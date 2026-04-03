@@ -200,7 +200,24 @@ const COLORS=['#E8D5D8:#6B4A50','#D5DDE8:#4A5A6B','#D5E8D8:#4A6B4A','#E8E0D5:#6B
 async function loadCands(){
   document.getElementById('clist').innerHTML='<div class="empty-list">Cargando...</div>';
   try{
-    cands=await sbGet('candidatos','select=*');
+    const all=await sbGet('candidatos','select=*');
+    // Group by email — keep most recent per email, track submission count
+    const byEmail={};
+    all.forEach(c=>{
+      const key=(c.email||'sin-email').toLowerCase().trim();
+      if(!byEmail[key]){byEmail[key]=[];}
+      byEmail[key].push(c);
+    });
+    // For each email group: sort by created_at desc, keep most recent as main record
+    cands=Object.values(byEmail).map(group=>{
+      group.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+      const main=group[0];
+      main._submissions=group.length;
+      main._history=group;
+      return main;
+    });
+    // Sort all by most recent submission
+    cands.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
     reps=JSON.parse(localStorage.getItem('mj_panel_reps')||'{}');
     notes=JSON.parse(localStorage.getItem('mj_panel_notes')||'{}');
     renderSidebar();
@@ -232,7 +249,9 @@ function renderSidebar(){
     d.onclick=()=>openCand(c.id);
     d.innerHTML='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
       +'<div class="av" style="width:30px;height:30px;font-size:11px;background:'+col[0]+';color:'+col[1]+'">'+ini+'</div>'
-      +'<div class="crow-name">'+( c.nombre||'—')+'</div></div>'
+      +'<div class="crow-name">'+(c.nombre||'—')+'</div>'
+      +(c._submissions>1?'<span style="font-size:9px;font-weight:700;background:#f3efef;color:#6B5A5F;padding:2px 6px;border-radius:10px;">'+c._submissions+'x</span>':'')
+      +'</div>'
       +'<div class="crow-sub">'+(c.rol||c.sector||'—')+' · '+(c.ciudad||'—')+'</div>'
       +'<div class="crow-pills">'
       +(!seen?'<span class="pill pill-new">Nuevo</span>':'')
@@ -311,7 +330,19 @@ function tabDatos(c){
     +'<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Obstáculos</div>'
     +'<div class="olist">'+(obs.length?obs.map(o=>'<div class="oi"><div class="odot"></div>'+o+'</div>').join(''):'<div style="font-size:12px;color:#999;">No indicados</div>')+'</div></div>'
     +'<div><div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Habilidades</div>'
-    +'<div style="display:flex;flex-wrap:wrap;gap:6px;">'+(ski.map(s=>'<span style="background:#f3efef;color:#6B5A5F;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;">'+s+'</span>').join('')||'<span style="font-size:12px;color:#999;">No indicadas</span>')+'</div></div>';
+    +'<div style="display:flex;flex-wrap:wrap;gap:6px;">'+(ski.map(s=>'<span style="background:#f3efef;color:#6B5A5F;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;">'+s+'</span>').join('')||'<span style="font-size:12px;color:#999;">No indicadas</span>')+'</div></div>'
+    +(c._submissions>1
+      ?'<div style="margin-top:20px;padding-top:16px;border-top:1px solid #eee;">'
+        +'<div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Historial ('+c._submissions+' formularios enviados)</div>'
+        +c._history.map(function(h,i){
+          return '<div style="background:#f9f8f8;border-radius:8px;padding:8px 12px;margin-bottom:6px;">'
+            +'<div style="font-size:12px;font-weight:600;color:#1a1a1a;">'+(i===0?'Formulario más reciente':'Formulario '+String(c._submissions-i))+' · '+new Date(h.created_at).toLocaleDateString('es-ES')+'</div>'
+            +'<div style="font-size:11px;color:#999;margin-top:2px;">Rol: '+(h.rol||'—')+' · Situación: '+(h.situacion||'—')+'</div>'
+            +'</div>';
+        }).join('')
+        +'</div>'
+      :'')
+    ;
 }
 
 function tabGenerar(c){
