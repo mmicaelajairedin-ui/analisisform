@@ -625,16 +625,18 @@ function go(n){
 }
 function selR(g,el){document.querySelectorAll('#'+g+' .opt').forEach(o=>o.classList.remove('sel'));el.classList.add('sel');rVals[g]=el.querySelector('span').textContent;}
 function togC(el){el.classList.toggle('sel');}
-let cvUrl='No subido';let cvFile='No subido';
+let cvUrl='No subido';let cvFile='No subido';let ucWidget=null;
 function initUploadcare(){
   if(typeof uploadcare==='undefined')return;
-  const widget=uploadcare.Widget('#cv-uc');
-  widget.onChange(function(file){
+  ucWidget=uploadcare.Widget('#cv-uc');
+  ucWidget.onChange(function(file){
     if(!file)return;
+    const st=document.getElementById('cv-status');
+    st.textContent='Subiendo...';st.style.display='block';st.style.color='#666';
     file.done(function(info){
       cvUrl=info.cdnUrl;cvFile=info.name;
-      const st=document.getElementById('cv-status');
-      st.textContent='\u2713 '+info.name+' subido correctamente';st.style.display='block';
+      st.textContent='\u2713 '+info.name+' subido correctamente';
+      st.style.color='#0F6E56';
     });
   });
 }
@@ -658,6 +660,14 @@ async function enviar(){
   const t=TX[lang];
   const btn=document.getElementById('btn-send');const st=document.getElementById('send-st');
   btn.disabled=true;btn.textContent=t.sending;st.textContent=t.sending;st.style.color='#666';
+  // Si hay un archivo subiendo, esperar a que termine
+  if(ucWidget&&cvFile==='No subido'&&ucWidget.value()!==null){
+    st.textContent='Esperando que termine de subir el CV...';
+    await new Promise((res,rej)=>{
+      const f=ucWidget.value();if(!f){res();return;}
+      f.done(info=>{cvUrl=info.cdnUrl;cvFile=info.name;res();}).fail(()=>res());
+    });
+  }
   const d={
     nombre:document.getElementById('f-nom').value||'—',
     email:document.getElementById('f-mai').value||'—',
