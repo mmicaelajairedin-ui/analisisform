@@ -141,6 +141,7 @@ async function init(){
   if(!email){showError('No se encontró tu informe. Contacta con Micaela.');return;}
 
   try{
+    // Load informe
     const r=await fetch(SB_URL+'/rest/v1/informes?email=eq.'+encodeURIComponent(email)+'&order=created_at.desc&select=*',{
       headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
     });
@@ -152,7 +153,14 @@ async function init(){
     const prev=latest.prev?JSON.parse(latest.prev):null;
     const hasProgress=!!(prev&&prev.scores&&prev.scores.length);
 
-    renderReport(d,prev,hasProgress);
+    // Load CV if available
+    const rcv=await fetch(SB_URL+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(email)+'&order=created_at.desc&limit=1&select=*',{
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+    });
+    const cvRows=await rcv.json();
+    const cvData=cvRows&&cvRows.length?cvRows[0].contenido:null;
+
+    renderReport(d,prev,hasProgress,cvData);
   }catch(e){
     showError('Error al cargar el informe. Inténtalo de nuevo.');
   }
@@ -165,7 +173,7 @@ function showError(msg){
     +'</div></div>';
 }
 
-function renderReport(d,prev,hasProgress){
+function renderReport(d,prev,hasProgress,cvData){
   function sc(arr){
     return arr.map(s=>{
       const pct=Math.min(100,Math.max(0,Math.round(s.val)));
@@ -230,6 +238,11 @@ function renderReport(d,prev,hasProgress){
     +'</div>'
     +'<div class="rfooter"><div class="rfooter-brand">Micaela Jairedin · Career Coach & Recruiter</div><div class="rfooter-note">Informe personalizado · Confidencial</div></div>'
     +'</div>'
+    +(cvData?'<div class="report" style="margin-bottom:1.5rem;">'
+      +'<div class="rhead"><div><div class="rhead-brand-name">Micaela Jairedin</div><div class="rhead-brand-title">Career Coach & Recruiter</div></div><div class="rhead-meta"><div class="rhead-tag">CV optimizado</div><div class="rhead-cand">'+d.candidato+'</div></div></div>'
+      +'<div class="rbody"><pre style="font-family:Montserrat,sans-serif;font-size:12px;line-height:1.8;color:#2a2a2a;white-space:pre-wrap;word-break:break-word;">'+cvData+'</pre></div>'
+      +'<div class="rfooter"><div class="rfooter-brand">Micaela Jairedin · Career Coach & Recruiter</div><div class="rfooter-note">CV optimizado · Confidencial</div></div>'
+      +'</div>':'')
     +'<div class="next-box">'
       +'<h3>¿Tienes preguntas sobre tu informe?</h3>'
       +'<p>Estaré encantada de resolverlas en nuestra próxima sesión. También puedes contactarme directamente si necesitas algo antes.</p>'
