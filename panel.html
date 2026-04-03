@@ -273,6 +273,22 @@ function openCand(id){
   renderMain(c);
 }
 
+function makeTabs(atab,cid,hasRep){
+  var tabs=['datos','generar'];
+  if(hasRep) tabs.push('informe');
+  tabs.push('cv');
+  tabs.push('notas');
+  var labels={datos:'Datos',generar:'Generar informe',informe:'Informe',cv:'Generar CV',notas:'Mis notas'};
+  var html='<div class="tabs">';
+  for(var i2=0;i2<tabs.length;i2++){
+    var t=tabs[i2];
+    var cls='tab'+(atab===t?' on':'');
+    var oc="switchTab('"+t+"',"+cid+")";
+    html+='<div class="'+cls+'" onclick="'+oc+'">'+labels[t]+'</div>';
+  }
+  return html+'</div>';
+}
+
 function renderMain(c){
   const hasRep=!!reps[c.id];
   const isPub=hasRep&&reps[c.id].published;
@@ -309,6 +325,7 @@ function renderTab(c,tab){
   if(tab==='datos') return tabDatos(c);
   if(tab==='generar') return tabGenerar(c);
   if(tab==='informe') return tabInforme(c);
+  if(tab==='cv') return tabCV(c);
   if(tab==='notas') return tabNotas(c);
   return '';
 }
@@ -498,6 +515,106 @@ function tabInforme(c){
     +'</div>';
 }
 
+function tabCV(c){
+  const rep=reps[c.id];
+  const d=rep?rep.data:null;
+  const liUrl=c.linkedin?'https://linkedin.com/in/'+c.linkedin:'No tiene';
+  const cvLink=c.cv_url&&c.cv_url!=='No subido'?c.cv_url:'';
+
+  const scores=d?d.scores.map(s=>s.label+': '+Math.round(s.val)+'%').join(' | '):'No disponible';
+  const accCV=d&&d.cv_acciones?d.cv_acciones.join('\n- '):'';
+  const accLI=d&&d.linkedin_acciones?d.linkedin_acciones.join('\n- '):'';
+  const gaps=d&&d.gaps?d.gaps.join('\n- '):'';
+  const fortalezas=d&&d.fortalezas?d.fortalezas.join('\n- '):'';
+
+  const prompt='Eres un experto en recursos humanos y redacción de CVs para el mercado europeo. '
+    +'Genera un CV profesional optimizado para ATS y para el mercado español/europeo para este candidato. '
+    +'El CV debe estar en español, ser claro, impactante y pasar filtros ATS.\n\n'
+    +'DATOS DEL CANDIDATO:\n'
+    +'Nombre: '+(c.nombre||'--')+'\n'
+    +'Email: '+(c.email||'--')+'\n'
+    +'Ciudad: '+(c.ciudad||'--')+'\n'
+    +'Experiencia: '+(c.exp||'--')+'\n'
+    +'Sector: '+(c.sector||'--')+'\n'
+    +'Cargo actual: '+(c.cargo||'--')+'\n'
+    +'Rol buscado: '+(c.rol||'--')+'\n'
+    +'Empresa objetivo: '+(c.empresa||'--')+'\n'
+    +'Modalidad: '+(c.modalidad||'--')+'\n'
+    +'Salario esperado: '+(c.salario||'--')+'\n'
+    +'Skills: '+(c.skills||'--')+'\n'
+    +'Logro destacado: '+(c.logro||'--')+'\n'
+    +'Fuera del CV: '+(c.extra||'--')+'\n'
+    +'LinkedIn: '+liUrl+'\n'
+    +(cvLink?'CV original: '+cvLink+'\n':'')+'\n'
+    +'DIAGNÓSTICO DEL INFORME:\n'
+    +'Scores: '+scores+'\n'
+    +'Fortalezas:\n- '+fortalezas+'\n'
+    +'Gaps a corregir:\n- '+gaps+'\n'
+    +'Acciones prioritarias CV:\n- '+accCV+'\n'
+    +'Acciones LinkedIn:\n- '+accLI+'\n\n'
+    +(cvLink?'IMPORTANTE: Descarga y analiza el CV original en: '+cvLink+' y úsalo como base para mejorar, no para copiar.\n\n':'')
+    +'INSTRUCCIONES:\n'
+    +'1. Crea un CV de máximo 2 páginas con estas secciones: Titular profesional | Resumen ejecutivo (3-4 líneas) | Experiencia (con logros cuantificados) | Formación | Habilidades | Idiomas\n'
+    +'2. El titular debe incluir el rol buscado y las palabras clave del sector\n'
+    +'3. Cada puesto de trabajo debe tener 3-5 bullets con formato: Verbo de acción + qué hice + resultado cuantificado\n'
+    +'4. Incluye palabras clave ATS relevantes para el rol y sector\n'
+    +'5. Elimina información irrelevante o que pueda generar rechazo\n'
+    +'6. Adapta el lenguaje al mercado español/europeo\n'
+    +'7. Al final del CV añade una nota: "CV optimizado por Micaela Jairedin | Career Coach & Recruiter"\n\n'
+    +'Genera el CV completo en texto plano con formato claro usando separadores y mayúsculas para los títulos de sección.';
+
+  window['_cv_prompt_'+c.id]=prompt;
+
+  const hasCV=!!(c.cv_url&&c.cv_url!=='No subido');
+
+  return '<div class="gen-box">'
+    +'<h3>Generador de CV optimizado</h3>'
+    +'<p>Este servicio genera un CV profesional adaptado al mercado europeo, optimizado para ATS y basado en el diagnóstico del informe.'+(hasCV?' Se usará el CV original como base.':' El candidato no ha subido CV original.')+'</p>'
+    +(rep?'':'<div style="background:#fdf6f6;border-left:3px solid #c0756e;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#2a2a2a;">Genera primero el informe del candidato para que el CV sea más preciso.</div>')
+    +'<div style="background:#f3efef;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:#4A3A3E;line-height:1.6;">'
+      +'<strong>Flujo:</strong> Copia el prompt → pégalo en Claude.ai → Claude genera el CV → cópialo y pégalo aquí abajo para verlo con el diseño de marca.'
+    +'</div>'
+    +'<div style="background:#f9f8f8;border-radius:8px;padding:12px;margin-bottom:10px;font-size:11px;font-family:monospace;color:#333;max-height:150px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;border:1px solid #eee;" id="cv-prompt-'+c.id+'">'+escH(prompt)+'</div>'
+    +'<button class="btn" onclick="copiarCVPrompt('+c.id+')">Copiar prompt</button>'
+    +'<div class="status" id="st-cv-'+c.id+'"></div>'
+    +'</div>'
+    +'<div class="gen-box" style="margin-top:12px;">'
+    +'<h3>Paso 2 — Pega el CV generado por Claude</h3>'
+    +'<p>Pega el texto del CV que generó Claude y pulsa "Publicar CV" para que el cliente pueda verlo online.</p>'
+    +'<textarea id="cv-text-'+c.id+'" rows="10" placeholder="Pega aquí el CV generado por Claude..."></textarea>'
+    +'<div style="margin-top:10px;display:flex;gap:8px;">'
+    +'<button class="btn" onclick="publicarCV('+c.id+')">Publicar CV al cliente</button>'
+    +'</div>'
+    +'<div class="status" id="st-cvpub-'+c.id+'"></div>'
+    +'</div>';
+}
+
+function copiarCVPrompt(id){
+  const p=window['_cv_prompt_'+id];
+  navigator.clipboard.writeText(p).then(()=>{
+    const st=document.getElementById('st-cv-'+id);
+    st.textContent='✓ Copiado. Pégalo en Claude.ai';
+    st.style.color='#8C7B80';
+  });
+}
+
+async function publicarCV(id){
+  const cvText=document.getElementById('cv-text-'+id).value.trim();
+  const st=document.getElementById('st-cvpub-'+id);
+  if(!cvText){st.textContent='Pega el CV antes de publicar.';st.style.color='#c0756e';return;}
+  const c=cands.find(x=>x.id===id);
+  st.textContent='Publicando...';st.style.color='#666';
+  try{
+    await sbInsert('cv_publicados',{email:c.email,candidato_id:id,contenido:cvText,created_at:new Date().toISOString()});
+    st.textContent='✓ CV publicado. El cliente puede verlo en su página.';
+    st.style.color='#4a7c5f';
+  }catch(e){
+    // Table might not exist yet - show URL anyway
+    st.textContent='✓ CV listo. URL del cliente: '+BASE+'/cliente.html?email='+encodeURIComponent(c.email);
+    st.style.color='#4a7c5f';
+  }
+}
+
 function tabNotas(c){
   const saved=notes[c.id]||'';
   return '<div>'
@@ -602,7 +719,7 @@ function printReport(){window.print();}
 function escH(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 loadCands();
-
++makeTabs(atab,c.id,hasRep)
 </script>
 </body>
 </html>
