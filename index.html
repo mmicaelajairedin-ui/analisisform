@@ -6,6 +6,8 @@
 <title id="page-title">Análisis de perfil profesional</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js"></script>
+<script>UPLOADCARE_PUBLIC_KEY='00db798991682d2a4da2';UPLOADCARE_LOCALE='es';UPLOADCARE_TABS='file';UPLOADCARE_EFFECTS='';UPLOADCARE_IMAGES_ONLY=false;</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Montserrat',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:100vh;padding:2rem 1rem 4rem;}
@@ -199,12 +201,8 @@ input[type=file]{display:none;}
       <div class="stag" id="s3t">Paso 3 de 7</div><div class="stitle" id="s3h">Tu CV y tu LinkedIn</div>
       <div class="sdesc" id="s3d">No te preocupes si no están perfectos — para eso estoy yo.</div>
       <div class="field"><label id="l-cv">Tu currículum</label>
-        <div class="uzone" id="cv-zone" onclick="document.getElementById('cv-inp').click()">
-          <div class="uzone-t" id="cvzt">Haz clic para subir tu CV</div>
-          <div class="uzone-s">PDF o Word · Máx 10MB</div>
-          <div class="uzone-fn" id="cv-fn" style="display:none"></div>
-        </div>
-        <input type="file" id="cv-inp" accept=".pdf,.doc,.docx,.jpg,.png" onchange="upFile()">
+        <input type="hidden" role="uploadcare-uploader" id="cv-uc" name="cv-uc" data-public-key="00db798991682d2a4da2" data-tabs="file" data-accept=".pdf,.doc,.docx" data-preview-step="false" />
+        <div id="cv-status" style="margin-top:8px;font-size:12px;color:#0F6E56;font-weight:600;display:none;"></div>
       </div>
       <div class="field"><label id="l-li">LinkedIn</label>
         <div style="display:flex;align-items:center;gap:8px;">
@@ -375,7 +373,7 @@ let activeId=null, atab='resumen';
 const COLORS=['#E1F5EE:#085041','#E6F1FB:#0C447C','#FBEAF0:#72243E','#FAEEDA:#633806','#EAF3DE:#27500A','#E1F5EE:#0F6E56'];
 
 // ── FORMULARIO STATE ──
-let lang='es', cur=1, rVals={}, cvFile='';
+let lang='es', cur=1, rVals={};
 const TX={
   es:{
     topH:'Cuéntame sobre ti',topP:'Tómate tu tiempo, no hay respuestas incorrectas. Esta información me ayudará a preparar nuestra sesión y darte el análisis más útil posible.',
@@ -627,7 +625,20 @@ function go(n){
 }
 function selR(g,el){document.querySelectorAll('#'+g+' .opt').forEach(o=>o.classList.remove('sel'));el.classList.add('sel');rVals[g]=el.querySelector('span').textContent;}
 function togC(el){el.classList.toggle('sel');}
-function upFile(){const f=document.getElementById('cv-inp').files[0];if(!f)return;cvFile=f.name;document.getElementById('cv-zone').classList.add('has');const fn=document.getElementById('cv-fn');fn.textContent=f.name+' ('+(f.size/1024).toFixed(0)+' KB)';fn.style.display='block';}
+let cvUrl='No subido';let cvFile='No subido';
+function initUploadcare(){
+  if(typeof uploadcare==='undefined')return;
+  const widget=uploadcare.Widget('#cv-uc');
+  widget.onChange(function(file){
+    if(!file)return;
+    file.done(function(info){
+      cvUrl=info.cdnUrl;cvFile=info.name;
+      const st=document.getElementById('cv-status');
+      st.textContent='\u2713 '+info.name+' subido correctamente';st.style.display='block';
+    });
+  });
+}
+document.addEventListener('DOMContentLoaded',initUploadcare);
 function addTag(e){if(e.key!=='Enter')return;e.preventDefault();const inp=document.getElementById('tag-inp');const v=inp.value.trim();if(!v)return;let arr=JSON.parse(document.getElementById('f-ski').value);arr.push(v);document.getElementById('f-ski').value=JSON.stringify(arr);const p=document.createElement('div');p.className='tpill';p.innerHTML=v+'<span class="tpill-x" onclick="rmTag(this,\''+v.replace(/'/g,"\\'")+'\')">×</span>';document.getElementById('tags-wrap').insertBefore(p,document.getElementById('tag-inp'));inp.value='';}
 function rmTag(el,val){let arr=JSON.parse(document.getElementById('f-ski').value);arr=arr.filter(x=>x!==val);document.getElementById('f-ski').value=JSON.stringify(arr);el.parentElement.remove();}
 function getObs(){return[...document.querySelectorAll('#c-obs .copt.sel')].map(el=>el.querySelector('span').textContent);}
@@ -674,6 +685,7 @@ async function enviar(){
     resp_ia:document.getElementById('f-resp').value||'—',
     preg_ia:document.getElementById('ai-q').textContent||'—',
     cv:cvFile||'No subido',
+    cvUrl:cvUrl||'No subido',
     idioma:lang.toUpperCase()
   };
   const liUrl=d.linkedin?'linkedin.com/in/'+d.linkedin:'No tiene';
@@ -691,7 +703,7 @@ ${d.situacion}
 "${d.objetivo}"
 
 ▸ CV Y LINKEDIN
-CV: ${d.cv} | LinkedIn: ${liUrl} (${d.li_estado})
+CV: ${d.cv}${d.cvUrl&&d.cvUrl!=='No subido'?' — Descargar: '+d.cvUrl:''} | LinkedIn: ${liUrl} (${d.li_estado})
 Portfolio: ${d.portfolio}
 
 ▸ EXPERIENCIA
