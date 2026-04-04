@@ -138,11 +138,68 @@ function alts(arr){if(!arr||!arr.length)return'';return arr.map(function(a){retu
 function pro(s){return'<div class="sec-b">'+esc(s||'')+'</div>';}
 function sec(title,body){return'<div class="sec"><div class="sec-t">'+title+'</div>'+body+'</div>';}
 
+var _dEN=null;  // cached EN translation
+
 function setLang(l){
   _lang=l;
   document.getElementById('lb-es').className='lb'+(l==='es'?' on':'');
   document.getElementById('lb-en').className='lb'+(l==='en'?' on':'');
-  if(_d)render();
+  if(l==='en'&&_d&&!_dEN){
+    translateToEN();
+  } else {
+    if(_d)render();
+  }
+}
+
+async function translateToEN(){
+  // Show loading
+  var lbEn=document.getElementById('lb-en');
+  if(lbEn)lbEn.textContent='EN...';
+
+  // Build text to translate from _d
+  var toTranslate={
+    resumen:_d.resumen||'',
+    fortalezas:_d.fortalezas||[],
+    gaps:_d.gaps||[],
+    mercado:_d.mercado||'',
+    estrategia:_d.estrategia||'',
+    cv_acciones:_d.cv_acciones||[],
+    linkedin_acciones:_d.linkedin_acciones||[],
+    networking_acciones:_d.networking_acciones||[],
+    preguntas:_d.preguntas||[],
+    alertas:_d.alertas||[],
+    mensaje_candidato:_d.mensaje_candidato||''
+  };
+
+  var prompt='Translate this JSON object from Spanish to English. '
+    +'Return ONLY valid JSON, no markdown, no explanation. '
+    +'Keep the exact same structure and keys.\n\n'
+    +JSON.stringify(toTranslate);
+
+  try{
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:2000,
+        messages:[{role:'user',content:prompt}]
+      })
+    });
+    var data=await resp.json();
+    var text=data.content&&data.content[0]?data.content[0].text:'';
+    var clean=text.replace(/```json|```/g,'').trim();
+    var translated=JSON.parse(clean);
+    // Merge translation with original data
+    _dEN=Object.assign({},_d,translated);
+    if(lbEn)lbEn.textContent='EN';
+    render();
+  }catch(e){
+    if(lbEn)lbEn.textContent='EN';
+    // Fallback: render in Spanish
+    render();
+    console.warn('Translation failed:',e);
+  }
 }
 
 function showTab(id,btn){
@@ -155,13 +212,77 @@ function showTab(id,btn){
 function toggleAction(idx){
   _actions[idx]=!_actions[idx];
   localStorage.setItem('actions_'+_email,JSON.stringify(_actions));
-  render();
-  showTab('progreso',document.querySelector('[data-tab="progreso"]'));
+  // Only re-render the progreso tab content, not the whole page
+  updateProgresoTab();
+}
+
+function updateProgresoTab(){
+  var t=T();
+  var d=_d;
+  var allActions=[];
+  var areaMap={'cv_acciones':t.cvArea,'linkedin_acciones':t.liArea,'networking_acciones':t.netArea};
+  ['cv_acciones','linkedin_acciones','networking_acciones'].forEach(function(k){
+    (d[k]||[]).forEach(function(text){allActions.push({area:areaMap[k],text:text});});
+  });
+  var done=allActions.filter(function(a,i){return _actions[i];}).length;
+  var pct=allActions.length?Math.round((done/allActions.length)*100):0;
+
+  // Update score cards
+  (_d.scores||[]).forEach(function(s,si){
+    var base=Math.round(s.val);
+    var areaKey='';
+    if(s.label.indexOf('CV')>=0||s.label.indexOf('marca')>=0||s.label.indexOf('brand')>=0)areaKey=t.cvArea;
+    else if(s.label.indexOf('LinkedIn')>=0)areaKey=t.liArea;
+    else if(s.label.indexOf('Red')>=0||s.label.indexOf('Network')>=0||s.label.indexOf('contacto')>=0)areaKey=t.netArea;
+    var areaActions=allActions.filter(function(a){return a.area===areaKey;});
+    var areaDone=areaActions.filter(function(a){return _actions[a.idx];}).length;
+    var gain=areaActions.length>0?Math.round((areaDone/areaActions.length)*20):0;
+    var cur=Math.min(100,base+gain);
+    var diff=cur-base;
+    var cl=base>=70?'#4a7c5f':base>=45?'#8C7B80':'#c0756e';
+    var lbl=cur>=70?'Destacado':cur>=45?'En progreso':'Inicial';
+    // Update score card elements
+    var card=document.getElementById('score-card-'+si);
+    if(card){
+      var pctEl=card.querySelector('.sc-p');
+      var fillEl=card.querySelector('.sc-fi');
+      var lblEl=card.querySelector('.sc-lbl');
+      var diffEl=card.querySelector('.sc-diff');
+      if(pctEl)pctEl.textContent=cur+'%';
+      if(fillEl)fillEl.style.width=cur+'%';
+      if(lblEl){lblEl.textContent=lbl;lblEl.style.color=cl;}
+      if(diffEl){diffEl.textContent=diff>0?'+'+diff+'%':'';diffEl.style.display=diff>0?'':'none';}
+    }
+  });
+
+  // Update progress bar
+  var pb=document.getElementById('prog-bar-fill');
+  var pp=document.getElementById('prog-pct');
+  var pc=document.getElementById('prog-count');
+  if(pb)pb.style.width=pct+'%';
+  if(pp)pp.textContent=pct+'%';
+  if(pc)pc.textContent=done+' de '+allActions.length;
+
+  // Update action items
+  allActions.forEach(function(a,i){
+    var el=document.getElementById('action-'+i);
+    if(!el)return;
+    var checked=!!_actions[i];
+    el.className='action-item'+(checked?' done':'');
+    var isPriority=i<3;
+    if(isPriority&&!checked){el.style.borderColor='#f3c94b';el.style.background='#fffdf0';}
+    else if(checked){el.style.borderColor='';el.style.background='';}
+    else{el.style.borderColor='';el.style.background='';}
+    var check=el.querySelector('.action-check');
+    if(check)check.innerHTML=checked?'<svg width="9" height="7" viewBox="0 0 9 7"><polyline points="1 3.5 3 5.5 8 1" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>':'';
+    var txt=el.querySelector('.action-text');
+    if(txt){txt.style.textDecoration=checked?'line-through':'';txt.style.opacity=checked?'.65':'1';txt.style.color=checked?'#2e7d32':'#1a1a1a';}
+  });
 }
 
 function render(){
   var t=T();
-  var d=_d;
+  var d=(_lang==='en'&&_dEN)?_dEN:_d;
   var hasCv=!!(_cvData&&_cvData.contenido);
 
   // All actions
@@ -213,7 +334,8 @@ function render(){
       return'<div class="sc"><div class="sc-l">'+esc(s.label)+'</div>'
         +'<div class="sc-p '+cl+'">'+p+'%</div>'
         +'<div class="sc-tr"><div class="sc-fi fi-'+cl+'" style="width:'+p+'%"></div></div>'
-        +'<div style="font-size:8px;font-weight:700;color:'+lblcl+';margin-top:4px;text-transform:uppercase;letter-spacing:.04em;">'+lbl+'</div>'
+        +'<div class="sc-lbl" style="font-size:8px;font-weight:700;color:'+lblcl+';margin-top:4px;text-transform:uppercase;letter-spacing:.04em;">'+lbl+'</div>'
+        +'<div class="sc-diff" style="font-size:9px;color:#4a7c5f;display:'+(diff>0?'block':'none')+';">+'+(diff>0?diff+'%':'')+'</div>'
         +'</div>';
     }).join('')+'</div>'
     +sec(t.s1,pro(d.resumen))
@@ -265,7 +387,7 @@ function render(){
     +'<p style="font-size:12px;color:#666;margin-bottom:14px;">Completa acciones abajo para ver c\u00f3mo mejoran tus \u00e1reas</p>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;">';
 
-  (_d.scores||[]).forEach(function(s){
+  (_d.scores||[]).forEach(function(s,si){
     var base=Math.round(s.val);
     var areaKey='';
     if(s.label.indexOf('CV')>=0||s.label.indexOf('marca')>=0||s.label.indexOf('brand')>=0)areaKey=t.cvArea;
@@ -277,7 +399,7 @@ function render(){
     var cur=Math.min(100,base+gain);
     var diff=cur-base;
     var cl=base>=70?'#4a7c5f':base>=45?'#8C7B80':'#c0756e';
-    html+='<div style="background:#f9f8f8;border-radius:10px;padding:12px 8px;text-align:center;">'
+    html+='<div id="score-card-'+si+'" style="background:#f9f8f8;border-radius:10px;padding:12px 8px;text-align:center;">'
       +'<div style="font-size:8px;font-weight:700;color:#8C7B80;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;line-height:1.4;">'+esc(s.label)+'</div>'
       +'<div style="display:flex;align-items:baseline;justify-content:center;gap:4px;">'
         +'<div style="font-size:22px;font-weight:700;color:'+cl+';">'+cur+'%</div>'
@@ -306,11 +428,11 @@ function render(){
   // PROGRESS BAR + ACTIONS
   html+='<div class="prog-card"><h3>'+t.progT+'</h3><p>'+t.progD+'</p>'
     +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
-      +'<div style="font-size:22px;font-weight:700;color:#8C7B80;">'+pct+'%</div>'
-      +'<div style="font-size:11px;color:#999;">'+done+' de '+allActions.length+'</div>'
+      +'<div id="prog-pct" style="font-size:22px;font-weight:700;color:#8C7B80;">'+pct+'%</div>'
+      +'<div id="prog-count" style="font-size:11px;color:#999;">'+done+' de '+allActions.length+'</div>'
     +'</div>'
     +'<div style="height:5px;background:#eee;border-radius:3px;overflow:hidden;margin-bottom:14px;">'
-      +'<div style="height:5px;background:#8C7B80;border-radius:3px;width:'+pct+'%;transition:width .5s;"></div>'
+      +'<div id="prog-bar-fill" style="height:5px;background:#8C7B80;border-radius:3px;width:'+pct+'%;transition:width .5s;"></div>'
     +'</div>';
 
   // Actions grouped by area
@@ -328,7 +450,7 @@ function render(){
     areas[area].forEach(function(a){
       var checked=!!_actions[a.idx];
       var isPriority=a.globalIdx<3;
-      html+='<div class="action-item'+(checked?' done':'')+'" onclick="toggleAction('+a.idx+')" style="'+(isPriority&&!checked?'border-color:#f3c94b;background:#fffdf0;':'')+'">'
+      html+='<div id="action-'+a.idx+'" class="action-item'+(checked?' done':'')+'" onclick="toggleAction('+a.idx+')" style="'+(isPriority&&!checked?'border-color:#f3c94b;background:#fffdf0;':'')+'">';
         +'<div class="action-check">'+(checked?'<svg width="9" height="7" viewBox="0 0 9 7"><polyline points="1 3.5 3 5.5 8 1" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>':'')+'</div>'
         +'<div style="flex:1;">'
           +(isPriority&&!checked?'<div style="font-size:8px;font-weight:700;color:#92620a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">⚡ Empieza aquí</div>':'')
