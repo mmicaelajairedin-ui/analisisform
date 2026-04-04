@@ -340,29 +340,107 @@ function renderCVLocked(){
 
 function renderProgreso(){
   const d=_d;const prev=_prev;
-  return '<div class="comparison">'
-    +'<div class="comp-title">Tu progreso \u2014 Comparativa de sesiones</div>'
-    +'<div class="comp-legend">'
-      +'<span><div class="comp-legend-dot bar-old"></div>Antes</span>'
-      +'<span><div class="comp-legend-dot bar-new"></div>Ahora</span>'
-    +'</div><br>'
-    +d.scores.map(s=>{
-      const cur=Math.round(s.val);
-      const prevS=prev.scores.find(ps=>ps.label===s.label);
-      const pre=prevS?Math.round(prevS.val):0;
-      const diff=cur-pre;
-      const cl=diff>0?'up':diff<0?'down':'same';
-      return '<div class="comp-row">'
-        +'<div class="comp-label">'+s.label+'</div>'
-        +'<div class="comp-bars">'
-          +'<div class="comp-bar-wrap"><div class="comp-bar-bg"><div class="comp-bar-fill bar-old" style="width:'+pre+'%"></div></div><div class="comp-pct" style="color:#999;">'+pre+'%</div></div>'
-          +'<div class="comp-bar-wrap"><div class="comp-bar-bg"><div class="comp-bar-fill bar-new" style="width:'+cur+'%"></div></div><div class="comp-pct" style="color:#8C7B80;">'+cur+'%</div></div>'
+  const hasPrev=!!(prev&&prev.scores&&prev.scores.length);
+
+  // Load saved actions from localStorage
+  const savedActions=JSON.parse(localStorage.getItem('actions_'+_email)||'{}');
+
+  // Build actions list from informe
+  const allActions=[
+    ...(d.cv_acciones||[]).map(function(a){return{type:'CV',text:a};}),
+    ...(d.linkedin_acciones||[]).map(function(a){return{type:'LinkedIn',text:a};}),
+    ...(d.networking_acciones||[]).map(function(a){return{type:'Networking',text:a};}),
+  ];
+
+  const typeColors={CV:'#4A7FA5',LinkedIn:'#1D4A35',Networking:'#8C7B80'};
+
+  let html='';
+
+  // PROGRESS BARS (only if prev session exists)
+  if(hasPrev){
+    html+='<div class="comparison" style="margin-bottom:1.5rem;">'
+      +'<div class="comp-title">Comparativa de sesiones</div>'
+      +'<div class="comp-legend">'
+        +'<span><div class="comp-legend-dot bar-old"></div>Sesi\u00f3n anterior</span>'
+        +'<span><div class="comp-legend-dot bar-new"></div>Sesi\u00f3n actual</span>'
+      +'</div><br>'
+      +d.scores.map(function(s){
+        const cur=Math.round(s.val);
+        const prevS=prev.scores.find(function(ps){return ps.label===s.label;});
+        const pre=prevS?Math.round(prevS.val):0;
+        const diff=cur-pre;
+        const cl=diff>0?'up':diff<0?'down':'same';
+        return '<div class="comp-row">'
+          +'<div class="comp-label">'+s.label+'</div>'
+          +'<div class="comp-bars">'
+            +'<div class="comp-bar-wrap"><div class="comp-bar-bg"><div class="comp-bar-fill bar-old" style="width:'+pre+'%"></div></div><div class="comp-pct" style="color:#999;">'+pre+'%</div></div>'
+            +'<div class="comp-bar-wrap"><div class="comp-bar-bg"><div class="comp-bar-fill bar-new" style="width:'+cur+'%"></div></div><div class="comp-pct" style="color:#8C7B80;">'+cur+'%</div></div>'
+          +'</div>'
+          +'<div class="comp-change '+cl+'">'+(diff>0?'+':'')+diff+'%</div>'
+          +'</div>';
+      }).join('')
+      +'</div>';
+  }
+
+  // ACTION TRACKER
+  const done=allActions.filter(function(a,i){return savedActions[i];}).length;
+  const pct=allActions.length?Math.round((done/allActions.length)*100):0;
+
+  html+='<div style="background:#fff;border-radius:14px;border:1px solid #eee;padding:1.5rem;margin-bottom:1rem;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
+      +'<div>'
+        +'<div style="font-size:14px;font-weight:700;color:#1a1a1a;">Mis acciones</div>'
+        +'<div style="font-size:12px;color:#666;margin-top:2px;">Marca lo que ya est\u00e1s haciendo para ver tu avance</div>'
+      +'</div>'
+      +'<div style="text-align:right;">'
+        +'<div style="font-size:22px;font-weight:700;color:#8C7B80;">'+pct+'%</div>'
+        +'<div style="font-size:11px;color:#999;">'+done+' de '+allActions.length+' acciones</div>'
+      +'</div>'
+    +'</div>'
+    // Progress bar
+    +'<div style="height:6px;background:#eee;border-radius:3px;overflow:hidden;margin-bottom:16px;">'
+      +'<div style="height:6px;background:#8C7B80;border-radius:3px;width:'+pct+'%;transition:width .5s;"></div>'
+    +'</div>'
+    // Actions list
+    +allActions.map(function(a,i){
+      const checked=!!savedActions[i];
+      const color=typeColors[a.type]||'#666';
+      return '<div onclick="toggleAction('+i+')" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin-bottom:6px;border-radius:8px;cursor:pointer;border:1px solid '+(checked?'#c5dac5':'#eee')+';background:'+(checked?'#f0f7f0':'#fafafa')+';transition:all .15s;">'
+        +'<div style="width:20px;height:20px;border-radius:50%;border:2px solid '+(checked?'#4a7c5f':'#ddd')+';background:'+(checked?'#4a7c5f':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">'
+          +(checked?'<svg width="10" height="8" viewBox="0 0 10 8"><polyline points="1 4 3.5 6.5 9 1" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>':'')
         +'</div>'
-        +'<div class="comp-change '+cl+'">'+(diff>0?'+':'')+diff+'%</div>'
+        +'<div style="flex:1;">'
+          +'<div style="font-size:9px;font-weight:700;color:'+color+';text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">'+a.type+'</div>'
+          +'<div style="font-size:12px;color:'+(checked?'#2e7d32':'#1a1a1a')+';line-height:1.5;'+(checked?'text-decoration:line-through;opacity:.7;':'')+'">'+a.text+'</div>'
+        +'</div>'
         +'</div>';
     }).join('')
+    +'</div>'
+
+    // Notes area
+    +'<div style="background:#fff;border-radius:14px;border:1px solid #eee;padding:1.5rem;">'
+      +'<div style="font-size:13px;font-weight:700;color:#1a1a1a;margin-bottom:6px;">Mis notas de progreso</div>'
+      +'<div style="font-size:12px;color:#666;margin-bottom:10px;">Anota los cambios que est\u00e1s haciendo, obstáculos o preguntas para la próxima sesión.</div>'
+      +'<textarea id="progress-notes" placeholder="Escribe aqui..." style="width:100%;padding:10px 12px;font-size:12px;font-family:Montserrat,sans-serif;border:1.5px solid #ddd;border-radius:8px;resize:vertical;min-height:80px;outline:none;line-height:1.6;" onchange="saveNotes(this.value)">'+(localStorage.getItem('notes_'+_email)||'')+'</textarea>'
+      +'<div style="font-size:11px;color:#aaa;margin-top:4px;">Guardado automáticamente en este dispositivo</div>'
     +'</div>';
+
+  return html;
 }
+
+function toggleAction(idx){
+  const saved=JSON.parse(localStorage.getItem('actions_'+_email)||'{}');
+  saved[idx]=!saved[idx];
+  localStorage.setItem('actions_'+_email,JSON.stringify(saved));
+  // Re-render progreso tab
+  const tab=document.getElementById('tab-progreso');
+  if(tab) tab.innerHTML=renderProgreso();
+}
+
+function saveNotes(val){
+  localStorage.setItem('notes_'+_email,val);
+}
+
 
 function renderServiceBox(){
   return '<div class="box service-box">'
