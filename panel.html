@@ -526,6 +526,11 @@ function saveNote(id){
 }
 
 function textToHtml(text,candidato){
+  // Pre-process: insert newlines before section headers that may be glued
+  var SECS=['RESUMEN EJECUTIVO','EXPERIENCIA PROFESIONAL','FORMACI\u00d3N','CERTIFICACIONES','HABILIDADES','IDIOMAS'];
+  SECS.forEach(function(s){text=text.replace(new RegExp(s,'g'),'\n\n'+s+'\n');});
+  // Also split role line (all caps) from previous content
+  text=text.replace(/([a-z\.])([A-Z\u00C0-\u00DC]{4,})/g,'$1\n$2');
   // Parse text CV into structured HTML
   var lines=text.split('\n');
   var name='',role='',email='',phone='',city='',linkedin='';
@@ -565,7 +570,7 @@ function textToHtml(text,candidato){
   var skills=[];
   skillLines.forEach(function(l){var cl=l.replace(/^[-·•\s]+/,'').trim();if(cl.includes('·')){cl.split('·').forEach(function(s){if(s.trim().length>2)skills.push(s.trim());});}else if(cl.length>2)skills.push(cl);});
   var langs=getSec('IDIOMA').map(function(l){var cl=l.replace(/^[-·•\s]+/,'').trim();var p=cl.split(':');if(p.length<2)p=cl.split(/\s{2,}|[—–]/);return{n:(p[0]||'').trim(),l:(p[1]||'').trim()};}).filter(function(x){return x.n.length>1;});
-  var edu=getSec('FORMACI').filter(function(l){return l.trim()&&l.trim().length>2;}).map(function(l){var cl=l.replace(/^[-·•\s]+/,'').trim();var p=cl.split('·');var yrm=cl.match(/\d{4}/);return{deg:p[0]?p[0].replace(/\d{4}.*/,'').trim():cl,school:(p[1]||'').trim(),yr:yrm?yrm[0]:''};}).filter(function(x){return x.deg.length>3;});
+  var edu=getSec('FORMACI\u00d3N').length?getSec('FORMACI\u00d3N'):getSec('FORMACI').filter(function(l){return l.trim()&&l.trim().length>2;}).map(function(l){var cl=l.replace(/^[-·•\s]+/,'').trim();var p=cl.split('·');var yrm=cl.match(/\d{4}/);return{deg:p[0]?p[0].replace(/\d{4}.*/,'').trim():cl,school:(p[1]||'').trim(),yr:yrm?yrm[0]:''};}).filter(function(x){return x.deg.length>3;});
   var certs=getSec('CERTIFICACI').map(function(l){return l.replace(/^[-·•\s]+/,'').trim();}).filter(function(l){return l.length>3;});
 
   // Parse experience
@@ -639,9 +644,9 @@ function textToHtml(text,candidato){
     if(dm){dates=dm[0];title=title.replace(dm[0],'').replace(/[|·—\-]+/g,' ').replace(/\s+/g,' ').trim();}
     for(var j=1;j<blines.length;j++){
       var bl=blines[j].trim();if(!bl)continue;
-      if(j===1&&!bl.match(/^[-·•]/)&&!bl.match(/^[a-záéíóúñü]/))company=bl;
-      else if(/^(Contexto|Nota):/i.test(bl))ctx=bl.replace(/^[^:]+:\s*/,'');
-      else if(bl.match(/^[-·•]/))bullets.push(bl.replace(/^[-·•]\s*/,''));
+      if(/^(Contexto|Nota|Context):/i.test(bl)){ctx=bl.replace(/^[^:]+:\s*/,'');continue;}
+      if(j===1&&!bl.match(/^[-·•]/)&&bl.length<80&&!bl.match(/,/)){company=bl;continue;}
+      bullets.push(bl.replace(/^[-·•]\s*/,''));
     }
     var ulId='ul-'+ei;
     h+='<div class="ex"><div class="ex-top"><div class="ex-t" contenteditable="false">'+esc(title)+'</div>'+(dates?'<div class="ex-d" contenteditable="false">'+esc(dates)+'</div>':'')+'</div>';
