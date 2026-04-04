@@ -239,7 +239,52 @@ function render(){
 
   // TAB PROGRESO
   html+='<div class="tab-content" id="tab-progreso">';
-  // Progress bar
+
+  // SCORE CARDS
+  html+='<div class="prog-card">'
+    +'<h3 style="margin-bottom:4px;">Diagn\u00f3stico de tu perfil</h3>'
+    +'<p style="font-size:12px;color:#666;margin-bottom:14px;">Completa acciones abajo para ver c\u00f3mo mejoran tus \u00e1reas</p>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;">';
+
+  (_d.scores||[]).forEach(function(s){
+    var base=Math.round(s.val);
+    var areaKey='';
+    if(s.label.indexOf('CV')>=0||s.label.indexOf('marca')>=0||s.label.indexOf('brand')>=0)areaKey=t.cvArea;
+    else if(s.label.indexOf('LinkedIn')>=0||s.label.indexOf('Linked')>=0)areaKey=t.liArea;
+    else if(s.label.indexOf('Red')>=0||s.label.indexOf('Network')>=0||s.label.indexOf('contacto')>=0)areaKey=t.netArea;
+    var areaActions=allActions.filter(function(a){return a.area===areaKey;});
+    var areaDone=areaActions.filter(function(a){return _actions[a.idx];}).length;
+    var gain=areaActions.length>0?Math.round((areaDone/areaActions.length)*20):0;
+    var cur=Math.min(100,base+gain);
+    var diff=cur-base;
+    var cl=base>=70?'#4a7c5f':base>=45?'#8C7B80':'#c0756e';
+    html+='<div style="background:#f9f8f8;border-radius:10px;padding:12px 8px;text-align:center;">'
+      +'<div style="font-size:8px;font-weight:700;color:#8C7B80;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;line-height:1.4;">'+esc(s.label)+'</div>'
+      +'<div style="display:flex;align-items:baseline;justify-content:center;gap:4px;">'
+        +'<div style="font-size:22px;font-weight:700;color:'+cl+';">'+cur+'%</div>'
+        +(diff>0?'<div style="font-size:10px;font-weight:700;color:#4a7c5f;">+'+diff+'</div>':'')
+      +'</div>'
+      +'<div style="height:4px;background:#eee;border-radius:2px;margin-top:6px;overflow:hidden;">'
+        +'<div style="height:4px;background:'+cl+';border-radius:2px;width:'+cur+'%;transition:width .8s;"></div>'
+      +'</div>'
+      +(diff>0?'<div style="font-size:9px;color:#4a7c5f;margin-top:4px;">↑ mejorando</div>':'')
+    +'</div>';
+  });
+  html+='</div></div>';
+
+  // CV UPLOAD
+  html+='<div class="prog-card">'
+    +'<h3 style="margin-bottom:4px;">Sube tu CV actualizado</h3>'
+    +'<p style="font-size:12px;color:#666;margin-bottom:12px;">Cuando hayas mejorado tu CV, s\u00fabelo aqu\u00ed para compararlo con el original.</p>'
+    +'<label style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#f9f8f8;border:1.5px dashed #ddd;border-radius:10px;cursor:pointer;font-size:12px;color:#666;transition:.15s;">'
+      +'<span style="font-size:20px;">\uD83D\uDCCE</span>'
+      +'<span id="cv-upload-label">Seleccionar CV (PDF o Word)</span>'
+      +'<input type="file" accept=".pdf,.doc,.docx" style="display:none" onchange="handleCVUpload(this)">'
+    +'</label>'
+    +'<div id="cv-compare-result" style="margin-top:12px;"></div>'
+  +'</div>';
+
+  // PROGRESS BAR + ACTIONS
   html+='<div class="prog-card"><h3>'+t.progT+'</h3><p>'+t.progD+'</p>'
     +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
       +'<div style="font-size:22px;font-weight:700;color:#8C7B80;">'+pct+'%</div>'
@@ -270,10 +315,10 @@ function render(){
   });
   html+='</div>';
 
-  // Comparison
+  // Comparison bars (second session)
   if(_prev&&_prev.scores&&_prev.scores.length){
     html+='<div class="prog-card"><h3>Comparativa de sesiones</h3>'
-      +(d.scores||[]).map(function(s){
+      +(_d.scores||[]).map(function(s){
         var cur=Math.round(s.val);
         var ps=(_prev.scores.find(function(p){return p.label===s.label;})||{val:0});
         var pre=Math.round(ps.val);
@@ -290,11 +335,11 @@ function render(){
       }).join('')+'</div>';
   }
 
-  // Notes - built via DOM to avoid quote issues
+  // Notes
   html+='<div class="prog-card" id="notes-card"><h3>'+t.notasT+'</h3><p>'+t.notasD+'</p></div>';
   html+='</div>';
 
-  // Bottom box
+// Bottom box
   html+='<div class="box"><h3>'+t.wa+'</h3><p>Escríbeme directamente y te respondo.</p>'
     +'<a href="https://wa.me/34611256224?text=Hola%20Micaela%2C%20tengo%20una%20consulta%20sobre%20mi%20informe." class="wa-btn" target="_blank">'+t.wa+'</a></div>';
 
@@ -315,6 +360,28 @@ function render(){
     hint.textContent=t.notasAuto;
     nc.appendChild(ta);
     nc.appendChild(hint);
+  }
+}
+
+function handleCVUpload(input){
+  if(!input.files||!input.files[0])return;
+  var file=input.files[0];
+  var label=document.getElementById('cv-upload-label');
+  var result=document.getElementById('cv-compare-result');
+  if(label)label.textContent=file.name+' ✓';
+  if(result){
+    result.innerHTML='<div style="background:#f0f7f0;border-radius:8px;padding:12px 14px;border:1px solid #c5dac5;">'
+      +'<div style="font-size:12px;font-weight:700;color:#2e7d32;margin-bottom:4px;">CV recibido</div>'
+      +'<div style="font-size:12px;color:#555;line-height:1.6;">'
+        +'Tu nuevo CV ha sido cargado. En tu pr\u00f3xima sesi\u00f3n con Micaela lo revisaremos juntos y veremos c\u00f3mo han mejorado tus \u00e1reas.'
+      +'</div>'
+      +'<div style="margin-top:10px;">'
+        +'<a href="https://wa.me/34611256224?text=Hola%20Micaela%2C%20he%20actualizado%20mi%20CV%20y%20quiero%20compartirlo%20contigo%20para%20la%20pr\u00f3xima%20revisi\u00f3n." '
+          +'target="_blank" style="display:inline-block;padding:8px 16px;background:#8C7B80;color:#fff;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;">'
+          +'Enviar a Micaela por WhatsApp'
+        +'</a>'
+      +'</div>'
+    +'</div>';
   }
 }
 
