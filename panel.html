@@ -492,7 +492,9 @@ function tabCV(c){
     +'<button class="btn" onclick="copiarP('+c.id+',\'_cp_\',\'st-cp-'+c.id+'\')">Copiar prompt</button>'
     +'<div class="status" id="st-cp-'+c.id+'"></div></div>'
     +'<div class="gen-box"><h3>Paso 2 &mdash; Pega el CV generado</h3><p>Pega el texto del CV y define el codigo de acceso para el cliente.</p>'
-    +'<textarea id="cvt-'+c.id+'" rows="8" placeholder="Pega aqui el CV generado por Claude..."></textarea>'
+    +'<textarea id="cvt-'+c.id+'" rows="8" placehol'<button onclick="generarCVAuto('+c.id+')" style="width:100%;padding:12px;font-size:13px;font-weight:700;font-family:Montserrat,sans-serif;background:#1B3A5C;color:#fff;border:none;border-radius:8px;cursor:pointer;margin-bottom:8px;">✨ Generar CV optimizado automáticamente</button>'
+    +'<div id="cvgs-'+c.id+'" style="font-size:12px;color:#666;text-align:center;min-height:20px;margin-bottom:8px;"></div>'
+    +der="Pega aqui el CV generado por Claude..."></textarea>'
     +'<div style="margin-top:10px;">'
     +'<label style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px;">Codigo de acceso para el cliente</label>'
     +'<div style="display:flex;gap:8px;align-items:center;">'
@@ -667,6 +669,83 @@ function textToHtml(text,candidato){
   h+='<\/script></body></html>';
 
   return h;
+}
+
+async function generarCVAuto(id){
+  var c=cands.find(function(x){return x.id===id;});
+  if(!c){alert('Candidato no encontrado');return;}
+  var st=document.getElementById('cvgs-'+id);
+  var ta=document.getElementById('cvt-'+id);
+  if(st)st.textContent='Generando CV con IA... puede tardar 30 segundos';
+
+  // Build prompt from form data
+  var repData=reps[(c.email||'').toLowerCase().trim()];
+  var rep=repData&&repData.length?(repData[0].data?JSON.parse(repData[0].data):null):null;
+  var nicho=rep?rep.nicho||rep.objetivo||'':'';
+  var obs=(c.obstaculos||'').split('|').map(function(s){return s.trim();}).filter(Boolean).join(', ');
+  var red=(c.red_profesional||'').split('|').map(function(s){return s.trim();}).filter(Boolean).join(', ');
+
+  var prompt='Eres experto en RRHH y redacción de CVs para el mercado europeo (España). '
+    +'Genera un CV profesional, optimizado para ATS, en español, máximo 2 páginas. '
+    +'Usa exactamente este formato de secciones:\n'
+    +'NOMBRE COMPLETO\n'
+    +'ROL OBJETIVO (subtítulo profesional enfocado al nicho)\n'
+    +'RESUMEN EJECUTIVO\n(3-4 líneas impactantes con datos cuantitativos)\n'
+    +'EXPERIENCIA PROFESIONAL\n(cada puesto: título — empresa | sector | fechas, Contexto: ..., bullets con verbo acción + resultado)\n'
+    +'FORMACIÓN\n(cada formación: título · escuela · año)\n'
+    +'CERTIFICACIONES\n'
+    +'HABILIDADES\n(lista separada por · )\n'
+    +'IDIOMAS\n(idioma: nivel)\n\n'
+    +'DATOS DEL CANDIDATO:\n'
+    +'Nombre: '+(c.nombre||'--')+'\n'
+    +'Email: '+(c.email||'--')+'\n'
+    +'Ciudad: '+(c.ciudad||'--')+'\n'
+    +'Teléfono: '+(c.telefono||'--')+'\n'
+    +'LinkedIn: '+(c.linkedin?'linkedin.com/in/'+c.linkedin:'--')+'\n'
+    +'Años experiencia: '+(c.exp||'--')+'\n'
+    +'Sector: '+(c.sector||'--')+'\n'
+    +'Cargo actual: '+(c.cargo||'--')+'\n'
+    +'Rol buscado: '+(c.rol||'--')+'\n'
+    +'Empresa objetivo: '+(c.empresa||'--')+'\n'
+    +'Modalidad: '+(c.modalidad||'--')+'\n'
+    +'Salario esperado: '+(c.salario||'--')+'\n'
+    +'Movilidad: '+(c.geo||'--')+'\n'
+    +'Logro principal: '+(c.logro||'--')+'\n'
+    +'Habilidades: '+(c.habilidades||'--')+'\n'
+    +'Obstáculos: '+obs+'\n'
+    +'Red profesional: '+red+'\n'
+    +'Objetivo proceso: '+(c.objetivo||'--')+'\n'
+    +'CV/LinkedIn adjunto: '+(c.cv_url&&c.cv_url!=='No subido'?c.cv_url:'No adjuntado')+'\n'
+    +(c.linkedin_texto?'\nPERFIL LINKEDIN (texto completo):\n'+c.linkedin_texto+'\n':'')
+    +(nicho?'Nicho definido en informe: '+nicho+'\n':'')
+    +(c.linkedin_texto?'\nCONTENIDO PERFIL LINKEDIN/WEB DEL CANDIDATO (texto completo copiado por el candidato):\n'+c.linkedin_texto+'\n':'')
+    +'\nGenera el CV completo con toda la información disponible. '
+    +'Infiere y enriquece donde falten datos pero sé preciso con nombres, fechas y datos reales. '
+    +'No uses placeholders como [Año]. Usa solo información real o bien inferida del contexto.';
+
+  try {
+    var resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:2000,
+        messages:[{role:'user',content:prompt}]
+      })
+    });
+    var data=await resp.json();
+    var cvText=data.content&&data.content[0]?data.content[0].text:'';
+    if(cvText){
+      if(ta)ta.value=cvText;
+      localStorage.setItem('cvtext_'+id,cvText);
+      if(st)st.textContent='CV generado. Revísalo, edita si necesitas y luego publica.';
+      if(st)st.style.color='#4a7c5f';
+    } else {
+      throw new Error('Respuesta vacía');
+    }
+  } catch(e){
+    if(st){st.textContent='Error: '+e.message;st.style.color='#c0756e';}
+  }
 }
 
 function publicarCV(id){
