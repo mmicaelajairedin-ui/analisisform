@@ -167,61 +167,11 @@ function getAllActions(){
 function toggleAction(idx){
   _actions[idx]=!_actions[idx];
   localStorage.setItem('actions_'+_email,JSON.stringify(_actions));
-  // Recalculate
-  var t=T();var d=_d;
+  // Re-render only the progreso tab
   var tab=document.getElementById('tab-progreso');
-  if(!tab)return;
-  var allActions=[];
-  var areaMap={'cv_acciones':t.cvArea,'linkedin_acciones':t.liArea,'networking_acciones':t.netArea};
-  ['cv_acciones','linkedin_acciones','networking_acciones'].forEach(function(k){
-    (d[k]||[]).forEach(function(txt){allActions.push({area:areaMap[k],text:txt});});
-  });
-  var done=allActions.filter(function(a,i){return _actions[i];}).length;
-  var pct=allActions.length?Math.round((done/allActions.length)*100):0;
-
-  // Update progress bar
-  var pb=document.getElementById('prog-bar-fill');
-  var pp=document.getElementById('prog-pct');
-  var pc=document.getElementById('prog-count');
-  if(pb)pb.style.width=pct+'%';
-  if(pp)pp.textContent=pct+'%';
-  if(pc)pc.textContent=done+' de '+allActions.length;
-
-  // Update score cards
-  (_d.scores||[]).forEach(function(s,si){
-    var base=Math.round(s.val);
-    var areaKey='';
-    if(s.label.indexOf('CV')>=0||s.label.indexOf('marca')>=0)areaKey=t.cvArea;
-    else if(s.label.indexOf('LinkedIn')>=0)areaKey=t.liArea;
-    else if(s.label.indexOf('Red')>=0||s.label.indexOf('contacto')>=0||s.label.indexOf('Network')>=0)areaKey=t.netArea;
-    var areaActions=allActions.filter(function(a){return a.area===areaKey;});
-    var areaDone=areaActions.filter(function(a){return _actions[a.idx];}).length;
-    var gain=areaActions.length>0?Math.round((areaDone/areaActions.length)*20):0;
-    var cur=Math.min(100,base+gain);
-    var diff=cur-base;
-    var cl=base>=70?'#4a7c5f':base>=45?'#8C7B80':'#c0756e';
-    var lbl=cur>=70?'Destacado':cur>=45?'En progreso':'Inicial';
-    var pctEl=document.getElementById('sc-pct-'+si);
-    var fillEl=document.getElementById('sc-fill-'+si);
-    var diffEl=document.getElementById('sc-diff-'+si);
-    var lblEl=document.getElementById('sc-lbl-'+si);
-    if(pctEl)pctEl.textContent=cur+'%';
-    if(fillEl){fillEl.style.width=cur+'%';fillEl.style.background=cl;}
-    if(diffEl){if(diff>0){diffEl.textContent='+'+diff+'%';diffEl.style.display='inline-block';}else diffEl.style.display='none';}
-    if(lblEl){lblEl.textContent=lbl;lblEl.style.color=cl;}
-  });
-
-  // Update action item
-  var el=document.getElementById('action-'+idx);
-  if(el){
-    var checked=!!_actions[idx];
-    el.className='action-item'+(checked?' done':'');
-    el.style.borderColor=checked?'#c5dac5':'#eee';
-    el.style.background=checked?'#f0f7f0':'#fafafa';
-    var check=el.querySelector('.action-check');
-    if(check)check.innerHTML=checked?'<svg width="9" height="7" viewBox="0 0 9 7"><polyline points="1 3.5 3 5.5 8 1" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>':'';
-    var txt=el.querySelector('.action-text');
-    if(txt){txt.style.textDecoration=checked?'line-through':'none';txt.style.opacity=checked?'.65':'1';txt.style.color=checked?'#2e7d32':'#1a1a1a';}
+  if(tab){
+    tab.innerHTML=buildProgresoHTML();
+    buildNotes();
   }
 }
 
@@ -232,56 +182,36 @@ function buildProgresoHTML(){
   var pct=allActions.length?Math.round((done/allActions.length)*100):0;
   var html='';
 
-  // SCORE CARDS - before/after style
+  // SCORE CARDS
   html+='<div class="prog-card">'
-    +'<h3 style="margin-bottom:4px;">Tu diagn\u00f3stico</h3>'
-    +'<p style="font-size:12px;color:#666;margin-bottom:16px;">Marca acciones abajo y ve c\u00f3mo mejoran tus \u00e1reas en tiempo real</p>';
-
-  (_d.scores||[]).forEach(function(s,si){
+    +'<h3 style="margin-bottom:4px;">Diagnóstico de tu perfil</h3>'
+    +'<p>Completa acciones abajo para ver cómo mejoran tus áreas</p>'
+    +'<div class="scores-grid">';
+  (d.scores||[]).forEach(function(s){
     var base=Math.round(s.val);
     var areaKey='';
     if(s.label.indexOf('CV')>=0||s.label.indexOf('marca')>=0||s.label.indexOf('brand')>=0)areaKey=t.cvArea;
     else if(s.label.indexOf('LinkedIn')>=0)areaKey=t.liArea;
-    else if(s.label.indexOf('Red')>=0||s.label.indexOf('contacto')>=0||s.label.indexOf('Network')>=0)areaKey=t.netArea;
-    var areaActions=allActions.filter(function(a){return a.area===areaKey;});
-    var areaDone=areaActions.filter(function(a){return _actions[a.idx];}).length;
-    var gain=areaActions.length>0?Math.round((areaDone/areaActions.length)*20):0;
+    else if(s.label.indexOf('Red')>=0||s.label.indexOf('Network')>=0||s.label.indexOf('contacto')>=0)areaKey=t.netArea;
+    var areaActs=allActions.filter(function(a){return a.area===areaKey;});
+    var areaDone=areaActs.filter(function(a,i){var ai=allActions.indexOf(a);return _actions[ai];}).length;
+    var gain=areaActs.length>0?Math.round((areaDone/areaActs.length)*20):0;
     var cur=Math.min(100,base+gain);
     var diff=cur-base;
-    var baseCl=base>=70?'#4a7c5f':base>=45?'#8C7B80':'#c0756e';
-    var curCl=cur>=70?'#4a7c5f':cur>=45?'#8C7B80':'#c0756e';
-
-    html+='<div id="score-card-'+si+'" style="margin-bottom:14px;padding-bottom:14px;border-bottom:.5px solid #eee;">'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
-        +'<div style="font-size:11px;font-weight:600;color:#1a1a1a;">'+esc(s.label)+'</div>'
-        +'<div style="display:flex;align-items:center;gap:8px;">'
-          +'<div style="font-size:11px;color:#999;">'+base+'%</div>'
-          +'<div style="font-size:11px;color:#aaa;">→</div>'
-          +'<div class="sc-p" style="font-size:15px;font-weight:700;color:'+curCl+';">'+cur+'%</div>'
-          +'<div class="sc-diff" style="font-size:10px;font-weight:700;color:#4a7c5f;background:#e8f5e9;padding:2px 6px;border-radius:10px;display:'+(diff>0?'block':'none')+';">+'+diff+'%</div>'
-        +'</div>'
-      +'</div>'
-      // Before bar
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
-        +'<div style="font-size:9px;color:#aaa;width:40px;text-align:right;">Ahora</div>'
-        +'<div style="flex:1;height:6px;background:#eee;border-radius:3px;overflow:hidden;">'
-          +'<div style="height:6px;background:#D4C5C8;border-radius:3px;width:'+base+'%;"></div>'
-        +'</div>'
-      +'</div>'
-      // After bar
-      +'<div style="display:flex;align-items:center;gap:8px;">'
-        +'<div style="font-size:9px;color:#4a7c5f;width:40px;text-align:right;font-weight:600;">Meta</div>'
-        +'<div style="flex:1;height:6px;background:#eee;border-radius:3px;overflow:hidden;">'
-          +'<div class="sc-fi" style="height:6px;background:'+curCl+';border-radius:3px;width:'+cur+'%;transition:width .6s;"></div>'
-        +'</div>'
-      +'</div>'
-      +(areaActions.length>0?'<div style="font-size:10px;color:#999;margin-top:5px;">'+areaDone+' de '+areaActions.length+' acciones completadas en esta \u00e1rea</div>':'')
-    +'</div>';
+    var cl=cur>=70?'hi':cur>=45?'mid':'lo';
+    var lbl=cur>=70?t.Destacado:cur>=45?t.EnProgreso:t.Inicial;
+    var lblcl=cur>=70?'#4a7c5f':cur>=45?'#8C7B80':'#c0756e';
+    html+='<div class="sc">'
+      +'<div class="sc-l">'+esc(s.label)+'</div>'
+      +'<div class="sc-p '+cl+'">'+cur+'%</div>'
+      +'<div class="sc-tr"><div class="sc-fi fi-'+cl+'" style="width:'+cur+'%"></div></div>'
+      +'<div class="sc-lbl" style="color:'+lblcl+';">'+lbl+'</div>'
+      +(diff>0?'<div style="font-size:9px;color:#4a7c5f;margin-top:2px;">+'+diff+'%</div>':'')
+      +'</div>';
   });
+  html+='</div></div>';
 
-  html+='</div>';
-
-// CV UPLOAD
+  // CV UPLOAD
   html+='<div class="prog-card">'
     +'<h3 style="margin-bottom:4px;">Sube tu CV actualizado</h3>'
     +'<p>Cuando hayas mejorado tu CV, súbelo aquí para compararlo con el original.</p>'
@@ -470,136 +400,10 @@ function render(){
 
   // TAB PROGRESO
   html+='<div class="tab-content" id="tab-progreso">';
-
-  // SCORE DASHBOARD
-  html+='<div class="prog-card">'
-    +'<h3 style="margin-bottom:4px;">Tu diagn\u00f3stico</h3>'
-    +'<p style="font-size:12px;color:#666;margin-bottom:16px;">Cada acci\u00f3n que completas mejora tu puntuaci\u00f3n. Empieza por las marcadas en amarillo.</p>';
-
-  (_d.scores||[]).forEach(function(s,si){
-    var base=Math.round(s.val);
-    var areaKey='';
-    if(s.label.indexOf('CV')>=0||s.label.indexOf('marca')>=0||s.label.indexOf('brand')>=0)areaKey=t.cvArea;
-    else if(s.label.indexOf('LinkedIn')>=0)areaKey=t.liArea;
-    else if(s.label.indexOf('Red')>=0||s.label.indexOf('contacto')>=0||s.label.indexOf('Network')>=0)areaKey=t.netArea;
-    var areaActions=allActions.filter(function(a){return a.area===areaKey;});
-    var areaDone=areaActions.filter(function(a){return _actions[a.idx];}).length;
-    var gain=areaActions.length>0?Math.round((areaDone/areaActions.length)*20):0;
-    var cur=Math.min(100,base+gain);
-    var diff=cur-base;
-    var cl=base>=70?'#4a7c5f':base>=45?'#8C7B80':'#c0756e';
-    var lbl=cur>=70?'Destacado':cur>=45?'En progreso':'Inicial';
-
-    html+='<div id="score-card-'+si+'" style="margin-bottom:14px;padding:12px 14px;background:#f9f8f8;border-radius:10px;">'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
-        +'<div style="font-size:12px;font-weight:700;color:#1a1a1a;">'+esc(s.label)+'</div>'
-        +'<div style="display:flex;align-items:center;gap:8px;">'
-          +'<div style="font-size:11px;color:#999;text-decoration:line-through;">'+base+'%</div>'
-          +'<div style="font-size:16px;font-weight:700;color:'+cl+';" id="sc-pct-'+si+'">'+cur+'%</div>'
-          +(diff>0?'<div id="sc-diff-'+si+'" style="font-size:10px;font-weight:700;color:#4a7c5f;background:#e8f5e9;padding:2px 7px;border-radius:10px;">+'+diff+'%</div>':'<div id="sc-diff-'+si+'" style="display:none;font-size:10px;font-weight:700;color:#4a7c5f;background:#e8f5e9;padding:2px 7px;border-radius:10px;"></div>')
-        +'</div>'
-      +'</div>'
-      +'<div style="position:relative;height:8px;background:#eee;border-radius:4px;overflow:hidden;">'
-        +'<div style="position:absolute;left:0;top:0;height:8px;background:#ddd;border-radius:4px;width:'+base+'%;"></div>'
-        +'<div id="sc-fill-'+si+'" style="position:absolute;left:0;top:0;height:8px;background:'+cl+';border-radius:4px;width:'+cur+'%;transition:width .6s;"></div>'
-      +'</div>'
-      +'<div style="display:flex;justify-content:space-between;margin-top:4px;">'
-        +'<div style="font-size:9px;color:#aaa;">Punto de partida: '+base+'%</div>'
-        +'<div class="sc-lbl" id="sc-lbl-'+si+'" style="font-size:9px;font-weight:700;color:'+cl+';">'+lbl+'</div>'
-      +'</div>'
-    +'</div>';
-  });
+  html+=buildProgresoHTML();
   html+='</div>';
 
-  // PROGRESS BAR
-  html+='<div class="prog-card">'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
-      +'<h3>Mis acciones</h3>'
-      +'<div style="text-align:right;">'
-        +'<div id="prog-pct" style="font-size:22px;font-weight:700;color:#8C7B80;">'+pct+'%</div>'
-        +'<div id="prog-count" style="font-size:11px;color:#999;">'+done+' de '+allActions.length+'</div>'
-      +'</div>'
-    +'</div>'
-    +'<div style="height:6px;background:#eee;border-radius:3px;overflow:hidden;margin-bottom:16px;">'
-      +'<div id="prog-bar-fill" style="height:6px;background:linear-gradient(90deg,#8C7B80,#4A7FA5);border-radius:3px;width:'+pct+'%;transition:width .5s;"></div>'
-    +'</div>';
-
-  // Actions grouped by area
-  var areas={};
-  var _gi2=0;
-  allActions.forEach(function(a,i){
-    a.globalIdx=_gi2++;
-    if(!areas[a.area])areas[a.area]=[];
-    areas[a.area].push({text:a.text,idx:i,globalIdx:a.globalIdx});
-  });
-  var areaColors={};
-  areaColors[t.cvArea]='#4A7FA5';
-  areaColors[t.liArea]='#1D4A35';
-  areaColors[t.netArea]='#8C7B80';
-
-  var globalIdx=0;
-  Object.keys(areas).forEach(function(area){
-    var color=areaColors[area]||'#8C7B80';
-    var areaDoneCount=areas[area].filter(function(a){return _actions[a.idx];}).length;
-    html+='<div style="margin-bottom:14px;">'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
-        +'<div style="font-size:10px;font-weight:700;color:'+color+';text-transform:uppercase;letter-spacing:.06em;">'+area+'</div>'
-        +'<div style="font-size:10px;color:#999;">'+areaDoneCount+'/'+areas[area].length+'</div>'
-      +'</div>';
-    areas[area].forEach(function(a){
-      var checked=!!_actions[a.idx];
-      var isPriority=globalIdx<3;
-      globalIdx++;
-      html+='<div class="action-item'+(checked?' done':'')+'" id="action-'+a.idx+'" onclick="toggleAction('+a.idx+')"'
-        +' style="'+(isPriority&&!checked?'border-color:#f3c94b;background:#fffdf0;':checked?'border-color:#c5dac5;background:#f0f7f0;':'')+'">'
-        +'<div class="action-check">'+(checked?'<svg width="9" height="7" viewBox="0 0 9 7"><polyline points="1 3.5 3 5.5 8 1" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>':'')+'</div>'
-        +'<div style="flex:1;">'
-          +(isPriority&&!checked?'<div style="font-size:8px;font-weight:700;color:#92620a;margin-bottom:2px;">⚡ Empieza aquí</div>':'')
-          +'<div class="action-text">'+esc(a.text)+'</div>'
-        +'</div>'
-        +'</div>';
-    });
-    html+='</div>';
-  });
-  html+='</div>';
-
-  // CV UPLOAD
-  html+='<div class="prog-card">'
-    +'<h3 style="margin-bottom:4px;">Sube tu CV actualizado</h3>'
-    +'<p style="font-size:12px;color:#666;margin-bottom:12px;">Cuando hayas mejorado tu CV, s\u00fabelo aqu\u00ed para que Micaela lo revise.</p>'
-    +'<label style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#f9f8f8;border:1.5px dashed #ddd;border-radius:10px;cursor:pointer;font-size:12px;color:#666;">'
-      +'<span style="font-size:20px;">\uD83D\uDCCE</span>'
-      +'<span id="cv-upload-label">Seleccionar CV (PDF o Word)</span>'
-      +'<input type="file" accept=".pdf,.doc,.docx" style="display:none" onchange="handleCVUpload(this)">'
-    +'</label>'
-    +'<div id="cv-compare-result" style="margin-top:12px;"></div>'
-  +'</div>';
-
-  // Comparativa sesiones
-  if(_prev&&_prev.scores&&_prev.scores.length){
-    html+='<div class="prog-card"><h3 style="margin-bottom:12px;">Comparativa de sesiones</h3>'
-      +(_d.scores||[]).map(function(s){
-        var cur=Math.round(s.val);
-        var ps=(_prev.scores.find(function(p){return p.label===s.label;})||{val:0});
-        var pre=Math.round(ps.val);
-        var diff2=cur-pre;
-        var cl2=diff2>0?'#4a7c5f':diff2<0?'#c0756e':'#999';
-        return'<div style="display:grid;grid-template-columns:110px 1fr 50px;align-items:center;gap:8px;margin-bottom:12px;">'
-          +'<div style="font-size:11px;color:#666;">'+esc(s.label)+'</div>'
-          +'<div>'
-            +'<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;"><div style="flex:1;height:4px;background:#eee;border-radius:2px;overflow:hidden;"><div style="height:4px;background:#D4C5C8;border-radius:2px;width:'+pre+'%;"></div></div><div style="font-size:10px;color:#999;min-width:28px;">'+pre+'%</div></div>'
-            +'<div style="display:flex;align-items:center;gap:5px;"><div style="flex:1;height:4px;background:#eee;border-radius:2px;overflow:hidden;"><div style="height:4px;background:#8C7B80;border-radius:2px;width:'+cur+'%;"></div></div><div style="font-size:10px;color:#8C7B80;min-width:28px;font-weight:600;">'+cur+'%</div></div>'
-          +'</div>'
-          +'<div style="font-size:13px;font-weight:700;text-align:right;color:'+cl2+';">'+(diff2>0?'+':'')+diff2+'%</div>'
-          +'</div>';
-      }).join('')+'</div>';
-  }
-
-  // Notes
-  html+='<div class="prog-card" id="notes-card"><h3>'+t.notasT+'</h3><p>'+t.notasD+'</p></div>';
-  html+='</div>';
-
-// Bottom box
+  // Bottom box
   html+='<div class="box"><h3>'+t.wa+'</h3><p>Escríbeme directamente y te respondo.</p>'
     +'<a href="https://wa.me/34611256224?text=Hola%20Micaela%2C%20tengo%20una%20consulta%20sobre%20mi%20informe." class="wa-btn" target="_blank">'+t.wa+'</a></div>';
 
