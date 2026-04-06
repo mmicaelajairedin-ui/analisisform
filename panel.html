@@ -414,6 +414,14 @@ function tabGenerar(c){
   return html;
 }
 
+function copiarPCV(btn){
+  var cid=btn.getAttribute('data-cid');
+  var val=window['_cp_'+cid]||'';
+  var pasteEl=document.getElementById('paste-area-'+cid);
+  var pasteText=pasteEl?pasteEl.value.trim():'';
+  if(pasteText)val=val+'\n\n=== CV Y LINKEDIN ADICIONAL ===\n'+pasteText;
+  navigator.clipboard.writeText(val).then(function(){btn.textContent='\u2713 Copiado';setTimeout(function(){btn.textContent='Copiar prompt';},2000);});
+}
 function copiarPBtn(btn){var cid=btn.getAttribute("data-cid");copiarP(cid,"_p_","st-p-"+cid);}
 function copiarP(id,prefix,stId){
   var val=window[prefix+id]||'';
@@ -537,51 +545,74 @@ function tabCV(c){
   var cvLink=c.cv_url&&c.cv_url!=='No subido'?c.cv_url:'';
   var repData=reps[email]&&reps[email].length?reps[email][0].data||reps[email][0]:null;
   if(repData&&typeof repData==='string')repData=JSON.parse(repData);
-  var scores=repData?(repData.scores||[]).map(function(s){return s.label+': '+Math.round(s.val)+'%';}).join(' | '):'No disponible';
-  var accCV=repData&&repData.cv_acciones?(repData.cv_acciones).join('\n- '):'';
-  var gaps=repData&&repData.gaps?(repData.gaps).join('\n- '):'';
-  var cvPrompt='Eres un experto en RRHH y redaccion de CVs para el mercado europeo. '
-    +'Genera un CV profesional optimizado para ATS y para el mercado espanol/europeo, 2 paginas maximas. '
-    +'El CV debe estar en espanol, ser claro, impactante y pasar filtros ATS.\n\n'
-    +'DATOS:\nNombre: '+(c.nombre||'--')+'\nEmail: '+(c.email||'--')+'\nCiudad: '+(c.ciudad||'--')+'\n'
-    +'Experiencia: '+(c.exp||'--')+'\nSector: '+(c.sector||'--')+'\nCargo actual: '+(c.cargo||'--')+'\n'
-    +'Rol buscado: '+(c.rol||'--')+'\nEmpresa objetivo: '+(c.empresa||'--')+'\nModalidad: '+(c.modalidad||'--')+'\n'
-    +'Salario: '+(c.salario||'--')+'\nSkills: '+(c.skills||'--')+'\n'
-    +'Logro: '+(c.logro||'--')+'\n'
-    +(c.extra&&c.extra!=='--'?'Fuera del CV: '+c.extra+'\n':'')
-    +'LinkedIn: '+liUrl+'\n'+(cvLink?'CV original: '+cvLink+'\n':'')+'\n'
-    +(repData?'DIAGNOSTICO:\nScores: '+scores+'\nGaps:\n- '+gaps+'\nAcciones CV:\n- '+accCV+'\n\n':'')
-    +(cvLink?'IMPORTANTE: Descarga y analiza el CV original en: '+cvLink+'\n\n':'')
-    +'INSTRUCCIONES:\n'
-    +'1. CV 2 paginas: Titular | Resumen ejecutivo | Experiencia con logros cuantificados | Formacion | Habilidades | Idiomas\n'
-    +'2. Titular con rol buscado y palabras clave del sector\n'
-    +'3. Bullets: Verbo de accion + que hice + resultado cuantificado\n'
-    +'4. Palabras clave ATS del sector\n5. Lenguaje mercado espanol/europeo\n6. Sin notas del autor al final\n\n'
-    +'Genera el CV en texto plano con separadores --- y MAYUSCULAS para titulos de seccion.';
+  var nicho=repData?repData.nicho||'':'';
+  var scores=repData?(repData.scores||[]).map(function(s){return s.label+': '+Math.round(s.val)+'%';}).join(' | '):'';
+  var accCV=repData&&repData.cv_acciones?repData.cv_acciones.join('\n- '):'';
+  var gaps=repData&&repData.gaps?repData.gaps.join('\n- '):'';
+  var obs=(c.obstaculos||'').split('|').map(function(s){return s.trim();}).filter(Boolean).join(', ');
+  var savedCvLi=c.linkedin_texto||localStorage.getItem('cvli_'+c.id)||'';
+
+  var cvPrompt='Eres experto en RRHH y redaccion de CVs para el mercado europeo (Espana).\n'
+    +'Genera un CV profesional optimizado para ATS en espanol, maximo 2 paginas.\n\n'
+    +'USA EXACTAMENTE ESTAS SECCIONES EN MAYUSCULAS:\n'
+    +'NOMBRE COMPLETO\nROL OBJETIVO\nRESUMEN EJECUTIVO\nEXPERIENCIA PROFESIONAL\nFORMACION\nCERTIFICACIONES\nHABILIDADES\nIDIOMAS\n\n'
+    +'FORMATO EXPERIENCIA: TITULO - EMPRESA | Sector | Fechas\nContexto: una linea\n- Bullet verbo accion + resultado cuantificado\n\n'
+    +'REGLAS OBLIGATORIAS:\n'
+    +'- Extrae FORMACION y CERTIFICACIONES del texto CV/LinkedIn pegado abajo.\n'
+    +'- No dejes secciones vacias. Usa toda la info disponible.\n'
+    +'- Bullets: verbo de accion + resultado cuantificado.\n\n'
+    +'DATOS DEL CANDIDATO:\n'
+    +'Nombre: '+(c.nombre||'--')+'\nEmail: '+(c.email||'--')+'\nCiudad: '+(c.ciudad||'--')+'\n'
+    +(c.linkedin?'LinkedIn: '+liUrl+'\n':'')
+    +(cvLink?'CV adjunto: '+cvLink+'\n':'')
+    +'Experiencia: '+(c.exp||'--')+'\nSector: '+(c.sector||'--')+'\nCargo: '+(c.cargo||'--')+'\n'
+    +'Rol buscado: '+(c.rol||'--')+'\nModalidad: '+(c.modalidad||'--')+'\nSalario: '+(c.salario||'--')+'\n'
+    +'Habilidades: '+(c.habilidades||c.skills||'--')+'\nLogro: '+(c.logro||'--')+'\n'
+    +(obs?'Obstaculos: '+obs+'\n':'')
+    +(nicho?'Nicho definido: '+nicho+'\n':'')
+    +(scores?'\nDiagnostico: '+scores+'\n':'')
+    +(accCV?'Acciones CV pendientes:\n- '+accCV+'\n':'')
+    +(savedCvLi?'\n=== CV Y LINKEDIN DEL CANDIDATO (pega aqui si no esta arriba) ===\n'+savedCvLi:'');
+
   window['_cp_'+c.id]=cvPrompt;
   var hasCv=!!cvs[email];
-  return '<div class="gen-box"><h3>Paso 1 &mdash; Copia el prompt</h3><p>Pega en Claude.ai y te devolvera el CV optimizado.</p>'
-    +'<div class="prompt-box">'+escH(cvPrompt)+'</div>'
-    +'<button class="btn" onclick="copiarP('+c.id+',\'_cp_\',\'st-cp-'+c.id+'\')">Copiar prompt</button>'
-    +'<div class="status" id="st-cp-'+c.id+'"></div></div>'
-    +'<div class="gen-box"><h3>Paso 2 &mdash; Pega el CV generado</h3><p>Pega el texto del CV y define el codigo de acceso para el cliente.</p>'
-    +'<textarea id="cvt-\'+c.id+\'" rows="8" placeholder="Pega aqui el CV generado por Claude..."></textarea>\''
-    +'<div id="cvgs-'+c.id+'" style="font-size:12px;color:#666;text-align:center;min-height:20px;margin-bottom:8px;"></div>'
-    +'<div id="cvgs-\'+c.id+\'" style="font-size:12px;color:#666;text-align:center;min-height:20px;margin-bottom:8px;"></div>\''
-    +'<div style="margin-top:10px;">'
-    +'<label style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px;">Codigo de acceso para el cliente</label>'
-    +'<div style="display:flex;gap:8px;align-items:center;">'
-    +'<input id="cv-code-'+c.id+'" type="text" maxlength="8" placeholder="Ej: JJBR2025" value="'+(cvs[email]?cvs[email].codigo:localStorage.getItem('cv_code_'+email)||'')+'" style="padding:8px 12px;font-size:14px;font-family:Montserrat,sans-serif;border:1.5px solid #ddd;border-radius:7px;outline:none;width:160px;letter-spacing:.08em;font-weight:700;text-transform:uppercase;">'
-    +'<button class="btn btn-green" onclick="publicarCV('+c.id+')">Publicar CV</button>'
-    +'</div>'
-    +'<div style="font-size:11px;color:#999;margin-top:4px;">Escribe el codigo que quieres darle. El cliente lo usara para acceder.</div>'
-    +'</div>'
-    +'<div class="status" id="st-cvpub-'+c.id+'"></div>'
-    +(hasCv?'<div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:#f9f8f8;border-radius:7px;">'
-      +'<span style="font-size:11px;color:#4a7c5f;font-weight:600;">Ya hay un CV publicado. Codigo actual: <strong>'+escH(cvs[email].codigo||'--')+'</strong></span>'
+  var savedTxt=localStorage.getItem('cvtext_'+c.id)||'';
+
+  var html='';
+  html+='<div class="gen-box">';
+  html+='<h3>Paso 1 &mdash; CV y LinkedIn del candidato</h3>';
+  html+='<p style="font-size:12px;color:#666;margin-bottom:8px;">Pega aqui el texto del CV y LinkedIn. Se incluira en el prompt.</p>';
+  html+='<textarea id="paste-area-'+c.id+'" rows="4" placeholder="Pega el CV y LinkedIn del candidato..." style="border:1.5px solid #f3c94b;background:#fffdf0;">'+escH(savedCvLi)+'</textarea>';
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-top:6px;">';
+  html+='<button class="btn" style="background:#f3a41b;" onclick="guardarCVLinkedIn('+c.id+')">Guardar</button>';
+  html+='<span id="cvli-st-'+c.id+'" style="font-size:11px;color:#666;"></span>';
+  html+='</div></div>';
+
+  html+='<div class="gen-box">';
+  html+='<h3>Paso 2 &mdash; Copia el prompt del CV</h3>';
+  html+='<p style="font-size:12px;color:#666;margin-bottom:8px;">Pega en Claude.ai y te devolvera el CV optimizado en texto.</p>';
+  html+='<div class="prompt-box">'+escH(cvPrompt)+'</div>';
+  html+='<button class="btn" onclick="copiarPCV(this)" data-cid="'+c.id+'">Copiar prompt</button>';
+  html+='<div class="status" id="st-cp-'+c.id+'"></div>';
+  html+='</div>';
+
+  html+='<div class="gen-box">';
+  html+='<h3>Paso 3 &mdash; Pega el CV generado</h3>';
+  html+='<p style="font-size:12px;color:#666;margin-bottom:8px;">Pega el texto del CV que te dio Claude.</p>';
+  html+='<textarea id="cvt-'+c.id+'" rows="8" placeholder="Pega aqui el CV generado por Claude...">'+escH(savedTxt)+'</textarea>';
+  html+='<div id="cvgs-'+c.id+'" style="font-size:12px;color:#4a7c5f;text-align:center;min-height:20px;margin:6px 0;"></div>';
+  html+='<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">';
+  html+='<button class="btn btn-green" onclick="publicarCV('+c.id+')">Publicar CV</button>';
+  html+='<div class="status" id="st-cvpub-'+c.id+'"></div>';
+  html+='</div>';
+  if(hasCv){
+    html+='<div style="margin-top:10px;padding:8px 10px;background:#f9f8f8;border-radius:7px;display:flex;align-items:center;justify-content:space-between;">'
+      +'<span style="font-size:11px;color:#4a7c5f;font-weight:600;">CV publicado.</span>'
       +'<button class="btn-sec" style="font-size:11px;padding:5px 10px;" onclick="abrirEditCV('+c.id+')">Editar CV publicado</button>'
-      +'</div>':'')
-    +'</div>';
+      +'</div>';
+  }
+  html+='</div>';
+  return html;
 }
 
 function tabNotas(c){
