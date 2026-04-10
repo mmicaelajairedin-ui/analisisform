@@ -306,8 +306,9 @@ function renderMain(c){
   var cl=col(i);
   var tabs=['datos','generar','cv'];
   if(hasRep)tabs.splice(2,0,'informe','sesion');
+  tabs.push('carta');
   tabs.push('notas');
-  var labels={datos:'Datos',generar:'Generar informe',sesion:'Para mi sesión',informe:'Informe',cv:'Generar CV',notas:'Notas'};
+  var labels={datos:'Datos',generar:'Generar informe',sesion:'Para mi sesión',informe:'Informe',cv:'Generar CV',carta:'Carta',notas:'Notas'};
   var tabsHTML=tabs.map(function(t){return '<div class="tab'+(atab===t?' on':'')+'" onclick="switchTab(\''+t+'\','+c.id+')">'+labels[t]+'</div>';}).join('');
   document.getElementById('main').innerHTML=
     '<div class="chead">'
@@ -341,6 +342,7 @@ function renderTab(c,tab){
   if(tab==='generar')return tabGenerar(c);
   if(tab==='informe')return tabInforme(c);
   if(tab==='sesion')return tabSesion(c);
+  if(tab==='carta')return tabCarta(c);
   if(tab==='cv')return tabCV(c);
   if(tab==='notas')return tabNotas(c);
   return '';
@@ -557,28 +559,65 @@ function tabCV(c){
   var obs=(c.obstaculos||'').split('|').map(function(s){return s.trim();}).filter(Boolean).join(', ');
   var savedCvLi=c.linkedin_texto||localStorage.getItem('cvli_'+c.id)||'';
 
+  var urgenciaInmediata=(c.urgencia||'').toLowerCase().indexOf('antes')>=0||
+    (c.urgencia||'').toLowerCase().indexOf('urgent')>=0||
+    (c.urgencia||'').toLowerCase().indexOf('inmedia')>=0;
+
   var cvPrompt='Eres experto en RRHH y redaccion de CVs para el mercado europeo (Espana).\n'
-    +'Genera un CV profesional optimizado para ATS en espanol, maximo 2 paginas.\n\n'
-    +'USA EXACTAMENTE ESTAS SECCIONES EN MAYUSCULAS:\n'
-    +'NOMBRE COMPLETO\nROL OBJETIVO\nRESUMEN EJECUTIVO\nEXPERIENCIA PROFESIONAL\nFORMACION\nCERTIFICACIONES\nHABILIDADES\nIDIOMAS\n\n'
-    +'FORMATO EXPERIENCIA: TITULO - EMPRESA | Sector | Fechas\nContexto: una linea\n- Bullet verbo accion + resultado cuantificado\n\n'
-    +'REGLAS OBLIGATORIAS:\n'
-    +'- Extrae FORMACION y CERTIFICACIONES del texto CV/LinkedIn pegado abajo.\n'
-    +'- No dejes secciones vacias. Usa toda la info disponible.\n'
-    +'- Bullets: verbo de accion + resultado cuantificado.\n\n'
-    +'DATOS DEL CANDIDATO:\n'
+    +'Genera un CV profesional en espanol, maximo 2 paginas, con EXACTAMENTE estas secciones en MAYUSCULAS:\n\n'
+    +'NOMBRE COMPLETO\n'
+    +'ROL OBJETIVO\n'
+    +'RESUMEN EJECUTIVO\n'
+    +'EXPERIENCIA PROFESIONAL\n'
+    +'FORMACION\n'
+    +'CERTIFICACIONES\n'
+    +'COMPETENCIAS\n'
+    +'HERRAMIENTAS\n'
+    +'IDIOMAS\n'
+    +'OTROS DATOS\n\n'
+    +'=== INSTRUCCIONES POR SECCION ===\n'
+    +'ROL OBJETIVO: subtitulo profesional en mayusculas, enfocado al nicho del candidato.\n'
+    +'RESUMEN EJECUTIVO: MAXIMO 3-4 lineas. Frases cortas con palabras clave ATS y 1-2 logros cuantificados. NO repetir info que ya aparece en experiencia.\n'
+    +'  TITULO PUESTO - EMPRESA | Sector | Fechas\n'
+    +'  Contexto: una linea describiendo empresa/contexto\n'
+    +'  - Bullet: verbo accion + **palabra clave en negrita** + resultado cuantificado (usar numeros con puntos: 1.000)\n'
+    +'  (minimo 4 bullets para ultimos 2 puestos, 2 para anteriores)\n'
+    +'FORMACION: titulo | escuela | ano inicio - ano fin (de mas reciente a mas antiguo)\n'
+    +'CERTIFICACIONES: solo cursos de menos de 1 ano, de mas reciente a mas antiguo\n'
+    +'COMPETENCIAS: maximo 6 competencias BLANDAS relacionadas con el rol objetivo. Una por linea.\n'
+    +'HERRAMIENTAS: herramientas, software, plataformas. Una por linea. Son tambien palabras clave ATS.\n'
+    +'IDIOMAS: un idioma por linea con nivel en formato C1, C2, B2, Nativo (NO usar basico/intermedio/avanzado)\n'
+    +'OTROS DATOS: informacion extra que no entra en otras secciones (vehiculo propio, carnet, disponibilidad geografica, etc.)\n'
+    +(urgenciaInmediata?'  IMPORTANTE: incluye "Incorporacion inmediata" en OTROS DATOS porque el candidato busca trabajo urgente.\n':'')
+    +'\n=== FUENTES DE INFORMACION (usa TODO lo disponible) ===\n'
+    +'FORMULARIO DEL CANDIDATO:\n'
     +'Nombre: '+(c.nombre||'--')+'\nEmail: '+(c.email||'--')+'\nCiudad: '+(c.ciudad||'--')+'\n'
-    +(c.linkedin?'LinkedIn: '+liUrl+'\n':'')
-    +(cvLink?'CV adjunto: '+cvLink+'\n':'')
-    +'Experiencia: '+(c.exp||'--')+'\nSector: '+(c.sector||'--')+'\nCargo: '+(c.cargo||'--')+'\n'
-    +'Rol buscado: '+(c.rol||'--')+'\nModalidad: '+(c.modalidad||'--')+'\nSalario: '+(c.salario||'--')+'\n'
-    +'Habilidades: '+(c.habilidades||c.skills||'--')+'\nLogro: '+(c.logro||'--')+'\n'
+    +(c.linkedin?'LinkedIn: linkedin.com/in/'+c.linkedin+'\n':'')
+    +(cvLink?'CV adjunto URL: '+cvLink+'\n':'')
+    +'Anos experiencia: '+(c.exp||'--')+'\nSector: '+(c.sector||'--')+'\nCargo actual: '+(c.cargo||'--')+'\n'
+    +'Rol buscado: '+(c.rol||'--')+'\nModalidad: '+(c.modalidad||'--')+'\nMovilidad: '+(c.geo||'--')+'\n'
+    +'Urgencia: '+(c.urgencia||'--')+'\n'
+    +'Habilidades: '+(c.habilidades||c.skills||'--')+'\n'
+    +'Logro principal: '+(c.logro||'--')+'\n'
+    +'Experiencia fuera del CV: '+(c.extra||'--')+'\n'
     +(obs?'Obstaculos: '+obs+'\n':'')
     +(nicho?'Nicho definido: '+nicho+'\n':'')
-    +(scores?'\nDiagnostico: '+scores+'\n':'')
-    +(accCV?'Acciones CV pendientes:\n- '+accCV+'\n':'')
-    +(savedCvLi?'\n=== CV Y LINKEDIN DEL CANDIDATO (pega aqui si no esta arriba) ===\n'+savedCvLi:'');
-
+    +(scores?'Diagnostico scores: '+scores+'\n':'')
+    +(savedCvLi?'\n=== TEXTO DEL CV Y LINKEDIN DEL CANDIDATO (FUENTE PRINCIPAL - extrae toda la info) ===\n'+savedCvLi+'\n':'\n(No hay texto de CV/LinkedIn disponible. Usa solo los datos del formulario.)\n')
+    +'\n=== REGLAS FINALES ===\n'
+    +'- Extrae TODA la experiencia, formacion, certificaciones e idiomas del texto del CV/LinkedIn pegado arriba.\n'
+    +'- Usa **negrita** para palabras clave importantes dentro de los bullets.\n'
+    +'- Formatea los numeros grandes con puntos: 1.000.000\n'
+    +'- NO inventes datos. NO dejes secciones vacias si hay informacion disponible.\n'
+    +'- NO repitas la misma informacion en distintas secciones. Cada dato aparece UNA sola vez.\n'
+    +'- El RESUMEN no puede repetir bullets de EXPERIENCIA. Es un titular, no un resumen de cargos.\n'
+    +'- Las COMPETENCIAS no deben repetirse en HERRAMIENTAS ni en RESUMEN.\n'
+    +'- Si un logro ya esta en EXPERIENCIA no lo pongas tambien en RESUMEN.'
+    +'- NO pongas notas del autor al final.\n'
+    +'- Los titulos de seccion en MAYUSCULAS completas.\n'
+    +'- El NOMBRE COMPLETO en mayusculas.\n'
+    +'- Las empresas y titulos de puesto con Primera Letra En Mayuscula.\n'
+    +'- El ROL OBJETIVO en mayusculas.'
   window['_cp_'+c.id]=cvPrompt;
   var hasCv=!!cvs[email];
   var savedTxt=localStorage.getItem('cvtext_'+c.id)||'';
@@ -620,6 +659,91 @@ function tabCV(c){
   return html;
 }
 
+function tabCarta(c){
+  var email=(c.email||'').toLowerCase().trim();
+  var repData=reps[email]&&reps[email].length?reps[email][0].data||reps[email][0]:null;
+  if(repData&&typeof repData==='string')repData=JSON.parse(repData);
+  var nicho=repData?repData.nicho||'':'';
+  var obs=(c.obstaculos||'').split('|').map(function(s){return s.trim();}).filter(Boolean).join(', ');
+
+  var cartaPrompt='Escribe una carta de presentacion profesional en espanol para el siguiente candidato.\n\n'
+    +'ESTILO: Personal, directo, sin clichés. Maximo 4 parrafos cortos. Que parezca humana, no de IA.\n'
+    +'No empieces con "Me dirijo a usted" ni con "Estimados senores". Busca una apertura original.\n'
+    +'La carta debe demostrar que conoce la empresa/sector y conectar su experiencia con lo que buscan.\n\n'
+    +'ESTRUCTURA:\n'
+    +'Parrafo 1: Apertura impactante. Por que esta persona + por que esta empresa/oferta.\n'
+    +'Parrafo 2: Su experiencia mas relevante con 1-2 logros cuantificados que conecten con el rol.\n'
+    +'Parrafo 3: Su valor diferencial. Que puede aportar que otros candidatos no.\n'
+    +'Parrafo 4: Cierre breve. Propone entrevista, tono seguro no suplicante.\n\n'
+    +'DATOS DEL CANDIDATO:\n'
+    +'Nombre: '+(c.nombre||'--')+'\nEmail: '+(c.email||'--')+'\nCiudad: '+(c.ciudad||'--')+'\n'
+    +(c.linkedin?'LinkedIn: linkedin.com/in/'+c.linkedin+'\n':'')
+    +'Experiencia: '+(c.exp||'--')+'\nSector: '+(c.sector||'--')+'\nCargo: '+(c.cargo||'--')+'\n'
+    +'Rol buscado: '+(c.rol||'--')+'\nEmpresa objetivo: '+(c.empresa||'--')+'\n'
+    +'Logro principal: '+(c.logro||'--')+'\n'
+    +'Habilidades: '+(c.habilidades||c.skills||'--')+'\n'
+    +(obs?'Obstaculos: '+obs+'\n':'')
+    +(nicho?'Nicho: '+nicho+'\n':'')
+    +(c.linkedin_texto?'\nCONTENIDO CV/LINKEDIN:\n'+c.linkedin_texto+'\n':'')
+    +'\nIMPORTANTE: El candidato personalizara el nombre de la empresa y el puesto. Pon [EMPRESA] y [PUESTO] como marcadores.\n'
+    +'Al final incluye firma: nombre, telefono (si lo tienes), email, LinkedIn.';
+
+  window['_carta_'+c.id]=cartaPrompt;
+  var saved=localStorage.getItem('carta_'+c.id)||'';
+
+  var html='';
+  html+='<div class="gen-box">';
+  html+='<h3>Paso 1 &mdash; Copia el prompt</h3>';
+  html+='<p style="font-size:12px;color:#666;margin-bottom:8px;">Pega en Claude.ai para generar la carta de presentación.</p>';
+  html+='<div class="prompt-box">'+escH(cartaPrompt)+'</div>';
+  html+='<button class="btn" onclick="copiarCarta(this)" data-cid="'+c.id+'">Copiar prompt</button>';
+  html+='<div class="status" id="st-carta-'+c.id+'"></div>';
+  html+='</div>';
+  html+='<div class="gen-box">';
+  html+='<h3>Paso 2 &mdash; Pega la carta generada</h3>';
+  html+='<p style="font-size:12px;color:#666;margin-bottom:8px;">Revisa, edita si necesitas y copia para el candidato.</p>';
+  html+='<textarea id="carta-'+c.id+'" rows="14" placeholder="Pega aqui la carta generada por Claude...">'+escH(saved)+'</textarea>';
+  html+='<div style="display:flex;gap:8px;margin-top:8px;">';
+  html+='<button class="btn btn-green" onclick="guardarCarta('+c.id+')">Guardar carta</button>';
+  html+='<button class="btn" data-id="carta-'+c.id+'" onclick="copiarTexto(this.dataset.id)">Copiar carta</button>';
+  html+='</div>';
+  html+='<div class="status" id="st-cartasave-'+c.id+'"></div>';
+  html+='</div>';
+  return html;
+}
+
+function copiarCarta(btn){
+  var cid=btn.getAttribute('data-cid');
+  var val=window['_carta_'+cid]||'';
+  navigator.clipboard.writeText(val).then(function(){
+    btn.textContent='✓ Copiado';
+    setTimeout(function(){btn.textContent='Copiar prompt';},2000);
+  });
+}
+
+function copiarTexto(id){
+  var el=document.getElementById(id);
+  if(!el)return;
+  navigator.clipboard.writeText(el.value).then(function(){showToast('Carta copiada');});
+}
+
+function guardarCarta(id){
+  var val=document.getElementById('carta-'+id).value;
+  localStorage.setItem('carta_'+id,val);
+  var c=cands.find(function(x){return x.id===id;});
+  var st=document.getElementById('st-cartasave-'+id);
+  if(st){st.textContent='Guardando...';st.style.color='#666';}
+  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({carta_presentacion:val})
+  }).then(function(r){
+    if(st){st.textContent=r.ok?'✓ Guardada':'Guardado local';st.style.color=r.ok?'#4a7c5f':'#8C7B80';}
+  }).catch(function(){
+    if(st){st.textContent='✓ Guardado local';st.style.color='#8C7B80';}
+  });
+}
+
 function tabNotas(c){
   var saved=notes[c.id]||'';
   return '<p style="font-size:12px;color:#999;margin-bottom:7px;">Notas privadas — el candidato nunca las vera.</p>'
@@ -652,149 +776,471 @@ function saveNote(id){
   });
 }
 
-function textToHtml(text,candidato){
-  // Pre-process: insert newlines before section headers that may be glued
-  var SECS=['RESUMEN EJECUTIVO','EXPERIENCIA PROFESIONAL','FORMACI\u00d3N','CERTIFICACIONES','HABILIDADES','IDIOMAS'];
-  SECS.forEach(function(s){text=text.replace(new RegExp(s,'g'),'\n\n'+s+'\n');});
-  // Also split role line (all caps) from previous content
-  text=text.replace(/([a-z\.])([A-Z\u00C0-\u00DC]{4,})/g,'$1\n$2');
-  // Parse text CV into structured HTML
-  var lines=text.split('\n');
-  var name='',role='',email='',phone='',city='',linkedin='';
-  // Extract header info
-  for(var i=0;i<Math.min(8,lines.length);i++){
-    var l=lines[i].trim();
-    if(!l)continue;
-    if(!name&&l.length>2&&!l.includes('@')&&!l.match(/^\+?\d/)&&!l.includes('---'))name=l;
-    else if(!role&&name&&l.length>4&&!l.includes('@')&&!l.match(/^\+?\d/)&&!l.includes('---'))role=l;
-  }
-  var em=text.match(/[\w.+-]+@[\w.-]+\.\w+/);if(em)email=em[0];
-  var ph=text.match(/\+?[\d][\d\s().+\-]{8,16}/);if(ph)phone=ph[0].trim();
-  var li=text.match(/linkedin\.com\/in\/[\w-]+/i);if(li)linkedin=li[0];
-  var cy=text.match(/(Boiro|Galicia|A Coru[n\u00f1]a|Madrid|Barcelona|Espa[n\u00f1]a)[^|\n,]*/i);if(cy)city=cy[0].trim().replace(/[·|,\s]+$/,'');
-  var ini=(name||candidato||'CV').split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();
+// Nueva función textToHtml con el formato exacto de Micaela
+function textToHtml(text, candidato, emailCand, cvEmail) {
+  // email del candidato para auto-save
+  var _cvEmail = cvEmail || emailCand || '';
 
-  function getSec(kw){
-    var idx=-1;
-    for(var i=0;i<lines.length;i++){
-      if(lines[i].trim().toUpperCase().indexOf(kw)===0&&lines[i].trim().length<70){idx=i;break;}
-    }
-    if(idx===-1)return[];
-    var out=[];
-    var secKws=['RESUMEN','EJECUTIVO','EXPERIENCIA','HABILIDAD','COMPETENCIA','IDIOMA','FORMACI','CERTIFICACI'];
-    for(var j=idx+1;j<lines.length;j++){
-      var u=lines[j].trim().toUpperCase().replace(/[^A-Z\u00C0-\u024F\s]/g,'');
-      if(u.length>3&&u.length<60&&secKws.some(function(k){return u.indexOf(k)===0;})&&out.length>0)break;
-      out.push(lines[j]);
-    }
-    return out.filter(function(l){return l.trim().length>0;});
-  }
-
-  function esc(t){return(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
-  var summary=getSec('RESUMEN').filter(function(l){return l.trim()&&!l.trim().match(/^[A-Z\s]{10,}$/);}).join(' ').trim();
-  var skillLines=getSec('HABILIDAD').length?getSec('HABILIDAD'):getSec('COMPETENCIA');
-  var skills=[];
-  skillLines.forEach(function(l){var cl=l.replace(/^[-·•\s]+/,'').trim();if(cl.includes('·')){cl.split('·').forEach(function(s){if(s.trim().length>2)skills.push(s.trim());});}else if(cl.length>2)skills.push(cl);});
-  var langs=getSec('IDIOMA').map(function(l){var cl=l.replace(/^[-·•\s]+/,'').trim();var p=cl.split(':');if(p.length<2)p=cl.split(/\s{2,}|[—–]/);return{n:(p[0]||'').trim(),l:(p[1]||'').trim()};}).filter(function(x){return x.n.length>1;});
-  var edu=getSec('FORMACI\u00d3N').length?getSec('FORMACI\u00d3N'):getSec('FORMACI').filter(function(l){return l.trim()&&l.trim().length>2;}).map(function(l){var cl=l.replace(/^[-·•\s]+/,'').trim();var p=cl.split('·');var yrm=cl.match(/\d{4}/);return{deg:p[0]?p[0].replace(/\d{4}.*/,'').trim():cl,school:(p[1]||'').trim(),yr:yrm?yrm[0]:''};}).filter(function(x){return x.deg.length>3;});
-  var certs=getSec('CERTIFICACI').map(function(l){return l.replace(/^[-·•\s]+/,'').trim();}).filter(function(l){return l.length>3;});
-
-  // Parse experience
-  var expLines=getSec('EXPERIENCIA');
-  var expBlocks=[],cur=[];
-  expLines.forEach(function(l){
-    var hasDate=/\d{4}/.test(l);
-    var notBullet=!l.trim().match(/^[-·•]/);
-    var notLower=!l.trim().match(/^[a-záéíóúñü]/);
-    var ok=l.trim().length>3&&l.trim().length<130;
-    if(hasDate&&notBullet&&notLower&&ok&&cur.length>1){expBlocks.push(cur.join('\n'));cur=[l];}
-    else cur.push(l);
+  // Pre-process secciones
+  // Normalize accented chars for section detection
+  var SECS = ['NOMBRE COMPLETO','ROL OBJETIVO','RESUMEN EJECUTIVO','EXPERIENCIA PROFESIONAL',
+    'FORMACIÓN','FORMACION','EDUCACIÓN','EDUCACION','DATOS ACADÉMICOS','DATOS ACADEMICOS',
+    'TITULACIÓN','TITULACION','ESTUDIOS','CERTIFICACIONES','CURSOS','COMPETENCIAS',
+    'HABILIDADES','HERRAMIENTAS','IDIOMAS','OTROS DATOS','DATOS ADICIONALES'];
+  SECS.forEach(function(s) {
+    var re = new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+    text = text.replace(re, '\n\n' + s.toUpperCase() + '\n');
   });
-  if(cur.length)expBlocks.push(cur.join('\n'));
+  // Also handle FORMACION without accent
+  text = text.replace(/\bFORMACION\b/gi, '\n\nFORMACI\u00d3N\n');
 
-  var kws=['Dirección General','Gestión P&L','B2B Industrial','Expansión Internacional','Supply Chain','Gobierno Corporativo','Lean','Transformación Digital'];
+  var lines = text.split('\n').map(function(l){ return l.trim(); });
 
-  var h='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">';
-  h+='<title>CV — '+esc(name)+'</title>';
-  h+='<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">';
-  h+='<style>:root{--A:#1B3A5C;--A2:#4A7FA5;--AB:#EEF3F8;--SB:#F4F6F9;--T:#1a1a1a;--S:#555;--BD:#E5E5E5;}.f{--A:#1D4A35;--A2:#3A8060;--AB:#EAF3EE;--SB:#F2F7F4;}.b{--A:#5C1B2E;--A2:#A54A65;--AB:#F4EEF0;--SB:#F7F2F4;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"DM Sans",sans-serif;background:#E8E6E2;padding:2rem 1rem 5rem;}.bar{max-width:860px;margin:0 auto 1.2rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}.bar-l{font-size:11px;font-weight:600;color:#8C7B80;background:#fff;padding:5px 14px;border-radius:20px;border:1px solid #e0d8d5;}.bar-r{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}.blbl{font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.06em;}.cdot{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:.15s;}.cdot.on{border-color:#fff;box-shadow:0 0 0 2.5px var(--A);}.xbtn{padding:7px 16px;font-size:11px;font-weight:700;font-family:"DM Sans",sans-serif;border-radius:8px;cursor:pointer;border:none;transition:.15s;}.xbtn-o{background:#fff;color:#555;border:1.5px solid #ddd;}.xbtn-o:hover{border-color:var(--A);color:var(--A);}.xbtn-y{background:#f3a41b;color:#fff;}.xbtn-p{background:var(--A);color:#fff;}.xbtn-p:hover{opacity:.88;}.cv{max-width:860px;margin:0 auto;background:#fff;box-shadow:0 8px 50px rgba(0,0,0,.13);}.hd{background:var(--A);padding:36px 40px 30px;display:flex;align-items:center;gap:28px;overflow:hidden;position:relative;}.hd::after{content:"";position:absolute;right:-50px;top:-50px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.04);pointer-events:none;}.ph{flex-shrink:0;cursor:pointer;position:relative;z-index:2;}.ph-c{width:96px;height:96px;border-radius:50%;border:3px solid rgba(255,255,255,.3);overflow:hidden;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;}.ph-c img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:none;}.ph-ini{font-family:"Playfair Display",serif;font-size:30px;font-weight:800;color:rgba(255,255,255,.9);}.ph-hint{font-size:9px;font-weight:600;color:rgba(255,255,255,.5);text-align:center;margin-top:5px;}.hi{flex:1;z-index:2;}[contenteditable]{outline:none;border-radius:3px;transition:background .15s;}body.editing [contenteditable]:hover{background:rgba(255,255,255,.15);cursor:text;}body.editing [contenteditable]:focus{background:rgba(255,255,255,.2);}body.editing .cv-main-col [contenteditable]:hover{background:rgba(27,58,92,.06);}body.editing .cv-main-col [contenteditable]:focus{background:rgba(27,58,92,.09);}body.editing .cv-side-col [contenteditable]:hover{background:rgba(27,58,92,.06);}body.editing .cv-side-col [contenteditable]:focus{background:rgba(27,58,92,.09);}.name{font-family:"Playfair Display",serif;font-size:30px;font-weight:800;color:#fff;line-height:1.1;letter-spacing:-.02em;margin-bottom:5px;}.rol{font-size:10px;font-weight:700;color:rgba(255,255,255,.72);letter-spacing:.2em;text-transform:uppercase;margin-bottom:12px;}.cts{display:flex;flex-wrap:wrap;gap:4px 18px;margin-bottom:10px;}.ct{font-size:11px;color:rgba(255,255,255,.75);}.ct strong{color:#fff;font-weight:600;}.tags{display:flex;flex-wrap:wrap;gap:5px;}.tag{font-size:9.5px;font-weight:600;color:rgba(255,255,255,.88);background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);padding:3px 10px;border-radius:20px;}.bd{display:grid;grid-template-columns:210px 1fr;}.cv-side-col{background:var(--SB);padding:28px 20px;border-right:1px solid var(--BD);}.ss{margin-bottom:26px;}.ss:last-child{margin-bottom:0;}.sh{font-size:8px;font-weight:700;color:var(--A);text-transform:uppercase;letter-spacing:.22em;margin-bottom:9px;padding-bottom:5px;border-bottom:1.5px solid var(--A);}.sk{font-size:11.5px;color:var(--T);padding:3.5px 0 3.5px 12px;border-bottom:.5px solid var(--BD);line-height:1.4;position:relative;display:block;width:100%;}.sk::before{content:"";position:absolute;left:0;top:10px;width:4px;height:4px;border-radius:50%;background:var(--A2);}.sk:last-child{border-bottom:none;}.lg-row{display:flex;justify-content:space-between;align-items:center;padding:4.5px 0;border-bottom:.5px solid var(--BD);}.lg-row:last-child{border-bottom:none;}.lg-n{font-size:11.5px;color:var(--T);font-weight:500;}.lg-l{font-size:9px;font-weight:700;color:#fff;background:var(--A);padding:2px 8px;border-radius:10px;}.ed{margin-bottom:13px;padding-bottom:13px;border-bottom:.5px solid var(--BD);}.ed:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}.ed-d{font-size:11.5px;font-weight:700;color:var(--T);line-height:1.3;}.ed-s{font-size:10.5px;color:var(--A2);font-weight:500;margin-top:2px;}.ed-y{font-size:10px;color:var(--S);margin-top:2px;}.ct2{font-size:11px;color:var(--T);padding:3px 0 3px 12px;border-bottom:.5px solid var(--BD);line-height:1.4;position:relative;display:block;width:100%;}.ct2::before{content:"";position:absolute;left:0;top:9px;width:4px;height:4px;border-radius:50%;background:var(--A2);}.ct2:last-child{border-bottom:none;}.cv-main-col{padding:28px 34px;}.ms{margin-bottom:24px;}.ms:last-child{margin-bottom:0;}.mh{font-size:8px;font-weight:700;color:var(--A);text-transform:uppercase;letter-spacing:.22em;margin-bottom:10px;padding-bottom:5px;border-bottom:1.5px solid var(--A);}.sum{font-size:12px;color:var(--T);line-height:1.8;}.sum strong{font-weight:700;color:var(--A);}.kws{display:flex;flex-wrap:wrap;gap:4px;margin-top:9px;}.kw{font-size:9.5px;font-weight:600;color:var(--A);background:var(--AB);padding:2px 9px;border-radius:10px;}.ex{margin-bottom:18px;padding-bottom:18px;border-bottom:.5px solid var(--BD);}.ex:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}.ex-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:2px;}.ex-t{font-family:"Playfair Display",serif;font-size:13.5px;font-weight:700;color:var(--T);line-height:1.2;flex:1;}.ex-d{font-size:9.5px;font-weight:700;color:#fff;background:var(--A);padding:2px 9px;border-radius:10px;flex-shrink:0;white-space:nowrap;}.ex-co{font-size:11px;color:var(--A2);font-weight:600;margin-bottom:5px;}.ex-ctx{font-size:10.5px;color:#888;background:var(--AB);border-radius:4px;padding:4px 9px;margin-bottom:6px;line-height:1.5;border-left:2px solid var(--A2);font-style:italic;}.ex-ul{list-style:none;padding:0;}.ex-ul li{font-size:11.5px;color:var(--T);line-height:1.7;padding:3px 0 3px 14px;position:relative;}.ex-ul li::before{content:"";position:absolute;left:0;top:9px;width:5px;height:5px;border-radius:50%;background:var(--A);}.ex-ul li strong{font-weight:700;color:var(--A);}.bullet-controls{display:none;}body.editing .bullet-controls{display:flex;gap:6px;margin-top:6px;}.bc-btn{padding:3px 10px;font-size:10px;font-weight:700;font-family:"DM Sans",sans-serif;border:1.5px solid var(--BD);background:#fff;color:var(--S);border-radius:6px;cursor:pointer;}.bc-btn:hover{border-color:var(--A);color:var(--A);}.bc-btn.rem{border-color:#e5c5c5;color:#c0756e;}@media print{body{background:#fff;padding:0;}.bar{display:none;}.bullet-controls{display:none!important;}.cv{box-shadow:none;max-width:100%;}.hd,.cv-side-col,.ex-d,.lg-l,.kw,.tag{-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{margin:.4cm;size:A4;}}</style></head><body>';
+  function norm(s){return (s||'').toUpperCase().replace(/[ÁÀÄÂ]/g,'A').replace(/[ÉÈËÊ]/g,'E').replace(/[ÍÌÏÎ]/g,'I').replace(/[ÓÒÖÔ]/g,'O').replace(/[ÚÙÜÛ]/g,'U').replace(/Ñ/g,'N');}
+  function getSec(kw) {
+    var kwn = norm(kw);
+    var idx = -1;
+    for (var i = 0; i < lines.length; i++) {
+      var u = norm(lines[i]);
+      if (u.indexOf(kwn) === 0 && lines[i].length < 80) { idx = i; break; }
+    }
+    if (idx === -1) return [];
+    var out = [];
+    var next = ['NOMBRE','ROL OBJ','RESUMEN','EXPERIENCIA','FORMAC','EDUCAC','TITULAC','ESTUDIO','CERTIF','CURSO','HABILIDAD','COMPETENC','HERRAMIENTA','IDIOMA','OTRO','DATO','INFORMAC'];
+    for (var j = idx + 1; j < lines.length; j++) {
+      var u2 = norm(lines[j]).replace(/[^A-Z\s]/g, '');
+      if (u2.length > 2 && u2.length < 60 && next.some(function(k){ return u2.trim().indexOf(k) === 0; }) && out.length > 0) break;
+      if (lines[j]) out.push(lines[j]);
+    }
+    return out;
+  }
+
+  function esc(t) { return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function bold(t) {
+    // Convert **text** to <strong>text</strong>
+    return esc(t).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  }
+  function fmtNum(t) {
+    // Format numbers with dot separator: 1000000 → 1.000.000
+    return t.replace(/\b(\d{4,})\b/g, function(m) {
+      return m.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    });
+  }
+
+  // Extract header
+  var name = '', role = '', email = '', phone = '', city = '', linkedin = '';
+  var roleLines = getSec('ROL OBJETIVO');
+  if (roleLines.length) role = roleLines[0];
+  var nameLines = getSec('NOMBRE COMPLETO');
+  if (nameLines.length) name = nameLines[0];
+  if (!name) {
+    for (var i = 0; i < Math.min(5, lines.length); i++) {
+      var l = lines[i];
+      if (l && !l.includes('@') && !l.match(/^\+?\d/) && l.toUpperCase() === l.replace(/[^A-ZÁÉÍÓÚÑÜ\s]/g,'') && l.length > 3 && l.length < 50) {
+        name = l; break;
+      }
+    }
+  }
+  if (!name) name = candidato || 'CV';
+
+  var em = text.match(/[\w.+-]+@[\w.-]+\.\w+/); if (em) email = em[0];
+  var ph = text.match(/\+?[\d][\d\s().+\-]{7,15}/); if (ph) phone = ph[0].trim();
+  var li = text.match(/linkedin\.com\/in\/[\w-]+/i); if (li) linkedin = li[0];
+  var cy = text.match(/(Madrid|Barcelona|Valencia|Sevilla|Bilbao|Galicia|Boiro|España|Spain|[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+ *,? *(España|Spain))/i);
+  if (cy) city = cy[0].trim();
+
+  var ini = (name||'CV').split(' ').map(function(w){ return w[0]||''; }).join('').slice(0,2).toUpperCase();
+
+  // Parse sections
+  var summary = getSec('RESUMEN EJECUTIVO').join(' ').trim();
+  var expLines = getSec('EXPERIENCIA PROFESIONAL');
+  var formLines = getSec('FORMACIÓN').length ? getSec('FORMACIÓN') :
+    getSec('FORMACION').length ? getSec('FORMACION') :
+    getSec('EDUCACIÓN').length ? getSec('EDUCACIÓN') :
+    getSec('EDUCACION').length ? getSec('EDUCACION') :
+    getSec('DATOS ACADÉMICOS').length ? getSec('DATOS ACADÉMICOS') :
+    getSec('DATOS ACADEMICOS').length ? getSec('DATOS ACADEMICOS') :
+    getSec('TITULACIÓN').length ? getSec('TITULACIÓN') :
+    getSec('TITULACION').length ? getSec('TITULACION') :
+    getSec('ESTUDIOS');
+  var certLines = getSec('CERTIFICACIONES').length ? getSec('CERTIFICACIONES') : getSec('CURSOS');
+  var skillLines = getSec('COMPETENCIAS').length ? getSec('COMPETENCIAS') : getSec('HABILIDADES');
+  var toolLines = getSec('HERRAMIENTAS');
+  var langLines = getSec('IDIOMAS');
+  var otherLines = getSec('OTROS DATOS').length ? getSec('OTROS DATOS') : getSec('DATOS');
+
+  // Parse competencias (soft, max 6) and herramientas (technical)
+  var skills = [];
+  skillLines.forEach(function(l) {
+    var cl = l.replace(/^[-·•·▸\s]+/, '').trim();
+    // Skip lines that look like categories (contain colon)
+    if (cl.includes(':')) {
+      // Extract after colon
+      var after = cl.split(':')[1]||'';
+      after.split(/[•·,]/g).forEach(function(s){ if(s.trim().length>2) skills.push(s.trim()); });
+      return;
+    }
+    if (cl.includes('·') || cl.includes('•')) {
+      cl.split(/[·•]/).forEach(function(s){ if(s.trim().length>2) skills.push(s.trim()); });
+    } else if (cl.length > 2) skills.push(cl);
+  });
+  // Keep only soft skills (filter out technical terms)
+  var techWords = /workday|ats|power bi|tableau|excel|greenhouse|linkedin|beamery|bamboo|oracle|boolean|github|analytics|hris|successfactor|smartrecruit|lever|stack/i;
+  var softSkills = skills.filter(function(s){ return !techWords.test(s); }).slice(0,6);
+  if (!softSkills.length) softSkills = skills.slice(0,6);
+  skills = softSkills;
+
+  // Parse tools
+  var tools = [];
+  if (toolLines.length) {
+    toolLines.forEach(function(l) {
+      var cl = l.replace(/^[-·•·▸\s]+/, '').trim();
+      if (cl.includes(':')) cl = (cl.split(':')[1]||cl);
+      cl.split(/[•·,]/g).forEach(function(s){ if(s.trim().length>1) tools.push(s.trim()); });
+    });
+  } else {
+    // Extract tools from habilidades lines that look technical
+    skillLines.forEach(function(l) {
+      var cl = l.replace(/^[-·•·▸\s]+/, '').trim();
+      if (cl.includes(':')) {
+        var label = cl.split(':')[0].toLowerCase();
+        if (/ats|analytic|herram|tool|sourcing|hris|sector/i.test(label)) {
+          var after = cl.split(':')[1]||'';
+          after.split(/[•·,]/g).forEach(function(s){ if(s.trim().length>1) tools.push(s.trim()); });
+        }
+      }
+    });
+  }
+  tools = tools.slice(0,10);
+
+  // Parse languages (C1, C2, B2 format)
+  var langs = [];
+  langLines.forEach(function(l) {
+    var cl = l.replace(/^[-·•·\s]+/, '').trim();
+    var lm = cl.match(/^(.+?)[\s:·\-]+([A-C][12]|Nativo|Bilingüe|Fluido|Avanzado|Intermedio|Básico|Native|Fluent)/i);
+    if (lm) langs.push({n: lm[1].trim(), l: lm[2].trim()});
+    else if (cl.length > 1) langs.push({n: cl, l: ''});
+  });
+
+  // Parse education
+  var edu = [];
+  formLines.forEach(function(l) {
+    var cl = l.replace(/^[-·•·\s]+/, '').trim();
+    if (!cl || cl.length < 3) return;
+    var yr = cl.match(/(\d{4})\s*[-–]\s*(\d{4}|\bActual\b|\bPresente\b)/i) || cl.match(/\d{4}/);
+    var parts = cl.split(/[·\|]/);
+    edu.push({
+      deg: (parts[0]||cl).replace(/\d{4}.*/,'').trim(),
+      school: (parts[1]||'').trim(),
+      yr: yr ? yr[0] : ''
+    });
+  });
+
+  // Parse certs (courses < 1 year, newest first)
+  var certs = [];
+  certLines.forEach(function(l) {
+    var cl = l.replace(/^[-·•·\s]+/, '').trim();
+    if (cl.length > 2) certs.push(cl);
+  });
+
+  // Parse other data
+  var others = [];
+  otherLines.forEach(function(l) {
+    var cl = l.replace(/^[-·•·\s]+/, '').trim();
+    if (cl.length > 2) others.push(cl);
+  });
+
+  // Parse experience blocks
+  var expBlocks = [], cur = [];
+  expLines.forEach(function(l) {
+    var hasDate = /\d{4}/.test(l);
+    var notBullet = !l.match(/^[-·•]/);
+    var notLower = !l.match(/^[a-záéíóúñü]/);
+    var ok = l.length > 3 && l.length < 140;
+    if (hasDate && notBullet && notLower && ok && cur.length > 1) {
+      expBlocks.push(cur); cur = [l];
+    } else cur.push(l);
+  });
+  if (cur.length) expBlocks.push(cur);
+  // Sort newest first (by year)
+  expBlocks.sort(function(a, b) {
+    var ya = (a[0]||'').match(/\d{4}/g)||[0]; var yb = (b[0]||'').match(/\d{4}/g)||[0];
+    return Math.max.apply(null,yb.map(Number)) - Math.max.apply(null,ya.map(Number));
+  });
+
+  // Build HTML
+  var h = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">';
+  h += '<meta name="viewport" content="width=device-width,initial-scale=1.0">';
+  h += '<title>CV — ' + esc(name) + '</title>';
+  h += '<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">';
+  h += '<style>';
+  h += ':root{--A:#1B3A5C;--A2:#4A7FA5;--AB:#EEF3F8;--SB:#F4F6F9;--T:#1a1a1a;--S:#555;--BD:#E5E5E5;}';
+  h += '.f{--A:#1D4A35;--A2:#3A8060;--AB:#EAF3EE;--SB:#F2F7F4;}.b{--A:#5C1B2E;--A2:#A54A65;--AB:#F4EEF0;--SB:#F7F2F4;}';
+  h += '*{box-sizing:border-box;margin:0;padding:0;}';
+  h += 'body{font-family:"DM Sans",sans-serif;background:#E8E6E2;padding:2rem 1rem 5rem;font-size:12px;}';
+  h += '.bar{max-width:800px;margin:0 auto 1rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}';
+  h += '.bar-l{font-size:11px;font-weight:600;color:#8C7B80;background:#fff;padding:5px 14px;border-radius:20px;border:1px solid #e0d8d5;}';
+  h += '.bar-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}';
+  h += '.cdot{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:.15s;}';
+  h += '.cdot.on{border-color:#fff;box-shadow:0 0 0 2px var(--A);}';
+  h += '.xbtn{padding:6px 14px;font-size:11px;font-weight:700;font-family:"DM Sans",sans-serif;border-radius:7px;cursor:pointer;border:none;transition:.15s;}';
+  h += '.xbtn-o{background:#fff;color:#555;border:1.5px solid #ddd;}.xbtn-o:hover{border-color:var(--A);color:var(--A);}';
+  h += '.xbtn-y{background:#f3a41b;color:#fff;}.xbtn-p{background:var(--A);color:#fff;}';
+  h += '#save-st{font-size:10px;color:#999;}';
+  h += '.cv{max-width:800px;margin:0 auto;background:#fff;box-shadow:0 6px 40px rgba(0,0,0,.12);page-break-inside:avoid;}';
+  // Header
+  h += '.hd{background:var(--A);padding:28px 32px 22px;position:relative;overflow:hidden;}';
+  h += '.hd::after{content:"";position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,.04);pointer-events:none;}';
+  h += '.hd-inner{display:flex;align-items:center;gap:20px;position:relative;z-index:2;}';
+  h += '.ph-wrap{flex-shrink:0;}';
+  h += '.ph-c{width:80px;height:80px;border-radius:50%;border:2.5px solid rgba(255,255,255,.3);overflow:hidden;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;}';
+  h += '.ph-c img{width:100%;height:100%;object-fit:cover;display:none;}';
+  h += '.ph-ini{font-family:"Playfair Display",serif;font-size:26px;font-weight:800;color:rgba(255,255,255,.9);}';
+  h += '.ph-hint{font-size:9px;color:rgba(255,255,255,.45);text-align:center;margin-top:3px;}';
+  h += '.hi{flex:1;}';
+  h += '.nm{font-family:"Playfair Display",serif;font-size:26px;font-weight:800;color:#fff;line-height:1.1;letter-spacing:.04em;text-transform:uppercase;margin-bottom:3px;}';
+  h += '.rl{font-size:9px;font-weight:700;color:rgba(255,255,255,.7);letter-spacing:.18em;text-transform:uppercase;margin-bottom:10px;}';
+  h += '.cts{display:flex;flex-wrap:wrap;gap:3px 16px;margin-bottom:8px;}';
+  h += '.ct{font-size:10.5px;color:rgba(255,255,255,.75);}';
+  h += '.ct strong{color:#fff;font-weight:600;}';
+  h += '.ct a{color:#fff;text-decoration:underline;text-decoration-color:rgba(255,255,255,.4);}';
+  h += '.ct a:hover{text-decoration-color:#fff;}';
+  h += '.tags{display:flex;flex-wrap:wrap;gap:4px;}';
+  h += '.tag{font-size:9px;font-weight:600;color:rgba(255,255,255,.88);background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);padding:2px 9px;border-radius:20px;}';
+  // Body 2 columns
+  h += '.bd{display:grid;grid-template-columns:185px 1fr;}';
+  // Sidebar
+  h += '.sd{background:var(--SB);padding:22px 16px;border-right:1px solid var(--BD);}';
+  h += '.ss{margin-bottom:20px;}.ss:last-child{margin-bottom:0;}';
+  h += '.sh{font-size:7.5px;font-weight:700;color:var(--A);text-transform:uppercase;letter-spacing:.2em;margin-bottom:7px;padding-bottom:4px;border-bottom:1.5px solid var(--A);}';
+  h += '.sk{font-size:11px;color:var(--T);padding:3px 0 3px 11px;border-bottom:.5px solid var(--BD);line-height:1.4;position:relative;display:block;}';
+  h += '.sk::before{content:"";position:absolute;left:0;top:9px;width:3.5px;height:3.5px;border-radius:50%;background:var(--A2);}';
+  h += '.sk:last-child{border-bottom:none;}';
+  h += '.lg-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:.5px solid var(--BD);}';
+  h += '.lg-row:last-child{border-bottom:none;}';
+  h += '.lg-n{font-size:11px;color:var(--T);font-weight:500;}';
+  h += '.lg-l{font-size:8.5px;font-weight:700;color:#fff;background:var(--A);padding:1px 7px;border-radius:10px;}';
+  h += '.ed{margin-bottom:11px;padding-bottom:11px;border-bottom:.5px solid var(--BD);}';
+  h += '.ed:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}';
+  h += '.ed-d{font-size:11px;font-weight:700;color:var(--T);line-height:1.3;}';
+  h += '.ed-s{font-size:10px;color:var(--A2);font-weight:500;margin-top:1px;}';
+  h += '.ed-y{font-size:9.5px;color:var(--S);margin-top:1px;}';
+  h += '.ct2{font-size:10.5px;color:var(--T);padding:2.5px 0 2.5px 11px;border-bottom:.5px solid var(--BD);line-height:1.4;position:relative;display:block;}';
+  h += '.ct2::before{content:"";position:absolute;left:0;top:8px;width:3.5px;height:3.5px;border-radius:50%;background:var(--A2);}';
+  h += '.ct2:last-child{border-bottom:none;}';
+  // Main
+  h += '.mn{padding:22px 28px;}';
+  h += '.ms{margin-bottom:20px;}.ms:last-child{margin-bottom:0;}';
+  h += '.mh{font-size:7.5px;font-weight:700;color:var(--A);text-transform:uppercase;letter-spacing:.2em;margin-bottom:8px;padding-bottom:4px;border-bottom:1.5px solid var(--A);}';
+  h += '.sum{font-size:11.5px;color:var(--T);line-height:1.8;}';
+  h += '.sum strong{font-weight:700;color:var(--A);}';
+  // Experience
+  h += '.ex{margin-bottom:14px;padding-bottom:14px;border-bottom:.5px solid var(--BD);}';
+  h += '.ex:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}';
+  h += '.ex-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:1px;}';
+  h += '.ex-t{font-family:"Playfair Display",serif;font-size:12.5px;font-weight:700;color:var(--T);line-height:1.2;flex:1;text-transform:capitalize;}';
+  h += '.ex-d{font-size:9px;font-weight:700;color:#fff;background:var(--A);padding:2px 8px;border-radius:8px;flex-shrink:0;white-space:nowrap;}';
+  h += '.ex-co{font-size:10.5px;color:var(--A2);font-weight:600;margin-bottom:4px;}';
+  h += '.ex-ctx{font-size:10px;color:#888;background:var(--AB);border-radius:3px;padding:3px 8px;margin-bottom:5px;line-height:1.5;border-left:2px solid var(--A2);font-style:italic;}';
+  h += '.ul{list-style:none;padding:0;}';
+  h += '.ul li{font-size:11px;color:var(--T);line-height:1.7;padding:2px 0 2px 13px;position:relative;}';
+  h += '.ul li::before{content:"";position:absolute;left:0;top:8px;width:4px;height:4px;border-radius:50%;background:var(--A);}';
+  h += '.ul li strong{font-weight:700;color:var(--A);}';
+  h += '.bc{display:none;}body.editing .bc{display:flex;gap:5px;margin-top:5px;}';
+  h += '.bb{padding:2px 9px;font-size:9.5px;font-weight:700;font-family:"DM Sans",sans-serif;border:1.5px solid var(--BD);background:#fff;color:var(--S);border-radius:5px;cursor:pointer;}';
+  h += '.bb:hover{border-color:var(--A);color:var(--A);}.bb.rem{border-color:#e5c5c5;color:#c0756e;}.bb.rem:hover{border-color:#c0756e;background:#fdf6f6;}';
+  // Editable
+  h += '[contenteditable]{outline:none;border-radius:2px;transition:background .12s;}';
+  h += 'body.editing [contenteditable]:hover{background:rgba(27,58,92,.06);cursor:text;}';
+  h += 'body.editing [contenteditable]:focus{background:rgba(27,58,92,.1);}';
+  h += 'body.editing .hd [contenteditable]:hover{background:rgba(255,255,255,.15);}';
+  h += 'body.editing .hd [contenteditable]:focus{background:rgba(255,255,255,.22);}';
+  // Print
+  h += '@media print{body{background:#fff;padding:0;}.bar{display:none;}.bc{display:none!important;}';
+  h += '.cv{box-shadow:none;max-width:100%;}.hd,.sd,.ex-d,.lg-l{-webkit-print-color-adjust:exact;print-color-adjust:exact;}';
+  h += '@page{margin:.4cm;size:A4;}}';
+  h += '</style></head><body>';
 
   // TOOLBAR
-  h+='<div class="bar"><div class="bar-l">Micaela Jairedin &middot; Career Coach & Recruiter</div>';
-  h+='<div class="bar-r"><span class="blbl">Color</span>';
-  h+='<div class="cdot on" style="background:#1B3A5C" onclick="setT(\'\',this)"></div>';
-  h+='<div class="cdot" style="background:#1D4A35" onclick="setT(\'f\',this)"></div>';
-  h+='<div class="cdot" style="background:#5C1B2E" onclick="setT(\'b\',this)"></div>';
-  h+='<input type="file" id="ph-file" accept="image/*" style="display:none" onchange="loadPh(this)">';
-  h+='<button class="xbtn xbtn-o" onclick="document.getElementById(\'ph-file\').click()">+ Foto</button>';
-  h+='<button class="xbtn xbtn-y" id="edit-btn" onclick="toggleEdit()">✏ Editar</button>';
-  h+='<button class="xbtn xbtn-p" onclick="window.print()">↓ PDF</button>';
-  h+='</div></div>';
+  h += '<div class="bar">';
+  h += '<div class="bar-l">Micaela Jairedin &middot; Career Coach &amp; Recruiter</div>';
+  h += '<div class="bar-r">';
+  h += '<span style="font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Color</span>';
+  h += '<div class="cdot on" style="background:#1B3A5C" onclick="setT(\'\',this)"></div>';
+  h += '<div class="cdot" style="background:#1D4A35" onclick="setT(\'f\',this)"></div>';
+  h += '<div class="cdot" style="background:#5C1B2E" onclick="setT(\'b\',this)"></div>';
+  h += '<input type="file" id="pf" accept="image/*" style="display:none" onchange="loadPh(this)">';
+  h += '<button class="xbtn xbtn-o" onclick="document.getElementById(\'pf\').click()">+ Foto</button>';
+  h += '<span id="save-st"></span>';
+  h += '<button class="xbtn xbtn-y" id="eb" onclick="toggleEdit()">\u270F Editar</button>';
+  h += '<button class="xbtn xbtn-p" onclick="window.print()">\u2193 PDF</button>';
+  h += '</div></div>';
 
   // CV
-  h+='<div class="cv">';
+  h += '<div class="cv">';
+
   // HEADER
-  h+='<div class="hd">';
-  h+='<div class="ph" onclick="document.getElementById(\'ph-file\').click()"><div class="ph-c"><img id="ph-img" src="" alt=""><span id="ph-ini" class="ph-ini">'+ini+'</span></div><div class="ph-hint">+ Foto</div></div>';
-  h+='<div class="hi">';
-  h+='<div class="name" contenteditable="false">'+esc(name)+'</div>';
-  h+='<div class="rol" contenteditable="false">'+esc(role)+'</div>';
-  h+='<div class="cts">';
-  if(email)h+='<div class="ct" contenteditable="false"><strong>'+esc(email)+'</strong></div>';
-  if(phone)h+='<div class="ct" contenteditable="false">'+esc(phone)+'</div>';
-  if(city)h+='<div class="ct" contenteditable="false">'+esc(city)+'</div>';
-  if(linkedin)h+='<div class="ct" contenteditable="false">'+esc(linkedin)+'</div>';
-  h+='</div>';
-  h+='<div class="tags"><span class="tag" contenteditable="false">Disponibilidad inmediata</span><span class="tag" contenteditable="false">Abierto a relocalización</span><span class="tag" contenteditable="false">Bilingüe ES · EN</span></div>';
-  h+='</div></div>';
+  h += '<div class="hd"><div class="hd-inner">';
+  h += '<div class="ph-wrap"><div class="ph-c" onclick="document.getElementById(\'pf\').click()">';
+  h += '<img id="pi" src="" alt=""><span id="pn" class="ph-ini">' + esc(ini) + '</span></div>';
+  h += '<div class="ph-hint">+ Foto</div></div>';
+  h += '<div class="hi">';
+  h += '<div class="nm" contenteditable="false">' + esc(name) + '</div>';
+  h += '<div class="rl" contenteditable="false">' + esc(role) + '</div>';
+  h += '<div class="cts">';
+  if (email) h += '<div class="ct" contenteditable="false"><strong>' + esc(email) + '</strong></div>';
+  if (phone) h += '<div class="ct" contenteditable="false">' + esc(phone) + '</div>';
+  if (city) h += '<div class="ct" contenteditable="false">' + esc(city) + '</div>';
+  if (linkedin) h += '<div class="ct"><a href="https://' + esc(linkedin) + '" target="_blank" contenteditable="false">' + esc(linkedin) + '</a></div>';
+  h += '</div>';
+  // Tags: otros datos
+  h += '<div class="tags">';
+  if (others.length) {
+    others.forEach(function(o) { h += '<span class="tag" contenteditable="false">' + esc(o) + '</span>'; });
+  } else {
+    h += '<span class="tag" contenteditable="false">Incorporaci\u00f3n inmediata</span>';
+    h += '<span class="tag" contenteditable="false">Disponible para viajar</span>';
+  }
+  h += '</div>';
+  h += '</div></div></div>';
 
   // BODY
-  h+='<div class="bd">';
+  h += '<div class="bd">';
+
   // SIDEBAR
-  h+='<div class="cv-side-col">';
-  if(skills.length){h+='<div class="ss"><div class="sh">Competencias</div>';skills.slice(0,14).forEach(function(s){h+='<div class="sk" contenteditable="false">'+esc(s)+'</div>';});h+='</div>';}
-  if(langs.length){h+='<div class="ss"><div class="sh">Idiomas</div>';langs.forEach(function(l){h+='<div class="lg-row"><span class="lg-n" contenteditable="false">'+esc(l.n)+'</span>'+(l.l?'<span class="lg-l" contenteditable="false">'+esc(l.l)+'</span>':'')+'</div>';});h+='</div>';}
-  if(edu.length){h+='<div class="ss"><div class="sh">Formación</div>';edu.forEach(function(e){h+='<div class="ed"><div class="ed-d" contenteditable="false">'+esc(e.deg)+'</div>'+(e.school?'<div class="ed-s" contenteditable="false">'+esc(e.school)+'</div>':'')+(e.yr?'<div class="ed-y" contenteditable="false">'+esc(e.yr)+'</div>':'')+'</div>';});h+='</div>';}
-  if(certs.length){h+='<div class="ss"><div class="sh">Certificaciones</div>';certs.slice(0,5).forEach(function(c){h+='<div class="ct2" contenteditable="false">'+esc(c)+'</div>';});h+='</div>';}
-  h+='</div>';
+  h += '<div class="sd">';
+
+  // Idiomas
+  if (langs.length) {
+    h += '<div class="ss"><div class="sh">Idiomas</div>';
+    langs.forEach(function(l) {
+      h += '<div class="lg-row"><span class="lg-n" contenteditable="false">' + esc(l.n) + '</span>';
+      if (l.l) h += '<span class="lg-l" contenteditable="false">' + esc(l.l) + '</span>';
+      h += '</div>';
+    });
+    h += '</div>';
+  }
+
+  // Competencias (soft, max 6)
+  if (skills.length) {
+    h += '<div class="ss"><div class="sh">Competencias</div>';
+    skills.forEach(function(s) { h += '<div class="sk" contenteditable="false">' + esc(s) + '</div>'; });
+    h += '</div>';
+  }
+
+  // Herramientas
+  if (tools.length) {
+    h += '<div class="ss"><div class="sh">Herramientas</div>';
+    tools.forEach(function(t) { h += '<div class="sk" contenteditable="false">' + esc(t) + '</div>'; });
+    h += '</div>';
+  }
+
+  // Formación
+  if (edu.length) {
+    h += '<div class="ss"><div class="sh">Formaci\u00f3n</div>';
+    edu.forEach(function(e) {
+      h += '<div class="ed"><div class="ed-d" contenteditable="false">' + esc(e.deg) + '</div>';
+      if (e.school) h += '<div class="ed-s" contenteditable="false">' + esc(e.school) + '</div>';
+      if (e.yr) h += '<div class="ed-y" contenteditable="false">' + esc(e.yr) + '</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+  }
+
+  // Certificaciones/Cursos
+  if (certs.length) {
+    h += '<div class="ss"><div class="sh">Cursos y certificaciones</div>';
+    certs.forEach(function(c) { h += '<div class="ct2" contenteditable="false">' + esc(c) + '</div>'; });
+    h += '</div>';
+  }
+
+  h += '</div>'; // end sidebar
+
   // MAIN
-  h+='<div class="cv-main-col">';
-  if(summary){h+='<div class="ms"><div class="mh">Resumen ejecutivo</div><div class="sum" contenteditable="false">'+esc(summary)+'</div>';h+='<div class="kws">'+kws.map(function(k){return'<span class="kw" contenteditable="false">'+k+'</span>';}).join('')+'</div></div>';}
-  // Experience
-  h+='<div class="ms"><div class="mh">Experiencia profesional</div>';
-  expBlocks.filter(function(b){return b.trim().length>15;}).forEach(function(block,ei){
-    var blines=block.split('\n').filter(function(l){return l.trim();});
-    if(!blines.length)return;
-    var title=blines[0],dates='',company='',ctx='',bullets=[];
-    var dm=title.match(/\d{2}\/\d{4}\s*[-\u2013]+\s*\S+/i)||title.match(/\d{4}\s*[-\u2013\u2014]+\s*(\d{4}|Actualidad|Presente)/i);
-    if(dm){dates=dm[0];title=title.replace(dm[0],'').replace(/[|·—\-]+/g,' ').replace(/\s+/g,' ').trim();}
-    for(var j=1;j<blines.length;j++){
-      var bl=blines[j].trim();if(!bl)continue;
-      if(/^(Contexto|Nota|Context):/i.test(bl)){ctx=bl.replace(/^[^:]+:\s*/,'');continue;}
-      if(j===1&&!bl.match(/^[-·•]/)&&bl.length<80&&!bl.match(/,/)){company=bl;continue;}
-      bullets.push(bl.replace(/^[-·•]\s*/,''));
+  h += '<div class="mn">';
+
+  // Resumen
+  if (summary) {
+    h += '<div class="ms"><div class="mh">Resumen ejecutivo</div>';
+    h += '<div class="sum" contenteditable="false">' + bold(fmtNum(summary)) + '</div></div>';
+  }
+
+  // Experiencia
+  h += '<div class="ms"><div class="mh">Experiencia profesional</div>';
+  expBlocks.filter(function(b) { return b.join('').trim().length > 10; }).forEach(function(block, ei) {
+    var blines = block.filter(function(l){ return l.trim(); });
+    if (!blines.length) return;
+    var title = blines[0], dates = '', company = '', ctx = '', bullets = [];
+    var dm = title.match(/\d{4}\s*[-–—]\s*(\d{4}|Actualidad|Presente|Actual)/i)
+           || title.match(/\d{2}\/\d{4}\s*[-–—]\s*\S+/i);
+    if (dm) { dates = dm[0]; title = title.replace(dm[0], '').replace(/[|·—\-]+/g,' ').replace(/\s+/g,' ').trim(); }
+    for (var j = 1; j < blines.length; j++) {
+      var bl = blines[j];
+      if (/^(Contexto|Context):/i.test(bl)) { ctx = bl.replace(/^[^:]+:\s*/, ''); continue; }
+      if (j === 1 && !bl.match(/^[-·•]/) && bl.length < 90 && !bl.match(/^[a-z]/)) { company = bl; continue; }
+      bullets.push(bl.replace(/^[-·•·\s]+/, ''));
     }
-    var ulId='ul-'+ei;
-    h+='<div class="ex"><div class="ex-top"><div class="ex-t" contenteditable="false">'+esc(title)+'</div>'+(dates?'<div class="ex-d" contenteditable="false">'+esc(dates)+'</div>':'')+'</div>';
-    if(company)h+='<div class="ex-co" contenteditable="false">'+esc(company)+'</div>';
-    if(ctx)h+='<div class="ex-ctx" contenteditable="false">'+esc(ctx)+'</div>';
-    if(bullets.length)h+='<ul class="ex-ul" id="'+ulId+'">'+bullets.map(function(b){return'<li contenteditable="false">'+esc(b).replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')+'</li>';}).join('')+'</ul>';
-    h+='<div class="bullet-controls"><button class="bc-btn" onclick="addBullet(\''+ulId+'\')">+ Bullet</button><button class="bc-btn rem" onclick="removeBullet(\''+ulId+'\')">− Quitar</button></div>';
-    h+='</div>';
+    var ulId = 'ul' + ei;
+    h += '<div class="ex">';
+    h += '<div class="ex-top"><div class="ex-t" contenteditable="false">' + bold(esc(title)) + '</div>';
+    if (dates) h += '<div class="ex-d" contenteditable="false">' + esc(dates) + '</div>';
+    h += '</div>';
+    if (company) h += '<div class="ex-co" contenteditable="false">' + esc(company) + '</div>';
+    if (ctx) h += '<div class="ex-ctx" contenteditable="false">' + esc(ctx) + '</div>';
+    if (bullets.length) {
+      h += '<ul class="ul" id="' + ulId + '">';
+      bullets.forEach(function(b) {
+        h += '<li contenteditable="false">' + bold(fmtNum(esc(b))) + '</li>';
+      });
+      h += '</ul>';
+    } else {
+      h += '<ul class="ul" id="' + ulId + '"></ul>';
+    }
+    h += '<div class="bc">';
+    h += '<button class="bb" onclick="addB(\'' + ulId + '\')">+ Bullet</button>';
+    h += '<button class="bb rem" onclick="remB(\'' + ulId + '\')">&#8722; Quitar</button>';
+    h += '</div>';
+    h += '</div>';
   });
-  h+='</div></div></div></div>';
+  h += '</div>';
+
+  h += '</div></div></div>'; // end mn, bd, cv
 
   // SCRIPT
-  h+='<script>function setT(cls,btn){document.body.className=cls+(document.body.classList.contains(\'editing\')?\' editing\':\'\');document.querySelectorAll(\'.cdot\').forEach(function(d){d.classList.remove(\'on\');});btn.classList.add(\'on\');}';
-  h+='function loadPh(inp){if(!inp.files[0])return;var r=new FileReader();r.onload=function(e){document.getElementById(\'ph-img\').src=e.target.result;document.getElementById(\'ph-img\').style.display=\'block\';document.getElementById(\'ph-ini\').style.display=\'none\';};r.readAsDataURL(inp.files[0]);}';
-  h+='var _editing=false;function toggleEdit(){_editing=!_editing;var btn=document.getElementById(\'edit-btn\');var cls=document.body.className.replace(\' editing\',\'\');if(_editing){document.body.className=cls+\' editing\';btn.textContent=\'✓ Listo\';btn.style.background=\'#4a7c5f\';document.querySelectorAll(\'[contenteditable]\').forEach(function(el){el.contentEditable=\'true\';});}else{document.body.className=cls;btn.textContent=\'✏ Editar\';btn.style.background=\'\';document.querySelectorAll(\'[contenteditable]\').forEach(function(el){el.contentEditable=\'false\';});}}';
-  h+='function addBullet(id){var ul=document.getElementById(id);if(!ul)return;var li=document.createElement(\'li\');li.contentEditable=\'true\';li.textContent=\'Escribe aquí...\';li.style.color=\'#aaa\';li.onfocus=function(){if(this.textContent===\'Escribe aquí...\'){this.textContent=\'\';this.style.color=\'\'}};ul.appendChild(li);li.focus();}';
-  h+='function removeBullet(id){var ul=document.getElementById(id);if(ul&&ul.children.length>1)ul.removeChild(ul.lastElementChild);}';
-  h+='<\/script></body></html>';
+  var cvEmailJs = JSON.stringify(_cvEmail);
+  h += '<script>';
+  h += 'var SB="https://ddxnrsnjdvtqhxunxnwj.supabase.co";';
+  h += 'var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";';
+  h += 'var _em=' + cvEmailJs + ';';
+  h += 'var _saveT=null,_ed=false;';
+  h += 'function setT(c,b){document.body.className=c+(_ed?" editing":"");document.querySelectorAll(".cdot").forEach(function(d){d.classList.remove("on");});b.classList.add("on");}'
+  h += 'function loadPh(i){if(!i.files[0])return;var r=new FileReader();r.onload=function(e){var img=document.getElementById("pi");var ini=document.getElementById("pn");img.src=e.target.result;img.style.display="block";if(ini)ini.style.display="none";schedSave();};r.readAsDataURL(i.files[0]);}';
+  h += 'function toggleEdit(){';
+  h += '_ed=!_ed;var b=document.getElementById("eb");var cls=document.body.className.replace(" editing","");';
+  h += 'if(_ed){';
+  h += 'document.body.className=cls+" editing";b.textContent="\u2713 Listo";b.style.background="#4a7c5f";';
+  h += 'document.querySelectorAll("[contenteditable]").forEach(function(e){e.contentEditable="true";e.oninput=schedSave;});';
+  h += 'document.querySelectorAll(".ul li").forEach(function(li){';
+  h += 'if(li.querySelector(".del-btn"))return;';
+  h += 'var x=document.createElement("button");x.className="del-btn";x.title="Eliminar bullet";';
+  h += 'x.innerHTML="&times;";x.onclick=function(ev){ev.stopPropagation();li.remove();schedSave();};';
+  h += 'li.style.position="relative";li.appendChild(x);});';
+  h += '}else{';
+  h += 'document.body.className=cls;b.textContent="\u270F Editar";b.style.background="";';
+  h += 'document.querySelectorAll("[contenteditable]").forEach(function(e){e.contentEditable="false";});';
+  h += 'document.querySelectorAll(".del-btn").forEach(function(x){x.remove();});';
+  h += 'saveNow();}}';
+  h += 'function addB(id){var u=document.getElementById(id);if(!u)return;var li=document.createElement("li");li.contentEditable=_ed?"true":"false";li.textContent="Escribe aqui...";li.style.color="#aaa";li.oninput=schedSave;li.onfocus=function(){if(this.textContent==="Escribe aqui..."){this.textContent="";this.style.color="";}};if(_ed){var x=document.createElement("button");x.className="del-btn";x.innerHTML="&times;";x.onclick=function(ev){ev.stopPropagation();li.remove();schedSave();};li.style.position="relative";li.appendChild(x);}u.appendChild(li);li.focus();schedSave();}';
+  h += 'function remB(id){var u=document.getElementById(id);if(!u)return;var items=u.querySelectorAll("li");if(!items.length)return;items[items.length-1].remove();schedSave();}';
+  h += 'function schedSave(){clearTimeout(_saveT);_saveT=setTimeout(saveNow,2000);showSt("Guardando...",false);}';
+  h += 'function saveNow(){if(!_em)return;var html=document.documentElement.outerHTML;fetch(SB+"/rest/v1/cv_publicados?email=eq."+encodeURIComponent(_em),{method:"PATCH",headers:{"apikey":KEY,"Authorization":"Bearer "+KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify({contenido:html})}).then(function(r){showSt(r.ok||r.status===204?"\u2713 Guardado":"Error al guardar",r.ok||r.status===204);}).catch(function(){showSt("Error",false);});}';
+  h += 'function showSt(msg,ok){var s=document.getElementById("save-st");if(s){s.textContent=msg;s.style.color=ok?"#4a7c5f":"#999";setTimeout(function(){if(s.textContent===msg)s.textContent="";},3000);}}';
+  h += 'var st=document.createElement("style");st.textContent=".del-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:#c0756e;color:#fff;border:none;cursor:pointer;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;opacity:.7;}.del-btn:hover{opacity:1;}";document.head.appendChild(st);';
+  h += '<\/script></body></html>';
 
   return h;
 }
+
 
 
 
@@ -906,7 +1352,7 @@ function publicarCV(id){
   var st=document.getElementById('st-cvpub-'+id);
   if(!cvText){if(st){st.textContent='Pega el CV antes de publicar.';st.style.color='#c0756e';}return;}
   var c=cands.find(function(x){return x.id===id;});
-  var cvHtml=textToHtml(cvText,c.nombre||'');
+  var cvHtml=textToHtml(cvText,c.nombre||'',c.email||'',c.email||'');
   if(st){st.textContent='Publicando...';st.style.color='#666';}
   sbUpsert('cv_publicados',{email:c.email,candidato_id:id,contenido:cvHtml,codigo:''}).then(function(){
     var email=(c.email||'').toLowerCase().trim();
