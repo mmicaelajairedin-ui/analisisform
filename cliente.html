@@ -192,6 +192,15 @@ function toggleAction(idx){
   _actions[idx]=!_actions[idx];
   localStorage.setItem('actions_'+_email,JSON.stringify(_actions));
   updateProgress();
+  // Save to Supabase
+  clearTimeout(window._actTimer);
+  window._actTimer=setTimeout(function(){
+    fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_email),{
+      method:'PATCH',
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({acciones_progreso:JSON.stringify(_actions)})
+    }).catch(function(){});
+  },1000);
 }
 
 function updateProgress(){
@@ -531,7 +540,15 @@ function init(){
     _d=JSON.parse(rows[0].data);
     _prev=rows[0].prev?JSON.parse(rows[0].prev):null;
     _cvData=Array.isArray(cvRows)&&cvRows.length?cvRows[0]:null;
-    render();
+    // Load saved actions from Supabase
+    fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_email)+'&select=acciones_progreso&limit=1',{
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+    }).then(function(r){return r.ok?r.json():[];}).catch(function(){return[];}).then(function(rows2){
+      if(rows2&&rows2.length&&rows2[0].acciones_progreso){
+        try{_actions=JSON.parse(rows2[0].acciones_progreso);}catch(e){}
+      }
+      render();
+    });
   }).catch(function(e){
     document.getElementById('content').innerHTML='<div class="loading"><p>Error: '+e.message+'</p></div>';
   });
