@@ -361,6 +361,44 @@ function generarInformeAI(id){
     if(st){st.innerHTML='<span style="color:#4a7c5f;font-weight:600;">✓ Informe generado. Recargando panel...</span>';}
     // Recargar candidatos para mostrar el nuevo informe
     setTimeout(function(){
+      function abrirCrearCliente(){
+  document.getElementById('nc-nombre').value='';
+  document.getElementById('nc-email').value='';
+  document.getElementById('nc-pass').value='';
+  document.getElementById('nc-st').textContent='';
+  abrirModal('modal-nuevo-cliente');
+}
+
+async function crearCliente(){
+  var nombre=document.getElementById('nc-nombre').value.trim();
+  var email=document.getElementById('nc-email').value.trim().toLowerCase();
+  var pass=document.getElementById('nc-pass').value.trim();
+  var st=document.getElementById('nc-st');
+  if(!nombre||!email||!pass){st.textContent='Rellena todos los campos.';st.style.color='#c0756e';return;}
+  st.textContent='Creando...';st.style.color='#999';
+  var hash=await hashPass(pass);
+  fetch(SB+'/rest/v1/usuarios',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
+    body:JSON.stringify({email:email,password_hash:hash,rol:'cliente',nombre:nombre,activo:true})
+  }).then(function(r){
+    if(r.ok||r.status===201){
+      st.textContent='✓ Cliente creado. Mándale el link y la contraseña.';
+      st.style.color='#4a7c5f';
+      showToast('Cliente '+nombre+' creado ✓');
+    } else {
+      st.textContent='Error — puede que el email ya exista.';st.style.color='#c0756e';
+    }
+  }).catch(function(){st.textContent='Error de conexión.';st.style.color='#c0756e';});
+}
+
+async function hashPass(password){
+  var encoder=new TextEncoder();
+  var data=encoder.encode(password);
+  var hashBuffer=await crypto.subtle.digest('SHA-256',data);
+  var hashArray=Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+}
       loadCands();
       setTimeout(function(){
         var updated=cands.find(function(x){return x.id===id;});
