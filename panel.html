@@ -248,6 +248,11 @@ function loadCands(){
     cvs={};
     allCvs.forEach(function(cv){cvs[(cv.email||'').toLowerCase().trim()]=cv;});
     notes=JSON.parse(localStorage.getItem('mj_notes')||'{}');
+    // Merge with Supabase notes
+    cands.forEach(function(c){
+      if(c.notas_coach){notes[c.id]=c.notas_coach;}
+    });
+    localStorage.setItem('mj_notes',JSON.stringify(notes));
     renderSidebar();
     if(activeId){var c=cands.find(function(x){return x.id===activeId;});if(c)renderMain(c);}
   }).catch(function(){
@@ -626,9 +631,25 @@ function tabNotas(c){
 }
 
 function saveNote(id){
-  notes[id]=document.getElementById('nota-'+id).value;
+  var c=cands.find(function(x){return x.id===id;});
+  var val=document.getElementById('nota-'+id).value;
+  notes[id]=val;
   localStorage.setItem('mj_notes',JSON.stringify(notes));
-  var el=document.getElementById('notaok-'+id);el.style.display='inline';setTimeout(function(){el.style.display='none';},2500);
+  var el=document.getElementById('notaok-'+id);
+  el.textContent='Guardando...';el.style.display='inline';el.style.color='#999';
+  // Save to Supabase
+  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({notas_coach:val})
+  }).then(function(r){
+    el.textContent=r.ok?'\u2713 Guardado':'\u2713 Local';
+    el.style.color=r.ok?'#4a7c5f':'#8C7B80';
+    setTimeout(function(){el.style.display='none';},2500);
+  }).catch(function(){
+    el.textContent='\u2713 Local';el.style.color='#8C7B80';
+    setTimeout(function(){el.style.display='none';},2500);
+  });
 }
 
 function textToHtml(text,candidato){
