@@ -401,12 +401,24 @@ function empezar(){
 function mostrarApp(){
   document.getElementById('app').classList.add('visible');
   document.getElementById('wa-btn').classList.add('visible');
-  var nombre=(_cand.nombre||'').split(' ')[0]||_cand.nombre||'--';
   document.getElementById('hdr-ini').textContent=ini(_cand.nombre||'');
   document.getElementById('hdr-name').textContent=_cand.nombre||'--';
-  document.getElementById('hdr-week').textContent=Math.min(_semana,4)+'/4';
-  renderProgress();
-  renderTab('semana');
+  // Always reload semana_activa fresh from Supabase
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_email)+'&select=semana_activa,acciones_progreso',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.json();}).then(function(rows){
+    if(rows&&rows.length){
+      _semana=parseInt(rows[0].semana_activa||1);
+      try{_actions=rows[0].acciones_progreso?JSON.parse(rows[0].acciones_progreso):_actions;}catch(e){}
+    }
+    document.getElementById('hdr-week').textContent=Math.min(_semana,4)+'/4';
+    renderProgress();
+    renderTab('semana');
+  }).catch(function(){
+    document.getElementById('hdr-week').textContent=Math.min(_semana,4)+'/4';
+    renderProgress();
+    renderTab('semana');
+  });
 }
 
 function renderProgress(){
@@ -424,7 +436,22 @@ function setTab(tab,el){
   ['semana','analisis','documentos','historial'].forEach(function(t){
     document.getElementById('tab-'+t).style.display=t===tab?'block':'none';
   });
-  renderTab(tab);
+  if(tab==='semana'||tab==='historial'){
+    // Reload semana_activa and actions fresh
+    fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_email)+'&select=semana_activa,acciones_progreso',{
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+    }).then(function(r){return r.json();}).then(function(rows){
+      if(rows&&rows.length){
+        _semana=parseInt(rows[0].semana_activa||1);
+        try{_actions=rows[0].acciones_progreso?JSON.parse(rows[0].acciones_progreso):_actions;}catch(e){}
+      }
+      document.getElementById('hdr-week').textContent=Math.min(_semana,4)+'/4';
+      renderProgress();
+      renderTab(tab);
+    }).catch(function(){renderTab(tab);});
+  } else {
+    renderTab(tab);
+  }
 }
 
 function renderTab(tab){
