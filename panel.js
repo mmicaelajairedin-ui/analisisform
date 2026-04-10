@@ -557,28 +557,62 @@ function tabCV(c){
   var obs=(c.obstaculos||'').split('|').map(function(s){return s.trim();}).filter(Boolean).join(', ');
   var savedCvLi=c.linkedin_texto||localStorage.getItem('cvli_'+c.id)||'';
 
+  var urgenciaInmediata=(c.urgencia||'').toLowerCase().indexOf('antes')>=0||
+    (c.urgencia||'').toLowerCase().indexOf('urgent')>=0||
+    (c.urgencia||'').toLowerCase().indexOf('inmedia')>=0;
+
   var cvPrompt='Eres experto en RRHH y redaccion de CVs para el mercado europeo (Espana).\n'
-    +'Genera un CV profesional optimizado para ATS en espanol, maximo 2 paginas.\n\n'
-    +'USA EXACTAMENTE ESTAS SECCIONES EN MAYUSCULAS:\n'
-    +'NOMBRE COMPLETO\nROL OBJETIVO\nRESUMEN EJECUTIVO\nEXPERIENCIA PROFESIONAL\nFORMACION\nCERTIFICACIONES\nHABILIDADES\nIDIOMAS\n\n'
-    +'FORMATO EXPERIENCIA: TITULO - EMPRESA | Sector | Fechas\nContexto: una linea\n- Bullet verbo accion + resultado cuantificado\n\n'
-    +'REGLAS OBLIGATORIAS:\n'
-    +'- Extrae FORMACION y CERTIFICACIONES del texto CV/LinkedIn pegado abajo.\n'
-    +'- No dejes secciones vacias. Usa toda la info disponible.\n'
-    +'- Bullets: verbo de accion + resultado cuantificado.\n\n'
-    +'DATOS DEL CANDIDATO:\n'
+    +'Genera un CV profesional en espanol, maximo 2 paginas, con EXACTAMENTE estas secciones en MAYUSCULAS:\n\n'
+    +'NOMBRE COMPLETO\n'
+    +'ROL OBJETIVO\n'
+    +'RESUMEN EJECUTIVO\n'
+    +'EXPERIENCIA PROFESIONAL\n'
+    +'FORMACION\n'
+    +'CERTIFICACIONES\n'
+    +'COMPETENCIAS\n'
+    +'HERRAMIENTAS\n'
+    +'IDIOMAS\n'
+    +'OTROS DATOS\n\n'
+    +'=== INSTRUCCIONES POR SECCION ===\n'
+    +'ROL OBJETIVO: subtitulo profesional en mayusculas, enfocado al nicho del candidato.\n'
+    +'RESUMEN EJECUTIVO: 2-3 frases impactantes con palabras clave ATS y logros cuantificados.\n'
+    +'EXPERIENCIA PROFESIONAL: de mas reciente a mas antiguo. Formato:\n'
+    +'  TITULO PUESTO - EMPRESA | Sector | Fechas\n'
+    +'  Contexto: una linea describiendo empresa/contexto\n'
+    +'  - Bullet: verbo accion + **palabra clave en negrita** + resultado cuantificado (usar numeros con puntos: 1.000)\n'
+    +'  (minimo 4 bullets para ultimos 2 puestos, 2 para anteriores)\n'
+    +'FORMACION: titulo | escuela | ano inicio - ano fin (de mas reciente a mas antiguo)\n'
+    +'CERTIFICACIONES: solo cursos de menos de 1 ano, de mas reciente a mas antiguo\n'
+    +'COMPETENCIAS: maximo 6 competencias BLANDAS relacionadas con el rol objetivo. Una por linea.\n'
+    +'HERRAMIENTAS: herramientas, software, plataformas. Una por linea. Son tambien palabras clave ATS.\n'
+    +'IDIOMAS: un idioma por linea con nivel en formato C1, C2, B2, Nativo (NO usar basico/intermedio/avanzado)\n'
+    +'OTROS DATOS: informacion extra que no entra en otras secciones (vehiculo propio, carnet, disponibilidad geografica, etc.)\n'
+    +(urgenciaInmediata?'  IMPORTANTE: incluye "Incorporacion inmediata" en OTROS DATOS porque el candidato busca trabajo urgente.\n':'')
+    +'\n=== FUENTES DE INFORMACION (usa TODO lo disponible) ===\n'
+    +'FORMULARIO DEL CANDIDATO:\n'
     +'Nombre: '+(c.nombre||'--')+'\nEmail: '+(c.email||'--')+'\nCiudad: '+(c.ciudad||'--')+'\n'
-    +(c.linkedin?'LinkedIn: '+liUrl+'\n':'')
-    +(cvLink?'CV adjunto: '+cvLink+'\n':'')
-    +'Experiencia: '+(c.exp||'--')+'\nSector: '+(c.sector||'--')+'\nCargo: '+(c.cargo||'--')+'\n'
-    +'Rol buscado: '+(c.rol||'--')+'\nModalidad: '+(c.modalidad||'--')+'\nSalario: '+(c.salario||'--')+'\n'
-    +'Habilidades: '+(c.habilidades||c.skills||'--')+'\nLogro: '+(c.logro||'--')+'\n'
+    +(c.linkedin?'LinkedIn: linkedin.com/in/'+c.linkedin+'\n':'')
+    +(cvLink?'CV adjunto URL: '+cvLink+'\n':'')
+    +'Anos experiencia: '+(c.exp||'--')+'\nSector: '+(c.sector||'--')+'\nCargo actual: '+(c.cargo||'--')+'\n'
+    +'Rol buscado: '+(c.rol||'--')+'\nModalidad: '+(c.modalidad||'--')+'\nMovilidad: '+(c.geo||'--')+'\n'
+    +'Urgencia: '+(c.urgencia||'--')+'\n'
+    +'Habilidades: '+(c.habilidades||c.skills||'--')+'\n'
+    +'Logro principal: '+(c.logro||'--')+'\n'
+    +'Experiencia fuera del CV: '+(c.extra||'--')+'\n'
     +(obs?'Obstaculos: '+obs+'\n':'')
     +(nicho?'Nicho definido: '+nicho+'\n':'')
-    +(scores?'\nDiagnostico: '+scores+'\n':'')
-    +(accCV?'Acciones CV pendientes:\n- '+accCV+'\n':'')
-    +(savedCvLi?'\n=== CV Y LINKEDIN DEL CANDIDATO (pega aqui si no esta arriba) ===\n'+savedCvLi:'');
-
+    +(scores?'Diagnostico scores: '+scores+'\n':'')
+    +(savedCvLi?'\n=== TEXTO DEL CV Y LINKEDIN DEL CANDIDATO (FUENTE PRINCIPAL - extrae toda la info) ===\n'+savedCvLi+'\n':'\n(No hay texto de CV/LinkedIn disponible. Usa solo los datos del formulario.)\n')
+    +'\n=== REGLAS FINALES ===\n'
+    +'- Extrae TODA la experiencia, formacion, certificaciones e idiomas del texto del CV/LinkedIn pegado arriba.\n'
+    +'- Usa **negrita** para palabras clave importantes dentro de los bullets.\n'
+    +'- Formatea los numeros grandes con puntos: 1.000.000\n'
+    +'- NO inventes datos. NO dejes secciones vacias si hay informacion disponible.\n'
+    +'- NO pongas notas del autor al final.\n'
+    +'- Los titulos de seccion en MAYUSCULAS completas.\n'
+    +'- El NOMBRE COMPLETO en mayusculas.\n'
+    +'- Las empresas y titulos de puesto con Primera Letra En Mayuscula.\n'
+    +'- El ROL OBJETIVO en mayusculas.'
   window['_cp_'+c.id]=cvPrompt;
   var hasCv=!!cvs[email];
   var savedTxt=localStorage.getItem('cvtext_'+c.id)||'';
@@ -835,7 +869,7 @@ function textToHtml(text, candidato, emailCand, cvEmail) {
   h += '.ph-ini{font-family:"Playfair Display",serif;font-size:26px;font-weight:800;color:rgba(255,255,255,.9);}';
   h += '.ph-hint{font-size:9px;color:rgba(255,255,255,.45);text-align:center;margin-top:3px;}';
   h += '.hi{flex:1;}';
-  h += '.nm{font-family:"Playfair Display",serif;font-size:26px;font-weight:800;color:#fff;line-height:1.1;letter-spacing:-.01em;margin-bottom:3px;}';
+  h += '.nm{font-family:"Playfair Display",serif;font-size:26px;font-weight:800;color:#fff;line-height:1.1;letter-spacing:.04em;text-transform:uppercase;margin-bottom:3px;}';
   h += '.rl{font-size:9px;font-weight:700;color:rgba(255,255,255,.7);letter-spacing:.18em;text-transform:uppercase;margin-bottom:10px;}';
   h += '.cts{display:flex;flex-wrap:wrap;gap:3px 16px;margin-bottom:8px;}';
   h += '.ct{font-size:10.5px;color:rgba(255,255,255,.75);}';
@@ -875,7 +909,7 @@ function textToHtml(text, candidato, emailCand, cvEmail) {
   h += '.ex{margin-bottom:14px;padding-bottom:14px;border-bottom:.5px solid var(--BD);}';
   h += '.ex:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}';
   h += '.ex-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:1px;}';
-  h += '.ex-t{font-family:"Playfair Display",serif;font-size:12.5px;font-weight:700;color:var(--T);line-height:1.2;flex:1;}';
+  h += '.ex-t{font-family:"Playfair Display",serif;font-size:12.5px;font-weight:700;color:var(--T);line-height:1.2;flex:1;text-transform:capitalize;}';
   h += '.ex-d{font-size:9px;font-weight:700;color:#fff;background:var(--A);padding:2px 8px;border-radius:8px;flex-shrink:0;white-space:nowrap;}';
   h += '.ex-co{font-size:10.5px;color:var(--A2);font-weight:600;margin-bottom:4px;}';
   h += '.ex-ctx{font-size:10px;color:#888;background:var(--AB);border-radius:3px;padding:3px 8px;margin-bottom:5px;line-height:1.5;border-left:2px solid var(--A2);font-style:italic;}';
