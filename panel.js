@@ -575,8 +575,7 @@ function tabCV(c){
     +'OTROS DATOS\n\n'
     +'=== INSTRUCCIONES POR SECCION ===\n'
     +'ROL OBJETIVO: subtitulo profesional en mayusculas, enfocado al nicho del candidato.\n'
-    +'RESUMEN EJECUTIVO: 2-3 frases impactantes con palabras clave ATS y logros cuantificados.\n'
-    +'EXPERIENCIA PROFESIONAL: de mas reciente a mas antiguo. Formato:\n'
+    +'RESUMEN EJECUTIVO: MAXIMO 3-4 lineas. Frases cortas con palabras clave ATS y 1-2 logros cuantificados. NO repetir info que ya aparece en experiencia.\n'
     +'  TITULO PUESTO - EMPRESA | Sector | Fechas\n'
     +'  Contexto: una linea describiendo empresa/contexto\n'
     +'  - Bullet: verbo accion + **palabra clave en negrita** + resultado cuantificado (usar numeros con puntos: 1.000)\n'
@@ -608,6 +607,10 @@ function tabCV(c){
     +'- Usa **negrita** para palabras clave importantes dentro de los bullets.\n'
     +'- Formatea los numeros grandes con puntos: 1.000.000\n'
     +'- NO inventes datos. NO dejes secciones vacias si hay informacion disponible.\n'
+    +'- NO repitas la misma informacion en distintas secciones. Cada dato aparece UNA sola vez.\n'
+    +'- El RESUMEN no puede repetir bullets de EXPERIENCIA. Es un titular, no un resumen de cargos.\n'
+    +'- Las COMPETENCIAS no deben repetirse en HERRAMIENTAS ni en RESUMEN.\n'
+    +'- Si un logro ya esta en EXPERIENCIA no lo pongas tambien en RESUMEN.'
     +'- NO pongas notas del autor al final.\n'
     +'- Los titulos de seccion en MAYUSCULAS completas.\n'
     +'- El NOMBRE COMPLETO en mayusculas.\n'
@@ -692,28 +695,34 @@ function textToHtml(text, candidato, emailCand, cvEmail) {
   var _cvEmail = cvEmail || emailCand || '';
 
   // Pre-process secciones
+  // Normalize accented chars for section detection
   var SECS = ['NOMBRE COMPLETO','ROL OBJETIVO','RESUMEN EJECUTIVO','EXPERIENCIA PROFESIONAL',
-    'FORMACIÓN','FORMACION','CERTIFICACIONES','CURSOS','HABILIDADES','COMPETENCIAS',
-    'HERRAMIENTAS','IDIOMAS','OTROS DATOS','DATOS'];
+    'FORMACIÓN','FORMACION','EDUCACIÓN','EDUCACION','DATOS ACADÉMICOS','DATOS ACADEMICOS',
+    'TITULACIÓN','TITULACION','ESTUDIOS','CERTIFICACIONES','CURSOS','COMPETENCIAS',
+    'HABILIDADES','HERRAMIENTAS','IDIOMAS','OTROS DATOS','DATOS ADICIONALES'];
   SECS.forEach(function(s) {
-    text = text.replace(new RegExp('(?<![\\w])' + s + '(?![\\w])', 'gi'), '\n\n' + s.toUpperCase() + '\n');
+    var re = new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+    text = text.replace(re, '\n\n' + s.toUpperCase() + '\n');
   });
+  // Also handle FORMACION without accent
+  text = text.replace(/\bFORMACION\b/gi, '\n\nFORMACI\u00d3N\n');
 
   var lines = text.split('\n').map(function(l){ return l.trim(); });
 
+  function norm(s){return (s||'').toUpperCase().replace(/[ÁÀÄÂ]/g,'A').replace(/[ÉÈËÊ]/g,'E').replace(/[ÍÌÏÎ]/g,'I').replace(/[ÓÒÖÔ]/g,'O').replace(/[ÚÙÜÛ]/g,'U').replace(/Ñ/g,'N');}
   function getSec(kw) {
+    var kwn = norm(kw);
     var idx = -1;
     for (var i = 0; i < lines.length; i++) {
-      var u = lines[i].toUpperCase();
-      if (u.indexOf(kw) === 0 && lines[i].length < 80) { idx = i; break; }
+      var u = norm(lines[i]);
+      if (u.indexOf(kwn) === 0 && lines[i].length < 80) { idx = i; break; }
     }
     if (idx === -1) return [];
     var out = [];
-    var next = ['NOMBRE','ROL OBJETIVO','RESUMEN','EXPERIENCIA','FORMAC','CERTIF','CURSO',
-                'HABILIDAD','COMPETENCIA','HERRAMIENTA','IDIOMA','OTRO','DATO'];
+    var next = ['NOMBRE','ROL OBJ','RESUMEN','EXPERIENCIA','FORMAC','EDUCAC','TITULAC','ESTUDIO','CERTIF','CURSO','HABILIDAD','COMPETENC','HERRAMIENTA','IDIOMA','OTRO','DATO','INFORMAC'];
     for (var j = idx + 1; j < lines.length; j++) {
-      var u2 = lines[j].toUpperCase().replace(/[^A-ZÁÉÍÓÚÑÜ\s]/g, '');
-      if (u2.length > 2 && u2.length < 60 && next.some(function(k){ return u2.indexOf(k) === 0; }) && out.length > 0) break;
+      var u2 = norm(lines[j]).replace(/[^A-Z\s]/g, '');
+      if (u2.length > 2 && u2.length < 60 && next.some(function(k){ return u2.trim().indexOf(k) === 0; }) && out.length > 0) break;
       if (lines[j]) out.push(lines[j]);
     }
     return out;
@@ -758,31 +767,64 @@ function textToHtml(text, candidato, emailCand, cvEmail) {
   // Parse sections
   var summary = getSec('RESUMEN EJECUTIVO').join(' ').trim();
   var expLines = getSec('EXPERIENCIA PROFESIONAL');
-  var formLines = getSec('FORMACIÓN').length ? getSec('FORMACIÓN') : getSec('FORMACION');
+  var formLines = getSec('FORMACIÓN').length ? getSec('FORMACIÓN') :
+    getSec('FORMACION').length ? getSec('FORMACION') :
+    getSec('EDUCACIÓN').length ? getSec('EDUCACIÓN') :
+    getSec('EDUCACION').length ? getSec('EDUCACION') :
+    getSec('DATOS ACADÉMICOS').length ? getSec('DATOS ACADÉMICOS') :
+    getSec('DATOS ACADEMICOS').length ? getSec('DATOS ACADEMICOS') :
+    getSec('TITULACIÓN').length ? getSec('TITULACIÓN') :
+    getSec('TITULACION').length ? getSec('TITULACION') :
+    getSec('ESTUDIOS');
   var certLines = getSec('CERTIFICACIONES').length ? getSec('CERTIFICACIONES') : getSec('CURSOS');
   var skillLines = getSec('COMPETENCIAS').length ? getSec('COMPETENCIAS') : getSec('HABILIDADES');
   var toolLines = getSec('HERRAMIENTAS');
   var langLines = getSec('IDIOMAS');
   var otherLines = getSec('OTROS DATOS').length ? getSec('OTROS DATOS') : getSec('DATOS');
 
-  // Parse skills (max 6, soft skills)
+  // Parse competencias (soft, max 6) and herramientas (technical)
   var skills = [];
   skillLines.forEach(function(l) {
-    var cl = l.replace(/^[-·•·\s]+/, '').trim();
-    if (cl.includes('·') || cl.includes(',')) {
-      (cl.split(/[·,]/)).forEach(function(s){ if (s.trim().length > 2) skills.push(s.trim()); });
+    var cl = l.replace(/^[-·•·▸\s]+/, '').trim();
+    // Skip lines that look like categories (contain colon)
+    if (cl.includes(':')) {
+      // Extract after colon
+      var after = cl.split(':')[1]||'';
+      after.split(/[•·,]/g).forEach(function(s){ if(s.trim().length>2) skills.push(s.trim()); });
+      return;
+    }
+    if (cl.includes('·') || cl.includes('•')) {
+      cl.split(/[·•]/).forEach(function(s){ if(s.trim().length>2) skills.push(s.trim()); });
     } else if (cl.length > 2) skills.push(cl);
   });
-  skills = skills.slice(0, 6);
+  // Keep only soft skills (filter out technical terms)
+  var techWords = /workday|ats|power bi|tableau|excel|greenhouse|linkedin|beamery|bamboo|oracle|boolean|github|analytics|hris|successfactor|smartrecruit|lever|stack/i;
+  var softSkills = skills.filter(function(s){ return !techWords.test(s); }).slice(0,6);
+  if (!softSkills.length) softSkills = skills.slice(0,6);
+  skills = softSkills;
 
   // Parse tools
   var tools = [];
-  toolLines.forEach(function(l) {
-    var cl = l.replace(/^[-·•·\s]+/, '').trim();
-    if (cl.includes('·') || cl.includes(',')) {
-      (cl.split(/[·,]/)).forEach(function(s){ if (s.trim().length > 1) tools.push(s.trim()); });
-    } else if (cl.length > 1) tools.push(cl);
-  });
+  if (toolLines.length) {
+    toolLines.forEach(function(l) {
+      var cl = l.replace(/^[-·•·▸\s]+/, '').trim();
+      if (cl.includes(':')) cl = (cl.split(':')[1]||cl);
+      cl.split(/[•·,]/g).forEach(function(s){ if(s.trim().length>1) tools.push(s.trim()); });
+    });
+  } else {
+    // Extract tools from habilidades lines that look technical
+    skillLines.forEach(function(l) {
+      var cl = l.replace(/^[-·•·▸\s]+/, '').trim();
+      if (cl.includes(':')) {
+        var label = cl.split(':')[0].toLowerCase();
+        if (/ats|analytic|herram|tool|sourcing|hris|sector/i.test(label)) {
+          var after = cl.split(':')[1]||'';
+          after.split(/[•·,]/g).forEach(function(s){ if(s.trim().length>1) tools.push(s.trim()); });
+        }
+      }
+    });
+  }
+  tools = tools.slice(0,10);
 
   // Parse languages (C1, C2, B2 format)
   var langs = [];
@@ -1083,27 +1125,30 @@ function textToHtml(text, candidato, emailCand, cvEmail) {
   h += 'var SB="https://ddxnrsnjdvtqhxunxnwj.supabase.co";';
   h += 'var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";';
   h += 'var _em=' + cvEmailJs + ';';
-  h += 'var _saveT=null;';
-  h += 'function setT(c,b){document.body.className=c+(document.body.classList.contains("editing")?" editing":"");document.querySelectorAll(".cdot").forEach(function(d){d.classList.remove("on");});b.classList.add("on");}';
-  h += 'function loadPh(i){if(!i.files[0])return;var r=new FileReader();r.onload=function(e){document.getElementById("pi").src=e.target.result;document.getElementById("pi").style.display="block";document.getElementById("pn").style.display="none";};r.readAsDataURL(i.files[0]);}';
-  h += 'var _ed=false;';
-  h += 'function toggleEdit(){_ed=!_ed;var b=document.getElementById("eb");var c=document.body.className.replace(" editing","");';
-  h += 'if(_ed){document.body.className=c+" editing";b.textContent="\\u2713 Listo";b.style.background="#4a7c5f";';
-  h += 'document.querySelectorAll("[contenteditable]").forEach(function(e){e.contentEditable="true";e.oninput=schedSave;});}';
-  h += 'else{document.body.className=c;b.textContent="\\u270F Editar";b.style.background="";';
-  h += 'document.querySelectorAll("[contenteditable]").forEach(function(e){e.contentEditable="false";});saveNow();}}';
-  h += 'function addB(id){var u=document.getElementById(id);if(!u)return;var l=document.createElement("li");l.contentEditable="true";';
-  h += 'l.textContent="Escribe aqu\\u00ed...";l.style.color="#aaa";';
-  h += 'l.onfocus=function(){if(this.textContent==="Escribe aqu\\u00ed..."){this.textContent="";this.style.color="";}};';
-  h += 'l.oninput=schedSave;u.appendChild(l);l.focus();}';
-  h += 'function remB(id){var u=document.getElementById(id);if(!u)return;var items=u.querySelectorAll("li");if(items.length<1)return;items[items.length-1].remove();schedSave();}';
+  h += 'var _saveT=null,_ed=false;';
+  h += 'function setT(c,b){document.body.className=c+(_ed?" editing":"");document.querySelectorAll(".cdot").forEach(function(d){d.classList.remove("on");});b.classList.add("on");}'
+  h += 'function loadPh(i){if(!i.files[0])return;var r=new FileReader();r.onload=function(e){var img=document.getElementById("pi");var ini=document.getElementById("pn");img.src=e.target.result;img.style.display="block";if(ini)ini.style.display="none";schedSave();};r.readAsDataURL(i.files[0]);}';
+  h += 'function toggleEdit(){';
+  h += '_ed=!_ed;var b=document.getElementById("eb");var cls=document.body.className.replace(" editing","");';
+  h += 'if(_ed){';
+  h += 'document.body.className=cls+" editing";b.textContent="\u2713 Listo";b.style.background="#4a7c5f";';
+  h += 'document.querySelectorAll("[contenteditable]").forEach(function(e){e.contentEditable="true";e.oninput=schedSave;});';
+  h += 'document.querySelectorAll(".ul li").forEach(function(li){';
+  h += 'if(li.querySelector(".del-btn"))return;';
+  h += 'var x=document.createElement("button");x.className="del-btn";x.title="Eliminar bullet";';
+  h += 'x.innerHTML="&times;";x.onclick=function(ev){ev.stopPropagation();li.remove();schedSave();};';
+  h += 'li.style.position="relative";li.appendChild(x);});';
+  h += '}else{';
+  h += 'document.body.className=cls;b.textContent="\u270F Editar";b.style.background="";';
+  h += 'document.querySelectorAll("[contenteditable]").forEach(function(e){e.contentEditable="false";});';
+  h += 'document.querySelectorAll(".del-btn").forEach(function(x){x.remove();});';
+  h += 'saveNow();}}';
+  h += 'function addB(id){var u=document.getElementById(id);if(!u)return;var li=document.createElement("li");li.contentEditable=_ed?"true":"false";li.textContent="Escribe aqui...";li.style.color="#aaa";li.oninput=schedSave;li.onfocus=function(){if(this.textContent==="Escribe aqui..."){this.textContent="";this.style.color="";}};if(_ed){var x=document.createElement("button");x.className="del-btn";x.innerHTML="&times;";x.onclick=function(ev){ev.stopPropagation();li.remove();schedSave();};li.style.position="relative";li.appendChild(x);}u.appendChild(li);li.focus();schedSave();}';
+  h += 'function remB(id){var u=document.getElementById(id);if(!u)return;var items=u.querySelectorAll("li");if(!items.length)return;items[items.length-1].remove();schedSave();}';
   h += 'function schedSave(){clearTimeout(_saveT);_saveT=setTimeout(saveNow,2000);showSt("Guardando...",false);}';
-  h += 'function saveNow(){if(!_em)return;var html=document.documentElement.outerHTML;';
-  h += 'fetch(SB+"/rest/v1/cv_publicados",{method:"POST",';
-  h += 'headers:{"apikey":KEY,"Authorization":"Bearer "+KEY,"Content-Type":"application/json","Prefer":"resolution=merge-duplicates"},';
-  h += 'body:JSON.stringify({email:_em,contenido:html})';
-  h += '}).then(function(r){showSt(r.ok?"\\u2713 Guardado":"Error",r.ok);}).catch(function(){showSt("Error",false);});}';
-  h += 'function showSt(msg,ok){var s=document.getElementById("save-st");if(s){s.textContent=msg;s.style.color=ok?"#4a7c5f":"#999";}}';
+  h += 'function saveNow(){if(!_em)return;var html=document.documentElement.outerHTML;fetch(SB+"/rest/v1/cv_publicados?email=eq."+encodeURIComponent(_em),{method:"PATCH",headers:{"apikey":KEY,"Authorization":"Bearer "+KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify({contenido:html})}).then(function(r){showSt(r.ok||r.status===204?"\u2713 Guardado":"Error al guardar",r.ok||r.status===204);}).catch(function(){showSt("Error",false);});}';
+  h += 'function showSt(msg,ok){var s=document.getElementById("save-st");if(s){s.textContent=msg;s.style.color=ok?"#4a7c5f":"#999";setTimeout(function(){if(s.textContent===msg)s.textContent="";},3000);}}';
+  h += 'var st=document.createElement("style");st.textContent=".del-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:#c0756e;color:#fff;border:none;cursor:pointer;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;opacity:.7;}.del-btn:hover{opacity:1;}";document.head.appendChild(st);';
   h += '<\/script></body></html>';
 
   return h;
