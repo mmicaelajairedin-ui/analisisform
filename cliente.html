@@ -137,6 +137,7 @@ body{background:var(--bg);}
 .cal-d.today{background:var(--rose);color:#fff;font-weight:800;}
 .cal-d.ses-day{background:var(--rose-light);color:var(--rose);font-weight:800;border:1.5px solid var(--rose);}
 .cal-d.prev{color:#ddd;}
+._calday:hover{filter:brightness(.95);}
 
 .ses-col{padding:18px 16px;display:flex;flex-direction:column;}
 .ses-coach{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);}
@@ -748,7 +749,8 @@ function goSec(sec,el){
   .then(function(rows){
     if(rows&&rows.length){var r=rows[0];SEM=parseInt(r.semana_activa)||1;try{ACTS=r.acciones_progreso?JSON.parse(r.acciones_progreso):[];}catch(e){}C.notas_progreso=r.notas_progreso||'';C.carta_presentacion=r.carta_presentacion||'';}
     updSB();render(sec);
-  }).catch(function(){render(sec);});
+    setTimeout(function(){_initCalGrid();},120);
+  }).catch(function(){render(sec);setTimeout(function(){_initCalGrid();},120);});
 }
 
 function render(sec){
@@ -877,55 +879,142 @@ function verSemana(n){
 
 function rCalSes(ntxtId,nstId,saveFn){
   var now=new Date(),yr=now.getFullYear(),mo=now.getMonth();
-  var meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  var dias=['L','M','X','J','V','S','D'];
-  var firstDay=new Date(yr,mo,1).getDay();firstDay=firstDay===0?6:firstDay-1;
+  var MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var DIAS=['L','M','X','J','V','S','D'];
+  var firstDay=new Date(yr,mo,1).getDay();
+  firstDay=firstDay===0?6:firstDay-1;
   var daysInMonth=new Date(yr,mo+1,0).getDate();
   var prevDays=new Date(yr,mo,0).getDate();
   var today=now.getDate();
-  var o='<div class="cal-ses">';
-  o+='<div class="cal-col"><div class="cal-hdr-row"><div class="cal-title">Calendario</div><div class="cal-mo">'+meses[mo]+' '+yr+'</div></div>';
-  o+='<div class="cal-g">';
-  dias.forEach(function(d){o+='<div class="cal-dh">'+d+'</div>';});
-  for(var i=0;i<firstDay;i++){o+='<div class="cal-d prev">'+(prevDays-firstDay+1+i)+'</div>';}
-  // Día de próxima sesión
-  var sesDay=null;
-  if(C&&C.proxima_sesion){
-    var sesDate=new Date(C.proxima_sesion);
-    if(sesDate.getFullYear()===yr&&sesDate.getMonth()===mo){
-      sesDay=sesDate.getDate();
-    }
-  }
-  for(var d=1;d<=daysInMonth;d++){
-    var cls='cal-d';
-    if(d===today)cls+=' today';
-    else if(d===sesDay)cls+=' ses-day';
-    o+='<div class="'+cls+'">'+d+'</div>';
-  }
-  o+='</div></div>';
-  o+='<div class="ses-col">';
-  o+='<div class="ses-coach"><img class="ses-coach-img" src="'+FC+'" alt="Micaela"><div><div class="ses-coach-name">Micaela Jairedin</div><div class="ses-coach-role">Career Coach &amp; Recruiter</div></div></div>';
-  o+='<div class="ses-lbl">Próxima sesión</div>';
+
+  // Sesión agendada desde Supabase
+  var sesDay=null,sesHora='';
   if(C&&C.proxima_sesion){
     var sd=new Date(C.proxima_sesion);
-    var dias2=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-    var meses2=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-    var hora=sd.getHours().toString().padStart(2,'0')+':'+sd.getMinutes().toString().padStart(2,'0');
-    o+='<div class="ses-title">'+dias2[sd.getDay()]+' '+sd.getDate()+' de '+meses2[sd.getMonth()]+'</div>';
-    o+='<div style="font-size:28px;font-weight:800;color:var(--rose);margin-bottom:4px;line-height:1;">'+hora+'</div>';
-    o+='<div class="ses-sub" style="margin-bottom:12px;">'+hh(C.proxima_sesion_nombre||'Sesión con Micaela')+'</div>';
-    o+='<a href="'+CALENDLY+'" target="_blank" class="ses-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>Unirse a Sesión</a>';
-  } else {
-    o+='<div class="ses-title">Agenda tu cita</div>';
-    o+='<div class="ses-sub">'+pn(C.nombre)+', elige el día y hora. 60 min por videollamada.</div>';
-    o+='<a href="'+CALENDLY+'" target="_blank" class="ses-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>Ver disponibilidad →</a>';
+    if(sd.getFullYear()===yr&&sd.getMonth()===mo){
+      sesDay=sd.getDate();
+      sesHora=sd.getHours().toString().padStart(2,'0')+':'+sd.getMinutes().toString().padStart(2,'0');
+    }
   }
-  o+='<div class="ses-prep"><div class="ses-prep-lbl">Prepara tu sesión</div>';
-  o+='<textarea class="ses-ta" id="'+ntxtId+'" placeholder="Avances, dudas o preguntas..." rows="2">'+hh(C.notas_progreso||'')+'</textarea>';
-  o+='<div style="display:flex;align-items:center;gap:8px;margin-top:8px;"><button class="ses-save" onclick="'+saveFn+'()">Guardar</button><span style="font-size:11px;color:var(--rose);" id="'+nstId+'"></span></div></div>';
+
+  // Sesiones marcadas manualmente (localStorage)
+  var sesKey='mj_ses_'+E;
+  var sesManuales={};
+  try{ sesManuales=JSON.parse(localStorage.getItem(sesKey)||'{}'); }catch(ex){}
+
+  // Inicio del proceso
+  var inicioTs=C&&C.created_at?new Date(C.created_at):null;
+  var semColores=['','var(--rose)','var(--blue)','var(--green)','var(--orange)'];
+  var semLabels=['','S1 Evaluación','S2 CV','S3 LinkedIn','S4 Entrevistas'];
+
+  // ── Construir el HTML del calendario ──
+  var o='<div class="cal-ses" style="background:var(--white);border-radius:var(--r);border:1.5px solid var(--border);box-shadow:var(--shadow);overflow:hidden;">';
+
+  // Header
+  o+='<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">';
+  o+='<div style="font-size:15px;font-weight:800;color:var(--text);font-family:Montserrat,sans-serif;">'+MESES[mo]+' '+yr+'</div>';
+  o+='<div style="display:flex;gap:10px;">';
+  o+='<span style="font-size:10px;font-weight:700;color:var(--rose);display:flex;align-items:center;gap:4px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--rose);display:inline-block;"></span>Hoy</span>';
+  o+='<span style="font-size:10px;font-weight:700;color:var(--rose-dark);display:flex;align-items:center;gap:4px;"><span style="width:9px;height:9px;border-radius:50%;background:var(--rose-light);border:2px solid var(--rose);display:inline-block;"></span>Sesión</span>';
   o+='</div></div>';
+
+  // Días de la semana
+  o+='<div style="padding:10px 14px 0;">';
+  o+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px;">';
+  DIAS.forEach(function(d){
+    var wknd=(d==='S'||d==='D');
+    o+='<div style="text-align:center;font-size:9px;font-weight:800;padding:4px 2px;color:'+(wknd?'var(--rose-mid)':'var(--muted)')+';font-family:Montserrat,sans-serif;text-transform:uppercase;">'+d+'</div>';
+  });
+  o+='</div>';
+
+  // Grid de días — usar data-date para evitar onclick inline con comillas
+  o+='<div id="cal-grid-'+ntxtId+'" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">';
+
+  // Días mes anterior
+  for(var pi=0;pi<firstDay;pi++){
+    var pd=prevDays-firstDay+1+pi;
+    o+='<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:11px;color:#CCC;border-radius:7px;">'+pd+'</div>';
+  }
+
+  // Días del mes actual
+  for(var d=1;d<=daysInMonth;d++){
+    var dayDate=new Date(yr,mo,d);
+    var dk=yr+'-'+(mo+1)+'-'+d;
+    var isToday=(d===today);
+    var isSes=(d===sesDay);
+    var isManual=!!sesManuales[dk];
+
+    // Número de semana del proceso
+    var semLabel='';
+    if(inicioTs&&dayDate>=inicioTs){
+      var wsn=Math.floor((dayDate-inicioTs)/(7*24*3600*1000))+1;
+      if(wsn>=1&&wsn<=4){
+        semLabel='S'+wsn;
+      }
+    }
+
+    var bg,col,fw,brd;
+    if(isToday){bg='var(--rose)';col='#fff';fw='800';brd='none';}
+    else if(isSes||isManual){bg='var(--rose-light)';col='var(--rose-dark)';fw='800';brd='2px solid var(--rose)';}
+    else{bg='transparent';col='var(--text2)';fw='400';brd='none';}
+
+    o+='<div class="_cday" data-dk="'+dk+'" style="'
+      +'aspect-ratio:1;position:relative;display:flex;flex-direction:column;'
+      +'align-items:center;justify-content:center;'
+      +'background:'+bg+';color:'+col+';font-weight:'+fw+';'
+      +'border:'+brd+';border-radius:7px;cursor:pointer;'
+      +'transition:all .15s;font-size:12px;user-select:none;">';
+    o+=String(d);
+    if(semLabel) o+='<span style="font-size:7px;font-weight:700;opacity:.65;line-height:1;margin-top:1px;">'+semLabel+'</span>';
+    if(isSes&&sesHora) o+='<span style="position:absolute;bottom:1px;font-size:7px;font-weight:800;color:var(--rose);line-height:1;">'+sesHora+'</span>';
+    o+='</div>';
+  }
+
+  o+='</div>'; // grid
+
+  // Leyenda semanas del proceso
+  if(inicioTs){
+    o+='<div style="display:flex;gap:5px;flex-wrap:wrap;padding:10px 14px;">';
+    for(var sw=1;sw<=4;sw++){
+      o+='<span style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:10px;background:'+semColores[sw]+'22;color:'+semColores[sw]+';font-family:Montserrat,sans-serif;">'+semLabels[sw]+'</span>';
+    }
+    o+='</div>';
+  }
+  o+='</div>'; // padding
+  o+='</div>'; // cal-ses
+
   return o;
 }
+
+function _initCalGrid(){
+  // Event delegation para todos los días del calendario — sin onclick inline
+  document.querySelectorAll('._cday').forEach(function(el){
+    el.addEventListener('click',function(){
+      var dk=this.dataset.dk;
+      if(!dk) return;
+      var sesKey='mj_ses_'+E;
+      var ses={};
+      try{ ses=JSON.parse(localStorage.getItem(sesKey)||'{}'); }catch(ex){}
+      if(ses[dk]){ delete ses[dk]; }
+      else{ ses[dk]=true; }
+      localStorage.setItem(sesKey,JSON.stringify(ses));
+      render(SEC);
+      setTimeout(_initCalGrid,100);
+    });
+    el.addEventListener('mouseover',function(){
+      if(this.style.background==='transparent'||!this.style.background){
+        this.style.background='var(--rose-light)';
+      }
+    });
+    el.addEventListener('mouseout',function(){
+      if(!this.dataset.dk||!localStorage.getItem('mj_ses_'+E)||!JSON.parse(localStorage.getItem('mj_ses_'+E)||'{}')[this.dataset.dk]){
+        var isToday=(parseInt(this.textContent)===new Date().getDate()&&this.style.color==='rgb(255, 255, 255)');
+        if(!isToday) this.style.background='transparent';
+      }
+    });
+  });
+}
+
 
 function rSemana(){
   if(SEM>4)return '<div class="card"><div class="card-body" style="text-align:center;padding:3rem;"><div style="font-size:40px;margin-bottom:12px;">🎉</div><div style="font-size:22px;font-weight:800;">¡Proceso completado!</div></div></div>';
@@ -996,38 +1085,37 @@ function rDocs(){
   var hasCv=!!CV,hasCarta=!!(C.carta_presentacion);
   var o='<div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.14em;margin-bottom:14px;">Panel de documentos</div>';
   o+='<div class="doc-pair">';
-  // CV
-  o+='<div class="doc-box"><div class="doc-box-top"><div class="doc-ico">'+docSvg('#7A9E7E',hasCv)+'</div>';
+
+  // ── CV ──
+  o+='<div class="doc-box">';
+  o+='<div class="doc-box-top">';
+  o+='<div class="doc-ico">'+docSvg('#7A9E7E',hasCv)+'</div>';
   o+='<div class="doc-box-title">'+(hasCv?'CV Optimizado':'Mi CV')+'</div>';
   o+='<span class="doc-box-status '+(hasCv?'ok':'wait')+'">'+(hasCv?'✓ Finalizado':'⏳ En preparación')+'</span>';
-  if(hasCv){o+='<div class="doc-box-by"><img src="'+FC+'" alt="">Por Micaela</div>';}
-  o+='</div><div class="doc-box-btns">';
-  if(hasCv){o+='<button class="dbtn fill" onclick="verCV()">Ver y descargar</button><button class="dbtn out" onclick="verCV()">Ver feedback</button>';}
-  else{o+='<button class="dbtn dis">En camino...</button>';}
+  if(hasCv) o+='<div class="doc-box-by"><img src="'+FC+'" alt="">Por Micaela</div>';
+  o+='</div>';
+  o+='<div class="doc-box-btns">';
+  if(hasCv) o+='<button class="dbtn fill" onclick="verCV()">&#128196; Abrir CV</button>';
+  else o+='<button class="dbtn dis">En camino...</button>';
   o+='</div></div>';
-  // Carta
-  o+='<div class="doc-box"><div class="doc-box-top"><div class="doc-ico">'+docSvg('#8C7B80',hasCarta)+'</div>';
+
+  // ── CARTA ──
+  o+='<div class="doc-box">';
+  o+='<div class="doc-box-top">';
+  o+='<div class="doc-ico">'+docSvg('#8C7B80',hasCarta)+'</div>';
   o+='<div class="doc-box-title">'+(hasCarta?'Carta de presentación':'Mi Carta')+'</div>';
   o+='<span class="doc-box-status '+(hasCarta?'rose':'wait')+'">'+(hasCarta?'✓ Lista':'⏳ En preparación')+'</span>';
-  if(hasCarta){o+='<div style="font-size:10px;color:var(--muted);margin-top:6px;">Editable · personalizable</div>';}
-  o+='</div><div class="doc-box-btns">';
-  if(hasCarta){o+='<button class="dbtn fill" onclick="srtCarta()">Ver y editar</button><button class="dbtn out" onclick="copCarta()">Copiar texto</button>';}
-  else{o+='<button class="dbtn dis">En camino...</button>';}
+  if(hasCarta) o+='<div class="doc-box-by"><img src="'+FC+'" alt="">Por Micaela</div>';
+  o+='</div>';
+  o+='<div class="doc-box-btns">';
+  if(hasCarta) o+='<button class="dbtn fill" onclick="abrirCarta()">&#128196; Abrir carta</button>';
+  else o+='<button class="dbtn dis">En camino...</button>';
   o+='</div></div>';
+
   o+='</div>';
   o+='<div class="upz" onclick="document.getElementById(\'cvf\').click()"><p>+ Subir mi CV actualizado · PDF o Word · Micaela lo revisará</p></div>';
   o+='<input type="file" id="cvf" accept=".pdf,.doc,.docx" style="display:none" onchange="sCV(this)">';
   o+='<div id="upst" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>';
-  if(hasCarta){
-    o+='<div class="card" id="carta-s" style="margin-top:16px;"><div class="card-hd"><div><div class="card-lbl">Carta de presentación</div><div class="card-title">Edita y personaliza</div></div><button class="btn-s" onclick="abrirCarta()" style="margin-left:auto;white-space:nowrap;">&#8599; Ver en página completa</button></div><div class="card-body">';
-    o+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Cambia <b>[EMPRESA]</b> y <b>[PUESTO]</b> por los datos reales</div>';
-    o+='<textarea class="carea" id="ctxt">'+hh(C.carta_presentacion)+'</textarea>';
-    o+='<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">';
-    o+='<button class="btn-p" onclick="gCarta()">Guardar</button>';
-    o+='<button class="btn-s" onclick="copCarta()">Copiar</button>';
-    o+='<button class="btn-s" onclick="abrirCarta()">&#128196; Abrir carta completa</button>';
-    o+='<span class="sst" id="cst"></span></div></div></div>';
-  }
   return o;
 }
 
@@ -1227,29 +1315,32 @@ var _notifsOpen=false;
 var _notifs=[];
 
 function buildNotifs(){
-  // Generar notificaciones basadas en el estado del cliente
   _notifs=[];
   if(C&&D){
-    // Mensaje de Micaela
     if(D.mensaje_candidato){
-      _notifs.push({icon:'&#128172;',title:'Mensaje de Micaela',desc:D.mensaje_candidato.slice(0,60)+'...',color:'#8E7676',time:'Hoy'});
+      _notifs.push({icon:'&#128172;',title:'Mensaje de Micaela',desc:D.mensaje_candidato.slice(0,60)+'...',color:'#8E7676',time:'Ver',sec:'semana'});
     }
-    // Próxima sesión
     if(C.proxima_sesion){
       var sd=new Date(C.proxima_sesion);
       var dias=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-      _notifs.push({icon:'&#128197;',title:'Sesión agendada',desc:dias[sd.getDay()]+' '+sd.getDate()+' a las '+sd.getHours()+':'+String(sd.getMinutes()).padStart(2,'0'),color:'#5B7FA6',time:'Próximamente'});
+      _notifs.push({icon:'&#128197;',title:'Sesión agendada',desc:dias[sd.getDay()]+' '+sd.getDate()+' · '+sd.getHours()+':'+String(sd.getMinutes()).padStart(2,'0'),color:'#5B7FA6',time:'Ver',sec:'sesion'});
+    } else {
+      _notifs.push({icon:'&#128197;',title:'Agenda tu próxima sesión',desc:'Elegí día y hora con Micaela',color:'#5B7FA6',time:'Agendar',sec:'calendly'});
     }
-    // Acciones pendientes de esta semana
     var sem=SEMS[Math.min(SEM,4)-1]||SEMS[0];
     var accs=D[sem.acc]||[];
     var pendientes=accs.filter(function(a,i){return !ACTS[i];}).length;
     if(pendientes>0){
-      _notifs.push({icon:'&#9757;',title:pendientes+' acción'+(pendientes>1?'es':'')+' pendiente'+(pendientes>1?'s':''),desc:'Esta semana: '+sem.lbl,color:'#C4907A',time:'Esta semana'});
+      _notifs.push({icon:'&#9757;&#65039;',title:pendientes+' acción'+(pendientes>1?'es':'')+' pendiente'+(pendientes>1?'s':''),desc:'Semana '+SEM+': '+hh(sem.lbl),color:'#C4907A',time:'Ver',sec:'semana'});
     }
-    // CV listo
     if(CV&&CV.contenido){
-      _notifs.push({icon:'&#128196;',title:'Tu CV está listo',desc:'Puedes verlo y descargarlo',color:'#5A8C6E',time:'Disponible'});
+      _notifs.push({icon:'&#128196;',title:'Tu CV está listo',desc:'Podés verlo y descargarlo',color:'#5A8C6E',time:'Abrir',sec:'docs'});
+    }
+    if(C.carta_presentacion&&C.carta_presentacion.length>50){
+      _notifs.push({icon:'&#128140;',title:'Tu carta está lista',desc:'Editá y personalizá para cada empresa',color:'#8C7B80',time:'Abrir',sec:'docs'});
+    }
+    if(D.estrategia){
+      _notifs.push({icon:'&#128269;',title:'Empleos sugeridos para vos',desc:'IA encontró oportunidades según tu perfil',color:'#5B7FA6',time:'Ver',sec:'empleos'});
     }
   }
   // Actualizar badge
@@ -1292,16 +1383,40 @@ function toggleNotifs(){
       if(!_notifs.length){
         listEl.innerHTML='<div style="text-align:center;padding:2rem;font-size:12px;color:var(--muted);">Todo al día &#127881;</div>';
       } else {
-        listEl.innerHTML=_notifs.map(function(n){
-          return '<div style="display:flex;gap:10px;padding:12px;border-radius:10px;margin-bottom:6px;background:#FAFAFA;border:1px solid var(--border);cursor:pointer;" onclick="toggleNotifs()">'
-            +'<div style="width:36px;height:36px;border-radius:10px;background:'+n.color+'18;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">'+n.icon+'</div>'
-            +'<div style="flex:1;min-width:0;">'
-              +'<div style="font-size:12px;font-weight:700;color:var(--text);font-family:Montserrat,sans-serif;margin-bottom:2px;">'+n.title+'</div>'
-              +'<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+n.desc+'</div>'
-            +'</div>'
-            +'<div style="font-size:9px;color:var(--muted);white-space:nowrap;font-weight:600;padding-top:2px;">'+n.time+'</div>'
-          +'</div>';
-        }).join('');
+        listEl.innerHTML='';
+        _notifs.forEach(function(n,ni){
+          var d2=document.createElement('div');
+          d2.dataset.ni=String(ni);
+          d2.style.cssText='display:flex;gap:10px;padding:12px;border-radius:10px;margin-bottom:6px;background:#FAFAFA;border:1px solid var(--border);cursor:pointer;transition:background .15s;';
+          d2.onmouseover=function(){this.style.background='#F0EDED';};
+          d2.onmouseout=function(){this.style.background='#FAFAFA';};
+          d2.innerHTML='<div style="width:36px;height:36px;border-radius:10px;background:'+n.color+'18;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">'+n.icon+'</div>'
+            +'<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;color:#4A3F3F;font-family:Montserrat,sans-serif;margin-bottom:2px;">'+n.title+'</div>'
+            +'<div style="font-size:11px;color:#9E9696;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+n.desc+'</div></div>'
+            +'<div style="font-size:9px;color:#8E7676;white-space:nowrap;font-weight:700;padding-top:2px;">'+n.time+' ›</div>';
+          listEl.appendChild(d2);
+        });
+        // Click en notificación → navegar a su sección
+        listEl.addEventListener('click',function(ev){
+          var item=ev.target.closest('[data-ni]');
+          if(!item) return;
+          var n=_notifs[parseInt(item.dataset.ni)];
+          if(!n) return;
+          toggleNotifs(); // cerrar dropdown
+          if(n.sec==='calendly'){
+            window.open(CALENDLY,'_blank');
+          } else if(n.sec){
+            var navBtn=document.querySelector('.ni.on');
+            goSec(n.sec, navBtn);
+            // Encontrar el botón correcto del nav
+            document.querySelectorAll('.ni').forEach(function(b){
+              if(b.getAttribute('onclick')&&b.getAttribute('onclick').indexOf("'"+n.sec+"'")>=0){
+                navBtn=b;
+              }
+            });
+            if(navBtn) goSec(n.sec, navBtn);
+          }
+        });
       }
     }
   } else {
