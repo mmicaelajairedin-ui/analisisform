@@ -1358,44 +1358,26 @@ function rEmpleos(){
     +'</div>'
   +'</div>';
 
-  // Llamar a Claude API para generar sugerencias de empleos
-  var prompt='Eres un asistente de búsqueda de empleo. Basándote en el perfil de este candidato, sugiere 6 tipos de empleos muy concretos y relevantes.\n\n'
-    +'PERFIL:\n'
-    +'- Sector: '+sector+'\n'
-    +'- Ubicación: '+ubicacion+'\n'
-    +'- Modalidad: '+modalidad+'\n'
-    +'- Nicho/Target: '+nicho+'\n'
-    +'- Fortalezas clave: '+fortalezas+'\n'
-    +(estrategia?'- Estrategia: '+estrategia.slice(0,200)+'\n':'')
-    +'\nResponde SOLO con un JSON array de 6 objetos con exactamente estos campos:\n'
-    +'[{"titulo":"Director de Operaciones","empresa_tipo":"Empresa mediana tecnológica","descripcion":"Gestión de equipos y procesos operativos","requisitos":"5+ años liderazgo, gestión de KPIs","salario_rango":"45.000-65.000€","relevancia":95,"query_indeed":"director operaciones '+ubicacion+'" }]\n'
-    +'Sé específico con el contexto de '+ubicacion+'. No uses markdown ni texto extra, solo el JSON.';
-
-  fetch('https://api.anthropic.com/v1/messages',{
+  // Llamar a la Edge Function de Supabase (evita CORS)
+  fetch('https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/sugerir-empleos',{
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
     body:JSON.stringify({
-      model:'claude-sonnet-4-20250514',
-      max_tokens:1500,
-      messages:[{role:'user',content:prompt}]
+      sector:sector,
+      ubicacion:ubicacion,
+      modalidad:modalidad,
+      nicho:nicho,
+      fortalezas:fortalezas,
+      estrategia:estrategia,
+      objetivo:C.objetivo||''
     })
   })
-  .then(function(r){return r.json();})
+  .then(function(r){
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  })
   .then(function(data){
-    var txt='';
-    if(data.content&&data.content[0]&&data.content[0].text){
-      txt=data.content[0].text.trim();
-    }
-    // Parsear JSON
-    var jobs=[];
-    try{
-      // Limpiar posibles backticks
-      txt=txt.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-      jobs=JSON.parse(txt);
-    }catch(e){
-      console.warn('Error parsing jobs:', e, txt);
-    }
-
+    var jobs=data.jobs||[];
     if(!jobs.length){
       document.getElementById('empleos-cards').innerHTML='<div style="text-align:center;padding:2rem;color:var(--muted);">No se pudieron cargar sugerencias. Inténtalo de nuevo.</div>';
       return;
