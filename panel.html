@@ -767,20 +767,64 @@ function openCand(id){activeId=id;atab='datos';localStorage.setItem('seen_'+id,'
 function renderMain(c){
   var email=(c.email||'').toLowerCase().trim();
   var hasRep=!!(reps[email]&&reps[email].length);
+  var hasCvPub=!!cvs[email];
   var i=cands.findIndex(function(x){return x.id===c.id;});
   var cl=col(i);
+  var sem=parseInt(c.semana_activa||1);
+  var semNames=['','CV y Marca','LinkedIn','Red','Entrevistas'];
+  var semColors=['','var(--accent)','var(--blue)','var(--green)','var(--orange)'];
+  var semColor=semColors[sem]||'var(--accent)';
+  var pct=Math.round((sem-1)/4*100);
+
+  // Avatar
+  var avHtml=c.foto_perfil?
+    '<div class="av-big" style="overflow:hidden;border:3px solid var(--border);">'
+      +'<img src="'+c.foto_perfil+'" style="width:100%;height:100%;object-fit:cover;display:block;"></div>':
+    '<div class="av-big" style="background:'+cl[0]+';color:'+cl[1]+';border:3px solid var(--border);">'+ini(c.nombre)+'</div>';
+
+  // Badges
+  var badges='';
+  if(hasRep) badges+='<span class="chead-badge badge-green">&#10003; Informe</span>';
+  if(hasCvPub) badges+='<span class="chead-badge badge-blue">&#10003; CV</span>';
+  if(sem>1) badges+='<span class="chead-badge badge-rose">S'+sem+' '+(semNames[sem]||'')+'</span>';
+  if(!hasRep&&!hasCvPub) badges+='<span class="chead-badge badge-gray">Sin publicar</span>';
+
+  // Proceso en flecha
+  var pasoLabels=['Evaluación','CV','LinkedIn','Red','Final'];
+  var pasoHtml='';
+  for(var p=0;p<5;p++){
+    var ps=p<sem-1?'done':p===sem-1?'active':'pending';
+    pasoHtml+='<div class="paso '+ps+'"><div class="paso-inner">'
+      +'<div class="paso-dot">'+(p<sem-1?'&#10003;':String(p+1))+'</div>'
+      +'<div class="paso-lbl">'+pasoLabels[p]+'</div>'
+      +'</div></div>';
+  }
+
   var tabs=['datos','generar','cv'];
-  if(hasRep)tabs.splice(2,0,'informe','sesion');
-  tabs.push('carta');tabs.push('notas');
-  var labels={datos:'Datos',generar:'Generar informe',sesion:'Para mi sesión',informe:'Informe',cv:'Generar CV',carta:'Carta',notas:'Notas'};
-  var tabsHTML=tabs.map(function(t){return '<div class="tab'+(atab===t?' on':'')+'" onclick="switchTab(\''+t+'\','+c.id+')">'+labels[t]+'</div>';}).join('');
+  if(hasRep) tabs.splice(2,0,'informe','sesion');
+  tabs.push('carta'); tabs.push('notas');
+  var labels={datos:'Datos',generar:'Generar IA',sesion:'Sesión',informe:'Informe',cv:'CV IA',carta:'Carta',notas:'Notas'};
+  var tabsHTML=tabs.map(function(t){
+    return '<div class="tab'+(atab===t?' on':'')+'" onclick="switchTab(\''+t+'\','+c.id+')">'+labels[t]+'</div>';
+  }).join('');
+
   document.getElementById('main').innerHTML=
-    '<div class="chead">'
-      +'<div class="av-big" style="background:'+cl[0]+';color:'+cl[1]+'">'+ini(c.nombre)+'</div>'
-      +'<div><div class="chead-name">'+escH(c.nombre||'--')+'</div><div class="chead-sub">'+escH(c.email||'--')+' &middot; '+escH(c.ciudad||'--')+'</div></div>'
+    '<div class="chead" style="gap:16px;">'
+      +avHtml
+      +'<div style="flex:1;min-width:0;">'
+        +'<div class="chead-name">'+escH(c.nombre||'--')+'</div>'
+        +'<div class="chead-sub">'+escH(c.email||'--')+(c.ciudad?' &middot; '+escH(c.ciudad):'')+'</div>'
+        +'<div class="cand-badges" style="margin-top:6px;">'+badges+'</div>'
+      +'</div>'
+      +'<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0;">'
+        +'<div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-family:Montserrat,sans-serif;">Progreso</div>'
+        +'<div style="font-size:32px;font-weight:800;color:'+semColor+';line-height:1;font-family:Montserrat,sans-serif;">'+pct+'%</div>'
+        +'<div style="font-size:11px;font-weight:700;color:'+semColor+';font-family:Montserrat,sans-serif;">'+(semNames[sem]||'Inicio')+'</div>'
+      +'</div>'
     +'</div>'
+    +'<div class="proceso-wrap">'+pasoHtml+'</div>'
     +'<div class="tabs">'+tabsHTML+'</div>'
-    +'<div id="tc">'+renderTab(c,atab)+'</div>';
+    +'<div class="tab-body" id="tc">'+renderTab(c,atab)+'</div>';
 }
 
 function switchTab(tab,id){
@@ -1562,79 +1606,78 @@ function showSection(sec) {
 }
 
 // ── RESUMEN ──────────────────────────────────────────────────
-function _renderInicio() {
-  var dp = document.getElementById('dynamic-panel');
-  dp.innerHTML =
-    '<div class="dp-title">Resumen de tu práctica</div>'+
-    '<div class="dp-desc">Vista general de clientes y en qué etapa del proceso están.</div>'+
-    '<div class="stat-grid" id="ini-stats">'+
-      '<div class="stat-card"><div class="stat-v" style="color:var(--accent)" id="is-tot">—</div><div class="stat-l">Clientes</div></div>'+
-      '<div class="stat-card"><div class="stat-v" style="color:var(--green)" id="is-inf">—</div><div class="stat-l">Informes</div></div>'+
-      '<div class="stat-card"><div class="stat-v" style="color:var(--blue)" id="is-cv">—</div><div class="stat-l">CVs publicados</div></div>'+
-      '<div class="stat-card"><div class="stat-v" style="color:var(--orange)" id="is-new">—</div><div class="stat-l">Esta semana</div></div>'+
-    '</div>'+
-    '<div class="dp-card"><div class="dp-card-hd"><span class="dp-card-title">Todos los clientes</span><span class="dp-lbl">Proceso activo</span></div>'+
-    '<div id="ini-list"><div class="dp-loading"><div class="dots"><span></span><span></span><span></span></div> Cargando...</div></div></div>';
-
-  var semNombres=['','Evaluación','CV Optimizado','LinkedIn','Entrevistas'];
+function _renderInicio(){
+  var dp=document.getElementById('dynamic-panel');
+  var semNames=['','Evaluación','CV','LinkedIn','Entrevistas'];
   var semColors=['','var(--accent)','var(--blue)','var(--green)','var(--orange)'];
 
-  Promise.all([
-    sbGet('candidatos','select=id,email,nombre,sector,semana_activa,created_at,foto_perfil&limit=100'),
-    sbGet('informes','select=email&limit=200'),
-    sbGet('cv_publicados','select=email&limit=200')
-  ]).then(function(res) {
-    var cc=toArr(res[0]),ii=toArr(res[1]),vv=toArr(res[2]);
+  // Usar datos ya en memoria
+  function build(){
     var seen={},uniq=[];
-    cc.forEach(function(c){var k=(c.email||'').toLowerCase();if(!seen[k]){seen[k]=true;uniq.push(c);}});
-    var iS={};ii.forEach(function(r){iS[(r.email||'').toLowerCase()]=true;});
-    var cS={};vv.forEach(function(r){cS[(r.email||'').toLowerCase()]=true;});
+    cands.forEach(function(c){var k=(c.email||'').toLowerCase();if(!seen[k]){seen[k]=true;uniq.push(c);}});
+    var iS={};Object.keys(reps).forEach(function(k){if(reps[k]&&reps[k].length)iS[k]=true;});
+    var cS={};Object.keys(cvs).forEach(function(k){if(cvs[k])cS[k]=true;});
     var ms=7*24*3600*1000;
     var nw=uniq.filter(function(c){return c.created_at&&(Date.now()-new Date(c.created_at).getTime())<ms;}).length;
-    ['is-tot','is-inf','is-cv','is-new'].forEach(function(id,i){
-      var el=document.getElementById(id);
-      if(el) el.textContent=[uniq.length,Object.keys(iS).length,Object.keys(cS).length,nw][i];
-    });
-    var listEl=document.getElementById('ini-list');
-    if(!listEl) return;
-    if(!uniq.length){listEl.innerHTML='<div class="dp-empty">No hay clientes aún.</div>';return;}
-    listEl.innerHTML=uniq.map(function(c,i){
-      var em=(c.email||'').toLowerCase();
-      var cl=col(i);
-      var sem=parseInt(c.semana_activa||1);
-      var pct=Math.round((sem-1)/4*100);
-      var semColor=semColors[sem]||'var(--accent)';
-      var semNom=semNombres[sem]||'S'+sem;
-      var avHtml=c.foto_perfil?
-        '<img src="'+c.foto_perfil+'" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--border);flex-shrink:0;">':
-        '<div class="av" style="background:'+cl[0]+';color:'+cl[1]+';width:40px;height:40px;font-size:13px;flex-shrink:0;">'+ini(c.nombre||'')+'</div>';
-      return '<div class="res-row" data-cid="'+c.id+'" style="cursor:pointer;">'+
-        avHtml+
-        '<div style="flex:1;min-width:0;margin:0 10px;">'+
-          '<div style="font-size:13px;font-weight:800;color:var(--t1);">'+(c.nombre||'—')+'</div>'+
-          '<div style="font-size:11px;color:var(--muted);">'+escH(c.sector||c.email||'—')+'</div>'+
-          '<div style="margin-top:5px;display:flex;align-items:center;gap:6px;">'+
-            '<div style="height:5px;flex:1;background:var(--border);border-radius:3px;overflow:hidden;">'+
-              '<div style="height:5px;width:'+pct+'%;background:'+semColor+';border-radius:3px;transition:width .4s;"></div>'+
+
+    dp.innerHTML=
+      '<div class="dp-title">Resumen de tu práctica</div>'+
+      '<div class="dp-desc">Vista general de clientes y en qué etapa están.</div>'+
+      '<div class="stat-grid">'+
+        '<div class="stat-card"><div class="stat-v" style="color:var(--accent)">'+uniq.length+'</div><div class="stat-l">Clientes</div></div>'+
+        '<div class="stat-card"><div class="stat-v" style="color:var(--green)">'+Object.keys(iS).length+'</div><div class="stat-l">Informes</div></div>'+
+        '<div class="stat-card"><div class="stat-v" style="color:var(--blue)">'+Object.keys(cS).length+'</div><div class="stat-l">CVs</div></div>'+
+        '<div class="stat-card"><div class="stat-v" style="color:var(--orange)">'+nw+'</div><div class="stat-l">Esta semana</div></div>'+
+      '</div>'+
+      '<div class="dp-card"><div class="dp-card-hd"><span class="dp-card-title">Todos los clientes</span><span class="dp-lbl">'+uniq.length+' activos</span></div>'+
+      '<div id="ini-list">'+
+      (uniq.length?uniq.map(function(c,i){
+        var em=(c.email||'').toLowerCase();
+        var cl=col(i);
+        var sem=parseInt(c.semana_activa||1);
+        var pct=Math.round((sem-1)/4*100);
+        var semColor=semColors[sem]||'var(--accent)';
+        var avHtml=c.foto_perfil?
+          '<img src="'+c.foto_perfil+'" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--border);flex-shrink:0;">':
+          '<div class="av" style="background:'+cl[0]+';color:'+cl[1]+';width:40px;height:40px;font-size:13px;flex-shrink:0;">'+ini(c.nombre||'')+'</div>';
+        return '<div class="res-row" data-cid="'+c.id+'">'+
+          avHtml+
+          '<div style="flex:1;min-width:0;margin:0 10px;">'+
+            '<div style="font-size:13px;font-weight:800;color:var(--t1);">'+(c.nombre||'—')+'</div>'+
+            '<div style="font-size:11px;color:var(--muted);">'+(c.sector||c.email||'—')+'</div>'+
+            '<div style="margin-top:5px;display:flex;align-items:center;gap:6px;">'+
+              '<div style="height:5px;flex:1;background:var(--border);border-radius:3px;overflow:hidden;">'+
+                '<div style="height:5px;width:'+pct+'%;background:'+semColor+';border-radius:3px;"></div>'+
+              '</div>'+
+              '<span style="font-size:9px;font-weight:800;color:'+semColor+';white-space:nowrap;">S'+sem+' '+(semNames[sem]||'')+'</span>'+
             '</div>'+
-            '<span style="font-size:9px;font-weight:800;color:'+semColor+';white-space:nowrap;">S'+sem+' '+semNom+'</span>'+
           '</div>'+
-        '</div>'+
-        '<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end;flex-shrink:0;">'+
-          (iS[em]?'<span class="pill pill-rep">Informe</span>':'')+
-          (cS[em]?'<span class="pill pill-pub">CV</span>':'')+
-        '</div>'+
-      '</div>';
-    }).join('');
-    listEl.addEventListener('click',function(ev){
+          '<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end;flex-shrink:0;">'+
+            (iS[em]?'<span class="pill pill-rep">Informe</span>':'')+
+            (cS[em]?'<span class="pill pill-pub">CV</span>':'')+
+          '</div>'+
+        '</div>';
+      }).join(''):'<div class="dp-empty">No hay clientes aún.</div>')+
+      '</div></div>';
+
+    // Click en cliente → ir a su ficha
+    var listEl=document.getElementById('ini-list');
+    if(listEl) listEl.addEventListener('click',function(ev){
       var row=ev.target.closest('[data-cid]');
       if(!row) return;
-      var id=parseInt(row.dataset.cid);
       showSection('clientes');
-      setTimeout(function(){ openCand(id); },80);
+      setTimeout(function(){openCand(parseInt(row.dataset.cid));},80);
     });
-  });
+  }
+
+  if(cands&&cands.length){ build(); }
+  else{
+    dp.innerHTML='<div class="dp-title">Resumen</div><div style="padding:2rem;text-align:center;color:var(--muted);">Cargando...</div>';
+    var _t=setInterval(function(){if(cands&&cands.length){clearInterval(_t);build();}},300);
+    setTimeout(function(){clearInterval(_t);},8000);
+  }
 }
+
 function _renderLinks() {
   var dp = document.getElementById('dynamic-panel');
   dp.innerHTML =
