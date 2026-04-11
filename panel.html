@@ -593,7 +593,9 @@ function tabCarta(c){
   html+='<textarea id="carta-'+c.id+'" rows="14" placeholder="La carta aparecerá aquí...">'+escH(saved)+'</textarea>';
   html+='<div style="display:flex;gap:8px;margin-top:8px;">';
   html+='<button class="btn btn-green" onclick="guardarCarta('+c.id+')">Guardar</button>';
-  html+='<button class="btn" onclick="copiarTexto(\'carta-'+c.id+'\')">Copiar carta</button></div>';
+  html+='<button class="btn" onclick="copiarTexto(\'carta-'+c.id+'\')">Copiar</button>';
+  html+='<button class="btn" onclick="verCartaHTML('+c.id+')">Ver como carta</button>';
+  html+='<button class="btn btn-green" onclick="enviarCartaCliente('+c.id+')">Enviar al cliente</button></div>';
   html+='<div class="status" id="st-cartasave-'+c.id+'"></div></div>';
   return html;
 }
@@ -985,7 +987,7 @@ function publicarCV(id){
   sbUpsert('cv_publicados',{email:c.email,candidato_id:id,contenido:cvHtml,codigo:''}).then(function(){
     var email=(c.email||'').toLowerCase().trim();
     cvs[email]={email:c.email,codigo:'',contenido:cvHtml};
-    var cvUrl=BASE+'/cliente.html?email='+encodeURIComponent(c.email);
+    var cvUrl=BASE+'/cv.html?email='+encodeURIComponent(c.email);
     window._lastCvUrl=cvUrl;
     if(st){st.innerHTML='<div class="code-box"><div style="font-size:11px;font-weight:700;color:#2e7d32;margin-bottom:5px;">✓ CV publicado</div><div style="font-size:11px;color:#666;margin-bottom:7px;">'+escH(cvUrl)+'</div><button class="btn" style="font-size:11px;padding:6px 12px;" onclick="navigator.clipboard.writeText(window._lastCvUrl).then(function(){showToast(\'Copiado\');})">Copiar URL</button></div>';}
     renderSidebar();
@@ -999,6 +1001,50 @@ function verURL(id){
   document.getElementById('modal-url-content').innerHTML=html;
   document.getElementById('btn-copy-inf').onclick=function(){navigator.clipboard.writeText(infUrl);this.textContent='Copiado';};
   abrirModal('modal-url');
+}
+
+function verCartaHTML(id){
+  var c=cands.find(function(x){return x.id===id;});
+  var texto=document.getElementById('carta-'+id)?document.getElementById('carta-'+id).value:'';
+  if(!texto){showToast('No hay carta para mostrar');return;}
+  var nombre=c.nombre||'Candidato';
+  var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Carta de presentación</title>';
+  html+='<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=Montserrat:wght@400;600&display=swap" rel="stylesheet">';
+  html+='<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"Lora",serif;background:#FAF9F7;color:#2D292A;padding:3rem 1rem;}';
+  html+='.carta{max-width:680px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 4px 30px rgba(0,0,0,.08);padding:4rem 4.5rem;}';
+  html+='.carta-header{border-bottom:2px solid #8C7B80;padding-bottom:1.5rem;margin-bottom:2rem;}';
+  html+='.carta-logo{font-family:"Montserrat",sans-serif;font-size:11px;font-weight:700;color:#8C7B80;letter-spacing:.2em;text-transform:uppercase;margin-bottom:4px;}';
+  html+='.carta-nombre{font-size:24px;font-weight:600;color:#2D292A;}';
+  html+='.carta-body{font-size:15px;line-height:1.9;white-space:pre-wrap;color:#3D3537;}';
+  html+='.btn-dl{display:block;margin:2rem auto 0;padding:12px 32px;background:#8C7B80;color:#fff;border:none;border-radius:8px;font-family:"Montserrat",sans-serif;font-weight:700;font-size:13px;cursor:pointer;}';
+  html+='@media print{.btn-dl{display:none;}.carta{box-shadow:none;}}';
+  html+='</style></head><body>';
+  html+='<div class="carta"><div class="carta-header"><div class="carta-logo">Carta de presentación</div><div class="carta-nombre">'+nombre+'</div></div>';
+  html+='<div class="carta-body">'+texto.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</div>';
+  html+='<button class="btn-dl" onclick="window.print()">⬇ Descargar / Imprimir</button>';
+  html+='</div></body></html>';
+  var w=window.open('','_blank');
+  if(w){w.document.write(html);w.document.close();}
+}
+
+function enviarCartaCliente(id){
+  var c=cands.find(function(x){return x.id===id;});
+  var texto=document.getElementById('carta-'+id)?document.getElementById('carta-'+id).value:'';
+  if(!texto){showToast('No hay carta para enviar');return;}
+  var st=document.getElementById('st-cartasave-'+id);
+  if(st){st.textContent='Enviando al cliente...';st.style.color='#666';}
+  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({carta_presentacion:texto})
+  }).then(function(r){
+    if(r.ok){
+      if(st){st.textContent='✓ Carta enviada al cliente';st.style.color='#4a7c5f';}
+      var cand=cands.find(function(x){return x.id===id;});
+      if(cand)cand.carta_presentacion=texto;
+      setTimeout(function(){if(st)st.textContent='';},3000);
+    }else{throw new Error('Error '+r.status);}
+  }).catch(function(e){if(st){st.textContent='Error: '+e.message;st.style.color='#c0756e';}});
 }
 
 function cerrarSesion(){localStorage.removeItem('mj_user');window.location.href='https://mmicaelajairedin-ui.github.io/analisisform/login.html';}
