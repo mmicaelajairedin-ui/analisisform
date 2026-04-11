@@ -167,18 +167,18 @@ var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 var BASE='https://mmicaelajairedin-ui.github.io/analisisform';
 
 var PALETA=[
-  {name:'Malva Suave',   hex:'#8C7B80'},
-  {name:'Tierra Calida', hex:'#A0876E'},
-  {name:'Gris Azul',    hex:'#6B7FA3'},
-  {name:'Salvia',       hex:'#6A8F7A'},
-  {name:'Carbon',       hex:'#4A4A4A'},
-  {name:'Durazno',      hex:'#C4907A'},
-  {name:'Pizarra',      hex:'#5C6B7A'},
-  {name:'Rosa Palo',    hex:'#B8909A'}
+  {name:'Antracita',    hex:'#3D4451'},
+  {name:'Azul Noche',  hex:'#2C3E6B'},
+  {name:'Pizarra',     hex:'#4A5568'},
+  {name:'Verde Salvia',hex:'#4A6741'},
+  {name:'Gris Azul',   hex:'#5B7FA6'},
+  {name:'Azul Acero',  hex:'#2E6B8A'},
+  {name:'Negro Suave', hex:'#2D2D2D'},
+  {name:'Topo',        hex:'#6B6560'}
 ];
 
-var _email=null,_cand=null,_inf=null;
-var _color='#8C7B80',_colorName='Malva Suave';
+var _email=null,_cand=null,_inf=null,_cvHtml=null,_iframe=null,_saveT=null,_editing=false;
+var _color='#3D4451',_colorName='Antracita';
 var _ftitle='Montserrat',_fbody='Open Sans';
 var _photo=null,_hstyle='solid';
 
@@ -188,7 +188,7 @@ if(_uu){try{_email=JSON.parse(_uu).email;}catch(e){}}
 if(!_email){var _pp=new URLSearchParams(window.location.search);_email=_pp.get('email');}
 
 // Volver
-document.getElementById('back-btn').onclick=function(){window.history.back();};
+document.getElementById('back-btn').onclick=function(){window.location.href=BASE+'/cliente.html';};
 
 // Swatches
 (function(){
@@ -250,6 +250,9 @@ document.getElementById('style-grad').addEventListener('click',function(){
 document.getElementById('btn-dl').addEventListener('click',function(){
   var paper=document.getElementById('cv-paper');
   var nombre=_cand?_cand.nombre||'CV':'CV';
+  if(_cvHtml&&_iframe){
+    try{_iframe.contentWindow.print();return;}catch(e){}
+  }
   var ww=window.open('','_blank');
   if(!ww)return;
   var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">';
@@ -268,19 +271,17 @@ document.getElementById('btn-dl').addEventListener('click',function(){
 if(!_email){
   document.getElementById('cv-paper').innerHTML='<div class="empty-cv"><div style="font-size:32px;">&#128272;</div><div style="font-size:13px;color:#9E9696;">Sesion no encontrada</div></div>';
 }else{
-  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_email)+'&select=*&limit=1',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}})
-  .then(function(r){return r.json();})
-  .then(function(rows){
-    _cand=rows&&rows.length?rows[0]:null;
+  Promise.all([
+    fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_email)+'&select=*&limit=1',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.json();}),
+    fetch(SB+'/rest/v1/informes?email=eq.'+encodeURIComponent(_email)+'&select=data&order=created_at.desc&limit=1',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.json();}),
+    fetch(SB+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(_email)+'&order=created_at.desc&limit=1&select=contenido',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.json();})
+  ]).then(function(res){
+    _cand=res[0]&&res[0].length?res[0][0]:null;
     if(_cand)document.getElementById('cand-name').textContent=_cand.nombre||_email;
-    return fetch(SB+'/rest/v1/informes?email=eq.'+encodeURIComponent(_email)+'&select=data&order=created_at.desc&limit=1',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}});
-  })
-  .then(function(r){return r.json();})
-  .then(function(rows){
-    if(rows&&rows.length){var d=rows[0].data;if(typeof d==='string')try{d=JSON.parse(d);}catch(e){}; _inf=d;}
+    if(res[1]&&res[1].length){var d=res[1][0].data;if(typeof d==='string')try{d=JSON.parse(d);}catch(e){}; _inf=d;}
+    _cvHtml=res[2]&&res[2].length?res[2][0].contenido||null:null;
     render();
-  })
-  .catch(function(){
+  }).catch(function(){
     document.getElementById('cv-paper').innerHTML='<div class="empty-cv"><div>Error al cargar</div></div>';
   });
 }
@@ -293,7 +294,43 @@ function lighten(hex,a){
   return '#'+[r,g,b].map(function(x){return x.toString(16).padStart(2,'0');}).join('');
 }
 
+function applyStyleToHtml(html,color,ft,fb){
+  var cl=lighten(color,0.88);
+  var css='<style id="ds-override">'+
+    ':root{--A:'+color+';--SB:'+cl+';}'+
+    'body{font-family:"+fb+",sans-serif!important;}'+
+    '.nm,.hd .nm{font-family:"+ft+",sans-serif!important;}'+
+    '.hd{background:'+color+'!important;}'+
+    '.sd{background:'+cl+'!important;}'+
+    '.sh,.mh{color:'+color+'!important;border-bottom-color:'+color+'!important;}'+
+    '.ex-d,.lg-l{background:'+color+'!important;}'+
+    '.ul li::before,.sk::before{background:'+lighten(color,0.4)+'!important;}'+
+    '.ed-s{color:'+lighten(color,0.3)+'!important;}'+
+    '</style>';
+  html=html.replace('</head>',css+'</head>');
+  return html;
+}
+
+function mostrarEnIframe(html){
+  var paper=document.getElementById('cv-paper');
+  paper.innerHTML='<div id="cv-frame-wrap" style="width:100%;min-height:297mm;"><iframe id="cv-iframe" src="about:blank" style="width:100%;border:none;display:block;min-height:297mm;" scrolling="no"></iframe></div>';
+  _iframe=document.getElementById('cv-iframe');
+  var blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  _iframe.onload=function(){
+    try{var h=_iframe.contentDocument.documentElement.scrollHeight;_iframe.style.height=Math.max(h,1100)+'px';}
+    catch(e){_iframe.style.height='297mm';}
+  };
+  _iframe.src=url;
+}
+
 function render(){
+  if(_cvHtml){
+    var html=applyStyleToHtml(_cvHtml,_color,_ftitle,_fbody);
+    mostrarEnIframe(html);
+    return;
+  }
+  // Construir CV desde datos cuando no hay CV de IA
   var c=_cand,inf=_inf,color=_color,ft=_ftitle,fb=_fbody,photo=_photo,hs=_hstyle;
   var colorLight=lighten(color,0.88);
   var colorMid=lighten(color,0.55);
@@ -414,6 +451,7 @@ function render(){
 
   document.getElementById('cv-paper').innerHTML=o;
 }
+// end render
 </script>
 </body>
 </html>
