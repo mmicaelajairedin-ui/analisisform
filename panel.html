@@ -124,12 +124,44 @@ textarea:focus{border-color:#8C7B80;}
     <div class="stat"><div class="stat-l">CVs</div><div class="stat-v" id="st-cv">0</div></div>
     <div class="stat"><div class="stat-l">Nuevos</div><div class="stat-v" id="st-new">0</div></div>
   </div>
-  <button class="refresh-btn" onclick="loadCands()">&#8635; Actualizar</button>
-  <button class="refresh-btn" onclick="cerrarSesion()" style="color:#c0756e;border-color:#f3d0cc;">&#x2715; Cerrar sesión</button>
-  <button class="refresh-btn" onclick="abrirCrearCliente()" style="background:#f3efef;color:#8C7B80;border-color:#8C7B80;">+ Nuevo cliente</button>
+  <div style="display:flex;flex-direction:column;gap:5px;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.08);">
+    <button class="refresh-btn" onclick="showSection('clientes')" id="nav-clientes" style="background:rgba(140,123,128,.25);color:#fff;border-color:rgba(255,255,255,.2);">&#128100; Clientes</button>
+    <button class="refresh-btn" onclick="showSection('inicio')" id="nav-inicio" style="color:rgba(255,255,255,.6);border-color:rgba(255,255,255,.1);">&#128200; Resumen</button>
+    <button class="refresh-btn" onclick="showSection('links')" id="nav-links" style="color:rgba(255,255,255,.6);border-color:rgba(255,255,255,.1);">&#128279; Links</button>
+    <button class="refresh-btn" onclick="showSection('pagos')" id="nav-pagos" style="color:rgba(255,255,255,.6);border-color:rgba(255,255,255,.1);">&#128176; Pagos</button>
+  </div>
+  <button class="refresh-btn" onclick="loadCands()" style="margin:8px 14px 0;">&#8635; Actualizar</button>
+  <button class="refresh-btn" onclick="abrirCrearCliente()" style="margin:4px 14px 0;background:#f3efef;color:#8C7B80;border-color:#8C7B80;">+ Nuevo cliente</button>
+  <button class="refresh-btn" onclick="cerrarSesion()" style="margin:4px 14px 8px;color:#c0756e;border-color:#f3d0cc;">&#x2715; Cerrar sesión</button>
   <div class="clist" id="clist"><div style="padding:2rem;text-align:center;color:#999;font-size:12px;">Cargando...</div></div>
 </div>
-<div class="main" id="main"><div class="empty-main">Selecciona un candidato</div></div>
+<div id="section-clientes" style="flex:1;overflow:hidden;">
+  <div class="main" id="main"><div class="empty-main">Selecciona un candidato</div></div>
+</div>
+<div id="section-inicio" style="display:none;flex:1;overflow-y:auto;padding:28px;">
+  <div style="max-width:900px;margin:0 auto;">
+    <h2 style="font-size:20px;font-weight:800;color:#2D2420;margin-bottom:20px;">&#128200; Resumen de tu práctica</h2>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;" id="ini-stats"></div>
+    <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06);">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:14px;color:#4A3F3F;">Clientes recientes</h3>
+      <div id="ini-list"></div>
+    </div>
+  </div>
+</div>
+<div id="section-links" style="display:none;flex:1;overflow-y:auto;padding:28px;">
+  <div style="max-width:800px;margin:0 auto;">
+    <h2 style="font-size:20px;font-weight:800;color:#2D2420;margin-bottom:20px;">&#128279; Links por cliente</h2>
+    <p style="font-size:13px;color:#666;margin-bottom:20px;">Genera y comparte los links de informe y CV para cada cliente.</p>
+    <div id="links-list"></div>
+  </div>
+</div>
+<div id="section-pagos" style="display:none;flex:1;overflow-y:auto;padding:28px;">
+  <div style="max-width:800px;margin:0 auto;">
+    <h2 style="font-size:20px;font-weight:800;color:#2D2420;margin-bottom:6px;">&#128176; Registro de pagos</h2>
+    <p style="font-size:13px;color:#666;margin-bottom:20px;">Lleva el control manual de pagos por cliente.</p>
+    <div id="pagos-list"></div>
+  </div>
+</div>
 </div>
 
 <!-- MODALS -->
@@ -380,6 +412,7 @@ function generarInformeAI(id){
 
   // Construir payload limpio sin referencias circulares
   var payload={
+    accion:'generar_informe',
     nombre:c.nombre||'',
     email:c.email||'',
     edad:c.edad||'',
@@ -403,6 +436,7 @@ function generarInformeAI(id){
     // Recargar candidatos para mostrar el nuevo informe
     setTimeout(function(){
       loadCands();
+showSection('clientes');
       setTimeout(function(){
         var updated=cands.find(function(x){return x.id===id;});
         if(updated){atab='informe';renderMain(updated);}
@@ -1064,6 +1098,217 @@ function enviarCartaCliente(id){
   }).catch(function(e){if(st){st.textContent='Error: '+e.message;st.style.color='#c0756e';}});
 }
 
+
+
+// ═══════════════════════════════════════
+// NAVEGACIÓN DE SECCIONES
+// ═══════════════════════════════════════
+var _currentSection='clientes';
+
+function showSection(sec){
+  ['clientes','inicio','links','pagos'].forEach(function(s){
+    var el=document.getElementById('section-'+s);
+    if(el)el.style.display=s===sec?'':'none';
+    var nav=document.getElementById('nav-'+s);
+    if(nav){
+      if(s===sec){
+        nav.style.background='rgba(140,123,128,.25)';nav.style.color='#fff';nav.style.borderColor='rgba(255,255,255,.2)';
+      }else{
+        nav.style.background='';nav.style.color='rgba(255,255,255,.6)';nav.style.borderColor='rgba(255,255,255,.1)';
+      }
+    }
+  });
+  _currentSection=sec;
+  if(sec==='inicio')loadInicio();
+  if(sec==='links')loadLinks();
+  if(sec==='pagos')loadPagos();
+}
+
+// ═══════════════════════════════════════
+// SECCIÓN INICIO - RESUMEN
+// ═══════════════════════════════════════
+function loadInicio(){
+  document.getElementById('ini-stats').innerHTML='<div style="grid-column:1/-1;text-align:center;color:#999;font-size:13px;padding:1rem;">Cargando...</div>';
+  Promise.all([
+    sbGet('candidatos','select=id,email,nombre,sector,semana_activa,created_at&limit=100'),
+    sbGet('informes','select=email&limit=200'),
+    sbGet('cv_publicados','select=email&limit=200')
+  ]).then(function(res){
+    var cands2=toArr(res[0]),infs=toArr(res[1]),cvs2=toArr(res[2]);
+    var seen={},unique=[];
+    cands2.forEach(function(c){var k=(c.email||'').toLowerCase();if(!seen[k]){seen[k]=true;unique.push(c);}});
+    var infSet={};infs.forEach(function(r){infSet[(r.email||'').toLowerCase()]=true;});
+    var cvSet={};cvs2.forEach(function(r){cvSet[(r.email||'').toLowerCase()]=true;});
+    var semana=7*24*3600*1000;
+    var nuevos=unique.filter(function(c){return c.created_at&&(Date.now()-new Date(c.created_at).getTime())<semana;}).length;
+
+    var stats=[
+      {v:unique.length,l:'Clientes'},
+      {v:Object.keys(infSet).length,l:'Informes'},
+      {v:Object.keys(cvSet).length,l:'CVs publicados'},
+      {v:nuevos,l:'Esta semana'}
+    ];
+    document.getElementById('ini-stats').innerHTML=stats.map(function(s){
+      return '<div style="background:#fff;border-radius:12px;padding:20px;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.06);">'+
+        '<div style="font-size:32px;font-weight:800;color:#8C7B80;">'+s.v+'</div>'+
+        '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.08em;margin-top:4px;">'+s.l+'</div>'+
+        '</div>';
+    }).join('');
+
+    var lista=unique.slice(0,10);
+    document.getElementById('ini-list').innerHTML=lista.map(function(c,i){
+      var email=(c.email||'').toLowerCase();
+      var sem=parseInt(c.semana_activa||1);
+      var hasInf=!!infSet[email];
+      var hasCv=!!cvSet[email];
+      var colors=[['#f3efef','#8C7B80'],['#eef3ef','#4a7c5f'],['#eff3f7','#2e6b8a'],['#f7f0ec','#a0876e']];
+      var cl=colors[i%4];
+      return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:.5px solid #f0eded;cursor:pointer;" onclick="showSection(\'clientes\')">'+
+        '<div style="width:36px;height:36px;border-radius:50%;background:'+cl[0]+';color:'+cl[1]+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">'+ini(c.nombre||'')+'</div>'+
+        '<div style="flex:1;"><div style="font-size:13px;font-weight:600;color:#2D2420;">'+(c.nombre||'—')+'</div>'+
+        '<div style="font-size:11px;color:#999;">'+(c.sector||'—')+' · Semana '+sem+'</div></div>'+
+        '<div style="display:flex;gap:5px;">'+
+        (hasInf?'<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;background:#eef3ef;color:#4a7c5f;">Informe</span>':'')+
+        (hasCv?'<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;background:#f3efef;color:#8C7B80;">CV</span>':'')+
+        '</div></div>';
+    }).join('');
+  }).catch(function(){
+    document.getElementById('ini-stats').innerHTML='<div style="color:#c0756e;font-size:13px;">Error al cargar.</div>';
+  });
+}
+
+// ═══════════════════════════════════════
+// SECCIÓN LINKS
+// ═══════════════════════════════════════
+function loadLinks(){
+  document.getElementById('links-list').innerHTML='<div style="text-align:center;color:#999;padding:2rem;">Cargando...</div>';
+  Promise.all([
+    sbGet('candidatos','select=id,email,nombre,created_at&limit=100'),
+    sbGet('informes','select=email&limit=200'),
+    sbGet('cv_publicados','select=email,codigo&limit=200')
+  ]).then(function(res){
+    var all=toArr(res[0]),allInf=toArr(res[1]),allCvs=toArr(res[2]);
+    var seen={},cands2=[];
+    all.forEach(function(c){var k=(c.email||'').toLowerCase();if(!seen[k]){seen[k]=true;cands2.push(c);}});
+    var infSet={};allInf.forEach(function(r){infSet[(r.email||'').toLowerCase()]=true;});
+    var cvMap={};allCvs.forEach(function(r){cvMap[(r.email||'').toLowerCase()]=r.codigo;});
+    if(!cands2.length){document.getElementById('links-list').innerHTML='<div style="text-align:center;color:#999;padding:2rem;">No hay clientes aún.</div>';return;}
+    var html='';
+    cands2.forEach(function(c,i){
+      var email=(c.email||'').toLowerCase();
+      var hasInf=!!infSet[email];
+      var cvCode=cvMap[email]||'';
+      var hasCv=!!cvCode;
+      var infUrl=BASE+'/cliente.html';
+      var cvUrl=BASE+'/cv.html?email='+encodeURIComponent(c.email);
+      html+='<div style="background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px;box-shadow:0 2px 12px rgba(0,0,0,.06);">';
+      html+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">';
+      html+='<div style="font-size:13px;font-weight:700;color:#2D2420;flex:1;">'+(c.nombre||c.email)+'</div>';
+      if(hasInf)html+='<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;background:#eef3ef;color:#4a7c5f;">Informe ✓</span>';
+      if(hasCv)html+='<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;background:#f3efef;color:#8C7B80;">CV ✓</span>';
+      html+='</div>';
+      // Link cliente
+      var idx2=i;
+      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">';
+      html+='<div style="flex:1;font-size:11px;background:#f9f8f8;border-radius:7px;padding:7px 10px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+infUrl+'</div>';
+      html+='<button data-url="'+encodeURIComponent(infUrl)+'" class="link-copy-btn" style="padding:7px 12px;font-size:10px;font-weight:700;font-family:Montserrat,sans-serif;background:#f3efef;color:#8C7B80;border:1.5px solid #ddd0d0;border-radius:7px;cursor:pointer;">Copiar</button>';
+      html+='<button data-nombre="'+encodeURIComponent(c.nombre||'')+'" data-inf="'+encodeURIComponent(infUrl)+'" data-cv="'+encodeURIComponent(cvUrl)+'" class="link-wa-btn" style="padding:7px 12px;font-size:10px;font-weight:700;font-family:Montserrat,sans-serif;background:#25D366;color:#fff;border:none;border-radius:7px;cursor:pointer;">WhatsApp</button>';
+      html+='</div>';
+      if(hasCv){
+        html+='<div style="display:flex;align-items:center;gap:8px;">';
+        html+='<div style="flex:1;font-size:11px;background:#f9f8f8;border-radius:7px;padding:7px 10px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">CV: '+cvUrl+'</div>';
+        html+='<button data-url="'+encodeURIComponent(cvUrl)+'" class="link-copy-btn" style="padding:7px 12px;font-size:10px;font-weight:700;font-family:Montserrat,sans-serif;background:#f3efef;color:#8C7B80;border:1.5px solid #ddd0d0;border-radius:7px;cursor:pointer;">Copiar CV</button>';
+        html+='</div>';
+      }
+      html+='</div>';
+    });
+    document.getElementById('links-list').innerHTML=html;
+    // Event delegation para botones
+    document.getElementById('links-list').addEventListener('click',function(ev){
+      var btn=ev.target.closest('button');
+      if(!btn)return;
+      if(btn.classList.contains('link-copy-btn')){
+        copiarLink(decodeURIComponent(btn.dataset.url||''));
+      }else if(btn.classList.contains('link-wa-btn')){
+        waLink(decodeURIComponent(btn.dataset.nombre||''),decodeURIComponent(btn.dataset.inf||''),decodeURIComponent(btn.dataset.cv||''));
+      }
+    });
+  }).catch(function(e){
+    document.getElementById('links-list').innerHTML='<div style="color:#c0756e;font-size:13px;">Error: '+e.message+'</div>';
+  });
+}
+
+function copiarLink(url){
+  navigator.clipboard.writeText(url).then(function(){showToast('Link copiado');});
+}
+
+function waLink(nombre,infUrl,cvUrl){
+  var n=(nombre||'').split(' ')[0];
+  var msg='Hola '+n+',%0A%0AYa puedes acceder a tu espacio de coaching:%0A'+encodeURIComponent(infUrl);
+  if(cvUrl)msg+='%0A%0ATu CV optimizado está listo:%0A'+encodeURIComponent(cvUrl);
+  window.open('https://wa.me/?text='+msg,'_blank');
+}
+
+// ═══════════════════════════════════════
+// SECCIÓN PAGOS
+// ═══════════════════════════════════════
+var _pagos=JSON.parse(localStorage.getItem('mj_pagos')||'{}');
+
+function loadPagos(){
+  sbGet('candidatos','select=id,email,nombre,sector&limit=100').then(function(res){
+    var cands2=toArr(res);
+    var seen={},unique=[];
+    cands2.forEach(function(c){var k=(c.email||'').toLowerCase();if(!seen[k]){seen[k]=true;unique.push(c);}});
+    if(!unique.length){document.getElementById('pagos-list').innerHTML='<div style="text-align:center;color:#999;padding:2rem;">No hay clientes.</div>';return;}
+    var estados=['Pendiente','Pagado','Parcial','Cancelado'];
+    var colores={'Pendiente':'#f59e0b','Pagado':'#4a7c5f','Parcial':'#8C7B80','Cancelado':'#c0756e'};
+    var html='<div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);">';
+    html+='<div style="display:grid;grid-template-columns:1fr 120px 140px 100px 60px;padding:10px 16px;border-bottom:1px solid #f0eded;font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.08em;">';
+    html+='<div>Cliente</div><div>Monto</div><div>Estado</div><div>Fecha</div><div></div></div>';
+    unique.forEach(function(c){
+      var email=(c.email||'').toLowerCase();
+      var p=_pagos[email]||{monto:'',estado:'Pendiente',fecha:''};
+      var color=colores[p.estado]||'#999';
+      html+='<div style="display:grid;grid-template-columns:1fr 120px 140px 100px 60px;padding:12px 16px;border-bottom:.5px solid #f0eded;align-items:center;">';
+      html+='<div><div style="font-size:13px;font-weight:600;color:#2D2420;">'+(c.nombre||'—')+'</div><div style="font-size:10px;color:#999;">'+(c.sector||c.email)+'</div></div>';
+      html+='<input data-email="'+email+'" class="pago-monto" type="text" value="'+(p.monto||'')+'" placeholder="EUR" style="width:90px;padding:5px 8px;font-size:12px;font-family:Montserrat,sans-serif;border:1.5px solid #ddd;border-radius:7px;outline:none;">';
+      html+='<select data-email="'+email+'" class="pago-estado" style="padding:5px 8px;font-size:12px;font-family:Montserrat,sans-serif;border:1.5px solid #ddd;border-radius:7px;outline:none;color:'+color+';font-weight:700;cursor:pointer;">';
+      estados.forEach(function(st){html+='<option value="'+st+'"'+(p.estado===st?' selected':'')+'>'+st+'</option>';});
+      html+='</select>';
+      html+='<div style="font-size:11px;color:#999;">'+(p.fecha||'—')+'</div>';
+      html+='<button data-email="'+email+'" class="pago-save-btn" style="padding:5px 10px;font-size:10px;font-weight:700;font-family:Montserrat,sans-serif;background:#f3efef;color:#8C7B80;border:1.5px solid #ddd0d0;border-radius:7px;cursor:pointer;">Guardar</button>';
+      html+='</div>';
+    });
+    html+='</div>';
+    var el=document.getElementById('pagos-list');
+    el.innerHTML=html;
+    el.addEventListener('click',function(ev){
+      var btn=ev.target.closest('.pago-save-btn');
+      if(btn)savePago(btn.dataset.email);
+    });
+    el.addEventListener('change',function(ev){
+      if(ev.target.classList.contains('pago-estado'))savePago(ev.target.dataset.email);
+    });
+  });
+}
+
+
+function savePago(email){
+  var montoEl=document.querySelector('.pago-monto[data-email="'+email+'"]');
+  var estadoEl=document.querySelector('.pago-estado[data-email="'+email+'"]');
+  if(!montoEl||!estadoEl)return;
+  _pagos[email]={
+    monto:montoEl.value,
+    estado:estadoEl.value,
+    fecha:new Date().toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})
+  };
+  localStorage.setItem('mj_pagos',JSON.stringify(_pagos));
+  var colores={'Pendiente':'#f59e0b','Pagado':'#4a7c5f','Parcial':'#8C7B80','Cancelado':'#c0756e'};
+  estadoEl.style.color=colores[estadoEl.value]||'#999';
+  showToast('Pago guardado');
+}
+
+
 function cerrarSesion(){localStorage.removeItem('mj_user');window.location.href='https://mmicaelajairedin-ui.github.io/analisisform/login.html';}
 
 function abrirCrearCliente(){
@@ -1084,7 +1329,7 @@ async function crearCliente(){
   var hash=await hashPass(pass);
   fetch(SB+'/rest/v1/usuarios',{
     method:'POST',
-    headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
+    headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'resolution=ignore-duplicates,return=minimal'},
     body:JSON.stringify({email:email,password_hash:hash,rol:'cliente',nombre:nombre,activo:true})
 }).then(function(r){
     if(r.ok||r.status===201){
@@ -1127,6 +1372,7 @@ async function hashPass(password){
 }
 
 loadCands();
+showSection('clientes');
 </script>
 </body>
   <div class="modal-overlay" id="modal-nuevo-cliente" style="display:none;" onclick="if(event.target===this)cerrarModal('modal-nuevo-cliente')">
