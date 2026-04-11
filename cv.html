@@ -229,10 +229,39 @@ document.getElementById('photo-input').addEventListener('change',function(){
   var r=new FileReader();
   r.onload=function(e){
     _photo=e.target.result;
+    // Actualizar preview en sidebar
     var prev=document.getElementById('photo-preview');
     prev.innerHTML='';
     var img=document.createElement('img');img.src=_photo;prev.appendChild(img);
     render();
+    // Guardar en Supabase si hay email
+    if(_email){
+      // Comprimir: si es muy grande, redimensionar
+      var canvas=document.createElement('canvas');
+      var ctx2=canvas.getContext('2d');
+      var imgEl=new Image();
+      imgEl.onload=function(){
+        var maxW=400,maxH=400;
+        var w=imgEl.width,h=imgEl.height;
+        if(w>maxW||h>maxH){
+          var ratio=Math.min(maxW/w,maxH/h);
+          w=Math.round(w*ratio);h=Math.round(h*ratio);
+        }
+        canvas.width=w;canvas.height=h;
+        ctx2.drawImage(imgEl,0,0,w,h);
+        var b64=canvas.toDataURL('image/jpeg',0.75);
+        // Guardar en Supabase
+        fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_email),{
+          method:'PATCH',
+          headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body:JSON.stringify({foto_perfil:b64})
+        }).then(function(){
+          var st=document.getElementById('save-st');
+          if(st){st.textContent='Foto guardada ✓';setTimeout(function(){st.textContent='';},2000);}
+        }).catch(function(){});
+      };
+      imgEl.src=_photo;
+    }
   };
   r.readAsDataURL(this.files[0]);
 });
@@ -291,6 +320,12 @@ if(!_email){
     if(_cand)document.getElementById('cand-name').textContent=_cand.nombre||_email;
     if(res[1]&&res[1].length){var d=res[1][0].data;if(typeof d==='string')try{d=JSON.parse(d);}catch(e){}; _inf=d;}
     _cvHtml=res[2]&&res[2].length?res[2][0].contenido||null:null;
+    // Cargar foto guardada
+    if(_cand&&_cand.foto_perfil&&!_photo){
+      _photo=_cand.foto_perfil;
+      var fp=document.getElementById('photo-preview');
+      if(fp){fp.innerHTML='';var fi=document.createElement('img');fi.src=_photo;fp.appendChild(fi);}
+    }
     render();
   }).catch(function(){
     document.getElementById('cv-paper').innerHTML='<div class="empty-cv"><div>Error al cargar</div></div>';
