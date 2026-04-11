@@ -766,86 +766,165 @@ function rSesionPage(){
 }
 
 function rHistorial(){
-  if(!D||SEM<=1){
-    return '<div class="empty" style="padding:4rem;text-align:center;">'+
-      '<div style="font-size:48px;margin-bottom:16px;">&#128640;</div>'+
-      '<div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:8px;">Tu historial empieza aquí</div>'+
-      '<div style="font-size:13px;color:var(--muted);max-width:280px;margin:0 auto;line-height:1.6;">Cuando avances a la semana 2 verás aquí todo lo que has completado.</div>'+
-    '</div>';
+  // ─── CSS del camino (inyectado una sola vez) ───
+  if(!document.getElementById('hist-css')){
+    var st=document.createElement('style');
+    st.id='hist-css';
+    st.textContent=[
+      '.hpath{position:relative;padding:0 0 0 20px;}',
+      '.hpath-line{position:absolute;left:35px;top:0;bottom:0;width:3px;background:linear-gradient(to bottom,#8E7676 0%,#D1D1D1 100%);border-radius:2px;}',
+      '.hweek{position:relative;margin-bottom:32px;}',
+      '.hweek-hd{display:flex;align-items:center;gap:14px;margin-bottom:14px;}',
+      '.hweek-dot{width:50px;height:50px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;z-index:2;position:relative;box-shadow:0 3px 10px rgba(0,0,0,.15);}',
+      '.hweek-title{font-family:"Montserrat",sans-serif;font-size:15px;font-weight:800;color:#4A3F3F;margin-bottom:2px;}',
+      '.hweek-sub{font-size:11px;color:#9E9696;font-weight:600;}',
+      '.hweek-pct{font-family:"Montserrat",sans-serif;font-size:20px;font-weight:800;margin-left:auto;}',
+      '.hitems{display:flex;flex-direction:column;gap:8px;padding-left:64px;}',
+      '.hitem{display:flex;align-items:flex-start;gap:10px;background:#fff;border-radius:10px;padding:12px 14px;border:1.5px solid #EAE5E5;box-shadow:0 2px 8px rgba(0,0,0,.04);transition:border-color .2s;}',
+      '.hitem.done{border-color:#DDD0D0;}',
+      '.hitem.pending{opacity:.55;filter:grayscale(.4);}',
+      '.hitem-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:1px;}',
+      '.hitem-icon.done{background:#F5EFEF;}',
+      '.hitem-icon.pending{background:#F4F4F4;}',
+      '.hitem-dot{width:16px;height:16px;border-radius:50%;flex-shrink:0;margin-top:4px;}',
+      '.hitem-dot.done{background:#8E7676;}',
+      '.hitem-dot.nd{border:2px solid #D1D1D1;background:#fff;}',
+      '.hitem-body{flex:1;min-width:0;}',
+      '.hitem-title{font-family:"Montserrat",sans-serif;font-size:13px;font-weight:700;color:#4A3F3F;line-height:1.4;margin-bottom:2px;}',
+      '.hitem-title.pending{color:#9E9696;font-weight:600;}',
+      '.hitem-meta{font-size:11px;color:#9E9696;}',
+      '.hitem-check{font-size:16px;flex-shrink:0;}',
+      '.hbar{height:5px;background:#F0EDED;border-radius:3px;margin-top:8px;overflow:hidden;}',
+      '.hbar-fill{height:5px;border-radius:3px;transition:width .6s ease;}',
+      '.htotal{background:linear-gradient(135deg,#8E7676 0%,#6B5A5F 100%);border-radius:14px;padding:20px 22px;color:#fff;margin-bottom:24px;display:flex;align-items:center;gap:16px;}',
+      '.heditable{font-size:11px;font-weight:700;color:#8E7676;cursor:pointer;font-family:"Montserrat",sans-serif;padding:4px 10px;border:1.5px solid #DDD0D0;border-radius:20px;background:#fff;margin-left:auto;}',
+      '.heditable:hover{background:#F5EFEF;}',
+      '.hnota-box{margin-top:10px;padding:10px 14px;background:#FAFAFA;border:1px solid #EAE5E5;border-radius:8px;font-size:12px;color:#6B6060;line-height:1.6;font-style:italic;}'
+    ].join('');
+    document.head.appendChild(st);
   }
-  var semColors=['','#8C7B80','#5B7FA6','#5A8C6E','#C4907A'];
-  var semIcons=['','&#128221;','&#128279;','&#129309;','&#127775;'];
-  var o='';
-  // Resumen de progreso total
+
+  // ─── Estado vacío ───
+  if(!D||SEM<=1){
+    return '<div style="text-align:center;padding:4rem;">'
+      +'<div style="font-size:52px;margin-bottom:16px;">&#128640;</div>'
+      +'<div style="font-family:Montserrat,sans-serif;font-size:18px;font-weight:800;color:#4A3F3F;margin-bottom:8px;">Tu camino empieza aquí</div>'
+      +'<div style="font-size:13px;color:#9E9696;max-width:280px;margin:0 auto;line-height:1.6;">Cuando avances a la semana 2 verás aquí todo tu recorrido semana a semana.</div>'
+      +'</div>';
+  }
+
+  // ─── Datos ───
+  var semColors=['','#8E7676','#5B7FA6','#5A8C6E','#C4907A'];
+  var semIcons= ['','&#128221;','&#128279;','&#129309;','&#127775;'];
+  var semLabels=['','CV y Marca Personal','LinkedIn Optimizado','Red y Búsqueda','Entrevistas'];
+  var iconMap={
+    cv:'&#9997;', linkedin:'&#128279;', red:'&#129309;',
+    entrevista:'&#127775;', carta:'&#128140;', pdf:'&#128196;',
+    sesion:'&#128197;', feedback:'&#128172;', default:'&#9711;'
+  };
+
+  // ─── Total ───
   var totalAcc=0,totalDone=0;
   for(var ss=1;ss<SEM&&ss<=4;ss++){
-    var semm=SEMS[ss-1];var accsAll=D[semm.acc]||[];
+    var accsAll=D[(SEMS[ss-1]||{}).acc]||[];
     totalAcc+=accsAll.length;
     accsAll.forEach(function(a,i){if(ACTS[i])totalDone++;});
   }
   var pctTotal=totalAcc?Math.round(totalDone/totalAcc*100):0;
-  o+='<div style="background:linear-gradient(135deg,var(--rose) 0%,var(--rose-dark) 100%);border-radius:var(--r);padding:22px 24px;margin-bottom:20px;color:#fff;display:flex;align-items:center;gap:16px;">'+
-    '<div style="font-size:40px;">&#127942;</div>'+
-    '<div style="flex:1;">'+
-      '<div style="font-size:12px;font-weight:700;opacity:.75;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;">Tu progreso total</div>'+
-      '<div style="font-size:26px;font-weight:800;margin-bottom:6px;">'+totalDone+' de '+totalAcc+' acciones</div>'+
-      '<div style="height:8px;background:rgba(255,255,255,.25);border-radius:4px;overflow:hidden;">'+
-        '<div style="height:8px;width:'+pctTotal+'%;background:#fff;border-radius:4px;transition:width .6s;"></div>'+
-      '</div>'+
-    '</div>'+
-    '<div style="font-size:36px;font-weight:800;">'+pctTotal+'%</div>'+
-  '</div>';
-  // Línea de tiempo por semana
-  o+='<div style="position:relative;">';
-  // Línea vertical
-  o+='<div style="position:absolute;left:19px;top:0;bottom:0;width:2px;background:var(--border);border-radius:2px;"></div>';
-  var found=false;
-  for(var s=1;s<SEM&&s<=4;s++){
-    var sem=SEMS[s-1];
-    var accs=D[sem.acc]||[];
-    if(!accs.length)continue;
-    found=true;
-    var done=0;
-    accs.forEach(function(a,i){if(ACTS[i])done++;});
-    var pct=accs.length?Math.round(done/accs.length*100):0;
-    var color=semColors[s]||'#8C7B80';
-    var icon=semIcons[s]||'&#128197;';
-    o+='<div style="margin-bottom:24px;padding-left:50px;position:relative;">'+
-      // Círculo de la semana en la línea
-      '<div style="position:absolute;left:0;top:0;width:40px;height:40px;border-radius:50%;background:'+color+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;z-index:1;box-shadow:0 2px 8px rgba(0,0,0,.15);">'+icon+'</div>'+
-      // Card de la semana
-      '<div style="background:var(--white);border-radius:var(--r);border:1.5px solid var(--border);overflow:hidden;box-shadow:var(--shadow);">'+
-        // Cabecera
-        '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">'+
-          '<div>'+
-            '<div style="font-size:9px;font-weight:700;color:'+color+';text-transform:uppercase;letter-spacing:.1em;margin-bottom:2px;">Semana '+s+'</div>'+
-            '<div style="font-size:15px;font-weight:800;color:var(--text);">'+hh(sem.lbl)+'</div>'+
-          '</div>'+
-          '<div style="text-align:right;">'+
-            '<div style="font-size:20px;font-weight:800;color:'+color+';">'+pct+'%</div>'+
-            '<div style="font-size:10px;color:var(--muted);">'+done+'/'+accs.length+' completadas</div>'+
-          '</div>'+
-        '</div>'+
-        // Barra de progreso
-        '<div style="height:4px;background:var(--border);">'+
-          '<div style="height:4px;width:'+pct+'%;background:'+color+';transition:width .6s;"></div>'+
-        '</div>'+
-        // Lista de acciones
-        '<div style="padding:12px 18px;">'+
-        accs.map(function(a,i){
-          var dk=!!ACTS[i];
-          return '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border);align-items:flex-start;">'+
-            '<div style="width:22px;height:22px;border-radius:50%;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;'+(dk?'background:'+color+';color:#fff;':'border:2px solid var(--border);color:var(--muted);')+'">'+(dk?ck():String(i+1))+'</div>'+
-            '<div style="flex:1;font-size:13px;color:'+(dk?'var(--text)':'var(--muted)')+';line-height:1.6;'+(dk?'':'text-decoration:none;')+'">'+(dk?'<strong>'+hh(a)+'</strong>':hh(a))+'</div>'+
-            (dk?'<div style="font-size:18px;">&#9989;</div>':'')+
-          '</div>';
-        }).join('')+
-        '</div>'+
-      '</div>'+
-    '</div>';
+
+  var o='';
+  // Tarjeta resumen
+  o+='<div class="htotal">'
+    +'<div style="font-size:40px;">&#127942;</div>'
+    +'<div style="flex:1;">'
+      +'<div style="font-size:11px;font-weight:700;opacity:.75;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;font-family:Montserrat,sans-serif;">Tu recorrido hasta aquí</div>'
+      +'<div style="font-family:Montserrat,sans-serif;font-size:22px;font-weight:800;margin-bottom:8px;">'+totalDone+' de '+totalAcc+' acciones completadas</div>'
+      +'<div style="height:8px;background:rgba(255,255,255,.25);border-radius:4px;overflow:hidden;">'
+        +'<div style="height:8px;width:'+pctTotal+'%;background:#fff;border-radius:4px;transition:width .8s;"></div>'
+      +'</div>'
+    +'</div>'
+    +'<div style="font-family:Montserrat,sans-serif;font-size:42px;font-weight:800;">'+pctTotal+'%</div>'
+  +'</div>';
+
+  // Notas de progreso (editables desde aquí)
+  if(C&&C.notas_progreso){
+    o+='<div class="hnota-box">'
+      +'<div style="font-size:9px;font-weight:700;color:#8E7676;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;font-family:Montserrat,sans-serif;">Notas del proceso</div>'
+      +hh(C.notas_progreso)
+    +'</div>';
   }
-  o+='</div>';
-  return found?o:'<div class="empty" style="padding:4rem;text-align:center;"><div style="font-size:32px;">&#128197;</div><div style="font-size:15px;font-weight:700;margin-top:10px;">Sin historial aún</div></div>';
+
+  // ─── Camino de semanas ───
+  o+='<div class="hpath" style="margin-top:24px;">'
+    +'<div class="hpath-line"></div>';
+
+  var accOffset=0;
+  for(var s=1;s<SEM&&s<=4;s++){
+    var sem=SEMS[s-1]||{};
+    var accs=D[sem.acc]||[];
+    if(!accs.length){accOffset+=accs.length;continue;}
+
+    var done=0;
+    var acts=accs.map(function(a,i){var dk=!!ACTS[accOffset+i];if(dk)done++;return{txt:a,done:dk};});
+    var pct=accs.length?Math.round(done/accs.length*100):0;
+    var color=semColors[s]||'#8E7676';
+    var icon=semIcons[s]||'&#128197;';
+
+    o+='<div class="hweek">'
+      // Cabecera de semana
+      +'<div class="hweek-hd">'
+        +'<div class="hweek-dot" style="background:'+color+';">'+icon+'</div>'
+        +'<div style="flex:1;">'
+          +'<div class="hweek-title">'+hh(semLabels[s])+'</div>'
+          +'<div class="hweek-sub">Semana '+s+' · '+done+'/'+accs.length+' completadas</div>'
+          +'<div class="hbar" style="margin-top:6px;width:200px;">'
+            +'<div class="hbar-fill" style="width:'+pct+'%;background:'+color+';"></div>'
+          +'</div>'
+        +'</div>'
+        +'<div class="hweek-pct" style="color:'+color+';">'+pct+'%</div>'
+      +'</div>'
+      // Items del camino
+      +'<div class="hitems">';
+
+    acts.forEach(function(item){
+      // Detectar tipo de acción por keywords
+      var txt=item.txt.toLowerCase();
+      var icoKey='default';
+      if(txt.indexOf('cv')>=0||txt.indexOf('resume')>=0) icoKey='cv';
+      else if(txt.indexOf('linkedin')>=0) icoKey='linkedin';
+      else if(txt.indexOf('red')>=0||txt.indexOf('network')>=0||txt.indexOf('contact')>=0) icoKey='red';
+      else if(txt.indexOf('entrev')>=0||txt.indexOf('interview')>=0) icoKey='entrevista';
+      else if(txt.indexOf('carta')>=0||txt.indexOf('cover')>=0) icoKey='carta';
+      else if(txt.indexOf('pdf')>=0||txt.indexOf('document')>=0) icoKey='pdf';
+      else if(txt.indexOf('sesi')>=0||txt.indexOf('reuni')>=0) icoKey='sesion';
+      else if(txt.indexOf('feedback')>=0||txt.indexOf('comentar')>=0) icoKey='feedback';
+
+      o+='<div class="hitem '+(item.done?'done':'pending')+'">'
+          +'<div class="hitem-icon '+(item.done?'done':'pending')+'">'+iconMap[icoKey]+'</div>'
+          +'<div class="hitem-body">'
+            +'<div class="hitem-title '+(item.done?'':'pending')+'">'+hh(item.txt)+'</div>'
+          +'</div>'
+          +(item.done?'<div class="hitem-check">&#9989;</div>':'')
+        +'</div>';
+    });
+
+    o+='</div></div>'; // hitems, hweek
+    accOffset+=accs.length;
+  }
+
+  // Hitos futuros (semanas por venir)
+  if(SEM<=4){
+    o+='<div class="hweek" style="opacity:.4;">'
+      +'<div class="hweek-hd">'
+        +'<div class="hweek-dot" style="background:#D1D1D1;color:#fff;">&#8943;</div>'
+        +'<div><div class="hweek-title" style="color:#9E9696;">Próximas etapas</div>'
+        +'<div class="hweek-sub">Semana '+(SEM)+(SEM<4?' · '+semLabels[SEM]:'')+'</div></div>'
+      +'</div>'
+    +'</div>';
+  }
+
+  o+='</div>'; // hpath
+  return o;
 }
 
 function tAcc(i){ACTS[i]=!ACTS[i];pt('candidatos','email=eq.'+encodeURIComponent(E),{acciones_progreso:JSON.stringify(ACTS)}).catch(function(){});updSB();render(SEC);}
