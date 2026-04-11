@@ -239,7 +239,8 @@ body{background:var(--bg);}
 <body>
 <div id="loading">
   <div class="lds"><div class="ld"></div><div class="ld"></div><div class="ld"></div></div>
-  <div style="font-size:13px;color:var(--muted);margin-top:4px;">Cargando tu espacio...</div>
+  <div style="font-size:13px;color:var(--muted);margin-top:4px;" id="load-msg">Cargando tu espacio...</div>
+  <div style="font-size:11px;color:#c0756e;margin-top:8px;max-width:300px;text-align:center;" id="load-err"></div>
 </div>
 
 <!-- LANDING -->
@@ -327,17 +328,38 @@ function get(t,q){return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:{'apikey':KEY,'Au
 function pt(t,q,d){return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(d)});}
 function docSvg(color,ok){return '<svg width="48" height="60" viewBox="0 0 48 60" fill="none"><rect x="1" y="1" width="46" height="58" rx="6" fill="'+color+'18" stroke="'+color+'" stroke-width="1.5"/><path d="M10 18h28M10 26h28M10 34h18" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round"/>'+(ok?'<circle cx="36" cy="48" r="9" fill="'+color+'"/><path d="M32 48l3 3 5-5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>':'<circle cx="36" cy="48" r="9" fill="'+color+'60"/><path d="M36 44.5v4.5M36 50.5v1" stroke="#fff" stroke-width="2" stroke-linecap="round"/>')+'</svg>';}
 
-(function(){var u=localStorage.getItem('mj_user');if(!u){window.location.href=BASE+'/login.html';throw new Error('no auth');}var pu=JSON.parse(u);if(pu.rol!=='cliente'){window.location.href=BASE+'/login.html';throw new Error('no perm');}})();
+(function(){
+  try{
+    var u=localStorage.getItem('mj_user');
+    if(!u){window.location.href=BASE+'/login.html';return;}
+    var pu=JSON.parse(u);
+    if(pu.rol!=='cliente'){window.location.href=BASE+'/login.html';return;}
+  }catch(e){window.location.href=BASE+'/login.html';}
+})();
 
 function init(){
-  var u=localStorage.getItem('mj_user');if(!u){window.location.href=BASE+'/login.html';return;}
-  E=JSON.parse(u).email;
+  var u=localStorage.getItem('mj_user');
+  if(!u){window.location.href=BASE+'/login.html';return;}
+  var parsed;
+  try{parsed=JSON.parse(u);}catch(e){localStorage.removeItem('mj_user');window.location.href=BASE+'/login.html';return;}
+  E=parsed.email;
+  if(!E){document.getElementById('load-err').textContent='Email no encontrado en sesión.';return;}
+  document.getElementById('load-msg').textContent='Conectando con Supabase...';
   Promise.all([
     get('candidatos','email=eq.'+encodeURIComponent(E)+'&select=*&limit=1'),
     get('informes','email=eq.'+encodeURIComponent(E)+'&select=data&order=created_at.desc&limit=1'),
     get('cv_publicados','email=eq.'+encodeURIComponent(E)+'&select=id&limit=1')
   ]).then(function(res){
-    if(!res[0]||!res[0].length){document.getElementById('loading').innerHTML='<div style="padding:2rem;text-align:center;color:#c0756e;">Perfil no encontrado.</div>';return;}
+    if(!res[0]||!Array.isArray(res[0])){
+      document.getElementById('load-err').textContent='Error de conexión con la base de datos. Recarga la página.';
+      document.getElementById('load-msg').textContent='';
+      return;
+    }
+    if(!res[0].length){
+      document.getElementById('load-err').textContent='Perfil no encontrado para: '+E;
+      document.getElementById('load-msg').textContent='';
+      return;
+    }
     C=res[0][0];SEM=parseInt(C.semana_activa)||1;
     try{ACTS=C.acciones_progreso?JSON.parse(C.acciones_progreso):[];}catch(e){ACTS=[];}
     if(res[1]&&res[1].length){var raw=res[1][0].data;if(typeof raw==='string')try{raw=JSON.parse(raw);}catch(e){raw=null;}D=raw;}
@@ -345,7 +367,10 @@ function init(){
     document.getElementById('loading').style.display='none';
     document.getElementById('landing').style.display='block';
     if(D&&D.mensaje_candidato)document.getElementById('lmsg').textContent='"'+D.mensaje_candidato+'"';
-  }).catch(function(){document.getElementById('loading').innerHTML='<div style="padding:2rem;text-align:center;color:#c0756e;">Error al cargar.</div>';});
+  }).catch(function(err){
+    document.getElementById('load-err').textContent='Error: '+(err&&err.message?err.message:'Recarga la página.');
+    document.getElementById('load-msg').textContent='';
+  });
 }
 
 function entrar(){
