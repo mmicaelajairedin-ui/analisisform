@@ -711,118 +711,244 @@ function guardarCV(){
 
 function textToHtml(text, candidato, emailCand, cvEmail) {
   var _cvEmail = cvEmail || emailCand || '';
-  var SECS = ['NOMBRE COMPLETO','ROL OBJETIVO','RESUMEN EJECUTIVO','EXPERIENCIA PROFESIONAL',
-    'FORMACIÓN','FORMACION','EDUCACIÓN','EDUCACION','DATOS ACADÉMICOS','DATOS ACADEMICOS',
-    'TITULACIÓN','TITULACION','ESTUDIOS','CERTIFICACIONES','CURSOS','COMPETENCIAS',
-    'HABILIDADES','HERRAMIENTAS','IDIOMAS','OTROS DATOS','DATOS ADICIONALES'];
-  SECS.forEach(function(s) {
-    var re = new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
-    text = text.replace(re, '\n\n' + s.toUpperCase() + '\n');
-  });
-  var lines = text.split('\n').map(function(l){ return l.trim(); });
-  function norm(s){return (s||'').toUpperCase().replace(/[\u00C0-\u00C6]/g,'A').replace(/[\u00C8-\u00CB]/g,'E').replace(/[\u00CC-\u00CF]/g,'I').replace(/[\u00D2-\u00D6]/g,'O').replace(/[\u00D9-\u00DC]/g,'U').replace(/\u00D1/g,'N');}
-  function getSec(kw) {
-    var kwn = norm(kw), idx = -1;
-    for (var i = 0; i < lines.length; i++) {
-      var u = norm(lines[i]);
-      if (u.indexOf(kwn) === 0 && lines[i].length < 80) { idx = i; break; }
-    }
-    if (idx === -1) return [];
-    var out = [], next = ['NOMBRE','ROL OBJ','RESUMEN','EXPERIENCIA','FORMAC','EDUCAC','TITULAC','ESTUDIO','CERTIF','CURSO','HABILIDAD','COMPETENC','HERRAMIENTA','IDIOMA','OTRO','DATO','INFORMAC'];
-    for (var j = idx + 1; j < lines.length; j++) {
-      var u2 = norm(lines[j]).replace(/[^A-Z\s]/g, '');
-      if (u2.length > 2 && u2.length < 60 && next.some(function(k){ return u2.trim().indexOf(k) === 0; }) && out.length > 0) break;
-      if (lines[j]) out.push(lines[j]);
-    }
-    return out;
-  }
-  function esc(t) { return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function bold(t) { return esc(t).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>'); }
-  function fmtNum(t) { return t.replace(/\b(\d{4,})\b/g, function(m) { return m.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }); }
-  var name = '', role = '', email = '', phone = '', city = '', linkedin = '';
-  var roleLines = getSec('ROL OBJETIVO'); if (roleLines.length) role = roleLines[0];
-  var nameLines = getSec('NOMBRE COMPLETO'); if (nameLines.length) name = nameLines[0];
-  if (!name) { for (var i = 0; i < Math.min(5, lines.length); i++) { var l = lines[i]; if (l && !l.includes('@') && !l.match(/^\+?\d/) && l.toUpperCase() === l.replace(/[^A-Z\u00C0-\u00DC\s]/g,'') && l.length > 3 && l.length < 50) { name = l; break; } } }
-  if (!name) name = candidato || 'CV';
-  var em = text.match(/[\w.+-]+@[\w.-]+\.\w+/); if (em) email = em[0];
-  var ph = text.match(/\+?[\d][\d\s().+\-]{7,15}/); if (ph) phone = ph[0].trim();
-  var li = text.match(/linkedin\.com\/in\/[\w-]+/i); if (li) linkedin = li[0];
-  var cy = text.match(/(Madrid|Barcelona|Valencia|Sevilla|Bilbao|Galicia|Boiro|Espa\u00f1a|Spain)/i); if (cy) city = cy[0].trim();
-  var ini2 = (name||'CV').split(' ').map(function(w){ return w[0]||''; }).join('').slice(0,2).toUpperCase();
-  var summary = getSec('RESUMEN EJECUTIVO').join(' ').trim();
-  var expLines = getSec('EXPERIENCIA PROFESIONAL');
-  var formLines = getSec('FORMACI\u00d3N').length ? getSec('FORMACI\u00d3N') : getSec('FORMACION').length ? getSec('FORMACION') : getSec('EDUCACI\u00d3N').length ? getSec('EDUCACI\u00d3N') : getSec('EDUCACION').length ? getSec('EDUCACION') : getSec('ESTUDIOS');
-  var certLines = getSec('CERTIFICACIONES').length ? getSec('CERTIFICACIONES') : getSec('CURSOS');
-  var skillLines = getSec('COMPETENCIAS').length ? getSec('COMPETENCIAS') : getSec('HABILIDADES');
-  var toolLines = getSec('HERRAMIENTAS');
-  var langLines = getSec('IDIOMAS');
-  var otherLines = getSec('OTROS DATOS').length ? getSec('OTROS DATOS') : getSec('DATOS ADICIONALES');
-  var skills = [];
-  skillLines.forEach(function(l) {
-    var cl = l.replace(/^[-\u00b7\u2022\u25b8\s]+/, '').trim();
-    if (cl.includes(':')) { var after = cl.split(':')[1]||''; after.split(/[\u2022\u00b7,]/g).forEach(function(s){ if(s.trim().length>2) skills.push(s.trim()); }); return; }
-    if (cl.includes('\u00b7') || cl.includes('\u2022')) { cl.split(/[\u00b7\u2022]/).forEach(function(s){ if(s.trim().length>2) skills.push(s.trim()); }); } else if (cl.length > 2) skills.push(cl);
-  });
-  skills = skills.slice(0,6);
-  if (!skills.length) skills = skillLines.map(function(l){return l.replace(/^[-\u00b7\u2022\s]+/,'').trim();}).filter(function(s){return s.length>2;}).slice(0,6);
-  var tools = [];
-  if (toolLines.length) { toolLines.forEach(function(l) { var cl = l.replace(/^[-\u00b7\u2022\s]+/, '').trim(); if (cl.includes(':')) cl = (cl.split(':')[1]||cl); cl.split(/[\u2022\u00b7,]/g).forEach(function(s){ if(s.trim().length>1) tools.push(s.trim()); }); }); }
-  tools = tools.slice(0,10);
-  var langs = [];
-  langLines.forEach(function(l) { var cl = l.replace(/^[-\u00b7\u2022\s]+/, '').trim(); var lm = cl.match(/^(.+?)[\s:\u00b7\-]+([A-C][12]|Nativo|Biling\u00fce|Fluido|Native|Fluent)/i); if (lm) langs.push({n: lm[1].trim(), l: lm[2].trim()}); else if (cl.length > 1) langs.push({n: cl, l: ''}); });
-  var edu = [];
-  formLines.forEach(function(l) { var cl = l.replace(/^[-\u00b7\u2022\s]+/, '').trim(); if (!cl || cl.length < 3) return; var yr = cl.match(/(\d{4})\s*[-\u2013]\s*(\d{4}|\bActual\b)/i) || cl.match(/\d{4}/); var parts = cl.split(/[\u00b7|]/); edu.push({deg:(parts[0]||cl).replace(/\d{4}.*/,'').trim(),school:(parts[1]||'').trim(),yr:yr?yr[0]:''}); });
-  var certs = []; certLines.forEach(function(l) { var cl = l.replace(/^[-\u00b7\u2022\s]+/, '').trim(); if (cl.length > 2) certs.push(cl); });
-  var others = []; otherLines.forEach(function(l) { var cl = l.replace(/^[-\u00b7\u2022\s]+/, '').trim(); if (cl.length > 2) others.push(cl); });
-  var expBlocks = [], cur = [];
-  expLines.forEach(function(l) {
-    var hasDate = /\d{4}/.test(l), notBullet = !l.match(/^[-\u00b7\u2022]/), notLower = !l.match(/^[a-z\u00e1-\u00fc]/), ok = l.length > 3 && l.length < 140;
-    if (hasDate && notBullet && notLower && ok && cur.length > 1) { expBlocks.push(cur); cur = [l]; } else cur.push(l);
-  });
-  if (cur.length) expBlocks.push(cur);
-  expBlocks.sort(function(a, b) { var ya = (a[0]||'').match(/\d{4}/g)||[0]; var yb = (b[0]||'').match(/\d{4}/g)||[0]; return Math.max.apply(null,yb.map(Number)) - Math.max.apply(null,ya.map(Number)); });
 
+  // ── PARSEAR MARKDOWN ──
+  var lines = text.split('\n').map(function(l){ return l.trim(); });
+
+  function esc(t){ return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function bold(t){ return esc(t).replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>'); }
+  function fmtNum(t){ return t.replace(/\b(\d{4,})\b/g,function(m){return m.replace(/\B(?=(\d{3})+(?!\d))/g,'.');}); }
+
+  // Encontrar secciones por encabezados ## o palabras clave en mayúsculas
+  var sections = {};
+  var currentSection = null;
+  var currentLines = [];
+  var name = '', role = '';
+
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    if (!l || l === '---') continue;
+
+    // Detectar nombre (primera línea con # o todo mayúsculas)
+    if (!name && (l.startsWith('# ') || (l === l.toUpperCase() && l.length > 3 && l.length < 60 && !l.startsWith('#')))) {
+      name = l.replace(/^#+\s*/,'').trim();
+      continue;
+    }
+
+    // Detectar rol (línea en negrita sin ## que viene después del nombre)
+    if (!role && name && l.startsWith('**') && !l.startsWith('##') && l.length < 100) {
+      role = l.replace(/\*\*/g,'').trim();
+      continue;
+    }
+
+    // Detectar sección con ##
+    if (l.startsWith('## ')) {
+      if (currentSection) sections[currentSection] = currentLines;
+      currentSection = l.replace(/^##\s*/,'').toUpperCase().trim();
+      currentLines = [];
+      continue;
+    }
+
+    if (currentSection) currentLines.push(l);
+  }
+  if (currentSection) sections[currentSection] = currentLines;
+
+  if (!name) name = candidato || 'CV';
+
+  // Extraer datos de contacto de OTROS DATOS
+  var email = '', phone = '', city = '', linkedin = '';
+  var emailM = text.match(/[\w.+-]+@[\w.-]+\.\w+/); if (emailM) email = emailM[0];
+  var phoneM = text.match(/\+?[\d][\d\s().+\-]{7,15}/); if (phoneM) phone = phoneM[0].trim();
+  var liM = text.match(/linkedin\.com\/in\/[\w-]+/i); if (liM) linkedin = liM[0];
+  var cityM = text.match(/(Madrid|Barcelona|Valencia|Sevilla|Bilbao|Galicia|Boiro|Coruña|España|Spain|Galicia)/i); if (cityM) city = cityM[0].trim();
+
+  var ini2 = (name||'CV').split(' ').map(function(w){ return w[0]||''; }).join('').slice(0,2).toUpperCase();
+
+  // Parsear experiencia
+  function parseExp(lines) {
+    var blocks = [], cur = null;
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i];
+      if (!l || l === '---') continue;
+      // Detectar inicio de puesto: línea en negrita o con año
+      var isBold = l.startsWith('**') && l.includes('—');
+      var hasYear = /\d{4}/.test(l) && !l.startsWith('•') && !l.startsWith('-');
+      if (isBold || (hasYear && l.length < 200 && !l.startsWith('•'))) {
+        if (cur) blocks.push(cur);
+        cur = {title: l, bullets: []};
+      } else if (cur) {
+        if (l.startsWith('•') || l.startsWith('-')) {
+          cur.bullets.push(l.replace(/^[•\-\s]+/,''));
+        }
+      }
+    }
+    if (cur) blocks.push(cur);
+    return blocks;
+  }
+
+  function parseList(lines) {
+    var items = [];
+    lines.forEach(function(l) {
+      var cl = l.replace(/^[•\-\*\s]+/,'').replace(/\*\*/g,'').trim();
+      if (cl.length > 2) items.push(cl);
+    });
+    return items;
+  }
+
+  function parseLangs(lines) {
+    var langs = [];
+    lines.forEach(function(l) {
+      var cl = l.replace(/^[•\-\s]+/,'').trim();
+      if (!cl) return;
+      var m = cl.match(/^(.+?)\s*[—\-–]\s*(.+)$/);
+      if (m) langs.push({n: m[1].trim(), l: m[2].trim()});
+      else langs.push({n: cl, l: ''});
+    });
+    return langs;
+  }
+
+  function parseEdu(lines) {
+    var items = [];
+    lines.forEach(function(l) {
+      var cl = l.replace(/^[•\-\s]+/,'').trim();
+      if (!cl || cl === '---') return;
+      var parts = cl.split('|');
+      var yr = cl.match(/\d{4}/);
+      items.push({
+        deg: (parts[0]||cl).replace(/\d{4}.*/,'').trim(),
+        school: (parts[1]||'').trim(),
+        yr: parts[2]?parts[2].trim():(yr?yr[0]:'')
+      });
+    });
+    return items;
+  }
+
+  var expBlocks = parseExp(sections['EXPERIENCIA PROFESIONAL'] || []);
+  var skills = parseList(sections['COMPETENCIAS'] || sections['HABILIDADES'] || []).slice(0,6);
+  var tools = parseList(sections['HERRAMIENTAS'] || []).slice(0,10);
+  var langs = parseLangs(sections['IDIOMAS'] || []);
+  var edu = parseEdu(sections['FORMACIÓN'] || sections['FORMACION'] || sections['EDUCACIÓN'] || []);
+  var certs = parseList(sections['CERTIFICACIONES'] || sections['CURSOS'] || []);
+  var others = parseList(sections['OTROS DATOS'] || sections['DATOS ADICIONALES'] || [])
+    .filter(function(o){ return !o.match(/[\w.+-]+@[\w.-]+/) && !o.match(/linkedin/i) && !o.match(/\+?\d[\d\s]{6,}/); });
+  var summaryLines = sections['RESUMEN EJECUTIVO'] || [];
+  var summary = summaryLines.join(' ').trim();
+
+  // Parsear título y empresa de cada bloque de experiencia
+  function parseExpTitle(raw) {
+    var title = raw.replace(/\*\*/g,'').replace(/^#+\s*/,'');
+    var dates = '', company = '';
+    var dm = title.match(/(\d{2}\/\d{4}|\d{4})\s*[–\-—]\s*(\d{2}\/\d{4}|\d{4}|Presente|Presente|Actual|Present)/i);
+    if (dm) { dates = dm[0]; title = title.replace(dm[0],'').trim(); }
+    var parts = title.split(/\s*—\s*|\s*\|\s*/);
+    var mainTitle = parts[0]||title;
+    var rest = parts.slice(1).join(' | ');
+    // El último pipe suele ser empresa
+    var pipeparts = title.split('|');
+    if (pipeparts.length > 1) {
+      mainTitle = pipeparts[0].replace(/\s*—\s*.*/,'').trim();
+      company = pipeparts[0].replace(/^[^—]+—\s*/,'').trim() + (pipeparts[1]?' | '+pipeparts[1].trim():'');
+    } else if (parts.length > 1) {
+      mainTitle = parts[0].trim();
+      company = parts[1].trim();
+    }
+    return {title: mainTitle, company: company, dates: dates};
+  }
+
+  // ── HTML ──
+  var cvEmailJs = JSON.stringify(_cvEmail);
   var h = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">';
   h += '<title>CV — ' + esc(name) + '</title>';
   h += '<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">';
-  h += '<style>:root{--A:#1B3A5C;--A2:#4A7FA5;--AB:#EEF3F8;--SB:#F4F6F9;--T:#1a1a1a;--S:#555;--BD:#E5E5E5;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"DM Sans",sans-serif;background:#E8E6E2;padding:2rem 1rem 5rem;font-size:12px;}.bar{max-width:800px;margin:0 auto 1rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}.bar-l{font-size:11px;font-weight:600;color:#8C7B80;background:#fff;padding:5px 14px;border-radius:20px;border:1px solid #e0d8d5;}.bar-r{display:flex;align-items:center;gap:8px;}.xbtn{padding:6px 14px;font-size:11px;font-weight:700;font-family:"DM Sans",sans-serif;border-radius:7px;cursor:pointer;border:none;transition:.15s;}.xbtn-o{background:#fff;color:#555;border:1.5px solid #ddd;}.xbtn-o:hover{border-color:var(--A);color:var(--A);}.xbtn-p{background:var(--A);color:#fff;}#save-st{font-size:10px;color:#999;}.cv{max-width:800px;margin:0 auto;background:#fff;box-shadow:0 6px 40px rgba(0,0,0,.12);}.hd{background:var(--A);padding:28px 32px 22px;}.hd-inner{display:flex;align-items:center;gap:20px;}.ph-c{width:70px;height:70px;border-radius:50%;border:2px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;}.ph-ini{font-family:"Playfair Display",serif;font-size:22px;font-weight:800;color:rgba(255,255,255,.9);}.hi{flex:1;}.nm{font-family:"Playfair Display",serif;font-size:24px;font-weight:800;color:#fff;line-height:1.1;text-transform:uppercase;margin-bottom:3px;}.rl{font-size:9px;font-weight:700;color:rgba(255,255,255,.7);letter-spacing:.18em;text-transform:uppercase;margin-bottom:8px;}.cts{display:flex;flex-wrap:wrap;gap:3px 14px;}.ct{font-size:10.5px;color:rgba(255,255,255,.75);}.ct a{color:#fff;}.bd{display:grid;grid-template-columns:185px 1fr;}.sd{background:var(--SB);padding:22px 16px;border-right:1px solid var(--BD);}.ss{margin-bottom:18px;}.sh{font-size:7.5px;font-weight:700;color:var(--A);text-transform:uppercase;letter-spacing:.2em;margin-bottom:6px;padding-bottom:4px;border-bottom:1.5px solid var(--A);}.sk{font-size:11px;color:var(--T);padding:3px 0 3px 11px;border-bottom:.5px solid var(--BD);line-height:1.4;position:relative;display:block;}.sk::before{content:"";position:absolute;left:0;top:9px;width:3.5px;height:3.5px;border-radius:50%;background:var(--A2);}.sk:last-child{border-bottom:none;}.lg-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:.5px solid var(--BD);}.lg-row:last-child{border-bottom:none;}.lg-n{font-size:11px;color:var(--T);font-weight:500;}.lg-l{font-size:8.5px;font-weight:700;color:#fff;background:var(--A);padding:1px 7px;border-radius:10px;}.ed{margin-bottom:10px;padding-bottom:10px;border-bottom:.5px solid var(--BD);}.ed:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}.ed-d{font-size:11px;font-weight:700;color:var(--T);line-height:1.3;}.ed-s{font-size:10px;color:var(--A2);margin-top:1px;}.ed-y{font-size:9.5px;color:var(--S);margin-top:1px;}.ct2{font-size:10.5px;color:var(--T);padding:2.5px 0 2.5px 11px;border-bottom:.5px solid var(--BD);line-height:1.4;position:relative;display:block;}.ct2::before{content:"";position:absolute;left:0;top:8px;width:3.5px;height:3.5px;border-radius:50%;background:var(--A2);}.ct2:last-child{border-bottom:none;}.mn{padding:22px 28px;}.ms{margin-bottom:18px;}.mh{font-size:7.5px;font-weight:700;color:var(--A);text-transform:uppercase;letter-spacing:.2em;margin-bottom:7px;padding-bottom:4px;border-bottom:1.5px solid var(--A);}.sum{font-size:11.5px;color:var(--T);line-height:1.8;}.sum strong{color:var(--A);}.ex{margin-bottom:14px;padding-bottom:14px;border-bottom:.5px solid var(--BD);}.ex:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}.ex-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:1px;}.ex-t{font-family:"Playfair Display",serif;font-size:12.5px;font-weight:700;color:var(--T);line-height:1.2;flex:1;}.ex-d{font-size:9px;font-weight:700;color:#fff;background:var(--A);padding:2px 8px;border-radius:8px;flex-shrink:0;white-space:nowrap;}.ex-co{font-size:10.5px;color:var(--A2);font-weight:600;margin-bottom:4px;}.ex-ctx{font-size:10px;color:#888;background:var(--AB);border-radius:3px;padding:3px 8px;margin-bottom:5px;line-height:1.5;border-left:2px solid var(--A2);font-style:italic;}.ul{list-style:none;padding:0;}.ul li{font-size:11px;color:var(--T);line-height:1.7;padding:2px 0 2px 13px;position:relative;}.ul li::before{content:"";position:absolute;left:0;top:8px;width:4px;height:4px;border-radius:50%;background:var(--A);}.ul li strong{color:var(--A);}@media print{body{background:#fff;padding:0;}.bar{display:none;}.cv{box-shadow:none;}.hd{-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{margin:.4cm;size:A4;}}</style></head><body>';
+  h += '<style>:root{--A:#1B3A5C;--A2:#4A7FA5;--AB:#EEF3F8;--SB:#F4F6F9;--T:#1a1a1a;--S:#555;--BD:#E5E5E5;}.f{--A:#1D4A35;--A2:#3A8060;--AB:#EAF3EE;--SB:#F2F7F4;}.b{--A:#5C1B2E;--A2:#A54A65;--AB:#F4EEF0;--SB:#F7F2F4;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"DM Sans",sans-serif;background:#E8E6E2;padding:2rem 1rem 5rem;font-size:12px;}.bar{max-width:800px;margin:0 auto 1rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}.bar-l{font-size:11px;font-weight:600;color:#8C7B80;background:#fff;padding:5px 14px;border-radius:20px;border:1px solid #e0d8d5;}.bar-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}.cdot{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:.15s;}.cdot.on{border-color:#fff;box-shadow:0 0 0 2px var(--A);}.xbtn{padding:6px 14px;font-size:11px;font-weight:700;font-family:"DM Sans",sans-serif;border-radius:7px;cursor:pointer;border:none;transition:.15s;}.xbtn-o{background:#fff;color:#555;border:1.5px solid #ddd;}.xbtn-o:hover{border-color:var(--A);color:var(--A);}.xbtn-y{background:#f3a41b;color:#fff;}.xbtn-p{background:var(--A);color:#fff;}#save-st{font-size:10px;color:#999;}.cv{max-width:800px;margin:0 auto;background:#fff;box-shadow:0 6px 40px rgba(0,0,0,.12);}.hd{background:var(--A);padding:28px 32px 22px;position:relative;overflow:hidden;}.hd::after{content:"";position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,.04);pointer-events:none;}.hd-inner{display:flex;align-items:center;gap:20px;position:relative;z-index:2;}.ph-wrap{flex-shrink:0;}.ph-c{width:80px;height:80px;border-radius:50%;border:2.5px solid rgba(255,255,255,.3);overflow:hidden;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;}.ph-c img{width:100%;height:100%;object-fit:cover;display:none;}.ph-ini{font-family:"Playfair Display",serif;font-size:26px;font-weight:800;color:rgba(255,255,255,.9);}.ph-hint{font-size:9px;color:rgba(255,255,255,.45);text-align:center;margin-top:3px;}.hi{flex:1;}.nm{font-family:"Playfair Display",serif;font-size:26px;font-weight:800;color:#fff;line-height:1.1;letter-spacing:.04em;text-transform:uppercase;margin-bottom:3px;}.rl{font-size:9px;font-weight:700;color:rgba(255,255,255,.7);letter-spacing:.18em;text-transform:uppercase;margin-bottom:10px;}.cts{display:flex;flex-wrap:wrap;gap:3px 16px;margin-bottom:8px;}.ct{font-size:10.5px;color:rgba(255,255,255,.75);}.ct a{color:#fff;text-decoration:underline;text-decoration-color:rgba(255,255,255,.4);}.bd{display:grid;grid-template-columns:185px 1fr;}.sd{background:var(--SB);padding:22px 16px;border-right:1px solid var(--BD);}.ss{margin-bottom:20px;}.sh{font-size:7.5px;font-weight:700;color:var(--A);text-transform:uppercase;letter-spacing:.2em;margin-bottom:7px;padding-bottom:4px;border-bottom:1.5px solid var(--A);}.sk{font-size:11px;color:var(--T);padding:3px 0 3px 11px;border-bottom:.5px solid var(--BD);line-height:1.4;position:relative;display:block;}.sk::before{content:"";position:absolute;left:0;top:9px;width:3.5px;height:3.5px;border-radius:50%;background:var(--A2);}.sk:last-child{border-bottom:none;}.lg-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:.5px solid var(--BD);}.lg-row:last-child{border-bottom:none;}.lg-n{font-size:11px;color:var(--T);font-weight:500;}.lg-l{font-size:8.5px;font-weight:700;color:#fff;background:var(--A);padding:1px 7px;border-radius:10px;}.ed{margin-bottom:11px;padding-bottom:11px;border-bottom:.5px solid var(--BD);}.ed:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}.ed-d{font-size:11px;font-weight:700;color:var(--T);line-height:1.3;}.ed-s{font-size:10px;color:var(--A2);font-weight:500;margin-top:1px;}.ed-y{font-size:9.5px;color:var(--S);margin-top:1px;}.ct2{font-size:10.5px;color:var(--T);padding:2.5px 0 2.5px 11px;border-bottom:.5px solid var(--BD);line-height:1.4;position:relative;display:block;}.ct2::before{content:"";position:absolute;left:0;top:8px;width:3.5px;height:3.5px;border-radius:50%;background:var(--A2);}.ct2:last-child{border-bottom:none;}.mn{padding:22px 28px;}.ms{margin-bottom:20px;}.mh{font-size:7.5px;font-weight:700;color:var(--A);text-transform:uppercase;letter-spacing:.2em;margin-bottom:8px;padding-bottom:4px;border-bottom:1.5px solid var(--A);}.sum{font-size:11.5px;color:var(--T);line-height:1.8;}.sum strong{font-weight:700;color:var(--A);}.ex{margin-bottom:14px;padding-bottom:14px;border-bottom:.5px solid var(--BD);}.ex:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}.ex-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:1px;}.ex-t{font-family:"Playfair Display",serif;font-size:12.5px;font-weight:700;color:var(--T);line-height:1.2;flex:1;}.ex-d{font-size:9px;font-weight:700;color:#fff;background:var(--A);padding:2px 8px;border-radius:8px;flex-shrink:0;white-space:nowrap;}.ex-co{font-size:10.5px;color:var(--A2);font-weight:600;margin-bottom:4px;}.ul{list-style:none;padding:0;}.ul li{font-size:11px;color:var(--T);line-height:1.7;padding:2px 0 2px 13px;position:relative;}.ul li::before{content:"";position:absolute;left:0;top:8px;width:4px;height:4px;border-radius:50%;background:var(--A);}.ul li strong{font-weight:700;color:var(--A);}.bc{display:none;}body.editing .bc{display:flex;gap:5px;margin-top:5px;}.bb{padding:2px 9px;font-size:9.5px;font-weight:700;font-family:"DM Sans",sans-serif;border:1.5px solid var(--BD);background:#fff;color:var(--S);border-radius:5px;cursor:pointer;}.bb:hover{border-color:var(--A);color:var(--A);}.bb.rem{border-color:#e5c5c5;color:#c0756e;}[contenteditable]{outline:none;border-radius:2px;transition:background .12s;}body.editing [contenteditable]:hover{background:rgba(27,58,92,.06);cursor:text;}body.editing [contenteditable]:focus{background:rgba(27,58,92,.1);}body.editing .hd [contenteditable]:hover{background:rgba(255,255,255,.15);}body.editing .hd [contenteditable]:focus{background:rgba(255,255,255,.22);}@media print{body{background:#fff;padding:0;}.bar{display:none;}.bc{display:none!important;}.cv{box-shadow:none;max-width:100%;}.hd,.sd,.ex-d,.lg-l{-webkit-print-color-adjust:exact;print-color-adjust:exact;}@page{margin:.4cm;size:A4;}}</style></head><body>';
+
+  // Barra de herramientas
   h += '<div class="bar"><div class="bar-l">Micaela Jairedin &middot; Career Coach &amp; Recruiter</div>';
-  h += '<div class="bar-r"><button class="xbtn xbtn-p" onclick="window.print()">↓ Descargar PDF</button></div></div>';
+  h += '<div class="bar-r"><span style="font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Color</span>';
+  h += '<div class="cdot on" style="background:#1B3A5C" onclick="setT(\'\',this)"></div>';
+  h += '<div class="cdot" style="background:#1D4A35" onclick="setT(\'f\',this)"></div>';
+  h += '<div class="cdot" style="background:#5C1B2E" onclick="setT(\'b\',this)"></div>';
+  h += '<input type="file" id="pf" accept="image/*" style="display:none" onchange="loadPh(this)">';
+  h += '<button class="xbtn xbtn-o" onclick="document.getElementById(\'pf\').click()">+ Foto</button>';
+  h += '<span id="save-st"></span>';
+  h += '<button class="xbtn xbtn-y" id="eb" onclick="toggleEdit()">\u270F Editar</button>';
+  h += '<button class="xbtn xbtn-p" onclick="window.print()">\u2193 PDF</button></div></div>';
+
+  // Header CV
   h += '<div class="cv"><div class="hd"><div class="hd-inner">';
-  h += '<div class="ph-c"><span class="ph-ini">' + esc(ini2) + '</span></div>';
-  h += '<div class="hi"><div class="nm">' + esc(name) + '</div>';
-  h += '<div class="rl">' + esc(role) + '</div>';
+  h += '<div class="ph-wrap"><div class="ph-c" onclick="document.getElementById(\'pf\').click()"><img id="pi" src="" alt=""><span id="pn" class="ph-ini">' + esc(ini2) + '</span></div><div class="ph-hint">+ Foto</div></div>';
+  h += '<div class="hi"><div class="nm" contenteditable="false">' + esc(name) + '</div>';
+  h += '<div class="rl" contenteditable="false">' + esc(role) + '</div>';
   h += '<div class="cts">';
-  if (email) h += '<div class="ct">' + esc(email) + '</div>';
-  if (phone) h += '<div class="ct">' + esc(phone) + '</div>';
-  if (city) h += '<div class="ct">' + esc(city) + '</div>';
-  if (linkedin) h += '<div class="ct"><a href="https://' + esc(linkedin) + '" target="_blank">' + esc(linkedin) + '</a></div>';
+  if (email) h += '<div class="ct" contenteditable="false">' + esc(email) + '</div>';
+  if (phone) h += '<div class="ct" contenteditable="false">' + esc(phone) + '</div>';
+  if (city) h += '<div class="ct" contenteditable="false">' + esc(city) + '</div>';
+  if (linkedin) h += '<div class="ct"><a href="https://' + esc(linkedin) + '" target="_blank" contenteditable="false">' + esc(linkedin) + '</a></div>';
   h += '</div></div></div></div>';
+
+  // Body
   h += '<div class="bd"><div class="sd">';
-  if (langs.length) { h += '<div class="ss"><div class="sh">Idiomas</div>'; langs.forEach(function(l) { h += '<div class="lg-row"><span class="lg-n">' + esc(l.n) + '</span>' + (l.l ? '<span class="lg-l">' + esc(l.l) + '</span>' : '') + '</div>'; }); h += '</div>'; }
-  if (skills.length) { h += '<div class="ss"><div class="sh">Competencias</div>'; skills.forEach(function(s) { h += '<div class="sk">' + esc(s) + '</div>'; }); h += '</div>'; }
-  if (tools.length) { h += '<div class="ss"><div class="sh">Herramientas</div>'; tools.forEach(function(t) { h += '<div class="sk">' + esc(t) + '</div>'; }); h += '</div>'; }
-  if (edu.length) { h += '<div class="ss"><div class="sh">Formación</div>'; edu.forEach(function(e) { h += '<div class="ed"><div class="ed-d">' + esc(e.deg) + '</div>' + (e.school ? '<div class="ed-s">' + esc(e.school) + '</div>' : '') + (e.yr ? '<div class="ed-y">' + esc(e.yr) + '</div>' : '') + '</div>'; }); h += '</div>'; }
-  if (certs.length) { h += '<div class="ss"><div class="sh">Certificaciones</div>'; certs.forEach(function(c) { h += '<div class="ct2">' + esc(c) + '</div>'; }); h += '</div>'; }
-  if (others.length) { h += '<div class="ss"><div class="sh">Otros datos</div>'; others.forEach(function(o) { h += '<div class="ct2">' + esc(o) + '</div>'; }); h += '</div>'; }
+  if (langs.length) {
+    h += '<div class="ss"><div class="sh">Idiomas</div>';
+    langs.forEach(function(l) { h += '<div class="lg-row"><span class="lg-n" contenteditable="false">' + esc(l.n) + '</span>' + (l.l ? '<span class="lg-l" contenteditable="false">' + esc(l.l) + '</span>' : '') + '</div>'; });
+    h += '</div>';
+  }
+  if (skills.length) {
+    h += '<div class="ss"><div class="sh">Competencias</div>';
+    skills.forEach(function(s) { h += '<div class="sk" contenteditable="false">' + esc(s) + '</div>'; });
+    h += '</div>';
+  }
+  if (tools.length) {
+    h += '<div class="ss"><div class="sh">Herramientas</div>';
+    tools.forEach(function(t) { h += '<div class="sk" contenteditable="false">' + esc(t) + '</div>'; });
+    h += '</div>';
+  }
+  if (edu.length) {
+    h += '<div class="ss"><div class="sh">Formaci\u00f3n</div>';
+    edu.forEach(function(e) { h += '<div class="ed"><div class="ed-d" contenteditable="false">' + esc(e.deg) + '</div>' + (e.school ? '<div class="ed-s" contenteditable="false">' + esc(e.school) + '</div>' : '') + (e.yr ? '<div class="ed-y" contenteditable="false">' + esc(e.yr) + '</div>' : '') + '</div>'; });
+    h += '</div>';
+  }
+  if (certs.length) {
+    h += '<div class="ss"><div class="sh">Certificaciones</div>';
+    certs.forEach(function(c) { h += '<div class="ct2" contenteditable="false">' + esc(c) + '</div>'; });
+    h += '</div>';
+  }
+  if (others.length) {
+    h += '<div class="ss"><div class="sh">Otros datos</div>';
+    others.forEach(function(o) { h += '<div class="ct2" contenteditable="false">' + esc(o) + '</div>'; });
+    h += '</div>';
+  }
   h += '</div><div class="mn">';
-  if (summary) { h += '<div class="ms"><div class="mh">Resumen ejecutivo</div><div class="sum">' + bold(fmtNum(summary)) + '</div></div>'; }
+
+  // Resumen
+  if (summary) h += '<div class="ms"><div class="mh">Resumen ejecutivo</div><div class="sum" contenteditable="false">' + bold(fmtNum(summary)) + '</div></div>';
+
+  // Experiencia
   h += '<div class="ms"><div class="mh">Experiencia profesional</div>';
-  expBlocks.filter(function(b) { return b.join('').trim().length > 10; }).forEach(function(block, ei) {
-    var blines = block.filter(function(l){ return l.trim(); }); if (!blines.length) return;
-    var title = blines[0], dates = '', company = '', ctx = '', bullets = [];
-    var dm = title.match(/\d{4}\s*[-\u2013\u2014]\s*(\d{4}|Actualidad|Presente|Actual)/i);
-    if (dm) { dates = dm[0]; title = title.replace(dm[0], '').replace(/[|\u00b7\u2014\-]+/g,' ').replace(/\s+/g,' ').trim(); }
-    for (var j = 1; j < blines.length; j++) { var bl = blines[j]; if (/^(Contexto|Context):/i.test(bl)) { ctx = bl.replace(/^[^:]+:\s*/, ''); continue; } if (j === 1 && !bl.match(/^[-\u00b7\u2022]/) && bl.length < 90) { company = bl; continue; } bullets.push(bl.replace(/^[-\u00b7\u2022\s]+/, '')); }
-    h += '<div class="ex"><div class="ex-top"><div class="ex-t">' + bold(esc(title)) + '</div>' + (dates ? '<div class="ex-d">' + esc(dates) + '</div>' : '') + '</div>';
-    if (company) h += '<div class="ex-co">' + esc(company) + '</div>';
-    if (ctx) h += '<div class="ex-ctx">' + esc(ctx) + '</div>';
-    h += '<ul class="ul">';
-    bullets.forEach(function(b) { h += '<li>' + bold(fmtNum(esc(b))) + '</li>'; });
-    h += '</ul></div>';
+  expBlocks.forEach(function(block, ei) {
+    var parsed = parseExpTitle(block.title);
+    var ulId = 'ul' + ei;
+    h += '<div class="ex"><div class="ex-top"><div class="ex-t" contenteditable="false">' + bold(esc(parsed.title)) + '</div>' + (parsed.dates ? '<div class="ex-d" contenteditable="false">' + esc(parsed.dates) + '</div>' : '') + '</div>';
+    if (parsed.company) h += '<div class="ex-co" contenteditable="false">' + esc(parsed.company) + '</div>';
+    h += '<ul class="ul" id="' + ulId + '">';
+    block.bullets.forEach(function(b) { h += '<li contenteditable="false">' + bold(fmtNum(esc(b))) + '</li>'; });
+    h += '</ul><div class="bc"><button class="bb" onclick="addB(\'' + ulId + '\')">+ Bullet</button><button class="bb rem" onclick="remB(\'' + ulId + '\')">&#8722; Quitar</button></div></div>';
   });
   h += '</div></div></div></div>';
-  h += '</body></html>';
+
+  // Script edición
+  var cvEmailJs2 = JSON.stringify(_cvEmail);
+  h += '<script>var SB="https://ddxnrsnjdvtqhxunxnwj.supabase.co",KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU",_em=' + cvEmailJs2 + ',_saveT=null,_ed=false;';
+  h += 'function setT(c,b){document.body.className=c+(_ed?" editing":"");document.querySelectorAll(".cdot").forEach(function(d){d.classList.remove("on");});b.classList.add("on");}';
+  h += 'function loadPh(i){if(!i.files[0])return;var r=new FileReader();r.onload=function(e){var img=document.getElementById("pi"),pn=document.getElementById("pn");img.src=e.target.result;img.style.display="block";if(pn)pn.style.display="none";schedSave();};r.readAsDataURL(i.files[0]);}';
+  h += 'function toggleEdit(){_ed=!_ed;var b=document.getElementById("eb"),cls=document.body.className.replace(" editing","");if(_ed){document.body.className=cls+" editing";b.textContent="\u2713 Listo";b.style.background="#4a7c5f";document.querySelectorAll("[contenteditable]").forEach(function(e){e.contentEditable="true";e.oninput=schedSave;});document.querySelectorAll(".ul li").forEach(function(li){if(li.querySelector(".del-btn"))return;var x=document.createElement("button");x.className="del-btn";x.innerHTML="&times;";x.onclick=function(ev){ev.stopPropagation();li.remove();schedSave();};li.style.position="relative";li.appendChild(x);});}else{document.body.className=cls;b.textContent="\u270F Editar";b.style.background="";document.querySelectorAll("[contenteditable]").forEach(function(e){e.contentEditable="false";});document.querySelectorAll(".del-btn").forEach(function(x){x.remove();});saveNow();}}';
+  h += 'function addB(id){var u=document.getElementById(id);if(!u)return;var li=document.createElement("li");li.contentEditable=_ed?"true":"false";li.textContent="Escribe aqui...";li.style.color="#aaa";li.oninput=schedSave;li.onfocus=function(){if(this.textContent==="Escribe aqui..."){this.textContent="";this.style.color="";}};if(_ed){var x=document.createElement("button");x.className="del-btn";x.innerHTML="&times;";x.onclick=function(ev){ev.stopPropagation();li.remove();schedSave();};li.style.position="relative";li.appendChild(x);}u.appendChild(li);li.focus();schedSave();}';
+  h += 'function remB(id){var u=document.getElementById(id);if(!u)return;var items=u.querySelectorAll("li");if(!items.length)return;items[items.length-1].remove();schedSave();}';
+  h += 'function schedSave(){clearTimeout(_saveT);_saveT=setTimeout(saveNow,2000);showSt("Guardando...",false);}';
+  h += 'function saveNow(){if(!_em)return;var html=document.documentElement.outerHTML;fetch(SB+"/rest/v1/cv_publicados?email=eq."+encodeURIComponent(_em),{method:"PATCH",headers:{"apikey":KEY,"Authorization":"Bearer "+KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify({contenido:html})}).then(function(r){showSt(r.ok||r.status===204?"\u2713 Guardado":"Error",r.ok||r.status===204);}).catch(function(){showSt("Error",false);});}';
+  h += 'function showSt(msg,ok){var s=document.getElementById("save-st");if(s){s.textContent=msg;s.style.color=ok?"#4a7c5f":"#999";setTimeout(function(){if(s.textContent===msg)s.textContent="";},3000);}}';
+  h += 'var st=document.createElement("style");st.textContent=".del-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:#c0756e;color:#fff;border:none;cursor:pointer;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;opacity:.7;}.del-btn:hover{opacity:1;}";document.head.appendChild(st);';
+  h += '<\/script></body></html>';
   return h;
 }
 
@@ -831,10 +957,8 @@ function publicarCV(id){
   var st=document.getElementById('st-cvpub-'+id);
   if(!cvText){if(st){st.textContent='No hay CV para publicar.';st.style.color='#c0756e';}return;}
   var c=cands.find(function(x){return x.id===id;});
-  if(st){st.textContent='Convirtiendo a HTML y publicando...';st.style.color='#666';}
-  // Convertir texto a HTML con diseño antes de publicar
-  var cvHtml=textToHtml(cvText,c.nombre||'',c.email||'',c.email||'');
-  sbUpsert('cv_publicados',{email:c.email,candidato_id:id,contenido:cvHtml,codigo:''}).then(function(){
+  if(st){st.textContent='Publicando...';st.style.color='#666';}
+  sbUpsert('cv_publicados',{email:c.email,candidato_id:id,contenido:cvText,codigo:''}).then(function(){
     var email=(c.email||'').toLowerCase().trim();
     cvs[email]={email:c.email,codigo:'',contenido:cvText};
     var cvUrl=BASE+'/cliente.html?email='+encodeURIComponent(c.email);
