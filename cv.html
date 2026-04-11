@@ -3,16 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
 <title>CV Optimizado</title>
 <style>
-body{margin:0;padding:0;background:#E8E6E2;}
-.loading{text-align:center;padding:5rem;color:#999;font-family:sans-serif;font-size:14px;}
-.lock{max-width:360px;margin:5rem auto;background:#fff;border-radius:16px;padding:2.5rem 2rem;text-align:center;box-shadow:0 4px 30px rgba(0,0,0,.08);font-family:sans-serif;}
-.lock h2{font-size:20px;margin-bottom:8px;}
-.lock p{font-size:13px;color:#666;line-height:1.6;margin-bottom:1.4rem;}
-.lock input{width:150px;padding:11px;font-size:18px;font-weight:700;letter-spacing:.25em;text-align:center;text-transform:uppercase;border:2px solid #ddd;border-radius:10px;outline:none;}
-.lock button{margin-top:10px;width:100%;padding:12px;font-size:13px;font-weight:700;background:#1B3A5C;color:#fff;border:none;border-radius:10px;cursor:pointer;}
-.lock-err{font-size:12px;color:#c0756e;margin-top:7px;min-height:16px;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{margin:0;padding:0;background:#E8E6E2;font-family:'Helvetica Neue',Arial,sans-serif;}
+.loading{text-align:center;padding:5rem;color:#999;font-size:14px;}
 </style>
 </head>
 <body>
@@ -20,58 +16,52 @@ body{margin:0;padding:0;background:#E8E6E2;}
 <script>
 var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
-var _row=null,_email=null,_code=null;
 
-function init(){
-  var p=new URLSearchParams(window.location.search);
-  _email=p.get('email');
-  _code=(p.get('code')||'').trim().toUpperCase();
-  if(!_email){show('<div class="loading">No se encontró el CV.</div>');return;}
-  fetch(SB+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(_email)+'&order=created_at.desc&limit=1&select=*',{
+var _email=null;
+var user=localStorage.getItem('mj_user');
+if(user){try{_email=JSON.parse(user).email;}catch(e){}}
+if(!_email){var p=new URLSearchParams(window.location.search);_email=p.get('email');}
+if(!_email){
+  document.getElementById('root').innerHTML='<div class="loading">Sesión no encontrada. <a href="login.html" style="color:#8C7B80;">Iniciar sesión</a></div>';
+}else{cargarCV();}
+
+function cargarCV(){
+  fetch(SB+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(_email)+'&order=created_at.desc&limit=1&select=contenido',{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
   }).then(function(r){return r.json();}).then(function(rows){
-    if(!Array.isArray(rows)||!rows.length){show('<div class="loading">Tu CV aún no está disponible.</div>');return;}
-    _row=rows[0];
-    showCV();
-  }).catch(function(e){show('<div class="loading">Error: '+e.message+'</div>');});
+    if(!Array.isArray(rows)||!rows.length){
+      document.getElementById('root').innerHTML='<div class="loading">Tu CV aún no está disponible.<br><span style="font-size:12px;color:#bbb;">Micaela lo está preparando.</span></div>';
+      return;
+    }
+    mostrarCV(rows[0].contenido||'');
+  }).catch(function(){
+    document.getElementById('root').innerHTML='<div class="loading">Error al cargar. Inténtalo de nuevo.</div>';
+  });
 }
 
-function show(html){document.getElementById('root').innerHTML=html;}
-
-function showLock(){
-  show('<div class="lock">'
-    +'<h2>&#128274; Tu CV optimizado</h2>'
-    +'<p>Introduce el código que Micaela te envió por WhatsApp.</p>'
-    +'<input id="li" type="text" maxlength="8" placeholder="XXXXXX" autocomplete="off">'
-    +'<button onclick="verificar()">Ver mi CV</button>'
-    +'<p class="lock-err" id="le"></p></div>');
-}
-
-function verificar(){
-  var code=(document.getElementById('li').value||'').trim().toUpperCase();
-  if(code===(_row.codigo||'').trim().toUpperCase()){
-    _code=code;
-    window.history.replaceState({},'',location.pathname+'?email='+encodeURIComponent(_email)+'&code='+code);
-    showCV();
-  } else {
-    document.getElementById('le').textContent='Código incorrecto.';
+function mostrarCV(html){
+  if(html.trim().startsWith('<!DOCTYPE')||html.trim().startsWith('<html')){
+    var root=document.getElementById('root');
+    root.style.cssText='margin:0;padding:0;';
+    var blob=new Blob([html],{type:'text/html'});
+    var url=URL.createObjectURL(blob);
+    var iframe=document.createElement('iframe');
+    iframe.src=url;
+    iframe.style.cssText='width:100%;border:none;display:block;min-height:100vh;';
+    iframe.onload=function(){
+      try{
+        var h=iframe.contentDocument.documentElement.scrollHeight;
+        iframe.style.height=h+'px';
+      }catch(e){iframe.style.height='200vh';}
+    };
+    root.innerHTML='';
+    root.appendChild(iframe);
+  }else{
+    document.getElementById('root').innerHTML=
+      '<div style="max-width:860px;margin:2rem auto;background:#fff;padding:2rem 2.5rem;box-shadow:0 4px 20px rgba(0,0,0,.1);border-radius:8px;white-space:pre-wrap;font-size:13px;line-height:1.8;color:#1a1a1a;">'+
+      html.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</div>';
   }
 }
-
-function showCV(){
-  var html=_row.contenido||'';
-  // If it's HTML content, inject it directly
-  if(html.trim().startsWith('<!DOCTYPE') || html.trim().startsWith('<html')){
-    document.open();
-    document.write(html);
-    document.close();
-  } else {
-    // Legacy text content — show with basic formatting
-    document.getElementById('root').innerHTML='<div style="max-width:860px;margin:2rem auto;background:#fff;padding:2rem;box-shadow:0 4px 20px rgba(0,0,0,.1);font-family:sans-serif;white-space:pre-wrap;font-size:13px;line-height:1.8;">'+html+'</div>';
-  }
-}
-
-init();
 </script>
 </body>
 </html>
