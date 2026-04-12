@@ -1388,8 +1388,8 @@ function renderMain(c){
 
   var tabs=['datos','generar','cv'];
   if(hasRep) tabs.splice(2,0,'informe','sesion');
-  tabs.push('carta'); tabs.push('notas');
-  var labels={datos:'Datos',generar:'Generar IA',sesion:'Sesión',informe:'Informe',cv:'CV IA',carta:'Carta',notas:'Notas'};
+  tabs.push('carta'); tabs.push('notas'); tabs.push('mensajes');
+  var labels={datos:'Datos',generar:'Generar IA',sesion:'Sesión',informe:'Informe',cv:'CV IA',carta:'Carta',notas:'Notas',mensajes:'✉ Mensajes'};
   var tabsHTML=tabs.map(function(t){
     return '<div class="tab'+(atab===t?' on':'')+'" onclick="switchTab(\''+t+'\','+c.id+')">'+labels[t]+'</div>';
   }).join('');
@@ -1428,6 +1428,7 @@ function renderTab(c,tab){
   if(tab==='carta')return tabCarta(c);
   if(tab==='cv')return tabCV(c);
   if(tab==='notas')return tabNotas(c);
+  if(tab==='mensajes')return tabMensajes(c);
   return '';
 }
 
@@ -1768,6 +1769,155 @@ function guardarCarta(id){
   var st=document.getElementById('st-cartasave-'+id);
   if(st){st.textContent='Guardando...';st.style.color='#666';}
   fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(c.email),{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({carta_presentacion:val})}).then(function(r){var ok=r.ok||r.status===204;if(st){st.textContent=ok?'✓ Guardada':'Error';st.style.color=ok?'#4a7c5f':'#c0756e';}if(ok)showToast('Carta guardada ✓');}).catch(function(e){if(st){st.textContent='Error: '+e.message;st.style.color='#c0756e';}});
+}
+
+
+// ══════════════════════════════════════════════════════
+// TAB MENSAJES — envío directo al cliente
+// ══════════════════════════════════════════════════════
+function tabMensajes(c){
+  var nom   = (c.nombre||c.email||'').split(' ')[0];
+  var email = c.email||'';
+  var tel   = (c.telefono||c.tel||'').replace(/\D/g,'');
+  if(tel && tel.length < 11) tel = '34'+tel;
+  var FORM  = 'https://mmicaelajairedin-ui.github.io/analisisform/index.html';
+  var PORTAL= 'https://mmicaelajairedin-ui.github.io/analisisform/cliente.html';
+  var CV_URL= 'https://mmicaelajairedin-ui.github.io/analisisform/cv.html?email='+encodeURIComponent(email);
+
+  var plants = [
+    {
+      id:'bienvenida', icon:'👋', label:'Bienvenida',
+      es:'¡Hola '+nom+'! 🎉\n\nTe doy la bienvenida a tu proceso de coaching personalizado. Ya tenés acceso a tu portal donde vas a encontrar tu plan semana a semana, tus acciones y mucho más.\n\n📱 Tu espacio personal:\n'+PORTAL+'\n\nTu usuario es tu email. Cualquier duda estoy aquí.\n\n¡Arrancamos! 🚀\nMicaela',
+      en:'Hi '+nom+'! 🎉\n\nWelcome to your personalized coaching process. You now have access to your portal where you will find your weekly plan, actions and more.\n\n📱 Your personal space:\n'+PORTAL+'\n\nYour username is your email. Any questions, I\'m here.\n\nLet\'s go! 🚀\nMicaela'
+    },
+    {
+      id:'login', icon:'🔑', label:'Acceso y contraseña',
+      es:'¡Hola '+nom+'!\n\nAquí tus datos de acceso al portal:\n\n📧 Usuario: '+email+'\n🔑 Contraseña: [CONTRASEÑA]\n\n🔗 Acceso:\n'+PORTAL+'\n\nGuardá bien estos datos. Si tenés algún problema para entrar, escribime.\n\nMicaela',
+      en:'Hi '+nom+'!\n\nHere are your portal login details:\n\n📧 Username: '+email+'\n🔑 Password: [PASSWORD]\n\n🔗 Access:\n'+PORTAL+'\n\nKeep these details safe. If you have any trouble logging in, just message me.\n\nMicaela'
+    },
+    {
+      id:'cv_listo', icon:'📄', label:'CV listo',
+      es:'¡Hola '+nom+'! Tu CV optimizado ya está listo 🎉\n\nLo podés ver y descargar desde acá:\n👉 '+CV_URL+'\n\nRevisalo con calma y me contás qué te parece. Si querés ajustar algo lo vemos juntos en la próxima sesión.\n\nMicaela',
+      en:'Hi '+nom+'! Your optimized CV is ready 🎉\n\nYou can view and download it here:\n👉 '+CV_URL+'\n\nReview it carefully and let me know what you think. If you want to adjust anything we can go over it in our next session.\n\nMicaela'
+    },
+    {
+      id:'recordatorio', icon:'📅', label:'Recordatorio sesión',
+      es:'¡Hola '+nom+'! Te recuerdo que mañana tenemos sesión 📅\n\nAntes de la llamada te recomiendo:\n✅ Revisar tus acciones de esta semana\n✅ Anotar dudas o avances en el portal\n✅ Tener a mano tu CV\n\nNos vemos mañana. ¡Cualquier cosa escribime!\n\nMicaela',
+      en:'Hi '+nom+'! Just a reminder that we have our session tomorrow 📅\n\nBefore the call I recommend:\n✅ Review your weekly actions\n✅ Note any questions or progress in the portal\n✅ Have your CV handy\n\nSee you tomorrow. Message me if anything!\n\nMicaela'
+    },
+    {
+      id:'nueva_semana', icon:'⏭', label:'Nueva semana',
+      es:'¡Hola '+nom+'! Felicitaciones por completar esta etapa 🏆\n\nYa tenés tu nueva semana lista en el portal con acciones nuevas:\n👉 '+PORTAL+'\n\n¡Seguimos! Micaela',
+      en:'Hi '+nom+'! Congratulations on completing this stage 🏆\n\nYour new week is ready in the portal with new actions:\n👉 '+PORTAL+'\n\nKeep going! Micaela'
+    },
+    {
+      id:'informe', icon:'📊', label:'Informe listo',
+      es:'¡Hola '+nom+'! Tu informe de perfil profesional ya está disponible 📊\n\nEntrá a tu portal, sección "Mi análisis", para ver tu diagnóstico completo con fortalezas, áreas de mejora y estrategia personalizada.\n👉 '+PORTAL+'\n\nMicaela',
+      en:'Hi '+nom+'! Your professional profile report is now available 📊\n\nLog in to your portal, "My analysis" section, to see your complete diagnosis with strengths, areas for improvement and personalized strategy.\n👉 '+PORTAL+'\n\nMicaela'
+    },
+    {
+      id:'personalizado', icon:'✏', label:'Personalizado',
+      es:'¡Hola '+nom+'!\n\n',
+      en:'Hi '+nom+'!\n\n'
+    }
+  ];
+
+  var _pl = 'bienvenida';
+  var _lg = 'es';
+
+  function getMsg(){
+    var p = plants.find(function(x){return x.id===_pl;})||plants[0];
+    var ta = document.getElementById('msg-ta');
+    return ta ? ta.value : (p[_lg]||p.es);
+  }
+
+  function html(){
+    var p = plants.find(function(x){return x.id===_pl;})||plants[0];
+    var msg = p[_lg]||p.es;
+    var o = '<div style="display:flex;flex-direction:column;gap:16px;">';
+
+    // Header
+    o += '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">';
+    o += '<div><div class="dp-lbl" style="margin-bottom:2px;">Enviar mensaje a</div>';
+    o += '<div style="font-size:16px;font-weight:700;color:var(--accent);font-family:Montserrat,sans-serif;">'+escH(c.nombre||email)+'</div>';
+    o += '<div style="font-size:12px;color:var(--muted);">'+escH(email)+'</div></div>';
+    // Toggle idioma
+    o += '<div style="display:flex;gap:4px;">';
+    o += '<button id="ml-es" onclick="(function(){_mLg(\'es\');})()" style="padding:5px 12px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;border-radius:8px;border:1.5px solid;cursor:pointer;'+(_lg==='es'?'background:var(--accent);color:#fff;border-color:var(--accent);':'background:#fff;color:var(--muted);border-color:var(--border);')+'">ES</button>';
+    o += '<button id="ml-en" onclick="(function(){_mLg(\'en\');})()" style="padding:5px 12px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;border-radius:8px;border:1.5px solid;cursor:pointer;'+(_lg==='en'?'background:var(--accent);color:#fff;border-color:var(--accent);':'background:#fff;color:var(--muted);border-color:var(--border);')+'">EN</button>';
+    o += '</div></div>';
+
+    // Plantillas
+    o += '<div>';
+    o += '<div class="dp-lbl" style="margin-bottom:8px;">Plantilla</div>';
+    o += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+    plants.forEach(function(pl){
+      var on = pl.id===_pl;
+      o += '<button onclick="(function(){_mPl(\''+pl.id+'\');})()" style="display:flex;align-items:center;gap:5px;padding:7px 12px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;border-radius:10px;border:1.5px solid;cursor:pointer;transition:all .15s;'
+        +(on?'background:var(--accent-light);color:var(--accent);border-color:var(--accent-mid);':'background:#fff;color:var(--body);border-color:var(--border);')
+        +'">'+pl.icon+' '+pl.label+'</button>';
+    });
+    o += '</div></div>';
+
+    // Textarea
+    o += '<div>';
+    o += '<div class="dp-lbl" style="margin-bottom:6px;">Mensaje</div>';
+    o += '<textarea id="msg-ta" style="width:100%;padding:12px 14px;font-size:13px;font-family:Open Sans,sans-serif;border:1.5px solid var(--border);border-radius:12px;resize:vertical;min-height:180px;outline:none;color:var(--t1,#4A3F3F);line-height:1.65;background:#FAFAFA;transition:border-color .15s;" onfocus="this.style.borderColor=\'var(--accent)\'" onblur="this.style.borderColor=\'var(--border)\'">'+escH(msg)+'</textarea>';
+    o += '</div>';
+
+    // Botones envío
+    o += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
+    if(tel){
+      o += '<button onclick="(function(){_mWA();})()" style="display:flex;align-items:center;gap:7px;padding:11px 18px;background:#25D366;color:#fff;border:none;border-radius:11px;font-size:12px;font-weight:700;font-family:Montserrat,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(37,211,102,.3);">'
+        +'<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.555 4.122 1.527 5.855L.057 24l6.305-1.654A11.954 11.954 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.655-.52-5.165-1.427l-.371-.22-3.742.982.999-3.648-.242-.376A9.958 9.958 0 0 1 2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>'
+        +'WhatsApp</button>';
+    }
+    o += '<button onclick="(function(){_mEmail();})()" style="display:flex;align-items:center;gap:7px;padding:11px 18px;background:var(--accent);color:#fff;border:none;border-radius:11px;font-size:12px;font-weight:700;font-family:Montserrat,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(142,118,118,.3);">'
+      +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>'
+      +'Email</button>';
+    o += '<button onclick="(function(){_mCopy();})()" style="display:flex;align-items:center;gap:7px;padding:11px 16px;background:var(--bg);color:var(--body);border:1.5px solid var(--border);border-radius:11px;font-size:12px;font-weight:700;font-family:Montserrat,sans-serif;cursor:pointer;">'
+      +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
+      +'Copiar</button>';
+    o += '<span id="msg-ok" style="font-size:11px;color:var(--green);font-weight:600;"></span>';
+    o += '</div>';
+
+    o += '</div>';
+    return o;
+  }
+
+  // Funciones en window para acceso desde onclick
+  window._mLg = function(l){
+    _lg=l;
+    var p=plants.find(function(x){return x.id===_pl;})||plants[0];
+    var ta=document.getElementById('msg-ta');
+    if(ta) ta.value=p[l]||p.es;
+    ['es','en'].forEach(function(x){
+      var b=document.getElementById('ml-'+x);
+      if(b){ b.style.background=x===l?'var(--accent)':'#fff'; b.style.color=x===l?'#fff':'var(--muted)'; b.style.borderColor=x===l?'var(--accent)':'var(--border)'; }
+    });
+  };
+  window._mPl = function(id){
+    _pl=id;
+    document.getElementById('tc').innerHTML=html();
+  };
+  window._mWA = function(){
+    var msg=getMsg();
+    window.open('https://wa.me/'+tel+'?text='+encodeURIComponent(msg),'_blank');
+  };
+  window._mEmail = function(){
+    var msg=getMsg();
+    var lines=msg.split('\n');
+    var sub=lines[0].replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s\d!¡]/g,'').trim()||'Mensaje de Micaela';
+    window.open('mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(msg),'_blank');
+  };
+  window._mCopy = function(){
+    navigator.clipboard.writeText(getMsg()).then(function(){
+      var ok=document.getElementById('msg-ok');
+      if(ok){ok.textContent='✓ Copiado';setTimeout(function(){ok.textContent='';},2000);}
+    });
+  };
+
+  return html();
 }
 
 function tabNotas(c){
