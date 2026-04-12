@@ -548,13 +548,23 @@ function mostrarEnIframe(html){
 }
 
 function render(){
+  // ─── CASO 1: _cvHtml existe ───────────────────────────
   if(_cvHtml){
-    var html=applyStyleToHtml(_cvHtml,_color,_ftitle,_fbody);
-    mostrarEnIframe(html);
+    // ¿Es JSON estructurado (cv_data del panel)?
+    try{
+      var parsed = JSON.parse(_cvHtml);
+      if(parsed && (parsed.nombre || parsed.experiencia)){
+        // Es cv_data JSON → renderizar con el diseño del cv.html
+        _renderFromJson(parsed);
+        return;
+      }
+    }catch(e2){}
+    // Es HTML normal → mostrar en iframe
+    mostrarEnIframe(applyStyleToHtml(_cvHtml, _color, _ftitle, _fbody));
     return;
   }
-  // Construir CV desde datos cuando no hay CV de IA
-  var c=_cand,inf=_inf,color=_color,ft=_ftitle,fb=_fbody,photo=_photo,hs=_hstyle;
+  // ─── CASO 2: Sin CV guardado — construir desde _cand ──
+  var c=_cand, inf=_inf, color=_color, ft=_ftitle, fb=_fbody, photo=_photo, hs=_hstyle;
   var colorLight=lighten(color,0.88);
   var colorMid=lighten(color,0.55);
   var nombre=c?c.nombre||'Tu Nombre':'Tu Nombre';
@@ -563,43 +573,35 @@ function render(){
   var tel=c?c.telefono||'':'';
   var ciudad=c?c.ubicacion||c.ciudad||'':'';
   var habs=c?c.habilidades||'':'';
-  var skills=habs?habs.split(/[,;|]/).map(function(s){return s.trim();}).filter(Boolean):[];
+  var skills=habs?habs.split(/[,;|]/).map(function(x){return x.trim();}).filter(Boolean):[];
   var fortalezas=inf?inf.fortalezas||[]:[];
 
   var headBg=hs==='grad'?
     'background:linear-gradient(135deg,'+color+' 55%,'+colorMid+' 100%);':
     'background:'+color+';';
 
-  var o='<div style="font-family:\''+fb+'\',sans-serif;">';
-
-  // CABECERA
+  var o='<div style="font-family:&quot;'+fb+'&quot;,sans-serif;">';
   o+='<div class="cv-head" style="'+headBg+'">';
   o+='<div class="cv-photo-wrap">';
   if(photo){
     o+='<img class="cv-photo" src="'+photo+'" alt="foto">';
   }else{
-    o+='<div class="cv-photo-ini" style="font-family:\''+ft+'\',sans-serif;">'+ini(nombre)+'</div>';
+    o+='<div class="cv-photo-ini" style="font-family:&quot;'+ft+'&quot;,sans-serif;">'+ini(nombre)+'</div>';
   }
   o+='</div>';
-  o+='<div class="cv-name" style="font-family:\''+ft+'\',sans-serif;">'+esc(nombre)+'</div>';
+  o+='<div class="cv-name" style="font-family:&quot;'+ft+'&quot;,sans-serif;">'+esc(nombre)+'</div>';
   if(rol)o+='<div class="cv-role">'+esc(rol)+'</div>';
   o+='<div class="cv-contact">';
   if(email2)o+='<span class="cv-contact-item">'+esc(email2)+'</span>';
   if(tel)o+='<span class="cv-contact-item">'+esc(tel)+'</span>';
   if(ciudad)o+='<span class="cv-contact-item">'+esc(ciudad)+'</span>';
   o+='</div></div>';
-
-  // CUERPO
   o+='<div class="cv-body">';
-
-  // Sidebar CV
   o+='<div class="cv-sidebar-col" style="background:'+colorLight+';">';
-
   if(c&&c.objetivo){
     o+='<div class="cv-block"><div class="sec-title" style="color:'+color+';border-color:'+color+';">Perfil</div>';
     o+='<div class="item-desc">'+esc(c.objetivo.slice(0,180))+'</div></div>';
   }
-
   if(skills.length){
     o+='<div class="cv-block"><div class="sec-title" style="color:'+color+';border-color:'+color+';">Habilidades</div>';
     skills.slice(0,7).forEach(function(sk,i){
@@ -609,16 +611,13 @@ function render(){
     });
     o+='</div>';
   }
-
   if(fortalezas.length){
     o+='<div class="cv-block"><div class="sec-title" style="color:'+color+';border-color:'+color+';">Fortalezas</div>';
     fortalezas.slice(0,5).forEach(function(f){
-      var words=f.split(' ').slice(0,4).join(' ');
-      o+='<div class="cv-tag" style="background:'+colorMid+'55;color:'+color+';">'+esc(words)+'</div>';
+      o+='<div class="cv-tag" style="background:'+colorMid+'55;color:'+color+';">'+esc(f.split(' ').slice(0,4).join(' '))+'</div>';
     });
     o+='</div>';
   }
-
   if(c&&c.idiomas){
     o+='<div class="cv-block"><div class="sec-title" style="color:'+color+';border-color:'+color+';">Idiomas</div>';
     c.idiomas.split(/[,;|]/).forEach(function(id){
@@ -626,12 +625,8 @@ function render(){
     });
     o+='</div>';
   }
-
   o+='</div>';
-
-  // Main CV
   o+='<div class="cv-main-col">';
-
   if(c&&c.experiencia){
     o+='<div class="cv-block"><div class="sec-title" style="color:'+color+';border-color:'+colorLight+';">Experiencia profesional</div>';
     var exps=c.experiencia.split(/\n\n|\r\n\r\n/).filter(Boolean);
@@ -646,7 +641,6 @@ function render(){
     });
     o+='</div>';
   }
-
   if(c&&c.educacion){
     o+='<div class="cv-block"><div class="sec-title" style="color:'+color+';border-color:'+colorLight+';">Educacion</div>';
     var edus=c.educacion.split(/\n\n|\r\n\r\n/).filter(Boolean);
@@ -660,21 +654,190 @@ function render(){
     });
     o+='</div>';
   }
-
-  if(inf&&inf.estrategia){
-    o+='<div class="cv-block"><div class="sec-title" style="color:'+color+';border-color:'+colorLight+';">Propuesta de valor</div>';
-    o+='<div class="item-desc">'+esc(inf.estrategia.slice(0,280))+'</div></div>';
-  } else if(!c||(!c.experiencia&&!c.educacion)){
+  if(!c||(!c.experiencia&&!c.educacion)){
     o+='<div class="cv-block"><div class="sec-title" style="color:'+color+';border-color:'+colorLight+';">Tu CV esta en preparacion</div>';
-    o+='<div class="item-desc">Micaela esta trabajando en tu perfil personalizado. Cuando este listo aparecera aqui.</div></div>';
+    o+='<div class="item-desc">Micaela esta trabajando en tu perfil. Cuando este listo aparecera aqui.</div></div>';
   }
-
-  o+='</div></div>';
-  o+='</div>';
-
+  o+='</div></div></div>';
   document.getElementById('cv-paper').innerHTML=o;
 }
-// end render
+
+// ─── Renderizar desde JSON estructurado (cv_data de la IA) ─
+function _renderFromJson(d){
+  var color=_color, ft=_ftitle, fb=_fbody, photo=_photo, hs=_hstyle;
+  var colorLight=lighten(color,0.88);
+  var colorMid=lighten(color,0.55);
+
+  var nombre   = d.nombre || '';
+  var rolObj   = d.rol_objetivo || '';
+  var objetivo = d.objetivo || '';
+  var contacto = d.contacto || {};
+  var exp      = Array.isArray(d.experiencia) ? d.experiencia : [];
+  var edu      = Array.isArray(d.educacion)   ? d.educacion   : [];
+  var comps    = Array.isArray(d.competencias)? d.competencias: [];
+  var idiomas  = Array.isArray(d.idiomas)     ? d.idiomas     : [];
+  var herr     = Array.isArray(d.herramientas)? d.herramientas: [];
+  var cursos   = Array.isArray(d.cursos)      ? d.cursos      : [];
+  var otros    = d.otros || {};
+
+  var headBg = hs==='grad'
+    ? 'background:linear-gradient(135deg,'+color+' 55%,'+colorMid+' 100%);'
+    : 'background:'+color+';';
+
+  // CSS completo del CV
+  var css = '<style>';
+  css += '*{box-sizing:border-box;margin:0;padding:0;}';
+  css += 'body{font-family:"'+fb+'",sans-serif;font-size:11px;color:#333;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}';
+  css += '.cv{display:grid;grid-template-columns:200px 1fr;min-height:297mm;width:210mm;}';
+  css += '.cv-left{'+headBg.replace('background:','background:')+';padding:0;}';
+  css += '.foto-area{width:100%;height:220px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:'+colorMid+'44;}';
+  css += '.foto-area img{width:100%;height:100%;object-fit:cover;object-position:top;}';
+  css += '.foto-ini{width:100%;height:220px;background:'+color+';display:flex;align-items:center;justify-content:center;font-family:"'+ft+'",sans-serif;font-size:56px;font-weight:800;color:#fff;letter-spacing:2px;}';
+  css += '.col-l-body{padding:18px 16px;}';
+  css += '.col-l-nombre{font-family:"'+ft+'",sans-serif;font-size:15px;font-weight:800;color:'+color+';line-height:1.2;margin-bottom:3px;letter-spacing:-0.3px;}';
+  css += '.col-l-rol{font-size:10px;color:'+color+'BB;font-weight:600;margin-bottom:14px;line-height:1.4;}';
+  css += '.sl-sec{margin-bottom:14px;}';
+  css += '.sl-h{font-family:"'+ft+'",sans-serif;font-size:8px;font-weight:800;color:'+color+';text-transform:uppercase;letter-spacing:1.4px;border-bottom:1.5px solid '+color+'44;padding-bottom:3px;margin-bottom:7px;}';
+  css += '.sl-row{font-size:9.5px;color:#444;margin-bottom:4px;line-height:1.4;word-break:break-all;}';
+  css += '.tag-c{display:inline-block;background:'+color+';color:#fff;font-size:8.5px;font-weight:700;padding:2px 8px;border-radius:3px;margin:2px 2px 2px 0;}';
+  css += '.lang-row{display:flex;justify-content:space-between;margin-bottom:4px;}';
+  css += '.lang-n{font-size:10px;color:#333;font-weight:600;}';
+  css += '.lang-l{font-size:8.5px;font-weight:700;color:#fff;background:'+color+';padding:2px 7px;border-radius:2px;}';
+  css += '.lang-c{font-size:8.5px;font-weight:600;color:#888;background:#EEE;padding:2px 7px;border-radius:2px;}';
+  css += '.tool-row{font-size:9.5px;color:#444;margin-bottom:3px;display:flex;align-items:center;gap:5px;}';
+  css += '.tool-dot{width:4px;height:4px;border-radius:50%;background:'+color+';flex-shrink:0;}';
+  css += '.col-r{padding:28px 24px;background:#fff;}';
+  css += '.cr-head{border-bottom:2px solid '+colorLight+';padding-bottom:14px;margin-bottom:18px;}';
+  css += '.cr-nombre{font-family:"'+ft+'",sans-serif;font-size:34px;font-weight:900;color:#111;letter-spacing:-1.5px;line-height:1;text-transform:uppercase;}';
+  css += '.cr-rol{font-size:12px;font-weight:700;color:'+color+';margin-top:5px;letter-spacing:.04em;}';
+  css += '.cr-obj{font-size:11px;color:#555;line-height:1.7;margin-top:7px;}';
+  css += '.cr-sec{margin-bottom:16px;}';
+  css += '.cr-h{font-family:"'+ft+'",sans-serif;font-size:8px;font-weight:800;color:'+color+';text-transform:uppercase;letter-spacing:1.4px;border-bottom:2px solid '+colorLight+';padding-bottom:4px;margin-bottom:10px;}';
+  css += '.exp-blk{margin-bottom:12px;padding-left:12px;border-left:3px solid '+color+';}';
+  css += '.exp-t{font-family:"'+ft+'",sans-serif;font-size:12px;font-weight:800;color:#111;margin-bottom:2px;}';
+  css += '.exp-s{font-size:10px;color:'+color+';font-weight:700;margin-bottom:4px;}';
+  css += '.exp-b{font-size:10.5px;color:#444;line-height:1.6;margin-bottom:2px;display:flex;gap:6px;}';
+  css += '.exp-b::before{content:"—";color:'+color+';flex-shrink:0;}';
+  css += '.edu-blk{margin-bottom:8px;display:flex;gap:10px;}';
+  css += '.edu-dot{width:8px;height:8px;border-radius:50%;background:'+color+';flex-shrink:0;margin-top:3px;}';
+  css += '.edu-t{font-size:11px;font-weight:800;color:#111;}';
+  css += '.edu-s{font-size:10px;color:'+color+';font-weight:600;}';
+  css += '.otros-g{display:grid;grid-template-columns:1fr 1fr;gap:5px;}';
+  css += '.otro{font-size:10px;color:#444;display:flex;gap:4px;}';
+  css += '.otro-ok{color:'+color+';font-weight:800;}';
+  css += '@page{margin:0;size:A4;}';
+  css += '@media print{body{background:#fff;}}';
+  css += '</style>';
+
+  // HTML
+  var o = css + '<div class="cv">';
+
+  // Columna izquierda
+  o += '<div class="cv-left">';
+  if(photo){
+    o += '<div class="foto-area"><img src="'+photo+'" alt="foto"></div>';
+  } else {
+    o += '<div class="foto-ini">'+(nombre.split(' ').slice(0,2).map(function(w){return w[0]||'';}).join('').toUpperCase()||'CV')+'</div>';
+  }
+  o += '<div class="col-l-body">';
+  o += '<div class="col-l-nombre">'+esc(nombre)+'</div>';
+  if(rolObj) o += '<div class="col-l-rol">'+esc(rolObj)+'</div>';
+
+  // Contacto
+  if(contacto.tel||contacto.email||contacto.ciudad||contacto.linkedin){
+    o += '<div class="sl-sec"><div class="sl-h">Contacto</div>';
+    if(contacto.tel)     o += '<div class="sl-row">&#9990; '+esc(contacto.tel)+'</div>';
+    if(contacto.email)   o += '<div class="sl-row">&#9993; '+esc(contacto.email)+'</div>';
+    if(contacto.ciudad)  o += '<div class="sl-row">&#9675; '+esc(contacto.ciudad)+'</div>';
+    if(contacto.linkedin)o += '<div class="sl-row">&#128279; '+esc(contacto.linkedin)+'</div>';
+    o += '</div>';
+  }
+
+  // Competencias
+  if(comps.length){
+    o += '<div class="sl-sec"><div class="sl-h">Competencias</div>';
+    comps.slice(0,6).forEach(function(c){ o += '<span class="tag-c">'+esc(c)+'</span>'; });
+    o += '</div>';
+  }
+
+  // Idiomas
+  if(idiomas.length){
+    o += '<div class="sl-sec"><div class="sl-h">Idiomas</div>';
+    idiomas.forEach(function(id){
+      var nmb = typeof id==='object' ? (id.idioma||'') : String(id);
+      var lvl = typeof id==='object' ? (id.nivel||'') : '';
+      var isC = lvl.toLowerCase().indexOf('curso')>=0||lvl==='A1'||lvl==='A2'||lvl.toLowerCase()==='básico'||lvl.toLowerCase()==='basico';
+      o += '<div class="lang-row"><span class="lang-n">'+esc(nmb)+'</span>'
+         +(lvl?'<span class="'+(isC?'lang-c':'lang-l')+'">'+esc(isC?'En curso':lvl)+'</span>':'')
+         +'</div>';
+    });
+    o += '</div>';
+  }
+
+  // Herramientas
+  if(herr.length){
+    o += '<div class="sl-sec"><div class="sl-h">Herramientas</div>';
+    herr.forEach(function(h){ o += '<div class="tool-row"><div class="tool-dot"></div>'+esc(h)+'</div>'; });
+    o += '</div>';
+  }
+
+  // Cursos
+  if(cursos.length){
+    o += '<div class="sl-sec"><div class="sl-h">Cursos</div>';
+    cursos.slice(0,4).forEach(function(c){ o += '<div class="sl-row">&#8227; '+esc(c)+'</div>'; });
+    o += '</div>';
+  }
+
+  o += '</div></div>'; // col-l-body, cv-left
+
+  // Columna derecha
+  o += '<div class="col-r">';
+  o += '<div class="cr-head">';
+  o += '<div class="cr-nombre">'+esc(nombre)+'</div>';
+  if(rolObj)   o += '<div class="cr-rol">'+esc(rolObj)+'</div>';
+  if(objetivo) o += '<div class="cr-obj">'+esc(objetivo)+'</div>';
+  o += '</div>';
+
+  // Experiencia
+  if(exp.length){
+    o += '<div class="cr-sec"><div class="cr-h">Experiencia profesional</div>';
+    exp.forEach(function(ex){
+      o += '<div class="exp-blk">';
+      if(ex.titulo)  o += '<div class="exp-t">'+esc(ex.titulo)+'</div>';
+      if(ex.empresa) o += '<div class="exp-s">'+esc(ex.empresa)+'</div>';
+      (ex.bullets||[]).forEach(function(b){ o += '<div class="exp-b">'+esc(b)+'</div>'; });
+      o += '</div>';
+    });
+    o += '</div>';
+  }
+
+  // Educación
+  if(edu.length){
+    o += '<div class="cr-sec"><div class="cr-h">Educación</div>';
+    edu.forEach(function(ed){
+      o += '<div class="edu-blk"><div class="edu-dot"></div><div>';
+      if(ed.titulo)      o += '<div class="edu-t">'+esc(ed.titulo)+'</div>';
+      if(ed.institucion) o += '<div class="edu-s">'+esc(ed.institucion)+'</div>';
+      o += '</div></div>';
+    });
+    o += '</div>';
+  }
+
+  // Otros datos
+  if(otros.incorporacion||otros.modalidad||otros.viajes){
+    o += '<div class="cr-sec"><div class="cr-h">Otros datos</div><div class="otros-g">';
+    if(otros.incorporacion) o += '<div class="otro"><span class="otro-ok">&#10003;</span>'+esc(otros.incorporacion)+'</div>';
+    if(otros.modalidad)     o += '<div class="otro"><span class="otro-ok">&#10003;</span>'+esc(otros.modalidad)+'</div>';
+    if(otros.viajes)        o += '<div class="otro"><span class="otro-ok">&#10003;</span>'+esc(otros.viajes)+'</div>';
+    o += '</div></div>';
+  }
+
+  o += '</div></div>'; // col-r, cv
+
+  document.getElementById('cv-paper').innerHTML = o;
+}
+
+
 
 // ── Editar CV ────────────────────────────────────────────
 var _editMode=false;
@@ -689,9 +852,21 @@ function toggleEditMode(){
     } else {
       var p=document.getElementById('cv-paper');
       if(p){
-        p.querySelectorAll('div,span,p').forEach(function(el){
-          if(el.children.length===0&&el.textContent.trim()){el.contentEditable='true';el.style.outline='1px dashed rgba(140,123,128,.4)';}
+        // Seleccionar todos los textos editables del diseño
+        var sels = '.cr-nombre,.cr-rol,.cr-obj,.exp-t,.exp-s,.exp-b,.edu-t,.edu-s,.col-l-nombre,.col-l-rol,.sl-row,.tag-c,.lang-n,.tool-row,.otro,.cv-name,.cv-role,.item-title,.item-sub,.item-desc,.cv-contact-item,.skill-name,.side-item';
+        var els = p.querySelectorAll(sels);
+        if(els.length === 0){
+          // Fallback: cualquier elemento hoja con texto
+          p.querySelectorAll('div,span,p').forEach(function(el){
+            if(el.children.length===0&&el.textContent.trim()) els = Array.from(els).concat([el]);
+          });
+        }
+        els.forEach(function(el){
+          el.contentEditable='true';
+          el.style.outline='1px dashed rgba(140,123,128,.4)';
+          el.style.cursor='text';
         });
+        p.style.boxShadow='0 0 0 3px rgba(140,123,128,.2)';
       }
     }
   } else {
@@ -700,7 +875,12 @@ function toggleEditMode(){
       try{var d=_iframe.contentDocument||_iframe.contentWindow.document;if(d&&d.body){d.body.contentEditable='false';d.body.style.boxShadow='';}}catch(ex){}
     } else {
       var p=document.getElementById('cv-paper');
-      if(p) p.querySelectorAll('[contenteditable]').forEach(function(el){el.contentEditable='false';el.style.outline='';});
+      if(p){
+        p.querySelectorAll('[contenteditable]').forEach(function(el){
+          el.contentEditable='false';el.style.outline='';el.style.cursor='';
+        });
+        p.style.boxShadow='0 10px 40px rgba(0,0,0,.07),0 2px 8px rgba(0,0,0,.04)';
+      }
     }
     saveEdits();
   }
