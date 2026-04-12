@@ -46,7 +46,9 @@ body{background:#E2E2E2;display:flex;overflow:hidden;}
 
 /* Footer */
 .sb-footer{padding:18px 22px;margin-top:auto;border-top:1px solid #EEE;}
-.btn-download{width:100%;padding:14px;font-size:12px;font-weight:800;font-family:'Montserrat',sans-serif;background:#8C7B80;color:#fff;border:none;border-radius:10px;cursor:pointer;letter-spacing:.08em;text-transform:uppercase;transition:all .15s;box-shadow:0 4px 14px rgba(140,123,128,.3);}
+.btn-download{width:100%;padding:14px;font-size:12px;font-weight:800;font-family:'Montserrat',sans-serif;background:#8C7B80;color:#fff;border:1.5px solid transparent;border-radius:10px;cursor:pointer;letter-spacing:.08em;text-transform:uppercase;transition:all .15s;box-shadow:0 4px 14px rgba(140,123,128,.3);}
+.btn-download:hover{opacity:.9;}
+.btn-download.editing{background:#8C7B80;color:#fff;border-color:#8C7B80;}
 .btn-download:hover{background:#6B5A5F;}
 
 /* WORKSPACE */
@@ -82,6 +84,12 @@ body{background:#E2E2E2;display:flex;overflow:hidden;}
 .cv-tag{display:inline-block;padding:3px 8px;border-radius:20px;font-size:9px;font-weight:700;margin:2px;}
 .side-item{font-size:10px;color:#5E5859;margin-bottom:5px;display:flex;align-items:flex-start;gap:5px;}
 .empty-cv{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:297mm;gap:12px;color:#9E9696;text-align:center;padding:3rem;}
+@media print{
+  .sidebar-config{display:none!important;}
+  .workspace{padding:0!important;background:#fff!important;}
+  .cv-paper{box-shadow:none!important;}
+  body{background:#fff!important;}
+}
 </style>
 </head>
 <body>
@@ -144,16 +152,15 @@ body{background:#E2E2E2;display:flex;overflow:hidden;}
   </div>
 
   <div class="sb-footer">
-    <button class="btn-download" id="btn-dl">&#8595; Descargar CV Actualizado</button>
+    <button class="btn-download" id="btn-edit-mode" onclick="toggleEditMode()" style="background:#F5F0F0;color:#8C7B80;border:1.5px solid #DDD0D0;margin-bottom:6px;">&#9998; Editar CV</button>
+    <button class="btn-download" id="btn-save" style="background:#5A8C6E;margin-bottom:6px;">&#10003; Guardar cambios</button>
+    <button class="btn-download" id="btn-dl">&#8595; Descargar / Imprimir</button>
+    <div id="cv-st" style="font-size:11px;color:#5A8C6E;text-align:center;margin-top:6px;min-height:16px;"></div>
   </div>
 </div>
 
 <div class="workspace">
-  <div class="workspace-top">
-    <div class="ws-lbl">Vista previa · A4</div>
-    <div class="ws-badge" id="color-badge">Malva Suave</div>
-  </div>
-  <div class="cv-paper" id="cv-paper">
+<div class="cv-paper" id="cv-paper">
     <div class="empty-cv">
       <div style="font-size:36px;">&#128196;</div>
       <div style="font-size:14px;font-weight:700;color:#4A3F3F;">Cargando CV...</div>
@@ -470,6 +477,59 @@ function render(){
   document.getElementById('cv-paper').innerHTML=o;
 }
 // end render
+
+// ── Editar CV ────────────────────────────────────────────
+var _editMode=false;
+function toggleEditMode(){
+  _editMode=!_editMode;
+  var btn=document.getElementById('btn-edit-mode');
+  if(_editMode){
+    if(btn){btn.textContent='✓ Terminar edición';btn.style.background='#8C7B80';btn.style.color='#fff';}
+    // Editar en iframe si existe, sino editar el paper directamente
+    if(_iframe){
+      try{var d=_iframe.contentDocument||_iframe.contentWindow.document;if(d&&d.body){d.body.contentEditable='true';d.body.style.boxShadow='inset 0 0 0 2px rgba(140,123,128,.3)';}}catch(ex){}
+    } else {
+      var p=document.getElementById('cv-paper');
+      if(p){
+        p.querySelectorAll('div,span,p').forEach(function(el){
+          if(el.children.length===0&&el.textContent.trim()){el.contentEditable='true';el.style.outline='1px dashed rgba(140,123,128,.4)';}
+        });
+      }
+    }
+  } else {
+    if(btn){btn.textContent='✏ Editar CV';btn.style.background='#F5F0F0';btn.style.color='#8C7B80';}
+    if(_iframe){
+      try{var d=_iframe.contentDocument||_iframe.contentWindow.document;if(d&&d.body){d.body.contentEditable='false';d.body.style.boxShadow='';}}catch(ex){}
+    } else {
+      var p=document.getElementById('cv-paper');
+      if(p) p.querySelectorAll('[contenteditable]').forEach(function(el){el.contentEditable='false';el.style.outline='';});
+    }
+    saveEdits();
+  }
+}
+
+// ── Guardar CV ───────────────────────────────────────────
+function saveEdits(){
+  try{
+    var doc=_iframe?(_iframe.contentDocument||_iframe.contentWindow.document):null;
+    var html=doc?doc.documentElement.outerHTML:document.getElementById('cv-paper').innerHTML;
+    if(!_email||!html) return;
+    var st=document.getElementById('cv-st');
+    if(st) st.textContent='Guardando...';
+    fetch(SB+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(_email),{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}})
+    .then(function(r){return r.json();}).then(function(rows){
+      var method=rows&&rows.length?'PATCH':'POST';
+      var url=SB+'/rest/v1/cv_publicados'+(rows&&rows.length?'?email=eq.'+encodeURIComponent(_email):'');
+      return fetch(url,{method:method,headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},body:JSON.stringify({email:_email,contenido:html,updated_at:new Date().toISOString()})});
+    }).then(function(){
+      if(st){st.textContent='✓ Guardado';setTimeout(function(){if(st)st.textContent='';},2500);}
+    }).catch(function(){if(st) st.textContent='Error al guardar';});
+  }catch(ex){console.warn(ex);}
+}
+
+// ── btn-save ─────────────────────────────────────────────
+document.getElementById('btn-save').addEventListener('click',function(){ saveEdits(); });
+
 </script>
 </body>
 </html>
