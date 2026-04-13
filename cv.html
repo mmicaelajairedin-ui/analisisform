@@ -347,6 +347,7 @@ function loadGFont(f){
 var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 var BASE='https://mmicaelajairedin-ui.github.io/analisisform';
+var EDGE='https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/generar-informe';
 
 var _email=null,_d=null,_photo=null,_editing=false;
 var _color='#2C3E50',_fontTitle='DM Serif Display',_fontBody='DM Sans';
@@ -710,30 +711,25 @@ function toggleEdit(){
   }
 }
 
-/* ── GUARDAR ── */
+/* ── GUARDAR — via Edge Function (usa service key, bypasses RLS) ── */
 function guardar(){
   var st=document.getElementById('save-st');
-  if(!_email||!_d){st.textContent='Error';return;}
-  // Leer ediciones del DOM y actualizar _d
+  if(!_email){if(st)st.textContent='Sin sesión';return;}
+  if(!_d){if(st)st.textContent='Sin datos';return;}
   syncDFromDOM();
-  st.textContent='Guardando...';
-  var emailClean=_email.toLowerCase().trim();
-  fetch(SB+'/rest/v1/cv_publicados?email=eq.'+enc(emailClean),{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}})
-  .then(function(r){return r.json();})
-  .then(function(rows){
-    var method=rows&&rows.length?'PATCH':'POST';
-    var url=SB+'/rest/v1/cv_publicados'+(rows&&rows.length?'?email=eq.'+enc(emailClean):'');
-    return fetch(url,{method:method,headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
-      body:JSON.stringify({email:emailClean,contenido:JSON.stringify(_d),updated_at:new Date().toISOString()})});
-  })
-  .then(function(r){
-    st.textContent=r.ok||r.status===204?'✓ Guardado':'Error';
-    st.style.color=r.ok||r.status===204?'#C9A96E':'#C0756E';
-    setTimeout(function(){st.textContent='';},3000);
-  })
-  .catch(function(){
-    st.textContent='Error';st.style.color='#C0756E';
-    setTimeout(function(){st.textContent='';},3000);
+  if(st){st.textContent='Guardando...';st.style.color='#888';}
+  fetch(EDGE,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
+    body:JSON.stringify({accion:'guardar_cv',email:_email,cv_data:_d})
+  }).then(function(r){return r.json();})
+  .then(function(data){
+    var ok=data&&data.ok;
+    if(st){st.textContent=ok?'✓ Guardado':'Error al guardar';st.style.color=ok?'#5A8C6E':'#C0756E';}
+    setTimeout(function(){if(st)st.textContent='';},3000);
+  }).catch(function(){
+    if(st){st.textContent='Error de red';st.style.color='#C0756E';}
+    setTimeout(function(){if(st)st.textContent='';},3000);
   });
 }
 
