@@ -711,25 +711,40 @@ function toggleEdit(){
   }
 }
 
-/* ── GUARDAR — via Edge Function (usa service key, bypasses RLS) ── */
+/* ── GUARDAR ── */
 function guardar(){
   var st=document.getElementById('save-st');
-  if(!_email){if(st)st.textContent='Sin sesión';return;}
-  if(!_d){if(st)st.textContent='Sin datos';return;}
+  if(!_email){if(st){st.textContent='Sin sesión';st.style.color='#C0756E';}return;}
+  if(!_d){if(st){st.textContent='Sin datos';st.style.color='#C0756E';}return;}
   syncDFromDOM();
   if(st){st.textContent='Guardando...';st.style.color='#888';}
-  fetch(EDGE,{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
-    body:JSON.stringify({accion:'guardar_cv',email:_email,cv_data:JSON.stringify(_d)})
-  }).then(function(r){return r.json();})
-  .then(function(data){
-    var ok=data&&data.ok;
-    if(st){st.textContent=ok?'✓ Guardado':'Error al guardar';st.style.color=ok?'#5A8C6E':'#C0756E';}
-    setTimeout(function(){if(st)st.textContent='';},3000);
-  }).catch(function(){
+  var emailClean=_email.toLowerCase().trim();
+  var contenido=JSON.stringify(_d);
+  var h={'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'};
+  // 1. Intentar PATCH
+  fetch(SB+'/rest/v1/cv_publicados?email=eq.'+enc(emailClean),{
+    method:'PATCH', headers:h,
+    body:JSON.stringify({contenido:contenido,updated_at:new Date().toISOString()})
+  }).then(function(r){
+    if(r.status===404||r.status===400){
+      // 2. Si falla, POST
+      return fetch(SB+'/rest/v1/cv_publicados',{
+        method:'POST', headers:h,
+        body:JSON.stringify({email:emailClean,contenido:contenido})
+      });
+    }
+    return r;
+  }).then(function(r){
+    var ok=r.ok||r.status===204||r.status===201||r.status===200;
+    if(st){
+      st.textContent=ok?'✓ Guardado':'Error '+r.status;
+      st.style.color=ok?'#5A8C6E':'#C0756E';
+    }
+    setTimeout(function(){if(st){st.textContent='';st.style.color='';}},3000);
+  }).catch(function(e){
+    console.error('guardar error:',e);
     if(st){st.textContent='Error de red';st.style.color='#C0756E';}
-    setTimeout(function(){if(st)st.textContent='';},3000);
+    setTimeout(function(){if(st){st.textContent='';st.style.color='';}},3000);
   });
 }
 
