@@ -670,11 +670,19 @@ function col(i){return COLORS[i%COLORS.length].split(':');}
 
 // ── LLAMADA A LA EDGE FUNCTION ──
 function llamarEdge(payload){
+  console.log('Calling edge:', payload.accion, EDGE);
   return fetch(EDGE,{
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
     body:JSON.stringify(payload)
-  }).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||r.status);return d;});});
+  }).then(function(r){
+    console.log('Edge status:', r.status);
+    return r.json().then(function(d){
+      console.log('Edge raw response keys:', Object.keys(d||{}));
+      if(!r.ok)throw new Error(d.error||r.status);
+      return d;
+    });
+  });
 }
 
 function loadCands(){
@@ -1100,6 +1108,7 @@ function generarCVAI(id){
   };
 
   llamarEdge(payload).then(function(res){
+    console.log('Edge function response:', JSON.stringify(res).slice(0,500));
     var cvText = '';
     var cvDataJson = null;
 
@@ -1689,15 +1698,37 @@ function textToHtml(text, candidato, emailCand, cvEmail) {
 
 function publicarCV(id){
   var cvRaw=document.getElementById('cvt-'+id)?document.getElementById('cvt-'+id).value.trim():'';
-  // Limpiar backticks y formato markdown extra
   var cvText=cvRaw.replace(/^```[\w]*\n?/,'').replace(/\n?```$/,'').trim();
   var st=document.getElementById('st-cvpub-'+id);
   if(!cvText){if(st){st.textContent='No hay CV para publicar.';st.style.color='#c0756e';}return;}
   var c=cands.find(function(x){return x.id===id;});
-  if(st){st.textContent='Convirtiendo a HTML y publicando...';st.style.color='#666';}
-  var cvHtml=textToHtml(cvText,c.nombre||'',c.email||'',c.email||'');
   if(st){st.textContent='Publicando...';st.style.color='#666';}
-  sbUpsert('cv_publicados',{email:c.email,candidato_id:id,contenido:cvHtml,codigo:''}).then(function(){
+  // Si el texto es JSON (cv_data), guardarlo como JSON — NO convertir a HTML
+  var contenidoFinal;
+  try{
+    var parsed=JSON.parse(cvText);
+    if(parsed&&(parsed.nombre||parsed.experiencia)){
+      contenidoFinal=JSON.stringify(parsed); // guardar JSON puro
+    } else {
+      contenidoFinal=textToHtml(cvText,c.nombre||'',c.email||'',c.email||'');
+    }
+  }catch(e){
+    contenidoFinal=textToHtml(cvText,c.nombre||'',c.email||'',c.email||'');
+  }
+  var emailClean=(c.email||'').toLowerCase().trim();
+  fetch(SB+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(emailClean),{
+    method:'PATCH',
+    headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
+    body:JSON.stringify({email:emailClean,candidato_id:id,contenido:contenidoFinal})
+  }).then(function(r){
+    // Si no había fila, hacer POST
+    if(r.status===204||r.ok){return r;}
+    return fetch(SB+'/rest/v1/cv_publicados',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
+      body:JSON.stringify({email:emailClean,candidato_id:id,contenido:contenidoFinal})
+    });
+  }).then(function(){
     var email=(c.email||'').toLowerCase().trim();
     cvs[email]={email:c.email,codigo:'',contenido:cvHtml};
     var cvUrl=BASE+'/cv.html?email='+encodeURIComponent(c.email);
