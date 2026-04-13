@@ -219,6 +219,7 @@ body.editing .edit-hint{display:block;}
   <button class="tb-btn btn-edit" id="btn-edit" onclick="toggleEdit()">✏ Editar</button>
   <button class="tb-btn btn-save" onclick="guardar()">✓ Guardar</button>
   <button class="tb-btn btn-pdf" onclick="window.print()">↓ PDF</button>
+  <button class="tb-btn" style="background:#C0756E;color:#fff;font-size:10px;" onclick="resetCV()" title="Regenerar desde datos del candidato">↺ Regenerar</button>
 </div>
 
 <div class="edit-hint" id="edit-hint">Clic en cualquier texto para editar · Esc para salir</div>
@@ -293,17 +294,25 @@ function cargar(){
     }
     var raw=res[1]&&res[1].length?res[1][0].contenido:null;
     if(raw){
+      // Intentar JSON (cv_data del panel IA)
       try{
         var parsed=JSON.parse(raw);
         if(parsed&&(parsed.nombre||parsed.experiencia)){_d=parsed;render();return;}
+        // JSON pero con wrapper
+        if(parsed&&parsed.cv_data){_d=parsed.cv_data;render();return;}
       }catch(e){}
-      // HTML guardado — mostrarlo directo
+      // Es HTML pero puede tener datos en data-cv attribute o ser HTML de cv-wrap
+      // Extraer datos del candidato como fallback
+      if(cand&&(cand.nombre||cand.sector)){
+        _d=buildDFromCand(cand);render();return;
+      }
+      // Último recurso: mostrar HTML
       document.getElementById('cv-wrap').innerHTML=raw;
-      applyTheme();
-    } else if(cand) {
-      showErr('CV en preparación','Micaela está trabajando en tu CV.');
+    } else if(cand&&(cand.nombre||cand.sector)) {
+      // Sin CV publicado: usar datos del candidato
+      _d=buildDFromCand(cand);render();
     } else {
-      showErr('Sin datos','Accedé desde tu portal.');
+      showErr('CV en preparación','Generá el CV desde el panel.');
     }
   }).catch(function(){showErr('Error de conexión','Recargá la página.');});
 }
@@ -565,6 +574,24 @@ function toggleEdit(){
   }
 }
 
+// ── BUILD D FROM CAND (fallback) ──
+function buildDFromCand(c){
+  var skills=c.habilidades?(c.habilidades.split(/[,;|]/).map(function(x){return x.trim();}).filter(Boolean)):[];
+  return {
+    nombre:c.nombre||'',
+    rol_objetivo:c.sector||c.rol||'',
+    objetivo:c.objetivo||'',
+    contacto:{tel:c.telefono||'',email:c.email||'',ciudad:c.ciudad||c.ubicacion||'',linkedin:c.linkedin||''},
+    experiencia:[],
+    educacion:[],
+    competencias:skills.slice(0,6),
+    idiomas:c.idiomas?(c.idiomas.split(/[,;|]/).map(function(x){return {idioma:x.trim(),nivel:''};})):[],
+    herramientas:[],
+    cursos:[],
+    otros:{incorporacion:'',modalidad:c.modalidad||'',viajes:''}
+  };
+}
+
 // ── GUARDAR ──
 function guardar(){
   var st=document.getElementById('save-st');
@@ -578,7 +605,7 @@ function guardar(){
     var method=rows&&rows.length?'PATCH':'POST';
     var url=SB+'/rest/v1/cv_publicados'+(rows&&rows.length?'?email=eq.'+enc(_email):'');
     return fetch(url,{method:method,headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
-      body:JSON.stringify({email:_email,contenido:JSON.stringify(_d||html),updated_at:new Date().toISOString()})});
+      body:JSON.stringify({email:_email,contenido:_d?JSON.stringify(_d):html,updated_at:new Date().toISOString()})});
   })
   .then(function(r){
     st.textContent=r.ok||r.status===204?'✓ Guardado':'Error';
@@ -586,6 +613,26 @@ function guardar(){
     setTimeout(function(){st.textContent='';st.style.color='';},3000);
   })
   .catch(function(){st.textContent='Error';st.style.color='#C0756E';setTimeout(function(){st.textContent='';st.style.color='';},3000);});
+}
+
+// ── RESET CV ──
+function resetCV(){
+  if(!confirm('¿Regenerar el CV desde los datos del candidato? Se perderán ediciones no guardadas.')) return;
+  // Limpiar cv_publicados para forzar regeneración desde panel
+  fetch(SB+'/rest/v1/cv_publicados?email=eq.'+enc(_email),{
+    method:'DELETE',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(){
+    showErr('CV limpiado','Generá el CV desde el panel (tab CV IA → Generar CV optimizado).');
+  }).catch(function(){
+    // Si falla el delete, al menos borrar el contenido
+    fetch(SB+'/rest/v1/cv_publicados?email=eq.'+enc(_email),{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
+      body:JSON.stringify({contenido:null})
+    });
+    showErr('Error','Intentá de nuevo.');
+  });
 }
 
 // ── HELPERS ──
