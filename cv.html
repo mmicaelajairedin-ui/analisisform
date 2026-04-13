@@ -226,9 +226,18 @@ html,body{height:100%;background:#EFEBEB;font-family:'DM Sans',sans-serif;}
 .exp-b{
   font-size:10.5px;color:#2D2D2D;line-height:1.7;
   margin-bottom:3px;display:flex;gap:7px;align-items:flex-start;
+  position:relative;
 }
 .exp-b-dot{flex-shrink:0;width:5px;height:5px;border-radius:50%;margin-top:5px;}
+.exp-b-txt{flex:1;}
 .exp-b strong{font-weight:600;color:#111;}
+.exp-b-del{
+  display:none;background:none;border:none;cursor:pointer;
+  color:#C0756E;font-size:14px;font-weight:700;line-height:1;
+  flex-shrink:0;padding:0 2px;opacity:.7;
+}
+.exp-b-del:hover{opacity:1;}
+.editing-mode .exp-b-del{display:block;}
 /* Educación */
 .edu{margin-bottom:9px;display:flex;gap:10px;align-items:flex-start;}
 .edu-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:3px;}
@@ -563,9 +572,9 @@ function buildPage(d,expList,isFirst,eduList){
     /* Contacto */
     if(ct.tel||ct.email||ct.ciudad||ct.linkedin){
       o+='<div class="sl"><div class="sl-h">Contacto</div>';
-      if(ct.tel)o+=ctRow('📞',esc(ct.tel));
-      if(ct.email)o+=ctRow('✉',esc(ct.email));
-      if(ct.ciudad)o+=ctRow('📍',esc(ct.ciudad));
+      if(ct.tel)o+=ctRow('📞','<span class="ct-edit" data-field="tel" contenteditable="false">'+esc(ct.tel)+'</span>');
+      if(ct.email)o+=ctRow('✉','<span class="ct-edit" data-field="email" contenteditable="false">'+esc(ct.email)+'</span>');
+      if(ct.ciudad)o+=ctRow('📍','<span class="ct-edit" data-field="ciudad" contenteditable="false">'+esc(ct.ciudad)+'</span>');
       if(ct.linkedin)o+=ctRow('in','<a href="https://linkedin.com/in/'+esc(ct.linkedin)+'" target="_blank">linkedin.com/in/'+esc(ct.linkedin)+'</a>');
       o+='</div>';
     }
@@ -638,8 +647,8 @@ function buildPage(d,expList,isFirst,eduList){
       o+='<div class="exp">';
       o+='<div class="exp-t" contenteditable="false">'+esc(e.titulo||'')+'</div>';
       if(e.empresa)o+='<div class="exp-s" contenteditable="false">'+esc(e.empresa)+'</div>';
-      arr(e.bullets).slice(0,5).forEach(function(b){
-        o+='<div class="exp-b"><div class="exp-b-dot"></div><div contenteditable="false">'+boldKw(esc(b))+'</div></div>';
+      arr(e.bullets).slice(0,5).forEach(function(b,bi){
+        o+='<div class="exp-b" data-expidx="'+i+'" data-bidx="'+bi+'"><div class="exp-b-dot"></div><div class="exp-b-txt" contenteditable="false">'+boldKw(esc(b))+'</div><button class="exp-b-del" onclick="delBullet(this)" title="Eliminar bullet">×</button></div>';
       });
       o+='</div>';
     });
@@ -683,13 +692,19 @@ function toggleEdit(){
   _editing=!_editing;
   var btn=document.getElementById('btn-edit');
   var wrap=document.getElementById('cv-wrap');
+  // Make all editable elements active
   wrap.querySelectorAll('[contenteditable]').forEach(function(el){el.contentEditable=_editing?'true':'false';});
+  // Also make exp-b-txt editable (they have contenteditable set dynamically)
+  wrap.querySelectorAll('.exp-b-txt,.ct-edit,.edu-t,.edu-s').forEach(function(el){el.contentEditable=_editing?'true':'false';});
   if(_editing){
+    wrap.querySelectorAll('.cv-page').forEach(function(p){p.classList.add('editing-mode');});
     wrap.classList.add('editing');
     btn.textContent='✓ Listo';btn.classList.add('on');
   } else {
+    wrap.querySelectorAll('.cv-page').forEach(function(p){p.classList.remove('editing-mode');});
     wrap.classList.remove('editing');
     btn.textContent='✏ Editar texto';btn.classList.remove('on');
+    guardar();
   }
 }
 
@@ -721,23 +736,49 @@ function guardar(){
 }
 
 function syncDFromDOM(){
-  // Sync nombre
+  if(!_d)return;
+  // Nombre y rol
   var nEl=document.querySelector('.cv-nombre-izq');
-  if(nEl&&_d)_d.nombre=nEl.textContent;
+  if(nEl)_d.nombre=nEl.textContent.trim();
   var rEl=document.querySelector('.cv-rol-izq');
-  if(rEl&&_d)_d.rol_objetivo=rEl.textContent;
-  // Sync experience bullets
-  if(_d&&_d.experiencia){
+  if(rEl)_d.rol_objetivo=rEl.textContent.trim();
+  // Perfil/objetivo
+  var oEl=document.querySelector('.cv-right [contenteditable]');
+  if(oEl&&oEl.className!=='exp-t'&&oEl.className!=='exp-s')_d.objetivo=oEl.textContent.trim();
+  // Contacto
+  if(!_d.contacto)_d.contacto={};
+  document.querySelectorAll('.ct-edit').forEach(function(el){
+    var f=el.dataset.field;
+    if(f)_d.contacto[f]=el.textContent.trim();
+  });
+  // Experiencia
+  if(_d.experiencia){
     document.querySelectorAll('.exp').forEach(function(expEl,i){
       if(!_d.experiencia[i])return;
       var tEl=expEl.querySelector('.exp-t');
-      if(tEl)_d.experiencia[i].titulo=tEl.textContent;
+      if(tEl)_d.experiencia[i].titulo=tEl.textContent.trim();
       var sEl=expEl.querySelector('.exp-s');
-      if(sEl)_d.experiencia[i].empresa=sEl.textContent;
-      var bEls=expEl.querySelectorAll('.exp-b div[contenteditable]');
-      if(bEls.length){_d.experiencia[i].bullets=Array.from(bEls).map(function(b){return b.textContent;});}
+      if(sEl)_d.experiencia[i].empresa=sEl.textContent.trim();
+      var bEls=expEl.querySelectorAll('.exp-b-txt');
+      if(bEls.length)_d.experiencia[i].bullets=Array.from(bEls).map(function(b){return b.textContent.trim();}).filter(Boolean);
     });
   }
+  // Educación
+  if(_d.educacion){
+    document.querySelectorAll('.edu').forEach(function(eduEl,i){
+      if(!_d.educacion[i])return;
+      var tEl=eduEl.querySelector('.edu-t');
+      if(tEl)_d.educacion[i].titulo=tEl.textContent.trim();
+      var sEl=eduEl.querySelector('.edu-s');
+      if(sEl)_d.educacion[i].institucion=sEl.textContent.trim();
+    });
+  }
+}
+
+/* ── DELETE BULLET ──
+function delBullet(btn){
+  var row=btn.closest('.exp-b');
+  if(row)row.remove();
 }
 
 /* ── HELPERS ── */
