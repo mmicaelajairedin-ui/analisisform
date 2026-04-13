@@ -1122,24 +1122,32 @@ function generarCVAI(id){
 
     if(st){ st.innerHTML='<div class="ai-loading"><div class="dots"><span></span><span></span><span></span></div> Publicando CV...</div>'; }
 
-    sbUpsert('cv_publicados', {
-      email: (c.email||'').toLowerCase().trim(),
-      candidato_id: c.id,
-      contenido: contenidoGuardar
-    }).then(function(){
-      // Actualizar cache local
-      var em = (c.email||'').toLowerCase().trim();
-      if(!cvs[em]) cvs[em] = {};
-      cvs[em].contenido = contenidoGuardar;
-
-      if(st){ st.innerHTML='<span style="color:#4a7c5f;font-weight:600;">✓ CV generado y publicado. El cliente ya puede verlo.</span>'; }
-      if(btn){ btn.disabled=false; btn.textContent='✨ Regenerar CV'; }
+    var emailClean=(c.email||'').toLowerCase().trim();
+    // Siempre intentar PATCH primero, luego POST si no existe
+    fetch(SB+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(emailClean),{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=representation'},
+      body:JSON.stringify({email:emailClean,candidato_id:c.id,contenido:contenidoGuardar})
+    }).then(function(r){
+      if(r.status===200||r.status===204){return r;}
+      // 0 rows updated — hacer POST
+      return fetch(SB+'/rest/v1/cv_publicados',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
+        body:JSON.stringify({email:emailClean,candidato_id:c.id,contenido:contenidoGuardar})
+      });
+    }).then(function(r){
+      var em=emailClean;
+      if(!cvs[em])cvs[em]={};
+      cvs[em].contenido=contenidoGuardar;
+      if(st){st.innerHTML='<span style="color:#4a7c5f;font-weight:600;">✓ CV generado y guardado. El cliente ya puede verlo.</span>';}
+      if(btn){btn.disabled=false;btn.textContent='✨ Regenerar CV';}
+      renderSidebar();
       atab='cv';
       renderMain(c);
     }).catch(function(err2){
-      // Si falla la publicación, igual mostrar éxito parcial
-      if(st){ st.innerHTML='<span style="color:#f3a41b;font-weight:600;">✓ CV generado (error al publicar: '+escH(String(err2))+')</span>'; }
-      if(btn){ btn.disabled=false; btn.textContent='✨ Regenerar CV'; }
+      if(st){st.innerHTML='<span style="color:#f3a41b;font-weight:600;">✓ CV generado (error al guardar: '+escH(String(err2))+')</span>';}
+      if(btn){btn.disabled=false;btn.textContent='✨ Regenerar CV';}
       atab='cv';
       renderMain(c);
     });
