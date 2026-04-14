@@ -1078,24 +1078,50 @@ function entrar(){
   updSB();goSec('semana',document.querySelector('.ni'));
 
   // Notificaciones inteligentes
-  setTimeout(function(){ buildNotifs(); }, 500);
+  setTimeout(function(){ buildSbNotifs(); buildNotifs(); }, 500);
 }
 
-function buildNotifs(){
+function buildSbNotifs(){
   var notifs=[];
+  var lastSeen=parseInt(localStorage.getItem('mj_notif_seen_'+E)||'0');
+  var now=Date.now();
+
+  // 0. Detectar cambios del coach desde la ultima visita
+  if(lastSeen>0){
+    // Informe nuevo o actualizado
+    if(D&&C.created_at){
+      var infUpdated=false;
+      try{
+        var ek=(E||'').toLowerCase().trim();
+        // Comprobar si hay informes recientes
+        get('informes','email=eq.'+encodeURIComponent(E)+'&select=created_at&order=created_at.desc&limit=1').then(function(rows){
+          if(rows&&rows.length){
+            var infTime=new Date(rows[0].created_at).getTime();
+            if(infTime>lastSeen) _addCoachNotif('Tu informe fue actualizado por Micaela','analisis','var(--green)');
+          }
+        }).catch(function(){});
+      }catch(e){}
+    }
+    // Semana cambiada
+    var lastSem=parseInt(localStorage.getItem('mj_last_sem_'+E)||'0');
+    if(lastSem>0&&SEM>lastSem) notifs.push({icon:'&#9889;',txt:'Micaela te avanz\u00f3 a Semana '+SEM+'. \u00a1Nuevas acciones!',sec:'semana',color:'var(--rose)',coach:true});
+  }
+  localStorage.setItem('mj_notif_seen_'+E,String(now));
+  localStorage.setItem('mj_last_sem_'+E,String(SEM));
+
   // 1. CV pendiente
-  if(!CV||!CV.contenido) notifs.push({icon:'&#128196;',txt:'Tu CV aún está en preparación',sec:'docs',color:'var(--blue)'});
+  if(!CV||!CV.contenido) notifs.push({icon:'&#128196;',txt:'Tu CV a\u00fan est\u00e1 en preparaci\u00f3n',sec:'docs',color:'var(--blue)'});
   // 2. Carta pendiente
-  if(!C.carta_presentacion||C.carta_presentacion.length<50) notifs.push({icon:'&#128140;',txt:'Falta tu carta de presentación',sec:'docs',color:'var(--orange)'});
+  if(!C.carta_presentacion||C.carta_presentacion.length<50) notifs.push({icon:'&#128140;',txt:'Falta tu carta de presentaci\u00f3n',sec:'docs',color:'var(--orange)'});
   // 3. Sesión pendiente
-  if(!C.proxima_sesion) notifs.push({icon:'&#128197;',txt:'Agenda tu próxima sesión',sec:'sesion',color:'var(--rose)'});
+  if(!C.proxima_sesion) notifs.push({icon:'&#128197;',txt:'Agenda tu pr\u00f3xima sesi\u00f3n',sec:'sesion',color:'var(--rose)'});
   // 4. Acciones casi completas
   if(D){
     var sem=SEMS[Math.min(SEM,4)-1]||SEMS[0];
     var accs=D[sem.acc]||[];
     var done=ACTS.filter(function(v,i){return v&&i<accs.length;}).length;
     var remaining=accs.length-done;
-    if(remaining===1) notifs.push({icon:'&#127942;',txt:'¡Solo te queda 1 acción esta semana!',sec:'semana',color:'var(--green)'});
+    if(remaining===1) notifs.push({icon:'&#127942;',txt:'\u00a1Solo te queda 1 acci\u00f3n esta semana!',sec:'semana',color:'var(--green)'});
     else if(remaining>0&&remaining<=3) notifs.push({icon:'&#9989;',txt:'Te faltan '+remaining+' acciones esta semana',sec:'semana',color:'var(--green)'});
   }
   // 5. Trabajos sugeridos (always)
@@ -1831,6 +1857,29 @@ var _notifs=[];
 
 function buildNotifs(){
   _notifs=[];
+  // Detectar cambios del coach desde la ultima visita
+  var _lastSeen=parseInt(localStorage.getItem('mj_notif_seen_'+E)||'0');
+  var _now=Date.now();
+  var _lastSem=parseInt(localStorage.getItem('mj_last_sem_'+E)||'0');
+  if(_lastSem>0&&SEM>_lastSem){
+    _notifs.push({icon:'&#9889;',title:'Nueva semana activada',desc:'Micaela te avanz\u00f3 a Semana '+SEM+'. Nuevas acciones disponibles.',color:'#8E7676',time:'Ver',sec:'semana'});
+  }
+  localStorage.setItem('mj_notif_seen_'+E,String(_now));
+  localStorage.setItem('mj_last_sem_'+E,String(SEM));
+  // Detectar informe nuevo
+  if(_lastSeen>0&&D){
+    get('informes','email=eq.'+encodeURIComponent(E)+'&select=created_at&order=created_at.desc&limit=1').then(function(rows){
+      if(rows&&rows.length){
+        var infTime=new Date(rows[0].created_at).getTime();
+        if(infTime>_lastSeen){
+          _notifs.unshift({icon:'&#11088;',title:'Tu informe fue actualizado',desc:'Micaela actualiz\u00f3 tu an\u00e1lisis. Revis\u00e1 las novedades.',color:'#5A8C6E',time:'Ver',sec:'analisis'});
+          var badge=document.getElementById('notif-badge');
+          if(badge){badge.style.display='flex';badge.textContent=_notifs.length;}
+        }
+      }
+    }).catch(function(){});
+  }
+
   if(C&&D){
     if(D.mensaje_candidato){
       _notifs.push({icon:'&#128172;',title:'Mensaje de Micaela',desc:D.mensaje_candidato.slice(0,60)+'...',color:'#8E7676',time:'Ver',sec:'semana'});
@@ -2248,36 +2297,44 @@ function rRecursos(){
     {
       cat:'Semana 1 — CV y marca personal',
       items:[
-        {icon:'📄',title:'Como armar un CV que pase los filtros ATS',desc:'Guia paso a paso para optimizar tu CV con palabras clave y formato correcto.'},
-        {icon:'🎯',title:'Identifica tu propuesta de valor',desc:'Ejercicio para definir que te diferencia y como comunicarlo.'},
-        {icon:'📸',title:'Foto profesional: guia rapida',desc:'Tips para tener una foto de perfil que transmita confianza.'}
+        {icon:'📄',title:'Como armar un CV que pase los filtros ATS',desc:'Guia paso a paso para optimizar tu CV con palabras clave y formato correcto.',tipo:'articulo',url:'https://www.indeed.com/career-advice/resumes-cover-letters/ats-resume'},
+        {icon:'🎬',title:'Video: CV perfecto en 10 minutos',desc:'Tutorial practico para estructurar tu CV de forma profesional.',tipo:'video',url:'https://www.youtube.com/watch?v=Tt08KmFfIYQ'},
+        {icon:'🎯',title:'Identifica tu propuesta de valor',desc:'Ejercicio para definir que te diferencia y como comunicarlo.',tipo:'ejercicio'},
+        {icon:'📸',title:'Foto profesional: guia rapida',desc:'Tips para tener una foto de perfil que transmita confianza.',tipo:'articulo',url:'https://www.linkedin.com/pulse/how-take-professional-headshot-home/'}
       ]
     },
     {
       cat:'Semana 2 — LinkedIn',
       items:[
-        {icon:'💼',title:'Optimiza tu perfil de LinkedIn',desc:'Los 7 elementos clave que los reclutadores miran primero.'},
-        {icon:'✍',title:'Como escribir un titular que destaque',desc:'Formulas probadas para que tu headline atraiga oportunidades.'},
-        {icon:'🔍',title:'Busqueda activa en LinkedIn',desc:'Como usar filtros, alertas y operadores para encontrar ofertas.'}
+        {icon:'💼',title:'Optimiza tu perfil de LinkedIn',desc:'Los 7 elementos clave que los reclutadores miran primero.',tipo:'articulo',url:'https://www.linkedin.com/pulse/how-optimize-your-linkedin-profile/'},
+        {icon:'🎬',title:'Video: LinkedIn de 0 a profesional',desc:'Paso a paso para crear un perfil que atraiga reclutadores.',tipo:'video',url:'https://www.youtube.com/watch?v=BcPkz2ZNHKQ'},
+        {icon:'✍',title:'Como escribir un titular que destaque',desc:'Formulas probadas para que tu headline atraiga oportunidades.',tipo:'articulo',url:'https://www.themuse.com/advice/the-31-best-linkedin-profile-tips-for-job-seekers'},
+        {icon:'🔍',title:'Busqueda activa en LinkedIn',desc:'Como usar filtros, alertas y operadores booleanos para encontrar ofertas.',tipo:'articulo',url:'https://www.jobscan.co/blog/linkedin-boolean-search/'}
       ]
     },
     {
       cat:'Semana 3 — Networking',
       items:[
-        {icon:'🤝',title:'Networking efectivo sin ser invasivo',desc:'Como contactar personas clave y construir relaciones profesionales.'},
-        {icon:'📩',title:'Plantillas de mensajes para networking',desc:'5 templates listos para usar en LinkedIn y email.'},
-        {icon:'🗺',title:'Mapa de contactos estrategicos',desc:'Ejercicio para identificar tu red y donde estan las oportunidades.'}
+        {icon:'🤝',title:'Networking efectivo sin ser invasivo',desc:'Como contactar personas clave y construir relaciones profesionales.',tipo:'articulo',url:'https://hbr.org/2016/05/learn-to-love-networking'},
+        {icon:'📩',title:'Plantillas de mensajes para networking',desc:'5 templates listos para usar en LinkedIn y email.',tipo:'template'},
+        {icon:'🎬',title:'Video: El arte del networking',desc:'Estrategias probadas para hacer conexiones que generen oportunidades.',tipo:'video',url:'https://www.youtube.com/watch?v=8wA0yh0oFe0'},
+        {icon:'🗺',title:'Mapa de contactos estrategicos',desc:'Ejercicio para identificar tu red y donde estan las oportunidades.',tipo:'ejercicio'}
       ]
     },
     {
       cat:'Semana 4 — Entrevistas',
       items:[
-        {icon:'🎤',title:'Prepara tus respuestas STAR',desc:'Metodo para responder preguntas conductuales con historias concretas.'},
-        {icon:'💰',title:'Negociacion salarial: guia practica',desc:'Como investigar rangos, presentar tu numero y negociar con confianza.'},
-        {icon:'❓',title:'Las 20 preguntas mas frecuentes',desc:'Preguntas clasicas con ejemplos de respuestas adaptables a tu perfil.'}
+        {icon:'🎤',title:'Prepara tus respuestas STAR',desc:'Metodo para responder preguntas conductuales con historias concretas.',tipo:'articulo',url:'https://www.indeed.com/career-advice/interviewing/how-to-use-the-star-interview-response-technique'},
+        {icon:'🎬',title:'Video: Entrevista de trabajo perfecta',desc:'Errores comunes y como evitarlos. Incluye ejemplos reales.',tipo:'video',url:'https://www.youtube.com/watch?v=HG68Ymazo18'},
+        {icon:'💰',title:'Negociacion salarial: guia practica',desc:'Como investigar rangos, presentar tu numero y negociar con confianza.',tipo:'articulo',url:'https://hbr.org/2014/06/15-rules-for-negotiating-a-job-offer'},
+        {icon:'❓',title:'Las 20 preguntas mas frecuentes',desc:'Preguntas clasicas con ejemplos de respuestas adaptables a tu perfil.',tipo:'template'}
       ]
     }
   ];
+
+  var tipoLabel={articulo:'Articulo',video:'Video',template:'Template',ejercicio:'Ejercicio'};
+  var tipoColor={articulo:'var(--rose)',video:'#C0756E',template:'var(--green)',ejercicio:'#5B7FA6'};
+  var tipoBg={articulo:'var(--rose-light)',video:'#FAF0EF',template:'#EAF4EF',ejercicio:'#EAF0FA'};
 
   var o='<div style="display:flex;flex-direction:column;gap:24px;">';
 
@@ -2299,14 +2356,22 @@ function rRecursos(){
 
     o+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">';
     cat.items.forEach(function(item){
-      o+='<div style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:16px 18px;transition:all .2s;cursor:default;'+(isCurrent?'border-left:3px solid var(--rose);':'')
+      var tc=tipoColor[item.tipo]||'var(--muted)';
+      var tb=tipoBg[item.tipo]||'var(--bg)';
+      var tl=tipoLabel[item.tipo]||'';
+      var isLink=!!item.url;
+      var tag=isLink?'a':'div';
+      var linkAttr=isLink?' href="'+item.url+'" target="_blank" rel="noopener"':'';
+      o+='<'+tag+linkAttr+' style="background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:16px 18px;transition:all .2s;text-decoration:none;color:inherit;display:block;'+(isCurrent?'border-left:3px solid var(--rose);':'')+(isLink?'cursor:pointer;':'cursor:default;')
         +'" onmouseover="this.style.boxShadow=\'0 6px 20px rgba(0,0,0,.08)\';this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.boxShadow=\'none\';this.style.transform=\'none\'">';
       o+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">';
       o+='<span style="font-size:22px;">'+item.icon+'</span>';
-      o+='<div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;">'+hh(item.title)+'</div>';
+      o+='<div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;">'+hh(item.title)+'</div></div>';
+      if(tl) o+='<span style="font-size:9px;font-weight:700;background:'+tb+';color:'+tc+';padding:2px 8px;border-radius:8px;font-family:Montserrat,sans-serif;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0;">'+tl+'</span>';
       o+='</div>';
       o+='<div style="font-size:12px;color:var(--muted);line-height:1.5;">'+hh(item.desc)+'</div>';
-      o+='</div>';
+      if(isLink) o+='<div style="margin-top:8px;font-size:11px;font-weight:700;color:var(--rose);">Abrir recurso &rarr;</div>';
+      o+='</'+tag+'>';
     });
     o+='</div>';
     o+='</div>';
