@@ -1239,6 +1239,26 @@ function regenerarInforme(id){
 }
 
 function tabSesion(c){
+  // Agendar sesión
+  var _ps=c.proxima_sesion||'';
+  var _psHtml='<div style="background:linear-gradient(135deg,#EAF0FA,#E0ECF8);border:1.5px solid #C8D8E8;border-radius:14px;padding:16px 18px;margin-bottom:16px;">';
+  _psHtml+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">';
+  _psHtml+='<div style="font-size:12px;font-weight:800;color:#4A6BA0;font-family:Montserrat,sans-serif;text-transform:uppercase;letter-spacing:.06em;">Pr\u00f3xima sesi\u00f3n</div>';
+  if(_ps){
+    var _sd=new Date(_ps);
+    var _dias=['Dom','Lun','Mar','Mi\u00e9','Jue','Vie','S\u00e1b'];
+    _psHtml+='<div style="font-size:13px;font-weight:700;color:#4A6BA0;">'+_dias[_sd.getDay()]+' '+_sd.getDate()+'/'+(1+_sd.getMonth())+' '+_sd.getHours()+':'+String(_sd.getMinutes()).padStart(2,'0')+'</div>';
+  } else {
+    _psHtml+='<div style="font-size:12px;color:#999;">Sin agendar</div>';
+  }
+  _psHtml+='</div>';
+  _psHtml+='<div style="display:flex;gap:8px;align-items:flex-end;">';
+  _psHtml+='<div style="flex:1;"><div style="font-size:10px;font-weight:700;color:#6A8AB0;margin-bottom:3px;">Fecha y hora</div>';
+  _psHtml+='<input id="ps-dt-'+c.id+'" type="datetime-local" value="'+escH(_ps?_ps.substring(0,16):'')+'" style="width:100%;padding:8px 10px;border:1.5px solid #C8D8E8;border-radius:8px;font-size:12px;font-family:Montserrat,sans-serif;background:#fff;"></div>';
+  _psHtml+='<button onclick="_guardarSesion('+c.id+')" class="btn" style="background:#4A6BA0;padding:8px 16px;font-size:11px;">Agendar</button>';
+  if(_ps) _psHtml+='<button onclick="_borrarSesion('+c.id+')" style="padding:8px 12px;background:none;border:1.5px solid #C8D8E8;border-radius:8px;font-size:11px;font-weight:700;color:#C0756E;cursor:pointer;font-family:Montserrat,sans-serif;">Quitar</button>';
+  _psHtml+='</div></div>';
+
   var email=(c.email||'').toLowerCase().trim();
   var repData=reps[email]&&reps[email].length?reps[email][0].data||reps[email][0]:null;
   if(repData&&typeof repData==='string')repData=JSON.parse(repData);
@@ -1270,7 +1290,31 @@ function tabSesion(c){
   if(d.mercado||d.nicho){html2+='<details style="background:#f9f8f8;border-radius:10px;border:1px solid #eee;"><summary style="padding:11px 14px;font-size:11px;font-weight:700;color:#555;cursor:pointer;list-style:none;display:flex;justify-content:space-between;">Contexto de mercado <span style="color:#bbb;">▾</span></summary>';if(d.mercado)html2+='<div style="padding:10px 14px;font-size:12px;color:#333;line-height:1.75;border-top:.5px solid #eee;">'+escH(d.mercado)+'</div>';if(d.nicho)html2+='<div style="margin:0 14px 10px;background:#f0f7f0;border-radius:6px;padding:8px 11px;font-size:12px;color:#333;line-height:1.6;border-left:2px solid #4a7c5f;"><strong style="font-size:9px;color:#4a7c5f;text-transform:uppercase;display:block;margin-bottom:2px;">Nicho</strong>'+escH(d.nicho)+'</div>';html2+='</details>';}
   html2+='</div>';
   setTimeout(function(){var el=document.getElementById('cand-notes-'+c.id);if(!el)return;fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(c.email)+'&select=notas_progreso&limit=1',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.json();}).then(function(rows){if(!el)return;var txt=rows&&rows.length&&rows[0].notas_progreso?rows[0].notas_progreso:'(Sin notas aún)';el.textContent=txt;el.style.fontStyle=txt.startsWith('(')?'italic':'normal';}).catch(function(){if(el)el.textContent='Error al cargar';});},80);
-  return html+html2;
+  return _psHtml+html+html2;
+}
+
+function _guardarSesion(id){
+  var c=cands.find(function(x){return x.id===id;});if(!c)return;
+  var dt=document.getElementById('ps-dt-'+id);
+  if(!dt||!dt.value){showToast('Selecciona fecha y hora');return;}
+  c.proxima_sesion=dt.value;
+  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({proxima_sesion:dt.value})
+  }).then(function(r){
+    showToast(r.ok||r.status===204?'Sesi\u00f3n agendada':'Error');
+    renderMain(c);
+  }).catch(function(){showToast('Error de conexi\u00f3n');});
+}
+function _borrarSesion(id){
+  var c=cands.find(function(x){return x.id===id;});if(!c)return;
+  c.proxima_sesion='';
+  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({proxima_sesion:null})
+  }).then(function(){showToast('Sesi\u00f3n removida');renderMain(c);}).catch(function(){});
 }
 
 function cambiarSemana(id,nueva){
@@ -1641,8 +1685,44 @@ function tabMensajes(c){
   window._mEmail = function(){
     var msg=getMsg();
     var lines=msg.split('\n');
-    var sub=lines[0].replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s\d!¡]/g,'').trim()||'Mensaje de Micaela';
-    window.open('mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(msg),'_blank');
+    var sub=lines[0].replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s\d!¡?¿.,:\-–—]/g,'').trim()||'Mensaje de Micaela';
+    var ok=document.getElementById('msg-ok');
+    // Construir HTML con estilo de la pagina
+    var htmlBody='<div style="max-width:560px;margin:0 auto;font-family:\'Open Sans\',Arial,sans-serif;color:#2D2929;background:#F8F9FA;border-radius:16px;overflow:hidden;border:1px solid #EDEAE8;">'
+      +'<div style="background:linear-gradient(135deg,#8E7676 0%,#766262 100%);padding:28px 32px;">'
+        +'<div style="font-family:Montserrat,Arial,sans-serif;font-size:20px;font-weight:800;color:#fff;letter-spacing:-0.02em;">Career Pathway</div>'
+        +'<div style="font-size:12px;color:rgba(255,255,255,.7);margin-top:4px;">Micaela Jairedin &middot; Career Coach</div>'
+      +'</div>'
+      +'<div style="padding:28px 32px;background:#fff;">'
+        +'<div style="font-size:14px;color:#2D2929;line-height:1.8;white-space:pre-wrap;">'+escH(msg).replace(/\n/g,'<br>')+'</div>'
+      +'</div>'
+      +'<div style="padding:16px 32px;background:#F5EFEF;border-top:1px solid #EDEAE8;text-align:center;">'
+        +'<div style="font-size:11px;color:#8E7676;font-weight:600;">Micaela Jairedin &middot; Career Coach &amp; Recruiter</div>'
+        +'<div style="font-size:10px;color:#9E9E9E;margin-top:4px;">Este es un mensaje personal de tu proceso de coaching</div>'
+      +'</div>'
+    +'</div>';
+    if(ok) ok.textContent='Enviando...';
+    if(typeof emailjs!=='undefined'){
+      emailjs.send('Coach','template_7f00mbl',{
+        to_email:email,
+        name:nom,
+        subject:sub,
+        message:htmlBody
+      }).then(function(){
+        if(ok){ok.textContent='✓ Email enviado';ok.style.color='var(--green)';setTimeout(function(){ok.textContent='';},4000);}
+        showToast('Email enviado a '+email);
+      }).catch(function(err){
+        if(ok){ok.textContent='Error — abriendo mailto...';ok.style.color='var(--red)';}
+        // Fallback a mailto
+        setTimeout(function(){
+          window.open('mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(msg),'_blank');
+          if(ok) ok.textContent='';
+        },1500);
+      });
+    } else {
+      window.open('mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(msg),'_blank');
+      if(ok) ok.textContent='';
+    }
   };
   window._mCopy = function(){
     navigator.clipboard.writeText(getMsg()).then(function(){
