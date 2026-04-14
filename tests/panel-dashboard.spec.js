@@ -126,7 +126,7 @@ test.describe('Panel - JavaScript funcional', () => {
     });
 
     await page.goto('/panel.html');
-    await page.waitForTimeout(3000);
+    await page.waitForLoadState('domcontentloaded');
 
     // Filtrar errores esperados (ej: falta de sesión/auth)
     const criticalErrors = errors.filter(e =>

@@ -39,16 +39,18 @@ test.describe('Login - Validaciones del formulario', () => {
     await page.fill('#password', 'wrongpass123');
     await page.locator('#btn').click();
 
-    // Esperar respuesta del servidor
-    await page.waitForTimeout(3000);
+    // Esperar a que aparezca el error o el botón se re-habilite
+    await page.waitForFunction(() => {
+      const err = document.getElementById('error');
+      const btn = document.getElementById('btn');
+      return (err && err.textContent.length > 0) || (btn && !btn.disabled);
+    }, { timeout: 5000 }).catch(() => {});
 
-    // Debe mostrar error o loading desaparece
     const error = page.locator('#error');
     const errorText = await error.textContent();
     const hasError = errorText.length > 0;
     const btnDisabled = await page.locator('#btn').isDisabled();
 
-    // Alguno de los dos indica que procesó la solicitud
     expect(hasError || !btnDisabled).toBe(true);
   });
 
@@ -75,14 +77,11 @@ test.describe('Login - Validaciones del formulario', () => {
     const loading = page.locator('#loading');
     await expect(loading).not.toBeVisible();
 
-    // Al hacer click, debe aparecer
+    // Al hacer click, el botón debe deshabilitarse
     await page.locator('#btn').click();
-    // Pequeña espera para que el JS procese
-    await page.waitForTimeout(500);
 
-    // El botón debe deshabilitarse durante el loading
-    const btnDisabled = await page.locator('#btn').isDisabled();
-    expect(btnDisabled).toBe(true);
+    // Esperar a que el botón se deshabilite
+    await expect(page.locator('#btn')).toBeDisabled({ timeout: 2000 });
   });
 });
 
