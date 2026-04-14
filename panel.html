@@ -727,23 +727,25 @@ button:active { transform: scale(.98); }
     </div>
   </div>
 
-  <!-- Stats 2x2 -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 12px 12px;background:rgba(0,0,0,.12);border-radius:14px;padding:12px 8px;">
-    <div style="text-align:center;">
-      <div style="font-size:24px;font-weight:800;color:#fff;line-height:1;" id="st-tot">0</div>
-      <div style="font-size:9px;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.08em;margin-top:2px;">Clientes</div>
+  <!-- Stats -->
+  <div style="margin:0 12px 12px;background:rgba(0,0,0,.12);border-radius:14px;padding:14px 14px 10px;">
+    <div style="display:flex;justify-content:space-around;margin-bottom:10px;">
+      <div style="text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:#fff;line-height:1;" id="st-act">0</div>
+        <div style="font-size:9px;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.08em;margin-top:2px;">Activos</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:#C8F0DC;line-height:1;" id="st-sem">-</div>
+        <div style="font-size:9px;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.08em;margin-top:2px;">Sem. prom</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:#F0D8C8;line-height:1;" id="st-new">0</div>
+        <div style="font-size:9px;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.08em;margin-top:2px;">Nuevos</div>
+      </div>
     </div>
-    <div style="text-align:center;">
-      <div style="font-size:24px;font-weight:800;color:#C8F0DC;line-height:1;" id="st-rep">0</div>
-      <div style="font-size:9px;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.08em;margin-top:2px;">Informes</div>
-    </div>
-    <div style="text-align:center;">
-      <div style="font-size:24px;font-weight:800;color:#C0D8F0;line-height:1;" id="st-cv">0</div>
-      <div style="font-size:9px;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.08em;margin-top:2px;">CVs</div>
-    </div>
-    <div style="text-align:center;">
-      <div style="font-size:24px;font-weight:800;color:#F0D8C8;line-height:1;" id="st-new">0</div>
-      <div style="font-size:9px;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.08em;margin-top:2px;">Nuevos</div>
+    <div style="font-size:9px;color:rgba(255,255,255,.45);text-align:center;margin-bottom:4px;" id="st-bar-lbl">Progreso general</div>
+    <div style="height:4px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden;">
+      <div id="st-bar" style="height:4px;background:#C8F0DC;border-radius:2px;width:0%;transition:width .5s;"></div>
     </div>
   </div>
 
@@ -942,11 +944,16 @@ function loadCands(){
 }
 
 function renderSidebar(){
+  var activos=cands.filter(function(c){return c.activo!==false;});
   var newC=cands.filter(function(c){return !localStorage.getItem('seen_'+c.id);}).length;
-  document.getElementById('st-tot').textContent=cands.length;
-  document.getElementById('st-rep').textContent=Object.keys(reps).length;
-  document.getElementById('st-cv').textContent=Object.keys(cvs).length;
+  var semProm=activos.length?Math.round(activos.reduce(function(s,c){return s+parseInt(c.semana_activa||1);},0)/activos.length*10)/10:0;
+  // Progreso general: promedio de (semana/4) de todos los activos
+  var pctGen=activos.length?Math.round(activos.reduce(function(s,c){return s+(Math.min(parseInt(c.semana_activa||1),4)/4);},0)/activos.length*100):0;
+  document.getElementById('st-act').textContent=activos.length;
+  document.getElementById('st-sem').textContent=semProm;
   document.getElementById('st-new').textContent=newC;
+  document.getElementById('st-bar').style.width=pctGen+'%';
+  document.getElementById('st-bar-lbl').textContent=pctGen+'% progreso general';
 }
 
 function openCand(id){
@@ -2153,6 +2160,12 @@ function _renderClientes(){
     var filtered=cands;
     if(_cliFilter==='activos')   filtered=cands.filter(function(c){return c.activo!==false;});
     if(_cliFilter==='inactivos') filtered=cands.filter(function(c){return c.activo===false;});
+    // Siempre: activos primero, inactivos al final
+    filtered=filtered.slice().sort(function(a,b){
+      var aAct=a.activo!==false?1:0;
+      var bAct=b.activo!==false?1:0;
+      return bAct-aAct;
+    });
 
     var countActivos=cands.filter(function(c){return c.activo!==false;}).length;
     var countInactivos=cands.filter(function(c){return c.activo===false;}).length;
@@ -2612,9 +2625,25 @@ function crearCliente(){
   if(!nombre||!email){if(st){st.textContent='Nombre y email son obligatorios.';st.style.color='#c0756e';}return;}
   if(pass&&pass.length<6){if(st){st.textContent='La contraseña debe tener mínimo 6 caracteres.';st.style.color='#c0756e';}return;}
   if(st){st.textContent='Creando cliente...';st.style.color='#666';}
-  sbPost('candidatos',{email:email,nombre:nombre,semana_activa:1})
+  // Crear candidato + usuario (si hay contraseña)
+  var crearUsuario=null;
+  if(pass){
+    var encoder=new TextEncoder();
+    crearUsuario=crypto.subtle.digest('SHA-256',encoder.encode(pass)).then(function(buf){
+      var hash=Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+      return fetch(SB+'/rest/v1/usuarios',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
+        body:JSON.stringify({email:email,password_hash:hash,rol:'cliente',nombre:nombre,activo:true})
+      });
+    });
+  }
+  Promise.all([
+    sbPost('candidatos',{email:email,nombre:nombre,semana_activa:1}),
+    crearUsuario
+  ].filter(Boolean))
   .then(function(){
-    if(st){st.textContent='✓ Cliente creado — enviando bienvenida...';st.style.color='#5A8C6E';}
+    if(st){st.textContent='✓ Cliente creado'+(pass?' con acceso':'')+' — enviando bienvenida...';st.style.color='#5A8C6E';}
     // Enviar email de bienvenida via EmailJS
     var clienteUrl='https://mmicaelajairedin-ui.github.io/analisisform/cliente.html';
     var primerNombre=nombre.split(' ')[0];
