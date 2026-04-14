@@ -812,8 +812,8 @@ function renderMain(c){
 
   var tabs=['datos','generar','cv'];
   if(hasRep) tabs.splice(2,0,'informe','sesion');
-  tabs.push('carta'); tabs.push('notas'); tabs.push('mensajes');
-  var labels={datos:'Datos',generar:'Generar IA',sesion:'Sesión',informe:'Informe',cv:'CV IA',carta:'Carta',notas:'Notas',mensajes:'✉ Mensajes'};
+  tabs.push('carta'); tabs.push('notas'); tabs.push('pagos'); tabs.push('mensajes');
+  var labels={datos:'Datos',generar:'Generar IA',sesion:'Sesión',informe:'Informe',cv:'CV IA',carta:'Carta',notas:'Notas',pagos:'💳 Pago',mensajes:'✉ Mensajes'};
   var tabsHTML=tabs.map(function(t){
     return '<div class="tab'+(atab===t?' on':'')+'" onclick="switchTab(\''+t+'\','+c.id+')">'+labels[t]+'</div>';
   }).join('');
@@ -852,6 +852,7 @@ function renderTab(c,tab){
   if(tab==='carta')return tabCarta(c);
   if(tab==='cv')return tabCV(c);
   if(tab==='notas')return tabNotas(c);
+  if(tab==='pagos')return tabPagos(c);
   if(tab==='mensajes')return tabMensajes(c);
   return '';
 }
@@ -1404,6 +1405,80 @@ function tabNotas(c){
     +'<button class="btn" onclick="saveNote('+c.id+')">Guardar</button>'
     +'<span id="notaok-'+c.id+'" style="font-size:11px;color:#8C7B80;font-weight:600;display:none;">Guardado</span></div>';
 }
+
+function tabPagos(c){
+  var estado=c.pago_estado||'pendiente';
+  var monto=c.pago_monto||'';
+  var fecha=c.pago_fecha||'';
+  var notas=c.pago_notas||'';
+  var estados=[
+    {val:'pendiente',label:'Pendiente',color:'#C4907A',bg:'#FDF0EB'},
+    {val:'parcial',label:'Pago parcial',color:'#8E7676',bg:'#F5EFEF'},
+    {val:'pagado',label:'Pagado ✓',color:'#5A8C6E',bg:'#EBF5EF'},
+    {val:'vencido',label:'Vencido',color:'#C0756E',bg:'#FDECEA'},
+  ];
+  var cur=estados.find(function(e){return e.val===estado;})||estados[0];
+  
+  var html='<div style="display:flex;flex-direction:column;gap:14px;">';
+  
+  // Estado actual
+  html+='<div style="background:'+cur.bg+';border-radius:12px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">';
+  html+='<div><div style="font-size:10px;font-weight:700;color:'+cur.color+';text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;font-family:Montserrat,sans-serif;">Estado de pago</div>';
+  html+='<div style="font-size:20px;font-weight:800;color:'+cur.color+';font-family:Montserrat,sans-serif;">'+cur.label+'</div></div>';
+  html+='<select id="pago-estado-'+c.id+'" onchange="guardarPago('+c.id+')" style="padding:8px 12px;border:1.5px solid '+cur.color+';border-radius:8px;font-size:12px;font-family:Montserrat,sans-serif;background:#fff;cursor:pointer;color:'+cur.color+';font-weight:700;">';
+  estados.forEach(function(e){
+    html+='<option value="'+e.val+'"'+(e.val===estado?' selected':'')+'>'+e.label+'</option>';
+  });
+  html+='</select></div>';
+  
+  // Monto y fecha
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
+  html+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:14px;">';
+  html+='<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;font-family:Montserrat,sans-serif;">Monto</div>';
+  html+='<input id="pago-monto-'+c.id+'" type="text" value="'+escH(monto)+'" placeholder="Ej: €500 / $300" onblur="guardarPago('+c.id+')" style="width:100%;border:none;outline:none;font-size:16px;font-weight:700;color:var(--title);font-family:Montserrat,sans-serif;background:transparent;">';
+  html+='</div>';
+  html+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:14px;">';
+  html+='<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;font-family:Montserrat,sans-serif;">Fecha límite</div>';
+  html+='<input id="pago-fecha-'+c.id+'" type="date" value="'+escH(fecha)+'" onchange="guardarPago('+c.id+')" style="width:100%;border:none;outline:none;font-size:13px;font-weight:600;color:var(--title);font-family:Montserrat,sans-serif;background:transparent;">';
+  html+='</div></div>';
+  
+  // Notas de pago
+  html+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:14px;">';
+  html+='<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;font-family:Montserrat,sans-serif;">Notas</div>';
+  html+='<textarea id="pago-notas-'+c.id+'" onblur="guardarPago('+c.id+')" rows="3" style="width:100%;border:none;outline:none;font-size:12px;font-family:Montserrat,sans-serif;resize:vertical;color:var(--body);" placeholder="Notas sobre el pago...">'+escH(notas)+'</textarea>';
+  html+='</div>';
+  
+  html+='<div id="pago-st-'+c.id+'" style="font-size:11px;color:var(--muted);text-align:center;"></div>';
+  html+='</div>';
+  return html;
+}
+
+function guardarPago(id){
+  var c=cands.find(function(x){return x.id===id;});
+  if(!c)return;
+  var estado=document.getElementById('pago-estado-'+id);
+  var monto=document.getElementById('pago-monto-'+id);
+  var fecha=document.getElementById('pago-fecha-'+id);
+  var notas=document.getElementById('pago-notas-'+id);
+  var st=document.getElementById('pago-st-'+id);
+  var patch={
+    pago_estado:estado?estado.value:'pendiente',
+    pago_monto:monto?monto.value:'',
+    pago_fecha:fecha?fecha.value:'',
+    pago_notas:notas?notas.value:''
+  };
+  // Update local
+  Object.assign(c,patch);
+  if(st)st.textContent='Guardando...';
+  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify(patch)
+  }).then(function(r){
+    if(st){st.textContent=r.ok||r.status===204?'✓ Guardado':'Error';setTimeout(function(){if(st)st.textContent='';},2000);}
+  }).catch(function(){if(st){st.textContent='Error';setTimeout(function(){if(st)st.textContent='';},2000);}});
+}
+
 
 function saveNote(id){
   var val=document.getElementById('nota-'+id).value;notes[id]=val;localStorage.setItem('mj_notes',JSON.stringify(notes));
@@ -2086,7 +2161,18 @@ function crearCliente(){
   if(st){st.textContent='Creando cliente...';st.style.color='#666';}
   sbPost('candidatos',{email:email,nombre:nombre,semana_activa:1})
   .then(function(){
-    if(st){st.textContent='✓ Cliente creado';st.style.color='#5A8C6E';}
+    if(st){st.textContent='✓ Cliente creado — enviando bienvenida...';st.style.color='#5A8C6E';}
+    // Enviar email de bienvenida via EmailJS
+    var clienteUrl='https://mmicaelajairedin-ui.github.io/analisisform/cliente.html';
+    var primerNombre=nombre.split(' ')[0];
+    if(typeof emailjs!=='undefined'){
+      emailjs.send('Coach','template_7f00mbl',{
+        to_email:email,
+        name:primerNombre,
+        subject:'¡Bienvenida/o a tu proceso de búsqueda de empleo! 🚀',
+        message:'Hola '+primerNombre+',\n\nEstoy muy contenta de acompañarte en este proceso. Ya tenés acceso a tu portal personal donde vas a poder ver tu análisis, tu CV optimizado, tu carta de presentación y los empleos que más encajan con tu perfil.\n\nEntrá cuando quieras desde este link:\n'+clienteUrl+'\n\nAntes de nuestra próxima sesión, hacé un repaso de las acciones que te dejé en el portal. Cualquier duda, escribime.\n\nUn abrazo,\nMicaela Jairedin\nCareer Coach & Recruiter'
+      }).catch(function(){});
+    }
     setTimeout(function(){
       cerrarModal('modal-crear');
       ['nc-nombre','nc-email','nc-pass'].forEach(function(id){
