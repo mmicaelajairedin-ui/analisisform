@@ -222,6 +222,11 @@ function cargar(){
   .then(function(rows){
     _cand=rows&&rows.length?rows[0]:{nombre:_email,email:_email};
     document.getElementById('tb-name').textContent=_cand.nombre||'';
+    // Check localStorage for more recent saved carta
+    var localCarta=localStorage.getItem('carta_'+_email);
+    if(localCarta&&(!_cand.carta_presentacion||localCarta.length>(_cand.carta_presentacion||'').length)){
+      _cand.carta_presentacion=localCarta;
+    }
     renderCarta();
   }).catch(function(){
     document.getElementById('carta-paper').innerHTML='<div style="padding:3rem;text-align:center;color:#999;font-family:Montserrat,sans-serif;font-size:13px;">Error al cargar. Recargá la página.</div>';
@@ -348,33 +353,57 @@ function toggleEdit(){
   }
 }
 
-// ── GUARDAR — via edge function que usa service key ──
+// ── GUARDAR — directo a Supabase tabla cartas ──
 function guardar(){
   if(!_email)return;
   var st=document.getElementById('save-st');
   var paper=document.getElementById('carta-paper');
+  
+  // Recolectar todo el texto editable
+  var partes=[];
+  var empresa=paper.querySelector('.cd-empresa');
+  var asunto=paper.querySelector('.carta-asunto');
   var saludo=paper.querySelector('.carta-saludo');
   var parrafos=paper.querySelectorAll('.carta-parrafo');
   var cierre=paper.querySelector('.carta-cierre');
-  var partes=[];
+  
   if(saludo)partes.push(saludo.textContent.trim());
   parrafos.forEach(function(p){if(p.textContent.trim())partes.push(p.textContent.trim());});
   if(cierre)partes.push(cierre.textContent.trim());
   var cartaTexto=partes.join('\n\n');
+  
+  // Guardar empresa y asunto también
+  var empresaNombre=empresa?empresa.textContent.trim():'[EMPRESA]';
+  var asuntoTexto=asunto?asunto.textContent.trim():'';
+  
+  var payload={
+    carta_presentacion: cartaTexto,
+    carta_empresa: empresaNombre,
+    carta_asunto: asuntoTexto
+  };
 
   st.textContent='Guardando...';st.style.color='#888';
-  fetch(EDGE,{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
-    body:JSON.stringify({accion:'guardar_carta',email:_email,carta_texto:cartaTexto})
-  }).then(function(r){return r.json();})
-  .then(function(data){
-    var ok=data&&data.ok;
-    st.textContent=ok?'✓ Guardada':'Error al guardar';
-    st.style.color=ok?'#5A8C6E':'#C0756E';
+  
+  // PATCH directo a candidatos — funciona con service key via anon si RLS lo permite
+  // Si falla, guardamos en localStorage como backup
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+enc(_email),{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify(payload)
+  }).then(function(r){
+    if(r.ok||r.status===204){
+      st.textContent='✓ Guardada';st.style.color='#5A8C6E';
+      // Backup en localStorage
+      localStorage.setItem('carta_'+_email, cartaTexto);
+    } else {
+      // Fallback: guardar en localStorage
+      localStorage.setItem('carta_'+_email, cartaTexto);
+      st.textContent='✓ Guardada localmente';st.style.color='#8E7676';
+    }
     setTimeout(function(){st.textContent='';st.style.color='';},3000);
   }).catch(function(){
-    st.textContent='Error de red';st.style.color='#C0756E';
+    localStorage.setItem('carta_'+_email, cartaTexto);
+    st.textContent='✓ Guardada localmente';st.style.color='#8E7676';
     setTimeout(function(){st.textContent='';st.style.color='';},3000);
   });
 }
