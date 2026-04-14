@@ -68,25 +68,32 @@ Si la columna no existe, crearla:
 ALTER TABLE candidatos ADD COLUMN activo BOOLEAN DEFAULT true;
 ```
 
-## PENDIENTE — Rediseno del panel (proxima sesion)
+## Completado — Rediseno del panel
 
-### Prioridad 2: Emails al cliente
-- Sistema de plantillas de email desde el panel
-- Plantillas: Bienvenida, Analisis listo, CV listo, Resumen semanal, Recordatorio sesion
-- Enviar via EmailJS o abrir mailto: con el texto pre-armado
-- Ya existe parcialmente en la tab "Mensajes" (tabMensajes)
+### Prioridad 2: Emails al cliente — HECHO
+- 7 plantillas en tabMensajes: Bienvenida, Acceso, CV listo, Recordatorio, Nueva semana, Informe, Personalizado
+- Toggle ES/EN, envio via WhatsApp, Email (mailto:) y Copiar
 
-### Prioridad 3: Pagina de recursos
-- Crear/mejorar pagina de recursos con materiales para el cliente
-- Guias, templates, links utiles durante la mentoria
+### Prioridad 3: Pagina de recursos — HECHO
+- rRecursos() en cliente.html con material organizado por semana
+- 12 recursos (3 por semana): CV, LinkedIn, Networking, Entrevistas
+- Semana actual destacada con badge + borde accent
+- Seccion de consejos generales
 
-### Prioridad 4: Mas opciones de empleos
-- Mejorar seccion de empleos sugeridos en cliente.html
-- Mas fuentes, filtros, integracion con portales
+### Prioridad 4: Mas opciones de empleos — HECHO
+- Barra de portales rapidos: Indeed, LinkedIn Jobs, InfoJobs, Glassdoor, CompuTrabajo
+- Links pre-filtrados por sector y ubicacion del candidato
+- Cada sugerencia IA con 3 botones de portal (Indeed, LinkedIn, InfoJobs)
 
-### Prioridad 5: Visual general
-- El usuario dijo que no le encanta como se ve Links y accesos
-- Seguir puliendo: colores, espaciado, que sea mas profesional
+### Prioridad 5: Visual general — HECHO
+- Links: formulario con icono+gradiente, accesos con separador limpio
+- Botones URL mas compactos, cards con hover sutil
+- Sidebar 240px (antes 280px), stats cards con sombra suave
+
+## PENDIENTE — Proximas mejoras
+- Mas contenido real en recursos (links a articulos, videos, templates descargables)
+- Sistema de notificaciones push o email automatico cuando el coach actualiza algo
+- Dashboard analytics: metricas de progreso agregadas
 
 ## Base de datos (Supabase)
 ### Tablas principales:
