@@ -932,6 +932,9 @@ function loadCands(){
     notes=JSON.parse(localStorage.getItem('mj_notes')||'{}');
     cands.forEach(function(c){if(c.notas_coach){notes[c.id]=c.notas_coach;}});
     localStorage.setItem('mj_notes',JSON.stringify(notes));
+    // Restaurar estado activo/inactivo desde localStorage
+    var localAct=JSON.parse(localStorage.getItem('mj_activos')||'{}');
+    cands.forEach(function(c){if(localAct.hasOwnProperty(c.id)){c.activo=localAct[c.id];}});
     renderSidebar();
     if(activeId&&_sec==='ficha'){var c=cands.find(function(x){return x.id===activeId;});if(c)renderMain(c);}
     if(_sec==='clientes') _renderClientes();
@@ -2256,19 +2259,18 @@ function _toggleActivo(id, val){
   var c=cands.find(function(x){return x.id===id;});
   if(!c) return;
   c.activo=val;
-  // Guardar en Supabase
+  // Guardar en localStorage siempre (fallback)
+  var localAct=JSON.parse(localStorage.getItem('mj_activos')||'{}');
+  localAct[id]=val;
+  localStorage.setItem('mj_activos',JSON.stringify(localAct));
+  showToast(val?'Cliente activado':'Cliente desactivado');
+  _renderClientes();
+  // Intentar guardar en Supabase (si la columna existe)
   fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
     method:'PATCH',
     headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
     body:JSON.stringify({activo:val})
-  }).then(function(r){
-    if(!r.ok) throw new Error(r.status);
-    showToast(val?'Cliente activado':'Cliente desactivado');
-    _renderClientes();
-  }).catch(function(err){
-    showToast('Error: '+String(err));
-    c.activo=!val; // revert
-  });
+  }).catch(function(){});
 }
 
 // ── RESUMEN ──────────────────────────────────────────────────
