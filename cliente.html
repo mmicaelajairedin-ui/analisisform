@@ -2102,6 +2102,142 @@ goSec=function(s,el){
 };
 
 init();
+
+function rLinkedIn(){
+  var foto=localStorage.getItem('mj_foto_'+(E||'').toLowerCase())||C.foto_perfil||null;
+  var nombre=C.nombre||'';
+  var titular=C.sector||C.rol||'Profesional';
+  var ciudad=C.ciudad||C.ubicacion||'';
+  var EDGE='https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/generar-informe';
+
+  var o='<div style="display:flex;flex-direction:column;gap:16px;">';
+
+  // Subir perfil
+  o+='<div style="background:#fff;border-radius:14px;padding:20px 22px;border:1.5px solid var(--border);">';
+  o+='<div style="font-size:14px;font-weight:800;color:var(--text);font-family:Montserrat,sans-serif;margin-bottom:4px;">Analizar mi LinkedIn</div>';
+  o+='<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Pega el texto de tu perfil y la IA sugiere mejoras en cada sección.</div>';
+  o+='<textarea id="li-txt" rows="6" placeholder="Pega aqui el texto de tu perfil de LinkedIn..." style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;font-size:12px;font-family:Montserrat,sans-serif;resize:vertical;outline:none;line-height:1.6;"></textarea>';
+  if(C.linkedin_texto&&C.linkedin_texto.length>50){
+    o+='<div style="font-size:11px;color:#0077B5;font-weight:600;margin-top:6px;">✓ Tenes un perfil guardado — aparecera en el campo al analizar</div>';
+  }
+  o+='<div style="margin-top:12px;display:flex;align-items:center;gap:12px;">';
+  o+='<button onclick="liAnalizar()" style="padding:10px 20px;background:#0077B5;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;font-family:Montserrat,sans-serif;cursor:pointer;">✨ Analizar</button>';
+  o+='<span id="li-st" style="font-size:12px;color:var(--muted);font-family:Montserrat,sans-serif;"></span>';
+  o+='</div></div>';
+
+  // Mockup LinkedIn
+  o+='<div style="background:#F3F2EF;border-radius:14px;overflow:hidden;border:1px solid #E0DFDC;">';
+  o+='<div style="background:#0077B5;height:100px;"></div>';
+  o+='<div style="background:#fff;padding:0 20px 20px;position:relative;">';
+  o+='<div style="width:72px;height:72px;border-radius:50%;border:3px solid #fff;overflow:hidden;background:#E8F2FF;display:flex;align-items:center;justify-content:center;margin-top:-36px;margin-bottom:10px;">';
+  if(foto){o+='<img src="'+foto+'" style="width:100%;height:100%;object-fit:cover;">';}
+  else{o+='<div style="font-size:22px;font-weight:800;color:#0077B5;font-family:Montserrat,sans-serif;">'+ini(nombre)+'</div>';}
+  o+='</div>';
+  o+='<div id="li-m-nombre" style="font-size:17px;font-weight:800;color:#000;font-family:Montserrat,sans-serif;margin-bottom:3px;">'+hh(nombre)+'</div>';
+  o+='<div id="li-m-titular" style="font-size:13px;color:#444;margin-bottom:4px;line-height:1.4;">'+hh(titular)+'</div>';
+  if(ciudad)o+='<div style="font-size:12px;color:#666;">'+hh(ciudad)+'</div>';
+  o+='<hr style="border:none;border-top:1px solid #E0DFDC;margin:14px 0;">';
+  o+='<div style="font-size:13px;font-weight:800;color:#000;font-family:Montserrat,sans-serif;margin-bottom:6px;">Acerca de</div>';
+  o+='<div id="li-m-resumen" style="font-size:12px;color:#444;line-height:1.6;">'+(C.objetivo?hh(C.objetivo.slice(0,250)):'<em style="color:#999;">Analiza tu perfil para ver el resumen optimizado</em>')+'</div>';
+  o+='<div id="li-propuesta" style="margin-top:14px;"></div>';
+  o+='</div></div>';
+
+  // Mejoras (se llenan al analizar)
+  o+='<div id="li-mejoras"></div>';
+
+  o+='</div>';
+
+  setTimeout(function(){
+    var saved=localStorage.getItem('mj_li_'+(E||''));
+    if(saved){try{liMostrar(JSON.parse(saved));}catch(e){}}
+    var ta=document.getElementById('li-txt');
+    if(ta&&C.linkedin_texto)ta.value=C.linkedin_texto;
+  },80);
+
+  return o;
+}
+
+function liAnalizar(){
+  var ta=document.getElementById('li-txt');
+  var texto=ta?ta.value.trim():'';
+  if(!texto&&C.linkedin_texto)texto=C.linkedin_texto;
+  if(!texto){
+    var st=document.getElementById('li-st');
+    if(st){st.textContent='Pega el texto de tu perfil primero';st.style.color='var(--rose)';}
+    return;
+  }
+  var st=document.getElementById('li-st');
+  if(st){st.textContent='Analizando... ~30 segundos';st.style.color='var(--muted)';}
+  var EDGE='https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/generar-informe';
+  fetch(EDGE,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
+    body:JSON.stringify({accion:'analizar_linkedin',nombre:C.nombre||'',sector:C.sector||'',rol:C.rol||'',ciudad:C.ciudad||'',linkedin_texto:texto,objetivo:C.objetivo||''})
+  }).then(function(r){return r.json();})
+  .then(function(data){
+    if(data&&data.analisis){
+      localStorage.setItem('mj_li_'+(E||''),JSON.stringify(data.analisis));
+      if(texto.length>50)pt('candidatos','email=eq.'+encodeURIComponent(E),{linkedin_texto:texto});
+      liMostrar(data.analisis);
+      if(st){st.textContent='Listo';st.style.color='var(--green)';}
+    } else {
+      if(st){st.textContent='Error. Intenta de nuevo.';st.style.color='var(--rose)';}
+    }
+  }).catch(function(){
+    if(st){st.textContent='Error de conexion';st.style.color='var(--rose)';}
+  });
+}
+
+function liMostrar(d){
+  if(!d)return;
+  var mT=document.getElementById('li-m-titular');
+  if(mT&&d.titular_optimizado){
+    mT.innerHTML='<span style="color:#999;font-size:11px;text-decoration:line-through;">'+hh(d.titular_actual||'')+'</span><br><span style="color:#0077B5;font-weight:700;">'+hh(d.titular_optimizado)+'</span>';
+  }
+  var mR=document.getElementById('li-m-resumen');
+  if(mR&&d.resumen_optimizado)mR.textContent=d.resumen_optimizado;
+  var prop=document.getElementById('li-propuesta');
+  if(prop){
+    prop.innerHTML='<div style="background:#E8F5E9;border-radius:8px;padding:10px 14px;font-size:12px;color:#2E7D32;font-weight:700;font-family:Montserrat,sans-serif;">✅ Score actual: '+d.score_actual+'/100 &rarr; Potencial: '+d.score_potencial+'/100</div>';
+  }
+  var mej=document.getElementById('li-mejoras');
+  if(!mej)return;
+  var o='<div style="display:flex;flex-direction:column;gap:12px;">';
+  if(d.titular_actual||d.titular_optimizado){o+=liCard('🎯 Titular','#0077B5',d.titular_actual,d.titular_optimizado,d.titular_tip);}
+  if(d.resumen_optimizado){o+=liCard('📝 Resumen','#7B4F9E',d.resumen_actual,d.resumen_optimizado,d.resumen_tip);}
+  if(d.keywords&&d.keywords.length){
+    o+='<div style="background:#fff;border-radius:12px;padding:16px 18px;border:1.5px solid var(--border);">';
+    o+='<div style="font-size:13px;font-weight:800;color:#000;font-family:Montserrat,sans-serif;margin-bottom:10px;">🔑 Keywords a incluir</div>';
+    o+='<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+    d.keywords.forEach(function(k){o+='<span style="background:#E3F2FD;color:#0077B5;font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;">'+hh(k)+'</span>';});
+    o+='</div></div>';
+  }
+  if(d.acciones&&d.acciones.length){
+    o+='<div style="background:#fff;border-radius:12px;padding:16px 18px;border:1.5px solid var(--border);">';
+    o+='<div style="font-size:13px;font-weight:800;color:#000;font-family:Montserrat,sans-serif;margin-bottom:10px;">⚡ Acciones esta semana</div>';
+    d.acciones.forEach(function(a,i){
+      o+='<div style="display:flex;gap:8px;padding:7px 0;border-bottom:.5px solid var(--border);font-size:12px;color:var(--text2);line-height:1.5;"><span style="color:#0077B5;font-weight:800;min-width:18px;">'+(i+1)+'.</span>'+hh(a)+'</div>';
+    });
+    o+='</div>';
+  }
+  o+='</div>';
+  mej.innerHTML=o;
+}
+
+function liCard(titulo,color,antes,despues,tip){
+  return '<div style="background:#fff;border-radius:12px;overflow:hidden;border:1.5px solid var(--border);">'+
+    '<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:800;color:#000;font-family:Montserrat,sans-serif;">'+titulo+'</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;">'+
+    '<div style="padding:12px 16px;background:#FFF8F8;border-right:1px solid var(--border);">'+
+    '<div style="font-size:9px;font-weight:800;color:#C0756E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">ANTES</div>'+
+    '<div style="font-size:12px;color:#555;line-height:1.6;">'+hh(antes||'No detectado')+'</div></div>'+
+    '<div style="padding:12px 16px;background:#F0F7FF;">'+
+    '<div style="font-size:9px;font-weight:800;color:'+color+';text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">PROPUESTA</div>'+
+    '<div style="font-size:12px;color:#000;line-height:1.6;font-weight:500;">'+hh(despues||'')+'</div></div>'+
+    '</div>'+
+    (tip?'<div style="padding:9px 16px;background:#F8F8F8;border-top:1px solid var(--border);font-size:11px;color:#666;">💡 '+hh(tip)+'</div>':'')+
+    '</div>';
+}
 </script>
 </body>
 </html>
