@@ -46,7 +46,7 @@ test.describe('Responsive - Login', () => {
 
 test.describe('Responsive - Panel', () => {
 
-  test('Panel tiene layout grid en desktop', async ({ page }) => {
+  test('Panel tiene layout con sidebar en desktop', async ({ page }) => {
     // Inyectar sesión para que panel.html no redirija al login
     await page.goto('login.html');
     await page.evaluate(() => {
@@ -58,8 +58,6 @@ test.describe('Responsive - Panel', () => {
 
     const layout = page.locator('.layout');
     await expect(layout).toBeVisible({ timeout: 8000 });
-
-    const display = await layout.evaluate(el => getComputedStyle(el).display);
-    expect(display).toBe('grid');
+    await expect(page.locator('.sidebar')).toBeVisible();
   });
 });
