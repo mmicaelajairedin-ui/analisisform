@@ -180,6 +180,7 @@ test.describe('Formulario - Componentes interactivos', () => {
     await page.locator('#s1 .btn-next').click();
 
     await page.locator('#r-sit .opt').first().click();
+    await page.fill('#f-obj', 'Cambiar de trabajo');
     await page.locator('#s2 .btn-next').click();
 
     await page.locator('#s3 .btn-next').click();
@@ -188,7 +189,6 @@ test.describe('Formulario - Componentes interactivos', () => {
     await page.locator('#s4 .btn-next').click();
 
     await page.fill('#f-rol', 'CTO');
-    await page.locator('#r-urg .opt').first().click();
     await page.locator('#s5 .btn-next').click();
 
     await expect(page.locator('#s6')).toBeVisible();
