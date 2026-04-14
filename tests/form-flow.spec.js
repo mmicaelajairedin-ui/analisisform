@@ -102,7 +102,10 @@ test.describe('Formulario - Navegación entre pasos', () => {
     await page.locator('#consent-btn').click();
     await expect(page.locator('#s1')).toBeVisible();
 
-    // Ir al paso 2
+    // Llenar campos obligatorios del paso 1
+    await page.fill('#f-nom', 'Test');
+    await page.fill('#f-mai', 'test@test.com');
+    await page.fill('#f-sec', 'Tech');
     await page.locator('#s1btn').click();
     await expect(page.locator('#s2')).toBeVisible();
 
@@ -145,9 +148,15 @@ test.describe('Formulario - Componentes interactivos', () => {
     await page.goto('index.html');
     await page.locator('#consent-cb').check();
     await page.locator('#consent-btn').click();
-    await page.locator('#s1btn').click();
 
-    // Seleccionar primera opción
+    // Llenar campos obligatorios del paso 1 para poder avanzar
+    await page.fill('#f-nom', 'Test');
+    await page.fill('#f-mai', 'test@test.com');
+    await page.fill('#f-sec', 'Tech');
+    await page.locator('#s1btn').click();
+    await expect(page.locator('#s2')).toBeVisible();
+
+    // Seleccionar primera opción de situación
     const opts = page.locator('#r-sit .opt');
     await opts.first().click();
     await expect(opts.first()).toHaveClass(/sel/);
@@ -161,12 +170,28 @@ test.describe('Formulario - Componentes interactivos', () => {
   test('Checkboxes (opciones múltiples) funcionan correctamente', async ({ page }) => {
     await page.goto('index.html');
 
-    // Navegar hasta paso 6
+    // Navegar hasta paso 6 llenando campos obligatorios
     await page.locator('#consent-cb').check();
     await page.locator('#consent-btn').click();
-    for (let i = 1; i <= 5; i++) {
-      await page.locator(`#s${i} .btn-next`).click();
-    }
+
+    await page.fill('#f-nom', 'Test');
+    await page.fill('#f-mai', 'test@test.com');
+    await page.fill('#f-sec', 'Tech');
+    await page.locator('#s1 .btn-next').click();
+
+    await page.locator('#r-sit .opt').first().click();
+    await page.locator('#s2 .btn-next').click();
+
+    await page.locator('#s3 .btn-next').click();
+
+    await page.fill('#f-car', 'Developer');
+    await page.locator('#s4 .btn-next').click();
+
+    await page.fill('#f-rol', 'CTO');
+    await page.locator('#r-urg .opt').first().click();
+    await page.locator('#s5 .btn-next').click();
+
+    await expect(page.locator('#s6')).toBeVisible();
 
     // Marcar múltiples checkboxes
     const copts = page.locator('#c-obs .copt');

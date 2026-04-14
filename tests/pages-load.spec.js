@@ -42,11 +42,18 @@ test.describe('Carga de páginas principales', () => {
   });
 
   test('panel.html - Panel del coach carga correctamente', async ({ page }) => {
+    // panel.html redirige al login sin sesión, así que inyectamos una
+    await page.goto('login.html');
+    await page.evaluate(() => {
+      localStorage.setItem('mj_user', JSON.stringify({
+        id: 999, email: 'test-agent@test.invalid', rol: 'coach', nombre: 'Test Agent'
+      }));
+    });
     const response = await page.goto('panel.html');
     expect(response.status()).toBe(200);
 
     // Verifica estructura del layout
-    await expect(page.locator('.layout')).toBeVisible();
+    await expect(page.locator('.layout')).toBeVisible({ timeout: 8000 });
     await expect(page.locator('.sidebar')).toBeVisible();
   });
 
