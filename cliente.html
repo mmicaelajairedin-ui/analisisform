@@ -669,11 +669,6 @@ input:focus, select:focus, textarea:focus {
         <div class="sb-pb-lbl" id="sb-pb-lbl" style="margin-top:5px;font-size:10px;">0 acciones</div>
       </div>
       <div class="sb-nav">
-        <!-- Notificaciones -->
-        <div id="sb-notif-wrap" style="display:none;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:10px;">
-          <div style="font-size:8px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px;">Avisos</div>
-          <div id="sb-notifs"></div>
-        </div>
         <div class="sb-sec">Mi proceso</div>
         <button class="ni on" onclick="goSec('semana',this)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -732,6 +727,48 @@ input:focus, select:focus, textarea:focus {
       ">
         <!-- DERECHA: campana + foto Micaela -->
         <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+
+          <!-- Mensajes -->
+          <div style="position:relative;">
+            <button onclick="toggleMsgs()" id="msg-bell-btn" style="
+              width:38px;height:38px;border-radius:50%;
+              border:1.5px solid var(--border);background:#fff;
+              cursor:pointer;display:flex;align-items:center;justify-content:center;
+              transition:all .15s;position:relative;
+            ">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <div id="msg-badge" style="
+                display:none;position:absolute;top:-3px;right:-3px;
+                min-width:16px;height:16px;border-radius:8px;
+                background:#5B7FA6;color:#fff;
+                font-size:9px;font-weight:800;font-family:'Montserrat',sans-serif;
+                padding:0 4px;align-items:center;justify-content:center;
+              ">0</div>
+            </button>
+            <!-- Dropdown mensajes -->
+            <div id="msg-panel" style="
+              display:none;position:absolute;top:46px;right:0;
+              width:320px;background:#fff;border-radius:14px;
+              border:1.5px solid var(--border);
+              box-shadow:0 8px 28px rgba(0,0,0,.12);
+              z-index:200;overflow:hidden;
+            ">
+              <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+                <div style="font-size:13px;font-weight:800;color:var(--text);font-family:'Montserrat',sans-serif;">Mensajes</div>
+              </div>
+              <div id="msg-list" style="max-height:350px;overflow-y:auto;padding:8px;"></div>
+              <div style="padding:10px;border-top:1px solid var(--border);">
+                <div style="display:flex;gap:6px;">
+                  <input id="msg-input" type="text" placeholder="Escribe un mensaje..." style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:20px;font-size:12px;font-family:'Open Sans',sans-serif;outline:none;" onkeydown="if(event.key==='Enter')sendMsg()">
+                  <button onclick="sendMsg()" style="width:34px;height:34px;border-radius:50%;background:var(--rose);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <!-- Campana -->
           <div style="position:relative;">
@@ -2390,6 +2427,121 @@ function rRecursos(){
   o+='</div>';
   return o;
 }
+
+// ── MENSAJERÍA ──────────────────────────────────────────
+var _msgsOpen=false;
+
+function _getMsgs(){
+  var k='mj_msgs_'+(E||'').toLowerCase().trim();
+  try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return[];}
+}
+function _saveMsgs(msgs){
+  var k='mj_msgs_'+(E||'').toLowerCase().trim();
+  localStorage.setItem(k,JSON.stringify(msgs));
+}
+
+function toggleMsgs(){
+  _msgsOpen=!_msgsOpen;
+  var panel=document.getElementById('msg-panel');
+  var btn=document.getElementById('msg-bell-btn');
+  if(!panel)return;
+  if(_msgsOpen){
+    panel.style.display='block';
+    if(btn) btn.style.background='var(--rose-light)';
+    _renderMsgs();
+    // Cerrar al click fuera
+    setTimeout(function(){
+      document.addEventListener('click',function _closeMsg(ev){
+        if(!panel.contains(ev.target)&&ev.target!==btn&&!btn.contains(ev.target)){
+          panel.style.display='none';
+          if(btn) btn.style.background='#fff';
+          _msgsOpen=false;
+          document.removeEventListener('click',_closeMsg);
+        }
+      });
+    },10);
+    // También cargar desde Supabase
+    _loadMsgsFromDB();
+  } else {
+    panel.style.display='none';
+    if(btn) btn.style.background='#fff';
+  }
+}
+
+function _renderMsgs(){
+  var list=document.getElementById('msg-list');
+  if(!list)return;
+  var msgs=_getMsgs();
+  if(!msgs.length){
+    list.innerHTML='<div style="text-align:center;padding:24px;font-size:12px;color:var(--muted);">Sin mensajes a\u00fan.<br>Escrib\u00ed para iniciar.</div>';
+    return;
+  }
+  var nombre=C&&C.nombre?C.nombre.split(' ')[0]:'';
+  list.innerHTML=msgs.map(function(m){
+    var isCoach=m.from==='coach';
+    return '<div style="display:flex;justify-content:'+(isCoach?'flex-start':'flex-end')+';margin-bottom:6px;">'
+      +'<div style="max-width:85%;padding:9px 13px;border-radius:'+(isCoach?'4px 14px 14px 14px':'14px 4px 14px 14px')+';background:'+(isCoach?'var(--rose-light)':'#EAF0FA')+';font-size:12px;color:var(--text);line-height:1.5;">'
+        +'<div style="font-size:9px;font-weight:700;color:'+(isCoach?'var(--rose)':'#5B7FA6')+';margin-bottom:2px;">'+(isCoach?'Micaela':nombre)+'</div>'
+        +hh(m.text)
+        +'<div style="font-size:9px;color:var(--muted);margin-top:3px;text-align:right;">'+hh(m.time||'')+'</div>'
+      +'</div></div>';
+  }).join('');
+  list.scrollTop=list.scrollHeight;
+  // Quitar badge
+  var badge=document.getElementById('msg-badge');
+  if(badge) badge.style.display='none';
+}
+
+function sendMsg(){
+  var inp=document.getElementById('msg-input');
+  if(!inp||!inp.value.trim())return;
+  var msgs=_getMsgs();
+  var now=new Date();
+  var time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');
+  msgs.push({from:'cliente',text:inp.value.trim(),time:time,ts:now.getTime()});
+  _saveMsgs(msgs);
+  inp.value='';
+  _renderMsgs();
+  // Guardar en Supabase
+  _syncMsgsToDB(msgs);
+}
+
+function _syncMsgsToDB(msgs){
+  if(!E)return;
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({notas_coach:JSON.stringify(msgs)})
+  }).catch(function(){});
+}
+
+function _loadMsgsFromDB(){
+  if(!E)return;
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E)+'&select=notas_coach',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.json();}).then(function(rows){
+    if(!rows||!rows.length)return;
+    var raw=rows[0].notas_coach||'';
+    var dbMsgs;
+    try{dbMsgs=JSON.parse(raw);}catch(e){return;}
+    if(!Array.isArray(dbMsgs))return;
+    // Merge: usar la version con mas mensajes
+    var local=_getMsgs();
+    if(dbMsgs.length>local.length){
+      _saveMsgs(dbMsgs);
+      _renderMsgs();
+      // Badge si hay mensajes nuevos del coach
+      var newCoach=dbMsgs.filter(function(m){return m.from==='coach'&&(!m._seen);}).length;
+      if(newCoach>0){
+        var badge=document.getElementById('msg-badge');
+        if(badge){badge.style.display='flex';badge.textContent=newCoach;}
+      }
+    }
+  }).catch(function(){});
+}
+
+// Cargar mensajes al iniciar para mostrar badge
+setTimeout(function(){if(E)_loadMsgsFromDB();},2000);
 
 function liCard(titulo,color,antes,despues,tip){
   return '<div style="background:#fff;border-radius:12px;overflow:hidden;border:1.5px solid var(--border);">'+

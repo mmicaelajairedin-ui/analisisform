@@ -992,7 +992,7 @@ function renderMain(c){
   }).join('');
 
   document.getElementById('main').innerHTML=
-    '<div style="padding:12px 20px 0;"><button onclick="showSection(\'clientes\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;transition:all .15s;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg> Volver a Clientes</button></div>'+
+    '<div style="padding:12px 20px 0;display:flex;align-items:center;gap:8px;"><button onclick="showSection(\'clientes\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;transition:all .15s;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg> Volver</button><div style="flex:1;"></div><button onclick="_openChat('+c.id+')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#EAF0FA;border:1.5px solid #C8D8E8;border-radius:8px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:700;color:#4A6BA0;cursor:pointer;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Chat</button></div>'+
     '<div class="chead" style="gap:16px;">'
       +avHtml
       +'<div style="flex:1;min-width:0;">'
@@ -2745,6 +2745,105 @@ function _qrFormulario(){
 
 
 // ── Funciones faltantes ──────────────────────────────────
+// ── CHAT CON CLIENTE ──────────────────────────────────────
+function _openChat(id){
+  var c=cands.find(function(x){return x.id===id;});
+  if(!c)return;
+  var email=(c.email||'').toLowerCase().trim();
+  var nombre=c.nombre||email;
+  // Crear modal de chat
+  var existing=document.getElementById('modal-chat');
+  if(existing) existing.remove();
+  var modal=document.createElement('div');
+  modal.id='modal-chat';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:300;backdrop-filter:blur(4px);';
+  modal.innerHTML=
+    '<div style="background:#fff;border-radius:20px;width:420px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.15);overflow:hidden;">'+
+      '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">'+
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'+
+        '<div style="flex:1;"><div style="font-size:14px;font-weight:800;color:var(--title);font-family:Montserrat,sans-serif;">Chat con '+escH(nombre.split(' ')[0])+'</div></div>'+
+        '<button onclick="document.getElementById(\'modal-chat\').remove()" style="background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;">&times;</button>'+
+      '</div>'+
+      '<div id="chat-msgs" style="flex:1;overflow-y:auto;padding:12px 16px;min-height:300px;background:var(--bg);"></div>'+
+      '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;">'+
+        '<input id="chat-input" type="text" placeholder="Escribe un mensaje..." style="flex:1;padding:9px 14px;border:1.5px solid var(--border);border-radius:20px;font-size:12px;outline:none;" onkeydown="if(event.key===\'Enter\')_sendChatMsg('+c.id+')">'+
+        '<button onclick="_sendChatMsg('+c.id+')" style="width:36px;height:36px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>'+
+      '</div>'+
+    '</div>';
+  modal.onclick=function(ev){if(ev.target===modal)modal.remove();};
+  document.body.appendChild(modal);
+  // Cargar mensajes
+  _loadChat(c);
+}
+
+function _getChatMsgs(id){
+  try{return JSON.parse(localStorage.getItem('mj_chat_'+id)||'[]');}catch(e){return[];}
+}
+
+function _loadChat(c){
+  var el=document.getElementById('chat-msgs');
+  if(!el)return;
+  // Intentar cargar de Supabase primero
+  var email=(c.email||'').toLowerCase().trim();
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(email)+'&select=notas_coach',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.json();}).then(function(rows){
+    if(rows&&rows.length&&rows[0].notas_coach){
+      var dbMsgs;
+      try{dbMsgs=JSON.parse(rows[0].notas_coach);}catch(e){dbMsgs=null;}
+      if(Array.isArray(dbMsgs)&&dbMsgs.length){
+        var local=_getChatMsgs(c.id);
+        if(dbMsgs.length>=local.length){
+          localStorage.setItem('mj_chat_'+c.id,JSON.stringify(dbMsgs));
+        }
+      }
+    }
+    _renderChat(c);
+  }).catch(function(){_renderChat(c);});
+}
+
+function _renderChat(c){
+  var el=document.getElementById('chat-msgs');
+  if(!el)return;
+  var msgs=_getChatMsgs(c.id);
+  var nombre=(c.nombre||'').split(' ')[0];
+  if(!msgs.length){
+    el.innerHTML='<div style="text-align:center;padding:40px;font-size:12px;color:var(--muted);">Sin mensajes. Escribe para iniciar la conversacion.</div>';
+    return;
+  }
+  el.innerHTML=msgs.map(function(m){
+    var isCoach=m.from==='coach';
+    return '<div style="display:flex;justify-content:'+(isCoach?'flex-end':'flex-start')+';margin-bottom:6px;">'
+      +'<div style="max-width:80%;padding:9px 14px;border-radius:'+(isCoach?'14px 4px 14px 14px':'4px 14px 14px 14px')+';background:'+(isCoach?'var(--accent-light)':'#EAF0FA')+';font-size:12px;color:var(--body);line-height:1.5;">'
+        +'<div style="font-size:9px;font-weight:700;color:'+(isCoach?'var(--accent)':'#5B7FA6')+';margin-bottom:2px;">'+(isCoach?'Micaela':nombre)+'</div>'
+        +escH(m.text)
+        +'<div style="font-size:9px;color:var(--muted);margin-top:3px;text-align:right;">'+escH(m.time||'')+'</div>'
+      +'</div></div>';
+  }).join('');
+  el.scrollTop=el.scrollHeight;
+}
+
+function _sendChatMsg(id){
+  var inp=document.getElementById('chat-input');
+  if(!inp||!inp.value.trim())return;
+  var c=cands.find(function(x){return x.id===id;});
+  if(!c)return;
+  var msgs=_getChatMsgs(id);
+  var now=new Date();
+  var time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');
+  msgs.push({from:'coach',text:inp.value.trim(),time:time,ts:now.getTime()});
+  localStorage.setItem('mj_chat_'+id,JSON.stringify(msgs));
+  inp.value='';
+  _renderChat(c);
+  // Sync a Supabase (notas_coach = JSON de mensajes)
+  var email=(c.email||'').toLowerCase().trim();
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(email),{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({notas_coach:JSON.stringify(msgs)})
+  }).catch(function(){});
+}
+
 function cerrarSesion(){
   if(confirm('¿Cerrar sesión?')){
     localStorage.clear();
