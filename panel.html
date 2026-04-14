@@ -2286,16 +2286,83 @@ function _renderInicio(){
     var ms=7*24*3600*1000;
     var nw=uniq.filter(function(c){return c.created_at&&(Date.now()-new Date(c.created_at).getTime())<ms;}).length;
 
+    // Analytics: contar clientes por semana
+    var porSemana=[0,0,0,0,0];
+    var activos=uniq.filter(function(c){return c.activo!==false;});
+    activos.forEach(function(c){var s=Math.min(parseInt(c.semana_activa||1),4);porSemana[s]++;});
+    var maxSem=Math.max.apply(null,porSemana)||1;
+    // Tasa de completitud
+    var conInforme=activos.filter(function(c){return iS[(c.email||'').toLowerCase().trim()];}).length;
+    var conCV=activos.filter(function(c){return cS[(c.email||'').toLowerCase().trim()];}).length;
+    var pctInf=activos.length?Math.round(conInforme/activos.length*100):0;
+    var pctCV=activos.length?Math.round(conCV/activos.length*100):0;
+    var semProm=activos.length?Math.round(activos.reduce(function(s,c){return s+parseInt(c.semana_activa||1);},0)/activos.length*10)/10:0;
+
     dp.innerHTML=
-      '<div class="dp-title">Resumen de tu práctica</div>'+
-      '<div class="dp-desc">Vista general de clientes y en qué etapa están.</div>'+
+      '<div class="dp-title">Resumen de tu pr\u00e1ctica</div>'+
+      '<div class="dp-desc">Vista general de clientes y en qu\u00e9 etapa est\u00e1n.</div>'+
       '<div class="stat-grid">'+
         '<div class="stat-card"><div class="stat-v" style="color:var(--accent)">'+uniq.length+'</div><div class="stat-l">Clientes</div></div>'+
         '<div class="stat-card"><div class="stat-v" style="color:var(--green)">'+Object.keys(iS).length+'</div><div class="stat-l">Informes</div></div>'+
         '<div class="stat-card"><div class="stat-v" style="color:var(--blue)">'+Object.keys(cS).length+'</div><div class="stat-l">CVs</div></div>'+
         '<div class="stat-card"><div class="stat-v" style="color:var(--orange)">'+nw+'</div><div class="stat-l">Esta semana</div></div>'+
       '</div>'+
-      '<div class="dp-card"><div class="dp-card-hd"><span class="dp-card-title">Todos los clientes</span><span class="dp-lbl">'+uniq.filter(function(c){return c.activo!==false;}).length+' activos</span></div>'+
+
+      // Analytics: Progreso
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">'+
+        // Clientes por etapa
+        '<div class="dp-card" style="margin-bottom:0;"><div class="dp-card-hd"><span class="dp-card-title">Clientes por etapa</span></div>'+
+          '<div style="padding:18px 22px;">'+
+            [1,2,3,4].map(function(s){
+              var lbl=semNames[s]||'S'+s;
+              var cnt=porSemana[s]||0;
+              var pct2=maxSem?Math.round(cnt/maxSem*100):0;
+              var clr=semColors[s]||'var(--accent)';
+              return '<div style="margin-bottom:10px;">'+
+                '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">'+
+                  '<span style="font-size:12px;font-weight:600;color:var(--body);">S'+s+' '+lbl+'</span>'+
+                  '<span style="font-size:12px;font-weight:700;color:'+clr+';">'+cnt+'</span>'+
+                '</div>'+
+                '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">'+
+                  '<div style="height:6px;width:'+pct2+'%;background:'+clr+';border-radius:3px;transition:width .5s;"></div>'+
+                '</div></div>';
+            }).join('')+
+          '</div>'+
+        '</div>'+
+        // Metricas clave
+        '<div class="dp-card" style="margin-bottom:0;"><div class="dp-card-hd"><span class="dp-card-title">M\u00e9tricas clave</span></div>'+
+          '<div style="padding:18px 22px;display:flex;flex-direction:column;gap:14px;">'+
+            '<div style="display:flex;align-items:center;justify-content:space-between;">'+
+              '<span style="font-size:12px;color:var(--body);">Semana promedio</span>'+
+              '<span style="font-size:20px;font-weight:800;color:var(--accent);font-family:Montserrat,sans-serif;">'+semProm+'</span>'+
+            '</div>'+
+            '<div>'+
+              '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">'+
+                '<span style="font-size:12px;color:var(--body);">Con informe</span>'+
+                '<span style="font-size:12px;font-weight:700;color:var(--green);">'+pctInf+'%</span>'+
+              '</div>'+
+              '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">'+
+                '<div style="height:6px;width:'+pctInf+'%;background:var(--green);border-radius:3px;"></div>'+
+              '</div>'+
+            '</div>'+
+            '<div>'+
+              '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">'+
+                '<span style="font-size:12px;color:var(--body);">Con CV publicado</span>'+
+                '<span style="font-size:12px;font-weight:700;color:var(--blue);">'+pctCV+'%</span>'+
+              '</div>'+
+              '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">'+
+                '<div style="height:6px;width:'+pctCV+'%;background:var(--blue);border-radius:3px;"></div>'+
+              '</div>'+
+            '</div>'+
+            '<div style="display:flex;align-items:center;justify-content:space-between;">'+
+              '<span style="font-size:12px;color:var(--body);">Activos / Total</span>'+
+              '<span style="font-size:14px;font-weight:800;color:var(--accent);font-family:Montserrat,sans-serif;">'+activos.length+' / '+uniq.length+'</span>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+
+      '<div class="dp-card"><div class="dp-card-hd"><span class="dp-card-title">Todos los clientes</span><span class="dp-lbl">'+activos.length+' activos</span></div>'+
       '<div id="ini-list">'+
       (uniq.length?uniq.map(function(c,i){
         var em=(c.email||'').toLowerCase();
