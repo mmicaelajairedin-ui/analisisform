@@ -134,7 +134,39 @@ function generateReport(results) {
   report += `  ⏭️  Omitidos:      ${skipped}\n`;
   report += `  Tasa de éxito:     ${totalTests > 0 ? Math.round((passed / totalTests) * 100) : 0}%\n\n`;
 
-  if (failures.length > 0) {
+  // Leer auto-fixes si existen
+  let autoFixesTxt = [];
+  let pendingIssuesTxt = [];
+  try {
+    const fixesPath = path.join(__dirname, 'results', 'fixes-applied.json');
+    const pendingPath = path.join(__dirname, 'results', 'pending-issues.json');
+    if (fs.existsSync(fixesPath)) autoFixesTxt = JSON.parse(fs.readFileSync(fixesPath, 'utf-8'));
+    if (fs.existsSync(pendingPath)) pendingIssuesTxt = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
+  } catch (e) { /* sin auto-fixes */ }
+
+  if (autoFixesTxt.length > 0) {
+    report += `🔧 REPARADO AUTOMÁTICAMENTE (${autoFixesTxt.length})\n`;
+    report += `─────────────────────────────────────────\n`;
+    for (const f of autoFixesTxt) {
+      report += `  ✅ ${f.explanation}\n`;
+      report += `     Archivo: ${f.file} · Test: ${f.test}\n\n`;
+    }
+    report += `  → Se creó un PR. Revísalo y mergea cuando quieras.\n\n`;
+  }
+
+  if (pendingIssuesTxt.length > 0) {
+    report += `⏳ NECESITAN TU APROBACIÓN (${pendingIssuesTxt.length})\n`;
+    report += `─────────────────────────────────────────\n`;
+    for (let i = 0; i < pendingIssuesTxt.length; i++) {
+      const f = pendingIssuesTxt[i];
+      report += `\n  ${i + 1}. ${f.test}\n`;
+      report += `     Tipo: ${f.description}\n`;
+      report += `     Error: ${(f.error || '').substring(0, 200)}\n`;
+    }
+    report += `\n  → Se creó un Issue en GitHub. Pide a Claude Code: "Repara el issue #X"\n\n`;
+  }
+
+  if (failures.length > 0 && pendingIssuesTxt.length === 0 && autoFixesTxt.length === 0) {
     report += `🔴 PROBLEMAS ENCONTRADOS (${failures.length})\n`;
     report += `─────────────────────────────────────────\n`;
     for (let i = 0; i < failures.length; i++) {
@@ -212,37 +244,57 @@ function generateReport(results) {
     suiteGroups,
   });
 
-  // Generar body para GitHub Issue (cuando hay fallos)
+  // Leer pending issues del auto-fixer para el Issue de GitHub
+  let pendingForIssue = [];
+  try {
+    const pendingPath = path.join(__dirname, 'results', 'pending-issues.json');
+    if (fs.existsSync(pendingPath)) {
+      pendingForIssue = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
+    }
+  } catch (e) { /* usar failures como fallback */ }
+
+  // Si no hay pending del auto-fixer, usar failures directamente
+  const issueFailures = pendingForIssue.length > 0 ? pendingForIssue : failures;
+
+  // Generar body para GitHub Issue (solo problemas complejos/pendientes)
   let issueBody = '';
-  if (failures.length > 0) {
+  if (issueFailures.length > 0) {
+    const fixedCount = failures.length - issueFailures.length;
     issueBody += `## Resumen\n\n`;
-    issueBody += `El testing diario del **${dateStr}** detectó **${failed} problema(s)** de ${totalTests} tests ejecutados.\n\n`;
+    issueBody += `El testing diario del **${dateStr}** detectó **${failed} problema(s)** de ${totalTests} tests.\n\n`;
+    if (fixedCount > 0) {
+      issueBody += `> **${fixedCount} problema(s) simples fueron reparados automáticamente** (PR creado). Este issue solo contiene los problemas que necesitan tu revisión.\n\n`;
+    }
     issueBody += `| Métrica | Valor |\n|---------|-------|\n`;
     issueBody += `| Total tests | ${totalTests} |\n`;
     issueBody += `| Pasaron | ${passed} |\n`;
-    issueBody += `| Fallaron | ${failed} |\n`;
-    issueBody += `| Tasa de éxito | ${totalTests > 0 ? Math.round((passed / totalTests) * 100) : 0}% |\n\n`;
+    issueBody += `| Reparados auto | ${fixedCount} |\n`;
+    issueBody += `| Pendientes | ${issueFailures.length} |\n\n`;
 
-    issueBody += `## Problemas detectados\n\n`;
-    for (let i = 0; i < failures.length; i++) {
-      const f = failures[i];
-      issueBody += `### ${i + 1}. ${f.name}\n\n`;
-      issueBody += `- **Suite:** ${f.suite}\n`;
-      issueBody += `- **Archivo:** \`${f.file || 'N/A'}\`\n`;
-      issueBody += `- **Error:**\n\`\`\`\n${f.error}\n\`\`\`\n\n`;
+    issueBody += `## Problemas que necesitan tu aprobación\n\n`;
+    for (let i = 0; i < issueFailures.length; i++) {
+      const f = issueFailures[i];
+      const testName = f.test || f.name;
+      const errorText = f.error || 'Error desconocido';
+      const fileText = f.file || 'N/A';
+      const descText = f.description || '';
 
-      // Acción recomendada
+      issueBody += `### ${i + 1}. ${testName}\n\n`;
+      if (descText) issueBody += `- **Tipo:** ${descText}\n`;
+      issueBody += `- **Archivo:** \`${fileText}\`\n`;
+      issueBody += `- **Error:**\n\`\`\`\n${errorText.substring(0, 300)}\n\`\`\`\n\n`;
+
       issueBody += `**Acción recomendada:** `;
-      if (f.error.includes('status()')) {
+      if (errorText.includes('status()') || /server/.test(f.category || '')) {
         issueBody += `Verificar que la página/endpoint está desplegado correctamente.\n\n`;
-      } else if (f.error.includes('toBeVisible')) {
-        issueBody += `Un elemento de la UI no se muestra — revisar HTML/CSS del componente.\n\n`;
-      } else if (f.error.includes('timeout') || f.error.includes('Timeout')) {
-        issueBody += `La página tarda demasiado en cargar — revisar performance.\n\n`;
-      } else if (f.error.includes('toHaveText')) {
-        issueBody += `El texto del elemento cambió — verificar si fue intencional.\n\n`;
-      } else if (f.error.includes('net::') || f.error.includes('ERR_')) {
-        issueBody += `Error de red — verificar conectividad y URLs del servicio.\n\n`;
+      } else if (/database|supabase/.test(f.category || '')) {
+        issueBody += `Verificar conexión y estructura de la base de datos Supabase.\n\n`;
+      } else if (/auth/.test(f.category || '')) {
+        issueBody += `Revisar el flujo de autenticación y manejo de sesión.\n\n`;
+      } else if (/performance|timeout/.test(f.category || '')) {
+        issueBody += `Optimizar rendimiento — la página tarda demasiado en cargar.\n\n`;
+      } else if (/ai-service/.test(f.category || '')) {
+        issueBody += `Verificar la API key de Anthropic y el endpoint de AI.\n\n`;
       } else {
         issueBody += `Investigar el error y corregir el componente afectado.\n\n`;
       }
@@ -253,9 +305,9 @@ function generateReport(results) {
     issueBody += `_Generado automáticamente por el Testing Agent_`;
   }
 
-  // Generar título del issue
-  const issueTitle = failures.length > 0
-    ? `🔴 Testing diario: ${failed} test(s) fallaron — ${dateStr}`
+  // Generar título del issue (solo para problemas pendientes)
+  const issueTitle = issueFailures.length > 0
+    ? `🔴 Testing diario: ${issueFailures.length} problema(s) necesitan revisión — ${dateStr}`
     : '';
 
   return { text: report, html: htmlReport, failed, passed, totalTests, issueBody, issueTitle };
@@ -271,8 +323,51 @@ function generateHTMLReport(data) {
   const statusColor = failed === 0 ? '#4a7c5f' : failed <= 3 ? '#b45309' : '#c0756e';
   const statusText = failed === 0 ? 'Saludable' : failed <= 3 ? 'Atención necesaria' : 'Problemas críticos';
 
+  // Leer resultados del auto-fixer (si existen)
+  let autoFixes = [];
+  let pendingIssues = [];
+  try {
+    const fixesPath = path.join(__dirname, 'results', 'fixes-applied.json');
+    const pendingPath = path.join(__dirname, 'results', 'pending-issues.json');
+    if (fs.existsSync(fixesPath)) autoFixes = JSON.parse(fs.readFileSync(fixesPath, 'utf-8'));
+    if (fs.existsSync(pendingPath)) pendingIssues = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
+  } catch (e) { /* sin auto-fixes */ }
+
+  // Auto-fixes section
+  let autoFixesHTML = '';
+  if (autoFixes.length > 0) {
+    autoFixesHTML = `
+      <div style="margin-top:20px;">
+        <h3 style="color:#2e7d32;font-size:14px;margin-bottom:10px;">🔧 Reparado automáticamente (${autoFixes.length})</h3>
+        <p style="font-size:12px;color:#666;margin-bottom:10px;">Se creó un PR con estos cambios. Revísalo y mergea cuando quieras.</p>
+        ${autoFixes.map(f => `
+          <div style="background:#e8f5e9;border-left:3px solid #4a7c5f;padding:10px 14px;margin-bottom:8px;border-radius:0 6px 6px 0;">
+            <strong style="font-size:13px;color:#2e7d32;">✅ ${f.explanation}</strong><br>
+            <span style="font-size:11px;color:#666;">Archivo: <code>${f.file}</code> · Test: ${f.test}</span>
+          </div>
+        `).join('')}
+      </div>`;
+  }
+
+  // Pending complex issues section (override failures if we have pending data)
+  let pendingHTML = '';
+  if (pendingIssues.length > 0) {
+    pendingHTML = `
+      <div style="margin-top:20px;">
+        <h3 style="color:#b45309;font-size:14px;margin-bottom:10px;">⏳ Necesitan tu aprobación (${pendingIssues.length})</h3>
+        <p style="font-size:12px;color:#666;margin-bottom:10px;">Se creó un Issue en GitHub. Revísalo y pide a Claude Code que lo repare.</p>
+        ${pendingIssues.map((f, i) => `
+          <div style="background:#fff8e1;border-left:3px solid #b45309;padding:10px 14px;margin-bottom:8px;border-radius:0 6px 6px 0;">
+            <strong style="font-size:13px;">${i + 1}. ${f.test}</strong><br>
+            <span style="font-size:12px;color:#666;">${f.description}</span><br>
+            <span style="font-size:11px;color:#b45309;font-family:monospace;">${(f.error || '').substring(0, 150)}</span>
+          </div>
+        `).join('')}
+      </div>`;
+  }
+
   let failuresHTML = '';
-  if (failures.length > 0) {
+  if (failures.length > 0 && pendingIssues.length === 0) {
     failuresHTML = `
       <div style="margin-top:20px;">
         <h3 style="color:#c0756e;font-size:14px;margin-bottom:10px;">🔴 Problemas encontrados (${failures.length})</h3>
@@ -356,6 +451,8 @@ function generateHTMLReport(data) {
         <div style="background:${statusColor};height:6px;border-radius:4px;width:${successRate}%;"></div>
       </div>
 
+      ${autoFixesHTML}
+      ${pendingHTML}
       ${failuresHTML}
       ${warningsHTML}
 
