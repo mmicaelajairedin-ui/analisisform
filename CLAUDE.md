@@ -57,18 +57,18 @@ El archivo `panel.js` existe pero **panel.html NO lo carga**. Todo el JavaScript
 3. Cabecera de candidato con gradiente
 4. Pagina Resumen con stat cards y filas de clientes
 5. Pagina Links con tarjetas por cliente
+6. Sidebar sin lista de clientes → navegacion limpia: Resumen, Clientes, Links, Pagos
+7. Nueva pagina "Clientes" con grid de tarjetas, filtro Activos/Inactivos/Todos, toggle activo/inactivo
+8. Click en cliente → ficha con 4 tabs + boton "Volver a Clientes"
+
+### Nota: columna `activo` en candidatos
+El toggle activo/inactivo usa el campo `activo` (boolean) en la tabla `candidatos`.
+Si la columna no existe, crearla:
+```sql
+ALTER TABLE candidatos ADD COLUMN activo BOOLEAN DEFAULT true;
+```
 
 ## PENDIENTE — Rediseno del panel (proxima sesion)
-
-### Prioridad 1: Sidebar → Pagina de Clientes
-**El usuario pidio explicitamente esto:**
-- Quitar lista de clientes del sidebar
-- Sidebar solo con navegacion: Resumen, **Clientes**, Links, Config
-- Nueva pagina "Clientes" con:
-  - Filtro: Activos | Inactivos | Todos
-  - Toggle manual activo/inactivo por cliente (campo `activo` en candidatos)
-  - Click en cliente → abre su ficha con las 4 tabs
-- El usuario decide manualmente quien esta activo o inactivo
 
 ### Prioridad 2: Emails al cliente
 - Sistema de plantillas de email desde el panel
