@@ -1,0 +1,104 @@
+# Contexto del Proyecto — Career Pathway (Micaela Jairedin)
+
+## Que es
+Plataforma de soporte para un servicio de mentoria/coaching de transicion de carrera.
+**No es una tienda ni landing de venta** — los clientes ya compraron la mentoria a traves de una agencia externa.
+Micaela les envia acceso a esta plataforma como herramienta de soporte durante 4 semanas (renovable).
+
+## Flujo del servicio
+```
+Agencia (landing) → Cliente compra mentoria → Micaela le manda link al formulario
+→ Cliente completa formulario (index.html) → Datos llegan al panel de Micaela
+→ Micaela genera informe con IA → Le crea acceso (login) → Cliente usa el portal 4 semanas
+```
+
+## Stack tecnico
+- HTML/CSS/JS vanilla (sin frameworks)
+- Supabase (PostgreSQL + REST API)
+- EmailJS (notificaciones)
+- Uploadcare (subida de CVs)
+- Anthropic Claude API via Netlify Edge Function (generacion de informes)
+- Deploy: GitHub Pages (mmicaelajairedin-ui.github.io/analisisform)
+
+## Archivos principales
+| Archivo | Que hace | Lineas |
+|---------|----------|--------|
+| `index.html` | Formulario de intake (7 pasos) | ~600 |
+| `panel.html` | Panel del coach (TODO el JS esta inline, NO usa panel.js) | ~2300 |
+| `panel.js` | Archivo legacy con funciones duplicadas (panel.html no lo carga) |
+| `cliente.html` | Portal del cliente (su espacio durante la mentoria) | ~2100 |
+| `cv.html` | Editor de CV | ~850 |
+| `carta.html` | Editor de carta de presentacion | ~420 |
+| `login.html` | Login (coach y cliente) | ~110 |
+| `hub.html` | Hub del coach (alternativo al panel) | ~370 |
+| `links.html` | Pagina de links para compartir | ~275 |
+
+## IMPORTANTE: panel.html tiene todo el JS inline
+El archivo `panel.js` existe pero **panel.html NO lo carga**. Todo el JavaScript del panel esta dentro de `<script>` en panel.html. Cualquier funcion nueva debe ir dentro de panel.html, no en panel.js.
+
+## Bugs arreglados (ya en produccion)
+1. Validacion por pasos en formulario (nombre, email, situacion, cargo, rol obligatorios)
+2. XSS en tags de habilidades (innerHTML → createTextNode)
+3. Campo f-litext fantasma eliminado
+4. Candidatos duplicados prevenidos (upsert con merge-duplicates)
+5. Race condition en subida de CV (flag done + timeout 15s)
+6. EmailJS separado del guardado (email falla ≠ datos perdidos)
+7. Email normalizado a lowercase en formulario
+8. sbGet() verifica status HTTP
+9. JSON.parse con try-catch en localStorage
+10. Funciones verPass() y cambiarPass() implementadas en panel.html
+11. Foto de candidato visible en panel (busca en foto_perfil, localStorage, cv_publicados._photo)
+12. Foto se sincroniza de cv.html a candidatos.foto_perfil + localStorage
+13. Scroll del panel arreglado (overflow:hidden removido)
+
+## Mejoras de UX hechas (ya en produccion)
+1. 9 tabs → 4 tabs: Perfil, Documentos, Sesion, Gestion
+2. Data grid con tarjetas (igrid/ii/iil/iiv con CSS)
+3. Cabecera de candidato con gradiente
+4. Pagina Resumen con stat cards y filas de clientes
+5. Pagina Links con tarjetas por cliente
+
+## PENDIENTE — Rediseno del panel (proxima sesion)
+
+### Prioridad 1: Sidebar → Pagina de Clientes
+**El usuario pidio explicitamente esto:**
+- Quitar lista de clientes del sidebar
+- Sidebar solo con navegacion: Resumen, **Clientes**, Links, Config
+- Nueva pagina "Clientes" con:
+  - Filtro: Activos | Inactivos | Todos
+  - Toggle manual activo/inactivo por cliente (campo `activo` en candidatos)
+  - Click en cliente → abre su ficha con las 4 tabs
+- El usuario decide manualmente quien esta activo o inactivo
+
+### Prioridad 2: Emails al cliente
+- Sistema de plantillas de email desde el panel
+- Plantillas: Bienvenida, Analisis listo, CV listo, Resumen semanal, Recordatorio sesion
+- Enviar via EmailJS o abrir mailto: con el texto pre-armado
+- Ya existe parcialmente en la tab "Mensajes" (tabMensajes)
+
+### Prioridad 3: Pagina de recursos
+- Crear/mejorar pagina de recursos con materiales para el cliente
+- Guias, templates, links utiles durante la mentoria
+
+### Prioridad 4: Mas opciones de empleos
+- Mejorar seccion de empleos sugeridos en cliente.html
+- Mas fuentes, filtros, integracion con portales
+
+### Prioridad 5: Visual general
+- El usuario dijo que no le encanta como se ve Links y accesos
+- Seguir puliendo: colores, espaciado, que sea mas profesional
+
+## Base de datos (Supabase)
+### Tablas principales:
+- `candidatos` — datos del formulario + foto_perfil, semana_activa, pago_*, notas_coach, carta_presentacion
+- `informes` — informes generados (email, data JSON, prev)
+- `cv_publicados` — CVs publicados (email, contenido JSON, codigo)
+- `usuarios` — login (email, password_hash SHA-256, rol, nombre, activo)
+
+### Nota sobre foto_perfil:
+La columna `foto_perfil` puede no existir en la tabla `candidatos` de Supabase.
+El codigo tiene fallback: busca en localStorage y luego parsea cv_publicados.contenido._photo.
+Si se quiere que funcione directo, crear la columna:
+```sql
+ALTER TABLE candidatos ADD COLUMN foto_perfil TEXT;
+```
