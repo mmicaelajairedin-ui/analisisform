@@ -9,7 +9,7 @@ const { test, expect } = require('@playwright/test');
 test.describe('Login - Validaciones del formulario', () => {
 
   test('Campos email y password están presentes y son funcionales', async ({ page }) => {
-    await page.goto('/login.html');
+    await page.goto('login.html');
 
     const email = page.locator('#email');
     const password = page.locator('#password');
@@ -23,7 +23,7 @@ test.describe('Login - Validaciones del formulario', () => {
   });
 
   test('Muestra error con campos vacíos', async ({ page }) => {
-    await page.goto('/login.html');
+    await page.goto('login.html');
 
     await page.locator('#btn').click();
 
@@ -33,7 +33,7 @@ test.describe('Login - Validaciones del formulario', () => {
   });
 
   test('Muestra error con credenciales inválidas', async ({ page }) => {
-    await page.goto('/login.html');
+    await page.goto('login.html');
 
     await page.fill('#email', 'fake@noexiste.com');
     await page.fill('#password', 'wrongpass123');
@@ -55,7 +55,7 @@ test.describe('Login - Validaciones del formulario', () => {
   });
 
   test('Enter en campo password activa login', async ({ page }) => {
-    await page.goto('/login.html');
+    await page.goto('login.html');
 
     await page.fill('#email', 'test@test.com');
     await page.fill('#password', 'test123');
@@ -68,7 +68,7 @@ test.describe('Login - Validaciones del formulario', () => {
   });
 
   test('Indicador de carga aparece al intentar login', async ({ page }) => {
-    await page.goto('/login.html');
+    await page.goto('login.html');
 
     await page.fill('#email', 'test@test.com');
     await page.fill('#password', 'test123');
@@ -88,7 +88,7 @@ test.describe('Login - Validaciones del formulario', () => {
 test.describe('Login - Branding y diseño', () => {
 
   test('Logo y marca se muestran correctamente', async ({ page }) => {
-    await page.goto('/login.html');
+    await page.goto('login.html');
 
     await expect(page.locator('.logo-dot')).toBeVisible();
     await expect(page.locator('.logo h1')).toHaveText('Micaela Jairedin');
@@ -96,7 +96,7 @@ test.describe('Login - Branding y diseño', () => {
   });
 
   test('Diseño responsivo - se centra verticalmente', async ({ page }) => {
-    await page.goto('/login.html');
+    await page.goto('login.html');
 
     const card = page.locator('.card');
     await expect(card).toBeVisible();

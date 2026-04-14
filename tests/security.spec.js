@@ -127,7 +127,7 @@ test.describe('Seguridad — Supabase Row Level Security', () => {
 test.describe('Seguridad — Sin secretos expuestos en el código', () => {
 
   test('index.html no expone ANTHROPIC_API_KEY', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     const html = await page.content();
 
@@ -137,7 +137,7 @@ test.describe('Seguridad — Sin secretos expuestos en el código', () => {
   });
 
   test('panel.html no expone ANTHROPIC_API_KEY', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     const html = await page.content();
 
@@ -146,7 +146,7 @@ test.describe('Seguridad — Sin secretos expuestos en el código', () => {
   });
 
   test('login.html no expone contraseñas en texto plano', async ({ page }) => {
-    await page.goto('/login.html');
+    await page.goto('login.html');
 
     const html = await page.content();
 
@@ -225,7 +225,7 @@ test.describe('Seguridad — HTTPS y headers', () => {
   });
 
   test('Login no cachea credenciales (verificar autocomplete)', async ({ page }) => {
-    await page.goto('/login.html');
+    await page.goto('login.html');
 
     // Los campos de password deberían tener autocomplete apropiado
     const pwField = page.locator('#password');

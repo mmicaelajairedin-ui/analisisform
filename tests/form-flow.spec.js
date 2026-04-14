@@ -10,7 +10,7 @@ const { test, expect } = require('@playwright/test');
 test.describe('Formulario - Navegación entre pasos', () => {
 
   test('Consentimiento bloquea avance hasta aceptar', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     // El botón debe estar deshabilitado
     const btn = page.locator('#consent-btn');
@@ -24,7 +24,7 @@ test.describe('Formulario - Navegación entre pasos', () => {
   });
 
   test('Paso 0 → Paso 1 funciona correctamente', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     // Aceptar y avanzar
     await page.locator('#consent-cb').check();
@@ -43,7 +43,7 @@ test.describe('Formulario - Navegación entre pasos', () => {
   });
 
   test('Navegación completa pasos 1 → 6', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     // Paso 0: Consentimiento
     await page.locator('#consent-cb').check();
@@ -95,7 +95,7 @@ test.describe('Formulario - Navegación entre pasos', () => {
   });
 
   test('Botón Atrás funciona en cada paso', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     // Ir al paso 1
     await page.locator('#consent-cb').check();
@@ -115,7 +115,7 @@ test.describe('Formulario - Navegación entre pasos', () => {
 test.describe('Formulario - Cambio de idioma', () => {
 
   test('Cambio ES → EN actualiza textos correctamente', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     // Verificar español por defecto
     await expect(page.locator('#top-h')).toHaveText('Cuéntame sobre ti');
@@ -128,7 +128,7 @@ test.describe('Formulario - Cambio de idioma', () => {
   });
 
   test('Cambio EN → ES restaura textos', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     // Cambiar a inglés y luego volver
     await page.locator('.lb').nth(1).click();
@@ -142,7 +142,7 @@ test.describe('Formulario - Cambio de idioma', () => {
 test.describe('Formulario - Componentes interactivos', () => {
 
   test('Radio buttons (opciones únicas) funcionan correctamente', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
     await page.locator('#consent-cb').check();
     await page.locator('#consent-btn').click();
     await page.locator('#s1btn').click();
@@ -159,7 +159,7 @@ test.describe('Formulario - Componentes interactivos', () => {
   });
 
   test('Checkboxes (opciones múltiples) funcionan correctamente', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     // Navegar hasta paso 6
     await page.locator('#consent-cb').check();
@@ -183,7 +183,7 @@ test.describe('Formulario - Componentes interactivos', () => {
   });
 
   test('Barra de progreso avanza con los pasos', async ({ page }) => {
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     // Verificar progreso inicial en 0%
     const progFill = page.locator('#prog');

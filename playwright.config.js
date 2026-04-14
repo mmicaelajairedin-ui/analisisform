@@ -1,7 +1,7 @@
 // @ts-check
 const { defineConfig } = require('@playwright/test');
 
-const BASE_URL = process.env.BASE_URL || 'https://mmicaelajairedin-ui.github.io/analisisform';
+const BASE_URL = process.env.BASE_URL || 'https://mmicaelajairedin-ui.github.io/analisisform/';
 
 module.exports = defineConfig({
   testDir: './tests',

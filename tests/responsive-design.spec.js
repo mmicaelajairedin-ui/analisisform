@@ -11,7 +11,7 @@ test.describe('Responsive - Formulario (index.html)', () => {
 
   test('Formulario se adapta en móvil (375px)', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     const card = page.locator('.card');
     await expect(card).toBeVisible();
@@ -22,7 +22,7 @@ test.describe('Responsive - Formulario (index.html)', () => {
 
   test('Formulario se adapta en desktop (1440px)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/index.html');
+    await page.goto('index.html');
 
     const wrap = page.locator('.wrap');
     await expect(wrap).toBeVisible();
@@ -36,7 +36,7 @@ test.describe('Responsive - Login', () => {
 
   test('Login se centra en móvil', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto('/login.html');
+    await page.goto('login.html');
 
     const card = page.locator('.card');
     await expect(card).toBeVisible();
@@ -47,7 +47,7 @@ test.describe('Responsive - Login', () => {
 test.describe('Responsive - Panel', () => {
 
   test('Panel tiene layout grid en desktop', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     const layout = page.locator('.layout');
     await expect(layout).toBeVisible();
