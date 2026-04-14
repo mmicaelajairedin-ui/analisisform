@@ -212,7 +212,53 @@ function generateReport(results) {
     suiteGroups,
   });
 
-  return { text: report, html: htmlReport, failed, passed, totalTests };
+  // Generar body para GitHub Issue (cuando hay fallos)
+  let issueBody = '';
+  if (failures.length > 0) {
+    issueBody += `## Resumen\n\n`;
+    issueBody += `El testing diario del **${dateStr}** detectó **${failed} problema(s)** de ${totalTests} tests ejecutados.\n\n`;
+    issueBody += `| Métrica | Valor |\n|---------|-------|\n`;
+    issueBody += `| Total tests | ${totalTests} |\n`;
+    issueBody += `| Pasaron | ${passed} |\n`;
+    issueBody += `| Fallaron | ${failed} |\n`;
+    issueBody += `| Tasa de éxito | ${totalTests > 0 ? Math.round((passed / totalTests) * 100) : 0}% |\n\n`;
+
+    issueBody += `## Problemas detectados\n\n`;
+    for (let i = 0; i < failures.length; i++) {
+      const f = failures[i];
+      issueBody += `### ${i + 1}. ${f.name}\n\n`;
+      issueBody += `- **Suite:** ${f.suite}\n`;
+      issueBody += `- **Archivo:** \`${f.file || 'N/A'}\`\n`;
+      issueBody += `- **Error:**\n\`\`\`\n${f.error}\n\`\`\`\n\n`;
+
+      // Acción recomendada
+      issueBody += `**Acción recomendada:** `;
+      if (f.error.includes('status()')) {
+        issueBody += `Verificar que la página/endpoint está desplegado correctamente.\n\n`;
+      } else if (f.error.includes('toBeVisible')) {
+        issueBody += `Un elemento de la UI no se muestra — revisar HTML/CSS del componente.\n\n`;
+      } else if (f.error.includes('timeout') || f.error.includes('Timeout')) {
+        issueBody += `La página tarda demasiado en cargar — revisar performance.\n\n`;
+      } else if (f.error.includes('toHaveText')) {
+        issueBody += `El texto del elemento cambió — verificar si fue intencional.\n\n`;
+      } else if (f.error.includes('net::') || f.error.includes('ERR_')) {
+        issueBody += `Error de red — verificar conectividad y URLs del servicio.\n\n`;
+      } else {
+        issueBody += `Investigar el error y corregir el componente afectado.\n\n`;
+      }
+    }
+
+    issueBody += `---\n`;
+    issueBody += `> Para reparar, abre Claude Code y escribe: **"Repara el issue #(número de este issue)"**\n\n`;
+    issueBody += `_Generado automáticamente por el Testing Agent_`;
+  }
+
+  // Generar título del issue
+  const issueTitle = failures.length > 0
+    ? `🔴 Testing diario: ${failed} test(s) fallaron — ${dateStr}`
+    : '';
+
+  return { text: report, html: htmlReport, failed, passed, totalTests, issueBody, issueTitle };
 }
 
 function generateHTMLReport(data) {
@@ -333,7 +379,7 @@ function generateHTMLReport(data) {
 // Main
 async function main() {
   const results = await readResults();
-  const { text, html, failed, totalTests } = generateReport(results);
+  const { text, html, failed, totalTests, issueBody, issueTitle } = generateReport(results);
 
   // Imprimir reporte en consola
   console.log(text);
@@ -356,6 +402,14 @@ async function main() {
   };
 
   fs.writeFileSync(path.join(outputDir, 'summary.json'), JSON.stringify(summary, null, 2));
+
+  // Guardar datos del issue (si hay fallos)
+  if (issueBody && issueTitle) {
+    fs.writeFileSync(path.join(outputDir, 'issue-title.txt'), issueTitle);
+    fs.writeFileSync(path.join(outputDir, 'issue-body.md'), issueBody);
+    console.log(`   - issue-title.txt`);
+    console.log(`   - issue-body.md`);
+  }
 
   console.log('\n📁 Reportes guardados en tests/results/');
   console.log(`   - report.txt`);

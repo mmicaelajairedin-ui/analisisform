@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   test-platform:
@@ -77,6 +78,61 @@ jobs:
           from: "Testing Agent MJ <${{ secrets.GMAIL_USER }}>"
           html_body: file://tests/results/report.html
           attachments: tests/results/report.txt
+
+      - name: "🏷️ Asegurar que existen los labels"
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "testing-agent" --description "Issues creados por el Testing Agent diario" --color "d73a4a" --force 2>/dev/null || true
+          gh label create "bug" --description "Something isn't working" --color "d73a4a" --force 2>/dev/null || true
+
+      - name: "🐛 Crear Issue en GitHub si hay fallos"
+        if: steps.generate-report.outputs.failed != '0' && steps.generate-report.outputs.status != 'error'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f tests/results/issue-title.txt ] && [ -f tests/results/issue-body.md ]; then
+            TITLE=$(cat tests/results/issue-title.txt)
+            BODY=$(cat tests/results/issue-body.md)
+
+            # Verificar si ya existe un issue abierto del testing agent para evitar duplicados
+            EXISTING=$(gh issue list --label "testing-agent" --state open --limit 1 --json number -q '.[0].number' 2>/dev/null || echo "")
+
+            if [ -n "$EXISTING" ]; then
+              # Actualizar el issue existente con un comentario
+              gh issue comment "$EXISTING" --body "## Actualización — $(date +'%d/%m/%Y %H:%M')
+
+            $BODY"
+              echo "Comentario añadido al issue #$EXISTING"
+            else
+              # Crear issue nuevo
+              gh issue create \
+                --title "$TITLE" \
+                --body "$BODY" \
+                --label "testing-agent,bug"
+              echo "Issue creado con éxito"
+            fi
+          else
+            echo "No hay archivos de issue para crear"
+          fi
+
+      - name: "✅ Cerrar Issue si todos los tests pasan"
+        if: steps.generate-report.outputs.failed == '0' && steps.generate-report.outputs.status != 'error'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Si hay un issue abierto del testing agent, cerrarlo
+          EXISTING=$(gh issue list --label "testing-agent" --state open --limit 1 --json number -q '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --comment "✅ **Todos los tests pasan.** Issue cerrado automáticamente por el Testing Agent.
+
+            Resultado: ${{ steps.generate-report.outputs.passed }}/${{ steps.generate-report.outputs.total }} tests OK"
+            echo "Issue #$EXISTING cerrado (todos los tests pasan)"
+          else
+            echo "No hay issues abiertos del testing agent"
+          fi
 
       - name: "📤 Subir resultados como artifact"
         uses: actions/upload-artifact@v4
