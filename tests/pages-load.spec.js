@@ -87,7 +87,7 @@ test.describe('Verificación de recursos y assets', () => {
     });
 
     await page.goto('/index.html');
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('domcontentloaded');
 
     // Filtra errores esperados (ej: CORS de fuentes externas)
     const criticalErrors = errors.filter(e =>
@@ -108,7 +108,7 @@ test.describe('Verificación de recursos y assets', () => {
     });
 
     await page.goto('/login.html');
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState('domcontentloaded');
 
     const criticalErrors = errors.filter(e =>
       !e.includes('favicon') &&

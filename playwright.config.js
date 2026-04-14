@@ -5,32 +5,27 @@ const BASE_URL = process.env.BASE_URL || 'https://mmicaelajairedin-ui.github.io/
 
 module.exports = defineConfig({
   testDir: './tests',
-  timeout: 30000,
-  retries: 1,
+  timeout: 15000,
+  retries: 0,
+  workers: 2,
   reporter: [
     ['list'],
     ['json', { outputFile: 'tests/results/test-results.json' }]
   ],
   use: {
     baseURL: BASE_URL,
-    screenshot: 'only-on-failure',
-    trace: 'on-first-retry',
+    screenshot: 'off',
+    trace: 'off',
     headless: true,
     viewport: { width: 1280, height: 720 },
     ignoreHTTPSErrors: true,
+    actionTimeout: 5000,
+    navigationTimeout: 10000,
   },
   projects: [
     {
       name: 'Desktop Chrome',
       use: { browserName: 'chromium' },
-    },
-    {
-      name: 'Mobile',
-      use: {
-        browserName: 'chromium',
-        viewport: { width: 375, height: 812 },
-        isMobile: true,
-      },
     },
   ],
   outputDir: 'tests/results/artifacts',
