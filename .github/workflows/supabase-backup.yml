@@ -1,0 +1,151 @@
+name: "💾 Backup Nocturno — Supabase"
+
+# Ejecuta cada noche a las 3:00 AM hora de España
+on:
+  schedule:
+    - cron: '0 1 * * *'   # 01:00 UTC = 03:00 CEST
+  workflow_dispatch:        # Ejecución manual
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: "Exportar datos de Supabase"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      SB_URL: "https://ddxnrsnjdvtqhxunxnwj.supabase.co"
+      SB_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU"
+
+    steps:
+      - name: "📥 Checkout"
+        uses: actions/checkout@v4
+
+      - name: "📦 Instalar Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: "💾 Exportar todas las tablas"
+        id: export
+        run: |
+          mkdir -p backup
+
+          DATE=$(date +'%Y-%m-%d')
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+
+          TABLES=("candidatos" "informes" "usuarios" "cv_publicados")
+          ERRORS=""
+          SUMMARY=""
+
+          for TABLE in "${TABLES[@]}"; do
+            echo "📥 Exportando: $TABLE"
+
+            # Descargar datos (sin password_hash para usuarios)
+            if [ "$TABLE" = "usuarios" ]; then
+              SELECT="id,email,rol,nombre,activo,created_at"
+            else
+              SELECT="*"
+            fi
+
+            HTTP_CODE=$(curl -s -o "backup/${TABLE}.json" -w "%{http_code}" \
+              "${SB_URL}/rest/v1/${TABLE}?select=${SELECT}&order=id" \
+              -H "apikey: ${SB_KEY}" \
+              -H "Authorization: Bearer ${SB_KEY}")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              COUNT=$(python3 -c "import json;print(len(json.load(open('backup/${TABLE}.json'))))" 2>/dev/null || echo "0")
+              echo "  ✅ $TABLE: $COUNT registros"
+              SUMMARY="$SUMMARY\n  ✅ $TABLE: $COUNT registros"
+            else
+              echo "  ❌ $TABLE: HTTP $HTTP_CODE"
+              SUMMARY="$SUMMARY\n  ❌ $TABLE: HTTP $HTTP_CODE"
+              ERRORS="$ERRORS $TABLE"
+            fi
+          done
+
+          # Generar metadata del backup
+          python3 -c "
+          import json, os, glob
+          from datetime import datetime
+
+          meta = {
+            'date': '${DATE}',
+            'timestamp': datetime.utcnow().isoformat(),
+            'tables': {}
+          }
+
+          for f in glob.glob('backup/*.json'):
+            table = os.path.basename(f).replace('.json', '')
+            if table == 'backup-meta':
+              continue
+            try:
+              data = json.load(open(f))
+              meta['tables'][table] = {
+                'count': len(data),
+                'size_bytes': os.path.getsize(f)
+              }
+            except:
+              meta['tables'][table] = {'count': 0, 'error': True}
+
+          json.dump(meta, open('backup/backup-meta.json', 'w'), indent=2)
+          "
+
+          echo -e "\n📋 Resumen:$SUMMARY"
+
+          if [ -n "$ERRORS" ]; then
+            echo "has_errors=true" >> $GITHUB_OUTPUT
+            echo "errors=$ERRORS" >> $GITHUB_OUTPUT
+          else
+            echo "has_errors=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: "📤 Subir backup como artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-backup-${{ steps.export.outputs.date }}
+          path: backup/
+          retention-days: 90
+
+      - name: "📧 Notificar si hubo errores"
+        if: steps.export.outputs.has_errors == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.GMAIL_USER }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "🔴 ERROR en backup de Supabase — ${{ steps.export.outputs.date }}"
+          to: mmicaela.jairedin@gmail.com
+          from: "Backup Agent MJ <${{ secrets.GMAIL_USER }}>"
+          body: |
+            El backup nocturno de Supabase tuvo errores.
+
+            Tablas con error: ${{ steps.export.outputs.errors }}
+
+            Revisa el workflow en GitHub Actions para más detalles.
+
+      - name: "📝 Resumen"
+        if: always()
+        run: |
+          echo "## 💾 Backup Nocturno de Supabase" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Fecha: ${{ steps.export.outputs.date }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f backup/backup-meta.json ]; then
+            echo "| Tabla | Registros | Tamaño |" >> $GITHUB_STEP_SUMMARY
+            echo "|-------|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+            python3 -c "
+          import json
+          meta = json.load(open('backup/backup-meta.json'))
+          for table, info in meta['tables'].items():
+              count = info.get('count', 0)
+              size = info.get('size_bytes', 0)
+              size_str = f'{size/1024:.1f} KB' if size > 1024 else f'{size} B'
+              status = '❌' if info.get('error') else '✅'
+              print(f'| {status} {table} | {count} | {size_str} |')
+          " >> $GITHUB_STEP_SUMMARY
+          fi
