@@ -9,8 +9,9 @@ on:
   workflow_dispatch:        # Permite ejecución manual desde GitHub
 
 permissions:
-  contents: read
+  contents: write
   issues: write
+  pull-requests: write
 
 jobs:
   test-platform:
@@ -65,6 +66,117 @@ jobs:
             echo "failed=0" >> $GITHUB_OUTPUT
           fi
 
+      - name: "🔧 Auto-fixer: reparar problemas simples"
+        id: auto-fix
+        if: steps.generate-report.outputs.failed != '0'
+        run: |
+          node tests/auto-fixer.js || true
+
+          # Leer resultados del auto-fixer
+          FIXES_COUNT=0
+          PENDING_COUNT=0
+          if [ -f tests/results/fixes-applied.json ]; then
+            FIXES_COUNT=$(python3 -c "import json;print(len(json.load(open('tests/results/fixes-applied.json'))))")
+          fi
+          if [ -f tests/results/pending-issues.json ]; then
+            PENDING_COUNT=$(python3 -c "import json;print(len(json.load(open('tests/results/pending-issues.json'))))")
+          fi
+
+          echo "fixes=$FIXES_COUNT" >> $GITHUB_OUTPUT
+          echo "pending=$PENDING_COUNT" >> $GITHUB_OUTPUT
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: "🔀 Crear PR con auto-fixes"
+        id: create-pr
+        if: steps.auto-fix.outputs.fixes != '0' && steps.auto-fix.outputs.fixes != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DATE=$(date +'%Y-%m-%d')
+          BRANCH="auto-fix/${DATE}"
+
+          # Verificar si hay cambios reales
+          if [ -z "$(git status --porcelain -- '*.html' '*.js' '*.css' ':!tests/' ':!.github/' ':!package.json')" ]; then
+            echo "No hay cambios en archivos de la plataforma"
+            echo "pr_created=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Crear branch y commit
+          git config user.name "Testing Agent MJ"
+          git config user.email "testing-agent@micaelajairedin.com"
+          git checkout -b "$BRANCH"
+          git add -A -- '*.html' '*.js' '*.css' ':!tests/' ':!.github/' ':!package.json'
+
+          # Generar mensaje del commit con los fixes
+          FIXES_DESC=""
+          if [ -f tests/results/fixes-applied.json ]; then
+            FIXES_DESC=$(python3 -c "
+          import json
+          fixes = json.load(open('tests/results/fixes-applied.json'))
+          for f in fixes:
+              print(f'- {f[\"explanation\"]} ({f[\"file\"]})')
+          ")
+          fi
+
+          git commit -m "fix: auto-reparaciones del Testing Agent ($DATE)
+
+          Fixes aplicados automáticamente:
+          $FIXES_DESC
+
+          Generado por el Testing Agent Diario"
+
+          git push origin "$BRANCH"
+
+          # Crear PR
+          PR_BODY=$(cat <<'PREOF'
+          ## Auto-reparaciones del Testing Agent
+
+          El testing diario detectó problemas simples y los reparó automáticamente.
+
+          ### Fixes aplicados
+          PREOF
+          )
+
+          if [ -f tests/results/fixes-applied.json ]; then
+            FIXES_TABLE=$(python3 -c "
+          import json
+          fixes = json.load(open('tests/results/fixes-applied.json'))
+          print('| Archivo | Problema | Fix aplicado |')
+          print('|---------|----------|-------------|')
+          for f in fixes:
+              print(f'| \`{f[\"file\"]}\` | {f[\"category\"]} | {f[\"explanation\"]} |')
+          ")
+            PR_BODY="$PR_BODY
+          $FIXES_TABLE"
+          fi
+
+          PR_BODY="$PR_BODY
+
+          ---
+          > **Revisa los cambios y mergea cuando estés conforme.**
+          > _Generado automáticamente por el Testing Agent_"
+
+          PR_URL=$(gh pr create \
+            --title "🔧 Auto-fix: reparaciones del testing diario ($DATE)" \
+            --body "$PR_BODY" \
+            --label "testing-agent" \
+            --base main \
+            --head "$BRANCH")
+
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "pr_created=true" >> $GITHUB_OUTPUT
+          echo "PR creado: $PR_URL"
+
+          # Volver al branch original para los siguientes steps
+          git checkout main
+
+      - name: "📊 Re-generar reporte con info de auto-fixes"
+        if: steps.auto-fix.outputs.fixes != '0' && steps.auto-fix.outputs.fixes != ''
+        run: |
+          node tests/generate-report.js || true
+
       - name: "📧 Enviar reporte por email"
         uses: dawidd6/action-send-mail@v3
         with:
@@ -87,8 +199,8 @@ jobs:
           gh label create "testing-agent" --description "Issues creados por el Testing Agent diario" --color "d73a4a" --force 2>/dev/null || true
           gh label create "bug" --description "Something isn't working" --color "d73a4a" --force 2>/dev/null || true
 
-      - name: "🐛 Crear Issue en GitHub si hay fallos"
-        if: steps.generate-report.outputs.failed != '0' && steps.generate-report.outputs.status != 'error'
+      - name: "🐛 Crear Issue para problemas complejos"
+        if: steps.auto-fix.outputs.pending != '0' && steps.auto-fix.outputs.pending != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
