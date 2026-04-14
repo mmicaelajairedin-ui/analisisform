@@ -9,7 +9,7 @@ const { test, expect } = require('@playwright/test');
 test.describe('Panel - Estructura y Layout', () => {
 
   test('Layout grid con sidebar y main area', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     await expect(page.locator('.layout')).toBeVisible();
     await expect(page.locator('.sidebar')).toBeVisible();
@@ -23,7 +23,7 @@ test.describe('Panel - Estructura y Layout', () => {
   });
 
   test('Sidebar contiene sección de estadísticas', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     await expect(page.locator('.stats')).toBeVisible();
     const statItems = page.locator('.stat');
@@ -32,19 +32,19 @@ test.describe('Panel - Estructura y Layout', () => {
   });
 
   test('Sidebar contiene botón de refresh', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     await expect(page.locator('.refresh-btn')).toBeVisible();
   });
 
   test('Sidebar tiene lista de candidatos', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     await expect(page.locator('.clist')).toBeVisible();
   });
 
   test('Área principal muestra mensaje vacío sin selección', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     // Sin candidato seleccionado, debe mostrar placeholder
     const emptyMain = page.locator('.empty-main');
@@ -60,7 +60,7 @@ test.describe('Panel - Estructura y Layout', () => {
 test.describe('Panel - Sistema de tabs', () => {
 
   test('Tabs están definidas en el HTML', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     // Verificar que existen tabs en la estructura
     const tabElements = page.locator('.tab');
@@ -73,21 +73,21 @@ test.describe('Panel - Sistema de tabs', () => {
 test.describe('Panel - Elementos de UI', () => {
 
   test('Título del panel se muestra', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     const title = page.locator('.sb-top h1');
     await expect(title).toBeVisible();
   });
 
   test('Subtítulo del panel se muestra', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     const subtitle = page.locator('.sb-top p');
     await expect(subtitle).toBeVisible();
   });
 
   test('Estilos del modal están definidos', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     // Verificar que los estilos de modal existen en el CSS
     const hasModalStyles = await page.evaluate(() => {
@@ -110,7 +110,7 @@ test.describe('Panel - Elementos de UI', () => {
 test.describe('Panel - JavaScript funcional', () => {
 
   test('Variables de Supabase están configuradas', async ({ page }) => {
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
 
     const hasSB = await page.evaluate(() => {
       return typeof window.SB !== 'undefined' || typeof SB !== 'undefined';
@@ -125,7 +125,7 @@ test.describe('Panel - JavaScript funcional', () => {
       errors.push(err.message);
     });
 
-    await page.goto('/panel.html');
+    await page.goto('panel.html');
     await page.waitForLoadState('domcontentloaded');
 
     // Filtrar errores esperados (ej: falta de sesión/auth)
