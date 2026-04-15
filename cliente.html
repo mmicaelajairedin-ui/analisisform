@@ -1094,12 +1094,23 @@ function entrar(){
   var _fotoSrc=C.foto_perfil||localStorage.getItem('mj_foto_'+E)||null;
   // Fallback: extraer foto del CV publicado si existe
   if(!_fotoSrc&&CV&&CV.contenido){
-    try{var _cvJ=JSON.parse(CV.contenido);if(_cvJ&&_cvJ._photo)_fotoSrc=_cvJ._photo;}catch(e){
-      var _cvM=(CV.contenido||'').match(/<img[^>]+id=["']pi["'][^>]+src=["']([^"']+)["']/);
-      if(_cvM&&_cvM[1]&&_cvM[1].indexOf('data:')===0)_fotoSrc=_cvM[1];
+    try{
+      var _cvJ=JSON.parse(CV.contenido);
+      if(_cvJ&&_cvJ._photo)_fotoSrc=_cvJ._photo;
+    }catch(e){
+      // contenido es HTML — extraer src del img
+      var _cvM=(CV.contenido||'').match(/src=["'](data:image[^"']+)["']/);
+      if(_cvM&&_cvM[1])_fotoSrc=_cvM[1];
     }
-    // Sincronizar a localStorage para próximas cargas
-    if(_fotoSrc)try{localStorage.setItem('mj_foto_'+E,_fotoSrc);}catch(e){}
+  }
+  // Sincronizar foto a localStorage y Supabase si la encontramos
+  if(_fotoSrc){
+    try{localStorage.setItem('mj_foto_'+E,_fotoSrc);}catch(e){}
+    // Sync a candidatos.foto_perfil si no estaba ahí
+    if(!C.foto_perfil){
+      pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:_fotoSrc}).catch(function(){});
+      C.foto_perfil=_fotoSrc;
+    }
   }
   var _topAv=document.getElementById('top-avatar');
   var _bigAv=document.getElementById('sb-avatar-wrap');
@@ -1133,7 +1144,7 @@ function entrar(){
   // foto_perfil se guarda solo desde cv.html (cuando la columna existe en Supabase)
   document.getElementById('sb-uname').textContent=C.nombre||'';
   document.getElementById('sb-uemail').textContent=E||'';
-  updSB();goSec('semana',document.querySelector('.ni'));
+  updSB();render('semana');goSec('semana',document.querySelector('.ni'));
 
   // Notificaciones inteligentes
   setTimeout(function(){ buildSbNotifs(); buildNotifs(); }, 500);
