@@ -573,7 +573,7 @@ async function enviar(){
       body:JSON.stringify(d)
     }).catch(err=>console.warn('Informe automático falló (no crítico):',err));
 
-    // 3. Email de notificación (no bloquea el éxito si falla)
+    // 3. Email de notificación al coach (no bloquea el éxito si falla)
     try{
       await emailjs.send(SVC,TPL,{
         to_email:CEMAIL,
@@ -583,6 +583,36 @@ async function enviar(){
       });
     }catch(emailErr){
       console.warn('Email de notificación falló (datos ya guardados):',emailErr);
+    }
+
+    // 4. Onboarding automático — crear usuario + enviar bienvenida
+    try{
+      var _email=(d.email||'').toLowerCase().trim();
+      var _nombre=d.nombre||'';
+      var _primerNombre=_nombre.split(' ')[0];
+      // Generar contraseña automática (8 chars alfanuméricos)
+      var _chars='abcdefghijkmnpqrstuvwxyz23456789';
+      var _autoPass='';for(var _pi=0;_pi<8;_pi++)_autoPass+=_chars[Math.floor(Math.random()*_chars.length)];
+      // Hash SHA-256
+      var _encoder=new TextEncoder();
+      var _buf=await crypto.subtle.digest('SHA-256',_encoder.encode(_autoPass));
+      var _hash=Array.from(new Uint8Array(_buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+      // Crear usuario (upsert - si ya existe no falla)
+      await fetch(SB_URL+'/rest/v1/usuarios',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal,resolution=merge-duplicates'},
+        body:JSON.stringify({email:_email,password_hash:_hash,rol:'cliente',nombre:_nombre,activo:true})
+      });
+      // Enviar email de bienvenida al cliente con sus datos de acceso
+      var _portalUrl='https://mmicaelajairedin-ui.github.io/analisisform/cliente.html';
+      await emailjs.send(SVC,TPL,{
+        to_email:_email,
+        name:_primerNombre,
+        subject:'Tu acceso al portal - Career Pathway',
+        message:'Hola '+_primerNombre+',\n\nGracias por completar el formulario. Ya tenes acceso a tu portal donde vamos a trabajar juntos durante las próximas semanas.\n\nTus datos de acceso:\nEmail: '+_email+'\nContraseña: '+_autoPass+'\n\nEntra desde acá:\n'+_portalUrl+'\n\nGuarda estos datos. Cualquier duda, escribime.\n\nMicaela Jairedin\nCareer Coach & Recruiter'
+      });
+    }catch(_onbErr){
+      console.warn('Onboarding automático falló (datos ya guardados):',_onbErr);
     }
 
     st.textContent='';
