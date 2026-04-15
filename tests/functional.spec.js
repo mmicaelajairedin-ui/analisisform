@@ -219,13 +219,28 @@ test.describe('Funcional — Portal del cliente', () => {
   });
 
   test('Función render() existe para renderizar secciones', async ({ page }) => {
+    // cliente.html redirige sin sesión de cliente, inyectamos una
+    await page.goto('login.html');
+    await page.evaluate(() => {
+      localStorage.setItem('mj_user', JSON.stringify({
+        id: 999, email: 'test-agent@test.invalid', rol: 'cliente', nombre: 'Test Cliente'
+      }));
+    });
     await page.goto('cliente.html');
+    await page.waitForLoadState('domcontentloaded');
     const exists = await page.evaluate(() => typeof render === 'function');
     expect(exists).toBe(true);
   });
 
   test('Función goSec() existe para navegación', async ({ page }) => {
+    await page.goto('login.html');
+    await page.evaluate(() => {
+      localStorage.setItem('mj_user', JSON.stringify({
+        id: 999, email: 'test-agent@test.invalid', rol: 'cliente', nombre: 'Test Cliente'
+      }));
+    });
     await page.goto('cliente.html');
+    await page.waitForLoadState('domcontentloaded');
     const exists = await page.evaluate(() => typeof goSec === 'function');
     expect(exists).toBe(true);
   });
