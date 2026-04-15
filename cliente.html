@@ -1019,13 +1019,13 @@ function init(){
   if(!u){window.location.href=BASE+'/login.html';return;}
   var parsed;
   try{parsed=JSON.parse(u);}catch(e){localStorage.removeItem('mj_user');window.location.href=BASE+'/login.html';return;}
-  E=parsed.email;
+  E=parsed.email.toLowerCase().trim();
   if(!E){document.getElementById('load-err').textContent='Email no encontrado en sesión.';return;}
   document.getElementById('load-msg').textContent='Conectando con Supabase...';
   Promise.all([
     get('candidatos','email=eq.'+encodeURIComponent(E)+'&select=*&limit=1'),
     get('informes','email=eq.'+encodeURIComponent(E)+'&select=data&order=created_at.desc&limit=1'),
-    get('cv_publicados','email=eq.'+encodeURIComponent(E)+'&select=id&limit=1')
+    get('cv_publicados','email=eq.'+encodeURIComponent(E)+'&select=id,contenido&limit=1')
   ]).then(function(res){
     if(!res[0]||!Array.isArray(res[0])){
       document.getElementById('load-err').textContent='Error de conexión con la base de datos. Recarga la página.';
@@ -1063,7 +1063,16 @@ function entrar(){
   // Actualizar topbar
   // top-hello eliminado (solo sb-hello en sidebar)
   // Avatar grande en sb-user
-  var _fotoSrc=localStorage.getItem('mj_foto_'+E)||C.foto_perfil||null;
+  var _fotoSrc=C.foto_perfil||localStorage.getItem('mj_foto_'+E)||null;
+  // Fallback: extraer foto del CV publicado si existe
+  if(!_fotoSrc&&CV&&CV.contenido){
+    try{var _cvJ=JSON.parse(CV.contenido);if(_cvJ&&_cvJ._photo)_fotoSrc=_cvJ._photo;}catch(e){
+      var _cvM=(CV.contenido||'').match(/<img[^>]+id=["']pi["'][^>]+src=["']([^"']+)["']/);
+      if(_cvM&&_cvM[1]&&_cvM[1].indexOf('data:')===0)_fotoSrc=_cvM[1];
+    }
+    // Sincronizar a localStorage para próximas cargas
+    if(_fotoSrc)try{localStorage.setItem('mj_foto_'+E,_fotoSrc);}catch(e){}
+  }
   var _topAv=document.getElementById('top-avatar');
   var _bigAv=document.getElementById('sb-avatar-wrap');
   function _setAv(el){
