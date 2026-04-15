@@ -52,9 +52,10 @@ test.describe('Carga de páginas principales', () => {
     const response = await page.goto('panel.html');
     expect(response.status()).toBe(200);
 
-    // Verifica estructura del layout
+    // Verifica estructura del layout con sesión
     await expect(page.locator('.layout')).toBeVisible({ timeout: 8000 });
     await expect(page.locator('.sidebar')).toBeVisible();
+    await expect(page.locator('#nb-inicio')).toBeVisible();
   });
 
   test('cliente.html - Portal del cliente carga correctamente', async ({ page }) => {
