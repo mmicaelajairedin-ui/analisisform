@@ -816,7 +816,7 @@ button:active { transform: scale(.98); }
 <div class="modal-overlay" id="modal-edit-cv" style="display:none;" onclick="if(event.target===this)cerrarModal('modal-edit-cv')">
   <div class="modal-box">
     <h3>Editar CV publicado</h3>
-    <div class="mf"><label>Contenido HTML del CV</label><textarea id="ecv-content" rows="14" style="font-size:11px;font-family:monospace;"></textarea></div>
+    <div class="mf"><label>Contenido HTML del CV</label><textarea id="ec-text" rows="14" style="font-size:11px;font-family:monospace;"></textarea></div>
     <div class="modal-actions">
       <button class="btn btn-sec" onclick="cerrarModal('modal-edit-cv')">Cancelar</button>
       <button class="btn btn-rose" onclick="guardarCV()">Guardar CV</button>
@@ -848,6 +848,44 @@ button:active { transform: scale(.98); }
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-email-preview" style="display:none;" onclick="if(event.target===this)cerrarModal('modal-email-preview')">
+  <div class="modal-box" style="max-width:520px;">
+    <h3>Vista previa del email</h3>
+    <div style="margin-bottom:12px;">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;">Para</div>
+      <div id="ep-to" style="font-size:13px;font-weight:600;color:var(--title);"></div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;">Asunto</div>
+      <div id="ep-subject" style="font-size:13px;font-weight:600;color:var(--title);"></div>
+    </div>
+    <div style="margin-bottom:16px;">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Mensaje</div>
+      <div id="ep-body" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px;max-height:300px;overflow-y:auto;"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-sec" onclick="cerrarModal('modal-email-preview')">Cancelar</button>
+      <button class="btn btn-rose" onclick="_confirmarEnvioEmail()">Confirmar y enviar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-pub-inf" style="display:none;" onclick="if(event.target===this)cerrarModal('modal-pub-inf')">
+  <div class="modal-box">
+    <h3>Publicar informe al cliente</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Revisa antes de publicar. El cliente podrá ver este informe en su portal.</p>
+    <div class="mf"><label>Resumen ejecutivo</label><textarea id="pi-res" rows="3"></textarea></div>
+    <div class="mf"><label>Mensaje al candidato</label><textarea id="pi-msg" rows="3"></textarea></div>
+    <div class="mf"><label>Puntuaciones (%)</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;" id="pi-scores"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-sec" onclick="cerrarModal('modal-pub-inf')">Cancelar</button>
+      <button class="btn btn-green" onclick="confirmarPublicar()">Publicar informe</button>
+    </div>
+  </div>
+</div>
+
 <script>
 
 var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
@@ -862,7 +900,7 @@ var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 var BASE='https://mmicaelajairedin-ui.github.io/analisisform';
 var EDGE='https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/generar-informe';
 var COLORS=['#E8D5D8:#6B4A50','#D5DDE8:#4A5A6B','#D5E8D8:#4A6B4A','#E8E0D5:#6B5A4A','#E0D5E8:#5A4A6B'];
-var cands=[],reps={},cvs={},notes={},activeId=null,atab='perfil',editInfId=null,editCvId=null,pubInfId=null,urlId=null;
+var cands=[],reps={},cvs={},notes={},activeId=null,atab='perfil',editInfId=null,editCvId=null,pubInfId=null,urlId=null,_pendingEmail=null;
 
 // ── Inicialización de la app ──────────────────────────
 document.addEventListener('DOMContentLoaded', function(){
@@ -916,9 +954,19 @@ function loadCands(){
     notes=JSON.parse(localStorage.getItem('mj_notes')||'{}');
     cands.forEach(function(c){if(c.notas_coach){notes[c.id]=c.notas_coach;}});
     localStorage.setItem('mj_notes',JSON.stringify(notes));
-    // Restaurar estado activo/inactivo desde localStorage
+    // Sincronizar activo: Supabase es fuente de verdad, localStorage como backup
     var localAct=JSON.parse(localStorage.getItem('mj_activos')||'{}');
-    cands.forEach(function(c){if(localAct.hasOwnProperty(c.id)){c.activo=localAct[c.id];}});
+    cands.forEach(function(c){
+      // Si Supabase tiene valor explícito (true/false), usarlo y actualizar localStorage
+      if(c.activo===true||c.activo===false){
+        localAct[c.id]=c.activo;
+      } else if(localAct.hasOwnProperty(c.id)){
+        // Supabase no tiene valor (null/undefined) — usar localStorage y sincronizar
+        c.activo=localAct[c.id];
+        fetch(SB+'/rest/v1/candidatos?id=eq.'+c.id,{method:'PATCH',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},body:JSON.stringify({activo:localAct[c.id]})}).catch(function(){});
+      }
+    });
+    localStorage.setItem('mj_activos',JSON.stringify(localAct));
     renderSidebar();
     if(activeId&&_sec==='ficha'){var c=cands.find(function(x){return x.id===activeId;});if(c)renderMain(c);}
     if(_sec==='clientes') _renderClientes();
@@ -958,11 +1006,18 @@ function renderMain(c){
   var semColor=semColors[sem]||'var(--accent)';
   var pct=Math.round((sem-1)/4*100);
 
-  // Avatar — buscar foto en: 1) candidatos.foto_perfil, 2) localStorage, 3) cv_publicados.contenido._photo
+  // Avatar — buscar foto en: 1) candidatos.foto_perfil, 2) localStorage, 3) cv_publicados.contenido (img src)
   var emailKey=(c.email||'').toLowerCase().trim();
   var _fotoSrc=c.foto_perfil||localStorage.getItem('mj_foto_'+emailKey)||null;
   if(!_fotoSrc&&cvs[emailKey]&&cvs[emailKey].contenido){
-    try{var _cvData=JSON.parse(cvs[emailKey].contenido);if(_cvData&&_cvData._photo)_fotoSrc=_cvData._photo;}catch(e){}
+    try{
+      var _cvData=JSON.parse(cvs[emailKey].contenido);
+      if(_cvData&&_cvData._photo)_fotoSrc=_cvData._photo;
+    }catch(e){
+      // contenido es HTML — extraer src del img#pi
+      var _m=(cvs[emailKey].contenido||'').match(/<img[^>]+id=["']pi["'][^>]+src=["']([^"']+)["']/);
+      if(_m&&_m[1]&&_m[1].indexOf('data:')===0)_fotoSrc=_m[1];
+    }
   }
   var avHtml=_fotoSrc?
     '<div class="av-big" style="overflow:hidden;border:3px solid var(--accent-mid);">'      +'<img src="'+_fotoSrc+'" style="width:100%;height:100%;object-fit:cover;display:block;"></div>':    '<div class="av-big" style="background:'+cl[0]+';color:'+cl[1]+';border:3px solid var(--border);">'+ini(c.nombre)+'</div>';
@@ -1051,8 +1106,16 @@ function tabPerfil(c){
 }
 
 function tabDocumentos(c){
+  var email=(c.email||'').toLowerCase().trim();
+  var hasRep=!!(reps[email]&&reps[email].length);
   var html='<div class="section-label">Generar documentos</div>';
   html+=tabGenerar(c);
+  if(hasRep){
+    html+='<div style="margin-top:24px;border-top:2px solid var(--border);padding-top:20px;">';
+    html+='<div class="section-label">Informe generado</div>';
+    html+=tabInforme(c);
+    html+='</div>';
+  }
   html+='<div style="margin-top:24px;border-top:2px solid var(--border);padding-top:20px;">';
   html+='<div class="section-label">CV del cliente</div>';
   html+=tabCV(c);
@@ -1673,7 +1736,6 @@ function tabMensajes(c){
     var msg=getMsg();
     var lines=msg.split('\n');
     var sub=lines[0].replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s\d!¡?¿.,:\-–—]/g,'').trim()||'Mensaje de Micaela';
-    var ok=document.getElementById('msg-ok');
     // Construir HTML con estilo de la pagina
     var htmlBody='<div style="max-width:560px;margin:0 auto;font-family:\'Open Sans\',Arial,sans-serif;color:#2D2929;background:#F8F9FA;border-radius:16px;overflow:hidden;border:1px solid #EDEAE8;">'
       +'<div style="background:linear-gradient(135deg,#8E7676 0%,#766262 100%);padding:28px 32px;">'
@@ -1688,28 +1750,40 @@ function tabMensajes(c){
         +'<div style="font-size:10px;color:#9E9E9E;margin-top:4px;">Este es un mensaje personal de tu proceso de coaching</div>'
       +'</div>'
     +'</div>';
+    // Mostrar preview antes de enviar
+    _pendingEmail={to:email,name:nom,subject:sub,htmlBody:htmlBody,msg:msg};
+    var prev=document.getElementById('modal-email-preview');
+    document.getElementById('ep-to').textContent=email;
+    document.getElementById('ep-subject').textContent=sub;
+    document.getElementById('ep-body').innerHTML='<div style="font-size:13px;color:#2D2929;line-height:1.8;white-space:pre-wrap;">'+escH(msg)+'</div>';
+    prev.style.display='flex';
+  };
+  window._confirmarEnvioEmail = function(){
+    var p=_pendingEmail;if(!p)return;
+    var ok=document.getElementById('msg-ok');
+    cerrarModal('modal-email-preview');
     if(ok) ok.textContent='Enviando...';
     if(typeof emailjs!=='undefined'){
       emailjs.send('Coach','template_7f00mbl',{
-        to_email:email,
-        name:nom,
-        subject:sub,
-        message:htmlBody
+        to_email:p.to,
+        name:p.name,
+        subject:p.subject,
+        message:p.htmlBody
       }).then(function(){
         if(ok){ok.textContent='✓ Email enviado';ok.style.color='var(--green)';setTimeout(function(){ok.textContent='';},4000);}
-        showToast('Email enviado a '+email);
+        showToast('Email enviado a '+p.to);
       }).catch(function(err){
-        if(ok){ok.textContent='Error — abriendo mailto...';ok.style.color='var(--red)';}
-        // Fallback a mailto
+        if(ok){ok.textContent='Error �� abriendo mailto...';ok.style.color='var(--red)';}
         setTimeout(function(){
-          window.open('mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(msg),'_blank');
+          window.open('mailto:'+encodeURIComponent(p.to)+'?subject='+encodeURIComponent(p.subject)+'&body='+encodeURIComponent(p.msg),'_blank');
           if(ok) ok.textContent='';
         },1500);
       });
     } else {
-      window.open('mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(msg),'_blank');
+      window.open('mailto:'+encodeURIComponent(p.to)+'?subject='+encodeURIComponent(p.subject)+'&body='+encodeURIComponent(p.msg),'_blank');
       if(ok) ok.textContent='';
     }
+    _pendingEmail=null;
   };
   window._mCopy = function(){
     navigator.clipboard.writeText(getMsg()).then(function(){
@@ -1907,7 +1981,16 @@ function guardarInforme(){
   d.cv_acciones=toArr('ei-cv');d.linkedin_acciones=toArr('ei-li');d.networking_acciones=toArr('ei-net');
   d.preguntas=toArr('ei-preg');d.alertas=toArr('ei-alert');d.mensaje_candidato=document.getElementById('ei-msg').value;
   d.scores=d.scores.map(function(s,i){return Object.assign({},s,{val:parseInt(document.getElementById('eisc-'+i).value)||s.val});});
-  reps[email][0].data=d;cerrarModal('modal-edit-inf');renderMain(c);showToast('Informe actualizado');
+  reps[email][0].data=d;cerrarModal('modal-edit-inf');renderMain(c);
+  // Guardar en Supabase
+  var repId=reps[email][0].id;
+  if(repId){
+    fetch(SB+'/rest/v1/informes?id=eq.'+repId,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({data:JSON.stringify(d)})}).then(function(r){
+      showToast(r.ok||r.status===204?'Informe guardado':'Informe actualizado (local)');
+    }).catch(function(){showToast('Informe actualizado (local)');});
+  } else {
+    showToast('Informe actualizado');
+  }
 }
 
 function abrirPubInf(id){
@@ -2165,7 +2248,8 @@ function textToHtml(text, candidato, emailCand, cvEmail) {
   var cvEmailJs2 = JSON.stringify(_cvEmail);
   h += '<script>var SB="https://ddxnrsnjdvtqhxunxnwj.supabase.co",KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU",_em=' + cvEmailJs2 + ',_saveT=null,_ed=false;';
   h += 'function setT(c,b){document.body.className=c+(_ed?" editing":"");document.querySelectorAll(".cdot").forEach(function(d){d.classList.remove("on");});b.classList.add("on");}';
-  h += 'function loadPh(i){if(!i.files[0])return;var r=new FileReader();r.onload=function(e){var img=document.getElementById("pi"),pn=document.getElementById("pn");img.src=e.target.result;img.style.display="block";if(pn)pn.style.display="none";schedSave();};r.readAsDataURL(i.files[0]);}';
+  h += 'function loadPh(i){if(!i.files[0])return;var r=new FileReader();r.onload=function(e){var img=document.getElementById("pi"),pn=document.getElementById("pn");img.src=e.target.result;img.style.display="block";if(pn)pn.style.display="none";schedSave();syncFoto(e.target.result);};r.readAsDataURL(i.files[0]);}';
+  h += 'function syncFoto(dataUrl){if(!_em)return;try{localStorage.setItem("mj_foto_"+_em.toLowerCase().trim(),dataUrl);}catch(e){}fetch(SB+"/rest/v1/candidatos?email=eq."+encodeURIComponent(_em),{method:"PATCH",headers:{"apikey":KEY,"Authorization":"Bearer "+KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify({foto_perfil:dataUrl})}).catch(function(){});}';
   h += 'function toggleEdit(){_ed=!_ed;var b=document.getElementById("eb"),cls=document.body.className.replace(" editing","");if(_ed){document.body.className=cls+" editing";b.textContent="\u2713 Listo";b.style.background="#4a7c5f";document.querySelectorAll("[contenteditable]").forEach(function(e){e.contentEditable="true";e.oninput=schedSave;});document.querySelectorAll(".ul li").forEach(function(li){if(li.querySelector(".del-btn"))return;var x=document.createElement("button");x.className="del-btn";x.innerHTML="&times;";x.onclick=function(ev){ev.stopPropagation();li.remove();schedSave();};li.style.position="relative";li.appendChild(x);});}else{document.body.className=cls;b.textContent="\u270F Editar";b.style.background="";document.querySelectorAll("[contenteditable]").forEach(function(e){e.contentEditable="false";});document.querySelectorAll(".del-btn").forEach(function(x){x.remove();});saveNow();}}';
   h += 'function addB(id){var u=document.getElementById(id);if(!u)return;var li=document.createElement("li");li.contentEditable=_ed?"true":"false";li.textContent="Escribe aqui...";li.style.color="#aaa";li.oninput=schedSave;li.onfocus=function(){if(this.textContent==="Escribe aqui..."){this.textContent="";this.style.color="";}};if(_ed){var x=document.createElement("button");x.className="del-btn";x.innerHTML="&times;";x.onclick=function(ev){ev.stopPropagation();li.remove();schedSave();};li.style.position="relative";li.appendChild(x);}u.appendChild(li);li.focus();schedSave();}';
   h += 'function remB(id){var u=document.getElementById(id);if(!u)return;var items=u.querySelectorAll("li");if(!items.length)return;items[items.length-1].remove();schedSave();}';
@@ -2424,14 +2508,21 @@ function _toggleActivo(id, val){
   var localAct=JSON.parse(localStorage.getItem('mj_activos')||'{}');
   localAct[id]=val;
   localStorage.setItem('mj_activos',JSON.stringify(localAct));
-  showToast(val?'Cliente activado':'Cliente desactivado');
   _renderClientes();
-  // Intentar guardar en Supabase (si la columna existe)
+  // Guardar en Supabase
   fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
     method:'PATCH',
     headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
     body:JSON.stringify({activo:val})
-  }).catch(function(){});
+  }).then(function(r){
+    if(r.ok||r.status===204){
+      showToast(val?'Cliente activado':'Cliente desactivado');
+    } else {
+      showToast(val?'Cliente activado (local)':'Cliente desactivado (local)');
+    }
+  }).catch(function(){
+    showToast(val?'Cliente activado (local)':'Cliente desactivado (local)');
+  });
 }
 
 // ── RESUMEN ──────────────────────────────────────────────────
