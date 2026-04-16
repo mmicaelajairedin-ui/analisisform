@@ -222,7 +222,7 @@ body{background:var(--bg);}
 .empty-title{font-size:15px;font-weight:700;margin-bottom:4px;}
 .empty-desc{font-size:13px;color:var(--muted);line-height:1.6;}
 
-/* ACHIEVEMENTS (dashboard) */
+/* ACHIEVEMENTS (dashboard) + MEDAL SYSTEM */
 .dach-grid{display:grid;grid-template-columns:1fr;gap:7px;}
 .dach{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:var(--bg);border:1.5px solid var(--border);transition:all .3s;}
 .dach-ico{font-size:18px;flex-shrink:0;filter:grayscale(1) opacity(.35);transition:filter .3s;}
@@ -231,6 +231,22 @@ body{background:var(--bg);}
 .dach-lbl{font-size:11px;font-weight:700;color:var(--muted);line-height:1.3;}
 .dach-sub{font-size:9px;color:var(--muted);line-height:1.3;margin-top:1px;}
 .dach-chk{width:18px;height:18px;border-radius:50%;border:2px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .3s;}
+/* Medal in sidebar */
+.sb-medal{text-align:center;margin-top:8px;}
+.sb-medal-ico{font-size:22px;line-height:1;display:block;}
+.sb-medal-lbl{font-size:8px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-top:2px;}
+.sb-medal-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin:5px 12px 0;}
+.sb-medal-fill{height:4px;border-radius:2px;transition:width .5s ease;}
+.sb-medal-next{font-size:8px;color:var(--muted);margin-top:3px;}
+/* Medal card in dashboard */
+.medal-track{display:flex;align-items:center;justify-content:center;gap:0;margin:10px 0 6px;position:relative;}
+.medal-step{display:flex;flex-direction:column;align-items:center;gap:2px;width:60px;position:relative;z-index:1;}
+.medal-step-ico{font-size:24px;filter:grayscale(1) opacity(.3);transition:all .3s;}
+.medal-step-ico.active{filter:none;transform:scale(1.2);}
+.medal-step-lbl{font-size:8px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+.medal-step-lbl.active{color:var(--text);font-weight:800;}
+.medal-line{flex:1;height:3px;background:var(--border);border-radius:2px;position:relative;z-index:0;}
+.medal-line-fill{height:3px;border-radius:2px;transition:width .5s ease;}
 
 /* HAMBURGUESA BUTTON */
 .hamburger{
@@ -689,6 +705,7 @@ input:focus, select:focus, textarea:focus {
         <div id="sb-pill" style="font-size:9px;font-weight:700;color:var(--rose);margin-top:4px;">Semana 1/5</div>
         <div class="sb-pb" style="margin-top:6px;"><div class="sb-pb-fill" id="sb-pb-fill" style="width:0%"></div></div>
         <div id="sb-pb-lbl" class="sb-pb-lbl"></div>
+        <div class="sb-medal" id="sb-medal"></div>
       </div>
       <div class="sb-nav">
         <button class="ni on" onclick="goSec('semana',this)">
@@ -1261,9 +1278,17 @@ function updSB(){
   document.getElementById('sb-pill').textContent='Semana '+Math.min(SEM,5)+'/5';
   document.getElementById('sb-pb-fill').style.width=pct+'%';
   var _pblbl=document.getElementById('sb-pb-lbl');if(_pblbl)_pblbl.textContent=done+' de '+accs.length+' acciones';
+  updSbMedal();
 }
 
-/* ── Sistema de logros ── */
+/* ── Sistema de logros + medallas ── */
+var MEDALS=[
+  {min:0, ico:'', lbl:'', color:'var(--muted)', next:'Bronce'},
+  {min:2, ico:'🥉', lbl:'Bronce', color:'#CD7F32', next:'Plata'},
+  {min:4, ico:'🥈', lbl:'Plata',  color:'#A0A0A0', next:'Oro'},
+  {min:6, ico:'🏆', lbl:'Oro',    color:'#DAA520', next:null}
+];
+
 function getAchievements(){
   var hasInforme=!!(D&&D.resumen);
   var hasCv=!!CV;
@@ -1281,22 +1306,81 @@ function getAchievements(){
   ];
 }
 
+function getMedalInfo(n){
+  var current=MEDALS[0];
+  for(var i=MEDALS.length-1;i>=0;i--){if(n>=MEDALS[i].min){current=MEDALS[i];break;}}
+  var nextIdx=MEDALS.indexOf(current)+1;
+  var next=nextIdx<MEDALS.length?MEDALS[nextIdx]:null;
+  var faltan=next?(next.min-n):0;
+  var progressInTier=next?((n-current.min)/(next.min-current.min)*100):100;
+  return {current:current, next:next, faltan:faltan, pct:Math.round(progressInTier)};
+}
+
+function updSbMedal(){
+  var el=document.getElementById('sb-medal');
+  if(!el) return;
+  var achs=getAchievements();
+  var n=achs.filter(function(a){return a.done;}).length;
+  var m=getMedalInfo(n);
+  var o='';
+  if(m.current.ico){
+    o+='<span class="sb-medal-ico">'+m.current.ico+'</span>';
+    o+='<div class="sb-medal-lbl" style="color:'+m.current.color+';">'+m.current.lbl+'</div>';
+  }
+  if(m.next){
+    o+='<div class="sb-medal-bar"><div class="sb-medal-fill" style="width:'+m.pct+'%;background:'+m.current.color+';"></div></div>';
+    o+='<div class="sb-medal-next">'+m.faltan+' logro'+(m.faltan!==1?'s':'')+' para '+m.next.ico+' '+m.next.lbl+'</div>';
+  } else {
+    o+='<div class="sb-medal-next" style="color:'+m.current.color+';font-weight:700;">&#10024; Nivel máximo</div>';
+  }
+  el.innerHTML=o;
+}
+
 function rAchievementsCard(){
   var achs=getAchievements();
-  var doneCount=achs.filter(function(a){return a.done;}).length;
-  var pct=Math.round((doneCount/achs.length)*100);
+  var n=achs.filter(function(a){return a.done;}).length;
+  var m=getMedalInfo(n);
+
   var o='<div class="card" style="margin-bottom:14px;">';
   o+='<div class="card-hd"><div>';
-  o+='<div class="card-lbl">Tu progreso general</div>';
-  o+='<div class="card-title" style="display:flex;align-items:center;gap:10px;">Logros <span style="font-size:12px;font-weight:800;color:var(--rose);background:var(--rose-light);padding:2px 10px;border-radius:20px;">'+doneCount+'/'+achs.length+'</span></div>';
+  o+='<div class="card-lbl">Tu progreso</div>';
+  o+='<div class="card-title" style="display:flex;align-items:center;gap:10px;">';
+  if(m.current.ico) o+=m.current.ico+' ';
+  o+='Logros <span style="font-size:12px;font-weight:800;color:'+m.current.color+';background:var(--bg);padding:2px 10px;border-radius:20px;">'+n+'/'+achs.length+'</span></div>';
   o+='</div></div>';
   o+='<div class="card-body" style="padding:14px 16px;">';
-  // Barra de progreso general
-  o+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">';
-  o+='<div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;">';
-  o+='<div style="height:100%;width:'+pct+'%;background:linear-gradient(90deg,var(--rose),var(--green));border-radius:3px;transition:width .6s ease;"></div></div>';
-  o+='<span style="font-size:12px;font-weight:800;color:var(--rose);">'+pct+'%</span></div>';
-  // Lista de logros — 1 columna, cada uno con su color
+
+  // Medal track — visual del camino Bronce → Plata → Oro
+  o+='<div class="medal-track">';
+  for(var i=1;i<MEDALS.length;i++){
+    var ml=MEDALS[i];
+    var reached=n>=ml.min;
+    var isCurrent=(m.current===ml);
+    // Línea entre medallas
+    if(i>1){
+      var prev=MEDALS[i-1];
+      var linePct=n>=ml.min?100:n>prev.min?((n-prev.min)/(ml.min-prev.min)*100):0;
+      o+='<div class="medal-line"><div class="medal-line-fill" style="width:'+Math.round(linePct)+'%;background:'+(reached?ml.color:'var(--border)');
+      o+='"></div></div>';
+    }
+    o+='<div class="medal-step">';
+    o+='<span class="medal-step-ico'+(reached||isCurrent?' active':'')+'">'+ml.ico+'</span>';
+    o+='<span class="medal-step-lbl'+(isCurrent?' active':'')+'">'+ml.lbl+'</span>';
+    o+='</div>';
+  }
+  o+='</div>';
+
+  // Mensaje de próximo objetivo
+  if(m.next){
+    o+='<div style="text-align:center;font-size:11px;color:var(--muted);margin-bottom:12px;">';
+    o+='<strong style="color:'+m.current.color+';">'+m.faltan+' logro'+(m.faltan!==1?'s':'')+' más</strong> para '+m.next.ico+' '+m.next.lbl;
+    o+='</div>';
+  } else {
+    o+='<div style="text-align:center;padding:8px;margin-bottom:12px;background:linear-gradient(135deg,#FFF8E7,#FFFCF0);border-radius:8px;border:1.5px solid #DAA520;">';
+    o+='<div style="font-size:12px;font-weight:800;color:#DAA520;">&#10024; ¡Llegaste al nivel Oro!</div></div>';
+  }
+
+  // Lista de logros
   o+='<div class="dach-grid">';
   achs.forEach(function(a){
     var bg=a.done?a.bg:'var(--bg)';
@@ -1309,10 +1393,6 @@ function rAchievementsCard(){
     o+='</div>';
   });
   o+='</div>';
-  if(doneCount===achs.length){
-    o+='<div style="margin-top:10px;text-align:center;padding:8px;background:linear-gradient(135deg,var(--rose-light),var(--green-light));border-radius:10px;">';
-    o+='<div style="font-size:12px;font-weight:700;color:var(--rose-dark);">&#127881; ¡Todos los logros completados!</div></div>';
-  }
   o+='</div></div>';
   return o;
 }
