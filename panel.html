@@ -1877,11 +1877,14 @@ function tabMensajes(c){
 }
 
 function tabSesiones(c){
+  var sesiones=[];
+  try{sesiones=JSON.parse(c.sesiones_registro||'[]');}catch(e){sesiones=[];}
+  // Fallback: migrar desde localStorage si existe
   var sesKey='mj_sesiones_'+c.id;
-  var sesiones=JSON.parse(localStorage.getItem(sesKey)||'[]');
+  var lsSes=localStorage.getItem(sesKey);
+  if(!sesiones.length&&lsSes){try{sesiones=JSON.parse(lsSes);if(sesiones.length){c.sesiones_registro=JSON.stringify(sesiones);fetch(SB+'/rest/v1/candidatos?id=eq.'+c.id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({sesiones_registro:JSON.stringify(sesiones)})});}}catch(e){sesiones=[];}}
   var html='<div style="display:flex;flex-direction:column;gap:12px;">';
 
-  // Lista de sesiones
   if(sesiones.length){
     sesiones.slice().reverse().forEach(function(s,ri){
       var idx=sesiones.length-1-ri;
@@ -1892,21 +1895,20 @@ function tabSesiones(c){
       html+='</div>';
       if(s.trabajado) html+='<div style="margin-bottom:6px;"><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:3px;">Trabajamos</div><div style="font-size:12px;color:var(--body);line-height:1.5;white-space:pre-wrap;">'+escH(s.trabajado)+'</div></div>';
       if(s.acordado) html+='<div style="margin-bottom:6px;"><div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;margin-bottom:3px;">Acordado</div><div style="font-size:12px;color:var(--body);line-height:1.5;white-space:pre-wrap;">'+escH(s.acordado)+'</div></div>';
-      if(s.acciones) html+='<div><div style="font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;margin-bottom:3px;">Acciones</div><div style="font-size:12px;color:var(--body);line-height:1.5;white-space:pre-wrap;">'+escH(s.acciones)+'</div></div>';
+      if(s.acciones) html+='<div><div style="font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;margin-bottom:3px;">Tareas para el cliente</div><div style="font-size:12px;color:var(--body);line-height:1.5;white-space:pre-wrap;">'+escH(s.acciones)+'</div></div>';
       html+='</div>';
     });
   } else {
     html+='<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px;">Sin sesiones registradas a\u00fan.</div>';
   }
 
-  // Agregar nueva sesion
   html+='<div style="background:var(--accent-light);border:1.5px solid var(--accent-mid);border-radius:12px;padding:16px;">';
   html+='<div style="font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;font-family:Montserrat,sans-serif;">+ Nueva sesi\u00f3n</div>';
   var hoy=new Date();var fHoy=hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
   html+='<div style="margin-bottom:8px;"><input id="ns-fecha-'+c.id+'" type="date" value="'+fHoy+'" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:Montserrat,sans-serif;"></div>';
   html+='<div style="margin-bottom:8px;"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px;">Que se trabajo</div><textarea id="ns-trab-'+c.id+'" rows="2" placeholder="Temas trabajados en la sesi\u00f3n..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:12px;resize:vertical;"></textarea></div>';
   html+='<div style="margin-bottom:8px;"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px;">Que se acord\u00f3</div><textarea id="ns-acord-'+c.id+'" rows="2" placeholder="Acuerdos y compromisos..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:12px;resize:vertical;"></textarea></div>';
-  html+='<div style="margin-bottom:10px;"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px;">Acciones para el cliente</div><textarea id="ns-acc-'+c.id+'" rows="2" placeholder="Tareas y pr\u00f3ximos pasos..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:12px;resize:vertical;"></textarea></div>';
+  html+='<div style="margin-bottom:10px;"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px;">Tareas para el cliente</div><textarea id="ns-acc-'+c.id+'" rows="2" placeholder="Una por l\u00ednea — el cliente las ve y puede marcarlas&#10;Ej: Actualizar foto LinkedIn&#10;Enviar 3 mensajes a recruiters" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:12px;resize:vertical;"></textarea></div>';
   html+='<button onclick="_addSesion('+c.id+')" class="btn" style="padding:8px 20px;">Guardar sesi\u00f3n</button>';
   html+='</div>';
 
@@ -1919,21 +1921,20 @@ function _addSesion(id){
   var acord=document.getElementById('ns-acord-'+id);
   var acc=document.getElementById('ns-acc-'+id);
   if(!trab||!trab.value.trim()){showToast('Escrib\u00ed que se trabaj\u00f3');return;}
-  var sesKey='mj_sesiones_'+id;
-  var sesiones=JSON.parse(localStorage.getItem(sesKey)||'[]');
-  sesiones.push({fecha:fecha?fecha.value:'',trabajado:trab.value.trim(),acordado:acord?acord.value.trim():'',acciones:acc?acc.value.trim():''});
-  localStorage.setItem(sesKey,JSON.stringify(sesiones));
-  showToast('Sesi\u00f3n guardada');
-  var c=cands.find(function(x){return x.id===id;});
-  if(c){atab='sesion';renderMain(c);}
+  var c=cands.find(function(x){return x.id===id;});if(!c)return;
+  var sesiones=[];try{sesiones=JSON.parse(c.sesiones_registro||'[]');}catch(e){sesiones=[];}
+  sesiones.push({fecha:fecha?fecha.value:'',trabajado:trab.value.trim(),acordado:acord?acord.value.trim():'',acciones:acc?acc.value.trim():'',tareas_done:[]});
+  c.sesiones_registro=JSON.stringify(sesiones);
+  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({sesiones_registro:JSON.stringify(sesiones)})}).then(function(r){showToast(r.ok||r.status===204?'Sesi\u00f3n guardada y visible para el cliente':'Error');}).catch(function(){showToast('Guardado local');});
+  atab='sesion';renderMain(c);
 }
 function _delSesion(id,idx){
-  var sesKey='mj_sesiones_'+id;
-  var sesiones=JSON.parse(localStorage.getItem(sesKey)||'[]');
+  var c=cands.find(function(x){return x.id===id;});if(!c)return;
+  var sesiones=[];try{sesiones=JSON.parse(c.sesiones_registro||'[]');}catch(e){sesiones=[];}
   sesiones.splice(idx,1);
-  localStorage.setItem(sesKey,JSON.stringify(sesiones));
-  var c=cands.find(function(x){return x.id===id;});
-  if(c){atab='sesion';renderMain(c);}
+  c.sesiones_registro=JSON.stringify(sesiones);
+  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({sesiones_registro:JSON.stringify(sesiones)})}).catch(function(){});
+  atab='sesion';renderMain(c);
 }
 
 function tabPagos(c){
