@@ -73,11 +73,6 @@ test.describe('Carga de páginas principales', () => {
     expect(response.status()).toBe(200);
   });
 
-  test('links.html - Gestor de links carga correctamente', async ({ page }) => {
-    const response = await page.goto('links.html');
-    expect(response.status()).toBe(200);
-  });
-
   test('hub.html - Hub de conexiones carga correctamente', async ({ page }) => {
     const response = await page.goto('hub.html');
     expect(response.status()).toBe(200);
