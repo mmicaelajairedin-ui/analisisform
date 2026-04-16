@@ -9,8 +9,8 @@ const { test, expect } = require('@playwright/test');
 
 test.describe('Carga de páginas principales', () => {
 
-  test('index.html - Formulario de análisis carga correctamente', async ({ page }) => {
-    const response = await page.goto('index.html');
+  test('formulario.html - Formulario de análisis carga correctamente', async ({ page }) => {
+    const response = await page.goto('formulario.html');
     expect(response.status()).toBe(200);
 
     // Verifica título
@@ -86,7 +86,7 @@ test.describe('Carga de páginas principales', () => {
 
 test.describe('Verificación de recursos y assets', () => {
 
-  test('No hay errores de consola críticos en index.html', async ({ page }) => {
+  test('No hay errores de consola críticos en formulario.html', async ({ page }) => {
     const errors = [];
     page.on('console', msg => {
       if (msg.type() === 'error') {
@@ -94,7 +94,7 @@ test.describe('Verificación de recursos y assets', () => {
       }
     });
 
-    await page.goto('index.html');
+    await page.goto('formulario.html');
     await page.waitForLoadState('domcontentloaded');
 
     // Filtra errores esperados (ej: CORS de fuentes externas)
@@ -132,7 +132,7 @@ test.describe('Verificación de recursos y assets', () => {
   });
 
   test('Google Fonts carga correctamente', async ({ page }) => {
-    await page.goto('index.html');
+    await page.goto('formulario.html');
     await page.waitForLoadState('networkidle');
 
     // Verificar que la fuente Montserrat se aplicó
@@ -140,8 +140,8 @@ test.describe('Verificación de recursos y assets', () => {
     expect(fontFamily.toLowerCase()).toContain('montserrat');
   });
 
-  test('EmailJS SDK carga correctamente en index.html', async ({ page }) => {
-    await page.goto('index.html');
+  test('EmailJS SDK carga correctamente en formulario.html', async ({ page }) => {
+    await page.goto('formulario.html');
     await page.waitForLoadState('networkidle');
     const emailjsLoaded = await page.evaluate(() => typeof window.emailjs !== 'undefined');
     expect(emailjsLoaded).toBe(true);

@@ -126,8 +126,8 @@ test.describe('Seguridad — Supabase Row Level Security', () => {
 
 test.describe('Seguridad — Sin secretos expuestos en el código', () => {
 
-  test('index.html no expone ANTHROPIC_API_KEY', async ({ page }) => {
-    await page.goto('index.html');
+  test('formulario.html no expone ANTHROPIC_API_KEY', async ({ page }) => {
+    await page.goto('formulario.html');
 
     const html = await page.content();
 
@@ -162,7 +162,7 @@ test.describe('Seguridad — Sin secretos expuestos en el código', () => {
 
   test('Ninguna página expone claves privadas de Supabase (service_role)', async ({ page }) => {
     // La anon key es pública por diseño, pero la service_role key NUNCA debe estar en el frontend
-    const pages = ['/index.html', '/login.html', '/panel.html', '/cliente.html'];
+    const pages = ['/index.html', '/formulario.html', '/login.html', '/panel.html', '/cliente.html'];
 
     for (const url of pages) {
       await page.goto(url);

@@ -7,8 +7,9 @@ Micaela les envia acceso a esta plataforma como herramienta de soporte durante 4
 
 ## Flujo del servicio
 ```
+Landing publica (index.html) → Coach/candidato llega al sitio
 Agencia (landing) → Cliente compra mentoria → Micaela le manda link al formulario
-→ Cliente completa formulario (index.html) → Datos llegan al panel de Micaela
+→ Cliente completa formulario (formulario.html) → Datos llegan al panel de Micaela
 → Micaela genera informe con IA → Le crea acceso (login) → Cliente usa el portal 4 semanas
 ```
 
@@ -18,12 +19,16 @@ Agencia (landing) → Cliente compra mentoria → Micaela le manda link al formu
 - EmailJS (notificaciones)
 - Uploadcare (subida de CVs)
 - Anthropic Claude API via Netlify Edge Function (generacion de informes)
-- Deploy: GitHub Pages (mmicaelajairedin-ui.github.io/analisisform)
+- Deploy: GitHub Pages con dominio custom `pathwaycareercoach.com` (fallback: mmicaelajairedin-ui.github.io/analisisform). CNAME en raiz.
 
 ## Archivos principales
 | Archivo | Que hace | Lineas |
 |---------|----------|--------|
-| `index.html` | Formulario de intake (7 pasos) | ~600 |
+| `index.html` | **Landing publica** (marketing, FAQ, CTA) — la raiz del dominio | ~430 |
+| `formulario.html` | Formulario de intake (7 pasos) — solo se comparte con clientes que pagaron | ~600 |
+| `soy-candidato.html` | Pagina publica "Busco trabajo" | ~220 |
+| `soy-coach.html` | Pagina publica "Soy coach" con pricing | ~240 |
+| `registro.html` | Registro de coaches | ~250 |
 | `panel.html` | Panel del coach (TODO el JS esta inline, NO usa panel.js) | ~2300 |
 | `panel.js` | Archivo legacy con funciones duplicadas (panel.html no lo carga) |
 | `cliente.html` | Portal del cliente (su espacio durante la mentoria) | ~2100 |
@@ -32,6 +37,11 @@ Agencia (landing) → Cliente compra mentoria → Micaela le manda link al formu
 | `login.html` | Login (coach y cliente) | ~110 |
 | `hub.html` | Hub del coach (alternativo al panel) | ~370 |
 | `links.html` | Pagina de links para compartir | ~275 |
+
+### IMPORTANTE: rename index ↔ landing (abril 2026)
+Lo que era `landing.html` ahora es `index.html` (se sirve en la raiz `/`).
+Lo que era `index.html` (form de intake) ahora es `formulario.html`.
+Si tocas URLs absolutas al form, usa: `https://pathwaycareercoach.com/formulario.html`.
 
 ## IMPORTANTE: panel.html tiene todo el JS inline
 El archivo `panel.js` existe pero **panel.html NO lo carga**. Todo el JavaScript del panel esta dentro de `<script>` en panel.html. Cualquier funcion nueva debe ir dentro de panel.html, no en panel.js.

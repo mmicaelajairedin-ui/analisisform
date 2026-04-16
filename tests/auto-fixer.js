@@ -79,7 +79,7 @@ function getAffectedFile(failure) {
 
   // Mapear test suite/name a archivo de la plataforma
   const fileMap = {
-    'index.html': /formulario|form|index|idioma|lang|progreso|consent/i,
+    'formulario.html': /formulario|form|index|idioma|lang|progreso|consent/i,
     'login.html': /login|autenticación|auth|credential|password/i,
     'panel.html': /panel|dashboard|sidebar|coach|candidat/i,
     'cliente.html': /cliente|client|portal/i,

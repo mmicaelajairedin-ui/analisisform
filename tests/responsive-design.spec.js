@@ -7,11 +7,11 @@ const { test, expect } = require('@playwright/test');
  * Usa page.setViewportSize para evitar crear contextos extra (más rápido).
  */
 
-test.describe('Responsive - Formulario (index.html)', () => {
+test.describe('Responsive - Formulario (formulario.html)', () => {
 
   test('Formulario se adapta en móvil (375px)', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto('index.html');
+    await page.goto('formulario.html');
 
     const card = page.locator('.card');
     await expect(card).toBeVisible();
@@ -22,7 +22,7 @@ test.describe('Responsive - Formulario (index.html)', () => {
 
   test('Formulario se adapta en desktop (1440px)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('index.html');
+    await page.goto('formulario.html');
 
     const wrap = page.locator('.wrap');
     await expect(wrap).toBeVisible();
