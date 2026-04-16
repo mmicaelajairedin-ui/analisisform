@@ -85,7 +85,6 @@ function getAffectedFile(failure) {
     'cliente.html': /cliente|client|portal/i,
     'cv.html': /cv|currículum|resume/i,
     'carta.html': /carta|cover letter/i,
-    'links.html': /links|enlace/i,
     'hub.html': /hub|conexion/i,
   };
 

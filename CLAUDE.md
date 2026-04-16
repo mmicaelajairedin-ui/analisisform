@@ -36,7 +36,6 @@ Agencia (landing) → Cliente compra mentoria → Micaela le manda link al formu
 | `carta.html` | Editor de carta de presentacion | ~420 |
 | `login.html` | Login (coach y cliente) | ~110 |
 | `hub.html` | Hub del coach (alternativo al panel) | ~370 |
-| `links.html` | Pagina de links para compartir | ~275 |
 
 ### IMPORTANTE: rename index ↔ landing (abril 2026)
 Lo que era `landing.html` ahora es `index.html` (se sirve en la raiz `/`).
