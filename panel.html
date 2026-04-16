@@ -3193,55 +3193,92 @@ function cambiarPass(id,email){
 }
 
 // ── MENSAJES PANEL ──────────────────────────────────────────
+var _msgActiveEmail=null;
 function _renderMensajes(){
   var dp=document.getElementById('dynamic-panel');
   if(!dp)return;
-  dp.innerHTML='<div class="dp-title">Mensajes</div><div class="dp-desc">Mensajes de tus clientes</div><div id="panel-msgs" style="display:flex;flex-direction:column;gap:12px;padding:0 22px 40px;"><div style="text-align:center;padding:2rem;color:#999;">Cargando mensajes...</div></div>';
-  // Fetch all candidates
+  dp.innerHTML='<div class="dp-title">Mensajes</div><div class="dp-desc">Conversaciones con tus clientes</div><div id="panel-msgs" style="padding:0 22px 40px;"><div style="text-align:center;padding:2rem;color:#999;">Cargando...</div></div>';
   fetch(SB+'/rest/v1/candidatos?select=nombre,email,notas_coach&order=created_at.desc',{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
   }).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(function(rows){
     var container=document.getElementById('panel-msgs');
     if(!container)return;
-    var allMsgs=[];
+    var clients=[];
     (rows||[]).forEach(function(c){
       if(!c.notas_coach)return;
       try{
         var msgs=JSON.parse(c.notas_coach);
-        if(!Array.isArray(msgs))return;
-        msgs.forEach(function(m){
-          allMsgs.push({nombre:c.nombre||c.email,email:c.email,foto:'',from:m.from,text:m.text,time:m.time,ts:m.ts||0});
-        });
+        if(!Array.isArray(msgs)||!msgs.length)return;
+        var lastMsg=msgs[msgs.length-1];
+        var unread=0;var ls=parseInt(localStorage.getItem('mj_msgs_seen_'+(c.email||''))||'0');
+        msgs.forEach(function(m){if(m.from==='cliente'&&(m.ts||0)>ls)unread++;});
+        var foto='';var cd=cands.find(function(x){return(x.email||'').toLowerCase()===(c.email||'').toLowerCase();});
+        if(cd&&cd.foto_perfil)foto=cd.foto_perfil;
+        if(!foto)foto=localStorage.getItem('mj_foto_'+(c.email||'').toLowerCase().trim())||'';
+        clients.push({nombre:c.nombre||c.email,email:c.email,foto:foto,msgs:msgs,lastTs:lastMsg.ts||0,unread:unread});
       }catch(e){}
     });
-    // Ordenar por timestamp desc
-    allMsgs.sort(function(a,b){return(b.ts||0)-(a.ts||0);});
-    if(!allMsgs.length){
-      container.innerHTML='<div style="text-align:center;padding:3rem;color:#999;"><div style="font-size:32px;margin-bottom:8px;">💬</div>No hay mensajes todavía</div>';
-      return;
+    clients.sort(function(a,b){return b.lastTs-a.lastTs;});
+    if(!clients.length){container.innerHTML='<div style="text-align:center;padding:3rem;color:#999;"><div style="font-size:32px;margin-bottom:8px;">\ud83d\udcac</div>No hay mensajes todav\u00eda</div>';return;}
+    var active=_msgActiveEmail?clients.find(function(cl){return cl.email===_msgActiveEmail;}):clients[0];
+    if(!active)active=clients[0];
+    _msgActiveEmail=active.email;
+    function mkAv(foto,nombre,size){
+      var sz=size||36;var i2=(nombre||'?').split(' ').map(function(w){return(w[0]||'').toUpperCase();}).join('').slice(0,2);
+      return '<div style="width:'+sz+'px;height:'+sz+'px;border-radius:50%;background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">'+(foto?'<img src="'+foto+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">':'<span style="font-size:'+(sz<30?'9':'11')+'px;font-weight:800;color:#8C7B80;">'+i2+'</span>')+'</div>';
     }
-    var html='';
-    allMsgs.slice(0,50).forEach(function(m){
-      var isCoach=m.from==='coach';
-      var ini2=(m.nombre||'?').split(' ').map(function(w){return(w[0]||'').toUpperCase();}).join('').slice(0,2);
-      var avHtml=m.foto?'<img src="'+m.foto+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">':'<span style="font-size:10px;font-weight:800;color:#8C7B80;">'+ini2+'</span>';
-      html+='<div style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#fff;border-radius:12px;border:1px solid var(--border);">';
-      html+='<div style="width:34px;height:34px;border-radius:50%;background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">'+avHtml+'</div>';
-      html+='<div style="flex:1;min-width:0;">';
-      html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">';
-      html+='<span style="font-size:12px;font-weight:700;color:'+(isCoach?'var(--accent)':'var(--title)')+';">'+(isCoach?'Micaela':escH(m.nombre))+'</span>';
-      html+='<span style="font-size:10px;color:var(--muted);">'+escH(m.time||'')+'</span>';
-      html+='</div>';
-      html+='<div style="font-size:12px;color:var(--body);line-height:1.5;">'+escH(m.text)+'</div>';
-      if(!isCoach){html+='<div style="font-size:10px;color:var(--muted);margin-top:2px;">'+escH(m.email||'')+'</div>';}
-      html+='</div></div>';
+    var h='<div style="display:grid;grid-template-columns:220px 1fr;border:1px solid var(--border);border-radius:14px;overflow:hidden;background:#fff;min-height:480px;">';
+    h+='<div style="border-right:1px solid var(--border);overflow-y:auto;max-height:560px;">';
+    clients.forEach(function(cl){
+      var isAct=cl.email===_msgActiveEmail;
+      var lt=cl.msgs[cl.msgs.length-1].text||'';if(lt.length>35)lt=lt.slice(0,35)+'...';
+      h+='<div onclick="_openChat(\''+cl.email.replace(/'/g,"\\'")+'\')" style="display:flex;gap:8px;align-items:center;padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);background:'+(isAct?'var(--accent-light)':'#fff')+';transition:.15s;">';
+      h+=mkAv(cl.foto,cl.nombre,34);
+      h+='<div style="flex:1;min-width:0;"><div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:12px;font-weight:700;color:var(--title);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escH(cl.nombre.split(' ')[0])+'</span>';
+      if(cl.unread)h+='<span style="background:var(--red);color:#fff;font-size:8px;font-weight:800;padding:1px 5px;border-radius:10px;flex-shrink:0;">'+cl.unread+'</span>';
+      h+='</div><div style="font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escH(lt)+'</div></div></div>';
     });
-    container.innerHTML=html;
+    h+='</div>';
+    h+='<div style="display:flex;flex-direction:column;">';
+    h+='<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">'+mkAv(active.foto,active.nombre,30);
+    h+='<div><div style="font-size:13px;font-weight:700;color:var(--title);">'+escH(active.nombre)+'</div><div style="font-size:10px;color:var(--muted);">'+escH(active.email)+'</div></div></div>';
+    h+='<div id="chat-msgs" style="flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:5px;max-height:400px;">';
+    active.msgs.forEach(function(m){
+      var ic=m.from==='coach';
+      h+='<div style="display:flex;justify-content:'+(ic?'flex-end':'flex-start')+';"><div style="max-width:75%;padding:8px 12px;border-radius:'+(ic?'12px 12px 2px 12px':'12px 12px 12px 2px')+';background:'+(ic?'var(--accent)':'#F3F0F0')+';color:'+(ic?'#fff':'var(--body)')+';font-size:12px;line-height:1.5;">'+escH(m.text)+'<div style="font-size:9px;margin-top:2px;opacity:.6;text-align:'+(ic?'right':'left')+';">'+escH(m.time||'')+'</div></div></div>';
+    });
+    h+='</div>';
+    h+='<div style="padding:8px 12px;border-top:1px solid var(--border);display:flex;gap:6px;"><input id="coach-msg-input" type="text" placeholder="Escribir..." style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:20px;font-size:13px;font-family:Open Sans,sans-serif;outline:none;" onkeydown="if(event.key===\'Enter\')_sendCoachMsg()"><button onclick="_sendCoachMsg()" style="width:34px;height:34px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;"><svg width="13" height="13" viewBox="0 0 24 24" fill="#fff"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button></div>';
+    h+='</div></div>';
+    container.innerHTML=h;
+    var ce=document.getElementById('chat-msgs');if(ce)ce.scrollTop=ce.scrollHeight;
+    localStorage.setItem('mj_msgs_seen_'+active.email,String(Date.now()));
   }).catch(function(){
     var container=document.getElementById('panel-msgs');
     if(container)container.innerHTML='<div style="text-align:center;padding:2rem;color:#c0756e;">Error al cargar mensajes</div>';
   });
 }
+function _openChat(email){_msgActiveEmail=email;_renderMensajes();}
+function _sendCoachMsg(){
+  var inp=document.getElementById('coach-msg-input');
+  if(!inp||!inp.value.trim()||!_msgActiveEmail)return;
+  var text=inp.value.trim();inp.value='';
+  var email=_msgActiveEmail;
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(email)+'&select=notas_coach',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.json();}).then(function(rows){
+    var msgs=[];
+    if(rows&&rows.length&&rows[0].notas_coach){try{msgs=JSON.parse(rows[0].notas_coach);}catch(e){}}
+    if(!Array.isArray(msgs))msgs=[];
+    var now=new Date();
+    msgs.push({from:'coach',text:text,time:now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0'),ts:now.getTime()});
+    return fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(email),{
+      method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({notas_coach:JSON.stringify(msgs)})
+    });
+  }).then(function(){_renderMensajes();showToast('Mensaje enviado');}).catch(function(){showToast('Error al enviar');});
+}
+
 
 // Cargar badge de mensajes al iniciar
 function _checkMsgBadge(){
