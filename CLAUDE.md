@@ -90,7 +90,30 @@ ALTER TABLE candidatos ADD COLUMN activo BOOLEAN DEFAULT true;
 - Botones URL mas compactos, cards con hover sutil
 - Sidebar 240px (antes 280px), stats cards con sombra suave
 
+### Prioridad 6: UX SaaS — HECHO
+- **Design system unificado**: color accent #8C7B80 en todas las paginas (antes panel usaba #8E7676), font Poppins unificado (antes Open Sans en panel)
+- **Sistema de medallas**: Bronce (2 logros), Plata (4), Oro/Copa (6). Medalla visible en sidebar debajo de la foto con barra de progreso hacia la siguiente
+- **6 logros con colores variados**: Formulario (rose), Diagnostico (blue), CV (green), Carta (orange), LinkedIn (brown), Semana 2+ (red)
+- **Card de logros en dashboard**: track visual Bronce→Plata→Oro, lista de logros con checks
+- **Medalla se actualiza al instante**: despues de analizar LinkedIn o guardar carta, sin recargar
+- **Feed de actividad**: timeline "Tu timeline" en columna derecha con timeAgo()
+- **Bottom nav mobile**: barra fija con 5 tabs (Inicio, Docs, LinkedIn, Empleos, Recursos), reemplaza hamburger
+- **Onboarding primer login**: 5 pasos con overlay animado, solo se muestra una vez (mj_onboard_ en localStorage)
+- **Skeleton loaders**: animacion shimmer en carga de empleos (skelCards helper)
+- **Empty states con CTA**: mensajes descriptivos + boton WhatsApp en vez de "En camino..."
+- **Cache de secciones**: LinkedIn/Empleos/Recursos no se regeneran al navegar entre tabs (_secCache)
+- **Accesibilidad**: aria-labels en botones icono, role=navigation, font min 10px, skip-to-content
+- **Cache-bust en login**: redirige con ?v=timestamp para forzar carga fresca
+
+### IMPORTANTE: traducciones TX
+El objeto TX en cliente.html NO debe usar t() dentro de su propia definicion (referencia circular). Todos los valores deben ser strings literales.
+
+### IMPORTANTE: cache de secciones (_secCache)
+El cache se guarda en goSec() ANTES de actualizar SEC. render() solo lee el cache. Si se mueve SEC=sec antes del save, el cache se guarda bajo la key incorrecta.
+
 ## PENDIENTE — Proximas mejoras
+- Logro por sesion agendada (Calendly: https://calendly.com/mmicaela-jairedin/career-strategy-session)
+- Calendly integrado en el dashboard del cliente (al lado de logros, para que agenda despues de ver progreso)
 - Mas contenido real en recursos (links a articulos, videos, templates descargables)
 - Sistema de notificaciones push o email automatico cuando el coach actualiza algo
 - Dashboard analytics: metricas de progreso agregadas
