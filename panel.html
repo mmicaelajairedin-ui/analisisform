@@ -785,6 +785,10 @@ button:active { transform: scale(.98); }
       style="background:transparent;color:rgba(255,255,255,.9);border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;font-family:Montserrat,sans-serif;text-align:left;cursor:pointer;display:flex;align-items:center;gap:9px;width:100%;transition:all .15s;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg> Pagos
     </button>
+    <button class="nb" id="nb-mensajes" onclick="showSection('mensajes')"
+      style="background:transparent;color:rgba(255,255,255,.9);border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;font-family:Montserrat,sans-serif;text-align:left;cursor:pointer;display:flex;align-items:center;gap:9px;width:100%;transition:all .15s;position:relative;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Mensajes <span id="msg-count-badge" style="display:none;position:absolute;top:4px;right:8px;background:#C0756E;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:10px;min-width:16px;text-align:center;"></span>
+    </button>
   </div>
 
   <!-- Acciones -->
@@ -2433,7 +2437,7 @@ var _pagos = JSON.parse(localStorage.getItem('mj_pagos')||'{}');
 function showSection(sec) {
   closePanelSidebar();
   _sec = sec;
-  ['inicio','clientes','pagos'].forEach(function(s) {
+  ['inicio','clientes','pagos','mensajes'].forEach(function(s) {
     var nb = document.getElementById('nb-'+s);
     if (nb) nb.classList.toggle('nb-on', s===sec);
   });
@@ -2450,6 +2454,7 @@ function showSection(sec) {
     if (sec === 'clientes')  _renderClientes();
     if (sec === 'links')    _renderLinks();
     if (sec === 'pagos')    _renderPagos();
+    if (sec === 'mensajes') _renderMensajes();
   }
 }
 
@@ -3186,5 +3191,93 @@ function cambiarPass(id,email){
     st.textContent='Error: '+err.message;st.style.color='#c0756e';
   });
 }
+
+// ── MENSAJES PANEL ──────────────────────────────────────────
+function _renderMensajes(){
+  var dp=document.getElementById('dynamic-panel');
+  if(!dp)return;
+  dp.innerHTML='<div class="dp-title">Mensajes</div><div class="dp-desc">Mensajes de tus clientes</div><div id="panel-msgs" style="display:flex;flex-direction:column;gap:12px;padding:0 22px 40px;"><div style="text-align:center;padding:2rem;color:#999;">Cargando mensajes...</div></div>';
+  // Fetch all candidates with notas_coach
+  fetch(SB+'/rest/v1/candidatos?select=nombre,email,foto_perfil,notas_coach&order=created_at.desc',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.json();}).then(function(rows){
+    var container=document.getElementById('panel-msgs');
+    if(!container)return;
+    var allMsgs=[];
+    (rows||[]).forEach(function(c){
+      if(!c.notas_coach)return;
+      try{
+        var msgs=JSON.parse(c.notas_coach);
+        if(!Array.isArray(msgs))return;
+        msgs.forEach(function(m){
+          allMsgs.push({nombre:c.nombre||c.email,email:c.email,foto:c.foto_perfil||'',from:m.from,text:m.text,time:m.time,ts:m.ts||0});
+        });
+      }catch(e){}
+    });
+    // Ordenar por timestamp desc
+    allMsgs.sort(function(a,b){return(b.ts||0)-(a.ts||0);});
+    if(!allMsgs.length){
+      container.innerHTML='<div style="text-align:center;padding:3rem;color:#999;"><div style="font-size:32px;margin-bottom:8px;">💬</div>No hay mensajes todavía</div>';
+      return;
+    }
+    var html='';
+    allMsgs.slice(0,50).forEach(function(m){
+      var isCoach=m.from==='coach';
+      var ini2=(m.nombre||'?').split(' ').map(function(w){return(w[0]||'').toUpperCase();}).join('').slice(0,2);
+      var avHtml=m.foto?'<img src="'+m.foto+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">':'<span style="font-size:10px;font-weight:800;color:#8C7B80;">'+ini2+'</span>';
+      html+='<div style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#fff;border-radius:12px;border:1px solid var(--border);">';
+      html+='<div style="width:34px;height:34px;border-radius:50%;background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">'+avHtml+'</div>';
+      html+='<div style="flex:1;min-width:0;">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">';
+      html+='<span style="font-size:12px;font-weight:700;color:'+(isCoach?'var(--accent)':'var(--title)')+';">'+(isCoach?'Micaela':escH(m.nombre))+'</span>';
+      html+='<span style="font-size:10px;color:var(--muted);">'+escH(m.time||'')+'</span>';
+      html+='</div>';
+      html+='<div style="font-size:12px;color:var(--body);line-height:1.5;">'+escH(m.text)+'</div>';
+      if(!isCoach){html+='<div style="font-size:10px;color:var(--muted);margin-top:2px;">'+escH(m.email||'')+'</div>';}
+      html+='</div></div>';
+    });
+    container.innerHTML=html;
+  }).catch(function(){
+    var container=document.getElementById('panel-msgs');
+    if(container)container.innerHTML='<div style="text-align:center;padding:2rem;color:#c0756e;">Error al cargar mensajes</div>';
+  });
+}
+
+// Cargar badge de mensajes al iniciar
+function _checkMsgBadge(){
+  fetch(SB+'/rest/v1/candidatos?select=notas_coach&notas_coach=not.is.null',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.json();}).then(function(rows){
+    var count=0;
+    var lastSeen=parseInt(localStorage.getItem('mj_msgs_seen')||'0');
+    (rows||[]).forEach(function(c){
+      if(!c.notas_coach)return;
+      try{
+        var msgs=JSON.parse(c.notas_coach);
+        if(!Array.isArray(msgs))return;
+        msgs.forEach(function(m){if(m.from==='cliente'&&(m.ts||0)>lastSeen)count++;});
+      }catch(e){}
+    });
+    var badge=document.getElementById('msg-count-badge');
+    if(badge){
+      if(count>0){badge.textContent=count;badge.style.display='inline-block';}
+      else{badge.style.display='none';}
+    }
+  }).catch(function(){});
+}
+
+// Marcar como leídos al abrir mensajes
+var _origShowSection=showSection;
+showSection=function(sec){
+  _origShowSection(sec);
+  if(sec==='mensajes'){
+    localStorage.setItem('mj_msgs_seen',String(Date.now()));
+    var badge=document.getElementById('msg-count-badge');
+    if(badge)badge.style.display='none';
+  }
+};
+
+// Check badge on load
+setTimeout(_checkMsgBadge,2000);
 
 </script>
