@@ -7,11 +7,10 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Panel Coach · Career Pathway</title>
+<title>Panel · Pathway</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
-
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>">
 <style>
 
 /* ════════════════════════════════════════════════════════
@@ -706,10 +705,13 @@ button:active { transform: scale(.98); }
 
 /* ── Responsive ── */
 .mob-toggle{display:none;position:fixed;top:12px;left:12px;z-index:300;width:40px;height:40px;border-radius:10px;background:var(--accent);color:#fff;border:none;font-size:20px;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.2);align-items:center;justify-content:center;}
+.mob-brand{display:none;position:fixed;top:18px;left:62px;z-index:300;align-items:center;gap:7px;pointer-events:none;}
+.mob-brand span{font-family:'Fraunces',Georgia,serif;font-size:18px;font-weight:600;color:#1B4332;letter-spacing:-.5px;line-height:1;}
 .mob-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;}
 
 @media (max-width: 768px) {
   .mob-toggle{display:flex;}
+  .mob-brand{display:flex;}
   .layout{grid-template-columns:1fr;}
   .sidebar{position:fixed;left:-260px;top:0;width:250px;z-index:200;transition:left .25s ease;height:100vh;height:100dvh;}
   .sidebar.open{left:0;}
@@ -750,6 +752,7 @@ button:active { transform: scale(.98); }
 
 <div class="toast" id="toast"></div>
 <button class="mob-toggle" id="mob-toggle" onclick="togglePanelSidebar()">☰</button>
+<div class="mob-brand" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 100 100"><polygon points="10,82 32,52 54,82" fill="#52B788"/><polygon points="34,82 58,28 82,82" fill="#2D6A4F"/><circle cx="58" cy="22" r="5" fill="#E9C46A"/></svg><span>pathway<span style="color:#52B788;">.</span></span></div>
 <div class="mob-overlay" id="mob-overlay" onclick="closePanelSidebar()"></div>
 
 <div class="layout">
@@ -2639,173 +2642,163 @@ function _toggleActivo(id, val){
 function _renderInicio(){
   var dp=document.getElementById('dynamic-panel');
   var semNames=['','Evaluación','CV','LinkedIn','Búsqueda','Revisión'];
-  var semColors=['','var(--accent)','var(--blue)','var(--green)','var(--orange)','#7A5C4A'];
 
-  // Usar datos ya en memoria
   function build(){
+    // De-dup + agregados
     var seen={},uniq=[];
     cands.forEach(function(c){var k=(c.email||'').toLowerCase();if(!seen[k]){seen[k]=true;uniq.push(c);}});
     var iS={};Object.keys(reps).forEach(function(k){if(reps[k]&&reps[k].length)iS[k]=true;});
     var cS={};Object.keys(cvs).forEach(function(k){if(cvs[k])cS[k]=true;});
-    var ms=7*24*3600*1000;
-    var nw=uniq.filter(function(c){return c.created_at&&(Date.now()-new Date(c.created_at).getTime())<ms;}).length;
-
-    // Analytics: contar clientes por semana
-    var porSemana=[0,0,0,0,0,0];
     var activos=uniq.filter(function(c){return c.activo!==false;});
-    var inactivos=uniq.length-activos.length;
-    activos.forEach(function(c){var s=Math.min(parseInt(c.semana_activa||1),5);porSemana[s]++;});
-    var maxSem=Math.max.apply(null,porSemana)||1;
-    // Tasa de completitud
-    var conInforme=activos.filter(function(c){return iS[(c.email||'').toLowerCase().trim()];}).length;
-    var conCV=activos.filter(function(c){return cS[(c.email||'').toLowerCase().trim()];}).length;
-    var pctInf=activos.length?Math.round(conInforme/activos.length*100):0;
-    var pctCV=activos.length?Math.round(conCV/activos.length*100):0;
-    var semProm=activos.length?Math.round(activos.reduce(function(s,c){return s+parseInt(c.semana_activa||1);},0)/activos.length*10)/10:0;
 
-    dp.innerHTML=
-      '<div class="dp-title">Resumen de tu pr\u00e1ctica</div>'+
-      '<div class="dp-desc">Vista general de clientes y en qu\u00e9 etapa est\u00e1n.</div>'+
-      '<div class="stat-grid">'+
-        '<div class="stat-card"><div class="stat-v" style="color:var(--accent)">'+uniq.length+'</div><div class="stat-l">Clientes</div></div>'+
-        '<div class="stat-card"><div class="stat-v" style="color:var(--green)">'+Object.keys(iS).length+'</div><div class="stat-l">Informes</div></div>'+
-        '<div class="stat-card"><div class="stat-v" style="color:var(--blue)">'+Object.keys(cS).length+'</div><div class="stat-l">CVs</div></div>'+
-        '<div class="stat-card"><div class="stat-v" style="color:var(--orange)">'+nw+'</div><div class="stat-l">Esta semana</div></div>'+
-        '<div class="stat-card"><div class="stat-v" style="color:#7A5C4A">'+inactivos+'</div><div class="stat-l">Inactivos</div></div>'+
-      '</div>'+
+    // Fecha hoy y semana actual (lunes → domingo)
+    var today=new Date();
+    var yyyy=today.getFullYear(),mm=String(today.getMonth()+1).padStart(2,'0'),dd=String(today.getDate()).padStart(2,'0');
+    var todayStr=yyyy+'-'+mm+'-'+dd;
+    var dow=today.getDay();var lunDelta=dow===0?-6:1-dow;
+    var lun=new Date(today);lun.setHours(0,0,0,0);lun.setDate(lun.getDate()+lunDelta);
+    var dom=new Date(lun);dom.setDate(dom.getDate()+7);
+    var meses=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    var dias=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+    var fechaLarga=dias[dow].charAt(0).toUpperCase()+dias[dow].slice(1)+' · '+dd+' '+meses[today.getMonth()];
 
-      // Analytics: Progreso
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">'+
-        // Clientes por etapa
-        '<div class="dp-card" style="margin-bottom:0;"><div class="dp-card-hd"><span class="dp-card-title">Clientes por etapa</span></div>'+
-          '<div style="padding:18px 22px;">'+
-            [1,2,3,4,5].map(function(s){
-              var lbl=semNames[s]||'S'+s;
-              var cnt=porSemana[s]||0;
-              var pct2=maxSem?Math.round(cnt/maxSem*100):0;
-              var clr=semColors[s]||'var(--accent)';
-              return '<div style="margin-bottom:10px;">'+
-                '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">'+
-                  '<span style="font-size:12px;font-weight:600;color:var(--body);">S'+s+' '+lbl+'</span>'+
-                  '<span style="font-size:12px;font-weight:700;color:'+clr+';">'+cnt+'</span>'+
-                '</div>'+
-                '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">'+
-                  '<div style="height:6px;width:'+pct2+'%;background:'+clr+';border-radius:3px;transition:width .5s;"></div>'+
-                '</div></div>';
-            }).join('')+
-          '</div>'+
-        '</div>'+
-        // Metricas clave
-        '<div class="dp-card" style="margin-bottom:0;"><div class="dp-card-hd"><span class="dp-card-title">M\u00e9tricas clave</span></div>'+
-          '<div style="padding:18px 22px;display:flex;flex-direction:column;gap:14px;">'+
-            '<div style="display:flex;align-items:center;justify-content:space-between;">'+
-              '<span style="font-size:12px;color:var(--body);">Semana promedio</span>'+
-              '<span style="font-size:20px;font-weight:800;color:var(--accent);font-family:Inter,sans-serif;">'+semProm+'</span>'+
-            '</div>'+
-            '<div>'+
-              '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">'+
-                '<span style="font-size:12px;color:var(--body);">Con informe</span>'+
-                '<span style="font-size:12px;font-weight:700;color:var(--green);">'+pctInf+'%</span>'+
-              '</div>'+
-              '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">'+
-                '<div style="height:6px;width:'+pctInf+'%;background:var(--green);border-radius:3px;"></div>'+
-              '</div>'+
-            '</div>'+
-            '<div>'+
-              '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">'+
-                '<span style="font-size:12px;color:var(--body);">Con CV publicado</span>'+
-                '<span style="font-size:12px;font-weight:700;color:var(--blue);">'+pctCV+'%</span>'+
-              '</div>'+
-              '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">'+
-                '<div style="height:6px;width:'+pctCV+'%;background:var(--blue);border-radius:3px;"></div>'+
-              '</div>'+
-            '</div>'+
-            '<div style="display:flex;align-items:center;justify-content:space-between;">'+
-              '<span style="font-size:12px;color:var(--body);">Activos / Total</span>'+
-              '<span style="font-size:14px;font-weight:800;color:var(--accent);font-family:Inter,sans-serif;">'+activos.length+' / '+uniq.length+'</span>'+
-            '</div>'+
-          '</div>'+
-        '</div>'+
-        // Facturación
-        (function(){
-          var totalEsperado=0,totalPagado=0;
-          uniq.forEach(function(c2){
-            totalEsperado+=parseFloat(c2.pago_monto||0);
-            var p2=JSON.parse(localStorage.getItem('mj_pagos_'+c2.id)||'[]');
-            totalPagado+=p2.reduce(function(s,p){return s+(parseFloat(p.monto)||0);},0);
-          });
-          var pctFact=totalEsperado>0?Math.round(totalPagado/totalEsperado*100):0;
-          return '<div class="dp-card" style="margin-bottom:20px;"><div class="dp-card-hd"><span class="dp-card-title">Facturaci\u00f3n</span></div>'+
-            '<div style="padding:18px 22px;display:flex;gap:20px;align-items:center;">'+
-              '<div style="text-align:center;flex:1;">'+
-                '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">Cobrado</div>'+
-                '<div style="font-size:28px;font-weight:800;color:var(--green);font-family:Inter,sans-serif;">'+totalPagado.toFixed(0)+'</div>'+
-              '</div>'+
-              '<div style="text-align:center;flex:1;">'+
-                '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">Esperado</div>'+
-                '<div style="font-size:28px;font-weight:800;color:var(--accent);font-family:Inter,sans-serif;">'+totalEsperado.toFixed(0)+'</div>'+
-              '</div>'+
-              '<div style="text-align:center;flex:1;">'+
-                '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">Pendiente</div>'+
-                '<div style="font-size:28px;font-weight:800;color:'+(totalEsperado-totalPagado>0?'var(--orange)':'var(--green)')+';font-family:Inter,sans-serif;">'+(totalEsperado-totalPagado).toFixed(0)+'</div>'+
-              '</div>'+
-            '</div>'+
-            '<div style="padding:0 22px 16px;">'+
-              '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">'+
-                '<div style="height:6px;width:'+pctFact+'%;background:var(--green);border-radius:3px;"></div>'+
-              '</div>'+
-              '<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:4px;">'+pctFact+'% cobrado</div>'+
-            '</div>'+
-          '</div>';
-        })()+
-      '</div>'+
+    // Sesiones de HOY y de ESTA SEMANA (registradas)
+    var sesHoy=[],sesSemana=0;
+    uniq.forEach(function(c){
+      var arr=[];try{arr=JSON.parse(c.sesiones_registro||'[]');}catch(e){arr=[];}
+      arr.forEach(function(s){
+        if(!s.fecha)return;
+        if(s.fecha===todayStr){sesHoy.push({c:c,s:s});}
+        var d=new Date(s.fecha);
+        if(!isNaN(d)&&d>=lun&&d<dom)sesSemana++;
+      });
+    });
+    sesHoy.sort(function(a,b){return (a.s.hora||'').localeCompare(b.s.hora||'');});
 
-      '<div class="dp-card"><div class="dp-card-hd"><span class="dp-card-title">Todos los clientes</span><span class="dp-lbl">'+activos.length+' activos</span></div>'+
-      '<div id="ini-list">'+
-      (uniq.length?uniq.map(function(c,i){
-        var em=(c.email||'').toLowerCase();
+    // Ingresos esperados de la semana (monto pactado con clientes activos)
+    var ingresosSem=0;
+    activos.forEach(function(c){ingresosSem+=parseFloat(c.pago_monto||0);});
+
+    // Nombre del coach + foto
+    var coachNom=(typeof ME!=='undefined'&&ME&&ME.nombre)?ME.nombre:'Coach';
+    var primerNom=coachNom.split(' ')[0];
+
+    // Calendly URL (config del coach)
+    var cfg={};try{cfg=JSON.parse(localStorage.getItem('mj_coach_config')||'{}');}catch(e){cfg={};}
+    var calUrl=cfg.calendly_url||'';
+
+    var html='<div style="padding:8px 4px 40px;max-width:960px;">';
+
+    // ── HERO ──
+    html+='<div style="font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px;">'+fechaLarga+'</div>';
+    html+='<h1 style="font-family:\'Fraunces\',Georgia,serif;font-size:34px;font-weight:500;color:var(--title);letter-spacing:-1px;line-height:1.15;margin-bottom:32px;">Hola '+escH(primerNom)+'<span style="color:var(--accent);">.</span>';
+    if(sesHoy.length){
+      html+='<br>Tenés <span style="color:var(--accent);">'+sesHoy.length+' '+(sesHoy.length===1?'sesión':'sesiones')+'</span> hoy.';
+    } else {
+      html+='<br><span style="color:var(--muted);font-size:24px;">Sin sesiones agendadas hoy.</span>';
+    }
+    html+='</h1>';
+
+    // ── HOY — Sesiones ──
+    if(sesHoy.length){
+      html+='<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;">Hoy</div>';
+      html+='<div style="display:grid;gap:10px;margin-bottom:32px;">';
+      sesHoy.forEach(function(item){
+        var c=item.c,s=item.s;
+        var sem=parseInt(c.semana_activa||1);
+        html+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:16px;">';
+        html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:20px;font-weight:500;color:var(--accent);min-width:64px;">'+escH(s.hora||'—')+'</div>';
+        html+='<div style="flex:1;min-width:0;">';
+        html+='<div style="font-size:14px;font-weight:700;color:var(--title);">'+escH(c.nombre||c.email)+' <span style="display:inline-block;background:rgba(45,106,79,.08);color:var(--accent);font-size:11px;font-weight:600;padding:2px 9px;border-radius:100px;margin-left:4px;">Semana '+sem+'</span></div>';
+        if(s.trabajado)html+='<div style="font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escH(s.trabajado.slice(0,80))+'</div>';
+        html+='</div>';
+        html+='<button data-open="'+c.id+'" style="padding:8px 14px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;">Abrir ficha →</button>';
+        html+='</div>';
+      });
+      html+='</div>';
+    }
+
+    // ── STATS semana ──
+    html+='<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;">Esta semana</div>';
+    html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:32px;">';
+    html+='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px;">'+
+      '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:8px;">Sesiones</div>'+
+      '<div style="font-family:\'Fraunces\',Georgia,serif;font-size:30px;font-weight:500;color:var(--title);letter-spacing:-.8px;line-height:1;">'+sesSemana+'</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-top:4px;">registradas</div>'+
+    '</div>';
+    html+='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px;">'+
+      '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:8px;">Ingresos</div>'+
+      '<div style="font-family:\'Fraunces\',Georgia,serif;font-size:30px;font-weight:500;color:var(--title);letter-spacing:-.8px;line-height:1;">€'+ingresosSem.toFixed(0)+'</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+activos.length+' mentoría'+(activos.length===1?'':'s')+' activa'+(activos.length===1?'':'s')+'</div>'+
+    '</div>';
+    html+='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px;">'+
+      '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:8px;">Clientes activos</div>'+
+      '<div style="font-family:\'Fraunces\',Georgia,serif;font-size:30px;font-weight:500;color:var(--title);letter-spacing:-.8px;line-height:1;">'+activos.length+'</div>'+
+      '<div style="font-size:12px;color:var(--accent);margin-top:4px;font-weight:500;">'+Object.keys(iS).length+' con informe</div>'+
+    '</div>';
+    html+='</div>';
+
+    // ── CTA grande Calendly ──
+    html+='<div style="background:linear-gradient(135deg,#2D6A4F 0%,#1B4332 100%);color:#fff;border-radius:16px;padding:24px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:32px;flex-wrap:wrap;">';
+    html+='<div style="flex:1;min-width:220px;">';
+    html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:22px;font-weight:500;letter-spacing:-.5px;margin-bottom:4px;">Agendá más sesiones esta semana</div>';
+    html+='<div style="font-size:13px;color:rgba(255,255,255,.75);">';
+    html+=calUrl?'Compartí tu link de Calendly y dejá que tus clientes reserven.':'Configurá tu link de Calendly en Pagos para aceptar reservas.';
+    html+='</div>';
+    html+='</div>';
+    if(calUrl){
+      html+='<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+      html+='<button onclick="navigator.clipboard.writeText(\''+calUrl.replace(/\'/g,"\\'")+'\').then(function(){showToast(\'Link de Calendly copiado ✓\');});" style="background:#E9C46A;color:#1B2E26;padding:11px 20px;border-radius:10px;font-weight:600;font-size:13px;border:none;cursor:pointer;">Copiar link</button>';
+      html+='<a href="'+escH(calUrl)+'" target="_blank" rel="noopener" style="background:rgba(255,255,255,.15);color:#fff;padding:11px 20px;border-radius:10px;font-weight:600;font-size:13px;text-decoration:none;display:inline-block;">Abrir Calendly →</a>';
+      html+='</div>';
+    } else {
+      html+='<button onclick="showSection(\'pagos\')" style="background:#E9C46A;color:#1B2E26;padding:11px 20px;border-radius:10px;font-weight:600;font-size:13px;border:none;cursor:pointer;">Configurar →</button>';
+    }
+    html+='</div>';
+
+    // ── CLIENTES ACTIVOS grid ──
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">';
+    html+='<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;">Clientes activos <span style="background:var(--accent);color:#fff;font-size:10px;padding:2px 8px;border-radius:100px;letter-spacing:0;margin-left:6px;">'+activos.length+'</span></div>';
+    html+='<button onclick="showSection(\'clientes\')" style="background:none;border:none;font-size:12px;color:var(--accent);cursor:pointer;font-weight:500;">Ver todos →</button>';
+    html+='</div>';
+
+    if(activos.length){
+      html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;">';
+      activos.slice(0,9).forEach(function(c,i){
         var cl=col(i);
+        var em=(c.email||'').toLowerCase().trim();
         var sem=parseInt(c.semana_activa||1);
         var pct=Math.round((sem-1)/4*100);
-        var semColor=semColors[sem]||'var(--accent)';
-        var _ek=(c.email||'').toLowerCase().trim();
-        var _fp=c.foto_perfil||localStorage.getItem('mj_foto_'+_ek)||null;
-        if(!_fp&&cvs[_ek]&&cvs[_ek].contenido){try{var _cd=JSON.parse(cvs[_ek].contenido);if(_cd&&_cd._photo)_fp=_cd._photo;}catch(e){}}
-        var avHtml=_fp?
-          '<img src="'+_fp+'" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--border);flex-shrink:0;">':
-          '<div class="av" style="background:'+cl[0]+';color:'+cl[1]+';width:40px;height:40px;font-size:13px;flex-shrink:0;">'+ini(c.nombre||'')+'</div>';
-        return '<div class="res-row" data-cid="'+c.id+'">'+
-          avHtml+
-          '<div style="flex:1;min-width:0;margin:0 10px;">'+
-            '<div style="font-size:13px;font-weight:800;color:var(--t1);">'+(c.nombre||'—')+'</div>'+
-            '<div style="font-size:11px;color:var(--muted);">'+(c.sector||c.email||'—')+'</div>'+
-            '<div style="margin-top:5px;display:flex;align-items:center;gap:6px;">'+
-              '<div style="height:5px;flex:1;background:var(--border);border-radius:3px;overflow:hidden;">'+
-                '<div style="height:5px;width:'+pct+'%;background:'+semColor+';border-radius:3px;"></div>'+
-              '</div>'+
-              '<span style="font-size:9px;font-weight:800;color:'+semColor+';white-space:nowrap;">S'+sem+' '+(semNames[sem]||'')+'</span>'+
-            '</div>'+
-          '</div>'+
-          '<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end;flex-shrink:0;">'+
-            (iS[em]?'<span class="pill pill-rep">Informe</span>':'')+
-            (cS[em]?'<span class="pill pill-pub">CV</span>':'')+
-          '</div>'+
-        '</div>';
-      }).join(''):'<div class="dp-empty">No hay clientes aún.</div>')+
-      '</div></div>';
+        var _fp=c.foto_perfil||localStorage.getItem('mj_foto_'+em)||null;
+        if(!_fp&&cvs[em]&&cvs[em].contenido){try{var _cd=JSON.parse(cvs[em].contenido);if(_cd&&_cd._photo)_fp=_cd._photo;}catch(e){}}
+        var avHtml=_fp
+          ?'<img src="'+_fp+'" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;">'
+          :'<div style="width:36px;height:36px;border-radius:50%;background:'+cl[0]+';color:'+cl[1]+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">'+ini(c.nombre||'')+'</div>';
+        html+='<div data-open="'+c.id+'" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;transition:all .15s;">';
+        html+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'+avHtml+'<div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:700;color:var(--title);line-height:1.2;">'+escH(c.nombre||'—')+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Semana '+sem+' de 4 · '+(semNames[sem]||'')+'</div></div></div>';
+        html+='<div style="height:4px;background:rgba(45,106,79,.08);border-radius:2px;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:var(--accent);border-radius:2px;"></div></div>';
+        html+='</div>';
+      });
+      html+='</div>';
+    } else {
+      html+='<div style="background:rgba(233,196,106,.08);border:1px dashed rgba(233,196,106,.35);border-radius:14px;padding:24px;text-align:center;color:var(--muted);font-size:13px;">Ningún cliente activo todavía.<br><button onclick="abrirCrearCliente()" style="margin-top:10px;background:var(--accent);color:#fff;border:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer;">+ Crear primer cliente</button></div>';
+    }
 
-    // Click en cliente → ir a su ficha
-    var listEl=document.getElementById('ini-list');
-    if(listEl) listEl.addEventListener('click',function(ev){
-      var row=ev.target.closest('[data-cid]');
-      if(!row) return;
-      openCand(parseInt(row.dataset.cid));
+    html+='</div>';
+    dp.innerHTML=html;
+
+    // Delegation: cualquier elemento con data-open abre su ficha
+    dp.addEventListener('click',function(ev){
+      var el=ev.target.closest('[data-open]');
+      if(!el)return;
+      ev.stopPropagation();
+      openCand(parseInt(el.dataset.open));
     });
   }
 
   if(cands&&cands.length){ build(); }
   else{
-    dp.innerHTML='<div class="dp-title">Resumen</div><div style="padding:2rem;text-align:center;color:var(--muted);">Cargando...</div>';
+    dp.innerHTML='<div style="padding:2rem;text-align:center;color:var(--muted);">Cargando...</div>';
     var _t=setInterval(function(){if(cands&&cands.length){clearInterval(_t);build();}},300);
     setTimeout(function(){clearInterval(_t);},8000);
   }
