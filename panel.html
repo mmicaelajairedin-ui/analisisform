@@ -1983,6 +1983,18 @@ function tabPagos(c){
   var monto=c.pago_monto||'';
   var pagosKey='mj_pagos_'+c.id;
   var pagos=[];try{pagos=JSON.parse(localStorage.getItem(pagosKey)||'[]');}catch(e){}
+  // Si Stripe webhook marcó pago_recibido + stripe_session_id, inyectamos ese pago
+  // al historial (solo una vez, para no duplicar en cada render)
+  if(c.pago_recibido&&c.stripe_session_id&&!pagos.some(function(p){return p.stripe_session_id===c.stripe_session_id;})){
+    var fechaStripe=c.pago_fecha?String(c.pago_fecha).slice(0,10):'';
+    pagos.push({
+      monto:String(c.pago_monto||0),
+      nota:'Pago automático vía Stripe',
+      fecha:fechaStripe,
+      stripe_session_id:c.stripe_session_id
+    });
+    try{localStorage.setItem(pagosKey,JSON.stringify(pagos));}catch(e){}
+  }
   var totalPagado=pagos.reduce(function(s,p){return s+(parseFloat(p.monto)||0);},0);
   var totalEsperado=parseFloat(monto)||0;
   var restante=Math.max(0,totalEsperado-totalPagado);
