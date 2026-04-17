@@ -3360,18 +3360,19 @@ function _renderConfig(){
   }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
     var coach=(rows&&rows[0])||{};
     var lsCfg={};try{lsCfg=JSON.parse(localStorage.getItem('mj_coach_config')||'{}');}catch(e){}
-    // Supabase wins si tiene el campo; si no, fallback a localStorage
-    var cfg=Object.assign({},lsCfg,coach.configuracion||{});
+    // localStorage gana (es lo que el coach acaba de guardar en este
+    // navegador) — Supabase solo llena campos que localStorage no tenga.
+    var cfg=Object.assign({},coach.configuracion||{},lsCfg);
 
-    var foto=coach.foto_url||lsCfg.foto_url||'';
+    var foto=lsCfg.foto_url||coach.foto_url||'';
     var color=cfg.color_marca||'#8C7B80';
     var calUrl=cfg.calendly_url||'';
     var stMentoria=cfg.stripe_mentoria_url||'';
     var stSesion=cfg.stripe_sesion_url||'';
     var prMentoria=cfg.precio_mentoria||'';
     var prSesion=cfg.precio_sesion||'';
-    var bio=coach.bio||lsCfg.bio||'';
-    var practica=coach.nombre_practica||lsCfg.nombre_practica||coach.nombre||'';
+    var bio=lsCfg.bio||coach.bio||'';
+    var practica=lsCfg.nombre_practica||coach.nombre_practica||coach.nombre||'';
 
     var palette=[['#8C7B80','Rosa'],['#2D6A4F','Verde bosque'],['#3D5A80','Azul'],['#C27B7B','Terracota'],['#D4A853','Dorado'],['#7B8C8A','Gris']];
 
@@ -3528,9 +3529,24 @@ function _saveConfig(){
     var body={};body[key]=val;
     return fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email),{
       method:'PATCH',
-      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
       body:JSON.stringify(body)
-    }).then(function(r){return {key:key,ok:r.ok,status:r.status};}).catch(function(){return {key:key,ok:false,status:0};});
+    }).then(function(r){
+      if(!r.ok)return {key:key,ok:false,status:r.status};
+      // Verifica que la fila realmente se haya modificado (RLS podría
+      // devolver 200 con array vacío si bloquea el UPDATE)
+      return r.json().then(function(rows){
+        if(!rows||!rows.length)return {key:key,ok:false,status:r.status,reason:'no-rows'};
+        var row=rows[0];
+        // Para JSONB (configuracion), comparar el valor guardado
+        if(key==='configuracion'){
+          var stored=row.configuracion||{};
+          if(JSON.stringify(stored)===JSON.stringify(val))return {key:key,ok:true};
+          return {key:key,ok:false,status:r.status,reason:'not-persisted'};
+        }
+        return {key:key,ok:true};
+      });
+    }).catch(function(){return {key:key,ok:false,status:0};});
   }
 
   Promise.all(Object.keys(fields).map(function(k){return patchOne(k,fields[k]);})).then(function(results){
