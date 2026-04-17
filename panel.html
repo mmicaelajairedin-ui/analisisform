@@ -3440,7 +3440,9 @@ function _renderConfig(){
   var email=ME&&ME.email?ME.email:'';
   if(!email){dp.innerHTML='<div style="padding:2rem;color:#c0756e;">Sin sesión activa.</div>';return;}
 
-  fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&select=*',{
+  // Usamos id si está disponible (más robusto que email — evita problemas de case/casing)
+  var filter=ME.id?'id=eq.'+encodeURIComponent(ME.id):'email=eq.'+encodeURIComponent(email.toLowerCase());
+  fetch(SB+'/rest/v1/usuarios?'+filter+'&select=*',{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
   }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
     var coach=(rows&&rows[0])||{};
@@ -3753,16 +3755,17 @@ function _saveConfig(){
   };
   if(newFoto)fields.foto_url=newFoto;
 
+  // Usamos id si está disponible (más robusto), fallback a email lowercase
+  var patchFilter=ME.id?'id=eq.'+encodeURIComponent(ME.id):'email=eq.'+encodeURIComponent(email.toLowerCase());
   function patchOne(key,val){
     var body={};body[key]=val;
-    return fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email),{
+    return fetch(SB+'/rest/v1/usuarios?'+patchFilter,{
       method:'PATCH',
       headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
       body:JSON.stringify(body)
     }).then(function(r){
       if(!r.ok)return {key:key,ok:false,status:r.status};
       // Verifica que RLS no haya bloqueado silenciosamente el UPDATE
-      // (en ese caso PostgREST devuelve 200 con array vacío)
       return r.json().then(function(rows){
         if(!rows||!rows.length)return {key:key,ok:false,status:r.status,reason:'no-rows'};
         return {key:key,ok:true};
