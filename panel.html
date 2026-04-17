@@ -805,6 +805,10 @@ button:active { transform: scale(.98); }
       style="background:transparent;color:rgba(255,255,255,.9);border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;font-family:Inter,sans-serif;text-align:left;cursor:pointer;display:flex;align-items:center;gap:9px;width:100%;transition:all .15s;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Configuración
     </button>
+    <button class="nb" id="nb-admin" onclick="showSection('admin')"
+      style="display:none;background:transparent;color:rgba(233,196,106,.95);border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;font-family:Inter,sans-serif;text-align:left;cursor:pointer;align-items:center;gap:9px;width:100%;transition:all .15s;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z"/><path d="M12 22V12"/><path d="M3 7l9 5 9-5"/></svg> Admin
+    </button>
   </div>
 
   <!-- Acciones -->
@@ -973,6 +977,11 @@ var ME=null;
   if(avEl){
     var nm=ME.nombre||ME.email||'?';
     avEl.textContent=nm.split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();
+  }
+  // Botón Admin solo para owners de la plataforma
+  if(ME.rol==='admin'){
+    var adminBtn=document.getElementById('nb-admin');
+    if(adminBtn)adminBtn.style.display='flex';
   }
 })();
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
@@ -2474,14 +2483,13 @@ var _pagos = JSON.parse(localStorage.getItem('mj_pagos')||'{}');
 function showSection(sec) {
   closePanelSidebar();
   _sec = sec;
-  ['inicio','clientes','pagos','mensajes','config'].forEach(function(s) {
+  ['inicio','clientes','pagos','mensajes','config','admin'].forEach(function(s) {
     var nb = document.getElementById('nb-'+s);
     if (nb) nb.classList.toggle('nb-on', s===sec);
   });
   var cp = document.getElementById('clients-panel');
   var dp = document.getElementById('dynamic-panel');
   if (sec === 'ficha') {
-    // Mostrar ficha individual de un cliente
     if (cp) cp.style.display = 'flex';
     if (dp) { dp.style.display = 'none'; dp.innerHTML = ''; }
   } else {
@@ -2493,6 +2501,7 @@ function showSection(sec) {
     if (sec === 'pagos')    _renderPagos();
     if (sec === 'mensajes') _renderMensajes();
     if (sec === 'config')   _renderConfig();
+    if (sec === 'admin')    _renderAdmin();
   }
 }
 
@@ -3474,6 +3483,149 @@ function _renderConfig(){
   }).catch(function(err){
     dp.innerHTML='<div style="padding:2rem;color:#c0756e;">Error cargando configuración: '+err.message+'</div>';
   });
+}
+
+// ── ADMIN DASHBOARD (Pathway owner) ─────────────────────────
+function _renderAdmin(){
+  var dp=document.getElementById('dynamic-panel');
+  if(!dp)return;
+  if(!ME||ME.rol!=='admin'){
+    dp.innerHTML='<div style="padding:2rem;color:#c0756e;">Sin permisos de admin.</div>';
+    return;
+  }
+  dp.innerHTML='<div style="padding:28px 32px;"><h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:32px;font-weight:500;color:var(--title);letter-spacing:-1px;">Admin</h2><div style="padding:2rem;text-align:center;color:var(--muted);">Cargando métricas...</div></div>';
+
+  // Fetch en paralelo: usuarios (coaches + clientes) y candidatos
+  Promise.all([
+    fetch(SB+'/rest/v1/usuarios?select=id,email,nombre,rol,activo,created_at,configuracion',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];}),
+    fetch(SB+'/rest/v1/candidatos?select=id,email,nombre,created_at,activo,semana_activa,pago_monto,coach_id',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];})
+  ]).then(function(results){
+    var usuarios=results[0]||[];
+    var candidatos=results[1]||[];
+    build(usuarios,candidatos);
+  }).catch(function(err){
+    dp.innerHTML='<div style="padding:2rem;color:#c0756e;">Error cargando datos: '+err.message+'</div>';
+  });
+
+  function build(usuarios,candidatos){
+    var coaches=usuarios.filter(function(u){return u.rol==='coach'||u.rol==='admin';});
+    var clientes=usuarios.filter(function(u){return u.rol==='cliente';});
+    var totalCand=candidatos.length;
+    var cand7d=candidatos.filter(function(c){return c.created_at&&(Date.now()-new Date(c.created_at).getTime())<7*24*3600*1000;}).length;
+    var cand30d=candidatos.filter(function(c){return c.created_at&&(Date.now()-new Date(c.created_at).getTime())<30*24*3600*1000;}).length;
+
+    // MRR estimado: cada coach con estado_sub='activa' paga 79/mes starter, pro 699/año => 58/mes
+    var mrr=0,payingCoaches=0,trialCoaches=0;
+    coaches.forEach(function(c){
+      var cfg=c.configuracion||{};
+      var plan=cfg.plan||'starter';
+      var estado=cfg.estado_sub||'prueba';
+      if(estado==='activa'){
+        mrr+=plan==='pro'?58:79;
+        payingCoaches++;
+      } else if(estado==='prueba'){
+        trialCoaches++;
+      }
+    });
+    var arr=mrr*12;
+
+    var html='<div style="padding:28px 32px 48px;max-width:1100px;">';
+
+    // HEADER
+    html+='<div style="margin-bottom:28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">';
+    html+='<div>';
+    html+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:32px;font-weight:500;color:var(--title);letter-spacing:-1px;line-height:1.1;margin-bottom:4px;">Admin</h2>';
+    html+='<p style="font-size:13px;color:var(--muted);">Métricas de Pathway. Solo vos ves esta pestaña.</p>';
+    html+='</div>';
+    html+='<span style="display:inline-flex;align-items:center;gap:6px;background:rgba(233,196,106,.15);color:#8C7B20;padding:6px 14px;border-radius:100px;font-size:11px;font-weight:600;">'+
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.39 4.84L20 7.66l-4 3.89.95 5.54L12 14.5l-4.95 2.59L8 11.55 4 7.66l5.61-.82L12 2z"/></svg>'+
+      'Owner</span>';
+    html+='</div>';
+
+    // KPIs TOP ROW
+    html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:28px;">';
+    function stat(lbl,val,sub,color){
+      return '<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px;">'+
+        '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:8px;">'+lbl+'</div>'+
+        '<div style="font-family:\'Fraunces\',Georgia,serif;font-size:30px;font-weight:500;color:'+(color||'var(--title)')+';letter-spacing:-.8px;line-height:1;">'+val+'</div>'+
+        (sub?'<div style="font-size:12px;color:var(--muted);margin-top:6px;">'+sub+'</div>':'')+
+      '</div>';
+    }
+    html+=stat('MRR','€'+mrr,payingCoaches+' coach'+(payingCoaches===1?'':'es')+' activo'+(payingCoaches===1?'':'s'),'var(--accent)');
+    html+=stat('ARR','€'+arr,'proyectado anual');
+    html+=stat('Coaches',coaches.length,payingCoaches+' activos · '+trialCoaches+' prueba');
+    html+=stat('Candidatos',totalCand,cand7d+' esta semana');
+    html+='</div>';
+
+    // CONVERSIÓN
+    html+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:16px;">';
+    html+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;margin-bottom:16px;">Conversión y actividad</div>';
+    html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;">';
+    // Prueba → pago conversion
+    var convPagoPct=coaches.length?Math.round((payingCoaches/(payingCoaches+trialCoaches||1))*100):0;
+    html+='<div>';
+    html+='<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="font-size:12px;color:var(--body);font-weight:500;">Prueba → Pago</span><span style="font-size:12px;font-weight:700;color:var(--accent);">'+convPagoPct+'%</span></div>';
+    html+='<div style="height:6px;background:rgba(45,106,79,.08);border-radius:3px;overflow:hidden;"><div style="height:100%;width:'+convPagoPct+'%;background:var(--accent);border-radius:3px;"></div></div>';
+    html+='</div>';
+    // Candidatos últimos 30 días
+    html+='<div>';
+    html+='<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="font-size:12px;color:var(--body);font-weight:500;">Candidatos últimos 30d</span><span style="font-size:12px;font-weight:700;color:#3D5A80;">'+cand30d+'</span></div>';
+    html+='<div style="height:6px;background:rgba(61,90,128,.08);border-radius:3px;overflow:hidden;"><div style="height:100%;width:'+Math.min(100,cand30d*2)+'%;background:#3D5A80;border-radius:3px;"></div></div>';
+    html+='</div>';
+    // Clientes activos en plataforma
+    var clientesActivos=clientes.filter(function(c){return c.activo!==false;}).length;
+    html+='<div>';
+    html+='<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="font-size:12px;color:var(--body);font-weight:500;">Clientes activos</span><span style="font-size:12px;font-weight:700;color:#2D6A4F;">'+clientesActivos+' / '+clientes.length+'</span></div>';
+    html+='<div style="height:6px;background:rgba(82,183,136,.08);border-radius:3px;overflow:hidden;"><div style="height:100%;width:'+(clientes.length?Math.round(clientesActivos/clientes.length*100):0)+'%;background:#2D6A4F;border-radius:3px;"></div></div>';
+    html+='</div>';
+    html+='</div>';
+    html+='</div>';
+
+    // LISTA DE COACHES
+    html+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:16px;">';
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">';
+    html+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;">Coaches en Pathway</div>';
+    html+='<span style="font-size:11px;color:var(--muted);">'+coaches.length+' total</span>';
+    html+='</div>';
+    if(coaches.length){
+      html+='<div style="display:flex;flex-direction:column;gap:8px;">';
+      coaches.forEach(function(c){
+        var cfg=c.configuracion||{};
+        var estado=cfg.estado_sub||'prueba';
+        var plan=cfg.plan||'starter';
+        var planLbl=plan==='pro'?'Pro':'Starter';
+        var estadoLbl={prueba:'Prueba',activa:'Activa',cancelada:'Cancelada',vencida:'Vencida'}[estado]||'Prueba';
+        var estadoBg={prueba:'rgba(233,196,106,.15)',activa:'rgba(82,183,136,.15)',cancelada:'rgba(196,117,110,.15)',vencida:'rgba(196,117,110,.15)'}[estado];
+        var estadoFg={prueba:'#8C7B20',activa:'#2D6A4F',cancelada:'#C0756E',vencida:'#C0756E'}[estado];
+        var ini2=(c.nombre||'?').split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();
+        // Contar candidatos de este coach
+        var coachCands=candidatos.filter(function(ca){return ca.coach_id===c.id;}).length;
+        html+='<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;">';
+        html+='<div style="width:34px;height:34px;border-radius:50%;background:rgba(45,106,79,.1);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">'+ini2+'</div>';
+        html+='<div style="flex:1;min-width:0;">';
+        html+='<div style="font-size:13px;font-weight:700;color:var(--title);line-height:1.2;">'+escH(c.nombre||'—')+(c.rol==='admin'?' <span style="font-size:9px;background:rgba(233,196,106,.25);color:#8C7B20;padding:1px 7px;border-radius:100px;font-weight:600;letter-spacing:.04em;margin-left:4px;">ADMIN</span>':'')+'</div>';
+        html+='<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escH(c.email||'')+'</div>';
+        html+='</div>';
+        html+='<div style="font-size:11px;color:var(--muted);font-weight:500;flex-shrink:0;">'+coachCands+' candidato'+(coachCands===1?'':'s')+'</div>';
+        html+='<span style="font-size:10px;font-weight:600;padding:3px 10px;border-radius:100px;background:rgba(45,106,79,.06);color:var(--body);flex-shrink:0;">'+planLbl+'</span>';
+        html+='<span style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:100px;background:'+estadoBg+';color:'+estadoFg+';flex-shrink:0;">'+estadoLbl+'</span>';
+        html+='</div>';
+      });
+      html+='</div>';
+    } else {
+      html+='<div style="padding:2rem;text-align:center;color:var(--muted);font-size:13px;">Sin coaches registrados.</div>';
+    }
+    html+='</div>';
+
+    // NOTA
+    html+='<div style="background:rgba(45,106,79,.04);border:1px dashed rgba(45,106,79,.2);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:14px;margin-top:16px;">';
+    html+='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+    html+='<div style="flex:1;font-size:13px;color:var(--body);">MRR calculado sobre suscripciones activas en usuarios.configuracion. Para datos reales necesitás integrar Stripe Subscriptions — hoy es estimado.</div>';
+    html+='</div>';
+
+    html+='</div>';
+    dp.innerHTML=html;
+  }
 }
 
 function _cfgPickColor(hex){
