@@ -709,7 +709,7 @@ input, select, textarea {
   transition: border-color .2s ease, box-shadow .2s ease !important;
 }
 input:focus, select:focus, textarea:focus {
-  border-color: #8C7B80 !important;
+  border-color: var(--rose) !important;
   box-shadow: 0 0 0 3px rgba(140,123,128,.1) !important;
   outline: none !important;
 }
@@ -830,7 +830,7 @@ input:focus, select:focus, textarea:focus {
               <div id="msg-badge" style="
                 display:none;position:absolute;top:-3px;right:-3px;
                 min-width:16px;height:16px;border-radius:8px;
-                background:#5B7FA6;color:#fff;
+                background:var(--blue);color:#fff;
                 font-size:9px;font-weight:800;font-family:'Montserrat',sans-serif;
                 padding:0 4px;align-items:center;justify-content:center;
               ">0</div>
@@ -1235,14 +1235,66 @@ function _applyCoachColor(hex){
   root.setProperty('--blue',mix(91,127,166,r,g,b,0.20));
   root.setProperty('--blue-light',mix(237,242,248,r,g,b,0.10));
 }
+// Nombre del coach en uso — default Micaela para backward-compat
+var COACH_FULL='Micaela Jairedin';
+var COACH_FIRST='Micaela';
+
+// Reemplaza las referencias a Micaela en un string con el nombre
+// del coach actual. Se usa en renderers dinámicos (rAnalisis, rDocs)
+// para que los templates "Por Micaela" / "Mensaje de Micaela" muestren
+// el nombre del coach real.
+function _mc(s){
+  if(!s||COACH_FIRST==='Micaela')return s;
+  return String(s).replace(/Micaela Jairedin/g,COACH_FULL).replace(/Micaela/g,COACH_FIRST);
+}
+
+// Walk el DOM entero y reemplaza "Micaela" en los text nodes.
+// Corre una vez al cargar la marca del coach (para limpiar el topbar
+// y otros textos estáticos que ya están renderizados en el HTML).
+function _replaceCoachInDOM(){
+  if(COACH_FIRST==='Micaela')return;
+  try{
+    var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+    var n;
+    while(n=w.nextNode()){
+      if(n.nodeValue.indexOf('Micaela')>=0){
+        n.nodeValue=n.nodeValue.replace(/Micaela Jairedin/g,COACH_FULL).replace(/Micaela/g,COACH_FIRST);
+      }
+    }
+  }catch(e){}
+}
+
 function _applyCoachBrand(data){
   if(!data)return;
+  // Set globals
+  if(data.nombre){
+    COACH_FULL=data.nombre;
+    COACH_FIRST=data.nombre.split(' ')[0];
+  }
+  // Mutate TX strings so future t() calls use the coach name
+  if(typeof TX==='object'&&COACH_FIRST!=='Micaela'){
+    ['es','en'].forEach(function(lang){
+      if(!TX[lang])return;
+      Object.keys(TX[lang]).forEach(function(k){
+        if(typeof TX[lang][k]==='string'){
+          TX[lang][k]=_mc(TX[lang][k]);
+        }
+      });
+    });
+  }
+  // Update hero elements
   var nameEl=document.getElementById('lh-name');
   if(nameEl&&data.nombre)nameEl.textContent=data.nombre;
   var subEl=document.getElementById('lh-sub');
   if(subEl&&data.nombre_practica)subEl.textContent=data.nombre_practica;
   var fotoEl=document.getElementById('lh-foto');
   if(fotoEl&&data.foto_url){fotoEl.src=data.foto_url;fotoEl.alt=data.nombre||'';}
+  // Replace any "Micaela" text still in the DOM (topbar, citations, etc.)
+  _replaceCoachInDOM();
+  // Si hay una sección renderizada, re-render para picar los strings nuevos
+  if(typeof render==='function'&&typeof SEC!=='undefined'&&SEC){
+    try{render(SEC);}catch(e){}
+  }
 }
 function _loadCoachColor(){
   // Primero prueba localStorage (sincrónico, evita flash en el navegador del coach)
@@ -1692,18 +1744,18 @@ function goSec(sec,el){
 function render(sec){
   var el=document.getElementById('mc');
   // Secciones que siempre se refrescan (datos cambian con frecuencia)
-  if(sec==='semana'){el.innerHTML=rSemana();return;}
-  if(sec==='analisis'){el.innerHTML=rAnalisis();return;}
-  if(sec==='docs'){el.innerHTML=rDocs();return;}
-  if(sec==='sesion'){el.innerHTML=rSesionPage();return;}
+  if(sec==='semana'){el.innerHTML=_mc(rSemana());return;}
+  if(sec==='analisis'){el.innerHTML=_mc(rAnalisis());return;}
+  if(sec==='docs'){el.innerHTML=_mc(rDocs());return;}
+  if(sec==='sesion'){el.innerHTML=_mc(rSesionPage());return;}
   // Secciones cacheables — reutilizar si ya se renderizaron
   if(sec==='linkedin'){
-    if(_secCache.linkedin){el.innerHTML=_secCache.linkedin;return;}
-    el.innerHTML=rLinkedIn();return;
+    if(_secCache.linkedin){el.innerHTML=_mc(_secCache.linkedin);return;}
+    el.innerHTML=_mc(rLinkedIn());return;
   }
   if(sec==='recursos'){
-    if(_secCache.recursos){el.innerHTML=_secCache.recursos;return;}
-    el.innerHTML=rRecursos();return;
+    if(_secCache.recursos){el.innerHTML=_mc(_secCache.recursos);return;}
+    el.innerHTML=_mc(rRecursos());return;
   }
   if(sec==='empleos'){
     if(_secCache.empleos){el.innerHTML=_secCache.empleos;return;}
@@ -1742,7 +1794,8 @@ function rRoadmap(){
   var done=ACTS.filter(function(v,i){return v&&i<accs.length;}).length;
   var pct=accs.length?Math.round((done/accs.length)*100):0;
   var steps=['Evaluar','CV','LinkedIn','Buscar','Revisar'];
-  var stepColors=['#8C7B80','#5B8C6E','#5B7FA6','#C4907A','#7A5C4A'];
+  // Usamos las CSS vars para que se adapten al color del coach
+  var stepColors=['var(--rose)','var(--green)','var(--blue)','var(--orange)','var(--brown)'];
   var active=Math.min(SEM,5);
   var o='<div class="rm-wrap">'
     +'<div class="rm-top">'
@@ -1782,8 +1835,8 @@ function verSemana(n){
   }
 
   var semLabels=['','Evaluación','CV','LinkedIn','Búsqueda activa'];
-  var semColors=['','#8C7B80','#5B7FA6','#5A8C6E','#C4907A'];
-  var color=semColors[n]||'#8C7B80';
+  var semColors=['','var(--rose)','var(--blue)','var(--green)','var(--orange)'];
+  var color=semColors[n]||'var(--rose)';
 
   var done=0;
   accs.forEach(function(a,i){if(ACTS[offset+i])done++;});
@@ -1820,13 +1873,13 @@ function verSemana(n){
       var dk=!!ACTS[offset+i];
       html+='<div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:.5px solid #F0EDED;">'
         +'<div style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;'+(dk?'background:'+color+';color:#fff;':'border:2px solid #D1D1D1;color:#9E9696;')+'">'+(dk?'&#10003;':String(i+1))+'</div>'
-        +'<div style="flex:1;font-size:13px;font-weight:'+(dk?'700':'400')+';color:'+(dk?'#8C7B80':'#9E9696')+';line-height:1.5;">'+(dk?'<strong>'+hh(a)+'</strong>':hh(a))+'</div>'
+        +'<div style="flex:1;font-size:13px;font-weight:'+(dk?'700':'400')+';color:'+(dk?'var(--rose)':'#9E9696')+';line-height:1.5;">'+(dk?'<strong>'+hh(a)+'</strong>':hh(a))+'</div>'
         +(dk?'<div style="font-size:16px;">&#9989;</div>':'')
       +'</div>';
     });
     html+='</div>';
     if(!esCurrent){
-      html+='<div style="margin-top:12px;padding:10px 14px;background:#F5EFEF;border-radius:8px;font-size:12px;color:#8C7B80;font-weight:600;text-align:center;">'
+      html+='<div style="margin-top:12px;padding:10px 14px;background:var(--rose-light);border-radius:8px;font-size:12px;color:var(--rose);font-weight:600;text-align:center;">'
         +'&#8592; Estás viendo la semana '+n+'. '
         +'<span style="cursor:pointer;text-decoration:underline;" onclick="verSemana('+SEM+')">Volver a la semana actual ('+SEM+')</span>'
       +'</div>';
@@ -1841,10 +1894,10 @@ function verSemana(n){
 
 
 
-var STEP_COLORS=['#8C7B80','#5B8C6E','#5B7FA6','#C4907A','#7A5C4A'];
-var SCORE_COLORS=['#8C7B80','#5B8C6E','#5B7FA6','#C4907A','#9B7BB8','#5BA6A0'];
+var STEP_COLORS=['var(--rose)','var(--green)','var(--blue)','var(--orange)','var(--brown)'];
+var SCORE_COLORS=['var(--rose)','var(--green)','var(--blue)','var(--orange)','#9B7BB8','#5BA6A0'];
 function _semProceso(pasos,secId,btnLabel,btnIcon,semColor){
-  var sc=semColor||STEP_COLORS[(SEM-1)%4]||'#8C7B80';
+  var sc=semColor||STEP_COLORS[(SEM-1)%4]||'var(--rose)';
   var o='<div class="card"><div class="card-hd"><div><div class="card-lbl" style="color:'+sc+';">'+t('semana_pill')+' '+SEM+'</div><div class="card-title">'+t('your_process')+'</div></div></div>';
   o+='<div class="card-body" style="padding:14px 18px;">';
   pasos.forEach(function(p,i){
@@ -1873,7 +1926,7 @@ function rSemana(){
 
   // Contenido según la semana
   if(SEM===1){
-    o+='<div class="card"><div class="card-hd"><div><div class="card-lbl" style="color:#8C7B80;">'+t('semana_pill')+' 1</div><div class="card-title">'+t('s1_title')+'</div></div></div>';
+    o+='<div class="card"><div class="card-hd"><div><div class="card-lbl" style="color:var(--rose);">'+t('semana_pill')+' 1</div><div class="card-title">'+t('s1_title')+'</div></div></div>';
     o+='<div class="card-body" style="padding:14px 18px;">';
     o+='<div style="font-size:13px;color:#1a1a1a;line-height:1.7;margin-bottom:12px;">'+t('s1_desc')+'</div>';
     if(D&&D.resumen){o+='<div style="background:var(--rose-light);border-radius:10px;padding:12px 14px;font-size:12px;color:#1a1a1a;line-height:1.6;">'+hh(D.resumen)+'</div>';}
@@ -1882,23 +1935,23 @@ function rSemana(){
   } else if(SEM===2){
     o+=_semProceso([
       {t:t('s2_p1t'),d:t('s2_p1d')},{t:t('s2_p2t'),d:t('s2_p2d')},{t:t('s2_p3t'),d:t('s2_p3d')}
-    ],'docs',t('s2_btn'),'📄','#5B8C6E');
+    ],'docs',t('s2_btn'),'📄','var(--green)');
   } else if(SEM===3){
     o+=_semProceso([
       {t:t('s3_p1t'),d:t('s3_p1d')},{t:t('s3_p2t'),d:t('s3_p2d')},{t:t('s3_p3t'),d:t('s3_p3d')},{t:t('s3_p4t'),d:t('s3_p4d')}
-    ],'linkedin',t('s3_btn'),'💼','#5B7FA6');
+    ],'linkedin',t('s3_btn'),'💼','var(--blue)');
   } else if(SEM===4){
     o+=_semProceso([
       {t:t('s4_p1t'),d:t('s4_p1d')},{t:t('s4_p2t'),d:t('s4_p2d')},{t:t('s4_p3t'),d:t('s4_p3d')}
-    ],'empleos',t('s4_btn'),'🔍','#C4907A');
+    ],'empleos',t('s4_btn'),'🔍','var(--orange)');
   } else if(SEM===5){
     // S5 Revisión final
-    o+='<div class="card"><div class="card-hd"><div><div class="card-lbl" style="color:#7A5C4A;">'+t('semana_pill')+' 5</div><div class="card-title">'+t('s5_title')+'</div></div></div>';
+    o+='<div class="card"><div class="card-hd"><div><div class="card-lbl" style="color:var(--brown);">'+t('semana_pill')+' 5</div><div class="card-title">'+t('s5_title')+'</div></div></div>';
     o+='<div class="card-body" style="padding:14px 18px;">';
     o+='<div style="font-size:13px;color:#1a1a1a;line-height:1.7;margin-bottom:14px;">'+t('s5_desc')+'</div>';
     // Scores comparison
     if(D&&D.scores&&D.scores.length){
-      o+='<div style="font-size:11px;font-weight:700;color:#7A5C4A;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">'+t('s5_progress')+'</div>';
+      o+='<div style="font-size:11px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">'+t('s5_progress')+'</div>';
       D.scores.forEach(function(s,si){
         var p=Math.min(100,Math.max(0,Math.round(s.val)));
         var c2=STEP_COLORS[si%STEP_COLORS.length];
@@ -1907,14 +1960,14 @@ function rSemana(){
         o+='<span style="font-size:13px;font-weight:800;color:'+c2+';min-width:35px;text-align:right;">'+p+'%</span></div>';
       });
     }
-    o+='<div style="margin-top:16px;padding:14px;background:var(--brown-light);border-radius:10px;border-left:3px solid #7A5C4A;">';
-    o+='<div style="font-size:12px;font-weight:700;color:#7A5C4A;margin-bottom:6px;">'+t('s5_next')+'</div>';
+    o+='<div style="margin-top:16px;padding:14px;background:var(--brown-light);border-radius:10px;border-left:3px solid var(--brown);">';
+    o+='<div style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:6px;">'+t('s5_next')+'</div>';
     o+='<div style="font-size:12px;color:#333;line-height:1.6;">'+t('s5_next_desc')+'</div>';
     o+='</div>';
     // Feedback textarea
-    o+='<div style="margin-top:14px;"><div style="font-size:11px;font-weight:700;color:#7A5C4A;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">'+t('s5_feedback')+'</div>';
+    o+='<div style="margin-top:14px;"><div style="font-size:11px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">'+t('s5_feedback')+'</div>';
     o+='<textarea id="feedback-final" rows="3" placeholder="'+t('s5_feedback_ph')+'" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:Montserrat,sans-serif;resize:vertical;outline:none;line-height:1.5;">'+hh(C.feedback_final||'')+'</textarea>';
-    o+='<button onclick="guardarFeedback()" style="margin-top:6px;padding:7px 16px;background:#7A5C4A;color:#fff;border:none;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;cursor:pointer;">'+t('s5_send')+'</button>';
+    o+='<button onclick="guardarFeedback()" style="margin-top:6px;padding:7px 16px;background:var(--brown);color:#fff;border:none;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;cursor:pointer;">'+t('s5_send')+'</button>';
     o+='<span id="fb-st" style="font-size:10px;color:#777;margin-left:8px;"></span>';
     o+='</div>';
     o+='</div></div>';
@@ -2126,7 +2179,7 @@ function buildNotifs(){
   var _now=Date.now();
   var _lastSem=parseInt(localStorage.getItem('mj_last_sem_'+E)||'0');
   if(_lastSem>0&&SEM>_lastSem){
-    _notifs.push({icon:'&#9889;',title:'Nueva semana activada',desc:'Micaela te avanz\u00f3 a Semana '+SEM+'. Nuevas acciones disponibles.',color:'#8C7B80',time:'Ver',sec:'semana'});
+    _notifs.push({icon:'&#9889;',title:'Nueva semana activada',desc:'Micaela te avanz\u00f3 a Semana '+SEM+'. Nuevas acciones disponibles.',color:'var(--rose)',time:'Ver',sec:'semana'});
   }
   localStorage.setItem('mj_notif_seen_'+E,String(_now));
   localStorage.setItem('mj_last_sem_'+E,String(SEM));
@@ -2136,7 +2189,7 @@ function buildNotifs(){
       if(rows&&rows.length){
         var infTime=new Date(rows[0].created_at).getTime();
         if(infTime>_lastSeen){
-          _notifs.unshift({icon:'&#11088;',title:'Tu informe fue actualizado',desc:'Micaela actualiz\u00f3 tu an\u00e1lisis. Revis\u00e1 las novedades.',color:'#5A8C6E',time:'Ver',sec:'analisis'});
+          _notifs.unshift({icon:'&#11088;',title:'Tu informe fue actualizado',desc:'Micaela actualiz\u00f3 tu an\u00e1lisis. Revis\u00e1 las novedades.',color:'var(--green)',time:'Ver',sec:'analisis'});
           var badge=document.getElementById('notif-badge');
           if(badge){badge.style.display='flex';badge.textContent=_notifs.length;}
         }
@@ -2146,29 +2199,29 @@ function buildNotifs(){
 
   if(C&&D){
     if(D.mensaje_candidato){
-      _notifs.push({icon:'&#128172;',title:'Mensaje de Micaela',desc:D.mensaje_candidato.slice(0,60)+'...',color:'#8C7B80',time:'Ver',sec:'semana'});
+      _notifs.push({icon:'&#128172;',title:'Mensaje de Micaela',desc:D.mensaje_candidato.slice(0,60)+'...',color:'var(--rose)',time:'Ver',sec:'semana'});
     }
     if(C.proxima_sesion){
       var sd=new Date(C.proxima_sesion);
       var dias=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-      _notifs.push({icon:'&#128197;',title:'Sesión agendada',desc:dias[sd.getDay()]+' '+sd.getDate()+' · '+sd.getHours()+':'+String(sd.getMinutes()).padStart(2,'0'),color:'#5B7FA6',time:'Ver',sec:'sesion'});
+      _notifs.push({icon:'&#128197;',title:'Sesión agendada',desc:dias[sd.getDay()]+' '+sd.getDate()+' · '+sd.getHours()+':'+String(sd.getMinutes()).padStart(2,'0'),color:'var(--blue)',time:'Ver',sec:'sesion'});
     } else {
-      _notifs.push({icon:'&#128197;',title:'Agenda tu próxima sesión',desc:'Elegí día y hora con Micaela',color:'#5B7FA6',time:'Agendar',sec:'calendly'});
+      _notifs.push({icon:'&#128197;',title:'Agenda tu próxima sesión',desc:'Elegí día y hora con Micaela',color:'var(--blue)',time:'Agendar',sec:'calendly'});
     }
     var sem=SEMS[Math.min(SEM,5)-1]||SEMS[0];
     var accs=D[sem.acc]||[];
     var pendientes=accs.filter(function(a,i){return !ACTS[i];}).length;
     if(pendientes>0){
-      _notifs.push({icon:'&#9757;&#65039;',title:pendientes+' acción'+(pendientes>1?'es':'')+' pendiente'+(pendientes>1?'s':''),desc:'Semana '+SEM+': '+hh(sem.lbl),color:'#C4907A',time:'Ver',sec:'semana'});
+      _notifs.push({icon:'&#9757;&#65039;',title:pendientes+' acción'+(pendientes>1?'es':'')+' pendiente'+(pendientes>1?'s':''),desc:'Semana '+SEM+': '+hh(sem.lbl),color:'var(--orange)',time:'Ver',sec:'semana'});
     }
     if(CV&&CV.contenido){
-      _notifs.push({icon:'&#128196;',title:'Tu CV está listo',desc:'Podés verlo y descargarlo',color:'#5A8C6E',time:'Abrir',sec:'docs'});
+      _notifs.push({icon:'&#128196;',title:'Tu CV está listo',desc:'Podés verlo y descargarlo',color:'var(--green)',time:'Abrir',sec:'docs'});
     }
     if(C.carta_presentacion&&C.carta_presentacion.length>50){
-      _notifs.push({icon:'&#128140;',title:'Tu carta está lista',desc:'Editá y personalizá para cada empresa',color:'#8C7B80',time:'Abrir',sec:'docs'});
+      _notifs.push({icon:'&#128140;',title:'Tu carta está lista',desc:'Editá y personalizá para cada empresa',color:'var(--rose)',time:'Abrir',sec:'docs'});
     }
     if(D.estrategia){
-      _notifs.push({icon:'&#128269;',title:'Hay empleos para vos',desc:'Hay ofertas que encajan con vos',color:'#5B7FA6',time:'Ver',sec:'empleos'});
+      _notifs.push({icon:'&#128269;',title:'Hay empleos para vos',desc:'Hay ofertas que encajan con vos',color:'var(--blue)',time:'Ver',sec:'empleos'});
     }
   }
   // Actualizar badge
@@ -2219,9 +2272,9 @@ function toggleNotifs(){
           d2.onmouseover=function(){this.style.background='#F0EDED';};
           d2.onmouseout=function(){this.style.background='#FAFAFA';};
           d2.innerHTML='<div style="width:36px;height:36px;border-radius:10px;background:'+n.color+'18;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">'+n.icon+'</div>'
-            +'<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;color:#8C7B80;font-family:Montserrat,sans-serif;margin-bottom:2px;">'+n.title+'</div>'
+            +'<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;color:var(--rose);font-family:Montserrat,sans-serif;margin-bottom:2px;">'+n.title+'</div>'
             +'<div style="font-size:11px;color:#9E9696;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+n.desc+'</div></div>'
-            +'<div style="font-size:9px;color:#8C7B80;white-space:nowrap;font-weight:700;padding-top:2px;">'+n.time+' ›</div>';
+            +'<div style="font-size:9px;color:var(--rose);white-space:nowrap;font-weight:700;padding-top:2px;">'+n.time+' ›</div>';
           listEl.appendChild(d2);
         });
         // Click en notificación → navegar a su sección
@@ -2342,7 +2395,7 @@ function rEmpleos(){
 
     cardsEl.innerHTML=jobs.map(function(job){
       var rel=Math.min(100,Math.max(0,job.relevancia||80));
-      var relColor=rel>=90?'#5A8C6E':rel>=75?'#8C7B80':'#C4907A';
+      var relColor=rel>=90?'var(--green)':rel>=75?'var(--rose)':'var(--orange)';
       var q=encodeURIComponent(job.query_indeed||job.titulo);
       var loc=encodeURIComponent(ubicacion);
       var indeedUrl='https://es.indeed.com/jobs?q='+q+'&l='+loc;
@@ -2749,13 +2802,13 @@ function rRecursos(){
   ];
 
   var tipoLabel={articulo:'Articulo',video:'Video',template:'Template',ejercicio:'Ejercicio'};
-  var tipoColor={articulo:'var(--rose)',video:'#C0756E',template:'var(--green)',ejercicio:'#5B7FA6'};
+  var tipoColor={articulo:'var(--rose)',video:'#C0756E',template:'var(--green)',ejercicio:'var(--blue)'};
   var tipoBg={articulo:'var(--rose-light)',video:'#FAF0EF',template:'#EAF4EF',ejercicio:'#EAF0FA'};
 
   var o='<div style="display:flex;flex-direction:column;gap:24px;">';
 
   // Header
-  o+='<div style="background:linear-gradient(135deg,#F5F0F0 0%,#EDE8E8 100%);border-radius:16px;padding:24px;border:1.5px solid var(--border);">';
+  o+='<div style="background:linear-gradient(135deg,var(--rose-light) 0%,#EDE8E8 100%);border-radius:16px;padding:24px;border:1.5px solid var(--border);">';
   o+='<div style="font-size:20px;font-weight:800;color:var(--text);font-family:Montserrat,sans-serif;margin-bottom:6px;">Recursos para tu proceso</div>';
   o+='<div style="font-size:13px;color:var(--muted);line-height:1.6;">Material de apoyo organizado por semana. '+(nombre?hh(nombre)+', e':'E')+'stos recursos complementan tu mentoria y te ayudan a avanzar entre sesiones.</div>';
   o+='</div>';
@@ -2860,7 +2913,7 @@ function _renderMsgs(){
     var isCoach=m.from==='coach';
     return '<div style="display:flex;justify-content:'+(isCoach?'flex-start':'flex-end')+';margin-bottom:6px;">'
       +'<div style="max-width:85%;padding:9px 13px;border-radius:'+(isCoach?'4px 14px 14px 14px':'14px 4px 14px 14px')+';background:'+(isCoach?'var(--rose-light)':'#EAF0FA')+';font-size:12px;color:var(--text);line-height:1.5;">'
-        +'<div style="font-size:9px;font-weight:700;color:'+(isCoach?'var(--rose)':'#5B7FA6')+';margin-bottom:2px;">'+(isCoach?'Micaela':nombre)+'</div>'
+        +'<div style="font-size:9px;font-weight:700;color:'+(isCoach?'var(--rose)':'var(--blue)')+';margin-bottom:2px;">'+(isCoach?'Micaela':nombre)+'</div>'
         +hh(m.text)
         +'<div style="font-size:9px;color:var(--muted);margin-top:3px;text-align:right;">'+hh(m.time||'')+'</div>'
       +'</div></div>';
