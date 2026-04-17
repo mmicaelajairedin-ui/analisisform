@@ -9,6 +9,30 @@ const { test, expect } = require('@playwright/test');
 
 test.describe('Carga de páginas principales', () => {
 
+  test('index.html - Landing principal de Pathway carga correctamente', async ({ page }) => {
+    const response = await page.goto('index.html');
+    expect(response.status()).toBe(200);
+    await expect(page).toHaveTitle(/Pathway/i);
+  });
+
+  test('soy-candidato.html - Landing de candidatos carga correctamente', async ({ page }) => {
+    const response = await page.goto('soy-candidato.html');
+    expect(response.status()).toBe(200);
+    await expect(page).toHaveTitle(/Pathway/i);
+  });
+
+  test('soy-coach.html - Landing de coaches carga correctamente', async ({ page }) => {
+    const response = await page.goto('soy-coach.html');
+    expect(response.status()).toBe(200);
+    await expect(page).toHaveTitle(/Coach/i);
+  });
+
+  test('registro.html - Página de registro de coaches carga correctamente', async ({ page }) => {
+    const response = await page.goto('registro.html');
+    expect(response.status()).toBe(200);
+    await expect(page).toHaveTitle(/Registro/i);
+  });
+
   test('formulario.html - Formulario de análisis carga correctamente', async ({ page }) => {
     const response = await page.goto('formulario.html');
     expect(response.status()).toBe(200);
@@ -140,5 +164,54 @@ test.describe('Verificación de recursos y assets', () => {
     await page.waitForLoadState('networkidle');
     const emailjsLoaded = await page.evaluate(() => typeof window.emailjs !== 'undefined');
     expect(emailjsLoaded).toBe(true);
+  });
+});
+
+test.describe('SEO y Meta tags en landings', () => {
+
+  test('index.html tiene meta description y canonical', async ({ page }) => {
+    await page.goto('index.html');
+
+    const description = await page.locator('meta[name="description"]').getAttribute('content');
+    const canonical = await page.locator('link[rel="canonical"]').getAttribute('href');
+
+    expect(description).toBeTruthy();
+    expect(description.length).toBeGreaterThan(50);
+    expect(canonical).toContain('pathwaycareercoach.com');
+  });
+
+  test('soy-candidato.html tiene Open Graph tags', async ({ page }) => {
+    await page.goto('soy-candidato.html');
+
+    const ogTitle = await page.locator('meta[property="og:title"]').getAttribute('content');
+    const ogSite = await page.locator('meta[property="og:site_name"]').getAttribute('content');
+
+    expect(ogTitle).toBeTruthy();
+    expect(ogSite).toContain('Pathway');
+  });
+
+  test('soy-coach.html tiene Open Graph tags', async ({ page }) => {
+    await page.goto('soy-coach.html');
+
+    const ogTitle = await page.locator('meta[property="og:title"]').getAttribute('content');
+    const ogSite = await page.locator('meta[property="og:site_name"]').getAttribute('content');
+
+    expect(ogTitle).toBeTruthy();
+    expect(ogSite).toContain('Pathway');
+  });
+
+  test('registro.html tiene noindex (no debe aparecer en buscadores)', async ({ page }) => {
+    await page.goto('registro.html');
+    const robots = await page.locator('meta[name="robots"]').getAttribute('content');
+    expect(robots).toContain('noindex');
+  });
+
+  test('CNAME apunta al dominio pathwaycareercoach.com', async ({ request }) => {
+    const BASE = process.env.BASE_URL || 'https://mmicaelajairedin-ui.github.io/analisisform/';
+    const response = await request.get(`${BASE}CNAME`);
+    if (response.status() === 200) {
+      const content = await response.text();
+      expect(content.trim()).toContain('pathwaycareercoach.com');
+    }
   });
 });

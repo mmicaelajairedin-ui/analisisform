@@ -255,3 +255,85 @@ test.describe('Funcional — Portal del cliente', () => {
     expect(config.hasKEY).toBe(true);
   });
 });
+
+// ─── REGISTRO (registro.html) ───────────────────────────────────
+
+test.describe('Funcional — Registro de coaches', () => {
+
+  test('Función registrar() existe', async ({ page }) => {
+    await page.goto('registro.html');
+    const exists = await page.evaluate(() => typeof registrar === 'function');
+    expect(exists).toBe(true);
+  });
+
+  test('Función selectPlan() existe', async ({ page }) => {
+    await page.goto('registro.html');
+    const exists = await page.evaluate(() => typeof selectPlan === 'function');
+    expect(exists).toBe(true);
+  });
+
+  test('Función previewPhoto() existe', async ({ page }) => {
+    await page.goto('registro.html');
+    const exists = await page.evaluate(() => typeof previewPhoto === 'function');
+    expect(exists).toBe(true);
+  });
+
+  test('Función hashPassword() existe', async ({ page }) => {
+    await page.goto('registro.html');
+    const exists = await page.evaluate(() => typeof hashPassword === 'function');
+    expect(exists).toBe(true);
+  });
+
+  test('Botón Crear cuenta tiene onclick conectado', async ({ page }) => {
+    await page.goto('registro.html');
+    const onclick = await page.locator('#btn-submit').getAttribute('onclick');
+    expect(onclick).toContain('registrar');
+  });
+
+  test('Selector de plan Mensual tiene onclick conectado', async ({ page }) => {
+    await page.goto('registro.html');
+    const onclick = await page.locator('#plan-mensual').getAttribute('onclick');
+    expect(onclick).toContain('selectPlan');
+  });
+
+  test('Selector de plan Anual tiene onclick conectado', async ({ page }) => {
+    await page.goto('registro.html');
+    const onclick = await page.locator('#plan-anual').getAttribute('onclick');
+    expect(onclick).toContain('selectPlan');
+  });
+});
+
+// ─── LANDINGS (soy-candidato, soy-coach, index) ────────────────
+
+test.describe('Funcional — Landings', () => {
+
+  test('index.html tiene Pathway branding', async ({ page }) => {
+    await page.goto('index.html');
+    const html = await page.content();
+    expect(html).toContain('Pathway');
+  });
+
+  test('soy-candidato.html tiene CTA de registro o formulario', async ({ page }) => {
+    await page.goto('soy-candidato.html');
+
+    // Buscar cualquier link a formulario, registro o login (CTAs esperados)
+    const hasCTA = await page.evaluate(() => {
+      const links = Array.from(document.querySelectorAll('a'));
+      return links.some(a => {
+        const href = a.getAttribute('href') || '';
+        return /formulario|registro|login|cliente/.test(href);
+      });
+    });
+    expect(hasCTA).toBe(true);
+  });
+
+  test('soy-coach.html tiene CTA a registro', async ({ page }) => {
+    await page.goto('soy-coach.html');
+
+    const hasRegistroLink = await page.evaluate(() => {
+      const links = Array.from(document.querySelectorAll('a'));
+      return links.some(a => (a.getAttribute('href') || '').includes('registro'));
+    });
+    expect(hasRegistroLink).toBe(true);
+  });
+});
