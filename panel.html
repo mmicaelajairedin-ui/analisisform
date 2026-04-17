@@ -1981,64 +1981,105 @@ function _delSesion(id,idx){
 
 function tabPagos(c){
   var monto=c.pago_monto||'';
-  // Historial de pagos guardado en localStorage
   var pagosKey='mj_pagos_'+c.id;
-  var pagos=JSON.parse(localStorage.getItem(pagosKey)||'[]');
+  var pagos=[];try{pagos=JSON.parse(localStorage.getItem(pagosKey)||'[]');}catch(e){}
   var totalPagado=pagos.reduce(function(s,p){return s+(parseFloat(p.monto)||0);},0);
   var totalEsperado=parseFloat(monto)||0;
-  var restante=totalEsperado-totalPagado;
+  var restante=Math.max(0,totalEsperado-totalPagado);
   var pctPagado=totalEsperado>0?Math.min(100,Math.round(totalPagado/totalEsperado*100)):0;
   var estado=totalEsperado<=0?'sin-definir':totalPagado>=totalEsperado?'pagado':totalPagado>0?'parcial':'pendiente';
-  var estadoLabel={pendiente:'Pendiente','parcial':'Pago parcial','pagado':'Pagado','sin-definir':'Sin monto'};
-  var estadoColor={pendiente:'#C4907A','parcial':'#2D6A4F','pagado':'#5A8C6E','sin-definir':'#999'};
-  var estadoBg={pendiente:'#FDF0EB','parcial':'#F5EFEF','pagado':'#EBF5EF','sin-definir':'#F5F5F5'};
+  var cfgE={
+    pendiente:{lbl:'Pendiente',bg:'rgba(196,144,122,.12)',fg:'#8C5E42'},
+    parcial:{lbl:'Parcial',bg:'rgba(233,196,106,.15)',fg:'#8C7B20'},
+    pagado:{lbl:'Pagado ✓',bg:'rgba(82,183,136,.15)',fg:'#2D6A4F'},
+    'sin-definir':{lbl:'Sin monto',bg:'#F5F5F5',fg:'#888'}
+  };
+  var s=cfgE[estado];
 
   var html='<div style="display:flex;flex-direction:column;gap:14px;">';
 
-  // Monto total + estado
-  html+='<div style="display:flex;gap:12px;">';
-  html+='<div style="flex:1;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;">';
-  html+='<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;font-family:Inter,sans-serif;">Monto total</div>';
-  html+='<input id="pago-monto-'+c.id+'" type="text" value="'+escH(monto)+'" placeholder="Ej: 500" onblur="guardarPagoMonto('+c.id+')" style="width:100%;border:none;outline:none;font-size:18px;font-weight:800;color:var(--title);font-family:Inter,sans-serif;background:transparent;">';
+  // ── HEADER con monto + estado ──
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
+  html+='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 18px;">';
+  html+='<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Monto total mentoría</div>';
+  html+='<div style="display:flex;align-items:baseline;gap:4px;">';
+  html+='<span style="font-family:\'Fraunces\',Georgia,serif;font-size:14px;color:var(--muted);">€</span>';
+  html+='<input id="pago-monto-'+c.id+'" type="text" value="'+escH(monto)+'" placeholder="0" onblur="guardarPagoMonto('+c.id+')" style="flex:1;border:none;outline:none;font-family:\'Fraunces\',Georgia,serif;font-size:28px;font-weight:500;color:var(--title);letter-spacing:-.6px;background:transparent;min-width:0;">';
   html+='</div>';
-  html+='<div style="flex:1;background:'+estadoBg[estado]+';border-radius:12px;padding:14px 16px;text-align:center;">';
-  html+='<div style="font-size:10px;font-weight:700;color:'+estadoColor[estado]+';text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;font-family:Inter,sans-serif;">'+estadoLabel[estado]+'</div>';
-  html+='<div style="font-size:20px;font-weight:800;color:'+estadoColor[estado]+';font-family:Inter,sans-serif;">'+totalPagado.toFixed(0)+(totalEsperado?' / '+totalEsperado.toFixed(0):'')+'</div>';
+  html+='</div>';
+  html+='<div style="background:'+s.bg+';border-radius:12px;padding:16px 18px;">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">';
+  html+='<div style="font-size:10px;font-weight:600;color:'+s.fg+';text-transform:uppercase;letter-spacing:.08em;">'+s.lbl+'</div>';
+  html+='</div>';
+  html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:500;color:'+s.fg+';letter-spacing:-.5px;line-height:1.1;">€'+totalPagado.toFixed(0)+(totalEsperado?' <span style="font-size:14px;opacity:.65;">/ €'+totalEsperado.toFixed(0)+'</span>':'')+'</div>';
   if(totalEsperado>0){
-    html+='<div style="height:4px;background:rgba(0,0,0,.08);border-radius:2px;margin-top:8px;overflow:hidden;"><div style="height:4px;width:'+pctPagado+'%;background:'+estadoColor[estado]+';border-radius:2px;"></div></div>';
+    html+='<div style="height:4px;background:rgba(0,0,0,.08);border-radius:2px;margin-top:10px;overflow:hidden;"><div style="height:100%;width:'+pctPagado+'%;background:'+s.fg+';border-radius:2px;transition:width .4s;"></div></div>';
   }
   html+='</div></div>';
 
-  // Historial de pagos
-  html+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;">';
-  html+='<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">';
-  html+='<div style="font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;font-family:Inter,sans-serif;">Historial de pagos</div>';
+  // ── QUICK ACTION: Marcar pagado completo ──
+  if(restante>0){
+    html+='<button onclick="_pagoCompleto('+c.id+')" style="background:var(--accent);color:#fff;border:none;padding:12px 22px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;font-family:Inter,sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;">'+
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>'+
+      'Marcar pagado completo (€'+restante.toFixed(0)+')</button>';
+  }
+
+  // ── HISTORIAL ──
+  html+='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;">';
+  html+='<div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">';
+  html+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;">Historial</div>';
   html+='<span style="font-size:11px;color:var(--muted);">'+pagos.length+' pago'+(pagos.length!==1?'s':'')+'</span>';
   html+='</div>';
   if(pagos.length){
-    pagos.forEach(function(p,i){
-      html+='<div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">';
-      html+='<div style="font-size:16px;font-weight:800;color:var(--green);font-family:Inter,sans-serif;min-width:70px;">'+parseFloat(p.monto||0).toFixed(0)+'</div>';
-      html+='<div style="flex:1;font-size:12px;color:var(--body);">'+escH(p.nota||'')+'</div>';
+    pagos.slice().reverse().forEach(function(p,i){
+      var realIdx=pagos.length-1-i;
+      html+='<div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">';
+      html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:18px;font-weight:500;color:#2D6A4F;letter-spacing:-.3px;min-width:80px;">€'+parseFloat(p.monto||0).toFixed(0)+'</div>';
+      html+='<div style="flex:1;min-width:0;">';
+      if(p.nota)html+='<div style="font-size:12px;color:var(--body);line-height:1.4;">'+escH(p.nota)+'</div>';
       html+='<div style="font-size:11px;color:var(--muted);">'+escH(p.fecha||'')+'</div>';
-      html+='<button onclick="_delPago('+c.id+','+i+')" style="font-size:10px;color:var(--red);background:none;border:none;cursor:pointer;padding:4px;" title="Eliminar">&times;</button>';
+      html+='</div>';
+      html+='<button onclick="_delPago('+c.id+','+realIdx+')" style="background:transparent;border:none;color:var(--muted);cursor:pointer;padding:6px;opacity:.5;transition:opacity .15s;" onmouseover="this.style.opacity=1;" onmouseout="this.style.opacity=.5;" title="Eliminar">';
+      html+='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+      html+='</button>';
       html+='</div>';
     });
   } else {
-    html+='<div style="padding:16px;text-align:center;font-size:12px;color:var(--muted);">Sin pagos registrados</div>';
+    html+='<div style="padding:18px;text-align:center;font-size:12px;color:var(--muted);">Sin pagos registrados</div>';
   }
   html+='</div>';
 
-  // Agregar pago
-  html+='<div style="display:flex;gap:8px;align-items:flex-end;">';
-  html+='<div style="flex:0 0 100px;"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px;">Monto</div><input id="np-monto-'+c.id+'" type="number" placeholder="0" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-weight:700;"></div>';
-  html+='<div style="flex:1;"><div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px;">Nota</div><input id="np-nota-'+c.id+'" type="text" placeholder="Concepto..." style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;"></div>';
-  html+='<button onclick="_addPago('+c.id+')" class="btn" style="padding:8px 16px;font-size:11px;">+ Agregar</button>';
+  // ── AGREGAR PAGO MANUAL ──
+  html+='<div style="background:rgba(45,106,79,.03);border:1px dashed rgba(45,106,79,.2);border-radius:12px;padding:14px 16px;">';
+  html+='<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">Agregar pago manual</div>';
+  html+='<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">';
+  html+='<div style="flex:0 0 110px;"><label style="display:block;font-size:10px;color:var(--muted);font-weight:600;margin-bottom:4px;">Monto €</label><input id="np-monto-'+c.id+'" type="number" placeholder="0" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-weight:600;font-family:Inter,sans-serif;background:#fff;"></div>';
+  html+='<div style="flex:1;min-width:140px;"><label style="display:block;font-size:10px;color:var(--muted);font-weight:600;margin-bottom:4px;">Nota (opcional)</label><input id="np-nota-'+c.id+'" type="text" placeholder="Ej: Transferencia recibida" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;background:#fff;"></div>';
+  html+='<button onclick="_addPago('+c.id+')" style="background:var(--accent);color:#fff;border:none;padding:9px 18px;border-radius:8px;font-weight:600;font-size:12px;cursor:pointer;font-family:Inter,sans-serif;">Registrar</button>';
+  html+='</div>';
   html+='</div>';
 
   html+='<div id="pago-st-'+c.id+'" style="font-size:11px;color:var(--muted);text-align:center;"></div>';
   html+='</div>';
   return html;
+}
+
+function _pagoCompleto(id){
+  var c=cands.find(function(x){return x.id===id;});
+  if(!c)return;
+  var totalEsp=parseFloat(c.pago_monto)||0;
+  if(totalEsp<=0){showToast('Seteá primero el monto total');return;}
+  var pagosKey='mj_pagos_'+id;
+  var pagos=[];try{pagos=JSON.parse(localStorage.getItem(pagosKey)||'[]');}catch(e){}
+  var yaPagado=pagos.reduce(function(s,p){return s+(parseFloat(p.monto)||0);},0);
+  var restante=totalEsp-yaPagado;
+  if(restante<=0){showToast('Ya está pagado');return;}
+  var hoy=new Date();
+  var f=hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
+  pagos.push({monto:String(restante),nota:'Pago completo',fecha:f});
+  localStorage.setItem(pagosKey,JSON.stringify(pagos));
+  showToast('✓ Marcado como pagado completo');
+  atab='gestion';renderMain(c);
 }
 
 function guardarPagoMonto(id){
