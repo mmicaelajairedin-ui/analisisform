@@ -3510,48 +3510,41 @@ function _saveConfig(){
   };
   try{localStorage.setItem('mj_coach_config',JSON.stringify(fullCfg));}catch(e){}
 
-  // Intenta PATCH en Supabase probando distintos sets de columnas — quita
-  // campos que fallan uno por uno. El orden: todos → sin configuracion →
-  // sin foto_url → sin nombre_practica → sin bio → solo lo que queda.
+  // Intenta guardar cada campo INDEPENDIENTEMENTE en Supabase — si uno
+  // falla por falta de columna, los otros siguen funcionando.
   var configuracion={
     color_marca:color,calendly_url:calUrl,
     stripe_mentoria_url:stMentoria,stripe_sesion_url:stSesion,
     precio_mentoria:fullCfg.precio_mentoria,precio_sesion:fullCfg.precio_sesion
   };
-  var attempts=[
-    {nombre_practica:practica||null,bio:bio||null,foto_url:newFoto||undefined,configuracion:configuracion},
-    {nombre_practica:practica||null,bio:bio||null,foto_url:newFoto||undefined},
-    {nombre_practica:practica||null,bio:bio||null},
-    {nombre_practica:practica||null},
-    {}
-  ];
-  // Remove undefined keys
-  attempts=attempts.map(function(o){var n={};Object.keys(o).forEach(function(k){if(o[k]!==undefined)n[k]=o[k];});return n;});
+  var fields={
+    configuracion:configuracion,
+    nombre_practica:practica||null,
+    bio:bio||null
+  };
+  if(newFoto)fields.foto_url=newFoto;
 
-  function tryNext(i){
-    if(i>=attempts.length||!Object.keys(attempts[i]).length){
-      return Promise.resolve({level:attempts.length});
-    }
+  function patchOne(key,val){
+    var body={};body[key]=val;
     return fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email),{
       method:'PATCH',
       headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-      body:JSON.stringify(attempts[i])
-    }).then(function(r){
-      if(r.ok)return {level:i,body:attempts[i]};
-      return tryNext(i+1);
-    });
+      body:JSON.stringify(body)
+    }).then(function(r){return {key:key,ok:r.ok,status:r.status};}).catch(function(){return {key:key,ok:false,status:0};});
   }
 
-  tryNext(0).then(function(res){
+  Promise.all(Object.keys(fields).map(function(k){return patchOne(k,fields[k]);})).then(function(results){
     if(!st)return;
-    if(res.level===0){
+    var failed=results.filter(function(r){return !r.ok;}).map(function(r){return r.key;});
+    var ok=results.filter(function(r){return r.ok;}).map(function(r){return r.key;});
+    if(!failed.length){
       st.textContent='✓ Guardado en Supabase';st.style.color='#2D6A4F';
       setTimeout(function(){if(st)st.textContent='';},3500);
-    } else if(res.level<attempts.length){
-      st.innerHTML='⚠️ Guardado parcial. Faltan columnas en Supabase — corré este SQL:<br><code style="display:block;margin-top:6px;padding:8px;background:#F5F0F0;border-radius:6px;font-family:monospace;font-size:11px;color:#1B2E26;user-select:all;">ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto_url TEXT, ADD COLUMN IF NOT EXISTS nombre_practica TEXT, ADD COLUMN IF NOT EXISTS bio TEXT, ADD COLUMN IF NOT EXISTS configuracion JSONB DEFAULT \'{}\';</code>';
+    } else if(ok.length){
+      st.innerHTML='⚠️ Guardado parcial. Se guardó: '+ok.join(', ')+'. Falta columna: <b>'+failed.join(', ')+'</b>. Corré este SQL:<br><code style="display:block;margin-top:6px;padding:8px;background:#F5F0F0;border-radius:6px;font-family:monospace;font-size:11px;color:#1B2E26;user-select:all;white-space:pre-wrap;">'+failed.map(function(f){return f==='configuracion'?"ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS configuracion JSONB DEFAULT '{}';":"ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS "+f+" TEXT;";}).join('\n')+'</code>';
       st.style.color='#B8A44E';
     } else {
-      st.innerHTML='❌ No se pudo guardar en Supabase (quedó en este navegador). Corré este SQL:<br><code style="display:block;margin-top:6px;padding:8px;background:#F5F0F0;border-radius:6px;font-family:monospace;font-size:11px;color:#1B2E26;user-select:all;">ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto_url TEXT, ADD COLUMN IF NOT EXISTS nombre_practica TEXT, ADD COLUMN IF NOT EXISTS bio TEXT, ADD COLUMN IF NOT EXISTS configuracion JSONB DEFAULT \'{}\';</code>';
+      st.innerHTML='❌ No se pudo guardar nada en Supabase (quedó solo en este navegador). Corré este SQL completo:<br><code style="display:block;margin-top:6px;padding:8px;background:#F5F0F0;border-radius:6px;font-family:monospace;font-size:11px;color:#1B2E26;user-select:all;white-space:pre-wrap;">ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto_url TEXT;\nALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nombre_practica TEXT;\nALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bio TEXT;\nALTER TABLE usuarios ADD COLUMN IF NOT EXISTS configuracion JSONB DEFAULT \'{}\';</code>';
       st.style.color='#c0756e';
     }
     // Refresca la foto del sidebar si cambió
