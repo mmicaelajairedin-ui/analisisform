@@ -43,16 +43,12 @@ test.describe('Panel - Estructura con sesión', () => {
     await expect(page.locator('.sidebar')).toBeVisible();
   });
 
-  test('Sidebar muestra nombre de Micaela y foto', async ({ page }) => {
+  test('Sidebar muestra avatar del coach', async ({ page }) => {
     await expect(page.locator('.sidebar')).toBeVisible({ timeout: 8000 });
 
-    // Verificar foto del coach
-    const foto = page.locator('#sb-foto-img');
-    await expect(foto).toBeVisible();
-
-    // Verificar que el nombre aparece en la sidebar
-    const sidebarText = await page.locator('.sidebar').textContent();
-    expect(sidebarText).toContain('Micaela');
+    // Verificar avatar del coach (puede ser foto o iniciales)
+    const avatar = page.locator('#sb-coach-avatar');
+    await expect(avatar).toBeVisible();
   });
 
   test('Sidebar contiene barra de progreso general', async ({ page }) => {

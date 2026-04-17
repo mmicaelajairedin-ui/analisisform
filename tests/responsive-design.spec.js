@@ -11,7 +11,7 @@ test.describe('Responsive - Formulario (formulario.html)', () => {
 
   test('Formulario se adapta en móvil (375px)', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
 
     const card = page.locator('.card');
     await expect(card).toBeVisible();
@@ -22,7 +22,7 @@ test.describe('Responsive - Formulario (formulario.html)', () => {
 
   test('Formulario se adapta en desktop (1440px)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
 
     const wrap = page.locator('.wrap');
     await expect(wrap).toBeVisible();
@@ -40,7 +40,7 @@ test.describe('Responsive - Login', () => {
 
     const card = page.locator('.card');
     await expect(card).toBeVisible();
-    await expect(page.locator('.logo-dot')).toBeVisible();
+    await expect(page.locator('.logo-mark')).toBeVisible();
   });
 });
 

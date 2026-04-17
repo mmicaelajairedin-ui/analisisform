@@ -90,9 +90,8 @@ test.describe('Login - Branding y diseño', () => {
   test('Logo y marca se muestran correctamente', async ({ page }) => {
     await page.goto('login.html');
 
-    await expect(page.locator('.logo-dot')).toBeVisible();
-    await expect(page.locator('.logo h1')).toHaveText('Micaela Jairedin');
-    await expect(page.locator('.logo p')).toHaveText('Career Coach & Recruiter');
+    await expect(page.locator('.logo-mark')).toBeVisible();
+    await expect(page.locator('.logo p')).toBeVisible();
   });
 
   test('Diseño responsivo - se centra verticalmente', async ({ page }) => {

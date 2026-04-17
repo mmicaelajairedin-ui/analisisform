@@ -34,7 +34,7 @@ test.describe('Carga de páginas principales', () => {
   });
 
   test('formulario.html - Formulario de análisis carga correctamente', async ({ page }) => {
-    const response = await page.goto('formulario.html');
+    const response = await page.goto('formulario.html?access=mj2026');
     expect(response.status()).toBe(200);
 
     // Verifica título
@@ -113,7 +113,7 @@ test.describe('Verificación de recursos y assets', () => {
       }
     });
 
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
     await page.waitForLoadState('domcontentloaded');
 
     // Filtra errores esperados (ej: CORS de fuentes externas)
@@ -151,16 +151,16 @@ test.describe('Verificación de recursos y assets', () => {
   });
 
   test('Google Fonts carga correctamente', async ({ page }) => {
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
     await page.waitForLoadState('networkidle');
 
-    // Verificar que la fuente Montserrat se aplicó
+    // Verificar que la fuente Inter se aplicó (Pathway rebrand)
     const fontFamily = await page.locator('body').evaluate(el => getComputedStyle(el).fontFamily);
-    expect(fontFamily.toLowerCase()).toContain('montserrat');
+    expect(fontFamily.toLowerCase()).toContain('inter');
   });
 
   test('EmailJS SDK carga correctamente en formulario.html', async ({ page }) => {
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
     await page.waitForLoadState('networkidle');
     const emailjsLoaded = await page.evaluate(() => typeof window.emailjs !== 'undefined');
     expect(emailjsLoaded).toBe(true);
