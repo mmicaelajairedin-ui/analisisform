@@ -26,31 +26,31 @@ async function goWithSession(page, url) {
 test.describe('Funcional — Formulario', () => {
 
   test('Función enviar() existe y está definida', async ({ page }) => {
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
     const exists = await page.evaluate(() => typeof enviar === 'function');
     expect(exists).toBe(true);
   });
 
   test('Función go() existe para navegar entre pasos', async ({ page }) => {
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
     const exists = await page.evaluate(() => typeof go === 'function');
     expect(exists).toBe(true);
   });
 
   test('Función validateStep() existe para validar campos', async ({ page }) => {
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
     const exists = await page.evaluate(() => typeof validateStep === 'function');
     expect(exists).toBe(true);
   });
 
   test('Función setLang() existe para cambio de idioma', async ({ page }) => {
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
     const exists = await page.evaluate(() => typeof setLang === 'function');
     expect(exists).toBe(true);
   });
 
   test('Constantes de Supabase están configuradas', async ({ page }) => {
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
     const config = await page.evaluate(() => ({
       hasSbUrl: typeof SB_URL === 'string' && SB_URL.includes('supabase'),
       hasSbKey: typeof SB_KEY === 'string' && SB_KEY.length > 20,
@@ -60,14 +60,14 @@ test.describe('Funcional — Formulario', () => {
   });
 
   test('EmailJS está inicializado', async ({ page }) => {
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
     await page.waitForLoadState('networkidle');
     const initialized = await page.evaluate(() => typeof emailjs !== 'undefined' && typeof emailjs.send === 'function');
     expect(initialized).toBe(true);
   });
 
   test('Botón enviar tiene onclick conectado', async ({ page }) => {
-    await page.goto('formulario.html');
+    await page.goto('formulario.html?access=mj2026');
     const btnSend = page.locator('#btn-send');
     const onclick = await btnSend.getAttribute('onclick');
     expect(onclick).toContain('enviar');
