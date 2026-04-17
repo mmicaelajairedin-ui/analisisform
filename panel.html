@@ -801,6 +801,10 @@ button:active { transform: scale(.98); }
       style="background:transparent;color:rgba(255,255,255,.9);border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;font-family:Inter,sans-serif;text-align:left;cursor:pointer;display:flex;align-items:center;gap:9px;width:100%;transition:all .15s;position:relative;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Mensajes <span id="msg-count-badge" style="display:none;position:absolute;top:4px;right:8px;background:#C0756E;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:10px;min-width:16px;text-align:center;"></span>
     </button>
+    <button class="nb" id="nb-config" onclick="showSection('config')"
+      style="background:transparent;color:rgba(255,255,255,.9);border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;font-family:Inter,sans-serif;text-align:left;cursor:pointer;display:flex;align-items:center;gap:9px;width:100%;transition:all .15s;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Configuración
+    </button>
   </div>
 
   <!-- Acciones -->
@@ -2470,7 +2474,7 @@ var _pagos = JSON.parse(localStorage.getItem('mj_pagos')||'{}');
 function showSection(sec) {
   closePanelSidebar();
   _sec = sec;
-  ['inicio','clientes','pagos','mensajes'].forEach(function(s) {
+  ['inicio','clientes','pagos','mensajes','config'].forEach(function(s) {
     var nb = document.getElementById('nb-'+s);
     if (nb) nb.classList.toggle('nb-on', s===sec);
   });
@@ -2488,6 +2492,7 @@ function showSection(sec) {
     if (sec === 'links')    _renderLinks();
     if (sec === 'pagos')    _renderPagos();
     if (sec === 'mensajes') _renderMensajes();
+    if (sec === 'config')   _renderConfig();
   }
 }
 
@@ -3338,6 +3343,197 @@ function cambiarPass(id,email){
     }
   }).catch(function(err){
     st.textContent='Error: '+err.message;st.style.color='#c0756e';
+  });
+}
+
+// ── CONFIGURACIÓN DEL COACH ─────────────────────────────────
+function _renderConfig(){
+  var dp=document.getElementById('dynamic-panel');
+  if(!dp)return;
+  dp.innerHTML='<div style="padding:24px;max-width:800px;"><div style="text-align:center;padding:3rem;color:var(--muted);">Cargando configuración...</div></div>';
+
+  var email=ME&&ME.email?ME.email:'';
+  if(!email){dp.innerHTML='<div style="padding:2rem;color:#c0756e;">Sin sesión activa.</div>';return;}
+
+  fetch(SB+'/rest/v1/coaches?email=eq.'+encodeURIComponent(email)+'&select=*',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+    var coach=(rows&&rows[0])||{};
+    var lsCfg={};try{lsCfg=JSON.parse(localStorage.getItem('mj_coach_config')||'{}');}catch(e){}
+    var cfg=Object.assign({},lsCfg,coach.configuracion||{});
+
+    var foto=coach.foto_url||'';
+    var color=cfg.color_marca||'#8C7B80';
+    var calUrl=cfg.calendly_url||'';
+    var stMentoria=cfg.stripe_mentoria_url||'';
+    var stSesion=cfg.stripe_sesion_url||'';
+    var prMentoria=cfg.precio_mentoria||'';
+    var prSesion=cfg.precio_sesion||'';
+    var bio=coach.bio||'';
+    var practica=coach.nombre_practica||coach.nombre||'';
+
+    var palette=[['#8C7B80','Rosa'],['#2D6A4F','Verde bosque'],['#3D5A80','Azul'],['#C27B7B','Terracota'],['#D4A853','Dorado'],['#7B8C8A','Gris']];
+
+    var h='<div style="padding:28px 32px 48px;max-width:760px;">';
+    h+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:28px;font-weight:500;color:var(--title);letter-spacing:-.8px;margin-bottom:6px;">Configuración</h2>';
+    h+='<p style="font-size:13px;color:var(--muted);margin-bottom:28px;">Todo lo tuyo — foto, color de marca, links de pago, precios, agenda.</p>';
+
+    // PERFIL
+    h+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:14px;">';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;">Tu perfil</div>';
+    h+='<div style="display:flex;gap:18px;align-items:flex-start;margin-bottom:18px;">';
+    h+='<div id="cfg-foto-wrap" onclick="document.getElementById(\'cfg-foto-input\').click()" style="width:84px;height:84px;border-radius:50%;background:#F0EDED;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;flex-shrink:0;">';
+    if(foto){h+='<img id="cfg-foto-preview" src="'+foto+'" style="width:100%;height:100%;object-fit:cover;">';}
+    else{h+='<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>';}
+    h+='</div>';
+    h+='<input type="file" id="cfg-foto-input" accept="image/*" style="display:none;" onchange="_cfgPreviewFoto(this)">';
+    h+='<div style="flex:1;min-width:0;">';
+    h+='<div style="font-size:14px;font-weight:600;color:var(--title);margin-bottom:4px;">Foto de perfil</div>';
+    h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Click en el círculo para cambiarla. Máximo 2MB.</div>';
+    h+='<button onclick="document.getElementById(\'cfg-foto-input\').click()" style="background:transparent;color:var(--accent);border:1px solid var(--accent);padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Subir foto</button>';
+    h+='</div></div>';
+    h+='<div style="margin-bottom:14px;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Nombre de tu práctica</label>';
+    h+='<input id="cfg-practica" type="text" value="'+escH(practica)+'" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:Inter,sans-serif;"></div>';
+    h+='<div><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Bio (opcional)</label>';
+    h+='<textarea id="cfg-bio" rows="3" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:Inter,sans-serif;resize:vertical;">'+escH(bio)+'</textarea></div>';
+    h+='</div>';
+
+    // COLOR
+    h+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:14px;">';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Color de marca</div>';
+    h+='<div style="font-size:13px;color:var(--muted);margin-bottom:14px;">Se usa como acento en el portal de tus clientes.</div>';
+    h+='<div id="cfg-color-swatches" style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;">';
+    palette.forEach(function(p){
+      var c=p[0],lbl=p[1];
+      var on=c.toLowerCase()===color.toLowerCase();
+      h+='<button type="button" data-color="'+c+'" onclick="_cfgPickColor(\''+c+'\')" style="display:flex;flex-direction:column;align-items:center;gap:5px;background:transparent;border:none;cursor:pointer;padding:3px;">';
+      h+='<div style="width:42px;height:42px;border-radius:50%;background:'+c+';border:3px solid '+(on?'var(--title)':'transparent')+';box-shadow:0 2px 6px rgba(0,0,0,.08);transition:border-color .15s;"></div>';
+      h+='<div style="font-size:10px;color:var(--body);font-weight:500;">'+lbl+'</div>';
+      h+='</button>';
+    });
+    h+='</div>';
+    h+='<div style="display:flex;gap:10px;align-items:center;">';
+    h+='<label style="font-size:11px;color:var(--muted);font-weight:600;">Custom:</label>';
+    h+='<input id="cfg-color" type="color" value="'+color+'" onchange="_cfgPickColor(this.value)" style="width:54px;height:36px;border:1px solid var(--border);border-radius:8px;cursor:pointer;padding:2px;">';
+    h+='<span id="cfg-color-hex" style="font-size:12px;font-family:monospace;color:var(--body);background:#F5F0F0;padding:4px 10px;border-radius:6px;">'+color+'</span>';
+    h+='</div>';
+    h+='</div>';
+
+    // PAGOS
+    h+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:14px;">';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Pagos y agenda</div>';
+    h+='<div style="font-size:13px;color:var(--muted);margin-bottom:16px;">Tus links de Stripe para que tus clientes paguen directamente. El de Calendly aparece como CTA en tu panel.</div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 110px;gap:10px;margin-bottom:14px;align-items:end;">';
+    h+='<div><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Link Stripe · Mentoría 4 semanas</label>';
+    h+='<input id="cfg-st-mentoria" type="url" value="'+escH(stMentoria)+'" placeholder="https://buy.stripe.com/..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;"></div>';
+    h+='<div><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Precio €</label>';
+    h+='<input id="cfg-pr-mentoria" type="number" value="'+escH(String(prMentoria))+'" placeholder="400" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:Inter,sans-serif;"></div>';
+    h+='</div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 110px;gap:10px;margin-bottom:14px;align-items:end;">';
+    h+='<div><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Link Stripe · Sesión única</label>';
+    h+='<input id="cfg-st-sesion" type="url" value="'+escH(stSesion)+'" placeholder="https://buy.stripe.com/..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;"></div>';
+    h+='<div><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Precio €</label>';
+    h+='<input id="cfg-pr-sesion" type="number" value="'+escH(String(prSesion))+'" placeholder="120" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:Inter,sans-serif;"></div>';
+    h+='</div>';
+    h+='<div><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Link Calendly</label>';
+    h+='<input id="cfg-calendly" type="url" value="'+escH(calUrl)+'" placeholder="https://calendly.com/tu-nombre" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;"></div>';
+    h+='</div>';
+
+    // SAVE
+    h+='<div style="display:flex;gap:12px;align-items:center;margin-top:8px;">';
+    h+='<button onclick="_saveConfig()" style="background:var(--accent);color:#fff;border:none;padding:12px 28px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;font-family:Inter,sans-serif;">Guardar cambios</button>';
+    h+='<span id="cfg-status" style="font-size:12px;color:var(--muted);"></span>';
+    h+='</div>';
+    h+='</div>';
+    dp.innerHTML=h;
+  }).catch(function(err){
+    dp.innerHTML='<div style="padding:2rem;color:#c0756e;">Error cargando configuración: '+err.message+'</div>';
+  });
+}
+
+function _cfgPickColor(hex){
+  var input=document.getElementById('cfg-color');
+  var lbl=document.getElementById('cfg-color-hex');
+  if(input)input.value=hex;
+  if(lbl)lbl.textContent=hex;
+  var swatches=document.querySelectorAll('#cfg-color-swatches [data-color]');
+  swatches.forEach(function(btn){
+    var c=btn.getAttribute('data-color');
+    var circle=btn.querySelector('div');
+    if(circle)circle.style.borderColor=(c.toLowerCase()===hex.toLowerCase())?'var(--title)':'transparent';
+  });
+}
+
+function _cfgPreviewFoto(input){
+  if(!input.files||!input.files[0])return;
+  var file=input.files[0];
+  if(file.size>2*1024*1024){showToast('La foto no puede pesar más de 2MB');return;}
+  var reader=new FileReader();
+  reader.onload=function(e){
+    input.dataset.dataurl=e.target.result;
+    var wrap=document.getElementById('cfg-foto-wrap');
+    if(wrap)wrap.innerHTML='<img id="cfg-foto-preview" src="'+e.target.result+'" style="width:100%;height:100%;object-fit:cover;">';
+  };
+  reader.readAsDataURL(file);
+}
+
+function _saveConfig(){
+  var email=ME&&ME.email?ME.email:'';
+  if(!email){showToast('Sin sesión activa');return;}
+  var st=document.getElementById('cfg-status');
+  if(st){st.textContent='Guardando...';st.style.color='var(--muted)';}
+
+  var fotoInput=document.getElementById('cfg-foto-input');
+  var newFoto=fotoInput&&fotoInput.dataset&&fotoInput.dataset.dataurl||null;
+  var practica=((document.getElementById('cfg-practica')||{}).value||'').trim();
+  var bio=((document.getElementById('cfg-bio')||{}).value||'').trim();
+  var color=(document.getElementById('cfg-color')||{}).value||'#8C7B80';
+  var stMentoria=((document.getElementById('cfg-st-mentoria')||{}).value||'').trim();
+  var stSesion=((document.getElementById('cfg-st-sesion')||{}).value||'').trim();
+  var prMentoria=(document.getElementById('cfg-pr-mentoria')||{}).value||'';
+  var prSesion=(document.getElementById('cfg-pr-sesion')||{}).value||'';
+  var calUrl=((document.getElementById('cfg-calendly')||{}).value||'').trim();
+
+  var configuracion={
+    color_marca:color,
+    calendly_url:calUrl,
+    stripe_mentoria_url:stMentoria,
+    stripe_sesion_url:stSesion,
+    precio_mentoria:prMentoria?parseFloat(prMentoria):null,
+    precio_sesion:prSesion?parseFloat(prSesion):null
+  };
+  try{localStorage.setItem('mj_coach_config',JSON.stringify(configuracion));}catch(e){}
+
+  var patch={nombre_practica:practica||null,bio:bio||null,configuracion:configuracion};
+  if(newFoto)patch.foto_url=newFoto;
+
+  function tryPatch(body,onFallback){
+    return fetch(SB+'/rest/v1/coaches?email=eq.'+encodeURIComponent(email),{
+      method:'PATCH',
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify(body)
+    }).then(function(r){
+      if(r.ok)return {ok:true};
+      if(onFallback)return onFallback();
+      throw new Error('HTTP '+r.status);
+    });
+  }
+
+  tryPatch(patch,function(){
+    // Column `configuracion` might not exist — retry without it
+    var p2=Object.assign({},patch);delete p2.configuracion;
+    return tryPatch(p2,null).then(function(){return {ok:true,partial:true};});
+  }).then(function(res){
+    if(res.partial){
+      if(st){st.textContent='Guardado parcial. Falta columna configuracion en Supabase (color/Stripe/Calendly quedan en este navegador).';st.style.color='#B8A44E';}
+    }else{
+      if(st){st.textContent='✓ Guardado';st.style.color='#2D6A4F';}
+      setTimeout(function(){if(st)st.textContent='';},3500);
+    }
+    // Refresca la foto del sidebar si cambió
+    if(newFoto){var av=document.getElementById('sb-coach-avatar');if(av)av.innerHTML='<img src="'+newFoto+'" alt="" style="width:100%;height:100%;object-fit:cover;">';}
+  }).catch(function(err){
+    if(st){st.textContent='Error: '+err.message;st.style.color='#c0756e';}
   });
 }
 
