@@ -1311,13 +1311,21 @@ function _loadCoachColor(){
     if(ls.color_marca)_applyCoachColor(ls.color_marca);
     _applyCoachBrand(ls);
   }catch(e){}
-  // Después fetch a Supabase — trae color + foto + nombre para el hero del portal
+
+  // Si el candidato C ya está cargado y tiene coach_id, usamos ese coach específico
+  // (multi-coach). Si no, fallback al primer coach (legacy single-coach).
   var q='select=nombre,foto_url,nombre_practica,configuracion';
-  fetch(SB+'/rest/v1/usuarios?rol=in.(coach,admin)&'+q+'&limit=1',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}})
+  var filter;
+  if(C&&C.coach_id){
+    filter='id=eq.'+encodeURIComponent(C.coach_id);
+  } else {
+    filter='rol=in.(coach,admin)&limit=1';
+  }
+  fetch(SB+'/rest/v1/usuarios?'+filter+'&'+q,{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}})
     .then(function(r){
-      // Si la columna configuracion no existe, PostgREST tira 400. Intenta sin ella.
       if(r.ok)return r.json();
-      return fetch(SB+'/rest/v1/usuarios?rol=in.(coach,admin)&select=nombre,foto_url&limit=1',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}})
+      // Fallback si la columna configuracion no existe todavía
+      return fetch(SB+'/rest/v1/usuarios?'+filter+'&select=nombre,foto_url',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}})
         .then(function(r2){return r2.ok?r2.json():[];});
     })
     .then(function(rows){
@@ -1358,6 +1366,8 @@ function init(){
     }
     C=res[0][0];SEM=parseInt(C.semana_activa)||1;
     try{ACTS=C.acciones_progreso?JSON.parse(C.acciones_progreso):[];}catch(e){ACTS=[];}
+    // Re-cargar marca del coach asignado (multi-coach) ahora que C.coach_id está disponible
+    if(typeof _loadCoachColor==='function')_loadCoachColor();
     if(res[1]&&res[1].length){var raw=res[1][0].data;if(typeof raw==='string')try{raw=JSON.parse(raw);}catch(e){raw=null;}D=raw;}
     CV=res[2]&&res[2].length?res[2][0]:null;
     document.getElementById('loading').style.display='none';
