@@ -90,7 +90,7 @@ test.describe('Login - Branding y diseño', () => {
   test('Logo y marca se muestran correctamente', async ({ page }) => {
     await page.goto('login.html');
 
-    await expect(page.locator('.logo-mark')).toBeVisible();
+    await expect(page.locator('.logo-dot')).toBeVisible();
     await expect(page.locator('.logo p')).toBeVisible();
   });
 
