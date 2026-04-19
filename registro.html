@@ -323,8 +323,8 @@ async function registrar(){
   try {
     var hash = await hashPassword(password);
 
-    // Verificar si el email ya existe en coaches
-    var checkRes = await fetch(SB + '/rest/v1/coaches?email=eq.' + encodeURIComponent(email) + '&select=id', {
+    // Verificar si el email ya existe en usuarios
+    var checkRes = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id', {
       headers: {'apikey': KEY, 'Authorization': 'Bearer ' + KEY}
     });
     var existing = await checkRes.json();
@@ -334,23 +334,31 @@ async function registrar(){
       return;
     }
 
-    // Crear coach en tabla coaches
-    var coachData = {
-      nombre: nombre,
-      email: email,
-      password_hash: hash,
-      nombre_practica: nombre_practica || nombre,
-      bio: bio || null,
+    // Crear coach directamente en usuarios (tabla única, no hay coaches separada)
+    // Los datos del plan/estado/especialidad/mercado van en configuracion JSONB
+    var configuracion = {
+      plan: selectedPlan === 'anual' ? 'pro' : 'starter',
+      estado_sub: 'prueba',
+      visible_directorio: true,
+      max_candidatos: selectedPlan === 'anual' ? 999 : 15,
       especialidades: [especialidad],
       mercados: [mercado],
-      plan: selectedPlan === 'anual' ? 'pro' : 'starter',
-      estado: 'prueba',
-      visible_directorio: true,
-      foto_url: photoDataUrl || null,
-      max_candidatos: selectedPlan === 'anual' ? 999 : 15
+      fecha_fin_prueba: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
     };
 
-    var res = await fetch(SB + '/rest/v1/coaches', {
+    var userData = {
+      email: email,
+      password_hash: hash,
+      rol: 'coach',
+      nombre: nombre,
+      activo: true,
+      nombre_practica: nombre_practica || nombre,
+      bio: bio || null,
+      foto_url: photoDataUrl || null,
+      configuracion: configuracion
+    };
+
+    var res = await fetch(SB + '/rest/v1/usuarios', {
       method: 'POST',
       headers: {
         'apikey': KEY,
@@ -358,65 +366,18 @@ async function registrar(){
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
       },
-      body: JSON.stringify(coachData)
+      body: JSON.stringify(userData)
     });
 
     if(!res.ok){
       var errBody = await res.text();
-      console.error('Error creando coach:', errBody);
-      showError('Error al crear la cuenta. Intentá de nuevo.');
+      console.error('Error creando usuario:', errBody);
+      showError('Error al crear la cuenta: ' + (errBody.slice(0, 100) || res.status));
       btn.disabled = false; loading.style.display = 'none';
       return;
     }
 
     var coach = (await res.json())[0];
-
-    // Crear usuario en tabla usuarios para login
-    var userData = {
-      email: email,
-      password_hash: hash,
-      rol: 'coach',
-      nombre: nombre,
-      activo: true,
-      coach_id: coach.id
-    };
-
-    var userRes = await fetch(SB + '/rest/v1/usuarios', {
-      method: 'POST',
-      headers: {
-        'apikey': KEY,
-        'Authorization': 'Bearer ' + KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify(userData)
-    });
-
-    if(!userRes.ok){
-      console.error('Error creando usuario:', await userRes.text());
-    }
-
-    // Crear suscripción en prueba
-    var subData = {
-      coach_id: coach.id,
-      plan: selectedPlan,
-      precio: selectedPlan === 'anual' ? 699 : 79,
-      moneda: 'eur',
-      estado: 'prueba',
-      fecha_inicio: new Date().toISOString(),
-      fecha_fin: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
-    };
-
-    await fetch(SB + '/rest/v1/suscripciones', {
-      method: 'POST',
-      headers: {
-        'apikey': KEY,
-        'Authorization': 'Bearer ' + KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify(subData)
-    });
 
     // Guardar sesión
     localStorage.setItem('mj_user', JSON.stringify({
