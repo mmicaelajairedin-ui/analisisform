@@ -960,7 +960,15 @@ input:focus, select:focus, textarea:focus {
 
 <script>
 // ══ SISTEMA DE IDIOMAS — cliente.html ══════════════════
-var _lang = localStorage.getItem('mj_lang') || 'es';
+// Idioma: 1) localStorage si el usuario eligió antes, 2) navigator si arranca en EN,
+// 3) ES por default. Permite que clientes English-speaking vean EN automáticamente.
+var _lang = localStorage.getItem('mj_lang');
+if(!_lang){
+  try{
+    var _nav=(navigator.language||navigator.userLanguage||'es').toLowerCase();
+    _lang = _nav.indexOf('en')===0 ? 'en' : 'es';
+  }catch(e){_lang='es';}
+}
 
 var TX = {
   es: {
@@ -2873,18 +2881,36 @@ function liAnalizar(){
   .then(function(data){
     if(data&&data.analisis){
       var a=data.analisis;
-      localStorage.setItem('mj_li_'+(E||''),JSON.stringify(a));
-      if(texto.length>50)pt('candidatos','email=eq.'+encodeURIComponent(E),{linkedin_texto:texto});
-      var patch={linkedin_analisis:JSON.stringify(a)};
+      // Siempre guardamos localStorage (instantáneo, sobrevive recargas)
+      try{localStorage.setItem('mj_li_'+(E||''),JSON.stringify(a));}catch(e){}
+      // Guardar texto crudo y análisis en Supabase
+      var patch={linkedin_texto:texto,linkedin_analisis:JSON.stringify(a)};
       if(a.titular_optimizado){patch.linkedin_titular=a.titular_optimizado;C.linkedin_titular=a.titular_optimizado;}
       if(a.resumen_optimizado){patch.linkedin_resumen=a.resumen_optimizado;C.linkedin_resumen=a.resumen_optimizado;}
       if(a.experiencia_optimizada){patch.linkedin_experiencia=a.experiencia_optimizada;C.linkedin_experiencia=a.experiencia_optimizada;}
       C.linkedin_analisis=JSON.stringify(a);
-      pt('candidatos','email=eq.'+encodeURIComponent(E),patch);
+      C.linkedin_texto=texto;
+      // PATCH a Supabase con feedback explícito de éxito/falla
+      fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{
+        method:'PATCH',
+        headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify(patch)
+      }).then(function(r){
+        if(st){
+          if(r.ok){
+            st.textContent='✓ Guardado — disponible desde cualquier dispositivo';
+            st.style.color='var(--green)';
+          } else {
+            st.innerHTML='⚠️ Solo guardado en este navegador. Pedile a tu coach que corra el SQL: <code style="font-size:10px;background:#fff;padding:2px 4px;border-radius:3px;">ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_analisis TEXT;</code>';
+            st.style.color='#B8A44E';
+          }
+        }
+      }).catch(function(){
+        if(st){st.textContent='⚠️ Solo guardado en este navegador (sin conexión)';st.style.color='#B8A44E';}
+      });
       liMostrar(a);
       _secCache.linkedin=null;
       updSbMedal();
-      if(st){st.textContent='Listo — revisa cada seccion';st.style.color='var(--green)';}
     } else {if(st){st.textContent='Error. Intenta de nuevo.';st.style.color='var(--rose)';}}
   }).catch(function(){if(st){st.textContent='Error de conexion';st.style.color='var(--rose)';}});
 }
