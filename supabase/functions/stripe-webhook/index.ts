@@ -35,6 +35,11 @@ interface StripeSession {
   customer_email?: string;
   customer_details?: { email?: string; name?: string };
   subscription?: string;
+  // Coach asignado: en este orden de prioridad:
+  // 1. metadata.coach_id (configurable en cada Payment Link de Stripe)
+  // 2. client_reference_id (URL ?client_reference_id=<uuid>)
+  metadata?: { coach_id?: string; [k: string]: string | undefined };
+  client_reference_id?: string;
 }
 
 interface StripeSubscriptionItem {
@@ -137,6 +142,24 @@ function getSupabaseAuth() {
   };
 }
 
+// ── Lookup: ¿quién es el coach por defecto? ─────────────────
+// Usamos al admin (owner Pathway) como fallback cuando no viene
+// coach_id en metadata. Garantiza que ningún candidato quede huérfano.
+async function getDefaultCoachId(): Promise<string | undefined> {
+  const { url: SB_URL, headers } = getSupabaseAuth();
+  try {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/usuarios?rol=in.(admin,coach)&select=id&order=created_at.asc&limit=1`,
+      { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+    );
+    if (!res.ok) return undefined;
+    const rows = await res.json();
+    return rows?.[0]?.id;
+  } catch {
+    return undefined;
+  }
+}
+
 // ── Handler: pago one-off del candidato (mentoría/sesión) ────
 async function handleClientPayment(session: StripeSession) {
   const email = (session.customer_details?.email || session.customer_email || "")
@@ -146,20 +169,31 @@ async function handleClientPayment(session: StripeSession) {
   const amount = (session.amount_total || 0) / 100;
   const { url: SB_URL, headers } = getSupabaseAuth();
 
+  // Resolver coach_id en este orden:
+  //   1. session.metadata.coach_id (configurable en cada Payment Link)
+  //   2. session.client_reference_id (URL pasa ?client_reference_id=)
+  //   3. Fallback: primer coach/admin de la plataforma
+  let coachId: string | undefined =
+    session.metadata?.coach_id || session.client_reference_id || undefined;
+  if (!coachId) coachId = await getDefaultCoachId();
+
   const checkRes = await fetch(
-    `${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(email)}&select=id`,
+    `${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(email)}&select=id,coach_id`,
     { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
   );
   const rows = checkRes.ok ? await checkRes.json() : [];
 
-  const body = {
+  const body: Record<string, unknown> = {
     pago_monto: amount,
     pago_recibido: true,
     pago_fecha: new Date().toISOString(),
     stripe_session_id: session.id,
   };
+  // Solo seteamos coach_id si el candidato existente NO tenía uno
+  // (evita reescribir asignaciones manuales del coach).
 
   if (Array.isArray(rows) && rows.length > 0) {
+    if (!rows[0].coach_id && coachId) body.coach_id = coachId;
     await fetch(
       `${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(email)}`,
       {
@@ -168,9 +202,10 @@ async function handleClientPayment(session: StripeSession) {
         body: JSON.stringify(body),
       },
     );
-    return { result: "updated", email, amount };
+    return { result: "updated", email, amount, coach_id: coachId };
   } else {
     const name = session.customer_details?.name || email.split("@")[0];
+    if (coachId) body.coach_id = coachId;
     await fetch(`${SB_URL}/rest/v1/candidatos`, {
       method: "POST",
       headers: { ...headers, Prefer: "return=minimal" },
@@ -181,7 +216,7 @@ async function handleClientPayment(session: StripeSession) {
         activo: true,
       }),
     });
-    return { result: "created", email, amount };
+    return { result: "created", email, amount, coach_id: coachId };
   }
 }
 

@@ -537,36 +537,137 @@ function toggleFaqMini(btn){
   if(!wasOpen) item.classList.add('open');
 }
 
-// Filtro del directorio de coaches por país
-(function(){
-  var tabs = document.querySelectorAll('.filter-tab');
-  var cards = document.querySelectorAll('.coach-card');
-  var empty = document.getElementById('dir-empty');
-  if(!tabs.length) return;
+// ─── DIRECTORIO DINÁMICO DE COACHES ────────────────────────
+// Lee usuarios con rol coach/admin + configuracion.visible_directorio !== false
+// y los renderiza como tarjetas. Cada CTA Stripe lleva client_reference_id=<coach_id>
+// para que el webhook pueda asignar el candidato al coach correcto.
+var SB = 'https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+var KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 
+function escH(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function ini(n){return String(n||'?').split(' ').map(function(w){return (w[0]||'').toUpperCase();}).join('').slice(0,2);}
+function appendRef(url,coachId){
+  if(!url)return '';
+  var sep = url.indexOf('?')>=0 ? '&' : '?';
+  return url + sep + 'client_reference_id=' + encodeURIComponent(coachId);
+}
+function buildCoachCard(c){
+  var cfg = c.configuracion || {};
+  var nombre = c.nombre || c.nombre_practica || 'Coach';
+  var titulo = c.nombre_practica || 'Career Coach';
+  var bio = c.bio || 'Coach certificado en Pathway. Acompaña a profesionales en su transición de carrera.';
+  var foto = c.foto_url || '';
+  var mercados = Array.isArray(cfg.mercados) ? cfg.mercados : (cfg.mercado ? [cfg.mercado] : []);
+  var paisesAttr = mercados.join(' ');
+  var paisesLbl = mercados.length ? mercados.map(function(m){return m.charAt(0).toUpperCase()+m.slice(1);}).join(' · ') : 'Remoto';
+  var especialidades = Array.isArray(cfg.especialidades) ? cfg.especialidades : [];
+  var precioMent = cfg.precio_mentoria || 400;
+  var precioSes = cfg.precio_sesion || 120;
+  var stripeMent = cfg.stripe_mentoria_url || '';
+  var stripeSes = cfg.stripe_sesion_url || '';
+  var fotoHtml = foto
+    ? '<img src="'+escH(foto)+'" alt="'+escH(nombre)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">'
+    : '<div style="width:100%;height:100%;border-radius:50%;background:rgba(45,106,79,.1);color:var(--pw-bosque);display:flex;align-items:center;justify-content:center;font-family:var(--pw-serif);font-size:24px;font-weight:600;">'+escH(ini(nombre))+'</div>';
+  var tagsHtml = especialidades.length
+    ? especialidades.map(function(t){return '<span class="tag">'+escH(t)+'</span>';}).join('')
+    : '<span class="tag">Coaching</span>';
+  var ctaPrincipal = stripeMent
+    ? '<a href="'+escH(appendRef(stripeMent,c.id))+'" target="_blank" rel="noopener" class="btn-primary">Mentoría 4 semanas · €'+escH(String(precioMent))+'<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>'
+    : '<button class="btn-disabled" disabled>Próximamente — sin link de pago</button>';
+  var ctaSecundario = stripeSes
+    ? '<a href="'+escH(appendRef(stripeSes,c.id))+'" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:8px;font-size:13px;color:var(--pw-texto-suave);text-decoration:none;">o una sesión única · €'+escH(String(precioSes))+' →</a>'
+    : '';
+  return '<article class="coach-card" data-pais="'+escH(paisesAttr)+'" data-coach-id="'+escH(c.id)+'">'
+    + '<div class="coach-top">'
+    +   '<div class="coach-photo-round">'+fotoHtml+'</div>'
+    +   '<div class="coach-info">'
+    +     '<h3>'+escH(nombre)+'</h3>'
+    +     '<p class="coach-title">'+escH(titulo)+'</p>'
+    +     '<p class="coach-location">'
+    +       '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2C8 2 5 5 5 9c0 5.3 7 13 7 13s7-7.7 7-13c0-4-3-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>'
+    +       escH(paisesLbl)
+    +     '</p>'
+    +   '</div>'
+    + '</div>'
+    + '<p class="coach-bio">'+escH(bio)+'</p>'
+    + '<div class="coach-tags">'+tagsHtml+'</div>'
+    + '<div class="coach-price-row">'
+    +   '<div><span class="label">Por sesión</span><strong>€'+escH(String(precioSes))+'</strong></div>'
+    +   '<div><span class="label">Mentoría 4 sem</span><strong>€'+escH(String(precioMent))+'</strong></div>'
+    + '</div>'
+    + ctaPrincipal
+    + ctaSecundario
+    + '</article>';
+}
+
+function buildPlaceholderCard(){
+  return '<article class="coach-card coach-card--placeholder" data-pais="placeholder" aria-hidden="true">'
+    + '<div class="coach-top">'
+    +   '<div class="coach-photo-round">'
+    +     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>'
+    +   '</div>'
+    +   '<div class="coach-info">'
+    +     '<span class="badge-coming">Próximamente</span>'
+    +     '<h3>Nuevo coach</h3>'
+    +     '<p class="coach-title">En camino</p>'
+    +   '</div>'
+    + '</div>'
+    + '<p class="coach-bio">Estamos sumando más coaches al directorio. ¿Quieres ser el próximo? <a href="soy-coach.html" style="color:var(--pw-bosque);text-decoration:underline;">Regístrate aquí</a>.</p>'
+    + '<button class="btn-disabled" disabled>Próximamente</button>'
+    + '</article>';
+}
+
+function attachFilterTabs(){
+  var tabs = document.querySelectorAll('.filter-tab');
+  var empty = document.getElementById('dir-empty');
   tabs.forEach(function(tab){
-    tab.addEventListener('click', function(){
+    tab.onclick = function(){
       tabs.forEach(function(t){ t.classList.remove('active'); });
       tab.classList.add('active');
       var pais = tab.dataset.pais;
+      var cards = document.querySelectorAll('.coach-card');
       var visibles = 0;
       cards.forEach(function(card){
-        var paises = (card.dataset.pais || '').split(' ');
-        var isPlaceholder = card.classList.contains('placeholder');
+        var paises = (card.dataset.pais || '').split(/\s+/);
+        var isPlaceholder = card.classList.contains('coach-card--placeholder');
         var show = false;
-        if(pais === 'todos'){
-          show = true;
-        } else if(!isPlaceholder && paises.indexOf(pais) !== -1){
-          show = true;
-        } else if(pais === 'latam' && !isPlaceholder && (paises.indexOf('argentina') !== -1 || paises.indexOf('mexico') !== -1 || paises.indexOf('colombia') !== -1 || paises.indexOf('chile') !== -1 || paises.indexOf('peru') !== -1 || paises.indexOf('uruguay') !== -1)){
-          show = true;
-        }
+        if(pais === 'todos'){ show = true; }
+        else if(!isPlaceholder && paises.indexOf(pais) !== -1){ show = true; }
+        else if(pais === 'latam' && !isPlaceholder && paises.some(function(p){return ['argentina','mexico','colombia','chile','peru','uruguay'].indexOf(p)>=0;})){ show = true; }
         card.style.display = show ? '' : 'none';
         if(show) visibles++;
       });
       if(empty) empty.style.display = visibles === 0 ? 'block' : 'none';
-    });
+    };
   });
+}
+
+(async function loadCoachesDirectory(){
+  try {
+    var url = SB + '/rest/v1/usuarios?rol=in.(coach,admin)&activo=eq.true&select=id,nombre,email,foto_url,nombre_practica,bio,configuracion&order=created_at.asc';
+    var r = await fetch(url, { headers:{ apikey:KEY, Authorization:'Bearer '+KEY } });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var coaches = await r.json();
+    if(!Array.isArray(coaches) || coaches.length === 0){
+      // Sin coaches en DB → dejamos el HTML estático como fallback
+      attachFilterTabs();
+      return;
+    }
+    // Filtrar los que tienen visible_directorio !== false
+    coaches = coaches.filter(function(c){
+      var v = c.configuracion && c.configuracion.visible_directorio;
+      return v !== false; // default true si undefined
+    });
+    var grid = document.getElementById('coach-grid');
+    if(!grid) return;
+    var html = coaches.map(buildCoachCard).join('') + buildPlaceholderCard()
+      + '<div class="dir-empty" id="dir-empty">Todavía no hay coaches en este país. <a href="#directorio" style="color:var(--pw-bosque);text-decoration:underline;">Ver todos</a></div>';
+    grid.innerHTML = html;
+    attachFilterTabs();
+  } catch (e) {
+    console.warn('No se pudo cargar el directorio dinámico, usando fallback HTML:', e);
+    attachFilterTabs();
+  }
 })();
 </script>
 </body>
