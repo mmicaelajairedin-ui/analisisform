@@ -360,12 +360,18 @@ const SB_URL='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 const EDGE_URL='https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/generar-informe';
 
-// Carga el email del coach asignado (si viene ?coach=<uuid> en URL).
+// Carga el email del coach asignado. Fuentes por prioridad:
+//   1. URL ?coach=<uuid> (directo o por access_code auto-rewrite)
+//   2. sessionStorage pw_coach_id (cuando el flow vino vía Stripe)
+//      se seteó en soy-candidato.html al clickear el CTA antes del pago.
 // Se ejecuta al cargar la página, antes de que el form se envíe.
 (async function initCoachEmail(){
   try{
     const _p=new URLSearchParams(location.search);
-    const _cid=_p.get('coach')||'';
+    let _cid=_p.get('coach')||'';
+    if(!_cid){
+      try{_cid=sessionStorage.getItem('pw_coach_id')||'';}catch(e){}
+    }
     if(!_cid||!/^[0-9a-f-]{32,36}$/i.test(_cid))return;
     COACH_ID=_cid;
     const r=await fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(_cid)+'&select=email&limit=1',{
@@ -651,10 +657,12 @@ async function enviar(){
     idioma:lang.toUpperCase()
   };
 
-  // Asigna el coach: ?coach=<uuid> en URL, o access code, o null
+  // Asigna el coach: ?coach=<uuid> en URL, o sessionStorage (Stripe flow), o null.
+  // Usamos la misma fuente que initCoachEmail para consistencia.
   try{
     var _cp=new URLSearchParams(location.search);
     var _cid=_cp.get('coach')||'';
+    if(!_cid){try{_cid=sessionStorage.getItem('pw_coach_id')||'';}catch(e){}}
     if(_cid&&/^[0-9a-f-]{32,36}$/i.test(_cid))d.coach_id=_cid;
   }catch(e){}
 
