@@ -6,10 +6,32 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>Análisis de perfil profesional</title>
 <script>
+  // Gate síncrono: ?paid=1 (Stripe redirect) o ?access=<code> (manual coach)
+  // Códigos válidos: mj2026 (legacy global) o cualquiera que coincida con
+  // algún configuracion.access_code de un coach (validado async después).
   (function(){
     var p=new URLSearchParams(location.search);
-    var ok=p.get('paid')==='1'||p.get('access')==='mj2026';
-    if(ok)document.documentElement.setAttribute('data-access','ok');
+    var code=p.get('access')||'';
+    var ok=p.get('paid')==='1'||code==='mj2026';
+    if(ok){document.documentElement.setAttribute('data-access','ok');return;}
+    // Validación async contra Supabase: ¿hay algún coach con ese access_code?
+    if(!code)return;
+    var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+    var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+    fetch(SB+'/rest/v1/usuarios?rol=in.(coach,admin)&select=id,configuracion',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
+      .then(function(r){return r.ok?r.json():[];})
+      .then(function(rows){
+        var match=(rows||[]).find(function(u){return u.configuracion&&u.configuracion.access_code===code;});
+        if(match){
+          document.documentElement.setAttribute('data-access','ok');
+          // Re-emite ?coach=<id> en URL para que initCoachEmail lo capture sin recargar
+          try{
+            var url=new URL(location.href);
+            if(!url.searchParams.get('coach'))url.searchParams.set('coach',match.id);
+            history.replaceState(null,'',url.toString());
+          }catch(e){}
+        }
+      }).catch(function(){});
   })();
 </script>
 <style>
