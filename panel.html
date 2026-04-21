@@ -4129,7 +4129,7 @@ function _renderQueueIn(){
   if(!el)return;
   el.innerHTML='<div style="text-align:center;padding:3rem;color:var(--muted);">Cargando cola...</div>';
 
-  fetch(SB+'/rest/v1/email_queue?select=*&order=scheduled_at.desc&limit=200',{
+  fetch(SB+'/rest/v1/email_queue?select=*&limit=200',{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
   }).then(function(r){
     if(r.status===404){
@@ -4145,6 +4145,13 @@ function _renderQueueIn(){
   }).then(function(rows){
     if(!rows)return;
     if(!Array.isArray(rows))rows=[];
+    // Ordenar por scheduled_at desc en JS (el order en el query PostgREST
+    // a veces da 404 con columnas timestamptz recién creadas — schema cache)
+    rows.sort(function(a,b){
+      var da=a.scheduled_at?new Date(a.scheduled_at).getTime():0;
+      var db=b.scheduled_at?new Date(b.scheduled_at).getTime():0;
+      return db-da;
+    });
     _queueData={
       pending:rows.filter(function(x){return x.status==='pending'||x.status==='sending';}),
       sent:rows.filter(function(x){return x.status==='sent';}),
