@@ -117,26 +117,18 @@ test.describe('Formulario - Navegación entre pasos', () => {
 
 test.describe('Formulario - Cambio de idioma', () => {
 
-  test('Cambio ES → EN actualiza textos correctamente', async ({ page }) => {
+  test('Cambio de idioma funciona correctamente', async ({ page }) => {
     await page.goto('formulario.html?access=mj2026');
 
-    // Verificar español por defecto
+    // Forzar español primero (el CI puede cargar en inglés)
+    await page.locator('.lb').first().click();
     await expect(page.locator('#top-h')).toHaveText('Cuéntame sobre ti');
 
     // Cambiar a inglés
     await page.locator('.lb').nth(1).click();
-
-    // Verificar textos en inglés
-    await expect(page.locator('#top-h')).toHaveText('Tell me about yourself');
-  });
-
-  test('Cambio EN → ES restaura textos', async ({ page }) => {
-    await page.goto('formulario.html?access=mj2026');
-
-    // Cambiar a inglés y luego volver
-    await page.locator('.lb').nth(1).click();
     await expect(page.locator('#top-h')).toHaveText('Tell me about yourself');
 
+    // Volver a español
     await page.locator('.lb').first().click();
     await expect(page.locator('#top-h')).toHaveText('Cuéntame sobre ti');
   });
