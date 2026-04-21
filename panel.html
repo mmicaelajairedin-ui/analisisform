@@ -3599,6 +3599,7 @@ function _prospRenderList(){
     html+='<button onclick="_prospFilter=\''+e.v+'\';_prospRenderList();" style="background:'+(on?e.fg:e.bg)+';color:'+(on?'#fff':e.fg)+';border:1px solid '+(on?e.fg:'transparent')+';padding:6px 14px;border-radius:100px;font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">'+e.lbl+' <span style="opacity:.65;">'+stats[e.v]+'</span></button>';
   });
   html+='<div style="flex:1;"></div>';
+  html+='<button onclick="_prospImportModal()" style="background:#fff;color:var(--accent);border:1.5px solid var(--accent);padding:8px 14px;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;display:inline-flex;align-items:center;gap:6px;" title="Importar CSV desde Apollo, Hunter, LinkedIn Sales Nav, etc.">📥 Importar CSV</button>';
   html+='<button onclick="_prospAddModal()" style="background:var(--accent);color:#fff;border:none;padding:8px 16px;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;display:inline-flex;align-items:center;gap:6px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo prospect</button>';
   html+='</div>';
 
@@ -3637,7 +3638,7 @@ function _prospRenderList(){
       // Acciones
       html+='<div style="display:flex;gap:6px;flex-shrink:0;">';
       if(p.linkedin_url)html+='<a href="'+escH(p.linkedin_url)+'" target="_blank" title="LinkedIn" style="padding:7px 10px;background:#0A66C2;color:#fff;border-radius:8px;font-size:10px;font-weight:700;text-decoration:none;">in</a>';
-      if(p.email)html+='<a href="mailto:'+escH(p.email)+'" title="Email" style="padding:7px 10px;background:#EAF0FA;color:#3D5A80;border-radius:8px;font-size:11px;text-decoration:none;">✉</a>';
+      if(p.email)html+='<button onclick="_prospEmailModal('+p.id+')" title="Enviar email con plantilla Pathway" style="padding:7px 10px;background:linear-gradient(135deg,#2D6A4F,#52B788);color:#fff;border:none;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;">✉ Email</button>';
       if(p.telefono)html+='<a href="https://wa.me/'+encodeURIComponent(p.telefono.replace(/[^0-9+]/g,''))+'" target="_blank" title="WhatsApp" style="padding:7px 10px;background:#25D366;color:#fff;border-radius:8px;font-size:11px;text-decoration:none;">💬</a>';
       html+='<button onclick="_prospEditModal('+p.id+')" title="Editar" style="padding:7px 10px;background:var(--accent-light);color:var(--accent);border:none;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;">✏</button>';
       html+='</div>';
@@ -3732,6 +3733,289 @@ function _prospDelete(id){
     var m=document.getElementById('prosp-modal');if(m)m.remove();
     _renderLeadsProspects();
   });
+}
+
+// ── IMPORTAR CSV (Apollo, Hunter, LinkedIn Sales Nav, etc.) ──
+function _prospImportModal(){
+  var html='<div id="prosp-import-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)document.getElementById(\'prosp-import-modal\').remove();">'
+    +'<div style="background:#fff;border-radius:14px;padding:24px;max-width:680px;width:100%;max-height:92vh;overflow-y:auto;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">'
+    +'<h3 style="font-family:\'Fraunces\',Georgia,serif;font-size:22px;font-weight:500;color:var(--title);">Importar prospects desde CSV</h3>'
+    +'<button onclick="document.getElementById(\'prosp-import-modal\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);">×</button>'
+    +'</div>'
+    +'<div style="background:rgba(233,196,106,.1);border:1px solid rgba(233,196,106,.4);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--body);margin-bottom:14px;line-height:1.5;">'
+    +'<div style="font-weight:700;margin-bottom:4px;">Formatos detectados automáticamente:</div>'
+    +'Apollo.io · Hunter.io · LinkedIn Sales Navigator · Genérico<br>'
+    +'Columnas reconocidas: <code>name / first name / last name</code>, <code>email</code>, <code>linkedin / linkedin url</code>, <code>phone / mobile</code>, <code>title</code>, <code>company</code>, <code>city / country</code>.'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:12px;">'
+    +'<label style="flex:1;padding:10px 14px;background:var(--accent-light);color:var(--accent);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;text-align:center;font-family:Inter,sans-serif;">📁 Subir archivo CSV<input type="file" accept=".csv,text/csv" onchange="_prospImportFile(event)" style="display:none;"></label>'
+    +'<button onclick="document.getElementById(\'prosp-csv-paste\').focus();" style="flex:1;padding:10px 14px;background:#fff;color:var(--body);border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">📋 Pegar CSV abajo</button>'
+    +'</div>'
+    +'<textarea id="prosp-csv-paste" rows="8" placeholder="Pegá el contenido del CSV aquí, o arrastrá el archivo arriba.&#10;&#10;Ejemplo Apollo:&#10;First Name,Last Name,Title,Email,Person Linkedin Url,Company&#10;María,López,Career Coach,maria@ejemplo.com,https://linkedin.com/in/marialopez,Self-employed" style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:monospace;line-height:1.4;resize:vertical;"></textarea>'
+    +'<div id="prosp-import-preview" style="margin-top:14px;"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:space-between;margin-top:16px;align-items:center;">'
+    +'<div style="font-size:11px;color:var(--muted);">Los duplicados por email o LinkedIn se ignoran.</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button onclick="_prospImportPreview()" style="background:#fff;color:var(--accent);border:1.5px solid var(--accent);padding:10px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Previsualizar</button>'
+    +'<button onclick="_prospImportSave()" style="background:var(--accent);color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Importar todos</button>'
+    +'</div>'
+    +'</div>'
+    +'</div></div>';
+  var wrap=document.createElement('div');wrap.innerHTML=html;document.body.appendChild(wrap.firstChild);
+}
+
+function _prospImportFile(ev){
+  var f=ev.target.files&&ev.target.files[0];
+  if(!f)return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var ta=document.getElementById('prosp-csv-paste');
+    if(ta){ta.value=e.target.result;_prospImportPreview();}
+  };
+  reader.readAsText(f);
+}
+
+// Parser CSV simple que respeta comillas y escapes ""
+function _prospParseCSV(txt){
+  var rows=[],row=[],cell='',q=false,i=0,c;
+  txt=txt.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  while(i<txt.length){
+    c=txt[i];
+    if(q){
+      if(c==='"'&&txt[i+1]==='"'){cell+='"';i+=2;continue;}
+      if(c==='"'){q=false;i++;continue;}
+      cell+=c;i++;continue;
+    }
+    if(c==='"'){q=true;i++;continue;}
+    if(c===','){row.push(cell);cell='';i++;continue;}
+    if(c==='\n'){row.push(cell);rows.push(row);row=[];cell='';i++;continue;}
+    cell+=c;i++;
+  }
+  if(cell.length||row.length){row.push(cell);rows.push(row);}
+  return rows.filter(function(r){return r.some(function(v){return (v||'').trim();});});
+}
+
+// Mapea header de CSV a campos nuestros
+function _prospMapRow(headers,row){
+  var H={};
+  headers.forEach(function(h,idx){H[h.toLowerCase().trim()]=idx;});
+  function v(keys){
+    for(var k=0;k<keys.length;k++){
+      var i=H[keys[k]];
+      if(i!=null&&row[i]!=null&&String(row[i]).trim()) return String(row[i]).trim();
+    }
+    return '';
+  }
+  var first=v(['first name','firstname','nombre','first']);
+  var last=v(['last name','lastname','apellido','last']);
+  var fullName=v(['name','full name','contact name','nombre completo']);
+  var nombre=fullName||((first+' '+last).trim());
+  var email=v(['email','email address','work email','e-mail','correo']);
+  var linkedin=v(['linkedin url','person linkedin url','linkedin','profile url','linkedin profile']);
+  var phone=v(['phone','mobile','mobile phone','work phone','telefono','tel']);
+  var title=v(['title','job title','position','cargo','puesto']);
+  var company=v(['company','company name','current company','empresa','organization']);
+  var city=v(['city','ciudad']);
+  var country=v(['country','pais','país']);
+  var notasParts=[];
+  if(title)notasParts.push(title);
+  if(company)notasParts.push('@ '+company);
+  if(city||country)notasParts.push([city,country].filter(Boolean).join(', '));
+  return {
+    nombre:nombre,
+    email:email.toLowerCase()||null,
+    linkedin_url:linkedin||null,
+    telefono:phone||null,
+    canal:'LinkedIn',
+    estado:'pendiente',
+    notas:notasParts.join(' · ')||null
+  };
+}
+
+function _prospImportParse(){
+  var txt=(document.getElementById('prosp-csv-paste')||{}).value||'';
+  if(!txt.trim())return {rows:[],dupes:0,skipped:0};
+  var grid=_prospParseCSV(txt);
+  if(grid.length<2)return {rows:[],dupes:0,skipped:0};
+  var headers=grid[0];
+  var existingEmails={},existingLinkedin={};
+  _prospData.forEach(function(p){
+    if(p.email)existingEmails[p.email.toLowerCase()]=true;
+    if(p.linkedin_url)existingLinkedin[p.linkedin_url.replace(/\/$/,'').toLowerCase()]=true;
+  });
+  var rows=[],dupes=0,skipped=0,seenNow={};
+  for(var i=1;i<grid.length;i++){
+    var m=_prospMapRow(headers,grid[i]);
+    if(!m.nombre){skipped++;continue;}
+    var ek=(m.email||'').toLowerCase();
+    var lk=(m.linkedin_url||'').replace(/\/$/,'').toLowerCase();
+    if((ek&&(existingEmails[ek]||seenNow['e:'+ek]))||(lk&&(existingLinkedin[lk]||seenNow['l:'+lk]))){
+      dupes++;continue;
+    }
+    if(ek)seenNow['e:'+ek]=true;
+    if(lk)seenNow['l:'+lk]=true;
+    rows.push(m);
+  }
+  return {rows:rows,dupes:dupes,skipped:skipped,total:grid.length-1};
+}
+
+function _prospImportPreview(){
+  var out=_prospImportParse();
+  var el=document.getElementById('prosp-import-preview');
+  if(!el)return;
+  if(!out.rows.length&&!out.dupes&&!out.skipped){el.innerHTML='<div style="font-size:12px;color:var(--muted);padding:10px 0;">Pegá un CSV arriba o subí un archivo para ver la previsualización.</div>';return;}
+  var h='<div style="background:#F5EFEF;border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;gap:18px;flex-wrap:wrap;font-size:12px;">'
+    +'<div><strong style="color:var(--accent);">'+out.rows.length+'</strong> nuevos</div>'
+    +'<div><strong style="color:#8C7B20;">'+out.dupes+'</strong> duplicados</div>'
+    +'<div><strong style="color:#999;">'+out.skipped+'</strong> sin nombre</div>'
+    +'<div style="margin-left:auto;opacity:.7;">Total filas: '+(out.total||0)+'</div>'
+    +'</div>';
+  if(out.rows.length){
+    h+='<div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">';
+    h+='<table style="width:100%;font-size:11px;border-collapse:collapse;">';
+    h+='<thead style="background:#FAFAF8;position:sticky;top:0;"><tr><th style="text-align:left;padding:8px 10px;">Nombre</th><th style="text-align:left;padding:8px 10px;">Email</th><th style="text-align:left;padding:8px 10px;">Notas</th></tr></thead><tbody>';
+    out.rows.slice(0,20).forEach(function(r){
+      h+='<tr style="border-top:1px solid var(--border);"><td style="padding:6px 10px;">'+escH(r.nombre)+'</td><td style="padding:6px 10px;opacity:.8;">'+escH(r.email||'—')+'</td><td style="padding:6px 10px;opacity:.7;font-size:10px;">'+escH(r.notas||'')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    if(out.rows.length>20)h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;">Mostrando primeros 20. Se importan los '+out.rows.length+' nuevos.</div>';
+  }
+  el.innerHTML=h;
+}
+
+function _prospImportSave(){
+  var out=_prospImportParse();
+  if(!out.rows.length){showToast('Nada para importar');return;}
+  var btnEl=event&&event.target;if(btnEl){btnEl.disabled=true;btnEl.textContent='Importando...';}
+  fetch(SB+'/rest/v1/prospectos',{
+    method:'POST',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify(out.rows)
+  }).then(function(r){
+    if(!r.ok){showToast('Error al importar ('+r.status+')');if(btnEl){btnEl.disabled=false;btnEl.textContent='Importar todos';}return;}
+    showToast('✓ '+out.rows.length+' prospects importados'+(out.dupes?' ('+out.dupes+' duplicados saltados)':''));
+    var m=document.getElementById('prosp-import-modal');if(m)m.remove();
+    _renderLeadsProspects();
+  }).catch(function(){showToast('Error de red');if(btnEl){btnEl.disabled=false;btnEl.textContent='Importar todos';}});
+}
+
+// ── EMAIL OUTREACH con plantilla Pathway ──
+var PATHWAY_EMAIL_TEMPLATES=[
+  {
+    id:'intro',
+    lbl:'Intro — Presentación suave',
+    subject:'Herramientas para coaches de carrera',
+    body:'Hola {{nombre}},\n\nTe escribo desde Pathway. Estamos construyendo una plataforma white-label para coaches de carrera que quieren ofrecer a sus clientes algo más que sesiones 1:1 — CV con IA, análisis de LinkedIn, búsqueda de empleo personalizada, seguimiento por semanas.\n\nEstuve viendo tu perfil y me pareció que podía encajar con cómo trabajás. ¿Te interesaría ver una demo rápida (10 min)?\n\nGracias,\nEquipo Pathway\nhttps://pathwaycareercoach.com'
+  },
+  {
+    id:'value',
+    lbl:'Valor — Qué resuelve',
+    subject:'¿Cómo automatizás el seguimiento con tus clientes?',
+    body:'Hola {{nombre}},\n\nMuchos coaches nos dicen que lo más difícil no son las sesiones — es mantener a los clientes activos entre sesión y sesión.\n\nPathway es una plataforma que le das a tu cliente con su login, sus herramientas (CV, LinkedIn, empleos), su progreso por semanas, y tus notas. Todo con tu marca, tu color, tu Calendly.\n\n¿Te mando un link de demo para que la veas por dentro?\n\nSaludos,\nEquipo Pathway\nhttps://pathwaycareercoach.com'
+  },
+  {
+    id:'trial',
+    lbl:'Trial — Prueba gratis',
+    subject:'14 días gratis de Pathway para probar con un cliente',
+    body:'Hola {{nombre}},\n\nTe escribo rápido porque estamos dando 14 días gratis a coaches de carrera para que prueben Pathway con un cliente real.\n\nEs una plataforma white-label: tu marca, tus precios, tus clientes. Incluye CV con IA, análisis de LinkedIn, sugerencias de empleo, seguimiento semanal.\n\nSin tarjeta para el trial. ¿Te mando el link de registro?\n\nGracias,\nEquipo Pathway\nhttps://pathwaycareercoach.com'
+  },
+  {
+    id:'followup',
+    lbl:'Follow-up — Segundo contacto',
+    subject:'Volviendo sobre Pathway',
+    body:'Hola {{nombre}},\n\nTe escribí hace unos días sobre Pathway, la plataforma white-label para coaches de carrera. No sé si llegaste a verlo.\n\nSi te interesa echarle un vistazo en 2 minutos, el sitio es https://pathwaycareercoach.com. Y si no es para vos, decime y no insisto más.\n\nGracias,\nEquipo Pathway'
+  }
+];
+
+function _prospEmailModal(id){
+  var p=_prospData.find(function(x){return x.id===id;});
+  if(!p){showToast('Prospect no encontrado');return;}
+  if(!p.email){showToast('Este prospect no tiene email');return;}
+  var tplOpts=PATHWAY_EMAIL_TEMPLATES.map(function(t){return '<option value="'+t.id+'">'+t.lbl+'</option>';}).join('');
+  var firstName=String(p.nombre||'').split(' ')[0]||p.nombre||'';
+  var fromAddr='hi@pathwaycareercoach.com';
+  var html='<div id="prosp-email-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)document.getElementById(\'prosp-email-modal\').remove();">'
+    +'<div style="background:#fff;border-radius:14px;padding:24px;max-width:640px;width:100%;max-height:92vh;overflow-y:auto;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    +'<div><h3 style="font-family:\'Fraunces\',Georgia,serif;font-size:22px;font-weight:500;color:var(--title);margin:0;">Email a '+escH(p.nombre)+'</h3>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px;">De <strong>'+fromAddr+'</strong> → '+escH(p.email)+'</div></div>'
+    +'<button onclick="document.getElementById(\'prosp-email-modal\').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);">×</button>'
+    +'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:10px;">'
+    +'<div><label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Plantilla</label>'
+    +'<select id="pe-tpl" onchange="_prospEmailLoadTpl()" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;margin-top:4px;background:#fff;">'+tplOpts+'</select></div>'
+    +'<div><label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Asunto</label>'
+    +'<input id="pe-subject" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;margin-top:4px;"></div>'
+    +'<div><label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Mensaje</label>'
+    +'<textarea id="pe-body" rows="11" style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;margin-top:4px;resize:vertical;line-height:1.5;"></textarea></div>'
+    +'<div style="background:rgba(82,183,136,.08);border:1px solid rgba(82,183,136,.3);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--body);line-height:1.5;">'
+    +'<strong>Variables:</strong> <code>{{nombre}}</code> = '+escH(p.nombre)+' · <code>{{primer}}</code> = '+escH(firstName)+' · <code>{{email}}</code> = '+escH(p.email)
+    +'</div></div>'
+    +'<input type="hidden" id="pe-pid" value="'+id+'">'
+    +'<div style="display:flex;gap:8px;justify-content:space-between;margin-top:18px;flex-wrap:wrap;">'
+    +'<div style="font-size:11px;color:var(--muted);align-self:center;">Se abre tu cliente de email con el mensaje listo.</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button onclick="_prospEmailCopy()" style="background:#fff;color:var(--body);border:1px solid var(--border);padding:10px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">Copiar</button>'
+    +'<button onclick="_prospEmailSend()" style="background:linear-gradient(135deg,#2D6A4F,#52B788);color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;">✉ Abrir en email</button>'
+    +'</div></div>'
+    +'</div></div>';
+  var wrap=document.createElement('div');wrap.innerHTML=html;document.body.appendChild(wrap.firstChild);
+  _prospEmailLoadTpl();
+}
+
+function _prospEmailFill(str,p){
+  var first=String(p.nombre||'').split(' ')[0]||p.nombre||'';
+  return str
+    .replace(/\{\{nombre\}\}/g,p.nombre||'')
+    .replace(/\{\{primer\}\}/g,first)
+    .replace(/\{\{email\}\}/g,p.email||'');
+}
+
+function _prospEmailLoadTpl(){
+  var pid=+(document.getElementById('pe-pid')||{}).value;
+  var p=_prospData.find(function(x){return x.id===pid;});
+  if(!p)return;
+  var tplId=(document.getElementById('pe-tpl')||{}).value;
+  var tpl=PATHWAY_EMAIL_TEMPLATES.find(function(t){return t.id===tplId;})||PATHWAY_EMAIL_TEMPLATES[0];
+  var sub=document.getElementById('pe-subject');
+  var body=document.getElementById('pe-body');
+  if(sub)sub.value=_prospEmailFill(tpl.subject,p);
+  if(body)body.value=_prospEmailFill(tpl.body,p);
+}
+
+function _prospEmailSend(){
+  var pid=+(document.getElementById('pe-pid')||{}).value;
+  var p=_prospData.find(function(x){return x.id===pid;});
+  if(!p||!p.email){showToast('Sin email');return;}
+  var sub=(document.getElementById('pe-subject')||{}).value||'';
+  var body=(document.getElementById('pe-body')||{}).value||'';
+  var url='mailto:'+encodeURIComponent(p.email)+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(body);
+  // Marcar como contactado + setear follow-up a 4 días
+  var fu=new Date();fu.setDate(fu.getDate()+4);
+  var patch={
+    estado:p.estado==='pendiente'?'contactado':p.estado,
+    fecha_contacto:new Date().toISOString(),
+    proximo_followup:fu.toISOString().slice(0,10)
+  };
+  fetch(SB+'/rest/v1/prospectos?id=eq.'+pid,{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify(patch)
+  }).then(function(){
+    window.location.href=url;
+    showToast('✓ Marcado como contactado · follow-up en 4 días');
+    var m=document.getElementById('prosp-email-modal');if(m)m.remove();
+    _renderLeadsProspects();
+  }).catch(function(){window.location.href=url;});
+}
+
+function _prospEmailCopy(){
+  var sub=(document.getElementById('pe-subject')||{}).value||'';
+  var body=(document.getElementById('pe-body')||{}).value||'';
+  var txt='Asunto: '+sub+'\n\n'+body;
+  if(navigator.clipboard)navigator.clipboard.writeText(txt).then(function(){showToast('Copiado (asunto + cuerpo)');});
+  else showToast('No se pudo copiar');
 }
 
 // ── CONFIGURACIÓN DEL COACH ─────────────────────────────────
