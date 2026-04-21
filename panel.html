@@ -3539,6 +3539,7 @@ function _renderLeadsChat(){
 // ── BÚSQUEDA ACTIVA: prospects de coaches ────────────────
 var _prospFilter='todos';
 var _prospData=[];
+var _prospEmailMap={}; // prospecto_id → {sent,pending,failed,cancelled}
 
 var PROSP_ESTADOS=[
   {v:'pendiente',lbl:'Pendiente',bg:'#F5F5F5',fg:'#888'},
@@ -3565,7 +3566,24 @@ function _renderLeadsProspects(){
   }).then(function(rows){
     if(!Array.isArray(rows))return;
     _prospData=rows;
-    _prospRenderList();
+    // Cargar también email_queue para saber a quién ya le mandamos
+    fetch(SB+'/rest/v1/email_queue?select=prospecto_id,status,scheduled_at,sent_at&limit=500',{
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+    }).then(function(r){return r.ok?r.json():[];}).then(function(queue){
+      _prospEmailMap={};
+      if(Array.isArray(queue)){
+        queue.forEach(function(q){
+          if(!q.prospecto_id)return;
+          var m=_prospEmailMap[q.prospecto_id]||{sent:0,pending:0,failed:0,cancelled:0};
+          if(q.status==='sent')m.sent++;
+          else if(q.status==='pending'||q.status==='sending')m.pending++;
+          else if(q.status==='failed')m.failed++;
+          else if(q.status==='cancelled')m.cancelled++;
+          _prospEmailMap[q.prospecto_id]=m;
+        });
+      }
+      _prospRenderList();
+    }).catch(function(){_prospEmailMap={};_prospRenderList();});
   }).catch(function(){
     var el=document.getElementById('leads-content');
     if(el)el.innerHTML=_prospSqlMissing();
@@ -3629,6 +3647,13 @@ function _prospRenderList(){
       html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">';
       html+='<div style="font-size:14px;font-weight:700;color:var(--title);">'+escH(p.nombre||'—')+'</div>';
       html+='<span style="font-size:10px;font-weight:600;padding:2px 10px;border-radius:100px;background:'+e.bg+';color:'+e.fg+';">'+e.lbl+'</span>';
+      // Badge email status
+      var em=_prospEmailMap[p.id];
+      if(em){
+        if(em.pending>0)html+='<span title="Tiene '+em.pending+' email programado" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px;background:rgba(233,196,106,.2);color:#8C7B20;">📅 Programado</span>';
+        else if(em.sent>0)html+='<span title="Le enviaste '+em.sent+' email" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px;background:rgba(82,183,136,.2);color:#2D6A4F;">✓ '+em.sent+' enviado'+(em.sent>1?'s':'')+'</span>';
+        else if(em.failed>0)html+='<span title="Email falló" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px;background:rgba(196,117,110,.15);color:#C0756E;">⚠ Falló</span>';
+      }
       if(isOverdue)html+='<span style="font-size:10px;color:#C0756E;font-weight:600;">⏰ Follow-up atrasado</span>';
       html+='</div>';
       html+='<div style="font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;">';
@@ -3935,6 +3960,15 @@ function _prospEmailModal(id){
   var p=_prospData.find(function(x){return x.id===id;});
   if(!p){showToast('Prospect no encontrado');return;}
   if(!p.email){showToast('Este prospect no tiene email');return;}
+  // Warning si ya le mandaste o programaste antes
+  var em=_prospEmailMap[id];
+  if(em&&(em.sent>0||em.pending>0)){
+    var msg='⚠ Cuidado: ';
+    if(em.sent>0)msg+='ya le enviaste '+em.sent+' email'+(em.sent>1?'s':'')+' a este prospect.';
+    if(em.pending>0)msg+=(em.sent>0?' Además hay':'Hay')+' '+em.pending+' email programado pendiente.';
+    msg+='\n\n¿Querés continuar y mandar otro?';
+    if(!confirm(msg))return;
+  }
   var tplOpts=PATHWAY_EMAIL_TEMPLATES.map(function(t){return '<option value="'+t.id+'">'+t.lbl+'</option>';}).join('');
   var firstName=String(p.nombre||'').split(' ')[0]||p.nombre||'';
   var fromAddr='hi@pathwaycareercoach.com';
