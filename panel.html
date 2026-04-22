@@ -1156,8 +1156,8 @@ function renderMain(c){
       +'</div></div>';
   }
 
-  var tabs=['perfil','documentos','sesion','gestion'];
-  var labels={perfil:'📋 Perfil',documentos:'📄 Documentos',sesion:'📅 Sesión',gestion:'⚙ Gestión'};
+  var tabs=['perfil','avance','documentos','sesion','gestion'];
+  var labels={perfil:'📋 Perfil',avance:'✅ Avance',documentos:'📄 Documentos',sesion:'📅 Sesión',gestion:'⚙ Gestión'};
   var tabsHTML=tabs.map(function(t){
     return '<div class="tab'+(atab===t?' on':'')+'" onclick="switchTab(\''+t+'\','+c.id+')">'+labels[t]+'</div>';
   }).join('');
@@ -1191,6 +1191,7 @@ function switchTab(tab,id){
 
 function renderTab(c,tab){
   if(tab==='perfil') return tabPerfil(c);
+  if(tab==='avance') return tabAvance(c);
   if(tab==='documentos') return tabDocumentos(c);
   if(tab==='sesion') return tabSesionGroup(c);
   if(tab==='gestion') return tabGestion(c);
@@ -1218,6 +1219,112 @@ function tabPerfil(c){
     html+=tabInforme(c);
     html+='</div>';
   }
+  return html;
+}
+
+function tabAvance(c){
+  // Tab Avance — muestra qué acciones marcó el cliente, por semana.
+  // Lee candidatos.acciones_progreso (JSON array de booleans) + informes.data.<week>_acciones
+  var loading='<div style="padding:2rem;text-align:center;color:var(--muted);font-family:Inter,sans-serif;font-size:13px;">Cargando avance...</div>';
+  // Fetch async: candidato completo + informe
+  setTimeout(function(){
+    var cont=document.getElementById('avance-body');
+    if(!cont)return;
+    Promise.all([
+      fetch(SB+'/rest/v1/candidatos?id=eq.'+c.id+'&select=acciones_progreso,semana_activa,updated_at',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];}),
+      fetch(SB+'/rest/v1/informes?email=eq.'+encodeURIComponent(c.email)+'&select=data&limit=1',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];})
+    ]).then(function(res){
+      var cd=(res[0]&&res[0][0])||{};
+      var inf=(res[1]&&res[1][0]&&res[1][0].data)||null;
+      var ACTS=[];try{ACTS=cd.acciones_progreso?JSON.parse(cd.acciones_progreso):[];}catch(e){ACTS=[];}
+      var semActiva=parseInt(cd.semana_activa)||1;
+      cont.innerHTML=_buildAvanceBody(ACTS,inf,semActiva,c);
+    }).catch(function(e){
+      cont.innerHTML='<div style="padding:2rem;color:#c0756e;">Error cargando avance</div>';
+    });
+  },80);
+  return '<div id="avance-body" style="padding:20px 24px;">'+loading+'</div>';
+}
+
+function _buildAvanceBody(ACTS,inf,semActiva,c){
+  if(!inf){
+    return '<div style="padding:2rem;background:rgba(233,196,106,.1);border:1px dashed rgba(233,196,106,.4);border-radius:12px;text-align:center;"><div style="font-size:14px;color:var(--body);font-family:Inter,sans-serif;">El cliente aún no tiene informe generado. Generá el informe para ver sus acciones semana a semana.</div></div>';
+  }
+  var SEMS=[
+    {n:1,lbl:'Evaluación',ico:'🎯',acc:'cv_acciones',color:'#2D6A4F'},
+    {n:2,lbl:'CV',ico:'📄',acc:'linkedin_acciones',color:'#1D4A35'},
+    {n:3,lbl:'LinkedIn',ico:'💼',acc:'networking_acciones',color:'#5C3A1B'},
+    {n:4,lbl:'Búsqueda activa',ico:'🔍',acc:'preguntas',color:'#4A3A6B'},
+    {n:5,lbl:'Revisión final',ico:'🏁',acc:null,color:'#7A5C4A'}
+  ];
+
+  // Calcular totales
+  var ofs=0,totalDone=0,totalAll=0;
+  var perSem=[];
+  SEMS.forEach(function(s,i){
+    var accs=s.acc&&inf[s.acc]?inf[s.acc]:[];
+    var hechas=[],pendientes=[];
+    accs.forEach(function(a,idx){(ACTS[ofs+idx]?hechas:pendientes).push(a);});
+    perSem.push({n:s.n,lbl:s.lbl,ico:s.ico,color:s.color,hechas:hechas,pendientes:pendientes,total:accs.length,done:hechas.length,isCurrent:s.n===semActiva});
+    totalDone+=hechas.length;totalAll+=accs.length;
+    ofs+=accs.length;
+  });
+  var pct=totalAll?Math.round((totalDone/totalAll)*100):0;
+
+  var html='';
+  // Header resumen
+  html+='<div style="background:linear-gradient(135deg,rgba(82,183,136,.1),rgba(45,106,79,.04));border-radius:14px;padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">';
+  html+='<div>';
+  html+='<div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-family:Inter,sans-serif;margin-bottom:4px;">AVANCE GENERAL</div>';
+  html+='<div style="font-size:22px;font-weight:800;color:var(--title);font-family:var(--font-title),Georgia,serif;letter-spacing:-.3px;">'+totalDone+' de '+totalAll+' acciones</div>';
+  html+='<div style="font-size:12px;color:var(--body);margin-top:3px;">Semana activa: <strong>S'+semActiva+' · '+(perSem[semActiva-1]?perSem[semActiva-1].lbl:'')+'</strong></div>';
+  html+='</div>';
+  html+='<div style="text-align:right;">';
+  html+='<div style="font-size:38px;font-weight:900;color:var(--accent);font-family:var(--font-title),Georgia,serif;letter-spacing:-1px;line-height:1;">'+pct+'%</div>';
+  html+='</div>';
+  html+='</div>';
+
+  // Por semana
+  perSem.forEach(function(p){
+    if(p.total===0&&p.n!==5)return;
+    var pctW=p.total?Math.round((p.done/p.total)*100):0;
+    html+='<div style="margin-bottom:12px;background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;'+(p.isCurrent?'border-color:'+p.color+';box-shadow:0 0 0 3px '+p.color+'22;':'')+'">';
+    // Header
+    html+='<div style="padding:13px 18px;display:flex;align-items:center;gap:12px;border-bottom:.5px solid var(--border);background:'+p.color+'08;">';
+    html+='<div style="font-size:22px;">'+p.ico+'</div>';
+    html+='<div style="flex:1;min-width:0;">';
+    html+='<div style="font-size:14px;font-weight:800;color:var(--title);font-family:Inter,sans-serif;">S'+p.n+' · '+escH(p.lbl)+(p.isCurrent?' <span style="font-size:9px;font-weight:800;padding:2px 8px;border-radius:100px;background:'+p.color+';color:#fff;margin-left:6px;vertical-align:middle;">ACTUAL</span>':'')+'</div>';
+    html+='</div>';
+    if(p.total){
+      html+='<div style="text-align:right;">';
+      html+='<div style="font-size:13px;font-weight:800;color:'+p.color+';font-family:Inter,sans-serif;">'+p.done+'/'+p.total+'</div>';
+      html+='<div style="font-size:10px;color:var(--muted);">'+pctW+'%</div>';
+      html+='</div>';
+    }
+    html+='</div>';
+    // Body
+    if(p.total===0){
+      html+='<div style="padding:12px 18px;font-size:12px;color:var(--muted);font-style:italic;font-family:Inter,sans-serif;">Semana de revisión final · sin acciones checklist</div>';
+    } else {
+      html+='<div style="padding:10px 18px 12px;">';
+      if(p.hechas.length){
+        p.hechas.forEach(function(a){
+          html+='<div style="display:flex;gap:10px;padding:6px 0;font-size:12px;color:var(--body);line-height:1.5;"><div style="color:#2D6A4F;flex-shrink:0;font-weight:800;">✓</div><div>'+escH(a)+'</div></div>';
+        });
+      }
+      if(p.pendientes.length){
+        p.pendientes.forEach(function(a){
+          html+='<div style="display:flex;gap:10px;padding:6px 0;font-size:12px;color:var(--muted);line-height:1.5;"><div style="color:#C0756E;flex-shrink:0;">○</div><div>'+escH(a)+'</div></div>';
+        });
+      }
+      html+='</div>';
+    }
+    html+='</div>';
+  });
+
+  // Hint footer
+  html+='<div style="margin-top:14px;padding:12px 16px;background:rgba(82,183,136,.06);border-radius:10px;font-size:11px;color:var(--muted);font-family:Inter,sans-serif;line-height:1.5;">💡 <strong>Tip:</strong> si ves acciones pendientes en la semana actual, mandale un WhatsApp o comentale en la próxima sesión.</div>';
+
   return html;
 }
 
