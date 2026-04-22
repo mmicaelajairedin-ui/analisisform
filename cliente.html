@@ -289,13 +289,19 @@ body{background:var(--bg);}
 
   /* ── Sidebar mobile: oculto por defecto, slide desde izq ── */
   .sb{
-    position:fixed;left:0;top:0;height:100vh;z-index:160;
+    position:fixed;left:0;top:0;height:100vh;height:100dvh;z-index:160;
     width:82vw;max-width:300px;
     transform:translateX(-100%);
     transition:transform .28s cubic-bezier(.4,0,.2,1);
     box-shadow:4px 0 24px rgba(0,0,0,.15);
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
   }
   .sb.open{transform:translateX(0);}
+  /* En móvil: que los elementos internos no queden apretados */
+  .sb .sb-user{padding:20px 14px 16px !important;}
+  .sb .sb-nav{padding:8px !important;gap:2px;}
+  .sb .ni{padding:12px 14px !important;font-size:14px !important;}
 
   /* ── Layout ── */
   .app{display:block;}
@@ -726,6 +732,91 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--rose) !important;
   box-shadow: 0 0 0 3px rgba(140,123,128,.1) !important;
   outline: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ✨ POLISH PACK WOW — tipografía, interacciones, feedback
+   ═══════════════════════════════════════════════════════════ */
+
+/* 1. TIPOGRAFÍA: Fraunces serif en títulos principales (carácter) */
+.main-title,
+.main-title * { font-family:'Fraunces',Georgia,serif !important; font-weight:500 !important; letter-spacing:-.025em !important; }
+.card-title { font-family:'Fraunces',Georgia,serif !important; font-weight:500 !important; letter-spacing:-.02em !important; }
+
+/* 2. CARDS con hover lift (sensación premium) */
+.card { transition: transform .25s cubic-bezier(.4,0,.2,1), box-shadow .25s cubic-bezier(.4,0,.2,1), border-color .2s ease !important; }
+.card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(27,46,38,.09), 0 4px 10px rgba(27,46,38,.05) !important; }
+
+/* 3. BOTONES con :active press + hover lift */
+.btn-p, .btn-s, .ses-btn, .dbtn, .ses-save, .p-btn-fill, .p-btn-out {
+  transition: transform .12s cubic-bezier(.4,0,.2,1), background .15s ease, box-shadow .2s ease, border-color .15s ease !important;
+}
+.btn-p:hover, .btn-s:hover, .ses-btn:hover, .dbtn:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 18px rgba(140,123,128,.28) !important;
+}
+.btn-p:active, .btn-s:active, .ses-btn:active, .dbtn:active, .ses-save:active {
+  transform: scale(.96);
+  transition-duration: .05s !important;
+}
+
+/* Links tipo botón (Calendly, etc) también se sienten como botón */
+a[style*="Elegir día"], a[style*="Cambiar horario"] {
+  transition: transform .12s ease, box-shadow .15s ease !important;
+}
+a[style*="Elegir día"]:active, a[style*="Cambiar horario"]:active {
+  transform: scale(.96) !important;
+}
+
+/* 4. CHECKBOXES/CHECKS inline en acciones — bouncy cuando se marcan
+   Las acciones de la semana se renderizan con circle+checkmark inline
+   (ver verSemana function). Apuntamos a esos specifically via JS data attr */
+[data-act-check]{ transition: all .2s cubic-bezier(.4,0,.2,1); }
+[data-act-check].done {
+  animation: checkBounce .45s cubic-bezier(.34,1.5,.64,1);
+}
+@keyframes checkBounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.28); }
+  70% { transform: scale(.93); }
+  100% { transform: scale(1); }
+}
+
+/* 5. SCORE BARS: brillo sutil en hover del score-item */
+.score-item { transition: transform .2s ease; cursor: default; }
+
+/* 6. EMPTY STATES con micro-pulse del ícono (procesando) */
+.empty-icon { display:inline-block; animation: emptyPulse 2.4s ease-in-out infinite; }
+@keyframes emptyPulse {
+  0%,100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: .85; }
+}
+
+/* 7. Sidebar items: hover con slide sutil */
+.ni { transition: all .18s ease; position: relative; }
+.ni:not(.on):hover { padding-left: 18px; background: rgba(140,123,128,.08); }
+
+/* 8. Progreso de roadmap: los items activos tienen pulse suave */
+.rm-item.current,
+.rm-item.active {
+  animation: rmPulse 2s ease-in-out infinite;
+}
+@keyframes rmPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(82,183,136,.35); }
+  50% { box-shadow: 0 0 0 5px rgba(82,183,136,0); }
+}
+
+/* 9. Animación de entrada sutil en cards al renderizar */
+.card { animation: cardIn .35s ease both; }
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 10. Focus visible accesible (útil para gente que navega con teclado) */
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--green) !important;
+  outline-offset: 2px !important;
 }
 
 </style>
@@ -1743,39 +1834,70 @@ function rActivityFeed(){
   return o;
 }
 
+// Calcula cuánto sube cada score del diagnóstico en base a las acciones
+// completadas por el cliente. Cap máximo +20 puntos por score.
+// Mapeo: cada score tira de acciones de UNA semana específica, el resto
+// usa el progreso global.
+function _getScoreBoost(scoreLabel){
+  if(!D)return 0;
+  var lbl=String(scoreLabel||'').toLowerCase();
+  var relevantWeek=0; // 0 = global
+  if(lbl.indexOf('cv')!==-1||lbl.indexOf('marca')!==-1||lbl.indexOf('resume')!==-1)relevantWeek=2;
+  else if(lbl.indexOf('linkedin')!==-1)relevantWeek=3;
+  else if(lbl.indexOf('claridad')!==-1||lbl.indexOf('objetivo')!==-1||lbl.indexOf('clarity')!==-1)relevantWeek=1;
+  else if(lbl.indexOf('red')!==-1||lbl.indexOf('contactos')!==-1||lbl.indexOf('network')!==-1)relevantWeek=4;
+  // propuesta / valor / otros → global
+  var maxBoost=20;
+  if(relevantWeek===0){
+    var td=0,ta=0,ofs=0;
+    for(var i=0;i<SEMS.length;i++){
+      var accs=D[SEMS[i].acc]||[];
+      accs.forEach(function(v,k){if(ACTS[ofs+k])td++;});
+      ta+=accs.length;ofs+=accs.length;
+    }
+    return ta?Math.round(maxBoost*td/ta):0;
+  }
+  var ofs=0;
+  for(var j=0;j<relevantWeek-1;j++){ofs+=(D[SEMS[j].acc]||[]).length;}
+  var a=D[SEMS[relevantWeek-1].acc]||[];
+  var dn=0;a.forEach(function(v,k){if(ACTS[ofs+k])dn++;});
+  return a.length?Math.round(maxBoost*dn/a.length):0;
+}
+
 // Card de motivación/gamificación — llena espacio derecho y engancha.
 // Muestra un stat destacado según estado del cliente.
 function rMotivCard(){
-  // Calcular progreso global
-  var offset=0, totalDone=0, totalAccs=0;
-  for(var i=0;i<SEMS.length;i++){
-    var sem=SEMS[i];
-    var accs=D?(D[sem.acc]||[]):[];
-    var dn=0;accs.forEach(function(v,k){if(ACTS[offset+k])dn++;});
-    totalDone+=dn;totalAccs+=accs.length;
-    offset+=accs.length;
-  }
-  var pct=totalAccs?Math.round((totalDone/totalAccs)*100):0;
+  // Progreso de la SEMANA ACTUAL (no global) — la card acompaña el momento
+  var semIdx=Math.min(SEM,5)-1;
+  var semNames=['Evaluación','CV','LinkedIn','Búsqueda activa','Revisión'];
+  var offset=0;
+  for(var i=0;i<semIdx;i++){offset+=(D?(D[SEMS[i].acc]||[]):[]).length;}
+  var accsWeek=D?(D[SEMS[semIdx].acc]||[]):[];
+  var doneWeek=0;accsWeek.forEach(function(v,k){if(ACTS[offset+k])doneWeek++;});
+  var pct=accsWeek.length?Math.round((doneWeek/accsWeek.length)*100):0;
+  var semLbl=semNames[semIdx]||'';
 
-  // Lógica de mensaje dinámico
+  // Mensajes por semana + progreso
   var emoji,title,sub,bg,col;
   if(pct===0){
-    emoji='🚀';title='¡Arrancá fuerte!';sub='Marcá tu primera acción hoy para sumar momentum';
+    emoji='🚀';title='Semana '+SEM+' · Arrancá fuerte';
+    sub='Marcá tu primera acción de '+semLbl+' para sumar momentum';
     bg='linear-gradient(135deg,rgba(82,183,136,.12),rgba(45,106,79,.06))';col='var(--green)';
-  } else if(pct<25){
-    emoji='⚡';title='Buen comienzo';sub='Cada acción te acerca a tu objetivo. ¡Seguí así!';
-    bg='linear-gradient(135deg,rgba(82,183,136,.15),rgba(45,106,79,.08))';col='var(--green)';
   } else if(pct<50){
-    emoji='🔥';title='En ritmo';sub='Completaste '+totalDone+' de '+totalAccs+' acciones. Vas muy bien';
-    bg='linear-gradient(135deg,rgba(233,196,106,.18),rgba(233,196,106,.06))';col='#8c6f2a';
-  } else if(pct<75){
-    emoji='💪';title='A mitad del camino';sub='Ya pasaste el 50%. El cierre está cerca';
-    bg='linear-gradient(135deg,rgba(233,196,106,.22),rgba(233,196,106,.08))';col='#8c6f2a';
+    emoji='⚡';title='En camino con '+semLbl;
+    sub='Completaste '+doneWeek+' de '+accsWeek.length+' acciones de esta semana';
+    bg='linear-gradient(135deg,rgba(82,183,136,.15),rgba(45,106,79,.08))';col='var(--green)';
   } else if(pct<100){
-    emoji='🎯';title='¡Casi ahí!';sub='Solo '+Math.round(totalAccs-totalDone)+' acciones para cerrar';
-    bg='linear-gradient(135deg,rgba(45,106,79,.18),rgba(45,106,79,.06))';col='var(--green)';
+    emoji='🔥';title='Mitad de '+semLbl;
+    sub='Ya pasaste la mitad. Faltan '+(accsWeek.length-doneWeek)+' acciones para cerrar';
+    bg='linear-gradient(135deg,rgba(233,196,106,.18),rgba(233,196,106,.06))';col='#8c6f2a';
   } else {
-    emoji='🏆';title='¡Completaste todo!';sub='Hablá con Micaela para cerrar el proceso';
+    // Semana completa
+    if(SEM>=5){
+      emoji='🏆';title='¡Proceso completado!';sub='Hablá con Micaela para cerrar';
+    } else {
+      emoji='✅';title='¡Semana '+SEM+' lista!';sub='Esperá a que Micaela te habilite la siguiente';
+    }
     bg='linear-gradient(135deg,rgba(233,196,106,.25),rgba(233,196,106,.1))';col='#8c6f2a';
   }
 
@@ -1787,7 +1909,7 @@ function rMotivCard(){
   // Progreso grande
   o+='<div style="background:#fff;border-radius:12px;padding:12px 14px;">';
   o+='<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">';
-  o+='<div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">PROGRESO</div>';
+  o+='<div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">SEMANA '+SEM+' · '+doneWeek+'/'+accsWeek.length+'</div>';
   o+='<div style="font-size:22px;font-weight:900;color:'+col+';font-family:Montserrat,sans-serif;letter-spacing:-.8px;">'+pct+'<span style="font-size:13px;">%</span></div>';
   o+='</div>';
   o+='<div style="height:6px;background:var(--border);border-radius:100px;overflow:hidden;">';
@@ -2305,11 +2427,14 @@ function rSemana(){
   o+='<div class="card"><div class="card-hd"><div><div class="card-lbl">'+t('your_diagnosis')+'</div><div class="card-title">'+t('current_situation')+'</div></div></div><div class="card-body">';
   if(D&&D.scores&&D.scores.length){
     D.scores.forEach(function(s,si){
-      var p=Math.min(100,Math.max(0,Math.round(s.val)));
+      var baseP=Math.min(100,Math.max(0,Math.round(s.val)));
+      // Boost dinámico por acciones completadas del cliente (max +20%)
+      var boost=_getScoreBoost(s.label);
+      var p=Math.min(100,baseP+boost);
       var c2=SCORE_COLORS[si%SCORE_COLORS.length];
       o+='<div class="score-item"><div class="score-top">';
-      o+='<span class="score-lbl" style="font-size:12px;color:#1a1a1a;">'+hh(s.label)+'</span>';
-      o+='<span class="score-val" style="color:'+c2+';font-size:13px;font-weight:800;">'+p+'%</span></div>';
+      o+='<span class="score-lbl" style="font-size:13px;color:#1a1a1a;">'+hh(s.label)+'</span>';
+      o+='<span class="score-val" style="color:'+c2+';font-size:15px;font-weight:900;">'+p+'%'+(boost>0?' <span style="font-size:10px;font-weight:800;color:var(--green);background:rgba(82,183,136,.15);padding:2px 6px;border-radius:100px;margin-left:4px;">+'+boost+'</span>':'')+'</span></div>';
       o+='<div class="score-bar"><div class="score-fill" style="width:'+p+'%;background:'+c2+';"></div></div></div>';
     });
   }else{o+='<div class="empty"><div class="empty-icon">📊</div><div class="empty-title">Tu diagnóstico está en camino</div><div class="empty-desc">Micaela está analizando tu perfil. Recibirás tus scores y recomendaciones pronto.</div></div>';}
