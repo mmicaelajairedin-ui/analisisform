@@ -2058,16 +2058,66 @@ function _semProceso(pasos,secId,btnLabel,btnIcon,semColor){
 
 // Tarjeta personalizada basada en el informe inicial — aparece en cada semana
 // Refuerza la sensación de que el contenido está calibrado a este cliente.
+// Keywords por semana para filtrar gaps/fortalezas del informe
+var SEM_KEYWORDS={
+  1:['.'],  // Semana 1 = informe completo, sin filtrar
+  2:['cv','currículum','curriculum','resum','experiencia','logros','perfil profesional','action','verb','ats','habilidad','skills'],
+  3:['linkedin','titular','headline','perfil','about','sobre mí','sobre ti','red','visibilidad','marca personal','feed','posts'],
+  4:['red','network','networking','contact','búsqueda','search','aplic','ofertas','empresas','prospect','cold','decision-maker','recruiter','headhunter','entrevista','interview','preguntas'],
+  5:['oferta','offer','negoci','salario','compensación','cierre','aceptar','rechazar','contraoferta','counter','conversión','progreso']
+};
+
+// Foco práctico de la semana — tips accionables por tema
+var SEM_FOCUS={
+  2:{ lbl:'Foco de esta semana', tips:[
+    {ico:'📝',t:'Reescribí tus logros con verbos en pasado y números',d:'Ej: "Lideré equipo de 40 personas, reduje costos 23%"'},
+    {ico:'🎯',t:'Adaptá el CV a CADA oferta que aplicas',d:'Palabras clave del anuncio = palabras en tu CV (ATS)'},
+    {ico:'📐',t:'CV de 1 página si tenés <10 años de experiencia, 2 si más',d:'Nunca 3 páginas, ningún recruiter las lee'}
+  ]},
+  3:{ lbl:'Foco de esta semana', tips:[
+    {ico:'💼',t:'Headline con tu propuesta, no tu último puesto',d:'Ej: "Ayudo a PMEs a duplicar ingresos con IA" > "Senior Manager"'},
+    {ico:'📖',t:'About de 3-4 párrafos con tu historia y valor',d:'Para quién trabajás, qué resolvés, cómo contactarte'},
+    {ico:'🌐',t:'Publicá 1 post/semana sobre tu expertise',d:'Aumenta visibilidad para reclutadores que buscan tu perfil'}
+  ]},
+  4:{ lbl:'Foco de esta semana', tips:[
+    {ico:'🎯',t:'Lista de 30-50 empresas objetivo (tier 1, 2, 3)',d:'Foco por tamaño, sector y probabilidad'},
+    {ico:'☕',t:'10 cafés virtuales/semana con contactos de 2º grado',d:'Conversaciones informales abren puertas antes que aplicaciones'},
+    {ico:'📬',t:'Emails a decision-makers (no HR) con valor específico',d:'1 párrafo: quién sos, qué traés, qué pedís'},
+    {ico:'🎙️',t:'Prepará respuestas a "háblame de ti" y 5 historias STAR',d:'Situation, Task, Action, Result — adaptables a 90% de preguntas'}
+  ]},
+  5:{ lbl:'Foco de esta semana', tips:[
+    {ico:'💰',t:'Investigá el rango salarial antes de recibir oferta',d:'Glassdoor, LinkedIn Salary, comparables con tu red'},
+    {ico:'📊',t:'Negociá: base, bonus, equity, vacaciones, fecha de inicio',d:'Casi siempre hay 10-20% de margen sobre la primera oferta'},
+    {ico:'⚖️',t:'Si tenés 2+ ofertas, pedí tiempo para comparar',d:'Compañía, equipo, trayectoria, compensación total, work-life'}
+  ]}
+};
+
 function rInformePersonalizado(sem){
   if(!D)return '';
   var hasFort=D.fortalezas&&D.fortalezas.length;
   var hasGaps=D.gaps&&D.gaps.length;
   var hasStrat=D.estrategia;
-  if(!hasFort&&!hasGaps&&!hasStrat)return '';
 
-  // Tema por semana para el título
   var temas={1:'tu evaluación inicial',2:'tu CV',3:'tu LinkedIn',4:'tu búsqueda activa',5:'tu revisión final'};
   var temaLbl=temas[sem]||'tu semana';
+
+  // Filtrado por keywords (S1 muestra todo)
+  var keywords=(SEM_KEYWORDS[sem]||['.']);
+  function matches(txt){
+    var t=String(txt||'').toLowerCase();
+    if(sem===1)return true;
+    for(var i=0;i<keywords.length;i++){if(t.indexOf(keywords[i])!==-1)return true;}
+    return false;
+  }
+  var fortFilt=hasFort?D.fortalezas.filter(matches):[];
+  var gapsFilt=hasGaps?D.gaps.filter(matches):[];
+  // Si el filtro no devuelve nada, mostramos los 2 primeros del original
+  if(!fortFilt.length&&hasFort&&sem!==1)fortFilt=D.fortalezas.slice(0,2);
+  if(!gapsFilt.length&&hasGaps&&sem!==1)gapsFilt=D.gaps.slice(0,2);
+
+  var focus=SEM_FOCUS[sem];
+  var showReport=hasFort||hasGaps||(hasStrat&&sem===1);
+  if(!showReport&&!focus)return '';
 
   var o='<div class="card" style="margin-bottom:14px;border:1.5px solid var(--rose-mid);">';
   o+='<div class="card-hd" style="background:linear-gradient(135deg,var(--rose-light) 0%,rgba(255,255,255,0) 100%);">';
@@ -2075,35 +2125,130 @@ function rInformePersonalizado(sem){
   o+='<div class="card-title" style="font-size:15px;">Para '+temaLbl+'</div></div></div>';
   o+='<div class="card-body" style="padding:14px 18px;">';
 
-  // Fortalezas (hasta 3)
-  if(hasFort){
+  // Fortalezas relevantes a esta semana (hasta 2)
+  if(fortFilt.length){
     o+='<div style="margin-bottom:14px;">';
-    o+='<div style="font-size:10px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">↑ Tus fortalezas para aprovechar</div>';
-    D.fortalezas.slice(0,3).forEach(function(f){
+    o+='<div style="font-size:10px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">↑ Tus fortalezas a aprovechar</div>';
+    fortFilt.slice(0,sem===1?3:2).forEach(function(f){
       o+='<div style="display:flex;gap:8px;padding:6px 0;font-size:12px;color:#1a1a1a;line-height:1.5;border-bottom:.5px solid var(--border);">';
       o+='<span style="color:var(--green);font-weight:700;flex-shrink:0;">✓</span>'+hh(f)+'</div>';
     });
     o+='</div>';
   }
 
-  // Gaps (hasta 3)
-  if(hasGaps){
+  // Gaps relevantes a esta semana (hasta 2)
+  if(gapsFilt.length){
     o+='<div style="margin-bottom:14px;">';
     o+='<div style="font-size:10px;font-weight:800;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">→ Donde hay más potencial</div>';
-    D.gaps.slice(0,3).forEach(function(g){
+    gapsFilt.slice(0,sem===1?3:2).forEach(function(g){
       o+='<div style="display:flex;gap:8px;padding:6px 0;font-size:12px;color:#1a1a1a;line-height:1.5;border-bottom:.5px solid var(--border);">';
       o+='<span style="color:var(--orange);font-weight:700;flex-shrink:0;">→</span>'+hh(g)+'</div>';
     });
     o+='</div>';
   }
 
-  // Quote de estrategia (primeras 200 caracteres)
-  if(hasStrat){
+  // Estrategia solo en Semana 1 (sino es repetitivo)
+  if(hasStrat&&sem===1){
     var estr=String(D.estrategia).trim();
-    if(estr.length>240)estr=estr.slice(0,240).trim()+'…';
-    o+='<div style="background:rgba(45,106,79,.06);border-radius:8px;padding:10px 12px;border-left:3px solid var(--green);">';
+    if(estr.length>260)estr=estr.slice(0,260).trim()+'…';
+    o+='<div style="background:rgba(45,106,79,.06);border-radius:8px;padding:10px 12px;border-left:3px solid var(--green);margin-bottom:14px;">';
     o+='<div style="font-size:10px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Tu estrategia</div>';
     o+='<div style="font-size:12px;color:#333;line-height:1.55;">'+hh(estr)+'</div>';
+    o+='</div>';
+  }
+
+  // Foco práctico de la semana (tips accionables)
+  if(focus&&focus.tips&&focus.tips.length){
+    o+='<div style="background:rgba(233,196,106,.1);border-radius:8px;padding:12px;border-left:3px solid var(--amanecer,#E9C46A);">';
+    o+='<div style="font-size:10px;font-weight:800;color:#8c6f2a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">🎯 '+focus.lbl+'</div>';
+    focus.tips.forEach(function(tip){
+      o+='<div style="display:flex;gap:10px;padding:6px 0;align-items:flex-start;">';
+      o+='<div style="font-size:16px;flex-shrink:0;line-height:1.3;">'+tip.ico+'</div>';
+      o+='<div><div style="font-size:12px;font-weight:700;color:#1a1a1a;line-height:1.4;margin-bottom:2px;">'+tip.t+'</div>';
+      o+='<div style="font-size:11px;color:#666;line-height:1.45;">'+tip.d+'</div></div>';
+      o+='</div>';
+    });
+    o+='</div>';
+  }
+
+  o+='</div></div>';
+  return o;
+}
+
+// Recap de progreso del cliente — muestra qué hizo en cada semana.
+// Útil para el reporte final y para que el cliente vea su avance.
+function rProgresoRecap(opts){
+  opts=opts||{};
+  var stepColors=['var(--rose)','var(--green)','var(--blue)','var(--orange)','var(--brown)'];
+  var stepIcos=['🎯','📄','💼','🔍','🏁'];
+  var stepLbls=['Evaluación','CV','LinkedIn','Búsqueda activa','Revisión final'];
+
+  // Calcular progreso total
+  var offset=0, totalDone=0, totalAccs=0;
+  var perSem=[];
+  for(var i=0;i<SEMS.length;i++){
+    var sem=SEMS[i];
+    var accs=D?(D[sem.acc]||[]):[];
+    var hechas=[];
+    accs.forEach(function(a,idx){if(ACTS[offset+idx])hechas.push(a);});
+    var done=hechas.length;
+    totalDone+=done;
+    totalAccs+=accs.length;
+    perSem.push({n:i+1,accs:accs,hechas:hechas,done:done,total:accs.length,pct:accs.length?Math.round((done/accs.length)*100):0});
+    offset+=accs.length;
+  }
+  var globalPct=totalAccs?Math.round((totalDone/totalAccs)*100):0;
+
+  var showDetalle=!!opts.detalle;
+  var title=opts.title||'Tu progreso';
+
+  var o='<div class="card" style="margin-bottom:14px;border:1.5px solid var(--green);">';
+  o+='<div class="card-hd" style="background:linear-gradient(135deg,rgba(82,183,136,.12) 0%,rgba(255,255,255,0) 100%);">';
+  o+='<div><div class="card-lbl" style="color:#1B4332;">📊 '+title+'</div>';
+  o+='<div class="card-title" style="font-size:15px;">'+totalDone+' de '+totalAccs+' acciones · '+globalPct+'%</div></div></div>';
+  o+='<div class="card-body" style="padding:14px 18px;">';
+
+  // Barra de progreso general
+  o+='<div style="margin-bottom:14px;">';
+  o+='<div style="height:10px;background:#F0EDED;border-radius:100px;overflow:hidden;">';
+  o+='<div style="height:100%;width:'+globalPct+'%;background:linear-gradient(90deg,var(--rose),var(--green));border-radius:100px;transition:width .5s;"></div>';
+  o+='</div></div>';
+
+  // Por semana: mini filas con progreso
+  perSem.forEach(function(p){
+    if(p.total===0)return;
+    var isCurrent=p.n===SEM;
+    o+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border);">';
+    o+='<div style="font-size:18px;flex-shrink:0;width:28px;">'+stepIcos[p.n-1]+'</div>';
+    o+='<div style="flex:1;min-width:0;">';
+    o+='<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:3px;">';
+    o+='<div style="font-size:12px;font-weight:700;color:var(--text);">S'+p.n+' · '+stepLbls[p.n-1]+'</div>';
+    if(isCurrent)o+='<span style="font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;background:var(--rose);color:#fff;">ACTUAL</span>';
+    o+='<div style="flex:1;"></div>';
+    o+='<div style="font-size:11px;font-weight:700;color:'+stepColors[p.n-1]+';">'+p.done+'/'+p.total+'</div>';
+    o+='</div>';
+    o+='<div style="height:5px;background:#F0EDED;border-radius:100px;overflow:hidden;">';
+    o+='<div style="height:100%;width:'+p.pct+'%;background:'+stepColors[p.n-1]+';border-radius:100px;transition:width .4s;"></div>';
+    o+='</div>';
+    // Detalle expandido: lista de lo que hizo
+    if(showDetalle&&p.hechas.length){
+      o+='<div style="margin-top:6px;padding-left:2px;">';
+      p.hechas.forEach(function(a){
+        o+='<div style="font-size:11px;color:#444;padding:3px 0;display:flex;gap:6px;align-items:flex-start;"><span style="color:'+stepColors[p.n-1]+';flex-shrink:0;">✓</span>'+hh(a)+'</div>';
+      });
+      o+='</div>';
+    }
+    o+='</div></div>';
+  });
+
+  // Sesiones agendadas + registradas
+  var sesReg=0;
+  try{sesReg=JSON.parse(C.sesiones_registro||'[]').length;}catch(e){}
+  var sesClicked=localStorage.getItem('mj_sesion_clicked_'+E)?1:0;
+  if(sesReg||sesClicked){
+    o+='<div style="margin-top:10px;padding-top:10px;border-top:.5px solid var(--border);display:flex;gap:14px;flex-wrap:wrap;font-size:11px;">';
+    if(sesReg)o+='<div><strong style="color:var(--green);">📅 '+sesReg+'</strong> sesión'+(sesReg>1?'es':'')+' registrada'+(sesReg>1?'s':'')+'</div>';
+    if(sesClicked&&!sesReg)o+='<div><strong style="color:var(--rose);">🔗 Calendly abierto</strong></div>';
     o+='</div>';
   }
 
@@ -2118,6 +2263,10 @@ function rSemana(){
   var o=rRoadmap();
   o+='<div id="semana-view-panel"></div>';
   o+='<div id="semana-main-content" class="two-col"><div class="left-col">';
+
+  // Recap de progreso general (compacto) — visible desde S2 en adelante para
+  // que el cliente vea su avance acumulado. En S5 se muestra detallado abajo.
+  if(SEM>=2&&SEM<5)o+=rProgresoRecap({title:'Tu avance hasta ahora'});
 
   // Tarjeta "Basado en tu informe" — refuerza personalización cada semana
   o+=rInformePersonalizado(SEM);
@@ -2152,7 +2301,9 @@ function rSemana(){
       {t:t('s4_p1t'),d:t('s4_p1d')},{t:t('s4_p2t'),d:t('s4_p2d')},{t:t('s4_p3t'),d:t('s4_p3d')}
     ],'empleos',t('s4_btn'),'🔍','var(--orange)');
   } else if(SEM===5){
-    // S5 Revisión final
+    // S5 Revisión final — RECAP COMPLETO del recorrido
+    o+=rProgresoRecap({title:'Tu recorrido completo',detalle:true});
+
     o+='<div class="card"><div class="card-hd"><div><div class="card-lbl" style="color:var(--brown);">'+t('semana_pill')+' 5</div><div class="card-title">'+t('s5_title')+'</div></div></div>';
     o+='<div class="card-body" style="padding:14px 18px;">';
     o+='<div style="font-size:13px;color:#1a1a1a;line-height:1.7;margin-bottom:14px;">'+t('s5_desc')+'</div>';
