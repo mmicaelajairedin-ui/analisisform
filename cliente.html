@@ -1725,6 +1725,25 @@ function updSbMedal(){
   var achs=getAchievements();
   var n=achs.filter(function(a){return a.done;}).length;
   var m=getMedalInfo(n);
+
+  // Detectar achievements recién desbloqueados (desde la última vez)
+  var prevDoneKey='mj_achs_done_'+E;
+  var prevDone=[];
+  try{prevDone=JSON.parse(localStorage.getItem(prevDoneKey)||'[]');}catch(e){}
+  var currDone=achs.filter(function(a){return a.done;}).map(function(a){return a.id;});
+  var newly=currDone.filter(function(id){return prevDone.indexOf(id)===-1;});
+  // Solo celebrar si ya había algo guardado antes (para no disparar en 1er load)
+  if(prevDone.length>0&&newly.length>0){
+    newly.forEach(function(id,idx){
+      var ach=achs.find(function(a){return a.id===id;});
+      if(!ach)return;
+      setTimeout(function(){
+        showMilestoneCelebration({emoji:ach.ico,title:'¡'+ach.lbl+'!',sub:ach.sub,btn:'¡Seguí!'});
+      },300+idx*200);
+    });
+  }
+  localStorage.setItem(prevDoneKey,JSON.stringify(currDone));
+
   // Detectar cambio de medalla
   var prevMedal=localStorage.getItem('mj_medal_'+E)||'';
   var currMedal=m.current.lbl||'';
@@ -2004,8 +2023,48 @@ function rCalendlyCard(){
 }
 
 function marcarSesionAgendada(){
-  localStorage.setItem('mj_sesion_clicked_'+E,'1');
+  var k='mj_sesion_clicked_'+E;
+  var first=!localStorage.getItem(k);
+  localStorage.setItem(k,'1');
+  _bumpStreak();
   setTimeout(function(){updSbMedal();},500);
+  // Celebración solo la primera vez que agenda
+  if(first){
+    setTimeout(function(){
+      showMilestoneCelebration({
+        emoji:'📅',
+        title:'¡Sesión agendada!',
+        sub:'Nos vemos pronto. Mientras tanto seguí avanzando con tus acciones de la semana.',
+        btn:'¡Dale!'
+      });
+    },400);
+  }
+}
+
+// Celebración genérica (más chica que la de semana)
+function showMilestoneCelebration(opts){
+  opts=opts||{};
+  var ov=document.createElement('div');
+  ov.className='week-celeb-overlay';
+  ov.innerHTML='<div class="week-celeb-card" style="max-width:380px;padding:2.5rem 2rem 1.75rem;">'
+    +'<div class="week-celeb-emoji" style="font-size:58px;">'+(opts.emoji||'🎉')+'</div>'
+    +'<div class="week-celeb-title" style="font-size:24px;">'+(opts.title||'¡Genial!')+'</div>'
+    +'<div class="week-celeb-sub">'+(opts.sub||'')+'</div>'
+    +'<button class="week-celeb-btn" onclick="this.closest(\'.week-celeb-overlay\').remove()">'+(opts.btn||'¡Seguí!')+'</button>'
+    +'</div>';
+  // Confetti (menos, más sutil)
+  var colors=['#52B788','#E9C46A','#F77F00','#8C7B80','#2D6A4F'];
+  for(var i=0;i<25;i++){
+    var c=document.createElement('div');
+    c.className='confetti-piece';
+    c.style.left=Math.random()*100+'%';
+    c.style.background=colors[i%colors.length];
+    c.style.animationDelay=(Math.random()*.3)+'s';
+    c.style.animationDuration=(2+Math.random()*1.2)+'s';
+    ov.appendChild(c);
+  }
+  document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
 }
 
 function goSec(sec,el){
