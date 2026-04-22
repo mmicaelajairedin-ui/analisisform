@@ -1601,7 +1601,7 @@ function cambiarSemana(id,nueva){
   var c=cands.find(function(x){return x.id===id;});if(!c)return;
   var nombres=['Evaluación','CV','LinkedIn','Búsqueda activa','Revisión final'];
   if(!confirm('¿Activar Semana '+nueva+' ('+nombres[nueva-1]+') para '+c.nombre+'?\nEl cliente verá las acciones de esa semana.'))return;
-  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({semana_activa:nueva})}).then(function(r){if(r.ok||r.status===204){c.semana_activa=nueva;renderSidebar();renderMain(c);showToast('Semana '+nueva+' activada ✓');}else{showToast('Error al cambiar semana');}}).catch(function(){showToast('Error de conexión');});
+  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({semana_activa:nueva})}).then(function(r){if(r.ok||r.status===204){var prevSem=parseInt(c.semana_activa||1);c.semana_activa=nueva;renderSidebar();renderMain(c);showToast('Semana '+nueva+' activada ✓');if(nueva>prevSem)_notifClient(c,'semana_nueva');}else{showToast('Error al cambiar semana');}}).catch(function(){showToast('Error de conexión');});
 }
 
 function guardarNotaSesion(id,semana){
@@ -2309,6 +2309,7 @@ function confirmarPublicar(){
   sbPost('informes',{candidato_id:c.id,email:c.email,data:JSON.stringify(d),prev:prev}).then(function(){
     reps[email][0].published=true;reps[email][0].data=d;
     cerrarModal('modal-pub-inf');renderSidebar();renderMain(c);showToast('Informe publicado');
+    _notifClient(c,'informe_listo');
     setTimeout(function(){verURL(c.id);},500);
   }).catch(function(e){alert('Error: '+e.message);});
 }
@@ -2598,7 +2599,55 @@ function publicarCV(id){
     window._lastCvUrl=cvUrl;
     if(st){st.innerHTML='<div class="code-box"><div style="font-size:11px;font-weight:700;color:#2e7d32;margin-bottom:5px;">✓ CV publicado</div><div style="font-size:11px;color:#666;margin-bottom:7px;">'+escH(cvUrl)+'</div><button class="btn" style="font-size:11px;padding:6px 12px;" onclick="navigator.clipboard.writeText(window._lastCvUrl).then(function(){showToast(\'Copiado\');})">Copiar URL</button></div>';}
     renderSidebar();
+    // Notificar al cliente por email
+    _notifClient(c,'cv_publicado');
   }).catch(function(e){if(st){st.textContent='Error: '+e.message;st.style.color='#c0756e';}});
+}
+
+// Helper para notificar al cliente de eventos importantes
+function _notifClient(c,tipo){
+  if(!c||!c.email)return;
+  var coachNom=(ME&&ME.nombre)?ME.nombre.split(' ')[0]:'Tu coach';
+  var primerNom=(c.nombre||'').split(' ')[0]||c.nombre||'';
+  var portalUrl=BASE+'/cliente.html';
+  var templates={
+    cv_publicado:{
+      subject:'📄 Tu CV está listo',
+      html:'<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">Hola '+escH(primerNom)+',</h2>'
+        +'<p>'+escH(coachNom)+' acaba de publicar tu CV personalizado. Ya lo podés ver, descargar o compartir desde tu portal.</p>'
+        +'<p style="margin-top:20px;"><a href="'+portalUrl+'" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ver mi CV →</a></p>'
+        +'<p style="font-size:12px;color:#666;margin-top:20px;">Revisalo bien y avisale a '+escH(coachNom)+' si hay algo para ajustar.</p>'
+    },
+    informe_listo:{
+      subject:'📊 Tu informe personalizado está listo',
+      html:'<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">Hola '+escH(primerNom)+',</h2>'
+        +'<p>'+escH(coachNom)+' generó tu informe personalizado: fortalezas, gaps y estrategia para los próximos pasos.</p>'
+        +'<p style="margin-top:20px;"><a href="'+portalUrl+'" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ver mi informe →</a></p>'
+    },
+    carta_lista:{
+      subject:'✉ Tu carta de presentación está lista',
+      html:'<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">Hola '+escH(primerNom)+',</h2>'
+        +'<p>Tu carta de presentación está lista para usar. '+escH(coachNom)+' la adaptó a tu perfil.</p>'
+        +'<p style="margin-top:20px;"><a href="'+portalUrl+'" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ver mi carta →</a></p>'
+    },
+    semana_nueva:{
+      subject:'🎯 Nueva semana activada',
+      html:'<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">Hola '+escH(primerNom)+',</h2>'
+        +'<p>'+escH(coachNom)+' te activó una nueva semana en tu proceso. Entrá para ver las nuevas acciones.</p>'
+        +'<p style="margin-top:20px;"><a href="'+portalUrl+'" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ver mi semana →</a></p>'
+    }
+  };
+  var tpl=templates[tipo];
+  if(!tpl)return;
+  fetch(SB+'/functions/v1/send-email',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      to:c.email,to_name:c.nombre||'',
+      subject:tpl.subject,html:tpl.html,
+      reply_to:(ME&&ME.email)||'hi@pathwaycareercoach.com'
+    })
+  }).catch(function(){});
 }
 
 function verURL(id){
@@ -4722,6 +4771,82 @@ function _renderAdmin(){
     html+='</div>';
     html+='</div>';
     html+='</div>';
+
+    // TRIAL VENCIENDO + COACHES ZOMBIES
+    var now=Date.now();
+    var trialEndingSoon=[],zombies=[],newCoaches7d=[];
+    coaches.forEach(function(c){
+      var cfg=c.configuracion||{};
+      var estado=cfg.estado_sub||'prueba';
+      var coachCands=candidatos.filter(function(ca){return ca.coach_id===c.id;}).length;
+      // Trial venciendo si tiene fecha_fin_prueba en próximos 3 días
+      if(estado==='prueba'&&cfg.fecha_fin_prueba){
+        var endTs=new Date(cfg.fecha_fin_prueba).getTime();
+        var diasRestantes=Math.ceil((endTs-now)/(24*3600*1000));
+        if(diasRestantes>=0&&diasRestantes<=5)trialEndingSoon.push({c:c,dias:diasRestantes});
+      }
+      // Zombie: lleva >14 días registrado, sin clientes
+      if(c.created_at){
+        var ageDays=Math.floor((now-new Date(c.created_at).getTime())/(24*3600*1000));
+        if(ageDays>14&&coachCands===0)zombies.push({c:c,dias:ageDays});
+        if(ageDays<=7)newCoaches7d.push(c);
+      }
+    });
+
+    // Alertas row
+    if(trialEndingSoon.length||zombies.length||newCoaches7d.length){
+      html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:16px;">';
+      if(trialEndingSoon.length){
+        html+='<div style="background:#fff;border:1.5px solid rgba(233,196,106,.4);border-radius:12px;padding:14px 18px;">';
+        html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-size:20px;">⏰</div><div style="font-size:11px;font-weight:700;color:#8c6f2a;text-transform:uppercase;letter-spacing:.08em;">Trial venciendo</div></div>';
+        html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:26px;color:var(--title);line-height:1;font-weight:500;">'+trialEndingSoon.length+'</div>';
+        html+='<div style="font-size:11px;color:var(--muted);margin-top:6px;">';
+        trialEndingSoon.slice(0,3).forEach(function(item){
+          html+='<div style="margin-top:3px;"><strong>'+escH((item.c.nombre||'').split(' ')[0]||item.c.email)+'</strong> en '+item.dias+'d</div>';
+        });
+        html+='</div></div>';
+      }
+      if(newCoaches7d.length){
+        html+='<div style="background:#fff;border:1.5px solid rgba(82,183,136,.35);border-radius:12px;padding:14px 18px;">';
+        html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-size:20px;">🎉</div><div style="font-size:11px;font-weight:700;color:#2D6A4F;text-transform:uppercase;letter-spacing:.08em;">Nuevos esta semana</div></div>';
+        html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:26px;color:var(--title);line-height:1;font-weight:500;">'+newCoaches7d.length+'</div>';
+        html+='<div style="font-size:11px;color:var(--muted);margin-top:6px;">';
+        newCoaches7d.slice(0,3).forEach(function(c){html+='<div style="margin-top:3px;"><strong>'+escH((c.nombre||'').split(' ')[0]||c.email)+'</strong></div>';});
+        html+='</div></div>';
+      }
+      if(zombies.length){
+        html+='<div style="background:#fff;border:1.5px solid rgba(196,117,110,.35);border-radius:12px;padding:14px 18px;">';
+        html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-size:20px;">💤</div><div style="font-size:11px;font-weight:700;color:#C0756E;text-transform:uppercase;letter-spacing:.08em;">Inactivos (sin clientes)</div></div>';
+        html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:26px;color:var(--title);line-height:1;font-weight:500;">'+zombies.length+'</div>';
+        html+='<div style="font-size:11px;color:var(--muted);margin-top:6px;">';
+        zombies.slice(0,3).forEach(function(item){html+='<div style="margin-top:3px;"><strong>'+escH((item.c.nombre||'').split(' ')[0]||item.c.email)+'</strong> · '+item.dias+'d</div>';});
+        html+='</div></div>';
+      }
+      html+='</div>';
+    }
+
+    // TOP COACHES (por cantidad de clientes)
+    var coachesConStats=coaches.map(function(c){
+      var coachCands=candidatos.filter(function(ca){return ca.coach_id===c.id;});
+      var active=coachCands.filter(function(ca){return ca.activo!==false;}).length;
+      return {c:c,total:coachCands.length,active:active};
+    }).filter(function(x){return x.total>0;}).sort(function(a,b){return b.total-a.total;});
+
+    if(coachesConStats.length){
+      html+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:20px 24px;margin-bottom:16px;">';
+      html+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px;">🏆 Top coaches por actividad</div>';
+      html+='<div style="display:flex;flex-direction:column;gap:6px;">';
+      coachesConStats.slice(0,5).forEach(function(item,idx){
+        var c=item.c;
+        var medal=idx===0?'🥇':idx===1?'🥈':idx===2?'🥉':(idx+1)+'.';
+        html+='<div style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:8px;background:'+(idx<3?'rgba(233,196,106,.06)':'transparent')+';">';
+        html+='<div style="font-size:18px;min-width:28px;text-align:center;font-weight:800;color:var(--muted);">'+medal+'</div>';
+        html+='<div style="flex:1;font-size:13px;font-weight:700;color:var(--title);">'+escH(c.nombre||c.email)+'</div>';
+        html+='<div style="font-size:12px;color:var(--muted);"><strong style="color:var(--accent);">'+item.active+'</strong> activos · '+item.total+' total</div>';
+        html+='</div>';
+      });
+      html+='</div></div>';
+    }
 
     // LISTA DE COACHES
     html+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:16px;">';
