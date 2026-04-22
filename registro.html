@@ -346,6 +346,14 @@ async function registrar(){
       fecha_fin_prueba: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
     };
 
+    // Capturar ?ref=<coach_id> de la URL para tracking de referrals
+    var urlParams = new URLSearchParams(window.location.search);
+    var refCoachId = urlParams.get('ref');
+    if(refCoachId){
+      configuracion.referred_by = refCoachId;
+      configuracion.referred_at = new Date().toISOString();
+    }
+
     var userData = {
       email: email,
       password_hash: hash,
@@ -394,16 +402,40 @@ async function registrar(){
       body: JSON.stringify({
         to: 'hi@pathwaycareercoach.com',
         to_name: 'Micaela',
-        subject: '🎉 Nuevo coach registrado: ' + nombre,
+        subject: '🎉 Nuevo coach registrado: ' + nombre + (refCoachId?' (referido)':''),
         html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">¡Nuevo coach en Pathway!</h2>'
           + '<p><strong>Nombre:</strong> ' + nombre + '</p>'
           + '<p><strong>Email:</strong> ' + email + '</p>'
           + '<p><strong>Plan:</strong> ' + (selectedPlan === 'anual' ? 'Anual (€699)' : 'Mensual (€79)') + '</p>'
           + (nombre_practica ? '<p><strong>Práctica:</strong> ' + nombre_practica + '</p>' : '')
           + (bio ? '<p><strong>Bio:</strong> ' + bio.slice(0, 200) + '</p>' : '')
+          + (refCoachId?'<p style="padding:10px 14px;background:rgba(233,196,106,.18);border-left:3px solid #E9C46A;border-radius:6px;"><strong>🎁 Referido por:</strong> coach_id ' + refCoachId + '<br>Acordate de darle 1 mes gratis cuando este pague.</p>':'')
           + '<p style="margin-top:20px;padding:12px 16px;background:rgba(82,183,136,.1);border-radius:8px;font-size:13px;">Va a ser redirigido a Stripe ahora. Recibirás otro email cuando complete el pago.</p>'
       })
     }).catch(function(){});
+
+    // Notificación al coach que refirió (si aplica)
+    if(refCoachId){
+      fetch(SB + '/rest/v1/usuarios?id=eq.' + refCoachId + '&select=email,nombre', {
+        headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+      }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+        if(!rows||!rows.length)return;
+        var refCoach = rows[0];
+        fetch(SB + '/functions/v1/send-email', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            to: refCoach.email,
+            to_name: refCoach.nombre||'',
+            subject: '🎁 Alguien se registró con tu link',
+            html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">¡Tu link funcionó!</h2>'
+              + '<p><strong>' + nombre + '</strong> se acaba de registrar en Pathway con tu link de referido.</p>'
+              + '<p>Cuando complete el pago vas a recibir <strong>1 mes gratis</strong> en tu suscripción.</p>'
+              + '<p style="margin-top:20px;padding:12px 16px;background:rgba(82,183,136,.08);border-radius:8px;font-size:13px;color:#2D6A4F;">Te avisamos de nuevo cuando se confirme el pago.</p>'
+          })
+        }).catch(function(){});
+      }).catch(function(){});
+    }
 
     // Email de bienvenida al coach
     fetch(SB + '/functions/v1/send-email', {
