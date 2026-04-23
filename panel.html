@@ -1580,13 +1580,15 @@ function _buildAvanceBody(ACTS,inf,semActiva,c){
   if(semActiva<5)html+='<button onclick="cambiarSemana('+c.id+','+(semActiva+1)+')" style="padding:7px 14px;font-size:12px;font-weight:800;font-family:Inter,sans-serif;background:#fff;color:'+stepActiva.color+';border:none;border-radius:8px;cursor:pointer;">S'+(semActiva+1)+' →</button>';
   else html+='<span style="font-size:12px;color:rgba(255,255,255,.85);font-weight:700;padding:7px 14px;">✓ Completo</span>';
   html+='</div></div>';
-  // Mini stepper visual
+  // Mini stepper visual — clickable: jump a cualquier semana
   html+='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">';
   SEM_STEPS.forEach(function(s){
     var done=s.n<semActiva,active=s.n===semActiva;
     var bg=done?'rgba(255,255,255,.6)':active?'#fff':'rgba(255,255,255,.18)';
     var tc=active?'#fff':done?'rgba(255,255,255,.8)':'rgba(255,255,255,.45)';
-    html+='<div style="text-align:center;"><div style="height:4px;background:'+bg+';border-radius:2px;margin-bottom:4px;"></div><div style="font-size:9px;font-weight:'+(active?'800':'600')+';color:'+tc+';font-family:Inter,sans-serif;">S'+s.n+'</div></div>';
+    var click=s.n===semActiva?'':'onclick="cambiarSemana('+c.id+','+s.n+')" title="Click para activar S'+s.n+'"';
+    var cur=s.n===semActiva?'default':'pointer';
+    html+='<div '+click+' style="text-align:center;cursor:'+cur+';padding:4px 2px;border-radius:6px;transition:background .15s;" onmouseover="if(\''+s.n+'\'!=\''+semActiva+'\')this.style.background=\'rgba(255,255,255,.08)\'" onmouseout="this.style.background=\'transparent\'"><div style="height:4px;background:'+bg+';border-radius:2px;margin-bottom:4px;"></div><div style="font-size:9px;font-weight:'+(active?'800':'600')+';color:'+tc+';font-family:Inter,sans-serif;">S'+s.n+'</div></div>';
   });
   html+='</div></div>';
 
@@ -1909,11 +1911,38 @@ function _borrarSesion(id){
   }).then(function(){showToast('Sesi\u00f3n removida');renderMain(c);}).catch(function(){});
 }
 
-function cambiarSemana(id,nueva){
+async function cambiarSemana(id,nueva){
   var c=cands.find(function(x){return x.id===id;});if(!c)return;
   var nombres=['Evaluación','CV','LinkedIn','Búsqueda activa','Revisión final'];
   if(!confirm('¿Activar Semana '+nueva+' ('+nombres[nueva-1]+') para '+c.nombre+'?\nEl cliente verá las acciones de esa semana.'))return;
-  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({semana_activa:nueva})}).then(function(r){if(r.ok||r.status===204){var prevSem=parseInt(c.semana_activa||1);c.semana_activa=nueva;renderSidebar();renderMain(c);showToast('Semana '+nueva+' activada ✓');if(nueva>prevSem)_notifClient(c,'semana_nueva');}else{showToast('Error al cambiar semana');}}).catch(function(){showToast('Error de conexión');});
+  var prevSem=parseInt(c.semana_activa||1);
+  try{
+    var r=await fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
+      method:'PATCH',
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+      body:JSON.stringify({semana_activa:nueva})
+    });
+    if(!r.ok){
+      var err=await r.text();
+      console.error('[cambiarSemana] PATCH failed',r.status,err);
+      showToast('❌ Error '+r.status+': '+err.slice(0,80));
+      return;
+    }
+    var rows=await r.json();
+    if(!rows||!rows.length){
+      showToast('⚠ Se guardó pero 0 filas afectadas. RLS está bloqueando — corré: ALTER TABLE candidatos DISABLE ROW LEVEL SECURITY;');
+      console.warn('[cambiarSemana] 0 rows updated for id',id);
+      return;
+    }
+    c.semana_activa=nueva;
+    renderSidebar();
+    renderMain(c);
+    showToast('✓ Semana '+nueva+' activada');
+    if(nueva>prevSem)_notifClient(c,'semana_nueva');
+  } catch(e){
+    console.error('[cambiarSemana] exception',e);
+    showToast('❌ Error de conexión: '+String(e).slice(0,60));
+  }
 }
 
 function guardarNotaSesion(id,semana){
