@@ -1400,49 +1400,63 @@ function _avanceSemKey(n){
   return {1:'cv_acciones',2:'linkedin_acciones',3:'networking_acciones',4:'preguntas'}[n]||null;
 }
 
-function _avanceGuardarInforme(){
-  var c=_avanceData.cand,inf=_avanceData.inf,infId=_avanceData.infId;
-  if(!c||!inf){showToast('Sin datos para guardar');return;}
-  if(!infId){
-    // Fallback: intentar buscar por email antes de fallar
-    var email=(c.email||'').toLowerCase().trim();
-    fetch(SB+'/rest/v1/informes?email=eq.'+encodeURIComponent(email)+'&select=id&order=created_at.desc&limit=1',{
-      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
-    }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
-      if(rows&&rows[0]&&rows[0].id){
-        _avanceData.infId=rows[0].id;
-        _avanceGuardarInforme(); // retry
-      } else {
-        showToast('No se encontró el informe. Generá uno primero.');
-      }
-    });
-    return;
-  }
-  // Actualizar también reps local para que otros lugares vean los cambios
+async function _avanceGuardarInforme(){
+  var c=_avanceData.cand,inf=_avanceData.inf;
+  if(!c||!inf){showToast('⚠ Sin datos para guardar');return false;}
   var email=(c.email||'').toLowerCase().trim();
-  if(reps[email]&&reps[email][0])reps[email][0].data=inf;
 
-  fetch(SB+'/rest/v1/informes?id=eq.'+infId,{
-    method:'PATCH',
-    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
-    body:JSON.stringify({data:JSON.stringify(inf)})
-  }).then(function(r){
-    if(r.ok){
-      return r.json().then(function(rows){
-        if(rows&&rows.length){
-          showToast('✓ Guardado · cliente lo ve al instante');
-        } else {
-          showToast('⚠ Guardado pero 0 filas afectadas (revisá permisos)');
-        }
-      });
-    } else {
-      return r.text().then(function(t){
-        showToast('Error '+r.status+': '+t.slice(0,80));
-      });
+  try{
+    // SIEMPRE re-fetcheamos el id más reciente (no confiamos en el cache)
+    var lookupRes=await fetch(SB+'/rest/v1/informes?email=eq.'+encodeURIComponent(email)+'&select=id&order=created_at.desc&limit=1',{
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+    });
+    if(!lookupRes.ok){
+      var lookupErr=await lookupRes.text();
+      showToast('Error buscando informe ('+lookupRes.status+'): '+lookupErr.slice(0,80));
+      console.error('[Avance] lookup failed',lookupRes.status,lookupErr);
+      return false;
     }
-  }).catch(function(e){
-    showToast('Error de conexión: '+String(e).slice(0,60));
-  });
+    var rows=await lookupRes.json();
+    if(!rows||!rows.length){
+      showToast('⚠ Este cliente no tiene informe. Generá uno primero.');
+      console.warn('[Avance] no informe for',email);
+      return false;
+    }
+    var infId=rows[0].id;
+    _avanceData.infId=infId;
+
+    // PATCH con return=representation para confirmar rows afectadas
+    var saveRes=await fetch(SB+'/rest/v1/informes?id=eq.'+infId,{
+      method:'PATCH',
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+      body:JSON.stringify({data:JSON.stringify(inf)})
+    });
+
+    if(!saveRes.ok){
+      var errTxt=await saveRes.text();
+      console.error('[Avance] PATCH failed',saveRes.status,errTxt);
+      showToast('❌ Error '+saveRes.status+': '+errTxt.slice(0,100));
+      return false;
+    }
+
+    var updated=await saveRes.json();
+    console.log('[Avance] PATCH ok, rows updated:',updated?updated.length:0,'infId:',infId);
+
+    if(!updated||!updated.length){
+      showToast('⚠ Se guardó pero 0 filas afectadas (id '+infId+'). ¿RLS bloqueando?');
+      return false;
+    }
+
+    // Actualizar reps local
+    if(reps[email]&&reps[email][0])reps[email][0].data=inf;
+
+    showToast('✓ Guardado en informe #'+infId);
+    return true;
+  } catch(e){
+    console.error('[Avance] exception',e);
+    showToast('❌ Error: '+String(e).slice(0,80));
+    return false;
+  }
 }
 
 function _avanceRerender(){
@@ -1454,7 +1468,7 @@ function _avanceRerender(){
   }
 }
 
-function _avanceEditar(semN,idx,el){
+async function _avanceEditar(semN,idx,el){
   var key=_avanceSemKey(semN);
   if(!key||!_avanceData.inf[key])return;
   var newText=(el.textContent||'').trim();
@@ -1463,13 +1477,20 @@ function _avanceEditar(semN,idx,el){
   if(!newText){el.textContent=original;return;}
   _avanceData.inf[key][idx]=newText;
   el.setAttribute('data-original',newText);
-  _avanceGuardarInforme();
+  var ok=await _avanceGuardarInforme();
+  if(!ok){
+    // Revertir si falló el save
+    _avanceData.inf[key][idx]=original;
+    el.textContent=original;
+    el.setAttribute('data-original',original);
+  }
 }
 
-function _avanceBorrar(semN,idx){
+async function _avanceBorrar(semN,idx){
   if(!confirm('¿Borrar esta acción? El cliente dejará de verla.'))return;
   var key=_avanceSemKey(semN);
   if(!key||!_avanceData.inf[key])return;
+  var removed=_avanceData.inf[key][idx];
   _avanceData.inf[key].splice(idx,1);
   // También reindexar ACTS (quitar el bit correspondiente al offset+idx)
   var offset=0;
@@ -1477,22 +1498,30 @@ function _avanceBorrar(semN,idx){
     var k=_avanceSemKey(n);
     if(k&&_avanceData.inf[k])offset+=_avanceData.inf[k].length;
   }
-  // ACTS es solo visual localmente, el save real viene del cliente.
-  // Pero ajustamos in-memory por consistencia
   _avanceData.ACTS.splice(offset+idx,1);
-  _avanceGuardarInforme();
-  _avanceRerender();
+  var ok=await _avanceGuardarInforme();
+  if(ok){
+    _avanceRerender();
+  } else {
+    // Revertir: devolver el elemento
+    _avanceData.inf[key].splice(idx,0,removed);
+  }
 }
 
-function _avanceAgregar(semN){
+async function _avanceAgregar(semN){
   var texto=prompt('Nueva acción para la Semana '+semN+':');
   if(!texto||!texto.trim())return;
   var key=_avanceSemKey(semN);
   if(!key)return;
   if(!_avanceData.inf[key])_avanceData.inf[key]=[];
   _avanceData.inf[key].push(texto.trim());
-  _avanceGuardarInforme();
-  _avanceRerender();
+  var ok=await _avanceGuardarInforme();
+  if(ok){
+    _avanceRerender();
+  } else {
+    // Revertir
+    _avanceData.inf[key].pop();
+  }
 }
 
 // Abre cliente.html en nueva tab con cache-bust para ver cómo se ve
