@@ -1391,10 +1391,88 @@ function tabAvance(c){
   return '<div id="avance-body" style="padding:20px 24px;">'+loading+'</div>';
 }
 
+// ── EDITAR ACCIONES desde panel coach ──────────────────
+function _avanceSemKey(n){
+  return {1:'cv_acciones',2:'linkedin_acciones',3:'networking_acciones',4:'preguntas'}[n]||null;
+}
+
+function _avanceGuardarInforme(){
+  var c=_avanceData.cand,inf=_avanceData.inf;
+  if(!c||!inf)return;
+  var email=(c.email||'').toLowerCase().trim();
+  // Buscar el informe actual en reps
+  var repArr=reps[email]||[];
+  var rep=repArr[0];
+  if(!rep||!rep.id){showToast('No se encontró el informe para actualizar');return;}
+  rep.data=inf;
+  fetch(SB+'/rest/v1/informes?id=eq.'+rep.id,{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({data:JSON.stringify(inf)})
+  }).then(function(r){
+    showToast(r.ok||r.status===204?'✓ Guardado':'Error al guardar');
+  }).catch(function(){showToast('Error de conexión');});
+}
+
+function _avanceRerender(){
+  var c=_avanceData.cand;
+  if(!c)return;
+  var cont=document.getElementById('avance-body');
+  if(cont){
+    cont.innerHTML=_buildAvanceBody(_avanceData.ACTS,_avanceData.inf,_avanceData.sem,c);
+  }
+}
+
+function _avanceEditar(semN,idx,el){
+  var key=_avanceSemKey(semN);
+  if(!key||!_avanceData.inf[key])return;
+  var newText=(el.textContent||'').trim();
+  var original=el.getAttribute('data-original')||'';
+  if(newText===original)return;
+  if(!newText){el.textContent=original;return;}
+  _avanceData.inf[key][idx]=newText;
+  el.setAttribute('data-original',newText);
+  _avanceGuardarInforme();
+}
+
+function _avanceBorrar(semN,idx){
+  if(!confirm('¿Borrar esta acción? El cliente dejará de verla.'))return;
+  var key=_avanceSemKey(semN);
+  if(!key||!_avanceData.inf[key])return;
+  _avanceData.inf[key].splice(idx,1);
+  // También reindexar ACTS (quitar el bit correspondiente al offset+idx)
+  var offset=0;
+  for(var n=1;n<semN;n++){
+    var k=_avanceSemKey(n);
+    if(k&&_avanceData.inf[k])offset+=_avanceData.inf[k].length;
+  }
+  // ACTS es solo visual localmente, el save real viene del cliente.
+  // Pero ajustamos in-memory por consistencia
+  _avanceData.ACTS.splice(offset+idx,1);
+  _avanceGuardarInforme();
+  _avanceRerender();
+}
+
+function _avanceAgregar(semN){
+  var texto=prompt('Nueva acción para la Semana '+semN+':');
+  if(!texto||!texto.trim())return;
+  var key=_avanceSemKey(semN);
+  if(!key)return;
+  if(!_avanceData.inf[key])_avanceData.inf[key]=[];
+  _avanceData.inf[key].push(texto.trim());
+  _avanceGuardarInforme();
+  _avanceRerender();
+}
+
+// Guardar estado global de avance en memoria para poder editarlo
+var _avanceData={cand:null,inf:null,ACTS:[],sem:1};
+
 function _buildAvanceBody(ACTS,inf,semActiva,c){
   if(!inf){
     return '<div style="padding:2rem;background:rgba(233,196,106,.1);border:1px dashed rgba(233,196,106,.4);border-radius:12px;text-align:center;"><div style="font-size:14px;color:var(--body);font-family:Inter,sans-serif;">El cliente aún no tiene informe generado. Generá el informe para ver sus acciones semana a semana.</div></div>';
   }
+  _avanceData={cand:c,inf:inf,ACTS:ACTS,sem:semActiva};
+
   var SEMS=[
     {n:1,lbl:'Evaluación',ico:'🎯',acc:'cv_acciones',color:'#2D6A4F'},
     {n:2,lbl:'CV',ico:'📄',acc:'linkedin_acciones',color:'#1D4A35'},
@@ -1403,15 +1481,12 @@ function _buildAvanceBody(ACTS,inf,semActiva,c){
     {n:5,lbl:'Revisión final',ico:'🏁',acc:null,color:'#7A5C4A'}
   ];
 
-  // Calcular totales
   var ofs=0,totalDone=0,totalAll=0;
   var perSem=[];
   SEMS.forEach(function(s,i){
     var accs=s.acc&&inf[s.acc]?inf[s.acc]:[];
-    var hechas=[],pendientes=[];
-    accs.forEach(function(a,idx){(ACTS[ofs+idx]?hechas:pendientes).push(a);});
-    perSem.push({n:s.n,lbl:s.lbl,ico:s.ico,color:s.color,hechas:hechas,pendientes:pendientes,total:accs.length,done:hechas.length,isCurrent:s.n===semActiva});
-    totalDone+=hechas.length;totalAll+=accs.length;
+    perSem.push({n:s.n,lbl:s.lbl,ico:s.ico,color:s.color,acc:s.acc,offset:ofs,accs:accs,total:accs.length,done:accs.filter(function(a,idx){return ACTS[ofs+idx];}).length,isCurrent:s.n===semActiva});
+    totalDone+=perSem[i].done;totalAll+=accs.length;
     ofs+=accs.length;
   });
   var pct=totalAll?Math.round((totalDone/totalAll)*100):0;
@@ -1429,11 +1504,13 @@ function _buildAvanceBody(ACTS,inf,semActiva,c){
   html+='</div>';
   html+='</div>';
 
+  // Info editable
+  html+='<div style="background:rgba(233,196,106,.08);border:1px dashed rgba(233,196,106,.35);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--body);font-family:Inter,sans-serif;line-height:1.5;">✏️ Podés <strong>editar, agregar o borrar</strong> acciones de cada semana. El cliente las ve al instante en su portal.</div>';
+
   // Por semana
   perSem.forEach(function(p){
-    if(p.total===0&&p.n!==5)return;
-    var pctW=p.total?Math.round((p.done/p.total)*100):0;
-    html+='<div style="margin-bottom:12px;background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;'+(p.isCurrent?'border-color:'+p.color+';box-shadow:0 0 0 3px '+p.color+'22;':'')+'">';
+    if(!p.acc)return; // S5 sin acciones
+    html+='<div style="margin-bottom:14px;background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;'+(p.isCurrent?'border-color:'+p.color+';box-shadow:0 0 0 3px '+p.color+'22;':'')+'">';
     // Header
     html+='<div style="padding:13px 18px;display:flex;align-items:center;gap:12px;border-bottom:.5px solid var(--border);background:'+p.color+'08;">';
     html+='<div style="font-size:22px;">'+p.ico+'</div>';
@@ -1441,34 +1518,29 @@ function _buildAvanceBody(ACTS,inf,semActiva,c){
     html+='<div style="font-size:14px;font-weight:800;color:var(--title);font-family:Inter,sans-serif;">S'+p.n+' · '+escH(p.lbl)+(p.isCurrent?' <span style="font-size:9px;font-weight:800;padding:2px 8px;border-radius:100px;background:'+p.color+';color:#fff;margin-left:6px;vertical-align:middle;">ACTUAL</span>':'')+'</div>';
     html+='</div>';
     if(p.total){
-      html+='<div style="text-align:right;">';
-      html+='<div style="font-size:13px;font-weight:800;color:'+p.color+';font-family:Inter,sans-serif;">'+p.done+'/'+p.total+'</div>';
-      html+='<div style="font-size:10px;color:var(--muted);">'+pctW+'%</div>';
-      html+='</div>';
+      html+='<div style="text-align:right;font-size:12px;font-weight:800;color:'+p.color+';font-family:Inter,sans-serif;">'+p.done+'/'+p.total+'</div>';
     }
     html+='</div>';
-    // Body
-    if(p.total===0){
-      html+='<div style="padding:12px 18px;font-size:12px;color:var(--muted);font-style:italic;font-family:Inter,sans-serif;">Semana de revisión final · sin acciones checklist</div>';
+
+    // Body: acciones editables
+    html+='<div style="padding:8px 18px 12px;" id="avance-sem-'+p.n+'">';
+    if(!p.accs.length){
+      html+='<div style="padding:8px 0;font-size:12px;color:var(--muted);font-style:italic;font-family:Inter,sans-serif;">Sin acciones. Agregá la primera ↓</div>';
     } else {
-      html+='<div style="padding:10px 18px 12px;">';
-      if(p.hechas.length){
-        p.hechas.forEach(function(a){
-          html+='<div style="display:flex;gap:10px;padding:6px 0;font-size:12px;color:var(--body);line-height:1.5;"><div style="color:#2D6A4F;flex-shrink:0;font-weight:800;">✓</div><div>'+escH(a)+'</div></div>';
-        });
-      }
-      if(p.pendientes.length){
-        p.pendientes.forEach(function(a){
-          html+='<div style="display:flex;gap:10px;padding:6px 0;font-size:12px;color:var(--muted);line-height:1.5;"><div style="color:#C0756E;flex-shrink:0;">○</div><div>'+escH(a)+'</div></div>';
-        });
-      }
-      html+='</div>';
+      p.accs.forEach(function(a,idx){
+        var done=!!ACTS[p.offset+idx];
+        html+='<div class="av-row" data-sem="'+p.n+'" data-idx="'+idx+'" style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:.5px dashed var(--border);">';
+        html+='<div style="flex-shrink:0;font-size:14px;font-weight:800;line-height:20px;color:'+(done?'#2D6A4F':'#C0756E')+';">'+(done?'✓':'○')+'</div>';
+        html+='<div class="av-text" contenteditable="true" data-original="'+escH(a)+'" style="flex:1;font-size:13px;color:var(--body);line-height:1.5;outline:none;padding:2px 6px;border-radius:4px;font-family:Inter,sans-serif;" onblur="_avanceEditar('+p.n+','+idx+',this)">'+escH(a)+'</div>';
+        html+='<button onclick="_avanceBorrar('+p.n+','+idx+')" title="Borrar" style="flex-shrink:0;background:transparent;border:none;color:#C0756E;cursor:pointer;padding:2px 6px;font-size:14px;opacity:.6;transition:opacity .15s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.6">×</button>';
+        html+='</div>';
+      });
     }
+    // Botón agregar
+    html+='<button onclick="_avanceAgregar('+p.n+')" style="margin-top:8px;background:transparent;border:1.5px dashed var(--border);color:var(--accent);padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;width:100%;transition:all .15s;" onmouseover="this.style.borderColor=\'var(--accent)\';this.style.background=\'rgba(45,106,79,.04)\'" onmouseout="this.style.borderColor=\'var(--border)\';this.style.background=\'transparent\'">+ Agregar acción</button>';
+    html+='</div>';
     html+='</div>';
   });
-
-  // Hint footer
-  html+='<div style="margin-top:14px;padding:12px 16px;background:rgba(82,183,136,.06);border-radius:10px;font-size:11px;color:var(--muted);font-family:Inter,sans-serif;line-height:1.5;">💡 <strong>Tip:</strong> si ves acciones pendientes en la semana actual, mandale un WhatsApp o comentale en la próxima sesión.</div>';
 
   return html;
 }
