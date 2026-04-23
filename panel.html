@@ -746,6 +746,23 @@ button:active { transform: scale(.98); }
   .mf textarea,.mf input{font-size:14px !important;}
 }
 
+/* ═══════ TOUR GUIADO (onboarding primer login coach) ═══════ */
+.tour-overlay{position:fixed;inset:0;background:rgba(27,46,38,.6);backdrop-filter:blur(4px);z-index:9999;animation:tourFadeIn .3s ease;}
+@keyframes tourFadeIn{from{opacity:0;}to{opacity:1;}}
+.tour-card{position:fixed;background:#fff;border-radius:16px;padding:24px 26px 20px;max-width:360px;width:calc(100vw - 48px);box-shadow:0 24px 60px rgba(0,0,0,.3);z-index:10000;animation:tourPop .4s cubic-bezier(.175,.885,.32,1.275);}
+@keyframes tourPop{0%{opacity:0;transform:scale(.85);}100%{opacity:1;transform:scale(1);}}
+.tour-step-num{display:inline-block;background:rgba(45,106,79,.1);color:#2D6A4F;font-size:11px;font-weight:800;padding:3px 10px;border-radius:100px;margin-bottom:10px;letter-spacing:.04em;}
+.tour-title{font-family:'Fraunces',Georgia,serif;font-size:22px;font-weight:500;color:#1B2E26;letter-spacing:-.3px;line-height:1.2;margin-bottom:8px;}
+.tour-body{font-size:13px;color:#555;line-height:1.6;margin-bottom:16px;}
+.tour-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.tour-skip{background:transparent;border:none;color:#999;font-size:12px;font-weight:600;cursor:pointer;padding:6px 8px;}
+.tour-skip:hover{color:#666;}
+.tour-next{background:#2D6A4F;color:#fff;border:none;padding:9px 20px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;transition:transform .1s,background .15s;}
+.tour-next:hover{background:#1B4332;transform:translateY(-1px);}
+.tour-next:active{transform:scale(.96);}
+.tour-arrow{position:absolute;width:16px;height:16px;background:#fff;transform:rotate(45deg);}
+.tour-highlight{position:relative;z-index:10001;box-shadow:0 0 0 4px rgba(82,183,136,.5),0 0 0 9999px rgba(27,46,38,.6)!important;border-radius:12px;transition:box-shadow .3s;}
+
 </style>
 </head>
 <body>
@@ -996,11 +1013,96 @@ var EDGE='https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/generar-informe'
 var COLORS=['#E8D5D8:#6B4A50','#D5DDE8:#4A5A6B','#D5E8D8:#4A6B4A','#E8E0D5:#6B5A4A','#E0D5E8:#5A4A6B'];
 var cands=[],reps={},cvs={},notes={},activeId=null,atab='perfil',editInfId=null,editCvId=null,pubInfId=null,urlId=null,_pendingEmail=null;
 
+// ── TOUR GUIADO ONBOARDING COACH ──────────────────────
+var TOUR_STEPS=[
+  {target:null,  title:'Bienvenida a Pathway 🌱',                body:'En 4 pasos te muestro lo esencial del panel. Podés saltarlo cuando quieras.',position:'center'},
+  {target:'#nb-inicio', title:'Inicio',                           body:'Tu home: sesiones del día, progreso de clientes, y tu checklist de setup.',position:'right'},
+  {target:'#nb-clientes',title:'Clientes',                        body:'Acá vas a agregar, ver y gestionar cada cliente. Cada uno tiene su ficha con tabs: Perfil, Avance, Documentos, Sesión y Gestión.',position:'right'},
+  {target:'#nb-config',  title:'Configuración',                   body:'Subí tu foto, bio, Calendly y Stripe para personalizar el portal que ven tus clientes. También tu color de marca.',position:'right'},
+  {target:null,  title:'Listo para empezar',                      body:'Creá tu primer cliente con el botón "+ Nuevo cliente" arriba y generá su primer informe con IA. ¡Dale!',position:'center'}
+];
+var _tourIdx=0;
+
+function startCoachTour(){
+  _tourIdx=0;
+  _showTourStep();
+}
+
+function _showTourStep(){
+  // Limpiar highlight anterior
+  document.querySelectorAll('.tour-highlight').forEach(function(el){el.classList.remove('tour-highlight');});
+  if(_tourIdx>=TOUR_STEPS.length){_endTour();return;}
+  var step=TOUR_STEPS[_tourIdx];
+
+  // Crear overlay si no existe
+  var ov=document.getElementById('tour-ov');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.className='tour-overlay';
+    ov.id='tour-ov';
+    document.body.appendChild(ov);
+  }
+
+  // Crear o actualizar card
+  var card=document.getElementById('tour-card');
+  if(!card){
+    card=document.createElement('div');
+    card.className='tour-card';
+    card.id='tour-card';
+    document.body.appendChild(card);
+  }
+
+  var isLast=_tourIdx===TOUR_STEPS.length-1;
+  card.innerHTML='<div class="tour-step-num">Paso '+(_tourIdx+1)+' de '+TOUR_STEPS.length+'</div>'
+    +'<div class="tour-title">'+step.title+'</div>'
+    +'<div class="tour-body">'+step.body+'</div>'
+    +'<div class="tour-actions">'
+    +'<button class="tour-skip" onclick="_endTour()">Saltar tour</button>'
+    +'<button class="tour-next" onclick="_tourNext()">'+(isLast?'¡Entendido!':'Siguiente →')+'</button>'
+    +'</div>';
+
+  // Posicionar card y highlight
+  if(step.target&&step.position!=='center'){
+    var tEl=document.querySelector(step.target);
+    if(tEl){
+      tEl.classList.add('tour-highlight');
+      var rect=tEl.getBoundingClientRect();
+      if(step.position==='right'){
+        var left=rect.right+14;
+        var top=rect.top;
+        // Si no entra en viewport, centrar
+        if(left+360>window.innerWidth){left=Math.max(16,(window.innerWidth-360)/2);top=rect.bottom+14;}
+        card.style.left=left+'px';
+        card.style.top=top+'px';
+        card.style.transform='';
+      } else {
+        card.style.left='50%';card.style.top='50%';card.style.transform='translate(-50%,-50%)';
+      }
+    }
+  } else {
+    // Center
+    card.style.left='50%';card.style.top='50%';card.style.transform='translate(-50%,-50%)';
+  }
+}
+
+function _tourNext(){_tourIdx++;_showTourStep();}
+
+function _endTour(){
+  document.querySelectorAll('.tour-highlight').forEach(function(el){el.classList.remove('tour-highlight');});
+  var ov=document.getElementById('tour-ov');if(ov)ov.remove();
+  var card=document.getElementById('tour-card');if(card)card.remove();
+  localStorage.setItem('mj_coach_tour_done','1');
+}
+
 // ── Inicialización de la app ──────────────────────────
 document.addEventListener('DOMContentLoaded', function(){
   showSection('inicio');
   loadCands();
   loadCoachPhoto();
+  // Tour: solo si coach nuevo (no completó aún)
+  if(ME&&ME.rol!=='admin'&&!localStorage.getItem('mj_coach_tour_done')){
+    setTimeout(function(){startCoachTour();},1200);
+  }
 });
 
 function loadCoachPhoto(){
