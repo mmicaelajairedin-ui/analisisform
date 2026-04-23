@@ -3206,7 +3206,7 @@ function _setCliFilter(f){
   _renderClientes();
 }
 
-function _toggleActivo(id, val){
+async function _toggleActivo(id, val){
   var c=cands.find(function(x){return x.id===id;});
   if(!c) return;
   c.activo=val;
@@ -3215,20 +3215,27 @@ function _toggleActivo(id, val){
   localAct[id]=val;
   localStorage.setItem('mj_activos',JSON.stringify(localAct));
   _renderClientes();
-  // Guardar en Supabase
-  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
-    method:'PATCH',
-    headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
-    body:JSON.stringify({activo:val})
-  }).then(function(r){
-    if(r.ok||r.status===204){
-      showToast(val?'Cliente activado':'Cliente desactivado');
-    } else {
-      showToast(val?'Cliente activado (local)':'Cliente desactivado (local)');
+  // Guardar en Supabase con detección de RLS silencioso
+  try{
+    var r=await fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=representation'},
+      body:JSON.stringify({activo:val})
+    });
+    if(!r.ok){
+      var err=await r.text();
+      showToast('❌ Error '+r.status+': '+err.slice(0,60));
+      return;
     }
-  }).catch(function(){
-    showToast(val?'Cliente activado (local)':'Cliente desactivado (local)');
-  });
+    var rows=await r.json();
+    if(!rows||!rows.length){
+      showToast('⚠ No se guardó en DB — RLS bloqueando. Corré: ALTER TABLE candidatos DISABLE ROW LEVEL SECURITY;');
+      return;
+    }
+    showToast(val?'✓ Cliente activado':'✓ Cliente desactivado');
+  } catch(e){
+    showToast('Error de red (quedó local)');
+  }
 }
 
 // ── RESUMEN ──────────────────────────────────────────────────
@@ -5467,12 +5474,16 @@ function _checkMsgBadge(){
   }).catch(function(){});
 }
 
-// Marcar como leídos al abrir mensajes
+// Marcar como leídos al abrir mensajes. También actualizar cada 30s el badge.
 var _origShowSection=showSection;
 showSection=function(sec){
   _origShowSection(sec);
   if(sec==='mensajes'){
     localStorage.setItem('mj_msgs_seen',String(Date.now()));
+    // Marcar cada cliente como seen también (per-client)
+    (cands||[]).forEach(function(c){
+      if(c.email)localStorage.setItem('mj_msgs_seen_'+c.email,String(Date.now()));
+    });
     var badge=document.getElementById('msg-count-badge');
     if(badge)badge.style.display='none';
   }
