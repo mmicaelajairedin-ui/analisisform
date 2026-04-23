@@ -1377,13 +1377,17 @@ function tabAvance(c){
     if(!cont)return;
     Promise.all([
       fetch(SB+'/rest/v1/candidatos?id=eq.'+c.id+'&select=acciones_progreso,semana_activa,updated_at',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];}),
-      fetch(SB+'/rest/v1/informes?email=eq.'+encodeURIComponent(c.email)+'&select=data&limit=1',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];})
+      fetch(SB+'/rest/v1/informes?email=eq.'+encodeURIComponent(c.email)+'&select=id,data&order=created_at.desc&limit=1',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];})
     ]).then(function(res){
       var cd=(res[0]&&res[0][0])||{};
-      var inf=(res[1]&&res[1][0]&&res[1][0].data)||null;
+      var infRow=(res[1]&&res[1][0])||null;
+      var infData=infRow?(typeof infRow.data==='string'?JSON.parse(infRow.data):infRow.data):null;
+      var infId=infRow?infRow.id:null;
       var ACTS=[];try{ACTS=cd.acciones_progreso?JSON.parse(cd.acciones_progreso):[];}catch(e){ACTS=[];}
       var semActiva=parseInt(cd.semana_activa)||1;
-      cont.innerHTML=_buildAvanceBody(ACTS,inf,semActiva,c);
+      // Guardar en _avanceData con ID correcto
+      _avanceData={cand:c,inf:infData,infId:infId,ACTS:ACTS,sem:semActiva};
+      cont.innerHTML=_buildAvanceBody(ACTS,infData,semActiva,c);
     }).catch(function(e){
       cont.innerHTML='<div style="padding:2rem;color:#c0756e;">Error cargando avance</div>';
     });
@@ -1397,21 +1401,48 @@ function _avanceSemKey(n){
 }
 
 function _avanceGuardarInforme(){
-  var c=_avanceData.cand,inf=_avanceData.inf;
-  if(!c||!inf)return;
+  var c=_avanceData.cand,inf=_avanceData.inf,infId=_avanceData.infId;
+  if(!c||!inf){showToast('Sin datos para guardar');return;}
+  if(!infId){
+    // Fallback: intentar buscar por email antes de fallar
+    var email=(c.email||'').toLowerCase().trim();
+    fetch(SB+'/rest/v1/informes?email=eq.'+encodeURIComponent(email)+'&select=id&order=created_at.desc&limit=1',{
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+    }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+      if(rows&&rows[0]&&rows[0].id){
+        _avanceData.infId=rows[0].id;
+        _avanceGuardarInforme(); // retry
+      } else {
+        showToast('No se encontró el informe. Generá uno primero.');
+      }
+    });
+    return;
+  }
+  // Actualizar también reps local para que otros lugares vean los cambios
   var email=(c.email||'').toLowerCase().trim();
-  // Buscar el informe actual en reps
-  var repArr=reps[email]||[];
-  var rep=repArr[0];
-  if(!rep||!rep.id){showToast('No se encontró el informe para actualizar');return;}
-  rep.data=inf;
-  fetch(SB+'/rest/v1/informes?id=eq.'+rep.id,{
+  if(reps[email]&&reps[email][0])reps[email][0].data=inf;
+
+  fetch(SB+'/rest/v1/informes?id=eq.'+infId,{
     method:'PATCH',
-    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
     body:JSON.stringify({data:JSON.stringify(inf)})
   }).then(function(r){
-    showToast(r.ok||r.status===204?'✓ Guardado':'Error al guardar');
-  }).catch(function(){showToast('Error de conexión');});
+    if(r.ok){
+      return r.json().then(function(rows){
+        if(rows&&rows.length){
+          showToast('✓ Guardado · cliente lo ve al instante');
+        } else {
+          showToast('⚠ Guardado pero 0 filas afectadas (revisá permisos)');
+        }
+      });
+    } else {
+      return r.text().then(function(t){
+        showToast('Error '+r.status+': '+t.slice(0,80));
+      });
+    }
+  }).catch(function(e){
+    showToast('Error de conexión: '+String(e).slice(0,60));
+  });
 }
 
 function _avanceRerender(){
