@@ -281,12 +281,126 @@ async function handleCoachSubscription(
     },
   );
 
+  // ── REFERRAL CREDIT: si el nuevo coach paga por primera vez y
+  // tiene `referred_by` guardado, dar 1 mes gratis al coach que lo refirió
+  const paidTransition =
+    (estado_sub === "activa") &&
+    (existingCfg.estado_sub !== "activa") &&
+    existingCfg.referred_by &&
+    !existingCfg.referral_credited;
+
+  if (paidTransition) {
+    await creditReferrer(
+      existingCfg.referred_by,
+      email,
+      existingCfg,
+    );
+    // Marcar al nuevo coach como 'referral_credited' para no pagar 2 veces
+    await fetch(
+      `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}`,
+      {
+        method: "PATCH",
+        headers: { ...headers, Prefer: "return=minimal" },
+        body: JSON.stringify({
+          configuracion: { ...newCfg, referral_credited: true, referral_credited_at: new Date().toISOString() },
+        }),
+      },
+    );
+  }
+
   return {
     result: patchRes.ok ? "subscription-updated" : "subscription-failed",
     email,
     estado_sub,
     plan,
   };
+}
+
+// ── REFERRAL CREDIT ─────────────────────────────────────────
+// Extiende la fecha de fin de período del coach que refirió por +30 días
+// y le manda un email de confirmación.
+async function creditReferrer(
+  referrerId: string,
+  referredEmail: string,
+  _referredCfg: Record<string, unknown>,
+): Promise<void> {
+  const { url: SB_URL, headers } = getSupabaseAuth();
+  try {
+    // Fetch referrer
+    const refRes = await fetch(
+      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(referrerId)}&select=email,nombre,configuracion`,
+      { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+    );
+    const refs = refRes.ok ? await refRes.json() : [];
+    if (!refs || !refs.length) return;
+    const referrer = refs[0];
+    const refCfg = referrer.configuracion || {};
+
+    // Extender fecha_fin_periodo por 30 días. Si no tiene, usamos hoy+30
+    const base = refCfg.fecha_fin_periodo ? new Date(refCfg.fecha_fin_periodo) : new Date();
+    base.setDate(base.getDate() + 30);
+    const newEnd = base.toISOString();
+
+    // Crear/actualizar array de referrals ganados
+    const earned = Array.isArray(refCfg.referrals_earned) ? refCfg.referrals_earned : [];
+    earned.push({
+      referred_email: referredEmail,
+      credited_at: new Date().toISOString(),
+      months_granted: 1,
+    });
+
+    const newRefCfg = {
+      ...refCfg,
+      fecha_fin_periodo: newEnd,
+      referrals_earned: earned,
+      last_referral_credit_at: new Date().toISOString(),
+    };
+
+    await fetch(
+      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(referrerId)}`,
+      {
+        method: "PATCH",
+        headers: { ...headers, Prefer: "return=minimal" },
+        body: JSON.stringify({ configuracion: newRefCfg }),
+      },
+    );
+
+    // Enviar email al referrer: '¡Ganaste tu mes gratis!'
+    await sendReferralEmail(referrer.email, referrer.nombre || "", referredEmail, earned.length);
+  } catch (e) {
+    console.error("creditReferrer error:", e);
+  }
+}
+
+async function sendReferralEmail(
+  to: string,
+  toName: string,
+  referredEmail: string,
+  totalReferrals: number,
+): Promise<void> {
+  const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+  try {
+    await fetch(`${SB_URL}/functions/v1/send-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: to,
+        to_name: toName,
+        subject: "🎁 Ganaste tu mes gratis",
+        html:
+          `<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">¡El coach que referiste pagó!</h2>` +
+          `<p><strong>${referredEmail}</strong> acaba de completar su primer pago en Pathway.</p>` +
+          `<div style="background:rgba(82,183,136,.08);border-left:3px solid #2D6A4F;border-radius:6px;padding:14px 16px;margin:18px 0;">` +
+          `<div style="font-size:13px;color:#2D6A4F;font-weight:800;">✓ Tu próxima renovación se extendió 30 días</div>` +
+          `<div style="font-size:12px;color:#444;margin-top:4px;">Total de referrals exitosos: <strong>${totalReferrals}</strong></div>` +
+          `</div>` +
+          `<p>Seguí compartiendo tu link desde el panel → Inicio. Por cada coach que paga, 1 mes gratis más.</p>` +
+          `<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel</a></p>`,
+      }),
+    });
+  } catch (e) {
+    console.error("sendReferralEmail error:", e);
+  }
 }
 
 // ── Lookup email de customer si Stripe no lo manda ──────────
