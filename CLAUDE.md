@@ -121,11 +121,70 @@ El objeto TX en cliente.html NO debe usar t() dentro de su propia definicion (re
 El cache se guarda en goSec() ANTES de actualizar SEC. render() solo lee el cache. Si se mueve SEC=sec antes del save, el cache se guarda bajo la key incorrecta.
 
 ## PENDIENTE — Proximas mejoras
-- Logro por sesion agendada (Calendly: https://calendly.com/mmicaela-jairedin/career-strategy-session)
-- Calendly integrado en el dashboard del cliente (al lado de logros, para que agenda despues de ver progreso)
-- Mas contenido real en recursos (links a articulos, videos, templates descargables)
+- Blog: crear /blog.html como hub + 4-5 posts SEO (coaching de carrera, CV con IA, etc.)
+- Paginas por pais: /coaching-carrera-espana.html, /coaching-carrera-argentina.html
+- Pagina About/Acerca de + Testimonios
+- Video demo del producto (60-90s Loom del panel)
+- Social proof en landing (testimonios, metricas, logos)
+- Chrome extension para guardar empleos desde portales
+- Networking tracker en portal del cliente
+- AI chat assistant en portal del cliente (Claude conversacional)
 - Sistema de notificaciones push o email automatico cuando el coach actualiza algo
-- Dashboard analytics: metricas de progreso agregadas
+- Dark mode
+
+## Completado — Sesion UX + SEO (abril 2026)
+
+### UX del cliente (cliente.html):
+- **Sistema de medallas**: Bronce (2), Plata (4), Oro (7) con celebracion confetti
+- **7 logros**: Formulario, Diagnostico, CV, Carta, LinkedIn, Sesion agendada, Semana 2+
+- **Calendly en dashboard** + logro por sesion agendada
+- **Sesiones compartidas coach↔cliente**: registro en Supabase (sesiones_registro), tareas interactivas que el cliente marca como hechas
+- **Seccion "Sesiones"** en sidebar: Calendly CTA, preparacion, historial, tareas
+- **Bottom nav mobile**: 5 tabs fijos (Inicio, Docs, LinkedIn, Empleos, Recursos)
+- **Onboarding primer login**: 5 pasos con overlay animado (mj_onboard_)
+- **Feed de actividad**: timeline "Tu timeline" con timeAgo()
+- **Score de completitud documentos**: 4 items (CV, Carta, LinkedIn, Foto) con barra de progreso
+- **Skeleton loaders**: animacion shimmer en carga de empleos
+- **Empty states con CTA**: mensajes descriptivos + WhatsApp
+- **Transiciones suaves**: fade-in 0.3s al cambiar de seccion
+- **Cache de secciones**: LinkedIn/Empleos/Recursos no se regeneran (_secCache en goSec ANTES de SEC=sec)
+
+### Panel del coach (panel.html):
+- **Sesiones sincronizadas a Supabase** (no solo localStorage)
+- **Dashboard analytics**: progreso agregado (informes, CVs, LinkedIn, cartas) con barras
+- **Seccion Leads**: contactos del chatbot, solo visible para admin, boton WhatsApp directo
+
+### Plataforma general:
+- **Design system unificado**: #8C7B80 + Poppins en portal, verde Pathway en landing/public
+- **Espanol neutro**: 0 voseo en toda la plataforma (emails, onboarding, placeholders)
+- **URLs migradas**: todo apunta a pathwaycareercoach.com (no GitHub Pages)
+- **SEO**: robots.txt, sitemap.xml, H1s con keywords, schema markup, checklist-linkedin en sitemap
+- **H1s optimizados**: "Coaching de carrera profesional", "Tu proximo trabajo en 4 semanas", "Plataforma de coaching de carrera"
+- **Accesibilidad**: labels con for, aria-labels, role=navigation, font min 10px, skip-to-content
+- **Console.logs eliminados** de produccion
+- **Errores con feedback claro**: "Sin conexion — guardado localmente"
+- **Coach name configurable**: COACH_FULL/COACH_FIRST en cliente.html
+- **Traducciones EN**: 173/173 keys completas
+- **PDF colores**: print-color-adjust:exact en CV y carta
+- **Cache-bust login**: redirige con ?v=timestamp
+
+### Landing + marketing:
+- **Chatbot guiado**: burbuja flotante verde, flujo candidato/coach con emojis, captura telefono → Supabase (contactos_chat)
+- **Mockup compacto** en soy-candidato.html (browser frame con portal del cliente)
+- **Hero copy**: "Un coach a tu lado, herramientas automatizadas, y un proceso que funciona"
+- **Tutorial CV**: tutorial-cv.html visual con 3 pasos para descargar PDF
+
+### Tablas Supabase agregadas:
+```sql
+ALTER TABLE candidatos ADD COLUMN sesiones_registro TEXT;
+CREATE TABLE contactos_chat (id SERIAL PRIMARY KEY, contacto TEXT, pagina TEXT, fecha TIMESTAMPTZ DEFAULT now());
+```
+
+### IMPORTANTE: traducciones TX
+El objeto TX en cliente.html NO debe usar t() dentro de su propia definicion (referencia circular). Todos los valores deben ser strings literales.
+
+### IMPORTANTE: cache de secciones (_secCache)
+El cache se guarda en goSec() ANTES de actualizar SEC. render() solo lee el cache. Si se mueve SEC=sec antes del save, el cache se guarda bajo la key incorrecta.
 
 ## Base de datos (Supabase)
 ### Tablas principales:
