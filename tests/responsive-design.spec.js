@@ -40,7 +40,7 @@ test.describe('Responsive - Login', () => {
 
     const card = page.locator('.card');
     await expect(card).toBeVisible();
-    await expect(page.locator('.logo-dot')).toBeVisible();
+    await expect(page.locator('.logo')).toBeVisible();
   });
 });
 
