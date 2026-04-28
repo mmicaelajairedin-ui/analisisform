@@ -1711,7 +1711,8 @@ function getAchievements(){
     {id:'carta',ico:'✉️', lbl:'Carta',        sub:'Tu carta de presentación está lista',   done:hasCarta,           color:'var(--orange)', bg:'var(--orange-light)'},
     {id:'li',   ico:'💼', lbl:'LinkedIn',     sub:'Optimizaste tu perfil de LinkedIn',     done:hasLinkedin,        color:'var(--brown)',  bg:'var(--brown-light)'},
     {id:'cal',  ico:'📅', lbl:'Sesión',       sub:'Agendaste una sesión con Micaela',      done:hasSesionAgendada,  color:'var(--blue)',   bg:'var(--blue-light)'},
-    {id:'ses',  ico:'🎯', lbl:'Semana 2+',    sub:'Avanzaste más allá de la semana 1',     done:hasSesion,          color:'var(--red)',    bg:'var(--red-light)'}
+    {id:'ses',  ico:'🎯', lbl:'Semana 2+',    sub:'Avanzaste más allá de la semana 1',     done:hasSesion,          color:'var(--red)',    bg:'var(--red-light)'},
+    {id:'review',ico:'⭐', lbl:'Reseña',       sub:'Dejaste tu opinión sobre Pathway',      done:!!(C.review_rating),color:'var(--orange)', bg:'var(--orange-light)'}
   ];
 }
 
@@ -2346,6 +2347,99 @@ function _relatedInsight(actionText){
   return bestScore>=1?best:null;
 }
 
+// ── REVIEW CARD: estrellas + textarea + confetti ─────────────
+function rReviewCard(){
+  // Estado: ya dejó review
+  if(C.review_rating){
+    var stars='';
+    for(var s=1;s<=5;s++){stars+='<span style="color:'+(s<=C.review_rating?'#E9C46A':'#E5DCD2')+';font-size:22px;">★</span>';}
+    return '<div class="card" style="border:1.5px solid var(--orange);background:linear-gradient(135deg,#fff,#FFF6E5);">'
+      +'<div class="card-body" style="padding:20px 22px;text-align:center;">'
+      +'<div style="font-size:32px;margin-bottom:6px;">🙌</div>'
+      +'<div style="font-family:Montserrat,sans-serif;font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px;">¡Gracias por tu reseña!</div>'
+      +'<div style="display:flex;gap:2px;justify-content:center;margin-bottom:6px;">'+stars+'</div>'
+      +(C.review_texto?'<div style="font-size:12px;color:var(--muted);font-style:italic;line-height:1.55;max-width:340px;margin:0 auto;">"'+escH(C.review_texto)+'"</div>':'')
+      +'</div></div>';
+  }
+  // Estado: pedir review
+  return '<div class="card" id="review-card" style="border:1.5px solid var(--orange);background:linear-gradient(135deg,#fff,#FFF6E5);">'
+    +'<div class="card-hd"><div>'
+    +'<div class="card-lbl" style="color:var(--orange);">⭐ Tu opinión suma 1 logro</div>'
+    +'<div class="card-title">¿Cómo te está yendo con Pathway?</div>'
+    +'</div></div>'
+    +'<div class="card-body" style="padding:14px 20px 20px;">'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.55;">Tu opinión nos ayuda a mejorar y a otros candidatos a confiar.</div>'
+    +'<div id="review-stars" style="display:flex;gap:6px;margin-bottom:14px;justify-content:center;">'
+    + (function(){var h='';for(var i=1;i<=5;i++){h+='<button type="button" data-star="'+i+'" onmouseover="_revHover('+i+')" onmouseout="_revHover(0)" onclick="_revSet('+i+')" aria-label="'+i+' estrellas" style="background:none;border:none;font-size:34px;color:#E5DCD2;cursor:pointer;padding:0;line-height:1;transition:transform .15s,color .15s;">★</button>';}return h;})()
+    +'</div>'
+    +'<textarea id="review-text" placeholder="¿Qué te parece? (opcional)" rows="2" maxlength="500" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-family:Inter,sans-serif;font-size:13px;resize:none;background:#fff;line-height:1.5;"></textarea>'
+    +'<button id="review-submit" onclick="_submitReview()" disabled style="margin-top:12px;width:100%;padding:11px;background:var(--orange,#F77F00);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:800;font-family:Montserrat,sans-serif;cursor:pointer;opacity:.5;transition:opacity .2s;">Elegí estrellas para enviar</button>'
+    +'</div></div>';
+}
+window._revRating=0;
+function _revHover(n){
+  var btns=document.querySelectorAll('#review-stars button');
+  btns.forEach(function(b,i){
+    var v=i+1;
+    var fill=n>0?(v<=n?'#E9C46A':'#E5DCD2'):(v<=window._revRating?'#E9C46A':'#E5DCD2');
+    b.style.color=fill;
+    if(n>0&&v<=n)b.style.transform='scale(1.1)';
+    else b.style.transform='scale(1)';
+  });
+}
+function _revSet(n){
+  window._revRating=n;
+  _revHover(0);
+  var btn=document.getElementById('review-submit');
+  if(btn){
+    btn.disabled=false;
+    btn.style.opacity='1';
+    btn.textContent=n>=4?'Enviar reseña '+'★'.repeat(n):'Enviar reseña';
+  }
+}
+async function _submitReview(){
+  var rating=window._revRating;
+  if(!rating)return;
+  var texto=(document.getElementById('review-text')||{}).value||'';
+  texto=texto.trim().slice(0,500);
+  var btn=document.getElementById('review-submit');
+  if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  try{
+    var r=await fetch(SB+'/rest/v1/candidatos?id=eq.'+C.id,{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=representation'},
+      body:JSON.stringify({review_rating:rating, review_texto:texto||null, review_fecha:new Date().toISOString()})
+    });
+    if(!r.ok){throw new Error('save failed '+r.status);}
+    var rows=await r.json();
+    if(!rows||!rows.length){throw new Error('RLS blocking');}
+    // Update local state
+    C.review_rating=rating; C.review_texto=texto||null; C.review_fecha=new Date().toISOString();
+    // CONFETTI 🎉
+    _fireReviewConfetti();
+    showSaveToast();
+    // Re-render dashboard para mostrar gracias + actualizar logro
+    setTimeout(function(){if(typeof render==='function')render();else if(typeof goSec==='function')goSec(SEC||'semana');},500);
+  }catch(err){
+    console.error('[review]',err);
+    if(btn){btn.disabled=false;btn.textContent='Reintentar';btn.style.opacity='1';}
+    alert('No pudimos guardar tu reseña. Probá en un momento.');
+  }
+}
+function _fireReviewConfetti(){
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:9001;overflow:hidden;';
+  var colors=['#52B788','#E9C46A','#F77F00','#8C7B80','#2D6A4F','#F4A261'];
+  for(var i=0;i<60;i++){
+    var c=document.createElement('div');
+    c.className='confetti-piece';
+    c.style.cssText='position:absolute;width:'+(8+Math.random()*4)+'px;height:'+(10+Math.random()*6)+'px;top:-20px;left:'+(Math.random()*100)+'%;background:'+colors[i%colors.length]+';animation:confettiFall '+(2.4+Math.random()*1.4)+'s ease-in '+(Math.random()*.4)+'s forwards;border-radius:'+(Math.random()>.5?'50%':'2px')+';';
+    ov.appendChild(c);
+  }
+  document.body.appendChild(ov);
+  setTimeout(function(){if(ov.parentNode)ov.remove();},4500);
+}
+
 function _semProceso(pasos,secId,btnLabel,btnIcon,semColor){
   var sc=semColor||STEP_COLORS[(SEM-1)%4]||'var(--rose)';
   // Si hay acciones del informe para esta semana, las usamos en vez de los pasos genéricos
@@ -2599,10 +2693,11 @@ function rSemana(){
   }
 
   o+='</div><div class="right-col">';
-  // Columna derecha: logros + motivación + calendly
+  // Columna derecha: logros + motivación + calendly + reseña
   o+=rAchievementsCard();
   o+=rMotivCard();
   o+=rCalendlyCard();
+  o+=rReviewCard();
   o+='</div></div>'; // cierra right-col y two-col
 
   // Fila inferior — timeline + situación actual (menos prioritarios)
