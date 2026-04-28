@@ -46,10 +46,34 @@ function bodyToHtml(body: string, fromNombre: string, fromEmail: string): string
   const escaped = body
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br>");
+    .replace(/>/g, "&gt;");
+
+  // Detectar líneas tipo "Unirme directo: https://chat.whatsapp.com/..." y reemplazar
+  // por botón verde de WhatsApp. También auto-linkea cualquier otra URL.
+  const WA_BTN = /(?:^|\n)([^\n:]*:?\s*)?(https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]+)/g;
+  const URL_RE = /(https?:\/\/[^\s<]+)/g;
+
+  let html = escaped;
+
+  // Primero capturamos los links de WhatsApp y los reemplazamos por botón
+  html = html.replace(WA_BTN, (match, prefix, url) => {
+    const cleanPrefix = (prefix || "").trim();
+    const button = `<div style="margin:18px 0;text-align:left;"><a href="${url}" style="display:inline-block;background:#25D366;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;font-size:14px;font-family:Inter,-apple-system,sans-serif;">💬 Unirme a la comunidad</a></div>`;
+    // Si había prefijo tipo "Unirme directo:" lo descartamos (el botón ya lo dice)
+    return "\n" + button;
+  });
+
+  // Auto-linkear el resto de URLs (las que no quedaron dentro de un href)
+  html = html.replace(URL_RE, (url) => {
+    if (url.includes("chat.whatsapp.com")) return url; // ya fue procesada arriba
+    return `<a href="${url}" style="color:#2D6A4F;text-decoration:underline;">${url}</a>`;
+  });
+
+  // Convertir saltos de línea a <br>
+  html = html.replace(/\n/g, "<br>");
+
   return `<!DOCTYPE html><html><body style="font-family:Inter,-apple-system,sans-serif;font-size:14px;line-height:1.6;color:#1B4332;max-width:620px;margin:0 auto;padding:20px;">
-<div>${escaped}</div>
+<div>${html}</div>
 <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;">
 <table style="border-collapse:collapse;"><tr><td style="padding-right:16px;vertical-align:middle;">
 <img src="https://pathwaycareercoach.com/logo-mark.png" width="48" height="48" alt="Pathway" style="display:block;">
