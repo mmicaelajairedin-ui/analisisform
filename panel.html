@@ -3543,7 +3543,7 @@ function _renderInicio(){
   }
 }
 
-// ── Hidratar agenda desde Google Calendar (Cloudflare Pages Function /api/calendar) ──
+// ── Hidratar agenda desde Google Calendar (Supabase Edge Function /calendar) ──
 function _loadAgenda(){
   var listEl=document.getElementById('agenda-list');
   if(!listEl) return;
@@ -3557,13 +3557,24 @@ function _loadAgenda(){
 
   if(!email){ showInfo('Iniciá sesión para ver tu agenda.'); return; }
 
-  fetch('/api/calendar?email='+encodeURIComponent(email),{cache:'no-store'})
-    .then(function(r){ return r.json().catch(function(){return{error:'bad_json'};}); })
+  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(email),{
+    cache:'no-store',
+    headers:{'Authorization':'Bearer '+KEY,'apikey':KEY}
+  })
+    .then(function(r){
+      var ct=(r.headers.get('content-type')||'').toLowerCase();
+      if(ct.indexOf('application/json')===-1){
+        return r.text().then(function(){ return {error:'not_deployed', status:r.status}; });
+      }
+      return r.json().catch(function(){ return {error:'bad_json', status:r.status}; });
+    })
     .then(function(data){
       if(!data){ showError('Sin respuesta del servidor.'); return; }
+      if(data.error==='not_deployed'){ showInfo('La función calendar todavía no está desplegada en Supabase. Pedile al admin que corra <code style="background:#fff;padding:1px 5px;border-radius:4px;">supabase functions deploy calendar --no-verify-jwt</code>.'); return; }
       if(data.unconfigured){ showInfo('Conectá tu Google Calendar en '+configBtn('Configuración')+' para ver tus llamadas acá.'); return; }
       if(data.error==='invalid_ical_url'){ showError('La URL guardada no es de Google Calendar. Revisá '+configBtn('Configuración')+'.'); return; }
       if(data.error==='ical_fetch_failed'||data.error==='ical_unreachable'){ showError('No pudimos leer tu calendario. Verificá la URL en '+configBtn('Configuración')+'.'); return; }
+      if(data.error==='parse_failed'){ showError('No pudimos leer el formato de tu calendario. Probá con otra URL en '+configBtn('Configuración')+'.'); return; }
       if(data.error){ showError('Error: '+data.error+'.'); return; }
 
       var ev=data.events||[];
