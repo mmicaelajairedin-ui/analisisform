@@ -49,7 +49,12 @@ export async function onRequestGet({ request }) {
     return json({ error: 'ical_unreachable', events: [] }, 200);
   }
 
-  const all = parseICal(icalText);
+  let all;
+  try {
+    all = parseICal(icalText);
+  } catch (e) {
+    return json({ error: 'parse_failed', events: [] }, 200);
+  }
   const now = Date.now();
   const cutoff = now + DAYS_AHEAD * 86400_000;
   const upcoming = all

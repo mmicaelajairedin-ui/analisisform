@@ -3558,12 +3558,24 @@ function _loadAgenda(){
   if(!email){ showInfo('Iniciá sesión para ver tu agenda.'); return; }
 
   fetch('/api/calendar?email='+encodeURIComponent(email),{cache:'no-store'})
-    .then(function(r){ return r.json().catch(function(){return{error:'bad_json'};}); })
+    .then(function(r){
+      // El handler /api/calendar devuelve JSON siempre. Si no es JSON casi
+      // seguro la Pages Function no esta desplegada todavia (Cloudflare
+      // sirve la 404 HTML del proyecto). Detectamos por content-type para
+      // dar un mensaje util en vez del cripticio "bad_json".
+      var ct=(r.headers.get('content-type')||'').toLowerCase();
+      if(ct.indexOf('application/json')===-1){
+        return r.text().then(function(){ return {error:'not_deployed', status:r.status}; });
+      }
+      return r.json().catch(function(){ return {error:'bad_json', status:r.status}; });
+    })
     .then(function(data){
       if(!data){ showError('Sin respuesta del servidor.'); return; }
+      if(data.error==='not_deployed'){ showInfo('La función /api/calendar todavía no está desplegada. Esperá a que Cloudflare Pages termine el deploy del último commit (suele tardar 1-2 min) y refrescá.'); return; }
       if(data.unconfigured){ showInfo('Conectá tu Google Calendar en '+configBtn('Configuración')+' para ver tus llamadas acá.'); return; }
       if(data.error==='invalid_ical_url'){ showError('La URL guardada no es de Google Calendar. Revisá '+configBtn('Configuración')+'.'); return; }
       if(data.error==='ical_fetch_failed'||data.error==='ical_unreachable'){ showError('No pudimos leer tu calendario. Verificá la URL en '+configBtn('Configuración')+'.'); return; }
+      if(data.error==='parse_failed'){ showError('No pudimos leer el formato de tu calendario. Probá con otra URL en '+configBtn('Configuración')+'.'); return; }
       if(data.error){ showError('Error: '+data.error+'.'); return; }
 
       var ev=data.events||[];
