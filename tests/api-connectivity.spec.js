@@ -107,48 +107,10 @@ test.describe('Supabase - Integridad de datos', () => {
   });
 });
 
-test.describe('Netlify AI Function - Conectividad', () => {
-
-  test('AI endpoint responde a OPTIONS (CORS preflight)', async ({ request }) => {
-    // Probar contra la URL base del sitio en Netlify
-    const BASE = process.env.NETLIFY_URL || 'https://analisisform.netlify.app';
-
-    try {
-      const response = await request.fetch(`${BASE}/.netlify/functions/ai`, {
-        method: 'OPTIONS',
-      });
-
-      // Si el sitio está en Netlify, debería responder 200 o 204
-      expect([200, 204, 404]).toContain(response.status());
-
-      if (response.status() === 200 || response.status() === 204) {
-        const headers = response.headers();
-        expect(headers['access-control-allow-origin']).toBeDefined();
-      }
-    } catch (e) {
-      // Si no se puede conectar, reportar pero no fallar (podría ser GitHub Pages)
-      console.log('Netlify function no accesible (puede estar en GitHub Pages):', e.message);
-    }
-  });
-
-  test('AI endpoint rechaza GET correctamente', async ({ request }) => {
-    const BASE = process.env.NETLIFY_URL || 'https://analisisform.netlify.app';
-
-    try {
-      const response = await request.get(`${BASE}/.netlify/functions/ai`);
-
-      // Debe rechazar GET con 405
-      expect([405, 404]).toContain(response.status());
-    } catch (e) {
-      console.log('Netlify function no accesible:', e.message);
-    }
-  });
-});
-
 test.describe('Sitio desplegado - Health Check', () => {
 
   test('Sitio principal responde en < 5 segundos', async ({ request }) => {
-    const BASE = process.env.BASE_URL || 'https://mmicaelajairedin-ui.github.io/analisisform';
+    const BASE = process.env.BASE_URL || 'https://pathwaycareercoach.com';
     const start = Date.now();
 
     const response = await request.get(`${BASE}/index.html`);
@@ -160,7 +122,7 @@ test.describe('Sitio desplegado - Health Check', () => {
   });
 
   test('Login page responde en < 5 segundos', async ({ request }) => {
-    const BASE = process.env.BASE_URL || 'https://mmicaelajairedin-ui.github.io/analisisform';
+    const BASE = process.env.BASE_URL || 'https://pathwaycareercoach.com';
     const start = Date.now();
 
     const response = await request.get(`${BASE}/login.html`);

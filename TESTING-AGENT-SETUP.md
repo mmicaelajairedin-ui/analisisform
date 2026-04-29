@@ -11,7 +11,7 @@ Agente automatizado que testea la plataforma de mentoría de Micaela Jairedin to
 | Cambio de idioma | 2 tests | ES ↔ EN con verificación de textos |
 | Login | 5 tests | Validaciones, errores, branding |
 | Panel del coach | 6 tests | Layout, sidebar, estadísticas, tabs |
-| APIs | 6 tests | Supabase (candidatos, informes, usuarios), Netlify AI function |
+| APIs | 8 tests | Supabase (candidatos, informes, usuarios, cv_publicados) + health check del sitio |
 | Responsivo | 4 tests | Móvil (375px), Tablet (768px), Desktop (1440px) |
 | Recursos | 3 tests | Google Fonts, EmailJS, errores de consola |
 
@@ -62,7 +62,7 @@ tests/
 ├── form-flow.spec.js         # Formulario multi-paso
 ├── login-flow.spec.js        # Autenticación
 ├── panel-dashboard.spec.js   # Panel del coach
-├── api-connectivity.spec.js  # Supabase + AI endpoint
+├── api-connectivity.spec.js  # Supabase + health check
 ├── responsive-design.spec.js # Diseño responsivo
 ├── generate-report.js        # Generador de reportes
 └── results/                  # Resultados (gitignored)
