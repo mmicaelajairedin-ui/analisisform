@@ -3353,14 +3353,17 @@ function _renderInicio(){
     }
     html+='</h1>';
 
-    // ── CTA Mi Agenda en Calendly (Fase 1) ──
-    html+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:18px 22px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:32px;flex-wrap:wrap;">';
-    html+='<div style="flex:1;min-width:200px;">';
-    html+='<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:4px;">📅 Mi agenda</div>';
-    html+='<div style="font-size:14px;color:var(--title);line-height:1.5;">Discovery calls, networking y todas tus llamadas reservadas por Calendly.</div>';
+    // ── Mi agenda — proximas llamadas (Google Calendar via /api/calendar) ──
+    html+='<div id="agenda-card" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:32px;">';
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">';
+    html+='<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;">📅 Mi agenda — próximas llamadas</div>';
+    html+='<a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);font-weight:600;text-decoration:none;">Ver en Google Calendar →</a>';
     html+='</div>';
-    html+='<a href="https://app.calendly.com/scheduled_events" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:10px 18px;background:var(--accent);color:#fff;border-radius:10px;font-size:13px;font-weight:600;text-decoration:none;">Ver agenda completa →</a>';
-    html+='</div>';
+    html+='<div id="agenda-list" style="display:grid;gap:8px;">';
+    for(var _i=0;_i<3;_i++){
+      html+='<div style="background:#F5F0F0;border-radius:10px;height:54px;opacity:.55;"></div>';
+    }
+    html+='</div></div>';
 
     // ── HOY — Sesiones ──
     if(sesHoy.length){
@@ -3527,6 +3530,9 @@ function _renderInicio(){
       ev.stopPropagation();
       openCand(parseInt(el.dataset.open));
     });
+
+    // Hidratar agenda (Google Calendar via /api/calendar)
+    if(typeof _loadAgenda==='function') _loadAgenda();
   }
 
   if(cands&&cands.length){ build(); }
@@ -3535,6 +3541,82 @@ function _renderInicio(){
     var _t=setInterval(function(){if(cands&&cands.length){clearInterval(_t);build();}},300);
     setTimeout(function(){clearInterval(_t);},8000);
   }
+}
+
+// ── Hidratar agenda desde Google Calendar (Cloudflare Pages Function /api/calendar) ──
+function _loadAgenda(){
+  var listEl=document.getElementById('agenda-list');
+  if(!listEl) return;
+
+  var u={};try{u=JSON.parse(localStorage.getItem('mj_user')||'{}');}catch(e){}
+  var email=(u.email||'').toLowerCase();
+
+  function showInfo(html){ listEl.innerHTML='<div style="padding:14px 16px;background:#FFF7E6;border:1px solid #F5E5B0;border-radius:10px;font-size:13px;color:#8C6D2E;line-height:1.5;">'+html+'</div>'; }
+  function showError(html){ listEl.innerHTML='<div style="padding:14px 16px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;font-size:13px;color:#991B1B;line-height:1.5;">'+html+'</div>'; }
+  function configBtn(label){ return '<button onclick="showSection(\'config\')" style="background:none;border:none;color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline;padding:0;font-family:inherit;font-size:inherit;">'+label+'</button>'; }
+
+  if(!email){ showInfo('Iniciá sesión para ver tu agenda.'); return; }
+
+  fetch('/api/calendar?email='+encodeURIComponent(email),{cache:'no-store'})
+    .then(function(r){ return r.json().catch(function(){return{error:'bad_json'};}); })
+    .then(function(data){
+      if(!data){ showError('Sin respuesta del servidor.'); return; }
+      if(data.unconfigured){ showInfo('Conectá tu Google Calendar en '+configBtn('Configuración')+' para ver tus llamadas acá.'); return; }
+      if(data.error==='invalid_ical_url'){ showError('La URL guardada no es de Google Calendar. Revisá '+configBtn('Configuración')+'.'); return; }
+      if(data.error==='ical_fetch_failed'||data.error==='ical_unreachable'){ showError('No pudimos leer tu calendario. Verificá la URL en '+configBtn('Configuración')+'.'); return; }
+      if(data.error){ showError('Error: '+data.error+'.'); return; }
+
+      var ev=data.events||[];
+      if(!ev.length){
+        listEl.innerHTML='<div style="font-size:13px;color:var(--muted);padding:18px 14px;text-align:center;background:#FAF8F8;border-radius:10px;">Sin llamadas en los próximos 14 días.</div>';
+        return;
+      }
+
+      var DIAS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+      var MESES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+      var hoy=new Date(); hoy.setHours(0,0,0,0);
+      var manana=new Date(hoy.getTime()+86400000);
+      var max=Math.min(ev.length,5);
+      var html='';
+      for(var i=0;i<max;i++){
+        var e=ev[i];
+        var d=new Date(e.start);
+        var diaLabel;
+        var dStart=new Date(d); dStart.setHours(0,0,0,0);
+        if(dStart.getTime()===hoy.getTime()) diaLabel='Hoy';
+        else if(dStart.getTime()===manana.getTime()) diaLabel='Mañana';
+        else diaLabel=DIAS[d.getDay()];
+        var dia=d.getDate();
+        var mes=MESES[d.getMonth()];
+        var hh=String(d.getHours()).padStart(2,'0');
+        var mm=String(d.getMinutes()).padStart(2,'0');
+        var hora=hh+':'+mm;
+        var isHoy=dStart.getTime()===hoy.getTime();
+        html+='<div style="display:flex;align-items:center;gap:14px;padding:12px 14px;background:'+(isHoy?'rgba(45,106,79,.06)':'#FAF8F8')+';border-radius:10px;'+(isHoy?'border:1px solid rgba(45,106,79,.2);':'')+'">';
+        html+='<div style="text-align:center;min-width:54px;flex-shrink:0;">';
+        html+='<div style="font-size:9px;color:'+(isHoy?'var(--accent)':'var(--muted)')+';text-transform:uppercase;font-weight:700;letter-spacing:.08em;">'+diaLabel+'</div>';
+        html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:22px;color:var(--accent);line-height:1.1;font-weight:500;">'+dia+'</div>';
+        html+='<div style="font-size:9px;color:var(--muted);text-transform:lowercase;">'+mes+'</div>';
+        html+='</div>';
+        html+='<div style="flex:1;min-width:0;">';
+        html+='<div style="font-size:13px;font-weight:700;color:var(--title);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escH(e.title)+'</div>';
+        var sub=hora;
+        if(e.location) sub+=' · '+e.location.slice(0,40);
+        html+='<div style="font-size:11px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escH(sub)+'</div>';
+        html+='</div>';
+        if(e.meet){
+          html+='<a href="'+escH(e.meet)+'" target="_blank" rel="noopener" style="padding:7px 12px;background:#1A73E8;color:#fff;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;flex-shrink:0;">Meet →</a>';
+        }
+        html+='</div>';
+      }
+      if(ev.length>max){
+        html+='<div style="font-size:11px;color:var(--muted);text-align:center;padding-top:6px;">+ '+(ev.length-max)+' evento'+(ev.length-max===1?'':'s')+' más en los próximos días</div>';
+      }
+      listEl.innerHTML=html;
+    })
+    .catch(function(){
+      showError('Error de red. Refrescá la página.');
+    });
 }
 
 function _renderLinks() {
