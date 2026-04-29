@@ -177,7 +177,7 @@ textarea:focus{border-color:#8C7B80;}
 <script>
 var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
-var BASE='https://mmicaelajairedin-ui.github.io/analisisform';
+var BASE='https://pathwaycareercoach.com';
 var COLORS=['#E8D5D8:#6B4A50','#D5DDE8:#4A5A6B','#D5E8D8:#4A6B4A','#E8E0D5:#6B5A4A','#E0D5E8:#5A4A6B'];
 
 var cands=[], reps={}, cvs={}, notes={}, activeId=null, atab='datos', editInfId=null, editCvId=null, pubInfId=null, urlId=null;
