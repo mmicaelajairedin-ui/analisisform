@@ -42,6 +42,19 @@ Lo que era `landing.html` ahora es `index.html` (se sirve en la raiz `/`).
 Lo que era `index.html` (form de intake) ahora es `formulario.html`.
 Si tocas URLs absolutas al form, usa: `https://pathwaycareercoach.com/formulario.html`.
 
+### IMPORTANTE: URLs de preview de Cloudflare Pages estan detras de Access
+Cloudflare Pages genera 3 tipos de URL para este proyecto:
+
+| URL | Que es | Publica |
+|-----|--------|---------|
+| `<hash>.analisisform.pages.dev` (ej. `df051cd6.analisisform.pages.dev`) | Preview del deploy especifico | NO — Cloudflare Access pide login |
+| `analisisform.pages.dev` | Alias de produccion | SI |
+| `pathwaycareercoach.com` | Dominio custom de produccion | SI |
+
+Si al abrir el sitio aparece una pantalla de login en `analisisform-pages.cloudflareaccess.com`, **no es un bug del codigo** — es porque se esta abriendo la URL del preview (la del hash del deployment) en vez de la de produccion. En el dashboard de Cloudflare hay que usar el boton "Visit" o el dominio custom, no el hash del commit.
+
+Para diagnosticar: si la URL en la barra empieza con `<hash>.analisisform.pages.dev` o `analisisform-pages.cloudflareaccess.com`, redirigir al usuario a `pathwaycareercoach.com` o `analisisform.pages.dev`. No buscar URLs rotas en el HTML — los hrefs relativos no causan esto.
+
 ## IMPORTANTE: panel.html tiene todo el JS inline
 El archivo `panel.js` existe pero **panel.html NO lo carga**. Todo el JavaScript del panel esta dentro de `<script>` en panel.html. Cualquier funcion nueva debe ir dentro de panel.html, no en panel.js.
 
