@@ -207,7 +207,7 @@ test.describe('SEO y Meta tags en landings', () => {
   });
 
   test('CNAME apunta al dominio pathwaycareercoach.com', async ({ request }) => {
-    const BASE = process.env.BASE_URL || 'https://mmicaelajairedin-ui.github.io/analisisform/';
+    const BASE = process.env.BASE_URL || 'https://pathwaycareercoach.com/';
     const response = await request.get(`${BASE}CNAME`);
     if (response.status() === 200) {
       const content = await response.text();

@@ -18,8 +18,8 @@ Agencia (landing) → Cliente compra mentoria → Micaela le manda link al formu
 - Supabase (PostgreSQL + REST API)
 - EmailJS (notificaciones)
 - Uploadcare (subida de CVs)
-- Anthropic Claude API via Netlify Edge Function (generacion de informes)
-- Deploy: GitHub Pages con dominio custom `pathwaycareercoach.com` (fallback: mmicaelajairedin-ui.github.io/analisisform). CNAME en raiz.
+- Anthropic Claude API via Supabase Edge Function `generar-informe` (generacion de informes)
+- Deploy: Cloudflare Pages (proyecto `analisisform`) con dominio custom `pathwaycareercoach.com` (fallback: analisisform.pages.dev). Auto-deploy en push a `main`.
 
 ## Archivos principales
 | Archivo | Que hace | Lineas |

@@ -175,48 +175,10 @@ test.describe('Seguridad — Sin secretos expuestos en el código', () => {
   });
 });
 
-test.describe('Seguridad — Endpoint AI', () => {
-
-  test('Endpoint AI rechaza peticiones sin body', async ({ request }) => {
-    const BASE = process.env.NETLIFY_URL || 'https://analisisform.netlify.app';
-
-    try {
-      const response = await request.post(`${BASE}/.netlify/functions/ai`, {
-        headers: { 'Content-Type': 'application/json' },
-        data: {},
-      });
-
-      // Debería manejar graciosamente peticiones sin prompt
-      expect(response.status()).toBeLessThan(502);
-    } catch (e) {
-      // Si Netlify no es accesible, no es un fallo de seguridad
-      console.log('Netlify no accesible para test de AI endpoint');
-    }
-  });
-
-  test('Endpoint AI rechaza payloads muy grandes', async ({ request }) => {
-    const BASE = process.env.NETLIFY_URL || 'https://analisisform.netlify.app';
-
-    try {
-      // Enviar un prompt absurdamente grande
-      const bigPrompt = 'x'.repeat(100000);
-      const response = await request.post(`${BASE}/.netlify/functions/ai`, {
-        headers: { 'Content-Type': 'application/json' },
-        data: { prompt: bigPrompt },
-      });
-
-      // No debería causar un crash del servidor
-      expect(response.status()).toBeLessThan(502);
-    } catch (e) {
-      console.log('Netlify no accesible para test de payload grande');
-    }
-  });
-});
-
 test.describe('Seguridad — HTTPS y headers', () => {
 
   test('El sitio está accesible por HTTPS', async ({ request }) => {
-    const BASE = process.env.BASE_URL || 'https://mmicaelajairedin-ui.github.io/analisisform';
+    const BASE = process.env.BASE_URL || 'https://pathwaycareercoach.com';
     const response = await request.get(`${BASE}/index.html`);
 
     expect(response.status()).toBe(200);
