@@ -2758,13 +2758,10 @@ function rSemana(){
   o+=rCalendlyCard();
   o+='</div></div>'; // cierra right-col y two-col
 
-  // Fila inferior — timeline + diagnóstico + reseña (3 columnas)
+  // Fila inferior — timeline + reseña + diagnóstico (3 columnas)
   o+='<div class="below-row">';
   o+=rActivityFeed();
-  // rReviewCard() (sistema viejo de review único) reemplazado por
-  // _renderResenaCard() abajo — ahora hay 2 cards (coach + plataforma)
-  // con guardado en candidatos.resena JSON. Logro "Reseña" se computa
-  // mirando los dos sistemas (compat hacia atrás con review_rating).
+  o+=_renderResenaCard();
   o+='<div class="card"><div class="card-hd"><div><div class="card-lbl">'+t('your_diagnosis')+'</div><div class="card-title">'+t('current_situation')+'</div></div></div><div class="card-body">';
   if(D&&D.scores&&D.scores.length){
     D.scores.forEach(function(s,si){
@@ -2782,7 +2779,6 @@ function rSemana(){
 
   o+='</div></div>';
   o+='</div>'; // cierra below-row
-  o+=_renderResenaCard();
   return o;
 }
 
@@ -2807,22 +2803,25 @@ function _parseResenas(jsonStr){
 function _renderResenaCard(){
   if(COACH_PREVIEW)return''; // en preview el coach no deja reseña
   var both=_parseResenas(C.resena);
-  // Header chico arriba + grid de 2 cards compactas debajo
-  return '<div id="resena" style="margin-top:18px;">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-left:2px;">'
-    +'<span style="font-size:14px;">⭐</span>'
-    +'<div style="font-size:13px;font-weight:700;color:var(--title);">'+(_lang==='en'?'Your reviews':'Tu reseña')+'</div>'
-    +'<div style="font-size:11px;color:var(--muted);">·</div>'
-    +'<div style="font-size:11px;color:var(--muted);">'+(_lang==='en'?'1 minute · helps your coach and others':'1 minuto · ayuda a tu coach y a otros')+'</div>'
-    +'</div>'
-    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;">'
-    +_renderResenaSection('coach',both.coach)
-    +_renderResenaSection('plataforma',both.plataforma)
+  // Card que entra en una columna del below-row (junto a timeline + diagnóstico).
+  // Las 2 sub-secciones (coach + plataforma) van stacked verticales en lugar
+  // de lado a lado, así cabe en una sola columna estrecha.
+  return '<div id="resena" class="card" style="margin-bottom:14px;">'
+    +'<div class="card-hd"><div>'
+      +'<div class="card-lbl">⭐ '+(_lang==='en'?'YOUR REVIEW':'TU RESEÑA')+'</div>'
+      +'<div class="card-title" style="font-size:15px;">'+(_lang==='en'?'How was it?':'Cómo fue todo')+'</div>'
+    +'</div></div>'
+    +'<div class="card-body" style="padding:8px 16px 14px;">'
+      +_renderResenaSection('coach',both.coach)
+      +'<div style="height:1px;background:var(--border);margin:4px 0;"></div>'
+      +_renderResenaSection('plataforma',both.plataforma)
     +'</div>'
     +'</div>';
 }
 
-// Renderiza una card de reseña compacta. Tipo: 'coach' o 'plataforma'.
+// Renderiza una sub-sección de reseña dentro del card "Tu reseña".
+// Tipo: 'coach' o 'plataforma'. Ultra-compacta — sin marco propio (el
+// card padre ya tiene chrome).
 function _renderResenaSection(tipo,existing){
   var s=existing&&existing.stars?existing.stars:0;
   var txt=existing&&existing.text?existing.text:'';
@@ -2830,11 +2829,11 @@ function _renderResenaSection(tipo,existing){
 
   var titulo, placeholder;
   if(tipo==='coach'){
-    titulo=_lang==='en'?'About '+COACH_FIRST:'Sobre '+COACH_FIRST;
+    titulo=_lang==='en'?COACH_FIRST:COACH_FIRST;
     placeholder=_lang==='en'?'How was the mentorship?':'¿Cómo fue la mentoría?';
   } else {
-    titulo=_lang==='en'?'About Pathway':'Sobre Pathway';
-    placeholder=_lang==='en'?'How did the platform work for you?':'¿Cómo te fue con la plataforma?';
+    titulo=_lang==='en'?'Pathway':'Pathway';
+    placeholder=_lang==='en'?'How did the platform work?':'¿Cómo te fue con la plataforma?';
   }
 
   var idStars='resena-stars-'+tipo;
@@ -2843,30 +2842,29 @@ function _renderResenaSection(tipo,existing){
   var idBtn='resena-btn-'+tipo;
   var idStatus='resena-status-'+tipo;
 
-  var o='<div data-tipo="'+tipo+'" style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">';
-  // Header: emoji + título + (badge si ya envió)
-  o+='<div style="display:flex;align-items:center;gap:8px;">';
-  o+='<span style="font-size:16px;">'+(tipo==='coach'?'👤':'🌱')+'</span>';
-  o+='<div style="flex:1;font-size:13px;font-weight:700;color:var(--title);">'+titulo+'</div>';
-  if(existing)o+='<span style="font-size:9px;background:rgba(74,124,95,.12);color:#4a7c5f;padding:2px 7px;border-radius:100px;font-weight:600;letter-spacing:.04em;">✓</span>';
-  o+='</div>';
-  // Estrellas (más chicas que antes)
-  o+='<div id="'+idStars+'" style="display:flex;gap:3px;">';
+  var o='<div data-tipo="'+tipo+'" style="padding:8px 0;">';
+  // Header: emoji + título + estrellas inline (todo en una sola línea)
+  o+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">';
+  o+='<span style="font-size:13px;">'+(tipo==='coach'?'👤':'🌱')+'</span>';
+  o+='<span style="font-size:11px;font-weight:700;color:var(--text);">'+titulo+'</span>';
+  if(existing)o+='<span style="font-size:8px;background:rgba(74,124,95,.12);color:#4a7c5f;padding:1px 6px;border-radius:100px;font-weight:600;">✓</span>';
+  o+='<div id="'+idStars+'" style="display:flex;gap:1px;margin-left:auto;">';
   for(var i=1;i<=5;i++){
     var on=i<=s;
-    o+='<button type="button" data-star="'+i+'" onclick="_setResenaStars(\''+tipo+'\','+i+')" style="background:none;border:none;cursor:pointer;padding:2px;font-size:22px;line-height:1;color:'+(on?'#E9C46A':'#E5E0DD')+';transition:transform .12s,color .12s;" onmouseover="this.style.transform=\'scale(1.15)\';" onmouseout="this.style.transform=\'\';">★</button>';
+    o+='<button type="button" data-star="'+i+'" onclick="_setResenaStars(\''+tipo+'\','+i+')" style="background:none;border:none;cursor:pointer;padding:0 1px;font-size:18px;line-height:1;color:'+(on?'#E9C46A':'#E5E0DD')+';transition:transform .12s,color .12s;" onmouseover="this.style.transform=\'scale(1.18)\';" onmouseout="this.style.transform=\'\';">★</button>';
   }
   o+='</div>';
-  // Textarea (2 filas, más chica)
-  o+='<textarea id="'+idText+'" rows="2" placeholder="'+placeholder+'" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;line-height:1.5;color:var(--text);background:#fff;outline:none;resize:vertical;transition:border-color .12s;" onfocus="this.style.borderColor=\'var(--accent)\';" onblur="this.style.borderColor=\'var(--border)\';">'+hh(txt)+'</textarea>';
-  // Footer en una línea: checkbox público + botón + status
-  o+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">';
-  o+='<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:10px;color:var(--muted);">';
-  o+='<input type="checkbox" id="'+idPub+'" '+(isPublic?'checked':'')+' style="cursor:pointer;width:13px;height:13px;accent-color:var(--accent);">';
+  o+='</div>';
+  // Textarea de 1-2 filas
+  o+='<textarea id="'+idText+'" rows="2" placeholder="'+placeholder+'" style="width:100%;padding:6px 9px;border:1px solid var(--border);border-radius:6px;font-size:11px;font-family:Inter,sans-serif;line-height:1.45;color:var(--text);background:#fff;outline:none;resize:vertical;transition:border-color .12s;" onfocus="this.style.borderColor=\'var(--accent)\';" onblur="this.style.borderColor=\'var(--border)\';">'+hh(txt)+'</textarea>';
+  // Footer: checkbox + status + botón en una línea
+  o+='<div style="display:flex;align-items:center;gap:8px;margin-top:6px;">';
+  o+='<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:9px;color:var(--muted);">';
+  o+='<input type="checkbox" id="'+idPub+'" '+(isPublic?'checked':'')+' style="cursor:pointer;width:11px;height:11px;accent-color:var(--accent);">';
   o+='<span>'+(_lang==='en'?'Public':'Pública')+'</span>';
   o+='</label>';
-  o+='<div id="'+idStatus+'" style="font-size:10px;color:var(--muted);flex:1;"></div>';
-  o+='<button onclick="_saveResena(\''+tipo+'\')" id="'+idBtn+'" style="padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">'+(existing?(_lang==='en'?'Update':'Actualizar'):(_lang==='en'?'Enviar':'Enviar'))+'</button>';
+  o+='<div id="'+idStatus+'" style="font-size:9px;color:var(--muted);flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>';
+  o+='<button onclick="_saveResena(\''+tipo+'\')" id="'+idBtn+'" style="padding:5px 10px;background:var(--accent);color:#fff;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">'+(existing?'↻':'→')+'</button>';
   o+='</div>';
   o+='</div>';
   return o;
