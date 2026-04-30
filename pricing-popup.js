@@ -58,9 +58,11 @@
 
     // Popup solo se usa en landings de coach (index + soy-coach). El
     // candidato no se suscribe a Pathway directamente — paga al coach.
-    var titulo='🎁 Tu primer mes gratis';
-    var subtitulo='30 días gratis con tu suscripción. Te pedimos la tarjeta para activar pero no cobramos hasta el día 31. Cancelás cuando quieras desde tu panel.';
-    var ctaTexto='Enviarme mi link de acceso';
+    // Bonus: el trial estándar es 14d, este popup regala +14 días extra
+    // (28 en total) para los que dejen email con código PATHWAY30.
+    var titulo='🎁 +14 días extra al trial';
+    var subtitulo='El trial estándar es 14 días — con este código sumás 14 más, total 28 días gratis. Te mandamos el link al email para que actives la suscripción.';
+    var ctaTexto='Quiero los 14 días extra';
 
     card.innerHTML=''
       +'<button data-pw-close style="position:absolute;top:14px;right:14px;background:none;border:none;font-size:22px;cursor:pointer;color:#9E9E9E;line-height:1;padding:4px 8px;border-radius:6px;" aria-label="Cerrar">×</button>'
@@ -128,9 +130,9 @@
       var regUrl='https://pathwaycareercoach.com/registro.html?ref=popup&email='+encodeURIComponent(email);
       var html=''
         +'<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">¡Acá va tu link!</h2>'
-        +'<p>Como prometido — usá <strong>'+CODIGO+'</strong> para activar 30 días gratis al suscribirte.</p>'
-        +'<p style="margin-top:20px;"><a href="'+regUrl+'" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Empezar mi prueba gratis →</a></p>'
-        +'<p style="font-size:13px;color:#666;margin-top:24px;">Te pedimos la tarjeta para activar la suscripción, pero <strong>no cobramos hasta el día 31</strong>. Si no te sirve, cancelás desde tu panel y listo, no se cobra nada.</p>'
+        +'<p>Tu código <strong>'+CODIGO+'</strong> te suma <strong>14 días extra</strong> al trial estándar de 14 días — <strong>28 días gratis</strong> en total.</p>'
+        +'<p style="margin-top:20px;"><a href="'+regUrl+'" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Activar mi prueba de 28 días →</a></p>'
+        +'<p style="font-size:13px;color:#666;margin-top:24px;">Te pedimos la tarjeta para activar la suscripción, pero <strong>no cobramos hasta que termine el trial</strong>. Si no te sirve, cancelás desde tu panel y listo, no se cobra nada.</p>'
         +'<p style="font-size:12px;color:#888;">Cualquier duda, respondé este mail y te contesto.</p>';
       return fetch(SB+'/functions/v1/send-email',{
         method:'POST',
