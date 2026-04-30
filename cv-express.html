@@ -391,6 +391,33 @@ h1 .accent{color:var(--pw-sendero);}
       var ce=document.getElementById('confirmed-email');
       if(ce)ce.textContent='Recibís los documentos a '+emailPaidGlobal;
     }
+
+    // Hidratar `generated` desde localStorage si el usuario ya generó
+    // antes y está volviendo a esta página (ej. desde el editor de cv
+    // o carta tras hacer click en "Volver"). Si encontramos los 3 docs,
+    // saltamos el form y mostramos result-state directamente para que
+    // pueda re-abrir cualquier editor sin volver a generar.
+    try{
+      var savedCv=localStorage.getItem('mj_express_cv');
+      var savedCarta=localStorage.getItem('mj_express_carta');
+      var savedLi=localStorage.getItem('mj_express_linkedin');
+      if(savedCv && savedCarta){
+        generated={
+          cv_optimizado: JSON.parse(savedCv),
+          carta: savedCarta,
+          linkedin_analisis: savedLi?JSON.parse(savedLi):null
+        };
+        // Restaurar foto si existe
+        var savedFoto=localStorage.getItem('mj_express_foto');
+        if(savedFoto)window._fotoData=savedFoto;
+        // Mostrar result-state directamente, ocultar form-card y header
+        var hdr=document.getElementById('post-pay-header');
+        if(hdr)hdr.style.display='none';
+        var formCard=document.getElementById('form-card');
+        if(formCard)formCard.style.display='none';
+        document.getElementById('result-state').style.display='block';
+      }
+    }catch(e){console.warn('hidratar localStorage falló',e);}
   }
 
   function setError(msg){
@@ -526,6 +553,18 @@ h1 .accent{color:var(--pw-sendero);}
       }).then(function(data){
         // data debe tener: cv_optimizado, carta, linkedin_analisis
         generated=data;
+        // Persistir en localStorage para que si el usuario vuelve a esta
+        // página después de editar en cv.html/carta.html no tenga que
+        // re-generar (perdería €40 si el flow lo obliga a re-pagar).
+        try{
+          if(data.cv_optimizado)localStorage.setItem('mj_express_cv', JSON.stringify(data.cv_optimizado));
+          if(data.carta)localStorage.setItem('mj_express_carta', data.carta);
+          if(data.linkedin_analisis)localStorage.setItem('mj_express_linkedin', JSON.stringify(data.linkedin_analisis));
+          if(window._fotoData)localStorage.setItem('mj_express_foto', window._fotoData);
+          var nom=(data.cv_optimizado&&data.cv_optimizado.nombre)||'';
+          if(nom)localStorage.setItem('mj_express_nombre', nom);
+          if(emailPaidGlobal)localStorage.setItem('mj_express_email', emailPaidGlobal);
+        }catch(e){console.warn('persist localStorage falló',e);}
         completeProgress(function(){
           document.getElementById('loading-state').style.display='none';
           document.getElementById('result-state').style.display='block';
