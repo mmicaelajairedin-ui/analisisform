@@ -3766,7 +3766,13 @@ function _sendChatMsg(id){
 
 function cerrarSesion(){
   if(confirm('¿Cerrar sesión?')){
-    localStorage.clear();
+    // Solo borrar la sesion. Los settings (mj_coach_config, mj_msgs_seen,
+    // mj_activos, etc.) sobreviven al logout — si los borramos, el coach
+    // pierde toda su configuracion local cada vez que sale, y si Supabase
+    // tiene RLS activo y rechazo los writes, queda como si nunca hubiera
+    // configurado nada.
+    localStorage.removeItem('mj_user');
+    sessionStorage.clear();
     window.location.href='login.html';
   }
 }
@@ -5377,7 +5383,14 @@ function _saveConfig(){
       st.innerHTML='⚠️ Guardado parcial. Se guardó: '+ok.join(', ')+'. Falta columna: <b>'+failed.join(', ')+'</b>. Corré este SQL:<br><code style="display:block;margin-top:6px;padding:8px;background:#F5F0F0;border-radius:6px;font-family:monospace;font-size:11px;color:#1B2E26;user-select:all;white-space:pre-wrap;">'+failed.map(function(f){return f==='configuracion'?"ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS configuracion JSONB DEFAULT '{}';":"ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS "+f+" TEXT;";}).join('\n')+'</code>';
       st.style.color='#B8A44E';
     } else {
-      st.innerHTML='❌ No se pudo guardar nada en Supabase (quedó solo en este navegador). Corré este SQL completo:<br><code style="display:block;margin-top:6px;padding:8px;background:#F5F0F0;border-radius:6px;font-family:monospace;font-size:11px;color:#1B2E26;user-select:all;white-space:pre-wrap;">ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto_url TEXT;\nALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nombre_practica TEXT;\nALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bio TEXT;\nALTER TABLE usuarios ADD COLUMN IF NOT EXISTS configuracion JSONB DEFAULT \'{}\';</code>';
+      // Si TODO falla con HTTP OK pero 0 filas → casi seguro RLS bloqueando.
+      // Si todo falla con 4xx → faltan columnas.
+      var allRls=results.every(function(r){return r.reason==='no-rows';});
+      var sqlFix=allRls
+        ? 'ALTER TABLE usuarios DISABLE ROW LEVEL SECURITY;\nALTER TABLE candidatos DISABLE ROW LEVEL SECURITY;\nALTER TABLE informes DISABLE ROW LEVEL SECURITY;\nALTER TABLE cv_publicados DISABLE ROW LEVEL SECURITY;'
+        : 'ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto_url TEXT;\nALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nombre_practica TEXT;\nALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bio TEXT;\nALTER TABLE usuarios ADD COLUMN IF NOT EXISTS configuracion JSONB DEFAULT \'{}\';\n-- Y por si tambien hay RLS:\nALTER TABLE usuarios DISABLE ROW LEVEL SECURITY;';
+      var causa=allRls?'RLS está bloqueando los writes':'falta(n) columna(s) o RLS bloquea';
+      st.innerHTML='❌ No se pudo guardar nada en Supabase ('+causa+'). Quedó solo en este navegador. Corré este SQL en Supabase → SQL Editor:<br><code style="display:block;margin-top:6px;padding:8px;background:#F5F0F0;border-radius:6px;font-family:monospace;font-size:11px;color:#1B2E26;user-select:all;white-space:pre-wrap;">'+sqlFix+'</code>';
       st.style.color='#c0756e';
     }
     // Refresca la foto del sidebar si cambió
