@@ -2783,80 +2783,136 @@ function rSemana(){
 // panel (sección Reseñas) y puede pedirla al cliente con la plantilla
 // "Pedir reseña" en mensajes — el link incluye #resena para que al
 // abrir el portal el scroll vaya directo a esta card.
+// Lee y normaliza candidatos.resena. Soporta formato legacy (donde el JSON
+// era directamente {stars,text,...} = reseña del coach) y formato nuevo
+// ({coach:{...}, plataforma:{...}}). Devuelve siempre {coach, plataforma}.
+function _parseResenas(jsonStr){
+  if(!jsonStr)return{coach:null,plataforma:null};
+  try{
+    var o=JSON.parse(jsonStr);
+    if(o&&o.stars!==undefined)return{coach:o,plataforma:null}; // legacy
+    return{coach:o.coach||null,plataforma:o.plataforma||null};
+  }catch(e){return{coach:null,plataforma:null};}
+}
+
 function _renderResenaCard(){
   if(COACH_PREVIEW)return''; // en preview el coach no deja reseña
-  var existing=null;
-  try{existing=C.resena?JSON.parse(C.resena):null;}catch(e){existing=null;}
+  var both=_parseResenas(C.resena);
+  return '<div id="resena" style="margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;">'
+    +_renderResenaSection('coach',both.coach)
+    +_renderResenaSection('plataforma',both.plataforma)
+    +'</div>';
+}
+
+// Renderiza una card de reseña. Tipo: 'coach' o 'plataforma'.
+function _renderResenaSection(tipo,existing){
   var s=existing&&existing.stars?existing.stars:0;
   var txt=existing&&existing.text?existing.text:'';
   var fecha=existing&&existing.date?new Date(existing.date).toLocaleDateString(_lang==='en'?'en-US':'es-ES'):null;
+  var isPublic=existing?(existing.public!==false):true;
 
-  var o='<div id="resena" style="margin-top:24px;background:#fff;border:1.5px solid var(--border);border-radius:16px;padding:22px 24px;">';
-  o+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">';
-  o+='<span style="font-size:22px;">⭐</span>';
-  o+='<div><div style="font-family:\'Fraunces\',Georgia,serif;font-size:20px;font-weight:500;color:var(--title);letter-spacing:-.4px;line-height:1.2;">'+(_lang==='en'?'Your review':'Tu reseña')+'</div>';
-  o+='<div style="font-size:12px;color:var(--muted);margin-top:2px;">'+(_lang==='en'?'1 minute · helps your coach and others':'1 minuto · ayuda a tu coach y a otros')+'</div></div>';
-  if(existing&&fecha)o+='<div style="margin-left:auto;font-size:10px;color:var(--muted);background:rgba(74,124,95,.1);color:#4a7c5f;padding:4px 10px;border-radius:100px;font-weight:600;">✓ '+(_lang==='en'?'Sent':'Enviada')+' '+fecha+'</div>';
+  var titulo, sub, placeholder;
+  if(tipo==='coach'){
+    titulo=_lang==='en'?'How was '+COACH_FIRST+'?':'¿Qué te pareció '+COACH_FIRST+'?';
+    sub=_lang==='en'?'Your opinion about the mentorship':'Tu opinión sobre la mentoría';
+    placeholder=_lang==='en'?'What did '+COACH_FIRST+' help you with the most?':'¿En qué te ayudó más '+COACH_FIRST+'?';
+  } else {
+    titulo=_lang==='en'?'How did Pathway work for you?':'¿Cómo te fue con Pathway?';
+    sub=_lang==='en'?'Your opinion about the platform':'Tu opinión sobre la plataforma';
+    placeholder=_lang==='en'?'Did Pathway help structure your job search? What was most useful?':'¿Pathway te ayudó a estructurar tu búsqueda? ¿Qué te resultó más útil?';
+  }
+
+  var idStars='resena-stars-'+tipo;
+  var idText='resena-text-'+tipo;
+  var idPub='resena-public-'+tipo;
+  var idBtn='resena-btn-'+tipo;
+  var idStatus='resena-status-'+tipo;
+
+  var o='<div data-tipo="'+tipo+'" style="background:#fff;border:1.5px solid var(--border);border-radius:16px;padding:22px 24px;display:flex;flex-direction:column;">';
+  o+='<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;">';
+  o+='<span style="font-size:22px;flex-shrink:0;">'+(tipo==='coach'?'👤':'🌱')+'</span>';
+  o+='<div style="flex:1;min-width:0;">';
+  o+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:18px;font-weight:500;color:var(--title);letter-spacing:-.3px;line-height:1.25;">'+titulo+'</div>';
+  o+='<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+sub+'</div>';
+  o+='</div>';
+  if(existing&&fecha)o+='<div style="font-size:10px;background:rgba(74,124,95,.1);color:#4a7c5f;padding:4px 9px;border-radius:100px;font-weight:600;white-space:nowrap;">✓ '+(_lang==='en'?'Sent':'Enviada')+'</div>';
   o+='</div>';
 
-  // Stars (clickables)
-  o+='<div id="resena-stars" style="display:flex;gap:6px;margin-bottom:14px;">';
+  o+='<div id="'+idStars+'" style="display:flex;gap:5px;margin-bottom:12px;">';
   for(var i=1;i<=5;i++){
     var on=i<=s;
-    o+='<button type="button" data-star="'+i+'" onclick="_setResenaStars('+i+')" style="background:none;border:none;cursor:pointer;padding:4px;font-size:32px;line-height:1;color:'+(on?'#E9C46A':'#E5E0DD')+';transition:transform .15s,color .15s;" onmouseover="this.style.transform=\'scale(1.15)\';" onmouseout="this.style.transform=\'\';">★</button>';
+    o+='<button type="button" data-star="'+i+'" onclick="_setResenaStars(\''+tipo+'\','+i+')" style="background:none;border:none;cursor:pointer;padding:3px;font-size:28px;line-height:1;color:'+(on?'#E9C46A':'#E5E0DD')+';transition:transform .15s,color .15s;" onmouseover="this.style.transform=\'scale(1.15)\';" onmouseout="this.style.transform=\'\';">★</button>';
   }
   o+='</div>';
 
-  o+='<textarea id="resena-text" rows="4" placeholder="'+(_lang==='en'?'How was the experience? What did you like the most?':'¿Cómo fue la experiencia? ¿Qué te ayudó más?')+'" style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;font-family:Inter,sans-serif;line-height:1.5;color:var(--text);background:#fff;outline:none;resize:vertical;transition:border-color .15s;" onfocus="this.style.borderColor=\'var(--accent)\';" onblur="this.style.borderColor=\'var(--border)\';">'+hh(txt)+'</textarea>';
+  o+='<textarea id="'+idText+'" rows="4" placeholder="'+placeholder+'" style="width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;font-family:Inter,sans-serif;line-height:1.5;color:var(--text);background:#fff;outline:none;resize:vertical;transition:border-color .15s;flex:1;" onfocus="this.style.borderColor=\'var(--accent)\';" onblur="this.style.borderColor=\'var(--border)\';">'+hh(txt)+'</textarea>';
+
+  var liNote=tipo==='coach'&&C.linkedin?' y link a mi LinkedIn':(tipo==='plataforma'&&C.linkedin?' y link a mi LinkedIn':'');
+  var liNoteEn=C.linkedin?' and LinkedIn link':'';
+  o+='<label style="display:flex;align-items:flex-start;gap:8px;margin-top:12px;cursor:pointer;font-size:11px;color:var(--body);line-height:1.5;">';
+  o+='<input type="checkbox" id="'+idPub+'" '+(isPublic?'checked':'')+' style="margin-top:2px;flex-shrink:0;cursor:pointer;width:14px;height:14px;accent-color:var(--accent);">';
+  o+='<span>'+(_lang==='en'?'Share publicly (with my name'+liNoteEn+')':'Compartir en la web pública (con mi nombre'+liNote+')')+'</span>';
+  o+='</label>';
 
   o+='<div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;">';
-  o+='<button onclick="_saveResena()" id="resena-btn" style="padding:11px 22px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">'+(existing?(_lang==='en'?'Update review':'Actualizar reseña'):(_lang==='en'?'Send review':'Enviar reseña'))+'</button>';
-  o+='<div id="resena-status" style="font-size:12px;color:var(--muted);"></div>';
+  o+='<button onclick="_saveResena(\''+tipo+'\')" id="'+idBtn+'" style="padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">'+(existing?(_lang==='en'?'Update':'Actualizar'):(_lang==='en'?'Send':'Enviar'))+'</button>';
+  o+='<div id="'+idStatus+'" style="font-size:11px;color:var(--muted);"></div>';
   o+='</div>';
   o+='</div>';
   return o;
 }
 
-var _resenaStars=0;
-function _setResenaStars(n){
-  _resenaStars=n;
-  var stars=document.querySelectorAll('#resena-stars button');
-  stars.forEach(function(b,i){b.style.color=(i<n)?'#E9C46A':'#E5E0DD';});
+var _resenaStarsState={coach:0,plataforma:0};
+function _setResenaStars(tipo,n){
+  _resenaStarsState[tipo]=n;
+  var btns=document.querySelectorAll('#resena-stars-'+tipo+' button');
+  btns.forEach(function(b,i){b.style.color=(i<n)?'#E9C46A':'#E5E0DD';});
 }
-function _saveResena(){
-  var st=document.getElementById('resena-status');
-  var btn=document.getElementById('resena-btn');
-  var txt=(document.getElementById('resena-text')||{}).value||'';
+function _saveResena(tipo){
+  var st=document.getElementById('resena-status-'+tipo);
+  var btn=document.getElementById('resena-btn-'+tipo);
+  var txt=(document.getElementById('resena-text-'+tipo)||{}).value||'';
   txt=txt.trim();
-  // Si el usuario nunca tocó las estrellas, leer las actuales del estado existente
-  var stars=_resenaStars;
+  var stars=_resenaStarsState[tipo]||0;
+  // Si el usuario no tocó estrellas, leer las del estado existente
   if(!stars){
-    try{var ex=C.resena?JSON.parse(C.resena):null;if(ex&&ex.stars)stars=ex.stars;}catch(e){}
+    var both=_parseResenas(C.resena);
+    if(both[tipo]&&both[tipo].stars)stars=both[tipo].stars;
   }
   if(!stars){st.textContent=(_lang==='en'?'Pick at least 1 star':'Elegí al menos 1 estrella');st.style.color='#c0756e';return;}
-  if(txt.length<10){st.textContent=(_lang==='en'?'Add a bit more detail (10+ chars)':'Escribí un poco más (10+ caracteres)');st.style.color='#c0756e';return;}
+  if(txt.length<10){st.textContent=(_lang==='en'?'10+ chars please':'Escribí un poco más (10+ chars)');st.style.color='#c0756e';return;}
   st.textContent=(_lang==='en'?'Saving...':'Guardando...');st.style.color='var(--muted)';
   if(btn)btn.disabled=true;
 
-  var payload={stars:stars,text:txt,date:new Date().toISOString()};
+  var pubEl=document.getElementById('resena-public-'+tipo);
+  var isPublic=pubEl?pubEl.checked:true;
+  var entry={stars:stars,text:txt,date:new Date().toISOString(),public:isPublic};
+
+  // Mergear con el otro tipo (no pisar la otra reseña si existe)
+  var existing=_parseResenas(C.resena);
+  var newPayload={
+    coach:tipo==='coach'?entry:existing.coach,
+    plataforma:tipo==='plataforma'?entry:existing.plataforma
+  };
+
   fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{
     method:'PATCH',
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
-    body:JSON.stringify({resena:JSON.stringify(payload)})
+    body:JSON.stringify({resena:JSON.stringify(newPayload)})
   }).then(function(r){
     if(btn)btn.disabled=false;
     if(!r.ok)return r.text().then(function(t){st.textContent=(_lang==='en'?'Error: ':'Error: ')+t.slice(0,80);st.style.color='#c0756e';});
     return r.json().then(function(rows){
       if(!rows||!rows.length){
-        st.innerHTML='⚠ '+(_lang==='en'?'Could not save (DB rejected). Contact your coach.':'No se pudo guardar (DB rechazó). Contactá a tu coach.');
+        st.innerHTML='⚠ '+(_lang==='en'?'Could not save (DB rejected)':'No se pudo guardar (DB rechazó)');
         st.style.color='#c0756e';
         return;
       }
-      C.resena=JSON.stringify(payload);
-      st.textContent=(_lang==='en'?'✓ Thanks for your review!':'✓ ¡Gracias por tu reseña!');
+      C.resena=JSON.stringify(newPayload);
+      st.textContent=(_lang==='en'?'✓ Thanks!':'✓ ¡Gracias!');
       st.style.color='#4a7c5f';
     });
-  }).catch(function(e){
+  }).catch(function(){
     if(btn)btn.disabled=false;
     st.textContent=(_lang==='en'?'Network error':'Error de red');st.style.color='#c0756e';
   });
