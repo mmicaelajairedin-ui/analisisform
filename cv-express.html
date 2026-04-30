@@ -552,6 +552,15 @@ h1 .accent{color:var(--pw-sendero);}
         });
       }).then(function(data){
         // data debe tener: cv_optimizado, carta, linkedin_analisis
+        // Log diagnostico para debugging si algo sale mal
+        console.log('[cv-express] respuesta IA:', {
+          tieneCV: !!data.cv_optimizado,
+          tipoCV: typeof data.cv_optimizado,
+          cvTieneNombre: data.cv_optimizado && typeof data.cv_optimizado === 'object' && !!data.cv_optimizado.nombre,
+          tieneCarta: !!data.carta,
+          tieneLinkedin: !!data.linkedin_analisis,
+          claves: Object.keys(data||{})
+        });
         generated=data;
         // Persistir en localStorage para que si el usuario vuelve a esta
         // página después de editar en cv.html/carta.html no tenga que
@@ -763,11 +772,22 @@ h1 .accent{color:var(--pw-sendero);}
       e.preventDefault();
       var v=document.getElementById('li-viewer');
       var content=document.getElementById('li-viewer-content');
-      if(v.style.display==='none'){
-        content.innerHTML=renderLinkedinViewer(generated.linkedin_analisis);
-        v.style.display='block';
-        t.textContent='Ocultar análisis ↑';
-        v.scrollIntoView({behavior:'smooth',block:'start'});
+      var liData=generated&&generated.linkedin_analisis;
+      if(!liData){
+        console.error('[cv-express] linkedin_analisis vacío en `generated`:', generated);
+        alert('No se encontró el análisis de LinkedIn. Es probable que la Edge Function haya devuelto un formato inesperado. Re-deployá `generar-informe` o volvé a generar desde el formulario.');
+        return;
+      }
+      if(v.style.display==='none' || v.style.display===''){
+        try{
+          content.innerHTML=renderLinkedinViewer(liData);
+          v.style.display='block';
+          t.textContent='Ocultar análisis ↑';
+          v.scrollIntoView({behavior:'smooth',block:'start'});
+        }catch(err){
+          console.error('[cv-express] error renderizando LinkedIn:', err, liData);
+          alert('Error al mostrar el análisis de LinkedIn. Revisá la consola para más detalles.');
+        }
       } else {
         v.style.display='none';
         t.textContent='Ver análisis →';
