@@ -1152,6 +1152,23 @@ function loadCoachPhoto(){
 
 function sbGet(table,filter){return fetch(SB+'/rest/v1/'+table+'?'+filter+'&order=created_at.desc',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){if(!r.ok)throw new Error('API error '+r.status);return r.json();});}
 function sbPost(table,data){return fetch(SB+'/rest/v1/'+table,{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},body:JSON.stringify(data)}).then(function(r){if(!r.ok)throw new Error(r.status);});}
+// Wrapper PATCH que detecta RLS bloqueando silenciosamente (200 OK + 0 filas).
+// Devuelve {ok:true, rows} o {ok:false, status, error, rls?:bool, table?}.
+// Usar este helper en cualquier escritura donde el usuario espere feedback —
+// los .then() viejos con r.ok devolvían "✓ Guardado" aunque RLS rechazara.
+function sbPatch(table,query,data){
+  return fetch(SB+'/rest/v1/'+table+'?'+query,{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+    body:JSON.stringify(data)
+  }).then(function(r){
+    if(!r.ok)return r.text().then(function(t){return {ok:false,status:r.status,error:t.slice(0,120),table:table};});
+    return r.json().then(function(rows){
+      if(!rows||!rows.length)return {ok:false,status:r.status,rls:true,table:table,error:'RLS bloqueando — corré: ALTER TABLE '+table+' DISABLE ROW LEVEL SECURITY;'};
+      return {ok:true,status:r.status,rows:rows};
+    });
+  }).catch(function(e){return {ok:false,status:0,error:e.message,table:table};});
+}
 function sbUpsert(table,data){
   var email=data.email||'';
   return fetch(SB+'/rest/v1/'+table+'?email=eq.'+encodeURIComponent(email)+'&select=id',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.json();}).then(function(rows){
@@ -1951,7 +1968,13 @@ function guardarNotaSesion(id,semana){
   var val=el.value;localStorage.setItem('nsesion_'+id+'_s'+semana,val);
   if(st){st.textContent='Guardando...';st.style.color='#999';}
   var patch={};patch['notas_sesion_s'+semana]=val;
-  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(patch)}).then(function(r){var ok=r.ok||r.status===204;if(st){st.textContent=ok?'✓ Guardado':'✓ Local';st.style.color=ok?'#4a7c5f':'#2D6A4F';}setTimeout(function(){if(st)st.textContent='';},3000);}).catch(function(){if(st){st.textContent='✓ Local';st.style.color='#2D6A4F';}setTimeout(function(){if(st)st.textContent='';},3000);});
+  sbPatch('candidatos','id=eq.'+id,patch).then(function(res){
+    if(!st)return;
+    if(res.ok){st.textContent='✓ Guardado';st.style.color='#4a7c5f';}
+    else if(res.rls){st.innerHTML='⚠ '+res.error;st.style.color='#c0756e';}
+    else{st.textContent='Error: '+(res.error||res.status);st.style.color='#c0756e';}
+    setTimeout(function(){if(st)st.textContent='';},3500);
+  });
 }
 
 function guardarAccCustom(id,semana){
@@ -1960,7 +1983,13 @@ function guardarAccCustom(id,semana){
   var c=cands.find(function(x){return x.id===id;});if(c)c['acciones_custom_s'+semana]=val;
   if(st){st.textContent='Guardando...';st.style.color='#999';}
   var patch={};patch['acciones_custom_s'+semana]=val;
-  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(patch)}).then(function(r){var ok=r.ok||r.status===204;if(st){st.textContent=ok?'✓ Guardado':'✓ Local';st.style.color=ok?'#4a7c5f':'#2D6A4F';}setTimeout(function(){if(st)st.textContent='';},3000);}).catch(function(){if(st){st.textContent='✓ Local';st.style.color='#2D6A4F';}setTimeout(function(){if(st)st.textContent='';},3000);});
+  sbPatch('candidatos','id=eq.'+id,patch).then(function(res){
+    if(!st)return;
+    if(res.ok){st.textContent='✓ Guardado';st.style.color='#4a7c5f';}
+    else if(res.rls){st.innerHTML='⚠ '+res.error;st.style.color='#c0756e';}
+    else{st.textContent='Error: '+(res.error||res.status);st.style.color='#c0756e';}
+    setTimeout(function(){if(st)st.textContent='';},3500);
+  });
 }
 
 function guardarCVLinkedIn(id){
@@ -1968,7 +1997,12 @@ function guardarCVLinkedIn(id){
   var val=el.value;var st=document.getElementById('cvli-st-'+id);
   localStorage.setItem('cvli_'+id,val);
   if(st){st.textContent='Guardando...';st.style.color='#999';}
-  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({linkedin_texto:val})}).then(function(r){var ok=r.ok||r.status===204;if(st){st.textContent=ok?'✓ Guardado':'✓ Local';st.style.color=ok?'#4a7c5f':'#2D6A4F';}}).catch(function(){if(st){st.textContent='✓ Local';st.style.color='#2D6A4F';}});
+  sbPatch('candidatos','id=eq.'+id,{linkedin_texto:val}).then(function(res){
+    if(!st)return;
+    if(res.ok){st.textContent='✓ Guardado';st.style.color='#4a7c5f';}
+    else if(res.rls){st.innerHTML='⚠ '+res.error;st.style.color='#c0756e';}
+    else{st.textContent='Error: '+(res.error||res.status);st.style.color='#c0756e';}
+  });
 }
 
 // ── GENERAR CV CON IA ──
@@ -2007,7 +2041,12 @@ function guardarCVLinkedInCV(id){
   var val=el.value;var st=document.getElementById('cvli-cv-st-'+id);
   localStorage.setItem('cvli_'+id,val);
   if(st){st.textContent='Guardando...';st.style.color='#999';}
-  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({linkedin_texto:val})}).then(function(r){var ok=r.ok||r.status===204;if(st){st.textContent=ok?'✓ Guardado':'✓ Local';st.style.color=ok?'#4a7c5f':'#2D6A4F';}}).catch(function(){if(st){st.textContent='✓ Local';st.style.color='#2D6A4F';}});
+  sbPatch('candidatos','id=eq.'+id,{linkedin_texto:val}).then(function(res){
+    if(!st)return;
+    if(res.ok){st.textContent='✓ Guardado';st.style.color='#4a7c5f';}
+    else if(res.rls){st.innerHTML='⚠ '+res.error;st.style.color='#c0756e';}
+    else{st.textContent='Error: '+(res.error||res.status);st.style.color='#c0756e';}
+  });
 }
 
 function generarCVAI(id){
@@ -2177,7 +2216,12 @@ function guardarCarta(id){
   var c=cands.find(function(x){return x.id===id;});
   var st=document.getElementById('st-cartasave-'+id);
   if(st){st.textContent='Guardando...';st.style.color='#666';}
-  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(c.email),{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({carta_presentacion:val})}).then(function(r){var ok=r.ok||r.status===204;if(st){st.textContent=ok?'✓ Guardada':'Error';st.style.color=ok?'#4a7c5f':'#c0756e';}if(ok)showToast('Carta guardada ✓');}).catch(function(e){if(st){st.textContent='Error: '+e.message;st.style.color='#c0756e';}});
+  sbPatch('candidatos','email=eq.'+encodeURIComponent(c.email),{carta_presentacion:val}).then(function(res){
+    if(!st)return;
+    if(res.ok){st.textContent='✓ Guardada';st.style.color='#4a7c5f';showToast('Carta guardada ✓');}
+    else if(res.rls){st.innerHTML='⚠ '+res.error;st.style.color='#c0756e';}
+    else{st.textContent='Error: '+(res.error||res.status);st.style.color='#c0756e';}
+  });
 }
 
 
@@ -2430,7 +2474,11 @@ function _addSesion(id){
   var sesiones=[];try{sesiones=JSON.parse(c.sesiones_registro||'[]');}catch(e){sesiones=[];}
   sesiones.push({fecha:fecha?fecha.value:'',trabajado:trab.value.trim(),acordado:acord?acord.value.trim():'',acciones:acc?acc.value.trim():'',tareas_done:[]});
   c.sesiones_registro=JSON.stringify(sesiones);
-  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({sesiones_registro:JSON.stringify(sesiones)})}).then(function(r){showToast(r.ok||r.status===204?'Sesi\u00f3n guardada y visible para el cliente':'Error');}).catch(function(){showToast('Guardado local');});
+  sbPatch('candidatos','id=eq.'+id,{sesiones_registro:JSON.stringify(sesiones)}).then(function(res){
+    if(res.ok)showToast('Sesi\u00f3n guardada y visible para el cliente');
+    else if(res.rls)showToast('\u26a0 '+res.error);
+    else showToast('Error: '+(res.error||res.status));
+  });
   atab='sesion';renderMain(c);
 }
 function _delSesion(id,idx){
@@ -2596,7 +2644,12 @@ function _delPago(id,idx){
 function saveNote(id){
   var val=document.getElementById('nota-'+id).value;notes[id]=val;localStorage.setItem('mj_notes',JSON.stringify(notes));
   var el=document.getElementById('notaok-'+id);el.textContent='Guardando...';el.style.display='inline';el.style.color='#999';
-  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({notas_coach:val})}).then(function(r){el.textContent=r.ok?'✓ Guardado':'✓ Local';el.style.color=r.ok?'#4a7c5f':'#2D6A4F';setTimeout(function(){el.style.display='none';},2500);}).catch(function(){el.textContent='✓ Local';el.style.color='#2D6A4F';setTimeout(function(){el.style.display='none';},2500);});
+  sbPatch('candidatos','id=eq.'+id,{notas_coach:val}).then(function(res){
+    if(res.ok){el.textContent='✓ Guardado';el.style.color='#4a7c5f';}
+    else if(res.rls){el.innerHTML='⚠ RLS '+res.table;el.style.color='#c0756e';showToast(res.error);}
+    else{el.textContent='✓ Local (no DB)';el.style.color='#c0756e';}
+    setTimeout(function(){el.style.display='none';},3500);
+  });
 }
 
 function abrirEditInf(id){
