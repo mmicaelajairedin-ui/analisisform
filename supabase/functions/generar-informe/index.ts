@@ -404,20 +404,47 @@ Deno.serve(async (req: Request) => {
           : "") +
         `Generá los 3 outputs siguiendo el formato JSON estricto.`;
 
-      const response = await callClaude(SYSTEM_CV_EXPRESS, prompt, apiKey, 8000);
+      // 16K max_tokens — los 3 outputs (CV con experiencia detallada +
+      // carta + análisis LinkedIn completo) pueden requerir bastante espacio.
+      const response = await callClaude(SYSTEM_CV_EXPRESS, prompt, apiKey, 16000);
       const parsed = extractJson(response);
-      if (!parsed || !parsed.cv_optimizado || !parsed.carta || !parsed.linkedin_analisis) {
+
+      // Diagnóstico: log las claves que volvieron + si hay truncación
+      console.log("[cv_express] response length:", response.length);
+      console.log("[cv_express] parsed keys:", parsed ? Object.keys(parsed) : "null");
+
+      // Si parsed falló por completo, intentamos relajar la validación
+      // requiriendo SOLO cv_optimizado (los otros 2 son nice-to-have).
+      // Mejor entregar parcial que 502 silente.
+      if (!parsed || !parsed.cv_optimizado) {
         return new Response(
           JSON.stringify({
-            error: "Output de Claude inválido (faltan campos)",
-            raw: response.slice(0, 600),
+            error: "Output de Claude inválido o truncado",
+            response_length: response.length,
+            parsed_keys: parsed ? Object.keys(parsed) : null,
+            raw_start: response.slice(0, 800),
+            raw_end: response.slice(-400),
           }),
           { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
         );
       }
 
+      // Si faltan carta o linkedin_analisis, retornamos lo que tenemos
+      // con un warning — el usuario al menos ve el CV editor.
+      const partial = !parsed.carta || !parsed.linkedin_analisis;
+      const result: Record<string, unknown> = {
+        ok: true,
+        cv_optimizado: parsed.cv_optimizado,
+        carta: parsed.carta || "",
+        linkedin_analisis: parsed.linkedin_analisis || null,
+      };
+      if (partial) {
+        result.warning = "Algunos campos vinieron incompletos: " +
+          (!parsed.carta ? "carta " : "") + (!parsed.linkedin_analisis ? "linkedin_analisis" : "");
+      }
+
       return new Response(
-        JSON.stringify({ ok: true, ...parsed }),
+        JSON.stringify(result),
         { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
       );
     }
