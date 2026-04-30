@@ -376,7 +376,7 @@ var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 var BASE='https://pathwaycareercoach.com';
 var EDGE='https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/generar-informe';
 
-var _email=null,_d=null,_photo=null,_editing=false;
+var _email=null,_d=null,_photo=null,_editing=false,_expressMode=false;
 var _color='#2C3E50',_fontTitle='DM Serif Display',_fontBody='DM Sans';
 
 /* Paleta elegante */
@@ -393,11 +393,30 @@ var PALETA=[
   {hex:'#6B4F4F',name:'Burdeos'},
 ];
 
-function goBack(){window.location.href=BASE+'/cliente.html';}
+function goBack(){
+  // En express mode el usuario viene de cv-express.html (Pack Express),
+  // no del portal del cliente. Cerramos la pestaña si abrió en _blank.
+  if(_expressMode){window.close();return;}
+  window.location.href=BASE+'/cliente.html';
+}
 
 /* ── INIT ── */
 (function(){
   var p=new URLSearchParams(window.location.search);
+
+  // Modo Express (Pack Express €40 self-service): cv-express.html guardó
+  // el output de la IA en sessionStorage y abrió cv.html?express=1. No
+  // hay candidato en Supabase ni email logueado — todo viene de
+  // sessionStorage y al guardar también escribimos ahí (no Supabase).
+  if(p.get('express')==='1'){
+    _expressMode=true;
+    cargarExpress();
+    buildPalette();
+    document.getElementById('file-foto').onchange=onFoto;
+    document.addEventListener('keydown',function(e){if(e.key==='Escape'&&_editing)toggleEdit();});
+    return;
+  }
+
   _email=p.get('email');
   if(!_email){var u=localStorage.getItem('mj_user');if(u){try{_email=JSON.parse(u).email;}catch(e){}}}
   buildPalette();
@@ -406,6 +425,30 @@ function goBack(){window.location.href=BASE+'/cliente.html';}
   if(_email)cargar();
   else showMsg('✨','Sin sesión','Accedé desde tu portal');
 })();
+
+// Carga datos del Pack Express desde sessionStorage (sin Supabase).
+// Acepta:
+//   mj_express_cv     — JSON estructurado del cv (formato _d que render() espera)
+//   mj_express_foto   — base64 dataURL de la foto subida en el form
+//   mj_express_email  — email del comprador (para descarga/contexto)
+function cargarExpress(){
+  try{
+    var rawCv=sessionStorage.getItem('mj_express_cv');
+    if(!rawCv){showMsg('⚠️','Sin datos','Volvé a cv-express.html y completá el formulario.');return;}
+    _d=JSON.parse(rawCv);
+    var foto=sessionStorage.getItem('mj_express_foto');
+    if(foto){_photo=foto;setFotoUI(_photo);}
+    _email=sessionStorage.getItem('mj_express_email')||'';
+    var sbName=document.getElementById('sb-name');
+    var sbRole=document.getElementById('sb-role');
+    if(sbName)sbName.textContent=(_d&&_d.nombre)||'';
+    if(sbRole)sbRole.textContent=(_d&&_d.rol_objetivo)||'';
+    render();
+  }catch(e){
+    console.error('[cv.html express] error',e);
+    showMsg('⚠️','Error','No se pudo cargar el CV. Volvé a generar desde cv-express.');
+  }
+}
 
 function buildPalette(){
   var w=document.getElementById('palette');w.innerHTML='';
@@ -785,6 +828,16 @@ function toggleEdit(){
 /* ── GUARDAR ── */
 function guardar(){
   var st=document.getElementById('save-st');
+  // En express mode no hay candidato en Supabase — guardamos en sessionStorage
+  // así si la pestaña se mantiene abierta los cambios persisten al re-renderizar.
+  // Para el "guardado real" el flow es: usuario imprime/descarga PDF desde cv.html.
+  if(_expressMode){
+    if(_d){_d._color=_color;_d._font=_fontTitle;if(_photo)_d._photo=_photo;}
+    syncDFromDOM();
+    try{sessionStorage.setItem('mj_express_cv', JSON.stringify(_d));}catch(e){}
+    if(st){st.textContent='✓ Guardado en sesión';st.style.color='#4a7c5f';setTimeout(function(){st.textContent='';},2500);}
+    return;
+  }
   if(!_email){if(st){st.textContent='Sin sesión';st.style.color='#C0756E';}return;}
   if(!_d){if(st){st.textContent='Sin datos';st.style.color='#C0756E';}return;}
   syncDFromDOM();
