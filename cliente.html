@@ -1764,7 +1764,7 @@ function getAchievements(){
     {id:'li',   ico:'💼', lbl:'LinkedIn',     sub:'Optimizaste tu perfil de LinkedIn',     done:hasLinkedin,        color:'var(--brown)',  bg:'var(--brown-light)'},
     {id:'cal',  ico:'📅', lbl:'Sesión',       sub:'Agendaste una sesión con Micaela',      done:hasSesionAgendada,  color:'var(--blue)',   bg:'var(--blue-light)'},
     {id:'ses',  ico:'🎯', lbl:'Semana 2+',    sub:'Avanzaste más allá de la semana 1',     done:hasSesion,          color:'var(--red)',    bg:'var(--red-light)'},
-    {id:'review',ico:'⭐', lbl:'Reseña',       sub:'Dejaste tu opinión sobre Pathway',      done:!!(C.review_rating),color:'var(--orange)', bg:'var(--orange-light)'}
+    {id:'review',ico:'⭐', lbl:'Reseña',       sub:'Dejaste tu opinión sobre Pathway',      done:!!(C.review_rating)||(function(){try{var r=C.resena?JSON.parse(C.resena):null;return !!(r&&((r.stars&&r.text)||(r.coach&&r.coach.stars)||(r.plataforma&&r.plataforma.stars)));}catch(e){return false;}})(),color:'var(--orange)', bg:'var(--orange-light)'}
   ];
 }
 
@@ -2755,7 +2755,10 @@ function rSemana(){
   // Fila inferior — timeline + diagnóstico + reseña (3 columnas)
   o+='<div class="below-row">';
   o+=rActivityFeed();
-  o+=rReviewCard();
+  // rReviewCard() (sistema viejo de review único) reemplazado por
+  // _renderResenaCard() abajo — ahora hay 2 cards (coach + plataforma)
+  // con guardado en candidatos.resena JSON. Logro "Reseña" se computa
+  // mirando los dos sistemas (compat hacia atrás con review_rating).
   o+='<div class="card"><div class="card-hd"><div><div class="card-lbl">'+t('your_diagnosis')+'</div><div class="card-title">'+t('current_situation')+'</div></div></div><div class="card-body">';
   if(D&&D.scores&&D.scores.length){
     D.scores.forEach(function(s,si){
@@ -2798,28 +2801,34 @@ function _parseResenas(jsonStr){
 function _renderResenaCard(){
   if(COACH_PREVIEW)return''; // en preview el coach no deja reseña
   var both=_parseResenas(C.resena);
-  return '<div id="resena" style="margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;">'
+  // Header chico arriba + grid de 2 cards compactas debajo
+  return '<div id="resena" style="margin-top:18px;">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-left:2px;">'
+    +'<span style="font-size:14px;">⭐</span>'
+    +'<div style="font-size:13px;font-weight:700;color:var(--title);">'+(_lang==='en'?'Your reviews':'Tu reseña')+'</div>'
+    +'<div style="font-size:11px;color:var(--muted);">·</div>'
+    +'<div style="font-size:11px;color:var(--muted);">'+(_lang==='en'?'1 minute · helps your coach and others':'1 minuto · ayuda a tu coach y a otros')+'</div>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;">'
     +_renderResenaSection('coach',both.coach)
     +_renderResenaSection('plataforma',both.plataforma)
+    +'</div>'
     +'</div>';
 }
 
-// Renderiza una card de reseña. Tipo: 'coach' o 'plataforma'.
+// Renderiza una card de reseña compacta. Tipo: 'coach' o 'plataforma'.
 function _renderResenaSection(tipo,existing){
   var s=existing&&existing.stars?existing.stars:0;
   var txt=existing&&existing.text?existing.text:'';
-  var fecha=existing&&existing.date?new Date(existing.date).toLocaleDateString(_lang==='en'?'en-US':'es-ES'):null;
   var isPublic=existing?(existing.public!==false):true;
 
-  var titulo, sub, placeholder;
+  var titulo, placeholder;
   if(tipo==='coach'){
-    titulo=_lang==='en'?'How was '+COACH_FIRST+'?':'¿Qué te pareció '+COACH_FIRST+'?';
-    sub=_lang==='en'?'Your opinion about the mentorship':'Tu opinión sobre la mentoría';
-    placeholder=_lang==='en'?'What did '+COACH_FIRST+' help you with the most?':'¿En qué te ayudó más '+COACH_FIRST+'?';
+    titulo=_lang==='en'?'About '+COACH_FIRST:'Sobre '+COACH_FIRST;
+    placeholder=_lang==='en'?'How was the mentorship?':'¿Cómo fue la mentoría?';
   } else {
-    titulo=_lang==='en'?'How did Pathway work for you?':'¿Cómo te fue con Pathway?';
-    sub=_lang==='en'?'Your opinion about the platform':'Tu opinión sobre la plataforma';
-    placeholder=_lang==='en'?'Did Pathway help structure your job search? What was most useful?':'¿Pathway te ayudó a estructurar tu búsqueda? ¿Qué te resultó más útil?';
+    titulo=_lang==='en'?'About Pathway':'Sobre Pathway';
+    placeholder=_lang==='en'?'How did the platform work for you?':'¿Cómo te fue con la plataforma?';
   }
 
   var idStars='resena-stars-'+tipo;
@@ -2828,35 +2837,30 @@ function _renderResenaSection(tipo,existing){
   var idBtn='resena-btn-'+tipo;
   var idStatus='resena-status-'+tipo;
 
-  var o='<div data-tipo="'+tipo+'" style="background:#fff;border:1.5px solid var(--border);border-radius:16px;padding:22px 24px;display:flex;flex-direction:column;">';
-  o+='<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;">';
-  o+='<span style="font-size:22px;flex-shrink:0;">'+(tipo==='coach'?'👤':'🌱')+'</span>';
-  o+='<div style="flex:1;min-width:0;">';
-  o+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:18px;font-weight:500;color:var(--title);letter-spacing:-.3px;line-height:1.25;">'+titulo+'</div>';
-  o+='<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+sub+'</div>';
+  var o='<div data-tipo="'+tipo+'" style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">';
+  // Header: emoji + título + (badge si ya envió)
+  o+='<div style="display:flex;align-items:center;gap:8px;">';
+  o+='<span style="font-size:16px;">'+(tipo==='coach'?'👤':'🌱')+'</span>';
+  o+='<div style="flex:1;font-size:13px;font-weight:700;color:var(--title);">'+titulo+'</div>';
+  if(existing)o+='<span style="font-size:9px;background:rgba(74,124,95,.12);color:#4a7c5f;padding:2px 7px;border-radius:100px;font-weight:600;letter-spacing:.04em;">✓</span>';
   o+='</div>';
-  if(existing&&fecha)o+='<div style="font-size:10px;background:rgba(74,124,95,.1);color:#4a7c5f;padding:4px 9px;border-radius:100px;font-weight:600;white-space:nowrap;">✓ '+(_lang==='en'?'Sent':'Enviada')+'</div>';
-  o+='</div>';
-
-  o+='<div id="'+idStars+'" style="display:flex;gap:5px;margin-bottom:12px;">';
+  // Estrellas (más chicas que antes)
+  o+='<div id="'+idStars+'" style="display:flex;gap:3px;">';
   for(var i=1;i<=5;i++){
     var on=i<=s;
-    o+='<button type="button" data-star="'+i+'" onclick="_setResenaStars(\''+tipo+'\','+i+')" style="background:none;border:none;cursor:pointer;padding:3px;font-size:28px;line-height:1;color:'+(on?'#E9C46A':'#E5E0DD')+';transition:transform .15s,color .15s;" onmouseover="this.style.transform=\'scale(1.15)\';" onmouseout="this.style.transform=\'\';">★</button>';
+    o+='<button type="button" data-star="'+i+'" onclick="_setResenaStars(\''+tipo+'\','+i+')" style="background:none;border:none;cursor:pointer;padding:2px;font-size:22px;line-height:1;color:'+(on?'#E9C46A':'#E5E0DD')+';transition:transform .12s,color .12s;" onmouseover="this.style.transform=\'scale(1.15)\';" onmouseout="this.style.transform=\'\';">★</button>';
   }
   o+='</div>';
-
-  o+='<textarea id="'+idText+'" rows="4" placeholder="'+placeholder+'" style="width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;font-family:Inter,sans-serif;line-height:1.5;color:var(--text);background:#fff;outline:none;resize:vertical;transition:border-color .15s;flex:1;" onfocus="this.style.borderColor=\'var(--accent)\';" onblur="this.style.borderColor=\'var(--border)\';">'+hh(txt)+'</textarea>';
-
-  var liNote=tipo==='coach'&&C.linkedin?' y link a mi LinkedIn':(tipo==='plataforma'&&C.linkedin?' y link a mi LinkedIn':'');
-  var liNoteEn=C.linkedin?' and LinkedIn link':'';
-  o+='<label style="display:flex;align-items:flex-start;gap:8px;margin-top:12px;cursor:pointer;font-size:11px;color:var(--body);line-height:1.5;">';
-  o+='<input type="checkbox" id="'+idPub+'" '+(isPublic?'checked':'')+' style="margin-top:2px;flex-shrink:0;cursor:pointer;width:14px;height:14px;accent-color:var(--accent);">';
-  o+='<span>'+(_lang==='en'?'Share publicly (with my name'+liNoteEn+')':'Compartir en la web pública (con mi nombre'+liNote+')')+'</span>';
+  // Textarea (2 filas, más chica)
+  o+='<textarea id="'+idText+'" rows="2" placeholder="'+placeholder+'" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;line-height:1.5;color:var(--text);background:#fff;outline:none;resize:vertical;transition:border-color .12s;" onfocus="this.style.borderColor=\'var(--accent)\';" onblur="this.style.borderColor=\'var(--border)\';">'+hh(txt)+'</textarea>';
+  // Footer en una línea: checkbox público + botón + status
+  o+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">';
+  o+='<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:10px;color:var(--muted);">';
+  o+='<input type="checkbox" id="'+idPub+'" '+(isPublic?'checked':'')+' style="cursor:pointer;width:13px;height:13px;accent-color:var(--accent);">';
+  o+='<span>'+(_lang==='en'?'Public':'Pública')+'</span>';
   o+='</label>';
-
-  o+='<div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;">';
-  o+='<button onclick="_saveResena(\''+tipo+'\')" id="'+idBtn+'" style="padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">'+(existing?(_lang==='en'?'Update':'Actualizar'):(_lang==='en'?'Send':'Enviar'))+'</button>';
-  o+='<div id="'+idStatus+'" style="font-size:11px;color:var(--muted);"></div>';
+  o+='<div id="'+idStatus+'" style="font-size:10px;color:var(--muted);flex:1;"></div>';
+  o+='<button onclick="_saveResena(\''+tipo+'\')" id="'+idBtn+'" style="padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">'+(existing?(_lang==='en'?'Update':'Actualizar'):(_lang==='en'?'Enviar':'Enviar'))+'</button>';
   o+='</div>';
   o+='</div>';
   return o;
