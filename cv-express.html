@@ -258,6 +258,19 @@ h1 .accent{color:var(--pw-sendero);}
     <div class="card" id="form-card">
       <form id="cv-form">
         <div class="form-group">
+          <label class="form-label">Foto profesional (opcional)</label>
+          <div id="foto-upload-wrap" style="display:flex;gap:14px;align-items:center;padding:12px;border:1.5px dashed var(--pw-borde);border-radius:10px;background:#fff;">
+            <div id="foto-preview" style="width:64px;height:64px;border-radius:50%;background:rgba(82,183,136,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:24px;color:var(--pw-bosque);">📷</div>
+            <div style="flex:1;min-width:0;">
+              <input type="file" id="foto-input" accept="image/*" style="display:none;">
+              <label for="foto-input" style="display:inline-block;padding:7px 14px;background:var(--pw-bosque);color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--pw-sans);">Subir foto</label>
+              <button type="button" id="foto-remove" style="display:none;margin-left:8px;padding:7px 10px;background:#fff;border:1.5px solid var(--pw-borde);color:var(--pw-texto-suave);border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--pw-sans);">Quitar</button>
+              <div class="form-hint" style="margin-top:6px;">JPG o PNG, cuadrada idealmente. Se incluye en tu CV optimizado.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
           <label class="form-label" for="objetivo">¿Cuál es tu objetivo profesional?</label>
           <input type="text" id="objetivo" class="form-input" placeholder="Ej: Quiero un puesto de Data Analyst en una startup en España" required minlength="20">
           <div class="form-hint">Esto guía la carta de presentación y el énfasis del CV. Sé específico.</div>
@@ -424,6 +437,37 @@ h1 .accent{color:var(--pw-sendero);}
     setTimeout(cb||function(){}, 600);
   }
 
+  // ── Foto upload — preview + dataURL ─────────────────────────
+  // El input file lee la imagen como base64 dataURL y la guarda en
+  // window._fotoData. Se envía al Edge Function en cv_express y se
+  // pasa al editor (cv.html) para que la incluya en el CV final.
+  var fotoInput=document.getElementById('foto-input');
+  var fotoPreview=document.getElementById('foto-preview');
+  var fotoRemove=document.getElementById('foto-remove');
+  if(fotoInput){
+    fotoInput.addEventListener('change',function(e){
+      var f=e.target.files&&e.target.files[0];
+      if(!f)return;
+      if(!/^image\//.test(f.type)){alert('Subí una imagen (JPG o PNG).');return;}
+      if(f.size>4*1024*1024){alert('La imagen es muy grande (max 4 MB).');return;}
+      var reader=new FileReader();
+      reader.onload=function(ev){
+        window._fotoData=ev.target.result;
+        fotoPreview.innerHTML='<img src="'+ev.target.result+'" alt="" style="width:100%;height:100%;object-fit:cover;">';
+        if(fotoRemove)fotoRemove.style.display='inline-block';
+      };
+      reader.readAsDataURL(f);
+    });
+  }
+  if(fotoRemove){
+    fotoRemove.addEventListener('click',function(){
+      window._fotoData=null;
+      fotoInput.value='';
+      fotoPreview.innerHTML='📷';
+      fotoRemove.style.display='none';
+    });
+  }
+
   // Submit del form: valida → call Edge Function → muestra resultado
   var form=document.getElementById('cv-form');
   if(form){
@@ -446,7 +490,10 @@ h1 .accent{color:var(--pw-sendero);}
       document.getElementById('loading-state').style.display='block';
       startProgress();
 
-      // Llamar a la Edge Function generar-informe con accion='cv_express'
+      // Llamar a la Edge Function generar-informe con accion='cv_express'.
+      // No mandamos foto_data al servidor (es base64 grande y no aporta a la
+      // generación de texto). La guardamos en window._fotoData para pasársela
+      // a cv.html cuando se abra el editor (Fase 2).
       fetch(EDGE,{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
@@ -456,7 +503,8 @@ h1 .accent{color:var(--pw-sendero);}
           cv_texto:cvTexto,
           linkedin_url:liUrl,
           linkedin_texto:liTexto||null,
-          email:emailPaidGlobal||null
+          email:emailPaidGlobal||null,
+          tiene_foto: !!window._fotoData
         })
       }).then(function(r){
         return r.json().then(function(data){
