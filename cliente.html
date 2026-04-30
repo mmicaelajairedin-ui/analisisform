@@ -1650,6 +1650,15 @@ function entrar(){
   document.getElementById('sb-uemail').textContent=E||'';
   updSB();render('semana');goSec('semana',document.querySelector('.ni'));
 
+  // Si el cliente llega con #resena (link de la plantilla "Pedir reseña"
+  // del coach), scrolleamos a la card de reseña y la enfocamos.
+  if(window.location.hash==='#resena'){
+    setTimeout(function(){
+      var r=document.getElementById('resena');
+      if(r){r.scrollIntoView({behavior:'smooth',block:'center'});r.style.boxShadow='0 0 0 3px rgba(233,196,106,.5)';setTimeout(function(){r.style.boxShadow='';},2400);}
+    }, 600);
+  }
+
   // Notificaciones inteligentes
   setTimeout(function(){ buildSbNotifs(); buildNotifs(); }, 500);
 
@@ -2764,7 +2773,93 @@ function rSemana(){
 
   o+='</div></div>';
   o+='</div>'; // cierra below-row
+  o+=_renderResenaCard();
   return o;
+}
+
+// ── RESEÑA DEL CLIENTE ───────────────────────────────────────
+// Card simple con 5 estrellas + textarea. Se guarda en candidatos.resena
+// como JSON: {stars:N, text:"...", date:"ISO"}. La coach la ve en el
+// panel (sección Reseñas) y puede pedirla al cliente con la plantilla
+// "Pedir reseña" en mensajes — el link incluye #resena para que al
+// abrir el portal el scroll vaya directo a esta card.
+function _renderResenaCard(){
+  if(COACH_PREVIEW)return''; // en preview el coach no deja reseña
+  var existing=null;
+  try{existing=C.resena?JSON.parse(C.resena):null;}catch(e){existing=null;}
+  var s=existing&&existing.stars?existing.stars:0;
+  var txt=existing&&existing.text?existing.text:'';
+  var fecha=existing&&existing.date?new Date(existing.date).toLocaleDateString(_lang==='en'?'en-US':'es-ES'):null;
+
+  var o='<div id="resena" style="margin-top:24px;background:#fff;border:1.5px solid var(--border);border-radius:16px;padding:22px 24px;">';
+  o+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">';
+  o+='<span style="font-size:22px;">⭐</span>';
+  o+='<div><div style="font-family:\'Fraunces\',Georgia,serif;font-size:20px;font-weight:500;color:var(--title);letter-spacing:-.4px;line-height:1.2;">'+(_lang==='en'?'Your review':'Tu reseña')+'</div>';
+  o+='<div style="font-size:12px;color:var(--muted);margin-top:2px;">'+(_lang==='en'?'1 minute · helps your coach and others':'1 minuto · ayuda a tu coach y a otros')+'</div></div>';
+  if(existing&&fecha)o+='<div style="margin-left:auto;font-size:10px;color:var(--muted);background:rgba(74,124,95,.1);color:#4a7c5f;padding:4px 10px;border-radius:100px;font-weight:600;">✓ '+(_lang==='en'?'Sent':'Enviada')+' '+fecha+'</div>';
+  o+='</div>';
+
+  // Stars (clickables)
+  o+='<div id="resena-stars" style="display:flex;gap:6px;margin-bottom:14px;">';
+  for(var i=1;i<=5;i++){
+    var on=i<=s;
+    o+='<button type="button" data-star="'+i+'" onclick="_setResenaStars('+i+')" style="background:none;border:none;cursor:pointer;padding:4px;font-size:32px;line-height:1;color:'+(on?'#E9C46A':'#E5E0DD')+';transition:transform .15s,color .15s;" onmouseover="this.style.transform=\'scale(1.15)\';" onmouseout="this.style.transform=\'\';">★</button>';
+  }
+  o+='</div>';
+
+  o+='<textarea id="resena-text" rows="4" placeholder="'+(_lang==='en'?'How was the experience? What did you like the most?':'¿Cómo fue la experiencia? ¿Qué te ayudó más?')+'" style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;font-family:Inter,sans-serif;line-height:1.5;color:var(--text);background:#fff;outline:none;resize:vertical;transition:border-color .15s;" onfocus="this.style.borderColor=\'var(--accent)\';" onblur="this.style.borderColor=\'var(--border)\';">'+hh(txt)+'</textarea>';
+
+  o+='<div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;">';
+  o+='<button onclick="_saveResena()" id="resena-btn" style="padding:11px 22px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">'+(existing?(_lang==='en'?'Update review':'Actualizar reseña'):(_lang==='en'?'Send review':'Enviar reseña'))+'</button>';
+  o+='<div id="resena-status" style="font-size:12px;color:var(--muted);"></div>';
+  o+='</div>';
+  o+='</div>';
+  return o;
+}
+
+var _resenaStars=0;
+function _setResenaStars(n){
+  _resenaStars=n;
+  var stars=document.querySelectorAll('#resena-stars button');
+  stars.forEach(function(b,i){b.style.color=(i<n)?'#E9C46A':'#E5E0DD';});
+}
+function _saveResena(){
+  var st=document.getElementById('resena-status');
+  var btn=document.getElementById('resena-btn');
+  var txt=(document.getElementById('resena-text')||{}).value||'';
+  txt=txt.trim();
+  // Si el usuario nunca tocó las estrellas, leer las actuales del estado existente
+  var stars=_resenaStars;
+  if(!stars){
+    try{var ex=C.resena?JSON.parse(C.resena):null;if(ex&&ex.stars)stars=ex.stars;}catch(e){}
+  }
+  if(!stars){st.textContent=(_lang==='en'?'Pick at least 1 star':'Elegí al menos 1 estrella');st.style.color='#c0756e';return;}
+  if(txt.length<10){st.textContent=(_lang==='en'?'Add a bit more detail (10+ chars)':'Escribí un poco más (10+ caracteres)');st.style.color='#c0756e';return;}
+  st.textContent=(_lang==='en'?'Saving...':'Guardando...');st.style.color='var(--muted)';
+  if(btn)btn.disabled=true;
+
+  var payload={stars:stars,text:txt,date:new Date().toISOString()};
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+    body:JSON.stringify({resena:JSON.stringify(payload)})
+  }).then(function(r){
+    if(btn)btn.disabled=false;
+    if(!r.ok)return r.text().then(function(t){st.textContent=(_lang==='en'?'Error: ':'Error: ')+t.slice(0,80);st.style.color='#c0756e';});
+    return r.json().then(function(rows){
+      if(!rows||!rows.length){
+        st.innerHTML='⚠ '+(_lang==='en'?'Could not save (DB rejected). Contact your coach.':'No se pudo guardar (DB rechazó). Contactá a tu coach.');
+        st.style.color='#c0756e';
+        return;
+      }
+      C.resena=JSON.stringify(payload);
+      st.textContent=(_lang==='en'?'✓ Thanks for your review!':'✓ ¡Gracias por tu reseña!');
+      st.style.color='#4a7c5f';
+    });
+  }).catch(function(e){
+    if(btn)btn.disabled=false;
+    st.textContent=(_lang==='en'?'Network error':'Error de red');st.style.color='#c0756e';
+  });
 }
 
 function rAnalisis(){

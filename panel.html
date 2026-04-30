@@ -1304,8 +1304,8 @@ function renderSidebar(){
   document.getElementById('st-bar-lbl').textContent=pctGen+'% progreso general';
 }
 
-function openCand(id){
-  activeId=id;atab='perfil';localStorage.setItem('seen_'+id,'1');
+function openCand(id,initialTab){
+  activeId=id;atab=initialTab||'perfil';localStorage.setItem('seen_'+id,'1');
   var c=cands.find(function(x){return x.id===id;});
   if(!c) return;
   // Switch to ficha view
@@ -2128,8 +2128,31 @@ function _borrarSesion(id){
 async function cambiarSemana(id,nueva){
   var c=cands.find(function(x){return x.id===id;});if(!c)return;
   var nombres=['Evaluación','CV','LinkedIn','Búsqueda activa','Revisión final'];
-  if(!confirm('¿Activar Semana '+nueva+' ('+nombres[nueva-1]+') para '+c.nombre+'?\nEl cliente verá las acciones de esa semana.'))return;
   var prevSem=parseInt(c.semana_activa||1);
+
+  // Validación: si está avanzando (nueva > prevSem) y quedan acciones
+  // pendientes en la semana actual, mostrar warning explícito.
+  if(nueva>prevSem){
+    var email=(c.email||'').toLowerCase().trim();
+    var infData=(reps[email]&&reps[email][0]&&reps[email][0].data)?reps[email][0].data:null;
+    if(typeof infData==='string'){try{infData=JSON.parse(infData);}catch(e){infData=null;}}
+    var semKeys=['','cv_acciones','linkedin_acciones','networking_acciones','preguntas',''];
+    var actKey=semKeys[prevSem];
+    var totalActs=(infData&&actKey&&Array.isArray(infData[actKey]))?infData[actKey].length:0;
+    var acts=[];try{acts=c.acciones_progreso?JSON.parse(c.acciones_progreso):[];}catch(e){}
+    var done=acts.filter(Boolean).length;
+    if(totalActs>0 && done<totalActs){
+      var falta=totalActs-done;
+      var msg='⚠ Atención: '+c.nombre+' aún tiene '+falta+' acción'+(falta===1?'':'es')+' sin completar de Semana '+prevSem+' ('+nombres[prevSem-1]+').\n\n';
+      msg+='Si avanzás a Semana '+nueva+' ahora, esas acciones se quedan a medias y el cliente puede sentir que se las salteamos.\n\n';
+      msg+='¿Avanzar igual?';
+      if(!confirm(msg))return;
+    } else {
+      if(!confirm('¿Activar Semana '+nueva+' ('+nombres[nueva-1]+') para '+c.nombre+'?\nEl cliente verá las acciones de esa semana.'))return;
+    }
+  } else {
+    if(!confirm('¿Activar Semana '+nueva+' ('+nombres[nueva-1]+') para '+c.nombre+'?\nEl cliente verá las acciones de esa semana.'))return;
+  }
   try{
     var r=await fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{
       method:'PATCH',
@@ -2463,6 +2486,11 @@ function tabMensajes(c){
       id:'informe', icon:'📊', label:'Análisis listo',
       es:'Hola '+nom+'! Ya está tu análisis.\n\nEntra al portal y revisa "Mi análisis" — ahí encontrarás todo lo que revisamos.\n'+PORTAL+'\n\nMicaela',
       en:'Hi '+nom+'! Your analysis is ready.\n\nLog into the portal and check "My analysis" to see everything we reviewed.\n'+PORTAL+'\n\nMicaela'
+    },
+    {
+      id:'resena', icon:'⭐', label:'Pedir reseña',
+      es:'Hola '+nom+'!\n\nEspero que estés viendo resultados con lo que estamos trabajando.\n\nMe ayudaría mucho que dejes tu opinión sobre la mentoría — son 30 segundos:\n'+PORTAL+'#resena\n\nTu feedback me ayuda a mejorar y a otros profesionales saber si esto realmente sirve.\n\nGracias!\nMicaela',
+      en:'Hi '+nom+'!\n\nHope you\'re seeing results from what we\'ve been working on.\n\nIt would mean a lot if you could leave a quick review of the mentorship — takes 30 seconds:\n'+PORTAL+'#resena\n\nYour feedback helps me improve and helps other professionals know this works.\n\nThanks!\nMicaela'
     },
     {
       id:'personalizado', icon:'✏', label:'Escribir',
@@ -3412,11 +3440,13 @@ function _renderClientes(){
         html+='<button class="cli-toggle '+(isActive?'active':'inactive')+'" title="'+(isActive?'Activo':'Inactivo')+'" onclick="event.stopPropagation();_toggleActivo('+c.id+','+(!isActive)+')" style="flex-shrink:0;"></button>';
         html+='</div>';
 
-        // Semana + badges
+        // Semana + badges (clickables → abren la ficha en el tab relevante)
+        var pillBase='font-weight:600;border-radius:100px;cursor:pointer;border:none;font-family:Inter,sans-serif;transition:transform .1s;';
+        var pillHover=' onmouseover="this.style.transform=\'scale(1.05)\';" onmouseout="this.style.transform=\'\';"';
         html+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap;">';
-        html+='<span style="font-size:11px;background:rgba(45,106,79,.08);color:var(--accent);padding:3px 10px;border-radius:100px;font-weight:600;">Semana '+sem+' · '+(semNames[sem]||'')+'</span>';
-        if(hasRep)html+='<span style="font-size:10px;background:#E8F5E9;color:#2E7D32;padding:3px 8px;border-radius:100px;font-weight:600;">Informe</span>';
-        if(hasCv)html+='<span style="font-size:10px;background:#E3F2FD;color:#1976D2;padding:3px 8px;border-radius:100px;font-weight:600;">CV</span>';
+        html+='<button onclick="event.stopPropagation();openCand('+c.id+',\'avance\');" title="Ver avance del cliente" style="font-size:11px;background:rgba(45,106,79,.08);color:var(--accent);padding:3px 10px;'+pillBase+'"'+pillHover+'>Semana '+sem+' · '+(semNames[sem]||'')+'</button>';
+        if(hasRep)html+='<button onclick="event.stopPropagation();openCand('+c.id+',\'documentos\');" title="Ver informe generado" style="font-size:10px;background:#E8F5E9;color:#2E7D32;padding:3px 8px;'+pillBase+'"'+pillHover+'>Informe</button>';
+        if(hasCv)html+='<button onclick="event.stopPropagation();openCand('+c.id+',\'documentos\');" title="Ver CV publicado" style="font-size:10px;background:#E3F2FD;color:#1976D2;padding:3px 8px;'+pillBase+'"'+pillHover+'>CV</button>';
         if(!isActive)html+='<span style="font-size:10px;background:#F5F5F5;color:#888;padding:3px 8px;border-radius:100px;font-weight:600;">Inactivo</span>';
         html+='</div>';
 
@@ -3768,6 +3798,44 @@ function _renderInicio(){
     html+='</div></div></div></div>';
 
     html+='</div>'; // cierra referral section
+
+    // ── Reseñas recibidas de clientes ─────────────────────────
+    // Cualquier candidato con candidatos.resena (JSON) aparece acá.
+    // Cards con estrellas + texto + nombre + fecha. Si no hay ninguna,
+    // no se renderiza la sección.
+    var reviews=[];
+    cands.forEach(function(_c){
+      if(!_c.resena)return;
+      try{
+        var r=JSON.parse(_c.resena);
+        if(r&&r.stars)reviews.push({stars:r.stars,text:r.text||'',date:r.date,nombre:_c.nombre,email:_c.email,cid:_c.id});
+      }catch(e){}
+    });
+    if(reviews.length){
+      reviews.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+      var avg=(reviews.reduce(function(s,r){return s+r.stars;},0)/reviews.length).toFixed(1);
+      html+='<div style="margin-top:32px;">';
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">';
+      html+='<div><div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:4px;">⭐ Reseñas recibidas</div>';
+      html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:500;color:var(--title);letter-spacing:-.4px;">'+reviews.length+' '+(reviews.length===1?'reseña':'reseñas')+' · promedio '+avg+'/5</div></div>';
+      html+='</div>';
+      html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;">';
+      reviews.forEach(function(r){
+        var fecha=new Date(r.date).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
+        var stars='';
+        for(var s=1;s<=5;s++)stars+='<span style="color:'+(s<=r.stars?'#E9C46A':'#E5E0DD')+';font-size:16px;">★</span>';
+        html+='<div onclick="openCand('+r.cid+')" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:16px 18px;cursor:pointer;transition:all .15s;" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 6px 16px rgba(0,0,0,.06)\';" onmouseout="this.style.transform=\'\';this.style.boxShadow=\'\';">';
+        html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;">';
+        html+='<div style="display:flex;gap:1px;">'+stars+'</div>';
+        html+='<div style="font-size:10px;color:var(--muted);">'+fecha+'</div>';
+        html+='</div>';
+        html+='<div style="font-size:13px;color:var(--body);line-height:1.55;margin-bottom:10px;">'+escH(r.text||'').replace(/\n/g,'<br>')+'</div>';
+        html+='<div style="font-size:11px;font-weight:700;color:var(--accent);">'+escH(r.nombre||r.email||'—')+'</div>';
+        html+='</div>';
+      });
+      html+='</div>';
+      html+='</div>'; // cierra reseñas section
+    }
 
     html+='</div>';
     dp.innerHTML=html;
