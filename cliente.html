@@ -2253,17 +2253,23 @@ function _renderMain(sec){
         +'</div>'
         +'<button onclick="refreshEmpleos()" style="padding:7px 14px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;background:var(--rose-light);color:var(--rose);border:1.5px solid var(--rose-mid);border-radius:9px;cursor:pointer;">&#8635; Actualizar</button>'
       +'</div>'
-      // Portales rapidos
+      // Portales rapidos — todos en color del coach (var(--rose)) para
+      // mantener uniformidad visual; antes cada portal tenía su color de
+      // marca (LinkedIn azul, InfoJobs rojo, etc.) y rompía el estilo.
       +'<div style="background:var(--rose-light);border:1.5px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:20px;">'
         +'<div style="font-size:12px;font-weight:800;color:var(--rose);font-family:Montserrat,sans-serif;margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em;">Buscar en portales</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
           +'<a href="https://es.indeed.com/jobs?q='+_empSector+'&l='+_empUbi+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">Indeed</a>'
-          +'<a href="https://www.linkedin.com/jobs/search/?keywords='+_empSector+'&location='+_empUbi+'" target="_blank" style="padding:8px 14px;background:#0A66C2;color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">LinkedIn Jobs</a>'
-          +'<a href="https://www.infojobs.net/" target="_blank" style="padding:8px 14px;background:#FF6340;color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">InfoJobs</a>'
-          +'<a href="https://www.glassdoor.com/Job/index.htm" target="_blank" style="padding:8px 14px;background:#0caa41;color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">Glassdoor</a>'
-          +'<a href="https://www.computrabajo.com" target="_blank" style="padding:8px 14px;background:#1a3e72;color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">CompuTrabajo</a>'
+          +'<a href="https://www.linkedin.com/jobs/search/?keywords='+_empSector+'&location='+_empUbi+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">LinkedIn Jobs</a>'
+          +'<a href="https://www.infojobs.net/" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">InfoJobs</a>'
+          +'<a href="https://www.glassdoor.com/Job/index.htm" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">Glassdoor</a>'
+          +'<a href="https://www.computrabajo.com" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">CompuTrabajo</a>'
         +'</div>'
       +'</div>'
+      // Contador de postulaciones — refleja lo que el cliente fue marcando
+      // como "me postulé" en cada job. Sirve para que vea su progreso
+      // semanal sin tener que contar manualmente.
+      +_postulacionesCounter()
       +'<div id="mc-empleos"></div>'
     +'</div>';
     rEmpleos();
@@ -3405,6 +3411,57 @@ function toggleNotifs(){
 var _empleosBuscados=false;
 var _empleosCache=null;
 
+// Cuenta postulaciones marcadas (localStorage) y devuelve un widget compacto
+// con el total y un mensaje motivacional. Se actualiza al re-renderizar la
+// sección empleos o al togglear un job. Para que también se actualice al
+// vuelo sin recargar, _toggleApplied dispara _refreshPostulacionesCounter.
+function _postulacionesCounter(){
+  var key='mj_jobs_applied_'+(E||'');
+  var applied={};try{applied=JSON.parse(localStorage.getItem(key)||'{}');}catch(e){applied={};}
+  var keys=Object.keys(applied);
+  var total=keys.length;
+  // Cuántas en los últimos 7 días
+  var weekAgo=Date.now()-7*24*3600*1000;
+  var sem=keys.filter(function(k){var v=applied[k];return v&&v.ts&&v.ts>=weekAgo;}).length;
+
+  var msg, color, icon;
+  if(total===0){
+    icon='📋';
+    msg=_lang==='en'?'Mark each job you apply to so we can track your progress.':'Marcá cada empleo al que te postules para llevar tu progreso.';
+    color='var(--muted)';
+  } else if(sem>=5){
+    icon='🔥';
+    msg=_lang==='en'?'Great pace! Keep the momentum.':'¡Buen ritmo! Seguí así.';
+    color='var(--green)';
+  } else if(sem>=2){
+    icon='👍';
+    msg=_lang==='en'?'Good rhythm. The recommendation is 5-10 per week.':'Buen ritmo. La recomendación es 5-10 por semana.';
+    color='var(--rose)';
+  } else if(total>0){
+    icon='🚀';
+    msg=_lang==='en'?'Try to apply to 5+ this week. Quantity matters.':'Probá postularte a 5+ esta semana. La cantidad importa.';
+    color='var(--orange)';
+  }
+
+  return '<div id="postul-counter" style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:14px;">'
+    +'<div style="font-size:28px;flex-shrink:0;">'+icon+'</div>'
+    +'<div style="flex:1;min-width:0;">'
+      +'<div style="font-size:13px;font-weight:800;color:var(--text);font-family:Montserrat,sans-serif;letter-spacing:-.02em;">'+total+' '+(total===1?(_lang==='en'?'application':'postulación'):(_lang==='en'?'applications':'postulaciones'))+(sem>0?' <span style="font-size:11px;color:'+color+';font-weight:700;margin-left:4px;">· '+sem+' '+(_lang==='en'?'this week':'esta semana')+'</span>':'')+'</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.45;">'+msg+'</div>'
+    +'</div>'
+  +'</div>';
+}
+
+// Re-renderiza el counter sin tocar el resto de la sección. Llamado desde
+// _toggleApplied después de actualizar localStorage.
+function _refreshPostulacionesCounter(){
+  var el=document.getElementById('postul-counter');
+  if(!el)return;
+  var wrap=document.createElement('div');
+  wrap.innerHTML=_postulacionesCounter();
+  if(wrap.firstChild)el.replaceWith(wrap.firstChild);
+}
+
 function rEmpleos(){
   var el=document.getElementById('mc-empleos')||document.getElementById('mc');
   if(!el) return;
@@ -3518,8 +3575,8 @@ function rEmpleos(){
         +(job.salario_rango?'<div style="display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:var(--accent-lt);color:var(--accent);margin-bottom:12px;">'+hh(job.salario_rango)+'</div>':'')
         +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">'
           +'<a href="'+indeedUrl+'" target="_blank" style="flex:1;min-width:100px;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;background:var(--rose);color:#fff;border-radius:9px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">Indeed</a>'
-          +'<a href="'+linkedinUrl+'" target="_blank" style="flex:1;min-width:100px;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;background:#0A66C2;color:#fff;border-radius:9px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">LinkedIn</a>'
-          +'<a href="'+infojobsUrl+'" target="_blank" style="flex:1;min-width:100px;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;background:#FF6340;color:#fff;border-radius:9px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">InfoJobs</a>'
+          +'<a href="'+linkedinUrl+'" target="_blank" style="flex:1;min-width:100px;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;background:var(--rose);color:#fff;border-radius:9px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">LinkedIn</a>'
+          +'<a href="'+infojobsUrl+'" target="_blank" style="flex:1;min-width:100px;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;background:var(--rose);color:#fff;border-radius:9px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">InfoJobs</a>'
           +'<button class="_cp-job" data-q="'+encodeURIComponent(job.query_indeed||job.titulo)+'" style="padding:8px 12px;background:var(--bg);color:var(--text2);border:1.5px solid var(--border);border-radius:9px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;cursor:pointer;transition:all .15s;" title="Copiar busqueda">&#128203;</button>'
         +'</div>'
         +'<button onclick="_toggleApplied(\''+encodeURIComponent(jobKey)+'\',this)" style="width:100%;padding:10px;background:'+(isApplied?'var(--green)':'#fff')+';color:'+(isApplied?'#fff':'var(--green)')+';border:1.5px solid var(--green);border-radius:9px;font-size:12px;font-weight:800;font-family:Montserrat,sans-serif;cursor:pointer;transition:all .15s;">'+(isApplied?'✓ Ya me postulé':'Me postulé a este empleo')+'</button>'
@@ -3599,6 +3656,8 @@ function _toggleApplied(jobKeyEnc,btn){
         if(b)b.remove();
       }
       showSaveToast();
+      // Actualizar el contador arriba sin recargar toda la sección
+      _refreshPostulacionesCounter();
     }
   }
 }
