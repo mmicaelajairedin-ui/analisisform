@@ -186,7 +186,27 @@
     }
     // Trigger 2 (fallback): tras X segundos
     setTimeout(show,SCROLL_TRIGGER_DELAY_MS);
+    // Trigger 3: cualquier elemento con [data-open-pricing-popup] —
+    // útil para CTAs explícitos en el flow ("Suscribite aquí" → popup).
+    document.addEventListener('click',function(e){
+      var t=e.target.closest('[data-open-pricing-popup]');
+      if(!t)return;
+      e.preventDefault();
+      // Si el usuario lo cerró antes pero ahora hace click explícito, lo
+      // re-abrimos (resetea las dos llaves de "ya mostrado").
+      sessionStorage.removeItem(SHOWN_KEY);
+      localStorage.removeItem(DISMISS_KEY);
+      show();
+    });
   }
+
+  // Exponer global para que cualquier link/botón en las landings pueda
+  // gatillar el popup explícitamente con onclick="openPricingPopup()".
+  window.openPricingPopup=function(){
+    sessionStorage.removeItem(SHOWN_KEY);
+    localStorage.removeItem(DISMISS_KEY);
+    show();
+  };
 
   if(document.readyState==='loading'){
     document.addEventListener('DOMContentLoaded',init);
