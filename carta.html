@@ -220,11 +220,19 @@ var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 var BASE='https://pathwaycareercoach.com';
 var EDGE='https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/generar-informe';
 
-var _email=null,_cand=null,_editing=false,_saveT=null;
+var _email=null,_cand=null,_editing=false,_saveT=null,_expressMode=false;
 
 // ── INIT ──
 (function(){
   var p=new URLSearchParams(window.location.search);
+
+  // Modo Express: viene de cv-express.html con la carta en sessionStorage
+  if(p.get('express')==='1'){
+    _expressMode=true;
+    cargarExpress();
+    return;
+  }
+
   _email=p.get('email');
   if(!_email){var u=localStorage.getItem('mj_user');if(u){try{_email=JSON.parse(u).email;}catch(e){}}}
   if(!_email){
@@ -233,6 +241,26 @@ var _email=null,_cand=null,_editing=false,_saveT=null;
   }
   cargar();
 })();
+
+// Carga la carta del Pack Express desde sessionStorage (sin Supabase).
+function cargarExpress(){
+  try{
+    var carta=sessionStorage.getItem('mj_express_carta')||'';
+    var nombre=sessionStorage.getItem('mj_express_nombre')||'';
+    _email=sessionStorage.getItem('mj_express_email')||'express@cliente.com';
+    _cand={
+      nombre: nombre,
+      email: _email,
+      carta_presentacion: carta
+    };
+    var tbName=document.getElementById('tb-name');
+    if(tbName)tbName.textContent=nombre;
+    renderCarta();
+  }catch(e){
+    console.error('[carta.html express] error',e);
+    document.getElementById('carta-paper').innerHTML='<div style="padding:3rem;text-align:center;color:#999;font-family:Montserrat,sans-serif;font-size:13px;">No se pudo cargar la carta. Volvé a generarla desde cv-express.</div>';
+  }
+}
 
 // ── CARGA ──
 function cargar(){
@@ -402,8 +430,18 @@ function guardar(){
     carta_asunto: asuntoTexto
   };
 
+  // En express mode no hay candidato en Supabase — guardar en sessionStorage
+  // para que persista mientras la pestaña esté abierta. El usuario imprime/
+  // descarga PDF como acción final.
+  if(_expressMode){
+    try{sessionStorage.setItem('mj_express_carta', cartaTexto);}catch(e){}
+    st.textContent='✓ Guardado en sesión';st.style.color='#4a7c5f';
+    setTimeout(function(){st.textContent='';},2500);
+    return;
+  }
+
   st.textContent='Guardando...';st.style.color='#888';
-  
+
   // PATCH directo a candidatos — funciona con service key via anon si RLS lo permite
   // Si falla, guardamos en localStorage como backup
   fetch(SB+'/rest/v1/candidatos?email=eq.'+enc(_email),{
