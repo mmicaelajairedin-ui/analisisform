@@ -101,6 +101,54 @@ test.describe('Carga de páginas principales', () => {
     const response = await page.goto('hub.html');
     expect(response.status()).toBe(200);
   });
+
+  test('blog.html - Blog carga correctamente', async ({ page }) => {
+    const response = await page.goto('blog.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('comunidad.html - Comunidad carga correctamente', async ({ page }) => {
+    const response = await page.goto('comunidad.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('circulo.html - Círculo carga correctamente', async ({ page }) => {
+    const response = await page.goto('circulo.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('precios-coaching.html - Precios carga correctamente', async ({ page }) => {
+    const response = await page.goto('precios-coaching.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('checklist-linkedin.html - Checklist LinkedIn carga correctamente', async ({ page }) => {
+    const response = await page.goto('checklist-linkedin.html');
+    expect(response.status()).toBe(200);
+  });
+});
+
+test.describe('Carga de blog posts', () => {
+
+  test('5-errores-cv.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('5-errores-cv.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('7-preguntas-entrevista.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('7-preguntas-entrevista.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('primeros-10-clientes-coaching.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('primeros-10-clientes-coaching.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('rechazo-entrevista-final.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('rechazo-entrevista-final.html');
+    expect(response.status()).toBe(200);
+  });
 });
 
 test.describe('Verificación de recursos y assets', () => {
