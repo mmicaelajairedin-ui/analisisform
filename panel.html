@@ -1039,8 +1039,54 @@ var ME=null;
     if(adminBtn)adminBtn.style.display='flex';
     var leadsBtn=document.getElementById('nb-leads');
     if(leadsBtn)leadsBtn.style.display='flex';
+    // Diferido: chequear coaches nuevos despues de que se carguen KEY/SB
+    setTimeout(_checkNewCoaches,300);
   }
 })();
+
+// ── Notificaciones admin: coaches nuevos ─────────────────────
+// Detecta usuarios.rol=coach con created_at posterior al ultimo check.
+// Resultado: badge rojo en boton "Admin" del sidebar + toast en panel.
+// Estado se persiste en localStorage('mj_admin_last_seen') = timestamp ISO.
+function _checkNewCoaches(){
+  if(!ME||ME.rol!=='admin')return;
+  var lastSeen=localStorage.getItem('mj_admin_last_seen');
+  // Primera visita: marcar todo lo actual como visto, sin alarma
+  if(!lastSeen){
+    localStorage.setItem('mj_admin_last_seen',new Date().toISOString());
+    return;
+  }
+  fetch(SB+'/rest/v1/usuarios?rol=eq.coach&created_at=gt.'+encodeURIComponent(lastSeen)+'&select=email,nombre,created_at&order=created_at.desc&limit=20',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+    if(!rows||!rows.length)return;
+    _showAdminBadge(rows.length);
+    // Toast con preview del primer coach (mas reciente)
+    var c=rows[0];
+    var nombre=c.nombre||c.email||'sin nombre';
+    var msg=rows.length===1
+      ?'🎉 Nuevo coach: '+nombre
+      :'🎉 '+rows.length+' coaches nuevos (últ.: '+nombre+')';
+    if(typeof showToast==='function')showToast(msg);
+  }).catch(function(){});
+}
+function _showAdminBadge(n){
+  var btn=document.getElementById('nb-admin');
+  if(!btn)return;
+  // Limpiar badge previo
+  var prev=btn.querySelector('.admin-badge');
+  if(prev)prev.remove();
+  if(!n)return;
+  var bd=document.createElement('span');
+  bd.className='admin-badge';
+  bd.textContent=n>9?'9+':String(n);
+  bd.style.cssText='margin-left:auto;background:#c0756e;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;line-height:1;min-width:18px;text-align:center;';
+  btn.appendChild(bd);
+}
+function _markAdminSeen(){
+  localStorage.setItem('mj_admin_last_seen',new Date().toISOString());
+  _showAdminBadge(0);
+}
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 var BASE='https://pathwaycareercoach.com';
 var EDGE='https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/generar-informe';
@@ -3120,7 +3166,7 @@ function showSection(sec) {
     if (sec === 'mensajes') _renderMensajes();
     if (sec === 'config')   _renderConfig();
     if (sec === 'leads')    _renderLeads();
-    if (sec === 'admin')    _renderAdmin();
+    if (sec === 'admin')    { _renderAdmin(); _markAdminSeen(); }
   }
 }
 
