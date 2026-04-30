@@ -1,18 +1,25 @@
 // Testimonios públicos — Pathway Career Coach
 //
 // Fetchea reseñas de candidatos.resena (donde public:true) desde Supabase
-// y las renderiza en el primer <div data-testimonios> que encuentre.
+// y las renderiza en cada <div data-testimonios> que encuentre.
+//
+// Las reseñas tienen 2 tipos:
+//   - 'coach': el cliente sobre la mentoría de su coach
+//   - 'plataforma': el cliente sobre Pathway como herramienta
+// El JSON guardado en candidatos.resena puede ser el formato nuevo
+// {coach:{...}, plataforma:{...}} o el legacy {stars,text,...} = coach.
 //
 // Uso desde cualquier página pública:
-//   <div data-testimonios data-max="6" data-theme="green"></div>
+//   <div data-testimonios data-tipo="coach" data-max="6"></div>
 //   <script src="testimonios.js"></script>
 //
-// Atributos opcionales:
-//   data-max:   número máximo de reseñas (default 6)
+// Atributos:
+//   data-tipo:  'coach' (default) o 'plataforma'
+//   data-max:   máximo de reseñas (default 6)
 //   data-theme: 'green' (default) o 'beige' — afecta colores
 //
-// La sección se OCULTA automáticamente si no hay reseñas públicas, así
-// que es seguro incluirla en una landing antes de tener testimonios.
+// La sección se OCULTA automáticamente si no hay reseñas públicas para
+// ese tipo, así es seguro incluirla antes de tener testimonios.
 
 (function(){
   var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
@@ -20,7 +27,18 @@
 
   function escH(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+  // Soporta formato nuevo {coach:{},plataforma:{}} y legacy {stars,text,...}
+  function parseResena(jsonStr){
+    if(!jsonStr)return{coach:null,plataforma:null};
+    try{
+      var o=JSON.parse(jsonStr);
+      if(o&&o.stars!==undefined)return{coach:o,plataforma:null};
+      return{coach:o.coach||null,plataforma:o.plataforma||null};
+    }catch(e){return{coach:null,plataforma:null};}
+  }
+
   function render(host){
+    var tipo=host.getAttribute('data-tipo')||'coach';
     var max=parseInt(host.getAttribute('data-max'))||6;
     var theme=host.getAttribute('data-theme')||'green';
 
@@ -29,31 +47,32 @@
     }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
       var reviews=[];
       rows.forEach(function(c){
-        try{
-          var r=JSON.parse(c.resena);
-          if(r&&r.stars&&r.public!==false&&(r.text||'').trim().length>=10){
-            reviews.push({stars:r.stars,text:r.text,date:r.date,nombre:c.nombre,linkedin:c.linkedin});
-          }
-        }catch(e){}
+        var both=parseResena(c.resena);
+        var r=both[tipo];
+        if(r&&r.stars&&r.public!==false&&(r.text||'').trim().length>=10){
+          reviews.push({stars:r.stars,text:r.text,date:r.date,nombre:c.nombre,linkedin:c.linkedin});
+        }
       });
 
-      // Si no hay reseñas, ocultar la sección entera (no mostrar "vacío")
       if(!reviews.length){host.style.display='none';return;}
 
-      // Ordenar por stars desc, luego fecha desc
       reviews.sort(function(a,b){
         if(b.stars!==a.stars)return b.stars-a.stars;
         return new Date(b.date)-new Date(a.date);
       });
-      reviews=reviews.slice(0,max);
-
-      var avg=(rows.reduce(function(s,c){
-        try{var r=JSON.parse(c.resena);return s+(r&&r.stars&&r.public!==false?r.stars:0);}catch(e){return s;}
-      },0)/reviews.length).toFixed(1);
+      var displayed=reviews.slice(0,max);
+      var avg=(reviews.reduce(function(s,r){return s+r.stars;},0)/reviews.length).toFixed(1);
 
       var accent=theme==='beige'?'#8C7B80':'#2D6A4F';
       var sand=theme==='beige'?'#E9C46A':'#52B788';
       var titleColor=theme==='beige'?'#1B2E26':'#1B4332';
+
+      var heading=tipo==='plataforma'
+        ?'Lo que dicen quienes usaron Pathway'
+        :'Lo que dicen nuestros clientes';
+      var subheading=tipo==='plataforma'
+        ?reviews.length+' personas que pasaron por Pathway. Su opinión sobre la herramienta — con link a su LinkedIn, son reales.'
+        :reviews.length+' personas que pasaron por Pathway. Su opinión sobre la mentoría — con link a su LinkedIn, son reales.';
 
       var html='';
       html+='<div style="text-align:center;margin-bottom:36px;">';
@@ -62,12 +81,12 @@
       html+=stars;
       html+='<span style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:500;color:'+titleColor+';">'+avg+'/5</span>';
       html+='</div>';
-      html+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:clamp(28px,4vw,40px);font-weight:500;color:'+titleColor+';letter-spacing:-1.2px;line-height:1.15;margin-bottom:10px;">Lo que dicen nuestros clientes</h2>';
-      html+='<p style="font-size:15px;color:'+accent+';opacity:.85;max-width:560px;margin:0 auto;">'+reviews.length+' personas que pasaron por Pathway. Cada testimonio viene con link a su LinkedIn — son reales.</p>';
+      html+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:clamp(28px,4vw,40px);font-weight:500;color:'+titleColor+';letter-spacing:-1.2px;line-height:1.15;margin-bottom:10px;">'+heading+'</h2>';
+      html+='<p style="font-size:15px;color:'+accent+';opacity:.85;max-width:560px;margin:0 auto;">'+subheading+'</p>';
       html+='</div>';
 
       html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;">';
-      reviews.forEach(function(r){
+      displayed.forEach(function(r){
         var rs='';for(var i=1;i<=5;i++)rs+='<span style="color:'+(i<=r.stars?sand:'#E5E0DD')+';font-size:16px;">★</span>';
         var liUrl=r.linkedin?('https://linkedin.com/in/'+String(r.linkedin).replace(/^.*linkedin\.com\/in\//,'').replace(/\/$/,'')):'';
         var ini=(r.nombre||'?').split(' ').filter(Boolean).slice(0,2).map(function(s){return s.charAt(0).toUpperCase();}).join('');

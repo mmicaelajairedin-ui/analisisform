@@ -2489,8 +2489,8 @@ function tabMensajes(c){
     },
     {
       id:'resena', icon:'⭐', label:'Pedir reseña',
-      es:'Hola '+nom+'!\n\nEspero que estés viendo resultados con lo que estamos trabajando.\n\nMe ayudaría mucho que dejes tu opinión sobre la mentoría — son 30 segundos:\n'+PORTAL+'#resena\n\nTu feedback me ayuda a mejorar y a otros profesionales saber si esto realmente sirve.\n\nGracias!\nMicaela',
-      en:'Hi '+nom+'!\n\nHope you\'re seeing results from what we\'ve been working on.\n\nIt would mean a lot if you could leave a quick review of the mentorship — takes 30 seconds:\n'+PORTAL+'#resena\n\nYour feedback helps me improve and helps other professionals know this works.\n\nThanks!\nMicaela'
+      es:'Hola '+nom+'!\n\nEspero que estés viendo resultados con lo que estamos trabajando.\n\nMe ayudaría mucho que dejes tu opinión — son 2 espacios cortitos:\n• Qué te pareció la mentoría conmigo\n• Cómo te fue con Pathway (la plataforma)\n\n2 minutos en total:\n'+PORTAL+'#resena\n\nTu feedback me ayuda a mejorar y a otros profesionales saber si esto realmente sirve.\n\nGracias!\nMicaela',
+      en:'Hi '+nom+'!\n\nHope you\'re seeing results from what we\'ve been working on.\n\nIt would mean a lot if you could share your opinion — 2 quick fields:\n• How was the mentorship with me\n• How Pathway (the platform) worked for you\n\n2 minutes total:\n'+PORTAL+'#resena\n\nYour feedback helps me improve and helps other professionals know this works.\n\nThanks!\nMicaela'
     },
     {
       id:'personalizado', icon:'✏', label:'Escribir',
@@ -3800,41 +3800,58 @@ function _renderInicio(){
     html+='</div>'; // cierra referral section
 
     // ── Reseñas recibidas de clientes ─────────────────────────
-    // Cualquier candidato con candidatos.resena (JSON) aparece acá.
-    // Cards con estrellas + texto + nombre + fecha. Si no hay ninguna,
-    // no se renderiza la sección.
-    var reviews=[];
+    // Cada candidato.resena puede tener {coach, plataforma} o el formato
+    // legacy {stars,text,...} (= coach). Mostramos ambos tipos en grupos
+    // separados para que la coach distinga qué dicen sobre ella vs sobre
+    // la herramienta.
+    function _parseR(s){
+      if(!s)return{coach:null,plataforma:null};
+      try{var o=JSON.parse(s);if(o&&o.stars!==undefined)return{coach:o,plataforma:null};return{coach:o.coach||null,plataforma:o.plataforma||null};}
+      catch(e){return{coach:null,plataforma:null};}
+    }
+    var revCoach=[], revPlat=[];
     cands.forEach(function(_c){
-      if(!_c.resena)return;
-      try{
-        var r=JSON.parse(_c.resena);
-        if(r&&r.stars)reviews.push({stars:r.stars,text:r.text||'',date:r.date,nombre:_c.nombre,email:_c.email,cid:_c.id});
-      }catch(e){}
+      var both=_parseR(_c.resena);
+      if(both.coach&&both.coach.stars)revCoach.push({stars:both.coach.stars,text:both.coach.text||'',date:both.coach.date,public:both.coach.public,nombre:_c.nombre,email:_c.email,cid:_c.id});
+      if(both.plataforma&&both.plataforma.stars)revPlat.push({stars:both.plataforma.stars,text:both.plataforma.text||'',date:both.plataforma.date,public:both.plataforma.public,nombre:_c.nombre,email:_c.email,cid:_c.id});
     });
-    if(reviews.length){
+    function _renderRevGrupo(reviews,titulo,emoji){
+      if(!reviews.length)return'';
       reviews.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
       var avg=(reviews.reduce(function(s,r){return s+r.stars;},0)/reviews.length).toFixed(1);
-      html+='<div style="margin-top:32px;">';
-      html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">';
-      html+='<div><div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:4px;">⭐ Reseñas recibidas</div>';
-      html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:500;color:var(--title);letter-spacing:-.4px;">'+reviews.length+' '+(reviews.length===1?'reseña':'reseñas')+' · promedio '+avg+'/5</div></div>';
-      html+='</div>';
-      html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;">';
+      var pubCount=reviews.filter(function(r){return r.public!==false;}).length;
+      var o='<div style="margin-bottom:24px;">';
+      o+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">';
+      o+='<div><div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:4px;">'+emoji+' '+titulo+'</div>';
+      o+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:20px;font-weight:500;color:var(--title);letter-spacing:-.3px;">'+reviews.length+' · '+avg+'/5 <span style="font-size:12px;color:var(--muted);font-weight:400;">('+pubCount+' públicas)</span></div></div>';
+      o+='</div>';
+      o+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">';
       reviews.forEach(function(r){
-        var fecha=new Date(r.date).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
-        var stars='';
-        for(var s=1;s<=5;s++)stars+='<span style="color:'+(s<=r.stars?'#E9C46A':'#E5E0DD')+';font-size:16px;">★</span>';
-        html+='<div onclick="openCand('+r.cid+')" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:16px 18px;cursor:pointer;transition:all .15s;" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 6px 16px rgba(0,0,0,.06)\';" onmouseout="this.style.transform=\'\';this.style.boxShadow=\'\';">';
-        html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;">';
-        html+='<div style="display:flex;gap:1px;">'+stars+'</div>';
-        html+='<div style="font-size:10px;color:var(--muted);">'+fecha+'</div>';
-        html+='</div>';
-        html+='<div style="font-size:13px;color:var(--body);line-height:1.55;margin-bottom:10px;">'+escH(r.text||'').replace(/\n/g,'<br>')+'</div>';
-        html+='<div style="font-size:11px;font-weight:700;color:var(--accent);">'+escH(r.nombre||r.email||'—')+'</div>';
-        html+='</div>';
+        var fecha=new Date(r.date).toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+        var stars='';for(var s=1;s<=5;s++)stars+='<span style="color:'+(s<=r.stars?'#E9C46A':'#E5E0DD')+';font-size:14px;">★</span>';
+        var pubBadge=r.public!==false?'<span title="Visible en la web pública" style="font-size:9px;background:rgba(74,124,95,.12);color:#4a7c5f;padding:2px 7px;border-radius:100px;font-weight:600;">PÚBLICA</span>':'<span title="Solo visible para vos" style="font-size:9px;background:#F5F5F5;color:#888;padding:2px 7px;border-radius:100px;font-weight:600;">PRIVADA</span>';
+        o+='<div onclick="openCand('+r.cid+')" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;cursor:pointer;transition:all .15s;" onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 6px 16px rgba(0,0,0,.06)\';" onmouseout="this.style.transform=\'\';this.style.boxShadow=\'\';">';
+        o+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:6px;">';
+        o+='<div style="display:flex;gap:1px;">'+stars+'</div>';
+        o+=pubBadge;
+        o+='</div>';
+        o+='<div style="font-size:12px;color:var(--body);line-height:1.5;margin-bottom:8px;">'+escH(r.text||'').replace(/\n/g,'<br>')+'</div>';
+        o+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;">';
+        o+='<span style="font-weight:700;color:var(--accent);">'+escH(r.nombre||r.email||'—')+'</span>';
+        o+='<span style="color:var(--muted);">'+fecha+'</span>';
+        o+='</div>';
+        o+='</div>';
       });
+      o+='</div>';
+      o+='</div>';
+      return o;
+    }
+    if(revCoach.length||revPlat.length){
+      html+='<div style="margin-top:32px;">';
+      html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:26px;font-weight:500;color:var(--title);letter-spacing:-.5px;margin-bottom:18px;">⭐ Reseñas recibidas</div>';
+      html+=_renderRevGrupo(revCoach,'Sobre vos como coach','👤');
+      html+=_renderRevGrupo(revPlat,'Sobre Pathway (la plataforma)','🌱');
       html+='</div>';
-      html+='</div>'; // cierra reseñas section
     }
 
     html+='</div>';
