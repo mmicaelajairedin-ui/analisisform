@@ -104,8 +104,36 @@ Recibirás:
 Devolverás JSON ESTRICTO con 3 campos:
 
 {
-  "cv_optimizado": "<CV completo en formato Markdown, listo para PDF>",
-  "carta": "<Carta de presentación en Markdown, 3-4 párrafos>",
+  "cv_optimizado": {
+    "nombre": "Nombre Completo",
+    "rol_objetivo": "Título profesional alineado al objetivo (ej: 'Director de Marketing Digital')",
+    "objetivo": "1-2 frases de perfil/objetivo profesional",
+    "contacto": {
+      "tel": "+34 6XX XXX XXX",
+      "email": "email@dominio.com",
+      "ciudad": "Ciudad, País",
+      "linkedin": "linkedin.com/in/usuario"
+    },
+    "competencias": ["Competencia 1", "Competencia 2", "..."],
+    "herramientas": ["Tool 1", "Tool 2", "..."],
+    "idiomas": [{"idioma": "Español", "nivel": "Nativo"}, {"idioma": "Inglés", "nivel": "C1"}],
+    "experiencia": [
+      {
+        "rol": "Director de Marketing",
+        "empresa": "Empresa S.A.",
+        "fecha": "2020 — Actual",
+        "ubicacion": "Madrid",
+        "logros": ["Lideré ...", "Implementé ...", "Aumenté ..."]
+      }
+    ],
+    "educacion": [
+      {"titulo": "Título", "institucion": "Universidad", "fecha": "2015"}
+    ],
+    "cursos": [
+      {"titulo": "Curso", "institucion": "Plataforma", "fecha": "2023"}
+    ]
+  },
+  "carta": "<Carta de presentación texto plano, 3-4 párrafos>",
   "linkedin_analisis": {
     "score_actual": 65,
     "titular_propuesto": "<titular optimizado, max 220 chars>",
@@ -119,28 +147,31 @@ Devolverás JSON ESTRICTO con 3 campos:
 
 REGLAS CRÍTICAS:
 
-CV OPTIMIZADO:
-- Estructura ATS-friendly: headers claros (Experiencia, Formación, Habilidades), bullets con verbo en pasado/presente
-- Cuantificá impacto SIEMPRE que se pueda inferir del CV original (números, %, alcance)
-- Palabras clave del objetivo y del rol incrustadas en experiencia y habilidades
-- Datos personales arriba: nombre, email, teléfono (si lo dice), LinkedIn URL, ubicación
-- 1 página equivalente — no más de 600 palabras totales
-- Formato Markdown: ## Headers, **negrita**, - bullets
+CV OPTIMIZADO (estructura JSON):
+- Extraé los datos del cv_texto y reorganizalos en la estructura.
+- nombre: tal cual aparece en el CV
+- rol_objetivo: NO copiar el rol actual — generalo a partir del objetivo del candidato
+- objetivo: 1-2 frases sintéticas de su perfil profesional (evitá adjetivos vacíos)
+- contacto: si falta algún dato, omitir esa key (no inventar)
+- competencias: 4-6 competencias relevantes para el objetivo
+- herramientas: las que aparecen + las relevantes al objetivo
+- experiencia: máximo 4 experiencias más relevantes. logros: 3-5 bullets cada uno con verbo de acción + número/% si se puede
+- Si en el CV no aparece info para una sección, omitirla (no la inventes)
 
 CARTA DE PRESENTACIÓN:
-- 3-4 párrafos, máximo 350 palabras
-- Estructura: hook (por qué este rol/empresa), por qué soy buen fit, valor concreto que aporto, cierre con CTA
+- 3-4 párrafos, máximo 350 palabras, texto plano (sin markdown)
+- Estructura: hook (por qué este rol), por qué soy buen fit, valor concreto que aporto, cierre con CTA
 - Personalizada al objetivo — NO genérica
 - No uses frases tipo "soy una persona apasionada" o "siempre dispuesto a aprender" — específico
 
 LINKEDIN ANÁLISIS:
-- score_actual: número 0-100 evaluando el LinkedIn actual (titular + acerca de + completitud que se ve en el texto)
+- score_actual: 0-100 evaluando el LinkedIn actual (titular + acerca de + completitud)
 - titular_propuesto: ALINEADO al objetivo, no "Buscando nuevas oportunidades"
-- acerca_de_propuesto: storytelling que conecte experiencia → objetivo, primer párrafo = hook
-- puntos_fuertes: 2-3 cosas concretas que ya hace bien (refiriéndose al perfil real)
-- areas_mejora: 2-3 cosas ACCIONABLES (no "subí más contenido", sino "agrega cuantificación de impactos en tus 2 últimos roles")
-- habilidades_sugeridas: 5-8 keywords relevantes para el objetivo que probablemente le faltan al perfil
-- experiencia_sugerencias: 2-3 mejoras concretas en cómo describe sus roles
+- acerca_de_propuesto: storytelling que conecte experiencia → objetivo
+- puntos_fuertes: 2-3 cosas concretas que ya hace bien
+- areas_mejora: 2-3 cosas ACCIONABLES y específicas
+- habilidades_sugeridas: 5-8 keywords relevantes
+- experiencia_sugerencias: 2-3 mejoras concretas
 
 OUTPUT: JSON estricto, sin markdown wrapper, sin texto antes ni después. Solo el JSON.`;
 
