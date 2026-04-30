@@ -4136,7 +4136,7 @@ function verPass(id){
   });
 }
 
-function cambiarPass(id,email){
+async function cambiarPass(id,email){
   var inp=document.getElementById('np-'+id);
   var st=document.getElementById('ps-'+id);
   if(!inp||!st)return;
@@ -4144,42 +4144,66 @@ function cambiarPass(id,email){
   if(newPass.length<6){st.textContent='Mínimo 6 caracteres';st.style.color='#c0756e';return;}
   st.textContent='Guardando...';st.style.color='#666';
   var emailClean=(email||'').toLowerCase().trim();
-  var encoder=new TextEncoder();
-  crypto.subtle.digest('SHA-256',encoder.encode(newPass)).then(function(buf){
+
+  try{
+    var encoder=new TextEncoder();
+    var buf=await crypto.subtle.digest('SHA-256',encoder.encode(newPass));
     var hash=Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
-    return fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(emailClean)+'&select=id',{
+
+    // Buscar si el usuario ya existe
+    var lookupRes=await fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(emailClean)+'&select=id',{
       headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
-    }).then(function(r){return r.json();}).then(function(rows){
-      if(rows&&rows.length){
-        return fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(emailClean),{
-          method:'PATCH',
-          headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
-          body:JSON.stringify({password_hash:hash})
-        });
-      } else {
-        var nombre='';
-        var c=cands.find(function(x){return x.id===id;});
-        if(c)nombre=c.nombre||'';
-        return fetch(SB+'/rest/v1/usuarios',{
-          method:'POST',
-          headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
-          body:JSON.stringify({email:emailClean,password_hash:hash,rol:'cliente',nombre:nombre,activo:true})
-        });
-      }
     });
-  }).then(function(r){
-    if(r&&(r.ok||r.status===201||r.status===204)){
-      st.textContent='✓ Contraseña actualizada';st.style.color='#4a7c5f';
-      inp.value='';
-      // Mostrar la nueva contraseña en texto claro por 5 segundos
-      var pvEl=document.getElementById('pv-'+id);
-      if(pvEl){pvEl.textContent=newPass;setTimeout(function(){pvEl.textContent='••••••••';},5000);}
+    var existing=await lookupRes.json();
+
+    var saveRes;
+    if(existing&&existing.length){
+      // UPDATE — Prefer:return=representation para detectar RLS bloqueando
+      saveRes=await fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(emailClean),{
+        method:'PATCH',
+        headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=representation'},
+        body:JSON.stringify({password_hash:hash})
+      });
     } else {
-      r.text().then(function(t){st.textContent='Error: '+t.substring(0,80);st.style.color='#c0756e';}).catch(function(){st.textContent='Error al guardar';st.style.color='#c0756e';});
+      var nombre='';
+      var c=cands.find(function(x){return x.id===id;});
+      if(c)nombre=c.nombre||'';
+      saveRes=await fetch(SB+'/rest/v1/usuarios',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=representation'},
+        body:JSON.stringify({email:emailClean,password_hash:hash,rol:'cliente',nombre:nombre,activo:true})
+      });
     }
-  }).catch(function(err){
+
+    if(!saveRes.ok){
+      var errTxt=await saveRes.text();
+      st.textContent='❌ Error '+saveRes.status+': '+errTxt.substring(0,80);st.style.color='#c0756e';
+      return;
+    }
+
+    // RLS puede devolver 200 OK con array vacio — verificar que se escribio
+    var written=await saveRes.json();
+    if(!written||!written.length){
+      st.innerHTML='⚠ No se guardó en DB — RLS bloqueando. Corré: <code style="background:#fff;padding:1px 5px;border-radius:4px;">ALTER TABLE usuarios DISABLE ROW LEVEL SECURITY;</code>';
+      st.style.color='#c0756e';
+      return;
+    }
+
+    // Exito — mostrar la pass visible con boton Copiar, SIN auto-ocultar.
+    // SHA-256 es one-way: si la coach no la copia ahora, no se puede recuperar.
+    inp.value='';
+    var pvEl=document.getElementById('pv-'+id);
+    if(pvEl){
+      var passJson=JSON.stringify(newPass);
+      pvEl.innerHTML=escH(newPass)+
+        ' <button onclick="navigator.clipboard.writeText('+passJson+').then(function(){var b=event.target;b.textContent=\'✓ Copiada\';setTimeout(function(){b.textContent=\'Copiar\';},2000);});" style="margin-left:8px;padding:3px 10px;font-size:10px;font-weight:700;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;font-family:Inter,sans-serif;">Copiar</button>'+
+        ' <button onclick="document.getElementById(\'pv-'+id+'\').textContent=\'••••••••\';" style="padding:3px 10px;font-size:10px;font-weight:700;background:#fff;color:var(--muted);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:Inter,sans-serif;">Ocultar</button>';
+    }
+    st.innerHTML='✓ Contraseña guardada. <strong style="color:#c0756e;">Copiala antes de cerrar — no se puede recuperar.</strong>';
+    st.style.color='#4a7c5f';
+  } catch(err){
     st.textContent='Error: '+err.message;st.style.color='#c0756e';
-  });
+  }
 }
 
 // ── LEADS (contactos del chatbot) ────────────────────────────
