@@ -93,6 +93,57 @@ RESPONDÉ SOLO CON JSON VÁLIDO, sin explicaciones previas ni markdown. Estructu
 
 Los scores van de 0-100 y deben reflejar el estado actual del candidato basado en los datos proporcionados.`;
 
+const SYSTEM_CV_EXPRESS = `Sos un experto en CV ATS y career coaching con +800 procesos de selección en Amazon. Tu output debe ser PROFESIONAL, ESPECÍFICO al objetivo del candidato y aplicable al mercado real.
+
+Recibirás:
+1. objetivo: la posición que busca el candidato
+2. cv_texto: texto del CV actual del candidato
+3. linkedin_url: URL de su LinkedIn
+4. linkedin_texto: (opcional) texto del perfil LinkedIn
+
+Devolverás JSON ESTRICTO con 3 campos:
+
+{
+  "cv_optimizado": "<CV completo en formato Markdown, listo para PDF>",
+  "carta": "<Carta de presentación en Markdown, 3-4 párrafos>",
+  "linkedin_analisis": {
+    "score_actual": 65,
+    "titular_propuesto": "<titular optimizado, max 220 chars>",
+    "acerca_de_propuesto": "<sección 'Acerca de' optimizada, max 1500 chars>",
+    "puntos_fuertes": ["punto 1", "punto 2", "punto 3"],
+    "areas_mejora": ["área 1", "área 2", "área 3"],
+    "habilidades_sugeridas": ["habilidad 1", "habilidad 2"],
+    "experiencia_sugerencias": ["sugerencia concreta 1", "sugerencia concreta 2"]
+  }
+}
+
+REGLAS CRÍTICAS:
+
+CV OPTIMIZADO:
+- Estructura ATS-friendly: headers claros (Experiencia, Formación, Habilidades), bullets con verbo en pasado/presente
+- Cuantificá impacto SIEMPRE que se pueda inferir del CV original (números, %, alcance)
+- Palabras clave del objetivo y del rol incrustadas en experiencia y habilidades
+- Datos personales arriba: nombre, email, teléfono (si lo dice), LinkedIn URL, ubicación
+- 1 página equivalente — no más de 600 palabras totales
+- Formato Markdown: ## Headers, **negrita**, - bullets
+
+CARTA DE PRESENTACIÓN:
+- 3-4 párrafos, máximo 350 palabras
+- Estructura: hook (por qué este rol/empresa), por qué soy buen fit, valor concreto que aporto, cierre con CTA
+- Personalizada al objetivo — NO genérica
+- No uses frases tipo "soy una persona apasionada" o "siempre dispuesto a aprender" — específico
+
+LINKEDIN ANÁLISIS:
+- score_actual: número 0-100 evaluando el LinkedIn actual (titular + acerca de + completitud que se ve en el texto)
+- titular_propuesto: ALINEADO al objetivo, no "Buscando nuevas oportunidades"
+- acerca_de_propuesto: storytelling que conecte experiencia → objetivo, primer párrafo = hook
+- puntos_fuertes: 2-3 cosas concretas que ya hace bien (refiriéndose al perfil real)
+- areas_mejora: 2-3 cosas ACCIONABLES (no "subí más contenido", sino "agrega cuantificación de impactos en tus 2 últimos roles")
+- habilidades_sugeridas: 5-8 keywords relevantes para el objetivo que probablemente le faltan al perfil
+- experiencia_sugerencias: 2-3 mejoras concretas en cómo describe sus roles
+
+OUTPUT: JSON estricto, sin markdown wrapper, sin texto antes ni después. Solo el JSON.`;
+
 const SYSTEM_EMPLEOS = `Sos un recruiter senior con acceso a información del mercado laboral. Generá 5 sugerencias de empleos relevantes para el candidato en formato JSON.
 
 REGLAS:
@@ -123,6 +174,7 @@ async function callClaude(
   systemPrompt: string,
   userMessage: string,
   apiKey: string,
+  maxTokens = 4000,
 ): Promise<string> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -133,7 +185,7 @@ async function callClaude(
     },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
-      max_tokens: 4000,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     }),
@@ -285,6 +337,56 @@ Deno.serve(async (req: Request) => {
       }
       return new Response(
         JSON.stringify(parsed),
+        { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── PACK EXPRESS — self-service del candidato ──
+    // Recibe cv_texto + linkedin_url + objetivo + opcional linkedin_texto.
+    // Devuelve {cv_optimizado, carta, linkedin_analisis} en una sola
+    // llamada a Claude (max_tokens 8000 es suficiente para los 3 outputs).
+    if (accion === "cv_express") {
+      const b = body as unknown as {
+        objetivo?: string;
+        cv_texto?: string;
+        linkedin_url?: string;
+        linkedin_texto?: string;
+        email?: string;
+      };
+      if (!b.objetivo || b.objetivo.length < 20) {
+        return new Response(
+          JSON.stringify({ error: "objetivo es requerido (min 20 chars)" }),
+          { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+      if (!b.cv_texto || b.cv_texto.length < 100) {
+        return new Response(
+          JSON.stringify({ error: "cv_texto es requerido (min 100 chars)" }),
+          { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+      const prompt = `OBJETIVO PROFESIONAL:\n${b.objetivo}\n\n` +
+        `CV ACTUAL DEL CANDIDATO:\n${b.cv_texto}\n\n` +
+        `LINKEDIN URL: ${b.linkedin_url || "(no proporcionado)"}\n\n` +
+        (b.linkedin_texto
+          ? `LINKEDIN TEXTO:\n${b.linkedin_texto}\n\n`
+          : "") +
+        `Generá los 3 outputs siguiendo el formato JSON estricto.`;
+
+      const response = await callClaude(SYSTEM_CV_EXPRESS, prompt, apiKey, 8000);
+      const parsed = extractJson(response);
+      if (!parsed || !parsed.cv_optimizado || !parsed.carta || !parsed.linkedin_analisis) {
+        return new Response(
+          JSON.stringify({
+            error: "Output de Claude inválido (faltan campos)",
+            raw: response.slice(0, 600),
+          }),
+          { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ ok: true, ...parsed }),
         { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
       );
     }

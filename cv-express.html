@@ -336,65 +336,162 @@ h1 .accent{color:var(--pw-sendero);}
 (function(){
   'use strict';
 
+  // ── Config Supabase ────────────────────────────────────────
+  var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+  var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+  var EDGE=SB+'/functions/v1/generar-informe';
+
+  // Resultado generado — guardado en memoria para los botones de descarga
+  var generated=null;
+  var emailPaidGlobal='';
+
   // Detectar si viene de Stripe con pago confirmado
-  var qs = new URLSearchParams(window.location.search);
-  var paid = qs.get('paid') === '1';
-  var emailPaid = qs.get('email') || '';
+  var qs=new URLSearchParams(window.location.search);
+  var paid=qs.get('paid')==='1';
+  emailPaidGlobal=qs.get('email')||'';
 
   if(paid){
     document.getElementById('mode-pre-pay').style.display='none';
     document.getElementById('mode-post-pay').style.display='block';
-    if(emailPaid){
-      var ce = document.getElementById('confirmed-email');
-      if(ce) ce.textContent = 'Recibís los documentos a ' + emailPaid;
+    if(emailPaidGlobal){
+      var ce=document.getElementById('confirmed-email');
+      if(ce)ce.textContent='Recibís los documentos a '+emailPaidGlobal;
     }
   }
 
-  // Submit del form (todavía mock — la Edge Function con accion='cv_express'
-  // se conecta en un PR siguiente). Por ahora simula loading + resultado.
-  var form = document.getElementById('cv-form');
+  function setError(msg){
+    var err=document.getElementById('form-error');
+    err.textContent=msg;
+    err.style.display='block';
+  }
+
+  // Submit del form: valida → call Edge Function → muestra resultado
+  var form=document.getElementById('cv-form');
   if(form){
-    form.addEventListener('submit', function(e){
+    form.addEventListener('submit',function(e){
       e.preventDefault();
-      var err = document.getElementById('form-error');
+      var err=document.getElementById('form-error');
       err.style.display='none';
 
-      var objetivo = document.getElementById('objetivo').value.trim();
-      var cvTexto = document.getElementById('cv-texto').value.trim();
-      var liUrl = document.getElementById('linkedin-url').value.trim();
+      var objetivo=document.getElementById('objetivo').value.trim();
+      var cvTexto=document.getElementById('cv-texto').value.trim();
+      var liUrl=document.getElementById('linkedin-url').value.trim();
+      var liTexto=document.getElementById('linkedin-texto').value.trim();
 
-      // Validaciones básicas
-      if(objetivo.length < 20){
-        err.textContent = 'El objetivo es muy corto. Sé específico (mínimo 20 caracteres).';
-        err.style.display='block';
-        return;
-      }
-      if(cvTexto.length < 100){
-        err.textContent = 'Pegá más texto del CV — necesitamos al menos 100 caracteres para optimizarlo.';
-        err.style.display='block';
-        return;
-      }
-      if(!/^https?:\/\/.*linkedin\.com\/in\//i.test(liUrl)){
-        err.textContent = 'La URL de LinkedIn no parece válida. Debe ser tipo https://linkedin.com/in/tu-usuario';
-        err.style.display='block';
-        return;
-      }
+      if(objetivo.length<20){setError('El objetivo es muy corto. Sé específico (mínimo 20 caracteres).');return;}
+      if(cvTexto.length<100){setError('Pegá más texto del CV — necesitamos al menos 100 caracteres para optimizarlo.');return;}
+      if(!/^https?:\/\/.*linkedin\.com\/in\//i.test(liUrl)){setError('La URL de LinkedIn no parece válida. Debe ser tipo https://linkedin.com/in/tu-usuario');return;}
 
       // Mostrar loading
       document.getElementById('form-card').style.display='none';
       document.getElementById('loading-state').style.display='block';
 
-      // TODO: cuando esté la Edge Function lista, llamar acá:
-      //   fetch(SB+'/functions/v1/generar-informe', {method:'POST',
-      //     body: JSON.stringify({accion:'cv_express', objetivo, cv_texto, linkedin_url, linkedin_texto})})
-      //   ...
-      // Por ahora simulamos 3 segundos de processing y mostramos result.
-      setTimeout(function(){
+      // Llamar a la Edge Function generar-informe con accion='cv_express'
+      fetch(EDGE,{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},
+        body:JSON.stringify({
+          accion:'cv_express',
+          objetivo:objetivo,
+          cv_texto:cvTexto,
+          linkedin_url:liUrl,
+          linkedin_texto:liTexto||null,
+          email:emailPaidGlobal||null
+        })
+      }).then(function(r){
+        return r.json().then(function(data){
+          if(!r.ok || data.error){
+            throw new Error(data.error||('Error '+r.status));
+          }
+          return data;
+        });
+      }).then(function(data){
+        // data debe tener: cv_optimizado, carta, linkedin_analisis
+        generated=data;
         document.getElementById('loading-state').style.display='none';
         document.getElementById('result-state').style.display='block';
-      }, 3000);
+      }).catch(function(e){
+        // Volver al form y mostrar el error
+        document.getElementById('loading-state').style.display='none';
+        document.getElementById('form-card').style.display='block';
+        setError('No pudimos generar los documentos: '+(e.message||'error desconocido')+'. Probá de nuevo en un momento.');
+      });
     });
   }
+
+  // ── Helpers para descargas ───────────────────────────────────
+  // Por ahora descargas .txt (texto). Para PDFs reales necesitamos un
+  // generador (jsPDF o servidor) — TODO en próxima iteración.
+  function downloadText(filename, content){
+    var blob=new Blob([content||''],{type:'text/plain;charset=utf-8'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(a.href);},100);
+  }
+
+  function fmtLinkedinAnalisis(li){
+    if(!li)return '';
+    var s='# Análisis de tu LinkedIn\n\n';
+    if(li.score_actual!==undefined)s+='**Score actual:** '+li.score_actual+'/100\n\n';
+    if(li.titular_propuesto)s+='## Titular propuesto\n'+li.titular_propuesto+'\n\n';
+    if(li.acerca_de_propuesto)s+='## "Acerca de" propuesto\n'+li.acerca_de_propuesto+'\n\n';
+    if(li.puntos_fuertes&&li.puntos_fuertes.length){
+      s+='## Puntos fuertes\n';
+      li.puntos_fuertes.forEach(function(p){s+='- '+p+'\n';});
+      s+='\n';
+    }
+    if(li.areas_mejora&&li.areas_mejora.length){
+      s+='## Áreas de mejora\n';
+      li.areas_mejora.forEach(function(p){s+='- '+p+'\n';});
+      s+='\n';
+    }
+    if(li.habilidades_sugeridas&&li.habilidades_sugeridas.length){
+      s+='## Habilidades sugeridas\n';
+      li.habilidades_sugeridas.forEach(function(p){s+='- '+p+'\n';});
+      s+='\n';
+    }
+    if(li.experiencia_sugerencias&&li.experiencia_sugerencias.length){
+      s+='## Sugerencias para experiencia\n';
+      li.experiencia_sugerencias.forEach(function(p){s+='- '+p+'\n';});
+      s+='\n';
+    }
+    return s;
+  }
+
+  // Wire up download buttons (delegation)
+  document.addEventListener('click',function(e){
+    if(!generated)return;
+    var t=e.target.closest('a,button');
+    if(!t)return;
+    var id=t.id;
+    if(id==='dl-cv-pdf'||id==='dl-cv-edit'){
+      e.preventDefault();
+      downloadText('cv-optimizado.md',generated.cv_optimizado||'');
+    } else if(id==='dl-carta-pdf'||id==='dl-carta-edit'){
+      e.preventDefault();
+      downloadText('carta-presentacion.md',generated.carta||'');
+    } else if(id==='dl-li-pdf'){
+      e.preventDefault();
+      downloadText('linkedin-analisis.md',fmtLinkedinAnalisis(generated.linkedin_analisis));
+    } else if(id==='dl-li-view'){
+      e.preventDefault();
+      // Abrir en nueva pestaña con el contenido formateado simple
+      var w=window.open('','_blank');
+      if(w){
+        w.document.write('<pre style="font-family:Inter,sans-serif;padding:24px;line-height:1.6;max-width:780px;margin:0 auto;white-space:pre-wrap;">'+
+          (fmtLinkedinAnalisis(generated.linkedin_analisis).replace(/[<>]/g,function(c){return c==='<'?'&lt;':'&gt;';}))+'</pre>');
+        w.document.close();
+      }
+    } else if(id==='btn-regenerate'){
+      e.preventDefault();
+      // Volver al form pre-rellenado (los inputs siguen ahí)
+      document.getElementById('result-state').style.display='none';
+      document.getElementById('form-card').style.display='block';
+    }
+  });
 })();
 </script>
 <script src="testimonios.js"></script>
