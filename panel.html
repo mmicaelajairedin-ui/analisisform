@@ -4556,8 +4556,9 @@ function _renderLeads(){
     +'<button onclick="_renderLeads()" style="padding:8px 14px;background:var(--accent-light);color:var(--accent);border:1.5px solid var(--accent-mid);border-radius:8px;font-size:12px;font-weight:700;font-family:var(--font-title);cursor:pointer;">&#8635; Actualizar</button>'
     +'</div>'
     // Tabs
-    +'<div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid var(--border);">'
+    +'<div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid var(--border);flex-wrap:wrap;">'
     +'<button onclick="_leadsTab=\'chat\';_renderLeads();" style="padding:10px 18px;background:'+(t==='chat'?'#fff':'transparent')+';color:'+(t==='chat'?'var(--accent)':'var(--muted)')+';border:none;border-bottom:2px solid '+(t==='chat'?'var(--accent)':'transparent')+';font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-title);">💬 Chatbot</button>'
+    +'<button onclick="_leadsTab=\'pricing\';_renderLeads();" style="padding:10px 18px;background:'+(t==='pricing'?'#fff':'transparent')+';color:'+(t==='pricing'?'var(--accent)':'var(--muted)')+';border:none;border-bottom:2px solid '+(t==='pricing'?'var(--accent)':'transparent')+';font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-title);">🎁 Popup pricing</button>'
     +'<button onclick="_leadsTab=\'prospects\';_renderLeads();" style="padding:10px 18px;background:'+(t==='prospects'?'#fff':'transparent')+';color:'+(t==='prospects'?'var(--accent)':'var(--muted)')+';border:none;border-bottom:2px solid '+(t==='prospects'?'var(--accent)':'transparent')+';font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-title);">🎯 Búsqueda activa</button>'
     +'<button onclick="_leadsTab=\'queue\';_renderLeads();" style="padding:10px 18px;background:'+(t==='queue'?'#fff':'transparent')+';color:'+(t==='queue'?'var(--accent)':'var(--muted)')+';border:none;border-bottom:2px solid '+(t==='queue'?'var(--accent)':'transparent')+';font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-title);">📅 Cola de envíos</button>'
     +'</div>'
@@ -4565,7 +4566,61 @@ function _renderLeads(){
     +'</div>';
   if(t==='chat')_renderLeadsChat();
   else if(t==='queue')_renderQueueIn();
+  else if(t==='pricing')_renderLeadsPricing();
   else _renderLeadsProspects();
+}
+
+// Embudo de leads del popup de pricing en landings:
+//   capturados (dejaron email) → convertidos (completaron registro)
+//   → trial iniciado (Stripe webhook) → pago (mes 2)
+function _renderLeadsPricing(){
+  fetch(SB+'/rest/v1/leads_pricing?select=*&order=fecha.desc&limit=200',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+    var el=document.getElementById('leads-content');
+    if(!el)return;
+    if(!rows||!rows.length){
+      el.innerHTML='<div style="background:#fff;border-radius:14px;border:1.5px dashed var(--border);padding:2rem;text-align:center;color:var(--muted);">'
+        +'<div style="font-size:32px;margin-bottom:10px;">🎁</div>'
+        +'<div style="font-size:14px;font-weight:700;color:var(--title);margin-bottom:6px;">Sin leads del popup todavía</div>'
+        +'<div style="font-size:12px;line-height:1.5;">Cuando alguien deje su email en el popup de pricing del landing, aparecerá acá. Si no ves leads y la tabla `leads_pricing` aún no existe, corré:<br><br><code style="background:#F5F0F0;padding:6px 10px;border-radius:6px;font-size:11px;display:inline-block;user-select:all;">CREATE TABLE leads_pricing (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL, pagina TEXT, fecha TIMESTAMPTZ DEFAULT now(), convertido_at TIMESTAMPTZ, trial_iniciado_at TIMESTAMPTZ, pago_at TIMESTAMPTZ, metadata JSONB);<br>ALTER TABLE leads_pricing DISABLE ROW LEVEL SECURITY;</code></div>'
+        +'</div>';
+      return;
+    }
+    var total=rows.length;
+    var convertidos=rows.filter(function(r){return r.convertido_at;}).length;
+    var trial=rows.filter(function(r){return r.trial_iniciado_at;}).length;
+    var pagos=rows.filter(function(r){return r.pago_at;}).length;
+    function pct(n){return total?Math.round(n/total*100):0;}
+    var h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px;">';
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:4px;">Capturados</div><div style="font-family:\'Fraunces\',Georgia,serif;font-size:26px;color:var(--title);font-weight:500;">'+total+'</div></div>';
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:4px;">Registrados</div><div style="font-family:\'Fraunces\',Georgia,serif;font-size:26px;color:var(--title);font-weight:500;">'+convertidos+' <span style="font-size:12px;color:var(--muted);font-family:Inter;">'+pct(convertidos)+'%</span></div></div>';
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:4px;">En trial</div><div style="font-family:\'Fraunces\',Georgia,serif;font-size:26px;color:var(--title);font-weight:500;">'+trial+' <span style="font-size:12px;color:var(--muted);font-family:Inter;">'+pct(trial)+'%</span></div></div>';
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:4px;">Pagaron</div><div style="font-family:\'Fraunces\',Georgia,serif;font-size:26px;color:#4a7c5f;font-weight:500;">'+pagos+' <span style="font-size:12px;color:var(--muted);font-family:Inter;">'+pct(pagos)+'%</span></div></div>';
+    h+='</div>';
+    h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;">';
+    h+='<div style="padding:10px 16px;background:#FAFAF8;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:10px;">';
+    h+='<div>Email</div><div>Página</div><div>Capturado</div><div>Registró</div><div>Estado</div></div>';
+    rows.forEach(function(r){
+      var fmt=function(d){return d?new Date(d).toLocaleDateString('es-ES',{day:'numeric',month:'short'}):'—';};
+      var estado=r.pago_at?'<span style="font-size:10px;background:rgba(74,124,95,.15);color:#4a7c5f;padding:2px 8px;border-radius:100px;font-weight:700;">PAGÓ</span>'
+        :r.trial_iniciado_at?'<span style="font-size:10px;background:rgba(233,196,106,.2);color:#8C6D2E;padding:2px 8px;border-radius:100px;font-weight:700;">TRIAL</span>'
+        :r.convertido_at?'<span style="font-size:10px;background:rgba(74,107,160,.15);color:#4A6BA0;padding:2px 8px;border-radius:100px;font-weight:700;">REGISTRÓ</span>'
+        :'<span style="font-size:10px;background:#F5F5F5;color:#888;padding:2px 8px;border-radius:100px;font-weight:700;">SOLO EMAIL</span>';
+      h+='<div style="padding:10px 16px;border-top:.5px solid var(--border);font-size:12px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:10px;align-items:center;">';
+      h+='<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escH(r.email)+'</div>';
+      h+='<div style="color:var(--muted);">'+escH(r.pagina||'—')+'</div>';
+      h+='<div style="color:var(--muted);">'+fmt(r.fecha)+'</div>';
+      h+='<div style="color:var(--muted);">'+fmt(r.convertido_at)+'</div>';
+      h+='<div>'+estado+'</div>';
+      h+='</div>';
+    });
+    h+='</div>';
+    el.innerHTML=h;
+  }).catch(function(){
+    var el=document.getElementById('leads-content');
+    if(el)el.innerHTML='<div style="padding:2rem;color:#c0756e;">Error cargando leads</div>';
+  });
 }
 
 function _renderLeadsChat(){

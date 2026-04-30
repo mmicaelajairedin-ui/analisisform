@@ -308,12 +308,45 @@ async function handleCoachSubscription(
     );
   }
 
+  // Marcar conversión en leads_pricing si este email salió del popup
+  // de pricing en alguna landing. Best-effort — no rompe el flujo si falla.
+  await markLeadConversion(email, estado_sub);
+
   return {
     result: patchRes.ok ? "subscription-updated" : "subscription-failed",
     email,
     estado_sub,
     plan,
   };
+}
+
+// ── LEAD TRACKING (popup de pricing) ────────────────────────
+// Cuando un email que dejó email en el popup llega a trial/pago, marcamos
+// el evento en leads_pricing. Sirve para ver el embudo en el panel admin.
+// Match por email — no requiere modificar Stripe ni metadata.
+async function markLeadConversion(email: string, estadoSub: string): Promise<void> {
+  if (!email) return;
+  const { url: SB_URL, headers } = getSupabaseAuth();
+  const patch: Record<string, string> = {};
+  if (estadoSub === "prueba") {
+    patch.trial_iniciado_at = new Date().toISOString();
+  } else if (estadoSub === "activa") {
+    patch.pago_at = new Date().toISOString();
+  } else {
+    return; // otros estados no nos interesan acá
+  }
+  try {
+    await fetch(
+      `${SB_URL}/rest/v1/leads_pricing?email=eq.${encodeURIComponent(email)}&${Object.keys(patch)[0]}=is.null`,
+      {
+        method: "PATCH",
+        headers: { ...headers, Prefer: "return=minimal" },
+        body: JSON.stringify(patch),
+      },
+    );
+  } catch (_e) {
+    // best-effort, no bloquear el flow
+  }
 }
 
 // ── REFERRAL CREDIT ─────────────────────────────────────────
