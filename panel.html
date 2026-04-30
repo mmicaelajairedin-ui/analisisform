@@ -1371,7 +1371,7 @@ function renderMain(c){
   }).join('');
 
   document.getElementById('main').innerHTML=
-    '<div style="padding:12px 20px 0;display:flex;align-items:center;gap:8px;"><button onclick="showSection(\'clientes\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;transition:all .15s;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg> Volver</button><div style="flex:1;"></div><button onclick="_openChat('+c.id+')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#EAF0FA;border:1.5px solid #C8D8E8;border-radius:8px;font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:#4A6BA0;cursor:pointer;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Chat</button></div>'+
+    '<div style="padding:12px 20px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><button onclick="showSection(\'clientes\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;transition:all .15s;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg> Volver</button><div style="flex:1;"></div><button onclick="window.open(BASE+\'/cliente.html?coach_view=\'+encodeURIComponent(\''+escH(c.email||'')+'\'),\'_blank\')" title="Abre el portal del cliente como él lo ve, en una pestaña nueva" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#FFF7E6;border:1.5px solid #F5E5B0;border-radius:8px;font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:#8C6D2E;cursor:pointer;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Ver como cliente</button><button onclick="_openChat('+c.id+')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#EAF0FA;border:1.5px solid #C8D8E8;border-radius:8px;font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:#4A6BA0;cursor:pointer;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Chat</button></div>'+
     '<div class="chead" style="gap:16px;">'
       +avHtml
       +'<div style="flex:1;min-width:0;">'
@@ -1386,8 +1386,89 @@ function renderMain(c){
       +'</div>'
     +'</div>'
     +'<div class="proceso-wrap">'+pasoHtml+'</div>'
+    +_widgetEstaSemana(c)
     +'<div class="tabs">'+tabsHTML+'</div>'
     +'<div class="tab-body" id="tc">'+renderTab(c,atab)+'</div>';
+}
+
+// Widget "Esta semana toca" — guía contextual para la coach.
+// Lee semana_activa + acciones_progreso + informes.data y combina
+// para dar una sugerencia accionable: generá informe / avanzá semana /
+// agendá sesión / etc. NO toma acción automática — solo sugiere.
+function _widgetEstaSemana(c){
+  var sem=parseInt(c.semana_activa||1);
+  var semNames=['','Evaluación','CV','LinkedIn','Búsqueda','Revisión'];
+  var semKeys=['','cv_acciones','linkedin_acciones','networking_acciones','preguntas',''];
+  var email=(c.email||'').toLowerCase().trim();
+  var hasRep=!!(reps[email]&&reps[email].length);
+  var hasCv=!!cvs[email];
+  var hasCarta=!!(c.carta_presentacion&&c.carta_presentacion.length>50);
+
+  // acciones_progreso es un array de booleans paralelo a las acciones
+  // de la semana. Si no existe, asumimos 0/?
+  var acts=[];
+  try{acts=c.acciones_progreso?JSON.parse(c.acciones_progreso):[];}catch(e){acts=[];}
+  // Total de acciones de la semana actual (si tenemos informe)
+  var infData=(reps[email]&&reps[email][0]&&reps[email][0].data)?reps[email][0].data:null;
+  if(typeof infData==='string'){try{infData=JSON.parse(infData);}catch(e){infData=null;}}
+  var actKey=semKeys[sem];
+  var totalActs=(infData&&actKey&&Array.isArray(infData[actKey]))?infData[actKey].length:0;
+  var doneActs=acts.filter(Boolean).length;
+
+  // Decidir la sugerencia según el estado
+  var titulo='', sugerencia='', cta='', ctaAction='';
+  if(sem===1 && !hasRep){
+    titulo='Falta el informe inicial';
+    sugerencia='El cliente no tiene informe generado todavía. Es lo primero del proceso — sin informe no hay acciones específicas que pueda hacer.';
+    cta='Ir a generar →';ctaAction='switchTab(\'documentos\','+c.id+')';
+  } else if(sem===1 && hasRep && doneActs===0){
+    titulo='Cliente sin actividad';
+    sugerencia='Ya tiene informe pero aún no marcó ninguna acción. Mandale un mensaje recordándole que entre al portal.';
+    cta='Abrir chat →';ctaAction='_openChat('+c.id+')';
+  } else if(totalActs>0 && doneActs<totalActs){
+    var falta=totalActs-doneActs;
+    titulo='Semana en curso · '+doneActs+'/'+totalActs+' acciones';
+    sugerencia='Falta'+(falta===1?'':'n')+' '+falta+' acción'+(falta===1?'':'es')+' de Semana '+sem+'. '+(sem<5?'Antes de avanzar a Semana '+(sem+1)+', considerá agendar una sesión para revisar lo hecho.':'Cierre del proceso — buen momento para una sesión final.');
+    cta='Ver avance →';ctaAction='switchTab(\'avance\','+c.id+')';
+  } else if(totalActs>0 && doneActs>=totalActs && sem<5){
+    titulo='✅ Acciones de Semana '+sem+' completas';
+    sugerencia='Todas las acciones de '+semNames[sem]+' marcadas. Estás para avanzar a Semana '+(sem+1)+' — '+semNames[sem+1]+'.';
+    cta='Avanzar a S'+(sem+1)+' →';ctaAction='cambiarSemana('+c.id+','+(sem+1)+')';
+  } else if(sem===5){
+    titulo='Semana final · '+semNames[sem];
+    sugerencia='Última semana del proceso. Buen momento para sesión de cierre, retrospectiva y feedback. ¿Renovás otras 4 semanas?';
+    cta='Abrir chat →';ctaAction='_openChat('+c.id+')';
+  } else if(sem<5){
+    titulo='Semana '+sem+' · '+semNames[sem];
+    sugerencia='Cliente en '+semNames[sem]+'. Genera/revisá el informe para que tenga acciones específicas.';
+    cta='Avanzar a S'+(sem+1)+' →';ctaAction='cambiarSemana('+c.id+','+(sem+1)+')';
+  } else {
+    titulo='Semana '+sem;
+    sugerencia='';
+  }
+
+  // Mini stats inline (informe / CV / carta)
+  function pill(label,done){
+    var bg=done?'rgba(74,124,95,.12)':'rgba(192,117,110,.12)';
+    var fg=done?'#4a7c5f':'#c0756e';
+    var icon=done?'✓':'·';
+    return '<span style="font-size:10px;font-weight:600;background:'+bg+';color:'+fg+';padding:3px 9px;border-radius:100px;">'+icon+' '+label+'</span>';
+  }
+
+  var html='<div style="margin:14px 22px 0;background:linear-gradient(135deg,rgba(45,106,79,.05),rgba(45,106,79,.02));border:1.5px solid rgba(45,106,79,.18);border-radius:12px;padding:14px 18px;">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px;">';
+  html+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">';
+  html+='<div style="font-size:9px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.12em;">Esta semana toca</div>';
+  html+=pill('Informe',hasRep)+pill('CV',hasCv)+pill('Carta',hasCarta);
+  html+='</div>';
+  if(cta){
+    html+='<button onclick="'+ctaAction+'" style="padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:11px;font-weight:700;font-family:Inter,sans-serif;cursor:pointer;white-space:nowrap;">'+cta+'</button>';
+  }
+  html+='</div>';
+  html+='<div style="font-size:14px;font-weight:700;color:var(--title);margin-bottom:3px;">'+escH(titulo)+'</div>';
+  if(sugerencia)html+='<div style="font-size:12px;color:var(--body);line-height:1.5;">'+escH(sugerencia)+'</div>';
+  html+='</div>';
+  return html;
 }
 
 function switchTab(tab,id){
@@ -1771,21 +1852,90 @@ function tabLinksCliente(c){
 }
 
 function tabDatos(c){
-  var liUrl=c.linkedin?'linkedin.com/in/'+c.linkedin:'No tiene';
-  var obs=(c.obstaculos||'').split('|').map(function(s){return s.trim();}).filter(Boolean);
+  // Cada campo es un <input> o <textarea> que guarda en blur via _saveField.
+  // Antes era read-only: si el cliente puso algo mal, había que volver a
+  // llenar todo el formulario. Ahora la coach puede editar inline.
+  var inputStyle='width:100%;padding:8px 10px;font-size:13px;font-family:Inter,sans-serif;font-weight:600;color:var(--title);border:1.5px solid transparent;border-radius:6px;outline:none;background:transparent;transition:border-color .15s,background .15s;';
+  var inputHover='onfocus="this.style.background=\'#fff\';this.style.borderColor=\'var(--border)\';" onmouseover="this.style.background=\'#fff\';" onmouseout="if(document.activeElement!==this){this.style.background=\'transparent\';}"';
+  function inp(key,val,placeholder){
+    return '<input data-cid="'+c.id+'" data-key="'+key+'" type="text" value="'+escH(val||'')+'" placeholder="'+(placeholder||'--')+'" onblur="_saveField(this)" style="'+inputStyle+'" '+inputHover+'>';
+  }
+  function ta(key,val,placeholder,rows){
+    rows=rows||3;
+    return '<textarea data-cid="'+c.id+'" data-key="'+key+'" rows="'+rows+'" placeholder="'+(placeholder||'')+'" onblur="_saveField(this)" style="'+inputStyle+'resize:vertical;line-height:1.5;font-weight:400;" '+inputHover+'>'+escH(val||'')+'</textarea>';
+  }
+  function fld(label,inputHtml){
+    return '<div class="ii"><div class="iil">'+label+'</div><div class="iiv" style="padding:0;">'+inputHtml+'</div></div>';
+  }
+  function fldFw(label,inputHtml){
+    return '<div class="ii fw"><div class="iil">'+label+'</div><div class="iiv" style="padding:0;font-weight:400;">'+inputHtml+'</div></div>';
+  }
+
+  var liUrl=c.linkedin?'linkedin.com/in/'+c.linkedin:'';
+
   return '<div class="igrid">'
-    +'<div class="ii"><div class="iil">Situacion</div><div class="iiv">'+escH(c.situacion||'--')+'</div></div>'
-    +'<div class="ii"><div class="iil">Urgencia</div><div class="iiv">'+escH(c.urgencia||'--')+'</div></div>'
-    +'<div class="ii"><div class="iil">Rol buscado</div><div class="iiv">'+escH(c.rol||'--')+'</div></div>'
-    +'<div class="ii"><div class="iil">Salario</div><div class="iiv">'+escH(c.salario||'--')+'</div></div>'
-    +'<div class="ii"><div class="iil">LinkedIn</div><div class="iiv">'+escH(liUrl)+'<br><span style="font-size:10px;color:#999">'+escH(c.li_estado||'--')+'</span></div></div>'
-    +'<div class="ii"><div class="iil">CV</div><div class="iiv">'+escH(c.cv||'No subido')+(c.cv_url&&c.cv_url!=='No subido'?'<br><a href="'+escH(c.cv_url)+'" target="_blank" style="font-size:10px;color:#2D6A4F;font-weight:600;">Descargar</a>':'')+'</div></div>'
-    +'<div class="ii fw"><div class="iil">Objetivo</div><div class="iiv" style="font-weight:400;line-height:1.5">'+escH(c.objetivo||'--')+'</div></div>'
-    +'<div class="ii fw"><div class="iil">Logro destacado</div><div class="iiv" style="font-weight:400;line-height:1.5">'+escH(c.logro||'--')+'</div></div>'
-    +(c.extra&&c.extra!=='--'?'<div class="ii fw"><div class="iil">Fuera del CV</div><div class="iiv" style="font-weight:400;line-height:1.5">'+escH(c.extra)+'</div></div>':'')
+    +fld('Situación', inp('situacion',c.situacion))
+    +fld('Urgencia',     inp('urgencia',c.urgencia))
+    +fld('Rol buscado',  inp('rol',c.rol))
+    +fld('Salario',      inp('salario',c.salario))
+    +fld('LinkedIn',     inp('linkedin',c.linkedin,'usuario'))
+    +fld('CV (texto)',   inp('cv',c.cv,'No subido'))
+    +fldFw('Objetivo',     ta('objetivo',c.objetivo,'',3))
+    +fldFw('Logro destacado', ta('logro',c.logro,'',2))
+    +fldFw('Fuera del CV',  ta('extra',c.extra,'Algo importante que no aparece en el CV',2))
+    +fldFw('Obstáculos (uno por línea)', ta('obstaculos',(c.obstaculos||'').split('|').filter(Boolean).join('\n'),'Cada línea es un obstáculo',3))
     +'</div>'
-    +'<div style="margin-bottom:10px"><div style="font-size:9px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Obstaculos</div>'
-    +'<div>'+(obs.length?obs.map(function(o){return '<div style="font-size:12px;padding:5px 0 5px 12px;position:relative;border-bottom:.5px solid #f0ece8;"><span style="position:absolute;left:0;top:12px;width:4px;height:4px;border-radius:50%;background:#c0756e;display:block;"></span>'+escH(o)+'</div>';}).join(''):'<span style="font-size:12px;color:#999;">No indicados</span>')+'</div></div>'    +'<div style="margin-top:14px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:16px;">'    +'<div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;">Acceso del cliente</div>'    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'    +'<div style="font-size:10px;font-weight:700;color:var(--t2);width:80px;">Email</div>'    +'<div style="font-size:13px;font-weight:600;">'+escH(c.email||'')+'</div>'    +'</div>'    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'    +'<div style="font-size:10px;font-weight:700;color:var(--t2);width:80px;">Contraseña</div>'    +'<span style="font-size:13px;font-weight:600;font-family:monospace;" id="pv-'+c.id+'">••••••••</span>'    +'<button onclick="verPass('+c.id+')" style="padding:4px 10px;font-size:10px;font-weight:700;font-family:Inter,sans-serif;background:#fff;color:var(--t2);border:1px solid var(--border);border-radius:6px;cursor:pointer;margin-left:6px;">Ver</button>'    +'</div>'    +'<div style="display:flex;gap:8px;">'    +'<input id="np-'+c.id+'" type="text" placeholder="Nueva contraseña (mín. 6 caracteres)" style="flex:1;padding:8px 10px;font-size:12px;font-family:Inter,sans-serif;border:1.5px solid var(--border);border-radius:6px;outline:none;background:#fff;">'    +'<button onclick="cambiarPass('+c.id+',\''+escH(c.email||'')+'\')" style="padding:8px 14px;font-size:11px;font-weight:700;font-family:Inter,sans-serif;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;">Cambiar</button>'    +'</div>'    +'<div id="ps-'+c.id+'" style="font-size:11px;margin-top:6px;color:var(--muted);"></div>'    +'</div>';
+    +'<div style="font-size:10px;color:var(--muted);margin-top:-6px;margin-bottom:14px;">Los cambios se guardan al hacer clic fuera del campo.</div>'
+    +'<div style="margin-top:14px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:16px;">'
+    +'<div style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;">Acceso del cliente</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+    +'<div style="font-size:10px;font-weight:700;color:var(--t2);width:80px;">Email</div>'
+    +'<div style="font-size:13px;font-weight:600;">'+escH(c.email||'')+'</div>'
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'
+    +'<div style="font-size:10px;font-weight:700;color:var(--t2);width:80px;">Contraseña</div>'
+    +'<span style="font-size:13px;font-weight:600;font-family:monospace;" id="pv-'+c.id+'">••••••••</span>'
+    +'<button onclick="verPass('+c.id+')" style="padding:4px 10px;font-size:10px;font-weight:700;font-family:Inter,sans-serif;background:#fff;color:var(--t2);border:1px solid var(--border);border-radius:6px;cursor:pointer;margin-left:6px;">Ver</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<input id="np-'+c.id+'" type="text" placeholder="Nueva contraseña (mín. 6 caracteres)" style="flex:1;padding:8px 10px;font-size:12px;font-family:Inter,sans-serif;border:1.5px solid var(--border);border-radius:6px;outline:none;background:#fff;">'
+    +'<button onclick="cambiarPass('+c.id+',\''+escH(c.email||'')+'\')" style="padding:8px 14px;font-size:11px;font-weight:700;font-family:Inter,sans-serif;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;">Cambiar</button>'
+    +'</div>'
+    +'<div id="ps-'+c.id+'" style="font-size:11px;margin-top:6px;color:var(--muted);"></div>'
+    +'</div>';
+}
+
+// Guarda inline cuando un campo del tabDatos pierde foco. El campo
+// 'obstaculos' viene como una lista por línea y se persiste como
+// string separado por '|' (es lo que parsea el resto del código).
+function _saveField(el){
+  var cid=parseInt(el.dataset.cid);
+  var key=el.dataset.key;
+  if(!cid||!key)return;
+  var val=el.value.trim();
+  if(key==='obstaculos'){
+    val=val.split(/\n+/).map(function(s){return s.trim();}).filter(Boolean).join('|');
+  }
+  var c=cands.find(function(x){return x.id===cid;});
+  if(c){
+    var prev=c[key];
+    if(prev===val||(!prev&&!val))return; // sin cambios: nada que guardar
+    c[key]=val;
+  }
+  el.style.borderColor='#E9C46A';
+  var patch={};patch[key]=val||null;
+  sbPatch('candidatos','id=eq.'+cid,patch).then(function(res){
+    if(res.ok){
+      el.style.borderColor='#4a7c5f';
+      setTimeout(function(){el.style.borderColor='transparent';},1800);
+    } else if(res.rls){
+      el.style.borderColor='#c0756e';
+      showToast('⚠ '+res.error);
+    } else {
+      el.style.borderColor='#c0756e';
+      showToast('Error guardando '+key+': '+(res.error||res.status));
+    }
+  });
 }
 // ── GENERAR INFORME (ahora automático con IA) ──
 function tabGenerar(c){
