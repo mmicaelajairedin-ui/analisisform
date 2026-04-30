@@ -1362,9 +1362,26 @@ function docSvg(color,ok){return '<svg width="48" height="60" viewBox="0 0 48 60
     var u=localStorage.getItem('mj_user');
     if(!u){window.location.href=BASE+'/login.html';return;}
     var pu=JSON.parse(u);
+    // Si trae ?coach_view=<email> y la sesion es de coach/admin, NO redirigir
+    // al panel — estamos en modo preview del portal del cliente.
+    var qsView=new URLSearchParams(window.location.search).get('coach_view');
+    if(qsView && (pu.rol==='coach'||pu.rol==='admin'))return;
     if(pu.rol==='coach'||pu.rol==='admin'){window.location.href=BASE+'/panel.html';return;}
   }catch(e){window.location.href=BASE+'/login.html';}
 })();
+
+// Banner amarillo arriba del portal indicando que estamos en modo preview.
+// Se inyecta al body en init() cuando COACH_PREVIEW es true.
+function _showCoachPreviewBanner(clientEmail){
+  var bar=document.createElement('div');
+  bar.id='coach-preview-banner';
+  bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#FFF7E6;border-bottom:2px solid #F5E5B0;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:Inter,sans-serif;font-size:12px;color:#8C6D2E;flex-wrap:wrap;';
+  bar.innerHTML='<div><strong>👀 Vista del coach</strong> &middot; estás viendo el portal de <strong>'+clientEmail+'</strong> como él lo ve. Las acciones que hagas acá se aplican a su cuenta.</div>'+
+    '<button onclick="window.close()" style="padding:5px 12px;background:#8C6D2E;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">Cerrar pestaña</button>';
+  document.body.appendChild(bar);
+  // Empujar el contenido para que el banner no tape nada
+  document.body.style.paddingTop='42px';
+}
 
 // Aplica el color de marca del coach como CSS variables.
 // Incluye también los acentos decorativos (orange/brown/green/blue) para
@@ -1498,13 +1515,27 @@ function _loadCoachColor(){
     }).catch(function(){});
 }
 
+// Modo "Ver como cliente" desde el panel: si la URL trae ?coach_view=<email>
+// Y la sesión es de un coach/admin, cargamos los datos de ESE cliente en vez
+// de los del coach. Sirve para que la coach previsualice el portal sin tener
+// que loguearse como el cliente. NO es bypass de autenticación: requiere que
+// la sesión local tenga rol coach o admin.
+var COACH_PREVIEW=false;
 function init(){
   _loadCoachColor();
   var u=localStorage.getItem('mj_user');
   if(!u){window.location.href=BASE+'/login.html';return;}
   var parsed;
   try{parsed=JSON.parse(u);}catch(e){localStorage.removeItem('mj_user');window.location.href=BASE+'/login.html';return;}
-  E=parsed.email.toLowerCase().trim();
+
+  var qsView=new URLSearchParams(window.location.search).get('coach_view');
+  if(qsView && (parsed.rol==='coach'||parsed.rol==='admin')){
+    COACH_PREVIEW=true;
+    E=qsView.toLowerCase().trim();
+    _showCoachPreviewBanner(E);
+  } else {
+    E=parsed.email.toLowerCase().trim();
+  }
   if(!E){document.getElementById('load-err').textContent='Email no encontrado en sesión.';return;}
   document.getElementById('load-msg').textContent='Conectando con Supabase...';
   Promise.all([
@@ -1522,7 +1553,18 @@ function init(){
       document.getElementById('load-msg').textContent='';
       return;
     }
-    C=res[0][0];SEM=parseInt(C.semana_activa)||1;
+    C=res[0][0];
+    // Si el coach desactivó el acceso, no dejamos entrar al portal.
+    // candidatos.activo es boolean. Tratamos null/undefined como activo
+    // (default histórico) para no romper cuentas viejas sin la columna.
+    if(C.activo===false){
+      document.getElementById('load-err').innerHTML='Tu acceso al portal está pausado.<br><br>Si necesitás retomar la mentoría, contactá a tu coach.';
+      document.getElementById('load-msg').textContent='';
+      // Cerrar la sesión local así no insiste en cargar
+      localStorage.removeItem('mj_user');
+      return;
+    }
+    SEM=parseInt(C.semana_activa)||1;
     try{ACTS=C.acciones_progreso?JSON.parse(C.acciones_progreso):[];}catch(e){ACTS=[];}
     // Re-cargar marca del coach asignado (multi-coach) ahora que C.coach_id está disponible
     if(typeof _loadCoachColor==='function')_loadCoachColor();
