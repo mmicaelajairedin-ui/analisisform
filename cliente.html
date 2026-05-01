@@ -2226,21 +2226,33 @@ function render(sec){
   _updateNavLocks();
 }
 
+// Helper: ejecuta un render y captura cualquier error (en lugar de fallar
+// silenciosamente y dejar la sección anterior en pantalla, que confunde
+// al usuario haciéndole creer que clickeó mal). Si hay error, muestra
+// un mensaje claro + log en consola para diagnóstico.
+function _safeRender(fn, label){
+  try{return fn();}
+  catch(e){
+    console.error('[render '+label+'] error:',e);
+    return '<div style="padding:32px 24px;text-align:center;color:#999;font-family:Montserrat,sans-serif;"><div style="font-size:32px;margin-bottom:10px;">⚠️</div><div style="font-size:14px;font-weight:700;color:#444;margin-bottom:6px;">No pudimos cargar esta sección</div><div style="font-size:12px;line-height:1.5;max-width:320px;margin:0 auto 14px;">Hubo un error técnico. Refrescá la página o avisale a tu coach.</div><div style="font-size:10px;color:#bbb;font-family:monospace;background:#fafafa;padding:8px 12px;border-radius:4px;display:inline-block;">'+(e&&e.message?e.message:'Error desconocido')+'</div></div>';
+  }
+}
+
 function _renderMain(sec){
   var el=document.getElementById('mc');
   // Secciones que siempre se refrescan (datos cambian con frecuencia)
-  if(sec==='semana'){el.innerHTML=_mc(rSemana());return;}
-  if(sec==='analisis'){el.innerHTML=_mc(rAnalisis());return;}
-  if(sec==='docs'){el.innerHTML=_mc(rDocs());return;}
-  if(sec==='sesion'){el.innerHTML=_mc(rSesionPage());return;}
+  if(sec==='semana'){el.innerHTML=_mc(_safeRender(rSemana,'semana'));return;}
+  if(sec==='analisis'){el.innerHTML=_mc(_safeRender(rAnalisis,'analisis'));return;}
+  if(sec==='docs'){el.innerHTML=_mc(_safeRender(rDocs,'docs'));return;}
+  if(sec==='sesion'){el.innerHTML=_mc(_safeRender(rSesionPage,'sesion'));return;}
   // Secciones cacheables — reutilizar si ya se renderizaron
   if(sec==='linkedin'){
     if(_secCache.linkedin){el.innerHTML=_mc(_secCache.linkedin);return;}
-    el.innerHTML=_mc(rLinkedIn());return;
+    el.innerHTML=_mc(_safeRender(rLinkedIn,'linkedin'));return;
   }
   if(sec==='recursos'){
     if(_secCache.recursos){el.innerHTML=_mc(_secCache.recursos);return;}
-    el.innerHTML=_mc(rRecursos());return;
+    el.innerHTML=_mc(_safeRender(rRecursos,'recursos'));return;
   }
   if(sec==='empleos'){
     if(_secCache.empleos){el.innerHTML=_secCache.empleos;return;}
@@ -3787,7 +3799,9 @@ function rLinkedIn(){
   var liAcerca=li.resumen_optimizado||C.linkedin_resumen||'';
   if(liTitular||liAcerca){
     var iniLi=(nombre||'').split(' ').filter(Boolean).slice(0,2).map(function(s){return s.charAt(0).toUpperCase();}).join('')||'?';
-    var fotoLi=_photo||C.foto_perfil||'';
+    // Foto: priorizamos C.foto_perfil (de Supabase), luego localStorage
+    var fotoLi='';
+    try{fotoLi=C.foto_perfil||localStorage.getItem('mj_foto_'+(E||''))||'';}catch(e){}
     o+='<div style="background:#fff;border-radius:14px;padding:14px 16px 16px;border:1.5px solid var(--border);">';
     o+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">';
     o+='<div style="font-size:13px;font-weight:800;color:var(--text);font-family:Montserrat,sans-serif;">📱 Vista previa — cómo te van a ver</div>';
