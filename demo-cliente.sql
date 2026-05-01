@@ -15,8 +15,14 @@
 
 -- ╔══════════════════════ INSERT (correr antes de la demo) ═══════════╗
 
+-- NOTA: Si tu tabla candidatos no tiene alguna columna que aparece abajo
+-- (ej: 'activo', 'linkedin_prefs', 'linkedin_resumen'), la creás antes con:
+--   ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT true;
+--   ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_prefs TEXT;
+--   ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_resumen TEXT;
+-- Estas columnas son seguras de agregar — el código ya las usa cuando existen.
 INSERT INTO candidatos (
-  email, nombre, semana_activa, activo,
+  email, nombre, semana_activa,
   sector, rol, ciudad, objetivo, experiencia, educacion, habilidades,
   carta_presentacion,
   linkedin_titular, linkedin_resumen, linkedin_texto, linkedin_analisis, linkedin_prefs,
@@ -25,7 +31,6 @@ INSERT INTO candidatos (
   'maria.demo@pathway.com',
   'María González',
   3,
-  true,
   'Tecnología',
   'Senior Marketing Manager',
   'Madrid',
