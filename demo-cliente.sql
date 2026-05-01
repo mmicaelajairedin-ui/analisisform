@@ -105,8 +105,25 @@ INSERT INTO candidatos (
 );
 
 
--- ╔════════════════ DELETE (correr DESPUÉS de la demo) ════════════════╗
--- Descomentá las 4 líneas y corré para limpiar todo.
+-- 4) Informe IA generado para María (aparece en tab Resumen)
+INSERT INTO informes (email, prev, data) VALUES (
+  'maria.demo@pathway.com',
+  'Marketing leader con 8+ años escalando B2B SaaS. Lista para rol de Director con foco internacional.',
+  '{"resumen_ejecutivo":"María González es una marketing leader con 8+ años de experiencia escalando operaciones B2B SaaS. Ha demostrado capacidad para combinar pensamiento estratégico con ejecución técnica hands-on, escalando TechFlow de €5M a €30M ARR. Su perfil es ideal para un rol de Director/a de Marketing en scaleup con foco internacional.","fortalezas":["Experiencia probada escalando ARR (de €5M a €30M)","Mix técnico-estratégico (HubSpot, Salesforce, OKRs)","Liderazgo de equipos multifuncionales","Visión internacional (España + LATAM)"],"areas_desarrollo":["Visibilidad personal en LinkedIn (posts, network)","Casos de uso publicados o conferencias","Networking activo con C-levels de scaleups target"],"plan_accion":[{"semana":1,"focus":"Diagnóstico y marca personal","acciones":["Pulir LinkedIn (headline + Acerca de)","Definir 5 objetivos profesionales SMART","Listar 20 empresas target"]},{"semana":2,"focus":"CV y posicionamiento","acciones":["Redactar CV optimizado para ATS","Cuantificar todos los logros con números","Adaptar carta de presentación al objetivo"]},{"semana":3,"focus":"Networking y outreach","acciones":["Conectar con 30 hiring managers","Mensaje outreach personalizado","Agendar 5 conversaciones informales"]},{"semana":4,"focus":"Aplicación y cierre","acciones":["Aplicar a 10 vacantes target","Preparar entrevistas (STAR + métricas)","Negociación de oferta"]}],"empresas_recomendadas":["Factorial","TravelPerk","Holded","JobAndTalent","Glovo Tech"]}'
+);
 
+-- 5) CV publicado de María (aparece en tab Documentos)
+INSERT INTO cv_publicados (email, codigo, contenido) VALUES (
+  'maria.demo@pathway.com',
+  'demo123',
+  '{"nombre":"María González","rol_objetivo":"Director de Marketing","objetivo":"Marketing leader con 8+ años escalando operaciones B2B SaaS. Especializada en demand generation, ABM y construcción de equipos high-performance.","contacto":{"tel":"+34 612 345 678","email":"maria.demo@pathway.com","ciudad":"Madrid, España","linkedin":"linkedin.com/in/mariademo"},"competencias":["Demand Generation","Account-Based Marketing","Liderazgo","Marketing Operations","Estrategia B2B SaaS"],"herramientas":["HubSpot","Salesforce","Tableau","GA4","LinkedIn Sales Navigator","Notion"],"idiomas":[{"idioma":"Español","nivel":"Nativo"},{"idioma":"Inglés","nivel":"C1"},{"idioma":"Francés","nivel":"B2"}],"experiencia":[{"titulo":"Senior Marketing Manager","empresa":"TechFlow SaaS","fecha":"2022 — Actual","ubicacion":"Madrid","bullets":["Lideré rediseño de funnel B2B reduciendo CAC en 28% y subiendo conversión MQL→SQL del 12% al 19%","Implementé estrategia de account-based marketing con HubSpot generando €1.2M en pipeline","Coordiné equipo de 6 personas con metodología OKR trimestral","Diseñé scoring de leads que aumentó velocidad de cierre en 35%"]},{"titulo":"Marketing Manager","empresa":"Globo Digital","fecha":"2019 — 2022","ubicacion":"Barcelona","bullets":["Escalé operación de marketing digital de €5M a €18M ARR en 3 años","Lideré expansión a 4 mercados LATAM (México, Colombia, Argentina, Chile)","Diseñé estrategia de SEO técnico que aumentó tráfico orgánico 340%","Construí equipo de 4 personas desde cero"]},{"titulo":"Marketing Specialist","empresa":"Visualizar Inc","fecha":"2017 — 2019","ubicacion":"Madrid","bullets":["Gestioné campañas paid con presupuesto de €500K/año, ROAS 4.2x","Lancé 12 product launches coordinando con equipos de producto y ventas"]}],"educacion":[{"titulo":"Master en Marketing Digital","institucion":"IE Business School","fecha":"2017"},{"titulo":"Licenciatura en Comunicación","institucion":"Universidad Autónoma de Madrid","fecha":"2015"}],"cursos":["Account-Based Marketing Certification · HubSpot Academy (2023)","Growth Marketing Bootcamp · Reforge (2022)"]}'
+);
+
+
+-- ╔════════════════ DELETE (correr DESPUÉS de la demo) ════════════════╗
+-- Descomentá las 5 líneas y corré para limpiar todo.
+
+-- DELETE FROM informes WHERE email = 'maria.demo@pathway.com';
+-- DELETE FROM cv_publicados WHERE email = 'maria.demo@pathway.com';
 -- DELETE FROM candidatos WHERE email IN ('maria.demo@pathway.com','carlos.demo@pathway.com');
 -- DELETE FROM usuarios WHERE email = 'demo.coach@pathway.com';
