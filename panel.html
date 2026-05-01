@@ -5971,13 +5971,28 @@ function _renderMensajes(){
     '</div>'+
     '<div id="panel-msgs"><div style="text-align:center;padding:2rem;color:var(--muted);">Cargando...</div></div>'+
   '</div>';
-  fetch(SB+'/rest/v1/candidatos?select=nombre,email,notas_coach&order=created_at.desc',{
+  // Filtramos por coach_id para que cada coach vea SOLO sus mensajes
+  // (sin esto, todos los coaches verían los mensajes de todos los candidatos
+  // — bug de privacidad). Mantenemos coach_id IS NULL para legacy data
+  // que no tiene coach asignado todavía (compat con `loadCands`).
+  var msgFilter='?select=nombre,email,notas_coach,coach_id&order=created_at.desc';
+  if(ME&&ME.id){
+    msgFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+  }
+  fetch(SB+'/rest/v1/candidatos'+msgFilter,{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
   }).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(function(rows){
     var container=document.getElementById('panel-msgs');
     if(!container)return;
+    // Defensa adicional: solo procesamos candidatos que estén en `cands`
+    // (la lista de candidatos del coach actual). Si por algún motivo el
+    // filtro server-side falla, esto previene fugas de mensajes.
+    var myEmails={};
+    (cands||[]).forEach(function(c){myEmails[(c.email||'').toLowerCase().trim()]=true;});
     var clients=[];
     (rows||[]).forEach(function(c){
+      var em=(c.email||'').toLowerCase().trim();
+      if(!myEmails[em])return; // skip candidatos que no son de este coach
       if(!c.notas_coach)return;
       try{
         var msgs=JSON.parse(c.notas_coach);
@@ -6055,7 +6070,13 @@ function _sendCoachMsg(){
 
 // Cargar badge de mensajes al iniciar
 function _checkMsgBadge(){
-  fetch(SB+'/rest/v1/candidatos?select=notas_coach&order=created_at.desc',{
+  // Filtrar por coach_id — sin esto el badge cuenta mensajes de TODOS los
+  // candidatos (de todos los coaches), no solo los del coach actual.
+  var badgeFilter='?select=notas_coach,coach_id&order=created_at.desc';
+  if(typeof ME!=='undefined'&&ME&&ME.id){
+    badgeFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+  }
+  fetch(SB+'/rest/v1/candidatos'+badgeFilter,{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
   }).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(function(rows){
     var count=0;
