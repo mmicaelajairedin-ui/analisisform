@@ -3790,13 +3790,36 @@ function rLinkedIn(){
   var li={}; try{li=JSON.parse(C.linkedin_analisis||localStorage.getItem('mj_li_'+(E||''))||'{}');}catch(e){}
   var prefs={}; try{prefs=JSON.parse(C.linkedin_prefs||localStorage.getItem('mj_liprefs_'+(E||''))||'{}');}catch(e){}
 
+  // Compatibilidad de formatos: el Pack Express usa NEW format
+  // (titular_propuesto, score_actual, etc.). El analizador del cliente usa
+  // OLD format (titular_optimizado, resumen_optimizado). Leemos ambos.
+  var liTitularProp=li.titular_propuesto||li.titular_optimizado||C.linkedin_titular||'';
+  var liTitularAct=li.titular_actual||'';
+  var liAcercaProp=li.acerca_de_propuesto||li.resumen_optimizado||C.linkedin_resumen||'';
+  var liAcercaAct=li.acerca_de_actual||'';
+  var liAptitudes=li.habilidades_sugeridas||li.aptitudes||[];
+  var liExpSug=li.experiencia_sugerencias||[];
+  var liPuntosFuertes=li.puntos_fuertes||[];
+  var liAreasMejora=li.areas_mejora||[];
+  var liScore=li.score_actual;
+
   var o='<div style="display:flex;flex-direction:column;gap:14px;">';
+
+  // ── SCORE BANNER (si la IA lo devolvió) ──
+  if(typeof liScore==='number'){
+    var scoreColor=liScore>=80?'#4a7c5f':liScore>=60?'#E9C46A':'#c0756e';
+    o+='<div style="display:flex;align-items:center;gap:14px;padding:16px 18px;background:linear-gradient(135deg,rgba(45,106,79,.06),rgba(82,183,136,.04));border-radius:14px;border:1.5px solid var(--border);">';
+    o+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:42px;font-weight:600;color:'+scoreColor+';line-height:1;">'+liScore+'<span style="font-size:16px;color:var(--muted);font-weight:400;">/100</span></div>';
+    o+='<div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;">Score actual de tu LinkedIn</div>';
+    o+='<div style="font-size:11px;color:var(--muted);">Aplicando todas las sugerencias podés llegar a 90+.</div></div>';
+    o+='</div>';
+  }
 
   // ── MOCKUP VISUAL ESTILO LINKEDIN ──
   // Sólo mostramos el preview cuando ya hay análisis (titular optimizado).
   // Antes de eso, sería raro mostrar un mockup vacío.
-  var liTitular=li.titular_optimizado||C.linkedin_titular||'';
-  var liAcerca=li.resumen_optimizado||C.linkedin_resumen||'';
+  var liTitular=liTitularProp;
+  var liAcerca=liAcercaProp;
   if(liTitular||liAcerca){
     var iniLi=(nombre||'').split(' ').filter(Boolean).slice(0,2).map(function(s){return s.charAt(0).toUpperCase();}).join('')||'?';
     // Foto: priorizamos C.foto_perfil (de Supabase), luego localStorage
@@ -3833,12 +3856,12 @@ function rLinkedIn(){
       o+='<div style="font-family:Arial,sans-serif;font-size:13px;color:rgba(0,0,0,.85);line-height:1.55;white-space:pre-wrap;">'+hh(liAcerca)+'</div>';
       o+='</div>';
     }
-    // Aptitudes
-    if(li.aptitudes&&li.aptitudes.length){
+    // Aptitudes (mockup)
+    if(liAptitudes&&liAptitudes.length){
       o+='<div style="border-top:1px solid #ebebeb;padding:14px 16px;">';
       o+='<div style="font-family:Arial,sans-serif;font-size:16px;font-weight:600;color:#000;margin-bottom:8px;">Aptitudes</div>';
       o+='<div style="display:flex;gap:5px;flex-wrap:wrap;">';
-      li.aptitudes.slice(0,8).forEach(function(s){o+='<span style="padding:3px 11px;background:#eef3f8;color:#000;border-radius:100px;font-family:Arial,sans-serif;font-size:12px;">'+hh(s)+'</span>';});
+      liAptitudes.slice(0,8).forEach(function(s){o+='<span style="padding:3px 11px;background:#eef3f8;color:#000;border-radius:100px;font-family:Arial,sans-serif;font-size:12px;">'+hh(s)+'</span>';});
       o+='</div></div>';
     }
     o+='</div>';
@@ -3869,13 +3892,34 @@ function rLinkedIn(){
     return s;
   }
 
-  // ── 1. Titular ──
-  o+=cpSec('li-titular',t('li_titular'),t('li_titular_desc'),
-    li.titular_optimizado||C.linkedin_titular||'',t('li_pending'));
+  // Helper: bloque comparativa antes/después (estilo Pack Express).
+  // Si hay 'actual' (lo que tiene hoy), lo mostramos tachado en rojo.
+  // 'propuesto' va abajo en verde, listo para copiar.
+  function comparativaBox(id,titulo,desc,actual,propuesto,btnLabel){
+    var s='<div style="background:#fff;border-radius:14px;padding:16px 18px;border:1.5px solid var(--border);">';
+    s+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">';
+    s+='<div><div style="font-size:13px;font-weight:800;color:#000;font-family:Montserrat,sans-serif;">'+titulo+'</div>';
+    if(desc)s+='<div style="font-size:10px;color:var(--muted);margin-top:2px;">'+desc+'</div>';
+    s+='</div>';
+    if(propuesto)s+='<button onclick="liCopiar(\''+id+'\')" style="padding:6px 14px;background:#0a66c2;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:Montserrat,sans-serif;white-space:nowrap;">📋 '+btnLabel+'</button>';
+    s+='</div>';
+    if(actual&&actual.trim()){
+      s+='<div style="font-size:10px;color:#c0756e;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px;">Lo que tienes ahora</div>';
+      s+='<div style="font-size:12px;color:#999;text-decoration:line-through;line-height:1.55;background:#fdf3f2;padding:9px 12px;border-radius:6px;border-left:3px solid #c0756e;margin-bottom:10px;white-space:pre-wrap;">'+hh(actual)+'</div>';
+    }
+    s+='<div style="font-size:10px;color:#4a7c5f;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px;">Pega esto en su lugar</div>';
+    s+='<div id="'+id+'" style="font-size:13px;color:'+(propuesto?'var(--text)':'#999')+';line-height:1.6;background:'+(propuesto?'rgba(82,183,136,.06)':'#f7f7f7')+';padding:10px 14px;border-radius:6px;border-left:3px solid '+(propuesto?'#4a7c5f':'#ddd')+';white-space:pre-wrap;">'+(propuesto?hh(propuesto):'Aparece después de analizar')+'</div>';
+    s+='</div>';
+    return s;
+  }
 
-  // ── 2. Acerca de ──
-  o+=cpSec('li-acerca',t('li_about'),t('li_about_desc'),
-    li.resumen_optimizado||C.linkedin_resumen||'',t('li_pending'));
+  // ── 1. Titular (antes/después) ──
+  o+=comparativaBox('li-titular',t('li_titular'),t('li_titular_desc'),
+    liTitularAct,liTitularProp,'Copiar titular');
+
+  // ── 2. Acerca de (antes/después) ──
+  o+=comparativaBox('li-acerca',t('li_about'),t('li_about_desc'),
+    liAcercaAct,liAcercaProp,'Copiar Acerca de');
 
   // ── 3. Experiencia (bullets) ──
   o+=cpSec('li-experiencia',t('li_exp'),t('li_exp_desc'),
