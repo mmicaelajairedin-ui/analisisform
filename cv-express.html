@@ -430,6 +430,20 @@ h1 .accent{color:var(--pw-sendero);}
     try{emailPaidGlobal=localStorage.getItem('mj_express_email')||'';}catch(e){}
   }
 
+  // ?regen=1 — viene del link de Stripe del suplemento €10. Cliente pagó
+  // para regenerar con info nueva: limpiamos el Pack anterior y mostramos
+  // el form en blanco para que pueda llenarlo de nuevo. Mantenemos el email
+  // así la nueva generación queda asociada al mismo cliente y reemplaza la
+  // vieja en Supabase via upsert.
+  var regen=qs.get('regen')==='1';
+  if(regen){
+    try{
+      ['mj_express_cv','mj_express_carta','mj_express_linkedin','mj_express_foto','mj_express_nombre','mj_express_li_url','mj_express_carta_html','mj_express_carta_empresa','mj_express_carta_asunto','mj_express_carta_fecha'].forEach(function(k){
+        localStorage.removeItem(k);
+      });
+    }catch(e){}
+  }
+
   function showResultState(){
     var hdr=document.getElementById('post-pay-header');
     if(hdr)hdr.style.display='none';
@@ -452,28 +466,43 @@ h1 .accent{color:var(--pw-sendero);}
       if(ce)ce.textContent='Recibís los documentos a '+emailPaidGlobal;
     }
 
-    // 1) Intentar hidratar de localStorage primero (rápido, sin red)
+    // 1) Intentar hidratar de localStorage primero (rápido, sin red).
+    //    PERO solo si el email guardado coincide con el del URL — si no,
+    //    el localStorage es de OTRO cliente (ej: usuario está testeando
+    //    con un email distinto en la misma máquina) y hay que descartarlo.
     var hidratadoLocal=false;
     try{
-      var savedCv=localStorage.getItem('mj_express_cv');
-      var savedCarta=localStorage.getItem('mj_express_carta');
-      var savedLi=localStorage.getItem('mj_express_linkedin');
-      if(savedCv && savedCarta){
-        generated={
-          cv_optimizado: JSON.parse(savedCv),
-          carta: savedCarta,
-          linkedin_analisis: savedLi?JSON.parse(savedLi):null
-        };
-        var savedFoto=localStorage.getItem('mj_express_foto');
-        if(savedFoto)window._fotoData=savedFoto;
-        showResultState();
-        hidratadoLocal=true;
+      var savedEmail=(localStorage.getItem('mj_express_email')||'').toLowerCase().trim();
+      var urlEmail=(emailPaidGlobal||'').toLowerCase().trim();
+      var emailMatch=!savedEmail||!urlEmail||savedEmail===urlEmail;
+      if(!emailMatch){
+        // Limpiar localStorage del cliente anterior para no contaminar
+        ['mj_express_cv','mj_express_carta','mj_express_linkedin','mj_express_foto','mj_express_nombre','mj_express_email','mj_express_li_url','mj_express_carta_html','mj_express_carta_empresa','mj_express_carta_asunto','mj_express_carta_fecha'].forEach(function(k){
+          try{localStorage.removeItem(k);}catch(e){}
+        });
+      } else {
+        var savedCv=localStorage.getItem('mj_express_cv');
+        var savedCarta=localStorage.getItem('mj_express_carta');
+        var savedLi=localStorage.getItem('mj_express_linkedin');
+        if(savedCv && savedCarta){
+          generated={
+            cv_optimizado: JSON.parse(savedCv),
+            carta: savedCarta,
+            linkedin_analisis: savedLi?JSON.parse(savedLi):null
+          };
+          var savedFoto=localStorage.getItem('mj_express_foto');
+          if(savedFoto)window._fotoData=savedFoto;
+          showResultState();
+          hidratadoLocal=true;
+        }
       }
     }catch(e){console.warn('hidratar localStorage falló',e);}
 
     // 2) Si NO hay localStorage pero sí email, buscar en Supabase
-    //    (escenario: cliente entra desde otro dispositivo o limpió cache)
-    if(!hidratadoLocal && emailPaidGlobal){
+    //    (escenario: cliente entra desde otro dispositivo o limpió cache).
+    //    Saltar este paso si regen=1 — el cliente pagó el suplemento para
+    //    regenerar y queremos el form en blanco, no que aparezca el Pack viejo.
+    if(!hidratadoLocal && emailPaidGlobal && !regen){
       sbLoadByEmail(emailPaidGlobal).then(function(row){
         if(!row || !row.cv_optimizado)return;
         try{
