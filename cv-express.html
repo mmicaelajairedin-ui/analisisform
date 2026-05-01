@@ -505,6 +505,56 @@ h1 .accent{color:var(--pw-sendero);}
     });
   }
 
+  // ── Persistencia del form en localStorage ───────────────────
+  // Al refrescar la página, el usuario no debería perder lo que ya
+  // escribió. Guardamos cada input on-blur en localStorage y al cargar
+  // (modo post-pago) los restauramos.
+  var FORM_FIELDS=['objetivo','cv-texto','linkedin-url','linkedin-texto'];
+  function saveFormState(){
+    try{
+      FORM_FIELDS.forEach(function(id){
+        var el=document.getElementById(id);
+        if(el)localStorage.setItem('mj_express_form_'+id, el.value||'');
+      });
+    }catch(e){}
+  }
+  function restoreFormState(){
+    try{
+      FORM_FIELDS.forEach(function(id){
+        var v=localStorage.getItem('mj_express_form_'+id);
+        var el=document.getElementById(id);
+        if(el && v){el.value=v;}
+      });
+      // Restaurar foto si existe
+      var savedFoto=localStorage.getItem('mj_express_foto');
+      if(savedFoto && fotoPreview && !window._fotoData){
+        window._fotoData=savedFoto;
+        fotoPreview.innerHTML='<img src="'+savedFoto+'" alt="" style="width:100%;height:100%;object-fit:cover;">';
+        if(fotoRemove)fotoRemove.style.display='inline-block';
+      }
+    }catch(e){}
+  }
+  // Bind input listeners (debounced via blur)
+  FORM_FIELDS.forEach(function(id){
+    var el=document.getElementById(id);
+    if(el)el.addEventListener('blur',saveFormState);
+  });
+  // Restaurar al cargar (solo si estamos en modo post-pago — paid=1)
+  if(paid)restoreFormState();
+  // Cuando la foto cambia, persistirla
+  if(fotoInput){
+    fotoInput.addEventListener('change',function(){
+      setTimeout(function(){
+        if(window._fotoData)try{localStorage.setItem('mj_express_foto', window._fotoData);}catch(e){}
+      },200);
+    });
+  }
+  if(fotoRemove){
+    fotoRemove.addEventListener('click',function(){
+      try{localStorage.removeItem('mj_express_foto');}catch(e){}
+    });
+  }
+
   // Submit del form: valida → call Edge Function → muestra resultado
   var form=document.getElementById('cv-form');
   if(form){
