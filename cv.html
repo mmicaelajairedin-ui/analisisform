@@ -436,6 +436,48 @@ function goBack(){
   else showMsg('✨','Sin sesión','Accedé desde tu portal');
 })();
 
+// Normaliza la respuesta del Edge Function para que coincida con el formato
+// que render() espera. La IA a veces devuelve campos con nombres distintos
+// (rol/logros vs titulo/bullets) o cursos como strings con formato roto.
+function normalizeExpressCv(d){
+  if(!d||typeof d!=='object')return d;
+  if(Array.isArray(d.experiencia)){
+    d.experiencia=d.experiencia.map(function(e){
+      if(!e||typeof e!=='object')return e;
+      if(!e.titulo&&e.rol)e.titulo=e.rol;
+      if((!Array.isArray(e.bullets)||!e.bullets.length)&&Array.isArray(e.logros))e.bullets=e.logros;
+      return e;
+    });
+  }
+  if(Array.isArray(d.cursos)){
+    d.cursos=d.cursos.map(function(c){
+      if(typeof c==='string'){
+        var s=c.trim();
+        // Fix JSON roto tipo ["titulo":"X","institucion":"Y","fecha":"-"]
+        if(s.charAt(0)==='['&&s.charAt(s.length-1)===']'&&s.indexOf('":')>0){
+          try{c=JSON.parse('{'+s.slice(1,-1)+'}');}catch(e){return s;}
+        } else if(s.charAt(0)==='{'){
+          try{c=JSON.parse(s);}catch(e){return s;}
+        } else {
+          return s;
+        }
+      }
+      if(c&&typeof c==='object'){
+        var nom=c.nombre||c.titulo||'';
+        var inst=c.institucion||'';
+        var fec=c.fecha||'';
+        var fecOk=fec&&fec!=='-'&&fec!=='—'&&fec!=='---';
+        if(inst&&fecOk)return nom+' · '+inst+' ('+fec+')';
+        if(inst)return nom+' · '+inst;
+        if(fecOk)return nom+' ('+fec+')';
+        return nom||'';
+      }
+      return c;
+    }).filter(Boolean);
+  }
+  return d;
+}
+
 // Carga datos del Pack Express desde sessionStorage (sin Supabase).
 // Acepta:
 //   mj_express_cv     — JSON estructurado del cv (formato _d que render() espera)
@@ -458,7 +500,7 @@ function cargarExpress(){
             showMsg('⚠️','Sin datos','No encontramos tu CV. Volvé a cv-express.html y completá el formulario.');
             return;
           }
-          _d=row.cv_optimizado;
+          _d=normalizeExpressCv(row.cv_optimizado);
           if(row.foto){_photo=row.foto;setFotoUI(_photo);localStorage.setItem('mj_express_foto',row.foto);}
           localStorage.setItem('mj_express_cv', JSON.stringify(_d));
           _email=emExp;
@@ -474,7 +516,7 @@ function cargarExpress(){
       return;
     }
     if(!rawCv){showMsg('⚠️','Sin datos','Volvé a cv-express.html y completá el formulario.');return;}
-    _d=JSON.parse(rawCv);
+    _d=normalizeExpressCv(JSON.parse(rawCv));
     // Validación: si _d no tiene .nombre, la estructura no es la que cv.html
     // espera. Probablemente el Edge Function no fue re-deployado y devolvió
     // markdown en lugar de JSON estructurado.
@@ -759,7 +801,20 @@ function buildPage(d,expList,isFirst,eduList){
     if(cursos.length){
       o+='<div class="sl"><div class="sl-h">Formación complementaria</div>';
       cursos.forEach(function(c){
-        o+='<div class="curso"><div class="curso-n" contenteditable="false">'+esc(typeof c==='string'?c:c.nombre||c)+'</div></div>';
+        var txt='';
+        if(typeof c==='string'){txt=c;}
+        else if(c&&typeof c==='object'){
+          var nom=c.nombre||c.titulo||'';
+          var inst=c.institucion||'';
+          var fec=c.fecha||'';
+          var fecOk=fec&&fec!=='-'&&fec!=='—'&&fec!=='---';
+          if(inst&&fecOk)txt=nom+' · '+inst+' ('+fec+')';
+          else if(inst)txt=nom+' · '+inst;
+          else if(fecOk)txt=nom+' ('+fec+')';
+          else txt=nom;
+        }
+        if(!txt)return;
+        o+='<div class="curso"><div class="curso-n" contenteditable="false">'+esc(txt)+'</div></div>';
       });
       o+='</div>';
     }
@@ -804,10 +859,14 @@ function buildPage(d,expList,isFirst,eduList){
   if(expList.length){
     o+='<div class="sec"><div class="sec-h">Experiencia profesional</div>';
     expList.forEach(function(e,i){
+      var rolTxt=e.titulo||e.rol||'';
+      var sub=[e.empresa||'',e.fecha||'',e.ubicacion||''].filter(Boolean).join(' · ');
+      var bullets=arr(e.bullets);
+      if(!bullets.length)bullets=arr(e.logros);
       o+='<div class="exp">';
-      o+='<div class="exp-t" contenteditable="false">'+esc(e.titulo||'')+'</div>';
-      if(e.empresa)o+='<div class="exp-s" contenteditable="false">'+esc(e.empresa)+'</div>';
-      arr(e.bullets).slice(0,5).forEach(function(b,bi){
+      o+='<div class="exp-t" contenteditable="false">'+esc(rolTxt)+'</div>';
+      if(sub)o+='<div class="exp-s" contenteditable="false">'+esc(sub)+'</div>';
+      bullets.slice(0,5).forEach(function(b,bi){
         o+='<div class="exp-b" data-expidx="'+i+'" data-bidx="'+bi+'"><div class="exp-b-dot"></div><div class="exp-b-txt" contenteditable="false">'+boldKw(esc(b))+'</div><button class="exp-b-del" onclick="delBullet(this)" title="Eliminar bullet">×</button></div>';
       });
       o+='</div>';
