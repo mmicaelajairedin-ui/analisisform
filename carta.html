@@ -253,18 +253,30 @@ function volver(){
 }
 
 // Carga la carta del Pack Express desde localStorage (sin Supabase).
+// Estrategia: si tenemos un snapshot HTML completo (mj_express_carta_html)
+// lo usamos directo para preservar TODA la edición del usuario. Si no,
+// reconstruimos desde texto plano + nombre.
 function cargarExpress(){
   try{
-    var carta=localStorage.getItem('mj_express_carta')||'';
     var nombre=localStorage.getItem('mj_express_nombre')||'';
     _email=localStorage.getItem('mj_express_email')||'express@cliente.com';
     _cand={
       nombre: nombre,
       email: _email,
-      carta_presentacion: carta
+      carta_presentacion: localStorage.getItem('mj_express_carta')||'',
+      carta_empresa: localStorage.getItem('mj_express_carta_empresa')||'',
+      carta_asunto: localStorage.getItem('mj_express_carta_asunto')||''
     };
     var tbName=document.getElementById('tb-name');
     if(tbName)tbName.textContent=nombre;
+
+    // Si existe snapshot HTML del editor (post-edición), usarlo directo
+    var savedHtml=localStorage.getItem('mj_express_carta_html');
+    if(savedHtml && savedHtml.length>50){
+      document.getElementById('carta-paper').innerHTML=savedHtml;
+      return;
+    }
+    // Sino, render fresh desde el texto
     renderCarta();
   }catch(e){
     console.error('[carta.html express] error',e);
@@ -440,12 +452,27 @@ function guardar(){
     carta_asunto: asuntoTexto
   };
 
-  // En express mode no hay candidato en Supabase — guardar en sessionStorage
-  // para que persista mientras la pestaña esté abierta. El usuario imprime/
-  // descarga PDF como acción final.
+  // En express mode no hay candidato en Supabase — guardar TODO en
+  // localStorage (persiste tras refresh y entre tabs). Incluye nombre,
+  // empresa, asunto, fecha y el HTML completo de la carta para que al
+  // refrescar el editor se reconstruya idéntico (no solo el texto plano).
   if(_expressMode){
-    try{localStorage.setItem('mj_express_carta', cartaTexto);}catch(e){}
-    st.textContent='✓ Guardado en sesión';st.style.color='#4a7c5f';
+    try{
+      // Capturar el nombre y datos de cabecera que el usuario puede haber
+      // editado dentro del editor (no solo el form inicial).
+      var nombreEl=paper.querySelector('.cd-nombre');
+      var fechaEl=paper.querySelector('.cd-fecha');
+      var nombreActual=nombreEl?nombreEl.textContent.trim():'';
+      var fechaActual=fechaEl?fechaEl.textContent.trim():'';
+      localStorage.setItem('mj_express_carta', cartaTexto);
+      if(empresaNombre)localStorage.setItem('mj_express_carta_empresa', empresaNombre);
+      if(asuntoTexto)localStorage.setItem('mj_express_carta_asunto', asuntoTexto);
+      if(nombreActual)localStorage.setItem('mj_express_nombre', nombreActual);
+      if(fechaActual)localStorage.setItem('mj_express_carta_fecha', fechaActual);
+      // HTML completo de la carta: snapshot exacto para restaurar al refrescar
+      localStorage.setItem('mj_express_carta_html', paper.innerHTML);
+    }catch(e){console.warn('[carta express] no pude persistir', e);}
+    st.textContent='✓ Guardado';st.style.color='#4a7c5f';
     setTimeout(function(){st.textContent='';},2500);
     return;
   }
