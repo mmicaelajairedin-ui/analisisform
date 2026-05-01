@@ -136,7 +136,9 @@ Devolverás JSON ESTRICTO con 3 campos:
   "carta": "<Carta de presentación texto plano, 3-4 párrafos>",
   "linkedin_analisis": {
     "score_actual": 65,
+    "titular_actual": "<extraído del linkedin_texto, lo que tiene HOY el candidato>",
     "titular_propuesto": "<titular optimizado, max 220 chars>",
+    "acerca_de_actual": "<extraído del linkedin_texto, máx 800 chars>",
     "acerca_de_propuesto": "<sección 'Acerca de' optimizada, max 1500 chars>",
     "puntos_fuertes": ["punto 1", "punto 2", "punto 3"],
     "areas_mejora": ["área 1", "área 2", "área 3"],
@@ -166,12 +168,14 @@ CARTA DE PRESENTACIÓN:
 
 LINKEDIN ANÁLISIS:
 - score_actual: 0-100 evaluando el LinkedIn actual (titular + acerca de + completitud)
+- titular_actual: extraé del linkedin_texto la headline actual del candidato. Si no se identifica claramente, devolvé "" (string vacío)
 - titular_propuesto: ALINEADO al objetivo, no "Buscando nuevas oportunidades"
+- acerca_de_actual: extraé del linkedin_texto la sección "Acerca de" / "About" actual (max 800 chars). Si no aparece, devolvé ""
 - acerca_de_propuesto: storytelling que conecte experiencia → objetivo
 - puntos_fuertes: 2-3 cosas concretas que ya hace bien
 - areas_mejora: 2-3 cosas ACCIONABLES y específicas
 - habilidades_sugeridas: 5-8 keywords relevantes
-- experiencia_sugerencias: 2-3 mejoras concretas
+- experiencia_sugerencias: 2-3 mejoras concretas con formato "ANTES → DESPUÉS" cuando sea posible (ej: "En 'Director de Marketing en X' (2020-2023) cambiá 'Lideré el equipo' por 'Lideré equipo de 8 con foco en growth, +40% leads MQL en 12 meses'")
 
 OUTPUT: JSON estricto, sin markdown wrapper, sin texto antes ni después. Solo el JSON.`;
 
