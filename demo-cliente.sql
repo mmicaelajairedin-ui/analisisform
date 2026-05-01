@@ -15,12 +15,26 @@
 
 -- ╔══════════════════════ INSERT (correr antes de la demo) ═══════════╗
 
--- NOTA: Si tu tabla candidatos no tiene alguna columna que aparece abajo
--- (ej: 'activo', 'linkedin_prefs', 'linkedin_resumen'), la creás antes con:
---   ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT true;
---   ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_prefs TEXT;
---   ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_resumen TEXT;
--- Estas columnas son seguras de agregar — el código ya las usa cuando existen.
+-- ALTER TABLE pre-flight: agrega columnas opcionales que el código usa
+-- pero pueden no existir en bases viejas. IF NOT EXISTS = no rompe si
+-- ya existen. Seguro de correr siempre.
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT true;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS sector TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS rol TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS ciudad TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS objetivo TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS experiencia TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS educacion TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS habilidades TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS carta_presentacion TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_titular TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_resumen TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_texto TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_analisis TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_prefs TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS notas_coach TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS sesiones_registro TEXT;
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS foto_perfil TEXT;
 INSERT INTO candidatos (
   email, nombre, semana_activa,
   sector, rol, ciudad, objetivo, experiencia, educacion, habilidades,
