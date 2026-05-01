@@ -258,12 +258,57 @@ function volver(){
 // reconstruimos desde texto plano + nombre.
 function cargarExpress(){
   try{
+    var emExp=localStorage.getItem('mj_express_email')||'';
+    var cartaLocal=localStorage.getItem('mj_express_carta')||'';
+    // Si no hay carta en localStorage pero sí email, cargar de Supabase
+    // (cliente entró desde otro dispositivo o limpió cache).
+    if(!cartaLocal && emExp){
+      document.getElementById('carta-paper').innerHTML='<div style="padding:3rem;text-align:center;color:#999;font-family:Montserrat,sans-serif;font-size:13px;">Recuperando tu carta...</div>';
+      fetch(SB+'/rest/v1/cv_express?email=eq.'+encodeURIComponent(emExp.toLowerCase().trim())+'&select=*&limit=1',{
+        headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+      }).then(function(r){return r.ok?r.json():null;})
+        .then(function(rows){
+          var row=rows&&rows[0];
+          if(!row||!row.carta){
+            document.getElementById('carta-paper').innerHTML='<div style="padding:3rem;text-align:center;color:#999;font-family:Montserrat,sans-serif;font-size:13px;">No encontramos tu carta. Volvé a cv-express.html y completá el formulario.</div>';
+            return;
+          }
+          // Mirror a localStorage para que ediciones futuras tengan base
+          localStorage.setItem('mj_express_carta', row.carta);
+          if(row.nombre)localStorage.setItem('mj_express_nombre', row.nombre);
+          if(row.carta_html)localStorage.setItem('mj_express_carta_html', row.carta_html);
+          if(row.carta_empresa)localStorage.setItem('mj_express_carta_empresa', row.carta_empresa);
+          if(row.carta_asunto)localStorage.setItem('mj_express_carta_asunto', row.carta_asunto);
+          if(row.carta_fecha)localStorage.setItem('mj_express_carta_fecha', row.carta_fecha);
+          // Render
+          _email=emExp;
+          _cand={
+            nombre: row.nombre||'',
+            email: _email,
+            carta_presentacion: row.carta||'',
+            carta_empresa: row.carta_empresa||'',
+            carta_asunto: row.carta_asunto||''
+          };
+          var tbName=document.getElementById('tb-name');
+          if(tbName)tbName.textContent=row.nombre||'';
+          if(row.carta_html && row.carta_html.length>50){
+            document.getElementById('carta-paper').innerHTML=row.carta_html;
+          } else {
+            renderCarta();
+          }
+        }).catch(function(e){
+          console.error('[carta.html express] cargar supabase',e);
+          document.getElementById('carta-paper').innerHTML='<div style="padding:3rem;text-align:center;color:#999;font-family:Montserrat,sans-serif;font-size:13px;">Error al recuperar la carta. Volvé a generar.</div>';
+        });
+      return;
+    }
+
     var nombre=localStorage.getItem('mj_express_nombre')||'';
-    _email=localStorage.getItem('mj_express_email')||'express@cliente.com';
+    _email=emExp||'express@cliente.com';
     _cand={
       nombre: nombre,
       email: _email,
-      carta_presentacion: localStorage.getItem('mj_express_carta')||'',
+      carta_presentacion: cartaLocal,
       carta_empresa: localStorage.getItem('mj_express_carta_empresa')||'',
       carta_asunto: localStorage.getItem('mj_express_carta_asunto')||''
     };
@@ -472,6 +517,28 @@ function guardar(){
       // HTML completo de la carta: snapshot exacto para restaurar al refrescar
       localStorage.setItem('mj_express_carta_html', paper.innerHTML);
     }catch(e){console.warn('[carta express] no pude persistir', e);}
+    // Sincronizar a Supabase (tabla cv_express) con email como key
+    // para que el cliente recupere su carta desde otro dispositivo.
+    var emExp=_email||localStorage.getItem('mj_express_email')||'';
+    if(emExp && emExp!=='express@cliente.com'){
+      try{
+        var hExp={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal,resolution=merge-duplicates'};
+        fetch(SB+'/rest/v1/cv_express',{
+          method:'POST',
+          headers:hExp,
+          body:JSON.stringify({
+            email:emExp.toLowerCase().trim(),
+            carta:cartaTexto,
+            carta_html:paper.innerHTML,
+            carta_empresa:empresaNombre||null,
+            carta_asunto:asuntoTexto||null,
+            carta_fecha:fechaActual||null,
+            nombre:nombreActual||null,
+            updated_at:new Date().toISOString()
+          })
+        }).catch(function(e){console.warn('[carta express] supabase upsert',e);});
+      }catch(e){console.warn('[carta express] supabase upsert',e);}
+    }
     st.textContent='✓ Guardado';st.style.color='#4a7c5f';
     setTimeout(function(){st.textContent='';},2500);
     return;

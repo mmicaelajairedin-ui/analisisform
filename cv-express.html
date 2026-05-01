@@ -374,15 +374,64 @@ h1 .accent{color:var(--pw-sendero);}
   var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
   var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
   var EDGE=SB+'/functions/v1/generar-informe';
+  var REST=SB+'/rest/v1/cv_express';
 
   // Resultado generado — guardado en memoria para los botones de descarga
   var generated=null;
   var emailPaidGlobal='';
 
+  // Helpers Supabase (tabla cv_express, key = email).
+  // Persistir en cloud da acceso 24hs desde cualquier dispositivo:
+  // si el cliente cierra el navegador, borra cache, o entra desde el
+  // celular, recupera CV/carta/linkedin con su email.
+  function sbHeaders(){
+    return {
+      'apikey':KEY,
+      'Authorization':'Bearer '+KEY,
+      'Content-Type':'application/json',
+      'Prefer':'return=representation,resolution=merge-duplicates'
+    };
+  }
+  function sbLoadByEmail(email){
+    if(!email)return Promise.resolve(null);
+    return fetch(REST+'?email=eq.'+encodeURIComponent(email)+'&select=*&limit=1',{
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+    }).then(function(r){return r.ok?r.json():null;})
+      .then(function(rows){return (rows&&rows[0])||null;})
+      .catch(function(e){console.warn('[cv-express] sbLoadByEmail falló',e);return null;});
+  }
+  function sbUpsert(email, fields){
+    if(!email)return Promise.resolve(false);
+    var body=Object.assign({email:email, updated_at:new Date().toISOString()}, fields||{});
+    return fetch(REST,{
+      method:'POST',
+      headers:sbHeaders(),
+      body:JSON.stringify(body)
+    }).then(function(r){
+      if(!r.ok){console.warn('[cv-express] sbUpsert',r.status); return false;}
+      return true;
+    }).catch(function(e){console.warn('[cv-express] sbUpsert falló',e);return false;});
+  }
+  // Expuesto globalmente para que cv.html y carta.html (modo express)
+  // puedan sincronizar sus ediciones a Supabase.
+  window._expressSb={load:sbLoadByEmail, upsert:sbUpsert};
+
   // Detectar si viene de Stripe con pago confirmado
   var qs=new URLSearchParams(window.location.search);
   var paid=qs.get('paid')==='1';
   emailPaidGlobal=qs.get('email')||'';
+  // Fallback: si no viene en URL, usar el email del último pago guardado
+  if(!emailPaidGlobal){
+    try{emailPaidGlobal=localStorage.getItem('mj_express_email')||'';}catch(e){}
+  }
+
+  function showResultState(){
+    var hdr=document.getElementById('post-pay-header');
+    if(hdr)hdr.style.display='none';
+    var formCard=document.getElementById('form-card');
+    if(formCard)formCard.style.display='none';
+    document.getElementById('result-state').style.display='block';
+  }
 
   if(paid){
     document.getElementById('mode-pre-pay').style.display='none';
@@ -392,11 +441,8 @@ h1 .accent{color:var(--pw-sendero);}
       if(ce)ce.textContent='Recibís los documentos a '+emailPaidGlobal;
     }
 
-    // Hidratar `generated` desde localStorage si el usuario ya generó
-    // antes y está volviendo a esta página (ej. desde el editor de cv
-    // o carta tras hacer click en "Volver"). Si encontramos los 3 docs,
-    // saltamos el form y mostramos result-state directamente para que
-    // pueda re-abrir cualquier editor sin volver a generar.
+    // 1) Intentar hidratar de localStorage primero (rápido, sin red)
+    var hidratadoLocal=false;
     try{
       var savedCv=localStorage.getItem('mj_express_cv');
       var savedCarta=localStorage.getItem('mj_express_carta');
@@ -407,17 +453,39 @@ h1 .accent{color:var(--pw-sendero);}
           carta: savedCarta,
           linkedin_analisis: savedLi?JSON.parse(savedLi):null
         };
-        // Restaurar foto si existe
         var savedFoto=localStorage.getItem('mj_express_foto');
         if(savedFoto)window._fotoData=savedFoto;
-        // Mostrar result-state directamente, ocultar form-card y header
-        var hdr=document.getElementById('post-pay-header');
-        if(hdr)hdr.style.display='none';
-        var formCard=document.getElementById('form-card');
-        if(formCard)formCard.style.display='none';
-        document.getElementById('result-state').style.display='block';
+        showResultState();
+        hidratadoLocal=true;
       }
     }catch(e){console.warn('hidratar localStorage falló',e);}
+
+    // 2) Si NO hay localStorage pero sí email, buscar en Supabase
+    //    (escenario: cliente entra desde otro dispositivo o limpió cache)
+    if(!hidratadoLocal && emailPaidGlobal){
+      sbLoadByEmail(emailPaidGlobal).then(function(row){
+        if(!row || !row.cv_optimizado)return;
+        try{
+          generated={
+            cv_optimizado: row.cv_optimizado,
+            carta: row.carta||'',
+            linkedin_analisis: row.linkedin_analisis||null
+          };
+          // Espejar a localStorage para que cv.html y carta.html los lean
+          localStorage.setItem('mj_express_cv', JSON.stringify(row.cv_optimizado));
+          if(row.carta)localStorage.setItem('mj_express_carta', row.carta);
+          if(row.linkedin_analisis)localStorage.setItem('mj_express_linkedin', JSON.stringify(row.linkedin_analisis));
+          if(row.foto){localStorage.setItem('mj_express_foto', row.foto); window._fotoData=row.foto;}
+          if(row.nombre)localStorage.setItem('mj_express_nombre', row.nombre);
+          if(row.carta_html)localStorage.setItem('mj_express_carta_html', row.carta_html);
+          if(row.carta_empresa)localStorage.setItem('mj_express_carta_empresa', row.carta_empresa);
+          if(row.carta_asunto)localStorage.setItem('mj_express_carta_asunto', row.carta_asunto);
+          if(row.carta_fecha)localStorage.setItem('mj_express_carta_fecha', row.carta_fecha);
+          localStorage.setItem('mj_express_email', emailPaidGlobal);
+          showResultState();
+        }catch(e){console.warn('[cv-express] hidratar Supabase falló',e);}
+      });
+    }
   }
 
   function setError(msg){
@@ -615,15 +683,27 @@ h1 .accent{color:var(--pw-sendero);}
         // Persistir en localStorage para que si el usuario vuelve a esta
         // página después de editar en cv.html/carta.html no tenga que
         // re-generar (perdería €40 si el flow lo obliga a re-pagar).
+        var nom=(data.cv_optimizado&&data.cv_optimizado.nombre)||'';
         try{
           if(data.cv_optimizado)localStorage.setItem('mj_express_cv', JSON.stringify(data.cv_optimizado));
           if(data.carta)localStorage.setItem('mj_express_carta', data.carta);
           if(data.linkedin_analisis)localStorage.setItem('mj_express_linkedin', JSON.stringify(data.linkedin_analisis));
           if(window._fotoData)localStorage.setItem('mj_express_foto', window._fotoData);
-          var nom=(data.cv_optimizado&&data.cv_optimizado.nombre)||'';
           if(nom)localStorage.setItem('mj_express_nombre', nom);
           if(emailPaidGlobal)localStorage.setItem('mj_express_email', emailPaidGlobal);
         }catch(e){console.warn('persist localStorage falló',e);}
+        // Persistir TAMBIÉN en Supabase con email como key.
+        // Esto da acceso 24hs desde cualquier dispositivo.
+        if(emailPaidGlobal){
+          sbUpsert(emailPaidGlobal,{
+            cv_optimizado:data.cv_optimizado||null,
+            carta:data.carta||null,
+            linkedin_analisis:data.linkedin_analisis||null,
+            foto:window._fotoData||null,
+            nombre:nom||null,
+            objetivo:objetivo||null
+          });
+        }
         completeProgress(function(){
           document.getElementById('loading-state').style.display='none';
           document.getElementById('result-state').style.display='block';
