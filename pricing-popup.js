@@ -1,8 +1,10 @@
 // Pathway — Popup de pricing con email capture y oferta de 1 mes gratis.
 //
-// Se dispara la primera vez que el visitante llega a la sección de precios
-// (Intersection Observer sobre el elemento [data-pricing-trigger]) o tras X
-// segundos en la página, lo que ocurra primero.
+// SOLO se dispara al hacer click en un elemento con [data-open-pricing-popup].
+// Antes había triggers automáticos (scroll a pricing + timer 8s) pero
+// resultaban intrusivos — el código aparecía sin que el usuario lo pidiera.
+// Ahora es 100% pull: el visitante decide cuándo verlo clickeando "aquí" o
+// equivalente.
 //
 // Captura email → guarda en Supabase (tabla leads_pricing) → manda mail con
 // link a registro.html?ref=popup&email=<email>. El email es el identificador
@@ -10,12 +12,10 @@
 //
 // Uso desde cualquier landing pública:
 //   <script src="pricing-popup.js"></script>
-//   <!-- opcional: marcar la sección de precios para trigger por scroll -->
-//   <section data-pricing-trigger>...precios...</section>
+//   <a href="#" data-open-pricing-popup>Suscribite aquí</a>
 //
 // Atributos del <body> opcionales:
 //   data-popup-pagina="soy-coach" (default: window.location.pathname)
-//   data-popup-disabled="1"  → desactiva el popup en esa página
 //
 // La oferta es simbólica (Stripe ya tiene 30d de trial configurado en los
 // Payment Links). El código PATHWAY30 es un sello visual, no un coupon real.
@@ -26,14 +26,6 @@
   var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
   var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
   var CODIGO='PATHWAY30';
-  var DISMISS_KEY='pw_popup_dismissed';
-  var SHOWN_KEY='pw_popup_shown';
-  var SCROLL_TRIGGER_DELAY_MS=8000; // fallback si la página no tiene [data-pricing-trigger]
-
-  if(document.body && document.body.getAttribute('data-popup-disabled'))return;
-  // Si el visitante ya lo cerró/envió en esta sesión o en visitas previas,
-  // no lo molestamos de nuevo.
-  if(localStorage.getItem(DISMISS_KEY)||sessionStorage.getItem(SHOWN_KEY))return;
 
   function getPagina(){
     var p=document.body && document.body.getAttribute('data-popup-pagina');
@@ -92,11 +84,9 @@
     document.head.appendChild(s);
   }
 
-  function dismiss(persist){
+  function dismiss(){
     var ov=document.getElementById('pw-popup-overlay');
     if(ov)ov.remove();
-    sessionStorage.setItem(SHOWN_KEY,'1');
-    if(persist)localStorage.setItem(DISMISS_KEY,Date.now().toString());
   }
 
   function handleSubmit(form){
@@ -145,7 +135,7 @@
       btn.style.display='none';
       emailEl.disabled=true;
       // Cerrar el overlay después de unos segundos
-      setTimeout(function(){dismiss(true);},3500);
+      setTimeout(function(){dismiss();},3500);
     }).catch(function(err){
       console.error('[popup] error',err);
       st.textContent='No pudimos guardar — probá de nuevo en un momento.';
@@ -156,57 +146,32 @@
 
   function show(){
     if(document.getElementById('pw-popup-overlay'))return;
-    if(sessionStorage.getItem(SHOWN_KEY)||localStorage.getItem(DISMISS_KEY))return;
     injectStyles();
     var ov=buildOverlay();
     document.body.appendChild(ov);
-    sessionStorage.setItem(SHOWN_KEY,'1');
     // Bind events
-    ov.querySelector('[data-pw-close]').addEventListener('click',function(){dismiss(true);});
-    ov.addEventListener('click',function(e){if(e.target===ov)dismiss(false);});
+    ov.querySelector('[data-pw-close]').addEventListener('click',function(){dismiss();});
+    ov.addEventListener('click',function(e){if(e.target===ov)dismiss();});
     var form=ov.querySelector('[data-pw-form]');
     form.addEventListener('submit',function(e){e.preventDefault();handleSubmit(form);});
     setTimeout(function(){ov.querySelector('[data-pw-email]').focus();},150);
   }
 
   function init(){
-    // Trigger 1: scroll a la sección [data-pricing-trigger] (o cualquier
-    // sección con id="pricing"|"precios"|"planes")
-    var triggerEl=document.querySelector('[data-pricing-trigger]')
-      ||document.getElementById('pricing')
-      ||document.getElementById('precios')
-      ||document.getElementById('planes');
-    if(triggerEl && 'IntersectionObserver' in window){
-      var io=new IntersectionObserver(function(entries){
-        entries.forEach(function(e){
-          if(e.isIntersecting){show();io.disconnect();}
-        });
-      },{threshold:0.3});
-      io.observe(triggerEl);
-    }
-    // Trigger 2 (fallback): tras X segundos
-    setTimeout(show,SCROLL_TRIGGER_DELAY_MS);
-    // Trigger 3: cualquier elemento con [data-open-pricing-popup] —
-    // útil para CTAs explícitos en el flow ("Suscribite aquí" → popup).
+    // El popup SOLO se abre cuando el visitante clickea explícitamente un
+    // elemento con [data-open-pricing-popup] (típicamente el "aquí" del
+    // banner CTA). Sin auto-show por scroll ni por timer.
     document.addEventListener('click',function(e){
       var t=e.target.closest('[data-open-pricing-popup]');
       if(!t)return;
       e.preventDefault();
-      // Si el usuario lo cerró antes pero ahora hace click explícito, lo
-      // re-abrimos (resetea las dos llaves de "ya mostrado").
-      sessionStorage.removeItem(SHOWN_KEY);
-      localStorage.removeItem(DISMISS_KEY);
       show();
     });
   }
 
   // Exponer global para que cualquier link/botón en las landings pueda
   // gatillar el popup explícitamente con onclick="openPricingPopup()".
-  window.openPricingPopup=function(){
-    sessionStorage.removeItem(SHOWN_KEY);
-    localStorage.removeItem(DISMISS_KEY);
-    show();
-  };
+  window.openPricingPopup=show;
 
   if(document.readyState==='loading'){
     document.addEventListener('DOMContentLoaded',init);
