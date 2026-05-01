@@ -482,35 +482,58 @@ function guardar(){
 // vez y seguir editándola offline (cambiar empresa, ajustar tono, etc.)
 // para postularse a múltiples empresas sin volver a entrar al editor.
 function exportarDoc(){
-  guardar();
+  console.log('[carta] exportarDoc disparado');
+  try{
+    guardar();
+  }catch(saveErr){
+    console.warn('[carta] guardar() falló (no bloquea descarga):', saveErr);
+  }
   // Pequeño delay para que guardar() termine de capturar los cambios del DOM
   setTimeout(function(){
-    var paper=document.getElementById('carta-paper');
-    if(!paper){alert('No se pudo obtener el contenido.');return;}
-    var nombre=(document.getElementById('tb-name')&&document.getElementById('tb-name').textContent)||'carta';
-    nombre=nombre.replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,40)||'carta';
+    try{
+      var paper=document.getElementById('carta-paper');
+      if(!paper){alert('No se pudo obtener el contenido de la carta.');return;}
+      var bodyHtml=paper.innerHTML;
+      if(!bodyHtml||bodyHtml.length<10){
+        alert('La carta está vacía. Generala primero o esperá a que cargue.');
+        return;
+      }
+      var nombre=(document.getElementById('tb-name')&&document.getElementById('tb-name').textContent)||'carta';
+      nombre=nombre.replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,40)||'carta';
 
-    // Construimos un documento HTML simple con estilos inline que Word entiende.
-    var bodyHtml=paper.innerHTML;
-    var html=''
-      +'<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
-      +'<head><meta charset="utf-8"><title>Carta de presentación</title>'
-      +'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->'
-      +'<style>'
-      +'body{font-family:Georgia,serif;font-size:11.5pt;line-height:1.55;color:#222;max-width:680px;margin:40px auto;padding:0 24px;}'
-      +'h1{font-size:18pt;margin:0 0 16px;}'
-      +'p{margin:0 0 12px;}'
-      +'[contenteditable]{outline:none;}'
-      +'.tb-btn,.btn-back,.toolbar{display:none!important;}'
-      +'</style></head><body>'+bodyHtml+'</body></html>';
+      // Construimos un documento HTML simple con estilos inline que Word entiende.
+      var html=''
+        +'<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'
+        +'<head><meta charset="utf-8"><title>Carta de presentacion</title>'
+        +'<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->'
+        +'<style>'
+        +'body{font-family:Georgia,serif;font-size:11.5pt;line-height:1.55;color:#222;max-width:680px;margin:40px auto;padding:0 24px;}'
+        +'h1{font-size:18pt;margin:0 0 16px;}'
+        +'p{margin:0 0 12px;}'
+        +'[contenteditable]{outline:none;}'
+        +'.tb-btn,.btn-back,.toolbar{display:none!important;}'
+        +'</style></head><body>'+bodyHtml+'</body></html>';
 
-    var blob=new Blob(['﻿'+html],{type:'application/msword'});
-    var a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download=nombre+'_carta.doc';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(a.href);},100);
+      var blob=new Blob(['﻿'+html],{type:'application/msword'});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url;
+      a.download=nombre+'_carta.doc';
+      a.style.display='none';
+      document.body.appendChild(a);
+      console.log('[carta] disparando download:',a.download,'size:',html.length);
+      a.click();
+      setTimeout(function(){
+        if(a.parentNode)document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      },200);
+      // Feedback visual
+      var st=document.getElementById('save-st');
+      if(st){st.textContent='✓ Word descargado';st.style.color='#4a7c5f';setTimeout(function(){st.textContent='';},2500);}
+    }catch(err){
+      console.error('[carta] exportarDoc error:',err);
+      alert('Error al generar el archivo Word: '+err.message+'. Revisá la consola para más detalles.');
+    }
   },300);
 }
 
