@@ -20,7 +20,7 @@ INSERT INTO candidatos (
   sector, rol, ciudad, objetivo, experiencia, educacion, habilidades,
   carta_presentacion,
   linkedin_titular, linkedin_resumen, linkedin_texto, linkedin_analisis, linkedin_prefs,
-  notas_coach, sesiones_registro, fecha_registro
+  notas_coach, sesiones_registro, created_at
 ) VALUES (
   'maria.demo@pathway.com',
   'María González',
