@@ -444,6 +444,35 @@ function goBack(){
 function cargarExpress(){
   try{
     var rawCv=localStorage.getItem('mj_express_cv');
+    var emExp=localStorage.getItem('mj_express_email')||'';
+    // Si no hay localStorage pero sí email, cargar de Supabase
+    // (cliente entró desde otro dispositivo o limpió cache).
+    if(!rawCv && emExp){
+      showMsg('⏳','Recuperando tu CV...','Buscando en la nube');
+      fetch(SB+'/rest/v1/cv_express?email=eq.'+encodeURIComponent(emExp.toLowerCase().trim())+'&select=*&limit=1',{
+        headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+      }).then(function(r){return r.ok?r.json():null;})
+        .then(function(rows){
+          var row=rows&&rows[0];
+          if(!row||!row.cv_optimizado){
+            showMsg('⚠️','Sin datos','No encontramos tu CV. Volvé a cv-express.html y completá el formulario.');
+            return;
+          }
+          _d=row.cv_optimizado;
+          if(row.foto){_photo=row.foto;setFotoUI(_photo);localStorage.setItem('mj_express_foto',row.foto);}
+          localStorage.setItem('mj_express_cv', JSON.stringify(_d));
+          _email=emExp;
+          var sbName=document.getElementById('sb-name');
+          var sbRole=document.getElementById('sb-role');
+          if(sbName)sbName.textContent=(_d&&_d.nombre)||'';
+          if(sbRole)sbRole.textContent=(_d&&_d.rol_objetivo)||'';
+          render();
+        }).catch(function(e){
+          console.error('[cv.html express] cargar supabase',e);
+          showMsg('⚠️','Error','No pudimos recuperar tu CV. Volvé a generar.');
+        });
+      return;
+    }
     if(!rawCv){showMsg('⚠️','Sin datos','Volvé a cv-express.html y completá el formulario.');return;}
     _d=JSON.parse(rawCv);
     // Validación: si _d no tiene .nombre, la estructura no es la que cv.html
@@ -853,7 +882,26 @@ function guardar(){
     if(_d){_d._color=_color;_d._font=_fontTitle;if(_photo)_d._photo=_photo;}
     syncDFromDOM();
     try{localStorage.setItem('mj_express_cv', JSON.stringify(_d));}catch(e){}
-    if(st){st.textContent='✓ Guardado en sesión';st.style.color='#4a7c5f';setTimeout(function(){st.textContent='';},2500);}
+    // Sincronizar a Supabase (tabla cv_express) con email como key
+    // para que el cliente recupere su CV desde otro dispositivo.
+    var emExp=_email||localStorage.getItem('mj_express_email')||'';
+    if(emExp){
+      try{
+        var hExp={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal,resolution=merge-duplicates'};
+        fetch(SB+'/rest/v1/cv_express',{
+          method:'POST',
+          headers:hExp,
+          body:JSON.stringify({
+            email:emExp.toLowerCase().trim(),
+            cv_optimizado:_d,
+            foto:_photo||null,
+            nombre:(_d&&_d.nombre)||null,
+            updated_at:new Date().toISOString()
+          })
+        }).catch(function(e){console.warn('[cv express] supabase upsert',e);});
+      }catch(e){console.warn('[cv express] supabase upsert',e);}
+    }
+    if(st){st.textContent='✓ Guardado';st.style.color='#4a7c5f';setTimeout(function(){st.textContent='';},2500);}
     return;
   }
   if(!_email){if(st){st.textContent='Sin sesión';st.style.color='#C0756E';}return;}
