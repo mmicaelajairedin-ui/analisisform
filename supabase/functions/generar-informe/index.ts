@@ -123,7 +123,7 @@ Devolverás JSON ESTRICTO con 3 campos:
         "empresa": "Empresa S.A.",
         "fecha": "2020 — Actual",
         "ubicacion": "Madrid",
-        "logros": ["Lideré ...", "Implementé ...", "Aumenté ..."]
+        "logros": ["Lideré ...", "Implementé ...", "Aumenté ...", "Diseñé ...", "Coordiné ..."]
       }
     ],
     "educacion": [
@@ -157,7 +157,7 @@ CV OPTIMIZADO (estructura JSON):
 - contacto: si falta algún dato, omitir esa key (no inventar)
 - competencias: 4-6 competencias relevantes para el objetivo
 - herramientas: las que aparecen + las relevantes al objetivo
-- experiencia: máximo 4 experiencias más relevantes. logros: 3-5 bullets cada uno con verbo de acción + número/% si se puede. Estos bullets se usan también para LinkedIn — que estén listos para copiar/pegar (sin abreviaciones, sin "etc.").
+- experiencia: incluí TODAS las experiencias laborales que aparezcan en el CV (típicamente 4-6). PRIORIZÁ la experiencia ACTUAL / MÁS RECIENTE — NUNCA la omitas, aunque tengas que recortar otras. Cada experiencia con 4-6 bullets de logros, verbo de acción + número/% si se puede. Estos bullets se usan también para LinkedIn — listos para copiar/pegar (sin abreviaciones, sin "etc."). Si una empresa aparece sólo como nombre en el CV pero no es trabajo (ej: el candidato hizo cursos en Amazon pero no trabajó ahí), NO la pongas en experiencia.
 - educacion: por cada entrada, agregá descripcion (1-2 líneas) si el CV menciona tesis, especialización, beca, proyecto destacado, GPA o intercambio. Si no hay info, omitir descripcion (NO inventar).
 - Si en el CV no aparece info para una sección, omitirla (no la inventes)
 
