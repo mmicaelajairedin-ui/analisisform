@@ -123,7 +123,7 @@ Devolverás JSON ESTRICTO con 3 campos:
         "empresa": "Empresa S.A.",
         "fecha": "2020 — Actual",
         "ubicacion": "Madrid",
-        "logros": ["Lideré ...", "Implementé ...", "Aumenté ..."]
+        "logros": ["Lideré ...", "Implementé ...", "Aumenté ...", "Diseñé ...", "Coordiné ..."]
       }
     ],
     "educacion": [
@@ -139,7 +139,7 @@ Devolverás JSON ESTRICTO con 3 campos:
     "titular_actual": "<extraído del linkedin_texto, lo que tiene HOY el candidato>",
     "titular_propuesto": "<titular optimizado, max 220 chars>",
     "acerca_de_actual": "<extraído del linkedin_texto, máx 800 chars>",
-    "acerca_de_propuesto": "<sección 'Acerca de' optimizada, MAX 700 chars — conciso y al grano, no relleno>",
+    "acerca_de_propuesto": "<sección 'Acerca de' optimizada, MAX 350 caracteres / 3-4 líneas — extremadamente conciso, solo lo esencial>",
     "puntos_fuertes": ["punto 1", "punto 2", "punto 3"],
     "areas_mejora": ["área 1", "área 2", "área 3"],
     "habilidades_sugeridas": ["habilidad 1", "habilidad 2"],
@@ -157,7 +157,8 @@ CV OPTIMIZADO (estructura JSON):
 - contacto: si falta algún dato, omitir esa key (no inventar)
 - competencias: 4-6 competencias relevantes para el objetivo
 - herramientas: las que aparecen + las relevantes al objetivo
-- experiencia: máximo 4 experiencias más relevantes. logros: 3-5 bullets cada uno con verbo de acción + número/% si se puede. Estos bullets se usan también para LinkedIn — que estén listos para copiar/pegar (sin abreviaciones, sin "etc.").
+- experiencia: incluí TODAS las experiencias laborales que aparezcan en el CV (típicamente 4-6). PRIORIZÁ la experiencia ACTUAL / MÁS RECIENTE — NUNCA la omitas, aunque tengas que recortar otras. Cada experiencia con 4-6 bullets de logros, verbo de acción + número/% si se puede. Estos bullets se usan también para LinkedIn — listos para copiar/pegar (sin abreviaciones, sin "etc."). Si una empresa aparece sólo como nombre en el CV pero no es trabajo (ej: el candidato hizo cursos en Amazon pero no trabajó ahí), NO la pongas en experiencia.
+- rol: COPIÁ EL CARGO EXACTO como aparece en el CV original. NO traduzcas (si dice "Responsable de RRHH" no lo cambies a "HR Manager"). NO acortes. NO modifiqués. El cliente quiere ver su título tal cual lo escribió.
 - educacion: por cada entrada, agregá descripcion (1-2 líneas) si el CV menciona tesis, especialización, beca, proyecto destacado, GPA o intercambio. Si no hay info, omitir descripcion (NO inventar).
 - Si en el CV no aparece info para una sección, omitirla (no la inventes)
 
@@ -172,7 +173,7 @@ LINKEDIN ANÁLISIS:
 - titular_actual: extraé del linkedin_texto la headline actual del candidato. Si no se identifica claramente, devolvé "" (string vacío)
 - titular_propuesto: ALINEADO al objetivo, no "Buscando nuevas oportunidades"
 - acerca_de_actual: extraé del linkedin_texto la sección "Acerca de" / "About" actual (max 800 chars). Si no aparece, devolvé ""
-- acerca_de_propuesto: storytelling que conecte experiencia → objetivo. MÁX 700 caracteres. Conciso y específico — sin relleno ni adjetivos vacíos. Que invite a contactar, no que cuente toda la vida.
+- acerca_de_propuesto: MÁX 350 caracteres / 3-4 líneas. Hook breve: quién soy + qué busco + 1 logro. Sin adjetivos vacíos, sin storytelling largo. La gente lo lee de pasada, debe captar atención en 5 segundos.
 - puntos_fuertes: 2-3 cosas concretas que ya hace bien
 - areas_mejora: 2-3 cosas ACCIONABLES y específicas
 - habilidades_sugeridas: 5-8 keywords relevantes
