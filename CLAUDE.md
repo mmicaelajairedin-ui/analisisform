@@ -165,6 +165,30 @@ GH Actions cron lunes 8am UTC
 
 **Iterar el prompt:** el system prompt esta en `analytics-weekly/index.ts` constante `SYSTEM_ANALYTICS`. Editarlo, redesplegar, y disparar manualmente desde GH Actions para testear.
 
+### Vista Web Analytics en panel.html (mayo 2026)
+
+Seccion privada del panel, **solo visible para `ME.rol==='admin'`**. Acceso: sidebar → **🔒 Web Analytics** (badge amarillo). URL directa: `panel.html#webanalytics`.
+
+**3 tabs:**
+- **📊 Pathway** — KPIs, graficos (Chart.js via CDN) y analisis de Claude para pathwaycareercoach.com
+- **📊 Micaela** — lo mismo para micaelajairedin.com (negocio independiente, no se mezcla con Pathway)
+- **⚙️ Contexto** — la coach configura objetivos, audiencia, paginas clave y conversiones de cada sitio. Esto se inyecta al prompt de Claude cada lunes para que las hipotesis sean ESPECIFICAS, no genericas
+
+**Tabla nueva:** `site_context` (zone PK, display_name, objetivo_principal, audiencia, paginas_clave JSONB, conversiones JSONB, notas). Migration en `supabase/migrations/site_context.sql` (incluye seed inicial para ambas zonas).
+
+**Cambios al agente:**
+- `analytics-weekly` ahora analiza CADA sitio por separado (1 llamada a Claude por zona) — no cruza narrativas
+- Lee las **ultimas 4 semanas** de histórico (no solo 1) para detectar tendencias
+- Lee `site_context` y lo inyecta al prompt
+- Email corto con boton al panel (no mas reporte largo embebido)
+- System prompt actualizado: pide `tendencia_4_semanas` y `verificacion_hipotesis_previas`
+
+**Setup adicional (post-deploy):**
+1. Aplicar migration `site_context.sql` (crea tabla + abre RLS de `analytics_reports` para lectura desde panel)
+2. Re-deployar `analytics-weekly` con la nueva version
+3. Entrar al panel como admin → Web Analytics → ⚙️ Contexto → revisar/editar el contexto seedeado
+4. Disparar el agente manualmente para probar el reporte nuevo
+
 ## PENDIENTE — Proximas mejoras
 - Blog: crear /blog.html como hub + 4-5 posts SEO (coaching de carrera, CV con IA, etc.)
 - Paginas por pais: /coaching-carrera-espana.html, /coaching-carrera-argentina.html

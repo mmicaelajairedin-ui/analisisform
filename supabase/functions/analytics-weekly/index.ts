@@ -1,8 +1,12 @@
 // Supabase Edge Function — analytics-weekly
 //
 // Genera un reporte semanal automático de tráfico web combinando datos de
-// Cloudflare Analytics (vía GraphQL API) + análisis con Claude. Manda el
-// reporte por email vía Brevo (la edge function send-email).
+// Cloudflare Analytics (vía GraphQL API) + análisis con Claude. Manda un
+// email corto con link al panel (panel.html → seccion Web Analytics).
+//
+// IMPORTANTE: cada sitio se analiza POR SEPARADO. Pathway y micaelajairedin
+// son negocios distintos — el agente no debe cruzar narrativas ni transferir
+// conclusiones de uno al otro.
 //
 // Se ejecuta cada lunes a las 8:00 UTC, disparada por GitHub Actions
 // (.github/workflows/weekly-analytics.yml) → POST a esta función.
@@ -18,7 +22,7 @@
 //   REPORT_EMAIL_TO       — email destino (ej: hi@pathwaycareercoach.com)
 //   SUPABASE_URL          — auto-inyectada por Supabase
 //   SUPABASE_SERVICE_ROLE_KEY — auto-inyectada por Supabase
-//   AGENT_TRIGGER_SECRET  — string compartido con GitHub Actions; protege el endpoint
+//   AGENT_TRIGGER_SECRET  — string compartido con GitHub Actions
 //
 // Trigger manual (testing):
 //   curl -X POST https://<proyecto>.supabase.co/functions/v1/analytics-weekly \
@@ -31,20 +35,18 @@ const CORS_HEADERS = {
 };
 
 const CLAUDE_MODEL = "claude-sonnet-4-5";
+const PANEL_URL = "https://pathwaycareercoach.com/panel.html#webanalytics";
+const HISTORY_WEEKS = 4;  // semanas previas a leer para contexto/comparacion
 
-const ZONES: Array<{ key: string; envVar: string; label: string; role: string }> = [
-  {
-    key: "mj",
-    envVar: "CLOUDFLARE_ZONE_MJ",
-    label: "micaelajairedin.com",
-    role: "Web personal de Micaela (coach individual). Objetivo: captar candidatos que buscan mentoría 1-a-1.",
-  },
-  {
-    key: "pw",
-    envVar: "CLOUDFLARE_ZONE_PW",
-    label: "pathwaycareercoach.com",
-    role: "Plataforma SaaS para coaches y coachees. Objetivo: registrar coaches y completar formularios de candidatos.",
-  },
+interface ZoneConfig {
+  key: string;
+  envVar: string;
+  label: string;
+}
+
+const ZONES: ZoneConfig[] = [
+  { key: "mj", envVar: "CLOUDFLARE_ZONE_MJ", label: "micaelajairedin.com" },
+  { key: "pw", envVar: "CLOUDFLARE_ZONE_PW", label: "pathwaycareercoach.com" },
 ];
 
 // ── Cloudflare GraphQL ────────────────────────────────────
@@ -162,55 +164,55 @@ function summariseRows(rows: DailyRow[]) {
 
 // ── Claude ────────────────────────────────────────────────
 
-const SYSTEM_ANALYTICS = `Sos un analista de marketing digital especializado en negocios SaaS y servicios profesionales. Tu cliente es Micaela Jairedin, coach de carrera, dueña de dos sitios:
+const SYSTEM_ANALYTICS = `Sos un analista de marketing digital. Tu tarea: analizar las metricas de UN sitio web especifico (no de varios), comparar con su histórico reciente, y dar hipotesis y acciones concretas.
 
-1. micaelajairedin.com → su web personal como coach individual. Objetivo: captar candidatos para mentoría 1-a-1.
-2. pathwaycareercoach.com → plataforma SaaS donde otros coaches registran clientes. Objetivo: registrar coaches y candidatos completando el formulario.
-
-Tu tarea: leer las métricas de tráfico de la última semana de cada sitio, compararlas con la semana anterior si hay datos previos, y devolver un análisis ACCIONABLE en JSON.
+REGLA CRITICA: vas a recibir un solo sitio por vez. NO menciones, compares ni transfieras conclusiones de otros sitios. Cada sitio es un negocio independiente con su propia estrategia. Si te llega contexto de "otro sitio", ignoralo — solo analiza el que se te pide.
 
 REGLAS:
-1. NO seas genérico. Si ves un pico, hipotetizá causas concretas (publicación, festivo, día de la semana, fin de campaña, etc.). Considerá el calendario (festivos en España y LatAm).
-2. Las acciones deben ser ESPECÍFICAS y ejecutables esta semana, no consejos abstractos.
-3. Si no hay datos suficientes para sostener una afirmación, decilo. No inventes.
-4. Distinguí "lo que funcionó" (replicable) de "ruido" (no replicable).
-5. Mencioná el día de la semana de cada fecha cuando sea relevante (los patrones B2B son distintos de los B2C).
+1. Usa el CONTEXTO del sitio (objetivo, audiencia, paginas clave, conversiones) para que las hipotesis y acciones sean ESPECIFICAS, no genericas.
+2. Si ves un pico o caida, hipotetizá causas concretas considerando el calendario (festivos en España y LatAm, dia de la semana, fin de campaña, etc.).
+3. Las acciones deben ser ESPECIFICAS y ejecutables esta semana, no consejos abstractos. Idealmente con metrica de exito.
+4. Si hay datos de semanas previas, usalos para detectar tendencias y verificar si las hipotesis previas se cumplieron.
+5. Si no hay datos suficientes para sostener una afirmacion, decilo. No inventes.
+6. Mencioná dia de la semana cuando sea relevante (los patrones B2B son distintos de los B2C).
 
-RESPONDÉ SOLO CON JSON VÁLIDO, sin markdown ni explicaciones previas. Estructura exacta:
+RESPONDÉ SOLO CON JSON VÁLIDO, sin markdown ni explicaciones previas:
 {
-  "headline": "1 frase con la noticia más importante de la semana",
-  "sitios": [
-    {
-      "sitio": "micaelajairedin.com",
-      "resumen": "2-3 oraciones sobre el estado del tráfico esta semana",
-      "comparacion_semana_anterior": "string con cambio % o 'sin datos previos'",
-      "hipotesis": ["hipótesis 1 concreta con evidencia", "hipótesis 2"],
-      "acciones_esta_semana": ["acción 1 específica y ejecutable", "acción 2", "acción 3"],
-      "alertas": ["alerta 1 si aplica"],
-      "que_replicar": "qué funcionó que vale la pena repetir"
-    },
-    {
-      "sitio": "pathwaycareercoach.com",
-      "resumen": "...",
-      "comparacion_semana_anterior": "...",
-      "hipotesis": ["..."],
-      "acciones_esta_semana": ["..."],
-      "alertas": ["..."],
-      "que_replicar": "..."
-    }
-  ],
-  "experimento_propuesto": "1 experimento puntual para esta semana que pueda mover la aguja, con métrica de éxito medible"
+  "headline": "1 frase con la noticia mas importante de esta semana para ESTE sitio",
+  "resumen": "2-3 oraciones sobre el estado del trafico esta semana",
+  "comparacion_semana_anterior": "string con cambio % o 'sin datos previos'",
+  "tendencia_4_semanas": "string describiendo trend si hay datos (creciente/estable/caida)",
+  "hipotesis": ["hipotesis 1 con evidencia", "hipotesis 2"],
+  "acciones_esta_semana": ["accion 1 con metrica de exito", "accion 2", "accion 3"],
+  "alertas": ["alerta 1 si aplica"],
+  "que_replicar": "que funciono que vale la pena repetir",
+  "verificacion_hipotesis_previas": "si hay reporte de la semana pasada, verificar si las hipotesis se cumplieron. Si no hay, devolver string vacio.",
+  "experimento_propuesto": "1 experimento puntual para esta semana con metrica de exito medible"
 }`;
 
-async function callClaude(
+interface ContextRow {
+  zone: string;
+  display_name?: string;
+  objetivo_principal?: string;
+  audiencia?: string;
+  paginas_clave?: unknown;
+  conversiones?: unknown;
+  notas?: string;
+}
+
+async function callClaudeForZone(
   apiKey: string,
+  zone: string,
+  context: ContextRow | null,
   current: Record<string, unknown>,
-  previous: Record<string, unknown> | null,
+  history: Array<Record<string, unknown>>,
 ): Promise<Record<string, unknown>> {
   const userContent =
-    `# Datos de esta semana\n\n${JSON.stringify(current, null, 2)}\n\n` +
-    `# Datos de la semana anterior (para comparar)\n\n` +
-    (previous ? JSON.stringify(previous, null, 2) : "Sin datos previos guardados todavía.");
+    `# Sitio a analizar\n${zone}\n\n` +
+    `# Contexto del sitio (configurado por la coach)\n${context ? JSON.stringify(context, null, 2) : "Sin contexto configurado todavia. Pedile a la coach que llene el contexto en el panel para mejor analisis."}\n\n` +
+    `# Datos de esta semana\n${JSON.stringify(current, null, 2)}\n\n` +
+    `# Histórico de las ${HISTORY_WEEKS} semanas previas (mas reciente primero)\n` +
+    (history.length > 0 ? JSON.stringify(history, null, 2) : "Sin datos previos guardados todavia.");
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -231,122 +233,86 @@ async function callClaude(
   }
   const json = await res.json();
   const text: string = json?.content?.[0]?.text || "";
-  // El modelo puede envolver con ```json ... ```; limpiar.
   const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
   return JSON.parse(cleaned);
 }
 
-// ── Email HTML ────────────────────────────────────────────
+// ── Email HTML (corto, link al panel) ─────────────────────
 
 function fmtNum(n: number): string {
   return n.toLocaleString("es-ES");
 }
-function fmtBytes(b: number): string {
-  if (b > 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024).toFixed(2) + " GB";
-  return (b / 1024 / 1024).toFixed(1) + " MB";
-}
 
-function buildEmailHtml(
+function buildShortEmailHtml(
   periodStart: string,
   periodEnd: string,
-  perZone: Array<{ label: string; summary: ReturnType<typeof summariseRows> }>,
-  analysis: any,
+  perZone: Array<{
+    label: string;
+    displayName: string;
+    summary: ReturnType<typeof summariseRows>;
+    analysis: any;
+  }>,
 ): string {
-  const sitiosHtml = (analysis.sitios || [])
-    .map((s: any, i: number) => {
-      const summary = perZone[i]?.summary;
-      const dailyTable = summary
-        ? `<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0;">
-            <thead><tr style="background:#f6f3f4;color:#5e5050;">
-              <th style="text-align:left;padding:6px;">Día</th>
-              <th style="text-align:right;padding:6px;">Visitas</th>
-              <th style="text-align:right;padding:6px;">Reqs</th>
-              <th style="text-align:right;padding:6px;">Cache</th>
-            </tr></thead>
-            <tbody>${
-              summary.daily
-                .map(
-                  (d) =>
-                    `<tr><td style="padding:6px;border-top:1px solid #eee;">${d.date}</td><td style="padding:6px;border-top:1px solid #eee;text-align:right;">${fmtNum(d.uniques)}</td><td style="padding:6px;border-top:1px solid #eee;text-align:right;">${fmtNum(d.requests)}</td><td style="padding:6px;border-top:1px solid #eee;text-align:right;">${d.cachePct}%</td></tr>`,
-                )
-                .join("")
-            }</tbody>
-          </table>`
-        : "";
+  const cards = perZone
+    .map((z) => {
+      const headline = z.analysis?.headline || "—";
+      const comp = z.analysis?.comparacion_semana_anterior || "";
       return `
-        <div style="margin:24px 0;padding:18px;background:#fafafa;border-radius:10px;border-left:3px solid #8C7B80;">
-          <h3 style="margin:0 0 10px;color:#1B4332;font-size:16px;">${s.sitio}</h3>
-          ${
-            summary
-              ? `<div style="font-size:13px;color:#666;margin-bottom:10px;">
-                  <strong>${fmtNum(summary.totalUniques)}</strong> visitantes ·
-                  <strong>${fmtNum(summary.totalRequests)}</strong> requests ·
-                  <strong>${summary.cachePct}%</strong> cache ·
-                  pico ${summary.peakDay.date} (${fmtNum(summary.peakDay.uniques)})
-                </div>`
-              : ""
-          }
-          <p style="margin:8px 0;font-size:13px;"><strong>Resumen:</strong> ${s.resumen || "—"}</p>
-          <p style="margin:8px 0;font-size:13px;"><strong>vs semana anterior:</strong> ${s.comparacion_semana_anterior || "—"}</p>
-          ${
-            (s.hipotesis || []).length
-              ? `<p style="margin:8px 0 4px;font-size:13px;"><strong>Hipótesis:</strong></p>
-                <ul style="margin:4px 0 8px 18px;font-size:13px;color:#444;">${
-                  (s.hipotesis as string[]).map((h) => `<li>${h}</li>`).join("")
-                }</ul>`
-              : ""
-          }
-          ${
-            (s.acciones_esta_semana || []).length
-              ? `<p style="margin:8px 0 4px;font-size:13px;color:#1B4332;"><strong>Acciones esta semana:</strong></p>
-                <ul style="margin:4px 0 8px 18px;font-size:13px;color:#1B4332;">${
-                  (s.acciones_esta_semana as string[]).map((a) => `<li>${a}</li>`).join("")
-                }</ul>`
-              : ""
-          }
-          ${
-            (s.alertas || []).length
-              ? `<div style="background:#fff4e6;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:13px;">⚠️ ${
-                  (s.alertas as string[]).join(" · ")
-                }</div>`
-              : ""
-          }
-          ${s.que_replicar ? `<p style="margin:8px 0;font-size:13px;"><strong>Replicar:</strong> ${s.que_replicar}</p>` : ""}
-          ${dailyTable}
+        <div style="margin:14px 0;padding:16px;background:#fff;border-radius:10px;border-left:3px solid #E9C46A;">
+          <div style="font-size:11px;color:#999;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;">${z.displayName}</div>
+          <div style="font-size:14px;color:#1B4332;font-weight:600;line-height:1.4;margin-bottom:8px;">${headline}</div>
+          <div style="font-size:12px;color:#666;">
+            <strong>${fmtNum(z.summary.totalUniques)}</strong> visitas ·
+            <strong>${z.summary.cachePct}%</strong> cache ·
+            pico ${z.summary.peakDay.date} (${fmtNum(z.summary.peakDay.uniques)})
+          </div>
+          ${comp ? `<div style="font-size:12px;color:#666;margin-top:4px;">vs semana anterior: ${comp}</div>` : ""}
         </div>`;
     })
     .join("");
 
   return `
-    <h2 style="margin:0 0 6px;color:#1B4332;">Reporte semanal · ${periodStart} → ${periodEnd}</h2>
-    <p style="margin:0 0 18px;font-size:14px;color:#444;">${analysis.headline || ""}</p>
-    ${sitiosHtml}
-    ${
-      analysis.experimento_propuesto
-        ? `<div style="margin:24px 0;padding:16px;background:#eef6f1;border-radius:10px;">
-            <h3 style="margin:0 0 8px;color:#2D6A4F;font-size:15px;">🧪 Experimento propuesto</h3>
-            <p style="margin:0;font-size:13px;">${analysis.experimento_propuesto}</p>
-          </div>`
-        : ""
-    }
-    <p style="margin:18px 0 0;font-size:11px;color:#999;">Generado automáticamente por analytics-weekly. Histórico en Supabase → analytics_reports.</p>
+    <h2 style="margin:0 0 4px;color:#1B4332;font-size:20px;">Reporte semanal · ${periodStart} → ${periodEnd}</h2>
+    <p style="margin:0 0 16px;font-size:13px;color:#666;">Resumen breve. El analisis completo, graficos, hipotesis, acciones y experimentos estan en el panel.</p>
+    ${cards}
+    <div style="text-align:center;margin:24px 0;">
+      <a href="${PANEL_URL}" style="display:inline-block;padding:12px 28px;background:#1B4332;color:#fff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:700;">
+        Ver detalle en el panel →
+      </a>
+    </div>
+    <p style="margin:18px 0 0;font-size:11px;color:#999;text-align:center;">Generado automaticamente. Histórico en panel → Web Analytics.</p>
   `;
 }
 
 // ── Supabase storage ──────────────────────────────────────
 
-async function getPreviousReport(
+async function getRecentReports(
   supabaseUrl: string,
   serviceKey: string,
   zone: string,
-): Promise<Record<string, unknown> | null> {
-  const url = `${supabaseUrl}/rest/v1/analytics_reports?zone=eq.${encodeURIComponent(zone)}&select=raw_metrics,analysis,period_start,period_end&order=period_end.desc&limit=1`;
+  limit: number,
+): Promise<Array<Record<string, unknown>>> {
+  const url = `${supabaseUrl}/rest/v1/analytics_reports?zone=eq.${encodeURIComponent(zone)}&select=raw_metrics,analysis,period_start,period_end&order=period_end.desc&limit=${limit}`;
+  const res = await fetch(url, {
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+  });
+  if (!res.ok) return [];
+  const arr = await res.json();
+  return Array.isArray(arr) ? arr : [];
+}
+
+async function getSiteContext(
+  supabaseUrl: string,
+  serviceKey: string,
+  zone: string,
+): Promise<ContextRow | null> {
+  const url = `${supabaseUrl}/rest/v1/site_context?zone=eq.${encodeURIComponent(zone)}&select=*&limit=1`;
   const res = await fetch(url, {
     headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
   });
   if (!res.ok) return null;
   const arr = await res.json();
-  return Array.isArray(arr) && arr.length > 0 ? arr[0] : null;
+  return Array.isArray(arr) && arr.length > 0 ? (arr[0] as ContextRow) : null;
 }
 
 async function saveReport(
@@ -382,7 +348,6 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Auth simple por shared secret (no usamos JWT porque la disparamos desde GH Actions).
   const triggerSecret = Deno.env.get("AGENT_TRIGGER_SECRET") || "";
   const provided = req.headers.get("x-trigger-secret") || "";
   if (!triggerSecret || provided !== triggerSecret) {
@@ -412,7 +377,6 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  // Rango: últimos 7 días completos (ayer hacia atrás).
   const now = new Date();
   const end = new Date(now); end.setUTCDate(end.getUTCDate() - 1);
   const start = new Date(end); start.setUTCDate(start.getUTCDate() - 6);
@@ -421,61 +385,57 @@ Deno.serve(async (req: Request) => {
   const periodEnd = fmt(end);
 
   try {
-    // 1. Pull Cloudflare data + previous reports for both zones in parallel.
+    // 1. Por cada zona: pull data + history + context, llamar a Claude separado.
     const perZoneTasks = ZONES.map(async (z) => {
       const zoneTag = Deno.env.get(z.envVar) || "";
       if (!zoneTag) {
-        return { zone: z, summary: null, previous: null, error: `missing ${z.envVar}` };
+        return { zone: z, summary: null, analysis: null, context: null, error: `missing ${z.envVar}` };
       }
-      const [rows, previous] = await Promise.all([
-        fetchCloudflareDaily(zoneTag, CLOUDFLARE_API_TOKEN, periodStart, periodEnd),
-        getPreviousReport(SUPABASE_URL, SERVICE_KEY, z.label),
-      ]);
-      return { zone: z, summary: summariseRows(rows), previous, error: null as string | null };
+      try {
+        const [rows, history, context] = await Promise.all([
+          fetchCloudflareDaily(zoneTag, CLOUDFLARE_API_TOKEN, periodStart, periodEnd),
+          getRecentReports(SUPABASE_URL, SERVICE_KEY, z.label, HISTORY_WEEKS),
+          getSiteContext(SUPABASE_URL, SERVICE_KEY, z.label),
+        ]);
+        const summary = summariseRows(rows);
+        const currentPayload = { period: { start: periodStart, end: periodEnd }, metricas: summary };
+        const historyPayload = history.map((h) => ({
+          period: { start: (h as any).period_start, end: (h as any).period_end },
+          metricas: (h as any).raw_metrics,
+          analysis_previo: (h as any).analysis,
+        }));
+        const analysis = await callClaudeForZone(
+          ANTHROPIC_API_KEY,
+          z.label,
+          context,
+          currentPayload,
+          historyPayload,
+        );
+        return { zone: z, summary, analysis, context, error: null as string | null };
+      } catch (e) {
+        return { zone: z, summary: null, analysis: null, context: null, error: String(e).slice(0, 300) };
+      }
     });
     const perZone = await Promise.all(perZoneTasks);
 
-    const errored = perZone.filter((p) => p.error);
-    if (errored.length === ZONES.length) {
+    const successful = perZone.filter((p) => p.summary && p.analysis);
+    if (successful.length === 0) {
       return new Response(
-        JSON.stringify({ ok: false, error: errored.map((e) => e.error).join("; ") }),
+        JSON.stringify({ ok: false, error: perZone.map((p) => p.error).filter(Boolean).join("; ") }),
         { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
       );
     }
 
-    // 2. Build payload for Claude.
-    const currentPayload = {
-      period: { start: periodStart, end: periodEnd },
-      sitios: perZone
-        .filter((p) => p.summary)
-        .map((p) => ({
-          sitio: p.zone.label,
-          rol: p.zone.role,
-          metricas: p.summary,
-        })),
-    };
-    const previousPayload = perZone
-      .filter((p) => p.previous)
-      .map((p) => ({
-        sitio: p.zone.label,
-        period: { start: (p.previous as any).period_start, end: (p.previous as any).period_end },
-        analysis: (p.previous as any).analysis,
-        metricas: (p.previous as any).raw_metrics,
-      }));
-
-    // 3. Claude analysis.
-    const analysis = await callClaude(
-      ANTHROPIC_API_KEY,
-      currentPayload,
-      previousPayload.length > 0 ? { sitios: previousPayload } : null,
-    );
-
-    // 4. Build email & send.
-    const html = buildEmailHtml(
+    // 2. Email corto con link al panel.
+    const html = buildShortEmailHtml(
       periodStart,
       periodEnd,
-      perZone.filter((p) => p.summary).map((p) => ({ label: p.zone.label, summary: p.summary! })),
-      analysis,
+      successful.map((p) => ({
+        label: p.zone.label,
+        displayName: (p.context as ContextRow | null)?.display_name || p.zone.label,
+        summary: p.summary!,
+        analysis: p.analysis,
+      })),
     );
 
     const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
@@ -491,24 +451,21 @@ Deno.serve(async (req: Request) => {
         html,
       }),
     });
-    const emailOk = emailRes.ok;
-    const emailStatus = emailOk ? "ok" : `error: ${(await emailRes.text()).slice(0, 200)}`;
+    const emailStatus = emailRes.ok ? "ok" : `error: ${(await emailRes.text()).slice(0, 200)}`;
 
-    // 5. Persist one row per zone (so memory works per-site next week).
+    // 3. Guardar 1 fila por zona (memoria).
     await Promise.all(
-      perZone
-        .filter((p) => p.summary)
-        .map((p) =>
-          saveReport(SUPABASE_URL, SERVICE_KEY, {
-            period_start: periodStart,
-            period_end: periodEnd,
-            zone: p.zone.label,
-            raw_metrics: p.summary,
-            analysis: (analysis.sitios || []).find((s: any) => s.sitio === p.zone.label) || analysis,
-            email_sent_to: REPORT_EMAIL_TO,
-            email_status: emailStatus,
-          }),
-        ),
+      successful.map((p) =>
+        saveReport(SUPABASE_URL, SERVICE_KEY, {
+          period_start: periodStart,
+          period_end: periodEnd,
+          zone: p.zone.label,
+          raw_metrics: p.summary,
+          analysis: p.analysis,
+          email_sent_to: REPORT_EMAIL_TO,
+          email_status: emailStatus,
+        }),
+      ),
     );
 
     return new Response(
