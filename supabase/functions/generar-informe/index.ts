@@ -139,11 +139,21 @@ Devolverás JSON ESTRICTO con 3 campos:
     "titular_actual": "<extraído del linkedin_texto, lo que tiene HOY el candidato>",
     "titular_propuesto": "<titular optimizado, max 220 chars>",
     "acerca_de_actual": "<extraído del linkedin_texto, máx 800 chars>",
-    "acerca_de_propuesto": "<sección 'Acerca de' optimizada, MAX 350 caracteres / 3-4 líneas — extremadamente conciso, solo lo esencial>",
+    "acerca_de_propuesto": "<sección 'Acerca de' optimizada — MÁX 250 caracteres / 2-3 líneas. Hook directo: quién soy + 1 logro + qué busco. NADA de relleno, listas o párrafos. Que entre completo arriba del fold de LinkedIn móvil.>",
     "puntos_fuertes": ["punto 1", "punto 2", "punto 3"],
     "areas_mejora": ["área 1", "área 2", "área 3"],
     "habilidades_sugeridas": ["habilidad 1", "habilidad 2"],
-    "experiencia_sugerencias": ["sugerencia concreta 1", "sugerencia concreta 2"]
+    "experiencias_optimizadas": [
+      {
+        "rol": "Cargo (idéntico al CV original)",
+        "empresa": "Empresa",
+        "fecha": "2020 — Actual",
+        "ubicacion": "Madrid",
+        "bullets": ["Logro 1 con verbo + número", "Logro 2", "Logro 3", "Logro 4"],
+        "aptitudes": ["Skill 1", "Skill 2", "Skill 3"],
+        "keywords": ["keyword 1", "keyword 2", "keyword 3"]
+      }
+    ]
   }
 }
 
@@ -157,7 +167,7 @@ CV OPTIMIZADO (estructura JSON):
 - contacto: si falta algún dato, omitir esa key (no inventar)
 - competencias: 4-6 competencias relevantes para el objetivo
 - herramientas: las que aparecen + las relevantes al objetivo
-- experiencia: incluí TODAS las experiencias laborales que aparezcan en el CV (típicamente 4-6). PRIORIZÁ la experiencia ACTUAL / MÁS RECIENTE — NUNCA la omitas, aunque tengas que recortar otras. Cada experiencia con 4-6 bullets de logros, verbo de acción + número/% si se puede. Estos bullets se usan también para LinkedIn — listos para copiar/pegar (sin abreviaciones, sin "etc."). Si una empresa aparece sólo como nombre en el CV pero no es trabajo (ej: el candidato hizo cursos en Amazon pero no trabajó ahí), NO la pongas en experiencia.
+- experiencia: incluí TODAS las experiencias laborales que aparezcan en el CV (típicamente 4-6). PRIORIZÁ la experiencia ACTUAL / MÁS RECIENTE — NUNCA la omitas, aunque tengas que recortar otras. CADA experiencia con 3-5 bullets de logros, verbo de acción + número/% si se puede. NO dejes la última experiencia con 5 bullets y las anteriores con 1 — TODAS al mismo nivel de detalle. Si la info del CV original es escasa para experiencias viejas, expandilas con criterio (responsabilidades típicas del rol + datos del CV, SIN inventar números). Estos bullets se usan también para LinkedIn — listos para copiar/pegar (sin abreviaciones, sin "etc."). Si una empresa aparece sólo como nombre en el CV pero no es trabajo (ej: el candidato hizo cursos en Amazon pero no trabajó ahí), NO la pongas en experiencia.
 - rol: COPIÁ EL CARGO EXACTO como aparece en el CV original. NO traduzcas (si dice "Responsable de RRHH" no lo cambies a "HR Manager"). NO acortes. NO modifiqués. El cliente quiere ver su título tal cual lo escribió.
 - educacion: por cada entrada, agregá descripcion (1-2 líneas) si el CV menciona tesis, especialización, beca, proyecto destacado, GPA o intercambio. Si no hay info, omitir descripcion (NO inventar).
 - Si en el CV no aparece info para una sección, omitirla (no la inventes)
@@ -173,11 +183,17 @@ LINKEDIN ANÁLISIS:
 - titular_actual: extraé del linkedin_texto la headline actual del candidato. Si no se identifica claramente, devolvé "" (string vacío)
 - titular_propuesto: ALINEADO al objetivo, no "Buscando nuevas oportunidades"
 - acerca_de_actual: extraé del linkedin_texto la sección "Acerca de" / "About" actual (max 800 chars). Si no aparece, devolvé ""
-- acerca_de_propuesto: MÁX 350 caracteres / 3-4 líneas. Hook breve: quién soy + qué busco + 1 logro. Sin adjetivos vacíos, sin storytelling largo. La gente lo lee de pasada, debe captar atención en 5 segundos.
+- acerca_de_propuesto: MÁX 250 caracteres / 2-3 líneas. Hook breve: quién soy + 1 logro concreto + qué busco. Sin adjetivos vacíos, sin storytelling, sin listas, sin párrafos. La gente lo lee en 3 segundos. Ejemplo bueno: "Marketing leader B2B SaaS con 8+ años escalando ARR de €5M a €30M. Especializada en demand gen y ABM. Buscando rol de Director/a en scaleup."
 - puntos_fuertes: 2-3 cosas concretas que ya hace bien
 - areas_mejora: 2-3 cosas ACCIONABLES y específicas
-- habilidades_sugeridas: 5-8 keywords relevantes
-- experiencia_sugerencias: 2-3 mejoras concretas con formato "ANTES → DESPUÉS" cuando sea posible (ej: "En 'Director de Marketing en X' (2020-2023) cambiá 'Lideré el equipo' por 'Lideré equipo de 8 con foco en growth, +40% leads MQL en 12 meses'")
+- habilidades_sugeridas: 5-8 skills generales del perfil (van en la sección Aptitudes general de LinkedIn)
+- experiencias_optimizadas: array CON TODAS las experiencias laborales del CV. Por CADA experiencia:
+  * rol: cargo exacto del CV (no traducir, no resumir)
+  * empresa, fecha, ubicacion: igual al CV
+  * bullets: 4-6 bullets de logros optimizados (verbo en pasado + número/%). Ready-to-paste en el campo "Description" de LinkedIn. NO abreviar, NO usar "etc.". Cada bullet completo.
+  * aptitudes: 4-6 skills SUSTANTIVAS del puesto específico (no genéricas). Ej: en "Marketing Manager B2B SaaS" → ["Demand Generation", "Account-Based Marketing", "Pipeline Acceleration", "HubSpot", "Marketing Operations"]. Sirven para que el cliente las agregue una a una en LinkedIn.
+  * keywords: 4-6 palabras-clave del rol que el cliente debe incluir en bullets/headline para que recruiters los encuentren con búsquedas. Ej: ["B2B SaaS", "Pipeline", "Growth Marketing"].
+  IMPORTANTE: TODAS las experiencias deben tener bullets+aptitudes+keywords completos. NO dejar la última con 5 bullets y las anteriores con 1 — TODAS al mismo nivel de detalle. Si la info del CV original es escasa, expandirla con criterio (sin inventar números).
 
 OUTPUT: JSON estricto, sin markdown wrapper, sin texto antes ni después. Solo el JSON.`;
 
@@ -451,6 +467,64 @@ Deno.serve(async (req: Request) => {
 
       return new Response(
         JSON.stringify(result),
+        { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── ANALIZAR LINKEDIN — desde cliente.html ──
+    // Cliente del coach pega su LinkedIn actual, la IA analiza y genera
+    // titular_propuesto + acerca_de_propuesto + experiencias_optimizadas.
+    // Reusamos el prompt de cv_express pero pedimos SOLO el bloque de LinkedIn.
+    if (accion === "analizar_linkedin") {
+      const b = body as unknown as {
+        nombre?: string;
+        rol?: string;
+        sector?: string;
+        ciudad?: string;
+        objetivo?: string;
+        experiencia?: string;
+        educacion?: string;
+        habilidades?: string;
+        linkedin_texto?: string;
+      };
+      if (!b.linkedin_texto || b.linkedin_texto.length < 50) {
+        return new Response(
+          JSON.stringify({ error: "linkedin_texto es requerido (min 50 chars)" }),
+          { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+      // Construir un cv_texto sintético desde los campos del candidato.
+      const cvSint = [
+        b.nombre ? `Nombre: ${b.nombre}` : "",
+        b.rol ? `Rol actual: ${b.rol}` : "",
+        b.sector ? `Sector: ${b.sector}` : "",
+        b.ciudad ? `Ciudad: ${b.ciudad}` : "",
+        b.experiencia ? `Experiencia:\n${b.experiencia}` : "",
+        b.educacion ? `Educación:\n${b.educacion}` : "",
+        b.habilidades ? `Habilidades: ${b.habilidades}` : "",
+      ].filter(Boolean).join("\n\n");
+      const objetivo = b.objetivo || `Mejorar perfil de LinkedIn como ${b.rol || "profesional"}`;
+      const prompt = `OBJETIVO PROFESIONAL:\n${objetivo}\n\n` +
+        `CV/CONTEXTO DEL CANDIDATO:\n${cvSint}\n\n` +
+        `LINKEDIN TEXTO ACTUAL:\n${b.linkedin_texto}\n\n` +
+        `Devolvé SOLO el bloque linkedin_analisis del formato JSON. ` +
+        `NO incluyas cv_optimizado ni carta — solo linkedin_analisis con todos sus subcampos ` +
+        `(score_actual, titular_actual, titular_propuesto, acerca_de_actual, acerca_de_propuesto, ` +
+        `puntos_fuertes, areas_mejora, habilidades_sugeridas, experiencias_optimizadas).`;
+      const response = await callClaude(SYSTEM_CV_EXPRESS, prompt, apiKey, 8000);
+      const parsed = extractJson(response);
+      if (!parsed) {
+        return new Response(
+          JSON.stringify({ error: "No se pudo parsear respuesta de Claude" }),
+          { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+      // El frontend (cliente.html liAnalizar) lee data.analisis. Devolvemos
+      // ahí el linkedin_analisis si vino, o el parsed completo como fallback
+      // (algunos prompts devuelven el contenido al root level).
+      const analisis = parsed.linkedin_analisis || parsed;
+      return new Response(
+        JSON.stringify({ ok: true, analisis: analisis }),
         { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
       );
     }
