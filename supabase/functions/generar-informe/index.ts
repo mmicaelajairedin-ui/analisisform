@@ -471,6 +471,64 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ── ANALIZAR LINKEDIN — desde cliente.html ──
+    // Cliente del coach pega su LinkedIn actual, la IA analiza y genera
+    // titular_propuesto + acerca_de_propuesto + experiencias_optimizadas.
+    // Reusamos el prompt de cv_express pero pedimos SOLO el bloque de LinkedIn.
+    if (accion === "analizar_linkedin") {
+      const b = body as unknown as {
+        nombre?: string;
+        rol?: string;
+        sector?: string;
+        ciudad?: string;
+        objetivo?: string;
+        experiencia?: string;
+        educacion?: string;
+        habilidades?: string;
+        linkedin_texto?: string;
+      };
+      if (!b.linkedin_texto || b.linkedin_texto.length < 50) {
+        return new Response(
+          JSON.stringify({ error: "linkedin_texto es requerido (min 50 chars)" }),
+          { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+      // Construir un cv_texto sintético desde los campos del candidato.
+      const cvSint = [
+        b.nombre ? `Nombre: ${b.nombre}` : "",
+        b.rol ? `Rol actual: ${b.rol}` : "",
+        b.sector ? `Sector: ${b.sector}` : "",
+        b.ciudad ? `Ciudad: ${b.ciudad}` : "",
+        b.experiencia ? `Experiencia:\n${b.experiencia}` : "",
+        b.educacion ? `Educación:\n${b.educacion}` : "",
+        b.habilidades ? `Habilidades: ${b.habilidades}` : "",
+      ].filter(Boolean).join("\n\n");
+      const objetivo = b.objetivo || `Mejorar perfil de LinkedIn como ${b.rol || "profesional"}`;
+      const prompt = `OBJETIVO PROFESIONAL:\n${objetivo}\n\n` +
+        `CV/CONTEXTO DEL CANDIDATO:\n${cvSint}\n\n` +
+        `LINKEDIN TEXTO ACTUAL:\n${b.linkedin_texto}\n\n` +
+        `Devolvé SOLO el bloque linkedin_analisis del formato JSON. ` +
+        `NO incluyas cv_optimizado ni carta — solo linkedin_analisis con todos sus subcampos ` +
+        `(score_actual, titular_actual, titular_propuesto, acerca_de_actual, acerca_de_propuesto, ` +
+        `puntos_fuertes, areas_mejora, habilidades_sugeridas, experiencias_optimizadas).`;
+      const response = await callClaude(SYSTEM_CV_EXPRESS, prompt, apiKey, 8000);
+      const parsed = extractJson(response);
+      if (!parsed) {
+        return new Response(
+          JSON.stringify({ error: "No se pudo parsear respuesta de Claude" }),
+          { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+      // El frontend (cliente.html liAnalizar) lee data.analisis. Devolvemos
+      // ahí el linkedin_analisis si vino, o el parsed completo como fallback
+      // (algunos prompts devuelven el contenido al root level).
+      const analisis = parsed.linkedin_analisis || parsed;
+      return new Response(
+        JSON.stringify({ ok: true, analisis: analisis }),
+        { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      );
+    }
+
     // generar_informe (default)
     const prompt = buildInformePrompt(body);
     const response = await callClaude(SYSTEM_INFORME, prompt, apiKey);

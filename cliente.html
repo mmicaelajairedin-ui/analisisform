@@ -1475,8 +1475,10 @@ function _applyCoachBrand(data){
   if(fotoEl&&data.foto_url){fotoEl.src=data.foto_url;fotoEl.alt=data.nombre||'';}
   // Replace any "Micaela" text still in the DOM (topbar, citations, etc.)
   _replaceCoachInDOM();
-  // Si hay una sección renderizada, re-render para picar los strings nuevos
-  if(typeof render==='function'&&typeof SEC!=='undefined'&&SEC){
+  // Si hay una sección renderizada, re-render para picar los strings nuevos.
+  // Guard: solo re-renderizar si C ya cargó (evita race condition con init()
+  // donde _applyCoachBrand corre antes de que la data del candidato esté lista).
+  if(typeof render==='function'&&typeof SEC!=='undefined'&&SEC&&typeof C!=='undefined'&&C){
     try{render(SEC);}catch(e){}
   }
 }
@@ -1764,6 +1766,10 @@ var MEDALS=[
 ];
 
 function getAchievements(){
+  // Si C no está cargado todavía (puede pasar si _applyCoachBrand triggerea
+  // un re-render antes de que init() termine de cargar el candidato),
+  // devolvemos array vacío en lugar de crashear con 'null.carta_presentacion'.
+  if(!C) return [];
   var hasInforme=!!(D&&D.resumen);
   var hasCv=!!CV;
   var hasCarta=!!(C.carta_presentacion&&C.carta_presentacion.length>50);
@@ -3839,12 +3845,10 @@ function rLinkedIn(){
   var liAreasMejora=li.areas_mejora||[];
   var liScore=li.score_actual;
 
-  // Wrapper principal: max-width centrado, igual al linkedin-viewer del
-  // Pack Express. Esto hace que todo el contenido (mockup + cards) viva
-  // en una columna estrecha y la vista no se sienta "wide y vacía".
-  // data-sec="linkedin" — usado por goSec para validar el cache (sin esto
-  // se podía cachear contenido de otra sección bajo la key linkedin).
-  var o='<div data-sec="linkedin" style="max-width:680px;margin:0 auto;display:flex;flex-direction:column;gap:14px;">';
+  // Wrapper principal: max-width amplio para que las cards de Titular,
+  // Acerca de, Experiencias entren cómodas sin forzar tanto scroll.
+  // data-sec="linkedin" — usado por goSec para validar el cache.
+  var o='<div data-sec="linkedin" style="max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:14px;">';
 
   // Título grande arriba (idéntico estilo al Pack Express)
   o+='<div style="text-align:center;margin-bottom:8px;">';
