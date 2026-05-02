@@ -1032,7 +1032,17 @@ var ME=null;
   var avEl=document.getElementById('sb-coach-avatar');
   if(avEl){
     var nm=ME.nombre||ME.email||'?';
-    avEl.textContent=nm.split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();
+    var ini=nm.split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();
+    // PERF: si tenemos foto cacheada en localStorage, mostrarla AHORA
+    // (evita el 'flash' de iniciales → foto que Mica reportó). El fetch
+    // async de abajo igual revalida y actualiza si cambió en Supabase.
+    var cachedFoto=null;
+    try{var cfg=JSON.parse(localStorage.getItem('mj_coach_config')||'{}');cachedFoto=cfg.foto_url;}catch(e){}
+    if(cachedFoto){
+      avEl.innerHTML='<img src="'+cachedFoto+'" alt="" style="width:100%;height:100%;object-fit:cover;">';
+    } else {
+      avEl.textContent=ini;
+    }
   }
   // Botón Admin solo para owners de la plataforma
   if(ME.rol==='admin'){
@@ -1268,7 +1278,16 @@ function loadCands(){
   if(!isAdmin&&ME&&ME.id){
     candFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
   }
-  Promise.all([sbGet('candidatos',candFilter),sbGet('informes','select=*'),sbGet('cv_publicados','select=id,email,codigo,contenido,created_at')]).then(function(res){
+  // PERFORMANCE: ANTES traíamos informes con `select=*` (incluye `data` JSON
+  // de varios KB por informe) y cv_publicados con `contenido` JSON. Para un
+  // coach con 20 clientes eso son ~500KB de payload solo para chequear
+  // existencia. Cambiamos a select que omite los blobs grandes — solo
+  // id+email+metadata. La data completa se fetchea on-demand al abrir ficha.
+  Promise.all([
+    sbGet('candidatos',candFilter),
+    sbGet('informes','select=id,email,prev,created_at'),
+    sbGet('cv_publicados','select=id,email,codigo,created_at')
+  ]).then(function(res){
     var all=res[0],allReps=res[1],allCvs=res[2];
     var byEmail={};
     all.forEach(function(c){var k=(c.email||'').toLowerCase().trim();if(!byEmail[k])byEmail[k]=[];byEmail[k].push(c);});
