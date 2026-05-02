@@ -1,0 +1,53 @@
+name: "📊 Weekly Analytics Agent"
+
+# Dispara la edge function analytics-weekly cada lunes 8:00 UTC
+# (≈10:00 CEST en verano / 9:00 CET en invierno).
+# La edge function arma el reporte semanal y lo manda por email.
+#
+# Secrets requeridos en el repo:
+#   SUPABASE_PROJECT_URL    https://<proyecto>.supabase.co
+#   AGENT_TRIGGER_SECRET    mismo valor que el secret de Supabase
+#
+# Trigger manual: Actions → Weekly Analytics Agent → Run workflow
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trigger-analytics:
+    name: "Disparar reporte semanal"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: "POST a edge function analytics-weekly"
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          AGENT_TRIGGER_SECRET: ${{ secrets.AGENT_TRIGGER_SECRET }}
+        run: |
+          if [ -z "$SUPABASE_PROJECT_URL" ] || [ -z "$AGENT_TRIGGER_SECRET" ]; then
+            echo "::error::Faltan secrets SUPABASE_PROJECT_URL o AGENT_TRIGGER_SECRET"
+            exit 1
+          fi
+
+          response=$(curl -sS -w "\n%{http_code}" -X POST \
+            "$SUPABASE_PROJECT_URL/functions/v1/analytics-weekly" \
+            -H "X-Trigger-Secret: $AGENT_TRIGGER_SECRET" \
+            -H "Content-Type: application/json" \
+            --max-time 120)
+
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP $status"
+          echo "$body"
+
+          if [ "$status" != "200" ]; then
+            echo "::error::La edge function devolvió status $status"
+            exit 1
+          fi

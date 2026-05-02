@@ -133,6 +133,38 @@ El objeto TX en cliente.html NO debe usar t() dentro de su propia definicion (re
 ### IMPORTANTE: cache de secciones (_secCache)
 El cache se guarda en goSec() ANTES de actualizar SEC. render() solo lee el cache. Si se mueve SEC=sec antes del save, el cache se guarda bajo la key incorrecta.
 
+## Agente semanal de analytics (mayo 2026)
+
+Reporte automatizado los lunes 8:00 UTC con metricas de Cloudflare + analisis IA + email.
+
+**Componentes:**
+- `supabase/functions/analytics-weekly/index.ts` — pulls Cloudflare GraphQL, llama Claude, guarda en Supabase, manda email
+- `.github/workflows/weekly-analytics.yml` — cron lunes 8:00 UTC, hace POST a la edge function
+- `supabase/migrations/analytics_reports.sql` — tabla `analytics_reports` (memoria semana a semana)
+
+**Setup (una sola vez):**
+1. Aplicar migration: `analytics_reports.sql`
+2. Crear API token en Cloudflare con permiso "Zone Analytics: Read" para ambas zonas (micaelajairedin.com y pathwaycareercoach.com). Anotar zone IDs.
+3. Configurar secrets en Supabase (Edge Functions → Secrets):
+   - `ANTHROPIC_API_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_MJ`, `CLOUDFLARE_ZONE_PW`, `REPORT_EMAIL_TO`, `AGENT_TRIGGER_SECRET`
+4. Configurar secrets en GitHub (Settings → Secrets → Actions):
+   - `SUPABASE_PROJECT_URL`, `AGENT_TRIGGER_SECRET` (mismo valor que en Supabase)
+5. Deploy: `supabase functions deploy analytics-weekly --no-verify-jwt`
+6. Test manual: Actions → Weekly Analytics Agent → Run workflow
+
+**Flujo:**
+```
+GH Actions cron lunes 8am UTC
+  → POST /functions/v1/analytics-weekly (con X-Trigger-Secret header)
+  → Cloudflare GraphQL (datos 7 dias para ambas zonas)
+  → Lee reporte anterior de analytics_reports (memoria)
+  → Claude API (analisis + hipotesis + acciones)
+  → Guarda nuevo reporte en analytics_reports
+  → send-email (Brevo) → llega al REPORT_EMAIL_TO
+```
+
+**Iterar el prompt:** el system prompt esta en `analytics-weekly/index.ts` constante `SYSTEM_ANALYTICS`. Editarlo, redesplegar, y disparar manualmente desde GH Actions para testear.
+
 ## PENDIENTE — Proximas mejoras
 - Blog: crear /blog.html como hub + 4-5 posts SEO (coaching de carrera, CV con IA, etc.)
 - Paginas por pais: /coaching-carrera-espana.html, /coaching-carrera-argentina.html
