@@ -5890,12 +5890,14 @@ function _waPaintZone(zoneCfg,rows){
       +'<div style="font-size:15px;color:#1B4332;font-weight:600;line-height:1.4;">'+_escW(a.headline)+'</div>'
       +'</div>';
   }
-  // Charts side by side
+  // Charts side by side. IMPORTANTE: cada canvas DEBE estar dentro de un
+  // wrapper con altura fija (position:relative + height en px) sino Chart.js
+  // entra en loop infinito de resize y el grafico crece sin parar.
   html+='<div style="display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:20px;">'
-    +'<div style="background:#fff;border-radius:10px;padding:16px;"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Visitas dia x dia</div><canvas id="wa-chart-daily" height="80"></canvas></div>'
+    +'<div style="background:#fff;border-radius:10px;padding:16px;"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Visitas dia x dia</div><div style="position:relative;height:260px;"><canvas id="wa-chart-daily"></canvas></div></div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">'
-    +'<div style="background:#fff;border-radius:10px;padding:16px;"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Top paises</div><canvas id="wa-chart-countries" height="120"></canvas></div>'
-    +'<div style="background:#fff;border-radius:10px;padding:16px;"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Visitas por semana (ultimas '+rows.length+')</div><canvas id="wa-chart-weekly" height="120"></canvas></div>'
+    +'<div style="background:#fff;border-radius:10px;padding:16px;"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Top paises</div><div style="position:relative;height:240px;"><canvas id="wa-chart-countries"></canvas></div></div>'
+    +'<div style="background:#fff;border-radius:10px;padding:16px;"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Visitas por semana (ultimas '+rows.length+')</div><div style="position:relative;height:240px;"><canvas id="wa-chart-weekly"></canvas></div></div>'
     +'</div></div>';
   // Analisis Claude
   function listSection(title,items,color){
@@ -5926,47 +5928,55 @@ function _waPaintZone(zoneCfg,rows){
   setTimeout(function(){_waPaintCharts(zoneCfg,rows);},10);
 }
 
+var _waChartInstances={};
+
+function _waMakeChart(id,config){
+  var canvas=document.getElementById(id);
+  if(!canvas)return;
+  // Destruir instancia previa si existe (evita leaks y bugs de re-render)
+  if(_waChartInstances[id]){
+    try{_waChartInstances[id].destroy();}catch(_e){}
+    _waChartInstances[id]=null;
+  }
+  _waChartInstances[id]=new Chart(canvas,config);
+}
+
 function _waPaintCharts(zoneCfg,rows){
   if(!window.Chart)return;
   var latest=rows[0];
   var m=latest.raw_metrics||{};
   // 1. Daily line chart (esta semana)
-  var dailyCtx=document.getElementById('wa-chart-daily');
-  if(dailyCtx&&m.daily){
-    new Chart(dailyCtx,{
+  if(m.daily){
+    _waMakeChart('wa-chart-daily',{
       type:'line',
       data:{
         labels:m.daily.map(function(d){return d.date.slice(5);}),
         datasets:[{label:'Visitas',data:m.daily.map(function(d){return d.uniques;}),borderColor:zoneCfg.color,backgroundColor:zoneCfg.color+'22',tension:.3,fill:true,pointRadius:4,pointBackgroundColor:zoneCfg.color}]
       },
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:11}}},x:{ticks:{font:{size:11}}}}}
+      options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:11}}},x:{ticks:{font:{size:11}}}}}
     });
   }
   // 2. Countries pie chart
-  var ctryCtx=document.getElementById('wa-chart-countries');
-  if(ctryCtx&&m.topCountries&&m.topCountries.length){
-    new Chart(ctryCtx,{
+  if(m.topCountries&&m.topCountries.length){
+    _waMakeChart('wa-chart-countries',{
       type:'doughnut',
       data:{
         labels:m.topCountries.map(function(c){return c.country;}),
         datasets:[{data:m.topCountries.map(function(c){return c.requests;}),backgroundColor:['#2D6A4F','#8C7B80','#E9C46A','#C0756E','#5E5050']}]
       },
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:11},boxWidth:12}}}}
+      options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{position:'right',labels:{font:{size:11},boxWidth:12}}}}
     });
   }
   // 3. Weekly trend bar chart (ultimas N semanas, mas vieja primero)
-  var weekCtx=document.getElementById('wa-chart-weekly');
-  if(weekCtx){
-    var sorted=rows.slice().sort(function(a,b){return a.period_end.localeCompare(b.period_end);});
-    new Chart(weekCtx,{
-      type:'bar',
-      data:{
-        labels:sorted.map(function(r){return r.period_end.slice(5);}),
-        datasets:[{label:'Visitas',data:sorted.map(function(r){return (r.raw_metrics||{}).totalUniques||0;}),backgroundColor:zoneCfg.color}]
-      },
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:11}}},x:{ticks:{font:{size:11}}}}}
-    });
-  }
+  var sorted=rows.slice().sort(function(a,b){return a.period_end.localeCompare(b.period_end);});
+  _waMakeChart('wa-chart-weekly',{
+    type:'bar',
+    data:{
+      labels:sorted.map(function(r){return r.period_end.slice(5);}),
+      datasets:[{label:'Visitas',data:sorted.map(function(r){return (r.raw_metrics||{}).totalUniques||0;}),backgroundColor:zoneCfg.color}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:11}}},x:{ticks:{font:{size:11}}}}}
+  });
 }
 
 // ── ADMIN DASHBOARD (Pathway owner) ─────────────────────────
