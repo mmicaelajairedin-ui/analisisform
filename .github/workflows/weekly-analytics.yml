@@ -30,16 +30,28 @@ jobs:
           SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
           AGENT_TRIGGER_SECRET: ${{ secrets.AGENT_TRIGGER_SECRET }}
         run: |
-          if [ -z "$SUPABASE_PROJECT_URL" ] || [ -z "$AGENT_TRIGGER_SECRET" ]; then
+          # Strip whitespace (newlines, spaces, tabs) — common copy-paste issue
+          # con secrets de GitHub. Tambien limpia / al final de la URL.
+          URL=$(printf '%s' "$SUPABASE_PROJECT_URL" | tr -d '[:space:]' | sed 's:/*$::')
+          SECRET=$(printf '%s' "$AGENT_TRIGGER_SECRET" | tr -d '[:space:]')
+
+          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
             echo "::error::Faltan secrets SUPABASE_PROJECT_URL o AGENT_TRIGGER_SECRET"
             exit 1
           fi
 
+          # Sanity check: la URL y el secret no deberian estar vacios despues de
+          # limpiar. Imprimimos longitudes (no los valores) para debug.
+          echo "URL chars: ${#URL} | Secret chars: ${#SECRET}"
+
           response=$(curl -sS -w "\n%{http_code}" -X POST \
-            "$SUPABASE_PROJECT_URL/functions/v1/analytics-weekly" \
-            -H "X-Trigger-Secret: $AGENT_TRIGGER_SECRET" \
+            "${URL}/functions/v1/analytics-weekly" \
+            -H "X-Trigger-Secret: ${SECRET}" \
             -H "Content-Type: application/json" \
-            --max-time 120)
+            --max-time 120) || {
+              echo "::error::curl fallo con exit code $?"
+              exit 1
+            }
 
           status=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
