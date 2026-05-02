@@ -860,6 +860,10 @@ button:active { transform: scale(.98); }
       style="display:none;background:transparent;color:rgba(233,196,106,.95);border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;font-family:Inter,sans-serif;text-align:left;cursor:pointer;align-items:center;gap:9px;width:100%;transition:all .15s;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg> Leads
     </button>
+    <button class="nb" id="nb-webanalytics" onclick="showSection('webanalytics')"
+      style="display:none;background:transparent;color:rgba(233,196,106,.95);border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;font-family:Inter,sans-serif;text-align:left;cursor:pointer;align-items:center;gap:9px;width:100%;transition:all .15s;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-7"/></svg> Web Analytics
+    </button>
     <button class="nb" id="nb-admin" onclick="showSection('admin')"
       style="display:none;background:transparent;color:rgba(233,196,106,.95);border:none;border-radius:10px;padding:9px 12px;font-size:12px;font-weight:600;font-family:Inter,sans-serif;text-align:left;cursor:pointer;align-items:center;gap:9px;width:100%;transition:all .15s;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z"/><path d="M12 22V12"/><path d="M3 7l9 5 9-5"/></svg> Admin
@@ -1039,6 +1043,8 @@ var ME=null;
     if(adminBtn)adminBtn.style.display='flex';
     var leadsBtn=document.getElementById('nb-leads');
     if(leadsBtn)leadsBtn.style.display='flex';
+    var waBtn=document.getElementById('nb-webanalytics');
+    if(waBtn)waBtn.style.display='flex';
     // Diferido: chequear coaches nuevos despues de que se carguen KEY/SB
     setTimeout(_checkNewCoaches,300);
   }
@@ -1176,7 +1182,13 @@ function _endTour(){
 
 // ── Inicialización de la app ──────────────────────────
 document.addEventListener('DOMContentLoaded', function(){
-  showSection('inicio');
+  // Hash routing: si la URL tiene #webanalytics u otra seccion, abrir esa
+  var initialSec = (window.location.hash || '').replace(/^#/,'') || 'inicio';
+  var validSecs = {inicio:1,clientes:1,pagos:1,mensajes:1,config:1,leads:1,webanalytics:1,admin:1};
+  if(!validSecs[initialSec]) initialSec = 'inicio';
+  // Web Analytics solo si admin
+  if(initialSec==='webanalytics' && (!ME||ME.rol!=='admin')) initialSec='inicio';
+  showSection(initialSec);
   loadCands();
   loadCoachPhoto();
   // Tour: solo si coach nuevo (no completó aún)
@@ -3340,7 +3352,7 @@ var _pagos = JSON.parse(localStorage.getItem('mj_pagos')||'{}');
 function showSection(sec) {
   closePanelSidebar();
   _sec = sec;
-  ['inicio','clientes','pagos','mensajes','config','admin'].forEach(function(s) {
+  ['inicio','clientes','pagos','mensajes','config','leads','webanalytics','admin'].forEach(function(s) {
     var nb = document.getElementById('nb-'+s);
     if (nb) nb.classList.toggle('nb-on', s===sec);
   });
@@ -3359,6 +3371,7 @@ function showSection(sec) {
     if (sec === 'mensajes') _renderMensajes();
     if (sec === 'config')   _renderConfig();
     if (sec === 'leads')    _renderLeads();
+    if (sec === 'webanalytics') _renderWebAnalytics();
     if (sec === 'admin')    { _renderAdmin(); _markAdminSeen(); }
   }
 }
@@ -5642,6 +5655,318 @@ function _renderConfig(){
   }).catch(function(err){
     dp.innerHTML='<div style="padding:2rem;color:#c0756e;">Error cargando configuración: '+err.message+'</div>';
   });
+}
+
+// ── WEB ANALYTICS (admin only) ──────────────────────────────
+// Tabs: Contexto (config), Pathway, Micaela
+// Lee analytics_reports + site_context. Renderiza con Chart.js (CDN).
+var _waTab='pathway';     // 'pathway' | 'micaela' | 'contexto'
+var _waReports={};        // { 'pathwaycareercoach.com': [rows], 'micaelajairedin.com': [rows] }
+var _waContext={};        // { 'pathwaycareercoach.com': contextRow, ... }
+var _waChartsLoaded=false;
+
+var WA_ZONES={
+  pathway:{zone:'pathwaycareercoach.com',label:'Pathway',color:'#2D6A4F'},
+  micaela:{zone:'micaelajairedin.com',label:'Micaela',color:'#8C7B80'}
+};
+
+function _waLoadCharts(cb){
+  if(_waChartsLoaded){cb();return;}
+  if(window.Chart){_waChartsLoaded=true;cb();return;}
+  var s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+  s.onload=function(){_waChartsLoaded=true;cb();};
+  s.onerror=function(){cb(new Error('No se pudo cargar Chart.js'));};
+  document.head.appendChild(s);
+}
+
+function _renderWebAnalytics(){
+  var dp=document.getElementById('dynamic-panel');
+  if(!dp)return;
+  if(!ME||ME.rol!=='admin'){
+    dp.innerHTML='<div style="padding:2rem;color:#c0756e;">Sin permisos.</div>';
+    return;
+  }
+  var t=_waTab;
+  function tabBtn(key,label){
+    var on=(t===key);
+    return '<button onclick="_waTab=\''+key+'\';_renderWebAnalytics();" style="padding:10px 18px;background:'+(on?'#fff':'transparent')+';color:'+(on?'#1B4332':'var(--muted)')+';border:none;border-bottom:2px solid '+(on?'#E9C46A':'transparent')+';font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-title);">'+label+'</button>';
+  }
+  dp.innerHTML='<div style="padding:8px 4px 40px;max-width:1100px;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px;">'
+    +'<div>'
+    +'<div style="display:inline-flex;align-items:center;gap:8px;background:#FFF7E6;color:#8C6D2E;padding:4px 10px;border-radius:14px;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;">🔒 Privado · Admin</div>'
+    +'<h2 style="font-family:var(--font-title);font-size:24px;font-weight:700;color:var(--title);letter-spacing:-.5px;margin:0;">Web Analytics</h2>'
+    +'<p style="font-size:12px;color:var(--muted);margin:4px 0 0;">Reportes semanales generados los lunes 8:00 UTC. <a href="https://github.com/mmicaelajairedin-ui/analisisform/actions/workflows/weekly-analytics.yml" target="_blank" style="color:var(--accent);">Disparar manualmente →</a></p>'
+    +'</div>'
+    +'<button onclick="_waReports={};_waContext={};_renderWebAnalytics();" style="padding:8px 14px;background:#FFF7E6;color:#8C6D2E;border:1.5px solid #F5E5B0;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">&#8635; Refrescar</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;margin:18px 0 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;">'
+    +tabBtn('pathway','📊 Pathway')
+    +tabBtn('micaela','📊 Micaela')
+    +tabBtn('contexto','⚙️ Contexto')
+    +'</div>'
+    +'<div id="wa-content"><div style="text-align:center;padding:3rem;color:var(--muted);">Cargando...</div></div>'
+    +'</div>';
+  if(t==='contexto') _waRenderContexto();
+  else _waRenderZone(WA_ZONES[t]);
+}
+
+// ── Tab Contexto ────────────────────────────────────────────
+function _waRenderContexto(){
+  var el=document.getElementById('wa-content');
+  if(!el)return;
+  el.innerHTML='<div style="text-align:center;padding:2rem;color:var(--muted);">Cargando contexto...</div>';
+  fetch(SB+'/rest/v1/site_context?select=*',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+    rows.forEach(function(c){_waContext[c.zone]=c;});
+    var html='<div style="display:flex;flex-direction:column;gap:20px;">';
+    html+='<div style="background:#FFF7E6;border-left:3px solid #E9C46A;border-radius:8px;padding:14px 18px;font-size:13px;color:#5A4520;">'
+      +'<strong>Para que sirve esto:</strong> el agente lee este contexto cada lunes y lo usa para que las hipotesis y acciones sean ESPECIFICAS de cada sitio. Sin contexto, las recomendaciones son genericas.'
+      +'</div>';
+    ['pathwaycareercoach.com','micaelajairedin.com'].forEach(function(zone){
+      var c=_waContext[zone]||{zone:zone};
+      var displayName=c.display_name||(zone==='pathwaycareercoach.com'?'Pathway':'Micaela');
+      html+='<div style="background:#fff;border-radius:12px;padding:22px;box-shadow:0 1px 4px rgba(0,0,0,.04);">'
+        +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">'
+        +'<div style="width:36px;height:36px;border-radius:8px;background:#F5F0F0;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--accent);">'+displayName.charAt(0)+'</div>'
+        +'<div><div style="font-size:15px;font-weight:700;color:var(--title);">'+_escW(displayName)+'</div>'
+        +'<div style="font-size:11px;color:var(--muted);">'+_escW(zone)+'</div></div>'
+        +'</div>'
+        +'<div style="display:grid;grid-template-columns:1fr;gap:14px;">'
+        +_waField('display_name',zone,'Nombre amigable',c.display_name||'',false,'Pathway / Micaela')
+        +_waField('objetivo_principal',zone,'Objetivo principal',c.objetivo_principal||'',true,'Que un coach se registre y active su trial')
+        +_waField('audiencia',zone,'Audiencia objetivo',c.audiencia||'',true,'Coaches independientes hispanohablantes 30-50 años...')
+        +_waJsonField('paginas_clave',zone,'Paginas clave (JSON)',c.paginas_clave,'[{"url":"/registro.html","proposito":"Registro coach","conversion":true}]')
+        +_waJsonField('conversiones',zone,'Conversiones clave (JSON)',c.conversiones,'[{"cta":"Empezar prueba","donde":"/soy-coach.html","valor":"critico"}]')
+        +_waField('notas',zone,'Notas adicionales',c.notas||'',true,'Cualquier contexto extra que el agente deba saber')
+        +'</div>'
+        +'<div style="margin-top:18px;text-align:right;">'
+        +'<button onclick="_waSaveContext(\''+zone+'\')" style="padding:10px 22px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">Guardar</button>'
+        +'<span id="wa-save-msg-'+_waSlug(zone)+'" style="margin-left:12px;font-size:12px;color:var(--muted);"></span>'
+        +'</div>'
+        +'</div>';
+    });
+    html+='</div>';
+    el.innerHTML=html;
+  }).catch(function(err){
+    el.innerHTML='<div style="padding:2rem;color:#c0756e;">Error cargando contexto: '+_escW(err.message)+'</div>';
+  });
+}
+
+function _escW(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
+function _waSlug(s){return s.replace(/[^a-z0-9]/g,'_');}
+
+function _waField(name,zone,label,val,multi,placeholder){
+  var id='wa-f-'+_waSlug(zone)+'-'+name;
+  var input=multi
+    ?'<textarea id="'+id+'" rows="3" placeholder="'+_escW(placeholder)+'" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:Inter,sans-serif;font-size:13px;color:var(--body);resize:vertical;background:#fff;">'+_escW(val)+'</textarea>'
+    :'<input id="'+id+'" type="text" placeholder="'+_escW(placeholder)+'" value="'+_escW(val)+'" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:Inter,sans-serif;font-size:13px;color:var(--body);background:#fff;">';
+  return '<div><label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">'+_escW(label)+'</label>'+input+'</div>';
+}
+
+function _waJsonField(name,zone,label,val,placeholder){
+  var id='wa-f-'+_waSlug(zone)+'-'+name;
+  var str='';
+  try{str=val?JSON.stringify(val,null,2):'';}catch(_e){str='';}
+  return '<div><label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">'+_escW(label)+'</label>'
+    +'<textarea id="'+id+'" rows="5" placeholder="'+_escW(placeholder)+'" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--body);resize:vertical;background:#fff;">'+_escW(str)+'</textarea>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:4px;">JSON valido. Si lo dejas vacio, el agente no lo usa.</div></div>';
+}
+
+function _waSaveContext(zone){
+  var slug=_waSlug(zone);
+  var msg=document.getElementById('wa-save-msg-'+slug);
+  function val(name){var el=document.getElementById('wa-f-'+slug+'-'+name);return el?el.value.trim():'';}
+  function jsonVal(name){
+    var raw=val(name);
+    if(!raw)return null;
+    try{return JSON.parse(raw);}
+    catch(e){throw new Error('JSON invalido en '+name+': '+e.message);}
+  }
+  try{
+    var payload={
+      zone:zone,
+      display_name:val('display_name')||null,
+      objetivo_principal:val('objetivo_principal')||null,
+      audiencia:val('audiencia')||null,
+      paginas_clave:jsonVal('paginas_clave'),
+      conversiones:jsonVal('conversiones'),
+      notas:val('notas')||null,
+      updated_at:new Date().toISOString()
+    };
+    if(msg){msg.textContent='Guardando...';msg.style.color='var(--muted)';}
+    fetch(SB+'/rest/v1/site_context?on_conflict=zone',{
+      method:'POST',
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify(payload)
+    }).then(function(r){
+      if(r.ok){if(msg){msg.textContent='✓ Guardado';msg.style.color='#2D6A4F';}}
+      else{return r.text().then(function(t){throw new Error('HTTP '+r.status+': '+t.slice(0,150));});}
+    }).catch(function(err){
+      if(msg){msg.textContent='Error: '+err.message;msg.style.color='#c0756e';}
+    });
+  }catch(e){
+    if(msg){msg.textContent='Error: '+e.message;msg.style.color='#c0756e';}
+  }
+}
+
+// ── Tab Pathway / Micaela ───────────────────────────────────
+function _waRenderZone(zoneCfg){
+  var el=document.getElementById('wa-content');
+  if(!el)return;
+  el.innerHTML='<div style="text-align:center;padding:2rem;color:var(--muted);">Cargando reportes...</div>';
+  var zone=zoneCfg.zone;
+  // Cache: si ya tenemos los reportes, no re-fetch
+  if(_waReports[zone]){
+    _waLoadCharts(function(err){
+      if(err){el.innerHTML='<div style="padding:2rem;color:#c0756e;">'+err.message+'</div>';return;}
+      _waPaintZone(zoneCfg,_waReports[zone]);
+    });
+    return;
+  }
+  fetch(SB+'/rest/v1/analytics_reports?zone=eq.'+encodeURIComponent(zone)+'&select=*&order=period_end.desc&limit=12',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+    _waReports[zone]=rows;
+    _waLoadCharts(function(err){
+      if(err){el.innerHTML='<div style="padding:2rem;color:#c0756e;">'+err.message+'</div>';return;}
+      _waPaintZone(zoneCfg,rows);
+    });
+  }).catch(function(err){
+    el.innerHTML='<div style="padding:2rem;color:#c0756e;">Error: '+_escW(err.message)+'</div>';
+  });
+}
+
+function _waFmt(n){return (n||0).toLocaleString('es-ES');}
+function _waBytes(b){if(!b)return '0 MB';if(b>1073741824)return (b/1073741824).toFixed(1)+' GB';return (b/1048576).toFixed(0)+' MB';}
+
+function _waPaintZone(zoneCfg,rows){
+  var el=document.getElementById('wa-content');
+  if(!el)return;
+  if(!rows||!rows.length){
+    el.innerHTML='<div style="background:#fff;border-radius:14px;padding:3rem;text-align:center;color:var(--muted);">'
+      +'<div style="font-size:32px;margin-bottom:10px;">📊</div>'
+      +'<div style="font-size:14px;font-weight:700;color:var(--title);margin-bottom:6px;">Sin reportes para '+_escW(zoneCfg.label)+' todavia</div>'
+      +'<div style="font-size:12px;line-height:1.5;">Los reportes se generan los lunes 8:00 UTC. Tambien podes <a href="https://github.com/mmicaelajairedin-ui/analisisform/actions/workflows/weekly-analytics.yml" target="_blank" style="color:var(--accent);">disparar uno manualmente</a>.</div>'
+      +'</div>';
+    return;
+  }
+  var latest=rows[0];
+  var prev=rows[1];
+  var m=latest.raw_metrics||{};
+  var a=latest.analysis||{};
+  var html='';
+  // KPIs
+  function kpi(label,value,delta){
+    var deltaHtml='';
+    if(delta!=null){
+      var sign=delta>=0?'+':'';
+      var color=delta>=0?'#2D6A4F':'#c0756e';
+      deltaHtml='<div style="font-size:11px;color:'+color+';font-weight:700;margin-top:2px;">'+sign+delta.toFixed(1)+'% vs anterior</div>';
+    }
+    return '<div style="background:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.04);">'
+      +'<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">'+label+'</div>'
+      +'<div style="font-size:22px;font-weight:700;color:var(--title);">'+value+'</div>'
+      +deltaHtml+'</div>';
+  }
+  function pctDelta(curr,prev){
+    if(prev==null||prev===0)return null;
+    return ((curr-prev)/prev)*100;
+  }
+  var pm=prev?prev.raw_metrics:null;
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px;">'
+    +kpi('Visitas',_waFmt(m.totalUniques),pm?pctDelta(m.totalUniques,pm.totalUniques):null)
+    +kpi('Requests',_waFmt(m.totalRequests),pm?pctDelta(m.totalRequests,pm.totalRequests):null)
+    +kpi('% Cache',(m.cachePct||0).toFixed(1)+'%',null)
+    +kpi('Datos',_waBytes(m.totalBytes),null)
+    +kpi('Pico',_waFmt(m.peakDay&&m.peakDay.uniques||0),null)
+    +'</div>';
+  // Headline + analisis
+  if(a.headline){
+    html+='<div style="background:#FFF7E6;border-left:3px solid #E9C46A;border-radius:10px;padding:16px 20px;margin-bottom:18px;">'
+      +'<div style="font-size:11px;font-weight:700;color:#8C6D2E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Titular</div>'
+      +'<div style="font-size:15px;color:#1B4332;font-weight:600;line-height:1.4;">'+_escW(a.headline)+'</div>'
+      +'</div>';
+  }
+  // Charts side by side
+  html+='<div style="display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:20px;">'
+    +'<div style="background:#fff;border-radius:10px;padding:16px;"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Visitas dia x dia</div><canvas id="wa-chart-daily" height="80"></canvas></div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">'
+    +'<div style="background:#fff;border-radius:10px;padding:16px;"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Top paises</div><canvas id="wa-chart-countries" height="120"></canvas></div>'
+    +'<div style="background:#fff;border-radius:10px;padding:16px;"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Visitas por semana (ultimas '+rows.length+')</div><canvas id="wa-chart-weekly" height="120"></canvas></div>'
+    +'</div></div>';
+  // Analisis Claude
+  function listSection(title,items,color){
+    if(!items||!items.length)return '';
+    return '<div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:14px;border-left:3px solid '+color+';">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">'+title+'</div>'
+      +'<ul style="margin:0;padding-left:20px;font-size:13px;color:var(--body);line-height:1.6;">'
+      +items.map(function(x){return '<li style="margin-bottom:4px;">'+_escW(x)+'</li>';}).join('')
+      +'</ul></div>';
+  }
+  function textSection(title,txt,color){
+    if(!txt)return '';
+    return '<div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:14px;border-left:3px solid '+color+';">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">'+title+'</div>'
+      +'<div style="font-size:13px;color:var(--body);line-height:1.6;">'+_escW(txt)+'</div></div>';
+  }
+  html+=textSection('Resumen',a.resumen,'#999');
+  html+=textSection('Comparacion semana anterior',a.comparacion_semana_anterior,'#999');
+  html+=textSection('Tendencia 4 semanas',a.tendencia_4_semanas,'#999');
+  html+=listSection('Hipotesis',a.hipotesis,'#8C7B80');
+  html+=listSection('Acciones esta semana',a.acciones_esta_semana,'#2D6A4F');
+  html+=listSection('Alertas',a.alertas,'#c0756e');
+  html+=textSection('Que replicar',a.que_replicar,'#E9C46A');
+  html+=textSection('Verificacion hipotesis previas',a.verificacion_hipotesis_previas,'#999');
+  html+=textSection('Experimento propuesto',a.experimento_propuesto,'#1B4332');
+  html+='<div style="margin-top:24px;text-align:center;font-size:11px;color:var(--muted);">Reporte del '+_escW(latest.period_start)+' al '+_escW(latest.period_end)+'. Generado '+_escW((latest.generated_at||'').slice(0,10))+'.</div>';
+  el.innerHTML=html;
+  setTimeout(function(){_waPaintCharts(zoneCfg,rows);},10);
+}
+
+function _waPaintCharts(zoneCfg,rows){
+  if(!window.Chart)return;
+  var latest=rows[0];
+  var m=latest.raw_metrics||{};
+  // 1. Daily line chart (esta semana)
+  var dailyCtx=document.getElementById('wa-chart-daily');
+  if(dailyCtx&&m.daily){
+    new Chart(dailyCtx,{
+      type:'line',
+      data:{
+        labels:m.daily.map(function(d){return d.date.slice(5);}),
+        datasets:[{label:'Visitas',data:m.daily.map(function(d){return d.uniques;}),borderColor:zoneCfg.color,backgroundColor:zoneCfg.color+'22',tension:.3,fill:true,pointRadius:4,pointBackgroundColor:zoneCfg.color}]
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:11}}},x:{ticks:{font:{size:11}}}}}
+    });
+  }
+  // 2. Countries pie chart
+  var ctryCtx=document.getElementById('wa-chart-countries');
+  if(ctryCtx&&m.topCountries&&m.topCountries.length){
+    new Chart(ctryCtx,{
+      type:'doughnut',
+      data:{
+        labels:m.topCountries.map(function(c){return c.country;}),
+        datasets:[{data:m.topCountries.map(function(c){return c.requests;}),backgroundColor:['#2D6A4F','#8C7B80','#E9C46A','#C0756E','#5E5050']}]
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:11},boxWidth:12}}}}
+    });
+  }
+  // 3. Weekly trend bar chart (ultimas N semanas, mas vieja primero)
+  var weekCtx=document.getElementById('wa-chart-weekly');
+  if(weekCtx){
+    var sorted=rows.slice().sort(function(a,b){return a.period_end.localeCompare(b.period_end);});
+    new Chart(weekCtx,{
+      type:'bar',
+      data:{
+        labels:sorted.map(function(r){return r.period_end.slice(5);}),
+        datasets:[{label:'Visitas',data:sorted.map(function(r){return (r.raw_metrics||{}).totalUniques||0;}),backgroundColor:zoneCfg.color}]
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:11}}},x:{ticks:{font:{size:11}}}}}
+    });
+  }
 }
 
 // ── ADMIN DASHBOARD (Pathway owner) ─────────────────────────
