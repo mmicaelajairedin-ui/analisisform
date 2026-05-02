@@ -1273,8 +1273,23 @@ function loadCands(){
     all.forEach(function(c){var k=(c.email||'').toLowerCase().trim();if(!byEmail[k])byEmail[k]=[];byEmail[k].push(c);});
     cands=Object.values(byEmail).map(function(g){g.sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});g[0]._subs=g.length;g[0]._hist=g;return g[0];});
     cands.sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
-    reps={};allReps.forEach(function(r){var k=(r.email||'').toLowerCase().trim();if(!reps[k])reps[k]=[];reps[k].push(r);});
-    cvs={};allCvs.forEach(function(cv){cvs[(cv.email||'').toLowerCase().trim()]=cv;});
+    // PRIVACY GUARD: filtrar informes/CVs por emails de mis candidatos.
+    // Sin esto, allReps y allCvs traen registros de TODOS los coaches
+    // (las queries 'select=*' no filtran por coach_id en estas tablas
+    // todavía — falta migración SQL para agregar la columna).
+    var myEmailsSet={};
+    cands.forEach(function(c){myEmailsSet[(c.email||'').toLowerCase().trim()]=true;});
+    reps={};allReps.forEach(function(r){
+      var k=(r.email||'').toLowerCase().trim();
+      if(!myEmailsSet[k]&&!(ME&&ME.rol==='admin'))return; // skip si no es mío
+      if(!reps[k])reps[k]=[];
+      reps[k].push(r);
+    });
+    cvs={};allCvs.forEach(function(cv){
+      var k=(cv.email||'').toLowerCase().trim();
+      if(!myEmailsSet[k]&&!(ME&&ME.rol==='admin'))return; // skip si no es mío
+      cvs[k]=cv;
+    });
     notes=JSON.parse(localStorage.getItem('mj_notes')||'{}');
     cands.forEach(function(c){if(c.notas_coach){notes[c.id]=c.notas_coach;}});
     localStorage.setItem('mj_notes',JSON.stringify(notes));
@@ -3473,10 +3488,11 @@ function _renderClientes(){
     });
   }
 
-  if(cands&&cands.length){ build(); }
+  // Render aunque cands sea array vacío — build() maneja el empty state.
+  if(typeof cands!=='undefined' && cands!==null){ build(); }
   else{
     dp.innerHTML='<div style="padding:28px 32px;"><h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:32px;font-weight:500;color:var(--title);letter-spacing:-1px;">Clientes</h2><div style="padding:2rem;text-align:center;color:var(--muted);">Cargando...</div></div>';
-    var _t=setInterval(function(){if(cands&&cands.length){clearInterval(_t);build();}},300);
+    var _t=setInterval(function(){if(typeof cands!=='undefined' && cands!==null){clearInterval(_t);build();}},300);
     setTimeout(function(){clearInterval(_t);},8000);
   }
 }
@@ -3890,10 +3906,13 @@ function _renderInicio(){
     if(typeof _loadAgenda==='function') _loadAgenda();
   }
 
-  if(cands&&cands.length){ build(); }
+  // Llamamos a build() siempre que cands esté inicializado (aunque sea
+  // array vacío). El empty state para coach con 0 clientes lo maneja
+  // build() internamente. Si cands aún no se cargó (undefined), esperamos.
+  if(typeof cands!=='undefined' && cands!==null){ build(); }
   else{
     dp.innerHTML='<div style="padding:2rem;text-align:center;color:var(--muted);">Cargando...</div>';
-    var _t=setInterval(function(){if(cands&&cands.length){clearInterval(_t);build();}},300);
+    var _t=setInterval(function(){if(typeof cands!=='undefined' && cands!==null){clearInterval(_t);build();}},300);
     setTimeout(function(){clearInterval(_t);},8000);
   }
 }
@@ -4435,8 +4454,16 @@ function crearCliente(){
       });
     });
   }
+  // PRIVACY: asociar el nuevo cliente al coach que lo crea. Sin coach_id,
+  // el cliente queda visible a todos los otros coaches (la query usa
+  // 'or=coach_id.eq.X,coach_id.is.null' para retrocompatibilidad).
   Promise.all([
-    sbPost('candidatos',{email:email,nombre:nombre,semana_activa:1}),
+    sbPost('candidatos',{
+      email:email,
+      nombre:nombre,
+      semana_activa:1,
+      coach_id: ME&&ME.id ? ME.id : null
+    }),
     crearUsuario
   ].filter(Boolean))
   .then(function(){
@@ -5971,13 +5998,28 @@ function _renderMensajes(){
     '</div>'+
     '<div id="panel-msgs"><div style="text-align:center;padding:2rem;color:var(--muted);">Cargando...</div></div>'+
   '</div>';
-  fetch(SB+'/rest/v1/candidatos?select=nombre,email,notas_coach&order=created_at.desc',{
+  // Filtramos por coach_id para que cada coach vea SOLO sus mensajes
+  // (sin esto, todos los coaches verían los mensajes de todos los candidatos
+  // — bug de privacidad). Mantenemos coach_id IS NULL para legacy data
+  // que no tiene coach asignado todavía (compat con `loadCands`).
+  var msgFilter='?select=nombre,email,notas_coach,coach_id&order=created_at.desc';
+  if(ME&&ME.id){
+    msgFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+  }
+  fetch(SB+'/rest/v1/candidatos'+msgFilter,{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
   }).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(function(rows){
     var container=document.getElementById('panel-msgs');
     if(!container)return;
+    // Defensa adicional: solo procesamos candidatos que estén en `cands`
+    // (la lista de candidatos del coach actual). Si por algún motivo el
+    // filtro server-side falla, esto previene fugas de mensajes.
+    var myEmails={};
+    (cands||[]).forEach(function(c){myEmails[(c.email||'').toLowerCase().trim()]=true;});
     var clients=[];
     (rows||[]).forEach(function(c){
+      var em=(c.email||'').toLowerCase().trim();
+      if(!myEmails[em])return; // skip candidatos que no son de este coach
       if(!c.notas_coach)return;
       try{
         var msgs=JSON.parse(c.notas_coach);
@@ -6055,7 +6097,13 @@ function _sendCoachMsg(){
 
 // Cargar badge de mensajes al iniciar
 function _checkMsgBadge(){
-  fetch(SB+'/rest/v1/candidatos?select=notas_coach&order=created_at.desc',{
+  // Filtrar por coach_id — sin esto el badge cuenta mensajes de TODOS los
+  // candidatos (de todos los coaches), no solo los del coach actual.
+  var badgeFilter='?select=notas_coach,coach_id&order=created_at.desc';
+  if(typeof ME!=='undefined'&&ME&&ME.id){
+    badgeFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+  }
+  fetch(SB+'/rest/v1/candidatos'+badgeFilter,{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
   }).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(function(rows){
     var count=0;

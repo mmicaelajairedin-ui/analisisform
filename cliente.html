@@ -1507,6 +1507,10 @@ function _loadCoachColor(){
       var coach=rows&&rows[0];if(!coach)return;
       var cfg=coach.configuracion||{};
       if(cfg.color_marca)_applyCoachColor(cfg.color_marca);
+      // Multi-tenant: cada coach tiene su propio Calendly. Si el coach
+      // configuró su URL, la usamos para el cliente; si no, queda el
+      // hardcoded como fallback (legacy).
+      if(cfg.calendly_url){CALENDLY=cfg.calendly_url;}
       _applyCoachBrand({
         nombre:coach.nombre,
         foto_url:coach.foto_url,
@@ -1554,6 +1558,17 @@ function init(){
       return;
     }
     C=res[0][0];
+    // ── PRIVACY GUARD: validar ownership de coach_view ────────────
+    // Si la URL trae ?coach_view=email pero el cliente NO pertenece al
+    // coach logueado, bloqueamos. Sin esto, cualquier coach podría ver
+    // datos privados de clientes de otros coaches simplemente cambiando
+    // el email en la URL. Admin sí puede ver todo (rol='admin').
+    if(COACH_PREVIEW && parsed.rol!=='admin' && C.coach_id && C.coach_id!==parsed.id){
+      document.getElementById('load-err').textContent='Sin permisos: este cliente pertenece a otro coach.';
+      document.getElementById('load-msg').textContent='';
+      setTimeout(function(){window.location.href=BASE+'/panel.html';},2500);
+      return;
+    }
     // Si el coach desactivó el acceso, no dejamos entrar al portal.
     // candidatos.activo es boolean. Tratamos null/undefined como activo
     // (default histórico) para no romper cuentas viejas sin la columna.

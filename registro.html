@@ -370,11 +370,11 @@ async function registrar(){
         html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">¡Nuevo coach en Pathway!</h2>'
           + '<p><strong>Nombre:</strong> ' + nombre + '</p>'
           + '<p><strong>Email:</strong> ' + email + '</p>'
-          + '<p><strong>Plan:</strong> ' + (selectedPlan === 'anual' ? 'Anual (€699)' : 'Mensual (€79)') + '</p>'
+          + '<p><strong>Estado:</strong> Trial 14 días gratis (sin tarjeta)</p>'
           + (nombre_practica ? '<p><strong>Práctica:</strong> ' + nombre_practica + '</p>' : '')
           + (bio ? '<p><strong>Bio:</strong> ' + bio.slice(0, 200) + '</p>' : '')
           + (refCoachId?'<p style="padding:10px 14px;background:rgba(233,196,106,.18);border-left:3px solid #E9C46A;border-radius:6px;"><strong>🎁 Referido por:</strong> coach_id ' + refCoachId + '<br>Acordate de darle 1 mes gratis cuando este pague.</p>':'')
-          + '<p style="margin-top:20px;padding:12px 16px;background:rgba(82,183,136,.1);border-radius:8px;font-size:13px;">Va a ser redirigido a Stripe ahora. Recibirás otro email cuando complete el pago.</p>'
+          + '<p style="margin-top:20px;padding:12px 16px;background:rgba(82,183,136,.1);border-radius:8px;font-size:13px;">El coach va al panel directo. Antes del día 14 recordá enviarle el link de pago.</p>'
       })
     }).then(function(r){
       if(!r.ok)return r.text().then(function(t){console.error('[admin notif] Brevo failed',r.status,t);});
@@ -403,42 +403,42 @@ async function registrar(){
       }).catch(function(){});
     }
 
-    // Email de bienvenida al coach
+    // Email de bienvenida al coach — alineado con el flow "trial sin tarjeta".
+    // Antes mencionaba 'Completá el pago para activar', pero ya no requerimos
+    // pago al inicio. El cobro se ofrece cerca del fin del trial.
     fetch(SB + '/functions/v1/send-email', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         to: email,
         to_name: nombre,
-        subject: 'Bienvenido a Pathway 🌱',
-        html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">Hola ' + (nombre.split(' ')[0] || nombre) + ',</h2>'
-          + '<p>Gracias por registrarte en Pathway. Te espera tu período de <strong>14 días gratis</strong> para probar la plataforma con clientes reales.</p>'
-          + '<h3 style="color:#2D6A4F;margin-top:20px;">Qué hacer ahora:</h3>'
-          + '<ol style="padding-left:20px;line-height:1.8;">'
-          + '<li>Completá el pago para activar tu cuenta (sin cargo en los 14 días)</li>'
-          + '<li>Completá tu perfil en Configuración (foto, bio, colores)</li>'
-          + '<li>Agregá tu primer cliente desde el panel</li>'
-          + '<li>Generá su primer informe con IA</li>'
+        subject: '¡Bienvenida a Pathway! Tu trial de 14 días empezó 🌱',
+        html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + (nombre.split(' ')[0] || nombre) + ',</h2>'
+          + '<p style="font-size:15px;line-height:1.65;">Bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis sin tarjeta</strong>.</p>'
+          + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Ir a mi panel →</a></p>'
+          + '<h3 style="color:#2D6A4F;margin-top:32px;font-family:Fraunces,Georgia,serif;font-weight:500;">Empezá en 4 pasos:</h3>'
+          + '<ol style="padding-left:20px;line-height:1.9;font-size:14px;">'
+          + '<li><strong>Completá tu perfil</strong> — foto, bio y colores en Configuración (5 min)</li>'
+          + '<li><strong>Conectá tu Calendly y Stripe</strong> — para que tus clientes agenden y te paguen directo</li>'
+          + '<li><strong>Agregá tu primer cliente</strong> — un click en "+ Nuevo cliente"</li>'
+          + '<li><strong>Generá su primer informe</strong> con IA — 30 segundos</li>'
           + '</ol>'
-          + '<p style="margin-top:24px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
-          + '<p style="font-size:12px;color:#666;margin-top:24px;">Cualquier duda, respondé este mail y te contestamos.</p>'
+          + '<p style="font-size:13px;color:#666;margin-top:24px;line-height:1.6;">Antes de que se acaben tus 14 días, te avisamos para que elijas plan y sigas. Si no querés seguir, no se cobra nada.</p>'
+          + '<p style="font-size:12px;color:#888;margin-top:18px;">Cualquier duda, respondé este mail. Te contestamos.</p>'
       })
     }).catch(function(){});
 
-    // Éxito — redirigir a Stripe Checkout para cobro de la suscripción
+    // Éxito — redirigir directo al panel (no a Stripe). El plan se elige
+    // al final del trial vía banner en el panel + email automatizado.
     loading.style.display = 'none';
-    showSuccess('Cuenta creada. Redirigiendo a pago seguro...');
-    btn.textContent = 'Redirigiendo...';
+    showSuccess('¡Cuenta creada! Te llevamos a tu panel...');
+    btn.textContent = 'Listo';
 
-    // URLs de Stripe Subscription (14 días trial gratis, después recurring)
-    var STRIPE_STARTER = 'https://buy.stripe.com/00waEXaeI6FO56Y8LF8AE03';
-    var STRIPE_PRO     = 'https://buy.stripe.com/9B600j5Ys6FO1UM8LF8AE04';
-    var stripeUrl = selectedPlan === 'anual' ? STRIPE_PRO : STRIPE_STARTER;
-    // Pre-llenar email en Stripe para asociar el pago a su cuenta
-    stripeUrl += '?prefilled_email=' + encodeURIComponent(email);
-
+    // Sesión ya está guardada arriba (línea ~353) con coach.id de Supabase.
+    // Redirigimos al panel directo — sin Stripe en el medio porque el trial
+    // no requiere tarjeta hasta el día 14.
     setTimeout(function(){
-      window.location.href = stripeUrl;
+      window.location.href = 'https://pathwaycareercoach.com/panel.html';
     }, 1200);
 
   } catch(err) {
