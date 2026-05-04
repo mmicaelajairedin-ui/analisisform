@@ -526,13 +526,28 @@ async function getRecentReports(
 ): Promise<Array<Record<string, unknown>>> {
   // Incluye actions_done para que el agente sepa que acciones marco la coach
   // como cumplidas en reportes anteriores y pueda verificar impacto.
-  const url = `${supabaseUrl}/rest/v1/analytics_reports?zone=eq.${encodeURIComponent(zone)}&select=raw_metrics,analysis,actions_done,period_start,period_end&order=period_end.desc&limit=${limit}`;
+  // Defensa: pedimos un poco mas de filas y deduplicamos por period_end.
+  // Si el unique constraint todavia no se aplico (migration pendiente),
+  // esto evita que el agente vea la misma semana repetida.
+  const url = `${supabaseUrl}/rest/v1/analytics_reports?zone=eq.${encodeURIComponent(zone)}&select=raw_metrics,analysis,actions_done,period_start,period_end&order=period_end.desc&limit=${limit * 3}`;
   const res = await fetch(url, {
     headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
   });
   if (!res.ok) return [];
   const arr = await res.json();
-  return Array.isArray(arr) ? arr : [];
+  if (!Array.isArray(arr)) return [];
+  // Dedup por period_end: si hay duplicados, nos quedamos con el primero
+  // (que es el mas reciente por el order=period_end.desc).
+  const seen = new Set<string>();
+  const unique: Array<Record<string, unknown>> = [];
+  for (const row of arr) {
+    const key = String((row as any).period_end || "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+    if (unique.length >= limit) break;
+  }
+  return unique;
 }
 
 // Extrae las acciones que la coach marco como cumplidas en el reporte mas
@@ -585,13 +600,18 @@ async function saveReport(
   serviceKey: string,
   row: Record<string, unknown>,
 ): Promise<void> {
-  const res = await fetch(`${supabaseUrl}/rest/v1/analytics_reports`, {
+  // UPSERT en (zone, period_end) — si ya existe un reporte para esa
+  // semana/zona, lo actualiza en vez de duplicar. Evita que el agente
+  // vea el mismo periodo repetido como "histórico" cuando se dispara
+  // el workflow varias veces dentro de la misma semana.
+  // Requiere migration analytics_reports_dedup.sql aplicada (UNIQUE constraint).
+  const res = await fetch(`${supabaseUrl}/rest/v1/analytics_reports?on_conflict=zone,period_end`, {
     method: "POST",
     headers: {
       apikey: serviceKey,
       Authorization: `Bearer ${serviceKey}`,
       "Content-Type": "application/json",
-      Prefer: "return=minimal",
+      Prefer: "resolution=merge-duplicates,return=minimal",
     },
     body: JSON.stringify(row),
   });
