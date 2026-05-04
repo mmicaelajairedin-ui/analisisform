@@ -5911,6 +5911,42 @@ function _waPaintZone(zoneCfg,rows){
     +kpi('Datos',_waBytes(m.totalBytes),null)
     +kpi('Pico',_waFmt(m.peakDay&&m.peakDay.uniques||0),null)
     +'</div>';
+  // Conversiones (solo si hay datos — Pathway si, Micaela no)
+  var conv=m.conversions;
+  if(conv){
+    var pmConv=pm?pm.conversions:null;
+    function convDelta(curr,prevVal){
+      if(curr==null||prevVal==null||prevVal===0)return null;
+      return ((curr-prevVal)/prevVal)*100;
+    }
+    function convRate(num){
+      if(num==null||!m.totalUniques)return null;
+      return ((num/m.totalUniques)*100).toFixed(1)+'%';
+    }
+    html+='<div style="margin-bottom:18px;">'
+      +'<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">🎯 Conversiones (datos del backend)</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">';
+    function convKpi(label,curr,prevVal,rate){
+      if(curr==null)return '';
+      var deltaHtml='';
+      var d=convDelta(curr,prevVal);
+      if(d!=null){
+        var sign=d>=0?'+':'';
+        var color=d>=0?'#2D6A4F':'#c0756e';
+        deltaHtml='<div style="font-size:10px;color:'+color+';font-weight:700;margin-top:2px;">'+sign+d.toFixed(1)+'% vs anterior</div>';
+      }
+      var rateHtml=rate?'<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">tasa '+rate+'</div>':'';
+      return '<div style="background:#F0F7F2;border-radius:10px;padding:12px 14px;border-left:3px solid #2D6A4F;">'
+        +'<div style="font-size:10px;font-weight:700;color:#2D6A4F;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">'+label+'</div>'
+        +'<div style="font-size:20px;font-weight:700;color:var(--title);">'+_waFmt(curr)+'</div>'
+        +deltaHtml+rateHtml+'</div>';
+    }
+    html+=convKpi('Formularios',conv.formularios_completados,pmConv?pmConv.formularios_completados:null,convRate(conv.formularios_completados));
+    html+=convKpi('Coaches registrados',conv.coaches_registrados,pmConv?pmConv.coaches_registrados:null,null);
+    html+=convKpi('Pack Express',conv.pack_express_compras,pmConv?pmConv.pack_express_compras:null,null);
+    html+=convKpi('Leads chatbot',conv.leads_chatbot,pmConv?pmConv.leads_chatbot:null,convRate(conv.leads_chatbot));
+    html+='</div></div>';
+  }
   // Headline + analisis
   if(a.headline){
     html+='<div style="background:#FFF7E6;border-left:3px solid #E9C46A;border-radius:10px;padding:16px 20px;margin-bottom:18px;">'
@@ -5942,15 +5978,40 @@ function _waPaintZone(zoneCfg,rows){
       +'<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">'+title+'</div>'
       +'<div style="font-size:13px;color:var(--body);line-height:1.6;">'+_escW(txt)+'</div></div>';
   }
+  // Card especifico para pruebas A/B (estructuradas, no string libre)
+  function abTestCard(items){
+    if(!items||!items.length)return '';
+    var inner=items.map(function(t){
+      if(typeof t==='string')return '<li>'+_escW(t)+'</li>';
+      return '<li style="margin-bottom:10px;">'
+        +'<div style="font-weight:700;color:var(--title);font-size:13px;">'+_escW(t.prueba||'')+'</div>'
+        +(t.prediccion?'<div style="font-size:12px;color:#2D6A4F;margin-top:2px;">📈 '+_escW(t.prediccion)+'</div>':'')
+        +(t.metrica?'<div style="font-size:11px;color:var(--muted);margin-top:2px;">Medir: '+_escW(t.metrica)+(t.duracion?' · '+_escW(t.duracion):'')+'</div>':'')
+        +'</li>';
+    }).join('');
+    return '<div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:14px;border-left:3px solid #1B4332;">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">🧪 Pruebas A/B propuestas</div>'
+      +'<ul style="margin:0;padding-left:20px;font-size:13px;color:var(--body);line-height:1.6;">'+inner+'</ul></div>';
+  }
+
   html+=textSection('Resumen',a.resumen,'#999');
   html+=textSection('Comparacion semana anterior',a.comparacion_semana_anterior,'#999');
   html+=textSection('Tendencia 4 semanas',a.tendencia_4_semanas,'#999');
+  html+=listSection('💡 Oportunidades no obvias',a.oportunidades_no_obvias,'#E9C46A');
   html+=listSection('Hipotesis',a.hipotesis,'#8C7B80');
-  html+=listSection('Acciones esta semana',a.acciones_esta_semana,'#2D6A4F');
+  // Quick wins + estrategicas (backward compat: si no hay, mostrar acciones_esta_semana)
+  if((a.quick_wins&&a.quick_wins.length)||(a.acciones_estrategicas&&a.acciones_estrategicas.length)){
+    html+=listSection('⚡ Quick wins (<30 min)',a.quick_wins,'#2D6A4F');
+    html+=listSection('🎯 Acciones estrategicas (2+ semanas)',a.acciones_estrategicas,'#1B4332');
+  }else{
+    html+=listSection('Acciones esta semana',a.acciones_esta_semana,'#2D6A4F');
+  }
+  html+=abTestCard(a.pruebas_ab_propuestas);
   html+=listSection('Alertas',a.alertas,'#c0756e');
   html+=textSection('Que replicar',a.que_replicar,'#E9C46A');
   html+=textSection('Verificacion hipotesis previas',a.verificacion_hipotesis_previas,'#999');
-  html+=textSection('Experimento propuesto',a.experimento_propuesto,'#1B4332');
+  html+=textSection('Verificacion pruebas A/B previas',a.verificacion_pruebas_ab_previas,'#999');
+  html+=textSection('🌟 Experimento estrella',a.experimento_estrella||a.experimento_propuesto,'#1B4332');
   html+='<div style="margin-top:24px;text-align:center;font-size:11px;color:var(--muted);">Reporte del '+_escW(latest.period_start)+' al '+_escW(latest.period_end)+'. Generado '+_escW((latest.generated_at||'').slice(0,10))+'.</div>';
   el.innerHTML=html;
   setTimeout(function(){_waPaintCharts(zoneCfg,rows);},10);

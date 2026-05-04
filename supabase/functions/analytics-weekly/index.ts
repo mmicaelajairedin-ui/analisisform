@@ -162,32 +162,100 @@ function summariseRows(rows: DailyRow[]) {
   };
 }
 
+// ── Conversiones desde Supabase ───────────────────────────
+// Solo aplica para Pathway (su backend vive en este Supabase).
+// Para micaelajairedin.com NO hay datos en este Supabase: la web personal
+// de Micaela tiene su propio backend. Skip silencioso para esa zona.
+
+interface Conversions {
+  formularios_completados: number | null;
+  coaches_registrados: number | null;
+  pack_express_compras: number | null;
+  leads_chatbot: number | null;
+}
+
+async function countRows(
+  supabaseUrl: string,
+  serviceKey: string,
+  pathQuery: string,
+): Promise<number | null> {
+  // Usa Prefer:count=exact + Range:0-0 para obtener solo el total sin filas.
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/${pathQuery}`, {
+      method: "GET",
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        Prefer: "count=exact",
+        Range: "0-0",
+      },
+    });
+    if (!res.ok) return null;
+    const range = res.headers.get("Content-Range") || "";
+    const total = range.split("/")[1];
+    return total && total !== "*" ? parseInt(total, 10) : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function fetchPathwayConversions(
+  supabaseUrl: string,
+  serviceKey: string,
+  start: string,
+  end: string,
+): Promise<Conversions> {
+  const endTs = `${end}T23:59:59`;
+  const dateFilter = (col: string) => `${col}=gte.${start}&${col}=lte.${endTs}`;
+  const [forms, coaches, packs, leads] = await Promise.all([
+    countRows(supabaseUrl, serviceKey, `candidatos?${dateFilter("created_at")}&select=id`),
+    countRows(supabaseUrl, serviceKey, `usuarios?rol=eq.coach&${dateFilter("created_at")}&select=id`),
+    countRows(supabaseUrl, serviceKey, `cv_express?${dateFilter("created_at")}&select=email`),
+    countRows(supabaseUrl, serviceKey, `contactos_chat?${dateFilter("fecha")}&select=id`),
+  ]);
+  return {
+    formularios_completados: forms,
+    coaches_registrados: coaches,
+    pack_express_compras: packs,
+    leads_chatbot: leads,
+  };
+}
+
 // ── Claude ────────────────────────────────────────────────
 
-const SYSTEM_ANALYTICS = `Sos un analista de marketing digital. Tu tarea: analizar las metricas de UN sitio web especifico (no de varios), comparar con su histórico reciente, y dar hipotesis y acciones concretas.
+const SYSTEM_ANALYTICS = `Sos un analista de marketing digital senior. Analizas un sitio web por vez (NUNCA dos juntos), comparas con su histórico reciente, y das insights NO OBVIOS + acciones concretas + experimentos medibles.
 
-REGLA CRITICA: vas a recibir un solo sitio por vez. NO menciones, compares ni transfieras conclusiones de otros sitios. Cada sitio es un negocio independiente con su propia estrategia. Si te llega contexto de "otro sitio", ignoralo — solo analiza el que se te pide.
+REGLA CRITICA: solo analizas el sitio que se te pide. NO menciones, compares ni transfieras conclusiones de otros sitios. Si te llega contexto de "otro sitio", ignoralo.
 
-REGLAS:
-1. Usa el CONTEXTO del sitio (objetivo, audiencia, paginas clave, conversiones) para que las hipotesis y acciones sean ESPECIFICAS, no genericas.
-2. Si ves un pico o caida, hipotetizá causas concretas considerando el calendario (festivos en España y LatAm, dia de la semana, fin de campaña, etc.).
-3. Las acciones deben ser ESPECIFICAS y ejecutables esta semana, no consejos abstractos. Idealmente con metrica de exito.
-4. Si hay datos de semanas previas, usalos para detectar tendencias y verificar si las hipotesis previas se cumplieron.
-5. Si no hay datos suficientes para sostener una afirmacion, decilo. No inventes.
-6. Mencioná dia de la semana cuando sea relevante (los patrones B2B son distintos de los B2C).
+REGLAS DE CALIDAD:
+1. Usa el CONTEXTO del sitio (objetivo, audiencia, paginas clave, conversiones) para ESPECIFICIDAD. Si no hay contexto configurado, decilo y pedi que la coach lo configure.
+2. Las hipotesis deben tener evidencia: cita el numero/dato concreto que la sostiene.
+3. Las acciones deben ser EJECUTABLES con metrica de exito clara. Verbo + objeto + numero (ej: "Cambiar el CTA principal de 'Empezar' a 'Empezar prueba 14 dias gratis' y medir CTR del boton durante 7 dias").
+4. Las predicciones de pruebas A/B deben ser CUANTITATIVAS ("CTR sube ~10%") asi la semana siguiente podemos verificarlas con datos.
+5. Si no hay datos suficientes, decilo. NO inventes.
+6. Considera el calendario al hipotetizar: festivos España/LatAm, dia de semana, eventos.
+7. Diferencia QUICK WINS (lo que se hace en <30 min con impacto rapido) de ACCIONES ESTRATEGICAS (bets a 2+ semanas).
+8. Buscar OPORTUNIDADES NO OBVIAS: cosas que los datos sugieren pero la coach probablemente no esta viendo (ej: "30% del trafico es de Mexico pero no hay contenido localizado", "los miercoles cae 50% — hay un hueco para llenar").
+9. Si hay datos de conversion (formularios completados, registros, leads), enfocate en CONVERSION RATE no solo en visitas. Visitas son vanity metric — conversion paga las cuentas.
 
-RESPONDÉ SOLO CON JSON VÁLIDO, sin markdown ni explicaciones previas:
+RESPONDÉ SOLO CON JSON VÁLIDO, sin markdown:
 {
-  "headline": "1 frase con la noticia mas importante de esta semana para ESTE sitio",
-  "resumen": "2-3 oraciones sobre el estado del trafico esta semana",
-  "comparacion_semana_anterior": "string con cambio % o 'sin datos previos'",
-  "tendencia_4_semanas": "string describiendo trend si hay datos (creciente/estable/caida)",
-  "hipotesis": ["hipotesis 1 con evidencia", "hipotesis 2"],
-  "acciones_esta_semana": ["accion 1 con metrica de exito", "accion 2", "accion 3"],
+  "headline": "1 frase con la noticia mas importante de la semana para ESTE sitio",
+  "resumen": "2-3 oraciones sobre el estado del trafico Y conversion (si hay datos de conversion)",
+  "comparacion_semana_anterior": "cambio % o 'sin datos previos'",
+  "tendencia_4_semanas": "trend (creciente/estable/caida) si hay datos historicos",
+  "hipotesis": ["hipotesis 1 con dato concreto que la sustenta"],
+  "oportunidades_no_obvias": ["oportunidad 1 que la coach probablemente no esta viendo, con evidencia"],
+  "quick_wins": ["accion ejecutable en <30 min con metrica esperada"],
+  "acciones_estrategicas": ["bet a 2+ semanas con metrica de exito"],
+  "pruebas_ab_propuestas": [
+    {"prueba": "Cambiar X por Y en pagina Z", "prediccion": "CTR sube ~10%", "duracion": "7 dias", "metrica": "% click en boton X"}
+  ],
   "alertas": ["alerta 1 si aplica"],
-  "que_replicar": "que funciono que vale la pena repetir",
-  "verificacion_hipotesis_previas": "si hay reporte de la semana pasada, verificar si las hipotesis se cumplieron. Si no hay, devolver string vacio.",
-  "experimento_propuesto": "1 experimento puntual para esta semana con metrica de exito medible"
+  "que_replicar": "que funciono que vale la pena repetir, citando dato",
+  "verificacion_hipotesis_previas": "si hay reporte previo: lista cada hipotesis previa, decir si los datos de esta semana la confirman/refutan. Si no hay, string vacio.",
+  "verificacion_pruebas_ab_previas": "si hay pruebas_ab_propuestas en reporte previo, decir si la prediccion se cumplio segun los datos de esta semana. Si no hay, string vacio.",
+  "experimento_estrella": "el experimento mas alto-leverage para esta semana, con metrica medible y prediccion cuantitativa"
 }`;
 
 interface ContextRow {
@@ -206,11 +274,17 @@ async function callClaudeForZone(
   context: ContextRow | null,
   current: Record<string, unknown>,
   history: Array<Record<string, unknown>>,
+  conversions: Conversions | null,
 ): Promise<Record<string, unknown>> {
+  const conversionsBlock = conversions
+    ? `# Conversiones (datos REALES del backend, no Cloudflare)\n${JSON.stringify(conversions, null, 2)}\n\nNota: estos numeros vienen de la base de datos. Cruza con las visitas de Cloudflare para calcular conversion rate y enfocarte en CONVERSION, no solo en trafico.\n\n`
+    : `# Conversiones\nNo hay datos de conversion disponibles para este sitio (su backend no esta integrado).\n\n`;
+
   const userContent =
     `# Sitio a analizar\n${zone}\n\n` +
     `# Contexto del sitio (configurado por la coach)\n${context ? JSON.stringify(context, null, 2) : "Sin contexto configurado todavia. Pedile a la coach que llene el contexto en el panel para mejor analisis."}\n\n` +
     `# Datos de esta semana\n${JSON.stringify(current, null, 2)}\n\n` +
+    conversionsBlock +
     `# Histórico de las ${HISTORY_WEEKS} semanas previas (mas reciente primero)\n` +
     (history.length > 0 ? JSON.stringify(history, null, 2) : "Sin datos previos guardados todavia.");
 
@@ -249,7 +323,7 @@ function buildShortEmailHtml(
   perZone: Array<{
     label: string;
     displayName: string;
-    summary: ReturnType<typeof summariseRows>;
+    summary: ReturnType<typeof summariseRows> & { conversions?: Conversions };
     analysis: any;
   }>,
 ): string {
@@ -257,6 +331,15 @@ function buildShortEmailHtml(
     .map((z) => {
       const headline = z.analysis?.headline || "—";
       const comp = z.analysis?.comparacion_semana_anterior || "";
+      const conv = z.summary.conversions;
+      const convLine = conv
+        ? `<div style="font-size:12px;color:#2D6A4F;margin-top:4px;font-weight:600;">
+             🎯 ${conv.formularios_completados ?? 0} formularios ·
+             ${conv.coaches_registrados ?? 0} coaches ·
+             ${conv.pack_express_compras ?? 0} packs ·
+             ${conv.leads_chatbot ?? 0} leads chat
+           </div>`
+        : "";
       return `
         <div style="margin:14px 0;padding:16px;background:#fff;border-radius:10px;border-left:3px solid #E9C46A;">
           <div style="font-size:11px;color:#999;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;">${z.displayName}</div>
@@ -266,6 +349,7 @@ function buildShortEmailHtml(
             <strong>${z.summary.cachePct}%</strong> cache ·
             pico ${z.summary.peakDay.date} (${fmtNum(z.summary.peakDay.uniques)})
           </div>
+          ${convLine}
           ${comp ? `<div style="font-size:12px;color:#666;margin-top:4px;">vs semana anterior: ${comp}</div>` : ""}
         </div>`;
     })
@@ -392,12 +476,23 @@ Deno.serve(async (req: Request) => {
         return { zone: z, summary: null, analysis: null, context: null, error: `missing ${z.envVar}` };
       }
       try {
-        const [rows, history, context] = await Promise.all([
+        // Pathway tiene su backend en este Supabase → traemos conversiones.
+        // Micaela vive en otro lado → null.
+        const isPathway = z.label === "pathwaycareercoach.com";
+        const [rows, history, context, conversions] = await Promise.all([
           fetchCloudflareDaily(zoneTag, CLOUDFLARE_API_TOKEN, periodStart, periodEnd),
           getRecentReports(SUPABASE_URL, SERVICE_KEY, z.label, HISTORY_WEEKS),
           getSiteContext(SUPABASE_URL, SERVICE_KEY, z.label),
+          isPathway
+            ? fetchPathwayConversions(SUPABASE_URL, SERVICE_KEY, periodStart, periodEnd)
+            : Promise.resolve(null as Conversions | null),
         ]);
         const summary = summariseRows(rows);
+        // Mergear conversions en el summary que se guarda como raw_metrics.
+        // El panel lo lee desde ahi para mostrar KPIs de conversion.
+        const summaryWithConv = conversions
+          ? { ...summary, conversions }
+          : summary;
         const currentPayload = { period: { start: periodStart, end: periodEnd }, metricas: summary };
         const historyPayload = history.map((h) => ({
           period: { start: (h as any).period_start, end: (h as any).period_end },
@@ -410,8 +505,9 @@ Deno.serve(async (req: Request) => {
           context,
           currentPayload,
           historyPayload,
+          conversions,
         );
-        return { zone: z, summary, analysis, context, error: null as string | null };
+        return { zone: z, summary: summaryWithConv, analysis, context, error: null as string | null };
       } catch (e) {
         return { zone: z, summary: null, analysis: null, context: null, error: String(e).slice(0, 300) };
       }

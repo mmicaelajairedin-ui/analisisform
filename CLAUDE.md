@@ -180,8 +180,14 @@ Seccion privada del panel, **solo visible para `ME.rol==='admin'`**. Acceso: sid
 - `analytics-weekly` ahora analiza CADA sitio por separado (1 llamada a Claude por zona) — no cruza narrativas
 - Lee las **ultimas 4 semanas** de histórico (no solo 1) para detectar tendencias
 - Lee `site_context` y lo inyecta al prompt
-- Email corto con boton al panel (no mas reporte largo embebido)
-- System prompt actualizado: pide `tendencia_4_semanas` y `verificacion_hipotesis_previas`
+- **Datos de conversion para Pathway**: cuenta filas en `candidatos`, `usuarios` (rol=coach), `cv_express`, `contactos_chat` en el periodo. Se inyectan al prompt y se guardan en `raw_metrics.conversions`
+- Email corto con boton al panel + linea con conversiones de Pathway
+- **System prompt expandido** pide:
+  - `oportunidades_no_obvias` (outsider lens)
+  - `quick_wins` vs `acciones_estrategicas` (separacion por horizonte)
+  - `pruebas_ab_propuestas` con prediccion cuantitativa
+  - `verificacion_pruebas_ab_previas` (mide si las predicciones se cumplieron)
+  - `experimento_estrella`
 
 **Setup adicional (post-deploy):**
 1. Aplicar migration `site_context.sql` (crea tabla + abre RLS de `analytics_reports` para lectura desde panel)
