@@ -120,7 +120,7 @@ body{font-family:var(--pw-sans);background:var(--pw-niebla);color:var(--pw-texto
 <!-- FORM CARD -->
 <div class="card">
   <div class="card-title">Creá tu cuenta de coach<span style="color:#52B788">.</span></div>
-  <div class="card-sub">Empezá tu trial de 14 días gratis. <strong>Sin tarjeta requerida.</strong></div>
+  <div class="card-sub">Empezá tu trial de 14 días gratis. <strong>No cobramos hasta el día 14.</strong></div>
 
   <!-- Name + Email -->
   <div class="field-row">
@@ -160,7 +160,7 @@ body{font-family:var(--pw-sans);background:var(--pw-niebla);color:var(--pw-texto
   </div>
 
   <button class="btn-submit" id="btn-submit" onclick="registrar()">Empezar mi trial de 14 días</button>
-  <div class="trial-note"><strong>Sin tarjeta requerida.</strong> Probá todo el panel con clientes reales. Antes de que termine el trial, te avisamos para que elijas plan.</div>
+  <div class="trial-note"><strong>Te pedimos la tarjeta</strong> para activar la suscripción, pero no cobramos hasta el día 14. Si cancelás antes, no se cobra nada.</div>
   <div class="error-msg" id="error-msg"></div>
   <div class="success-msg" id="success-msg" style="display:none;"></div>
   <div class="loading" id="loading">
@@ -176,6 +176,14 @@ body{font-family:var(--pw-sans);background:var(--pw-niebla);color:var(--pw-texto
 <script>
 var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+
+// Stripe Payment Links — Pathway Coach Mensual €59
+// Despues del registro redirigimos a Stripe para que cargue la tarjeta y
+// active el trial. La tarjeta es REQUERIDA — Stripe no cobra hasta el dia 14
+// (o 30 con el link bonus). Si cancelan antes, no se cobra nada.
+var STRIPE_LINK_14D='https://buy.stripe.com/fZu6oH86A4xG42U7HB8AE07';
+// Link privado, solo se manda por email a quienes dejan datos en el popup.
+var STRIPE_LINK_30D='https://buy.stripe.com/14A28rfz2fckarifa38AE08';
 
 // ── URL params ──
 var params = new URLSearchParams(window.location.search);
@@ -370,7 +378,7 @@ async function registrar(){
         html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">¡Nuevo coach en Pathway!</h2>'
           + '<p><strong>Nombre:</strong> ' + nombre + '</p>'
           + '<p><strong>Email:</strong> ' + email + '</p>'
-          + '<p><strong>Estado:</strong> Trial 14 días gratis (sin tarjeta)</p>'
+          + '<p><strong>Estado:</strong> Trial 14 días gratis (con tarjeta, cobro automático día 14)</p>'
           + (nombre_practica ? '<p><strong>Práctica:</strong> ' + nombre_practica + '</p>' : '')
           + (bio ? '<p><strong>Bio:</strong> ' + bio.slice(0, 200) + '</p>' : '')
           + (refCoachId?'<p style="padding:10px 14px;background:rgba(233,196,106,.18);border-left:3px solid #E9C46A;border-radius:6px;"><strong>🎁 Referido por:</strong> coach_id ' + refCoachId + '<br>Acordate de darle 1 mes gratis cuando este pague.</p>':'')
@@ -414,7 +422,7 @@ async function registrar(){
         to_name: nombre,
         subject: '¡Bienvenida a Pathway! Tu trial de 14 días empezó 🌱',
         html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + (nombre.split(' ')[0] || nombre) + ',</h2>'
-          + '<p style="font-size:15px;line-height:1.65;">Bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis sin tarjeta</strong>.</p>'
+          + '<p style="font-size:15px;line-height:1.65;">Bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis</strong>. No cobramos hasta el día 14 — si cancelás antes, no se cobra nada.</p>'
           + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Ir a mi panel →</a></p>'
           + '<h3 style="color:#2D6A4F;margin-top:32px;font-family:Fraunces,Georgia,serif;font-weight:500;">Empezá en 4 pasos:</h3>'
           + '<ol style="padding-left:20px;line-height:1.9;font-size:14px;">'
@@ -495,14 +503,18 @@ async function registrar(){
     // Éxito — redirigir directo al panel (no a Stripe). El plan se elige
     // al final del trial vía banner en el panel + email automatizado.
     loading.style.display = 'none';
-    showSuccess('¡Cuenta creada! Te llevamos a tu panel...');
+    showSuccess('¡Cuenta creada! Te llevamos a Stripe para activar tu trial...');
     btn.textContent = 'Listo';
 
-    // Sesión ya está guardada arriba (línea ~353) con coach.id de Supabase.
-    // Redirigimos al panel directo — sin Stripe en el medio porque el trial
-    // no requiere tarjeta hasta el día 14.
+    // Cuenta creada. Ahora redirigimos a Stripe Payment Link para que carguen
+    // la tarjeta y activen el trial. Stripe pide la tarjeta pero NO cobra
+    // hasta el dia 14 (o 30 si vienen del popup con link extendido).
+    // Si vienen ?ref=popup → 30 dias trial. Si no → 14 dias trial.
+    var stripeUrl = fromPopup ? STRIPE_LINK_30D : STRIPE_LINK_14D;
+    // Stripe acepta prefilled_email para que el usuario no tenga que retipearlo
+    var stripeUrlWithEmail = stripeUrl + '?prefilled_email=' + encodeURIComponent(email);
     setTimeout(function(){
-      window.location.href = 'https://pathwaycareercoach.com/panel.html';
+      window.location.href = stripeUrlWithEmail;
     }, 1200);
 
   } catch(err) {
