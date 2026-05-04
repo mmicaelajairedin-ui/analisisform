@@ -180,7 +180,8 @@ Seccion privada del panel, **solo visible para `ME.rol==='admin'`**. Acceso: sid
 - `analytics-weekly` ahora analiza CADA sitio por separado (1 llamada a Claude por zona) — no cruza narrativas
 - Lee las **ultimas 4 semanas** de histórico (no solo 1) para detectar tendencias
 - Lee `site_context` y lo inyecta al prompt
-- **Datos de conversion para Pathway**: cuenta filas en `candidatos`, `usuarios` (rol=coach), `cv_express`, `contactos_chat` en el periodo. Se inyectan al prompt y se guardan en `raw_metrics.conversions`
+- **Datos de conversion para Pathway**: cuenta filas en `candidatos`, `usuarios` (rol=coach), `cv_express`, `contactos_chat`, `leads_pricing` (trial_iniciado_at + pago_at) en el periodo. Se inyectan al prompt y se guardan en `raw_metrics.conversions`. Distingue funnel: leads → trials → ventas reales
+- **Datos de conversion para Micaela**: pulls Calendly API (`/scheduled_events`) para contar llamadas exploratorias agendadas/activas/canceladas en el periodo. Necesita secrets `CALENDLY_API_TOKEN_MJ` y opcionalmente `CALENDLY_USER_URI_MJ`.
 - Email corto con boton al panel + linea con conversiones de Pathway
 - **System prompt expandido** pide:
   - `oportunidades_no_obvias` (outsider lens)
