@@ -761,9 +761,59 @@ h1 .accent{color:var(--pw-sendero);}
     }
   }
 
+  // ── ACCESS GUARD: validar que el email tiene paid_at en cv_express ──
+  // Sin esto, cualquiera con el URL '?paid=1&email=X' accedería gratis.
+  // El stripe-webhook crea/actualiza el row con paid_at cuando se completa
+  // el pago. Si NO hay row, el email no pagó → bloquear y redirigir.
+  // Excepción: vista de admin (Mica logueada como rol admin).
+  function _validateAccess(email){
+    if(!email)return Promise.resolve(false);
+    // Si Mica está logueada como admin, dejar pasar (testing).
+    try{
+      var u=JSON.parse(localStorage.getItem('mj_user')||'{}');
+      if(u && u.rol==='admin')return Promise.resolve(true);
+    }catch(e){}
+    return fetch(SB+'/rest/v1/cv_express?email=eq.'+encodeURIComponent(email)+'&select=paid_at&limit=1',{
+      headers:{apikey:KEY,Authorization:'Bearer '+KEY}
+    }).then(function(r){return r.ok?r.json():[];})
+      .then(function(rows){
+        var row=rows&&rows[0];
+        // Acepta si paid_at existe (pagó vía Stripe o admin lo otorgó).
+        // También acepta si el row tiene cv_optimizado (legacy: usuarios
+        // que pagaron antes de que existiera la columna paid_at).
+        return !!(row&&(row.paid_at||row.cv_optimizado));
+      })
+      .catch(function(){return false;});
+  }
+
+  function _showNoAccess(){
+    document.getElementById('mode-pre-pay').style.display='block';
+    document.getElementById('mode-post-pay').style.display='none';
+    var preCard=document.getElementById('mode-pre-pay');
+    if(preCard){
+      // Banner arriba advirtiendo que el URL no es válido sin pago.
+      var warn=document.createElement('div');
+      warn.style.cssText='background:#FDF3F2;border:1.5px solid #c0756e;border-radius:14px;padding:18px 22px;margin:0 0 24px;color:#8c4540;';
+      warn.innerHTML='<strong>⚠️ Acceso no válido</strong><br><span style="font-size:13px;">Para usar el Pack Express necesitás completar el pago abajo. Compartir el link sin pagar no funciona.</span>';
+      preCard.insertBefore(warn,preCard.firstChild);
+    }
+  }
+
   if(paid){
+    // Validar acceso ANTES de mostrar nada del post-pay
     document.getElementById('mode-pre-pay').style.display='none';
     document.getElementById('mode-post-pay').style.display='block';
+    _validateAccess(emailPaidGlobal).then(function(hasAccess){
+      if(!hasAccess){
+        _clearExpressLocalStorage();
+        _showNoAccess();
+        return;
+      }
+      _initPostPay();
+    });
+  }
+
+  function _initPostPay(){
     if(emailPaidGlobal){
       var ce=document.getElementById('confirmed-email');
       if(ce)ce.textContent='Recibís los documentos a '+emailPaidGlobal;

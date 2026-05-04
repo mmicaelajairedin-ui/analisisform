@@ -1033,6 +1033,21 @@ var ME=null;
 (function(){
   var user=localStorage.getItem('mj_user');
   if(!user){window.location.href='https://pathwaycareercoach.com/login.html';throw new Error('No autorizado');}
+  // Multi-tenant guard: si el coach logueado es DISTINTO al de la última
+  // sesión (Mica testea con coach demo y luego vuelve a su cuenta), borrar
+  // todo el config cacheado en localStorage. Sin esto, la foto/Stripe/bio
+  // del coach anterior aparecen mezclados con los del nuevo.
+  try{
+    var lastUser=localStorage.getItem('mj_last_coach_id')||'';
+    var thisUser=JSON.parse(user).id||'';
+    if(lastUser && thisUser && lastUser!==thisUser){
+      // Limpiar caches per-coach para evitar contaminación cruzada
+      ['mj_coach_config','mj_msgs_seen','mj_admin_last_seen','mj_coach_onb_dismiss','mj_coach_tour_done','mj_notes','mj_activos'].forEach(function(k){
+        try{localStorage.removeItem(k);}catch(e){}
+      });
+    }
+    if(thisUser)localStorage.setItem('mj_last_coach_id',thisUser);
+  }catch(e){}
   ME=JSON.parse(user);
   if(ME.rol!=='coach'&&ME.rol!=='admin'){window.location.href='https://pathwaycareercoach.com/login.html';throw new Error('Sin permisos');}
   var nameEl=document.getElementById('sb-coach-name');
@@ -1296,15 +1311,10 @@ function loadCands(){
   if(!isAdmin&&ME&&ME.id){
     candFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
   }
-  // PERFORMANCE: ANTES traíamos informes con `select=*` (incluye `data` JSON
-  // de varios KB por informe) y cv_publicados con `contenido` JSON. Para un
-  // coach con 20 clientes eso son ~500KB de payload solo para chequear
-  // existencia. Cambiamos a select que omite los blobs grandes — solo
-  // id+email+metadata. La data completa se fetchea on-demand al abrir ficha.
   Promise.all([
     sbGet('candidatos',candFilter),
-    sbGet('informes','select=id,email,prev,created_at'),
-    sbGet('cv_publicados','select=id,email,codigo,created_at')
+    sbGet('informes','select=*'),
+    sbGet('cv_publicados','select=id,email,codigo,contenido,created_at')
   ]).then(function(res){
     var all=res[0],allReps=res[1],allCvs=res[2];
     var byEmail={};

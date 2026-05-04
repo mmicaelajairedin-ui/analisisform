@@ -160,6 +160,54 @@ async function getDefaultCoachId(): Promise<string | undefined> {
   }
 }
 
+// ── Handler: Pack Express (€40 inicial o €10 supplement) ──────
+// Registra en cv_express que este email pagó. Sin esto, cualquiera con
+// el URL `?paid=1&email=X` podría acceder al form sin pagar. La validación
+// ocurre en cv-express.html: si el email no tiene paid_at en cv_express,
+// se redirige a la página de pago.
+async function handlePackExpressPayment(session: StripeSession) {
+  const email = (session.customer_details?.email || session.customer_email || "")
+    .toLowerCase();
+  if (!email) return { result: "no-email", type: "pack_express" };
+
+  const amount = (session.amount_total || 0) / 100;
+  const { url: SB_URL, headers } = getSupabaseAuth();
+
+  // Upsert: si ya hay un row para ese email (ej: regen), solo actualizamos
+  // paid_at y stripe_session_id. Si no, creamos uno con paid_at.
+  const checkRes = await fetch(
+    `${SB_URL}/rest/v1/cv_express?email=eq.${encodeURIComponent(email)}&select=email`,
+    { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+  );
+  const exists = checkRes.ok && (await checkRes.json()).length > 0;
+
+  const body: Record<string, unknown> = {
+    email,
+    paid_at: new Date().toISOString(),
+    stripe_session_id: session.id,
+    pago_monto: amount,
+  };
+
+  if (exists) {
+    await fetch(
+      `${SB_URL}/rest/v1/cv_express?email=eq.${encodeURIComponent(email)}`,
+      {
+        method: "PATCH",
+        headers: { ...headers, Prefer: "return=minimal" },
+        body: JSON.stringify(body),
+      },
+    );
+    return { result: "pack_express_updated", email, amount };
+  } else {
+    await fetch(`${SB_URL}/rest/v1/cv_express`, {
+      method: "POST",
+      headers: { ...headers, Prefer: "return=minimal" },
+      body: JSON.stringify(body),
+    });
+    return { result: "pack_express_created", email, amount };
+  }
+}
+
 // ── Handler: pago one-off del candidato (mentoría/sesión) ────
 async function handleClientPayment(session: StripeSession) {
   const email = (session.customer_details?.email || session.customer_email || "")
@@ -477,7 +525,7 @@ Deno.serve(async (req: Request) => {
 
   let result: unknown = { received: true, type: ev.type, skipped: true };
 
-  // ── Checkout one-off del candidato ──
+  // ── Checkout one-off ──
   if (ev.type === "checkout.session.completed") {
     const session = ev.data.object as StripeSession;
     if (session.mode === "subscription") {
@@ -485,7 +533,15 @@ Deno.serve(async (req: Request) => {
       // que trae todos los detalles. Acá solo registramos.
       result = { received: true, type: ev.type, skipped: "subscription-checkout" };
     } else {
-      result = await handleClientPayment(session);
+      // Pack Express: pagos de €40 (4000) o €10 supplement (1000) van al
+      // handler que registra el acceso en la tabla cv_express. Otros
+      // amounts son pagos de mentoría/sesión al coach (handleClientPayment).
+      const amountCents = session.amount_total || 0;
+      if (amountCents === 4000 || amountCents === 1000) {
+        result = await handlePackExpressPayment(session);
+      } else {
+        result = await handleClientPayment(session);
+      }
     }
   }
 

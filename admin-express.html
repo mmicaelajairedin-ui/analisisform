@@ -124,6 +124,16 @@ h1 .accent{color:var(--sendero);}
     h+='<div class="stat"><div class="stat-num">'+last30+'</div><div class="stat-lbl">Últimos 30 días</div></div>';
     h+='</div>';
 
+    // Botón para otorgar acceso manual (a friends, demos, etc.) sin pago.
+    h+='<div style="background:#fff;border:1.5px solid var(--borde);border-radius:14px;padding:18px 20px;margin-bottom:24px;">';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">';
+    h+='<div><div style="font-size:13px;font-weight:700;color:var(--carbon);">Otorgar acceso manual</div>';
+    h+='<div style="font-size:12px;color:var(--texto-suave);margin-top:2px;">Para amigos o demos, sin pago. Marca el email como "paid_at = ahora".</div></div>';
+    h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+    h+='<input id="grant-email" type="email" placeholder="email@ejemplo.com" style="padding:9px 12px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;width:220px;outline:none;">';
+    h+='<button onclick="grantAccess()" class="btn-action" style="padding:10px 16px;font-size:12px;">+ Otorgar</button>';
+    h+='</div></div></div>';
+
     if(!rows.length){
       h+='<div class="table-wrap"><div class="empty">Aún no hay Packs generados. Cuando alguien complete el flow de €40, aparece acá.</div></div>';
       document.getElementById('main').innerHTML=h;
@@ -168,6 +178,39 @@ h1 .accent{color:var(--sendero);}
       if(r.ok)load();
       else alert('Error al borrar: '+r.status);
     }).catch(function(){alert('Error de conexión');});
+  };
+
+  // Otorgar acceso manual a un email (sin pago). Útil para friends y demos.
+  // Crea un row en cv_express con paid_at=now, marca explícitamente el
+  // pago_monto a 0 para distinguirlo de pagos reales.
+  window.grantAccess=function(){
+    var input=document.getElementById('grant-email');
+    var email=(input.value||'').trim().toLowerCase();
+    if(!email||email.indexOf('@')===-1){alert('Email inválido');return;}
+    if(!confirm('¿Otorgar acceso a '+email+' sin pago? Va a poder usar el Pack Express y generar sus 3 documentos.'))return;
+    // Verificar si ya existe (para no duplicar)
+    fetch(SB+'/rest/v1/cv_express?email=eq.'+encodeURIComponent(email)+'&select=email&limit=1',{
+      headers:{apikey:KEY,Authorization:'Bearer '+KEY}
+    }).then(function(r){return r.ok?r.json():[];})
+      .then(function(rows){
+        var exists=rows.length>0;
+        var body={paid_at:new Date().toISOString(),pago_monto:0};
+        if(!exists)body.email=email;
+        var url=SB+'/rest/v1/cv_express'+(exists?'?email=eq.'+encodeURIComponent(email):'');
+        return fetch(url,{
+          method:exists?'PATCH':'POST',
+          headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
+          body:JSON.stringify(body)
+        });
+      })
+      .then(function(r){
+        if(r.ok){
+          input.value='';
+          alert('✓ Acceso otorgado. Pasale el link:\n\nhttps://pathwaycareercoach.com/cv-express.html?paid=1&email='+encodeURIComponent(email));
+          load();
+        } else alert('Error: '+r.status);
+      })
+      .catch(function(){alert('Error de conexión');});
   };
 
   function load(){
