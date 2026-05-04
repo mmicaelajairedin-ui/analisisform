@@ -168,10 +168,17 @@ function summariseRows(rows: DailyRow[]) {
 // de Micaela tiene su propio backend. Skip silencioso para esa zona.
 
 interface Conversions {
-  formularios_completados: number | null;
-  coaches_registrados: number | null;
-  pack_express_compras: number | null;
-  leads_chatbot: number | null;
+  // Top of funnel — leads/registros (NO son ventas)
+  formularios_completados: number | null;  // candidatos.created_at — leads de mentoria
+  coaches_registrados: number | null;      // usuarios rol=coach — incluye trials sin pagar y posibles tests
+  leads_chatbot: number | null;            // contactos_chat — leads brutos del chat
+
+  // Mid funnel — trial activado via Stripe (NO son ventas todavia)
+  coaches_trial_activado: number | null;   // leads_pricing.trial_iniciado_at — empezo trial real
+
+  // BOTTOM funnel — ventas reales con dinero entrante
+  coaches_pagantes: number | null;         // leads_pricing.pago_at — coach que efectivamente pago
+  pack_express_compras: number | null;     // cv_express — compra puntual one-shot
 }
 
 async function countRows(
@@ -207,15 +214,19 @@ async function fetchPathwayConversions(
 ): Promise<Conversions> {
   const endTs = `${end}T23:59:59`;
   const dateFilter = (col: string) => `${col}=gte.${start}&${col}=lte.${endTs}`;
-  const [forms, coaches, packs, leads] = await Promise.all([
+  const [forms, regs, packs, leads, trials, pagos] = await Promise.all([
     countRows(supabaseUrl, serviceKey, `candidatos?${dateFilter("created_at")}&select=id`),
     countRows(supabaseUrl, serviceKey, `usuarios?rol=eq.coach&${dateFilter("created_at")}&select=id`),
     countRows(supabaseUrl, serviceKey, `cv_express?${dateFilter("created_at")}&select=email`),
     countRows(supabaseUrl, serviceKey, `contactos_chat?${dateFilter("fecha")}&select=id`),
+    countRows(supabaseUrl, serviceKey, `leads_pricing?${dateFilter("trial_iniciado_at")}&select=id`),
+    countRows(supabaseUrl, serviceKey, `leads_pricing?${dateFilter("pago_at")}&select=id`),
   ]);
   return {
     formularios_completados: forms,
-    coaches_registrados: coaches,
+    coaches_registrados: regs,
+    coaches_trial_activado: trials,
+    coaches_pagantes: pagos,
     pack_express_compras: packs,
     leads_chatbot: leads,
   };
@@ -277,7 +288,7 @@ async function callClaudeForZone(
   conversions: Conversions | null,
 ): Promise<Record<string, unknown>> {
   const conversionsBlock = conversions
-    ? `# Conversiones (datos REALES del backend, no Cloudflare)\n${JSON.stringify(conversions, null, 2)}\n\nNota: estos numeros vienen de la base de datos. Cruza con las visitas de Cloudflare para calcular conversion rate y enfocarte en CONVERSION, no solo en trafico.\n\n`
+    ? `# Conversiones (datos REALES del backend, no Cloudflare)\n${JSON.stringify(conversions, null, 2)}\n\n## CRITICO — distincion entre ETAPAS DEL FUNNEL\n\nEl funnel de Pathway tiene varias etapas. NO las trates a todas como "ventas":\n\n- **TOP de funnel (LEADS, NO ventas):**\n  - \`formularios_completados\`: candidatos que llenaron el form de intake. Son leads para Micaela coach individual.\n  - \`coaches_registrados\`: cuentas creadas. Incluye gente en trial sin pagar Y posibles cuentas de prueba/test que crea la propia coach. NO ES VENTA.\n  - \`leads_chatbot\`: leads brutos del chat de la landing.\n\n- **MID de funnel (TRIAL ACTIVADO, NO venta todavia):**\n  - \`coaches_trial_activado\`: empezaron trial real via Stripe (con tarjeta o sin tarjeta segun el plan). Tampoco es venta hasta que paguen el primer mes.\n\n- **BOTTOM de funnel (VENTAS REALES, dinero entrante):**\n  - \`coaches_pagantes\`: pagaron efectivamente por la suscripcion. ESTO SI ES VENTA.\n  - \`pack_express_compras\`: compraron el Pack Express (one-shot). ESTO SI ES VENTA.\n\nCuando hables de "ventas", "conversion" o "revenue", referite SOLO a \`coaches_pagantes\` + \`pack_express_compras\`. Lo demas son leads o trials.\n\nSi \`coaches_registrados\` > 0 pero \`coaches_pagantes\` = 0, di explicitamente "X registros (sin ventas reales todavia)" — no inflar la narrativa.\n\nUsa los datos para calcular tasas de conversion entre etapas (ej: trial→pago, registros→trial) y proponer acciones para destrabar el cuello de botella mas grande.\n\n`
     : `# Conversiones\nNo hay datos de conversion disponibles para este sitio (su backend no esta integrado).\n\n`;
 
   const userContent =
@@ -361,12 +372,15 @@ function buildShortEmailHtml(
       const headline = z.analysis?.headline || "—";
       const comp = z.analysis?.comparacion_semana_anterior || "";
       const conv = z.summary.conversions;
+      const ventas = (conv?.coaches_pagantes ?? 0) + (conv?.pack_express_compras ?? 0);
       const convLine = conv
-        ? `<div style="font-size:12px;color:#2D6A4F;margin-top:4px;font-weight:600;">
-             🎯 ${conv.formularios_completados ?? 0} formularios ·
-             ${conv.coaches_registrados ?? 0} coaches ·
-             ${conv.pack_express_compras ?? 0} packs ·
-             ${conv.leads_chatbot ?? 0} leads chat
+        ? `<div style="margin-top:6px;">
+             <div style="font-size:13px;color:#1B4332;font-weight:700;">
+               💰 Ventas reales: ${ventas} (${conv.coaches_pagantes ?? 0} suscripciones · ${conv.pack_express_compras ?? 0} packs)
+             </div>
+             <div style="font-size:11px;color:#666;margin-top:2px;">
+               Funnel: ${conv.formularios_completados ?? 0} formularios · ${conv.coaches_registrados ?? 0} registros · ${conv.coaches_trial_activado ?? 0} trials · ${conv.leads_chatbot ?? 0} leads chat
+             </div>
            </div>`
         : "";
       return `

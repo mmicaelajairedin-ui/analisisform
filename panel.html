@@ -5911,7 +5911,8 @@ function _waPaintZone(zoneCfg,rows){
     +kpi('Datos',_waBytes(m.totalBytes),null)
     +kpi('Pico',_waFmt(m.peakDay&&m.peakDay.uniques||0),null)
     +'</div>';
-  // Conversiones (solo si hay datos — Pathway si, Micaela no)
+  // Funnel completo (solo si hay datos — Pathway si, Micaela no).
+  // CRITICO: separar VENTAS REALES (pagos) de leads/trials para no inflar el numero.
   var conv=m.conversions;
   if(conv){
     var pmConv=pm?pm.conversions:null;
@@ -5919,15 +5920,9 @@ function _waPaintZone(zoneCfg,rows){
       if(curr==null||prevVal==null||prevVal===0)return null;
       return ((curr-prevVal)/prevVal)*100;
     }
-    function convRate(num){
-      if(num==null||!m.totalUniques)return null;
-      return ((num/m.totalUniques)*100).toFixed(1)+'%';
-    }
-    html+='<div style="margin-bottom:18px;">'
-      +'<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">🎯 Conversiones (datos del backend)</div>'
-      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">';
-    function convKpi(label,curr,prevVal,rate){
-      if(curr==null)return '';
+    function fnKpi(label,curr,prevVal,opts){
+      opts=opts||{};
+      if(curr==null)curr=0;
       var deltaHtml='';
       var d=convDelta(curr,prevVal);
       if(d!=null){
@@ -5935,17 +5930,41 @@ function _waPaintZone(zoneCfg,rows){
         var color=d>=0?'#2D6A4F':'#c0756e';
         deltaHtml='<div style="font-size:10px;color:'+color+';font-weight:700;margin-top:2px;">'+sign+d.toFixed(1)+'% vs anterior</div>';
       }
-      var rateHtml=rate?'<div style="font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;">tasa '+rate+'</div>':'';
-      return '<div style="background:#F0F7F2;border-radius:10px;padding:12px 14px;border-left:3px solid #2D6A4F;">'
-        +'<div style="font-size:10px;font-weight:700;color:#2D6A4F;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">'+label+'</div>'
+      var bg=opts.bg||'#F5F0F0';
+      var border=opts.border||'#999';
+      var labelColor=opts.labelColor||'var(--muted)';
+      return '<div style="background:'+bg+';border-radius:10px;padding:12px 14px;border-left:3px solid '+border+';">'
+        +'<div style="font-size:10px;font-weight:700;color:'+labelColor+';text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">'+label+'</div>'
         +'<div style="font-size:20px;font-weight:700;color:var(--title);">'+_waFmt(curr)+'</div>'
-        +deltaHtml+rateHtml+'</div>';
+        +deltaHtml+'</div>';
     }
-    html+=convKpi('Formularios',conv.formularios_completados,pmConv?pmConv.formularios_completados:null,convRate(conv.formularios_completados));
-    html+=convKpi('Coaches registrados',conv.coaches_registrados,pmConv?pmConv.coaches_registrados:null,null);
-    html+=convKpi('Pack Express',conv.pack_express_compras,pmConv?pmConv.pack_express_compras:null,null);
-    html+=convKpi('Leads chatbot',conv.leads_chatbot,pmConv?pmConv.leads_chatbot:null,convRate(conv.leads_chatbot));
-    html+='</div></div>';
+    var ventasReales=(conv.coaches_pagantes||0)+(conv.pack_express_compras||0);
+    var pmVentasReales=pmConv?((pmConv.coaches_pagantes||0)+(pmConv.pack_express_compras||0)):null;
+
+    // Banda 1: VENTAS REALES (lo que paga las cuentas)
+    html+='<div style="margin-bottom:14px;">'
+      +'<div style="font-size:11px;font-weight:700;color:#1B4332;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">💰 Ventas reales (revenue)</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">'
+      +fnKpi('Total ventas',ventasReales,pmVentasReales,{bg:'#E8F5EE',border:'#2D6A4F',labelColor:'#2D6A4F'})
+      +fnKpi('Coaches pagando',conv.coaches_pagantes,pmConv?pmConv.coaches_pagantes:null,{bg:'#E8F5EE',border:'#2D6A4F',labelColor:'#2D6A4F'})
+      +fnKpi('Pack Express',conv.pack_express_compras,pmConv?pmConv.pack_express_compras:null,{bg:'#E8F5EE',border:'#2D6A4F',labelColor:'#2D6A4F'})
+      +'</div></div>';
+
+    // Banda 2: TRIALS (mid funnel — todavia no son ventas)
+    html+='<div style="margin-bottom:14px;">'
+      +'<div style="font-size:11px;font-weight:700;color:#8C6D2E;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">🟡 Trials activados (todavia no son ventas)</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">'
+      +fnKpi('Trials activados',conv.coaches_trial_activado,pmConv?pmConv.coaches_trial_activado:null,{bg:'#FFF7E6',border:'#E9C46A',labelColor:'#8C6D2E'})
+      +'</div></div>';
+
+    // Banda 3: LEADS / TOP FUNNEL (incluye tests, gente que solo se registro, etc)
+    html+='<div style="margin-bottom:18px;">'
+      +'<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">📥 Leads (top de funnel — puede incluir tests)</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">'
+      +fnKpi('Formularios',conv.formularios_completados,pmConv?pmConv.formularios_completados:null,{})
+      +fnKpi('Coaches registrados',conv.coaches_registrados,pmConv?pmConv.coaches_registrados:null,{})
+      +fnKpi('Leads chatbot',conv.leads_chatbot,pmConv?pmConv.leads_chatbot:null,{})
+      +'</div></div>';
   }
   // Headline + analisis
   if(a.headline){
