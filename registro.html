@@ -428,6 +428,70 @@ async function registrar(){
       })
     }).catch(function(){});
 
+    // ── EMAIL AUTOMATION TRIAL ──
+    // Programar 3 emails en email_queue para el trial del coach:
+    // - Día 7: tip / engagement
+    // - Día 13: reminder "trial termina en 24h"
+    // - Día 14: trial terminó, link de pago
+    // send-queued-emails los procesa automáticamente vía pg_cron.
+    var primerNombre = (nombre.split(' ')[0]) || nombre;
+    var trialEmails = [
+      {
+        days: 7,
+        plantilla: 'trial_day_7',
+        subject: '¿Cómo va tu trial en Pathway, ' + primerNombre + '? 🌱',
+        body: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + primerNombre + ',</h2>'
+          + '<p style="font-size:15px;line-height:1.65;">Ya pasó la primera semana de tu trial. ¿Cómo te está yendo?</p>'
+          + '<p style="margin-top:16px;font-size:15px;line-height:1.65;"><strong>Tip de la semana:</strong> el ROI más alto está en <em>generar el primer informe IA con un cliente real</em>. Tarda 30 segundos y los clientes lo aman — empezá por ahí si todavía no lo hiciste.</p>'
+          + '<p style="margin-top:24px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
+          + '<p style="font-size:13px;color:#666;margin-top:24px;">¿Una duda específica? Respondé este mail.</p>'
+      },
+      {
+        days: 13,
+        plantilla: 'trial_day_13',
+        subject: 'Tu trial de Pathway termina mañana ⏰',
+        body: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">' + primerNombre + ', tu trial termina en 24h</h2>'
+          + '<p style="font-size:15px;line-height:1.65;">Si Pathway te está sirviendo y querés seguir, este es el momento de elegir plan:</p>'
+          + '<p style="margin:18px 0;font-size:14px;line-height:1.7;"><strong>Mensual:</strong> €79/mes — hasta 15 candidatos<br><strong>Anual:</strong> €699/año — ilimitados (ahorrás €249)</p>'
+          + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/soy-coach.html#precios" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Elegir mi plan →</a></p>'
+          + '<p style="font-size:13px;color:#666;margin-top:24px;">Si no querés seguir, no hace falta hacer nada — el trial se cierra solo y no se cobra.</p>'
+      },
+      {
+        days: 14,
+        plantilla: 'trial_day_14',
+        subject: 'Tu trial de Pathway terminó',
+        body: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">' + primerNombre + ', tu trial terminó</h2>'
+          + '<p style="font-size:15px;line-height:1.65;">Si Pathway te sirvió, podés activar tu plan ahora y seguir trabajando con tus clientes sin perder data:</p>'
+          + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/soy-coach.html#precios" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Activar mi plan →</a></p>'
+          + '<p style="font-size:13px;color:#666;margin-top:24px;line-height:1.6;">Si no, tu cuenta queda en pausa y tus datos se conservan 30 días.</p>'
+          + '<p style="font-size:13px;color:#666;margin-top:14px;">¿Algún feedback? Respondé este mail — me ayuda muchísimo a mejorar.</p>'
+      }
+    ];
+    var nowMs = Date.now();
+    var queueInserts = trialEmails.map(function(e){
+      return {
+        coach_id: coach.id,
+        to_email: email,
+        to_nombre: nombre,
+        subject: e.subject,
+        body: e.body,
+        scheduled_at: new Date(nowMs + e.days * 24 * 60 * 60 * 1000).toISOString(),
+        plantilla_id: e.plantilla
+      };
+    });
+    fetch(SB + '/rest/v1/email_queue', {
+      method: 'POST',
+      headers: {
+        apikey: KEY,
+        Authorization: 'Bearer ' + KEY,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify(queueInserts)
+    }).catch(function(){
+      console.warn('[trial-emails] no se pudieron programar');
+    });
+
     // Éxito — redirigir directo al panel (no a Stripe). El plan se elige
     // al final del trial vía banner en el panel + email automatizado.
     loading.style.display = 'none';
