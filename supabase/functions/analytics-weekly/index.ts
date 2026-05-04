@@ -297,7 +297,11 @@ async function callClaudeForZone(
     },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
-      max_tokens: 2400,
+      // El prompt expandido pide muchos campos (oportunidades, quick_wins,
+      // acciones_estrategicas, pruebas_ab estructuradas, verificaciones, etc).
+      // 2400 truncaba la JSON. 6000 deja margen para reportes ricos sin
+      // sobrar mucho.
+      max_tokens: 6000,
       system: SYSTEM_ANALYTICS,
       messages: [{ role: "user", content: userContent }],
     }),
@@ -307,8 +311,33 @@ async function callClaudeForZone(
   }
   const json = await res.json();
   const text: string = json?.content?.[0]?.text || "";
-  const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-  return JSON.parse(cleaned);
+  // Parsing defensivo: el modelo a veces envuelve con ```json ... ``` o
+  // agrega texto antes/despues. Extraer la primera { hasta la ultima } valida.
+  const cleaned = extractJson(text);
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // Si aun asi falla, devolvemos un payload minimo para no romper el flow
+    // y guardamos el texto crudo en un campo para poder debugear.
+    return {
+      headline: "Error parseando respuesta de Claude — ver _raw para texto",
+      resumen: "El modelo devolvio JSON invalido. Revisar _raw y subir max_tokens si esta truncado.",
+      _parse_error: String(e).slice(0, 200),
+      _raw: text.slice(0, 5000),
+    };
+  }
+}
+
+function extractJson(text: string): string {
+  // Strip markdown code fences si los hay
+  let s = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+  // Si el modelo agrego texto antes del JSON, encontrar la primera {
+  const firstBrace = s.indexOf("{");
+  if (firstBrace > 0) s = s.slice(firstBrace);
+  // Encontrar el último } valido (por si agrego texto despues)
+  const lastBrace = s.lastIndexOf("}");
+  if (lastBrace > 0 && lastBrace < s.length - 1) s = s.slice(0, lastBrace + 1);
+  return s.trim();
 }
 
 // ── Email HTML (corto, link al panel) ─────────────────────
