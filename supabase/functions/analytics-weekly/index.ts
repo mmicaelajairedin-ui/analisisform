@@ -206,6 +206,71 @@ async function countRows(
   }
 }
 
+// ── Calendly (Micaela) ────────────────────────────────────
+// La web personal de Micaela captura leads con un boton "Agendar llamada"
+// que abre Calendly. Cada evento agendado es una conversion. Llamamos a la
+// API de Calendly cada lunes para contar eventos del periodo.
+//
+// Setup:
+//   CALENDLY_API_TOKEN_MJ → Personal Access Token de Calendly de Micaela
+//     (https://calendly.com/integrations/api_webhooks → Personal Access Tokens)
+//   CALENDLY_USER_URI_MJ  → opcional. Si no se pasa, lo descubrimos via /users/me.
+
+interface MicaelaConversions {
+  llamadas_agendadas: number;
+  llamadas_activas: number;
+  llamadas_canceladas: number;
+}
+
+async function getCalendlyUserUri(apiToken: string): Promise<string | null> {
+  try {
+    const res = await fetch("https://api.calendly.com/users/me", {
+      headers: { Authorization: `Bearer ${apiToken}` },
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json?.resource?.uri || null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function fetchMicaelaConversions(
+  apiToken: string,
+  configuredUri: string,
+  start: string,
+  end: string,
+): Promise<MicaelaConversions | null> {
+  if (!apiToken) return null;
+  const uri = configuredUri || (await getCalendlyUserUri(apiToken));
+  if (!uri) return null;
+  const startTs = `${start}T00:00:00Z`;
+  const endTs = `${end}T23:59:59Z`;
+  let url: string | null = `https://api.calendly.com/scheduled_events?user=${encodeURIComponent(uri)}&min_start_time=${encodeURIComponent(startTs)}&max_start_time=${encodeURIComponent(endTs)}&count=100`;
+  const events: Array<{ status?: string }> = [];
+  // Paginar por si hay mas de 100 (improbable pero defensivo)
+  let safety = 5;
+  while (url && safety-- > 0) {
+    try {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${apiToken}` } });
+      if (!res.ok) break;
+      const json = await res.json();
+      const collection = json?.collection || [];
+      for (const e of collection) events.push(e);
+      url = json?.pagination?.next_page || null;
+    } catch (_e) {
+      break;
+    }
+  }
+  const active = events.filter((e) => e.status === "active").length;
+  const canceled = events.filter((e) => e.status === "canceled").length;
+  return {
+    llamadas_agendadas: events.length,
+    llamadas_activas: active,
+    llamadas_canceladas: canceled,
+  };
+}
+
 async function fetchPathwayConversions(
   supabaseUrl: string,
   serviceKey: string,
@@ -300,16 +365,25 @@ async function callClaudeForZone(
   context: ContextRow | null,
   current: Record<string, unknown>,
   history: Array<Record<string, unknown>>,
-  conversions: Conversions | null,
+  conversions: Conversions | MicaelaConversions | null,
   completedActions: Array<Record<string, string>>,
 ): Promise<Record<string, unknown>> {
   const completedBlock = completedActions.length > 0
     ? `# Acciones que la coach marco como completadas la semana pasada\n${JSON.stringify(completedActions, null, 2)}\n\nVerifica en \`verificacion_acciones_previas\` si el impacto es visible en los datos de esta semana.\n\n`
     : `# Acciones completadas la semana pasada\nNinguna accion fue marcada como completada por la coach. Mencionarlo amablemente en \`verificacion_acciones_previas\`.\n\n`;
 
-  const conversionsBlock = conversions
-    ? `# Conversiones (datos REALES del backend, no Cloudflare)\n${JSON.stringify(conversions, null, 2)}\n\n## CRITICO — distincion entre ETAPAS DEL FUNNEL\n\nEl funnel de Pathway tiene varias etapas. NO las trates a todas como "ventas":\n\n- **TOP de funnel (LEADS, NO ventas):**\n  - \`formularios_completados\`: candidatos que llenaron el form de intake. Son leads para Micaela coach individual.\n  - \`coaches_registrados\`: cuentas creadas. Incluye gente en trial sin pagar Y posibles cuentas de prueba/test que crea la propia coach. NO ES VENTA.\n  - \`leads_chatbot\`: leads brutos del chat de la landing.\n\n- **MID de funnel (TRIAL ACTIVADO, NO venta todavia):**\n  - \`coaches_trial_activado\`: empezaron trial real via Stripe (con tarjeta o sin tarjeta segun el plan). Tampoco es venta hasta que paguen el primer mes.\n\n- **BOTTOM de funnel (VENTAS REALES, dinero entrante):**\n  - \`coaches_pagantes\`: pagaron efectivamente por la suscripcion. ESTO SI ES VENTA.\n  - \`pack_express_compras\`: compraron el Pack Express (one-shot). ESTO SI ES VENTA.\n\nCuando hables de "ventas", "conversion" o "revenue", referite SOLO a \`coaches_pagantes\` + \`pack_express_compras\`. Lo demas son leads o trials.\n\nSi \`coaches_registrados\` > 0 pero \`coaches_pagantes\` = 0, di explicitamente "X registros (sin ventas reales todavia)" — no inflar la narrativa.\n\nUsa los datos para calcular tasas de conversion entre etapas (ej: trial→pago, registros→trial) y proponer acciones para destrabar el cuello de botella mas grande.\n\n`
-    : `# Conversiones\nNo hay datos de conversion disponibles para este sitio (su backend no esta integrado).\n\n`;
+  // El bloque de conversiones cambia segun el sitio. Pathway tiene funnel
+  // multi-etapa (registros → trials → pagos). Micaela tiene Calendly (llamadas
+  // agendadas → activas → canceladas).
+  const isPathwayConversions = conversions && "coaches_pagantes" in conversions;
+  const isMicaelaConversions = conversions && "llamadas_agendadas" in conversions;
+
+  let conversionsBlock = `# Conversiones\nNo hay datos de conversion disponibles para este sitio.\n\n`;
+  if (isPathwayConversions) {
+    conversionsBlock = `# Conversiones (datos REALES del backend, no Cloudflare)\n${JSON.stringify(conversions, null, 2)}\n\n## CRITICO — distincion entre ETAPAS DEL FUNNEL\n\nEl funnel de Pathway tiene varias etapas. NO las trates a todas como "ventas":\n\n- **TOP de funnel (LEADS, NO ventas):**\n  - \`formularios_completados\`: candidatos que llenaron el form de intake. Son leads para Micaela coach individual.\n  - \`coaches_registrados\`: cuentas creadas. Incluye gente en trial sin pagar Y posibles cuentas de prueba/test que crea la propia coach. NO ES VENTA.\n  - \`leads_chatbot\`: leads brutos del chat de la landing.\n\n- **MID de funnel (TRIAL ACTIVADO, NO venta todavia):**\n  - \`coaches_trial_activado\`: empezaron trial real via Stripe.\n\n- **BOTTOM de funnel (VENTAS REALES, dinero entrante):**\n  - \`coaches_pagantes\`: pagaron efectivamente. ESTO SI ES VENTA.\n  - \`pack_express_compras\`: compraron el Pack Express (one-shot). ESTO SI ES VENTA.\n\nCuando hables de "ventas", "conversion" o "revenue", referite SOLO a \`coaches_pagantes\` + \`pack_express_compras\`. Lo demas son leads o trials.\n\nSi \`coaches_registrados\` > 0 pero \`coaches_pagantes\` = 0, di explicitamente "X registros (sin ventas reales todavia)".\n\n`;
+  } else if (isMicaelaConversions) {
+    conversionsBlock = `# Conversiones (Calendly API — eventos agendados en el periodo)\n${JSON.stringify(conversions, null, 2)}\n\n## Lectura para Micaela\n\n- \`llamadas_agendadas\`: total de eventos creados (alguien hizo click en el link y agendó).\n- \`llamadas_activas\`: las que NO se cancelaron — son las que efectivamente van a ocurrir o ya ocurrieron.\n- \`llamadas_canceladas\`: agendadas pero canceladas despues. Vale la pena vigilarlas: si la tasa de cancelacion es alta puede indicar mensaje confuso, fricción en el formulario de Calendly, o leads de baja intencion.\n\nEl objetivo de Micaela es captar leads para mentoria 1-a-1, asi que cada llamada activa es un PROSPECT calificado. Cruza con el trafico de Cloudflare para calcular conversion rate (visitas → llamadas agendadas). Si la tasa es <1%, hay un problema de mensaje o CTA en su web. Si es >3%, esta funcionando — escalar trafico.\n\n`;
+  }
 
   const userContent =
     `# Sitio a analizar\n${zone}\n\n` +
@@ -392,18 +466,28 @@ function buildShortEmailHtml(
     .map((z) => {
       const headline = z.analysis?.headline || "—";
       const comp = z.analysis?.comparacion_semana_anterior || "";
-      const conv = z.summary.conversions;
-      const ventas = (conv?.coaches_pagantes ?? 0) + (conv?.pack_express_compras ?? 0);
-      const convLine = conv
-        ? `<div style="margin-top:6px;">
-             <div style="font-size:13px;color:#1B4332;font-weight:700;">
-               💰 Ventas reales: ${ventas} (${conv.coaches_pagantes ?? 0} suscripciones · ${conv.pack_express_compras ?? 0} packs)
-             </div>
-             <div style="font-size:11px;color:#666;margin-top:2px;">
-               Funnel: ${conv.formularios_completados ?? 0} formularios · ${conv.coaches_registrados ?? 0} registros · ${conv.coaches_trial_activado ?? 0} trials · ${conv.leads_chatbot ?? 0} leads chat
-             </div>
-           </div>`
-        : "";
+      const conv = z.summary.conversions as any;
+      let convLine = "";
+      if (conv && "coaches_pagantes" in conv) {
+        const ventas = (conv.coaches_pagantes ?? 0) + (conv.pack_express_compras ?? 0);
+        convLine = `<div style="margin-top:6px;">
+          <div style="font-size:13px;color:#1B4332;font-weight:700;">
+            💰 Ventas reales: ${ventas} (${conv.coaches_pagantes ?? 0} suscripciones · ${conv.pack_express_compras ?? 0} packs)
+          </div>
+          <div style="font-size:11px;color:#666;margin-top:2px;">
+            Funnel: ${conv.formularios_completados ?? 0} formularios · ${conv.coaches_registrados ?? 0} registros · ${conv.coaches_trial_activado ?? 0} trials · ${conv.leads_chatbot ?? 0} leads chat
+          </div>
+        </div>`;
+      } else if (conv && "llamadas_agendadas" in conv) {
+        convLine = `<div style="margin-top:6px;">
+          <div style="font-size:13px;color:#1B4332;font-weight:700;">
+            📞 Llamadas activas: ${conv.llamadas_activas ?? 0}
+          </div>
+          <div style="font-size:11px;color:#666;margin-top:2px;">
+            Calendly: ${conv.llamadas_agendadas ?? 0} agendadas · ${conv.llamadas_canceladas ?? 0} canceladas
+          </div>
+        </div>`;
+      }
       return `
         <div style="margin:14px 0;padding:16px;background:#fff;border-radius:10px;border-left:3px solid #E9C46A;">
           <div style="font-size:11px;color:#999;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;">${z.displayName}</div>
@@ -573,16 +657,21 @@ Deno.serve(async (req: Request) => {
         return { zone: z, summary: null, analysis: null, context: null, error: `missing ${z.envVar}` };
       }
       try {
-        // Pathway tiene su backend en este Supabase → traemos conversiones.
-        // Micaela vive en otro lado → null.
+        // Pathway: conversiones desde el backend en este Supabase.
+        // Micaela: conversiones desde Calendly API (eventos agendados).
         const isPathway = z.label === "pathwaycareercoach.com";
+        const isMicaela = z.label === "micaelajairedin.com";
+        const calendlyToken = Deno.env.get("CALENDLY_API_TOKEN_MJ") || "";
+        const calendlyUri = Deno.env.get("CALENDLY_USER_URI_MJ") || "";
         const [rows, history, context, conversions] = await Promise.all([
           fetchCloudflareDaily(zoneTag, CLOUDFLARE_API_TOKEN, periodStart, periodEnd),
           getRecentReports(SUPABASE_URL, SERVICE_KEY, z.label, HISTORY_WEEKS),
           getSiteContext(SUPABASE_URL, SERVICE_KEY, z.label),
           isPathway
             ? fetchPathwayConversions(SUPABASE_URL, SERVICE_KEY, periodStart, periodEnd)
-            : Promise.resolve(null as Conversions | null),
+            : isMicaela
+              ? fetchMicaelaConversions(calendlyToken, calendlyUri, periodStart, periodEnd)
+              : Promise.resolve(null as Conversions | null),
         ]);
         const summary = summariseRows(rows);
         // Mergear conversions en el summary que se guarda como raw_metrics.
