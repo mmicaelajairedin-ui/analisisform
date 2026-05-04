@@ -189,11 +189,16 @@ Seccion privada del panel, **solo visible para `ME.rol==='admin'`**. Acceso: sid
   - `verificacion_pruebas_ab_previas` (mide si las predicciones se cumplieron)
   - `experimento_estrella`
 
+**Action tracker (mayo 2026):**
+Cada quick win, accion estrategica y prueba A/B en el panel tiene un checkbox para marcar como completada. El estado se guarda en `analytics_reports.actions_done` JSONB (indexado por categoria + position). La proxima semana el agente lee este campo y verifica en `verificacion_acciones_previas` si los datos muestran impacto.
+
 **Setup adicional (post-deploy):**
 1. Aplicar migration `site_context.sql` (crea tabla + abre RLS de `analytics_reports` para lectura desde panel)
-2. Re-deployar `analytics-weekly` con la nueva version
-3. Entrar al panel como admin → Web Analytics → ⚙️ Contexto → revisar/editar el contexto seedeado
-4. Disparar el agente manualmente para probar el reporte nuevo
+2. Aplicar migration `actions_tracking.sql` (agrega columna `actions_done` + permiso de UPDATE)
+3. Re-deployar `analytics-weekly` con la nueva version
+4. Entrar al panel como admin → Web Analytics → ⚙️ Contexto → revisar/editar el contexto seedeado
+5. Disparar el agente manualmente para probar el reporte nuevo
+6. Marcar acciones como completadas con los checkboxes a medida que las hagas. El reporte siguiente las verifica.
 
 ## PENDIENTE — Proximas mejoras
 - Blog: crear /blog.html como hub + 4-5 posts SEO (coaching de carrera, CV con IA, etc.)

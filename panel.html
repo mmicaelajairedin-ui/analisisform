@@ -5840,6 +5840,43 @@ function _waSaveContext(zone){
   }
 }
 
+// ── Action tracker: marcar acciones del reporte como completadas ──
+// Cada checkbox de quick_wins / acciones_estrategicas / pruebas_ab_propuestas
+// llama a esta funcion al cambiar. Patcha analytics_reports.actions_done
+// (JSONB) por positional index.
+function _waToggleAction(reportId,category,index,checked){
+  // Buscar el reporte en cache para mergear con el estado existente
+  var allRows=[];
+  Object.keys(_waReports).forEach(function(k){allRows=allRows.concat(_waReports[k]||[]);});
+  var report=allRows.find(function(r){return String(r.id)===String(reportId);});
+  if(!report){console.warn('Reporte no encontrado en cache',reportId);return;}
+  var done=report.actions_done||{};
+  if(!Array.isArray(done[category])){
+    // Inicializar array con la longitud de items en analysis[category]
+    var items=(report.analysis||{})[category]||[];
+    done[category]=new Array(items.length).fill(false);
+  }
+  done[category][index]=checked;
+  report.actions_done=done;  // actualizar cache
+  // Tachar/destacar visualmente sin recargar todo
+  var li=document.getElementById('wa-chk-'+reportId+'-'+category+'-'+index);
+  if(li){
+    var label=li.parentElement;
+    if(label){
+      label.style.textDecoration=checked?'line-through':'';
+      label.style.color=checked?'var(--muted)':'';
+    }
+  }
+  // Persistir en Supabase
+  fetch(SB+'/rest/v1/analytics_reports?id=eq.'+encodeURIComponent(reportId),{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({actions_done:done})
+  }).catch(function(err){
+    console.error('Error guardando action_done:',err);
+  });
+}
+
 // ── Tab Pathway / Micaela ───────────────────────────────────
 function _waRenderZone(zoneCfg){
   var el=document.getElementById('wa-content');
@@ -5983,6 +6020,8 @@ function _waPaintZone(zoneCfg,rows){
     +'<div style="background:#fff;border-radius:10px;padding:16px;"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Visitas por semana (ultimas '+rows.length+')</div><div style="position:relative;height:240px;"><canvas id="wa-chart-weekly"></canvas></div></div>'
     +'</div></div>';
   // Analisis Claude
+  var actionsDone=latest.actions_done||{};
+  var reportId=latest.id;
   function listSection(title,items,color){
     if(!items||!items.length)return '';
     return '<div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:14px;border-left:3px solid '+color+';">'
@@ -5991,26 +6030,66 @@ function _waPaintZone(zoneCfg,rows){
       +items.map(function(x){return '<li style="margin-bottom:4px;">'+_escW(x)+'</li>';}).join('')
       +'</ul></div>';
   }
+  // Variant de listSection que agrega checkbox para marcar como completada.
+  // Persiste el estado en analytics_reports.actions_done[category][index].
+  function listSectionWithChecks(title,items,color,category){
+    if(!items||!items.length)return '';
+    var flags=actionsDone[category]||[];
+    var inner=items.map(function(x,i){
+      var checked=flags[i]===true;
+      var idEl='wa-chk-'+reportId+'-'+category+'-'+i;
+      var lineThrough=checked?'text-decoration:line-through;color:var(--muted);':'';
+      return '<li style="margin-bottom:8px;list-style:none;display:flex;gap:10px;align-items:flex-start;'+lineThrough+'">'
+        +'<input type="checkbox" id="'+idEl+'" '+(checked?'checked':'')+' '
+        +'onchange="_waToggleAction(\''+reportId+'\',\''+category+'\','+i+',this.checked)" '
+        +'style="margin-top:3px;cursor:pointer;width:16px;height:16px;accent-color:'+color+';flex-shrink:0;">'
+        +'<label for="'+idEl+'" style="cursor:pointer;flex:1;">'+_escW(x)+'</label>'
+        +'</li>';
+    }).join('');
+    return '<div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:14px;border-left:3px solid '+color+';">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">'
+      +'<span>'+title+'</span>'
+      +'<span style="font-size:10px;font-weight:600;color:#999;text-transform:none;letter-spacing:0;">📌 marca las que hagas</span>'
+      +'</div>'
+      +'<ul style="margin:0;padding:0;font-size:13px;color:var(--body);line-height:1.6;">'+inner+'</ul></div>';
+  }
   function textSection(title,txt,color){
     if(!txt)return '';
     return '<div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:14px;border-left:3px solid '+color+';">'
       +'<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">'+title+'</div>'
       +'<div style="font-size:13px;color:var(--body);line-height:1.6;">'+_escW(txt)+'</div></div>';
   }
-  // Card especifico para pruebas A/B (estructuradas, no string libre)
+  // Card especifico para pruebas A/B con checkbox
   function abTestCard(items){
     if(!items||!items.length)return '';
-    var inner=items.map(function(t){
-      if(typeof t==='string')return '<li>'+_escW(t)+'</li>';
-      return '<li style="margin-bottom:10px;">'
-        +'<div style="font-weight:700;color:var(--title);font-size:13px;">'+_escW(t.prueba||'')+'</div>'
-        +(t.prediccion?'<div style="font-size:12px;color:#2D6A4F;margin-top:2px;">📈 '+_escW(t.prediccion)+'</div>':'')
-        +(t.metrica?'<div style="font-size:11px;color:var(--muted);margin-top:2px;">Medir: '+_escW(t.metrica)+(t.duracion?' · '+_escW(t.duracion):'')+'</div>':'')
+    var flags=actionsDone.pruebas_ab_propuestas||[];
+    var inner=items.map(function(t,i){
+      var checked=flags[i]===true;
+      var idEl='wa-chk-'+reportId+'-pruebas_ab_propuestas-'+i;
+      var lineThrough=checked?'text-decoration:line-through;color:var(--muted);':'';
+      var content;
+      if(typeof t==='string'){
+        content='<div style="'+lineThrough+'">'+_escW(t)+'</div>';
+      }else{
+        content='<div style="'+lineThrough+'">'
+          +'<div style="font-weight:700;color:var(--title);font-size:13px;">'+_escW(t.prueba||'')+'</div>'
+          +(t.prediccion?'<div style="font-size:12px;color:#2D6A4F;margin-top:2px;">📈 '+_escW(t.prediccion)+'</div>':'')
+          +(t.metrica?'<div style="font-size:11px;color:var(--muted);margin-top:2px;">Medir: '+_escW(t.metrica)+(t.duracion?' · '+_escW(t.duracion):'')+'</div>':'')
+          +'</div>';
+      }
+      return '<li style="margin-bottom:12px;list-style:none;display:flex;gap:10px;align-items:flex-start;">'
+        +'<input type="checkbox" id="'+idEl+'" '+(checked?'checked':'')+' '
+        +'onchange="_waToggleAction(\''+reportId+'\',\'pruebas_ab_propuestas\','+i+',this.checked)" '
+        +'style="margin-top:3px;cursor:pointer;width:16px;height:16px;accent-color:#1B4332;flex-shrink:0;">'
+        +'<label for="'+idEl+'" style="cursor:pointer;flex:1;">'+content+'</label>'
         +'</li>';
     }).join('');
     return '<div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:14px;border-left:3px solid #1B4332;">'
-      +'<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">🧪 Pruebas A/B propuestas</div>'
-      +'<ul style="margin:0;padding-left:20px;font-size:13px;color:var(--body);line-height:1.6;">'+inner+'</ul></div>';
+      +'<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">'
+      +'<span>🧪 Pruebas A/B propuestas</span>'
+      +'<span style="font-size:10px;font-weight:600;color:#999;text-transform:none;letter-spacing:0;">📌 marca las que hagas</span>'
+      +'</div>'
+      +'<ul style="margin:0;padding:0;font-size:13px;color:var(--body);line-height:1.6;">'+inner+'</ul></div>';
   }
 
   html+=textSection('Resumen',a.resumen,'#999');
@@ -6018,10 +6097,12 @@ function _waPaintZone(zoneCfg,rows){
   html+=textSection('Tendencia 4 semanas',a.tendencia_4_semanas,'#999');
   html+=listSection('💡 Oportunidades no obvias',a.oportunidades_no_obvias,'#E9C46A');
   html+=listSection('Hipotesis',a.hipotesis,'#8C7B80');
-  // Quick wins + estrategicas (backward compat: si no hay, mostrar acciones_esta_semana)
+  // Asunciones: cosas que el agente da por sentadas y la coach debe verificar
+  html+=listSection('🤔 Asunciones a verificar antes de actuar',a.asunciones,'#c0756e');
+  // Quick wins + estrategicas con CHECKBOXES (action tracker)
   if((a.quick_wins&&a.quick_wins.length)||(a.acciones_estrategicas&&a.acciones_estrategicas.length)){
-    html+=listSection('⚡ Quick wins (<30 min)',a.quick_wins,'#2D6A4F');
-    html+=listSection('🎯 Acciones estrategicas (2+ semanas)',a.acciones_estrategicas,'#1B4332');
+    html+=listSectionWithChecks('⚡ Quick wins (<30 min)',a.quick_wins,'#2D6A4F','quick_wins');
+    html+=listSectionWithChecks('🎯 Acciones estrategicas (2+ semanas)',a.acciones_estrategicas,'#1B4332','acciones_estrategicas');
   }else{
     html+=listSection('Acciones esta semana',a.acciones_esta_semana,'#2D6A4F');
   }
@@ -6030,6 +6111,7 @@ function _waPaintZone(zoneCfg,rows){
   html+=textSection('Que replicar',a.que_replicar,'#E9C46A');
   html+=textSection('Verificacion hipotesis previas',a.verificacion_hipotesis_previas,'#999');
   html+=textSection('Verificacion pruebas A/B previas',a.verificacion_pruebas_ab_previas,'#999');
+  html+=textSection('✅ Verificacion acciones marcadas previas',a.verificacion_acciones_previas,'#2D6A4F');
   html+=textSection('🌟 Experimento estrella',a.experimento_estrella||a.experimento_propuesto,'#1B4332');
   html+='<div style="margin-top:24px;text-align:center;font-size:11px;color:var(--muted);">Reporte del '+_escW(latest.period_start)+' al '+_escW(latest.period_end)+'. Generado '+_escW((latest.generated_at||'').slice(0,10))+'.</div>';
   el.innerHTML=html;
