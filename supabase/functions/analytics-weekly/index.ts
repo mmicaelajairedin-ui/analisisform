@@ -249,23 +249,38 @@ REGLAS DE CALIDAD:
 8. Buscar OPORTUNIDADES NO OBVIAS: cosas que los datos sugieren pero la coach probablemente no esta viendo (ej: "30% del trafico es de Mexico pero no hay contenido localizado", "los miercoles cae 50% — hay un hueco para llenar").
 9. Si hay datos de conversion (formularios completados, registros, leads), enfocate en CONVERSION RATE no solo en visitas. Visitas son vanity metric — conversion paga las cuentas.
 
+REGLAS DE PRIORIZACION (para que la coach pueda actuar, no se ahogue en lista larga):
+- MAX 3 quick_wins. Solo los de MAS ALTO LEVERAGE.
+- MAX 2 acciones_estrategicas.
+- MAX 2 pruebas_ab_propuestas.
+- MAX 3 hipotesis. MAX 3 oportunidades_no_obvias.
+- Mejor menos y bien fundadas que muchas y debiles.
+
+REGLA DE TRANSPARENCIA:
+- Si en alguna hipotesis o accion estas asumiendo algo que NO esta verificado con datos, agregalo en \`asunciones\`. Ejemplo: "Asumo que el pico del domingo es trafico humano real (no bot/scraper) — verificar en Cloudflare Bot Fight Mode antes de invertir en replicarlo".
+
+REGLA DE FEEDBACK LOOP:
+- Si te llega un campo \`acciones_completadas_semana_pasada\`, debes verificar en \`verificacion_acciones_previas\` si los datos de esta semana muestran impacto. Si la coach NO marco nada, decilo amablemente: "no se marcaron acciones como completadas — para mejorar este reporte, marca cuales hiciste en el panel".
+
 RESPONDÉ SOLO CON JSON VÁLIDO, sin markdown:
 {
   "headline": "1 frase con la noticia mas importante de la semana para ESTE sitio",
   "resumen": "2-3 oraciones sobre el estado del trafico Y conversion (si hay datos de conversion)",
   "comparacion_semana_anterior": "cambio % o 'sin datos previos'",
   "tendencia_4_semanas": "trend (creciente/estable/caida) si hay datos historicos",
-  "hipotesis": ["hipotesis 1 con dato concreto que la sustenta"],
-  "oportunidades_no_obvias": ["oportunidad 1 que la coach probablemente no esta viendo, con evidencia"],
-  "quick_wins": ["accion ejecutable en <30 min con metrica esperada"],
-  "acciones_estrategicas": ["bet a 2+ semanas con metrica de exito"],
+  "hipotesis": ["MAX 3 hipotesis, cada una con dato concreto"],
+  "oportunidades_no_obvias": ["MAX 3 oportunidades con evidencia"],
+  "asunciones": ["lista de cosas que estas asumiendo sin haber verificado, para que la coach valide antes de actuar"],
+  "quick_wins": ["MAX 3 acciones <30 min con metrica esperada, ranqueadas por impacto"],
+  "acciones_estrategicas": ["MAX 2 bets a 2+ semanas con metrica de exito"],
   "pruebas_ab_propuestas": [
     {"prueba": "Cambiar X por Y en pagina Z", "prediccion": "CTR sube ~10%", "duracion": "7 dias", "metrica": "% click en boton X"}
   ],
-  "alertas": ["alerta 1 si aplica"],
+  "alertas": ["alertas criticas si aplican"],
   "que_replicar": "que funciono que vale la pena repetir, citando dato",
-  "verificacion_hipotesis_previas": "si hay reporte previo: lista cada hipotesis previa, decir si los datos de esta semana la confirman/refutan. Si no hay, string vacio.",
-  "verificacion_pruebas_ab_previas": "si hay pruebas_ab_propuestas en reporte previo, decir si la prediccion se cumplio segun los datos de esta semana. Si no hay, string vacio.",
+  "verificacion_hipotesis_previas": "si hay reporte previo: lista cada hipotesis previa y decir si los datos esta semana la confirman/refutan. Si no hay, string vacio.",
+  "verificacion_pruebas_ab_previas": "si hay pruebas_ab_propuestas en reporte previo, decir si la prediccion se cumplio segun los datos. Si no hay, string vacio.",
+  "verificacion_acciones_previas": "si la coach marco acciones como completadas (ver acciones_completadas_semana_pasada), evaluar el impacto en los datos de esta semana. Si no marco nada, mensaje amable.",
   "experimento_estrella": "el experimento mas alto-leverage para esta semana, con metrica medible y prediccion cuantitativa"
 }`;
 
@@ -286,7 +301,12 @@ async function callClaudeForZone(
   current: Record<string, unknown>,
   history: Array<Record<string, unknown>>,
   conversions: Conversions | null,
+  completedActions: Array<Record<string, string>>,
 ): Promise<Record<string, unknown>> {
+  const completedBlock = completedActions.length > 0
+    ? `# Acciones que la coach marco como completadas la semana pasada\n${JSON.stringify(completedActions, null, 2)}\n\nVerifica en \`verificacion_acciones_previas\` si el impacto es visible en los datos de esta semana.\n\n`
+    : `# Acciones completadas la semana pasada\nNinguna accion fue marcada como completada por la coach. Mencionarlo amablemente en \`verificacion_acciones_previas\`.\n\n`;
+
   const conversionsBlock = conversions
     ? `# Conversiones (datos REALES del backend, no Cloudflare)\n${JSON.stringify(conversions, null, 2)}\n\n## CRITICO — distincion entre ETAPAS DEL FUNNEL\n\nEl funnel de Pathway tiene varias etapas. NO las trates a todas como "ventas":\n\n- **TOP de funnel (LEADS, NO ventas):**\n  - \`formularios_completados\`: candidatos que llenaron el form de intake. Son leads para Micaela coach individual.\n  - \`coaches_registrados\`: cuentas creadas. Incluye gente en trial sin pagar Y posibles cuentas de prueba/test que crea la propia coach. NO ES VENTA.\n  - \`leads_chatbot\`: leads brutos del chat de la landing.\n\n- **MID de funnel (TRIAL ACTIVADO, NO venta todavia):**\n  - \`coaches_trial_activado\`: empezaron trial real via Stripe (con tarjeta o sin tarjeta segun el plan). Tampoco es venta hasta que paguen el primer mes.\n\n- **BOTTOM de funnel (VENTAS REALES, dinero entrante):**\n  - \`coaches_pagantes\`: pagaron efectivamente por la suscripcion. ESTO SI ES VENTA.\n  - \`pack_express_compras\`: compraron el Pack Express (one-shot). ESTO SI ES VENTA.\n\nCuando hables de "ventas", "conversion" o "revenue", referite SOLO a \`coaches_pagantes\` + \`pack_express_compras\`. Lo demas son leads o trials.\n\nSi \`coaches_registrados\` > 0 pero \`coaches_pagantes\` = 0, di explicitamente "X registros (sin ventas reales todavia)" — no inflar la narrativa.\n\nUsa los datos para calcular tasas de conversion entre etapas (ej: trial→pago, registros→trial) y proponer acciones para destrabar el cuello de botella mas grande.\n\n`
     : `# Conversiones\nNo hay datos de conversion disponibles para este sitio (su backend no esta integrado).\n\n`;
@@ -296,6 +316,7 @@ async function callClaudeForZone(
     `# Contexto del sitio (configurado por la coach)\n${context ? JSON.stringify(context, null, 2) : "Sin contexto configurado todavia. Pedile a la coach que llene el contexto en el panel para mejor analisis."}\n\n` +
     `# Datos de esta semana\n${JSON.stringify(current, null, 2)}\n\n` +
     conversionsBlock +
+    completedBlock +
     `# Histórico de las ${HISTORY_WEEKS} semanas previas (mas reciente primero)\n` +
     (history.length > 0 ? JSON.stringify(history, null, 2) : "Sin datos previos guardados todavia.");
 
@@ -419,13 +440,46 @@ async function getRecentReports(
   zone: string,
   limit: number,
 ): Promise<Array<Record<string, unknown>>> {
-  const url = `${supabaseUrl}/rest/v1/analytics_reports?zone=eq.${encodeURIComponent(zone)}&select=raw_metrics,analysis,period_start,period_end&order=period_end.desc&limit=${limit}`;
+  // Incluye actions_done para que el agente sepa que acciones marco la coach
+  // como cumplidas en reportes anteriores y pueda verificar impacto.
+  const url = `${supabaseUrl}/rest/v1/analytics_reports?zone=eq.${encodeURIComponent(zone)}&select=raw_metrics,analysis,actions_done,period_start,period_end&order=period_end.desc&limit=${limit}`;
   const res = await fetch(url, {
     headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
   });
   if (!res.ok) return [];
   const arr = await res.json();
   return Array.isArray(arr) ? arr : [];
+}
+
+// Extrae las acciones que la coach marco como cumplidas en el reporte mas
+// reciente. El resultado es legible para Claude (lista de strings con la
+// accion completa de cada categoria marcada).
+function extractCompletedActions(prevReport: Record<string, unknown> | undefined): Array<Record<string, string>> {
+  if (!prevReport) return [];
+  const analysis = (prevReport as any).analysis || {};
+  const done = (prevReport as any).actions_done || {};
+  const completed: Array<Record<string, string>> = [];
+  const categorias: Array<{ key: string; label: string; isObj?: boolean }> = [
+    { key: "quick_wins", label: "Quick win" },
+    { key: "acciones_estrategicas", label: "Accion estrategica" },
+    { key: "pruebas_ab_propuestas", label: "Prueba A/B", isObj: true },
+  ];
+  for (const cat of categorias) {
+    const items = analysis[cat.key];
+    const flags = done[cat.key];
+    if (!Array.isArray(items) || !Array.isArray(flags)) continue;
+    items.forEach((item: unknown, i: number) => {
+      if (flags[i] === true) {
+        const text = cat.isObj && typeof item === "object" && item
+          ? (item as any).prueba || JSON.stringify(item)
+          : typeof item === "string"
+          ? item
+          : JSON.stringify(item);
+        completed.push({ categoria: cat.label, accion: text });
+      }
+    });
+  }
+  return completed;
 }
 
 async function getSiteContext(
@@ -542,6 +596,8 @@ Deno.serve(async (req: Request) => {
           metricas: (h as any).raw_metrics,
           analysis_previo: (h as any).analysis,
         }));
+        // Acciones marcadas como cumplidas en el reporte mas reciente.
+        const completedActions = extractCompletedActions(history[0]);
         const analysis = await callClaudeForZone(
           ANTHROPIC_API_KEY,
           z.label,
@@ -549,6 +605,7 @@ Deno.serve(async (req: Request) => {
           currentPayload,
           historyPayload,
           conversions,
+          completedActions,
         );
         return { zone: z, summary: summaryWithConv, analysis, context, error: null as string | null };
       } catch (e) {
