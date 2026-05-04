@@ -1,14 +1,17 @@
-// Pathway — Popup de pricing con email capture y oferta de 1 mes gratis.
+// Pathway — Popup de pricing con email capture y oferta de bonus de trial.
 //
 // SOLO se dispara al hacer click en un elemento con [data-open-pricing-popup].
 // Antes había triggers automáticos (scroll a pricing + timer 8s) pero
-// resultaban intrusivos — el código aparecía sin que el usuario lo pidiera.
+// resultaban intrusivos — el popup aparecía sin que el usuario lo pidiera.
 // Ahora es 100% pull: el visitante decide cuándo verlo clickeando "aquí" o
 // equivalente.
 //
-// Captura email → guarda en Supabase (tabla leads_pricing) → manda mail con
-// link a registro.html?ref=popup&email=<email>. El email es el identificador
-// que correlaciona popup → registro → trial → pago.
+// Flow: captura email → guarda en Supabase (tabla leads_pricing) → manda
+// mail con link a registro.html?ref=popup&email=<email>. Cuando el usuario
+// se registra desde ese link, registro.html detecta ?ref=popup y lo redirige
+// al Stripe Payment Link de 30 días trial (en vez del público de 14 días).
+//
+// El usuario NO escribe ningún código en ningún lado — la magia es invisible.
 //
 // Uso desde cualquier landing pública:
 //   <script src="pricing-popup.js"></script>
@@ -16,16 +19,12 @@
 //
 // Atributos del <body> opcionales:
 //   data-popup-pagina="soy-coach" (default: window.location.pathname)
-//
-// La oferta es simbólica (Stripe ya tiene 30d de trial configurado en los
-// Payment Links). El código PATHWAY30 es un sello visual, no un coupon real.
 
 (function(){
   'use strict';
 
   var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
   var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
-  var CODIGO='PATHWAY30';
 
   function getPagina(){
     var p=document.body && document.body.getAttribute('data-popup-pagina');
@@ -50,15 +49,16 @@
 
     // Popup solo se usa en landings de coach (index + soy-coach). El
     // candidato no se suscribe a Pathway directamente — paga al coach.
-    // Bonus: el trial estándar es 14d, este popup regala +14 días extra
-    // (28 en total) para los que dejen email con código PATHWAY30.
-    var titulo='🎁 +14 días extra al trial';
-    var subtitulo='El trial estándar es 14 días — con este código sumás 14 más, total 28 días gratis. Te mandamos el link al email para que actives la suscripción.';
-    var ctaTexto='Quiero los 14 días extra';
+    // Bonus: el trial estándar es 14d, dejando email se desbloquea un link
+    // privado con 30 días en total (16 días extra). El usuario no escribe
+    // código — recibe directamente un link especial al email.
+    var titulo='🎁 +16 días extra al trial';
+    var subtitulo='El trial estándar es 14 días — dejá tu email y te mandamos un link especial para activar 30 días gratis con tarjeta. Si no te gusta, cancelás antes y no se cobra nada.';
+    var ctaTexto='Quiero los 30 días gratis';
 
     card.innerHTML=''
       +'<button data-pw-close style="position:absolute;top:14px;right:14px;background:none;border:none;font-size:22px;cursor:pointer;color:#9E9E9E;line-height:1;padding:4px 8px;border-radius:6px;" aria-label="Cerrar">×</button>'
-      +'<div style="display:inline-block;background:rgba(82,183,136,.15);color:#2D6A4F;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 12px;border-radius:100px;margin-bottom:16px;">CÓDIGO '+CODIGO+'</div>'
+      +'<div style="display:inline-block;background:rgba(82,183,136,.15);color:#2D6A4F;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 12px;border-radius:100px;margin-bottom:16px;">BONUS · 30 DÍAS GRATIS</div>'
       +'<h3 style="font-family:Fraunces,Georgia,serif;font-size:26px;font-weight:500;color:#1B2E26;letter-spacing:-.6px;line-height:1.18;margin:0 0 10px;">'+titulo+'</h3>'
       +'<p style="font-size:14px;color:#4A4444;line-height:1.55;margin:0 0 18px;">'+subtitulo+'</p>'
       +'<form data-pw-form style="display:flex;flex-direction:column;gap:10px;">'
@@ -116,18 +116,20 @@
       body:JSON.stringify({email:email,pagina:pagina,metadata:{ua:navigator.userAgent.slice(0,160)}})
     }).then(function(r){
       if(!r.ok && r.status!==201 && r.status!==204)return r.text().then(function(t){throw new Error('save '+r.status+' '+t.slice(0,80));});
-      // Mandar email con link de registro pre-cargado
+      // Mandar email con link de registro pre-cargado. El parametro ?ref=popup
+      // hace que registro.html, despues de crear la cuenta, redirija al
+      // Stripe Payment Link de 30 días (en vez del público de 14 días).
       var regUrl='https://pathwaycareercoach.com/registro.html?ref=popup&email='+encodeURIComponent(email);
       var html=''
-        +'<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">¡Acá va tu link!</h2>'
-        +'<p>Tu código <strong>'+CODIGO+'</strong> te suma <strong>14 días extra</strong> al trial estándar de 14 días — <strong>28 días gratis</strong> en total.</p>'
-        +'<p style="margin-top:20px;"><a href="'+regUrl+'" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Activar mi prueba de 28 días →</a></p>'
-        +'<p style="font-size:13px;color:#666;margin-top:24px;">Te pedimos la tarjeta para activar la suscripción, pero <strong>no cobramos hasta que termine el trial</strong>. Si no te sirve, cancelás desde tu panel y listo, no se cobra nada.</p>'
+        +'<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">¡Acá va tu link especial!</h2>'
+        +'<p>Te conseguimos <strong>16 días extra</strong> al trial estándar — <strong>30 días gratis</strong> en total para que pruebes Pathway sin apuro.</p>'
+        +'<p style="margin-top:20px;"><a href="'+regUrl+'" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Activar mis 30 días gratis →</a></p>'
+        +'<p style="font-size:13px;color:#666;margin-top:24px;">Te pedimos la tarjeta para activar la suscripción, pero <strong>no cobramos hasta el día 30</strong>. Si no te sirve, cancelás desde tu panel y listo, no se cobra nada.</p>'
         +'<p style="font-size:12px;color:#888;">Cualquier duda, respondé este mail y te contesto.</p>';
       return fetch(SB+'/functions/v1/send-email',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({to:email,to_name:email.split('@')[0],subject:'🎁 Tu código '+CODIGO+' — 30 días gratis en Pathway',html:html})
+        body:JSON.stringify({to:email,to_name:email.split('@')[0],subject:'🎁 30 días gratis en Pathway — tu link especial',html:html})
       }).catch(function(e){console.error('[popup] email fail',e);});
     }).then(function(){
       st.innerHTML='✓ Listo, te mandamos el mail. Revisá tu bandeja (y spam por las dudas).';
