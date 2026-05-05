@@ -254,7 +254,9 @@ async function entrar(){
 
   try{
     var hash=await hashPassword(password);
-    var res=await fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+hash+'&activo=eq.true&select=id,email,rol,nombre',{
+    // Buscar sin filtrar por activo — asi distinguimos entre "credenciales mal"
+    // y "credenciales OK pero cuenta pendiente de pago"
+    var res=await fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+hash+'&select=id,email,rol,nombre,activo,configuracion',{
       headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
     });
     var rows=await res.json();
@@ -266,6 +268,18 @@ async function entrar(){
     }
 
     var usuario=rows[0];
+
+    // Paywall: si la cuenta esta inactiva (no pagaron o suscripcion vencida),
+    // mostrar mensaje claro y CTA al Stripe en vez de error generico
+    if(usuario.activo===false && usuario.rol!=='admin'){
+      var fromPopup = usuario.configuracion && usuario.configuracion.from_popup === true;
+      var stripeUrl = fromPopup
+        ? 'https://buy.stripe.com/14A28rfz2fckarifa38AE08'
+        : 'https://buy.stripe.com/fZu6oH86A4xG42U7HB8AE07';
+      error.innerHTML = 'Tu cuenta está pendiente de pago. <a href="'+stripeUrl+'?prefilled_email='+encodeURIComponent(usuario.email)+'" style="color:var(--bosque);font-weight:600;text-decoration:underline;">Completar pago →</a>';
+      btn.disabled=false;loading.style.display='none';
+      return;
+    }
     localStorage.setItem('mj_user',JSON.stringify({id:usuario.id,email:usuario.email,rol:usuario.rol,nombre:usuario.nombre}));
 
     var _v='v='+Date.now();
