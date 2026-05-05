@@ -1337,18 +1337,34 @@ function llamarEdge(payload){
 }
 
 function loadCands(){
-  // Admin ve todos los candidatos. Coaches normales solo ven LOS SUYOS
-  // (filtrado estricto por coach_id). Antes incluiamos coach_id IS NULL
-  // como "legacy data" pero eso causaba fuga: candidatos sin coach asignado
-  // aparecian en TODOS los paneles → mensajes mezclados entre coaches.
-  // Ahora solo admin ve los huerfanos para reasignar.
+  // Cada coach (incluyendo admin) ve SOLO SUS candidatos + huerfanos.
+  // Admin NO ve candidatos de otros coaches en el panel — para eso existe
+  // la seccion Admin. Esto es igual a como _renderMensajes() maneja admin.
   var isAdmin=ME&&ME.rol==='admin';
   var candFilter='select=*';
-  if(!isAdmin&&ME&&ME.id){
-    candFilter+='&coach_id=eq.'+encodeURIComponent(ME.id);
+  if(ME&&ME.id){
+    if(isAdmin){
+      candFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+    } else {
+      candFilter+='&coach_id=eq.'+encodeURIComponent(ME.id);
+    }
   }
-  var repFilter='select=*'+((!isAdmin&&ME&&ME.id)?'&coach_id=eq.'+encodeURIComponent(ME.id):'');
-  var cvFilter='select=id,email,codigo,contenido,created_at'+((!isAdmin&&ME&&ME.id)?'&coach_id=eq.'+encodeURIComponent(ME.id):'');
+  var repFilter='select=*';
+  if(ME&&ME.id){
+    if(isAdmin){
+      repFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+    } else {
+      repFilter+='&coach_id=eq.'+encodeURIComponent(ME.id);
+    }
+  }
+  var cvFilter='select=id,email,codigo,contenido,created_at';
+  if(ME&&ME.id){
+    if(isAdmin){
+      cvFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+    } else {
+      cvFilter+='&coach_id=eq.'+encodeURIComponent(ME.id);
+    }
+  }
   Promise.all([
     sbGet('candidatos',candFilter),
     sbGet('informes',repFilter),
