@@ -22,7 +22,7 @@ jobs:
   trigger-analytics:
     name: "Disparar reporte semanal"
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: "POST a edge function analytics-weekly"
@@ -44,11 +44,16 @@ jobs:
           # limpiar. Imprimimos longitudes (no los valores) para debug.
           echo "URL chars: ${#URL} | Secret chars: ${#SECRET}"
 
+          # Timeout 5 min (300s). La edge function ahora hace mucho mas trabajo:
+          # 2 zonas en paralelo, cada una con Cloudflare + history + context +
+          # conversions (Pathway) o Calendly (Micaela) + Claude API (~30-60s
+          # cada uno) + email. Bajo carga normal tarda 60-120s, pero a veces
+          # Claude se demora y necesitamos margen.
           response=$(curl -sS -w "\n%{http_code}" -X POST \
             "${URL}/functions/v1/analytics-weekly" \
             -H "X-Trigger-Secret: ${SECRET}" \
             -H "Content-Type: application/json" \
-            --max-time 120) || {
+            --max-time 300) || {
               echo "::error::curl fallo con exit code $?"
               exit 1
             }
