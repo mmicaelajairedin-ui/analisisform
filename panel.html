@@ -1337,13 +1337,15 @@ function llamarEdge(payload){
 }
 
 function loadCands(){
-  // Admin ve todos los candidatos. Coaches normales solo ven los suyos
-  // (filtrado por coach_id). Si un coach no tiene coach_id en sus
-  // candidatos (legacy), mostramos los que tengan coach_id null O el suyo.
+  // Admin ve todos los candidatos. Coaches normales solo ven LOS SUYOS
+  // (filtrado estricto por coach_id). Antes incluiamos coach_id IS NULL
+  // como "legacy data" pero eso causaba fuga: candidatos sin coach asignado
+  // aparecian en TODOS los paneles → mensajes mezclados entre coaches.
+  // Ahora solo admin ve los huerfanos para reasignar.
   var isAdmin=ME&&ME.rol==='admin';
   var candFilter='select=*';
   if(!isAdmin&&ME&&ME.id){
-    candFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+    candFilter+='&coach_id=eq.'+encodeURIComponent(ME.id);
   }
   Promise.all([
     sbGet('candidatos',candFilter),
@@ -3912,15 +3914,17 @@ function _renderInicio(){
     });
     html+='</div>';
 
-    // Referral
+    // Referral: el link incluye ref=popup (activa flow de 30d trial) +
+    // referrer=<coachId> (trackea quien refirio para darle 1 mes gratis cuando
+    // el referido pague). El coach referido recibe 30 dias en vez de 14.
     var coachId=(ME&&ME.id)||'';
-    var refLink='https://pathwaycareercoach.com/registro.html?ref='+coachId;
+    var refLink='https://pathwaycareercoach.com/registro.html?ref=popup&referrer='+coachId;
     html+='<div style="background:linear-gradient(135deg,rgba(82,183,136,.1),rgba(45,106,79,.04));border:1.5px solid rgba(82,183,136,.25);border-radius:14px;padding:20px 22px;">';
     html+='<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">';
     html+='<div style="font-size:32px;flex-shrink:0;">🎁</div>';
     html+='<div style="flex:1;min-width:260px;">';
     html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:18px;font-weight:500;color:var(--title);margin-bottom:4px;letter-spacing:-.2px;">Invitá a otro coach</div>';
-    html+='<div style="font-size:12px;color:var(--body);line-height:1.55;margin-bottom:12px;">Compartí tu link. Por cada coach que se registra y paga, ganás <strong>1 mes gratis</strong>.</div>';
+    html+='<div style="font-size:12px;color:var(--body);line-height:1.55;margin-bottom:12px;">Compartí tu link. Tu colega arranca con <strong>30 días gratis</strong> y vos ganás <strong>1 mes gratis</strong> cuando paguen.</div>';
     html+='<div style="display:flex;gap:8px;flex-wrap:wrap;">';
     html+='<input type="text" value="'+escH(refLink)+'" readonly id="ref-link-input" style="flex:1;min-width:240px;padding:9px 12px;background:#fff;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:monospace;color:var(--body);" onclick="this.select()">';
     html+='<button onclick="navigator.clipboard.writeText(document.getElementById(\'ref-link-input\').value);showToast(\'Link copiado\');" style="background:var(--accent);color:#fff;border:none;padding:9px 18px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">Copiar</button>';
@@ -6594,13 +6598,17 @@ function _renderMensajes(){
     '</div>'+
     '<div id="panel-msgs"><div style="text-align:center;padding:2rem;color:var(--muted);">Cargando...</div></div>'+
   '</div>';
-  // Filtramos por coach_id para que cada coach vea SOLO sus mensajes
-  // (sin esto, todos los coaches verían los mensajes de todos los candidatos
-  // — bug de privacidad). Mantenemos coach_id IS NULL para legacy data
-  // que no tiene coach asignado todavía (compat con `loadCands`).
+  // Filtramos por coach_id ESTRICTO para que cada coach vea SOLO sus mensajes.
+  // Antes incluiamos coach_id IS NULL (legacy data sin coach asignado) pero
+  // eso causaba mezcla — candidatos huerfanos aparecian en todos los paneles
+  // y por ende sus mensajes tambien. Solo admin ve huerfanos.
   var msgFilter='?select=nombre,email,notas_coach,coach_id&order=created_at.desc';
   if(ME&&ME.id){
-    msgFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+    if(ME.rol==='admin'){
+      msgFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+    } else {
+      msgFilter+='&coach_id=eq.'+encodeURIComponent(ME.id);
+    }
   }
   fetch(SB+'/rest/v1/candidatos'+msgFilter,{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}

@@ -190,9 +190,20 @@ async function handleCallback(){
     try {
       // activo=false: el usuario NO puede acceder al panel hasta que pague.
       // Webhook de Stripe lo flipea a true cuando confirma la suscripcion.
-      // Tambien guardamos from_popup en configuracion si vino del popup,
-      // asi panel.html puede redirigirlo al Stripe link de 30d en vez de 14d.
+      // from_popup → trial extendido a 30d (popup users / referidos por coach)
+      // referred_by → coach que invito (ganara 1 mes gratis cuando este pague)
       var refIsPopup = ref === 'popup';
+      var referredBy = params.get('referrer') || null;
+      var newCfg = {
+        auth_provider: 'google',
+        foto_perfil: photoUrl,
+        from_google: true,
+        from_popup: refIsPopup
+      };
+      if(referredBy){
+        newCfg.referred_by = referredBy;
+        newCfg.referred_at = new Date().toISOString();
+      }
       var createRes = await fetch(SB + '/rest/v1/usuarios', {
         method: 'POST',
         headers: {
@@ -207,12 +218,7 @@ async function handleCallback(){
           rol: 'coach',
           nombre: name,
           activo: false,
-          configuracion: {
-            auth_provider: 'google',
-            foto_perfil: photoUrl,
-            from_google: true,
-            from_popup: refIsPopup
-          }
+          configuracion: newCfg
         })
       });
       if(!createRes.ok){
