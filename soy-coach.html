@@ -234,8 +234,61 @@ a{color:inherit;text-decoration:none;}
   .mockup-row-week{display:none;}
 }
 </style>
+<!-- Google Identity Services (One Tap auto-prompt) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
+
+<!-- Google One Tap: muestra overlay automatico arriba a la derecha
+     "Continuar como ana@gmail.com" si el usuario tiene Google logueado.
+     Click → Supabase signInWithIdToken → redirect a auth-callback con sync. -->
+<div id="g_id_onload"
+     data-client_id="496232899827-7krvs7f7d2vhrqqugsjgna8mb1esf02h.apps.googleusercontent.com"
+     data-context="signup"
+     data-ux_mode="popup"
+     data-callback="handleGoogleOneTapCoach"
+     data-auto_prompt="true"
+     data-itp_support="true"
+     data-use_fedcm_for_prompt="true"></div>
+
+<script>
+async function handleGoogleOneTapCoach(response){
+  if(!response || !response.credential){
+    console.warn('[onetap] sin credencial');
+    return;
+  }
+  // Mostrar mensaje de loading mientras procesa
+  var loadingDiv = document.createElement('div');
+  loadingDiv.style.cssText = 'position:fixed;inset:0;background:rgba(45,106,79,.92);color:#fff;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:Inter,sans-serif;font-size:15px;';
+  loadingDiv.innerHTML = '<div style="text-align:center;"><div style="width:40px;height:40px;border:3px solid rgba(255,255,255,.3);border-top:3px solid #fff;border-radius:50%;margin:0 auto 16px;animation:spin .8s linear infinite;"></div>Conectando con Google...</div><style>@keyframes spin{to{transform:rotate(360deg);}}</style>';
+  document.body.appendChild(loadingDiv);
+
+  try {
+    if(!window.supabase){
+      throw new Error('Supabase SDK no cargo');
+    }
+    var sb = window.supabase.createClient(
+      'https://ddxnrsnjdvtqhxunxnwj.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU'
+    );
+    var result = await sb.auth.signInWithIdToken({
+      provider: 'google',
+      token: response.credential
+    });
+    if(result.error){
+      throw result.error;
+    }
+    // Sesion guardada. Redirigir a auth-callback para sync con tabla usuarios
+    // y decidir destino (Stripe si es nuevo, panel si existe).
+    window.location.href = '/auth-callback.html?source=registro';
+  } catch(err) {
+    console.error('[onetap] error', err);
+    loadingDiv.remove();
+    alert('Error con Google Sign-in: ' + (err.message || 'desconocido'));
+  }
+}
+</script>
 
 <nav class="nav">
   <div class="nav-inner">

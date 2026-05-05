@@ -132,6 +132,10 @@ body{font-family:'Inter',-apple-system,sans-serif;background:#f5f5f3;color:#1a1a
 .done-p{font-size:14px;color:#666;line-height:1.7;margin-bottom:1.5rem;max-width:420px;margin-left:auto;margin-right:auto;}
 .done-chip{display:inline-block;background:#D8F3DC;color:#1B2E26;font-size:12px;font-weight:600;padding:6px 18px;border-radius:20px;}
 </style>
+
+<!-- Google Identity Services para prefill del form (no para signup —
+     el candidato no necesita cuenta, solo se le auto-completa nombre+email) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -220,6 +224,24 @@ function checkAccessCode(){
     <div class="step" id="s1">
       <div class="stag" id="s1t">Paso 1 de 7</div><div class="stitle" id="s1h">¡Hola! ¿Quién eres?</div>
       <div class="sdesc" id="s1d">Empezamos por lo básico para personalizar todo el análisis para ti.</div>
+
+      <!-- Auto-fill con Google: simplifica nombre + email + foto. El resto
+           del form (sector, experiencia, etc) lo completan a mano igual. -->
+      <div style="background:#FAFDF9;border:1.5px solid rgba(45,106,79,.15);border-radius:12px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+        <div style="font-size:13px;color:var(--pw-texto-suave);flex:1;min-width:200px;">
+          ⚡ <strong style="color:var(--pw-texto);">¿Acelerar?</strong> Auto-completá nombre y email con tu cuenta Google.
+        </div>
+        <button type="button" id="btn-google-prefill" onclick="googlePrefillForm()" style="display:inline-flex;align-items:center;gap:8px;padding:9px 14px;background:#fff;color:#3C4043;border:1.5px solid #DADCE0;border-radius:8px;font-size:13px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;transition:all .15s;white-space:nowrap;" onmouseover="this.style.background='#F8F9FA';" onmouseout="this.style.background='#fff';">
+          <svg width="14" height="14" viewBox="0 0 18 18" aria-hidden="true">
+            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+            <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+          </svg>
+          Auto-completar con Google
+        </button>
+      </div>
+
       <div class="cols2">
         <div class="field"><label id="l-nom" for="f-nom">Nombre completo</label><input id="f-nom" type="text" placeholder="Tu nombre y apellido"></div>
         <div class="field"><label id="l-mai" for="f-mai">Tu email</label><input id="f-mai" type="email" placeholder="tu@email.com"></div>
@@ -837,6 +859,59 @@ async function enviar(){
     st.style.color='#c0756e';st.textContent=t.err;
   }
 }
+
+// ── Google Pre-fill ─────────────────────────────────────────
+// Cuando el candidato clickea "Auto-completar con Google", abrimos el OAuth
+// popup de Google. La respuesta trae un JWT con email/name/picture.
+// Decodificamos client-side y prellenamos los campos del paso 1.
+// El candidato no se registra (no se crea fila en usuarios) — solo es
+// pre-fill de datos para acelerar el form.
+window.googlePrefillForm = function(){
+  if(!window.google || !window.google.accounts || !window.google.accounts.id){
+    alert('Google Sign-in todavia esta cargando. Esperá un segundo y volvé a clickear.');
+    return;
+  }
+  google.accounts.id.initialize({
+    client_id: '496232899827-7krvs7f7d2vhrqqugsjgna8mb1esf02h.apps.googleusercontent.com',
+    callback: function(response){
+      if(!response || !response.credential){
+        alert('No pudimos obtener tus datos de Google. Probá completar a mano.');
+        return;
+      }
+      try {
+        // Decodificar JWT — el payload es publico (no firmado por nosotros)
+        var parts = response.credential.split('.');
+        var payload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+        // Pre-fill name y email
+        var nombreEl = document.getElementById('f-nom');
+        var emailEl = document.getElementById('f-mai');
+        if(nombreEl && payload.name) nombreEl.value = payload.name;
+        if(emailEl && payload.email) emailEl.value = payload.email;
+        // Guardar foto en localStorage para usar despues cuando se cargue al cv
+        if(payload.picture){
+          try { localStorage.setItem('mj_google_picture', payload.picture); } catch(e){}
+        }
+        // Feedback visual
+        var btn = document.getElementById('btn-google-prefill');
+        if(btn){
+          btn.style.background = '#E8F5EE';
+          btn.style.borderColor = '#52B788';
+          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2D6A4F" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span style="color:#2D6A4F;">Datos cargados</span>';
+        }
+      } catch(err){
+        console.error('[google prefill]', err);
+        alert('Error procesando los datos de Google. Probá completar a mano.');
+      }
+    },
+    auto_select: false
+  });
+  google.accounts.id.prompt(function(notification){
+    if(notification.isNotDisplayed() || notification.isSkippedMoment()){
+      // Si el One Tap no se muestra (FedCM block, etc), abrir popup manualmente
+      console.warn('[google prefill] prompt no mostrado:', notification.getNotDisplayedReason());
+    }
+  });
+};
 
 </script>
 </body>
