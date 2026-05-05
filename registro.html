@@ -219,9 +219,15 @@ function signInWithGoogle(){
   if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Google...';}
   // Pasar ref=popup si vino del popup, asi en el callback decidimos si va al
   // Stripe link de 30d (popup users) o 14d (publico).
+  // Pasar referrer=<coachId> si vino con tracking de referido, asi auth-callback
+  // guarda el referred_by en configuracion.
   var urlParams = new URLSearchParams(window.location.search);
   var refRaw = urlParams.get('ref') || '';
-  var refSuffix = (refRaw === 'popup') ? '&ref=popup' : '';
+  var referrer = urlParams.get('referrer') || '';
+  var query = [];
+  if(refRaw === 'popup') query.push('ref=popup');
+  if(referrer) query.push('referrer=' + encodeURIComponent(referrer));
+  var refSuffix = query.length ? '&' + query.join('&') : '';
   var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=registro' + refSuffix;
   var sb = window.supabase.createClient(SB, KEY);
   sb.auth.signInWithOAuth({
@@ -348,12 +354,16 @@ async function registrar(){
       fecha_fin_prueba: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
     };
 
-    // Capturar ?ref=<coach_id|popup> de la URL para tracking de referrals
-    // y de leads del popup de pricing. ref=popup viene del email enviado por
-    // pricing-popup.js — usamos el mismo email para correlacionar conversión.
+    // Capturar params de la URL:
+    // - ref=popup → flow de 30d trial (popup leads o referidos por coach)
+    // - referrer=<coach_id> → tracking explicito de quien refirio (param nuevo,
+    //   independiente de ref). Combinable con ref=popup. El link de "Invitá
+    //   a otro coach" del panel usa ?ref=popup&referrer=<coachId>.
+    // - ref=<coach_id> → fallback legacy: links viejos sin el param referrer
+    //   donde el ref llevaba el coach_id directamente.
     var urlParams = new URLSearchParams(window.location.search);
     var refRaw = urlParams.get('ref');
-    var refCoachId = (refRaw && refRaw !== 'popup') ? refRaw : null;
+    var refCoachId = urlParams.get('referrer') || (refRaw && refRaw !== 'popup' ? refRaw : null);
     var fromPopup = (refRaw === 'popup');
     if(refCoachId){
       configuracion.referred_by = refCoachId;
