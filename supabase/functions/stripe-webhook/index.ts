@@ -320,12 +320,26 @@ async function handleCoachSubscription(
     fecha_fin_periodo: periodEndISO,
   };
 
+  // Paywall: flipear `activo` segun el status de la suscripcion. Esto controla
+  // si el usuario puede acceder al panel.html.
+  // - trialing/active/past_due → activo=true (puede usar el panel)
+  // - canceled/unpaid/incomplete_expired → activo=false (bloqueado en panel)
+  // - incomplete (estado intermedio cuando recien se crea) → activo=true
+  //   (le damos acceso optimista ya que estan en proceso de pagar)
+  const activeStatuses = ["trialing", "active", "past_due", "incomplete"];
+  const shouldBeActive = activeStatuses.includes(sub.status);
+
+  const patchBody: Record<string, unknown> = {
+    configuracion: newCfg,
+    activo: shouldBeActive,
+  };
+
   const patchRes = await fetch(
     `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}`,
     {
       method: "PATCH",
       headers: { ...headers, Prefer: "return=minimal" },
-      body: JSON.stringify({ configuracion: newCfg }),
+      body: JSON.stringify(patchBody),
     },
   );
 
