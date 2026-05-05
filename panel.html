@@ -1347,10 +1347,12 @@ function loadCands(){
   if(!isAdmin&&ME&&ME.id){
     candFilter+='&coach_id=eq.'+encodeURIComponent(ME.id);
   }
+  var repFilter='select=*'+((!isAdmin&&ME&&ME.id)?'&coach_id=eq.'+encodeURIComponent(ME.id):'');
+  var cvFilter='select=id,email,codigo,contenido,created_at'+((!isAdmin&&ME&&ME.id)?'&coach_id=eq.'+encodeURIComponent(ME.id):'');
   Promise.all([
     sbGet('candidatos',candFilter),
-    sbGet('informes','select=*'),
-    sbGet('cv_publicados','select=id,email,codigo,contenido,created_at')
+    sbGet('informes',repFilter),
+    sbGet('cv_publicados',cvFilter)
   ]).then(function(res){
     var all=res[0],allReps=res[1],allCvs=res[2];
     var byEmail={};
@@ -3034,7 +3036,7 @@ function confirmarPublicar(){
   d.resumen=document.getElementById('pi-res').value;d.mensaje_candidato=document.getElementById('pi-msg').value;
   d.scores=d.scores.map(function(s,i){return Object.assign({},s,{val:parseInt(document.getElementById('pisc-'+i).value)||s.val});});
   var prev=reps[email].length>1?JSON.stringify(reps[email][1].data||reps[email][1]):null;
-  sbPost('informes',{candidato_id:c.id,email:c.email,data:JSON.stringify(d),prev:prev}).then(function(){
+  sbPost('informes',{candidato_id:c.id,email:c.email,data:JSON.stringify(d),prev:prev,coach_id:ME&&ME.id?ME.id:null}).then(function(){
     reps[email][0].published=true;reps[email][0].data=d;
     cerrarModal('modal-pub-inf');renderSidebar();renderMain(c);showToast('Informe publicado');
     _notifClient(c,'informe_listo');
@@ -3051,7 +3053,7 @@ function abrirEditCV(id){
 function guardarCV(){
   if(editCvId===null)return;var c=cands.find(function(x){return x.id===editCvId;});var email=(c.email||'').toLowerCase().trim();
   var cvRow=cvs[email];if(!cvRow)return;var newText=document.getElementById('ec-text').value;
-  sbUpsert('cv_publicados',{email:c.email,candidato_id:c.id,contenido:newText,codigo:cvRow.codigo}).then(function(){
+  sbUpsert('cv_publicados',{email:c.email,candidato_id:c.id,contenido:newText,codigo:cvRow.codigo,coach_id:ME&&ME.id?ME.id:null}).then(function(){
     cvs[email].contenido=newText;cerrarModal('modal-edit-cv');renderMain(c);showToast('CV actualizado');
   }).catch(function(e){alert('Error: '+e.message);});
 }
@@ -3311,14 +3313,14 @@ function publicarCV(id){
   fetch(SB+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(emailClean),{
     method:'PATCH',
     headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
-    body:JSON.stringify({email:emailClean,candidato_id:id,contenido:contenidoFinal})
+    body:JSON.stringify({email:emailClean,candidato_id:id,contenido:contenidoFinal,coach_id:ME&&ME.id?ME.id:null})
   }).then(function(r){
     // Si no había fila, hacer POST
     if(r.status===204||r.ok){return r;}
     return fetch(SB+'/rest/v1/cv_publicados',{
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
-      body:JSON.stringify({email:emailClean,candidato_id:id,contenido:contenidoFinal})
+      body:JSON.stringify({email:emailClean,candidato_id:id,contenido:contenidoFinal,coach_id:ME&&ME.id?ME.id:null})
     });
   }).then(function(){
     var email=(c.email||'').toLowerCase().trim();
@@ -6705,7 +6707,11 @@ function _checkMsgBadge(){
   // candidatos (de todos los coaches), no solo los del coach actual.
   var badgeFilter='?select=notas_coach,coach_id&order=created_at.desc';
   if(typeof ME!=='undefined'&&ME&&ME.id){
-    badgeFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+    if(ME.rol==='admin'){
+      badgeFilter+='&or=(coach_id.eq.'+encodeURIComponent(ME.id)+',coach_id.is.null)';
+    } else {
+      badgeFilter+='&coach_id=eq.'+encodeURIComponent(ME.id);
+    }
   }
   fetch(SB+'/rest/v1/candidatos'+badgeFilter,{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
