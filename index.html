@@ -327,8 +327,49 @@ section{padding:96px 0;}
   .func-grid{grid-template-columns:repeat(2,1fr);}
 }
 </style>
+<!-- Google Identity Services (One Tap auto-prompt para sign-up de coach) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
+
+<!-- Google One Tap: si tienen Google logueado, ven overlay "Continuar como X".
+     Aplica para signup de COACH (la mayoria de signups venian por ahi).
+     Si el visitante quiere ir como candidato, sigue funcionando todo igual
+     porque One Tap es no-blocking — solo dispara si lo clickean. -->
+<div id="g_id_onload"
+     data-client_id="496232899827-7krvs7f7d2vhrqqugsjgna8mb1esf02h.apps.googleusercontent.com"
+     data-context="signup"
+     data-ux_mode="popup"
+     data-callback="handleGoogleOneTap"
+     data-auto_prompt="true"
+     data-itp_support="true"
+     data-use_fedcm_for_prompt="true"></div>
+
+<script>
+async function handleGoogleOneTap(response){
+  if(!response || !response.credential)return;
+  var loadingDiv = document.createElement('div');
+  loadingDiv.style.cssText = 'position:fixed;inset:0;background:rgba(45,106,79,.92);color:#fff;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:Inter,sans-serif;font-size:15px;';
+  loadingDiv.innerHTML = '<div style="text-align:center;"><div style="width:40px;height:40px;border:3px solid rgba(255,255,255,.3);border-top:3px solid #fff;border-radius:50%;margin:0 auto 16px;animation:spin .8s linear infinite;"></div>Conectando con Google...</div><style>@keyframes spin{to{transform:rotate(360deg);}}</style>';
+  document.body.appendChild(loadingDiv);
+  try {
+    if(!window.supabase) throw new Error('Supabase SDK no cargo');
+    var sb = window.supabase.createClient(
+      'https://ddxnrsnjdvtqhxunxnwj.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU'
+    );
+    var result = await sb.auth.signInWithIdToken({ provider: 'google', token: response.credential });
+    if(result.error) throw result.error;
+    // Asumimos signup como coach (intent mas comun en index)
+    window.location.href = '/auth-callback.html?source=registro';
+  } catch(err) {
+    console.error('[onetap]', err);
+    loadingDiv.remove();
+    alert('Error con Google Sign-in: ' + (err.message || 'desconocido'));
+  }
+}
+</script>
 
 <!-- ── NAV ─────────────────────────────────────────── -->
 <nav class="nav">
