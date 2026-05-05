@@ -122,6 +122,24 @@ body{font-family:var(--pw-sans);background:var(--pw-niebla);color:var(--pw-texto
   <div class="card-title">Creá tu cuenta de coach<span style="color:#52B788">.</span></div>
   <div class="card-sub">Empezá tu trial de 14 días gratis. <strong>No cobramos hasta el día 14.</strong></div>
 
+  <!-- Google Sign-up: opcion mas rapida (un click, sin contraseña) -->
+  <button type="button" id="btn-google" onclick="signInWithGoogle()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:13px 16px;background:#fff;color:#3C4043;border:1.5px solid #DADCE0;border-radius:10px;font-size:14px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;transition:all .15s;margin-top:18px;margin-bottom:14px;" onmouseover="this.style.background='#F8F9FA';this.style.boxShadow='0 1px 6px rgba(0,0,0,.08)';" onmouseout="this.style.background='#fff';this.style.boxShadow='none';">
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+      <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+      <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+      <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+      <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+    </svg>
+    <span>Continuar con Google</span>
+  </button>
+
+  <!-- Divider visual -->
+  <div style="display:flex;align-items:center;gap:10px;margin:8px 0 18px;">
+    <div style="flex:1;height:1px;background:var(--pw-borde);"></div>
+    <span style="font-size:11px;color:var(--pw-texto-suave);text-transform:uppercase;letter-spacing:.08em;font-weight:500;">o con email</span>
+    <div style="flex:1;height:1px;background:var(--pw-borde);"></div>
+  </div>
+
   <!-- Name + Email -->
   <div class="field-row">
     <div class="field">
@@ -173,6 +191,9 @@ body{font-family:var(--pw-sans);background:var(--pw-niebla);color:var(--pw-texto
   </div>
 </div>
 
+<!-- Supabase JS SDK para Google OAuth (sign-in flow) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
 <script>
 var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
@@ -184,6 +205,34 @@ var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 var STRIPE_LINK_14D='https://buy.stripe.com/fZu6oH86A4xG42U7HB8AE07';
 // Link privado, solo se manda por email a quienes dejan datos en el popup.
 var STRIPE_LINK_30D='https://buy.stripe.com/14A28rfz2fckarifa38AE08';
+
+// ── Google Sign-in ─────────────────────────────────────────
+// Cuando el usuario clickea "Continuar con Google", lo redirige a Google OAuth.
+// Despues, Google → Supabase → /auth-callback.html?source=registro&ref=<popup|>
+// auth-callback.html sincroniza con la tabla usuarios y redirige a Stripe.
+function signInWithGoogle(){
+  if(!window.supabase){
+    alert('Supabase SDK no cargo todavia. Recargá la pagina.');
+    return;
+  }
+  var btn = document.getElementById('btn-google');
+  if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Google...';}
+  // Pasar ref=popup si vino del popup, asi en el callback decidimos si va al
+  // Stripe link de 30d (popup users) o 14d (publico).
+  var urlParams = new URLSearchParams(window.location.search);
+  var refRaw = urlParams.get('ref') || '';
+  var refSuffix = (refRaw === 'popup') ? '&ref=popup' : '';
+  var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=registro' + refSuffix;
+  var sb = window.supabase.createClient(SB, KEY);
+  sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: redirectTo }
+  }).catch(function(err){
+    console.error('[google signin]', err);
+    if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
+    alert('Error iniciando sesión con Google: ' + (err && err.message || 'desconocido'));
+  });
+}
 
 // ── URL params ──
 var params = new URLSearchParams(window.location.search);

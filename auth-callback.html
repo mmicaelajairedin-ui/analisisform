@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta name="robots" content="noindex, nofollow">
+
+<title>Conectando con Pathway...</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:wght@500;600&display=swap" rel="stylesheet">
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  font-family:'Inter',-apple-system,sans-serif;
+  background:linear-gradient(135deg,#FAFDF9 0%,#EEF6F1 100%);
+  color:#1B2E26;
+  min-height:100vh;
+  display:flex;align-items:center;justify-content:center;
+  padding:24px;
+}
+.card{
+  background:#fff;
+  border-radius:20px;
+  padding:48px 40px;
+  max-width:440px;
+  width:100%;
+  text-align:center;
+  box-shadow:0 8px 40px rgba(45,106,79,.08);
+  border:1px solid rgba(45,106,79,.12);
+}
+.spinner{
+  width:48px;height:48px;
+  border:3px solid #E8F2EC;
+  border-top:3px solid #2D6A4F;
+  border-radius:50%;
+  margin:0 auto 24px;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+h1{
+  font-family:'Fraunces',Georgia,serif;
+  font-size:22px;font-weight:500;
+  color:#1B2E26;margin-bottom:10px;letter-spacing:-0.4px;
+}
+p{font-size:14px;color:#5A6A60;line-height:1.55;}
+.error{
+  background:#FFF1EE;
+  border-left:3px solid #C0756E;
+  border-radius:10px;
+  padding:14px 18px;
+  text-align:left;
+  font-size:13px;
+  color:#8B4D45;
+  margin-top:20px;
+}
+.btn{
+  display:inline-block;
+  margin-top:20px;
+  padding:12px 28px;
+  background:#2D6A4F;
+  color:#fff;
+  border-radius:10px;
+  text-decoration:none;
+  font-size:14px;
+  font-weight:600;
+}
+.hidden{display:none;}
+</style>
+</head>
+<body>
+<div class="card">
+  <div id="loading">
+    <div class="spinner"></div>
+    <h1>Conectando con Pathway...</h1>
+    <p id="loading-msg">Validando tu cuenta de Google y configurando tu acceso.</p>
+  </div>
+  <div id="error-state" class="hidden">
+    <div style="font-size:42px;margin-bottom:12px;">⚠️</div>
+    <h1>Algo salió mal</h1>
+    <div class="error" id="error-msg">No pudimos completar el login.</div>
+    <a href="login.html" class="btn">Volver al login</a>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+
+// Stripe Payment Links — debe matchear con registro.html
+var STRIPE_LINK_14D='https://buy.stripe.com/fZu6oH86A4xG42U7HB8AE07';
+var STRIPE_LINK_30D='https://buy.stripe.com/14A28rfz2fckarifa38AE08';
+
+function showError(msg){
+  document.getElementById('loading').classList.add('hidden');
+  document.getElementById('error-state').classList.remove('hidden');
+  document.getElementById('error-msg').textContent = msg;
+}
+
+function setLoadingMsg(msg){
+  var el = document.getElementById('loading-msg');
+  if(el) el.textContent = msg;
+}
+
+async function handleCallback(){
+  // Inicializar Supabase JS client
+  var sb;
+  try {
+    sb = window.supabase.createClient(SB, KEY, {
+      auth: {
+        // detectSessionInUrl=true (default) hace que Supabase parsee el #access_token=
+        // del callback de Google y guarde la sesion automaticamente.
+        detectSessionInUrl: true,
+        persistSession: true,
+        autoRefreshToken: true
+      }
+    });
+  } catch(e) {
+    return showError('No pudimos cargar el cliente. Recargá la página.');
+  }
+
+  // Esperar a que se procese el hash de la URL (Supabase lo hace al cargar)
+  await new Promise(function(r){ setTimeout(r, 200); });
+
+  // Obtener la sesion
+  var sessionRes;
+  try {
+    sessionRes = await sb.auth.getSession();
+  } catch(e) {
+    return showError('Error obteniendo sesión: ' + e.message);
+  }
+
+  var session = sessionRes && sessionRes.data && sessionRes.data.session;
+  if(!session){
+    return showError('No se encontró sesión activa. Probá iniciar sesión de nuevo.');
+  }
+
+  var user = session.user;
+  var email = (user.email || '').toLowerCase();
+  if(!email){
+    return showError('Google no compartió tu email. Verificá los permisos otorgados.');
+  }
+
+  var meta = user.user_metadata || {};
+  var name = meta.full_name || meta.name || meta.given_name || email.split('@')[0];
+  var photoUrl = meta.avatar_url || meta.picture || null;
+
+  setLoadingMsg('Buscando tu cuenta...');
+
+  // Chequear si el usuario existe en nuestra tabla usuarios
+  var existingUser = null;
+  try {
+    var checkRes = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,email,rol,nombre,activo,configuracion', {
+      headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY }
+    });
+    var existingArr = await checkRes.json();
+    if(Array.isArray(existingArr) && existingArr.length > 0){
+      existingUser = existingArr[0];
+    }
+  } catch(e) {
+    return showError('Error consultando tu cuenta: ' + e.message);
+  }
+
+  var isNew = !existingUser;
+  var usuario;
+
+  if(existingUser){
+    // Usuario existente — actualizar nombre/foto si cambió
+    usuario = existingUser;
+    var cfg = usuario.configuracion || {};
+    var needsUpdate = false;
+    if(cfg.auth_provider !== 'google'){ cfg.auth_provider = 'google'; needsUpdate = true; }
+    if(photoUrl && cfg.foto_perfil !== photoUrl){ cfg.foto_perfil = photoUrl; needsUpdate = true; }
+    if(needsUpdate){
+      // Update best-effort, no bloquea el flow
+      fetch(SB + '/rest/v1/usuarios?id=eq.' + usuario.id, {
+        method: 'PATCH',
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ configuracion: cfg })
+      }).catch(function(){});
+    }
+  } else {
+    // Usuario nuevo — crearlo en usuarios
+    setLoadingMsg('Creando tu cuenta...');
+    try {
+      var createRes = await fetch(SB + '/rest/v1/usuarios', {
+        method: 'POST',
+        headers: {
+          'apikey': KEY,
+          'Authorization': 'Bearer ' + KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({
+          email: email,
+          password_hash: null,
+          rol: 'coach',
+          nombre: name,
+          activo: true,
+          configuracion: {
+            auth_provider: 'google',
+            foto_perfil: photoUrl,
+            from_google: true
+          }
+        })
+      });
+      if(!createRes.ok){
+        var errTxt = await createRes.text();
+        return showError('No pudimos crear tu cuenta: ' + errTxt.slice(0,200));
+      }
+      var created = await createRes.json();
+      usuario = Array.isArray(created) ? created[0] : created;
+
+      // Notificar admin (best-effort)
+      fetch(SB + '/functions/v1/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: 'hi@pathwaycareercoach.com',
+          to_name: 'Micaela',
+          subject: '🎉 Nuevo coach via Google: ' + name,
+          html: '<h2>Nuevo coach registrado</h2><p><strong>' + name + '</strong> (' + email + ') se registro via Google. Ahora va a Stripe para activar suscripcion.</p>'
+        })
+      }).catch(function(){});
+    } catch(e) {
+      return showError('Error creando cuenta: ' + e.message);
+    }
+  }
+
+  // Guardar sesion en localStorage (mismo formato que login.html)
+  localStorage.setItem('mj_user', JSON.stringify({
+    id: usuario.id,
+    email: usuario.email,
+    rol: usuario.rol,
+    nombre: usuario.nombre
+  }));
+
+  // Decidir destino segun source y si es nuevo
+  var params = new URLSearchParams(window.location.search);
+  var source = params.get('source') || 'login';
+  var ref = params.get('ref') || '';
+
+  if(isNew){
+    // Usuario nuevo → Stripe para activar suscripcion
+    setLoadingMsg('Te llevamos a configurar tu suscripción...');
+    var stripeUrl = (ref === 'popup') ? STRIPE_LINK_30D : STRIPE_LINK_14D;
+    setTimeout(function(){
+      window.location.href = stripeUrl + '?prefilled_email=' + encodeURIComponent(email);
+    }, 800);
+  } else {
+    // Usuario existente → directo al panel
+    setLoadingMsg('¡Bienvenida de vuelta! Te llevamos al panel...');
+    var dest = (usuario.rol === 'coach' || usuario.rol === 'admin') ? '/panel.html' : '/cliente.html';
+    setTimeout(function(){
+      window.location.href = dest + '?v=' + Date.now();
+    }, 800);
+  }
+}
+
+// Esperar a que el SDK de Supabase cargue
+if(window.supabase){
+  handleCallback();
+} else {
+  window.addEventListener('load', function(){
+    if(window.supabase){
+      handleCallback();
+    } else {
+      showError('No pudimos cargar Supabase. Verificá tu conexión.');
+    }
+  });
+}
+</script>
+</body>
+</html>
