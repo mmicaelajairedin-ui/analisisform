@@ -633,6 +633,13 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // Param zone: si se especifica (?zone=pathwaycareercoach.com o ?zone=micaelajairedin.com)
+  // procesamos solo esa zona. Sin param, procesamos todas (legacy).
+  // Splittear por zona evita el limite de 150s wall-time de Supabase Edge
+  // Functions cuando el trabajo total (2 zonas + 2 Claude calls) excede ese.
+  const reqUrl = new URL(req.url);
+  const zoneFilter = reqUrl.searchParams.get("zone");
+
   const triggerSecret = Deno.env.get("AGENT_TRIGGER_SECRET") || "";
   const provided = req.headers.get("x-trigger-secret") || "";
   if (!triggerSecret || provided !== triggerSecret) {
@@ -683,8 +690,21 @@ Deno.serve(async (req: Request) => {
       context: ContextRow | null;
       error: string | null;
     };
+    // Filtrar zonas si viene ?zone=<label> en el query string.
+    // Asi el workflow puede invocar la function 2 veces (una por zona) y
+    // cada invocacion respeta el limite de 150s de Supabase Edge Functions.
+    const zonesToProcess = zoneFilter
+      ? ZONES.filter((z) => z.label === zoneFilter)
+      : ZONES;
+    if (zoneFilter && zonesToProcess.length === 0) {
+      return new Response(
+        JSON.stringify({ ok: false, error: `unknown zone: ${zoneFilter}. Valid: ${ZONES.map((z) => z.label).join(", ")}` }),
+        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      );
+    }
+
     const perZone: ZoneResult[] = [];
-    for (const z of ZONES) {
+    for (const z of zonesToProcess) {
       const zoneTag = Deno.env.get(z.envVar) || "";
       if (!zoneTag) {
         perZone.push({ zone: z, summary: null, analysis: null, context: null, error: `missing ${z.envVar}` });

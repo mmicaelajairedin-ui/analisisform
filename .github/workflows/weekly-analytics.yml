@@ -1,8 +1,9 @@
 name: "📊 Weekly Analytics Agent"
 
-# Dispara la edge function analytics-weekly cada lunes 8:00 UTC
-# (≈10:00 CEST en verano / 9:00 CET en invierno).
-# La edge function arma el reporte semanal y lo manda por email.
+# Dispara la edge function analytics-weekly cada lunes 8:00 UTC.
+# Por el limite de 150s de Supabase Edge Functions, llamamos a la function
+# UNA VEZ POR ZONA (en steps separados). Cada invocacion procesa una sola
+# zona y manda su email correspondiente.
 #
 # Secrets requeridos en el repo:
 #   SUPABASE_PROJECT_URL    https://<proyecto>.supabase.co
@@ -22,49 +23,62 @@ jobs:
   trigger-analytics:
     name: "Disparar reporte semanal"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
-      - name: "POST a edge function analytics-weekly"
+      - name: "Setup secrets (sanitizar)"
         env:
           SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
           AGENT_TRIGGER_SECRET: ${{ secrets.AGENT_TRIGGER_SECRET }}
         run: |
-          # Strip whitespace (newlines, spaces, tabs) — common copy-paste issue
-          # con secrets de GitHub. Tambien limpia / al final de la URL.
           URL=$(printf '%s' "$SUPABASE_PROJECT_URL" | tr -d '[:space:]' | sed 's:/*$::')
           SECRET=$(printf '%s' "$AGENT_TRIGGER_SECRET" | tr -d '[:space:]')
-
           if [ -z "$URL" ] || [ -z "$SECRET" ]; then
             echo "::error::Faltan secrets SUPABASE_PROJECT_URL o AGENT_TRIGGER_SECRET"
             exit 1
           fi
-
-          # Sanity check: la URL y el secret no deberian estar vacios despues de
-          # limpiar. Imprimimos longitudes (no los valores) para debug.
           echo "URL chars: ${#URL} | Secret chars: ${#SECRET}"
+          # Exportar a outputs para los steps siguientes
+          echo "URL=$URL" >> $GITHUB_ENV
+          echo "SECRET=$SECRET" >> $GITHUB_ENV
 
-          # Timeout 5 min (300s). La edge function ahora hace mucho mas trabajo:
-          # 2 zonas en paralelo, cada una con Cloudflare + history + context +
-          # conversions (Pathway) o Calendly (Micaela) + Claude API (~30-60s
-          # cada uno) + email. Bajo carga normal tarda 60-120s, pero a veces
-          # Claude se demora y necesitamos margen.
+      - name: "📊 Reporte de Pathway"
+        run: |
+          # Una invocacion por zona — cada una tiene 150s de wall time
           response=$(curl -sS -w "\n%{http_code}" -X POST \
-            "${URL}/functions/v1/analytics-weekly" \
+            "${URL}/functions/v1/analytics-weekly?zone=pathwaycareercoach.com" \
             -H "X-Trigger-Secret: ${SECRET}" \
             -H "Content-Type: application/json" \
-            --max-time 300) || {
-              echo "::error::curl fallo con exit code $?"
+            --max-time 200) || {
+              echo "::error::curl Pathway fallo con exit code $?"
               exit 1
             }
-
           status=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
-
           echo "HTTP $status"
           echo "$body"
-
           if [ "$status" != "200" ]; then
-            echo "::error::La edge function devolvió status $status"
+            echo "::error::Pathway devolvió status $status"
+            exit 1
+          fi
+
+      - name: "📊 Reporte de Micaela"
+        # Continua aunque Pathway haya fallado — son independientes
+        if: always()
+        run: |
+          response=$(curl -sS -w "\n%{http_code}" -X POST \
+            "${URL}/functions/v1/analytics-weekly?zone=micaelajairedin.com" \
+            -H "X-Trigger-Secret: ${SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 200) || {
+              echo "::error::curl Micaela fallo con exit code $?"
+              exit 1
+            }
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "HTTP $status"
+          echo "$body"
+          if [ "$status" != "200" ]; then
+            echo "::error::Micaela devolvió status $status"
             exit 1
           fi
