@@ -670,11 +670,25 @@ Deno.serve(async (req: Request) => {
   const periodEnd = fmt(end);
 
   try {
-    // 1. Por cada zona: pull data + history + context, llamar a Claude separado.
-    const perZoneTasks = ZONES.map(async (z) => {
+    // Por cada zona: pull data + history + context, llamar a Claude separado.
+    // Procesamos las zonas SECUENCIALMENTE (no en paralelo) porque Supabase
+    // Edge Functions tiene limites de memoria/CPU — procesar 2 zonas en
+    // paralelo con Claude calls grandes nos daba WORKER_RESOURCE_LIMIT.
+    // Sequential = misma duracion total (Claude es el cuello de botella),
+    // pero ~50% menos memoria peak.
+    type ZoneResult = {
+      zone: ZoneConfig;
+      summary: ReturnType<typeof summariseRows> & { conversions?: Conversions | MicaelaConversions } | null;
+      analysis: Record<string, unknown> | null;
+      context: ContextRow | null;
+      error: string | null;
+    };
+    const perZone: ZoneResult[] = [];
+    for (const z of ZONES) {
       const zoneTag = Deno.env.get(z.envVar) || "";
       if (!zoneTag) {
-        return { zone: z, summary: null, analysis: null, context: null, error: `missing ${z.envVar}` };
+        perZone.push({ zone: z, summary: null, analysis: null, context: null, error: `missing ${z.envVar}` });
+        continue;
       }
       try {
         // Pathway: conversiones desde el backend en este Supabase.
@@ -683,6 +697,8 @@ Deno.serve(async (req: Request) => {
         const isMicaela = z.label === "micaelajairedin.com";
         const calendlyToken = Deno.env.get("CALENDLY_API_TOKEN_MJ") || "";
         const calendlyUri = Deno.env.get("CALENDLY_USER_URI_MJ") || "";
+        // Estos 4 fetches SI van en paralelo dentro de la zona — son IO-bound
+        // (sin parsing pesado) y no consumen memoria significativa.
         const [rows, history, context, conversions] = await Promise.all([
           fetchCloudflareDaily(zoneTag, CLOUDFLARE_API_TOKEN, periodStart, periodEnd),
           getRecentReports(SUPABASE_URL, SERVICE_KEY, z.label, HISTORY_WEEKS),
@@ -695,16 +711,34 @@ Deno.serve(async (req: Request) => {
         ]);
         const summary = summariseRows(rows);
         // Mergear conversions en el summary que se guarda como raw_metrics.
-        // El panel lo lee desde ahi para mostrar KPIs de conversion.
         const summaryWithConv = conversions
           ? { ...summary, conversions }
           : summary;
         const currentPayload = { period: { start: periodStart, end: periodEnd }, metricas: summary };
-        const historyPayload = history.map((h) => ({
-          period: { start: (h as any).period_start, end: (h as any).period_end },
-          metricas: (h as any).raw_metrics,
-          analysis_previo: (h as any).analysis,
-        }));
+        // History trim: el agente solo necesita resumenes para detectar trends
+        // y verificar predicciones — NO necesita el array daily completo de
+        // cada semana pasada. Trim agresivo para reducir tokens y memoria.
+        const historyPayload = history.map((h) => {
+          const m = ((h as any).raw_metrics || {}) as Record<string, unknown>;
+          const a = ((h as any).analysis || {}) as Record<string, unknown>;
+          return {
+            period: { start: (h as any).period_start, end: (h as any).period_end },
+            // Solo agregados — sin daily array completo
+            metricas_resumen: {
+              totalUniques: (m as any).totalUniques,
+              totalRequests: (m as any).totalRequests,
+              cachePct: (m as any).cachePct,
+              peakDay: (m as any).peakDay,
+              topCountries: ((m as any).topCountries || []).slice(0, 3),
+              conversions: (m as any).conversions,
+            },
+            // Solo lo que el agente necesita para verificar (no el analisis completo)
+            headline_previo: (a as any).headline,
+            hipotesis_previas: (a as any).hipotesis,
+            pruebas_ab_previas: (a as any).pruebas_ab_propuestas,
+            quick_wins_previos: (a as any).quick_wins,
+          };
+        });
         // Acciones marcadas como cumplidas en el reporte mas reciente.
         const completedActions = extractCompletedActions(history[0]);
         const analysis = await callClaudeForZone(
@@ -716,12 +750,11 @@ Deno.serve(async (req: Request) => {
           conversions,
           completedActions,
         );
-        return { zone: z, summary: summaryWithConv, analysis, context, error: null as string | null };
+        perZone.push({ zone: z, summary: summaryWithConv as any, analysis, context, error: null });
       } catch (e) {
-        return { zone: z, summary: null, analysis: null, context: null, error: String(e).slice(0, 300) };
+        perZone.push({ zone: z, summary: null, analysis: null, context: null, error: String(e).slice(0, 300) });
       }
-    });
-    const perZone = await Promise.all(perZoneTasks);
+    }
 
     const successful = perZone.filter((p) => p.summary && p.analysis);
     if (successful.length === 0) {
