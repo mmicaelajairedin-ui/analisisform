@@ -1301,6 +1301,19 @@ function sbUpsert(table,data){
   }).then(function(r){if(r&&!r.ok)throw new Error(r.status);});
 }
 function escH(t){return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// Defense-in-depth: cinturón para queries individuales (id=eq.X o email=eq.X)
+// que escriben/leen una sola fila. Aún si un coach técnico conoce el UUID
+// de un candidato ajeno, el match coach_id=eq.<su-id> hace que la query
+// devuelva 0 filas o no escriba nada. Admin pasa sin restricción para
+// poder reasignar huérfanos. NO es seguridad real (atacante puede saltarse
+// si hace fetch directo con la anon key) — eso requiere RLS estricto +
+// Supabase Auth, planificado en SECURITY MODEL de CLAUDE.md.
+function coachGuard(){
+  if(!ME||!ME.id)return '';
+  if(ME.rol==='admin')return '';
+  return '&coach_id=eq.'+encodeURIComponent(ME.id);
+}
 function toArr(id){return document.getElementById(id).value.split('\n').map(function(l){return l.trim();}).filter(Boolean);}
 function cerrarModal(id){document.getElementById(id).style.display='none';}
 function abrirModal(id){document.getElementById(id).style.display='flex';}
@@ -1404,7 +1417,7 @@ function loadCands(){
       } else if(localAct.hasOwnProperty(c.id)){
         // Supabase no tiene valor (null/undefined) — usar localStorage y sincronizar
         c.activo=localAct[c.id];
-        fetch(SB+'/rest/v1/candidatos?id=eq.'+c.id,{method:'PATCH',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},body:JSON.stringify({activo:localAct[c.id]})}).catch(function(){});
+        fetch(SB+'/rest/v1/candidatos?id=eq.'+c.id+coachGuard(),{method:'PATCH',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},body:JSON.stringify({activo:localAct[c.id]})}).catch(function(){});
       }
     });
     localStorage.setItem('mj_activos',JSON.stringify(localAct));
@@ -2782,7 +2795,7 @@ function tabSesiones(c){
   // Fallback: migrar desde localStorage si existe
   var sesKey='mj_sesiones_'+c.id;
   var lsSes=localStorage.getItem(sesKey);
-  if(!sesiones.length&&lsSes){try{sesiones=JSON.parse(lsSes);if(sesiones.length){c.sesiones_registro=JSON.stringify(sesiones);fetch(SB+'/rest/v1/candidatos?id=eq.'+c.id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({sesiones_registro:JSON.stringify(sesiones)})});}}catch(e){sesiones=[];}}
+  if(!sesiones.length&&lsSes){try{sesiones=JSON.parse(lsSes);if(sesiones.length){c.sesiones_registro=JSON.stringify(sesiones);fetch(SB+'/rest/v1/candidatos?id=eq.'+c.id+coachGuard(),{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({sesiones_registro:JSON.stringify(sesiones)})});}}catch(e){sesiones=[];}}
   var html='<div style="display:flex;flex-direction:column;gap:12px;">';
 
   if(sesiones.length){
@@ -2837,7 +2850,7 @@ function _delSesion(id,idx){
   var sesiones=[];try{sesiones=JSON.parse(c.sesiones_registro||'[]');}catch(e){sesiones=[];}
   sesiones.splice(idx,1);
   c.sesiones_registro=JSON.stringify(sesiones);
-  fetch(SB+'/rest/v1/candidatos?id=eq.'+id,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({sesiones_registro:JSON.stringify(sesiones)})}).catch(function(){});
+  fetch(SB+'/rest/v1/candidatos?id=eq.'+id+coachGuard(),{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({sesiones_registro:JSON.stringify(sesiones)})}).catch(function(){});
   atab='sesiones';renderMain(c);
 }
 

@@ -201,6 +201,50 @@ Cada quick win, accion estrategica y prueba A/B en el panel tiene un checkbox pa
 5. Disparar el agente manualmente para probar el reporte nuevo
 6. Marcar acciones como completadas con los checkboxes a medida que las hagas. El reporte siguiente las verifica.
 
+## SECURITY MODEL — multi-tenant aislamiento por coach_id (mayo 2026)
+
+Cada coach ve solo sus candidatos/informes/CVs. Estado actual del aislamiento:
+
+### Capa 1 — Frontend filtering (HECHO)
+`panel.html` filtra todas las queries de listas por `coach_id = ME.id`:
+- `candFilter` (linea ~1344) para `candidatos`
+- `repFilter` para `informes`
+- `cvFilter` para `cv_publicados`
+- `msgFilter` y `badgeFilter` para mensajes/badges
+
+Admin (`ME.rol==='admin'`) ve los suyos + huerfanos (`coach_id IS NULL`).
+
+### Capa 2 — Defense-in-depth con coachGuard() (HECHO)
+Helper `coachGuard()` (linea ~1303) devuelve `&coach_id=eq.<ME.id>` para
+no-admin. Aplicado a queries individuales PATCH/DELETE criticas (toggle
+activo, sesiones_registro). Si un coach intenta escribir con un `id` ajeno
+(p.ej. abriendo devtools y haciendo PATCH con un UUID conocido), la query
+no matchea ninguna fila y no escribe nada.
+
+### Capa 3 — RLS estricto en Supabase (PENDIENTE)
+**GAP DE SEGURIDAD CONOCIDO**: las tablas `candidatos`, `informes`,
+`cv_publicados`, `usuarios` no tienen RLS estricto. Un atacante con la
+anon key (publica en el codigo del navegador) puede hacer
+`fetch('/rest/v1/candidatos?select=*')` sin filtro y bajar TODOS los
+candidatos de TODOS los coaches.
+
+Mitigacion temporal: las primeras 1-3 coaches paga se onboardean
+manualmente (gente conocida, riesgo bajo). Antes del lanzamiento abierto,
+cerrar este gap.
+
+### Plan de cierre (Sprint B — antes de 5+ coaches activos)
+1. Migrar login custom (SHA-256 + localStorage) → Supabase Auth (OAuth o email magic-link)
+2. Activar RLS estricto: `USING (coach_id = auth.uid())` en candidatos/informes/cv_publicados
+3. Politica para admin: bypass via `auth.jwt()->>'role' = 'admin'` o tabla aparte
+4. Migrar `panel.html` para usar `supabase.auth.getUser()` en vez de `JSON.parse(localStorage.mj_user)`
+5. Estimado: 1-2 dias de trabajo + 1 dia de QA
+
+### Reglas para nuevas queries
+- Toda nueva query a `candidatos`/`informes`/`cv_publicados`:
+  - Si es lista: usar pattern de `candFilter` (filtro por `coach_id` con admin override)
+  - Si es individual: agregar `+coachGuard()` al final del query string
+- Test mental: si un atacante con devtools cambia el `id` por un UUID ajeno, ¿que ve/escribe?
+
 ## PENDIENTE — Proximas mejoras
 - Blog: crear /blog.html como hub + 4-5 posts SEO (coaching de carrera, CV con IA, etc.)
 - Paginas por pais: /coaching-carrera-espana.html, /coaching-carrera-argentina.html
