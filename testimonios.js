@@ -54,7 +54,21 @@
         }
       });
 
-      if(!reviews.length){host.style.display='none';return;}
+      if(!reviews.length){
+        host.style.display='none';
+        // Si la <section> contenedora solo envuelve este host (caso típico
+        // de las landings que tienen un único bloque de testimonios), la
+        // ocultamos también para no dejar un espacio vacío con padding +
+        // gradiente entre las secciones contiguas.
+        var sect=host.closest('section');
+        if(sect){
+          var others=sect.querySelectorAll('[data-testimonios]');
+          var anyVisible=false;
+          others.forEach(function(n){if(n!==host && n.style.display!=='none')anyVisible=true;});
+          if(!anyVisible)sect.style.display='none';
+        }
+        return;
+      }
 
       reviews.sort(function(a,b){
         if(b.stars!==a.stars)return b.stars-a.stars;
