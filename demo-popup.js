@@ -53,8 +53,8 @@
 
     card.innerHTML=''
       +'<button data-pw-close style="position:absolute;top:14px;right:14px;background:none;border:none;font-size:22px;cursor:pointer;color:#9E9E9E;line-height:1;padding:4px 8px;border-radius:6px;" aria-label="Cerrar">×</button>'
-      +'<div style="display:inline-block;background:rgba(82,183,136,.15);color:#2D6A4F;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 12px;border-radius:100px;margin-bottom:16px;">DEMO · 4 MIN</div>'
-      +'<h3 style="font-family:Fraunces,Georgia,serif;font-size:26px;font-weight:500;color:#1B2E26;letter-spacing:-.6px;line-height:1.18;margin:0 0 10px;">Mirá Pathway en 4 minutos</h3>'
+      +'<div style="display:inline-block;background:rgba(82,183,136,.15);color:#2D6A4F;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 12px;border-radius:100px;margin-bottom:16px;">DEMO · 11 MIN</div>'
+      +'<h3 style="font-family:Fraunces,Georgia,serif;font-size:26px;font-weight:500;color:#1B2E26;letter-spacing:-.6px;line-height:1.18;margin:0 0 10px;">Mirá Pathway en 11 minutos</h3>'
       +'<p style="font-size:14px;color:#4A4444;line-height:1.55;margin:0 0 18px;">Dejá tu email y te muestro la plataforma — qué ves vos como coach y qué ve tu cliente. Sin agendar nada.</p>'
       +'<form data-pw-form style="display:flex;flex-direction:column;gap:10px;">'
         +'<input data-pw-email type="email" required placeholder="tu@email.com" style="width:100%;padding:12px 14px;border:1.5px solid #E5E0DD;border-radius:10px;font-size:14px;font-family:Inter,sans-serif;outline:none;color:#1B2E26;transition:border-color .15s;" onfocus="this.style.borderColor=\'#2D6A4F\';" onblur="this.style.borderColor=\'#E5E0DD\';">'
