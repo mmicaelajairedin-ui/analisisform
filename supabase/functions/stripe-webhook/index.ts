@@ -65,6 +65,7 @@ interface StripeCustomer {
 }
 
 interface StripeEvent {
+  id: string;
   type: string;
   data: { object: StripeSession | StripeSubscription | StripeCustomer };
 }
@@ -498,6 +499,49 @@ async function sendReferralEmail(
   }
 }
 
+// ── Idempotencia: registrar evento procesado ────────────────
+// Stripe puede reintentar un mismo evento si tarda en responder. Sin
+// idempotencia, podriamos duplicar un cobro o reactivar una cuenta
+// cancelada. Verificamos por event_id contra stripe_events_processed.
+//
+// Tabla:
+//   CREATE TABLE stripe_events_processed (
+//     event_id TEXT PRIMARY KEY,
+//     event_type TEXT,
+//     processed_at TIMESTAMPTZ DEFAULT now()
+//   );
+async function isEventProcessed(eventId: string): Promise<boolean> {
+  if (!eventId) return false;
+  const { url: SB_URL, headers } = getSupabaseAuth();
+  try {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/stripe_events_processed?event_id=eq.${encodeURIComponent(eventId)}&select=event_id`,
+      { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+    );
+    if (!res.ok) return false;
+    const rows = await res.json();
+    return Array.isArray(rows) && rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function markEventProcessed(eventId: string, eventType: string): Promise<void> {
+  if (!eventId) return;
+  const { url: SB_URL, headers } = getSupabaseAuth();
+  try {
+    await fetch(`${SB_URL}/rest/v1/stripe_events_processed`, {
+      method: "POST",
+      headers: { ...headers, Prefer: "return=minimal,resolution=ignore-duplicates" },
+      body: JSON.stringify({ event_id: eventId, event_type: eventType }),
+    });
+  } catch {
+    // best-effort: si falla el insert, el peor caso es procesar 2x el evento
+    // (lo cual sigue siendo aceptable por la UNIQUE constraint en candidatos
+    // y porque las suscripciones updates son idempotentes por naturaleza).
+  }
+}
+
 // ── Lookup email de customer si Stripe no lo manda ──────────
 async function getCustomerEmail(customerId: string): Promise<string | undefined> {
   const key = Deno.env.get("STRIPE_SECRET_KEY");
@@ -537,6 +581,16 @@ Deno.serve(async (req: Request) => {
     return new Response("Invalid JSON", { status: 400 });
   }
 
+  // Idempotencia: si Stripe reintenta el mismo evento, no lo reprocesamos.
+  // La firma ya fue validada, asi que devolvemos 200 OK para que Stripe no
+  // siga reintentando.
+  if (await isEventProcessed(ev.id)) {
+    return new Response(
+      JSON.stringify({ received: true, type: ev.type, skipped: "already-processed", event_id: ev.id }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   let result: unknown = { received: true, type: ev.type, skipped: true };
 
   // ── Checkout one-off ──
@@ -569,6 +623,12 @@ Deno.serve(async (req: Request) => {
     const email = await getCustomerEmail(sub.customer);
     result = await handleCoachSubscription(sub, email);
   }
+
+  // Marcar evento como procesado para que reintentos de Stripe no
+  // dupliquen el procesamiento. Best-effort: si el insert falla, el
+  // siguiente reintento volvera a procesar (aceptable porque las
+  // operaciones son idempotentes por UNIQUE en candidatos/usuarios).
+  await markEventProcessed(ev.id, ev.type);
 
   return new Response(JSON.stringify({ received: true, ...(result as object) }), {
     status: 200,
