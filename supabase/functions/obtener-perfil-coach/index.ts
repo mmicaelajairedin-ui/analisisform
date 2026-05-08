@@ -1,10 +1,15 @@
 // Supabase Edge Function — obtener-perfil-coach
 //
-// Lee de usuarios un coach por su slug y devuelve los campos publicos
-// + redes sociales desde configuracion JSONB.
+// Devuelve el perfil publico de un coach por slug.
+// Solo retorna filas con perfil_publico_activo=true.
 //
-// Sin auth — alimenta la pagina publica /coach/{slug}.
+// v3: ahora incluye:
+//   - servicios, videos, links desde configuracion JSONB
+//   - linkedin_url, instagram_url, web_url
+//   - stats: clientes_total, reviews_count, avg_rating
+//     (derivados de candidatos.coach_id y candidatos.resena)
 //
+// Sin auth — alimenta /coach/{slug}.
 // Desplegar: supabase functions deploy obtener-perfil-coach --no-verify-jwt
 
 const CORS_HEADERS = {
@@ -14,6 +19,7 @@ const CORS_HEADERS = {
 };
 
 const SELECT_FIELDS = [
+  "id",
   "nombre",
   "slug",
   "titulo_profesional",
@@ -28,6 +34,7 @@ const SELECT_FIELDS = [
 ].join(",");
 
 interface UsuarioRow {
+  id: string;
   nombre: string | null;
   slug: string | null;
   titulo_profesional: string | null;
@@ -40,6 +47,8 @@ interface UsuarioRow {
   foto_url: string | null;
   configuracion: Record<string, unknown> | null;
 }
+
+interface CandReview { resena: string | null }
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -58,49 +67,93 @@ Deno.serve(async (req: Request) => {
   const SB_URL = Deno.env.get("SUPABASE_URL") || "";
   const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
     Deno.env.get("SUPABASE_ANON_KEY") || "";
-  if (!SB_URL || !SB_KEY) {
-    return json({ error: "supabase_env_missing" }, 500);
-  }
+  if (!SB_URL || !SB_KEY) return json({ error: "supabase_env_missing" }, 500);
 
+  const headers = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` };
+
+  let row: UsuarioRow;
   try {
     const q = `${SB_URL}/rest/v1/usuarios` +
       `?slug=eq.${encodeURIComponent(slug)}` +
       `&perfil_publico_activo=eq.true` +
       `&select=${SELECT_FIELDS}` +
       `&limit=1`;
-    const sbRes = await fetch(q, {
-      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
-    });
+    const sbRes = await fetch(q, { headers });
     if (!sbRes.ok) return json({ error: "supabase_error", status: sbRes.status }, 502);
     const rows: UsuarioRow[] = await sbRes.json();
     if (!rows.length) return json({ error: "not_found" }, 404);
-
-    const r = rows[0];
-    const cfg = r.configuracion || {};
-    const str = (k: string) => typeof cfg[k] === "string" ? cfg[k] as string : null;
-
-    return json({
-      coach: {
-        nombre: r.nombre,
-        slug: r.slug,
-        titulo_profesional: r.titulo_profesional,
-        tagline: r.tagline,
-        bio_publica: r.bio,
-        mi_enfoque: r.mi_enfoque,
-        especialidades: r.especialidades,
-        atiende: r.atiende,
-        anios_experiencia: r.anios_experiencia,
-        calendly_url: str("calendly_url"),
-        foto_perfil_url: r.foto_url,
-        linkedin_url: str("linkedin_url"),
-        instagram_url: str("instagram_url"),
-        web_url: str("web_url"),
-      },
-    });
+    row = rows[0];
   } catch (_e) {
     return json({ error: "supabase_unreachable" }, 502);
   }
+
+  let clientes_total = 0;
+  let reviews_count = 0;
+  let avg_rating: number | null = null;
+  try {
+    const cRes = await fetch(
+      `${SB_URL}/rest/v1/candidatos?coach_id=eq.${row.id}&select=id&limit=0`,
+      { headers: { ...headers, Prefer: "count=exact" } },
+    );
+    if (cRes.ok) {
+      const range = cRes.headers.get("content-range") || "";
+      const total = parseInt(range.split("/")[1] || "0", 10);
+      if (!isNaN(total)) clientes_total = total;
+    }
+    const rRes = await fetch(
+      `${SB_URL}/rest/v1/candidatos?coach_id=eq.${row.id}&resena=not.is.null&select=resena`,
+      { headers },
+    );
+    if (rRes.ok) {
+      const arr: CandReview[] = await rRes.json();
+      let sum = 0;
+      for (const c of arr) {
+        const r = parseResena(c.resena);
+        if (r) { reviews_count++; sum += r; }
+      }
+      if (reviews_count > 0) avg_rating = Math.round((sum / reviews_count) * 10) / 10;
+    }
+  } catch (_e) { /* opcional */ }
+
+  const cfg = row.configuracion || {};
+  const str = (k: string) => typeof cfg[k] === "string" ? cfg[k] as string : null;
+  const arr = (k: string) => Array.isArray(cfg[k]) ? cfg[k] as unknown[] : [];
+
+  return json({
+    coach: {
+      nombre: row.nombre,
+      slug: row.slug,
+      titulo_profesional: row.titulo_profesional,
+      tagline: row.tagline,
+      bio_publica: row.bio,
+      mi_enfoque: row.mi_enfoque,
+      especialidades: row.especialidades || [],
+      atiende: row.atiende,
+      anios_experiencia: row.anios_experiencia,
+      calendly_url: str("calendly_url"),
+      foto_perfil_url: row.foto_url,
+      linkedin_url: str("linkedin_url"),
+      instagram_url: str("instagram_url"),
+      web_url: str("web_url"),
+      servicios: arr("servicios"),
+      videos: arr("videos"),
+      links: arr("links"),
+      stats: { clientes_total, reviews_count, avg_rating },
+    },
+  });
 });
+
+function parseResena(jsonStr: string | null): number | null {
+  if (!jsonStr) return null;
+  try {
+    const o = JSON.parse(jsonStr);
+    const c = (o && typeof o === "object" && "coach" in o) ? o.coach : o;
+    if (!c) return null;
+    if (c.public === false) return null;
+    if (typeof c.stars !== "number") return null;
+    return c.stars;
+  } catch { return null; }
+}
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
