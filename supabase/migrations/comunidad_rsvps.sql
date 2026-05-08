@@ -39,6 +39,12 @@ CREATE POLICY comunidad_rsvps_update_anon
 
 -- No hay policy de SELECT en la tabla -> el email queda privado.
 
+-- Permisos a nivel tabla (necesarios ademas de las policies de RLS).
+-- Sin estos GRANTs, PostgREST devuelve 401 al rol anon aunque las
+-- policies sean permisivas.
+GRANT INSERT, UPDATE ON comunidad_rsvps TO anon, authenticated;
+GRANT USAGE ON SEQUENCE comunidad_rsvps_id_seq TO anon, authenticated;
+
 -- Vista publica: solo los campos seguros para mostrar en la pagina.
 CREATE OR REPLACE VIEW comunidad_rsvps_publicos AS
   SELECT id, event_id, nombre, practica, asistencia, created_at
