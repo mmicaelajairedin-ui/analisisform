@@ -1,18 +1,11 @@
 // Supabase Edge Function — obtener-perfil-coach
 //
-// Lee de usuarios un coach por su slug y devuelve solo los campos
-// publicos. Si perfil_publico_activo=false o el slug no existe, devuelve
-// 404.
+// Lee de usuarios un coach por su slug y devuelve los campos publicos
+// + redes sociales desde configuracion JSONB.
 //
-// Sin auth — esta funcion alimenta la pagina publica /coach/{slug} que
-// los coaches comparten en LinkedIn / IG.
+// Sin auth — alimenta la pagina publica /coach/{slug}.
 //
-// IMPORTANTE: usuarios ya tiene bio, foto_url y configuracion (JSONB).
-// Leemos de esos campos directamente y mapeamos al contrato que coach.html
-// espera (bio_publica, foto_perfil_url, calendly_url).
-//
-// Desplegar:
-//   supabase functions deploy obtener-perfil-coach --no-verify-jwt
+// Desplegar: supabase functions deploy obtener-perfil-coach --no-verify-jwt
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -84,7 +77,7 @@ Deno.serve(async (req: Request) => {
 
     const r = rows[0];
     const cfg = r.configuracion || {};
-    const calendly = typeof cfg.calendly_url === "string" ? cfg.calendly_url : null;
+    const str = (k: string) => typeof cfg[k] === "string" ? cfg[k] as string : null;
 
     return json({
       coach: {
@@ -97,8 +90,11 @@ Deno.serve(async (req: Request) => {
         especialidades: r.especialidades,
         atiende: r.atiende,
         anios_experiencia: r.anios_experiencia,
-        calendly_url: calendly,
+        calendly_url: str("calendly_url"),
         foto_perfil_url: r.foto_url,
+        linkedin_url: str("linkedin_url"),
+        instagram_url: str("instagram_url"),
+        web_url: str("web_url"),
       },
     });
   } catch (_e) {
