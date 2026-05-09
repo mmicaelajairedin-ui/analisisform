@@ -824,6 +824,7 @@ button:active { transform: scale(.98); }
     <div>
       <div id="sb-coach-name" style="font-size:14px;font-weight:800;color:#fff;letter-spacing:-.2px;"></div>
       <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:1px;">Career Coach</div>
+      <div id="sb-plan-badge" style="margin-top:6px;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;display:none;padding:3px 9px;border-radius:20px;line-height:1.1;cursor:pointer;" onclick="window.location.href='/upgrade.html'" title="Ver detalles del plan"></div>
     </div>
   </div>
 
@@ -1313,6 +1314,8 @@ document.addEventListener('DOMContentLoaded', function(){
   showSection(initialSec);
   loadCands();
   loadCoachPhoto();
+  if(typeof updatePlanBadge==='function')updatePlanBadge();
+  if(typeof updateTrialBanner==='function')updateTrialBanner();
   // Tour: solo si coach nuevo (no completó aún)
   if(ME&&ME.rol!=='admin'&&!localStorage.getItem('mj_coach_tour_done')){
     setTimeout(function(){startCoachTour();},1200);
@@ -1387,6 +1390,51 @@ window.abrirModalUpgrade=function(razon){
   if(body)body.textContent=msgs[razon]||msgs.default;
   abrirModal('modal-upgrade');
 };
+// Badge de plan en sidebar — refleja plan actual + clientes (si Basic) o días trial (si trialing).
+// Se llama desde DOMContentLoaded y desde loadCands() cuando cambia el conteo.
+window.updatePlanBadge=function(){
+  var el=document.getElementById('sb-plan-badge');
+  if(!el)return;
+  var plan=getPlan();
+  var dias=getDiasTrialRestantes();
+  var nClientes=Array.isArray(cands)?cands.length:0;
+  el.style.display='inline-block';
+  if(isTrialing() && dias!=null){
+    var diasTxt=dias>0?(dias+'d'):'expira';
+    el.style.background='rgba(233,196,106,.25)';
+    el.style.color='#E9C46A';
+    el.textContent='Trial · '+diasTxt;
+  } else if(plan==='pro'){
+    el.style.background='rgba(82,183,136,.28)';
+    el.style.color='#9BE5BC';
+    el.textContent='Pro';
+  } else {
+    el.style.background='rgba(255,255,255,.14)';
+    el.style.color='rgba(255,255,255,.9)';
+    el.textContent='Basic · '+nClientes+'/5';
+  }
+};
+// Banner fijo arriba si trial expira en ≤7 días. ≤2 días pasa a rojo crítico.
+window.updateTrialBanner=function(){
+  var existing=document.getElementById('trial-banner');
+  if(existing)existing.remove();
+  document.body.style.paddingTop='';
+  if(!isTrialing())return;
+  var dias=getDiasTrialRestantes();
+  if(dias==null||dias>7)return;
+  var critico=dias<=2;
+  var bg=critico?'#C0756E':'#E9C46A';
+  var fg=critico?'#fff':'#1B2E26';
+  var txt=dias<=0?'Tu trial expiró. Activá tu suscripción para mantener el acceso.'
+       :dias===1?'Tu trial expira mañana. Activá tu suscripción ahora.'
+       :'Tu trial expira en '+dias+' días. Activá tu suscripción cuando quieras.';
+  var bn=document.createElement('div');
+  bn.id='trial-banner';
+  bn.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;padding:9px 16px;background:'+bg+';color:'+fg+';font-family:Inter,sans-serif;font-size:13px;font-weight:600;text-align:center;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;box-shadow:0 2px 8px rgba(0,0,0,.08);';
+  bn.innerHTML='<span>⏳ '+txt+'</span><a href="/upgrade.html" style="background:'+(critico?'#fff':'#1B4332')+';color:'+(critico?'#C0756E':'#fff')+';padding:5px 14px;border-radius:6px;text-decoration:none;font-weight:700;font-size:12px;white-space:nowrap;">Activar suscripción →</a>';
+  document.body.appendChild(bn);
+  document.body.style.paddingTop='40px';
+};
 function showToast(msg){var t=document.createElement('div');t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;font-size:13px;font-weight:600;padding:11px 22px;border-radius:10px;z-index:99999;font-family:Inter,sans-serif;';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove();},3000);}
 function togglePanelSidebar(){var sb=document.querySelector('.sidebar');var ov=document.getElementById('mob-overlay');sb.classList.toggle('open');ov.classList.toggle('open');}
 function closePanelSidebar(){var sb=document.querySelector('.sidebar');var ov=document.getElementById('mob-overlay');if(sb)sb.classList.remove('open');if(ov)ov.classList.remove('open');}
@@ -1458,6 +1506,8 @@ function loadCands(){
     all.forEach(function(c){var k=(c.email||'').toLowerCase().trim();if(!byEmail[k])byEmail[k]=[];byEmail[k].push(c);});
     cands=Object.values(byEmail).map(function(g){g.sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});g[0]._subs=g.length;g[0]._hist=g;return g[0];});
     cands.sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
+    // Refrescar badge de plan (puede haber cambiado el conteo Basic X/5)
+    if(typeof updatePlanBadge==='function')updatePlanBadge();
     // PRIVACY GUARD: filtrar informes/CVs por emails de mis candidatos.
     // Sin esto, allReps y allCvs traen registros de TODOS los coaches
     // (las queries 'select=*' no filtran por coach_id en estas tablas
