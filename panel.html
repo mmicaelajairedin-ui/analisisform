@@ -1025,6 +1025,26 @@ button:active { transform: scale(.98); }
   </div>
 </div>
 
+<!-- Modal: Upgrade a Pro (reusable, se llama desde gates) -->
+<div class="modal-overlay" id="modal-upgrade" style="display:none;" onclick="if(event.target===this)cerrarModal('modal-upgrade')">
+  <div class="modal-box" style="max-width:440px;text-align:center;">
+    <div style="font-size:46px;margin-bottom:6px;">⭐</div>
+    <div class="modal-title" style="font-family:Fraunces,Georgia,serif;font-size:22px;color:#1B2E26;margin-bottom:10px;">Esto es del plan Pro</div>
+    <div id="modal-upgrade-body" style="font-size:14px;line-height:1.6;color:#5A6A60;margin:6px 0 20px;"></div>
+    <div style="background:#F5EFEF;border-radius:10px;padding:14px 16px;margin-bottom:18px;text-align:left;font-size:13px;color:#1B2E26;line-height:1.55;">
+      <div style="font-weight:700;margin-bottom:6px;color:#2D6A4F;">Pro · €89/mes</div>
+      <div>✓ Clientes ilimitados</div>
+      <div>✓ Personalización con tus logos y colores</div>
+      <div>✓ Envío de emails al cliente desde el panel</div>
+      <div>✓ Soporte por WhatsApp + email</div>
+    </div>
+    <div class="modal-actions" style="justify-content:center;gap:10px;">
+      <button class="btn btn-sec" onclick="cerrarModal('modal-upgrade')">Ahora no</button>
+      <a href="/upgrade.html" class="btn" style="background:#2D6A4F;color:#fff;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;padding:11px 22px;border-radius:10px;font-weight:600;font-size:13px;">Ver planes →</a>
+    </div>
+  </div>
+</div>
+
 <script>
 
 var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
@@ -1051,6 +1071,42 @@ var ME=null;
   ME=JSON.parse(user);
   if(ME.rol!=='coach'&&ME.rol!=='admin'){window.location.href='https://pathwaycareercoach.com/login.html';throw new Error('Sin permisos');}
 
+  // ── Plan + suscripcion helpers ─────────────────────────
+  // Leen de ME.configuracion (JSONB cargado desde Supabase al login).
+  // Coaches con configuracion.es_pro_vitalicio=true (admin/demo) son Pro siempre.
+  // El plan se mapea: configuracion.plan === 'pro' → Pro, todo lo demas → Basic.
+  window.getPlan=function(){
+    if(!ME)return 'basic';
+    if(ME.rol==='admin')return 'pro';
+    var cfg=ME.configuracion||{};
+    if(cfg.es_pro_vitalicio===true)return 'pro';
+    return cfg.plan==='pro'?'pro':'basic';
+  };
+  window.isPro=function(){return getPlan()==='pro';};
+  window.isBasic=function(){return getPlan()==='basic';};
+  window.getEstadoSub=function(){
+    if(!ME)return '';
+    var cfg=ME.configuracion||{};
+    if(cfg.es_pro_vitalicio===true)return 'activa';
+    return cfg.estado_sub||'';
+  };
+  window.isTrialing=function(){return getEstadoSub()==='prueba';};
+  window.getDiasTrialRestantes=function(){
+    if(!isTrialing())return null;
+    var cfg=(ME&&ME.configuracion)||{};
+    var fin=cfg.fecha_fin_prueba;
+    if(!fin)return null;
+    var msRest=new Date(fin).getTime()-Date.now();
+    return Math.ceil(msRest/(1000*60*60*24));
+  };
+  // Stripe Payment Links — Basic ya creado, Pro pendiente
+  window.STRIPE_LINK_BASIC='https://buy.stripe.com/fZu6oH86A4xG42U7HB8AE07';      // €58/mes 14d trial
+  window.STRIPE_LINK_BASIC_30D='https://buy.stripe.com/14A28rfz2fckarifa38AE08';  // €58/mes 30d (popup)
+  window.STRIPE_LINK_PRO='https://buy.stripe.com/4gM9AT0E82py42U0f98AE0b';                       // €89/mes — REEMPLAZAR cuando este creado en Stripe
+  window.getStripeUpgradeUrl=function(){
+    return STRIPE_LINK_PRO+'?prefilled_email='+encodeURIComponent((ME&&ME.email)||'');
+  };
+
   // ── Paywall: bloquear acceso si la suscripcion no esta activa ──
   // activo=false significa que se registraron pero no completaron el pago en
   // Stripe (o que su suscripcion fue cancelada/vencida). El webhook de Stripe
@@ -1066,7 +1122,7 @@ var ME=null;
       if(fresh && fresh.activo===true){
         // Webhook acabo de actualizar — refrescar localStorage y recargar panel
         ME.activo = true;
-        try{ localStorage.setItem('mj_user', JSON.stringify({id:ME.id,email:ME.email,rol:ME.rol,nombre:ME.nombre,activo:true})); }catch(e){}
+        try{ localStorage.setItem('mj_user', JSON.stringify({id:ME.id,email:ME.email,rol:ME.rol,nombre:ME.nombre,activo:true,configuracion:fresh.configuracion||ME.configuracion||{}})); }catch(e){}
         window.location.reload();
         return;
       }
@@ -1317,6 +1373,20 @@ function coachGuard(){
 function toArr(id){return document.getElementById(id).value.split('\n').map(function(l){return l.trim();}).filter(Boolean);}
 function cerrarModal(id){document.getElementById(id).style.display='none';}
 function abrirModal(id){document.getElementById(id).style.display='flex';}
+// Modal Upgrade reusable: lo abren los gates de features Pro.
+// `razon` cambia el copy del body para que sea contextual.
+window.abrirModalUpgrade=function(razon){
+  var msgs={
+    clientes:'Llegaste al límite de 5 clientes del plan Basic. Con Pro tenés clientes ilimitados.',
+    emails:'El envío de emails al cliente desde el panel es una función Pro.',
+    whitelabel:'Personalizar el portal con tus logos y colores propios es una función Pro.',
+    trial_expirado:'Tu trial expiró. Activá tu suscripción para seguir usando el panel.',
+    default:'Esta función está disponible solo en el plan Pro.'
+  };
+  var body=document.getElementById('modal-upgrade-body');
+  if(body)body.textContent=msgs[razon]||msgs.default;
+  abrirModal('modal-upgrade');
+};
 function showToast(msg){var t=document.createElement('div');t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;font-size:13px;font-weight:600;padding:11px 22px;border-radius:10px;z-index:99999;font-family:Inter,sans-serif;';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove();},3000);}
 function togglePanelSidebar(){var sb=document.querySelector('.sidebar');var ov=document.getElementById('mob-overlay');sb.classList.toggle('open');ov.classList.toggle('open');}
 function closePanelSidebar(){var sb=document.querySelector('.sidebar');var ov=document.getElementById('mob-overlay');if(sb)sb.classList.remove('open');if(ov)ov.classList.remove('open');}
@@ -2737,6 +2807,12 @@ function tabMensajes(c){
     document.getElementById('modal-email-preview').style.display='flex';
   };
   window._confirmarEnvioEmail = function(){
+    // GATE Plan: envío de emails al cliente desde el panel es Pro-only
+    if(typeof isBasic==='function' && isBasic()){
+      cerrarModal('modal-email-preview');
+      abrirModalUpgrade('emails');
+      return;
+    }
     var p=_pendingEmail;if(!p)return;
     var editedMsg=document.getElementById('ep-msg-edit').value||'';
     var _cNom=(ME&&ME.nombre?ME.nombre.split(' ')[0]:null)||'Tu coach';
@@ -4383,6 +4459,12 @@ function cerrarSesion(){
 }
 
 function abrirCrearCliente(){
+  // GATE Plan: Basic permite máximo 5 clientes. Si llegó al límite, abrir modal upgrade.
+  // Admin y coaches con es_pro_vitalicio bypassan via getPlan() === 'pro'.
+  if(typeof isBasic==='function' && isBasic() && Array.isArray(cands) && cands.length>=5){
+    abrirModalUpgrade('clientes');
+    return;
+  }
   // Mostrar modal de crear cliente
   var mo=document.getElementById('modal-crear');
   if(mo){ mo.style.display='flex'; return; }
