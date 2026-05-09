@@ -1026,6 +1026,45 @@ button:active { transform: scale(.98); }
   </div>
 </div>
 
+<!-- Modal: Crear coach manual (admin only) - para pagos fuera de Stripe -->
+<div class="modal-overlay" id="modal-crear-coach" style="display:none;" onclick="if(event.target===this)cerrarModal('modal-crear-coach')">
+  <div class="modal-box" style="max-width:460px;">
+    <div class="modal-title" style="font-family:Fraunces,Georgia,serif;font-size:22px;color:#1B2E26;margin-bottom:6px;">Crear coach manual</div>
+    <p style="font-size:13px;color:#5A6A60;margin-bottom:18px;line-height:1.5;">Para coaches que pagan por fuera de Stripe (transferencia, agencia, etc). Crea la cuenta y le da trial gratis de N días. Sin cobro automático.</p>
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:11px;font-weight:600;color:#5A6A60;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Email *</label>
+      <input id="cc-email" type="email" placeholder="coach@ejemplo.com" style="width:100%;padding:10px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:Inter,sans-serif;">
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:11px;font-weight:600;color:#5A6A60;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Nombre *</label>
+      <input id="cc-nombre" type="text" placeholder="Nombre Apellido" style="width:100%;padding:10px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:Inter,sans-serif;">
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:11px;font-weight:600;color:#5A6A60;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Contraseña temporal *</label>
+      <input id="cc-pass" type="text" placeholder="ej: pathway2026" style="width:100%;padding:10px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:Inter,sans-serif;">
+      <div style="font-size:10px;color:#5A6A60;margin-top:4px;">Compártela con el coach. Podrá cambiarla luego.</div>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;">
+      <div style="flex:1;">
+        <label style="display:block;font-size:11px;font-weight:600;color:#5A6A60;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Plan</label>
+        <select id="cc-plan" style="width:100%;padding:10px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:Inter,sans-serif;background:#fff;">
+          <option value="basic">Basic (€58/mes)</option>
+          <option value="pro" selected>Pro (€89/mes)</option>
+        </select>
+      </div>
+      <div style="flex:1;">
+        <label style="display:block;font-size:11px;font-weight:600;color:#5A6A60;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Días gratis</label>
+        <input id="cc-dias" type="number" value="30" min="1" max="365" style="width:100%;padding:10px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:Inter,sans-serif;">
+      </div>
+    </div>
+    <div id="cc-status" style="font-size:12px;min-height:18px;margin-bottom:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sec" onclick="cerrarModal('modal-crear-coach')">Cancelar</button>
+      <button class="btn btn-rose" onclick="_adminCrearCoachManual()">Crear coach</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Upgrade a Pro (reusable, se llama desde gates) -->
 <div class="modal-overlay" id="modal-upgrade" style="display:none;" onclick="if(event.target===this)cerrarModal('modal-upgrade')">
   <div class="modal-box" style="max-width:440px;text-align:center;">
@@ -1413,6 +1452,114 @@ window.updatePlanBadge=function(){
     el.style.color='rgba(255,255,255,.9)';
     el.textContent='Basic · '+nClientes+'/5';
   }
+};
+// ── Admin: gestión de coaches (crear manual, extender trial, marcar pagado) ──
+window._adminAbrirCrearCoach=function(){
+  if(!ME||ME.rol!=='admin'){showToast('Sin permisos');return;}
+  ['cc-email','cc-nombre','cc-pass'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+  var st=document.getElementById('cc-status');if(st){st.textContent='';}
+  var diasEl=document.getElementById('cc-dias');if(diasEl)diasEl.value='30';
+  var planEl=document.getElementById('cc-plan');if(planEl)planEl.value='pro';
+  abrirModal('modal-crear-coach');
+};
+window._adminCrearCoachManual=async function(){
+  if(!ME||ME.rol!=='admin')return;
+  var email=((document.getElementById('cc-email')||{}).value||'').trim().toLowerCase();
+  var nombre=((document.getElementById('cc-nombre')||{}).value||'').trim();
+  var pass=((document.getElementById('cc-pass')||{}).value||'').trim();
+  var plan=((document.getElementById('cc-plan')||{}).value||'basic');
+  var diasNum=parseInt(((document.getElementById('cc-dias')||{}).value||'30'),10);
+  var dias=Math.max(1,Math.min(365,isNaN(diasNum)?30:diasNum));
+  var st=document.getElementById('cc-status');
+  if(!email||!nombre||!pass){if(st){st.textContent='Email, nombre y contraseña son obligatorios.';st.style.color='#C0756E';}return;}
+  if(pass.length<4){if(st){st.textContent='Contraseña muy corta (mín 4 chars).';st.style.color='#C0756E';}return;}
+  if(st){st.textContent='Creando...';st.style.color='#5A6A60';}
+  try{
+    var enc=new TextEncoder();
+    var hashBuffer=await crypto.subtle.digest('SHA-256',enc.encode(pass));
+    var hashHex=Array.from(new Uint8Array(hashBuffer)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+    var trialEnd=new Date(Date.now()+dias*24*3600*1000).toISOString();
+    var configuracion={
+      plan:plan,
+      estado_sub:'prueba',
+      fecha_fin_prueba:trialEnd,
+      creado_por_admin:true,
+      creado_por:ME.email
+    };
+    var body={
+      email:email,
+      nombre:nombre,
+      password_hash:hashHex,
+      rol:'coach',
+      activo:true,
+      configuracion:configuracion
+    };
+    var res=await fetch(SB+'/rest/v1/usuarios',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},
+      body:JSON.stringify(body)
+    });
+    if(!res.ok){
+      var t=await res.text();
+      if(res.status===409||t.indexOf('duplicate')>=0){if(st){st.textContent='Ya existe un usuario con ese email.';st.style.color='#C0756E';}}
+      else{if(st){st.textContent='Error: '+(t.slice(0,80)||res.status);st.style.color='#C0756E';}}
+      return;
+    }
+    if(st){st.textContent='✓ Coach creado. Pasale email + contraseña.';st.style.color='#2D6A4F';}
+    setTimeout(function(){cerrarModal('modal-crear-coach');if(typeof _renderAdmin==='function')_renderAdmin();},1400);
+  }catch(err){
+    if(st){st.textContent='Error: '+(err.message||'desconocido');st.style.color='#C0756E';}
+  }
+};
+window._adminExtenderTrial=function(coachId){
+  if(!ME||ME.rol!=='admin')return;
+  if(!confirm('¿Extender el trial de este coach por +30 días?'))return;
+  fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(coachId)+'&select=configuracion',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+    var coach=rows&&rows[0];if(!coach){showToast('Coach no encontrado');return;}
+    var cfg=coach.configuracion||{};
+    var base=cfg.fecha_fin_prueba?new Date(cfg.fecha_fin_prueba):new Date();
+    if(base.getTime()<Date.now())base=new Date();
+    base.setDate(base.getDate()+30);
+    var newCfg=Object.assign({},cfg,{
+      fecha_fin_prueba:base.toISOString(),
+      estado_sub:'prueba',
+      ultima_extension_admin:new Date().toISOString()
+    });
+    return fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(coachId),{
+      method:'PATCH',
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({configuracion:newCfg,activo:true})
+    });
+  }).then(function(r){
+    if(r&&r.ok){showToast('Trial extendido +30 días ✓');if(typeof _renderAdmin==='function')_renderAdmin();}
+    else{showToast('Error extendiendo trial');}
+  }).catch(function(err){showToast('Error: '+(err.message||'desconocido'));});
+};
+window._adminMarcarPagado=function(coachId){
+  if(!ME||ME.rol!=='admin')return;
+  if(!confirm('¿Marcar este coach como pagado? estado_sub=activa, sin trial. Acceso permanente hasta cancelación.'))return;
+  fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(coachId)+'&select=configuracion',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+    var coach=rows&&rows[0];if(!coach){showToast('Coach no encontrado');return;}
+    var cfg=coach.configuracion||{};
+    var newCfg=Object.assign({},cfg,{
+      estado_sub:'activa',
+      fecha_fin_prueba:null,
+      marcado_pagado_admin:true,
+      marcado_pagado_at:new Date().toISOString()
+    });
+    return fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(coachId),{
+      method:'PATCH',
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({configuracion:newCfg,activo:true})
+    });
+  }).then(function(r){
+    if(r&&r.ok){showToast('Coach marcado como pagado ✓');if(typeof _renderAdmin==='function')_renderAdmin();}
+    else{showToast('Error marcando pagado');}
+  }).catch(function(err){showToast('Error: '+(err.message||'desconocido'));});
 };
 // Banner fijo arriba si trial expira en ≤7 días. ≤2 días pasa a rojo crítico.
 window.updateTrialBanner=function(){
@@ -4547,15 +4694,17 @@ function _renderPagos(){
   if(!dp) return;
 
   var coachCfg={};try{coachCfg=JSON.parse(localStorage.getItem('mj_coach_config')||'{}');}catch(e){}
-  var planActual=coachCfg.plan||'starter';
-  var planLabel=planActual==='pro'?'Anual (Pro)':'Mensual (Starter)';
-  var estadoSub=coachCfg.estado_sub||'prueba';
-  var diasRestantes=14;
-  if(coachCfg.fecha_fin_prueba){
+  // Plan se lee de ME.configuracion (fuente de verdad). Fallback a localStorage para legacy.
+  var planActual=(typeof getPlan==='function'?getPlan():(coachCfg.plan||'basic'));
+  if(planActual==='starter')planActual='basic';  // legacy rename
+  var planLabel=planActual==='pro'?'Pro (€89/mes)':'Basic (€58/mes)';
+  var estadoSub=(typeof getEstadoSub==='function'?getEstadoSub():(coachCfg.estado_sub||'prueba'));
+  var diasRestantes=(typeof getDiasTrialRestantes==='function')?(getDiasTrialRestantes()||14):14;
+  if(coachCfg.fecha_fin_prueba && diasRestantes===14){
     var fin=new Date(coachCfg.fecha_fin_prueba);
     diasRestantes=Math.max(0,Math.ceil((fin-Date.now())/(1000*60*60*24)));
   }
-  var precioLabel='€58/mes';
+  var precioLabel=planActual==='pro'?'€89/mes':'€58/mes';
 
   var estadoColors={prueba:'#E9C46A',activa:'#52B788',cancelada:'#C0756E',vencida:'#C0756E'};
   var estadoLabels={prueba:'Prueba gratuita',activa:'Activa',cancelada:'Cancelada',vencida:'Vencida'};
@@ -6451,14 +6600,15 @@ function _renderAdmin(){
     var cand7d=candidatos.filter(function(c){return c.created_at&&(Date.now()-new Date(c.created_at).getTime())<7*24*3600*1000;}).length;
     var cand30d=candidatos.filter(function(c){return c.created_at&&(Date.now()-new Date(c.created_at).getTime())<30*24*3600*1000;}).length;
 
-    // MRR estimado: cada coach con estado_sub='activa' paga 79/mes starter, pro 699/año => 58/mes
+    // MRR estimado: cada coach con estado_sub='activa' paga €58/mes (Basic) o €89/mes (Pro)
     var mrr=0,payingCoaches=0,trialCoaches=0;
     coaches.forEach(function(c){
       var cfg=c.configuracion||{};
-      var plan=cfg.plan||'starter';
+      var plan=cfg.plan||'basic';
+      if(plan==='starter')plan='basic';  // legacy rename
       var estado=cfg.estado_sub||'prueba';
       if(estado==='activa'){
-        mrr+=plan==='pro'?58:79;
+        mrr+=plan==='pro'?89:58;
         payingCoaches++;
       } else if(estado==='prueba'){
         trialCoaches++;
@@ -6596,17 +6746,20 @@ function _renderAdmin(){
 
     // LISTA DE COACHES
     html+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:16px;">';
-    html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">';
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">';
     html+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;">Coaches en Pathway</div>';
+    html+='<div style="display:flex;align-items:center;gap:10px;">';
     html+='<span style="font-size:11px;color:var(--muted);">'+coaches.length+' total</span>';
+    html+='<button onclick="_adminAbrirCrearCoach()" style="background:var(--accent);color:#fff;border:none;padding:7px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">+ Crear coach manual</button>';
+    html+='</div>';
     html+='</div>';
     if(coaches.length){
       html+='<div style="display:flex;flex-direction:column;gap:8px;">';
       coaches.forEach(function(c){
         var cfg=c.configuracion||{};
         var estado=cfg.estado_sub||'prueba';
-        var plan=cfg.plan||'starter';
-        var planLbl=plan==='pro'?'Pro':'Starter';
+        var plan=cfg.plan||'basic';
+        var planLbl=plan==='pro'?'Pro':'Basic';
         var estadoLbl={prueba:'Prueba',activa:'Activa',cancelada:'Cancelada',vencida:'Vencida'}[estado]||'Prueba';
         var estadoBg={prueba:'rgba(233,196,106,.15)',activa:'rgba(82,183,136,.15)',cancelada:'rgba(196,117,110,.15)',vencida:'rgba(196,117,110,.15)'}[estado];
         var estadoFg={prueba:'#8C7B20',activa:'#2D6A4F',cancelada:'#C0756E',vencida:'#C0756E'}[estado];
@@ -6622,6 +6775,13 @@ function _renderAdmin(){
         html+='<div style="font-size:11px;color:var(--muted);font-weight:500;flex-shrink:0;">'+coachCands+' candidato'+(coachCands===1?'':'s')+'</div>';
         html+='<span style="font-size:10px;font-weight:600;padding:3px 10px;border-radius:100px;background:rgba(45,106,79,.06);color:var(--body);flex-shrink:0;">'+planLbl+'</span>';
         html+='<span style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:100px;background:'+estadoBg+';color:'+estadoFg+';flex-shrink:0;">'+estadoLbl+'</span>';
+        // Botones de gestión admin (no para mí mismo, no para vitalicios)
+        var isMe=ME&&c.id===ME.id;
+        var isVit=cfg.es_pro_vitalicio===true;
+        if(!isMe && !isVit){
+          html+='<button onclick="_adminExtenderTrial(\''+c.id+'\')" title="Extender trial +30 días" style="background:rgba(82,183,136,.14);color:#2D6A4F;border:none;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;flex-shrink:0;">+30d</button>';
+          html+='<button onclick="_adminMarcarPagado(\''+c.id+'\')" title="Marcar como pagado (estado activa)" style="background:rgba(233,196,106,.22);color:#8C7B20;border:none;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;flex-shrink:0;">Pagado</button>';
+        }
         html+='</div>';
       });
       html+='</div>';
