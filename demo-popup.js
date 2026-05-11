@@ -17,7 +17,7 @@
   var DEFAULT_LOOM_ID='72bbe92b3f704518abd768417ed30991';
 
   // Stripe Payment Link de la prueba de 30 dias.
-  var TRIAL_URL='https://buy.stripe.com/14A28rfz2fckarifa38AE08';
+  var TRIAL_URL='https://buy.stripe.com/9B6eVddqUd4c2YQfa38AE0c';
 
   function getLoomId(){
     var b=document.body && document.body.getAttribute('data-demo-loom-id');
