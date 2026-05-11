@@ -2465,12 +2465,77 @@ function tabGenerar(c){
 // y requiere activar suscripcion.
 var INFORMES_LIMIT_TRIAL = 3;
 
+// Reenviar email de verificación. Genera un token nuevo y manda email via
+// send-email edge function. Se invoca desde el banner amarillo del gate de
+// email_verificado en generarInformeAI.
+window._reenviarVerifEmail = function(){
+  if(!ME || !ME.id || !ME.email){showToast('Error: sesión inválida');return;}
+  var nuevoToken = (typeof crypto!=='undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : (Math.random().toString(36).slice(2)+Date.now().toString(36));
+  var cfg = ME.configuracion || {};
+  cfg.verification_token = nuevoToken;
+  cfg.verification_sent_at = new Date().toISOString();
+  // PATCH user con el nuevo token
+  fetch(SB+'/rest/v1/usuarios?id=eq.'+ME.id,{
+    method:'PATCH',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({configuracion:cfg})
+  }).then(function(r){
+    if(!r.ok)throw new Error('patch_failed');
+    // Sync localStorage
+    ME.configuracion = cfg;
+    try{localStorage.setItem('mj_user',JSON.stringify(ME));}catch(e){}
+    // Mandar email via send-email edge function
+    var verifyUrl='https://pathwaycareercoach.com/verify.html?email='+encodeURIComponent(ME.email)+'&token='+nuevoToken;
+    var firstName=(ME.nombre||'').split(' ')[0]||'';
+    return fetch(SB+'/functions/v1/send-email',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        to:ME.email,
+        to_name:ME.nombre||'',
+        subject:'Confirmá tu email — Pathway',
+        html:'<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola '+escH(firstName)+',</h2>'
+          +'<p style="font-size:15px;line-height:1.65;">Para activar todas las features de Pathway (incluido generar informes con IA), confirmá tu email haciendo click acá abajo:</p>'
+          +'<p style="margin-top:18px;"><a href="'+verifyUrl+'" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">✓ Confirmar mi email</a></p>'
+          +'<p style="font-size:12px;color:#888;margin-top:18px;">Si vos no pediste esto, podés ignorarlo.</p>'
+      })
+    });
+  }).then(function(){
+    showToast('✓ Email reenviado a '+ME.email);
+  }).catch(function(err){
+    showToast('Error reenviando email — escribinos a hi@pathwaycareercoach.com');
+    console.error('[verif resend]',err);
+  });
+};
+
 function generarInformeAI(id){
-  // Gate: si esta en trial (no admin, no vitalicio), chequear cuantos
-  // informes ya genero. Si llego al limite, bloquear y mostrar upgrade.
-  var esTrial = typeof isTrialing==='function' && isTrialing();
   var esAdmin = ME && ME.rol==='admin';
   var esVitalicio = ME && ME.configuracion && ME.configuracion.es_pro_vitalicio===true;
+
+  // Gate 1: email verification — coaches deben confirmar email antes de
+  // generar informes IA (anti-abuso para fake-email signups). Solo bloqueamos
+  // si email_verificado === false EXPLICITO. Si es undefined (cuentas viejas
+  // pre-mayo-2026), permitimos para no romper backward compat.
+  if(!esAdmin && !esVitalicio && ME && ME.configuracion && ME.configuracion.email_verificado === false){
+    var btnV=document.getElementById('btn-gen-inf-'+id);
+    var stV=document.getElementById('st-gen-'+id);
+    if(stV){
+      stV.innerHTML='<div style="background:#FEF8E7;border:1.5px solid #E9C46A;border-radius:10px;padding:14px 16px;color:#7A5C1E;font-size:13px;line-height:1.5;">'
+        +'<div style="font-weight:700;margin-bottom:6px;">📧 Confirmá tu email para activar informes IA</div>'
+        +'Te mandamos un link a <strong>'+escH((ME.email||''))+'</strong> al registrarte. Buscalo en tu bandeja (o spam) y clickeá "Confirmar mi email".'
+        +'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">'
+        +'<button onclick="_reenviarVerifEmail()" style="background:#2D6A4F;color:#fff;padding:8px 14px;border:none;border-radius:8px;font-weight:700;font-size:12px;font-family:Inter,sans-serif;cursor:pointer;">Reenviar email</button>'
+        +'</div></div>';
+    }
+    if(btnV){btnV.disabled=false;btnV.textContent='✨ Generar informe automáticamente';}
+    return;
+  }
+
+  // Gate 2: si esta en trial (no admin, no vitalicio), chequear cuantos
+  // informes ya genero. Si llego al limite, bloquear y mostrar upgrade.
+  var esTrial = typeof isTrialing==='function' && isTrialing();
   if(esTrial && !esAdmin && !esVitalicio){
     var btnPre=document.getElementById('btn-gen-inf-'+id);
     var stPre=document.getElementById('st-gen-'+id);

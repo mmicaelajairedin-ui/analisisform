@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="robots" content="noindex, nofollow">
+<title>Confirmá tu email — Pathway</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bosque:#2D6A4F;--bosque-dark:#1B4332;--sendero:#52B788;--amanecer:#E9C46A;
+  --carbon:#1B2E26;--niebla:#FAFDF9;--texto:#1B2E26;--texto-suave:#5A5A55;
+  --borde:rgba(45,106,79,.12);--serif:'Fraunces',Georgia,serif;
+  --sans:'Inter',-apple-system,sans-serif;
+}
+body{
+  font-family:var(--sans);color:var(--texto);min-height:100vh;
+  display:flex;align-items:center;justify-content:center;padding:2rem 1rem;
+  background:linear-gradient(135deg,#FAFDF9 0%,#F0F7F2 50%,#E8F2EC 100%);
+}
+.card{
+  background:#fff;border-radius:20px;padding:2.5rem 2rem;width:100%;max-width:460px;
+  box-shadow:0 8px 40px rgba(45,106,79,.08);text-align:center;
+  border:1px solid var(--borde);animation:in .5s ease;
+}
+@keyframes in{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
+.icon{width:64px;height:64px;margin:0 auto 18px;display:flex;align-items:center;justify-content:center;}
+h1{font-family:var(--serif);font-size:26px;font-weight:500;color:var(--carbon);margin-bottom:10px;letter-spacing:-0.6px;}
+.msg{font-size:14px;color:var(--texto-suave);line-height:1.6;margin-bottom:24px;}
+.btn{display:inline-block;padding:13px 32px;background:var(--bosque);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;font-family:var(--sans);cursor:pointer;text-decoration:none;transition:all .2s;box-shadow:0 4px 14px rgba(45,106,79,.18);}
+.btn:hover{background:var(--bosque-dark);transform:translateY(-1px);}
+.btn-sec{background:#fff;color:var(--bosque);border:1.5px solid var(--bosque);box-shadow:none;margin-left:8px;}
+.btn-sec:hover{background:var(--bosque);color:#fff;}
+.loading{display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;color:var(--texto-suave);margin-top:14px;}
+.dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--sendero);animation:dp 1.2s ease-in-out infinite;}
+.dots span:nth-child(2){animation-delay:.2s;}.dots span:nth-child(3){animation-delay:.4s;}
+@keyframes dp{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+.success-icon{color:#52B788;}
+.error-icon{color:#C0756E;}
+.help{font-size:11px;color:#999;margin-top:24px;}
+.help a{color:var(--bosque);text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon" id="icon">
+    <div class="dots"><span></span><span></span><span></span></div>
+  </div>
+  <h1 id="title">Confirmando tu email...</h1>
+  <div class="msg" id="msg">Validando tu link. Esto toma unos segundos.</div>
+  <div id="actions" style="display:none;"></div>
+  <div class="help">¿Algo no funciona? <a href="mailto:hi@pathwaycareercoach.com">Escribinos</a>.</div>
+</div>
+
+<script>
+var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+
+function showState(state, title, msg, actions){
+  var iconEl = document.getElementById('icon');
+  if(state==='success'){
+    iconEl.innerHTML = '<svg width="56" height="56" viewBox="0 0 56 56" class="success-icon" fill="none" stroke="currentColor" stroke-width="3"><circle cx="28" cy="28" r="24" fill="rgba(82,183,136,.12)" stroke="#52B788"/><path d="M18 28l8 8 14-16" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  } else if(state==='error'){
+    iconEl.innerHTML = '<svg width="56" height="56" viewBox="0 0 56 56" class="error-icon" fill="none" stroke="currentColor" stroke-width="3"><circle cx="28" cy="28" r="24" fill="rgba(196,117,110,.12)" stroke="#C0756E"/><path d="M20 20l16 16M36 20l-16 16" stroke-linecap="round"/></svg>';
+  }
+  document.getElementById('title').textContent = title;
+  document.getElementById('msg').innerHTML = msg;
+  if(actions){
+    var act = document.getElementById('actions');
+    act.innerHTML = actions;
+    act.style.display = 'block';
+  }
+}
+
+(function init(){
+  var params = new URLSearchParams(window.location.search);
+  var email = (params.get('email')||'').trim().toLowerCase();
+  var token = (params.get('token')||'').trim();
+
+  if(!email || !token){
+    showState('error', 'Link inválido',
+      'El link no incluye email o token. Volvé a usar el link del email de bienvenida.',
+      '<a href="/login.html" class="btn">Ir a login</a>');
+    return;
+  }
+
+  // Fetch user, validate token, set email_verificado=true
+  fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&select=id,configuracion,nombre', {
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){
+    if(!r.ok) throw new Error('lookup_failed');
+    return r.json();
+  }).then(function(rows){
+    if(!rows || !rows.length){
+      showState('error', 'Cuenta no encontrada',
+        'No encontramos una cuenta con ese email. ¿Te registraste? <a href="/registro.html" style="color:#2D6A4F;font-weight:600;">Registrate acá</a>.',
+        '<a href="/registro.html" class="btn">Crear cuenta</a>');
+      return;
+    }
+    var user = rows[0];
+    var cfg = user.configuracion || {};
+
+    // Ya verificado: mostrar success igual (idempotente, el link puede haber sido clickeado 2 veces)
+    if(cfg.email_verificado === true){
+      showState('success', '✓ Tu email ya estaba confirmado',
+        'Tu cuenta está activa. Podés ir directo al panel.',
+        '<a href="/panel.html" class="btn">Ir a mi panel →</a>');
+      return;
+    }
+
+    // Token no coincide: error
+    if(cfg.verification_token !== token){
+      showState('error', 'Token inválido o expirado',
+        'El link no es válido o ya fue usado. Reenviá el email de verificación desde tu panel.',
+        '<a href="/login.html" class="btn">Ir a login</a>');
+      return;
+    }
+
+    // Token coincide: marcar verificado
+    cfg.email_verificado = true;
+    cfg.verification_verified_at = new Date().toISOString();
+    // Limpiar token para que no pueda reusarse
+    delete cfg.verification_token;
+
+    fetch(SB+'/rest/v1/usuarios?id=eq.'+user.id, {
+      method:'PATCH',
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body: JSON.stringify({configuracion: cfg})
+    }).then(function(pr){
+      if(!pr.ok) throw new Error('update_failed');
+      // Actualizar localStorage si existe para que el panel vea el cambio sin re-login
+      try{
+        var ls = JSON.parse(localStorage.getItem('mj_user')||'null');
+        if(ls && ls.email===email){
+          ls.configuracion = cfg;
+          localStorage.setItem('mj_user', JSON.stringify(ls));
+        }
+      }catch(e){}
+
+      var firstName = (user.nombre||'').split(' ')[0] || '';
+      showState('success', '¡Email confirmado! 🌱',
+        (firstName?'Bienvenida '+firstName+', tu':'Tu')+' cuenta está activa. Ya podés generar informes con IA y usar todas las features de Pathway.',
+        '<a href="/panel.html" class="btn">Ir a mi panel →</a>');
+    }).catch(function(){
+      showState('error', 'Error al confirmar',
+        'No pudimos actualizar tu cuenta. Probá de nuevo en un minuto o escribinos.',
+        '<a href="javascript:location.reload()" class="btn btn-sec">Reintentar</a>');
+    });
+  }).catch(function(){
+    showState('error', 'Error de conexión',
+      'No pudimos verificar tu cuenta ahora. Probá de nuevo en un minuto.',
+      '<a href="javascript:location.reload()" class="btn btn-sec">Reintentar</a>');
+  });
+})();
+</script>
+</body>
+</html>

@@ -378,6 +378,14 @@ async function registrar(){
     // (5800=basic, 8900=pro). selectedPlan='anual' o 'pro' sigue funcionando como
     // override legacy via URL param ?plan=anual.
     var planInicial = (selectedPlan === 'anual' || selectedPlan === 'pro') ? 'pro' : 'basic';
+    // Token de verificación de email — anti-abuso para que cuentas con email
+    // fake no puedan usar features costosas (generar informe IA, etc).
+    // Real users reciben el welcome email con CTA → verify.html?email=X&token=Y
+    // → al clickear se setea email_verificado=true. Hasta entonces, el panel
+    // los deja navegar pero bloquea generar informes (gate en panel.html).
+    var verificationToken = (typeof crypto!=='undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : (Math.random().toString(36).slice(2)+Date.now().toString(36)+Math.random().toString(36).slice(2));
     var configuracion = {
       plan: planInicial,
       estado_sub: 'prueba',
@@ -386,7 +394,11 @@ async function registrar(){
       especialidades: [especialidad],
       mercados: [mercado],
       // Default 14d. Si viene del popup (?ref=popup), abajo se extiende a 28d.
-      fecha_fin_prueba: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+      fecha_fin_prueba: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      // Email verification (anti-abuso)
+      email_verificado: false,
+      verification_token: verificationToken,
+      verification_sent_at: new Date().toISOString()
     };
 
     // Capturar params de la URL:
@@ -513,16 +525,23 @@ async function registrar(){
     // Email de bienvenida al coach — alineado con el flow "trial sin tarjeta".
     // No pedimos tarjeta al inicio: la coach usa los 14 dias gratis sin
     // compromiso. Si quiere seguir, se suscribe en Stripe al final del trial.
+    // El CTA principal es verificar el email — esto desbloquea features
+    // costosas como generar informes IA (anti-abuso).
+    var verifyUrl = 'https://pathwaycareercoach.com/verify.html?email=' + encodeURIComponent(email) + '&token=' + verificationToken;
     fetch(SB + '/functions/v1/send-email', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         to: email,
         to_name: nombre,
-        subject: '¡Bienvenida a Pathway! Tu trial de 14 días empezó 🌱',
+        subject: '¡Bienvenida a Pathway! Confirmá tu email para empezar 🌱',
         html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + (nombre.split(' ')[0] || nombre) + ',</h2>'
           + '<p style="font-size:15px;line-height:1.65;">Bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis</strong>. No te pedimos tarjeta — si al final no querés seguir, simplemente no hacés nada.</p>'
-          + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Ir a mi panel →</a></p>'
+          + '<p style="font-size:15px;line-height:1.65;margin-top:14px;"><strong>Primero, confirmá tu email para activar todas las features:</strong></p>'
+          + '<p style="margin-top:14px;"><a href="' + verifyUrl + '" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">✓ Confirmar mi email</a></p>'
+          + '<p style="font-size:12px;color:#888;margin-top:10px;line-height:1.5;">Sin confirmar tu email no vas a poder generar informes con IA. Es un paso rápido — 1 click.</p>'
+          + '<p style="margin-top:24px;font-size:13px;color:#666;">¿Querés explorar antes de confirmar? Igual podés entrar al panel:</p>'
+          + '<p style="margin-top:6px;"><a href="https://pathwaycareercoach.com/panel.html" style="color:#2D6A4F;font-weight:600;font-size:13px;">Ir a mi panel →</a></p>'
           + '<h3 style="color:#2D6A4F;margin-top:32px;font-family:Fraunces,Georgia,serif;font-weight:500;">Empezá en 4 pasos:</h3>'
           + '<ol style="padding-left:20px;line-height:1.9;font-size:14px;">'
           + '<li><strong>Completá tu perfil</strong> — foto, bio y colores en Configuración (5 min)</li>'
