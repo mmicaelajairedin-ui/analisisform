@@ -1568,7 +1568,7 @@ window._adminExtenderTrial=function(coachId){
       body:JSON.stringify({configuracion:newCfg,activo:true})
     });
   }).then(function(r){
-    if(r&&r.ok){showToast('Trial extendido +30 días ✓');if(typeof _renderAdmin==='function')_renderAdmin();}
+    if(r&&r.ok){showCabraToast('logro','Trial extendido +30 días ✓');if(typeof _renderAdmin==='function')_renderAdmin();}
     else{showToast('Error extendiendo trial');}
   }).catch(function(err){showToast('Error: '+(err.message||'desconocido'));});
 };
@@ -1592,7 +1592,7 @@ window._adminMarcarPagado=function(coachId){
       body:JSON.stringify({configuracion:newCfg,activo:true})
     });
   }).then(function(r){
-    if(r&&r.ok){showToast('Coach marcado como pagado ✓');if(typeof _renderAdmin==='function')_renderAdmin();}
+    if(r&&r.ok){showCabraToast('thumbs-up','Coach marcado como pagado ✓');if(typeof _renderAdmin==='function')_renderAdmin();}
     else{showToast('Error marcando pagado');}
   }).catch(function(err){showToast('Error: '+(err.message||'desconocido'));});
 };
@@ -1651,17 +1651,34 @@ function showToast(msg){var t=document.createElement('div');t.style.cssText='pos
 // existe (404), se oculta sin romper layout (onerror). El llamante decide
 // si mostrar el fallback original (emoji/spinner) cuando esto devuelve ''.
 //
-// Cabras disponibles (subir a /assets/mascota/):
+// Cabras disponibles (en /assets/mascota/):
 //   - saludando: cabra con bandera (Bienvenida)
 //   - laptop: cabra trabajando (Generando informe/CV/carta)
 //   - thumbs-up: cabra de pulgar arriba (Éxito)
-//   - meditando: cabra meditando (futuro: pensando/analizando)
+//   - pensando: cabra meditando (loading admin)
+//   - logro: cabra salta con bandera (milestone celebración)
+//   - mapa: cabra con mapa saltando (navegación)
+//   - montanas: cabra asomando de montañas (decoración header)
 function _cabra(name,size){
   if(!ME||ME.rol!=='admin')return '';
   size=size||96;
   return '<img src="/assets/mascota/cabra-'+name+'.gif" alt="" '
     +'style="width:'+size+'px;height:'+size+'px;object-fit:contain;display:block;margin:0 auto;" '
     +'onerror="this.style.display=\'none\';">';
+}
+
+// Toast celebratorio con cabra animada — para hitos admin (extender trial,
+// marcar pagado, etc). Si no es admin, cae al showToast normal de texto.
+function showCabraToast(cabraName,msg){
+  if(!ME||ME.rol!=='admin')return showToast(msg);
+  var t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#fff;color:#1B2E26;font-size:13px;font-weight:600;padding:16px 22px;border-radius:14px;z-index:99999;font-family:Inter,sans-serif;display:flex;align-items:center;gap:14px;box-shadow:0 12px 36px rgba(45,106,79,.25);border:2px solid rgba(82,183,136,.3);max-width:92vw;';
+  t.innerHTML='<img src="/assets/mascota/cabra-'+cabraName+'.gif" alt="" '
+    +'style="width:56px;height:56px;object-fit:contain;flex-shrink:0;" '
+    +'onerror="this.style.display=\'none\';">'
+    +'<span style="line-height:1.4;">'+msg+'</span>';
+  document.body.appendChild(t);
+  setTimeout(function(){t.remove();},4500);
 }
 
 // Toast persistente con acción "Enviar bienvenida". El coach manda desde su
@@ -6960,9 +6977,14 @@ function _renderAdmin(){
 
     // HEADER
     html+='<div style="margin-bottom:28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">';
+    html+='<div style="display:flex;align-items:center;gap:14px;">';
+    // Cabra de montañas asomando como decoración del header admin
+    var cabraDeco = _cabra('montanas', 64);
+    if(cabraDeco){html+='<div style="flex-shrink:0;">'+cabraDeco+'</div>';}
     html+='<div>';
     html+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:32px;font-weight:500;color:var(--title);letter-spacing:-1px;line-height:1.1;margin-bottom:4px;">Admin</h2>';
     html+='<p style="font-size:13px;color:var(--muted);">Métricas de Pathway. Solo vos ves esta pestaña.</p>';
+    html+='</div>';
     html+='</div>';
     html+='<span style="display:inline-flex;align-items:center;gap:6px;background:rgba(233,196,106,.15);color:#8C7B20;padding:6px 14px;border-radius:100px;font-size:11px;font-weight:600;">'+
       '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.39 4.84L20 7.66l-4 3.89.95 5.54L12 14.5l-4.95 2.59L8 11.55 4 7.66l5.61-.82L12 2z"/></svg>'+
@@ -7167,7 +7189,13 @@ function _renderAdmin(){
 function _renderCoachDetail(coachId){
   var dp=document.getElementById('dynamic-panel');
   if(!dp)return;
-  dp.innerHTML='<div style="padding:28px 32px;"><div style="padding:60px 0;text-align:center;color:var(--muted);font-size:13px;">Cargando detalle...</div></div>';
+  // Loading state con cabra pensando para admin; spinner discreto para otros
+  var cabraLoad = _cabra('pensando', 120);
+  if(cabraLoad){
+    dp.innerHTML='<div style="padding:28px 32px;"><div style="padding:48px 0;text-align:center;">'+cabraLoad+'<div style="font-size:13px;color:var(--muted);margin-top:14px;">Buscando info del coach...</div></div></div>';
+  } else {
+    dp.innerHTML='<div style="padding:28px 32px;"><div style="padding:60px 0;text-align:center;color:var(--muted);font-size:13px;">Cargando detalle...</div></div>';
+  }
 
   Promise.all([
     fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(coachId)+'&select=*',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];}),
