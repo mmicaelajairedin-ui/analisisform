@@ -5934,13 +5934,91 @@ function _queueRetry(id){
 }
 
 // ── CONFIGURACIÓN DEL COACH ─────────────────────────────────
-function _renderConfig(){
+// Estado del tab activo en la sección Configuración.
+// Tabs: 'general' (perfil/marca/pagos/agenda/acceso), 'soporte', 'opinion'.
+var _cfgTab='general';
+
+function _cfgShellOpen(activeTab){
+  var tabs=[{id:'general',label:'General'},{id:'soporte',label:'Soporte'},{id:'opinion',label:'Tu opinión'}];
+  var h='<div style="padding:28px 32px 48px;max-width:760px;">';
+  h+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:28px;font-weight:500;color:var(--title);letter-spacing:-.8px;margin-bottom:6px;">Configuración</h2>';
+  h+='<p style="font-size:13px;color:var(--muted);margin-bottom:18px;">Tu cuenta, soporte y feedback — todo en un solo lugar.</p>';
+  h+='<div role="tablist" style="display:flex;gap:2px;border-bottom:2px solid var(--border);margin-bottom:24px;flex-wrap:wrap;">';
+  tabs.forEach(function(t){
+    var on=(t.id===activeTab);
+    var color=on?'var(--accent)':'var(--muted)';
+    var bb=on?'2px solid var(--accent)':'2px solid transparent';
+    h+='<button role="tab" aria-selected="'+(on?'true':'false')+'" onclick="_renderConfig(\''+t.id+'\')" style="background:transparent;border:none;border-bottom:'+bb+';color:'+color+';padding:10px 18px;font-size:13px;font-weight:'+(on?'700':'600')+';font-family:Inter,sans-serif;cursor:pointer;margin-bottom:-2px;transition:all .15s;">'+t.label+'</button>';
+  });
+  h+='</div>';
+  return h;
+}
+function _cfgShellClose(){ return '</div>'; }
+
+function _renderConfig(tab){
+  if(tab) _cfgTab=tab;
+  var activeTab=_cfgTab;
   var dp=document.getElementById('dynamic-panel');
   if(!dp)return;
-  dp.innerHTML='<div style="padding:24px;max-width:800px;"><div style="text-align:center;padding:3rem;color:var(--muted);">Cargando configuración...</div></div>';
+
+  // ─── Tab SOPORTE ───
+  if(activeTab==='soporte'){
+    var pro=(typeof isPro==='function' && isPro());
+    var slaTxt=pro?'Respondemos en menos de 24h (Pro)':'Respondemos en 1-2 días hábiles (Basic)';
+    var s=_cfgShellOpen(activeTab);
+    s+='<p style="font-size:13px;color:var(--muted);margin-bottom:8px;">¿Algo no funciona? ¿Una duda técnica? Contanos por acá.</p>';
+    s+='<p style="font-size:12px;color:var(--accent);font-weight:600;margin-bottom:22px;">⏱ '+slaTxt+'</p>';
+    s+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px;">';
+    s+='<div style="margin-bottom:14px;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Asunto</label>';
+    s+='<input id="sop-asunto" type="text" placeholder="Ej: No me carga la sección Empleos" maxlength="120" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:Inter,sans-serif;"></div>';
+    s+='<div style="margin-bottom:14px;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Mensaje</label>';
+    s+='<textarea id="sop-mensaje" rows="6" placeholder="Contanos qué pasa con el mayor detalle posible. Incluí pasos para reproducir si es un bug." maxlength="3000" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:Inter,sans-serif;resize:vertical;line-height:1.5;"></textarea></div>';
+    s+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">';
+    s+='<button id="sop-btn" onclick="_enviarSoporte()" style="background:var(--accent);color:#fff;border:none;padding:11px 26px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;font-family:Inter,sans-serif;">Enviar mensaje</button>';
+    s+='<span id="sop-status" style="font-size:12px;color:var(--muted);"></span>';
+    s+='</div></div>';
+    s+='<p style="font-size:11px;color:var(--muted);margin-top:14px;text-align:center;">Te responderemos al email con el que te registraste ('+(ME&&ME.email?escH(ME.email):'tu cuenta')+').</p>';
+    s+=_cfgShellClose();
+    dp.innerHTML=s;
+    return;
+  }
+
+  // ─── Tab TU OPINIÓN ───
+  if(activeTab==='opinion'){
+    var s=_cfgShellOpen(activeTab);
+    s+='<p style="font-size:13px;color:var(--muted);margin-bottom:22px;">¿Qué te gusta? ¿Qué le falta? ¿Qué cambiarías? Tu feedback ayuda a que Pathway sea mejor.</p>';
+    s+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px;">';
+    s+='<div style="margin-bottom:18px;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">¿Qué tan satisfecho/a estás con Pathway?</label>';
+    s+='<div id="op-stars" style="display:flex;gap:6px;font-size:30px;color:#ddd;cursor:pointer;line-height:1;">';
+    for(var i=1;i<=5;i++){
+      s+='<span data-val="'+i+'" onclick="_setOpinionStar('+i+')" onmouseover="_hoverOpinionStar('+i+')" onmouseout="_hoverOpinionStar(0)" style="transition:transform .1s;">★</span>';
+    }
+    s+='</div><input type="hidden" id="op-rating" value="0"></div>';
+    s+='<div style="margin-bottom:14px;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Categoría</label>';
+    s+='<select id="op-categoria" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:Inter,sans-serif;background:#fff;">';
+    s+='<option value="sugerencia">Sugerencia de mejora</option>';
+    s+='<option value="feature">Pedido de feature</option>';
+    s+='<option value="bug">Algo que no anda bien</option>';
+    s+='<option value="elogio">Algo que me gusta</option>';
+    s+='<option value="otro">Otro</option>';
+    s+='</select></div>';
+    s+='<div style="margin-bottom:14px;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Comentario</label>';
+    s+='<textarea id="op-comentario" rows="5" placeholder="Contanos qué pensás..." maxlength="3000" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:Inter,sans-serif;resize:vertical;line-height:1.5;"></textarea></div>';
+    s+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">';
+    s+='<button id="op-btn" onclick="_enviarOpinion()" style="background:var(--accent);color:#fff;border:none;padding:11px 26px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;font-family:Inter,sans-serif;">Enviar opinión</button>';
+    s+='<span id="op-status" style="font-size:12px;color:var(--muted);"></span>';
+    s+='</div></div>';
+    s+='<p style="font-size:11px;color:var(--muted);margin-top:14px;text-align:center;">Tu opinión es anónima — solo guardamos tu email para responderte si querés que lo hagamos.</p>';
+    s+=_cfgShellClose();
+    dp.innerHTML=s;
+    return;
+  }
+
+  // ─── Tab GENERAL (default) — necesita fetch ───
+  dp.innerHTML=_cfgShellOpen(activeTab)+'<div style="text-align:center;padding:3rem;color:var(--muted);">Cargando configuración...</div>'+_cfgShellClose();
 
   var email=ME&&ME.email?ME.email:'';
-  if(!email){dp.innerHTML='<div style="padding:2rem;color:#c0756e;">Sin sesión activa.</div>';return;}
+  if(!email){dp.innerHTML=_cfgShellOpen(activeTab)+'<div style="padding:2rem;color:#c0756e;">Sin sesión activa.</div>'+_cfgShellClose();return;}
 
   // Usamos id si está disponible (más robusto que email — evita problemas de case/casing)
   var filter=ME.id?'id=eq.'+encodeURIComponent(ME.id):'email=eq.'+encodeURIComponent(email.toLowerCase());
@@ -5965,9 +6043,7 @@ function _renderConfig(){
 
     var palette=[['#8C7B80','Rosa'],['#2D6A4F','Verde bosque'],['#3D5A80','Azul'],['#C27B7B','Terracota'],['#D4A853','Dorado'],['#7B8C8A','Gris']];
 
-    var h='<div style="padding:28px 32px 48px;max-width:760px;">';
-    h+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:28px;font-weight:500;color:var(--title);letter-spacing:-.8px;margin-bottom:6px;">Configuración</h2>';
-    h+='<p style="font-size:13px;color:var(--muted);margin-bottom:28px;">Todo lo tuyo — foto, color de marca, links de pago, agenda.</p>';
+    var h=_cfgShellOpen(activeTab);
 
     // PERFIL
     h+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:14px;">';
@@ -6061,12 +6137,99 @@ function _renderConfig(){
     h+='<button onclick="_saveConfig()" style="background:var(--accent);color:#fff;border:none;padding:12px 28px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;font-family:Inter,sans-serif;">Guardar cambios</button>';
     h+='<span id="cfg-status" style="font-size:12px;color:var(--muted);"></span>';
     h+='</div>';
-    h+='</div>';
+    h+=_cfgShellClose();
     dp.innerHTML=h;
   }).catch(function(err){
-    dp.innerHTML='<div style="padding:2rem;color:#c0756e;">Error cargando configuración: '+err.message+'</div>';
+    dp.innerHTML=_cfgShellOpen(activeTab)+'<div style="padding:2rem;color:#c0756e;">Error cargando configuración: '+err.message+'</div>'+_cfgShellClose();
   });
 }
+
+// Handlers de Soporte y Tu opinión (tabs dentro de Configuración).
+// Envían email a hi@pathwaycareercoach.com via EmailJS con tag de plan.
+window._enviarSoporte=function(){
+  var asunto=((document.getElementById('sop-asunto')||{}).value||'').trim();
+  var mensaje=((document.getElementById('sop-mensaje')||{}).value||'').trim();
+  var st=document.getElementById('sop-status');
+  var btn=document.getElementById('sop-btn');
+  if(!asunto||!mensaje){if(st){st.textContent='Asunto y mensaje obligatorios.';st.style.color='#C0756E';}return;}
+  if(mensaje.length<10){if(st){st.textContent='Detallá un poco más el problema (mín 10 chars).';st.style.color='#C0756E';}return;}
+  if(btn){btn.disabled=true;btn.style.opacity='.7';}
+  if(st){st.textContent='Enviando...';st.style.color='var(--muted)';}
+  var coachEmail=(ME&&ME.email)||'desconocido';
+  var coachNombre=(ME&&ME.nombre)||'Coach';
+  var plan=(typeof getPlan==='function'?getPlan():'basic').toUpperCase();
+  var bodyTexto='SOPORTE · Plan '+plan+'\n\n'
+    +'Coach: '+coachNombre+' <'+coachEmail+'>\n'
+    +'Fecha: '+new Date().toLocaleString('es-ES')+'\n'
+    +'Asunto: '+asunto+'\n\n'
+    +'Mensaje:\n'+mensaje;
+  emailjs.send('Coach','template_7f00mbl',{
+    to_email:'hi@pathwaycareercoach.com',
+    name:'Pathway Soporte',
+    subject:'[SOPORTE '+plan+'] '+asunto,
+    message:bodyTexto.replace(/\n/g,'<br>'),
+    reply_to:coachEmail
+  }).then(function(){
+    if(st){st.textContent='✓ Mensaje enviado. Te respondemos al email.';st.style.color='#2D6A4F';}
+    var a=document.getElementById('sop-asunto');if(a)a.value='';
+    var m=document.getElementById('sop-mensaje');if(m)m.value='';
+    if(btn){btn.disabled=false;btn.style.opacity='1';}
+    setTimeout(function(){if(st)st.textContent='';},6000);
+  }).catch(function(err){
+    if(st){st.textContent='Error enviando. Intentá de nuevo en un rato.';st.style.color='#C0756E';}
+    if(btn){btn.disabled=false;btn.style.opacity='1';}
+  });
+};
+window._setOpinionStar=function(n){
+  var r=document.getElementById('op-rating');if(r)r.value=n;
+  var spans=document.querySelectorAll('#op-stars span');
+  spans.forEach(function(s,idx){s.style.color=(idx<n)?'#E9C46A':'#ddd';});
+};
+window._hoverOpinionStar=function(n){
+  var spans=document.querySelectorAll('#op-stars span');
+  var current=parseInt((document.getElementById('op-rating')||{}).value||'0',10);
+  spans.forEach(function(s,idx){
+    if(n>0)s.style.color=(idx<n)?'#E9C46A':'#ddd';
+    else s.style.color=(idx<current)?'#E9C46A':'#ddd';
+  });
+};
+window._enviarOpinion=function(){
+  var rating=parseInt((document.getElementById('op-rating')||{}).value||'0',10);
+  var categoria=((document.getElementById('op-categoria')||{}).value||'sugerencia');
+  var comentario=((document.getElementById('op-comentario')||{}).value||'').trim();
+  var st=document.getElementById('op-status');
+  var btn=document.getElementById('op-btn');
+  if(!comentario){if(st){st.textContent='Escribí un comentario.';st.style.color='#C0756E';}return;}
+  if(comentario.length<5){if(st){st.textContent='Mínimo 5 caracteres.';st.style.color='#C0756E';}return;}
+  if(btn){btn.disabled=true;btn.style.opacity='.7';}
+  if(st){st.textContent='Enviando...';st.style.color='var(--muted)';}
+  var coachEmail=(ME&&ME.email)||'desconocido';
+  var coachNombre=(ME&&ME.nombre)||'Coach';
+  var plan=(typeof getPlan==='function'?getPlan():'basic').toUpperCase();
+  var stars=rating>0?('★'.repeat(rating)+'☆'.repeat(5-rating)+' ('+rating+'/5)'):'(sin rating)';
+  var bodyTexto='FEEDBACK · Plan '+plan+'\n\n'
+    +'Coach: '+coachNombre+' <'+coachEmail+'>\n'
+    +'Fecha: '+new Date().toLocaleString('es-ES')+'\n'
+    +'Rating: '+stars+'\n'
+    +'Categoría: '+categoria+'\n\n'
+    +'Comentario:\n'+comentario;
+  emailjs.send('Coach','template_7f00mbl',{
+    to_email:'hi@pathwaycareercoach.com',
+    name:'Pathway Feedback',
+    subject:'[FEEDBACK '+plan+' '+categoria+'] '+(rating?rating+'★ ':'')+coachNombre,
+    message:bodyTexto.replace(/\n/g,'<br>'),
+    reply_to:coachEmail
+  }).then(function(){
+    if(st){st.textContent='✓ ¡Gracias por tu opinión!';st.style.color='#2D6A4F';}
+    var c=document.getElementById('op-comentario');if(c)c.value='';
+    if(typeof _setOpinionStar==='function')_setOpinionStar(0);
+    if(btn){btn.disabled=false;btn.style.opacity='1';}
+    setTimeout(function(){if(st)st.textContent='';},6000);
+  }).catch(function(err){
+    if(st){st.textContent='Error enviando. Intentá de nuevo.';st.style.color='#C0756E';}
+    if(btn){btn.disabled=false;btn.style.opacity='1';}
+  });
+};
 
 // ── WEB ANALYTICS (admin only) ──────────────────────────────
 // Tabs: Contexto (config), Pathway, Micaela
