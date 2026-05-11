@@ -55,8 +55,8 @@ test.describe('Cliente — Navegación de secciones', () => {
 
     await loginAsClient(page);
 
-    // Buscar botón o tab de Documentos (bottom nav o sidebar)
-    const docsBtn = page.locator('[onclick*="docs"], [onclick*="Docs"], [data-sec="docs"]').first();
+    // Sidebar nav uses .ni buttons with goSec('docs',this)
+    const docsBtn = page.locator('button.ni', { hasText: /Doc/i }).first();
     if (await docsBtn.count() > 0) {
       await docsBtn.click();
       await page.waitForTimeout(2000);
@@ -75,7 +75,7 @@ test.describe('Cliente — Navegación de secciones', () => {
 
     await loginAsClient(page);
 
-    const empleosBtn = page.locator('[onclick*="empleo"], [onclick*="Empleo"], [data-sec="empleos"]').first();
+    const empleosBtn = page.locator('button.ni', { hasText: /Empleo/i }).first();
     if (await empleosBtn.count() > 0) {
       await empleosBtn.click();
       await page.waitForTimeout(2000);
@@ -94,7 +94,7 @@ test.describe('Cliente — Navegación de secciones', () => {
 
     await loginAsClient(page);
 
-    const recursosBtn = page.locator('[onclick*="recurso"], [onclick*="Recurso"], [data-sec="recursos"]').first();
+    const recursosBtn = page.locator('button.ni', { hasText: /Recurso/i }).first();
     if (await recursosBtn.count() > 0) {
       await recursosBtn.click();
       await page.waitForTimeout(2000);
@@ -117,8 +117,8 @@ test.describe('Cliente — Acciones interactivas', () => {
 
     await loginAsClient(page);
 
-    // Navegar por las secciones del bottom nav (si existe)
-    const navButtons = page.locator('.bnav button, .bottom-nav button, nav button');
+    // Navegar por las secciones del sidebar nav (.ni) o bottom nav (.bnav-item)
+    const navButtons = page.locator('button.ni, button.bnav-item');
     const navCount = await navButtons.count();
 
     for (let i = 0; i < Math.min(navCount, 5); i++) {
