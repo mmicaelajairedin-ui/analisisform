@@ -19,27 +19,52 @@
 
   var EDIT={ servicios:[], videos:[], links:[] };
 
+  // Cada llamada a _renderConfig incrementa _seq. El poll y el fetch
+  // chequean su mySeq vs _seq actual — si el coach cambio de tab o
+  // re-cliqueo en General mientras este fetch estaba en vuelo, descartamos
+  // este inject para que no se acumulen duplicados (era el bug de los 3x
+  // "Perfil publico" / "Servicios, links y videos").
+  var _seq=0;
+  var _activePoll=null;
+
   window._renderConfig = function(){
     origRender.apply(this, arguments);
+    if(_activePoll){clearInterval(_activePoll);_activePoll=null;}
+    var mySeq=++_seq;
     var tries=0;
-    var poll=setInterval(function(){
+    _activePoll=setInterval(function(){
       tries++;
+      if(mySeq!==_seq){clearInterval(_activePoll);_activePoll=null;return;}
       var bio=$('cfg-bio');
-      if(bio){clearInterval(poll);injectAll(bio);}
-      else if(tries>60){clearInterval(poll);}
+      if(bio){clearInterval(_activePoll);_activePoll=null;injectAll(bio,mySeq);}
+      else if(tries>60){clearInterval(_activePoll);_activePoll=null;}
     },100);
   };
 
-  function injectAll(bioEl){
-    if($('pp-card'))return;
+  function injectAll(bioEl,mySeq){
     var ME=window.ME||{};
     if(!ME.id)return;
-    var perfilCard=bioEl.closest('div[style*="background:#fff"]');
-    var anchor=perfilCard&&perfilCard.parentNode?perfilCard:null;
 
     fetch(SB_URL+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(ME.id)+'&select=slug,titulo_profesional,tagline,mi_enfoque,especialidades,atiende,anios_experiencia,perfil_publico_activo,configuracion&limit=1',{
       headers:{apikey:SB_ANON,Authorization:'Bearer '+SB_ANON}
     }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+      // Si despues de iniciar el fetch hubo otra llamada a _renderConfig
+      // (otro tab, otro click), descartar este resultado.
+      if(mySeq!==_seq)return;
+
+      // Limpiar cards stale antes de insertar — defensa en profundidad
+      // contra cualquier otra carrera que haya dejado sobrantes.
+      var prev1=document.getElementById('pp-card');if(prev1)prev1.remove();
+      var prev2=document.getElementById('pp-mkt-card');if(prev2)prev2.remove();
+
+      // Re-resolver el anchor en el DOM actual (el render puede haber
+      // reescrito #dynamic-panel entre que arrancamos el fetch y resolvio).
+      var bioNow=$('cfg-bio');
+      if(!bioNow)return;
+      var perfilCard=bioNow.closest('div[style*="background:#fff"]');
+      var anchor=perfilCard&&perfilCard.parentNode?perfilCard:null;
+      if(!anchor)return;
+
       var c=(rows&&rows[0])||{};
       var cfg=c.configuracion||{};
       EDIT.servicios=Array.isArray(cfg.servicios)?cfg.servicios.slice():[];
@@ -48,10 +73,8 @@
 
       var card1=buildPerfilCard(c);
       var card2=buildMarketplaceCard();
-      if(anchor&&anchor.parentNode){
-        anchor.parentNode.insertBefore(card1,anchor.nextSibling);
-        card1.parentNode.insertBefore(card2,card1.nextSibling);
-      }
+      anchor.parentNode.insertBefore(card1,anchor.nextSibling);
+      card1.parentNode.insertBefore(card2,card1.nextSibling);
       wireCard1();wireCard2();
     }).catch(function(){});
   }
