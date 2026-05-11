@@ -290,10 +290,19 @@ async function handleCoachSubscription(
   };
   const estado_sub = statusMap[sub.status] || "prueba";
 
-  // Detectar plan por intervalo de facturación
+  // Detectar plan por monto del Payment Link:
+  //   €58/mes (5800 cents) → "basic"
+  //   €89/mes (8900 cents) → "pro"
+  // Fallback legacy (Payment Links viejos sin precios estandar): mes=basic, año=pro.
   const item = sub.items?.data?.[0];
-  const interval = item?.price?.recurring?.interval || "month";
-  const plan = interval === "year" ? "pro" : "starter";
+  const unitAmount = item?.price?.unit_amount || 0;
+  let plan: "basic" | "pro";
+  if (unitAmount === 8900) plan = "pro";
+  else if (unitAmount === 5800) plan = "basic";
+  else {
+    const interval = item?.price?.recurring?.interval || "month";
+    plan = interval === "year" ? "pro" : "basic";
+  }
 
   // Fecha fin de prueba / próxima renovación
   const trialEndISO = sub.trial_end
@@ -311,14 +320,19 @@ async function handleCoachSubscription(
   const users = userRes.ok ? await userRes.json() : [];
   const existingCfg = (users && users[0] && users[0].configuracion) || {};
 
+  // Si el coach tiene es_pro_vitalicio=true (admin / demo coach whitelisteado),
+  // NO sobreescribimos plan/activo/estado_sub aunque Stripe mande un cancel.
+  // Solo guardamos los IDs de Stripe por si los necesitamos.
+  const isVitalicio = existingCfg.es_pro_vitalicio === true;
+
   const newCfg = {
     ...existingCfg,
-    estado_sub,
-    plan,
+    estado_sub: isVitalicio ? "activa" : estado_sub,
+    plan: isVitalicio ? "pro" : plan,
     stripe_customer_id: sub.customer,
     stripe_subscription_id: sub.id,
-    fecha_fin_prueba: trialEndISO,
-    fecha_fin_periodo: periodEndISO,
+    fecha_fin_prueba: isVitalicio ? null : trialEndISO,
+    fecha_fin_periodo: isVitalicio ? null : periodEndISO,
   };
 
   // Paywall: flipear `activo` segun el status de la suscripcion. Esto controla
@@ -327,8 +341,9 @@ async function handleCoachSubscription(
   // - canceled/unpaid/incomplete_expired → activo=false (bloqueado en panel)
   // - incomplete (estado intermedio cuando recien se crea) → activo=true
   //   (le damos acceso optimista ya que estan en proceso de pagar)
+  // - es_pro_vitalicio=true → siempre activo, ignora el status de Stripe
   const activeStatuses = ["trialing", "active", "past_due", "incomplete"];
-  const shouldBeActive = activeStatuses.includes(sub.status);
+  const shouldBeActive = isVitalicio ? true : activeStatuses.includes(sub.status);
 
   const patchBody: Record<string, unknown> = {
     configuracion: newCfg,
