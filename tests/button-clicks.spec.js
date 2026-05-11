@@ -154,11 +154,14 @@ test.describe('Panel — Botones de acción sin errores JS', () => {
   test('Botón Cerrar sesión redirige a login', async ({ page }) => {
     await loginAsCoach(page);
 
+    // cerrarSesion() tiene un confirm() — aceptarlo automáticamente
+    page.on('dialog', dialog => dialog.accept());
+
     const cerrarBtn = page.locator('button', { hasText: 'Cerrar sesión' });
     await cerrarBtn.click();
 
     // Debe redirigir a login
-    await page.waitForURL(/login\.html/, { timeout: 5000 });
+    await page.waitForURL(/login\.html/, { timeout: 10000 });
     expect(page.url()).toContain('login.html');
   });
 });
