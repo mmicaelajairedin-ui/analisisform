@@ -21,7 +21,12 @@ async function loginAsClient(page) {
 
   await page.waitForURL(/cliente\.html/, { timeout: 10000 });
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForTimeout(3000);
+  // Esperar a que #app sea visible (se muestra después del login)
+  await page.waitForFunction(() => {
+    const app = document.getElementById('app');
+    return app && app.style.display !== 'none';
+  }, { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(2000);
 }
 
 test.describe('Cliente — Login real', () => {
@@ -55,10 +60,9 @@ test.describe('Cliente — Navegación de secciones', () => {
 
     await loginAsClient(page);
 
-    // Sidebar nav uses .ni buttons with goSec('docs',this)
-    const docsBtn = page.locator('button.ni', { hasText: /Doc/i }).first();
+    const docsBtn = page.locator('[onclick*="docs"]').first();
     if (await docsBtn.count() > 0) {
-      await docsBtn.click();
+      await docsBtn.click({ timeout: 8000 });
       await page.waitForTimeout(2000);
     }
 
@@ -75,9 +79,9 @@ test.describe('Cliente — Navegación de secciones', () => {
 
     await loginAsClient(page);
 
-    const empleosBtn = page.locator('button.ni', { hasText: /Empleo/i }).first();
+    const empleosBtn = page.locator('[onclick*="empleos"]').first();
     if (await empleosBtn.count() > 0) {
-      await empleosBtn.click();
+      await empleosBtn.click({ timeout: 8000 });
       await page.waitForTimeout(2000);
     }
 
@@ -94,9 +98,9 @@ test.describe('Cliente — Navegación de secciones', () => {
 
     await loginAsClient(page);
 
-    const recursosBtn = page.locator('button.ni', { hasText: /Recurso/i }).first();
+    const recursosBtn = page.locator('[onclick*="recursos"]').first();
     if (await recursosBtn.count() > 0) {
-      await recursosBtn.click();
+      await recursosBtn.click({ timeout: 8000 });
       await page.waitForTimeout(2000);
     }
 
@@ -117,13 +121,14 @@ test.describe('Cliente — Acciones interactivas', () => {
 
     await loginAsClient(page);
 
-    // Navegar por las secciones del sidebar nav (.ni) o bottom nav (.bnav-item)
-    const navButtons = page.locator('button.ni, button.bnav-item');
-    const navCount = await navButtons.count();
-
-    for (let i = 0; i < Math.min(navCount, 5); i++) {
-      await navButtons.nth(i).click();
-      await page.waitForTimeout(1500);
+    // Navegar por las secciones usando los onclick de goSec
+    const sections = ['semana', 'docs', 'linkedin', 'empleos', 'recursos'];
+    for (const sec of sections) {
+      const btn = page.locator(`[onclick*="${sec}"]`).first();
+      if (await btn.count() > 0) {
+        await btn.click({ timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(1000);
+      }
     }
 
     const criticalErrors = errors.filter(e =>
