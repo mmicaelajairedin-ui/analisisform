@@ -6855,13 +6855,26 @@ function _renderAdmin(){
     html+='</div>';
     html+='</div>';
 
+    // Helper: cuenta candidatos de un coach. Para admin incluye huerfanos
+    // (coach_id IS NULL) — mismo criterio que el filtro de la lista de
+    // candidatos en panel.html (admin ve los suyos + huerfanos). Sin esto,
+    // el admin aparecia con "0 candidatos" en esta vista aunque tuviera
+    // clientes huerfanos creados antes de que existiera el campo coach_id.
+    function _countCoachCands(c){
+      return candidatos.filter(function(ca){
+        if(ca.coach_id===c.id) return true;
+        if(c.rol==='admin' && !ca.coach_id) return true;
+        return false;
+      });
+    }
+
     // TRIAL VENCIENDO + COACHES ZOMBIES
     var now=Date.now();
     var trialEndingSoon=[],zombies=[],newCoaches7d=[];
     coaches.forEach(function(c){
       var cfg=c.configuracion||{};
       var estado=cfg.estado_sub||'prueba';
-      var coachCands=candidatos.filter(function(ca){return ca.coach_id===c.id;}).length;
+      var coachCands=_countCoachCands(c).length;
       // Trial venciendo si tiene fecha_fin_prueba en próximos 3 días
       if(estado==='prueba'&&cfg.fecha_fin_prueba){
         var endTs=new Date(cfg.fecha_fin_prueba).getTime();
@@ -6910,7 +6923,7 @@ function _renderAdmin(){
 
     // TOP COACHES (por cantidad de clientes)
     var coachesConStats=coaches.map(function(c){
-      var coachCands=candidatos.filter(function(ca){return ca.coach_id===c.id;});
+      var coachCands=_countCoachCands(c);
       var active=coachCands.filter(function(ca){return ca.activo!==false;}).length;
       return {c:c,total:coachCands.length,active:active};
     }).filter(function(x){return x.total>0;}).sort(function(a,b){return b.total-a.total;});
@@ -6951,8 +6964,8 @@ function _renderAdmin(){
         var estadoBg={prueba:'rgba(233,196,106,.15)',activa:'rgba(82,183,136,.15)',cancelada:'rgba(196,117,110,.15)',vencida:'rgba(196,117,110,.15)'}[estado];
         var estadoFg={prueba:'#8C7B20',activa:'#2D6A4F',cancelada:'#C0756E',vencida:'#C0756E'}[estado];
         var ini2=(c.nombre||'?').split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();
-        // Contar candidatos de este coach
-        var coachCands=candidatos.filter(function(ca){return ca.coach_id===c.id;}).length;
+        // Contar candidatos de este coach (admin incluye huerfanos via helper)
+        var coachCands=_countCoachCands(c).length;
         html+='<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;">';
         html+='<div style="width:34px;height:34px;border-radius:50%;background:rgba(45,106,79,.1);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">'+ini2+'</div>';
         html+='<div style="flex:1;min-width:0;">';
