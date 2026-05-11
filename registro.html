@@ -120,7 +120,7 @@ body{font-family:var(--pw-sans);background:var(--pw-niebla);color:var(--pw-texto
 <!-- FORM CARD -->
 <div class="card">
   <div class="card-title">Creá tu cuenta de coach<span style="color:#52B788">.</span></div>
-  <div class="card-sub">Empezá tu trial de 14 días gratis. <strong>No cobramos hasta el día 14.</strong></div>
+  <div class="card-sub">Empezá tu trial de 14 días gratis. <strong>Sin tarjeta. Sin compromiso.</strong></div>
 
   <!-- Google Sign-up: opcion mas rapida (un click, sin contraseña) -->
   <button type="button" id="btn-google" onclick="signInWithGoogle()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:13px 16px;background:#fff;color:#3C4043;border:1.5px solid #DADCE0;border-radius:10px;font-size:14px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;transition:all .15s;margin-top:18px;margin-bottom:14px;" onmouseover="this.style.background='#F8F9FA';this.style.boxShadow='0 1px 6px rgba(0,0,0,.08)';" onmouseout="this.style.background='#fff';this.style.boxShadow='none';">
@@ -178,7 +178,7 @@ body{font-family:var(--pw-sans);background:var(--pw-niebla);color:var(--pw-texto
   </div>
 
   <button class="btn-submit" id="btn-submit" onclick="registrar()">Empezar mi trial de 14 días</button>
-  <div class="trial-note"><strong>Te pedimos la tarjeta</strong> para activar la suscripción, pero no cobramos hasta el día 14. Si cancelás antes, no se cobra nada.</div>
+  <div class="trial-note"><strong>Sin tarjeta para empezar.</strong> Si al cumplirse los 14 días querés seguir, te pasamos al checkout de Stripe.</div>
   <div class="error-msg" id="error-msg"></div>
   <div class="success-msg" id="success-msg" style="display:none;"></div>
   <div class="loading" id="loading">
@@ -209,7 +209,7 @@ var STRIPE_LINK_PRO_14D='https://buy.stripe.com/4gM9AT0E82py42U0f98AE0b';    // 
 var STRIPE_LINK_14D=STRIPE_LINK_BASIC_14D;
 var STRIPE_LINK_30D=STRIPE_LINK_BASIC_30D;
 
-// ── Google Sign-in ─────────────────────────────────────────
+// ── Google Sign-in ──────────────────────────────
 // Cuando el usuario clickea "Continuar con Google", lo redirige a Google OAuth.
 // Despues, Google → Supabase → /auth-callback.html?source=registro&ref=<popup|>
 // auth-callback.html sincroniza con la tabla usuarios y redirige a Stripe.
@@ -395,11 +395,12 @@ async function registrar(){
       password_hash: hash,
       rol: 'coach',
       nombre: nombre,
-      // activo=false: el coach NO puede acceder al panel hasta que pague.
-      // El webhook de Stripe (handleCoachSubscription) lo flipea a true cuando
-      // confirma la suscripcion (status trialing/active). Sin esto, cualquiera
-      // se podia registrar y entrar al panel sin pagar.
-      activo: false,
+      // activo=true desde el registro: trial sin tarjeta. La coach entra al
+      // panel directo y usa los 14 dias gratis. Cuando vence fecha_fin_prueba
+      // sin haberse suscripto, panel.html muestra un paywall full-screen.
+      // El webhook de Stripe sigue flipeando activo (cancel/unpaid) cuando
+      // hay suscripcion, pero ya no es lo que gatilla el bloqueo al inicio.
+      activo: true,
       nombre_practica: nombre_practica || nombre,
       bio: bio || null,
       foto_url: photoDataUrl || null,
@@ -448,7 +449,7 @@ async function registrar(){
         html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">¡Nuevo coach en Pathway!</h2>'
           + '<p><strong>Nombre:</strong> ' + nombre + '</p>'
           + '<p><strong>Email:</strong> ' + email + '</p>'
-          + '<p><strong>Estado:</strong> Trial 14 días gratis (con tarjeta, cobro automático día 14)</p>'
+          + '<p><strong>Estado:</strong> Trial 14 días gratis (sin tarjeta; se ofrece Stripe al final del trial)</p>'
           + (nombre_practica ? '<p><strong>Práctica:</strong> ' + nombre_practica + '</p>' : '')
           + (bio ? '<p><strong>Bio:</strong> ' + bio.slice(0, 200) + '</p>' : '')
           + (refCoachId?'<p style="padding:10px 14px;background:rgba(233,196,106,.18);border-left:3px solid #E9C46A;border-radius:6px;"><strong>🎁 Referido por:</strong> coach_id ' + refCoachId + '<br>Acordate de darle 1 mes gratis cuando este pague.</p>':'')
@@ -482,8 +483,8 @@ async function registrar(){
     }
 
     // Email de bienvenida al coach — alineado con el flow "trial sin tarjeta".
-    // Antes mencionaba 'Completá el pago para activar', pero ya no requerimos
-    // pago al inicio. El cobro se ofrece cerca del fin del trial.
+    // No pedimos tarjeta al inicio: la coach usa los 14 dias gratis sin
+    // compromiso. Si quiere seguir, se suscribe en Stripe al final del trial.
     fetch(SB + '/functions/v1/send-email', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -492,7 +493,7 @@ async function registrar(){
         to_name: nombre,
         subject: '¡Bienvenida a Pathway! Tu trial de 14 días empezó 🌱',
         html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + (nombre.split(' ')[0] || nombre) + ',</h2>'
-          + '<p style="font-size:15px;line-height:1.65;">Bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis</strong>. No cobramos hasta el día 14 — si cancelás antes, no se cobra nada.</p>'
+          + '<p style="font-size:15px;line-height:1.65;">Bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis</strong>. No te pedimos tarjeta — si al final no querés seguir, simplemente no hacés nada.</p>'
           + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Ir a mi panel →</a></p>'
           + '<h3 style="color:#2D6A4F;margin-top:32px;font-family:Fraunces,Georgia,serif;font-weight:500;">Empezá en 4 pasos:</h3>'
           + '<ol style="padding-left:20px;line-height:1.9;font-size:14px;">'
@@ -529,20 +530,20 @@ async function registrar(){
         plantilla: 'trial_day_13',
         subject: 'Tu trial de Pathway termina mañana ⏰',
         body: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">' + primerNombre + ', tu trial termina en 24h</h2>'
-          + '<p style="font-size:15px;line-height:1.65;">Si Pathway te está sirviendo, mañana se activa tu suscripción automáticamente:</p>'
+          + '<p style="font-size:15px;line-height:1.65;">Si Pathway te está sirviendo, dejá tu suscripción lista para no perder acceso al panel mañana:</p>'
           + '<p style="margin:18px 0;font-size:14px;line-height:1.7;"><strong>€58/mes</strong> — candidatos ilimitados<br>Cancelás cuando quieras desde tu panel, sin permanencia.</p>'
-          + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
-          + '<p style="font-size:13px;color:#666;margin-top:24px;">Si no querés seguir, cancelá antes de mañana desde tu panel y no se cobra nada.</p>'
+          + '<p style="margin-top:20px;"><a href="https://buy.stripe.com/fZu6oH86A4xG42U7HB8AE07?prefilled_email=' + encodeURIComponent(email) + '" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Suscribirme →</a></p>'
+          + '<p style="font-size:13px;color:#666;margin-top:24px;">Si no querés seguir, no hacés nada — el acceso se cierra mañana y no se cobra nada (nunca cargaste tarjeta).</p>'
       },
       {
         days: 14,
         plantilla: 'trial_day_14',
-        subject: 'Tu suscripción a Pathway está activa 🌱',
-        body: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">' + primerNombre + ', tu suscripción está activa</h2>'
-          + '<p style="font-size:15px;line-height:1.65;">Tu trial terminó y se activó tu plan de €58/mes. Seguí usando la plataforma con tus clientes sin perder data.</p>'
-          + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
-          + '<p style="font-size:13px;color:#666;margin-top:24px;line-height:1.6;">Si decidís cancelar más adelante, lo hacés desde tu panel sin permanencia. Mantenés acceso hasta el final del período pagado.</p>'
-          + '<p style="font-size:13px;color:#666;margin-top:14px;">¿Algún feedback? Respondé este mail — me ayuda muchísimo a mejorar.</p>'
+        subject: 'Tu trial de Pathway terminó — guardá tu acceso 🌱',
+        body: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">' + primerNombre + ', tu trial terminó</h2>'
+          + '<p style="font-size:15px;line-height:1.65;">Hoy se cumplen los 14 días. Si querés mantener tu cuenta activa (con todos tus clientes, informes y configuración), activá tu suscripción acá:</p>'
+          + '<p style="margin-top:20px;"><a href="https://buy.stripe.com/fZu6oH86A4xG42U7HB8AE07?prefilled_email=' + encodeURIComponent(email) + '" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Suscribirme — €58/mes →</a></p>'
+          + '<p style="font-size:13px;color:#666;margin-top:24px;line-height:1.6;">Sin permanencia, cancelás cuando quieras. Tu data sigue acá si activás más adelante.</p>'
+          + '<p style="font-size:13px;color:#666;margin-top:14px;">¿Algún feedback de estos 14 días? Respondé este mail — me ayuda muchísimo a mejorar.</p>'
       }
     ];
     var nowMs = Date.now();
@@ -557,6 +558,27 @@ async function registrar(){
         plantilla_id: e.plantilla
       };
     });
+    // ── RECOVERY MAIL +5min ──
+    // Mail extra a los 5 minutos del registro. La idea: si la coach se
+    // registro pero no llego a entrar al panel (se distrajo, problema de
+    // browser, etc), recibe un mail calido ofreciendo ayuda. Cuando entra
+    // al panel por primera vez, panel.html DELETE este row del email_queue
+    // para no enviarlo. Asi solo lo reciben las que efectivamente no
+    // llegaron a usar la plataforma.
+    queueInserts.push({
+      coach_id: coach.id,
+      to_email: email,
+      to_nombre: nombre,
+      subject: '¿Te puedo ayudar a empezar, ' + primerNombre + '? 🌱',
+      body: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + primerNombre + ',</h2>'
+        + '<p style="font-size:15px;line-height:1.65;">Me llamo Micaela, soy fundadora de Pathway. Vi que te registraste hace unos minutos pero no llegaste a entrar al panel — supuse que quizás te quedó alguna duda o se te complicó.</p>'
+        + '<p style="font-size:15px;line-height:1.65;">Recordá que tu trial de 14 días <strong>ya está activo</strong> y <strong>no te pedimos tarjeta</strong> para empezar. Podés entrar directo acá:</p>'
+        + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/login.html" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Entrar al panel →</a></p>'
+        + '<p style="font-size:14px;line-height:1.65;margin-top:24px;">Si preferís que charlemos 15 minutos antes (te muestro cómo configurar tu primer cliente y generar un informe), agendá acá: <a href="https://calendly.com/mmicaela-jairedin" style="color:#2D6A4F;font-weight:600;">Reservar llamada</a>.</p>'
+        + '<p style="font-size:13px;color:#666;margin-top:18px;">Cualquier duda, respondé este mail. — Mica</p>',
+      scheduled_at: new Date(nowMs + 5 * 60 * 1000).toISOString(),
+      plantilla_id: 'recovery_5min'
+    });
     fetch(SB + '/rest/v1/email_queue', {
       method: 'POST',
       headers: {
@@ -570,31 +592,17 @@ async function registrar(){
       console.warn('[trial-emails] no se pudieron programar');
     });
 
-    // Éxito — redirigir directo al panel (no a Stripe). El plan se elige
-    // al final del trial vía banner en el panel + email automatizado.
+    // Éxito — trial sin tarjeta. La coach va DIRECTO al panel y usa los 14
+    // dias gratis. Cuando vence fecha_fin_prueba sin suscripcion, panel.html
+    // muestra un paywall full-screen con CTA al Stripe Payment Link.
     loading.style.display = 'none';
-    showSuccess('¡Cuenta creada! Te llevamos a Stripe para activar tu trial...');
+    var primerNombreOk = (nombre.split(' ')[0]) || nombre;
+    showSuccess('¡Bienvenida, ' + primerNombreOk + '! Te llevamos al panel...');
     btn.textContent = 'Listo';
 
-    // Cuenta creada. Ahora redirigimos a Stripe Payment Link para que carguen
-    // la tarjeta y activen el trial. Stripe pide la tarjeta pero NO cobra
-    // hasta el dia 14 (o 30 si vienen del popup con link extendido).
-    // Link elegido segun plan + bonus de popup:
-    //   - Pro (€89/mes) → STRIPE_LINK_PRO_14D (no hay variante 30d todavia)
-    //   - Basic (€58/mes) + popup → STRIPE_LINK_BASIC_30D
-    //   - Basic (€58/mes) sin popup → STRIPE_LINK_BASIC_14D
-    var stripeUrl;
-    if(planInicial === 'pro'){
-      stripeUrl = STRIPE_LINK_PRO_14D;
-    } else if(fromPopup){
-      stripeUrl = STRIPE_LINK_BASIC_30D;
-    } else {
-      stripeUrl = STRIPE_LINK_BASIC_14D;
-    }
-    // Stripe acepta prefilled_email para que el usuario no tenga que retipearlo
-    var stripeUrlWithEmail = stripeUrl + '?prefilled_email=' + encodeURIComponent(email);
+    var primerLogin = 'panel.html?welcome=1';
     setTimeout(function(){
-      window.location.href = stripeUrlWithEmail;
+      window.location.href = primerLogin;
     }, 1200);
 
   } catch(err) {
