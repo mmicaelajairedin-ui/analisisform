@@ -1645,6 +1645,42 @@ window.updateTrialBanner=function(){
   document.body.style.paddingTop='40px';
 };
 function showToast(msg){var t=document.createElement('div');t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;font-size:13px;font-weight:600;padding:11px 22px;border-radius:10px;z-index:99999;font-family:Inter,sans-serif;';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove();},3000);}
+
+// Toast persistente con acción "Enviar bienvenida". El coach manda desde su
+// propio cliente de correo (mailto: abre Gmail/Outlook/etc del coach) en vez
+// de usar EmailJS con la cuenta del admin de Pathway.
+function showWelcomeToast(nombreCliente,mailtoUrl){
+  var t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;font-size:13px;padding:14px 16px;border-radius:12px;z-index:99999;font-family:Inter,sans-serif;display:flex;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(0,0,0,.25);max-width:92vw;';
+
+  var msgEl=document.createElement('div');
+  msgEl.style.cssText='font-weight:600;line-height:1.4;';
+  msgEl.textContent='Cliente '+nombreCliente+' creado ✓';
+
+  var btn=document.createElement('a');
+  btn.href=mailtoUrl;
+  btn.textContent='📧 Enviar bienvenida';
+  btn.title='Abre tu cliente de correo con el mensaje listo — sale desde TU cuenta';
+  btn.style.cssText='background:#52B788;color:#1a1a1a;text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:12px;white-space:nowrap;transition:background .15s;';
+  btn.onmouseover=function(){btn.style.background='#74D196';};
+  btn.onmouseout=function(){btn.style.background='#52B788';};
+  btn.onclick=function(){setTimeout(function(){if(document.body.contains(t))t.remove();},500);};
+
+  var closeBtn=document.createElement('button');
+  closeBtn.textContent='×';
+  closeBtn.setAttribute('aria-label','Cerrar');
+  closeBtn.style.cssText='background:none;border:none;color:#999;font-size:22px;cursor:pointer;padding:0 4px;line-height:1;font-family:inherit;';
+  closeBtn.onclick=function(){t.remove();};
+
+  t.appendChild(msgEl);
+  t.appendChild(btn);
+  t.appendChild(closeBtn);
+  document.body.appendChild(t);
+
+  // Auto-dismiss después de 30s — más largo que showToast normal para dar
+  // tiempo a clickear "Enviar bienvenida".
+  setTimeout(function(){if(document.body.contains(t))t.remove();},30000);
+}
 function togglePanelSidebar(){var sb=document.querySelector('.sidebar');var ov=document.getElementById('mob-overlay');sb.classList.toggle('open');ov.classList.toggle('open');}
 function closePanelSidebar(){var sb=document.querySelector('.sidebar');var ov=document.getElementById('mob-overlay');if(sb)sb.classList.remove('open');if(ov)ov.classList.remove('open');}
 // En móvil, al clickear un item nav cerramos el sidebar automáticamente
@@ -4952,19 +4988,26 @@ function crearCliente(){
     crearUsuario
   ].filter(Boolean))
   .then(function(){
-    if(st){st.textContent='✓ Cliente creado'+(pass?' con acceso':'')+' — enviando bienvenida...';st.style.color='#5A8C6E';}
-    // Enviar email de bienvenida via EmailJS
+    if(st){st.textContent='✓ Cliente creado'+(pass?' con acceso':'');st.style.color='#5A8C6E';}
+    // Construir bienvenida con mailto: para que el coach la mande desde SU
+    // propia cuenta (Gmail, Outlook...). Antes usábamos emailjs.send con la
+    // cuenta de Pathway, pero eso hacía que TODOS los emails de bienvenida
+    // salieran desde la misma cuenta del owner del servicio EmailJS — no
+    // del coach que creó al cliente. Con mailto: cada coach manda con su
+    // foto, firma y branding propios.
     var clienteUrl='https://pathwaycareercoach.com/cliente.html';
     var primerNombre=nombre.split(' ')[0];
-    if(typeof emailjs!=='undefined'){
-      emailjs.send('Coach','template_7f00mbl',{
-        to_email:email,
-        name:primerNombre,
-        subject:'¡Bienvenida/o a tu proceso de búsqueda de empleo! 🚀',
-        message:'Hola '+primerNombre+',\n\nYa tienes acceso a tu portal. Ahí encontrarás todo lo que vamos trabajando juntos.\n\nEntra desde aquí:\n'+clienteUrl+'\n\nCualquier duda, escríbeme.\n\n'+(ME&&ME.nombre?ME.nombre.split(' ')[0]:'Tu coach'),
-        reply_to:(ME&&ME.email)||''
-      }).catch(function(){});
-    }
+    var coachNomShort=(ME&&ME.nombre?ME.nombre.split(' ')[0]:null)||'Tu coach';
+    var welcomeSubject='¡Bienvenida a tu proceso de búsqueda de empleo! 🚀';
+    var welcomeBody='Hola '+primerNombre+'!\n\n'
+      +'Ya tienes acceso a tu portal. Ahí encontrarás todo lo que vamos trabajando juntos: tu plan, tus acciones y tus documentos.\n\n'
+      +'Entra desde aquí:\n'+clienteUrl+'\n\n'
+      +'Tu usuario es tu email. Cualquier duda, escríbeme.\n\n'
+      +coachNomShort;
+    var mailtoUrl='mailto:'+encodeURIComponent(email)
+      +'?subject='+encodeURIComponent(welcomeSubject)
+      +'&body='+encodeURIComponent(welcomeBody);
+    showWelcomeToast(primerNombre,mailtoUrl);
     setTimeout(function(){
       cerrarModal('modal-crear');
       ['nc-nombre','nc-email','nc-pass'].forEach(function(id){
