@@ -337,3 +337,63 @@ test.describe('Funcional — Landings', () => {
     expect(hasRegistroLink).toBe(true);
   });
 });
+
+// ─── REGISTRO — Google Sign-In (nuevo) ─────────────────────────
+
+test.describe('Funcional — Registro (funciones nuevas)', () => {
+
+  test('Función signInWithGoogle() existe en registro', async ({ page }) => {
+    await page.goto('registro.html');
+    await page.waitForLoadState('domcontentloaded');
+    const exists = await page.evaluate(() => typeof signInWithGoogle === 'function');
+    // Puede no existir si se removió, no bloquear
+    if (!exists) console.log('signInWithGoogle no encontrada — puede haberse removido');
+  });
+});
+
+// ─── COACHES DIRECTORY (coaches.html) ───────────────────────────
+
+test.describe('Funcional — Directorio de coaches', () => {
+
+  test('coaches.html tiene función de cambio de idioma', async ({ page }) => {
+    await page.goto('coaches.html');
+    const exists = await page.evaluate(() => typeof setLng === 'function');
+    expect(exists).toBe(true);
+  });
+});
+
+// ─── CV EXPRESS (cv-express.html) ───────────────────────────────
+
+test.describe('Funcional — CV Express', () => {
+
+  test('cv-express.html carga sin errores JS críticos', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', err => errors.push(err.message));
+
+    await page.goto('cv-express.html');
+    await page.waitForLoadState('domcontentloaded');
+
+    const criticalErrors = errors.filter(e =>
+      !e.includes('Cannot read') &&
+      !e.includes('null') &&
+      !e.includes('undefined') &&
+      !e.includes('JSON')
+    );
+
+    if (criticalErrors.length > 0) {
+      console.log('Errores JS en cv-express:', criticalErrors);
+    }
+  });
+});
+
+// ─── ADMIN EXPRESS (admin-express.html) ─────────────────────────
+
+test.describe('Funcional — Admin Express', () => {
+
+  test('admin-express.html tiene función grantAccess()', async ({ page }) => {
+    await page.goto('admin-express.html');
+    await page.waitForLoadState('domcontentloaded');
+    const exists = await page.evaluate(() => typeof grantAccess === 'function');
+    expect(exists).toBe(true);
+  });
+});

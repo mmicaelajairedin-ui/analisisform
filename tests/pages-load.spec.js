@@ -149,6 +149,64 @@ test.describe('Carga de blog posts', () => {
     const response = await page.goto('rechazo-entrevista-final.html');
     expect(response.status()).toBe(200);
   });
+
+  test('cv-con-ia-2026.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('cv-con-ia-2026.html');
+    expect(response.status()).toBe(200);
+  });
+});
+
+test.describe('Carga de páginas de producto', () => {
+
+  test('cv-express.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('cv-express.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('coach.html - Perfil de coach carga correctamente', async ({ page }) => {
+    const response = await page.goto('coach.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('coaches.html - Directorio de coaches carga correctamente', async ({ page }) => {
+    const response = await page.goto('coaches.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('linkedin-viewer.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('linkedin-viewer.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('upgrade.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('upgrade.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('legales.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('legales.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('bienvenida-coach.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('bienvenida-coach.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('auth-callback.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('auth-callback.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('admin-express.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('admin-express.html');
+    expect(response.status()).toBe(200);
+  });
+
+  test('comunidad.html carga correctamente', async ({ page }) => {
+    const response = await page.goto('comunidad.html');
+    expect(response.status()).toBe(200);
+  });
 });
 
 test.describe('Verificación de recursos y assets', () => {
