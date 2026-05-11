@@ -42,38 +42,56 @@ function getSupabaseAuth() {
   };
 }
 
+// Heurística simple: si el body ya contiene una etiqueta HTML conocida
+// (<p>, <h1-h6>, <div>, <a>, <br>, <strong>, etc.) lo tratamos como HTML
+// y NO lo escapamos. Las plantillas de trial en registro.html ya guardan
+// el body como HTML, así que escapar rompía el render.
+function isHtmlBody(body: string): boolean {
+  return /<(?:p|a|div|h[1-6]|br|strong|em|ul|ol|li|span|table|td|tr|img|hr|blockquote|b|i)\b[^>]*>/i
+    .test(body);
+}
+
 function bodyToHtml(body: string, fromNombre: string, fromEmail: string): string {
-  const escaped = body
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  let inner: string;
 
-  // Detectar líneas tipo "Unirme directo: https://chat.whatsapp.com/..." y reemplazar
-  // por botón verde de WhatsApp. También auto-linkea cualquier otra URL.
-  const WA_BTN = /(?:^|\n)([^\n:]*:?\s*)?(https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]+)/g;
-  const URL_RE = /(https?:\/\/[^\s<]+)/g;
+  if (isHtmlBody(body)) {
+    // Body ya viene como HTML: no escapar, no transformar URLs (las plantillas
+    // ya pueden tener <a> propios). Solo lo envolvemos en el scaffold.
+    inner = body;
+  } else {
+    // Body en texto plano: escapar, auto-linkear URLs, convertir \n → <br>.
+    const escaped = body
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
 
-  let html = escaped;
+    // Detectar líneas tipo "Unirme directo: https://chat.whatsapp.com/..." y reemplazar
+    // por botón verde de WhatsApp. También auto-linkea cualquier otra URL.
+    const WA_BTN = /(?:^|\n)([^\n:]*:?\s*)?(https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]+)/g;
+    const URL_RE = /(https?:\/\/[^\s<]+)/g;
 
-  // Primero capturamos los links de WhatsApp y los reemplazamos por botón
-  html = html.replace(WA_BTN, (match, prefix, url) => {
-    const cleanPrefix = (prefix || "").trim();
-    const button = `<div style="margin:18px 0;text-align:left;"><a href="${url}" style="display:inline-block;background:#25D366;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;font-size:14px;font-family:Inter,-apple-system,sans-serif;">💬 Unirme a la comunidad</a></div>`;
-    // Si había prefijo tipo "Unirme directo:" lo descartamos (el botón ya lo dice)
-    return "\n" + button;
-  });
+    let html = escaped;
 
-  // Auto-linkear el resto de URLs (las que no quedaron dentro de un href)
-  html = html.replace(URL_RE, (url) => {
-    if (url.includes("chat.whatsapp.com")) return url; // ya fue procesada arriba
-    return `<a href="${url}" style="color:#2D6A4F;text-decoration:underline;">${url}</a>`;
-  });
+    // Primero capturamos los links de WhatsApp y los reemplazamos por botón
+    html = html.replace(WA_BTN, (match, prefix, url) => {
+      const cleanPrefix = (prefix || "").trim();
+      const button = `<div style="margin:18px 0;text-align:left;"><a href="${url}" style="display:inline-block;background:#25D366;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;font-size:14px;font-family:Inter,-apple-system,sans-serif;">💬 Unirme a la comunidad</a></div>`;
+      return "\n" + button;
+    });
 
-  // Convertir saltos de línea a <br>
-  html = html.replace(/\n/g, "<br>");
+    // Auto-linkear el resto de URLs (las que no quedaron dentro de un href)
+    html = html.replace(URL_RE, (url) => {
+      if (url.includes("chat.whatsapp.com")) return url; // ya fue procesada arriba
+      return `<a href="${url}" style="color:#2D6A4F;text-decoration:underline;">${url}</a>`;
+    });
+
+    // Convertir saltos de línea a <br>
+    html = html.replace(/\n/g, "<br>");
+    inner = html;
+  }
 
   return `<!DOCTYPE html><html><body style="font-family:Inter,-apple-system,sans-serif;font-size:14px;line-height:1.6;color:#1B4332;max-width:620px;margin:0 auto;padding:20px;">
-<div>${html}</div>
+<div>${inner}</div>
 <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;">
 <table style="border-collapse:collapse;"><tr><td style="padding-right:16px;vertical-align:middle;">
 <img src="https://pathwaycareercoach.com/logo-mark.png" width="48" height="48" alt="Pathway" style="display:block;">
