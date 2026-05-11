@@ -159,6 +159,15 @@ body{font-family:var(--pw-sans);background:var(--pw-niebla);color:var(--pw-texto
     <div class="field-hint">El resto del perfil (foto, bio, especialidad) lo configurás adentro.</div>
   </div>
 
+  <!-- Honeypot anti-bot: campo invisible para humanos (off-screen + aria-hidden
+       + tabindex -1). Los bots automatizados que rellenan todos los inputs lo
+       completan y eso nos delata que es spam. Real users nunca lo ven ni
+       lo enfocan con tab. -->
+  <div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;">
+    <label for="hp_website">Sitio web (no completar)</label>
+    <input type="text" id="hp_website" name="website" tabindex="-1" autocomplete="off">
+  </div>
+
   <!-- Hidden defaults: campos opcionales que se completan en el panel -->
   <input type="hidden" id="password2" value="">
   <input type="hidden" id="nombre_practica" value="">
@@ -315,6 +324,25 @@ async function registrar(){
   var loading = document.getElementById('loading');
 
   showError('');
+
+  // Honeypot anti-bot: si el campo invisible 'hp_website' viene con valor,
+  // es spam automatizado. Abortamos silenciosamente sin dar feedback al bot
+  // (no mostramos error ni success — el bot se queda esperando y se va).
+  // Real users nunca llegan acá porque el campo es invisible (off-screen).
+  var honeypot = document.getElementById('hp_website');
+  if(honeypot && honeypot.value){
+    // Log mínimo en console para detectar si algún humano legítimo cae acá
+    console.warn('[signup] honeypot triggered, aborting silently');
+    // Pretendemos que algo se está procesando para que el bot no detecte
+    // que lo bloqueamos. Después no pasa nada.
+    btn.disabled = true;
+    btn.textContent = 'Procesando...';
+    setTimeout(function(){
+      btn.disabled = false;
+      btn.textContent = 'Empezar mi trial de 14 días';
+    }, 3000);
+    return;
+  }
 
   // Validaciones
   if(!nombre){ showError('Ingresá tu nombre completo.'); return; }
