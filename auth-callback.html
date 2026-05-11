@@ -108,6 +108,15 @@ function setLoadingMsg(msg){
 }
 
 async function handleCallback(){
+  // URL params declarados al inicio: antes estaban al final pero el branch
+  // de "usuario nuevo" los usaba por hoisting (params=undefined ⇒ TypeError
+  // al hacer params.get(...)). Movidos arriba para que esten disponibles
+  // en cualquier rama del flow.
+  var params = new URLSearchParams(window.location.search);
+  var source = params.get('source') || 'login';
+  var ref = params.get('ref') || '';
+  var referredBy = params.get('referrer') || null;
+
   // Inicializar Supabase JS client
   var sb;
   try {
@@ -185,20 +194,25 @@ async function handleCallback(){
       }).catch(function(){});
     }
   } else {
-    // Usuario nuevo — crearlo en usuarios
+    // Usuario nuevo — crearlo en usuarios.
+    // Modelo nuevo: trial SIN tarjeta. activo=true desde el inicio. La coach
+    // tiene 14 dias gratis (28 si vino del popup) sin pasar por Stripe.
+    // Cuando vence fecha_fin_prueba sin suscripcion, panel.html muestra un
+    // paywall full-screen con el CTA a Stripe Payment Link.
     setLoadingMsg('Creando tu cuenta...');
     try {
-      // activo=false: el usuario NO puede acceder al panel hasta que pague.
-      // Webhook de Stripe lo flipea a true cuando confirma la suscripcion.
-      // from_popup → trial extendido a 30d (popup users / referidos por coach)
-      // referred_by → coach que invito (ganara 1 mes gratis cuando este pague)
       var refIsPopup = ref === 'popup';
-      var referredBy = params.get('referrer') || null;
+      var trialDays = refIsPopup ? 28 : 14;
       var newCfg = {
         auth_provider: 'google',
         foto_perfil: photoUrl,
         from_google: true,
-        from_popup: refIsPopup
+        from_popup: refIsPopup,
+        plan: 'basic',
+        estado_sub: 'prueba',
+        visible_directorio: true,
+        max_candidatos: 5,
+        fecha_fin_prueba: new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString()
       };
       if(referredBy){
         newCfg.referred_by = referredBy;
@@ -217,7 +231,7 @@ async function handleCallback(){
           password_hash: null,
           rol: 'coach',
           nombre: name,
-          activo: false,
+          activo: true,
           configuracion: newCfg
         })
       });
@@ -228,6 +242,8 @@ async function handleCallback(){
       var created = await createRes.json();
       usuario = Array.isArray(created) ? created[0] : created;
 
+      var primerNombreGoogle = (name && name.split(' ')[0]) || name || '';
+
       // Notificar admin (best-effort)
       fetch(SB + '/functions/v1/send-email', {
         method: 'POST',
@@ -236,8 +252,45 @@ async function handleCallback(){
           to: 'hi@pathwaycareercoach.com',
           to_name: 'Micaela',
           subject: '🎉 Nuevo coach via Google: ' + name,
-          html: '<h2>Nuevo coach registrado</h2><p><strong>' + name + '</strong> (' + email + ') se registro via Google. Ahora va a Stripe para activar suscripcion.</p>'
+          html: '<h2>Nuevo coach registrado</h2><p><strong>' + name + '</strong> (' + email + ') se registró via Google.</p><p>Trial de ' + trialDays + ' días sin tarjeta. Se le ofrece Stripe al final del trial.</p>'
         })
+      }).catch(function(){});
+
+      // Email de bienvenida (best-effort)
+      fetch(SB + '/functions/v1/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: email,
+          to_name: name,
+          subject: '¡Bienvenida a Pathway! Tu trial de ' + trialDays + ' días empezó 🌱',
+          html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + primerNombreGoogle + ',</h2>'
+            + '<p style="font-size:15px;line-height:1.65;">Bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de ' + trialDays + ' días gratis</strong>. No te pedimos tarjeta — si al final no querés seguir, simplemente no hacés nada.</p>'
+            + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
+            + '<p style="font-size:13px;color:#888;margin-top:18px;">Cualquier duda, respondé este mail. — Mica</p>'
+        })
+      }).catch(function(){});
+
+      // Mail recovery a +5 min en email_queue. panel.html borra esta fila
+      // cuando la coach entra por primera vez (asi solo lo reciben las que
+      // no llegaron a usar la plataforma).
+      var nowMs = Date.now();
+      fetch(SB + '/rest/v1/email_queue', {
+        method: 'POST',
+        headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify([{
+          coach_id: usuario.id,
+          to_email: email,
+          to_nombre: name,
+          subject: '¿Te puedo ayudar a empezar, ' + primerNombreGoogle + '? 🌱',
+          body: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + primerNombreGoogle + ',</h2>'
+            + '<p style="font-size:15px;line-height:1.65;">Me llamo Micaela, soy fundadora de Pathway. Vi que te registraste hace unos minutos pero no llegaste a entrar al panel — supuse que quizás te quedó alguna duda o se te complicó.</p>'
+            + '<p style="font-size:15px;line-height:1.65;">Recordá que tu trial de ' + trialDays + ' días <strong>ya está activo</strong> y <strong>no te pedimos tarjeta</strong> para empezar.</p>'
+            + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/login.html" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Entrar al panel →</a></p>'
+            + '<p style="font-size:13px;color:#666;margin-top:18px;">Cualquier duda, respondé este mail. — Mica</p>',
+          scheduled_at: new Date(nowMs + 5 * 60 * 1000).toISOString(),
+          plantilla_id: 'recovery_5min'
+        }])
       }).catch(function(){});
     } catch(e) {
       return showError('Error creando cuenta: ' + e.message);
@@ -249,29 +302,25 @@ async function handleCallback(){
     id: usuario.id,
     email: usuario.email,
     rol: usuario.rol,
-    nombre: usuario.nombre
+    nombre: usuario.nombre,
+    activo: true,
+    configuracion: usuario.configuracion || {}
   }));
 
-  // Decidir destino segun source y si es nuevo
-  var params = new URLSearchParams(window.location.search);
-  var source = params.get('source') || 'login';
-  var ref = params.get('ref') || '';
-
+  // Destino:
+  //   - Coach/admin nuevo o existente → /panel.html
+  //   - Cliente → /cliente.html
+  // (Antes los nuevos via Google iban a Stripe. Con trial-sin-tarjeta, van
+  //  directo al panel — el cobro se ofrece al final del trial.)
   if(isNew){
-    // Usuario nuevo → Stripe para activar suscripcion
-    setLoadingMsg('Te llevamos a configurar tu suscripción...');
-    var stripeUrl = (ref === 'popup') ? STRIPE_LINK_30D : STRIPE_LINK_14D;
-    setTimeout(function(){
-      window.location.href = stripeUrl + '?prefilled_email=' + encodeURIComponent(email);
-    }, 800);
+    setLoadingMsg('¡Bienvenida! Te llevamos al panel...');
   } else {
-    // Usuario existente → directo al panel
     setLoadingMsg('¡Bienvenida de vuelta! Te llevamos al panel...');
-    var dest = (usuario.rol === 'coach' || usuario.rol === 'admin') ? '/panel.html' : '/cliente.html';
-    setTimeout(function(){
-      window.location.href = dest + '?v=' + Date.now();
-    }, 800);
   }
+  var dest = (usuario.rol === 'cliente') ? '/cliente.html' : '/panel.html';
+  setTimeout(function(){
+    window.location.href = dest + (isNew ? '?welcome=1&v=' : '?v=') + Date.now();
+  }, 800);
 }
 
 // Esperar a que el SDK de Supabase cargue
