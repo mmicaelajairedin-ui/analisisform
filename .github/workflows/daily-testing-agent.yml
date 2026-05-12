@@ -181,19 +181,40 @@ jobs:
         run: |
           node tests/generate-report.js || true
 
-      - name: "📧 Enviar reporte por email"
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{ secrets.GMAIL_USER }}
-          password: ${{ secrets.GMAIL_APP_PASSWORD }}
-          subject: |
-            ${{ steps.generate-report.outputs.status == 'healthy' && '✅' || steps.generate-report.outputs.status == 'warning' && '⚠️' || '🔴' }} Reporte Testing MJ — ${{ steps.generate-report.outputs.passed }}/${{ steps.generate-report.outputs.total }} tests OK
-          to: mmicaela.jairedin@gmail.com
-          from: "Testing Agent MJ <${{ secrets.GMAIL_USER }}>"
-          html_body: file://tests/results/report.html
-          attachments: tests/results/report.txt
+      - name: "📧 Enviar reporte por email (Brevo)"
+        if: always()
+        run: |
+          STATUS="${{ steps.generate-report.outputs.status }}"
+          PASSED="${{ steps.generate-report.outputs.passed }}"
+          TOTAL="${{ steps.generate-report.outputs.total }}"
+
+          if [ "$STATUS" = "healthy" ]; then
+            EMOJI="✅"
+          elif [ "$STATUS" = "warning" ]; then
+            EMOJI="⚠️"
+          else
+            EMOJI="🔴"
+          fi
+
+          SUBJECT="$EMOJI Reporte Testing Pathway — ${PASSED}/${TOTAL} tests OK"
+
+          # Leer HTML del reporte
+          if [ -f tests/results/report.html ]; then
+            REPORT_HTML=$(cat tests/results/report.html | python3 -c "import sys,json;print(json.dumps(sys.stdin.read()))")
+          else
+            REPORT_HTML='"<p>No se generó reporte HTML.</p>"'
+          fi
+
+          curl -s -X POST "https://api.brevo.com/v3/smtp/email" \
+            -H "accept: application/json" \
+            -H "api-key: ${{ secrets.BREVO_API_KEY }}" \
+            -H "content-type: application/json" \
+            -d "{
+              \"sender\": {\"name\": \"Testing Agent Pathway\", \"email\": \"notificaciones@pathwaycareercoach.com\"},
+              \"to\": [{\"email\": \"notificaciones@pathwaycareercoach.com\", \"name\": \"Pathway Notificaciones\"}],
+              \"subject\": \"$SUBJECT\",
+              \"htmlContent\": $REPORT_HTML
+            }" || echo "Error enviando email"
 
       - name: "🏷️ Asegurar que existen los labels"
         if: always()
