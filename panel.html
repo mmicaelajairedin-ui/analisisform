@@ -4252,6 +4252,7 @@ function _renderInicio(){
     // Calendly URL (config del coach)
     var lsCfg={};try{lsCfg=JSON.parse(localStorage.getItem('mj_coach_config')||'{}');}catch(e){lsCfg={};}
     var cfg=Object.assign({},(ME&&ME.configuracion)||{},lsCfg);    var calUrl=cfg.calendly_url||'';
+    var embedUrl=cfg.calendar_embed_url||'';
 
     var html='<div style="padding:8px 4px 40px;max-width:960px;">';
     // ── CALENDARIO DE LA EMPRESA (solo admin: Micaela) ──
@@ -4356,17 +4357,20 @@ function _renderInicio(){
     }
     html+='</h1>';
 
-    // ── Mi agenda — proximas llamadas (Google Calendar via /api/calendar) ──
+    // ── Mi calendario (embebido publico) ──
     html+='<div id="agenda-card" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:32px;">';
     html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">';
-    html+='<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;">📅 Mi agenda — próximas llamadas</div>';
-    html+='<a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);font-weight:600;text-decoration:none;">Ver en Google Calendar →</a>';
+    html+='<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;">📅 Mi calendario</div>';
+    html+='<a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);font-weight:600;text-decoration:none;">Abrir Google Calendar →</a>';
     html+='</div>';
-    html+='<div id="agenda-list" style="display:grid;gap:8px;">';
-    for(var _i=0;_i<3;_i++){
-      html+='<div style="background:#F5F0F0;border-radius:10px;height:54px;opacity:.55;"></div>';
+    if(embedUrl){
+      html+='<div style="border-radius:10px;overflow:hidden;border:1px solid var(--border);">';
+      html+='<iframe src="'+escH(embedUrl)+'" style="border:0;width:100%;height:500px;display:block;" frameborder="0" scrolling="no"></iframe>';
+      html+='</div>';
+    } else {
+      html+='<div style="padding:24px 18px;text-align:center;background:#FAF8F8;border-radius:10px;font-size:13px;color:var(--muted);line-height:1.55;">Conectá tu calendario en <button onclick="showSection(\'config\')" style="background:none;border:none;color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline;padding:0;font-family:inherit;font-size:inherit;">Configuración</button> para verlo acá.</div>';
     }
-    html+='</div></div>';
+    html+='</div>';
 
     // ── HOY — Sesiones ──
     if(sesHoy.length){
@@ -4595,8 +4599,7 @@ function _renderInicio(){
       openCand(parseInt(el.dataset.open));
     });
 
-    // Hidratar agenda (Google Calendar via /api/calendar)
-    if(typeof _loadAgenda==='function') _loadAgenda();
+    // (Agenda ahora se renderiza inline con iframe embed; _loadAgenda eliminado)
   }
 
   // Llamamos a build() siempre que cands esté inicializado (aunque sea
@@ -4610,92 +4613,8 @@ function _renderInicio(){
   }
 }
 
-// ── Hidratar agenda desde Google Calendar (Supabase Edge Function /calendar) ──
-function _loadAgenda(){
-  var listEl=document.getElementById('agenda-list');
-  if(!listEl) return;
+// (funcion _loadAgenda eliminada: agenda ahora es iframe embed)
 
-  var u={};try{u=JSON.parse(localStorage.getItem('mj_user')||'{}');}catch(e){}
-  var email=(u.email||'').toLowerCase();
-
-  function showInfo(html){ listEl.innerHTML='<div style="padding:14px 16px;background:#FFF7E6;border:1px solid #F5E5B0;border-radius:10px;font-size:13px;color:#8C6D2E;line-height:1.5;">'+html+'</div>'; }
-  function showError(html){ listEl.innerHTML='<div style="padding:14px 16px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;font-size:13px;color:#991B1B;line-height:1.5;">'+html+'</div>'; }
-  function configBtn(label){ return '<button onclick="showSection(\'config\')" style="background:none;border:none;color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline;padding:0;font-family:inherit;font-size:inherit;">'+label+'</button>'; }
-
-  if(!email){ showInfo('Iniciá sesión para ver tu agenda.'); return; }
-
-  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(email),{
-    cache:'no-store',
-    headers:{'Authorization':'Bearer '+KEY}
-  })
-    .then(function(r){
-      var ct=(r.headers.get('content-type')||'').toLowerCase();
-      if(ct.indexOf('application/json')===-1){
-        return r.text().then(function(){ return {error:'not_deployed', status:r.status}; });
-      }
-      return r.json().catch(function(){ return {error:'bad_json', status:r.status}; });
-    })
-    .then(function(data){
-      if(!data){ showError('Sin respuesta del servidor.'); return; }
-      if(data.error==='not_deployed'){ showInfo('La función calendar todavía no está desplegada en Supabase. Pedile al admin que corra <code style="background:#fff;padding:1px 5px;border-radius:4px;">supabase functions deploy calendar --no-verify-jwt</code>.'); return; }
-      if(data.unconfigured){ showInfo('Conectá tu Google Calendar en '+configBtn('Configuración')+' para ver tus llamadas acá.'); return; }
-      if(data.error==='invalid_ical_url'){ showError('La URL guardada no es de Google Calendar. Revisá '+configBtn('Configuración')+'.'); return; }
-      if(data.error==='ical_fetch_failed'||data.error==='ical_unreachable'){ showError('No pudimos leer tu calendario. Verificá la URL en '+configBtn('Configuración')+'.'); return; }
-      if(data.error==='parse_failed'){ showError('No pudimos leer el formato de tu calendario. Probá con otra URL en '+configBtn('Configuración')+'.'); return; }
-      if(data.error){ showError('Error: '+data.error+'.'); return; }
-
-      var ev=data.events||[];
-      if(!ev.length){
-        listEl.innerHTML='<div style="font-size:13px;color:var(--muted);padding:18px 14px;text-align:center;background:#FAF8F8;border-radius:10px;">Sin llamadas en los próximos 14 días.</div>';
-        return;
-      }
-
-      var DIAS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-      var MESES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-      var hoy=new Date(); hoy.setHours(0,0,0,0);
-      var manana=new Date(hoy.getTime()+86400000);
-      var max=Math.min(ev.length,5);
-      var html='';
-      for(var i=0;i<max;i++){
-        var e=ev[i];
-        var d=new Date(e.start);
-        var diaLabel;
-        var dStart=new Date(d); dStart.setHours(0,0,0,0);
-        if(dStart.getTime()===hoy.getTime()) diaLabel='Hoy';
-        else if(dStart.getTime()===manana.getTime()) diaLabel='Mañana';
-        else diaLabel=DIAS[d.getDay()];
-        var dia=d.getDate();
-        var mes=MESES[d.getMonth()];
-        var hh=String(d.getHours()).padStart(2,'0');
-        var mm=String(d.getMinutes()).padStart(2,'0');
-        var hora=hh+':'+mm;
-        var isHoy=dStart.getTime()===hoy.getTime();
-        html+='<div style="display:flex;align-items:center;gap:14px;padding:12px 14px;background:'+(isHoy?'rgba(45,106,79,.06)':'#FAF8F8')+';border-radius:10px;'+(isHoy?'border:1px solid rgba(45,106,79,.2);':'')+'">';
-        html+='<div style="text-align:center;min-width:54px;flex-shrink:0;">';
-        html+='<div style="font-size:9px;color:'+(isHoy?'var(--accent)':'var(--muted)')+';text-transform:uppercase;font-weight:700;letter-spacing:.08em;">'+diaLabel+'</div>';
-        html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:22px;color:var(--accent);line-height:1.1;font-weight:500;">'+dia+'</div>';
-        html+='<div style="font-size:9px;color:var(--muted);text-transform:lowercase;">'+mes+'</div>';
-        html+='</div>';
-        html+='<div style="flex:1;min-width:0;">';
-        html+='<div style="font-size:13px;font-weight:700;color:var(--title);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escH(e.title)+'</div>';
-        var sub=hora;
-        if(e.location) sub+=' · '+e.location.slice(0,40);
-        html+='<div style="font-size:11px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escH(sub)+'</div>';
-        html+='</div>';
-        if(e.meet){
-          html+='<a href="'+escH(e.meet)+'" target="_blank" rel="noopener" style="padding:7px 12px;background:#1A73E8;color:#fff;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap;flex-shrink:0;">Meet →</a>';
-        }
-        html+='</div>';
-      }
-      if(ev.length>max){
-        html+='<div style="font-size:11px;color:var(--muted);text-align:center;padding-top:6px;">+ '+(ev.length-max)+' evento'+(ev.length-max===1?'':'s')+' más en los próximos días</div>';
-      }
-      listEl.innerHTML=html;
-    })
-    .catch(function(){
-      showError('Error de red. Refrescá la página.');
-    });
-}
 
 function _renderLinks() {
   var dp = document.getElementById('dynamic-panel');
@@ -6333,7 +6252,7 @@ function _renderConfig(tab){
     var foto=lsCfg.foto_url||coach.foto_url||'';
     var color=cfg.color_marca||'#8C7B80';
     var calUrl=cfg.calendly_url||'';
-    var gcalUrl=cfg.gcal_ical_url||'';
+    var embedUrl=cfg.calendar_embed_url||'';
     var stMentoria=cfg.stripe_mentoria_url||'';
     var stSesion=cfg.stripe_sesion_url||'';
     var bio=lsCfg.bio||coach.bio||'';
@@ -6413,14 +6332,14 @@ function _renderConfig(tab){
     h+='<input id="cfg-calendly" type="url" value="'+escH(calUrl)+'" placeholder="https://calendly.com/tu-nombre" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;"></div>';
     h+='</div>';
 
-    // ─── AGENDA · SINCRONIZACIÓN GOOGLE CALENDAR ───
+    // ─── AGENDA · CALENDARIO PUBLICO EMBEBIDO ───
     h+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:14px;">';
-    h+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Agenda · Sincronización</div>';
-    h+='<div style="font-size:13px;color:var(--muted);margin-bottom:14px;">Conectá tu Google Calendar para ver todas tus llamadas (Calendly + manuales + invitaciones) directamente en el panel home, sin abrir Google.</div>';
-    h+='<label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">URL secreta iCal de Google Calendar</label>';
-    h+='<input id="cfg-gcal" type="url" value="'+escH(gcalUrl)+'" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;">';
-    h+='<div style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5;">¿Cómo obtengo este URL? <a href="#" onclick="alert(\'Andá a calendar.google.com → engranaje arriba a la derecha → Configuración → en el menú izquierdo elegí tu calendario → bajá a Integrar el calendario → copiá la Dirección secreta en formato iCal (NO la pública). Va a verse así: https://calendar.google.com/calendar/ical/.../private-XXX/basic.ics\'); return false;" style="color:var(--accent);font-weight:600;text-decoration:none;">Ver pasos →</a></div>';
-    h+='<div style="font-size:11px;color:var(--muted);margin-top:6px;">🔒 Esta URL es privada. Solo se usa desde el servidor para leer tus eventos.</div>';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Agenda · Calendario público</div>';
+    h+='<div style="font-size:13px;color:var(--muted);margin-bottom:14px;">Pegá el link público de tu calendario para mostrarlo embebido en tu panel. Solo se muestran los eventos que vos marcaste como públicos.</div>';
+    h+='<label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Link público de Google Calendar (opcional)</label>';
+    h+='<input id="cfg-cal-embed" type="url" value="'+escH(embedUrl)+'" placeholder="https://calendar.google.com/calendar/embed?src=..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;">';
+    h+='<div style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5;">¿Cómo obtengo este link? <a href="#" onclick="alert(\'En calendar.google.com → engranaje arriba a la derecha → Configuración → elegí tu calendario en el menú izquierdo → bajá a Integrar el calendario → copiá la URL en Código para insertar (la que está dentro del src= del iframe, NO el iframe completo). Va a verse así: https://calendar.google.com/calendar/embed?src=...\'); return false;" style="color:var(--accent);font-weight:600;text-decoration:none;">Ver pasos →</a></div>';
+    h+='<div style="font-size:11px;color:var(--muted);margin-top:6px;">🌐 Este link es público — solo se ven los eventos que marcaste como visibles para cualquiera.</div>';
     h+='</div>';
 
     // ─── ACCESO MANUAL AL FORMULARIO ───
@@ -7502,7 +7421,7 @@ function _saveConfig(){
   var stMentoria=((document.getElementById('cfg-st-mentoria')||{}).value||'').trim();
   var stSesion=((document.getElementById('cfg-st-sesion')||{}).value||'').trim();
   var calUrl=((document.getElementById('cfg-calendly')||{}).value||'').trim();
-  var gcalUrl=((document.getElementById('cfg-gcal')||{}).value||'').trim();
+  var embedUrl=((document.getElementById('cfg-cal-embed')||{}).value||'').trim();
   var accessCode=((document.getElementById('cfg-access-code')||{}).value||'').trim().toLowerCase();
 
   // Guarda TODO en localStorage primero — siempre funciona, sobrevive recargas
@@ -7514,7 +7433,7 @@ function _saveConfig(){
     color_marca:color,
     logo_url:logoUrl,
     calendly_url:calUrl,
-    gcal_ical_url:gcalUrl,
+    calendar_embed_url:embedUrl,
     stripe_mentoria_url:stMentoria,
     stripe_sesion_url:stSesion,
     access_code:accessCode
@@ -7524,7 +7443,7 @@ function _saveConfig(){
   // Intenta guardar cada campo INDEPENDIENTEMENTE en Supabase — si uno
   // falla por falta de columna, los otros siguen funcionando.
   var configuracion={
-    color_marca:color,logo_url:logoUrl,calendly_url:calUrl,gcal_ical_url:gcalUrl,
+    color_marca:color,logo_url:logoUrl,calendly_url:calUrl,calendar_embed_url:embedUrl,
     stripe_mentoria_url:stMentoria,stripe_sesion_url:stSesion,
     access_code:accessCode
   };
