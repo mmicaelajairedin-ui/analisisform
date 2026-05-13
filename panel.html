@@ -4357,19 +4357,58 @@ function _renderInicio(){
     }
     html+='</h1>';
 
-    // ── Mi calendario (embebido publico) ──
+    // ── Mi calendario (embebido publico) + Proxima reunion + Agendar ──
+    // Calcular proxima sesion (la mas cercana en el futuro, de cualquier cliente)
+    var _proxSes=null, _nowTs=Date.now();
+    uniq.forEach(function(c){
+      var arr=[]; try{ arr=JSON.parse(c.sesiones_registro||'[]'); }catch(e){}
+      arr.forEach(function(s){
+        if(!s.fecha) return;
+        var iso=s.fecha+(s.hora?'T'+s.hora:'T23:59');
+        var d=new Date(iso);
+        if(isNaN(d)||d.getTime()<_nowTs) return;
+        if(!_proxSes||d.getTime()<_proxSes._t){ _proxSes={ _t:d.getTime(), d:d, c:c, s:s }; }
+      });
+    });
+    var _DIAS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    var _MESES2=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
     html+='<div id="agenda-card" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:32px;">';
     html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">';
     html+='<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;">📅 Mi calendario</div>';
     html+='<a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);font-weight:600;text-decoration:none;">Abrir Google Calendar →</a>';
     html+='</div>';
+    html+='<div class="coach-cal-grid" style="display:grid;grid-template-columns:1fr 260px;gap:18px;align-items:start;">';
+    // Columna izquierda: iframe o placeholder
     if(embedUrl){
-      html+='<div style="border-radius:10px;overflow:hidden;border:1px solid var(--border);">';
-      html+='<iframe src="'+escH(embedUrl)+'" style="border:0;width:100%;height:500px;display:block;" frameborder="0" scrolling="no"></iframe>';
+      html+='<div style="border-radius:10px;overflow:hidden;border:1px solid var(--border);min-width:0;">';
+      html+='<iframe src="'+escH(embedUrl)+'" style="border:0;width:100%;height:440px;display:block;" frameborder="0" scrolling="no"></iframe>';
       html+='</div>';
     } else {
-      html+='<div style="padding:24px 18px;text-align:center;background:#FAF8F8;border-radius:10px;font-size:13px;color:var(--muted);line-height:1.55;">Conectá tu calendario en <button onclick="showSection(\'config\')" style="background:none;border:none;color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline;padding:0;font-family:inherit;font-size:inherit;">Configuración</button> para verlo acá.</div>';
+      html+='<div style="padding:32px 18px;text-align:center;background:#FAF8F8;border-radius:10px;font-size:13px;color:var(--muted);line-height:1.55;min-height:200px;display:flex;align-items:center;justify-content:center;"><div>Conectá tu calendario en <button onclick="showSection(\'config\')" style="background:none;border:none;color:var(--accent);font-weight:700;cursor:pointer;text-decoration:underline;padding:0;font-family:inherit;font-size:inherit;">Configuración</button> para verlo acá.</div></div>';
     }
+    // Columna derecha: Proxima reunion + Boton agendar
+    html+='<div style="display:flex;flex-direction:column;gap:14px;">';
+    // Box proxima reunion
+    html+='<div style="background:#FAF8F8;border-radius:12px;padding:16px 18px;">';
+    html+='<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px;">Próxima reunión</div>';
+    if(_proxSes){
+      var _pd=_proxSes.d;
+      var _diasFalt=Math.ceil((_pd.getTime()-_nowTs)/86400000);
+      var _etiq=_diasFalt<=0?'Hoy':(_diasFalt===1?'Mañana':_DIAS[_pd.getDay()]);
+      html+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:18px;font-weight:500;color:var(--title);line-height:1.25;margin-bottom:6px;letter-spacing:-.2px;">'+escH(_proxSes.c.nombre||_proxSes.c.email||'Cliente')+'</div>';
+      html+='<div style="font-size:13px;color:var(--body);font-weight:500;">'+_etiq+' · '+_pd.getDate()+' '+_MESES2[_pd.getMonth()]+(_proxSes.s.hora?' · <span style="color:var(--accent);font-weight:600;">'+escH(_proxSes.s.hora)+'</span>':'')+'</div>';
+    } else {
+      html+='<div style="font-size:13px;color:var(--muted);line-height:1.5;">Sin reuniones próximas agendadas.</div>';
+    }
+    html+='</div>';
+    // Boton agendar
+    if(calUrl){
+      html+='<a href="'+escH(calUrl)+'" target="_blank" rel="noopener" style="background:var(--accent);color:#fff;padding:12px 16px;border-radius:10px;font-weight:600;font-size:13px;text-decoration:none;text-align:center;display:block;font-family:Inter,sans-serif;">+ Agendar reunión</a>';
+    } else {
+      html+='<button onclick="showSection(\'config\')" style="background:transparent;border:1.5px dashed var(--border);color:var(--muted);padding:12px 16px;border-radius:10px;font-weight:600;font-size:12px;cursor:pointer;text-align:center;font-family:Inter,sans-serif;">Configurá tu Calendly</button>';
+    }
+    html+='</div>';
+    html+='</div>';
     html+='</div>';
 
     // ── HOY — Sesiones ──
