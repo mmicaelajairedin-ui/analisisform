@@ -1,9 +1,5 @@
 name: Migrate calendar to public embed (one-shot)
 
-# Auto-ejecuta cuando se sube este file. Aplica el patch a panel.html en
-# esta misma branch (auto/migrate-calendar-public), valida sintaxis y
-# se auto-borra. Despues hay que abrir el PR a main.
-
 on:
   push:
     branches: [auto/migrate-calendar-public]
@@ -37,14 +33,12 @@ jobs:
             console.log('OK ' + label);
           }
 
-          // 1) Agregar variable embedUrl en el render del panel home
           replaceOnce(
             "    var cfg=Object.assign({},(ME&&ME.configuracion)||{},lsCfg);    var calUrl=cfg.calendly_url||'';\n",
             "    var cfg=Object.assign({},(ME&&ME.configuracion)||{},lsCfg);    var calUrl=cfg.calendly_url||'';\n    var embedUrl=cfg.calendar_embed_url||'';\n",
             '1) embedUrl var en panel home'
           );
 
-          // 2) Reemplazar card "Mi agenda - proximas llamadas" por iframe embed
           const oldAgenda = "    // ── Mi agenda — proximas llamadas (Google Calendar via /api/calendar) ──\n" +
           "    html+='<div id=\"agenda-card\" style=\"background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:32px;\">';\n" +
           "    html+='<div style=\"display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;\">';\n" +
@@ -74,14 +68,12 @@ jobs:
 
           replaceOnce(oldAgenda, newAgenda, '2) card Mi agenda -> iframe embed');
 
-          // 3) Quitar la llamada a _loadAgenda
           replaceOnce(
             "    // Hidratar agenda (Google Calendar via /api/calendar)\n    if(typeof _loadAgenda==='function') _loadAgenda();\n",
             "    // (Agenda ahora se renderiza inline con iframe embed; _loadAgenda eliminado)\n",
             '3) sacar llamada _loadAgenda'
           );
 
-          // 4) Eliminar la funcion _loadAgenda completa
           const startMarker = "// ── Hidratar agenda desde Google Calendar (Supabase Edge Function /calendar) ──\nfunction _loadAgenda(){";
           const startIdx = html.indexOf(startMarker);
           if (startIdx === -1) throw new Error('NO MATCH inicio _loadAgenda');
@@ -93,14 +85,12 @@ jobs:
           html = before + "// (funcion _loadAgenda eliminada: agenda ahora es iframe embed)\n" + after;
           console.log('OK 4) eliminada funcion _loadAgenda');
 
-          // 5) Cambiar var gcalUrl en Configuracion
           replaceOnce(
             "    var gcalUrl=cfg.gcal_ical_url||'';",
             "    var embedUrl=cfg.calendar_embed_url||'';",
             '5) var gcalUrl en config'
           );
 
-          // 6) Reemplazar bloque de Config UI
           const oldConfigUI = "    // ─── AGENDA · SINCRONIZACIÓN GOOGLE CALENDAR ───\n" +
           "    h+='<div style=\"background:#fff;border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:14px;\">';\n" +
           "    h+='<div style=\"font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;\">Agenda · Sincronización</div>';\n" +
@@ -117,28 +107,24 @@ jobs:
 
           replaceOnce(oldConfigUI, newConfigUI, '6) bloque Config UI');
 
-          // 7) Cambiar help text
           const oldHelp = "    h+='<div style=\"font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5;\">¿Cómo obtengo este URL? <a href=\"#\" onclick=\"alert(\\'Andá a calendar.google.com → engranaje arriba a la derecha → Configuración → en el menú izquierdo elegí tu calendario → bajá a Integrar el calendario → copiá la Dirección secreta en formato iCal (NO la pública). Va a verse así: https://calendar.google.com/calendar/ical/.../private-XXX/basic.ics\\'); return false;\" style=\"color:var(--accent);font-weight:600;text-decoration:none;\">Ver pasos →</a></div>';\n    h+='<div style=\"font-size:11px;color:var(--muted);margin-top:6px;\">🔒 Esta URL es privada. Solo se usa desde el servidor para leer tus eventos.</div>';\n";
 
           const newHelp = "    h+='<div style=\"font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5;\">¿Cómo obtengo este link? <a href=\"#\" onclick=\"alert(\\'En calendar.google.com → engranaje arriba a la derecha → Configuración → elegí tu calendario en el menú izquierdo → bajá a Integrar el calendario → copiá la URL en Código para insertar (la que está dentro del src= del iframe, NO el iframe completo). Va a verse así: https://calendar.google.com/calendar/embed?src=...\\'); return false;\" style=\"color:var(--accent);font-weight:600;text-decoration:none;\">Ver pasos →</a></div>';\n    h+='<div style=\"font-size:11px;color:var(--muted);margin-top:6px;\">🌐 Este link es público — solo se ven los eventos que marcaste como visibles para cualquiera.</div>';\n";
 
           replaceOnce(oldHelp, newHelp, '7) help text');
 
-          // 8) Cambiar handler de Guardar - lectura DOM
           replaceOnce(
             "  var gcalUrl=((document.getElementById('cfg-gcal')||{}).value||'').trim();",
             "  var embedUrl=((document.getElementById('cfg-cal-embed')||{}).value||'').trim();",
             '8) lectura DOM en _saveConfig'
           );
 
-          // 9) Campo en fullCfg
           replaceOnce(
             "    calendly_url:calUrl,\n    gcal_ical_url:gcalUrl,",
             "    calendly_url:calUrl,\n    calendar_embed_url:embedUrl,",
             '9) campo en fullCfg localStorage'
           );
 
-          // 10) Campo en configuracion Supabase
           replaceOnce(
             "    color_marca:color,logo_url:logoUrl,calendly_url:calUrl,gcal_ical_url:gcalUrl,",
             "    color_marca:color,logo_url:logoUrl,calendly_url:calUrl,calendar_embed_url:embedUrl,",
@@ -146,20 +132,17 @@ jobs:
           );
 
           fs.writeFileSync(FILE, html);
-          console.log('\nTodos los reemplazos aplicados.');
+          console.log('Todos los reemplazos aplicados.');
           PATCH_EOF
           node /tmp/patch.js
 
       - name: Verify changes
         run: |
-          echo "--- Restos del campo viejo (debe ser 0) ---"
           if grep -n "gcal_ical_url\|cfg-gcal\b\|_loadAgenda(" panel.html; then
             echo "ERROR: quedaron restos"
             exit 1
           fi
           echo "OK: sin restos del campo viejo"
-          echo ""
-          echo "--- Menciones nuevas ---"
           grep -cn "calendar_embed_url\|cfg-cal-embed\|embedUrl" panel.html || true
 
       - name: Validate JS syntax
@@ -191,10 +174,5 @@ jobs:
             echo "Nada que commitear"
             exit 0
           fi
-          git commit -m "refactor(panel): migrar calendar privado iCal a embed publico
-
-- Reemplaza campo gcal_ical_url (URL secreta) por calendar_embed_url (link publico)
-- Card 'Mi agenda' ahora es iframe embebido del calendar publico del coach
-- Elimina funcion _loadAgenda() y dependencia de Edge Function /calendar
-- Mejora seguridad: ya no se guardan URLs privadas con acceso a todos los eventos"
+          git commit -m "refactor(panel): migrar calendar iCal privado a embed publico"
           git push origin auto/migrate-calendar-public
