@@ -1,0 +1,64 @@
+name: Patch calendar admin filter (one-shot)
+
+# Workflow de uso unico. Aplica un cambio quirurgico a panel.html
+# (ME.rol==='admin' -> ME.email==='mmicaela.jairedin@gmail.com')
+# solo dentro del bloque CALENDARIO DE LA EMPRESA, y luego se autoborra.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply scoped patch
+        run: |
+          set -e
+          # Substitucion limitada al bloque "CALENDARIO DE LA EMPRESA" + 1 linea siguiente
+          sed -i "/CALENDARIO DE LA EMPRESA/,+1 s|ME\.rol===\x27admin\x27|ME.email===\x27mmicaela.jairedin@gmail.com\x27|" panel.html
+
+          if ! grep -q "ME.email==='mmicaela.jairedin@gmail.com'" panel.html; then
+            echo "ERROR: el patch no se aplico"
+            exit 1
+          fi
+          echo "Cambio aplicado:"
+          grep -n "ME.email==='mmicaela.jairedin@gmail.com'" panel.html
+
+      - name: Validate JS syntax
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const html = fs.readFileSync('panel.html','utf8');
+          const matches = html.match(/<script\b[^>]*>[\s\S]*?<\/script>/gi) || [];
+          let failed = 0;
+          for (const s of matches) {
+            const openTag = s.match(/<script\b[^>]*>/i)[0];
+            if (/\ssrc\s*=/i.test(openTag)) continue;
+            if (/\stype\s*=\s*["']?(module|application\/(json|ld\+json)|text\/(template|html))/i.test(openTag)) continue;
+            const body = s.replace(/^<script\b[^>]*>/i,'').replace(/<\/script>\s*$/i,'');
+            if (!body.trim()) continue;
+            try { new Function(body); } catch (e) { console.error(e.message); failed++; }
+          }
+          if (failed > 0) { console.error(failed + ' script(s) con error'); process.exit(1); }
+          console.log('Sintaxis OK');
+          EOF
+
+      - name: Self-delete workflow + commit & push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/patch-calendar-admin.yml
+          git add panel.html
+          if git diff --staged --quiet; then
+            echo "Nada que commitear"
+            exit 0
+          fi
+          git commit -m "fix(panel): calendario admin solo para email de Mica (via workflow one-shot)"
+          git push
