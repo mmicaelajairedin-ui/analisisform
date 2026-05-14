@@ -3298,24 +3298,30 @@ function tabMensajes(c){
     var editedSub=document.getElementById('ep-subject-input').value||'Mensaje de '+_cNom;
     var ok=document.getElementById('msg-ok');
     cerrarModal('modal-email-preview');
-    // TEMPORAL: abrir mailto: en vez de usar EmailJS (que mandaba via el
-    // Gmail del admin para TODOS los coaches). Cuando integremos Gmail OAuth
-    // con Google Workspace, este flow se reemplaza para que cada coach
-    // mande desde su propia cuenta autorizada (con firma, foto y branding
-    // propios, y tracking en la cuenta del coach).
-    // Por ahora: mailto: abre el cliente de correo del coach (Gmail web,
-    // Outlook, lo que tenga por default) con el mensaje pre-rellenado.
-    window.open(
-      'mailto:'+encodeURIComponent(p.to)
-      +'?subject='+encodeURIComponent(editedSub)
-      +'&body='+encodeURIComponent(editedMsg),
-      '_blank'
-    );
-    if(ok){
-      ok.textContent='✓ Abriendo tu email...';
-      ok.style.color='var(--green)';
-      setTimeout(function(){ok.textContent='';},4000);
-    }
+    // Envio directo via EmailJS. From-name = nombre del coach, Reply-To = email del coach.
+    // SMTP origen es la cuenta master EmailJS (limitacion del plan free).
+    if(ok){ ok.textContent='Enviando...'; ok.style.color='var(--muted)'; }
+    var _coachReply=(typeof ME!=='undefined'&&ME&&ME.email)||'hi@pathwaycareercoach.com';
+    emailjs.send('Coach','template_7f00mbl',{
+      to_email: p.to,
+      name: coachFull,
+      subject: editedSub,
+      message: editedMsg.replace(/\n/g,'<br>'),
+      reply_to: _coachReply
+    }).then(function(){
+      if(ok){
+        ok.textContent='✓ Email enviado a '+p.to;
+        ok.style.color='var(--green)';
+        setTimeout(function(){ok.textContent='';},6000);
+      }
+    }).catch(function(err){
+      console.error('[email send]',err);
+      if(ok){
+        ok.textContent='Error enviando: '+(err&&(err.text||err.message)||'desconocido');
+        ok.style.color='#C0756E';
+        setTimeout(function(){ok.textContent='';},8000);
+      }
+    });
     _pendingEmail=null;
   };
   window._mCopy = function(){
