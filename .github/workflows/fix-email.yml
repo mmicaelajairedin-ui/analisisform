@@ -1,0 +1,120 @@
+name: Fix email direct send (one-shot)
+
+on:
+  push:
+    branches: [auto/fix-email-direct-send]
+    paths:
+      - '.github/workflows/fix-email.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: auto/fix-email-direct-send
+
+      - name: Patch
+        run: |
+          cat > /tmp/patch.js <<'PATCH_EOF'
+          const fs = require('fs');
+          const FILE = 'panel.html';
+          let html = fs.readFileSync(FILE, 'utf8');
+
+          function replaceOnce(from, to, label){
+            const idx = html.indexOf(from);
+            if (idx === -1) throw new Error('NO MATCH: '+label);
+            const idx2 = html.indexOf(from, idx+1);
+            if (idx2 !== -1) throw new Error('MULTIPLES: '+label);
+            html = html.slice(0,idx) + to + html.slice(idx+from.length);
+            console.log('OK ' + label);
+          }
+
+          // Reemplazar el bloque mailto: temporal por envio directo via EmailJS.
+          // From: nombre del coach. Reply-To: email del coach. SMTP: cuenta master EmailJS.
+          const oldBlock =
+          "    // TEMPORAL: abrir mailto: en vez de usar EmailJS (que mandaba via el\n" +
+          "    // Gmail del admin para TODOS los coaches). Cuando integremos Gmail OAuth\n" +
+          "    // con Google Workspace, este flow se reemplaza para que cada coach\n" +
+          "    // mande desde su propia cuenta autorizada (con firma, foto y branding\n" +
+          "    // propios, y tracking en la cuenta del coach).\n" +
+          "    // Por ahora: mailto: abre el cliente de correo del coach (Gmail web,\n" +
+          "    // Outlook, lo que tenga por default) con el mensaje pre-rellenado.\n" +
+          "    window.open(\n" +
+          "      'mailto:'+encodeURIComponent(p.to)\n" +
+          "      +'?subject='+encodeURIComponent(editedSub)\n" +
+          "      +'&body='+encodeURIComponent(editedMsg),\n" +
+          "      '_blank'\n" +
+          "    );\n" +
+          "    if(ok){\n" +
+          "      ok.textContent='✓ Abriendo tu email...';\n" +
+          "      ok.style.color='var(--green)';\n" +
+          "      setTimeout(function(){ok.textContent='';},4000);\n" +
+          "    }\n" +
+          "    _pendingEmail=null;\n";
+
+          const newBlock =
+          "    // Envio directo via EmailJS. From-name = nombre del coach, Reply-To = email del coach.\n" +
+          "    // SMTP origen es la cuenta master EmailJS (limitacion del plan free).\n" +
+          "    if(ok){ ok.textContent='Enviando...'; ok.style.color='var(--muted)'; }\n" +
+          "    var _coachReply=(typeof ME!=='undefined'&&ME&&ME.email)||'hi@pathwaycareercoach.com';\n" +
+          "    emailjs.send('Coach','template_7f00mbl',{\n" +
+          "      to_email: p.to,\n" +
+          "      name: coachFull,\n" +
+          "      subject: editedSub,\n" +
+          "      message: editedMsg.replace(/\\n/g,'<br>'),\n" +
+          "      reply_to: _coachReply\n" +
+          "    }).then(function(){\n" +
+          "      if(ok){\n" +
+          "        ok.textContent='✓ Email enviado a '+p.to;\n" +
+          "        ok.style.color='var(--green)';\n" +
+          "        setTimeout(function(){ok.textContent='';},6000);\n" +
+          "      }\n" +
+          "    }).catch(function(err){\n" +
+          "      console.error('[email send]',err);\n" +
+          "      if(ok){\n" +
+          "        ok.textContent='Error enviando: '+(err&&(err.text||err.message)||'desconocido');\n" +
+          "        ok.style.color='#C0756E';\n" +
+          "        setTimeout(function(){ok.textContent='';},8000);\n" +
+          "      }\n" +
+          "    });\n" +
+          "    _pendingEmail=null;\n";
+
+          replaceOnce(oldBlock, newBlock, 'Email directo via EmailJS');
+
+          fs.writeFileSync(FILE, html);
+          console.log('Patch aplicado');
+          PATCH_EOF
+          node /tmp/patch.js
+
+      - name: Validate JS
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const html = fs.readFileSync('panel.html','utf8');
+          const matches = html.match(/<script\b[^>]*>[\s\S]*?<\/script>/gi) || [];
+          let failed = 0;
+          for (const s of matches) {
+            const openTag = s.match(/<script\b[^>]*>/i)[0];
+            if (/\ssrc\s*=/i.test(openTag)) continue;
+            if (/\stype\s*=\s*["']?(module|application\/(json|ld\+json)|text\/(template|html))/i.test(openTag)) continue;
+            const body = s.replace(/^<script\b[^>]*>/i,'').replace(/<\/script>\s*$/i,'');
+            if (!body.trim()) continue;
+            try { new Function(body); } catch (e) { console.error('SYNTAX:', e.message); failed++; }
+          }
+          if (failed > 0) process.exit(1);
+          console.log('OK sintaxis');
+          EOF
+
+      - name: Self-delete + commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-email.yml
+          git add panel.html
+          git diff --staged --quiet && exit 0
+          git commit -m "fix(panel): enviar emails al cliente directo via EmailJS"
+          git push origin auto/fix-email-direct-send
