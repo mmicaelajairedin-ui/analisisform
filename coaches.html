@@ -555,14 +555,13 @@ function appendRef(url,coachId){
   var sep = url.indexOf('?')>=0 ? '&' : '?';
   return url + sep + 'client_reference_id=' + encodeURIComponent(coachId);
 }
-// Solo mostramos coaches con perfil completo y cobrable: foto, bio y al
-// menos un link de pago (Stripe) configurado en su panel.
+// Mostramos coaches con perfil completo: foto y bio. El pago ya no
+// depende de un link propio del coach — los leads del directorio se
+// gestionan por Pathway (modelo de solicitud + comisión).
 function _coachCompleto(c){
-  var cfg = c.configuracion || {};
   var foto = String(c.foto_url || '').trim();
   var bio = String(c.bio || '').trim();
-  var pago = String(cfg.stripe_mentoria_url || '').trim() || String(cfg.stripe_sesion_url || '').trim();
-  return !!(foto && bio && pago);
+  return !!(foto && bio);
 }
 function buildCoachCard(c){
   var cfg = c.configuracion || {};
@@ -576,20 +575,14 @@ function buildCoachCard(c){
   var especialidades = Array.isArray(cfg.especialidades) ? cfg.especialidades : [];
   var precioMent = cfg.precio_mentoria || 400;
   var precioSes = cfg.precio_sesion || 120;
-  var stripeMent = cfg.stripe_mentoria_url || '';
-  var stripeSes = cfg.stripe_sesion_url || '';
   var fotoHtml = foto
     ? '<img src="'+escH(foto)+'" alt="'+escH(nombre)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">'
     : '<div style="width:100%;height:100%;border-radius:50%;background:rgba(45,106,79,.1);color:var(--pw-bosque);display:flex;align-items:center;justify-content:center;font-family:var(--pw-serif);font-size:24px;font-weight:600;">'+escH(ini(nombre))+'</div>';
   var tagsHtml = especialidades.length
     ? especialidades.map(function(t){return '<span class="tag">'+escH(t)+'</span>';}).join('')
     : '<span class="tag">Coaching</span>';
-  var ctaPrincipal = stripeMent
-    ? '<a href="'+escH(appendRef(stripeMent,c.id))+'" target="_blank" rel="noopener" class="btn-primary" onclick="try{sessionStorage.setItem(\'pw_coach_id\',\''+escH(c.id)+'\');}catch(e){}">Mentoría 4 semanas · €'+escH(String(precioMent))+'<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>'
-    : '<button class="btn-disabled" disabled>Próximamente — sin link de pago</button>';
-  var ctaSecundario = stripeSes
-    ? '<a href="'+escH(appendRef(stripeSes,c.id))+'" target="_blank" rel="noopener" onclick="try{sessionStorage.setItem(\'pw_coach_id\',\''+escH(c.id)+'\');}catch(e){}" style="display:block;text-align:center;margin-top:8px;font-size:13px;color:var(--pw-texto-suave);text-decoration:none;">o una sesión única · €'+escH(String(precioSes))+' →</a>'
-    : '';
+  var ctaPrincipal = '<button class="btn-primary" data-coach-id="'+escH(c.id)+'" data-coach-nombre="'+escH(nombre)+'" onclick="_pwSolicitarCoach(this)">Solicitar este coach<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>';
+  var ctaSecundario = '';
   return '<article class="coach-card" data-pais="'+escH(paisesAttr)+'" data-coach-id="'+escH(c.id)+'">'
     + '<div class="coach-top">'
     +   '<div class="coach-photo-round">'+fotoHtml+'</div>'
@@ -691,6 +684,23 @@ function _pwAbrirDirectorio(){
   if(grid) grid.setAttribute('data-locked','0');
   loadCoachesDirectory();
 }
+// Fase 1 (manual): el candidato solicita un coach. No hay pago acá —
+// se registra el lead en contactos_chat y Pathway lo gestiona a mano
+// (avisar al coach, esperar que acepte en 24 h, cobrar por Pathway).
+window._pwSolicitarCoach = function(btn){
+  if(!btn || btn.disabled) return;
+  var cid = btn.getAttribute('data-coach-id') || '';
+  var cnm = btn.getAttribute('data-coach-nombre') || '';
+  var nm = '', em = '';
+  try { nm = localStorage.getItem('pw_cand_nombre') || ''; em = localStorage.getItem('pw_cand_email') || ''; } catch(_e){}
+  btn.disabled = true; btn.style.opacity = '.6'; btn.textContent = 'Enviando…';
+  var done = function(){ btn.textContent = '✓ Solicitud enviada — te contactamos'; };
+  fetch(SB + '/rest/v1/contactos_chat', {
+    method: 'POST',
+    headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ contacto: (nm ? nm + ' · ' : '') + (em || 'sin email') + ' → SOLICITA coach: ' + cnm + ' [' + cid + ']', pagina: 'solicitud-coach' })
+  }).then(done, done);
+};
 window._pwRegCandidato = function(e){
   e.preventDefault();
   var em = (document.getElementById('dir-email').value || '').trim();
@@ -707,7 +717,7 @@ window._pwRegCandidato = function(e){
     headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
     body: JSON.stringify({ contacto: (nm ? nm + ' · ' : '') + em, pagina: 'soy-candidato' })
   }).catch(function(){});
-  try { localStorage.setItem('pw_cand_reg', '1'); } catch(_e){}
+  try { localStorage.setItem('pw_cand_reg', '1'); localStorage.setItem('pw_cand_nombre', nm); localStorage.setItem('pw_cand_email', em); } catch(_e){}
   _pwAbrirDirectorio();
   return false;
 };
