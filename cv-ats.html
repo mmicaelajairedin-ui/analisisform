@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="robots" content="noindex, nofollow">
+<title>CV — Versión ATS</title>
+<style>
+/* CV optimizado para ATS (Applicant Tracking Systems).
+   - Una sola columna (los ATS no leen bien layouts multi-column)
+   - Sin foto en el body (algunos ATS la marcan como contenido inútil)
+   - Sin colores de fondo, sin íconos decorativos, sin tablas
+   - Fuentes sans-serif estándar (Arial/Calibri-like)
+   - Headers semánticos claros con jerarquía H1 → H2 → H3
+   - Bullets con dash plano · texto plano */
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;font-size:11pt;line-height:1.45;}
+body{max-width:780px;margin:0 auto;padding:30px 40px 50px;}
+h1{font-size:22pt;font-weight:700;margin-bottom:4px;letter-spacing:-0.3px;}
+.subtitle{font-size:11pt;font-weight:600;color:#222;margin-bottom:8px;}
+.contact{font-size:10pt;color:#222;margin-bottom:18px;}
+.contact span{margin-right:14px;white-space:nowrap;}
+h2{font-size:13pt;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:18px;margin-bottom:8px;padding-bottom:4px;border-bottom:1.5px solid #000;}
+.section{margin-bottom:14px;}
+.section p{margin-bottom:6px;}
+.item{margin-bottom:12px;}
+.item-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;}
+.item-title{font-size:11pt;font-weight:700;}
+.item-org{font-size:11pt;font-weight:600;color:#222;}
+.item-date{font-size:10pt;color:#444;font-style:italic;white-space:nowrap;}
+.item-loc{font-size:10pt;color:#555;}
+ul{list-style:none;padding-left:0;margin-top:4px;}
+ul li{padding-left:14px;position:relative;margin-bottom:3px;font-size:10.5pt;}
+ul li::before{content:'•';position:absolute;left:2px;top:0;}
+.skills-line{font-size:10.5pt;line-height:1.5;}
+.toolbar{position:fixed;top:0;left:0;right:0;background:#1B4332;color:#fff;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;z-index:9999;font-size:13px;}
+.toolbar-info{flex:1;}
+.toolbar-info strong{color:#fff;}
+.toolbar-info small{display:block;font-size:11px;opacity:.85;margin-top:2px;}
+.toolbar-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#fff;color:#1B4332;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;font-family:inherit;}
+.toolbar-btn:hover{background:#E8F5EE;}
+.toolbar-btn.secondary{background:transparent;color:#fff;border:1px solid #fff;}
+.toolbar-btn.secondary:hover{background:rgba(255,255,255,.15);color:#fff;}
+.loading{text-align:center;padding:60px 20px;color:#666;}
+.error-box{text-align:center;padding:40px 20px;background:#FEF2F2;border:1.5px solid #FECACA;border-radius:8px;color:#7A3A3A;margin:20px 0;}
+.error-box h2{border:none;color:#7A3A3A;text-transform:none;letter-spacing:0;}
+@media print{
+  .toolbar{display:none;}
+  body{padding:20px 30px;max-width:none;}
+  h2{break-after:avoid;page-break-after:avoid;}
+  .item{break-inside:avoid;page-break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar" id="toolbar">
+  <div class="toolbar-info">
+    <strong>Versión ATS</strong>
+    <small>Optimizada para sistemas de filtrado automático. Imprimí con "Guardar como PDF" para descargar.</small>
+  </div>
+  <button class="toolbar-btn" onclick="window.print()">📥 Descargar PDF</button>
+  <a class="toolbar-btn secondary" href="cliente.html">← Volver</a>
+</div>
+
+<div id="content" style="margin-top:80px;">
+  <div class="loading">Cargando tu CV...</div>
+</div>
+
+<script>
+var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+
+function esc(s){if(s==null)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function arr(v){return Array.isArray(v)?v:(v?[v]:[]);}
+
+function getEmail(){
+  var p=new URLSearchParams(window.location.search);
+  var em=p.get('email');
+  if(em) return em.toLowerCase().trim();
+  try{
+    var u=JSON.parse(localStorage.getItem('mj_user')||'null');
+    if(u && u.email) return u.email.toLowerCase().trim();
+  }catch(e){}
+  return null;
+}
+
+function showError(msg){
+  document.getElementById('content').innerHTML=
+    '<div class="error-box"><h2>No pudimos cargar tu CV</h2><p>'+esc(msg)+'</p>'
+    +'<p style="margin-top:10px;"><a href="cliente.html" style="color:#2D6A4F;font-weight:600;">← Volver al portal</a></p></div>';
+}
+
+function render(d){
+  if(!d){showError('Tu coach aún no publicó tu CV. Cuando esté listo, podrás descargar la versión ATS desde acá.');return;}
+  var nombre=d.nombre||'';
+  var rolObj=d.rol_objetivo||d.objetivo||'';
+  var ct=d.contacto||{};
+  var perfil=d.perfil||d.resumen||'';
+  var exp=arr(d.experiencia);
+  var edu=arr(d.educacion);
+  // Competencias: intenta separar técnicas/blandas; si no, todo junto.
+  var compsTec=arr(d.competencias_tecnicas||d.tecnicas);
+  var compsBland=arr(d.competencias_blandas||d.blandas||d.soft_skills);
+  var compsAll=arr(d.competencias);
+  var idiomas=arr(d.idiomas);
+  var herr=arr(d.herramientas);
+  var cursos=arr(d.cursos);
+
+  var h='';
+
+  // ─── Header: nombre + línea de palabras clave (rol + skills relevantes) ───
+  // Sigue el template "Luis Gabriel": nombre grande, debajo una línea con
+  // el rol objetivo + 4-5 keywords/competencias clave alineadas al cargo.
+  // Esto refuerza el match para ATS y para el reclutador que lee rápido.
+  h+='<h1>'+esc(nombre)+'</h1>';
+  // Subtítulo: rol objetivo + palabras clave (mezcla de tecnicas + herramientas)
+  var keywordsLine='';
+  if(rolObj) keywordsLine=esc(rolObj);
+  var topKeywords=[].concat(compsTec.slice(0,3),herr.slice(0,3)).filter(Boolean);
+  if(topKeywords.length){
+    if(keywordsLine) keywordsLine+=' | ';
+    keywordsLine+=topKeywords.map(esc).join(' | ');
+  }
+  if(keywordsLine) h+='<div class="subtitle">'+keywordsLine+'</div>';
+
+  // ─── Contacto en 1 línea ───
+  var contactParts=[];
+  if(ct.tel) contactParts.push(esc(ct.tel));
+  if(ct.email) contactParts.push(esc(ct.email));
+  if(ct.ciudad) contactParts.push(esc(ct.ciudad));
+  if(ct.linkedin) contactParts.push(esc(ct.linkedin));
+  if(contactParts.length){
+    h+='<div class="contact">'+contactParts.map(function(c){return '<span>'+c+'</span>';}).join(' · ')+'</div>';
+  }
+
+  // ─── Perfil Profesional ───
+  // Resumen breve: formación + experiencia clave + habilidades + cierre con
+  // "disponible para..." (CTA implícito como sugiere el template).
+  if(perfil){
+    h+='<h2>Perfil Profesional</h2>';
+    h+='<div class="section"><p>'+esc(perfil).replace(/\n/g,'<br>')+'</p></div>';
+  }
+
+  // ─── Experiencia Laboral (últimos 6-8 años máximo, bullets con logros) ───
+  if(exp.length){
+    h+='<h2>Experiencia Laboral</h2>';
+    h+='<div class="section">';
+    exp.forEach(function(e){
+      h+='<div class="item">';
+      h+='<div class="item-head">';
+      h+='<div><span class="item-title">'+esc(e.titulo||e.puesto||'')+'</span>';
+      if(e.empresa) h+=' <span class="item-org">| '+esc(e.empresa)+'</span>';
+      h+='</div>';
+      var dateStr=[e.desde,e.hasta].filter(Boolean).join(' – ')||e.periodo||'';
+      if(dateStr) h+='<span class="item-date">'+esc(dateStr)+'</span>';
+      h+='</div>';
+      if(e.ubicacion) h+='<div class="item-loc">'+esc(e.ubicacion)+'</div>';
+      var bullets=arr(e.bullets||e.logros||e.tareas);
+      if(bullets.length){
+        h+='<ul>';
+        bullets.forEach(function(b){if(b)h+='<li>'+esc(b)+'</li>';});
+        h+='</ul>';
+      } else if(e.descripcion){
+        h+='<p style="margin-top:4px;">'+esc(e.descripcion)+'</p>';
+      }
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+
+  // ─── Formación Académica (posgrado + pregrado) ───
+  if(edu.length){
+    h+='<h2>Formación Académica</h2>';
+    h+='<div class="section">';
+    edu.forEach(function(e){
+      h+='<div class="item">';
+      h+='<div class="item-head">';
+      h+='<div><span class="item-title">'+esc(e.titulo||e.grado||'')+'</span>';
+      if(e.institucion) h+=' <span class="item-org">| '+esc(e.institucion)+'</span>';
+      h+='</div>';
+      var dateStr=e.anio||[e.desde,e.hasta].filter(Boolean).join(' – ')||'';
+      if(dateStr) h+='<span class="item-date">'+esc(dateStr)+'</span>';
+      h+='</div>';
+      if(e.descripcion) h+='<p style="margin-top:4px;">'+esc(e.descripcion)+'</p>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+
+  // ─── Formación Complementaria (cursos, diplomados, certificaciones) ───
+  // Va inmediatamente después de Formación Académica como sugiere el template.
+  if(cursos.length){
+    h+='<h2>Formación Complementaria</h2>';
+    h+='<div class="section">';
+    cursos.forEach(function(c){
+      if(typeof c==='string'){
+        h+='<p>• '+esc(c)+'</p>';
+      } else {
+        h+='<p>• '+esc(c.titulo||c.nombre||'')+(c.institucion?' — '+esc(c.institucion):'')+(c.anio?' ('+esc(c.anio)+')':'')+'</p>';
+      }
+    });
+    h+='</div>';
+  }
+
+  // ─── Competencias Profesionales (divididas Técnicas / Blandas) ───
+  // Estructura recomendada: dos subsecciones claras para ATS y reclutador.
+  // Si no hay separación en data, mostramos todo bajo Técnicas.
+  var hasComp=compsTec.length||compsBland.length||compsAll.length||herr.length;
+  if(hasComp){
+    h+='<h2>Competencias Profesionales</h2>';
+    h+='<div class="section">';
+    // Técnicas: incluye competencias_tecnicas + herramientas
+    var tecnicas=[];
+    if(compsTec.length) tecnicas=tecnicas.concat(compsTec);
+    if(herr.length) tecnicas=tecnicas.concat(herr);
+    // Si no hay tecnicas separadas, usar competencias_all como técnicas
+    if(!tecnicas.length && compsAll.length && !compsBland.length){
+      tecnicas=compsAll;
+    }
+    if(tecnicas.length){
+      h+='<p style="margin-top:4px;"><strong>Técnicas:</strong> '+tecnicas.map(esc).join(' | ')+'</p>';
+    }
+    // Blandas
+    if(compsBland.length){
+      h+='<p style="margin-top:6px;"><strong>Blandas:</strong> '+compsBland.map(esc).join(' | ')+'</p>';
+    } else if(compsAll.length && tecnicas===compsAll){
+      // ya se renderizó como técnicas — skip
+    }
+    // Si tiene competencias_all + competencias_blandas pero no técnicas separadas,
+    // tratamos competencias_all como técnicas (caso raro pero válido)
+    h+='</div>';
+  }
+
+  // ─── Idiomas ───
+  if(idiomas.length){
+    h+='<h2>Idiomas</h2>';
+    h+='<div class="section"><div class="skills-line">'+idiomas.map(function(i){
+      if(typeof i==='string')return esc(i);
+      var nivel=i.nivel?' ('+esc(i.nivel)+')':'';
+      return esc(i.idioma||i.nombre||'')+nivel;
+    }).join(' · ')+'</div></div>';
+  }
+
+  document.getElementById('content').innerHTML=h;
+  document.title='CV ATS — '+nombre;
+}
+
+(function init(){
+  var email=getEmail();
+  if(!email){showError('No se pudo identificar tu email. Volvé al portal e intentalo de nuevo.');return;}
+  fetch(SB+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(email)+'&order=created_at.desc&limit=1&select=contenido',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(function(rows){
+    if(!rows || !rows.length){showError('Tu CV todavía no está publicado.');return;}
+    var contenido=rows[0].contenido;
+    if(typeof contenido==='string'){try{contenido=JSON.parse(contenido);}catch(e){}}
+    render(contenido);
+  }).catch(function(err){
+    console.error('CV ATS load error:',err);
+    showError('Error de conexión: '+(err.message||'desconocido'));
+  });
+})();
+</script>
+</body>
+</html>
