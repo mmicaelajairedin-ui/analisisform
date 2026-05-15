@@ -6223,7 +6223,7 @@ function _queueRetry(id){
 var _cfgTab='general';
 
 function _cfgShellOpen(activeTab){
-  var tabs=[{id:'general',label:'General'},{id:'soporte',label:'Soporte'},{id:'opinion',label:'Tu opinión'}];
+  var tabs=[{id:'general',label:'General'},{id:'firma',label:'Mi firma'},{id:'soporte',label:'Soporte'},{id:'opinion',label:'Tu opinión'}];
   var h='<div style="padding:28px 32px 48px;max-width:760px;">';
   h+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:28px;font-weight:500;color:var(--title);letter-spacing:-.8px;margin-bottom:6px;">Configuración</h2>';
   h+='<p style="font-size:13px;color:var(--muted);margin-bottom:18px;">Tu cuenta, soporte y feedback — todo en un solo lugar.</p>';
@@ -6238,6 +6238,45 @@ function _cfgShellOpen(activeTab){
   return h;
 }
 function _cfgShellClose(){ return '</div>'; }
+
+function _slugFirma(n){
+  var s=(n||'').toString().toLowerCase();
+  var from='áàäâãéèëêíìïîóòöôõúùüûñç', to='aaaaaeeeeiiiiooooouuuunc';
+  s=s.replace(/./g,function(c){var i=from.indexOf(c);return i<0?c:to.charAt(i);});
+  return s.replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)||'tu-perfil';
+}
+function _buildFirmaHTML(o){
+  var color=o.color?escH(o.color):'#2D6A4F';
+  var nombre=escH(o.nombre), email=escH(o.email), web=escH(o.web), foto=o.foto;
+  var s='<table cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;"><tr>';
+  if(foto){
+    s+='<td style="padding-right:16px;vertical-align:top;"><img src="'+escH(foto)+'" width="60" height="60" alt="" style="border-radius:50%;display:block;border:2px solid '+color+';"></td>';
+  }
+  s+='<td style="vertical-align:top;border-left:3px solid '+color+';padding-left:16px;">';
+  s+='<div style="font-size:15px;font-weight:700;color:#1B2E26;">'+nombre+'</div>';
+  s+='<div style="font-size:12px;color:#5b6b63;margin:2px 0 8px;">Career Coach</div>';
+  s+='<div style="font-size:12px;color:#5b6b63;"><span style="color:#9aa49e;">Email</span>&nbsp; '+email+'</div>';
+  s+='<div style="font-size:12px;color:#5b6b63;"><span style="color:#9aa49e;">Web</span>&nbsp;&nbsp;&nbsp; '+web+'</div>';
+  s+='<div style="margin-top:12px;"><table cellpadding="0" cellspacing="0" border="0"><tr>';
+  s+='<td style="vertical-align:middle;padding-right:7px;"><img src="https://pathwaycareercoach.com/logo-mark.png" width="18" height="18" alt="Pathway" style="display:block;"></td>';
+  s+='<td style="vertical-align:middle;font-size:11px;color:#9aa49e;">Powered by <span style="color:#2D6A4F;font-weight:700;">Pathway</span></td>';
+  s+='</tr></table></div>';
+  s+='</td></tr></table>';
+  return s;
+}
+function _copiarFirma(){
+  var el=document.getElementById('firma-render');
+  var st=document.getElementById('firma-status');
+  if(!el)return;
+  try{
+    var range=document.createRange();range.selectNodeContents(el);
+    var sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
+    var ok=document.execCommand('copy');sel.removeAllRanges();
+    if(st){st.textContent=ok?'✓ Firma copiada — pegala en Gmail → Configuración → Firma':'No se pudo copiar. Seleccionala y copiala con Ctrl+C.';st.style.color=ok?'var(--accent)':'#c0756e';}
+  }catch(e){
+    if(st){st.textContent='No se pudo copiar automáticamente. Seleccionala y copiala con Ctrl+C.';st.style.color='#c0756e';}
+  }
+}
 
 function _renderConfig(tab){
   if(tab) _cfgTab=tab;
@@ -6295,6 +6334,39 @@ function _renderConfig(tab){
     s+='<p style="font-size:11px;color:var(--muted);margin-top:14px;text-align:center;">Tu opinión es anónima — solo guardamos tu email para responderte si querés que lo hagamos.</p>';
     s+=_cfgShellClose();
     dp.innerHTML=s;
+    return;
+  }
+
+  // ─── Tab MI FIRMA ───
+  if(activeTab==='firma'){
+    var femail=ME&&ME.email?ME.email:'';
+    dp.innerHTML=_cfgShellOpen(activeTab)+'<div style="text-align:center;padding:3rem;color:var(--muted);">Cargando...</div>'+_cfgShellClose();
+    if(!femail){dp.innerHTML=_cfgShellOpen(activeTab)+'<div style="padding:2rem;color:#c0756e;">Sin sesión activa.</div>'+_cfgShellClose();return;}
+    var ffilter=ME.id?'id=eq.'+encodeURIComponent(ME.id):'email=eq.'+encodeURIComponent(femail.toLowerCase());
+    fetch(SB+'/rest/v1/usuarios?'+ffilter+'&select=*',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}})
+      .then(function(r){return r.ok?r.json():[];}).then(function(rows){
+        var coach=(rows&&rows[0])||{};
+        var lsCfg={};try{lsCfg=JSON.parse(localStorage.getItem('mj_coach_config')||'{}');}catch(e){}
+        var cfg=Object.assign({},coach.configuracion||{},lsCfg);
+        var foto=lsCfg.foto_url||coach.foto_url||'';
+        var color=cfg.color_marca||'#2D6A4F';
+        var nombre=coach.nombre||(ME&&ME.nombre)||lsCfg.nombre_practica||coach.nombre_practica||'Tu nombre';
+        var web='pathwaycareercoach.com/'+_slugFirma(nombre);
+        var firma=_buildFirmaHTML({foto:foto,color:color,nombre:nombre,email:femail,web:web});
+        var h=_cfgShellOpen(activeTab);
+        h+='<p style="font-size:13px;color:var(--muted);margin-bottom:18px;">Tu firma para los emails que les mandás a tus clientes. Copiala y pegala en Gmail → Configuración → Firma.</p>';
+        h+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:16px;">';
+        h+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;">Vista previa</div>';
+        h+='<div id="firma-render" style="padding:6px 2px;">'+firma+'</div>';
+        h+='</div>';
+        h+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">';
+        h+='<button id="firma-copy-btn" onclick="_copiarFirma()" style="background:var(--accent);color:#fff;border:none;padding:11px 26px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;font-family:Inter,sans-serif;">Copiar firma</button>';
+        h+='<span id="firma-status" style="font-size:12px;color:var(--muted);"></span>';
+        h+='</div>';
+        h+='<p style="font-size:11px;color:var(--muted);margin-top:16px;">La foto y el color salen de lo que cargaste en <b>Configuración → General</b>. El link <code>'+escH(web)+'</code> es tu perfil público (próximamente).</p>';
+        h+=_cfgShellClose();
+        dp.innerHTML=h;
+      }).catch(function(){dp.innerHTML=_cfgShellOpen('firma')+'<div style="padding:2rem;color:#c0756e;">No se pudo cargar. Reintentá.</div>'+_cfgShellClose();});
     return;
   }
 
