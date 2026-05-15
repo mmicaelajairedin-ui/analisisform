@@ -3298,25 +3298,31 @@ function tabMensajes(c){
     var editedSub=document.getElementById('ep-subject-input').value||'Mensaje de '+_cNom;
     var ok=document.getElementById('msg-ok');
     cerrarModal('modal-email-preview');
-    // TEMPORAL: abrir mailto: en vez de usar EmailJS (que mandaba via el
-    // Gmail del admin para TODOS los coaches). Cuando integremos Gmail OAuth
-    // con Google Workspace, este flow se reemplaza para que cada coach
-    // mande desde su propia cuenta autorizada (con firma, foto y branding
-    // propios, y tracking en la cuenta del coach).
-    // Por ahora: mailto: abre el cliente de correo del coach (Gmail web,
-    // Outlook, lo que tenga por default) con el mensaje pre-rellenado.
-    window.open(
-      'mailto:'+encodeURIComponent(p.to)
-      +'?subject='+encodeURIComponent(editedSub)
-      +'&body='+encodeURIComponent(editedMsg),
-      '_blank'
-    );
-    if(ok){
-      ok.textContent='✓ Abriendo tu email...';
-      ok.style.color='var(--green)';
-      setTimeout(function(){ok.textContent='';},4000);
-    }
-    _pendingEmail=null;
+    if(ok){ok.textContent='Enviando…';ok.style.color='var(--muted)';}
+    // El panel manda el email directo (server-side) con la firma del coach
+    // adjunta. Si falla, se cae a mailto: para no bloquear al coach.
+    var bodyHtml='<div style="font-size:15px;line-height:1.7;color:#2D2929;font-family:Inter,Arial,sans-serif;">'
+      +escH(editedMsg).replace(/\n/g,'<br>')
+      +'</div>'+_firmaEmailHTML();
+    fetch(SB+'/functions/v1/send-email',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        to:p.to,
+        to_name:p.name||'',
+        subject:editedSub,
+        html:bodyHtml,
+        reply_to:(ME&&ME.email)||'hi@pathwaycareercoach.com'
+      })
+    }).then(function(r){
+      if(!r.ok)throw new Error('send_failed');
+      if(ok){ok.textContent='✓ Email enviado a '+p.to;ok.style.color='var(--green)';setTimeout(function(){ok.textContent='';},5000);}
+      _pendingEmail=null;
+    }).catch(function(){
+      window.open('mailto:'+encodeURIComponent(p.to)+'?subject='+encodeURIComponent(editedSub)+'&body='+encodeURIComponent(editedMsg),'_blank');
+      if(ok){ok.textContent='No se pudo enviar desde el panel — abrimos tu email';ok.style.color='#c0756e';setTimeout(function(){ok.textContent='';},6000);}
+      _pendingEmail=null;
+    });
   };
   window._mCopy = function(){
     navigator.clipboard.writeText(getMsg()).then(function(){
@@ -3942,7 +3948,7 @@ function _notifClient(c,tipo){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
       to:c.email,to_name:c.nombre||'',
-      subject:tpl.subject,html:tpl.html,
+      subject:tpl.subject,html:tpl.html+_firmaEmailHTML(),
       reply_to:(ME&&ME.email)||'hi@pathwaycareercoach.com'
     })
   }).catch(function(){});
@@ -6264,18 +6270,20 @@ function _buildFirmaHTML(o){
   s+='</td></tr></table>';
   return s;
 }
-function _copiarFirma(){
-  var el=document.getElementById('firma-render');
-  var st=document.getElementById('firma-status');
-  if(!el)return;
-  try{
-    var range=document.createRange();range.selectNodeContents(el);
-    var sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
-    var ok=document.execCommand('copy');sel.removeAllRanges();
-    if(st){st.textContent=ok?'✓ Firma copiada — pegala en Gmail → Configuración → Firma':'No se pudo copiar. Seleccionala y copiala con Ctrl+C.';st.style.color=ok?'var(--accent)':'#c0756e';}
-  }catch(e){
-    if(st){st.textContent='No se pudo copiar automáticamente. Seleccionala y copiala con Ctrl+C.';st.style.color='#c0756e';}
-  }
+// Firma del coach logueado para adjuntar a los emails que envía el panel.
+// Lee los mismos datos que la pestaña "Mi firma" (foto + color de marca).
+function _firmaEmailHTML(){
+  var ls={};try{ls=JSON.parse(localStorage.getItem('mj_coach_config')||'{}');}catch(e){}
+  var meCfg=(ME&&ME.configuracion)||{};
+  var foto=ls.foto_url||(ME&&ME.foto_url)||'';
+  var color=ls.color_marca||meCfg.color_marca||'#2D6A4F';
+  var nombre=(ME&&ME.nombre)||ls.nombre_practica||'';
+  var email=(ME&&ME.email)||'';
+  if(!nombre&&!email)return '';
+  var web='pathwaycareercoach.com/'+_slugFirma(nombre||email);
+  return '<div style="margin-top:28px;border-top:1px solid #e6e6e6;padding-top:18px;">'
+    +_buildFirmaHTML({foto:foto,color:color,nombre:nombre||'Tu coach',email:email,web:web})
+    +'</div>';
 }
 
 function _renderConfig(tab){
@@ -6354,16 +6362,12 @@ function _renderConfig(tab){
         var web='pathwaycareercoach.com/'+_slugFirma(nombre);
         var firma=_buildFirmaHTML({foto:foto,color:color,nombre:nombre,email:femail,web:web});
         var h=_cfgShellOpen(activeTab);
-        h+='<p style="font-size:13px;color:var(--muted);margin-bottom:18px;">Tu firma para los emails que les mandás a tus clientes. Copiala y pegala en Gmail → Configuración → Firma.</p>';
+        h+='<p style="font-size:13px;color:var(--muted);margin-bottom:18px;">Esta firma se agrega <b>automáticamente</b> al final de todos los emails que enviás desde el panel: los avisos a tus clientes (CV listo, informe, nueva semana) y los mensajes que les escribís. No tenés que copiar ni pegar nada.</p>';
         h+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:16px;">';
-        h+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;">Vista previa</div>';
+        h+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;">Así se ve</div>';
         h+='<div id="firma-render" style="padding:6px 2px;">'+firma+'</div>';
         h+='</div>';
-        h+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">';
-        h+='<button id="firma-copy-btn" onclick="_copiarFirma()" style="background:var(--accent);color:#fff;border:none;padding:11px 26px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;font-family:Inter,sans-serif;">Copiar firma</button>';
-        h+='<span id="firma-status" style="font-size:12px;color:var(--muted);"></span>';
-        h+='</div>';
-        h+='<p style="font-size:11px;color:var(--muted);margin-top:16px;">La foto y el color salen de lo que cargaste en <b>Configuración → General</b>. El link <code>'+escH(web)+'</code> es tu perfil público (próximamente).</p>';
+        h+='<p style="font-size:11px;color:var(--muted);margin-top:4px;">La foto y el color salen de lo que cargaste en <b>Configuración → General</b> — cambialos ahí y la firma se actualiza sola. El link <code>'+escH(web)+'</code> es tu perfil público (próximamente).</p>';
         h+=_cfgShellClose();
         dp.innerHTML=h;
       }).catch(function(){dp.innerHTML=_cfgShellOpen('firma')+'<div style="padding:2rem;color:#c0756e;">No se pudo cargar. Reintentá.</div>'+_cfgShellClose();});
