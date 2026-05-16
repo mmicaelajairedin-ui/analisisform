@@ -29,6 +29,21 @@ en `leads/<nombre>.md` y lo saco de esta tabla.
 | LevelUp (Constanza) · Orientación laboral | @levelupcareershub | Pitch + "¿15 min?" enviado | Sin respuesta | Follow-up 2-3 d con 2 horarios |
 | Soraya · Orientación Laboral Estratégica | @bas.a.lograrlo | Pitch + "¿15 min?" enviado | Sin respuesta | Follow-up 2-3 d con 2 horarios |
 | Clara Oroná · Coach de Carrera (Career Design) | @career.design.byclara | Pitch enviado; responde un **bot/autoresponder**, no humano | Visto, sin respuesta humana | Buscar otro canal (web/email/WhatsApp); IG es funnel automatizado |
+| Karen Bartsch · Life Coach | @karenbartsch.temp | Opener | Sin respuesta | Esperar; follow-up 2-3 d |
+| RRHH Talento | @rrhhtalento | Opener | Sin respuesta | Esperar; follow-up 2-3 d |
 
 > Regla: no creo un archivo por cada saludo en frío (serían decenas vacíos).
 > Se trackean acá hasta que haya conversación real.
+
+---
+
+## Perdidos / no interesados (con motivo — esto es el aprendizaje)
+
+| Lead | IG | Motivo del "no" | ¿Recontactar? |
+|---|---|---|---|
+| Esther Martínez · Orientadora/RRHH/Docente | @soyesthermartinez | "No me interesa en este momento" tras oferta gratis (usa Excel/Notion/Drive/Gmail/notebook) | Follow-up lejano opcional |
+| Leila Farhi · Career Coach | @lic.leilafarhi | "No quiero sumar ninguna herramienta" (usa solo mail + celu, sin plataforma) | No por ahora |
+
+Ver también fichas con motivo: `estimada-rebel.md` (precio LatAm + ya tiene
+servicios), `nora-taboada.md` (sin motivo), `ana-uribe.md` (usa plataforma vía
+Laboratoria — **lead futuro**).
