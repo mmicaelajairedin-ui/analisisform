@@ -23,6 +23,7 @@ en `leads/<nombre>.md` y lo saco de esta tabla.
 | Beatriz De Retes · Career Coach | @beatrizderetescoach | Opener | Sin respuesta | Esperar; follow-up 2-3 d |
 | Jhonatan Marco · Career Coach | @jhonatanmarco | Piropo + pitch enviado | Sin respuesta | Esperar; follow-up 2-3 d |
 | Silvia Faloni · Career Clarity Coach for Women | @silvia_faloni | Piropo + pitch enviado | Sin respuesta | Esperar; follow-up 2-3 d |
+| Majo Callejas · RRHH/CV/LinkedIn/Entrevistas/Reclutadora | @majorrhh | Piropo + pitch enviado | Sin respuesta | Esperar; follow-up 2-3 d |
 
 > Regla: no creo un archivo por cada saludo en frío (serían decenas vacíos).
 > Se trackean acá hasta que haya conversación real.
