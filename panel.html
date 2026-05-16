@@ -6202,6 +6202,35 @@ function _cfgShellOpen(activeTab){
 }
 function _cfgShellClose(){ return '</div>'; }
 
+// Guardado aislado y seguro para cobros/directorio: read-merge de
+// configuracion (NO pisa otras keys) — independiente de _saveCfg.
+window._pwConnectInfo=function(){
+  alert('Estamos activando los cobros automáticos con Stripe. En breve vas a poder conectar tu cuenta desde acá. Por ahora no es necesario hacer nada.');
+};
+window._savePwCfg=function(btn){
+  var msg=document.getElementById('cfg-pw-msg');
+  var optEl=document.getElementById('cfg-dir-optin');
+  var optin=optEl?!!optEl.checked:true;
+  var pm=parseFloat((document.getElementById('cfg-precio-mentoria')||{}).value)||0;
+  var ps=parseFloat((document.getElementById('cfg-precio-sesion')||{}).value)||0;
+  if(btn){btn.disabled=true;btn.style.opacity='.6';}
+  if(msg){msg.textContent='Guardando…';msg.style.color='var(--muted)';}
+  var pf=(typeof ME!=='undefined'&&ME&&ME.id)?'id=eq.'+encodeURIComponent(ME.id):'email=eq.'+encodeURIComponent(((typeof ME!=='undefined'&&ME&&ME.email)||'').toLowerCase());
+  fetch(SB+'/rest/v1/usuarios?'+pf+'&select=configuracion',{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}})
+    .then(function(r){return r.json();})
+    .then(function(rows){
+      var curr=(rows&&rows[0]&&rows[0].configuracion)||{};
+      curr.directorio_optin=optin; curr.visible_directorio=optin;
+      curr.precio_mentoria=pm; curr.precio_sesion=ps;
+      return fetch(SB+'/rest/v1/usuarios?'+pf,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({configuracion:curr})}).then(function(rr){
+        if(!rr.ok)throw new Error('HTTP '+rr.status);
+        try{if(typeof ME!=='undefined'&&ME)ME.configuracion=curr;var ls=JSON.parse(localStorage.getItem('mj_coach_config')||'{}');ls.directorio_optin=optin;ls.precio_mentoria=pm;ls.precio_sesion=ps;localStorage.setItem('mj_coach_config',JSON.stringify(ls));}catch(_e){}
+        if(msg){msg.textContent='Guardado ✓';msg.style.color='var(--accent)';}
+      });
+    })
+    .catch(function(){ if(msg){msg.textContent='No se pudo guardar — reintenta.';msg.style.color='#c0756e';} })
+    .then(function(){ if(btn){btn.disabled=false;btn.style.opacity='1';} });
+};
 function _renderConfig(tab){
   if(tab) _cfgTab=tab;
   var activeTab=_cfgTab;
@@ -6284,6 +6313,9 @@ function _renderConfig(tab){
     var embedUrl=cfg.calendar_embed_url||'';
     var stMentoria=cfg.stripe_mentoria_url||'';
     var stSesion=cfg.stripe_sesion_url||'';
+    var dirOptin=(cfg.directorio_optin===false)?false:true;
+    var precioMent=cfg.precio_mentoria||400;
+    var precioSes=cfg.precio_sesion||120;
     var bio=lsCfg.bio||coach.bio||'';
     var practica=lsCfg.nombre_practica||coach.nombre_practica||coach.nombre||'';
     var accessCode=cfg.access_code||'';
@@ -6349,16 +6381,29 @@ function _renderConfig(tab){
     h+='</div>';
     h+='</div>';
 
-    // PAGOS
+    // COBROS Y DIRECTORIO (Pathway)
     h+='<div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:14px;">';
-    h+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Pagos y agenda</div>';
-    h+='<div style="font-size:13px;color:var(--muted);margin-bottom:16px;">Links opcionales para cobrar a tus propios clientes. Los clientes que te trae Pathway se cobran automáticamente (lo estamos activando).</div>';
-    h+='<div style="margin-bottom:14px;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Link Stripe · Mentoría 4 semanas</label>';
-    h+='<input id="cfg-st-mentoria" type="url" value="'+escH(stMentoria)+'" placeholder="https://buy.stripe.com/..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;"></div>';
-    h+='<div style="margin-bottom:14px;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Link Stripe · Sesión única</label>';
-    h+='<input id="cfg-st-sesion" type="url" value="'+escH(stSesion)+'" placeholder="https://buy.stripe.com/..." style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;"></div>';
-    h+='<div><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Link Calendly</label>';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Cobros y directorio</div>';
+    h+='<div style="font-size:13px;color:var(--muted);margin-bottom:18px;">Aparece en el directorio de Pathway y recibe candidatos que buscan coach.</div>';
+    h+='<label style="display:flex;align-items:center;gap:12px;cursor:pointer;margin-bottom:8px;"><input type="checkbox" id="cfg-dir-optin"'+(dirOptin?' checked':'')+' style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;"><span style="font-size:14px;font-weight:600;color:var(--title);">Aparecer en el directorio de Pathway</span></label>';
+    h+='<div style="font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:20px;">Lo activas o desactivas cuando quieras. Comisión: 20% solo sobre los clientes que te trae Pathway. Tus propios clientes siguen siendo 0%, siempre.</div>';
+    h+='<div style="border-top:1px solid var(--border);margin-bottom:18px;"></div>';
+    h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;"><div style="flex:1;font-size:14px;font-weight:600;color:var(--title);">Conecta tu cuenta para cobrar</div><span style="font-size:11px;font-weight:700;background:#FBEEDC;color:#9A6B12;padding:4px 11px;border-radius:20px;">Pendiente</span></div>';
+    h+='<div style="font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:12px;">Stripe te paga directo a tu cuenta. Pathway nunca toca tu dinero. Es un paso único.</div>';
+    h+='<button type="button" onclick="_pwConnectInfo()" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px 18px;font-size:14px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;">Conectar mi cuenta para cobrar</button>';
+    h+='<div style="border-top:1px solid var(--border);margin:20px 0 18px;"></div>';
+    h+='<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Tus precios</div>';
+    h+='<div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5;">Tú defines el precio de cada servicio. Es lo que paga el cliente; Pathway descuenta su 20% solo si te lo trajo.</div>';
+    h+='<div style="display:flex;gap:12px;margin-bottom:18px;">';
+    h+='<div style="flex:1;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Mentoría · 4 semanas (€)</label>';
+    h+='<input id="cfg-precio-mentoria" type="number" min="0" value="'+escH(String(precioMent))+'" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;"></div>';
+    h+='<div style="flex:1;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Sesión única (€)</label>';
+    h+='<input id="cfg-precio-sesion" type="number" min="0" value="'+escH(String(precioSes))+'" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;"></div>';
+    h+='</div>';
+    h+='<div style="margin-bottom:16px;"><label style="display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Link de Calendly (para agendar sesiones)</label>';
     h+='<input id="cfg-calendly" type="url" value="'+escH(calUrl)+'" placeholder="https://calendly.com/tu-nombre" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Inter,sans-serif;"></div>';
+    h+='<button type="button" onclick="_savePwCfg(this)" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:14px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;">Guardar cobros y directorio</button>';
+    h+='<span id="cfg-pw-msg" style="font-size:12px;color:var(--muted);margin-left:12px;"></span>';
     h+='</div>';
 
     // ─── AGENDA · CALENDARIO PUBLICO EMBEBIDO ───
