@@ -27,6 +27,8 @@ en `leads/<nombre>.md` y lo saco de esta tabla.
 | Angie Araya · Career Coach | @angiearaya23 | Pitch + "¿15 min?" enviado | Sin respuesta | Follow-up 2-3 d con 2 horarios |
 | Eva · Career Coach | @coach_eva_mars | Pitch + "¿15 min?" enviado | Sin respuesta | Follow-up 2-3 d con 2 horarios |
 | LevelUp (Constanza) · Orientación laboral | @levelupcareershub | Pitch + "¿15 min?" enviado | Sin respuesta | Follow-up 2-3 d con 2 horarios |
+| Soraya · Orientación Laboral Estratégica | @bas.a.lograrlo | Pitch + "¿15 min?" enviado | Sin respuesta | Follow-up 2-3 d con 2 horarios |
+| Clara Oroná · Coach de Carrera (Career Design) | @career.design.byclara | Pitch enviado; responde un **bot/autoresponder**, no humano | Visto, sin respuesta humana | Buscar otro canal (web/email/WhatsApp); IG es funnel automatizado |
 
 > Regla: no creo un archivo por cada saludo en frío (serían decenas vacíos).
 > Se trackean acá hasta que haya conversación real.
