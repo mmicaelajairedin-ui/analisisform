@@ -761,40 +761,61 @@ h1 .accent{color:var(--pw-sendero);}
     }
   }
 
-  // ── ACCESS GUARD: validar que el email tiene paid_at en cv_express ──
+  // El Pack Express da acceso por 24 horas desde el pago (paid_at).
+  // Pasada esa ventana, el link deja de funcionar.
+  var ACCESS_WINDOW_MS=24*3600*1000;
+
+  // ── ACCESS GUARD: validar pago + ventana de 24h en cv_express ──
   // Sin esto, cualquiera con el URL '?paid=1&email=X' accedería gratis.
   // El stripe-webhook crea/actualiza el row con paid_at cuando se completa
-  // el pago. Si NO hay row, el email no pagó → bloquear y redirigir.
-  // Excepción: vista de admin (Mica logueada como rol admin).
+  // el pago. Reglas:
+  //  - No hay row / sin paid_at ni cv_optimizado → reason 'none' (no pagó)
+  //  - paid_at presente y +24h → reason 'expired' (acceso vencido)
+  //  - paid_at presente dentro de 24h → ok
+  //  - Legacy (cv_optimizado sin paid_at) → ok (no se puede medir ventana)
+  // Excepción: admin logueada y flujo de regeneración pagada (?regen=1).
   function _validateAccess(email){
-    if(!email)return Promise.resolve(false);
+    if(!email)return Promise.resolve({ok:false,reason:'none'});
     // Si Mica está logueada como admin, dejar pasar (testing).
     try{
       var u=JSON.parse(localStorage.getItem('mj_user')||'{}');
-      if(u && u.rol==='admin')return Promise.resolve(true);
+      if(u && u.rol==='admin')return Promise.resolve({ok:true,reason:'admin'});
     }catch(e){}
-    return fetch(SB+'/rest/v1/cv_express?email=eq.'+encodeURIComponent(email)+'&select=paid_at&limit=1',{
+    // ?regen=1 viene del pago del suplemento de €10 — el cliente acaba de
+    // pagar para regenerar, dejarlo pasar al form aunque el paid_at viejo
+    // ya estuviera vencido (el nuevo paid_at se escribe al generar).
+    if(regen)return Promise.resolve({ok:true,reason:'regen'});
+    return fetch(SB+'/rest/v1/cv_express?email=eq.'+encodeURIComponent(email)+'&select=paid_at,cv_optimizado&limit=1',{
       headers:{apikey:KEY,Authorization:'Bearer '+KEY}
     }).then(function(r){return r.ok?r.json():[];})
       .then(function(rows){
         var row=rows&&rows[0];
-        // Acepta si paid_at existe (pagó vía Stripe o admin lo otorgó).
-        // También acepta si el row tiene cv_optimizado (legacy: usuarios
-        // que pagaron antes de que existiera la columna paid_at).
-        return !!(row&&(row.paid_at||row.cv_optimizado));
+        if(!row)return {ok:false,reason:'none'};
+        if(!row.paid_at){
+          // Legacy: pagó antes de existir la columna paid_at. Sin timestamp
+          // no se puede medir la ventana — se mantiene si tiene el pack.
+          return {ok:!!row.cv_optimizado,reason:row.cv_optimizado?'legacy':'none'};
+        }
+        var age=Date.now()-new Date(row.paid_at).getTime();
+        if(age>ACCESS_WINDOW_MS)return {ok:false,reason:'expired'};
+        return {ok:true,reason:'ok'};
       })
-      .catch(function(){return false;});
+      .catch(function(){return {ok:false,reason:'none'};});
   }
 
-  function _showNoAccess(){
+  function _showNoAccess(reason){
     document.getElementById('mode-pre-pay').style.display='block';
     document.getElementById('mode-post-pay').style.display='none';
     var preCard=document.getElementById('mode-pre-pay');
     if(preCard){
-      // Banner arriba advirtiendo que el URL no es válido sin pago.
+      // Banner arriba según el motivo (no pagó vs. acceso vencido).
       var warn=document.createElement('div');
       warn.style.cssText='background:#FDF3F2;border:1.5px solid #c0756e;border-radius:14px;padding:18px 22px;margin:0 0 24px;color:#8c4540;';
-      warn.innerHTML='<strong>⚠️ Acceso no válido</strong><br><span style="font-size:13px;">Para usar el Pack Express necesitás completar el pago abajo. Compartir el link sin pagar no funciona.</span>';
+      if(reason==='expired'){
+        warn.innerHTML='<strong>⏱️ Tu acceso expiró</strong><br><span style="font-size:13px;">El Pack Express da acceso por 24 horas desde el pago, y ese período ya terminó. Si necesitás generar tus documentos de nuevo, podés volver a comprar el Pack abajo.</span>';
+      } else {
+        warn.innerHTML='<strong>⚠️ Acceso no válido</strong><br><span style="font-size:13px;">Para usar el Pack Express necesitás completar el pago abajo. Compartir el link sin pagar no funciona.</span>';
+      }
       preCard.insertBefore(warn,preCard.firstChild);
     }
   }
@@ -803,10 +824,10 @@ h1 .accent{color:var(--pw-sendero);}
     // Validar acceso ANTES de mostrar nada del post-pay
     document.getElementById('mode-pre-pay').style.display='none';
     document.getElementById('mode-post-pay').style.display='block';
-    _validateAccess(emailPaidGlobal).then(function(hasAccess){
-      if(!hasAccess){
+    _validateAccess(emailPaidGlobal).then(function(res){
+      if(!res||!res.ok){
         _clearExpressLocalStorage();
-        _showNoAccess();
+        _showNoAccess(res&&res.reason);
         return;
       }
       _initPostPay();
@@ -1033,6 +1054,48 @@ h1 .accent{color:var(--pw-sendero);}
       if(cvTexto.length<100){setError('Pegá más texto del CV — necesitamos al menos 100 caracteres para optimizarlo.');return;}
       if(!/^https?:\/\/.*linkedin\.com\/in\//i.test(liUrl)){setError('La URL de LinkedIn no parece válida. Debe ser tipo https://linkedin.com/in/tu-usuario');return;}
 
+      // Anti-doble-generación: el Pack Express incluye UNA generación. Si NO
+      // es una regeneración pagada (?regen=1, suplemento de €10) y ya existe
+      // un pack para este email en Supabase, NO generamos otro gratis —
+      // mostramos el que ya tiene. El único modo de regenerar es pagar el
+      // suplemento, que cae con ?regen=1 y reinicia la ventana de 24h.
+      if(!regen && emailPaidGlobal){
+        document.getElementById('form-card').style.display='none';
+        document.getElementById('loading-state').style.display='block';
+        startProgress();
+        sbLoadByEmail(emailPaidGlobal).then(function(row){
+          if(row && row.cv_optimizado){
+            stopProgress();
+            document.getElementById('loading-state').style.display='none';
+            generated={
+              cv_optimizado: row.cv_optimizado,
+              carta: row.carta||'',
+              linkedin_analisis: row.linkedin_analisis||null
+            };
+            try{
+              localStorage.setItem('mj_express_cv', JSON.stringify(row.cv_optimizado));
+              if(row.carta)localStorage.setItem('mj_express_carta', row.carta);
+              if(row.linkedin_analisis)localStorage.setItem('mj_express_linkedin', JSON.stringify(row.linkedin_analisis));
+              if(row.foto){localStorage.setItem('mj_express_foto', row.foto); window._fotoData=row.foto;}
+              if(row.nombre)localStorage.setItem('mj_express_nombre', row.nombre);
+              localStorage.setItem('mj_express_email', emailPaidGlobal);
+            }catch(e2){}
+            showResultState();
+            return;
+          }
+          runGeneration();
+        }).catch(function(){runGeneration();});
+        return;
+      }
+      runGeneration();
+    });
+
+    function runGeneration(){
+      var objetivo=document.getElementById('objetivo').value.trim();
+      var cvTexto=document.getElementById('cv-texto').value.trim();
+      var liUrl=document.getElementById('linkedin-url').value.trim();
+      var liTexto=document.getElementById('linkedin-texto').value.trim();
+
       // Mostrar loading + arrancar barra
       document.getElementById('form-card').style.display='none';
       document.getElementById('loading-state').style.display='block';
@@ -1090,14 +1153,18 @@ h1 .accent{color:var(--pw-sendero);}
         // Persistir TAMBIÉN en Supabase con email como key.
         // Esto da acceso 24hs desde cualquier dispositivo.
         if(emailPaidGlobal){
-          sbUpsert(emailPaidGlobal,{
+          var _upFields={
             cv_optimizado:data.cv_optimizado||null,
             carta:data.carta||null,
             linkedin_analisis:data.linkedin_analisis||null,
             foto:window._fotoData||null,
             nombre:nom||null,
             objetivo:objetivo||null
-          });
+          };
+          // Si es una regeneración pagada (€10), reiniciamos la ventana de
+          // 24h desde ahora: el cliente acaba de pagar de nuevo.
+          if(regen)_upFields.paid_at=new Date().toISOString();
+          sbUpsert(emailPaidGlobal,_upFields);
           // Email de confirmación al cliente con link para volver. Best-effort:
           // si falla el envío no rompemos el flow — los docs ya están generados
           // y guardados en Supabase, el cliente los puede ver desde la URL del
@@ -1141,7 +1208,7 @@ h1 .accent{color:var(--pw-sendero);}
         document.getElementById('form-card').style.display='block';
         setError('No pudimos generar los documentos: '+(e.message||'error desconocido')+'. Probá de nuevo en un momento.');
       });
-    });
+    }
   }
 
   // ── Helpers para descargas ───────────────────────────────────
