@@ -61,8 +61,20 @@ ul li::before{content:'•';position:absolute;left:2px;top:0;}
     <small>Optimizada para sistemas de filtrado automático. Imprimí con "Guardar como PDF" para descargar.</small>
   </div>
   <button class="toolbar-btn" onclick="window.print()">📥 Descargar PDF</button>
-  <a class="toolbar-btn secondary" href="cliente.html">← Volver</a>
+  <a class="toolbar-btn secondary" id="back-link" href="cliente.html">← Volver</a>
 </div>
+<script>
+// El link "Volver" depende del origen: express → cv-express.html, sino portal.
+(function(){
+  try{
+    var p=new URLSearchParams(window.location.search);
+    if(p.get('express')==='1'){
+      var b=document.getElementById('back-link');
+      if(b) b.setAttribute('href','cv-express.html?paid=1');
+    }
+  }catch(e){}
+})();
+</script>
 
 <div id="content" style="margin-top:80px;">
   <div class="loading">Cargando tu CV...</div>
@@ -248,6 +260,23 @@ function render(d){
 }
 
 (function init(){
+  var params=new URLSearchParams(window.location.search);
+
+  // Modo EXPRESS: viene de cv-express.html. El CV no está en la DB
+  // (cv_publicados) sino en localStorage 'mj_express_cv' (el objeto que
+  // genera el Edge Function). Mismo render, distinta fuente de datos.
+  if(params.get('express')==='1'){
+    var raw=null;
+    try{raw=localStorage.getItem('mj_express_cv');}catch(e){}
+    if(!raw){showError('No encontramos tu CV Express. Volvé a la página de tu Pack y abrí el editor primero.');return;}
+    var cvObj=null;
+    try{cvObj=JSON.parse(raw);}catch(e){}
+    if(!cvObj||typeof cvObj!=='object'){showError('Tu CV Express tiene un formato inesperado. Regenerá tu Pack.');return;}
+    render(cvObj);
+    return;
+  }
+
+  // Modo normal: cliente del portal — CV en cv_publicados por email.
   var email=getEmail();
   if(!email){showError('No se pudo identificar tu email. Volvé al portal e intentalo de nuevo.');return;}
   fetch(SB+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(email)+'&order=created_at.desc&limit=1&select=contenido',{
