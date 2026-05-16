@@ -546,6 +546,24 @@ h1 .accent{color:var(--pw-sendero);}
         </div>
       </div>
 
+      <!-- ── REVIEW: dejá tu opinión (recolección, no se muestra público) ── -->
+      <div id="review-box" style="margin-top:24px;padding:24px 26px;background:#fff;border:1.5px solid var(--pw-borde);border-radius:16px;">
+        <div style="font-family:var(--pw-serif);font-size:19px;font-weight:500;color:var(--pw-carbon);letter-spacing:-.4px;margin-bottom:4px;">¿Te sirvió tu Pack? 🌱</div>
+        <div style="font-size:13px;color:var(--pw-texto-suave);margin-bottom:16px;">Tu opinión nos ayuda a mejorar y a que más gente confíe en Pathway. 30 segundos.</div>
+        <div id="review-stars" style="display:flex;gap:6px;margin-bottom:14px;font-size:30px;line-height:1;cursor:pointer;user-select:none;">
+          <span data-star="1" style="color:#D8D8D8;transition:color .1s;">★</span>
+          <span data-star="2" style="color:#D8D8D8;transition:color .1s;">★</span>
+          <span data-star="3" style="color:#D8D8D8;transition:color .1s;">★</span>
+          <span data-star="4" style="color:#D8D8D8;transition:color .1s;">★</span>
+          <span data-star="5" style="color:#D8D8D8;transition:color .1s;">★</span>
+        </div>
+        <textarea id="review-text" rows="3" placeholder="¿Qué te pareció? ¿Qué mejorarías? (opcional)" style="width:100%;padding:11px 13px;border:1.5px solid var(--pw-borde);border-radius:10px;font-size:13.5px;font-family:var(--pw-sans);resize:vertical;outline:none;color:var(--pw-texto);background:var(--pw-niebla);"></textarea>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap;">
+          <button id="review-send" style="padding:11px 22px;background:var(--pw-bosque);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;font-family:var(--pw-sans);cursor:pointer;">Enviar opinión</button>
+          <span id="review-status" style="font-size:12px;color:var(--pw-texto-suave);"></span>
+        </div>
+      </div>
+
       <!-- ── CROSS-SELL: MENTORÍA COMPLETA con descuento ── -->
       <!-- Cliente del Pack Express ya pagó €40 = ya valida la propuesta.
            Es el momento perfecto para el upsell a la mentoría completa
@@ -1369,6 +1387,62 @@ h1 .accent{color:var(--pw-sendero);}
       // No preventDefault — dejar que el browser abra el target=_blank.
     }
   });
+
+  // ── REVIEW: estrellas + envío ────────────────────────────────
+  // Guarda la reseña en cv_express (campos review_rating, review_text,
+  // review_at) por email. Solo recolección — no se muestra público todavía.
+  (function initReview(){
+    var starsWrap=document.getElementById('review-stars');
+    var ta=document.getElementById('review-text');
+    var btn=document.getElementById('review-send');
+    var st=document.getElementById('review-status');
+    if(!starsWrap||!btn)return;
+    var rating=0;
+    var stars=starsWrap.querySelectorAll('[data-star]');
+    function paint(n){
+      stars.forEach(function(s){
+        s.style.color=(parseInt(s.getAttribute('data-star'),10)<=n)?'#E9C46A':'#D8D8D8';
+      });
+    }
+    stars.forEach(function(s){
+      s.addEventListener('mouseenter',function(){paint(parseInt(s.getAttribute('data-star'),10));});
+      s.addEventListener('click',function(){rating=parseInt(s.getAttribute('data-star'),10);paint(rating);});
+    });
+    starsWrap.addEventListener('mouseleave',function(){paint(rating);});
+
+    btn.addEventListener('click',function(){
+      if(!rating){st.textContent='Tocá una estrella primero ⭐';st.style.color='#C0756E';return;}
+      if(!emailPaidGlobal){st.textContent='No identificamos tu email. Escribinos a hi@pathwaycareercoach.com';st.style.color='#C0756E';return;}
+      btn.disabled=true;btn.textContent='Enviando...';st.textContent='';
+      var body={
+        review_rating:rating,
+        review_text:(ta&&ta.value||'').trim().slice(0,1000),
+        review_at:new Date().toISOString()
+      };
+      fetch(REST+'?email=eq.'+encodeURIComponent(emailPaidGlobal),{
+        method:'PATCH',
+        headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
+        body:JSON.stringify(body)
+      }).then(function(r){
+        if(r.ok){
+          document.getElementById('review-box').innerHTML=
+            '<div style="text-align:center;padding:14px 4px;">'
+            +'<div style="font-size:34px;line-height:1;margin-bottom:8px;">🌱</div>'
+            +'<div style="font-family:var(--pw-serif);font-size:19px;color:var(--pw-carbon);margin-bottom:4px;">¡Gracias por tu opinión!</div>'
+            +'<div style="font-size:13px;color:var(--pw-texto-suave);">La leemos toda. Nos ayuda muchísimo a mejorar Pathway.</div>'
+            +'</div>';
+        } else {
+          btn.disabled=false;btn.textContent='Enviar opinión';
+          st.textContent='No se pudo guardar (error '+r.status+'). Probá de nuevo en un momento.';
+          st.style.color='#C0756E';
+        }
+      }).catch(function(){
+        btn.disabled=false;btn.textContent='Enviar opinión';
+        st.textContent='Error de conexión. Probá de nuevo.';
+        st.style.color='#C0756E';
+      });
+    });
+  })();
 })();
 </script>
 <script src="testimonios.js"></script>
