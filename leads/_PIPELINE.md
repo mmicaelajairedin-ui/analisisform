@@ -31,6 +31,7 @@ en `leads/<nombre>.md` y lo saco de esta tabla.
 | Clara Oroná · Coach de Carrera (Career Design) | @career.design.byclara | Pitch enviado; responde un **bot/autoresponder**, no humano | Visto, sin respuesta humana | Buscar otro canal (web/email/WhatsApp); IG es funnel automatizado |
 | Karen Bartsch · Life Coach | @karenbartsch.temp | Opener | Sin respuesta | Esperar; follow-up 2-3 d |
 | RRHH Talento | @rrhhtalento | Opener | Sin respuesta | Esperar; follow-up 2-3 d |
+| Teresa de Gouveia · Global Talent Manager / Career Coach / DEI | @teresadegouveia | Opener | Sin respuesta | Esperar; follow-up 2-3 d (perfil senior, vale la pena) |
 
 > Regla: no creo un archivo por cada saludo en frío (serían decenas vacíos).
 > Se trackean acá hasta que haya conversación real.
