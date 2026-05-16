@@ -24,6 +24,9 @@ en `leads/<nombre>.md` y lo saco de esta tabla.
 | Jhonatan Marco · Career Coach | @jhonatanmarco | Piropo + pitch enviado | Sin respuesta | Esperar; follow-up 2-3 d |
 | Silvia Faloni · Career Clarity Coach for Women | @silvia_faloni | Piropo + pitch enviado | Sin respuesta | Esperar; follow-up 2-3 d |
 | Majo Callejas · RRHH/CV/LinkedIn/Entrevistas/Reclutadora | @majorrhh | Piropo + pitch enviado | Sin respuesta | Esperar; follow-up 2-3 d |
+| Angie Araya · Career Coach | @angiearaya23 | Pitch + "¿15 min?" enviado | Sin respuesta | Follow-up 2-3 d con 2 horarios |
+| Eva · Career Coach | @coach_eva_mars | Pitch + "¿15 min?" enviado | Sin respuesta | Follow-up 2-3 d con 2 horarios |
+| LevelUp (Constanza) · Orientación laboral | @levelupcareershub | Pitch + "¿15 min?" enviado | Sin respuesta | Follow-up 2-3 d con 2 horarios |
 
 > Regla: no creo un archivo por cada saludo en frío (serían decenas vacíos).
 > Se trackean acá hasta que haya conversación real.
