@@ -495,6 +495,7 @@ var state = {
   cliDetTab: "perfil",
   cliWeek: null,
   cliVis: { cv:true, carta:true, linkedin:true, recursos:true, sesiones:true },
+  newOpen: false,
   pathwayOptIn: false,
   services: [
     { name:"Mentoría 4 semanas", desc:"Programa completo · 4 sesiones 1:1 + acceso al portal", price:480, unit:"/programa" },
@@ -543,7 +544,7 @@ function viewSidebar(){
       "<div class='cp-side-coach-role'>"+esc(COACH.role)+"<span class='cp-side-plan'>"+(state.plan==="pro"?"Pro":"Basic")+"</span></div></div></div>"+
     "<nav class='cp-side-nav'>"+nav+"</nav>"+
     "<div class='cp-side-foot'>"+
-      "<button class='cp-side-cta' data-act='nav:clientes'>"+svg(IC.plus,14)+" Nuevo cliente</button>"+
+      "<button class='cp-side-cta' data-act='cli-new'>"+svg(IC.plus,14)+" Nuevo cliente</button>"+
       "<a href='#' class='cp-side-link' data-act='nav:links'>"+svg(IC.extLink,11)+" Mi perfil público</a>"+
       "<a href='#' class='cp-side-link'>"+svg(IC.logout,11)+" Cerrar sesión</a>"+
     "</div></aside>";
@@ -617,7 +618,7 @@ function viewClienteDetalle(c){
   var medal=c.medal?"<img class='cp-client-medal' src='assets/iconos/medalla-"+c.medal+".png' alt='' style='width:42px;height:42px'>":"";
   var wa=(c.email||"").replace(/[^0-9]/g,"")||"34611256224";
   var t=state.cliDetTab;
-  var tabs=[["perfil","Perfil"],["docs","Documentos"],["sesiones","Sesiones"],["gestion","Gestión"]];
+  var tabs=[["perfil","Perfil"],["docs","Documentos"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
   var tabBar="<div class='cp-filters'>"+tabs.map(function(x){return "<button class='cp-chip "+(t===x[0]?"is-on":"")+"' data-act='clidet:"+x[0]+"'>"+x[1]+"</button>";}).join("")+"</div>";
 
   var cvSt=c.cvState==="published"?["Publicado","ok"]:(c.cvState==="pending"?["A revisar","warn"]:["Borrador",""]);
@@ -653,6 +654,29 @@ function viewClienteDetalle(c){
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3></div>"+
         "<div class='cp-card-pad' style='font-size:13px;color:var(--pw-text-soft);line-height:1.9'>"+
         "Sesión 1 · 1 may · Diagnóstico inicial<br>Sesión 2 · 8 may · Estrategia de CV<br>Sesión 3 · 15 may · LinkedIn y networking</div></div>";
+  } else if(t==="mensajes"){
+    var fn=(""+(c.name||"")).split(" ")[0], cn=COACH.name||"tu coach";
+    var msgs=[
+      ["Bienvenida","Hola "+fn+", soy "+cn+", tu coach en Pathway. ¡Bienvenido/a! En breve te comparto tu acceso y arrancamos el proceso."],
+      ["Acceso al portal","Hola "+fn+", este es el acceso a tu portal: "+portalUrl+" — ahí vas a ver tu CV, tu informe y los recursos de cada semana."],
+      ["CV listo","Hola "+fn+", tu CV ya está listo en el portal. Revisalo y decime si querés ajustar algo antes de enviarlo."],
+      ["Recordatorio de sesión","Hola "+fn+", te recuerdo nuestra próxima sesión. ¿Te queda bien el horario? Cualquier cosa, avisame."],
+      ["Nueva semana","Hola "+fn+", arrancamos una nueva semana del proceso. Te dejé nuevos recursos y tareas en tu portal."],
+      ["Informe listo","Hola "+fn+", ya publiqué tu informe de diagnóstico en el portal. Te recomiendo leerlo antes de la próxima sesión."]
+    ];
+    var mc=msgs.map(function(m){
+      var enc=encodeURIComponent(m[1]);
+      return "<div class='cp-card' style='box-shadow:none;border:1px solid var(--pw-border)'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+        "<div style='font-size:13px;font-weight:700;color:var(--pw-carbon)'>"+esc(m[0])+"</div>"+
+        "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.5;background:var(--pw-niebla-2);border-radius:10px;padding:12px 14px'>"+esc(m[1])+"</div>"+
+        "<div style='display:flex;gap:8px;flex-wrap:wrap'>"+
+          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc("https://wa.me/?text="+enc)+"'>"+svg(IC.wa,13)+" WhatsApp</button>"+
+          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc("mailto:"+(c.email||"")+"?subject="+encodeURIComponent("Pathway")+"&body="+enc)+"'>Email</button>"+
+          "<button class='cp-icon-btn' data-act='copy' data-url='"+esc(m[1])+"' title='Copiar'>"+svg(IC.copy,15)+"</button>"+
+        "</div></div></div>";
+    }).join("");
+    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
   } else if(t==="gestion"){
     var weekChips=[1,2,3,4].map(function(n){return "<button class='cp-chip "+(wk===n?"is-on":"")+"' data-act='cliweek:"+n+"'>Semana "+n+"</button>";}).join("");
     var visItems=[["cv","CV"],["carta","Carta de presentación"],["linkedin","LinkedIn"],["recursos","Recursos"],["sesiones","Sesiones"]];
@@ -664,25 +688,22 @@ function viewClienteDetalle(c){
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Qué ve el cliente en su portal<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Visibilidad</span></div><div class='cp-card-pad'>"+visRows+"</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Notas del coach<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Privadas</span></div><div class='cp-card-pad'>"+
-        "<textarea class='cp-form-textarea' placeholder='Notas internas sobre este cliente…'>Perfil fuerte en producto. Trabajar confianza para entrevistas senior.</textarea></div></div>"+
-      "<div class='cp-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:16px'>"+
-        "<div class='cp-form-row' style='max-width:280px'><label class='cp-form-label'>Estado</label>"+
-          "<select class='cp-form-select'><option>Activo</option><option>Pausado</option><option>Cerrado</option></select></div>"+
+        "<span class='cp-eyebrow'>Privadas</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+        "<textarea id='cf-notas' class='cp-form-textarea' placeholder='Notas internas sobre este cliente…'>"+esc(c.notas||"")+"</textarea>"+
+        "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cli-savemeta' data-id='"+esc(c.id)+"'>Guardar nota y semana</button></div></div></div>"+
+      "<div class='cp-card'><div class='cp-card-pad'>"+
         "<div style='display:flex;gap:10px;flex-wrap:wrap'><button class='cp-btn cp-btn-primary' data-act='open' data-url='"+esc(genUrl)+"'>Generar informe</button>"+
           "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(fotoWa)+"'>Mensaje al cliente</button>"+
           "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='cli-archive' data-id='"+esc(c.id)+"'>Archivar cliente</button></div></div></div>";
   } else {
-    function fr(k,v){ return "<div class='cp-form-row'><label class='cp-form-label'>"+k+"</label><input class='cp-form-input' value=\""+v+"\"></div>"; }
-    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Datos del formulario<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Editable</span></div>"+
+    function fr(k,v,id){ return "<div class='cp-form-row'><label class='cp-form-label'>"+k+"</label><input id='"+id+"' class='cp-form-input' value=\""+v+"\"></div>"; }
+    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Datos del cliente<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Editable"+(REAL?"":" · ejemplo")+"</span></div>"+
         "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:16px'>"+
-          "<div class='cp-form-row-2'>"+fr("Nombre",esc(c.name))+fr("Email",esc(c.email||""))+"</div>"+
-          "<div class='cp-form-row-2'>"+fr("Teléfono","+34 6•• ••• •••")+fr("Rol / cargo",esc(c.role))+"</div>"+
-          "<div class='cp-form-row-2'>"+fr("Situación actual","Empleada, buscando cambio")+fr("Objetivo","Pasar a un rol senior en producto")+"</div>"+
-          "<div class='cp-form-row-2'>"+fr("Sector","Tecnología · SaaS")+fr("Ubicación","Madrid · abierta a remoto")+"</div>"+
-          "<div class='cp-form-row-2'>"+fr("Experiencia","6 años · 2 empresas")+fr("Disponibilidad","Inmediata")+"</div>"+
-          "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'><button class='cp-btn cp-btn-ghost'>Descartar</button><button class='cp-btn cp-btn-primary'>Guardar cambios</button></div>"+
+          "<div class='cp-form-row-2'>"+fr("Nombre",esc(c.name),"cf-nombre")+fr("Email",esc(c.email||""),"cf-email")+"</div>"+
+          "<div class='cp-form-row'>"+fr("Rol / cargo",esc(c.role),"cf-cargo")+"</div>"+
+          "<span class='cp-form-hint'>Situación, objetivo y demás respuestas del formulario se editan desde tu panel actual.</span>"+
+          "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'><button class='cp-btn cp-btn-ghost' data-act='clidet:perfil'>Descartar</button><button class='cp-btn cp-btn-primary' data-act='cli-save' data-id='"+esc(c.id)+"'>Guardar cambios</button></div>"+
         "</div></div>";
   }
 
@@ -765,7 +786,7 @@ function viewClientes(){
       "<div class='cp-sub'>"+sub+"</div></div>"+
       "<div class='cp-topbar-actions'><div class='cp-search'>"+svg(IC.search,14)+
         "<input id='cp-cli-search' placeholder='Buscar por nombre o email…'></div>"+
-        "<button class='cp-btn cp-btn-primary'>"+svg(IC.plus,13)+" Nuevo cliente</button></div></header>"+
+        "<button class='cp-btn cp-btn-primary' data-act='cli-new'>"+svg(IC.plus,13)+" Nuevo cliente</button></div></header>"+
     banner+
     "<div class='cp-filters'>"+chips+
       "<div class='cp-sort'>Ordenar por: <select style='background:transparent;border:none;color:var(--pw-carbon);font-weight:600;cursor:pointer;outline:none'>"+
@@ -1376,13 +1397,28 @@ function viewAdmin(){
 }
 
 /* ═══ Render ═══ */
+function viewNewModal(){
+  return "<div data-act='cli-bg' style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
+    "<div data-act='cli-stop' style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:420px;max-width:100%;overflow:hidden'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>Nuevo cliente<span class='dot'>.</span></h3>"+
+        "<button class='cp-icon-btn' data-act='cli-modal-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
+      "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Nombre</label><input id='nc-nombre' class='cp-form-input' placeholder='Nombre y apellido'></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Email</label><input id='nc-email' class='cp-form-input' placeholder='email@ejemplo.com'></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Rol / cargo</label><input id='nc-cargo' class='cp-form-input' placeholder='Ej: Product Manager'></div>"+
+        "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'>"+
+          "<button class='cp-btn cp-btn-ghost' data-act='cli-modal-close'>Cancelar</button>"+
+          "<button class='cp-btn cp-btn-primary' data-act='cli-create'>Crear cliente</button></div>"+
+      "</div></div></div>";
+}
 function render(){
   var sections = { resumen:viewResumen, clientes:viewClientes, links:viewLinks, config:viewConfig, admin:viewAdmin };
   var view = (sections[state.section]||viewResumen)();
   document.getElementById("root").innerHTML =
     "<div class='cp-app'>"+viewSidebar()+
       "<div class='cp-main'><div class='cp-scroll'><div class='cp-container'>"+view+"</div></div></div>"+
-      viewAsistente()+"</div>";
+      viewAsistente()+"</div>"+
+    (state.newOpen?viewNewModal():"");
 }
 
 /* ═══ Events ═══ */
@@ -1419,6 +1455,38 @@ document.addEventListener("click", function(ev){
     fetch(SB+"/rest/v1/candidatos?id=eq."+encodeURIComponent(cid),{method:"PATCH",headers:{apikey:KEY,Authorization:"Bearer "+KEY,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({activo:false})})
       .then(function(r){ if(!r.ok) throw 0; CLIENTS=CLIENTS.filter(function(x){return String(x.id)!==String(cid);}); state.clienteSel=null; render(); })
       .catch(function(){ alert("No se pudo archivar desde aquí. Podés hacerlo desde tu panel actual."); });
+    return;
+  }
+  if(act==="cli-new"){ if(!REAL||!RME){ alert("Iniciá sesión para crear clientes reales."); return; } state.newOpen=true; render(); return; }
+  if(act==="cli-stop"){ return; }
+  if(act==="cli-bg"){ if(ev.target===el){ state.newOpen=false; render(); } return; }
+  if(act==="cli-modal-close"){ state.newOpen=false; render(); return; }
+  if(act==="cli-create"){
+    var nm=_val("nc-nombre").trim(), em=_val("nc-email").trim(), cg=_val("nc-cargo").trim();
+    if(!nm){ alert("Poné al menos el nombre."); return; }
+    _sbw("candidatos","POST",{nombre:nm,email:em,cargo:cg,coach_id:RME.id,semana_activa:1,activo:true})
+      .then(function(r){ if(!r.ok) throw 0; state.newOpen=false; toast("Cliente creado ✓"); loadReal(); })
+      .catch(function(){ alert("No se pudo crear. Revisá el email o creálo desde tu panel actual."); });
+    return;
+  }
+  if(act==="cli-save"){
+    var sid=el.getAttribute("data-id"); if(!sid) return;
+    _sbw("candidatos?id=eq."+encodeURIComponent(sid),"PATCH",{nombre:_val("cf-nombre").trim(),email:_val("cf-email").trim(),cargo:_val("cf-cargo").trim()})
+      .then(function(r){ if(!r.ok) throw 0;
+        CLIENTS.forEach(function(x){ if(String(x.id)===String(sid)){ x.name=_val("cf-nombre").trim()||x.name; x.email=_val("cf-email").trim(); x.role=_val("cf-cargo").trim(); } });
+        toast("Datos guardados ✓"); render(); })
+      .catch(function(){ alert("No se pudo guardar."); });
+    return;
+  }
+  if(act==="cli-savemeta"){
+    var mid=el.getAttribute("data-id"); if(!mid) return;
+    var mc=CLIENTS.filter(function(x){return String(x.id)===String(mid);})[0]||{};
+    var wkv=state.cliWeek!=null?state.cliWeek:(mc.week||1);
+    _sbw("candidatos?id=eq."+encodeURIComponent(mid),"PATCH",{notas_coach:_val("cf-notas"),semana_activa:wkv})
+      .then(function(r){ if(!r.ok) throw 0;
+        CLIENTS.forEach(function(x){ if(String(x.id)===String(mid)){ x.notas=_val("cf-notas"); x.week=wkv; } });
+        state.cliWeek=null; toast("Nota y semana guardadas ✓"); render(); })
+      .catch(function(){ alert("No se pudo guardar."); });
     return;
   }
   if(act==="svc-add"){ state.services.push({name:"",desc:"",price:0,unit:"/sesión"}); state.svcEdit=state.services.length-1; state._svcNew=true; state.cfg="services"; render(); return; }
@@ -1458,6 +1526,9 @@ document.addEventListener("input", function(ev){
 var SB="https://ddxnrsnjdvtqhxunxnwj.supabase.co";
 var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
 function _sb(p){ return fetch(SB+"/rest/v1/"+p,{headers:{apikey:KEY,Authorization:"Bearer "+KEY}}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }
+function _sbw(p,method,body){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:{apikey:KEY,Authorization:"Bearer "+KEY,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify(body)}); }
+function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
+function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600); }
 var REAL=false, RCFG={}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false;
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
@@ -1505,7 +1576,7 @@ function loadReal(){
         id: String(c.id||em||("c"+i)), name: c.nombre||c.email||"Cliente", role: c.cargo||"",
         email: c.email||"", week: wk, medal: medal, last:{txt:lastTxt,state:lastSt},
         cvState: cvSet[em]?"published":"pending", reportState: rpSet[em]?"published":"pending",
-        source: "directo", photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
+        source: "directo", notas: c.notas_coach||"", photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
       };
     });
     render();
