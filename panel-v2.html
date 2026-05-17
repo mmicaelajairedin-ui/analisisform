@@ -706,7 +706,7 @@ function viewClienteDetalle(c){
 }
 function viewClientes(){
   if(state.clienteSel){
-    var _sel=CLIENTS.filter(function(x){return x.id===state.clienteSel;})[0];
+    var _sel=CLIENTS.filter(function(x){return String(x.id)===String(state.clienteSel);})[0];
     if(_sel) return viewClienteDetalle(_sel);
     state.clienteSel=null;
   }
@@ -744,7 +744,7 @@ function viewClientes(){
     var cvTxt = c.cvState==="published"?"publicado":(c.cvState==="pending"?"a revisar":"borrador");
     var rpCls = c.reportState==="published"?"is-published":"is-pending";
     var rpTxt = c.reportState==="published"?"publicado":"pendiente";
-    return "<article class='cp-client' data-act='cli-open:"+c.id+"'"+(isPw?" style='border-color:var(--pw-border-strong)'":"")+">"+
+    return "<article class='cp-client' data-act='cli-open:"+c.id+"' data-s='"+esc(((c.name||"")+" "+(c.email||"")+" "+(c.role||"")).toLowerCase())+"'"+(isPw?" style='border-color:var(--pw-border-strong)'":"")+">"+
       "<header class='cp-client-head'><img class='cp-client-photo' src='"+c.photo+"' alt='"+esc(c.name)+"'>"+
         "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+"</div><div class='cp-client-role'>"+role+"</div></div>"+medal+"</header>"+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
@@ -758,13 +758,14 @@ function viewClientes(){
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Clientes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>"+sub+"</div></div>"+
       "<div class='cp-topbar-actions'><div class='cp-search'>"+svg(IC.search,14)+
-        "<input placeholder='Buscar por nombre o email…'></div>"+
+        "<input id='cp-cli-search' placeholder='Buscar por nombre o email…'></div>"+
         "<button class='cp-btn cp-btn-primary'>"+svg(IC.plus,13)+" Nuevo cliente</button></div></header>"+
     banner+
     "<div class='cp-filters'>"+chips+
       "<div class='cp-sort'>Ordenar por: <select style='background:transparent;border:none;color:var(--pw-carbon);font-weight:600;cursor:pointer;outline:none'>"+
       "<option>Última actividad</option><option>Nombre</option><option>Semana del programa</option></select></div></div>"+
-    "<section class='cp-clients-grid'>"+cards+"</section>";
+    "<section class='cp-clients-grid'>"+cards+"</section>"+
+    "<div id='cp-cli-empty' style='display:none;padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin resultados para tu búsqueda.</div>";
 }
 
 /* ═══ Links ═══ */
@@ -1424,6 +1425,20 @@ document.addEventListener("click", function(ev){
   if(act==="ai-quick"){ state.ai.tab="chat"; state.ai.messages=[{role:"me",text:el.getAttribute("data-q")||""}]; render(); return; }
 });
 
+document.addEventListener("input", function(ev){
+  if(!ev.target || ev.target.id!=="cp-cli-search") return;
+  var q=(ev.target.value||"").toLowerCase().trim();
+  var grid=document.querySelector(".cp-clients-grid"); if(!grid) return;
+  var cards=grid.querySelectorAll(".cp-client"), n=0;
+  for(var i=0;i<cards.length;i++){
+    var s=cards[i].getAttribute("data-s")||"";
+    var show=!q||s.indexOf(q)>=0;
+    cards[i].style.display=show?"":"none"; if(show)n++;
+  }
+  var em=document.getElementById("cp-cli-empty");
+  if(em) em.style.display=(cards.length&&!n)?"":"none";
+});
+
 /* ═══ Datos reales (Supabase) — si hay sesión de panel.html; si no, queda el ejemplo ═══ */
 var SB="https://ddxnrsnjdvtqhxunxnwj.supabase.co";
 var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
@@ -1453,8 +1468,14 @@ function loadReal(){
     if(!cands.length){ render(); return; }
     var cvSet={}; cvR.forEach(function(x){ if(x&&x.email) cvSet[(""+x.email).toLowerCase().trim()]=true; });
     var rpSet={}; inf.forEach(function(x){ if(x&&x.email) rpSet[(""+x.email).toLowerCase().trim()]=true; });
+    var _norm=function(s){ return (""+(s||"")).toLowerCase().trim().replace(/\s+/g," "); };
+    var meEm=_norm(ME.email), meNm=_norm(ME.nombre);
     var seen={}, list=[];
-    cands.forEach(function(c){ var k=(""+(c.email||"")).toLowerCase().trim(); if(k&&seen[k])return; if(k)seen[k]=true; list.push(c); });
+    cands.forEach(function(c){
+      var k=(""+(c.email||"")).toLowerCase().trim();
+      if((meEm && _norm(c.email)===meEm) || (meNm && _norm(c.nombre)===meNm)) return; // no listar a la propia coach como cliente
+      if(k&&seen[k])return; if(k)seen[k]=true; list.push(c);
+    });
     CLIENTS = list.map(function(c,i){
       var em=(""+(c.email||"")).toLowerCase().trim();
       var wk=parseInt(c.semana_activa,10); if(!(wk>=1&&wk<=4)) wk=1;
@@ -1462,7 +1483,7 @@ function loadReal(){
       var lastTxt="—", lastSt="mid";
       try{ var sr=JSON.parse(c.sesiones_registro||"[]"); if(sr.length&&sr[sr.length-1].fecha){ var d=Math.floor((Date.now()-new Date(sr[sr.length-1].fecha))/86400000); lastTxt=d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"); lastSt=d<=2?"fresh":(d<=7?"mid":"stale"); } }catch(e){}
       return {
-        id: c.id||em||("c"+i), name: c.nombre||c.email||"Cliente", role: c.cargo||"",
+        id: String(c.id||em||("c"+i)), name: c.nombre||c.email||"Cliente", role: c.cargo||"",
         email: c.email||"", week: wk, medal: medal, last:{txt:lastTxt,state:lastSt},
         cvState: cvSet[em]?"published":"pending", reportState: rpSet[em]?"published":"pending",
         source: "directo", photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
