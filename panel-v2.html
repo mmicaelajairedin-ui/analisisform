@@ -554,13 +554,15 @@ function viewResumen(){
   var greet = "Buenos días", emoji = "☀️";
   var pendingReview = CLIENTS.filter(function(c){return c.reportState==="pending";}).length;
   var stale = CLIENTS.filter(function(c){return c.last.state==="stale";});
-  var todo = [
-    { c:CLIENTS[3], head:"Sesión 1:1 con Pedro Méndez", meta:"Cierre · Semana 4 · Zoom", time:"En 25 min", ts:"is-now" },
-    { c:CLIENTS[0], head:"Revisar informe de Julia Sánchez", meta:"Diagnóstico inicial · Generado ayer", time:"Hoy", ts:"is-today" },
-    { c:CLIENTS[4], head:"Aprobar CV de Carla Otero", meta:"Tercera iteración · Pendiente desde el lunes", time:"Hoy", ts:"is-today" },
-    { c:CLIENTS[6], head:"Revisar LinkedIn de Sofía Marín", meta:"Auditoría completa · Lista para feedback", time:"Mañana", ts:"is-soon" },
-    { c:CLIENTS[5], head:"Reconectar con Daniel Vidal", meta:"Sin actividad hace 8 días", time:"Mañana", ts:"is-soon" }
-  ];
+  function _score(c){ return (c.last&&c.last.state==="stale"?3:0)+(c.reportState==="pending"?2:0)+(c.cvState==="pending"?1:0); }
+  var todo = CLIENTS.slice().sort(function(a,b){ return _score(b)-_score(a); }).slice(0,5).map(function(c){
+    var head,meta,time,ts;
+    if(c.last&&c.last.state==="stale"){ head="Reconectar con "+c.name; meta="Sin actividad · "+c.last.txt; time="Hoy"; ts="is-now"; }
+    else if(c.reportState==="pending"){ head="Revisar informe de "+c.name; meta="Semana "+c.week+" · pendiente de devolución"; time="Hoy"; ts="is-today"; }
+    else if(c.cvState==="pending"){ head="Aprobar CV de "+c.name; meta="Semana "+c.week+" · esperando tu revisión"; time="Hoy"; ts="is-today"; }
+    else { head="Seguimiento de "+c.name; meta=(c.role||"Cliente")+" · Semana "+c.week+"/4"; time="Esta semana"; ts="is-soon"; }
+    return { c:c, head:head, meta:meta, time:time, ts:ts };
+  });
   var todoRows = todo.map(function(t){
     return "<div class='cp-todo-row'><img src='"+t.c.photo+"' alt='"+esc(t.c.name)+"'>"+
       "<div class='cp-todo-body'><div class='cp-todo-head'>"+esc(t.head)+"</div><div class='cp-todo-meta'>"+esc(t.meta)+"</div></div>"+
@@ -1359,7 +1361,52 @@ document.addEventListener("click", function(ev){
   if(act==="ai-quick"){ state.ai.tab="chat"; state.ai.messages=[{role:"me",text:el.getAttribute("data-q")||""}]; render(); return; }
 });
 
+/* ═══ Datos reales (Supabase) — si hay sesión de panel.html; si no, queda el ejemplo ═══ */
+var SB="https://ddxnrsnjdvtqhxunxnwj.supabase.co";
+var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
+function _sb(p){ return fetch(SB+"/rest/v1/"+p,{headers:{apikey:KEY,Authorization:"Bearer "+KEY}}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }
+function loadReal(){
+  var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
+  if(!ME||!ME.id) return; // sin sesión → datos de ejemplo
+  var cf = ME.rol==="admin"
+    ? "select=*&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)"
+    : "select=*&coach_id=eq."+encodeURIComponent(ME.id);
+  Promise.all([
+    _sb("candidatos?"+cf+"&order=created_at.desc"),
+    _sb("cv_publicados?select=email,contenido"),
+    _sb("informes?select=email"),
+    _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion")
+  ]).then(function(res){
+    var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
+    if(!cands.length) return;
+    var cvSet={}; cvR.forEach(function(x){ if(x&&x.email) cvSet[(""+x.email).toLowerCase().trim()]=true; });
+    var rpSet={}; inf.forEach(function(x){ if(x&&x.email) rpSet[(""+x.email).toLowerCase().trim()]=true; });
+    var seen={}, list=[];
+    cands.forEach(function(c){ var k=(""+(c.email||"")).toLowerCase().trim(); if(k&&seen[k])return; if(k)seen[k]=true; list.push(c); });
+    CLIENTS = list.map(function(c,i){
+      var em=(""+(c.email||"")).toLowerCase().trim();
+      var wk=parseInt(c.semana_activa,10); if(!(wk>=1&&wk<=4)) wk=1;
+      var medal = wk>=4?"oro":(wk>=3?"plata":(wk>=2?"bronce":null));
+      var lastTxt="—", lastSt="mid";
+      try{ var sr=JSON.parse(c.sesiones_registro||"[]"); if(sr.length&&sr[sr.length-1].fecha){ var d=Math.floor((Date.now()-new Date(sr[sr.length-1].fecha))/86400000); lastTxt=d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"); lastSt=d<=2?"fresh":(d<=7?"mid":"stale"); } }catch(e){}
+      return {
+        id: c.id||em||("c"+i), name: c.nombre||c.email||"Cliente", role: c.cargo||"",
+        email: c.email||"", week: wk, medal: medal, last:{txt:lastTxt,state:lastSt},
+        cvState: cvSet[em]?"published":"pending", reportState: rpSet[em]?"published":"pending",
+        source: "directo", photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
+      };
+    });
+    var cname = ME.nombre || usr.nombre || "Coach";
+    var cfg = usr.configuracion || ME.configuracion || {};
+    COACH = { name:cname, firstName:(""+cname).split(" ")[0], role:"Career Coach",
+      plan:(cfg&&cfg.plan==="basic"?"Basic":"Pro"), photo:(cfg&&cfg.foto_url)||usr.foto_url||makeAvatar(cname,150),
+      slug:(cfg&&cfg.slug)||"", email:ME.email||"" };
+    render();
+  });
+}
+
 render();
+loadReal();
 </script>
 </body>
 </html>
