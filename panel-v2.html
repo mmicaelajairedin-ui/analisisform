@@ -491,6 +491,8 @@ var state = {
   plan: "pro",
   trialDays: 9,
   adminTab: "resumen",
+  clienteSel: null,
+  cliDetTab: "perfil",
   pathwayOptIn: false,
   services: [
     { name:"Mentoría 4 semanas", desc:"Programa completo · 4 sesiones 1:1 + acceso al portal", price:480, unit:"/programa" },
@@ -586,7 +588,106 @@ function viewResumen(){
 }
 
 /* ═══ Clientes ═══ */
+function viewClienteDetalle(c){
+  function pill2(txt,kind){
+    var st = kind==="ok" ? "background:var(--pw-success-bg);color:var(--pw-bosque)"
+      : kind==="warn" ? "background:rgba(233,196,106,.22);color:#8E7A35"
+      : kind==="danger" ? "background:var(--pw-danger-bg);color:var(--pw-danger)"
+      : "background:var(--pw-niebla-2);color:var(--pw-text-soft)";
+    return "<span class='cp-client-pill' style='"+st+"'>"+txt+"</span>";
+  }
+  function kv(k,v){ return "<div style='display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid var(--pw-border)'><span style='font-size:12px;color:var(--pw-text-soft);text-transform:uppercase;letter-spacing:.06em;font-weight:600'>"+k+"</span><span style='font-size:14px;color:var(--pw-carbon);text-align:right;max-width:62%'>"+v+"</span></div>"; }
+  function docRow(name,desc,st,stk,btn){
+    return "<div style='display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--pw-border)'>"+
+      "<div style='flex:1;min-width:0'><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+name+"</div>"+
+      "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+desc+"</div></div>"+
+      pill2(st,stk)+"<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px'>"+btn+"</button></div>";
+  }
+  var dots=[1,2,3,4].map(function(w){var cl=w<c.week?"is-done":(w===c.week?"is-current":"");return "<span class='cp-week-dot "+cl+"'></span>";}).join("");
+  var medal=c.medal?"<img class='cp-client-medal' src='assets/iconos/medalla-"+c.medal+".png' alt='' style='width:42px;height:42px'>":"";
+  var wa=(c.email||"").replace(/[^0-9]/g,"")||"34611256224";
+  var t=state.cliDetTab;
+  var tabs=[["perfil","Perfil"],["docs","Documentos"],["sesiones","Sesiones"],["gestion","Gestión"]];
+  var tabBar="<div class='cp-filters'>"+tabs.map(function(x){return "<button class='cp-chip "+(t===x[0]?"is-on":"")+"' data-act='clidet:"+x[0]+"'>"+x[1]+"</button>";}).join("")+"</div>";
+
+  var cvSt=c.cvState==="published"?["Publicado","ok"]:(c.cvState==="pending"?["A revisar","warn"]:["Borrador",""]);
+  var rpSt=c.reportState==="published"?["Publicado","ok"]:["Pendiente","warn"];
+
+  var body;
+  if(t==="docs"){
+    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Documentos<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>3 de 4 listos</span></div><div class='cp-card-pad' style='padding-top:6px;padding-bottom:6px'>"+
+        docRow("CV","Última versión · hace 2 días",cvSt[0],cvSt[1],"Ver / Editar")+
+        docRow("Carta de presentación","Generada con IA",rpSt[0]==="Publicado"?"Lista":"Pendiente",rpSt[0]==="Publicado"?"ok":"warn","Ver")+
+        docRow("LinkedIn","Auditoría completa","Revisado","ok","Ver")+
+        docRow("Foto profesional","Subida por el cliente","Falta","danger","Pedir")+
+      "</div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Informe<span class='dot'>.</span></h3></div>"+
+        "<div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap'>"+
+        "<div><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>Informe de diagnóstico</div>"+
+        "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+(rpSt[0]==="Publicado"?"Publicado en el portal del cliente":"Aún no generado")+"</div></div>"+
+        "<button class='cp-btn cp-btn-primary'>"+(rpSt[0]==="Publicado"?"Ver informe":"Generar informe")+"</button></div></div>";
+  } else if(t==="sesiones"){
+    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Próxima sesión<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● Agendada</span></div>"+
+        "<div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap'>"+
+        "<div><div style='font-family:var(--pw-serif);font-size:18px;color:var(--pw-carbon)'>Jueves 22 may · 16:00</div>"+
+        "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>Sesión "+c.week+" de 4 · Zoom</div></div>"+
+        "<button class='cp-btn cp-btn-ghost'>Reprogramar</button></div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tareas del cliente<span class='dot'>.</span></h3></div>"+
+        "<div class='cp-card-pad'>"+
+        ["Actualizar el CV con los logros cuantificados","Optimizar el titular de LinkedIn","Preparar 3 historias STAR"].map(function(tk,i){
+          return "<div class='cp-toggle'><div class='cp-toggle-body'><div class='cp-toggle-title'>"+tk+"</div></div>"+
+            "<button class='cp-switch "+(i===0?"is-on":"")+"'><span></span></button></div>";
+        }).join("")+"</div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3></div>"+
+        "<div class='cp-card-pad' style='font-size:13px;color:var(--pw-text-soft);line-height:1.9'>"+
+        "Sesión 1 · 1 may · Diagnóstico inicial<br>Sesión 2 · 8 may · Estrategia de CV<br>Sesión 3 · 15 may · LinkedIn y networking</div></div>";
+  } else if(t==="gestion"){
+    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Notas del coach<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Privadas</span></div><div class='cp-card-pad'>"+
+        "<textarea class='cp-form-textarea' placeholder='Notas internas sobre este cliente…'>Perfil fuerte en producto. Trabajar confianza para entrevistas senior.</textarea></div></div>"+
+      "<div class='cp-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:16px'>"+
+        "<div class='cp-form-row-2'><div class='cp-form-row'><label class='cp-form-label'>Semana del programa</label>"+
+          "<select class='cp-form-select'><option>Semana 1</option><option>Semana 2</option><option>Semana 3</option><option>Semana 4</option></select></div>"+
+          "<div class='cp-form-row'><label class='cp-form-label'>Estado</label><select class='cp-form-select'><option>Activo</option><option>Pausado</option><option>Cerrado</option></select></div></div>"+
+        "<div style='display:flex;gap:10px;flex-wrap:wrap'><button class='cp-btn cp-btn-primary'>Generar informe</button>"+
+          "<button class='cp-btn cp-btn-ghost'>Enviar plantilla</button>"+
+          "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)'>Archivar cliente</button></div></div></div>";
+  } else {
+    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Datos del formulario<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Intake · 7 pasos</span></div><div class='cp-card-pad' style='padding-top:4px;padding-bottom:6px'>"+
+        kv("Email",esc(c.email||"—"))+
+        kv("Teléfono","+34 6•• ••• •••")+
+        kv("Situación actual","Empleada, buscando cambio")+
+        kv("Objetivo","Pasar a un rol senior en producto")+
+        kv("Sector","Tecnología · SaaS")+
+        kv("Ubicación","Madrid · abierta a remoto")+
+        kv("Experiencia","6 años · 2 empresas")+
+        kv("Disponibilidad","Inmediata")+
+      "</div></div>";
+  }
+
+  return "<button class='cp-btn cp-btn-ghost' style='align-self:flex-start;height:34px;font-size:12px;padding:0 14px' data-act='cli-back'>‹ Volver a Clientes</button>"+
+    "<div class='cp-card'><div class='cp-card-pad' style='display:flex;align-items:center;gap:18px;flex-wrap:wrap'>"+
+      "<img src='"+c.photo+"' alt='"+esc(c.name)+"' style='width:72px;height:72px;border-radius:50%;object-fit:cover;flex-shrink:0'>"+
+      "<div style='flex:1;min-width:160px'>"+
+        "<div style='font-family:var(--pw-serif);font-size:24px;font-weight:500;color:var(--pw-carbon);letter-spacing:-.5px'>"+esc(c.name)+(c.source==="pathway"?" <span class='cp-client-pill' style='background:var(--pw-success-bg);color:var(--pw-bosque);vertical-align:middle'>Pathway</span>":"")+"</div>"+
+        "<div style='font-size:13px;color:var(--pw-text-soft);margin-top:2px'>"+esc(c.role)+" · "+esc(c.email||"")+"</div>"+
+        "<div class='cp-week' style='margin-top:10px;max-width:280px'><span class='cp-week-label'>Sem "+c.week+"/4</span><span class='cp-week-dots'>"+dots+"</span></div></div>"+
+      medal+
+      "<div style='display:flex;gap:8px;flex-wrap:wrap'>"+
+        "<a href='https://wa.me/"+wa+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='text-decoration:none'>"+svg(IC.wa,14)+" WhatsApp</a>"+
+        "<button class='cp-btn cp-btn-ghost'>"+svg(IC.extLink,13)+" Ver su portal</button></div>"+
+    "</div></div>"+
+    tabBar+body;
+}
 function viewClientes(){
+  if(state.clienteSel){
+    var _sel=CLIENTS.filter(function(x){return x.id===state.clienteSel;})[0];
+    if(_sel) return viewClienteDetalle(_sel);
+    state.clienteSel=null;
+  }
   var pool = state.pathwayOptIn ? CLIENTS : CLIENTS.filter(function(c){return c.source!=="pathway";});
   var filters = [
     { id:"all",    label:"Todos",         test:function(){return true;} },
@@ -621,7 +722,7 @@ function viewClientes(){
     var cvTxt = c.cvState==="published"?"publicado":(c.cvState==="pending"?"a revisar":"borrador");
     var rpCls = c.reportState==="published"?"is-published":"is-pending";
     var rpTxt = c.reportState==="published"?"publicado":"pendiente";
-    return "<article class='cp-client'"+(isPw?" style='border-color:var(--pw-border-strong)'":"")+">"+
+    return "<article class='cp-client' data-act='cli-open:"+c.id+"'"+(isPw?" style='border-color:var(--pw-border-strong)'":"")+">"+
       "<header class='cp-client-head'><img class='cp-client-photo' src='"+c.photo+"' alt='"+esc(c.name)+"'>"+
         "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+"</div><div class='cp-client-role'>"+role+"</div></div>"+medal+"</header>"+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
@@ -1214,6 +1315,9 @@ document.addEventListener("click", function(ev){
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; render(); return; }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); render(); return; }
+  if(act.indexOf("cli-open:")===0){ state.clienteSel=act.slice(9); state.cliDetTab="perfil"; render(); window.scrollTo(0,0); return; }
+  if(act==="cli-back"){ state.clienteSel=null; render(); return; }
+  if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); render(); return; }
   if(act==="svc-add"){ state.services.push({name:"",desc:"",price:0,unit:"/sesión"}); state.svcEdit=state.services.length-1; state._svcNew=true; state.cfg="services"; render(); return; }
   if(act.indexOf("svc-edit:")===0){ state.svcEdit=parseInt(act.slice(9),10); state._svcNew=false; render(); return; }
   if(act==="svc-cancel"){ if(state._svcNew && state.svcEdit!=null) state.services.splice(state.svcEdit,1); state._svcNew=false; state.svcEdit=null; render(); return; }
