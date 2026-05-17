@@ -385,8 +385,10 @@ var CLIENTS = [
   { id:"c5", name:"Carla Otero",    role:"Marketing Lead",   email:"c.otero@email.com",    week:2, medal:"bronce", last:{txt:"ayer",     state:"fresh"}, cvState:"draft",     reportState:"pending"   },
   { id:"c6", name:"Daniel Vidal",   role:"Sales",            email:"dvidal@email.com",     week:1, medal:null,     last:{txt:"hace 8 d", state:"stale"}, cvState:"pending",   reportState:"pending"   },
   { id:"c7", name:"Sofía Marín",    role:"Backend Engineer", email:"sofiamarin@email.com", week:3, medal:"plata",  last:{txt:"hace 5 h", state:"fresh"}, cvState:"published", reportState:"pending"   },
-  { id:"c8", name:"Iván Pereira",   role:"QA Lead",          email:"ipereira@email.com",   week:4, medal:"oro",    last:{txt:"hace 12 d",state:"stale"}, cvState:"published", reportState:"published" }
-].map(function(c){ c.photo = makeAvatar(c.name); return c; });
+  { id:"c8", name:"Iván Pereira",   role:"QA Lead",          email:"ipereira@email.com",   week:4, medal:"oro",    last:{txt:"hace 12 d",state:"stale"}, cvState:"published", reportState:"published" },
+  { id:"p1", name:"Martín Ruiz",    role:"Product Designer", email:"martin.r@email.com",   week:1, medal:null,     last:{txt:"hace 1 d", state:"fresh"}, cvState:"draft",     reportState:"pending", source:"pathway" },
+  { id:"p2", name:"Elena Costa",    role:"Data Engineer",    email:"elena.c@email.com",    week:1, medal:null,     last:{txt:"hace 4 h", state:"fresh"}, cvState:"pending",   reportState:"pending", source:"pathway" }
+].map(function(c){ c.photo = makeAvatar(c.name); if(!c.source) c.source="directo"; return c; });
 
 /* ═══ Icons ═══ */
 function svg(inner, w, extra){ w=w||16; return "<svg width='"+w+"' height='"+w+"' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'"+(extra?" "+extra:"")+">"+inner+"</svg>"; }
@@ -431,6 +433,7 @@ var state = {
   cliFilter: "all",
   cfg: "profile",
   brandAccent: "#2D6A4F",
+  pathwayOptIn: false,
   notifs: { newClient:true, cvUpload:true, sessionReminder:true, weeklyReport:false, marketing:false },
   ai: { open:false, bubbleOpen:true, tab:"home", messages:[] }
 };
@@ -519,6 +522,7 @@ function viewResumen(){
 
 /* ═══ Clientes ═══ */
 function viewClientes(){
+  var pool = state.pathwayOptIn ? CLIENTS : CLIENTS.filter(function(c){return c.source!=="pathway";});
   var filters = [
     { id:"all",    label:"Todos",         test:function(){return true;} },
     { id:"review", label:"A revisar",     test:function(c){return c.reportState==="pending"||c.cvState==="pending";} },
@@ -526,15 +530,24 @@ function viewClientes(){
     { id:"week4",  label:"Semana 4",      test:function(c){return c.week===4;} },
     { id:"new",    label:"Nuevos",        test:function(c){return c.week===1;} }
   ];
+  if(state.pathwayOptIn) filters.push({ id:"pathway", label:"De Pathway", test:function(c){return c.source==="pathway";} });
+  if(state.cliFilter==="pathway" && !state.pathwayOptIn) state.cliFilter="all";
   var active = filters.filter(function(f){return f.id===state.cliFilter;})[0]||filters[0];
-  var list = CLIENTS.filter(active.test);
+  var list = pool.filter(active.test);
   var chips = filters.map(function(f){
-    var count = CLIENTS.filter(f.test).length;
+    var count = pool.filter(f.test).length;
     return "<button class='cp-chip "+(state.cliFilter===f.id?"is-on":"")+"' data-act='cli:"+f.id+"'>"+f.label+
       "<span class='cp-chip-count'>"+count+"</span></button>";
   }).join("");
+  var pwCount = CLIENTS.filter(function(c){return c.source==="pathway";}).length;
+  var sub = pool.length+" activos · 6 en proceso · 2 en semana de cierre"+
+    (state.pathwayOptIn ? " · "+pwCount+" de Pathway" : "");
   var cards = list.map(function(c){
     var medal = c.medal ? "<img class='cp-client-medal' src='assets/iconos/medalla-"+c.medal+".png' alt='Medalla "+c.medal+"'>" : "";
+    var isPw = c.source==="pathway";
+    var role = isPw
+      ? esc(c.role)+" · <span style='color:var(--pw-bosque);font-weight:700'>Pathway</span>"
+      : esc(c.role);
     var dots = [1,2,3,4].map(function(w){
       var cls = w<c.week?"is-done":(w===c.week?"is-current":"");
       return "<span class='cp-week-dot "+cls+"'></span>";
@@ -543,19 +556,23 @@ function viewClientes(){
     var cvTxt = c.cvState==="published"?"publicado":(c.cvState==="pending"?"a revisar":"borrador");
     var rpCls = c.reportState==="published"?"is-published":"is-pending";
     var rpTxt = c.reportState==="published"?"publicado":"pendiente";
-    return "<article class='cp-client'>"+
+    return "<article class='cp-client'"+(isPw?" style='border-color:var(--pw-border-strong)'":"")+">"+
       "<header class='cp-client-head'><img class='cp-client-photo' src='"+c.photo+"' alt='"+esc(c.name)+"'>"+
-        "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+"</div><div class='cp-client-role'>"+esc(c.role)+"</div></div>"+medal+"</header>"+
+        "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+"</div><div class='cp-client-role'>"+role+"</div></div>"+medal+"</header>"+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
       "<div class='cp-week'><span class='cp-week-label'>Sem "+c.week+"/4</span><span class='cp-week-dots'>"+dots+"</span></div>"+
       "<footer class='cp-client-foot'><span class='cp-client-pill "+cvCls+"'>CV "+cvTxt+"</span>"+
         "<span class='cp-client-pill "+rpCls+"'>Informe "+rpTxt+"</span></footer></article>";
   }).join("");
+  var banner = state.pathwayOptIn
+    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'>Estás recibiendo clientes de <strong>Pathway</strong> (etiquetados abajo). Cobrás vía Pathway con 20% de comisión solo sobre esos. Tus clientes propios siguen siendo 100% tuyos. Lo cambiás en <strong>Configuración › Plan y pagos</strong>.</div>"
+    : "";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Clientes<span class='dot'>.</span></h1>"+
-      "<div class='cp-sub'>"+CLIENTS.length+" activos · 6 en proceso · 2 en semana de cierre</div></div>"+
+      "<div class='cp-sub'>"+sub+"</div></div>"+
       "<div class='cp-topbar-actions'><div class='cp-search'>"+svg(IC.search,14)+
         "<input placeholder='Buscar por nombre o email…'></div>"+
         "<button class='cp-btn cp-btn-primary'>"+svg(IC.plus,13)+" Nuevo cliente</button></div></header>"+
+    banner+
     "<div class='cp-filters'>"+chips+
       "<div class='cp-sort'>Ordenar por: <select style='background:transparent;border:none;color:var(--pw-carbon);font-weight:600;cursor:pointer;outline:none'>"+
       "<option>Última actividad</option><option>Nombre</option><option>Semana del programa</option></select></div></div>"+
@@ -711,20 +728,46 @@ function cfgBilling(){
       "<td><span class='cp-bill-status is-paid'>Pagado</span></td>"+
       "<td style='text-align:right;width:100px'><button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px'>"+svg(IC.download,12)+" PDF</button></td></tr>";
   }).join("");
-  return "<div class='cp-plan-card'><div><div class='cp-plan-eyebrow'>Tu plan Pathway</div>"+
+  var optIn = state.pathwayOptIn;
+  function moneyRow(label, val, opts){
+    opts = opts || {};
+    var lblC = opts.muted ? "var(--pw-text-soft)" : "var(--pw-carbon)";
+    var valC = opts.neg ? "var(--pw-danger)" : (opts.strongC || "var(--pw-carbon)");
+    var big = opts.big;
+    return "<div style='display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:"+(big?"14px 0 4px":"10px 0")+";"+(opts.top?"border-top:1px solid var(--pw-border);margin-top:4px;":"")+"'>"+
+      "<span style='font-size:"+(big?"14px":"13px")+";color:"+lblC+";font-weight:"+(big?"600":"400")+"'>"+label+"</span>"+
+      "<span style='font-family:var(--pw-serif);font-size:"+(big?"26px":"15px")+";font-weight:"+(big?"600":"500")+";color:"+valC+";letter-spacing:-.4px'>"+val+"</span></div>";
+  }
+  var earnings = optIn
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tus ingresos de Pathway<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● Stripe conectado</span></div>"+
+        "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
+          moneyRow("Cobrado a clientes de Pathway","€3.100")+
+          moneyRow("Comisión Pathway (20%)","−€620",{muted:true,neg:true})+
+          moneyRow("A tu favor (neto)","€2.480",{big:true,strongC:"var(--pw-bosque)",top:true})+
+        "</div>"+
+        "<div style='margin:0 22px;padding:14px 16px;background:var(--pw-niebla-2);border-radius:12px;display:flex;flex-direction:column;gap:9px'>"+
+          "<div style='display:flex;justify-content:space-between;gap:12px;font-size:13px'><span style='color:var(--pw-text-soft)'>Dónde lo recibís</span><span style='color:var(--pw-carbon);font-weight:600'>Stripe → tu banco ES•••• 4521</span></div>"+
+          "<div style='display:flex;justify-content:space-between;gap:12px;font-size:13px'><span style='color:var(--pw-text-soft)'>Cuándo</span><span style='color:var(--pw-carbon);font-weight:600'>Tras 24 h de retención · próximo payout 17 may 2026</span></div>"+
+          "<div style='display:flex;justify-content:space-between;gap:12px;font-size:13px'><span style='color:var(--pw-text-soft)'>Estado</span><span style='color:var(--pw-bosque);font-weight:600'>€2.480 en tránsito</span></div>"+
+        "</div>"+
+        "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div>"+
+        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'><strong>Tus clientes directos no pasan por acá:</strong> ese dinero es 100% tuyo, 0% comisión, directo a tu cuenta.</p></div>"
+    : "<div class='cp-card'><div class='cp-card-pad'>"+
+        "<p class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Estás gestionando solo tus clientes propios.</strong> Cobrás el 100%, directo a tu cuenta vía Stripe — Pathway no toca tu dinero. Activá el switch de arriba si querés que Pathway te mande clientes nuevos del directorio (esos pagan 20% de comisión; tus clientes propios siguen siendo 0%).</p></div>";
+  return "<div class='cp-plan-card'><div><div class='cp-plan-eyebrow'>Tu suscripción a Pathway</div>"+
       "<div class='cp-plan-name'>Pro<span style='color:#52B788'>.</span></div>"+
       "<div class='cp-plan-price'><strong>€89</strong> / mes · facturado mensualmente</div>"+
       "<div class='cp-plan-meta'>Próximo cobro <strong style='color:rgba(255,255,255,.92)'>el 1 jun 2026</strong> · 14 clientes activos · sin límite</div></div>"+
       "<div class='cp-plan-actions'><button class='cp-plan-btn-up'>Subir a Premium</button>"+
       "<button class='cp-plan-btn-mng'>Cancelar suscripción</button></div></div>"+
-    "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Cómo cobrás a tus clientes<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● Stripe conectado</span></div>"+
-      "<div class='cp-stripe-row'><span class='cp-stripe-logo'>S</span>"+
-        "<div class='cp-stripe-info'><div class='cp-stripe-name'>Stripe · acct_•••••2GLk</div>"+
-        "<div class='cp-stripe-meta'>Próximo payout · 17 may 2026 · destino: ES•••• 4521</div></div>"+
-        "<div style='text-align:right'><div class='cp-stripe-amount'>€2.480<small>en tránsito</small></div></div>"+
-        "<button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div>"+
-      "<p class='cp-reassurance' style='margin:0 18px 18px;border-radius:12px'><strong>Pathway no toca el dinero que cobras a tus clientes.</strong> Tus ingresos van directo a tu cuenta vía Stripe — 0% comisión, siempre.</p></div>"+
+    "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Clientes de Pathway<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Cómo cobrás</span></div>"+
+      "<div class='cp-card-pad'><div class='cp-toggle' style='border-bottom:none;padding:4px 0'>"+
+        "<div class='cp-toggle-body'><div class='cp-toggle-title'>Recibir clientes nuevos de Pathway</div>"+
+        "<div class='cp-toggle-desc'>Pathway te envía candidatos de su directorio. Cobrás vía Pathway con 20% de comisión solo sobre esos. Tus clientes propios siempre son 0%.</div></div>"+
+        "<button class='cp-switch "+(optIn?"is-on":"")+"' data-act='pw-optin' aria-label='Recibir clientes de Pathway'><span></span></button></div></div></div>"+
+    earnings+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Método de pago<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>Cargo a tu suscripción Pathway</span></div>"+
       "<div class='cp-pm-row'><div class='cp-pm-brand'>VISA</div>"+
@@ -856,6 +899,7 @@ document.addEventListener("click", function(ev){
   if(act.indexOf("cfg:")===0){ state.cfg = act.slice(4); render(); return; }
   if(act.indexOf("brand:")===0){ state.brandAccent = act.slice(6); render(); return; }
   if(act.indexOf("notif:")===0){ var k=act.slice(6); state.notifs[k]=!state.notifs[k]; render(); return; }
+  if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; render(); return; }
   if(act==="ai-open"){ state.ai.open=true; state.ai.bubbleOpen=false; render(); return; }
   if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; render(); return; }
   if(act==="ai-bubble-close"){ ev.stopPropagation(); state.ai.bubbleOpen=false; render(); return; }
