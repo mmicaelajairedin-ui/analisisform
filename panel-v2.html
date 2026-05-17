@@ -772,28 +772,31 @@ function copyBtn(url){
   return "<button class='cp-icon-btn' data-act='copy' data-url='"+esc(url)+"' title='Copiar'>"+svg(IC.copy,15)+"</button>";
 }
 function viewLinks(){
-  var base = "pathwaycareercoach.com";
+  var base = "https://pathwaycareercoach.com";
+  var slug = ((REAL ? (RCFG.slug||"") : (COACH.slug||"")) || "").toString().trim();
+  function oBtn(u){ return "<button class='cp-icon-btn' data-act='open' data-url='"+esc(u)+"' title='Abrir'>"+svg(IC.extLink,15)+"</button>"; }
+  function qBtn(u){ return "<button class='cp-icon-btn' data-act='open' data-url='"+esc("https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="+encodeURIComponent(u))+"' title='Ver QR'>"+svg(IC.qr,15)+"</button>"; }
   var myLinks = [
-    { tag:"lkProfile", label:"Mi perfil público", desc:"Tu landing como coach — biografía, servicios, reservas.", url:base+"/coach/"+COACH.slug },
-    { tag:"lkIntake",  label:"Formulario de intake", desc:"El cuestionario de 7 pasos para nuevos clientes.", url:base+"/formulario?coach="+COACH.slug },
-    { tag:"lkSignup",  label:"Alta directa con descuento", desc:"Skip-the-call: el cliente se registra y paga.", url:base+"/alta?ref="+COACH.slug+"&promo=30off" }
+    { tag:"lkProfile", label:"Mi perfil público", desc: slug?"Tu landing como coach.":"Configura tu slug en Configuración › Perfil público.", url: slug? base+"/coach/"+slug : base },
+    { tag:"lkIntake",  label:"Formulario de intake", desc:"El cuestionario para nuevos clientes.", url: base+"/formulario.html"+(slug?"?coach="+encodeURIComponent(slug):"") },
+    { tag:"lkSignup",  label:"Alta directa", desc:"El cliente se registra y paga.", url: base+"/alta.html"+(slug?"?ref="+encodeURIComponent(slug):"") }
   ];
   var rows = myLinks.map(function(l){
     return "<div class='cp-link-row'><span class='cp-link-tag'>"+svg(IC[l.tag],16)+"</span>"+
       "<div class='cp-link-info'><div class='cp-link-label'>"+esc(l.label)+"</div><div class='cp-link-desc'>"+esc(l.desc)+"</div></div>"+
       "<code class='cp-link-url'>"+esc(l.url)+"</code>"+
-      "<div class='cp-link-actions'>"+copyBtn(l.url)+
-        "<button class='cp-icon-btn' title='QR'>"+svg(IC.qr,15)+"</button>"+
-        "<button class='cp-icon-btn' title='Abrir'>"+svg(IC.extLink,15)+"</button></div></div>";
+      "<div class='cp-link-actions'>"+copyBtn(l.url)+qBtn(l.url)+oBtn(l.url)+"</div></div>";
   }).join("");
-  var clientRows = CLIENTS.slice(0,6).map(function(c){
-    var url = base+"/cliente/"+c.id;
+  var clist = CLIENTS.slice(0,8);
+  var clientRows = clist.length ? clist.map(function(c){
+    var url = base+"/cliente.html?email="+encodeURIComponent(c.email||"");
+    var wamsg = encodeURIComponent("Hola "+(""+c.name).split(" ")[0]+", este es el acceso a tu portal: "+url);
     return "<div class='cp-client-link-row'><img src='"+c.photo+"' alt='"+esc(c.name)+"'>"+
       "<span class='cp-client-link-name'>"+esc(c.name)+"</span><code class='cp-link-url'>"+esc(url)+"</code>"+
       "<div class='cp-link-actions'>"+copyBtn(url)+
-        "<button class='cp-icon-btn' title='Enviar por WhatsApp'>"+svg(IC.wa,15)+"</button>"+
-        "<button class='cp-icon-btn' title='Abrir'>"+svg(IC.extLink,15)+"</button></div></div>";
-  }).join("");
+        "<button class='cp-icon-btn' data-act='open' data-url='"+esc("https://wa.me/?text="+wamsg)+"' title='Enviar por WhatsApp'>"+svg(IC.wa,15)+"</button>"+
+        oBtn(url)+"</div></div>";
+  }).join("") : "<div style='padding:18px 22px;color:var(--pw-text-soft);font-size:13px'>Todavía no tienes clientes.</div>";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Links<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Tus enlaces para captar, derivar y dar acceso a tus clientes.</div></div></header>"+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tus links<span class='dot'>.</span></h3>"+
@@ -925,6 +928,31 @@ function cfgAccount(){
       "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)'>Cerrar cuenta</button></div></div>";
 }
 function cfgPlan(){
+  if(REAL){
+    var pl=(RCFG.plan==="pro")?"pro":(RCFG.plan==="basic"?"basic":"");
+    var rName=pl==="pro"?"Pro":(pl==="basic"?"Basic":"—");
+    var rPrice=pl==="pro"?"€89":(pl==="basic"?"€58":"—");
+    var est=(RCFG.estado_sub||"").toString();
+    var trialN=0; if(RCFG.fecha_fin_prueba){ try{ trialN=Math.max(0,Math.ceil((new Date(RCFG.fecha_fin_prueba)-Date.now())/86400000)); }catch(e){} }
+    var meta = est ? ("Estado: "+esc(est)) : (trialN>0 ? ("Prueba: "+trialN+" días restantes") : "");
+    var tCard = trialN>0
+      ? "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap'>"+
+          "<div><div class='cp-toggle-title'>Prueba gratuita</div><div class='cp-toggle-desc'>Te quedan <strong style='color:var(--pw-bosque)'>"+trialN+" días</strong> gratis"+(rPrice!=="—"?" · luego "+rPrice+"/mes":"")+".</div></div>"+
+          "<button class='cp-btn cp-btn-primary' style='height:34px;font-size:12px;padding:0 14px'>Activar suscripción</button></div></div>"
+      : "";
+    return "<div class='cp-plan-card'><div><div class='cp-plan-eyebrow'>Tu suscripción a Pathway</div>"+
+        "<div class='cp-plan-name'>"+rName+"<span style='color:#52B788'>.</span></div>"+
+        "<div class='cp-plan-price'>"+(rPrice!=="—"?"<strong>"+rPrice+"</strong> / mes":"<strong>Sin plan activo</strong>")+"</div>"+
+        (meta?"<div class='cp-plan-meta'>"+meta+"</div>":"")+"</div>"+
+        "<div class='cp-plan-actions'>"+(pl==="pro"?"<button class='cp-plan-btn-up'>Gestionar plan</button>":"<button class='cp-plan-btn-up'>Mejorar a Pro</button>")+
+        "<button class='cp-plan-btn-mng'>Cancelar suscripción</button></div></div>"+
+      tCard+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Método de pago<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Suscripción</span></div><div class='cp-card-pad'>"+
+        "<p class='cp-reassurance' style='margin:0;border-radius:12px'>Tu método de pago y tus facturas se gestionan en Stripe. Todavía no hay cargos para mostrar aquí.</p></div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial de facturas<span class='dot'>.</span></h3></div>"+
+        "<div class='cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Sin facturas todavía.</div></div>";
+  }
   var isPro = state.plan === "pro";
   var planName  = isPro ? "Pro" : "Basic";
   var planPrice = isPro ? "€89" : "€58";
@@ -992,6 +1020,20 @@ function cfgPathway(){
   if(!optIn){
     return toggleCard+
       "<div class='cp-card'><div class='cp-card-pad'><p class='cp-reassurance' style='margin:0;border-radius:12px'>Aún no recibes clientes de Pathway. Cuando actives el switch verás aquí tus precios para Pathway y dónde cobras.</p></div></div>";
+  }
+  if(REAL){
+    return toggleCard+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tus precios para Pathway<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Precio − 20%</span></div><div class='cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>"+
+        "Configura tus servicios en <strong>Configuración › Servicios</strong> y aquí verás tu neto por cada uno (precio − 20%).</div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Dónde y cuándo cobras<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Pagos de Pathway</span></div>"+
+        "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
+          moneyRow("Cobrado a clientes de Pathway","€0",{muted:true})+
+          moneyRow("Comisión Pathway (20%)","€0",{muted:true})+
+          moneyRow("A tu favor (neto)","€0",{big:true,strongC:"var(--pw-bosque)",top:true})+
+        "</div>"+
+        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>Todavía no recibes pagos por clientes de Pathway. Cuando un cliente pague, aquí verás el desglose real: <strong>cobrado, comisión 20%, tu neto, y dónde/cuándo cobras</strong>.</p></div>";
   }
   var priceRows = state.services.map(function(s){
     var net = Math.round(s.price*0.8);
@@ -1163,6 +1205,18 @@ function viewAdmin(){
     { n:"Nora Vidal",       plan:"Basic", est:["Prueba","warn"],        acc:["hace 16 d","danger"], cli:0, pw:"No", com:"—" },
     { n:"Tomás Gil",        plan:"Pro",   est:["Pago vencido","danger"],acc:["hace 19 d","danger"], cli:7, pw:"Sí", com:"€280" }
   ];
+  if(REAL && RCOACHES){
+    coachesEng = RCOACHES.map(function(u){
+      var cg=u.configuracion||{};
+      var plan=cg.plan==="pro"?"Pro":(cg.plan==="basic"?"Basic":"—");
+      var es=(cg.estado_sub||"").toString();
+      var est = es==="activa"?["Activa","ok"]:es==="prueba"?["Prueba","warn"]:(es==="cancelada"||es==="vencida")?["Cancelada","danger"]:(u.activo===false?["Inactiva","danger"]:["Activa","ok"]);
+      var acc=["—",""];
+      var la=cg.last_login||u.last_login;
+      if(la){ try{ var d=Math.floor((Date.now()-new Date(la))/86400000); acc=[d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"), d<=2?"ok":(d<=7?"warn":"danger")]; }catch(e){} }
+      return { n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, cli:"—", pw:cg.pathway_optin?"Sí":"No", com:"—" };
+    });
+  }
   var engRows = coachesEng.map(function(c){
     return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.n)+"</td>"+
       "<td>"+pill(c.plan, c.plan==="Pro"?"ok":"")+"</td>"+
@@ -1178,8 +1232,13 @@ function viewAdmin(){
     { tel:"+34 622 98 76 54",   pag:"soy-candidato", f:"Ayer 18:40" },
     { tel:"+34 600 11 22 33",   pag:"soy-coach",     f:"15 may 09:15" }
   ];
+  if(REAL && RCONTACTS){
+    contactos = RCONTACTS.map(function(x){
+      return { tel:(""+(x.contacto||"—")), pag:(""+(x.pagina||"")).replace(/^\//,""), f:(""+(x.fecha||"")).replace("T"," ").slice(0,16) };
+    });
+  }
   var contactoRows = contactos.map(function(c){
-    var wa = c.tel.replace(/[^0-9]/g,"");
+    var wa = (""+c.tel).replace(/[^0-9]/g,"");
     return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.tel)+"</td>"+
       "<td><code style='font-size:11px;color:var(--pw-text-muted)'>/"+esc(c.pag)+"</code></td>"+
       "<td style='color:var(--pw-text-soft)'>"+esc(c.f)+"</td>"+
@@ -1301,9 +1360,12 @@ function viewAdmin(){
           row("Total ingresos de la plataforma","€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
         "</div></div>";
   }
+  var realNote = REAL
+    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Coaches y Contactos:</strong> datos reales. <strong>Ingresos / comisión / payouts / CV Express:</strong> agregados de plataforma todavía no cableados — los importes mostrados no son reales aún.</div>"
+    : "";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Admin<span class='dot'>.</span></h1>"+
-      "<div class='cp-sub'>Vista de plataforma · mayo 2026</div></div></header>"+
-    tabBar + body;
+      "<div class='cp-sub'>Vista de plataforma"+(REAL?" · datos en vivo":" · datos de ejemplo")+"</div></div></header>"+
+    realNote + tabBar + body;
 }
 
 /* ═══ Render ═══ */
@@ -1321,6 +1383,7 @@ document.addEventListener("click", function(ev){
   var el = ev.target.closest("[data-act]");
   if(!el) return;
   var act = el.getAttribute("data-act");
+  if(act==="open"){ var ou=el.getAttribute("data-url"); if(ou) window.open(ou,"_blank","noopener"); return; }
   if(act==="copy"){
     var url = el.getAttribute("data-url")||"";
     try{ navigator.clipboard && navigator.clipboard.writeText(url); }catch(e){}
@@ -1365,20 +1428,29 @@ document.addEventListener("click", function(ev){
 var SB="https://ddxnrsnjdvtqhxunxnwj.supabase.co";
 var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
 function _sb(p){ return fetch(SB+"/rest/v1/"+p,{headers:{apikey:KEY,Authorization:"Bearer "+KEY}}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }
+var REAL=false, RCFG={}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false;
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
   if(!ME||!ME.id) return; // sin sesión → datos de ejemplo
+  REAL=true; RME=ME; RADMIN=(ME.rol==="admin");
   var cf = ME.rol==="admin"
     ? "select=*&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)"
     : "select=*&coach_id=eq."+encodeURIComponent(ME.id);
+  var extra = ME.rol==="admin"
+    ? [ _sb("usuarios?select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
+        _sb("contactos_chat?select=contacto,pagina,fecha&order=fecha.desc&limit=30") ]
+    : [ Promise.resolve([]), Promise.resolve([]) ];
   Promise.all([
     _sb("candidatos?"+cf+"&order=created_at.desc"),
     _sb("cv_publicados?select=email,contenido"),
     _sb("informes?select=email"),
-    _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion")
+    _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion"),
+    extra[0], extra[1]
   ]).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
-    if(!cands.length) return;
+    RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
+    RCFG = usr.configuracion || ME.configuracion || {};
+    if(!cands.length){ render(); return; }
     var cvSet={}; cvR.forEach(function(x){ if(x&&x.email) cvSet[(""+x.email).toLowerCase().trim()]=true; });
     var rpSet={}; inf.forEach(function(x){ if(x&&x.email) rpSet[(""+x.email).toLowerCase().trim()]=true; });
     var seen={}, list=[];
