@@ -418,6 +418,7 @@ var IC = {
   cfgInteg:   "<polyline points='16 18 22 12 16 6'/><polyline points='8 6 2 12 8 18'/>",
   cfgAccount: "<path d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/><circle cx='12' cy='7' r='4'/>",
   download:   "<path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/>",
+  edit:       "<path d='M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7'/><path d='M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z'/>",
   close:      "<line x1='18' y1='6' x2='6' y2='18'/><line x1='6' y1='6' x2='18' y2='18'/>",
   insStale:   "<circle cx='12' cy='12' r='10'/><polyline points='12 6 12 12 16 14'/>",
   insClosing: "<path d='M22 11.08V12a10 10 0 1 1-5.93-9.14'/><polyline points='22 4 12 14.01 9 11.01'/>",
@@ -434,6 +435,13 @@ var state = {
   cfg: "profile",
   brandAccent: "#2D6A4F",
   pathwayOptIn: false,
+  services: [
+    { name:"Mentoría 4 semanas", desc:"Programa completo · 4 sesiones 1:1 + acceso al portal", price:480, unit:"/programa" },
+    { name:"Sesión individual",  desc:"1 hora · Diagnóstico, plan o ajuste puntual", price:95, unit:"/sesión" },
+    { name:"Auditoría LinkedIn", desc:"Async · Te entrego informe + sugerencias en 48h", price:60, unit:"/auditoría" }
+  ],
+  svcEdit: null,
+  _svcNew: false,
   notifs: { newClient:true, pathwayLead:true, cvUpload:true, sessionReminder:true, weeklyReport:false, marketing:false },
   ai: { open:false, bubbleOpen:true, tab:"home", messages:[] }
 };
@@ -565,7 +573,7 @@ function viewClientes(){
         "<span class='cp-client-pill "+rpCls+"'>Informe "+rpTxt+"</span></footer></article>";
   }).join("");
   var banner = state.pathwayOptIn
-    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'>Estás recibiendo clientes de <strong>Pathway</strong> (etiquetados abajo). Cobrás vía Pathway con 20% de comisión solo sobre esos. Tus clientes propios siguen siendo 100% tuyos. Lo cambiás en <strong>Configuración › Plan y pagos</strong>.</div>"
+    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'>Estás recibiendo clientes de <strong>Pathway</strong> (etiquetados abajo): esos los cobrás vía Pathway con 20% de comisión. A tus clientes propios los seguís invitando y cobrando <strong>por fuera</strong>, 0%. Lo cambiás en <strong>Configuración › Plan y pagos</strong>.</div>"
     : "";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Clientes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>"+sub+"</div></div>"+
@@ -636,19 +644,34 @@ function cfgProfile(){
     "</div></div>";
 }
 function cfgServices(){
-  var services = [
-    { name:"Mentoría 4 semanas", desc:"Programa completo · 4 sesiones 1:1 + acceso al portal", price:"€480", unit:"/programa" },
-    { name:"Sesión individual",  desc:"1 hora · Diagnóstico, plan o ajuste puntual", price:"€95", unit:"/sesión" },
-    { name:"Auditoría LinkedIn", desc:"Async · Te entrego informe + sugerencias en 48h", price:"€60", unit:"/auditoría" }
-  ];
-  var cards = services.map(function(s){
-    return "<div class='cp-service-card'><div><div class='cp-service-name'>"+esc(s.name)+"</div><div class='cp-service-desc'>"+esc(s.desc)+"</div></div>"+
-      "<div class='cp-service-price'>"+s.price+"<small> "+esc(s.unit)+"</small></div></div>";
+  var optIn = state.pathwayOptIn;
+  var cards = state.services.map(function(s,i){
+    if(state.svcEdit===i){
+      return "<div class='cp-service-card' style='display:block'>"+
+        "<div class='cp-form-row' style='margin-bottom:10px'><label class='cp-form-label'>Nombre del servicio</label>"+
+          "<input id='svc-name' class='cp-form-input' value=\""+esc(s.name)+"\"></div>"+
+        "<div class='cp-form-row' style='margin-bottom:10px'><label class='cp-form-label'>Descripción</label>"+
+          "<input id='svc-desc' class='cp-form-input' value=\""+esc(s.desc)+"\"></div>"+
+        "<div class='cp-form-row-2' style='margin-bottom:14px'>"+
+          "<div class='cp-form-row'><label class='cp-form-label'>Precio (€)</label><input id='svc-price' type='number' min='0' class='cp-form-input' value='"+s.price+"'></div>"+
+          "<div class='cp-form-row'><label class='cp-form-label'>Unidad</label><input id='svc-unit' class='cp-form-input' value=\""+esc(s.unit)+"\"></div></div>"+
+        "<div style='display:flex;gap:8px;justify-content:space-between;align-items:center'>"+
+          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px;color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='svc-del:"+i+"'>Eliminar</button>"+
+          "<div style='display:flex;gap:8px'><button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='svc-cancel'>Cancelar</button>"+
+          "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='svc-save'>Guardar</button></div></div></div>";
+    }
+    var net = Math.round(s.price*0.8);
+    var pwLine = optIn
+      ? "<div style='font-size:11px;color:var(--pw-text-soft);margin-top:4px'>Vía Pathway recibís <strong style='color:var(--pw-bosque)'>€"+net+"</strong> <span style='color:var(--pw-text-muted)'>(−20%)</span></div>"
+      : "";
+    return "<div class='cp-service-card'><div><div class='cp-service-name'>"+esc(s.name||"Servicio sin nombre")+"</div><div class='cp-service-desc'>"+esc(s.desc)+"</div></div>"+
+      "<div style='display:flex;align-items:center;gap:14px'><div style='text-align:right'><div class='cp-service-price'>€"+s.price+"<small> "+esc(s.unit)+"</small></div>"+pwLine+"</div>"+
+      "<button class='cp-icon-btn' title='Editar' data-act='svc-edit:"+i+"'>"+svg(IC.edit,15)+"</button></div></div>";
   }).join("");
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Servicios y precios<span class='dot'>.</span></h3>"+
-    "<button class='cp-btn cp-btn-primary' style='height:32px;padding:0 14px;font-size:12px'>"+svg(IC.plus,12)+" Añadir servicio</button></div>"+
+    "<button class='cp-btn cp-btn-primary' style='height:32px;padding:0 14px;font-size:12px' data-act='svc-add'>"+svg(IC.plus,12)+" Añadir servicio</button></div>"+
     "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+cards+
-      "<p class='cp-reassurance' style='margin-top:6px'><strong>Vos cobrás lo que ponés acá, directo a tu cuenta.</strong> Tus clientes propios son 0% comisión, siempre. Solo los clientes que te manda Pathway pagan 20% — lo ves desglosado en <strong>Plan y pagos</strong>.</p></div></div>";
+      "<p class='cp-reassurance' style='margin-top:6px'><strong>Este es el precio que vos ponés.</strong> A tus clientes propios los invitás y les cobrás <strong>por fuera</strong>, como vos manejes — la plataforma no toca ese dinero (0% comisión). A los que te manda Pathway les cobrás vía Pathway: recibís ese precio <strong>menos 20%</strong>, desglosado en <strong>Plan y pagos</strong>.</p></div></div>";
 }
 function cfgBrand(){
   var swatches = ["#2D6A4F","#1B4332","#5C7A6F","#7C5C3D","#4A6BA0","#9B6B7C"];
@@ -687,7 +710,7 @@ function cfgNotifs(){
 function cfgInteg(){
   var integs = [
     { name:"Calendly", icon:"📅", status:"Conectado · micaela.calendly.com", connected:true },
-    { name:"Stripe", icon:"💳", status:(state.pathwayOptIn?"Conectado · cobros propios + payouts de Pathway":"Conectado · cobros directos a tu cuenta"), connected:true },
+    { name:"Stripe", icon:"💳", status:(state.pathwayOptIn?"Conectado · recibís acá los payouts de Pathway":"Conectado · listo para payouts de Pathway"), connected:true },
     { name:"Google Calendar", icon:"🗓️", status:"Conectar para sincronizar tus sesiones", connected:false },
     { name:"Zoom", icon:"🎥", status:"Conectar para generar links de sesión automáticos", connected:false },
     { name:"Mailchimp", icon:"📨", status:"Conectar para mandar newsletters a tus clientes", connected:false }
@@ -753,9 +776,9 @@ function cfgBilling(){
           "<div style='display:flex;justify-content:space-between;gap:12px;font-size:13px'><span style='color:var(--pw-text-soft)'>Estado</span><span style='color:var(--pw-bosque);font-weight:600'>€2.480 en tránsito</span></div>"+
         "</div>"+
         "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div>"+
-        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'><strong>Tus clientes directos no pasan por acá:</strong> ese dinero es 100% tuyo, 0% comisión, directo a tu cuenta.</p></div>"
+        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'><strong>Tus clientes propios no pasan por acá:</strong> a ellos los cobrás por fuera, 100% tuyo, 0% comisión.</p></div>"
     : "<div class='cp-card'><div class='cp-card-pad'>"+
-        "<p class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Estás gestionando solo tus clientes propios.</strong> Cobrás el 100%, directo a tu cuenta vía Stripe — Pathway no toca tu dinero. Activá el switch de arriba si querés que Pathway te mande clientes nuevos del directorio (esos pagan 20% de comisión; tus clientes propios siguen siendo 0%).</p></div>";
+        "<p class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Estás gestionando solo tus clientes propios.</strong> A ellos los invitás y les cobrás <strong>por fuera</strong>, por tu cuenta — la plataforma no procesa ni toca ese dinero (0% comisión). Solo pagás tu suscripción a Pathway. Activá el switch de arriba si querés que Pathway te mande clientes nuevos del directorio (solo esos pagan 20%).</p></div>";
   return "<div class='cp-plan-card'><div><div class='cp-plan-eyebrow'>Tu suscripción a Pathway</div>"+
       "<div class='cp-plan-name'>Pro<span style='color:#52B788'>.</span></div>"+
       "<div class='cp-plan-price'><strong>€89</strong> / mes · facturado mensualmente</div>"+
@@ -766,7 +789,7 @@ function cfgBilling(){
       "<span class='cp-eyebrow'>Cómo cobrás</span></div>"+
       "<div class='cp-card-pad'><div class='cp-toggle' style='border-bottom:none;padding:4px 0'>"+
         "<div class='cp-toggle-body'><div class='cp-toggle-title'>Recibir clientes nuevos de Pathway</div>"+
-        "<div class='cp-toggle-desc'>Pathway te envía candidatos de su directorio. Cobrás vía Pathway con 20% de comisión solo sobre esos. Tus clientes propios siempre son 0%.</div></div>"+
+        "<div class='cp-toggle-desc'>Pathway te envía candidatos de su directorio: a esos los cobrás vía Pathway con 20% de comisión. A tus clientes propios los seguís invitando y cobrando por fuera, siempre 0%.</div></div>"+
         "<button class='cp-switch "+(optIn?"is-on":"")+"' data-act='pw-optin' aria-label='Recibir clientes de Pathway'><span></span></button></div></div></div>"+
     earnings+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Método de pago<span class='dot'>.</span></h3>"+
@@ -901,6 +924,18 @@ document.addEventListener("click", function(ev){
   if(act.indexOf("brand:")===0){ state.brandAccent = act.slice(6); render(); return; }
   if(act.indexOf("notif:")===0){ var k=act.slice(6); state.notifs[k]=!state.notifs[k]; render(); return; }
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; render(); return; }
+  if(act==="svc-add"){ state.services.push({name:"",desc:"",price:0,unit:"/sesión"}); state.svcEdit=state.services.length-1; state._svcNew=true; state.cfg="services"; render(); return; }
+  if(act.indexOf("svc-edit:")===0){ state.svcEdit=parseInt(act.slice(9),10); state._svcNew=false; render(); return; }
+  if(act==="svc-cancel"){ if(state._svcNew && state.svcEdit!=null) state.services.splice(state.svcEdit,1); state._svcNew=false; state.svcEdit=null; render(); return; }
+  if(act.indexOf("svc-del:")===0){ state.services.splice(parseInt(act.slice(8),10),1); state._svcNew=false; state.svcEdit=null; render(); return; }
+  if(act==="svc-save"){
+    var si=state.svcEdit;
+    if(si!=null && state.services[si]){
+      var g=function(id){ var e=document.getElementById(id); return e?e.value:""; };
+      state.services[si]={ name:(g('svc-name').trim()||"Servicio"), desc:g('svc-desc').trim(), price:Math.max(0,parseInt(g('svc-price'),10)||0), unit:(g('svc-unit').trim()||"/sesión") };
+    }
+    state._svcNew=false; state.svcEdit=null; render(); return;
+  }
   if(act==="ai-open"){ state.ai.open=true; state.ai.bubbleOpen=false; render(); return; }
   if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; render(); return; }
   if(act==="ai-bubble-close"){ ev.stopPropagation(); state.ai.bubbleOpen=false; render(); return; }
