@@ -1528,13 +1528,21 @@ function viewAdmin(){
       "<td style='color:var(--pw-text-soft)'>"+esc(c.f)+"</td>"+
       "<td style='text-align:right'><a href='https://wa.me/"+wa+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px;text-decoration:none'>"+svg(IC.wa,13)+" WhatsApp</a></td></tr>";
   }).join("");
-  var cvx = [
+  var cvx = (REAL && RADM && RADM.cvx)
+    ? RADM.cvx.map(function(x){
+        var paid=!!x.paid_at, fday="—";
+        try{ var _dd=new Date(x.created_at); if(!isNaN(_dd)) fday=_dd.toLocaleDateString("es-ES",{day:"numeric",month:"short"}); }catch(e){}
+        return { n:(x.nombre||x.email||"—"), em:(x.email||""), f:fday,
+          org: paid ? ["Pagó"+(x.pago_monto?" €"+x.pago_monto:""),"ok"] : ["Acceso admin",""],
+          acc: paid ? ["Pagado","ok"] : ["Prueba","warn"], rev:null, cv:true };
+      })
+    : (REAL ? [] : [
     { n:"Marcos Ledesma", em:"marcos@email.com",  f:"16 may", org:["Pagó €29","ok"],      acc:["CV generado","ok"],     rev:{st:5,txt:"Rápido y clarísimo"}, cv:true },
     { n:"Sara Lin",       em:"sara.lin@email.com", f:"16 may", org:["Pagó €29","ok"],      acc:["CV generado","ok"],     rev:null, cv:true },
     { n:"Lucía Fritz",    em:"lucia.f@email.com",  f:"15 may", org:["Pagó €29","ok"],      acc:["Accedió","ok"],         rev:null, cv:false },
     { n:"Iván Soto",      em:"ivan.s@email.com",   f:"15 may", org:["Acceso admin",""],    acc:["CV generado","ok"],     rev:{st:4,txt:"Muy útil"}, cv:true },
     { n:"Paula Reyes",    em:"paula.r@email.com",  f:"14 may", org:["Acceso admin",""],    acc:["Invitado","warn"],      rev:null, cv:false }
-  ];
+  ]);
   var cvxRows = cvx.map(function(c){
     var stars = c.rev
       ? "<span style='color:var(--pw-amanecer);letter-spacing:1px'>"+Array(c.rev.st+1).join("★")+"</span> <span style='font-size:11px;color:var(--pw-text-soft)'>"+esc(c.rev.txt)+"</span>"
@@ -1546,7 +1554,7 @@ function viewAdmin(){
       "<td>"+pill(c.acc[0], c.acc[1])+"</td>"+
       "<td>"+stars+"</td>"+
       "<td style='text-align:right;white-space:nowrap'><button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px;margin-right:6px' data-act='open' data-url='"+esc("mailto:"+(c.em||"")+"?subject="+encodeURIComponent("Tu acceso a CV Express — Pathway")+"&body="+encodeURIComponent("Hola "+(c.n||"")+", aquí tienes tu acceso a CV Express: https://pathwaycareercoach.com/cv-express.html"))+"'>Reenviar acceso</button>"+verCv+"</td></tr>";
-  }).join("");
+  }).join("") || "<tr><td colspan='6' style='padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin registros de CV Express todavía.</td></tr>";
   var payouts = [
     { n:"Micaela Jairedin", bruto:"€3.100", com:"−€620", neto:"€2.480", est:["En tránsito · 24 h","warn"], f:"17 may" },
     { n:"Lucas Romano",     bruto:"€2.050", com:"−€410", neto:"€1.640", est:["Programado","ok"],          f:"19 may" },
@@ -1582,9 +1590,12 @@ function viewAdmin(){
     var _lds=_R.leads||[];
     var _lt=_lds.filter(function(x){return x.trial_iniciado_at;}).length;
     var _lp=_lds.filter(function(x){return x.pago_at;}).length;
+    var _cx=_R.cvx||[];
+    var _cxP=_cx.filter(function(x){return x.paid_at;}).length;
+    var _cxR=_cx.reduce(function(s,x){return s+((x.paid_at&&x.pago_monto)?(Number(x.pago_monto)||0):0);},0);
     A={ total:RCOACHES.length, pro:_pro, basic:_basic, prueba:_prueba, act7:_act7, inact14:_inact14,
         nuevas7:_nuevas7, venc3:_venc3, mrr:_pro*89+_basic*58,
-        candsTot:(_R.cands||[]).length, cands30:_c30, cvx:(_R.cvx||[]).length,
+        candsTot:(_R.cands||[]).length, cands30:_c30, cvx:_cx.length, cvxPaid:_cxP, cvxRev:_cxR,
         leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
   }
 
@@ -1621,7 +1632,7 @@ function viewAdmin(){
   } else if(state.adminTab==="cvx"){
     body = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
         (A
-          ? fc((A.cvx||"—"),"Registros CV Express")+fc("<span style='color:var(--pw-text-muted)'>—</span>","Ingresos (no cableado)")+fc("<span style='color:var(--pw-text-muted)'>—</span>","Reseñas (no cableado)")
+          ? fc((A.cvx||"0"),"Registros CV Express")+fc("<span style='color:var(--pw-bosque)'>"+(A.cvxPaid||0)+"</span>","Compras pagas")+fc("<span style='color:var(--pw-bosque)'>"+eur(A.cvxRev)+"</span>","Ingresos CV Express")
           : fc("37","Compras pagas (mes)")+fc("<span style='color:var(--pw-bosque)'>€1.073</span>","Ingresos (mes)")+fc("11","Accesos de prueba (admin)")+fc("<span style='color:#C99A2E'>4,8 ★</span>","14 reseñas"))+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>CV Express<span class='dot'>.</span></h3>"+
@@ -1655,7 +1666,7 @@ function viewAdmin(){
         kpi("MRR estimado", A?eur(A.mrr):"€1.091", A?(A.total+" coaches · "+A.pro+" Pro + "+A.basic+" Basic"):"14 coaches · 9 Pro + 5 Basic")+
         kpi("Comisión Pathway", A?"—":"€3.720", A?"no cableado (Stripe)":"20% de €18.600 referido")+
         kpi("Payouts a coaches", A?"—":"€14.880", A?"no cableado (Stripe)":"80% · €2.480 en tránsito")+
-        kpi("CV Express", A?(A.cvx?A.cvx+" reg.":"—"):"€1.073", A?"no cableado":"37 pagas + 11 de prueba")+
+        kpi("CV Express", A?(""+(A.cvx||0)):"€1.073", A?((A.cvxPaid||0)+" pagas · "+eur(A.cvxRev)):"37 pagas + 11 de prueba")+
         kpi("Candidatos (30 d)", A?(""+A.cands30):"86", A?(A.candsTot+" en total"):"de formularios + directorio")+
         kpi("Leads pricing", A?(A.leadsTot||"—"):"3", A?(A.leadsPago?A.leadsPago+" pagaron":"no cableado"):"pendientes · ventana 24 h")+
       "</div>"+
@@ -1675,7 +1686,7 @@ function viewAdmin(){
         "</div></div>";
   }
   var realNote = REAL
-    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Datos reales:</strong> coaches, contactos, candidatos, leads y MRR estimado por plan. <strong>Comisión, payouts e ingresos de CV Express</strong> se gestionan en Stripe y todavía no están cableados (se muestran como —).</div>"
+    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Datos reales:</strong> coaches, contactos, candidatos, CV Express (registros, compras pagas e ingresos) y MRR estimado por plan. <strong>Comisión y payouts a coaches</strong> se gestionan en Stripe y todavía no están cableados.</div>"
     : "";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Admin<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Vista de plataforma"+(REAL?" · datos en vivo":" · datos de ejemplo")+"</div></div></header>"+
@@ -2200,7 +2211,7 @@ function loadReal(){
     ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
         _sb("contactos_chat?select=contacto,pagina,fecha&order=fecha.desc&limit=30"),
         _sb("candidatos?select=id,created_at"),
-        Promise.resolve([]),
+        _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
         Promise.resolve([]) ]
     : [ Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]) ];
   Promise.all([
