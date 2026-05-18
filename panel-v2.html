@@ -505,27 +505,26 @@ var state = {
   svcEdit: null,
   _svcNew: false,
   notifs: { newClient:true, pathwayLead:true, cvUpload:true, sessionReminder:true, weeklyReport:false, marketing:false },
-  ai: { open:false, bubbleOpen:true, tab:"home", messages:[] }
+  ai: { open:false, bubbleOpen:true }
 };
 
 /* ═══ Onboarding steps + insights (port of v2-Asistente.jsx) ═══ */
 var STEPS = [
-  { id:"account",  label:"Crear tu cuenta", done:true },
-  { id:"profile",  label:"Completar perfil público", done:true, cabra:"cabra-saludando", tipTitle:"Presentate", tipDesc:"Suma foto, bio y servicios para que el cliente sepa quién sos." },
-  { id:"services", label:"Definir servicios y precios", done:true, cabra:"cabra-pensando", tipTitle:"Define qué ofreces", tipDesc:"Mentoría 4 semanas, sesión suelta, auditoría… cada una con su precio." },
-  { id:"stripe",   label:"Conectar Stripe para cobrar", done:true, cabra:"cabra-laptop", tipTitle:"Conecta Stripe", tipDesc:"Sin esto no puedes cobrar a tus clientes. Lleva 2 minutos." },
-  { id:"link",     label:"Compartir tu primer link", done:true, cabra:"cabra-mapa", tipTitle:"Tu link público", tipDesc:"Cópialo y compártelo por LinkedIn, WhatsApp o donde sumes clientes." },
-  { id:"client",   label:"Sumar tu primer cliente", done:false, current:true, cabra:"cabra-mapa", tipTitle:"Suma tu primer cliente", tipDesc:"Te lo cuento paso a paso — desde el alta hasta su primer informe." },
-  { id:"report",   label:"Publicar tu primer informe", done:false, cabra:"cabra-pensando", tipTitle:"Tu primer informe", tipDesc:"Genéralo con IA, revísalo y lo publicas en el portal del cliente." },
-  { id:"template", label:"Configurar plantillas de email", done:false, cabra:"cabra-laptop", tipTitle:"Plantillas de email", tipDesc:"Bienvenida, recordatorios, devolución de CV… las dejas listas una vez." }
+  { id:"account",  label:"Crear tu cuenta", done:true, go:"config|account" },
+  { id:"profile",  label:"Completar perfil público", done:true, go:"config|profile", cabra:"cabra-saludando", tipTitle:"Preséntate", tipDesc:"Suma foto, bio y servicios para que el cliente sepa quién eres." },
+  { id:"services", label:"Definir servicios y precios", done:true, go:"config|services", cabra:"cabra-pensando", tipTitle:"Define qué ofreces", tipDesc:"Mentoría 4 semanas, sesión suelta, auditoría… cada una con su precio." },
+  { id:"stripe",   label:"Conectar Stripe para cobrar", done:true, go:"config|integ", cabra:"cabra-laptop", tipTitle:"Conecta Stripe", tipDesc:"Sin esto no puedes cobrar a tus clientes. Lleva 2 minutos." },
+  { id:"link",     label:"Compartir tu primer link", done:true, go:"clientes", cabra:"cabra-mapa", tipTitle:"Tu link público", tipDesc:"Cópialo y compártelo por LinkedIn, WhatsApp o donde sumes clientes." },
+  { id:"client",   label:"Sumar tu primer cliente", done:false, current:true, go:"clientes", cabra:"cabra-mapa", tipTitle:"Suma tu primer cliente", tipDesc:"Desde el alta hasta su primer informe." },
+  { id:"report",   label:"Generar y publicar tu primer informe", done:false, go:"clientes", cabra:"cabra-pensando", tipTitle:"Tu primer informe", tipDesc:"Ábrele la ficha al cliente, genéralo con IA y edítalo en Plan." },
+  { id:"template", label:"Mensajes para tus clientes", done:false, go:"clientes", cabra:"cabra-laptop", tipTitle:"Mensajes", tipDesc:"Bienvenida, recordatorios, devolución de CV… listos en la ficha." }
 ];
 var INSIGHTS = [
-  { level:"danger", icon:"insStale",     title:"Daniel Vidal sin actividad +8d",      desc:"Momento clave para retención. Te sugiero un mensaje." },
-  { level:"warn",   icon:"insClosing",   title:"2 cierres esta semana",               desc:"Pedro e Iván cierran semana 4 — pide review y ofrece continuación." },
-  { level:"warn",   icon:"insMilestone", title:"3 clientes alcanzaron medalla dinero", desc:"Felicítalos — aumenta la retención del programa." },
-  { level:"ok",     icon:"insProfile",   title:"Tu perfil público al 90%",            desc:"Falta una foto cuadrada. +30% de conversión." }
+  { level:"danger", icon:"insStale",     title:"Clientes sin actividad",          desc:"Revisa quién no entra hace días y mándales un mensaje.",      go:"clientes" },
+  { level:"warn",   icon:"insClosing",   title:"Cierres de semana 4",             desc:"Pide review y ofrece continuación a los que cierran.",        go:"clientes" },
+  { level:"warn",   icon:"insMilestone", title:"Clientes con buen avance",        desc:"Felicítalos — sube la retención del programa.",               go:"clientes" },
+  { level:"ok",     icon:"insProfile",   title:"Completa tu perfil público",      desc:"Foto, bio y servicios suben tu conversión.",                  go:"config|profile" }
 ];
-var SUGGESTIONS = ["¿Cómo subir mi retención?","Plantilla para cliente inactivo","Cómo cobrar al cierre","Mejorar mi perfil público"];
 var MASCOT_BASE = "assets/mascota/";
 
 /* ═══ Sidebar ═══ */
@@ -1203,45 +1202,36 @@ function viewAsistente(){
       (unread>0?"<span class='cp-cabra-img-wrap-dot'>"+unread+"</span>":"")+"</div></div>";
   }
 
-  var homeTab, body;
-  if(state.ai.tab==="home"){
-    var stepRows = STEPS.map(function(s){
-      var cls = s.done?"is-done":(s.current?"is-current":"");
-      return "<div class='cp-ob-row "+cls+"'><span class='cp-ob-check'>"+(s.done?svg(IC.check,11,"stroke-width='3.2'"):"")+"</span>"+
-        "<span class='cp-ob-text'>"+esc(s.label)+"</span></div>";
-    }).join("");
-    var insRows = INSIGHTS.map(function(it,i){
-      return "<div class='cp-insight is-"+it.level+"' data-act='ai-quick' data-q='"+esc(it.title)+"'>"+
-        "<span class='cp-insight-icon'>"+svg(IC[it.icon],16)+"</span>"+
-        "<div class='cp-insight-body'><div class='cp-insight-title'>"+esc(it.title)+"</div>"+
-        "<div class='cp-insight-desc'>"+esc(it.desc)+"</div></div>"+
-        "<span class='cp-insight-arrow'>"+svg(IC.chevR,13)+"</span></div>";
-    }).join("");
-    body = "<div class='cp-ai-home'>"+
-      "<div class='cp-ob-mini'><div class='cp-ob-mini-top'><div class='cp-ob-mini-title'>Tu onboarding</div>"+
-        "<span class='cp-ob-mini-pct'>"+done+"/"+STEPS.length+"</span></div>"+
-        "<div class='cp-ob-bar'><span style='width:"+pct+"%'></span></div>"+
-        "<div class='cp-ob-next'>"+(allDone?"<span><strong>¡Listo!</strong> Todos los pasos completos.</span>":"<span>Próximo: <strong>"+esc(nextStep.label)+"</strong></span>")+
-        (allDone?"":"<a href='#' class='cp-ob-next-cta'>Continuar →</a>")+"</div></div>"+
-      "<div><div class='cp-ai-section-title' style='margin-bottom:6px'>Tus pasos</div><div class='cp-ob-list'>"+stepRows+"</div></div>"+
-      "<div><div class='cp-ai-section-title' style='margin-bottom:8px'>Sugerencias para ti</div>"+insRows+"</div></div>";
-  } else {
-    body = "<div class='cp-ai-body'>"+
-      "<div class='cp-ai-bubble cp-ai-bubble-them'>¡Hola "+esc(COACH.firstName)+"! Para dudas sobre Pathway, onboarding o tus clientes te respondo directo por WhatsApp. Elige una o escribe abajo.</div>"+
-      "<div class='cp-ai-suggest'>"+SUGGESTIONS.map(function(q){return "<button class='cp-ai-chip' data-act='ai-quick' data-q='"+esc(q)+"'>"+esc(q)+"</button>";}).join("")+"</div>"+
-      "<a href='https://wa.me/34611256224?text="+encodeURIComponent("Hola, tengo una consulta sobre Pathway")+"' target='_blank' rel='noopener' class='cp-ai-chip' style='display:inline-flex;align-items:center;gap:6px;border-color:var(--pw-bosque);align-self:flex-start;margin-top:4px'>"+svg(IC.wa,13)+" Hablar por WhatsApp</a>"+
-      "</div>";
-  }
+  var stepRows = STEPS.map(function(s){
+    var cls = s.done?"is-done":(s.current?"is-current":"");
+    return "<div class='cp-ob-row "+cls+"' data-act='asist-go' data-go='"+esc(s.go||"clientes")+"' style='cursor:pointer'>"+
+      "<span class='cp-ob-check'>"+(s.done?svg(IC.check,11,"stroke-width='3.2'"):"")+"</span>"+
+      "<span class='cp-ob-text'>"+esc(s.label)+"</span>"+
+      "<span class='cp-insight-arrow' style='margin-left:auto'>"+svg(IC.chevR,13)+"</span></div>";
+  }).join("");
+  var insRows = INSIGHTS.map(function(it){
+    return "<div class='cp-insight is-"+it.level+"' data-act='asist-go' data-go='"+esc(it.go||"clientes")+"' style='cursor:pointer'>"+
+      "<span class='cp-insight-icon'>"+svg(IC[it.icon],16)+"</span>"+
+      "<div class='cp-insight-body'><div class='cp-insight-title'>"+esc(it.title)+"</div>"+
+      "<div class='cp-insight-desc'>"+esc(it.desc)+"</div></div>"+
+      "<span class='cp-insight-arrow'>"+svg(IC.chevR,13)+"</span></div>";
+  }).join("");
+  var body = "<div class='cp-ai-home'>"+
+    "<div class='cp-ob-mini'><div class='cp-ob-mini-top'><div class='cp-ob-mini-title'>Tu progreso</div>"+
+      "<span class='cp-ob-mini-pct'>"+done+"/"+STEPS.length+"</span></div>"+
+      "<div class='cp-ob-bar'><span style='width:"+pct+"%'></span></div>"+
+      "<div class='cp-ob-next'>"+(allDone?"<span><strong>¡Listo!</strong> Todo configurado.</span>":"<span>Próximo: <strong>"+esc(nextStep.label)+"</strong></span>")+"</div></div>"+
+    "<div><div class='cp-ai-section-title' style='margin-bottom:6px'>Tus pasos · toca para ir</div><div class='cp-ob-list'>"+stepRows+"</div></div>"+
+    "<div><div class='cp-ai-section-title' style='margin-bottom:8px'>Sugerencias para ti</div>"+insRows+"</div></div>";
   return "<div class='cp-ai-panel' role='dialog' aria-label='Asistente Pathway'>"+
     "<div class='cp-ai-head'><span class='cp-ai-head-cabra'><img src='"+cabraSrc+"' alt=''></span>"+
       "<div><div class='cp-ai-name'>Tu asistente Pathway</div>"+
-      "<div class='cp-ai-status'>Te guío con el onboarding y retención</div></div>"+
+      "<div class='cp-ai-status'>Atajos para avanzar con tu negocio</div></div>"+
       "<button class='cp-ai-close' data-act='ai-close' aria-label='Cerrar'>"+svg(IC.close,16,"stroke-width='2.2'")+"</button></div>"+
-    "<div class='cp-ai-tabs'><button class='cp-ai-tab "+(state.ai.tab==="home"?"is-on":"")+"' data-act='ai-tab:home'>Inicio</button>"+
-      "<button class='cp-ai-tab "+(state.ai.tab==="chat"?"is-on":"")+"' data-act='ai-tab:chat'>Conversación</button></div>"+
     "<div class='cp-ai-scroll'>"+body+"</div>"+
-    "<div class='cp-ai-compose'><input id='ai-q' placeholder='Escribe tu duda y te paso a WhatsApp…'>"+
-      "<button class='cp-ai-send' data-act='ai-wa-send' aria-label='Enviar por WhatsApp'>"+svg(IC.wa,15)+"</button></div></div>";
+    "<div class='cp-ai-compose' style='justify-content:center'>"+
+      "<a href='https://wa.me/34611256224?text="+encodeURIComponent("Hola, tengo una consulta sobre Pathway")+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='width:100%;justify-content:center;text-decoration:none;border-color:var(--pw-bosque);color:var(--pw-bosque)'>"+svg(IC.wa,14)+" ¿Necesitas ayuda? Hablar por WhatsApp</a>"+
+    "</div></div>";
 }
 
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
@@ -1577,8 +1567,8 @@ document.addEventListener("click", function(ev){
     if(Object.keys(patch).length) _sbw("candidatos?id=eq."+encodeURIComponent(gi)+cg(),"PATCH",patch);
     _genBusy=true; toast("Generando informe… puede tardar un momento");
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"generar_informe",nombre:rw.nombre,email:rw.email,edad:rw.edad,experiencia:rw.exp||rw.experiencia,sector:rw.sector,educacion:rw.educacion,habilidades:rw.habilidades,objetivo:rw.objetivo,idiomas:rw.idiomas||rw.idioma,ubicacion:rw.ciudad||rw.geo||rw.ubicacion,situacion:rw.situacion,urgencia:rw.urgencia,modalidad:rw.modalidad,linkedin:rw.linkedin,obstaculos:rw.obstaculos,linkedin_texto:liUse})})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; state.cliDetTab="plan"; toast("Informe generado ✓ — revísalo en la pestaña Plan"); loadReal(); })
-      .catch(function(){ _genBusy=false; alert("No se pudo generar el informe desde aquí. Puedes generarlo en tu panel actual."); });
+      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); setTimeout(loadReal,1300); })
+      .catch(function(){ _genBusy=false; alert("No se pudo generar el informe. Reintenta en un momento o genera desde tu panel actual."); });
     return;
   }
   if(act==="gen-cv"){
@@ -1682,15 +1672,14 @@ document.addEventListener("click", function(ev){
   if(act==="ai-open"){ state.ai.open=true; state.ai.bubbleOpen=false; render(); return; }
   if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; render(); return; }
   if(act==="ai-bubble-close"){ ev.stopPropagation(); state.ai.bubbleOpen=false; render(); return; }
-  if(act.indexOf("ai-tab:")===0){ state.ai.tab=act.slice(7); render(); return; }
-  if(act==="ai-quick"){ waSupport(el.getAttribute("data-q")||""); return; }
-  if(act==="ai-wa-send"){ waSupport(_val("ai-q")); return; }
+  if(act==="asist-go"){
+    var g=(el.getAttribute("data-go")||"clientes").split("|");
+    state.section=g[0]; if(g[0]==="config"&&g[1]) state.cfg=g[1];
+    state.ai.open=false; state.ai.bubbleOpen=true;
+    render(); window.scrollTo(0,0); return;
+  }
   if(act==="gocal"){ state.section="config"; state.cfg="integ"; render(); window.scrollTo(0,0); return; }
   if(act==="cfg-save-integ"){ saveCfg({ calendly_url:_val("cfi-cal").trim(), calendar_embed_url:_val("cfi-emb").trim() }); return; }
-});
-
-document.addEventListener("keydown", function(ev){
-  if(ev.target && ev.target.id==="ai-q" && (ev.key==="Enter"||ev.keyCode===13)){ ev.preventDefault(); waSupport(ev.target.value); }
 });
 
 document.addEventListener("input", function(ev){
@@ -1715,7 +1704,6 @@ function _sbw(p,method,body){ return fetch(SB+"/rest/v1/"+p,{method:method,heade
 var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy=false;
 function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0]; return (c&&c.raw)||null; }
 function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
-function waSupport(txt){ var who=(COACH&&COACH.firstName)?(" Soy "+COACH.firstName+" (coach)."):""; var msg=txt&&txt.trim()?("Hola,"+who+" "+txt.trim()):("Hola, tengo una consulta sobre Pathway."); window.open("https://wa.me/34611256224?text="+encodeURIComponent(msg),"_blank","noopener"); }
 function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600); }
 var REAL=false, RCFG={}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false;
 function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURIComponent(RME.id) : ""; }
@@ -1746,7 +1734,7 @@ function loadReal(){
   Promise.all([
     _sb("candidatos?"+cf+"&order=created_at.desc"),
     _sb("cv_publicados?select=email,contenido"),
-    _sb("informes?select=email,id,data"),
+    _sb("informes?select=email,id,data&order=created_at.desc"),
     _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion"),
     extra[0], extra[1]
   ]).then(function(res){
