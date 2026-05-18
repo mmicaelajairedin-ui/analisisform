@@ -809,29 +809,33 @@ function viewClienteDetalle(c){
   } else if(t==="avance"){
     var AD=(c.inf&&c.inf.d)||{};
     var ACTS=[]; try{ ACTS=JSON.parse((c.raw&&c.raw.acciones_progreso)||"[]")||[]; }catch(e){ ACTS=[]; }
-    var weeksA=[["S1","cv_acciones"],["S2","linkedin_acciones"],["S3","networking_acciones"],["S4","preguntas"]];
-    var totD=0,totN=0,off=0,listRows="";
+    var weeksA=[["Semana 1 · CV","cv_acciones"],["Semana 2 · LinkedIn","linkedin_acciones"],["Semana 3 · Networking","networking_acciones"],["Semana 4 · Entrevistas","preguntas"]];
+    var totD=0,totN=0,off=0,boxes="";
     weeksA.forEach(function(w){
       var arr=AD[w[1]]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
+      var nd=0, rows="";
       arr.forEach(function(tx,i){
-        var ok=!!ACTS[off+i]; if(ok) totD++;
-        listRows+="<div style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border)'>"+
-          "<span style='width:18px;height:18px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:"+(ok?"var(--pw-bosque)":"transparent")+";border:1.5px solid "+(ok?"var(--pw-bosque)":"var(--pw-border-strong)")+";color:#fff'>"+(ok?svg(IC.check,10,"stroke-width='3.2'"):"")+"</span>"+
-          "<span style='font-size:10px;font-weight:700;color:var(--pw-bosque);flex-shrink:0;width:20px'>"+w[0]+"</span>"+
-          "<span style='font-size:13px;color:"+(ok?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(ok?"text-decoration:line-through":"")+";line-height:1.5'>"+esc(tx)+"</span></div>";
+        var fi=off+i, ok=!!ACTS[fi]; if(ok) nd++;
+        rows+="<label for='av-"+fi+"' style='display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
+          "<input type='checkbox' id='av-"+fi+"'"+(ok?" checked":"")+" style='width:17px;height:17px;accent-color:var(--pw-bosque);flex-shrink:0;cursor:pointer'>"+
+          "<span style='font-size:13px;color:var(--pw-carbon);line-height:1.5'>"+esc(tx)+"</span></label>";
       });
-      off+=arr.length; totN+=arr.length;
+      off+=arr.length; totD+=nd; totN+=arr.length;
+      boxes+="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+w[0]+"<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>"+nd+"/"+arr.length+"</span></div><div class='cp-card-pad'>"+
+        (arr.length?rows:"<div style='font-size:13px;color:var(--pw-text-soft)'>Sin acciones en esta semana — editá el <strong>Plan</strong>.</div>")+"</div></div>";
     });
     if(!totN){
       body="<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:40px 24px;color:var(--pw-text-soft);font-size:13px'>"+
-        "Todavía no hay un plan. Generalo o escribilo en la pestaña <strong>Plan semana a semana</strong> y acá vas a ver qué va marcando el cliente.</div></div>";
+        "Todavía no hay un plan. Generalo o escribilo en la pestaña <strong>Plan semana a semana</strong> y acá vas a poder marcar el avance.</div></div>";
     } else {
       var pctA=Math.round(totD/totN*100);
       body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Avance del cliente<span class='dot'>.</span></h3>"+
           "<span class='cp-eyebrow'>"+totD+"/"+totN+" · "+pctA+"%</span></div>"+
           "<div class='cp-card-pad'><div class='cp-ob-bar'><span style='width:"+pctA+"%'></span></div>"+
-          "<div style='font-size:12px;color:var(--pw-text-soft);margin:8px 0 6px'>Lo que el cliente fue marcando en su portal. Solo lectura — las acciones se editan en Plan; la semana se cambia en Gestión.</div>"+
-          listRows+"</div></div>";
+          "<div style='font-size:12px;color:var(--pw-text-soft);margin:8px 0 2px'>Marcá o desmarcá los logros del cliente y tocá <strong>Guardar avance</strong> — se sincroniza con su portal al instante.</div></div></div>"+
+        boxes+
+        "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='avance-save' data-id='"+esc(c.id)+"'>Guardar avance</button></div></div>";
     }
   } else if(t==="sesiones"){
     var ses=(c.ses||[]).slice();
@@ -1993,7 +1997,9 @@ document.addEventListener("click", function(ev){
     _sbw("candidatos?id=eq."+encodeURIComponent(sid),"PATCH",patch)
       .then(function(r){ if(!r.ok) throw 0;
         CLIENTS.forEach(function(x){ if(String(x.id)===String(sid)){ x.name=patch.nombre||x.name; x.email=patch.email; x.role=patch.cargo; if(x.raw){ for(var k in patch){ x.raw[k]=patch[k]; } } } });
-        toast("Datos guardados ✓"); render(); })
+        var _sb2=el; _sb2.textContent="✓ Guardado"; _sb2.style.background="var(--pw-bosque)"; _sb2.style.color="#fff";
+        setTimeout(function(){ _sb2.textContent="Guardar cambios"; _sb2.style.background=""; _sb2.style.color=""; },2200);
+        toast("Datos guardados ✓"); })
       .catch(function(){ alert("No se pudo guardar."); });
     return;
   }
@@ -2202,6 +2208,22 @@ document.addEventListener("click", function(ev){
         .then(function(r){ if(!r.ok) throw 0; toast("Plan creado ✓ — ya lo ve el cliente"); loadReal(); })
         .catch(function(){ alert("No se pudo crear el plan."); });
     }
+    return;
+  }
+  if(act==="avance-save"){
+    var avid=el.getAttribute("data-id"); if(!avid) return;
+    var avc=CLIENTS.filter(function(x){return String(x.id)===String(avid);})[0]; if(!avc) return;
+    var avD=(avc.inf&&avc.inf.d)||{};
+    var avOrder=["cv_acciones","linkedin_acciones","networking_acciones","preguntas"];
+    var avA=[], avOff=0;
+    avOrder.forEach(function(k){
+      var arr=avD[k]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
+      for(var i=0;i<arr.length;i++){ var cb=document.getElementById("av-"+(avOff+i)); avA[avOff+i]=!!(cb&&cb.checked); }
+      avOff+=arr.length;
+    });
+    _sbw("candidatos?id=eq."+encodeURIComponent(avid),"PATCH",{acciones_progreso:JSON.stringify(avA)})
+      .then(function(r){ if(!r.ok) throw 0; if(avc.raw) avc.raw.acciones_progreso=JSON.stringify(avA); toast("Avance guardado ✓ — sincronizado con el cliente"); render(); })
+      .catch(function(){ alert("No se pudo guardar el avance."); });
     return;
   }
   if(act==="ses-add"){
