@@ -1584,13 +1584,32 @@ function viewAdmin(){
       "<td style='color:var(--pw-text-soft)'>"+esc(c.f)+"</td>"+
       "<td style='text-align:right'><a href='https://wa.me/"+wa+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px;text-decoration:none'>"+svg(IC.wa,13)+" WhatsApp</a></td></tr>";
   }).join("");
+  var _resenas=(REAL && RADM && RADM.resenas) ? RADM.resenas : [];
+  var _revMap={}, _revList=[], _revSum=0, _revN=0;
+  _resenas.forEach(function(rv){
+    var m=String((rv&&rv.contacto)||"").match(/⭐\s*([0-9-]).*?\(([^)]*)\)\s*:\s*([\s\S]*)/);
+    if(!m) return;
+    var st=parseInt(m[1],10); if(isNaN(st)) st=0;
+    var em=(""+(m[2]||"")).toLowerCase().trim(); if(em==="sin email") em="";
+    var txt=(m[3]||"").trim();
+    if(st>0){ _revSum+=st; _revN++; }
+    if(em && !_revMap[em]) _revMap[em]={ st:st, txt:txt };
+    _revList.push({ st:st, em:em, txt:txt, f:(""+((rv&&rv.fecha)||"")).slice(0,10) });
+  });
+  var _revAvg=_revN ? (_revSum/_revN) : 0;
+  var _revCard = _revList.length
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Últimas reseñas<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+_revN+" · promedio "+(_revAvg?(_revAvg.toFixed(1).replace(".",",")+" ★"):"—")+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+        _revList.slice(0,40).map(function(r){ return "<div style='border-bottom:1px solid var(--pw-border);padding-bottom:8px'><div style='display:flex;justify-content:space-between;gap:10px'><span style='color:#C99A2E;letter-spacing:1px'>"+(r.st>0?Array(r.st+1).join("★"):"—")+"</span><span style='font-size:11px;color:var(--pw-text-muted)'>"+esc(r.em||"sin email")+(r.f?" · "+esc(r.f):"")+"</span></div>"+(r.txt?"<div style='font-size:13px;color:var(--pw-carbon);margin-top:4px;line-height:1.5'>"+esc(r.txt)+"</div>":"")+"</div>"; }).join("")+
+      "</div></div>"
+    : "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:32px 24px;color:var(--pw-text-soft);font-size:13px'>Todavía no hay reseñas de CV Express. Llegan cuando una persona completa el formulario de reseña (resena.html).</div></div>";
   var cvx = (REAL && RADM && RADM.cvx)
     ? RADM.cvx.map(function(x){
         var paid=!!x.paid_at, fday="—";
         try{ var _dd=new Date(x.created_at); if(!isNaN(_dd)) fday=_dd.toLocaleDateString("es-ES",{day:"numeric",month:"short"}); }catch(e){}
+        var _em=(""+(x.email||"")).toLowerCase().trim();
         return { n:(x.nombre||x.email||"—"), em:(x.email||""), f:fday,
           org: paid ? ["Pagó"+(x.pago_monto?" €"+x.pago_monto:""),"ok"] : ["Acceso admin",""],
-          acc: paid ? ["Pagado","ok"] : ["Prueba","warn"], rev:null, cv:true };
+          acc: paid ? ["Pagado","ok"] : ["Prueba","warn"], rev:(_em&&_revMap[_em])||null, cv:true };
       })
     : (REAL ? [] : [
     { n:"Marcos Ledesma", em:"marcos@email.com",  f:"16 may", org:["Pagó €29","ok"],      acc:["CV generado","ok"],     rev:{st:5,txt:"Rápido y clarísimo"}, cv:true },
@@ -1688,7 +1707,7 @@ function viewAdmin(){
   } else if(state.adminTab==="cvx"){
     body = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
         (A
-          ? fc((A.cvx||"0"),"Registros CV Express")+fc("<span style='color:var(--pw-bosque)'>"+(A.cvxPaid||0)+"</span>","Compras pagas")+fc("<span style='color:var(--pw-bosque)'>"+eur(A.cvxRev)+"</span>","Ingresos CV Express")
+          ? fc((A.cvx||"0"),"Registros CV Express")+fc("<span style='color:var(--pw-bosque)'>"+(A.cvxPaid||0)+"</span>","Compras pagas")+fc("<span style='color:var(--pw-bosque)'>"+eur(A.cvxRev)+"</span>","Ingresos CV Express")+fc("<span style='color:#C99A2E'>"+(_revN?(_revAvg.toFixed(1).replace(".",",")+" ★"):"—")+"</span>",(_revN||"0")+" reseñas")
           : fc("37","Compras pagas (mes)")+fc("<span style='color:var(--pw-bosque)'>€1.073</span>","Ingresos (mes)")+fc("11","Accesos de prueba (admin)")+fc("<span style='color:#C99A2E'>4,8 ★</span>","14 reseñas"))+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>CV Express<span class='dot'>.</span></h3>"+
@@ -1701,7 +1720,8 @@ function viewAdmin(){
         "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:780px'><thead><tr>"+
           "<th>Persona</th><th>Fecha</th><th>Origen</th><th>Estado</th><th>Reseña</th><th style='text-align:right'>Acciones</th>"+
         "</tr></thead><tbody>"+cvxRows+"</tbody></table></div>"+
-        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>En general <strong>CV Express se paga</strong>: la persona paga y va a la página a generarlo. Como admin puedes <strong>dar acceso de prueba</strong> escribiendo su email arriba → recibe el link por mail → lo usa y, a cambio, deja una reseña. Las reseñas se recopilan aquí; <strong>su ubicación pública (landing, perfil…) está por definir</strong>.</p></div>";
+        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>En general <strong>CV Express se paga</strong>: la persona paga y va a la página a generarlo. Como admin puedes <strong>dar acceso de prueba</strong> escribiendo su email arriba → recibe el link por mail → lo usa y, a cambio, deja una reseña.</p></div>"+
+      _revCard;
   } else if(state.adminTab==="pagos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Mayo 2026</span></div>"+
@@ -2331,11 +2351,12 @@ function loadReal(){
     _sb("informes?select=email,id,data&order=created_at.desc"),
     _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion"),
     extra[0], extra[1], extra[2], extra[3], extra[4],
-    _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc")
+    _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc"),
+    (ME.rol==="admin" ? _sb("contactos_chat?pagina=eq.resena-cvexpress&select=contacto,fecha&order=fecha.desc&limit=200") : Promise.resolve([]))
   ]).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
     RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
-    RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[] } : null;
+    RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[], resenas:res[10]||[] } : null;
     RSOL = res[9]||[];
     RCFG = usr.configuracion || ME.configuracion || {};
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
