@@ -638,7 +638,7 @@ function viewClienteDetalle(c){
   var medal=c.medal?"<img class='cp-client-medal' src='assets/iconos/medalla-"+c.medal+".png' alt='' style='width:42px;height:42px'>":"";
   var wa=(c.email||"").replace(/[^0-9]/g,"")||"34611256224";
   var t=state.cliDetTab;
-  var tabs=[["perfil","Perfil"],["plan","Plan semana a semana"],["docs","Documentos"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
+  var tabs=[["perfil","Perfil"],["plan","Plan semana a semana"],["avance","Avance"],["docs","Documentos"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
   var tabBar="<div class='cp-filters'>"+tabs.map(function(x){return "<button class='cp-chip "+(t===x[0]?"is-on":"")+"' data-act='clidet:"+x[0]+"'>"+x[1]+"</button>";}).join("")+"</div>";
 
   var cvSt=c.cvState==="published"?["Publicado","ok"]:(c.cvState==="pending"?["A revisar","warn"]:["Borrador",""]);
@@ -691,7 +691,6 @@ function viewClienteDetalle(c){
           "</div></div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Archivos y portal<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Ver / editar</span></div><div class='cp-card-pad' style='padding-top:6px;padding-bottom:6px'>"+
-        docRow("Editor de CV","Abrir el editor del CV del cliente",cvSt[0],cvSt[1],"Ver / Editar",cvUrl)+
         docRow("Informe en el portal","Cómo lo ve el cliente",rpSt[0],rpSt[1],"Ver",portalUrl)+
         docRow("Foto profesional","Pedírsela al cliente","Falta","danger","Pedir",fotoWa)+
       "</div></div>";
@@ -718,13 +717,61 @@ function viewClienteDetalle(c){
       _blk("Mensaje para el cliente","Nota personal que ve en su portal",_ta("pl-msg",D.mensaje_candidato||"","Mensaje personal para el cliente…",80))+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end;gap:10px'>"+
         "<button class='cp-btn cp-btn-primary' data-act='plan-save' data-id='"+esc(c.id)+"'>Guardar plan</button></div></div>";
+  } else if(t==="avance"){
+    var AD=(c.inf&&c.inf.d)||{};
+    var ACTS=[]; try{ ACTS=JSON.parse((c.raw&&c.raw.acciones_progreso)||"[]")||[]; }catch(e){ ACTS=[]; }
+    var weeksA=[[1,"Semana 1 · CV","cv_acciones"],[2,"Semana 2 · LinkedIn","linkedin_acciones"],[3,"Semana 3 · Networking","networking_acciones"],[4,"Semana 4 · Entrevistas","preguntas"]];
+    var totD=0,totN=0,off=0,wkCards="";
+    weeksA.forEach(function(w){
+      var arr=AD[w[2]]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
+      var nd=0;
+      var rows=arr.map(function(tx,i){
+        var ok=!!ACTS[off+i]; if(ok) nd++;
+        return "<div style='display:flex;align-items:center;gap:9px;padding:5px 0'>"+
+          "<span style='width:18px;height:18px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:"+(ok?"var(--pw-bosque)":"transparent")+";border:1.5px solid "+(ok?"var(--pw-bosque)":"var(--pw-border-strong)")+";color:#fff'>"+(ok?svg(IC.check,10,"stroke-width='3.2'"):"")+"</span>"+
+          "<span style='font-size:13px;color:"+(ok?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(ok?"text-decoration:line-through":"")+";line-height:1.5'>"+esc(tx)+"</span></div>";
+      }).join("");
+      off+=arr.length; totD+=nd; totN+=arr.length;
+      wkCards+="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+w[1]+"<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>"+nd+"/"+arr.length+" hechas</span></div>"+
+        "<div class='cp-card-pad'>"+(arr.length?rows:"<div style='font-size:13px;color:var(--pw-text-soft)'>Sin acciones en esta semana.</div>")+"</div></div>";
+    });
+    if(!totN){
+      body="<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:40px 24px;color:var(--pw-text-soft);font-size:13px'>"+
+        "Todavía no hay un plan. Generalo o escribilo en la pestaña <strong>Plan semana a semana</strong> y acá vas a ver qué va marcando el cliente.</div></div>";
+    } else {
+      var pctA=Math.round(totD/totN*100);
+      body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Avance del cliente<span class='dot'>.</span></h3>"+
+          "<span class='cp-eyebrow'>"+totD+"/"+totN+" tareas · "+pctA+"%</span></div>"+
+          "<div class='cp-card-pad'><div class='cp-ob-bar'><span style='width:"+pctA+"%'></span></div>"+
+          "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:8px'>Lo que el cliente fue marcando como hecho en su portal. Solo lectura — para editar las acciones usá la pestaña Plan.</div></div></div>"+
+        wkCards;
+    }
   } else if(t==="sesiones"){
     var ses=(c.ses||[]).slice();
     var now2=Date.now(), prox=null;
     ses.forEach(function(s){ if(!s||!s.fecha)return; var d=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")); if(!isNaN(d)&&d.getTime()>=now2&&(!prox||d.getTime()<prox.t))prox={t:d.getTime(),s:s}; });
     var ordered=ses.slice().sort(function(a,b){ return (""+(b.fecha||"")).localeCompare(""+(a.fecha||"")); });
     var hist=ordered.length
-      ? ordered.map(function(s){ return "<div style='padding:11px 0;border-bottom:1px solid var(--pw-border)'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(s.fecha||"")+(s.hora?" · "+esc(s.hora):"")+"</div>"+(s.trabajado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.trabajado)+"</div>":"")+(s.acordado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>Acordado: "+esc(s.acordado)+"</div>":"")+"</div>"; }).join("")
+      ? ordered.map(function(s){
+          var tA=(s.acciones||"").split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean);
+          var dn=s.tareas_done||[];
+          var tHtml="";
+          if(tA.length){
+            var ndn=0;
+            var tr=tA.map(function(tx,ti){ var ok=dn.indexOf(ti)!==-1; if(ok) ndn++;
+              return "<div style='display:flex;align-items:center;gap:8px;padding:3px 0'>"+
+                "<span style='width:16px;height:16px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:"+(ok?"var(--pw-bosque)":"transparent")+";border:1.5px solid "+(ok?"var(--pw-bosque)":"var(--pw-border-strong)")+";color:#fff'>"+(ok?svg(IC.check,9,"stroke-width='3.2'"):"")+"</span>"+
+                "<span style='font-size:12px;color:"+(ok?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(ok?"text-decoration:line-through":"")+"'>"+esc(tx)+"</span></div>";
+            }).join("");
+            tHtml="<div style='margin-top:8px;background:var(--pw-niebla-2);border-radius:10px;padding:10px 12px'>"+
+              "<div class='cp-eyebrow' style='margin-bottom:6px'>Tareas del cliente · "+ndn+"/"+tA.length+" hechas</div>"+tr+"</div>";
+          }
+          return "<div style='padding:12px 0;border-bottom:1px solid var(--pw-border)'>"+
+            "<div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(s.fecha||"")+(s.hora?" · "+esc(s.hora):"")+"</div>"+
+            (s.trabajado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.trabajado)+"</div>":"")+
+            (s.acordado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>Acordado: "+esc(s.acordado)+"</div>":"")+
+            tHtml+"</div>"; }).join("")
       : "<div style='color:var(--pw-text-soft);font-size:13px'>Todavía no hay sesiones registradas.</div>";
     body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Próxima sesión<span class='dot'>.</span></h3>"+
         (prox?"<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● Agendada</span>":"<span class='cp-eyebrow'>Sin agendar</span>")+"</div>"+
@@ -737,6 +784,7 @@ function viewClienteDetalle(c){
           "<div class='cp-form-row'><label class='cp-form-label'>Hora</label><input id='ss-hora' type='time' class='cp-form-input'></div></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Tema / qué se trabajó</label><input id='ss-tema' class='cp-form-input' placeholder='Ej: Estrategia de CV'></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Acordado / próximos pasos</label><textarea id='ss-acor' class='cp-form-textarea' placeholder='Qué quedó acordado…'></textarea></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Tareas para el cliente (una por línea)</label><textarea id='ss-tareas' class='cp-form-textarea' placeholder='Una tarea por línea. El cliente las marca como hechas en su portal.'></textarea><span class='cp-form-hint'>Aparecen en el portal del cliente con un check que él va marcando.</span></div>"+
         "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='ses-add' data-id='"+esc(c.id)+"'>Guardar sesión</button></div></div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+ordered.length+" sesiones</span></div>"+
@@ -1775,7 +1823,7 @@ document.addEventListener("click", function(ev){
     var pc=CLIENTS.filter(function(x){return String(x.id)===String(pid);})[0];
     if(!pc) return;
     var arr=(pc.ses||[]).slice();
-    arr.push({fecha:f,hora:_val("ss-hora"),trabajado:_val("ss-tema").trim(),acordado:_val("ss-acor").trim(),acciones:"",tareas_done:[]});
+    arr.push({fecha:f,hora:_val("ss-hora"),trabajado:_val("ss-tema").trim(),acordado:_val("ss-acor").trim(),acciones:_val("ss-tareas").trim(),tareas_done:[]});
     _sbw("candidatos?id=eq."+encodeURIComponent(pid)+cg(),"PATCH",{sesiones_registro:JSON.stringify(arr)})
       .then(function(r){ if(!r.ok) throw 0; pc.ses=arr; toast("Sesión registrada ✓"); render(); })
       .catch(function(){ alert("No se pudo guardar la sesión."); });
