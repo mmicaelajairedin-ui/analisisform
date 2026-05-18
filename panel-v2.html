@@ -1607,16 +1607,26 @@ function viewAdmin(){
 
   // engagement de coaches (último acceso) — "saber el interés por la plataforma"
   var coachesEng = [
-    { n:"Micaela Jairedin", plan:"Pro",   est:["Activa","ok"],          acc:["hoy","ok"],        cli:14, pw:"Sí", com:"€620" },
-    { n:"Pablo Cruz",       plan:"Pro",   est:["Activa","ok"],          acc:["hoy","ok"],        cli:6,  pw:"Sí", com:"€180" },
-    { n:"Lucas Romano",     plan:"Pro",   est:["Activa","ok"],          acc:["hace 1 d","ok"],   cli:9,  pw:"Sí", com:"€410" },
-    { n:"Sofía Belén",      plan:"Basic", est:["Prueba · vence 2 d","warn"], acc:["hace 4 h","ok"], cli:3, pw:"No", com:"—" },
-    { n:"Diego Paz",        plan:"Pro",   est:["Activa","ok"],          acc:["hace 2 d","ok"],   cli:11, pw:"Sí", com:"€530" },
-    { n:"Ana Ferro",        plan:"Basic", est:["Activa","ok"],          acc:["hace 6 d","warn"], cli:5,  pw:"No", com:"—" },
-    { n:"Nora Vidal",       plan:"Basic", est:["Prueba","warn"],        acc:["hace 16 d","danger"], cli:0, pw:"No", com:"—" },
-    { n:"Tomás Gil",        plan:"Pro",   est:["Pago vencido","danger"],acc:["hace 19 d","danger"], cli:7, pw:"Sí", com:"€280" }
+    { n:"Micaela Jairedin", plan:"Pro",   est:["Activa","ok"],          acc:["hoy","ok"],        alta:["hace 4 mes","ok"], cli:14, actv:["14 clientes · últ. hoy","ok"], pw:"Sí", com:"€620" },
+    { n:"Pablo Cruz",       plan:"Pro",   est:["Activa","ok"],          acc:["hoy","ok"],        alta:["hace 2 mes","ok"], cli:6,  actv:["6 clientes · últ. ayer","ok"], pw:"Sí", com:"€180" },
+    { n:"Lucas Romano",     plan:"Pro",   est:["Activa","ok"],          acc:["hace 1 d","ok"],   alta:["hace 3 mes","ok"], cli:9,  actv:["9 clientes · últ. hace 3 d","ok"], pw:"Sí", com:"€410" },
+    { n:"Sofía Belén",      plan:"Basic", est:["Prueba · vence 2 d","warn"], acc:["hace 4 h","ok"], alta:["hace 12 d","ok"], cli:3, actv:["3 clientes · últ. hace 5 d","ok"], pw:"No", com:"—" },
+    { n:"Diego Paz",        plan:"Pro",   est:["Activa","ok"],          acc:["hace 2 d","ok"],   alta:["hace 2 mes","ok"], cli:11, actv:["11 clientes · últ. hace 2 d","ok"], pw:"Sí", com:"€530" },
+    { n:"Ana Ferro",        plan:"Basic", est:["Activa","ok"],          acc:["hace 6 d","warn"], alta:["hace 1 mes","ok"], cli:5,  actv:["5 clientes · últ. hace 9 d","ok"], pw:"No", com:"—" },
+    { n:"Catalina Ruiz",    plan:"Basic", est:["Prueba","warn"],        acc:["hace 7 d","warn"], alta:["hace 7 d","ok"], cli:0, actv:["Sin uso · 7 d sin crear nada","danger"], pw:"No", com:"—" },
+    { n:"Nora Vidal",       plan:"Basic", est:["Prueba","warn"],        acc:["hace 16 d","danger"], alta:["hace 18 d","ok"], cli:0, actv:["Sin uso · 18 d sin crear nada","danger"], pw:"No", com:"—" },
+    { n:"Tomás Gil",        plan:"Pro",   est:["Pago vencido","danger"],acc:["hace 19 d","danger"], alta:["hace 5 mes","ok"], cli:7, actv:["7 clientes · últ. hace 21 d","warn"], pw:"Sí", com:"€280" }
   ];
   if(REAL && RCOACHES){
+    var _D2=86400000, _now2=Date.now();
+    var candByCoach={};
+    ((RADM&&RADM.cands)||[]).forEach(function(x){
+      var k=x&&x.coach_id; if(!k) return;
+      if(!candByCoach[k]) candByCoach[k]={ n:0, last:0 };
+      candByCoach[k].n++;
+      var t=x.created_at?+new Date(x.created_at):0; if(t>candByCoach[k].last) candByCoach[k].last=t;
+    });
+    function ago(ms){ var d=Math.floor(ms/_D2); return d<=0?"hoy":(d===1?"ayer":(d<30?"hace "+d+" d":"hace "+Math.floor(d/30)+" mes"+(d>=60?"es":""))); }
     coachesEng = RCOACHES.map(function(u){
       var cg=u.configuracion||{};
       var plan=cg.plan==="pro"?"Pro":(cg.plan==="basic"?"Basic":"—");
@@ -1624,8 +1634,17 @@ function viewAdmin(){
       var est = es==="activa"?["Activa","ok"]:es==="prueba"?["Prueba","warn"]:(es==="cancelada"||es==="vencida")?["Cancelada","danger"]:(u.activo===false?["Inactiva","danger"]:["Activa","ok"]);
       var acc=["—",""];
       var la=cg.last_login||u.last_login;
-      if(la){ try{ var d=Math.floor((Date.now()-new Date(la))/86400000); acc=[d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"), d<=2?"ok":(d<=7?"warn":"danger")]; }catch(e){} }
-      return { id:u.id, activo:u.activo, email:u.email||"", n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, cli:"—", pw:cg.pathway_optin?"Sí":"No", com:"—" };
+      if(la){ try{ var d=Math.floor((_now2-new Date(la))/_D2); acc=[d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"), d<=2?"ok":(d<=7?"warn":"danger")]; }catch(e){} }
+      var cb=candByCoach[u.id]||{n:0,last:0};
+      var altaMs=u.created_at?(_now2-new Date(u.created_at)):0;
+      var alta=u.created_at?[ago(altaMs), altaMs/_D2>30?"":"ok"]:["—",""];
+      var diasAlta=u.created_at?Math.floor(altaMs/_D2):0;
+      var actv;
+      if(u.rol==="admin"){ actv=["—",""]; }
+      else if(cb.n>0){ actv=[cb.n+" cliente"+(cb.n===1?"":"s")+(cb.last?" · últ. "+ago(_now2-cb.last):""),"ok"]; }
+      else if(diasAlta>=5){ actv=["Sin uso · "+diasAlta+" d sin crear nada","danger"]; }
+      else { actv=["Recién creada","warn"]; }
+      return { id:u.id, activo:u.activo, email:u.email||"", n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, alta:alta, cli:(u.rol==="admin"?"—":cb.n), actv:actv, pw:cg.pathway_optin?"Sí":"No", com:"—" };
     });
   }
   var engRows = coachesEng.map(function(c){
@@ -1634,11 +1653,14 @@ function viewAdmin(){
     var actBtn=selfRow
       ? "<span style='font-size:11px;color:var(--pw-text-muted)'>vos</span>"
       : "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 12px;font-size:11px"+(off?"":";color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='coach-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>";
+    var alta=c.alta||["—",""], actv=c.actv||["—",""];
     return "<tr"+(off?" style='opacity:.55'":"")+"><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.n)+"</td>"+
       "<td>"+pill(c.plan, c.plan==="Pro"?"ok":"")+"</td>"+
       "<td>"+pill(off?"Inactiva":c.est[0], off?"danger":c.est[1])+"</td>"+
+      "<td style='color:var(--pw-text-soft);font-size:12px'>"+esc(alta[0])+"</td>"+
       "<td>"+pill(c.acc[0], c.acc[1])+"</td>"+
-      "<td>"+c.cli+"</td>"+
+      "<td style='font-weight:600;color:var(--pw-carbon)'>"+c.cli+"</td>"+
+      "<td>"+pill(actv[0], actv[1])+"</td>"+
       "<td>"+(c.pw==="Sí"?"<span style='color:var(--pw-bosque);font-weight:600'>Sí</span>":"<span style='color:var(--pw-text-muted)'>No</span>")+"</td>"+
       "<td style='text-align:right'>"+actBtn+"</td></tr>";
   }).join("");
@@ -1736,7 +1758,7 @@ function viewAdmin(){
   function eur(n){ return "€"+(Number(n)||0).toLocaleString("es-ES"); }
   var A=null;
   if(REAL && RCOACHES){
-    var _now=Date.now(), _D=86400000, _pro=0,_basic=0,_prueba=0,_act7=0,_inact14=0,_nuevas7=0,_venc3=0;
+    var _now=Date.now(), _D=86400000, _pro=0,_basic=0,_prueba=0,_act7=0,_inact14=0,_nuevas7=0,_venc3=0,_sinUso=0;
     RCOACHES.forEach(function(u){
       var cgf=u.configuracion||{};
       var vit=cgf.es_pro_vitalicio===true||u.rol==="admin";
@@ -1747,6 +1769,7 @@ function viewAdmin(){
       var la=cgf.last_login||u.last_login;
       if(la){ var dd=(_now-new Date(la))/_D; if(dd<=7)_act7++; if(dd>14)_inact14++; } else { _inact14++; }
       if(u.created_at && (_now-new Date(u.created_at))/_D<=7) _nuevas7++;
+      if(u.rol!=="admin" && !(candByCoach[u.id]&&candByCoach[u.id].n>0) && u.created_at && (_now-new Date(u.created_at))/_D>=5) _sinUso++;
       if(es==="prueba" && cgf.fecha_fin_prueba){ var fd=(new Date(cgf.fecha_fin_prueba)-_now)/_D; if(fd>=0&&fd<=3)_venc3++; }
     });
     var _R=RADM||{cands:[],cvx:[],leads:[]};
@@ -1758,7 +1781,7 @@ function viewAdmin(){
     var _cxP=_cx.filter(function(x){return x.paid_at;}).length;
     var _cxR=_cx.reduce(function(s,x){return s+((x.paid_at&&x.pago_monto)?(Number(x.pago_monto)||0):0);},0);
     A={ total:RCOACHES.length, pro:_pro, basic:_basic, prueba:_prueba, act7:_act7, inact14:_inact14,
-        nuevas7:_nuevas7, venc3:_venc3, mrr:_pro*89+_basic*58,
+        nuevas7:_nuevas7, venc3:_venc3, sinUso:_sinUso, mrr:_pro*89+_basic*58,
         candsTot:(_R.cands||[]).length, cands30:_c30, cvx:_cx.length, cvxPaid:_cxP, cvxRev:_cxR,
         leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
   }
@@ -1775,11 +1798,12 @@ function viewAdmin(){
         fc("<span style='color:#8E7A35'>"+(A?A.prueba:2)+"</span>","En prueba"+(A&&A.venc3?" ("+A.venc3+" vence ≤3 d)":""))+
         fc("<span style='color:var(--pw-danger)'>"+(A?A.inact14:2)+"</span>","Inactivas +14 d")+
         fc(""+(A?A.nuevas7:1),"Nuevas esta semana")+
+        fc("<span style='color:var(--pw-danger)'>"+(A?A.sinUso:2)+"</span>","Sin uso (≥5 d, 0 clientes)")+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>"+coachesEng.length+" registradas · último acceso</span></div>"+
-        "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:680px'><thead><tr>"+
-          "<th>Coach</th><th>Plan</th><th>Estado</th><th>Último acceso</th><th>Clientes</th><th>Pathway</th><th style='text-align:right'>Acción</th>"+
+        "<span class='cp-eyebrow'>"+coachesEng.length+" registradas · uso real</span></div>"+
+        "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:820px'><thead><tr>"+
+          "<th>Coach</th><th>Plan</th><th>Estado</th><th>Alta</th><th>Últ. acceso</th><th>Clientes</th><th>Actividad</th><th>Pathway</th><th style='text-align:right'>Acción</th>"+
         "</tr></thead><tbody>"+engRows+"</tbody></table></div></div>";
   } else if(state.adminTab==="contactos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Popup de pricing<span class='dot'>.</span></h3>"+
@@ -2564,7 +2588,7 @@ function loadReal(){
   var extra = ME.rol==="admin"
     ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
         _sb("contactos_chat?select=contacto,pagina,fecha&order=fecha.desc&limit=30"),
-        _sb("candidatos?select=id,created_at"),
+        _sb("candidatos?select=id,created_at,coach_id"),
         _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
         Promise.resolve([]) ]
     : [ Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]) ];
