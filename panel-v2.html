@@ -271,6 +271,22 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .cp-integration-status.is-connected::before{content:"● ";}
 
 /* ═══ Asistente cabra ═══ */
+.cp-inbox-fab{position:fixed;top:16px;right:22px;z-index:75;display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
+.cp-inbox-btn{position:relative;width:42px;height:42px;border-radius:50%;background:#fff;border:1.5px solid var(--pw-border);color:var(--pw-bosque);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--pw-shadow-sm);transition:transform .15s var(--pw-ease),box-shadow .15s;}
+.cp-inbox-btn:hover{transform:translateY(-1px);box-shadow:var(--pw-shadow-md);}
+.cp-inbox-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:100px;background:var(--pw-danger);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;border:2px solid var(--pw-niebla);}
+.cp-inbox-panel{width:330px;background:#fff;border:1.5px solid var(--pw-border);border-radius:14px;box-shadow:0 14px 36px rgba(45,106,79,.18),0 2px 6px rgba(0,0,0,.06);overflow:hidden;}
+.cp-inbox-hd{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--pw-border);font-family:var(--pw-serif);font-size:15px;font-weight:500;color:var(--pw-carbon);}
+.cp-inbox-x{width:24px;height:24px;border-radius:50%;border:none;background:transparent;color:var(--pw-text-muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+.cp-inbox-x:hover{background:var(--pw-niebla-2);color:var(--pw-carbon);}
+.cp-inbox-list{max-height:400px;overflow-y:auto;}
+.cp-inbox-row{display:flex;align-items:center;gap:11px;width:100%;padding:11px 14px;border:none;background:transparent;border-bottom:1px solid var(--pw-border);cursor:pointer;}
+.cp-inbox-row:hover{background:var(--pw-niebla-2);}
+.cp-inbox-row.is-unread{background:rgba(82,183,136,.07);}
+.cp-inbox-av{width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;}
+.cp-inbox-name{font-size:13px;font-weight:700;color:var(--pw-carbon);display:flex;align-items:center;gap:6px;}
+.cp-inbox-dot{width:7px;height:7px;border-radius:50%;background:var(--pw-danger);display:inline-block;}
+.cp-inbox-snip{font-size:12px;color:var(--pw-text-soft);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px;}
 .cp-ai-fab{position:fixed;right:22px;bottom:18px;z-index:60;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none;}
 .cp-ai-fab>*{pointer-events:auto;}
 .cp-cabra-bubble{background:#fff;border:1px solid var(--pw-border);border-radius:16px;padding:14px 32px 14px 16px;width:280px;box-shadow:0 14px 36px rgba(45,106,79,.18),0 2px 6px rgba(0,0,0,.06);position:relative;cursor:pointer;transition:transform .2s var(--pw-ease);animation:cpBubbleIn .35s var(--pw-ease-out);}
@@ -481,6 +497,7 @@ var IC = {
   download:   "<path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/>",
   edit:       "<path d='M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7'/><path d='M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z'/>",
   close:      "<line x1='18' y1='6' x2='6' y2='18'/><line x1='6' y1='6' x2='18' y2='18'/>",
+  msg:        "<path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/>",
   insStale:   "<circle cx='12' cy='12' r='10'/><polyline points='12 6 12 12 16 14'/>",
   insClosing: "<path d='M22 11.08V12a10 10 0 1 1-5.93-9.14'/><polyline points='22 4 12 14.01 9 11.01'/>",
   insProfile: "<circle cx='12' cy='12' r='10'/><line x1='12' y1='8' x2='12' y2='12'/><line x1='12' y1='16' x2='12.01' y2='16'/>",
@@ -509,6 +526,7 @@ var state = {
   pathwayOptIn: false,
   pubActive: null,
   stripe: null,
+  inboxOpen: false,
   services: [
     { name:"Mentoría 4 semanas", desc:"Programa completo · 4 sesiones 1:1 + acceso al portal", price:480, unit:"/programa" },
     { name:"Sesión individual",  desc:"1 hora · Diagnóstico, plan o ajuste puntual", price:95, unit:"/sesión" },
@@ -906,6 +924,7 @@ function viewClienteDetalle(c){
         "<span class='cp-eyebrow'>"+ordered.length+" sesiones</span></div>"+
         "<div class='cp-card-pad'>"+hist+"</div></div>";
   } else if(t==="mensajes"){
+    _inboxMarkSeen(c.id);
     var fn=(""+(c.name||"")).split(" ")[0], cn=COACH.name||"tu coach";
     var pro=isProV();
     var msgs=[
@@ -1917,6 +1936,35 @@ function viewNewModal(){
           "<button class='cp-btn cp-btn-primary' data-act='cli-create'>Crear cliente</button></div>"+
       "</div></div></div>";
 }
+function _inboxSeenKey(id){ return "pw_inbox_seen_"+id; }
+function _inboxSeen(id){ try{ return parseInt(localStorage.getItem(_inboxSeenKey(id))||"0",10)||0; }catch(e){ return 0; } }
+function _inboxMarkSeen(id){ try{ localStorage.setItem(_inboxSeenKey(id), String(Date.now())); }catch(e){} }
+function viewInbox(){
+  var threads=[];
+  (typeof CLIENTS!=="undefined"?(CLIENTS||[]):[]).forEach(function(c){
+    var ch=c&&c.chat; if(!(ch&&ch.length)) return;
+    var last=ch[ch.length-1];
+    var ts=+(last&&last.ts)||0;
+    var unread = !!(last && last.from==="cliente" && ts > _inboxSeen(c.id));
+    threads.push({ id:c.id, name:c.name, photo:c.photo, last:last, unread:unread, ts:ts });
+  });
+  threads.sort(function(a,b){ return b.ts-a.ts; });
+  var nUnread=threads.filter(function(t){return t.unread;}).length;
+  var btn="<button class='cp-inbox-btn' data-act='inbox-open' aria-label='Mensajes de clientes'>"+svg(IC.msg,19)+
+    (nUnread>0?"<span class='cp-inbox-badge'>"+nUnread+"</span>":"")+"</button>";
+  if(!state.inboxOpen) return "<div class='cp-inbox-fab'>"+btn+"</div>";
+  var rows = threads.length ? threads.map(function(t){
+    var snip=(((t.last&&t.last.text)||"")+"").replace(/\s+/g," ").slice(0,58);
+    var pre=(t.last&&t.last.from==="coach")?"Vos: ":"";
+    return "<button class='cp-inbox-row"+(t.unread?" is-unread":"")+"' data-act='inbox-go:"+esc(t.id)+"'>"+
+      avImg(t.photo,t.name,"class='cp-inbox-av'")+
+      "<div style='min-width:0;flex:1'><div class='cp-inbox-name'>"+esc(t.name)+(t.unread?"<span class='cp-inbox-dot'></span>":"")+"</div>"+
+      "<div class='cp-inbox-snip'>"+esc(pre+snip)+"</div></div></button>";
+  }).join("") : "<div style='padding:28px 16px;text-align:center;font-size:13px;color:var(--pw-text-soft)'>Sin conversaciones todavía.<br>Cuando un cliente te escriba desde su portal, aparece acá.</div>";
+  var panel="<div class='cp-inbox-panel'><div class='cp-inbox-hd'>Mensajes<button class='cp-inbox-x' data-act='inbox-close' aria-label='Cerrar'>"+svg(IC.close,14)+"</button></div>"+
+    "<div class='cp-inbox-list'>"+rows+"</div></div>";
+  return "<div class='cp-inbox-fab'>"+panel+btn+"</div>";
+}
 function render(){
   try{
     if(state.section==="admin" && !RADMIN) state.section="resumen";
@@ -1925,7 +1973,7 @@ function render(){
     document.getElementById("root").innerHTML =
       "<div class='cp-app'>"+viewSidebar()+
         "<div class='cp-main'><div class='cp-scroll'><div class='cp-container'>"+view+"</div></div></div>"+
-        viewAsistente()+"</div>"+
+        viewInbox()+viewAsistente()+"</div>"+
       (state.newOpen?viewNewModal():"")+
       (state.mail&&state.mail.open?viewMailModal():"");
   }catch(err){
@@ -1952,6 +2000,14 @@ document.addEventListener("click", function(ev){
     el.innerHTML = svg(IC.check,15,"stroke-width='2.4'");
     setTimeout(function(){ el.classList.remove("is-copied"); el.innerHTML = _orig; }, 1500);
     return;
+  }
+  if(act==="inbox-open"){ state.inboxOpen=!state.inboxOpen; render(); return; }
+  if(act==="inbox-close"){ state.inboxOpen=false; render(); return; }
+  if(act.indexOf("inbox-go:")===0){
+    var igid=act.slice(9);
+    _inboxMarkSeen(igid);
+    state.inboxOpen=false; state.section="clientes"; state.clienteSel=igid; state.cliDetTab="mensajes"; state.cliWeek=null;
+    render(); window.scrollTo(0,0); return;
   }
   if(act.indexOf("nav:")===0){ state.section = act.slice(4); render(); window.scrollTo(0,0); return; }
   if(act.indexOf("cli:")===0){ state.cliFilter = act.slice(4); render(); return; }
