@@ -541,11 +541,10 @@ var MASCOT_BASE = "assets/mascota/";
 /* ═══ Sidebar ═══ */
 function viewSidebar(){
   var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"],["config","Configuración","navConfig"]];
-  var _pwOn = REAL ? !!(RCFG&&RCFG.pathway_optin) : !!state.pathwayOptIn;
-  if(_pwOn || (RSOL&&RSOL.length)) items.splice(2,0,["solicitudes","Solicitudes","navClientes"]);
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
+  var _navSec = state.section==="solicitudes" ? "clientes" : state.section;
   var nav = items.map(function(it){
-    return "<button class='cp-side-nav-item "+(state.section===it[0]?"is-active":"")+"' data-act='nav:"+it[0]+"'>"+
+    return "<button class='cp-side-nav-item "+(_navSec===it[0]?"is-active":"")+"' data-act='nav:"+it[0]+"'>"+
       "<span class='cp-side-nav-icon'>"+svg(IC[it[2]],16,"class='cp-side-nav-icon'")+"</span><span>"+it[1]+"</span></button>";
   }).join("");
   return "<aside class='cp-side'>"+
@@ -567,6 +566,13 @@ function viewSidebar(){
 }
 
 /* ═══ Resumen ═══ */
+function cliSolTabs(active){
+  if(!state.pathwayOptIn && !(RSOL&&RSOL.length)) return "";
+  var pend=(RSOL||[]).filter(function(s){return s.estado==="autorizada";}).length;
+  return "<div class='cp-filters' style='margin:0 0 4px'>"+
+    "<button class='cp-chip "+(active==="clientes"?"is-on":"")+"' data-act='nav:clientes'>Clientes</button>"+
+    "<button class='cp-chip "+(active==="sol"?"is-on":"")+"' data-act='nav:solicitudes'>Solicitudes"+(pend?"<span class='cp-chip-count'>"+pend+"</span>":"")+"</button></div>";
+}
 function viewSolicitudes(){
   var SOL = (REAL ? (RSOL||[]) : [
     { id:"demo1", candidato_nombre:"Lucía Fernández", candidato_email:"lucia.f@email.com", servicio:"mentoria", monto:400, comision:80, estado:"autorizada", created_at:new Date(Date.now()-3*3600000).toISOString(), expires_at:new Date(Date.now()+21*3600000).toISOString() },
@@ -618,6 +624,7 @@ function viewSolicitudes(){
 
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Solicitudes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Candidatos del directorio de Pathway que te eligieron.</div></div></header>"+
+    cliSolTabs("sol")+
     "<div class='cp-card' style='background:var(--pw-niebla-2);border:1px solid var(--pw-border)'><div class='cp-card-pad'>"+
       "<div class='cp-eyebrow' style='margin-bottom:8px'>Cómo funciona</div>"+
       "<div style='font-size:13px;color:var(--pw-text);line-height:1.6'>El candidato <strong>paga primero</strong>: su tarjeta queda <strong>autorizada y retenida</strong> (todavía no se le cobra). Tenés <strong>24 h</strong> para responder. Si <strong>aceptás</strong>, se captura el pago: el dinero va <strong>directo a tu cuenta de cobro</strong> y Pathway retiene solo el <strong>20%</strong> de comisión. Si <strong>rechazás</strong> o pasan 24 h, la retención se libera y al candidato <strong>no se le cobra</strong>. Tus clientes propios no pasan por acá (0% comisión).</div></div></div>"+
@@ -727,54 +734,32 @@ function viewClienteDetalle(c){
         "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+desc+"</div></div>"+
         pill2(estado,estk)+"<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' "+actAttr+">Generar</button></div>";
     }
-    body="<div class='cp-card' style='background:var(--pw-niebla-2);border:1px solid var(--pw-border)'><div class='cp-card-pad'>"+
-        "<div class='cp-eyebrow' style='margin-bottom:8px'>Cómo se trabaja un cliente</div>"+
-        "<div style='display:flex;flex-direction:column;gap:7px;font-size:13px;color:var(--pw-text)'>"+
-          "<div><strong style='color:var(--pw-bosque)'>1.</strong> Pegá el <strong>LinkedIn y el CV</strong> del cliente abajo y tocá <strong>Guardar material</strong>.</div>"+
-          "<div><strong style='color:var(--pw-bosque)'>2.</strong> Generá con IA el <strong>Informe</strong>, el <strong>CV</strong> y la <strong>Carta</strong> (botones “Generar”).</div>"+
-          "<div><strong style='color:var(--pw-bosque)'>3.</strong> Revisá y editá el <strong>CV</strong> y la <strong>carta</strong> acá mismo; el plan se edita en la pestaña <strong>Plan</strong>.</div>"+
-          "<div><strong style='color:var(--pw-bosque)'>4.</strong> El cliente lo ve en su portal al instante (botón “Ver en su portal”).</div>"+
-        "</div></div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Material del cliente<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Lo usa la IA para generar</span></div>"+
+    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>1 · Material del cliente<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Etapa 1 de 3</span></div>"+
         "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>Perfil de LinkedIn — pega el texto del perfil del cliente</label>"+
-            "<textarea id='pa-li' class='cp-form-textarea' style='min-height:120px' placeholder='Pega aquí todo el texto del perfil de LinkedIn del cliente…'>"+esc(liTxt)+"</textarea></div>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>CV — pega el texto del CV o la URL del archivo</label>"+
-            "<textarea id='pa-cv' class='cp-form-textarea' style='min-height:90px' placeholder='Pega el texto del CV actual o un enlace al PDF…'>"+esc(cvTxt)+"</textarea></div>"+
-          "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' data-act='mat-save' data-id='"+esc(c.id)+"'>Guardar material</button></div>"+
-          "<span class='cp-form-hint'>Se guarda en el cliente y se usa cada vez que generas el informe, el CV o la carta con IA.</span>"+
-        "</div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Generar con IA<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Con el formulario + el material de arriba</span></div>"+
+          "<div class='cp-form-row'><label class='cp-form-label'>Perfil de LinkedIn — pegá el texto del perfil</label>"+
+            "<textarea id='pa-li' class='cp-form-textarea' style='min-height:110px' placeholder='Pegá acá todo el texto del perfil de LinkedIn del cliente…'>"+esc(liTxt)+"</textarea></div>"+
+          "<div class='cp-form-row'><label class='cp-form-label'>CV — pegá el texto del CV o la URL del archivo</label>"+
+            "<textarea id='pa-cv' class='cp-form-textarea' style='min-height:80px' placeholder='Pegá el texto del CV actual o un enlace al PDF…'>"+esc(cvTxt)+"</textarea></div>"+
+          "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' data-act='mat-save' data-id='"+esc(c.id)+"'>Guardar material</button></div></div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>2 · Generar con IA<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Etapa 2 de 3</span></div>"+
         "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:0'>"+
-          genRow("Informe / plan semana a semana", (rpSt[0]==="Publicado"?"Publicado — al regenerar se actualiza el plan":"Genera el plan de 4 semanas que ve el cliente"), rpSt[0], rpSt[1], "data-act='gen-informe' data-id='"+esc(c.id)+"'")+
+          "<div style='font-size:12px;color:var(--pw-text-soft);padding-bottom:10px'>Usa el formulario + el material de arriba. El <strong>Informe</strong> también genera la <strong>carta</strong> y el plan que ve el cliente. El plan se edita en la pestaña <strong>Plan</strong>.</div>"+
+          genRow("Informe + plan + carta", (rpSt[0]==="Publicado"?"Publicado — al regenerar se actualiza":"Genera diagnóstico, plan de 4 semanas y carta"), rpSt[0], rpSt[1], "data-act='gen-informe' data-id='"+esc(c.id)+"'")+
           genRow("CV", (cvSt[0]==="Publicado"?"Publicado en el portal del cliente":"Genera el CV a partir del material"), cvSt[0], cvSt[1], "data-act='gen-cv' data-id='"+esc(c.id)+"'")+
-          genRow("Carta de presentación","Queda guardada en el cliente","",""," data-act='gen-carta' data-id='"+esc(c.id)+"'")+
+          genRow("Solo la carta","Regenera únicamente la carta de presentación","",""," data-act='gen-carta' data-id='"+esc(c.id)+"'")+
         "</div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Editar CV publicado<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Lo que ve el cliente en cv.html</span></div>"+
-        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-          "<textarea id='cv-edit' class='cp-form-textarea' style='min-height:200px;font-family:var(--pw-mono);font-size:12px' placeholder='Aún no hay CV. Genéralo con IA arriba o pega el contenido (JSON o HTML) aquí.'>"+esc(c.cvContenido||"")+"</textarea>"+
-          "<span class='cp-form-hint'>Acepta el JSON estructurado del CV o HTML. Se guarda en cv_publicados y el cliente lo ve al instante.</span>"+
-          "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
-            "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(cvUrl)+"'>"+svg(IC.extLink,13)+" Abrir cv.html</button>"+
-            "<button class='cp-btn cp-btn-primary' data-act='cv-save' data-id='"+esc(c.id)+"'>Guardar CV</button>"+
-          "</div></div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Editar carta de presentación<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Se guarda en el cliente</span></div>"+
-        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-          "<textarea id='carta-edit' class='cp-form-textarea' style='min-height:200px' placeholder='Aún no hay carta. Genérala con IA arriba o escríbela aquí. Puedes usar [EMPRESA] y [PUESTO] como marcadores.'>"+esc((c.raw&&c.raw.carta_presentacion)||"")+"</textarea>"+
-          "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
-            "<button class='cp-btn cp-btn-ghost' data-act='carta-copy'>"+svg(IC.copy,13)+" Copiar</button>"+
-            "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(cartaUrl)+"'>"+svg(IC.extLink,13)+" Ver como carta</button>"+
-            "<button class='cp-btn cp-btn-primary' data-act='carta-save' data-id='"+esc(c.id)+"'>Guardar carta</button>"+
-          "</div></div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Archivos y portal<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Ver / editar</span></div><div class='cp-card-pad' style='padding-top:6px;padding-bottom:6px'>"+
-        docRow("Informe en el portal","Cómo lo ve el cliente",rpSt[0],rpSt[1],"Ver",portalUrl)+
-        docRow("Foto profesional","Pedírsela al cliente","Falta","danger","Pedir",fotoWa)+
-      "</div></div>";
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>3 · El cliente lo ve<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Etapa 3 de 3</span></div>"+
+        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+          "<div style='font-size:12px;color:var(--pw-text-soft)'>El cliente ve (y puede editar) todo desde su portal. Si algo no está bien, volvé a la etapa 2 y regenerá.</div>"+
+          "<div style='display:flex;gap:8px;flex-wrap:wrap'>"+
+            "<button class='cp-btn cp-btn-primary' data-act='open' data-url='"+esc(portalUrl)+"'>"+svg(IC.extLink,13)+" Ver su portal</button>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(cvUrl)+"'>Ver CV</button>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(cartaUrl)+"'>Ver carta</button>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(fotoWa)+"'>Pedir foto</button>"+
+          "</div></div></div>";
   } else if(t==="plan"){
     var D=(c.inf&&c.inf.d)||{};
     var hasInf=!!(c.inf&&c.inf.id);
@@ -782,14 +767,22 @@ function viewClienteDetalle(c){
     var _ta=function(id,val,ph,h){ return "<textarea id='"+id+"' class='cp-form-textarea' style='min-height:"+(h||90)+"px' placeholder='"+esc(ph||"")+"'>"+esc(val||"")+"</textarea>"; };
     var _blk=function(title,hint,inner){ return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+title+"<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+esc(hint)+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+inner+"</div></div>"; };
     var resm=D.resumen||D.resumen_ejecutivo||"";
-    body="<div class='cp-reassurance' style='margin:0 0 16px;border-radius:12px'>Esto es <strong>lo que tu cliente ve en su portal</strong>, semana a semana. Genéralo con IA desde el formulario o escríbelo a mano, edítalo y <strong>guarda</strong> para que lo vea.</div>"+
+    var _scArr=(Object.prototype.toString.call(D.scores)==="[object Array]")?D.scores:[];
+    var _scRows=_scArr.map(function(s,i){ return "<div style='display:flex;align-items:center;gap:12px'><span style='flex:1;font-size:13px;color:var(--pw-carbon)'>"+esc((s&&s.label)||("Métrica "+(i+1)))+"</span><input id='pl-sc-"+i+"' type='number' min='0' max='100' value='"+(parseInt(s&&s.val,10)||0)+"' class='cp-form-input' style='width:90px'></div>"; }).join("");
+    var _scBlk=_scRows
+      ? _blk("Puntajes","0–100 · el cliente los ve grandes",_scRows)
+      : _blk("Puntajes","Se generan con IA","<div style='font-size:12px;color:var(--pw-text-soft)'>Aún no hay puntajes. Generá el informe con IA y aparecen acá para ajustar.</div>");
+    body="<div class='cp-reassurance' style='margin:0 0 16px;border-radius:12px'>Esto es <strong>exactamente lo que tu cliente ve en su portal</strong>: situación, puntajes, fortalezas, áreas a mejorar, estrategia y las acciones de cada semana. Editá y <strong>guardá</strong> para que lo vea al instante.</div>"+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:10px;flex-wrap:wrap;align-items:center'>"+
         "<button class='cp-btn cp-btn-primary' data-act='gen-informe' data-id='"+esc(c.id)+"'>"+(hasInf?"Regenerar con IA":"Generar con IA")+"</button>"+
         "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(portalUrl)+"'>Ver en su portal</button>"+
         "<span style='font-size:12px;color:var(--pw-text-soft)'>"+(hasInf?"Informe creado. Edita lo que quieras y guarda.":"Aún no hay informe. Genera con IA o escríbelo y guarda.")+"</span>"+
       "</div></div>"+
       _blk("Resumen del diagnóstico","Lo primero que ve el cliente",_ta("pl-res",resm,"Resumen ejecutivo del diagnóstico…",90))+
+      _scBlk+
       _blk("Fortalezas","Una por línea",_ta("pl-for",_al(D.fortalezas),"Una fortaleza por línea…",80))+
+      _blk("Áreas a mejorar","Una por línea — el cliente las ve como 'dónde tenés más potencial'",_ta("pl-gap",_al(D.gaps),"Un área por línea…",80))+
+      _blk("Estrategia","El plan general que ve el cliente en su portal",_ta("pl-est",D.estrategia||"","Estrategia recomendada para el cliente…",90))+
       _blk("Semana 1 · CV","Acciones de la semana 1 — una por línea",_ta("pl-s1",_al(D.cv_acciones),"Una acción por línea…",90))+
       _blk("Semana 2 · LinkedIn","Acciones de la semana 2 — una por línea",_ta("pl-s2",_al(D.linkedin_acciones),"Una acción por línea…",90))+
       _blk("Semana 3 · Networking","Acciones de la semana 3 — una por línea",_ta("pl-s3",_al(D.networking_acciones),"Una acción por línea…",90))+
@@ -801,29 +794,33 @@ function viewClienteDetalle(c){
   } else if(t==="avance"){
     var AD=(c.inf&&c.inf.d)||{};
     var ACTS=[]; try{ ACTS=JSON.parse((c.raw&&c.raw.acciones_progreso)||"[]")||[]; }catch(e){ ACTS=[]; }
-    var weeksA=[["S1","cv_acciones"],["S2","linkedin_acciones"],["S3","networking_acciones"],["S4","preguntas"]];
-    var totD=0,totN=0,off=0,listRows="";
+    var weeksA=[["Semana 1 · CV","cv_acciones"],["Semana 2 · LinkedIn","linkedin_acciones"],["Semana 3 · Networking","networking_acciones"],["Semana 4 · Entrevistas","preguntas"]];
+    var totD=0,totN=0,off=0,boxes="";
     weeksA.forEach(function(w){
       var arr=AD[w[1]]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
+      var nd=0, rows="";
       arr.forEach(function(tx,i){
-        var ok=!!ACTS[off+i]; if(ok) totD++;
-        listRows+="<div style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border)'>"+
-          "<span style='width:18px;height:18px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:"+(ok?"var(--pw-bosque)":"transparent")+";border:1.5px solid "+(ok?"var(--pw-bosque)":"var(--pw-border-strong)")+";color:#fff'>"+(ok?svg(IC.check,10,"stroke-width='3.2'"):"")+"</span>"+
-          "<span style='font-size:10px;font-weight:700;color:var(--pw-bosque);flex-shrink:0;width:20px'>"+w[0]+"</span>"+
-          "<span style='font-size:13px;color:"+(ok?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(ok?"text-decoration:line-through":"")+";line-height:1.5'>"+esc(tx)+"</span></div>";
+        var fi=off+i, ok=!!ACTS[fi]; if(ok) nd++;
+        rows+="<label for='av-"+fi+"' style='display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
+          "<input type='checkbox' id='av-"+fi+"'"+(ok?" checked":"")+" style='width:17px;height:17px;accent-color:var(--pw-bosque);flex-shrink:0;cursor:pointer'>"+
+          "<span style='font-size:13px;color:var(--pw-carbon);line-height:1.5'>"+esc(tx)+"</span></label>";
       });
-      off+=arr.length; totN+=arr.length;
+      off+=arr.length; totD+=nd; totN+=arr.length;
+      boxes+="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+w[0]+"<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>"+nd+"/"+arr.length+"</span></div><div class='cp-card-pad'>"+
+        (arr.length?rows:"<div style='font-size:13px;color:var(--pw-text-soft)'>Sin acciones en esta semana — editá el <strong>Plan</strong>.</div>")+"</div></div>";
     });
     if(!totN){
       body="<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:40px 24px;color:var(--pw-text-soft);font-size:13px'>"+
-        "Todavía no hay un plan. Generalo o escribilo en la pestaña <strong>Plan semana a semana</strong> y acá vas a ver qué va marcando el cliente.</div></div>";
+        "Todavía no hay un plan. Generalo o escribilo en la pestaña <strong>Plan semana a semana</strong> y acá vas a poder marcar el avance.</div></div>";
     } else {
       var pctA=Math.round(totD/totN*100);
       body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Avance del cliente<span class='dot'>.</span></h3>"+
           "<span class='cp-eyebrow'>"+totD+"/"+totN+" · "+pctA+"%</span></div>"+
           "<div class='cp-card-pad'><div class='cp-ob-bar'><span style='width:"+pctA+"%'></span></div>"+
-          "<div style='font-size:12px;color:var(--pw-text-soft);margin:8px 0 6px'>Lo que el cliente fue marcando en su portal. Solo lectura — las acciones se editan en Plan; la semana se cambia en Gestión.</div>"+
-          listRows+"</div></div>";
+          "<div style='font-size:12px;color:var(--pw-text-soft);margin:8px 0 2px'>Marcá o desmarcá los logros del cliente y tocá <strong>Guardar avance</strong> — se sincroniza con su portal al instante.</div></div></div>"+
+        boxes+
+        "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='avance-save' data-id='"+esc(c.id)+"'>Guardar avance</button></div></div>";
     }
   } else if(t==="sesiones"){
     var ses=(c.ses||[]).slice();
@@ -878,20 +875,20 @@ function viewClienteDetalle(c){
       ["Nueva semana","Hola "+fn+", arrancamos una nueva semana del proceso. Te dejé nuevos recursos y tareas en tu portal."],
       ["Tu informe está listo","Hola "+fn+", ya publiqué tu informe de diagnóstico en el portal. Te recomiendo leerlo antes de la próxima sesión."]
     ];
-    var mc=msgs.map(function(m){
-      var enc=encodeURIComponent(m[1]);
+    var mc=msgs.map(function(m,mi){
+      var subEnc=encodeURIComponent(m[0]);
       var sendBtn = pro
-        ? "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='msg-send' data-id='"+esc(c.id)+"' data-sub='"+esc(encodeURIComponent(m[0]))+"' data-msg='"+esc(enc)+"'>"+svg(IC.extLink,12)+" Enviar email</button>"
+        ? "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='msg-send' data-id='"+esc(c.id)+"' data-i='"+mi+"' data-sub='"+esc(subEnc)+"'>"+svg(IC.extLink,12)+" Enviar email</button>"
         : "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px;opacity:.85' data-act='msg-send' data-id='"+esc(c.id)+"'>Enviar email "+proBadge()+"</button>";
       return "<div class='cp-card' style='box-shadow:none;border:1px solid var(--pw-border)'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
         "<div style='font-size:13px;font-weight:700;color:var(--pw-carbon)'>"+esc(m[0])+"</div>"+
-        "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.5;background:var(--pw-niebla-2);border-radius:10px;padding:12px 14px'>"+esc(m[1])+"</div>"+
+        "<textarea id='msg-"+mi+"' class='cp-form-textarea' style='min-height:92px;font-size:13px'>"+esc(m[1])+"</textarea>"+
         "<div style='display:flex;gap:8px;flex-wrap:wrap'>"+
           sendBtn+
-          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc("https://wa.me/?text="+enc)+"'>"+svg(IC.wa,13)+" WhatsApp</button>"+
-          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc("mailto:"+(c.email||"")+"?subject="+encodeURIComponent(m[0])+"&body="+enc)+"'>Email manual</button>"+
-          "<button class='cp-icon-btn' data-act='copy' data-url='"+esc(m[1])+"' title='Copiar'>"+svg(IC.copy,15)+"</button>"+
-        "</div></div></div>";
+          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='msg-wa' data-i='"+mi+"'>"+svg(IC.wa,13)+" WhatsApp</button>"+
+          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='msg-mail' data-i='"+mi+"' data-em='"+esc(c.email||"")+"' data-sub='"+esc(subEnc)+"'>Email manual</button>"+
+          "<button class='cp-icon-btn' data-act='msg-copy' data-i='"+mi+"' title='Copiar'>"+svg(IC.copy,15)+"</button>"+
+        "</div><span class='cp-form-hint'>Editá el texto antes de enviarlo — los botones usan lo que escribas.</span></div></div>";
     }).join("");
     body = (state.plan!=="pro")
       ? "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:12px'>"+
@@ -954,15 +951,6 @@ function viewClienteDetalle(c){
           ftA("Algo importante fuera del CV",rvf("extra"),"cf-extra")+
           ftA("Obstáculos (uno por línea)",obst,"cf-obstaculos","Cada línea es un obstáculo")+
           "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'><button class='cp-btn cp-btn-ghost' data-act='clidet:perfil'>Descartar</button><button class='cp-btn cp-btn-primary' data-act='cli-save' data-id='"+esc(c.id)+"'>Guardar cambios</button></div>"+
-        "</div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Acceso del cliente<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Login al portal</span></div>"+
-        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
-          "<div style='font-size:13px;color:var(--pw-text-soft)'>Usuario: <strong style='color:var(--pw-carbon)'>"+esc(c.email||"—")+"</strong> · entra en <code>"+esc(accUrl)+"</code></div>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>Nueva contraseña</label>"+
-            "<input id='cf-newpass' class='cp-form-input' value=\""+esc(state.cliPass||"")+"\" placeholder='Mínimo 6 caracteres'>"+
-            "<span class='cp-form-hint'>La contraseña está cifrada y no se puede ver. Pon una nueva y se la reenvías al cliente.</span></div>"+
-          "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cli-pass' data-id='"+esc(c.id)+"'>Restablecer y preparar email</button></div>"+
         "</div></div>";
   }
 
@@ -1047,6 +1035,7 @@ function viewClientes(){
       "<div class='cp-topbar-actions'><div class='cp-search'>"+svg(IC.search,14)+
         "<input id='cp-cli-search' placeholder='Buscar por nombre o email…'></div>"+
         "<button class='cp-btn cp-btn-primary' data-act='cli-new'>"+svg(IC.plus,13)+" Nuevo cliente</button></div></header>"+
+    cliSolTabs("clientes")+
     banner+
     linksCard()+
     "<div class='cp-filters'>"+chips+
@@ -1837,10 +1826,28 @@ document.addEventListener("click", function(ev){
     var msid=el.getAttribute("data-id");
     var msc=CLIENTS.filter(function(x){return String(x.id)===String(msid);})[0];
     if(!msc||!msc.email){ alert("Este cliente no tiene email."); return; }
+    var msi=el.getAttribute("data-i");
+    var msBody = msi!=null ? _val("msg-"+msi) : decodeURIComponent(el.getAttribute("data-msg")||"");
     state.mail={ open:true, to:msc.email,
       subj:decodeURIComponent(el.getAttribute("data-sub")||"Mensaje de tu coach"),
-      body:decodeURIComponent(el.getAttribute("data-msg")||"") };
+      body:msBody };
     render(); return;
+  }
+  if(act==="msg-wa"){
+    var wi=el.getAttribute("data-i"); var wt=_val("msg-"+wi);
+    if(!wt.trim()){ alert("El mensaje está vacío."); return; }
+    window.open("https://wa.me/?text="+encodeURIComponent(wt),"_blank","noopener"); return;
+  }
+  if(act==="msg-mail"){
+    var ei=el.getAttribute("data-i"); var et=_val("msg-"+ei);
+    var eto=el.getAttribute("data-em")||"";
+    var esu=decodeURIComponent(el.getAttribute("data-sub")||"Pathway");
+    window.open("mailto:"+eto+"?subject="+encodeURIComponent(esu)+"&body="+encodeURIComponent(et),"_blank","noopener"); return;
+  }
+  if(act==="msg-copy"){
+    var ci=el.getAttribute("data-i"); var ct=_val("msg-"+ci);
+    try{ navigator.clipboard && navigator.clipboard.writeText(ct); }catch(e){}
+    toast("Mensaje copiado ✓"); return;
   }
   if(act==="mail-bg"){ if(ev.target===el){ state.mail.open=false; render(); } return; }
   if(act==="mail-stop"){ return; }
@@ -1967,7 +1974,9 @@ document.addEventListener("click", function(ev){
     _sbw("candidatos?id=eq."+encodeURIComponent(sid),"PATCH",patch)
       .then(function(r){ if(!r.ok) throw 0;
         CLIENTS.forEach(function(x){ if(String(x.id)===String(sid)){ x.name=patch.nombre||x.name; x.email=patch.email; x.role=patch.cargo; if(x.raw){ for(var k in patch){ x.raw[k]=patch[k]; } } } });
-        toast("Datos guardados ✓"); render(); })
+        var _sb2=el; _sb2.textContent="✓ Guardado"; _sb2.style.background="var(--pw-bosque)"; _sb2.style.color="#fff";
+        setTimeout(function(){ _sb2.textContent="Guardar cambios"; _sb2.style.background=""; _sb2.style.color=""; },2200);
+        toast("Datos guardados ✓"); })
       .catch(function(){ alert("No se pudo guardar."); });
     return;
   }
@@ -2026,8 +2035,9 @@ document.addEventListener("click", function(ev){
     if(Object.keys(patch).length) _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",patch);
     _genBusy=true; toast("Generando informe… puede tardar un momento");
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"generar_informe",nombre:rw.nombre,email:rw.email,edad:rw.edad,experiencia:rw.exp||rw.experiencia,sector:rw.sector,educacion:rw.educacion,habilidades:rw.habilidades,objetivo:rw.objetivo,idiomas:rw.idiomas||rw.idioma,ubicacion:rw.ciudad||rw.geo||rw.ubicacion,situacion:rw.situacion,urgencia:rw.urgencia,modalidad:rw.modalidad,linkedin:rw.linkedin,obstaculos:rw.obstaculos,linkedin_texto:liUse})})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); setTimeout(loadReal,1300); })
-      .catch(function(){ _genBusy=false; alert("No se pudo generar el informe. Reintenta en un momento o genera desde tu panel actual."); });
+      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
+      .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); setTimeout(loadReal,1300); })
+      .catch(function(){ _genBusy=false; alert("No se pudo generar el informe. Reintentá en unos minutos."); });
     return;
   }
   if(act==="gen-cv"){
@@ -2062,10 +2072,10 @@ document.addEventListener("click", function(ev){
     if(!confirm("¿Generar la carta de presentación con IA? Puede tardar ~20 s.")) return;
     var cliP=_val("pa-li").trim();
     _genBusy=true; toast("Generando carta…");
-    fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"generar_carta",nombre:rc.nombre,email:rc.email,ciudad:rc.ciudad,linkedin:rc.linkedin,exp:rc.exp||rc.experiencia,sector:rc.sector,cargo:rc.cargo,rol:rc.rol,empresa:rc.empresa,logro:rc.logro,habilidades:rc.habilidades,obstaculos:rc.obstaculos,nicho:rc.nicho,linkedin_texto:cliP||rc.linkedin_texto||""})})
+    fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"generar_informe",nombre:rc.nombre,email:rc.email,ciudad:rc.ciudad,linkedin:rc.linkedin,experiencia:rc.exp||rc.experiencia,sector:rc.sector,cargo:rc.cargo,rol:rc.rol,empresa:rc.empresa,logro:rc.logro,habilidades:rc.habilidades,obstaculos:rc.obstaculos,nicho:rc.nicho,objetivo:rc.objetivo,situacion:rc.situacion,linkedin_texto:cliP||rc.linkedin_texto||""})})
       .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
-      .then(function(j){ var ct=j&&(j.carta_texto||j.texto); if(ct){ _sbw("candidatos?id=eq."+encodeURIComponent(gc),"PATCH",{carta_presentacion:ct}); var _cc=CLIENTS.filter(function(x){return String(x.id)===String(gc);})[0]; if(_cc&&_cc.raw) _cc.raw.carta_presentacion=ct; toast("Carta generada ✓ — abriendo el editor…"); state.cliDetTab="docs"; render(); } else { toast("Carta generada ✓"); } })
-      .catch(function(){ _genBusy=false; alert("No se pudo generar la carta desde aquí. Prueba en tu panel actual."); });
+      .then(function(j){ var ct=j&&(j.carta||j.carta_texto||j.texto); if(ct){ _sbw("candidatos?id=eq."+encodeURIComponent(gc),"PATCH",{carta_presentacion:ct}); var _cc=CLIENTS.filter(function(x){return String(x.id)===String(gc);})[0]; if(_cc&&_cc.raw) _cc.raw.carta_presentacion=ct; toast("Carta generada ✓ — el cliente ya la ve en su portal"); } else { alert("La IA no devolvió la carta. Reintentá."); } })
+      .catch(function(){ _genBusy=false; alert("No se pudo generar la carta. Reintentá en unos minutos."); });
     return;
   }
   if(act==="mat-save"){
@@ -2155,6 +2165,11 @@ document.addEventListener("click", function(ev){
     var d={}; for(var bk in base){ if(base.hasOwnProperty(bk)) d[bk]=base[bk]; }
     d.resumen=_val("pl-res");
     d.fortalezas=_lines("pl-for");
+    d.gaps=_lines("pl-gap");
+    d.estrategia=_val("pl-est");
+    if(Object.prototype.toString.call(base.scores)==="[object Array]" && base.scores.length){
+      d.scores=base.scores.map(function(s,i){ var v=document.getElementById("pl-sc-"+i); var n=v?parseInt(v.value,10):NaN; return { label:(s&&s.label)||("Métrica "+(i+1)), val:(isNaN(n)?(parseInt(s&&s.val,10)||0):Math.max(0,Math.min(100,n))) }; });
+    }
     d.cv_acciones=_lines("pl-s1");
     d.linkedin_acciones=_lines("pl-s2");
     d.networking_acciones=_lines("pl-s3");
@@ -2171,6 +2186,22 @@ document.addEventListener("click", function(ev){
         .then(function(r){ if(!r.ok) throw 0; toast("Plan creado ✓ — ya lo ve el cliente"); loadReal(); })
         .catch(function(){ alert("No se pudo crear el plan."); });
     }
+    return;
+  }
+  if(act==="avance-save"){
+    var avid=el.getAttribute("data-id"); if(!avid) return;
+    var avc=CLIENTS.filter(function(x){return String(x.id)===String(avid);})[0]; if(!avc) return;
+    var avD=(avc.inf&&avc.inf.d)||{};
+    var avOrder=["cv_acciones","linkedin_acciones","networking_acciones","preguntas"];
+    var avA=[], avOff=0;
+    avOrder.forEach(function(k){
+      var arr=avD[k]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
+      for(var i=0;i<arr.length;i++){ var cb=document.getElementById("av-"+(avOff+i)); avA[avOff+i]=!!(cb&&cb.checked); }
+      avOff+=arr.length;
+    });
+    _sbw("candidatos?id=eq."+encodeURIComponent(avid),"PATCH",{acciones_progreso:JSON.stringify(avA)})
+      .then(function(r){ if(!r.ok) throw 0; if(avc.raw) avc.raw.acciones_progreso=JSON.stringify(avA); toast("Avance guardado ✓ — sincronizado con el cliente"); render(); })
+      .catch(function(){ alert("No se pudo guardar el avance."); });
     return;
   }
   if(act==="ses-add"){
@@ -2310,6 +2341,7 @@ function loadReal(){
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
     if(RCFG && RCFG.color_marca) state.brandAccent=RCFG.color_marca;
     if(RCFG && RCFG.notifs && Object.prototype.toString.call(RCFG.notifs)==="[object Object]") state.notifs=Object.assign({}, state.notifs, RCFG.notifs);
+    if(RCFG) state.pathwayOptIn = !!RCFG.pathway_optin;
     var cname = ME.nombre || usr.nombre || "Coach";
     var cfg = RCFG;
     var _vit = (cfg&&cfg.es_pro_vitalicio===true) || RADMIN;
