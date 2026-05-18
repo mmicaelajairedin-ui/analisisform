@@ -1378,17 +1378,22 @@ function viewAdmin(){
       var acc=["—",""];
       var la=cg.last_login||u.last_login;
       if(la){ try{ var d=Math.floor((Date.now()-new Date(la))/86400000); acc=[d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"), d<=2?"ok":(d<=7?"warn":"danger")]; }catch(e){} }
-      return { n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, cli:"—", pw:cg.pathway_optin?"Sí":"No", com:"—" };
+      return { id:u.id, activo:u.activo, email:u.email||"", n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, cli:"—", pw:cg.pathway_optin?"Sí":"No", com:"—" };
     });
   }
   var engRows = coachesEng.map(function(c){
-    return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.n)+"</td>"+
+    var off=(c.activo===false);
+    var selfRow=(RME&&String(c.id)===String(RME.id));
+    var actBtn=selfRow
+      ? "<span style='font-size:11px;color:var(--pw-text-muted)'>vos</span>"
+      : "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 12px;font-size:11px"+(off?"":";color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='coach-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>";
+    return "<tr"+(off?" style='opacity:.55'":"")+"><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.n)+"</td>"+
       "<td>"+pill(c.plan, c.plan==="Pro"?"ok":"")+"</td>"+
-      "<td>"+pill(c.est[0], c.est[1])+"</td>"+
+      "<td>"+pill(off?"Inactiva":c.est[0], off?"danger":c.est[1])+"</td>"+
       "<td>"+pill(c.acc[0], c.acc[1])+"</td>"+
       "<td>"+c.cli+"</td>"+
       "<td>"+(c.pw==="Sí"?"<span style='color:var(--pw-bosque);font-weight:600'>Sí</span>":"<span style='color:var(--pw-text-muted)'>No</span>")+"</td>"+
-      "<td><span class='cp-bill-amount'>"+c.com+"</span></td></tr>";
+      "<td style='text-align:right'>"+actBtn+"</td></tr>";
   }).join("");
   var contactos = [
     { tel:"+34 611 23 45 67",   pag:"soy-coach",     f:"Hoy 14:30" },
@@ -1484,7 +1489,7 @@ function viewAdmin(){
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+coachesEng.length+" registradas · último acceso</span></div>"+
         "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:680px'><thead><tr>"+
-          "<th>Coach</th><th>Plan</th><th>Estado</th><th>Último acceso</th><th>Clientes</th><th>Pathway</th><th>Comisión (mes)</th>"+
+          "<th>Coach</th><th>Plan</th><th>Estado</th><th>Último acceso</th><th>Clientes</th><th>Pathway</th><th style='text-align:right'>Acción</th>"+
         "</tr></thead><tbody>"+engRows+"</tbody></table></div></div>";
   } else if(state.adminTab==="contactos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Popup de pricing<span class='dot'>.</span></h3>"+
@@ -1627,6 +1632,19 @@ document.addEventListener("click", function(ev){
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; render(); return; }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); render(); return; }
+  if(act==="coach-toggle"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var ctid=el.getAttribute("data-id"); if(!ctid) return;
+    if(RME&&String(ctid)===String(RME.id)){ alert("No podés desactivar tu propia cuenta."); return; }
+    var turnOn=el.getAttribute("data-on")==="1";
+    if(!confirm(turnOn?"¿Reactivar el acceso de esta coach?":"¿Desactivar a esta coach? Pierde acceso al panel hasta que la reactives.")) return;
+    _sbw("usuarios?id=eq."+encodeURIComponent(ctid),"PATCH",{activo:turnOn})
+      .then(function(r){ if(!r.ok) throw 0;
+        if(RCOACHES){ RCOACHES.forEach(function(u){ if(String(u.id)===String(ctid)) u.activo=turnOn; }); }
+        toast(turnOn?"Coach reactivada ✓":"Coach desactivada ✓"); render(); })
+      .catch(function(){ alert("No se pudo cambiar el estado de la coach."); });
+    return;
+  }
   if(act.indexOf("cli-open:")===0){ state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
@@ -1939,7 +1957,7 @@ function loadReal(){
     ? "select=*&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)"
     : "select=*&coach_id=eq."+encodeURIComponent(ME.id);
   var extra = ME.rol==="admin"
-    ? [ _sb("usuarios?select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
+    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
         _sb("contactos_chat?select=contacto,pagina,fecha&order=fecha.desc&limit=30"),
         _sb("candidatos?select=id,created_at"),
         _sb("cv_express?select=id,created_at"),
