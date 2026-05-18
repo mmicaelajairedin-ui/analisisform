@@ -878,20 +878,20 @@ function viewClienteDetalle(c){
       ["Nueva semana","Hola "+fn+", arrancamos una nueva semana del proceso. Te dejé nuevos recursos y tareas en tu portal."],
       ["Tu informe está listo","Hola "+fn+", ya publiqué tu informe de diagnóstico en el portal. Te recomiendo leerlo antes de la próxima sesión."]
     ];
-    var mc=msgs.map(function(m){
-      var enc=encodeURIComponent(m[1]);
+    var mc=msgs.map(function(m,mi){
+      var subEnc=encodeURIComponent(m[0]);
       var sendBtn = pro
-        ? "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='msg-send' data-id='"+esc(c.id)+"' data-sub='"+esc(encodeURIComponent(m[0]))+"' data-msg='"+esc(enc)+"'>"+svg(IC.extLink,12)+" Enviar email</button>"
+        ? "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='msg-send' data-id='"+esc(c.id)+"' data-i='"+mi+"' data-sub='"+esc(subEnc)+"'>"+svg(IC.extLink,12)+" Enviar email</button>"
         : "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px;opacity:.85' data-act='msg-send' data-id='"+esc(c.id)+"'>Enviar email "+proBadge()+"</button>";
       return "<div class='cp-card' style='box-shadow:none;border:1px solid var(--pw-border)'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
         "<div style='font-size:13px;font-weight:700;color:var(--pw-carbon)'>"+esc(m[0])+"</div>"+
-        "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.5;background:var(--pw-niebla-2);border-radius:10px;padding:12px 14px'>"+esc(m[1])+"</div>"+
+        "<textarea id='msg-"+mi+"' class='cp-form-textarea' style='min-height:92px;font-size:13px'>"+esc(m[1])+"</textarea>"+
         "<div style='display:flex;gap:8px;flex-wrap:wrap'>"+
           sendBtn+
-          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc("https://wa.me/?text="+enc)+"'>"+svg(IC.wa,13)+" WhatsApp</button>"+
-          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc("mailto:"+(c.email||"")+"?subject="+encodeURIComponent(m[0])+"&body="+enc)+"'>Email manual</button>"+
-          "<button class='cp-icon-btn' data-act='copy' data-url='"+esc(m[1])+"' title='Copiar'>"+svg(IC.copy,15)+"</button>"+
-        "</div></div></div>";
+          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='msg-wa' data-i='"+mi+"'>"+svg(IC.wa,13)+" WhatsApp</button>"+
+          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='msg-mail' data-i='"+mi+"' data-em='"+esc(c.email||"")+"' data-sub='"+esc(subEnc)+"'>Email manual</button>"+
+          "<button class='cp-icon-btn' data-act='msg-copy' data-i='"+mi+"' title='Copiar'>"+svg(IC.copy,15)+"</button>"+
+        "</div><span class='cp-form-hint'>Editá el texto antes de enviarlo — los botones usan lo que escribas.</span></div></div>";
     }).join("");
     body = (state.plan!=="pro")
       ? "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:12px'>"+
@@ -1837,10 +1837,28 @@ document.addEventListener("click", function(ev){
     var msid=el.getAttribute("data-id");
     var msc=CLIENTS.filter(function(x){return String(x.id)===String(msid);})[0];
     if(!msc||!msc.email){ alert("Este cliente no tiene email."); return; }
+    var msi=el.getAttribute("data-i");
+    var msBody = msi!=null ? _val("msg-"+msi) : decodeURIComponent(el.getAttribute("data-msg")||"");
     state.mail={ open:true, to:msc.email,
       subj:decodeURIComponent(el.getAttribute("data-sub")||"Mensaje de tu coach"),
-      body:decodeURIComponent(el.getAttribute("data-msg")||"") };
+      body:msBody };
     render(); return;
+  }
+  if(act==="msg-wa"){
+    var wi=el.getAttribute("data-i"); var wt=_val("msg-"+wi);
+    if(!wt.trim()){ alert("El mensaje está vacío."); return; }
+    window.open("https://wa.me/?text="+encodeURIComponent(wt),"_blank","noopener"); return;
+  }
+  if(act==="msg-mail"){
+    var ei=el.getAttribute("data-i"); var et=_val("msg-"+ei);
+    var eto=el.getAttribute("data-em")||"";
+    var esu=decodeURIComponent(el.getAttribute("data-sub")||"Pathway");
+    window.open("mailto:"+eto+"?subject="+encodeURIComponent(esu)+"&body="+encodeURIComponent(et),"_blank","noopener"); return;
+  }
+  if(act==="msg-copy"){
+    var ci=el.getAttribute("data-i"); var ct=_val("msg-"+ci);
+    try{ navigator.clipboard && navigator.clipboard.writeText(ct); }catch(e){}
+    toast("Mensaje copiado ✓"); return;
   }
   if(act==="mail-bg"){ if(ev.target===el){ state.mail.open=false; render(); } return; }
   if(act==="mail-stop"){ return; }
