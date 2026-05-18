@@ -530,6 +530,32 @@ var STEPS = [
   { id:"report",   label:"Generar y publicar tu primer informe", done:false, go:"clientes", cabra:"cabra-pensando", tipTitle:"Tu primer informe", tipDesc:"Ábrele la ficha al cliente, genéralo con IA y edítalo en Plan." },
   { id:"template", label:"Mensajes para tus clientes", done:false, go:"clientes", cabra:"cabra-laptop", tipTitle:"Mensajes", tipDesc:"Bienvenida, recordatorios, devolución de CV… listos en la ficha." }
 ];
+// Progreso real del onboarding. Antes STEPS tenía los flags `done`
+// hardcodeados, así que la cabra mostraba SIEMPRE el mismo mensaje sin
+// importar lo que la coach ya hubiera hecho. Acá derivamos `done` de los
+// datos reales; los pasos sin señal de datos (stripe, plantillas) se
+// marcan al tocarlos y se recuerdan en localStorage.
+function _onbKey(){ return "pw_onb_"+((COACH&&COACH.email)||(REAL&&RME&&RME.email)||"x"); }
+function _onbManual(){ try{ return JSON.parse(localStorage.getItem(_onbKey())||"{}")||{}; }catch(e){ return {}; } }
+function onbMark(id){ try{ var m=_onbManual(); m[id]=true; localStorage.setItem(_onbKey(), JSON.stringify(m)); }catch(e){} }
+function computeSteps(){
+  if(!REAL) return STEPS.map(function(s){ return Object.assign({}, s); });
+  var man=_onbManual();
+  var hasServices = !!(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length);
+  var hasSlug = !!(RCFG && (""+(RCFG.slug||"")).trim());
+  var hasProfile = hasSlug || !!(RCFG && ((""+(RCFG.bio||"")).trim() || (""+(RCFG.titulo||"")).trim() || (""+(RCFG.foto_url||"")).trim()));
+  var hasClient = !!(typeof CLIENTS!=="undefined" && CLIENTS && CLIENTS.length);
+  var hasReport = !!(typeof CLIENTS!=="undefined" && CLIENTS && CLIENTS.some(function(c){return c&&c.reportState==="published";}));
+  var sig = { account:true, profile:hasProfile, services:hasServices, stripe:false,
+              link:hasSlug, client:hasClient, report:hasReport, template:false };
+  var firstPending=true;
+  return STEPS.map(function(s){
+    var d = (sig[s.id]!=null ? sig[s.id] : s.done) || !!man[s.id];
+    var o = Object.assign({}, s, { done:d, current:false });
+    if(!d && firstPending){ o.current=true; firstPending=false; }
+    return o;
+  });
+}
 var INSIGHTS = [
   { level:"danger", icon:"insStale",     title:"Clientes sin actividad",          desc:"Revisa quién no entra hace días y mándales un mensaje.",      go:"clientes" },
   { level:"warn",   icon:"insClosing",   title:"Cierres de semana 4",             desc:"Pide review y ofrece continuación a los que cierran.",        go:"clientes" },
@@ -718,7 +744,7 @@ function viewClienteDetalle(c){
   var medal=c.medal?"<img class='cp-client-medal' src='assets/iconos/medalla-"+c.medal+".png' alt='' style='width:42px;height:42px'>":"";
   var wa=(c.email||"").replace(/[^0-9]/g,"")||"34611256224";
   var t=state.cliDetTab;
-  var tabs=[["perfil","Perfil"],["plan","Plan semana a semana"],["avance","Avance"],["docs","Documentos"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
+  var tabs=[["perfil","Perfil"],["plan","Análisis"],["avance","Avance"],["docs","Documentos"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
   var tabBar="<div class='cp-filters'>"+tabs.map(function(x){return "<button class='cp-chip "+(t===x[0]?"is-on":"")+"' data-act='clidet:"+x[0]+"'>"+x[1]+"</button>";}).join("")+"</div>";
 
   var cvSt=c.cvState==="published"?["Publicado","ok"]:(c.cvState==="pending"?["A revisar","warn"]:["Borrador",""]);
@@ -745,7 +771,7 @@ function viewClienteDetalle(c){
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>2 · Generar con IA<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Etapa 2 de 3</span></div>"+
         "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:0'>"+
-          "<div style='font-size:12px;color:var(--pw-text-soft);padding-bottom:10px'>Usa el formulario + el material de arriba. El <strong>Informe</strong> también genera la <strong>carta</strong> y el plan que ve el cliente. El plan se edita en la pestaña <strong>Plan</strong>.</div>"+
+          "<div style='font-size:12px;color:var(--pw-text-soft);padding-bottom:10px'>Usa el formulario + el material de arriba. El <strong>Informe</strong> también genera la <strong>carta</strong> y el plan que ve el cliente. El plan se edita en la pestaña <strong>Análisis</strong>.</div>"+
           genRow("Informe + plan + carta", (rpSt[0]==="Publicado"?"Publicado — al regenerar se actualiza":"Genera diagnóstico, plan de 4 semanas y carta"), rpSt[0], rpSt[1], "data-act='gen-informe' data-id='"+esc(c.id)+"'")+
           genRow("CV", (cvSt[0]==="Publicado"?"Publicado en el portal del cliente":"Genera el CV a partir del material"), cvSt[0], cvSt[1], "data-act='gen-cv' data-id='"+esc(c.id)+"'")+
           genRow("Solo la carta","Regenera únicamente la carta de presentación","",""," data-act='gen-carta' data-id='"+esc(c.id)+"'")+
@@ -808,11 +834,11 @@ function viewClienteDetalle(c){
       off+=arr.length; totD+=nd; totN+=arr.length;
       boxes+="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+w[0]+"<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+nd+"/"+arr.length+"</span></div><div class='cp-card-pad'>"+
-        (arr.length?rows:"<div style='font-size:13px;color:var(--pw-text-soft)'>Sin acciones en esta semana — editá el <strong>Plan</strong>.</div>")+"</div></div>";
+        (arr.length?rows:"<div style='font-size:13px;color:var(--pw-text-soft)'>Sin acciones en esta semana — editá el <strong>Análisis</strong>.</div>")+"</div></div>";
     });
     if(!totN){
       body="<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:40px 24px;color:var(--pw-text-soft);font-size:13px'>"+
-        "Todavía no hay un plan. Generalo o escribilo en la pestaña <strong>Plan semana a semana</strong> y acá vas a poder marcar el avance.</div></div>";
+        "Todavía no hay un plan. Generalo o escribilo en la pestaña <strong>Análisis</strong> y acá vas a poder marcar el avance.</div></div>";
     } else {
       var pctA=Math.round(totD/totN*100);
       body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Avance del cliente<span class='dot'>.</span></h3>"+
@@ -1433,9 +1459,10 @@ function viewConfig(){
 
 /* ═══ Asistente ═══ */
 function viewAsistente(){
-  var done = STEPS.filter(function(s){return s.done;}).length;
-  var pct = Math.round(done/STEPS.length*100);
-  var nextStep = STEPS.filter(function(s){return !s.done;})[0];
+  var STEPSx = computeSteps();
+  var done = STEPSx.filter(function(s){return s.done;}).length;
+  var pct = Math.round(done/STEPSx.length*100);
+  var nextStep = STEPSx.filter(function(s){return !s.done;})[0];
   var allDone = !nextStep;
   var cabraGif = allDone ? "cabra-thumbs-up" : (nextStep.cabra || "cabra-mapa");
   var cabraSrc = MASCOT_BASE+cabraGif+".gif";
@@ -1448,12 +1475,12 @@ function viewAsistente(){
     if(state.ai.bubbleOpen){
       top = "<div class='cp-cabra-bubble' data-act='ai-open' role='button' tabindex='0'>"+
         "<button class='cp-cabra-bubble-close' data-act='ai-bubble-close' aria-label='Ocultar'>"+svg(IC.close,12,"stroke-width='2.2'")+"</button>"+
-        "<div class='cp-cabra-bubble-step'>"+(allDone?"Onboarding completo":"Paso "+(done+1)+" de "+STEPS.length)+"</div>"+
+        "<div class='cp-cabra-bubble-step'>"+(allDone?"Onboarding completo":"Paso "+(done+1)+" de "+STEPSx.length)+"</div>"+
         "<div class='cp-cabra-bubble-title'>"+esc(tipTitle)+"</div>"+
         "<div class='cp-cabra-bubble-desc'>"+esc(tipDesc)+"</div>"+
         "<div class='cp-cabra-bubble-cta'>"+(allDone?"Ver tu progreso":"Hacerlo ahora")+" "+svg(IC.arrowR,10,"stroke-width='2.6'")+"</div></div>";
     } else {
-      top = "<div class='cp-cabra-mini-bubble' data-act='ai-open'>"+(allDone?"¿Necesitas ayuda?":done+"/"+STEPS.length+" · seguir")+"</div>";
+      top = "<div class='cp-cabra-mini-bubble' data-act='ai-open'>"+(allDone?"¿Necesitas ayuda?":done+"/"+STEPSx.length+" · seguir")+"</div>";
     }
     return "<div class='cp-ai-fab'>"+top+
       "<div class='cp-cabra-img-wrap' data-act='ai-open' role='button' tabindex='0' aria-label='Abrir asistente'>"+
@@ -1461,9 +1488,9 @@ function viewAsistente(){
       (unread>0?"<span class='cp-cabra-img-wrap-dot'>"+unread+"</span>":"")+"</div></div>";
   }
 
-  var stepRows = STEPS.map(function(s){
+  var stepRows = STEPSx.map(function(s){
     var cls = s.done?"is-done":(s.current?"is-current":"");
-    return "<div class='cp-ob-row "+cls+"' data-act='asist-go' data-go='"+esc(s.go||"clientes")+"' style='cursor:pointer'>"+
+    return "<div class='cp-ob-row "+cls+"' data-act='asist-go' data-step='"+esc(s.id)+"' data-go='"+esc(s.go||"clientes")+"' style='cursor:pointer'>"+
       "<span class='cp-ob-check'>"+(s.done?svg(IC.check,11,"stroke-width='3.2'"):"")+"</span>"+
       "<span class='cp-ob-text'>"+esc(s.label)+"</span>"+
       "<span class='cp-insight-arrow' style='margin-left:auto'>"+svg(IC.chevR,13)+"</span></div>";
@@ -1477,7 +1504,7 @@ function viewAsistente(){
   }).join("");
   var body = "<div class='cp-ai-home'>"+
     "<div class='cp-ob-mini'><div class='cp-ob-mini-top'><div class='cp-ob-mini-title'>Tu progreso</div>"+
-      "<span class='cp-ob-mini-pct'>"+done+"/"+STEPS.length+"</span></div>"+
+      "<span class='cp-ob-mini-pct'>"+done+"/"+STEPSx.length+"</span></div>"+
       "<div class='cp-ob-bar'><span style='width:"+pct+"%'></span></div>"+
       "<div class='cp-ob-next'>"+(allDone?"<span><strong>¡Listo!</strong> Todo configurado.</span>":"<span>Próximo: <strong>"+esc(nextStep.label)+"</strong></span>")+"</div></div>"+
     "<div><div class='cp-ai-section-title' style='margin-bottom:6px'>Tus pasos · toca para ir</div><div class='cp-ob-list'>"+stepRows+"</div></div>"+
@@ -2270,6 +2297,8 @@ document.addEventListener("click", function(ev){
   if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; render(); return; }
   if(act==="ai-bubble-close"){ ev.stopPropagation(); state.ai.bubbleOpen=false; render(); return; }
   if(act==="asist-go"){
+    var _sid=el.getAttribute("data-step");
+    if(_sid==="stripe"||_sid==="template") onbMark(_sid);
     var g=(el.getAttribute("data-go")||"clientes").split("|");
     state.section=g[0]; if(g[0]==="config"&&g[1]) state.cfg=g[1];
     state.ai.open=false; state.ai.bubbleOpen=true;
