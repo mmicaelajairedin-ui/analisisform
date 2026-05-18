@@ -720,21 +720,18 @@ function viewClienteDetalle(c){
   } else if(t==="avance"){
     var AD=(c.inf&&c.inf.d)||{};
     var ACTS=[]; try{ ACTS=JSON.parse((c.raw&&c.raw.acciones_progreso)||"[]")||[]; }catch(e){ ACTS=[]; }
-    var weeksA=[[1,"Semana 1 · CV","cv_acciones"],[2,"Semana 2 · LinkedIn","linkedin_acciones"],[3,"Semana 3 · Networking","networking_acciones"],[4,"Semana 4 · Entrevistas","preguntas"]];
-    var totD=0,totN=0,off=0,wkCards="";
+    var weeksA=[["S1","cv_acciones"],["S2","linkedin_acciones"],["S3","networking_acciones"],["S4","preguntas"]];
+    var totD=0,totN=0,off=0,listRows="";
     weeksA.forEach(function(w){
-      var arr=AD[w[2]]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
-      var nd=0;
-      var rows=arr.map(function(tx,i){
-        var ok=!!ACTS[off+i]; if(ok) nd++;
-        return "<div style='display:flex;align-items:center;gap:9px;padding:5px 0'>"+
+      var arr=AD[w[1]]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
+      arr.forEach(function(tx,i){
+        var ok=!!ACTS[off+i]; if(ok) totD++;
+        listRows+="<div style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border)'>"+
           "<span style='width:18px;height:18px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:"+(ok?"var(--pw-bosque)":"transparent")+";border:1.5px solid "+(ok?"var(--pw-bosque)":"var(--pw-border-strong)")+";color:#fff'>"+(ok?svg(IC.check,10,"stroke-width='3.2'"):"")+"</span>"+
+          "<span style='font-size:10px;font-weight:700;color:var(--pw-bosque);flex-shrink:0;width:20px'>"+w[0]+"</span>"+
           "<span style='font-size:13px;color:"+(ok?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(ok?"text-decoration:line-through":"")+";line-height:1.5'>"+esc(tx)+"</span></div>";
-      }).join("");
-      off+=arr.length; totD+=nd; totN+=arr.length;
-      wkCards+="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+w[1]+"<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>"+nd+"/"+arr.length+" hechas</span></div>"+
-        "<div class='cp-card-pad'>"+(arr.length?rows:"<div style='font-size:13px;color:var(--pw-text-soft)'>Sin acciones en esta semana.</div>")+"</div></div>";
+      });
+      off+=arr.length; totN+=arr.length;
     });
     if(!totN){
       body="<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:40px 24px;color:var(--pw-text-soft);font-size:13px'>"+
@@ -742,10 +739,10 @@ function viewClienteDetalle(c){
     } else {
       var pctA=Math.round(totD/totN*100);
       body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Avance del cliente<span class='dot'>.</span></h3>"+
-          "<span class='cp-eyebrow'>"+totD+"/"+totN+" tareas · "+pctA+"%</span></div>"+
+          "<span class='cp-eyebrow'>"+totD+"/"+totN+" · "+pctA+"%</span></div>"+
           "<div class='cp-card-pad'><div class='cp-ob-bar'><span style='width:"+pctA+"%'></span></div>"+
-          "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:8px'>Lo que el cliente fue marcando como hecho en su portal. Solo lectura — para editar las acciones usá la pestaña Plan.</div></div></div>"+
-        wkCards;
+          "<div style='font-size:12px;color:var(--pw-text-soft);margin:8px 0 6px'>Lo que el cliente fue marcando en su portal. Solo lectura — las acciones se editan en Plan; la semana se cambia en Gestión.</div>"+
+          listRows+"</div></div>";
     }
   } else if(t==="sesiones"){
     var ses=(c.ses||[]).slice();
@@ -1444,6 +1441,32 @@ function viewAdmin(){
       "<td style='color:var(--pw-text-soft)'>"+p.f+"</td></tr>";
   }).join("");
   function fc(stat,lbl){ return "<div style='flex:1;min-width:120px'><div style='font-family:var(--pw-serif);font-size:24px;font-weight:600;color:var(--pw-carbon)'>"+stat+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+lbl+"</div></div>"; }
+  function eur(n){ return "€"+(Number(n)||0).toLocaleString("es-ES"); }
+  var A=null;
+  if(REAL && RCOACHES){
+    var _now=Date.now(), _D=86400000, _pro=0,_basic=0,_prueba=0,_act7=0,_inact14=0,_nuevas7=0,_venc3=0;
+    RCOACHES.forEach(function(u){
+      var cgf=u.configuracion||{};
+      var vit=cgf.es_pro_vitalicio===true||u.rol==="admin";
+      var pl=vit?"pro":(cgf.plan==="pro"?"pro":"basic");
+      if(pl==="pro")_pro++; else _basic++;
+      var es=(cgf.estado_sub||"").toString();
+      if(es==="prueba")_prueba++;
+      var la=cgf.last_login||u.last_login;
+      if(la){ var dd=(_now-new Date(la))/_D; if(dd<=7)_act7++; if(dd>14)_inact14++; } else { _inact14++; }
+      if(u.created_at && (_now-new Date(u.created_at))/_D<=7) _nuevas7++;
+      if(es==="prueba" && cgf.fecha_fin_prueba){ var fd=(new Date(cgf.fecha_fin_prueba)-_now)/_D; if(fd>=0&&fd<=3)_venc3++; }
+    });
+    var _R=RADM||{cands:[],cvx:[],leads:[]};
+    var _c30=(_R.cands||[]).filter(function(x){return x.created_at&&(_now-new Date(x.created_at))/_D<=30;}).length;
+    var _lds=_R.leads||[];
+    var _lt=_lds.filter(function(x){return x.trial_iniciado_at;}).length;
+    var _lp=_lds.filter(function(x){return x.pago_at;}).length;
+    A={ total:RCOACHES.length, pro:_pro, basic:_basic, prueba:_prueba, act7:_act7, inact14:_inact14,
+        nuevas7:_nuevas7, venc3:_venc3, mrr:_pro*89+_basic*58,
+        candsTot:(_R.cands||[]).length, cands30:_c30, cvx:(_R.cvx||[]).length,
+        leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
+  }
 
   var tabs = [["resumen","Resumen"],["coaches","Coaches"],["contactos","Contactos"],["cvx","CV Express"],["pagos","Pagos"]];
   var tabBar = "<div class='cp-filters'>"+tabs.map(function(t){
@@ -1453,10 +1476,10 @@ function viewAdmin(){
   var body;
   if(state.adminTab==="coaches"){
     body = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
-        fc("<span style='color:var(--pw-bosque)'>5</span>","Activas esta semana")+
-        fc("<span style='color:#8E7A35'>2</span>","En prueba (1 vence ≤3 d)")+
-        fc("<span style='color:var(--pw-danger)'>2</span>","Inactivas +14 d")+
-        fc("1","Nuevas esta semana")+
+        fc("<span style='color:var(--pw-bosque)'>"+(A?A.act7:5)+"</span>","Activas esta semana")+
+        fc("<span style='color:#8E7A35'>"+(A?A.prueba:2)+"</span>","En prueba"+(A&&A.venc3?" ("+A.venc3+" vence ≤3 d)":""))+
+        fc("<span style='color:var(--pw-danger)'>"+(A?A.inact14:2)+"</span>","Inactivas +14 d")+
+        fc(""+(A?A.nuevas7:1),"Nuevas esta semana")+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+coachesEng.length+" registradas · último acceso</span></div>"+
@@ -1466,7 +1489,9 @@ function viewAdmin(){
   } else if(state.adminTab==="contactos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Popup de pricing<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Funnel</span></div><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
-        fc("128","Capturados")+fc("41","Registrados · 32%")+fc("23","En trial · 18%")+fc("<span style='color:var(--pw-bosque)'>9</span>","Pagaron · 7%")+
+        (A
+          ? fc(""+A.leadsTot,"Leads pricing")+fc(""+A.leadsTrial,"En trial"+(A.leadsTot?" · "+Math.round(A.leadsTrial/A.leadsTot*100)+"%":""))+fc("<span style='color:var(--pw-bosque)'>"+A.leadsPago+"</span>","Pagaron"+(A.leadsTot?" · "+Math.round(A.leadsPago/A.leadsTot*100)+"%":""))
+          : fc("128","Capturados")+fc("41","Registrados · 32%")+fc("23","En trial · 18%")+fc("<span style='color:var(--pw-bosque)'>9</span>","Pagaron · 7%"))+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Contactos del chatbot<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+contactos.length+" · desde la web</span></div>"+
@@ -1475,7 +1500,9 @@ function viewAdmin(){
         "</tr></thead><tbody>"+contactoRows+"</tbody></table></div></div>";
   } else if(state.adminTab==="cvx"){
     body = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
-        fc("37","Compras pagas (mes)")+fc("<span style='color:var(--pw-bosque)'>€1.073</span>","Ingresos (mes)")+fc("11","Accesos de prueba (admin)")+fc("<span style='color:#C99A2E'>4,8 ★</span>","14 reseñas")+
+        (A
+          ? fc(""+A.cvx,"Registros CV Express")+fc("<span style='color:var(--pw-text-muted)'>—</span>","Ingresos (no cableado)")+fc("<span style='color:var(--pw-text-muted)'>—</span>","Reseñas (no cableado)")
+          : fc("37","Compras pagas (mes)")+fc("<span style='color:var(--pw-bosque)'>€1.073</span>","Ingresos (mes)")+fc("11","Accesos de prueba (admin)")+fc("<span style='color:#C99A2E'>4,8 ★</span>","14 reseñas"))+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>CV Express<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Producto pago · acceso de prueba por admin</span></div>"+
@@ -1492,12 +1519,12 @@ function viewAdmin(){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Mayo 2026</span></div>"+
         "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
-          row("Suscripciones de coaches","€1.091",{muted:true})+
-          row("Comisión Pathway (20% de lo referido)","€3.720",{muted:true})+
-          row("CV Express (pagas)","€1.073",{muted:true})+
-          row("Total ingresos de la plataforma","€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("Suscripciones de coaches (MRR estimado por plan)", A?eur(A.mrr):"€1.091",{muted:true})+
+          row("Comisión Pathway", A?"—":"€3.720",{muted:true})+
+          row("CV Express", A?"—":"€1.073",{muted:true})+
+          row("Total estimado", A?eur(A.mrr):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
         "</div>"+
-        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>Los <strong>€14.880</strong> de payouts a coaches (su 80% de lo referido) no son ingreso de la plataforma — se transfieren tras la retención de 24 h.</p></div>"+
+        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>"+(A?"El MRR es <strong>estimado</strong> según los planes activos ("+A.pro+" Pro × €89 + "+A.basic+" Basic × €58). Comisión, payouts y CV Express se gestionan en Stripe — todavía no están cableados aquí.":"Los <strong>€14.880</strong> de payouts a coaches (su 80% de lo referido) no son ingreso de la plataforma — se transfieren tras la retención de 24 h.")+"</p></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Payouts a coaches — pendientes<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● vía Stripe</span></div>"+
         "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:640px'><thead><tr>"+
@@ -1505,30 +1532,30 @@ function viewAdmin(){
         "</tr></thead><tbody>"+payoutRows+"</tbody></table></div></div>";
   } else {
     body = "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px'>"+
-        kpi("MRR suscripciones","€1.091","14 coaches · 9 Pro + 5 Basic")+
-        kpi("Comisión Pathway (mes)","€3.720","20% de €18.600 referido")+
-        kpi("Payouts a coaches (mes)","€14.880","80% · €2.480 en tránsito")+
-        kpi("CV Express (mes)","€1.073","37 pagas + 11 de prueba")+
-        kpi("Candidatos (30 d)","86","de formularios + directorio")+
-        kpi("Solicitudes directorio","3","pendientes · ventana 24 h")+
+        kpi("MRR estimado", A?eur(A.mrr):"€1.091", A?(A.total+" coaches · "+A.pro+" Pro + "+A.basic+" Basic"):"14 coaches · 9 Pro + 5 Basic")+
+        kpi("Comisión Pathway", A?"—":"€3.720", A?"no cableado (Stripe)":"20% de €18.600 referido")+
+        kpi("Payouts a coaches", A?"—":"€14.880", A?"no cableado (Stripe)":"80% · €2.480 en tránsito")+
+        kpi("CV Express", A?(A.cvx+" reg."):"€1.073", A?"sin importe (no cableado)":"37 pagas + 11 de prueba")+
+        kpi("Candidatos (30 d)", A?(""+A.cands30):"86", A?(A.candsTot+" en total"):"de formularios + directorio")+
+        kpi("Leads pricing", A?(""+A.leadsTot):"3", A?(A.leadsPago+" pagaron"):"pendientes · ventana 24 h")+
       "</div>"+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
-        fc("<span style='color:#8E7A35'>2</span>","Trials por vencer ≤3 d")+
-        fc("<span style='color:var(--pw-danger)'>2</span>","Coaches inactivas +14 d")+
-        fc("1","Coaches nuevas (7 d)")+
-        fc("<span style='color:var(--pw-bosque)'>9</span>","Ventas reales (mes)")+
+        fc("<span style='color:#8E7A35'>"+(A?A.venc3:2)+"</span>","Trials por vencer ≤3 d")+
+        fc("<span style='color:var(--pw-danger)'>"+(A?A.inact14:2)+"</span>","Coaches inactivas +14 d")+
+        fc(""+(A?A.nuevas7:1),"Coaches nuevas (7 d)")+
+        fc("<span style='color:var(--pw-bosque)'>"+(A?A.leadsPago:9)+"</span>","Ventas (leads pagados)")+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Mayo 2026</span></div>"+
         "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
-          row("Suscripciones de coaches","€1.091",{muted:true})+
-          row("Comisión Pathway (20%)","€3.720",{muted:true})+
-          row("CV Express (pagas)","€1.073",{muted:true})+
-          row("Total ingresos de la plataforma","€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("Suscripciones de coaches (MRR estimado)", A?eur(A.mrr):"€1.091",{muted:true})+
+          row("Comisión Pathway", A?"—":"€3.720",{muted:true})+
+          row("CV Express", A?"—":"€1.073",{muted:true})+
+          row("Total estimado", A?eur(A.mrr):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
         "</div></div>";
   }
   var realNote = REAL
-    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Coaches y Contactos:</strong> datos reales. <strong>Ingresos / comisión / payouts / CV Express:</strong> agregados de plataforma todavía no cableados — los importes mostrados no son reales aún.</div>"
+    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Datos reales:</strong> coaches, contactos, candidatos, leads y MRR estimado por plan. <strong>Comisión, payouts e ingresos de CV Express</strong> se gestionan en Stripe y todavía no están cableados (se muestran como —).</div>"
     : "";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Admin<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Vista de plataforma"+(REAL?" · datos en vivo":" · datos de ejemplo")+"</div></div></header>"+
@@ -1880,7 +1907,7 @@ function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===Strin
 function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
 function _sha256(txt){ return crypto.subtle.digest("SHA-256",new TextEncoder().encode(""+txt)).then(function(b){ return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join(""); }); }
 function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600); }
-var REAL=false, RCFG={}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false;
+var REAL=false, RCFG={}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null;
 function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURIComponent(RME.id) : ""; }
 function saveCfg(cfgPatch, usuariosExtra){
   if(!RME||!RME.id){ alert("Iniciá sesión para guardar."); return; }
@@ -1904,17 +1931,21 @@ function loadReal(){
     : "select=*&coach_id=eq."+encodeURIComponent(ME.id);
   var extra = ME.rol==="admin"
     ? [ _sb("usuarios?select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
-        _sb("contactos_chat?select=contacto,pagina,fecha&order=fecha.desc&limit=30") ]
-    : [ Promise.resolve([]), Promise.resolve([]) ];
+        _sb("contactos_chat?select=contacto,pagina,fecha&order=fecha.desc&limit=30"),
+        _sb("candidatos?select=id,created_at"),
+        _sb("cv_express?select=id,created_at"),
+        _sb("leads_pricing?select=trial_iniciado_at,pago_at,created_at") ]
+    : [ Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]) ];
   Promise.all([
     _sb("candidatos?"+cf+"&order=created_at.desc"),
     _sb("cv_publicados?select=email,contenido"),
     _sb("informes?select=email,id,data&order=created_at.desc"),
     _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion"),
-    extra[0], extra[1]
+    extra[0], extra[1], extra[2], extra[3], extra[4]
   ]).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
     RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
+    RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[] } : null;
     RCFG = usr.configuracion || ME.configuracion || {};
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
     var cname = ME.nombre || usr.nombre || "Coach";
