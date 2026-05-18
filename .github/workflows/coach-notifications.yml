@@ -1,0 +1,62 @@
+name: "📋 Coach Notifications — digest semanal"
+
+# Dispara la edge function notif-coach cada lunes 7:00 UTC.
+# La function recorre los coaches activos y, a los que tienen activado
+# "Resumen semanal" (Configuración › Notificaciones en panel-v2), les
+# manda un email con sus clientes nuevos de la semana.
+#
+# Secrets requeridos en el repo (ya existen para weekly-analytics):
+#   SUPABASE_PROJECT_URL    https://<proyecto>.supabase.co
+#   AGENT_TRIGGER_SECRET    mismo valor que el secret de Supabase
+#
+# Setup (una vez): supabase functions deploy notif-coach --no-verify-jwt
+# Trigger manual: Actions → Coach Notifications → Run workflow
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trigger-notifs:
+    name: "Disparar digest a coaches"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "Setup secrets (sanitizar)"
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          AGENT_TRIGGER_SECRET: ${{ secrets.AGENT_TRIGGER_SECRET }}
+        run: |
+          URL=$(printf '%s' "$SUPABASE_PROJECT_URL" | tr -d '[:space:]' | sed 's:/*$::')
+          SECRET=$(printf '%s' "$AGENT_TRIGGER_SECRET" | tr -d '[:space:]')
+          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
+            echo "::error::Faltan secrets SUPABASE_PROJECT_URL o AGENT_TRIGGER_SECRET"
+            exit 1
+          fi
+          echo "URL chars: ${#URL} | Secret chars: ${#SECRET}"
+          echo "URL=$URL" >> $GITHUB_ENV
+          echo "SECRET=$SECRET" >> $GITHUB_ENV
+
+      - name: "📋 Enviar digests"
+        run: |
+          response=$(curl -sS -w "\n%{http_code}" -X POST \
+            "${URL}/functions/v1/notif-coach" \
+            -H "X-Trigger-Secret: ${SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 200) || {
+              echo "::error::curl notif-coach falló con exit code $?"
+              exit 1
+            }
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "HTTP $status"
+          echo "$body"
+          if [ "$status" != "200" ]; then
+            echo "::error::notif-coach devolvió status $status"
+            exit 1
+          fi

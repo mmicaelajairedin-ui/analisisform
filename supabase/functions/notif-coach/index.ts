@@ -1,0 +1,123 @@
+// notif-coach — Digest semanal por email a cada coach.
+//
+// Recorre los coaches activos y, si tienen activado el toggle
+// "Resumen semanal" (configuracion.notifs.weeklyReport === true en
+// panel-v2 → Configuración › Notificaciones), les manda un email con:
+//   - clientes nuevos de los últimos 7 días (asignados a su coach_id)
+//   - total de clientes activos
+//
+// Disparo: GitHub Actions cron (.github/workflows/coach-notifications.yml)
+// hace POST con header X-Trigger-Secret = AGENT_TRIGGER_SECRET.
+//
+// Env (Supabase Edge Functions → Secrets):
+//   SUPABASE_URL               — auto-inyectada
+//   SUPABASE_SERVICE_ROLE_KEY  — auto-inyectada
+//   AGENT_TRIGGER_SECRET       — mismo valor que el secret de GitHub
+//
+// Deploy: supabase functions deploy notif-coach --no-verify-jwt
+
+const PANEL_URL = "https://pathwaycareercoach.com/panel-v2.html";
+
+function esc(s: unknown): string {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function digestHtml(coachName: string, nuevos: Array<Record<string, unknown>>, totalActivos: number): string {
+  const primer = (coachName || "").split(" ")[0] || "coach";
+  const lista = nuevos.length
+    ? `<ul style="margin:8px 0 0;padding-left:18px;">${nuevos.map((c) =>
+        `<li>${esc(c.nombre || c.email || "Cliente")}${c.email ? ` · <span style="color:#5A6A60;">${esc(c.email)}</span>` : ""}</li>`).join("")}</ul>`
+    : `<p style="color:#5A6A60;margin:8px 0 0;">No hubo clientes nuevos esta semana.</p>`;
+  return `<!DOCTYPE html><html><body style="font-family:Inter,-apple-system,sans-serif;font-size:14px;line-height:1.6;color:#1B4332;max-width:620px;margin:0 auto;padding:24px;background:#FAFDF9;">
+<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ${esc(primer)},</h2>
+<p>Tu resumen semanal en Pathway:</p>
+<div style="background:#fff;border:1px solid rgba(45,106,79,.14);border-radius:12px;padding:16px 18px;margin:14px 0;">
+  <div style="font-weight:700;">${nuevos.length} cliente${nuevos.length === 1 ? "" : "s"} nuevo${nuevos.length === 1 ? "" : "s"} esta semana</div>
+  ${lista}
+  <div style="margin-top:14px;color:#5A6A60;">Clientes activos en total: <strong style="color:#1B4332;">${totalActivos}</strong></div>
+</div>
+<p style="margin-top:20px;"><a href="${PANEL_URL}" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Abrir mi panel →</a></p>
+<p style="font-size:12px;color:#999;margin-top:18px;">Recibís esto porque tenés activado "Resumen semanal" en Configuración › Notificaciones. Podés desactivarlo desde el panel.</p>
+</body></html>`;
+}
+
+Deno.serve(async (req: Request) => {
+  const triggerSecret = Deno.env.get("AGENT_TRIGGER_SECRET") || "";
+  const provided = req.headers.get("x-trigger-secret") || "";
+  if (!triggerSecret || provided !== triggerSecret) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401, headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").replace(/\/+$/, "");
+  const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    return new Response(JSON.stringify({ error: "missing SUPABASE_URL / SERVICE_ROLE_KEY" }), {
+      status: 500, headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const sbHeaders = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
+  const sinceISO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const result = { coaches: 0, enviados: 0, saltados: 0, errores: [] as string[] };
+
+  try {
+    const cRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/usuarios?rol=in.(coach,admin)&activo=eq.true&select=id,email,nombre,configuracion`,
+      { headers: sbHeaders },
+    );
+    const coaches: Array<Record<string, unknown>> = cRes.ok ? await cRes.json() : [];
+    result.coaches = coaches.length;
+
+    for (const u of coaches) {
+      const email = String(u.email || "").trim();
+      const cfg = (u.configuracion as Record<string, unknown>) || {};
+      const notifs = (cfg.notifs as Record<string, unknown>) || {};
+      // Respetar el toggle del coach: solo si activó "Resumen semanal".
+      if (notifs.weeklyReport !== true || !email) { result.saltados++; continue; }
+
+      try {
+        const id = encodeURIComponent(String(u.id));
+        const nRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/candidatos?coach_id=eq.${id}&created_at=gte.${encodeURIComponent(sinceISO)}&select=nombre,email,created_at&order=created_at.desc`,
+          { headers: sbHeaders },
+        );
+        const nuevos: Array<Record<string, unknown>> = nRes.ok ? await nRes.json() : [];
+
+        const tRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/candidatos?coach_id=eq.${id}&or=(activo.is.null,activo.eq.true)&select=id`,
+          { headers: { ...sbHeaders, Prefer: "count=exact", Range: "0-0" } },
+        );
+        const cr = tRes.headers.get("content-range") || "0/0";
+        const totalActivos = parseInt(cr.split("/")[1] || "0", 10) || 0;
+
+        const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
+          body: JSON.stringify({
+            to: email,
+            to_name: String(u.nombre || ""),
+            subject: "📋 Tu resumen semanal — Pathway",
+            html: digestHtml(String(u.nombre || ""), nuevos, totalActivos),
+            reply_to: "hi@pathwaycareercoach.com",
+          }),
+        });
+        if (emailRes.ok) result.enviados++;
+        else result.errores.push(`${email}: send-email ${emailRes.status}`);
+      } catch (e) {
+        result.errores.push(`${email}: ${String(e).slice(0, 120)}`);
+      }
+    }
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e).slice(0, 200) }), {
+      status: 500, headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return new Response(JSON.stringify(result), {
+    status: 200, headers: { "Content-Type": "application/json" },
+  });
+});
