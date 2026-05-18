@@ -842,20 +842,20 @@ function viewClienteDetalle(c){
       var nd=0, rows="";
       arr.forEach(function(tx,i){
         var fi=off+i, ok=!!ACTS[fi]; if(ok) nd++;
-        rows+="<label for='av-"+fi+"' style='display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
-          "<input type='checkbox' id='av-"+fi+"'"+(ok?" checked":"")+" style='width:17px;height:17px;accent-color:var(--pw-bosque);flex-shrink:0;cursor:pointer'>"+
-          "<span style='font-size:13px;color:var(--pw-carbon);line-height:1.5'>"+esc(tx)+"</span></label>";
+        rows+="<div style='display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
+          "<input type='checkbox' id='av-"+fi+"'"+(ok?" checked":"")+" title='Marcar como hecho' style='width:17px;height:17px;accent-color:var(--pw-bosque);flex-shrink:0;cursor:pointer'>"+
+          "<input id='avt-"+wi+"-"+i+"' class='cp-form-input' style='flex:1;font-size:13px;padding:8px 10px' value=\""+esc(tx)+"\">"+
+          "<button class='cp-icon-btn' title='Quitar' data-act='av-del' data-w='"+wi+"' data-i='"+i+"' data-id='"+esc(c.id)+"'>"+svg(IC.close,13)+"</button></div>";
       });
       off+=arr.length; totD+=nd; totN+=arr.length;
       boxes+="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(w[0])+"<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Etapa "+(wi+1)+" · "+nd+"/"+arr.length+"</span></div><div class='cp-card-pad'>"+
-        (arr.length?rows:"<div style='font-size:13px;color:var(--pw-text-soft)'>Sin acciones en esta etapa — editá el <strong>Análisis</strong>.</div>")+"</div></div>";
+        (arr.length?rows:"<div style='font-size:13px;color:var(--pw-text-soft);padding:6px 0 10px'>Sin acciones todavía. Agregá la primera abajo 👇</div>")+
+        "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px;margin-top:10px' data-act='av-add' data-w='"+wi+"' data-id='"+esc(c.id)+"'>"+svg(IC.plus,12)+" Agregar acción</button>"+
+        "</div></div>";
     });
-    if(!totN){
-      body=etapaCard+"<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:40px 24px;color:var(--pw-text-soft);font-size:13px'>"+
-        "Todavía no hay un plan. Generalo o escribilo en la pestaña <strong>Análisis</strong> y acá vas a poder marcar el avance.</div></div>";
-    } else {
-      var pctA=Math.round(totD/totN*100);
+    {
+      var pctA=totN?Math.round(totD/totN*100):0;
       body=etapaCard+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Avance del cliente<span class='dot'>.</span></h3>"+
           "<span class='cp-eyebrow'>"+totD+"/"+totN+" · "+pctA+"%</span></div>"+
           "<div class='cp-card-pad'><div class='cp-ob-bar'><span style='width:"+pctA+"%'></span></div>"+
@@ -2210,7 +2210,7 @@ document.addEventListener("click", function(ev){
       .then(function(r){ if(!r.ok) throw 0;
         CLIENTS.forEach(function(x){ if(String(x.id)===String(esid)){ x.week=ewk; if(x.raw) x.raw.etapas=JSON.stringify(enames); } });
         state.cliWeek=null; toast("Etapa y nombres guardados ✓ — el cliente lo ve"); render(); })
-      .catch(function(){ alert("No se pudo guardar la etapa."); });
+      .catch(function(){ alert("No se pudo guardar la etapa. Falta la columna en Supabase — corré el SQL: ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS etapas TEXT;"); });
     return;
   }
   if(act==="gen-informe"){
@@ -2386,20 +2386,52 @@ document.addEventListener("click", function(ev){
     }
     return;
   }
+  if(act==="av-add"){
+    var aaid=el.getAttribute("data-id"), aaw=parseInt(el.getAttribute("data-w"),10);
+    var aac=CLIENTS.filter(function(x){return String(x.id)===String(aaid);})[0]; if(!aac) return;
+    _avCollect(aac);
+    var aakey=["cv_acciones","linkedin_acciones","networking_acciones","preguntas"][aaw];
+    var aaArr=(aac.inf&&aac.inf.d&&aac.inf.d[aakey]);
+    if(Object.prototype.toString.call(aaArr)!=="[object Array]") aaArr=[];
+    aaArr.push("Nueva acción");
+    aac.inf.d[aakey]=aaArr;
+    render();
+    return;
+  }
+  if(act==="av-del"){
+    var adid=el.getAttribute("data-id"), adw=parseInt(el.getAttribute("data-w"),10), adi=parseInt(el.getAttribute("data-i"),10);
+    var adc=CLIENTS.filter(function(x){return String(x.id)===String(adid);})[0]; if(!adc) return;
+    var adKey=["cv_acciones","linkedin_acciones","networking_acciones","preguntas"][adw];
+    var adSrc=(adc.inf&&adc.inf.d&&adc.inf.d[adKey]);
+    if(Object.prototype.toString.call(adSrc)!=="[object Array]") adSrc=[];
+    var adInp=document.getElementById("avt-"+adw+"-"+adi);
+    if(adInp) adInp.value="";
+    _avCollect(adc);
+    render();
+    return;
+  }
   if(act==="avance-save"){
     var avid=el.getAttribute("data-id"); if(!avid) return;
     var avc=CLIENTS.filter(function(x){return String(x.id)===String(avid);})[0]; if(!avc) return;
-    var avD=(avc.inf&&avc.inf.d)||{};
-    var avOrder=["cv_acciones","linkedin_acciones","networking_acciones","preguntas"];
-    var avA=[], avOff=0;
-    avOrder.forEach(function(k){
-      var arr=avD[k]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
-      for(var i=0;i<arr.length;i++){ var cb=document.getElementById("av-"+(avOff+i)); avA[avOff+i]=!!(cb&&cb.checked); }
-      avOff+=arr.length;
-    });
-    _sbw("candidatos?id=eq."+encodeURIComponent(avid),"PATCH",{acciones_progreso:JSON.stringify(avA)})
-      .then(function(r){ if(!r.ok) throw 0; if(avc.raw) avc.raw.acciones_progreso=JSON.stringify(avA); toast("Avance guardado ✓ — sincronizado con el cliente"); render(); })
-      .catch(function(){ alert("No se pudo guardar el avance."); });
+    var avRes=_avCollect(avc);
+    var saveProg=function(){
+      return _sbw("candidatos?id=eq."+encodeURIComponent(avid),"PATCH",{acciones_progreso:JSON.stringify(avRes.prog)})
+        .then(function(r){ if(!r.ok) throw 0; if(avc.raw) avc.raw.acciones_progreso=JSON.stringify(avRes.prog); });
+    };
+    if(avc.inf&&avc.inf.id){
+      _sbw("informes?id=eq."+encodeURIComponent(avc.inf.id),"PATCH",{data:JSON.stringify(avRes.d)})
+        .then(function(r){ if(!r.ok) throw 0; return saveProg(); })
+        .then(function(){ toast("Avance guardado ✓ — el cliente lo ve"); render(); })
+        .catch(function(){ alert("No se pudo guardar el avance. ¿Aplicaste el SQL de candidatos (etapas, acciones_progreso)?"); });
+    } else if(avc.email){
+      var aib={ email:avc.email, data:JSON.stringify(avRes.d) }; if(REAL&&RME&&RME.rol!=="admin") aib.coach_id=RME.id;
+      _sbw("informes","POST",aib)
+        .then(function(r){ if(!r.ok) throw 0; return saveProg(); })
+        .then(function(){ toast("Avance guardado ✓ — el cliente lo ve"); loadReal(); })
+        .catch(function(){ alert("No se pudo guardar el avance. ¿Aplicaste el SQL de candidatos (etapas, acciones_progreso)?"); });
+    } else {
+      saveProg().then(function(){ toast("Avance guardado ✓"); render(); }).catch(function(){ alert("No se pudo guardar el avance."); });
+    }
     return;
   }
   if(act==="ses-add"){
@@ -2578,6 +2610,32 @@ var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
 var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
 function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0]; return (c&&c.raw)||null; }
 function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
+// Lee los inputs editables del tab Avance (texto + checkbox) y reconstruye
+// las 4 listas del informe + el progreso alineado. Vacío = se elimina.
+function _avCollect(avc){
+  var avD=(avc&&avc.inf&&avc.inf.d)||{};
+  var order=[["cv_acciones",0],["linkedin_acciones",1],["networking_acciones",2],["preguntas",3]];
+  var newD={}; for(var k in avD){ if(avD.hasOwnProperty(k)) newD[k]=avD[k]; }
+  var prog=[], off=0;
+  order.forEach(function(p){
+    var key=p[0], wi=p[1];
+    var src=avD[key]; if(Object.prototype.toString.call(src)!=="[object Array]") src=[];
+    var kept=[];
+    for(var i=0;i<src.length;i++){
+      var ti=document.getElementById("avt-"+wi+"-"+i);
+      var txt=ti?(""+ti.value).trim():(""+(src[i]||"")).trim();
+      var cb=document.getElementById("av-"+(off+i));
+      var chk=cb?!!cb.checked:false;
+      if(!txt) continue;
+      kept.push(txt); prog.push(chk);
+    }
+    off+=src.length;
+    newD[key]=kept;
+  });
+  if(avc.inf) avc.inf.d=newD; else avc.inf={ d:newD };
+  if(avc.raw) avc.raw.acciones_progreso=JSON.stringify(prog);
+  return { d:newD, prog:prog };
+}
 function _chatArr(s){ try{ var a=JSON.parse(s||"[]"); return Object.prototype.toString.call(a)==="[object Array]"?a:[]; }catch(e){ return []; } }
 function _isChat(s){ if(!s) return false; var t=(""+s).trim(); if(t.charAt(0)!=="[") return false; try{ return Object.prototype.toString.call(JSON.parse(t))==="[object Array]"; }catch(e){ return false; } }
 function _sha256(txt){ return crypto.subtle.digest("SHA-256",new TextEncoder().encode(""+txt)).then(function(b){ return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join(""); }); }
