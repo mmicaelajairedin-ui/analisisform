@@ -402,6 +402,7 @@ input,textarea,select{font-family:inherit;color:inherit;}
   .cp-side-nav-item{ font-size:9px; }
 }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -411,7 +412,8 @@ input,textarea,select{font-family:inherit;color:inherit;}
 
 /* ═══ Data (port of v2-data.jsx) ═══ */
 function makeAvatar(name, hueOverride){
-  var initials = name.trim().split(/\s+/).map(function(p){return p[0];}).slice(0,2).join("").toUpperCase();
+  name = (""+(name||"")).trim() || "·";
+  var initials = name.split(/\s+/).map(function(p){return p[0];}).slice(0,2).join("").toUpperCase();
   var hash = name.split("").reduce(function(a,ch){return a+ch.charCodeAt(0);},0);
   var hues = [150,130,95,65,25,5,175,110];
   var hue = hueOverride!=null ? hueOverride : hues[hash%hues.length];
@@ -425,6 +427,12 @@ function makeAvatar(name, hueOverride){
     "<text x='50' y='63' font-family='Inter,system-ui,sans-serif' font-size='40' font-weight='600' fill='white' text-anchor='middle'>"+initials+"</text>"+
     "</svg>";
   return "data:image/svg+xml;utf8,"+encodeURIComponent(svg);
+}
+// <img> que cae a iniciales si no hay foto o la foto está rota
+function avImg(src, name, attrs){
+  var fb = makeAvatar(name);
+  var s = (src && (""+src).trim()) ? src : fb;
+  return "<img src=\""+esc(s)+"\" onerror=\"this.onerror=null;this.src='"+fb+"'\" alt=\""+esc(name||"")+"\" "+(attrs||"")+">";
 }
 
 var COACH = { name:"Micaela Jairedin", firstName:"Micaela", role:"Career Coach", plan:"Pro",
@@ -496,6 +504,9 @@ var state = {
   cliWeek: null,
   cliVis: { cv:true, carta:true, linkedin:true, recursos:true, sesiones:true },
   newOpen: false,
+  mail: { open:false, to:"", subj:"", body:"" },
+  newPass: "",
+  cliPass: "",
   pathwayOptIn: false,
   services: [
     { name:"Mentoría 4 semanas", desc:"Programa completo · 4 sesiones 1:1 + acceso al portal", price:480, unit:"/programa" },
@@ -539,7 +550,7 @@ function viewSidebar(){
     "<a href='#' class='cp-side-brand' data-act='nav:resumen'>"+
       "<svg width='24' height='24' viewBox='0 0 100 100' aria-hidden='true'><polygon points='10,82 32,52 54,82' fill='#52B788'/><polygon points='34,82 58,28 82,82' fill='#FAFDF9'/><circle cx='58' cy='22' r='5' fill='#E9C46A'/></svg>"+
       "<span class='cp-side-brand-word'>pathway<span style='color:#52B788'>.</span></span></a>"+
-    "<div class='cp-side-coach'><img src='"+COACH.photo+"' alt='"+esc(COACH.name)+"'>"+
+    "<div class='cp-side-coach'>"+avImg(COACH.photo,COACH.name,"")+
       "<div style='min-width:0'><div class='cp-side-coach-name'>"+esc(COACH.name)+"</div>"+
       "<div class='cp-side-coach-role'>"+esc(COACH.role)+"<span class='cp-side-plan'>"+(state.plan==="pro"?"Pro":"Basic")+"</span></div></div></div>"+
     "<nav class='cp-side-nav'>"+nav+"</nav>"+
@@ -587,7 +598,7 @@ function viewResumen(){
         "<div style='font-family:var(--pw-serif);font-size:17px;color:var(--pw-carbon);line-height:1.3'>"+_nxTxt+"</div>"+
         (_calU?"<a href='"+esc(_calU)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='margin-top:6px;text-decoration:none'>Agendar sesión</a>":"")+
       "</div></div></div>";
-  return "<div class='cp-greet'><img src='"+COACH.photo+"' alt='"+esc(COACH.name)+"'>"+
+  return "<div class='cp-greet'>"+avImg(COACH.photo,COACH.name,"")+
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+" "+emoji+"</h1>"+
       "<div class='cp-greet-sub'>Tienes "+pendingReview+" entregables pendientes"+(_nx?" · próxima reunión: "+_nxTxt:"")+".</div></div></div>"+
     calCard+
@@ -788,22 +799,27 @@ function viewClienteDetalle(c){
         "<div class='cp-card-pad'>"+hist+"</div></div>";
   } else if(t==="mensajes"){
     var fn=(""+(c.name||"")).split(" ")[0], cn=COACH.name||"tu coach";
+    var pro=isProV();
     var msgs=[
       ["Bienvenida","Hola "+fn+", soy "+cn+", tu coach en Pathway. ¡Bienvenido/a! En breve te comparto tu acceso y arrancamos el proceso."],
-      ["Acceso al portal","Hola "+fn+", este es el acceso a tu portal: "+portalUrl+" — ahí vas a ver tu CV, tu informe y los recursos de cada semana."],
-      ["CV listo","Hola "+fn+", tu CV ya está listo en el portal. Revisalo y decime si querés ajustar algo antes de enviarlo."],
-      ["Recordatorio de sesión","Hola "+fn+", te recuerdo nuestra próxima sesión. ¿Te queda bien el horario? Cualquier cosa, avisame."],
+      ["Tu acceso al portal","Hola "+fn+", este es el acceso a tu portal: "+portalUrl+" — ahí verás tu CV, tu informe y los recursos de cada semana."],
+      ["Tu CV está listo","Hola "+fn+", tu CV ya está listo en el portal. Revísalo y dime si quieres ajustar algo antes de enviarlo."],
+      ["Recordatorio de sesión","Hola "+fn+", te recuerdo nuestra próxima sesión. ¿Te queda bien el horario? Cualquier cosa, avísame."],
       ["Nueva semana","Hola "+fn+", arrancamos una nueva semana del proceso. Te dejé nuevos recursos y tareas en tu portal."],
-      ["Informe listo","Hola "+fn+", ya publiqué tu informe de diagnóstico en el portal. Te recomiendo leerlo antes de la próxima sesión."]
+      ["Tu informe está listo","Hola "+fn+", ya publiqué tu informe de diagnóstico en el portal. Te recomiendo leerlo antes de la próxima sesión."]
     ];
     var mc=msgs.map(function(m){
       var enc=encodeURIComponent(m[1]);
+      var sendBtn = pro
+        ? "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='msg-send' data-id='"+esc(c.id)+"' data-sub='"+esc(encodeURIComponent(m[0]))+"' data-msg='"+esc(enc)+"'>"+svg(IC.extLink,12)+" Enviar email</button>"
+        : "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px;opacity:.85' data-act='msg-send' data-id='"+esc(c.id)+"'>Enviar email "+proBadge()+"</button>";
       return "<div class='cp-card' style='box-shadow:none;border:1px solid var(--pw-border)'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
         "<div style='font-size:13px;font-weight:700;color:var(--pw-carbon)'>"+esc(m[0])+"</div>"+
         "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.5;background:var(--pw-niebla-2);border-radius:10px;padding:12px 14px'>"+esc(m[1])+"</div>"+
         "<div style='display:flex;gap:8px;flex-wrap:wrap'>"+
+          sendBtn+
           "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc("https://wa.me/?text="+enc)+"'>"+svg(IC.wa,13)+" WhatsApp</button>"+
-          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc("mailto:"+(c.email||"")+"?subject="+encodeURIComponent("Pathway")+"&body="+enc)+"'>Email</button>"+
+          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc("mailto:"+(c.email||"")+"?subject="+encodeURIComponent(m[0])+"&body="+enc)+"'>Email manual</button>"+
           "<button class='cp-icon-btn' data-act='copy' data-url='"+esc(m[1])+"' title='Copiar'>"+svg(IC.copy,15)+"</button>"+
         "</div></div></div>";
     }).join("");
@@ -815,6 +831,10 @@ function viewClienteDetalle(c){
           "<button class='cp-btn cp-btn-primary' style='margin-top:6px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Ver planes →</button></div></div>"
       : "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
+    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div>"+
+      "<div class='cp-card-pad'><p style='font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.55'><strong>Enviar email</strong> manda el mensaje directo al cliente con tu nombre y tu marca — es una función "+(pro?"Pro (activa)":"Pro")+". WhatsApp, email manual y copiar están siempre disponibles.</p></div>"+
+      "<div class='cp-card-pad' style='padding-top:0;display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
   } else if(t==="gestion"){
     var weekChips=[1,2,3,4].map(function(n){return "<button class='cp-chip "+(wk===n?"is-on":"")+"' data-act='cliweek:"+n+"'>Semana "+n+"</button>";}).join("");
     var visItems=[["cv","CV"],["carta","Carta de presentación"],["linkedin","LinkedIn"],["recursos","Recursos"],["sesiones","Sesiones"]];
@@ -842,20 +862,43 @@ function viewClienteDetalle(c){
           "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(fotoWa)+"'>Mensaje al cliente</button>"+
           "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='cli-archive' data-id='"+esc(c.id)+"'>Archivar cliente</button></div></div></div>";
   } else {
+    var rw=c.raw||{};
+    var rvf=function(k){ return esc(rw[k]!=null?(""+rw[k]):""); };
     function fr(k,v,id){ return "<div class='cp-form-row'><label class='cp-form-label'>"+k+"</label><input id='"+id+"' class='cp-form-input' value=\""+v+"\"></div>"; }
+    function ftA(k,v,id,ph){ return "<div class='cp-form-row'><label class='cp-form-label'>"+k+"</label><textarea id='"+id+"' class='cp-form-textarea' placeholder='"+esc(ph||"")+"'>"+v+"</textarea></div>"; }
+    var obst=esc(((rw.obstaculos||"")+"").split("|").filter(Boolean).join("\n"));
+    var accUrl="https://pathwaycareercoach.com/cliente.html";
     body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Datos del cliente<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Editable"+(REAL?"":" · ejemplo")+"</span></div>"+
+        "<span class='cp-eyebrow'>Del formulario · editable"+(REAL?"":" · ejemplo")+"</span></div>"+
         "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:16px'>"+
           "<div class='cp-form-row-2'>"+fr("Nombre",esc(c.name),"cf-nombre")+fr("Email",esc(c.email||""),"cf-email")+"</div>"+
-          "<div class='cp-form-row'>"+fr("Rol / cargo",esc(c.role),"cf-cargo")+"</div>"+
-          "<span class='cp-form-hint'>Situación, objetivo y demás respuestas del formulario se editan desde tu panel actual.</span>"+
+          "<div class='cp-form-row-2'>"+fr("Rol / cargo",esc(c.role),"cf-cargo")+fr("Rol que busca",rvf("rol"),"cf-rol")+"</div>"+
+          "<div class='cp-form-row-2'>"+fr("Situación",rvf("situacion"),"cf-situacion")+fr("Urgencia",rvf("urgencia"),"cf-urgencia")+"</div>"+
+          "<div class='cp-form-row-2'>"+fr("Sector",rvf("sector"),"cf-sector")+fr("Experiencia",esc(rw.exp!=null?(""+rw.exp):(rw.experiencia||"")),"cf-exp")+"</div>"+
+          "<div class='cp-form-row-2'>"+fr("Ciudad",esc(rw.ciudad||rw.geo||rw.ubicacion||""),"cf-ciudad")+fr("Modalidad",rvf("modalidad"),"cf-modalidad")+"</div>"+
+          "<div class='cp-form-row-2'>"+fr("Educación",rvf("educacion"),"cf-educacion")+fr("Idiomas",esc(rw.idiomas||rw.idioma||""),"cf-idiomas")+"</div>"+
+          "<div class='cp-form-row'>"+fr("LinkedIn",rvf("linkedin"),"cf-linkedin")+"</div>"+
+          ftA("Objetivo",rvf("objetivo"),"cf-objetivo")+
+          ftA("Habilidades",rvf("habilidades"),"cf-habilidades")+
+          ftA("Logro destacado",rvf("logro"),"cf-logro")+
+          ftA("Algo importante fuera del CV",rvf("extra"),"cf-extra")+
+          ftA("Obstáculos (uno por línea)",obst,"cf-obstaculos","Cada línea es un obstáculo")+
           "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'><button class='cp-btn cp-btn-ghost' data-act='clidet:perfil'>Descartar</button><button class='cp-btn cp-btn-primary' data-act='cli-save' data-id='"+esc(c.id)+"'>Guardar cambios</button></div>"+
+        "</div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Acceso del cliente<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Login al portal</span></div>"+
+        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
+          "<div style='font-size:13px;color:var(--pw-text-soft)'>Usuario: <strong style='color:var(--pw-carbon)'>"+esc(c.email||"—")+"</strong> · entra en <code>"+esc(accUrl)+"</code></div>"+
+          "<div class='cp-form-row'><label class='cp-form-label'>Nueva contraseña</label>"+
+            "<input id='cf-newpass' class='cp-form-input' value=\""+esc(state.cliPass||"")+"\" placeholder='Mínimo 6 caracteres'>"+
+            "<span class='cp-form-hint'>La contraseña está cifrada y no se puede ver. Pon una nueva y se la reenvías al cliente.</span></div>"+
+          "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cli-pass' data-id='"+esc(c.id)+"'>Restablecer y preparar email</button></div>"+
         "</div></div>";
   }
 
   return "<header class='cp-topbar' style='align-items:center'>"+
       "<div style='display:flex;align-items:center;gap:16px;min-width:0'>"+
-        "<img src='"+c.photo+"' alt='"+esc(c.name)+"' style='width:60px;height:60px;border-radius:50%;object-fit:cover;flex-shrink:0;box-shadow:var(--pw-shadow-sm)'>"+
+        avImg(c.photo,c.name,"style='width:60px;height:60px;border-radius:50%;object-fit:cover;flex-shrink:0;box-shadow:var(--pw-shadow-sm)'")+
         "<div style='min-width:0'>"+
           "<button data-act='cli-back' style='background:none;border:none;cursor:pointer;padding:0;color:var(--pw-bosque);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;display:inline-flex;align-items:center;gap:4px;margin-bottom:4px'>‹ Volver a Clientes</button>"+
           "<h1 class='cp-h1'>"+esc(c.name)+"<span class='dot'>.</span></h1>"+
@@ -919,7 +962,7 @@ function viewClientes(){
     var rpCls = c.reportState==="published"?"is-published":"is-pending";
     var rpTxt = c.reportState==="published"?"publicado":"pendiente";
     return "<article class='cp-client' data-act='cli-open:"+c.id+"' data-s='"+esc(((c.name||"")+" "+(c.email||"")+" "+(c.role||"")).toLowerCase())+"'"+(isPw?" style='border-color:var(--pw-border-strong)'":"")+">"+
-      "<header class='cp-client-head'><img class='cp-client-photo' src='"+c.photo+"' alt='"+esc(c.name)+"'>"+
+      "<header class='cp-client-head'>"+avImg(c.photo,c.name,"class='cp-client-photo'")+
         "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+"</div><div class='cp-client-role'>"+role+"</div></div>"+medal+"</header>"+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
       "<div class='cp-week'><span class='cp-week-label'>Sem "+c.week+"/4</span><span class='cp-week-dots'>"+dots+"</span></div>"+
@@ -975,11 +1018,14 @@ function cfgProfile(){
   var tit=v("titulo", REAL?"":"Career Coach · 8 años en HR & Recruiting");
   var bio=v("bio", REAL?"":"Ayudo a profesionales a encontrar el siguiente paso de su carrera.");
   var li=v("linkedin", REAL?"":"linkedin.com/in/micaelajairedin"), ig=v("instagram", REAL?"":"@micaela.coach");
+  var cu=v("calendly_url",""), ce=v("calendar_embed_url","");
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tu perfil público<span class='dot'>.</span></h3>"+
     (slug?"<a href='https://pathwaycareercoach.com/coach/"+esc(slug)+"' target='_blank' rel='noopener' style='font-size:12px;color:var(--pw-bosque);font-weight:600;display:inline-flex;align-items:center;gap:6px'>Ver mi página "+svg(IC.extLink,12)+"</a>":"")+"</div>"+
     "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:18px'>"+
-      "<div class='cp-photo-pick'><img src='"+COACH.photo+"' alt='"+esc(nm)+"'>"+
-        "<div class='cp-photo-actions'><div style='font-size:12px;color:var(--pw-text-soft)'>La foto se gestiona desde tu panel actual.</div></div></div>"+
+      "<div class='cp-photo-pick'>"+avImg(COACH.photo,nm,"id='cfp-foto-prev'")+
+        "<div class='cp-photo-actions'>"+
+          "<label class='cp-btn cp-btn-ghost' style='cursor:pointer'>Cambiar foto<input id='cfp-foto' type='file' accept='image/*' style='display:none'></label>"+
+          "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:6px'>JPG o PNG · máx 2 MB</div></div></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Nombre completo</label><input id='cfp-nombre' class='cp-form-input' value=\""+esc(nm)+"\"></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>URL de tu perfil (slug)</label><input id='cfp-slug' class='cp-form-input' value=\""+esc(slug)+"\" placeholder='tu-nombre'>"+
         "<span class='cp-form-hint'>Tu link público: <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code></span></div>"+
@@ -989,6 +1035,11 @@ function cfgProfile(){
         "<span class='cp-form-hint'>Aparece en tu página pública.</span></div>"+
       "<div class='cp-form-row-2'><div class='cp-form-row'><label class='cp-form-label'>LinkedIn</label><input id='cfp-li' class='cp-form-input' value=\""+esc(li)+"\"></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Instagram</label><input id='cfp-ig' class='cp-form-input' value=\""+esc(ig)+"\"></div></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Enlace de Calendly</label>"+
+        "<input id='cfp-cal' class='cp-form-input' value=\""+esc(cu)+"\" placeholder='https://calendly.com/tu-usuario'>"+
+        "<span class='cp-form-hint'>Tus clientes agendan acá y se ve tu agenda en Resumen.</span></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Calendly para incrustar (opcional)</label>"+
+        "<input id='cfp-cal-emb' class='cp-form-input' value=\""+esc(ce)+"\" placeholder='https://calendly.com/tu-usuario/30min'></div>"+
       "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:6px'>"+
         "<button class='cp-btn cp-btn-ghost' data-act='cfg:profile'>Descartar</button>"+
         "<button class='cp-btn cp-btn-primary' data-act='cfg-save-profile'>Guardar cambios</button></div>"+
@@ -1020,9 +1071,76 @@ function cfgServices(){
       "<p class='cp-reassurance' style='margin-top:6px'><strong>Tú defines el precio.</strong> Es lo que paga el cliente.</p>"+
       "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cfg-save-services'>Guardar servicios</button></div></div></div>";
 }
+// Plan helper — fiel a panel.html getPlan(): admin o configuracion.es_pro_vitalicio o configuracion.plan==='pro' → Pro
+function isProV(){
+  if(!REAL) return state.plan==="pro";
+  if(RADMIN) return true;
+  var c=RCFG||{};
+  if(c.es_pro_vitalicio===true) return true;
+  return c.plan==="pro";
+}
+function proBadge(){ return "<span style='display:inline-flex;align-items:center;font-size:10px;font-weight:800;letter-spacing:.6px;color:#8E7A35;background:rgba(233,196,106,.22);padding:2px 8px;border-radius:100px;text-transform:uppercase;margin-left:8px'>Pro</span>"; }
+// Firma del coach al pie del email — Opción 1: foto/iniciales con anillo,
+// nombre, rol · Pathway, etiquetas Email / Web y badge "Powered by Pathway"
+function sigInitial(){ var n=(""+((COACH&&COACH.name)||"·")).trim(); return (n.charAt(0)||"·").toUpperCase(); }
+function sigWeb(){ var s=(COACH&&COACH.slug)||""; return s ? ("pathwaycareercoach.com/"+s) : "pathwaycareercoach.com"; }
+function sigBlock(attached){
+  // El color de marca en la firma es white-label → solo Pro. Basic = verde Pathway.
+  var ac = isProV() ? (state.brandAccent || "#2D6A4F") : "#2D6A4F";
+  var nm = (COACH&&COACH.name)||"Tu coach";
+  var role = (COACH&&COACH.role)||"Career Coach";
+  var em = (COACH&&COACH.email)||"";
+  var web = sigWeb();
+  var ph = (COACH&&COACH.photo)||"";
+  var isPhoto = ph && (""+ph).indexOf("data:image/svg+xml")!==0;
+  var avatar = isPhoto
+    ? "<img src=\""+esc(ph)+"\" onerror=\"this.onerror=null;this.src='"+makeAvatar(nm)+"'\" style='width:52px;height:52px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid "+ac+"' alt=''>"
+    : "<div style='width:52px;height:52px;border-radius:50%;background:"+ac+";color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;font-weight:700;border:2px solid "+ac+"'>"+esc(sigInitial())+"</div>";
+  var lbl = "display:inline-block;min-width:42px;color:#9E9E9E;font-size:11px";
+  var val = "color:#5A6A60;font-size:12px";
+  var box = attached
+    ? "border-top:1px solid #EDEAE8;border-left:3px solid "+ac+";background:#fff;padding:16px 18px;"
+    : "border:1px solid #EDEAE8;border-left:3px solid "+ac+";background:#fff;border-radius:10px;padding:16px 18px;";
+  return "<div style='"+box+"display:flex;gap:14px;align-items:flex-start'>"+avatar+
+    "<div style='min-width:0'>"+
+      "<div style='font-size:15px;font-weight:700;color:#1B2E26'>"+esc(nm)+"</div>"+
+      "<div style='font-size:12px;color:#9E9E9E;margin:2px 0 8px'>"+esc(role)+" · Pathway</div>"+
+      (em?"<div style='margin-bottom:3px'><span style='"+lbl+"'>Email</span><span style='"+val+"'>"+esc(em)+"</span></div>":"")+
+      "<div style='margin-bottom:10px'><span style='"+lbl+"'>Web</span><span style='"+val+"'>"+esc(web)+"</span></div>"+
+      "<span style='display:inline-block;font-size:10px;font-weight:700;color:#2D6A4F;background:rgba(45,106,79,.10);padding:4px 10px;border-radius:100px'>Powered by Pathway</span>"+
+    "</div></div>";
+}
+function sigText(){
+  var nm=(COACH&&COACH.name)||"Tu coach", role=(COACH&&COACH.role)||"Career Coach", em=(COACH&&COACH.email)||"";
+  return "\n\n— "+nm+"\n"+role+" · Pathway"+(em?"\nEmail: "+em:"")+"\nWeb: "+sigWeb()+"\nPowered by Pathway";
+}
+function viewMailModal(){
+  var m=state.mail||{};
+  var pro=isProV();
+  return "<div data-act='mail-bg' style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:160;display:flex;align-items:center;justify-content:center;padding:20px'>"+
+    "<div data-act='mail-stop' style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:520px;max-width:100%;max-height:90vh;overflow:auto'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>Vista previa del email<span class='dot'>.</span></h3>"+
+        "<button class='cp-icon-btn' data-act='mail-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
+      "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
+        "<div style='font-size:12px;color:var(--pw-text-soft)'>Para: <strong style='color:var(--pw-carbon)'>"+esc(m.to||"")+"</strong></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Asunto</label><input id='mp-sub' class='cp-form-input' value=\""+esc(m.subj||"")+"\"></div>"+
+        "<div><div class='cp-form-label' style='margin-bottom:6px'>Mensaje</div>"+
+          "<div style='border:1px solid #EDEAE8;border-radius:12px;overflow:hidden'>"+
+            "<textarea id='mp-body' style='width:100%;box-sizing:border-box;min-height:150px;border:none;outline:none;font-size:13px;font-family:Inter,sans-serif;color:#2D2929;line-height:1.8;resize:vertical;background:#fff;padding:16px 20px'>"+esc(m.body||"")+"</textarea>"+
+            sigBlock(true)+
+          "</div><span class='cp-form-hint'>La firma se añade automáticamente al final.</span></div>"+
+        (pro?"":"<p class='cp-form-hint' style='color:#8E7A35'>Enviar el email desde el panel es una función Pro. Puedes copiar el texto y mandarlo por WhatsApp o tu correo.</p>")+
+        "<div style='display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding-top:4px'>"+
+          "<button class='cp-btn cp-btn-ghost' data-act='mail-close'>Cancelar</button>"+
+          "<button class='cp-btn cp-btn-ghost' data-act='mail-copy'>"+svg(IC.copy,13)+" Copiar texto</button>"+
+          (pro?"<button class='cp-btn cp-btn-primary' data-act='mail-send'>"+svg(IC.extLink,13)+" Enviar email</button>"
+              :"<button class='cp-btn cp-btn-ghost' style='opacity:.85' data-act='mail-send'>Enviar email "+proBadge()+"</button>")+
+        "</div>"+
+      "</div></div></div>";
+}
 function cfgBrand(){
-  if(state.plan!=="pro"){
-    return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Marca propia<span class='dot'>.</span></h3>"+
+  if(!isProV()){
+    return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Marca propia<span class='dot'>.</span>"+proBadge()+"</h3>"+
       "<span class='cp-eyebrow' style='color:var(--pw-text-muted)'>Disponible en Pro</span></div>"+
       "<div class='cp-card-pad' style='text-align:center;padding:44px 24px;display:flex;flex-direction:column;align-items:center;gap:12px'>"+
         "<span style='width:46px;height:46px;border-radius:50%;background:var(--pw-niebla-2);display:inline-flex;align-items:center;justify-content:center;color:var(--pw-bosque)'>"+
@@ -1036,15 +1154,21 @@ function cfgBrand(){
     var on = state.brandAccent===c;
     return "<button data-act='brand:"+c+"' style='width:38px;height:38px;border-radius:50%;background:"+c+";border:"+(on?"3px solid #fff":"2px solid transparent")+";box-shadow:"+(on?"0 0 0 2px "+c:"var(--pw-shadow-xs)")+";cursor:pointer;padding:0' aria-label='"+c+"'></button>";
   }).join("");
-  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Marca propia<span class='dot'>.</span></h3>"+
+  var logoU = (REAL && RCFG && RCFG.logo_url) ? RCFG.logo_url : "";
+  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Marca propia<span class='dot'>.</span>"+proBadge()+"</h3>"+
     "<span class='cp-eyebrow'>White-label</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:18px'>"+
+    "<p style='font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.55'>Tu color y tu logo reemplazan los de Pathway en el <strong>portal que ven tus clientes</strong>. (Solo Pro — en Basic el portal usa la marca Pathway.)</p>"+
     "<div class='cp-form-row'><label class='cp-form-label'>Color de acento</label>"+
       "<div style='display:flex;gap:10px;align-items:center'>"+sw+"</div>"+
-      "<span class='cp-form-hint'>Se aplica al portal de tus clientes y a tu página pública.</span></div>"+
-    "<div class='cp-form-row'><label class='cp-form-label'>Logo personalizado (opcional)</label>"+
-      "<div style='border:1.5px dashed var(--pw-border-input);border-radius:10px;padding:24px;text-align:center;color:var(--pw-text-soft);font-size:13px'>"+
-        "Arrastra tu logo aquí o <a href='#' style='color:var(--pw-bosque);font-weight:600'>selecciona un archivo</a>"+
-        "<div style='font-size:11px;margin-top:4px;color:var(--pw-text-muted)'>PNG o SVG · máx 1MB</div></div></div></div></div>";
+      "<span class='cp-form-hint'>El cliente lo ve en su portal y en tu página pública.</span></div>"+
+    "<div class='cp-form-row'><label class='cp-form-label'>URL de tu logo</label>"+
+      "<input id='cfb-logo' class='cp-form-input' value=\""+esc(logoU)+"\" placeholder='https://tu-sitio.com/logo.png'>"+
+      "<span class='cp-form-hint'>Pega el enlace de tu logo (PNG o SVG). Aparece arriba en el portal del cliente.</span></div>"+
+    (logoU?"<div style='display:flex;align-items:center;gap:10px'><span style='font-size:12px;color:var(--pw-text-soft)'>Vista previa:</span><img src='"+esc(logoU)+"' alt='logo' onerror=\"this.style.display='none'\" style='height:34px;width:auto;max-width:160px;object-fit:contain'></div>":"")+
+    "<div class='cp-form-row'><label class='cp-form-label'>Tu firma en los emails al cliente</label>"+sigBlock()+
+      "<span class='cp-form-hint'>Así se ve al pie de cada email que envías desde Mensajes. Si no tienes foto, salen tus iniciales.</span></div>"+
+    "<div style='display:flex;justify-content:flex-end;gap:10px'><button class='cp-btn cp-btn-primary' data-act='cfg-save-brand'>Guardar marca</button></div>"+
+    "</div></div>";
 }
 function cfgNotifs(){
   var toggles = [
@@ -1064,27 +1188,6 @@ function cfgNotifs(){
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Notificaciones<span class='dot'>.</span></h3>"+
     "<span class='cp-eyebrow'>Por email</span></div><div class='cp-card-pad'>"+rows+"</div></div>";
 }
-function cfgInteg(){
-  var cu=(RCFG&&RCFG.calendly_url)||"";
-  var ce=(RCFG&&RCFG.calendar_embed_url)||"";
-  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Calendario<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>Calendly</span></div>"+
-      "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:16px'>"+
-        "<p style='font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.5'>Pega tu enlace de Calendly para que tus clientes agenden sesiones y para ver tu agenda en <strong>Resumen</strong>.</p>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Tu enlace de Calendly</label>"+
-          "<input id='cfi-cal' class='cp-form-input' value=\""+esc(cu)+"\" placeholder='https://calendly.com/tu-usuario'></div>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Enlace para incrustar (opcional)</label>"+
-          "<input id='cfi-emb' class='cp-form-input' value=\""+esc(ce)+"\" placeholder='https://calendly.com/tu-usuario/30min'>"+
-          "<span class='cp-form-hint'>Si lo pones, el calendario se muestra incrustado en Resumen.</span></div>"+
-        "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
-          (cu?"<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(cu)+"'>"+svg(IC.extLink,13)+" Abrir Calendly</button>":"")+
-          "<button class='cp-btn cp-btn-primary' data-act='cfg-save-integ'>Guardar</button></div>"+
-      "</div></div>"+
-    "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Pagos<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>Stripe</span></div><div class='cp-card-pad'>"+
-      "<p style='font-size:13px;color:var(--pw-text-soft);margin:0 0 14px;line-height:1.5'>Tú cobras a tus clientes por fuera. Si activas clientes de Pathway, la comisión y los pagos se gestionan en <strong>Configuración › Plan y pagos</strong>.</p>"+
-      "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='https://dashboard.stripe.com'>"+svg(IC.extLink,12)+" Abrir Stripe</button></div></div>";
-}
 function cfgAccount(){
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Cuenta<span class='dot'>.</span></h3></div>"+
     "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:16px'>"+
@@ -1100,6 +1203,12 @@ function cfgAccount(){
       "<div><div class='cp-toggle-title' style='color:var(--pw-danger)'>Cerrar mi cuenta</div>"+
       "<div class='cp-toggle-desc'>Tus clientes pierden acceso a su portal. Tus datos se eliminan a los 30 días.</div></div>"+
       "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='open' data-url='"+esc("https://wa.me/34611256224?text="+encodeURIComponent("Hola, quiero solicitar el cierre de mi cuenta de coach en Pathway ("+((REAL&&COACH.email)||"")+")."))+"'>Solicitar cierre</button></div></div>";
+      "<div class='cp-form-row'><label class='cp-form-label'>Cambiar contraseña</label>"+
+        "<button class='cp-btn cp-btn-ghost' style='align-self:flex-start' data-act='open' data-url='"+esc(supportMail("Restablecer mi contraseña — Pathway"))+"'>Enviarme un link por email</button></div></div></div>"+
+    "<div class='cp-card' style='border-color:rgba(192,117,110,.25)'><div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:18px'>"+
+      "<div><div class='cp-toggle-title' style='color:var(--pw-danger)'>Cerrar mi cuenta</div>"+
+      "<div class='cp-toggle-desc'>Tus clientes pierden acceso a su portal. Tus datos se eliminan a los 30 días.</div></div>"+
+      "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='open' data-url='"+esc(supportMail("Cerrar mi cuenta — Pathway"))+"'>Cerrar cuenta</button></div></div>";
 }
 function cfgPlan(){
   if(REAL){
@@ -1114,6 +1223,8 @@ function cfgPlan(){
       ? "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap'>"+
           "<div><div class='cp-toggle-title'>Prueba gratuita</div><div class='cp-toggle-desc'>Te quedan <strong style='color:var(--pw-bosque)'>"+trialN+" días</strong> gratis · luego "+rPrice+"/mes.</div></div>"+
           "<button class='cp-btn cp-btn-primary' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Activar suscripción</button></div></div>"
+          "<div><div class='cp-toggle-title'>Prueba gratuita</div><div class='cp-toggle-desc'>Te quedan <strong style='color:var(--pw-bosque)'>"+trialN+" días</strong> gratis"+(rPrice!=="—"?" · luego "+rPrice+"/mes":"")+".</div></div>"+
+          "<button class='cp-btn cp-btn-primary' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(stripeUrl(pl==="pro"?"pro":"basic"))+"'>Activar suscripción</button></div></div>"
       : "";
     var actions = _vit
       ? "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Gestionar pagos</button>"
@@ -1125,6 +1236,8 @@ function cfgPlan(){
         "<div class='cp-plan-price'><strong>"+rPrice+"</strong> / mes"+(_vit?" · cortesía":"")+"</div>"+
         (meta?"<div class='cp-plan-meta'>"+meta+"</div>":"")+"</div>"+
         "<div class='cp-plan-actions'>"+actions+"</div></div>"+
+        "<div class='cp-plan-actions'>"+(pl==="pro"?"<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(supportMail("Gestionar mi plan — Pathway"))+"'>Gestionar plan</button>":"<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(stripeUrl("pro"))+"'>Mejorar a Pro</button>")+
+        "<button class='cp-plan-btn-mng' data-act='open' data-url='"+esc(supportMail("Cancelar suscripción — Pathway"))+"'>Cancelar suscripción</button></div></div>"+
       tCard+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Método de pago<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Suscripción</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
@@ -1153,13 +1266,14 @@ function cfgPlan(){
       "<td><code style='font-size:11px;color:var(--pw-text-muted)'>"+esc(i.ref)+"</code></td>"+
       "<td><span class='cp-bill-amount'>"+esc(i.amount)+"</span></td>"+
       "<td><span class='cp-bill-status is-paid'>Pagado</span></td>"+
-      "<td style='text-align:right;width:100px'><button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px'>"+svg(IC.download,12)+" PDF</button></td></tr>";
+      "<td style='text-align:right;width:100px'><button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='open' data-url='"+esc(supportMail("Factura "+i.ref+" — Pathway"))+"'>"+svg(IC.download,12)+" PDF</button></td></tr>";
   }).join("");
   var trialCard = trial>0
     ? "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap'>"+
         "<div><div class='cp-toggle-title'>Prueba gratuita</div>"+
         "<div class='cp-toggle-desc'>Te quedan <strong style='color:var(--pw-bosque)'>"+trial+" días</strong> gratis · luego "+planPrice+"/mes.</div></div>"+
         "<button class='cp-btn cp-btn-primary' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Activar suscripción ahora</button></div></div>"
+        "<button class='cp-btn cp-btn-primary' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(stripeUrl("basic"))+"'>Activar suscripción ahora</button></div></div>"
     : "";
   return planSwitch+
     "<div class='cp-plan-card'><div><div class='cp-plan-eyebrow'>Tu suscripción a Pathway</div>"+
@@ -1170,6 +1284,9 @@ function cfgPlan(){
         (isPro ? "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Cambiar de plan</button>"
                : "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Mejorar a Pro · €89/mes</button>")+
       "<button class='cp-plan-btn-mng' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Cancelar suscripción</button></div></div>"+
+        (isPro ? "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(supportMail("Cambiar de plan — Pathway"))+"'>Cambiar de plan</button>"
+               : "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(stripeUrl("pro"))+"'>Mejorar a Pro · €89/mes</button>")+
+      "<button class='cp-plan-btn-mng' data-act='open' data-url='"+esc(supportMail("Cancelar suscripción — Pathway"))+"'>Cancelar suscripción</button></div></div>"+
     trialCard+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Método de pago<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>Cargo a tu suscripción</span></div>"+
@@ -1177,6 +1294,7 @@ function cfgPlan(){
         "<div class='cp-pm-info'><div class='cp-pm-name'>Visa terminada en •••• 4242</div>"+
         "<div class='cp-pm-exp'>Vence 08/2027 · Titular: Micaela Jairedin</div></div>"+
         "<button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Actualizar tarjeta</button></div></div>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(supportMail("Actualizar mi tarjeta — Pathway"))+"'>Actualizar tarjeta</button></div></div>"+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial de facturas<span class='dot'>.</span></h3>"+
       "<a href='"+esc(STRIPE_PORTAL)+"' target='_blank' rel='noopener' style='font-size:12px;color:var(--pw-bosque);font-weight:600'>Ver todas →</a></div>"+
       "<table class='cp-bill-table'><tbody>"+invRows+"</tbody></table></div>";
@@ -1204,9 +1322,7 @@ function cfgPathway(){
   }
   if(REAL){
     return toggleCard+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tus precios para Pathway<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Precio − 20%</span></div><div class='cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>"+
-        "Configura tus servicios en <strong>Configuración › Servicios</strong> y aquí verás tu neto por cada uno (precio − 20%).</div></div>"+
+      cfgServices()+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Dónde y cuándo cobras<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Pagos de Pathway</span></div>"+
         "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
@@ -1239,18 +1355,22 @@ function cfgPathway(){
       "</div>"+
       "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div></div>";
   return toggleCard+pricesCard+earnings;
+      "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='https://dashboard.stripe.com'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div></div>";
+  return toggleCard+cfgServices()+pricesCard+earnings;
 }
 function viewConfig(){
+  if(state.cfg==="services") state.cfg="pathway"; // servicios ahora vive en Clientes de Pathway
+  if(state.cfg==="integ") state.cfg="profile";    // calendario ahora vive en Perfil público
   var secs = [
-    ["profile","Perfil público","cfgProfile"],["services","Servicios y precios","cfgServices"],
+    ["profile","Perfil público","cfgProfile"],
     ["brand","Marca propia","cfgBrand"],["plan","Mi plan","cfgBilling"],["pathway","Clientes de Pathway","navClientes"],
-    ["notifs","Notificaciones","cfgNotifs"],["integ","Calendario y pagos","cfgInteg"],["account","Cuenta","cfgAccount"]
+    ["notifs","Notificaciones","cfgNotifs"],["account","Cuenta","cfgAccount"]
   ];
   var nav = secs.map(function(s){
     return "<button class='cp-cfg-nav-item "+(state.cfg===s[0]?"is-on":"")+"' data-act='cfg:"+s[0]+"'>"+
       svg(IC[s[2]],15,"class='cp-cfg-nav-icon'")+"<span>"+s[1]+"</span></button>";
   }).join("");
-  var panels = { profile:cfgProfile, services:cfgServices, brand:cfgBrand, plan:cfgPlan, pathway:cfgPathway, notifs:cfgNotifs, integ:cfgInteg, account:cfgAccount };
+  var panels = { profile:cfgProfile, brand:cfgBrand, plan:cfgPlan, pathway:cfgPathway, notifs:cfgNotifs, account:cfgAccount };
   var body = (panels[state.cfg]||cfgProfile)();
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Configuración<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Tu perfil público, servicios, integraciones y preferencias.</div></div></header>"+
@@ -1424,13 +1544,13 @@ function viewAdmin(){
     var stars = c.rev
       ? "<span style='color:var(--pw-amanecer);letter-spacing:1px'>"+Array(c.rev.st+1).join("★")+"</span> <span style='font-size:11px;color:var(--pw-text-soft)'>"+esc(c.rev.txt)+"</span>"
       : "<span style='color:var(--pw-text-muted)'>—</span>";
-    var verCv = c.cv ? "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px'>Ver CV</button>" : "";
+    var verCv = c.cv ? "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px' data-act='open' data-url='"+esc("https://pathwaycareercoach.com/cv.html?email="+encodeURIComponent(c.em||""))+"'>Ver CV</button>" : "";
     return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.n)+"<div style='font-size:11px;color:var(--pw-text-muted);font-weight:400'>"+esc(c.em)+"</div></td>"+
       "<td style='color:var(--pw-text-soft)'>"+esc(c.f)+"</td>"+
       "<td>"+pill(c.org[0], c.org[1])+"</td>"+
       "<td>"+pill(c.acc[0], c.acc[1])+"</td>"+
       "<td>"+stars+"</td>"+
-      "<td style='text-align:right;white-space:nowrap'><button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px;margin-right:6px'>Reenviar acceso</button>"+verCv+"</td></tr>";
+      "<td style='text-align:right;white-space:nowrap'><button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px;margin-right:6px' data-act='open' data-url='"+esc("mailto:"+(c.em||"")+"?subject="+encodeURIComponent("Tu acceso a CV Express — Pathway")+"&body="+encodeURIComponent("Hola "+(c.n||"")+", aquí tienes tu acceso a CV Express: https://pathwaycareercoach.com/cv-express.html"))+"'>Reenviar acceso</button>"+verCv+"</td></tr>";
   }).join("");
   var payouts = [
     { n:"Micaela Jairedin", bruto:"€3.100", com:"−€620", neto:"€2.480", est:["En tránsito · 24 h","warn"], f:"17 may" },
@@ -1514,8 +1634,8 @@ function viewAdmin(){
         "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--pw-border)'>"+
           "<div style='font-size:12px;color:var(--pw-text-soft)'>Dar acceso de prueba a cambio de una reseña (no pasa por pago):</div>"+
           "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
-            "<input class='cp-form-input' style='flex:1;min-width:240px' placeholder='Email de la persona (o varios separados por coma)'>"+
-            "<button class='cp-btn cp-btn-primary'>"+svg(IC.plus,12)+" Dar acceso</button></div></div>"+
+            "<input id='cvx-access' class='cp-form-input' style='flex:1;min-width:240px' placeholder='Email de la persona (o varios separados por coma)'>"+
+            "<button class='cp-btn cp-btn-primary' data-act='cvx-grant'>"+svg(IC.plus,12)+" Dar acceso</button></div></div>"+
         "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:780px'><thead><tr>"+
           "<th>Persona</th><th>Fecha</th><th>Origen</th><th>Estado</th><th>Reseña</th><th style='text-align:right'>Acciones</th>"+
         "</tr></thead><tbody>"+cvxRows+"</tbody></table></div>"+
@@ -1578,6 +1698,9 @@ function viewNewModal(){
         "<div class='cp-form-row'><label class='cp-form-label'>Email</label><input id='nc-email' class='cp-form-input' placeholder='email@ejemplo.com'></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Rol / cargo</label><input id='nc-cargo' class='cp-form-input' placeholder='Ej: Product Manager'></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Contraseña de acceso (opcional, mín. 6)</label><input id='nc-pass' type='text' class='cp-form-input' placeholder='Si la dejás vacía, el cliente aún no podrá entrar al portal'><span class='cp-form-hint'>Crea su login al portal. Podés asignarla/cambiarla luego en la ficha → Gestión.</span></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Contraseña de acceso</label>"+
+          "<input id='nc-pass' class='cp-form-input' value=\""+esc(state.newPass||"")+"\" placeholder='Mínimo 6 caracteres'>"+
+          "<span class='cp-form-hint'>Con esto el cliente entra a su portal. Se la mandas en el email de acceso. Déjala vacía si aún no quieres darle acceso.</span></div>"+
         "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'>"+
           "<button class='cp-btn cp-btn-ghost' data-act='cli-modal-close'>Cancelar</button>"+
           "<button class='cp-btn cp-btn-primary' data-act='cli-create'>Crear cliente</button></div>"+
@@ -1592,7 +1715,8 @@ function render(){
       "<div class='cp-app'>"+viewSidebar()+
         "<div class='cp-main'><div class='cp-scroll'><div class='cp-container'>"+view+"</div></div></div>"+
         viewAsistente()+"</div>"+
-      (state.newOpen?viewNewModal():"");
+      (state.newOpen?viewNewModal():"")+
+      (state.mail&&state.mail.open?viewMailModal():"");
   }catch(err){
     document.getElementById("root").innerHTML=
       "<div style='max-width:560px;margin:60px auto;font-family:var(--pw-sans);color:var(--pw-text)'>"+
@@ -1623,11 +1747,46 @@ document.addEventListener("click", function(ev){
   if(act.indexOf("cfg:")===0){ state.cfg = act.slice(4); render(); return; }
   if(act==="cfg-save-profile"){
     var sl=_val("cfp-slug").trim().toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"");
-    saveCfg({ slug:sl, titulo:_val("cfp-titulo").trim(), bio:_val("cfp-bio").trim(), linkedin:_val("cfp-li").trim(), instagram:_val("cfp-ig").trim() }, { nombre:_val("cfp-nombre").trim() });
+    var pp={ slug:sl, titulo:_val("cfp-titulo").trim(), bio:_val("cfp-bio").trim(), linkedin:_val("cfp-li").trim(), instagram:_val("cfp-ig").trim(), calendly_url:_val("cfp-cal").trim(), calendar_embed_url:_val("cfp-cal-emb").trim() };
+    if(window._cfpFoto){ pp.foto_url=window._cfpFoto; COACH.photo=window._cfpFoto; }
+    saveCfg(pp, { nombre:_val("cfp-nombre").trim() });
+    window._cfpFoto=null;
     return;
   }
   if(act==="cfg-save-services"){ saveCfg({ servicios: state.services }); return; }
   if(act.indexOf("brand:")===0){ state.brandAccent = act.slice(6); if(REAL) saveCfg({ color_marca: act.slice(6) }); else render(); return; }
+  if(act==="cfg-save-brand"){
+    if(!isProV()){ alert("La marca propia es una función Pro (€89/mes). La activas en Configuración › Mi plan."); return; }
+    saveCfg({ color_marca: state.brandAccent, logo_url: _val("cfb-logo").trim() });
+    return;
+  }
+  if(act==="msg-send"){
+    var msid=el.getAttribute("data-id");
+    var msc=CLIENTS.filter(function(x){return String(x.id)===String(msid);})[0];
+    if(!msc||!msc.email){ alert("Este cliente no tiene email."); return; }
+    state.mail={ open:true, to:msc.email,
+      subj:decodeURIComponent(el.getAttribute("data-sub")||"Mensaje de tu coach"),
+      body:decodeURIComponent(el.getAttribute("data-msg")||"") };
+    render(); return;
+  }
+  if(act==="mail-bg"){ if(ev.target===el){ state.mail.open=false; render(); } return; }
+  if(act==="mail-stop"){ return; }
+  if(act==="mail-close"){ state.mail.open=false; render(); return; }
+  if(act==="mail-copy"){
+    try{ navigator.clipboard && navigator.clipboard.writeText(_val("mp-sub")+"\n\n"+_val("mp-body")+sigText()); }catch(e){}
+    toast("Texto copiado ✓"); return;
+  }
+  if(act==="mail-send"){
+    if(!isProV()){ alert("Enviar emails al cliente desde el panel es una función Pro (€89/mes). Puedes copiar el texto y mandarlo por WhatsApp o tu correo. La activas en Configuración › Mi plan."); return; }
+    if(!window.emailjs){ alert("No se pudo cargar el envío de email. Reintenta en un momento."); return; }
+    var mto=state.mail.to, msub=_val("mp-sub"), mbody=_val("mp-body");
+    var mreply=(REAL&&RME&&RME.email)||(COACH&&COACH.email)||"hi@pathwaycareercoach.com";
+    toast("Enviando email…");
+    emailjs.send("Coach","template_7f00mbl",{ to_email: mto, name:(COACH&&COACH.name)||"Pathway Coach", subject: msub, message:(mbody+sigText()).replace(/\n/g,"<br>"), reply_to: mreply })
+      .then(function(){ state.mail.open=false; render(); toast("Email enviado a "+mto+" ✓"); })
+      .catch(function(){ alert("No se pudo enviar el email. Reintenta o usa WhatsApp."); });
+    return;
+  }
   if(act.indexOf("notif:")===0){ var k=act.slice(6); state.notifs[k]=!state.notifs[k]; render(); return; }
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; render(); return; }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
@@ -1646,6 +1805,7 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act.indexOf("cli-open:")===0){ state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; render(); window.scrollTo(0,0); return; }
+  if(act.indexOf("cli-open:")===0){ state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.cliPass="pw"+Math.random().toString(36).slice(2,8); render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
   if(act.indexOf("clivis:")===0){ var vk=act.slice(7); state.cliVis[vk]=!state.cliVis[vk]; render(); return; }
@@ -1667,6 +1827,7 @@ document.addEventListener("click", function(ev){
     }
     state.newOpen=true; render(); return;
   }
+  if(act==="cli-new"){ if(!REAL||!RME){ alert("Inicia sesión para crear clientes reales."); return; } state.newPass="pw"+Math.random().toString(36).slice(2,8); state.newOpen=true; render(); return; }
   if(act==="cli-stop"){ return; }
   if(act==="cli-bg"){ if(ev.target===el){ state.newOpen=false; render(); } return; }
   if(act==="cli-modal-close"){ state.newOpen=false; render(); return; }
@@ -1681,15 +1842,73 @@ document.addEventListener("click", function(ev){
       .then(function(){ return _sbw("candidatos","POST",{nombre:nm,email:em,cargo:cargo,coach_id:RME.id,semana_activa:1,activo:true}); })
       .then(function(r){ if(!r.ok) throw 0; state.newOpen=false; toast(pw?"Cliente creado con acceso ✓":"Cliente creado ✓"); loadReal(); })
       .catch(function(){ alert("No se pudo crear. Revisá el email (puede que ya exista) o creálo desde tu panel actual."); });
+    var nm=_val("nc-nombre").trim(), em=_val("nc-email").trim().toLowerCase(), cg=_val("nc-cargo").trim(), pw=_val("nc-pass").trim();
+    if(!nm){ alert("Pon al menos el nombre."); return; }
+    if(pw && pw.length<6){ alert("La contraseña debe tener mínimo 6 caracteres (o déjala vacía)."); return; }
+    var nfn=(nm.split(" ")[0]||nm);
+    var finish=function(){
+      state.newOpen=false; toast("Cliente creado ✓"+(pw?" con acceso":""));
+      if(em){
+        state.mail={ open:true, to:em, subj:"Tu acceso a Pathway",
+          body:"Hola "+nfn+", ¡bienvenido/a a tu proceso con Pathway!\n\nYa tienes acceso a tu portal:\nhttps://pathwaycareercoach.com/cliente.html\n\nUsuario: "+em+(pw?"\nContraseña: "+pw:"")+"\n\nAhí verás tu plan, tus documentos y los recursos de cada semana. Cualquier duda, escríbeme." };
+      }
+      loadReal();
+    };
+    var doCreate=function(hash){
+      var jobs=[ _sbw("candidatos","POST",{nombre:nm,email:em,cargo:cg,coach_id:RME.id,semana_activa:1,activo:true}) ];
+      if(hash) jobs.push(_sbw("usuarios","POST",{email:em,password_hash:hash,rol:"cliente",nombre:nm,activo:true}));
+      Promise.all(jobs).then(function(rs){ if(!rs[0]||!rs[0].ok) throw 0; finish(); })
+        .catch(function(){ alert("No se pudo crear. Revisa el email (¿ya existe?) o créalo desde tu panel actual."); });
+    };
+    if(pw && window.crypto && crypto.subtle){
+      crypto.subtle.digest("SHA-256", new TextEncoder().encode(pw)).then(function(buf){
+        var hash=Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join("");
+        doCreate(hash);
+      }).catch(function(){ alert("No se pudo generar el acceso. Crea el cliente sin contraseña o usa tu panel actual."); });
+    } else {
+      doCreate(null);
+    }
     return;
   }
   if(act==="cli-save"){
     var sid=el.getAttribute("data-id"); if(!sid) return;
-    _sbw("candidatos?id=eq."+encodeURIComponent(sid)+cg(),"PATCH",{nombre:_val("cf-nombre").trim(),email:_val("cf-email").trim(),cargo:_val("cf-cargo").trim()})
+    var V=function(id){ return _val(id).trim(); };
+    var obs=_val("cf-obstaculos").split(/\n+/).map(function(s){return s.trim();}).filter(Boolean).join("|");
+    var patch={ nombre:V("cf-nombre"), email:V("cf-email"), cargo:V("cf-cargo"),
+      rol:V("cf-rol"), situacion:V("cf-situacion"), urgencia:V("cf-urgencia"),
+      sector:V("cf-sector"), exp:V("cf-exp"), ciudad:V("cf-ciudad"), modalidad:V("cf-modalidad"),
+      educacion:V("cf-educacion"), idiomas:V("cf-idiomas"), linkedin:V("cf-linkedin"),
+      objetivo:V("cf-objetivo"), habilidades:V("cf-habilidades"), logro:V("cf-logro"),
+      extra:V("cf-extra"), obstaculos:obs };
+    _sbw("candidatos?id=eq."+encodeURIComponent(sid)+cg(),"PATCH",patch)
       .then(function(r){ if(!r.ok) throw 0;
-        CLIENTS.forEach(function(x){ if(String(x.id)===String(sid)){ x.name=_val("cf-nombre").trim()||x.name; x.email=_val("cf-email").trim(); x.role=_val("cf-cargo").trim(); } });
+        CLIENTS.forEach(function(x){ if(String(x.id)===String(sid)){ x.name=patch.nombre||x.name; x.email=patch.email; x.role=patch.cargo; if(x.raw){ for(var k in patch){ x.raw[k]=patch[k]; } } } });
         toast("Datos guardados ✓"); render(); })
       .catch(function(){ alert("No se pudo guardar."); });
+    return;
+  }
+  if(act==="cli-pass"){
+    var ppid=el.getAttribute("data-id");
+    var ppc=CLIENTS.filter(function(x){return String(x.id)===String(ppid);})[0];
+    if(!ppc||!ppc.email){ alert("Este cliente no tiene email."); return; }
+    var npw=_val("cf-newpass").trim();
+    if(npw.length<6){ alert("La contraseña debe tener mínimo 6 caracteres."); return; }
+    if(!window.crypto||!crypto.subtle){ alert("No se puede generar el acceso aquí. Usa tu panel actual."); return; }
+    var pem=(""+ppc.email).toLowerCase().trim();
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(npw)).then(function(buf){
+      var hash=Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join("");
+      return fetch(SB+"/rest/v1/usuarios?email=eq."+encodeURIComponent(pem)+"&select=id",{headers:{apikey:KEY,Authorization:"Bearer "+KEY}})
+        .then(function(r){ return r.ok?r.json():[]; })
+        .then(function(rows){
+          if(rows&&rows.length) return _sbw("usuarios?email=eq."+encodeURIComponent(pem),"PATCH",{password_hash:hash});
+          return _sbw("usuarios","POST",{email:pem,password_hash:hash,rol:"cliente",nombre:ppc.name||"",activo:true});
+        });
+    }).then(function(r){ if(!r||!r.ok) throw 0;
+      var pfn=(""+(ppc.name||"")).split(" ")[0]||ppc.name||"";
+      state.mail={ open:true, to:pem, subj:"Tu acceso a Pathway",
+        body:"Hola "+pfn+", aquí tienes tu acceso al portal:\n\nhttps://pathwaycareercoach.com/cliente.html\n\nUsuario: "+pem+"\nContraseña: "+npw+"\n\nCualquier duda, escríbeme." };
+      render(); toast("Acceso actualizado ✓");
+    }).catch(function(){ alert("No se pudo actualizar el acceso. Reintenta o usa tu panel actual."); });
     return;
   }
   if(act==="cli-savemeta"){
@@ -1904,8 +2123,23 @@ document.addEventListener("click", function(ev){
     state.ai.open=false; state.ai.bubbleOpen=true;
     render(); window.scrollTo(0,0); return;
   }
-  if(act==="gocal"){ state.section="config"; state.cfg="integ"; render(); window.scrollTo(0,0); return; }
-  if(act==="cfg-save-integ"){ saveCfg({ calendly_url:_val("cfi-cal").trim(), calendar_embed_url:_val("cfi-emb").trim() }); return; }
+  if(act==="gocal"){ state.section="config"; state.cfg="profile"; render(); window.scrollTo(0,0); return; }
+  if(act==="cvx-grant"){
+    var cvxe=_val("cvx-access").trim();
+    if(!cvxe){ alert("Escribe al menos un email."); return; }
+    var to=cvxe.split(",").map(function(s){return s.trim();}).filter(Boolean).join(",");
+    window.open("mailto:"+encodeURIComponent(to)+"?subject="+encodeURIComponent("Tu acceso a CV Express — Pathway")+"&body="+encodeURIComponent("Hola, te doy acceso de prueba a CV Express. Entra aquí: https://pathwaycareercoach.com/cv-express.html\n\nCuando lo pruebes, me encantaría tu reseña. ¡Gracias!"),"_blank","noopener");
+    return;
+  }
+});
+
+document.addEventListener("change", function(ev){
+  if(!ev.target || ev.target.id!=="cfp-foto") return;
+  var f=ev.target.files && ev.target.files[0]; if(!f) return;
+  if(f.size > 2*1024*1024){ alert("La foto no puede pesar más de 2 MB."); ev.target.value=""; return; }
+  var rd=new FileReader();
+  rd.onload=function(e){ window._cfpFoto=e.target.result; var im=document.getElementById("cfp-foto-prev"); if(im) im.src=e.target.result; toast("Foto lista — pulsa Guardar cambios"); };
+  rd.readAsDataURL(f);
 });
 
 document.addEventListener("input", function(ev){
@@ -1923,6 +2157,11 @@ document.addEventListener("input", function(ev){
 });
 
 /* ═══ Datos reales (Supabase) — si hay sesión de panel.html; si no, queda el ejemplo ═══ */
+var STRIPE_BASIC="https://buy.stripe.com/9B6eVddqUd4c2YQfa38AE0c";
+var STRIPE_PRO="https://buy.stripe.com/4gM9AT0E82py42U0f98AE0b";
+var SUPPORT_EMAIL="hi@pathwaycareercoach.com";
+function stripeUrl(which){ var base=which==="pro"?STRIPE_PRO:STRIPE_BASIC; var em=(COACH&&COACH.email)||(REAL&&RME&&RME.email)||""; return base+(em?"?prefilled_email="+encodeURIComponent(em):""); }
+function supportMail(subject){ return "mailto:"+SUPPORT_EMAIL+"?subject="+encodeURIComponent(subject); }
 var SB="https://ddxnrsnjdvtqhxunxnwj.supabase.co";
 var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
 function _sb(p){ return fetch(SB+"/rest/v1/"+p,{headers:{apikey:KEY,Authorization:"Bearer "+KEY}}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }
@@ -1975,6 +2214,7 @@ function loadReal(){
     RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[] } : null;
     RCFG = usr.configuracion || ME.configuracion || {};
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
+    if(RCFG && RCFG.color_marca) state.brandAccent=RCFG.color_marca;
     var cname = ME.nombre || usr.nombre || "Coach";
     var cfg = RCFG;
     var _vit = (cfg&&cfg.es_pro_vitalicio===true) || RADMIN;
@@ -2019,7 +2259,35 @@ function loadReal(){
   }).catch(function(){ render(); });
 }
 
+// Paywall: bloquea si la prueba venció sin suscripción (fiel a panel.html
+// _paywallCheck). Excepciones: admin, es_pro_vitalicio, estado_sub 'activa',
+// o sin fecha_fin_prueba (cuentas viejas). Devuelve true si maneja el gate.
+function _paywallCheck(u){
+  if(!u || u.rol==="admin") return false;
+  var cfg=u.configuracion||{};
+  if(cfg.es_pro_vitalicio===true) return false;
+  if(cfg.estado_sub==="activa") return false;
+  var fin=cfg.fecha_fin_prueba ? new Date(cfg.fecha_fin_prueba) : null;
+  if(!fin || isNaN(fin)) return false;
+  if(fin.getTime() > Date.now()) return false;
+  var root=document.getElementById("root");
+  if(root) root.innerHTML="<div style='display:flex;align-items:center;justify-content:center;height:100vh;font-family:var(--pw-sans);color:var(--pw-text-soft);font-size:14px'>Verificando tu suscripción…</div>";
+  fetch(SB+"/rest/v1/usuarios?id=eq."+encodeURIComponent(u.id)+"&select=activo,configuracion",{headers:{apikey:KEY,Authorization:"Bearer "+KEY}})
+    .then(function(r){return r.ok?r.json():[];}).then(function(rows){
+      var fresh=rows&&rows[0]; var fc=(fresh&&fresh.configuracion)||cfg;
+      if(fc.estado_sub==="activa" || fc.es_pro_vitalicio===true){
+        try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=fc; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
+        window.location.reload(); return;
+      }
+      var ff=fc.fecha_fin_prueba?new Date(fc.fecha_fin_prueba):null;
+      if(ff && !isNaN(ff) && ff.getTime()>Date.now()){ window.location.reload(); return; }
+      var su=STRIPE_BASIC+"?prefilled_email="+encodeURIComponent(u.email||"");
+      document.body.innerHTML="<div style='position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#FAFDF9;font-family:Inter,sans-serif;padding:24px'><div style='background:#fff;border-radius:14px;padding:32px;max-width:480px;width:100%;text-align:center;box-shadow:0 8px 30px rgba(45,106,79,.1)'><div style='font-size:42px;margin-bottom:14px'>🌱</div><h1 style='font-family:Fraunces,Georgia,serif;font-size:24px;color:#1B2E26;margin-bottom:10px;letter-spacing:-.4px'>Tu prueba terminó</h1><p style='font-size:14px;color:#5A6A60;line-height:1.55;margin-bottom:20px'>Activa tu suscripción para seguir usando Pathway con todos tus clientes, informes y configuración. <strong>€58/mes, cancelas cuando quieras.</strong></p><a href='"+su+"' style='display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;margin-bottom:10px'>Suscribirme →</a><br><a href='login.html' style='display:inline-block;padding:8px 18px;font-size:12px;color:#5A6A60;text-decoration:underline'>Cerrar sesión</a><p style='font-size:11px;color:#999;margin-top:18px;line-height:1.5'>¿Algún problema? Escríbenos a <a href='mailto:"+SUPPORT_EMAIL+"' style='color:#2D6A4F'>"+SUPPORT_EMAIL+"</a></p></div></div>";
+    }).catch(function(){ window.location.href="login.html"; });
+  return true;
+}
 (function bootPanel(){
+  try{ if(window.emailjs && emailjs.init) emailjs.init("rPy7LSI615o_T5fbU"); }catch(e){}
   var u=null; try{ u=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){}
   var prod=/pathwaycareercoach\.com$|\.pages\.dev$/i.test(location.hostname);
   if(prod && (!u || !u.id || (u.rol!=="coach" && u.rol!=="admin"))){
@@ -2027,6 +2295,7 @@ function loadReal(){
     window.location.href="https://pathwaycareercoach.com/login.html";
     return;
   }
+  if(u && u.id && _paywallCheck(u)){ return; }
   if(u && u.id){
     document.getElementById("root").innerHTML="<div style='display:flex;align-items:center;justify-content:center;height:100vh;font-family:var(--pw-sans)'>"+
       "<div style='text-align:center'><div style='font-family:var(--pw-serif);font-size:22px;font-weight:500;color:var(--pw-bosque)'>Cargando tu panel…</div>"+
