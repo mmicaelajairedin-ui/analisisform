@@ -2078,13 +2078,19 @@ document.addEventListener("click", function(ev){
   }
   if(act==="mail-send"){
     if(!isProV()){ alert("Enviar emails al cliente desde el panel es una función Pro (€89/mes). Puedes copiar el texto y mandarlo por WhatsApp o tu correo. La activas en Configuración › Mi plan."); return; }
-    if(!window.emailjs){ alert("No se pudo cargar el envío de email. Reintenta en un momento."); return; }
-    var mto=state.mail.to, msub=_val("mp-sub"), mbody=_val("mp-body");
+    var mto=state.mail.to, msub=_val("mp-sub")||"Mensaje de tu coach", mbody=_val("mp-body");
+    if(!mto){ alert("Este cliente no tiene email."); return; }
     var mreply=(REAL&&RME&&RME.email)||(COACH&&COACH.email)||"hi@pathwaycareercoach.com";
+    var mbodyHtml=esc(mbody).replace(/\n/g,"<br>");
+    var mhtml="<!DOCTYPE html><html><body style=\"font-family:Inter,-apple-system,sans-serif;font-size:14px;line-height:1.7;color:#2D2929;max-width:600px;margin:0 auto;padding:24px;background:#FAFDF9;\">"+
+      "<div style=\"border:1px solid #EDEAE8;border-radius:12px;overflow:hidden;background:#fff;\">"+
+        "<div style=\"padding:18px 22px;\">"+mbodyHtml+"</div>"+
+        sigBlock(true)+
+      "</div></body></html>";
     toast("Enviando email…");
-    emailjs.send("Coach","template_7f00mbl",{ to_email: mto, name:(COACH&&COACH.name)||"Pathway Coach", subject: msub, message:(mbody+sigText()).replace(/\n/g,"<br>"), reply_to: mreply })
-      .then(function(){ state.mail.open=false; render(); toast("Email enviado a "+mto+" ✓"); })
-      .catch(function(){ alert("No se pudo enviar el email. Reintenta o usa WhatsApp."); });
+    fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:mto,to_name:(COACH&&COACH.name)||"",subject:msub,html:mhtml,reply_to:mreply})})
+      .then(function(r){ if(!r.ok) throw 0; state.mail.open=false; render(); toast("Email enviado a "+mto+" ✓"); })
+      .catch(function(){ alert("No se pudo enviar el email. Reintentá o usá WhatsApp."); });
     return;
   }
   if(act.indexOf("notif:")===0){ var k=act.slice(6); state.notifs[k]=!state.notifs[k]; if(REAL){ saveCfg({ notifs: state.notifs }); } else { render(); } return; }
