@@ -1609,9 +1609,21 @@ function viewAdmin(){
         var paid=!!x.paid_at, fday="—";
         try{ var _dd=new Date(x.created_at); if(!isNaN(_dd)) fday=_dd.toLocaleDateString("es-ES",{day:"numeric",month:"short"}); }catch(e){}
         var _em=(""+(x.email||"")).toLowerCase().trim();
+        // Origen = cómo obtuvo el acceso. Pago real vía Stripe trae
+        // pago_monto>0; un "Dar acceso" manual deja pago_monto 0/null.
+        var monto=parseFloat(x.pago_monto);
+        var origen = (monto>0) ? ["Pago €"+monto,"ok"]
+          : paid ? ["Acceso manual",""]
+          : ["—",""];
+        // Estado = si el acceso sigue válido (mismo criterio que el guard
+        // de cv-express.html: 48 h desde paid_at).
+        var estado;
+        if(paid){
+          var ageMs=Date.now()-new Date(x.paid_at).getTime();
+          estado = (ageMs<=48*3600*1000) ? ["Activo","ok"] : ["Vencido","danger"];
+        } else { estado=["Sin acceso","warn"]; }
         return { n:(x.nombre||x.email||"—"), em:(x.email||""), f:fday,
-          org: paid ? ["Pagó"+(x.pago_monto?" €"+x.pago_monto:""),"ok"] : ["Acceso admin",""],
-          acc: paid ? ["Pagado","ok"] : ["Prueba","warn"], rev:(_em&&_revMap[_em])||null, cv:true };
+          org: origen, acc: estado, rev:(_em&&_revMap[_em])||null, cv:true };
       })
     : (REAL ? [] : [
     { n:"Marcos Ledesma", em:"marcos@email.com",  f:"16 may", org:["Pagó €29","ok"],      acc:["CV generado","ok"],     rev:{st:5,txt:"Rápido y clarísimo"}, cv:true },
@@ -1631,7 +1643,7 @@ function viewAdmin(){
       "<td>"+pill(c.org[0], c.org[1])+"</td>"+
       "<td>"+pill(c.acc[0], c.acc[1])+"</td>"+
       "<td>"+stars+"</td>"+
-      "<td style='text-align:right;white-space:nowrap'>"+askRev+"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px;margin-right:6px' data-act='open' data-url='"+esc("mailto:"+(c.em||"")+"?subject="+encodeURIComponent("Tu acceso a CV Express — Pathway")+"&body="+encodeURIComponent("Hola "+(c.n||"")+", aquí tienes tu acceso a CV Express: https://pathwaycareercoach.com/cv-express.html"))+"'>Reenviar acceso</button>"+verCv+"</td></tr>";
+      "<td style='text-align:right;white-space:nowrap'>"+askRev+"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px;margin-right:6px' data-act='cvx-resend' data-em='"+esc(c.em||"")+"' data-n='"+esc(c.n||"")+"'>Reenviar acceso</button>"+verCv+"</td></tr>";
   }).join("") || "<tr><td colspan='6' style='padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin registros de CV Express todavía.</td></tr>";
   var payouts = [
     { n:"Micaela Jairedin", bruto:"€3.100", com:"−€620", neto:"€2.480", est:["En tránsito · 24 h","warn"], f:"17 may" },
@@ -2290,11 +2302,77 @@ document.addEventListener("click", function(ev){
   if(act==="cvx-grant"){
     var cvxe=_val("cvx-access").trim();
     if(!cvxe){ alert("Escribe al menos un email."); return; }
-    var to=cvxe.split(",").map(function(s){return s.trim();}).filter(Boolean).join(",");
-    window.open("mailto:"+encodeURIComponent(to)+"?subject="+encodeURIComponent("Tu acceso a CV Express — Pathway")+"&body="+encodeURIComponent("Hola, te doy acceso de prueba a CV Express. Entra aquí: https://pathwaycareercoach.com/cv-express.html\n\nCuando lo pruebes, me encantaría tu reseña. ¡Gracias!"),"_blank","noopener");
+    var emails=cvxe.split(",").map(function(s){return s.trim().toLowerCase();})
+      .filter(function(s){return s.indexOf("@")>0;});
+    if(!emails.length){ alert("Email inválido."); return; }
+    if(!confirm("¿Otorgar acceso a CV Express a "+emails.length+" persona(s) y enviarles el email con el link?")) return;
+    cvxGrantAccess(emails, el, true);
+    return;
+  }
+  if(act==="cvx-resend"){
+    var rgem=(el.getAttribute("data-em")||"").trim().toLowerCase();
+    if(rgem.indexOf("@")<1){ alert("Esa persona no tiene email."); return; }
+    if(!confirm("¿Reenviar acceso a CV Express a "+rgem+"? Se renueva la ventana de 48 h.")) return;
+    cvxGrantAccess([rgem], el, false);
     return;
   }
 });
+
+// Otorga acceso a CV Express: por cada email crea/actualiza el row en
+// cv_express con paid_at=ahora (lo que valida el guard de cv-express.html
+// por 48 h) y manda el email con el link correcto (?paid=1&email=) vía la
+// edge function send-email. Reemplaza el viejo window.open(mailto) que
+// abría una pestaña en blanco y mandaba un link sin acceso.
+function cvxGrantAccess(emails, gbtn, clearInput){
+  var gold=gbtn?gbtn.innerHTML:"";
+  if(gbtn){ gbtn.disabled=true; gbtn.textContent="Otorgando..."; }
+  var GH={apikey:KEY,Authorization:"Bearer "+KEY};
+  function one(email){
+    return fetch(SB+"/rest/v1/cv_express?email=eq."+encodeURIComponent(email)+"&select=email&limit=1",{headers:GH})
+      .then(function(r){ return r.ok?r.json():[]; })
+      .then(function(rows){
+        var exists=rows.length>0;
+        var body={paid_at:new Date().toISOString(),pago_monto:0};
+        if(!exists) body.email=email;
+        return fetch(SB+"/rest/v1/cv_express"+(exists?"?email=eq."+encodeURIComponent(email):""),{
+          method:exists?"PATCH":"POST",
+          headers:{apikey:KEY,Authorization:"Bearer "+KEY,"Content-Type":"application/json",Prefer:"return=minimal"},
+          body:JSON.stringify(body)
+        });
+      })
+      .then(function(r){
+        if(!r.ok) throw new Error("grant_"+r.status);
+        var link="https://pathwaycareercoach.com/cv-express.html?paid=1&email="+encodeURIComponent(email);
+        var nm=(email.split("@")[0]||"").replace(/[._-]+/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();});
+        var html="<!DOCTYPE html><html><body style=\"font-family:Inter,-apple-system,sans-serif;font-size:14px;line-height:1.6;color:#1B4332;max-width:600px;margin:0 auto;padding:24px;background:#FAFDF9;\">"+
+          "<h2 style=\"font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;\">Hola "+esc(nm||"!")+",</h2>"+
+          "<p>Tu acceso al <strong>Pack Express de Pathway</strong> ya está activo. Tenés <strong>48 horas</strong> para generar y descargar tu CV, tu carta y el análisis de tu LinkedIn.</p>"+
+          "<p style=\"margin:22px 0;\"><a href=\""+link+"\" style=\"display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;\">Empezar mi Pack Express →</a></p>"+
+          "<p style=\"font-size:12px;color:#5A6A60;word-break:break-all;\">Si el botón no funciona, copiá este link: "+esc(link)+"</p></body></html>";
+        return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nm,subject:"Tu acceso a CV Express — Pathway",html:html,reply_to:"hi@pathwaycareercoach.com"})})
+          .then(function(r){ return {email:email,emailOk:r.ok}; })
+          .catch(function(){ return {email:email,emailOk:false}; });
+      })
+      .catch(function(e){ return {email:email,error:(e&&e.message)||"error"}; });
+  }
+  Promise.all(emails.map(one)).then(function(res){
+    if(gbtn){ gbtn.disabled=false; gbtn.innerHTML=gold; }
+    var oks=res.filter(function(x){return !x.error;});
+    var noMail=oks.filter(function(x){return !x.emailOk;});
+    var fails=res.filter(function(x){return x.error;});
+    if(oks.length && !noMail.length && !fails.length){
+      if(clearInput){ var ci=document.getElementById("cvx-access"); if(ci) ci.value=""; }
+      toast(oks.length>1?("Acceso otorgado y emails enviados ✓"):"Acceso otorgado y email enviado ✓");
+      return;
+    }
+    var msg="";
+    if(oks.length) msg+="✓ Acceso otorgado a "+oks.length+" persona(s).\n";
+    if(noMail.length) msg+="\n⚠️ El email no se pudo enviar a: "+noMail.map(function(x){return x.email;}).join(", ")+
+      "\nPasales el link manual:\nhttps://pathwaycareercoach.com/cv-express.html?paid=1&email=EMAIL\n";
+    if(fails.length) msg+="\n✗ Falló otorgar acceso a: "+fails.map(function(x){return x.email;}).join(", ");
+    alert(msg);
+  });
+}
 
 document.addEventListener("change", function(ev){
   if(!ev.target || ev.target.id!=="cfp-foto") return;
