@@ -541,6 +541,8 @@ var MASCOT_BASE = "assets/mascota/";
 /* ═══ Sidebar ═══ */
 function viewSidebar(){
   var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"],["config","Configuración","navConfig"]];
+  var _pwOn = REAL ? !!(RCFG&&RCFG.pathway_optin) : !!state.pathwayOptIn;
+  if(_pwOn || (RSOL&&RSOL.length)) items.splice(2,0,["solicitudes","Solicitudes","navClientes"]);
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
   var nav = items.map(function(it){
     return "<button class='cp-side-nav-item "+(state.section===it[0]?"is-active":"")+"' data-act='nav:"+it[0]+"'>"+
@@ -565,6 +567,64 @@ function viewSidebar(){
 }
 
 /* ═══ Resumen ═══ */
+function viewSolicitudes(){
+  var SOL = (REAL ? (RSOL||[]) : [
+    { id:"demo1", candidato_nombre:"Lucía Fernández", candidato_email:"lucia.f@email.com", servicio:"mentoria", monto:400, comision:80, estado:"autorizada", created_at:new Date(Date.now()-3*3600000).toISOString(), expires_at:new Date(Date.now()+21*3600000).toISOString() },
+    { id:"demo2", candidato_nombre:"Marco Díaz", candidato_email:"marco.d@email.com", servicio:"sesion", monto:120, comision:24, estado:"autorizada", created_at:new Date(Date.now()-20*3600000).toISOString(), expires_at:new Date(Date.now()+4*3600000).toISOString() }
+  ]);
+  function _money(n){ return "€"+(Number(n)||0).toLocaleString("es-ES"); }
+  function _svc(s){ return s==="sesion" ? "Sesión única" : "Mentoría 4 semanas"; }
+  function _left(exp){
+    if(!exp) return "";
+    var ms=new Date(exp).getTime()-Date.now();
+    if(isNaN(ms)) return "";
+    if(ms<=0) return "<span style='color:var(--pw-danger);font-weight:600'>Ventana vencida</span>";
+    var h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000);
+    return "<span style='color:"+(h<6?"var(--pw-danger)":"#8E7A35")+";font-weight:600'>"+(h>0?h+" h ":"")+m+" min restantes</span>";
+  }
+  var pend = SOL.filter(function(s){ return s.estado==="autorizada"; });
+  var waiting = SOL.filter(function(s){ return s.estado==="pendiente"; });
+  var hist = SOL.filter(function(s){ return ["aceptada","rechazada","expirada"].indexOf(s.estado)>=0; });
+
+  function card(s){
+    var neto=(Number(s.monto)||0)-(Number(s.comision)|| (Number(s.monto)||0)*0.2);
+    return "<div class='cp-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+      "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap'>"+
+        "<div><div style='font-family:var(--pw-serif);font-size:17px;color:var(--pw-carbon)'>"+esc(s.candidato_nombre||s.candidato_email||"Candidato")+"</div>"+
+          "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.candidato_email||"")+" · "+_svc(s.servicio)+"</div></div>"+
+        "<div style='text-align:right'>"+_left(s.expires_at)+"<div style='font-size:11px;color:var(--pw-text-muted);margin-top:2px'>pagado y retenido</div></div>"+
+      "</div>"+
+      "<div style='display:flex;gap:18px;flex-wrap:wrap;background:var(--pw-niebla-2);border-radius:10px;padding:12px 14px'>"+
+        "<div><div style='font-size:11px;color:var(--pw-text-soft)'>Cobrado al candidato</div><div style='font-family:var(--pw-serif);font-size:18px;color:var(--pw-carbon)'>"+_money(s.monto)+"</div></div>"+
+        "<div><div style='font-size:11px;color:var(--pw-text-soft)'>Comisión Pathway (20%)</div><div style='font-family:var(--pw-serif);font-size:18px;color:var(--pw-danger)'>−"+_money(s.comision||(Number(s.monto)||0)*0.2)+"</div></div>"+
+        "<div><div style='font-size:11px;color:var(--pw-text-soft)'>A tu favor (neto)</div><div style='font-family:var(--pw-serif);font-size:18px;color:var(--pw-bosque);font-weight:600'>"+_money(neto)+"</div></div>"+
+      "</div>"+
+      "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
+        "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='sol-reject' data-id='"+esc(s.id)+"'>Rechazar</button>"+
+        "<button class='cp-btn cp-btn-primary' data-act='sol-accept' data-id='"+esc(s.id)+"'>Aceptar y cobrar</button>"+
+      "</div></div></div>";
+  }
+  var pendHtml = pend.length ? pend.map(card).join("")
+    : "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:36px 24px;color:var(--pw-text-soft);font-size:13px'>No tenés solicitudes esperando tu respuesta.</div></div>";
+  var waitHtml = waiting.length
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperando pago del candidato<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+waiting.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
+        waiting.map(function(s){ return "<div style='display:flex;justify-content:space-between;font-size:13px;color:var(--pw-text-soft);border-bottom:1px solid var(--pw-border);padding:8px 0'><span>"+esc(s.candidato_nombre||s.candidato_email||"Candidato")+" · "+_svc(s.servicio)+"</span><span>"+_money(s.monto)+"</span></div>"; }).join("")+"</div></div>"
+    : "";
+  var histHtml = hist.length
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+hist.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
+        hist.map(function(s){ var c=s.estado==="aceptada"?"var(--pw-bosque)":(s.estado==="rechazada"?"var(--pw-danger)":"var(--pw-text-muted)");
+          return "<div style='display:flex;justify-content:space-between;font-size:13px;border-bottom:1px solid var(--pw-border);padding:8px 0'><span style='color:var(--pw-carbon)'>"+esc(s.candidato_nombre||s.candidato_email||"Candidato")+" · "+_svc(s.servicio)+"</span><span style='color:"+c+";font-weight:600;text-transform:capitalize'>"+esc(s.estado)+" · "+_money(s.monto)+"</span></div>"; }).join("")+"</div></div>"
+    : "";
+
+  return "<header class='cp-topbar'><div><h1 class='cp-h1'>Solicitudes<span class='dot'>.</span></h1>"+
+      "<div class='cp-sub'>Candidatos del directorio de Pathway que te eligieron.</div></div></header>"+
+    "<div class='cp-card' style='background:var(--pw-niebla-2);border:1px solid var(--pw-border)'><div class='cp-card-pad'>"+
+      "<div class='cp-eyebrow' style='margin-bottom:8px'>Cómo funciona</div>"+
+      "<div style='font-size:13px;color:var(--pw-text);line-height:1.6'>El candidato <strong>paga primero</strong>: su tarjeta queda <strong>autorizada y retenida</strong> (todavía no se le cobra). Tenés <strong>24 h</strong> para responder. Si <strong>aceptás</strong>, se captura el pago: el dinero va <strong>directo a tu cuenta de cobro</strong> y Pathway retiene solo el <strong>20%</strong> de comisión. Si <strong>rechazás</strong> o pasan 24 h, la retención se libera y al candidato <strong>no se le cobra</strong>. Tus clientes propios no pasan por acá (0% comisión).</div></div></div>"+
+    "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperan tu respuesta<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span></div></div>"+
+    pendHtml + waitHtml + histHtml;
+}
 function viewResumen(){
   var greet = "Buenos días", emoji = "☀️";
   var pendingReview = CLIENTS.filter(function(c){return c.reportState==="pending";}).length;
@@ -1317,7 +1377,7 @@ function cfgPathway(){
       "<span class='cp-eyebrow'>Cómo funciona</span></div>"+
       "<div class='cp-card-pad'><div class='cp-toggle' style='border-bottom:none;padding:4px 0'>"+
         "<div class='cp-toggle-body'><div class='cp-toggle-title'>Recibir clientes nuevos de Pathway</div>"+
-        "<div class='cp-toggle-desc'>Pathway te envía candidatos de su directorio. Aceptas o rechazas cada solicitud (tienes 24 h). En los clientes que aceptas, el cobro pasa por Pathway con 20% de comisión; el resto se transfiere a tu cuenta. Tus clientes propios no entran aquí.</div></div>"+
+        "<div class='cp-toggle-desc'>Pathway te envía candidatos de su directorio. El candidato <strong>paga primero</strong> y su tarjeta queda <strong>retenida</strong> (no se le cobra todavía). Tenés <strong>24 h</strong> para aceptar o rechazar en la sección <strong>Solicitudes</strong>. Si aceptás, el dinero va <strong>directo a tu cuenta</strong> y Pathway retiene solo el <strong>20%</strong>; si rechazás o pasan 24 h, no se le cobra. Tus clientes propios no entran aquí (0% comisión).</div></div>"+
         "<button class='cp-switch "+(optIn?"is-on":"")+"' data-act='pw-optin' aria-label='Recibir clientes de Pathway'><span></span></button></div></div></div>";
   if(!optIn){
     return toggleCard+
@@ -1723,7 +1783,7 @@ function viewNewModal(){
 function render(){
   try{
     if(state.section==="admin" && !RADMIN) state.section="resumen";
-    var sections = { resumen:viewResumen, clientes:viewClientes, config:viewConfig, admin:viewAdmin };
+    var sections = { resumen:viewResumen, clientes:viewClientes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin };
     var view = (sections[state.section]||viewResumen)();
     document.getElementById("root").innerHTML =
       "<div class='cp-app'>"+viewSidebar()+
@@ -1802,7 +1862,18 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act.indexOf("notif:")===0){ var k=act.slice(6); state.notifs[k]=!state.notifs[k]; if(REAL){ saveCfg({ notifs: state.notifs }); } else { render(); } return; }
-  if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; render(); return; }
+  if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; if(REAL){ saveCfg({ pathway_optin: state.pathwayOptIn }); } else { render(); } return; }
+  if(act==="sol-accept" || act==="sol-reject"){
+    var solId=el.getAttribute("data-id"); if(!solId) return;
+    if(!REAL){ alert("Demo: en producción esto acepta/rechaza la solicitud real."); return; }
+    var doAccept=(act==="sol-accept");
+    if(!confirm(doAccept?"¿Aceptar esta solicitud? Se captura el pago: cobrás el neto y Pathway retiene el 20%.":"¿Rechazar esta solicitud? Se libera la retención y al candidato no se le cobra.")) return;
+    if(_genBusy) return; _genBusy=true; toast(doAccept?"Aceptando y cobrando…":"Rechazando…");
+    fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:doAccept?"accept":"reject",solicitud_id:solId})})
+      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; toast(doAccept?"Solicitud aceptada ✓ — pago capturado":"Solicitud rechazada ✓"); loadReal(); })
+      .catch(function(){ _genBusy=false; alert("No se pudo procesar la solicitud. Reintentá en un momento."); });
+    return;
+  }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); render(); return; }
   if(act==="coach-toggle"){
@@ -2195,7 +2266,7 @@ function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===Strin
 function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
 function _sha256(txt){ return crypto.subtle.digest("SHA-256",new TextEncoder().encode(""+txt)).then(function(b){ return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join(""); }); }
 function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600); }
-var REAL=false, RCFG={}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null;
+var REAL=false, RCFG={}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[];
 function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURIComponent(RME.id) : ""; }
 function saveCfg(cfgPatch, usuariosExtra){
   if(!RME||!RME.id){ alert("Iniciá sesión para guardar."); return; }
@@ -2229,11 +2300,13 @@ function loadReal(){
     _sb("cv_publicados?select=email,contenido"),
     _sb("informes?select=email,id,data&order=created_at.desc"),
     _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion"),
-    extra[0], extra[1], extra[2], extra[3], extra[4]
+    extra[0], extra[1], extra[2], extra[3], extra[4],
+    _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc")
   ]).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
     RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
     RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[] } : null;
+    RSOL = res[9]||[];
     RCFG = usr.configuracion || ME.configuracion || {};
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
     if(RCFG && RCFG.color_marca) state.brandAccent=RCFG.color_marca;
