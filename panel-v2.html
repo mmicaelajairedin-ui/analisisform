@@ -639,6 +639,7 @@ function viewClienteDetalle(c){
   var PB="https://pathwaycareercoach.com";
   var cem=encodeURIComponent(c.email||"");
   var cvUrl=PB+"/cv.html?email="+cem;
+  var cartaUrl=PB+"/carta.html?email="+cem;
   var portalUrl=PB+"/cliente.html?coach_view="+cem;
   var accessUrl=PB+"/cliente.html?email="+cem;
   var genUrl=PB+"/panel.html";
@@ -648,7 +649,7 @@ function viewClienteDetalle(c){
   var medal=c.medal?"<img class='cp-client-medal' src='assets/iconos/medalla-"+c.medal+".png' alt='' style='width:42px;height:42px'>":"";
   var wa=(c.email||"").replace(/[^0-9]/g,"")||"34611256224";
   var t=state.cliDetTab;
-  var tabs=[["perfil","Perfil"],["plan","Plan semana a semana"],["docs","Documentos"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
+  var tabs=[["perfil","Perfil"],["plan","Plan semana a semana"],["avance","Avance"],["docs","Documentos"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
   var tabBar="<div class='cp-filters'>"+tabs.map(function(x){return "<button class='cp-chip "+(t===x[0]?"is-on":"")+"' data-act='clidet:"+x[0]+"'>"+x[1]+"</button>";}).join("")+"</div>";
 
   var cvSt=c.cvState==="published"?["Publicado","ok"]:(c.cvState==="pending"?["A revisar","warn"]:["Borrador",""]);
@@ -681,9 +682,26 @@ function viewClienteDetalle(c){
           genRow("CV", (cvSt[0]==="Publicado"?"Publicado en el portal del cliente":"Genera el CV a partir del material"), cvSt[0], cvSt[1], "data-act='gen-cv' data-id='"+esc(c.id)+"'")+
           genRow("Carta de presentación","Queda guardada en el cliente","",""," data-act='gen-carta' data-id='"+esc(c.id)+"'")+
         "</div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Editar CV publicado<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Lo que ve el cliente en cv.html</span></div>"+
+        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+          "<textarea id='cv-edit' class='cp-form-textarea' style='min-height:200px;font-family:var(--pw-mono);font-size:12px' placeholder='Aún no hay CV. Genéralo con IA arriba o pega el contenido (JSON o HTML) aquí.'>"+esc(c.cvContenido||"")+"</textarea>"+
+          "<span class='cp-form-hint'>Acepta el JSON estructurado del CV o HTML. Se guarda en cv_publicados y el cliente lo ve al instante.</span>"+
+          "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(cvUrl)+"'>"+svg(IC.extLink,13)+" Abrir cv.html</button>"+
+            "<button class='cp-btn cp-btn-primary' data-act='cv-save' data-id='"+esc(c.id)+"'>Guardar CV</button>"+
+          "</div></div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Editar carta de presentación<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Se guarda en el cliente</span></div>"+
+        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+          "<textarea id='carta-edit' class='cp-form-textarea' style='min-height:200px' placeholder='Aún no hay carta. Genérala con IA arriba o escríbela aquí. Puedes usar [EMPRESA] y [PUESTO] como marcadores.'>"+esc((c.raw&&c.raw.carta_presentacion)||"")+"</textarea>"+
+          "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='carta-copy'>"+svg(IC.copy,13)+" Copiar</button>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(cartaUrl)+"'>"+svg(IC.extLink,13)+" Ver como carta</button>"+
+            "<button class='cp-btn cp-btn-primary' data-act='carta-save' data-id='"+esc(c.id)+"'>Guardar carta</button>"+
+          "</div></div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Archivos y portal<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Ver / editar</span></div><div class='cp-card-pad' style='padding-top:6px;padding-bottom:6px'>"+
-        docRow("Editor de CV","Abrir el editor del CV del cliente",cvSt[0],cvSt[1],"Ver / Editar",cvUrl)+
         docRow("Informe en el portal","Cómo lo ve el cliente",rpSt[0],rpSt[1],"Ver",portalUrl)+
         docRow("Foto profesional","Pedírsela al cliente","Falta","danger","Pedir",fotoWa)+
       "</div></div>";
@@ -710,13 +728,58 @@ function viewClienteDetalle(c){
       _blk("Mensaje para el cliente","Nota personal que ve en su portal",_ta("pl-msg",D.mensaje_candidato||"","Mensaje personal para el cliente…",80))+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end;gap:10px'>"+
         "<button class='cp-btn cp-btn-primary' data-act='plan-save' data-id='"+esc(c.id)+"'>Guardar plan</button></div></div>";
+  } else if(t==="avance"){
+    var AD=(c.inf&&c.inf.d)||{};
+    var ACTS=[]; try{ ACTS=JSON.parse((c.raw&&c.raw.acciones_progreso)||"[]")||[]; }catch(e){ ACTS=[]; }
+    var weeksA=[["S1","cv_acciones"],["S2","linkedin_acciones"],["S3","networking_acciones"],["S4","preguntas"]];
+    var totD=0,totN=0,off=0,listRows="";
+    weeksA.forEach(function(w){
+      var arr=AD[w[1]]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
+      arr.forEach(function(tx,i){
+        var ok=!!ACTS[off+i]; if(ok) totD++;
+        listRows+="<div style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border)'>"+
+          "<span style='width:18px;height:18px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:"+(ok?"var(--pw-bosque)":"transparent")+";border:1.5px solid "+(ok?"var(--pw-bosque)":"var(--pw-border-strong)")+";color:#fff'>"+(ok?svg(IC.check,10,"stroke-width='3.2'"):"")+"</span>"+
+          "<span style='font-size:10px;font-weight:700;color:var(--pw-bosque);flex-shrink:0;width:20px'>"+w[0]+"</span>"+
+          "<span style='font-size:13px;color:"+(ok?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(ok?"text-decoration:line-through":"")+";line-height:1.5'>"+esc(tx)+"</span></div>";
+      });
+      off+=arr.length; totN+=arr.length;
+    });
+    if(!totN){
+      body="<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:40px 24px;color:var(--pw-text-soft);font-size:13px'>"+
+        "Todavía no hay un plan. Generalo o escribilo en la pestaña <strong>Plan semana a semana</strong> y acá vas a ver qué va marcando el cliente.</div></div>";
+    } else {
+      var pctA=Math.round(totD/totN*100);
+      body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Avance del cliente<span class='dot'>.</span></h3>"+
+          "<span class='cp-eyebrow'>"+totD+"/"+totN+" · "+pctA+"%</span></div>"+
+          "<div class='cp-card-pad'><div class='cp-ob-bar'><span style='width:"+pctA+"%'></span></div>"+
+          "<div style='font-size:12px;color:var(--pw-text-soft);margin:8px 0 6px'>Lo que el cliente fue marcando en su portal. Solo lectura — las acciones se editan en Plan; la semana se cambia en Gestión.</div>"+
+          listRows+"</div></div>";
+    }
   } else if(t==="sesiones"){
     var ses=(c.ses||[]).slice();
     var now2=Date.now(), prox=null;
     ses.forEach(function(s){ if(!s||!s.fecha)return; var d=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")); if(!isNaN(d)&&d.getTime()>=now2&&(!prox||d.getTime()<prox.t))prox={t:d.getTime(),s:s}; });
     var ordered=ses.slice().sort(function(a,b){ return (""+(b.fecha||"")).localeCompare(""+(a.fecha||"")); });
     var hist=ordered.length
-      ? ordered.map(function(s){ return "<div style='padding:11px 0;border-bottom:1px solid var(--pw-border)'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(s.fecha||"")+(s.hora?" · "+esc(s.hora):"")+"</div>"+(s.trabajado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.trabajado)+"</div>":"")+(s.acordado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>Acordado: "+esc(s.acordado)+"</div>":"")+"</div>"; }).join("")
+      ? ordered.map(function(s){
+          var tA=(s.acciones||"").split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean);
+          var dn=s.tareas_done||[];
+          var tHtml="";
+          if(tA.length){
+            var ndn=0;
+            var tr=tA.map(function(tx,ti){ var ok=dn.indexOf(ti)!==-1; if(ok) ndn++;
+              return "<div style='display:flex;align-items:center;gap:8px;padding:3px 0'>"+
+                "<span style='width:16px;height:16px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:"+(ok?"var(--pw-bosque)":"transparent")+";border:1.5px solid "+(ok?"var(--pw-bosque)":"var(--pw-border-strong)")+";color:#fff'>"+(ok?svg(IC.check,9,"stroke-width='3.2'"):"")+"</span>"+
+                "<span style='font-size:12px;color:"+(ok?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(ok?"text-decoration:line-through":"")+"'>"+esc(tx)+"</span></div>";
+            }).join("");
+            tHtml="<div style='margin-top:8px;background:var(--pw-niebla-2);border-radius:10px;padding:10px 12px'>"+
+              "<div class='cp-eyebrow' style='margin-bottom:6px'>Tareas del cliente · "+ndn+"/"+tA.length+" hechas</div>"+tr+"</div>";
+          }
+          return "<div style='padding:12px 0;border-bottom:1px solid var(--pw-border)'>"+
+            "<div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(s.fecha||"")+(s.hora?" · "+esc(s.hora):"")+"</div>"+
+            (s.trabajado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.trabajado)+"</div>":"")+
+            (s.acordado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>Acordado: "+esc(s.acordado)+"</div>":"")+
+            tHtml+"</div>"; }).join("")
       : "<div style='color:var(--pw-text-soft);font-size:13px'>Todavía no hay sesiones registradas.</div>";
     body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Próxima sesión<span class='dot'>.</span></h3>"+
         (prox?"<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● Agendada</span>":"<span class='cp-eyebrow'>Sin agendar</span>")+"</div>"+
@@ -729,6 +792,7 @@ function viewClienteDetalle(c){
           "<div class='cp-form-row'><label class='cp-form-label'>Hora</label><input id='ss-hora' type='time' class='cp-form-input'></div></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Tema / qué se trabajó</label><input id='ss-tema' class='cp-form-input' placeholder='Ej: Estrategia de CV'></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Acordado / próximos pasos</label><textarea id='ss-acor' class='cp-form-textarea' placeholder='Qué quedó acordado…'></textarea></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Tareas para el cliente (una por línea)</label><textarea id='ss-tareas' class='cp-form-textarea' placeholder='Una tarea por línea. El cliente las marca como hechas en su portal.'></textarea><span class='cp-form-hint'>Aparecen en el portal del cliente con un check que él va marcando.</span></div>"+
         "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='ses-add' data-id='"+esc(c.id)+"'>Guardar sesión</button></div></div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+ordered.length+" sesiones</span></div>"+
@@ -759,6 +823,14 @@ function viewClienteDetalle(c){
           "<button class='cp-icon-btn' data-act='copy' data-url='"+esc(m[1])+"' title='Copiar'>"+svg(IC.copy,15)+"</button>"+
         "</div></div></div>";
     }).join("");
+    body = (state.plan!=="pro")
+      ? "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:12px'>"+
+          "<span style='width:46px;height:46px;border-radius:50%;background:var(--pw-niebla-2);display:inline-flex;align-items:center;justify-content:center;color:var(--pw-bosque)'>"+svg("<rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/>",20)+"</span>"+
+          "<div style='font-family:var(--pw-serif);font-size:19px;font-weight:500;color:var(--pw-carbon);letter-spacing:-.4px'>Mensajería es una función Pro</div>"+
+          "<p style='font-size:13px;color:var(--pw-text-soft);max-width:420px;line-height:1.55'>El envío de emails y plantillas al cliente desde el panel está disponible en el plan Pro (€89/mes). En Basic gestionás el contacto por fuera.</p>"+
+          "<button class='cp-btn cp-btn-primary' style='margin-top:6px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Ver planes →</button></div></div>"
+      : "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
     body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div>"+
       "<div class='cp-card-pad'><p style='font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.55'><strong>Enviar email</strong> manda el mensaje directo al cliente con tu nombre y tu marca — es una función "+(pro?"Pro (activa)":"Pro")+". WhatsApp, email manual y copiar están siempre disponibles.</p></div>"+
@@ -773,6 +845,14 @@ function viewClienteDetalle(c){
         "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:10px'>Define en qué semana del proceso de 4 está el cliente. Afecta su progreso y los recursos que ve.</div></div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Qué ve el cliente en su portal<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Visibilidad</span></div><div class='cp-card-pad'>"+visRows+"</div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Acceso del cliente<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>Login al portal</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+        "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.5'>Usuario: <strong style='color:var(--pw-carbon)'>"+esc(c.email||"—")+"</strong> · <span id='cli-pass-st'>contraseña ••••••••</span></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Nueva contraseña (mín. 6)</label><input id='cli-pass' type='text' class='cp-form-input' placeholder='Asigná o cambiá la contraseña del cliente'></div>"+
+        "<div style='display:flex;gap:10px;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' data-act='cli-pass-show' data-id='"+esc(c.id)+"'>Ver estado</button>"+
+          "<button class='cp-btn cp-btn-primary' data-act='cli-pass-save' data-id='"+esc(c.id)+"'>Guardar contraseña</button></div>"+
+        "<span class='cp-form-hint'>Crea el acceso si no existe. El cliente entra en <code>cliente.html</code> con su email y esta contraseña.</span>"+
+      "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Notas del coach<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Privadas</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
         "<textarea id='cf-notas' class='cp-form-textarea' placeholder='Notas internas sobre este cliente…'>"+esc(c.notas||"")+"</textarea>"+
@@ -1067,7 +1147,7 @@ function cfgBrand(){
           svg("<rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/>",20)+"</span>"+
         "<div style='font-family:var(--pw-serif);font-size:19px;font-weight:500;color:var(--pw-carbon);letter-spacing:-.4px'>Una función del plan Pro</div>"+
         "<p style='font-size:13px;color:var(--pw-text-soft);max-width:420px;line-height:1.55'>Personaliza el color de acento y el logo del portal de tus clientes y de tu página pública. Se activa al mejorar al plan Pro.</p>"+
-        "<button class='cp-btn cp-btn-primary' style='margin-top:6px' data-act='plan:pro'>Mejorar a Pro · €89/mes</button></div></div>";
+        "<button class='cp-btn cp-btn-primary' style='margin-top:6px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Mejorar a Pro · €89/mes</button></div></div>";
   }
   var swatches = ["#2D6A4F","#1B4332","#5C7A6F","#7C5C3D","#4A6BA0","#9B6B7C"];
   var sw = swatches.map(function(c){
@@ -1111,11 +1191,18 @@ function cfgNotifs(){
 function cfgAccount(){
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Cuenta<span class='dot'>.</span></h3></div>"+
     "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:16px'>"+
-      "<div class='cp-form-row'><label class='cp-form-label'>Email de la cuenta</label><input class='cp-form-input' value='micaela@pathwaycareercoach.com'></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Email de la cuenta</label><input class='cp-form-input' value=\""+esc((REAL?COACH.email:"micaela@pathwaycareercoach.com")||"")+"\" readonly></div>"+
       "<div class='cp-form-row-2'><div class='cp-form-row'><label class='cp-form-label'>Idioma</label>"+
         "<select class='cp-form-select'><option>Español</option><option>English</option></select></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Zona horaria</label>"+
         "<select class='cp-form-select'><option>Madrid (GMT+1)</option><option>Barcelona (GMT+1)</option><option>Buenos Aires (GMT-3)</option><option>Ciudad de México (GMT-6)</option></select></div></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Cambiar mi contraseña (mín. 6)</label>"+
+        "<input id='coach-pass' type='text' class='cp-form-input' placeholder='Nueva contraseña para entrar al panel'>"+
+        "<div style='display:flex;justify-content:flex-end;margin-top:8px'><button class='cp-btn cp-btn-primary' data-act='coach-pass-save'>Guardar contraseña</button></div></div></div></div>"+
+    "<div class='cp-card' style='border-color:rgba(192,117,110,.25)'><div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:18px'>"+
+      "<div><div class='cp-toggle-title' style='color:var(--pw-danger)'>Cerrar mi cuenta</div>"+
+      "<div class='cp-toggle-desc'>Tus clientes pierden acceso a su portal. Tus datos se eliminan a los 30 días.</div></div>"+
+      "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='open' data-url='"+esc("https://wa.me/34611256224?text="+encodeURIComponent("Hola, quiero solicitar el cierre de mi cuenta de coach en Pathway ("+((REAL&&COACH.email)||"")+")."))+"'>Solicitar cierre</button></div></div>";
       "<div class='cp-form-row'><label class='cp-form-label'>Cambiar contraseña</label>"+
         "<button class='cp-btn cp-btn-ghost' style='align-self:flex-start' data-act='open' data-url='"+esc(supportMail("Restablecer mi contraseña — Pathway"))+"'>Enviarme un link por email</button></div></div></div>"+
     "<div class='cp-card' style='border-color:rgba(192,117,110,.25)'><div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:18px'>"+
@@ -1125,29 +1212,36 @@ function cfgAccount(){
 }
 function cfgPlan(){
   if(REAL){
-    var pl=(RCFG.plan==="pro")?"pro":(RCFG.plan==="basic"?"basic":"");
-    var rName=pl==="pro"?"Pro":(pl==="basic"?"Basic":"—");
-    var rPrice=pl==="pro"?"€89":(pl==="basic"?"€58":"—");
+    var _vit=(RCFG.es_pro_vitalicio===true)||RADMIN;
+    var pl=state.plan==="pro"?"pro":"basic";
+    var rName=pl==="pro"?"Pro":"Basic";
+    var rPrice=pl==="pro"?"€89":"€58";
     var est=(RCFG.estado_sub||"").toString();
     var trialN=0; if(RCFG.fecha_fin_prueba){ try{ trialN=Math.max(0,Math.ceil((new Date(RCFG.fecha_fin_prueba)-Date.now())/86400000)); }catch(e){} }
-    var meta = est ? ("Estado: "+esc(est)) : (trialN>0 ? ("Prueba: "+trialN+" días restantes") : "");
-    var tCard = trialN>0
+    var meta = _vit ? "Acceso Pro de cortesía (vitalicio)" : (est ? ("Estado: "+esc(est)) : (trialN>0 ? ("Prueba: "+trialN+" días restantes") : ""));
+    var tCard = (!_vit && trialN>0)
       ? "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap'>"+
-          "<div><div class='cp-toggle-title'>Prueba gratuita</div><div class='cp-toggle-desc'>Te quedan <strong style='color:var(--pw-bosque)'>"+trialN+" días</strong> gratis"+(rPrice!=="—"?" · luego "+rPrice+"/mes":"")+".</div></div>"+
+          "<div><div class='cp-toggle-title'>Prueba gratuita</div><div class='cp-toggle-desc'>Te quedan <strong style='color:var(--pw-bosque)'>"+trialN+" días</strong> gratis · luego "+rPrice+"/mes.</div></div>"+
           "<button class='cp-btn cp-btn-primary' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(stripeUrl(pl==="pro"?"pro":"basic"))+"'>Activar suscripción</button></div></div>"
       : "";
+    var actions = _vit
+      ? "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Gestionar pagos</button>"
+      : (pl==="pro"
+          ? "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Gestionar plan</button><button class='cp-plan-btn-mng' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Cancelar suscripción</button>"
+          : "<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Mejorar a Pro</button><button class='cp-plan-btn-mng' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Cancelar suscripción</button>");
     return "<div class='cp-plan-card'><div><div class='cp-plan-eyebrow'>Tu suscripción a Pathway</div>"+
         "<div class='cp-plan-name'>"+rName+"<span style='color:#52B788'>.</span></div>"+
-        "<div class='cp-plan-price'>"+(rPrice!=="—"?"<strong>"+rPrice+"</strong> / mes":"<strong>Sin plan activo</strong>")+"</div>"+
+        "<div class='cp-plan-price'><strong>"+rPrice+"</strong> / mes"+(_vit?" · cortesía":"")+"</div>"+
         (meta?"<div class='cp-plan-meta'>"+meta+"</div>":"")+"</div>"+
-        "<div class='cp-plan-actions'>"+(pl==="pro"?"<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(supportMail("Gestionar mi plan — Pathway"))+"'>Gestionar plan</button>":"<button class='cp-plan-btn-up' data-act='open' data-url='"+esc(stripeUrl("pro"))+"'>Mejorar a Pro</button>")+
-        "<button class='cp-plan-btn-mng' data-act='open' data-url='"+esc(supportMail("Cancelar suscripción — Pathway"))+"'>Cancelar suscripción</button></div></div>"+
+        "<div class='cp-plan-actions'>"+actions+"</div></div>"+
       tCard+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Método de pago<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Suscripción</span></div><div class='cp-card-pad'>"+
-        "<p class='cp-reassurance' style='margin:0;border-radius:12px'>Tu método de pago y tus facturas se gestionan en Stripe. Todavía no hay cargos para mostrar aquí.</p></div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial de facturas<span class='dot'>.</span></h3></div>"+
-        "<div class='cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Sin facturas todavía.</div></div>";
+        "<span class='cp-eyebrow'>Suscripción</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+        "<p class='cp-reassurance' style='margin:0;border-radius:12px'>Tu método de pago y tus facturas se gestionan en Stripe.</p>"+
+        "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>"+svg(IC.extLink,13)+" Abrir portal de Stripe</button></div></div></div>"+
+      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial de facturas<span class='dot'>.</span></h3>"+
+        "<a href='"+esc(STRIPE_PORTAL)+"' target='_blank' rel='noopener' style='font-size:12px;color:var(--pw-bosque);font-weight:600'>Ver en Stripe →</a></div>"+
+        "<div class='cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Tus facturas están en el portal de Stripe.</div></div>";
   }
   var isPro = state.plan === "pro";
   var planName  = isPro ? "Pro" : "Basic";
@@ -1191,9 +1285,10 @@ function cfgPlan(){
       "<div class='cp-pm-row'><div class='cp-pm-brand'>VISA</div>"+
         "<div class='cp-pm-info'><div class='cp-pm-name'>Visa terminada en •••• 4242</div>"+
         "<div class='cp-pm-exp'>Vence 08/2027 · Titular: Micaela Jairedin</div></div>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Actualizar tarjeta</button></div></div>"+
         "<button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(supportMail("Actualizar mi tarjeta — Pathway"))+"'>Actualizar tarjeta</button></div></div>"+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial de facturas<span class='dot'>.</span></h3>"+
-      "<a href='#' style='font-size:12px;color:var(--pw-bosque);font-weight:600'>Ver todas →</a></div>"+
+      "<a href='"+esc(STRIPE_PORTAL)+"' target='_blank' rel='noopener' style='font-size:12px;color:var(--pw-bosque);font-weight:600'>Ver todas →</a></div>"+
       "<table class='cp-bill-table'><tbody>"+invRows+"</tbody></table></div>";
 }
 function cfgPathway(){
@@ -1250,6 +1345,8 @@ function cfgPathway(){
         "<div style='display:flex;justify-content:space-between;gap:12px;font-size:13px'><span style='color:var(--pw-text-soft)'>Cuándo</span><span style='color:var(--pw-carbon);font-weight:600'>Tras 24 h de retención · próximo payout 17 may 2026</span></div>"+
         "<div style='display:flex;justify-content:space-between;gap:12px;font-size:13px'><span style='color:var(--pw-text-soft)'>Estado</span><span style='color:var(--pw-bosque);font-weight:600'>€2.480 en tránsito</span></div>"+
       "</div>"+
+      "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div></div>";
+  return toggleCard+pricesCard+earnings;
       "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='https://dashboard.stripe.com'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div></div>";
   return toggleCard+cfgServices()+pricesCard+earnings;
 }
@@ -1393,17 +1490,22 @@ function viewAdmin(){
       var acc=["—",""];
       var la=cg.last_login||u.last_login;
       if(la){ try{ var d=Math.floor((Date.now()-new Date(la))/86400000); acc=[d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"), d<=2?"ok":(d<=7?"warn":"danger")]; }catch(e){} }
-      return { n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, cli:"—", pw:cg.pathway_optin?"Sí":"No", com:"—" };
+      return { id:u.id, activo:u.activo, email:u.email||"", n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, cli:"—", pw:cg.pathway_optin?"Sí":"No", com:"—" };
     });
   }
   var engRows = coachesEng.map(function(c){
-    return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.n)+"</td>"+
+    var off=(c.activo===false);
+    var selfRow=(RME&&String(c.id)===String(RME.id));
+    var actBtn=selfRow
+      ? "<span style='font-size:11px;color:var(--pw-text-muted)'>vos</span>"
+      : "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 12px;font-size:11px"+(off?"":";color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='coach-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>";
+    return "<tr"+(off?" style='opacity:.55'":"")+"><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.n)+"</td>"+
       "<td>"+pill(c.plan, c.plan==="Pro"?"ok":"")+"</td>"+
-      "<td>"+pill(c.est[0], c.est[1])+"</td>"+
+      "<td>"+pill(off?"Inactiva":c.est[0], off?"danger":c.est[1])+"</td>"+
       "<td>"+pill(c.acc[0], c.acc[1])+"</td>"+
       "<td>"+c.cli+"</td>"+
       "<td>"+(c.pw==="Sí"?"<span style='color:var(--pw-bosque);font-weight:600'>Sí</span>":"<span style='color:var(--pw-text-muted)'>No</span>")+"</td>"+
-      "<td><span class='cp-bill-amount'>"+c.com+"</span></td></tr>";
+      "<td style='text-align:right'>"+actBtn+"</td></tr>";
   }).join("");
   var contactos = [
     { tel:"+34 611 23 45 67",   pag:"soy-coach",     f:"Hoy 14:30" },
@@ -1456,6 +1558,32 @@ function viewAdmin(){
       "<td style='color:var(--pw-text-soft)'>"+p.f+"</td></tr>";
   }).join("");
   function fc(stat,lbl){ return "<div style='flex:1;min-width:120px'><div style='font-family:var(--pw-serif);font-size:24px;font-weight:600;color:var(--pw-carbon)'>"+stat+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+lbl+"</div></div>"; }
+  function eur(n){ return "€"+(Number(n)||0).toLocaleString("es-ES"); }
+  var A=null;
+  if(REAL && RCOACHES){
+    var _now=Date.now(), _D=86400000, _pro=0,_basic=0,_prueba=0,_act7=0,_inact14=0,_nuevas7=0,_venc3=0;
+    RCOACHES.forEach(function(u){
+      var cgf=u.configuracion||{};
+      var vit=cgf.es_pro_vitalicio===true||u.rol==="admin";
+      var pl=vit?"pro":(cgf.plan==="pro"?"pro":"basic");
+      if(pl==="pro")_pro++; else _basic++;
+      var es=(cgf.estado_sub||"").toString();
+      if(es==="prueba")_prueba++;
+      var la=cgf.last_login||u.last_login;
+      if(la){ var dd=(_now-new Date(la))/_D; if(dd<=7)_act7++; if(dd>14)_inact14++; } else { _inact14++; }
+      if(u.created_at && (_now-new Date(u.created_at))/_D<=7) _nuevas7++;
+      if(es==="prueba" && cgf.fecha_fin_prueba){ var fd=(new Date(cgf.fecha_fin_prueba)-_now)/_D; if(fd>=0&&fd<=3)_venc3++; }
+    });
+    var _R=RADM||{cands:[],cvx:[],leads:[]};
+    var _c30=(_R.cands||[]).filter(function(x){return x.created_at&&(_now-new Date(x.created_at))/_D<=30;}).length;
+    var _lds=_R.leads||[];
+    var _lt=_lds.filter(function(x){return x.trial_iniciado_at;}).length;
+    var _lp=_lds.filter(function(x){return x.pago_at;}).length;
+    A={ total:RCOACHES.length, pro:_pro, basic:_basic, prueba:_prueba, act7:_act7, inact14:_inact14,
+        nuevas7:_nuevas7, venc3:_venc3, mrr:_pro*89+_basic*58,
+        candsTot:(_R.cands||[]).length, cands30:_c30, cvx:(_R.cvx||[]).length,
+        leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
+  }
 
   var tabs = [["resumen","Resumen"],["coaches","Coaches"],["contactos","Contactos"],["cvx","CV Express"],["pagos","Pagos"]];
   var tabBar = "<div class='cp-filters'>"+tabs.map(function(t){
@@ -1465,20 +1593,22 @@ function viewAdmin(){
   var body;
   if(state.adminTab==="coaches"){
     body = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
-        fc("<span style='color:var(--pw-bosque)'>5</span>","Activas esta semana")+
-        fc("<span style='color:#8E7A35'>2</span>","En prueba (1 vence ≤3 d)")+
-        fc("<span style='color:var(--pw-danger)'>2</span>","Inactivas +14 d")+
-        fc("1","Nuevas esta semana")+
+        fc("<span style='color:var(--pw-bosque)'>"+(A?A.act7:5)+"</span>","Activas esta semana")+
+        fc("<span style='color:#8E7A35'>"+(A?A.prueba:2)+"</span>","En prueba"+(A&&A.venc3?" ("+A.venc3+" vence ≤3 d)":""))+
+        fc("<span style='color:var(--pw-danger)'>"+(A?A.inact14:2)+"</span>","Inactivas +14 d")+
+        fc(""+(A?A.nuevas7:1),"Nuevas esta semana")+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+coachesEng.length+" registradas · último acceso</span></div>"+
         "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:680px'><thead><tr>"+
-          "<th>Coach</th><th>Plan</th><th>Estado</th><th>Último acceso</th><th>Clientes</th><th>Pathway</th><th>Comisión (mes)</th>"+
+          "<th>Coach</th><th>Plan</th><th>Estado</th><th>Último acceso</th><th>Clientes</th><th>Pathway</th><th style='text-align:right'>Acción</th>"+
         "</tr></thead><tbody>"+engRows+"</tbody></table></div></div>";
   } else if(state.adminTab==="contactos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Popup de pricing<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Funnel</span></div><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
-        fc("128","Capturados")+fc("41","Registrados · 32%")+fc("23","En trial · 18%")+fc("<span style='color:var(--pw-bosque)'>9</span>","Pagaron · 7%")+
+        (A
+          ? fc(""+A.leadsTot,"Leads pricing")+fc(""+A.leadsTrial,"En trial"+(A.leadsTot?" · "+Math.round(A.leadsTrial/A.leadsTot*100)+"%":""))+fc("<span style='color:var(--pw-bosque)'>"+A.leadsPago+"</span>","Pagaron"+(A.leadsTot?" · "+Math.round(A.leadsPago/A.leadsTot*100)+"%":""))
+          : fc("128","Capturados")+fc("41","Registrados · 32%")+fc("23","En trial · 18%")+fc("<span style='color:var(--pw-bosque)'>9</span>","Pagaron · 7%"))+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Contactos del chatbot<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+contactos.length+" · desde la web</span></div>"+
@@ -1487,7 +1617,9 @@ function viewAdmin(){
         "</tr></thead><tbody>"+contactoRows+"</tbody></table></div></div>";
   } else if(state.adminTab==="cvx"){
     body = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
-        fc("37","Compras pagas (mes)")+fc("<span style='color:var(--pw-bosque)'>€1.073</span>","Ingresos (mes)")+fc("11","Accesos de prueba (admin)")+fc("<span style='color:#C99A2E'>4,8 ★</span>","14 reseñas")+
+        (A
+          ? fc(""+A.cvx,"Registros CV Express")+fc("<span style='color:var(--pw-text-muted)'>—</span>","Ingresos (no cableado)")+fc("<span style='color:var(--pw-text-muted)'>—</span>","Reseñas (no cableado)")
+          : fc("37","Compras pagas (mes)")+fc("<span style='color:var(--pw-bosque)'>€1.073</span>","Ingresos (mes)")+fc("11","Accesos de prueba (admin)")+fc("<span style='color:#C99A2E'>4,8 ★</span>","14 reseñas"))+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>CV Express<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Producto pago · acceso de prueba por admin</span></div>"+
@@ -1504,12 +1636,12 @@ function viewAdmin(){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Mayo 2026</span></div>"+
         "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
-          row("Suscripciones de coaches","€1.091",{muted:true})+
-          row("Comisión Pathway (20% de lo referido)","€3.720",{muted:true})+
-          row("CV Express (pagas)","€1.073",{muted:true})+
-          row("Total ingresos de la plataforma","€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("Suscripciones de coaches (MRR estimado por plan)", A?eur(A.mrr):"€1.091",{muted:true})+
+          row("Comisión Pathway", A?"—":"€3.720",{muted:true})+
+          row("CV Express", A?"—":"€1.073",{muted:true})+
+          row("Total estimado", A?eur(A.mrr):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
         "</div>"+
-        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>Los <strong>€14.880</strong> de payouts a coaches (su 80% de lo referido) no son ingreso de la plataforma — se transfieren tras la retención de 24 h.</p></div>"+
+        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>"+(A?"El MRR es <strong>estimado</strong> según los planes activos ("+A.pro+" Pro × €89 + "+A.basic+" Basic × €58). Comisión, payouts y CV Express se gestionan en Stripe — todavía no están cableados aquí.":"Los <strong>€14.880</strong> de payouts a coaches (su 80% de lo referido) no son ingreso de la plataforma — se transfieren tras la retención de 24 h.")+"</p></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Payouts a coaches — pendientes<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● vía Stripe</span></div>"+
         "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:640px'><thead><tr>"+
@@ -1517,30 +1649,30 @@ function viewAdmin(){
         "</tr></thead><tbody>"+payoutRows+"</tbody></table></div></div>";
   } else {
     body = "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px'>"+
-        kpi("MRR suscripciones","€1.091","14 coaches · 9 Pro + 5 Basic")+
-        kpi("Comisión Pathway (mes)","€3.720","20% de €18.600 referido")+
-        kpi("Payouts a coaches (mes)","€14.880","80% · €2.480 en tránsito")+
-        kpi("CV Express (mes)","€1.073","37 pagas + 11 de prueba")+
-        kpi("Candidatos (30 d)","86","de formularios + directorio")+
-        kpi("Solicitudes directorio","3","pendientes · ventana 24 h")+
+        kpi("MRR estimado", A?eur(A.mrr):"€1.091", A?(A.total+" coaches · "+A.pro+" Pro + "+A.basic+" Basic"):"14 coaches · 9 Pro + 5 Basic")+
+        kpi("Comisión Pathway", A?"—":"€3.720", A?"no cableado (Stripe)":"20% de €18.600 referido")+
+        kpi("Payouts a coaches", A?"—":"€14.880", A?"no cableado (Stripe)":"80% · €2.480 en tránsito")+
+        kpi("CV Express", A?(A.cvx+" reg."):"€1.073", A?"sin importe (no cableado)":"37 pagas + 11 de prueba")+
+        kpi("Candidatos (30 d)", A?(""+A.cands30):"86", A?(A.candsTot+" en total"):"de formularios + directorio")+
+        kpi("Leads pricing", A?(""+A.leadsTot):"3", A?(A.leadsPago+" pagaron"):"pendientes · ventana 24 h")+
       "</div>"+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
-        fc("<span style='color:#8E7A35'>2</span>","Trials por vencer ≤3 d")+
-        fc("<span style='color:var(--pw-danger)'>2</span>","Coaches inactivas +14 d")+
-        fc("1","Coaches nuevas (7 d)")+
-        fc("<span style='color:var(--pw-bosque)'>9</span>","Ventas reales (mes)")+
+        fc("<span style='color:#8E7A35'>"+(A?A.venc3:2)+"</span>","Trials por vencer ≤3 d")+
+        fc("<span style='color:var(--pw-danger)'>"+(A?A.inact14:2)+"</span>","Coaches inactivas +14 d")+
+        fc(""+(A?A.nuevas7:1),"Coaches nuevas (7 d)")+
+        fc("<span style='color:var(--pw-bosque)'>"+(A?A.leadsPago:9)+"</span>","Ventas (leads pagados)")+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Ingresos de la plataforma<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Mayo 2026</span></div>"+
         "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
-          row("Suscripciones de coaches","€1.091",{muted:true})+
-          row("Comisión Pathway (20%)","€3.720",{muted:true})+
-          row("CV Express (pagas)","€1.073",{muted:true})+
-          row("Total ingresos de la plataforma","€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
+          row("Suscripciones de coaches (MRR estimado)", A?eur(A.mrr):"€1.091",{muted:true})+
+          row("Comisión Pathway", A?"—":"€3.720",{muted:true})+
+          row("CV Express", A?"—":"€1.073",{muted:true})+
+          row("Total estimado", A?eur(A.mrr):"€5.884",{big:true,strongC:"var(--pw-bosque)",top:true})+
         "</div></div>";
   }
   var realNote = REAL
-    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Coaches y Contactos:</strong> datos reales. <strong>Ingresos / comisión / payouts / CV Express:</strong> agregados de plataforma todavía no cableados — los importes mostrados no son reales aún.</div>"
+    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Datos reales:</strong> coaches, contactos, candidatos, leads y MRR estimado por plan. <strong>Comisión, payouts e ingresos de CV Express</strong> se gestionan en Stripe y todavía no están cableados (se muestran como —).</div>"
     : "";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Admin<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Vista de plataforma"+(REAL?" · datos en vivo":" · datos de ejemplo")+"</div></div></header>"+
@@ -1557,6 +1689,7 @@ function viewNewModal(){
         "<div class='cp-form-row'><label class='cp-form-label'>Nombre</label><input id='nc-nombre' class='cp-form-input' placeholder='Nombre y apellido'></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Email</label><input id='nc-email' class='cp-form-input' placeholder='email@ejemplo.com'></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Rol / cargo</label><input id='nc-cargo' class='cp-form-input' placeholder='Ej: Product Manager'></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Contraseña de acceso (opcional, mín. 6)</label><input id='nc-pass' type='text' class='cp-form-input' placeholder='Si la dejás vacía, el cliente aún no podrá entrar al portal'><span class='cp-form-hint'>Crea su login al portal. Podés asignarla/cambiarla luego en la ficha → Gestión.</span></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Contraseña de acceso</label>"+
           "<input id='nc-pass' class='cp-form-input' value=\""+esc(state.newPass||"")+"\" placeholder='Mínimo 6 caracteres'>"+
           "<span class='cp-form-hint'>Con esto el cliente entra a su portal. Se la mandas en el email de acceso. Déjala vacía si aún no quieres darle acceso.</span></div>"+
@@ -1650,6 +1783,20 @@ document.addEventListener("click", function(ev){
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; render(); return; }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); render(); return; }
+  if(act==="coach-toggle"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var ctid=el.getAttribute("data-id"); if(!ctid) return;
+    if(RME&&String(ctid)===String(RME.id)){ alert("No podés desactivar tu propia cuenta."); return; }
+    var turnOn=el.getAttribute("data-on")==="1";
+    if(!confirm(turnOn?"¿Reactivar el acceso de esta coach?":"¿Desactivar a esta coach? Pierde acceso al panel hasta que la reactives.")) return;
+    _sbw("usuarios?id=eq."+encodeURIComponent(ctid),"PATCH",{activo:turnOn})
+      .then(function(r){ if(!r.ok) throw 0;
+        if(RCOACHES){ RCOACHES.forEach(function(u){ if(String(u.id)===String(ctid)) u.activo=turnOn; }); }
+        toast(turnOn?"Coach reactivada ✓":"Coach desactivada ✓"); render(); })
+      .catch(function(){ alert("No se pudo cambiar el estado de la coach."); });
+    return;
+  }
+  if(act.indexOf("cli-open:")===0){ state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; render(); window.scrollTo(0,0); return; }
   if(act.indexOf("cli-open:")===0){ state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.cliPass="pw"+Math.random().toString(36).slice(2,8); render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
@@ -1664,11 +1811,29 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo archivar desde aquí. Podés hacerlo desde tu panel actual."); });
     return;
   }
+  if(act==="cli-new"){
+    if(!REAL||!RME){ alert("Iniciá sesión para crear clientes reales."); return; }
+    if(state.plan!=="pro"){
+      var _own=CLIENTS.filter(function(x){return x.source!=="pathway";}).length;
+      if(_own>=5){ if(confirm("Tu plan Basic permite hasta 5 clientes. ¿Querés ver los planes para ampliar a Pro?")) window.open(UPGRADE_URL,"_blank","noopener"); return; }
+    }
+    state.newOpen=true; render(); return;
+  }
   if(act==="cli-new"){ if(!REAL||!RME){ alert("Inicia sesión para crear clientes reales."); return; } state.newPass="pw"+Math.random().toString(36).slice(2,8); state.newOpen=true; render(); return; }
   if(act==="cli-stop"){ return; }
   if(act==="cli-bg"){ if(ev.target===el){ state.newOpen=false; render(); } return; }
   if(act==="cli-modal-close"){ state.newOpen=false; render(); return; }
   if(act==="cli-create"){
+    var nm=_val("nc-nombre").trim(), em=_val("nc-email").trim().toLowerCase(), cargo=_val("nc-cargo").trim(), pw=_val("nc-pass").trim();
+    if(!nm||!em){ alert("Nombre y email son obligatorios."); return; }
+    if(pw && pw.length<6){ alert("La contraseña debe tener al menos 6 caracteres."); return; }
+    var mkUser = pw
+      ? _sha256(pw).then(function(h){ return _sbw("usuarios","POST",{email:em,password_hash:h,rol:"cliente",nombre:nm,activo:true}).then(function(ru){ if(!ru.ok) throw 0; }); })
+      : Promise.resolve();
+    mkUser
+      .then(function(){ return _sbw("candidatos","POST",{nombre:nm,email:em,cargo:cargo,coach_id:RME.id,semana_activa:1,activo:true}); })
+      .then(function(r){ if(!r.ok) throw 0; state.newOpen=false; toast(pw?"Cliente creado con acceso ✓":"Cliente creado ✓"); loadReal(); })
+      .catch(function(){ alert("No se pudo crear. Revisá el email (puede que ya exista) o creálo desde tu panel actual."); });
     var nm=_val("nc-nombre").trim(), em=_val("nc-email").trim().toLowerCase(), cg=_val("nc-cargo").trim(), pw=_val("nc-pass").trim();
     if(!nm){ alert("Pon al menos el nombre."); return; }
     if(pw && pw.length<6){ alert("La contraseña debe tener mínimo 6 caracteres (o déjala vacía)."); return; }
@@ -1753,6 +1918,15 @@ document.addEventListener("click", function(ev){
     var gi=el.getAttribute("data-id"), rw=rawOf(gi);
     if(!rw){ alert("No tengo los datos del formulario de este cliente."); return; }
     if(_genBusy) return;
+    if(state.plan!=="pro"){
+      var _thisC=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0];
+      var _hasOwn=_thisC && _thisC.reportState==="published";
+      var _withInf=CLIENTS.filter(function(x){return x.reportState==="published";}).length;
+      if(!_hasOwn && _withInf>=5){
+        if(confirm("Tu plan Basic incluye informes para hasta 5 clientes (ya tenés "+_withInf+"). Para generar informes a más clientes, pasá a Pro. ¿Ver los planes?")) window.open(UPGRADE_URL,"_blank","noopener");
+        return;
+      }
+    }
     if(!confirm("¿Generar el informe con IA a partir del formulario y el material? Puede tardar ~30 s.")) return;
     var liP=_val("pa-li").trim(), cvP=_val("pa-cv").trim();
     var liUse=liP||rw.linkedin_texto||"";
@@ -1778,7 +1952,7 @@ document.addEventListener("click", function(ev){
       .then(function(j){
         if(!j||(!j.cv_data&&!j.cv_texto)){ alert("La IA no devolvió un CV. Probá de nuevo o usá tu panel actual."); return; }
         var cont=JSON.stringify(j.cv_data||{texto:j.cv_texto||""});
-        var done=function(r){ if(!r||!r.ok) throw 0; if(vc) vc.cvState="published"; toast("CV generado ✓"); render(); };
+        var done=function(r){ if(!r||!r.ok) throw 0; if(vc){ vc.cvState="published"; vc.cvContenido=cont; } toast("CV generado ✓"); render(); };
         if(vc&&vc.cvState==="published"){
           _sbw("cv_publicados?email=eq."+encodeURIComponent(rv.email||"")+cg(),"PATCH",{contenido:cont}).then(done).catch(function(){ alert("No se pudo guardar el CV."); });
         } else {
@@ -1798,7 +1972,7 @@ document.addEventListener("click", function(ev){
     _genBusy=true; toast("Generando carta…");
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"generar_carta",nombre:rc.nombre,email:rc.email,ciudad:rc.ciudad,linkedin:rc.linkedin,exp:rc.exp||rc.experiencia,sector:rc.sector,cargo:rc.cargo,rol:rc.rol,empresa:rc.empresa,logro:rc.logro,habilidades:rc.habilidades,obstaculos:rc.obstaculos,nicho:rc.nicho,linkedin_texto:cliP||rc.linkedin_texto||""})})
       .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
-      .then(function(j){ if(j&&(j.carta_texto||j.texto)){ _sbw("candidatos?id=eq."+encodeURIComponent(gc)+cg(),"PATCH",{carta_presentacion:j.carta_texto||j.texto}); } toast("Carta generada ✓"); })
+      .then(function(j){ var ct=j&&(j.carta_texto||j.texto); if(ct){ _sbw("candidatos?id=eq."+encodeURIComponent(gc)+cg(),"PATCH",{carta_presentacion:ct}); var _cc=CLIENTS.filter(function(x){return String(x.id)===String(gc);})[0]; if(_cc&&_cc.raw) _cc.raw.carta_presentacion=ct; toast("Carta generada ✓ — abriendo el editor…"); state.cliDetTab="docs"; render(); } else { toast("Carta generada ✓"); } })
       .catch(function(){ _genBusy=false; alert("No se pudo generar la carta desde aquí. Prueba en tu panel actual."); });
     return;
   }
@@ -1809,6 +1983,76 @@ document.addEventListener("click", function(ev){
     _sbw("candidatos?id=eq."+encodeURIComponent(mtid)+cg(),"PATCH",{linkedin_texto:mli,cv_url:mcv})
       .then(function(r){ if(!r.ok) throw 0; if(mtc&&mtc.raw){ mtc.raw.linkedin_texto=mli; mtc.raw.cv_url=mcv; } toast("Material guardado ✓"); })
       .catch(function(){ alert("No se pudo guardar el material."); });
+    return;
+  }
+  if(act==="cv-save"){
+    var cvid=el.getAttribute("data-id"); if(!cvid) return;
+    var cvc=CLIENTS.filter(function(x){return String(x.id)===String(cvid);})[0]; if(!cvc) return;
+    var cvtxt=_val("cv-edit");
+    var cvem=encodeURIComponent((""+(cvc.email||"")).toLowerCase().trim());
+    var cvok=function(r){ if(!r||!r.ok) throw 0; cvc.cvState="published"; cvc.cvContenido=cvtxt; toast("CV guardado ✓ — ya lo ve el cliente"); render(); };
+    if(cvc.cvState==="published"){
+      _sbw("cv_publicados?email=eq."+cvem+cg(),"PATCH",{contenido:cvtxt}).then(cvok).catch(function(){ alert("No se pudo guardar el CV."); });
+    } else {
+      var cvpb={email:(""+(cvc.email||"")).toLowerCase().trim(),contenido:cvtxt}; if(REAL&&RME&&RME.rol!=="admin") cvpb.coach_id=RME.id;
+      _sbw("cv_publicados","POST",cvpb).then(cvok).catch(function(){ alert("No se pudo guardar el CV."); });
+    }
+    return;
+  }
+  if(act==="carta-save"){
+    var ctid=el.getAttribute("data-id"); if(!ctid) return;
+    var ctc=CLIENTS.filter(function(x){return String(x.id)===String(ctid);})[0]; if(!ctc) return;
+    var cttxt=_val("carta-edit");
+    _sbw("candidatos?id=eq."+encodeURIComponent(ctid)+cg(),"PATCH",{carta_presentacion:cttxt})
+      .then(function(r){ if(!r.ok) throw 0; if(ctc.raw) ctc.raw.carta_presentacion=cttxt; toast("Carta guardada ✓ — ya la ve el cliente"); render(); })
+      .catch(function(){ alert("No se pudo guardar la carta."); });
+    return;
+  }
+  if(act==="carta-copy"){
+    var ctv=_val("carta-edit");
+    try{ navigator.clipboard && navigator.clipboard.writeText(ctv); }catch(e){}
+    toast("Carta copiada ✓"); return;
+  }
+  if(act==="cli-pass-show"){
+    var psid=el.getAttribute("data-id"); if(!psid) return;
+    var psc=CLIENTS.filter(function(x){return String(x.id)===String(psid);})[0]; if(!psc) return;
+    var psem=(""+(psc.email||"")).toLowerCase().trim();
+    var psSt=document.getElementById("cli-pass-st");
+    if(!psem){ if(psSt) psSt.textContent="sin email — no se puede crear acceso"; return; }
+    if(psSt) psSt.textContent="buscando…";
+    _sb("usuarios?email=eq."+encodeURIComponent(psem)+"&select=password_hash").then(function(rows){
+      var e2=document.getElementById("cli-pass-st"); if(!e2) return;
+      if(rows&&rows.length&&rows[0].password_hash){ e2.textContent="tiene acceso (contraseña configurada)"; }
+      else { e2.textContent="sin cuenta — usá Guardar para crearla"; }
+    });
+    return;
+  }
+  if(act==="cli-pass-save"){
+    var spid=el.getAttribute("data-id"); if(!spid) return;
+    var spc=CLIENTS.filter(function(x){return String(x.id)===String(spid);})[0]; if(!spc) return;
+    var np=_val("cli-pass").trim();
+    if(np.length<6){ alert("La contraseña debe tener al menos 6 caracteres."); return; }
+    var spem=(""+(spc.email||"")).toLowerCase().trim();
+    if(!spem){ alert("El cliente no tiene email — no se puede crear acceso."); return; }
+    _sha256(np).then(function(h){
+      return _sb("usuarios?email=eq."+encodeURIComponent(spem)+"&select=id").then(function(rows){
+        if(rows&&rows.length){ return _sbw("usuarios?email=eq."+encodeURIComponent(spem),"PATCH",{password_hash:h}); }
+        return _sbw("usuarios","POST",{email:spem,password_hash:h,rol:"cliente",nombre:spc.name||"",activo:true});
+      });
+    }).then(function(r){ if(!r||!r.ok) throw 0;
+      var e3=document.getElementById("cli-pass-st"); if(e3) e3.textContent="acceso actualizado ✓";
+      var inp=document.getElementById("cli-pass"); if(inp) inp.value="";
+      toast("Contraseña guardada ✓"); })
+      .catch(function(){ alert("No se pudo guardar la contraseña."); });
+    return;
+  }
+  if(act==="coach-pass-save"){
+    if(!REAL||!RME||!RME.id){ alert("Iniciá sesión para cambiar tu contraseña."); return; }
+    var cpw=_val("coach-pass").trim();
+    if(cpw.length<6){ alert("La contraseña debe tener al menos 6 caracteres."); return; }
+    _sha256(cpw).then(function(h){ return _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{password_hash:h}); })
+      .then(function(r){ if(!r.ok) throw 0; var ip=document.getElementById("coach-pass"); if(ip) ip.value=""; toast("Tu contraseña fue actualizada ✓"); })
+      .catch(function(){ alert("No se pudo cambiar la contraseña."); });
     return;
   }
   if(act==="plan-save"){
@@ -1844,7 +2088,7 @@ document.addEventListener("click", function(ev){
     var pc=CLIENTS.filter(function(x){return String(x.id)===String(pid);})[0];
     if(!pc) return;
     var arr=(pc.ses||[]).slice();
-    arr.push({fecha:f,hora:_val("ss-hora"),trabajado:_val("ss-tema").trim(),acordado:_val("ss-acor").trim(),acciones:"",tareas_done:[]});
+    arr.push({fecha:f,hora:_val("ss-hora"),trabajado:_val("ss-tema").trim(),acordado:_val("ss-acor").trim(),acciones:_val("ss-tareas").trim(),tareas_done:[]});
     _sbw("candidatos?id=eq."+encodeURIComponent(pid)+cg(),"PATCH",{sesiones_registro:JSON.stringify(arr)})
       .then(function(r){ if(!r.ok) throw 0; pc.ses=arr; toast("Sesión registrada ✓"); render(); })
       .catch(function(){ alert("No se pudo guardar la sesión."); });
@@ -1915,10 +2159,13 @@ var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 function _sb(p){ return fetch(SB+"/rest/v1/"+p,{headers:{apikey:KEY,Authorization:"Bearer "+KEY}}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }
 function _sbw(p,method,body){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:{apikey:KEY,Authorization:"Bearer "+KEY,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify(body)}); }
 var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy=false;
+var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
+var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
 function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0]; return (c&&c.raw)||null; }
 function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
+function _sha256(txt){ return crypto.subtle.digest("SHA-256",new TextEncoder().encode(""+txt)).then(function(b){ return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join(""); }); }
 function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600); }
-var REAL=false, RCFG={}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false;
+var REAL=false, RCFG={}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null;
 function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURIComponent(RME.id) : ""; }
 function saveCfg(cfgPatch, usuariosExtra){
   if(!RME||!RME.id){ alert("Iniciá sesión para guardar."); return; }
@@ -1941,27 +2188,34 @@ function loadReal(){
     ? "select=*&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)"
     : "select=*&coach_id=eq."+encodeURIComponent(ME.id);
   var extra = ME.rol==="admin"
-    ? [ _sb("usuarios?select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
-        _sb("contactos_chat?select=contacto,pagina,fecha&order=fecha.desc&limit=30") ]
-    : [ Promise.resolve([]), Promise.resolve([]) ];
+    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
+        _sb("contactos_chat?select=contacto,pagina,fecha&order=fecha.desc&limit=30"),
+        _sb("candidatos?select=id,created_at"),
+        _sb("cv_express?select=id,created_at"),
+        _sb("leads_pricing?select=trial_iniciado_at,pago_at,created_at") ]
+    : [ Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]) ];
   Promise.all([
     _sb("candidatos?"+cf+"&order=created_at.desc"),
     _sb("cv_publicados?select=email,contenido"),
     _sb("informes?select=email,id,data&order=created_at.desc"),
     _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion"),
-    extra[0], extra[1]
+    extra[0], extra[1], extra[2], extra[3], extra[4]
   ]).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
     RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
+    RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[] } : null;
     RCFG = usr.configuracion || ME.configuracion || {};
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
     if(RCFG && RCFG.color_marca) state.brandAccent=RCFG.color_marca;
     var cname = ME.nombre || usr.nombre || "Coach";
     var cfg = RCFG;
+    var _vit = (cfg&&cfg.es_pro_vitalicio===true) || RADMIN;
+    var planEff = _vit ? "pro" : (cfg&&cfg.plan==="pro" ? "pro" : "basic");
+    state.plan = planEff;
     COACH = { name:cname, firstName:(""+cname).split(" ")[0], role:"Career Coach",
-      plan:(cfg&&cfg.plan==="basic"?"Basic":"Pro"), photo:(cfg&&cfg.foto_url)||usr.foto_url||makeAvatar(cname,150),
+      plan:(planEff==="pro"?"Pro":"Basic"), photo:(cfg&&cfg.foto_url)||usr.foto_url||makeAvatar(cname,150),
       slug:(cfg&&cfg.slug)||"", email:ME.email||"" };
-    var cvSet={}; cvR.forEach(function(x){ if(x&&x.email) cvSet[(""+x.email).toLowerCase().trim()]=true; });
+    var cvSet={}, cvMap={}; cvR.forEach(function(x){ if(x&&x.email){ var ke=(""+x.email).toLowerCase().trim(); cvSet[ke]=true; if(cvMap[ke]==null) cvMap[ke]=(x.contenido!=null?(""+x.contenido):""); } });
     var infMap={}, rpSet={};
     inf.forEach(function(x){
       if(!x||!x.email) return;
@@ -1989,6 +2243,7 @@ function loadReal(){
         id: String(c.id||em||("c"+i)), name: c.nombre||c.email||"Cliente", role: c.cargo||"",
         email: c.email||"", week: wk, medal: medal, last:{txt:lastTxt,state:lastSt},
         cvState: cvSet[em]?"published":"pending", reportState: rpSet[em]?"published":"pending",
+        cvContenido: cvMap[em]||"",
         source: "directo", notas: c.notas_coach||"", raw:c, inf: infMap[em]||null, ses:(function(){try{return JSON.parse(c.sesiones_registro||"[]")||[];}catch(e){return [];}})(), photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
       };
     });
