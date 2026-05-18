@@ -1609,9 +1609,21 @@ function viewAdmin(){
         var paid=!!x.paid_at, fday="—";
         try{ var _dd=new Date(x.created_at); if(!isNaN(_dd)) fday=_dd.toLocaleDateString("es-ES",{day:"numeric",month:"short"}); }catch(e){}
         var _em=(""+(x.email||"")).toLowerCase().trim();
+        // Origen = cómo obtuvo el acceso. Pago real vía Stripe trae
+        // pago_monto>0; un "Dar acceso" manual deja pago_monto 0/null.
+        var monto=parseFloat(x.pago_monto);
+        var origen = (monto>0) ? ["Pago €"+monto,"ok"]
+          : paid ? ["Acceso manual",""]
+          : ["—",""];
+        // Estado = si el acceso sigue válido (mismo criterio que el guard
+        // de cv-express.html: 48 h desde paid_at).
+        var estado;
+        if(paid){
+          var ageMs=Date.now()-new Date(x.paid_at).getTime();
+          estado = (ageMs<=48*3600*1000) ? ["Activo","ok"] : ["Vencido","danger"];
+        } else { estado=["Sin acceso","warn"]; }
         return { n:(x.nombre||x.email||"—"), em:(x.email||""), f:fday,
-          org: paid ? ["Pagó"+(x.pago_monto?" €"+x.pago_monto:""),"ok"] : ["Acceso admin",""],
-          acc: paid ? ["Pagado","ok"] : ["Prueba","warn"], rev:(_em&&_revMap[_em])||null, cv:true };
+          org: origen, acc: estado, rev:(_em&&_revMap[_em])||null, cv:true };
       })
     : (REAL ? [] : [
     { n:"Marcos Ledesma", em:"marcos@email.com",  f:"16 may", org:["Pagó €29","ok"],      acc:["CV generado","ok"],     rev:{st:5,txt:"Rápido y clarísimo"}, cv:true },
