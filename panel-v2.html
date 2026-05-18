@@ -940,8 +940,24 @@ function viewClienteDetalle(c){
           "<button class='cp-btn cp-btn-primary' style='margin-top:6px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Ver planes →</button></div></div>"
       : "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
-    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div>"+
+    var _thread=(c.chat&&c.chat.length?c.chat:[]).map(function(m){
+      var isCoach=(m&&m.from==="coach");
+      return "<div style='display:flex;justify-content:"+(isCoach?"flex-end":"flex-start")+";margin-bottom:8px'>"+
+        "<div style='max-width:78%;padding:9px 13px;border-radius:"+(isCoach?"14px 4px 14px 14px":"4px 14px 14px 14px")+";background:"+(isCoach?"var(--pw-bosque);color:#fff":"var(--pw-niebla-2);color:var(--pw-carbon)")+";font-size:13px;line-height:1.5'>"+
+          "<div style='font-size:10px;font-weight:700;opacity:.75;margin-bottom:2px'>"+(isCoach?esc((COACH&&COACH.firstName)||"Vos"):esc(fn||"Cliente"))+"</div>"+
+          esc(m&&m.text||"")+
+          "<div style='font-size:10px;opacity:.6;margin-top:3px;text-align:right'>"+esc(m&&m.time||"")+"</div></div></div>";
+    }).join("");
+    if(!_thread) _thread="<div style='text-align:center;padding:34px 16px;font-size:13px;color:var(--pw-text-soft)'>Sin mensajes todavía.<br>Escribí abajo para iniciar la conversación con "+esc(fn)+". Le llega directo a su portal.</div>";
+    var chatCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Chat directo con "+esc(fn)+"<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>En vivo · su portal</span></div>"+
+        "<div class='cp-card-pad'><div style='max-height:340px;overflow-y:auto;display:flex;flex-direction:column;padding:4px 2px'>"+_thread+"</div>"+
+        "<div style='display:flex;gap:8px;margin-top:12px'>"+
+          "<input id='chatmsg' class='cp-form-input' style='flex:1' placeholder='Escribí un mensaje para "+esc(fn)+"…' onkeydown=\"if(event.key==='Enter'){event.preventDefault();var b=document.querySelector('[data-act=chat-send]');if(b)b.click();}\">"+
+          "<button class='cp-btn cp-btn-primary' style='padding:0 18px' data-act='chat-send' data-id='"+esc(c.id)+"'>Enviar</button></div>"+
+        "<span class='cp-form-hint'>Es un chat directo, más informal que un email. El cliente lo ve en la burbuja de mensajes de su portal.</span></div></div>";
+    body=chatCard+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Plantillas de email<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Para "+esc(fn)+"</span></div>"+
       "<div class='cp-card-pad'><p style='font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.55'><strong>Enviar email</strong> manda el mensaje directo al cliente con tu nombre y tu marca — es una función "+(pro?"Pro (activa)":"Pro")+". WhatsApp, email manual y copiar están siempre disponibles.</p></div>"+
       "<div class='cp-card-pad' style='padding-top:0;display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
   } else if(t==="gestion"){
@@ -2160,11 +2176,31 @@ document.addEventListener("click", function(ev){
     var mid=el.getAttribute("data-id"); if(!mid) return;
     var mc=CLIENTS.filter(function(x){return String(x.id)===String(mid);})[0]||{};
     var wkv=state.cliWeek!=null?state.cliWeek:(mc.week||1);
-    _sbw("candidatos?id=eq."+encodeURIComponent(mid),"PATCH",{notas_coach:_val("cf-notas"),semana_activa:wkv})
+    var _nv=_val("cf-notas");
+    _sbw("candidatos?id=eq."+encodeURIComponent(mid),"PATCH",{notas_privadas:_nv,semana_activa:wkv})
       .then(function(r){ if(!r.ok) throw 0;
-        CLIENTS.forEach(function(x){ if(String(x.id)===String(mid)){ x.notas=_val("cf-notas"); x.week=wkv; } });
+        CLIENTS.forEach(function(x){ if(String(x.id)===String(mid)){ x.notas=_nv; x.week=wkv; } });
         state.cliWeek=null; toast("Nota y semana guardadas ✓"); render(); })
-      .catch(function(){ alert("No se pudo guardar."); });
+      .catch(function(){ alert("No se pudo guardar la nota. ¿Aplicaste el SQL de notas_privadas en Supabase?"); });
+    return;
+  }
+  if(act==="chat-send"){
+    var chid=el.getAttribute("data-id"); if(!chid) return;
+    var inp=document.getElementById("chatmsg"); var txt=inp?(""+inp.value).trim():"";
+    if(!txt) return;
+    if(_genBusy) return; _genBusy=true; if(inp) inp.disabled=true;
+    var now=new Date();
+    var time=now.getDate()+"/"+(1+now.getMonth())+" "+now.getHours()+":"+String(now.getMinutes()).padStart(2,"0");
+    var msg={from:"coach",text:txt,time:time,ts:now.getTime()};
+    _sb("candidatos?id=eq."+encodeURIComponent(chid)+"&select=notas_coach").then(function(rows){
+      var arr=_chatArr(rows&&rows[0]?rows[0].notas_coach:"[]");
+      arr.push(msg);
+      return _sbw("candidatos?id=eq."+encodeURIComponent(chid),"PATCH",{notas_coach:JSON.stringify(arr)}).then(function(r){
+        _genBusy=false; if(!r.ok){ if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintentá."); return; }
+        CLIENTS.forEach(function(x){ if(String(x.id)===String(chid)){ x.chat=arr; if(x.raw) x.raw.notas_coach=JSON.stringify(arr); } });
+        render();
+      });
+    }).catch(function(){ _genBusy=false; if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintentá."); });
     return;
   }
   if(act==="etapa-save"){
@@ -2544,6 +2580,8 @@ var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
 var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
 function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0]; return (c&&c.raw)||null; }
 function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
+function _chatArr(s){ try{ var a=JSON.parse(s||"[]"); return Object.prototype.toString.call(a)==="[object Array]"?a:[]; }catch(e){ return []; } }
+function _isChat(s){ if(!s) return false; var t=(""+s).trim(); if(t.charAt(0)!=="[") return false; try{ return Object.prototype.toString.call(JSON.parse(t))==="[object Array]"; }catch(e){ return false; } }
 function _sha256(txt){ return crypto.subtle.digest("SHA-256",new TextEncoder().encode(""+txt)).then(function(b){ return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join(""); }); }
 function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600); }
 var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[];
@@ -2648,7 +2686,7 @@ function loadReal(){
         email: c.email||"", week: wk, medal: medal, last:{txt:lastTxt,state:lastSt},
         cvState: cvSet[em]?"published":"pending", reportState: rpSet[em]?"published":"pending",
         cvContenido: cvMap[em]||"",
-        source: "directo", notas: c.notas_coach||"", raw:c, inf: infMap[em]||null, ses:(function(){try{return JSON.parse(c.sesiones_registro||"[]")||[];}catch(e){return [];}})(), photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
+        source: "directo", notas: (c.notas_privadas!=null ? c.notas_privadas : (_isChat(c.notas_coach) ? "" : (c.notas_coach||""))), chat: _chatArr(c.notas_coach), raw:c, inf: infMap[em]||null, ses:(function(){try{return JSON.parse(c.sesiones_registro||"[]")||[];}catch(e){return [];}})(), photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
       };
     });
     render();
