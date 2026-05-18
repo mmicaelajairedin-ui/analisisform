@@ -183,11 +183,15 @@ h1 .accent{color:var(--sendero);}
   // Otorgar acceso manual a un email (sin pago). Útil para friends y demos.
   // Crea un row en cv_express con paid_at=now, marca explícitamente el
   // pago_monto a 0 para distinguirlo de pagos reales.
+  // Además ENVÍA un email de invitación automático vía send-email (Brevo)
+  // con el link directo al Pack Express.
   window.grantAccess=function(){
     var input=document.getElementById('grant-email');
     var email=(input.value||'').trim().toLowerCase();
     if(!email||email.indexOf('@')===-1){alert('Email inválido');return;}
-    if(!confirm('¿Otorgar acceso a '+email+' sin pago? Va a poder usar el Pack Express y generar sus 3 documentos.'))return;
+    if(!confirm('¿Otorgar acceso a '+email+' sin pago y enviarle el email de invitación?'))return;
+    var btn=document.querySelector('button[onclick="grantAccess()"]');
+    if(btn){btn.disabled=true;btn.textContent='Otorgando...';}
     // Verificar si ya existe (para no duplicar)
     fetch(SB+'/rest/v1/cv_express?email=eq.'+encodeURIComponent(email)+'&select=email&limit=1',{
       headers:{apikey:KEY,Authorization:'Bearer '+KEY}
@@ -204,14 +208,57 @@ h1 .accent{color:var(--sendero);}
         });
       })
       .then(function(r){
-        if(r.ok){
-          input.value='';
-          alert('✓ Acceso otorgado. Pasale el link:\n\nhttps://pathwaycareercoach.com/cv-express.html?paid=1&email='+encodeURIComponent(email));
-          load();
-        } else alert('Error: '+r.status);
+        if(!r.ok) throw new Error('grant_failed_'+r.status);
+        // Acceso otorgado OK → ahora mandamos el email de invitación.
+        return enviarInvitacionExpress(email);
       })
-      .catch(function(){alert('Error de conexión');});
+      .then(function(emailOk){
+        input.value='';
+        if(btn){btn.disabled=false;btn.textContent='+ Otorgar';}
+        if(emailOk){
+          alert('✓ Acceso otorgado y email de invitación enviado a '+email+'.');
+        } else {
+          alert('✓ Acceso otorgado a '+email+'.\n\n⚠️ El email automático falló. Pasale el link manualmente:\n\nhttps://pathwaycareercoach.com/cv-express.html?paid=1&email='+encodeURIComponent(email));
+        }
+        load();
+      })
+      .catch(function(err){
+        if(btn){btn.disabled=false;btn.textContent='+ Otorgar';}
+        alert('Error: '+(err.message||'conexión')+'\n\nSi el acceso se otorgó, pasale el link manual:\nhttps://pathwaycareercoach.com/cv-express.html?paid=1&email='+encodeURIComponent(email));
+      });
   };
+
+  // Envía el email de invitación al Pack Express vía send-email edge function
+  // (Brevo). Devuelve Promise<boolean> — true si se envió OK.
+  function enviarInvitacionExpress(email){
+    var link='https://pathwaycareercoach.com/cv-express.html?paid=1&email='+encodeURIComponent(email);
+    var nombre=(email.split('@')[0]||'').replace(/[._-]+/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
+    var html=''
+      +'<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola '+escH(nombre)+',</h2>'
+      +'<p style="font-size:15px;line-height:1.65;">Tu acceso al <strong>Pack Express de Pathway</strong> ya está activo. 🚀</p>'
+      +'<p style="font-size:15px;line-height:1.65;margin-top:10px;">Con el Pack vas a generar en minutos:</p>'
+      +'<ul style="font-size:14px;line-height:1.9;padding-left:20px;margin:10px 0;">'
+      +'<li><strong>Tu CV optimizado</strong> — listo para pasar filtros ATS</li>'
+      +'<li><strong>Tu carta de presentación</strong> — adaptada a tu perfil</li>'
+      +'<li><strong>Análisis de tu LinkedIn</strong> — titular, "Acerca de" y keywords</li>'
+      +'</ul>'
+      +'<p style="margin-top:22px;"><a href="'+link+'" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Empezar mi Pack Express →</a></p>'
+      +'<p style="font-size:11px;color:#AAAAAA;margin-top:16px;line-height:1.5;">Si el botón no funciona, copiá este link en tu navegador:<br><span style="color:#AAAAAA;word-break:break-all;">'+escH(link)+'</span></p>'
+      +'<p style="font-size:13px;color:#666;margin-top:18px;">Cualquier duda, respondé este mail. — Equipo Pathway</p>';
+    return fetch(SB+'/functions/v1/send-email',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        to:email,
+        to_name:nombre,
+        subject:'🚀 Tu Pack Express de Pathway está listo',
+        html:html,
+        from_email:'hi@pathwaycareercoach.com',
+        from_name:'Pathway',
+        reply_to:'hi@pathwaycareercoach.com'
+      })
+    }).then(function(r){return r.ok;}).catch(function(){return false;});
+  }
 
   function load(){
     document.getElementById('main').innerHTML='<div class="loading">Cargando compradores...</div>';
