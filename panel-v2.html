@@ -1019,13 +1019,15 @@ function viewClientes(){
     var cvTxt = c.cvState==="published"?"publicado":(c.cvState==="pending"?"a revisar":"borrador");
     var rpCls = c.reportState==="published"?"is-published":"is-pending";
     var rpTxt = c.reportState==="published"?"publicado":"pendiente";
+    var _inact = (c.last&&c.last.state==="stale") || (c.raw&&c.raw.activo===false);
+    var askR = (_inact && c.email) ? "<button class='cp-btn cp-btn-ghost' style='height:26px;padding:0 10px;font-size:11px;margin-left:auto' data-act='cvx-resena' data-em='"+esc(c.email)+"' data-n='"+esc(c.name||"")+"'>Pedir reseña</button>" : "";
     return "<article class='cp-client' data-act='cli-open:"+c.id+"' data-s='"+esc(((c.name||"")+" "+(c.email||"")+" "+(c.role||"")).toLowerCase())+"'"+(isPw?" style='border-color:var(--pw-border-strong)'":"")+">"+
       "<header class='cp-client-head'>"+avImg(c.photo,c.name,"class='cp-client-photo'")+
         "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+"</div><div class='cp-client-role'>"+role+"</div></div>"+medal+"</header>"+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
       "<div class='cp-week'><span class='cp-week-label'>Sem "+c.week+"/4</span><span class='cp-week-dots'>"+dots+"</span></div>"+
       "<footer class='cp-client-foot'><span class='cp-client-pill "+cvCls+"'>CV "+cvTxt+"</span>"+
-        "<span class='cp-client-pill "+rpCls+"'>Informe "+rpTxt+"</span></footer></article>";
+        "<span class='cp-client-pill "+rpCls+"'>Informe "+rpTxt+"</span>"+askR+"</footer></article>";
   }).join("");
   var banner = state.pathwayOptIn
     ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'>Incluye los clientes que te envía <strong>Pathway</strong> (etiquetados abajo). Lo gestionas en <strong>Configuración › Plan y pagos</strong>.</div>"
@@ -1623,12 +1625,13 @@ function viewAdmin(){
       ? "<span style='color:var(--pw-amanecer);letter-spacing:1px'>"+Array(c.rev.st+1).join("★")+"</span> <span style='font-size:11px;color:var(--pw-text-soft)'>"+esc(c.rev.txt)+"</span>"
       : "<span style='color:var(--pw-text-muted)'>—</span>";
     var verCv = c.cv ? "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px' data-act='open' data-url='"+esc("https://pathwaycareercoach.com/cv.html?email="+encodeURIComponent(c.em||""))+"'>Ver CV</button>" : "";
+    var askRev = (c.em && !c.rev) ? "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px;margin-right:6px' data-act='cvx-resena' data-em='"+esc(c.em)+"' data-n='"+esc(c.n||"")+"'>Pedir reseña</button>" : "";
     return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.n)+"<div style='font-size:11px;color:var(--pw-text-muted);font-weight:400'>"+esc(c.em)+"</div></td>"+
       "<td style='color:var(--pw-text-soft)'>"+esc(c.f)+"</td>"+
       "<td>"+pill(c.org[0], c.org[1])+"</td>"+
       "<td>"+pill(c.acc[0], c.acc[1])+"</td>"+
       "<td>"+stars+"</td>"+
-      "<td style='text-align:right;white-space:nowrap'><button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px;margin-right:6px' data-act='open' data-url='"+esc("mailto:"+(c.em||"")+"?subject="+encodeURIComponent("Tu acceso a CV Express — Pathway")+"&body="+encodeURIComponent("Hola "+(c.n||"")+", aquí tienes tu acceso a CV Express: https://pathwaycareercoach.com/cv-express.html"))+"'>Reenviar acceso</button>"+verCv+"</td></tr>";
+      "<td style='text-align:right;white-space:nowrap'>"+askRev+"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 10px;font-size:11px;margin-right:6px' data-act='open' data-url='"+esc("mailto:"+(c.em||"")+"?subject="+encodeURIComponent("Tu acceso a CV Express — Pathway")+"&body="+encodeURIComponent("Hola "+(c.n||"")+", aquí tienes tu acceso a CV Express: https://pathwaycareercoach.com/cv-express.html"))+"'>Reenviar acceso</button>"+verCv+"</td></tr>";
   }).join("") || "<tr><td colspan='6' style='padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin registros de CV Express todavía.</td></tr>";
   var payouts = [
     { n:"Micaela Jairedin", bruto:"€3.100", com:"−€620", neto:"€2.480", est:["En tránsito · 24 h","warn"], f:"17 may" },
@@ -2267,6 +2270,23 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="gocal"){ state.section="config"; state.cfg="profile"; render(); window.scrollTo(0,0); return; }
+  if(act==="cvx-resena"){
+    var rem=(el.getAttribute("data-em")||"").trim();
+    var rnm=(el.getAttribute("data-n")||"").trim();
+    if(!rem){ alert("Esa persona no tiene email."); return; }
+    if(!confirm("¿Enviar a "+(rnm||rem)+" un email pidiéndole una reseña de CV Express?")) return;
+    var rfn=(rnm||"").split(" ")[0]||"";
+    var rlink="https://pathwaycareercoach.com/resena.html?email="+encodeURIComponent(rem);
+    var rhtml="<!DOCTYPE html><html><body style=\"font-family:Inter,-apple-system,sans-serif;font-size:14px;line-height:1.6;color:#1B4332;max-width:600px;margin:0 auto;padding:24px;background:#FAFDF9;\">"+
+      "<h2 style=\"font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;\">Hola "+esc(rfn||"!")+",</h2>"+
+      "<p>Esperamos que tu experiencia con Pathway te haya servido. ¿Nos dejás una reseña corta? Te toma 30 segundos y nos ayuda muchísimo.</p>"+
+      "<p style=\"margin:22px 0;\"><a href=\""+rlink+"\" style=\"display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;\">Dejar mi reseña →</a></p>"+
+      "<p style=\"font-size:12px;color:#5A6A60;\">Gracias por confiar en Pathway 🌿</p></body></html>";
+    fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:rem,to_name:rnm,subject:"¿Nos dejás una reseña? · Pathway",html:rhtml,reply_to:"hi@pathwaycareercoach.com"})})
+      .then(function(r){ if(!r.ok) throw 0; toast("Email de reseña enviado a "+rem+" ✓"); })
+      .catch(function(){ alert("No se pudo enviar el email. Reintentá en unos minutos."); });
+    return;
+  }
   if(act==="cvx-grant"){
     var cvxe=_val("cvx-access").trim();
     if(!cvxe){ alert("Escribe al menos un email."); return; }
