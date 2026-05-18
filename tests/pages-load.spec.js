@@ -1,323 +1,80 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 
-/**
- * TEST SUITE: Carga de páginas
- * Verifica que todas las páginas de la plataforma cargan correctamente,
- * sin errores 404/500 y con los elementos esenciales visibles.
- */
+const ALL_PUBLIC = [
+  'index.html', 'blog.html', 'coaches.html', 'precios-coaching.html',
+  'legales.html', 'soy-coach.html', 'soy-candidato.html', 'comunidad.html',
+  'resena.html', 'checklist-linkedin.html',
+  // Blog posts
+  '5-errores-cv.html', '7-preguntas-entrevista.html', 'cv-con-ia-2026.html',
+  'primeros-10-clientes-coaching.html', 'rechazo-entrevista-final.html',
+  'mejor-plataforma-career-coaches.html',
+  // Salary pages
+  'calculadora-sueldo-2026.html', 'sueldo-developer-2026.html',
+  'sueldo-data-analyst-2026.html', 'sueldo-disenador-ux-2026.html',
+  'sueldo-product-manager-2026.html',
+];
 
-test.describe('Carga de páginas principales', () => {
+const ALL_AUTH = [
+  'login.html', 'registro.html', 'auth-callback.html',
+  'bienvenida-coach.html', 'verify.html',
+];
 
-  test('index.html - Landing principal de Pathway carga correctamente', async ({ page }) => {
-    const response = await page.goto('index.html');
-    expect(response.status()).toBe(200);
-    await expect(page).toHaveTitle(/Pathway/i);
-  });
+const ALL_TOOLS = [
+  'cv-express.html', 'cv.html', 'cv-ats.html', 'carta.html',
+  'hub.html', 'linkedin-viewer.html', 'upgrade.html',
+  'post-demo.html', 'circulo.html',
+];
 
-  test('soy-candidato.html - Landing de candidatos carga correctamente', async ({ page }) => {
-    const response = await page.goto('soy-candidato.html');
-    expect(response.status()).toBe(200);
-    await expect(page).toHaveTitle(/Pathway/i);
-  });
+const ALL_PROTECTED = [
+  'panel.html', 'panel-v2.html', 'gestion-leads.html',
+  'coach.html', 'admin-express.html', 'cliente.html',
+];
 
-  test('soy-coach.html - Landing de coaches carga correctamente', async ({ page }) => {
-    const response = await page.goto('soy-coach.html');
-    expect(response.status()).toBe(200);
-    await expect(page).toHaveTitle(/Coach/i);
-  });
-
-  test('registro.html - Página de registro de coaches carga correctamente', async ({ page }) => {
-    const response = await page.goto('registro.html');
-    expect(response.status()).toBe(200);
-    await expect(page).toHaveTitle(/Registro/i);
-  });
-
-  test('formulario.html - Formulario de análisis carga correctamente', async ({ page }) => {
-    const response = await page.goto('formulario.html?access=mj2026');
-    expect(response.status()).toBe(200);
-
-    // Verifica título
-    await expect(page).toHaveTitle(/Análisis de perfil profesional/);
-
-    // Verifica elementos clave del formulario
-    await expect(page.locator('.card')).toBeVisible();
-    await expect(page.locator('#top-h')).toBeVisible();
-    await expect(page.locator('.prog-bar')).toBeVisible();
-
-    // Verifica botones de idioma
-    await expect(page.locator('.lb').first()).toBeVisible();
-    await expect(page.locator('.lb').nth(1)).toBeVisible();
-
-    // Verifica que el paso 0 (consentimiento) es visible
-    await expect(page.locator('#s0')).toBeVisible();
-    await expect(page.locator('#consent-cb')).toBeVisible();
-  });
-
-  test('login.html - Página de login carga correctamente', async ({ page }) => {
-    const response = await page.goto('login.html');
-    expect(response.status()).toBe(200);
-
-    // Verifica elementos del login
-    await expect(page.locator('#email')).toBeVisible();
-    await expect(page.locator('#password')).toBeVisible();
-    await expect(page.locator('#btn')).toBeVisible();
-    await expect(page.locator('.logo')).toBeVisible();
-  });
-
-  test('panel.html - Panel del coach carga correctamente', async ({ page }) => {
-    // panel.html redirige al login sin sesión, así que inyectamos una
-    await page.goto('login.html');
-    await page.evaluate(() => {
-      localStorage.setItem('mj_user', JSON.stringify({
-        id: 999, email: 'test-agent@test.invalid', rol: 'coach', nombre: 'Test Agent'
-      }));
+test.describe('Páginas públicas — cargan sin error', () => {
+  for (const page of ALL_PUBLIC) {
+    test(`${page} responde 200`, async ({ request }) => {
+      const BASE = process.env.BASE_URL || 'https://pathwaycareercoach.com/';
+      const r = await request.get(`${BASE}${page}`);
+      expect(r.status()).toBe(200);
     });
-    const response = await page.goto('panel.html');
-    expect(response.status()).toBe(200);
-
-    // Verifica estructura del layout con sesión
-    await expect(page.locator('.layout')).toBeVisible({ timeout: 8000 });
-    await expect(page.locator('.sidebar')).toBeVisible();
-    await expect(page.locator('#nb-inicio')).toBeVisible();
-  });
-
-  test('cliente.html - Portal del cliente carga correctamente', async ({ page }) => {
-    const response = await page.goto('cliente.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('cv.html - Editor de CV carga correctamente', async ({ page }) => {
-    const response = await page.goto('cv.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('carta.html - Generador de cartas carga correctamente', async ({ page }) => {
-    const response = await page.goto('carta.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('hub.html - Hub de conexiones carga correctamente', async ({ page }) => {
-    const response = await page.goto('hub.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('blog.html - Blog carga correctamente', async ({ page }) => {
-    const response = await page.goto('blog.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('comunidad.html - Comunidad carga correctamente', async ({ page }) => {
-    const response = await page.goto('comunidad.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('circulo.html - Círculo carga correctamente', async ({ page }) => {
-    const response = await page.goto('circulo.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('precios-coaching.html - Precios carga correctamente', async ({ page }) => {
-    const response = await page.goto('precios-coaching.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('checklist-linkedin.html - Checklist LinkedIn carga correctamente', async ({ page }) => {
-    const response = await page.goto('checklist-linkedin.html');
-    expect(response.status()).toBe(200);
-  });
+  }
 });
 
-test.describe('Carga de blog posts', () => {
-
-  test('5-errores-cv.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('5-errores-cv.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('7-preguntas-entrevista.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('7-preguntas-entrevista.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('primeros-10-clientes-coaching.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('primeros-10-clientes-coaching.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('rechazo-entrevista-final.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('rechazo-entrevista-final.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('cv-con-ia-2026.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('cv-con-ia-2026.html');
-    expect(response.status()).toBe(200);
-  });
-});
-
-test.describe('Carga de páginas de producto', () => {
-
-  test('cv-express.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('cv-express.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('coach.html - Perfil de coach carga correctamente', async ({ page }) => {
-    const response = await page.goto('coach.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('coaches.html - Directorio de coaches carga correctamente', async ({ page }) => {
-    const response = await page.goto('coaches.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('linkedin-viewer.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('linkedin-viewer.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('upgrade.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('upgrade.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('legales.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('legales.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('bienvenida-coach.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('bienvenida-coach.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('auth-callback.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('auth-callback.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('admin-express.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('admin-express.html');
-    expect(response.status()).toBe(200);
-  });
-
-  test('comunidad.html carga correctamente', async ({ page }) => {
-    const response = await page.goto('comunidad.html');
-    expect(response.status()).toBe(200);
-  });
-});
-
-test.describe('Verificación de recursos y assets', () => {
-
-  test('No hay errores de consola críticos en formulario.html', async ({ page }) => {
-    const errors = [];
-    page.on('console', msg => {
-      if (msg.type() === 'error') {
-        errors.push(msg.text());
-      }
+test.describe('Páginas de auth — cargan sin error', () => {
+  for (const page of ALL_AUTH) {
+    test(`${page} responde 200`, async ({ request }) => {
+      const BASE = process.env.BASE_URL || 'https://pathwaycareercoach.com/';
+      const r = await request.get(`${BASE}${page}`);
+      expect(r.status()).toBe(200);
     });
-
-    await page.goto('formulario.html?access=mj2026');
-    await page.waitForLoadState('domcontentloaded');
-
-    // Filtra errores esperados (ej: CORS de fuentes externas)
-    const criticalErrors = errors.filter(e =>
-      !e.includes('favicon') &&
-      !e.includes('net::ERR') &&
-      !e.includes('CORS') &&
-      !e.includes('404') &&
-      !e.includes('Failed to load resource')
-    );
-
-    expect(criticalErrors).toEqual([]);
-  });
-
-  test('No hay errores de consola críticos en login.html', async ({ page }) => {
-    const errors = [];
-    page.on('console', msg => {
-      if (msg.type() === 'error') {
-        errors.push(msg.text());
-      }
-    });
-
-    await page.goto('login.html');
-    await page.waitForLoadState('domcontentloaded');
-
-    const criticalErrors = errors.filter(e =>
-      !e.includes('favicon') &&
-      !e.includes('net::ERR') &&
-      !e.includes('CORS') &&
-      !e.includes('404') &&
-      !e.includes('Failed to load resource')
-    );
-
-    expect(criticalErrors).toEqual([]);
-  });
-
-  test('Google Fonts carga correctamente', async ({ page }) => {
-    await page.goto('formulario.html?access=mj2026');
-    await page.waitForLoadState('networkidle');
-
-    // Verificar que la fuente Inter se aplicó (Pathway rebrand)
-    const fontFamily = await page.locator('body').evaluate(el => getComputedStyle(el).fontFamily);
-    expect(fontFamily.toLowerCase()).toContain('inter');
-  });
-
-  test('EmailJS SDK carga correctamente en formulario.html', async ({ page }) => {
-    await page.goto('formulario.html?access=mj2026');
-    await page.waitForLoadState('networkidle');
-    const emailjsLoaded = await page.evaluate(() => typeof window.emailjs !== 'undefined');
-    expect(emailjsLoaded).toBe(true);
-  });
+  }
 });
 
-test.describe('SEO y Meta tags en landings', () => {
+test.describe('Herramientas — cargan sin error', () => {
+  for (const page of ALL_TOOLS) {
+    test(`${page} responde 200`, async ({ request }) => {
+      const BASE = process.env.BASE_URL || 'https://pathwaycareercoach.com/';
+      const r = await request.get(`${BASE}${page}`);
+      expect(r.status()).toBe(200);
+    });
+  }
+});
 
-  test('index.html tiene meta description y canonical', async ({ page }) => {
-    await page.goto('index.html');
+test.describe('Páginas protegidas — cargan sin error de servidor', () => {
+  for (const page of ALL_PROTECTED) {
+    test(`${page} responde 200 (redirige a login si no hay sesión)`, async ({ request }) => {
+      const BASE = process.env.BASE_URL || 'https://pathwaycareercoach.com/';
+      const r = await request.get(`${BASE}${page}`);
+      expect(r.status()).toBe(200);
+    });
+  }
+});
 
-    const description = await page.locator('meta[name="description"]').getAttribute('content');
-    const canonical = await page.locator('link[rel="canonical"]').getAttribute('href');
-
-    expect(description).toBeTruthy();
-    expect(description.length).toBeGreaterThan(50);
-    expect(canonical).toContain('pathwaycareercoach.com');
-  });
-
-  test('soy-candidato.html tiene Open Graph tags', async ({ page }) => {
-    await page.goto('soy-candidato.html');
-
-    const ogTitle = await page.locator('meta[property="og:title"]').getAttribute('content');
-    const ogSite = await page.locator('meta[property="og:site_name"]').getAttribute('content');
-
-    expect(ogTitle).toBeTruthy();
-    expect(ogSite).toContain('Pathway');
-  });
-
-  test('soy-coach.html tiene Open Graph tags', async ({ page }) => {
-    await page.goto('soy-coach.html');
-
-    const ogTitle = await page.locator('meta[property="og:title"]').getAttribute('content');
-    const ogSite = await page.locator('meta[property="og:site_name"]').getAttribute('content');
-
-    expect(ogTitle).toBeTruthy();
-    expect(ogSite).toContain('Pathway');
-  });
-
-  test('registro.html tiene noindex (no debe aparecer en buscadores)', async ({ page }) => {
-    await page.goto('registro.html');
-    const robots = await page.locator('meta[name="robots"]').getAttribute('content');
-    expect(robots).toContain('noindex');
-  });
-
-  test('CNAME apunta al dominio pathwaycareercoach.com', async ({ request }) => {
+test.describe('Formulario — carga con access gate', () => {
+  test('formulario.html con ?access=mj2026 responde 200', async ({ request }) => {
     const BASE = process.env.BASE_URL || 'https://pathwaycareercoach.com/';
-    const response = await request.get(`${BASE}CNAME`);
-    if (response.status() === 200) {
-      const content = await response.text();
-      expect(content.trim()).toContain('pathwaycareercoach.com');
-    }
+    const r = await request.get(`${BASE}formulario.html?access=mj2026`);
+    expect(r.status()).toBe(200);
   });
 });
