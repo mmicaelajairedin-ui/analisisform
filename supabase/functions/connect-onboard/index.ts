@@ -24,8 +24,8 @@
 // posible es bajo: solo crea/devuelve un link de onboarding de Stripe.
 
 const STRIPE = "https://api.stripe.com/v1";
-const RETURN_URL = "https://pathwaycareercoach.com/panel.html?connect=done#config";
-const REFRESH_URL = "https://pathwaycareercoach.com/panel.html?connect=refresh#config";
+const RETURN_URL = "https://pathwaycareercoach.com/panel-v2.html?connect=done#config";
+const REFRESH_URL = "https://pathwaycareercoach.com/panel-v2.html?connect=refresh#config";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",

@@ -508,6 +508,7 @@ var state = {
   newPass: "",
   cliPass: "",
   pathwayOptIn: false,
+  stripe: null,
   services: [
     { name:"Mentoría 4 semanas", desc:"Programa completo · 4 sesiones 1:1 + acceso al portal", price:480, unit:"/programa" },
     { name:"Sesión individual",  desc:"1 hora · Diagnóstico, plan o ajuste puntual", price:95, unit:"/sesión" },
@@ -1421,16 +1422,34 @@ function cfgPathway(){
       "<div class='cp-card'><div class='cp-card-pad'><p class='cp-reassurance' style='margin:0;border-radius:12px'>Aún no recibes clientes de Pathway. Cuando actives el switch verás aquí tus precios para Pathway y dónde cobras.</p></div></div>";
   }
   if(REAL){
-    return toggleCard+
-      cfgServices()+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Dónde y cuándo cobras<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Pagos de Pathway</span></div>"+
-        "<div class='cp-card-pad' style='padding-top:8px;padding-bottom:8px'>"+
+    var st = state.stripe;
+    if(st===null){ loadStripeStatus(); }
+    var connHd = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tu cuenta de cobro<span class='dot'>.</span></h3>";
+    var connectCard;
+    if(st===null){
+      connectCard = connHd+"<span class='cp-eyebrow'>Stripe</span></div>"+
+        "<div class='cp-card-pad'><p class='cp-reassurance' style='margin:0;border-radius:12px'>Comprobando tu cuenta de cobro…</p></div></div>";
+    } else if(st&&st.error){
+      connectCard = connHd+"<span class='cp-eyebrow' style='color:var(--pw-danger)'>● Sin verificar</span></div>"+
+        "<div class='cp-card-pad'><p class='cp-reassurance' style='margin:0 0 14px;border-radius:12px'>No pudimos comprobar el estado de tu cuenta. Reintentá en un momento.</p>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='pw-connect-check'>Reintentar</button></div></div>";
+    } else if(st&&st.connected){
+      connectCard = connHd+"<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● Cuenta conectada</span></div>"+
+        "<div class='cp-card-pad'>"+
+          "<p style='margin:0 0 14px;font-size:13px;line-height:1.6;color:var(--pw-text-soft)'>Tu cuenta de Stripe está conectada y verificada. Cuando aceptes una solicitud, <strong>el dinero entra directo a tu cuenta bancaria</strong> y Pathway retiene solo el <strong>20%</strong>. Vos no tenés que hacer nada más.</p>"+
           moneyRow("Cobrado a clientes de Pathway","€0",{muted:true})+
           moneyRow("Comisión Pathway (20%)","€0",{muted:true})+
           moneyRow("A tu favor (neto)","€0",{big:true,strongC:"var(--pw-bosque)",top:true})+
-        "</div>"+
-        "<p class='cp-reassurance' style='margin:0 22px 20px;border-radius:12px'>Todavía no recibes pagos por clientes de Pathway. Cuando un cliente pague, aquí verás el desglose real: <strong>cobrado, comisión 20%, tu neto, y dónde/cuándo cobras</strong>.</p></div>";
+          "<p class='cp-reassurance' style='margin:14px 0 14px;border-radius:12px'>Todavía no recibiste pagos de Pathway. Cuando un cliente pague verás aquí el desglose real.</p>"+
+          "<button class='cp-btn cp-btn-ghost' data-act='pw-connect'>Actualizar mis datos bancarios "+svg(IC.extLink,12)+"</button></div></div>";
+    } else {
+      connectCard = connHd+"<span class='cp-eyebrow' style='color:var(--pw-danger)'>● Falta conectar</span></div>"+
+        "<div class='cp-card-pad'>"+
+          "<p style='margin:0 0 16px;font-size:13px;line-height:1.6;color:var(--pw-text-soft)'>Para cobrar a los clientes que Pathway te envía, conectá <strong>tu propia cuenta de Stripe</strong> (te pedirá tu banco e identidad, una sola vez). El candidato paga el monto que vos fijás, el dinero entra <strong>directo a tu cuenta</strong> y Pathway retiene solo el <strong>20%</strong> — nunca tocamos tu dinero.</p>"+
+          "<button class='cp-btn cp-btn-primary' data-act='pw-connect'>Conectar mi cuenta de cobro "+svg(IC.extLink,12)+"</button>"+
+          "<p style='margin:12px 0 0;font-size:11px;color:var(--pw-text-muted)'>Te lleva a Stripe para cargar tus datos de forma segura. Al terminar volvés acá automáticamente.</p></div></div>";
+    }
+    return toggleCard+cfgServices()+connectCard;
   }
   var priceRows = state.services.map(function(s){
     var net = Math.round(s.price*0.8);
@@ -1455,8 +1474,6 @@ function cfgPathway(){
       "</div>"+
       "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div></div>";
   return toggleCard+pricesCard+earnings;
-      "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='https://dashboard.stripe.com'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div></div>";
-  return toggleCard+cfgServices()+pricesCard+earnings;
 }
 function viewConfig(){
   if(state.cfg==="services") state.cfg="pathway"; // servicios ahora vive en Clientes de Pathway
@@ -1954,6 +1971,8 @@ document.addEventListener("click", function(ev){
   }
   if(act.indexOf("notif:")===0){ var k=act.slice(6); state.notifs[k]=!state.notifs[k]; if(REAL){ saveCfg({ notifs: state.notifs }); } else { render(); } return; }
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; if(REAL){ saveCfg({ pathway_optin: state.pathwayOptIn }); } else { render(); } return; }
+  if(act==="pw-connect"){ pwConnect(); return; }
+  if(act==="pw-connect-check"){ state.stripe=null; _stripeReq=false; render(); return; }
   if(act==="sol-accept" || act==="sol-reject"){
     var solId=el.getAttribute("data-id"); if(!solId) return;
     if(!REAL){ alert("Demo: en producción esto acepta/rechaza la solicitud real."); return; }
@@ -2494,6 +2513,23 @@ function saveCfg(cfgPatch, usuariosExtra){
       toast("Configuración guardada ✓"); render(); })
     .catch(function(){ alert("No se pudo guardar la configuración."); });
 }
+var _stripeReq=false;
+function loadStripeStatus(){
+  if(_stripeReq) return; _stripeReq=true;
+  if(!REAL||!RME||!RME.id){ state.stripe={connected:false}; return; }
+  fetch(SB+"/functions/v1/connect-onboard",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:"status",coach_id:RME.id})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){ state.stripe = j ? { connected:!!j.connected, details:!!j.details_submitted } : { error:true }; render(); })
+    .catch(function(){ state.stripe={error:true}; render(); });
+}
+function pwConnect(){
+  if(!REAL||!RME||!RME.id){ alert("Iniciá sesión para conectar tu cuenta de cobro."); return; }
+  if(_genBusy) return; _genBusy=true; toast("Abriendo Stripe…");
+  fetch(SB+"/functions/v1/connect-onboard",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:"onboard",coach_id:RME.id,email:(COACH&&COACH.email)||RME.email||""})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){ _genBusy=false; if(j&&j.url){ window.location.href=j.url; } else { alert("No se pudo abrir la conexión con Stripe. Reintentá en un momento."); } })
+    .catch(function(){ _genBusy=false; alert("No se pudo abrir la conexión con Stripe. Reintentá en un momento."); });
+}
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
   if(!ME||!ME.id) return; // sin sesión → datos de ejemplo
@@ -2607,6 +2643,14 @@ function _paywallCheck(u){
     return;
   }
   if(u && u.id && _paywallCheck(u)){ return; }
+  try{
+    var _cn=(new URLSearchParams(location.search)).get("connect");
+    if(_cn==="done"||_cn==="refresh"){
+      state.section="config"; state.cfg="pathway"; state.pathwayOptIn=true; state.stripe=null;
+      if(history.replaceState) history.replaceState(null,"",location.pathname);
+      setTimeout(function(){ toast(_cn==="done"?"Volviste de Stripe ✓ — comprobando tu cuenta":"Conexión incompleta — podés retomarla cuando quieras"); },800);
+    }
+  }catch(e){}
   if(u && u.id){
     document.getElementById("root").innerHTML="<div style='display:flex;align-items:center;justify-content:center;height:100vh;font-family:var(--pw-sans)'>"+
       "<div style='text-align:center'><div style='font-family:var(--pw-serif);font-size:22px;font-weight:500;color:var(--pw-bosque)'>Cargando tu panel…</div>"+
