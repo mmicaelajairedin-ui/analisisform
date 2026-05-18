@@ -508,6 +508,7 @@ var state = {
   newPass: "",
   cliPass: "",
   pathwayOptIn: false,
+  pubActive: null,
   stripe: null,
   services: [
     { name:"Mentoría 4 semanas", desc:"Programa completo · 4 sesiones 1:1 + acceso al portal", price:480, unit:"/programa" },
@@ -1111,21 +1112,29 @@ function linksCard(){
 function cfgProfile(){
   var v=function(k,d){ return (RCFG&&RCFG[k]!=null&&RCFG[k]!=="")?(""+RCFG[k]):(d||""); };
   var nm = REAL ? (COACH.name||"") : "Micaela Jairedin";
-  var slug=v("slug", REAL?"":"micaela-jairedin");
-  var tit=v("titulo", REAL?"":"Career Coach · 8 años en HR & Recruiting");
-  var bio=v("bio", REAL?"":"Ayudo a profesionales a encontrar el siguiente paso de su carrera.");
-  var li=v("linkedin", REAL?"":"linkedin.com/in/micaelajairedin"), ig=v("instagram", REAL?"":"@micaela.coach");
+  var slug = REAL ? (RPROF.slug||"") : "micaela-jairedin";
+  var tit  = REAL ? (RPROF.titulo_profesional||"") : "Career Coach · 8 años en HR & Recruiting";
+  var bio  = REAL ? (RPROF.bio||"") : "Ayudo a profesionales a encontrar el siguiente paso de su carrera.";
+  if(state.pubActive===null) state.pubActive = REAL ? !!RPROF.perfil_publico_activo : true;
+  var pubActive = state.pubActive;
+  var li = REAL ? (v("linkedin_url")||v("linkedin")) : "linkedin.com/in/micaelajairedin";
+  var ig = REAL ? (v("instagram_url")||v("instagram")) : "@micaela.coach";
   var cu=v("calendly_url",""), ce=v("calendar_embed_url","");
+  var liveOk = !!(slug && pubActive);
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tu perfil público<span class='dot'>.</span></h3>"+
-    (slug?"<a href='https://pathwaycareercoach.com/coach/"+esc(slug)+"' target='_blank' rel='noopener' style='font-size:12px;color:var(--pw-bosque);font-weight:600;display:inline-flex;align-items:center;gap:6px'>Ver mi página "+svg(IC.extLink,12)+"</a>":"")+"</div>"+
+    (liveOk?"<a href='https://pathwaycareercoach.com/coach/"+esc(slug)+"' target='_blank' rel='noopener' style='font-size:12px;color:var(--pw-bosque);font-weight:600;display:inline-flex;align-items:center;gap:6px'>Ver mi página "+svg(IC.extLink,12)+"</a>":"")+"</div>"+
     "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:18px'>"+
+      "<div class='cp-toggle' style='padding:4px 0'>"+
+        "<div class='cp-toggle-body'><div class='cp-toggle-title'>Activar mi perfil público</div>"+
+        "<div class='cp-toggle-desc'>"+(pubActive?"Tu página <strong>está visible</strong> en <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code> y aparecés en el directorio de coaches.":"Tu página <strong>no está visible</strong>. Activá el switch y guardá para publicarla. Necesitás un slug.")+"</div></div>"+
+        "<button class='cp-switch "+(pubActive?"is-on":"")+"' data-act='pub-toggle' aria-label='Activar perfil público'><span></span></button></div>"+
       "<div class='cp-photo-pick'>"+avImg(COACH.photo,nm,"id='cfp-foto-prev'")+
         "<div class='cp-photo-actions'>"+
           "<label class='cp-btn cp-btn-ghost' style='cursor:pointer'>Cambiar foto<input id='cfp-foto' type='file' accept='image/*' style='display:none'></label>"+
           "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:6px'>JPG o PNG · máx 2 MB</div></div></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Nombre completo</label><input id='cfp-nombre' class='cp-form-input' value=\""+esc(nm)+"\"></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>URL de tu perfil (slug)</label><input id='cfp-slug' class='cp-form-input' value=\""+esc(slug)+"\" placeholder='tu-nombre'>"+
-        "<span class='cp-form-hint'>Tu link público: <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code></span></div>"+
+        "<span class='cp-form-hint'>Tu link público: <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code> · solo minúsculas, números y guiones</span></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Título profesional</label><input id='cfp-titulo' class='cp-form-input' value=\""+esc(tit)+"\"></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Biografía corta</label>"+
         "<textarea id='cfp-bio' class='cp-form-textarea'>"+esc(bio)+"</textarea>"+
@@ -1909,12 +1918,27 @@ document.addEventListener("click", function(ev){
   if(act.indexOf("nav:")===0){ state.section = act.slice(4); render(); window.scrollTo(0,0); return; }
   if(act.indexOf("cli:")===0){ state.cliFilter = act.slice(4); render(); return; }
   if(act.indexOf("cfg:")===0){ state.cfg = act.slice(4); render(); return; }
+  if(act==="pub-toggle"){ state.pubActive=!state.pubActive; render(); return; }
   if(act==="cfg-save-profile"){
     var sl=_val("cfp-slug").trim().toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"");
-    var pp={ slug:sl, titulo:_val("cfp-titulo").trim(), bio:_val("cfp-bio").trim(), linkedin:_val("cfp-li").trim(), instagram:_val("cfp-ig").trim(), calendly_url:_val("cfp-cal").trim(), calendar_embed_url:_val("cfp-cal-emb").trim() };
-    if(window._cfpFoto){ pp.foto_url=window._cfpFoto; COACH.photo=window._cfpFoto; }
-    saveCfg(pp, { nombre:_val("cfp-nombre").trim() });
-    window._cfpFoto=null;
+    if(sl && !/^[a-z0-9][a-z0-9-]{0,80}$/.test(sl)){ alert("El slug solo puede tener minúsculas, números y guiones (y no empezar con guion)."); return; }
+    var pubA = !!state.pubActive;
+    if(pubA && !sl){ alert("Para activar tu perfil público necesitás un slug. Escribilo en «URL de tu perfil»."); var si=document.getElementById("cfp-slug"); if(si)si.focus(); return; }
+    var nom=_val("cfp-nombre").trim(), titP=_val("cfp-titulo").trim(), bioP=_val("cfp-bio").trim();
+    var cfgPatch={ linkedin_url:_val("cfp-li").trim(), instagram_url:_val("cfp-ig").trim(), calendly_url:_val("cfp-cal").trim(), calendar_embed_url:_val("cfp-cal-emb").trim() };
+    if(window._cfpFoto){ cfgPatch.foto_url=window._cfpFoto; COACH.photo=window._cfpFoto; }
+    var doSave=function(){
+      RPROF={ slug:sl, titulo_profesional:titP, bio:bioP, perfil_publico_activo:pubA };
+      COACH.slug=sl;
+      saveCfg(cfgPatch, { nombre:nom, slug:sl||null, titulo_profesional:titP||null, bio:bioP||null, perfil_publico_activo:pubA });
+      window._cfpFoto=null;
+    };
+    if(REAL && sl && RME && RME.id){
+      _sb("usuarios?slug=eq."+encodeURIComponent(sl)+"&id=neq."+encodeURIComponent(RME.id)+"&select=id&limit=1").then(function(rows){
+        if(rows&&rows.length){ alert("El slug «"+sl+"» ya está tomado por otro coach. Elegí otro."); var si2=document.getElementById("cfp-slug"); if(si2)si2.focus(); return; }
+        doSave();
+      });
+    } else { doSave(); }
     return;
   }
   if(act==="cfg-save-services"){ saveCfg({ servicios: state.services }); return; }
@@ -2498,7 +2522,7 @@ function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===Strin
 function _val(id){ var e=document.getElementById(id); return e?e.value:""; }
 function _sha256(txt){ return crypto.subtle.digest("SHA-256",new TextEncoder().encode(""+txt)).then(function(b){ return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join(""); }); }
 function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600); }
-var REAL=false, RCFG={}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[];
+var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[];
 function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURIComponent(RME.id) : ""; }
 function saveCfg(cfgPatch, usuariosExtra){
   if(!RME||!RME.id){ alert("Iniciá sesión para guardar."); return; }
@@ -2548,7 +2572,7 @@ function loadReal(){
     _sb("candidatos?"+cf+"&order=created_at.desc"),
     _sb("cv_publicados?select=email,contenido"),
     _sb("informes?select=email,id,data&order=created_at.desc"),
-    _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion"),
+    _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion,slug,titulo_profesional,bio,perfil_publico_activo"),
     extra[0], extra[1], extra[2], extra[3], extra[4],
     _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc"),
     (ME.rol==="admin" ? _sb("contactos_chat?pagina=eq.resena-cvexpress&select=contacto,fecha&order=fecha.desc&limit=200") : Promise.resolve([]))
@@ -2558,6 +2582,7 @@ function loadReal(){
     RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[], resenas:res[10]||[] } : null;
     RSOL = res[9]||[];
     RCFG = usr.configuracion || ME.configuracion || {};
+    RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), perfil_publico_activo:!!usr.perfil_publico_activo };
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
     if(RCFG && RCFG.color_marca) state.brandAccent=RCFG.color_marca;
     if(RCFG && RCFG.notifs && Object.prototype.toString.call(RCFG.notifs)==="[object Object]") state.notifs=Object.assign({}, state.notifs, RCFG.notifs);
@@ -2569,7 +2594,7 @@ function loadReal(){
     state.plan = planEff;
     COACH = { name:cname, firstName:(""+cname).split(" ")[0], role:"Career Coach",
       plan:(planEff==="pro"?"Pro":"Basic"), photo:(cfg&&cfg.foto_url)||usr.foto_url||makeAvatar(cname,150),
-      slug:(cfg&&cfg.slug)||"", email:ME.email||"" };
+      slug:RPROF.slug||(cfg&&cfg.slug)||"", email:ME.email||"" };
     var cvSet={}, cvMap={}; cvR.forEach(function(x){ if(x&&x.email){ var ke=(""+x.email).toLowerCase().trim(); cvSet[ke]=true; if(cvMap[ke]==null) cvMap[ke]=(x.contenido!=null?(""+x.contenido):""); } });
     var infMap={}, rpSet={};
     inf.forEach(function(x){
