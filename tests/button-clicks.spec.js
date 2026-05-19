@@ -7,6 +7,8 @@ const skip = !COACH_EMAIL || !COACH_PASSWORD;
 
 async function loginCoach(page) {
   await page.goto('login.html');
+  await page.waitForLoadState('networkidle');
+  await page.locator('#email').waitFor({ timeout: 15000 });
   await page.fill('#email', COACH_EMAIL);
   await page.fill('#password', COACH_PASSWORD);
   await page.locator('#btn').click();
@@ -20,6 +22,8 @@ test.describe('Coach — Login y navegación', () => {
 
   test('Login redirige al panel', async ({ page }) => {
     await page.goto('login.html');
+    await page.waitForLoadState('networkidle');
+    await page.locator('#email').waitFor({ timeout: 15000 });
     await page.fill('#email', COACH_EMAIL);
     await page.fill('#password', COACH_PASSWORD);
     await page.locator('#btn').click();
@@ -63,6 +67,8 @@ test.describe('Formulario — Recorrido completo', () => {
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.goto('formulario.html?access=mj2026');
+    await page.waitForLoadState('networkidle');
+    await page.locator('.lb').first().waitFor({ timeout: 15000 });
     await page.locator('.lb').first().click();
     await page.locator('#consent-cb').check();
     await page.locator('#consent-btn').click();
