@@ -1380,7 +1380,10 @@ function _showCoachPreviewBanner(clientEmail){
   bar.id='coach-preview-banner';
   bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#FFF7E6;border-bottom:2px solid #F5E5B0;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:Inter,sans-serif;font-size:12px;color:#8C6D2E;flex-wrap:wrap;';
   bar.innerHTML='<div><strong>👀 Vista del coach</strong> &middot; estás viendo el portal de <strong>'+clientEmail+'</strong> como él lo ve. Las acciones que hagas acá se aplican a su cuenta.</div>'+
-    '<button onclick="window.close()" style="padding:5px 12px;background:#8C6D2E;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">Cerrar pestaña</button>';
+    '<div style="display:flex;align-items:center;gap:8px;">'+
+    '<button onclick="window.location.href=BASE+\'/panel-v2.html\'" style="padding:5px 14px;background:#2D6A4F;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">← Ir a panel</button>'+
+    '<button onclick="window.close()" style="padding:5px 12px;background:#8C6D2E;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">Cerrar pestaña</button>'+
+    '</div>';
   document.body.appendChild(bar);
   // Empujar el contenido para que el banner no tape nada
   document.body.style.paddingTop='42px';
@@ -1475,8 +1478,20 @@ function _applyCoachBrand(data){
   var subEl=document.getElementById('lh-sub');
   if(subEl&&data.nombre_practica)subEl.textContent=data.nombre_practica;
   var fotoEl=document.getElementById('lh-foto');
-  var brandImg=data.logo_url||data.foto_url;
-  if(fotoEl&&brandImg){fotoEl.src=brandImg;fotoEl.alt=data.nombre||'';}
+  if(fotoEl){
+    if(data.foto_url){
+      fotoEl.src=data.foto_url;fotoEl.alt=data.nombre||'';
+      fotoEl.style.objectFit='cover';fotoEl.style.padding='0';fotoEl.style.background='';
+    } else if(data.nombre){
+      // Sin foto del coach: avatar limpio con iniciales (no el logo Pathway
+      // ni un bloque de color) para que nunca se vea un coach que no es.
+      var _ini=String(data.nombre).trim().split(/\s+/).map(function(w){return w.charAt(0)||'';}).join('').slice(0,2).toUpperCase();
+      var _svg='<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="120" height="120" rx="60" fill="#F4ECEC"/><text x="60" y="60" dy=".35em" text-anchor="middle" font-family="Montserrat,Arial,sans-serif" font-size="44" font-weight="700" fill="#8C7B80">'+_ini+'</text></svg>';
+      fotoEl.src='data:image/svg+xml;utf8,'+encodeURIComponent(_svg);
+      fotoEl.alt=data.nombre;
+      fotoEl.style.objectFit='cover';fotoEl.style.padding='0';fotoEl.style.background='';
+    }
+  }
   // Replace any "Micaela" text still in the DOM (topbar, citations, etc.)
   _replaceCoachInDOM();
   // Si hay una sección renderizada, re-render para picar los strings nuevos.
@@ -1517,15 +1532,16 @@ function _loadCoachColor(){
       // default — esa es la propuesta de valor del Pro €89/mes.
       // Vitalicios (admin/demo coach) siempre cuentan como Pro.
       var coachIsPro=(cfg.es_pro_vitalicio===true)||(cfg.plan==='pro');
-      if(coachIsPro){
-        if(cfg.color_marca)_applyCoachColor(cfg.color_marca);
-        _applyCoachBrand({
-          nombre:coach.nombre,
-          foto_url:coach.foto_url,
-          nombre_practica:coach.nombre_practica,
-          logo_url:cfg.logo_url||''
-        });
-      }
+      if(coachIsPro && cfg.color_marca)_applyCoachColor(cfg.color_marca);
+      // La identidad del coach (nombre real + foto) se aplica SIEMPRE: el
+      // cliente debe ver a su coach asignado, nunca el coach demo. El
+      // branding visual extra (color de marca, logo) sí queda como perk Pro.
+      _applyCoachBrand({
+        nombre:coach.nombre,
+        foto_url:coach.foto_url,
+        nombre_practica:coach.nombre_practica,
+        logo_url:coachIsPro?(cfg.logo_url||''):''
+      });
       // Calendly NO es branding visual — siempre se aplica si el coach lo configuró
       // (el cliente debe poder agendar con su coach independientemente del plan).
       if(cfg.calendly_url){CALENDLY=cfg.calendly_url;}
@@ -3372,6 +3388,7 @@ function sCV(input){if(!input.files[0])return;var st=document.getElementById('up
 function verCV(){
   var url=BASE+'/cv.html';
   if(E)url+='?email='+encodeURIComponent(E);
+  if(COACH_PREVIEW&&E)url+=(url.indexOf('?')>=0?'&':'?')+'coach_view='+encodeURIComponent(E);
   window.open(url,'_blank');
 }
 
