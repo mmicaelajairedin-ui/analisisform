@@ -410,7 +410,12 @@ Deno.serve(async (req: Request) => {
         linkedin_url?: string;
         linkedin_texto?: string;
         email?: string;
+        idioma?: string;
       };
+      const outEN = String(b.idioma || "es").toLowerCase().startsWith("en");
+      const langDirective = outEN
+        ? `\n\nIDIOMA DE SALIDA: INGLÉS. Redactá TODO el contenido de los valores del JSON (cv_optimizado completo, carta y linkedin_analisis) en inglés profesional y natural. Las claves del JSON quedan EXACTAMENTE igual. No uses español en ningún valor.`
+        : `\n\nIDIOMA DE SALIDA: ESPAÑOL. Redactá todo el contenido de los valores en español.`;
       if (!b.objetivo || b.objetivo.length < 20) {
         return new Response(
           JSON.stringify({ error: "objetivo es requerido (min 20 chars)" }),
@@ -429,7 +434,8 @@ Deno.serve(async (req: Request) => {
         (b.linkedin_texto
           ? `LINKEDIN TEXTO:\n${b.linkedin_texto}\n\n`
           : "") +
-        `Generá los 3 outputs siguiendo el formato JSON estricto.`;
+        langDirective +
+        `\n\nGenerá los 3 outputs siguiendo el formato JSON estricto.`;
 
       // 16K max_tokens — los 3 outputs (CV con experiencia detallada +
       // carta + análisis LinkedIn completo) pueden requerir bastante espacio.
