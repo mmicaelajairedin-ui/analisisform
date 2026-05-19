@@ -10,7 +10,6 @@
 <title>Panel · Pathway</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
 <style>
 
 /* ════════════════════════════════════════════════════════
@@ -1088,7 +1087,6 @@ button:active { transform: scale(.98); }
 <script>
 
 var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
-emailjs.init('rPy7LSI615o_T5fbU');
 var ME=null;
 (function(){
   var user=localStorage.getItem('mj_user');
@@ -3375,21 +3373,35 @@ function tabMensajes(c){
     var editedSub=document.getElementById('ep-subject-input').value||'Mensaje de '+_cNom;
     var ok=document.getElementById('msg-ok');
     cerrarModal('modal-email-preview');
-    // Envio directo via EmailJS. From-name = nombre del coach, Reply-To = email del coach.
-    // SMTP origen es la cuenta master EmailJS (limitacion del plan free).
+    // Envio via Brevo (edge function send-email): sin marca de agua y mejor
+    // entrega a Hotmail/Outlook. From-name = nombre del coach (remitente del
+    // dominio autenticado), Reply-To = email del coach.
     if(ok){ ok.textContent='Enviando...'; ok.style.color='var(--muted)'; }
     var _coachReply=(typeof ME!=='undefined'&&ME&&ME.email)||'hi@pathwaycareercoach.com';
-    emailjs.send('Coach','template_7f00mbl',{
-      to_email: p.to,
-      name: coachFull,
-      subject: editedSub,
-      message: editedMsg.replace(/\n/g,'<br>'),
-      reply_to: _coachReply
-    }).then(function(){
-      if(ok){
-        ok.textContent='✓ Email enviado a '+p.to;
-        ok.style.color='var(--green)';
-        setTimeout(function(){ok.textContent='';},6000);
+    var _coachPhoto=(typeof ME!=='undefined'&&ME&&(ME.foto_url||(ME.configuracion&&ME.configuracion.logo_url)))||'';
+    var _photoHtml=_coachPhoto?'<div style="text-align:center;margin-bottom:18px;"><img src="'+_coachPhoto+'" alt="'+coachFull+'" width="72" height="72" style="width:72px;height:72px;border-radius:50%;object-fit:cover;display:inline-block;"><div style="font-weight:700;color:#1B4332;font-size:14px;margin-top:8px;">'+coachFull+'</div></div>':'';
+    var _bodyHtml=_photoHtml+'<div>'+editedMsg.replace(/\n/g,'<br>')+'</div>';
+    fetch(SB+'/functions/v1/send-email',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        to:p.to,
+        to_name:p.to,
+        subject:editedSub,
+        html:_bodyHtml,
+        text:editedMsg,
+        from_name:coachFull,
+        reply_to:_coachReply
+      })
+    }).then(function(r){return r.json().catch(function(){return {ok:r.ok};});}).then(function(j){
+      if(j&&j.ok){
+        if(ok){
+          ok.textContent='✓ Email enviado a '+p.to;
+          ok.style.color='var(--green)';
+          setTimeout(function(){ok.textContent='';},6000);
+        }
+      } else {
+        throw new Error((j&&j.error)||'el envío falló');
       }
     }).catch(function(err){
       console.error('[email send]',err);
@@ -5202,12 +5214,8 @@ function crearCliente(){
   ].filter(Boolean))
   .then(function(){
     if(st){st.textContent='✓ Cliente creado'+(pass?' con acceso':'');st.style.color='#5A8C6E';}
-    // Construir bienvenida con mailto: para que el coach la mande desde SU
-    // propia cuenta (Gmail, Outlook...). Antes usábamos emailjs.send con la
-    // cuenta de Pathway, pero eso hacía que TODOS los emails de bienvenida
-    // salieran desde la misma cuenta del owner del servicio EmailJS — no
-    // del coach que creó al cliente. Con mailto: cada coach manda con su
-    // foto, firma y branding propios.
+    // Bienvenida con mailto: el coach la manda desde SU propia cuenta
+    // (Gmail, Outlook...) con su foto, firma y branding propios.
     var clienteUrl='https://pathwaycareercoach.com/cliente.html';
     var primerNombre=nombre.split(' ')[0];
     var coachNomShort=(ME&&ME.nombre?ME.nombre.split(' ')[0]:null)||'Tu coach';
@@ -7214,8 +7222,8 @@ function _renderAdmin(){
     html+='</div>';
     // Caja rápida: dar acceso por email (extiende trial si existe, lo crea si no)
     html+='<div style="background:rgba(45,106,79,.04);border:1px dashed rgba(45,106,79,.25);border-radius:10px;padding:14px 16px;margin-bottom:16px;">';
-    html+='<div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:3px;">🔑 Dar acceso por email</div>';
-    html+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.45;">Escribí el email del coach y los días de acceso. Si ya existe, le suma esos días de trial. Si no existe, completá nombre + contraseña y se crea en el momento.</div>';
+    html+='<div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:3px;">🔑 Dar acceso a un coach por email</div>';
+    html+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.45;">Crea o renueva una cuenta de <strong>coach</strong> (no es un cliente). Escribí el email del coach y los días de acceso: si ya existe, le suma esos días de trial; si no existe, completá nombre + contraseña y se crea como coach en el momento.</div>';
     html+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
     html+='<input id="dac-email" type="email" placeholder="email del coach *" style="flex:2;min-width:180px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;">';
     html+='<input id="dac-nombre" type="text" placeholder="nombre (si es nuevo)" style="flex:1;min-width:140px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;">';
@@ -7664,20 +7672,31 @@ window._enviarSoporte=function(){
     +'Fecha: '+new Date().toLocaleString('es-ES')+'\n'
     +'Asunto: '+asunto+'\n\n'
     +'Mensaje:\n'+mensaje;
-  // Reusa el template EmailJS existente (manda a hi@... como destinatario)
-  emailjs.send('Coach','template_7f00mbl',{
-    to_email:'hi@pathwaycareercoach.com',
-    name:'Pathway Soporte',
-    subject:'[SOPORTE '+plan+'] '+asunto,
-    message:bodyTexto.replace(/\n/g,'<br>'),
-    reply_to:coachEmail
-  }).then(function(){
-    if(st){st.textContent='✓ Mensaje enviado. Te respondemos al email.';st.style.color='#2D6A4F';}
-    var a=document.getElementById('sop-asunto');if(a)a.value='';
-    var m=document.getElementById('sop-mensaje');if(m)m.value='';
-    if(btn){btn.disabled=false;btn.style.opacity='1';}
-    setTimeout(function(){if(st)st.textContent='';},6000);
+  // Envío vía Brevo (send-email), destinatario hi@pathwaycareercoach.com
+  fetch(SB+'/functions/v1/send-email',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      to:'hi@pathwaycareercoach.com',
+      to_name:'Pathway Soporte',
+      subject:'[SOPORTE '+plan+'] '+asunto,
+      html:bodyTexto.replace(/\n/g,'<br>'),
+      text:bodyTexto,
+      from_name:'Pathway Soporte',
+      reply_to:coachEmail
+    })
+  }).then(function(r){return r.json().catch(function(){return {ok:r.ok};});}).then(function(j){
+    if(j&&j.ok){
+      if(st){st.textContent='✓ Mensaje enviado. Te respondemos al email.';st.style.color='#2D6A4F';}
+      var a=document.getElementById('sop-asunto');if(a)a.value='';
+      var m=document.getElementById('sop-mensaje');if(m)m.value='';
+      if(btn){btn.disabled=false;btn.style.opacity='1';}
+      setTimeout(function(){if(st)st.textContent='';},6000);
+    } else {
+      throw new Error((j&&j.error)||'el envío falló');
+    }
   }).catch(function(err){
+    console.error('[soporte send]',err);
     if(st){st.textContent='Error enviando. Intentá de nuevo en un rato.';st.style.color='#C0756E';}
     if(btn){btn.disabled=false;btn.style.opacity='1';}
   });
@@ -7716,19 +7735,30 @@ window._enviarOpinion=function(){
     +'Rating: '+stars+'\n'
     +'Categoría: '+categoria+'\n\n'
     +'Comentario:\n'+comentario;
-  emailjs.send('Coach','template_7f00mbl',{
-    to_email:'hi@pathwaycareercoach.com',
-    name:'Pathway Feedback',
-    subject:'[FEEDBACK '+plan+' '+categoria+'] '+(rating?rating+'★ ':'')+coachNombre,
-    message:bodyTexto.replace(/\n/g,'<br>'),
-    reply_to:coachEmail
-  }).then(function(){
-    if(st){st.textContent='✓ ¡Gracias por tu opinión!';st.style.color='#2D6A4F';}
-    var c=document.getElementById('op-comentario');if(c)c.value='';
-    if(typeof _setOpinionStar==='function')_setOpinionStar(0);
-    if(btn){btn.disabled=false;btn.style.opacity='1';}
-    setTimeout(function(){if(st)st.textContent='';},6000);
+  fetch(SB+'/functions/v1/send-email',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      to:'hi@pathwaycareercoach.com',
+      to_name:'Pathway Feedback',
+      subject:'[FEEDBACK '+plan+' '+categoria+'] '+(rating?rating+'★ ':'')+coachNombre,
+      html:bodyTexto.replace(/\n/g,'<br>'),
+      text:bodyTexto,
+      from_name:'Pathway Feedback',
+      reply_to:coachEmail
+    })
+  }).then(function(r){return r.json().catch(function(){return {ok:r.ok};});}).then(function(j){
+    if(j&&j.ok){
+      if(st){st.textContent='✓ ¡Gracias por tu opinión!';st.style.color='#2D6A4F';}
+      var c=document.getElementById('op-comentario');if(c)c.value='';
+      if(typeof _setOpinionStar==='function')_setOpinionStar(0);
+      if(btn){btn.disabled=false;btn.style.opacity='1';}
+      setTimeout(function(){if(st)st.textContent='';},6000);
+    } else {
+      throw new Error((j&&j.error)||'el envío falló');
+    }
   }).catch(function(err){
+    console.error('[feedback send]',err);
     if(st){st.textContent='Error enviando. Intentá de nuevo.';st.style.color='#C0756E';}
     if(btn){btn.disabled=false;btn.style.opacity='1';}
   });
