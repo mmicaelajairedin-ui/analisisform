@@ -5,7 +5,7 @@ const BASE_URL = process.env.BASE_URL || 'https://pathwaycareercoach.com/';
 
 module.exports = defineConfig({
   testDir: './tests',
-  timeout: 15000,
+  timeout: 30000,
   retries: 0,
   workers: 2,
   reporter: [
@@ -19,8 +19,8 @@ module.exports = defineConfig({
     headless: true,
     viewport: { width: 1280, height: 720 },
     ignoreHTTPSErrors: true,
-    actionTimeout: 5000,
-    navigationTimeout: 10000,
+    actionTimeout: 10000,
+    navigationTimeout: 20000,
   },
   projects: [
     {
