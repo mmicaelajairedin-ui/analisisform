@@ -105,8 +105,27 @@ Deno.serve(async (req: Request) => {
     subject: body.subject,
   };
   if (body.html) payload.htmlContent = wrapHtml(body.html);
-  if (body.text) payload.textContent = body.text;
+  // Microsoft (Hotmail/Outlook) prioriza correos multipart con alternativa
+  // de texto plano. Si no vino text, lo derivamos del html.
+  if (body.text) {
+    payload.textContent = body.text;
+  } else if (body.html) {
+    payload.textContent = body.html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|h[1-6]|li)>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
   if (body.reply_to) payload.replyTo = { email: body.reply_to };
+  // List-Unsubscribe mejora la entregabilidad en Microsoft/Gmail.
+  payload.headers = {
+    "List-Unsubscribe": "<mailto:hi@pathwaycareercoach.com?subject=unsubscribe>",
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
 
   try {
     const r = await fetch("https://api.brevo.com/v3/smtp/email", {
