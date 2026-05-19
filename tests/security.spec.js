@@ -6,7 +6,7 @@ const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const HEADERS = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' };
 
 test.describe('Seguridad — Sin secretos en frontend', () => {
-  const PAGES = ['formulario.html?access=mj2026', 'login.html', 'panel.html', 'cliente.html', 'registro.html'];
+  const PAGES = ['formulario.html?access=mj2026', 'login.html', 'panel-v2.html', 'cliente.html', 'registro.html'];
   for (const page of PAGES) {
     test(`${page.split('?')[0]} no expone ANTHROPIC_API_KEY`, async ({ page: p }) => {
       await p.goto(page);
