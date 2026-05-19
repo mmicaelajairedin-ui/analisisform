@@ -159,6 +159,10 @@ Devolverás JSON ESTRICTO con 3 campos:
 
 REGLAS CRÍTICAS:
 
+IDIOMA:
+- Detectá el idioma predominante del cv_texto + objetivo y generá TODO el contenido (cv_optimizado, carta, textos de linkedin_analisis) en ESE idioma. No mezcles idiomas.
+- Si el linkedin_texto está en OTRO idioma que el CV (ej: CV en español, LinkedIn en inglés), igual analizalo correctamente y agregá en areas_mejora una nota concreta: que unifique el idioma del LinkedIn con el del CV/objetivo o que tenga una versión por idioma según a qué mercado apunta. No bajes la calidad del análisis por el desajuste de idioma.
+
 CV OPTIMIZADO (estructura JSON):
 - Extraé los datos del cv_texto y reorganizalos en la estructura.
 - nombre: tal cual aparece en el CV
@@ -177,13 +181,14 @@ CARTA DE PRESENTACIÓN:
 - Estructura: hook (por qué este rol), por qué soy buen fit, valor concreto que aporto, cierre con CTA
 - Personalizada al objetivo — NO genérica
 - No uses frases tipo "soy una persona apasionada" o "siempre dispuesto a aprender" — específico
+- PERFIL INTEGRAL: la carta debe reflejar la TRAYECTORIA COMPLETA del candidato (años totales, recorrido por varias empresas/sectores/roles), NO solo el trabajo más reciente o más fuerte. Anclá en el logro más potente, pero hilvaná también la experiencia previa relevante al objetivo (ej: "13 años liderando equipos en 3 sectores", no solo el último puesto). El candidato siente que su perfil es más amplio que su rol actual — que se note.
 
 LINKEDIN ANÁLISIS:
 - score_actual: 0-100 evaluando el LinkedIn actual (titular + acerca de + completitud)
 - titular_actual: extraé del linkedin_texto la headline actual del candidato. Si no se identifica claramente, devolvé "" (string vacío)
 - titular_propuesto: ALINEADO al objetivo, no "Buscando nuevas oportunidades"
 - acerca_de_actual: extraé del linkedin_texto la sección "Acerca de" / "About" actual (max 800 chars). Si no aparece, devolvé ""
-- acerca_de_propuesto: MÁX 250 caracteres / 2-3 líneas. Hook breve: quién soy + 1 logro concreto + qué busco. Sin adjetivos vacíos, sin storytelling, sin listas, sin párrafos. La gente lo lee en 3 segundos. Ejemplo bueno: "Marketing leader B2B SaaS con 8+ años escalando ARR de €5M a €30M. Especializada en demand gen y ABM. Buscando rol de Director/a en scaleup."
+- acerca_de_propuesto: MÁX 250 caracteres / 2-3 líneas. Hook breve: quién soy + 1 logro concreto + qué busco. Sin adjetivos vacíos, sin storytelling, sin listas, sin párrafos. La gente lo lee en 3 segundos. El "quién soy" debe sintetizar la TRAYECTORIA INTEGRAL (años totales + amplitud de sectores/funciones), no solo el último/mejor rol — anclá el logro en lo más fuerte pero que la frase de identidad abarque todo el recorrido. Ejemplo bueno: "Marketing leader B2B SaaS con 8+ años escalando ARR de €5M a €30M. Especializada en demand gen y ABM. Buscando rol de Director/a en scaleup."
 - puntos_fuertes: 2-3 cosas concretas que ya hace bien
 - areas_mejora: 2-3 cosas ACCIONABLES y específicas
 - habilidades_sugeridas: 5-8 skills generales del perfil (van en la sección Aptitudes general de LinkedIn)
