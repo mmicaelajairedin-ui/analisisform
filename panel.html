@@ -1596,6 +1596,83 @@ window._adminMarcarPagado=function(coachId){
     else{showToast('Error marcando pagado');}
   }).catch(function(err){showToast('Error: '+(err.message||'desconocido'));});
 };
+// Dar acceso a un coach por email (caja rápida en Admin → Coaches, mismo
+// patrón que "Reactivar acceso cv-express"). Si el coach existe, le suma
+// N días de trial; si no existe, lo crea en el momento (requiere nombre +
+// contraseña). Si el email pertenece a un usuario que no es coach, avisa.
+window._adminDarAccesoCoach=function(){
+  if(!ME||ME.rol!=='admin')return;
+  var email=((document.getElementById('dac-email')||{}).value||'').trim().toLowerCase();
+  var nombre=((document.getElementById('dac-nombre')||{}).value||'').trim();
+  var pass=((document.getElementById('dac-pass')||{}).value||'').trim();
+  var diasNum=parseInt(((document.getElementById('dac-dias')||{}).value||'30'),10);
+  var dias=Math.max(1,Math.min(365,isNaN(diasNum)?30:diasNum));
+  var msg=document.getElementById('dac-msg');
+  function say(t,c){ if(msg){ msg.textContent=t; msg.style.color=c||'var(--muted)'; } }
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ say('Email inválido','#c0756e'); return; }
+  say('Procesando…');
+  fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&select=id,rol,configuracion',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+    var coachRow=null,anyRow=null;
+    (rows||[]).forEach(function(u){ if(!anyRow)anyRow=u; if((u.rol==='coach'||u.rol==='admin')&&!coachRow)coachRow=u; });
+    if(coachRow){
+      var cfg=coachRow.configuracion||{};
+      var base=cfg.fecha_fin_prueba?new Date(cfg.fecha_fin_prueba):new Date();
+      if(isNaN(base.getTime())||base.getTime()<Date.now())base=new Date();
+      base.setDate(base.getDate()+dias);
+      var newCfg=Object.assign({},cfg,{
+        plan:cfg.plan||'pro',
+        estado_sub:'prueba',
+        fecha_fin_prueba:base.toISOString(),
+        ultima_extension_admin:new Date().toISOString()
+      });
+      var hasta=base;
+      return fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(coachRow.id),{
+        method:'PATCH',
+        headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+        body:JSON.stringify({configuracion:newCfg,activo:true})
+      }).then(function(r){return r.ok?r.json():null;}).then(function(w){
+        if(w&&w.length){
+          showCabraToast('logro','Acceso dado: +'+dias+'d a '+email+' ✓');
+          say('✓ '+email+' tiene acceso hasta '+hasta.toLocaleDateString(),'#3f8f6b');
+          if(typeof _renderAdmin==='function')_renderAdmin();
+        } else {
+          say('No se pudo actualizar (¿RLS bloqueando usuarios?)','#c0756e');
+        }
+      });
+    }
+    if(anyRow){ say('Ese email ya lo usa un usuario "'+(anyRow.rol||'?')+'", no un coach. Usá otro email.','#c0756e'); return; }
+    if(!nombre||!pass){ say('No existe ese coach. Para crearlo completá nombre y contraseña.','#c0756e'); return; }
+    if(pass.length<4){ say('Contraseña muy corta (mín 4 caracteres).','#c0756e'); return; }
+    var enc=new TextEncoder();
+    return crypto.subtle.digest('SHA-256',enc.encode(pass)).then(function(buf){
+      var hash=Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+      var trialEnd=new Date(Date.now()+dias*24*3600*1000).toISOString();
+      return fetch(SB+'/rest/v1/usuarios',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=representation'},
+        body:JSON.stringify({
+          email:email,nombre:nombre,password_hash:hash,rol:'coach',activo:true,
+          configuracion:{plan:'pro',estado_sub:'prueba',fecha_fin_prueba:trialEnd,creado_por_admin:true,creado_por:ME.email}
+        })
+      });
+    }).then(function(r){
+      if(!r)return;
+      return r.text().then(function(t){
+        if(!r.ok){
+          if(r.status===409||t.indexOf('duplicate')>=0) say('Ya existe un usuario con ese email.','#c0756e');
+          else say('Error: '+(t.slice(0,80)||r.status),'#c0756e');
+          return;
+        }
+        showCabraToast('thumbs-up','Coach creado con '+dias+'d de acceso ✓');
+        say('✓ Coach creado. Pasale el email y la contraseña para entrar.','#3f8f6b');
+        ['dac-email','dac-nombre','dac-pass'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+        if(typeof _renderAdmin==='function')_renderAdmin();
+      });
+    });
+  }).catch(function(){ say('Error de conexión','#c0756e'); });
+};
 // Banner para coaches Basic acercándose al límite de 5 clientes.
 // 4/5 → banner amarillo "Te queda 1 cliente libre". 5/5 → banner rojo
 // "Llegaste al límite". Se monta dentro del main panel, no fixed top,
@@ -7133,6 +7210,19 @@ function _renderAdmin(){
     html+='<span style="font-size:11px;color:var(--muted);">'+coaches.length+' total</span>';
     html+='<button onclick="_adminAbrirCrearCoach()" style="background:var(--accent);color:#fff;border:none;padding:7px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">+ Crear coach manual</button>';
     html+='</div>';
+    html+='</div>';
+    // Caja rápida: dar acceso por email (extiende trial si existe, lo crea si no)
+    html+='<div style="background:rgba(45,106,79,.04);border:1px dashed rgba(45,106,79,.25);border-radius:10px;padding:14px 16px;margin-bottom:16px;">';
+    html+='<div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:3px;">🔑 Dar acceso por email</div>';
+    html+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.45;">Escribí el email del coach y los días de acceso. Si ya existe, le suma esos días de trial. Si no existe, completá nombre + contraseña y se crea en el momento.</div>';
+    html+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
+    html+='<input id="dac-email" type="email" placeholder="email del coach *" style="flex:2;min-width:180px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;">';
+    html+='<input id="dac-nombre" type="text" placeholder="nombre (si es nuevo)" style="flex:1;min-width:140px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;">';
+    html+='<input id="dac-pass" type="text" placeholder="contraseña (si es nuevo)" style="flex:1;min-width:140px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;">';
+    html+='<input id="dac-dias" type="number" value="30" min="1" max="365" title="Días de acceso" style="width:74px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;">';
+    html+='<button onclick="_adminDarAccesoCoach()" style="padding:9px 16px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;white-space:nowrap;">Dar acceso</button>';
+    html+='</div>';
+    html+='<div id="dac-msg" style="font-size:12px;color:var(--muted);margin-top:8px;min-height:16px;"></div>';
     html+='</div>';
     if(coaches.length){
       html+='<div style="display:flex;flex-direction:column;gap:8px;">';
