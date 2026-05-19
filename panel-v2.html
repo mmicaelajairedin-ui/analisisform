@@ -580,6 +580,8 @@ var state = {
   plan: "pro",
   trialDays: 9,
   adminTab: "resumen",
+  coachSel: null,
+  coachMsg: "",
   clienteSel: null,
   cliDetTab: "perfil",
   cliWeek: null,
@@ -1672,6 +1674,38 @@ function viewAsistente(){
 }
 
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
+function _sha256hex(str){ return crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)).then(function(buf){ return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join(""); }); }
+function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; render(); }); }
+function _coachDetailCard(){
+  var c=(RCOACHES||[]).filter(function(u){return String(u.id)===String(state.coachSel);})[0];
+  if(!c) return "<div class='cp-card'><div class='cp-card-pad'><button class='cp-btn cp-btn-ghost' data-act='coach-back'>← Volver</button><p style='margin-top:14px;color:var(--pw-danger)'>Coach no encontrado.</p></div></div>";
+  var cg=c.configuracion||{};
+  var plan=cg.plan==="pro"?"Pro":(cg.plan==="basic"?"Basic":"—");
+  var es=(cg.estado_sub||"prueba").toString();
+  var estLbl={prueba:"Prueba",activa:"Activa",cancelada:"Cancelada",vencida:"Vencida"}[es]||"Prueba";
+  function fdate(s){ if(!s) return "—"; try{ return new Date(s).toLocaleDateString("es-ES"); }catch(e){ return "—"; } }
+  var trialTxt = cg.fecha_fin_prueba ? fdate(cg.fecha_fin_prueba) : (es==="activa"?"— (pagado)":"—");
+  var rowD=function(l,v){ return "<div style='display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--pw-border)'><span style='font-size:13px;color:var(--pw-text-soft)'>"+esc(l)+"</span><span style='font-size:13px;color:var(--pw-carbon);font-weight:600;text-align:right'>"+esc(v)+"</span></div>"; };
+  var selfRow=(RME&&String(c.id)===String(RME.id));
+  return "<div class='cp-card'>"+
+    "<div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(c.nombre||c.email||"Coach")+(c.rol==="admin"?" · admin":"")+"<span class='dot'>.</span></h3>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='coach-back'>← Volver</button></div>"+
+    "<div class='cp-card-pad'>"+
+      rowD("Email", c.email||"—")+
+      rowD("Rol", c.rol||"coach")+
+      rowD("Plan", plan)+
+      rowD("Estado", c.activo===false?"Inactiva":estLbl)+
+      rowD("Fin de prueba", trialTxt)+
+      rowD("Alta", fdate(c.created_at))+
+      rowD("Activo", c.activo===false?"No":"Sí")+
+      (cg.creado_por_admin?rowD("Creado por admin", cg.creado_por||"—"):"")+
+      (selfRow?"<p style='font-size:12px;color:var(--pw-text-muted);margin:14px 0 0'>Es tu propia cuenta.</p>":
+      "<div style='display:flex;gap:10px;flex-wrap:wrap;margin-top:16px'>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='coach-trial:"+esc(c.id)+"'>+30 días de prueba</button>"+
+        "<button class='cp-btn cp-btn-primary' data-act='coach-paid:"+esc(c.id)+"'>Marcar como pagado</button>"+
+      "</div>")+
+    "</div></div>";
+}
 function viewAdmin(){
   function kpi(eyebrow, big, sub){
     return "<div class='cp-card cp-card-pad' style='display:flex;flex-direction:column;gap:6px'>"+
@@ -1754,9 +1788,13 @@ function viewAdmin(){
   var engRows = coachesEng.map(function(c){
     var off=(c.activo===false);
     var selfRow=(RME&&String(c.id)===String(RME.id));
+    var mgmt="<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 9px;font-size:11px;margin-right:5px' data-act='coach-view:"+esc(c.id)+"'>Ver</button>";
     var actBtn=selfRow
-      ? "<span style='font-size:11px;color:var(--pw-text-muted)'>vos</span>"
-      : "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 12px;font-size:11px"+(off?"":";color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='coach-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>";
+      ? mgmt+"<span style='font-size:11px;color:var(--pw-text-muted)'>vos</span>"
+      : mgmt
+        +"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 9px;font-size:11px;margin-right:5px' data-act='coach-trial:"+esc(c.id)+"'>+30 d</button>"
+        +"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 9px;font-size:11px;margin-right:5px' data-act='coach-paid:"+esc(c.id)+"'>Pagado</button>"
+        +"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 9px;font-size:11px"+(off?"":";color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='coach-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>";
     var alta=c.alta||["—",""], actv=c.actv||["—",""];
     return "<tr"+(off?" style='opacity:.55'":"")+"><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.n)+"</td>"+
       "<td>"+pill(c.plan, c.plan==="Pro"?"ok":"")+"</td>"+
@@ -1897,7 +1935,27 @@ function viewAdmin(){
 
   var body;
   if(state.adminTab==="coaches"){
-    body = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
+    if(REAL && state.coachSel){
+      body = _coachDetailCard();
+    } else {
+      var cm=state.coachMsg||"";
+      var cmCol=cm.indexOf("ok:")===0?"var(--pw-bosque)":cm.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
+      var accBox = REAL ? (
+        "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Crear / dar acceso a un coach<span class='dot'>.</span></h3>"+
+          "<span class='cp-eyebrow'>Alta manual · fuera de Stripe</span></div>"+
+          "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+            "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5'>Si el email ya es coach, le suma los días de acceso. Si no existe, completá nombre + contraseña y se crea como <strong>coach</strong> en el momento.</div>"+
+            "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+              "<input id='cac-email' class='cp-form-input' style='flex:2;min-width:200px' placeholder='email del coach *'>"+
+              "<input id='cac-nombre' class='cp-form-input' style='flex:1;min-width:150px' placeholder='nombre (si es nuevo)'>"+
+              "<input id='cac-pass' class='cp-form-input' style='flex:1;min-width:150px' placeholder='contraseña (si es nuevo)'>"+
+              "<input id='cac-dias' class='cp-form-input' type='number' value='30' min='1' max='365' style='width:80px' title='Días de acceso'>"+
+              "<button class='cp-btn cp-btn-primary' data-act='coach-access'>"+svg(IC.plus,12)+" Dar acceso</button>"+
+            "</div>"+
+            (cm ? "<div style='font-size:12px;font-weight:600;color:"+cmCol+"'>"+esc(cm.replace(/^(ok|err|…):/,""))+"</div>" : "")+
+          "</div></div>"
+      ) : "";
+      body = accBox+"<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
         fc("<span style='color:var(--pw-bosque)'>"+(A?A.act7:5)+"</span>","Activas esta semana")+
         fc("<span style='color:#8E7A35'>"+(A?A.prueba:2)+"</span>","En prueba"+(A&&A.venc3?" ("+A.venc3+" vence ≤3 d)":""))+
         fc("<span style='color:var(--pw-danger)'>"+(A?A.inact14:2)+"</span>","Inactivas +14 d")+
@@ -1906,9 +1964,10 @@ function viewAdmin(){
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+coachesEng.length+" registradas · uso real</span></div>"+
-        "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:820px'><thead><tr>"+
+        "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:980px'><thead><tr>"+
           "<th>Coach</th><th>Plan</th><th>Estado</th><th>Alta</th><th>Últ. acceso</th><th>Clientes</th><th>Actividad</th><th>Pathway</th><th style='text-align:right'>Acción</th>"+
         "</tr></thead><tbody>"+engRows+"</tbody></table></div></div>";
+    }
   } else if(state.adminTab==="contactos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Popup de pricing<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Funnel</span></div><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
@@ -2180,7 +2239,66 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
-  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); render(); return; }
+  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; render(); return; }
+  if(act==="coach-back"){ state.coachSel=null; render(); return; }
+  if(act.indexOf("coach-view:")===0){ state.coachSel=act.slice(11); render(); window.scrollTo(0,0); return; }
+  if(act.indexOf("coach-trial:")===0){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var ctId=act.slice(12);
+    if(!confirm("¿Extender el trial de este coach +30 días?")) return;
+    _sb("usuarios?id=eq."+encodeURIComponent(ctId)+"&select=configuracion").then(function(rows){
+      var u=rows&&rows[0]; if(!u){ alert("Coach no encontrado."); return; }
+      var cf=u.configuracion||{}; var base=cf.fecha_fin_prueba?new Date(cf.fecha_fin_prueba):new Date();
+      if(isNaN(base.getTime())||base.getTime()<Date.now()) base=new Date();
+      base.setDate(base.getDate()+30);
+      var nc=Object.assign({},cf,{fecha_fin_prueba:base.toISOString(),estado_sub:"prueba",ultima_extension_admin:new Date().toISOString()});
+      return _sbw("usuarios?id=eq."+encodeURIComponent(ctId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Trial extendido +30 días ✓"); reloadCoaches(); });
+    }).catch(function(){ alert("No se pudo extender el trial."); });
+    return;
+  }
+  if(act.indexOf("coach-paid:")===0){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var cpId=act.slice(11);
+    if(!confirm("¿Marcar este coach como pagado? Acceso permanente (estado activo, sin trial).")) return;
+    _sb("usuarios?id=eq."+encodeURIComponent(cpId)+"&select=configuracion").then(function(rows){
+      var u=rows&&rows[0]; if(!u){ alert("Coach no encontrado."); return; }
+      var cf=u.configuracion||{};
+      var nc=Object.assign({},cf,{estado_sub:"activa",fecha_fin_prueba:null,marcado_pagado_admin:true,marcado_pagado_at:new Date().toISOString()});
+      return _sbw("usuarios?id=eq."+encodeURIComponent(cpId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Coach marcado como pagado ✓"); reloadCoaches(); });
+    }).catch(function(){ alert("No se pudo marcar como pagado."); });
+    return;
+  }
+  if(act==="coach-access"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var caEmail=(_val("cac-email")||"").trim().toLowerCase();
+    var caNombre=(_val("cac-nombre")||"").trim();
+    var caPass=(_val("cac-pass")||"").trim();
+    var caDiasN=parseInt(_val("cac-dias")||"30",10);
+    var caDias=Math.max(1,Math.min(365,isNaN(caDiasN)?30:caDiasN));
+    var setMsg=function(t,kind){ state.coachMsg=(kind||"…")+":"+t; render(); };
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(caEmail)){ setMsg("Email inválido.","err"); return; }
+    setMsg("Procesando…","…");
+    _sb("usuarios?email=eq."+encodeURIComponent(caEmail)+"&select=id,rol,configuracion").then(function(rows){
+      var coachRow=null,anyRow=null;
+      (rows||[]).forEach(function(u){ if(!anyRow)anyRow=u; if((u.rol==="coach"||u.rol==="admin")&&!coachRow)coachRow=u; });
+      if(coachRow){
+        var cf=coachRow.configuracion||{};
+        var base=cf.fecha_fin_prueba?new Date(cf.fecha_fin_prueba):new Date();
+        if(isNaN(base.getTime())||base.getTime()<Date.now()) base=new Date();
+        base.setDate(base.getDate()+caDias);
+        var nc=Object.assign({},cf,{plan:cf.plan||"pro",estado_sub:"prueba",fecha_fin_prueba:base.toISOString(),ultima_extension_admin:new Date().toISOString()});
+        return _sbw("usuarios?id=eq."+encodeURIComponent(coachRow.id),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Acceso +"+caDias+"d a "+caEmail+" ✓"); setMsg("✓ "+caEmail+" tiene acceso hasta "+base.toLocaleDateString("es-ES"),"ok"); reloadCoaches(); });
+      }
+      if(anyRow){ setMsg('Ese email ya lo usa un usuario "'+(anyRow.rol||"?")+'", no un coach.',"err"); return; }
+      if(!caNombre||!caPass){ setMsg("No existe ese coach. Para crearlo completá nombre y contraseña.","err"); return; }
+      if(caPass.length<4){ setMsg("Contraseña muy corta (mín 4 caracteres).","err"); return; }
+      return _sha256hex(caPass).then(function(hash){
+        var trialEnd=new Date(Date.now()+caDias*86400000).toISOString();
+        return _sbw("usuarios","POST",{email:caEmail,nombre:caNombre,password_hash:hash,rol:"coach",activo:true,configuracion:{plan:"pro",estado_sub:"prueba",fecha_fin_prueba:trialEnd,creado_por_admin:true,creado_por:(RME&&RME.email)||""}}).then(function(r){ if(!r.ok) throw 0; toast("Coach creado con "+caDias+"d de acceso ✓"); setMsg("✓ Coach creado. Pasale el email y la contraseña para entrar.","ok"); reloadCoaches(); });
+      });
+    }).catch(function(){ setMsg("Error de conexión, o el email ya existe.","err"); });
+    return;
+  }
   if(act==="coach-toggle"){
     if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
     var ctid=el.getAttribute("data-id"); if(!ctid) return;

@@ -7,6 +7,8 @@ const skip = !EMAIL || !PASS;
 
 async function loginClient(page) {
   await page.goto('login.html');
+  await page.waitForLoadState('domcontentloaded');
+  await page.locator('#email').waitFor({ timeout: 15000 });
   await page.fill('#email', EMAIL);
   await page.fill('#password', PASS);
   await page.locator('#btn').click();
@@ -24,6 +26,8 @@ test.describe('Cliente — Login y navegación', () => {
 
   test('Login redirige al portal', async ({ page }) => {
     await page.goto('login.html');
+    await page.waitForLoadState('domcontentloaded');
+    await page.locator('#email').waitFor({ timeout: 15000 });
     await page.fill('#email', EMAIL);
     await page.fill('#password', PASS);
     await page.locator('#btn').click();

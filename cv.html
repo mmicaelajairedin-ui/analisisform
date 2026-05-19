@@ -245,9 +245,26 @@ html,body{height:100%;background:#F4F4F4;font-family:'DM Sans',sans-serif;}
 }
 .exp-b-del:hover{opacity:1;}
 .editing-mode .exp-b-del{display:block;}
-.cv-add{display:none;margin-top:8px;background:none;border:1px dashed #bbb;color:#666;font-size:11px;padding:5px 12px;border-radius:6px;cursor:pointer;font-family:inherit;}
-.cv-add:hover{border-color:#888;color:#333;}
-.editing-mode .cv-add{display:inline-flex;align-items:center;gap:5px;}
+/* Párrafo introductorio del rol */
+.exp-intro{font-size:10.5px;color:#333;line-height:1.65;margin:1px 0 8px;}
+.exp-intro:empty{display:none;}
+.editing-mode .exp-intro:empty{display:block;min-height:18px;}
+.editing-mode .exp-intro:empty:before{content:'Párrafo introductorio del rol (opcional)';color:#bbb;}
+/* Botón agregar (logro / competencia / formación) */
+.cv-addbtn{display:none;background:none;border:1px dashed #C9A96E;color:#8C7B80;font-size:10px;font-weight:600;cursor:pointer;border-radius:5px;padding:3px 9px;margin:5px 0 2px;font-family:'DM Sans',sans-serif;}
+.editing-mode .cv-addbtn{display:inline-block;}
+.cv-addbtn:hover{background:rgba(201,169,110,.14);}
+/* Competencia editable + quitar */
+.comp-item{position:relative;}
+.comp-del{display:none;background:none;border:none;color:#C0756E;font-size:11px;font-weight:700;cursor:pointer;line-height:1;padding:0 0 0 4px;}
+.editing-mode .comp-del{display:inline;}
+/* Quitar formación */
+.edu{position:relative;}
+.edu-del{display:none;background:none;border:none;color:#C0756E;font-size:14px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0;padding:0 2px;margin-left:auto;}
+.editing-mode .edu-del{display:block;}
+/* Ocultar secciones vacías salvo en edición */
+.sl-empty{display:none;}
+.editing-mode .sl-empty{display:block;}
 /* Educación */
 .edu{margin-bottom:9px;display:flex;gap:10px;align-items:flex-start;}
 .edu-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:3px;}
@@ -353,6 +370,7 @@ html,body{height:100%;background:#F4F4F4;font-family:'DM Sans',sans-serif;}
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
       Volver
     </button>
+    <button id="cv-go-panel" onclick="window.location.href=BASE+'/panel-v2.html'" style="display:none;width:100%;margin-top:6px;padding:8px;background:#2D6A4F;color:#fff;border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;">← Ir a panel</button>
   </div>
 </div>
 
@@ -445,6 +463,15 @@ function goBack(){
     window.location.href=BASE+'/panel-v2.html';
     return;
   }
+  // Si el coach está viendo "como cliente", volver al portal en modo
+  // preview (no al panel). cv.html se abrió en pestaña nueva, así que
+  // intentamos cerrarla; si no se puede, navegamos al portal con coach_view.
+  var _cv=new URLSearchParams(window.location.search).get('coach_view');
+  if(_cv){
+    try{window.close();}catch(e){}
+    setTimeout(function(){window.location.href=BASE+'/cliente.html?coach_view='+encodeURIComponent(_cv);},120);
+    return;
+  }
   window.location.href=BASE+'/cliente.html';
 }
 
@@ -467,6 +494,8 @@ function goBack(){
 
   _email=p.get('email');
   if(!_email){var u=localStorage.getItem('mj_user');if(u){try{_email=JSON.parse(u).email;}catch(e){}}}
+  // En modo "ver como cliente" (coach), mostrar botón verde para ir al panel.
+  if(p.get('coach_view')){var _gp=document.getElementById('cv-go-panel');if(_gp)_gp.style.display='block';}
   buildPalette();
   document.getElementById('file-foto').onchange=onFoto;
   document.addEventListener('keydown',function(e){if(e.key==='Escape'&&_editing)toggleEdit();});
@@ -766,7 +795,7 @@ function buildPage(d,expList,isFirst,eduList){
   var rolObj=d.rol_objetivo||'';
   var obj=d.objetivo||'';
   var ct=d.contacto||{};
-  var comps=arr(d.competencias).slice(0,6);
+  var comps=arr(d.competencias);
   var idiomas=arr(d.idiomas);
   var herr=arr(d.herramientas);
   var cursos=arr(d.cursos);
@@ -807,12 +836,11 @@ function buildPage(d,expList,isFirst,eduList){
     }
 
     /* Competencias */
-    if(comps.length){
-      o+='<div class="sl"><div class="sl-h">Competencias</div>';
-      comps.forEach(function(c){o+='<span class="comp-item" contenteditable="false">'+esc(c)+'</span>';});
-      if(comps.length<6)o+='<button class="cv-add" onclick="addCvItem(\'comp\')">+ Añadir competencia</button>';
-      o+='</div>';
-    }
+    o+='<div class="sl'+(comps.length?'':' sl-empty')+'"><div class="sl-h">Competencias</div><div class="comp-list">';
+    comps.forEach(function(c){
+      o+='<span class="comp-item"><span class="comp-txt" contenteditable="false">'+esc(normComp(c))+'</span><button class="comp-del" onclick="delComp(this)" title="Quitar">×</button></span>';
+    });
+    o+='</div><button class="cv-addbtn" onclick="addComp(this)">+ competencia</button></div>';
 
     /* Herramientas */
     if(herr.length){
@@ -860,17 +888,14 @@ function buildPage(d,expList,isFirst,eduList){
 
     /* Educación */
     var eduShow=eduList||[];
-    if(eduShow.length){
-      o+='<div class="sl"><div class="sl-h">Educación</div>';
-      eduShow.forEach(function(e){
-        o+='<div class="edu"><div class="edu-dot"></div><div>';
-        o+='<div class="edu-t" contenteditable="false">'+esc(e.titulo||'')+'</div>';
-        if(e.institucion)o+='<div class="edu-s" contenteditable="false">'+esc(e.institucion)+'</div>';
-        o+='</div></div>';
-      });
-      o+='<button class="cv-add" onclick="addCvItem(\'edu\')">+ Añadir formación</button>';
-      o+='</div>';
-    }
+    o+='<div class="sl'+(eduShow.length?'':' sl-empty')+'"><div class="sl-h">Educación</div>';
+    eduShow.forEach(function(e,ei){
+      o+='<div class="edu" data-eduidx="'+ei+'"><div class="edu-dot"></div><div style="flex:1;min-width:0">';
+      o+='<div class="edu-t" contenteditable="false">'+esc(e.titulo||'')+'</div>';
+      o+='<div class="edu-s" contenteditable="false">'+esc(e.institucion||'')+'</div>';
+      o+='</div><button class="edu-del" onclick="delEdu(this)" title="Quitar formación">×</button></div>';
+    });
+    o+='<button class="cv-addbtn" onclick="addEdu(this)">+ formación</button></div>';
 
     /* Otros */
     if(otros.incorporacion||otros.modalidad||otros.viajes){
@@ -903,15 +928,17 @@ function buildPage(d,expList,isFirst,eduList){
       var sub=[e.empresa||'',e.fecha||'',e.ubicacion||''].filter(Boolean).join(' · ');
       var bullets=arr(e.bullets);
       if(!bullets.length)bullets=arr(e.logros);
+      var introTxt=e.resumen||e.intro||'';
       o+='<div class="exp">';
       o+='<div class="exp-t" contenteditable="false">'+esc(rolTxt)+'</div>';
-      if(sub)o+='<div class="exp-s" contenteditable="false">'+esc(sub)+'</div>';
-      bullets.slice(0,7).forEach(function(b,bi){
-        o+='<div class="exp-b" data-expidx="'+i+'" data-bidx="'+bi+'"><div class="exp-b-dot"></div><div class="exp-b-txt" contenteditable="false">'+boldKw(esc(b))+'</div><button class="exp-b-del" onclick="delBullet(this)" title="Eliminar bullet">×</button></div>';
+      o+='<div class="exp-s" contenteditable="false">'+esc(sub)+'</div>';
+      o+='<div class="exp-intro" contenteditable="false">'+esc(introTxt)+'</div>';
+      bullets.forEach(function(b,bi){
+        o+='<div class="exp-b" data-expidx="'+i+'" data-bidx="'+bi+'"><div class="exp-b-dot"></div><div class="exp-b-txt" contenteditable="false">'+boldKw(esc(normBullet(b)))+'</div><button class="exp-b-del" onclick="delBullet(this)" title="Eliminar bullet">×</button></div>';
       });
+      o+='<button class="cv-addbtn" onclick="addBullet(this)">+ logro</button>';
       o+='</div>';
     });
-    o+='<button class="cv-add" onclick="addCvItem(\'exp\')">+ Añadir experiencia</button>';
     o+='</div>';
   }
 
@@ -949,7 +976,7 @@ function toggleEdit(){
   // Make all editable elements active
   wrap.querySelectorAll('[contenteditable]').forEach(function(el){el.contentEditable=_editing?'true':'false';});
   // Also make exp-b-txt editable (they have contenteditable set dynamically)
-  wrap.querySelectorAll('.exp-b-txt,.ct-edit,.edu-t,.edu-s').forEach(function(el){el.contentEditable=_editing?'true':'false';});
+  wrap.querySelectorAll('.exp-b-txt,.ct-edit,.edu-t,.edu-s,.exp-intro,.comp-txt').forEach(function(el){el.contentEditable=_editing?'true':'false';});
   if(_editing){
     wrap.querySelectorAll('.cv-page').forEach(function(p){p.classList.add('editing-mode');});
     wrap.classList.add('editing');
@@ -1067,14 +1094,27 @@ function syncDFromDOM(){
       var tEl=expEl.querySelector('.exp-t');
       if(tEl)_d.experiencia[i].titulo=tEl.textContent.trim();
       var sEl=expEl.querySelector('.exp-s');
-      if(sEl)_d.experiencia[i].empresa=sEl.textContent.trim();
+      if(sEl){
+        // El subtítulo se muestra como "empresa · fecha · ubicación".
+        // Si reescribiéramos solo .empresa, al re-render se volvería a
+        // concatenar con fecha/ubicacion y se duplicaba. El subtítulo
+        // editado pasa a ser la única fuente.
+        _d.experiencia[i].empresa=sEl.textContent.trim();
+        _d.experiencia[i].fecha='';
+        _d.experiencia[i].ubicacion='';
+      }
+      var iEl=expEl.querySelector('.exp-intro');
+      if(iEl)_d.experiencia[i].resumen=iEl.textContent.trim();
       var bEls=expEl.querySelectorAll('.exp-b-txt');
-      if(bEls.length)_d.experiencia[i].bullets=Array.from(bEls).map(function(b){return b.textContent.trim();}).filter(Boolean);
+      _d.experiencia[i].bullets=Array.from(bEls).map(function(b){return normBullet(b.textContent);}).filter(Boolean);
     });
   }
-  // Competencias
+  // Competencias (lee el span interno; vacías/eliminadas no persisten)
   var compEls=document.querySelectorAll('.comp-item');
-  if(compEls.length){_d.competencias=Array.from(compEls).map(function(el){return el.textContent.trim();}).filter(Boolean);}
+  _d.competencias=Array.from(compEls).map(function(el){
+    var t=el.querySelector('.comp-txt');
+    return normComp(t?t.textContent:el.textContent);
+  }).filter(Boolean);
   // Educación
   if(_d.educacion){
     document.querySelectorAll('.edu').forEach(function(eduEl,i){
@@ -1087,37 +1127,54 @@ function syncDFromDOM(){
   }
 }
 
-/* ── DELETE BULLET ── */
+/* ── EDITAR ESTRUCTURA (agregar/quitar) ── */
 function delBullet(btn){
   var row=btn.closest('.exp-b');
   if(row)row.remove();
 }
-function _cvApplyEditing(){
-  var wrap=document.getElementById('cv-wrap');
-  if(!wrap||!_editing)return;
-  wrap.querySelectorAll('[contenteditable]').forEach(function(el){el.contentEditable='true';});
-  wrap.querySelectorAll('.exp-b-txt,.ct-edit,.edu-t,.edu-s').forEach(function(el){el.contentEditable='true';});
-  wrap.querySelectorAll('.cv-page').forEach(function(p){p.classList.add('editing-mode');});
-  wrap.classList.add('editing');
+function addBullet(btn){
+  var exp=btn.closest('.exp'); if(!exp)return;
+  var row=document.createElement('div');
+  row.className='exp-b';
+  row.innerHTML='<div class="exp-b-dot"></div><div class="exp-b-txt" contenteditable="true"></div><button class="exp-b-del" onclick="delBullet(this)" title="Eliminar bullet">×</button>';
+  exp.insertBefore(row,btn);
+  var dot=row.querySelector('.exp-b-dot'); if(dot)dot.style.background=_color;
+  var t=row.querySelector('.exp-b-txt'); if(t)t.focus();
 }
-function addCvItem(kind){
+function addComp(btn){
+  var sl=btn.closest('.sl'); if(sl)sl.classList.remove('sl-empty');
+  var list=sl&&sl.querySelector('.comp-list'); if(!list)return;
+  var chip=document.createElement('span');
+  chip.className='comp-item';
+  chip.innerHTML='<span class="comp-txt" contenteditable="true"></span><button class="comp-del" onclick="delComp(this)" title="Quitar">×</button>';
+  list.appendChild(chip);
+  chip.style.background=lighten(_color,.65); chip.style.color=darken(_color,.2);
+  var t=chip.querySelector('.comp-txt'); if(t)t.focus();
+}
+function delComp(btn){
+  var c=btn.closest('.comp-item'); if(c)c.remove();
+}
+function addEdu(){
   if(!_d)return;
   syncDFromDOM();
-  if(kind==='exp'){ if(!Array.isArray(_d.experiencia))_d.experiencia=[]; _d.experiencia.push({titulo:'',empresa:'',fecha:'',ubicacion:'',bullets:['']}); }
-  else if(kind==='edu'){ if(!Array.isArray(_d.educacion))_d.educacion=[]; _d.educacion.push({titulo:'',institucion:''}); }
-  else if(kind==='comp'){ if(!Array.isArray(_d.competencias))_d.competencias=[]; if(_d.competencias.length>=6)return; _d.competencias.push('Nueva competencia'); }
-  else return;
+  if(!Array.isArray(_d.educacion))_d.educacion=[];
+  _d.educacion.push({titulo:'',institucion:''});
+  var wasEditing=_editing;
   render();
-  _cvApplyEditing();
-  var wrap=document.getElementById('cv-wrap');
-  if(!wrap)return;
-  var sel = kind==='exp' ? '.exp .exp-t' : (kind==='edu' ? '.edu .edu-t' : '.comp-item');
-  var nodes=wrap.querySelectorAll(sel);
-  var el=nodes[nodes.length-1];
-  if(el){
-    try{ el.focus(); var r=document.createRange(); r.selectNodeContents(el); var s=window.getSelection(); s.removeAllRanges(); s.addRange(r); }catch(e){}
-    try{ el.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){}
-  }
+  if(wasEditing){_editing=false;toggleEdit();}
+  setTimeout(function(){
+    var els=document.querySelectorAll('.edu-t');
+    var last=els[els.length-1]; if(last)last.focus();
+  },60);
+}
+function delEdu(btn){
+  var edu=btn.closest('.edu'); if(!edu)return;
+  var idx=parseInt(edu.getAttribute('data-eduidx'),10);
+  syncDFromDOM();
+  if(_d&&Array.isArray(_d.educacion)&&!isNaN(idx))_d.educacion.splice(idx,1);
+  var wasEditing=_editing;
+  render();
+  if(wasEditing){_editing=false;toggleEdit();}
 }
 
 /* ── HELPERS ── */
@@ -1132,6 +1189,17 @@ function esc(t){
 }
 function enc(s){return encodeURIComponent(s);}
 function arr(x){return Array.isArray(x)?x:[];}
+/* Consistencia: bullets sin punto final (conserva "..."); competencias
+   con inicial en mayúscula. Se aplica al render y al guardar. */
+function normBullet(s){
+  s=String(s==null?'':s).trim();
+  if(/\.\.\.$/.test(s))return s;
+  return s.replace(/\s*\.\s*$/,'').trim();
+}
+function normComp(s){
+  s=String(s==null?'':s).trim();
+  return s? s.charAt(0).toUpperCase()+s.slice(1) : s;
+}
 function lighten(hex,a){
   var r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
   r=Math.round(r+(255-r)*a);g=Math.round(g+(255-g)*a);b=Math.round(b+(255-b)*a);
