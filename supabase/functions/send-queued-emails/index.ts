@@ -107,16 +107,24 @@ function bodyToHtml(body: string, fromNombre: string, fromEmail: string): string
 </body></html>`;
 }
 
+// Cutover panel.html → panel-v2.html: hay emails ya encolados con la
+// plantilla vieja que linkean al panel viejo (que se elimina). Reescribimos
+// el link al enviar para que nunca apunte a una página borrada.
+function cutoverPanelLink(s: string): string {
+  return s.replace(/panel\.html/g, "panel-v2.html");
+}
+
 async function sendViaBrevo(row: QueueRow): Promise<{ ok: boolean; error?: string }> {
   const BREVO_KEY = Deno.env.get("BREVO_API_KEY") || "";
   if (!BREVO_KEY) return { ok: false, error: "BREVO_API_KEY no configurada" };
 
+  const safeBody = cutoverPanelLink(row.body);
   const payload = {
     sender: { email: row.from_email, name: row.from_nombre },
     to: [{ email: row.to_email, name: row.to_nombre || row.to_email }],
     subject: row.subject,
-    htmlContent: bodyToHtml(row.body, row.from_nombre, row.from_email),
-    textContent: row.body,
+    htmlContent: bodyToHtml(safeBody, row.from_nombre, row.from_email),
+    textContent: safeBody,
   };
 
   try {

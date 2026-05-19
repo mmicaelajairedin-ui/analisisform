@@ -2,7 +2,7 @@
 //
 // Genera un reporte semanal automático de tráfico web combinando datos de
 // Cloudflare Analytics (vía GraphQL API) + análisis con Claude. Manda un
-// email corto con link al panel (panel.html → seccion Web Analytics).
+// email corto con link al panel (panel-v2.html → seccion Web Analytics).
 //
 // IMPORTANTE: cada sitio se analiza POR SEPARADO. Pathway y micaelajairedin
 // son negocios distintos — el agente no debe cruzar narrativas ni transferir
@@ -35,7 +35,7 @@ const CORS_HEADERS = {
 };
 
 const CLAUDE_MODEL = "claude-sonnet-4-5";
-const PANEL_URL = "https://pathwaycareercoach.com/panel.html#webanalytics";
+const PANEL_URL = "https://pathwaycareercoach.com/panel-v2.html#webanalytics";
 const HISTORY_WEEKS = 4;  // semanas previas a leer para contexto/comparacion
 
 interface ZoneConfig {

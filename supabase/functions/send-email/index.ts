@@ -1,7 +1,7 @@
 // Supabase Edge Function — send-email
 //
 // Función reusable para enviar emails vía Brevo Transactional API.
-// La usan: panel.html (notificar al cliente cuando se genera informe/CV),
+// La usan: panel-v2.html (notificar al cliente cuando se genera informe/CV),
 // registro.html (avisar al admin cuando alguien se registra), etc.
 //
 // Desplegar:

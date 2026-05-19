@@ -336,7 +336,7 @@ async function handleCoachSubscription(
   };
 
   // Paywall: flipear `activo` segun el status de la suscripcion. Esto controla
-  // si el usuario puede acceder al panel.html.
+  // si el usuario puede acceder al panel-v2.html.
   // - trialing/active/past_due → activo=true (puede usar el panel)
   // - canceled/unpaid/incomplete_expired → activo=false (bloqueado en panel)
   // - incomplete (estado intermedio cuando recien se crea) → activo=true
@@ -506,7 +506,7 @@ async function sendReferralEmail(
           `<div style="font-size:12px;color:#444;margin-top:4px;">Total de referrals exitosos: <strong>${totalReferrals}</strong></div>` +
           `</div>` +
           `<p>Seguí compartiendo tu link desde el panel → Inicio. Por cada coach que paga, 1 mes gratis más.</p>` +
-          `<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel.html" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel</a></p>`,
+          `<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel</a></p>`,
       }),
     });
   } catch (e) {

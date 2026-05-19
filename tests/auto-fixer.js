@@ -81,7 +81,7 @@ function getAffectedFile(failure) {
   const fileMap = {
     'formulario.html': /formulario|form|index|idioma|lang|progreso|consent/i,
     'login.html': /login|autenticación|auth|credential|password/i,
-    'panel.html': /panel|dashboard|sidebar|coach|candidat/i,
+    'panel-v2.html': /panel|dashboard|sidebar|coach|candidat/i,
     'cliente.html': /cliente|client|portal/i,
     'cv.html': /cv|currículum|resume/i,
     'carta.html': /carta|cover letter/i,
