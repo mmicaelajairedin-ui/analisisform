@@ -172,6 +172,46 @@ async function updateProspect(id: number) {
   });
 }
 
+// Defensa antes de enviar emails de trial. Mira el estado actual del usuario y
+// cancela si no corresponde. Esto cubre tres casos:
+//
+//   1) Admins (rol='admin') o pro vitalicios (configuracion.es_pro_vitalicio=true)
+//      nunca deben recibir emails que asumen un trial activo.
+//   2) Coaches que ya pagaron (configuracion.estado_sub='activa') no deben
+//      recibir "tu prueba termina mañana" ni "tu trial terminó".
+//   3) Coaches dados de baja (activo=false) no deben recibir nada.
+//
+// Solo aplica a plantillas trial_*. Otros emails (notif admin, referral, etc)
+// pasan sin chequeo. Si no podemos leer el usuario (404 / red), enviamos
+// igual — no queremos bloquear emails por un fallo de DB transitorio.
+async function shouldCancel(
+  toEmail: string,
+  plantillaId: string | null,
+): Promise<{ cancel: boolean; reason?: string }> {
+  if (!plantillaId || !plantillaId.startsWith("trial_")) {
+    return { cancel: false };
+  }
+  const { url, headers } = getSupabaseAuth();
+  try {
+    const res = await fetch(
+      `${url}/rest/v1/usuarios?email=eq.${encodeURIComponent(toEmail)}&select=rol,activo,configuracion&limit=1`,
+      { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+    );
+    if (!res.ok) return { cancel: false };
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) return { cancel: false };
+    const u = rows[0] as { rol?: string; activo?: boolean; configuracion?: Record<string, unknown> };
+    const cfg = (u.configuracion as Record<string, unknown>) || {};
+    if (u.rol === "admin") return { cancel: true, reason: "admin user" };
+    if (cfg.es_pro_vitalicio === true) return { cancel: true, reason: "vitalicio user" };
+    if (cfg.estado_sub === "activa") return { cancel: true, reason: "already subscribed" };
+    if (u.activo === false) return { cancel: true, reason: "inactive user" };
+    return { cancel: false };
+  } catch {
+    return { cancel: false };
+  }
+}
+
 Deno.serve(async (_req: Request) => {
   const { url, headers } = getSupabaseAuth();
 
@@ -203,6 +243,18 @@ Deno.serve(async (_req: Request) => {
     );
     const lockRows = lockRes.ok ? await lockRes.json() : [];
     if (!Array.isArray(lockRows) || lockRows.length === 0) continue;
+
+    // Defensa: si es un email de trial y el usuario ya no corresponde
+    // (admin / vitalicio / pagante / inactivo), cancelar sin enviar.
+    const skip = await shouldCancel(row.to_email, row.plantilla_id);
+    if (skip.cancel) {
+      await markRow(row.id, {
+        status: "canceled",
+        error_msg: `skipped: ${skip.reason}`,
+      });
+      results.push({ id: row.id, ok: false, error: `skipped:${skip.reason}` });
+      continue;
+    }
 
     const r = await sendViaBrevo(row);
     if (r.ok) {
