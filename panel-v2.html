@@ -605,7 +605,7 @@ var state = {
   svcEdit: null,
   _svcNew: false,
   notifs: { newClient:true, pathwayLead:true, cvUpload:true, sessionReminder:true, weeklyReport:false, marketing:false },
-  ai: { open:false, bubbleOpen:true }
+  ai: { open:false, bubbleOpen:true, tab:"home" }
 };
 
 /* ═══ Onboarding steps + insights (port of v2-Asistente.jsx) ═══ */
@@ -656,27 +656,12 @@ var MASCOT_BASE = "assets/mascota/";
 
 /* ═══ Sidebar ═══ */
 function viewSidebar(){
-  var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"]];
-  // Mensajes: visible solo para coaches (no para admin — admin gestiona los
-  // hilos desde la ficha de cada coach en tab Admin → Coaches).
-  if(!RADMIN) items.push(["mensajes","Mensajes","navMsg"]);
-  items.push(["config","Configuración","navConfig"]);
+  var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"],["config","Configuración","navConfig"]];
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
   var _navSec = state.section==="solicitudes" ? "clientes" : state.section;
-  // Contador de no leídos: mensajes del admin todavía no marcados como leídos
-  // por este coach. Si es admin, no se muestra (no hay item "Mensajes").
-  var unread = 0;
-  if(!RADMIN && RMSG){
-    for(var i=0;i<RMSG.length;i++){
-      if(RMSG[i].from_admin && !RMSG[i].leido_en) unread++;
-    }
-  }
   var nav = items.map(function(it){
-    var badge = (it[0]==="mensajes" && unread>0)
-      ? "<span style='margin-left:auto;background:var(--pw-danger);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;min-width:18px;text-align:center'>"+unread+"</span>"
-      : "";
     return "<button class='cp-side-nav-item "+(_navSec===it[0]?"is-active":"")+"' data-act='nav:"+it[0]+"'>"+
-      "<span class='cp-side-nav-icon'>"+svg(IC[it[2]],16,"class='cp-side-nav-icon'")+"</span><span>"+it[1]+"</span>"+badge+"</button>";
+      "<span class='cp-side-nav-icon'>"+svg(IC[it[2]],16,"class='cp-side-nav-icon'")+"</span><span>"+it[1]+"</span></button>";
   }).join("");
   return "<aside class='cp-side'>"+
     "<a href='#' class='cp-side-brand' data-act='nav:resumen'>"+
@@ -1609,16 +1594,15 @@ function cfgPathway(){
       "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div></div>";
   return toggleCard+pricesCard+earnings;
 }
-/* ═══ Mensajes admin ↔ coach ═══
- * El coach ve acá el hilo con Mica. Cada vez que entra a la sección,
- * marca como leídos los mensajes del admin (PATCH leido_en=now).
- * No hay polling: para ver nuevos hay que refrescar (suficiente para v1).
+/* ═══ Mensajes admin ↔ coach — renderiza DENTRO del panel del asistente
+ * (la burbuja flotante). El coach lo abre desde la cabra, no desde un
+ * item de sidebar (decisión: no agregar otra entrada de navegación).
+ * Al cambiar a la tab "mensajes" se marcan como leídos los del admin.
  */
-function viewMensajes(){
-  var hilo = RMSG || [];
-  // Marcar como leídos los del admin que aún no estaban leídos.
+function viewMensajesBody(){
+  var hilo = (RMSG||[]).slice().sort(function(a,b){ return new Date(a.created_at)-new Date(b.created_at); });
   if(REAL && RME && hilo.length){
-    var unreadIds = hilo.filter(function(m){ return m.from_admin && !m.leido_en; }).map(function(m){ return m.id; });
+    var unreadIds = hilo.filter(function(m){ return m.from_admin && !m.leido_en && m.id; }).map(function(m){ return m.id; });
     if(unreadIds.length){
       _sbw("mensajes_admin_coach?id=in.("+unreadIds.join(",")+")","PATCH",{leido_en:new Date().toISOString()})
         .then(function(){ unreadIds.forEach(function(id){
@@ -1628,32 +1612,20 @@ function viewMensajes(){
   }
   function fmtTime(s){ try{ return new Date(s).toLocaleString("es-ES",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
   var bubbles = hilo.map(function(m){
-    var mine = !m.from_admin; // del coach (=ME) si no es del admin
+    var mine = !m.from_admin;
     var bg = mine ? "var(--pw-bosque)" : "var(--pw-niebla-2)";
     var color = mine ? "#fff" : "var(--pw-carbon)";
     var align = mine ? "flex-end" : "flex-start";
-    var who = mine ? "vos" : "Micaela · Pathway";
-    return "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:4px;margin-bottom:14px'>"+
-      "<div style='font-size:11px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='max-width:78%;background:"+bg+";color:"+color+";padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.55;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
+    var who = mine ? "vos" : "Micaela";
+    return "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;margin-bottom:10px'>"+
+      "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
+      "<div style='max-width:85%;background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
     "</div>";
   }).join("");
   if(!bubbles){
-    bubbles = "<div style='text-align:center;padding:32px 16px;color:var(--pw-text-soft);font-size:13px'>"+
-      "Todavía no hay mensajes con el equipo de Pathway. Si te trabaste con algo, escribí abajo y te respondemos."+
-    "</div>";
+    bubbles = "<div style='text-align:center;padding:24px 12px;color:var(--pw-text-soft);font-size:12.5px'>Sin mensajes todavía. Si te trabaste con algo, escribí abajo y Micaela te responde.</div>";
   }
-  var draft = state.msgDraft || "";
-  return "<div class='cp-card'>"+
-    "<div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes de Pathway<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>Hilo directo con Micaela</span></div>"+
-    "<div class='cp-card-pad' style='max-height:480px;overflow-y:auto'>"+bubbles+"</div>"+
-    "<div class='cp-card-pad' style='border-top:1px solid var(--pw-border);display:flex;flex-direction:column;gap:10px'>"+
-      "<textarea id='msg-draft' placeholder='Escribí tu mensaje…' style='width:100%;min-height:80px;padding:10px 12px;border:1px solid var(--pw-border);border-radius:10px;font-family:inherit;font-size:14px;resize:vertical' data-act='msg-input'>"+esc(draft)+"</textarea>"+
-      "<div style='display:flex;justify-content:flex-end'>"+
-        "<button class='cp-btn cp-btn-primary' data-act='msg-send' "+(draft.trim()?"":"disabled")+">Enviar</button>"+
-      "</div>"+
-    "</div></div>";
+  return "<div class='cp-ai-msgs' style='display:flex;flex-direction:column;gap:0;padding:6px 2px'>"+bubbles+"</div>";
 }
 function viewConfig(){
   if(state.cfg==="services") state.cfg="pathway"; // servicios ahora vive en Clientes de Pathway
@@ -1699,9 +1671,17 @@ function viewAsistente(){
     } else {
       top = "<div class='cp-cabra-mini-bubble' data-act='ai-open'>"+(allDone?"¿Necesitas ayuda?":done+"/"+STEPSx.length+" · seguir")+"</div>";
     }
+    // Indicador rojo si hay mensajes del admin sin leer.
+    var _unreadFab = 0;
+    if(!RADMIN && RMSG){
+      for(var _i=0;_i<RMSG.length;_i++){ if(RMSG[_i].from_admin && !RMSG[_i].leido_en) _unreadFab++; }
+    }
+    var unreadDot = _unreadFab>0
+      ? "<span style='position:absolute;top:-2px;right:-2px;background:var(--pw-danger);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:99px;min-width:18px;text-align:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.15)'>"+_unreadFab+"</span>"
+      : "";
     return "<div class='cp-ai-fab'>"+top+
-      "<div class='cp-cabra-img-wrap' data-act='ai-open' role='button' tabindex='0' aria-label='Abrir asistente'>"+
-      "<img src='"+cabraSrc+"' alt='Asistente Pathway'>"+
+      "<div class='cp-cabra-img-wrap' data-act='ai-open' role='button' tabindex='0' aria-label='Abrir asistente' style='position:relative'>"+
+      "<img src='"+cabraSrc+"' alt='Asistente Pathway'>"+unreadDot+
       "</div></div>";
   }
 
@@ -1719,22 +1699,54 @@ function viewAsistente(){
       "<div class='cp-insight-desc'>"+esc(it.desc)+"</div></div>"+
       "<span class='cp-insight-arrow'>"+svg(IC.chevR,13)+"</span></div>";
   }).join("");
-  var body = "<div class='cp-ai-home'>"+
+  // No-leídos del admin para badge en la tab "Mensajes".
+  var unread = 0;
+  if(!RADMIN && RMSG){
+    for(var i=0;i<RMSG.length;i++){ if(RMSG[i].from_admin && !RMSG[i].leido_en) unread++; }
+  }
+  var tab = state.ai && state.ai.tab || "home";
+  // Solo coaches (no admin) ven la tab "Mensajes". El admin gestiona el
+  // hilo desde la ficha del coach en Admin → Coaches.
+  var showMsgTab = !RADMIN;
+  var tabs = showMsgTab
+    ? "<div class='cp-ai-tabs' style='display:flex;gap:6px;padding:0 14px 8px;border-bottom:1px solid var(--pw-border);background:var(--pw-niebla)'>"+
+        "<button class='cp-chip "+(tab==="home"?"is-on":"")+"' data-act='ai-tab:home' style='height:30px;padding:0 14px;font-size:12px'>Tu progreso</button>"+
+        "<button class='cp-chip "+(tab==="mensajes"?"is-on":"")+"' data-act='ai-tab:mensajes' style='height:30px;padding:0 14px;font-size:12px;display:inline-flex;align-items:center;gap:6px'>Mensajes"+
+          (unread>0?"<span style='background:var(--pw-danger);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;min-width:16px;text-align:center'>"+unread+"</span>":"")+
+        "</button>"+
+      "</div>"
+    : "";
+  var homeBody = "<div class='cp-ai-home'>"+
     "<div class='cp-ob-mini'><div class='cp-ob-mini-top'><div class='cp-ob-mini-title'>Tu progreso</div>"+
       "<span class='cp-ob-mini-pct'>"+done+"/"+STEPSx.length+"</span></div>"+
       "<div class='cp-ob-bar'><span style='width:"+pct+"%'></span></div>"+
       "<div class='cp-ob-next'>"+(allDone?"<span><strong>¡Listo!</strong> Todo configurado.</span>":"<span>Próximo: <strong>"+esc(nextStep.label)+"</strong></span>")+"</div></div>"+
     "<div><div class='cp-ai-section-title' style='margin-bottom:6px'>Tus pasos · toca para ir</div><div class='cp-ob-list'>"+stepRows+"</div></div>"+
     "<div><div class='cp-ai-section-title' style='margin-bottom:8px'>Sugerencias para ti</div>"+insRows+"</div></div>";
+  var body = (tab==="mensajes" && showMsgTab) ? viewMensajesBody() : homeBody;
+  // Footer dinámico: en home queda el WhatsApp; en mensajes, caja para escribir.
+  var footer;
+  if(tab==="mensajes" && showMsgTab){
+    var draft = state.msgDraft || "";
+    footer = "<div class='cp-ai-compose' style='display:flex;flex-direction:column;gap:8px;align-items:stretch'>"+
+      "<textarea id='msg-draft' placeholder='Escribí a Micaela…' style='width:100%;min-height:60px;padding:9px 11px;border:1px solid var(--pw-border);border-radius:10px;font-family:inherit;font-size:13.5px;resize:vertical'>"+esc(draft)+"</textarea>"+
+      "<div style='display:flex;justify-content:flex-end'>"+
+        "<button class='cp-btn cp-btn-primary' data-act='msg-send' style='height:32px;font-size:13px;padding:0 16px' "+(draft.trim()?"":"disabled")+">Enviar</button>"+
+      "</div></div>";
+  } else {
+    footer = "<div class='cp-ai-compose' style='justify-content:center'>"+
+      "<a href='https://wa.me/34611256224?text="+encodeURIComponent("Hola, tengo una consulta sobre Pathway")+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='width:100%;justify-content:center;text-decoration:none;border-color:var(--pw-bosque);color:var(--pw-bosque)'>"+svg(IC.wa,14)+" ¿Necesitas ayuda? Hablar por WhatsApp</a>"+
+    "</div>";
+  }
   return "<div class='cp-ai-panel' role='dialog' aria-label='Asistente Pathway'>"+
     "<div class='cp-ai-head'><span class='cp-ai-head-cabra'><img src='"+cabraSrc+"' alt=''></span>"+
       "<div><div class='cp-ai-name'>Tu asistente Pathway</div>"+
       "<div class='cp-ai-status'>Atajos para avanzar con tu negocio</div></div>"+
       "<button class='cp-ai-close' data-act='ai-close' aria-label='Cerrar'>"+svg(IC.close,16,"stroke-width='2.2'")+"</button></div>"+
+    tabs+
     "<div class='cp-ai-scroll'>"+body+"</div>"+
-    "<div class='cp-ai-compose' style='justify-content:center'>"+
-      "<a href='https://wa.me/34611256224?text="+encodeURIComponent("Hola, tengo una consulta sobre Pathway")+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='width:100%;justify-content:center;text-decoration:none;border-color:var(--pw-bosque);color:var(--pw-bosque)'>"+svg(IC.wa,14)+" ¿Necesitas ayuda? Hablar por WhatsApp</a>"+
-    "</div></div>";
+    footer+
+    "</div>";
 }
 
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
@@ -2225,8 +2237,7 @@ function viewInbox(){
 function render(){
   try{
     if(state.section==="admin" && !RADMIN) state.section="resumen";
-    if(state.section==="mensajes" && RADMIN) state.section="admin"; // admin no tiene su propia inbox global
-    var sections = { resumen:viewResumen, clientes:viewClientes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin, mensajes:viewMensajes };
+    var sections = { resumen:viewResumen, clientes:viewClientes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin };
     var view = (sections[state.section]||viewResumen)();
     document.getElementById("root").innerHTML =
       "<div class='cp-app'>"+viewSidebar()+
@@ -2898,8 +2909,18 @@ document.addEventListener("click", function(ev){
     if(REAL){ saveCfg({ servicios: state.services }); } else { render(); }
     return;
   }
-  if(act==="ai-open"){ state.ai.open=true; state.ai.bubbleOpen=false; render(); return; }
+  if(act==="ai-open"){
+    state.ai.open=true; state.ai.bubbleOpen=false;
+    // Si hay mensajes del admin sin leer, abrir directo en la tab Mensajes.
+    if(!RADMIN && RMSG){
+      for(var _u=0;_u<RMSG.length;_u++){
+        if(RMSG[_u].from_admin && !RMSG[_u].leido_en){ state.ai.tab="mensajes"; break; }
+      }
+    }
+    render(); return;
+  }
   if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; render(); return; }
+  if(act.indexOf("ai-tab:")===0){ state.ai.tab=act.slice(7); render(); return; }
   if(act==="ai-bubble-close"){ ev.stopPropagation(); state.ai.bubbleOpen=false; render(); return; }
   if(act==="asist-go"){
     var _sid=el.getAttribute("data-step");
