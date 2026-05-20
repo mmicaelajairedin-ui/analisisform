@@ -1764,6 +1764,13 @@ function viewAdmin(){
       candByCoach[k].n++;
       var t=x.created_at?+new Date(x.created_at):0; if(t>candByCoach[k].last) candByCoach[k].last=t;
     });
+    // Conteo de informes IA por coach (KPI: ¿generó al menos un informe con
+    // IA? = adopción del feature core). RADM.informes lo carga loadReal().
+    var infByCoach={};
+    ((RADM&&RADM.informes)||[]).forEach(function(r){
+      var k=r&&r.coach_id; if(!k) return;
+      infByCoach[k]=(infByCoach[k]||0)+1;
+    });
     function ago(ms){ var d=Math.floor(ms/_D2); return d<=0?"hoy":(d===1?"ayer":(d<30?"hace "+d+" d":"hace "+Math.floor(d/30)+" mes"+(d>=60?"es":""))); }
     coachesEng = RCOACHES.map(function(u){
       var cg=u.configuracion||{};
@@ -1782,7 +1789,11 @@ function viewAdmin(){
       else if(cb.n>0){ actv=[cb.n+" cliente"+(cb.n===1?"":"s")+(cb.last?" · últ. "+ago(_now2-cb.last):""),"ok"]; }
       else if(diasAlta>=5){ actv=["Sin uso · "+diasAlta+" d sin crear nada","danger"]; }
       else { actv=["Recién creada","warn"]; }
-      return { id:u.id, activo:u.activo, email:u.email||"", n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, alta:alta, cli:(u.rol==="admin"?"—":cb.n), actv:actv, pw:cg.pathway_optin?"Sí":"No", com:"—" };
+      // KPI de adopción: ¿completó el perfil mínimo? Sirve para identificar
+      // coaches que no terminaron de configurar (señal típica de churn).
+      var hasFoto = !!(u.foto_url || cg.foto_perfil || cg.foto_url);
+      var nInf = infByCoach[u.id] || 0;
+      return { id:u.id, activo:u.activo, email:u.email||"", n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, alta:alta, cli:(u.rol==="admin"?"—":cb.n), actv:actv, foto:hasFoto, inf:nInf, pw:cg.pathway_optin?"Sí":"No", com:"—" };
     });
   }
   var engRows = coachesEng.map(function(c){
@@ -1796,12 +1807,20 @@ function viewAdmin(){
         +"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 9px;font-size:11px;margin-right:5px' data-act='coach-paid:"+esc(c.id)+"'>Pagado</button>"
         +"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 9px;font-size:11px"+(off?"":";color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='coach-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>";
     var alta=c.alta||["—",""], actv=c.actv||["—",""];
+    var fotoCell = c.foto
+      ? "<span style='color:var(--pw-bosque);font-weight:600'>✓</span>"
+      : "<span style='color:var(--pw-text-muted)'>—</span>";
+    var infCell = (c.inf>0)
+      ? "<span style='color:var(--pw-carbon);font-weight:600'>"+c.inf+"</span>"
+      : "<span style='color:var(--pw-text-muted)'>0</span>";
     return "<tr"+(off?" style='opacity:.55'":"")+"><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.n)+"</td>"+
       "<td>"+pill(c.plan, c.plan==="Pro"?"ok":"")+"</td>"+
       "<td>"+pill(off?"Inactiva":c.est[0], off?"danger":c.est[1])+"</td>"+
       "<td style='color:var(--pw-text-soft);font-size:12px'>"+esc(alta[0])+"</td>"+
       "<td>"+pill(c.acc[0], c.acc[1])+"</td>"+
+      "<td style='text-align:center'>"+fotoCell+"</td>"+
       "<td style='font-weight:600;color:var(--pw-carbon)'>"+c.cli+"</td>"+
+      "<td style='text-align:center'>"+infCell+"</td>"+
       "<td>"+pill(actv[0], actv[1])+"</td>"+
       "<td>"+(c.pw==="Sí"?"<span style='color:var(--pw-bosque);font-weight:600'>Sí</span>":"<span style='color:var(--pw-text-muted)'>No</span>")+"</td>"+
       "<td style='text-align:right'>"+actBtn+"</td></tr>";
@@ -1964,8 +1983,8 @@ function viewAdmin(){
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+coachesEng.length+" registradas · uso real</span></div>"+
-        "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:980px'><thead><tr>"+
-          "<th>Coach</th><th>Plan</th><th>Estado</th><th>Alta</th><th>Últ. acceso</th><th>Clientes</th><th>Actividad</th><th>Pathway</th><th style='text-align:right'>Acción</th>"+
+        "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:1140px'><thead><tr>"+
+          "<th>Coach</th><th>Plan</th><th>Estado</th><th>Alta</th><th>Últ. acceso</th><th style='text-align:center' title='¿Subió foto de perfil?'>Foto</th><th>Clientes</th><th style='text-align:center' title='Informes IA generados'>IA</th><th>Actividad</th><th>Pathway</th><th style='text-align:right'>Acción</th>"+
         "</tr></thead><tbody>"+engRows+"</tbody></table></div></div>";
     }
   } else if(state.adminTab==="contactos"){
@@ -2931,7 +2950,7 @@ function loadReal(){
     ? "select=*&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)"
     : "select=*&coach_id=eq."+encodeURIComponent(ME.id);
   var extra = ME.rol==="admin"
-    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
+    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at&order=created_at.desc"),
         _sb("contactos_chat?select=contacto,pagina,fecha&order=fecha.desc&limit=30"),
         _sb("candidatos?select=id,created_at,coach_id"),
         _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
@@ -2940,7 +2959,7 @@ function loadReal(){
   Promise.all([
     _sb("candidatos?"+cf+"&order=created_at.desc"),
     _sb("cv_publicados?select=email,contenido"),
-    _sb("informes?select=email,id,data&order=created_at.desc"),
+    _sb("informes?select=email,id,data,coach_id&order=created_at.desc"),
     _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion,slug,titulo_profesional,bio,perfil_publico_activo"),
     extra[0], extra[1], extra[2], extra[3], extra[4],
     _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc"),
@@ -2948,7 +2967,7 @@ function loadReal(){
   ]).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
     RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
-    RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[], resenas:res[10]||[] } : null;
+    RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[], resenas:res[10]||[], informes:inf } : null;
     RSOL = res[9]||[];
     RCFG = usr.configuracion || ME.configuracion || {};
     RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), perfil_publico_activo:!!usr.perfil_publico_activo };
