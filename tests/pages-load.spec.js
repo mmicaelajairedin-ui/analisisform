@@ -27,7 +27,7 @@ const ALL_TOOLS = [
 ];
 
 const ALL_PROTECTED = [
-  'panel.html', 'panel-v2.html', 'gestion-leads.html',
+  'panel-v2.html', 'gestion-leads.html',
   'coach.html', 'admin-express.html', 'cliente.html',
 ];
 
