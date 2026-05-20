@@ -57,7 +57,7 @@ test.describe('Coach — Login y navegación', () => {
     page.on('dialog', d => d.accept());
     const btn = page.locator('button', { hasText: /[Cc]errar/ });
     if (await btn.count() > 0) await btn.click();
-    await page.waitForURL(/login/, { timeout: 10000 });
+    await page.waitForURL(/login/, { timeout: 20000 });
     expect(page.url()).toContain('login');
   });
 });

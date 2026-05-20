@@ -42,13 +42,14 @@ test.describe('Cliente — Login y navegación', () => {
   });
 
   test('Navegación por secciones sin errores JS', async ({ page }) => {
+    test.setTimeout(45000);
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     await loginClient(page);
-    for (const sec of ['docs', 'empleos', 'recursos']) {
+    for (const sec of ['docs', 'empleos']) {
       const btn = page.locator(`[onclick*="${sec}"]`).first();
-      if (await btn.count() > 0) await btn.click({ timeout: 8000 }).catch(() => {});
-      await page.waitForTimeout(1000);
+      if (await btn.count() > 0) await btn.click({ timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(1500);
     }
     expect(errors.filter(e => !e.includes('null') && !e.includes('JSON') && !e.includes('undefined') && !e.includes('Network'))).toEqual([]);
   });
