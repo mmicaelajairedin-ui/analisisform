@@ -539,6 +539,7 @@ var IC = {
   navLinks:   "<path d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/><path d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/>",
   navConfig:  "<circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/>",
   navAdmin:   "<path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/><path d='M9 12l2 2 4-4'/>",
+  navMsg:     "<path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/>",
   plus:       "<line x1='12' y1='5' x2='12' y2='19'/><line x1='5' y1='12' x2='19' y2='12'/>",
   extLink:    "<path d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/><polyline points='15 3 21 3 21 9'/><line x1='10' y1='14' x2='21' y2='3'/>",
   logout:     "<path d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/><polyline points='16 17 21 12 16 7'/><line x1='21' y1='12' x2='9' y2='12'/>",
@@ -582,6 +583,8 @@ var state = {
   adminTab: "resumen",
   coachSel: null,
   coachMsg: "",
+  msgDraft: "",
+  msgAdminDraft: "",
   clienteSel: null,
   cliDetTab: "perfil",
   cliWeek: null,
@@ -653,12 +656,27 @@ var MASCOT_BASE = "assets/mascota/";
 
 /* ═══ Sidebar ═══ */
 function viewSidebar(){
-  var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"],["config","Configuración","navConfig"]];
+  var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"]];
+  // Mensajes: visible solo para coaches (no para admin — admin gestiona los
+  // hilos desde la ficha de cada coach en tab Admin → Coaches).
+  if(!RADMIN) items.push(["mensajes","Mensajes","navMsg"]);
+  items.push(["config","Configuración","navConfig"]);
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
   var _navSec = state.section==="solicitudes" ? "clientes" : state.section;
+  // Contador de no leídos: mensajes del admin todavía no marcados como leídos
+  // por este coach. Si es admin, no se muestra (no hay item "Mensajes").
+  var unread = 0;
+  if(!RADMIN && RMSG){
+    for(var i=0;i<RMSG.length;i++){
+      if(RMSG[i].from_admin && !RMSG[i].leido_en) unread++;
+    }
+  }
   var nav = items.map(function(it){
+    var badge = (it[0]==="mensajes" && unread>0)
+      ? "<span style='margin-left:auto;background:var(--pw-danger);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;min-width:18px;text-align:center'>"+unread+"</span>"
+      : "";
     return "<button class='cp-side-nav-item "+(_navSec===it[0]?"is-active":"")+"' data-act='nav:"+it[0]+"'>"+
-      "<span class='cp-side-nav-icon'>"+svg(IC[it[2]],16,"class='cp-side-nav-icon'")+"</span><span>"+it[1]+"</span></button>";
+      "<span class='cp-side-nav-icon'>"+svg(IC[it[2]],16,"class='cp-side-nav-icon'")+"</span><span>"+it[1]+"</span>"+badge+"</button>";
   }).join("");
   return "<aside class='cp-side'>"+
     "<a href='#' class='cp-side-brand' data-act='nav:resumen'>"+
@@ -1591,6 +1609,52 @@ function cfgPathway(){
       "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div></div>";
   return toggleCard+pricesCard+earnings;
 }
+/* ═══ Mensajes admin ↔ coach ═══
+ * El coach ve acá el hilo con Mica. Cada vez que entra a la sección,
+ * marca como leídos los mensajes del admin (PATCH leido_en=now).
+ * No hay polling: para ver nuevos hay que refrescar (suficiente para v1).
+ */
+function viewMensajes(){
+  var hilo = RMSG || [];
+  // Marcar como leídos los del admin que aún no estaban leídos.
+  if(REAL && RME && hilo.length){
+    var unreadIds = hilo.filter(function(m){ return m.from_admin && !m.leido_en; }).map(function(m){ return m.id; });
+    if(unreadIds.length){
+      _sbw("mensajes_admin_coach?id=in.("+unreadIds.join(",")+")","PATCH",{leido_en:new Date().toISOString()})
+        .then(function(){ unreadIds.forEach(function(id){
+          var m=hilo.find(function(x){return x.id===id;}); if(m) m.leido_en=new Date().toISOString();
+        }); });
+    }
+  }
+  function fmtTime(s){ try{ return new Date(s).toLocaleString("es-ES",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
+  var bubbles = hilo.map(function(m){
+    var mine = !m.from_admin; // del coach (=ME) si no es del admin
+    var bg = mine ? "var(--pw-bosque)" : "var(--pw-niebla-2)";
+    var color = mine ? "#fff" : "var(--pw-carbon)";
+    var align = mine ? "flex-end" : "flex-start";
+    var who = mine ? "vos" : "Micaela · Pathway";
+    return "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:4px;margin-bottom:14px'>"+
+      "<div style='font-size:11px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
+      "<div style='max-width:78%;background:"+bg+";color:"+color+";padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.55;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
+    "</div>";
+  }).join("");
+  if(!bubbles){
+    bubbles = "<div style='text-align:center;padding:32px 16px;color:var(--pw-text-soft);font-size:13px'>"+
+      "Todavía no hay mensajes con el equipo de Pathway. Si te trabaste con algo, escribí abajo y te respondemos."+
+    "</div>";
+  }
+  var draft = state.msgDraft || "";
+  return "<div class='cp-card'>"+
+    "<div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes de Pathway<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Hilo directo con Micaela</span></div>"+
+    "<div class='cp-card-pad' style='max-height:480px;overflow-y:auto'>"+bubbles+"</div>"+
+    "<div class='cp-card-pad' style='border-top:1px solid var(--pw-border);display:flex;flex-direction:column;gap:10px'>"+
+      "<textarea id='msg-draft' placeholder='Escribí tu mensaje…' style='width:100%;min-height:80px;padding:10px 12px;border:1px solid var(--pw-border);border-radius:10px;font-family:inherit;font-size:14px;resize:vertical' data-act='msg-input'>"+esc(draft)+"</textarea>"+
+      "<div style='display:flex;justify-content:flex-end'>"+
+        "<button class='cp-btn cp-btn-primary' data-act='msg-send' "+(draft.trim()?"":"disabled")+">Enviar</button>"+
+      "</div>"+
+    "</div></div>";
+}
 function viewConfig(){
   if(state.cfg==="services") state.cfg="pathway"; // servicios ahora vive en Clientes de Pathway
   if(state.cfg==="integ") state.cfg="profile";    // calendario ahora vive en Perfil público
@@ -1704,6 +1768,39 @@ function _coachDetailCard(){
         "<button class='cp-btn cp-btn-ghost' data-act='coach-trial:"+esc(c.id)+"'>+30 días de prueba</button>"+
         "<button class='cp-btn cp-btn-primary' data-act='coach-paid:"+esc(c.id)+"'>Marcar como pagado</button>"+
       "</div>")+
+    "</div></div>"+
+    _coachChatBlock(c);
+}
+/* Chat admin↔coach embebido dentro de la ficha. Reusa RMSG cargado en
+ * loadReal (admin trae todos los hilos; acá filtramos por coach_id). */
+function _coachChatBlock(c){
+  if(!RADMIN || !c) return "";
+  var hilo = (RMSG||[]).filter(function(m){ return String(m.coach_id)===String(c.id); }).sort(function(a,b){ return new Date(a.created_at)-new Date(b.created_at); });
+  function fmtTime(s){ try{ return new Date(s).toLocaleString("es-ES",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
+  var bubbles = hilo.map(function(m){
+    var mine = m.from_admin; // del admin = de Mica
+    var bg = mine ? "var(--pw-bosque)" : "var(--pw-niebla-2)";
+    var color = mine ? "#fff" : "var(--pw-carbon)";
+    var align = mine ? "flex-end" : "flex-start";
+    var who = mine ? "vos (admin)" : (c.nombre||c.email||"coach");
+    return "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:4px;margin-bottom:12px'>"+
+      "<div style='font-size:11px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
+      "<div style='max-width:78%;background:"+bg+";color:"+color+";padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
+    "</div>";
+  }).join("");
+  if(!bubbles){
+    bubbles = "<div style='text-align:center;padding:20px 12px;color:var(--pw-text-soft);font-size:12.5px'>Sin mensajes con este coach todavía.</div>";
+  }
+  var draft = state.msgAdminDraft || "";
+  return "<div class='cp-card' style='margin-top:16px'>"+
+    "<div class='cp-card-hd'><h3 class='cp-card-title'>Conversación con "+esc((c.nombre||c.email||"").split(" ")[0]||"coach")+"<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>"+hilo.length+" mensaje"+(hilo.length===1?"":"s")+"</span></div>"+
+    "<div class='cp-card-pad' style='max-height:380px;overflow-y:auto'>"+bubbles+"</div>"+
+    "<div class='cp-card-pad' style='border-top:1px solid var(--pw-border);display:flex;flex-direction:column;gap:10px'>"+
+      "<textarea id='msg-admin-draft' placeholder='Escribí a "+esc((c.nombre||c.email||"este coach").split(" ")[0])+"…' style='width:100%;min-height:72px;padding:10px 12px;border:1px solid var(--pw-border);border-radius:10px;font-family:inherit;font-size:14px;resize:vertical' data-act='msg-admin-input'>"+esc(draft)+"</textarea>"+
+      "<div style='display:flex;justify-content:flex-end'>"+
+        "<button class='cp-btn cp-btn-primary' data-act='msg-admin-send' "+(draft.trim()?"":"disabled")+">Enviar</button>"+
+      "</div>"+
     "</div></div>";
 }
 function viewAdmin(){
@@ -1789,11 +1886,14 @@ function viewAdmin(){
       else if(cb.n>0){ actv=[cb.n+" cliente"+(cb.n===1?"":"s")+(cb.last?" · últ. "+ago(_now2-cb.last):""),"ok"]; }
       else if(diasAlta>=5){ actv=["Sin uso · "+diasAlta+" d sin crear nada","danger"]; }
       else { actv=["Recién creada","warn"]; }
-      // KPI de adopción: ¿completó el perfil mínimo? Sirve para identificar
-      // coaches que no terminaron de configurar (señal típica de churn).
+      // KPI de adopción: ¿completó el perfil mínimo? ¿activó integraciones?
+      // Sirve para detectar coaches que no terminaron de configurar
+      // (señal típica de churn temprano).
       var hasFoto = !!(u.foto_url || cg.foto_perfil || cg.foto_url);
+      var hasCal = !!(cg.calendly_url || cg.calendly);
+      var hasStripe = !!(cg.stripe_account_id || cg.stripe_connect_account_id || cg.stripe_customer_id);
       var nInf = infByCoach[u.id] || 0;
-      return { id:u.id, activo:u.activo, email:u.email||"", n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, alta:alta, cli:(u.rol==="admin"?"—":cb.n), actv:actv, foto:hasFoto, inf:nInf, pw:cg.pathway_optin?"Sí":"No", com:"—" };
+      return { id:u.id, activo:u.activo, email:u.email||"", n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, alta:alta, cli:(u.rol==="admin"?"—":cb.n), actv:actv, foto:hasFoto, cal:hasCal, stripe:hasStripe, inf:nInf, pw:cg.pathway_optin?"Sí":"No", com:"—" };
     });
   }
   var engRows = coachesEng.map(function(c){
@@ -1807,9 +1907,9 @@ function viewAdmin(){
         +"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 9px;font-size:11px;margin-right:5px' data-act='coach-paid:"+esc(c.id)+"'>Pagado</button>"
         +"<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 9px;font-size:11px"+(off?"":";color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='coach-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>";
     var alta=c.alta||["—",""], actv=c.actv||["—",""];
-    var fotoCell = c.foto
+    var checkCell = function(on){ return on
       ? "<span style='color:var(--pw-bosque);font-weight:600'>✓</span>"
-      : "<span style='color:var(--pw-text-muted)'>—</span>";
+      : "<span style='color:var(--pw-text-muted)'>—</span>"; };
     var infCell = (c.inf>0)
       ? "<span style='color:var(--pw-carbon);font-weight:600'>"+c.inf+"</span>"
       : "<span style='color:var(--pw-text-muted)'>0</span>";
@@ -1818,9 +1918,11 @@ function viewAdmin(){
       "<td>"+pill(off?"Inactiva":c.est[0], off?"danger":c.est[1])+"</td>"+
       "<td style='color:var(--pw-text-soft);font-size:12px'>"+esc(alta[0])+"</td>"+
       "<td>"+pill(c.acc[0], c.acc[1])+"</td>"+
-      "<td style='text-align:center'>"+fotoCell+"</td>"+
+      "<td style='text-align:center'>"+checkCell(c.foto)+"</td>"+
       "<td style='font-weight:600;color:var(--pw-carbon)'>"+c.cli+"</td>"+
       "<td style='text-align:center'>"+infCell+"</td>"+
+      "<td style='text-align:center'>"+checkCell(c.cal)+"</td>"+
+      "<td style='text-align:center'>"+checkCell(c.stripe)+"</td>"+
       "<td>"+pill(actv[0], actv[1])+"</td>"+
       "<td>"+(c.pw==="Sí"?"<span style='color:var(--pw-bosque);font-weight:600'>Sí</span>":"<span style='color:var(--pw-text-muted)'>No</span>")+"</td>"+
       "<td style='text-align:right'>"+actBtn+"</td></tr>";
@@ -1983,8 +2085,14 @@ function viewAdmin(){
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+coachesEng.length+" registradas · uso real</span></div>"+
-        "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:1140px'><thead><tr>"+
-          "<th>Coach</th><th>Plan</th><th>Estado</th><th>Alta</th><th>Últ. acceso</th><th style='text-align:center' title='¿Subió foto de perfil?'>Foto</th><th>Clientes</th><th style='text-align:center' title='Informes IA generados'>IA</th><th>Actividad</th><th>Pathway</th><th style='text-align:right'>Acción</th>"+
+        "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:1280px'><thead><tr>"+
+          "<th>Coach</th><th>Plan</th><th>Estado</th><th>Alta</th><th>Últ. acceso</th>"+
+          "<th style='text-align:center' title='¿Subió foto de perfil?'>Foto</th>"+
+          "<th>Clientes</th>"+
+          "<th style='text-align:center' title='Informes IA generados'>IA</th>"+
+          "<th style='text-align:center' title='¿Conectó Calendly?'>Cal</th>"+
+          "<th style='text-align:center' title='¿Conectó Stripe?'>Stripe</th>"+
+          "<th>Actividad</th><th>Pathway</th><th style='text-align:right'>Acción</th>"+
         "</tr></thead><tbody>"+engRows+"</tbody></table></div></div>";
     }
   } else if(state.adminTab==="contactos"){
@@ -2117,7 +2225,8 @@ function viewInbox(){
 function render(){
   try{
     if(state.section==="admin" && !RADMIN) state.section="resumen";
-    var sections = { resumen:viewResumen, clientes:viewClientes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin };
+    if(state.section==="mensajes" && RADMIN) state.section="admin"; // admin no tiene su propia inbox global
+    var sections = { resumen:viewResumen, clientes:viewClientes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin, mensajes:viewMensajes };
     var view = (sections[state.section]||viewResumen)();
     document.getElementById("root").innerHTML =
       "<div class='cp-app'>"+viewSidebar()+
@@ -2259,8 +2368,66 @@ document.addEventListener("click", function(ev){
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; render(); return; }
-  if(act==="coach-back"){ state.coachSel=null; render(); return; }
-  if(act.indexOf("coach-view:")===0){ state.coachSel=act.slice(11); render(); window.scrollTo(0,0); return; }
+  if(act==="coach-back"){ state.coachSel=null; state.msgAdminDraft=""; render(); return; }
+  if(act.indexOf("coach-view:")===0){ state.coachSel=act.slice(11); state.msgAdminDraft=""; render(); window.scrollTo(0,0); return; }
+  // ─── Mensajes admin↔coach ───────────────────────────────────────
+  if(act==="msg-input"){
+    state.msgDraft = (ev.target && ev.target.value) || "";
+    return;
+  }
+  if(act==="msg-admin-input"){
+    state.msgAdminDraft = (ev.target && ev.target.value) || "";
+    return;
+  }
+  if(act==="msg-send"){
+    var input = document.getElementById("msg-draft");
+    var txt = ((input && input.value) || state.msgDraft || "").trim();
+    if(!txt){ return; }
+    if(!REAL || !RME || !RME.id){ alert("Iniciá sesión primero."); return; }
+    var btn = ev.currentTarget; if(btn) btn.disabled = true;
+    var newRow = { coach_id: RME.id, from_admin: false, body: txt, created_at: new Date().toISOString() };
+    _sbw("mensajes_admin_coach","POST",newRow).then(function(r){
+      if(!r.ok){ alert("No se pudo enviar el mensaje. Reintentá."); if(btn) btn.disabled=false; return; }
+      RMSG = (RMSG||[]).concat([newRow]);
+      state.msgDraft = "";
+      render();
+      // Notif a Mica por email (best-effort)
+      fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        to:"hi@pathwaycareercoach.com", to_name:"Micaela",
+        subject:"💬 Nuevo mensaje de "+((RME&&RME.nombre)||RME.email||"coach"),
+        html:"<p><strong>"+((RME&&RME.nombre)||RME.email)+"</strong> te escribió desde el panel:</p><blockquote style='border-left:3px solid #2D6A4F;padding:8px 14px;color:#3A4A40;background:rgba(45,106,79,.04);border-radius:6px'>"+esc(txt)+"</blockquote><p><a href='https://pathwaycareercoach.com/panel-v2.html#admin'>Abrir el panel admin</a></p>",
+        reply_to: RME.email||""
+      })}).catch(function(){});
+    });
+    return;
+  }
+  if(act==="msg-admin-send"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    if(!state.coachSel){ return; }
+    var ainput = document.getElementById("msg-admin-draft");
+    var atxt = ((ainput && ainput.value) || state.msgAdminDraft || "").trim();
+    if(!atxt){ return; }
+    var abtn = ev.currentTarget; if(abtn) abtn.disabled = true;
+    var coachId = state.coachSel;
+    var coachRow = (RCOACHES||[]).filter(function(u){return String(u.id)===String(coachId);})[0] || {};
+    var arow = { coach_id: coachId, from_admin: true, body: atxt, created_at: new Date().toISOString() };
+    _sbw("mensajes_admin_coach","POST",arow).then(function(r){
+      if(!r.ok){ alert("No se pudo enviar el mensaje. Reintentá."); if(abtn) abtn.disabled=false; return; }
+      RMSG = (RMSG||[]).concat([arow]);
+      state.msgAdminDraft = "";
+      render();
+      // Notif al coach por email
+      if(coachRow.email){
+        fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+          to: coachRow.email, to_name: coachRow.nombre||"",
+          subject:"💬 Mensaje de Micaela en tu panel de Pathway",
+          html:"<p>Hola "+esc(((coachRow.nombre||"").split(" ")[0])||"")+",</p><p>Te dejé un mensaje en tu panel:</p><blockquote style='border-left:3px solid #2D6A4F;padding:8px 14px;color:#3A4A40;background:rgba(45,106,79,.04);border-radius:6px'>"+esc(atxt)+"</blockquote><p><a href='https://pathwaycareercoach.com/panel-v2.html#mensajes' style='display:inline-block;margin-top:8px;padding:10px 22px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:600'>Abrir Mensajes</a></p>",
+          reply_to:"hi@pathwaycareercoach.com"
+        })}).catch(function(){});
+      }
+    });
+    return;
+  }
   if(act.indexOf("coach-trial:")===0){
     if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
     var ctId=act.slice(12);
@@ -2852,6 +3019,20 @@ document.addEventListener("change", function(ev){
 });
 
 document.addEventListener("input", function(ev){
+  if(ev.target && ev.target.id==="msg-draft"){
+    // Mantener el draft del coach sincronizado para que el botón Enviar
+    // se habilite cuando hay texto y el contenido sobreviva un re-render.
+    state.msgDraft = ev.target.value || "";
+    var sendBtn = document.querySelector("[data-act=msg-send]");
+    if(sendBtn) sendBtn.disabled = !state.msgDraft.trim();
+    return;
+  }
+  if(ev.target && ev.target.id==="msg-admin-draft"){
+    state.msgAdminDraft = ev.target.value || "";
+    var sendBtn2 = document.querySelector("[data-act=msg-admin-send]");
+    if(sendBtn2) sendBtn2.disabled = !state.msgAdminDraft.trim();
+    return;
+  }
   if(!ev.target || ev.target.id!=="cp-cli-search") return;
   var q=(ev.target.value||"").toLowerCase().trim();
   var grid=document.querySelector(".cp-clients-grid"); if(!grid) return;
@@ -2910,7 +3091,7 @@ function _chatArr(s){ try{ var a=JSON.parse(s||"[]"); return Object.prototype.to
 function _isChat(s){ if(!s) return false; var t=(""+s).trim(); if(t.charAt(0)!=="[") return false; try{ return Object.prototype.toString.call(JSON.parse(t))==="[object Array]"; }catch(e){ return false; } }
 function _sha256(txt){ return crypto.subtle.digest("SHA-256",new TextEncoder().encode(""+txt)).then(function(b){ return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join(""); }); }
 function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600); }
-var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[];
+var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[];
 function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURIComponent(RME.id) : ""; }
 function saveCfg(cfgPatch, usuariosExtra){
   if(!RME||!RME.id){ alert("Iniciá sesión para guardar."); return; }
@@ -2956,6 +3137,11 @@ function loadReal(){
         _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
         Promise.resolve([]) ]
     : [ Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]) ];
+  // Mensajes admin↔coach: admin trae todos (para listar por coach en la
+  // ficha), coach solo su hilo (filtrado por coach_id).
+  var msgQ = ME.rol==="admin"
+    ? _sb("mensajes_admin_coach?select=*&order=created_at.asc&limit=500")
+    : _sb("mensajes_admin_coach?coach_id=eq."+encodeURIComponent(ME.id)+"&select=*&order=created_at.asc&limit=500");
   Promise.all([
     _sb("candidatos?"+cf+"&order=created_at.desc"),
     _sb("cv_publicados?select=email,contenido"),
@@ -2963,12 +3149,14 @@ function loadReal(){
     _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion,slug,titulo_profesional,bio,perfil_publico_activo"),
     extra[0], extra[1], extra[2], extra[3], extra[4],
     _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc"),
-    (ME.rol==="admin" ? _sb("contactos_chat?pagina=eq.resena-cvexpress&select=contacto,fecha&order=fecha.desc&limit=200") : Promise.resolve([]))
+    (ME.rol==="admin" ? _sb("contactos_chat?pagina=eq.resena-cvexpress&select=contacto,fecha&order=fecha.desc&limit=200") : Promise.resolve([])),
+    msgQ
   ]).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
     RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
     RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[], resenas:res[10]||[], informes:inf } : null;
     RSOL = res[9]||[];
+    RMSG = res[11]||[];
     RCFG = usr.configuracion || ME.configuracion || {};
     RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), perfil_publico_activo:!!usr.perfil_publico_activo };
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
