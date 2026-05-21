@@ -345,15 +345,17 @@ img{max-width:100%;display:block;}
         return '<div class="servicio"><h3>'+escH(titulo)+'</h3>'+(descr?'<div class="desc">'+escH(descr)+'</div>':'')+meta+cta+'</div>';
       }).join('');
       show('sec-servicios');
-      // Wire-up de los botones Comprar — abrir modal con los datos del servicio
-      sg.querySelectorAll('[data-comprar]').forEach(function(btn){
-        btn.addEventListener('click', function(){
-          var idx = parseInt(btn.getAttribute('data-comprar'), 10);
-          var s = c.servicios[idx];
-          if(!s) return;
-          openComprarModal(c, s, idx);
-        });
-      });
+      // Wire-up con delegation en el grid — sobrevive a re-renders y al
+      // timing del innerHTML. El handler vive en sg, no en cada botón.
+      sg.onclick = function(ev){
+        var btn = ev.target && ev.target.closest ? ev.target.closest('[data-comprar]') : null;
+        if(!btn || !sg.contains(btn)) return;
+        var idx = parseInt(btn.getAttribute('data-comprar'), 10);
+        var s = c.servicios[idx];
+        if(!s) return;
+        ev.preventDefault();
+        openComprarModal(c, s, idx);
+      };
     }
 
     if(Array.isArray(c.especialidades)&&c.especialidades.length){
@@ -437,14 +439,17 @@ img{max-width:100%;display:block;}
     document.getElementById('comprar-modal').hidden = true;
     _comprarCtx = null;
   }
-  document.getElementById('comprar-close').addEventListener('click', closeComprarModal);
-  document.getElementById('comprar-modal').addEventListener('click', function(ev){
+  // Property assignment (onX) en vez de addEventListener — más robusto frente
+  // a cualquier interceptor / minificador que pueda romper addEventListener.
+  document.getElementById('comprar-close').onclick = closeComprarModal;
+  document.getElementById('comprar-modal').onclick = function(ev){
     if(ev.target === this) closeComprarModal(); // click en backdrop cierra
-  });
-  document.addEventListener('keydown', function(ev){
+  };
+  document.onkeydown = (function(prev){ return function(ev){
+    if(typeof prev === 'function') prev(ev);
     if(ev.key === 'Escape' && !document.getElementById('comprar-modal').hidden) closeComprarModal();
-  });
-  document.getElementById('comprar-form').addEventListener('submit', function(ev){
+  };})(document.onkeydown);
+  document.getElementById('comprar-form').onsubmit = function(ev){
     ev.preventDefault();
     if(!_comprarCtx) return;
     var nombre = document.getElementById('comprar-nombre').value.trim();
@@ -481,7 +486,7 @@ img{max-width:100%;display:block;}
       errBox.textContent = 'No hay conexión. Reintentá cuando vuelvas a tener internet.';
       errBox.hidden = false;
     });
-  });
+  };
 
   load();
 })();
