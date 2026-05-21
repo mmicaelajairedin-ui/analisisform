@@ -74,8 +74,15 @@ Deno.serve(async (req: Request) => {
   // ── CREATE: autoriza (hold) ──
   if (action === "create") {
     const coachId = String(p.coach_id || "").trim();
-    const servicio = p.servicio === "sesion" ? "sesion" : "mentoria";
+    // Dos formas de identificar el servicio:
+    //   - servicio_idx: número, índice en cfg.servicios (modo nuevo, desde
+    //     el perfil público del coach donde se listan todos los servicios)
+    //   - servicio: "sesion" | "mentoria" (modo legacy, usaba cfg.precio_*)
+    // Si vienen los dos, prevalece servicio_idx.
+    const hasIdx = typeof p.servicio_idx === "number" && Number.isFinite(p.servicio_idx) && p.servicio_idx >= 0;
+    const servicioLegacy = p.servicio === "sesion" ? "sesion" : "mentoria";
     const cand = p.candidato || {};
+    const mensaje = typeof cand.mensaje === "string" ? String(cand.mensaje).trim().slice(0, 1000) : "";
     if (!coachId) return json({ error: "coach_id requerido" }, 400);
 
     const r = await fetch(
@@ -90,26 +97,59 @@ Deno.serve(async (req: Request) => {
     const acct = cfg.stripe_account_id;
     if (!acct) return json({ error: "El coach todavía no conectó su cuenta de cobro" }, 409);
 
-    const precio = Number(
-      servicio === "sesion" ? (cfg.precio_sesion || 120) : (cfg.precio_mentoria || 400),
-    );
+    // Resolver precio + nombre del servicio según el modo
+    let precio: number;
+    let nombreServicio: string;
+    let servicioTag: string;       // legacy: 'sesion' | 'mentoria' | 'custom'
+    let servicioIdx: number | null = null;
+    let servicioTitulo: string;    // cacheado en la solicitud — sobrevive a renombres
+    if (hasIdx) {
+      const idx = Math.floor(p.servicio_idx);
+      const servicios = Array.isArray(cfg.servicios) ? cfg.servicios : [];
+      const s = servicios[idx];
+      if (!s || typeof s !== "object") return json({ error: "Servicio no encontrado" }, 404);
+      const so = s as Record<string, unknown>;
+      precio = Number(so.price ?? so.precio ?? 0);
+      nombreServicio = String(so.name ?? so.nombre ?? "Servicio") +
+        " con " + (coach.nombre || "tu coach");
+      servicioTag = "custom";
+      servicioIdx = idx;
+      servicioTitulo = String(so.name ?? so.nombre ?? "Servicio");
+    } else {
+      precio = Number(
+        servicioLegacy === "sesion" ? (cfg.precio_sesion || 120) : (cfg.precio_mentoria || 400),
+      );
+      nombreServicio = (servicioLegacy === "sesion" ? "Sesión única" : "Mentoría 4 semanas") +
+        " con " + (coach.nombre || "tu coach");
+      servicioTag = servicioLegacy;
+      servicioTitulo = servicioLegacy === "sesion" ? "Sesión única" : "Mentoría 4 semanas";
+    }
     const monto = Math.round(precio * 100);          // céntimos
     const fee = Math.round(monto * FEE_PCT);          // 20% para Pathway
     if (monto <= 0) return json({ error: "Precio inválido" }, 400);
+
+    // success_url devuelve al perfil del coach (slug) cuando es disponible,
+    // así el candidato ve un banner de confirmación en la misma página donde
+    // compró. Fallback al coaches.html si por algún motivo no hay slug.
+    const slug = typeof p.slug === "string" && p.slug ? p.slug : "";
+    const successUrl = slug
+      ? `${SITE}/coach/${encodeURIComponent(slug)}?solicitud=ok`
+      : `${SITE}/coaches.html?solicitud=ok`;
+    const cancelUrl = slug
+      ? `${SITE}/coach/${encodeURIComponent(slug)}?solicitud=cancel`
+      : `${SITE}/coaches.html?solicitud=cancel`;
 
     const sess = await stripe("/checkout/sessions", "POST", KEY, {
       mode: "payment",
       "line_items[0][quantity]": "1",
       "line_items[0][price_data][currency]": "eur",
       "line_items[0][price_data][unit_amount]": String(monto),
-      "line_items[0][price_data][product_data][name]":
-        (servicio === "sesion" ? "Sesión única" : "Mentoría 4 semanas") +
-        " con " + (coach.nombre || "tu coach"),
+      "line_items[0][price_data][product_data][name]": nombreServicio,
       "payment_intent_data[capture_method]": "manual",
       "payment_intent_data[application_fee_amount]": String(fee),
       ...(cand.email ? { customer_email: String(cand.email) } : {}),
-      success_url: `${SITE}/coaches.html?solicitud=ok`,
-      cancel_url: `${SITE}/coaches.html?solicitud=cancel`,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
     }, acct);
     if (!sess.ok || !sess.data?.id) {
       return json({ error: "No se pudo crear el checkout", detail: sess.data?.error?.message || sess.status }, 502);
@@ -123,7 +163,12 @@ Deno.serve(async (req: Request) => {
         coach_id: coachId,
         candidato_nombre: cand.nombre || null,
         candidato_email: cand.email || null,
-        servicio, monto: precio, comision: precio * FEE_PCT,
+        servicio: servicioTag,
+        servicio_idx: servicioIdx,
+        servicio_titulo: servicioTitulo,
+        mensaje: mensaje || null,
+        monto: precio,
+        comision: precio * FEE_PCT,
         estado: "pendiente",
         stripe_account_id: acct,
         stripe_session_id: sess.data.id,
