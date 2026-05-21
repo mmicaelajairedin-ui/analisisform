@@ -1626,6 +1626,64 @@ function viewMensajesBody(){
   }
   return "<div class='cp-ai-msgs' style='display:flex;flex-direction:column;gap:0;padding:6px 2px'>"+bubbles+"</div>";
 }
+/* Bandeja del admin: lista de hilos agrupados por coach. Cada fila muestra
+ * nombre del coach, último mensaje (preview), tiempo, badge de no-leídos.
+ * Click → cierra la cabra y abre la ficha del coach (Admin → Coaches → Ver)
+ * donde está el bloque de chat completo con caja para responder.
+ */
+function viewMensajesAdminBody(){
+  if(!RADMIN) return "";
+  var byCoach = {};
+  (RMSG||[]).forEach(function(m){
+    var k = String(m.coach_id||"");
+    if(!byCoach[k]) byCoach[k] = { coachId:k, mensajes:[], unread:0, last:null };
+    byCoach[k].mensajes.push(m);
+    if(!m.leido_en && !m.from_admin) byCoach[k].unread++;
+    if(!byCoach[k].last || new Date(m.created_at) > new Date(byCoach[k].last.created_at)) byCoach[k].last = m;
+  });
+  var threads = Object.keys(byCoach).map(function(k){ return byCoach[k]; });
+  // Ordenar: no-leídos primero, después por mensaje más reciente
+  threads.sort(function(a,b){
+    if((b.unread>0) !== (a.unread>0)) return (b.unread>0)?1:-1;
+    return new Date(b.last.created_at) - new Date(a.last.created_at);
+  });
+  if(!threads.length){
+    return "<div style='text-align:center;padding:28px 16px;color:var(--pw-text-soft);font-size:13px'>"+
+      "Todavía no hay conversaciones con coaches. Para empezar una, abrí Admin → Coaches → Ver y escribí desde la ficha."+
+    "</div>";
+  }
+  function fmtTime(s){
+    try{
+      var d = new Date(s), now = new Date();
+      var diffMin = Math.round((now-d)/60000);
+      if(diffMin < 1) return "ahora";
+      if(diffMin < 60) return "hace "+diffMin+" min";
+      var diffH = Math.round(diffMin/60);
+      if(diffH < 24) return "hace "+diffH+" h";
+      return d.toLocaleDateString("es-ES",{day:"2-digit",month:"short"});
+    }catch(e){ return ""; }
+  }
+  var rows = threads.map(function(t){
+    var coach = (RCOACHES||[]).filter(function(u){return String(u.id)===t.coachId;})[0];
+    var name = (coach && (coach.nombre || coach.email)) || "Coach";
+    var preview = (t.last.body||"").replace(/\s+/g," ").slice(0, 70);
+    if(t.last.body && t.last.body.length > 70) preview += "…";
+    var fromLabel = t.last.from_admin ? "Vos: " : "";
+    var unreadBadge = t.unread > 0
+      ? "<span style='background:var(--pw-danger);color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px;margin-left:6px'>"+t.unread+"</span>"
+      : "";
+    var bgRow = t.unread > 0 ? "background:rgba(192,117,110,.06)" : "background:#fff";
+    return "<div data-act='chat-open-thread' data-cid='"+esc(t.coachId)+"' style='display:flex;flex-direction:column;gap:3px;padding:12px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer;"+bgRow+"' onmouseover='this.style.background=\"var(--pw-niebla)\"' onmouseout='this.style.background=\""+(t.unread>0?"rgba(192,117,110,.06)":"#fff")+"\"'>"+
+      "<div style='display:flex;align-items:center;gap:6px'>"+
+        "<span style='font-weight:"+(t.unread>0?"700":"600")+";color:var(--pw-carbon);font-size:13.5px'>"+esc(name)+"</span>"+
+        unreadBadge+
+        "<span style='margin-left:auto;font-size:11px;color:var(--pw-text-soft)'>"+fmtTime(t.last.created_at)+"</span>"+
+      "</div>"+
+      "<div style='font-size:12.5px;color:var(--pw-text-soft);line-height:1.45'>"+esc(fromLabel)+esc(preview)+"</div>"+
+    "</div>";
+  }).join("");
+  return "<div style='padding:4px 0'>"+rows+"</div>";
+}
 function viewConfig(){
   if(state.cfg==="services") state.cfg="pathway"; // servicios ahora vive en Clientes de Pathway
   if(state.cfg==="integ") state.cfg="profile";    // calendario ahora vive en Perfil
@@ -1671,10 +1729,15 @@ function viewAsistente(){
     } else {
       top = "<div class='cp-cabra-mini-bubble' data-act='ai-open'>"+(allDone?"¿Necesitas ayuda?":done+"/"+STEPSx.length+" · seguir")+"</div>";
     }
-    // Indicador rojo si hay mensajes del admin sin leer.
+    // Indicador rojo si hay mensajes sin leer:
+    //   - Coach: mensajes del admin sin leer
+    //   - Admin: mensajes de coaches sin leer (su "bandeja")
     var _unreadFab = 0;
-    if(!RADMIN && RMSG){
-      for(var _i=0;_i<RMSG.length;_i++){ if(RMSG[_i].from_admin && !RMSG[_i].leido_en) _unreadFab++; }
+    if(RMSG){
+      for(var _i=0;_i<RMSG.length;_i++){
+        var _m = RMSG[_i];
+        if(!_m.leido_en && ((RADMIN && !_m.from_admin) || (!RADMIN && _m.from_admin))) _unreadFab++;
+      }
     }
     var unreadDot = _unreadFab>0
       ? "<span style='position:absolute;top:-2px;right:-2px;background:var(--pw-danger);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:99px;min-width:18px;text-align:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.15)'>"+_unreadFab+"</span>"
@@ -1699,23 +1762,26 @@ function viewAsistente(){
       "<div class='cp-insight-desc'>"+esc(it.desc)+"</div></div>"+
       "<span class='cp-insight-arrow'>"+svg(IC.chevR,13)+"</span></div>";
   }).join("");
-  // No-leídos del admin para badge en la tab "Mensajes".
+  // No-leídos en la tab "Mensajes".
+  //   - Coach: mensajes del admin sin leer (from_admin=true, leido_en null)
+  //   - Admin: mensajes de coaches sin leer (from_admin=false, leido_en null)
   var unread = 0;
-  if(!RADMIN && RMSG){
-    for(var i=0;i<RMSG.length;i++){ if(RMSG[i].from_admin && !RMSG[i].leido_en) unread++; }
+  if(RMSG){
+    for(var i=0;i<RMSG.length;i++){
+      var m = RMSG[i];
+      if(!m.leido_en && ((RADMIN && !m.from_admin) || (!RADMIN && m.from_admin))) unread++;
+    }
   }
   var tab = state.ai && state.ai.tab || "home";
-  // Solo coaches (no admin) ven la tab "Mensajes". El admin gestiona el
-  // hilo desde la ficha del coach en Admin → Coaches.
-  var showMsgTab = !RADMIN;
-  var tabs = showMsgTab
-    ? "<div class='cp-ai-tabs' style='display:flex;gap:6px;padding:0 14px 8px;border-bottom:1px solid var(--pw-border);background:var(--pw-niebla)'>"+
+  // Tanto coaches como admin ven la tab "Mensajes". Para el coach es su hilo
+  // con Mica. Para el admin es la bandeja con los hilos de cada coach.
+  var showMsgTab = true;
+  var tabs = "<div class='cp-ai-tabs' style='display:flex;gap:6px;padding:0 14px 8px;border-bottom:1px solid var(--pw-border);background:var(--pw-niebla)'>"+
         "<button class='cp-chip "+(tab==="home"?"is-on":"")+"' data-act='ai-tab:home' style='height:30px;padding:0 14px;font-size:12px'>Tu progreso</button>"+
         "<button class='cp-chip "+(tab==="mensajes"?"is-on":"")+"' data-act='ai-tab:mensajes' style='height:30px;padding:0 14px;font-size:12px;display:inline-flex;align-items:center;gap:6px'>Mensajes"+
           (unread>0?"<span style='background:var(--pw-danger);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;min-width:16px;text-align:center'>"+unread+"</span>":"")+
         "</button>"+
-      "</div>"
-    : "";
+      "</div>";
   var homeBody = "<div class='cp-ai-home'>"+
     "<div class='cp-ob-mini'><div class='cp-ob-mini-top'><div class='cp-ob-mini-title'>Tu progreso</div>"+
       "<span class='cp-ob-mini-pct'>"+done+"/"+STEPSx.length+"</span></div>"+
@@ -1723,16 +1789,28 @@ function viewAsistente(){
       "<div class='cp-ob-next'>"+(allDone?"<span><strong>¡Listo!</strong> Todo configurado.</span>":"<span>Próximo: <strong>"+esc(nextStep.label)+"</strong></span>")+"</div></div>"+
     "<div><div class='cp-ai-section-title' style='margin-bottom:6px'>Tus pasos · toca para ir</div><div class='cp-ob-list'>"+stepRows+"</div></div>"+
     "<div><div class='cp-ai-section-title' style='margin-bottom:8px'>Sugerencias para ti</div>"+insRows+"</div></div>";
-  var body = (tab==="mensajes" && showMsgTab) ? viewMensajesBody() : homeBody;
-  // Footer dinámico: en home queda el WhatsApp; en mensajes, caja para escribir.
+  var body;
+  if(tab==="mensajes"){
+    body = RADMIN ? viewMensajesAdminBody() : viewMensajesBody();
+  } else {
+    body = homeBody;
+  }
+  // Footer dinámico:
+  //   - tab home: botón WhatsApp (default)
+  //   - tab mensajes + coach: textarea para escribir a Mica
+  //   - tab mensajes + admin: sin compose (responde abriendo el hilo del coach)
   var footer;
-  if(tab==="mensajes" && showMsgTab){
+  if(tab==="mensajes" && !RADMIN){
     var draft = state.msgDraft || "";
     footer = "<div class='cp-ai-compose' style='display:flex;flex-direction:column;gap:8px;align-items:stretch'>"+
       "<textarea id='msg-draft' placeholder='Escribí a Micaela…' style='width:100%;min-height:60px;padding:9px 11px;border:1px solid var(--pw-border);border-radius:10px;font-family:inherit;font-size:13.5px;resize:vertical'>"+esc(draft)+"</textarea>"+
       "<div style='display:flex;justify-content:flex-end'>"+
         "<button class='cp-btn cp-btn-primary' data-act='chat-send' style='height:32px;font-size:13px;padding:0 16px' "+(draft.trim()?"":"disabled")+">Enviar</button>"+
       "</div></div>";
+  } else if(tab==="mensajes" && RADMIN){
+    footer = "<div class='cp-ai-compose' style='justify-content:center;font-size:12px;color:var(--pw-text-soft)'>"+
+      "Tocá un hilo para abrir la conversación y responder."+
+    "</div>";
   } else {
     footer = "<div class='cp-ai-compose' style='justify-content:center'>"+
       "<a href='https://wa.me/34611256224?text="+encodeURIComponent("Hola, tengo una consulta sobre Pathway")+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='width:100%;justify-content:center;text-decoration:none;border-color:var(--pw-bosque);color:var(--pw-bosque)'>"+svg(IC.wa,14)+" ¿Necesitas ayuda? Hablar por WhatsApp</a>"+
@@ -1788,6 +1866,17 @@ function _coachDetailCard(){
 function _coachChatBlock(c){
   if(!RADMIN || !c) return "";
   var hilo = (RMSG||[]).filter(function(m){ return String(m.coach_id)===String(c.id); }).sort(function(a,b){ return new Date(a.created_at)-new Date(b.created_at); });
+  // Al abrir la ficha del coach, marcar como leídos los mensajes que él
+  // me mandó (from_admin=false). Así la bandeja de la cabra se actualiza.
+  if(hilo.length){
+    var unreadIds = hilo.filter(function(m){ return !m.from_admin && !m.leido_en && m.id; }).map(function(m){ return m.id; });
+    if(unreadIds.length){
+      _sbw("mensajes_admin_coach?id=in.("+unreadIds.join(",")+")","PATCH",{leido_en:new Date().toISOString()})
+        .then(function(){ unreadIds.forEach(function(id){
+          var m = hilo.find(function(x){return x.id===id;}); if(m) m.leido_en = new Date().toISOString();
+        }); });
+    }
+  }
   function fmtTime(s){ try{ return new Date(s).toLocaleString("es-ES",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
   var bubbles = hilo.map(function(m){
     var mine = m.from_admin; // del admin = de Mica
@@ -2418,6 +2507,21 @@ document.addEventListener("click", function(ev){
   // Acciones con prefijo "chat-" para no chocar con el handler viejo de
   // msg-send (línea ~2347) que era para emails al cliente — ese match
   // primero y devolvía "Este cliente no tiene email" antes de llegar acá.
+  if(act==="chat-open-thread"){
+    // Click en un hilo de la bandeja del admin → cerrar cabra y abrir
+    // la ficha del coach (que tiene el chat completo + caja para responder).
+    var cid = el.getAttribute("data-cid");
+    if(!cid) return;
+    state.ai.open = false;
+    state.ai.bubbleOpen = true;
+    state.section = "admin";
+    state.adminTab = "coaches";
+    state.coachSel = cid;
+    state.msgAdminDraft = "";
+    render();
+    window.scrollTo(0,0);
+    return;
+  }
   if(act==="chat-input"){
     state.msgDraft = (ev.target && ev.target.value) || "";
     return;
@@ -2438,13 +2542,8 @@ document.addEventListener("click", function(ev){
       RMSG = (RMSG||[]).concat([newRow]);
       state.msgDraft = "";
       render();
-      // Notif a Mica por email (best-effort)
-      fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-        to:"hi@pathwaycareercoach.com", to_name:"Micaela",
-        subject:"💬 Nuevo mensaje de "+((RME&&RME.nombre)||RME.email||"coach"),
-        html:"<p><strong>"+((RME&&RME.nombre)||RME.email)+"</strong> te escribió desde el panel:</p><blockquote style='border-left:3px solid #2D6A4F;padding:8px 14px;color:#3A4A40;background:rgba(45,106,79,.04);border-radius:6px'>"+esc(txt)+"</blockquote><p><a href='https://pathwaycareercoach.com/panel-v2.html#admin'>Abrir el panel admin</a></p>",
-        reply_to: RME.email||""
-      })}).catch(function(){});
+      // (Sin notificación por email — el chat in-app es el único canal.
+      // Decisión: Mica entra al panel y ve los pendientes en su cabra.)
     });
     return;
   }
@@ -2463,15 +2562,8 @@ document.addEventListener("click", function(ev){
       RMSG = (RMSG||[]).concat([arow]);
       state.msgAdminDraft = "";
       render();
-      // Notif al coach por email
-      if(coachRow.email){
-        fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-          to: coachRow.email, to_name: coachRow.nombre||"",
-          subject:"💬 Mensaje de Micaela en tu panel de Pathway",
-          html:"<p>Hola "+esc(((coachRow.nombre||"").split(" ")[0])||"")+",</p><p>Te dejé un mensaje en tu panel:</p><blockquote style='border-left:3px solid #2D6A4F;padding:8px 14px;color:#3A4A40;background:rgba(45,106,79,.04);border-radius:6px'>"+esc(atxt)+"</blockquote><p><a href='https://pathwaycareercoach.com/panel-v2.html#mensajes' style='display:inline-block;margin-top:8px;padding:10px 22px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:600'>Abrir Mensajes</a></p>",
-          reply_to:"hi@pathwaycareercoach.com"
-        })}).catch(function(){});
-      }
+      // (Sin notificación por email al coach — al entrar a su panel,
+      // ve el indicador rojo en la cabra. Evitamos saturar la bandeja.)
     });
     return;
   }
@@ -2947,10 +3039,15 @@ document.addEventListener("click", function(ev){
   }
   if(act==="ai-open"){
     state.ai.open=true; state.ai.bubbleOpen=false;
-    // Si hay mensajes del admin sin leer, abrir directo en la tab Mensajes.
-    if(!RADMIN && RMSG){
+    // Si hay mensajes sin leer, abrir directo en la tab Mensajes.
+    //   - Coach: mira from_admin=true sin leer
+    //   - Admin: mira from_admin=false sin leer
+    if(RMSG){
       for(var _u=0;_u<RMSG.length;_u++){
-        if(RMSG[_u].from_admin && !RMSG[_u].leido_en){ state.ai.tab="mensajes"; break; }
+        var _mm = RMSG[_u];
+        if(!_mm.leido_en && ((RADMIN && !_mm.from_admin) || (!RADMIN && _mm.from_admin))){
+          state.ai.tab="mensajes"; break;
+        }
       }
     }
     render(); return;
