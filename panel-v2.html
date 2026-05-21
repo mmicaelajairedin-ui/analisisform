@@ -585,6 +585,7 @@ var state = {
   coachMsg: "",
   msgDraft: "",
   msgAdminDraft: "",
+  aiThread: null,  // coach_id del hilo abierto dentro de la cabra (admin)
   clienteSel: null,
   cliDetTab: "perfil",
   cliWeek: null,
@@ -1662,8 +1663,52 @@ function viewMensajesBody(){
  * Click → cierra la cabra y abre la ficha del coach (Admin → Coaches → Ver)
  * donde está el bloque de chat completo con caja para responder.
  */
+/* Conversación admin↔coach renderizada DENTRO de la cabra (sin salir).
+ * El back vuelve a la bandeja. El textarea de respuesta vive en el footer
+ * del panel de la cabra (ver render de footer, action "chat-cabra-send").
+ */
+function viewAdminThreadInCabra(coachId){
+  var hilo = (RMSG||[]).filter(function(m){ return String(m.coach_id)===String(coachId); })
+    .slice().sort(function(a,b){ return new Date(a.created_at)-new Date(b.created_at); });
+  // Marcar como leídos los del coach (from_admin=false) que aún no están leídos
+  var unreadIds = hilo.filter(function(m){ return !m.from_admin && !m.leido_en && m.id; }).map(function(m){ return m.id; });
+  if(unreadIds.length){
+    _sbw("mensajes_admin_coach?id=in.("+unreadIds.join(",")+")","PATCH",{leido_en:new Date().toISOString()})
+      .then(function(){ unreadIds.forEach(function(id){
+        var m = hilo.find(function(x){return x.id===id;}); if(m) m.leido_en = new Date().toISOString();
+      }); });
+  }
+  var coach = (RCOACHES||[]).filter(function(u){return String(u.id)===String(coachId);})[0] || {};
+  var coachName = coach.nombre || coach.email || "coach";
+  function fmtTime(s){ try{ return new Date(s).toLocaleString("es-ES",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
+  var bubbles = hilo.map(function(m){
+    var mine = m.from_admin;
+    var bg = mine ? "var(--pw-bosque)" : "var(--pw-niebla-2)";
+    var color = mine ? "#fff" : "var(--pw-carbon)";
+    var align = mine ? "flex-end" : "flex-start";
+    var who = mine ? "vos" : coachName.split(" ")[0];
+    return "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;margin-bottom:10px'>"+
+      "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
+      "<div style='max-width:85%;background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
+    "</div>";
+  }).join("");
+  if(!bubbles){
+    bubbles = "<div style='text-align:center;padding:24px 12px;color:var(--pw-text-soft);font-size:12.5px'>Sin mensajes con "+esc(coachName.split(" ")[0])+" todavía. Escribí abajo para iniciar.</div>";
+  }
+  var head = "<div style='display:flex;align-items:center;gap:8px;padding:8px 12px 10px;border-bottom:1px solid var(--pw-border);background:var(--pw-niebla)'>"+
+    "<button class='cp-btn cp-btn-ghost' data-act='chat-cabra-back' style='height:28px;padding:0 10px;font-size:12px'>← Bandeja</button>"+
+    "<span style='font-size:13px;font-weight:600;color:var(--pw-carbon);margin-left:2px'>"+esc(coachName)+"</span>"+
+  "</div>";
+  return head+"<div style='padding:10px 2px'>"+bubbles+"</div>";
+}
+
 function viewMensajesAdminBody(){
   if(!RADMIN) return "";
+  // Si hay un hilo abierto adentro de la cabra → mostrar la conversación
+  // completa con burbujas + back, sin navegar a la ficha del coach.
+  if(state.aiThread){
+    return viewAdminThreadInCabra(state.aiThread);
+  }
   var byCoach = {};
   (RMSG||[]).forEach(function(m){
     var k = String(m.coach_id||"");
@@ -1837,6 +1882,13 @@ function viewAsistente(){
       "<textarea id='msg-draft' placeholder='Escribí a Micaela…' style='width:100%;min-height:60px;padding:9px 11px;border:1px solid var(--pw-border);border-radius:10px;font-family:inherit;font-size:13.5px;resize:vertical'>"+esc(draft)+"</textarea>"+
       "<div style='display:flex;justify-content:flex-end'>"+
         "<button class='cp-btn cp-btn-primary' data-act='chat-send' style='height:32px;font-size:13px;padding:0 16px' "+(draft.trim()?"":"disabled")+">Enviar</button>"+
+      "</div></div>";
+  } else if(tab==="mensajes" && RADMIN && state.aiThread){
+    var adraft = state.msgAdminDraft || "";
+    footer = "<div class='cp-ai-compose' style='display:flex;flex-direction:column;gap:8px;align-items:stretch'>"+
+      "<textarea id='msg-cabra-draft' placeholder='Responder al coach…' style='width:100%;min-height:60px;padding:9px 11px;border:1px solid var(--pw-border);border-radius:10px;font-family:inherit;font-size:13.5px;resize:vertical' data-act='chat-cabra-input'>"+esc(adraft)+"</textarea>"+
+      "<div style='display:flex;justify-content:flex-end'>"+
+        "<button class='cp-btn cp-btn-primary' data-act='chat-cabra-send' style='height:32px;font-size:13px;padding:0 16px' "+(adraft.trim()?"":"disabled")+">Enviar</button>"+
       "</div></div>";
   } else if(tab==="mensajes" && RADMIN){
     footer = "<div class='cp-ai-compose' style='justify-content:center;font-size:12px;color:var(--pw-text-soft)'>"+
@@ -2539,18 +2591,42 @@ document.addEventListener("click", function(ev){
   // msg-send (línea ~2347) que era para emails al cliente — ese match
   // primero y devolvía "Este cliente no tiene email" antes de llegar acá.
   if(act==="chat-open-thread"){
-    // Click en un hilo de la bandeja del admin → cerrar cabra y abrir
-    // la ficha del coach (que tiene el chat completo + caja para responder).
+    // Click en un hilo de la bandeja del admin → abrir la conversación
+    // adentro de la cabra (sin cerrar el asistente ni navegar de página).
     var cid = el.getAttribute("data-cid");
     if(!cid) return;
-    state.ai.open = false;
-    state.ai.bubbleOpen = true;
-    state.section = "admin";
-    state.adminTab = "coaches";
-    state.coachSel = cid;
+    state.aiThread = cid;
     state.msgAdminDraft = "";
     render();
-    window.scrollTo(0,0);
+    return;
+  }
+  if(act==="chat-cabra-back"){
+    // Volver de la conversación a la bandeja, dentro de la cabra.
+    state.aiThread = null;
+    state.msgAdminDraft = "";
+    render();
+    return;
+  }
+  if(act==="chat-cabra-send"){
+    // Enviar respuesta al coach desde adentro de la cabra (no usa coachSel
+    // porque la navegación admin↔coaches no cambia).
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    if(!state.aiThread){ return; }
+    var cInput = document.getElementById("msg-cabra-draft");
+    var cTxt = ((cInput && cInput.value) || state.msgAdminDraft || "").trim();
+    if(!cTxt){ return; }
+    var cBtn = ev.currentTarget; if(cBtn) cBtn.disabled = true;
+    var cRow = { coach_id: state.aiThread, from_admin: true, body: cTxt, created_at: new Date().toISOString() };
+    _sbw("mensajes_admin_coach","POST",cRow).then(function(r){
+      if(!r.ok){ alert("No se pudo enviar el mensaje. Reintentá."); if(cBtn) cBtn.disabled=false; return; }
+      RMSG = (RMSG||[]).concat([cRow]);
+      state.msgAdminDraft = "";
+      render();
+    });
+    return;
+  }
+  if(act==="chat-cabra-input"){
+    state.msgAdminDraft = (ev.target && ev.target.value) || "";
     return;
   }
   if(act==="chat-input"){
@@ -3083,8 +3159,8 @@ document.addEventListener("click", function(ev){
     }
     render(); return;
   }
-  if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; render(); return; }
-  if(act.indexOf("ai-tab:")===0){ state.ai.tab=act.slice(7); render(); return; }
+  if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; state.aiThread=null; state.msgAdminDraft=""; render(); return; }
+  if(act.indexOf("ai-tab:")===0){ state.ai.tab=act.slice(7); state.aiThread=null; state.msgAdminDraft=""; render(); return; }
   if(act==="ai-bubble-close"){ ev.stopPropagation(); state.ai.bubbleOpen=false; render(); return; }
   if(act==="asist-go"){
     var _sid=el.getAttribute("data-step");
@@ -3216,6 +3292,14 @@ document.addEventListener("input", function(ev){
     state.msgAdminDraft = ev.target.value || "";
     var sendBtn2 = document.querySelector("[data-act=chat-admin-send]");
     if(sendBtn2) sendBtn2.disabled = !state.msgAdminDraft.trim();
+    return;
+  }
+  if(ev.target && ev.target.id==="msg-cabra-draft"){
+    // Respuesta admin desde adentro de la cabra — comparte el mismo draft
+    // que msgAdminDraft pero habilita el botón "Enviar" de la cabra.
+    state.msgAdminDraft = ev.target.value || "";
+    var sendBtn3 = document.querySelector("[data-act=chat-cabra-send]");
+    if(sendBtn3) sendBtn3.disabled = !state.msgAdminDraft.trim();
     return;
   }
   if(!ev.target || ev.target.id!=="cp-cli-search") return;
