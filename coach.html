@@ -209,6 +209,34 @@ img{max-width:100%;display:block;}
       <p>Plataforma de coaching de carrera · <a href="/coaches.html">Ver todos los coaches</a> · <a href="/soy-coach.html">¿Sos coach? Empeza gratis</a></p>
     </div>
   </footer>
+
+  <!-- Banner de feedback post-Stripe (se muestra solo con ?solicitud=ok|cancel) -->
+  <div id="solicitud-banner" hidden style="position:fixed;top:14px;left:50%;transform:translateX(-50%);max-width:520px;width:calc(100% - 28px);padding:14px 18px;border-radius:12px;font-size:14px;line-height:1.5;z-index:1000;box-shadow:0 8px 22px rgba(0,0,0,.12)"></div>
+
+  <!-- Modal "Comprar servicio" — abierto desde los botones Comprar de cada servicio -->
+  <div id="comprar-modal" hidden style="position:fixed;inset:0;background:rgba(20,30,25,.55);z-index:999;display:flex;align-items:center;justify-content:center;padding:18px">
+    <div role="dialog" aria-modal="true" aria-labelledby="comprar-titulo" style="background:#fff;max-width:460px;width:100%;border-radius:18px;padding:24px 22px;max-height:calc(100vh - 36px);overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.2)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px">
+        <h3 id="comprar-titulo" style="font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#1B2E26;line-height:1.3;margin:0">Solicitar este servicio</h3>
+        <button type="button" id="comprar-close" aria-label="Cerrar" style="background:transparent;border:none;font-size:24px;color:#7a857f;cursor:pointer;line-height:1;padding:0">×</button>
+      </div>
+      <div id="comprar-resumen" style="background:rgba(45,106,79,.06);border-left:3px solid #2D6A4F;border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13.5px;color:#3A4A40;line-height:1.5"></div>
+      <form id="comprar-form" style="display:flex;flex-direction:column;gap:12px">
+        <label style="font-size:13px;color:#1B2E26;font-weight:600">Tu nombre
+          <input type="text" id="comprar-nombre" required style="width:100%;margin-top:5px;padding:11px 13px;border:1.5px solid #dfe5e0;border-radius:10px;font-family:inherit;font-size:14px">
+        </label>
+        <label style="font-size:13px;color:#1B2E26;font-weight:600">Tu email
+          <input type="email" id="comprar-email" required style="width:100%;margin-top:5px;padding:11px 13px;border:1.5px solid #dfe5e0;border-radius:10px;font-family:inherit;font-size:14px">
+        </label>
+        <label style="font-size:13px;color:#1B2E26;font-weight:600">Contale al coach qué necesitás <span style="font-weight:400;color:#7a857f">(opcional)</span>
+          <textarea id="comprar-mensaje" rows="3" maxlength="1000" placeholder="Ej: tengo 5 años de experiencia y quiero cambiarme a producto" style="width:100%;margin-top:5px;padding:11px 13px;border:1.5px solid #dfe5e0;border-radius:10px;font-family:inherit;font-size:14px;resize:vertical;min-height:70px"></textarea>
+        </label>
+        <p style="font-size:12px;color:#7a857f;line-height:1.55;margin:4px 0 0">Al continuar, tu tarjeta queda <strong>autorizada (no se cobra todavía)</strong>. El coach tiene 24 h para aceptar. Si rechaza o pasa el tiempo, se libera sin cargo.</p>
+        <button type="submit" id="comprar-submit" style="margin-top:6px;padding:14px;background:#2D6A4F;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Continuar al pago →</button>
+        <div id="comprar-error" hidden style="font-size:13px;color:#C0756E;background:rgba(192,117,110,.08);padding:9px 12px;border-radius:8px"></div>
+      </form>
+    </div>
+  </div>
 </main>
 
 <script src="testimonios.js"></script>
@@ -293,14 +321,39 @@ img{max-width:100%;display:block;}
 
     if(Array.isArray(c.servicios)&&c.servicios.length){
       var sg=document.getElementById('servicios-grid');
-      sg.innerHTML=c.servicios.map(function(s){
-        var precio=fmtPrecio(s.precio,s.moneda);
-        var dur=s.duracion?'<span>· '+escH(s.duracion)+'</span>':'';
-        var meta=(precio||dur)?'<div class="meta">'+(precio?'<span class="precio">'+escH(precio)+'</span>':'')+dur+'</div>':'';
-        var cta=safeUrl(s.cta_url)?'<a href="'+escH(s.cta_url)+'" target="_blank" rel="noopener" class="servicio-cta">Reservar '+ICONS.arrow+'</a>':'';
-        return '<div class="servicio"><h3>'+escH(s.titulo||'')+'</h3>'+(s.descripcion?'<div class="desc">'+escH(s.descripcion)+'</div>':'')+meta+cta+'</div>';
+      // Soporta dos formatos coexistentes: {titulo, descripcion, precio, ...}
+      // (legacy / formulario de coach) y {name, desc, price, unit} (panel-v2).
+      // Normalizamos con fallback de claves.
+      sg.innerHTML=c.servicios.map(function(s, idx){
+        var titulo = s.titulo || s.name || '';
+        var descr = s.descripcion || s.desc || '';
+        var priceNum = Number(s.precio != null ? s.precio : s.price);
+        var precioStr = isFinite(priceNum) && priceNum > 0 ? fmtPrecio(priceNum, s.moneda) : '';
+        var dur=s.duracion?'<span>· '+escH(s.duracion)+'</span>':(s.unit?'<span>· '+escH(s.unit)+'</span>':'');
+        var meta=(precioStr||dur)?'<div class="meta">'+(precioStr?'<span class="precio">'+escH(precioStr)+'</span>':'')+dur+'</div>':'';
+        // Si el coach tiene Stripe conectado Y el servicio tiene precio > 0,
+        // mostramos "Comprar" (cobro vía Stripe Connect con split 20/80).
+        // Sino fallback al CTA externo del coach (Calendly u otro) si existe.
+        var cta;
+        if(c.stripe_connected && priceNum > 0){
+          cta = '<button type="button" class="servicio-cta" data-comprar="'+idx+'" style="background:#2D6A4F;color:#fff;border:none;cursor:pointer;font:inherit">Comprar '+precioStr+' '+ICONS.arrow+'</button>';
+        } else if(safeUrl(s.cta_url)){
+          cta = '<a href="'+escH(s.cta_url)+'" target="_blank" rel="noopener" class="servicio-cta">Reservar '+ICONS.arrow+'</a>';
+        } else {
+          cta = '';
+        }
+        return '<div class="servicio"><h3>'+escH(titulo)+'</h3>'+(descr?'<div class="desc">'+escH(descr)+'</div>':'')+meta+cta+'</div>';
       }).join('');
       show('sec-servicios');
+      // Wire-up de los botones Comprar — abrir modal con los datos del servicio
+      sg.querySelectorAll('[data-comprar]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var idx = parseInt(btn.getAttribute('data-comprar'), 10);
+          var s = c.servicios[idx];
+          if(!s) return;
+          openComprarModal(c, s, idx);
+        });
+      });
     }
 
     if(Array.isArray(c.especialidades)&&c.especialidades.length){
@@ -329,8 +382,107 @@ img{max-width:100%;display:block;}
     if(!slug){hide('loading');show('not-found');return;}
     fetch(SB_URL+'/functions/v1/obtener-perfil-coach?slug='+encodeURIComponent(slug),{
       headers:{Authorization:'Bearer '+SB_ANON,apikey:SB_ANON}
-    }).then(function(r){if(!r.ok){if(r.status===404){hide('loading');show('not-found');return null;}throw new Error('http '+r.status);}return r.json();}).then(function(d){if(!d)return;hide('loading');render(d.coach);show('profile');}).catch(function(){hide('loading');show('not-found');});
+    }).then(function(r){if(!r.ok){if(r.status===404){hide('loading');show('not-found');return null;}throw new Error('http '+r.status);}return r.json();}).then(function(d){if(!d)return;hide('loading');render(d.coach);show('profile');showSolicitudBanner();}).catch(function(){hide('loading');show('not-found');});
   }
+
+  /* ═══ Banner post-Stripe ═══
+   * Cuando el candidato vuelve de Stripe a /coach/<slug>?solicitud=ok|cancel,
+   * mostramos un cartel arriba durante 6s. No bloquea la página. */
+  function showSolicitudBanner(){
+    var qs = new URLSearchParams(window.location.search);
+    var sol = qs.get('solicitud'); if(!sol) return;
+    var b = document.getElementById('solicitud-banner'); if(!b) return;
+    if(sol === 'ok'){
+      b.style.background = 'rgba(45,106,79,.10)';
+      b.style.borderLeft = '4px solid #2D6A4F';
+      b.style.color = '#1B2E26';
+      b.innerHTML = '<strong>¡Listo!</strong> Tu tarjeta quedó autorizada (no se cobró todavía). El coach tiene 24 h para aceptar la solicitud. Te avisamos por email.';
+    } else if(sol === 'cancel'){
+      b.style.background = 'rgba(192,117,110,.08)';
+      b.style.borderLeft = '4px solid #C0756E';
+      b.style.color = '#1B2E26';
+      b.innerHTML = 'Cancelaste el pago. Si querés intentar de nuevo, tocá el servicio que quieras.';
+    } else { return; }
+    b.hidden = false;
+    setTimeout(function(){ b.hidden = true; }, 6000);
+    // Limpiar el query param sin recargar para que un refresh no muestre
+    // el banner de nuevo.
+    if(window.history && window.history.replaceState){
+      var clean = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, '', clean);
+    }
+  }
+
+  /* ═══ Modal de compra de servicio ═══
+   * Se abre desde los botones "Comprar €X" de cada servicio. Envía POST a
+   * la edge function connect-checkout/create, recibe la URL de Stripe
+   * Checkout y redirige. La url incluye ?solicitud=ok|cancel al volver
+   * para mostrar el banner de arriba. */
+  var _comprarCtx = null; // { coach, servicio, idx }
+  function openComprarModal(coach, servicio, idx){
+    _comprarCtx = { coach: coach, servicio: servicio, idx: idx };
+    var resumen = document.getElementById('comprar-resumen');
+    var titulo = servicio.titulo || servicio.name || 'Servicio';
+    var priceNum = Number(servicio.precio != null ? servicio.precio : servicio.price);
+    var precioStr = isFinite(priceNum) && priceNum > 0 ? fmtPrecio(priceNum, servicio.moneda) : '';
+    resumen.innerHTML = '<strong>'+escH(titulo)+'</strong> con '+escH(coach.nombre||'el coach')+
+      (precioStr ? '<div style="margin-top:4px;font-size:16px;color:#2D6A4F;font-weight:700">'+escH(precioStr)+'</div>' : '');
+    document.getElementById('comprar-modal').hidden = false;
+    document.getElementById('comprar-error').hidden = true;
+    document.getElementById('comprar-submit').disabled = false;
+    document.getElementById('comprar-submit').textContent = 'Continuar al pago →';
+    setTimeout(function(){ var n=document.getElementById('comprar-nombre'); if(n) n.focus(); }, 100);
+  }
+  function closeComprarModal(){
+    document.getElementById('comprar-modal').hidden = true;
+    _comprarCtx = null;
+  }
+  document.getElementById('comprar-close').addEventListener('click', closeComprarModal);
+  document.getElementById('comprar-modal').addEventListener('click', function(ev){
+    if(ev.target === this) closeComprarModal(); // click en backdrop cierra
+  });
+  document.addEventListener('keydown', function(ev){
+    if(ev.key === 'Escape' && !document.getElementById('comprar-modal').hidden) closeComprarModal();
+  });
+  document.getElementById('comprar-form').addEventListener('submit', function(ev){
+    ev.preventDefault();
+    if(!_comprarCtx) return;
+    var nombre = document.getElementById('comprar-nombre').value.trim();
+    var email = document.getElementById('comprar-email').value.trim();
+    var mensaje = document.getElementById('comprar-mensaje').value.trim();
+    if(!nombre || !email){ return; }
+    var submitBtn = document.getElementById('comprar-submit');
+    var errBox = document.getElementById('comprar-error');
+    submitBtn.disabled = true; submitBtn.textContent = 'Conectando…'; errBox.hidden = true;
+    fetch(SB_URL+'/functions/v1/connect-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer '+SB_ANON, apikey: SB_ANON },
+      body: JSON.stringify({
+        action: 'create',
+        coach_id: _comprarCtx.coach.id,
+        servicio_idx: _comprarCtx.idx,
+        slug: _comprarCtx.coach.slug || '',
+        candidato: { nombre: nombre, email: email, mensaje: mensaje }
+      })
+    }).then(function(r){
+      return r.json().then(function(j){ return { ok: r.ok, body: j }; });
+    }).then(function(res){
+      if(!res.ok || !res.body || !res.body.url){
+        submitBtn.disabled = false; submitBtn.textContent = 'Continuar al pago →';
+        errBox.textContent = (res.body && res.body.error) || 'No pudimos iniciar el pago. Reintentá en un momento.';
+        if(res.body && res.body.detail) errBox.textContent += ' ('+res.body.detail+')';
+        errBox.hidden = false;
+        return;
+      }
+      // Redirige a Stripe Checkout (cargo directo sobre la cuenta del coach)
+      window.location.href = res.body.url;
+    }).catch(function(){
+      submitBtn.disabled = false; submitBtn.textContent = 'Continuar al pago →';
+      errBox.textContent = 'No hay conexión. Reintentá cuando vuelvas a tener internet.';
+      errBox.hidden = false;
+    });
+  });
+
   load();
 })();
 </script>
