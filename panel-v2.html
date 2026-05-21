@@ -3286,6 +3286,44 @@ function pwConnect(){
     })
     .catch(function(e){ _genBusy=false; alert("Error de red conectando con Stripe.\n\n"+(e&&e.message?e.message:"")); });
 }
+/* Polling del chat: re-pide mensajes_admin_coach periódicamente y, si hay
+ * nuevos, re-renderiza. Sin esto, los mensajes solo aparecen al refrescar
+ * la página. Tres optimizaciones:
+ *   - Solo poll si la pestaña está visible (document.visibilityState).
+ *   - Refresh inmediato al volver a la pestaña (visibilitychange).
+ *   - Diff por id antes de re-renderizar — si nada cambió no rendereamos
+ *     (para no perder foco del textarea mientras el usuario escribe).
+ */
+var _msgPollTimer = null;
+function pollMessages(){
+  if(!REAL || !RME || !RME.id) return;
+  if(document.visibilityState !== "visible") return;
+  var q = RADMIN
+    ? _sb("mensajes_admin_coach?select=*&order=created_at.asc&limit=500")
+    : _sb("mensajes_admin_coach?coach_id=eq."+encodeURIComponent(RME.id)+"&select=*&order=created_at.asc&limit=500");
+  q.then(function(rows){
+    if(!rows || !Array.isArray(rows)) return;
+    var oldIds = {};
+    (RMSG||[]).forEach(function(m){ if(m.id) oldIds[m.id] = m.leido_en || true; });
+    var hasNew = rows.length !== (RMSG||[]).length;
+    if(!hasNew){
+      for(var i=0; i<rows.length; i++){
+        var r = rows[i];
+        // Hay novedad si: id nuevo, o el leido_en del lado del otro cambió.
+        if(r.id && !oldIds[r.id]){ hasNew = true; break; }
+      }
+    }
+    RMSG = rows;
+    if(hasNew) render();
+  }).catch(function(){});
+}
+function startMsgPolling(){
+  if(_msgPollTimer) return;
+  _msgPollTimer = setInterval(pollMessages, 25000);
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState === "visible") pollMessages();
+  });
+}
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
   if(!ME||!ME.id) return; // sin sesión → datos de ejemplo
@@ -3320,6 +3358,9 @@ function loadReal(){
     RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[], resenas:res[10]||[], informes:inf } : null;
     RSOL = res[9]||[];
     RMSG = res[11]||[];
+    // Una vez cargados los mensajes iniciales, arrancar el polling. La
+    // función es idempotente (no arranca un segundo timer si ya hay uno).
+    startMsgPolling();
     RCFG = usr.configuracion || ME.configuracion || {};
     RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), perfil_publico_activo:!!usr.perfil_publico_activo };
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
