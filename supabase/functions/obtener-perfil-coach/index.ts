@@ -121,6 +121,8 @@ Deno.serve(async (req: Request) => {
 
   return json({
     coach: {
+      id: row.id, // UUID — necesario para que el frontend lo pase a connect-checkout
+      stripe_connected: !!str("stripe_account_id"), // flag para mostrar/no el botón "Comprar"
       nombre: row.nombre,
       slug: row.slug,
       titulo_profesional: row.titulo_profesional,
