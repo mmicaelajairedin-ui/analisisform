@@ -214,7 +214,7 @@ img{max-width:100%;display:block;}
   <div id="solicitud-banner" hidden style="position:fixed;top:14px;left:50%;transform:translateX(-50%);max-width:520px;width:calc(100% - 28px);padding:14px 18px;border-radius:12px;font-size:14px;line-height:1.5;z-index:1000;box-shadow:0 8px 22px rgba(0,0,0,.12)"></div>
 
   <!-- Modal "Comprar servicio" — abierto desde los botones Comprar de cada servicio -->
-  <div id="comprar-modal" hidden style="position:fixed;inset:0;background:rgba(20,30,25,.55);z-index:999;display:flex;align-items:center;justify-content:center;padding:18px">
+  <div id="comprar-modal" hidden style="position:fixed;inset:0;background:rgba(20,30,25,.55);z-index:999;align-items:center;justify-content:center;padding:18px">
     <div role="dialog" aria-modal="true" aria-labelledby="comprar-titulo" style="background:#fff;max-width:460px;width:100%;border-radius:18px;padding:24px 22px;max-height:calc(100vh - 36px);overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.2)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px">
         <h3 id="comprar-titulo" style="font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#1B2E26;line-height:1.3;margin:0">Solicitar este servicio</h3>
@@ -345,15 +345,17 @@ img{max-width:100%;display:block;}
         return '<div class="servicio"><h3>'+escH(titulo)+'</h3>'+(descr?'<div class="desc">'+escH(descr)+'</div>':'')+meta+cta+'</div>';
       }).join('');
       show('sec-servicios');
-      // Wire-up de los botones Comprar — abrir modal con los datos del servicio
-      sg.querySelectorAll('[data-comprar]').forEach(function(btn){
-        btn.addEventListener('click', function(){
-          var idx = parseInt(btn.getAttribute('data-comprar'), 10);
-          var s = c.servicios[idx];
-          if(!s) return;
-          openComprarModal(c, s, idx);
-        });
-      });
+      // Wire-up con delegation en el grid — sobrevive a re-renders y al
+      // timing del innerHTML. El handler vive en sg, no en cada botón.
+      sg.onclick = function(ev){
+        var btn = ev.target && ev.target.closest ? ev.target.closest('[data-comprar]') : null;
+        if(!btn || !sg.contains(btn)) return;
+        var idx = parseInt(btn.getAttribute('data-comprar'), 10);
+        var s = c.servicios[idx];
+        if(!s) return;
+        ev.preventDefault();
+        openComprarModal(c, s, idx);
+      };
     }
 
     if(Array.isArray(c.especialidades)&&c.especialidades.length){
@@ -427,24 +429,31 @@ img{max-width:100%;display:block;}
     var precioStr = isFinite(priceNum) && priceNum > 0 ? fmtPrecio(priceNum, servicio.moneda) : '';
     resumen.innerHTML = '<strong>'+escH(titulo)+'</strong> con '+escH(coach.nombre||'el coach')+
       (precioStr ? '<div style="margin-top:4px;font-size:16px;color:#2D6A4F;font-weight:700">'+escH(precioStr)+'</div>' : '');
-    document.getElementById('comprar-modal').hidden = false;
+    var modal = document.getElementById('comprar-modal');
+    modal.hidden = false;
+    modal.style.display = 'flex';
     document.getElementById('comprar-error').hidden = true;
     document.getElementById('comprar-submit').disabled = false;
     document.getElementById('comprar-submit').textContent = 'Continuar al pago →';
     setTimeout(function(){ var n=document.getElementById('comprar-nombre'); if(n) n.focus(); }, 100);
   }
   function closeComprarModal(){
-    document.getElementById('comprar-modal').hidden = true;
+    var modal = document.getElementById('comprar-modal');
+    modal.hidden = true;
+    modal.style.display = 'none';
     _comprarCtx = null;
   }
-  document.getElementById('comprar-close').addEventListener('click', closeComprarModal);
-  document.getElementById('comprar-modal').addEventListener('click', function(ev){
+  // Property assignment (onX) en vez de addEventListener — más robusto frente
+  // a cualquier interceptor / minificador que pueda romper addEventListener.
+  document.getElementById('comprar-close').onclick = closeComprarModal;
+  document.getElementById('comprar-modal').onclick = function(ev){
     if(ev.target === this) closeComprarModal(); // click en backdrop cierra
-  });
-  document.addEventListener('keydown', function(ev){
+  };
+  document.onkeydown = (function(prev){ return function(ev){
+    if(typeof prev === 'function') prev(ev);
     if(ev.key === 'Escape' && !document.getElementById('comprar-modal').hidden) closeComprarModal();
-  });
-  document.getElementById('comprar-form').addEventListener('submit', function(ev){
+  };})(document.onkeydown);
+  document.getElementById('comprar-form').onsubmit = function(ev){
     ev.preventDefault();
     if(!_comprarCtx) return;
     var nombre = document.getElementById('comprar-nombre').value.trim();
@@ -481,7 +490,7 @@ img{max-width:100%;display:block;}
       errBox.textContent = 'No hay conexión. Reintentá cuando vuelvas a tener internet.';
       errBox.hidden = false;
     });
-  });
+  };
 
   load();
 })();
