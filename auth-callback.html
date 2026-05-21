@@ -291,26 +291,81 @@ async function handleCallback(){
         })
       }).catch(function(){});
 
-      // Mail recovery a +5 min en email_queue. panel-v2.html borra esta fila
-      // cuando la coach entra por primera vez (asi solo lo reciben las que
-      // no llegaron a usar la plataforma).
+      // Programar emails de trial (mismo flow que registro.html con email/password).
+      // - Dia 7  → engagement
+      // - Dia 13 → "tu prueba termina mañana"
+      // - Dia 15 → "tu prueba terminó, querés seguir?"
+      // send-queued-emails filtra antes de enviar si el coach ya pagó o es vitalicio.
       var nowMs = Date.now();
-      fetch(SB + '/rest/v1/email_queue', {
-        method: 'POST',
-        headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-        body: JSON.stringify([{
+      var upgradeUrl = 'https://pathwaycareercoach.com/upgrade.html?email=' + encodeURIComponent(email);
+      var trialShell = function(inner){
+        return '<div style="background:#FAFDF9;padding:28px 16px;font-family:Inter,-apple-system,Segoe UI,Roboto,Arial,sans-serif;">'
+          + '<div style="max-width:520px;margin:0 auto;">'
+          + '<div style="text-align:center;margin-bottom:18px;"><img src="https://pathwaycareercoach.com/logo-horizontal.png" alt="Pathway" width="150" style="width:150px;max-width:60%;height:auto;display:inline-block;"></div>'
+          + '<div style="background:#fff;border:1px solid #E8EFE9;border-radius:16px;padding:30px 28px;box-shadow:0 6px 22px rgba(45,106,79,.06);">'
+          + inner + '</div>'
+          + '<p style="text-align:center;color:#8A968E;font-size:12px;margin:16px 0 0;line-height:1.7;">¿Dudas? Responde a este correo, te leo.<br>— Micaela, fundadora de Pathway</p>'
+          + '</div></div>';
+      };
+      var trialCta = '<p style="margin:0 0 12px;"><a href="' + upgradeUrl + '" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Ver planes y suscribirme →</a></p>';
+      var trialEmails = [
+        {
+          days: 7,
+          plantilla: 'trial_day_7',
+          subject: '¿Cómo va tu primera semana en Pathway, ' + primerNombreGoogle + '? 🌱',
+          body: trialShell(
+            '<h1 style="font-family:Fraunces,Georgia,serif;font-size:23px;font-weight:600;color:#1B2E26;margin:0 0 14px;letter-spacing:-.4px;">Hola ' + primerNombreGoogle + ', ¿cómo va?</h1>'
+            + '<p style="font-size:15px;line-height:1.7;color:#3A4A40;margin:0 0 14px;">Ya pasó la primera semana de tu prueba. Cosas que las coaches que mejor aprovechan Pathway hacen al principio:</p>'
+            + '<ol style="padding-left:20px;line-height:1.9;font-size:14px;color:#3A4A40;margin:0 0 18px;">'
+            + '<li>Generan su primer <strong>informe IA</strong> con un cliente real (30 segundos)</li>'
+            + '<li>Conectan <strong>Calendly y Stripe</strong> para que los clientes agenden y paguen directo</li>'
+            + '<li>Personalizan colores y logo en Configuración</li>'
+            + '</ol>'
+            + '<p style="margin:0 0 18px;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Ir a mi panel →</a></p>'
+            + '<p style="font-size:13px;color:#5A6A60;margin:0;line-height:1.6;">¿Algo se traba? Responde este mail y te ayudo.</p>'
+          )
+        },
+        {
+          days: 13,
+          plantilla: 'trial_day_13',
+          subject: 'Tu prueba de Pathway termina mañana ⏰',
+          body: trialShell(
+            '<h1 style="font-family:Fraunces,Georgia,serif;font-size:23px;font-weight:600;color:#1B2E26;margin:0 0 14px;letter-spacing:-.4px;">' + primerNombreGoogle + ', tu prueba termina en 24 h</h1>'
+            + '<p style="font-size:15px;line-height:1.7;color:#3A4A40;margin:0 0 16px;">Si Pathway te está sirviendo, dejá tu suscripción lista para no perder el acceso al panel mañana.</p>'
+            + '<p style="font-size:14px;line-height:1.7;color:#3A4A40;margin:0 0 18px;">Hay dos planes; elegís el que mejor te queda — cancelás cuando quieras, sin permanencia.</p>'
+            + trialCta
+            + '<p style="font-size:13px;color:#5A6A60;margin:18px 0 0;line-height:1.6;">Si no querés seguir, no hace falta hacer nada — el acceso se cierra mañana y no se cobra nada.</p>'
+          )
+        },
+        {
+          days: 15,
+          plantilla: 'trial_day_15_post',
+          subject: 'Tu prueba terminó · ¿Querés seguir en Pathway?',
+          body: trialShell(
+            '<h1 style="font-family:Fraunces,Georgia,serif;font-size:23px;font-weight:600;color:#1B2E26;margin:0 0 14px;letter-spacing:-.4px;">' + primerNombreGoogle + ', tu prueba terminó</h1>'
+            + '<p style="font-size:15px;line-height:1.7;color:#3A4A40;margin:0 0 14px;">Como no te pedimos tarjeta, no se cobró nada. Tu cuenta y tu data <strong>siguen guardadas unos días</strong> por si decidís volver.</p>'
+            + '<p style="font-size:15px;line-height:1.7;color:#3A4A40;margin:0 0 14px;">Si querés seguir usando Pathway con tus clientes:</p>'
+            + trialCta
+            + '<p style="font-size:13px;color:#5A6A60;margin:18px 0 12px;line-height:1.6;">¿Algo te trabó? Respondé este mail y te ayudo — me sirve mucho el feedback.</p>'
+            + '<p style="font-size:13px;color:#5A6A60;margin:0;line-height:1.6;">Si por ahora no, ningún problema. Gracias por probarlo. 🌱</p>'
+          )
+        }
+      ];
+      var trialQueueInserts = trialEmails.map(function(e){
+        return {
           coach_id: usuario.id,
           to_email: email,
           to_nombre: name,
-          subject: '¿Te puedo ayudar a empezar, ' + primerNombreGoogle + '? 🌱',
-          body: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + primerNombreGoogle + ',</h2>'
-            + '<p style="font-size:15px;line-height:1.65;">Me llamo Micaela, soy fundadora de Pathway. Vi que te registraste hace unos minutos pero no llegaste a entrar al panel — supuse que quizás te quedó alguna duda o se te complicó.</p>'
-            + '<p style="font-size:15px;line-height:1.65;">Recordá que tu trial de ' + trialDays + ' días <strong>ya está activo</strong> y <strong>no te pedimos tarjeta</strong> para empezar.</p>'
-            + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/login.html" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Entrar al panel →</a></p>'
-            + '<p style="font-size:13px;color:#666;margin-top:18px;">Cualquier duda, respondé este mail. — Mica</p>',
-          scheduled_at: new Date(nowMs + 5 * 60 * 1000).toISOString(),
-          plantilla_id: 'recovery_5min'
-        }])
+          subject: e.subject,
+          body: e.body,
+          scheduled_at: new Date(nowMs + e.days * 24 * 60 * 60 * 1000).toISOString(),
+          plantilla_id: e.plantilla
+        };
+      });
+      fetch(SB + '/rest/v1/email_queue', {
+        method: 'POST',
+        headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify(trialQueueInserts)
       }).catch(function(){});
     } catch(e) {
       return showError('Error creando cuenta: ' + e.message);
