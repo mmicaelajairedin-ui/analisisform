@@ -1826,6 +1826,7 @@ function viewAdmin(){
   }).join("");
   var _resenas=(REAL && RADM && RADM.resenas) ? RADM.resenas : [];
   var _revMap={}, _revList=[], _revSum=0, _revN=0;
+  // Fuente 1: contactos_chat (reseñas del form de CV Express)
   _resenas.forEach(function(rv){
     var m=String((rv&&rv.contacto)||"").match(/⭐\s*([0-9-]).*?\(([^)]*)\)\s*:\s*([\s\S]*)/);
     if(!m) return;
@@ -1836,6 +1837,38 @@ function viewAdmin(){
     if(em && !_revMap[em]) _revMap[em]={ st:st, txt:txt };
     _revList.push({ st:st, em:em, txt:txt, f:(""+((rv&&rv.fecha)||"")).slice(0,10) });
   });
+  // Fuente 2: candidatos.resena — reseñas que dejan los clientes Pathway en
+  // su portal (cliente.html, card "Tu reseña"). Soporta formato legacy
+  // ({stars,text}) y nuevo ({coach:{...},plataforma:{...}}). Suma al total
+  // y aparece en "Últimas reseñas" del panel admin.
+  var _candsResena = (REAL && RADM && RADM.cands) ? RADM.cands : [];
+  _candsResena.forEach(function(c){
+    if(!c || !c.resena) return;
+    var parsed;
+    try { parsed = (typeof c.resena==='string') ? JSON.parse(c.resena) : c.resena; }
+    catch(e){ return; }
+    if(!parsed) return;
+    var em = (""+(c.email||"")).toLowerCase().trim();
+    function _addCandEntry(entry, kind){
+      if(!entry || !entry.stars) return;
+      var st = parseInt(entry.stars,10) || 0;
+      if(st<=0) return;
+      var txt = (""+(entry.text||"")).trim();
+      var fkey = "cand:"+(em||"")+"|"+kind;
+      if(_revMap[fkey]) return;
+      _revMap[fkey] = { st:st, txt:txt };
+      _revSum += st; _revN++;
+      _revList.push({ st:st, em:em, txt:txt, f:(""+(entry.date||"")).slice(0,10), kind:kind });
+    }
+    if(parsed.stars !== undefined){
+      _addCandEntry(parsed, 'legacy');
+    } else {
+      if(parsed.coach) _addCandEntry(parsed.coach, 'coach');
+      if(parsed.plataforma) _addCandEntry(parsed.plataforma, 'plataforma');
+    }
+  });
+  // Reordenar lista por fecha descendente
+  _revList.sort(function(a,b){ return (b.f||"").localeCompare(a.f||""); });
   var _revAvg=_revN ? (_revSum/_revN) : 0;
   var _revCard = _revList.length
     ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Últimas reseñas<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+_revN+" · promedio "+(_revAvg?(_revAvg.toFixed(1).replace(".",",")+" ★"):"—")+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
@@ -2919,9 +2952,18 @@ function pwConnect(){
   if(!REAL||!RME||!RME.id){ alert("Iniciá sesión para conectar tu cuenta de cobro."); return; }
   if(_genBusy) return; _genBusy=true; toast("Abriendo Stripe…");
   fetch(SB+"/functions/v1/connect-onboard",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:"onboard",coach_id:RME.id,email:(COACH&&COACH.email)||RME.email||""})})
-    .then(function(r){ return r.ok?r.json():null; })
-    .then(function(j){ _genBusy=false; if(j&&j.url){ window.location.href=j.url; } else { alert("No se pudo abrir la conexión con Stripe. Reintentá en un momento."); } })
-    .catch(function(){ _genBusy=false; alert("No se pudo abrir la conexión con Stripe. Reintentá en un momento."); });
+    .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { ok:r.ok, status:r.status, j:j }; }); })
+    .then(function(res){
+      _genBusy=false;
+      if(res.ok && res.j && res.j.url){ window.location.href=res.j.url; return; }
+      // Mostrar el error real de la edge function para que se pueda diagnosticar.
+      var msg = "No se pudo abrir la conexión con Stripe.";
+      if(res.j && res.j.error){ msg += "\n\n" + res.j.error; }
+      if(res.j && res.j.detail){ msg += "\nDetalle: " + res.j.detail; }
+      if(!res.j){ msg += "\n\nHTTP " + (res.status||"?") + " — la edge function no respondió JSON. Revisá los logs en Supabase → Edge Functions → connect-onboard → Logs."; }
+      alert(msg);
+    })
+    .catch(function(e){ _genBusy=false; alert("Error de red conectando con Stripe.\n\n"+(e&&e.message?e.message:"")); });
 }
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
@@ -2933,7 +2975,7 @@ function loadReal(){
   var extra = ME.rol==="admin"
     ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
         _sb("contactos_chat?select=contacto,pagina,fecha&order=fecha.desc&limit=30"),
-        _sb("candidatos?select=id,created_at,coach_id"),
+        _sb("candidatos?select=id,created_at,coach_id,email,resena"),
         _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
         Promise.resolve([]) ]
     : [ Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]) ];
