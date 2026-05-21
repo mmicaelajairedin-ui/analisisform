@@ -42,8 +42,12 @@
     var max=parseInt(host.getAttribute('data-max'))||6;
     var theme=host.getAttribute('data-theme')||'green';
 
-    fetch(SB+'/rest/v1/candidatos?resena=not.is.null&select=nombre,linkedin,resena&order=created_at.desc',{
-      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+    // apikey duplicado en URL como fallback: si por algún proxy/CORS/cache el
+    // header se pierde, Kong (gateway de Supabase) también acepta apikey en
+    // la query. Sin esto el endpoint devolvía 400 "No API key found in request"
+    // a pesar de mandarse en el header — bug observado en producción.
+    fetch(SB+'/rest/v1/candidatos?resena=not.is.null&select=nombre,linkedin,resena&order=created_at.desc&apikey='+encodeURIComponent(KEY),{
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Accept':'application/json'}
     }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
       var reviews=[];
       rows.forEach(function(c){
