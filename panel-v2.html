@@ -1230,8 +1230,7 @@ function linksCard(){
     : (coachId ? base+"/formulario.html?coach="+encodeURIComponent(coachId) : base+"/formulario.html");
   var myLinks = [
     { tag:"lkProfile", label:"Mi perfil", desc: slug?"Tu landing pública como coach.":"Configura tu slug en Configuración › Perfil.", url: slug? base+"/coach/"+slug : base },
-    { tag:"lkIntake",  label:"Formulario de intake", desc:"El cuestionario para nuevos clientes.", url: base+"/formulario.html"+(coachId?"?coach="+encodeURIComponent(coachId):"") },
-    { tag:"lkSignup",  label:"Alta directa", desc:"El cliente completa su intake vinculado a vos.", url: altaUrl }
+    { tag:"lkIntake",  label:"Formulario de intake", desc:"El cuestionario para nuevos clientes.", url: base+"/formulario.html"+(coachId?"?coach="+encodeURIComponent(coachId):"") }
   ];
   var rows = myLinks.map(function(l){
     return "<div class='cp-link-row'><span class='cp-link-tag'>"+svg(IC[l.tag],16)+"</span>"+
@@ -1239,8 +1238,21 @@ function linksCard(){
       "<code class='cp-link-url'>"+esc(l.url)+"</code>"+
       "<div class='cp-link-actions'>"+copyBtn(l.url)+qBtn(l.url)+oBtn(l.url)+"</div></div>";
   }).join("");
+  // Alta directa por email: el coach pone el email del cliente y le llega un
+  // mail con el link al formulario que SALTA el pago (lleva el access_code).
+  var altaCard = "<div class='cp-card' style='margin-top:16px'><div class='cp-card-hd'>"+
+      "<h3 class='cp-card-title'>Alta directa<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Sin pago</span></div>"+
+    "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+      "<p style='font-size:13px;color:var(--pw-text-soft);line-height:1.5;margin:0'>Para clientes que ya arreglaste por fuera. Poné su email y le llega un mail con el link al formulario — entra directo, <strong>sin pasar por el pago</strong>.</p>"+
+      "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+        "<input id='alta-email' type='email' class='cp-form-input' style='flex:1;min-width:240px' placeholder='Email del cliente'>"+
+        "<button class='cp-btn cp-btn-primary' data-act='alta-invitar'>"+svg(IC.extLink,13)+" Enviar invitación</button>"+
+      "</div>"+
+      "<div id='alta-msg' style='font-size:12.5px;min-height:16px'></div>"+
+    "</div></div>";
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tus links<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>Tu marca</span></div><div class='cp-link-group'>"+rows+"</div></div>";
+      "<span class='cp-eyebrow'>Tu marca</span></div><div class='cp-link-group'>"+rows+"</div></div>"+altaCard;
 }
 
 /* ═══ Configuración panels ═══ */
@@ -2584,6 +2596,40 @@ document.addEventListener("click", function(ev){
   if(act==="mail-copy"){
     try{ navigator.clipboard && navigator.clipboard.writeText(_val("mp-sub")+"\n\n"+_val("mp-body")+sigText()); }catch(e){}
     toast("Texto copiado ✓"); return;
+  }
+  if(act==="alta-invitar"){
+    if(!REAL||!RME||!RME.id){ alert("Iniciá sesión primero."); return; }
+    var aEl=document.getElementById("alta-email"), aMsg=document.getElementById("alta-msg");
+    var aem=((aEl&&aEl.value)||"").trim().toLowerCase();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(aem)){ if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Ingresá un email válido."; } return; }
+    var aBtn=ev.currentTarget; if(aBtn) aBtn.disabled=true;
+    if(aMsg){ aMsg.style.color="var(--pw-text-soft)"; aMsg.textContent="Enviando…"; }
+    var _sendInvite=function(theCode){
+      var link="https://pathwaycareercoach.com/formulario.html?access="+encodeURIComponent(theCode);
+      var cn=(COACH&&COACH.name)||"tu coach";
+      var html="<p style='font-size:15px'>Hola,</p>"+
+        "<p style='font-size:15px;line-height:1.6'>"+esc(cn)+" te invitó a Pathway. Completá tu formulario para empezar — es el primer paso para armar tu plan.</p>"+
+        "<p style='margin:22px 0'><a href='"+link+"' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Completar mi formulario →</a></p>"+
+        "<p style='font-size:13px;color:#777'>O copiá este link: "+esc(link)+"</p>";
+      fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:aem,to_name:"",subject:cn+" te invitó a Pathway — completá tu formulario",html:html,reply_to:(COACH&&COACH.email)||"hi@pathwaycareercoach.com",signature:"coach",coach:{name:cn,email:(COACH&&COACH.email)||"",slug:(RCFG&&RCFG.slug)||"",photo:(COACH&&COACH.photo)||""}})})
+        .then(function(r){ return r.ok; })
+        .then(function(ok){ if(aBtn) aBtn.disabled=false;
+          if(ok){ if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ Invitación enviada a "+aem; } if(aEl) aEl.value=""; }
+          else { if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo enviar. Reintentá."; } } })
+        .catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Sin conexión. Reintentá."; } });
+    };
+    var code=((RCFG&&RCFG.access_code)||"").toString().trim();
+    if(code){ _sendInvite(code); }
+    else {
+      var gen=((RCFG&&RCFG.slug)||"coach").toString().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,24)+"-"+Math.random().toString(36).slice(2,7);
+      var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } merged.access_code=gen;
+      _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged})
+        .then(function(r){ if(!r.ok) throw 0; RCFG=merged;
+          try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
+          _sendInvite(gen); })
+        .catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo preparar el link. Reintentá."; } });
+    }
+    return;
   }
   if(act==="mail-send"){
     if(!isProV()){ alert("Enviar emails al cliente desde el panel es una función Pro (€89/mes). Puedes copiar el texto y mandarlo por WhatsApp o tu correo. La activas en Configuración › Mi plan."); return; }
