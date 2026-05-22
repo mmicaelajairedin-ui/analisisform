@@ -115,11 +115,10 @@ ${avatar}
 </td><td style="vertical-align:middle;">
 <div style="font-weight:700;color:${PW_GREEN};font-size:15px;">${escAttr(nm)}</div>
 <div style="color:#666;font-size:12px;">Career Coach</div>
-<div style="margin-top:6px;font-size:12px;">
-<a href="${escAttr(webHref)}" style="color:${PW_GREEN};text-decoration:none;">${escAttr(web)}</a>${
-    em ? `&nbsp;·&nbsp;<a href="mailto:${escAttr(em)}" style="color:${PW_GREEN};text-decoration:none;">${escAttr(em)}</a>` : ""
+${
+    em ? `<div style="margin-top:6px;font-size:12px;"><a href="mailto:${escAttr(em)}" style="color:${PW_GREEN};text-decoration:none;">${escAttr(em)}</a></div>` : ""
   }
-</div>
+<div style="margin-top:3px;font-size:12px;"><a href="${escAttr(webHref)}" style="color:${PW_GREEN};text-decoration:none;">${escAttr(web)}</a></div>
 </td></tr></table>
 ${brand}`;
 }
