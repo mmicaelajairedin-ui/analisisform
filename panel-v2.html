@@ -464,6 +464,14 @@ function avImg(src, name, attrs){
   var s = (src && (""+src).trim()) ? src : fb;
   return "<img src=\""+esc(s)+"\" onerror=\"this.onerror=null;this.src='"+fb+"'\" alt=\""+esc(name||"")+"\" "+(attrs||"")+">";
 }
+// Avatar chico para las burbujas de chat. Solo muestra foto si es URL real
+// (http). Si no hay foto, devuelve "" (la burbuja queda como estaba).
+function _chatAv(url){
+  return /^https?:\/\//i.test(""+(url||"")) ? "<img src=\""+esc(url)+"\" style=\"width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0\" alt=\"\">" : "";
+}
+// Foto de Pathway/Micaela para las burbujas del admin en el chat de la cabra
+// (cuando el coach no tiene acceso a la foto real del admin en su sesión).
+var ADMIN_PHOTO="https://pathwaycareercoach.com/assets/micaela.jpg";
 
 var COACH = { name:"Micaela Jairedin", firstName:"Micaela", role:"Career Coach", plan:"Pro",
   photo:makeAvatar("Micaela Jairedin",150), slug:"micaela-jairedin", email:"micaela@pathwaycareercoach.com" };
@@ -1054,11 +1062,13 @@ function viewClienteDetalle(c){
       "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
     var _thread=(c.chat&&c.chat.length?c.chat:[]).map(function(m){
       var isCoach=(m&&m.from==="coach");
-      return "<div style='display:flex;justify-content:"+(isCoach?"flex-end":"flex-start")+";margin-bottom:8px'>"+
-        "<div style='max-width:78%;padding:9px 13px;border-radius:"+(isCoach?"14px 4px 14px 14px":"4px 14px 14px 14px")+";background:"+(isCoach?"var(--pw-bosque);color:#fff":"var(--pw-niebla-2);color:var(--pw-carbon)")+";font-size:13px;line-height:1.5'>"+
+      var av=isCoach?_chatAv(COACH&&COACH.photo):_chatAv(c.photo);
+      var bubble="<div style='max-width:78%;padding:9px 13px;border-radius:"+(isCoach?"14px 4px 14px 14px":"4px 14px 14px 14px")+";background:"+(isCoach?"var(--pw-bosque);color:#fff":"var(--pw-niebla-2);color:var(--pw-carbon)")+";font-size:13px;line-height:1.5'>"+
           "<div style='font-size:10px;font-weight:700;opacity:.75;margin-bottom:2px'>"+(isCoach?esc((COACH&&COACH.firstName)||"Vos"):esc(fn||"Cliente"))+"</div>"+
           esc(m&&m.text||"")+
-          "<div style='font-size:10px;opacity:.6;margin-top:3px;text-align:right'>"+esc(m&&m.time||"")+"</div></div></div>";
+          "<div style='font-size:10px;opacity:.6;margin-top:3px;text-align:right'>"+esc(m&&m.time||"")+"</div></div>";
+      return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+(isCoach?"flex-end":"flex-start")+";margin-bottom:8px'>"+
+        (isCoach?(bubble+av):(av+bubble))+"</div>";
     }).join("");
     if(!_thread) _thread="<div style='text-align:center;padding:34px 16px;font-size:13px;color:var(--pw-text-soft)'>Sin mensajes todavía.<br>Escribí abajo para iniciar la conversación con "+esc(fn)+". Le llega directo a su portal.</div>";
     var chatCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Chat directo con "+esc(fn)+"<span class='dot'>.</span></h3>"+
@@ -1669,10 +1679,12 @@ function viewMensajesBody(){
     var color = mine ? "#fff" : "var(--pw-carbon)";
     var align = mine ? "flex-end" : "flex-start";
     var who = mine ? "vos" : "Micaela";
-    return "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;margin-bottom:10px'>"+
+    var av = mine ? _chatAv(COACH&&COACH.photo) : _chatAv(ADMIN_PHOTO);
+    var col = "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='max-width:85%;background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
     "</div>";
+    return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
   }).join("");
   if(!bubbles){
     bubbles = "<div style='text-align:center;padding:24px 12px;color:var(--pw-text-soft);font-size:12.5px'>Sin mensajes todavía. Si te trabaste con algo, escribí abajo y Micaela te responde.</div>";
@@ -1701,6 +1713,7 @@ function viewAdminThreadInCabra(coachId){
   }
   var coach = (RCOACHES||[]).filter(function(u){return String(u.id)===String(coachId);})[0] || {};
   var coachName = coach.nombre || coach.email || "coach";
+  var coachPhoto = coach.foto_url || (coach.configuracion && coach.configuracion.foto_url) || "";
   function fmtTime(s){ try{ return new Date(s).toLocaleString("es-ES",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
   var bubbles = hilo.map(function(m){
     var mine = m.from_admin;
@@ -1708,10 +1721,12 @@ function viewAdminThreadInCabra(coachId){
     var color = mine ? "#fff" : "var(--pw-carbon)";
     var align = mine ? "flex-end" : "flex-start";
     var who = mine ? "vos" : coachName.split(" ")[0];
-    return "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;margin-bottom:10px'>"+
+    var av = mine ? _chatAv((COACH&&COACH.photo)||ADMIN_PHOTO) : _chatAv(coachPhoto);
+    var col = "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='max-width:85%;background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
     "</div>";
+    return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
   }).join("");
   if(!bubbles){
     bubbles = "<div style='text-align:center;padding:24px 12px;color:var(--pw-text-soft);font-size:12.5px'>Sin mensajes con "+esc(coachName.split(" ")[0])+" todavía. Escribí abajo para iniciar.</div>";
