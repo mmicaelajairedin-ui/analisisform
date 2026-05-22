@@ -28,6 +28,8 @@ interface CoachSig {
   email?: string;
   slug?: string;
   photo?: string;
+  logo?: string;   // logo del coach (white-label) — solo se usa si pro=true
+  pro?: boolean;   // plan Pro → marca del coach; Standard → marca Pathway
 }
 
 interface EmailPayload {
@@ -89,9 +91,19 @@ function coachSig(c: CoachSig): string {
   const web = slug ? `pathwaycareercoach.com/coach/${slug}` : "pathwaycareercoach.com";
   const webHref = slug ? `https://pathwaycareercoach.com/coach/${slug}` : "https://pathwaycareercoach.com";
   const initial = (nm.charAt(0) || "·").toUpperCase();
+  const logo = (c.logo || "").trim();
+  const pro = !!c.pro;
   const avatar = photo
     ? `<img src="${escAttr(photo)}" width="48" height="48" alt="${escAttr(nm)}" style="display:block;border-radius:50%;width:48px;height:48px;object-fit:cover;">`
     : `<div style="width:48px;height:48px;border-radius:50%;background:${PW_GREEN};color:#fff;font-weight:700;font-size:20px;line-height:48px;text-align:center;">${escAttr(initial)}</div>`;
+  // Marca al pie: Pro con logo → white-label (logo del coach, sin Pathway).
+  // Standard (o Pro sin logo) → "Powered by Pathway".
+  const brand = (pro && logo)
+    ? `<div style="margin-top:14px;"><img src="${escAttr(logo)}" alt="${escAttr(nm)}" style="height:26px;max-width:160px;object-fit:contain;display:block;"></div>`
+    : `<div style="margin-top:14px;font-size:11px;color:#999;">
+<a href="https://pathwaycareercoach.com" style="color:#999;text-decoration:none;">
+<img src="https://pathwaycareercoach.com/logo-mark.png" width="14" height="14" alt="Pathway" style="vertical-align:middle;border-radius:3px;margin-right:5px;">Powered by Pathway</a>
+</div>`;
   return `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;">
 <table style="border-collapse:collapse;width:100%;"><tr><td style="padding-right:14px;vertical-align:middle;width:56px;">
 ${avatar}
@@ -103,7 +115,8 @@ ${avatar}
     em ? `&nbsp;·&nbsp;<a href="mailto:${escAttr(em)}" style="color:${PW_GREEN};text-decoration:none;">${escAttr(em)}</a>` : ""
   }
 </div>
-</td></tr></table>`;
+</td></tr></table>
+${brand}`;
 }
 
 function wrapHtml(
