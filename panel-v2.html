@@ -1109,9 +1109,13 @@ function viewClienteDetalle(c){
         "<textarea id='cf-notas' class='cp-form-textarea' placeholder='Notas internas sobre este cliente…'>"+esc(c.notas||"")+"</textarea>"+
         "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cli-savemeta' data-id='"+esc(c.id)+"'>Guardar nota</button></div></div></div>"+
       "<div class='cp-card'><div class='cp-card-pad'>"+
+        ((c.raw&&c.raw.activo===false)?"<div style='font-size:12.5px;color:var(--pw-danger);font-weight:600;margin-bottom:10px'>Acceso desactivado — el cliente no puede entrar al portal ni aparece en el chat.</div>":"")+
         "<div style='display:flex;gap:10px;flex-wrap:wrap'><button class='cp-btn cp-btn-primary' data-act='clidet:docs'>Generar informe</button>"+
           "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(fotoWa)+"'>Mensaje al cliente</button>"+
-          "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='cli-archive' data-id='"+esc(c.id)+"'>Archivar cliente</button></div></div></div>";
+          ((c.raw&&c.raw.activo===false)
+            ? "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-bosque);border-color:var(--pw-bosque)' data-act='cli-reactivate' data-id='"+esc(c.id)+"'>Activar acceso</button>"
+            : "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='cli-deactivate' data-id='"+esc(c.id)+"'>Desactivar acceso</button>")+
+        "</div></div></div>";
   } else {
     var rw=c.raw||{};
     var rvf=function(k){ return esc(rw[k]!=null?(""+rw[k]):""); };
@@ -1179,18 +1183,28 @@ function viewClientes(){
     { id:"new",    label:"Nuevos",        test:function(c){return c.week===1;} }
   ];
   if(state.pathwayOptIn) filters.push({ id:"pathway", label:"De Pathway", test:function(c){return c.source==="pathway";} });
+  var isInactive = function(c){ return !!(c.raw && c.raw.activo===false); };
+  filters.push({ id:"inactive", label:"Inactivos", test:isInactive });
   if(state.cliFilter==="pathway" && !state.pathwayOptIn) state.cliFilter="all";
   var active = filters.filter(function(f){return f.id===state.cliFilter;})[0]||filters[0];
-  var list = pool.filter(active.test);
+  // Los desactivados solo se ven en la pestaña "Inactivos"; en el resto se ocultan
+  // para que no ocupen lugar.
+  var list = (state.cliFilter==="inactive")
+    ? pool.filter(isInactive)
+    : pool.filter(function(c){ return !isInactive(c) && active.test(c); });
   var chips = filters.map(function(f){
-    var count = pool.filter(f.test).length;
+    var count = (f.id==="inactive")
+      ? pool.filter(isInactive).length
+      : pool.filter(function(c){ return !isInactive(c) && f.test(c); }).length;
     return "<button class='cp-chip "+(state.cliFilter===f.id?"is-on":"")+"' data-act='cli:"+f.id+"'>"+f.label+
       "<span class='cp-chip-count'>"+count+"</span></button>";
   }).join("");
-  var pwCount = CLIENTS.filter(function(c){return c.source==="pathway";}).length;
+  var pwCount = CLIENTS.filter(function(c){return c.source==="pathway" && !isInactive(c);}).length;
+  var activeCount = pool.filter(function(c){return !isInactive(c);}).length;
+  var inactiveCount = pool.filter(isInactive).length;
   var sub = _exOnly
     ? "Cliente de ejemplo — todavía no tienes clientes propios"
-    : pool.length+" activos · 6 en proceso · 2 en semana de cierre"+
+    : activeCount+" activos"+(inactiveCount?" · "+inactiveCount+" inactivos":"")+
       (state.pathwayOptIn ? " · "+pwCount+" de Pathway" : "");
   var cards = list.map(function(c){
     var medal = c.medal ? "<img class='cp-client-medal' src='assets/iconos/medalla-"+c.medal+".png' alt='Medalla "+c.medal+"'>" : "";
@@ -1761,8 +1775,9 @@ function _chatBandejaRows(includeMica){
     var micaPrev = micaLast ? ((micaLast.from_admin?"Micaela: ":"Vos: ")+prevTxt(micaLast.body)) : "Soporte y dudas de la plataforma";
     rows += row({ key:"mica", name:"Soporte Pathway", avatarHtml:listAv(ADMIN_PHOTO,"Micaela"), preview:micaPrev, time:micaLast?fmtRel(micaLast.created_at):"", unread:micaUnread });
   }
-  // 2) Un item por cada cliente real del coach
+  // 2) Un item por cada cliente real del coach (los desactivados no aparecen)
   (CLIENTS||[]).forEach(function(c){
+    if(c.raw && c.raw.activo===false) return;
     var chat = c.chat||[];
     var last = chat.length ? chat[chat.length-1] : null;
     var prev = last ? ((last.from==="coach"?"Vos: ":((c.name||"").split(" ")[0]+": "))+prevTxt(last.text)) : "Iniciar conversación";
@@ -3079,13 +3094,24 @@ document.addEventListener("click", function(ev){
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
   if(act.indexOf("clivis:")===0){ var vk=act.slice(7); state.cliVis[vk]=!state.cliVis[vk]; render(); return; }
   if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); render(); return; }
-  if(act==="cli-archive"){
+  if(act==="cli-deactivate" || act==="cli-reactivate"){
     var cid=el.getAttribute("data-id");
     if(!cid) return;
-    if(!confirm("¿Archivar este cliente? Deja de aparecer en tu lista. Es reversible (queda inactivo, no se borra).")) return;
-    fetch(SB+"/rest/v1/candidatos?id=eq."+encodeURIComponent(cid),{method:"PATCH",headers:{apikey:KEY,Authorization:"Bearer "+KEY,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({activo:false})})
-      .then(function(r){ if(!r.ok) throw 0; CLIENTS=CLIENTS.filter(function(x){return String(x.id)!==String(cid);}); state.clienteSel=null; render(); })
-      .catch(function(){ alert("No se pudo archivar desde aquí. Podés hacerlo desde tu panel actual."); });
+    var turnOn=(act==="cli-reactivate");
+    var cliRow=CLIENTS.filter(function(x){return String(x.id)===String(cid);})[0];
+    var cliEmail=(cliRow && cliRow.email) ? cliRow.email.toLowerCase().trim() : "";
+    if(!turnOn && !confirm("¿Desactivar el acceso de este cliente? No podrá entrar al portal y deja de aparecer en el chat. Es reversible.")) return;
+    // 1) candidatos.activo controla el acceso al portal (cliente.html lo chequea)
+    //    y la presencia en el chat. 2) usuarios.activo bloquea también el login.
+    _sbw("candidatos?id=eq."+encodeURIComponent(cid),"PATCH",{activo:turnOn})
+      .then(function(r){
+        if(!r.ok) throw 0;
+        if(cliEmail) _sbw("usuarios?email=eq."+encodeURIComponent(cliEmail)+"&rol=eq.cliente","PATCH",{activo:turnOn});
+        CLIENTS.forEach(function(x){ if(String(x.id)===String(cid)){ if(x.raw) x.raw.activo=turnOn; } });
+        toast(turnOn?"Acceso reactivado ✓":"Acceso desactivado ✓");
+        render();
+      })
+      .catch(function(){ alert("No se pudo actualizar el acceso. Reintentá."); });
     return;
   }
   if(act==="cli-new"){
