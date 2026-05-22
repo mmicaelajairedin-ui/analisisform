@@ -1009,7 +1009,7 @@ function viewClienteDetalle(c){
         "<div class='cp-card-pad'>"+hist+"</div></div>";
   } else if(t==="mensajes"){
     _inboxMarkSeen(c.id);
-    var fn=(""+(c.name||"")).split(" ")[0], cn=COACH.name||"tu coach";
+    var fn=greetName(c.name, c.email), cn=COACH.name||"tu coach";
     var pro=isProV();
     var msgs=[
       ["Bienvenida","Hola "+fn+", soy "+cn+", tu coach en Pathway. ¡Bienvenido/a! En breve te comparto tu acceso y arrancamos el proceso."],
@@ -1332,10 +1332,22 @@ function isProV(){
   return c.plan==="pro";
 }
 function proBadge(){ return "<span style='display:inline-flex;align-items:center;font-size:10px;font-weight:800;letter-spacing:.6px;color:#8E7A35;background:rgba(233,196,106,.22);padding:2px 8px;border-radius:100px;text-transform:uppercase;margin-left:8px'>Pro</span>"; }
+// Nombre para el saludo "Hola X" de un email/mensaje. Fuente de verdad:
+//   - si hay nombre → primer nombre ("María García" → "María")
+//   - si solo hay email → la parte antes del @ ("maria@x.com" → "maria")
+//   - si no hay ninguno → "" (el caller decide el fallback)
+// Evita el bug de saludar con el email completo ("Hola maria@x.com").
+function greetName(name, email){
+  var n=(""+(name||"")).trim();
+  if(n) return n.split(/\s+/)[0];
+  var e=(""+(email||"")).trim();
+  if(e.indexOf("@")>0) return e.split("@")[0];
+  return "";
+}
 // Firma del coach al pie del email — Opción 1: foto/iniciales con anillo,
 // nombre, rol · Pathway, etiquetas Email / Web y badge "Powered by Pathway"
 function sigInitial(){ var n=(""+((COACH&&COACH.name)||"·")).trim(); return (n.charAt(0)||"·").toUpperCase(); }
-function sigWeb(){ var s=(COACH&&COACH.slug)||""; return s ? ("pathwaycareercoach.com/"+s) : "pathwaycareercoach.com"; }
+function sigWeb(){ var s=(COACH&&COACH.slug)||""; return s ? ("pathwaycareercoach.com/coach/"+s) : "pathwaycareercoach.com"; }
 function sigBlock(attached){
   // El color de marca en la firma es white-label → solo Pro. Basic = verde Pathway.
   var ac = isProV() ? (state.brandAccent || "#2D6A4F") : "#2D6A4F";
@@ -2566,7 +2578,7 @@ document.addEventListener("click", function(ev){
         sigBlock(true)+
       "</div></body></html>";
     toast("Enviando email…");
-    fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:mto,to_name:(COACH&&COACH.name)||"",subject:msub,html:mhtml,reply_to:mreply})})
+    fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:mto,to_name:(COACH&&COACH.name)||"",subject:msub,html:mhtml,reply_to:mreply,signature:"none"})})
       .then(function(r){ if(!r.ok) throw 0; state.mail.open=false; render(); toast("Email enviado a "+mto+" ✓"); })
       .catch(function(){ alert("No se pudo enviar el email. Reintentá o usá WhatsApp."); });
     return;
@@ -3186,7 +3198,7 @@ document.addEventListener("click", function(ev){
     var rnm=(el.getAttribute("data-n")||"").trim();
     if(!rem){ alert("Esa persona no tiene email."); return; }
     if(!confirm("¿Enviar a "+(rnm||rem)+" un email pidiéndole una reseña de CV Express?")) return;
-    var rfn=(rnm||"").split(" ")[0]||"";
+    var rfn=greetName(rnm, rem);
     var rlink="https://pathwaycareercoach.com/resena.html?email="+encodeURIComponent(rem);
     var rhtml="<!DOCTYPE html><html><body style=\"font-family:Inter,-apple-system,sans-serif;font-size:14px;line-height:1.6;color:#1B4332;max-width:600px;margin:0 auto;padding:24px;background:#FAFDF9;\">"+
       "<h2 style=\"font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;\">Hola "+esc(rfn||"!")+",</h2>"+
@@ -3194,7 +3206,7 @@ document.addEventListener("click", function(ev){
       "<p style=\"margin:22px 0;\"><a href=\""+rlink+"\" style=\"display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;\">Dejar mi reseña →</a></p>"+
       "<p style=\"font-size:13px;color:#5A6A60;margin:0 0 14px;\">Gracias por confiar en Pathway 🌿</p>"+
       sigPathwayHtml()+"</body></html>";
-    fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:rem,to_name:rnm,subject:"¿Nos dejás una reseña? · Pathway",html:rhtml,reply_to:"hi@pathwaycareercoach.com"})})
+    fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:rem,to_name:rnm,subject:"¿Nos dejás una reseña? · Pathway",html:rhtml,reply_to:"hi@pathwaycareercoach.com",signature:"none"})})
       .then(function(r){ if(!r.ok) throw 0; toast("Email de reseña enviado a "+rem+" ✓"); })
       .catch(function(){ alert("No se pudo enviar el email. Reintentá en unos minutos."); });
     return;
