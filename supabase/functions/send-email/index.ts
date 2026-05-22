@@ -104,8 +104,8 @@ function coachSig(c: CoachSig): string {
   // Marca al pie: Pro con logo (URL http) → white-label (logo del coach,
   // sin Pathway). Standard (o sin logo válido) → "Powered by Pathway".
   const brand = (pro && isUrl(logo))
-    ? `<div style="margin-top:14px;"><img src="${escAttr(logo)}" alt="${escAttr(nm)}" style="height:26px;max-width:160px;object-fit:contain;display:block;"></div>`
-    : `<div style="margin-top:14px;font-size:11px;color:#999;">
+    ? `<div style="margin-top:20px;text-align:center;"><img src="${escAttr(logo)}" alt="${escAttr(nm)}" style="height:28px;max-width:180px;object-fit:contain;display:inline-block;"></div>`
+    : `<div style="margin-top:20px;text-align:center;font-size:11px;color:#999;">
 <a href="https://pathwaycareercoach.com" style="color:#999;text-decoration:none;">
 <img src="https://pathwaycareercoach.com/logo-mark.png" width="14" height="14" alt="Pathway" style="vertical-align:middle;border-radius:3px;margin-right:5px;">Powered by Pathway</a>
 </div>`;
