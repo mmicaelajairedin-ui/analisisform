@@ -2347,8 +2347,19 @@ function _renderMain(sec){
   if(sec==='empleos'){
     if(_isValidCache(_secCache.empleos,'empleos')){el.innerHTML=_secCache.empleos;return;}
     _secCache.empleos=null;
-    var _empSector=encodeURIComponent((C&&C.sector)||'');
-    var _empUbi=encodeURIComponent((C&&(C.ubicacion||C.ciudad))||'');
+    var _empSectorRaw=(C&&C.sector)||'';
+    var _empUbiRaw=(C&&(C.ubicacion||C.ciudad))||'';
+    var _empSector=encodeURIComponent(_empSectorRaw);
+    var _empUbi=encodeURIComponent(_empUbiRaw);
+    // Slug para portales que filtran por path (InfoJobs, CompuTrabajo):
+    // minúsculas, sin acentos, espacios → guiones.
+    function _empSlug(s){
+      return (''+(s||'')).toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g,'')
+        .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+    }
+    var _empSectorSlug=_empSlug(_empSectorRaw);
+    var _empUbiSlug=_empSlug(_empUbiRaw);
     el.innerHTML='<div data-sec="empleos" style="padding:1rem 0;">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">'
         +'<div>'
@@ -2364,9 +2375,9 @@ function _renderMain(sec){
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
           +'<a href="https://es.indeed.com/jobs?q='+_empSector+'&l='+_empUbi+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">Indeed</a>'
           +'<a href="https://www.linkedin.com/jobs/search/?keywords='+_empSector+'&location='+_empUbi+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">LinkedIn Jobs</a>'
-          +'<a href="https://www.infojobs.net/" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">InfoJobs</a>'
-          +'<a href="https://www.glassdoor.com/Job/index.htm" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">Glassdoor</a>'
-          +'<a href="https://www.computrabajo.com" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">CompuTrabajo</a>'
+          +'<a href="https://www.infojobs.net/ofertas-trabajo/'+(_empSectorSlug||'')+(_empUbiSlug?'?provincia='+_empUbi:'')+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">InfoJobs</a>'
+          +'<a href="https://www.glassdoor.com/Job/jobs.htm?sc.keyword='+_empSector+'&locKeyword='+_empUbi+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">Glassdoor</a>'
+          +'<a href="https://www.computrabajo.com/ofertas-de-trabajo/?q='+_empSector+(_empUbiSlug?'&l='+_empUbi:'')+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;text-decoration:none;transition:all .15s;">CompuTrabajo</a>'
         +'</div>'
       +'</div>'
       // Contador de postulaciones — refleja lo que el cliente fue marcando
@@ -4506,12 +4517,48 @@ function sendMsg(){
   _syncMsgsToDB(msgs);
 }
 
+// Clave de deduplicación estable: emisor + contenido + timestamp. Así el
+// merge no depende de la longitud del array y no genera duplicados aunque el
+// mismo mensaje venga del local y de la DB.
+function _msgKey(m){
+  return (m&&m.from||'')+'|'+(m&&m.text||'')+'|'+(m&&(m.ts!=null?m.ts:(m.time||'')));
+}
+function _mergeMsgs(a,b){
+  var out=[],seen={};
+  function add(arr){ (arr||[]).forEach(function(m){ if(!m)return; var k=_msgKey(m); if(seen[k])return; seen[k]=true; out.push(m); }); }
+  add(a); add(b);
+  out.sort(function(x,y){
+    var tx=(x&&x.ts!=null)?x.ts:0, ty=(y&&y.ts!=null)?y.ts:0;
+    return tx-ty;
+  });
+  return out;
+}
+
+// Guarda en Supabase SIN pisar lo que escribió el coach: re-lee notas_coach,
+// mergea con los mensajes locales (mismo patrón que el panel del coach) y
+// recién entonces hace PATCH. Refresca el local y la UI con el resultado.
 function _syncMsgsToDB(msgs){
   if(!E)return;
-  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{
-    method:'PATCH',
-    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-    body:JSON.stringify({notas_coach:JSON.stringify(msgs)})
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E)+'&select=notas_coach',{
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+    var dbMsgs=[];
+    if(rows&&rows.length){
+      try{ var parsed=JSON.parse(rows[0].notas_coach||'[]'); if(Array.isArray(parsed)) dbMsgs=parsed; }catch(e){}
+    }
+    var merged=_mergeMsgs(dbMsgs,msgs);
+    return fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{
+      method:'PATCH',
+      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({notas_coach:JSON.stringify(merged)})
+    }).then(function(pr){
+      if(pr&&pr.ok){
+        // Si llegaron mensajes del coach que no estábamos mostrando, refrescar.
+        var grew=(merged.length!==_getMsgs().length);
+        _saveMsgs(merged);
+        if(grew) _renderMsgs();
+      }
+    });
   }).catch(function(){});
 }
 
@@ -4525,13 +4572,17 @@ function _loadMsgsFromDB(){
     var dbMsgs;
     try{dbMsgs=JSON.parse(raw);}catch(e){return;}
     if(!Array.isArray(dbMsgs))return;
-    // Merge: usar la version con mas mensajes
+    // Merge por clave estable (no por longitud): conserva tanto lo local como
+    // lo del coach que llegó mientras tanto, sin duplicar.
     var local=_getMsgs();
-    if(dbMsgs.length>local.length){
-      _saveMsgs(dbMsgs);
+    var merged=_mergeMsgs(local,dbMsgs);
+    if(merged.length!==local.length){
+      _saveMsgs(merged);
       _renderMsgs();
-      // Badge si hay mensajes nuevos del coach
-      var newCoach=dbMsgs.filter(function(m){return m.from==='coach'&&(!m._seen);}).length;
+      // Badge si hay mensajes del coach que no estaban en el local.
+      var localKeys={};
+      local.forEach(function(m){ localKeys[_msgKey(m)]=true; });
+      var newCoach=dbMsgs.filter(function(m){return m&&m.from==='coach'&&!localKeys[_msgKey(m)];}).length;
       if(newCoach>0){
         var badge=document.getElementById('msg-badge');
         if(badge){badge.style.display='flex';badge.textContent=newCoach;}
@@ -4542,6 +4593,25 @@ function _loadMsgsFromDB(){
 
 // Cargar mensajes al iniciar para mostrar badge
 setTimeout(function(){if(E)_loadMsgsFromDB();},2000);
+
+// Polling de mensajes (espejo de startMsgPolling del panel del coach): cada
+// 30 s re-pide notas_coach y, si hay novedades del coach, actualiza la UI.
+// _loadMsgsFromDB solo re-renderiza si cambió la cantidad de mensajes, así que
+// no pisa el borrador que el cliente está tipeando en #msg-input.
+var _msgPollTimer=null;
+function _pollMsgs(){
+  if(!E) return;
+  if(document.visibilityState!=='visible') return;
+  _loadMsgsFromDB();
+}
+function _startMsgPolling(){
+  if(_msgPollTimer) return;
+  _msgPollTimer=setInterval(_pollMsgs,30000);
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState==='visible') _pollMsgs();
+  });
+}
+if(E) _startMsgPolling();
 
 </script>
 </body>
