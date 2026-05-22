@@ -1192,7 +1192,7 @@ function viewClientes(){
         "<span class='cp-client-pill "+rpCls+"'>Informe "+rpTxt+"</span>"+askR+"</footer></article>";
   }).join("");
   var banner = _exOnly
-    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'>Esto es un <strong>cliente de ejemplo</strong> para que veas la plataforma funcionando: abrí su ficha y mirá el <strong>informe</strong> y el <strong>CV generados con IA</strong>, y su <strong>plan semana a semana</strong>. Cuando sumes tu primer cliente real con <strong>Sumar un cliente</strong> (abajo, en Tus links), el ejemplo desaparece.</div>"
+    ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'>Esto es un <strong>cliente de ejemplo</strong> para que veas la plataforma funcionando: abrí su ficha y mirá el <strong>informe</strong> y el <strong>CV generados con IA</strong>, y su <strong>plan semana a semana</strong>. Cuando sumes tu primer cliente real con <strong>Sumar un cliente</strong> (abajo), el ejemplo desaparece.</div>"
     : "";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Clientes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>"+sub+"</div></div>"+
@@ -1213,30 +1213,10 @@ function copyBtn(url){
   return "<button class='cp-icon-btn' data-act='copy' data-url='"+esc(url)+"' title='Copiar'>"+svg(IC.copy,15)+"</button>";
 }
 function linksCard(){
-  var base = "https://pathwaycareercoach.com";
-  var slug = ((REAL ? (RCFG&&RCFG.slug||"") : (COACH&&COACH.slug||"")) || "").toString().trim();
-  var coachId = (REAL && RME && RME.id) ? (""+RME.id) : "";
-  var accessCode = ((REAL ? (RCFG&&RCFG.access_code||"") : "") || "").toString().trim();
-  function oBtn(u){ return "<button class='cp-icon-btn' data-act='open' data-url='"+esc(u)+"' title='Abrir'>"+svg(IC.extLink,15)+"</button>"; }
-  function qBtn(u){ return "<button class='cp-icon-btn' data-act='open' data-url='"+esc("https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="+encodeURIComponent(u))+"' title='Ver QR'>"+svg(IC.qr,15)+"</button>"; }
-  // "Alta directa": el cliente entra al formulario de intake ya vinculado a vos.
-  // formulario.html solo abre con ?access=<código> (lo re-vincula a tu coach_id)
-  // o ?coach=<uuid>. Preferimos el access_code si lo configuraste; si no, el id.
-  var altaUrl = accessCode
-    ? base+"/formulario.html?access="+encodeURIComponent(accessCode)
-    : (coachId ? base+"/formulario.html?coach="+encodeURIComponent(coachId) : base+"/formulario.html");
-  var myLinks = [
-    { tag:"lkProfile", label:"Mi perfil", desc: slug?"Tu landing pública como coach. Compartila para que te encuentren.":"Configura tu slug en Configuración › Perfil.", url: slug? base+"/coach/"+slug : base }
-  ];
-  var rows = myLinks.map(function(l){
-    return "<div class='cp-link-row'><span class='cp-link-tag'>"+svg(IC[l.tag],16)+"</span>"+
-      "<div class='cp-link-info'><div class='cp-link-label'>"+esc(l.label)+"</div><div class='cp-link-desc'>"+esc(l.desc)+"</div></div>"+
-      "<code class='cp-link-url'>"+esc(l.url)+"</code>"+
-      "<div class='cp-link-actions'>"+copyBtn(l.url)+qBtn(l.url)+oBtn(l.url)+"</div></div>";
-  }).join("");
-  // Alta directa por email: el coach pone el email del cliente y le llega un
-  // mail con el link al formulario que SALTA el pago (lleva el access_code).
-  var altaCard = "<div class='cp-card' style='margin-top:16px'><div class='cp-card-hd'>"+
+  // Alta directa por email: el coach pone nombre + email del cliente y le
+  // llega un mail con el link al formulario que SALTA el pago (lleva el
+  // access_code). "Mi perfil" vive en el sidebar, no se duplica acá.
+  return "<div class='cp-card'><div class='cp-card-hd'>"+
       "<h3 class='cp-card-title'>Sumar un cliente<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>Sin pago</span></div>"+
     "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
@@ -1248,8 +1228,6 @@ function linksCard(){
       "</div>"+
       "<div id='alta-msg' style='font-size:12.5px;min-height:16px'></div>"+
     "</div></div>";
-  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tus links<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>Tu marca</span></div><div class='cp-link-group'>"+rows+"</div></div>"+altaCard;
 }
 
 /* ═══ Configuración panels ═══ */
@@ -3355,10 +3333,25 @@ function cvxGrantAccess(emails, gbtn, clearInput){
 document.addEventListener("change", function(ev){
   if(!ev.target || ev.target.id!=="cfp-foto") return;
   var f=ev.target.files && ev.target.files[0]; if(!f) return;
-  if(f.size > 2*1024*1024){ alert("La foto no puede pesar más de 2 MB."); ev.target.value=""; return; }
-  var rd=new FileReader();
-  rd.onload=function(e){ window._cfpFoto=e.target.result; var im=document.getElementById("cfp-foto-prev"); if(im) im.src=e.target.result; toast("Foto lista — pulsa Guardar cambios"); };
-  rd.readAsDataURL(f);
+  if(f.size > 5*1024*1024){ alert("La foto no puede pesar más de 5 MB."); ev.target.value=""; return; }
+  // Subir a Uploadcare → guardamos la URL del CDN (no base64). El base64 NO
+  // se ve en emails (Gmail lo bloquea) y engorda el mensaje. La URL sirve
+  // para la web, el perfil público y la firma de los emails por igual.
+  toast("Subiendo foto…");
+  var fd=new FormData();
+  fd.append("UPLOADCARE_PUB_KEY","00db798991682d2a4da2");
+  fd.append("UPLOADCARE_STORE","1");
+  fd.append("file",f);
+  fetch("https://upload.uploadcare.com/base/",{method:"POST",body:fd})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d || !d.file) throw 0;
+      var url="https://ucarecdn.com/"+d.file+"/";
+      window._cfpFoto=url;
+      var im=document.getElementById("cfp-foto-prev"); if(im) im.src=url;
+      toast("Foto lista — pulsá Guardar cambios");
+    })
+    .catch(function(){ alert("No se pudo subir la foto. Reintentá."); });
 });
 
 document.addEventListener("input", function(ev){
