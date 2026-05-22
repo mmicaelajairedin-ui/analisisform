@@ -99,8 +99,8 @@ function coachSig(c: CoachSig): string {
   // caemos a la inicial (HTML puro, siempre se ve y no pesa).
   const isUrl = (u: string) => /^https?:\/\//i.test(u);
   const avatar = isUrl(photo)
-    ? `<img src="${escAttr(photo)}" width="48" height="48" alt="${escAttr(nm)}" style="display:block;border-radius:50%;width:48px;height:48px;object-fit:cover;">`
-    : `<div style="width:48px;height:48px;border-radius:50%;background:${PW_GREEN};color:#fff;font-weight:700;font-size:20px;line-height:48px;text-align:center;">${escAttr(initial)}</div>`;
+    ? `<img src="${escAttr(photo)}" width="64" height="64" alt="${escAttr(nm)}" style="display:block;border-radius:50%;width:64px;height:64px;object-fit:cover;">`
+    : `<div style="width:64px;height:64px;border-radius:50%;background:${PW_GREEN};color:#fff;font-weight:700;font-size:26px;line-height:64px;text-align:center;">${escAttr(initial)}</div>`;
   // Marca al pie: Pro con logo (URL http) → white-label (logo del coach,
   // sin Pathway). Standard (o sin logo válido) → "Powered by Pathway".
   const brand = (pro && isUrl(logo))
@@ -110,7 +110,7 @@ function coachSig(c: CoachSig): string {
 <img src="https://pathwaycareercoach.com/logo-mark.png" width="14" height="14" alt="Pathway" style="vertical-align:middle;border-radius:3px;margin-right:5px;">Powered by Pathway</a>
 </div>`;
   return `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;">
-<table style="border-collapse:collapse;width:100%;"><tr><td style="padding-right:14px;vertical-align:middle;width:56px;">
+<table style="border-collapse:collapse;width:100%;"><tr><td style="padding-right:16px;vertical-align:middle;width:72px;">
 ${avatar}
 </td><td style="vertical-align:middle;">
 <div style="font-weight:700;color:${PW_GREEN};font-size:15px;">${escAttr(nm)}</div>
