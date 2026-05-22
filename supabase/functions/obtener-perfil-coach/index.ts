@@ -20,6 +20,7 @@ const CORS_HEADERS = {
 
 const SELECT_FIELDS = [
   "id",
+  "email",
   "nombre",
   "slug",
   "titulo_profesional",
@@ -35,6 +36,7 @@ const SELECT_FIELDS = [
 
 interface UsuarioRow {
   id: string;
+  email: string | null;
   nombre: string | null;
   slug: string | null;
   titulo_profesional: string | null;
@@ -133,6 +135,11 @@ Deno.serve(async (req: Request) => {
       atiende: row.atiende,
       anios_experiencia: row.anios_experiencia,
       calendly_url: str("calendly_url"),
+      // Canales de contacto de respaldo: si el coach no tiene Calendly, el
+      // perfil público igual muestra un CTA (WhatsApp si lo configuró, si no
+      // un mailto a su email de login). Así el perfil nunca queda sin acción.
+      whatsapp: str("whatsapp"),
+      contacto_email: row.email,
       foto_perfil_url: row.foto_url,
       linkedin_url: str("linkedin_url"),
       instagram_url: str("instagram_url"),

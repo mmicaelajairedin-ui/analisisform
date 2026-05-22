@@ -23,6 +23,13 @@
 //     })
 //   });
 
+interface CoachSig {
+  name?: string;
+  email?: string;
+  slug?: string;
+  photo?: string;
+}
+
 interface EmailPayload {
   to: string;
   to_name?: string;
@@ -32,6 +39,12 @@ interface EmailPayload {
   from_email?: string;
   from_name?: string;
   reply_to?: string;
+  // Firma a añadir al pie. Una sola firma por email:
+  //   "pathway" (default) → firma de Pathway
+  //   "coach"             → firma del coach (usa el objeto `coach`)
+  //   "none"              → el html ya trae su propia firma, no añadir nada
+  signature?: "pathway" | "coach" | "none";
+  coach?: CoachSig;
 }
 
 const CORS_HEADERS = {
@@ -40,23 +53,73 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "content-type, authorization",
 };
 
-function wrapHtml(innerHtml: string): string {
-  return `<!DOCTYPE html><html><body style="font-family:Inter,-apple-system,sans-serif;font-size:14px;line-height:1.6;color:#1B4332;max-width:620px;margin:0 auto;padding:24px;background:#FAFDF9;">
-<div style="background:#fff;border-radius:14px;padding:28px 24px;box-shadow:0 2px 12px rgba(27,46,38,.04);">
-${innerHtml}
-</div>
-<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;">
+// Verde Pathway oscuro — usado como color de marca en emails.
+const PW_GREEN = "#1F5740";
+
+function escAttr(s: unknown): string {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Firma de Pathway (emails enviados por la plataforma).
+function pathwaySig(): string {
+  return `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;">
 <table style="border-collapse:collapse;width:100%;"><tr><td style="padding-right:14px;vertical-align:middle;width:56px;">
 <img src="https://pathwaycareercoach.com/logo-mark.png" width="48" height="48" alt="Pathway" style="display:block;border-radius:8px;">
 </td><td style="vertical-align:middle;">
-<div style="font-weight:700;color:#1B4332;font-size:15px;">Pathway</div>
+<div style="font-weight:700;color:${PW_GREEN};font-size:15px;">Pathway</div>
 <div style="color:#666;font-size:12px;">Plataforma SaaS para coaches de carrera</div>
 <div style="margin-top:6px;font-size:12px;">
-<a href="https://pathwaycareercoach.com" style="color:#2D6A4F;text-decoration:none;">pathwaycareercoach.com</a>
+<a href="https://pathwaycareercoach.com" style="color:${PW_GREEN};text-decoration:none;">pathwaycareercoach.com</a>
 &nbsp;·&nbsp;
-<a href="mailto:hi@pathwaycareercoach.com" style="color:#2D6A4F;text-decoration:none;">hi@pathwaycareercoach.com</a>
+<a href="mailto:hi@pathwaycareercoach.com" style="color:${PW_GREEN};text-decoration:none;">hi@pathwaycareercoach.com</a>
 </div>
-</td></tr></table>
+</td></tr></table>`;
+}
+
+// Firma del coach (emails que el coach manda a su cliente). Si el coach no
+// tiene foto, mostramos un avatar con su inicial. Apunta a su web pública
+// pathwaycareercoach.com/coach/{slug} (o al dominio raíz si no hay slug).
+function coachSig(c: CoachSig): string {
+  const nm = (c.name || "Tu coach").trim();
+  const em = (c.email || "").trim();
+  const slug = (c.slug || "").trim();
+  const photo = (c.photo || "").trim();
+  const web = slug ? `pathwaycareercoach.com/coach/${slug}` : "pathwaycareercoach.com";
+  const webHref = slug ? `https://pathwaycareercoach.com/coach/${slug}` : "https://pathwaycareercoach.com";
+  const initial = (nm.charAt(0) || "·").toUpperCase();
+  const avatar = photo
+    ? `<img src="${escAttr(photo)}" width="48" height="48" alt="${escAttr(nm)}" style="display:block;border-radius:50%;width:48px;height:48px;object-fit:cover;">`
+    : `<div style="width:48px;height:48px;border-radius:50%;background:${PW_GREEN};color:#fff;font-weight:700;font-size:20px;line-height:48px;text-align:center;">${escAttr(initial)}</div>`;
+  return `<hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;">
+<table style="border-collapse:collapse;width:100%;"><tr><td style="padding-right:14px;vertical-align:middle;width:56px;">
+${avatar}
+</td><td style="vertical-align:middle;">
+<div style="font-weight:700;color:${PW_GREEN};font-size:15px;">${escAttr(nm)}</div>
+<div style="color:#666;font-size:12px;">Career Coach</div>
+<div style="margin-top:6px;font-size:12px;">
+<a href="${escAttr(webHref)}" style="color:${PW_GREEN};text-decoration:none;">${escAttr(web)}</a>${
+    em ? `&nbsp;·&nbsp;<a href="mailto:${escAttr(em)}" style="color:${PW_GREEN};text-decoration:none;">${escAttr(em)}</a>` : ""
+  }
+</div>
+</td></tr></table>`;
+}
+
+function wrapHtml(
+  innerHtml: string,
+  signature: "pathway" | "coach" | "none",
+  coach?: CoachSig,
+): string {
+  let sig = "";
+  if (signature === "pathway") sig = pathwaySig();
+  else if (signature === "coach") sig = coachSig(coach || {});
+  // signature === "none" → el html ya trae su firma; no añadir nada.
+  return `<!DOCTYPE html><html><body style="font-family:Inter,-apple-system,sans-serif;font-size:14px;line-height:1.6;color:${PW_GREEN};max-width:620px;margin:0 auto;padding:24px;background:#FAFDF9;">
+<div style="background:#fff;border-radius:14px;padding:28px 24px;box-shadow:0 2px 12px rgba(27,46,38,.04);">
+${innerHtml}
+</div>
+${sig}
 </body></html>`;
 }
 
@@ -104,7 +167,10 @@ Deno.serve(async (req: Request) => {
     to: [{ email: body.to, name: body.to_name || body.to }],
     subject: body.subject,
   };
-  if (body.html) payload.htmlContent = wrapHtml(body.html);
+  if (body.html) {
+    const sig = body.signature || "pathway";
+    payload.htmlContent = wrapHtml(body.html, sig, body.coach);
+  }
   // Microsoft (Hotmail/Outlook) prioriza correos multipart con alternativa
   // de texto plano. Si no vino text, lo derivamos del html.
   if (body.text) {
