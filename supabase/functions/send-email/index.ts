@@ -93,12 +93,17 @@ function coachSig(c: CoachSig): string {
   const initial = (nm.charAt(0) || "·").toUpperCase();
   const logo = (c.logo || "").trim();
   const pro = !!c.pro;
-  const avatar = photo
+  // Solo usamos imágenes con URL http(s). Las data: URIs (fotos subidas en
+  // base64) NO se muestran en Gmail/Outlook Y engordan el email hasta que
+  // el cliente lo recorta ("Mensaje recortado"). Si la foto es base64,
+  // caemos a la inicial (HTML puro, siempre se ve y no pesa).
+  const isUrl = (u: string) => /^https?:\/\//i.test(u);
+  const avatar = isUrl(photo)
     ? `<img src="${escAttr(photo)}" width="48" height="48" alt="${escAttr(nm)}" style="display:block;border-radius:50%;width:48px;height:48px;object-fit:cover;">`
     : `<div style="width:48px;height:48px;border-radius:50%;background:${PW_GREEN};color:#fff;font-weight:700;font-size:20px;line-height:48px;text-align:center;">${escAttr(initial)}</div>`;
-  // Marca al pie: Pro con logo → white-label (logo del coach, sin Pathway).
-  // Standard (o Pro sin logo) → "Powered by Pathway".
-  const brand = (pro && logo)
+  // Marca al pie: Pro con logo (URL http) → white-label (logo del coach,
+  // sin Pathway). Standard (o sin logo válido) → "Powered by Pathway".
+  const brand = (pro && isUrl(logo))
     ? `<div style="margin-top:14px;"><img src="${escAttr(logo)}" alt="${escAttr(nm)}" style="height:26px;max-width:160px;object-fit:contain;display:block;"></div>`
     : `<div style="margin-top:14px;font-size:11px;color:#999;">
 <a href="https://pathwaycareercoach.com" style="color:#999;text-decoration:none;">
