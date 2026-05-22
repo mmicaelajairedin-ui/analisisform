@@ -466,8 +466,10 @@ function avImg(src, name, attrs){
 }
 // Avatar chico para las burbujas de chat. Solo muestra foto si es URL real
 // (http). Si no hay foto, devuelve "" (la burbuja queda como estaba).
-function _chatAv(url){
-  return /^https?:\/\//i.test(""+(url||"")) ? "<img src=\""+esc(url)+"\" style=\"width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0\" alt=\"\">" : "";
+function _chatAv(url, name){
+  if(/^https?:\/\//i.test(""+(url||""))) return "<img src=\""+esc(url)+"\" style=\"width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0\" alt=\"\">";
+  var ini=(""+(name||"")).trim().split(/\s+/).map(function(w){return w.charAt(0)||"";}).slice(0,2).join("").toUpperCase()||"?";
+  return "<div style=\"width:28px;height:28px;border-radius:50%;background:var(--pw-bosque);color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700\">"+esc(ini)+"</div>";
 }
 // Foto de Pathway/Micaela para las burbujas del admin en el chat de la cabra
 // (cuando el coach no tiene acceso a la foto real del admin en su sesión).
@@ -602,6 +604,9 @@ var state = {
   msgDraft: "",
   msgAdminDraft: "",
   aiThread: null,  // coach_id del hilo abierto dentro de la cabra (admin)
+  aiCoachThread: null,  // hilo abierto en la bandeja del coach: "mica" (soporte) o id de cliente
+  aiTabTouched: false,  // true si el coach tocó las tabs de la cabra (no auto-saltar a mensajes)
+  adminMsgTab: "coaches",  // pestaña de la bandeja del admin (futuro: más pestañas)
   clienteSel: null,
   cliDetTab: "perfil",
   cliWeek: null,
@@ -1062,7 +1067,7 @@ function viewClienteDetalle(c){
       "<span class='cp-eyebrow'>Plantillas para "+esc(fn)+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
     var _thread=(c.chat&&c.chat.length?c.chat:[]).map(function(m){
       var isCoach=(m&&m.from==="coach");
-      var av=isCoach?_chatAv(COACH&&COACH.photo):_chatAv(c.photo);
+      var av=isCoach?_chatAv(COACH&&COACH.photo,(COACH&&COACH.name)):_chatAv(c.photo,c.name);
       var bubble="<div style='max-width:78%;padding:9px 13px;border-radius:"+(isCoach?"14px 4px 14px 14px":"4px 14px 14px 14px")+";background:"+(isCoach?"var(--pw-bosque);color:#fff":"var(--pw-niebla-2);color:var(--pw-carbon)")+";font-size:13px;line-height:1.5'>"+
           "<div style='font-size:10px;font-weight:700;opacity:.75;margin-bottom:2px'>"+(isCoach?esc((COACH&&COACH.firstName)||"Vos"):esc(fn||"Cliente"))+"</div>"+
           esc(m&&m.text||"")+
@@ -1078,7 +1083,11 @@ function viewClienteDetalle(c){
           "<input id='chatmsg' class='cp-form-input' style='flex:1' placeholder='Escribí un mensaje para "+esc(fn)+"…' onkeydown=\"if(event.key==='Enter'){event.preventDefault();var b=document.querySelector('[data-act=chat-cli-send]');if(b)b.click();}\">"+
           "<button class='cp-btn cp-btn-primary' style='padding:0 18px' data-act='chat-cli-send' data-id='"+esc(c.id)+"'>Enviar</button></div>"+
         "<span class='cp-form-hint'>Es un chat directo, más informal que un email. El cliente lo ve en la burbuja de mensajes de su portal.</span></div></div>";
-    body=chatCard+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Plantillas de email<span class='dot'>.</span></h3>"+
+    // El chat directo con el cliente ahora vive en la cabra (bandeja
+    // centralizada). Acá solo quedan las plantillas de email. _thread/chatCard
+    // se mantienen definidos arriba como código muerto.
+    void chatCard;
+    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Plantillas de email<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>Para "+esc(fn)+"</span></div>"+
       "<div class='cp-card-pad'><p style='font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.55'><strong>Enviar email</strong> manda el mensaje directo al cliente con tu nombre y tu marca — es una función "+(pro?"Pro (activa)":"Pro")+". WhatsApp, email manual y copiar están siempre disponibles.</p></div>"+
       "<div class='cp-card-pad' style='padding-top:0;display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
@@ -1656,12 +1665,14 @@ function cfgPathway(){
       "<div style='padding:16px 22px;display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(STRIPE_PORTAL)+"'>Abrir Stripe "+svg(IC.extLink,11)+"</button></div></div>";
   return toggleCard+pricesCard+earnings;
 }
-/* ═══ Mensajes admin ↔ coach — renderiza DENTRO del panel del asistente
- * (la burbuja flotante). El coach lo abre desde la cabra, no desde un
- * item de sidebar (decisión: no agregar otra entrada de navegación).
- * Al cambiar a la tab "mensajes" se marcan como leídos los del admin.
+/* ═══ Mensajes — bandeja centralizada del coach DENTRO de la cabra ═══
+ * Una sola bandeja con TODAS las conversaciones del coach:
+ *   - "Soporte Pathway" (chat con Micaela / admin, tabla mensajes_admin_coach)
+ *   - un hilo por cada cliente (chat coach↔cliente, candidatos.notas_coach)
+ * state.aiCoachThread guarda el hilo abierto: "mica" o el id del cliente.
+ * Al abrir el hilo de Mica se marcan como leídos los mensajes del admin.
  */
-function viewMensajesBody(){
+function _coachMicaBubbles(){
   var hilo = (RMSG||[]).slice().sort(function(a,b){ return new Date(a.created_at)-new Date(b.created_at); });
   if(REAL && RME && hilo.length){
     var unreadIds = hilo.filter(function(m){ return m.from_admin && !m.leido_en && m.id; }).map(function(m){ return m.id; });
@@ -1679,7 +1690,7 @@ function viewMensajesBody(){
     var color = mine ? "#fff" : "var(--pw-carbon)";
     var align = mine ? "flex-end" : "flex-start";
     var who = mine ? "vos" : "Micaela";
-    var av = mine ? _chatAv(COACH&&COACH.photo) : _chatAv(ADMIN_PHOTO);
+    var av = mine ? _chatAv(COACH&&COACH.photo,(COACH&&COACH.name)) : _chatAv(ADMIN_PHOTO,'Micaela');
     var col = "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
       "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
@@ -1689,7 +1700,89 @@ function viewMensajesBody(){
   if(!bubbles){
     bubbles = "<div style='text-align:center;padding:24px 12px;color:var(--pw-text-soft);font-size:12.5px'>Sin mensajes todavía. Si te trabaste con algo, escribí abajo y Micaela te responde.</div>";
   }
-  return "<div class='cp-ai-msgs' style='display:flex;flex-direction:column;gap:0;padding:14px 16px'>"+bubbles+"</div>";
+  return bubbles;
+}
+function _coachClientBubbles(c){
+  var fn = ((c.name||"Cliente")+"").split(" ")[0];
+  var bubbles = (c.chat&&c.chat.length?c.chat:[]).map(function(m){
+    var isCoach=(m&&m.from==="coach");
+    var av=isCoach?_chatAv(COACH&&COACH.photo,(COACH&&COACH.name)):_chatAv(c.photo,c.name);
+    var col = "<div style='display:flex;flex-direction:column;align-items:"+(isCoach?"flex-end":"flex-start")+";gap:3px;max-width:85%'>"+
+      "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+(isCoach?esc((COACH&&COACH.firstName)||"Vos"):esc(fn))+(m&&m.time?" · "+esc(m.time):"")+"</div>"+
+      "<div style='background:"+(isCoach?"var(--pw-bosque);color:#fff":"var(--pw-niebla-2);color:var(--pw-carbon)")+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m&&m.text||"")+"</div>"+
+    "</div>";
+    return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+(isCoach?"flex-end":"flex-start")+";margin-bottom:10px'>"+(isCoach?(col+av):(av+col))+"</div>";
+  }).join("");
+  if(!bubbles){
+    bubbles = "<div style='text-align:center;padding:24px 12px;color:var(--pw-text-soft);font-size:12.5px'>Sin mensajes todavía con "+esc(fn)+". Escribí abajo — le llega directo a su portal.</div>";
+  }
+  return bubbles;
+}
+function viewMensajesBody(){
+  // ── Hilo abierto ──────────────────────────────────────────────
+  if(state.aiCoachThread){
+    var backBtn = "<div style='display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--pw-border);background:var(--pw-niebla)'>"+
+      "<button class='cp-btn cp-btn-ghost' data-act='chat-coach-back' style='height:28px;padding:0 10px;font-size:12px'>← Bandeja</button>";
+    if(state.aiCoachThread==="mica"){
+      var headM = backBtn+"<span style='font-size:13px;font-weight:600;color:var(--pw-carbon);margin-left:2px'>Soporte Pathway</span></div>";
+      return headM+"<div class='cp-ai-msgs' style='display:flex;flex-direction:column;gap:0;padding:14px 16px'>"+_coachMicaBubbles()+"</div>";
+    }
+    var cli = (CLIENTS||[]).filter(function(x){ return String(x.id)===String(state.aiCoachThread); })[0];
+    if(!cli){
+      // Cliente ya no existe → volver a la bandeja
+      state.aiCoachThread = null;
+    } else {
+      var headC = backBtn+"<span style='font-size:13px;font-weight:600;color:var(--pw-carbon);margin-left:2px'>"+esc(cli.name||"Cliente")+"</span></div>";
+      return headC+"<div class='cp-ai-msgs' style='display:flex;flex-direction:column;gap:0;padding:14px 16px'>"+_coachClientBubbles(cli)+"</div>";
+    }
+  }
+  // ── Bandeja (lista de conversaciones) ─────────────────────────
+  function fmtRel(s){
+    try{
+      var d = new Date(s), now = new Date();
+      var diffMin = Math.round((now-d)/60000);
+      if(diffMin < 1) return "ahora";
+      if(diffMin < 60) return "hace "+diffMin+" min";
+      var diffH = Math.round(diffMin/60);
+      if(diffH < 24) return "hace "+diffH+" h";
+      return d.toLocaleDateString("es-ES",{day:"2-digit",month:"short"});
+    }catch(e){ return ""; }
+  }
+  function row(opts){
+    // opts: {key, name, avatarHtml, preview, time, unread}
+    var unreadBadge = opts.unread>0
+      ? "<span style='background:var(--pw-danger);color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px;margin-left:6px'>"+opts.unread+"</span>"
+      : "";
+    var bgRow = opts.unread>0 ? "rgba(192,117,110,.06)" : "#fff";
+    return "<div data-act='chat-coach-open' data-thread='"+esc(opts.key)+"' style='display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer;background:"+bgRow+"' onmouseover='this.style.background=\"var(--pw-niebla)\"' onmouseout='this.style.background=\""+bgRow+"\"'>"+
+      (opts.avatarHtml||"")+
+      "<div style='flex:1;min-width:0;display:flex;flex-direction:column;gap:3px'>"+
+        "<div style='display:flex;align-items:center;gap:6px'>"+
+          "<span style='font-weight:"+(opts.unread>0?"700":"600")+";color:var(--pw-carbon);font-size:13.5px'>"+esc(opts.name)+"</span>"+
+          unreadBadge+
+          "<span style='margin-left:auto;font-size:11px;color:var(--pw-text-soft);flex-shrink:0'>"+esc(opts.time||"")+"</span>"+
+        "</div>"+
+        "<div style='font-size:12.5px;color:var(--pw-text-soft);line-height:1.45;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+esc(opts.preview||"Sin mensajes todavía")+"</div>"+
+      "</div></div>";
+  }
+  function prevTxt(s){ var p=(s||"").replace(/\s+/g," ").slice(0,60); if(s&&s.length>60) p+="…"; return p; }
+  // Avatar de lista de 38px, con foto real si la hay e iniciales como fallback.
+  function listAv(url,name){ return avImg(url,name,"style='width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0'"); }
+  var rows = "";
+  // 1) Soporte Pathway (Mica)
+  var micaMsgs = (RMSG||[]).slice().sort(function(a,b){ return new Date(a.created_at)-new Date(b.created_at); });
+  var micaLast = micaMsgs[micaMsgs.length-1];
+  var micaUnread = (RMSG||[]).filter(function(m){ return m.from_admin && !m.leido_en; }).length;
+  var micaPrev = micaLast ? ((micaLast.from_admin?"Micaela: ":"Vos: ")+prevTxt(micaLast.body)) : "Soporte y dudas de la plataforma";
+  rows += row({ key:"mica", name:"Soporte Pathway", avatarHtml:listAv(ADMIN_PHOTO,"Micaela"), preview:micaPrev, time:micaLast?fmtRel(micaLast.created_at):"", unread:micaUnread });
+  // 2) Un item por cada cliente real del coach
+  (CLIENTS||[]).forEach(function(c){
+    var chat = c.chat||[];
+    var last = chat.length ? chat[chat.length-1] : null;
+    var prev = last ? ((last.from==="coach"?"Vos: ":((c.name||"").split(" ")[0]+": "))+prevTxt(last.text)) : "Iniciar conversación";
+    rows += row({ key:String(c.id), name:c.name||"Cliente", avatarHtml:listAv(c.photo,c.name||"Cliente"), preview:prev, time:last?(last.time||""):"", unread:0 });
+  });
+  return "<div style='padding:0'>"+rows+"</div>";
 }
 /* Bandeja del admin: lista de hilos agrupados por coach. Cada fila muestra
  * nombre del coach, último mensaje (preview), tiempo, badge de no-leídos.
@@ -1721,7 +1814,7 @@ function viewAdminThreadInCabra(coachId){
     var color = mine ? "#fff" : "var(--pw-carbon)";
     var align = mine ? "flex-end" : "flex-start";
     var who = mine ? "vos" : coachName.split(" ")[0];
-    var av = mine ? _chatAv((COACH&&COACH.photo)||ADMIN_PHOTO) : _chatAv(coachPhoto);
+    var av = mine ? _chatAv((COACH&&COACH.photo)||ADMIN_PHOTO,(COACH&&COACH.name)||'Micaela') : _chatAv(coachPhoto, coachName);
     var col = "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
       "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
@@ -1745,6 +1838,13 @@ function viewMensajesAdminBody(){
   if(state.aiThread){
     return viewAdminThreadInCabra(state.aiThread);
   }
+  // Barra de pestañas de la bandeja admin. Por ahora una sola ("Coaches"),
+  // queda como estructura para futuras categorías. Cosmético, no cambia la
+  // funcionalidad de la lista de hilos.
+  var adminTab = state.adminMsgTab || "coaches";
+  var adminTabsBar = "<div style='display:flex;gap:6px;padding:8px 14px;border-bottom:1px solid var(--pw-border);background:var(--pw-niebla)'>"+
+      "<button class='cp-chip "+(adminTab==="coaches"?"is-on":"")+"' data-act='admin-msgtab:coaches' style='height:28px;padding:0 14px;font-size:12px'>Coaches</button>"+
+    "</div>";
   var byCoach = {};
   (RMSG||[]).forEach(function(m){
     var k = String(m.coach_id||"");
@@ -1760,7 +1860,7 @@ function viewMensajesAdminBody(){
     return new Date(b.last.created_at) - new Date(a.last.created_at);
   });
   if(!threads.length){
-    return "<div style='text-align:center;padding:28px 16px;color:var(--pw-text-soft);font-size:13px'>"+
+    return adminTabsBar+"<div style='text-align:center;padding:28px 16px;color:var(--pw-text-soft);font-size:13px'>"+
       "Todavía no hay conversaciones con coaches. Para empezar una, abrí Admin → Coaches → Ver y escribí desde la ficha."+
     "</div>";
   }
@@ -1794,7 +1894,7 @@ function viewMensajesAdminBody(){
       "<div style='font-size:12.5px;color:var(--pw-text-soft);line-height:1.45'>"+esc(fromLabel)+esc(preview)+"</div>"+
     "</div>";
   }).join("");
-  return "<div style='padding:4px 0'>"+rows+"</div>";
+  return adminTabsBar+"<div style='padding:4px 0'>"+rows+"</div>";
 }
 function viewConfig(){
   if(state.cfg==="services") state.cfg="pathway"; // servicios ahora vive en Clientes de Pathway
@@ -1912,13 +2012,27 @@ function viewAsistente(){
   //   - tab mensajes + coach: textarea para escribir a Mica
   //   - tab mensajes + admin: sin compose (responde abriendo el hilo del coach)
   var footer;
-  if(tab==="mensajes" && !RADMIN){
-    var draft = state.msgDraft || "";
+  if(tab==="mensajes" && !RADMIN && state.aiCoachThread){
+    // Hilo del coach abierto → compose ruteado por chat-coach-send.
+    var cDraft = state.msgDraft || "";
+    var cPh;
+    if(state.aiCoachThread==="mica"){
+      cPh = "Escribí a Micaela…";
+    } else {
+      var _cc = (CLIENTS||[]).filter(function(x){ return String(x.id)===String(state.aiCoachThread); })[0];
+      var _cfn = _cc ? ((_cc.name||"el cliente")+"").split(" ")[0] : "el cliente";
+      cPh = "Escribí un mensaje para "+_cfn+"…";
+    }
     footer = "<div class='cp-ai-compose' style='flex-direction:column;gap:10px;align-items:stretch'>"+
-      "<textarea id='msg-draft' placeholder='Escribí a Micaela…'>"+esc(draft)+"</textarea>"+
+      "<textarea id='coach-chat-draft' placeholder='"+esc(cPh)+"'>"+esc(cDraft)+"</textarea>"+
       "<div style='display:flex;justify-content:flex-end'>"+
-        "<button class='cp-btn cp-btn-primary' data-act='chat-send' style='height:34px;font-size:13px;padding:0 18px' "+(draft.trim()?"":"disabled")+">Enviar</button>"+
+        "<button class='cp-btn cp-btn-primary' data-act='chat-coach-send' style='height:34px;font-size:13px;padding:0 18px' "+(cDraft.trim()?"":"disabled")+">Enviar</button>"+
       "</div></div>";
+  } else if(tab==="mensajes" && !RADMIN){
+    // Bandeja del coach (sin hilo abierto) → hint.
+    footer = "<div class='cp-ai-compose' style='justify-content:center;font-size:12px;color:var(--pw-text-soft)'>"+
+      "Elegí una conversación para responder."+
+    "</div>";
   } else if(tab==="mensajes" && RADMIN && state.aiThread){
     var adraft = state.msgAdminDraft || "";
     footer = "<div class='cp-ai-compose' style='flex-direction:column;gap:10px;align-items:stretch'>"+
@@ -2712,6 +2826,62 @@ document.addEventListener("click", function(ev){
     render();
     return;
   }
+  if(act==="chat-coach-open"){
+    // Click en un item de la bandeja del coach (Soporte Pathway o un cliente).
+    var ckey = el.getAttribute("data-thread");
+    if(!ckey) return;
+    state.aiCoachThread = ckey;   // "mica" o el id del cliente
+    state.msgDraft = "";
+    render();
+    return;
+  }
+  if(act==="chat-coach-back"){
+    // Volver del hilo a la bandeja del coach.
+    state.aiCoachThread = null;
+    state.msgDraft = "";
+    render();
+    return;
+  }
+  if(act==="chat-coach-send"){
+    // Envío desde el footer de la cabra cuando hay un hilo del coach abierto.
+    // Rutea según state.aiCoachThread: "mica" → admin (mensajes_admin_coach),
+    // o un id de cliente → candidatos.notas_coach.
+    var ccThread = state.aiCoachThread;
+    if(!ccThread){ return; }
+    var ccInput = document.getElementById("coach-chat-draft");
+    var ccTxt = ((ccInput && ccInput.value) || state.msgDraft || "").trim();
+    if(!ccTxt){ return; }
+    var ccBtn = ev.currentTarget; if(ccBtn) ccBtn.disabled = true;
+    if(ccThread==="mica"){
+      // ── Coach → admin (Soporte Pathway) ──
+      if(!REAL || !RME || !RME.id){ alert("Iniciá sesión primero."); if(ccBtn) ccBtn.disabled=false; return; }
+      var ccRow = { coach_id: RME.id, from_admin: false, body: ccTxt, created_at: new Date().toISOString() };
+      _sbw("mensajes_admin_coach","POST",ccRow).then(function(r){
+        if(!r.ok){ alert("No se pudo enviar el mensaje. Reintentá."); if(ccBtn) ccBtn.disabled=false; return; }
+        RMSG = (RMSG||[]).concat([ccRow]);
+        state.msgDraft = "";
+        render();
+      });
+      return;
+    }
+    // ── Coach → cliente (chat directo, candidatos.notas_coach) ──
+    if(_genBusy){ if(ccBtn) ccBtn.disabled=false; return; } _genBusy=true;
+    var ccNow=new Date();
+    var ccTime=ccNow.getDate()+"/"+(1+ccNow.getMonth())+" "+ccNow.getHours()+":"+String(ccNow.getMinutes()).padStart(2,"0");
+    var ccMsg={from:"coach",text:ccTxt,time:ccTime,ts:ccNow.getTime()};
+    _sb("candidatos?id=eq."+encodeURIComponent(ccThread)+"&select=notas_coach").then(function(rows){
+      var arr=_chatArr(rows&&rows[0]?rows[0].notas_coach:"[]");
+      arr.push(ccMsg);
+      return _sbw("candidatos?id=eq."+encodeURIComponent(ccThread),"PATCH",{notas_coach:JSON.stringify(arr)}).then(function(r){
+        _genBusy=false;
+        if(!r.ok){ alert("No se pudo enviar el mensaje. Reintentá."); if(ccBtn) ccBtn.disabled=false; return; }
+        CLIENTS.forEach(function(x){ if(String(x.id)===String(ccThread)){ x.chat=arr; if(x.raw) x.raw.notas_coach=JSON.stringify(arr); } });
+        state.msgDraft = "";
+        render();
+      });
+    }).catch(function(){ _genBusy=false; alert("No se pudo enviar el mensaje. Reintentá."); if(ccBtn) ccBtn.disabled=false; });
+    return;
+  }
   if(act==="chat-cabra-back"){
     // Volver de la conversación a la bandeja, dentro de la cabra.
     state.aiThread = null;
@@ -3269,18 +3439,30 @@ document.addEventListener("click", function(ev){
     // Si hay mensajes sin leer, abrir directo en la tab Mensajes.
     //   - Coach: mira from_admin=true sin leer
     //   - Admin: mira from_admin=false sin leer
+    var _jumpMsg=false;
     if(RMSG){
       for(var _u=0;_u<RMSG.length;_u++){
         var _mm = RMSG[_u];
         if(!_mm.leido_en && ((RADMIN && !_mm.from_admin) || (!RADMIN && _mm.from_admin))){
-          state.ai.tab="mensajes"; break;
+          _jumpMsg=true; break;
         }
       }
     }
+    // Coach con onboarding completo: arrancar en Mensajes (no en la lista de
+    // tareas ya cumplidas), salvo que ya haya tocado las tabs a mano.
+    if(!RADMIN && !state.aiTabTouched){
+      try{
+        var _stx=computeSteps();
+        var _allDone = !_stx.filter(function(s){return !s.done;})[0];
+        if(_allDone) _jumpMsg=true;
+      }catch(e){}
+    }
+    if(_jumpMsg) state.ai.tab="mensajes";
     render(); return;
   }
-  if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; state.aiThread=null; state.msgAdminDraft=""; render(); return; }
-  if(act.indexOf("ai-tab:")===0){ state.ai.tab=act.slice(7); state.aiThread=null; state.msgAdminDraft=""; render(); return; }
+  if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; state.aiThread=null; state.aiCoachThread=null; state.msgAdminDraft=""; state.msgDraft=""; render(); return; }
+  if(act.indexOf("ai-tab:")===0){ state.ai.tab=act.slice(7); state.aiTabTouched=true; state.aiThread=null; state.aiCoachThread=null; state.msgAdminDraft=""; state.msgDraft=""; render(); return; }
+  if(act.indexOf("admin-msgtab:")===0){ state.adminMsgTab=act.slice(13); render(); return; }
   if(act==="ai-bubble-close"){ ev.stopPropagation(); state.ai.bubbleOpen=false; render(); return; }
   if(act==="asist-go"){
     var _sid=el.getAttribute("data-step");
@@ -3443,6 +3625,13 @@ document.addEventListener("input", function(ev){
     state.msgDraft = ev.target.value || "";
     var sendBtn = document.querySelector("[data-act=chat-send]");
     if(sendBtn) sendBtn.disabled = !state.msgDraft.trim();
+    return;
+  }
+  if(ev.target && ev.target.id==="coach-chat-draft"){
+    // Footer de la cabra para el hilo abierto del coach (Soporte o cliente).
+    state.msgDraft = ev.target.value || "";
+    var sendBtnC = document.querySelector("[data-act=chat-coach-send]");
+    if(sendBtnC) sendBtnC.disabled = !state.msgDraft.trim();
     return;
   }
   if(ev.target && ev.target.id==="msg-admin-draft"){
