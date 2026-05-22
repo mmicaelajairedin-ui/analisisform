@@ -1934,20 +1934,30 @@ function viewAsistente(){
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
 function _sha256hex(str){ return crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)).then(function(buf){ return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join(""); }); }
 function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; render(); }); }
-// Email de acceso al coach (alta manual). pass es opcional: solo va cuando
-// el coach es nuevo (recién creado). Para renovaciones, sin contraseña.
-function _sendCoachAccessEmail(email, nombre, pass){
-  var loginUrl="https://pathwaycareercoach.com/login.html";
+// Email de acceso al coach. isNew=true → coach recién creado por el admin:
+// le mandamos a activar su cuenta y ELEGIR su contraseña (link a registro,
+// nunca le mandamos una contraseña). isNew=false → renovación: ya tiene
+// cuenta, solo le avisamos que su acceso está activo (link a login).
+function _sendCoachAccessEmail(email, nombre, isNew){
   var fn=(""+(nombre||"")).split(" ")[0]||"";
   var saludo = fn ? ("Hola "+esc(fn)+",") : "Hola,";
-  var creds = pass
-    ? "<p style='font-size:14px;background:#f4f7f5;padding:12px 14px;border-radius:8px;line-height:1.7'>Email: <b>"+esc(email)+"</b><br>Contraseña: <b>"+esc(pass)+"</b></p><p style='font-size:13px;color:#777'>Te recomendamos cambiarla cuando entres.</p>"
-    : "<p style='font-size:14px'>Entrá con tu email y tu contraseña de siempre.</p>";
-  var html="<p style='font-size:15px'>"+saludo+"</p>"+
-    "<p style='font-size:15px;line-height:1.6'>Tu acceso a <b>Pathway</b> ya está activo. Entrá a tu panel para configurar tu perfil y empezar a sumar clientes.</p>"+
-    "<p style='margin:22px 0'><a href='"+loginUrl+"' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a mi panel →</a></p>"+
-    creds;
-  return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:"Tu acceso a Pathway",html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){});
+  var html, subject;
+  if(isNew){
+    var activarUrl="https://pathwaycareercoach.com/registro.html?email="+encodeURIComponent(email);
+    subject="Activá tu cuenta de Pathway";
+    html="<p style='font-size:15px'>"+saludo+"</p>"+
+      "<p style='font-size:15px;line-height:1.6'>Te dimos acceso a <b>Pathway</b>. Para entrar, activá tu cuenta y elegí tu contraseña — toma 1 minuto.</p>"+
+      "<p style='margin:22px 0'><a href='"+activarUrl+"' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Activar mi cuenta →</a></p>"+
+      "<p style='font-size:13px;color:#777'>Usá este mismo email ("+esc(email)+") al activar.</p>";
+  } else {
+    var loginUrl="https://pathwaycareercoach.com/login.html";
+    subject="Tu acceso a Pathway está activo";
+    html="<p style='font-size:15px'>"+saludo+"</p>"+
+      "<p style='font-size:15px;line-height:1.6'>Tu acceso a <b>Pathway</b> ya está activo. Entrá a tu panel para configurar tu perfil y sumar clientes.</p>"+
+      "<p style='margin:22px 0'><a href='"+loginUrl+"' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a mi panel →</a></p>"+
+      "<p style='font-size:14px'>Entrá con tu email y tu contraseña de siempre.</p>";
+  }
+  return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:subject,html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){});
 }
 function _coachDetailCard(){
   var c=(RCOACHES||[]).filter(function(u){return String(u.id)===String(state.coachSel);})[0];
@@ -2316,9 +2326,10 @@ function viewAdmin(){
         "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Dar acceso a un coach<span class='dot'>.</span></h3>"+
           "<span class='cp-eyebrow'>Suma días de acceso · fuera de Stripe</span></div>"+
           "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
-            "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5'>Poné el email del coach y los días de acceso. El coach tiene que <strong>haberse registrado primero</strong> en pathwaycareercoach.com/registro.html (ahí elige su contraseña). Acá solo le activás/extendés el acceso.</div>"+
+            "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5'>Poné el email, el nombre y los días. Si el coach es nuevo, le llega un mail para <strong>activar su cuenta y elegir su contraseña</strong> (vos no manejás contraseñas). Si ya existe, le sumás los días.</div>"+
             "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
-              "<input id='cac-email' class='cp-form-input' style='flex:2;min-width:240px' placeholder='email del coach *'>"+
+              "<input id='cac-email' class='cp-form-input' style='flex:2;min-width:220px' placeholder='email del coach *'>"+
+              "<input id='cac-nombre' class='cp-form-input' style='flex:1;min-width:150px' placeholder='nombre del coach *'>"+
               "<input id='cac-dias' class='cp-form-input' type='number' value='30' min='1' max='365' style='width:90px' title='Días de acceso'>"+
               "<button class='cp-btn cp-btn-primary' data-act='coach-access'>"+svg(IC.plus,12)+" Dar acceso</button>"+
             "</div>"+
@@ -2782,6 +2793,7 @@ document.addEventListener("click", function(ev){
   if(act==="coach-access"){
     if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
     var caEmail=(_val("cac-email")||"").trim().toLowerCase();
+    var caNombre=(_val("cac-nombre")||"").trim();
     var caDiasN=parseInt(_val("cac-dias")||"30",10);
     var caDias=Math.max(1,Math.min(365,isNaN(caDiasN)?30:caDiasN));
     var setMsg=function(t,kind){ state.coachMsg=(kind||"…")+":"+t; render(); };
@@ -2796,11 +2808,15 @@ document.addEventListener("click", function(ev){
         if(isNaN(base.getTime())||base.getTime()<Date.now()) base=new Date();
         base.setDate(base.getDate()+caDias);
         var nc=Object.assign({},cf,{plan:cf.plan||"pro",estado_sub:"prueba",fecha_fin_prueba:base.toISOString(),ultima_extension_admin:new Date().toISOString()});
-        return _sbw("usuarios?id=eq."+encodeURIComponent(coachRow.id),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Acceso +"+caDias+"d a "+caEmail+" ✓"); _sendCoachAccessEmail(caEmail, coachRow.nombre||"", null); setMsg("✓ "+caEmail+" tiene acceso hasta "+base.toLocaleDateString("es-ES")+" · email enviado","ok"); reloadCoaches(); });
+        return _sbw("usuarios?id=eq."+encodeURIComponent(coachRow.id),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Acceso +"+caDias+"d a "+caEmail+" ✓"); _sendCoachAccessEmail(caEmail, coachRow.nombre||"", false); setMsg("✓ "+caEmail+" tiene acceso hasta "+base.toLocaleDateString("es-ES")+" · email enviado","ok"); reloadCoaches(); });
       }
       if(anyRow){ setMsg('Ese email ya lo usa un usuario "'+(anyRow.rol||"?")+'", no un coach.',"err"); return; }
-      setMsg("Ese email todavía no es coach. Pedile que se registre primero en pathwaycareercoach.com/registro.html (ahí elige su contraseña) y después le das acceso desde acá.","err"); return;
-    }).catch(function(){ setMsg("Error de conexión. Reintentá.","err"); });
+      // Coach nuevo: lo creamos SIN contraseña (el coach la elige al activar) y
+      // le mandamos un mail para activar su cuenta en registro.html.
+      if(!caNombre){ setMsg("Poné el nombre del coach.","err"); return; }
+      var trialEnd=new Date(Date.now()+caDias*86400000).toISOString();
+      return _sbw("usuarios","POST",{email:caEmail,nombre:caNombre,rol:"coach",activo:true,configuracion:{plan:"pro",estado_sub:"prueba",fecha_fin_prueba:trialEnd,creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){ if(!r.ok) throw 0; toast("Coach creado ✓"); _sendCoachAccessEmail(caEmail, caNombre, true); setMsg("✓ Coach creado. Le enviamos un email para activar su cuenta y elegir su contraseña.","ok"); reloadCoaches(); });
+    }).catch(function(){ setMsg("Error de conexión, o el email ya existe.","err"); });
     return;
   }
   if(act==="coach-toggle"){
