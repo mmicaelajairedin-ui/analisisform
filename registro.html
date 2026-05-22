@@ -276,6 +276,8 @@ function signInWithGoogle(){
 var params = new URLSearchParams(window.location.search);
 var selectedPlan = params.get('plan') || 'anual';
 var photoDataUrl = null;
+// Prefill del email cuando el coach viene del mail de activación (?email=).
+(function(){ var _pe=params.get('email'); if(_pe){ var _el=document.getElementById('email'); if(_el) _el.value=(""+_pe).trim().toLowerCase(); } })();
 
 // ── Init ──
 (function(){
@@ -382,14 +384,20 @@ async function registrar(){
     var hash = await hashPassword(password);
 
     // Verificar si el email ya existe en usuarios
-    var checkRes = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id', {
+    var checkRes = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,password_hash,configuracion', {
       headers: {'apikey': KEY, 'Authorization': 'Bearer ' + KEY}
     });
     var existing = await checkRes.json();
+    // activatingRow: cuenta creada por el admin SIN contraseña (el coach la
+    // activa eligiendo su contraseña). Si ya tiene contraseña → error normal.
+    var activatingRow = null;
     if(existing && existing.length > 0){
-      showError('Ya existe una cuenta con ese email.');
-      btn.disabled = false; loading.style.display = 'none';
-      return;
+      if(existing[0].password_hash){
+        showError('Ya existe una cuenta con ese email.');
+        btn.disabled = false; loading.style.display = 'none';
+        return;
+      }
+      activatingRow = existing[0];
     }
 
     // Crear coach directamente en usuarios (tabla única, no hay coaches separada)
@@ -450,6 +458,15 @@ async function registrar(){
       }).catch(function(){});
     }
 
+    // Activación: conservar los días de acceso que ya cargó el admin
+    // (fecha_fin_prueba) y el flag de creado_por_admin.
+    if(activatingRow && activatingRow.configuracion){
+      var ac = activatingRow.configuracion;
+      if(ac.fecha_fin_prueba) configuracion.fecha_fin_prueba = ac.fecha_fin_prueba;
+      if(ac.creado_por_admin) configuracion.creado_por_admin = true;
+      configuracion.pendiente_activacion = false;
+    }
+
     var userData = {
       email: email,
       password_hash: hash,
@@ -467,16 +484,28 @@ async function registrar(){
       configuracion: configuracion
     };
 
-    var res = await fetch(SB + '/rest/v1/usuarios', {
-      method: 'POST',
-      headers: {
-        'apikey': KEY,
-        'Authorization': 'Bearer ' + KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
-      },
-      body: JSON.stringify(userData)
-    });
+    // Si es activación → PATCH sobre la fila existente. Si no → POST nuevo.
+    var res = activatingRow
+      ? await fetch(SB + '/rest/v1/usuarios?id=eq.' + encodeURIComponent(activatingRow.id), {
+          method: 'PATCH',
+          headers: {
+            'apikey': KEY,
+            'Authorization': 'Bearer ' + KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify(userData)
+        })
+      : await fetch(SB + '/rest/v1/usuarios', {
+          method: 'POST',
+          headers: {
+            'apikey': KEY,
+            'Authorization': 'Bearer ' + KEY,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify(userData)
+        });
 
     if(!res.ok){
       var errBody = await res.text();
