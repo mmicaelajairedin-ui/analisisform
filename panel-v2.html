@@ -997,6 +997,7 @@ function viewClienteDetalle(c){
             "<div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(s.fecha||"")+(s.hora?" · "+esc(s.hora):"")+"</div>"+
             (s.trabajado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.trabajado)+"</div>":"")+
             (s.acordado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>Acordado: "+esc(s.acordado)+"</div>":"")+
+            (s.doc?"<div style='font-size:12px;margin-top:4px'>📎 <a href='"+esc(s.doc)+"' target='_blank' rel='noopener' style='color:var(--pw-bosque);font-weight:600'>"+esc(s.doc_nombre||"Documento")+"</a></div>":"")+
             tHtml+"</div>"; }).join("")
       : "<div style='color:var(--pw-text-soft);font-size:13px'>Todavía no hay sesiones registradas.</div>";
     body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Próxima sesión<span class='dot'>.</span></h3>"+
@@ -1011,6 +1012,7 @@ function viewClienteDetalle(c){
         "<div class='cp-form-row'><label class='cp-form-label'>Tema / qué se trabajó</label><input id='ss-tema' class='cp-form-input' placeholder='Ej: Estrategia de CV'></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Acordado / próximos pasos</label><textarea id='ss-acor' class='cp-form-textarea' placeholder='Qué quedó acordado…'></textarea></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Tareas para el cliente (una por línea)</label><textarea id='ss-tareas' class='cp-form-textarea' placeholder='Una tarea por línea. El cliente las marca como hechas en su portal.'></textarea><span class='cp-form-hint'>Aparecen en el portal del cliente con un check que él va marcando.</span></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Documento para el cliente (opcional)</label><input id='ss-doc' type='file' class='cp-form-input' accept='.pdf,.doc,.docx,.png,.jpg,.jpeg,.txt'><span class='cp-form-hint'>Se adjunta a la sesión. El cliente lo ve y lo descarga desde su portal.</span></div>"+
         "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='ses-add' data-id='"+esc(c.id)+"'>Guardar sesión</button></div></div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+ordered.length+" sesiones</span></div>"+
@@ -3187,11 +3189,21 @@ document.addEventListener("click", function(ev){
     if(!f){ alert("Poné al menos la fecha."); return; }
     var pc=CLIENTS.filter(function(x){return String(x.id)===String(pid);})[0];
     if(!pc) return;
-    var arr=(pc.ses||[]).slice();
-    arr.push({fecha:f,hora:_val("ss-hora"),trabajado:_val("ss-tema").trim(),acordado:_val("ss-acor").trim(),acciones:_val("ss-tareas").trim(),tareas_done:[]});
-    _sbw("candidatos?id=eq."+encodeURIComponent(pid),"PATCH",{sesiones_registro:JSON.stringify(arr)})
-      .then(function(r){ if(!r.ok) throw 0; pc.ses=arr; toast("Sesión registrada ✓"); render(); })
-      .catch(function(){ alert("No se pudo guardar la sesión."); });
+    var sesObj={fecha:f,hora:_val("ss-hora"),trabajado:_val("ss-tema").trim(),acordado:_val("ss-acor").trim(),acciones:_val("ss-tareas").trim(),tareas_done:[]};
+    var _saveSes=function(){
+      var arr=(pc.ses||[]).slice(); arr.push(sesObj);
+      _sbw("candidatos?id=eq."+encodeURIComponent(pid),"PATCH",{sesiones_registro:JSON.stringify(arr)})
+        .then(function(r){ if(!r.ok) throw 0; pc.ses=arr; toast("Sesión registrada ✓"); render(); })
+        .catch(function(){ alert("No se pudo guardar la sesión."); });
+    };
+    var docInput=document.getElementById("ss-doc");
+    var docFile=docInput&&docInput.files&&docInput.files[0];
+    if(docFile){
+      if(docFile.size>10*1024*1024){ alert("El documento no puede pesar más de 10 MB."); return; }
+      toast("Subiendo documento…");
+      _uploadDoc(docFile).then(function(url){ sesObj.doc=url; sesObj.doc_nombre=docFile.name; _saveSes(); })
+        .catch(function(e){ console.error("doc upload:",e); alert("No se pudo subir el documento. Reintentá."); });
+    } else { _saveSes(); }
     return;
   }
   if(act==="svc-add"){ state.services.push({name:"",desc:"",price:0,unit:"/sesión"}); state.svcEdit=state.services.length-1; state._svcNew=true; state.cfg="services"; render(); return; }
@@ -3344,6 +3356,21 @@ function _uploadAvatar(fileOrBlob, ext){
     method:"POST",
     headers:{ apikey:KEY, Authorization:"Bearer "+KEY, "Content-Type": (fileOrBlob.type||"image/png"), "x-upsert":"true" },
     body: fileOrBlob
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error("storage "+r.status+" "+t); });
+    return SB+"/storage/v1/object/public/avatars/"+path;
+  });
+}
+// Sube un documento de sesión al storage (mismo bucket público) y devuelve
+// la URL pública. Conserva el nombre original (limpio) en el path.
+function _uploadDoc(f){
+  var id=(REAL&&RME&&RME.id)?RME.id:"anon";
+  var clean=(""+(f.name||"doc")).replace(/[^a-zA-Z0-9._-]/g,"_").slice(-60);
+  var path="doc-"+id+"-"+Date.now()+"-"+clean;
+  return fetch(SB+"/storage/v1/object/avatars/"+encodeURIComponent(path),{
+    method:"POST",
+    headers:{ apikey:KEY, Authorization:"Bearer "+KEY, "Content-Type": (f.type||"application/octet-stream"), "x-upsert":"true" },
+    body: f
   }).then(function(r){
     if(!r.ok) return r.text().then(function(t){ throw new Error("storage "+r.status+" "+t); });
     return SB+"/storage/v1/object/public/avatars/"+path;
