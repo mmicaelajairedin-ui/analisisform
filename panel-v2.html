@@ -785,6 +785,10 @@ function viewResumen(){
   var _nx=null,_now=Date.now();
   CLIENTS.forEach(function(cc){ (cc.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var d=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")); if(isNaN(d)||d.getTime()<_now)return; if(!_nx||d.getTime()<_nx.t)_nx={t:d.getTime(),c:cc,s:s}; }); });
   var _nxTxt=_nx?(esc(_nx.c.name)+" · "+esc(_nx.s.fecha)+(_nx.s.hora?" · "+esc(_nx.s.hora):"")):"Sin reuniones agendadas";
+  var _todayStr=(function(){var d=new Date();return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);})();
+  var _today=[];
+  CLIENTS.forEach(function(cc){ (cc.ses||[]).forEach(function(s){ if(!s||!s.fecha||(""+s.fecha)!==_todayStr)return; _today.push({c:cc,s:s}); }); });
+  _today.sort(function(a,b){ return (""+(a.s.hora||"")).localeCompare(""+(b.s.hora||"")); });
   var calLeft=_emb
     ? "<iframe src='"+esc(_emb)+"' style='border:0;width:100%;height:340px;display:block;border-radius:12px' loading='lazy'></iframe>"
     : "<div style='background:var(--pw-niebla-2);border-radius:12px;padding:28px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Conecta tu calendario (Calendly) en <strong>Configuración</strong> para verlo aquí.</div>";
@@ -807,8 +811,8 @@ function viewResumen(){
         "<span class='cp-action-d'>Informes y CVs listos para devolución.</span>"+
         "<span class='cp-action-cta'>Revisar ahora "+svg(IC.arrowR,14)+"</span></button>"+
       "<button class='cp-action is-today' data-act='nav:clientes'><span class='cp-action-bg'></span><span class='cp-action-tag'>Hoy</span>"+
-        "<span class='cp-action-h'><strong>2 sesiones</strong> en tu agenda</span>"+
-        "<span class='cp-action-d'>Pedro Méndez · 10:30 &nbsp;·&nbsp; Lucía Romero · 16:00</span>"+
+        "<span class='cp-action-h'><strong>"+_today.length+" "+(_today.length===1?"sesión":"sesiones")+"</strong> en tu agenda</span>"+
+        "<span class='cp-action-d'>"+(_today.length?esc(_today.map(function(t){return t.c.name.split(" ")[0]+(t.s.hora?" · "+t.s.hora:"");}).join("  ·  ")):"No tenés sesiones agendadas para hoy.")+"</span>"+
         "<span class='cp-action-cta'>Abrir calendario "+svg(IC.arrowR,14)+"</span></button>"+
       "<button class='cp-action is-risk' data-act='nav:clientes'><span class='cp-action-bg'></span><span class='cp-action-tag'>Riesgo</span>"+
         "<span class='cp-action-h'><strong>"+stale.length+" cliente</strong> sin actividad +7d</span>"+
@@ -1214,12 +1218,20 @@ function copyBtn(url){
 function linksCard(){
   var base = "https://pathwaycareercoach.com";
   var slug = ((REAL ? (RCFG&&RCFG.slug||"") : (COACH&&COACH.slug||"")) || "").toString().trim();
+  var coachId = (REAL && RME && RME.id) ? (""+RME.id) : "";
+  var accessCode = ((REAL ? (RCFG&&RCFG.access_code||"") : "") || "").toString().trim();
   function oBtn(u){ return "<button class='cp-icon-btn' data-act='open' data-url='"+esc(u)+"' title='Abrir'>"+svg(IC.extLink,15)+"</button>"; }
   function qBtn(u){ return "<button class='cp-icon-btn' data-act='open' data-url='"+esc("https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="+encodeURIComponent(u))+"' title='Ver QR'>"+svg(IC.qr,15)+"</button>"; }
+  // "Alta directa": el cliente entra al formulario de intake ya vinculado a vos.
+  // formulario.html solo abre con ?access=<código> (lo re-vincula a tu coach_id)
+  // o ?coach=<uuid>. Preferimos el access_code si lo configuraste; si no, el id.
+  var altaUrl = accessCode
+    ? base+"/formulario.html?access="+encodeURIComponent(accessCode)
+    : (coachId ? base+"/formulario.html?coach="+encodeURIComponent(coachId) : base+"/formulario.html");
   var myLinks = [
     { tag:"lkProfile", label:"Mi perfil", desc: slug?"Tu landing pública como coach.":"Configura tu slug en Configuración › Perfil.", url: slug? base+"/coach/"+slug : base },
-    { tag:"lkIntake",  label:"Formulario de intake", desc:"El cuestionario para nuevos clientes.", url: base+"/formulario.html"+(slug?"?coach="+encodeURIComponent(slug):"") },
-    { tag:"lkSignup",  label:"Alta directa", desc:"El cliente se registra y paga.", url: base+"/alta.html"+(slug?"?ref="+encodeURIComponent(slug):"") }
+    { tag:"lkIntake",  label:"Formulario de intake", desc:"El cuestionario para nuevos clientes.", url: base+"/formulario.html"+(coachId?"?coach="+encodeURIComponent(coachId):"") },
+    { tag:"lkSignup",  label:"Alta directa", desc:"El cliente completa su intake vinculado a vos.", url: altaUrl }
   ];
   var rows = myLinks.map(function(l){
     return "<div class='cp-link-row'><span class='cp-link-tag'>"+svg(IC[l.tag],16)+"</span>"+
