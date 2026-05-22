@@ -3599,7 +3599,47 @@ function loadReal(){
     });
     if(REAL && !CLIENTS.length){ CLIENTS=[EXAMPLE_CLIENT]; }
     render();
+    _migrateFotoToUploadcare();
   }).catch(function(){ render(); });
+}
+
+// Migración automática: las fotos viejas guardadas como base64 (data: URI)
+// no se ven en los emails (Gmail las bloquea) y engordan el mensaje. Cuando
+// el coach abre el panel, si su foto es base64 la subimos UNA vez a
+// Uploadcare y guardamos la URL del CDN. Transparente, sin acción del coach.
+// El avatar SVG generado (placeholder) NO se migra — solo fotos reales.
+function _migrateFotoToUploadcare(){
+  if(!REAL || !RME || !RME.id) return;
+  var foto = (COACH && COACH.photo) || "";
+  if(!/^data:image\/(jpe?g|png|webp|gif);base64,/i.test(foto)) return;
+  if(window._fotoMigrating) return; window._fotoMigrating = true;
+  try{
+    var parts = foto.split(",");
+    var mime = (parts[0].match(/:(.*?);/) || [])[1] || "image/png";
+    var bin = atob(parts[1] || "");
+    var bytes = new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    var blob = new Blob([bytes], { type: mime });
+    var fd = new FormData();
+    fd.append("UPLOADCARE_PUB_KEY","00db798991682d2a4da2");
+    fd.append("UPLOADCARE_STORE","1");
+    fd.append("file", blob, "foto."+((mime.split("/")[1]||"png").replace("jpeg","jpg")));
+    fetch("https://upload.uploadcare.com/base/",{method:"POST",body:fd})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d || !d.file) return;
+        var url = "https://ucarecdn.com/"+d.file+"/";
+        var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } merged.foto_url=url;
+        return _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged,foto_url:url}).then(function(r){
+          if(r && r.ok){ RCFG=merged; COACH.photo=url;
+            try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; mu.foto_url=url; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
+            render();
+          }
+        });
+      })
+      .catch(function(){})
+      .then(function(){ window._fotoMigrating=false; });
+  }catch(e){ window._fotoMigrating=false; }
 }
 
 // Paywall: bloquea si la prueba venció sin suscripción (fiel a panel.html
