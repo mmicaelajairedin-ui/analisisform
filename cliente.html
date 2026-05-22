@@ -3599,12 +3599,17 @@ function rEmpleos(){
 
   if(_empleosCache){ el.innerHTML=_empleosCache; return; }
 
-  // Intentar cargar empleos guardados en localStorage
+  // Intentar cargar empleos guardados en localStorage. Sin expiración:
+  // Mica explícitamente pidió que los empleos persistan para siempre
+  // hasta que el cliente clickee "Actualizar" — preferimos mostrar
+  // empleos viejos a no mostrar nada mientras la IA tarda 20-40s
+  // (y a veces aborta). El timestamp se muestra arriba del listado
+  // para que sepa qué tan vieja es la búsqueda.
   var _savedJobs=localStorage.getItem('mj_empleos_'+(E||''));
   if(_savedJobs){
     try{
       var _sjData=JSON.parse(_savedJobs);
-      if(_sjData&&_sjData.html&&_sjData.ts&&(Date.now()-_sjData.ts)<7*24*3600*1000){
+      if(_sjData && _sjData.html){
         _empleosCache=_sjData.html;
         el.innerHTML=_sjData.html;
         return;
@@ -3682,6 +3687,21 @@ function rEmpleos(){
     var appliedKey='mj_jobs_applied_'+(E||'');
     var applied={};try{applied=JSON.parse(localStorage.getItem(appliedKey)||'{}');}catch(e){applied={};}
 
+    // Reemplazar el banner "Buscando empleos..." por uno con timestamp.
+    // El banner queda DENTRO del cache, así que al volver el cliente ve
+    // 'Actualizado: 21 may' en vez de 'Buscando empleos para vos...'.
+    var _empNow = new Date();
+    var _empStamp = _empNow.toLocaleDateString('es-ES',{day:'numeric',month:'short'})+' · '+_empNow.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    var _empBannerHtml = '<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
+      +'<div><div style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Última búsqueda</div>'
+      +'<div style="font-size:13px;color:var(--text);font-weight:700;font-family:Montserrat,sans-serif;margin-top:2px;">'+_empStamp+'</div></div>'
+      +'<button onclick="refreshEmpleos()" style="padding:7px 14px;font-size:11px;font-weight:700;font-family:Montserrat,sans-serif;background:var(--rose-light);color:var(--rose);border:1.5px solid var(--rose-mid);border-radius:9px;cursor:pointer;">&#8635; Buscar de nuevo</button>'
+    +'</div>';
+    // Reemplazo completo: saca el banner viejo (Buscando empleos...) y deja
+    // solo banner-timestamp + cards. Importante para que el cache no
+    // guarde el estado de loading.
+    el.innerHTML = _empBannerHtml + '<div id="empleos-cards" style="display:flex;flex-direction:column;gap:12px;"></div>';
+    cardsEl = document.getElementById('empleos-cards');
     cardsEl.innerHTML=jobs.map(function(job,jidx){
       var rel=Math.min(100,Math.max(0,job.relevancia||80));
       var relColor=rel>=90?'var(--green)':rel>=75?'var(--rose)':'var(--orange)';
