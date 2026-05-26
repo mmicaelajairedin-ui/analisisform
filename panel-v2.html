@@ -2354,16 +2354,71 @@ function viewAdmin(){
     { tel:"+34 600 11 22 33",   pag:"soy-coach",     f:"15 may 09:15" }
   ];
   if(REAL && RCONTACTS){
+    // El campo `contacto` viene como string libre con varios formatos:
+    //   "Nombre · email"                                  → simple
+    //   "Nombre · email (Google)"                         → vino por OAuth de Google
+    //   "Nombre · email → SOLICITA coach: Nombre [uuid]"  → llenó form pidiendo coach
+    // Lo parseamos en partes para no mostrar todo en una sola celda fea.
+    var pageLbl = {
+      "solicitud-coach":"Pidió coach",
+      "soy-candidato-google":"Lead candidato",
+      "soy-candidato":"Lead candidato",
+      "soy-coach":"Interesada en ser coach",
+      "index":"Landing",
+      "pricing":"Pricing",
+      "cv-express":"CV Express"
+    };
     contactos = RCONTACTS.map(function(x){
-      return { tel:(""+(x.contacto||"—")), pag:(""+(x.pagina||"")).replace(/^\//,""), f:(""+(x.fecha||"")).replace("T"," ").slice(0,16) };
+      var raw = (""+(x.contacto||"")).trim();
+      // 1) Capturar "→ SOLICITA coach: <nombre> [<uuid>]" y sacarlo del texto base
+      var solMatch = raw.match(/→\s*SOLICITA coach:\s*([^\[]+?)(?:\s*\[[^\]]+\])?\s*$/i);
+      var solicitaCoach = solMatch ? solMatch[1].trim() : "";
+      var base = solMatch ? raw.slice(0, solMatch.index).trim() : raw;
+      // 2) Capturar "(Google)"
+      var isGoogle = /\(Google\)\s*$/i.test(base);
+      base = base.replace(/\s*\(Google\)\s*$/i, "").trim();
+      // 3) Split "Nombre · email-o-telefono"
+      var parts = base.split(/\s*·\s*/);
+      var nombre = (parts[0]||"").trim();
+      var second = (parts[1]||"").trim();
+      var email = /@/.test(second) ? second : "";
+      var phone = email ? "" : second;
+      var pagSlug = (""+(x.pagina||"")).replace(/^\//,"");
+      // Heurística: si el email es el de la admin (mmicaela.jairedin) es una
+      // prueba interna — la marcamos para distinguirla.
+      var isInternal = /mmicaela\.jairedin@gmail\.com/i.test(email);
+      return {
+        nombre: nombre || "—",
+        email: email,
+        phone: phone,
+        solicitaCoach: solicitaCoach,
+        isGoogle: isGoogle,
+        isInternal: isInternal,
+        pagSlug: pagSlug,
+        pagLbl: pageLbl[pagSlug] || pagSlug,
+        f: (""+(x.fecha||"")).replace("T"," ").slice(0,16)
+      };
     });
   }
   var contactoRows = contactos.map(function(c){
-    var wa = (""+c.tel).replace(/[^0-9]/g,"");
-    return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.tel)+"</td>"+
-      "<td><code style='font-size:11px;color:var(--pw-text-muted)'>/"+esc(c.pag)+"</code></td>"+
-      "<td style='color:var(--pw-text-soft)'>"+esc(c.f)+"</td>"+
-      "<td style='text-align:right'><a href='https://wa.me/"+wa+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px;text-decoration:none'>"+svg(IC.wa,13)+" WhatsApp</a></td></tr>";
+    var wa = (c.phone||"").replace(/[^0-9]/g,"");
+    var badges = "";
+    if(c.solicitaCoach) badges += "<span style='display:inline-block;background:var(--pw-success-bg);color:var(--pw-bosque);font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;margin-right:6px'>Pidió a "+esc(c.solicitaCoach)+"</span>";
+    if(c.isGoogle)      badges += "<span style='display:inline-block;background:rgba(66,133,244,.10);color:#1A56B0;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;margin-right:6px'>Google</span>";
+    if(c.isInternal)    badges += "<span style='display:inline-block;background:var(--pw-niebla-2);color:var(--pw-text-soft);font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;margin-right:6px'>Prueba interna</span>";
+    var contactoCell =
+      "<div style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.nombre)+"</div>"+
+      (c.email ? "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(c.email)+"</div>" : "")+
+      (c.phone ? "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(c.phone)+"</div>" : "")+
+      (badges ? "<div style='margin-top:6px'>"+badges+"</div>" : "");
+    var actions = "";
+    if(c.email) actions += "<a href='mailto:"+esc(c.email)+"' class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px;text-decoration:none'>"+svg(IC.msg,13)+" Email</a>";
+    if(wa)      actions += (actions?" ":"")+"<a href='https://wa.me/"+wa+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px;text-decoration:none'>"+svg(IC.wa,13)+" WhatsApp</a>";
+    if(!actions) actions = "<span style='font-size:12px;color:var(--pw-text-soft)'>Sin contacto directo</span>";
+    return "<tr><td>"+contactoCell+"</td>"+
+      "<td style='font-size:12.5px;color:var(--pw-text)'>"+esc(c.pagLbl)+"</td>"+
+      "<td style='color:var(--pw-text-soft);font-size:12.5px;white-space:nowrap'>"+esc(c.f)+"</td>"+
+      "<td style='text-align:right;white-space:nowrap'>"+actions+"</td></tr>";
   }).join("");
   var _resenas=(REAL && RADM && RADM.resenas) ? RADM.resenas : [];
   var _revMap={}, _revList=[], _revSum=0, _revN=0;
@@ -2556,7 +2611,7 @@ function viewAdmin(){
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Contactos del chatbot<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+contactos.length+" · desde la web</span></div>"+
         "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:560px'><thead><tr>"+
-          "<th>Teléfono</th><th>Página</th><th>Fecha</th><th style='text-align:right'>Acción</th>"+
+          "<th>Contacto</th><th>Origen</th><th>Fecha</th><th style='text-align:right'>Acción</th>"+
         "</tr></thead><tbody>"+contactoRows+"</tbody></table></div></div>";
   } else if(state.adminTab==="cvx"){
     body = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
