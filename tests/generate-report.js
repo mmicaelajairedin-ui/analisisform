@@ -188,28 +188,6 @@ function generateReport(results) {
     report += '\n';
   }
 
-  if (failures.length > 0) {
-    report += `🔧 CAMBIOS RECOMENDADOS\n`;
-    report += `─────────────────────────────────────────\n`;
-    for (const f of failures) {
-      report += `  → Revisar: "${f.name}"\n`;
-      if (f.error.includes('status()')) {
-        report += `    Acción: Verificar que la página/endpoint está desplegado correctamente\n`;
-      } else if (f.error.includes('toBeVisible')) {
-        report += `    Acción: Un elemento de la UI no se muestra - revisar HTML/CSS\n`;
-      } else if (f.error.includes('timeout') || f.error.includes('Timeout')) {
-        report += `    Acción: La página tarda demasiado en cargar - revisar performance\n`;
-      } else if (f.error.includes('toHaveText')) {
-        report += `    Acción: El texto del elemento cambió - verificar si fue intencional\n`;
-      } else if (f.error.includes('net::') || f.error.includes('ERR_')) {
-        report += `    Acción: Error de red - verificar conectividad y URLs del servicio\n`;
-      } else {
-        report += `    Acción: Investigar el error y corregir el componente afectado\n`;
-      }
-    }
-    report += '\n';
-  }
-
   // Sección de tests exitosos (resumido)
   report += `✅ FUNCIONALIDADES VERIFICADAS (${passed})\n`;
   report += `─────────────────────────────────────────\n`;
