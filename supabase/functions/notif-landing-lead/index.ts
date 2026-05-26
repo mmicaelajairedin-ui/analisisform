@@ -49,7 +49,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  let body: { nombre?: string; contacto?: string; mensaje?: string };
+  let body: { nombre?: string; contacto?: string; mensaje?: string; tipo?: string };
   try {
     body = await req.json();
   } catch {
@@ -58,6 +58,10 @@ Deno.serve(async (req: Request) => {
   const nombre = (body.nombre || "").trim().slice(0, 100);
   const contacto = (body.contacto || "").trim().slice(0, 200);
   const mensaje = (body.mensaje || "").trim().slice(0, 1000);
+  // tipo: "coach" (quiere demo) | "candidato" (busca trabajo) | "" (general)
+  const tipoRaw = (body.tipo || "").trim().toLowerCase();
+  const tipo: "coach" | "candidato" | "" =
+    tipoRaw === "coach" ? "coach" : tipoRaw === "candidato" ? "candidato" : "";
   if (!nombre || !contacto) return json({ error: "nombre_contacto_required" }, 400);
 
   const SB_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -69,10 +73,19 @@ Deno.serve(async (req: Request) => {
   const firstName = nombre.split(/\s+/)[0] || nombre;
 
   // ── Email para la admin (Mica) ────────────────────────────────
-  const adminSubject = `Nuevo lead en la landing: ${nombre}`;
+  const tipoLbl = tipo === "coach"
+    ? "COACH (quiere demo)"
+    : tipo === "candidato" ? "CANDIDATO (busca trabajo)" : "Lead general";
+  const adminSubject = `Nuevo lead ${tipoLbl}: ${nombre}`;
   const replyTo = leadIsEmail ? contacto : "";
+  const tipoBanner = tipo === "coach"
+    ? `<div style="display:inline-block;background:#2D6A4F;color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;letter-spacing:.4px;text-transform:uppercase;">Coach · Quiere demo</div>`
+    : tipo === "candidato"
+      ? `<div style="display:inline-block;background:#8C7B80;color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;letter-spacing:.4px;text-transform:uppercase;">Candidato · Busca trabajo</div>`
+      : "";
   const adminHtml = `
 <h2 style="font-family:Fraunces,Georgia,serif;font-weight:500;color:#1B4332;margin:0 0 14px;">Nuevo lead desde la landing</h2>
+${tipoBanner ? `<div style="margin:0 0 14px;">${tipoBanner}</div>` : ""}
 <p style="margin:0 0 14px;color:#3A4A40;">Alguien dejó sus datos en el chat flotante de pathwaycareercoach.com.</p>
 <div style="background:#fff;border:1px solid rgba(45,106,79,.14);border-radius:12px;padding:16px 18px;margin:14px 0;">
   <div style="font-size:16px;font-weight:700;color:#1B4332;">${escH(nombre)}</div>
@@ -115,19 +128,53 @@ ${leadIsEmail
   // Confirmación al lead (solo si dejó un email válido)
   let leadResult: unknown = { lead: "skipped_no_email" };
   if (leadIsEmail) {
-    const leadSubject = `Hola ${firstName}, recibí tu mensaje · Pathway`;
-    const CAL_URL = "https://calendly.com/mmicaela-jairedin/30min";
-    const leadHtml = `
+    const DEMO_URL = "https://calendly.com/mmicaela-jairedin/pathway-demo";
+    const COACHES_URL = "https://pathwaycareercoach.com/coaches.html";
+    let leadSubject = "";
+    let leadHtml = "";
+    const mensajeBlock = mensaje
+      ? `<div style="background:#fff;border:1px solid rgba(45,106,79,.10);border-radius:10px;padding:12px 14px;margin:16px 0;font-size:13.5px;color:#5A6A60;line-height:1.55;font-style:italic;white-space:pre-wrap;">Tu mensaje: "${escH(mensaje)}"</div>`
+      : "";
+    if (tipo === "coach") {
+      // COACH: querés mostrar Pathway → demo Calendly directa.
+      leadSubject = `Hola ${firstName}, agendemos tu demo · Pathway`;
+      leadHtml = `
 <p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">¡Hola ${escH(firstName)}! 😊</p>
-<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Vi que pediste información sobre <strong>Pathway</strong> y nuestras mentorías.</p>
-<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Contame qué estás buscando y vemos cómo te puedo ayudar — o si preferís, agendamos una llamada directo.</p>
-${mensaje ? `<div style="background:#fff;border:1px solid rgba(45,106,79,.10);border-radius:10px;padding:12px 14px;margin:16px 0;font-size:13.5px;color:#5A6A60;line-height:1.55;font-style:italic;white-space:pre-wrap;">Tu mensaje: "${escH(mensaje)}"</div>` : ""}
+<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Vi que querés conocer <strong>Pathway</strong>. Te puedo mostrar la plataforma en una <strong>demo de 11 minutos</strong>: te enseño cómo funciona, qué problemas resuelve y vemos si encaja con lo que estás buscando para tu negocio.</p>
+${mensajeBlock}
 <p style="margin:18px 0;">
-  <a href="${CAL_URL}" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">Agendar una llamada →</a>
+  <a href="${DEMO_URL}" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">📅 Agendá tu demo</a>
 </p>
-<p style="margin:18px 0 6px;color:#3A4A40;line-height:1.65;">Saludos,</p>
+<p style="margin:18px 0 6px;color:#3A4A40;line-height:1.65;font-size:13.5px;">Si preferís, respondeme este email y te respondo con la info que necesites.</p>
+<p style="margin:14px 0 6px;color:#3A4A40;line-height:1.65;">Saludos,</p>
 <p style="margin:0;color:#1B4332;font-weight:600;">Micaela</p>
 `;
+    } else if (tipo === "candidato") {
+      // CANDIDATO: no centralizar en Mica. Mandarlo al directorio de coaches.
+      leadSubject = `Hola ${firstName}, encontrá tu coach · Pathway`;
+      leadHtml = `
+<p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">¡Hola ${escH(firstName)}! 😊</p>
+<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Vi que estás buscando trabajo. Pathway es la plataforma donde están los <strong>coaches de carrera</strong> — ellos son los que te acompañan uno a uno en tu proceso.</p>
+<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Acá podés ver los coaches disponibles y elegir el que más te encaje (cada uno tiene su perfil, su forma de trabajar y reseñas reales):</p>
+${mensajeBlock}
+<p style="margin:18px 0;">
+  <a href="${COACHES_URL}" style="display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;font-family:Inter,sans-serif;">🔍 Ver coaches disponibles</a>
+</p>
+<p style="margin:18px 0 6px;color:#3A4A40;line-height:1.65;font-size:13.5px;">Si ninguno te convence o tenés una duda, respondeme este email y te ayudo.</p>
+<p style="margin:14px 0 6px;color:#3A4A40;line-height:1.65;">Saludos,</p>
+<p style="margin:0;color:#1B4332;font-weight:600;">Micaela</p>
+`;
+    } else {
+      // Fallback genérico (sin tipo)
+      leadSubject = `Hola ${firstName}, recibí tu mensaje · Pathway`;
+      leadHtml = `
+<p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">¡Hola ${escH(firstName)}! 😊</p>
+<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Recibí tu mensaje sobre <strong>Pathway</strong> y te respondo pronto a este email.</p>
+${mensajeBlock}
+<p style="margin:14px 0 6px;color:#3A4A40;line-height:1.65;">Saludos,</p>
+<p style="margin:0;color:#1B4332;font-weight:600;">Micaela</p>
+`;
+    }
     tasks.push(
       sendOne(contacto, firstName, leadSubject, leadHtml)
         .then((r) => r.ok ? { lead: "sent" } : r.text().then((t) => ({ lead: "failed", status: r.status, detail: t.slice(0, 200) })))
