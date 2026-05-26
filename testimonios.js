@@ -59,26 +59,20 @@
 
       var displayed=reviews.slice(0,max);
       // Si dos reseñas comparten primer nombre, las desambiguamos con la
-      // inicial del apellido (ej. dos "Sol" → "Sol M." y "Sol P."). Si no
-      // hay apellido en la BD, agregamos un sufijo numérico para evitar
-      // que parezcan la misma persona.
+      // inicial del apellido si está en la BD (ej. dos "Sol" → "Sol M." y
+      // "Sol P."). Si no hay apellido, dejamos el nombre tal cual: prefiero
+      // que se vean dos "Sol" antes que inventar un sufijo poco natural.
       var firstCount={};
       displayed.forEach(function(r){
         var fn=(r.nombre||'').split(/\s+/).filter(Boolean)[0]||'';
         if(fn) firstCount[fn]=(firstCount[fn]||0)+1;
       });
-      var firstSeen={};
       displayed.forEach(function(r){
         var parts=(r.nombre||'').split(/\s+/).filter(Boolean);
         var fn=parts[0]||'';
         if(!fn || firstCount[fn]<2){ r._display=r.nombre||'Cliente Pathway'; return; }
         var lastInitial=parts.length>1 ? parts[parts.length-1].charAt(0).toUpperCase()+'.' : '';
-        if(lastInitial){
-          r._display=fn+' '+lastInitial;
-        } else {
-          firstSeen[fn]=(firstSeen[fn]||0)+1;
-          r._display=fn+' '+String.fromCharCode(64+firstSeen[fn]); // Sol A, Sol B…
-        }
+        r._display=lastInitial ? (fn+' '+lastInitial) : (r.nombre||fn);
       });
       var avg=(reviews.reduce(function(s,r){return s+r.stars;},0)/reviews.length).toFixed(1);
 
