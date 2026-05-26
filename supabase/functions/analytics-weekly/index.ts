@@ -446,73 +446,204 @@ function extractJson(text: string): string {
   return s.trim();
 }
 
-// ── Email HTML (corto, link al panel) ─────────────────────
+// ── Email HTML (contenido completo, compacto) ─────────────
+// El email incluye TODO el análisis (chart, hipotesis, acciones, A/Bs,
+// experimento) — la coach no debe tener que entrar al panel para leerlo.
+// Diseño compacto: tabla single-column, fuentes 11-14px, espacios densos.
 
 function fmtNum(n: number): string {
   return n.toLocaleString("es-ES");
 }
 
-function buildShortEmailHtml(
+function esc(s: unknown): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Mini bar chart inline-HTML (compatible con todos los clientes de email).
+// Una fila por día: fecha · barra proporcional · valor.
+function buildDailyChart(daily: Array<{ date: string; uniques: number }>): string {
+  if (!daily || daily.length === 0) return "";
+  const max = Math.max(...daily.map((d) => d.uniques), 1);
+  const rows = daily
+    .map((d) => {
+      const pct = Math.max(2, Math.round((d.uniques / max) * 100));
+      // dd-mm corto para ahorrar espacio
+      const short = d.date.slice(5);
+      return `
+        <tr>
+          <td style="font-size:11px;color:#666;padding:2px 8px 2px 0;white-space:nowrap;font-family:monospace;">${esc(short)}</td>
+          <td style="padding:2px 0;width:100%;">
+            <div style="background:#E9C46A;height:14px;width:${pct}%;border-radius:3px;"></div>
+          </td>
+          <td style="font-size:11px;color:#333;padding:2px 0 2px 8px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;">${fmtNum(d.uniques)}</td>
+        </tr>`;
+    })
+    .join("");
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:8px 0;border-collapse:collapse;">${rows}</table>`;
+}
+
+// Lista bullet compacta. Limita items para no inflar el email.
+function buildList(
+  items: unknown,
+  opts: { bullet?: string; max?: number; color?: string } = {},
+): string {
+  const { bullet = "•", max = 5, color = "#333" } = opts;
+  if (!Array.isArray(items) || items.length === 0) return "";
+  return items
+    .slice(0, max)
+    .map(
+      (it) =>
+        `<div style="font-size:12px;color:${color};line-height:1.5;margin:3px 0;padding-left:14px;text-indent:-14px;">
+          <span style="color:#999;">${bullet}</span> ${esc(it)}
+        </div>`,
+    )
+    .join("");
+}
+
+function buildAbList(items: unknown): string {
+  if (!Array.isArray(items) || items.length === 0) return "";
+  return items
+    .slice(0, 3)
+    .map((it: any) => {
+      const prueba = esc(it?.prueba || "—");
+      const pred = esc(it?.prediccion || "");
+      const dur = esc(it?.duracion || "");
+      const met = esc(it?.metrica || "");
+      return `
+        <div style="margin:6px 0;padding:8px 10px;background:#FAF7EE;border-radius:6px;border-left:2px solid #E9C46A;">
+          <div style="font-size:12px;color:#1B4332;font-weight:600;line-height:1.4;">${prueba}</div>
+          ${pred ? `<div style="font-size:11px;color:#666;margin-top:3px;"><strong>Predicción:</strong> ${pred}</div>` : ""}
+          ${(met || dur) ? `<div style="font-size:11px;color:#666;margin-top:2px;">${met ? `<strong>Métrica:</strong> ${met}` : ""}${met && dur ? " · " : ""}${dur ? `<strong>Duración:</strong> ${dur}` : ""}</div>` : ""}
+        </div>`;
+    })
+    .join("");
+}
+
+// Sección con título solo si hay contenido.
+function section(title: string, content: string, emoji = ""): string {
+  if (!content.trim()) return "";
+  return `
+    <div style="margin:14px 0 4px;font-size:11px;color:#1B4332;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">
+      ${emoji ? `${emoji} ` : ""}${esc(title)}
+    </div>
+    ${content}`;
+}
+
+function buildFullEmailHtml(
   periodStart: string,
   periodEnd: string,
   perZone: Array<{
     label: string;
     displayName: string;
-    summary: ReturnType<typeof summariseRows> & { conversions?: Conversions };
+    summary: ReturnType<typeof summariseRows> & { conversions?: Conversions | MicaelaConversions };
     analysis: any;
   }>,
 ): string {
   const cards = perZone
     .map((z) => {
-      const headline = z.analysis?.headline || "—";
-      const comp = z.analysis?.comparacion_semana_anterior || "";
+      const a = z.analysis || {};
       const conv = z.summary.conversions as any;
-      let convLine = "";
+
+      // Línea de conversiones (Pathway o Micaela)
+      let convBlock = "";
       if (conv && "coaches_pagantes" in conv) {
         const ventas = (conv.coaches_pagantes ?? 0) + (conv.pack_express_compras ?? 0);
-        convLine = `<div style="margin-top:6px;">
-          <div style="font-size:13px;color:#1B4332;font-weight:700;">
-            💰 Ventas reales: ${ventas} (${conv.coaches_pagantes ?? 0} suscripciones · ${conv.pack_express_compras ?? 0} packs)
-          </div>
-          <div style="font-size:11px;color:#666;margin-top:2px;">
-            Funnel: ${conv.formularios_completados ?? 0} formularios · ${conv.coaches_registrados ?? 0} registros · ${conv.coaches_trial_activado ?? 0} trials · ${conv.leads_chatbot ?? 0} leads chat
-          </div>
-        </div>`;
+        convBlock = `
+          <div style="margin:8px 0;padding:10px 12px;background:#F1F8F4;border-radius:6px;">
+            <div style="font-size:13px;color:#1B4332;font-weight:700;">
+              💰 Ventas reales: ${ventas} <span style="font-weight:400;color:#666;">(${conv.coaches_pagantes ?? 0} suscripciones · ${conv.pack_express_compras ?? 0} packs)</span>
+            </div>
+            <div style="font-size:11px;color:#666;margin-top:3px;">
+              Funnel: ${conv.formularios_completados ?? 0} formularios · ${conv.coaches_registrados ?? 0} registros · ${conv.coaches_trial_activado ?? 0} trials · ${conv.leads_chatbot ?? 0} leads chat
+            </div>
+          </div>`;
       } else if (conv && "llamadas_agendadas" in conv) {
-        convLine = `<div style="margin-top:6px;">
-          <div style="font-size:13px;color:#1B4332;font-weight:700;">
-            📞 Llamadas activas: ${conv.llamadas_activas ?? 0}
-          </div>
-          <div style="font-size:11px;color:#666;margin-top:2px;">
-            Calendly: ${conv.llamadas_agendadas ?? 0} agendadas · ${conv.llamadas_canceladas ?? 0} canceladas
-          </div>
-        </div>`;
+        convBlock = `
+          <div style="margin:8px 0;padding:10px 12px;background:#F1F8F4;border-radius:6px;">
+            <div style="font-size:13px;color:#1B4332;font-weight:700;">
+              📞 Llamadas activas: ${conv.llamadas_activas ?? 0}
+            </div>
+            <div style="font-size:11px;color:#666;margin-top:3px;">
+              Calendly: ${conv.llamadas_agendadas ?? 0} agendadas · ${conv.llamadas_canceladas ?? 0} canceladas
+            </div>
+          </div>`;
       }
+
+      // Experimento estrella destacado
+      const star = a.experimento_estrella
+        ? `<div style="margin:10px 0;padding:10px 12px;background:#1B4332;color:#fff;border-radius:6px;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.8;">⭐ Experimento estrella</div>
+            <div style="font-size:13px;line-height:1.5;margin-top:4px;">${esc(a.experimento_estrella)}</div>
+          </div>`
+        : "";
+
+      // Alertas
+      const alertas = Array.isArray(a.alertas) && a.alertas.length > 0
+        ? `<div style="margin:8px 0;padding:8px 10px;background:#FFF4E5;border-radius:6px;border-left:2px solid #E76F51;">
+            <div style="font-size:11px;color:#E76F51;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">⚠ Alertas</div>
+            ${buildList(a.alertas, { bullet: "!", color: "#7A3B1E" })}
+          </div>`
+        : "";
+
+      // Verificaciones (texto, no listas)
+      const verifs: string[] = [];
+      if (a.verificacion_hipotesis_previas) verifs.push(`<strong>Hipótesis previas:</strong> ${esc(a.verificacion_hipotesis_previas)}`);
+      if (a.verificacion_pruebas_ab_previas) verifs.push(`<strong>A/Bs previas:</strong> ${esc(a.verificacion_pruebas_ab_previas)}`);
+      if (a.verificacion_acciones_previas) verifs.push(`<strong>Acciones marcadas:</strong> ${esc(a.verificacion_acciones_previas)}`);
+      const verifBlock = verifs.length
+        ? verifs.map((v) => `<div style="font-size:11px;color:#666;line-height:1.5;margin:4px 0;">${v}</div>`).join("")
+        : "";
+
       return `
-        <div style="margin:14px 0;padding:16px;background:#fff;border-radius:10px;border-left:3px solid #E9C46A;">
-          <div style="font-size:11px;color:#999;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;">${z.displayName}</div>
-          <div style="font-size:14px;color:#1B4332;font-weight:600;line-height:1.4;margin-bottom:8px;">${headline}</div>
-          <div style="font-size:12px;color:#666;">
+        <div style="margin:18px 0;padding:18px;background:#fff;border-radius:10px;border-left:3px solid #E9C46A;">
+          <div style="font-size:11px;color:#999;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;">${esc(z.displayName)}</div>
+          <div style="font-size:15px;color:#1B4332;font-weight:600;line-height:1.4;margin-bottom:6px;">${esc(a.headline || "—")}</div>
+          ${a.resumen ? `<div style="font-size:12px;color:#444;line-height:1.5;margin-bottom:8px;">${esc(a.resumen)}</div>` : ""}
+
+          <div style="font-size:12px;color:#666;margin:6px 0;">
             <strong>${fmtNum(z.summary.totalUniques)}</strong> visitas ·
             <strong>${z.summary.cachePct}%</strong> cache ·
-            pico ${z.summary.peakDay.date} (${fmtNum(z.summary.peakDay.uniques)})
+            pico ${esc(z.summary.peakDay.date)} (${fmtNum(z.summary.peakDay.uniques)})
+            ${a.comparacion_semana_anterior ? ` · <em>vs sem ant: ${esc(a.comparacion_semana_anterior)}</em>` : ""}
+            ${a.tendencia_4_semanas ? ` · <em>tendencia 4sem: ${esc(a.tendencia_4_semanas)}</em>` : ""}
           </div>
-          ${convLine}
-          ${comp ? `<div style="font-size:12px;color:#666;margin-top:4px;">vs semana anterior: ${comp}</div>` : ""}
+
+          ${convBlock}
+
+          ${section("Visitas por día", buildDailyChart(z.summary.daily), "📈")}
+
+          ${alertas}
+
+          ${star}
+
+          ${section("Hipótesis", buildList(a.hipotesis, { max: 3 }), "🧠")}
+          ${section("Oportunidades no obvias", buildList(a.oportunidades_no_obvias, { max: 3 }), "💡")}
+          ${section("Quick wins (<30 min)", buildList(a.quick_wins, { max: 3, color: "#1B4332" }), "⚡")}
+          ${section("Acciones estratégicas", buildList(a.acciones_estrategicas, { max: 2 }), "🎯")}
+          ${section("Pruebas A/B propuestas", buildAbList(a.pruebas_ab_propuestas), "🧪")}
+          ${section("Qué replicar", a.que_replicar ? `<div style="font-size:12px;color:#333;line-height:1.5;margin:3px 0;">${esc(a.que_replicar)}</div>` : "", "🔁")}
+          ${section("Asunciones a validar", buildList(a.asunciones, { max: 3, color: "#666" }), "❓")}
+          ${section("Verificaciones de semanas previas", verifBlock, "🔎")}
         </div>`;
     })
     .join("");
 
   return `
-    <h2 style="margin:0 0 4px;color:#1B4332;font-size:20px;">Reporte semanal · ${periodStart} → ${periodEnd}</h2>
-    <p style="margin:0 0 16px;font-size:13px;color:#666;">Resumen breve. El analisis completo, graficos, hipotesis, acciones y experimentos estan en el panel.</p>
-    ${cards}
-    <div style="text-align:center;margin:24px 0;">
-      <a href="${PANEL_URL}" style="display:inline-block;padding:12px 28px;background:#1B4332;color:#fff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:700;">
-        Ver detalle en el panel →
-      </a>
+    <div style="max-width:680px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+      <h2 style="margin:0 0 4px;color:#1B4332;font-size:20px;">Reporte semanal · ${esc(periodStart)} → ${esc(periodEnd)}</h2>
+      <p style="margin:0 0 8px;font-size:12px;color:#666;">Análisis completo abajo. Para marcar acciones como hechas (para la verificación de la próxima semana), entrá al panel.</p>
+      ${cards}
+      <div style="text-align:center;margin:20px 0 8px;">
+        <a href="${PANEL_URL}" style="display:inline-block;padding:10px 22px;background:#1B4332;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">
+          Marcar acciones en el panel →
+        </a>
+      </div>
+      <p style="margin:14px 0 0;font-size:11px;color:#999;text-align:center;">Generado automaticamente. Histórico completo en panel → Web Analytics.</p>
     </div>
-    <p style="margin:18px 0 0;font-size:11px;color:#999;text-align:center;">Generado automaticamente. Histórico en panel → Web Analytics.</p>
   `;
 }
 
@@ -784,8 +915,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 2. Email corto con link al panel.
-    const html = buildShortEmailHtml(
+    // 2. Email con el contenido completo del analisis (no solo link al panel).
+    const html = buildFullEmailHtml(
       periodStart,
       periodEnd,
       successful.map((p) => ({
