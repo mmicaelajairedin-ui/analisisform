@@ -58,6 +58,28 @@
       }
 
       var displayed=reviews.slice(0,max);
+      // Si dos reseñas comparten primer nombre, las desambiguamos con la
+      // inicial del apellido (ej. dos "Sol" → "Sol M." y "Sol P."). Si no
+      // hay apellido en la BD, agregamos un sufijo numérico para evitar
+      // que parezcan la misma persona.
+      var firstCount={};
+      displayed.forEach(function(r){
+        var fn=(r.nombre||'').split(/\s+/).filter(Boolean)[0]||'';
+        if(fn) firstCount[fn]=(firstCount[fn]||0)+1;
+      });
+      var firstSeen={};
+      displayed.forEach(function(r){
+        var parts=(r.nombre||'').split(/\s+/).filter(Boolean);
+        var fn=parts[0]||'';
+        if(!fn || firstCount[fn]<2){ r._display=r.nombre||'Cliente Pathway'; return; }
+        var lastInitial=parts.length>1 ? parts[parts.length-1].charAt(0).toUpperCase()+'.' : '';
+        if(lastInitial){
+          r._display=fn+' '+lastInitial;
+        } else {
+          firstSeen[fn]=(firstSeen[fn]||0)+1;
+          r._display=fn+' '+String.fromCharCode(64+firstSeen[fn]); // Sol A, Sol B…
+        }
+      });
       var avg=(reviews.reduce(function(s,r){return s+r.stars;},0)/reviews.length).toFixed(1);
 
       var accent=theme==='beige'?'#8C7B80':'#2D6A4F';
@@ -78,16 +100,20 @@
       html+='<p style="font-size:15px;color:'+accent+';opacity:.85;max-width:560px;margin:0 auto;">'+subheading+'</p>';
       html+='</div>';
 
-      html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;">';
+      // Grilla de 2 columnas en desktop/tablet (1 en mobile). Mantiene la
+      // sección simétrica con cualquier número par y los cards de cada fila
+      // se estiran a la misma altura (default de CSS grid: align-items:stretch).
+      html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:18px;align-items:stretch;max-width:880px;margin:0 auto;">';
       displayed.forEach(function(r){
         var rs='';for(var i=1;i<=5;i++)rs+='<span style="color:'+(i<=r.stars?sand:'#E5E0DD')+';font-size:16px;">★</span>';
-        var ini=(r.nombre||'?').split(' ').filter(Boolean).slice(0,2).map(function(s){return s.charAt(0).toUpperCase();}).join('');
+        var displayName=r._display||r.nombre||'Cliente Pathway';
+        var ini=displayName.split(' ').filter(Boolean).slice(0,2).map(function(s){return s.charAt(0).toUpperCase();}).join('');
         html+='<div style="background:#fff;border:1.5px solid rgba(45,106,79,.12);border-radius:16px;padding:22px 24px;display:flex;flex-direction:column;gap:14px;transition:transform .2s,box-shadow .2s;" onmouseover="this.style.transform=\'translateY(-3px)\';this.style.boxShadow=\'0 12px 28px rgba(27,46,38,.08)\';" onmouseout="this.style.transform=\'\';this.style.boxShadow=\'\';">';
         html+='<div style="display:flex;gap:1px;">'+rs+'</div>';
         html+='<div style="font-size:14px;color:#2A2A2A;line-height:1.6;font-style:italic;">"'+escH(r.text).replace(/\n/g,'<br>')+'"</div>';
         html+='<div style="display:flex;align-items:center;gap:12px;margin-top:auto;padding-top:14px;border-top:1px solid rgba(45,106,79,.08);">';
         html+='<div style="width:40px;height:40px;border-radius:50%;background:'+accent+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;">'+ini+'</div>';
-        html+='<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:'+titleColor+';">'+escH(r.nombre||'Cliente Pathway')+'</div></div>';
+        html+='<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:'+titleColor+';">'+escH(displayName)+'</div></div>';
         html+='</div>';
         html+='</div>';
       });
