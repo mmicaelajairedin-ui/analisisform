@@ -184,12 +184,21 @@ async function updateProspect(id: number) {
 // Solo aplica a plantillas trial_*. Otros emails (notif admin, referral, etc)
 // pasan sin chequeo. Si no podemos leer el usuario (404 / red), enviamos
 // igual — no queremos bloquear emails por un fallo de DB transitorio.
+// Kill-switch: el drip de trial (trial_day_*) está PAUSADO hasta definir bien
+// el pricing. Mientras esté en false, cualquier trial_* pendiente se cancela
+// sin enviarse (cubre los que ya estaban encolados). Poner en true para
+// reactivar el drip.
+const TRIAL_DRIP_ENABLED = false;
+
 async function shouldCancel(
   toEmail: string,
   plantillaId: string | null,
 ): Promise<{ cancel: boolean; reason?: string }> {
   if (!plantillaId || !plantillaId.startsWith("trial_")) {
     return { cancel: false };
+  }
+  if (!TRIAL_DRIP_ENABLED) {
+    return { cancel: true, reason: "trial drip paused (pricing pending)" };
   }
   const { url, headers } = getSupabaseAuth();
   try {
