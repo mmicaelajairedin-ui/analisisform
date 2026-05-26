@@ -184,11 +184,16 @@ async function updateProspect(id: number) {
 // Solo aplica a plantillas trial_*. Otros emails (notif admin, referral, etc)
 // pasan sin chequeo. Si no podemos leer el usuario (404 / red), enviamos
 // igual — no queremos bloquear emails por un fallo de DB transitorio.
-// Kill-switch: el drip de trial (trial_day_*) está PAUSADO hasta definir bien
-// el pricing. Mientras esté en false, cualquier trial_* pendiente se cancela
-// sin enviarse (cubre los que ya estaban encolados). Poner en true para
-// reactivar el drip.
-const TRIAL_DRIP_ENABLED = false;
+// Whitelist explícita de templates de trial habilitados. Las plantillas
+// "legacy" (trial_day_14, etc.) que mencionaban precios concretos quedan
+// bloqueadas siempre — aunque sigan encoladas — para evitar mandar copy
+// desactualizado/incorrecto. Solo las plantillas nuevas (sin precio, con
+// link a upgrade.html) están permitidas.
+const ALLOWED_TRIAL_TEMPLATES = new Set([
+  "trial_day_7",
+  "trial_day_13",
+  "trial_day_15_post",
+]);
 
 async function shouldCancel(
   toEmail: string,
@@ -197,8 +202,8 @@ async function shouldCancel(
   if (!plantillaId || !plantillaId.startsWith("trial_")) {
     return { cancel: false };
   }
-  if (!TRIAL_DRIP_ENABLED) {
-    return { cancel: true, reason: "trial drip paused (pricing pending)" };
+  if (!ALLOWED_TRIAL_TEMPLATES.has(plantillaId)) {
+    return { cancel: true, reason: "legacy trial template (not whitelisted)" };
   }
   const { url, headers } = getSupabaseAuth();
   try {
