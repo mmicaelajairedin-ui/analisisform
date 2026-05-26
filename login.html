@@ -256,7 +256,7 @@ async function entrar(){
     var hash=await hashPassword(password);
     // Buscar sin filtrar por activo — asi distinguimos entre "credenciales mal"
     // y "credenciales OK pero cuenta pendiente de pago"
-    var res=await fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+hash+'&select=id,email,rol,nombre,activo,configuracion,foto_url,bio,nombre_practica',{
+    var res=await fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+hash+'&select=id,email,rol,nombre,activo,configuracion,foto_url,bio,nombre_practica,auth_id',{
       headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
     });
     var rows=await res.json();
@@ -281,6 +281,30 @@ async function entrar(){
       return;
     }
     localStorage.setItem('mj_user',JSON.stringify({id:usuario.id,email:usuario.email,rol:usuario.rol,nombre:usuario.nombre,activo:usuario.activo,configuracion:usuario.configuracion||{},foto_url:usuario.foto_url||'',bio:usuario.bio||'',nombre_practica:usuario.nombre_practica||''}));
+
+    // ── Migración perezosa a Supabase Auth (Fase 1 del cierre de RLS) ────
+    // Si el usuario todavía no tiene auth_id, llamamos al edge function que
+    // lo crea/sincroniza en auth.users con su misma contraseña. Best-effort:
+    // si falla, el login normal sigue funcionando porque ya guardamos
+    // mj_user arriba. Después de unos días, casi todos los usuarios activos
+    // van a tener auth_id seteado y la Fase 2 puede hacer el switch.
+    if(!usuario.auth_id){
+      try{
+        fetch(SB+'/functions/v1/migrate-user-to-auth',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},
+          body:JSON.stringify({email:email,password:password})
+        }).then(function(r){return r.ok?r.json():null;}).then(function(d){
+          if(d && d.ok && d.auth_id){
+            fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(usuario.id),{
+              method:'PATCH',
+              headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+              body:JSON.stringify({auth_id:d.auth_id})
+            });
+          }
+        }).catch(function(){});
+      }catch(_e){}
+    }
 
     // Registrar el último acceso (best-effort). El panel admin lo lee de
     // configuracion.last_login para la columna "Último acceso" de coaches.
