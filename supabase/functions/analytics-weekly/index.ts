@@ -394,24 +394,40 @@ async function callClaudeForZone(
     `# Histórico de las ${HISTORY_WEEKS} semanas previas (mas reciente primero)\n` +
     (history.length > 0 ? JSON.stringify(history, null, 2) : "Sin datos previos guardados todavia.");
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      // El prompt expandido pide muchos campos (oportunidades, quick_wins,
-      // acciones_estrategicas, pruebas_ab estructuradas, verificaciones, etc).
-      // 2400 truncaba la JSON. 6000 deja margen para reportes ricos sin
-      // sobrar mucho.
-      max_tokens: 6000,
-      system: SYSTEM_ANALYTICS,
-      messages: [{ role: "user", content: userContent }],
-    }),
-  });
+  // Timeout duro: si Claude tarda mas de 100s abortamos con error claro,
+  // en vez de dejar que Supabase nos mate a los 150s con WORKER_RESOURCE_LIMIT.
+  // Deja ~50s de margen para guardar reporte + send-email.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 100_000);
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        // 3500 alcanza para llenar todos los campos con los MAX del prompt
+        // (3 hipotesis + 3 oportunidades + 3 quick wins + 2 acciones + 3 A/Bs
+        // + headlines/resumen/verificaciones). 6000 era demasiado y hacia
+        // que Haiku tarde >100s, rozando el wall-time de Supabase (150s).
+        max_tokens: 3500,
+        system: SYSTEM_ANALYTICS,
+        messages: [{ role: "user", content: userContent }],
+      }),
+    });
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if ((e as any)?.name === "AbortError") {
+      throw new Error(`Claude timeout (>100s) — bajar max_tokens o cambiar modelo`);
+    }
+    throw e;
+  }
+  clearTimeout(timeoutId);
   if (!res.ok) {
     throw new Error(`Claude ${res.status}: ${(await res.text()).slice(0, 300)}`);
   }
