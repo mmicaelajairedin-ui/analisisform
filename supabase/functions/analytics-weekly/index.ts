@@ -651,14 +651,12 @@ function buildFullEmailHtml(
   return `
     <div style="max-width:680px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
       <h2 style="margin:0 0 4px;color:#1B4332;font-size:20px;">Reporte semanal · ${esc(periodStart)} → ${esc(periodEnd)}</h2>
-      <p style="margin:0 0 8px;font-size:12px;color:#666;">Análisis completo abajo. Para marcar acciones como hechas (para la verificación de la próxima semana), entrá al panel.</p>
+      <p style="margin:0 0 8px;font-size:12px;color:#666;">Análisis completo abajo — chart, hipótesis, quick wins, A/Bs y experimento estrella. Todo lo que necesitás leer está en este email.</p>
       ${cards}
-      <div style="text-align:center;margin:20px 0 8px;">
-        <a href="${PANEL_URL}" style="display:inline-block;padding:10px 22px;background:#1B4332;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">
-          Marcar acciones en el panel →
-        </a>
-      </div>
-      <p style="margin:14px 0 0;font-size:11px;color:#999;text-align:center;">Generado automaticamente. Histórico completo en panel → Web Analytics.</p>
+      <p style="margin:18px 0 4px;font-size:11px;color:#999;text-align:center;">Generado automáticamente.
+        <a href="${PANEL_URL}" style="color:#999;text-decoration:underline;">Tildar acciones como hechas</a>
+        si querés que el reporte de la próxima semana verifique impacto.
+      </p>
     </div>
   `;
 }
