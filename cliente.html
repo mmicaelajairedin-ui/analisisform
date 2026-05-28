@@ -60,6 +60,17 @@ body{background:var(--bg);}
 .match-ring-pct{font-family:'Fraunces',Georgia,serif;font-size:15px;font-weight:500;color:var(--rose);letter-spacing:-.3px;line-height:1;}
 .match-ring-lbl{font-size:7.5px;font-weight:800;letter-spacing:1px;color:var(--muted);}
 
+/* RESUMEN DE EMPLEOS — línea bajo el título: "N ofertas · M con match · hace Xh" */
+.emp-stats{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:16px;}
+.emp-stats-sep{margin:0 7px;opacity:.5;}
+
+/* BARRA "BUSCAR TAMBIÉN EN" — chips outline livianos, no bloques verdes */
+.emp-portals{display:flex;align-items:center;flex-wrap:wrap;gap:8px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 16px;margin-bottom:20px;}
+.emp-portals-lbl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-right:4px;}
+.emp-portal-chip{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#fff;border:1.5px solid var(--border);border-radius:100px;font-size:11.5px;font-weight:700;color:var(--text2);text-decoration:none;transition:all .15s;}
+.emp-portal-chip:hover{border-color:var(--rose);color:var(--rose);background:color-mix(in oklab,var(--rose) 6%,white);}
+.emp-portal-chip .arr{font-size:10px;opacity:.55;}
+
 /* SKELETON LOADERS */
 .skel{background:var(--border);border-radius:6px;position:relative;overflow:hidden;}
 .skel::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);animation:skelShine 1.5s infinite;}
@@ -1436,6 +1447,15 @@ function matchRing(pct,color,label){
     +'</div>'
   +'</div>';
 }
+// Recalcula los timestamps relativos ("hace Xh") de la línea de resumen de
+// empleos. El epoch viaja en data-emp-ts, así que al volver desde cache el
+// texto se refresca en vez de quedar congelado en el valor guardado.
+function _refreshEmpStamp(root){
+  (root||document).querySelectorAll('[data-emp-ts]').forEach(function(n){
+    var ts=+n.getAttribute('data-emp-ts');
+    if(ts) n.textContent=timeAgo(ts);
+  });
+}
 function ini(n){return(n||'').split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase()||'??';}
 function ck(){return'<svg width="10" height="8" viewBox="0 0 10 8"><polyline points="1 4 3.5 6.5 9 1" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';}
 function pn(n){return(n||'').split(' ')[0]||'';}
@@ -2518,18 +2538,15 @@ function _renderMain(sec){
         +'<div></div>'
         +'<button onclick="refreshEmpleos()" style="padding:7px 14px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;background:var(--rose-light);color:var(--rose);border:1.5px solid var(--rose-mid);border-radius:9px;cursor:pointer;">&#8635; Actualizar</button>'
       +'</div>'
-      // Portales rapidos — todos en color del coach (var(--rose)) para
-      // mantener uniformidad visual; antes cada portal tenía su color de
-      // marca (LinkedIn azul, InfoJobs rojo, etc.) y rompía el estilo.
-      +'<div style="background:var(--rose-light);border:1.5px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:20px;">'
-        +'<div style="font-size:12px;font-weight:600;color:var(--rose);font-family:Inter,-apple-system,sans-serif;margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em;">Buscar en portales</div>'
-        +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
-          +'<a href="https://es.indeed.com/jobs?q='+_empSector+'&l='+_empUbi+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;text-decoration:none;transition:all .15s;">Indeed</a>'
-          +'<a href="https://www.linkedin.com/jobs/search/?keywords='+_empSector+'&location='+_empUbi+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;text-decoration:none;transition:all .15s;">LinkedIn Jobs</a>'
-          +'<a href="https://www.infojobs.net/ofertas-trabajo/'+(_empSectorSlug||'')+(_empUbiSlug?'?provincia='+_empUbi:'')+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;text-decoration:none;transition:all .15s;">InfoJobs</a>'
-          +'<a href="https://www.glassdoor.com/Job/jobs.htm?sc.keyword='+_empSector+'&locKeyword='+_empUbi+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;text-decoration:none;transition:all .15s;">Glassdoor</a>'
-          +'<a href="https://www.computrabajo.com/ofertas-de-trabajo/?q='+_empSector+(_empUbiSlug?'&l='+_empUbi:'')+'" target="_blank" style="padding:8px 14px;background:var(--rose);color:#fff;border-radius:8px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;text-decoration:none;transition:all .15s;">CompuTrabajo</a>'
-        +'</div>'
+      // Portales: chips outline livianos (antes bloques verdes sólidos que
+      // quedaban toscos). El arrow ↗ marca que abren en otra pestaña.
+      +'<div class="emp-portals">'
+        +'<span class="emp-portals-lbl">Buscar también en</span>'
+        +'<a class="emp-portal-chip" href="https://www.linkedin.com/jobs/search/?keywords='+_empSector+'&location='+_empUbi+'" target="_blank">LinkedIn Jobs <span class="arr">&#8599;</span></a>'
+        +'<a class="emp-portal-chip" href="https://es.indeed.com/jobs?q='+_empSector+'&l='+_empUbi+'" target="_blank">Indeed <span class="arr">&#8599;</span></a>'
+        +'<a class="emp-portal-chip" href="https://www.infojobs.net/ofertas-trabajo/'+(_empSectorSlug||'')+(_empUbiSlug?'?provincia='+_empUbi:'')+'" target="_blank">InfoJobs <span class="arr">&#8599;</span></a>'
+        +'<a class="emp-portal-chip" href="https://www.glassdoor.com/Job/jobs.htm?sc.keyword='+_empSector+'&locKeyword='+_empUbi+'" target="_blank">Glassdoor <span class="arr">&#8599;</span></a>'
+        +'<a class="emp-portal-chip" href="https://www.computrabajo.com/ofertas-de-trabajo/?q='+_empSector+(_empUbiSlug?'&l='+_empUbi:'')+'" target="_blank">CompuTrabajo <span class="arr">&#8599;</span></a>'
       +'</div>'
       // Contador de postulaciones — refleja lo que el cliente fue marcando
       // como "me postulé" en cada job. Sirve para que vea su progreso
@@ -3809,7 +3826,7 @@ function rEmpleos(){
   var el=document.getElementById('mc-empleos')||document.getElementById('mc');
   if(!el) return;
 
-  if(_empleosCache){ el.innerHTML=_empleosCache; return; }
+  if(_empleosCache){ el.innerHTML=_empleosCache; _refreshEmpStamp(el); return; }
 
   // Intentar cargar empleos guardados en localStorage. Sin expiración:
   // Mica explícitamente pidió que los empleos persistan para siempre
@@ -3824,6 +3841,7 @@ function rEmpleos(){
       if(_sjData && _sjData.html){
         _empleosCache=_sjData.html;
         el.innerHTML=_sjData.html;
+        _refreshEmpStamp(el);
         return;
       }
     }catch(e){}
@@ -3902,20 +3920,20 @@ function rEmpleos(){
     var appliedKey='mj_jobs_applied_'+(E||'');
     var applied={};try{applied=JSON.parse(localStorage.getItem(appliedKey)||'{}');}catch(e){applied={};}
 
-    // Reemplazar el banner "Buscando empleos..." por uno con timestamp.
-    // El banner queda DENTRO del cache, así que al volver el cliente ve
-    // 'Actualizado: 21 may' en vez de 'Buscando empleos para vos...'.
-    var _empNow = new Date();
-    var _empStamp = _empNow.toLocaleDateString('es-ES',{day:'numeric',month:'short'})+' · '+_empNow.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-    var _empBannerHtml = '<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
-      +'<div><div style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Última búsqueda</div>'
-      +'<div style="font-size:13px;color:var(--text);font-weight:700;font-family:Inter,-apple-system,sans-serif;margin-top:2px;">'+_empStamp+'</div></div>'
-      +'<button onclick="refreshEmpleos()" style="padding:7px 14px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;background:var(--rose-light);color:var(--rose);border:1.5px solid var(--rose-mid);border-radius:9px;cursor:pointer;">&#8635; Buscar de nuevo</button>'
+    // Línea de resumen: "N ofertas · M con match > 85% · actualizado hace Xh".
+    // El timestamp se guarda como epoch en data-emp-ts y se recalcula con
+    // _refreshEmpStamp() al volver desde cache (si no, quedaría congelado).
+    var _empTs = Date.now();
+    var _empTotal = jobs.length;
+    var _empMatchHi = jobs.filter(function(j){return (j.relevancia||0) > 85;}).length;
+    var _empStatsHtml = '<div class="emp-stats">'
+      + _empTotal + ' ' + (_empTotal===1?'oferta':'ofertas')
+      + (_empMatchHi>0 ? '<span class="emp-stats-sep">·</span>'+_empMatchHi+' con match &gt; 85%' : '')
+      + '<span class="emp-stats-sep">·</span>actualizado <span data-emp-ts="'+_empTs+'">'+timeAgo(_empTs)+'</span>'
     +'</div>';
-    // Reemplazo completo: saca el banner viejo (Buscando empleos...) y deja
-    // solo banner-timestamp + cards. Importante para que el cache no
-    // guarde el estado de loading.
-    el.innerHTML = _empBannerHtml + '<div id="empleos-cards" style="display:flex;flex-direction:column;gap:12px;"></div>';
+    // Reemplazo completo: saca el loader y deja stats + cards. Importante para
+    // que el cache no guarde el estado de loading.
+    el.innerHTML = _empStatsHtml + '<div id="empleos-cards" style="display:flex;flex-direction:column;gap:12px;"></div>';
     cardsEl = document.getElementById('empleos-cards');
     cardsEl.innerHTML=jobs.map(function(job,jidx){
       var rel=Math.min(100,Math.max(0,job.relevancia||80));
@@ -3945,19 +3963,14 @@ function rEmpleos(){
           +'<a href="'+indeedUrl+'" target="_blank" style="flex:1;min-width:100px;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;background:var(--rose);color:#fff;border-radius:9px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;text-decoration:none;transition:all .15s;">Indeed</a>'
           +'<a href="'+linkedinUrl+'" target="_blank" style="flex:1;min-width:100px;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;background:var(--rose);color:#fff;border-radius:9px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;text-decoration:none;transition:all .15s;">LinkedIn</a>'
           +'<a href="'+infojobsUrl+'" target="_blank" style="flex:1;min-width:100px;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;background:var(--rose);color:#fff;border-radius:9px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;text-decoration:none;transition:all .15s;">InfoJobs</a>'
-          +'<button class="_cp-job" data-q="'+encodeURIComponent(job.query_indeed||job.titulo)+'" style="padding:8px 12px;background:var(--bg);color:var(--text2);border:1.5px solid var(--border);border-radius:9px;font-size:11px;font-weight:700;font-family:Inter,-apple-system,sans-serif;cursor:pointer;transition:all .15s;" title="Copiar busqueda">&#128203;</button>'
+          // Checkbox "ya me postulé": tilde en vez del ícono de copiar (papel).
+          +'<button class="_apply-chk" onclick="_toggleApplied(\''+encodeURIComponent(jobKey)+'\',this)" title="'+(isApplied?'Postulado':'Marcar como postulado')+'" aria-label="Marcar como postulado" style="width:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:8px;background:'+(isApplied?'var(--green)':'#fff')+';color:'+(isApplied?'#fff':'var(--green)')+';border:1.5px solid var(--green);border-radius:9px;font-size:15px;font-weight:800;cursor:pointer;transition:all .15s;">'+(isApplied?'&#10003;':'')+'</button>'
         +'</div>'
-        +'<button onclick="_toggleApplied(\''+encodeURIComponent(jobKey)+'\',this)" style="width:100%;padding:10px;background:'+(isApplied?'var(--green)':'#fff')+';color:'+(isApplied?'#fff':'var(--green)')+';border:1.5px solid var(--green);border-radius:9px;font-size:12px;font-weight:600;font-family:Inter,-apple-system,sans-serif;cursor:pointer;transition:all .15s;">'+(isApplied?'✓ Ya me postulé':'Me postulé a este empleo')+'</button>'
       +'</div>';
     }).join('');
 
     _empleosCache=el.innerHTML;
-    try{localStorage.setItem('mj_empleos_'+(E||''),JSON.stringify({html:el.innerHTML,ts:Date.now()}));}catch(e){}
-    // Event delegation para botones copiar
-    cardsEl.addEventListener('click',function(ev){
-      var btn=ev.target.closest('._cp-job');
-      if(btn) copiarBusqueda(btn.dataset.q||'');
-    });
+    try{localStorage.setItem('mj_empleos_'+(E||''),JSON.stringify({html:el.innerHTML,ts:_empTs}));}catch(e){}
   })
   .catch(function(err){
     if(_empTo) clearTimeout(_empTo);
@@ -3978,18 +3991,6 @@ function rEmpleos(){
     +'</div>';
   });
 }
-function copiarBusqueda(encodedQuery){
-  var q=decodeURIComponent(encodedQuery);
-  navigator.clipboard.writeText(q).then(function(){
-    // Toast rápido
-    var t=document.createElement('div');
-    t.textContent='Búsqueda copiada ✓';
-    t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#2D292A;color:#fff;padding:10px 20px;border-radius:10px;font-size:12px;font-weight:700;z-index:9999;font-family:Inter,-apple-system,sans-serif;';
-    document.body.appendChild(t);
-    setTimeout(function(){t.remove();},2000);
-  });
-}
-
 // Marcar/desmarcar empleo como postulado (persiste en localStorage)
 function _toggleApplied(jobKeyEnc,btn){
   var jobKey=decodeURIComponent(jobKeyEnc);
@@ -4010,7 +4011,8 @@ function _toggleApplied(jobKeyEnc,btn){
     if(card){
       var nowApplied=!!applied[jobKey];
       if(nowApplied){
-        btn.textContent='✓ Ya me postulé';
+        btn.innerHTML='&#10003;';
+        btn.title='Postulado';
         btn.style.background='var(--green)';
         btn.style.color='#fff';
         card.style.background='#F6FBF7';
@@ -4023,7 +4025,8 @@ function _toggleApplied(jobKeyEnc,btn){
           card.appendChild(badge);
         }
       } else {
-        btn.textContent='Me postulé a este empleo';
+        btn.innerHTML='';
+        btn.title='Marcar como postulado';
         btn.style.background='#fff';
         btn.style.color='var(--green)';
         card.style.background='#fff';
