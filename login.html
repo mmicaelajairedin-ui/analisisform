@@ -292,20 +292,30 @@ async function entrar(){
     // mj_user arriba. Después de unos días, casi todos los usuarios activos
     // van a tener auth_id seteado y la Fase 2 puede hacer el switch.
     if(!usuario.auth_id){
+      // IMPORTANTE: esperamos la migración con await ANTES de redirigir. Si se
+      // disparara fire-and-forget, la navegación a panel/cliente cancela la
+      // request (la function tarda ~1-2s hablando con Auth) y el auth_id nunca
+      // se guardaba. Timeout de 8s para no colgar el login si algo falla.
       try{
-        fetch(SB+'/functions/v1/migrate-user-to-auth',{
+        var _mc=new AbortController();
+        var _mt=setTimeout(function(){_mc.abort();},8000);
+        var _mr=await fetch(SB+'/functions/v1/migrate-user-to-auth',{
           method:'POST',
           headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},
-          body:JSON.stringify({email:email,password:password})
-        }).then(function(r){return r.ok?r.json():null;}).then(function(d){
-          if(d && d.ok && d.auth_id){
-            fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(usuario.id),{
+          body:JSON.stringify({email:email,password:password}),
+          signal:_mc.signal
+        });
+        clearTimeout(_mt);
+        if(_mr.ok){
+          var _md=await _mr.json();
+          if(_md && _md.ok && _md.auth_id){
+            await fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(usuario.id),{
               method:'PATCH',
               headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-              body:JSON.stringify({auth_id:d.auth_id})
+              body:JSON.stringify({auth_id:_md.auth_id})
             });
           }
-        }).catch(function(){});
+        }
       }catch(_e){}
     }
 
