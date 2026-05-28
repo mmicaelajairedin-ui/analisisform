@@ -44,6 +44,22 @@ body{background:var(--bg);}
 @keyframes lp{0%,100%{opacity:.2;transform:scale(.8);}50%{opacity:1;transform:scale(1.2);}}
 @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
 
+/* SLIM LOADER — pill arriba del listado, reemplaza el banner full-width */
+.loading-slim{display:flex;align-items:center;gap:10px;padding:8px 14px;margin-bottom:16px;background:color-mix(in oklab,var(--rose) 8%,white);border:1px solid color-mix(in oklab,var(--rose) 18%,transparent);border-radius:100px;font-size:11.5px;color:var(--text2);}
+.loading-slim-spin{width:14px;height:14px;border-radius:50%;border:1.5px solid color-mix(in oklab,var(--rose) 24%,transparent);border-top-color:var(--rose);animation:spin 1s linear infinite;flex-shrink:0;}
+.loading-slim-text{flex:1;}
+.loading-slim-text strong{font-weight:700;color:var(--text);}
+.loading-slim-time{color:var(--muted);font-weight:600;white-space:nowrap;}
+
+/* MATCH RING — componente reutilizable (match%, CV score, completitud, LinkedIn) */
+.match-ring{position:relative;width:60px;height:60px;flex-shrink:0;}
+.match-ring svg{width:100%;height:100%;transform:rotate(-90deg);}
+.match-ring-bg{fill:none;stroke:var(--border);stroke-width:5;}
+.match-ring-fg{fill:none;stroke:var(--rose);stroke-width:5;stroke-linecap:round;transition:stroke-dashoffset .8s ease;}
+.match-ring-text{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.match-ring-pct{font-family:'Fraunces',Georgia,serif;font-size:15px;font-weight:500;color:var(--rose);letter-spacing:-.3px;line-height:1;}
+.match-ring-lbl{font-size:7.5px;font-weight:800;letter-spacing:1px;color:var(--muted);}
+
 /* SKELETON LOADERS */
 .skel{background:var(--border);border-radius:6px;position:relative;overflow:hidden;}
 .skel::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);animation:skelShine 1.5s infinite;}
@@ -1401,6 +1417,25 @@ var SEMS=[{n:1,lbl:'Evaluación',acc:'cv_acciones',sec:null},{n:2,lbl:'CV',acc:'
 var TIPS={'Evaluación':'Estamos analizando tu perfil. Pronto tendrás tu diagnóstico completo.','CV':'Tu CV es lo primero que ven. Vamos a dejarlo impecable.','LinkedIn':'Unos ajustes en la cabecera hacen mucha diferencia.','Búsqueda activa':'Ahora toca salir a buscar: empleos, networking y entrevistas.'};
 function hh(t){return(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function skelCards(n){var o='';for(var i=0;i<n;i++){o+='<div class="skel-card"><div class="skel-row"><div class="skel skel-circle"></div><div style="flex:1;"><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div></div><div class="skel skel-line w100"></div><div class="skel skel-line w80"></div><div class="skel skel-line w60"></div></div>';}return o;}
+// Ring circular reutilizable: match%, CV score, completitud de documentos, LinkedIn score.
+// pct 0-100, color opcional (default --rose), label opcional (default MATCH).
+function matchRing(pct,color,label){
+  pct=Math.min(100,Math.max(0,Math.round(pct||0)));
+  color=color||'var(--rose)';
+  label=(label==null?'MATCH':label);
+  var circ=2*Math.PI*25; // 157.08
+  var offset=circ*(1-pct/100);
+  return '<div class="match-ring">'
+    +'<svg viewBox="0 0 60 60">'
+      +'<circle class="match-ring-bg" cx="30" cy="30" r="25"></circle>'
+      +'<circle class="match-ring-fg" cx="30" cy="30" r="25" stroke-dasharray="'+circ.toFixed(2)+'" stroke-dashoffset="'+offset.toFixed(2)+'" style="stroke:'+color+';"></circle>'
+    +'</svg>'
+    +'<div class="match-ring-text">'
+      +'<div class="match-ring-pct" style="color:'+color+';">'+pct+'%</div>'
+      +(label?'<div class="match-ring-lbl">'+label+'</div>':'')
+    +'</div>'
+  +'</div>';
+}
 function ini(n){return(n||'').split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase()||'??';}
 function ck(){return'<svg width="10" height="8" viewBox="0 0 10 8"><polyline points="1 4 3.5 6.5 9 1" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';}
 function pn(n){return(n||'').split(' ')[0]||'';}
@@ -2316,7 +2351,7 @@ function goSec(sec,el){
     var hasErr=mc.querySelector('[data-render-error="1"]');
     var hasMarker=mc.querySelector('[data-sec="'+SEC+'"]');
     var stillLoading=mc.querySelector('.skel, [data-sec$="-loading"]') ||
-                     /Buscando empleos para vos|Analizando|skelCards/i.test(mc.innerHTML);
+                     /loading-slim|Analizando|skelCards/i.test(mc.innerHTML);
     if(!hasErr && hasMarker && !stillLoading){
       _secCache[SEC]=mc.innerHTML;
     }
@@ -3808,11 +3843,13 @@ function rEmpleos(){
   var fortalezas = D&&D.fortalezas ? D.fortalezas.slice(0,3).join(', ') : (C.habilidades||'');
   var estrategia = (D&&D.estrategia)||'';
 
-  // Loading con skeletons + mensaje 'puede tardar'
-  el.innerHTML = '<div style="background:linear-gradient(135deg,var(--rose) 0%,var(--rose-dark) 100%);border-radius:14px;padding:18px 22px;color:#fff;margin-bottom:20px;display:flex;align-items:center;gap:14px;">'
-    +'<div style="font-size:32px;">&#129302;</div>'
-    +'<div><div style="font-size:15px;font-weight:600;letter-spacing:-0.02em;font-family:Inter,-apple-system,sans-serif;margin-bottom:3px;">Buscando empleos para vos...</div>'
-    +'<div style="font-size:12px;opacity:.85;">Analizando tu perfil — puede tardar 20-40 segundos.</div></div>'
+  // Loading slim: pill chiquita arriba del listado en vez de banner full-width.
+  // Se quita cuando termina (el .then reemplaza todo el innerHTML; las ramas
+  // sin-resultados y de error eliminan el pill explícitamente).
+  el.innerHTML = '<div id="empleos-loading" class="loading-slim">'
+    +'<div class="loading-slim-spin"></div>'
+    +'<div class="loading-slim-text"><strong>Buscando 3 más</strong> con tu perfil actualizado</div>'
+    +'<div class="loading-slim-time">~30 s</div>'
     +'</div>'
     +'<div id="empleos-cards" style="display:flex;flex-direction:column;gap:12px;">'
       +skelCards(3)
@@ -3849,6 +3886,7 @@ function rEmpleos(){
     var jobs=data.empleos||data.jobs||[];
     var cardsEl=document.getElementById('empleos-cards');
     if(!cardsEl) return;
+    var _ls=document.getElementById('empleos-loading'); if(_ls) _ls.remove();
 
     if(!jobs.length){
       cardsEl.innerHTML='<div style="text-align:center;padding:2rem;background:#fff;border-radius:12px;border:1.5px solid var(--border);">'
@@ -3898,13 +3936,7 @@ function rEmpleos(){
             +'<div style="font-size:15px;font-weight:600;color:var(--text);font-family:Inter,-apple-system,sans-serif;margin-bottom:3px;">'+hh(job.titulo)+'</div>'
             +'<div style="font-size:12px;color:var(--muted);font-weight:600;">'+hh(job.empresa_tipo)+'</div>'
           +'</div>'
-          +(isApplied?'':'<div style="text-align:center;flex-shrink:0;">'
-            +'<div style="font-size:20px;font-weight:600;color:'+relColor+';font-family:Inter,-apple-system,sans-serif;">'+rel+'%</div>'
-            +'<div style="font-size:9px;color:'+relColor+';font-weight:700;text-transform:uppercase;">match</div>'
-          +'</div>')
-        +'</div>'
-        +'<div style="height:4px;background:var(--border);border-radius:2px;margin-bottom:12px;overflow:hidden;">'
-          +'<div style="height:4px;width:'+rel+'%;background:'+(isApplied?'var(--green)':relColor)+';border-radius:2px;"></div>'
+          +(isApplied?'':matchRing(rel,relColor))
         +'</div>'
         +(job.descripcion?'<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:8px;">'+hh(job.descripcion)+'</div>':'')
         +(job.requisitos?'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;"><strong style="color:var(--text2);">Requisitos:</strong> '+hh(job.requisitos)+'</div>':'')
@@ -3932,6 +3964,7 @@ function rEmpleos(){
     console.error('rEmpleos error:', err);
     var cardsEl=document.getElementById('empleos-cards');
     if(!cardsEl) return;
+    var _ls=document.getElementById('empleos-loading'); if(_ls) _ls.remove();
     var isTimeout = err && (err.name==='AbortError' || /timeout|aborted/i.test(String(err.message||'')));
     var titulo = isTimeout ? 'La IA está tardando demasiado' : 'No se pudo conectar';
     var mensaje = isTimeout
