@@ -1511,7 +1511,11 @@ function _applyCoachBrand(data){
   if(nameEl&&data.nombre)nameEl.textContent=data.nombre;
   var subEl=document.getElementById('lh-sub');
   if(subEl&&data.nombre_practica)subEl.textContent=data.nombre_practica;
-  if(data.foto_url) COACH_PHOTO_URL=data.foto_url;
+  // Al aplicar la identidad de un coach real (data.nombre presente) seteamos
+  // SIEMPRE la foto a la de ESE coach (o vacío → iniciales). Si solo usáramos
+  // `if(data.foto_url)`, un coach sin foto dejaría la foto del coach anterior
+  // (bug: cliente veía el nombre de un coach con la foto de otro).
+  if(data.nombre) COACH_PHOTO_URL=data.foto_url||'';
   var fotoEl=document.getElementById('lh-foto');
   if(fotoEl){
     if(data.foto_url){
@@ -1543,14 +1547,21 @@ function _loadCoachColor(){
     _applyCoachBrand(ls);
   }catch(e){}
 
-  // Si el candidato C ya está cargado y tiene coach_id, usamos ese coach específico
-  // (multi-coach). Si no, fallback al primer coach (legacy single-coach).
+  // Resolución del coach del cliente. SOLO por coach_id — con multi-coach,
+  // adivinar "el primer coach de la tabla" muestra el coach equivocado
+  // (race condition: el fetch del coach arbitrario podía pisar al correcto).
   var q='select=nombre,foto_url,nombre_practica,configuracion';
   var filter;
   if(C&&C.coach_id){
     filter='id=eq.'+encodeURIComponent(C.coach_id);
+  } else if(typeof C!=='undefined'&&C){
+    // Cliente legacy sin coach_id asignado: mostramos al dueño de la plataforma
+    // (admin) — NUNCA otro coach. Lo correcto es asignarle coach_id en el panel.
+    filter='rol=eq.admin&order=created_at.asc&limit=1';
   } else {
-    filter='rol=in.(coach,admin)&limit=1';
+    // C todavía no cargó: no hacemos fetch para no aplicar un coach incorrecto.
+    // La 2da llamada a _loadCoachColor() (post-carga de C) hace el fetch real.
+    return;
   }
   fetch(SB+'/rest/v1/usuarios?'+filter+'&'+q,{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}})
     .then(function(r){
