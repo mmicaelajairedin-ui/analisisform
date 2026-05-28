@@ -1557,6 +1557,10 @@ function _loadCoachColor(){
     if(ls.color_marca)_applyCoachColor(ls.color_marca);
     _applyCoachBrand(ls);
   }catch(e){}
+  // Color de marca cacheado del último coach resuelto en este navegador: se
+  // aplica YA (sincrónico) para evitar el flash verde→marca mientras resuelve
+  // el fetch del coach real. El fetch de abajo lo confirma o corrige.
+  try{var _bc=localStorage.getItem('mj_brand_color'); if(_bc&&/^#[0-9a-f]{6}$/i.test(_bc))_applyCoachColor(_bc);}catch(e){}
 
   // Resolución del coach del cliente. SOLO por coach_id — con multi-coach,
   // adivinar "el primer coach de la tabla" muestra el coach equivocado
@@ -1589,7 +1593,8 @@ function _loadCoachColor(){
       // default — esa es la propuesta de valor del Pro €89/mes.
       // Vitalicios (admin/demo coach) siempre cuentan como Pro.
       var coachIsPro=(cfg.es_pro_vitalicio===true)||(cfg.plan==='pro')||(coach.rol==='admin');
-      if(coachIsPro && cfg.color_marca)_applyCoachColor(cfg.color_marca);
+      if(coachIsPro && cfg.color_marca){_applyCoachColor(cfg.color_marca);try{localStorage.setItem('mj_brand_color',cfg.color_marca);}catch(e){}}
+      else{try{localStorage.removeItem('mj_brand_color');}catch(e){}}
       // La identidad del coach (nombre real + foto) se aplica SIEMPRE: el
       // cliente debe ver a su coach asignado, nunca el coach demo. El
       // branding visual extra (color de marca, logo) sí queda como perk Pro.
@@ -2176,11 +2181,11 @@ function rMotivCard(){
   if(pct===0){
     emoji='🚀';title='Semana '+SEM+' · Arrancá fuerte';
     sub='Marcá tu primera acción de '+semLbl+' para sumar momentum';
-    bg='linear-gradient(135deg,rgba(82,183,136,.12),rgba(45,106,79,.06))';col='var(--green)';
+    bg='linear-gradient(135deg,var(--green-light),var(--rose-light))';col='var(--green)';
   } else if(pct<50){
     emoji='⚡';title='En camino con '+semLbl;
     sub='Completaste '+doneWeek+' de '+accsWeek.length+' acciones de esta semana';
-    bg='linear-gradient(135deg,rgba(82,183,136,.15),rgba(45,106,79,.08))';col='var(--green)';
+    bg='linear-gradient(135deg,var(--green-light),var(--rose-light))';col='var(--green)';
   } else if(pct<100){
     emoji='🔥';title='Mitad de '+semLbl;
     sub='Ya pasaste la mitad. Faltan '+(accsWeek.length-doneWeek)+' acciones para cerrar';
@@ -2750,7 +2755,7 @@ function _semProceso(pasos,secId,btnLabel,btnIcon,semColor){
     // Hint para el cliente: si no marcó nada aún, mostrar CTA arriba
     var totalDoneHere=infAccs.filter(function(a,i){return ACTS[offset+i];}).length;
     if(totalDoneHere===0){
-      o+='<div style="background:linear-gradient(135deg,rgba(233,196,106,.15),rgba(82,183,136,.08));border:1.5px dashed rgba(233,196,106,.5);border-radius:10px;padding:11px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">';
+      o+='<div style="background:linear-gradient(135deg,rgba(233,196,106,.15),var(--green-light));border:1.5px dashed rgba(233,196,106,.5);border-radius:10px;padding:11px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">';
       o+='<div style="font-size:20px;flex-shrink:0;animation:hintPulse 2s ease-in-out infinite;">👇</div>';
       o+='<div style="font-size:12px;color:#1a1a1a;line-height:1.5;"><strong style="color:#8c6f2a;">¡Marcá tus avances!</strong> Clickeá cada acción a medida que la completes. Vas a ver cómo suben tus % en Mi Diagnóstico.</div>';
       o+='</div>';
@@ -2765,7 +2770,7 @@ function _semProceso(pasos,secId,btnLabel,btnIcon,semColor){
       // Primera acción no marcada: destacarla con ring animado
       var isFirstPending=!done&&infAccs.slice(0,i).every(function(_a,_i){return ACTS[offset+_i];});
       var extraStyle=isFirstPending&&totalDoneHere<infAccs.length?'background:rgba(233,196,106,.06);border-radius:8px;box-shadow:0 0 0 2px rgba(233,196,106,.3);':'';
-      o+='<div onclick="tAcc('+(offset+i)+')" style="display:flex;gap:12px;align-items:flex-start;padding:12px 10px;cursor:pointer;'+(i<infAccs.length-1?'border-bottom:1px solid var(--border);':'')+';transition:background .15s;'+extraStyle+'" onmouseover="this.style.background=\'rgba(82,183,136,.08)\'" onmouseout="this.style.background=\''+(isFirstPending&&totalDoneHere<infAccs.length?'rgba(233,196,106,.06)':'transparent')+'\'">';
+      o+='<div onclick="tAcc('+(offset+i)+')" style="display:flex;gap:12px;align-items:flex-start;padding:12px 10px;cursor:pointer;'+(i<infAccs.length-1?'border-bottom:1px solid var(--border);':'')+';transition:background .15s;'+extraStyle+'" onmouseover="this.style.background=\'var(--green-light)\'" onmouseout="this.style.background=\''+(isFirstPending&&totalDoneHere<infAccs.length?'rgba(233,196,106,.06)':'transparent')+'\'">';
       // Checkbox
       // Completado: check verde ESTABLE (no deriva de la marca — verde = hecho,
       // sensación calma). Pendiente: número con borde gris.
@@ -3003,7 +3008,7 @@ function rSemana(){
       var c2=SCORE_COLORS[si%SCORE_COLORS.length];
       o+='<div class="score-item"><div class="score-top">';
       o+='<span class="score-lbl" style="font-size:13px;color:#1a1a1a;">'+hh(s.label)+'</span>';
-      o+='<span class="score-val" style="color:'+c2+';font-size:15px;font-weight:600;">'+p+'%'+(boost>0?' <span style="font-size:10px;font-weight:600;color:var(--green);background:rgba(82,183,136,.15);padding:2px 6px;border-radius:100px;margin-left:4px;">+'+boost+'</span>':'')+'</span></div>';
+      o+='<span class="score-val" style="color:'+c2+';font-size:15px;font-weight:600;">'+p+'%'+(boost>0?' <span style="font-size:10px;font-weight:600;color:var(--green);background:var(--green-light);padding:2px 6px;border-radius:100px;margin-left:4px;">+'+boost+'</span>':'')+'</span></div>';
       o+='<div class="score-bar"><div class="score-fill" style="width:'+p+'%;background:'+c2+';"></div></div></div>';
     });
   }else{o+='<div class="empty"><div class="empty-icon">📊</div><div class="empty-title">Tu diagnóstico está en camino</div><div class="empty-desc">Micaela está analizando tu perfil. Recibirás tus scores y recomendaciones pronto.</div></div>';}
@@ -4136,7 +4141,7 @@ function rLinkedIn(){
   // ── SCORE BANNER (si la IA lo devolvió) ──
   if(typeof liScore==='number'){
     var scoreColor=liScore>=80?'#4a7c5f':liScore>=60?'#E9C46A':'#c0756e';
-    o+='<div style="display:flex;align-items:center;gap:14px;padding:16px 18px;background:linear-gradient(135deg,rgba(45,106,79,.06),rgba(82,183,136,.04));border-radius:14px;border:1.5px solid var(--border);">';
+    o+='<div style="display:flex;align-items:center;gap:14px;padding:16px 18px;background:linear-gradient(135deg,var(--rose-light),var(--green-light));border-radius:14px;border:1.5px solid var(--border);">';
     o+='<div style="font-family:\'Fraunces\',Georgia,serif;font-size:42px;font-weight:600;color:'+scoreColor+';line-height:1;">'+liScore+'<span style="font-size:16px;color:var(--muted);font-weight:400;">/100</span></div>';
     o+='<div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;">Score actual de tu LinkedIn</div>';
     o+='<div style="font-size:11px;color:var(--muted);">Aplicando todas las sugerencias podés llegar a 90+.</div></div>';
@@ -4212,7 +4217,7 @@ function rLinkedIn(){
     s+='<button onclick="liCopiar(\''+id+'\')" style="padding:6px 14px;background:#0a66c2;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,-apple-system,sans-serif;white-space:nowrap;">📋 Copiar</button>';
     s+='</div>';
     if(desc)s+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px;">'+desc+'</div>';
-    s+='<div id="'+id+'" style="font-size:12.5px;color:'+(contenido?'#333':'#999')+';line-height:1.65;padding:10px 14px;background:'+(contenido?'rgba(82,183,136,.06)':'#f7f7f7')+';border-radius:6px;border-left:3px solid '+(contenido?'#4a7c5f':'#ddd')+';min-height:20px;white-space:pre-wrap;">'+(contenido||placeholder||'Aparece después de analizar')+'</div>';
+    s+='<div id="'+id+'" style="font-size:12.5px;color:'+(contenido?'#333':'#999')+';line-height:1.65;padding:10px 14px;background:'+(contenido?'var(--green-light)':'#f7f7f7')+';border-radius:6px;border-left:3px solid '+(contenido?'var(--green)':'#ddd')+';min-height:20px;white-space:pre-wrap;">'+(contenido||placeholder||'Aparece después de analizar')+'</div>';
     s+='</div>';
     return s;
   }
@@ -4233,7 +4238,7 @@ function rLinkedIn(){
       s+='<div style="font-size:12px;color:#999;text-decoration:line-through;line-height:1.55;background:#fdf3f2;padding:9px 12px;border-radius:6px;border-left:3px solid #c0756e;margin-bottom:10px;white-space:pre-wrap;">'+hh(actual)+'</div>';
     }
     s+='<div style="font-size:10px;color:#4a7c5f;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px;">Pega esto en su lugar</div>';
-    s+='<div id="'+id+'" style="font-size:13px;color:'+(propuesto?'var(--text)':'#999')+';line-height:1.6;background:'+(propuesto?'rgba(82,183,136,.06)':'#f7f7f7')+';padding:10px 14px;border-radius:6px;border-left:3px solid '+(propuesto?'#4a7c5f':'#ddd')+';white-space:pre-wrap;">'+(propuesto?hh(propuesto):'Aparece después de analizar')+'</div>';
+    s+='<div id="'+id+'" style="font-size:13px;color:'+(propuesto?'var(--text)':'#999')+';line-height:1.6;background:'+(propuesto?'var(--green-light)':'#f7f7f7')+';padding:10px 14px;border-radius:6px;border-left:3px solid '+(propuesto?'var(--green)':'#ddd')+';white-space:pre-wrap;">'+(propuesto?hh(propuesto):'Aparece después de analizar')+'</div>';
     s+='</div>';
     return s;
   }
@@ -4279,7 +4284,7 @@ function rLinkedIn(){
       }
       o+='</div>';
       if(bulletsTxt){
-        o+='<div id="li-exp-desc-'+i+'" data-copy="'+hh(bulletsTxt)+'" style="font-size:12.5px;line-height:1.65;color:#333;background:rgba(82,183,136,.06);padding:10px 14px;border-radius:6px;border-left:3px solid #4a7c5f;white-space:pre-wrap;margin-top:6px;">'+hh(bulletsTxt)+'</div>';
+        o+='<div id="li-exp-desc-'+i+'" data-copy="'+hh(bulletsTxt)+'" style="font-size:12.5px;line-height:1.65;color:#333;background:var(--green-light);padding:10px 14px;border-radius:6px;border-left:3px solid var(--green);white-space:pre-wrap;margin-top:6px;">'+hh(bulletsTxt)+'</div>';
       }
       if(apts.length){
         o+='<div style="margin-top:12px;">';
@@ -4327,7 +4332,7 @@ function rLinkedIn(){
 
   // ── 5. Puntos fuertes (lo que ya hace bien el cliente) ──
   if(liPuntosFuertes&&liPuntosFuertes.length){
-    o+='<div style="background:rgba(82,183,136,.05);border-radius:14px;padding:16px 18px;border:1px solid rgba(82,183,136,.25);">';
+    o+='<div style="background:var(--green-light);border-radius:14px;padding:16px 18px;border:1px solid var(--rose-mid);">';
     o+='<div style="font-size:12px;font-weight:700;color:#000;font-family:Inter,-apple-system,sans-serif;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">✅ Lo que ya hacés bien</div>';
     o+='<ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:8px;">';
     liPuntosFuertes.forEach(function(p){o+='<li style="display:flex;gap:10px;font-size:13px;line-height:1.55;color:var(--text);"><span style="color:#4a7c5f;flex-shrink:0;">▸</span><span>'+hh(p)+'</span></li>';});
