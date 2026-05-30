@@ -23,3 +23,39 @@ self.addEventListener("fetch", (event) => {
   // excluir las llamadas a Supabase/Stripe/Brevo.
   return;
 });
+
+// ─── Push notifications ─────────────────────────────────────────────────
+// El servidor manda payload JSON {title, body, url, tag} via web-push.
+// El SW lo recibe y muestra la notificación nativa del SO.
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) {}
+  const title = data.title || "Pathway";
+  const options = {
+    body: data.body || "",
+    icon: "/icon-192.png?v=1",
+    badge: "/icon-192.png?v=1",
+    tag: data.tag || "pathway",   // mismo tag = reemplaza (no se apilan iguales)
+    renotify: !!data.renotify,
+    data: { url: data.url || "/" }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ("focus" in c) {
+          c.focus();
+          if ("navigate" in c) { try { c.navigate(targetUrl); } catch (e) {} }
+          return;
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+    })
+  );
+});
