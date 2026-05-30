@@ -3433,12 +3433,32 @@ document.addEventListener("click", function(ev){
     var now=new Date();
     var time=now.getDate()+"/"+(1+now.getMonth())+" "+now.getHours()+":"+String(now.getMinutes()).padStart(2,"0");
     var msg={from:"coach",text:txt,time:time,ts:now.getTime()};
+    // Buscar email + nombre del cliente para mandarle el push después.
+    var _targetCli = CLIENTS.filter(function(x){return String(x.id)===String(chid);})[0]||{};
+    var _targetEmail = (_targetCli && _targetCli.email) || "";
     _sb("candidatos?id=eq."+encodeURIComponent(chid)+"&select=notas_coach").then(function(rows){
       var arr=_chatArr(rows&&rows[0]?rows[0].notas_coach:"[]");
       arr.push(msg);
       return _sbw("candidatos?id=eq."+encodeURIComponent(chid),"PATCH",{notas_coach:JSON.stringify(arr)}).then(function(r){
         _genBusy=false; if(!r.ok){ if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintentá."); return; }
         CLIENTS.forEach(function(x){ if(String(x.id)===String(chid)){ x.chat=arr; if(x.raw) x.raw.notas_coach=JSON.stringify(arr); } });
+        // Push notification al cliente (best effort).
+        if(_targetEmail){
+          try{
+            var _coachName = (COACH&&(COACH.firstName||COACH.name)) || "Tu coach";
+            fetch(SB+"/functions/v1/send-push",{
+              method:"POST",
+              headers:{"Content-Type":"application/json", apikey:KEY, Authorization:"Bearer "+KEY},
+              body:JSON.stringify({
+                user_email: _targetEmail.toLowerCase(),
+                title: _coachName + " te escribió",
+                body: txt.slice(0,140),
+                url: "/cliente.html",
+                tag: "chat-coach-" + _targetEmail.toLowerCase()
+              })
+            }).catch(function(){});
+          }catch(e){}
+        }
         render();
       });
     }).catch(function(){ _genBusy=false; if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintentá."); });
@@ -4328,6 +4348,19 @@ if('serviceWorker' in navigator){
     try { localStorage.setItem('pw_install_dismissed','1'); } catch(e){}
     if (chip) chip.style.display = 'none';
   });
+})();
+</script>
+<script>
+// Push notifications: invitación discreta para que la coach active los avisos
+// de chat de sus clientes. Espera a que COACH.email esté cargado.
+(function(){
+  function tryPrompt(){
+    var em = (typeof COACH!=="undefined" && COACH && COACH.email) || "";
+    if(em && window.PwPush && PwPush.autoPrompt){
+      PwPush.autoPrompt(em);
+    } else { setTimeout(tryPrompt, 1500); }
+  }
+  setTimeout(tryPrompt, 6000);
 })();
 </script>
 </body>
