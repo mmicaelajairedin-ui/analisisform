@@ -126,11 +126,51 @@
     } catch (e) { return false; }
   }
 
+  // autoPrompt: muestra una barra discreta abajo invitando a activar las
+  // notificaciones. Solo aparece si: hay soporte, no fue denegado, no hay
+  // suscripción activa, y el usuario no la cerró en esta sesión. Espera
+  // unos segundos para no asustar apenas se abre la app.
+  async function autoPrompt(userEmail, opts) {
+    opts = opts || {};
+    if (!isSupported()) return;
+    if (Notification.permission === "denied") return;
+    if (await hasSubscription()) return;
+    var key = "pw_push_dismissed_" + (userEmail || "global");
+    try { if (sessionStorage.getItem(key)) return; } catch (e) {}
+
+    setTimeout(function () {
+      if (document.getElementById("pw-push-banner")) return;
+      var b = document.createElement("div");
+      b.id = "pw-push-banner";
+      b.style.cssText = "position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9500;background:#fff;border:1px solid rgba(45,106,79,.18);border-radius:99px;padding:8px 10px 8px 16px;box-shadow:0 10px 28px rgba(45,106,79,.22);display:flex;align-items:center;gap:10px;font-family:Inter,-apple-system,sans-serif;font-size:13px;color:#1B2E26;max-width:92vw;animation:pwPushIn .25s ease-out;";
+      b.innerHTML =
+        '<span aria-hidden="true">🔔</span><span>Activá las notificaciones del chat</span>' +
+        '<button id="pw-push-yes" style="background:#2D6A4F;color:#fff;border:none;padding:6px 14px;border-radius:99px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Activar</button>' +
+        '<button id="pw-push-no" aria-label="Cerrar" style="background:transparent;border:none;font-size:18px;cursor:pointer;color:#888;line-height:1;padding:0 4px;font-family:inherit">×</button>';
+      var st = document.createElement("style");
+      st.textContent = "@keyframes pwPushIn{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}";
+      document.head.appendChild(st);
+      document.body.appendChild(b);
+      document.getElementById("pw-push-yes").onclick = async function () {
+        try { await activate(userEmail); b.remove(); }
+        catch (e) {
+          b.innerHTML = '<span style="color:#c0756e">' + ((e && e.message) || "No se pudo activar.") + "</span>";
+          setTimeout(function () { if (b && b.parentNode) b.remove(); }, 3500);
+        }
+      };
+      document.getElementById("pw-push-no").onclick = function () {
+        try { sessionStorage.setItem(key, "1"); } catch (e) {}
+        b.remove();
+      };
+    }, opts.delay || 6000);
+  }
+
   global.PwPush = {
     isSupported: isSupported,
     status: status,
     hasSubscription: hasSubscription,
     activate: activate,
     deactivate: deactivate,
+    autoPrompt: autoPrompt,
   };
 })(this);

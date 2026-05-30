@@ -1649,7 +1649,7 @@ function _loadCoachColor(){
   // Resolución del coach del cliente. SOLO por coach_id — con multi-coach,
   // adivinar "el primer coach de la tabla" muestra el coach equivocado
   // (race condition: el fetch del coach arbitrario podía pisar al correcto).
-  var q='select=nombre,foto_url,nombre_practica,configuracion,rol';
+  var q='select=nombre,foto_url,nombre_practica,configuracion,rol,email';
   var filter;
   if(C&&C.coach_id){
     filter='id=eq.'+encodeURIComponent(C.coach_id);
@@ -1688,6 +1688,9 @@ function _loadCoachColor(){
         nombre_practica:coach.nombre_practica,
         logo_url:coachIsPro?(cfg.logo_url||''):''
       });
+      // Guardar email del coach para poder mandarle push notifications
+      // cuando el cliente le manda un mensaje desde el chat.
+      try{ window.COACH_EMAIL = (coach.email||'').toLowerCase(); }catch(e){}
       // Calendly NO es branding visual — siempre se aplica si el coach lo configuró
       // (el cliente debe poder agendar con su coach independientemente del plan).
       if(cfg.calendly_url){CALENDLY=cfg.calendly_url;}
@@ -4739,15 +4742,33 @@ function _renderMsgs(){
 function sendMsg(){
   var inp=document.getElementById('msg-input');
   if(!inp||!inp.value.trim())return;
+  var txt=inp.value.trim();
   var msgs=_getMsgs();
   var now=new Date();
   var time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');
-  msgs.push({from:'cliente',text:inp.value.trim(),time:time,ts:now.getTime()});
+  msgs.push({from:'cliente',text:txt,time:time,ts:now.getTime()});
   _saveMsgs(msgs);
   inp.value='';
   _renderMsgs();
   // Guardar en Supabase
   _syncMsgsToDB(msgs);
+  // Push notification al coach (best effort, no bloquea el envío).
+  if(window.COACH_EMAIL){
+    try{
+      var clientName = (typeof C!=='undefined' && C && C.nombre) || E || 'Tu cliente';
+      fetch(SB+'/functions/v1/send-push',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},
+        body:JSON.stringify({
+          user_email: COACH_EMAIL,
+          title: clientName + ' te escribió',
+          body: txt.slice(0,140),
+          url: '/panel-v2.html',
+          tag: 'chat-' + E
+        })
+      }).catch(function(){});
+    }catch(e){}
+  }
 }
 
 // Clave de deduplicación estable: emisor + contenido + timestamp. Así el
@@ -4916,6 +4937,18 @@ if('serviceWorker' in navigator){
     try { localStorage.setItem('pw_install_dismissed','1'); } catch(e){}
     if (chip) chip.style.display = 'none';
   });
+})();
+</script>
+<script>
+// Push notifications: invitación discreta a activarlas (banner abajo, dismiss).
+// Espera a que E (email del cliente) esté seteado por init() antes de mostrar.
+(function(){
+  function tryPrompt(){
+    if(typeof E!=='undefined' && E && window.PwPush && PwPush.autoPrompt){
+      PwPush.autoPrompt(E);
+    } else { setTimeout(tryPrompt, 1500); }
+  }
+  setTimeout(tryPrompt, 6000);
 })();
 </script>
 </body>
