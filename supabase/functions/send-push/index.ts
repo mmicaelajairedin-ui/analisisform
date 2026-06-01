@@ -22,7 +22,7 @@
 import webpush from "https://esm.sh/web-push@3.6.7";
 
 // VAPID pública (la misma que en el frontend, pw-push.js).
-const VAPID_PUBLIC = "BEeEjwY2wj-XTIfnXMlTtrB18eMKIvAj_9fF5-Hdj7_lMDwcEW4dZZPx2V_8BOf2iM1Nw3bx45oZvXggYNZYJro";
+const VAPID_PUBLIC = "BKzJaV8CJyFmJPgT-RhbMQcfQANm9exHLKfeiTh8NWm5QHl8L7-Iipss-QPHLZNLDmdV9Uq3Wo0VJC2II_uuEVI";
 const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY") || "";
 const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:hi@pathwaycareercoach.com";
 
