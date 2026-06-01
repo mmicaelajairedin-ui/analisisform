@@ -255,6 +255,22 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .cp-conf{position:fixed;top:-12px;width:9px;height:14px;border-radius:2px;z-index:9001;pointer-events:none;animation:cpConfFall 2.4s ease-in forwards;}
 @keyframes cpConfFall{to{transform:translateY(104vh) rotate(560deg);opacity:.2;}}
 @media (prefers-reduced-motion:reduce){.cp-demo-spin{animation:none;}.cp-conf{display:none;}}
+/* Carteles "Empezá por aquí" (camino de activación del coach) */
+.cp-path .cp-path-medal{display:flex;align-items:center;gap:8px;}
+.cp-path-step{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:12px;border:1px solid var(--pw-border);transition:opacity .3s,background .3s;}
+.cp-path-step.is-current{border-color:var(--pw-bosque);background:linear-gradient(135deg,var(--pw-niebla-2),#fff);}
+.cp-path-step.is-done{opacity:.6;}
+.cp-path-step.is-locked{opacity:.5;}
+.cp-path-num,.cp-path-check{flex:0 0 auto;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;}
+.cp-path-num{background:var(--pw-niebla-2);color:var(--pw-text-soft);}
+.cp-path-step.is-current .cp-path-num{background:var(--pw-bosque);color:#fff;}
+.cp-path-check{background:var(--pw-bosque);color:#fff;}
+.cp-path-body{flex:1;min-width:0;}
+.cp-path-label{font-size:14px;font-weight:700;color:var(--pw-carbon);}
+.cp-path-desc{font-size:12px;color:var(--pw-text-soft);margin-top:1px;}
+.cp-path-donetag{font-size:12px;font-weight:700;color:var(--pw-bosque);}
+.cp-path-soon{font-size:12px;color:var(--pw-text-soft);}
+.cp-side-coach-medal{width:30px;height:30px;flex:0 0 auto;}
 .cp-reassurance strong{color:var(--pw-bosque);font-weight:600;}
 .cp-stripe-row{display:flex;align-items:center;gap:16px;padding:18px 22px;}
 .cp-stripe-logo{width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#635BFF,#4F46E5);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-family:var(--pw-serif);font-weight:600;font-size:20px;flex-shrink:0;}
@@ -823,8 +839,9 @@ function viewSidebar(){
       "<svg width='24' height='24' viewBox='0 0 100 100' aria-hidden='true'><polygon points='10,82 32,52 54,82' fill='#52B788'/><polygon points='34,82 58,28 82,82' fill='#FAFDF9'/><circle cx='58' cy='22' r='5' fill='#E9C46A'/></svg>"+
       "<span class='cp-side-brand-word'>pathway<span style='color:#52B788'>.</span></span></a>"+
     "<div class='cp-side-coach'>"+avImg(COACH.photo,COACH.name,"")+
-      "<div style='min-width:0'><div class='cp-side-coach-name'>"+esc(COACH.name)+"</div>"+
-      "<div class='cp-side-coach-role'>"+esc(COACH.role)+"<span class='cp-side-plan'>"+(state.plan==="pro"?"Pro":"Basic")+"</span></div></div></div>"+
+      "<div style='min-width:0;flex:1'><div class='cp-side-coach-name'>"+esc(COACH.name)+"</div>"+
+      "<div class='cp-side-coach-role'>"+esc(COACH.role)+"<span class='cp-side-plan'>"+(state.plan==="pro"?"Pro":"Basic")+"</span></div></div>"+
+      (function(){ var m=coachMedalInfo(); return m.name?"<img class='cp-side-coach-medal' src='assets/iconos/medalla-"+m.name+".png' alt='Medalla "+m.name+"' title='Medalla "+m.name+" · "+m.n+"/3 hitos'>":""; })()+"</div>"+
     "<nav class='cp-side-nav'>"+nav+"</nav>"+
     "<div class='cp-side-foot'>"+
       "<button class='cp-side-cta' data-act='nav:clientes'>"+svg(IC.plus,14)+" Sumar cliente</button>"+
@@ -911,6 +928,52 @@ function viewSolicitudes(){
       "<span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span></div></div>"+
     pendHtml + waitHtml + histHtml;
 }
+// Medalla del coach según hitos de arranque completados (perfil, cliente, informe).
+function coachMedalInfo(){
+  var steps=computeSteps(); var ids=["profile","client","report"];
+  var n=steps.filter(function(s){ return ids.indexOf(s.id)>=0 && s.done; }).length;
+  return { n:n, name:(n>=3?"oro":(n>=2?"plata":(n>=1?"bronce":""))) };
+}
+// Celebra con confeti cuando el coach completa un hito nuevo (no en el primer render).
+function _pathProgressCheck(n){
+  try{
+    var k="pw_path_"+((COACH&&COACH.email)||(REAL&&RME&&RME.email)||"x");
+    var raw=localStorage.getItem(k);
+    if(raw===null){ localStorage.setItem(k,String(n)); return; }
+    var prev=parseInt(raw,10)||0;
+    if(n>prev){ localStorage.setItem(k,String(n)); setTimeout(function(){ demoConfetti(); toast(n>=3?"¡Completaste tu arranque! 🏆":"¡Hito desbloqueado! 🎉"); },300); }
+    else if(n!==prev){ localStorage.setItem(k,String(n)); }
+  }catch(e){}
+}
+// Carteles guía: Perfil → Primer cliente → Primer informe. Se apagan al terminar.
+function coachPath(){
+  var mils=[
+    { id:"profile", n:1, label:"Armá tu perfil", desc:"Foto, bio y servicios para que el cliente sepa quién sos", go:"config|profile" },
+    { id:"client",  n:2, label:"Sumá tu primer cliente", desc:"Mandale el link de alta desde Clientes", go:"clientes" },
+    { id:"report",  n:3, label:"Generá su primer informe", desc:"Probalo ya mismo con María, tu clienta de ejemplo", go:"clientes" }
+  ];
+  var steps=computeSteps();
+  var doneOf=function(id){ var s=steps.filter(function(x){return x.id===id;})[0]; return !!(s&&s.done); };
+  mils.forEach(function(m){ m.done=doneOf(m.id); });
+  var doneN=mils.filter(function(m){return m.done;}).length;
+  _pathProgressCheck(doneN);
+  if(doneN>=3) return ""; // camino completo → se apaga
+  var med=coachMedalInfo();
+  var medalHtml=med.name?"<img src='assets/iconos/medalla-"+med.name+".png' alt='' style='width:32px;height:32px'>":"";
+  var firstPending=true;
+  var rows=mils.map(function(m){
+    var st=m.done?"done":(firstPending?"current":"locked");
+    if(st==="current") firstPending=false;
+    var icon=m.done?"<span class='cp-path-check'>"+svg(IC.check,15)+"</span>":"<span class='cp-path-num'>"+m.n+"</span>";
+    var act=m.done?"<span class='cp-path-donetag'>Hecho ✓</span>"
+      :(st==="current"?"<button class='cp-btn cp-btn-primary beacon' style='height:34px;font-size:12px;padding:0 16px' data-act='asist-go' data-go='"+m.go+"'>Empezá aquí</button>"
+      :"<span class='cp-path-soon'>Pronto</span>");
+    return "<div class='cp-path-step is-"+st+"'>"+icon+"<div class='cp-path-body'><div class='cp-path-label'>"+esc(m.label)+"</div><div class='cp-path-desc'>"+esc(m.desc)+"</div></div>"+act+"</div>";
+  }).join("");
+  return "<div class='cp-card cp-path'><div class='cp-card-hd'><h3 class='cp-card-title'>Empezá por aquí<span class='dot'>.</span></h3>"+
+    "<span class='cp-path-medal'>"+medalHtml+"<span class='cp-eyebrow'>"+doneN+"/3</span></span></div>"+
+    "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+rows+"</div></div>";
+}
 function viewResumen(){
   var greet = "Buenos días", emoji = "☀️";
   var pendingReview = CLIENTS.filter(function(c){return c.reportState==="pending";}).length;
@@ -954,6 +1017,7 @@ function viewResumen(){
   return "<div class='cp-greet'>"+avImg(COACH.photo,COACH.name,"")+
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+" "+emoji+"</h1>"+
       "<div class='cp-greet-sub'>"+pendingReview+" pendiente"+(pendingReview===1?"":"s")+(_nx?" · "+_nxTxt:"")+"</div></div></div>"+
+    coachPath()+
     calCard+
     "<div class='cp-action-row'>"+
       "<button class='cp-action is-urgent' data-act='nav:clientes'><span class='cp-action-bg'></span><span class='cp-action-tag'>Pendiente</span>"+
