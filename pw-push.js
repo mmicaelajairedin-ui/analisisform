@@ -130,38 +130,86 @@
   // notificaciones. Solo aparece si: hay soporte, no fue denegado, no hay
   // suscripción activa, y el usuario no la cerró en esta sesión. Espera
   // unos segundos para no asustar apenas se abre la app.
+  // Devuelve instrucciones específicas por navegador para des-bloquear notifs.
+  function blockedHelpHtml() {
+    var ua = (navigator.userAgent || "").toLowerCase();
+    var isIOS = /iphone|ipad|ipod/.test(ua);
+    var isAndroidChrome = /android/.test(ua) && /chrome/.test(ua) && !/firefox/.test(ua);
+    var isFirefox = /firefox/.test(ua);
+    if (isIOS) return "<strong>iPhone:</strong> Configuración → Notificaciones → Pathway → Permitir.<br><em>(Pathway tiene que estar agregada a la pantalla de inicio: Safari → Compartir → Añadir a inicio.)</em>";
+    if (isAndroidChrome) return "<strong>Chrome Android:</strong> tocá el candado 🔒 a la izquierda de la URL → Permisos → Notificaciones → Permitir. Recargá la página.";
+    if (isFirefox) return "<strong>Firefox:</strong> click en el candado 🔒 a la izquierda de la URL → Configuración → Permisos → Notificaciones → Permitir.";
+    return "<strong>Tu navegador:</strong> click en el candado 🔒 a la izquierda de la URL → Permisos del sitio → Notificaciones → Permitir. Después recargá la página.";
+  }
+
+  // autoPrompt: muestra banner abajo. Si están BLOQUEADAS por el navegador,
+  // muestra cómo desbloquearlas (porque requestPermission ya no puede hacer
+  // nada). La decisión se respeta por sesión (sessionStorage).
   async function autoPrompt(userEmail, opts) {
     opts = opts || {};
     if (!isSupported()) return;
-    if (Notification.permission === "denied") return;
     if (await hasSubscription()) return;
     var key = "pw_push_dismissed_" + (userEmail || "global");
     try { if (sessionStorage.getItem(key)) return; } catch (e) {}
 
+    var blocked = Notification.permission === "denied";
+
     setTimeout(function () {
       if (document.getElementById("pw-push-banner")) return;
+      var st = document.createElement("style");
+      st.textContent =
+        "@keyframes pwPushIn{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}" +
+        ".pw-push-banner{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9500;background:#fff;border:1px solid rgba(45,106,79,.18);box-shadow:0 10px 28px rgba(45,106,79,.22);font-family:Inter,-apple-system,sans-serif;font-size:13px;color:#1B2E26;max-width:92vw;animation:pwPushIn .25s ease-out;}" +
+        ".pw-push-banner.pill{border-radius:99px;padding:8px 10px 8px 16px;display:flex;align-items:center;gap:10px;}" +
+        ".pw-push-banner.card{border-radius:14px;padding:14px 16px 14px 16px;display:block;width:340px;max-width:90vw;line-height:1.45;position:fixed;}" +
+        ".pw-push-yes{background:#2D6A4F;color:#fff;border:none;padding:6px 14px;border-radius:99px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}" +
+        ".pw-push-no{background:transparent;border:none;font-size:18px;cursor:pointer;color:#888;line-height:1;padding:0 4px;font-family:inherit;}" +
+        ".pw-push-x{position:absolute;top:6px;right:8px;background:transparent;border:none;font-size:18px;cursor:pointer;color:#888;line-height:1;padding:2px 6px;font-family:inherit;}";
+      document.head.appendChild(st);
+
       var b = document.createElement("div");
       b.id = "pw-push-banner";
-      b.style.cssText = "position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9500;background:#fff;border:1px solid rgba(45,106,79,.18);border-radius:99px;padding:8px 10px 8px 16px;box-shadow:0 10px 28px rgba(45,106,79,.22);display:flex;align-items:center;gap:10px;font-family:Inter,-apple-system,sans-serif;font-size:13px;color:#1B2E26;max-width:92vw;animation:pwPushIn .25s ease-out;";
-      b.innerHTML =
-        '<span aria-hidden="true">🔔</span><span>Activá las notificaciones del chat</span>' +
-        '<button id="pw-push-yes" style="background:#2D6A4F;color:#fff;border:none;padding:6px 14px;border-radius:99px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Activar</button>' +
-        '<button id="pw-push-no" aria-label="Cerrar" style="background:transparent;border:none;font-size:18px;cursor:pointer;color:#888;line-height:1;padding:0 4px;font-family:inherit">×</button>';
-      var st = document.createElement("style");
-      st.textContent = "@keyframes pwPushIn{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}";
-      document.head.appendChild(st);
+
+      function showBlocked() {
+        b.className = "pw-push-banner card";
+        b.innerHTML =
+          "<button class='pw-push-x' aria-label='Cerrar'>×</button>" +
+          "<div style='display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:6px;'>" +
+            "<span aria-hidden='true'>🔔</span><span>Notificaciones bloqueadas</span>" +
+          "</div>" +
+          "<div style='color:#5A5A55;font-size:12.5px;'>" + blockedHelpHtml() + "</div>";
+        b.querySelector(".pw-push-x").onclick = function () {
+          try { sessionStorage.setItem(key, "1"); } catch (e) {}
+          b.remove();
+        };
+      }
+
+      if (blocked) {
+        showBlocked();
+      } else {
+        b.className = "pw-push-banner pill";
+        b.innerHTML =
+          "<span aria-hidden='true'>🔔</span><span>Activá las notificaciones del chat</span>" +
+          "<button class='pw-push-yes'>Activar</button>" +
+          "<button class='pw-push-no' aria-label='Cerrar'>×</button>";
+        b.querySelector(".pw-push-yes").onclick = async function () {
+          try { await activate(userEmail); b.remove(); }
+          catch (e) {
+            // Si lo bloquearon en el momento, mostrar las instrucciones inline.
+            if (Notification.permission === "denied") {
+              showBlocked();
+            } else {
+              b.innerHTML = "<span style='color:#c0756e'>" + ((e && e.message) || "No se pudo activar.") + "</span>";
+              setTimeout(function () { if (b && b.parentNode) b.remove(); }, 4500);
+            }
+          }
+        };
+        b.querySelector(".pw-push-no").onclick = function () {
+          try { sessionStorage.setItem(key, "1"); } catch (e) {}
+          b.remove();
+        };
+      }
       document.body.appendChild(b);
-      document.getElementById("pw-push-yes").onclick = async function () {
-        try { await activate(userEmail); b.remove(); }
-        catch (e) {
-          b.innerHTML = '<span style="color:#c0756e">' + ((e && e.message) || "No se pudo activar.") + "</span>";
-          setTimeout(function () { if (b && b.parentNode) b.remove(); }, 3500);
-        }
-      };
-      document.getElementById("pw-push-no").onclick = function () {
-        try { sessionStorage.setItem(key, "1"); } catch (e) {}
-        b.remove();
-      };
     }, opts.delay || 6000);
   }
 
