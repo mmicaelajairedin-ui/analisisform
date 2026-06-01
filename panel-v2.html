@@ -848,28 +848,22 @@ var INSIGHTS = [
 var MASCOT_BASE = "assets/mascota/";
 
 /* ═══ Sidebar ═══ */
-// Pasos de la guía de burbujas (avanza al apretar el botón objetivo).
-function _guideSteps(){ return [
-  { target:"config",   text:"Configura tu perfil" },
-  { target:"clientes", text:"Agrega un cliente" },
-  { target:"clientes", text:"Configura a tu cliente" }
-]; }
 function viewSidebar(){
   var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"],["config","Configuración","navConfig"]];
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
   var _navSec = state.section==="solicitudes" ? "clientes" : state.section;
-  // Burbuja guía: sale ARRIBA del botón del menú. Dura hasta que el coach
-  // aprieta ESE botón; ahí salta al siguiente (avance por click).
-  // Confeti + medalla SOLO al completar todos los sub-pasos de una fase
-  // (3 confetis en total, uno por medalla). No en cada click.
-  try{ var _pp=coachPhaseData(); _pathProgressCheck(_pp.filter(function(p){return p.done;}).length); }catch(e){}
-  var _gsteps=_guideSteps();
-  var _gidx=0; try{ _gidx=parseInt(localStorage.getItem("pw_guide_step")||"0",10)||0; }catch(e){}
+  // Burbuja guía: sigue el PROGRESO REAL — muestra siempre la fase incompleta
+  // actual sobre su botón del menú, hasta completar sus sub-pasos. Confeti +
+  // medalla SOLO al completar todos los sub-pasos de una fase (3 en total).
+  var _gphases=coachPhaseData();
+  _pathProgressCheck(_gphases.filter(function(p){return p.done;}).length);
+  var _gMap=["config","clientes","clientes"];
   var _gDismiss=false; try{ _gDismiss=localStorage.getItem("pw_guide_off")==="1"; }catch(e){}
-  var _gStep=(!_gDismiss && _gidx<_gsteps.length)?_gsteps[_gidx]:null;
+  var _gci=-1; for(var _gk=0;_gk<_gphases.length;_gk++){ if(!_gphases[_gk].done){ _gci=_gk; break; } }
+  var _gStep=(!_gDismiss && _gci>=0)?{ target:_gMap[_gci], text:_gphases[_gci].title, idx:_gci, total:_gphases.length, medal:_gphases[_gci].medal }:null;
   var nav = items.map(function(it){
     var bub=(_gStep && it[0]===_gStep.target)
-      ? "<div class='cp-guide-bubble'><button class='cp-guide-x' data-act='guide-off' aria-label='Ocultar guía'>×</button><span class='cp-guide-step'>Paso "+(_gidx+1)+" de "+_gsteps.length+"</span>"+esc(_gStep.text)+"<span class='cp-guide-arrow'></span></div>"
+      ? "<div class='cp-guide-bubble'><button class='cp-guide-x' data-act='guide-off' aria-label='Ocultar guía'>×</button><span class='cp-guide-step'>Paso "+(_gStep.idx+1)+" de "+_gStep.total+" · medalla "+_gStep.medal+"</span>"+esc(_gStep.text)+"<span class='cp-guide-arrow'></span></div>"
       : "";
     return "<div class='cp-side-nav-wrap'>"+bub+"<button class='cp-side-nav-item "+(_navSec===it[0]?"is-active":"")+"' data-act='nav:"+it[0]+"'>"+
       "<span class='cp-side-nav-icon'>"+svg(IC[it[2]],16,"class='cp-side-nav-icon'")+"</span><span>"+it[1]+"</span></button></div>";
@@ -3128,20 +3122,7 @@ document.addEventListener("click", function(ev){
     state.inboxOpen=false; state.section="clientes"; state.clienteSel=igid; state.cliDetTab="mensajes"; state.cliWeek=null;
     render(); window.scrollTo(0,0); return;
   }
-  if(act.indexOf("nav:")===0){
-    var _nsec=act.slice(4);
-    // Guía de burbujas: si aprietan el botón que tenía la burbuja, avanza al
-    // siguiente paso con confeti.
-    try{
-      if(localStorage.getItem("pw_guide_off")!=="1"){
-        var _gs=_guideSteps(), _gx=parseInt(localStorage.getItem("pw_guide_step")||"0",10)||0;
-        if(_gx<_gs.length && _gs[_gx].target===_nsec){
-          localStorage.setItem("pw_guide_step",String(_gx+1)); // solo mueve la burbuja; el confeti es al completar la fase
-        }
-      }
-    }catch(e){}
-    state.section=_nsec; render(); window.scrollTo(0,0); return;
-  }
+  if(act.indexOf("nav:")===0){ state.section = act.slice(4); render(); window.scrollTo(0,0); return; }
   if(act.indexOf("cli:")===0){ state.cliFilter = act.slice(4); render(); return; }
   if(act.indexOf("cfg:")===0){ state.cfg = act.slice(4); render(); return; }
   if(act==="pub-toggle"){ state.pubActive=!state.pubActive; render(); return; }
