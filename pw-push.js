@@ -13,7 +13,7 @@
 
   // VAPID pública: identifica a Pathway frente al push service. NO es secreta.
   // La privada vive como secret en la Edge Function 'send-push' (no en el cliente).
-  var VAPID_PUBLIC = "BKzJaV8CJyFmJPgT-RhbMQcfQANm9exHLKfeiTh8NWm5QHl8L7-Iipss-QPHLZNLDmdV9Uq3Wo0VJC2II_uuEVI";
+  var VAPID_PUBLIC = "BPssOKlQEcIo0V3sGQJNpieJt54zUZULa-2r2bJPHtvvdVG-s-EjpWprAB6wyTW5jvwJrsag_vxrX14WM1HBclA";
 
   // Endpoint del backend de Pathway (Supabase REST) para guardar/borrar suscripciones.
   // Reutiliza la anon key del proyecto — RLS permite INSERT/DELETE público sobre
