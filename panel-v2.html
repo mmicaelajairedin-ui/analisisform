@@ -270,6 +270,20 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .cp-path-desc{font-size:12px;color:var(--pw-text-soft);margin-top:1px;}
 .cp-path-donetag{font-size:12px;font-weight:700;color:var(--pw-bosque);}
 .cp-path-soon{font-size:12px;color:var(--pw-text-soft);}
+.cp-ph{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:12px;border:1px solid var(--pw-border);transition:opacity .3s;}
+.cp-ph-lock{opacity:.5;}
+.cp-ph-done{opacity:.75;background:var(--pw-niebla-2);align-items:center;}
+.cp-ph-cur{border-color:var(--pw-bosque);background:linear-gradient(135deg,var(--pw-niebla-2),#fff);}
+.cp-ph-num{flex:0 0 auto;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;background:var(--pw-niebla-2);color:var(--pw-text-soft);}
+.cp-ph-num.is-on{background:var(--pw-bosque);color:#fff;}
+.cp-ph-body{flex:1;min-width:0;}
+.cp-ph-title{font-size:14px;font-weight:700;color:var(--pw-carbon);}
+.cp-ph-sub{font-size:12px;color:var(--pw-text-soft);margin-top:1px;}
+.cp-ph-btns{display:flex;flex-direction:column;gap:7px;margin-top:11px;}
+.cp-ph-btn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;border-radius:9px;border:1px solid var(--pw-border);background:#fff;font-size:13px;font-weight:600;color:var(--pw-carbon);cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s;}
+.cp-ph-btn:hover:not(.is-done){border-color:var(--pw-bosque);background:var(--pw-niebla-2);}
+.cp-ph-btn.is-done{color:var(--pw-text-soft);cursor:default;}
+.cp-ph-btn-ic{flex:0 0 auto;color:var(--pw-bosque);display:inline-flex;}
 .cp-side-coach-badge{display:inline-flex;align-items:center;gap:6px;margin-top:7px;}
 .cp-side-coach-badge span{font-size:11px;font-weight:600;color:rgba(255,255,255,.72);letter-spacing:.3px;}
 .cp-side-coach-medal{width:30px!important;height:30px!important;border:0!important;border-radius:0!important;box-shadow:none!important;object-fit:contain!important;flex:0 0 auto;}
@@ -930,17 +944,37 @@ function viewSolicitudes(){
       "<span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span></div></div>"+
     pendHtml + waitHtml + histHtml;
 }
-// Hitos REALES del coach (María, la clienta de ejemplo, NO cuenta).
-function coachRealMilestones(){
+// Fases de arranque del coach con sub-pasos. María (ejemplo) NO cuenta como
+// cliente real. Cada fase completa = una medalla (bronce → plata → oro).
+function coachPhaseData(){
   var steps=computeSteps();
-  var prof=!!((steps.filter(function(s){return s.id==="profile";})[0])||{}).done;
+  var done=function(id){ return !!((steps.filter(function(x){return x.id===id;})[0])||{}).done; };
   var real=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c&&!c._example;}):[];
-  return { profile:prof, client:real.length>0, report:real.some(function(c){return c&&c.reportState==="published";}) };
+  var hasReal=real.length>0;
+  var hasReport=real.some(function(c){return c&&c.reportState==="published";});
+  var hasCv=real.some(function(c){return c&&c.cvState==="published";});
+  var phases=[
+    { medal:"bronce", title:"Configurá tu perfil", steps:[
+      { label:"Foto, bio y título profesional", done:done("profile"), go:"config|profile" },
+      { label:"Servicios y precios", done:done("services"), go:"config|pathway" },
+      { label:"Conectá tu cuenta de cobro", done:done("stripe"), go:"config|pathway" }
+    ]},
+    { medal:"plata", title:"Sumá tu primer cliente", steps:[
+      { label:"Probá el flujo con María (demo)", done:_exGen, demo:true },
+      { label:"Dá de alta a un cliente real", done:hasReal, go:"clientes" }
+    ]},
+    { medal:"oro", title:"Preparale su espacio", steps:[
+      { label:"Generá su informe con IA", done:hasReport, go:"clientes" },
+      { label:"Generá su CV con IA", done:hasCv, go:"clientes" }
+    ]}
+  ];
+  phases.forEach(function(p){ p.done=p.steps.every(function(s){return s.done;}); });
+  return phases;
 }
-// Medalla del coach según hitos de arranque completados (perfil, cliente, informe).
+// Medalla del coach = cantidad de fases completas (1=bronce, 2=plata, 3=oro).
 function coachMedalInfo(){
-  var m=coachRealMilestones();
-  var n=(m.profile?1:0)+(m.client?1:0)+(m.report?1:0);
+  var ph=coachPhaseData();
+  var n=ph.filter(function(p){return p.done;}).length;
   return { n:n, name:(n>=3?"oro":(n>=2?"plata":(n>=1?"bronce":""))) };
 }
 // Celebra con confeti cuando el coach completa un hito nuevo (no en el primer render).
@@ -950,34 +984,35 @@ function _pathProgressCheck(n){
     var raw=localStorage.getItem(k);
     if(raw===null){ localStorage.setItem(k,String(n)); return; }
     var prev=parseInt(raw,10)||0;
-    if(n>prev){ localStorage.setItem(k,String(n)); setTimeout(function(){ demoConfetti(); toast(n>=3?"¡Completaste tu arranque! 🏆":"¡Hito desbloqueado! 🎉"); },300); }
+    if(n>prev){ var _mn=["","bronce","plata","oro"][n]||""; localStorage.setItem(k,String(n)); setTimeout(function(){ demoConfetti(); toast(n>=3?"¡Medalla de oro! Completaste tu arranque 🏆":("¡Ganaste la medalla "+_mn+"! 🏅")); },300); }
     else if(n!==prev){ localStorage.setItem(k,String(n)); }
   }catch(e){}
 }
-// Carteles guía: Perfil → Primer cliente → Primer informe. Se apagan al terminar.
+// Guía por fases: cada fase muestra sus sub-pasos; al completarla, medalla.
+// La fase actual se expande con botones; las hechas se colapsan; el resto
+// queda bloqueado. Se apaga sola al completar las 3.
 function coachPath(){
-  var m=coachRealMilestones();
-  var hasReal=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.some(function(c){return c&&!c._example;}):false;
-  var reportAct=hasReal?"data-act='asist-go' data-go='clientes'":"data-act='open-demo'";
-  var mils=[
-    { id:"profile", n:1, label:"Armá tu perfil", desc:"Foto, bio y servicios para que el cliente sepa quién sos", act:"data-act='asist-go' data-go='config|profile'", done:m.profile },
-    { id:"client",  n:2, label:"Sumá tu primer cliente", desc:"Mandale el link de alta desde Clientes", act:"data-act='asist-go' data-go='clientes'", done:m.client },
-    { id:"report",  n:3, label:"Generá su primer informe", desc:(hasReal?"Abrí su ficha y generalo con IA":"Probalo ya mismo con María, tu clienta de ejemplo"), act:reportAct, done:m.report }
-  ];
-  var doneN=mils.filter(function(x){return x.done;}).length;
+  var ph=coachPhaseData();
+  var doneN=ph.filter(function(p){return p.done;}).length;
   _pathProgressCheck(doneN);
-  if(doneN>=3) return ""; // camino completo → se apaga
+  if(doneN>=ph.length) return ""; // todo completo → se apaga
+  var curIdx=-1; for(var i=0;i<ph.length;i++){ if(!ph[i].done){ curIdx=i; break; } }
   var med=coachMedalInfo();
-  var medalHtml=med.name?"<img src='assets/iconos/medalla-"+med.name+".png' alt='' style='width:32px;height:32px'>":"";
-  var firstPending=true;
-  var rows=mils.map(function(x){
-    var st=x.done?"done":(firstPending?"current":"locked");
-    if(st==="current") firstPending=false;
-    var icon=x.done?"<span class='cp-path-check'>"+svg(IC.check,15)+"</span>":"<span class='cp-path-num'>"+x.n+"</span>";
-    var actBtn=x.done?"<span class='cp-path-donetag'>Hecho ✓</span>"
-      :(st==="current"?"<button class='cp-btn cp-btn-primary beacon' style='height:34px;font-size:12px;padding:0 16px' "+x.act+">Empezá aquí</button>"
-      :"<span class='cp-path-soon'>Pronto</span>");
-    return "<div class='cp-path-step is-"+st+"'>"+icon+"<div class='cp-path-body'><div class='cp-path-label'>"+esc(x.label)+"</div><div class='cp-path-desc'>"+esc(x.desc)+"</div></div>"+actBtn+"</div>";
+  var medalHtml=med.name?"<img src='assets/iconos/medalla-"+med.name+".png' alt='' style='width:30px;height:30px'>":"";
+  var rows=ph.map(function(p,idx){
+    var medImg="<img src='assets/iconos/medalla-"+p.medal+".png' alt='' style='width:32px;height:32px;flex:0 0 auto'>";
+    if(p.done){
+      return "<div class='cp-ph cp-ph-done'>"+medImg+"<div class='cp-ph-body'><div class='cp-ph-title'>"+esc(p.title)+"</div><div class='cp-ph-sub'>Medalla "+p.medal+" ganada ✓</div></div></div>";
+    }
+    if(idx!==curIdx){
+      return "<div class='cp-ph cp-ph-lock'><span class='cp-ph-num'>"+(idx+1)+"</span><div class='cp-ph-body'><div class='cp-ph-title'>"+esc(p.title)+"</div><div class='cp-ph-sub'>Desbloqueás la medalla "+p.medal+"</div></div></div>";
+    }
+    var btns=p.steps.map(function(s){
+      var act=s.demo?"data-act='open-demo'":"data-act='asist-go' data-go='"+s.go+"'";
+      var ic=s.done?svg(IC.check,14):svg(IC.arrowR,14);
+      return "<button class='cp-ph-btn"+(s.done?" is-done":"")+"' "+(s.done?"disabled":act)+"><span class='cp-ph-btn-ic'>"+ic+"</span>"+esc(s.label)+"</button>";
+    }).join("");
+    return "<div class='cp-ph cp-ph-cur'><span class='cp-ph-num is-on'>"+(idx+1)+"</span><div class='cp-ph-body'><div class='cp-ph-title'>"+esc(p.title)+"</div><div class='cp-ph-sub'>Completá estos pasos y ganás la medalla "+p.medal+" 🏅</div><div class='cp-ph-btns'>"+btns+"</div></div></div>";
   }).join("");
   return "<div class='cp-card cp-path'><div class='cp-card-hd'><h3 class='cp-card-title'>Empezá por aquí<span class='dot'>.</span></h3>"+
     "<span class='cp-path-medal'>"+medalHtml+"<span class='cp-eyebrow'>"+doneN+"/3</span></span></div>"+
