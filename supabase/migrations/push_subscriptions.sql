@@ -25,3 +25,10 @@ CREATE POLICY push_insert_anyone ON push_subscriptions
 DROP POLICY IF EXISTS push_delete_anyone ON push_subscriptions;
 CREATE POLICY push_delete_anyone ON push_subscriptions
   FOR DELETE USING (true);
+
+-- IMPORTANTE: las policies RLS son solo el filtro de filas. Para que el rol
+-- 'anon' pueda llegar a esa policy, primero necesita el GRANT a nivel tabla.
+-- Sin esto el cliente recibe 401 desde la REST API de Supabase.
+GRANT INSERT, DELETE ON push_subscriptions TO anon, authenticated;
+GRANT USAGE, SELECT ON SEQUENCE push_subscriptions_id_seq TO anon, authenticated;
+
