@@ -273,16 +273,19 @@ cerrar este gap.
 - Test mental: si un atacante con devtools cambia el `id` por un UUID ajeno, ¿que ve/escribe?
 
 ## PENDIENTE — Proximas mejoras
-- Blog: crear /blog.html como hub + 4-5 posts SEO (coaching de carrera, CV con IA, etc.)
+- 🔒 **Cerrar gap de seguridad RLS en Supabase** (Sprint B, ver seccion "SECURITY MODEL"). Lo mas importante tecnicamente antes de escalar a 5+ coaches.
 - Paginas por pais: /coaching-carrera-espana.html, /coaching-carrera-argentina.html
-- Pagina About/Acerca de + Testimonios
-- Video demo del producto (60-90s Loom del panel)
-- Social proof en landing (testimonios, metricas, logos)
+- Pagina About/Acerca de
 - Chrome extension para guardar empleos desde portales
 - Networking tracker en portal del cliente
 - AI chat assistant en portal del cliente (Claude conversacional)
-- Sistema de notificaciones push o email automatico cuando el coach actualiza algo
 - Dark mode
+
+### Ya hechos (sacados de pendientes — junio 2026)
+- ✅ Testimonios en landing (seccion `#testimonios`, cargada via `testimonios.js`)
+- ✅ Video demo del producto en landing (`.demo-section` con iframe + boton play)
+- ✅ Blog: `blog.html` como hub + posts SEO (cv-con-ia-2026, primeros-10-clientes-coaching, 7-preguntas-entrevista, checklist-linkedin, rechazo-entrevista-final, etc.)
+- ✅ Notificaciones push (migration `push_subscriptions.sql`, edge functions `send-push` + `notif-new-client`, `pw-push.js`)
 
 ## Completado — Sesion UX + SEO (abril 2026)
 
