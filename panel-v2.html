@@ -740,7 +740,7 @@ var state = {
   ],
   svcEdit: null,
   _svcNew: false,
-  notifs: { newClient:true, pathwayLead:true, cvUpload:true, sessionReminder:true, weeklyReport:false, marketing:false },
+  pushOn: null,
   ai: { open:false, bubbleOpen:true, tab:"home" }
 };
 
@@ -1609,23 +1609,31 @@ function cfgBrand(){
     "<div style='display:flex;justify-content:flex-start;gap:10px'><button class='cp-btn cp-btn-primary' data-act='cfg-save-brand'>Guardar marca</button></div>"+
     "</div></div>";
 }
-function cfgNotifs(){
-  var toggles = [
-    { id:"newClient",       title:"Nuevo cliente registrado", desc:"Cuando alguien se da de alta usando tu link." },
-    { id:"pathwayLead",     title:"Nueva solicitud de Pathway", desc:"Cuando Pathway te ofrece un candidato del directorio (tienes 24 h para aceptarla)." },
-    { id:"cvUpload",        title:"CV subido para revisión", desc:"Te avisamos cuando un cliente sube una nueva versión." },
-    { id:"sessionReminder", title:"Recordatorio de sesión", desc:"15 min antes de cada sesión agendada." },
-    { id:"weeklyReport",    title:"Resumen semanal por email", desc:"Lunes 9h · estado de todos tus clientes." },
-    { id:"marketing",       title:"Novedades de Pathway", desc:"Producto, blog, casos de éxito (max 1/mes)." }
-  ];
-  var rows = toggles.map(function(t){
-    var on = state.notifs[t.id];
-    return "<div class='cp-toggle'><div class='cp-toggle-body'><div class='cp-toggle-title'>"+esc(t.title)+"</div>"+
-      "<div class='cp-toggle-desc'>"+esc(t.desc)+"</div></div>"+
-      "<button class='cp-switch "+(on?"is-on":"")+"' data-act='notif:"+t.id+"' aria-label='"+esc(t.title)+"'><span></span></button></div>";
-  }).join("");
-  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Notificaciones<span class='dot'>.</span></h3>"+
-    "<span class='cp-eyebrow'>Por email</span></div><div class='cp-card-pad'>"+rows+"</div></div>";
+// Notificaciones = un solo switch (push en este dispositivo). Vive dentro de Mi cuenta.
+// Lee el estado real de la suscripción de forma asíncrona y re-renderiza si cambió.
+function pushKickRefresh(){
+  if(!window.PwPush || !PwPush.hasSubscription) return;
+  PwPush.hasSubscription().then(function(has){
+    var v=!!has; if(state.pushOn!==v){ state.pushOn=v; render(); }
+  }).catch(function(){});
+}
+function notifCard(){
+  var st = (window.PwPush && PwPush.status) ? PwPush.status() : "unsupported";
+  if(st==="unsupported"){
+    return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Notificaciones<span class='dot'>.</span></h3></div>"+
+      "<div class='cp-card-pad'><p class='cp-reassurance' style='margin:0;border-radius:12px'>Este navegador no admite notificaciones. Instalá Pathway como app (o abrila en Chrome/Safari) para recibirlas.</p></div></div>";
+  }
+  pushKickRefresh();
+  var on = (state.pushOn!=null) ? state.pushOn : (st==="granted");
+  var note = (st==="denied")
+    ? "<div class='cp-form-hint' style='margin-top:10px;color:var(--pw-danger)'>Están bloqueadas en este navegador. Activalas en los permisos del sitio (🔒 junto a la URL) y volvé a probar.</div>"
+    : "";
+  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Notificaciones<span class='dot'>.</span></h3></div>"+
+    "<div class='cp-card-pad'><div class='cp-toggle' style='border-bottom:none;padding:4px 0'>"+
+      "<div class='cp-toggle-body'><div class='cp-toggle-title'>Notificaciones en este dispositivo</div>"+
+      "<div class='cp-toggle-desc'>Te avisamos cuando entra un cliente nuevo, una solicitud de Pathway o un mensaje de un cliente — aunque no tengas el panel abierto.</div></div>"+
+      "<button class='cp-switch "+(on?"is-on":"")+"' data-act='push-toggle' aria-label='Notificaciones en este dispositivo'><span></span></button></div>"+
+      note+"</div></div>";
 }
 function cfgAccount(){
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Cuenta<span class='dot'>.</span></h3></div>"+
@@ -1638,6 +1646,7 @@ function cfgAccount(){
       "<div class='cp-form-row'><label class='cp-form-label'>Cambiar mi contraseña (mín. 6)</label>"+
         "<input id='coach-pass' type='text' class='cp-form-input' placeholder='Nueva contraseña para entrar al panel'>"+
         "<div style='display:flex;justify-content:flex-end;margin-top:8px'><button class='cp-btn cp-btn-primary' data-act='coach-pass-save'>Guardar contraseña</button></div></div></div></div>"+
+    notifCard()+
     "<div class='cp-card' style='border-color:rgba(192,117,110,.25)'><div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:18px'>"+
       "<div><div class='cp-toggle-title' style='color:var(--pw-danger)'>Cerrar mi cuenta</div>"+
       "<div class='cp-toggle-desc'>Tus clientes pierden acceso a su portal. Tus datos se eliminan a los 30 días.</div></div>"+
@@ -2074,16 +2083,17 @@ function viewConfig(){
   if(state.cfg==="services") state.cfg="pathway"; // servicios ahora vive en Clientes de Pathway
   if(state.cfg==="integ") state.cfg="profile";    // calendario ahora vive en Perfil
   if(state.cfg==="plan") state.cfg="account";     // mi plan ahora vive dentro de Mi cuenta
+  if(state.cfg==="notifs") state.cfg="account";   // notificaciones ahora son un toggle dentro de Mi cuenta
   var secs = [
     ["profile","Perfil","cfgProfile"],
     ["brand","Marca propia","cfgBrand"],["pathway","Clientes de Pathway","navClientes"],
-    ["notifs","Notificaciones","cfgNotifs"],["account","Mi cuenta","cfgAccount"]
+    ["account","Mi cuenta","cfgAccount"]
   ];
   var nav = secs.map(function(s){
     return "<button class='cp-cfg-nav-item "+(state.cfg===s[0]?"is-on":"")+"' data-act='cfg:"+s[0]+"'>"+
       svg(IC[s[2]],15,"class='cp-cfg-nav-icon'")+"<span>"+s[1]+"</span></button>";
   }).join("");
-  var panels = { profile:cfgProfile, brand:cfgBrand, pathway:cfgPathway, notifs:cfgNotifs, account:cfgMyAccount };
+  var panels = { profile:cfgProfile, brand:cfgBrand, pathway:cfgPathway, account:cfgMyAccount };
   var body = (panels[state.cfg]||cfgProfile)();
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Configuración<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Tu perfil, servicios, integraciones y preferencias.</div></div></header>"+
@@ -3051,7 +3061,18 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo enviar el email. Reintentá o usá WhatsApp."); });
     return;
   }
-  if(act.indexOf("notif:")===0){ var k=act.slice(6); state.notifs[k]=!state.notifs[k]; if(REAL){ saveCfg({ notifs: state.notifs }); } else { render(); } return; }
+  if(act==="push-toggle"){
+    if(!window.PwPush){ alert("Las notificaciones no están disponibles en este navegador."); return; }
+    var em=(typeof COACH!=="undefined" && COACH && COACH.email)||"";
+    var cur=(state.pushOn!=null)?state.pushOn:(PwPush.status()==="granted");
+    var goingOn=!cur;
+    if(goingOn && !em){ alert("Iniciá sesión para activar las notificaciones."); return; }
+    toast(goingOn?"Activando notificaciones…":"Desactivando…");
+    var p=goingOn?PwPush.activate(em):PwPush.deactivate(em);
+    p.then(function(){ state.pushOn=goingOn; render(); toast(goingOn?"Notificaciones activadas ✓":"Notificaciones desactivadas"); })
+     .catch(function(){ state.pushOn=false; render(); alert(goingOn?"No se pudieron activar. Es posible que el navegador las haya bloqueado — revisá los permisos del sitio.":"No se pudieron desactivar."); });
+    return;
+  }
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; if(REAL){ saveCfg({ pathway_optin: state.pathwayOptIn }); } else { render(); } return; }
   if(act==="pw-connect"){ pwConnect(); return; }
   if(act==="pw-connect-check"){ state.stripe=null; _stripeReq=false; render(); return; }
@@ -4132,7 +4153,6 @@ function loadReal(){
     RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), perfil_publico_activo:!!usr.perfil_publico_activo };
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
     if(RCFG && RCFG.color_marca) state.brandAccent=RCFG.color_marca;
-    if(RCFG && RCFG.notifs && Object.prototype.toString.call(RCFG.notifs)==="[object Object]") state.notifs=Object.assign({}, state.notifs, RCFG.notifs);
     if(RCFG) state.pathwayOptIn = !!RCFG.pathway_optin;
     var cname = ME.nombre || usr.nombre || "Coach";
     var cfg = RCFG;
