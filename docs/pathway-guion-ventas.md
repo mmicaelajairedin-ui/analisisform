@@ -211,7 +211,7 @@ propia, soporte WhatsApp+email, acceso prioritario a features).
 - **CTA principal (coach):** "Empezá 14 días gratis — tu perfil público activo en 5 minutos." → registro en pathwaycareercoach.com
 - **CTA suave:** "Mirá la demo de 11 minutos, sin agendar nada. Después decidís."
 - **CTA candidato:** "Agendá tu diagnóstico gratis de 30 min — sin costo, sin compromiso."
-- **Contacto:** hi@pathwaycareercoach.com · WhatsApp +34 611 256 224
+- **Contacto:** hi@pathwaycareercoach.com · WhatsApp +34 623 816 019
 - **Sitios:** Coaches/landing → pathwaycareercoach.com · Marca personal Micaela → micaelajairedin.com
 
 ---
