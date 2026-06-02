@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Pathway Fit · Evaluación inicial</title>
+<!--
+  PROTOTIPO standalone — FORM DE EVALUACIÓN (fitness) + pantalla de ANÁLISIS.
+  Reusa el patrón de career `formulario.html` (pasos + validación) y, en
+  producción, dispararía la edge function `generar-informe` (mismo motor IA,
+  distinto prompt). Acá el análisis es de ejemplo (DEMO).
+  Incluye LESIONES para el análisis (pedido de la coach).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --pw-bosque:#2D6A4F;--pw-sendero:#52B788;--pw-amanecer:#E9C46A;
+  --pw-carbon:#1B2E26;--pw-niebla:#FAFDF9;
+  --pw-texto:#1B2E26;--pw-texto-suave:#5A5A55;--pw-borde:rgba(45,106,79,.14);
+  --pw-serif:'Fraunces',Georgia,serif;--pw-sans:'Inter',-apple-system,sans-serif;
+  --accent:#2D6A4F;--accent-soft:#52B788;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--pw-sans);color:var(--pw-texto);background:#EFF3EE;-webkit-font-smoothing:antialiased;}
+button{font-family:inherit;cursor:pointer;}
+
+.wrap{max-width:480px;margin:0 auto;background:var(--pw-niebla);min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;box-shadow:0 0 60px rgba(27,46,38,.12);}
+.top{padding:16px 20px 12px;}
+.brand{display:flex;align-items:center;gap:9px;margin-bottom:14px;}
+.brand .lg{width:30px;height:30px;border-radius:9px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--pw-serif);font-weight:600;font-size:15px;}
+.brand b{font-family:var(--pw-serif);font-size:16px;color:var(--pw-carbon);}
+/* progreso dots */
+.dots{display:flex;gap:6px;}
+.dots i{flex:1;height:5px;border-radius:4px;background:rgba(45,106,79,.12);transition:background .25s;}
+.dots i.on{background:var(--accent-soft);}
+.dots i.done{background:var(--accent);}
+
+.body{flex:1;overflow-y:auto;padding:8px 20px 20px;}
+.step{display:none;animation:fade .3s ease;}
+.step.on{display:block;}
+@keyframes fade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--accent);}
+.q{font-family:var(--pw-serif);font-size:24px;font-weight:600;letter-spacing:-.6px;line-height:1.15;color:var(--pw-carbon);margin:10px 0 6px;}
+.coach{display:flex;gap:9px;align-items:flex-start;background:rgba(82,183,136,.08);border-radius:12px;padding:11px 13px;margin-bottom:18px;}
+.coach .ca{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;}
+.coach p{font-size:12.5px;color:var(--pw-texto-suave);line-height:1.45;}
+
+.fld{margin-bottom:16px;}
+.fld label{display:block;font-size:13px;font-weight:600;color:var(--pw-carbon);margin-bottom:7px;}
+.fld input,.fld textarea{width:100%;padding:12px 14px;border:1.5px solid var(--pw-borde);border-radius:11px;font-family:inherit;font-size:15px;color:var(--pw-carbon);background:#fff;}
+.fld input:focus,.fld textarea:focus{outline:none;border-color:var(--accent-soft);}
+.fld textarea{resize:vertical;min-height:80px;}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+
+.chips{display:flex;flex-wrap:wrap;gap:9px;}
+.chip{padding:11px 16px;border-radius:12px;border:1.5px solid var(--pw-borde);background:#fff;font-size:14px;font-weight:500;color:var(--pw-texto);transition:all .12s;}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+.chip.multi.on{background:var(--accent-soft);border-color:var(--accent-soft);}
+
+.foot{padding:14px 20px;border-top:1px solid var(--pw-borde);display:flex;gap:10px;background:var(--pw-niebla);}
+.btn{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:14px;border-radius:12px;font-size:15px;font-weight:600;background:var(--accent);color:#fff;border:none;}
+.btn:disabled{opacity:.4;}
+.btn-back{flex:0 0 auto;background:rgba(45,106,79,.08);color:var(--accent);padding:14px 18px;}
+
+/* loading + análisis */
+.loading{display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 20px;gap:18px;}
+.loading.on{display:flex;}
+.spin{width:48px;height:48px;border:4px solid rgba(45,106,79,.15);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg);}}
+.loading b{font-family:var(--pw-serif);font-size:20px;color:var(--pw-carbon);}
+.loading p{font-size:13px;color:var(--pw-texto-suave);}
+
+.analisis{display:none;}
+.analisis.on{display:block;animation:fade .4s ease;}
+.card{background:#fff;border:1px solid var(--pw-borde);border-radius:16px;padding:18px;margin-bottom:14px;}
+.card .eyebrow{margin-bottom:8px;display:block;}
+.card h3{font-family:var(--pw-serif);font-size:17px;font-weight:600;color:var(--pw-carbon);margin-bottom:6px;}
+.card p{font-size:13.5px;color:var(--pw-texto-suave);line-height:1.55;}
+.plan-step{display:flex;gap:12px;margin-bottom:2px;}
+.plan-line{display:flex;flex-direction:column;align-items:center;flex-shrink:0;}
+.plan-num{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;}
+.plan-rail{width:2px;flex:1;background:var(--pw-borde);margin:2px 0;}
+.plan-step:last-child .plan-rail{display:none;}
+.plan-card{flex:1;padding-bottom:14px;}
+.plan-card b{font-size:14px;color:var(--pw-carbon);}
+.plan-card span{font-size:13px;color:var(--pw-texto-suave);}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;background:rgba(231,111,81,.12);color:#c2552f;margin:2px 4px 2px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand"><div class="lg">G</div><b>Gonza Coach</b></div>
+    <div class="dots" id="dots"></div>
+  </div>
+
+  <div class="body">
+
+    <!-- Paso 0: datos -->
+    <div class="step on" data-step>
+      <span class="eyebrow">Evaluación inicial</span>
+      <div class="q">¡Hola! Empecemos por lo básico 👋</div>
+      <div class="coach"><div class="ca">G</div><p>Con estos datos armo tu plan a tu medida. Lleva 2 minutos.</p></div>
+      <div class="fld"><label>Tu nombre</label><input id="nombre" placeholder="Ej: Martín" required></div>
+      <div class="row2">
+        <div class="fld"><label>Edad</label><input id="edad" type="number" placeholder="28"></div>
+        <div class="fld"><label>Sexo</label><input id="sexo" placeholder="M / F"></div>
+      </div>
+      <div class="row2">
+        <div class="fld"><label>Peso (kg)</label><input id="peso" type="number" placeholder="82"></div>
+        <div class="fld"><label>Altura (cm)</label><input id="altura" type="number" placeholder="178"></div>
+      </div>
+    </div>
+
+    <!-- Paso 1: objetivo -->
+    <div class="step" data-step>
+      <span class="eyebrow">Tu objetivo</span>
+      <div class="q">¿Qué querés lograr?</div>
+      <div class="coach"><div class="ca">G</div><p>No hay objetivo chico. Elegí el que más te representa hoy.</p></div>
+      <div class="chips" data-single="objetivo">
+        <button class="chip" onclick="pick(this)">🔥 Bajar grasa</button>
+        <button class="chip" onclick="pick(this)">💪 Ganar músculo</button>
+        <button class="chip" onclick="pick(this)">❤️ Salud general</button>
+        <button class="chip" onclick="pick(this)">🏃 Rendimiento</button>
+      </div>
+    </div>
+
+    <!-- Paso 2: nivel -->
+    <div class="step" data-step>
+      <span class="eyebrow">Tu experiencia</span>
+      <div class="q">¿Hace cuánto entrenás?</div>
+      <div class="coach"><div class="ca">G</div><p>Sin vergüenza — todos arrancamos en algún punto.</p></div>
+      <div class="chips" data-single="nivel">
+        <button class="chip" onclick="pick(this)">Recién empiezo</button>
+        <button class="chip" onclick="pick(this)">Intermedio</button>
+        <button class="chip" onclick="pick(this)">Avanzado</button>
+      </div>
+    </div>
+
+    <!-- Paso 3: disponibilidad -->
+    <div class="step" data-step>
+      <span class="eyebrow">Tu disponibilidad</span>
+      <div class="q">¿Cuántos días por semana?</div>
+      <div class="coach"><div class="ca">G</div><p>Prefiero pocos días que cumplas, a muchos que no.</p></div>
+      <div class="chips" data-single="dias" style="margin-bottom:18px;">
+        <button class="chip" onclick="pick(this)">2</button>
+        <button class="chip" onclick="pick(this)">3</button>
+        <button class="chip" onclick="pick(this)">4</button>
+        <button class="chip" onclick="pick(this)">5+</button>
+      </div>
+      <label style="display:block;font-size:13px;font-weight:600;color:var(--pw-carbon);margin-bottom:7px;">¿Dónde entrenás?</label>
+      <div class="chips" data-single="lugar">
+        <button class="chip" onclick="pick(this)">🏋️ Gym</button>
+        <button class="chip" onclick="pick(this)">🏠 Casa</button>
+        <button class="chip" onclick="pick(this)">🌳 Aire libre</button>
+      </div>
+    </div>
+
+    <!-- Paso 4: lesiones / salud -->
+    <div class="step" data-step>
+      <span class="eyebrow">Lesiones y salud</span>
+      <div class="q">¿Algo que deba tener en cuenta?</div>
+      <div class="coach"><div class="ca">G</div><p>Esto es clave para armarte un plan seguro. Marcá lo que aplique.</p></div>
+      <div class="chips multi-group" data-multi="lesiones" style="margin-bottom:16px;">
+        <button class="chip multi" onclick="pickMulti(this)">Rodilla</button>
+        <button class="chip multi" onclick="pickMulti(this)">Hombro</button>
+        <button class="chip multi" onclick="pickMulti(this)">Espalda baja</button>
+        <button class="chip multi" onclick="pickMulti(this)">Cervical</button>
+        <button class="chip multi" onclick="pickMulti(this)">Ninguna</button>
+      </div>
+      <div class="fld"><label>Detalle o condiciones de salud (opcional)</label><textarea id="salud" placeholder="Ej: operación de rodilla hace 1 año, presión alta..."></textarea></div>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading" id="loading">
+      <div class="spin"></div>
+      <b>Armando tu análisis…</b>
+      <p>Gonza está revisando tus datos para personalizar tu plan.</p>
+    </div>
+
+    <!-- Análisis (resultado IA) -->
+    <div class="analisis" id="analisis">
+      <span class="eyebrow">Tu análisis inicial</span>
+      <div class="q" style="margin-bottom:14px;">Listo, <span id="aNombre">Martín</span> 🎯</div>
+
+      <div class="card">
+        <span class="eyebrow">Diagnóstico</span>
+        <p>Tu objetivo es <b>bajar grasa</b> manteniendo masa muscular. Con 4 días y nivel intermedio, lo ideal es <b>fuerza + déficit calórico moderado</b>. Cuidamos la <b>rodilla</b>: evitamos impacto alto y priorizamos técnica.</p>
+        <div style="margin-top:10px;">
+          <span class="tag">⚠️ Cuidar rodilla</span><span class="tag">Objetivo: -4 kg grasa</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="eyebrow">Tu plan sugerido</span>
+        <div class="plan-step"><div class="plan-line"><div class="plan-num">1</div><div class="plan-rail"></div></div><div class="plan-card"><b>Semanas 1-2 · Adaptación</b><br><span>Aprender la técnica, carga liviana, sin impacto.</span></div></div>
+        <div class="plan-step"><div class="plan-line"><div class="plan-num">2</div><div class="plan-rail"></div></div><div class="plan-card"><b>Semanas 3-4 · Fuerza</b><br><span>Subir carga en empuje y tracción, cuidando rodilla.</span></div></div>
+        <div class="plan-step"><div class="plan-line"><div class="plan-num">3</div><div class="plan-rail"></div></div><div class="plan-card"><b>Mes 2 · Composición</b><br><span>Medición antropométrica y ajuste según resultados.</span></div></div>
+      </div>
+
+      <div class="card" style="text-align:center;background:rgba(82,183,136,.08);border:none;">
+        <p style="color:var(--pw-carbon);font-weight:500;">Gonza revisa tu análisis y arranca tu acompañamiento 💪</p>
+      </div>
+      <button class="btn" style="width:100%;" onclick="alert('(demo) Iría al portal del cliente')">Entrar a mi portal →</button>
+      <div style="height:20px;"></div>
+    </div>
+
+  </div>
+
+  <div class="foot" id="foot">
+    <button class="btn-back btn" id="back" onclick="prev()" style="display:none;">←</button>
+    <button class="btn" id="next" onclick="next()">Continuar</button>
+  </div>
+
+</div>
+
+<script>
+var steps=Array.prototype.slice.call(document.querySelectorAll('[data-step]'));
+var i=0;
+// dots
+var dots=document.getElementById('dots');
+steps.forEach(function(){var e=document.createElement('i');dots.appendChild(e);});
+function render(){
+  steps.forEach(function(s,k){s.classList.toggle('on',k===i);});
+  Array.prototype.forEach.call(dots.children,function(d,k){
+    d.className=k<i?'done':(k===i?'on':'');
+  });
+  document.getElementById('back').style.display=i>0?'flex':'none';
+  document.getElementById('next').textContent=(i===steps.length-1)?'Ver mi análisis ✨':'Continuar';
+  document.querySelector('.body').scrollTo({top:0,behavior:'smooth'});
+}
+function pick(btn){
+  var grp=btn.parentElement;
+  grp.querySelectorAll('.chip').forEach(function(c){c.classList.remove('on');});
+  btn.classList.add('on');
+}
+function pickMulti(btn){ btn.classList.toggle('on'); }
+function next(){
+  // validación mínima del paso 0
+  if(i===0 && !document.getElementById('nombre').value.trim()){
+    document.getElementById('nombre').focus();
+    document.getElementById('nombre').style.borderColor='#C25B5B';
+    return;
+  }
+  if(i<steps.length-1){ i++; render(); return; }
+  // último paso → análisis
+  generarAnalisis();
+}
+function prev(){ if(i>0){ i--; render(); } }
+function generarAnalisis(){
+  steps.forEach(function(s){s.classList.remove('on');});
+  document.getElementById('foot').style.display='none';
+  dots.parentElement.style.display='none';
+  document.getElementById('loading').classList.add('on');
+  var nom=document.getElementById('nombre').value.trim()||'crack';
+  document.getElementById('aNombre').textContent=nom;
+  // En producción: POST a /functions/v1/generar-informe (mismo motor que career)
+  setTimeout(function(){
+    document.getElementById('loading').classList.remove('on');
+    document.getElementById('analisis').classList.add('on');
+  },2200);
+}
+render();
+</script>
+</body>
+</html>
