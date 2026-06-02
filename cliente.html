@@ -978,6 +978,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 </style>
 <script src="/pw-push.js?v=3"></script>
+<script src="/pw-auth.js?v=1"></script>
 </head>
 <body>
 <a href="#mc" style="position:absolute;left:-999px;top:auto;width:1px;height:1px;overflow:hidden;z-index:999;" onfocus="this.style.cssText='position:fixed;left:12px;top:12px;z-index:999;padding:10px 16px;background:var(--rose);color:#fff;border-radius:8px;font-size:13px;font-weight:700;font-family:Inter,-apple-system,sans-serif;text-decoration:none;'" onblur="this.style.cssText='position:absolute;left:-999px;'">Ir al contenido</a>
@@ -1486,8 +1487,13 @@ function _refreshEmpStamp(root){
 function ini(n){return(n||'').split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase()||'??';}
 function ck(){return'<svg width="10" height="8" viewBox="0 0 10 8"><polyline points="1 4 3.5 6.5 9 1" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';}
 function pn(n){return(n||'').split(' ')[0]||'';}
-function get(t,q){return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}}).then(function(r){return r.json();});}
-function pt(t,q,d){return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(d)});}
+// Headers con el JWT del usuario logueado (vía pw-auth.js). Fallback a la anon
+// key si PWAUTH no cargó, para no romper nada mientras RLS esté apagado.
+function _hdr(extra){return (window.PWAUTH?PWAUTH.headers(extra):Promise.resolve(Object.assign({'apikey':KEY,'Authorization':'Bearer '+KEY},extra||{})));}
+// Versión síncrona para los fetch crudos (lee el token de localStorage).
+function H(extra){return window.PWAUTH?PWAUTH.headersSync(extra):Object.assign({'apikey':KEY,'Authorization':'Bearer '+KEY},extra||{});}
+function get(t,q){return _hdr().then(function(h){return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:h});}).then(function(r){return r.json();});}
+function pt(t,q,d){return _hdr({'Content-Type':'application/json','Prefer':'return=minimal'}).then(function(h){return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:h,body:JSON.stringify(d)});});}
 function docSvg(color,ok){return '<svg width="48" height="60" viewBox="0 0 48 60" fill="none"><rect x="1" y="1" width="46" height="58" rx="6" fill="'+color+'18" stroke="'+color+'" stroke-width="1.5"/><path d="M10 18h28M10 26h28M10 34h18" stroke="'+color+'" stroke-width="2.5" stroke-linecap="round"/>'+(ok?'<circle cx="36" cy="48" r="9" fill="'+color+'"/><path d="M32 48l3 3 5-5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>':'<circle cx="36" cy="48" r="9" fill="'+color+'60"/><path d="M36 44.5v4.5M36 50.5v1" stroke="#fff" stroke-width="2" stroke-linecap="round"/>')+'</svg>';}
 
 (function(){
@@ -2780,7 +2786,7 @@ async function _submitReview(){
   try{
     var r=await fetch(SB+'/rest/v1/candidatos?id=eq.'+C.id,{
       method:'PATCH',
-      headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=representation'},
+      headers:H({'Content-Type':'application/json','Prefer':'return=representation'}),
       body:JSON.stringify({review_rating:rating, review_texto:texto||null, review_fecha:new Date().toISOString()})
     });
     if(!r.ok){throw new Error('save failed '+r.status);}
@@ -3225,7 +3231,7 @@ function _saveResena(tipo){
 
   fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{
     method:'PATCH',
-    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+    headers:H({'Content-Type':'application/json','Prefer':'return=representation'}),
     body:JSON.stringify({resena:JSON.stringify(newPayload)})
   }).then(function(r){
     if(btn)btn.disabled=false;
@@ -4528,7 +4534,7 @@ function liAnalizar(){
       // PATCH a Supabase con feedback explícito de éxito/falla
       fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{
         method:'PATCH',
-        headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        headers:H({'Content-Type':'application/json','Prefer':'return=minimal'}),
         body:JSON.stringify(patch)
       }).then(function(r){
         if(st){
@@ -4794,7 +4800,7 @@ function _mergeMsgs(a,b){
 function _syncMsgsToDB(msgs){
   if(!E)return;
   fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E)+'&select=notas_coach',{
-    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+    headers:H()
   }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
     var dbMsgs=[];
     if(rows&&rows.length){
@@ -4803,7 +4809,7 @@ function _syncMsgsToDB(msgs){
     var merged=_mergeMsgs(dbMsgs,msgs);
     return fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{
       method:'PATCH',
-      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      headers:H({'Content-Type':'application/json','Prefer':'return=minimal'}),
       body:JSON.stringify({notas_coach:JSON.stringify(merged)})
     }).then(function(pr){
       if(pr&&pr.ok){
@@ -4819,7 +4825,7 @@ function _syncMsgsToDB(msgs){
 function _loadMsgsFromDB(){
   if(!E)return;
   fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E)+'&select=notas_coach',{
-    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+    headers:H()
   }).then(function(r){return r.json();}).then(function(rows){
     if(!rows||!rows.length)return;
     var raw=rows[0].notas_coach||'';
