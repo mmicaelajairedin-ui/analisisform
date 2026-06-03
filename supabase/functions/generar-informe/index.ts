@@ -93,6 +93,77 @@ RESPONDÉ SOLO CON JSON VÁLIDO, sin explicaciones previas ni markdown. Estructu
 
 Los scores van de 0-100 y deben reflejar el estado actual del candidato basado en los datos proporcionados.`;
 
+// ── Nicho FITNESS ── mismas claves de salida que SYSTEM_INFORME (las acciones
+// por etapa mapean a las 4 etapas del nicho: Adaptación/Base/Progresión/Medición).
+const SYSTEM_FITNESS = `Sos un coach de fitness y antropometrista con 15 años de experiencia, con conocimiento de nutrición, lesiones y rehabilitación. Entrenás de forma segura y progresiva.
+
+Tu tarea: generar un análisis ACCIONABLE y ESPECÍFICO para el cliente en JSON. No genérico.
+
+REGLAS CRÍTICAS:
+1. SEGURIDAD PRIMERO: si declara lesiones o condiciones, adaptá el plan y poné las precauciones en "alertas". NUNCA propongas ejercicios que agraven una lesión declarada.
+2. MEDICACIÓN Y LIMITACIONES: respetá la medicación declarada y lo que el cliente dice que NO puede/debe hacer. No contradigas indicaciones médicas; ante dudas de salud, recomendá consultar a un médico (en "alertas").
+3. Acciones CONCRETAS y medibles ("3 sesiones de fuerza/semana con progresión de carga", NO "entrenar más").
+4. Referenciá el perfil ESPECÍFICO (objetivo, nivel, días disponibles, lugar/equipo, peso/altura).
+5. El plan va por 4 etapas: Adaptación → Base → Progresión → Medición. 3-5 acciones por etapa.
+6. Si hay datos, incluí orientación nutricional general (no un plan médico).
+7. mensaje_candidato CÁLIDO y motivador (2-3 frases), mencionando algo específico.
+
+RESPONDÉ SOLO CON JSON VÁLIDO, sin markdown. Estructura EXACTA (mismas claves):
+{
+  "resumen": "3-4 oraciones sobre el punto de partida",
+  "fortalezas": ["fortaleza específica 1", "2", "3"],
+  "gaps": ["área a mejorar 1", "2", "3"],
+  "estrategia": "4-5 oraciones de cómo encarar el objetivo de forma segura y progresiva",
+  "cv_acciones": ["acción de Adaptación 1", "2", "3"],
+  "linkedin_acciones": ["acción de Base 1", "2", "3"],
+  "networking_acciones": ["acción de Progresión 1", "2", "3"],
+  "preguntas": ["Medición: qué medir y cuándo (peso, % grasa, IMO, pliegues) 1", "2", "3"],
+  "alertas": ["precaución por lesión/medicación si aplica", "..."],
+  "mensaje_candidato": "mensaje cálido 2-3 oraciones",
+  "scores": [
+    {"label":"Claridad de objetivo","val":70},
+    {"label":"Base técnica","val":50},
+    {"label":"Composición corporal","val":60},
+    {"label":"Hábitos","val":45},
+    {"label":"Constancia esperada","val":65}
+  ]
+}
+Los scores van de 0-100 y reflejan el estado actual del cliente.`;
+
+// ── Nicho FINANZAS ── mismas claves de salida (etapas: Diagnóstico/Presupuesto/Deudas/Ahorro).
+const SYSTEM_FINANZAS = `Sos un coach financiero con 15 años de experiencia ayudando a personas a ordenar sus finanzas, salir de deudas y construir el hábito del ahorro. No das consejos de inversión específicos ni recomendás productos.
+
+Tu tarea: generar un análisis ACCIONABLE y ESPECÍFICO para el cliente en JSON. No genérico.
+
+REGLAS CRÍTICAS:
+1. Trabajá con los números que da el cliente (ingresos, gastos, deudas, objetivo).
+2. Acciones CONCRETAS y medibles ("recortar 120€/mes en suscripciones", NO "gastar menos").
+3. El plan va por 4 etapas: Diagnóstico → Presupuesto → Deudas → Ahorro. 3-5 acciones por etapa.
+4. Para deudas usá método bola de nieve (saldar la más chica primero) salvo que convenga otra por tasa.
+5. mensaje_candidato CÁLIDO y sin juzgar (2-3 frases).
+
+RESPONDÉ SOLO CON JSON VÁLIDO, sin markdown. Estructura EXACTA (mismas claves):
+{
+  "resumen": "3-4 oraciones sobre la situación financiera",
+  "fortalezas": ["fortaleza 1", "2"],
+  "gaps": ["área a mejorar 1", "2"],
+  "estrategia": "4-5 oraciones",
+  "cv_acciones": ["acción de Diagnóstico 1", "2", "3"],
+  "linkedin_acciones": ["acción de Presupuesto 1", "2", "3"],
+  "networking_acciones": ["acción de Deudas 1", "2", "3"],
+  "preguntas": ["acción de Ahorro 1", "2", "3"],
+  "alertas": ["alerta si aplica"],
+  "mensaje_candidato": "mensaje cálido 2-3 oraciones",
+  "scores": [
+    {"label":"Salud financiera","val":50},
+    {"label":"Control del gasto","val":45},
+    {"label":"Nivel de deuda","val":40},
+    {"label":"Hábito de ahorro","val":35},
+    {"label":"Claridad de objetivo","val":70}
+  ]
+}
+Los scores van de 0-100 y reflejan el estado actual del cliente.`;
+
 const SYSTEM_CV_EXPRESS = `Sos un experto en CV ATS y career coaching con +800 procesos de selección en Amazon. Tu output debe ser PROFESIONAL, ESPECÍFICO al objetivo del candidato y aplicable al mercado real.
 
 Recibirás:
@@ -301,6 +372,31 @@ function buildInformePrompt(c: CandidatoPayload): string {
   }
   parts.push(``);
   parts.push(`Generá el informe JSON completo siguiendo las reglas. Sé específico y accionable.`);
+  return parts.join("\n");
+}
+
+// Prompt para nichos fitness/financiero: usa los campos del intake del nicho.
+function buildNichoPrompt(c: Record<string, unknown>, nicho: string): string {
+  const parts: string[] = [];
+  parts.push(nicho === "fitness" ? `Perfil del cliente (fitness):` : `Perfil del cliente (finanzas):`);
+  const g = (k: string) => (c[k] != null && c[k] !== "" ? String(c[k]) : "");
+  if (g("nombre")) parts.push(`- Nombre: ${g("nombre")}`);
+  if (g("objetivo")) parts.push(`- Objetivo: ${g("objetivo")}`);
+  if (g("situacion")) parts.push(`- Situación: ${g("situacion")}`);
+  const fitKeys = ["nivel", "dias", "lugar", "equipo", "peso", "altura", "lesiones", "medicacion", "restricciones", "nutricion", "edad"];
+  const finKeys = ["ingresos", "gastos", "deudas", "objetivo_ahorro", "plazo", "ahorro_actual"];
+  const labels: Record<string, string> = {
+    nivel: "Nivel", dias: "Días disponibles/semana", lugar: "Lugar (gym/casa)", equipo: "Equipo disponible",
+    peso: "Peso (kg)", altura: "Altura (cm)", lesiones: "Lesiones/condiciones", medicacion: "Medicación",
+    restricciones: "Restricciones (no puede/no debe)", nutricion: "Hábitos de alimentación", edad: "Edad",
+    ingresos: "Ingresos mensuales", gastos: "Gastos fijos", deudas: "Deudas", objetivo_ahorro: "Objetivo de ahorro",
+    plazo: "Plazo", ahorro_actual: "Ahorro actual",
+  };
+  (nicho === "fitness" ? fitKeys : finKeys).forEach((k) => { if (g(k)) parts.push(`- ${labels[k] || k}: ${g(k)}`); });
+  if (g("extra")) parts.push(`- Notas extra: ${g("extra")}`);
+  if (g("linkedin_texto")) { parts.push(``); parts.push(`Material/notas del cliente:`); parts.push(String(c["linkedin_texto"]).slice(0, 3000)); }
+  parts.push(``);
+  parts.push(`Generá el análisis JSON completo siguiendo las reglas. Sé específico y accionable.`);
   return parts.join("\n");
 }
 
@@ -540,9 +636,15 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // generar_informe (default)
-    const prompt = buildInformePrompt(body);
-    const response = await callClaude(SYSTEM_INFORME, prompt, apiKey);
+    // generar_informe (default). Elegimos el prompt según el nicho del coach:
+    // carrera = SYSTEM_INFORME; fitness / financiero = sus prompts propios.
+    const nicho = String((body as Record<string, unknown>).nicho || "carrera");
+    let systemPrompt = SYSTEM_INFORME;
+    let prompt: string;
+    if (nicho === "fitness") { systemPrompt = SYSTEM_FITNESS; prompt = buildNichoPrompt(body as Record<string, unknown>, "fitness"); }
+    else if (nicho === "financiero") { systemPrompt = SYSTEM_FINANZAS; prompt = buildNichoPrompt(body as Record<string, unknown>, "financiero"); }
+    else { prompt = buildInformePrompt(body); }
+    const response = await callClaude(systemPrompt, prompt, apiKey);
     const parsed = extractJson(response);
     if (!parsed) {
       return new Response(
