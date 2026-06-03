@@ -782,6 +782,7 @@ function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,
 /* ═══ App state ═══ */
 var state = {
   section: "resumen",
+  demoTipo: (function(){ try{ return localStorage.getItem("pw_demo_tipo")||null; }catch(e){ return null; } })(),
   cliFilter: "all",
   cfg: "profile",
   brandAccent: "#2D6A4F",
@@ -894,6 +895,14 @@ function viewSidebar(){
       "<div class='cp-side-coach-role'>"+esc(COACH.role)+"<span class='cp-side-plan'>"+(state.plan==="pro"?"Pro":"Basic")+"</span></div>"+
       (function(){ var m=coachMedalInfo(); return m.name?"<div class='cp-side-coach-badge' title='"+m.n+" de 3 hitos de arranque completados'><img class='cp-side-coach-medal' src='assets/iconos/medalla-"+m.name+".png' alt=''><span>"+(m.name.charAt(0).toUpperCase()+m.name.slice(1))+" · "+m.n+"/3</span></div>":""; })()+
       "</div></div>"+
+    (function(){
+      if(!_isDemoCoach()) return "";
+      var dt=state.demoTipo||'carrera';
+      var opt=[['carrera','Carrera'],['fitness','Fitness'],['financiero','Finanzas']];
+      return "<div style='padding:8px 4px 10px;border-bottom:1px solid rgba(255,255,255,.10)'>"+
+        "<div style='font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:6px;padding:0 4px'>Demo · tipo de coach</div>"+
+        "<div style='display:flex;gap:5px'>"+opt.map(function(o){var on=(dt===o[0]);return "<button data-act='demo-tipo:"+o[0]+"' style='flex:1;padding:6px 4px;border-radius:8px;border:1px solid rgba(255,255,255,"+(on?".5":".18")+");background:"+(on?"rgba(255,255,255,.16)":"transparent")+";color:#fff;font-size:11px;font-weight:"+(on?"700":"500")+";cursor:pointer'>"+o[1]+"</button>";}).join("")+"</div></div>";
+    })()+
     "<nav class='cp-side-nav'>"+nav+"</nav>"+
     "<div class='cp-side-foot'>"+
       "<button class='cp-side-cta' data-act='nav:clientes'>"+svg(IC.plus,14)+" Sumar cliente</button>"+
@@ -1152,7 +1161,15 @@ function viewClienteDetalle(c){
   // Demo de María: hasta que el coach "genere", ocultamos informe/CV.
   var _exHide = c._example && !_exGen;
   // Tipo del cliente (fitness/financiero/carrera). Default carrera → comportamiento de siempre.
-  var _tipo = (typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type) || (c.raw&&c.raw.configuracion&&c.raw.configuracion.tipo) || 'carrera';
+  // Cuenta demo: el tipo lo elige la coach con el selector del sidebar (para
+  // mostrar los 3 paneles con un solo login). Coach real: como siempre.
+  var _tipo = _isDemoCoach()
+    ? (state.demoTipo || 'carrera')
+    : ((typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type) || (c.raw&&c.raw.configuracion&&c.raw.configuracion.tipo) || 'carrera');
+  // Para clientes de nicho, el portal y el acceso apuntan al portal del nicho
+  // (no a cliente.html, que es el de carrera). Mismo patron ?coach_view / ?email.
+  if(_tipo==='fitness'){ portalUrl=PB+"/pathway-fit-cliente.html?coach_view="+cem; accessUrl=PB+"/pathway-fit-cliente.html?email="+cem; }
+  else if(_tipo==='financiero'){ portalUrl=PB+"/pathway-fin-cliente.html?coach_view="+cem; accessUrl=PB+"/pathway-fin-cliente.html?email="+cem; }
   var tabs;
   if(_tipo==='fitness') tabs=[["perfil","Perfil"],["plan","Análisis"],["fit_rutina","Rutina"],["fit_antro","Antropometría"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
   else if(_tipo==='financiero') tabs=[["perfil","Perfil"],["plan","Análisis"],["fin_pres","Finanzas"],["avance","Avance"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
@@ -1164,25 +1181,60 @@ function viewClienteDetalle(c){
 
   var body;
   if(t==="fit_antro"){
+    var ANTRO=[]; try{ ANTRO=JSON.parse((c.raw&&c.raw.fit_antro)||"[]")||[]; }catch(e){ ANTRO=[]; }
+    if(Object.prototype.toString.call(ANTRO)!=="[object Array]") ANTRO=[];
+    var _hoyA=new Date().toISOString().slice(0,10);
+    var histA="";
+    if(ANTRO.length){
+      histA="<div class='cp-card cp-card-pad' style='margin-top:14px'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3>"+
+        "<div class='cp-form-hint' style='margin:4px 0 12px'>El cliente ve esta evolución en su portal. Podés borrar una medición si te equivocaste.</div>"+
+        ANTRO.map(function(m,ix){
+          return "<div style='display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid var(--pw-border);padding:10px 0'>"+
+            "<div><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(""+(m.fecha||""))+"</div>"+
+            "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(""+(m.peso||"?"))+" kg · "+esc(""+(m.grasa||"?"))+"% grasa · músc "+esc(""+(m.musculo||"?"))+" · IMO "+esc(""+(m.imo||"?"))+"</div></div>"+
+            "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='fit-antro-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Borrar</button></div>";
+        }).join("")+"</div>";
+    }
     body="<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Cargar medición<span class='dot'>.</span></h3>"+
-      "<div class='cp-form-hint' style='margin:4px 0 14px'>Lo que cargás acá el cliente lo ve en gráficos, en solo-lectura.</div>"+
-      "<div class='cp-form-row-2'><div class='cp-form-row'><label class='cp-form-label'>Peso (kg)</label><input class='cp-form-input' value='78'></div><div class='cp-form-row'><label class='cp-form-label'>% Grasa</label><input class='cp-form-input' value='18.6'></div></div>"+
-      "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Masa muscular (kg)</label><input class='cp-form-input' value='46.6'></div><div class='cp-form-row'><label class='cp-form-label'>Masa ósea (kg)</label><input class='cp-form-input' value='10.05'></div></div>"+
-      "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Σ Pliegues (mm)</label><input class='cp-form-input' value='82'></div><div class='cp-form-row'><label class='cp-form-label'>IMO (músc./óseo)</label><input class='cp-form-input' value='4.63'></div></div>"+
-      "<button class='cp-btn cp-btn-primary' style='margin-top:14px'>Guardar medición</button></div>";
+      "<div class='cp-form-hint' style='margin:4px 0 14px'>Lo que cargás acá el cliente lo ve en su portal, en solo-lectura. Ideal una medición por mes.</div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Fecha</label><input id='fa-fecha' type='date' class='cp-form-input' value='"+_hoyA+"'></div>"+
+      "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Peso (kg)</label><input id='fa-peso' class='cp-form-input' placeholder='78'></div><div class='cp-form-row'><label class='cp-form-label'>% Grasa</label><input id='fa-grasa' class='cp-form-input' placeholder='18.6'></div></div>"+
+      "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Masa muscular (kg)</label><input id='fa-musculo' class='cp-form-input' placeholder='46.6'></div><div class='cp-form-row'><label class='cp-form-label'>Masa ósea (kg)</label><input id='fa-oseo' class='cp-form-input' placeholder='10.05'></div></div>"+
+      "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Σ Pliegues (mm)</label><input id='fa-pliegues' class='cp-form-input' placeholder='82'></div><div class='cp-form-row'><label class='cp-form-label'>IMO (músc./óseo)</label><input id='fa-imo' class='cp-form-input' placeholder='4.63'></div></div>"+
+      "<button class='cp-btn cp-btn-primary' style='margin-top:14px' data-act='fit-antro-save' data-id='"+esc(c.id)+"'>Guardar medición</button></div>"+histA;
   } else if(t==="fit_rutina"){
-    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Lunes · Tren superior<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px'>Editar</button></div>"+
-      "<div class='cp-card-pad'>"+
-        "<div style='font-size:14px;color:var(--pw-carbon);padding:8px 0'>Press de banca · <span style='color:var(--pw-text-soft)'>4×10</span></div>"+
-        "<div style='font-size:14px;color:var(--pw-carbon);padding:8px 0;border-top:1px solid var(--pw-border)'>Remo con barra · <span style='color:var(--pw-text-soft)'>4×12</span></div>"+
-        "<div style='font-size:14px;color:var(--pw-carbon);padding:8px 0;border-top:1px solid var(--pw-border)'>Press militar · <span style='color:var(--pw-text-soft)'>3×12</span></div>"+
-      "</div></div><button class='cp-btn cp-btn-primary'>+ Agregar día</button>";
+    var RUT=_rutToArr((c.raw&&c.raw.fit_rutina)||"");
+    var byDay={}, order=[];
+    RUT.forEach(function(e){ var d=e.dia||"General"; if(!byDay[d]){byDay[d]=[];order.push(d);} byDay[d].push(e); });
+    var rutRows=order.map(function(d){
+      var exs=byDay[d].map(function(e){
+        var ix=RUT.indexOf(e);
+        var thumb=e.foto?"<img src='"+esc(e.foto)+"' style='width:40px;height:40px;border-radius:8px;object-fit:cover'>":"<div style='width:40px;height:40px;border-radius:8px;background:var(--pw-bg);display:flex;align-items:center;justify-content:center;font-size:17px'>🏋️</div>";
+        return "<div style='display:flex;align-items:center;gap:10px;border-top:1px solid var(--pw-border);padding:9px 0'>"+thumb+
+          "<div style='flex:1'><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+esc(e.nombre||"")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(e.meta||"")+(e.foto?"":" · sin foto")+"</div></div>"+
+          "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px' data-act='fit-ex-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Quitar</button></div>";
+      }).join("");
+      return "<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>"+esc(d)+"<span class='dot'>.</span></h3>"+exs+"</div>";
+    }).join("");
+    body="<div class='cp-form-hint' style='margin:0 0 12px'>Cargá cada ejercicio con su nombre, series×reps y una foto (opcional). El cliente ve la foto al tocar 👁 en su portal.</div>"+
+      (rutRows||"<div class='cp-card cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Todavía no cargaste ejercicios. Agregá el primero abajo 👇</div>")+
+      "<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Agregar ejercicio<span class='dot'>.</span></h3>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Día / bloque</label><input id='fr-dia' class='cp-form-input' placeholder='Lunes · Tren superior'></div>"+
+        "<div class='cp-form-row-2' style='margin-top:10px'><div class='cp-form-row'><label class='cp-form-label'>Ejercicio</label><input id='fr-nom' class='cp-form-input' placeholder='Press de banca'></div><div class='cp-form-row'><label class='cp-form-label'>Series × reps</label><input id='fr-meta' class='cp-form-input' placeholder='4×10'></div></div>"+
+        "<div style='display:flex;align-items:center;gap:12px;margin-top:12px'>"+
+          "<label class='cp-btn cp-btn-ghost' style='cursor:pointer;height:34px;font-size:13px'>"+svg(IC.plus,14)+" Subir foto<input id='fr-foto' type='file' accept='image/*' style='display:none'></label>"+
+          "<img id='fr-foto-prev' style='width:44px;height:44px;border-radius:8px;object-fit:cover;display:none'>"+
+          "<span id='fr-foto-st' style='font-size:12px;color:var(--pw-text-soft)'></span>"+
+        "</div>"+
+        "<button class='cp-btn cp-btn-primary' style='margin-top:14px' data-act='fit-ex-add' data-id='"+esc(c.id)+"'>Agregar ejercicio</button>"+
+      "</div>";
   } else if(t==="fin_pres"){
+    var FP={}; try{ FP=JSON.parse((c.raw&&c.raw.fin_pres)||"{}")||{}; }catch(e){ FP={}; }
     body="<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Presupuesto recomendado<span class='dot'>.</span></h3>"+
-      "<div class='cp-form-hint' style='margin:4px 0 14px'>El cliente carga sus gastos; vos fijás los límites recomendados.</div>"+
-      "<div class='cp-form-row-2'><div class='cp-form-row'><label class='cp-form-label'>Vivienda</label><input class='cp-form-input' value='750'></div><div class='cp-form-row'><label class='cp-form-label'>Alimentación</label><input class='cp-form-input' value='350'></div></div>"+
-      "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Ocio (máx)</label><input class='cp-form-input' value='150'></div><div class='cp-form-row'><label class='cp-form-label'>Ahorro (mín)</label><input class='cp-form-input' value='350'></div></div>"+
-      "<button class='cp-btn cp-btn-primary' style='margin-top:14px'>Guardar presupuesto</button></div>";
+      "<div class='cp-form-hint' style='margin:4px 0 14px'>El cliente carga sus gastos; vos fijás los límites recomendados. El cliente los ve en su portal.</div>"+
+      "<div class='cp-form-row-2'><div class='cp-form-row'><label class='cp-form-label'>Vivienda</label><input id='fp-vivienda' class='cp-form-input' value='"+esc(""+(FP.vivienda||""))+"' placeholder='750'></div><div class='cp-form-row'><label class='cp-form-label'>Alimentación</label><input id='fp-alim' class='cp-form-input' value='"+esc(""+(FP.alimentacion||""))+"' placeholder='350'></div></div>"+
+      "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Ocio (máx)</label><input id='fp-ocio' class='cp-form-input' value='"+esc(""+(FP.ocio||""))+"' placeholder='150'></div><div class='cp-form-row'><label class='cp-form-label'>Ahorro (mín)</label><input id='fp-ahorro' class='cp-form-input' value='"+esc(""+(FP.ahorro||""))+"' placeholder='350'></div></div>"+
+      "<button class='cp-btn cp-btn-primary' style='margin-top:14px' data-act='fin-pres-save' data-id='"+esc(c.id)+"'>Guardar presupuesto</button></div>";
   } else if(t==="docs"){
     var liTxt=(c.raw&&(c.raw.linkedin_texto||""))||"";
     var cvTxt=(c.raw&&(c.raw.cv_url||c.raw.cv_texto||""))||"";
@@ -3574,6 +3626,7 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); render(); return; }
+  if(act.indexOf("demo-tipo:")===0){ state.demoTipo=act.slice(10); try{ localStorage.setItem("pw_demo_tipo",state.demoTipo); }catch(e){} toast("Demo: panel "+state.demoTipo); render(); return; }
   if(act==="cli-deactivate" || act==="cli-reactivate"){
     var cid=el.getAttribute("data-id");
     if(!cid) return;
@@ -3826,6 +3879,67 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo guardar el material."); });
     return;
   }
+  // ── Fitness/Financiero: lo que el coach carga acá lo ve el cliente en su portal ──
+  if(act==="fit-antro-save"){
+    var faid=el.getAttribute("data-id"); if(!faid) return;
+    var fac=CLIENTS.filter(function(x){return String(x.id)===String(faid);})[0];
+    var _arr=[]; try{ _arr=JSON.parse((fac&&fac.raw&&fac.raw.fit_antro)||"[]")||[]; }catch(e){ _arr=[]; }
+    if(Object.prototype.toString.call(_arr)!=="[object Array]") _arr=[];
+    var m={fecha:_val("fa-fecha")||(new Date().toISOString().slice(0,10)),peso:_val("fa-peso"),grasa:_val("fa-grasa"),musculo:_val("fa-musculo"),oseo:_val("fa-oseo"),pliegues:_val("fa-pliegues"),imo:_val("fa-imo")};
+    if(!m.peso&&!m.grasa&&!m.musculo){ alert("Cargá al menos peso, % grasa o masa muscular."); return; }
+    _arr.push(m); _arr.sort(function(a,b){ return (""+(a.fecha||"")).localeCompare(""+(b.fecha||"")); });
+    var _aj=JSON.stringify(_arr);
+    _sbw("candidatos?id=eq."+encodeURIComponent(faid),"PATCH",{fit_antro:_aj})
+      .then(function(r){ if(!r.ok) throw 0; if(fac&&fac.raw) fac.raw.fit_antro=_aj; toast("Medición guardada ✓ — el cliente la ve"); render(); })
+      .catch(function(){ alert("No se pudo guardar. Falta la columna fit_antro en candidatos (ver migración career_nicho_fields.sql)."); });
+    return;
+  }
+  if(act==="fit-antro-del"){
+    var fdid=el.getAttribute("data-id"); var fdix=parseInt(el.getAttribute("data-idx"),10);
+    if(!fdid||isNaN(fdix)) return;
+    if(!confirm("¿Borrar esta medición?")) return;
+    var fdc=CLIENTS.filter(function(x){return String(x.id)===String(fdid);})[0];
+    var _a2=[]; try{ _a2=JSON.parse((fdc&&fdc.raw&&fdc.raw.fit_antro)||"[]")||[]; }catch(e){ _a2=[]; }
+    _a2.splice(fdix,1);
+    var _a2j=JSON.stringify(_a2);
+    _sbw("candidatos?id=eq."+encodeURIComponent(fdid),"PATCH",{fit_antro:_a2j})
+      .then(function(r){ if(!r.ok) throw 0; if(fdc&&fdc.raw) fdc.raw.fit_antro=_a2j; toast("Medición borrada ✓"); render(); })
+      .catch(function(){ alert("No se pudo borrar."); });
+    return;
+  }
+  if(act==="fit-ex-add"){
+    var feid=el.getAttribute("data-id"); if(!feid) return;
+    var fec=CLIENTS.filter(function(x){return String(x.id)===String(feid);})[0];
+    var _nom=_val("fr-nom"); if(!_nom.trim()){ alert("Poné el nombre del ejercicio."); return; }
+    var arrE=_rutToArr(fec&&fec.raw&&fec.raw.fit_rutina);
+    arrE.push({dia:_val("fr-dia")||"General",nombre:_nom,meta:_val("fr-meta"),foto:window._frFoto||""});
+    var jE=JSON.stringify(arrE);
+    _sbw("candidatos?id=eq."+encodeURIComponent(feid),"PATCH",{fit_rutina:jE})
+      .then(function(r){ if(!r.ok) throw 0; if(fec&&fec.raw) fec.raw.fit_rutina=jE; window._frFoto=""; toast("Ejercicio agregado ✓ — el cliente lo ve"); render(); })
+      .catch(function(){ alert("No se pudo guardar. Falta la columna fit_rutina en candidatos (ver migración career_nicho_fields.sql)."); });
+    return;
+  }
+  if(act==="fit-ex-del"){
+    var fxid=el.getAttribute("data-id"); var fxix=parseInt(el.getAttribute("data-idx"),10);
+    if(!fxid||isNaN(fxix)) return;
+    var fxc=CLIENTS.filter(function(x){return String(x.id)===String(fxid);})[0];
+    var arrX=_rutToArr(fxc&&fxc.raw&&fxc.raw.fit_rutina); arrX.splice(fxix,1);
+    var jX=JSON.stringify(arrX);
+    _sbw("candidatos?id=eq."+encodeURIComponent(fxid),"PATCH",{fit_rutina:jX})
+      .then(function(r){ if(!r.ok) throw 0; if(fxc&&fxc.raw) fxc.raw.fit_rutina=jX; toast("Ejercicio quitado ✓"); render(); })
+      .catch(function(){ alert("No se pudo guardar."); });
+    return;
+  }
+  if(act==="fin-pres-save"){
+    var fpid=el.getAttribute("data-id"); if(!fpid) return;
+    var fpc=CLIENTS.filter(function(x){return String(x.id)===String(fpid);})[0];
+    var _fp={vivienda:_val("fp-vivienda"),alimentacion:_val("fp-alim"),ocio:_val("fp-ocio"),ahorro:_val("fp-ahorro")};
+    var _fpj=JSON.stringify(_fp);
+    _sbw("candidatos?id=eq."+encodeURIComponent(fpid),"PATCH",{fin_pres:_fpj})
+      .then(function(r){ if(!r.ok) throw 0; if(fpc&&fpc.raw) fpc.raw.fin_pres=_fpj; toast("Presupuesto guardado ✓ — el cliente lo ve"); })
+      .catch(function(){ alert("No se pudo guardar. Falta la columna fin_pres en candidatos (ver migración career_nicho_fields.sql)."); });
+    return;
+  }
   if(act==="cv-save"){
     var cvid=el.getAttribute("data-id"); if(!cvid) return;
     var cvc=CLIENTS.filter(function(x){return String(x.id)===String(cvid);})[0]; if(!cvc) return;
@@ -3876,9 +3990,15 @@ document.addEventListener("click", function(ev){
     var spem=(""+(spc.email||"")).toLowerCase().trim();
     if(!spem){ alert("El cliente no tiene email — no se puede crear acceso."); return; }
     _sha256(np).then(function(h){
-      return _sb("usuarios?email=eq."+encodeURIComponent(spem)+"&select=id").then(function(rows){
-        if(rows&&rows.length){ return _sbw("usuarios?email=eq."+encodeURIComponent(spem),"PATCH",{password_hash:h}); }
-        return _sbw("usuarios","POST",{email:spem,password_hash:h,rol:"cliente",nombre:spc.name||"",activo:true});
+      return _sb("usuarios?email=eq."+encodeURIComponent(spem)+"&select=id,configuracion").then(function(rows){
+        // El tipo del coach define a qué portal entra el cliente al loguearse.
+        var _ctype=(typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||"carrera";
+        if(rows&&rows.length){
+          var _patch={password_hash:h};
+          if(_ctype!=="carrera"){ var _ec=rows[0].configuracion||{}; _ec.coach_type=_ctype; _patch.configuracion=_ec; }
+          return _sbw("usuarios?email=eq."+encodeURIComponent(spem),"PATCH",_patch);
+        }
+        return _sbw("usuarios","POST",{email:spem,password_hash:h,rol:"cliente",nombre:spc.name||"",activo:true,configuracion:{coach_type:_ctype}});
       });
     }).then(function(r){ if(!r||!r.ok) throw 0;
       var e3=document.getElementById("cli-pass-st"); if(e3) e3.textContent="acceso actualizado ✓";
@@ -4185,6 +4305,16 @@ function _uploadDoc(f){
   });
 }
 
+// Foto de un ejercicio de rutina (la sube el coach al agregar el ejercicio).
+document.addEventListener("change", function(ev){
+  if(!ev.target || ev.target.id!=="fr-foto") return;
+  var ff=ev.target.files && ev.target.files[0]; if(!ff) return;
+  if(ff.size > 5*1024*1024){ alert("La foto no puede pesar más de 5 MB."); ev.target.value=""; return; }
+  var st=document.getElementById("fr-foto-st"); if(st) st.textContent="Subiendo…";
+  _uploadDoc(ff)
+    .then(function(url){ window._frFoto=url; var im=document.getElementById("fr-foto-prev"); if(im){ im.src=url; im.style.display="block"; } if(st) st.textContent="Foto lista ✓"; })
+    .catch(function(){ if(st) st.textContent="No se pudo subir la foto"; });
+});
 document.addEventListener("change", function(ev){
   if(!ev.target || ev.target.id!=="cfp-foto") return;
   var f=ev.target.files && ev.target.files[0]; if(!f) return;
@@ -4288,6 +4418,16 @@ function _avCollect(avc){
   return { d:newD, prog:prog };
 }
 function _chatArr(s){ try{ var a=JSON.parse(s||"[]"); return Object.prototype.toString.call(a)==="[object Array]"?a:[]; }catch(e){ return []; } }
+// Cuenta demo: habilita el selector Carrera/Fitness/Finanzas en el sidebar.
+function _isDemoCoach(){ try{ return !!(REAL && RME && ((""+(RME.email||"")).toLowerCase()==="demo.coach@pathway.com" || (RCFG&&RCFG.demo===true))); }catch(e){ return false; } }
+// Rutina fitness → array de ejercicios [{dia,nombre,meta,foto}]. Acepta el JSON
+// nuevo o texto plano viejo (back-compat) separado por línea en blanco.
+function _rutToArr(raw){
+  raw=raw||"";
+  if(typeof raw==="string" && raw.trim().charAt(0)==="["){ try{ var a=JSON.parse(raw); if(Object.prototype.toString.call(a)==="[object Array]") return a; }catch(e){} }
+  var out=[]; (""+raw).replace(/\r/g,"").split(/\n\s*\n/).forEach(function(bl){ var lines=bl.split("\n").map(function(s){return s.trim();}).filter(Boolean); if(!lines.length) return; var dia=lines.shift(); lines.forEach(function(l){ var p=l.split("·"); out.push({dia:dia,nombre:(p.shift()||"").trim(),meta:p.join("·").trim(),foto:""}); }); });
+  return out;
+}
 function _isChat(s){ if(!s) return false; var t=(""+s).trim(); if(t.charAt(0)!=="[") return false; try{ return Object.prototype.toString.call(JSON.parse(t))==="[object Array]"; }catch(e){ return false; } }
 function _sha256(txt){ return crypto.subtle.digest("SHA-256",new TextEncoder().encode(""+txt)).then(function(b){ return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join(""); }); }
 function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600); }

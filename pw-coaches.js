@@ -16,6 +16,42 @@ window.PW_SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
   });
 })();
 
+// ── Auth ──
+window.pwSession = async function(){ try{ var r=await sb.auth.getSession(); return (r.data&&r.data.session)||null; }catch(e){ return null; } };
+window.pwLogin   = function(email,pass){ return sb.auth.signInWithPassword({email:email,password:pass}); };
+window.pwSignup  = function(email,pass){ return sb.auth.signUp({email:email,password:pass}); };
+window.pwLogout  = function(){ return sb.auth.signOut(); };
+
+// ── Hábitos (clave = el propio usuario; RLS deja escribir lo suyo) ──
+window.pwSaveHabit = function(uid,fecha,habito,done){
+  return sb.from('habitos_log').upsert({cliente_id:uid,fecha:fecha,habito:habito,done:done},{onConflict:'cliente_id,fecha,habito'});
+};
+window.pwLoadHabits = function(uid,desde){
+  return sb.from('habitos_log').select('fecha,habito,done').eq('cliente_id',uid).gte('fecha',desde);
+};
+window.pwHoy = function(){ return new Date().toISOString().slice(0,10); };
+
+// ── White-label: aplicar la marca del coach (color + logo + nombre) ──
+// La marca viaja denormalizada en clientes.config (la setea el coach), así el
+// cliente la lee de su propia fila (sin chocar con RLS).
+window.pwApplyBrand = function(b){
+  if(!b) return;
+  try{
+    var root=document.documentElement.style;
+    if(b.color_marca){ root.setProperty('--rose', b.color_marca); root.setProperty('--rose-dark', b.color_marca); }
+    if(b.coach_nombre){
+      var nm=document.querySelector('.ptop-coach-name'); if(nm) nm.textContent=b.coach_nombre;
+      var sub=document.querySelector('.sb-brand-sub'); if(sub) sub.textContent='con '+b.coach_nombre;
+    }
+    if(b.logo_url){
+      var av=document.querySelector('.ptop-av'); if(av){ av.style.background='transparent'; av.innerHTML='<img src="'+b.logo_url+'" style="width:100%;height:100%;border-radius:50%;object-fit:cover">'; }
+    }
+  }catch(e){}
+};
+window.pwMyBrand = async function(uid){
+  try{ var c=await sb.from('clientes').select('config').eq('id',uid).maybeSingle(); return (c.data&&c.data.config)||null; }catch(e){ return null; }
+};
+
 // Helper: a qué panel/portal va cada quien según su rol/coach_type
 window.pwRedirect = function(rol, coachType){
   if(rol === "cliente"){
