@@ -1287,18 +1287,20 @@ function viewClienteDetalle(c){
       return "<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Semana "+w+"<span class='dot'>.</span></h3>"+daysHtml+"</div>";
     }).join("");
     var wkOpts=""; for(var _w=1;_w<=Math.max(maxWk+1,4);_w++){ wkOpts+="<option value='"+_w+"'"+(_w===(maxWk||1)?" selected":"")+">Semana "+_w+"</option>"; }
-    body="<div class='cp-form-hint' style='margin:0 0 12px'>Agrega ejercicios a cada semana (nombre, series×reps y foto opcional). Se agrupan por <strong>semana</strong> y por <strong>día</strong> — así el cliente ve qué hacer cada semana en su portal.</div>"+
-      (rutRows||"<div class='cp-card cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Todavía no cargaste ejercicios. Agrega el primero abajo 👇</div>")+
+    body="<div class='cp-form-hint' style='margin:0 0 12px'>Carga los ejercicios acá arriba (nombre, series×reps, <strong>peso</strong> y foto opcional). Aparecen abajo agrupados por <strong>semana</strong> y por <strong>día</strong> — y el cliente los ve igual en su portal.</div>"+
       "<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Agregar ejercicio<span class='dot'>.</span></h3>"+
         "<div class='cp-form-row-2'><div class='cp-form-row'><label class='cp-form-label'>Semana</label><select id='fr-sem' class='cp-form-input'>"+wkOpts+"</select></div><div class='cp-form-row'><label class='cp-form-label'>Día / bloque</label><input id='fr-dia' class='cp-form-input' placeholder='Lunes · Tren superior'></div></div>"+
-        "<div class='cp-form-row-2' style='margin-top:10px'><div class='cp-form-row'><label class='cp-form-label'>Ejercicio</label><input id='fr-nom' class='cp-form-input' placeholder='Press de banca'></div><div class='cp-form-row'><label class='cp-form-label'>Series × reps</label><input id='fr-meta' class='cp-form-input' placeholder='4×10'></div></div>"+
+        "<div class='cp-form-row' style='margin-top:10px'><label class='cp-form-label'>Ejercicio</label><input id='fr-nom' class='cp-form-input' placeholder='Press de banca'></div>"+
+        "<div class='cp-form-row-2' style='margin-top:10px'><div class='cp-form-row'><label class='cp-form-label'>Series × reps</label><input id='fr-meta' class='cp-form-input' placeholder='4×10'></div><div class='cp-form-row'><label class='cp-form-label'>Peso (kg)</label><input id='fr-peso' class='cp-form-input' placeholder='60' inputmode='decimal'></div></div>"+
         "<div style='display:flex;align-items:center;gap:12px;margin-top:12px'>"+
           "<label class='cp-btn cp-btn-ghost' style='cursor:pointer;height:34px;font-size:13px'>"+svg(IC.plus,14)+" Subir foto<input id='fr-foto' type='file' accept='image/*' style='display:none'></label>"+
           "<img id='fr-foto-prev' style='width:44px;height:44px;border-radius:8px;object-fit:cover;display:none'>"+
           "<span id='fr-foto-st' style='font-size:12px;color:var(--pw-text-soft)'></span>"+
         "</div>"+
         "<button class='cp-btn cp-btn-primary' style='margin-top:14px' data-act='fit-ex-add' data-id='"+esc(c.id)+"'>Agregar ejercicio</button>"+
-      "</div>";
+      "</div>"+
+      "<div style='font-size:11px;font-weight:700;color:var(--pw-text-soft);text-transform:uppercase;letter-spacing:.6px;margin:16px 0 2px'>Rutina cargada</div>"+
+      (rutRows||"<div class='cp-card cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Todavía no cargaste ejercicios. Agrega el primero acá arriba 👆</div>");
   } else if(t==="fin_pres"){
     var FP={}; try{ FP=JSON.parse((c.raw&&c.raw.fin_pres)||"{}")||{}; }catch(e){ FP={}; }
     body="<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Presupuesto recomendado<span class='dot'>.</span></h3>"+
@@ -4013,9 +4015,14 @@ document.addEventListener("click", function(ev){
     var feid=el.getAttribute("data-id"); if(!feid) return;
     var fec=CLIENTS.filter(function(x){return String(x.id)===String(feid);})[0];
     var _nom=_val("fr-nom"); if(!_nom.trim()){ alert("Pon el nombre del ejercicio."); return; }
+    var _mt=(_val("fr-meta")||"").trim(); var _ps=(_val("fr-peso")||"").trim();
+    var _metaFull=_mt + (_ps ? ((_mt?" · ":"") + _ps + (/kg/i.test(_ps)?"":" kg")) : "");
     var arrE=_rutToArr(fec&&fec.raw&&fec.raw.fit_rutina);
-    arrE.push({semana:parseInt(_val("fr-sem"),10)||1,dia:_val("fr-dia")||"General",nombre:_nom,meta:_val("fr-meta"),foto:window._frFoto||""});
+    arrE.push({semana:parseInt(_val("fr-sem"),10)||1,dia:_val("fr-dia")||"General",nombre:_nom,meta:_metaFull,peso:_ps,foto:window._frFoto||""});
     var jE=JSON.stringify(arrE);
+    // Cliente demo (María de ejemplo): no existe en la base. Lo agregamos en
+    // memoria para que la coach vea cómo queda; no persiste (se resetea al recargar).
+    if(fec && fec._example){ fec.raw.fit_rutina=jE; window._frFoto=""; toast("Ejercicio agregado al demo ✓ (no se guarda — es el cliente de ejemplo)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(feid),"PATCH",{fit_rutina:jE})
       .then(function(r){ if(!r.ok) throw 0; if(fec&&fec.raw) fec.raw.fit_rutina=jE; window._frFoto=""; toast("Ejercicio agregado ✓ — el cliente lo ve"); render(); })
       .catch(function(){ alert("No se pudo guardar. Falta la columna fit_rutina en candidatos (ver migración career_nicho_fields.sql)."); });
