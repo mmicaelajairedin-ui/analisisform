@@ -334,7 +334,17 @@ function toggleEx(el){
   day.querySelector('.d-prog').textContent=d+'/'+t;
 }
 var EX={'Press de banca':['Acostate en el banco con los pies firmes.','Agarrá la barra un poco más ancho que los hombros.','Bajá controlando hasta rozar el pecho.','Empujá sin bloquear de golpe los codos.'],'Remo con barra':['Incliná el torso con la espalda recta.','Dejá colgar la barra con los brazos estirados.','Tirá hacia el ombligo apretando la espalda.','Bajá despacio.'],'Press militar':['Barra a la altura de los hombros.','Empujá hasta estirar los brazos.','Bajá controlando.'],'Fondos en paralelas':['Sostené tu peso con los brazos estirados.','Bajá flexionando los codos.','Empujá hasta volver al inicio.'],'Curl de bíceps':['Mancuernas a los costados.','Subí flexionando el codo.','Bajá despacio.'],'Sentadilla':['Pies al ancho de los hombros.','Bajá llevando la cola atrás.','Muslos paralelos al piso.','Subí con los talones.'],'Peso muerto rumano':['Barra adelante de los muslos.','Bajá pegada a las piernas flexionando la cadera.','Volvé arriba.'],'Zancadas':['Paso largo adelante.','Bajá hasta 90° ambas rodillas.','Cambiá de pierna.']};
-function openEx(n){document.getElementById('exTitle').textContent=n;document.getElementById('exSteps').innerHTML=(EX[n]||['Pedile a tu coach las instrucciones.']).map(s=>'<li>'+s+'</li>').join('');document.getElementById('exModal').classList.add('on');}
+function openEx(n){
+  var meta=EXMETA[n]||{};
+  var ph=document.querySelector('#exModal .ex-photo');
+  if(ph){
+    if(meta.foto){ ph.innerHTML='<img src="'+esc(meta.foto)+'" alt=""><b style="margin-top:8px;font-family:var(--serif);font-size:16px;color:var(--text);">'+esc(n)+'</b>'; }
+    else{ ph.innerHTML='<span>📷</span><b id="exTitle" style="font-family:var(--serif);font-size:16px;color:var(--text);">'+esc(n)+'</b><small>Tu coach todavía no subió una foto</small>'; }
+  }
+  var steps=document.getElementById('exSteps');
+  if(steps) steps.innerHTML=(EX[n]||[(meta.meta?('Hacé: '+esc(meta.meta)+'.'):'Pedile a tu coach cómo hacer este ejercicio.')]).map(function(s){return '<li>'+s+'</li>';}).join('');
+  document.getElementById('exModal').classList.add('on');
+}
 function closeEx(){document.getElementById('exModal').classList.remove('on');}
 function toggleObj(el){el.classList.toggle('done');var c=el.closest('.card'),a=c.querySelectorAll('.objc').length,d=c.querySelectorAll('.objc.done').length;if(a===d){fireConfetti();showToast('🏅 ¡Objetivos de la semana completados!');}}
 function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),3200);}
@@ -438,26 +448,29 @@ function applyAntro(antro){
   var ad=document.getElementById('antroDate'); if(ad&&last.fecha) ad.textContent='🔒 '+last.fecha+' · lo mide tu coach';
 }
 
-// La rutina la escribe el coach como texto. Convención: días separados por
-// línea en blanco; primera línea = título del día; el resto = ejercicios
-// (formato "Nombre · 4×10").
-function applyRutina(text){
-  if(!text||!(''+text).trim()) return;
+// La rutina la carga el coach por ejercicio (nombre + series×reps + foto opcional).
+// Acepta el JSON nuevo [{dia,nombre,meta,foto}] o texto plano viejo (back-compat).
+var EXMETA={};
+function _rutToArr(raw){
+  raw=raw||'';
+  if(typeof raw==='string' && raw.trim().charAt(0)==='['){ try{ var a=JSON.parse(raw); if(Array.isArray(a)) return a; }catch(e){} }
+  var out=[]; (''+raw).replace(/\r/g,'').split(/\n\s*\n/).forEach(function(bl){ var lines=bl.split('\n').map(function(s){return s.trim();}).filter(Boolean); if(!lines.length) return; var dia=lines.shift(); lines.forEach(function(l){ var p=l.split('·'); out.push({dia:dia,nombre:(p.shift()||'').trim(),meta:p.join('·').trim(),foto:''}); }); });
+  return out;
+}
+function applyRutina(raw){
+  if(!raw||!(''+raw).trim()) return;
+  var arr=_rutToArr(raw); if(!arr.length) return;
   var sec=document.getElementById('s-rutina'); if(!sec) return;
   sec.querySelectorAll('.day').forEach(function(d){ d.remove(); });
   var wp=sec.querySelector('.weekpick'); if(wp) wp.style.display='none';
-  var blocks=(''+text).replace(/\r/g,'').split(/\n\s*\n/);
-  var html='';
-  blocks.forEach(function(bl){
-    var lines=bl.split('\n').map(function(s){return s.trim();}).filter(Boolean);
-    if(!lines.length) return;
-    var head=lines.shift();
-    var exs=lines.map(function(l){
-      var parts=l.split('·'); var nm=(parts.shift()||'').trim(); var meta=parts.join('·').trim();
-      return '<div class="ex" onclick="toggleEx(this)"><div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="ex-body"><div class="ex-name">'+esc(nm)+'</div><div class="ex-meta">'+esc(meta)+'</div></div><button class="ex-see" onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)">👁</button></div>';
+  var byDay={}, order=[];
+  arr.forEach(function(e){ var d=e.dia||'General'; if(!byDay[d]){byDay[d]=[];order.push(d);} byDay[d].push(e); if(e.nombre) EXMETA[e.nombre]={foto:e.foto||'',meta:e.meta||''}; });
+  var html=order.map(function(d){
+    var exs=byDay[d].map(function(e){
+      return '<div class="ex" onclick="toggleEx(this)"><div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="ex-body"><div class="ex-name">'+esc(e.nombre||'')+'</div><div class="ex-meta">'+esc(e.meta||'')+'</div></div><button class="ex-see" onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)">👁</button></div>';
     }).join('');
-    html+='<div class="day"><div class="day-h"><div class="d-name">'+esc(head)+'</div><div class="d-prog">0/'+lines.length+'</div></div>'+exs+'</div>';
-  });
+    return '<div class="day"><div class="day-h"><div class="d-name">'+esc(d)+'</div><div class="d-prog">0/'+byDay[d].length+'</div></div>'+exs+'</div>';
+  }).join('');
   sec.insertAdjacentHTML('beforeend', html);
 }
 
