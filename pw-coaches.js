@@ -16,6 +16,21 @@ window.PW_SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
   });
 })();
 
+// ── Auth ──
+window.pwSession = async function(){ try{ var r=await sb.auth.getSession(); return (r.data&&r.data.session)||null; }catch(e){ return null; } };
+window.pwLogin   = function(email,pass){ return sb.auth.signInWithPassword({email:email,password:pass}); };
+window.pwSignup  = function(email,pass){ return sb.auth.signUp({email:email,password:pass}); };
+window.pwLogout  = function(){ return sb.auth.signOut(); };
+
+// ── Hábitos (clave = el propio usuario; RLS deja escribir lo suyo) ──
+window.pwSaveHabit = function(uid,fecha,habito,done){
+  return sb.from('habitos_log').upsert({cliente_id:uid,fecha:fecha,habito:habito,done:done},{onConflict:'cliente_id,fecha,habito'});
+};
+window.pwLoadHabits = function(uid,desde){
+  return sb.from('habitos_log').select('fecha,habito,done').eq('cliente_id',uid).gte('fecha',desde);
+};
+window.pwHoy = function(){ return new Date().toISOString().slice(0,10); };
+
 // Helper: a qué panel/portal va cada quien según su rol/coach_type
 window.pwRedirect = function(rol, coachType){
   if(rol === "cliente"){
