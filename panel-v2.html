@@ -655,9 +655,12 @@ var ADMIN_PHOTO="https://pathwaycareercoach.com/assets/mascota/cabra-saludando.g
 // del cliente para que panel y cliente arranquen CONSECUENTES. Cada coach las
 // renombra por cliente desde "Avance" y el portal lo refleja al instante.
 var ETAPAS_DEFAULT=["Evaluación","CV","LinkedIn","Búsqueda activa"];
-function etapasDe(c){
+function etapasDe(c, tipo){
   var e; try{ e=JSON.parse((c&&c.raw&&c.raw.etapas)||"null"); }catch(_){ e=null; }
-  return (Object.prototype.toString.call(e)==="[object Array]" && e.length===4) ? e : ETAPAS_DEFAULT.slice();
+  if(Object.prototype.toString.call(e)==="[object Array]" && e.length===4) return e;
+  if(tipo==="fitness") return ["Adaptación","Base","Progresión","Medición"];
+  if(tipo==="financiero") return ["Diagnóstico","Presupuesto","Deudas","Ahorro"];
+  return ETAPAS_DEFAULT.slice();
 }
 
 var COACH = { name:"Micaela Jairedin", firstName:"Micaela", role:"Career Coach", plan:"Pro",
@@ -945,7 +948,7 @@ function viewSidebar(){
       "<span class='cp-side-brand-word'>pathway<span style='color:#52B788'>.</span></span></a>"+
     "<div class='cp-side-coach'>"+avImg(COACH.photo,COACH.name,"")+
       "<div class='cp-side-coach-txt'><div class='cp-side-coach-name'>"+esc(COACH.name)+"</div>"+
-      "<div class='cp-side-coach-role'>"+esc(COACH.role)+"<span class='cp-side-plan'>"+(state.plan==="pro"?"Pro":"Basic")+"</span></div>"+
+      "<div class='cp-side-coach-role'>"+esc(coachRoleLabel())+"<span class='cp-side-plan'>"+(state.plan==="pro"?"Pro":"Basic")+"</span></div>"+
       (function(){ var m=coachMedalInfo(); return m.name?"<div class='cp-side-coach-badge' title='"+m.n+" de 3 hitos de arranque completados'><img class='cp-side-coach-medal' src='assets/iconos/medalla-"+m.name+".png' alt=''><span>"+(m.name.charAt(0).toUpperCase()+m.name.slice(1))+" · "+m.n+"/3</span></div>":""; })()+
       "</div></div>"+
     (function(){
@@ -1212,7 +1215,9 @@ function viewClienteDetalle(c){
   var wa=(c.email||"").replace(/[^0-9]/g,"")||"34623816019";
   var t=state.cliDetTab;
   // Demo de María: hasta que el coach "genere", ocultamos informe/CV.
-  var _exHide = c._example && !_exGen;
+  // En el coach demo el análisis del ejemplo se muestra directo (sin el paso
+  // "Generar con IA"), para previsualizar los 3 nichos sin fricción.
+  var _exHide = c._example && !_exGen && !_isDemoCoach();
   // Tipo del cliente (fitness/financiero/carrera). Default carrera → comportamiento de siempre.
   // Cuenta demo: el tipo lo elige la coach con el selector del sidebar (para
   // mostrar los 3 paneles con un solo login). Coach real: como siempre.
@@ -1345,7 +1350,7 @@ function viewClienteDetalle(c){
           "</div></div></div>";
   } else if(t==="plan"){
     var D=_exHide?{}:((c.inf&&c.inf.d)||{});
-    var PETN=etapasDe(c);
+    var PETN=etapasDe(c, _tipo);
     var hasInf=!_exHide && !!(c.inf&&c.inf.id);
     var _al=function(x){ return (Object.prototype.toString.call(x)==="[object Array]"?x:(x?[x]:[])).join("\n"); };
     var _ta=function(id,val,ph,h){ return "<textarea id='"+id+"' class='cp-form-textarea' style='min-height:"+(h||90)+"px' placeholder='"+esc(ph||"")+"'>"+esc(val||"")+"</textarea>"; };
@@ -4508,6 +4513,11 @@ function _avCollect(avc){
 function _chatArr(s){ try{ var a=JSON.parse(s||"[]"); return Object.prototype.toString.call(a)==="[object Array]"?a:[]; }catch(e){ return []; } }
 // Cuenta demo: habilita el selector Carrera/Fitness/Finanzas en el sidebar.
 function _isDemoCoach(){ try{ return !!(REAL && RME && ((""+(RME.email||"")).toLowerCase()==="demo.coach@pathway.com" || (RCFG&&RCFG.demo===true))); }catch(e){ return false; } }
+// Etiqueta de rol del coach según su tipo (carrera/fitness/financiero).
+function coachRoleLabel(){
+  var tp=_isDemoCoach()?(state.demoTipo||"carrera"):((RCFG&&RCFG.coach_type)||"carrera");
+  return tp==="fitness"?"Coach Fitness":(tp==="financiero"?"Coach Financiero":"Career Coach");
+}
 // Rutina fitness → array de ejercicios [{dia,nombre,meta,foto}]. Acepta el JSON
 // nuevo o texto plano viejo (back-compat) separado por línea en blanco.
 function _rutToArr(raw){
@@ -4701,7 +4711,11 @@ function loadReal(){
         source: "directo", notas: (c.notas_privadas!=null ? c.notas_privadas : (_isChat(c.notas_coach) ? "" : (c.notas_coach||""))), chat: _chatArr(c.notas_coach), raw:c, inf: infMap[em]||null, ses:(function(){try{return JSON.parse(c.sesiones_registro||"[]")||[];}catch(e){return [];}})(), photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
       };
     });
-    if(REAL && !CLIENTS.length){ CLIENTS=[exampleFor(_isDemoCoach()?(state.demoTipo||"carrera"):"carrera")]; }
+    // Coach demo: siempre mostramos la María de ejemplo con el form "lleno"
+    // según el tipo elegido (Carrera/Fitness/Finanzas), ignorando clientes
+    // reales — así el demo de los 3 nichos sale limpio y coherente.
+    if(_isDemoCoach()){ CLIENTS=[exampleFor(state.demoTipo||"carrera")]; }
+    else if(REAL && !CLIENTS.length){ CLIENTS=[exampleFor("carrera")]; }
     render();
     _migrateFotoToUploadcare();
   }).catch(function(){ render(); });
