@@ -17,13 +17,13 @@ const ALL_PUBLIC = [
 
 const ALL_AUTH = [
   'login.html', 'registro.html', 'auth-callback.html',
-  'bienvenida-coach.html', 'verify.html',
+  'verify.html',
 ];
 
 const ALL_TOOLS = [
   'cv-express.html', 'cv.html', 'cv-ats.html', 'carta.html',
   'hub.html', 'linkedin-viewer.html', 'upgrade.html',
-  'post-demo.html', 'circulo.html',
+  'post-demo.html',
 ];
 
 const ALL_PROTECTED = [
