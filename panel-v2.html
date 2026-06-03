@@ -2252,7 +2252,7 @@ function viewAdminThreadInCabra(coachId){
   }
   var coach = (RCOACHES||[]).filter(function(u){return String(u.id)===String(coachId);})[0] || {};
   var coachName = coach.nombre || coach.email || "coach";
-  var coachPhoto = coach.foto_url || (coach.configuracion && coach.configuracion.foto_url) || "";
+  var coachPhoto = coach.foto_url || (coach.configuracion && (coach.configuracion.foto_url || coach.configuracion.foto_perfil)) || "";
   function fmtTime(s){ try{ return new Date(s).toLocaleString("es-ES",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
   var bubbles = hilo.map(function(m){
     var mine = m.from_admin;
@@ -2348,7 +2348,7 @@ function viewMensajesAdminBody(){
   var rows = threads.map(function(t){
     var coach = (RCOACHES||[]).filter(function(u){return String(u.id)===t.coachId;})[0];
     var name = (coach && (coach.nombre || coach.email)) || "Coach";
-    var cPhoto = (coach && (coach.foto_url || (coach.configuracion && coach.configuracion.foto_url))) || "";
+    var cPhoto = (coach && (coach.foto_url || (coach.configuracion && (coach.configuracion.foto_url || coach.configuracion.foto_perfil)))) || "";
     var preview = (t.last.body||"").replace(/\s+/g," ").slice(0, 70);
     if(t.last.body && t.last.body.length > 70) preview += "…";
     var fromLabel = t.last.from_admin ? "Tú: " : "";
@@ -2595,6 +2595,7 @@ function _coachDetailCard(){
       "<div style='display:flex;gap:10px;flex-wrap:wrap;margin-top:16px'>"+
         "<button class='cp-btn cp-btn-ghost' data-act='coach-trial:"+esc(c.id)+"'>+30 días de prueba</button>"+
         "<button class='cp-btn cp-btn-primary' data-act='coach-paid:"+esc(c.id)+"'>Marcar como pagado</button>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='coach-plan:"+(cg.plan==="pro"?"basic":"pro")+":"+esc(c.id)+"'>"+(cg.plan==="pro"?"Pasar a Basic":"Pasar a Pro")+"</button>"+
       "</div>")+
     "</div></div>"+
     _coachChatBlock(c);
@@ -3549,6 +3550,19 @@ document.addEventListener("click", function(ev){
       var nc=Object.assign({},cf,{estado_sub:"activa",fecha_fin_prueba:null,marcado_pagado_admin:true,marcado_pagado_at:new Date().toISOString()});
       return _sbw("usuarios?id=eq."+encodeURIComponent(cpId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Coach marcado como pagado ✓"); reloadCoaches(); });
     }).catch(function(){ alert("No se pudo marcar como pagado."); });
+    return;
+  }
+  if(act.indexOf("coach-plan:")===0){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var _pp=act.slice(11).split(":"); var newPlan=_pp[0]; var cplId=_pp[1];
+    if(newPlan!=="pro"&&newPlan!=="basic"){ return; }
+    if(!confirm(newPlan==="pro"?"¿Pasar este coach al plan Pro? Quedan habilitadas todas las funciones Pro.":"¿Bajar este coach al plan Basic?")) return;
+    _sb("usuarios?id=eq."+encodeURIComponent(cplId)+"&select=configuracion").then(function(rows){
+      var u=rows&&rows[0]; if(!u){ alert("Coach no encontrado."); return; }
+      var cf=u.configuracion||{};
+      var nc=Object.assign({},cf,{plan:newPlan});
+      return _sbw("usuarios?id=eq."+encodeURIComponent(cplId),"PATCH",{configuracion:nc}).then(function(r){ if(!r.ok) throw 0; toast(newPlan==="pro"?"Coach ahora es Pro ✓":"Coach pasado a Basic ✓"); reloadCoaches(); });
+    }).catch(function(){ alert("No se pudo cambiar el plan."); });
     return;
   }
   if(act==="coach-access"){
