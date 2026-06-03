@@ -282,12 +282,12 @@
         <p class="h-hero">Mensajes</p>
         <p class="h-sub">Hablá con Gonza directamente.</p>
         <div class="card"><div class="card-body">
-          <div class="pchat">
+          <div class="pchat" id="pmsgs">
             <div class="pmsg them">¡Hola Martín! ¿Cómo venís con los entrenos?<div class="t">ayer</div></div>
             <div class="pmsg me">Bien! La rodilla mejor 🙌<div class="t">ayer</div></div>
             <div class="pmsg them">Genial. Mañana subimos un poco la carga en press.<div class="t">9:02</div></div>
           </div>
-          <div class="pchat-in"><input placeholder="Escribí un mensaje…"><button class="btn btn-sm">Enviar</button></div>
+          <div class="pchat-in"><input id="pmsg-in" placeholder="Escribí un mensaje…" onkeydown="if(event.key==='Enter')sendMsg()"><button class="btn btn-sm" onclick="sendMsg()">Enviar</button></div>
           <p style="font-size:11px;color:var(--muted);margin-top:8px;">🔒 Los datos de contacto se filtran automáticamente.</p>
         </div></div>
       </section>
@@ -469,6 +469,57 @@ function applyClient(c){
   try{ applyAntro(JSON.parse(c.fit_antro||'[]')||[]); }catch(e){}
   applyRutina(c.fit_rutina||'');
   try{ WDATA=JSON.parse(c.fit_habitos||'{}')||{}; }catch(e){ WDATA={}; }
+  try{ MSGS=JSON.parse(c.notas_coach||'[]')||[]; }catch(e){ MSGS=[]; } if(!Array.isArray(MSGS)) MSGS=[];
+  renderMsgs(); startMsgPoll();
+  if(c.coach_id) applyBrand(c.coach_id);
+}
+
+// ── White-label: la marca del coach (nombre siempre; color+logo si es Pro) ──
+function applyBrand(coachId){
+  sbGet('usuarios','id=eq.'+encodeURIComponent(coachId)+'&select=nombre,configuracion,foto_url').then(function(rows){
+    if(!rows||!rows.length) return; var u=rows[0], cfg=u.configuracion||{};
+    var nm=document.querySelector('.ptop-coach-name'); if(nm&&u.nombre) nm.textContent=u.nombre;
+    var av=document.querySelector('.ptop-av');
+    var isPro=(cfg.es_pro_vitalicio===true)||(cfg.plan==='pro');
+    if(isPro){
+      if(cfg.color_marca){ var rs=document.documentElement.style; rs.setProperty('--rose',cfg.color_marca); rs.setProperty('--rose-dark',cfg.color_marca); }
+      var logo=cfg.logo_url||cfg.foto_url||u.foto_url;
+      if(logo&&av){ av.style.background='transparent'; av.innerHTML='<img src="'+esc(logo)+'" style="width:100%;height:100%;border-radius:50%;object-fit:cover">'; }
+    } else if(av&&u.nombre){ av.textContent=((u.nombre[0]||'C')+'').toUpperCase(); }
+  }).catch(function(){});
+}
+
+// ── Mensajería coach↔cliente (mismo modelo que career: candidatos.notas_coach) ──
+var MSGS=[], _pollT=null;
+// Se enmascaran datos de contacto (teléfono/email/links) antes de enviar.
+function _mask(t){ return (''+t).replace(/(\+?\d[\d\s\-().]{6,}\d)/g,'•••').replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g,'•••').replace(/\b(?:https?:\/\/|www\.)\S+/gi,'•••'); }
+function _mkey(m){ return (m&&m.from||'')+'|'+(m&&m.text||'')+'|'+(m&&(m.ts!=null?m.ts:(m.time||''))); }
+function _merge(a,b){ var out=[],seen={}; function add(arr){(arr||[]).forEach(function(m){ if(!m) return; var k=_mkey(m); if(seen[k]) return; seen[k]=true; out.push(m); });} add(a); add(b); out.sort(function(x,y){ return((x&&x.ts)||0)-((y&&y.ts)||0); }); return out; }
+function renderMsgs(){
+  var box=document.getElementById('pmsgs'); if(!box) return;
+  if(!MSGS.length){ box.innerHTML='<div style="text-align:center;padding:18px;font-size:12px;color:var(--muted)">Sin mensajes aún. Escribí para empezar.</div>'; return; }
+  box.innerHTML=MSGS.map(function(m){ var coach=m.from==='coach'; return '<div class="pmsg '+(coach?'them':'me')+'">'+esc(m.text||'')+'<div class="t">'+esc(m.time||'')+'</div></div>'; }).join('');
+  box.scrollTop=box.scrollHeight;
+}
+function loadMsgs(){
+  if(!CID) return;
+  sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){
+    if(!rows||!rows.length) return; var arr=[]; try{ arr=JSON.parse(rows[0].notas_coach||'[]'); }catch(e){} if(!Array.isArray(arr)) arr=[];
+    var merged=_merge(MSGS,arr); if(merged.length!==MSGS.length){ MSGS=merged; renderMsgs(); }
+  }).catch(function(){});
+}
+function startMsgPoll(){ if(_pollT||!CID) return; _pollT=setInterval(function(){ if(document.visibilityState==='visible') loadMsgs(); },30000); }
+function sendMsg(){
+  var inp=document.getElementById('pmsg-in'); if(!inp||!inp.value.trim()) return;
+  var txt=_mask(inp.value.trim());
+  var now=new Date(); var time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');
+  MSGS.push({from:'cliente',text:txt,time:time,ts:now.getTime()}); inp.value=''; renderMsgs();
+  if(!CID) return;
+  sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){
+    var db=[]; if(rows&&rows.length){ try{ var p=JSON.parse(rows[0].notas_coach||'[]'); if(Array.isArray(p)) db=p; }catch(e){} }
+    var merged=_merge(db,MSGS);
+    return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(){ MSGS=merged; });
+  }).catch(function(){});
 }
 
 async function pwInit(){
