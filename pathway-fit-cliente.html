@@ -172,7 +172,7 @@
       <section class="sec" id="s-rutina">
         <p class="h-hero">Mi rutina</p>
         <p class="h-sub">Tocá 👁 si no sabés cómo se hace un ejercicio.</p>
-        <div class="weekpick"><button class="wk">Sem 1</button><button class="wk">Sem 2</button><button class="wk on">Sem 3</button><button class="wk">Sem 4</button></div>
+        <div class="weekpick"><button class="wk on" onclick="selRutWeek(1,this)">Sem 1</button><button class="wk" onclick="selRutWeek(2,this)">Sem 2</button><button class="wk" onclick="selRutWeek(3,this)">Sem 3</button><button class="wk" onclick="selRutWeek(4,this)">Sem 4</button></div>
 
         <div class="day">
           <div class="day-h"><div class="d-name">Lunes · Tren superior</div><div class="d-prog">1/5</div></div>
@@ -331,7 +331,9 @@ function toggleSb(){ document.getElementById('sb').classList.toggle('open'); doc
 function toggleEx(el){
   el.classList.toggle('done');
   var day=el.closest('.day'),t=day.querySelectorAll('.ex').length,d=day.querySelectorAll('.ex.done').length;
-  day.querySelector('.d-prog').textContent=d+'/'+t;
+  var pr=day.querySelector('.d-prog'); if(pr) pr.textContent=d+'/'+t;
+  if(t>0 && d===t && !day.classList.contains('celebrated')){ day.classList.add('celebrated'); fireConfetti(); showToast('💪 ¡Día completo! Gran trabajo.'); }
+  else if(d<t){ day.classList.remove('celebrated'); }
 }
 var EX={'Press de banca':['Acostate en el banco con los pies firmes.','Agarrá la barra un poco más ancho que los hombros.','Bajá controlando hasta rozar el pecho.','Empujá sin bloquear de golpe los codos.'],'Remo con barra':['Incliná el torso con la espalda recta.','Dejá colgar la barra con los brazos estirados.','Tirá hacia el ombligo apretando la espalda.','Bajá despacio.'],'Press militar':['Barra a la altura de los hombros.','Empujá hasta estirar los brazos.','Bajá controlando.'],'Fondos en paralelas':['Sostené tu peso con los brazos estirados.','Bajá flexionando los codos.','Empujá hasta volver al inicio.'],'Curl de bíceps':['Mancuernas a los costados.','Subí flexionando el codo.','Bajá despacio.'],'Sentadilla':['Pies al ancho de los hombros.','Bajá llevando la cola atrás.','Muslos paralelos al piso.','Subí con los talones.'],'Peso muerto rumano':['Barra adelante de los muslos.','Bajá pegada a las piernas flexionando la cadera.','Volvé arriba.'],'Zancadas':['Paso largo adelante.','Bajá hasta 90° ambas rodillas.','Cambiá de pierna.']};
 function openEx(n){
@@ -457,21 +459,35 @@ function _rutToArr(raw){
   var out=[]; (''+raw).replace(/\r/g,'').split(/\n\s*\n/).forEach(function(bl){ var lines=bl.split('\n').map(function(s){return s.trim();}).filter(Boolean); if(!lines.length) return; var dia=lines.shift(); lines.forEach(function(l){ var p=l.split('·'); out.push({dia:dia,nombre:(p.shift()||'').trim(),meta:p.join('·').trim(),foto:''}); }); });
   return out;
 }
+var RUT_ALL=[];
+function _exHtml(e){
+  return '<div class="ex" onclick="toggleEx(this)"><div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="ex-body"><div class="ex-name">'+esc(e.nombre||'')+'</div><div class="ex-meta">'+esc(e.meta||'')+'</div></div><button class="ex-see" onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)">👁</button></div>';
+}
+function renderRutinaWeek(wk){
+  var sec=document.getElementById('s-rutina'); if(!sec) return;
+  sec.querySelectorAll('.day').forEach(function(d){ d.remove(); });
+  var list=RUT_ALL.filter(function(e){ return (parseInt(e.semana,10)||1)===wk; });
+  if(!list.length){ sec.insertAdjacentHTML('beforeend','<div class="day"><div class="day-h"><div class="d-name" style="color:var(--muted)">Sin ejercicios para esta semana</div></div></div>'); return; }
+  var byDay={}, order=[];
+  list.forEach(function(e){ var d=e.dia||'General'; if(!byDay[d]){byDay[d]=[];order.push(d);} byDay[d].push(e); });
+  var html=order.map(function(d){
+    return '<div class="day"><div class="day-h"><div class="d-name">'+esc(d)+'</div><div class="d-prog">0/'+byDay[d].length+'</div></div>'+byDay[d].map(_exHtml).join('')+'</div>';
+  }).join('');
+  sec.insertAdjacentHTML('beforeend', html);
+}
+function selRutWeek(w,el){ document.querySelectorAll('#s-rutina .wk').forEach(function(b){ b.classList.toggle('on',b===el); }); if(RUT_ALL.length) renderRutinaWeek(w); }
 function applyRutina(raw){
   if(!raw||!(''+raw).trim()) return;
   var arr=_rutToArr(raw); if(!arr.length) return;
+  RUT_ALL=arr;
+  arr.forEach(function(e){ if(e.nombre) EXMETA[e.nombre]={foto:e.foto||'',meta:e.meta||''}; });
   var sec=document.getElementById('s-rutina'); if(!sec) return;
-  sec.querySelectorAll('.day').forEach(function(d){ d.remove(); });
-  var wp=sec.querySelector('.weekpick'); if(wp) wp.style.display='none';
-  var byDay={}, order=[];
-  arr.forEach(function(e){ var d=e.dia||'General'; if(!byDay[d]){byDay[d]=[];order.push(d);} byDay[d].push(e); if(e.nombre) EXMETA[e.nombre]={foto:e.foto||'',meta:e.meta||''}; });
-  var html=order.map(function(d){
-    var exs=byDay[d].map(function(e){
-      return '<div class="ex" onclick="toggleEx(this)"><div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="ex-body"><div class="ex-name">'+esc(e.nombre||'')+'</div><div class="ex-meta">'+esc(e.meta||'')+'</div></div><button class="ex-see" onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)">👁</button></div>';
-    }).join('');
-    return '<div class="day"><div class="day-h"><div class="d-name">'+esc(d)+'</div><div class="d-prog">0/'+byDay[d].length+'</div></div>'+exs+'</div>';
-  }).join('');
-  sec.insertAdjacentHTML('beforeend', html);
+  var wp=sec.querySelector('.weekpick');
+  if(wp){
+    var firstWk=null;
+    wp.innerHTML=[1,2,3,4].map(function(w){ var has=arr.some(function(e){return (parseInt(e.semana,10)||1)===w;}); if(has&&firstWk==null) firstWk=w; return '<button class="wk'+(has&&firstWk===w?' on':'')+'"'+(has?'':' style="opacity:.4"')+' onclick="selRutWeek('+w+',this)">Sem '+w+'</button>'; }).join('');
+    renderRutinaWeek(firstWk||1);
+  } else { renderRutinaWeek(1); }
 }
 
 function applyClient(c){
