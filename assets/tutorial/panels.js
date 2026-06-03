@@ -86,7 +86,7 @@ function PanelFrame({
   }, "."))), /*#__PURE__*/React.createElement("div", {
     className: "pf-side-coach"
   }, /*#__PURE__*/React.createElement("img", {
-    src: "assets/avatars/coach-demo.svg",
+    src: "https://fucfze9g4e.ucarecd.net/9713050f-340a-481e-9577-243c5fb106e2/-/scale_crop/400x400/center/-/format/auto/",
     alt: "",
     className: "pf-side-coach-avatar"
   }), /*#__PURE__*/React.createElement("div", {
@@ -285,7 +285,7 @@ function StepPerfil({
       marginTop: 14
     }
   }, /*#__PURE__*/React.createElement("img", {
-    src: "assets/avatars/coach-demo.svg",
+    src: "https://fucfze9g4e.ucarecd.net/9713050f-340a-481e-9577-243c5fb106e2/-/scale_crop/400x400/center/-/format/auto/",
     alt: "",
     className: "pf-photo-circle"
   }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -395,7 +395,7 @@ function StepLink({
   }, "VISTA PREVIA"), /*#__PURE__*/React.createElement("div", {
     className: "pf-url-preview-card"
   }, /*#__PURE__*/React.createElement("img", {
-    src: "assets/avatars/coach-demo.svg",
+    src: "https://fucfze9g4e.ucarecd.net/9713050f-340a-481e-9577-243c5fb106e2/-/scale_crop/400x400/center/-/format/auto/",
     alt: "",
     className: "pf-url-preview-photo"
   }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -528,7 +528,7 @@ function StepCliente({
   }, "Click en ", /*#__PURE__*/React.createElement("strong", null, "\u201C+ Nuevo cliente\u201D"), " para abrir el alta."), /*#__PURE__*/React.createElement(Card, null, data.cliente.creado ? /*#__PURE__*/React.createElement("div", {
     className: "pf-client-row"
   }, /*#__PURE__*/React.createElement("img", {
-    src: "assets/avatars/cliente-demo.svg",
+    src: "https://fucfze9g4e.ucarecd.net/0be4c644-0915-4325-96aa-b1c94651b42b/-/scale_crop/400x400/center/-/format/auto/",
     alt: "",
     className: "pf-client-photo"
   }), /*#__PURE__*/React.createElement("div", {

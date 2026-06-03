@@ -56,8 +56,7 @@ Agencia (landing) → Cliente compra mentoria → Micaela le manda link al formu
 | `soy-candidato.html` | Pagina publica "Busco trabajo" | ~220 |
 | `soy-coach.html` | Pagina publica "Soy coach" con pricing | ~240 |
 | `registro.html` | Registro de coaches | ~250 |
-| `panel.html` | Panel del coach (TODO el JS esta inline, NO usa panel.js) | ~2300 |
-| `panel.js` | Archivo legacy con funciones duplicadas (panel.html no lo carga) |
+| `panel-v2.html` | **Panel del coach (EL QUE SE USA)** — TODO el JS inline. El login redirige aca | ~4500 |
 | `cliente.html` | Portal del cliente (su espacio durante la mentoria) | ~2100 |
 | `cv.html` | Editor de CV | ~850 |
 | `carta.html` | Editor de carta de presentacion | ~420 |
@@ -82,8 +81,16 @@ Si al abrir el sitio aparece una pantalla de login en `analisisform-pages.cloudf
 
 Para diagnosticar: si la URL en la barra empieza con `<hash>.analisisform.pages.dev` o `analisisform-pages.cloudflareaccess.com`, redirigir al usuario a `pathwaycareercoach.com` o `analisisform.pages.dev`. No buscar URLs rotas en el HTML — los hrefs relativos no causan esto.
 
-## IMPORTANTE: panel.html tiene todo el JS inline
-El archivo `panel.js` existe pero **panel.html NO lo carga**. Todo el JavaScript del panel esta dentro de `<script>` en panel.html. Cualquier funcion nueva debe ir dentro de panel.html, no en panel.js.
+## IMPORTANTE: el panel vivo es panel-v2.html (panel.html fue borrado)
+El panel del coach es **`panel-v2.html`** y el login redirige ahi. Todo su
+JavaScript esta inline dentro de `<script>` en `panel-v2.html`; cualquier
+funcion nueva del panel va ahi.
+
+> **Limpieza junio 2026 — archivos eliminados (ya no existen):**
+> `panel.html` (reemplazado por `panel-v2.html`), `panel.js` (legacy sin uso),
+> `perfil-publico-editor.js` (su funcion ya esta inline en panel-v2.html) y
+> `gestion-leads.html` (pantalla de Leads del panel viejo, en desuso).
+> En las secciones de mas abajo donde dice `panel.html`, leer `panel-v2.html`.
 
 ## Bugs arreglados (ya en produccion)
 1. Validacion por pasos en formulario (nombre, email, situacion, cargo, rol obligatorios)
