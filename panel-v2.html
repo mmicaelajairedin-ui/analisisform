@@ -1204,22 +1204,31 @@ function viewClienteDetalle(c){
       "<button class='cp-btn cp-btn-primary' style='margin-top:14px' data-act='fit-antro-save' data-id='"+esc(c.id)+"'>Guardar medición</button></div>"+histA;
   } else if(t==="fit_rutina"){
     var RUT=_rutToArr((c.raw&&c.raw.fit_rutina)||"");
-    var byDay={}, order=[];
-    RUT.forEach(function(e){ var d=e.dia||"General"; if(!byDay[d]){byDay[d]=[];order.push(d);} byDay[d].push(e); });
-    var rutRows=order.map(function(d){
-      var exs=byDay[d].map(function(e){
-        var ix=RUT.indexOf(e);
-        var thumb=e.foto?"<img src='"+esc(e.foto)+"' style='width:40px;height:40px;border-radius:8px;object-fit:cover'>":"<div style='width:40px;height:40px;border-radius:8px;background:var(--pw-bg);display:flex;align-items:center;justify-content:center;font-size:17px'>🏋️</div>";
-        return "<div style='display:flex;align-items:center;gap:10px;border-top:1px solid var(--pw-border);padding:9px 0'>"+thumb+
-          "<div style='flex:1'><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+esc(e.nombre||"")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(e.meta||"")+(e.foto?"":" · sin foto")+"</div></div>"+
-          "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px' data-act='fit-ex-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Quitar</button></div>";
+    // Agrupado por SEMANA (header claro), y dentro por día.
+    var byWk={}, wkOrder=[];
+    RUT.forEach(function(e){ var w=parseInt(e.semana,10)||1; if(!byWk[w]){byWk[w]=[];wkOrder.push(w);} byWk[w].push(e); });
+    wkOrder.sort(function(a,b){ return a-b; });
+    var maxWk=wkOrder.length?wkOrder[wkOrder.length-1]:0;
+    var rutRows=wkOrder.map(function(w){
+      var byDay={}, dOrder=[];
+      byWk[w].forEach(function(e){ var d=e.dia||"General"; if(!byDay[d]){byDay[d]=[];dOrder.push(d);} byDay[d].push(e); });
+      var daysHtml=dOrder.map(function(d){
+        var exs=byDay[d].map(function(e){
+          var ix=RUT.indexOf(e);
+          var thumb=e.foto?"<img src='"+esc(e.foto)+"' style='width:38px;height:38px;border-radius:8px;object-fit:cover'>":"<div style='width:38px;height:38px;border-radius:8px;background:var(--pw-bg);display:flex;align-items:center;justify-content:center;font-size:16px'>🏋️</div>";
+          return "<div style='display:flex;align-items:center;gap:10px;border-top:1px solid var(--pw-border);padding:8px 0'>"+thumb+
+            "<div style='flex:1'><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+esc(e.nombre||"")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(e.meta||"")+(e.foto?"":" · sin foto")+"</div></div>"+
+            "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px' data-act='fit-ex-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Quitar</button></div>";
+        }).join("");
+        return "<div style='margin-top:10px'><div style='font-size:11px;font-weight:700;color:var(--pw-bosque);text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px'>"+esc(d)+"</div>"+exs+"</div>";
       }).join("");
-      return "<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>"+esc(d)+"<span class='dot'>.</span></h3>"+exs+"</div>";
+      return "<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Semana "+w+"<span class='dot'>.</span></h3>"+daysHtml+"</div>";
     }).join("");
-    body="<div class='cp-form-hint' style='margin:0 0 12px'>Cargá cada ejercicio con su nombre, series×reps y una foto (opcional). El cliente ve la foto al tocar 👁 en su portal.</div>"+
+    var wkOpts=""; for(var _w=1;_w<=Math.max(maxWk+1,4);_w++){ wkOpts+="<option value='"+_w+"'"+(_w===(maxWk||1)?" selected":"")+">Semana "+_w+"</option>"; }
+    body="<div class='cp-form-hint' style='margin:0 0 12px'>Agregá ejercicios a cada semana (nombre, series×reps y foto opcional). Se agrupan por <strong>semana</strong> y por <strong>día</strong> — así el cliente ve qué hacer cada semana en su portal.</div>"+
       (rutRows||"<div class='cp-card cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Todavía no cargaste ejercicios. Agregá el primero abajo 👇</div>")+
       "<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Agregar ejercicio<span class='dot'>.</span></h3>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Día / bloque</label><input id='fr-dia' class='cp-form-input' placeholder='Lunes · Tren superior'></div>"+
+        "<div class='cp-form-row-2'><div class='cp-form-row'><label class='cp-form-label'>Semana</label><select id='fr-sem' class='cp-form-input'>"+wkOpts+"</select></div><div class='cp-form-row'><label class='cp-form-label'>Día / bloque</label><input id='fr-dia' class='cp-form-input' placeholder='Lunes · Tren superior'></div></div>"+
         "<div class='cp-form-row-2' style='margin-top:10px'><div class='cp-form-row'><label class='cp-form-label'>Ejercicio</label><input id='fr-nom' class='cp-form-input' placeholder='Press de banca'></div><div class='cp-form-row'><label class='cp-form-label'>Series × reps</label><input id='fr-meta' class='cp-form-input' placeholder='4×10'></div></div>"+
         "<div style='display:flex;align-items:center;gap:12px;margin-top:12px'>"+
           "<label class='cp-btn cp-btn-ghost' style='cursor:pointer;height:34px;font-size:13px'>"+svg(IC.plus,14)+" Subir foto<input id='fr-foto' type='file' accept='image/*' style='display:none'></label>"+
@@ -3912,7 +3921,7 @@ document.addEventListener("click", function(ev){
     var fec=CLIENTS.filter(function(x){return String(x.id)===String(feid);})[0];
     var _nom=_val("fr-nom"); if(!_nom.trim()){ alert("Poné el nombre del ejercicio."); return; }
     var arrE=_rutToArr(fec&&fec.raw&&fec.raw.fit_rutina);
-    arrE.push({dia:_val("fr-dia")||"General",nombre:_nom,meta:_val("fr-meta"),foto:window._frFoto||""});
+    arrE.push({semana:parseInt(_val("fr-sem"),10)||1,dia:_val("fr-dia")||"General",nombre:_nom,meta:_val("fr-meta"),foto:window._frFoto||""});
     var jE=JSON.stringify(arrE);
     _sbw("candidatos?id=eq."+encodeURIComponent(feid),"PATCH",{fit_rutina:jE})
       .then(function(r){ if(!r.ok) throw 0; if(fec&&fec.raw) fec.raw.fit_rutina=jE; window._frFoto=""; toast("Ejercicio agregado ✓ — el cliente lo ve"); render(); })
