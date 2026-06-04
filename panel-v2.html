@@ -1621,8 +1621,8 @@ function viewClienteDetalle(c){
         avImg(c.photo,c.name,"style='width:60px;height:60px;border-radius:50%;object-fit:cover;flex-shrink:0;box-shadow:var(--pw-shadow-sm)'")+
         "<div style='min-width:0'>"+
           "<button data-act='cli-back' style='background:none;border:none;cursor:pointer;padding:0;color:var(--pw-bosque);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;display:inline-flex;align-items:center;gap:4px;margin-bottom:4px'>‹ Volver a Clientes</button>"+
-          "<h1 class='cp-h1'>"+esc(c.name)+"<span class='dot'>.</span></h1>"+
-          "<div class='cp-sub'>"+esc(c.role)+" · "+esc(c.email||"")+(c.source==="pathway"?" · <span style='color:var(--pw-bosque);font-weight:700'>Pathway</span>":"")+"</div>"+
+          "<h1 class='cp-h1'>"+((c.raw&&_isOnline(c.raw.cliente_last_seen))?"<span title='En línea' style='display:inline-block;width:10px;height:10px;border-radius:50%;background:#3DDC84;margin-right:8px;vertical-align:middle;box-shadow:0 0 0 3px rgba(61,220,132,.22)'></span>":"")+esc(c.name)+"<span class='dot'>.</span></h1>"+
+          "<div class='cp-sub'>"+((c.raw&&_isOnline(c.raw.cliente_last_seen))?"<span style='color:#1Fae5a;font-weight:700'>En línea ahora</span> · ":"")+esc(c.role)+" · "+esc(c.email||"")+(c.source==="pathway"?" · <span style='color:var(--pw-bosque);font-weight:700'>Pathway</span>":"")+"</div>"+
         "</div>"+
       "</div>"+
       "<div class='cp-topbar-actions'>"+
@@ -4623,9 +4623,22 @@ function pollMessages(){
     if(hasNew) render();
   }).catch(function(){});
 }
+// Presencia: el coach marca que está en línea; el cliente lo ve con un puntito.
+function _isOnline(ts){ return !!(ts && (Date.now()-new Date(ts).getTime() < 90000)); }
+function coachBeat(){ if(!REAL||!RME||!RME.id) return; _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{last_seen:new Date().toISOString()}); }
+// Mientras el coach mira la ficha de un cliente, refrescamos su presencia.
+function refreshCliPresence(){
+  if(!REAL||!state.clienteSel) return;
+  var c=CLIENTS.filter(function(x){return String(x.id)===String(state.clienteSel);})[0];
+  if(!c||!c.raw||!c.email) return;
+  _sb("candidatos?email=eq."+encodeURIComponent((""+c.email).toLowerCase().trim())+"&select=cliente_last_seen").then(function(rows){
+    if(rows&&rows[0]){ var was=_isOnline(c.raw.cliente_last_seen); c.raw.cliente_last_seen=rows[0].cliente_last_seen; if(_isOnline(c.raw.cliente_last_seen)!==was) render(); }
+  }).catch(function(){});
+}
 function startMsgPolling(){
   if(_msgPollTimer) return;
-  _msgPollTimer = setInterval(pollMessages, 25000);
+  coachBeat();
+  _msgPollTimer = setInterval(function(){ pollMessages(); coachBeat(); refreshCliPresence(); }, 25000);
   document.addEventListener("visibilitychange", function(){
     if(document.visibilityState === "visible") pollMessages();
   });

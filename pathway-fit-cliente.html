@@ -415,6 +415,9 @@ function esc(s){ return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'
 var COACH_CALENDLY='';
 function pwLogout(){ try{ localStorage.removeItem('mj_user'); }catch(e){} location.href='login.html'; }
 function agendar(){ if(COACH_CALENDLY){ window.open(COACH_CALENDLY,'_blank','noopener'); } else { if(typeof go==='function') go('chat'); if(typeof showToast==='function') showToast('💬 Coordina tu sesión con tu coach por aquí'); } }
+// Presencia: marco que estoy en línea cada ~45s; el coach me ve con un puntito verde.
+function _isOnline(ts){ return !!(ts && (Date.now()-new Date(ts).getTime() < 90000)); }
+function pwBeat(){ if(!CID) return; try{ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{cliente_last_seen:new Date().toISOString()}); }catch(e){} }
 
 var EMAIL=(new URLSearchParams(location.search).get('email')||new URLSearchParams(location.search).get('coach_view')||'').toLowerCase().trim();
 var CID=null, CRAW=null;
@@ -570,11 +573,15 @@ function applyLogros(inf){
 }
 
 // ── White-label: la marca del coach (nombre siempre; color+logo si es Pro) ──
+function _coachDot(on){ return on?'<span title="En línea" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3DDC84;margin-right:6px;vertical-align:middle;box-shadow:0 0 0 2px rgba(61,220,132,.25)"></span>':''; }
+function refreshCoachPresence(coachId){ sbGet('usuarios','id=eq.'+encodeURIComponent(coachId)+'&select=nombre,last_seen').then(function(rows){ if(!rows||!rows.length) return; var u=rows[0], on=_isOnline(u.last_seen); var nm=document.querySelector('.ptop-coach-name'); if(nm){ var nom=u.nombre||(nm.textContent||'').replace(/^\s*/,'').trim(); nm.innerHTML=_coachDot(on)+esc(nom); } }).catch(function(){}); }
 function applyBrand(coachId){
-  sbGet('usuarios','id=eq.'+encodeURIComponent(coachId)+'&select=nombre,configuracion,foto_url').then(function(rows){
+  sbGet('usuarios','id=eq.'+encodeURIComponent(coachId)+'&select=nombre,configuracion,foto_url,last_seen').then(function(rows){
     if(!rows||!rows.length) return; var u=rows[0], cfg=u.configuracion||{};
     if(cfg.calendly_url||cfg.calendly) COACH_CALENDLY=cfg.calendly_url||cfg.calendly;
-    var nm=document.querySelector('.ptop-coach-name'); if(nm&&u.nombre) nm.textContent=u.nombre;
+    var on=_isOnline(u.last_seen);
+    var nm=document.querySelector('.ptop-coach-name'); if(nm&&u.nombre) nm.innerHTML=_coachDot(on)+esc(u.nombre);
+    var rl=document.querySelector('.ptop-coach-role'); if(rl&&on) rl.textContent='En línea ahora';
     var av=document.querySelector('.ptop-av');
     var isPro=(cfg.es_pro_vitalicio===true)||(cfg.plan==='pro');
     if(isPro){
@@ -630,6 +637,8 @@ async function pwInit(){
         var inf=null;
         try{ var ir=await sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=data&order=created_at.desc&limit=1'); if(ir&&ir.length){ var dd=ir[0].data; inf=(typeof dd==='string')?JSON.parse(dd):dd; } }catch(e){}
         applyInforme(inf); applyLogros(inf);
+        pwBeat();
+        setInterval(function(){ pwBeat(); if(CRAW&&CRAW.coach_id) refreshCoachPresence(CRAW.coach_id); }, 45000);
       }
     }catch(e){}
   }
