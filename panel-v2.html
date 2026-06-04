@@ -1572,7 +1572,7 @@ function viewClienteDetalle(c){
       "<div class='cp-card-pad' style='padding-top:0;display:flex;flex-direction:column;gap:12px'>"+mc+"</div></div>";
   } else if(t==="gestion"){
     var visItems = _tipo==='fitness'
-      ? [["rutina","Mi rutina"],["progreso","Mi progreso"],["sesiones","Sesiones"]]
+      ? [["rutina","Rutina"],["antropometria","Antropometría"],["nutricion","Nutrición"],["sesiones","Sesiones"]]
       : _tipo==='financiero'
       ? [["finanzas","Mi presupuesto"],["progreso","Mi avance"],["sesiones","Sesiones"]]
       : [["cv","CV"],["carta","Carta de presentación"],["linkedin","LinkedIn"],["recursos","Recursos"],["sesiones","Sesiones"]];
@@ -1584,7 +1584,17 @@ function viewClienteDetalle(c){
     var _visDef = {}; visItems.forEach(function(v){ _visDef[v[0]]=true; });
     var cliVisCur = Object.assign({}, _visDef, _visC);
     var visRows=visItems.map(function(v){var on=cliVisCur[v[0]];return "<div class='cp-toggle'><div class='cp-toggle-body'><div class='cp-toggle-title'>"+v[1]+"</div></div><button class='cp-switch "+(on?"is-on":"")+"' data-act='clivis:"+v[0]+"' data-id='"+esc(c.id)+"'><span></span></button></div>";}).join("");
-    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Qué ve el cliente en su portal<span class='dot'>.</span></h3>"+
+    // Control de semana del proceso (fit/fin no tienen pestaña "Avance" como carrera).
+    var _gWk=state.cliWeek!=null?state.cliWeek:(c.week||1);
+    var _gETN=etapasDe(c);
+    var _gChips=[1,2,3,4].map(function(n){return "<button class='cp-chip "+(_gWk===n?"is-on":"")+"' data-act='cliweek:"+n+"'>Semana "+n+(_gETN[n-1]?" · "+esc(_gETN[n-1]):"")+"</button>";}).join("");
+    var weekCard=(_tipo==='fitness'||_tipo==='financiero')
+      ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Semana del proceso<span class='dot'>.</span></h3><span class='cp-eyebrow'>En qué semana está el cliente</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+          "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.5'>Ahora está en <strong style='color:var(--pw-carbon)'>Semana "+_gWk+"</strong>. Marca su avance y resalta la semana actual en su portal.</div>"+
+          "<div class='cp-filters'>"+_gChips+"</div>"+
+          "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cli-saveweek' data-id='"+esc(c.id)+"'>Guardar semana</button></div></div></div>"
+      : "";
+    body=weekCard+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Qué ve el cliente en su portal<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Visibilidad · se guarda por cliente</span></div><div class='cp-card-pad'>"+visRows+"</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Acceso del cliente<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Login al portal</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
@@ -3746,13 +3756,21 @@ document.addEventListener("click", function(ev){
   if(act.indexOf("cli-open:")===0){ state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.cliPass="pw"+Math.random().toString(36).slice(2,8); render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
+  if(act==="cli-saveweek"){
+    var wkid=el.getAttribute("data-id"); if(!wkid) return;
+    var wkvv=state.cliWeek!=null?state.cliWeek:1;
+    _sbw("candidatos?id=eq."+encodeURIComponent(wkid),"PATCH",{semana_activa:wkvv})
+      .then(function(r){ if(!r.ok) throw 0; CLIENTS.forEach(function(x){ if(String(x.id)===String(wkid)) x.week=wkvv; }); state.cliWeek=null; toast("Semana actualizada ✓ — el cliente la ve"); render(); })
+      .catch(function(){ alert("No se pudo guardar la semana."); });
+    return;
+  }
   if(act.indexOf("clivis:")===0){
     var vk=act.slice(7);
     var cid=el.getAttribute("data-id")||state.clienteSel;
     var cli=(CLIENTS||[]).filter(function(x){return String(x.id)===String(cid);})[0];
     if(!cli){ return; }
     var curVis={}; try{ curVis=JSON.parse((cli.raw&&cli.raw.visibilidad)||"{}")||{}; }catch(e){}
-    var def={cv:true,carta:true,linkedin:true,recursos:true,sesiones:true};
+    var def={cv:true,carta:true,linkedin:true,recursos:true,sesiones:true,rutina:true,antropometria:true,nutricion:true,finanzas:true,progreso:true};
     var newVis=Object.assign({},def,curVis); newVis[vk]=!newVis[vk];
     cli.raw=cli.raw||{}; cli.raw.visibilidad=JSON.stringify(newVis);
     _sbw("candidatos?id=eq."+encodeURIComponent(cid),"PATCH",{visibilidad:JSON.stringify(newVis)})
