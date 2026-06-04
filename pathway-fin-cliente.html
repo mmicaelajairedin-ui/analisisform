@@ -176,7 +176,13 @@
           <div class="rule-row" style="margin-bottom:0;"><div class="rh"><b>Ahorro + deudas</b><span class="target">29% · meta 20%</span></div><div class="rbar"><i style="width:29%;background:#52B788"></i><div class="mark" style="left:20%"></div></div></div>
           <div class="warn">⚠️ Gastás un poco de más en lo fijo. Tu coach te propone revisar vivienda y servicios.</div>
         </div></div>
-        <button class="btn btn-ghost btn-block">+ Editar el cierre de marzo</button>
+        <p class="h-sec">Ordená tus gastos con IA</p>
+        <div class="card"><div class="card-body">
+          <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.5;">Subí el extracto de tu banco (PDF) y la IA reparte tus gastos por categoría. No guardamos el archivo.</p>
+          <label class="btn btn-ghost" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;">📄 Subir extracto (PDF)<input id="cli-fin-pdf" type="file" accept="application/pdf" style="display:none"></label>
+          <span id="cli-fin-pdf-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
+          <div id="cli-fin-pdf-res" style="margin-top:12px;"></div>
+        </div></div>
       </section>
 
       <!-- EVOLUCIÓN -->
@@ -468,6 +474,28 @@ function pwInit(){
     else if(_esDemo()){CRAW=_demoCraw();CID=null;applyClientFin(CRAW);_demoBrandFin();}
   }).catch(function(){ if(_esDemo()){CRAW=_demoCraw();CID=null;applyClientFin(CRAW);_demoBrandFin();} });
 }
+// Extracto bancario (PDF) → categorizar-gastos (IA) → desglose por categoría.
+document.addEventListener('change',function(ev){
+  if(!ev.target||ev.target.id!=='cli-fin-pdf')return;
+  var f=ev.target.files&&ev.target.files[0]; if(!f)return;
+  if(f.size>12*1024*1024){ alert('El PDF no puede pesar más de 12 MB.'); ev.target.value=''; return; }
+  var st=document.getElementById('cli-fin-pdf-st'); if(st)st.textContent='Analizando tu extracto…';
+  var rd=new FileReader();
+  rd.onload=function(){
+    var b64=(''+rd.result).replace(/^data:[^,]+,/,'');
+    fetch(SB+'/functions/v1/categorizar-gastos',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({pdf_base64:b64})})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if(!j||j.error){ if(st)st.textContent='No se pudo leer el PDF.'; return; }
+        if(st)st.textContent='Listo ✓';
+        var rows=(j.categorias||[]).map(function(c){return '<div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding:7px 0;font-size:13px"><span>'+esc(c.nombre||'')+'</span><strong>'+esc(j.moneda||'€')+' '+esc(''+(c.monto||0))+'</strong></div>';}).join('');
+        var res=document.getElementById('cli-fin-pdf-res');
+        if(res)res.innerHTML=(j.resumen?'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">'+esc(j.resumen)+'</div>':'')+rows+'<div style="display:flex;justify-content:space-between;padding:8px 0 0;font-size:13px;font-weight:600"><span>Total</span><strong>'+esc(j.moneda||'€')+' '+esc(''+(j.total||''))+'</strong></div>';
+      })
+      .catch(function(){ if(st)st.textContent='Error de conexión. Probá de nuevo en un rato.'; });
+  };
+  rd.readAsDataURL(f);
+});
 pwInit();
 })();
 </script>
