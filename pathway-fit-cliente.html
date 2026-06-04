@@ -406,10 +406,8 @@ function renderPeso(data){
   if(!data||!data.length) data=[82,78]; if(data.length<2) data=[data[0],data[0]];
   var w=380,h=120,pad=8,mn=Math.min.apply(null,data)-1,mx=Math.max.apply(null,data)+1; if(mx<=mn) mx=mn+1; var dx=(w-pad*2)/(data.length-1);var pts=data.map((v,i)=>[pad+i*dx,pad+(h-pad*2)*(1-(v-mn)/(mx-mn))]);var ln=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');var ar=ln+' L'+pts[pts.length-1][0].toFixed(1)+' '+(h-pad)+' L'+pad+' '+(h-pad)+' Z';var l=pts[pts.length-1];var el=document.getElementById('chartPeso'); if(el) el.innerHTML='<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#52B788" stop-opacity=".25"/><stop offset="1" stop-color="#52B788" stop-opacity="0"/></linearGradient></defs><path d="'+ar+'" fill="url(#g)"/><path d="'+ln+'" fill="none" stroke="#2D6A4F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+l[0].toFixed(1)+'" cy="'+l[1].toFixed(1)+'" r="4.5" fill="#2D6A4F" stroke="#fff" stroke-width="2"/></svg>';
 }
-// Demo inicial (se ve lindo aunque no haya cliente real cargado)
-renderDonut([{n:'Muscular',v:46.56,c:'#2D6A4F'},{n:'Adiposa',v:16.3,c:'#A8633A'},{n:'Residual',v:10.46,c:'#E9C46A'},{n:'Ósea',v:10.05,c:'#2E7587'},{n:'Piel',v:4.22,c:'#8C5B6B'}],'87.6');
-renderCmp(['Ene','Feb','Mar','Abr'],[46.0,46.5,46.8,47.2],[18.4,17.4,16.8,16.3]);
-renderPeso([82,81.5,81,80,79.5,79,78.5,78]);
+// Los gráficos los pinta applyAntro() con los datos reales del cliente (o con
+// los del demo). Si el coach no cargó medidas, se muestra un empty-state.
 </script>
 
 <!-- El portal se accede por el link que comparte el coach (?email=<cliente>).
@@ -462,7 +460,14 @@ function compOf(m){
 function _mes(f){ var d=new Date(f); if(isNaN(d.getTime())) return (''+(f||'')).slice(5,7); return ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][d.getMonth()]; }
 
 function applyAntro(antro){
-  if(!antro||!antro.length) return;
+  if(!antro||!antro.length){
+    var em='<div style="font-size:12.5px;color:var(--muted);padding:18px 4px;text-align:center;">Tu coach todavía no cargó tus medidas.</div>';
+    ['chartPeso','donutComp','cmpMasas'].forEach(function(idc){ var e=document.getElementById(idc); if(e)e.innerHTML=em; });
+    var lc0=document.getElementById('legendComp'); if(lc0)lc0.innerHTML='';
+    var pb0=document.getElementById('pesoBig'); if(pb0)pb0.innerHTML='—<span> kg</span>';
+    var pd0=document.getElementById('pesoDelta'); if(pd0)pd0.textContent='';
+    return;
+  }
   antro=antro.slice().sort(function(a,b){return(''+(a.fecha||'')).localeCompare(''+(b.fecha||''));});
   var last=antro[antro.length-1];
   renderDonut(compOf(last), (_pn(last.peso)!=null?(''+_pn(last.peso)):'—'));
@@ -559,7 +564,14 @@ function _focoActions(d){
   return (Object.prototype.toString.call(arr)==='[object Array]')?arr:[];
 }
 function applyInforme(inf){
-  if(!inf) return; var d=inf;
+  if(!inf){
+    var dg0=document.getElementById('dash-diag'); if(dg0)dg0.innerHTML='<div style="font-size:12.5px;color:var(--muted);padding:6px 0;">Tu coach todavía no cargó tu diagnóstico.</div>';
+    var fz0=document.getElementById('dash-forta'); if(fz0)fz0.innerHTML='<div style="font-size:12.5px;color:var(--muted)">—</div>';
+    var pt0=document.getElementById('dash-pot'); if(pt0)pt0.innerHTML='<div style="font-size:12.5px;color:var(--muted)">—</div>';
+    var fo0=document.getElementById('dash-foco'); if(fo0)fo0.innerHTML='<div style="font-size:12.5px;color:var(--muted)">Tu coach cargará acá tu foco de la semana.</div>';
+    return;
+  }
+  var d=inf;
   var obj=document.getElementById('dash-obj');
   if(obj && CRAW){ var o=CRAW.cargo||CRAW.objetivo||''; if(o) obj.innerHTML='Para tu objetivo: '+esc(o)+'<em>.</em>'; }
   var fz=document.getElementById('dash-forta');
@@ -573,9 +585,10 @@ function applyInforme(inf){
 }
 function applyProceso(){
   var box=document.getElementById('dash-proceso'); if(!box||!CRAW) return;
+  var wk=parseInt(CRAW.semana_activa,10)||1; if(wk<1)wk=1;
+  var bdg=document.getElementById('dash-proc-badge'); if(bdg)bdg.textContent='Semana '+wk;
   var et=null; try{ et=JSON.parse(CRAW.etapas||'null'); }catch(e){}
   if(!(Object.prototype.toString.call(et)==='[object Array]'&&et.length===4)) return;
-  var wk=parseInt(CRAW.semana_activa,10)||1; if(wk<1)wk=1;
   var items=[{n:'✓',l:'Evaluación',st:'done'}];
   et.forEach(function(name,i){ var num=i+1; var st=num<wk?'done':(num===wk?'active':''); items.push({n:st==='done'?'✓':String(num+1),l:name,st:st}); });
   box.innerHTML=items.map(function(it){return '<div class="rm-item '+it.st+'"><span class="rm-num">'+it.n+'</span><span class="rm-lbl">'+esc(it.l)+'</span></div>';}).join('');
@@ -714,10 +727,10 @@ async function pwInit(){
         try{ var ir=await sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=data&order=created_at.desc&limit=1'); if(ir&&ir.length){ var dd=ir[0].data; inf=(typeof dd==='string')?JSON.parse(dd):dd; } }catch(e){}
         applyInforme(inf); applyLogros(inf);
       } else if(_esDemoFit()){
-        CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); applyInforme(null); applyLogros(null); _demoBrandFit();
+        CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); applyLogros(null); _demoBrandFit();
       }
     }catch(e){ if(_esDemoFit()){ CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); _demoBrandFit(); } }
-  } else { CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); applyInforme(null); applyLogros(null); _demoBrandFit(); }
+  } else { CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); applyLogros(null); _demoBrandFit(); }
   WEEK.forEach(colorDay);
   var td=document.querySelector('.hd[data-date="'+pwHoy()+'"]'); if(td) selectDay(td);
 }
