@@ -1345,7 +1345,12 @@ function viewClienteDetalle(c){
       "<div class='cp-form-row-2'><div class='cp-form-row'><label class='cp-form-label'>Salud financiera</label><input id='fdg-salud' class='cp-form-input' value='"+esc(""+(FDIAG.salud!=null?FDIAG.salud:""))+"' placeholder='68'></div><div class='cp-form-row'><label class='cp-form-label'>Control del gasto</label><input id='fdg-control' class='cp-form-input' value='"+esc(""+(FDIAG.control!=null?FDIAG.control:""))+"' placeholder='55'></div></div>"+
       "<div class='cp-form-row-2' style='margin-top:10px'><div class='cp-form-row'><label class='cp-form-label'>Nivel de deuda</label><input id='fdg-deuda' class='cp-form-input' value='"+esc(""+(FDIAG.deuda!=null?FDIAG.deuda:""))+"' placeholder='40'></div><div class='cp-form-row'><label class='cp-form-label'>Hábito de ahorro</label><input id='fdg-ahorro' class='cp-form-input' value='"+esc(""+(FDIAG.ahorro!=null?FDIAG.ahorro:""))+"' placeholder='50'></div></div>"+
       "<button class='cp-btn cp-btn-primary' style='margin-top:12px' data-act='fin-diag-save' data-id='"+esc(c.id)+"'>Guardar diagnóstico</button></div>";
-    body=_presCard+_objCard+_deuCard+_diagCard;
+    var _iaCard="<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Categorizar gastos con IA<span class='dot'>.</span></h3>"+
+      "<div class='cp-form-hint' style='margin:4px 0 12px'>Subí el extracto del banco (PDF) y la IA reparte los gastos por categoría. Después lo volcás al presupuesto con un clic.</div>"+
+      "<label class='cp-btn cp-btn-ghost' style='cursor:pointer;height:34px;font-size:13px'>"+svg(IC.plus,14)+" Subir extracto (PDF)<input id='fin-pdf' type='file' accept='application/pdf' style='display:none'></label>"+
+      "<span id='fin-pdf-st' style='font-size:12px;color:var(--pw-text-soft);margin-left:10px'></span>"+
+      "<div id='fin-pdf-res' style='margin-top:12px'></div></div>";
+    body=_presCard+_iaCard+_objCard+_deuCard+_diagCard;
   } else if(t==="docs"){
     var liTxt=(c.raw&&(c.raw.linkedin_texto||""))||"";
     var cvTxt=(c.raw&&(c.raw.cv_url||c.raw.cv_texto||""))||"";
@@ -4227,6 +4232,14 @@ document.addEventListener("click", function(ev){
     var fda2=[]; try{ fda2=JSON.parse((fdc2&&fdc2.raw&&fdc2.raw.fin_deudas)||"[]")||[]; }catch(e){ fda2=[]; }
     fda2.splice(fdx,1); _finArrSave(fddi,"fin_deudas",fda2,"Deuda quitada ✓"); return;
   }
+  if(act==="fin-ia-aplicar"){
+    var jia=window._finIA; if(!jia||!jia.categorias){ return; }
+    function _sum(re){ var s=0; (jia.categorias||[]).forEach(function(c){ if(re.test(c.nombre||"")) s+=parseFloat(c.monto)||0; }); return s?Math.round(s):""; }
+    function _setv(id,v){ var e=document.getElementById(id); if(e&&v!=="") e.value=v; }
+    _setv("fp-vivienda",_sum(/vivienda/i)); _setv("fp-alim",_sum(/aliment/i)); _setv("fp-ocio",_sum(/ocio/i)); _setv("fp-ahorro",_sum(/ahorro/i));
+    toast("Volcado al presupuesto — revisá y apretá Guardar presupuesto ✓");
+    return;
+  }
   if(act==="fin-diag-save"){
     var fgid=el.getAttribute("data-id"); if(!fgid) return;
     var fgc=CLIENTS.filter(function(x){return String(x.id)===String(fgid);})[0];
@@ -4612,6 +4625,28 @@ document.addEventListener("change", function(ev){
   _uploadDoc(ff)
     .then(function(url){ window._frFoto=url; var im=document.getElementById("fr-foto-prev"); if(im){ im.src=url; im.style.display="block"; } if(st) st.textContent="Foto lista ✓"; })
     .catch(function(){ if(st) st.textContent="No se pudo subir la foto"; });
+});
+// Extracto bancario (PDF) → categorizar-gastos (IA) → categorías + total.
+document.addEventListener("change", function(ev){
+  if(!ev.target || ev.target.id!=="fin-pdf") return;
+  var pf=ev.target.files && ev.target.files[0]; if(!pf) return;
+  if(pf.size > 12*1024*1024){ alert("El PDF no puede pesar más de 12 MB."); ev.target.value=""; return; }
+  var pst=document.getElementById("fin-pdf-st"); if(pst) pst.textContent="Analizando el extracto con IA…";
+  var rd=new FileReader();
+  rd.onload=function(){
+    var b64=(""+rd.result).replace(/^data:[^,]+,/,"");
+    fetch(SB+"/functions/v1/categorizar-gastos",{method:"POST",headers:{"Content-Type":"application/json",apikey:KEY,Authorization:"Bearer "+KEY},body:JSON.stringify({pdf_base64:b64})})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if(!j || j.error){ if(pst) pst.textContent="No se pudo leer el PDF ("+((j&&j.error)||"error")+")."; return; }
+        if(pst) pst.textContent="Listo ✓"; window._finIA=j;
+        var rows=(j.categorias||[]).map(function(c){ return "<div style='display:flex;justify-content:space-between;border-top:1px solid var(--pw-border);padding:7px 0;font-size:13px'><span>"+esc(c.nombre||"")+"</span><strong>"+esc(j.moneda||"€")+" "+esc(""+(c.monto||0))+"</strong></div>"; }).join("");
+        var res=document.getElementById("fin-pdf-res");
+        if(res) res.innerHTML=(j.resumen?"<div style='font-size:12px;color:var(--pw-text-soft);margin-bottom:6px'>"+esc(j.resumen)+"</div>":"")+rows+"<div style='display:flex;justify-content:space-between;padding:8px 0 0;font-size:13px;font-weight:600'><span>Total</span><strong>"+esc(j.moneda||"€")+" "+esc(""+(j.total||""))+"</strong></div><button class='cp-btn cp-btn-primary' style='margin-top:12px' data-act='fin-ia-aplicar'>Volcar al presupuesto</button>";
+      })
+      .catch(function(){ if(pst) pst.textContent="Error de conexión con la IA. ¿Está deployada la función categorizar-gastos?"; });
+  };
+  rd.readAsDataURL(pf);
 });
 document.addEventListener("change", function(ev){
   if(!ev.target || ev.target.id!=="cfp-foto") return;
