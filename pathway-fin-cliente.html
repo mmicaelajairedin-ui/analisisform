@@ -436,8 +436,9 @@ function applyClientFin(c){
 }
 
 function applyBrandFin(coachId){
-  sbGet('usuarios','id=eq.'+encodeURIComponent(coachId)+'&select=nombre,configuracion,foto_url').then(function(rows){
+  sbGet('usuarios','id=eq.'+encodeURIComponent(coachId)+'&select=nombre,email,configuracion,foto_url').then(function(rows){
     if(!rows||!rows.length)return; var u=rows[0],cfg=u.configuracion||{};
+    if(u.email){ window.COACH_EMAIL=(''+u.email).toLowerCase(); }
     if(u.nombre){setText('.ptop-coach-name',u.nombre);}
     var isPro=(cfg.es_pro_vitalicio===true)||(cfg.plan==='pro');
     if(isPro&&cfg.color_marca){var rs=document.documentElement.style;rs.setProperty('--rose',cfg.color_marca);rs.setProperty('--rose-dark',cfg.color_marca);}
@@ -465,7 +466,7 @@ function _merge(a,b){var out=[],seen={};function add(arr){(arr||[]).forEach(func
 function renderMsgs(){var box=document.getElementById('pmsgs');if(!box||!MSGS.length)return;box.innerHTML=MSGS.map(function(m){var me=(m.from==='cliente');return '<div class="pmsg '+(me?'me':'them')+'">'+esc(m.text)+'<div class="t">'+esc(m.time||'')+'</div></div>';}).join('');box.scrollTop=box.scrollHeight;}
 function loadMsgs(){if(!CID)return;sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){if(!rows||!rows.length)return;var arr=[];try{arr=JSON.parse(rows[0].notas_coach||'[]');}catch(e){}if(!Array.isArray(arr))arr=[];var merged=_merge(MSGS,arr);if(merged.length!==MSGS.length){MSGS=merged;renderMsgs();}}).catch(function(){});}
 function startPoll(){if(_pollT||!CID)return;_pollT=setInterval(function(){if(document.visibilityState==='visible')loadMsgs();},30000);}
-window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!inp||!inp.value.trim())return;var txt=_mask(inp.value.trim());var now=new Date(),time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');MSGS.push({from:'cliente',text:txt,time:time,ts:now.getTime()});inp.value='';renderMsgs();if(!CID)return;sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){var db=[];if(rows&&rows.length){try{var p=JSON.parse(rows[0].notas_coach||'[]');if(Array.isArray(p))db=p;}catch(e){}}var merged=_merge(db,MSGS);return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(){MSGS=merged;});}).catch(function(){});};
+window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!inp||!inp.value.trim())return;var txt=_mask(inp.value.trim());var now=new Date(),time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');MSGS.push({from:'cliente',text:txt,time:time,ts:now.getTime()});inp.value='';renderMsgs();if(window.COACH_EMAIL){try{fetch(SB+'/functions/v1/send-push',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({user_email:COACH_EMAIL,title:((CRAW&&CRAW.nombre)||'Tu cliente')+' te escribió',body:txt.slice(0,140),url:'/panel-v2.html',tag:'chat-'+EMAIL})}).catch(function(){});}catch(e){}}if(!CID)return;sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){var db=[];if(rows&&rows.length){try{var p=JSON.parse(rows[0].notas_coach||'[]');if(Array.isArray(p))db=p;}catch(e){}}var merged=_merge(db,MSGS);return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(){MSGS=merged;});}).catch(function(){});};
 
 function pwInit(){
   if(!EMAIL){ CRAW=_demoCraw(); CID=null; applyClientFin(CRAW); _demoBrandFin(); return; }
