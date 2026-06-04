@@ -866,6 +866,7 @@ var state = {
   clienteSel: null,
   cliDetTab: "perfil",
   cliWeek: null,
+  coachRev: 0,
   cliVis: { cv:true, carta:true, linkedin:true, recursos:true, sesiones:true },
   newOpen: false,
   mail: { open:false, to:"", subj:"", body:"" },
@@ -2172,7 +2173,21 @@ function cfgPlan(){
 function cfgMyAccount(){
   // Combina "Mi plan" + "Cuenta" en una sola pestaña, plan arriba y datos
   // personales abajo. Ambas funciones devuelven cards HTML self-contained.
-  return cfgPlan() + cfgAccount();
+  return cfgPlan() + cfgAccount() + cfgCoachReview();
+}
+// Reseña del coach sobre Pathway → tabla reviews → testimonios del landing.
+function cfgCoachReview(){
+  if(RCFG && RCFG.review_done){
+    return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tu reseña de Pathway<span class='dot'>.</span></h3></div><div class='cp-card-pad'><p style='font-size:13px;color:var(--pw-text-soft);margin:0'>¡Gracias por tu reseña! 🙌 Si querés cambiarla, escribime.</p></div></div>";
+  }
+  var n=state.coachRev||0;
+  var chips=[1,2,3,4,5].map(function(i){return "<button class='cp-chip "+(i<=n?"is-on":"")+"' data-act='crev:"+i+"' style='font-size:20px;padding:2px 9px;line-height:1.1' aria-label='"+i+" estrellas'>★</button>";}).join("");
+  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tu reseña de Pathway<span class='dot'>.</span></h3><span class='cp-eyebrow'>Puede aparecer en la web</span></div>"+
+    "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+    "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.5'>¿Cómo es tu experiencia con Pathway? Tu reseña ayuda a otras coaches a animarse.</div>"+
+    "<div class='cp-filters' style='gap:4px'>"+chips+"</div>"+
+    "<textarea id='crev-text' class='cp-form-textarea' placeholder='Contá tu experiencia con Pathway…'></textarea>"+
+    "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='coach-review-send'>Publicar reseña</button></div></div></div>";
 }
 function cfgPathway(){
   var optIn = state.pathwayOptIn;
@@ -3757,6 +3772,18 @@ document.addEventListener("click", function(ev){
   if(act.indexOf("cli-open:")===0){ state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.cliPass="pw"+Math.random().toString(36).slice(2,8); render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
+  if(act.indexOf("crev:")===0){ state.coachRev=parseInt(act.slice(5),10)||0; render(); return; }
+  if(act==="coach-review-send"){
+    var crn=state.coachRev||0; if(!crn){ alert("Elegí cuántas estrellas."); return; }
+    var crt=(_val("crev-text")||"").trim();
+    _sbw("reviews","POST",{nombre:(ME&&ME.nombre)||(COACH&&COACH.name)||"Coach",rating:crn,texto:crt,fuente:"coach",publica:true})
+      .then(function(r){ if(!r.ok) throw 0;
+        RCFG=RCFG||{}; RCFG.review_done=true;
+        if(REAL&&RME&&RME.id){ var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).catch(function(){}); }
+        state.coachRev=0; toast("¡Gracias por tu reseña! 🙌"); render(); })
+      .catch(function(){ alert("No se pudo publicar la reseña."); });
+    return;
+  }
   if(act==="cli-saveweek"){
     var wkid=el.getAttribute("data-id"); if(!wkid) return;
     var wkvv=state.cliWeek!=null?state.cliWeek:1;
@@ -4765,7 +4792,7 @@ function loadReal(){
     var planEff = _vit ? "pro" : (cfg&&cfg.plan==="pro" ? "pro" : "basic");
     state.plan = planEff;
     COACH = { name:cname, firstName:(""+cname).split(" ")[0], role:"Career Coach",
-      plan:(planEff==="pro"?"Pro":"Basic"), photo:(cfg&&cfg.foto_url)||usr.foto_url||makeAvatar(cname,150),
+      plan:(planEff==="pro"?"Pro":"Basic"), photo:(_isDemoCoach()?"https://ucarecdn.com/9713050f-340a-481e-9577-243c5fb106e2/coachdemo.jpg":((cfg&&cfg.foto_url)||usr.foto_url||makeAvatar(cname,150))),
       slug:RPROF.slug||(cfg&&cfg.slug)||"", email:ME.email||"" };
     var cvSet={}, cvMap={}; cvR.forEach(function(x){ if(x&&x.email){ var ke=(""+x.email).toLowerCase().trim(); cvSet[ke]=true; if(cvMap[ke]==null) cvMap[ke]=(x.contenido!=null?(""+x.contenido):""); } });
     var infMap={}, rpSet={};
