@@ -4727,7 +4727,11 @@ var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 // Headers con el JWT del coach logueado (vía pw-auth.js). Fallback a la anon
 // key si PWAUTH no cargó, para no romper nada mientras RLS esté apagado.
 function _hdr(extra){ return (window.PWAUTH?PWAUTH.headers(extra):Promise.resolve(Object.assign({apikey:KEY,Authorization:"Bearer "+KEY},extra||{}))); }
-function _sb(p){ return _hdr().then(function(h){ return fetch(SB+"/rest/v1/"+p,{headers:h}); }).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }
+// Red de seguridad para cuando RLS esté prendido: 401/403 (sin sesión) → login.
+// Mientras RLS esté apagado nunca se dispara (la anon key no da 401).
+var _authGone=false;
+function _authExpired(){ if(_authGone)return; _authGone=true; try{ location.href="login.html"; }catch(e){} }
+function _sb(p){ return _hdr().then(function(h){ return fetch(SB+"/rest/v1/"+p,{headers:h}); }).then(function(r){ if(r.status===401||r.status===403){_authExpired();return [];} return r.ok?r.json():[];}).catch(function(){return [];}); }
 function _sbw(p,method,body){ return _hdr({"Content-Type":"application/json",Prefer:"return=minimal"}).then(function(h){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); }); }
 var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy=false;
 var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
