@@ -1635,12 +1635,19 @@ function viewClienteDetalle(c){
           "<div class='cp-filters'>"+_gChips+"</div>"+
           "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cli-saveweek' data-id='"+esc(c.id)+"'>Guardar "+_unit.toLowerCase()+"</button></div></div></div>"
       : "";
+    var _faseRows=_gNums.map(function(n){ return "<div class='cp-form-row'><label class='cp-form-label'>"+_unit+" "+n+"</label><input id='gfase-"+(n-1)+"' class='cp-form-input' value='"+esc(_gETN[n-1]||"")+"' placeholder='Nombre de la fase (ej. Adaptación)'></div>"; }).join("");
+    var faseCard=(_tipo==='fitness'||_tipo==='financiero')
+      ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Nombres de las fases<span class='dot'>.</span></h3><span class='cp-eyebrow'>Personalizá cada "+_unit.toLowerCase()+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+          "<div class='cp-form-hint' style='margin:0'>Ponele nombre a cada "+_unit.toLowerCase()+" (ej. Adaptación, Fuerza, Test). El cliente las ve en su plan y en las etiquetas de cada "+_unit.toLowerCase()+".</div>"+
+          _faseRows+
+          "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cli-savefases' data-id='"+esc(c.id)+"' data-n='"+_gMax+"'>Guardar fases</button></div></div></div>"
+      : "";
     var nutriCard=(_tipo==='fitness')
       ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Plan de nutrición<span class='dot'>.</span></h3><span class='cp-eyebrow'>Lo ve el cliente en su portal</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
           "<textarea id='cf-nutri-plan' class='cp-form-textarea' style='min-height:130px' placeholder='Pautas de alimentación: comidas sugeridas, macros/calorías, horarios, qué evitar… Lo que pongas acá lo ve el cliente en la sección Nutrición.'>"+esc((c.raw&&c.raw.fit_nutricion)||"")+"</textarea>"+
           "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='fit-nutri-save' data-id='"+esc(c.id)+"'>Guardar plan de nutrición</button></div></div></div>"
       : "";
-    body=weekCard+nutriCard+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Qué ve el cliente en su portal<span class='dot'>.</span></h3>"+
+    body=weekCard+faseCard+nutriCard+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Qué ve el cliente en su portal<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Visibilidad · se guarda por cliente</span></div><div class='cp-card-pad'>"+visRows+"</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Acceso del cliente<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Login al portal</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
@@ -3849,6 +3856,18 @@ document.addEventListener("click", function(ev){
     _sbw("candidatos?id=eq."+encodeURIComponent(wkid),"PATCH",{semana_activa:wkvv})
       .then(function(r){ if(!r.ok) throw 0; CLIENTS.forEach(function(x){ if(String(x.id)===String(wkid)) x.week=wkvv; }); state.cliWeek=null; toast("Semana actualizada ✓ — el cliente la ve"); render(); })
       .catch(function(){ alert("No se pudo guardar la semana."); });
+    return;
+  }
+  if(act==="cli-savefases"){
+    var sfid=el.getAttribute("data-id"); if(!sfid) return;
+    var sfn=parseInt(el.getAttribute("data-n"),10)||4;
+    var sfc=CLIENTS.filter(function(x){return String(x.id)===String(sfid);})[0];
+    var fArr=[]; for(var _fi=0;_fi<sfn;_fi++){ fArr.push((_val("gfase-"+_fi)||"").trim()); }
+    var fJ=JSON.stringify(fArr);
+    if(sfc && sfc._example){ if(sfc.raw) sfc.raw.etapas=fJ; toast("Fases guardadas en el demo ✓ (no se guarda — es el cliente de ejemplo)"); render(); return; }
+    _sbw("candidatos?id=eq."+encodeURIComponent(sfid),"PATCH",{etapas:fJ})
+      .then(function(r){ if(!r.ok) throw 0; if(sfc&&sfc.raw) sfc.raw.etapas=fJ; toast("Fases guardadas ✓ — el cliente las ve"); render(); })
+      .catch(function(){ alert("No se pudo guardar las fases. ¿Existe la columna 'etapas' en candidatos?"); });
     return;
   }
   if(act.indexOf("clivis:")===0){
