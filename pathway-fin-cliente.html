@@ -214,15 +214,16 @@
         <p class="h-hero">Mis objetivos</p>
         <p class="h-sub">Metas de ahorro y plan para salir de deudas.</p>
         <p class="h-sec">Metas de ahorro</p>
-        <div class="goal"><div class="goal-h"><b>🛟 Fondo de emergencia</b><span class="gv"><b>€1.200</b> / €3.000</span></div><div class="gbar"><i style="width:40%"></i></div><div class="pct">40% · te faltan €1.800</div></div>
-        <div class="goal"><div class="goal-h"><b>✈️ Vacaciones</b><span class="gv"><b>€600</b> / €1.000</span></div><div class="gbar"><i style="width:60%"></i></div><div class="pct">60% · te faltan €400</div></div>
+        <div id="fin-goals">
+          <div class="goal"><div class="goal-h"><b>🛟 Fondo de emergencia</b><span class="gv"><b>€1.200</b> / €3.000</span></div><div class="gbar"><i style="width:40%"></i></div><div class="pct">40% · te faltan €1.800</div></div>
+        </div>
         <p class="h-sec" style="margin-top:6px;">Salida de deudas <span style="font-size:11px;font-weight:400;color:var(--muted)">· método bola de nieve</span></p>
-        <div class="debt"><div class="debt-ic">💳</div><div class="debt-b"><b>Tarjeta de crédito</b><p>€1.200 · €400/mes</p></div><span class="debt-tag now">Pagando</span></div>
-        <div class="debt"><div class="debt-ic">🚗</div><div class="debt-b"><b>Préstamo auto</b><p>€2.200 · sigue después</p></div><span class="debt-tag next">Después</span></div>
-        <div class="card"><div class="card-body" style="text-align:center;">
+        <div id="fin-debts">
+          <div class="debt"><div class="debt-ic">💳</div><div class="debt-b"><b>Tarjeta de crédito</b><p>€1.200 · €400/mes</p></div><span class="debt-tag now">Pagando</span></div>
+        </div>
+        <div class="card" id="fin-debt-total-card"><div class="card-body" style="text-align:center;">
           <p style="font-size:12.5px;color:var(--muted)">Deuda total</p>
-          <p style="font-family:var(--serif);font-size:26px;font-weight:600;color:var(--text);margin:2px 0 4px;">€3.400</p>
-          <p style="font-size:12.5px;color:var(--rose);font-weight:600">Libre de deudas en ~9 meses 🎯</p>
+          <p id="fin-debt-total" style="font-family:var(--serif);font-size:26px;font-weight:600;color:var(--text);margin:2px 0 4px;">€3.400</p>
         </div></div>
       </section>
 
@@ -335,7 +336,7 @@ var CID=null, CRAW=null, MSGS=[], _pollT=null;
 window.pwLogout=function(){try{localStorage.removeItem('mj_user');}catch(e){}location.href='login.html';};
 
 function _esDemo(){return /maria\.ejemplo@pathwaycareercoach\.com/i.test(EMAIL);}
-function _demoCraw(){return {nombre:'María García',email:EMAIL,foto_perfil:CLIENTE_DEMO_FOTO,semana_activa:3,etapas:JSON.stringify(['Diagnóstico','Presupuesto','Salir de deudas','Hábito de ahorro']),fin_pres:JSON.stringify({vivienda:'750',alimentacion:'350',ocio:'150',ahorro:'350'})};}
+function _demoCraw(){return {nombre:'María García',email:EMAIL,foto_perfil:CLIENTE_DEMO_FOTO,semana_activa:3,etapas:JSON.stringify(['Diagnóstico','Presupuesto','Salir de deudas','Hábito de ahorro']),fin_pres:JSON.stringify({vivienda:'750',alimentacion:'350',ocio:'150',ahorro:'350'}),fin_objetivos:JSON.stringify([{nombre:'🛟 Fondo de emergencia',meta:'3000',actual:'1200'},{nombre:'✈️ Vacaciones',meta:'1000',actual:'600'}]),fin_deudas:JSON.stringify([{nombre:'Tarjeta de crédito',monto:'1200',cuota:'400',estado:'Pagando'},{nombre:'Préstamo auto',monto:'2200',cuota:'',estado:'Después'}]),fin_diagnostico:JSON.stringify({salud:68,control:55,deuda:40,ahorro:50})};}
 
 // ── Presupuesto: dona + total desde fin_pres {vivienda,alimentacion,ocio,ahorro} ──
 function renderPresupuesto(fp){
@@ -355,6 +356,32 @@ function applyVisFin(raw){
   Object.keys(map).forEach(function(k){var off=(vis[k]===false),ds=map[k];document.querySelectorAll('[data-s="'+ds+'"]').forEach(function(b){b.style.display=off?'none':'';});var sec=document.getElementById('s-'+ds);if(sec&&off){sec.classList.remove('on');sec.style.display='none';}});
 }
 
+// ── Objetivos / deudas / diagnóstico (los carga el coach en su panel) ──
+function renderObjetivos(arr){
+  var box=document.getElementById('fin-goals'); if(!box) return;
+  if(!arr||!arr.length){ box.innerHTML='<div style="font-size:12.5px;color:var(--muted);padding:6px 0;">Tu coach todavía no cargó metas de ahorro.</div>'; return; }
+  box.innerHTML=arr.map(function(o){ var meta=parseFloat(o.meta)||0,act=parseFloat(o.actual)||0,pct=meta>0?Math.min(100,Math.round(act/meta*100)):0,falta=Math.max(0,meta-act); return '<div class="goal"><div class="goal-h"><b>'+esc(o.nombre||'Meta')+'</b><span class="gv"><b>€'+act+'</b> / €'+meta+'</span></div><div class="gbar"><i style="width:'+pct+'%"></i></div><div class="pct">'+pct+'% · te faltan €'+falta+'</div></div>'; }).join('');
+}
+function renderDeudas(arr){
+  var box=document.getElementById('fin-debts'); if(!box) return;
+  var card=document.getElementById('fin-debt-total-card');
+  if(!arr||!arr.length){ box.innerHTML='<div style="font-size:12.5px;color:var(--muted);padding:6px 0;">Sin deudas cargadas.</div>'; if(card)card.style.display='none'; return; }
+  if(card)card.style.display='';
+  box.innerHTML=arr.map(function(d){ var pagando=/pagando/i.test(d.estado||''); return '<div class="debt"><div class="debt-ic">💳</div><div class="debt-b"><b>'+esc(d.nombre||'Deuda')+'</b><p>€'+esc(''+(d.monto||''))+(d.cuota?' · €'+esc(''+d.cuota)+'/mes':'')+'</p></div><span class="debt-tag '+(pagando?'now':'next')+'">'+esc(d.estado||'')+'</span></div>'; }).join('');
+  var tot=arr.reduce(function(s,d){return s+(parseFloat(d.monto)||0);},0);
+  var te=document.getElementById('fin-debt-total'); if(te)te.textContent='€'+tot;
+}
+function renderDiagnostico(d){
+  if(!d) return;
+  var keys=['salud','control','deuda','ahorro'];
+  document.querySelectorAll('#s-inicio .diag-row').forEach(function(r,i){ var v=d[keys[i]]; if(v==null)return; var vv=Math.max(0,Math.min(100,parseInt(v,10)||0)); var sp=r.querySelector('.v'); if(sp)sp.textContent=vv+'%'; var bar=r.querySelector('.diag-bar i'); if(bar)bar.style.width=vv+'%'; });
+  if(d.salud!=null){ var s=Math.max(0,Math.min(100,parseInt(d.salud,10)||0));
+    var arc=document.getElementById('gaugeArc'); if(arc){var r=36,c=2*Math.PI*r;arc.style.strokeDasharray=c;arc.style.strokeDashoffset=c*(1-s/100);}
+    var gn=document.querySelector('.gauge .gn b'); if(gn)gn.textContent=s;
+    var pbf=document.querySelector('.sb-pb-fill'); if(pbf)pbf.style.width=s+'%';
+    var pbl=document.querySelector('.sb-pb-lbl'); if(pbl)pbl.textContent='Salud financiera · '+s+'/100';
+  }
+}
 function applyClientFin(c){
   var nm=c.nombre||c.email||'Cliente', fn=(''+nm).split(' ')[0];
   setText('.sb-hello','Hola, '+fn+' 👋');
@@ -367,6 +394,9 @@ function applyClientFin(c){
   document.querySelectorAll('#s-plan .plan-step').forEach(function(s,i){var n=i+1;s.className='plan-step '+(n<mes?'done':(n===mes?'on':''));var num=s.querySelector('.plan-num');if(num)num.textContent=n;var pw=s.querySelector('.pw');if(pw)pw.textContent='Mes '+n+(n<mes?' · hecho':(n===mes?' · en curso':''));var b=s.querySelector('b');if(b)b.textContent=et[i]||('Mes '+n);});
   var fp={}; try{fp=JSON.parse(c.fin_pres||'{}')||{};}catch(e){}
   renderPresupuesto(fp);
+  try{ renderObjetivos(JSON.parse(c.fin_objetivos||'[]')||[]); }catch(e){}
+  try{ renderDeudas(JSON.parse(c.fin_deudas||'[]')||[]); }catch(e){}
+  try{ renderDiagnostico(JSON.parse(c.fin_diagnostico||'null')); }catch(e){}
   try{MSGS=JSON.parse(c.notas_coach||'[]')||[];}catch(e){MSGS=[];} if(!Array.isArray(MSGS))MSGS=[];
   renderMsgs(); startPoll();
   applyVisFin(c.visibilidad);
