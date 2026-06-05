@@ -1300,14 +1300,23 @@ function viewClienteDetalle(c){
       var daysHtml=dOrder.map(function(d){
         var exs=byDay[d].map(function(e){
           var ix=RUT.indexOf(e);
+          if(state.editEx===(c.id+":"+ix)){
+            return "<div style='display:flex;align-items:center;gap:8px;border-top:1px solid var(--pw-border);padding:8px 0;flex-wrap:wrap'>"+
+              "<input id='exed-nom-"+ix+"' class='cp-form-input' style='flex:2;min-width:130px' value=\""+esc(e.nombre||"")+"\" placeholder='Ejercicio'>"+
+              "<input id='exed-meta-"+ix+"' class='cp-form-input' style='flex:1;min-width:80px' value=\""+esc(e.meta||"")+"\" placeholder='4×10'>"+
+              "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 12px' data-act='fit-ex-editsave' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Guardar</button>"+
+              "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 10px' data-act='fit-ex-editcancel'>Cancelar</button></div>";
+          }
           var thumb=e.foto?"<img src='"+esc(e.foto)+"' style='width:38px;height:38px;border-radius:8px;object-fit:cover'>":"<div style='width:38px;height:38px;border-radius:8px;background:var(--pw-bg);display:flex;align-items:center;justify-content:center;font-size:16px'>🏋️</div>";
           return "<div style='display:flex;align-items:center;gap:10px;border-top:1px solid var(--pw-border);padding:8px 0'>"+thumb+
             "<div style='flex:1'><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+esc(e.nombre||"")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(e.meta||"")+(e.foto?"":" · sin foto")+"</div></div>"+
+            "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px;margin-right:5px' data-act='fit-ex-edit' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Editar</button>"+
             "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px' data-act='fit-ex-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Quitar</button></div>";
         }).join("");
         return "<div style='margin-top:10px'><div style='font-size:11px;font-weight:700;color:var(--pw-bosque);text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px'>"+esc(d)+"</div>"+exs+"</div>";
       }).join("");
-      return "<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Semana "+w+"<span class='dot'>.</span></h3>"+daysHtml+"</div>";
+      return "<div class='cp-card cp-card-pad'><div class='cp-card-hd' style='padding:0 0 8px;border:0'><h3 class='cp-card-title'>Semana "+w+"<span class='dot'>.</span></h3>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='fit-wk-dup' data-id='"+esc(c.id)+"' data-wk='"+w+"' title='Copiar todos los ejercicios a la Semana "+(w+1)+" para editarlos'>⧉ Duplicar a Semana "+(w+1)+"</button></div>"+daysHtml+"</div>";
     }).join("");
     var wkOpts=""; for(var _w=1;_w<=Math.max(maxWk+1,4);_w++){ wkOpts+="<option value='"+_w+"'"+(_w===(maxWk||1)?" selected":"")+">Semana "+_w+"</option>"; }
     body="<div class='cp-form-hint' style='margin:0 0 12px'>Carga los ejercicios acá arriba (nombre, series×reps, <strong>peso</strong> y foto opcional). Aparecen abajo agrupados por <strong>semana</strong> y por <strong>día</strong> — y el cliente los ve igual en su portal.</div>"+
@@ -4240,6 +4249,38 @@ document.addEventListener("click", function(ev){
     _sbw("candidatos?id=eq."+encodeURIComponent(feid),"PATCH",{fit_rutina:jE})
       .then(function(r){ if(!r.ok) throw 0; if(fec&&fec.raw) fec.raw.fit_rutina=jE; window._frFoto=""; toast("Ejercicio agregado ✓ — el cliente lo ve"); render(); })
       .catch(function(){ alert("No se pudo guardar. Falta la columna fit_rutina en candidatos (ver migración career_nicho_fields.sql)."); });
+    return;
+  }
+  if(act==="fit-ex-edit"){ state.editEx=el.getAttribute("data-id")+":"+el.getAttribute("data-idx"); render(); return; }
+  if(act==="fit-ex-editcancel"){ state.editEx=null; render(); return; }
+  if(act==="fit-ex-editsave"){
+    var eeid=el.getAttribute("data-id"); var eeix=parseInt(el.getAttribute("data-idx"),10);
+    if(!eeid||isNaN(eeix)) return;
+    var eec=CLIENTS.filter(function(x){return String(x.id)===String(eeid);})[0];
+    var arrE2=_rutToArr(eec&&eec.raw&&eec.raw.fit_rutina);
+    if(!arrE2[eeix]) { state.editEx=null; render(); return; }
+    arrE2[eeix].nombre=_val("exed-nom-"+eeix)||arrE2[eeix].nombre;
+    arrE2[eeix].meta=_val("exed-meta-"+eeix);
+    var jE2=JSON.stringify(arrE2); state.editEx=null;
+    if(eec && eec._example){ eec.raw.fit_rutina=jE2; toast("Editado en el demo ✓ (no se guarda)"); render(); return; }
+    _sbw("candidatos?id=eq."+encodeURIComponent(eeid),"PATCH",{fit_rutina:jE2})
+      .then(function(r){ if(!r.ok) throw 0; if(eec&&eec.raw) eec.raw.fit_rutina=jE2; toast("Ejercicio actualizado ✓"); render(); })
+      .catch(function(){ alert("No se pudo guardar."); });
+    return;
+  }
+  if(act==="fit-wk-dup"){
+    var dwid=el.getAttribute("data-id"); var dwn=parseInt(el.getAttribute("data-wk"),10);
+    if(!dwid||isNaN(dwn)) return;
+    var dwc=CLIENTS.filter(function(x){return String(x.id)===String(dwid);})[0];
+    var arrW=_rutToArr(dwc&&dwc.raw&&dwc.raw.fit_rutina);
+    var src=arrW.filter(function(e){ return (parseInt(e.semana,10)||1)===dwn; });
+    if(!src.length){ alert("No hay ejercicios en la Semana "+dwn+" para duplicar."); return; }
+    src.forEach(function(e){ arrW.push({semana:dwn+1,dia:e.dia,nombre:e.nombre,meta:e.meta,peso:e.peso,foto:e.foto}); });
+    var jW=JSON.stringify(arrW);
+    if(dwc && dwc._example){ dwc.raw.fit_rutina=jW; toast("Semana duplicada en el demo ✓ (no se guarda)"); render(); return; }
+    _sbw("candidatos?id=eq."+encodeURIComponent(dwid),"PATCH",{fit_rutina:jW})
+      .then(function(r){ if(!r.ok) throw 0; if(dwc&&dwc.raw) dwc.raw.fit_rutina=jW; toast("Semana "+dwn+" duplicada a la "+(dwn+1)+" ✓ — ahora editá los kg"); render(); })
+      .catch(function(){ alert("No se pudo duplicar."); });
     return;
   }
   if(act==="fit-ex-del"){
