@@ -4949,12 +4949,25 @@ function refreshCliPresence(){
     if(rows&&rows[0]){ var was=_isOnline(c.raw.cliente_last_seen); c.raw.cliente_last_seen=rows[0].cliente_last_seen; if(_isOnline(c.raw.cliente_last_seen)!==was) render(); }
   }).catch(function(){});
 }
+// Auto-refresco: el panel se actualiza solo (cliente nuevo, form completado,
+// cliente que entró) sin apretar "Actualizar". No corre si hay un modal abierto
+// o si la coach está escribiendo, para no interrumpir.
+var _autoTimer = null, _lastAuto = 0;
+function _autoRefresh(){
+  if(!REAL) return;
+  if(document.visibilityState!=="visible") return;
+  if(state.newOpen) return;
+  var ae=document.activeElement; if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+  if(Date.now()-_lastAuto < 8000) return;
+  _lastAuto=Date.now(); loadReal();
+}
 function startMsgPolling(){
   if(_msgPollTimer) return;
   coachBeat();
   _msgPollTimer = setInterval(function(){ pollMessages(); coachBeat(); refreshCliPresence(); }, 25000);
+  if(!_autoTimer) _autoTimer = setInterval(_autoRefresh, 40000);
   document.addEventListener("visibilitychange", function(){
-    if(document.visibilityState === "visible") pollMessages();
+    if(document.visibilityState === "visible"){ pollMessages(); _autoRefresh(); }
   });
 }
 function loadReal(){
