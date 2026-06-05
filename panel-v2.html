@@ -4797,7 +4797,17 @@ function _hdr(extra){ return (window.PWAUTH?PWAUTH.headers(extra):Promise.resolv
 var _authGone=false;
 function _authExpired(){ if(_authGone)return; _authGone=true; try{ location.href="login.html"; }catch(e){} }
 function _sb(p){ return _hdr().then(function(h){ return fetch(SB+"/rest/v1/"+p,{headers:h}); }).then(function(r){ if(r.status===401||r.status===403){_authExpired();return [];} return r.ok?r.json():[];}).catch(function(){return [];}); }
-function _sbw(p,method,body){ return _hdr({"Content-Type":"application/json",Prefer:"return=minimal"}).then(function(h){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); }); }
+// ¿El path apunta a un cliente de ejemplo (que no existe en la base)?
+function _isExampleWrite(p){
+  try{ var m=(""+p).match(/candidatos\?id=eq\.([^&]+)/); if(!m) return false; var id=decodeURIComponent(m[1]); return CLIENTS.some(function(x){ return x && x._example && String(x.id)===String(id); }); }catch(e){ return false; }
+}
+function _sbw(p,method,body){
+  // Cliente de ejemplo: no existe en la base → simulamos una respuesta OK para
+  // que cualquier acción del demo (guardar antro, presupuesto, semana, etc.)
+  // funcione en memoria sin romperse ni quedar trabada.
+  if((method==="PATCH"||method==="DELETE") && _isExampleWrite(p)){ return Promise.resolve({ok:true,status:204,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}); }
+  return _hdr({"Content-Type":"application/json",Prefer:"return=minimal"}).then(function(h){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); });
+}
 var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy=false;
 var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
 var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
