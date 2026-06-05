@@ -971,8 +971,10 @@ function viewSidebar(){
   }).join("");
   return "<aside class='cp-side'>"+
     "<a href='#' class='cp-side-brand' data-act='nav:resumen'>"+
-      "<svg width='24' height='24' viewBox='0 0 100 100' aria-hidden='true'><polygon points='10,82 32,52 54,82' fill='#52B788'/><polygon points='34,82 58,28 82,82' fill='#FAFDF9'/><circle cx='58' cy='22' r='5' fill='#E9C46A'/></svg>"+
-      "<span class='cp-side-brand-word'>pathway<span style='color:#52B788'>.</span></span></a>"+
+      ((REAL && isProV() && RCFG && RCFG.logo_url)
+        ? "<img src='"+esc(RCFG.logo_url)+"' alt='' style='max-width:150px;max-height:34px;object-fit:contain'>"
+        : "<svg width='24' height='24' viewBox='0 0 100 100' aria-hidden='true'><polygon points='10,82 32,52 54,82' fill='#52B788'/><polygon points='34,82 58,28 82,82' fill='#FAFDF9'/><circle cx='58' cy='22' r='5' fill='#E9C46A'/></svg>"+
+          "<span class='cp-side-brand-word'>pathway<span style='color:#52B788'>.</span></span>")+"</a>"+
     "<div class='cp-side-coach'>"+avImg(COACH.photo,COACH.name,"")+
       "<div class='cp-side-coach-txt'><div class='cp-side-coach-name'>"+esc(COACH.name)+"</div>"+
       "<div class='cp-side-coach-role'>"+esc(coachRoleLabel())+"<span class='cp-side-plan'>"+(state.plan==="pro"?"Pro":"Basic")+"</span></div>"+
@@ -1979,6 +1981,15 @@ function cfgServices(){
       "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cfg-save-services'>Guardar servicios</button></div></div></div>";
 }
 // Plan helper — fiel a panel.html getPlan(): admin o configuracion.es_pro_vitalicio o configuracion.plan==='pro' → Pro
+// White-label del panel (Pro): aplica el color de marca del coach al accent.
+function _applyPanelBrand(){
+  try{
+    var rs=document.documentElement.style;
+    var col=(REAL && isProV() && state && state.brandAccent && /^#[0-9a-f]{6}$/i.test(state.brandAccent) && state.brandAccent.toLowerCase()!=="#2d6a4f") ? state.brandAccent : "";
+    if(col){ rs.setProperty("--pw-bosque",col); rs.setProperty("--pw-bosque-dark",col); }
+    else { rs.removeProperty("--pw-bosque"); rs.removeProperty("--pw-bosque-dark"); }
+  }catch(e){}
+}
 function isProV(){
   if(!REAL) return state.plan==="pro";
   if(RADMIN) return true;
@@ -3432,6 +3443,7 @@ function render(){
       }
     }
     if(state.section==="admin" && !RADMIN) state.section="resumen";
+    _applyPanelBrand();
     var sections = { resumen:viewResumen, clientes:viewClientes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin };
     var view = (sections[state.section]||viewResumen)();
     var _narrow = (state.section==="config") || (state.section==="clientes" && state.clienteSel);
@@ -3528,7 +3540,7 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="cfg-save-services"){ saveCfg({ servicios: state.services }); return; }
-  if(act.indexOf("brand:")===0){ state.brandAccent = act.slice(6); if(REAL) saveCfg({ color_marca: act.slice(6) }); else render(); return; }
+  if(act.indexOf("brand:")===0){ state.brandAccent = act.slice(6); _applyPanelBrand(); if(REAL) saveCfg({ color_marca: act.slice(6) }); else render(); return; }
   if(act==="cfg-save-brand"){
     if(!isProV()){ alert("La marca propia es una función Pro (€89/mes). La activas en Configuración › Mi plan."); return; }
     saveCfg({ color_marca: state.brandAccent, logo_url: _val("cfb-logo").trim() });
@@ -5149,6 +5161,7 @@ function loadReal(){
     // función es idempotente (no arranca un segundo timer si ya hay uno).
     startMsgPolling();
     RCFG = usr.configuracion || ME.configuracion || {};
+    if(RCFG && RCFG.color_marca) state.brandAccent = RCFG.color_marca;
     RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), perfil_publico_activo:!!usr.perfil_publico_activo };
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
     if(RCFG && RCFG.color_marca) state.brandAccent=RCFG.color_marca;
