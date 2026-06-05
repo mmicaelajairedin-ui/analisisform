@@ -1409,7 +1409,7 @@ function viewClienteDetalle(c){
           ((!c._example && rpSt[0]!=="Publicado")?"<div style='font-size:12.5px;font-weight:600;color:#fff;background:var(--pw-danger);border-radius:11px;padding:10px 13px;line-height:1.4'>⚠️ Su portal se verá <strong>vacío</strong> hasta que generes el informe (etapa 2). Genéralo antes de compartirle el acceso.</div>":"")+
           "<div style='font-size:12px;color:var(--pw-text-soft)'>El cliente ve (y puede editar) todo desde su portal. Si algo no está bien, vuelve a la etapa 2 y regénera.</div>"+
           "<div style='display:flex;gap:8px;flex-wrap:wrap'>"+
-            "<button class='cp-btn cp-btn-primary' data-act='open' data-url='"+esc(portalUrl)+"'>"+svg(IC.extLink,13)+" Ver su portal</button>"+
+            "<button class='cp-btn cp-btn-primary' data-act='openportal' data-url='"+esc(portalUrl)+"'>"+svg(IC.extLink,13)+" Ver su portal</button>"+
             "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(cvUrl)+"'>Ver CV</button>"+
             "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(cartaUrl)+"'>Ver carta</button>"+
             "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(fotoWa)+"'>Pedir foto</button>"+
@@ -1441,7 +1441,7 @@ function viewClienteDetalle(c){
     body=_planIntro+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:10px;flex-wrap:wrap;align-items:center'>"+
         "<button class='cp-btn cp-btn-primary"+(hasInf?"":" beacon")+"' data-act='gen-informe' data-id='"+esc(c.id)+"'>"+(hasInf?"Regenerar con IA":"Generar con IA")+"</button>"+
-        "<button class='cp-btn cp-btn-ghost' data-act='open' data-url='"+esc(portalUrl)+"'>Ver en su portal</button>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='openportal' data-url='"+esc(portalUrl)+"'>Ver en su portal</button>"+
         "<span style='font-size:12px;color:var(--pw-text-soft)'>"+(hasInf?"Informe creado. Edita lo que quieras y guarda.":"Aún no hay informe. Genera con IA o escríbelo y guarda.")+"</span>"+
       "</div></div>"+
       _blk("Resumen del diagnóstico","Lo primero que ve el cliente",_ta("pl-res",resm,"Resumen ejecutivo del diagnóstico…",90))+
@@ -1755,7 +1755,7 @@ function viewClienteDetalle(c){
       "<div class='cp-topbar-actions'>"+
         "<a href='https://wa.me/"+wa+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='text-decoration:none'>"+svg(IC.wa,14)+" WhatsApp</a>"+
         "<button class='cp-btn cp-btn-ghost' data-act='copy' data-url='"+esc(accessUrl)+"' title='Copiar el link de acceso del cliente'>"+svg(IC.copy,13)+" Copiar acceso</button>"+
-        "<button class='cp-btn cp-btn-primary' data-act='open' data-url='"+esc(portalUrl)+"'>"+svg(IC.extLink,13)+" Ver su portal</button>"+
+        "<button class='cp-btn cp-btn-primary' data-act='openportal' data-url='"+esc(portalUrl)+"'>"+svg(IC.extLink,13)+" Ver su portal</button>"+
       "</div>"+
     "</header>"+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Progreso del programa<span class='dot'>.</span></h3>"+
@@ -3431,14 +3431,22 @@ function render(){
     // Preservar el scroll: si es la MISMA pantalla (un guardado/edición), se
     // queda donde está; si cambió de pantalla (navegación), va arriba.
     var _vk = state.section+"|"+(state.clienteSel||"")+"|"+(state.cliDetTab||"")+"|"+(state.cfg||"")+"|"+(state.adminTab||"")+"|"+(state.newOpen?"1":"0");
+    // En desktop el scroll vive en .cp-scroll; en móvil .cp-scroll tiene
+    // height:auto y el que scrollea es la ventana. Guardamos los dos.
     var _prevScroll=0; try{ var _scEl=document.querySelector(".cp-scroll"); if(_scEl) _prevScroll=_scEl.scrollTop; }catch(e){}
+    var _prevWin=0; try{ _prevWin=window.pageYOffset||document.documentElement.scrollTop||document.body.scrollTop||0; }catch(e){}
     document.getElementById("root").innerHTML =
       "<div class='cp-app'>"+viewSidebar()+
         "<div class='cp-main'><div class='cp-scroll'><div class='cp-container"+(_narrow?" cp-container--narrow":"")+"'>"+view+"</div></div></div>"+
         viewAsistente()+"</div>"+
       (state.newOpen?viewNewModal():"")+
       (state.mail&&state.mail.open?viewMailModal():"");
-    try{ var _scEl2=document.querySelector(".cp-scroll"); if(_scEl2) _scEl2.scrollTop=(_vk===_lastViewKey?_prevScroll:0); }catch(e){}
+    var _same=(_vk===_lastViewKey);
+    try{ var _scEl2=document.querySelector(".cp-scroll"); if(_scEl2) _scEl2.scrollTop=(_same?_prevScroll:0); }catch(e){}
+    try{ if(_same){ window.scrollTo(0,_prevWin); } else { window.scrollTo(0,0); } }catch(e){}
+    // En móvil el alto se recalcula tras el swap; reaplicamos el scroll en el
+    // próximo frame para que no quede arriba aunque el reflow llegue tarde.
+    if(_same && _prevWin){ try{ requestAnimationFrame(function(){ try{ window.scrollTo(0,_prevWin); }catch(e){} }); }catch(e){} }
     _lastViewKey=_vk;
     // Chat: cuando hay un hilo abierto, bajar automáticamente al último mensaje.
     // (No se chequea state.ai.tab porque con 8/8 el chat se muestra aunque la
@@ -3465,6 +3473,10 @@ document.addEventListener("click", function(ev){
   if(!el) return;
   var act = el.getAttribute("data-act");
   if(act==="open"){ var ou=el.getAttribute("data-url"); if(ou){ var _w=window.open(ou,"_blank","noopener"); if(!_w){ location.href=ou; } } return; }
+  // Portal del cliente: SIEMPRE en la misma pestaña ("pathway_portal"). Si ya
+  // está abierta, la navega al cliente nuevo y le da foco — no abre mil pestañas.
+  // El panel sigue en su propia pestaña/sesión.
+  if(act==="openportal"){ var op=el.getAttribute("data-url"); if(op){ var _pw2=window.open(op,"pathway_portal"); if(_pw2){ try{ _pw2.focus(); }catch(e){} } else { window.open(op,"_blank"); } } return; }
   if(act==="copy"){
     var url = el.getAttribute("data-url")||"";
     try{ navigator.clipboard && navigator.clipboard.writeText(url); }catch(e){}
