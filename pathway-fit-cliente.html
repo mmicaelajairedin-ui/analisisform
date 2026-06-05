@@ -230,7 +230,7 @@
         </div></div>
 
         <div class="card"><div class="card-body">
-          <span class="eyebrow">Comparativa por mes</span>
+          <span class="eyebrow">Evolución · músculo y grasa</span>
           <p style="font-size:12px;color:var(--muted);margin:3px 0 14px;">Una medición por mes — así ves cómo evolucionás.</p>
           <div id="cmpMasas"></div>
         </div></div>
@@ -254,13 +254,19 @@
       <!-- ===== NUTRICIÓN ===== -->
       <section class="sec" id="s-nutricion">
         <p class="h-hero">Nutrición</p>
-        <p class="h-sub">Tu día tipo y pautas con tu coach.</p>
-        <div class="card"><div class="card-body" style="padding:6px 16px;">
-          <div id="nutri-body" style="font-size:13.5px;color:var(--text);line-height:1.6;">Tu coach te comparte acá tu plan de alimentación.</div>
+        <p class="h-sub">Tu plan de comidas, día por día.</p>
+        <div class="weekpick" id="nutri-days"></div>
+        <div class="card"><div class="card-body" style="padding:14px 16px;">
+          <span class="eyebrow">Plan del día</span>
+          <div id="nutri-plan" style="font-size:13.5px;color:var(--text);line-height:1.6;white-space:pre-wrap;margin-top:6px;">Tu coach todavía no cargó tu plan.</div>
         </div></div>
-        <p class="h-sec" style="margin-top:8px;">Material</p>
-        <div class="guide"><div class="guide-ic">📄</div><div class="guide-b"><b>Tu guía de comidas</b><p>La comparte tu coach</p></div><div style="color:var(--muted)">→</div></div>
-        <div class="guide"><div class="guide-ic">🥑</div><div class="guide-b"><b>Lista de compras</b><p>Actualizada cada semana</p></div><div style="color:var(--muted)">→</div></div>
+        <div class="card"><div class="card-body" style="padding:14px 16px;">
+          <span class="eyebrow">Lo que comí</span>
+          <p style="font-size:12px;color:var(--muted);margin:4px 0 8px;">Anotá si comiste algo distinto al plan — tu coach lo ve.</p>
+          <textarea id="nutri-log" placeholder="Ej: cambié el pollo por atún…" style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:13.5px;color:var(--text);outline:none;min-height:70px;resize:vertical;box-sizing:border-box;"></textarea>
+          <div style="margin-top:8px;"><button class="btn btn-sm" onclick="saveNutriLog()">Guardar lo que comí</button><span id="nutri-log-st" style="font-size:12px;color:var(--muted);margin-left:8px;"></span></div>
+        </div></div>
+        <div id="nutri-pautas-card"></div>
       </section>
 
       <!-- ===== SESIONES ===== -->
@@ -365,21 +371,28 @@ function renderDonut(cats,totLabel){
   var dc=document.querySelector('#s-progreso .dc'); if(dc&&totLabel!=null) dc.innerHTML='<b>'+totLabel+'</b><small>kg total</small>';
 }
 function renderCmp(labels,mus,adi){
-  var col=['#9DC9B0','#6FB591','#3F8C66','#2D6A4F'];
+  // Gráfico de líneas compacto: músculo (verde, sube) y grasa (naranja, baja)
+  // a lo largo de los meses. Escala a 12+ mediciones sin agrandarse.
   var box=document.getElementById('cmpMasas'); if(!box) return;
-  mus=mus||[]; adi=adi||[];
-  var last=mus.length-1; if(last<0){ box.innerHTML=''; return; }
-  var prev=Math.max(0,last-1);
-  var prevLbl=labels[prev]||'Antes', nowLbl=labels[last]||'Ahora';
-  var metrics=[{n:'Masa muscular',ini:+mus[prev]||0,now:+mus[last]||0,good:1},{n:'Masa adiposa',ini:+adi[prev]||0,now:+adi[last]||0,good:-1}];
-  var hint=(last===prev)?'<div style="font-size:11.5px;color:var(--muted);padding:2px 0 8px">Cuando tu coach cargue una segunda medición, vas a ver acá la comparación con el mes pasado.</div>':'';
-  box.innerHTML=hint+metrics.map(function(m){
-    var mx=Math.max(m.ini,m.now,1)*1.15, d=+(m.now-m.ini).toFixed(1), good=(m.good>0?d>=0:d<=0), col=good?'#2D6A4F':'#C2552F', ds=(d>0?'+':'')+d+' kg';
-    return '<div class="cmp"><div class="cmp-h" style="display:flex;justify-content:space-between;align-items:center"><b>'+m.n+'</b>'+(last!==prev?'<span style="font-size:12px;font-weight:700;color:'+col+'">'+ds+'</span>':'')+'</div><div class="cmp-bars">'+
-      '<div class="cmp-bar"><span class="mlbl">'+esc(prevLbl)+'</span><div class="track"><i style="width:'+(m.ini/mx*100).toFixed(0)+'%;background:#C2CBC4"></i></div><span class="val">'+m.ini+'</span></div>'+
-      '<div class="cmp-bar"><span class="mlbl">'+esc(nowLbl)+'</span><div class="track"><i style="width:'+(m.now/mx*100).toFixed(0)+'%;background:#2D6A4F"></i></div><span class="val">'+m.now+'</span></div>'+
-    '</div></div>';
-  }).join('');
+  mus=(mus||[]).map(Number); adi=(adi||[]).map(Number); labels=labels||[];
+  var n=mus.length; if(n<1){ box.innerHTML=''; return; }
+  if(n===1){ box.innerHTML='<div style="font-size:11.5px;color:var(--muted);padding:4px 0">Con una sola medición todavía no hay tendencia. Cuando tu coach cargue la próxima, vas a ver la evolución acá.</div>'; }
+  var w=320,h=128,padL=8,padR=8,padT=12,padB=20;
+  var all=mus.concat(adi).filter(function(v){return !isNaN(v);}); if(!all.length){ box.innerHTML=''; return; }
+  var mn=Math.min.apply(null,all), mx=Math.max.apply(null,all); if(mx<=mn) mx=mn+1; var rng=mx-mn;
+  var dx=n>1?(w-padL-padR)/(n-1):0;
+  var P=function(arr){ return arr.map(function(v,i){ return [padL+i*dx, padT+(h-padT-padB)*(1-((v-mn)/rng))]; }); };
+  var LINE=function(arr){ return P(arr).map(function(p,i){return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' '); };
+  var DOTS=function(arr,c){ return P(arr).map(function(p){return '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3.4" fill="'+c+'" stroke="#fff" stroke-width="1.5"/>';}).join(''); };
+  var every=Math.ceil(n/6);
+  var xl=labels.map(function(l,i){ if(n>1 && i%every!==0 && i!==n-1) return ''; return '<text x="'+(padL+i*dx).toFixed(1)+'" y="'+(h-6)+'" text-anchor="middle" font-size="9" fill="#9aa39c" font-family="Inter">'+esc(l||'')+'</text>'; }).join('');
+  var svg='<svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:auto;display:block">'+
+    (n>1?'<path d="'+LINE(mus)+'" fill="none" stroke="#2D6A4F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>':'')+DOTS(mus,'#2D6A4F')+
+    (n>1?'<path d="'+LINE(adi)+'" fill="none" stroke="#C2552F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>':'')+DOTS(adi,'#C2552F')+
+    xl+'</svg>';
+  var legend='<div style="display:flex;gap:16px;justify-content:center;font-size:11.5px;color:var(--muted);margin-top:2px"><span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#2D6A4F;margin-right:5px"></span>Músculo</span><span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#C2552F;margin-right:5px"></span>Grasa</span></div>';
+  box.innerHTML=svg+legend;
+  return;
 }
 function renderPeso(data){
   if(!data||!data.length) data=[82,78]; if(data.length<2) data=[data[0],data[0]];
@@ -482,6 +495,41 @@ function _rutToArr(raw){
   return out;
 }
 var RUT_ALL=[];
+// ── Nutrición día a día (plan del coach) + log del cliente ──
+var NUT={dias:{},pautas:''}, NLOG={}, NUTDAY='';
+var _NDAYLIST=[['lun','Lun'],['mar','Mar'],['mie','Mié'],['jue','Jue'],['vie','Vie'],['sab','Sáb'],['dom','Dom']];
+function applyNutricion(c){
+  NUT={dias:{},pautas:''};
+  try{ var raw=(c&&c.fit_nutricion)||''; if((''+raw).trim().charAt(0)==='{'){ var o=JSON.parse(raw)||{};
+    if(o.dias){ NUT.dias=o.dias||{}; NUT.pautas=o.pautas||''; }
+    else { var meals=[['Desayuno',o.desayuno],['Media mañana',o.media],['Almuerzo',o.almuerzo],['Merienda',o.merienda],['Cena',o.cena]].filter(function(m){return m[1]&&(''+m[1]).trim();});
+      var txt=meals.map(function(m){return m[0]+': '+m[1];}).join('\n'); NUT.dias={}; ['lun','mar','mie','jue','vie','sab','dom'].forEach(function(k){NUT.dias[k]=txt;}); NUT.pautas=o.pautas||''; }
+  } }catch(e){ NUT={dias:{},pautas:''}; }
+  try{ NLOG=JSON.parse((c&&c.fit_nutri_log)||'{}')||{}; }catch(e){ NLOG={}; }
+  if(!NUTDAY) NUTDAY=['dom','lun','mar','mie','jue','vie','sab'][new Date().getDay()]||'lun';
+  var ds=document.getElementById('nutri-days');
+  if(ds) ds.innerHTML=_NDAYLIST.map(function(d){ return '<button class="wk'+(d[0]===NUTDAY?' on':'')+'" onclick="selNutriDay(\''+d[0]+'\')">'+d[1]+'</button>'; }).join('');
+  var pc=document.getElementById('nutri-pautas-card');
+  if(pc) pc.innerHTML=(NUT.pautas&&(''+NUT.pautas).trim())?'<div class="card"><div class="card-body" style="padding:14px 16px;"><span class="eyebrow">Pautas</span><div style="font-size:13.5px;color:var(--text);line-height:1.55;white-space:pre-wrap;margin-top:6px;">'+esc(NUT.pautas)+'</div></div></div>':'';
+  selNutriDay(NUTDAY);
+}
+function selNutriDay(k){
+  NUTDAY=k;
+  var ds=document.getElementById('nutri-days'); if(ds) ds.querySelectorAll('.wk').forEach(function(b){ b.classList.toggle('on', (b.getAttribute('onclick')||'').indexOf("'"+k+"'")>=0); });
+  var plan=document.getElementById('nutri-plan'); var pv=((NUT.dias&&NUT.dias[k])||'').trim();
+  if(plan) plan.textContent=pv||'Sin plan para este día.';
+  var lg=document.getElementById('nutri-log'); if(lg) lg.value=(NLOG&&NLOG[k])||'';
+  var st=document.getElementById('nutri-log-st'); if(st) st.textContent='';
+}
+function saveNutriLog(){
+  var lg=document.getElementById('nutri-log'); if(!lg) return;
+  NLOG[NUTDAY]=lg.value.trim();
+  var st=document.getElementById('nutri-log-st'); if(st) st.textContent='Guardando…';
+  if(!CID){ if(st) st.textContent='Guardado ✓'; return; }
+  sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_nutri_log:JSON.stringify(NLOG)})
+    .then(function(r){ if(st) st.textContent=(r&&(r.ok||r.status===204))?'Guardado ✓':'No se pudo guardar'; })
+    .catch(function(){ if(st) st.textContent='Sin conexión'; });
+}
 function _exHtml(e){
   var thumb = (e.foto && /^https?:\/\//i.test(''+e.foto)) ? '<img src="'+esc(e.foto)+'" alt="" onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)" style="width:42px;height:42px;border-radius:9px;object-fit:cover;flex-shrink:0;cursor:pointer">' : '';
   return '<div class="ex" onclick="toggleEx(this)"><div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>'+thumb+'<div class="ex-body"><div class="ex-name">'+esc(e.nombre||'')+'</div><div class="ex-meta">'+esc(e.meta||'')+'</div></div><button class="ex-see" onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)">👁</button></div>';
@@ -550,17 +598,7 @@ function applyClient(c){
   try{ applyAntro(JSON.parse(c.fit_antro||'[]')||[]); }catch(e){}
   applyRutina(c.fit_rutina||'');
   applyVisFit(c.visibilidad);
-  var _nb=document.getElementById('nutri-body');
-  if(_nb && c.fit_nutricion && (''+c.fit_nutricion).trim()){
-    var _nr=(''+c.fit_nutricion).trim(), _no=null;
-    if(_nr.charAt(0)==='{'){ try{ _no=JSON.parse(_nr); }catch(e){} }
-    if(_no){
-      var _meals=[['Desayuno',_no.desayuno],['Media mañana',_no.media],['Almuerzo',_no.almuerzo],['Merienda',_no.merienda],['Cena',_no.cena]].filter(function(m){return m[1]&&(''+m[1]).trim();});
-      var _h=_meals.map(function(m){return '<div style="border-top:1px solid var(--border);padding:9px 0"><div style="font-size:11px;font-weight:700;color:var(--rose);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">'+m[0]+'</div><div style="white-space:pre-wrap">'+esc(m[1])+'</div></div>';}).join('');
-      if(_no.pautas&&(''+_no.pautas).trim()) _h+='<div style="margin:12px 0 6px;background:var(--rose-light);border-radius:12px;padding:11px 14px;line-height:1.55;white-space:pre-wrap"><b>Pautas</b><br>'+esc(_no.pautas)+'</div>';
-      _nb.innerHTML=_h||'Tu coach todavía no cargó tu plan de alimentación.';
-    } else { _nb.style.whiteSpace='pre-wrap'; _nb.textContent=_nr; }
-  }
+  applyNutricion(c);
   try{ WDATA=JSON.parse(c.fit_habitos||'{}')||{}; }catch(e){ WDATA={}; }
   try{ MSGS=JSON.parse(c.notas_coach||'[]')||[]; }catch(e){ MSGS=[]; } if(!Array.isArray(MSGS)) MSGS=[];
   renderMsgs(); startMsgPoll();
@@ -728,7 +766,7 @@ function _demoCrawFit(){
       {semana:3,dia:'Viernes · Full body',nombre:'Sentadilla goblet',meta:'3×12 · 16 kg',foto:''}
     ]),
     fit_habitos:'{}',
-    fit_nutricion:JSON.stringify({desayuno:'Avena + fruta + 2 huevos',media:'Yogur + frutos secos',almuerzo:'Proteína (pollo/pescado) + arroz/papa + verduras',merienda:'Fruta + un puñado de almendras',cena:'Proteína + ensalada',pautas:'~1,6 g de proteína por kg. Tomá 2-2,5 L de agua. Evitá ultraprocesados entre semana.'})
+    fit_nutricion:JSON.stringify({dias:{lun:'Desayuno: avena + fruta + 2 huevos\nAlmuerzo: pollo + arroz + verduras\nMerienda: yogur + almendras\nCena: pescado + ensalada',mar:'Desayuno: tostadas integrales + palta + huevo\nAlmuerzo: carne magra + papa + ensalada\nMerienda: fruta + frutos secos\nCena: tortilla de verduras',mie:'Desayuno: avena + banana + maní\nAlmuerzo: pescado + quinoa + brócoli\nMerienda: yogur + granola\nCena: pollo + ensalada',jue:'',vie:'Desayuno: smoothie proteico\nAlmuerzo: lentejas + arroz\nMerienda: fruta\nCena: salmón + verduras',sab:'Libre / comida social (con cabeza)',dom:''},pautas:'~1,6 g de proteína por kg. Tomá 2-2,5 L de agua. Evitá ultraprocesados entre semana.'})
   };
 }
 async function pwInit(){
