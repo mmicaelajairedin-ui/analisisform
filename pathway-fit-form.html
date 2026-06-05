@@ -117,6 +117,11 @@ body{font-family:'Inter',-apple-system,sans-serif;background:#f5f5f3;color:#1a1a
       <div class="sdesc">Sin filtros: contame desde dónde partís — es la única forma de ayudarte de verdad.</div>
       <div class="field"><label>Tu nombre</label><input id="nombre" placeholder="Ej: Martín"></div>
       <div class="field"><label>Tu email</label><input id="email" type="email" placeholder="martin@email.com"></div>
+      <div class="field"><label>Tu foto (opcional)</label>
+        <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1.5px dashed #ccc;border-radius:10px;padding:10px 14px;font-size:13px;color:#555;">📷 Subir foto<input id="foto" type="file" accept="image/*" style="display:none" onchange="_onFoto(this)"></label>
+        <img id="foto-prev" style="display:none;width:56px;height:56px;border-radius:50%;object-fit:cover;margin-left:10px;vertical-align:middle">
+        <span id="foto-st" style="font-size:12px;color:#888;margin-left:6px"></span>
+      </div>
       <div class="cols2">
         <div class="field"><label>Edad</label><input id="edad" type="number" placeholder="28"></div>
         <div class="field"><label>Sexo</label><input id="sexo" placeholder="M / F"></div>
@@ -250,6 +255,19 @@ var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 function _qp(k){ try{ return new URLSearchParams(location.search).get(k)||''; }catch(e){ return ''; } }
 function _selTxt(id){ var e=document.getElementById(id); if(!e)return ''; var s=e.querySelector('.opt.sel'); return s?s.textContent.trim():''; }
 function _val(id){ var e=document.getElementById(id); return e?(''+e.value).trim():''; }
+var _formFoto='';
+function _onFoto(el){
+  var f=el.files&&el.files[0]; if(!f) return;
+  if(f.size>5*1024*1024){ alert('La foto no puede pesar más de 5 MB.'); el.value=''; return; }
+  var st=document.getElementById('foto-st'); if(st) st.textContent='Subiendo…';
+  var ext=((f.type||'image/jpeg').split('/')[1]||'jpg').replace('jpeg','jpg');
+  var path='cli-'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'.'+ext;
+  fetch(SB+'/storage/v1/object/avatars/'+encodeURIComponent(path),{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':(f.type||'image/jpeg'),'x-upsert':'true'},body:f})
+    .then(function(r){ if(!r.ok) throw 0; _formFoto=SB+'/storage/v1/object/public/avatars/'+path;
+      var im=document.getElementById('foto-prev'); if(im){ im.src=_formFoto; im.style.display='inline-block'; }
+      if(st) st.textContent='Foto lista ✓'; })
+    .catch(function(){ if(st) st.textContent='No se pudo subir, seguí sin foto'; });
+}
 var _fitSaved=false;
 function saveFit(){
   if(_fitSaved) return;
@@ -264,7 +282,9 @@ function saveFit(){
   var cid=_qp('coach'); if(cid&&/^[0-9a-f-]{32,36}$/i.test(cid)) d.coach_id=cid;
   _fitSaved=true;
   fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal,resolution=merge-duplicates'},body:JSON.stringify(d)})
-    .then(function(r){ if(!r.ok){ _fitSaved=false; } }).catch(function(){ _fitSaved=false; });
+    .then(function(r){ if(!r.ok){ _fitSaved=false; return; }
+      if(_formFoto){ fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(email),{method:'PATCH',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,'Prefer':'return=minimal'},body:JSON.stringify({foto_perfil:_formFoto})}).catch(function(){}); }
+    }).catch(function(){ _fitSaved=false; });
 }
 function prev(){ if(i>0){ i--; render(); } }
 function generar(){
