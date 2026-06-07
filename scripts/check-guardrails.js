@@ -27,18 +27,19 @@ function isDefined(name, js) {
 
 const RULES = [
   {
-    name: "auth-callback guarda la foto de Google en foto_url (no foto_perfil)",
-    bug: "La foto del coach por Google no aparecia en el panel: se guardaba en " +
-         "configuracion.foto_perfil pero el panel lee configuracion.foto_url.",
+    name: "auth-callback: foto de Google por defecto, respeta la elegida",
+    bug: "La foto del coach por Google no aparecia (se guardaba en foto_perfil " +
+         "y el panel lee foto_url). Ademas, no debe pisar una foto que el coach " +
+         "ya eligio: solo se pone la de Google si NO tiene foto (puede cambiarla).",
     check() {
       const s = read("auth-callback.html");
       if (!s) return null;
-      // No debe volver a asignar la foto a foto_perfil.
       if (/foto_perfil\s*[:=]\s*photoUrl/.test(s) || /cfg\.foto_perfil\s*=\s*photoUrl/.test(s))
         return "auth-callback.html vuelve a guardar la foto en foto_perfil; debe ser foto_url.";
-      // Debe guardar en foto_url.
       if (!/foto_url\s*[:=]\s*photoUrl/.test(s) && !/cfg\.foto_url\s*=\s*photoUrl/.test(s))
         return "auth-callback.html ya no guarda la foto de Google en foto_url.";
+      if (!/!cfg\.foto_url\s*\)\s*\{\s*cfg\.foto_url\s*=\s*photoUrl/.test(s))
+        return "auth-callback.html ya no respeta la foto elegida (debe poner la de Google solo si !cfg.foto_url).";
       return null;
     },
   },
