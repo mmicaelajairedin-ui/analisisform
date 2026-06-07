@@ -1,0 +1,31 @@
+name: Backup diario de Supabase
+# El plan Free de Supabase NO tiene backups automaticos. Esto exporta las tablas
+# importantes todos los dias y las guarda como artifact privado del repo (no se
+# publica). Para restaurar: descargar el artifact desde la pestana Actions.
+#
+# REQUIERE un secreto en GitHub (Settings -> Secrets and variables -> Actions):
+#   SUPABASE_SERVICE_KEY  = la service_role key del proyecto Supabase
+#   (opcional) SUPABASE_URL si el proyecto cambia de URL
+on:
+  schedule:
+    - cron: '0 3 * * *'   # todos los dias 03:00 UTC
+  workflow_dispatch: {}    # tambien se puede correr a mano desde Actions
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Exportar tablas a JSON
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node scripts/backup-export.js
+      - name: Subir backup como artifact (privado, 90 dias)
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-backup-${{ github.run_id }}
+          path: backup/
+          retention-days: 90
