@@ -48,6 +48,33 @@ Agencia (landing) → Cliente compra mentoria → Micaela le manda link al formu
 - Anthropic Claude API via Supabase Edge Function `generar-informe` (generacion de informes)
 - Deploy: Cloudflare Pages (proyecto `analisisform`) con dominio custom `pathwaycareercoach.com` (fallback: analisisform.pages.dev). Auto-deploy en push a `main`.
 
+## 🛡️ Blindaje del codigo — tests que no pueden mentir (junio 2026)
+Red de seguridad para que NO vuelvan bugs ya resueltos. Corren en CI en cada
+push/PR (`.github/workflows/syntax-check.yml`). **Antes de commitear, correr:**
+`node scripts/check-syntax.js && node scripts/check-smoke.js && node scripts/check-guardrails.js`
+- **`scripts/check-syntax.js`** — valida el JS inline de cada .html (un error
+  rompe la pagina entera).
+- **`scripts/check-smoke.js`** — verifica que cada handler (`onclick`...) llame a
+  una funcion que EXISTE y que cada asset local referenciado EXISTA. Atrapa
+  botones e imagenes rotas. Si agrega falsos positivos, tunear los allowlists.
+- **`scripts/check-guardrails.js`** — "vacuna" bugs resueltos: cada arreglo suma
+  una regla. **Al arreglar un bug nuevo, agregar una regla aca** para que no vuelva.
+- **`pw-observe.js`** (observabilidad) — incluido en las 10 paginas clave.
+  Registra en la tabla `client_errors` los errores reales de produccion:
+  guardados a Supabase que fallan (intercepta `fetch`, atrapa los `.catch`
+  silenciosos), errores de JS y promesas rechazadas. Migration:
+  `supabase/migrations/client_errors.sql` (RLS: anon solo INSERT, nadie lee).
+  Ver errores: `SELECT ts,kind,email,page,detail FROM client_errors ORDER BY ts DESC LIMIT 100;`
+
+## Calendario unificado del cliente (fitness) — junio 2026
+Widget compacto en el dashboard de `pathway-fit-cliente.html` (arriba del de
+habitos). Iconos = logros del cliente (💪 gym, ⭐ habitos, 🍎 nutricion); dia
+RESALTADO = medicion/sesion (evento del coach). Datos REALES: `fit_habitos` por
+fecha (`WDATA[date].gym/.nutri/.agua/.sueno/.pasos`) + `sesiones_registro` +
+`fit_antro`. Funciones: `renderFitCal()`, `_calData()`, `_ymd()`, `fitCalNav()`.
+CSS `.pwcal-*` en `pathway-portal.css` (reusable para finanzas). Pendiente:
+reusar en `pathway-fin-cliente.html` y version simple en el panel del coach.
+
 ## Archivos principales
 | Archivo | Que hace | Lineas |
 |---------|----------|--------|
