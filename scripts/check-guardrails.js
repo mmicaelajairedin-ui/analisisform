@@ -77,6 +77,18 @@ const RULES = [
       return offenders.length ? "usan esc() sin definirla: " + offenders.join(", ") : null;
     },
   },
+  {
+    name: "el detector de humo (pw-observe.js) sigue incluido en las paginas clave",
+    bug: "pw-observe.js registra los errores de produccion. Si se quita de una " +
+         "pagina, esa pagina vuelve a operar a ciegas.",
+    check() {
+      var must = ["panel-v2.html", "cliente.html", "pathway-fit-cliente.html",
+        "pathway-fin-cliente.html", "login.html", "formulario.html",
+        "pathway-fit-form.html", "pathway-fin-form.html", "cv.html", "auth-callback.html"];
+      var missing = must.filter(function (f) { return !/pw-observe\.js/.test(read(f)); });
+      return missing.length ? "les falta pw-observe.js: " + missing.join(", ") : null;
+    },
+  },
 ];
 
 let failures = 0;
