@@ -82,6 +82,17 @@ const RULES = [
     },
   },
   {
+    name: "auth-callback liga auth_id en login con Google (Etapa 2 / RLS)",
+    bug: "Los que entran con Google deben quedar ligados a Supabase Auth (auth_id) " +
+         "para que RLS los reconozca. Si se quita, Google queda sin identidad ligada.",
+    check() {
+      const s = read("auth-callback.html");
+      if (!s) return null;
+      return /auth_id:\s*user\.id/.test(s) ? null
+        : "auth-callback.html ya no liga auth_id en el login con Google.";
+    },
+  },
+  {
     name: "tipografia unificada en cliente.html (solo Fraunces + Inter)",
     bug: "El portal career cargaba Poppins/Montserrat/Playfair de mas, rompiendo " +
          "la unidad tipografica con el resto de la plataforma (Fraunces + Inter).",

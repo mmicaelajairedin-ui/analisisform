@@ -185,7 +185,7 @@ async function handleCallback(){
   // Chequear si el usuario existe en nuestra tabla usuarios
   var existingUser = null;
   try {
-    var checkRes = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,email,rol,nombre,activo,configuracion', {
+    var checkRes = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,email,rol,nombre,activo,configuracion,auth_id', {
       headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY }
     });
     var existingArr = await checkRes.json();
@@ -401,6 +401,20 @@ async function handleCallback(){
       return showError('Error creando cuenta: ' + e.message);
     }
   }
+
+  // Etapa 2 — ligar la cuenta a Supabase Auth (auth_id) para habilitar RLS.
+  // El login con email/contraseña ya lo hace via migrate-user-to-auth; acá lo
+  // hacemos para los que entran con Google (su auth_id = el id del usuario de la
+  // sesión de Supabase Auth que ya creó el OAuth). Best-effort, no bloquea.
+  try {
+    if(usuario && usuario.id && user.id && usuario.auth_id !== user.id){
+      fetch(SB + '/rest/v1/usuarios?id=eq.' + encodeURIComponent(usuario.id), {
+        method: 'PATCH',
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ auth_id: user.id })
+      }).catch(function(){});
+    }
+  } catch(e) {}
 
   // Guardar sesion en localStorage (mismo formato que login.html)
   localStorage.setItem('mj_user', JSON.stringify({
