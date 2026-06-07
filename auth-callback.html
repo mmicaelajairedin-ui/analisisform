@@ -151,6 +151,7 @@ async function handleCallback(){
   }
 
   var user = session.user;
+  var SJWT = session.access_token || KEY; // JWT del usuario: lecturas/updates a candidatos pasan RLS
   var email = (user.email || '').toLowerCase();
   if(!email){
     return showError('Google no compartió tu email. Verifica los permisos otorgados.');
@@ -203,7 +204,7 @@ async function handleCallback(){
   if(!existingUser){
     try {
       var candCheck = await fetch(SB + '/rest/v1/candidatos?email=eq.' + encodeURIComponent(email) + '&select=id,nicho&limit=1', {
-        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY }
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT }
       });
       var candArr = await candCheck.json();
       if(Array.isArray(candArr) && candArr.length){
@@ -440,12 +441,21 @@ async function handleCallback(){
     if(photoUrl){
       fetch(SB + '/rest/v1/candidatos?email=eq.' + encodeURIComponent(email) + '&foto_perfil=is.null', {
         method: 'PATCH',
-        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ foto_perfil: photoUrl })
       }).catch(function(){});
     }
-    // Cada cliente va al portal de SU nicho (igual que login.html con email).
-    var _ct = (usuario.configuracion && usuario.configuracion.coach_type) || 'carrera';
+    // Cada cliente va al portal de SU nicho. La fuente real es candidatos.nicho
+    // (la config del usuario puede no tenerlo si lo creó el panel sin nicho).
+    var _ct = (usuario.configuracion && usuario.configuracion.coach_type) || '';
+    if(!_ct || _ct === 'carrera'){
+      try {
+        var _nr = await fetch(SB + '/rest/v1/candidatos?email=eq.' + encodeURIComponent(email) + '&select=nicho&limit=1', { headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT } });
+        var _na = await _nr.json();
+        if(Array.isArray(_na) && _na.length && _na[0].nicho) _ct = _na[0].nicho;
+      } catch(e) {}
+    }
+    if(!_ct) _ct = 'carrera';
     var _em = '&email=' + encodeURIComponent((''+(usuario.email||'')).toLowerCase().trim());
     if(_ct === 'fitness') dest = '/pathway-fit-cliente.html?' + _v + _em;
     else if(_ct === 'financiero') dest = '/pathway-fin-cliente.html?' + _v + _em;
