@@ -79,6 +79,17 @@ const RULES = [
     },
   },
   {
+    name: "tipografia unificada en cliente.html (solo Fraunces + Inter)",
+    bug: "El portal career cargaba Poppins/Montserrat/Playfair de mas, rompiendo " +
+         "la unidad tipografica con el resto de la plataforma (Fraunces + Inter).",
+    check() {
+      const s = read("cliente.html");
+      if (!s) return null;
+      const extra = ["Poppins", "Montserrat", "Playfair"].filter((f) => s.indexOf(f) >= 0);
+      return extra.length ? "cliente.html volvio a usar fuentes ajenas: " + extra.join(", ") : null;
+    },
+  },
+  {
     name: "el detector de humo (pw-observe.js) sigue incluido en las paginas clave",
     bug: "pw-observe.js registra los errores de produccion. Si se quita de una " +
          "pagina, esa pagina vuelve a operar a ciegas.",
