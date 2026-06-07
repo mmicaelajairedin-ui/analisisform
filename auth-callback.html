@@ -196,6 +196,28 @@ async function handleCallback(){
     return showError('Error consultando tu cuenta: ' + e.message);
   }
 
+  // Si NO está en usuarios pero SÍ en candidatos, es un CLIENTE que el coach ya
+  // cargó pero que todavía no tenía login. Le creamos su acceso como CLIENTE
+  // (no como coach) y seguimos el flujo normal -> el routing por rol lo manda a
+  // su portal. Así cualquier cliente puede entrar con Google sin contraseña.
+  if(!existingUser){
+    try {
+      var candCheck = await fetch(SB + '/rest/v1/candidatos?email=eq.' + encodeURIComponent(email) + '&select=id,nicho&limit=1', {
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY }
+      });
+      var candArr = await candCheck.json();
+      if(Array.isArray(candArr) && candArr.length){
+        var cliRes = await fetch(SB + '/rest/v1/usuarios', {
+          method: 'POST',
+          headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+          body: JSON.stringify({ email: email, password_hash: null, rol: 'cliente', nombre: name, activo: true,
+            configuracion: { auth_provider: 'google', coach_type: (candArr[0].nicho || 'carrera'), from_google: true, last_login: new Date().toISOString() } })
+        });
+        if(cliRes.ok){ var _cc = await cliRes.json(); existingUser = Array.isArray(_cc) ? _cc[0] : _cc; }
+      }
+    } catch(e) {}
+  }
+
   var isNew = !existingUser;
   var usuario;
 
