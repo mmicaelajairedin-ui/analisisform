@@ -76,12 +76,15 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .cp-fmenu-item:hover{background:var(--pw-niebla);}
 .cp-fmenu-item.is-on{background:var(--pw-success-bg);color:var(--pw-bosque);font-weight:600;}
 .cp-ficha-main{min-width:0;display:flex;flex-direction:column;gap:16px;}
-@media (max-width:760px){.cp-ficha-cols{grid-template-columns:1fr;}.cp-ficha-menu{flex-direction:row;flex-wrap:wrap;position:static;}.cp-fmenu-item{width:auto;}}
+.cp-ficha-top{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;}
+.cp-ficha-cal{flex:0 0 320px;max-width:340px;}
+.cp-ficha-cal .cp-card{margin:0;}
+@media (max-width:760px){.cp-ficha-cols{grid-template-columns:1fr;}.cp-ficha-menu{flex-direction:row;flex-wrap:wrap;position:static;}.cp-fmenu-item{width:auto;}.cp-ficha-cal{flex:1 1 100%;max-width:none;}}
 /* Calendario del cliente en la ficha (solo-lectura) */
 .pwcal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;}
 .pwcal-dow span{text-align:center;font-size:9px;font-weight:700;color:var(--pw-text-soft);}
 .pwcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
-.pwcal-cell{position:relative;height:42px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:11px;font-weight:600;color:var(--pw-text-soft);background:var(--pw-niebla);}
+.pwcal-cell{position:relative;height:30px;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;font-size:10px;font-weight:600;color:var(--pw-text-soft);background:var(--pw-niebla);}
 .pwcal-cell.fut{color:#c9d2cc;}
 .pwcal-cell.today{outline:1.5px solid var(--pw-bosque);color:var(--pw-bosque);}
 .pwcal-cell.meas{background:#E1EDF1;box-shadow:inset 0 0 0 1px #BBD5DE;color:#2E7587;}
@@ -1187,8 +1190,8 @@ function viewResumen(){
   var todo = CLIENTS.slice().sort(function(a,b){ return _score(b)-_score(a); }).slice(0,5).map(function(c){
     var head,meta,time,ts;
     if(c.last&&c.last.state==="stale"){ head="Reconectar con "+c.name; meta="Sin actividad · "+c.last.txt; time="Hoy"; ts="is-now"; }
-    else if(c.reportState==="pending"){ head="Revisar informe de "+c.name; meta="Semana "+c.week+" · pendiente de devolución"; time="Hoy"; ts="is-today"; }
-    else if(c.cvState==="pending"){ head="Aprobar CV de "+c.name; meta="Semana "+c.week+" · esperando tu revisión"; time="Hoy"; ts="is-today"; }
+    else if(c.reportState==="pending"){ head="Revisar "+(((c.raw&&c.raw.nicho)&&c.raw.nicho!=='carrera')?"análisis":"informe")+" de "+c.name; meta="Semana "+c.week+" · pendiente de devolución"; time="Hoy"; ts="is-today"; }
+    else if(c.cvState==="pending" && (!(c.raw&&c.raw.nicho) || c.raw.nicho==='carrera')){ head="Aprobar CV de "+c.name; meta="Semana "+c.week+" · esperando tu revisión"; time="Hoy"; ts="is-today"; }
     else { head="Seguimiento de "+c.name; meta=(c.role||"Cliente")+" · Semana "+c.week+"/4"; time="Esta semana"; ts="is-soon"; }
     return { c:c, head:head, meta:meta, time:time, ts:ts };
   });
@@ -1288,8 +1291,9 @@ function viewClienteDetalle(c){
   else if(_tipo==='financiero') tabs=[["perfil","Perfil"],["plan","Análisis"],["fin_pres","Finanzas"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
   else tabs=[["perfil","Perfil"],["plan","Análisis"],["avance","Avance"],["docs","Documentos"],["sesiones","Sesiones"],["mensajes","Mensajes"],["gestion","Gestión"]];
   var tabBar="<div class='cp-filters'>"+tabs.map(function(x){return "<button class='cp-chip "+(t===x[0]?"is-on":"")+"' data-act='clidet:"+x[0]+"'>"+x[1]+"</button>";}).join("")+"</div>";
-  // Menu vertical (mismo formato que Configuracion). Mismos data-act que las pestañas.
-  var menuV="<nav class='cp-ficha-menu'>"+tabs.map(function(x){return "<button class='cp-fmenu-item "+(t===x[0]?"is-on":"")+"' data-act='clidet:"+x[0]+"'>"+x[1]+"</button>";}).join("")+"</nav>";
+  // Menu vertical IDENTICO al de Configuracion: mismas clases (cp-cfg-nav). Mismos data-act.
+  var _ficon={perfil:'👤',plan:'📋',fit_rutina:'🏋️',fit_antro:'📐',sesiones:'🗓️',mensajes:'💬',gestion:'⚙️',fin_pres:'💰',avance:'📈',docs:'📄'};
+  var menuV="<nav class='cp-cfg-nav'>"+tabs.map(function(x){return "<button class='cp-cfg-nav-item "+(t===x[0]?"is-on":"")+"' data-act='clidet:"+x[0]+"'><span style='width:16px;display:inline-block;text-align:center'>"+(_ficon[x[0]]||'•')+"</span><span>"+x[1]+"</span></button>";}).join("")+"</nav>";
 
   var cvSt=(!_exHide&&c.cvState==="published")?["Publicado","ok"]:((!_exHide&&c.cvState==="pending")?["A revisar","warn"]:(_exHide?["Pendiente","warn"]:["Borrador",""]));
   var rpSt=(!_exHide&&c.reportState==="published")?["Publicado","ok"]:["Pendiente","warn"];
@@ -1788,16 +1792,22 @@ function viewClienteDetalle(c){
         "<button class='cp-btn cp-btn-primary' data-act='openportal' data-url='"+esc(portalUrl)+"'>"+svg(IC.extLink,13)+" Ver su portal</button>"+
       "</div>"+
     "</header>"+
-    "<div class='cp-ficha-cols'>"+menuV+"<div class='cp-ficha-main'>"+
-    "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Progreso del programa<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>Semana "+wk+" de 4</span></div>"+
-      "<div class='cp-card-pad' style='display:flex;align-items:center;gap:18px;flex-wrap:wrap'>"+
-        medal+
-        "<div class='cp-week' style='flex:1;min-width:200px'><span class='cp-week-label'>Sem "+wk+"/4</span><span class='cp-week-dots'>"+dots+"</span></div>"+
-        (_tipo==='carrera'?"<span class='cp-client-pill' style='"+(cvSt[1]==="ok"?"background:var(--pw-success-bg);color:var(--pw-bosque)":(cvSt[1]==="warn"?"background:rgba(233,196,106,.22);color:#8E7A35":"background:var(--pw-niebla-2);color:var(--pw-text-soft)"))+"'>CV "+cvSt[0]+"</span>":"")+
-        "<span class='cp-client-pill' style='"+(rpSt[1]==="ok"?"background:var(--pw-success-bg);color:var(--pw-bosque)":"background:rgba(233,196,106,.22);color:#8E7A35")+"'>"+(_tipo==='carrera'?"Informe ":"Análisis ")+rpSt[0]+"</span>"+
-      "</div></div>"+
-    (_tipo==='fitness'?_coachCalHtml(c):"")+body+"</div></div>";
+    "<div class='cp-cfg-layout'>"+menuV+"<div class='cp-cfg-panel'>"+
+    // Progreso + calendario: SOLO en la pestaña Perfil (no se repiten en las demás).
+    (t==='perfil' ?
+      "<div class='cp-ficha-top'>"+
+        "<div class='cp-card' style='flex:1;min-width:300px'><div class='cp-card-hd'><h3 class='cp-card-title'>Progreso del programa<span class='dot'>.</span></h3>"+
+          "<span class='cp-eyebrow'>Semana "+wk+" de 4</span></div>"+
+          "<div class='cp-card-pad' style='display:flex;align-items:center;gap:18px;flex-wrap:wrap'>"+
+            medal+
+            "<div class='cp-week' style='flex:1;min-width:160px'><span class='cp-week-label'>Sem "+wk+"/4</span><span class='cp-week-dots'>"+dots+"</span></div>"+
+            (_tipo==='carrera'?"<span class='cp-client-pill' style='"+(cvSt[1]==="ok"?"background:var(--pw-success-bg);color:var(--pw-bosque)":(cvSt[1]==="warn"?"background:rgba(233,196,106,.22);color:#8E7A35":"background:var(--pw-niebla-2);color:var(--pw-text-soft)"))+"'>CV "+cvSt[0]+"</span>":"")+
+            "<span class='cp-client-pill' style='"+(rpSt[1]==="ok"?"background:var(--pw-success-bg);color:var(--pw-bosque)":"background:rgba(233,196,106,.22);color:#8E7A35")+"'>"+(_tipo==='carrera'?"Informe ":"Análisis ")+rpSt[0]+"</span>"+
+          "</div></div>"+
+        (_tipo==='fitness'?"<div class='cp-ficha-cal'>"+_coachCalHtml(c)+"</div>":"")+
+      "</div>"
+    : "")+
+    body+"</div></div>";
 }
 // Calendario del cliente (solo-lectura) para la ficha del coach. Mismos datos
 // reales que ve el cliente: fit_habitos por fecha + sesiones/mediciones.
