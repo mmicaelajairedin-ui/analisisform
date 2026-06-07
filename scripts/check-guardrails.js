@@ -34,8 +34,11 @@ const RULES = [
     check() {
       const s = read("auth-callback.html");
       if (!s) return null;
-      if (/foto_perfil\s*[:=]\s*photoUrl/.test(s) || /cfg\.foto_perfil\s*=\s*photoUrl/.test(s))
-        return "auth-callback.html vuelve a guardar la foto en foto_perfil; debe ser foto_url.";
+      // El bug era guardar la foto del COACH en configuracion.foto_perfil. El
+      // cliente SI usa candidatos.foto_perfil (eso es correcto), por eso solo
+      // marcamos el caso del coach: cfg.foto_perfil = photoUrl.
+      if (/cfg\.foto_perfil\s*=\s*photoUrl/.test(s))
+        return "auth-callback.html guarda la foto del coach en configuracion.foto_perfil; debe ser foto_url.";
       if (!/foto_url\s*[:=]\s*photoUrl/.test(s) && !/cfg\.foto_url\s*=\s*photoUrl/.test(s))
         return "auth-callback.html ya no guarda la foto de Google en foto_url.";
       if (!/!cfg\.foto_url\s*\)\s*\{\s*cfg\.foto_url\s*=\s*photoUrl/.test(s))
