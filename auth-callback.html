@@ -395,14 +395,31 @@ async function handleCallback(){
   //   - Cliente → /cliente.html
   // (Antes los nuevos via Google iban a Stripe. Con trial-sin-tarjeta, van
   //  directo al panel — el cobro se ofrece al final del trial.)
-  if(isNew){
-    setLoadingMsg('¡Te damos la bienvenida! Te llevamos al panel...');
+  var _v = (isNew ? 'welcome=1&v=' : 'v=') + Date.now();
+  var dest;
+  if(usuario.rol === 'cliente'){
+    setLoadingMsg('¡Hola! Te llevamos a tu espacio...');
+    // Google trae la foto del cliente: la ponemos en candidatos SOLO si no tiene
+    // (respeta la que ya haya elegido). Best-effort, no bloquea el ingreso.
+    if(photoUrl){
+      fetch(SB + '/rest/v1/candidatos?email=eq.' + encodeURIComponent(email) + '&foto_perfil=is.null', {
+        method: 'PATCH',
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ foto_perfil: photoUrl })
+      }).catch(function(){});
+    }
+    // Cada cliente va al portal de SU nicho (igual que login.html con email).
+    var _ct = (usuario.configuracion && usuario.configuracion.coach_type) || 'carrera';
+    var _em = '&email=' + encodeURIComponent((''+(usuario.email||'')).toLowerCase().trim());
+    if(_ct === 'fitness') dest = '/pathway-fit-cliente.html?' + _v + _em;
+    else if(_ct === 'financiero') dest = '/pathway-fin-cliente.html?' + _v + _em;
+    else dest = '/cliente.html?' + _v;
   } else {
-    setLoadingMsg('¡Hola de nuevo! Te llevamos al panel...');
+    setLoadingMsg(isNew ? '¡Te damos la bienvenida! Te llevamos al panel...' : '¡Hola de nuevo! Te llevamos al panel...');
+    dest = '/panel-v2.html?' + _v;
   }
-  var dest = (usuario.rol === 'cliente') ? '/cliente.html' : '/panel-v2.html';
   setTimeout(function(){
-    window.location.href = dest + (isNew ? '?welcome=1&v=' : '?v=') + Date.now();
+    window.location.href = dest;
   }, 800);
 }
 
