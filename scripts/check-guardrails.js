@@ -104,6 +104,22 @@ const RULES = [
     },
   },
   {
+    name: "el toggle 'Activar perfil publico' persiste al instante",
+    bug: "El switch de perfil publico solo cambiaba state.pubActive en memoria y " +
+         "llamaba render(): al refrescar volvia a estar apagado (nunca se guardaba " +
+         "en la DB). El handler pub-toggle debe llamar a saveCfg() para persistir.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const i = s.search(/act===?["']pub-toggle["']/);
+      if (i < 0) return "panel-v2.html ya no tiene el handler de pub-toggle.";
+      const block = s.slice(i, i + 700);
+      if (!/saveCfg\s*\(/.test(block))
+        return "el handler pub-toggle ya no llama a saveCfg() — el toggle no persiste y al refrescar se apaga.";
+      return null;
+    },
+  },
+  {
     name: "el detector de humo (pw-observe.js) sigue incluido en las paginas clave",
     bug: "pw-observe.js registra los errores de produccion. Si se quita de una " +
          "pagina, esa pagina vuelve a operar a ciegas.",
