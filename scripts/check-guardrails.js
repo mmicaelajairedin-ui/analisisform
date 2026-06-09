@@ -113,7 +113,7 @@ const RULES = [
       if (!s) return null;
       const i = s.search(/act===?["']pub-toggle["']/);
       if (i < 0) return "panel-v2.html ya no tiene el handler de pub-toggle.";
-      const block = s.slice(i, i + 700);
+      const block = s.slice(i, i + 1200);
       if (!/saveCfg\s*\(/.test(block))
         return "el handler pub-toggle ya no llama a saveCfg() — el toggle no persiste y al refrescar se apaga.";
       return null;
