@@ -613,6 +613,8 @@ input,textarea,select{font-family:inherit;color:inherit;}
   .cp-cli-filters{ display:none !important; }
   /* Sumar cliente del sidebar: redundante con el card de la página, ocultar. */
   .cp-side-cta{ display:none !important; }
+  /* Calendario: oculto en móvil (a pedido). El Resumen muestra el resto. */
+  .cp-cal-card{ display:none !important; }
   .cp-cabra-img-wrap{ width:96px; height:96px; }
   .cp-cabra-bubble{ width:240px; }
   .cp-ai-panel{ left:8px; right:8px; bottom:86px; width:auto; height:72vh; max-height:72vh; }
@@ -1268,10 +1270,28 @@ function viewResumen(){
         "</div>"+
       "</div></div>";
   }
+  // Lista compacta de clientes — es el contenido principal de la home (y lo
+  // único en móvil, donde el calendario se oculta, para que no quede en blanco).
+  var cliBlock = "";
+  if(CLIENTS && CLIENTS.length){
+    var cliRows = CLIENTS.slice(0,10).map(function(c){
+      var stTxt = (c.last && c.last.txt) ? c.last.txt : (c.role||"Cliente");
+      var stCls = (c.last && c.last.state==="stale") ? "is-now" : "is-soon";
+      return "<div class='cp-todo-row' data-act='cli-open:"+esc(c.id)+"' style='cursor:pointer'>"+
+        "<img src='"+c.photo+"' alt='"+esc(c.name)+"'>"+
+        "<div class='cp-todo-body'><div class='cp-todo-head'>"+esc(c.name)+"</div><div class='cp-todo-meta'>"+esc(stTxt)+"</div></div>"+
+        "<span class='cp-todo-time "+stCls+"'>Sem "+(c.week||1)+"</span>"+
+        svg(IC.chevR,14,"class='cp-todo-arrow'")+"</div>";
+    }).join("");
+    cliBlock = "<div class='cp-card' style='margin-top:16px'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>Tus clientes<span class='dot'>.</span></h3>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='nav:clientes'>Ver todos</button></div>"+
+      "<div>"+cliRows+"</div></div>";
+  }
   return "<div class='cp-greet'>"+avImg(COACH.photo,COACH.name,"")+
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+"<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>"+pendingReview+" pendiente"+(pendingReview===1?"":"s")+(_nx?" · "+_nxTxt:"")+"</div></div></div>"+
-    emptyState+calCard;
+    emptyState+cliBlock+calCard;
 }
 
 /* ═══ Clientes ═══ */
@@ -3622,7 +3642,7 @@ document.addEventListener("click", function(ev){
   if(act==="pub-toggle"){
     state.pubActive=!state.pubActive;
     var _pubA=state.pubActive;
-    var _sl=(""+((RPROF&&RPROF.slug)||"")).trim();
+    var _sl=(""+((RPROF&&RPROF.slug)||(RCFG&&RCFG.slug)||"")).trim();
     if(_pubA && !_sl){
       // Autogenerar slug del nombre si falta (antes exigia ponerlo a mano).
       _sl=(""+((COACH&&COACH.name)||(RME&&RME.email)||"coach")).toLowerCase()
@@ -3630,10 +3650,16 @@ document.addEventListener("click", function(ev){
         .replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40) || "coach";
     }
     if(RPROF){ RPROF.perfil_publico_activo=_pubA; if(_pubA&&_sl) RPROF.slug=_sl; }
+    // Guardamos el estado en configuracion (siempre existe, sin unique) Y en las
+    // columnas top-level (las usa el directorio público). Si las columnas fallan
+    // —slug UNIQUE ya tomado o columna inexistente— saveCfg reintenta solo con
+    // configuracion, así el toggle NO se vuelve a apagar al refrescar.
+    var _cfgPatch={ perfil_publico_activo:_pubA };
+    if(_pubA && _sl) _cfgPatch.slug=_sl;
     var _extra={ perfil_publico_activo:_pubA };
     if(_pubA && _sl) _extra.slug=_sl;
     render();
-    saveCfg({}, _extra); // <-- persiste de inmediato (ese era el bug)
+    saveCfg(_cfgPatch, _extra);
     return;
   }
   if(act==="cfg-save-profile"){
@@ -4023,8 +4049,7 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo cambiar el estado de la coach."); });
     return;
   }
-  if(act.indexOf("cli-open:")===0){ state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; render(); window.scrollTo(0,0); return; }
-  if(act.indexOf("cli-open:")===0){ state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.cliPass="pw"+Math.random().toString(36).slice(2,8); render(); window.scrollTo(0,0); return; }
+  if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
   if(act==="cliweek-add"){ var _cwc=CLIENTS.filter(function(x){return String(x.id)===String(state.clienteSel);})[0]||{}; var _cur=state.cliWeek!=null?state.cliWeek:(_cwc.week||1); state.cliWeek=Math.max(4,_cur)+1; render(); return; }
@@ -5143,12 +5168,25 @@ function saveCfg(cfgPatch, usuariosExtra){
   var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; }
   for(var j in cfgPatch){ if(cfgPatch.hasOwnProperty(j)) merged[j]=cfgPatch[j]; }
   var body={ configuracion: merged }; if(usuariosExtra){ for(var u in usuariosExtra){ if(usuariosExtra.hasOwnProperty(u)) body[u]=usuariosExtra[u]; } }
+  function _ok(){
+    RCFG=merged;
+    try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; if(usuariosExtra&&usuariosExtra.nombre)mu.nombre=usuariosExtra.nombre; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
+    if(usuariosExtra&&usuariosExtra.nombre){ COACH.name=usuariosExtra.nombre; COACH.firstName=(""+usuariosExtra.nombre).split(" ")[0]; }
+    toast("Configuración guardada ✓"); render();
+  }
   _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",body)
-    .then(function(r){ if(!r.ok) throw 0;
-      RCFG=merged;
-      try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; if(usuariosExtra&&usuariosExtra.nombre)mu.nombre=usuariosExtra.nombre; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
-      if(usuariosExtra&&usuariosExtra.nombre){ COACH.name=usuariosExtra.nombre; COACH.firstName=(""+usuariosExtra.nombre).split(" ")[0]; }
-      toast("Configuración guardada ✓"); render(); })
+    .then(function(r){
+      if(r.ok){ _ok(); return; }
+      // Fallback: si las columnas top-level fallan (p.ej. slug UNIQUE ya usado,
+      // o la columna no existe en este entorno), reintentamos guardando SOLO
+      // configuracion. Así el estado igual persiste (lo leemos desde ahí) y el
+      // toggle no "se sale" al refrescar.
+      if(usuariosExtra){
+        return _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged})
+          .then(function(r2){ if(!r2.ok) throw 0; _ok(); });
+      }
+      throw 0;
+    })
     .catch(function(){ alert("No se pudo guardar la configuración."); });
 }
 var _stripeReq=false;
@@ -5281,7 +5319,7 @@ function loadReal(){
     startMsgPolling();
     RCFG = usr.configuracion || ME.configuracion || {};
     if(RCFG && RCFG.color_marca) state.brandAccent = RCFG.color_marca;
-    RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), perfil_publico_activo:!!usr.perfil_publico_activo };
+    RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), perfil_publico_activo:!!(usr.perfil_publico_activo || (RCFG&&RCFG.perfil_publico_activo)) };
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
     if(RCFG && RCFG.color_marca) state.brandAccent=RCFG.color_marca;
     if(RCFG) state.pathwayOptIn = !!RCFG.pathway_optin;
