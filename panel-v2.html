@@ -190,6 +190,44 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .cp-todo-time.is-soon{background:var(--pw-success-bg);color:var(--pw-bosque);}
 .cp-todo-arrow{width:14px;height:14px;color:var(--pw-text-muted);}
 
+/* ═══ Home calendar (Resumen) — calendario propio, sin iframe ═══ */
+.cph-wrap{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;}
+@media(max-width:900px){.cph-wrap{grid-template-columns:1fr;}}
+.cph-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-bottom:1px solid var(--pw-border);}
+.cph-month{font-family:var(--pw-serif);font-size:20px;font-weight:500;letter-spacing:-.5px;color:var(--pw-carbon);}
+.cph-month .dot{color:var(--pw-sendero);}
+.cph-nav{display:flex;gap:8px;}
+.cph-nav button{width:32px;height:32px;border-radius:9px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-text-soft);font-size:15px;display:inline-flex;align-items:center;justify-content:center;transition:all .15s var(--pw-ease);}
+.cph-nav button:hover{border-color:var(--pw-border-strong);color:var(--pw-carbon);}
+.cph-nav .hoy{width:auto;padding:0 14px;font-size:12.5px;font-weight:600;color:var(--pw-bosque);}
+.cph-body{padding:12px 16px 16px;}
+.cph-dows{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px;}
+.cph-dows span{font-size:10px;font-weight:700;color:var(--pw-text-muted);text-transform:uppercase;letter-spacing:.6px;padding-left:4px;}
+.cph-grid{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:84px;gap:6px;}
+.cph-day{border:1px solid var(--pw-border);border-radius:10px;padding:6px 7px;display:flex;flex-direction:column;gap:4px;background:#fff;overflow:hidden;}
+.cph-day.mut{background:var(--pw-niebla-2);border-color:transparent;}
+.cph-dn{font-size:12px;font-weight:600;color:var(--pw-carbon);}
+.cph-day.today{border:1.5px solid var(--pw-bosque);box-shadow:0 0 0 3px rgba(82,183,136,.16);}
+.cph-day.today .cph-dn{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:50%;background:var(--pw-bosque);color:#fff;}
+.cph-ev{font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:7px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
+.cph-ev.g{background:var(--pw-success-bg);color:var(--pw-bosque);}
+.cph-ev.b{background:rgba(94,129,172,.16);color:#3E5B86;}
+.cph-ev.y{background:var(--pw-warning-bg);color:#8E7A35;}
+.cph-ev.t{background:rgba(46,117,135,.14);color:#2E7587;}
+.cph-ev.p{background:rgba(192,117,110,.14);color:var(--pw-danger);}
+.cph-ev.more{background:transparent;color:var(--pw-text-muted);padding:0 7px;cursor:default;}
+.cph-side{padding:0;}
+.cph-side-hd{padding:14px 18px 12px;border-bottom:1px solid var(--pw-border);}
+.cph-up{display:flex;gap:12px;padding:12px 18px;border-bottom:1px solid var(--pw-border);align-items:center;cursor:pointer;transition:background .12s;}
+.cph-up:last-child{border-bottom:none;}
+.cph-up:hover{background:var(--pw-niebla-2);}
+.cph-date{flex-shrink:0;width:40px;text-align:center;}
+.cph-date .d{font-family:var(--pw-serif);font-size:19px;font-weight:600;line-height:1;color:var(--pw-carbon);}
+.cph-date .m{font-size:9px;font-weight:700;color:var(--pw-text-muted);text-transform:uppercase;margin-top:2px;}
+.cph-up-name{font-size:13px;font-weight:600;color:var(--pw-carbon);}
+.cph-up-meta{font-size:11px;color:var(--pw-text-soft);margin-top:2px;}
+.cph-empty{padding:22px 18px;text-align:center;font-size:12.5px;color:var(--pw-text-soft);line-height:1.55;}
+
 /* ═══ Clientes ═══ */
 .cp-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
 .cp-chip{padding:8px 16px;border:1px solid var(--pw-border);border-radius:100px;background:#fff;color:var(--pw-text-soft);font-size:13px;font-weight:500;transition:all .15s var(--pw-ease);}
@@ -917,6 +955,7 @@ function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,
 /* ═══ App state ═══ */
 var state = {
   section: "resumen",
+  homeCalOff: 0,  // offset de mes del calendario del home (0 = mes actual)
   demoTipo: (function(){ try{ return localStorage.getItem("pw_demo_tipo")||null; }catch(e){ return null; } })(),
   cliFilter: "all",
   cfg: "profile",
@@ -1216,82 +1255,78 @@ function coachPath(){
     "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+rows+"</div></div>";
 }
 function viewResumen(){
-  var greet = "Buenos días";
-  var pendingReview = CLIENTS.filter(function(c){return c.reportState==="pending";}).length;
-  var stale = CLIENTS.filter(function(c){return c.last.state==="stale";});
-  function _score(c){ return (c.last&&c.last.state==="stale"?3:0)+(c.reportState==="pending"?2:0)+(c.cvState==="pending"?1:0); }
-  var todo = CLIENTS.slice().sort(function(a,b){ return _score(b)-_score(a); }).slice(0,5).map(function(c){
-    var head,meta,time,ts;
-    if(c.last&&c.last.state==="stale"){ head="Reconectar con "+c.name; meta="Sin actividad · "+c.last.txt; time="Hoy"; ts="is-now"; }
-    else if(c.reportState==="pending"){ head="Revisar "+(((c.raw&&c.raw.nicho)&&c.raw.nicho!=='carrera')?"análisis":"informe")+" de "+c.name; meta="Semana "+c.week+" · pendiente de devolución"; time="Hoy"; ts="is-today"; }
-    else if(c.cvState==="pending" && (!(c.raw&&c.raw.nicho) || c.raw.nicho==='carrera')){ head="Aprobar CV de "+c.name; meta="Semana "+c.week+" · esperando tu revisión"; time="Hoy"; ts="is-today"; }
-    else { head="Seguimiento de "+c.name; meta=(c.role||"Cliente")+" · Semana "+c.week+"/4"; time="Esta semana"; ts="is-soon"; }
-    return { c:c, head:head, meta:meta, time:time, ts:ts };
-  });
-  var todoRows = todo.map(function(t){
-    return "<div class='cp-todo-row'><img src='"+t.c.photo+"' alt='"+esc(t.c.name)+"'>"+
-      "<div class='cp-todo-body'><div class='cp-todo-head'>"+esc(t.head)+"</div><div class='cp-todo-meta'>"+esc(t.meta)+"</div></div>"+
-      "<span class='cp-todo-time "+t.ts+"'>"+esc(t.time)+"</span>"+
-      svg(IC.chevR,14,"class='cp-todo-arrow'")+"</div>";
-  }).join("");
-  var _emb=(REAL&&RCFG&&RCFG.calendar_embed_url)?RCFG.calendar_embed_url:"";
-  var _calU=(REAL&&RCFG&&RCFG.calendly_url)?RCFG.calendly_url:"";
-  var _nx=null,_now=Date.now();
-  CLIENTS.forEach(function(cc){ (cc.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var d=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")); if(isNaN(d)||d.getTime()<_now)return; if(!_nx||d.getTime()<_nx.t)_nx={t:d.getTime(),c:cc,s:s}; }); });
-  var _nxTxt=_nx?(esc(_nx.c.name)+" · "+esc(_nx.s.fecha)+(_nx.s.hora?" · "+esc(_nx.s.hora):"")):"Sin reuniones agendadas";
-  var _todayStr=(function(){var d=new Date();return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);})();
-  var _today=[];
-  CLIENTS.forEach(function(cc){ (cc.ses||[]).forEach(function(s){ if(!s||!s.fecha||(""+s.fecha)!==_todayStr)return; _today.push({c:cc,s:s}); }); });
-  _today.sort(function(a,b){ return (""+(a.s.hora||"")).localeCompare(""+(b.s.hora||"")); });
-  var calLeft=_emb
-    ? "<iframe src='"+esc(_emb)+"' style='border:0;width:100%;height:340px;display:block;border-radius:12px' loading='lazy'></iframe>"
-    : "<div style='background:var(--pw-niebla-2);border-radius:12px;padding:28px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Pon tu link para agendar (Calendly, Google…) en <strong>Configuración</strong> para verlo aquí.</div>";
-  var calCard="<div class='cp-card cp-cal-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mi calendario<span class='dot'>.</span></h3>"+
-      (_calU?"<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='open' data-url='"+esc(_calU)+"'>Abrir agenda</button>":"<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='gocal'>Configurar</button>")+"</div>"+
-    "<div class='cp-card-pad' style='display:flex;gap:18px;flex-wrap:wrap'>"+
-      "<div style='flex:2;min-width:280px'>"+calLeft+"</div>"+
-      "<div style='flex:1;min-width:200px;display:flex;flex-direction:column;gap:8px'>"+
-        "<div class='cp-eyebrow'>Próxima reunión</div>"+
-        "<div style='font-family:var(--pw-serif);font-size:17px;color:var(--pw-carbon);line-height:1.3'>"+_nxTxt+"</div>"+
-        (_calU?"<a href='"+esc(_calU)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='margin-top:6px;text-decoration:none'>Agendar sesión</a>":"")+
-      "</div></div></div>";
-  // Coach sin clientes: en vez de una home casi vacía, mostramos una
-  // bienvenida con el primer paso (sumar cliente) + atajos de configuración.
-  var emptyState = "";
-  if(REAL && (!CLIENTS || CLIENTS.length===0)){
-    emptyState = "<div class='cp-card' style='margin-top:16px'>"+
-      "<div class='cp-card-pad' style='text-align:center;padding:32px 22px'>"+
-        "<div style='font-family:var(--pw-serif);font-size:20px;font-weight:500;color:var(--pw-carbon)'>Tu panel está listo</div>"+
-        "<p style='font-size:13px;color:var(--pw-text-soft);line-height:1.6;max-width:420px;margin:8px auto 18px'>Todavía no tienes clientes. Cuando sumes a alguien, verás aquí su progreso y lo que necesita tu atención.</p>"+
-        "<button class='cp-btn cp-btn-primary' data-act='cli-new'>"+svg(IC.plus,14)+" Sumar tu primer cliente</button>"+
-        "<div style='display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:14px'>"+
-          "<button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='asist-go' data-go='config|profile'>Completar mi perfil</button>"+
-          "<button class='cp-btn cp-btn-ghost' style='height:34px;font-size:12px;padding:0 14px' data-act='asist-go' data-go='config|integ'>Conectar cobro</button>"+
-        "</div>"+
-      "</div></div>";
-  }
-  // Lista compacta de clientes — es el contenido principal de la home (y lo
-  // único en móvil, donde el calendario se oculta, para que no quede en blanco).
-  var cliBlock = "";
-  if(CLIENTS && CLIENTS.length){
-    var cliRows = CLIENTS.slice(0,10).map(function(c){
-      var stTxt = (c.last && c.last.txt && c.last.txt!=="—") ? c.last.txt : (c.role||"Cliente");
-      var stCls = (c.last && c.last.state==="stale") ? "is-now" : "is-soon";
-      return "<div class='cp-todo-row' data-act='cli-open:"+esc(c.id)+"' style='cursor:pointer'>"+
-        avImg(c.photo,c.name,"style='width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0'")+
-        "<div class='cp-todo-body'><div class='cp-todo-head'>"+esc(c.name)+"</div><div class='cp-todo-meta'>"+esc(stTxt)+"</div></div>"+
-        "<span class='cp-todo-time "+stCls+"'>Sem "+(c.week||1)+"</span>"+
-        svg(IC.chevR,14,"class='cp-todo-arrow'")+"</div>";
-    }).join("");
-    cliBlock = "<div class='cp-card' style='margin-top:16px'>"+
-      "<div class='cp-card-hd'><h3 class='cp-card-title'>Tus clientes<span class='dot'>.</span></h3>"+
-        "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='nav:clientes'>Ver todos</button></div>"+
-      "<div>"+cliRows+"</div></div>";
-  }
-  return "<div class='cp-greet'>"+avImg(COACH.photo,COACH.name,"")+
+  // Saludo segun la hora real (antes decia "Buenos dias" siempre).
+  var _h=new Date().getHours();
+  var greet = _h<12 ? "Buenos días" : (_h<20 ? "Buenas tardes" : "Buenas noches");
+  // Proxima sesion + cuantas hay esta semana (de TODOS los clientes).
+  var _now=Date.now(), _wkEnd=_now+7*86400000, _nx=null, _wk=0;
+  CLIENTS.forEach(function(cc){ (cc.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var d=new Date((""+s.fecha).slice(0,10)+(s.hora?"T"+s.hora:"T23:59")); var t=d.getTime(); if(isNaN(t)||t<_now)return; if(t<=_wkEnd)_wk++; if(!_nx||t<_nx.t)_nx={t:t,c:cc,s:s}; }); });
+  var _nxTxt=_nx?(esc(_nx.c.name)+" · "+esc((""+_nx.s.fecha).slice(0,10))+(_nx.s.hora?" · "+esc(_nx.s.hora):"")):"";
+  var sub = _wk>0
+    ? ("Tenés "+_wk+" sesión"+(_wk===1?"":"es")+" esta semana"+(_nxTxt?" · próxima: "+_nxTxt:""))
+    : "No tenés sesiones agendadas esta semana";
+  var greetHtml = "<div class='cp-greet'>"+avImg(COACH.photo,COACH.name,"")+
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+"<span class='dot'>.</span></h1>"+
-      "<div class='cp-greet-sub'>"+pendingReview+" pendiente"+(pendingReview===1?"":"s")+(_nx?" · "+_nxTxt:"")+"</div></div></div>"+
-    emptyState+cliBlock+calCard;
+      "<div class='cp-greet-sub'>"+sub+"</div></div></div>";
+  return greetHtml + _homeCalHtml();
+}
+
+// Calendario propio del home: se dibuja con las sesiones de TODOS los clientes
+// (sin iframe, sin configuracion). Asi la home nunca queda en blanco aunque el
+// coach no haya pegado un link de Calendly/Google. Click en una sesion abre la
+// ficha del cliente. Navegacion de mes con state.homeCalOff.
+function _homeCalHtml(){
+  function pad(n){ return ("0"+n).slice(-2); }
+  function lymd(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+  // Color estable por cliente (para distinguir de un vistazo en la grilla).
+  var COLS=["g","b","y","t","p"], colMap={}, ci=0;
+  CLIENTS.forEach(function(c){ if(!(c.id in colMap)){ colMap[c.id]=COLS[ci%COLS.length]; ci++; } });
+  function colOf(id){ return colMap[id]||"g"; }
+  // Juntar sesiones de todos los clientes.
+  var evs=[];
+  CLIENTS.forEach(function(c){ (c.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var k=(""+s.fecha).slice(0,10); var first=(""+(c.name||"Cliente")).split(" ")[0]; evs.push({ymd:k,hora:(s.hora||""),name:(c.name||"Cliente"),first:first,cid:c.id,tema:(s.trabajado||"")}); }); });
+  var byDay={}; evs.forEach(function(e){ (byDay[e.ymd]=byDay[e.ymd]||[]).push(e); });
+  Object.keys(byDay).forEach(function(k){ byDay[k].sort(function(a,b){ return (""+a.hora).localeCompare(""+b.hora); }); });
+  // Mes a mostrar (offset desde el actual).
+  var base=new Date(); base.setDate(1); base.setMonth(base.getMonth()+(state.homeCalOff||0));
+  var y=base.getFullYear(), m=base.getMonth();
+  var MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  var startDow=(new Date(y,m,1).getDay()+6)%7, days=new Date(y,m+1,0).getDate();
+  var todayK=lymd(new Date());
+  var cells="";
+  for(var i=0;i<startDow;i++) cells+="<div class='cph-day mut'></div>";
+  for(var d=1;d<=days;d++){
+    var key=y+"-"+pad(m+1)+"-"+pad(d);
+    var list=byDay[key]||[], chips="";
+    list.slice(0,3).forEach(function(e){ chips+="<span class='cph-ev "+colOf(e.cid)+"' data-act='cli-open:"+esc(e.cid)+"' title='"+esc(e.name)+(e.tema?" — "+esc(e.tema):"")+"'>"+(e.hora?esc(e.hora)+" ":"")+esc(e.first)+"</span>"; });
+    if(list.length>3) chips+="<span class='cph-ev more'>+"+(list.length-3)+" más</span>";
+    cells+="<div class='cph-day"+(key===todayK?" today":"")+"'><span class='cph-dn'>"+d+"</span>"+chips+"</div>";
+  }
+  var calCard="<div class='cp-card'>"+
+    "<div class='cph-top'><div class='cph-month'>"+MESES[m]+" "+y+"<span class='dot'>.</span></div>"+
+      "<div class='cph-nav'><button class='hoy' data-act='homecal-today'>Hoy</button>"+
+        "<button data-act='homecal-prev' aria-label='Mes anterior'>‹</button>"+
+        "<button data-act='homecal-next' aria-label='Mes siguiente'>›</button></div></div>"+
+    "<div class='cph-body'>"+
+      "<div class='cph-dows'><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div>"+
+      "<div class='cph-grid'>"+cells+"</div></div></div>";
+  // Panel lateral: proximas sesiones (desde ahora).
+  var up=evs.filter(function(e){ var dt=new Date(e.ymd+(e.hora?"T"+e.hora:"T23:59")); return !isNaN(dt.getTime())&&dt.getTime()>=Date.now()-3600000; })
+    .sort(function(a,b){ return (a.ymd+(a.hora||"")).localeCompare(b.ymd+(b.hora||"")); }).slice(0,6);
+  var MES3=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  var upHtml;
+  if(up.length){
+    upHtml=up.map(function(e){ var p=e.ymd.split("-"); var dnum=parseInt(p[2],10), mm=MES3[parseInt(p[1],10)-1];
+      return "<div class='cph-up' data-act='cli-open:"+esc(e.cid)+"'><div class='cph-date'><div class='d'>"+dnum+"</div><div class='m'>"+mm+"</div></div>"+
+        "<div style='flex:1;min-width:0'><div class='cph-up-name'>"+esc(e.name)+"</div><div class='cph-up-meta'>"+(e.hora?esc(e.hora)+" · ":"")+(e.tema?esc(e.tema):"Sesión")+"</div></div></div>";
+    }).join("");
+  } else {
+    upHtml="<div class='cph-empty'>"+(CLIENTS.length?"No tenés sesiones agendadas.<br>Agendá una desde la ficha de un cliente.":"Sumá tu primer cliente para empezar a agendar sesiones.")+"</div>";
+  }
+  var sideCard="<div class='cp-card cph-side'>"+
+    "<div class='cph-side-hd'><div class='cp-eyebrow'>Lo que viene</div><h3 class='cp-card-title' style='margin-top:3px'>Próximas sesiones<span class='dot'>.</span></h3></div>"+
+    upHtml+"</div>";
+  return "<div class='cph-wrap'>"+calCard+sideCard+"</div>";
 }
 
 /* ═══ Clientes ═══ */
@@ -3639,6 +3674,9 @@ document.addEventListener("click", function(ev){
     render(); window.scrollTo(0,0); return;
   }
   if(act.indexOf("nav:")===0){ state.section = act.slice(4); render(); window.scrollTo(0,0); return; }
+  if(act==="homecal-prev"){ state.homeCalOff=(state.homeCalOff||0)-1; render(); return; }
+  if(act==="homecal-next"){ state.homeCalOff=(state.homeCalOff||0)+1; render(); return; }
+  if(act==="homecal-today"){ state.homeCalOff=0; render(); return; }
   if(act.indexOf("cli:")===0){ state.cliFilter = act.slice(4); render(); return; }
   if(act.indexOf("cfg:")===0){ state.cfg = act.slice(4); render(); return; }
   if(act==="pub-toggle"){
