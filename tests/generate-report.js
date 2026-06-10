@@ -134,6 +134,30 @@ function generateReport(results) {
   report += `  ⏭️  Omitidos:      ${skipped}\n`;
   report += `  Tasa de éxito:     ${totalTests > 0 ? Math.round((passed / totalTests) * 100) : 0}%\n\n`;
 
+  // Leer análisis de backup si existe (lo genera tests/backup-check.js)
+  let backup = null;
+  try {
+    const backupPath = path.join(__dirname, 'results', 'backup-status.json');
+    if (fs.existsSync(backupPath)) backup = JSON.parse(fs.readFileSync(backupPath, 'utf-8'));
+  } catch (e) { /* sin análisis de backup */ }
+
+  if (backup) {
+    const bEmoji = backup.status === 'ok' ? '✅' : backup.status === 'warning' ? '⚠️' : '🔴';
+    const jobState = backup.job?.state || 'desconocido';
+    const jobLabel = {
+      ok: 'OK', fallo: 'FALLÓ', atrasado: 'ATRASADO', en_curso: 'en curso', desconocido: 'no verificado',
+    }[jobState] || jobState;
+    report += `💾 ANÁLISIS DE BACKUP: ${bEmoji} ${backup.status.toUpperCase()}\n`;
+    report += `─────────────────────────────────────────\n`;
+    report += `  Último job:  ${jobLabel}`;
+    if (backup.job?.ageHours != null) report += ` (hace ${backup.job.ageHours}h)`;
+    if (backup.job?.workflow) report += ` · ${backup.job.workflow}`;
+    report += `\n`;
+    report += `  Tablas:      ${backup.summary?.tablasOk ?? '?'}/${backup.summary?.tablasTotal ?? '?'} accesibles\n`;
+    for (const n of (backup.notes || [])) report += `  ⚠️  ${n}\n`;
+    report += `\n`;
+  }
+
   // Leer auto-fixes si existen
   let autoFixesTxt = [];
   let pendingIssuesTxt = [];
@@ -220,6 +244,7 @@ function generateReport(results) {
     warnings,
     passedTests,
     suiteGroups,
+    backup,
   });
 
   // Leer pending issues del auto-fixer para el Issue de GitHub
@@ -288,13 +313,13 @@ function generateReport(results) {
     ? `🔴 Testing diario: ${issueFailures.length} problema(s) necesitan revisión — ${dateStr}`
     : '';
 
-  return { text: report, html: htmlReport, failed, passed, totalTests, issueBody, issueTitle };
+  return { text: report, html: htmlReport, failed, passed, totalTests, issueBody, issueTitle, backup };
 }
 
 function generateHTMLReport(data) {
   const {
     dateStr, timeStr, healthEmoji, totalTests, passed, failed,
-    skipped, failures, warnings, suiteGroups,
+    skipped, failures, warnings, suiteGroups, backup,
   } = data;
 
   const successRate = totalTests > 0 ? Math.round((passed / totalTests) * 100) : 0;
@@ -372,6 +397,45 @@ function generateHTMLReport(data) {
       </div>`;
   }
 
+  // Sección de análisis de backup (la genera tests/backup-check.js)
+  let backupHTML = '';
+  if (backup) {
+    const bColor = backup.status === 'ok' ? '#4a7c5f' : backup.status === 'warning' ? '#b45309' : '#c0756e';
+    const bBg = backup.status === 'ok' ? '#E1F5EE' : backup.status === 'warning' ? '#fef3e2' : '#fdf6f6';
+    const bEmoji = backup.status === 'ok' ? '✅' : backup.status === 'warning' ? '⚠️' : '🔴';
+    const jobState = backup.job?.state || 'desconocido';
+    const jobLabel = {
+      ok: 'OK', fallo: 'Falló', atrasado: 'Atrasado', en_curso: 'En curso', desconocido: 'No verificado',
+    }[jobState] || jobState;
+    const ageTxt = backup.job?.ageHours != null ? ` · hace ${backup.job.ageHours}h` : '';
+    const jobUrl = backup.job?.url;
+    const tablasOk = backup.summary?.tablasOk ?? '?';
+    const tablasTotal = backup.summary?.tablasTotal ?? '?';
+    const notesHTML = (backup.notes || []).map(n =>
+      `<div style="font-size:11px;color:${bColor};margin-top:6px;">⚠️ ${n}</div>`
+    ).join('');
+
+    backupHTML = `
+      <div style="margin-top:20px;background:${bBg};border-radius:10px;padding:14px 16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <h3 style="font-size:14px;margin:0;color:#1a1a1a;">💾 Análisis de Backup</h3>
+          <span style="font-size:11px;font-weight:700;color:${bColor};">${bEmoji} ${backup.status.toUpperCase()}</span>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <div style="flex:1;background:#fff;border-radius:6px;padding:8px 10px;">
+            <div style="font-size:10px;color:#999;text-transform:uppercase;font-weight:600;">Último job</div>
+            <div style="font-size:13px;font-weight:700;color:${bColor};">${jobLabel}<span style="font-size:10px;color:#999;font-weight:400;">${ageTxt}</span></div>
+          </div>
+          <div style="flex:1;background:#fff;border-radius:6px;padding:8px 10px;">
+            <div style="font-size:10px;color:#999;text-transform:uppercase;font-weight:600;">Tablas respaldables</div>
+            <div style="font-size:13px;font-weight:700;color:#1a1a1a;">${tablasOk}/${tablasTotal} accesibles</div>
+          </div>
+        </div>
+        ${notesHTML}
+        ${jobUrl ? `<div style="margin-top:8px;"><a href="${jobUrl}" style="font-size:11px;color:${bColor};">Ver el job de backup →</a></div>` : ''}
+      </div>`;
+  }
+
   let passedHTML = Object.entries(suiteGroups).map(([suite, tests]) => `
     <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">
       <span>${suite}</span>
@@ -429,6 +493,7 @@ function generateHTMLReport(data) {
         <div style="background:${statusColor};height:6px;border-radius:4px;width:${successRate}%;"></div>
       </div>
 
+      ${backupHTML}
       ${autoFixesHTML}
       ${pendingHTML}
       ${failuresHTML}
@@ -454,7 +519,7 @@ function generateHTMLReport(data) {
 // Main
 async function main() {
   const results = await readResults();
-  const { text, html, failed, totalTests, issueBody, issueTitle } = generateReport(results);
+  const { text, html, failed, totalTests, issueBody, issueTitle, backup } = generateReport(results);
 
   // Imprimir reporte en consola
   console.log(text);
@@ -466,6 +531,14 @@ async function main() {
   fs.writeFileSync(path.join(outputDir, 'report.txt'), text);
   fs.writeFileSync(path.join(outputDir, 'report.html'), html);
 
+  // Estado de los tests…
+  let status = failed === 0 ? 'healthy' : failed <= 3 ? 'warning' : 'critical';
+  // …pero si el backup está en problemas, el reporte no puede salir "saludable".
+  if (backup) {
+    if (backup.status === 'critical') status = 'critical';
+    else if (backup.status === 'warning' && status === 'healthy') status = 'warning';
+  }
+
   // Generar resumen para GitHub Actions
   const summary = {
     date: new Date().toISOString(),
@@ -473,7 +546,8 @@ async function main() {
     passed: totalTests - failed,
     failed,
     successRate: totalTests > 0 ? Math.round(((totalTests - failed) / totalTests) * 100) : 0,
-    status: failed === 0 ? 'healthy' : failed <= 3 ? 'warning' : 'critical',
+    status,
+    backupStatus: backup ? backup.status : 'desconocido',
   };
 
   fs.writeFileSync(path.join(outputDir, 'summary.json'), JSON.stringify(summary, null, 2));
