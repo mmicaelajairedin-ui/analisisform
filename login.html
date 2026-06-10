@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<script src="pw-observe.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
@@ -357,8 +358,18 @@ async function entrar(){
     if(usuario.rol==='coach'||usuario.rol==='admin'){
       window.location.href=BASE+'/panel-v2.html?'+_v;
     } else {
-      // Clientes de nicho (fitness/financiero) van a su portal; carrera = cliente.html (sin cambios).
-      var _ct=(usuario.configuracion&&usuario.configuracion.coach_type)||'carrera';
+      // Clientes de nicho (fitness/financiero) van a su portal; carrera = cliente.html.
+      // El nicho real está en candidatos.nicho (la config del usuario puede no
+      // tenerlo). Lo leemos con el cliente de Supabase (lleva el JWT → pasa RLS).
+      var _ct=(usuario.configuracion&&usuario.configuracion.coach_type)||'';
+      if(!_ct || _ct==='carrera'){
+        try{
+          var _sc=window.supabase.createClient(SB,KEY);
+          var _cq=await _sc.from('candidatos').select('nicho').eq('email',email).limit(1);
+          if(_cq && _cq.data && _cq.data.length && _cq.data[0].nicho) _ct=_cq.data[0].nicho;
+        }catch(_e){}
+      }
+      if(!_ct)_ct='carrera';
       var _em='&email='+encodeURIComponent((''+(usuario.email||'')).toLowerCase().trim());
       if(_ct==='fitness'){ window.location.href=BASE+'/pathway-fit-cliente.html?'+_v+_em; }
       else if(_ct==='financiero'){ window.location.href=BASE+'/pathway-fin-cliente.html?'+_v+_em; }

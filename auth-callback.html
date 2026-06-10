@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<script src="pw-observe.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon-app.svg?v=2" type="image/svg+xml">
@@ -150,6 +151,7 @@ async function handleCallback(){
   }
 
   var user = session.user;
+  var SJWT = session.access_token || KEY; // JWT del usuario: lecturas/updates a candidatos pasan RLS
   var email = (user.email || '').toLowerCase();
   if(!email){
     return showError('Google no compartió tu email. Verifica los permisos otorgados.');
@@ -184,7 +186,7 @@ async function handleCallback(){
   // Chequear si el usuario existe en nuestra tabla usuarios
   var existingUser = null;
   try {
-    var checkRes = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,email,rol,nombre,activo,configuracion', {
+    var checkRes = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,email,rol,nombre,activo,configuracion,auth_id', {
       headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY }
     });
     var existingArr = await checkRes.json();
@@ -195,6 +197,47 @@ async function handleCallback(){
     return showError('Error consultando tu cuenta: ' + e.message);
   }
 
+  // ── Merge por persona (una persona, varios emails) ───────────────────────
+  // Si el email NO es el primario de ningún usuario, ver si está registrado
+  // como ALIAS de uno existente (configuracion.emails_alias). Una misma
+  // persona puede tener su email de negocio + el Gmail con el que entra por
+  // Google; ambos deben caer SIEMPRE en la misma cuenta. Sin esto, el login
+  // con el segundo email creaba un usuario nuevo (coach/cliente duplicado).
+  if(!existingUser){
+    try {
+      var aliasQ = encodeURIComponent(JSON.stringify({ emails_alias: [email] }));
+      var aliasRes = await fetch(SB + '/rest/v1/usuarios?configuracion=cs.' + aliasQ + '&select=id,email,rol,nombre,activo,configuracion,auth_id&limit=1', {
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY }
+      });
+      var aliasArr = await aliasRes.json();
+      if(Array.isArray(aliasArr) && aliasArr.length > 0){
+        existingUser = aliasArr[0];
+      }
+    } catch(e) {}
+  }
+
+  // Si NO está en usuarios pero SÍ en candidatos, es un CLIENTE que el coach ya
+  // cargó pero que todavía no tenía login. Le creamos su acceso como CLIENTE
+  // (no como coach) y seguimos el flujo normal -> el routing por rol lo manda a
+  // su portal. Así cualquier cliente puede entrar con Google sin contraseña.
+  if(!existingUser){
+    try {
+      var candCheck = await fetch(SB + '/rest/v1/candidatos?email=eq.' + encodeURIComponent(email) + '&select=id,nicho&limit=1', {
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT }
+      });
+      var candArr = await candCheck.json();
+      if(Array.isArray(candArr) && candArr.length){
+        var cliRes = await fetch(SB + '/rest/v1/usuarios', {
+          method: 'POST',
+          headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+          body: JSON.stringify({ email: email, password_hash: null, rol: 'cliente', nombre: name, activo: true,
+            configuracion: { auth_provider: 'google', coach_type: (candArr[0].nicho || 'carrera'), from_google: true, last_login: new Date().toISOString() } })
+        });
+        if(cliRes.ok){ var _cc = await cliRes.json(); existingUser = Array.isArray(_cc) ? _cc[0] : _cc; }
+      }
+    } catch(e) {}
+  }
+
   var isNew = !existingUser;
   var usuario;
 
@@ -203,7 +246,12 @@ async function handleCallback(){
     usuario = existingUser;
     var cfg = usuario.configuracion || {};
     if(cfg.auth_provider !== 'google'){ cfg.auth_provider = 'google'; }
-    if(photoUrl && cfg.foto_perfil !== photoUrl){ cfg.foto_perfil = photoUrl; }
+    // El panel lee la foto del coach desde configuracion.foto_url (no foto_perfil).
+    // Ponemos/REFRESCAMOS la de Google si el coach no tiene foto, O si la que
+    // tiene es una URL de Google (esas vencen/rotan, hay que refrescarlas en cada
+    // login para que no queden rotas). Si subio una propia (no-Google), se
+    // respeta y NO se pisa. (Default: Google; prioridad: la elegida a mano.)
+    if(photoUrl && (!cfg.foto_url || /googleusercontent\.com/.test(cfg.foto_url))){ cfg.foto_url = photoUrl; }
     cfg.last_login = new Date().toISOString();
     // Update best-effort (incluye last_login → columna "Último acceso" del
     // panel admin de coaches). No bloquea el flow.
@@ -226,7 +274,7 @@ async function handleCallback(){
       var newCfg = {
         coach_type: _ct,
         auth_provider: 'google',
-        foto_perfil: photoUrl,
+        foto_url: photoUrl,
         last_login: new Date().toISOString(),
         from_google: true,
         from_popup: refIsPopup,
@@ -375,6 +423,20 @@ async function handleCallback(){
     }
   }
 
+  // Etapa 2 — ligar la cuenta a Supabase Auth (auth_id) para habilitar RLS.
+  // El login con email/contraseña ya lo hace via migrate-user-to-auth; acá lo
+  // hacemos para los que entran con Google (su auth_id = el id del usuario de la
+  // sesión de Supabase Auth que ya creó el OAuth). Best-effort, no bloquea.
+  try {
+    if(usuario && usuario.id && user.id && usuario.auth_id !== user.id){
+      fetch(SB + '/rest/v1/usuarios?id=eq.' + encodeURIComponent(usuario.id), {
+        method: 'PATCH',
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ auth_id: user.id })
+      }).catch(function(){});
+    }
+  } catch(e) {}
+
   // Guardar sesion en localStorage (mismo formato que login.html)
   localStorage.setItem('mj_user', JSON.stringify({
     id: usuario.id,
@@ -390,14 +452,42 @@ async function handleCallback(){
   //   - Cliente → /cliente.html
   // (Antes los nuevos via Google iban a Stripe. Con trial-sin-tarjeta, van
   //  directo al panel — el cobro se ofrece al final del trial.)
-  if(isNew){
-    setLoadingMsg('¡Te damos la bienvenida! Te llevamos al panel...');
+  var _v = (isNew ? 'welcome=1&v=' : 'v=') + Date.now();
+  var dest;
+  if(usuario.rol === 'cliente'){
+    setLoadingMsg('¡Hola! Te llevamos a tu espacio...');
+    // Google trae la foto del cliente: la ponemos en candidatos si no tiene, O si
+    // la que tiene es una URL de Google (esas vencen/rotan → se refrescan en cada
+    // login para que no queden rotas). Respeta una foto propia (no-Google).
+    // Best-effort, no bloquea el ingreso.
+    if(photoUrl){
+      fetch(SB + '/rest/v1/candidatos?email=eq.' + encodeURIComponent(email) + '&or=(foto_perfil.is.null,foto_perfil.like.*googleusercontent.com*)', {
+        method: 'PATCH',
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ foto_perfil: photoUrl })
+      }).catch(function(){});
+    }
+    // Cada cliente va al portal de SU nicho. La fuente real es candidatos.nicho
+    // (la config del usuario puede no tenerlo si lo creó el panel sin nicho).
+    var _ct = (usuario.configuracion && usuario.configuracion.coach_type) || '';
+    if(!_ct || _ct === 'carrera'){
+      try {
+        var _nr = await fetch(SB + '/rest/v1/candidatos?email=eq.' + encodeURIComponent(email) + '&select=nicho&limit=1', { headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT } });
+        var _na = await _nr.json();
+        if(Array.isArray(_na) && _na.length && _na[0].nicho) _ct = _na[0].nicho;
+      } catch(e) {}
+    }
+    if(!_ct) _ct = 'carrera';
+    var _em = '&email=' + encodeURIComponent((''+(usuario.email||'')).toLowerCase().trim());
+    if(_ct === 'fitness') dest = '/pathway-fit-cliente.html?' + _v + _em;
+    else if(_ct === 'financiero') dest = '/pathway-fin-cliente.html?' + _v + _em;
+    else dest = '/cliente.html?' + _v;
   } else {
-    setLoadingMsg('¡Hola de nuevo! Te llevamos al panel...');
+    setLoadingMsg(isNew ? '¡Te damos la bienvenida! Te llevamos al panel...' : '¡Hola de nuevo! Te llevamos al panel...');
+    dest = '/panel-v2.html?' + _v;
   }
-  var dest = (usuario.rol === 'cliente') ? '/cliente.html' : '/panel-v2.html';
   setTimeout(function(){
-    window.location.href = dest + (isNew ? '?welcome=1&v=' : '?v=') + Date.now();
+    window.location.href = dest;
   }, 800);
 }
 
