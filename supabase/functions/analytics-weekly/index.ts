@@ -549,6 +549,78 @@ function section(title: string, content: string, emoji = ""): string {
     ${content}`;
 }
 
+// Badge de tendencia: ▲ verde si subió, ▼ rojo si bajó, gris si no se puede
+// leer. Lee el string libre que devuelve Claude (ej "+12%", "-8%", "estable").
+function trendBadge(raw: unknown): string {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  const m = s.match(/([+-]?)\s*(\d+(?:[.,]\d+)?)\s*%/);
+  if (m) {
+    const down = m[1] === "-";
+    const color = down ? "#E76F51" : "#2A9D8F";
+    const arrow = down ? "▼" : "▲";
+    return `<span style="color:${color};font-weight:700;white-space:nowrap;">${arrow} ${esc(m[2])}%</span>`;
+  }
+  return `<span style="color:#999;">${esc(s)}</span>`;
+}
+
+// Una celda de KPI (número grande + etiqueta + sub-dato opcional).
+function kpiCell(value: string, label: string, sub = "", accent = "#1B4332"): string {
+  return `
+    <td width="50%" style="padding:6px;" valign="top">
+      <div style="background:#F7F5EF;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:22px;font-weight:800;color:${accent};line-height:1.1;">${value}</div>
+        <div style="font-size:10px;color:#888;font-weight:700;letter-spacing:.05em;text-transform:uppercase;margin-top:3px;">${esc(label)}</div>
+        ${sub ? `<div style="font-size:11px;color:#666;margin-top:2px;">${sub}</div>` : ""}
+      </div>
+    </td>`;
+}
+
+// Grilla de KPIs (tabla 2x2 — robusta en todos los clientes de email).
+function buildKpiCards(
+  summary: ReturnType<typeof summariseRows>,
+  conv: any,
+  analysis: any,
+): string {
+  // KPI de conversión cambia según el sitio.
+  let convValue = "—";
+  let convLabel = "Conversión";
+  let convSub = "";
+  let convAccent = "#1B4332";
+  if (conv && "coaches_pagantes" in conv) {
+    const ventas = (conv.coaches_pagantes ?? 0) + (conv.pack_express_compras ?? 0);
+    convValue = `💰 ${ventas}`;
+    convLabel = "Ventas reales";
+    convSub = `${conv.coaches_registrados ?? 0} reg · ${conv.coaches_trial_activado ?? 0} trials`;
+    convAccent = ventas > 0 ? "#2A9D8F" : "#1B4332";
+  } else if (conv && "llamadas_agendadas" in conv) {
+    convValue = `📞 ${conv.llamadas_activas ?? 0}`;
+    convLabel = "Llamadas activas";
+    convSub = `${conv.llamadas_agendadas ?? 0} agendadas · ${conv.llamadas_canceladas ?? 0} cancel.`;
+    convAccent = (conv.llamadas_activas ?? 0) > 0 ? "#2A9D8F" : "#1B4332";
+  } else {
+    convValue = fmtNum(summary.totalRequests);
+    convLabel = "Requests";
+  }
+
+  const trend = trendBadge(analysis?.comparacion_semana_anterior);
+  const visitsSub = trend
+    ? `${trend} <span style="color:#999;">vs sem. ant.</span>`
+    : `${fmtNum(summary.avgUniquesPerDay)}/día`;
+
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:6px 0 2px;border-collapse:collapse;">
+      <tr>
+        ${kpiCell(fmtNum(summary.totalUniques), "Visitas · 7 días", visitsSub)}
+        ${kpiCell(convValue, convLabel, convSub, convAccent)}
+      </tr>
+      <tr>
+        ${kpiCell(`${summary.cachePct}%`, "Cache hit", "", "#1B4332")}
+        ${kpiCell(fmtNum(summary.peakDay.uniques), "Pico del día", esc(summary.peakDay.date))}
+      </tr>
+    </table>`;
+}
+
 function buildFullEmailHtml(
   periodStart: string,
   periodEnd: string,
@@ -614,31 +686,36 @@ function buildFullEmailHtml(
         ? verifs.map((v) => `<div style="font-size:11px;color:#666;line-height:1.5;margin:4px 0;">${v}</div>`).join("")
         : "";
 
+      const tendencia = a.tendencia_4_semanas
+        ? `<div style="font-size:11px;color:#999;margin:2px 0 4px;">Tendencia 4 semanas: <strong style="color:#666;">${esc(a.tendencia_4_semanas)}</strong></div>`
+        : "";
+
       return `
         <div style="margin:18px 0;padding:18px;background:#fff;border-radius:10px;border-left:3px solid #E9C46A;">
           <div style="font-size:11px;color:#999;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;">${esc(z.displayName)}</div>
-          <div style="font-size:15px;color:#1B4332;font-weight:600;line-height:1.4;margin-bottom:6px;">${esc(a.headline || "—")}</div>
-          ${a.resumen ? `<div style="font-size:12px;color:#444;line-height:1.5;margin-bottom:8px;">${esc(a.resumen)}</div>` : ""}
 
-          <div style="font-size:12px;color:#666;margin:6px 0;">
-            <strong>${fmtNum(z.summary.totalUniques)}</strong> visitas ·
-            <strong>${z.summary.cachePct}%</strong> cache ·
-            pico ${esc(z.summary.peakDay.date)} (${fmtNum(z.summary.peakDay.uniques)})
-            ${a.comparacion_semana_anterior ? ` · <em>vs sem ant: ${esc(a.comparacion_semana_anterior)}</em>` : ""}
-            ${a.tendencia_4_semanas ? ` · <em>tendencia 4sem: ${esc(a.tendencia_4_semanas)}</em>` : ""}
-          </div>
+          <!-- 1) Lo más importante de un vistazo -->
+          <div style="font-size:16px;color:#1B4332;font-weight:700;line-height:1.35;margin-bottom:4px;">${esc(a.headline || "—")}</div>
+          ${a.resumen ? `<div style="font-size:12px;color:#444;line-height:1.5;margin-bottom:6px;">${esc(a.resumen)}</div>` : ""}
 
-          ${convBlock}
+          <!-- 2) KPIs visuales -->
+          ${buildKpiCards(z.summary, conv, a)}
+          ${tendencia}
 
+          <!-- 3) Gráfico -->
           ${section("Visitas por día", buildDailyChart(z.summary.daily), "📈")}
 
+          <!-- 4) Lo accionable primero -->
+          ${star}
+          ${section("Quick wins (<30 min)", buildList(a.quick_wins, { max: 3, color: "#1B4332" }), "⚡")}
           ${alertas}
 
-          ${star}
+          <!-- 5) Detalle del funnel -->
+          ${convBlock}
 
+          <!-- 6) Análisis (para profundizar) -->
           ${section("Hipótesis", buildList(a.hipotesis, { max: 3 }), "🧠")}
           ${section("Oportunidades no obvias", buildList(a.oportunidades_no_obvias, { max: 3 }), "💡")}
-          ${section("Quick wins (<30 min)", buildList(a.quick_wins, { max: 3, color: "#1B4332" }), "⚡")}
           ${section("Acciones estratégicas", buildList(a.acciones_estrategicas, { max: 2 }), "🎯")}
           ${section("Pruebas A/B propuestas", buildAbList(a.pruebas_ab_propuestas), "🧪")}
           ${section("Qué replicar", a.que_replicar ? `<div style="font-size:12px;color:#333;line-height:1.5;margin:3px 0;">${esc(a.que_replicar)}</div>` : "", "🔁")}
@@ -651,7 +728,7 @@ function buildFullEmailHtml(
   return `
     <div style="max-width:680px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
       <h2 style="margin:0 0 4px;color:#1B4332;font-size:20px;">Reporte semanal · ${esc(periodStart)} → ${esc(periodEnd)}</h2>
-      <p style="margin:0 0 8px;font-size:12px;color:#666;">Análisis completo abajo — chart, hipótesis, quick wins, A/Bs y experimento estrella. Todo lo que necesitás leer está en este email.</p>
+      <p style="margin:0 0 8px;font-size:12px;color:#666;">Todo en este email: KPIs de un vistazo, gráfico, experimento estrella y quick wins. No hace falta abrir el panel.</p>
       ${cards}
       <p style="margin:18px 0 4px;font-size:11px;color:#999;text-align:center;">Generado automáticamente.
         <a href="${PANEL_URL}" style="color:#999;text-decoration:underline;">Tildar acciones como hechas</a>
