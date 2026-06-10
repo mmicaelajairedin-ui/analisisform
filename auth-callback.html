@@ -197,6 +197,25 @@ async function handleCallback(){
     return showError('Error consultando tu cuenta: ' + e.message);
   }
 
+  // ── Merge por persona (una persona, varios emails) ───────────────────────
+  // Si el email NO es el primario de ningún usuario, ver si está registrado
+  // como ALIAS de uno existente (configuracion.emails_alias). Una misma
+  // persona puede tener su email de negocio + el Gmail con el que entra por
+  // Google; ambos deben caer SIEMPRE en la misma cuenta. Sin esto, el login
+  // con el segundo email creaba un usuario nuevo (coach/cliente duplicado).
+  if(!existingUser){
+    try {
+      var aliasQ = encodeURIComponent(JSON.stringify({ emails_alias: [email] }));
+      var aliasRes = await fetch(SB + '/rest/v1/usuarios?configuracion=cs.' + aliasQ + '&select=id,email,rol,nombre,activo,configuracion,auth_id&limit=1', {
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY }
+      });
+      var aliasArr = await aliasRes.json();
+      if(Array.isArray(aliasArr) && aliasArr.length > 0){
+        existingUser = aliasArr[0];
+      }
+    } catch(e) {}
+  }
+
   // Si NO está en usuarios pero SÍ en candidatos, es un CLIENTE que el coach ya
   // cargó pero que todavía no tenía login. Le creamos su acceso como CLIENTE
   // (no como coach) y seguimos el flujo normal -> el routing por rol lo manda a
