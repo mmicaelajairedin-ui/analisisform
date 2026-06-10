@@ -120,6 +120,25 @@ const RULES = [
     },
   },
   {
+    name: "auth-callback hace merge por persona (no duplica usuarios con 2 emails)",
+    bug: "Una misma persona con dos emails (su email de negocio + el Gmail con el " +
+         "que entra por Google) creaba un usuario NUEVO por cada email. El login " +
+         "con Google debe buscar primero si el email es un ALIAS de un usuario " +
+         "existente (configuracion.emails_alias) ANTES de crear uno nuevo.",
+    check() {
+      const s = read("auth-callback.html");
+      if (!s) return null;
+      // La busqueda por alias debe correr antes del bloque que crea usuario nuevo.
+      const iAlias = s.search(/configuracion=cs\.'\s*\+\s*aliasQ|emails_alias/);
+      const iCreate = s.search(/rol:\s*'coach'/);
+      if (iAlias < 0)
+        return "auth-callback.html ya no busca el email como alias (emails_alias) — vuelve a duplicar usuarios.";
+      if (iCreate >= 0 && iAlias > iCreate)
+        return "la busqueda por alias quedo despues de crear el usuario — debe correr ANTES.";
+      return null;
+    },
+  },
+  {
     name: "el detector de humo (pw-observe.js) sigue incluido en las paginas clave",
     bug: "pw-observe.js registra los errores de produccion. Si se quita de una " +
          "pagina, esa pagina vuelve a operar a ciegas.",
