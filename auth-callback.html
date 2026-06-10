@@ -247,10 +247,11 @@ async function handleCallback(){
     var cfg = usuario.configuracion || {};
     if(cfg.auth_provider !== 'google'){ cfg.auth_provider = 'google'; }
     // El panel lee la foto del coach desde configuracion.foto_url (no foto_perfil).
-    // Solo ponemos la de Google si el coach NO tiene foto todavia. Si ya subio
-    // una propia, se respeta y NO se pisa en cada login -> puede cambiarla cuando
-    // quiera y queda. (Default: Google; prioridad: la elegida.)
-    if(photoUrl && !cfg.foto_url){ cfg.foto_url = photoUrl; }
+    // Ponemos/REFRESCAMOS la de Google si el coach no tiene foto, O si la que
+    // tiene es una URL de Google (esas vencen/rotan, hay que refrescarlas en cada
+    // login para que no queden rotas). Si subio una propia (no-Google), se
+    // respeta y NO se pisa. (Default: Google; prioridad: la elegida a mano.)
+    if(photoUrl && (!cfg.foto_url || /googleusercontent\.com/.test(cfg.foto_url))){ cfg.foto_url = photoUrl; }
     cfg.last_login = new Date().toISOString();
     // Update best-effort (incluye last_login → columna "Último acceso" del
     // panel admin de coaches). No bloquea el flow.
@@ -455,10 +456,12 @@ async function handleCallback(){
   var dest;
   if(usuario.rol === 'cliente'){
     setLoadingMsg('¡Hola! Te llevamos a tu espacio...');
-    // Google trae la foto del cliente: la ponemos en candidatos SOLO si no tiene
-    // (respeta la que ya haya elegido). Best-effort, no bloquea el ingreso.
+    // Google trae la foto del cliente: la ponemos en candidatos si no tiene, O si
+    // la que tiene es una URL de Google (esas vencen/rotan → se refrescan en cada
+    // login para que no queden rotas). Respeta una foto propia (no-Google).
+    // Best-effort, no bloquea el ingreso.
     if(photoUrl){
-      fetch(SB + '/rest/v1/candidatos?email=eq.' + encodeURIComponent(email) + '&foto_perfil=is.null', {
+      fetch(SB + '/rest/v1/candidatos?email=eq.' + encodeURIComponent(email) + '&or=(foto_perfil.is.null,foto_perfil.like.*googleusercontent.com*)', {
         method: 'PATCH',
         headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
         body: JSON.stringify({ foto_perfil: photoUrl })

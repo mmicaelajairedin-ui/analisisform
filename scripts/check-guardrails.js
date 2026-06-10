@@ -27,10 +27,11 @@ function isDefined(name, js) {
 
 const RULES = [
   {
-    name: "auth-callback: foto de Google por defecto, respeta la elegida",
+    name: "auth-callback: foto de Google se setea/refresca, respeta la propia",
     bug: "La foto del coach por Google no aparecia (se guardaba en foto_perfil " +
-         "y el panel lee foto_url). Ademas, no debe pisar una foto que el coach " +
-         "ya eligio: solo se pone la de Google si NO tiene foto (puede cambiarla).",
+         "y el panel lee foto_url). La de Google se setea si no tiene foto Y se " +
+         "REFRESCA si la actual es de Google (esas URLs vencen/rotan). Una foto " +
+         "subida a mano (no-Google) NO se pisa.",
     check() {
       const s = read("auth-callback.html");
       if (!s) return null;
@@ -41,8 +42,10 @@ const RULES = [
         return "auth-callback.html guarda la foto del coach en configuracion.foto_perfil; debe ser foto_url.";
       if (!/foto_url\s*[:=]\s*photoUrl/.test(s) && !/cfg\.foto_url\s*=\s*photoUrl/.test(s))
         return "auth-callback.html ya no guarda la foto de Google en foto_url.";
-      if (!/!cfg\.foto_url\s*\)\s*\{\s*cfg\.foto_url\s*=\s*photoUrl/.test(s))
-        return "auth-callback.html ya no respeta la foto elegida (debe poner la de Google solo si !cfg.foto_url).";
+      // Debe: setear si no hay foto O si la actual es de Google (refresca), y
+      // recien ahi asignar photoUrl. Asi respeta una foto propia (no-Google).
+      if (!/!cfg\.foto_url\s*\|\|[\s\S]*?googleusercontent[\s\S]*?cfg\.foto_url\s*=\s*photoUrl/.test(s))
+        return "auth-callback.html: la foto del coach debe setearse si no tiene O si la actual es de Google (refresca), respetando una propia.";
       return null;
     },
   },
