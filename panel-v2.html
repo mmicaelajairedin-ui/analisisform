@@ -1538,17 +1538,6 @@ function viewClienteDetalle(c){
   } else if(t==="docs"){
     var liTxt=(c.raw&&(c.raw.linkedin_texto||""))||"";
     var cvTxt=(c.raw&&(c.raw.cv_url||c.raw.cv_texto||""))||"";
-    function genRow(titulo,desc,estado,estk,actAttr){
-      return "<div style='display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;border-top:1px solid var(--pw-border);padding-top:12px'>"+
-        "<div><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+titulo+"</div>"+
-        "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+desc+"</div></div>"+
-        pill2(estado,estk)+"<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' "+actAttr+">Generar</button></div>";
-    }
-    // Burbujas guía dentro de la ficha del cliente (fase oro): LinkedIn → CV → generar.
-    var _cgLi=(""+(liTxt||"")).trim(), _cgCv=(""+(cvTxt||"")).trim(), _cgRep=c.reportState==="published";
-    var _cgOff=false; try{ _cgOff=localStorage.getItem("pw_guide_off")==="1"; }catch(e){}
-    var _cgNext=(c._example||_cgOff)?null:(!_cgLi?"li":(!_cgCv?"cv":(!_cgRep?"gen":null)));
-    var cib=function(w,t){ return _cgNext===w?"<div class='cp-iguide'>"+t+" 👇</div>":""; };
     var _visC={}; try{ _visC=JSON.parse((c.raw&&c.raw.visibilidad)||"{}")||{}; }catch(e){}
     var _visOn=function(k){ return _visC[k]!==false; };
     var _docRow=function(first,title,desc,estado,estk,genAct,abrirUrl,visKey){
@@ -1562,24 +1551,37 @@ function viewClienteDetalle(c){
           "<span style='margin-left:auto;display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--pw-text-soft)'>"+(_visOn(visKey)?"Visible":"Oculto")+"<button class='cp-switch "+(_visOn(visKey)?"is-on":"")+"' data-act='clivis:"+visKey+"' data-id='"+esc(c.id)+"'><span></span></button></span>"+
         "</div></div>";
     };
-    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Material del cliente<span class='dot'>.</span></h3><span class='cp-eyebrow'>Base para generar</span></div>"+
-        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-          "<div class='cp-form-hint' style='margin:0'>Pega el texto del LinkedIn y del CV del cliente. La IA lo usa para generar. (Abre su PDF, copia el texto y pégalo.)</div>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>LinkedIn</label><textarea id='pa-li' class='cp-form-textarea' style='min-height:80px' placeholder='Pega el texto del LinkedIn…'>"+esc(liTxt)+"</textarea></div>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>CV</label><textarea id='pa-cv' class='cp-form-textarea' style='min-height:70px' placeholder='Pega el texto del CV o el link al PDF…'>"+esc(cvTxt)+"</textarea></div>"+
-          "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary beacon' data-act='mat-save' data-id='"+esc(c.id)+"'>"+svg(IC.check,14)+" Guardar material</button></div>"+
-        "</div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Documentos del cliente<span class='dot'>.</span></h3><span class='cp-eyebrow'>Generar · abrir · mostrar</span></div>"+
+    var liDone=!!(c.raw&&(c.raw.linkedin_analisis||c.raw.linkedin_titular));
+    // Una sola tarjeta "Documentos del cliente" (como el mockup): el material se
+    // pega en una sección colapsada (no abruma) y debajo van las 3 filas de docs.
+    body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Documentos del cliente<span class='dot'>.</span></h3><span class='cp-eyebrow'>Generar · abrir · mostrar</span></div>"+
         "<div class='cp-card-pad'>"+
+          "<details style='border:1px solid var(--pw-border);border-radius:12px;margin-bottom:14px'>"+
+            "<summary style='cursor:pointer;padding:11px 14px;font-size:13px;font-weight:600;color:var(--pw-carbon)'><span class='cp-emo'>📋</span> Material del cliente — LinkedIn + CV (base para generar)</summary>"+
+            "<div style='padding:0 14px 14px;display:flex;flex-direction:column;gap:12px'>"+
+              "<div class='cp-form-hint' style='margin:0'>Pega el texto del LinkedIn y del CV. La IA lo usa para generar. (Abre su PDF, copia el texto y pégalo.)</div>"+
+              "<div class='cp-form-row'><label class='cp-form-label'>LinkedIn</label><textarea id='pa-li' class='cp-form-textarea' style='min-height:80px' placeholder='Pega el texto del LinkedIn…'>"+esc(liTxt)+"</textarea></div>"+
+              "<div class='cp-form-row'><label class='cp-form-label'>CV</label><textarea id='pa-cv' class='cp-form-textarea' style='min-height:70px' placeholder='Pega el texto del CV o el link al PDF…'>"+esc(cvTxt)+"</textarea></div>"+
+              "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='mat-save' data-id='"+esc(c.id)+"'>"+svg(IC.check,14)+" Guardar material</button></div>"+
+            "</div>"+
+          "</details>"+
           ((!c._example && rpSt[0]!=="Publicado")?"<div style='font-size:12px;color:#8E7A35;background:rgba(233,196,106,.16);border-radius:10px;padding:9px 12px;margin-bottom:6px'>⚠️ El <strong>informe</strong> se genera en la pestaña <strong>Análisis</strong>. Sin informe, el portal del cliente se ve vacío.</div>":"")+
           _docRow(true,"CV optimizado","Se abre en su editor · descargable en PDF desde ahí",cvSt[0],cvSt[1],"data-act='gen-cv' data-id='"+esc(c.id)+"'",cvUrl,"cv")+
           _docRow(false,"Carta de presentación","Se abre en su editor · descargable en PDF desde ahí","","","data-act='gen-carta' data-id='"+esc(c.id)+"'",cartaUrl,"carta")+
+          // Fila LinkedIn: el cliente lo optimiza en su portal con la IA; el coach lo revisa y decide si lo muestra.
+          "<div style='border-top:1px solid var(--pw-border);padding:14px 0 4px'>"+
+            "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:14px'>"+
+              "<div><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>Análisis de LinkedIn</div><div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>Lo optimiza el cliente en su portal con la IA. Tú lo revisas.</div></div>"+
+              pill2(liDone?"Optimizado":"Pendiente",liDone?"ok":"warn")+"</div>"+
+            "<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:11px'>"+
+              "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 12px' data-act='open' data-url='"+esc(portalUrl)+"'>Ver en su portal ↗</button>"+
+              "<span style='margin-left:auto;display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--pw-text-soft)'>"+(_visOn("linkedin")?"Visible":"Oculto")+"<button class='cp-switch "+(_visOn("linkedin")?"is-on":"")+"' data-act='clivis:linkedin' data-id='"+esc(c.id)+"'><span></span></button></span>"+
+            "</div></div>"+
         "</div></div>"+
-      // Lo que sobraba de la (ex) pestaña Gestión: el resto de la visibilidad del
-      // portal (CV y Carta ya tienen su switch arriba) + aviso si está sin acceso.
+      // Resto de visibilidad del portal (CV/Carta/LinkedIn ya tienen su switch arriba) + aviso si está sin acceso.
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Qué más ve el cliente<span class='dot'>.</span></h3><span class='cp-eyebrow'>Toca para mostrar u ocultar</span></div><div class='cp-card-pad'>"+
         "<div style='display:flex;flex-wrap:wrap;gap:8px'>"+
-          [["linkedin","LinkedIn"],["recursos","Recursos"],["sesiones","Sesiones"]].map(function(v){var on=_visOn(v[0]);return "<button class='cp-chip "+(on?"is-on":"")+"' data-act='clivis:"+v[0]+"' data-id='"+esc(c.id)+"'>"+v[1]+"</button>";}).join("")+
+          [["recursos","Recursos"],["sesiones","Sesiones"]].map(function(v){var on=_visOn(v[0]);return "<button class='cp-chip "+(on?"is-on":"")+"' data-act='clivis:"+v[0]+"' data-id='"+esc(c.id)+"'>"+v[1]+"</button>";}).join("")+
         "</div>"+
         "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:9px'>Verde = el cliente lo ve · gris = oculto.</div>"+
       "</div></div>"+
