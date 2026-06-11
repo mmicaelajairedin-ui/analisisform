@@ -3434,10 +3434,39 @@ function viewAdmin(){
         fc(""+(A?A.nuevas7:1),"Nuevas esta semana")+
         fc("<span style='color:var(--pw-danger)'>"+(A?A.sinUso:2)+"</span>","Sin uso (≥5 d, 0 clientes)")+
       "</div></div>";
+      // ── Embudo de implementación ────────────────────────────────────────
+      // Cuántas coaches (no admin) llegaron a cada fase. Todo sale de coachesEng
+      // (datos que ya tenemos). Solo lectura: no escribe ni rompe nada.
+      var _fc = coachesEng.filter(function(c){ return c.tipo!=="admin"; });
+      var _N = _fc.length || 0;
+      var _accRec = function(c){ var s=(c.acc&&c.acc[1])||""; return s==="ok"||s==="warn"; };
+      var _funnel = [
+        ["Activó cuenta", _N],
+        ["Perfil + foto", _fc.filter(function(c){return c.foto;}).length],
+        ["Conectó Calendly", _fc.filter(function(c){return c.cal;}).length],
+        ["Conectó Stripe", _fc.filter(function(c){return c.stripe;}).length],
+        ["Publicó su link", _fc.filter(function(c){return c.pub;}).length],
+        ["Primer cliente", _fc.filter(function(c){return (typeof c.cli==="number")&&c.cli>0;}).length],
+        ["Primer informe IA", _fc.filter(function(c){return c.inf>0;}).length],
+        ["Uso recurrente", _fc.filter(function(c){return c.inf>0 && _accRec(c);}).length]
+      ];
+      var _maxF = _funnel[0][1] || 1;
+      var _funRows = _funnel.map(function(f,i){
+        var w = _maxF ? Math.round(f[1]/_maxF*100) : 0;
+        var leak = (i>0 && _funnel[i-1][1]>0 && f[1] <= _funnel[i-1][1]*0.7);
+        return "<div style='display:grid;grid-template-columns:170px 1fr 30px;align-items:center;gap:12px;padding:5px 8px;border-radius:8px"+(leak?";background:rgba(181,101,29,.07)":"")+"'>"+
+          "<span style='font-size:12.5px;font-weight:600;color:var(--pw-carbon)'>"+esc(f[0])+(leak?" <span style='font-size:10px;color:#B5651D;font-weight:700'>▼ fuga</span>":"")+"</span>"+
+          "<span style='height:13px;background:var(--pw-niebla-3);border-radius:100px;overflow:hidden;display:block'><i style='display:block;height:100%;width:"+w+"%;background:linear-gradient(90deg,var(--pw-sendero),var(--pw-bosque));border-radius:100px'></i></span>"+
+          "<span style='font-size:13px;font-weight:700;text-align:right;color:var(--pw-carbon)'>"+f[1]+"</span></div>";
+      }).join("");
+      var _embudo = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Embudo de implementación<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>cuántas coaches llegaron a cada paso</span></div>"+
+        "<div class='cp-card-pad'>"+_funRows+
+        "<div style='font-size:12px;color:var(--pw-text-muted);margin-top:12px;line-height:1.5'>El número es cuántas coaches alcanzaron esa fase. La caída entre fases (▼ fuga) muestra dónde se traban.</div></div></div>";
       var _list = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<input class='cp-form-input' style='max-width:230px;height:34px' placeholder='Buscar coach…' oninput='cpCoachFilter(this.value)'></div>"+
         "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div></div>";
-      body = _tabs + (_cv==="analiticas" ? _kpis : (accBox + _list));
+      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo) : (accBox + _list));
     }
   } else if(state.adminTab==="contactos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Popup de pricing<span class='dot'>.</span></h3>"+
