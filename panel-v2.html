@@ -935,6 +935,7 @@ var state = {
   trialDays: 9,
   adminTab: "coaches",
   coachView: "lista",
+  funPhase: null,
   coachSel: null,
   coachMsg: "",
   msgDraft: "",
@@ -1996,16 +1997,16 @@ function linksCard(){
   // Alta directa por email: el coach pone nombre + email del cliente y le
   // llega un mail con el link al formulario que SALTA el pago (lleva el
   // access_code). "Mi perfil" vive en el sidebar, no se duplica acá.
-  return "<div class='cp-card cp-add-cli' style='max-width:780px'><div class='cp-card-hd'>"+
+  return "<div class='cp-card cp-add-cli'><div class='cp-card-hd'>"+
       "<h3 class='cp-card-title'>Sumar un cliente<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>Sin pago</span></div>"+
     "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
       "<p style='font-size:13px;color:var(--pw-text-soft);line-height:1.55;margin:0'>Escribí el <strong>nombre</strong> y el <strong>email</strong> de tu cliente y tocá <strong>Enviar invitación</strong>. Se agrega a tu lista al instante y le llega un mail con el formulario.</p>"+
       // Caja resaltada: que "respire" y se entienda que ACÁ se cargan los datos.
-      "<div style='background:var(--pw-niebla);border:1.5px solid var(--pw-border);border-radius:14px;padding:20px 18px;display:flex;flex-direction:column;gap:18px;max-width:720px'>"+
+      "<div style='background:var(--pw-niebla);border:1px solid var(--pw-border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:13px;max-width:680px'>"+
         "<div class='cp-form-row-2' style='gap:18px'>"+
-          "<div class='cp-form-row' style='gap:7px'><label class='cp-form-label' style='font-size:13px;font-weight:700;color:var(--pw-carbon)'>1 · Nombre del cliente</label><input id='alta-nombre' type='text' class='cp-form-input' placeholder='Ej: María López' style='height:46px;font-size:15px'></div>"+
-          "<div class='cp-form-row' style='gap:7px'><label class='cp-form-label' style='font-size:13px;font-weight:700;color:var(--pw-carbon)'>2 · Email del cliente</label><input id='alta-email' type='email' class='cp-form-input' placeholder='maria@email.com' style='height:46px;font-size:15px'></div>"+
+          "<div class='cp-form-row' style='gap:7px'><label class='cp-form-label' style='font-size:13px;font-weight:700;color:var(--pw-carbon)'>1 · Nombre del cliente</label><input id='alta-nombre' type='text' class='cp-form-input' placeholder='Ej: María López' style='height:40px;font-size:14px'></div>"+
+          "<div class='cp-form-row' style='gap:7px'><label class='cp-form-label' style='font-size:13px;font-weight:700;color:var(--pw-carbon)'>2 · Email del cliente</label><input id='alta-email' type='email' class='cp-form-input' placeholder='maria@email.com' style='height:40px;font-size:14px'></div>"+
         "</div>"+
         "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='alta-invitar' style='height:46px;padding:0 22px;font-size:14px'>"+svg(IC.extLink,14)+" Enviar invitación</button></div>"+
       "</div>"+
@@ -3434,35 +3435,51 @@ function viewAdmin(){
         fc(""+(A?A.nuevas7:1),"Nuevas esta semana")+
         fc("<span style='color:var(--pw-danger)'>"+(A?A.sinUso:2)+"</span>","Sin uso (≥5 d, 0 clientes)")+
       "</div></div>";
-      // ── Embudo de implementación ────────────────────────────────────────
-      // Cuántas coaches (no admin) llegaron a cada fase. Todo sale de coachesEng
-      // (datos que ya tenemos). Solo lectura: no escribe ni rompe nada.
+      // ── Embudo de implementación (con drill-down) ───────────────────────
+      // Cuántas coaches (no admin) llegaron a cada fase. Tocás una fase y se
+      // abre el detalle: quiénes la tienen y a quiénes les falta. Solo lectura.
       var _fc = coachesEng.filter(function(c){ return c.tipo!=="admin"; });
       var _N = _fc.length || 0;
       var _accRec = function(c){ var s=(c.acc&&c.acc[1])||""; return s==="ok"||s==="warn"; };
-      var _funnel = [
-        ["Activó cuenta", _N],
-        ["Perfil + foto", _fc.filter(function(c){return c.foto;}).length],
-        ["Conectó Calendly", _fc.filter(function(c){return c.cal;}).length],
-        ["Conectó Stripe", _fc.filter(function(c){return c.stripe;}).length],
-        ["Publicó su link", _fc.filter(function(c){return c.pub;}).length],
-        ["Primer cliente", _fc.filter(function(c){return (typeof c.cli==="number")&&c.cli>0;}).length],
-        ["Primer informe IA", _fc.filter(function(c){return c.inf>0;}).length],
-        ["Uso recurrente", _fc.filter(function(c){return c.inf>0 && _accRec(c);}).length]
+      var _phN = ["Activó cuenta","Perfil + foto","Conectó Calendly","Conectó Stripe","Publicó su link","Primer cliente","Primer informe IA","Uso recurrente"];
+      var _phT = [
+        function(c){return true;},
+        function(c){return c.foto;},
+        function(c){return c.cal;},
+        function(c){return c.stripe;},
+        function(c){return c.pub;},
+        function(c){return (typeof c.cli==="number")&&c.cli>0;},
+        function(c){return c.inf>0;},
+        function(c){return c.inf>0 && _accRec(c);}
       ];
+      var _funnel = _phN.map(function(nm,i){ return [nm, _fc.filter(_phT[i]).length]; });
       var _maxF = _funnel[0][1] || 1;
       var _funRows = _funnel.map(function(f,i){
         var w = _maxF ? Math.round(f[1]/_maxF*100) : 0;
         var leak = (i>0 && _funnel[i-1][1]>0 && f[1] <= _funnel[i-1][1]*0.7);
-        return "<div style='display:grid;grid-template-columns:170px 1fr 30px;align-items:center;gap:12px;padding:5px 8px;border-radius:8px"+(leak?";background:rgba(181,101,29,.07)":"")+"'>"+
-          "<span style='font-size:12.5px;font-weight:600;color:var(--pw-carbon)'>"+esc(f[0])+(leak?" <span style='font-size:10px;color:#B5651D;font-weight:700'>▼ fuga</span>":"")+"</span>"+
+        var sel = (state.funPhase===i);
+        return "<button type='button' data-act='funphase:"+i+"' style='width:100%;text-align:left;border:none;background:"+(sel?"var(--pw-info-bg)":(leak?"rgba(181,101,29,.07)":"transparent"))+";cursor:pointer;display:grid;grid-template-columns:170px 1fr 30px 14px;align-items:center;gap:12px;padding:7px 8px;border-radius:8px"+(sel?";box-shadow:inset 3px 0 0 var(--pw-bosque)":"")+"'>"+
+          "<span style='font-size:12.5px;font-weight:600;color:var(--pw-carbon)'>"+esc(f[0])+(leak?" <span style='font-size:10px;color:#B5651D;font-weight:700'>▼</span>":"")+"</span>"+
           "<span style='height:13px;background:var(--pw-niebla-3);border-radius:100px;overflow:hidden;display:block'><i style='display:block;height:100%;width:"+w+"%;background:linear-gradient(90deg,var(--pw-sendero),var(--pw-bosque));border-radius:100px'></i></span>"+
-          "<span style='font-size:13px;font-weight:700;text-align:right;color:var(--pw-carbon)'>"+f[1]+"</span></div>";
+          "<span style='font-size:13px;font-weight:700;text-align:right;color:var(--pw-carbon)'>"+f[1]+"</span>"+
+          "<span style='color:var(--pw-text-muted);font-size:15px;text-align:center'>"+(sel?"▾":"›")+"</span></button>";
       }).join("");
+      var _drill = "";
+      if(state.funPhase!=null && _phT[state.funPhase]){
+        var _pi=state.funPhase, _ptest=_phT[_pi];
+        var _con=_fc.filter(_ptest), _sin=_fc.filter(function(c){return !_ptest(c);});
+        var _coachChip=function(c){ return "<button type='button' data-act='coach-view:"+esc(c.id)+"' style='display:inline-flex;align-items:center;gap:7px;font-size:12px;background:#fff;border:1px solid var(--pw-border);border-radius:100px;padding:4px 11px 4px 5px;margin:0 6px 7px 0;cursor:pointer;color:var(--pw-carbon)'><span style='width:22px;height:22px;border-radius:50%;background:var(--pw-niebla-3);color:var(--pw-bosque);display:inline-flex;align-items:center;justify-content:center;font-family:var(--pw-serif);font-weight:600;font-size:11px'>"+esc((""+(c.n||"?")).charAt(0).toUpperCase())+"</span>"+esc(c.n)+"</button>"; };
+        var _list2=function(arr){ return arr.length ? arr.map(_coachChip).join("") : "<span style='font-size:12px;color:var(--pw-text-muted)'>—</span>"; };
+        _drill = "<div style='border-top:1px solid var(--pw-border);margin-top:12px;padding-top:14px'>"+
+          "<div style='font-size:13px;font-weight:700;color:var(--pw-carbon);margin-bottom:10px'>"+esc(_phN[_pi])+" — detalle <span style='font-weight:500;color:var(--pw-text-muted);font-size:12px'>(tocá una coach para abrir su ficha)</span></div>"+
+          "<div style='font-size:11px;font-weight:700;color:var(--pw-bosque);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px'>La tienen ("+_con.length+")</div><div style='margin-bottom:14px'>"+_list2(_con)+"</div>"+
+          (_pi>0 ? "<div style='font-size:11px;font-weight:700;color:#B5651D;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px'>Les falta ("+_sin.length+") — para empujar</div><div>"+_list2(_sin)+"</div>" : "")+
+        "</div>";
+      }
       var _embudo = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Embudo de implementación<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>cuántas coaches llegaron a cada paso</span></div>"+
-        "<div class='cp-card-pad'>"+_funRows+
-        "<div style='font-size:12px;color:var(--pw-text-muted);margin-top:12px;line-height:1.5'>El número es cuántas coaches alcanzaron esa fase. La caída entre fases (▼ fuga) muestra dónde se traban.</div></div></div>";
+        "<span class='cp-eyebrow'>tocá una fase para ver quiénes</span></div>"+
+        "<div class='cp-card-pad'>"+_funRows+_drill+
+        (state.funPhase==null?"<div style='font-size:12px;color:var(--pw-text-muted);margin-top:12px;line-height:1.5'>El número es cuántas coaches alcanzaron esa fase. Tocá una para ver quiénes la tienen y a quiénes les falta.</div>":"")+"</div></div>";
       var _list = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<input class='cp-form-input' style='max-width:230px;height:34px' placeholder='Buscar coach…' oninput='cpCoachFilter(this.value)'></div>"+
         "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div></div>";
@@ -3877,7 +3894,8 @@ document.addEventListener("click", function(ev){
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; render(); return; }
-  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); render(); return; }
+  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); return; }
+  if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
   if(act==="coach-back"){ state.coachSel=null; state.msgAdminDraft=""; render(); return; }
   if(act.indexOf("coach-view:")===0){ state.coachSel=act.slice(11); state.msgAdminDraft=""; render(); window.scrollTo(0,0); return; }
   // ─── Mensajes admin↔coach ───────────────────────────────────────
@@ -5354,7 +5372,7 @@ function loadReal(){
   var msgQ = ME.rol==="admin"
     ? _sb("mensajes_admin_coach?select=*&order=created_at.asc&limit=500")
     : _sb("mensajes_admin_coach?coach_id=eq."+encodeURIComponent(ME.id)+"&select=*&order=created_at.asc&limit=500");
-  Promise.all([
+  return Promise.all([
     _sb("candidatos?"+cf+"&order=created_at.desc"),
     // AISLAMIENTO + RENDIMIENTO: un coach no-admin solo baja SUS cv_publicados/
     // informes. El admin TAMBIEN baja solo los suyos + huerfanos (no el contenido
@@ -5566,7 +5584,7 @@ if('serviceWorker' in navigator){
     Salir
   </button>
   <button id="pw-refresh-btn" type="button" aria-label="Actualizar los datos" title="Actualizar"
-    onclick="try{toast('Actualizando…');loadReal();}catch(e){window.location.reload();}"
+    onclick="(function(b){if(b.dataset.b)return;b.dataset.b='1';toast('Actualizando…');var p;try{p=loadReal();}catch(e){location.reload();return;}var d=function(){b.removeAttribute('data-b');toast('Actualizado ✓');};if(p&&p.then){p.then(d,d);}else{setTimeout(d,1500);}})(this)"
     style="background:#fff;border:1px solid rgba(45,106,79,.14);border-radius:99px;padding:8px 14px 8px 12px;display:inline-flex;align-items:center;gap:7px;box-shadow:0 4px 12px rgba(45,106,79,.10);cursor:pointer;font-family:inherit;font-size:12.5px;color:var(--pw-carbon);font-weight:500;">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
     Actualizar
