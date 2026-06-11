@@ -1170,30 +1170,25 @@ function viewSolicitudes(){
 // Fases de arranque del coach con sub-pasos. María (ejemplo) NO cuenta como
 // cliente real. Cada fase completa = una medalla (bronce → plata → oro).
 function coachPhaseData(){
+  // 3 pasos del sendero de la cabra (Perfil · Cliente · Sesión), de datos reales.
+  // Cada uno completo = una medalla (bronce/plata/oro) en el sidebar.
   var rc=(typeof RCFG!=="undefined"&&RCFG)?RCFG:{};
   var rp=(typeof RPROF!=="undefined"&&RPROF)?RPROF:{};
   var _has=function(v){ return !!((""+(v||"")).trim()); };
   var hasFoto=_has(rc.foto_url)||_has(rp.foto_url);
   var hasBio =_has(rc.bio)||_has(rc.titulo)||_has(rc.titulo_profesional)||_has(rp.bio)||_has(rp.titulo_profesional);
-  var hasCall=_has(rc.calendly_url)||_has(rc.calendar_embed_url);
   var real=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c&&!c._example;}):[];
   var hasReal=real.length>0;
-  var hasLi    =real.some(function(c){return c&&c.raw&&_has(c.raw.linkedin_texto);});
-  var hasCvMat =real.some(function(c){return c&&c.raw&&(_has(c.raw.cv_texto)||_has(c.raw.cv_url));});
-  var hasReport=real.some(function(c){return c&&c.reportState==="published";});
+  var hasSesion=real.some(function(c){ return c && c.ses && c.ses.length; });
   var phases=[
-    { medal:"bronce", title:"Configura tu perfil", steps:[
-      { label:"Completa tu bio y título profesional", done:hasBio, go:"config|profile" },
-      { label:"Sube tu foto", done:hasFoto, go:"config|profile" },
-      { label:"Pon tu link para agendar (Calendly, Google…)", done:hasCall, go:"config|profile" }
+    { medal:"bronce", title:"Completá tu perfil", go:"config|profile", steps:[
+      { label:"Sumá tu bio/título y tu foto", done:(hasBio&&hasFoto), go:"config|profile" }
     ]},
-    { medal:"plata", title:"Agrega un cliente", steps:[
-      { label:"Da de alta a un cliente (nombre y email)", done:hasReal, go:"clientes" }
+    { medal:"plata", title:"Sumá tu primer cliente", go:"clientes", steps:[
+      { label:"Da de alta un cliente (nombre y email)", done:hasReal, go:"clientes" }
     ]},
-    { medal:"oro", title:"Configura a tu cliente", steps:[
-      { label:"Pega el LinkedIn del cliente y guarda", done:hasLi, go:"clientes" },
-      { label:"Pega el CV del cliente y guarda", done:hasCvMat, go:"clientes" },
-      { label:"Genera su informe con IA", done:hasReport, go:"clientes" }
+    { medal:"oro", title:"Registrá una sesión", go:"clientes", steps:[
+      { label:"Registrá una sesión con un cliente", done:hasSesion, go:"clientes" }
     ]}
   ];
   phases.forEach(function(p){ p.done=p.steps.every(function(s){return s.done;}); });
@@ -1220,35 +1215,48 @@ function _pathProgressCheck(n){
     else if(n!==prev){ localStorage.setItem(k,String(n)); }
   }catch(e){}
 }
-// Guía por fases: cada fase muestra sus sub-pasos; al completarla, medalla.
-// La fase actual se expande con botones; las hechas se colapsan; el resto
-// queda bloqueado. Se apaga sola al completar las 3.
+// Sendero de la cabra: una escena ilustrada en el Resumen. La cabra se planta
+// en el paso actual (Perfil/Cliente/Sesión), sube hacia la bandera Pathway de
+// la cima y, al completar los 3, la tarjeta se apaga y la medalla oro queda en
+// el sidebar. Posiciones %-based (afinadas en preview) → escalan con el ancho.
 function coachPath(){
   var ph=coachPhaseData();
   var doneN=ph.filter(function(p){return p.done;}).length;
   _pathProgressCheck(doneN);
-  if(doneN>=ph.length) return ""; // todo completo → se apaga
-  var curIdx=-1; for(var i=0;i<ph.length;i++){ if(!ph[i].done){ curIdx=i; break; } }
-  var med=coachMedalInfo();
-  var medalHtml=med.name?"<img src='assets/iconos/medalla-"+med.name+".png' alt='' style='width:30px;height:30px'>":"";
-  var rows=ph.map(function(p,idx){
-    var medImg="<img src='assets/iconos/medalla-"+p.medal+".png' alt='' style='width:32px;height:32px;flex:0 0 auto'>";
-    if(p.done){
-      return "<div class='cp-ph cp-ph-done'>"+medImg+"<div class='cp-ph-body'><div class='cp-ph-title'>"+esc(p.title)+"</div><div class='cp-ph-sub'>Medalla "+p.medal+" ganada ✓</div></div></div>";
-    }
-    if(idx!==curIdx){
-      return "<div class='cp-ph cp-ph-lock'><span class='cp-ph-num'>"+(idx+1)+"</span><div class='cp-ph-body'><div class='cp-ph-title'>"+esc(p.title)+"</div><div class='cp-ph-sub'>Desbloqueás la medalla "+p.medal+"</div></div></div>";
-    }
-    var btns=p.steps.map(function(s){
-      var act=s.demo?"data-act='open-demo'":"data-act='asist-go' data-go='"+s.go+"'";
-      var ic=s.done?svg(IC.check,14):svg(IC.arrowR,14);
-      return "<button class='cp-ph-btn"+(s.done?" is-done":"")+"' "+(s.done?"disabled":act)+"><span class='cp-ph-btn-ic'>"+ic+"</span>"+esc(s.label)+"</button>";
-    }).join("");
-    return "<div class='cp-ph cp-ph-cur'><span class='cp-ph-num is-on'>"+(idx+1)+"</span><div class='cp-ph-body'><div class='cp-ph-title'>"+esc(p.title)+"</div><div class='cp-ph-sub'>Completa estos pasos y ganas la medalla "+p.medal+" 🏅</div><div class='cp-ph-btns'>"+btns+"</div></div></div>";
+  if(doneN>=ph.length) return ""; // 3/3 → se apaga (la medalla queda en el sidebar)
+  var curIdx=doneN; // primer paso incompleto
+  var SHORT=["Perfil","Cliente","Sesión"];
+  // Paradas sobre el sendero pintado: {x%, y% (pies), escala = perspectiva}.
+  var STOPS=[{x:14,y:91,s:1.0},{x:37,y:85,s:0.90},{x:59,y:71,s:0.80},{x:76,y:47,s:0.68}];
+  var labels=ph.map(function(p,i){
+    var s=STOPS[i], current=(i===curIdx);
+    var col=p.done?"#2D6A4F":(current?"#1B4332":"#54655A");
+    var chk=p.done?"<svg width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='#2D6A4F' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round' style='margin-right:4px'><polyline points='20 6 9 17 4 12'></polyline></svg>":"";
+    var bg=current?"#fff":"rgba(255,255,255,.88)";
+    var bd=current?"1.5px solid rgba(82,183,136,.7)":"1px solid rgba(255,255,255,.75)";
+    return "<div style='position:absolute;left:"+s.x+"%;top:"+Math.min(s.y+2,94)+"%;transform:translateX(-50%);display:inline-flex;align-items:center;padding:4px 11px;border-radius:100px;background:"+bg+";border:"+bd+";box-shadow:0 2px 8px rgba(20,55,38,.22);white-space:nowrap'>"+chk+"<span style='font-family:Inter,sans-serif;font-size:11.5px;font-weight:"+(current?"700":"600")+";color:"+col+"'>"+SHORT[i]+"</span></div>";
   }).join("");
-  return "<div class='cp-card cp-path'><div class='cp-card-hd'><h3 class='cp-card-title'>Empieza por aquí<span class='dot'>.</span></h3>"+
-    "<span class='cp-path-medal'>"+medalHtml+"<span class='cp-eyebrow'>"+doneN+"/3</span></span></div>"+
-    "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+rows+"</div></div>";
+  var gs=STOPS[curIdx];
+  var goatSrc=curIdx===0?"assets/cabra/frente.gif":"assets/cabra/mira.png";
+  // -82% baja la cabra dentro de su caja (el GIF trae margen transparente abajo)
+  // para que las patas apoyen en el sendero y no floten.
+  var goat="<div style='position:absolute;left:"+gs.x+"%;top:"+gs.y+"%;width:11%;aspect-ratio:108 / 136;transform:translate(-50%,-82%) scale("+gs.s+");transform-origin:50% 100%;z-index:5'>"+
+    "<div style='position:absolute;left:50%;bottom:15%;width:55%;height:8%;border-radius:50%;transform:translateX(-50%);background:radial-gradient(ellipse,rgba(20,55,38,.34),transparent 70%)'></div>"+
+    "<img src='"+goatSrc+"' alt='' style='position:relative;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 8px 8px rgba(45,106,79,.25))'></div>";
+  var flag="<div style='position:absolute;left:80%;top:27%;width:5.2%;aspect-ratio:48 / 62;transform:translate(-50%,-100%);transform-origin:50% 100%;z-index:4;filter:drop-shadow(0 3px 4px rgba(20,55,38,.3))'>"+
+    "<svg width='100%' height='100%' viewBox='0 0 48 62' style='overflow:visible;display:block'>"+
+    "<rect x='9' y='3' width='2.6' height='58' rx='1.3' fill='#6F5A40'></rect>"+
+    "<path d='M11.6 4.5 C 22 1, 33 8, 44 4.8 L 44 21 C 33 24.2, 22 17, 11.6 20.5 Z' fill='#1B4332'></path>"+
+    "<g transform='translate(19,7.2)'><polygon points='1.6,12 7,4.5 12.4,12' fill='#52B788'></polygon><polygon points='7,12 13.6,2.5 20.2,12' fill='#FAFDF9'></polygon><circle cx='13.6' cy='1.8' r='1.8' fill='#E9C46A'></circle></g></svg></div>";
+  var scene="<div style='position:relative;width:100%;aspect-ratio:1300 / 403;background:url(assets/cabra/fondo.webp) center/cover no-repeat;overflow:hidden'>"+flag+goat+labels+"</div>";
+  var cur=ph[curIdx];
+  var cta="<div style='padding:13px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap'>"+
+    "<button class='cp-btn cp-btn-primary' data-act='asist-go' data-go='"+cur.go+"' style='height:38px'>"+esc(cur.title)+"</button>"+
+    "<span class='cp-eyebrow'>Completá los 3 pasos y desbloqueás tu medalla 🏅</span></div>";
+  return "<div class='cp-card cp-path' style='overflow:hidden;padding:0;margin-top:16px'>"+
+    "<div class='cp-card-hd'><h3 class='cp-card-title'>Empieza por aquí<span class='dot'>.</span></h3>"+
+    "<span class='cp-eyebrow'>"+doneN+"/3 completados</span></div>"+
+    scene+cta+"</div>";
 }
 function viewResumen(){
   var greet = "Buenos días";
@@ -1323,10 +1331,11 @@ function viewResumen(){
         "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='nav:clientes'>Ver todos</button></div>"+
       "<div>"+cliRows+"</div></div>";
   }
+  var pathCard = coachPath(); // sendero gamificado de la cabra (vacío si ya completó los 3)
   return "<div class='cp-greet'>"+avImg(COACH.photo,COACH.name,"")+
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+"<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>"+pendingReview+" pendiente"+(pendingReview===1?"":"s")+(_nx?" · "+_nxTxt:"")+"</div></div></div>"+
-    emptyState+cliBlock+calCard;
+    pathCard+(pathCard?"":emptyState)+cliBlock+calCard;
 }
 
 /* ═══ Clientes ═══ */
