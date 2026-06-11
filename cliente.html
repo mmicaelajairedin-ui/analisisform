@@ -2008,7 +2008,7 @@ function buildSbNotifs(){
   // 2. Carta pendiente
   if(!C.carta_presentacion||C.carta_presentacion.length<50) notifs.push({icon:'&#128140;',txt:'Falta tu carta de presentaci\u00f3n',sec:'docs',color:'var(--orange)'});
   // 3. Sesión pendiente
-  if(!C.proxima_sesion) notifs.push({icon:'&#128197;',txt:'Agenda tu pr\u00f3xima sesi\u00f3n',sec:'sesion',color:'var(--rose)'});
+  if(!_proxSesion()) notifs.push({icon:'&#128197;',txt:'Agenda tu pr\u00f3xima sesi\u00f3n',sec:'sesion',color:'var(--rose)'});
   // 4. Acciones casi completas
   if(D){
     var sem=SEMS[Math.min(SEM,5)-1]||SEMS[0];
@@ -2078,7 +2078,7 @@ function getAchievements(){
   var hasLinkedin=!!(C.linkedin_analisis||C.linkedin_titular);
   var hasFormulario=!!(C.nombre&&C.email);
   var hasSesion=SEM>=2;
-  var hasSesionAgendada=!!(C.proxima_sesion);
+  var hasSesionAgendada=!!_proxSesion();
   return [
     {id:'form', ico:'📋', lbl:'Formulario',   sub:'Completaste el formulario inicial',  done:hasFormulario,      color:'var(--rose)',   bg:'var(--rose-light)'},
     {id:'diag', ico:'📊', iconUrl:'/assets/iconos/badge-evaluacion.png', lbl:'Diagnóstico',  sub:'Micaela generó tu informe',            done:hasInforme,         color:'var(--blue)',   bg:'var(--blue-light)'},
@@ -2374,8 +2374,25 @@ function rMotivCard(){
   return o;
 }
 
+// Próxima sesión = la entrada futura más cercana del registro que carga el
+// coach en el panel (sesiones_registro), igual que la calcula el panel. Antes
+// el portal leía un campo aparte (proxima_sesion) que el coach nunca setea, así
+// que las sesiones agendadas desde el panel no aparecían acá. Fallback al campo
+// viejo por si algún dato histórico lo tiene. Genérico — vale para todos los nichos.
+function _proxSesion(){
+  var arr=[]; try{arr=JSON.parse(C.sesiones_registro||'[]')||[];}catch(e){arr=[];}
+  var now=Date.now(), best='', bestT=Infinity;
+  arr.forEach(function(s){
+    if(!s||!s.fecha) return;
+    var d=new Date(s.fecha+(s.hora?'T'+s.hora:'T23:59'));
+    var tt=d.getTime();
+    if(!isNaN(tt)&&tt>=now&&tt<bestT){ bestT=tt; best=s.fecha+'T'+(s.hora||'00:00'); }
+  });
+  return best||C.proxima_sesion||'';
+}
+
 function rCalendlyCard(){
-  var ps=C.proxima_sesion||'';
+  var ps=_proxSesion();
   var o='<div class="card" style="margin-bottom:14px;overflow:hidden;border:1.5px solid var(--rose-mid);">';
   if(ps){
     var d=new Date(ps);
@@ -3433,7 +3450,7 @@ function rDocs(){
 function srtCarta(){var el=document.getElementById('carta-s');if(el)el.scrollIntoView({behavior:'smooth'});}
 
 function rSesionPage(){
-  var ps=C.proxima_sesion||'';
+  var ps=_proxSesion();
   var loc=_lang==='en'?'en-US':'es-ES';
   var o='';
 
@@ -3507,7 +3524,7 @@ function rSesionPage(){
       o+='<div style="padding:12px 0;'+(ri<sesiones.length-1?'border-bottom:1px solid var(--border);':'')+'">';
       o+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">';
       o+='<div style="width:28px;height:28px;border-radius:50%;background:var(--rose-light);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">📅</div>';
-      o+='<div style="font-size:13px;font-weight:600;color:var(--text);font-family:Inter,-apple-system,sans-serif;">Sesión '+hh(s.fecha||'')+'</div></div>';
+      o+='<div style="font-size:13px;font-weight:600;color:var(--text);font-family:Inter,-apple-system,sans-serif;">Sesión '+hh(s.fecha||'')+(s.hora?' · '+hh(s.hora)+' hs':'')+'</div></div>';
       if(s.trabajado){o+='<div style="margin-bottom:8px;"><div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:3px;">Qué trabajamos</div><div style="font-size:12px;color:var(--text);line-height:1.6;white-space:pre-wrap;">'+hh(s.trabajado)+'</div></div>';}
       if(s.acordado){o+='<div style="margin-bottom:8px;background:var(--green-light);border-radius:8px;padding:10px 12px;border-left:3px solid var(--green);"><div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;margin-bottom:3px;">Acordado</div><div style="font-size:12px;color:var(--text);line-height:1.6;white-space:pre-wrap;">'+hh(s.acordado)+'</div></div>';}
       if(s.doc){o+='<div style="margin-bottom:8px;"><a href="'+hh(s.doc)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--rose);text-decoration:none;background:var(--rose-light);padding:9px 13px;border-radius:9px;">📎 '+hh(s.doc_nombre||'Ver documento')+'</a></div>';}
