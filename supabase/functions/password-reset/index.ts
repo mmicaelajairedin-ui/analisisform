@@ -74,11 +74,11 @@ async function sendResetEmail(to: string, toName: string, link: string) {
       </a>
     </p>
     <p style="font-size:13px;color:#5A5A55;">
-      Este enlace vence en ${TOKEN_TTL_MIN} minutos. Si vos no pediste esto,
-      ignorá este email — tu contraseña no cambia.
+      Este enlace vence en ${TOKEN_TTL_MIN} minutos. Si no pediste esto,
+      ignora este email — tu contraseña no cambia.
     </p>
     <p style="font-size:13px;color:#5A5A55;">
-      Si el botón no funciona, copiá y pegá este enlace en tu navegador:<br>
+      Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
       <span style="word-break:break-all;">${link}</span>
     </p>`;
   await fetch(`${SB_URL}/functions/v1/send-email`, {
