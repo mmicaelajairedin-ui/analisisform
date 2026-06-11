@@ -110,9 +110,9 @@ function showError(msg){
 function render(d){
   if(!d){showError('Tu coach aún no publicó tu CV. Cuando esté listo, podrás descargar la versión ATS desde acá.');return;}
   var nombre=d.nombre||'';
-  var rolObj=d.rol_objetivo||d.objetivo||'';
+  var rolObj=d.rol_objetivo||d.titulo_objetivo||'';
   var ct=d.contacto||{};
-  var perfil=d.perfil||d.resumen||'';
+  var perfil=d.perfil||d.resumen||d.objetivo||'';
   var exp=arr(d.experiencia);
   var edu=arr(d.educacion);
   // Competencias: intenta separar técnicas/blandas; si no, todo junto.
@@ -165,10 +165,10 @@ function render(d){
     exp.forEach(function(e){
       h+='<div class="item">';
       h+='<div class="item-head">';
-      h+='<div><span class="item-title">'+esc(e.titulo||e.puesto||'')+'</span>';
+      h+='<div><span class="item-title">'+esc(e.titulo||e.puesto||e.rol||e.cargo||'')+'</span>';
       if(e.empresa) h+=' <span class="item-org">| '+esc(e.empresa)+'</span>';
       h+='</div>';
-      var dateStr=[e.desde,e.hasta].filter(Boolean).join(' – ')||e.periodo||'';
+      var dateStr=[e.desde,e.hasta].filter(Boolean).join(' – ')||e.periodo||e.fecha||'';
       if(dateStr) h+='<span class="item-date">'+esc(dateStr)+'</span>';
       h+='</div>';
       if(e.ubicacion) h+='<div class="item-loc">'+esc(e.ubicacion)+'</div>';
@@ -195,7 +195,7 @@ function render(d){
       h+='<div><span class="item-title">'+esc(e.titulo||e.grado||'')+'</span>';
       if(e.institucion) h+=' <span class="item-org">| '+esc(e.institucion)+'</span>';
       h+='</div>';
-      var dateStr=e.anio||[e.desde,e.hasta].filter(Boolean).join(' – ')||'';
+      var dateStr=e.anio||e.fecha||[e.desde,e.hasta].filter(Boolean).join(' – ')||'';
       if(dateStr) h+='<span class="item-date">'+esc(dateStr)+'</span>';
       h+='</div>';
       if(e.descripcion) h+='<p style="margin-top:4px;">'+esc(e.descripcion)+'</p>';
@@ -213,7 +213,7 @@ function render(d){
       if(typeof c==='string'){
         h+='<p>• '+esc(c)+'</p>';
       } else {
-        h+='<p>• '+esc(c.titulo||c.nombre||'')+(c.institucion?' — '+esc(c.institucion):'')+(c.anio?' ('+esc(c.anio)+')':'')+'</p>';
+        h+='<p>• '+esc(c.titulo||c.nombre||'')+(c.institucion?' — '+esc(c.institucion):'')+((c.anio||c.fecha)?' ('+esc(c.anio||c.fecha)+')':'')+'</p>';
       }
     });
     h+='</div>';
@@ -262,6 +262,85 @@ function render(d){
   document.title='CV ATS — '+nombre;
 }
 
+// ── Render de un CV en TEXTO PLANO (demo + CVs editados a mano en el panel) ──
+// Detecta el nombre (1ª línea), el subtítulo, los encabezados de sección (líneas
+// en MAYÚSCULAS) y los bullets (·, •, -, *). Así un CV de texto se ve igual de
+// prolijo que uno estructurado, en vez de quedar en blanco.
+function isHeaderLine(ln){
+  var t=(ln||'').trim();
+  return t.length>0 && t.length<=42 && t===t.toUpperCase() && /[A-ZÁÉÍÓÚÑ]/.test(t) && !/[·•]/.test(t);
+}
+function renderText(txt){
+  var lines=String(txt||'').split(/\r?\n/);
+  var h='', i=0;
+  while(i<lines.length && !lines[i].trim()) i++;
+  if(i<lines.length){ h+='<h1>'+esc(lines[i].trim())+'</h1>'; i++; }
+  if(i<lines.length && lines[i].trim() && !isHeaderLine(lines[i])){ h+='<div class="subtitle">'+esc(lines[i].trim())+'</div>'; i++; }
+  var inList=false;
+  function closeList(){ if(inList){ h+='</ul>'; inList=false; } }
+  for(; i<lines.length; i++){
+    var ln=lines[i].trim();
+    if(!ln) continue;
+    if(isHeaderLine(ln)){ closeList(); h+='<h2>'+esc(ln)+'</h2>'; continue; }
+    var m=ln.match(/^[·•\-\*]\s*(.*)$/);
+    if(m){ if(!inList){ h+='<ul>'; inList=true; } h+='<li>'+esc(m[1])+'</li>'; continue; }
+    closeList();
+    h+='<p style="margin-bottom:5px;">'+esc(ln)+'</p>';
+  }
+  closeList();
+  document.getElementById('content').innerHTML=h || '';
+  if(!h){ showError('Tu CV está vacío. Pedile a tu coach que lo genere desde el panel.'); }
+}
+
+// Normaliza el contenido guardado: puede venir como objeto estructurado, como
+// {cv_data:{...}} / {cv_optimizado:{...}}, como {texto:"..."} o como texto plano.
+function normalizeCV(contenido){
+  var c=contenido;
+  if(typeof c==='string'){
+    var s=c.trim();
+    if(s && (s.charAt(0)==='{' || s.charAt(0)==='[')){
+      try{ c=JSON.parse(s); }catch(e){ return {type:'text', text:contenido}; }
+    } else {
+      return {type:'text', text:contenido};
+    }
+  }
+  if(c && typeof c==='object'){
+    if(c.cv_data && typeof c.cv_data==='object') c=c.cv_data;
+    if(c.cv_optimizado && typeof c.cv_optimizado==='object') c=c.cv_optimizado;
+    if(c.nombre || c.experiencia || c.educacion) return {type:'struct', data:c};
+    var t=c.texto || c.cv_texto || c.text;
+    if(t) return {type:'text', text:t};
+    return {type:'struct', data:c};
+  }
+  return null;
+}
+
+// CV de ejemplo (María) para la DEMO — así el coach puede mostrar la versión ATS
+// aunque no haya un CV publicado en la base.
+var DEMO_EMAIL='maria.ejemplo@pathwaycareercoach.com';
+var DEMO_CV=[
+  "MARÍA GARCÍA LÓPEZ",
+  "Head of Growth | Demand Gen B2B SaaS | Madrid",
+  "+34 6XX XXX XXX · maria.ejemplo@pathwaycareercoach.com · Madrid, España · linkedin.com/in/mariagarcia",
+  "",
+  "PERFIL PROFESIONAL",
+  "Marketing Manager con 8 años de experiencia en growth y demand generation en SaaS B2B. Resultados medibles en generación de demanda, reducción de CAC y gestión de equipo. Busco un rol de Head of Growth para liderar estrategia y equipo.",
+  "",
+  "EXPERIENCIA LABORAL",
+  "Marketing Manager | Nubeo SaaS — 2020 a la actualidad",
+  "· Lideré la estrategia de demand gen: +140% de leads cualificados en 2 años.",
+  "· Reduje el CAC un 32% reestructurando paid + contenido.",
+  "· Gestioné un equipo de 4 personas y un presupuesto de 600k€/año.",
+  "Marketing Specialist | Tiendol — 2016 a 2020",
+  "· Monté el canal de email marketing desde cero (18% del revenue online).",
+  "",
+  "FORMACIÓN ACADÉMICA",
+  "Grado en Publicidad y RRPP | Universidad Complutense de Madrid",
+  "",
+  "COMPETENCIAS PROFESIONALES",
+  "Growth · Demand Gen · HubSpot · SQL básico · Gestión de equipos · Inglés C1"
+].join("\n");
+
 (function init(){
   var params=new URLSearchParams(window.location.search);
 
@@ -272,15 +351,17 @@ function render(d){
     var raw=null;
     try{raw=localStorage.getItem('mj_express_cv');}catch(e){}
     if(!raw){showError('No encontramos tu CV Express. Vuelve a la página de tu Pack y abre el editor primero.');return;}
-    var cvObj=null;
-    try{cvObj=JSON.parse(raw);}catch(e){}
-    if(!cvObj||typeof cvObj!=='object'){showError('Tu CV Express tiene un formato inesperado. Regenerá tu Pack.');return;}
-    render(cvObj);
+    var norm=normalizeCV(raw);
+    if(!norm){showError('Tu CV Express tiene un formato inesperado. Regenerá tu Pack.');return;}
+    if(norm.type==='text') renderText(norm.text); else render(norm.data);
     return;
   }
 
   // Modo normal: cliente del portal — CV en cv_publicados por email.
   var email=getEmail();
+  // DEMO: María de ejemplo no tiene CV en la base → mostramos uno de ejemplo
+  // para que el coach pueda enseñar la versión ATS en la demo.
+  if(email===DEMO_EMAIL){ renderText(DEMO_CV); return; }
   if(!email){showError('No se pudo identificar tu email. Volvé al portal e intentalo de nuevo.');return;}
   fetch(SB+'/rest/v1/cv_publicados?email=eq.'+encodeURIComponent(email)+'&order=created_at.desc&limit=1&select=contenido',{
     headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
@@ -289,9 +370,9 @@ function render(d){
     return r.json();
   }).then(function(rows){
     if(!rows || !rows.length){showError('Tu CV todavía no está publicado.');return;}
-    var contenido=rows[0].contenido;
-    if(typeof contenido==='string'){try{contenido=JSON.parse(contenido);}catch(e){}}
-    render(contenido);
+    var norm=normalizeCV(rows[0].contenido);
+    if(!norm){showError('Tu CV tiene un formato inesperado. Pedile a tu coach que lo regenere.');return;}
+    if(norm.type==='text') renderText(norm.text); else render(norm.data);
   }).catch(function(err){
     console.error('CV ATS load error:',err);
     showError('Error de conexión: '+(err.message||'desconocido'));
