@@ -1621,6 +1621,7 @@ function viewClienteDetalle(c){
     var ordered=ses.slice().sort(function(a,b){ return (""+(b.fecha||"")).localeCompare(""+(a.fecha||"")); });
     var hist=ordered.length
       ? ordered.map(function(s){
+          var oi=(c.ses||[]).indexOf(s);
           var tA=(s.acciones||"").split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean);
           var dn=s.tareas_done||[];
           var tHtml="";
@@ -1629,7 +1630,8 @@ function viewClienteDetalle(c){
             var tr=tA.map(function(tx,ti){ var ok=dn.indexOf(ti)!==-1; if(ok) ndn++;
               return "<div style='display:flex;align-items:center;gap:8px;padding:3px 0'>"+
                 "<span style='width:16px;height:16px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:"+(ok?"var(--pw-bosque)":"transparent")+";border:1.5px solid "+(ok?"var(--pw-bosque)":"var(--pw-border-strong)")+";color:#fff'>"+(ok?svg(IC.check,9,"stroke-width='3.2'"):"")+"</span>"+
-                "<span style='font-size:12px;color:"+(ok?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(ok?"text-decoration:line-through":"")+"'>"+esc(tx)+"</span></div>";
+                "<span style='flex:1;font-size:12px;color:"+(ok?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(ok?"text-decoration:line-through":"")+"'>"+esc(tx)+"</span>"+
+                "<button class='cp-icon-btn' style='width:22px;height:22px;flex-shrink:0' data-act='ses-task-del' data-id='"+esc(c.id)+"' data-si='"+oi+"' data-ti='"+ti+"' title='Quitar tarea'>"+svg(IC.close,11)+"</button></div>";
             }).join("");
             tHtml="<div style='margin-top:8px;background:var(--pw-niebla-2);border-radius:10px;padding:10px 12px'>"+
               "<div class='cp-eyebrow' style='margin-bottom:6px'>Tareas del cliente · "+ndn+"/"+tA.length+" hechas</div>"+tr+"</div>";
@@ -1639,7 +1641,9 @@ function viewClienteDetalle(c){
             (s.trabajado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.trabajado)+"</div>":"")+
             (s.acordado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>Acordado: "+esc(s.acordado)+"</div>":"")+
             (s.doc?"<div style='font-size:12px;margin-top:4px'>📎 <a href='"+esc(s.doc)+"' target='_blank' rel='noopener' style='color:var(--pw-bosque);font-weight:600'>"+esc(s.doc_nombre||"Documento")+"</a></div>":"")+
-            tHtml+"</div>"; }).join("")
+            tHtml+
+            "<div style='display:flex;gap:8px;margin-top:8px'><input id='st-add-"+oi+"' class='cp-form-input' style='flex:1;height:32px;font-size:12px' placeholder='Nueva tarea para el cliente…'><button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 12px' data-act='ses-task-add' data-id='"+esc(c.id)+"' data-si='"+oi+"'>Agregar</button></div>"+
+            "</div>"; }).join("")
       : "<div style='color:var(--pw-text-soft);font-size:13px'>Todavía no hay sesiones registradas.</div>";
     body="<div class='cp-ses-hero'>"+
         "<div class='cp-ses-hero-lbl'>"+(prox?"● Próxima sesión":"Sin sesión agendada")+"</div>"+
@@ -1655,7 +1659,7 @@ function viewClienteDetalle(c){
         "<div class='cp-form-row'><label class='cp-form-label'>Tema / qué se trabajó</label><input id='ss-tema' class='cp-form-input' placeholder='Ej: Estrategia de CV'></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Acordado / próximos pasos</label><textarea id='ss-acor' class='cp-form-textarea' placeholder='Qué quedó acordado…'></textarea></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Tareas para el cliente (una por línea)</label><textarea id='ss-tareas' class='cp-form-textarea' placeholder='Una tarea por línea. El cliente las marca como hechas en su portal.'></textarea><span class='cp-form-hint'>Aparecen en el portal del cliente con un check que él va marcando.</span></div>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Documento para el cliente (opcional)</label><input id='ss-doc' type='file' class='cp-form-input' accept='.pdf,.doc,.docx,.png,.jpg,.jpeg,.txt'><span class='cp-form-hint'>Se adjunta a la sesión. El cliente lo ve y lo descarga desde su portal.</span></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Documento para el cliente (opcional)</label><input id='ss-doc' type='file' class='cp-form-input' accept='.pdf,.doc,.docx,.png,.jpg,.jpeg,.txt' style='background:var(--pw-niebla-2);border:1.5px dashed var(--pw-border-strong);border-radius:14px;padding:14px;cursor:pointer'><span class='cp-form-hint'>Se adjunta a la sesión. El cliente lo ve y lo descarga desde su portal.</span></div>"+
         "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='ses-add' data-id='"+esc(c.id)+"'>Guardar sesión</button></div></div>"+
         (ordered.length?"<div class='cp-tl'>"+hist+"</div>":"<div style='color:var(--pw-text-soft);font-size:13px'>Todavía no hay sesiones. Agrega la primera con el botón de arriba.</div>")+
         "</div></div>";
@@ -4841,6 +4845,32 @@ document.addEventListener("click", function(ev){
     } else {
       saveProg().then(function(){ toast("Avance guardado ✓"); render(); }).catch(function(){ alert("No se pudo guardar el avance."); });
     }
+    return;
+  }
+  if(act==="ses-task-add"){
+    var tid=el.getAttribute("data-id"), si=parseInt(el.getAttribute("data-si"),10);
+    var tc=CLIENTS.filter(function(x){return String(x.id)===String(tid);})[0];
+    if(!tc||!tc.ses||!tc.ses[si]){ return; }
+    var inp=document.getElementById("st-add-"+si); var v=inp?inp.value.trim():"";
+    if(!v) return;
+    var s=tc.ses[si]; s.acciones=((s.acciones||"")+(s.acciones?"\n":"")+v);
+    _sbw("candidatos?id=eq."+encodeURIComponent(tid),"PATCH",{sesiones_registro:JSON.stringify(tc.ses)})
+      .then(function(r){ if(!r.ok) throw 0; toast("Tarea agregada ✓"); render(); })
+      .catch(function(){ alert("No se pudo agregar la tarea."); });
+    return;
+  }
+  if(act==="ses-task-del"){
+    var dtid=el.getAttribute("data-id"), dsi=parseInt(el.getAttribute("data-si"),10), dti=parseInt(el.getAttribute("data-ti"),10);
+    var dtc=CLIENTS.filter(function(x){return String(x.id)===String(dtid);})[0];
+    if(!dtc||!dtc.ses||!dtc.ses[dsi]) return;
+    var ds=dtc.ses[dsi];
+    var darr=(ds.acciones||"").split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean);
+    if(dti<0||dti>=darr.length) return;
+    darr.splice(dti,1); ds.acciones=darr.join("\n");
+    ds.tareas_done=(ds.tareas_done||[]).filter(function(x){return x!==dti;}).map(function(x){return x>dti?x-1:x;});
+    _sbw("candidatos?id=eq."+encodeURIComponent(dtid),"PATCH",{sesiones_registro:JSON.stringify(dtc.ses)})
+      .then(function(r){ if(!r.ok) throw 0; toast("Tarea quitada ✓"); render(); })
+      .catch(function(){ alert("No se pudo quitar la tarea."); });
     return;
   }
   if(act==="ses-add"){
