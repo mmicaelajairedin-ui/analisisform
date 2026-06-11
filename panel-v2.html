@@ -934,6 +934,7 @@ var state = {
   plan: "pro",
   trialDays: 9,
   adminTab: "coaches",
+  coachView: "lista",
   coachSel: null,
   coachMsg: "",
   msgDraft: "",
@@ -3166,7 +3167,7 @@ function viewAdmin(){
     var _bc=(off||_hc==="danger")?"var(--pw-danger)":(_hc==="warn"?"#B5651D":"var(--pw-sendero)");
     var _av=c.fotoUrl?"<img src='"+esc(c.fotoUrl)+"' class='cp-coach-av' alt='' referrerpolicy='no-referrer'>":"<div class='cp-coach-av cp-coach-av-i'>"+esc((""+(c.n||"?")).charAt(0).toUpperCase())+"</div>";
     var _stat=function(v,k){return "<div class='cp-coach-st'><div class='v'>"+v+"</div><div class='k'>"+k+"</div></div>";};
-    return "<div class='cp-coach"+(off?" off":"")+"' style='border-left:4px solid "+_bc+"'>"+
+    return "<div class='cp-coach"+(off?" off":"")+"' data-nm='"+esc((""+(c.n||"")).toLowerCase())+"' style='border-left:4px solid "+_bc+"'>"+
       "<div class='cp-coach-top'>"+_av+
         "<div style='min-width:0;flex:1'><div class='cp-coach-nm'>"+esc(c.n)+"</div>"+
           "<div class='cp-coach-meta'>Alta "+esc(alta[0])+" · últ. acceso "+esc(c.acc[0])+"</div></div>"+
@@ -3419,16 +3420,24 @@ function viewAdmin(){
             (cm ? "<div style='font-size:12px;font-weight:600;color:"+cmCol+"'>"+esc(cm.replace(/^(ok|err|…):/,""))+"</div>" : "")+
           "</div></div>"
       ) : "";
-      body = accBox+"<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
+      // Dos sub-pestañas: "Coaches" (lista + buscador) y "Analíticas" (KPIs).
+      // Separar saca el "choclo" y hace que las analíticas no carguen de gusto.
+      var _cv = state.coachView||"lista";
+      var _tabs = "<div style='display:flex;gap:6px;margin-bottom:2px'>"+
+        "<button class='cp-chip "+(_cv==="lista"?"is-on":"")+"' data-act='coachview:lista'>Coaches</button>"+
+        "<button class='cp-chip "+(_cv==="analiticas"?"is-on":"")+"' data-act='coachview:analiticas'>Analíticas</button>"+
+      "</div>";
+      var _kpis = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
         fc("<span style='color:var(--pw-bosque)'>"+(A?A.act7:5)+"</span>","Activas esta semana")+
         fc("<span style='color:#8E7A35'>"+(A?A.prueba:2)+"</span>","En prueba"+(A&&A.venc3?" ("+A.venc3+" vence ≤3 d)":""))+
         fc("<span style='color:var(--pw-danger)'>"+(A?A.inact14:2)+"</span>","Inactivas +14 d")+
         fc(""+(A?A.nuevas7:1),"Nuevas esta semana")+
         fc("<span style='color:var(--pw-danger)'>"+(A?A.sinUso:2)+"</span>","Sin uso (≥5 d, 0 clientes)")+
-      "</div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>"+coachesEng.length+" registradas · uso real</span></div>"+
-        "<div class='cp-coach-grid'>"+engRows+"</div></div>";
+      "</div></div>";
+      var _list = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
+        "<input class='cp-form-input' style='max-width:230px;height:34px' placeholder='Buscar coach…' oninput='cpCoachFilter(this.value)'></div>"+
+        "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div></div>";
+      body = _tabs + (_cv==="analiticas" ? _kpis : (accBox + _list));
     }
   } else if(state.adminTab==="contactos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Popup de pricing<span class='dot'>.</span></h3>"+
@@ -3837,6 +3846,7 @@ document.addEventListener("click", function(ev){
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; render(); return; }
+  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); render(); return; }
   if(act==="coach-back"){ state.coachSel=null; state.msgAdminDraft=""; render(); return; }
   if(act.indexOf("coach-view:")===0){ state.coachSel=act.slice(11); state.msgAdminDraft=""; render(); window.scrollTo(0,0); return; }
   // ─── Mensajes admin↔coach ───────────────────────────────────────
@@ -5143,6 +5153,9 @@ function _avCollect(avc){
 function _chatArr(s){ try{ var a=JSON.parse(s||"[]"); return Object.prototype.toString.call(a)==="[object Array]"?a:[]; }catch(e){ return []; } }
 // Cuenta demo: habilita el selector Carrera/Fitness/Finanzas en el sidebar.
 function _isDemoCoach(){ try{ return !!(REAL && RME && ((""+(RME.email||"")).toLowerCase()==="demo.coach@pathway.com" || (RCFG&&RCFG.demo===true))); }catch(e){ return false; } }
+// Buscador de coaches (pestaña Coaches): oculta las tarjetas que no matchean.
+// Filtra en el DOM (sin re-render) para no perder el foco del input al tipear.
+function cpCoachFilter(q){ q=(""+(q||"")).toLowerCase().trim(); var els=document.querySelectorAll("#cp-coach-grid .cp-coach"); for(var i=0;i<els.length;i++){ var nm=els[i].getAttribute("data-nm")||""; els[i].style.display=(!q||nm.indexOf(q)>=0)?"":"none"; } }
 // Etiqueta de rol del coach según su tipo (carrera/fitness/financiero).
 function coachRoleLabel(){
   var tp=_isDemoCoach()?(state.demoTipo||"carrera"):((RCFG&&RCFG.coach_type)||"carrera");
