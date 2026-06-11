@@ -142,6 +142,21 @@ const RULES = [
     },
   },
   {
+    name: "la cabra (sendero gamificado) se renderiza en el Resumen del panel",
+    bug: "coachPath() dibuja el sendero de la cabra. Si queda definida pero NADIE " +
+         "la llama (como le paso a la tarjeta de onboarding vieja), la cabra " +
+         "desaparece del panel sin error. Tiene que invocarse en viewResumen y " +
+         "usar el fondo ilustrado.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!/pathCard\s*=\s*coachPath\(\)/.test(p))
+        return "coachPath() no se invoca en el Resumen (la cabra quedaria huerfana).";
+      if (!/assets\/cabra\/fondo\.webp/.test(p))
+        return "falta el fondo ilustrado (assets/cabra/fondo.webp) en la escena.";
+      return null;
+    },
+  },
+  {
     name: "el detector de humo (pw-observe.js) sigue incluido en las paginas clave",
     bug: "pw-observe.js registra los errores de produccion. Si se quita de una " +
          "pagina, esa pagina vuelve a operar a ciegas.",
