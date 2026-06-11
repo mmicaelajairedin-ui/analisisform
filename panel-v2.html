@@ -1334,22 +1334,17 @@ function viewResumen(){
 function _avanceHtml(c, embed){
   var AD=(c.inf&&c.inf.d)||{};
   var ACTS=[]; try{ ACTS=JSON.parse((c.raw&&c.raw.acciones_progreso)||"[]")||[]; }catch(e){ ACTS=[]; }
-  var ETN=etapasDe(c);
+  // Etapas OPCIONALES: solo se agrupan si el coach puso nombres (c.raw.etapas).
+  // Sin nombres → una sola lista de acciones. Igual en todos los nichos.
+  var rawEt=null; try{ rawEt=JSON.parse((c.raw&&c.raw.etapas)||"null"); }catch(e){}
+  if(Object.prototype.toString.call(rawEt)!=="[object Array]") rawEt=[];
+  var hasEt = rawEt.filter(function(x){return (""+(x||"")).trim();}).length>0;
   var wkE = state.cliWeek!=null ? state.cliWeek : c.week;
-  var etChips=[1,2,3,4].map(function(n){return "<button class='cp-chip "+(wkE===n?"is-on":"")+"' data-act='cliweek:"+n+"'>"+esc(ETN[n-1])+"</button>";}).join("");
-  var etInputs=[0,1,2,3].map(function(i){return "<div class='cp-form-row'><label class='cp-form-label'>Etapa "+(i+1)+"</label><input id='et-"+i+"' class='cp-form-input' value=\""+esc(ETN[i])+"\"></div>";}).join("");
-  var etapaCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Etapa del programa<span class='dot'>.</span></h3><span class='cp-eyebrow'>La defines tú</span></div>"+
-    "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-    "<div style='font-size:12px;color:var(--pw-text-soft)'>En qué etapa está el cliente (afecta su progreso y recursos):</div>"+
-    "<div class='cp-filters'>"+etChips+"</div>"+
-    "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:4px'>Nombres de las etapas (los ve el cliente):</div>"+
-    "<div class='cp-form-row-2'>"+etInputs+"</div>"+
-    "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' data-act='etapa-save' data-id='"+esc(c.id)+"'>Guardar etapa y nombres</button></div></div></div>";
-  var weeksA=[[ETN[0],"cv_acciones"],[ETN[1],"linkedin_acciones"],[ETN[2],"networking_acciones"],[ETN[3],"preguntas"]];
+  var keys=["cv_acciones","linkedin_acciones","networking_acciones","preguntas"];
   var totD=0,totN=0,off=0,actRows="";
-  weeksA.forEach(function(w,wi){
-    var arr=AD[w[1]]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
-    actRows+="<div style='font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--pw-text-muted);margin:14px 0 2px'>"+esc(w[0])+"</div>";
+  keys.forEach(function(key,wi){
+    var arr=AD[key]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
+    if(hasEt && (""+(rawEt[wi]||"")).trim()) actRows+="<div style='font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--pw-text-muted);margin:14px 0 2px'>"+esc(rawEt[wi])+"</div>";
     arr.forEach(function(tx,i){
       var fi=off+i, ok=!!ACTS[fi]; if(ok) totD++;
       actRows+="<div style='display:flex;align-items:center;gap:10px;padding:4px 0'>"+
@@ -1358,12 +1353,27 @@ function _avanceHtml(c, embed){
         "<button class='cp-icon-btn' style='width:24px;height:24px;flex-shrink:0' title='Quitar' data-act='av-del' data-w='"+wi+"' data-i='"+i+"' data-id='"+esc(c.id)+"'>"+svg(IC.close,12)+"</button></div>";
     });
     off+=arr.length; totN+=arr.length;
-    actRows+="<button class='cp-btn cp-btn-ghost' style='height:28px;font-size:12px;padding:0 12px;margin-top:4px' data-act='av-add' data-w='"+wi+"' data-id='"+esc(c.id)+"'>"+svg(IC.plus,11)+" Agregar acción</button>";
+    if(hasEt) actRows+="<button class='cp-btn cp-btn-ghost' style='height:28px;font-size:12px;padding:0 12px;margin:4px 0 8px' data-act='av-add' data-w='"+wi+"' data-id='"+esc(c.id)+"'>"+svg(IC.plus,11)+" Agregar acción</button>";
   });
+  if(!hasEt) actRows+="<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 14px;margin-top:8px' data-act='av-add' data-w='0' data-id='"+esc(c.id)+"'>"+svg(IC.plus,12)+" Agregar acción</button>";
+  if(!totN) actRows="<div style='font-size:13px;color:var(--pw-text-soft);padding:4px 0 8px'>Sin acciones todavía. Generá con IA arriba para crearlas.</div>"+actRows;
   var pctA=totN?Math.round(totD/totN*100):0;
-  return etapaCard+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Acciones<span class='dot'>.</span></h3>"+
+  // Editor de etapas — OPCIONAL y colapsable. Sin nombres queda oculto.
+  var etChips=[1,2,3,4].map(function(n){return "<button class='cp-chip "+(wkE===n?"is-on":"")+"' data-act='cliweek:"+n+"'>"+esc((rawEt[n-1]&&(""+rawEt[n-1]).trim())?rawEt[n-1]:("Etapa "+n))+"</button>";}).join("");
+  var etInputs=[0,1,2,3].map(function(i){return "<div class='cp-form-row'><label class='cp-form-label'>Etapa "+(i+1)+"</label><input id='et-"+i+"' class='cp-form-input' value=\""+esc(rawEt[i]||"")+"\" placeholder='Nombre (opcional)'></div>";}).join("");
+  var etEditor="<div class='cp-card'><div class='cp-card-pad'>"+
+    "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' onclick='_etToggle()'>"+svg(IC.plus,11)+" "+(hasEt?"Editar etapas":"Organizar por etapas")+"</button>"+
+    "<div id='et-edit' style='"+(hasEt?"":"display:none;")+"margin-top:12px'>"+
+      "<div class='cp-form-hint' style='margin:0 0 8px'>Opcional. Poné nombres a las etapas para agrupar las acciones; si los dejás vacíos, queda una sola lista.</div>"+
+      "<div style='font-size:12px;color:var(--pw-text-soft)'>En qué etapa está el cliente:</div>"+
+      "<div class='cp-filters' style='margin:6px 0 10px'>"+etChips+"</div>"+
+      "<div class='cp-form-row-2'>"+etInputs+"</div>"+
+      "<div style='display:flex;justify-content:flex-end;margin-top:10px'><button class='cp-btn cp-btn-primary' data-act='etapa-save' data-id='"+esc(c.id)+"'>Guardar etapas</button></div>"+
+    "</div></div></div>";
+  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Acciones<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>"+totD+"/"+totN+" hechas · "+pctA+"%</span></div>"+
       "<div class='cp-card-pad'><div class='cp-ob-bar'><span style='width:"+pctA+"%'></span></div>"+actRows+"</div></div>"+
+    etEditor+
     (embed?"":"<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='avance-save' data-id='"+esc(c.id)+"'>Guardar avance</button></div></div>");
 }
 function viewClienteDetalle(c){
@@ -1605,9 +1615,9 @@ function viewClienteDetalle(c){
       _blk("Fortalezas","Una por línea",_ta("pl-for",_al(D.fortalezas),"Una fortaleza por línea…",80))+
       _blk("Áreas a mejorar","Una por línea — el cliente las ve como 'dónde tienes más potencial'",_ta("pl-gap",_al(D.gaps),"Un área por línea…",80))+
       _blk("Estrategia","El plan general que ve el cliente en su portal",_ta("pl-est",D.estrategia||"","Estrategia recomendada para el cliente…",90))+
-      (_exHide?"":_avanceHtml(c,true))+
       _blk("Alertas","Avisos importantes — una por línea",_ta("pl-alert",_al(D.alertas),"Una alerta por línea…",70))+
       _blk("Mensaje para el cliente","Nota personal que ve en su portal",_ta("pl-msg",D.mensaje_candidato||"","Mensaje personal para el cliente…",80))+
+      (_exHide?"":_avanceHtml(c,true))+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end;gap:10px'>"+
         "<button class='cp-btn cp-btn-primary' data-act='plan-save' data-id='"+esc(c.id)+"'>Guardar</button></div></div>";
   } else if(t==="avance"){
@@ -5308,6 +5318,8 @@ function fichaV2(){ try{
 }catch(e){ return false; } }
 // Sesiones: "Agregar sesión" despliega/oculta el formulario (registrar = sumar al historial).
 function _sesForm(){ var f=document.getElementById("ses-form"); if(f) f.style.display=(f.style.display==="none"||!f.style.display)?"flex":"none"; }
+// Análisis: mostrar/ocultar el editor de etapas (opcional).
+function _etToggle(){ var f=document.getElementById("et-edit"); if(f) f.style.display=(f.style.display==="none"||!f.style.display)?"block":"none"; }
 // Mensajes: elegir plantilla muestra solo esa (el preview real sale al apretar Enviar email).
 function _msgPick(i){
   var b=document.querySelectorAll(".msgtpl"); for(var k=0;k<b.length;k++) b[k].style.display=(b[k].id==="msgtpl-"+i)?"":"none";
