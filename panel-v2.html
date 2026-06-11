@@ -5303,7 +5303,7 @@ function loadReal(){
         _sb("contactos_chat?select=contacto,pagina,fecha&pagina=neq.resena-cvexpress&order=fecha.desc&limit=30"),
         _sb("candidatos?select=id,created_at,coach_id,email,resena"),
         _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
-        Promise.resolve([]) ]
+        _sb("informes?select=coach_id") ]
     : [ Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]), Promise.resolve([]) ];
   // Mensajes admin↔coach: admin trae todos (para listar por coach en la
   // ficha), coach solo su hilo (filtrado por coach_id).
@@ -5312,12 +5312,14 @@ function loadReal(){
     : _sb("mensajes_admin_coach?coach_id=eq."+encodeURIComponent(ME.id)+"&select=*&order=created_at.asc&limit=500");
   Promise.all([
     _sb("candidatos?"+cf+"&order=created_at.desc"),
-    // AISLAMIENTO: un coach no-admin solo puede bajar SUS cv_publicados/informes.
-    // Sin el filtro, el navegador del coach descargaba el contenido completo de
-    // los CVs e informes de TODOS los coaches (fuga coach→coach, visible en
-    // DevTools aunque la UI mostrara solo los propios). Admin ve todo.
-    _sb("cv_publicados?select=email,contenido,coach_id"+(RADMIN?"":"&coach_id=eq."+encodeURIComponent(ME.id))),
-    _sb("informes?select=email,id,data,coach_id"+(RADMIN?"":"&coach_id=eq."+encodeURIComponent(ME.id))+"&order=created_at.desc"),
+    // AISLAMIENTO + RENDIMIENTO: un coach no-admin solo baja SUS cv_publicados/
+    // informes. El admin TAMBIEN baja solo los suyos + huerfanos (no el contenido
+    // pesado de TODAS las coaches): el panel solo muestra el contenido de SUS
+    // clientes. Los conteos de informes por coach salen de una query liviana
+    // (solo coach_id, ver extra[4]). Antes el admin bajaba el `data`/`contenido`
+    // completo de toda la plataforma -> arranque lento.
+    _sb("cv_publicados?select=email,contenido,coach_id"+(RADMIN?"&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)":"&coach_id=eq."+encodeURIComponent(ME.id))),
+    _sb("informes?select=email,id,data,coach_id"+(RADMIN?"&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)":"&coach_id=eq."+encodeURIComponent(ME.id))+"&order=created_at.desc"),
     _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion,slug,titulo_profesional,bio,perfil_publico_activo"),
     extra[0], extra[1], extra[2], extra[3], extra[4],
     _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc"),
@@ -5326,7 +5328,10 @@ function loadReal(){
   ]).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
     RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
-    RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:res[8]||[], resenas:res[10]||[], informes:inf } : null;
+    // informes: conteo por coach desde la query liviana (res[8] = solo coach_id de
+    // TODA la plataforma). `inf` (res[2]) tiene el `data` SOLO de los clientes del
+    // admin (para abrir sus reportes). leads quedo deprecado (siempre vacio).
+    RADM = (ME.rol==="admin") ? { cands:res[6]||[], cvx:res[7]||[], leads:[], resenas:res[10]||[], informes:res[8]||[] } : null;
     RSOL = res[9]||[];
     RMSG = res[11]||[];
     // Una vez cargados los mensajes iniciales, arrancar el polling. La
