@@ -1324,6 +1324,50 @@ function viewResumen(){
 }
 
 /* ═══ Clientes ═══ */
+// Render de "Avance" (etapas + acciones interactivas: editar/marcar/agregar/quitar).
+// Se usa embebido dentro de Análisis (embed=true oculta su propio botón Guardar,
+// porque el "Guardar" de Análisis ya guarda acciones+progreso vía _avCollect).
+function _avanceHtml(c, embed){
+  var AD=(c.inf&&c.inf.d)||{};
+  var ACTS=[]; try{ ACTS=JSON.parse((c.raw&&c.raw.acciones_progreso)||"[]")||[]; }catch(e){ ACTS=[]; }
+  var ETN=etapasDe(c);
+  var wkE = state.cliWeek!=null ? state.cliWeek : c.week;
+  var etChips=[1,2,3,4].map(function(n){return "<button class='cp-chip "+(wkE===n?"is-on":"")+"' data-act='cliweek:"+n+"'>"+esc(ETN[n-1])+"</button>";}).join("");
+  var etInputs=[0,1,2,3].map(function(i){return "<div class='cp-form-row'><label class='cp-form-label'>Etapa "+(i+1)+"</label><input id='et-"+i+"' class='cp-form-input' value=\""+esc(ETN[i])+"\"></div>";}).join("");
+  var etapaCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Etapa del programa<span class='dot'>.</span></h3><span class='cp-eyebrow'>La defines tú</span></div>"+
+    "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+    "<div style='font-size:12px;color:var(--pw-text-soft)'>En qué etapa está el cliente (afecta su progreso y recursos):</div>"+
+    "<div class='cp-filters'>"+etChips+"</div>"+
+    "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:4px'>Nombres de las etapas (los ve el cliente):</div>"+
+    "<div class='cp-form-row-2'>"+etInputs+"</div>"+
+    "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' data-act='etapa-save' data-id='"+esc(c.id)+"'>Guardar etapa y nombres</button></div></div></div>";
+  var weeksA=[[ETN[0],"cv_acciones"],[ETN[1],"linkedin_acciones"],[ETN[2],"networking_acciones"],[ETN[3],"preguntas"]];
+  var totD=0,totN=0,off=0,boxes="";
+  weeksA.forEach(function(w,wi){
+    var arr=AD[w[1]]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
+    var nd=0, rows="";
+    arr.forEach(function(tx,i){
+      var fi=off+i, ok=!!ACTS[fi]; if(ok) nd++;
+      rows+="<div style='display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
+        "<input type='checkbox' id='av-"+fi+"'"+(ok?" checked":"")+" title='Marcar como hecho' style='width:17px;height:17px;accent-color:var(--pw-bosque);flex-shrink:0;cursor:pointer'>"+
+        "<input id='avt-"+wi+"-"+i+"' class='cp-form-input' style='flex:1;font-size:13px;padding:8px 10px' value=\""+esc(tx)+"\">"+
+        "<button class='cp-icon-btn' title='Quitar' data-act='av-del' data-w='"+wi+"' data-i='"+i+"' data-id='"+esc(c.id)+"'>"+svg(IC.close,13)+"</button></div>";
+    });
+    off+=arr.length; totD+=nd; totN+=arr.length;
+    boxes+="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(w[0])+"<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Etapa "+(wi+1)+" · "+nd+"/"+arr.length+"</span></div><div class='cp-card-pad'>"+
+      (arr.length?rows:"<div style='font-size:13px;color:var(--pw-text-soft);padding:6px 0 10px'>Sin acciones todavía. Agrega la primera abajo 👇</div>")+
+      "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px;margin-top:10px' data-act='av-add' data-w='"+wi+"' data-id='"+esc(c.id)+"'>"+svg(IC.plus,12)+" Agregar acción</button>"+
+      "</div></div>";
+  });
+  var pctA=totN?Math.round(totD/totN*100):0;
+  return etapaCard+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Acciones del cliente<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>"+totD+"/"+totN+" · "+pctA+"%</span></div>"+
+      "<div class='cp-card-pad'><div class='cp-ob-bar'><span style='width:"+pctA+"%'></span></div>"+
+      "<div style='font-size:12px;color:var(--pw-text-soft);margin:8px 0 2px'>Editá las acciones y marcá las hechas. Se guardan con el botón <strong>Guardar</strong> de abajo.</div></div></div>"+
+    boxes+
+    (embed?"":"<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='avance-save' data-id='"+esc(c.id)+"'>Guardar avance</button></div></div>");
+}
 function viewClienteDetalle(c){
   function pill2(txt,kind){
     var st = kind==="ok" ? "background:var(--pw-success-bg);color:var(--pw-bosque)"
@@ -1371,7 +1415,7 @@ function viewClienteDetalle(c){
   var tabs;
   if(_tipo==='fitness') tabs=[["perfil","Perfil"],["plan","Análisis"],["fit_rutina","Gym"],["fit_antro","Antropometría"],["fit_nutri","Nutrición"],["sesiones","Sesiones"],["gestion","Gestión"]];
   else if(_tipo==='financiero') tabs=[["perfil","Perfil"],["plan","Análisis"],["fin_pres","Finanzas"],["sesiones","Sesiones"],["gestion","Gestión"]];
-  else tabs=[["perfil","Perfil"],["plan","Análisis"],["avance","Avance"],["docs","Documentos"],["sesiones","Sesiones"],["gestion","Gestión"]];
+  else tabs=[["perfil","Perfil"],["plan","Análisis"],["docs","Documentos"],["sesiones","Sesiones"],["gestion","Gestión"]];
   var tabBar="<div class='cp-filters'>"+tabs.map(function(x){return "<button class='cp-chip "+(t===x[0]?"is-on":"")+"' data-act='clidet:"+x[0]+"'>"+x[1]+"</button>";}).join("")+"</div>";
   // Menu vertical IDENTICO al de Configuracion: mismas clases (cp-cfg-nav). Mismos data-act.
   var _ficon={perfil:'👤',plan:'📋',fit_rutina:'🏋️',fit_antro:'📐',fit_nutri:'🥗',sesiones:'🗓️',mensajes:'💬',gestion:'⚙️',fin_pres:'💰',avance:'📈',docs:'📄'};
@@ -1564,56 +1608,13 @@ function viewClienteDetalle(c){
       _blk("Fortalezas","Una por línea",_ta("pl-for",_al(D.fortalezas),"Una fortaleza por línea…",80))+
       _blk("Áreas a mejorar","Una por línea — el cliente las ve como 'dónde tienes más potencial'",_ta("pl-gap",_al(D.gaps),"Un área por línea…",80))+
       _blk("Estrategia","El plan general que ve el cliente en su portal",_ta("pl-est",D.estrategia||"","Estrategia recomendada para el cliente…",90))+
-      _blk("Etapa 1 · "+esc(PETN[0]),"Acciones de esta etapa — una por línea",_ta("pl-s1",_al(D.cv_acciones),"Una acción por línea…",90))+
-      _blk("Etapa 2 · "+esc(PETN[1]),"Acciones de esta etapa — una por línea",_ta("pl-s2",_al(D.linkedin_acciones),"Una acción por línea…",90))+
-      _blk("Etapa 3 · "+esc(PETN[2]),"Acciones de esta etapa — una por línea",_ta("pl-s3",_al(D.networking_acciones),"Una acción por línea…",90))+
-      _blk("Etapa 4 · "+esc(PETN[3]),"Preguntas y preparación — una por línea",_ta("pl-s4",_al(D.preguntas),"Una pregunta por línea…",90))+
+      (_exHide?"":_avanceHtml(c,true))+
       _blk("Alertas","Avisos importantes — una por línea",_ta("pl-alert",_al(D.alertas),"Una alerta por línea…",70))+
       _blk("Mensaje para el cliente","Nota personal que ve en su portal",_ta("pl-msg",D.mensaje_candidato||"","Mensaje personal para el cliente…",80))+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end;gap:10px'>"+
-        "<button class='cp-btn cp-btn-primary' data-act='plan-save' data-id='"+esc(c.id)+"'>Guardar plan</button></div></div>";
+        "<button class='cp-btn cp-btn-primary' data-act='plan-save' data-id='"+esc(c.id)+"'>Guardar</button></div></div>";
   } else if(t==="avance"){
-    var AD=(c.inf&&c.inf.d)||{};
-    var ACTS=[]; try{ ACTS=JSON.parse((c.raw&&c.raw.acciones_progreso)||"[]")||[]; }catch(e){ ACTS=[]; }
-    var ETN=etapasDe(c);
-    var wkE = state.cliWeek!=null ? state.cliWeek : c.week;
-    var etChips=[1,2,3,4].map(function(n){return "<button class='cp-chip "+(wkE===n?"is-on":"")+"' data-act='cliweek:"+n+"'>"+esc(ETN[n-1])+"</button>";}).join("");
-    var etInputs=[0,1,2,3].map(function(i){return "<div class='cp-form-row'><label class='cp-form-label'>Etapa "+(i+1)+"</label><input id='et-"+i+"' class='cp-form-input' value=\""+esc(ETN[i])+"\"></div>";}).join("");
-    var etapaCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Etapa del programa<span class='dot'>.</span></h3><span class='cp-eyebrow'>La defines tú</span></div>"+
-      "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-      "<div style='font-size:12px;color:var(--pw-text-soft)'>En qué etapa está el cliente (afecta su progreso y recursos):</div>"+
-      "<div class='cp-filters'>"+etChips+"</div>"+
-      "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:4px'>Nombres de las etapas (los ve el cliente):</div>"+
-      "<div class='cp-form-row-2'>"+etInputs+"</div>"+
-      "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='etapa-save' data-id='"+esc(c.id)+"'>Guardar etapa y nombres</button></div></div></div>";
-    var weeksA=[[ETN[0],"cv_acciones"],[ETN[1],"linkedin_acciones"],[ETN[2],"networking_acciones"],[ETN[3],"preguntas"]];
-    var totD=0,totN=0,off=0,boxes="";
-    weeksA.forEach(function(w,wi){
-      var arr=AD[w[1]]; if(Object.prototype.toString.call(arr)!=="[object Array]") arr=[];
-      var nd=0, rows="";
-      arr.forEach(function(tx,i){
-        var fi=off+i, ok=!!ACTS[fi]; if(ok) nd++;
-        rows+="<div style='display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
-          "<input type='checkbox' id='av-"+fi+"'"+(ok?" checked":"")+" title='Marcar como hecho' style='width:17px;height:17px;accent-color:var(--pw-bosque);flex-shrink:0;cursor:pointer'>"+
-          "<input id='avt-"+wi+"-"+i+"' class='cp-form-input' style='flex:1;font-size:13px;padding:8px 10px' value=\""+esc(tx)+"\">"+
-          "<button class='cp-icon-btn' title='Quitar' data-act='av-del' data-w='"+wi+"' data-i='"+i+"' data-id='"+esc(c.id)+"'>"+svg(IC.close,13)+"</button></div>";
-      });
-      off+=arr.length; totD+=nd; totN+=arr.length;
-      boxes+="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(w[0])+"<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Etapa "+(wi+1)+" · "+nd+"/"+arr.length+"</span></div><div class='cp-card-pad'>"+
-        (arr.length?rows:"<div style='font-size:13px;color:var(--pw-text-soft);padding:6px 0 10px'>Sin acciones todavía. Agrega la primera abajo 👇</div>")+
-        "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px;margin-top:10px' data-act='av-add' data-w='"+wi+"' data-id='"+esc(c.id)+"'>"+svg(IC.plus,12)+" Agregar acción</button>"+
-        "</div></div>";
-    });
-    {
-      var pctA=totN?Math.round(totD/totN*100):0;
-      body=etapaCard+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Avance del cliente<span class='dot'>.</span></h3>"+
-          "<span class='cp-eyebrow'>"+totD+"/"+totN+" · "+pctA+"%</span></div>"+
-          "<div class='cp-card-pad'><div class='cp-ob-bar'><span style='width:"+pctA+"%'></span></div>"+
-          "<div style='font-size:12px;color:var(--pw-text-soft);margin:8px 0 2px'>Marca o desmarca los logros del cliente y toca <strong>Guardar avance</strong> — se sincroniza con su portal al instante.</div></div></div>"+
-        boxes+
-        "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='avance-save' data-id='"+esc(c.id)+"'>Guardar avance</button></div></div>";
-    }
+    body=_avanceHtml(c,false);
   } else if(t==="sesiones"){
     var ses=(c.ses||[]).slice();
     var now2=Date.now(), prox=null;
@@ -4782,28 +4783,28 @@ document.addEventListener("click", function(ev){
     var psid=el.getAttribute("data-id"); if(!psid) return;
     var psc=CLIENTS.filter(function(x){return String(x.id)===String(psid);})[0]; if(!psc) return;
     var _lines=function(id){ return _val(id).split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean); };
-    var base=(psc.inf&&psc.inf.d)?psc.inf.d:{};
-    var d={}; for(var bk in base){ if(base.hasOwnProperty(bk)) d[bk]=base[bk]; }
+    // Acciones + progreso salen del bloque interactivo (embebido en Análisis).
+    // _avCollect devuelve d con las acciones actualizadas (copiadas de base) + prog.
+    var avRes=_avCollect(psc);
+    var d=avRes.d;
     d.resumen=_val("pl-res");
     d.fortalezas=_lines("pl-for");
     d.gaps=_lines("pl-gap");
     d.estrategia=_val("pl-est");
-    // d.scores se preserva tal cual desde `base` (copiado arriba): el coach ya
-    // no los edita desde el panel, pero el cliente los sigue usando.
-    d.cv_acciones=_lines("pl-s1");
-    d.linkedin_acciones=_lines("pl-s2");
-    d.networking_acciones=_lines("pl-s3");
-    d.preguntas=_lines("pl-s4");
+    // scores se preservan (el cliente los usa); las acciones ya vienen de _avCollect.
     d.alertas=_lines("pl-alert");
     d.mensaje_candidato=_val("pl-msg");
+    var _saveProg=function(){ return _sbw("candidatos?id=eq."+encodeURIComponent(psid),"PATCH",{acciones_progreso:JSON.stringify(avRes.prog)}).then(function(r){ if(r&&r.ok&&psc.raw) psc.raw.acciones_progreso=JSON.stringify(avRes.prog); }); };
     if(psc.inf&&psc.inf.id){
       _sbw("informes?id=eq."+encodeURIComponent(psc.inf.id),"PATCH",{data:JSON.stringify(d)})
-        .then(function(r){ if(!r.ok) throw 0; psc.inf.d=d; toast("Plan guardado ✓ — ya lo ve el cliente"); render(); })
-        .catch(function(){ alert("No se pudo guardar el plan."); });
+        .then(function(r){ if(!r.ok) throw 0; psc.inf.d=d; return _saveProg(); })
+        .then(function(){ toast("Guardado ✓ — ya lo ve el cliente"); render(); })
+        .catch(function(){ alert("No se pudo guardar."); });
     } else {
       var ib={email:psc.email,data:JSON.stringify(d)}; if(REAL&&RME&&RME.rol!=="admin") ib.coach_id=RME.id;
       _sbw("informes","POST",ib)
-        .then(function(r){ if(!r.ok) throw 0; toast("Plan creado ✓ — ya lo ve el cliente"); loadReal(); })
+        .then(function(r){ if(!r.ok) throw 0; return _saveProg(); })
+        .then(function(){ toast("Plan creado ✓ — ya lo ve el cliente"); loadReal(); })
         .catch(function(){ alert("No se pudo crear el plan."); });
     }
     return;
