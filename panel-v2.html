@@ -1075,6 +1075,38 @@ var MASCOT_BASE = "assets/mascota/";
 // (las dos imagenes nuevas son estaticas en Uploadcare, no animadas)
 var CABRA_TRANQUILA = "https://47o2kps88n.ucarecd.net/56380cea-c1d2-4ac4-b15c-3d13c516f703/";
 var CABRA_SALUDA = "https://47o2kps88n.ucarecd.net/59d67f1a-bcb3-4f6a-bdd2-45a4ab282979/"; // cabra saludando (cuando hay notificaciones)
+// Estado de ánimo de la cabra flotante, calmo y según la situación REAL del
+// coach. Imágenes locales (transparentes), sin saltar. Prioridad:
+// descuidada (días sin entrar) > pide atención (mensajes/pendientes) > tranquila.
+var _cabraAwayDays=null;
+function cabraMood(){
+  // Días desde la última visita: se calcula UNA vez por carga y se cachea, así
+  // "descuidada" no parpadea (aparece la primera vez tras estar 5+ días afuera).
+  if(_cabraAwayDays===null){
+    var email=(typeof COACH!=="undefined"&&COACH&&COACH.email)||(REAL&&RME&&RME.email)||"";
+    if(email){
+      var d=0;
+      try{ var k="pw_lastseen_"+email; var prev=parseInt(localStorage.getItem(k)||"0",10)||0; if(prev) d=Math.floor((Date.now()-prev)/86400000); localStorage.setItem(k,String(Date.now())); }catch(e){}
+      _cabraAwayDays=d;
+    }
+  }
+  var away=_cabraAwayDays||0;
+  var unread=0;
+  if(RMSG){ for(var i=0;i<RMSG.length;i++){ var m=RMSG[i]; if(!m.leido_en && ((RADMIN && !m.from_admin) || (!RADMIN && m.from_admin))) unread++; } }
+  var ins=[]; try{ ins=computeInsights(); }catch(e){}
+  var fn=((typeof COACH!=="undefined"&&COACH&&COACH.firstName)||"").trim();
+  if(away>=5) return { mood:"descuidada", img:"assets/cabra/cansada.png", msg:"¡Cuánto tiempo"+(fn?", "+fn:"")+"! Tus clientes te esperan 💚" };
+  if(unread>0) return { mood:"atencion", img:"assets/cabra/atencion.png", msg:(unread===1?"Tienes 1 mensaje sin leer 👀":"Tienes "+unread+" mensajes sin leer 👀") };
+  if(ins.length) return { mood:"atencion", img:"assets/cabra/atencion.png", msg:ins[0].title+" — tócame para verlo." };
+  return { mood:"tranquila", img:"assets/cabra/frente.gif", msg:"" };
+}
+// Cartel calmo de la cabra (burbuja con estilos inline para no chocar con el CSS
+// legacy de .cp-cabra-bubble). Se cierra con la ✕ (ai-bubble-close).
+function _cabraCartel(msg){
+  return "<div data-act='ai-open' role='button' tabindex='0' style='position:relative;background:#fff;border:1px solid var(--pw-border);border-radius:16px;padding:12px 30px 12px 14px;max-width:236px;box-shadow:0 14px 36px rgba(45,106,79,.18),0 2px 6px rgba(0,0,0,.06);cursor:pointer;font-size:12.5px;color:var(--pw-carbon);line-height:1.45'>"+
+    "<button data-act='ai-bubble-close' aria-label='Ocultar' style='position:absolute;top:6px;right:6px;width:20px;height:20px;border-radius:50%;border:none;background:transparent;color:var(--pw-text-muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center'>"+svg(IC.close,11,"stroke-width='2.2'")+"</button>"+
+    esc(msg)+"</div>";
+}
 
 
 /* ═══ Sidebar ═══ */
@@ -2986,15 +3018,17 @@ function viewAsistente(){
   // Cuenta de mensajes sin leer: si hay, la cabra saluda; si no, está tranquila.
   var _cabraUnread = 0;
   if(RMSG){ for(var _ci=0;_ci<RMSG.length;_ci++){ var _cm=RMSG[_ci]; if(!_cm.leido_en && ((RADMIN && !_cm.from_admin) || (!RADMIN && _cm.from_admin))) _cabraUnread++; } }
-  var cabraSrc = _cabraUnread>0 ? CABRA_SALUDA : CABRA_TRANQUILA;
+  var _mood = cabraMood();
+  var cabraSrc = _mood.img;
   var tipTitle = allDone ? "¡Listo! Ya tienes todo configurado" : nextStep.tipTitle;
   var tipDesc  = allDone ? "Tu cuenta está lista. Recuerda que estoy aquí si necesitas ayuda." : nextStep.tipDesc;
 
   if(!state.ai.open){
     var top;
     if(allDone){
-      // 8/8: la cabra ya es solo chat → sin burbuja, solo el ícono que abre el chat.
-      top = "";
+      // Onboarding completo: la cabra muestra su mood (pide atención / descuidada)
+      // como cartel calmo y dismissible. Si no hay nada que avisar → solo el ícono.
+      top = (_mood.msg && state.ai.bubbleOpen) ? _cabraCartel(_mood.msg) : "";
     } else if(state.ai.bubbleOpen){
       top = "<div class='cp-cabra-bubble' data-act='ai-open' role='button' tabindex='0'>"+
         "<button class='cp-cabra-bubble-close' data-act='ai-bubble-close' aria-label='Ocultar'>"+svg(IC.close,12,"stroke-width='2.2'")+"</button>"+
