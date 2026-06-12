@@ -1325,7 +1325,9 @@ function coachPath(){
     return _coachPathRender(ph,k);
   }
   _pathProgressCheck(doneN);
-  if(doneN>=ph.length) return ""; // 3/3 → se apaga (la medalla queda en el sidebar)
+  // 3/3 → coaches normales: se apaga (la medalla oro queda en el sidebar). El
+  // admin lo sigue viendo en estado "completado" (para verlo/demostrarlo).
+  if(doneN>=ph.length && !RADMIN) return "";
   return _coachPathRender(ph,doneN);
 }
 function _coachPathRender(ph,doneN){
@@ -1349,20 +1351,22 @@ function _coachPathRender(ph,doneN){
     var anchorY=current?(s.y-32*s.s):Math.min(s.y,82);
     return "<div style='position:absolute;left:"+s.x+"%;top:"+anchorY+"%;transform:translate(-50%,-100%);display:inline-flex;align-items:center;padding:4px 11px;border-radius:100px;background:"+bg+";border:"+bd+";box-shadow:0 2px 8px rgba(20,55,38,.28);white-space:nowrap;z-index:6'>"+chk+"<span style='font-family:Inter,sans-serif;font-size:11.5px;font-weight:"+(current?"700":"600")+";color:"+col+"'>"+SHORT[i]+"</span></div>";
   }).join("");
-  var gs=STOPS[curIdx];
+  var done3=(curIdx>=ph.length);
+  var SUMMIT={x:80,y:33,s:0.6}; // cima junto a la bandera (estado "completado", admin)
+  var gs=done3?SUMMIT:STOPS[curIdx];
   // ¿La cabra tiene que CAMINAR hasta este paso? Si en la vista anterior estaba en
   // un paso menor (avanzó al guardar el perfil / sumar cliente), animamos el
   // recorrido por el sendero con camina.gif y un @keyframes de la pos vieja a la
-  // nueva; al terminar se planta (parada). Si la tocás, saluda (_goatWaveUntil).
-  var _walk=(_goatLastIdx!==null && _goatLastIdx<curIdx);
-  var goatSrc=_walk?"assets/cabra/camina.gif":((Date.now()<_goatWaveUntil)?CABRA_SALUDA:CABRA_TRANQUILA);
+  // nueva; al terminar se planta (parada). Si completó los 3, festeja en la cima.
+  var _walk=(!done3 && _goatLastIdx!==null && _goatLastIdx<curIdx);
+  var goatSrc=done3?"assets/cabra/salta.gif":(_walk?"assets/cabra/camina.gif":((Date.now()<_goatWaveUntil)?CABRA_SALUDA:CABRA_TRANQUILA));
   var _animCss="", _animStyle="";
   if(_walk){
     var _fr=STOPS[_goatLastIdx], _nm="goatWalk_"+_goatLastIdx+"_"+curIdx;
     _animCss="<style>@keyframes "+_nm+"{from{left:"+_fr.x+"%;top:"+_fr.y+"%;transform:translate(-50%,-82%) scale("+_fr.s+");}to{left:"+gs.x+"%;top:"+gs.y+"%;transform:translate(-50%,-82%) scale("+gs.s+");}}</style>";
     _animStyle="animation:"+_nm+" 2s ease both;";
     if(!_goatWalking){ _goatWalking=true; setTimeout(function(){ _goatLastIdx=curIdx; _goatWalking=false; try{render();}catch(e){} },2050); }
-  } else { _goatLastIdx=curIdx; }
+  } else if(!done3){ _goatLastIdx=curIdx; }
   // -82% baja la cabra dentro de su caja (el GIF trae margen transparente abajo)
   // para que las patas apoyen en el sendero y no floten.
   var goat=_animCss+"<div data-act='goat-wave' title='Tocá la cabra 🐐' style='position:absolute;left:"+gs.x+"%;top:"+gs.y+"%;width:14%;aspect-ratio:108 / 136;transform:translate(-50%,-82%) scale("+gs.s+");transform-origin:50% 100%;z-index:5;cursor:pointer;"+_animStyle+"'>"+
@@ -1374,35 +1378,45 @@ function _coachPathRender(ph,doneN){
   // cabra abajo. Los % de cabra y etiquetas mapean 1:1 al sendero pintado.
   var scene="<div style='position:relative;width:100%;aspect-ratio:3420 / 1216;overflow:hidden;border-radius:12px;box-shadow:0 3px 12px rgba(20,55,38,.12)'>"+
     "<div style='position:absolute;left:50%;top:50%;width:100%;aspect-ratio:3420 / 1216;transform:translate(-50%,-50%);background:url(assets/cabra/fondo.webp?v=2) center/cover no-repeat'>"+goat+labels+"</div></div>";
-  var cur=ph[curIdx];
-  // Columna derecha: panel enfocado en el SIGUIENTE paso (limpio, no cargado):
-  // medalla actual grande + título + nombre de la medalla + CTA verde, y abajo
-  // una mini-barra con las 3 medallas Pathway (bronce·plata·oro) y el progreso.
+  // Columna derecha: panel enfocado (limpio, no cargado). Si está completo (admin),
+  // muestra el estado de victoria; si no, el SIGUIENTE paso con su medalla.
   var MEDNAME={bronce:"Bronce",plata:"Plata",oro:"Oro"};
-  var HEAD=["Tu perfil","Primer cliente","Primera sesión"];
-  var medCur=ph[curIdx].medal;
   var mini=ph.map(function(p,i){
     var earned=p.done, isCur=(i===curIdx);
     var img="<img src='assets/iconos/medalla-"+p.medal+"-sm.webp' alt='' style='width:26px;height:26px;object-fit:contain;"+(earned?"":"filter:grayscale(1);opacity:"+(isCur?".85":".4")+";")+"'>";
     var conn=i<ph.length-1?"<span style='width:16px;height:2px;border-radius:2px;background:"+(earned?"#82B788":"#E1E3DA")+"'></span>":"";
     return img+conn;
   }).join("");
-  var rightCol="<div style='flex:1 1 230px;min-width:215px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px 12px'>"+
-    "<div style='font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#2D6A4F'>Siguiente paso</div>"+
-    "<img src='assets/iconos/medalla-"+medCur+"-sm.webp' alt='Medalla "+MEDNAME[medCur]+"' style='width:60px;height:60px;object-fit:contain;margin:10px 0 6px;filter:drop-shadow(0 4px 8px rgba(20,55,38,.18))'>"+
-    "<div style='font-family:var(--pw-serif);font-size:21px;font-weight:600;color:#1B4332;letter-spacing:-.3px'>"+esc(HEAD[curIdx])+"</div>"+
-    "<div style='font-size:12px;color:#9aa49c;font-weight:600;margin-top:2px'>Medalla "+MEDNAME[medCur]+"</div>"+
-    "<button class='cp-btn cp-btn-primary' data-act='asist-go' data-go='"+cur.go+"' style='height:44px;margin-top:16px;width:100%;max-width:240px;background:#1B4332;border:none;color:#fff;font-weight:700'>"+esc(cur.title)+"</button>"+
-    "<div style='display:flex;align-items:center;gap:7px;margin-top:16px'>"+mini+
-      "<span style='font-size:11px;font-weight:800;color:#9aa49c;margin-left:5px'>"+doneN+"/3</span></div>"+
-  "</div>";
+  var rightWrap="flex:1 1 230px;min-width:215px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px 12px";
+  var rightCol;
+  if(done3){
+    rightCol="<div style='"+rightWrap+"'>"+
+      "<div style='font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#B58A3C'>¡Arranque completo!</div>"+
+      "<img src='assets/iconos/medalla-oro-sm.webp' alt='Medalla Oro' style='width:66px;height:66px;object-fit:contain;margin:10px 0 6px;filter:drop-shadow(0 4px 10px rgba(181,138,60,.3))'>"+
+      "<div style='font-family:var(--pw-serif);font-size:21px;font-weight:600;color:#1B4332;letter-spacing:-.3px'>¡Lo lograste! 🏆</div>"+
+      "<div style='font-size:12px;color:#9aa49c;font-weight:600;margin-top:2px'>Medalla Oro · 3/3</div>"+
+      "<button class='cp-btn cp-btn-primary' data-act='nav:clientes' style='height:44px;margin-top:16px;width:100%;max-width:240px;background:#1B4332;border:none;color:#fff;font-weight:700'>Ver tus clientes</button>"+
+      "<div style='display:flex;align-items:center;gap:7px;margin-top:16px'>"+mini+"</div>"+
+    "</div>";
+  } else {
+    var cur=ph[curIdx], medCur=ph[curIdx].medal, HEAD=["Tu perfil","Primer cliente","Primera sesión"];
+    rightCol="<div style='"+rightWrap+"'>"+
+      "<div style='font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#2D6A4F'>Siguiente paso</div>"+
+      "<img src='assets/iconos/medalla-"+medCur+"-sm.webp' alt='Medalla "+MEDNAME[medCur]+"' style='width:60px;height:60px;object-fit:contain;margin:10px 0 6px;filter:drop-shadow(0 4px 8px rgba(20,55,38,.18))'>"+
+      "<div style='font-family:var(--pw-serif);font-size:21px;font-weight:600;color:#1B4332;letter-spacing:-.3px'>"+esc(HEAD[curIdx])+"</div>"+
+      "<div style='font-size:12px;color:#9aa49c;font-weight:600;margin-top:2px'>Medalla "+MEDNAME[medCur]+"</div>"+
+      "<button class='cp-btn cp-btn-primary' data-act='asist-go' data-go='"+cur.go+"' style='height:44px;margin-top:16px;width:100%;max-width:240px;background:#1B4332;border:none;color:#fff;font-weight:700'>"+esc(cur.title)+"</button>"+
+      "<div style='display:flex;align-items:center;gap:7px;margin-top:16px'>"+mini+
+        "<span style='font-size:11px;font-weight:800;color:#9aa49c;margin-left:5px'>"+doneN+"/3</span></div>"+
+    "</div>";
+  }
   var body="<div style='display:flex;flex-wrap:wrap;gap:18px;align-items:center;padding:6px 16px 16px'>"+
     "<div style='flex:1.3 1 340px;min-width:300px'>"+scene+"</div>"+rightCol+"</div>";
   // Card con top cálido (amarillo del cielo) que se funde con el banner y baja a
   // blanco abajo. Colapsable: el coach que no la quiere ver la oculta (se guarda
   // en localStorage y queda colapsada hasta que toque "Mostrar").
   var collapsed=false; try{ collapsed=localStorage.getItem("mj_path_collapsed")==="1"; }catch(e){}
-  var cardBg="background:linear-gradient(180deg,#FBEFC9 0%,#FDF6DF 30%,#ffffff 66%)";
+  var cardBg="background:linear-gradient(180deg,#FCF4DA 0%,#FEFAEC 32%,#ffffff 60%)";
   var hd="<div class='cp-card-hd' style='border-bottom:0;background:transparent;padding:8px 16px'>"+
       "<h3 class='cp-card-title'>Empieza por aquí<span class='dot'>.</span></h3>"+
       "<span style='display:inline-flex;align-items:center;gap:10px'>"+
