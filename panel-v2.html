@@ -1047,6 +1047,29 @@ var INSIGHTS = [
   { level:"warn",   icon:"insMilestone", title:"Clientes con buen avance",        desc:"Felicítalos — sube la retención del programa.",               go:"clientes" },
   { level:"ok",     icon:"insProfile",   title:"Completa tu perfil público",      desc:"Foto, bio y servicios suben tu conversión.",                  go:"config|profile" }
 ];
+// Sugerencias adaptativas para la guía de la cabra: salen de datos REALES (no
+// una lista fija). Solo aparece lo que aplica a la situación del coach, así no
+// es repetitivo ni se contradice con los pasos ya hechos.
+function computeInsights(){
+  var out=[];
+  var cls=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c&&!c._example;}):[];
+  // Perfil incompleto (solo si el paso de perfil NO está hecho).
+  try{
+    var st=computeSteps();
+    var pf=st.filter(function(s){return s.id==="profile";})[0];
+    if(pf && !pf.done) out.push({ level:"ok", icon:"insProfile", title:"Completa tu perfil público", desc:"Foto, bio y servicios suben tu conversión.", go:"config|profile" });
+  }catch(e){}
+  // Pendientes de revisión (CV o informe esperando tu visto bueno).
+  var pend=cls.filter(function(c){return c.reportState==="pending"||c.cvState==="pending";});
+  if(pend.length) out.push({ level:"warn", icon:"insMilestone", title:(pend.length>1?(pend.length+" pendientes de revisión"):"1 pendiente de revisión"), desc:"Tienes CV/informe esperando tu visto bueno.", go:"clientes" });
+  // Clientes sin actividad (stale).
+  var stale=cls.filter(function(c){return c.last && c.last.state==="stale";});
+  if(stale.length) out.push({ level:"danger", icon:"insStale", title:(stale.length>1?(stale.length+" clientes sin actividad"):"1 cliente sin actividad"), desc:"Hace días que no entran. Escríbeles desde el chat.", go:"clientes" });
+  // Cierres de semana 4.
+  var closing=cls.filter(function(c){return c.week>=4;});
+  if(closing.length) out.push({ level:"warn", icon:"insClosing", title:(closing.length>1?(closing.length+" cierres de semana 4"):"1 cierre de semana 4"), desc:"Pide review y ofrece continuación.", go:"clientes" });
+  return out;
+}
 var MASCOT_BASE = "assets/mascota/";
 // Cabra del chat: tranquila por defecto, saluda cuando hay notificaciones.
 // (las dos imagenes nuevas son estaticas en Uploadcare, no animadas)
@@ -3009,13 +3032,14 @@ function viewAsistente(){
       "<span class='cp-ob-text'>"+esc(s.label)+"</span>"+
       "<span class='cp-insight-arrow' style='margin-left:auto'>"+svg(IC.chevR,13)+"</span></div>";
   }).join("");
-  var insRows = INSIGHTS.map(function(it){
+  var _ins = computeInsights();
+  var insRows = _ins.length ? _ins.map(function(it){
     return "<div class='cp-insight is-"+it.level+"' data-act='asist-go' data-go='"+esc(it.go||"clientes")+"' style='cursor:pointer'>"+
       "<span class='cp-insight-icon'>"+svg(IC[it.icon],16)+"</span>"+
       "<div class='cp-insight-body'><div class='cp-insight-title'>"+esc(it.title)+"</div>"+
       "<div class='cp-insight-desc'>"+esc(it.desc)+"</div></div>"+
       "<span class='cp-insight-arrow'>"+svg(IC.chevR,13)+"</span></div>";
-  }).join("");
+  }).join("") : "<div style='padding:16px 14px;text-align:center;color:var(--pw-bosque);font-size:12.5px;background:var(--pw-success-bg);border-radius:12px'>Todo al día ✨ Sin pendientes urgentes.</div>";
   // No-leídos en la tab "Mensajes".
   //   - Coach: mensajes del admin sin leer (from_admin=true, leido_en null)
   //   - Admin: mensajes de coaches sin leer (from_admin=false, leido_en null)
@@ -3036,9 +3060,10 @@ function viewAsistente(){
     "<div class='cp-ob-mini'><div class='cp-ob-mini-top'><div class='cp-ob-mini-title'>Tu progreso</div>"+
       "<span class='cp-ob-mini-pct'>"+done+"/"+STEPSx.length+"</span></div>"+
       "<div class='cp-ob-bar'><span style='width:"+pct+"%'></span></div>"+
-      "<div class='cp-ob-next'>"+(allDone?"<span><strong>¡Listo!</strong> Todo configurado.</span>":"<span>Próximo: <strong>"+esc(nextStep.label)+"</strong></span>")+"</div></div>"+
-    "<div><div class='cp-ai-section-title' style='margin-bottom:6px'>Tus pasos · toca para ir</div><div class='cp-ob-list'>"+stepRows+"</div></div>"+
-    "<div><div class='cp-ai-section-title' style='margin-bottom:8px'>Sugerencias para ti</div>"+insRows+"</div></div>";
+      "<div class='cp-ob-next'>"+(allDone?"<span><strong>¡Listo!</strong> Todo configurado 🎉</span>":"<span>Próximo: <strong>"+esc(nextStep.label)+"</strong></span>")+"</div></div>"+
+    // Con el onboarding completo, la lista de pasos ya hechos es ruido: se oculta.
+    (allDone ? "" : "<div><div class='cp-ai-section-title' style='margin-bottom:6px'>Tus pasos · toca para ir</div><div class='cp-ob-list'>"+stepRows+"</div></div>")+
+    "<div><div class='cp-ai-section-title' style='margin-bottom:8px'>"+(allDone?"Para hoy":"Sugerencias para ti")+"</div>"+insRows+"</div></div>";
   var body;
   if(tab==="mensajes"){
     body = RADMIN ? viewMensajesAdminBody() : viewMensajesBody();
