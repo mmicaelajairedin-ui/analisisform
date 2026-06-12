@@ -1082,6 +1082,8 @@ var CABRA_SALUDA = "https://47o2kps88n.ucarecd.net/59d67f1a-bcb3-4f6a-bdd2-45a4a
 // coach. Imágenes locales (transparentes), sin saltar. Prioridad:
 // descuidada (días sin entrar) > pide atención (mensajes/pendientes) > tranquila.
 var _cabraAwayDays=null;
+var _cabraIdle=null; // idle calmo elegido una vez por carga (mira/frente/pensando)
+var _cabraJumpUntil=0; // mientras Date.now()<esto, la cabra muestra salta.gif (tras un cambio)
 function cabraMood(){
   // Días desde la última visita: se calcula UNA vez por carga y se cachea, así
   // "descuidada" no parpadea (aparece la primera vez tras estar 5+ días afuera).
@@ -1101,7 +1103,10 @@ function cabraMood(){
   if(away>=5) return { mood:"descuidada", img:"assets/cabra/cansada.png", msg:"¡Cuánto tiempo"+(fn?", "+fn:"")+"! Tus clientes te esperan 💚" };
   if(unread>0) return { mood:"atencion", img:"assets/cabra/atencion.png", msg:(unread===1?"Tienes 1 mensaje sin leer 👀":"Tienes "+unread+" mensajes sin leer 👀") };
   if(ins.length) return { mood:"atencion", img:"assets/cabra/atencion.png", msg:ins[0].title+" — tócame para verlo." };
-  return { mood:"tranquila", img:"assets/cabra/frente.gif", msg:"" };
+  // Tranquila: idle calmo que varía entre cargas (de frente / mirando a los
+  // costados / pensando). Nunca 'camina'. Se elige una vez para no parpadear.
+  if(_cabraIdle===null) _cabraIdle=["assets/cabra/frente.gif","assets/cabra/mira.png","assets/mascota/cabra-pensando.gif"][Math.floor(Math.random()*3)];
+  return { mood:"tranquila", img:_cabraIdle, msg:"" };
 }
 // Frase al azar cuando tocás la cabra (reacción juguetona).
 function _cabraCheer(){
@@ -3061,10 +3066,12 @@ function viewAsistente(){
     // Los mensajes sin leer ahora se notifican en el ícono de chat de arriba,
     // no en la cabra (la cabra es guía/ayuda).
     var unreadDot = "";
+    // Tras un cambio (toast con ✓) la cabra salta un ratito y luego se queda calma.
+    var _fabImg = (Date.now()<_cabraJumpUntil) ? "assets/cabra/salta.gif" : cabraSrc;
     return "<div class='cp-ai-fab'>"+top+
       "<div style='position:relative;display:inline-block'>"+
         "<div class='cp-cabra-img-wrap' data-act='cabra-poke' role='button' tabindex='0' aria-label='Abrir asistente'>"+
-          "<img src='"+cabraSrc+"' alt='Asistente Pathway'>"+
+          "<img src='"+_fabImg+"' alt='Asistente Pathway'>"+
         "</div>"+unreadDot+
       "</div></div>";
   }
@@ -3080,8 +3087,7 @@ function viewAsistente(){
   var insRows = _ins.length ? _ins.map(function(it){
     return "<div class='cp-insight is-"+it.level+"' data-act='asist-go' data-go='"+esc(it.go||"clientes")+"' style='cursor:pointer'>"+
       "<span class='cp-insight-icon'>"+svg(IC[it.icon],16)+"</span>"+
-      "<div class='cp-insight-body'><div class='cp-insight-title'>"+esc(it.title)+"</div>"+
-      "<div class='cp-insight-desc'>"+esc(it.desc)+"</div></div>"+
+      "<div class='cp-insight-body'><div class='cp-insight-title'>"+esc(it.title)+"</div></div>"+
       "<span class='cp-insight-arrow'>"+svg(IC.chevR,13)+"</span></div>";
   }).join("") : "<div style='padding:16px 14px;text-align:center;color:var(--pw-bosque);font-size:12.5px;background:var(--pw-success-bg);border-radius:12px'>Todo al día ✨ Sin pendientes urgentes.</div>";
   // No-leídos en la tab "Mensajes".
@@ -5601,7 +5607,9 @@ function _rutToArr(raw){
 }
 function _isChat(s){ if(!s) return false; var t=(""+s).trim(); if(t.charAt(0)!=="[") return false; try{ return Object.prototype.toString.call(JSON.parse(t))==="[object Array]"; }catch(e){ return false; } }
 function _sha256(txt){ return crypto.subtle.digest("SHA-256",new TextEncoder().encode(""+txt)).then(function(b){ return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join(""); }); }
-function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600); }
+function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600);
+  // Cada cambio (toast con ✓) → la cabra salta un instante y vuelve a calma.
+  try{ if(typeof msg==="string" && msg.indexOf("✓")>=0){ _cabraJumpUntil=Date.now()+1300; setTimeout(function(){ try{ if(typeof render==="function") render(); }catch(e){} },1350); } }catch(e){} }
 function demoConfetti(){ var c=["#1F5740","#8C7B80","#E8B04B","#C0756E","#5B8C7B"]; for(var k=0;k<60;k++){ (function(k){ var p=document.createElement("div"); p.className="cp-conf"; p.style.left=(Math.random()*100)+"vw"; p.style.background=c[k%c.length]; p.style.animationDelay=(Math.random()*0.3)+"s"; document.body.appendChild(p); setTimeout(function(){ p.remove(); },2600); })(k); } }
 function demoGenerateExample(){
   if(_genBusy) return; _genBusy=true;
