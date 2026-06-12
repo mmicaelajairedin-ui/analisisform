@@ -1084,13 +1084,15 @@ function computeInsights(){
 var MASCOT_BASE = "assets/mascota/";
 // Cabra del chat: tranquila por defecto, saluda cuando hay notificaciones.
 // (las dos imagenes nuevas son estaticas en Uploadcare, no animadas)
-var CABRA_TRANQUILA = "https://47o2kps88n.ucarecd.net/56380cea-c1d2-4ac4-b15c-3d13c516f703/";
-var CABRA_SALUDA = "https://47o2kps88n.ucarecd.net/59d67f1a-bcb3-4f6a-bdd2-45a4ab282979/"; // cabra saludando (cuando hay notificaciones)
+var CABRA_TRANQUILA = "https://21lun2vokt.ucarecd.net/354a2e2a-1d02-4756-95f5-558333ac3d65/"; // cabra parada de frente (idle del FAB + banner)
+var CABRA_SALUDA = "https://21lun2vokt.ucarecd.net/10dc5cab-b0c9-4ab1-8730-442c67a81193/"; // cabra saludando (al entrar / mensajes sin leer)
 // Estado de ánimo de la cabra flotante, calmo y según la situación REAL del
 // coach. Imágenes locales (transparentes), sin saltar. Prioridad:
 // descuidada (días sin entrar) > pide atención (mensajes/pendientes) > tranquila.
 var _cabraAwayDays=null;
 var _cabraFlashImg=""; var _cabraFlashUntil=0; var _cabraGreeted=false; var _cabraDidSomething=false;
+var _goatWaveUntil=0; // cabra del sendero: saluda un ratito cuando la tocás
+var _goatLastIdx=null, _goatWalking=false; // para animar el caminar entre pasos
 // Muestra una cabra-reacción (gif) un ratito y vuelve sola al idle. Se usa para
 // saluda / sonríe / salta(logro) / pensando. No para por cada render.
 function cabraFlash(img,ms){ ms=ms||1300; _cabraFlashImg=img; _cabraFlashUntil=Date.now()+ms; setTimeout(function(){try{ if(typeof render==="function") render(); }catch(e){}},0); setTimeout(function(){try{ if(typeof render==="function") render(); }catch(e){}},ms+50); }
@@ -1114,9 +1116,9 @@ function cabraMood(){
   // Hace mucho que no entra y todavía no hizo nada → triste (hasta que actúe).
   if(away>=5 && !_cabraDidSomething) return { mood:"triste", img:"assets/cabra/cansada.png", msg:"¡Cuánto tiempo"+(fn?", "+fn:"")+"! Tus clientes te esperan 💚" };
   // Hay mensajes sin leer → saluda (gif).
-  if(unread>0) return { mood:"saluda", img:"assets/mascota/cabra-saludando.gif", msg:(unread===1?"Tenés 1 mensaje sin leer 👀":"Tenés "+unread+" mensajes sin leer 👀") };
+  if(unread>0) return { mood:"saluda", img:CABRA_SALUDA, msg:(unread===1?"Tenés 1 mensaje sin leer 👀":"Tenés "+unread+" mensajes sin leer 👀") };
   // Todo bien → parada mirando (frente). 'mira' (yoga) no se usa.
-  return { mood:"tranquila", img:"assets/cabra/frente.gif", msg:"" };
+  return { mood:"tranquila", img:CABRA_TRANQUILA, msg:"" };
 }
 // Frase al azar cuando tocás la cabra (reacción juguetona).
 function _cabraCheer(){
@@ -1320,10 +1322,14 @@ function coachPath(){
   if(_pv!==null){
     var k=Math.max(0,Math.min(ph.length-1,parseInt(_pv,10)||0));
     ph.forEach(function(p,i){ p.done=(i<k); });
+    // En preview, arrancar un paso atrás para VER el caminar hasta el paso pedido.
+    if(_goatLastIdx===null && k>0) _goatLastIdx=k-1;
     return _coachPathRender(ph,k);
   }
   _pathProgressCheck(doneN);
-  if(doneN>=ph.length) return ""; // 3/3 → se apaga (la medalla queda en el sidebar)
+  // 3/3 → coaches normales: se apaga (la medalla oro queda en el sidebar). El
+  // admin lo sigue viendo en estado "completado" (para verlo/demostrarlo).
+  if(doneN>=ph.length && !RADMIN) return "";
   return _coachPathRender(ph,doneN);
 }
 function _coachPathRender(ph,doneN){
@@ -1336,7 +1342,7 @@ function _coachPathRender(ph,doneN){
   var labels=ph.map(function(p,i){
     var s=STOPS[i], current=(i===curIdx);
     var col=p.done?"#2D6A4F":(current?"#1B4332":"#54655A");
-    var chk=p.done?"<svg width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='#2D6A4F' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round' style='margin-right:4px'><polyline points='20 6 9 17 4 12'></polyline></svg>":"";
+    var chk=p.done?"<svg width='9' height='9' viewBox='0 0 24 24' fill='none' stroke='#2D6A4F' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round' style='margin-right:3px'><polyline points='20 6 9 17 4 12'></polyline></svg>":"";
     var bg=current?"#fff":"rgba(255,255,255,.92)";
     var bd=current?"1.5px solid rgba(82,183,136,.7)":"1px solid rgba(255,255,255,.75)";
     // Posición vertical del pill (su BORDE INFERIOR, con translateY(-100%) queda
@@ -1345,33 +1351,85 @@ function _coachPathRender(ph,doneN){
     // ella; los demás se apoyan justo sobre el punto del sendero, con un tope al
     // 82% para que el recorte de abajo no los corte.
     var anchorY=current?(s.y-32*s.s):Math.min(s.y,82);
-    return "<div style='position:absolute;left:"+s.x+"%;top:"+anchorY+"%;transform:translate(-50%,-100%);display:inline-flex;align-items:center;padding:4px 11px;border-radius:100px;background:"+bg+";border:"+bd+";box-shadow:0 2px 8px rgba(20,55,38,.28);white-space:nowrap;z-index:6'>"+chk+"<span style='font-family:Inter,sans-serif;font-size:11.5px;font-weight:"+(current?"700":"600")+";color:"+col+"'>"+SHORT[i]+"</span></div>";
+    return "<div style='position:absolute;left:"+s.x+"%;top:"+anchorY+"%;transform:translate(-50%,-100%);display:inline-flex;align-items:center;padding:2.5px 8px;border-radius:100px;background:"+bg+";border:"+bd+";box-shadow:0 1px 5px rgba(20,55,38,.2);white-space:nowrap;z-index:6'>"+chk+"<span style='font-family:Inter,sans-serif;font-size:9.5px;font-weight:"+(current?"700":"600")+";color:"+col+"'>"+SHORT[i]+"</span></div>";
   }).join("");
-  var gs=STOPS[curIdx];
-  var goatSrc=curIdx===0?"assets/cabra/frente.gif":"assets/cabra/mira.png";
+  var done3=(curIdx>=ph.length);
+  var SUMMIT={x:82,y:40,s:0.82}; // sobre la roca de la cima (al costado del sol), más grande
+  var gs=done3?SUMMIT:STOPS[curIdx];
+  // ¿La cabra tiene que CAMINAR hasta este paso? Si en la vista anterior estaba en
+  // un paso menor (avanzó al guardar el perfil / sumar cliente), animamos el
+  // recorrido por el sendero con camina.gif y un @keyframes de la pos vieja a la
+  // nueva; al terminar se planta (parada). Si completó los 3, festeja en la cima.
+  var _walk=(!done3 && _goatLastIdx!==null && _goatLastIdx<curIdx);
+  var goatSrc=done3?"assets/cabra/salta.gif":(_walk?"assets/cabra/camina.gif":((Date.now()<_goatWaveUntil)?CABRA_SALUDA:CABRA_TRANQUILA));
+  var _animCss="", _animStyle="";
+  if(_walk){
+    var _fr=STOPS[_goatLastIdx], _nm="goatWalk_"+_goatLastIdx+"_"+curIdx;
+    _animCss="<style>@keyframes "+_nm+"{from{left:"+_fr.x+"%;top:"+_fr.y+"%;transform:translate(-50%,-82%) scale("+_fr.s+");}to{left:"+gs.x+"%;top:"+gs.y+"%;transform:translate(-50%,-82%) scale("+gs.s+");}}</style>";
+    _animStyle="animation:"+_nm+" 2s ease both;";
+    if(!_goatWalking){ _goatWalking=true; setTimeout(function(){ _goatLastIdx=curIdx; _goatWalking=false; try{render();}catch(e){} },2050); }
+  } else if(!done3){ _goatLastIdx=curIdx; }
   // -82% baja la cabra dentro de su caja (el GIF trae margen transparente abajo)
   // para que las patas apoyen en el sendero y no floten.
-  var goat="<div style='position:absolute;left:"+gs.x+"%;top:"+gs.y+"%;width:11%;aspect-ratio:108 / 136;transform:translate(-50%,-82%) scale("+gs.s+");transform-origin:50% 100%;z-index:5'>"+
+  // En el estado completado la cabra está sobre la cima (fondo cargado + sol) → un
+  // halo blanco suave detrás la despega del paisaje para que no se pierda.
+  var _glow=done3?"<div style='position:absolute;left:50%;top:40%;width:140%;height:120%;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(255,255,255,.85),rgba(255,255,255,.4) 42%,transparent 70%);z-index:0;pointer-events:none'></div>":"";
+  var goat=_animCss+"<div data-act='goat-wave' title='Tocá la cabra 🐐' style='position:absolute;left:"+gs.x+"%;top:"+gs.y+"%;width:14%;aspect-ratio:108 / 136;transform:translate(-50%,-82%) scale("+gs.s+");transform-origin:50% 100%;z-index:5;cursor:pointer;"+_animStyle+"'>"+_glow+
     "<div style='position:absolute;left:50%;bottom:15%;width:55%;height:8%;border-radius:50%;transform:translateX(-50%);background:radial-gradient(ellipse,rgba(20,55,38,.34),transparent 70%)'></div>"+
-    "<img src='"+goatSrc+"' alt='' style='position:relative;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 8px 8px rgba(45,106,79,.25))'></div>";
-  // La bandera de Pathway ya viene PINTADA en el fondo (cima derecha), así que el
-  // código no dibuja ninguna — solo la cabra y las etiquetas.
-  // Banner = una FRANJA arriba del Resumen, no toda la pantalla. El wrapper interno
-  // usa el ratio nativo de la foto (3420/1216 = 2.812) para que los % de cabra y
-  // etiquetas mapeen 1:1 al sendero pintado. La caja externa, más baja (1300/384),
-  // recorta un poco de cielo arriba y de pasto abajo; translate -47% balancea el
-  // recorte para que la bandera (arriba) y las patas de la cabra (abajo) entren.
-  // Ajustar acá: aspect-ratio externo = alto de la franja; translate Y = balance.
-  var scene="<div style='position:relative;width:100%;aspect-ratio:1300 / 384;overflow:hidden'>"+
-    "<div style='position:absolute;left:50%;top:50%;width:100%;aspect-ratio:3420 / 1216;transform:translate(-50%,-47%);background:url(assets/cabra/fondo.webp) center/cover no-repeat'>"+goat+labels+"</div></div>";
-  var cur=ph[curIdx];
-  var cta="<div style='padding:13px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap'>"+
-    "<button class='cp-btn cp-btn-primary' data-act='asist-go' data-go='"+cur.go+"' style='height:38px'>"+esc(cur.title)+"</button>"+
-    "<span class='cp-eyebrow'>Completá los 3 pasos y desbloqueás tu medalla 🏅</span></div>";
-  return "<div class='cp-card cp-path' style='overflow:hidden;padding:0;margin-top:16px'>"+
-    "<div class='cp-card-hd'><h3 class='cp-card-title'>Empieza por aquí<span class='dot'>.</span></h3>"+
-    "<span class='cp-eyebrow'>"+doneN+"/3 completados</span></div>"+
-    scene+cta+"</div>";
+    "<img src='"+goatSrc+"' alt='' style='position:relative;z-index:1;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 8px 8px rgba(45,106,79,.25))'></div>";
+  // Banner chico y centrado (max-width) → margen a los costados sobre el fondo
+  // cálido de la card. Mostramos la foto COMPLETA (ratio nativo 3420/1216, sin
+  // recorte) para que NO se corte ni el sol/bandera arriba ni las patas de la
+  // cabra abajo. Los % de cabra y etiquetas mapean 1:1 al sendero pintado.
+  var scene="<div style='position:relative;width:100%;aspect-ratio:3420 / 1216;overflow:hidden;border-radius:12px;box-shadow:0 3px 12px rgba(20,55,38,.12)'>"+
+    "<div style='position:absolute;left:50%;top:50%;width:100%;aspect-ratio:3420 / 1216;transform:translate(-50%,-50%);background:url(assets/cabra/fondo.webp?v=2) center/cover no-repeat'>"+goat+labels+"</div></div>";
+  // Columna derecha: panel enfocado (limpio, no cargado). Si está completo (admin),
+  // muestra el estado de victoria; si no, el SIGUIENTE paso con su medalla.
+  var MEDNAME={bronce:"Bronce",plata:"Plata",oro:"Oro"};
+  var mini=ph.map(function(p,i){
+    var earned=p.done, isCur=(i===curIdx);
+    var img="<img src='assets/iconos/medalla-"+p.medal+"-sm.webp' alt='' style='width:26px;height:26px;object-fit:contain;"+(earned?"":"filter:grayscale(1);opacity:"+(isCur?".85":".4")+";")+"'>";
+    var conn=i<ph.length-1?"<span style='width:16px;height:2px;border-radius:2px;background:"+(earned?"#82B788":"#E1E3DA")+"'></span>":"";
+    return img+conn;
+  }).join("");
+  var rightWrap="flex:1 1 230px;min-width:215px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px 12px";
+  var rightCol;
+  if(done3){
+    rightCol="<div style='"+rightWrap+"'>"+
+      "<div style='font-size:10px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:#B58A3C'>¡Arranque completo!</div>"+
+      "<img src='assets/iconos/medalla-oro-sm.webp' alt='Medalla Oro' style='width:66px;height:66px;object-fit:contain;margin:10px 0 6px;filter:drop-shadow(0 4px 10px rgba(181,138,60,.3))'>"+
+      "<div style='font-family:var(--pw-serif);font-size:17px;font-weight:600;color:#1B4332;letter-spacing:-.2px'>¡Lo lograste! 🏆</div>"+
+      "<div style='font-size:11px;color:#9aa49c;font-weight:600;margin-top:3px'>Medalla Oro · 3/3</div>"+
+      "<button class='cp-btn cp-btn-primary' data-act='nav:clientes' style='height:44px;margin-top:16px;width:100%;max-width:240px;background:#1B4332;border:none;color:#fff;font-weight:700'>Ver tus clientes</button>"+
+      "<div style='display:flex;align-items:center;gap:7px;margin-top:16px'>"+mini+"</div>"+
+    "</div>";
+  } else {
+    var cur=ph[curIdx], medCur=ph[curIdx].medal, HEAD=["Tu perfil","Primer cliente","Primera sesión"];
+    rightCol="<div style='"+rightWrap+"'>"+
+      "<div style='font-size:10px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:#2D6A4F'>Siguiente paso</div>"+
+      "<img src='assets/iconos/medalla-"+medCur+"-sm.webp' alt='Medalla "+MEDNAME[medCur]+"' style='width:60px;height:60px;object-fit:contain;margin:10px 0 6px;filter:drop-shadow(0 4px 8px rgba(20,55,38,.18))'>"+
+      "<div style='font-family:var(--pw-serif);font-size:17px;font-weight:600;color:#1B4332;letter-spacing:-.2px'>"+esc(HEAD[curIdx])+"</div>"+
+      "<div style='font-size:11px;color:#9aa49c;font-weight:600;margin-top:3px'>Medalla "+MEDNAME[medCur]+"</div>"+
+      "<button class='cp-btn cp-btn-primary' data-act='asist-go' data-go='"+cur.go+"' style='height:44px;margin-top:16px;width:100%;max-width:240px;background:#1B4332;border:none;color:#fff;font-weight:700'>"+esc(cur.title)+"</button>"+
+      "<div style='display:flex;align-items:center;gap:7px;margin-top:16px'>"+mini+
+        "<span style='font-size:11px;font-weight:800;color:#9aa49c;margin-left:5px'>"+doneN+"/3</span></div>"+
+    "</div>";
+  }
+  var body="<div style='display:flex;flex-wrap:wrap;gap:18px;align-items:center;padding:6px 16px 16px'>"+
+    "<div style='flex:1.3 1 340px;min-width:300px'>"+scene+"</div>"+rightCol+"</div>";
+  // Card con top cálido (amarillo del cielo) que se funde con el banner y baja a
+  // blanco abajo. Colapsable: el coach que no la quiere ver la oculta (se guarda
+  // en localStorage y queda colapsada hasta que toque "Mostrar").
+  var collapsed=false; try{ collapsed=localStorage.getItem("mj_path_collapsed")==="1"; }catch(e){}
+  var cardBg="background:linear-gradient(180deg,#FCF4DA 0%,#FEFAEC 32%,#ffffff 60%)";
+  var hd="<div class='cp-card-hd' style='border-bottom:0;background:transparent;padding:8px 16px'>"+
+      "<h3 class='cp-card-title'>Empieza por aquí<span class='dot'>.</span></h3>"+
+      "<span style='display:inline-flex;align-items:center;gap:10px'>"+
+        "<span class='cp-eyebrow'>"+doneN+"/3 completados</span>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='path-toggle' style='height:26px;padding:0 11px;font-size:12px'>"+(collapsed?"Mostrar":"Ocultar")+"</button>"+
+      "</span></div>";
+  if(collapsed) return "<div class='cp-card cp-path' style='overflow:hidden;padding:0;margin-top:16px;"+cardBg+"'>"+hd+"</div>";
+  return "<div class='cp-card cp-path' style='overflow:hidden;padding:0;margin-top:16px;"+cardBg+"'>"+hd+body+"</div>";
 }
 // Objetivos de la semana que escribe cada coach (checklist). Se guardan por coach
 // y por semana (la key incluye el lunes), así arrancan limpios cada semana.
@@ -3136,10 +3194,12 @@ function viewAsistente(){
     var unreadDot = "";
     // Una reacción (saluda/salta) pisa el estado base un ratito; si no, el base.
     var _fabImg = (Date.now()<_cabraFlashUntil && _cabraFlashImg) ? _cabraFlashImg : cabraSrc;
+    // La cabra que salta se ve más chica dentro del cuadro → la agrandamos un toque.
+    var _fabImgStyle = _fabImg.indexOf('salta')>=0 ? " style='transform:scale(1.32)'" : "";
     return "<div class='cp-ai-fab'>"+top+
       "<div style='position:relative;display:inline-block'>"+
         "<div class='cp-cabra-img-wrap' data-act='cabra-poke' role='button' tabindex='0' aria-label='Abrir asistente'>"+
-          "<img src='"+_fabImg+"' alt='Asistente Pathway'>"+
+          "<img src='"+_fabImg+"' alt='Asistente Pathway'"+_fabImgStyle+">"+
         "</div>"+unreadDot+
       "</div></div>";
   }
@@ -4045,7 +4105,7 @@ function render(){
     _syncChatBtn();
     // Apenas entrás al panel (datos reales cargados), la cabra saluda y luego
     // se queda parada (o triste, si hace mucho que no entrabas).
-    if(!_cabraGreeted && REAL){ _cabraGreeted=true; cabraFlash("assets/mascota/cabra-saludando.gif",2000); }
+    if(!_cabraGreeted && REAL){ _cabraGreeted=true; cabraFlash(CABRA_SALUDA,2000); }
     // Chat: cuando hay un hilo abierto, bajar automáticamente al último mensaje.
     // (No se chequea state.ai.tab porque con 8/8 el chat se muestra aunque la
     // tab interna siga en "home" para el admin.)
@@ -4129,7 +4189,10 @@ document.addEventListener("click", function(ev){
     var doSave=function(){
       RPROF={ slug:sl, titulo_profesional:titP, bio:bioP, perfil_publico_activo:pubA };
       COACH.slug=sl;
-      saveCfg(cfgPatch, { nombre:nom, slug:sl||null, titulo_profesional:titP||null, bio:bioP||null, perfil_publico_activo:pubA });
+      // Tras guardar el perfil, volver al "juego" (Resumen) para que el coach vea
+      // a la cabra avanzar al próximo paso del sendero (y, si completó el hito,
+      // el confeti + la medalla bronce que dispara _pathProgressCheck).
+      saveCfg(cfgPatch, { nombre:nom, slug:sl||null, titulo_profesional:titP||null, bio:bioP||null, perfil_publico_activo:pubA }, function(){ state.section="resumen"; window.scrollTo(0,0); });
       window._cfpFoto=null;
     };
     if(REAL && sl && RME && RME.id){
@@ -5268,7 +5331,10 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="cabra-poke"){
-    // Tocar la cabra abre la guía. (El salto es solo cuando hacés algo, no al tocar.)
+    // Si ya terminó el onboarding no hay guía pendiente → tocar la cabra es un
+    // saludo simpático (igual que la cabra del sendero). Si falta algo, abre la guía.
+    var _st=computeSteps(); var _allDone=!_st.filter(function(s){return !s.done;})[0];
+    if(_allDone){ cabraFlash(CABRA_SALUDA,2200); toast(_cabraCheer()); return; }
     state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="guide"; state.ai.tab="home";
     render(); return;
   }
@@ -5303,6 +5369,8 @@ document.addEventListener("click", function(ev){
     state.section="clientes"; state.clienteSel="ejemplo-maria"; state.cliDetTab="plan"; state.cliWeek=null;
     state.ai.open=false; render(); window.scrollTo(0,0); return;
   }
+  if(act==="path-toggle"){ try{ var _pc=localStorage.getItem("mj_path_collapsed")==="1"; localStorage.setItem("mj_path_collapsed", _pc?"0":"1"); }catch(e){} render(); return; }
+  if(act==="goat-wave"){ _goatWaveUntil=Date.now()+2400; render(); setTimeout(function(){ try{ render(); }catch(e){} },2500); return; }
   if(act==="guide-off"){ try{ localStorage.setItem("pw_guide_off","1"); }catch(e){} render(); return; }
   if(act==="logout"){
     try{ localStorage.removeItem("mj_user"); }catch(e){}
@@ -5696,7 +5764,7 @@ function demoGenerateExample(){
 }
 var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[];
 function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURIComponent(RME.id) : ""; }
-function saveCfg(cfgPatch, usuariosExtra){
+function saveCfg(cfgPatch, usuariosExtra, onDone){
   if(!RME||!RME.id){ alert("Iniciá sesión para guardar."); return; }
   var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; }
   for(var j in cfgPatch){ if(cfgPatch.hasOwnProperty(j)) merged[j]=cfgPatch[j]; }
@@ -5705,6 +5773,7 @@ function saveCfg(cfgPatch, usuariosExtra){
     RCFG=merged;
     try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; if(usuariosExtra&&usuariosExtra.nombre)mu.nombre=usuariosExtra.nombre; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
     if(usuariosExtra&&usuariosExtra.nombre){ COACH.name=usuariosExtra.nombre; COACH.firstName=(""+usuariosExtra.nombre).split(" ")[0]; }
+    if(typeof onDone==="function"){ try{ onDone(); }catch(e){} }
     toast("Configuración guardada ✓"); render();
   }
   _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",body)
