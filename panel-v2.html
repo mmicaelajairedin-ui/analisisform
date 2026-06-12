@@ -1082,8 +1082,10 @@ var CABRA_SALUDA = "https://47o2kps88n.ucarecd.net/59d67f1a-bcb3-4f6a-bdd2-45a4a
 // coach. Imágenes locales (transparentes), sin saltar. Prioridad:
 // descuidada (días sin entrar) > pide atención (mensajes/pendientes) > tranquila.
 var _cabraAwayDays=null;
-var _cabraIdle=null; // idle calmo elegido una vez por carga (mira/frente/pensando)
-var _cabraJumpUntil=0; // mientras Date.now()<esto, la cabra muestra salta.gif (tras un cambio)
+var _cabraFlashImg=""; var _cabraFlashUntil=0; var _cabraGreeted=false; var _cabraDidSomething=false;
+// Muestra una cabra-reacción (gif) un ratito y vuelve sola al idle. Se usa para
+// saluda / sonríe / salta(logro) / pensando. No para por cada render.
+function cabraFlash(img,ms){ ms=ms||1300; _cabraFlashImg=img; _cabraFlashUntil=Date.now()+ms; setTimeout(function(){try{ if(typeof render==="function") render(); }catch(e){}},0); setTimeout(function(){try{ if(typeof render==="function") render(); }catch(e){}},ms+50); }
 function cabraMood(){
   // Días desde la última visita: se calcula UNA vez por carga y se cachea, así
   // "descuidada" no parpadea (aparece la primera vez tras estar 5+ días afuera).
@@ -1099,12 +1101,13 @@ function cabraMood(){
   var unread=0;
   if(RMSG){ for(var i=0;i<RMSG.length;i++){ var m=RMSG[i]; if(!m.leido_en && ((RADMIN && !m.from_admin) || (!RADMIN && m.from_admin))) unread++; } }
   var fn=((typeof COACH!=="undefined"&&COACH&&COACH.firstName)||"").trim();
-  // La cabra solo "habla" (cartel) por algo real: días sin entrar o mensajes sin
-  // leer. Las sugerencias suaves NO disparan cartel — viven dentro de la guía.
-  if(away>=5) return { mood:"descuidada", img:"assets/cabra/cansada.png", msg:"¡Cuánto tiempo"+(fn?", "+fn:"")+"! Tus clientes te esperan 💚" };
-  if(unread>0) return { mood:"atencion", img:"assets/cabra/atencion.png", msg:(unread===1?"Tienes 1 mensaje sin leer 👀":"Tienes "+unread+" mensajes sin leer 👀") };
-  // Tranquila: una sola cabra calma y consistente (de frente). Sin rotación de
-  // poses (combinarlas con el salto quedaba raro). El salto es solo al tocar/cambiar.
+  // Estado base (persistente). Las reacciones (saluda al entrar / salta al hacer
+  // algo) son flashes aparte que pisan esto un ratito.
+  // Hace mucho que no entra y todavía no hizo nada → triste (hasta que actúe).
+  if(away>=5 && !_cabraDidSomething) return { mood:"triste", img:"assets/cabra/cansada.png", msg:"¡Cuánto tiempo"+(fn?", "+fn:"")+"! Tus clientes te esperan 💚" };
+  // Hay mensajes sin leer → saluda (gif).
+  if(unread>0) return { mood:"saluda", img:"assets/mascota/cabra-saludando.gif", msg:(unread===1?"Tienes 1 mensaje sin leer 👀":"Tienes "+unread+" mensajes sin leer 👀") };
+  // Todo bien → parada mirando (frente). 'mira' (yoga) no se usa.
   return { mood:"tranquila", img:"assets/cabra/frente.gif", msg:"" };
 }
 // Frase al azar cuando tocás la cabra (reacción juguetona).
@@ -3071,8 +3074,8 @@ function viewAsistente(){
     // Los mensajes sin leer ahora se notifican en el ícono de chat de arriba,
     // no en la cabra (la cabra es guía/ayuda).
     var unreadDot = "";
-    // Tras un cambio (toast con ✓) la cabra salta un ratito y luego se queda calma.
-    var _fabImg = (Date.now()<_cabraJumpUntil) ? "assets/cabra/salta.gif" : cabraSrc;
+    // Una reacción (saluda/salta) pisa el estado base un ratito; si no, el base.
+    var _fabImg = (Date.now()<_cabraFlashUntil && _cabraFlashImg) ? _cabraFlashImg : cabraSrc;
     return "<div class='cp-ai-fab'>"+top+
       "<div style='position:relative;display:inline-block'>"+
         "<div class='cp-cabra-img-wrap' data-act='cabra-poke' role='button' tabindex='0' aria-label='Abrir asistente'>"+
@@ -3980,6 +3983,9 @@ function render(){
     if(_same && _prevWin){ try{ requestAnimationFrame(function(){ try{ window.scrollTo(0,_prevWin); }catch(e){} }); }catch(e){} }
     _lastViewKey=_vk;
     _syncChatBtn();
+    // Apenas entrás al panel (datos reales cargados), la cabra saluda y luego
+    // se queda parada (o triste, si hace mucho que no entrabas).
+    if(!_cabraGreeted && REAL){ _cabraGreeted=true; cabraFlash("assets/mascota/cabra-saludando.gif",2000); }
     // Chat: cuando hay un hilo abierto, bajar automáticamente al último mensaje.
     // (No se chequea state.ai.tab porque con 8/8 el chat se muestra aunque la
     // tab interna siga en "home" para el admin.)
@@ -5202,17 +5208,9 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="cabra-poke"){
-    // Reacción juguetona al tocar la cabra: saltito + frase, y abre la guía.
-    try{
-      var _w=document.querySelector(".cp-cabra-img-wrap");
-      if(_w){
-        var _img=_w.querySelector("img"); if(_img){ _img.src="assets/cabra/salta.gif"; }
-        _w.style.animation="none"; void _w.offsetWidth; _w.style.animation="cpCabraPoke .5s ease";
-      }
-      toast(_cabraCheer());
-    }catch(e){}
-    setTimeout(function(){ state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="guide"; state.ai.tab="home"; render(); }, 620);
-    return;
+    // Tocar la cabra abre la guía. (El salto es solo cuando hacés algo, no al tocar.)
+    state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="guide"; state.ai.tab="home";
+    render(); return;
   }
   if(act==="ai-open"){
     // La cabra ahora GUÍA (onboarding/ayuda). El chat de mensajes vive aparte,
@@ -5615,8 +5613,8 @@ function _rutToArr(raw){
 function _isChat(s){ if(!s) return false; var t=(""+s).trim(); if(t.charAt(0)!=="[") return false; try{ return Object.prototype.toString.call(JSON.parse(t))==="[object Array]"; }catch(e){ return false; } }
 function _sha256(txt){ return crypto.subtle.digest("SHA-256",new TextEncoder().encode(""+txt)).then(function(b){ return Array.prototype.map.call(new Uint8Array(b),function(x){return ("0"+x.toString(16)).slice(-2);}).join(""); }); }
 function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--pw-bosque);color:#fff;font-family:var(--pw-sans);font-size:13px;font-weight:600;padding:11px 20px;border-radius:10px;box-shadow:var(--pw-shadow-lg);z-index:200"; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2600);
-  // Cada cambio (toast con ✓) → la cabra salta un instante y vuelve a calma.
-  try{ if(typeof msg==="string" && msg.indexOf("✓")>=0){ _cabraJumpUntil=Date.now()+1300; setTimeout(function(){ try{ if(typeof render==="function") render(); }catch(e){} },1350); } }catch(e){} }
+  // Hizo algo (toast con ✓) → la cabra salta y, si estaba triste, vuelve a estar bien.
+  try{ if(typeof msg==="string" && msg.indexOf("✓")>=0){ _cabraDidSomething=true; cabraFlash("assets/cabra/salta.gif",1300); } }catch(e){} }
 function demoConfetti(){ var c=["#1F5740","#8C7B80","#E8B04B","#C0756E","#5B8C7B"]; for(var k=0;k<60;k++){ (function(k){ var p=document.createElement("div"); p.className="cp-conf"; p.style.left=(Math.random()*100)+"vw"; p.style.background=c[k%c.length]; p.style.animationDelay=(Math.random()*0.3)+"s"; document.body.appendChild(p); setTimeout(function(){ p.remove(); },2600); })(k); } }
 function demoGenerateExample(){
   if(_genBusy) return; _genBusy=true;
