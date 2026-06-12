@@ -2942,9 +2942,9 @@ function viewAsistente(){
         if(!_m.leido_en && ((RADMIN && !_m.from_admin) || (!RADMIN && _m.from_admin))) _unreadFab++;
       }
     }
-    var unreadDot = _unreadFab>0
-      ? "<span style='position:absolute;top:-4px;right:-4px;z-index:2;background:var(--pw-danger);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:99px;min-width:18px;text-align:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.15);pointer-events:none'>"+_unreadFab+"</span>"
-      : "";
+    // Los mensajes sin leer ahora se notifican en el ícono de chat de arriba,
+    // no en la cabra (la cabra es guía/ayuda).
+    var unreadDot = "";
     return "<div class='cp-ai-fab'>"+top+
       "<div style='position:relative;display:inline-block'>"+
         "<div class='cp-cabra-img-wrap' data-act='ai-open' role='button' tabindex='0' aria-label='Abrir asistente'>"+
@@ -2977,19 +2977,12 @@ function viewAsistente(){
       if(!m.leido_en && ((RADMIN && !m.from_admin) || (!RADMIN && m.from_admin))) unread++;
     }
   }
-  var tab = state.ai && state.ai.tab || "home";
-  // Cuando el onboarding está completo (8/8), la cabra es SOLO chat: se oculta
-  // "Tu progreso" para que no moleste el listado de pasos ya hechos.
-  if(allDone) tab = "mensajes";
-  // Tanto coaches como admin ven la tab "Mensajes". Para el coach es su hilo
-  // con Mica. Para el admin es la bandeja con los hilos de cada coach.
-  var tabs = allDone ? "" :
-    "<div class='cp-ai-tabs' style='display:flex;gap:6px;padding:0 14px 8px;border-bottom:1px solid var(--pw-border);background:var(--pw-niebla)'>"+
-        "<button class='cp-chip "+(tab==="home"?"is-on":"")+"' data-act='ai-tab:home' style='height:30px;padding:0 14px;font-size:12px'>Tu progreso</button>"+
-        "<button class='cp-chip "+(tab==="mensajes"?"is-on":"")+"' data-act='ai-tab:mensajes' style='height:30px;padding:0 14px;font-size:12px;display:inline-flex;align-items:center;gap:6px'>Mensajes"+
-          (unread>0?"<span style='background:var(--pw-danger);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;min-width:16px;text-align:center'>"+unread+"</span>":"")+
-        "</button>"+
-      "</div>";
+  // El panel tiene dos modos separados: la cabra abre "guide" (tu progreso +
+  // ayuda); el ícono de arriba abre "chat" (mensajes). Sin tabs: cada entrada
+  // muestra lo suyo.
+  var mode = (state.ai && state.ai.mode) || "guide";
+  var tab = (mode==="chat") ? "mensajes" : "home";
+  var tabs = "";
   var homeBody = "<div class='cp-ai-home'>"+
     "<div class='cp-ob-mini'><div class='cp-ob-mini-top'><div class='cp-ob-mini-title'>Tu progreso</div>"+
       "<span class='cp-ob-mini-pct'>"+done+"/"+STEPSx.length+"</span></div>"+
@@ -3047,8 +3040,8 @@ function viewAsistente(){
   }
   return "<div class='cp-ai-panel' role='dialog' aria-label='Asistente Pathway'>"+
     "<div class='cp-ai-head'><span class='cp-ai-head-cabra'><img src='"+cabraSrc+"' alt=''></span>"+
-      "<div><div class='cp-ai-name'>Chat Pathway</div>"+
-      "<div class='cp-ai-status'>Soporte y tus conversaciones</div></div>"+
+      "<div><div class='cp-ai-name'>"+(mode==="chat"?"Chat Pathway":"Tu guía Pathway")+"</div>"+
+      "<div class='cp-ai-status'>"+(mode==="chat"?"Soporte y tus conversaciones":"Onboarding y ayuda")+"</div></div>"+
       "<button class='cp-ai-close' data-act='ai-close' aria-label='Cerrar'>"+svg(IC.close,16,"stroke-width='2.2'")+"</button></div>"+
     tabs+
     "<div class='cp-ai-scroll'>"+body+"</div>"+
@@ -3775,6 +3768,40 @@ function viewInbox(){
   return "<div class='cp-inbox-fab'>"+panel+btn+"</div>";
 }
 var _lastViewKey="";
+// Notificación de mensajes sin leer en el ícono de chat de arriba: foto de quien
+// escribió + punto rojo con la cantidad. Se actualiza en cada render (el botón es
+// HTML estático fuera de #root).
+function _syncChatBtn(){
+  try{
+    var btn=document.getElementById("pw-chat-btn"); if(!btn) return;
+    var old=btn.querySelector(".pw-chat-notif"); if(old) old.remove();
+    var unread=0, lastMsg=null;
+    if(RMSG){
+      for(var i=0;i<RMSG.length;i++){ var m=RMSG[i];
+        if(!m.leido_en && ((RADMIN && !m.from_admin) || (!RADMIN && m.from_admin))){
+          unread++;
+          if(!lastMsg || new Date(m.created_at)>new Date(lastMsg.created_at)) lastMsg=m;
+        }
+      }
+    }
+    if(!unread) return;
+    // Foto de quien escribió: coach → Pathway/Mica; admin → foto del coach.
+    var photo=ADMIN_PHOTO;
+    if(RADMIN && lastMsg){
+      var co=(RCOACHES||[]).filter(function(u){return String(u.id)===String(lastMsg.coach_id);})[0];
+      photo=(co && (co.foto_url || (co.configuracion && (co.configuracion.foto_url||co.configuracion.foto_perfil)))) || ADMIN_PHOTO;
+    }
+    btn.style.position="relative";
+    var wrap=document.createElement("span");
+    wrap.className="pw-chat-notif";
+    wrap.setAttribute("style","position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:#fff url('"+photo+"') center/cover no-repeat;box-shadow:0 2px 6px rgba(0,0,0,.18);pointer-events:none");
+    var dot=document.createElement("span");
+    dot.setAttribute("style","position:absolute;top:-4px;right:-4px;min-width:14px;height:14px;padding:0 3px;border-radius:99px;background:var(--pw-danger);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff");
+    dot.textContent=unread>9?"9+":String(unread);
+    wrap.appendChild(dot);
+    btn.appendChild(wrap);
+  }catch(e){}
+}
 function render(){
   try{
     // Si hay sesión activa pero loadReal() todavía no terminó, mantener la
@@ -3819,6 +3846,7 @@ function render(){
     // próximo frame para que no quede arriba aunque el reflow llegue tarde.
     if(_same && _prevWin){ try{ requestAnimationFrame(function(){ try{ window.scrollTo(0,_prevWin); }catch(e){} }); }catch(e){} }
     _lastViewKey=_vk;
+    _syncChatBtn();
     // Chat: cuando hay un hilo abierto, bajar automáticamente al último mensaje.
     // (No se chequea state.ai.tab porque con 8/8 el chat se muestra aunque la
     // tab interna siga en "home" para el admin.)
@@ -5037,29 +5065,14 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="ai-open"){
-    state.ai.open=true; state.ai.bubbleOpen=false;
-    // Si hay mensajes sin leer, abrir directo en la tab Mensajes.
-    //   - Coach: mira from_admin=true sin leer
-    //   - Admin: mira from_admin=false sin leer
-    var _jumpMsg=false;
-    if(RMSG){
-      for(var _u=0;_u<RMSG.length;_u++){
-        var _mm = RMSG[_u];
-        if(!_mm.leido_en && ((RADMIN && !_mm.from_admin) || (!RADMIN && _mm.from_admin))){
-          _jumpMsg=true; break;
-        }
-      }
-    }
-    // Coach con onboarding completo: arrancar en Mensajes (no en la lista de
-    // tareas ya cumplidas), salvo que ya haya tocado las tabs a mano.
-    if(!RADMIN && !state.aiTabTouched){
-      try{
-        var _stx=computeSteps();
-        var _allDone = !_stx.filter(function(s){return !s.done;})[0];
-        if(_allDone) _jumpMsg=true;
-      }catch(e){}
-    }
-    if(_jumpMsg) state.ai.tab="mensajes";
+    // La cabra ahora GUÍA (onboarding/ayuda). El chat de mensajes vive aparte,
+    // en el ícono de arriba (data-act="chat-open").
+    state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="guide"; state.ai.tab="home";
+    render(); return;
+  }
+  if(act==="chat-open"){
+    // Chat de mensajes (soporte Pathway + clientes), desde el ícono de arriba.
+    state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="chat"; state.ai.tab="mensajes";
     render(); return;
   }
   if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; state.aiThread=null; state.aiCoachThread=null; state.msgAdminDraft=""; state.msgDraft=""; render(); return; }
@@ -5812,7 +5825,7 @@ if('serviceWorker' in navigator){
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     Salir
   </button>
-  <button id="pw-chat-btn" type="button" aria-label="Abrir chat con Pathway" title="Chat" data-act="ai-open"
+  <button id="pw-chat-btn" type="button" aria-label="Abrir chat con Pathway" title="Chat" data-act="chat-open"
     style="background:#fff;border:1px solid rgba(45,106,79,.14);border-radius:50%;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(45,106,79,.10);cursor:pointer;font-family:inherit;color:var(--pw-bosque);">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
   </button>
