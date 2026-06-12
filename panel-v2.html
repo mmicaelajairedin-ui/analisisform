@@ -494,9 +494,11 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .cp-ai-panel{position:fixed;right:20px;bottom:20px;z-index:60;width:340px;height:480px;max-height:calc(100vh - 110px);background:#fff;border-radius:18px;box-shadow:0 24px 60px rgba(45,106,79,.25),0 4px 12px rgba(0,0,0,.10);display:flex;flex-direction:column;overflow:hidden;animation:cpAiIn .25s var(--pw-ease-out);}
 /* Modo guía: alto ajustado al contenido (sin el hueco vacío cuando hay poco). */
 .cp-ai-panel--guide{height:auto;max-height:calc(100vh - 110px);}
-/* Dashboard (preview ?dash=1): grid de 2 columnas que se apila en pantallas chicas. */
-.cp-dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start;}
-@media(max-width:900px){.cp-dash-grid{grid-template-columns:1fr;}.cp-dash-hidecol{display:none;}}
+/* Resumen en 2 columnas (masonry): las cards (clientes, objetivos, avance) llenan
+   sin dejar huecos. El sendero va arriba full-width y el calendario abajo full. */
+.cp-res-grid{columns:2;column-gap:16px;margin-top:16px;}
+.cp-res-grid>div{break-inside:avoid;margin-bottom:16px;}
+@media(max-width:820px){.cp-res-grid{columns:1;}}
 /* Modo chat: el panel baja desde el ícono de chat de arriba (no desde la cabra). */
 .cp-ai-panel--chat{top:62px;bottom:auto;right:14px;animation:cpChatIn .22s var(--pw-ease-out);}
 @keyframes cpChatIn{from{opacity:0;transform:translateY(-12px) scale(.97);}to{opacity:1;transform:translateY(0) scale(1);}}
@@ -1371,8 +1373,13 @@ function _coachPathRender(ph,doneN){
     "<span class='cp-eyebrow'>"+doneN+"/3 completados</span></div>"+
     scene+cta+"</div>";
 }
-// Dashboard del coach (preview con ?dash=1): agenda, objetivo semanal, avance de
-// clientes (análisis) y lista de clientes — todo con datos REALES.
+// Objetivos de la semana que escribe cada coach (checklist). Se guardan por coach
+// y por semana (la key incluye el lunes), así arrancan limpios cada semana.
+function _wgoalKey(){ var em=(typeof COACH!=="undefined"&&COACH&&COACH.email)||(REAL&&RME&&RME.email)||"x"; var d=new Date();var day=(d.getDay()+6)%7;d.setHours(0,0,0,0);d.setDate(d.getDate()-day); var mon=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); return "pw_weekgoals_"+em+"_"+mon; }
+function _wgoals(){ try{ return JSON.parse(localStorage.getItem(_wgoalKey())||"[]")||[]; }catch(e){ return []; } }
+function _wgoalsSave(a){ try{ localStorage.setItem(_wgoalKey(), JSON.stringify(a)); }catch(e){} }
+// Dashboard del coach (preview con ?dash=1): agenda, objetivos de la semana,
+// avance de clientes (análisis), clientes y calendario — todo con datos REALES.
 function viewDashboard(){
   var now=Date.now();
   function _sdt(s){ return new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")).getTime(); }
@@ -1383,35 +1390,46 @@ function viewDashboard(){
   function _dayHead(t){ var d=new Date(t);d.setHours(0,0,0,0);var td=new Date();td.setHours(0,0,0,0);var diff=Math.round((d-td)/86400000);var fecha=new Date(t).toLocaleDateString("es-ES",{day:"numeric",month:"long"});var lbl=diff===0?"Hoy":diff===1?"Mañana":new Date(t).toLocaleDateString("es-ES",{weekday:"long"});return lbl.charAt(0).toUpperCase()+lbl.slice(1)+" · "+fecha; }
   var agendaRows="",lastDay="";
   upcoming.forEach(function(x){ var dh=_dayHead(x.t); if(dh!==lastDay){agendaRows+="<div style='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--pw-text-muted);padding:10px 18px 4px'>"+esc(dh)+"</div>";lastDay=dh;} var hora=x.s.hora||new Date(x.t).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"}); var sub=x.s.tipo||"Sesión"; agendaRows+="<div class='cp-todo-row' data-act='cli-open:"+esc(x.c.id)+"' style='cursor:pointer'><span style='font-family:var(--pw-serif);font-size:15px;font-weight:600;color:var(--pw-bosque);width:48px;flex-shrink:0'>"+esc(hora)+"</span><img src='"+esc(x.c.photo)+"' alt='' style='width:36px;height:36px;border-radius:50%;object-fit:cover'><div class='cp-todo-body'><div class='cp-todo-head'>"+esc(x.c.name)+"</div><div class='cp-todo-meta'>"+esc(sub)+"</div></div><span class='cp-eyebrow' style='background:var(--pw-success-bg);color:var(--pw-bosque);padding:3px 10px;border-radius:99px'>Sem "+x.c.week+"</span>"+svg(IC.chevR,14,"class='cp-todo-arrow'")+"</div>"; });
-  if(!upcoming.length) agendaRows="<div style='padding:24px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>No tienes sesiones agendadas.</div>";
-  var agendaCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📅</span> Tu agenda<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='gocal'>Ver calendario</button></div>"+agendaRows+"</div>";
-  // ── Objetivo semanal ──
-  var wd=new Date();var day=(wd.getDay()+6)%7;var wkStart=new Date(wd);wkStart.setHours(0,0,0,0);wkStart.setDate(wd.getDate()-day);var ws=wkStart.getTime(),we=ws+7*86400000;
-  var weekSess=sess.filter(function(x){return x.t>=ws&&x.t<we;});
-  var realized=weekSess.filter(function(x){return x.t<now;}).length;
-  var upc=weekSess.filter(function(x){return x.t>=now;}).length;
-  var goal=(REAL&&RCFG&&parseInt(RCFG.objetivo_semanal,10))||5;
-  var pct=Math.min(100,Math.round(realized/goal*100))||0;
-  var goalCard="<div class='cp-card'><div class='cp-card-pad'><div style='display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px'><div style='display:flex;align-items:center;gap:12px'><span style='width:42px;height:42px;border-radius:12px;background:var(--pw-success-bg);display:flex;align-items:center;justify-content:center;font-size:20px;filter:grayscale(1)'>🎯</span><div><div style='font-family:var(--pw-serif);font-size:16px;font-weight:600'>Objetivo semanal</div><div style='font-size:12.5px;color:var(--pw-text-soft)'>"+realized+" de "+goal+" sesiones realizadas</div></div></div><span class='cp-eyebrow' style='background:var(--pw-success-bg);color:var(--pw-bosque);padding:6px 12px;border-radius:99px'>"+upc+" por hacer</span></div><div style='height:9px;border-radius:99px;background:var(--pw-niebla-2);overflow:hidden'><span style='display:block;height:100%;width:"+pct+"%;background:linear-gradient(90deg,var(--pw-sendero),var(--pw-bosque))'></span></div><div style='font-size:12px;font-weight:600;color:var(--pw-bosque);text-align:right;margin-top:5px'>"+pct+"%</div></div></div>";
+  // Las reuniones reales viven en el calendario (Calendly): si no hay sesiones
+  // registradas, mostramos el embed para que la agenda SIEMPRE tenga contenido.
+  var _emb=(REAL&&RCFG&&RCFG.calendar_embed_url)?RCFG.calendar_embed_url:"";
+  var _calU=(REAL&&RCFG&&RCFG.calendly_url)?RCFG.calendly_url:"";
+  var calEmbed=_emb
+    ? "<iframe src='"+esc(_emb)+"' style='border:0;width:100%;height:300px;display:block;border-radius:12px' loading='lazy'></iframe>"
+    : (_calU
+        ? "<a href='"+esc(_calU)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='text-decoration:none;width:100%;justify-content:center'>Abrir mi agenda</a>"
+        : "<div style='background:var(--pw-niebla-2);border-radius:12px;padding:24px 16px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Conecta tu calendario (Calendly, Google…) en <strong>Configuración</strong> para verlo aquí.</div>");
+  var agHd="<div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📅</span> Tu agenda<span class='dot'>.</span></h3>"+(_calU?"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='open' data-url='"+esc(_calU)+"'>Abrir agenda</button>":"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='gocal'>Configurar</button>")+"</div>";
+  var agendaCard="<div class='cp-card'>"+agHd+(upcoming.length?agendaRows:"")+"<div class='cp-card-pad'"+(upcoming.length?" style='padding-top:8px'":"")+">"+calEmbed+"</div></div>";
+  // ── Objetivos de la semana (los escribe el coach; checklist editable) ──
+  var wg=_wgoals();
+  var wgDone=wg.filter(function(g){return g.done;}).length;
+  var wgPct=wg.length?Math.round(wgDone/wg.length*100):0;
+  var wgRows=wg.map(function(g,i){ return "<div style='display:flex;align-items:center;gap:10px;padding:7px 0'><button data-act='wgoal-toggle:"+i+"' aria-label='Marcar' style='width:20px;height:20px;border-radius:50%;border:2px solid "+(g.done?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(g.done?"var(--pw-bosque)":"#fff")+";flex-shrink:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0'>"+(g.done?svg(IC.check,11,"stroke='#fff' stroke-width='3'"):"")+"</button><span style='flex:1;font-size:13px;color:"+(g.done?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(g.done?"text-decoration:line-through":"")+"'>"+esc(g.t)+"</span><button data-act='wgoal-del:"+i+"' aria-label='Quitar' style='background:none;border:none;color:var(--pw-text-muted);cursor:pointer;font-size:17px;line-height:1;padding:0 4px'>×</button></div>"; }).join("");
+  if(!wg.length) wgRows="<div style='font-size:12.5px;color:var(--pw-text-soft);padding:4px 0 8px'>Anota lo que querés lograr esta semana y márcalo al cumplirlo.</div>";
+  var goalCard="<div class='cp-card'><div class='cp-card-pad'><div style='display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px'><div style='display:flex;align-items:center;gap:12px'><span style='width:42px;height:42px;border-radius:12px;background:var(--pw-success-bg);display:flex;align-items:center;justify-content:center;font-size:20px;filter:grayscale(1)'>🎯</span><div><div style='font-family:var(--pw-serif);font-size:16px;font-weight:600'>Objetivos de la semana</div><div style='font-size:12.5px;color:var(--pw-text-soft)'>"+(wg.length?(wgDone+" de "+wg.length+" cumplidos"):"Tus metas para esta semana")+"</div></div></div>"+(wg.length?"<span class='cp-eyebrow' style='background:var(--pw-success-bg);color:var(--pw-bosque);padding:6px 12px;border-radius:99px'>"+wgPct+"%</span>":"")+"</div>"+(wg.length?"<div style='height:8px;border-radius:99px;background:var(--pw-niebla-2);overflow:hidden;margin-bottom:10px'><span style='display:block;height:100%;width:"+wgPct+"%;background:linear-gradient(90deg,var(--pw-sendero),var(--pw-bosque))'></span></div>":"")+wgRows+"<div style='display:flex;gap:8px;margin-top:10px'><input id='wgoal-input' placeholder='Nuevo objetivo…' onkeydown=\"if(event.key==='Enter'){event.preventDefault();var b=document.querySelector('[data-act=wgoal-add]');if(b)b.click();}\" style='flex:1;height:36px;border:1px solid var(--pw-border);border-radius:9px;padding:0 12px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box'><button class='cp-btn cp-btn-primary' data-act='wgoal-add' style='height:36px;font-size:13px;padding:0 14px'>Agregar</button></div></div></div>";
   // ── Avance de clientes (análisis: si van cumpliendo objetivos) ──
-  var cliActive=CLIENTS.filter(function(c){return !(c.raw&&c.raw.activo===false);});
+  var cliActive=CLIENTS.filter(function(c){return c&&!c._example&&!(c.raw&&c.raw.activo===false);});
   var anaRows=cliActive.length?cliActive.slice(0,6).map(function(c){
     var objs=[!!(c.raw),c.reportState==="published",c.cvState==="published",!!(c.raw&&c.raw.carta_presentacion)];
     var doneN=objs.filter(Boolean).length; var p=Math.round(doneN/objs.length*100);
     var hl=c.last&&c.last.state==="stale"?{t:"Sin actividad",col:"var(--pw-danger)"}:(c.last&&c.last.state==="mid"?{t:"En seguimiento",col:"#8E7A35"}:{t:"Al día",col:"var(--pw-bosque)"});
     return "<div class='cp-todo-row' data-act='cli-open:"+esc(c.id)+"' style='cursor:pointer;flex-direction:column;align-items:stretch;gap:8px'><div style='display:flex;align-items:center;gap:10px'><img src='"+esc(c.photo)+"' style='width:34px;height:34px;border-radius:50%;object-fit:cover'><div style='flex:1'><div class='cp-todo-head'>"+esc(c.name)+"</div><div class='cp-todo-meta'>Semana "+c.week+"/4 · "+doneN+"/4 objetivos</div></div><span style='font-size:11px;font-weight:600;color:"+hl.col+"'>"+hl.t+"</span></div><div style='height:7px;border-radius:99px;background:var(--pw-niebla-2);overflow:hidden'><span style='display:block;height:100%;width:"+p+"%;background:linear-gradient(90deg,var(--pw-sendero),var(--pw-bosque))'></span></div></div>";
   }).join(""):"<div style='padding:24px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Sin clientes activos para analizar.</div>";
-  var anaCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📈</span> Avance de clientes<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver todos</button></div>"+anaRows+"</div>";
+  var anaCard=cliActive.length?("<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📈</span> Avance de clientes<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver todos</button></div>"+anaRows+"</div>"):"";
   // ── Tus clientes ──
   function _nextSesTxt(c){ var ns=null;(c.ses||[]).forEach(function(s){if(!s||!s.fecha)return;var t=_sdt(s);if(isNaN(t)||t<now)return;if(!ns||t<ns.t)ns={t:t,s:s};});if(!ns)return "—";var d=new Date(ns.t);d.setHours(0,0,0,0);var td=new Date();td.setHours(0,0,0,0);var diff=Math.round((d-td)/86400000);var pre=diff===0?"Hoy":diff===1?"Mañana":new Date(ns.t).toLocaleDateString("es-ES",{day:"2-digit",month:"short"});return pre+(ns.s.hora?" "+ns.s.hora:""); }
   var cliRows=cliActive.length?cliActive.slice(0,6).map(function(c){
     return "<div class='cp-todo-row' data-act='cli-open:"+esc(c.id)+"' style='cursor:pointer;display:grid;grid-template-columns:auto 1fr auto auto auto;gap:14px;align-items:center'><img src='"+esc(c.photo)+"' alt='' style='width:38px;height:38px;border-radius:50%;object-fit:cover'><div><div class='cp-todo-head'>"+esc(c.name)+"</div><div style='font-size:12px;color:var(--pw-bosque);display:flex;align-items:center;gap:5px'><span style='width:7px;height:7px;border-radius:50%;background:var(--pw-sendero)'></span>Activa</div></div><span class='cp-eyebrow' style='background:var(--pw-success-bg);color:var(--pw-bosque);padding:3px 10px;border-radius:99px'>Semana "+c.week+"</span><div class='cp-dash-hidecol'><div style='font-size:10.5px;color:var(--pw-text-muted);text-transform:uppercase'>Próxima sesión</div><div style='font-size:12.5px;font-weight:500'>"+esc(_nextSesTxt(c))+"</div></div><div class='cp-dash-hidecol'><div style='font-size:10.5px;color:var(--pw-text-muted);text-transform:uppercase'>Última actividad</div><div style='font-size:12.5px;color:var(--pw-text-soft)'>"+esc((c.last&&c.last.txt)||"—")+"</div></div></div>";
   }).join(""):"<div style='padding:24px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Todavía no tienes clientes activos.</div>";
   var cliCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>👥</span> Tus clientes<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver todos</button></div>"+cliRows+"</div>";
-  return "<div class='cp-greet' style='margin-bottom:18px'>"+avImg(COACH.photo,COACH.name,"")+"<div><h1 class='cp-greet-h1'>Hola, "+esc(COACH.firstName)+"<span class='dot'>.</span></h1><div class='cp-greet-sub'>Tu resumen de hoy</div></div></div><div class='cp-dash-grid'><div style='display:flex;flex-direction:column;gap:18px'>"+agendaCard+goalCard+"</div><div style='display:flex;flex-direction:column;gap:18px'>"+anaCard+cliCard+"</div></div>";
+  // Devuelve solo las CARDS NUEVAS funcionales (objetivos de la semana editables
+  // + avance de clientes). El Resumen las inserta en su grid junto a las que ya
+  // existían (clientes, calendario, sendero). El resto que se computa arriba
+  // (agenda/calendario) ya vive en el Resumen, no se usa acá.
+  return goalCard+anaCard;
 }
 function viewResumen(){
-  try{ if(new URLSearchParams(location.search).get("dash")==="1") return viewDashboard(); }catch(e){}
   var greet = "Buenos días";
   var pendingReview = CLIENTS.filter(function(c){return c.reportState==="pending";}).length;
   var stale = CLIENTS.filter(function(c){return c.last.state==="stale";});
@@ -1479,7 +1497,7 @@ function viewResumen(){
         "<span class='cp-todo-time "+stCls+"'>Sem "+(c.week||1)+"</span>"+
         svg(IC.chevR,14,"class='cp-todo-arrow'")+"</div>";
     }).join("");
-    cliBlock = "<div class='cp-card' style='margin-top:16px'>"+
+    cliBlock = "<div class='cp-card'>"+
       "<div class='cp-card-hd'><h3 class='cp-card-title'>Tus clientes<span class='dot'>.</span></h3>"+
         "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='nav:clientes'>Ver todos</button></div>"+
       "<div>"+cliRows+"</div></div>";
@@ -1488,7 +1506,9 @@ function viewResumen(){
   return "<div class='cp-greet'>"+avImg(COACH.photo,COACH.name,"")+
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+"<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>"+pendingReview+" pendiente"+(pendingReview===1?"":"s")+(_nx?" · "+_nxTxt:"")+"</div></div></div>"+
-    pathCard+(pathCard?"":emptyState)+cliBlock+calCard;
+    pathCard+(pathCard?"":emptyState)+
+    "<div class='cp-res-grid'>"+viewDashboard()+cliBlock+"</div>"+
+    calCard;
 }
 
 /* ═══ Clientes ═══ */
@@ -5252,6 +5272,9 @@ document.addEventListener("click", function(ev){
     state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="guide"; state.ai.tab="home";
     render(); return;
   }
+  if(act==="wgoal-add"){ var _wi=document.getElementById("wgoal-input"); var _wv=_wi?(""+_wi.value).trim():""; if(!_wv) return; var _wa=_wgoals(); _wa.push({t:_wv,done:false}); _wgoalsSave(_wa); render(); return; }
+  if(act.indexOf("wgoal-toggle:")===0){ var _wt=parseInt(act.slice(13),10); var _wb=_wgoals(); if(_wb[_wt]){ _wb[_wt].done=!_wb[_wt].done; _wgoalsSave(_wb); render(); } return; }
+  if(act.indexOf("wgoal-del:")===0){ var _wd2=parseInt(act.slice(10),10); var _wc=_wgoals(); if(_wd2>=0&&_wd2<_wc.length){ _wc.splice(_wd2,1); _wgoalsSave(_wc); render(); } return; }
   if(act==="ai-open"){
     // La cabra ahora GUÍA (onboarding/ayuda). El chat de mensajes vive aparte,
     // en el ícono de arriba (data-act="chat-open").
