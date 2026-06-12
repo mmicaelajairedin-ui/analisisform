@@ -3244,15 +3244,25 @@ function viewAsistente(){
   var mode = (state.ai && state.ai.mode) || "guide";
   var tab = (mode==="chat") ? "mensajes" : "home";
   var tabs = "";
-  var homeBody = "<div class='cp-ai-home'>"+
-    "<div class='cp-ob-mini'><div class='cp-ob-mini-top'><div class='cp-ob-mini-title'>Tu progreso</div>"+
-      "<span class='cp-ob-mini-pct'>"+done+"/"+STEPSx.length+"</span></div>"+
-      "<div class='cp-ob-bar'><span style='width:"+pct+"%'></span></div>"+
-      "<div class='cp-ob-next'>"+(allDone?"<span><strong>¡Listo!</strong> Todo configurado 🎉</span>":"<span>Próximo: <strong>"+esc(nextStep.label)+"</strong></span>")+"</div></div>"+
-    // Con onboarding completo: solo el progreso (7/7). En onboarding: los pasos.
-    // Las sugerencias quedan fuera por ahora (se verá más adelante).
-    (allDone ? "" : "<div><div class='cp-ai-section-title' style='margin-bottom:6px'>Tus pasos · toca para ir</div><div class='cp-ob-list'>"+stepRows+"</div></div>")+
+  var homeBody;
+  if(allDone){
+    // Onboarding completo: la cabra ya no guía. Queda como acceso simple a
+    // soporte de Pathway.
+    homeBody = "<div style='text-align:center;padding:26px 20px 14px'>"+
+      "<div style='font-size:38px;line-height:1'>🎉</div>"+
+      "<div style='font-family:var(--pw-serif);font-size:19px;font-weight:600;color:var(--pw-carbon);margin-top:10px'>¡Todo listo!</div>"+
+      "<p style='font-size:13px;color:var(--pw-text-soft);line-height:1.5;margin:8px auto 18px;max-width:250px'>Tu cuenta está configurada. Si necesitás una mano con la plataforma, escribinos.</p>"+
+      "<button class='cp-btn cp-btn-primary' data-act='chat-soporte' style='width:100%;height:42px'>"+svg(IC.msg,15)+" Chatear con soporte Pathway</button>"+
     "</div>";
+  } else {
+    homeBody = "<div class='cp-ai-home'>"+
+      "<div class='cp-ob-mini'><div class='cp-ob-mini-top'><div class='cp-ob-mini-title'>Tu progreso</div>"+
+        "<span class='cp-ob-mini-pct'>"+done+"/"+STEPSx.length+"</span></div>"+
+        "<div class='cp-ob-bar'><span style='width:"+pct+"%'></span></div>"+
+        "<div class='cp-ob-next'><span>Próximo: <strong>"+esc(nextStep.label)+"</strong></span></div></div>"+
+      "<div><div class='cp-ai-section-title' style='margin-bottom:6px'>Tus pasos · toca para ir</div><div class='cp-ob-list'>"+stepRows+"</div></div>"+
+    "</div>";
+  }
   var body;
   if(tab==="mensajes"){
     body = RADMIN ? viewMensajesAdminBody() : viewMensajesBody();
@@ -3296,9 +3306,12 @@ function viewAsistente(){
     footer = "<div class='cp-ai-compose' style='justify-content:center;font-size:12px;color:var(--pw-text-soft)'>"+
       "Toca un hilo para abrir la conversación y responder."+
     "</div>";
+  } else if(allDone){
+    // Onboarding completo: el botón de soporte ya vive en el cuerpo → sin footer.
+    footer = "";
   } else {
     footer = "<div class='cp-ai-compose' style='justify-content:center'>"+
-      "<a href='https://wa.me/34623816019?text="+encodeURIComponent("Hola, tengo una consulta sobre Pathway")+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='width:100%;justify-content:center;text-decoration:none;border-color:var(--pw-bosque);color:var(--pw-bosque)'>"+svg(IC.wa,14)+" ¿Necesitas ayuda? Hablar por WhatsApp</a>"+
+      "<a href='https://wa.me/34623816019?text="+encodeURIComponent("Hola, tengo una consulta sobre Pathway")+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='width:100%;justify-content:center;text-decoration:none;border-color:var(--pw-bosque);color:var(--pw-bosque)'>"+svg(IC.wa,14)+" ¿Necesitás ayuda? Hablar por WhatsApp</a>"+
     "</div>";
   }
   var headIcon = (mode==="chat")
@@ -3306,8 +3319,8 @@ function viewAsistente(){
     : "<span class='cp-ai-head-cabra'><img src='"+cabraSrc+"' alt=''></span>";
   return "<div class='cp-ai-panel"+(mode==="chat"?" cp-ai-panel--chat":" cp-ai-panel--guide")+"' role='dialog' aria-label='"+(mode==="chat"?"Chat Pathway":"Asistente Pathway")+"'>"+
     "<div class='cp-ai-head'>"+headIcon+
-      "<div><div class='cp-ai-name'>"+(mode==="chat"?"Chat Pathway":"Tu guía Pathway")+"</div>"+
-      "<div class='cp-ai-status'>"+(mode==="chat"?"Soporte y tus conversaciones":"Onboarding y ayuda")+"</div></div>"+
+      "<div><div class='cp-ai-name'>"+(mode==="chat"?"Chat Pathway":(allDone?"Soporte Pathway":"Tu guía Pathway"))+"</div>"+
+      "<div class='cp-ai-status'>"+(mode==="chat"?"Soporte y tus conversaciones":(allDone?"Estamos para ayudarte":"Onboarding y ayuda"))+"</div></div>"+
       "<button class='cp-ai-close' data-act='ai-close' aria-label='Cerrar'>"+svg(IC.close,16,"stroke-width='2.2'")+"</button></div>"+
     tabs+
     "<div class='cp-ai-scroll'>"+body+"</div>"+
@@ -5341,11 +5354,15 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="cabra-poke"){
-    // Si ya terminó el onboarding no hay guía pendiente → tocar la cabra es un
-    // saludo simpático (igual que la cabra del sendero). Si falta algo, abre la guía.
-    var _st=computeSteps(); var _allDone=!_st.filter(function(s){return !s.done;})[0];
-    if(_allDone){ cabraFlash(CABRA_SALUDA,2200); toast(_cabraCheer()); return; }
+    // Tocar la cabra abre su panel: la guía si falta onboarding, o el soporte
+    // simple de Pathway si ya está todo completo.
     state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="guide"; state.ai.tab="home";
+    render(); return;
+  }
+  if(act==="chat-soporte"){
+    // Desde el panel "todo listo": abre el chat directo con soporte Pathway.
+    state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="chat"; state.ai.tab="mensajes";
+    state.chatPicker=false; state.aiCoachThread=RADMIN?null:"mica";
     render(); return;
   }
   if(act==="wgoal-add"){ var _wi=document.getElementById("wgoal-input"); var _wv=_wi?(""+_wi.value).trim():""; if(!_wv) return; var _wa=_wgoals(); _wa.push({t:_wv,done:false}); _wgoalsSave(_wa); render(); return; }
