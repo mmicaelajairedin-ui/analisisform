@@ -1087,6 +1087,7 @@ var CABRA_SALUDA = "https://21lun2vokt.ucarecd.net/10dc5cab-b0c9-4ab1-8730-442c6
 var _cabraAwayDays=null;
 var _cabraFlashImg=""; var _cabraFlashUntil=0; var _cabraGreeted=false; var _cabraDidSomething=false;
 var _goatWaveUntil=0; // cabra del sendero: saluda un ratito cuando la tocás
+var _goatLastIdx=null, _goatWalking=false; // para animar el caminar entre pasos
 // Muestra una cabra-reacción (gif) un ratito y vuelve sola al idle. Se usa para
 // saluda / sonríe / salta(logro) / pensando. No para por cada render.
 function cabraFlash(img,ms){ ms=ms||1300; _cabraFlashImg=img; _cabraFlashUntil=Date.now()+ms; setTimeout(function(){try{ if(typeof render==="function") render(); }catch(e){}},0); setTimeout(function(){try{ if(typeof render==="function") render(); }catch(e){}},ms+50); }
@@ -1344,12 +1345,22 @@ function _coachPathRender(ph,doneN){
     return "<div style='position:absolute;left:"+s.x+"%;top:"+anchorY+"%;transform:translate(-50%,-100%);display:inline-flex;align-items:center;padding:4px 11px;border-radius:100px;background:"+bg+";border:"+bd+";box-shadow:0 2px 8px rgba(20,55,38,.28);white-space:nowrap;z-index:6'>"+chk+"<span style='font-family:Inter,sans-serif;font-size:11.5px;font-weight:"+(current?"700":"600")+";color:"+col+"'>"+SHORT[i]+"</span></div>";
   }).join("");
   var gs=STOPS[curIdx];
-  // La cabra que "espera" en el sendero es SIEMPRE la parada de frente en todos
-  // los pasos. Si la tocás, saluda un par de segundos y vuelve a parada (_goatWaveUntil).
-  var goatSrc=(Date.now()<_goatWaveUntil)?CABRA_SALUDA:CABRA_TRANQUILA;
+  // ¿La cabra tiene que CAMINAR hasta este paso? Si en la vista anterior estaba en
+  // un paso menor (avanzó al guardar el perfil / sumar cliente), animamos el
+  // recorrido por el sendero con camina.gif y un @keyframes de la pos vieja a la
+  // nueva; al terminar se planta (parada). Si la tocás, saluda (_goatWaveUntil).
+  var _walk=(_goatLastIdx!==null && _goatLastIdx<curIdx);
+  var goatSrc=_walk?"assets/cabra/camina.gif":((Date.now()<_goatWaveUntil)?CABRA_SALUDA:CABRA_TRANQUILA);
+  var _animCss="", _animStyle="";
+  if(_walk){
+    var _fr=STOPS[_goatLastIdx], _nm="goatWalk_"+_goatLastIdx+"_"+curIdx;
+    _animCss="<style>@keyframes "+_nm+"{from{left:"+_fr.x+"%;top:"+_fr.y+"%;transform:translate(-50%,-82%) scale("+_fr.s+");}to{left:"+gs.x+"%;top:"+gs.y+"%;transform:translate(-50%,-82%) scale("+gs.s+");}}</style>";
+    _animStyle="animation:"+_nm+" 2s ease both;";
+    if(!_goatWalking){ _goatWalking=true; setTimeout(function(){ _goatLastIdx=curIdx; _goatWalking=false; try{render();}catch(e){} },2050); }
+  } else { _goatLastIdx=curIdx; }
   // -82% baja la cabra dentro de su caja (el GIF trae margen transparente abajo)
   // para que las patas apoyen en el sendero y no floten.
-  var goat="<div data-act='goat-wave' title='Tocá la cabra 🐐' style='position:absolute;left:"+gs.x+"%;top:"+gs.y+"%;width:11%;aspect-ratio:108 / 136;transform:translate(-50%,-82%) scale("+gs.s+");transform-origin:50% 100%;z-index:5;cursor:pointer'>"+
+  var goat=_animCss+"<div data-act='goat-wave' title='Tocá la cabra 🐐' style='position:absolute;left:"+gs.x+"%;top:"+gs.y+"%;width:11%;aspect-ratio:108 / 136;transform:translate(-50%,-82%) scale("+gs.s+");transform-origin:50% 100%;z-index:5;cursor:pointer;"+_animStyle+"'>"+
     "<div style='position:absolute;left:50%;bottom:15%;width:55%;height:8%;border-radius:50%;transform:translateX(-50%);background:radial-gradient(ellipse,rgba(20,55,38,.34),transparent 70%)'></div>"+
     "<img src='"+goatSrc+"' alt='' style='position:relative;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 8px 8px rgba(45,106,79,.25))'></div>";
   // Banner chico y centrado (max-width) → margen a los costados sobre el fondo
@@ -5243,7 +5254,10 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="cabra-poke"){
-    // Tocar la cabra abre la guía. (El salto es solo cuando hacés algo, no al tocar.)
+    // Si ya terminó el onboarding no hay guía pendiente → tocar la cabra es un
+    // saludo simpático (igual que la cabra del sendero). Si falta algo, abre la guía.
+    var _st=computeSteps(); var _allDone=!_st.filter(function(s){return !s.done;})[0];
+    if(_allDone){ cabraFlash(CABRA_SALUDA,2200); toast(_cabraCheer()); return; }
     state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="guide"; state.ai.tab="home";
     render(); return;
   }
