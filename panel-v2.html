@@ -489,6 +489,7 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .cp-cabra-img-wrap:hover{transform:scale(1.06);}
 .cp-cabra-img-wrap img{width:100%;height:100%;object-fit:contain;pointer-events:none;filter:drop-shadow(0 6px 9px rgba(45,106,79,.25));}
 @keyframes cpCabraFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-8px);}}
+@keyframes cpCabraPoke{0%{transform:scale(1) rotate(0);}25%{transform:scale(1.16) rotate(-5deg);}55%{transform:scale(.94) rotate(4deg);}80%{transform:scale(1.04) rotate(-2deg);}100%{transform:scale(1) rotate(0);}}
 @keyframes cpDotPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.08);}}
 .cp-ai-panel{position:fixed;right:20px;bottom:20px;z-index:60;width:340px;height:480px;max-height:calc(100vh - 110px);background:#fff;border-radius:18px;box-shadow:0 24px 60px rgba(45,106,79,.25),0 4px 12px rgba(0,0,0,.10);display:flex;flex-direction:column;overflow:hidden;animation:cpAiIn .25s var(--pw-ease-out);}
 /* Modo chat: el panel baja desde el ícono de chat de arriba (no desde la cabra). */
@@ -1052,7 +1053,9 @@ var INSIGHTS = [
 // es repetitivo ni se contradice con los pasos ya hechos.
 function computeInsights(){
   var out=[];
-  var cls=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c&&!c._example;}):[];
+  // Solo clientes ACTIVOS (los inactivos / con los que ya no trabajás no deben
+  // generar sugerencias) y nunca el de ejemplo.
+  var cls=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c&&!c._example&&!(c.raw&&c.raw.activo===false);}):[];
   // Perfil incompleto (solo si el paso de perfil NO está hecho).
   try{
     var st=computeSteps();
@@ -1099,6 +1102,12 @@ function cabraMood(){
   if(unread>0) return { mood:"atencion", img:"assets/cabra/atencion.png", msg:(unread===1?"Tienes 1 mensaje sin leer 👀":"Tienes "+unread+" mensajes sin leer 👀") };
   if(ins.length) return { mood:"atencion", img:"assets/cabra/atencion.png", msg:ins[0].title+" — tócame para verlo." };
   return { mood:"tranquila", img:"assets/cabra/frente.gif", msg:"" };
+}
+// Frase al azar cuando tocás la cabra (reacción juguetona).
+function _cabraCheer(){
+  var fn=((typeof COACH!=="undefined"&&COACH&&COACH.firstName)||"").trim();
+  var arr=["¡Vamos"+(fn?", "+fn:"")+"! 🐐","Estoy contigo 💚","¡A por todo hoy!","¿Seguimos?","¡Buen trabajo!","Acá ando si me necesitás"];
+  return arr[Math.floor(Math.random()*arr.length)];
 }
 // Cartel calmo de la cabra (burbuja con estilos inline para no chocar con el CSS
 // legacy de .cp-cabra-bubble). Se cierra con la ✕ (ai-bubble-close).
@@ -3054,7 +3063,7 @@ function viewAsistente(){
     var unreadDot = "";
     return "<div class='cp-ai-fab'>"+top+
       "<div style='position:relative;display:inline-block'>"+
-        "<div class='cp-cabra-img-wrap' data-act='ai-open' role='button' tabindex='0' aria-label='Abrir asistente'>"+
+        "<div class='cp-cabra-img-wrap' data-act='cabra-poke' role='button' tabindex='0' aria-label='Abrir asistente'>"+
           "<img src='"+cabraSrc+"' alt='Asistente Pathway'>"+
         "</div>"+unreadDot+
       "</div></div>";
@@ -5178,6 +5187,19 @@ document.addEventListener("click", function(ev){
     }
     state._svcNew=false; state.svcEdit=null;
     if(REAL){ saveCfg({ servicios: state.services }); } else { render(); }
+    return;
+  }
+  if(act==="cabra-poke"){
+    // Reacción juguetona al tocar la cabra: saltito + frase, y abre la guía.
+    try{
+      var _w=document.querySelector(".cp-cabra-img-wrap");
+      if(_w){
+        var _img=_w.querySelector("img"); if(_img){ _img.src="assets/cabra/salta.gif"; }
+        _w.style.animation="none"; void _w.offsetWidth; _w.style.animation="cpCabraPoke .5s ease";
+      }
+      toast(_cabraCheer());
+    }catch(e){}
+    setTimeout(function(){ state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="guide"; state.ai.tab="home"; render(); }, 620);
     return;
   }
   if(act==="ai-open"){
