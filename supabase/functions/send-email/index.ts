@@ -179,9 +179,24 @@ Deno.serve(async (req: Request) => {
   const fromEmail = body.from_email || "hi@pathwaycareercoach.com";
   const fromName = body.from_name || "Pathway";
 
+  // `to` admite uno o varios destinatarios. Si viene una lista separada por
+  // comas o punto y coma (ej: REPORT_EMAIL_TO="a@x.com,b@y.com"), la
+  // partimos y mandamos a todos. Un solo email sigue funcionando igual.
+  const recipients = String(body.to)
+    .split(/[,;]/)
+    .map((e) => e.trim())
+    .filter(Boolean)
+    .map((email) => ({ email, name: body.to_name || email }));
+  if (recipients.length === 0) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "to no tiene ningún email válido" }),
+      { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+    );
+  }
+
   const payload: Record<string, unknown> = {
     sender: { email: fromEmail, name: fromName },
-    to: [{ email: body.to, name: body.to_name || body.to }],
+    to: recipients,
     subject: body.subject,
   };
   if (body.html) {

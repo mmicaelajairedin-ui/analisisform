@@ -19,7 +19,8 @@
 //   CLOUDFLARE_API_TOKEN  — token con permiso "Analytics: Read" en ambas zonas
 //   CLOUDFLARE_ZONE_MJ    — zone ID de micaelajairedin.com
 //   CLOUDFLARE_ZONE_PW    — zone ID de pathwaycareercoach.com
-//   REPORT_EMAIL_TO       — email destino (ej: hi@pathwaycareercoach.com)
+//   REPORT_EMAIL_TO       — email(s) destino. Admite varios separados por coma
+//                           (ej: "mmicaela.jairedin@gmail.com,hi@pathwaycareercoach.com")
 //   SUPABASE_URL          — auto-inyectada por Supabase
 //   SUPABASE_SERVICE_ROLE_KEY — auto-inyectada por Supabase
 //   AGENT_TRIGGER_SECRET  — string compartido con GitHub Actions
