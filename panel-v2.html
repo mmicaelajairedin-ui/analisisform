@@ -1190,7 +1190,16 @@ function _cabraCartel(msg){
 var _game=null, _gameRAF=null;
 function _gameKey(){ var em=(typeof COACH!=="undefined"&&COACH&&COACH.email)||(REAL&&RME&&RME.email)||"x"; return "pw_game_pts_"+em; }
 function _gameBest(){ try{ return parseInt(localStorage.getItem(_gameKey())||"0",10)||0; }catch(e){ return 0; } }
-function _gameSetBest(n){ try{ if(n>_gameBest()) localStorage.setItem(_gameKey(),String(n)); }catch(e){} }
+function _gameSetBest(n){ try{ if(n>_gameBest()){ localStorage.setItem(_gameKey(),String(n)); _gameSyncServer(n,null); } }catch(e){} }
+// Guarda puntos/medalla del coach en su fila de usuarios (para el ranking del
+// admin). Si las columnas no existen todavía, el PATCH falla silencioso.
+function _gameSyncServer(pts,medal){
+  try{ var id=(typeof REAL!=="undefined"&&REAL&&RME&&RME.id)||(typeof COACH!=="undefined"&&COACH&&COACH.id); if(!id) return;
+    var body={}; if(pts!=null) body.game_pts=pts; if(medal!=null) body.game_medal=medal;
+    if(!Object.keys(body).length) return;
+    _sbw("usuarios?id=eq."+encodeURIComponent(id),"PATCH",body).catch(function(){});
+  }catch(e){}
+}
 var GAME_LEVELS=[
   {n:1,name:"Perfil",target:100,gap:330,trees:false},
   {n:2,name:"Cliente",target:200,gap:255,trees:true},
@@ -3477,7 +3486,7 @@ function viewAsistente(){
 
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
 function _sha256hex(str){ return crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)).then(function(buf){ return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join(""); }); }
-function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; render(); }); }
+function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; render(); }); }
 // Email de acceso al coach. isNew=true → coach recién creado por el admin:
 // le mandamos a activar su cuenta y ELEGIR su contraseña (link a registro,
 // nunca le mandamos una contraseña). isNew=false → renovación: ya tiene
@@ -3577,6 +3586,28 @@ function _coachChatBlock(c){
         "<button class='cp-btn cp-btn-primary' data-act='chat-admin-send' "+(draft.trim()?"":"disabled")+">Enviar</button>"+
       "</div>"+
     "</div></div>";
+}
+// Ranking de coaches por puntos del juego (+ su medalla). Lee game_pts/game_medal
+// de usuarios (cada coach escribe su fila; ver _gameSyncServer + migración).
+function _adminRanking(){
+  var meds=["","bronce","plata","oro"];
+  var rows=(RCOACHES||[]).slice().sort(function(a,b){ return (b.game_pts||0)-(a.game_pts||0); });
+  if(!rows.length) return "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-text-soft);font-size:13px;padding:30px'>Todavía no hay puntajes. Cuando los coaches jueguen, aparecen acá.</div></div>";
+  var head="<div style='display:grid;grid-template-columns:32px 38px 1fr auto auto;gap:12px;padding:8px 14px;border-bottom:1px solid var(--pw-border);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-muted)'><span style='text-align:center'>#</span><span></span><span>Coach</span><span>Medalla</span><span>Puntos</span></div>";
+  var list=rows.map(function(c,i){
+    var pts=c.game_pts||0, med=meds[c.game_medal||0]||"";
+    var medImg=med?"<img src='assets/iconos/medalla-"+med+"-sm.webp' alt='"+med+"' style='width:26px;height:26px;object-fit:contain' title='Medalla "+med+"'>":"<span style='display:inline-block;width:26px'></span>";
+    var rankCol=i===0?"#D9A441":i===1?"#9AA0A6":i===2?"#C0865A":"var(--pw-text-soft)";
+    var nm=c.nombre||c.email||"Coach";
+    return "<div data-act='coach-view:"+esc(c.id)+"' style='display:grid;grid-template-columns:32px 38px 1fr auto auto;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
+      "<span style='font-family:var(--pw-serif);font-size:17px;font-weight:700;color:"+rankCol+";text-align:center'>"+(i+1)+"</span>"+
+      "<img src='"+esc(c.foto_url||makeAvatar(nm))+"' onerror=\"this.onerror=null;this.src='"+makeAvatar(nm)+"'\" alt='' style='width:34px;height:34px;border-radius:50%;object-fit:cover'>"+
+      "<span style='font-size:13.5px;font-weight:600;color:var(--pw-carbon);overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+esc(nm)+(c.rol==="admin"?" <span style='font-size:10px;color:var(--pw-text-muted)'>(admin)</span>":"")+"</span>"+
+      medImg+
+      "<span style='font-family:var(--pw-serif);font-size:16px;font-weight:700;color:var(--pw-bosque)'>"+pts+"</span>"+
+    "</div>";
+  }).join("");
+  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🏆</span> Ranking de coaches<span class='dot'>.</span></h3><span class='cp-eyebrow'>Por puntos del juego</span></div>"+head+list+"</div>";
 }
 function viewAdmin(){
   function kpi(eyebrow, big, sub){
@@ -3931,18 +3962,20 @@ function viewAdmin(){
         leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
   }
 
-  var tabs = [["coaches","Coaches"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"]];
+  var tabs = [["coaches","Coaches"],["ranking","Ranking"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"]];
   var tabBar = "<div class='cp-filters'>"+tabs.map(function(t){
     return "<button class='cp-chip "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'>"+t[1]+"</button>";
   }).join("")+"</div>";
   // Menu lateral del admin (mismo formato que Configuracion). Mismos data-act.
-  var _admIcon={resumen:'📊',coaches:'🎓',contactos:'📥',cvx:'📄',resenas:'⭐',pagos:'💳'};
+  var _admIcon={resumen:'📊',coaches:'🎓',ranking:'🏆',contactos:'📥',cvx:'📄',resenas:'⭐',pagos:'💳'};
   var adminMenu = "<nav class='cp-cfg-nav'>"+tabs.map(function(t){
     return "<button class='cp-cfg-nav-item "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'><span class='cp-emo'>"+(_admIcon[t[0]]||'•')+"</span><span>"+t[1]+"</span></button>";
   }).join("")+"</nav>";
 
   var body;
-  if(state.adminTab==="coaches"){
+  if(state.adminTab==="ranking"){
+    body = _adminRanking();
+  } else if(state.adminTab==="coaches"){
     if(REAL && state.coachSel){
       body = _coachDetailCard();
     } else {
@@ -6073,7 +6106,7 @@ function loadReal(){
     ? "select=*&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)"
     : "select=*&coach_id=eq."+encodeURIComponent(ME.id);
   var extra = ME.rol==="admin"
-    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at&order=created_at.desc"),
+    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal&order=created_at.desc"),
         _sb("contactos_chat?select=contacto,pagina,fecha&pagina=neq.resena-cvexpress&order=fecha.desc&limit=30"),
         _sb("candidatos?select=id,created_at,coach_id,email,resena"),
         _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
@@ -6177,6 +6210,7 @@ function loadReal(){
     if(_isDemoCoach()){ CLIENTS=[exampleFor(state.demoTipo||"carrera")]; }
     else if(REAL && !CLIENTS.length){ CLIENTS=[exampleFor("carrera")]; }
     _realLoaded=true; // ya hay datos reales: recién ahora el chequeo de medallas es fiable
+    try{ _gameSyncServer(_gameBest(), coachMedalInfo().n); }catch(e){} // ranking admin
     render();
     _migrateFotoToUploadcare();
   }).catch(function(){ render(); });
