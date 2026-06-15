@@ -827,6 +827,20 @@ var CLIENTS = [
   { id:"p2", name:"Elena Costa",    role:"Data Engineer",    email:"elena.c@email.com",    week:1, medal:null,     last:{txt:"hace 4 h", state:"fresh"}, cvState:"pending",   reportState:"pending", source:"pathway" }
 ].map(function(c){ c.photo = makeAvatar(c.name); if(!c.source) c.source="directo"; return c; });
 
+/* ═══ Demo · sesiones del cliente de ejemplo (María) ═══
+ * María es ficticia (no existe en Supabase), así que sus sesiones se guardan
+ * en el navegador (localStorage). Así cualquier coach que entre ve la sección
+ * "Sesiones" ya cargada, y lo que registre en una demo sobrevive a las
+ * recargas. Sembramos 2 sesiones genéricas (sirven para carrera, fitness y
+ * finanzas) para que nunca se vea vacía. NO toca la base de datos. */
+var _DEMO_SES_KEY="pw_demo_ses";
+var _DEMO_SES_SEED=[
+  {fecha:"2026-06-02",hora:"17:00",trabajado:"Definimos los objetivos de las primeras semanas y revisamos el plan por etapas.",acordado:"Avanzar con las dos primeras tareas antes de la próxima sesión.",acciones:"Completar la primera etapa del plan\nRegistrar el progreso en la plataforma\nPreparar dudas para la próxima sesión",tareas_done:[0]},
+  {fecha:"2026-06-09",hora:"17:00",trabajado:"Revisamos los avances de la semana y ajustamos el plan según los resultados.",acordado:"Sostener la constancia y registrar el progreso en la app.",acciones:"Mantener la rutina acordada\nSubir el material pendiente\nAgendar la próxima sesión",tareas_done:[]}
+];
+function _demoSesLoad(){ try{ var v=localStorage.getItem(_DEMO_SES_KEY); if(v){ var a=JSON.parse(v); if(Object.prototype.toString.call(a)==="[object Array]") return a; } }catch(e){} return JSON.parse(JSON.stringify(_DEMO_SES_SEED)); }
+function _demoSesSave(s){ try{ localStorage.setItem(_DEMO_SES_KEY, JSON.stringify(s||[])); }catch(e){} }
+
 /* ═══ Cliente de ejemplo (María) — se muestra a un coach real que todavía no tiene clientes propios ═══ */
 var EXAMPLE_CLIENT = (function(){
   var em="maria.ejemplo@pathwaycareercoach.com";
@@ -880,7 +894,7 @@ var EXAMPLE_CLIENT = (function(){
       alertas:["Aún no actualizó el LinkedIn — es lo que más la frena ahora mismo"],
       mensaje_candidato:"María, tienes los resultados; ahora hay que contarlos como lo que eres: una líder de growth. Vamos paso a paso y en 4 semanas tu perfil va a hablar por ti."
     } },
-    ses:[],
+    ses:_demoSesLoad(),
     photo:"https://fucfze9g4e.ucarecd.net/0be4c644-0915-4325-96aa-b1c94651b42b/clientedemo.jpg"
   };
 })();
@@ -891,8 +905,11 @@ var _exGen=false;
 // María según el nicho del demo: mismo personaje, datos coherentes con el
 // prompt de cada nicho (fitness / finanzas). Carrera = la María de siempre.
 function exampleFor(tipo){
-  if(tipo!=="fitness" && tipo!=="financiero") return EXAMPLE_CLIENT;
+  // Refrescar las sesiones desde localStorage en cada build, así lo que se
+  // registró en la demo persiste aunque se cambie de nicho o se recargue.
+  if(tipo!=="fitness" && tipo!=="financiero"){ EXAMPLE_CLIENT.ses=_demoSesLoad(); return EXAMPLE_CLIENT; }
   var c=JSON.parse(JSON.stringify(EXAMPLE_CLIENT));
+  c.ses=_demoSesLoad();
   c.cvState="pending";
   c.notas="Cliente de ejemplo para que veas la plataforma funcionando. No es real: abrí sus pestañas y mira el análisis y el plan por etapas. Cuando sumes tu primer cliente real, este desaparece.";
   if(tipo==="fitness"){
@@ -5327,7 +5344,7 @@ document.addEventListener("click", function(ev){
     var inp=document.getElementById("st-add-"+si); var v=inp?inp.value.trim():"";
     if(!v) return;
     var s=tc.ses[si]; s.acciones=((s.acciones||"")+(s.acciones?"\n":"")+v);
-    if(tc._example){ toast("Tarea agregada al demo ✓ (no se guarda — es el cliente de ejemplo)"); render(); return; }
+    if(tc._example){ _demoSesSave(tc.ses); toast("Tarea agregada al demo ✓ (queda guardada en este navegador)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(tid),"PATCH",{sesiones_registro:JSON.stringify(tc.ses)})
       .then(function(r){ if(!r.ok) throw 0; toast("Tarea agregada ✓"); render(); })
       .catch(function(){ alert("No se pudo agregar la tarea."); });
@@ -5342,7 +5359,7 @@ document.addEventListener("click", function(ev){
     if(dti<0||dti>=darr.length) return;
     darr.splice(dti,1); ds.acciones=darr.join("\n");
     ds.tareas_done=(ds.tareas_done||[]).filter(function(x){return x!==dti;}).map(function(x){return x>dti?x-1:x;});
-    if(dtc._example){ toast("Tarea quitada del demo ✓ (no se guarda — es el cliente de ejemplo)"); render(); return; }
+    if(dtc._example){ _demoSesSave(dtc.ses); toast("Tarea quitada del demo ✓ (queda guardada en este navegador)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(dtid),"PATCH",{sesiones_registro:JSON.stringify(dtc.ses)})
       .then(function(r){ if(!r.ok) throw 0; toast("Tarea quitada ✓"); render(); })
       .catch(function(){ alert("No se pudo quitar la tarea."); });
@@ -5355,7 +5372,7 @@ document.addEventListener("click", function(ev){
     var pc=CLIENTS.filter(function(x){return String(x.id)===String(pid);})[0];
     if(!pc) return;
     var sesObj={fecha:f,hora:_val("ss-hora"),trabajado:_val("ss-tema").trim(),acordado:_val("ss-acor").trim(),acciones:_val("ss-tareas").trim(),tareas_done:[]};
-    if(pc._example){ var _es=(pc.ses||[]).slice(); _es.push(sesObj); pc.ses=_es; toast("Sesión registrada en el demo ✓ (no se guarda — es el cliente de ejemplo)"); render(); return; }
+    if(pc._example){ var _es=(pc.ses||[]).slice(); _es.push(sesObj); pc.ses=_es; _demoSesSave(pc.ses); toast("Sesión registrada en el demo ✓ (queda guardada en este navegador)"); render(); return; }
     var _saveSes=function(){
       var arr=(pc.ses||[]).slice(); arr.push(sesObj);
       _sbw("candidatos?id=eq."+encodeURIComponent(pid),"PATCH",{sesiones_registro:JSON.stringify(arr)})
