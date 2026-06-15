@@ -827,19 +827,47 @@ var CLIENTS = [
   { id:"p2", name:"Elena Costa",    role:"Data Engineer",    email:"elena.c@email.com",    week:1, medal:null,     last:{txt:"hace 4 h", state:"fresh"}, cvState:"pending",   reportState:"pending", source:"pathway" }
 ].map(function(c){ c.photo = makeAvatar(c.name); if(!c.source) c.source="directo"; return c; });
 
-/* ═══ Demo · sesiones del cliente de ejemplo (María) ═══
- * María es ficticia (no existe en Supabase), así que sus sesiones se guardan
- * en el navegador (localStorage). Así cualquier coach que entre ve la sección
- * "Sesiones" ya cargada, y lo que registre en una demo sobrevive a las
- * recargas. Sembramos 2 sesiones genéricas (sirven para carrera, fitness y
- * finanzas) para que nunca se vea vacía. NO toca la base de datos. */
-var _DEMO_SES_KEY="pw_demo_ses";
+/* ═══ Demo · puente coach→cliente del cliente de ejemplo (María) ═══
+ * María es ficticia (no existe en Supabase). Todo lo que la coach edita en el
+ * demo (sesiones, rutina, mediciones, presupuesto, objetivos, plan por etapas,
+ * informe, ficha…) se guarda en el navegador (localStorage) en un "overlay"
+ * POR NICHO. Así (a) persiste entre recargas y (b) el portal del cliente lo
+ * lee y lo muestra → la coach demuestra el flujo completo coach→cliente.
+ * Una clave por nicho (pw_demo_carrera / pw_demo_fitness / pw_demo_financiero)
+ * para no mezclar los tres. NO toca la base de datos. */
 var _DEMO_SES_SEED=[
   {fecha:"2026-06-02",hora:"17:00",trabajado:"Definimos los objetivos de las primeras semanas y revisamos el plan por etapas.",acordado:"Avanzar con las dos primeras tareas antes de la próxima sesión.",acciones:"Completar la primera etapa del plan\nRegistrar el progreso en la plataforma\nPreparar dudas para la próxima sesión",tareas_done:[0]},
   {fecha:"2026-06-09",hora:"17:00",trabajado:"Revisamos los avances de la semana y ajustamos el plan según los resultados.",acordado:"Sostener la constancia y registrar el progreso en la app.",acciones:"Mantener la rutina acordada\nSubir el material pendiente\nAgendar la próxima sesión",tareas_done:[]}
 ];
-function _demoSesLoad(){ try{ var v=localStorage.getItem(_DEMO_SES_KEY); if(v){ var a=JSON.parse(v); if(Object.prototype.toString.call(a)==="[object Array]") return a; } }catch(e){} return JSON.parse(JSON.stringify(_DEMO_SES_SEED)); }
-function _demoSesSave(s){ try{ localStorage.setItem(_DEMO_SES_KEY, JSON.stringify(s||[])); }catch(e){} }
+function _demoKey(tipo){ return "pw_demo_"+(tipo||"carrera"); }
+function _demoOverlayLoad(tipo){ try{ var v=localStorage.getItem(_demoKey(tipo)); if(v){ var o=JSON.parse(v); if(o&&typeof o==="object") return o; } }catch(e){} return null; }
+function _demoSesLoad(){ return JSON.parse(JSON.stringify(_DEMO_SES_SEED)); }
+// Campos de `candidatos` que la coach puede editar en el demo y que el portal
+// del cliente sabe leer. Solo estos se vuelcan al overlay (no estado interno).
+var _DEMO_RAW_FIELDS=["nombre","email","cargo","whatsapp","rol","situacion","urgencia","sector","exp","ciudad","modalidad","educacion","idiomas","linkedin","linkedin_texto","objetivo","logro","extra","obstaculos","semana_activa","etapas","carta_presentacion","cv_texto","habilidades","acciones_progreso","edad","nivel","altura","peso","dias","lugar","equipo","lesiones","medicacion","restricciones","nutricion","fit_rutina","fit_antro","fit_habitos","fit_nutricion","ingresos","gastos","deudas","ahorro_actual","objetivo_ahorro","plazo","fin_pres","fin_objetivos","fin_deudas","fin_diagnostico"];
+var _demoLastSnap="";
+// Snapshot del cliente de ejemplo → overlay del nicho. Se llama desde render()
+// (catch-all: cualquier edición del demo termina en un render). Con detección
+// de cambios para no escribir de más ni disparar recargas innecesarias en el
+// portal abierto.
+function _demoSnapshot(){
+  try{
+    var ex=null; for(var i=0;i<CLIENTS.length;i++){ if(CLIENTS[i]&&CLIENTS[i]._example){ ex=CLIENTS[i]; break; } }
+    if(!ex) return;
+    var tipo=_isDemoCoach()?(state.demoTipo||"carrera"):"carrera";
+    var raw=ex.raw||{}, snap={ raw:{}, ses:ex.ses||[], inf:(ex.inf&&ex.inf.d)?ex.inf.d:null };
+    for(var k=0;k<_DEMO_RAW_FIELDS.length;k++){ var f=_DEMO_RAW_FIELDS[k]; if(raw[f]!=null) snap.raw[f]=raw[f]; }
+    // Las sesiones viajan también dentro de raw para que el portal las lea con
+    // un solo merge (sesiones_registro es la columna que ya entiende el cliente).
+    snap.raw.sesiones_registro=JSON.stringify(ex.ses||[]);
+    var s=JSON.stringify(snap); var key=_demoKey(tipo)+"|"+s;
+    if(key===_demoLastSnap) return; _demoLastSnap=key;
+    try{ localStorage.setItem(_demoKey(tipo), s); }catch(e){}
+  }catch(e){}
+}
+// Compat: las ramas de sesiones del demo llaman a esto; el snapshot real ocurre
+// en el render() que viene justo después.
+function _demoSesSave(){ /* no-op: _demoSnapshot() en render() captura todo */ }
 
 /* ═══ Cliente de ejemplo (María) — se muestra a un coach real que todavía no tiene clientes propios ═══ */
 var EXAMPLE_CLIENT = (function(){
@@ -904,12 +932,24 @@ var EXAMPLE_CLIENT = (function(){
 var _exGen=false;
 // María según el nicho del demo: mismo personaje, datos coherentes con el
 // prompt de cada nicho (fitness / finanzas). Carrera = la María de siempre.
+// Aplica el overlay guardado del nicho (lo que la coach editó en el demo)
+// sobre los datos base de María: campos de la ficha/plan, sesiones e informe.
+function _demoHydrate(c, tipo){
+  var ov=_demoOverlayLoad(tipo);
+  if(ov){
+    if(ov.raw && c.raw){ for(var k in ov.raw){ if(ov.raw.hasOwnProperty(k)) c.raw[k]=ov.raw[k]; } }
+    c.ses = (ov.ses && ov.ses.length!=null) ? ov.ses : _demoSesLoad();
+    if(ov.inf && c.inf){ c.inf={ id:c.inf.id, d:ov.inf }; }
+  } else {
+    c.ses=_demoSesLoad();
+  }
+  return c;
+}
 function exampleFor(tipo){
-  // Refrescar las sesiones desde localStorage en cada build, así lo que se
-  // registró en la demo persiste aunque se cambie de nicho o se recargue.
-  if(tipo!=="fitness" && tipo!=="financiero"){ EXAMPLE_CLIENT.ses=_demoSesLoad(); return EXAMPLE_CLIENT; }
+  // Hidratar el overlay del nicho (todo lo que la coach editó en el demo) sobre
+  // los datos base, así persiste entre recargas y cambios de nicho.
+  if(tipo!=="fitness" && tipo!=="financiero"){ return _demoHydrate(EXAMPLE_CLIENT, tipo); }
   var c=JSON.parse(JSON.stringify(EXAMPLE_CLIENT));
-  c.ses=_demoSesLoad();
   c.cvState="pending";
   c.notas="Cliente de ejemplo para que veas la plataforma funcionando. No es real: abrí sus pestañas y mira el análisis y el plan por etapas. Cuando sumes tu primer cliente real, este desaparece.";
   if(tipo==="fitness"){
@@ -966,7 +1006,7 @@ function exampleFor(tipo){
       mensaje_candidato:"María, tienes un ingreso sólido y muchas ganas — con orden esto se encarrila rápido. Primero vemos a dónde va la plata y de ahí salimos de la tarjeta. Paso a paso."
     }};
   }
-  return c;
+  return _demoHydrate(c, tipo);
 }
 
 /* ═══ Icons ═══ */
@@ -4136,6 +4176,10 @@ function render(){
         return;
       }
     }
+    // Demo: persistir lo que la coach editó en María al overlay del nicho, para
+    // que el portal del cliente lo refleje (flujo coach→cliente). No-op si no
+    // hay cliente de ejemplo en pantalla (coach real con clientes propios).
+    _demoSnapshot();
     if(state.section==="admin" && !RADMIN) state.section="resumen";
     _applyPanelBrand();
     var sections = { resumen:viewResumen, clientes:viewClientes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin };
@@ -4196,7 +4240,7 @@ document.addEventListener("click", function(ev){
   // Portal del cliente: SIEMPRE en la misma pestaña ("pathway_portal"). Si ya
   // está abierta, la navega al cliente nuevo y le da foco — no abre mil pestañas.
   // El panel sigue en su propia pestaña/sesión.
-  if(act==="openportal"){ var op=el.getAttribute("data-url"); if(op){ var _pw2=window.open(op,"pathway_portal"); if(_pw2){ try{ _pw2.focus(); }catch(e){} } else { window.open(op,"_blank"); } } return; }
+  if(act==="openportal"){ _demoSnapshot(); var op=el.getAttribute("data-url"); if(op){ var _pw2=window.open(op,"pathway_portal"); if(_pw2){ try{ _pw2.focus(); }catch(e){} } else { window.open(op,"_blank"); } } return; }
   if(act==="copy"){
     var url = el.getAttribute("data-url")||"";
     try{ navigator.clipboard && navigator.clipboard.writeText(url); }catch(e){}
