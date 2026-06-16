@@ -486,9 +486,19 @@ document.addEventListener('change',function(ev){
   rd.onload=function(){
     var b64=(''+rd.result).replace(/^data:[^,]+,/,'');
     fetch(SB+'/functions/v1/categorizar-gastos',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({pdf_base64:b64})})
-      .then(function(r){return r.json();})
-      .then(function(j){
-        if(!j||j.error){ if(st)st.textContent='No se pudo leer el PDF.'; return; }
+      .then(function(r){return r.json().then(function(j){return {ok:r.ok,status:r.status,j:j};},function(){return {ok:r.ok,status:r.status,j:null};});})
+      .then(function(R){
+        var j=R.j;
+        if(!R.ok||!j||j.error){
+          // Mensaje claro según la causa real (antes era siempre "No se pudo leer el PDF").
+          var code=(j&&j.error)||('http_'+R.status);
+          var msg='No se pudo analizar el extracto. Probá de nuevo.';
+          if(/no configurada|api_key/i.test(code)) msg='Falta configurar la IA en Supabase (ANTHROPIC_API_KEY).';
+          else if(R.status===404||/not found|method/i.test(code)) msg='El analizador todavía no está disponible (la función no se desplegó).';
+          else if(/no_legible|parse/i.test(code)) msg='No pude leer ese PDF. Subí el extracto original del banco (no una foto ni un escaneo).';
+          else if(/claude_/i.test(code)) msg='La IA falló por un momento. Probá de nuevo en un rato.';
+          if(st)st.textContent=msg; return;
+        }
         if(st)st.textContent='Listo ✓';
         var rows=(j.categorias||[]).map(function(c){return '<div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding:7px 0;font-size:13px"><span>'+esc(c.nombre||'')+'</span><strong>'+esc(j.moneda||'€')+' '+esc(''+(c.monto||0))+'</strong></div>';}).join('');
         var res=document.getElementById('cli-fin-pdf-res');
