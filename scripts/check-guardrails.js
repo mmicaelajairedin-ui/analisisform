@@ -157,6 +157,90 @@ const RULES = [
     },
   },
   {
+    name: "el logo del sidebar toma el color de marca del coach Pro (white-label)",
+    bug: "El coach Pro sin logo propio veia la montañita Pathway con el verde " +
+         "hardcodeado (#52B788) en el sidebar: _applyPanelBrand retiñe las vars " +
+         "--pw-* pero NO un hex literal, asi que el logo quedaba verde mientras el " +
+         "resto del panel cambiaba ('no cambia por completo'). El pico del SVG debe " +
+         "usar var(--pw-sendero), igual que el punto del wordmark 'pathway.'.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const i = s.search(/cp-side-brand-word/);
+      if (i < 0) return null; // si cambia el markup del brand, no bloquear
+      const block = s.slice(Math.max(0, i - 600), i);
+      if (/<polygon[^>]*fill='#52B788'/i.test(block))
+        return "el logo del sidebar volvio a usar #52B788 hardcodeado — no toma el color de marca del coach Pro.";
+      return null;
+    },
+  },
+  {
+    name: "el color de marca tiñe TODA la familia --rose en los portales de cliente",
+    bug: "applyBrand/applyBrandFin solo pisaban --rose y --rose-dark, dejando " +
+         "--rose-light y --rose-mid en verde: el portal del cliente cambiaba de " +
+         "color pero los fondos claros quedaban verdosos ('no cambia por completo'). " +
+         "Ahora derivan toda la familia via _pwBrandVars().",
+    check() {
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/_pwBrandVars\s*\(/.test(s))
+          return f + " ya no usa _pwBrandVars() para aplicar el color de marca.";
+        if (!/--rose-light/.test(s) || !/--rose-mid/.test(s))
+          return f + ": _pwBrandVars() ya no setea --rose-light/--rose-mid (los tonos claros quedan en verde).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "el portal del cliente demo refleja el color de marca del coach",
+    bug: "El demo (fitness/finanzas) mostraba siempre el verde Pathway porque " +
+         "_demoBrandFit/_demoBrandFin solo seteaban nombre y foto. El color del " +
+         "coach demo viaja en el overlay (snap.brand) que guarda _demoSnapshot y " +
+         "el portal lo aplica con _pwBrandVars.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p && !/snap\.brand\s*=/.test(p))
+        return "panel-v2.html: _demoSnapshot ya no guarda snap.brand (el color del coach no llega al demo).";
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/_ov\.brand[\s\S]{0,40}_pwBrandVars/.test(s))
+          return f + ": el demo ya no aplica el color de marca del overlay (_ov.brand).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "Sesiones del cliente: mismo diseño (hero + timeline) + columna de documentos en los 3 nichos",
+    bug: "Los 3 portales de cliente (carrera/fitness/finanzas) deben mostrar la " +
+         "sección Sesiones con el MISMO diseño del panel del coach: hero con " +
+         "degradado (.ses-hero), historial en timeline (.ses-tl) y una columna a la " +
+         "derecha con los documentos que sube el coach (.ses-layout + .ses-doc-item). " +
+         "Si un nicho pierde la columna o el diseño se desincroniza, deja de ser igual.",
+    check() {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/ses-layout/.test(s))
+          return f + ": falta el layout de 2 columnas (.ses-layout) en Sesiones.";
+        if (!/ses-hero/.test(s) || !/ses-tl/.test(s))
+          return f + ": falta el hero con degradado (.ses-hero) o el timeline (.ses-tl) del historial.";
+        if (!/ses-doc-item/.test(s) && !/id=["']ses-docs["']/.test(s))
+          return f + ": falta la columna de documentos del coach (.ses-doc-item / #ses-docs).";
+      }
+      // El CSS de fit/fin vive en pathway-portal.css; el de carrera, inline.
+      if (!/\.ses-layout\s*\{/.test(read("pathway-portal.css")))
+        return "pathway-portal.css perdió el layout .ses-layout de la sección Sesiones.";
+      // fit/fin: el cliente marca sus tareas con toggleSesTarea.
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        if (read(f) && !/toggleSesTarea/.test(read(f)))
+          return f + ": el cliente ya no puede marcar sus tareas (toggleSesTarea).";
+      }
+      return null;
+    },
+  },
+  {
     name: "el detector de humo (pw-observe.js) sigue incluido en las paginas clave",
     bug: "pw-observe.js registra los errores de produccion. Si se quita de una " +
          "pagina, esa pagina vuelve a operar a ciegas.",

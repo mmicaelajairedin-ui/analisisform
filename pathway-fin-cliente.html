@@ -233,15 +233,20 @@
       <section class="sec" id="s-sesiones">
         <p class="h-hero">Sesiones</p>
         <p class="h-sub">Tu acompañamiento con Lucía.</p>
-        <div class="sesion-cta"><h3>📅 Tu próxima sesión</h3><p>Reservá tu espacio con Lucía cuando lo necesites.</p><button class="btn" onclick="agendar()">Agendar sesión</button></div>
-        <p class="h-sec">Tareas para este mes</p>
-        <div class="card"><div class="card-body">
-          <div class="objc done" onclick="this.classList.toggle('done')"><div class="objc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="objc-name">Cargar el cierre de marzo</div></div>
-          <div class="objc" onclick="this.classList.toggle('done')"><div class="objc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="objc-name">Listar todas mis deudas</div></div>
-          <div class="objc" onclick="this.classList.toggle('done')"><div class="objc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="objc-name">Revisar suscripciones</div></div>
-        </div></div>
-        <p class="h-sec">Historial</p>
-        <div id="ses-hist"></div>
+        <div class="ses-layout">
+          <div>
+            <div class="ses-hero" id="ses-hero"></div>
+            <p class="h-sec">Historial</p>
+            <div id="ses-hist"></div>
+          </div>
+          <aside>
+            <div class="card"><div class="card-body">
+              <div class="eyebrow">Material</div>
+              <div class="ses-side-title">Documentos de tu coach</div>
+              <div id="ses-docs"></div>
+            </div></div>
+          </aside>
+        </div>
       </section>
 
       <!-- ===== MENSAJES ===== -->
@@ -303,13 +308,69 @@ function _hdr(x){ if(window.PWAUTH&&PWAUTH.headersSync) return PWAUTH.headersSyn
 // Agendar sesión: abre el Calendly del coach (si lo configuró); si no, al chat.
 var COACH_CALENDLY='';
 function agendar(){ if(COACH_CALENDLY){ window.open(COACH_CALENDLY,'_blank','noopener'); } else if(typeof go==='function'){ go('chat'); } }
-// Historial real de sesiones (las registra el coach en su panel).
+// Sesiones del cliente: próxima sesión (hero), historial con tareas que el
+// cliente marca, y la columna de documentos que el coach adjuntó por sesión.
+// Mismo modelo que el panel del coach y el portal de carrera.
 function renderSesiones(c){
-  var box=document.getElementById('ses-hist'); if(!box) return;
   var arr=[]; try{ arr=JSON.parse((c&&c.sesiones_registro)||'[]')||[]; }catch(e){}
+  // Hero: próxima sesión futura
+  var hero=document.getElementById('ses-hero');
+  if(hero){
+    var now=Date.now(), prox=null;
+    arr.forEach(function(s){ if(!s||!s.fecha)return; var d=new Date(s.fecha+(s.hora?'T'+s.hora:'T23:59')); if(!isNaN(d)&&d.getTime()>=now&&(!prox||d.getTime()<prox.t))prox={t:d.getTime(),s:s}; });
+    hero.innerHTML='<div><div class="ses-hero-lbl">'+(prox?'● Próxima sesión':'Sin sesión agendada')+'</div>'+
+      '<div class="ses-hero-date">'+(prox?esc(prox.s.fecha)+(prox.s.hora?' · '+esc(prox.s.hora)+' hs':''):'No hay sesiones futuras')+'</div>'+
+      (prox&&prox.s.trabajado?'<div class="ses-hero-sub">'+esc(prox.s.trabajado)+'</div>':'')+'</div>'+
+      '<button class="btn" onclick="agendar()">'+(prox?'Cambiar día y hora':'Agendar sesión')+'</button>';
+  }
+  // Documentos que el coach subió (uno por sesión, si los hay)
+  var docsBox=document.getElementById('ses-docs');
+  if(docsBox){
+    var docs=[]; arr.forEach(function(s,i){ if(s&&s.doc) docs.push({fecha:s.fecha||'',doc:s.doc,nombre:s.doc_nombre||'Documento sesión '+(i+1)}); });
+    if(docs.length){
+      docsBox.innerHTML=docs.slice().reverse().map(function(d){
+        return '<a class="ses-doc-item" href="'+esc(d.doc)+'" target="_blank" rel="noopener"><span class="ses-doc-ic">📎</span><span style="flex:1;min-width:0"><span class="ses-doc-nm">'+esc(d.nombre)+'</span>'+(d.fecha?'<span class="ses-doc-dt">Sesión '+esc(d.fecha)+'</span>':'')+'</span><span style="color:var(--rose);flex-shrink:0">↓</span></a>';
+      }).join('');
+    } else {
+      docsBox.innerHTML='<div class="ses-empty"><div class="ic">📎</div><div style="font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:3px">Sin documentos por ahora</div><div style="font-size:11px;line-height:1.5">Cuando tu coach comparta material en una sesión, lo vas a ver acá.</div></div>';
+    }
+  }
+  // Historial
+  var box=document.getElementById('ses-hist'); if(!box) return;
   if(!arr.length){ box.innerHTML='<div style="font-size:12.5px;color:var(--muted);padding:6px 0">Acá van a aparecer las sesiones que registre tu coach.</div>'; return; }
-  box.innerHTML=arr.slice().reverse().map(function(s,i){ var n=arr.length-i; return '<div class="guide"><div class="guide-ic">🗓️</div><div class="guide-b"><b>Sesión '+n+(s.fecha?' · '+esc(s.fecha):'')+'</b><p>'+esc(s.trabajado||s.acordado||'Sesión registrada')+'</p></div></div>'; }).join('');
+  box.innerHTML='<div class="card"><div class="card-body"><div class="ses-tl">'+arr.slice().reverse().map(function(s,ri){
+    var idx=arr.length-1-ri;
+    var h='<div class="ses-tl-item"><span class="ses-tl-dot"></span><div class="ses-tl-date">Sesión '+esc(s.fecha||'')+(s.hora?' · '+esc(s.hora)+' hs':'')+'</div>';
+    if(s.trabajado) h+='<div class="ses-block"><div class="ses-block-lbl">Qué trabajamos</div><div class="ses-block-txt">'+esc(s.trabajado)+'</div></div>';
+    if(s.acordado) h+='<div class="ses-block ses-acordado"><div class="ses-block-lbl">Acordado</div><div class="ses-block-txt">'+esc(s.acordado)+'</div></div>';
+    if(s.doc) h+='<div class="ses-block"><a href="'+esc(s.doc)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--rose);text-decoration:none;background:var(--rose-light);padding:8px 12px;border-radius:9px">📎 '+esc(s.doc_nombre||'Ver documento')+'</a></div>';
+    if(s.acciones){
+      var tareas=(''+s.acciones).split('\n').filter(function(x){return x.trim();});
+      var done=s.tareas_done||[];
+      if(tareas.length){
+        h+='<div class="ses-tasks"><div class="ses-block-lbl" style="color:var(--rose);margin-bottom:5px">Mis tareas</div>';
+        tareas.forEach(function(tx,ti){ var ok=done.indexOf(ti)!==-1;
+          h+='<div class="ses-task'+(ok?' done':'')+'" onclick="toggleSesTarea('+idx+','+ti+')"><span class="ses-task-check">'+(ok?'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>':'')+'</span><span class="ses-task-name">'+esc(tx)+'</span></div>';
+        });
+        h+='</div>';
+      }
+    }
+    h+='</div>';
+    return h;
+  }).join('')+'</div></div></div>';
 }
+// El cliente marca sus tareas; se persiste en candidatos.sesiones_registro
+// (en demo no hay CID: solo actualiza la vista).
+window.toggleSesTarea=function(idx,ti){
+  var arr=[]; try{ arr=JSON.parse((CRAW&&CRAW.sesiones_registro)||'[]')||[]; }catch(e){ return; }
+  if(!arr[idx]) return;
+  if(!arr[idx].tareas_done) arr[idx].tareas_done=[];
+  var di=arr[idx].tareas_done.indexOf(ti);
+  if(di===-1) arr[idx].tareas_done.push(ti); else arr[idx].tareas_done.splice(di,1);
+  CRAW.sesiones_registro=JSON.stringify(arr);
+  if(CID) sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{sesiones_registro:CRAW.sesiones_registro}).catch(function(){});
+  renderSesiones(CRAW);
+};
 // Red de seguridad para cuando RLS esté prendido: si una query da 401/403 (sin
 // sesión válida), mandamos a login. Mientras RLS esté apagado nunca se dispara.
 var _authGone=false;
@@ -340,7 +401,10 @@ function _esDemo(){return !EMAIL || /maria\.ejemplo@pathwaycareercoach\.com/i.te
 // flujo coach→cliente. Si no hay nada guardado, usa los datos de ejemplo.
 function _demoOverlay(niche){ try{ var v=localStorage.getItem('pw_demo_'+niche); if(v){ var o=JSON.parse(v); if(o&&typeof o==='object') return o; } }catch(e){} return null; }
 function _demoMerge(craw,niche){ var ov=_demoOverlay(niche); if(ov&&ov.raw){ for(var k in ov.raw){ if(ov.raw.hasOwnProperty(k)&&ov.raw[k]!=null) craw[k]=ov.raw[k]; } } return craw; }
-function _demoCraw(){return _demoMerge({nombre:'María García',email:EMAIL,foto_perfil:CLIENTE_DEMO_FOTO,semana_activa:3,etapas:JSON.stringify(['Diagnóstico','Presupuesto','Salir de deudas','Hábito de ahorro']),fin_pres:JSON.stringify({vivienda:'750',alimentacion:'350',ocio:'150',ahorro:'350'}),fin_objetivos:JSON.stringify([{nombre:'🛟 Fondo de emergencia',meta:'3000',actual:'1200'},{nombre:'✈️ Vacaciones',meta:'1000',actual:'600'}]),fin_deudas:JSON.stringify([{nombre:'Tarjeta de crédito',monto:'1200',cuota:'400',estado:'Pagando'},{nombre:'Préstamo auto',monto:'2200',cuota:'',estado:'Después'}]),fin_diagnostico:JSON.stringify({salud:68,control:55,deuda:40,ahorro:50}),sesiones_registro:JSON.stringify([{fecha:'2026-04-04',trabajado:'Diagnóstico inicial + objetivos'},{fecha:'2026-04-18',trabajado:'Revisión del presupuesto + plan de deudas'}])},'financiero');}
+function _demoCraw(){return _demoMerge({nombre:'María García',email:EMAIL,foto_perfil:CLIENTE_DEMO_FOTO,semana_activa:3,etapas:JSON.stringify(['Diagnóstico','Presupuesto','Salir de deudas','Hábito de ahorro']),fin_pres:JSON.stringify({vivienda:'750',alimentacion:'350',ocio:'150',ahorro:'350'}),fin_objetivos:JSON.stringify([{nombre:'🛟 Fondo de emergencia',meta:'3000',actual:'1200'},{nombre:'✈️ Vacaciones',meta:'1000',actual:'600'}]),fin_deudas:JSON.stringify([{nombre:'Tarjeta de crédito',monto:'1200',cuota:'400',estado:'Pagando'},{nombre:'Préstamo auto',monto:'2200',cuota:'',estado:'Después'}]),fin_diagnostico:JSON.stringify({salud:68,control:55,deuda:40,ahorro:50}),sesiones_registro:JSON.stringify([
+  {fecha:'2026-04-04',trabajado:'Diagnóstico inicial + objetivos',acordado:'Cargar todos los gastos del mes y listar las deudas con su tasa.',acciones:'Cargar el cierre del mes\nListar todas mis deudas\nRevisar suscripciones',tareas_done:[0,2]},
+  {fecha:'2026-04-18',trabajado:'Revisión del presupuesto + plan de deudas',acordado:'Atacar primero la tarjeta (mayor interés). Apartar el ahorro apenas cobrás.',acciones:'Automatizar el ahorro mensual\nCancelar 1 suscripción que no uso',tareas_done:[],doc:'data:text/plain;charset=utf-8,Plan%20de%20finanzas%20-%20Abril%0A%0A1)%20Ahorro%20autom%C3%A1tico%3A%20350%0A2)%20Tarjeta%3A%20pagar%20400%2Fmes%0A3)%20Fondo%20de%20emergencia%3A%20meta%203000',doc_nombre:'Plan de finanzas.txt'}
+])},'financiero');}
 
 // ── Presupuesto: dona + total desde fin_pres {vivienda,alimentacion,ocio,ahorro} ──
 function renderPresupuesto(fp){
@@ -649,6 +713,21 @@ function applyClientFin(c){
   applyVisFin(c.visibilidad);
 }
 
+// Deriva TODA la familia --rose del color de marca (no solo --rose/--rose-dark),
+// así los fondos claros (--rose-light) y medios (--rose-mid) también se tiñen y
+// el portal cambia de color por completo. Mismo criterio que _applyPanelBrand.
+function _pwBrandVars(col){
+  if(!/^#[0-9a-f]{6}$/i.test(col)) return;
+  var r=parseInt(col.slice(1,3),16),g=parseInt(col.slice(3,5),16),b=parseInt(col.slice(5,7),16);
+  function _h(v){ return Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0'); }
+  function _sh(f){ return '#'+_h(r*f)+_h(g*f)+_h(b*f); }
+  function _tint(a){ return '#'+_h(r+(255-r)*a)+_h(g+(255-g)*a)+_h(b+(255-b)*a); }
+  var rs=document.documentElement.style;
+  rs.setProperty('--rose',col);
+  rs.setProperty('--rose-dark',_sh(0.62));
+  rs.setProperty('--rose-mid',_tint(0.55));
+  rs.setProperty('--rose-light',_tint(0.90));
+}
 function applyBrandFin(coachId){
   sbGet('usuarios','id=eq.'+encodeURIComponent(coachId)+'&select=nombre,email,configuracion,foto_url').then(function(rows){
     if(!rows||!rows.length)return; var u=rows[0],cfg=u.configuracion||{};
@@ -656,13 +735,15 @@ function applyBrandFin(coachId){
     if(u.email){ window.COACH_EMAIL=(''+u.email).toLowerCase(); }
     if(u.nombre){setText('.ptop-coach-name',u.nombre);}
     var isPro=(cfg.es_pro_vitalicio===true)||(cfg.plan==='pro');
-    if(isPro&&cfg.color_marca){var rs=document.documentElement.style;rs.setProperty('--rose',cfg.color_marca);rs.setProperty('--rose-dark',cfg.color_marca);}
+    if(isPro&&cfg.color_marca){ _pwBrandVars(cfg.color_marca); }
     if(isPro && cfg.logo_url){ var _brand=document.querySelector('.sb-brand'); if(_brand){ _brand.innerHTML='<img src="'+esc(cfg.logo_url)+'" alt="" style="max-width:140px;max-height:42px;object-fit:contain;margin:0 auto;display:block">'; _brand.style.justifyContent='center'; } }
     var foto=cfg.foto_url||u.foto_url||'';
     var av=document.querySelector('.ptop-av'); if(av){ if(foto){av.style.background='transparent';av.innerHTML='<img src="'+esc(foto)+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">';}else if(u.nombre){av.textContent=(u.nombre[0]||'C').toUpperCase();} }
   }).catch(function(){});
 }
-function _demoBrandFin(){setText('.ptop-coach-name','Lucía Finanzas');var av=document.querySelector('.ptop-av');if(av){av.style.background='transparent';av.innerHTML='<img src="'+COACH_DEMO_FOTO+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">';}}
+function _demoBrandFin(){setText('.ptop-coach-name','Lucía Finanzas');var av=document.querySelector('.ptop-av');if(av){av.style.background='transparent';av.innerHTML='<img src="'+COACH_DEMO_FOTO+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">';}
+  // El color de marca del coach demo viaja en el overlay que guarda el panel.
+  var _ov=_demoOverlay('financiero'); if(_ov&&_ov.brand&&_ov.brand.color) _pwBrandVars(_ov.brand.color);}
 
 // ── Puntuar Pathway (cliente) → candidatos.resena {plataforma:{stars,text,fecha}} ──
 window._revR=0;
