@@ -3538,17 +3538,44 @@ function _coachDetailCard(){
   var trialTxt = cg.fecha_fin_prueba ? fdate(cg.fecha_fin_prueba) : (es==="activa"?"— (pagado)":"—");
   var rowD=function(l,v){ return "<div style='display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--pw-border)'><span style='font-size:13px;color:var(--pw-text-soft)'>"+esc(l)+"</span><span style='font-size:13px;color:var(--pw-carbon);font-weight:600;text-align:right'>"+esc(v)+"</span></div>"; };
   var selfRow=(RME&&String(c.id)===String(RME.id));
+  // ── "Qué hizo": datos reales por coach (clientes, informes, último acceso) ──
+  // para que la coach abra la ficha y decida, con la info a mano, cómo escribirle.
+  var _cd=(RADM&&RADM.cands)||[], _idf=(RADM&&RADM.informes)||[];
+  var nCli=_cd.filter(function(x){return x&&String(x.coach_id)===String(c.id);}).length;
+  var nInf=_idf.filter(function(x){return x&&String(x.coach_id)===String(c.id);}).length;
+  var la=cg.last_login||c.last_login;
+  function _ago(d){ var n=Math.floor((Date.now()-new Date(d))/86400000); return n<=0?"hoy":(n===1?"ayer":(n<30?"hace "+n+" d":"hace "+Math.floor(n/30)+" mes"+(n>=60?"es":""))); }
+  var ultAcc = la ? _ago(la) : "Nunca entró";
+  var noActivo = (!la) || !!cg.pendiente_activacion;
+  var tel = cg.telefono||cg.whatsapp||cg.tel||cg.movil||"";
+  var stat=function(v,k){ return "<div class='cp-coach-st'><div class='v'>"+v+"</div><div class='k'>"+k+"</div></div>"; };
+  var chk=function(on,l){ return "<span class='cp-chipk"+(on?" on":"")+"'>"+l+" "+(on?"✓":"✗")+"</span>"; };
+  var chips="<div class='cp-coach-chips'>"+
+    chk(!!(cg.calendly_url||cg.calendly),"Calendly")+
+    chk(!!(cg.stripe_account_id||cg.stripe_connect_account_id||cg.stripe_customer_id),"Stripe")+
+    chk(!!(cg.foto_url||cg.foto_perfil||c.foto_url),"Foto")+
+    chk(!!cg.perfil_publico_activo,"Público")+
+    chk(!!cg.pathway_optin,"Pathway")+"</div>";
+  var lbl=function(t){ return "<div style='font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-muted);margin:0 0 9px'>"+t+"</div>"; };
   return "<div class='cp-card'>"+
     "<div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(c.nombre||c.email||"Coach")+(c.rol==="admin"?" · admin":"")+"<span class='dot'>.</span></h3>"+
       "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='coach-back'>← Volver</button></div>"+
     "<div class='cp-card-pad'>"+
-      rowD("Email", c.email||"—")+
-      rowD("Rol", c.rol||"coach")+
+      (noActivo&&!selfRow?"<div style='background:rgba(192,117,110,.1);border:1px solid rgba(192,117,110,.35);border-radius:10px;padding:10px 13px;margin-bottom:16px;font-size:13px;color:var(--pw-carbon);line-height:1.5'>⚠️ <strong>No activó la cuenta todavía</strong> — recibió el acceso pero nunca entró. Buen momento para escribirle.</div>":"")+
+      lbl("Contacto directo")+
+      "<div style='display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:20px'>"+
+        (c.email?"<a class='cp-btn cp-btn-primary' style='text-decoration:none' href='mailto:"+esc(c.email)+"'>✉️ Escribir email</a>":"")+
+        (tel?"<a class='cp-btn cp-btn-ghost' style='text-decoration:none' href='https://wa.me/"+esc((""+tel).replace(/[^0-9]/g,""))+"' target='_blank' rel='noopener'>💬 WhatsApp</a>":"")+
+        "<span style='font-size:13px;color:var(--pw-text-soft);user-select:all'>"+esc(c.email||"sin email")+(tel?" · "+esc(tel):"")+"</span>"+
+      "</div>"+
+      lbl("Qué hizo")+
+      "<div class='cp-coach-stats' style='margin-bottom:10px'>"+stat(nCli,"Clientes")+stat(nInf,"Informes IA")+stat(esc(ultAcc),"Últ. acceso")+"</div>"+
+      chips+
+      "<div style='height:14px'></div>"+
       rowD("Plan", plan)+
       rowD("Estado", c.activo===false?"Inactiva":estLbl)+
       rowD("Fin de prueba", trialTxt)+
       rowD("Alta", fdate(c.created_at))+
-      rowD("Activo", c.activo===false?"No":"Sí")+
       (cg.creado_por_admin?rowD("Creado por admin", cg.creado_por||"—"):"")+
       (selfRow?"<p style='font-size:12px;color:var(--pw-text-muted);margin:14px 0 0'>Es tu propia cuenta.</p>":
       "<div style='display:flex;gap:10px;flex-wrap:wrap;margin-top:16px'>"+
@@ -3557,7 +3584,7 @@ function _coachDetailCard(){
         "<button class='cp-btn cp-btn-ghost' data-act='coach-plan:"+(cg.plan==="pro"?"basic":"pro")+":"+esc(c.id)+"'>"+(cg.plan==="pro"?"Pasar a Basic":"Pasar a Pro")+"</button>"+
       "</div>")+
     "</div></div>"+
-    _coachChatBlock(c);
+    (selfRow?"":"<details style='margin-top:16px'><summary style='cursor:pointer;list-style:none;padding:14px 20px;background:#fff;border:1px solid var(--pw-border);border-radius:14px;font-weight:600;font-size:13.5px;color:var(--pw-carbon)'>💬 Chat interno con el coach <span style='font-weight:400;color:var(--pw-text-muted);font-size:12px'>· casi no lo usan</span></summary>"+_coachChatBlock(c)+"</details>");
 }
 /* Chat admin↔coach embebido dentro de la ficha. Reusa RMSG cargado en
  * loadReal (admin trae todos los hilos; acá filtramos por coach_id). */
@@ -3756,7 +3783,7 @@ function viewAdmin(){
     var _av=c.fotoUrl?"<img src='"+esc(c.fotoUrl)+"' class='cp-coach-av' alt='' referrerpolicy='no-referrer'>":"<div class='cp-coach-av cp-coach-av-i'>"+esc((""+(c.n||"?")).charAt(0).toUpperCase())+"</div>";
     var _stat=function(v,k){return "<div class='cp-coach-st'><div class='v'>"+v+"</div><div class='k'>"+k+"</div></div>";};
     return "<div class='cp-coach"+(off?" off":"")+"' data-nm='"+esc((""+(c.n||"")).toLowerCase())+"' style='border-left:4px solid "+_bc+"'>"+
-      "<div class='cp-coach-top'>"+_av+
+      "<div class='cp-coach-top' data-act='coach-view:"+esc(c.id)+"' style='cursor:pointer'>"+_av+
         "<div style='min-width:0;flex:1'><div class='cp-coach-nm'>"+esc(c.n)+"</div>"+
           "<div class='cp-coach-meta'>Alta "+esc(alta[0])+" · últ. acceso "+esc(c.acc[0])+"</div></div>"+
         "<span class='cp-coach-health "+_hc+"'>"+healthLbl+"</span></div>"+
