@@ -21,7 +21,12 @@ doc.pipe(fs.createWriteStream(out));
 const _addPage = doc.addPage.bind(doc); let _allowPage=false;
 doc.addPage=function(){ if(!_allowPage) return doc; return _addPage.apply(doc,arguments); };
 
-const F='Helvetica', FB='Helvetica-Bold', FO='Helvetica-Oblique';
+// Fuente con cobertura Unicode (→ ≤ ≥ ▼ · € …). Fallback a Helvetica si no está.
+let F='Helvetica', FB='Helvetica-Bold';
+try{
+  const fr='assets/fonts/LiberationSans-Regular.ttf', fb='assets/fonts/LiberationSans-Bold.ttf';
+  if(fs.existsSync(fr)&&fs.existsSync(fb)){ doc.registerFont('Sans',fr); doc.registerFont('SansB',fb); F='Sans'; FB='SansB'; }
+}catch(e){ /* usa Helvetica */ }
 
 // ── helpers de dibujo ──
 function rrect(x,y,w,h,r,fill,stroke,lw){
@@ -59,13 +64,13 @@ function footer(){
 }
 function newPage(kicker,title){ _allowPage=true; doc.addPage(); _allowPage=false; header(kicker,title); footer(); }
 
-// Tarjeta de estadística grande
+// Tarjeta de estadística grande (etiqueta arriba con espacio propio, sub anclado abajo)
 function statCard(x,y,w,h,number,label,color,sub){
   rrect(x,y,w,h,9,C.blanco,C.borde,1);
   doc.rect(x,y+10,4,h-20).fill(color);
-  txt(number,x+16,y+13,{font:FB,size:23,color:color,width:w-22});
-  txt(label,x+16,y+13+27,{font:FB,size:8.5,color:C.carbon,width:w-26});
-  if(sub) txt(sub,x+16,y+13+40,{size:7.5,color:C.suave,width:w-26});
+  txt(number,x+15,y+12,{font:FB,size:20,color:color,width:w-22});
+  doc.font(FB).fontSize(8).fillColor(C.carbon).text(label,x+15,y+39,{width:w-24,height:22,lineBreak:true,ellipsis:true});
+  if(sub) doc.font(F).fontSize(7).fillColor(C.suave).text(sub,x+15,y+h-16,{width:w-24,height:12,lineBreak:false,ellipsis:true});
 }
 
 // Barras horizontales: items=[{label,val,color,note}], maxVal, unit
@@ -135,14 +140,14 @@ let y=96;
 txt('Pathway es un SaaS B2B2C: le vende herramientas con IA + portal del cliente a coaches de carrera.',M,y,{size:10,color:C.texto,width:CW});
 txt('El coach paga (€58–89/mes); el candidato no. Diferencial: un marketplace que TRAE clientes al coach.',M,y+14,{size:10,color:C.texto,width:CW});
 
-y=140;
+y=138;
 const gap=12, cwd=(CW-gap*3)/4;
-statCard(M,y,cwd,74,'$5,34 B','Mercado global de coaching 2025','#2D6A4F','+17% vs 2023 (ICF)');
-statCard(M+(cwd+gap),y,cwd,74,'122.974','Coaches en el mundo','#3E6B8C','+15% en 2 años');
-statCard(M+(cwd+gap)*2,y,cwd,74,'~53%','Coaches SIN plataforma digital',C.naranja,'= tu oportunidad');
-statCard(M+(cwd+gap)*3,y,cwd,74,'0 de 8','Competidores que traen clientes','#C0564B','espacio en blanco');
+statCard(M,y,cwd,86,'$5,34 B','Mercado global de coaching','#2D6A4F','2025 · +17% vs 2023');
+statCard(M+(cwd+gap),y,cwd,86,'122.974','Coaches en el mundo','#3E6B8C','+15% en 2 años (ICF)');
+statCard(M+(cwd+gap)*2,y,cwd,86,'~53%','Coaches sin plataforma',C.naranja,'= tu oportunidad');
+statCard(M+(cwd+gap)*3,y,cwd,86,'0 de 8','Competidores que traen clientes','#C0564B','espacio en blanco');
 
-y=240;
+y=242;
 txt('LOS 5 HALLAZGOS',M,y,{font:FB,size:10,color:C.bosque,characterSpacing:1});
 y+=18;
 const finds=[
@@ -178,11 +183,11 @@ txt('Confianza ALTA. ICF cuenta practicantes e ingresos de actividad de coaching
 
 y+=24;
 const cwd2=(CW-gap*2)/3;
-statCard(M,y,cwd2,70,'$1,43 B','Mercado de career coaching 2025',C.azul,'→ $2,5 B en 2034 (CAGR 6,4%)');
-statCard(M+(cwd2+gap),y,cwd2,70,'$4,6 B','Mercado de outplacement 2024',C.bosque,'CAGR ~6%');
-statCard(M+(cwd2+gap)*2,y,cwd2,70,'87%','Coaches que usan videollamada',C.sendero,'coaching online ya es norma');
+statCard(M,y,cwd2,80,'$1,43 B','Career coaching (servicio)',C.azul,'2025 → $2,5 B en 2034');
+statCard(M+(cwd2+gap),y,cwd2,80,'$4,6 B','Mercado de outplacement',C.bosque,'2024 · CAGR ~6%');
+statCard(M+(cwd2+gap)*2,y,cwd2,80,'87%','Coaches usan videollamada',C.sendero,'el coaching online ya es norma');
 
-y+=92;
+y+=98;
 txt('Tarifa media por sesión de 1 h (USD) — el dato clave para el pricing regional',M,y,{font:FB,size:9.5,color:C.carbon});
 y+=20;
 y=hbars(M,y,CW,[
@@ -291,28 +296,32 @@ callout(M,y,CW,'Regla de oro',
  C.rojo, '#F8ECEA');
 y+=68;
 
-// 4 medidores con zonas
-function gauge(x,y,w,title,zones,markerPct,markerLabel,note){
-  txt(title,x,y,{font:FB,size:9,color:C.carbon,width:w});
-  const by=y+16, bh=12;
+const Z_OK=C.sendero, Z_WARN=C.amanecer, Z_BAD='#E2A6A0';
+// 4 medidores con zonas. La META va en la misma línea del título; ▼ = dónde deberías estar.
+function gauge(x,y,w,title,zones,markerPct,metaLabel,note){
+  txt(title,x,y,{font:FB,size:9,color:C.carbon,width:w-72});
+  txt(metaLabel,x+w-72,y,{font:FB,size:8.5,color:C.bosque,width:72,align:'right'});
+  const by=y+16, bh=11;
   let cxp=x;
   zones.forEach(z=>{ const zw=w*z.p; doc.rect(cxp,by,zw,bh).fill(z.c); cxp+=zw; });
-  // marker
   const mx=x+w*markerPct;
-  doc.polygon([mx,by-3],[mx-4,by-9],[mx+4,by-9]).fill(C.carbon);
+  doc.polygon([mx,by-2],[mx-4,by-8],[mx+4,by-8]).fill(C.carbon);
   doc.moveTo(mx,by).lineTo(mx,by+bh).lineWidth(1.5).strokeColor(C.carbon).stroke();
-  txt(markerLabel,Math.min(mx-20,x+w-44),by+bh+3,{font:FB,size:8,color:C.carbon,width:60});
-  if(note) txt(note,x,by+bh+16,{size:7.6,color:C.suave,width:w});
+  if(note) doc.font(F).fontSize(7.2).fillColor(C.suave).text(note,x,by+bh+5,{width:w,height:24,lineBreak:true});
 }
+// leyenda de colores
+function sw(xx,yy,c,t){ doc.rect(xx,yy,9,9).fill(c); txt(t,xx+12,yy+1,{size:7.5,color:C.suave}); }
+txt('Cómo leer:',M,y,{font:FB,size:8,color:C.carbon});
+sw(M+54,y-1,Z_OK,'zona sana'); sw(M+128,y-1,Z_WARN,'alerta'); sw(M+180,y-1,Z_BAD,'problema');
+txt('▼ = dónde deberías apuntar',M+248,y,{size:7.5,color:C.carbon,font:FB});
+y+=20;
 const colW=(CW-gap)/2;
-const Z_OK=C.sendero, Z_WARN=C.amanecer, Z_BAD='#E2A6A0';
-y+=2;
-gauge(M,y,colW,'Churn mensual',[{p:0.45,c:Z_OK},{p:0.30,c:Z_WARN},{p:0.25,c:Z_BAD}],0.30,'meta ≤5%','Verde ≤5% · amarillo 6–8% · rojo doble dígito. (low-ARPA <$25 ≈ 6,1%/mes — ChartMogul)');
-gauge(M+colW+gap,y,colW,'Conversión trial→pago (sin tarjeta)',[{p:0.30,c:Z_BAD},{p:0.30,c:Z_WARN},{p:0.40,c:Z_OK}],0.45,'media ~9%','Sin tarjeta: media 8,9%, bueno 4–6%, genial 10–15%. Con tarjeta sería ~31% (no comparar).');
-y+=78;
-gauge(M,y,colW,'LTV : CAC',[{p:0.40,c:Z_BAD},{p:0.20,c:Z_WARN},{p:0.40,c:Z_OK}],0.60,'meta ≥3:1','≥3:1 sano, 5:1 fuerte. A $50–100/mes el CAC realista <$300–600.');
-gauge(M+colW+gap,y,colW,'Payback de CAC',[{p:0.55,c:Z_OK},{p:0.25,c:Z_WARN},{p:0.20,c:Z_BAD}],0.45,'meta ≤12m','SMB self-serve recupera el CAC en 8–12 meses.');
-y+=84;
+gauge(M,y,colW,'Churn mensual',[{p:0.45,c:Z_OK},{p:0.30,c:Z_WARN},{p:0.25,c:Z_BAD}],0.30,'meta ≤5%','Eje: 0% (izq) a 12%+ (der). Verde ≤5%, amarillo 6–8%, rojo doble dígito. Bajo ticket ronda 6%/mes (ChartMogul).');
+gauge(M+colW+gap,y,colW,'Conversión trial→pago',[{p:0.30,c:Z_BAD},{p:0.30,c:Z_WARN},{p:0.40,c:Z_OK}],0.45,'media ~9%','Trial SIN tarjeta: media 8,9%, bueno 4–6%, genial 10–15%. Con tarjeta sería ~31% (no comparar).');
+y+=82;
+gauge(M,y,colW,'LTV : CAC (valor cliente ÷ costo captarlo)',[{p:0.40,c:Z_BAD},{p:0.20,c:Z_WARN},{p:0.40,c:Z_OK}],0.62,'meta ≥3:1','Por cada €1 en captar un coach, ganar ≥€3 en su vida. A €58–89/mes, CAC realista <€300–600.');
+gauge(M+colW+gap,y,colW,'Payback de CAC (meses en recuperarlo)',[{p:0.55,c:Z_OK},{p:0.25,c:Z_WARN},{p:0.20,c:Z_BAD}],0.45,'meta ≤12m','Eje: 0 (izq) a 24+ meses (der). SMB self-serve recupera el CAC en 8–12 meses.');
+y+=86;
 
 txt('Dato accionable para retención',M,y,{font:FB,size:9.5,color:C.bosque});
 y+=16;
@@ -371,7 +380,7 @@ const risks=[
   ['Dependencia de agencia','Hoy los clientes llegan vía agencia externa. ¿Qué pasa si ese canal cambia?'],
 ];
 risks.forEach(r=>{
-  txt('▸ '+r[0],M,ya,{font:FB,size:9,color:C.carbon,width:colA});
+  txt('» '+r[0],M,ya,{font:FB,size:9,color:C.carbon,width:colA});
   const re=flow(r[1],M+10,ya+12,colA-10,{size:8,color:C.suave});
   ya=re+10;
 });
