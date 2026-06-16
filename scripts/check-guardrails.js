@@ -212,6 +212,29 @@ const RULES = [
     },
   },
   {
+    name: "la sección Sesiones del cliente (fit/fin) tiene historial + columna de documentos",
+    bug: "El portal del cliente fitness/finanzas debe mostrar la sesión al estilo " +
+         "del panel del coach: historial (#ses-hist) y una segunda columna con los " +
+         "documentos que sube el coach (#ses-docs, dentro de .ses-layout). Si se " +
+         "quita la columna, el cliente deja de ver el material de su coach.",
+    check() {
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/id=["']ses-docs["']/.test(s) || !/ses-layout/.test(s))
+          return f + ": falta la columna de documentos del coach (#ses-docs / .ses-layout) en Sesiones.";
+        if (!/id=["']ses-hist["']/.test(s))
+          return f + ": falta el historial de sesiones (#ses-hist).";
+        if (!/toggleSesTarea/.test(s))
+          return f + ": el cliente ya no puede marcar sus tareas de la sesión (toggleSesTarea).";
+      }
+      // El CSS compartido debe definir el layout de 2 columnas.
+      if (!/\.ses-layout\s*\{/.test(read("pathway-portal.css")))
+        return "pathway-portal.css perdió el layout .ses-layout de la sección Sesiones.";
+      return null;
+    },
+  },
+  {
     name: "el detector de humo (pw-observe.js) sigue incluido en las paginas clave",
     bug: "pw-observe.js registra los errores de produccion. Si se quita de una " +
          "pagina, esa pagina vuelve a operar a ciegas.",
