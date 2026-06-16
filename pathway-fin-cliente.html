@@ -483,6 +483,21 @@ function _spark(vals,color){
   var lt=P[P.length-1];
   return '<svg width="'+w+'" height="'+h+'" style="flex-shrink:0"><path d="'+ln+'" fill="none" stroke="'+color+'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+lt[0].toFixed(1)+'" cy="'+lt[1].toFixed(1)+'" r="2.4" fill="'+color+'"/></svg>';
 }
+// Gráfico combinado: TODAS las categorías juntas, misma escala, con meses en
+// el eje X → permite comparar magnitudes y ver la referencia de cada mes.
+function _trendChart(G,cats){
+  var n=G.length;
+  if(n<2) return '<div style="font-size:11.5px;color:var(--muted);padding:8px 0">Con un solo mes todavía no hay tendencia. Subí otro mes para comparar.</div>';
+  var top=cats.slice(0,8).map(function(c){ return { nombre:c.nombre, color:_gcol(c.nombre),
+    vals:G.map(function(m){ var s=0; (m.categorias||[]).forEach(function(x){ if((x.nombre||'Otros')===c.nombre) s+=(+x.monto||0); }); return s; }) }; });
+  var maxV=1; top.forEach(function(s){ s.vals.forEach(function(v){ if(v>maxV) maxV=v; }); });
+  var w=560,h=200,padL=46,padR=12,padT=12,padB=26, iw=w-padL-padR, ih=h-padT-padB, dx=iw/(n-1);
+  var X=function(i){return padL+i*dx;}, Y=function(v){return padT+ih*(1-v/maxV);};
+  var grid=[0,0.5,1].map(function(f){ var yy=padT+ih*(1-f); return '<line x1="'+padL+'" y1="'+yy.toFixed(1)+'" x2="'+(w-padR)+'" y2="'+yy.toFixed(1)+'" stroke="#eef0ee" stroke-width="1"/><text x="'+(padL-6)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" font-size="9" fill="#aaa" font-family="Inter">€'+Math.round(maxV*f)+'</text>'; }).join('');
+  var xlab=G.map(function(m,i){ return '<text x="'+X(i).toFixed(1)+'" y="'+(h-8)+'" text-anchor="middle" font-size="9.5" fill="#888" font-family="Inter">'+esc(_mesLbl(m.mes))+'</text>'; }).join('');
+  var paths=top.map(function(s){ var d=s.vals.map(function(v,i){return (i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1);}).join(' '); var dots=s.vals.map(function(v,i){return '<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(v).toFixed(1)+'" r="2.1" fill="'+s.color+'"/>';}).join(''); return '<path d="'+d+'" fill="none" stroke="'+s.color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'+dots; }).join('');
+  return '<svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:auto">'+grid+paths+xlab+'</svg>';
+}
 function renderGastos(){
   if(window._gEditOn){ renderGastosEdit(); return; }
   renderEvolucion();
@@ -503,15 +518,8 @@ function renderGastos(){
       '<div style="width:78%;max-width:46px;height:'+barH.toFixed(1)+'px;background:linear-gradient(180deg,#52B788,#2D6A4F);border-radius:5px 5px 0 0"></div>'+
       '<div style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+esc(_mesLbl(m.mes))+'</div></div>';
   }).join('');
-  var trend=aggCats.slice(0,8).map(function(c){
-    var vals=G.map(function(m){ var s=0; (m.categorias||[]).forEach(function(x){ if((x.nombre||'Otros')===c.nombre) s+=(+x.monto||0); }); return s; });
-    return '<div style="display:flex;align-items:center;gap:10px;margin:10px 0">'+
-      '<span style="width:10px;height:10px;border-radius:3px;background:'+_gcol(c.nombre)+';flex-shrink:0"></span>'+
-      '<span style="flex:1;font-size:12.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.nombre)+'</span>'+
-      _spark(vals,_gcol(c.nombre))+
-      '<strong style="font-size:12px;white-space:nowrap;width:78px;text-align:right">'+moneda+Math.round(c.monto)+'/mes</strong>'+
-    '</div>';
-  }).join('');
+  var trendChart=_trendChart(G,aggCats);
+  var trendLeg=aggCats.slice(0,8).map(function(c){ return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#555;margin:0 13px 6px 0"><span style="width:10px;height:10px;border-radius:3px;background:'+_gcol(c.nombre)+'"></span>'+esc(c.nombre)+' <b style="color:var(--text)">'+moneda+Math.round(c.monto)+'/mes</b></span>'; }).join('');
   // DERECHA (más chica): promedio mensual por categoría.
   var atot=aggCats.reduce(function(s,c){return s+c.monto;},0)||1;
   var crows=aggCats.map(function(c){ var pct=Math.round(c.monto/atot*100); return '<div style="margin:10px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>'+esc(c.nombre)+'</span><strong>'+pct+'%</strong></div><div style="height:8px;background:#edeeec;border-radius:6px;overflow:hidden"><i style="display:block;height:100%;width:'+pct+'%;background:'+_gcol(c.nombre)+'"></i></div><div style="font-size:11px;color:var(--muted);margin-top:2px">'+moneda+Math.round(c.monto)+'/mes</div></div>'; }).join('');
@@ -524,8 +532,9 @@ function renderGastos(){
           '<div style="display:flex;align-items:flex-end;gap:10px;overflow-x:auto;min-height:'+(H+34)+'px">'+bars+'</div>'+
         '</div></div>'+
         '<div class="card"><div class="card-body">'+
-          '<div style="margin-bottom:4px"><span class="eyebrow">📈 Tendencia por categoría</span></div>'+
-          trend+
+          '<div style="margin-bottom:8px"><span class="eyebrow">📈 Tendencia por categoría</span></div>'+
+          trendChart+
+          '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">'+trendLeg+'</div>'+
         '</div></div>'+
       '</div>'+
       '<div class="dash-rail">'+
