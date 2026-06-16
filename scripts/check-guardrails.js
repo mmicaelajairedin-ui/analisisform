@@ -157,6 +157,24 @@ const RULES = [
     },
   },
   {
+    name: "el logo del sidebar toma el color de marca del coach Pro (white-label)",
+    bug: "El coach Pro sin logo propio veia la montañita Pathway con el verde " +
+         "hardcodeado (#52B788) en el sidebar: _applyPanelBrand retiñe las vars " +
+         "--pw-* pero NO un hex literal, asi que el logo quedaba verde mientras el " +
+         "resto del panel cambiaba ('no cambia por completo'). El pico del SVG debe " +
+         "usar var(--pw-sendero), igual que el punto del wordmark 'pathway.'.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const i = s.search(/cp-side-brand-word/);
+      if (i < 0) return null; // si cambia el markup del brand, no bloquear
+      const block = s.slice(Math.max(0, i - 600), i);
+      if (/<polygon[^>]*fill='#52B788'/i.test(block))
+        return "el logo del sidebar volvio a usar #52B788 hardcodeado — no toma el color de marca del coach Pro.";
+      return null;
+    },
+  },
+  {
     name: "el detector de humo (pw-observe.js) sigue incluido en las paginas clave",
     bug: "pw-observe.js registra los errores de produccion. Si se quita de una " +
          "pagina, esa pagina vuelve a operar a ciegas.",
