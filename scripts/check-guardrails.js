@@ -212,25 +212,31 @@ const RULES = [
     },
   },
   {
-    name: "la sección Sesiones del cliente (fit/fin) tiene historial + columna de documentos",
-    bug: "El portal del cliente fitness/finanzas debe mostrar la sesión al estilo " +
-         "del panel del coach: historial (#ses-hist) y una segunda columna con los " +
-         "documentos que sube el coach (#ses-docs, dentro de .ses-layout). Si se " +
-         "quita la columna, el cliente deja de ver el material de su coach.",
+    name: "Sesiones del cliente: mismo diseño (hero + timeline) + columna de documentos en los 3 nichos",
+    bug: "Los 3 portales de cliente (carrera/fitness/finanzas) deben mostrar la " +
+         "sección Sesiones con el MISMO diseño del panel del coach: hero con " +
+         "degradado (.ses-hero), historial en timeline (.ses-tl) y una columna a la " +
+         "derecha con los documentos que sube el coach (.ses-layout + .ses-doc-item). " +
+         "Si un nicho pierde la columna o el diseño se desincroniza, deja de ser igual.",
     check() {
-      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
         const s = read(f);
         if (!s) continue;
-        if (!/id=["']ses-docs["']/.test(s) || !/ses-layout/.test(s))
-          return f + ": falta la columna de documentos del coach (#ses-docs / .ses-layout) en Sesiones.";
-        if (!/id=["']ses-hist["']/.test(s))
-          return f + ": falta el historial de sesiones (#ses-hist).";
-        if (!/toggleSesTarea/.test(s))
-          return f + ": el cliente ya no puede marcar sus tareas de la sesión (toggleSesTarea).";
+        if (!/ses-layout/.test(s))
+          return f + ": falta el layout de 2 columnas (.ses-layout) en Sesiones.";
+        if (!/ses-hero/.test(s) || !/ses-tl/.test(s))
+          return f + ": falta el hero con degradado (.ses-hero) o el timeline (.ses-tl) del historial.";
+        if (!/ses-doc-item/.test(s) && !/id=["']ses-docs["']/.test(s))
+          return f + ": falta la columna de documentos del coach (.ses-doc-item / #ses-docs).";
       }
-      // El CSS compartido debe definir el layout de 2 columnas.
+      // El CSS de fit/fin vive en pathway-portal.css; el de carrera, inline.
       if (!/\.ses-layout\s*\{/.test(read("pathway-portal.css")))
         return "pathway-portal.css perdió el layout .ses-layout de la sección Sesiones.";
+      // fit/fin: el cliente marca sus tareas con toggleSesTarea.
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        if (read(f) && !/toggleSesTarea/.test(read(f)))
+          return f + ": el cliente ya no puede marcar sus tareas (toggleSesTarea).";
+      }
       return null;
     },
   },
