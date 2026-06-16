@@ -484,6 +484,7 @@ function _spark(vals,color){
   return '<svg width="'+w+'" height="'+h+'" style="flex-shrink:0"><path d="'+ln+'" fill="none" stroke="'+color+'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+lt[0].toFixed(1)+'" cy="'+lt[1].toFixed(1)+'" r="2.4" fill="'+color+'"/></svg>';
 }
 function renderGastos(){
+  if(window._gEditOn){ renderGastosEdit(); return; }
   renderEvolucion();
   var box=document.getElementById('fin-gastos');
   var G=_gastosLoad();
@@ -515,6 +516,7 @@ function renderGastos(){
   var atot=aggCats.reduce(function(s,c){return s+c.monto;},0)||1;
   var crows=aggCats.map(function(c){ var pct=Math.round(c.monto/atot*100); return '<div style="margin:10px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>'+esc(c.nombre)+'</span><strong>'+pct+'%</strong></div><div style="height:8px;background:#edeeec;border-radius:6px;overflow:hidden"><i style="display:block;height:100%;width:'+pct+'%;background:'+_gcol(c.nombre)+'"></i></div><div style="font-size:11px;color:var(--muted);margin-top:2px">'+moneda+Math.round(c.monto)+'/mes</div></div>'; }).join('');
   box.innerHTML=
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button onclick="gEditStart()" class="btn btn-ghost" style="font-size:12px;padding:6px 12px">✏️ Ajustar / corregir</button></div>'+
     '<div class="dash">'+
       '<div class="dash-main">'+
         '<div class="card"><div class="card-body">'+
@@ -534,6 +536,57 @@ function renderGastos(){
       '</div>'+
     '</div>';
 }
+// ── Ajustar / corregir gastos (la IA no es perfecta) ─────────────────────
+// El cliente (o el coach) corrige montos, recategoriza, borra un movimiento
+// que no fue gasto (ej: transferencia a su propia cuenta) o un mes entero.
+var _CATS=['Vivienda','Alimentación','Transporte','Ocio','Servicios','Salud','Deudas','Ahorro','Otros'];
+function _gReadInputs(){
+  var G=window._gEditData||[];
+  G.forEach(function(m,mi){ (m.categorias||[]).forEach(function(c,ci){
+    var a=document.getElementById('ge-'+mi+'-'+ci); var s=document.getElementById('gec-'+mi+'-'+ci);
+    if(a) c.monto=parseFloat((''+a.value).replace(',','.'))||0;
+    if(s) c.nombre=s.value;
+  }); });
+}
+function renderGastosEdit(){
+  var box=document.getElementById('fin-gastos'); if(!box) return;
+  var G=window._gEditData||[];
+  var opts=function(sel){ return _CATS.map(function(c){return '<option'+(c===sel?' selected':'')+'>'+esc(c)+'</option>';}).join(''); };
+  var months=G.map(function(m,mi){
+    var rows=(m.categorias||[]).map(function(c,ci){
+      return '<div style="display:flex;gap:8px;align-items:center;margin:6px 0">'+
+        '<select id="gec-'+mi+'-'+ci+'" style="flex:1;min-width:0;height:34px;border:1px solid var(--border);border-radius:8px;padding:0 8px;font-size:12.5px;background:#fff">'+opts(c.nombre)+'</select>'+
+        '<input id="ge-'+mi+'-'+ci+'" type="number" inputmode="decimal" value="'+(Math.round(+c.monto||0))+'" style="width:92px;height:34px;border:1px solid var(--border);border-radius:8px;padding:0 8px;font-size:12.5px;text-align:right">'+
+        '<button onclick="gEditDelLine('+mi+','+ci+')" title="Quitar este movimiento" style="width:32px;height:32px;border:none;background:#f5e9e6;color:#b5651d;border-radius:8px;cursor:pointer;flex-shrink:0;font-size:13px">✕</button>'+
+      '</div>';
+    }).join('');
+    return '<div class="card" style="margin-bottom:12px"><div class="card-body">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="font-size:13px">'+esc(_mesLbl(m.mes))+'</strong>'+
+        '<button onclick="gEditDelMonth('+mi+')" style="font-size:11px;color:#b5651d;background:none;border:none;cursor:pointer">🗑 borrar mes</button></div>'+
+      rows+
+      '<button onclick="gEditAddLine('+mi+')" style="margin-top:6px;font-size:12px;color:#2D6A4F;background:none;border:none;cursor:pointer;padding:0">+ agregar categoría</button>'+
+    '</div></div>';
+  }).join('');
+  box.innerHTML=
+    '<div class="card" style="margin-bottom:12px;background:#f6f8f6;box-shadow:none"><div class="card-body" style="font-size:12.5px;color:var(--muted);line-height:1.5">✏️ <b style="color:var(--text)">Ajustá lo que la IA no clasificó bien.</b> Cambiá el monto o la categoría, o borrá con ✕ un movimiento que en realidad no fue un gasto (ej: una transferencia a tu propia cuenta).</div></div>'+
+    (months||'<div class="card"><div class="card-body" style="color:var(--muted);font-size:13px">No hay gastos cargados.</div></div>')+
+    '<div style="display:flex;gap:10px;margin-top:6px"><button onclick="gEditSave()" class="btn" style="flex:1">Guardar cambios</button><button onclick="gEditCancel()" class="btn btn-ghost">Cancelar</button></div>';
+}
+window.gEditStart=function(){ window._gEditData=JSON.parse(JSON.stringify(_gastosLoad())); window._gEditOn=true; renderGastos(); };
+window.gEditCancel=function(){ window._gEditOn=false; renderGastos(); };
+window.gEditAddLine=function(mi){ _gReadInputs(); var m=(window._gEditData||[])[mi]; if(m){ m.categorias=m.categorias||[]; m.categorias.push({nombre:'Otros',monto:0}); } renderGastos(); };
+window.gEditDelLine=function(mi,ci){ _gReadInputs(); var m=(window._gEditData||[])[mi]; if(m&&m.categorias){ m.categorias.splice(ci,1); } renderGastos(); };
+window.gEditDelMonth=function(mi){ _gReadInputs(); (window._gEditData||[]).splice(mi,1); renderGastos(); };
+window.gEditSave=function(){
+  _gReadInputs();
+  var G=(window._gEditData||[]).map(function(m){
+    var map={}; (m.categorias||[]).forEach(function(c){ if(c.nombre && (+c.monto||0)>0) map[c.nombre]=(map[c.nombre]||0)+(+c.monto||0); });
+    var merged=Object.keys(map).map(function(n){return {nombre:n,monto:Math.round(map[n])};});
+    return {mes:m.mes,total:merged.reduce(function(s,c){return s+c.monto;},0),categorias:merged};
+  }).filter(function(m){return m.categorias.length;});
+  _gastosSave(G);
+  window._gEditOn=false; renderGastos();
+};
 function applyClientFin(c){
   var nm=c.nombre||c.email||'Cliente', fn=(''+nm).split(' ')[0];
   setText('.sb-hello','Hola, '+fn+' 👋');
