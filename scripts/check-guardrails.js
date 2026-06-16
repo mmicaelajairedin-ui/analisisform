@@ -175,6 +175,43 @@ const RULES = [
     },
   },
   {
+    name: "el color de marca tiñe TODA la familia --rose en los portales de cliente",
+    bug: "applyBrand/applyBrandFin solo pisaban --rose y --rose-dark, dejando " +
+         "--rose-light y --rose-mid en verde: el portal del cliente cambiaba de " +
+         "color pero los fondos claros quedaban verdosos ('no cambia por completo'). " +
+         "Ahora derivan toda la familia via _pwBrandVars().",
+    check() {
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/_pwBrandVars\s*\(/.test(s))
+          return f + " ya no usa _pwBrandVars() para aplicar el color de marca.";
+        if (!/--rose-light/.test(s) || !/--rose-mid/.test(s))
+          return f + ": _pwBrandVars() ya no setea --rose-light/--rose-mid (los tonos claros quedan en verde).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "el portal del cliente demo refleja el color de marca del coach",
+    bug: "El demo (fitness/finanzas) mostraba siempre el verde Pathway porque " +
+         "_demoBrandFit/_demoBrandFin solo seteaban nombre y foto. El color del " +
+         "coach demo viaja en el overlay (snap.brand) que guarda _demoSnapshot y " +
+         "el portal lo aplica con _pwBrandVars.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p && !/snap\.brand\s*=/.test(p))
+        return "panel-v2.html: _demoSnapshot ya no guarda snap.brand (el color del coach no llega al demo).";
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/_ov\.brand[\s\S]{0,40}_pwBrandVars/.test(s))
+          return f + ": el demo ya no aplica el color de marca del overlay (_ov.brand).";
+      }
+      return null;
+    },
+  },
+  {
     name: "el detector de humo (pw-observe.js) sigue incluido en las paginas clave",
     bug: "pw-observe.js registra los errores de produccion. Si se quita de una " +
          "pagina, esa pagina vuelve a operar a ciegas.",
