@@ -282,10 +282,9 @@ function go(s){
 function toggleSb(){document.getElementById('sb').classList.toggle('open');document.getElementById('ov').classList.toggle('open');}
 // Gauge
 (function(){var a=document.getElementById('gaugeArc'),r=36,c=2*Math.PI*r;a.style.strokeDasharray=c;a.style.strokeDashoffset=c*(1-68/100);})();
-// Dona presupuesto
-(function(){var cats=[{n:'Vivienda',v:800,c:'#2D6A4F'},{n:'Deudas',v:400,c:'#8C5B6B'},{n:'Alimentación',v:350,c:'#52B788'},{n:'Ahorro',v:300,c:'#1B4332'},{n:'Ocio',v:200,c:'#A8633A'},{n:'Transporte',v:120,c:'#E9C46A'},{n:'Servicios',v:90,c:'#5B8C6E'},{n:'Otros',v:80,c:'#bdbdb5'},{n:'Salud',v:60,c:'#2E7587'}];var tot=cats.reduce((s,x)=>s+x.v,0),cx=65,cy=65,r=48,sw=18,C=2*Math.PI*r,off=0,svg='';cats.forEach(function(x){var len=x.v/tot*C;svg+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+x.c+'" stroke-width="'+sw+'" stroke-dasharray="'+len.toFixed(2)+' '+(C-len).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'" transform="rotate(-90 '+cx+' '+cy+')"/>';off+=len;});document.getElementById('donut').innerHTML=svg;document.getElementById('legend').innerHTML=cats.slice(0,5).map(x=>'<div class="lg"><span class="sw" style="background:'+x.c+'"></span><span class="ln">'+x.n+'</span><span class="lv">'+Math.round(x.v/tot*100)+'%</span></div>').join('');})();
-// Ahorro chart
-(function(){var data=[150,220,300],lab=['Ene','Feb','Mar'],w=340,h=110,pad=22,mn=0,mx=Math.max.apply(null,data)*1.25,dx=(w-pad*2)/(data.length-1);var pts=data.map((v,i)=>[pad+i*dx,pad/2+(h-pad)*(1-(v-mn)/(mx-mn))]);var ln=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');var ar=ln+' L'+pts[pts.length-1][0].toFixed(1)+' '+(h-pad/2)+' L'+pad+' '+(h-pad/2)+' Z';var dots=pts.map((p,i)=>'<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="4" fill="#2D6A4F" stroke="#fff" stroke-width="2"/><text x="'+p[0].toFixed(1)+'" y="'+(h-3)+'" text-anchor="middle" font-size="10" fill="#777" font-family="Inter">'+lab[i]+'</text><text x="'+p[0].toFixed(1)+'" y="'+(p[1]-9).toFixed(1)+'" text-anchor="middle" font-size="10" font-weight="700" fill="#2D6A4F" font-family="Inter">€'+data[i]+'</text>').join('');var _ca=document.getElementById('chartAhorro'); if(_ca) _ca.innerHTML='<svg viewBox="0 0 '+w+' '+h+'"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#52B788" stop-opacity=".22"/><stop offset="1" stop-color="#52B788" stop-opacity="0"/></linearGradient></defs><path d="'+ar+'" fill="url(#ga)"/><path d="'+ln+'" fill="none" stroke="#2D6A4F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+dots+'</svg>';})();
+// La dona del presupuesto y el gráfico de evolución se alimentan de datos
+// REALES (extracto del cliente / presupuesto del coach), no de números fijos:
+// los dibujan _drawDonutCats() y renderEvolucion() más abajo.
 </script>
 
 <script src="pw-auth.js"></script>
@@ -425,13 +424,9 @@ function applyLogrosFin(c){
 // cliente real → candidatos.fin_gastos; demo → localStorage pw_demo_fin_gastos.
 var _GCOL={'Vivienda':'#2D6A4F','Alimentación':'#52B788','Alimentacion':'#52B788','Transporte':'#E9C46A','Ocio':'#A8633A','Servicios':'#5B8C6E','Salud':'#2E7587','Deudas':'#8C5B6B','Ahorro':'#1B4332','Otros':'#bdbdb5'};
 function _gcol(n){ return _GCOL[n]||'#9aa39c'; }
-var _DEMO_GASTOS_SEED=[
-  {mes:'2026-01',total:2300,categorias:[{nombre:'Vivienda',monto:800},{nombre:'Deudas',monto:400},{nombre:'Alimentación',monto:340},{nombre:'Ahorro',monto:250},{nombre:'Ocio',monto:180},{nombre:'Transporte',monto:120},{nombre:'Servicios',monto:90},{nombre:'Otros',monto:120}]},
-  {mes:'2026-02',total:2250,categorias:[{nombre:'Vivienda',monto:800},{nombre:'Deudas',monto:400},{nombre:'Alimentación',monto:360},{nombre:'Ahorro',monto:300},{nombre:'Ocio',monto:150},{nombre:'Transporte',monto:110},{nombre:'Servicios',monto:90},{nombre:'Otros',monto:40}]},
-  {mes:'2026-03',total:2400,categorias:[{nombre:'Vivienda',monto:800},{nombre:'Deudas',monto:400},{nombre:'Alimentación',monto:350},{nombre:'Ahorro',monto:300},{nombre:'Ocio',monto:200},{nombre:'Transporte',monto:120},{nombre:'Servicios',monto:90},{nombre:'Otros',monto:140}]}
-];
 function _gastosLoad(){
-  if(_esDemo()){ try{ var v=localStorage.getItem('pw_demo_fin_gastos'); if(v){ var a=JSON.parse(v); if(Array.isArray(a)) return a; } }catch(e){} return JSON.parse(JSON.stringify(_DEMO_GASTOS_SEED)); }
+  // Sin datos inventados: los gastos salen SOLO del extracto que sube el cliente.
+  if(_esDemo()){ try{ var v=localStorage.getItem('pw_demo_fin_gastos'); if(v){ var a=JSON.parse(v); if(Array.isArray(a)) return a; } }catch(e){} return []; }
   try{ var g=JSON.parse((CRAW&&CRAW.fin_gastos)||'[]'); return Array.isArray(g)?g:[]; }catch(e){ return []; }
 }
 function _gastosSave(arr){
@@ -455,29 +450,64 @@ function _drawDonutCats(cats,mesLabel){
   d.innerHTML=svg;
   if(lg) lg.innerHTML=list.slice(0,6).map(function(c){return '<div class="lg"><span class="sw" style="background:'+_gcol(c.nombre)+'"></span><span class="ln">'+esc(c.nombre)+'</span><span class="lv">'+Math.round((+c.monto||0)/tot*100)+'%</span></div>';}).join('');
   var dc=document.querySelector('#s-presupuesto .dc b'); if(dc) dc.textContent='€'+Math.round(tot);
-  var hs=document.querySelector('#s-presupuesto .h-sub'); if(hs) hs.innerHTML=esc(mesLabel||'')+' · gastaste <b style="color:var(--text)">€'+Math.round(tot)+'</b>';
+  var hs=document.querySelector('#s-presupuesto .h-sub'); if(hs) hs.innerHTML=esc(mesLabel||'Gasto')+' · <b style="color:var(--text)">€'+Math.round(tot)+'</b>';
+}
+// Gráfico de evolución del Inicio = AHORRO REAL por mes (categoría "Ahorro"
+// del extracto). Sin datos → mensaje guía. Nunca números inventados.
+function renderEvolucion(){
+  var el=document.getElementById('chartAhorro'); if(!el) return;
+  var dl=document.getElementById('ahorro-delta');
+  var G=_gastosLoad();
+  var pts=G.map(function(m){ var a=0; (m.categorias||[]).forEach(function(c){ if(/ahorro/i.test(c.nombre||'')) a+=(+c.monto||0); }); return {mes:m.mes,val:a}; });
+  if(pts.length<2 || !pts.some(function(p){return p.val>0;})){
+    el.innerHTML='<div style="font-size:11.5px;color:var(--muted);padding:10px 0;line-height:1.5">Cuando cargues tus extractos en <b>Mis gastos</b>, vas a ver acá cómo evoluciona tu ahorro mes a mes.</div>';
+    if(dl) dl.style.display='none'; return;
+  }
+  if(dl){ dl.style.display=''; var d=pts[pts.length-1].val-pts[0].val; dl.textContent=(d>=0?'+':'−')+'€'+Math.abs(Math.round(d))+' en '+pts.length+' meses'; }
+  var data=pts.map(function(p){return p.val;}), lab=pts.map(function(p){return _mesLbl(p.mes);});
+  var w=340,h=110,pad=22,mn=Math.min.apply(null,data.concat([0])),mx=(Math.max.apply(null,data)*1.25)||1,dx=(w-pad*2)/Math.max(1,data.length-1);
+  var P=data.map(function(v,i){return [pad+i*dx, pad/2+(h-pad)*(1-(v-mn)/((mx-mn)||1))];});
+  var ln=P.map(function(p,i){return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' ');
+  var ar=ln+' L'+P[P.length-1][0].toFixed(1)+' '+(h-pad/2)+' L'+pad+' '+(h-pad/2)+' Z';
+  var dots=P.map(function(p,i){return '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="4" fill="#2D6A4F" stroke="#fff" stroke-width="2"/><text x="'+p[0].toFixed(1)+'" y="'+(h-3)+'" text-anchor="middle" font-size="10" fill="#777" font-family="Inter">'+esc(lab[i])+'</text><text x="'+p[0].toFixed(1)+'" y="'+(p[1]-9).toFixed(1)+'" text-anchor="middle" font-size="10" font-weight="700" fill="#2D6A4F" font-family="Inter">€'+Math.round(data[i])+'</text>';}).join('');
+  el.innerHTML='<svg viewBox="0 0 '+w+' '+h+'"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#52B788" stop-opacity=".22"/><stop offset="1" stop-color="#52B788" stop-opacity="0"/></linearGradient></defs><path d="'+ar+'" fill="url(#ga)"/><path d="'+ln+'" fill="none" stroke="#2D6A4F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+dots+'</svg>';
 }
 function renderGastos(){
+  renderEvolucion();
   var box=document.getElementById('fin-gastos');
   var G=_gastosLoad();
   if(!G.length){ if(box) box.innerHTML='<div class="card"><div class="card-body" style="text-align:center;padding:26px 16px;color:var(--muted);font-size:13px;line-height:1.6">Todavía no cargaste ningún extracto.<br>Subí el primero y vas a ver acá en qué se te va la plata, mes a mes. 📈</div></div>'; return; }
-  var moneda='€';
-  var avg=Math.round(G.reduce(function(s,m){return s+(+m.total||0);},0)/G.length);
-  var last=G[G.length-1];
-  _drawDonutCats(last.categorias,_mesLbl(last.mes)); // la dona del Presupuesto = gasto real del último mes
+  var moneda='€', nM=G.length;
+  // Promedio mensual por categoría (mes típico) — más rico que un solo mes.
+  var agg={}; G.forEach(function(m){ (m.categorias||[]).forEach(function(c){ var n=c.nombre||'Otros'; agg[n]=(agg[n]||0)+(+c.monto||0); }); });
+  var aggCats=Object.keys(agg).map(function(n){ return {nombre:n,monto:agg[n]/nM}; }).filter(function(c){return c.monto>0;}).sort(function(a,b){return b.monto-a.monto;});
+  var order=aggCats.map(function(c){return c.nombre;});
+  var avg=Math.round(G.reduce(function(s,m){return s+(+m.total||0);},0)/nM);
+  _drawDonutCats(aggCats,'Promedio mensual'); // la dona del Presupuesto = gasto real promedio
   if(!box) return;
-  var mx=Math.max.apply(null,G.map(function(m){return +m.total||0;}).concat([1]));
-  var bars=G.map(function(m){ var h=Math.max(6,Math.round((+m.total||0)/mx*92)); return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:38px"><div style="font-size:10px;font-weight:700;color:#2D6A4F">'+moneda+Math.round(+m.total||0)+'</div><div style="width:60%;max-width:34px;height:'+h+'px;background:linear-gradient(180deg,#52B788,#2D6A4F);border-radius:5px 5px 0 0"></div><div style="font-size:10px;color:var(--muted);white-space:nowrap">'+esc(_mesLbl(m.mes))+'</div></div>'; }).join('');
-  var cats=(last.categorias||[]).slice().filter(function(c){return (+c.monto||0)>0;}).sort(function(a,b){return (+b.monto||0)-(+a.monto||0);});
-  var ctot=cats.reduce(function(s,c){return s+(+c.monto||0);},0)||1;
-  var crows=cats.map(function(c){ var pct=Math.round((+c.monto||0)/ctot*100); return '<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px"><span>'+esc(c.nombre||'')+'</span><strong>'+moneda+Math.round(+c.monto||0)+' · '+pct+'%</strong></div><div style="height:8px;background:#edeeec;border-radius:6px;overflow:hidden"><i style="display:block;height:100%;width:'+pct+'%;background:'+_gcol(c.nombre)+'"></i></div></div>'; }).join('');
+  // 1) Barras APILADAS por categoría → comparativa mes a mes + composición.
+  var mxTot=Math.max.apply(null,G.map(function(m){return +m.total||0;}).concat([1])), H=150;
+  var bars=G.map(function(m){
+    var byCat={}; (m.categorias||[]).forEach(function(c){ byCat[c.nombre||'Otros']=(byCat[c.nombre||'Otros']||0)+(+c.monto||0); });
+    var tot=+m.total||0, barH=Math.max(4,(tot/mxTot)*H);
+    var segs=order.map(function(n){ var v=byCat[n]||0; if(v<=0) return ''; return '<div title="'+esc(n)+': '+moneda+Math.round(v)+'" style="height:'+((v/mxTot)*H).toFixed(1)+'px;background:'+_gcol(n)+'"></div>'; }).join('');
+    return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0">'+
+      '<div style="font-size:10.5px;font-weight:700;color:#2D6A4F">'+moneda+Math.round(tot)+'</div>'+
+      '<div style="width:88%;max-width:60px;height:'+barH.toFixed(1)+'px;display:flex;flex-direction:column-reverse;border-radius:5px 5px 0 0;overflow:hidden">'+segs+'</div>'+
+      '<div style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+esc(_mesLbl(m.mes))+'</div></div>';
+  }).join('');
+  var leg=aggCats.slice(0,8).map(function(c){ return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#555;margin:0 12px 5px 0"><span style="width:10px;height:10px;border-radius:3px;background:'+_gcol(c.nombre)+';display:inline-block"></span>'+esc(c.nombre)+'</span>'; }).join('');
+  // 2) Promedio mensual por categoría (todas, no un mes pobre).
+  var atot=aggCats.reduce(function(s,c){return s+c.monto;},0)||1;
+  var crows=aggCats.map(function(c){ var pct=Math.round(c.monto/atot*100); return '<div style="margin:9px 0"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px"><span>'+esc(c.nombre)+'</span><strong>'+moneda+Math.round(c.monto)+'/mes · '+pct+'%</strong></div><div style="height:9px;background:#edeeec;border-radius:6px;overflow:hidden"><i style="display:block;height:100%;width:'+pct+'%;background:'+_gcol(c.nombre)+'"></i></div></div>'; }).join('');
   box.innerHTML=
     '<div class="card"><div class="card-body">'+
-      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;gap:4px"><span class="eyebrow">📊 Gasto por mes</span><span style="font-size:12px;color:var(--muted)">promedio '+moneda+avg+'/mes · '+G.length+' '+(G.length===1?'mes':'meses')+'</span></div>'+
-      '<div style="display:flex;align-items:flex-end;gap:8px;height:120px;padding-top:6px;overflow-x:auto">'+bars+'</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:4px"><span class="eyebrow">📊 Gasto por mes</span><span style="font-size:12px;color:var(--muted)">promedio '+moneda+avg+'/mes · '+nM+' meses</span></div>'+
+      '<div style="display:flex;align-items:flex-end;gap:10px;overflow-x:auto;min-height:'+(H+34)+'px">'+bars+'</div>'+
+      '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:11px">'+leg+'</div>'+
     '</div></div>'+
     '<div class="card" style="margin-top:14px"><div class="card-body">'+
-      '<div style="margin-bottom:10px"><span class="eyebrow">🗂️ En qué gastaste · '+esc(_mesLbl(last.mes))+'</span></div>'+
+      '<div style="margin-bottom:10px"><span class="eyebrow">🗂️ En qué se te va · promedio mensual</span></div>'+
       crows+
     '</div></div>';
 }
