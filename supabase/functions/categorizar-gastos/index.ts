@@ -19,13 +19,17 @@ const CORS_HEADERS = {
 };
 const CLAUDE_MODEL = "claude-sonnet-4-5";
 
-const SYSTEM = `Sos un asistente financiero. Recibís el extracto bancario de un cliente (PDF).
+const SYSTEM = `Sos un asistente financiero. Recibís el extracto bancario de un cliente (PDF), que puede cubrir UNO o VARIOS meses.
 Clasificá SOLO los gastos (egresos) en estas categorías exactas:
 Vivienda, Alimentación, Transporte, Ocio, Servicios, Salud, Deudas, Ahorro, Otros.
-Sumá el monto total por categoría (ignorá ingresos/abonos/transferencias recibidas).
+Agrupá los gastos POR MES. Ignorá ingresos/abonos/transferencias recibidas.
 Devolvé ÚNICAMENTE un JSON válido, sin texto antes ni después, con esta forma exacta:
-{"total": <number>, "moneda": "<EUR|USD|ARS|...>", "categorias": [{"nombre":"Vivienda","monto":<number>}, ...], "resumen":"<1-2 frases con lo más relevante>"}
-Reglas: montos como número sin símbolo ni separador de miles; incluí solo categorías con monto > 0; si no podés leer el PDF devolvé {"error":"no_legible"}.`;
+{"moneda":"<EUR|USD|ARS|...>","meses":[{"mes":"YYYY-MM","total":<number>,"categorias":[{"nombre":"Vivienda","monto":<number>}, ...]}, ...],"categorias":[{"nombre":"Vivienda","monto":<number>}, ...],"total":<number>,"resumen":"<1-2 frases con lo más relevante>"}
+Reglas:
+- "meses": un objeto por cada mes presente en el extracto, ordenado del más antiguo al más reciente. Incluí solo categorías con monto > 0.
+- "categorias" y "total": el PROMEDIO MENSUAL (la suma de todos los meses dividida por la cantidad de meses), para representar un mes típico.
+- Montos como número, sin símbolo ni separador de miles.
+- Si no podés leer el PDF devolvé {"error":"no_legible"}.`;
 
 function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), {
