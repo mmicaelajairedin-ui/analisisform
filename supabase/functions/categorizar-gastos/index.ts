@@ -39,8 +39,9 @@ REGLAS DE PRECISIÓN:
 - Si un comercio es ambiguo, elegí la categoría más probable según el nombre; no lo mandes a "Otros" por las dudas.
 
 Devolvé ÚNICAMENTE un JSON válido, sin texto antes ni después, con esta forma exacta:
-{"moneda":"<EUR|USD|ARS|...>","meses":[{"mes":"YYYY-MM","total":<number>,"categorias":[{"nombre":"Vivienda","monto":<number>}, ...]}, ...],"categorias":[{"nombre":"Vivienda","monto":<number>}, ...],"total":<number>,"resumen":"<1-2 frases con lo más relevante>"}
+{"moneda":"<EUR|USD|ARS|...>","meses":[{"mes":"YYYY-MM","total":<number>,"categorias":[{"nombre":"Vivienda","monto":<number>}, ...],"sin_clasificar":[{"desc":"<comercio/concepto corto>","monto":<number>}, ...]}, ...],"categorias":[{"nombre":"Vivienda","monto":<number>}, ...],"total":<number>,"resumen":"<1-2 frases con lo más relevante>"}
 - "meses": un objeto por cada mes presente, del más antiguo al más reciente. Incluí solo categorías con monto > 0.
+- "sin_clasificar": SOLO los movimientos que mandaste a la categoría "Otros" de ese mes (los que no pudiste clasificar con confianza), cada uno con una descripción corta del comercio/concepto y su monto. La SUMA de "sin_clasificar" debe ser igual al monto de la categoría "Otros" de ese mes. Si "Otros" es 0, devolvé [] . Máximo 15 movimientos por mes (si hay más, agrupá los chicos en uno "Otros varios").
 - "categorias" y "total": el PROMEDIO MENSUAL (suma de todos los meses / cantidad de meses), para representar un mes típico.
 - Montos como número, sin símbolo ni separador de miles.
 - Si no podés leer el PDF devolvé {"error":"no_legible"}.`;

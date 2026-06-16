@@ -525,8 +525,13 @@ function renderGastos(){
   // DERECHA (más chica): promedio mensual por categoría.
   var atot=aggCats.reduce(function(s,c){return s+c.monto;},0)||1;
   var crows=aggCats.map(function(c){ var pct=Math.round(c.monto/atot*100); return '<div style="margin:10px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>'+esc(c.nombre)+'</span><strong>'+pct+'%</strong></div><div style="height:8px;background:#edeeec;border-radius:6px;overflow:hidden"><i style="display:block;height:100%;width:'+pct+'%;background:'+_gcol(c.nombre)+'"></i></div><div style="font-size:11px;color:var(--muted);margin-top:2px">'+moneda+Math.round(c.monto)+'/mes</div></div>'; }).join('');
+  // Aviso si "Otros" (sin clasificar) es alto → empuja a Ajustar o re-subir.
+  var otrosC=aggCats.filter(function(c){return /^otros/i.test(c.nombre);})[0];
+  var otrosPct=otrosC?Math.round(otrosC.monto/atot*100):0;
+  var nudge=(otrosC&&otrosPct>=12)?'<div class="card" style="background:#fff7e8;box-shadow:none;border-left:3px solid #E9C46A;margin-bottom:12px"><div class="card-body" style="font-size:12.5px;color:#7a5b1e;line-height:1.5">⚠️ <b style="color:#7a5b1e">'+moneda+Math.round(otrosC.monto)+'/mes ('+otrosPct+'%) quedó sin clasificar bien.</b> Tocá <b>✏️ Ajustar</b> para asignarle categoría a cada movimiento, o volvé a subir el extracto (la IA mejoró).</div></div>':'';
   box.innerHTML=
     '<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button onclick="gEditStart()" class="btn btn-ghost" style="font-size:12px;padding:6px 12px">✏️ Ajustar / corregir</button></div>'+
+    nudge+
     '<div class="dash">'+
       '<div class="dash-main">'+
         '<div class="card"><div class="card-body">'+
@@ -553,11 +558,14 @@ function renderGastos(){
 var _CATS=['Vivienda','Alimentación','Transporte','Ocio','Servicios','Salud','Deudas','Ahorro','Otros'];
 function _gReadInputs(){
   var G=window._gEditData||[];
-  G.forEach(function(m,mi){ (m.categorias||[]).forEach(function(c,ci){
-    var a=document.getElementById('ge-'+mi+'-'+ci); var s=document.getElementById('gec-'+mi+'-'+ci);
-    if(a) c.monto=parseFloat((''+a.value).replace(',','.'))||0;
-    if(s) c.nombre=s.value;
-  }); });
+  G.forEach(function(m,mi){
+    (m.categorias||[]).forEach(function(c,ci){
+      var a=document.getElementById('ge-'+mi+'-'+ci); var s=document.getElementById('gec-'+mi+'-'+ci);
+      if(a) c.monto=parseFloat((''+a.value).replace(',','.'))||0;
+      if(s) c.nombre=s.value;
+    });
+    (m.sin_clasificar||[]).forEach(function(it,k){ var s=document.getElementById('ges-'+mi+'-'+k); if(s) it.cat=s.value; });
+  });
 }
 function renderGastosEdit(){
   var box=document.getElementById('fin-gastos'); if(!box) return;
@@ -571,11 +579,23 @@ function renderGastosEdit(){
         '<button onclick="gEditDelLine('+mi+','+ci+')" title="Quitar este movimiento" style="width:32px;height:32px;border:none;background:#f5e9e6;color:#b5651d;border-radius:8px;cursor:pointer;flex-shrink:0;font-size:13px">✕</button>'+
       '</div>';
     }).join('');
+    // Movimientos que la IA mandó a "Otros": acá se les asigna categoría.
+    var sinc=(m.sin_clasificar||[]);
+    var sincHtml = sinc.length ? (
+      '<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:9px">'+
+      '<div style="font-size:11px;font-weight:700;color:#7a5b1e;letter-spacing:.04em;margin-bottom:6px">SIN CLASIFICAR ('+sinc.length+') · asignales una categoría</div>'+
+      sinc.map(function(it,k){ return '<div style="display:flex;gap:8px;align-items:center;margin:5px 0">'+
+        '<span style="flex:1;min-width:0;font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(it.desc||'')+'">'+esc(it.desc||'Movimiento')+'</span>'+
+        '<span style="font-size:12px;color:var(--muted);width:62px;text-align:right">€'+Math.round(+it.monto||0)+'</span>'+
+        '<select id="ges-'+mi+'-'+k+'" style="width:124px;height:32px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:#fff;padding:0 6px">'+opts(it.cat||'Otros')+'</select>'+
+      '</div>'; }).join('')+
+      '</div>'
+    ) : '';
     return '<div class="card" style="margin-bottom:12px"><div class="card-body">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="font-size:13px">'+esc(_mesLbl(m.mes))+'</strong>'+
         '<button onclick="gEditDelMonth('+mi+')" style="font-size:11px;color:#b5651d;background:none;border:none;cursor:pointer">🗑 borrar mes</button></div>'+
-      rows+
-      '<button onclick="gEditAddLine('+mi+')" style="margin-top:6px;font-size:12px;color:#2D6A4F;background:none;border:none;cursor:pointer;padding:0">+ agregar categoría</button>'+
+      rows+sincHtml+
+      '<button onclick="gEditAddLine('+mi+')" style="margin-top:8px;font-size:12px;color:#2D6A4F;background:none;border:none;cursor:pointer;padding:0">+ agregar categoría</button>'+
     '</div></div>';
   }).join('');
   box.innerHTML=
@@ -591,9 +611,17 @@ window.gEditDelMonth=function(mi){ _gReadInputs(); (window._gEditData||[]).splic
 window.gEditSave=function(){
   _gReadInputs();
   var G=(window._gEditData||[]).map(function(m){
-    var map={}; (m.categorias||[]).forEach(function(c){ if(c.nombre && (+c.monto||0)>0) map[c.nombre]=(map[c.nombre]||0)+(+c.monto||0); });
-    var merged=Object.keys(map).map(function(n){return {nombre:n,monto:Math.round(map[n])};});
-    return {mes:m.mes,total:merged.reduce(function(s,c){return s+c.monto;},0),categorias:merged};
+    var hasSinc=m.sin_clasificar && m.sin_clasificar.length;
+    var map={};
+    (m.categorias||[]).forEach(function(c){
+      if(!c.nombre || !((+c.monto||0)>0)) return;
+      if(hasSinc && /^otros/i.test(c.nombre)) return; // "Otros" se reconstruye desde sin_clasificar
+      map[c.nombre]=(map[c.nombre]||0)+(+c.monto||0);
+    });
+    var rem=[];
+    if(hasSinc){ m.sin_clasificar.forEach(function(it){ var cat=it.cat||'Otros', mo=+it.monto||0; if(mo<=0) return; map[cat]=(map[cat]||0)+mo; if(/^otros/i.test(cat)) rem.push({desc:it.desc,monto:Math.round(mo)}); }); }
+    var merged=Object.keys(map).filter(function(n){return map[n]>0;}).map(function(n){return {nombre:n,monto:Math.round(map[n])};});
+    return {mes:m.mes,total:merged.reduce(function(s,c){return s+c.monto;},0),categorias:merged,sin_clasificar:rem};
   }).filter(function(m){return m.categorias.length;});
   _gastosSave(G);
   window._gEditOn=false; renderGastos();
