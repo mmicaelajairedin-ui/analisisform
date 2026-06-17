@@ -26,7 +26,21 @@
     "hip thrust": { img: "Barbell_Hip_Thrust", pasos: ["Espalda apoyada en un banco, barra sobre la cadera.", "Subí la cadera apretando los glúteos.", "Bajá controlando sin tocar el piso."] },
     "dominadas": { img: "", pasos: ["Colgate de la barra con las palmas al frente.", "Tirá llevando el pecho hacia la barra.", "Bajá controlando hasta estirar los brazos."] },
     "dominadas asistidas": { img: "", pasos: ["Apoyá las rodillas en la asistencia.", "Tirá llevando el pecho hacia la barra.", "Bajá despacio."] },
-    "remo en polea": { img: "", pasos: ["Sentado, espalda recta, agarrá el maneral.", "Tirá hacia el abdomen apretando la espalda.", "Volvé estirando los brazos sin encorvar."] }
+    "remo en polea": { img: "", pasos: ["Sentado, espalda recta, agarrá el maneral.", "Tirá hacia el abdomen apretando la espalda.", "Volvé estirando los brazos sin encorvar."] },
+
+    // ── Entrada en calor / cardio (sin foto: son movimientos conocidos) ──
+    "caminar": { img: "", pasos: ["Caminá a ritmo sostenido, postura erguida.", "Empezá suave y subí el ritmo de a poco.", "5-10 min para entrar en calor."] },
+    "correr": { img: "", pasos: ["Trotá a un ritmo en el que todavía puedas hablar.", "Pisá con todo el pie, brazos y hombros relajados.", "Arrancá suave 2-3 min antes de exigir."] },
+    "trote": { img: "", pasos: ["Trote suave y continuo para activar el cuerpo.", "Respirá parejo; no busques velocidad.", "5-8 min como entrada en calor."] },
+    "cinta": { img: "", pasos: ["Empezá caminando 2-3 min y subí la velocidad de a poco.", "Mantené la postura erguida, no te agarres del frente.", "Usá una inclinación leve si querés más intensidad."] },
+    "bicicleta fija": { img: "", pasos: ["Ajustá el asiento a la altura de la cadera.", "Pedaleá parejo, resistencia suave para calentar.", "5-10 min a ritmo cómodo."] },
+    "eliptica": { img: "", pasos: ["Movimiento fluido, empujá con piernas y brazos.", "Espalda recta, mirada al frente.", "5-10 min para entrar en calor."] },
+    "saltar la cuerda": { img: "", pasos: ["Saltos bajos, solo con la punta de los pies.", "Codos pegados al cuerpo, giran las muñecas.", "Series cortas de 30-60 seg."] },
+    "jumping jacks": { img: "", pasos: ["Saltá abriendo piernas y subiendo los brazos.", "Volvé al centro y repetí a ritmo.", "30-60 seg para activar todo el cuerpo."] },
+    "movilidad articular": { img: "", pasos: ["Círculos suaves de cuello, hombros, cadera, rodillas y tobillos.", "Movimientos controlados, sin dolor.", "1-2 min antes de entrenar."] },
+    "estiramientos": { img: "", pasos: ["Estirá cada músculo sin rebotes.", "Sostené 20-30 seg por zona.", "Mejor al final de la sesión o en días suaves."] },
+    "burpees": { img: "", pasos: ["Bajá a plancha, hacé una flexión (opcional).", "Llevá los pies a las manos y saltá hacia arriba.", "Ritmo constante; cuidá la espalda."] },
+    "sentadilla sin peso": { img: "Barbell_Squat", pasos: ["Pies al ancho de hombros, brazos al frente para equilibrio.", "Bajá llevando la cola atrás, espalda recta.", "Subí empujando con los talones."] }
   };
 
   function norm(s) {
@@ -48,6 +62,6 @@
     },
     pasos: function (n) { var d = data(n); return (d && d.pasos) ? d.pasos : null; },
     // Nombres "lindos" para sugerencias (datalist del panel).
-    nombres: ["Press de banca", "Remo con barra", "Sentadilla", "Sentadilla goblet", "Press militar", "Peso muerto", "Peso muerto rumano", "Curl de bíceps", "Fondos en paralelas", "Zancadas", "Hip thrust", "Dominadas", "Dominadas asistidas", "Remo en polea"]
+    nombres: ["Caminar", "Correr", "Trote", "Cinta", "Bicicleta fija", "Elíptica", "Saltar la cuerda", "Jumping jacks", "Movilidad articular", "Estiramientos", "Burpees", "Sentadilla sin peso", "Press de banca", "Remo con barra", "Sentadilla", "Sentadilla goblet", "Press militar", "Peso muerto", "Peso muerto rumano", "Curl de bíceps", "Fondos en paralelas", "Zancadas", "Hip thrust", "Dominadas", "Dominadas asistidas", "Remo en polea"]
   };
 })();
