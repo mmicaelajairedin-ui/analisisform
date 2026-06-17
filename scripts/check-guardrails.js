@@ -273,18 +273,19 @@ const RULES = [
     },
   },
   {
-    name: "login.html: NO lee password_hash con la anon key (Fase 4 RLS)",
-    bug: "El login viejo consultaba usuarios?...&password_hash=eq.<hash> con la " +
-         "anon key. Eso obliga a exponer password_hash a anon (cualquiera podria " +
-         "bajar todos los hashes). El login ahora verifica via Supabase Auth " +
-         "(signInWithPassword + migrate-user-to-auth). Esta regla evita volver al " +
-         "patron viejo.",
+    name: "login/registro: NO leen password_hash con la anon key (Fase 4 RLS)",
+    bug: "El login y el registro viejos leian password_hash con la anon key " +
+         "(login filtraba por &password_hash=eq; registro lo pedia en &select). " +
+         "Eso obliga a exponer la columna a anon (cualquiera baja los hashes). " +
+         "Ahora login verifica via Supabase Auth y registro usa la RPC " +
+         "pw_tiene_pass. Esta regla evita volver al patron viejo.",
     check() {
-      const s = read("login.html");
-      if (!s) return null;
-      return /password_hash=eq\./.test(s)
-        ? "login.html volvio a filtrar por password_hash con la anon key"
-        : null;
+      const offenders = [];
+      const login = read("login.html");
+      if (login && /password_hash=eq\./.test(login)) offenders.push("login.html (filtra por password_hash)");
+      const reg = read("registro.html");
+      if (reg && /usuarios\?[^"'`]*select=[^"'`]*password_hash/.test(reg)) offenders.push("registro.html (select password_hash)");
+      return offenders.length ? offenders.join("; ") : null;
     },
   },
 ];

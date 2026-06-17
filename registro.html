@@ -414,16 +414,27 @@ async function registrar(){
   try {
     var hash = await hashPassword(password);
 
-    // Verificar si el email ya existe en usuarios
-    var checkRes = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,password_hash,configuracion', {
+    // Verificar si el email ya existe en usuarios. NO leemos password_hash (está
+    // protegido a nivel columna); para saber si ya tiene contraseña usamos la
+    // función booleana pw_tiene_pass (no expone el hash).
+    var checkRes = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,configuracion', {
       headers: {'apikey': KEY, 'Authorization': 'Bearer ' + KEY}
     });
     var existing = await checkRes.json();
     // activatingRow: cuenta creada por el admin SIN contraseña (el coach la
     // activa eligiendo su contraseña). Si ya tiene contraseña → error normal.
     var activatingRow = null;
-    if(existing && existing.length > 0){
-      if(existing[0].password_hash){
+    if(Array.isArray(existing) && existing.length > 0){
+      var yaTienePass = false;
+      try {
+        var hpRes = await fetch(SB + '/rest/v1/rpc/pw_tiene_pass', {
+          method: 'POST',
+          headers: {'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json'},
+          body: JSON.stringify({p_email: email})
+        });
+        if(hpRes.ok) yaTienePass = (await hpRes.json()) === true;
+      } catch(e){}
+      if(yaTienePass){
         showError('Ya existe una cuenta con ese email.');
         btn.disabled = false; loading.style.display = 'none';
         return;
