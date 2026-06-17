@@ -34,6 +34,12 @@
 -- dinámico → no hay que enumerar columnas y aguanta cambios de esquema futuros.
 REVOKE SELECT ON public.usuarios FROM anon, authenticated;
 
+-- ⚠️ IMPORTANTE: este DO block (el re-grant por columna) DEBE correr junto con el
+-- REVNoKE de arriba. Si se corre solo el REVOKE, anon/authenticated quedan SIN
+-- lectura de NINGUNA columna → "permission denied for table usuarios" → se rompe
+-- el LOGIN (lee el perfil tras autenticar) y el DIRECTORIO público. Correr SIEMPRE
+-- el archivo completo. (Pasó en el rollout del 2026-06-16: se aplicó el REVOKE sin
+-- el GRANT y hubo que re-correr este bloque para restaurar la lectura.)
 DO $$
 DECLARE col text;
 BEGIN
