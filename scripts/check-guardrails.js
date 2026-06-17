@@ -256,6 +256,37 @@ const RULES = [
       return missing.length ? "les falta pw-observe.js: " + missing.join(", ") : null;
     },
   },
+  {
+    name: "pw-auth.js: el interceptor de RLS sigue subiendo el JWT a las tablas sensibles",
+    bug: "El cierre del gap de RLS depende de que pw-auth.js intercepte fetch y " +
+         "suba el Authorization al JWT del usuario para candidatos/informes/" +
+         "cv_publicados. Si se quita, esas paginas volverian a pegar con la anon " +
+         "key y, con RLS prendido, el panel/portal se quedarian sin datos (o, con " +
+         "RLS apagado, se reabre el gap). Esta regla evita borrarlo sin querer.",
+    check() {
+      const s = read("pw-auth.js");
+      if (!s) return "no existe pw-auth.js";
+      const hasTables = /candidatos\|informes\|cv_publicados/.test(s);
+      const wrapsFetch = /window\.fetch\s*=\s*function/.test(s);
+      return (hasTables && wrapsFetch) ? null
+        : "falta el interceptor de fetch para las tablas con RLS estricto";
+    },
+  },
+  {
+    name: "login.html: NO lee password_hash con la anon key (Fase 4 RLS)",
+    bug: "El login viejo consultaba usuarios?...&password_hash=eq.<hash> con la " +
+         "anon key. Eso obliga a exponer password_hash a anon (cualquiera podria " +
+         "bajar todos los hashes). El login ahora verifica via Supabase Auth " +
+         "(signInWithPassword + migrate-user-to-auth). Esta regla evita volver al " +
+         "patron viejo.",
+    check() {
+      const s = read("login.html");
+      if (!s) return null;
+      return /password_hash=eq\./.test(s)
+        ? "login.html volvio a filtrar por password_hash con la anon key"
+        : null;
+    },
+  },
 ];
 
 let failures = 0;

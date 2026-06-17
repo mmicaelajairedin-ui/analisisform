@@ -265,10 +265,47 @@ async function entrar(){
   loading.style.display='flex';
 
   try{
-    var hash=await hashPassword(password);
-    // Buscar sin filtrar por activo — asi distinguimos entre "credenciales mal"
-    // y "credenciales OK pero cuenta pendiente de pago"
-    var res=await fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&password_hash=eq.'+hash+'&select=id,email,rol,nombre,activo,configuracion,foto_url,bio,nombre_practica,auth_id',{
+    // ── Login vía Supabase Auth (Fase 4: ya NO leemos password_hash con la
+    //    anon key). La contraseña se verifica contra Supabase Auth. Si el
+    //    usuario todavía no está en Auth (o cambió la pass solo en la tabla
+    //    vieja), migrate-user-to-auth re-verifica el hash legacy server-side y
+    //    crea/sincroniza el auth user; entonces reintentamos el login. ────────
+    var _sbAuth=window.supabase.createClient(SB,KEY);
+    var _si=await _sbAuth.auth.signInWithPassword({email:email,password:password});
+    if(_si.error){
+      try{
+        var _mc=new AbortController();
+        var _mt=setTimeout(function(){_mc.abort();},8000);
+        var _mr=await fetch(SB+'/functions/v1/migrate-user-to-auth',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},
+          body:JSON.stringify({email:email,password:password}),
+          signal:_mc.signal
+        });
+        clearTimeout(_mt);
+        if(!_mr.ok){
+          // 401 = credenciales mal; otro = problema de red/servidor.
+          error.textContent = (_mr.status===401) ? TXT[_lng].err_wrong : TXT[_lng].err_net;
+          btn.disabled=false;loading.style.display='none';
+          return;
+        }
+      }catch(_e){
+        error.textContent=TXT[_lng].err_net;
+        btn.disabled=false;loading.style.display='none';
+        return;
+      }
+      // Reintentar ya con el auth user creado/sincronizado.
+      _si=await _sbAuth.auth.signInWithPassword({email:email,password:password});
+      if(_si.error){
+        error.textContent=TXT[_lng].err_wrong;
+        btn.disabled=false;loading.style.display='none';
+        return;
+      }
+    }
+    var _authUid=(_si.data && _si.data.user && _si.data.user.id) || null;
+
+    // Perfil propio (SIN password_hash). Con la sesión activa lo leemos por email.
+    var res=await fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&select=id,email,rol,nombre,activo,configuracion,foto_url,bio,nombre_practica,auth_id&limit=1',{
       headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
     });
     var rows=await res.json();
@@ -284,62 +321,23 @@ async function entrar(){
     // Paywall: si la cuenta esta inactiva (no pagaron o suscripcion vencida),
     // mostrar mensaje claro y CTA al Stripe en vez de error generico
     if(usuario.activo===false && usuario.rol!=='admin'){
-      var fromPopup = usuario.configuracion && usuario.configuracion.from_popup === true;
-      var stripeUrl = fromPopup
-        ? 'https://buy.stripe.com/9B6eVddqUd4c2YQfa38AE0c'
-        : 'https://buy.stripe.com/9B6eVddqUd4c2YQfa38AE0c';
+      var stripeUrl = 'https://buy.stripe.com/9B6eVddqUd4c2YQfa38AE0c';
       error.innerHTML = 'Tu cuenta está pendiente de pago. <a href="'+stripeUrl+'?prefilled_email='+encodeURIComponent(usuario.email)+'" style="color:var(--bosque);font-weight:600;text-decoration:underline;">Completar pago →</a>';
       btn.disabled=false;loading.style.display='none';
       return;
     }
     localStorage.setItem('mj_user',JSON.stringify({id:usuario.id,email:usuario.email,rol:usuario.rol,nombre:usuario.nombre,activo:usuario.activo,configuracion:usuario.configuracion||{},foto_url:usuario.foto_url||'',bio:usuario.bio||'',nombre_practica:usuario.nombre_practica||''}));
 
-    // ── Migración perezosa a Supabase Auth (Fase 1 del cierre de RLS) ────
-    // Si el usuario todavía no tiene auth_id, llamamos al edge function que
-    // lo crea/sincroniza en auth.users con su misma contraseña. Best-effort:
-    // si falla, el login normal sigue funcionando porque ya guardamos
-    // mj_user arriba. Después de unos días, casi todos los usuarios activos
-    // van a tener auth_id seteado y la Fase 2 puede hacer el switch.
-    if(!usuario.auth_id){
-      // IMPORTANTE: esperamos la migración con await ANTES de redirigir. Si se
-      // disparara fire-and-forget, la navegación a panel/cliente cancela la
-      // request (la function tarda ~1-2s hablando con Auth) y el auth_id nunca
-      // se guardaba. Timeout de 8s para no colgar el login si algo falla.
+    // Guardar auth_id si todavía no estaba (lo tenemos de la sesión recién creada).
+    if(!usuario.auth_id && _authUid){
       try{
-        var _mc=new AbortController();
-        var _mt=setTimeout(function(){_mc.abort();},8000);
-        var _mr=await fetch(SB+'/functions/v1/migrate-user-to-auth',{
-          method:'POST',
-          headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},
-          body:JSON.stringify({email:email,password:password}),
-          signal:_mc.signal
+        await fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(usuario.id),{
+          method:'PATCH',
+          headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body:JSON.stringify({auth_id:_authUid})
         });
-        clearTimeout(_mt);
-        if(_mr.ok){
-          var _md=await _mr.json();
-          if(_md && _md.ok && _md.auth_id){
-            await fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(usuario.id),{
-              method:'PATCH',
-              headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-              body:JSON.stringify({auth_id:_md.auth_id})
-            });
-          }
-        }
       }catch(_e){}
     }
-
-    // ── Establecer sesión de Supabase Auth (Fase A del cierre de RLS) ──────
-    // Con una sesión real, el panel y el portal leen con el JWT del usuario (no
-    // con la anon key). Cuando se prenda RLS estricto, cada coach/cliente ve
-    // solo lo suyo. Best-effort + timeout: si falla, el login sigue funcionando
-    // con la anon key mientras RLS esté apagado (no rompe nada).
-    try{
-      var _sbAuth=window.supabase.createClient(SB,KEY);
-      await Promise.race([
-        _sbAuth.auth.signInWithPassword({email:email,password:password}),
-        new Promise(function(r){setTimeout(r,6000);})
-      ]);
-    }catch(_e){}
 
     // Registrar el último acceso (best-effort). El panel admin lo lee de
     // configuracion.last_login para la columna "Último acceso" de coaches.
