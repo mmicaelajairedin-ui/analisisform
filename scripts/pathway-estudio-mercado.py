@@ -160,6 +160,11 @@ def build(path):
                         ("~53%","Coaches sin plataforma = la oportunidad"),
                         ("0 de 8","Competidores que TRAEN clientes")]))
     E.append(Spacer(1,8))
+    E.append(_box("<b>¿DONDE ESTAMOS PARADOS HOY?</b> (lo concreto, mas alla del mercado)<br/>"
+        "<b>Etapa:</b> producto construido y ancho (3 nichos, panel, portal, app Android, marketplace), pero <b>0 coaches pagando aun</b>. Estamos en el <b>0 -> 1</b>: conseguir las primeras que pagan. El reto no es el producto, es la traccion.<br/>"
+        "<b>El camino:</b> Idea [hecho] -> Producto [hecho] -> <b>&gt;&gt; PRIMERAS QUE PAGAN (estamos ACA)</b> -> Formula repetible -> Escala.<br/>"
+        "<b>Tus 4 numeros a mirar (hoy ~0):</b> coaches que pagan · coaches en prueba · % que de prueba pasa a pago · % que sigue al mes 2. El mercado (USD 5,34 B, etc.) es el FONDO DE CANCHA, no tu posicion."))
+    E.append(Spacer(1,8))
     E.append(Paragraph("Los 5 hallazgos", CAP))
     for t in [
       "<b>1. Mercado grande y en alza con una grieta.</b> El coaching crece a doble digito y la mitad de los coaches aun no usa software. El nicho carrera es el segmento mas grande de plataformas (~28%).",
@@ -285,14 +290,14 @@ def build(path):
     E.append(Paragraph("FITNESS — vs Trainerize / TrueCoach / Everfit / Harbiz", CAP))
     E.append(niche_table("Lideres fitness",[
         ("Gestion de clientes, agenda y cobros","si","si"),
-        ("App MOVIL nativa con tu marca (iOS/Android)","no","si"),
-        ("Biblioteca de videos de ejercicios (1.200+)","no","si"),
+        ("App movil propia (Android ya; iOS en camino)","part","si"),
+        ("Ejercicios con preview + descripcion","part","si"),
         ("Sync wearables (Apple Health, Garmin, Fitbit)","no","si"),
-        ("Macros/calorias con base de alimentos","no","si"),
-        ("Constructor de rutinas y dietas con IA","no","si"),
+        ("Conteo de macros/calorias con base de alimentos","no","si"),
+        ("Planes auto-generados por IA (ver nota)","part","si"),
         ("Antropometria detallada (grasa, musculo, IMO)","si","part"),
         ("Directorio que TRAE clientes","si","no")]))
-    E.append(Paragraph("<b>Lectura:</b> el nicho donde mas atras estamos. No le ganamos a Trainerize en profundidad; ganamos con 'todo en uno + te traigo clientes' y simplicidad. Gap #1: <b>app movil + videos de ejercicios</b>.", SMALL))
+    E.append(Paragraph("<b>Lectura:</b> estamos mas cerca de lo que parecia. Ya tenemos <b>app Android</b> (iOS en camino) y <b>ejercicios con preview y descripcion</b>. Falta vs los especialistas: iOS, biblioteca mas grande de videos, sync con wearables y conteo de macros. <b>Nota IA:</b> NO auto-generamos los planes con IA a proposito — del otro lado hay un coach real; la IA asiste (CV, informes, categorizacion), no reemplaza. Ese es el angulo: humano + herramientas, no un bot.", SMALL))
     E.append(Spacer(1,5))
     E.append(Paragraph("FINANZAS — vs YNAB / Monarch / RightCapital", CAP))
     E.append(niche_table("Lideres finanzas",[
