@@ -507,7 +507,7 @@ function _objCard(o,i){
     '<div class="gbar"><i id="gbar-'+i+'" style="width:'+pct+'%;transition:width .8s cubic-bezier(.22,.8,.3,1)"></i></div><div class="pct">te faltan €'+Math.round(falta)+ritmo+'</div>'+
     (o.porque?'<div style="font-size:12px;color:#555;margin-top:8px;font-style:italic">“'+esc(o.porque)+'”</div>':'')+
     (o.nota?'<div style="margin-top:8px;background:#f1f8f4;border-radius:8px;padding:8px 10px;font-size:12px;color:#1B4332"><b>💬 Tu coach:</b> '+esc(o.nota)+'</div>':'')+
-    '<div style="display:flex;gap:16px;margin-top:10px"><button onclick="objActual('+i+')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#2D6A4F">＋ actualizar avance</button><button onclick="objToggleThread('+i+')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#2D6A4F">💬 '+(hilo.length||'')+' comentarios</button></div>'+thread+'</div></div>';
+    '<div style="display:flex;gap:16px;margin-top:10px"><button onclick="coinOpen('+i+')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#2D6A4F;font-weight:600">🪙 meter plata</button><button onclick="objToggleThread('+i+')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#2D6A4F">💬 '+(hilo.length||'')+' comentarios</button></div>'+thread+'</div></div>';
 }
 function _objForm(){
   var O=_objLoad(), e=window._objEdit, cur=(e.id==='new')?{tipo:'viaje',nombre:'',meta:'',actual:'',fecha:'',porque:''}:(O[e.idx]||{});
@@ -541,6 +541,45 @@ function _objCelebrate(i, oldPct, newPct, delta, nombre){
   else if(newPct>oldPct && Math.floor(newPct/25)>Math.floor(oldPct/25)){ fireConfetti(); showToast('🔥 ¡'+(Math.floor(newPct/25)*25)+'% de '+nombre+'!'); }
   else if(delta>0){ showToast('💪 +€'+Math.round(delta)+' hacia '+nombre); }
 }
+// ── Alcancía: apretás la moneda y se mete en la meta, la barra se llena ──
+window.coinOpen=function(i){
+  var O=_objLoad(), o=O[i]; if(!o) return;
+  window._coinIdx=i; window._coinAdded=0; window._coinDenom=10;
+  window._coinOldA=parseFloat(o.actual)||0; window._coinMeta=parseFloat(o.meta)||0;
+  var nm=document.getElementById('coin-meta-name'); if(nm)nm.textContent=_objIco(o.tipo)+' '+(o.nombre||'Meta');
+  var denoms=[5,10,20,50,100];
+  var db=document.getElementById('coin-denoms'); if(db)db.innerHTML=denoms.map(function(d){ return '<button class="coin-denom'+(d===10?' on':'')+'" onclick="coinDenom('+d+')">€'+d+'</button>'; }).join('');
+  _coinUI();
+  var m=document.getElementById('coinModal'); if(m){ m.classList.add('on'); m.setAttribute('aria-hidden','false'); }
+};
+window.coinDenom=function(d){ window._coinDenom=d; var bs=document.querySelectorAll('#coin-denoms .coin-denom'); for(var k=0;k<bs.length;k++){ bs[k].classList.toggle('on', bs[k].textContent==='€'+d); } };
+window.coinPress=function(){
+  var d=window._coinDenom||10; window._coinAdded=(window._coinAdded||0)+d;
+  if(navigator.vibrate){ try{ navigator.vibrate(8); }catch(e){} }
+  var piggy=document.getElementById('coin-piggy');
+  if(piggy){ var f=document.createElement('span'); f.className='coin-fly'; f.textContent='🪙'; piggy.appendChild(f);
+    f.animate([{transform:'translateX(-50%) translateY(0) scale(1)',opacity:1},{transform:'translateX(-50%) translateY(54px) scale(.35)',opacity:0}],{duration:420,easing:'cubic-bezier(.4,.1,.6,1)'});
+    setTimeout(function(){ f.remove(); },440);
+    piggy.classList.remove('bounce'); void piggy.offsetWidth; piggy.classList.add('bounce'); }
+  _coinUI();
+};
+function _coinUI(){
+  var oldA=window._coinOldA||0, added=window._coinAdded||0, meta=window._coinMeta||0;
+  var running=oldA+added, pct=meta>0?Math.min(100,Math.round(running/meta*100)):0;
+  var r=document.getElementById('coin-running'); if(r)r.textContent='€'+Math.round(running);
+  var tg=document.getElementById('coin-target'); if(tg)tg.textContent=meta>0?('de €'+Math.round(meta)):'';
+  var fill=document.getElementById('coin-fill'); if(fill)fill.style.width=pct+'%';
+  var pc=document.getElementById('coin-pct'); if(pc)pc.textContent=(added>0?'+€'+Math.round(added)+' esta vez':'Elegí la moneda y apretá')+(meta>0?' · '+pct+'%':'');
+}
+window.coinCommit=function(){
+  var O=_objLoad(), i=window._coinIdx, o=O[i]; if(!o){ coinClose(); return; }
+  if(!(window._coinAdded>0)){ coinClose(); return; }
+  var oldA=parseFloat(o.actual)||0, meta=parseFloat(o.meta)||0, oldPct=meta>0?Math.min(100,Math.round(oldA/meta*100)):0;
+  var nv=oldA+(window._coinAdded||0); o.actual=nv; _objSave(O); coinClose(); renderObjetivos();
+  var newPct=meta>0?Math.min(100,Math.round(nv/meta*100)):0;
+  _objCelebrate(i, oldPct, newPct, window._coinAdded||0, o.nombre||'tu meta');
+};
+window.coinClose=function(){ var m=document.getElementById('coinModal'); if(m){ m.classList.remove('on'); m.setAttribute('aria-hidden','true'); } };
 window.objToggleThread=function(i){ window._objThread=(window._objThread===i)?null:i; renderObjetivos(); };
 window.objMsg=function(i){ var inp=document.getElementById('objmsg-'+i); if(!inp||!inp.value.trim()) return; var O=_objLoad(), o=O[i]; if(!o) return; o.hilo=Array.isArray(o.hilo)?o.hilo:[]; o.hilo.push({from:'cliente',text:inp.value.trim(),ts:Date.now()}); _objSave(O); renderObjetivos(); };
 function renderDiagnostico(d){
@@ -928,5 +967,18 @@ window.addEventListener('storage',function(e){ if(e.key==='pw_demo_financiero' &
 })();
 </script>
 <div class="toast" id="toast"></div>
+<div id="coinModal" class="coin-modal" aria-hidden="true">
+  <div class="coin-sheet">
+    <button class="coin-close" onclick="coinClose()" aria-label="Cerrar">✕</button>
+    <div class="coin-title" id="coin-meta-name">Meta</div>
+    <div class="coin-amt"><span id="coin-running">€0</span> <small id="coin-target"></small></div>
+    <div class="coin-piggy" id="coin-piggy">🐷</div>
+    <div class="coin-bar"><i id="coin-fill"></i></div>
+    <div class="coin-pct" id="coin-pct"></div>
+    <div class="coin-denoms" id="coin-denoms"></div>
+    <button class="coin-press" onclick="coinPress()">🪙 Apretá para meter</button>
+    <div class="coin-actions"><button class="btn btn-ghost" onclick="coinClose()" style="flex:1">Cancelar</button><button class="btn" onclick="coinCommit()" style="flex:1">Guardar</button></div>
+  </div>
+</div>
 </body>
 </html>
