@@ -452,11 +452,14 @@ function _objSave(arr){ if(_esDemo()){ try{ localStorage.setItem('pw_demo_fin_ob
 function _patLoad(){ if(_esDemo()){ try{ var v=localStorage.getItem('pw_demo_fin_patrimonio'); if(v){ var a=JSON.parse(v); if(Array.isArray(a)) return a; } }catch(e){} } try{ var g=JSON.parse((CRAW&&CRAW.fin_patrimonio)||'[]'); return Array.isArray(g)?g:[]; }catch(e){ return []; } }
 function _patSave(arr){ if(_esDemo()){ try{ localStorage.setItem('pw_demo_fin_patrimonio',JSON.stringify(arr)); }catch(e){} } if(CRAW) CRAW.fin_patrimonio=JSON.stringify(arr); if(CID){ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fin_patrimonio:JSON.stringify(arr)}).catch(function(){}); } }
 function _deudasTotal(){ try{ return (JSON.parse((CRAW&&CRAW.fin_deudas)||'[]')||[]).reduce(function(s,d){return s+(parseFloat(d.monto)||0);},0); }catch(e){ return 0; } }
-var _OBJ_TIPOS={viaje:'✈️',ahorro:'🛟',emprendimiento:'🚀',casa:'🏠',otro:'🎯'};
+var _OBJ_TIPOS={viaje:'✈️',ahorro:'🐷',emprendimiento:'🚀',casa:'🏠',otro:'🎯'};
 function _objIco(t){ return _OBJ_TIPOS[t]||'🎯'; }
-var _PAT_TIPOS={inversion:'📈',propiedad:'🏠',efectivo:'💵',ahorro:'🏦',otro:'📦'};
+var _PAT_TIPOS={inversion:'📈',propiedad:'🏢',efectivo:'💵',ahorro:'🏦',otro:'📦'};
 var _PAT_LBL={inversion:'Inversión',propiedad:'Propiedad',efectivo:'Efectivo/cuenta',ahorro:'Ahorro',otro:'Otro'};
 function _patIco(t){ return _PAT_TIPOS[t]||'📦'; }
+// ── Gamificación: confeti + toast (reusa .confetti/.toast de pathway-portal.css) ──
+function showToast(m){ var t=document.getElementById('toast'); if(!t) return; t.textContent=m; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(function(){t.classList.remove('on');},3200); }
+function fireConfetti(){ var c=['#2D6A4F','#52B788','#E9C46A','#A8633A','#2E7587']; for(var i=0;i<90;i++){ var d=document.createElement('div'); d.className='confetti'; d.style.left=(Math.random()*100)+'vw'; d.style.background=c[i%c.length]; document.body.appendChild(d); var f=1900+Math.random()*1400,x=(Math.random()-.5)*240; d.animate([{transform:'translate(0,0) rotate(0)',opacity:1},{transform:'translate('+x+'px,110vh) rotate('+(Math.random()*720)+'deg)',opacity:.9}],{duration:f,easing:'cubic-bezier(.25,.6,.5,1)'}); (function(e,m){setTimeout(function(){e.remove();},m);})(d,f); } }
 // ── Patrimonio ──
 function renderPatrimonio(){
   var box=document.getElementById('fin-patrimonio'); if(!box) return;
@@ -480,30 +483,35 @@ window.patAdd=function(){ window._patEdit={i:'new'}; renderPatrimonio(); };
 window.patEdit=function(i){ window._patEdit={i:i}; renderPatrimonio(); };
 window.patCancel=function(){ window._patEdit=null; renderPatrimonio(); };
 window.patDel=function(i){ var A=_patLoad(); A.splice(i,1); _patSave(A); renderPatrimonio(); };
-window.patSave=function(){ var A=_patLoad(), e=window._patEdit||{i:'new'}; var o={tipo:_fv('pat-tipo')||'otro',nombre:_fv('pat-nombre').trim(),valor:_fn('pat-valor')}; if(!o.nombre){ alert('Ponle un nombre al activo.'); return; } if(e.i==='new') A.push(o); else A[e.i]=o; _patSave(A); window._patEdit=null; renderPatrimonio(); };
+window.patSave=function(){ var A=_patLoad(), e=window._patEdit||{i:'new'}; var o={tipo:_fv('pat-tipo')||'otro',nombre:_fv('pat-nombre').trim(),valor:_fn('pat-valor')}; if(!o.nombre){ alert('Ponle un nombre al activo.'); return; } var isNew=(e.i==='new'); if(isNew) A.push(o); else A[e.i]=o; _patSave(A); window._patEdit=null; renderPatrimonio(); if(isNew && o.valor>0){ showToast('📈 Patrimonio +€'+Math.round(o.valor)); } };
 // ── Metas ──
 function renderObjetivos(){
   var box=document.getElementById('fin-goals'); if(!box) return;
   if(window._objEdit){ box.innerHTML=_objForm(); return; }
   var O=_objLoad();
-  box.innerHTML= O.length? O.map(_objCard).join('') : '<div style="font-size:12.5px;color:var(--muted);padding:8px 0">Todavía no hay metas. Tocá <b>+ nueva meta</b> y armá la primera: un viaje, un fondo, un emprendimiento… ✨</div>';
+  if(!O.length){ box.innerHTML='<div style="font-size:12.5px;color:var(--muted);padding:8px 0">Todavía no hay metas. Tocá <b>+ nueva meta</b> y armá la primera: un viaje, un fondo, un emprendimiento… ✨</div>'; return; }
+  var tMeta=0,tAct=0; O.forEach(function(o){ var m=parseFloat(o.meta)||0; tMeta+=m; tAct+=Math.min(parseFloat(o.actual)||0,m||Infinity); });
+  var tPct=tMeta>0?Math.min(100,Math.round(tAct/tMeta*100)):0;
+  var done=O.filter(function(o){ var m=parseFloat(o.meta)||0; return m>0&&(parseFloat(o.actual)||0)>=m; }).length;
+  var summary='<div class="card" style="margin-bottom:12px"><div class="card-body"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span class="eyebrow">Tu progreso de ahorro</span><span style="font-size:12px;color:var(--muted)">'+done+'/'+O.length+' metas'+(done?' 🏆':'')+'</span></div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><strong>€'+Math.round(tAct)+'</strong><span style="color:var(--muted)">de €'+Math.round(tMeta)+'</span></div><div class="gbar"><i style="width:'+tPct+'%"></i></div></div></div>';
+  box.innerHTML= summary+'<div class="fin-grid2">'+O.map(_objCard).join('')+'</div>';
 }
 function _objCard(o,i){
   var meta=parseFloat(o.meta)||0, act=parseFloat(o.actual)||0, pct=meta>0?Math.min(100,Math.round(act/meta*100)):0, falta=Math.max(0,meta-act), aporte=parseFloat(o.aporte)||0;
   var ritmo=(aporte>0&&falta>0)?' · al ritmo de €'+Math.round(aporte)+'/mes llegás en ~'+Math.ceil(falta/aporte)+' meses':'';
   var hilo=Array.isArray(o.hilo)?o.hilo:[], open=(window._objThread===i);
   var thread=open?('<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">'+(hilo.length?hilo.map(function(m){ var me=(m.from==='cliente'); return '<div style="margin:5px 0;display:flex;'+(me?'justify-content:flex-end':'')+'"><div style="max-width:82%;font-size:12px;padding:7px 10px;border-radius:10px;background:'+(me?'#2D6A4F':'#eef1ee')+';color:'+(me?'#fff':'#333')+'">'+esc(m.text)+'</div></div>'; }).join(''):'<div style="font-size:11.5px;color:var(--muted);padding:4px 0">Sin comentarios. Escribile a tu coach sobre esta meta.</div>')+'<div style="display:flex;gap:8px;margin-top:8px"><input id="objmsg-'+i+'" placeholder="Escribí un comentario…" style="flex:1;height:34px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:12.5px"><button onclick="objMsg('+i+')" class="btn" style="padding:0 14px;height:34px;font-size:12px">Enviar</button></div></div>'):'';
-  return '<div class="card" style="margin-bottom:12px"><div class="card-body">'+
+  return '<div class="card" style="margin:0"><div class="card-body">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:22px">'+_objIco(o.tipo)+'</span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">'+esc(o.nombre||'Meta')+'</div>'+(o.fecha?'<div style="font-size:11px;color:var(--muted)">para '+esc(o.fecha)+'</div>':'')+'</div><button onclick="objEdit('+i+')" style="background:none;border:none;cursor:pointer;font-size:13px" title="Editar">✏️</button><button onclick="objDel('+i+')" style="background:none;border:none;cursor:pointer;color:#b5651d;font-size:14px" title="Borrar">✕</button></div>'+
     '<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span style="color:var(--muted)">€'+Math.round(act)+' de €'+Math.round(meta)+'</span><strong>'+pct+'%</strong></div>'+
-    '<div class="gbar"><i style="width:'+pct+'%"></i></div><div class="pct">te faltan €'+Math.round(falta)+ritmo+'</div>'+
+    '<div class="gbar"><i id="gbar-'+i+'" style="width:'+pct+'%;transition:width .8s cubic-bezier(.22,.8,.3,1)"></i></div><div class="pct">te faltan €'+Math.round(falta)+ritmo+'</div>'+
     (o.porque?'<div style="font-size:12px;color:#555;margin-top:8px;font-style:italic">“'+esc(o.porque)+'”</div>':'')+
     (o.nota?'<div style="margin-top:8px;background:#f1f8f4;border-radius:8px;padding:8px 10px;font-size:12px;color:#1B4332"><b>💬 Tu coach:</b> '+esc(o.nota)+'</div>':'')+
     '<div style="display:flex;gap:16px;margin-top:10px"><button onclick="objActual('+i+')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#2D6A4F">＋ actualizar avance</button><button onclick="objToggleThread('+i+')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#2D6A4F">💬 '+(hilo.length||'')+' comentarios</button></div>'+thread+'</div></div>';
 }
 function _objForm(){
   var O=_objLoad(), e=window._objEdit, cur=(e.id==='new')?{tipo:'viaje',nombre:'',meta:'',actual:'',fecha:'',porque:''}:(O[e.idx]||{});
-  var topts=[['viaje','✈️ Viaje'],['ahorro','🛟 Fondo / ahorro'],['emprendimiento','🚀 Emprendimiento'],['casa','🏠 Casa / propiedad'],['otro','🎯 Otro']].map(function(t){ return '<option value="'+t[0]+'"'+(cur.tipo===t[0]?' selected':'')+'>'+t[1]+'</option>'; }).join('');
+  var topts=[['viaje','✈️ Viaje'],['ahorro','🐷 Fondo / ahorro'],['emprendimiento','🚀 Emprendimiento'],['casa','🏠 Casa / propiedad'],['otro','🎯 Otro']].map(function(t){ return '<option value="'+t[0]+'"'+(cur.tipo===t[0]?' selected':'')+'>'+t[1]+'</option>'; }).join('');
   return '<div class="card"><div class="card-body"><div class="eyebrow" style="margin-bottom:10px">'+(e.id==='new'?'Nueva meta':'Editar meta')+'</div>'+
     '<select id="obj-tipo" style="'+_IST+';margin-bottom:8px">'+topts+'</select>'+
     '<input id="obj-nombre" placeholder="Nombre (ej: Viaje a Japón)" value="'+esc(cur.nombre)+'" style="'+_IST+';margin-bottom:8px">'+
@@ -517,7 +525,22 @@ window.objEdit=function(i){ window._objEdit={id:'edit',idx:i}; renderObjetivos()
 window.objCancel=function(){ window._objEdit=null; renderObjetivos(); };
 window.objDel=function(i){ var O=_objLoad(); O.splice(i,1); _objSave(O); renderObjetivos(); };
 window.objSaveForm=function(){ var O=_objLoad(), e=window._objEdit||{id:'new'}; var g={tipo:_fv('obj-tipo'),nombre:_fv('obj-nombre').trim(),meta:_fn('obj-meta'),actual:_fn('obj-actual'),fecha:_fv('obj-fecha').trim(),porque:_fv('obj-porque').trim()}; if(!g.nombre){ alert('Ponle un nombre a la meta.'); return; } if(e.id==='new'){ g.hilo=[]; O.push(g); } else { var old=O[e.idx]||{}; g.aporte=old.aporte; g.nota=old.nota; g.hilo=old.hilo||[]; O[e.idx]=g; } _objSave(O); window._objEdit=null; renderObjetivos(); };
-window.objActual=function(i){ var O=_objLoad(), o=O[i]; if(!o) return; var v=prompt('¿Cuánto llevás ahorrado para "'+(o.nombre||'esta meta')+'"? (€)', o.actual!=null?o.actual:''); if(v==null) return; o.actual=parseFloat((''+v).replace(',','.'))||0; _objSave(O); renderObjetivos(); };
+window.objActual=function(i){
+  var O=_objLoad(), o=O[i]; if(!o) return;
+  var meta=parseFloat(o.meta)||0, oldA=parseFloat(o.actual)||0, oldPct=meta>0?Math.min(100,Math.round(oldA/meta*100)):0;
+  var v=prompt('¿Cuánto llevás ahorrado para "'+(o.nombre||'esta meta')+'"? (€)', o.actual!=null?o.actual:'');
+  if(v==null) return;
+  var nv=parseFloat((''+v).replace(',','.'))||0; o.actual=nv; _objSave(O); renderObjetivos();
+  var newPct=meta>0?Math.min(100,Math.round(nv/meta*100)):0;
+  _objCelebrate(i, oldPct, newPct, nv-oldA, o.nombre||'tu meta');
+};
+function _objCelebrate(i, oldPct, newPct, delta, nombre){
+  var bar=document.getElementById('gbar-'+i);
+  if(bar){ bar.style.width=oldPct+'%'; requestAnimationFrame(function(){ requestAnimationFrame(function(){ bar.style.width=newPct+'%'; }); }); }
+  if(newPct>=100 && oldPct<100){ fireConfetti(); showToast('🎉 ¡Meta cumplida: '+nombre+'!'); }
+  else if(newPct>oldPct && Math.floor(newPct/25)>Math.floor(oldPct/25)){ fireConfetti(); showToast('🔥 ¡'+(Math.floor(newPct/25)*25)+'% de '+nombre+'!'); }
+  else if(delta>0){ showToast('💪 +€'+Math.round(delta)+' hacia '+nombre); }
+}
 window.objToggleThread=function(i){ window._objThread=(window._objThread===i)?null:i; renderObjetivos(); };
 window.objMsg=function(i){ var inp=document.getElementById('objmsg-'+i); if(!inp||!inp.value.trim()) return; var O=_objLoad(), o=O[i]; if(!o) return; o.hilo=Array.isArray(o.hilo)?o.hilo:[]; o.hilo.push({from:'cliente',text:inp.value.trim(),ts:Date.now()}); _objSave(O); renderObjetivos(); };
 function renderDiagnostico(d){
@@ -904,5 +927,6 @@ pwInit();
 window.addEventListener('storage',function(e){ if(e.key==='pw_demo_financiero' && _esDemo()) location.reload(); });
 })();
 </script>
+<div class="toast" id="toast"></div>
 </body>
 </html>
