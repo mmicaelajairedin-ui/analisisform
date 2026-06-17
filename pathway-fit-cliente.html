@@ -24,6 +24,16 @@
 .super-cat ul{list-style:none;margin:0;padding:0;}
 .super-cat li{display:flex;align-items:center;gap:7px;font-size:13px;padding:2px 0;color:var(--text);}
 .super-cat li::before{content:'';width:13px;height:13px;border:1.5px solid var(--border);border-radius:3px;flex-shrink:0;}
+/* Plan de la semana: un bloque por día (estilo similar a los días del gym). */
+.nutri-day{margin-bottom:12px;}
+.nutri-day:last-child{margin-bottom:0;}
+.nutri-day-h{font-size:11px;font-weight:700;color:var(--rose);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;}
+.nutri-day-m{font-size:13px;color:var(--text);line-height:1.55;}
+/* Lista del súper desplegable */
+#nutri-super-card details>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;}
+#nutri-super-card details>summary::-webkit-details-marker{display:none;}
+#nutri-super-card details>summary .chev{transition:transform .2s;color:var(--muted);font-size:12px;}
+#nutri-super-card details[open]>summary .chev{transform:rotate(180deg);}
 .gym-rail{position:sticky;top:14px;}
 .gym-rail-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 4px 16px rgba(0,0,0,.04);}
 .gym-rail-h{font-family:var(--serif);font-size:15px;color:var(--text);margin-bottom:12px;}
@@ -283,14 +293,13 @@
       <!-- ===== NUTRICIÓN ===== -->
       <section class="sec" id="s-nutricion">
         <p class="h-hero">Nutrición</p>
-        <p class="h-sub">Tu plan de comidas, día por día.</p>
-        <div class="weekpick" id="nutri-days"></div>
+        <p class="h-sub">Tu plan de comidas de la semana.</p>
         <div class="nutri-2col">
-          <!-- Columna izquierda: el plan + lo que comió -->
+          <!-- Columna izquierda: el plan de la semana + lo que comió -->
           <div style="display:flex;flex-direction:column;gap:14px;">
             <div class="card"><div class="card-body" style="padding:14px 16px;">
-              <span class="eyebrow">Plan del día</span>
-              <div id="nutri-plan" style="font-size:13.5px;color:var(--text);line-height:1.6;white-space:pre-wrap;margin-top:6px;">Tu coach todavía no cargó tu plan.</div>
+              <span class="eyebrow">Plan de la semana</span>
+              <div id="nutri-plan" style="margin-top:8px;">Tu coach todavía no cargó tu plan.</div>
             </div></div>
             <div class="card"><div class="card-body" style="padding:14px 16px;">
               <span class="eyebrow">Lo que comí</span>
@@ -307,9 +316,11 @@
               <button class="btn btn-sm" id="nutri-track-btn" onclick="toggleNutriHoy()">Marcar como cumplido</button>
             </div></div>
             <div class="card" id="nutri-super-card"><div class="card-body" style="padding:14px 16px;">
-              <span class="eyebrow">🛒 Lista del súper</span>
-              <p style="font-size:11.5px;color:var(--muted);margin:4px 0 8px;">Generada con IA de tu plan de la semana.</p>
-              <div id="nutri-super" style="font-size:13px;color:var(--text);">…</div>
+              <details open>
+                <summary><span class="eyebrow">🛒 Lista del súper</span><span class="chev">▾</span></summary>
+                <p style="font-size:11.5px;color:var(--muted);margin:8px 0;">Generada con IA de tu plan de la semana.</p>
+                <div id="nutri-super" style="font-size:13px;color:var(--text);">…</div>
+              </details>
             </div></div>
             <div id="nutri-pautas-card"></div>
           </div>
@@ -721,11 +732,21 @@ function applyNutricion(c){
   } }catch(e){ NUT={dias:{},pautas:''}; }
   try{ NLOG=JSON.parse((c&&c.fit_nutri_log)||'{}')||{}; }catch(e){ NLOG={}; }
   if(!NUTDAY) NUTDAY=['dom','lun','mar','mie','jue','vie','sab'][new Date().getDay()]||'lun';
-  var ds=document.getElementById('nutri-days');
-  if(ds) ds.innerHTML=_NDAYLIST.map(function(d){ return '<button class="wk'+(d[0]===NUTDAY?' on':'')+'" onclick="selNutriDay(\''+d[0]+'\')">'+d[1]+'</button>'; }).join('');
+  _renderWeekPlan();
   var pc=document.getElementById('nutri-pautas-card');
   if(pc) pc.innerHTML=(NUT.pautas&&(''+NUT.pautas).trim())?'<div class="card"><div class="card-body" style="padding:14px 16px;"><span class="eyebrow">Pautas</span><div style="font-size:13.5px;color:var(--text);line-height:1.55;white-space:pre-wrap;margin-top:6px;">'+esc(NUT.pautas)+'</div></div></div>':'';
-  selNutriDay(NUTDAY);
+  var lg=document.getElementById('nutri-log'); if(lg) lg.value=(NLOG&&NLOG[NUTDAY])||'';
+}
+var _NDAYFULL={lun:'Lunes',mar:'Martes',mie:'Miércoles',jue:'Jueves',vie:'Viernes',sab:'Sábado',dom:'Domingo'};
+// Plan de TODA la semana (como el gym muestra todos los días), en vez de uno por día.
+function _renderWeekPlan(){
+  var box=document.getElementById('nutri-plan'); if(!box) return;
+  var dias=(NUT&&NUT.dias)||{};
+  var html=['lun','mar','mie','jue','vie','sab','dom'].map(function(k){
+    var v=(dias[k]||'').trim(); if(!v) return '';
+    return '<div class="nutri-day"><div class="nutri-day-h">'+esc(_NDAYFULL[k])+'</div><div class="nutri-day-m">'+esc(v).replace(/\n/g,'<br>')+'</div></div>';
+  }).filter(Boolean).join('');
+  box.innerHTML=html||'<span style="color:var(--muted)">Tu coach todavía no cargó tu plan.</span>';
 }
 // ── Lista del súper (IA) — arma una lista de compras del plan de comidas de la
 //    semana, agrupada por sección. Se cachea en localStorage por hash del plan
