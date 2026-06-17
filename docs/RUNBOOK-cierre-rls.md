@@ -118,6 +118,41 @@ solo la **lectura** de esa columna (permisos a nivel columna).
 
 ---
 
+## Fase 5 — Endurecimiento de `usuarios` (cierra el takeover)
+
+Cierra el agujero CRÍTICO: con la anon key cualquiera podía `PATCH usuarios` y
+robar una cuenta / ponerse admin. Reemplaza las políticas abiertas por políticas
+acotadas por identidad/rol.
+
+**Código ya hecho** (en la rama):
+- `login.html` → lee/escribe su fila con el **JWT** de la sesión (no anon).
+- `formulario.html` → intake con `ignore-duplicates` (sin UPDATE anónimo).
+- `registro.html` → no lee `password_hash` (Fase 4).
+- Migración: `usuarios_hardening.sql`.
+
+### Pasos (probar EN VIVO cada flujo, igual que Fase 3)
+1. **Deploy del frontend** (mergear a `main`).
+2. **Verificar con las políticas VIEJAS todavía activas** (el frontend nuevo es
+   compatible): login coach, login cliente, activar coach invitado, alta por
+   formulario, crear/ver acceso de cliente en el panel, directorio público.
+3. **Correr `usuarios_hardening.sql`** en Supabase → SQL Editor.
+4. **RE-verificar los MISMOS flujos.** Además el candado:
+   - anon `…/usuarios?select=*` → solo coaches/admin (NO clientes).
+   - anon `…/usuarios?select=email&rol=eq.cliente` → `[]`.
+5. **ROLLBACK** al final del `.sql` si algo falla (restaura las políticas abiertas).
+
+### ⚠️ Casos borde a vigilar en el test (confianza media)
+- **Login de Google con alias** (un coach con 2 emails que fusiona en
+  `auth-callback`): el merge actualiza la fila del OTRO email → bajo las políticas
+  nuevas un no-admin no puede. Probar; si se rompe, mover ese merge a una edge
+  function con service_role.
+- **Reactivación de cuenta propia (`activo`)**: `usuarios_self_update` no deja
+  ponerse `rol=admin`, pero no bloquea cambiar `activo`. Si se quiere blindar el
+  paywall, revocar `UPDATE (activo, rol)` a `authenticated` (ojo: registro activa
+  como anon y escribe esas columnas, así que el revoke es solo para authenticated).
+
+---
+
 ## Notas / límites conocidos
 - **Sesión vencida con RLS prendido:** si a un usuario se le vence el token, sus
   lecturas devuelven vacío (no error). Solución: volver a iniciar sesión. (Mejora

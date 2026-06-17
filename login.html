@@ -303,10 +303,14 @@ async function entrar(){
       }
     }
     var _authUid=(_si.data && _si.data.user && _si.data.user.id) || null;
+    // Token de la sesión recién creada: lo usamos para leer/escribir la PROPIA
+    // fila de usuarios (las políticas RLS "tu propia fila" lo necesitan; con la
+    // anon key, tras el hardening, un cliente no podría leer su fila).
+    var _jwt=(_si.data && _si.data.session && _si.data.session.access_token) || KEY;
 
     // Perfil propio (SIN password_hash). Con la sesión activa lo leemos por email.
     var res=await fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&select=id,email,rol,nombre,activo,configuracion,foto_url,bio,nombre_practica,auth_id&limit=1',{
-      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+      headers:{'apikey':KEY,'Authorization':'Bearer '+_jwt}
     });
     var rows=await res.json();
 
@@ -333,7 +337,7 @@ async function entrar(){
       try{
         await fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(usuario.id),{
           method:'PATCH',
-          headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+          headers:{'apikey':KEY,'Authorization':'Bearer '+_jwt,'Content-Type':'application/json','Prefer':'return=minimal'},
           body:JSON.stringify({auth_id:_authUid})
         });
       }catch(_e){}
@@ -346,7 +350,7 @@ async function entrar(){
         var _cfg=Object.assign({}, usuario.configuracion||{}, {last_login:new Date().toISOString()});
         await fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(usuario.id),{
           method:'PATCH',
-          headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+          headers:{'apikey':KEY,'Authorization':'Bearer '+_jwt,'Content-Type':'application/json','Prefer':'return=minimal'},
           body:JSON.stringify({configuracion:_cfg})
         });
       }catch(e){}
