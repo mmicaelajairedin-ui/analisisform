@@ -268,6 +268,21 @@ const RULES = [
         : "falta el interceptor de fetch para las tablas con RLS estricto";
     },
   },
+  {
+    name: "login.html: NO lee password_hash con la anon key (Fase 4 RLS)",
+    bug: "El login viejo consultaba usuarios?...&password_hash=eq.<hash> con la " +
+         "anon key. Eso obliga a exponer password_hash a anon (cualquiera podria " +
+         "bajar todos los hashes). El login ahora verifica via Supabase Auth " +
+         "(signInWithPassword + migrate-user-to-auth). Esta regla evita volver al " +
+         "patron viejo.",
+    check() {
+      const s = read("login.html");
+      if (!s) return null;
+      return /password_hash=eq\./.test(s)
+        ? "login.html volvio a filtrar por password_hash con la anon key"
+        : null;
+    },
+  },
 ];
 
 let failures = 0;

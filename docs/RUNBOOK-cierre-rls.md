@@ -78,13 +78,53 @@ Todo vuelve a como estaba en segundos. Después investigamos con calma.
 
 ---
 
+---
+
+## Fase 4 — Proteger `usuarios.password_hash`
+
+El dato sensible de `usuarios` es **una sola columna**: `password_hash` (hashes
+SHA-256, crackeables si alguien los baja). NO prendemos RLS de fila en `usuarios`
+(rompería el directorio público, el intake y el registro). En su lugar, cortamos
+solo la **lectura** de esa columna (permisos a nivel columna).
+
+**Código ya hecho** (en esta rama):
+- `login.html`: verifica la contraseña vía **Supabase Auth** (`signInWithPassword`
+  + `migrate-user-to-auth`), ya **no** consulta `password_hash` con la anon key.
+  Funciona igual antes y después de la migración.
+- `panel-v2.html`: el botón "ver acceso" usa la función `pw_tiene_pass()` (devuelve
+  un booleano) en vez de leer el hash.
+- Migración: `usuarios_protect_password.sql`.
+
+### Pasos (mismo patrón: deploy → verificar → migrar → verificar)
+1. **Deploy del frontend** (mergear a `main`). El login nuevo funciona aunque la
+   migración todavía no se haya corrido.
+2. **Verificar en producción CON la migración TODAVÍA sin correr:**
+   - [ ] Login de **coach** funciona (entra al panel).
+   - [ ] Login de **cliente** funciona (entra a su portal, carrera y nicho).
+   - [ ] Login con contraseña **incorrecta** muestra "credenciales mal".
+   - [ ] Alta de candidato por `formulario.html` (crea el login del cliente).
+   - [ ] En el panel, "crear acceso / ver acceso" de un cliente funciona.
+   👉 Si algo falla acá, revertí el merge (no tocaste la base).
+3. **Correr `usuarios_protect_password.sql`** en Supabase → SQL Editor.
+4. **Re-verificar** lo de arriba + el candado:
+   - En una consola sin login: `SELECT password_hash FROM usuarios LIMIT 1;` debe
+     **fallar** (permiso denegado). Y `SELECT id,nombre FROM usuarios WHERE rol='coach'`
+     debe **seguir andando** (directorio público).
+5. **ROLLBACK** si algo se rompe:
+   ```sql
+   GRANT SELECT ON public.usuarios TO anon, authenticated;
+   DROP FUNCTION IF EXISTS public.pw_tiene_pass(text);
+   ```
+
+---
+
 ## Notas / límites conocidos
 - **Sesión vencida con RLS prendido:** si a un usuario se le vence el token, sus
   lecturas devuelven vacío (no error). Solución: volver a iniciar sesión. (Mejora
   futura: avisar "iniciá sesión de nuevo" cuando no hay token.)
-- **`usuarios` NO se blinda en este paso** (a propósito): el login viejo todavía
-  consulta `usuarios` con la anon key antes de tener sesión. El dato sensible ahí
-  es `password_hash`. Cerrarlo es la **Fase 4** (otra migración), después de que el
-  login deje de leer `password_hash` con anon. No urge como las 3 tablas de datos.
 - **`hub.html` y portales de nicho** (`pathway-fit/fin-cliente.html`) ya incluyen
   `pw-auth.js`, así que el interceptor también los cubre.
+- **Orden entre fases:** la Fase 4 (login vía Auth) y la Fase 3 (RLS en las 3
+  tablas) son independientes, pero ambas dependen de que el frontend autenticado
+  esté deployado. Se pueden correr las dos migraciones en la misma ventana, una
+  después de la otra, verificando entre cada una.
