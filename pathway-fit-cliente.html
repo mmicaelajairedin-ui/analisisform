@@ -16,6 +16,14 @@
 <style>
 /* Gym en dos columnas: rutina a la izquierda, logros de la semana a la derecha. */
 .gym-2col{display:grid;grid-template-columns:1fr 270px;gap:18px;align-items:start;}
+/* Nutrición en dos columnas: plan a la izquierda, lista del súper a la derecha. */
+.nutri-2col{display:grid;grid-template-columns:1fr 280px;gap:14px;align-items:start;}
+@media(max-width:880px){ .nutri-2col{grid-template-columns:1fr;} }
+.super-cat{margin-bottom:10px;}
+.super-cat-h{font-size:11px;font-weight:700;color:var(--rose);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.super-cat ul{list-style:none;margin:0;padding:0;}
+.super-cat li{display:flex;align-items:center;gap:7px;font-size:13px;padding:2px 0;color:var(--text);}
+.super-cat li::before{content:'';width:13px;height:13px;border:1.5px solid var(--border);border-radius:3px;flex-shrink:0;}
 .gym-rail{position:sticky;top:14px;}
 .gym-rail-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 4px 16px rgba(0,0,0,.04);}
 .gym-rail-h{font-family:var(--serif);font-size:15px;color:var(--text);margin-bottom:12px;}
@@ -277,10 +285,17 @@
         <p class="h-hero">Nutrición</p>
         <p class="h-sub">Tu plan de comidas, día por día.</p>
         <div class="weekpick" id="nutri-days"></div>
-        <div class="card"><div class="card-body" style="padding:14px 16px;">
-          <span class="eyebrow">Plan del día</span>
-          <div id="nutri-plan" style="font-size:13.5px;color:var(--text);line-height:1.6;white-space:pre-wrap;margin-top:6px;">Tu coach todavía no cargó tu plan.</div>
-        </div></div>
+        <div class="nutri-2col">
+          <div class="card"><div class="card-body" style="padding:14px 16px;">
+            <span class="eyebrow">Plan del día</span>
+            <div id="nutri-plan" style="font-size:13.5px;color:var(--text);line-height:1.6;white-space:pre-wrap;margin-top:6px;">Tu coach todavía no cargó tu plan.</div>
+          </div></div>
+          <div class="card" id="nutri-super-card"><div class="card-body" style="padding:14px 16px;">
+            <span class="eyebrow">🛒 Lista del súper</span>
+            <p style="font-size:11.5px;color:var(--muted);margin:4px 0 8px;">Generada con IA de tu plan de la semana.</p>
+            <div id="nutri-super" style="font-size:13px;color:var(--text);">…</div>
+          </div></div>
+        </div>
         <div class="card"><div class="card-body" style="padding:14px 16px;">
           <span class="eyebrow">Lo que comí</span>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 8px;">Anota si comiste algo distinto al plan — tu coach lo ve.</p>
@@ -360,6 +375,8 @@ function go(s){
   document.querySelectorAll('.bnav-item').forEach(b=>b.classList.toggle('on',b.dataset.s===s));
   document.querySelector('.main').scrollTo({top:0,behavior:'smooth'});
   if(window.innerWidth<=900 && document.getElementById('sb').classList.contains('open')) toggleSb();
+  // Lista del súper: se genera (perezosa) al abrir Nutrición; cacheada después.
+  if(s==='nutricion' && typeof renderListaSuper==='function') renderListaSuper();
 }
 function toggleSb(){ document.getElementById('sb').classList.toggle('open'); document.getElementById('ov').classList.toggle('open'); }
 function toggleEx(el){
@@ -695,6 +712,38 @@ function applyNutricion(c){
   var pc=document.getElementById('nutri-pautas-card');
   if(pc) pc.innerHTML=(NUT.pautas&&(''+NUT.pautas).trim())?'<div class="card"><div class="card-body" style="padding:14px 16px;"><span class="eyebrow">Pautas</span><div style="font-size:13.5px;color:var(--text);line-height:1.55;white-space:pre-wrap;margin-top:6px;">'+esc(NUT.pautas)+'</div></div></div>':'';
   selNutriDay(NUTDAY);
+}
+// ── Lista del súper (IA) — arma una lista de compras del plan de comidas de la
+//    semana, agrupada por sección. Se cachea en localStorage por hash del plan
+//    (solo se regenera si el coach cambia las comidas). Llamada perezosa desde go().
+function _superHash(s){ var h=5381; for(var i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))|0; } return (h>>>0).toString(36); }
+function _superRender(out){
+  var box=document.getElementById('nutri-super'); if(!box) return;
+  if(!out||!out.categorias||!out.categorias.length){ box.innerHTML='<p style="font-size:12px;color:var(--muted)">'+esc((out&&out.nota)||'Tu coach todavía no cargó tu plan.')+'</p>'; return; }
+  var html=out.categorias.map(function(c){
+    var items=(c.items||[]).map(function(it){ return '<li>'+esc(it)+'</li>'; }).join('');
+    return '<div class="super-cat"><div class="super-cat-h">'+esc(c.nombre||'')+'</div><ul>'+items+'</ul></div>';
+  }).join('');
+  if(out.nota) html+='<p style="font-size:11px;color:var(--muted);margin-top:6px;">'+esc(out.nota)+'</p>';
+  box.innerHTML=html;
+}
+function renderListaSuper(){
+  var box=document.getElementById('nutri-super'); if(!box) return;
+  var dias=(typeof NUT!=='undefined'&&NUT&&NUT.dias)||{}; var parts=[];
+  ['lun','mar','mie','jue','vie','sab','dom'].forEach(function(k){ var v=(dias[k]||'').trim(); if(v && parts.indexOf(v)<0) parts.push(v); });
+  var plan=(parts.join('\n')+((NUT&&NUT.pautas)?('\n'+NUT.pautas):'')).trim();
+  if(!plan){ box.innerHTML='<p style="font-size:12px;color:var(--muted)">Tu coach todavía no cargó tu plan.</p>'; return; }
+  var key='mj_superlista_'+_superHash(plan);
+  try{ var cached=localStorage.getItem(key); if(cached){ _superRender(JSON.parse(cached)); return; } }catch(e){}
+  box.innerHTML='<p style="font-size:12px;color:var(--muted)">Armando tu lista…</p>';
+  fetch(SB+'/functions/v1/lista-super',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({plan:plan})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(out){
+      if(!out||out.error){ box.innerHTML='<p style="font-size:12px;color:var(--muted)">No se pudo generar la lista ahora. <a href="#" onclick="renderListaSuper();return false;" style="color:var(--rose);font-weight:600">Reintentar</a></p>'; return; }
+      try{ localStorage.setItem(key, JSON.stringify(out)); }catch(e){}
+      _superRender(out);
+    })
+    .catch(function(){ box.innerHTML='<p style="font-size:12px;color:var(--muted)">No se pudo generar la lista ahora.</p>'; });
 }
 function selNutriDay(k){
   NUTDAY=k;
