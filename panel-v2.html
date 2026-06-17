@@ -139,6 +139,7 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .cp-demo-switch-btn{flex:1;padding:6px 4px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:transparent;color:#fff;font-size:11px;font-weight:500;cursor:pointer;}
 .cp-demo-switch-btn.on{border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.16);font-weight:700;}
 .cp-side-nav{display:flex;flex-direction:column;gap:2px;}
+.cp-nav-cli{display:none;} /* en desktop la nav del cliente vive en la ficha; solo aparece como barra inferior en móvil */
 .cp-side-nav-item{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13px;font-weight:500;color:rgba(255,255,255,.78);transition:all .15s var(--pw-ease);width:100%;text-align:left;cursor:pointer;border:none;background:transparent;position:relative;}
 .cp-side-nav-item:hover{background:rgba(255,255,255,.08);color:#fff;}
 .cp-side-nav-item.is-active{background:rgba(255,255,255,.14);color:#fff;font-weight:600;}
@@ -654,6 +655,13 @@ input,textarea,select{font-family:inherit;color:inherit;}
   .cp-side-nav-item.is-active{ background:rgba(255,255,255,.16); }
   .cp-side-nav-item.is-active::before{ display:none; }
   .cp-side-nav-item .cp-side-nav-icon{ width:21px; height:21px; }
+  /* Barra contextual: al entrar a un cliente, abajo salen SUS pestañas (no las del panel). */
+  .cp-side.cli-open .cp-nav-app{ display:none; }
+  .cp-side.cli-open .cp-nav-cli{ display:flex; flex:1; }
+  .cp-nav-cli .cp-side-nav-item{ font-size:8.5px; padding:8px 1px; }
+  .cp-nav-cli .cp-side-nav-item > span:last-child{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* El menú vertical del cliente (dentro de la ficha) se oculta en móvil: ahora va abajo. */
+  .cp-ficha-layout3 > .cp-cfg-nav{ display:none; }
   .cp-topbar{ flex-direction:column; align-items:stretch; gap:14px; }
   .cp-topbar-actions{ flex-wrap:wrap; }
   .cp-search{ width:100%; }
@@ -1396,6 +1404,11 @@ function _gameLoop(){
   _gameRAF=requestAnimationFrame(_gameLoop);
 }
 /* ═══ Sidebar ═══ */
+// Nicho y pestañas del cliente (fuente única: la usa la ficha y la barra móvil contextual).
+function _cliNicho(c){ return _isDemoCoach() ? (state.demoTipo||'carrera') : ((c&&c.raw&&c.raw.nicho)||(typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||(c&&c.raw&&c.raw.configuracion&&c.raw.configuracion.tipo)||'carrera'); }
+function _cliTabs(tipo){ if(tipo==='fitness') return [["perfil","Perfil"],["plan","Análisis"],["fit_rutina","Gym"],["fit_antro","Antropometría"],["fit_nutri","Nutrición"],["sesiones","Sesiones"]]; if(tipo==='financiero') return [["perfil","Perfil"],["plan","Análisis"],["fin_pres","Finanzas"],["sesiones","Sesiones"],["gestion","Gestión"]]; return [["perfil","Perfil"],["plan","Análisis"],["avance","Acciones"],["docs","Documentos"],["sesiones","Sesiones"]]; }
+var _CLI_ICON={perfil:'👤',plan:'📋',fit_rutina:'🏋️',fit_antro:'📐',fit_nutri:'🥗',sesiones:'🗓️',fin_pres:'💰',gestion:'⚙️',avance:'📈',docs:'📄',mensajes:'💬'};
+var _CLI_SHORT={fit_antro:'Medidas',docs:'Docs'};
 function viewSidebar(){
   var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"],["config","Configuración","navConfig"]];
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
@@ -1416,7 +1429,17 @@ function viewSidebar(){
     return "<div class='cp-side-nav-wrap'>"+bub+"<button class='cp-side-nav-item "+(_navSec===it[0]?"is-active":"")+"' data-act='nav:"+it[0]+"'>"+
       "<span class='cp-side-nav-icon'>"+svg(IC[it[2]],16,"class='cp-side-nav-icon'")+"</span><span>"+it[1]+"</span></button></div>";
   }).join("");
-  return "<aside class='cp-side'>"+
+  // Barra móvil contextual: si hay un cliente abierto, abajo salen SUS pestañas
+  // (con '‹ Clientes' para volver) en vez de las secciones del panel.
+  var cliNav="";
+  if(state.clienteSel){
+    var _csel=(typeof CLIENTS!=='undefined'&&CLIENTS)?CLIENTS.filter(function(x){return String(x.id)===String(state.clienteSel);})[0]:null;
+    if(_csel){
+      cliNav="<button class='cp-side-nav-item cp-cli-back' data-act='cli-back'><span class='cp-side-nav-icon' style='font-size:20px;line-height:1'>‹</span><span>Clientes</span></button>"+
+        _cliTabs(_cliNicho(_csel)).map(function(x){ return "<button class='cp-side-nav-item "+(state.cliDetTab===x[0]?"is-active":"")+"' data-act='clidet:"+x[0]+"'><span class='cp-side-nav-icon' style='font-size:18px;line-height:1'>"+(_CLI_ICON[x[0]]||'•')+"</span><span>"+(_CLI_SHORT[x[0]]||x[1])+"</span></button>"; }).join("");
+    }
+  }
+  return "<aside class='cp-side"+(state.clienteSel?" cli-open":"")+"'>"+
     "<a href='#' class='cp-side-brand' data-act='nav:resumen'>"+
       ((REAL && isProV() && RCFG && RCFG.logo_url)
         ? "<img src='"+esc(RCFG.logo_url)+"' alt='' style='max-width:150px;max-height:34px;object-fit:contain'>"
@@ -1440,7 +1463,8 @@ function viewSidebar(){
         "<div class='cp-demo-switch-lbl' style='display:flex;align-items:center;justify-content:space-between'>Demo · tipo de coach<button data-act='demo-switch-hide' title='Ocultar (para capturas)' style='background:none;border:none;color:rgba(255,255,255,.45);cursor:pointer;font-size:11px;line-height:1;padding:2px'>✕</button></div>"+
         "<div class='cp-demo-switch-btns'>"+opt.map(function(o){var on=(dt===o[0]);return "<button class='cp-demo-switch-btn"+(on?" on":"")+"' data-act='demo-tipo:"+o[0]+"'>"+o[1]+"</button>";}).join("")+"</div></div>";
     })()+
-    "<nav class='cp-side-nav'>"+nav+"</nav>"+
+    "<nav class='cp-side-nav cp-nav-app'>"+nav+"</nav>"+
+    (cliNav?"<nav class='cp-side-nav cp-nav-cli'>"+cliNav+"</nav>":"")+
     "<div class='cp-side-foot'>"+
       "<button class='cp-side-cta' data-act='nav:clientes'>"+svg(IC.plus,14)+" Sumar cliente</button>"+
       (function(){var s=((REAL?(RCFG&&RCFG.slug):(COACH&&COACH.slug))||"").toString().trim();
@@ -1930,10 +1954,7 @@ function viewClienteDetalle(c){
   // (no a cliente.html, que es el de carrera). Mismo patron ?coach_view / ?email.
   if(_tipo==='fitness'){ portalUrl=PB+"/pathway-fit-cliente.html?coach_view="+cem; accessUrl=PB+"/pathway-fit-cliente.html?email="+cem; }
   else if(_tipo==='financiero'){ portalUrl=PB+"/pathway-fin-cliente.html?coach_view="+cem; accessUrl=PB+"/pathway-fin-cliente.html?email="+cem; }
-  var tabs;
-  if(_tipo==='fitness') tabs=[["perfil","Perfil"],["plan","Análisis"],["fit_rutina","Gym"],["fit_antro","Antropometría"],["fit_nutri","Nutrición"],["sesiones","Sesiones"]];
-  else if(_tipo==='financiero') tabs=[["perfil","Perfil"],["plan","Análisis"],["fin_pres","Finanzas"],["sesiones","Sesiones"],["gestion","Gestión"]];
-  else tabs=[["perfil","Perfil"],["plan","Análisis"],["avance","Acciones"],["docs","Documentos"],["sesiones","Sesiones"]];
+  var tabs=_cliTabs(_tipo);
   var tabBar="<div class='cp-filters'>"+tabs.map(function(x){return "<button class='cp-chip "+(t===x[0]?"is-on":"")+"' data-act='clidet:"+x[0]+"'>"+x[1]+"</button>";}).join("")+"</div>";
   // Menu vertical IDENTICO al de Configuracion: mismas clases (cp-cfg-nav). Mismos data-act.
   var _ficon={perfil:'👤',plan:'📋',fit_rutina:'🏋️',fit_antro:'📐',fit_nutri:'🥗',sesiones:'🗓️',mensajes:'💬',gestion:'⚙️',fin_pres:'💰',avance:'📈',docs:'📄'};
