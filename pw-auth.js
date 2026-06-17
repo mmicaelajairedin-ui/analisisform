@@ -122,6 +122,55 @@
     },
   };
 
+  // ── Interceptor de fetch (Fase A del cierre de RLS) ─────────────────────
+  // Sube el Authorization al JWT del usuario logueado para las llamadas a las
+  // tablas con RLS estricto (candidatos / informes / cv_publicados). Centraliza
+  // la migración: con esto TODA página que incluya pw-auth.js manda la sesión a
+  // esas tablas, sin tener que reescribir cada fetch inline.
+  //
+  // Garantías de seguridad de este cambio:
+  //   • Es un NO-OP mientras RLS esté APAGADO (solo cambia el token; el server
+  //     devuelve lo mismo). Se puede deployar sin coordinar con el SQL.
+  //   • SIN sesión (intake anónimo del formulario, lecturas públicas, pre-login)
+  //     deja la anon key intacta → esos flujos siguen funcionando.
+  //   • Solo toca headers en objeto plano (los fetch inline del código). Si la
+  //     request viene del SDK de Supabase (Request/Headers), no la toca: el SDK
+  //     ya manda su propio JWT.
+  var RLS_TABLES = /\/rest\/v1\/(candidatos|informes|cv_publicados)\b/;
+  var _origFetch = (typeof window !== "undefined" && window.fetch)
+    ? window.fetch.bind(window) : null;
+  if (_origFetch) {
+    window.fetch = function (input, init) {
+      try {
+        var url = (typeof input === "string") ? input
+                : (input && input.url) ? input.url : "";
+        if (url.indexOf(SB_URL) === 0 && RLS_TABLES.test(url)) {
+          var tok = tokenSync();
+          if (tok) {
+            var anonBearer = "Bearer " + ANON, jwtBearer = "Bearer " + tok;
+            var h = init && init.headers;
+            if (h instanceof Headers) {
+              var cur = h.get("Authorization") || "";
+              if (cur === "" || cur === anonBearer) {
+                h.set("Authorization", jwtBearer);
+                if (!h.get("apikey")) h.set("apikey", ANON);
+              }
+            } else if (h && typeof h === "object" && !Array.isArray(h)) {
+              var c2 = h.Authorization || h.authorization || "";
+              if (c2 === "" || c2 === anonBearer) {
+                init = Object.assign({}, init);
+                init.headers = Object.assign({}, h, { Authorization: jwtBearer });
+                if (!init.headers.apikey) init.headers.apikey = ANON;
+              }
+            }
+            // Si no hay headers (o es un Request del SDK) no tocamos nada.
+          }
+        }
+      } catch (e) { /* ante cualquier duda, fetch normal */ }
+      return _origFetch(input, init);
+    };
+  }
+
   // Bootea el SDK al cargar el script, para que arranque el autoRefreshToken y
   // mantenga fresco el token en localStorage (lo que lee headersSync()).
   ensure();

@@ -252,6 +252,22 @@ const RULES = [
       return missing.length ? "les falta pw-observe.js: " + missing.join(", ") : null;
     },
   },
+  {
+    name: "pw-auth.js: el interceptor de RLS sigue subiendo el JWT a las tablas sensibles",
+    bug: "El cierre del gap de RLS depende de que pw-auth.js intercepte fetch y " +
+         "suba el Authorization al JWT del usuario para candidatos/informes/" +
+         "cv_publicados. Si se quita, esas paginas volverian a pegar con la anon " +
+         "key y, con RLS prendido, el panel/portal se quedarian sin datos (o, con " +
+         "RLS apagado, se reabre el gap). Esta regla evita borrarlo sin querer.",
+    check() {
+      const s = read("pw-auth.js");
+      if (!s) return "no existe pw-auth.js";
+      const hasTables = /candidatos\|informes\|cv_publicados/.test(s);
+      const wrapsFetch = /window\.fetch\s*=\s*function/.test(s);
+      return (hasTables && wrapsFetch) ? null
+        : "falta el interceptor de fetch para las tablas con RLS estricto";
+    },
+  },
 ];
 
 let failures = 0;
