@@ -188,6 +188,10 @@ const RULES = [
           return f + " ya no usa _pwBrandVars() para aplicar el color de marca.";
         if (!/--rose-light/.test(s) || !/--rose-mid/.test(s))
           return f + ": _pwBrandVars() ya no setea --rose-light/--rose-mid (los tonos claros quedan en verde).";
+        // El chrome (sidebar/bordes/sombra) también debe derivar de la marca,
+        // igual que el panel — si no, el portal queda con verde Pathway mezclado.
+        if (!/--sb-bg/.test(s) || !/--border'/.test(s) || !/--shadow'/.test(s))
+          return f + ": _pwBrandVars() ya no deriva el chrome (--sb-bg/--border/--shadow) del color de marca.";
       }
       return null;
     },
