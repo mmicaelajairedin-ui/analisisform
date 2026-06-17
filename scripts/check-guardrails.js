@@ -245,6 +245,45 @@ const RULES = [
     },
   },
   {
+    name: "el selector 'Demo · tipo de coach' no rompe el bottom-nav en movil",
+    bug: "El bloque para cambiar el tipo de coach en el demo estaba con estilos " +
+         "inline (texto blanco) dentro del sidebar. En movil el sidebar es la barra " +
+         "inferior: ese bloque (a) empujaba los iconos a la derecha y (b) quedaba " +
+         "blanco-sobre-blanco (intocable). Debe usar la clase .cp-demo-switch y " +
+         "reposicionarse (position:fixed) en el media query movil.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/class='cp-demo-switch'/.test(s) && !/class=\"cp-demo-switch\"/.test(s))
+        return "panel-v2.html: el selector demo-tipo ya no usa la clase .cp-demo-switch (vuelve a romper el bottom-nav en movil).";
+      if (!/\.cp-demo-switch\s*\{[^}]*position:fixed/.test(s.replace(/\n/g, " ")))
+        return "panel-v2.html: falta reposicionar .cp-demo-switch (position:fixed) en movil — los iconos del nav se descentran.";
+      return null;
+    },
+  },
+  {
+    name: "dentro de la app de tienda NO se muestran cobros (Apple/Google billing)",
+    bug: "Las tiendas exigen su sistema de cobro para compras digitales en la app. " +
+         "pw-app.js detecta 'dentro de la app' (clase .pw-in-app) y oculta los botones " +
+         "de Stripe/planes; el panel y el login muestran 'renová en la web' (sin link). " +
+         "Si esto se rompe, la app se cae en la revision de Apple/Google.",
+    check() {
+      const j = read("pw-app.js");
+      if (!j) return "falta pw-app.js (detector de app de tienda).";
+      if (!/PW_IN_APP/.test(j)) return "pw-app.js ya no expone window.PW_IN_APP.";
+      if (!/buy\.stripe\.com/.test(j)) return "pw-app.js ya no oculta los botones que abren Stripe en la app.";
+      for (const f of ["login.html", "panel-v2.html", "upgrade.html"]) {
+        if (read(f) && !/pw-app\.js/.test(read(f)))
+          return f + " ya no incluye pw-app.js.";
+      }
+      if (!/PW_IN_APP/.test(read("panel-v2.html")))
+        return "panel-v2.html ya no contempla PW_IN_APP (la pantalla de prueba vencida volveria a mostrar Stripe en la app).";
+      if (!/PW_IN_APP/.test(read("login.html")))
+        return "login.html ya no contempla PW_IN_APP (el paywall volveria a mostrar el link de Stripe en la app).";
+      return null;
+    },
+  },
+  {
     name: "el detector de humo (pw-observe.js) sigue incluido en las paginas clave",
     bug: "pw-observe.js registra los errores de produccion. Si se quita de una " +
          "pagina, esa pagina vuelve a operar a ciegas.",
