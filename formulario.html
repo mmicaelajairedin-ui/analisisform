@@ -843,10 +843,12 @@ async function enviar(){
       var _encoder=new TextEncoder();
       var _buf=await crypto.subtle.digest('SHA-256',_encoder.encode(_autoPass));
       var _hash=Array.from(new Uint8Array(_buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
-      // Crear usuario (upsert - si ya existe no falla)
+      // Crear usuario (INSERT con ignore-duplicates: si el email ya existe NO lo
+      // pisa — así no hace falta UPDATE anónimo en usuarios, que era el agujero
+      // de takeover. El alta es anónima pero acotada a rol='cliente' por RLS).
       await fetch(SB_URL+'/rest/v1/usuarios',{
         method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal,resolution=merge-duplicates'},
+        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal,resolution=ignore-duplicates'},
         body:JSON.stringify({email:_email,password_hash:_hash,rol:'cliente',nombre:_nombre,activo:true})
       });
       // Enviar email de bienvenida al cliente con sus datos de acceso
