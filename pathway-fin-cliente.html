@@ -299,6 +299,9 @@ function toggleSb(){document.getElementById('sb').classList.toggle('open');docum
 // coach" (todavía no hay dónde cargarlos), quedan como demo por ahora.
 // ===================================================================
 (function(){
+// Demo: si cambió el seed de ejemplo, purgamos los overlays viejos del navegador
+// (si no, el `pw_demo_financiero` cacheado pisa el seed nuevo y se ven datos rancios).
+try{ var _SEEDV='2026-06-fin-3'; if(localStorage.getItem('pw_demo_fin_seed')!==_SEEDV){ ['pw_demo_financiero','pw_demo_fin_objetivos','pw_demo_fin_patrimonio'].forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} }); localStorage.setItem('pw_demo_fin_seed',_SEEDV); } }catch(e){}
 var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 function _hdr(x){ if(window.PWAUTH&&PWAUTH.headersSync) return PWAUTH.headersSync(x); var h={apikey:KEY,Authorization:'Bearer '+KEY};if(x)for(var k in x)h[k]=x[k];return h;}
@@ -907,11 +910,10 @@ function startPoll(){if(_pollT||!CID)return;_pollT=setInterval(function(){if(doc
 window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!inp||!inp.value.trim())return;var txt=_mask(inp.value.trim());var now=new Date(),time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');MSGS.push({from:'cliente',text:txt,time:time,ts:now.getTime()});inp.value='';renderMsgs();if(window.COACH_EMAIL){try{fetch(SB+'/functions/v1/send-push',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({user_email:COACH_EMAIL,title:((CRAW&&CRAW.nombre)||'Tu cliente')+' te escribió',body:txt.slice(0,140),url:'/panel-v2.html',tag:'chat-'+EMAIL})}).catch(function(){});}catch(e){}}if(!CID)return;sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){var db=[];if(rows&&rows.length){try{var p=JSON.parse(rows[0].notas_coach||'[]');if(Array.isArray(p))db=p;}catch(e){}}var merged=_merge(db,MSGS);return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(){MSGS=merged;});}).catch(function(){});};
 
 function pwInit(){
-  if(!EMAIL){ CRAW=_demoCraw(); CID=null; applyClientFin(CRAW); _demoBrandFin(); return; }
+  if(_esDemo()){ CRAW=_demoCraw(); CID=null; applyClientFin(CRAW); _demoBrandFin(); return; }
   sbGet('candidatos','email=eq.'+encodeURIComponent(EMAIL)+'&select=*').then(function(rows){
     if(rows&&rows.length){CRAW=rows[0];CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);}
-    else if(_esDemo()){CRAW=_demoCraw();CID=null;applyClientFin(CRAW);_demoBrandFin();}
-  }).catch(function(){ if(_esDemo()){CRAW=_demoCraw();CID=null;applyClientFin(CRAW);_demoBrandFin();} });
+  }).catch(function(){});
 }
 // Extracto bancario (PDF) → categorizar-gastos (IA) → desglose por categoría.
 document.addEventListener('change',function(ev){
