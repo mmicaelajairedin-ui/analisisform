@@ -13,6 +13,21 @@
   cambia por nicho es el contenido. Datos de ejemplo (DEMO).
 -->
 <link rel="stylesheet" href="pathway-portal.css?v=6">
+<style>
+/* Gym en dos columnas: rutina a la izquierda, logros de la semana a la derecha. */
+.gym-2col{display:grid;grid-template-columns:1fr 270px;gap:18px;align-items:start;}
+.gym-rail{position:sticky;top:14px;}
+.gym-rail-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 4px 16px rgba(0,0,0,.04);}
+.gym-rail-h{font-family:var(--serif);font-size:15px;color:var(--text);margin-bottom:12px;}
+.gym-stat{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
+.gym-stat b{font-family:var(--serif);font-size:24px;color:var(--rose);line-height:1;}
+.gym-stat span{font-size:12px;color:var(--muted);}
+.gym-chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;}
+.gym-chip{font-size:11px;font-weight:600;padding:5px 10px;border-radius:20px;background:var(--rose-light);color:var(--rose);}
+.gym-chip.off{background:#F0F0EE;color:#B4B4AE;}
+.gym-rail-note{font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:4px;}
+@media(max-width:880px){ .gym-2col{grid-template-columns:1fr;} .gym-rail{position:static;} }
+</style>
 </head>
 <body>
 <div class="app">
@@ -355,15 +370,45 @@ function toggleEx(el){
   else if(d<t){ day.classList.remove('celebrated'); }
 }
 var EX={'Press de banca':['Acostate en el banco con los pies firmes.','Agarrá la barra un poco más ancho que los hombros.','Bajá controlando hasta rozar el pecho.','Empujá sin bloquear de golpe los codos.'],'Remo con barra':['Incliná el torso con la espalda recta.','Deja colgar la barra con los brazos estirados.','Tirá hacia el ombligo apretando la espalda.','Bajá despacio.'],'Press militar':['Barra a la altura de los hombros.','Empujá hasta estirar los brazos.','Bajá controlando.'],'Fondos en paralelas':['Sostené tu peso con los brazos estirados.','Bajá flexionando los codos.','Empujá hasta volver al inicio.'],'Curl de bíceps':['Mancuernas a los costados.','Sube flexionando el codo.','Bajá despacio.'],'Sentadilla':['Pies al ancho de los hombros.','Bajá llevando la cola atrás.','Muslos paralelos al piso.','Sube con los talones.'],'Peso muerto rumano':['Barra adelante de los muslos.','Bajá pegada a las piernas flexionando la cadera.','Vuelve arriba.'],'Zancadas':['Paso largo adelante.','Bajá hasta 90° ambas rodillas.','Cambiá de pierna.']};
+// ── Banco de ejercicios (free-exercise-db) — foto + pasos automáticos por
+//    NOMBRE. Si el coach cargó una foto propia en el ejercicio, esa manda; si no,
+//    sale de acá. Las imágenes las sirve el CDN jsDelivr (las carga el navegador
+//    del cliente). Si una imagen no existe, el onerror la oculta (no rompe nada).
+var EXIMG='https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/';
+function _exNorm(s){ return (''+(s||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim(); }
+var EXBANK={
+  'press de banca':{img:'Barbell_Bench_Press_-_Medium_Grip',pasos:EX['Press de banca']},
+  'remo con barra':{img:'Bent_Over_Barbell_Row',pasos:EX['Remo con barra']},
+  'sentadilla':{img:'Barbell_Squat',pasos:EX['Sentadilla']},
+  'sentadilla goblet':{img:'Barbell_Full_Squat',pasos:['Sostené una pesa contra el pecho con ambas manos.','Bajá con la espalda recta y el pecho arriba.','Empujá con los talones para subir.']},
+  'press militar':{img:'Barbell_Shoulder_Press',pasos:EX['Press militar']},
+  'peso muerto':{img:'Barbell_Deadlift',pasos:['Pies al ancho de cadera, barra pegada a las canillas.','Espalda recta, agarrá la barra.','Subí estirando cadera y rodillas a la vez.']},
+  'peso muerto rumano':{img:'Barbell_Deadlift',pasos:EX['Peso muerto rumano']},
+  'curl de biceps':{img:'Barbell_Curl',pasos:EX['Curl de bíceps']},
+  'fondos en paralelas':{img:'Bench_Dips',pasos:EX['Fondos en paralelas']},
+  'zancadas':{img:'Barbell_Walking_Lunge',pasos:EX['Zancadas']},
+  'dominadas':{img:'',pasos:['Colgate de la barra con las palmas al frente.','Tirá llevando el pecho hacia la barra.','Bajá controlando hasta estirar los brazos.']},
+  'dominadas asistidas':{img:'',pasos:['Apoyá las rodillas en la asistencia.','Tirá llevando el pecho hacia la barra.','Bajá despacio.']},
+  'remo en polea':{img:'',pasos:['Sentado, espalda recta, agarrá el maneral.','Tirá hacia el abdomen apretando la espalda.','Volvé estirando los brazos sin encorvar.']}
+};
+function _exData(n){ return EXBANK[_exNorm(n)]||null; }
+function _exFoto(nombre,explicit){
+  if(explicit && /^https?:\/\//i.test(''+explicit)) return explicit;
+  var d=_exData(nombre); return (d&&d.img)?(EXIMG+d.img+'/0.jpg'):'';
+}
+function _exPasos(n){ if(EX[n]) return EX[n]; var d=_exData(n); return (d&&d.pasos)?d.pasos:null; }
+
 function openEx(n){
   var meta=EXMETA[n]||{};
+  var foto=_exFoto(n, meta.foto);
   var ph=document.querySelector('#exModal .ex-photo');
   if(ph){
-    if(meta.foto){ ph.innerHTML='<img src="'+esc(meta.foto)+'" alt=""><b style="margin-top:8px;font-family:var(--serif);font-size:16px;color:var(--text);">'+esc(n)+'</b>'; }
-    else{ ph.innerHTML='<span>📷</span><b id="exTitle" style="font-family:var(--serif);font-size:16px;color:var(--text);">'+esc(n)+'</b><small>Tu coach todavía no subió una foto</small>'; }
+    if(foto){ ph.innerHTML='<img src="'+esc(foto)+'" alt="" onerror="this.style.display=\'none\'" style="width:100%;border-radius:12px;object-fit:cover;"><b style="margin-top:8px;font-family:var(--serif);font-size:16px;color:var(--text);">'+esc(n)+'</b>'; }
+    else{ ph.innerHTML='<span>📷</span><b style="font-family:var(--serif);font-size:16px;color:var(--text);">'+esc(n)+'</b><small>Tu coach todavía no subió una foto</small>'; }
   }
   var steps=document.getElementById('exSteps');
-  if(steps) steps.innerHTML=(EX[n]||[(meta.meta?('Haz: '+esc(meta.meta)+'.'):'Pedile a tu coach cómo hacer este ejercicio.')]).map(function(s){return '<li>'+s+'</li>';}).join('');
+  var pasos=_exPasos(n)||[(meta.meta?('Hacé: '+esc(meta.meta)+'.'):'Pedile a tu coach cómo hacer este ejercicio.')];
+  if(steps) steps.innerHTML=pasos.map(function(s){return '<li>'+s+'</li>';}).join('');
   document.getElementById('exModal').classList.add('on');
 }
 function closeEx(){document.getElementById('exModal').classList.remove('on');}
@@ -669,12 +714,26 @@ function saveNutriLog(){
     .catch(function(){ if(st) st.textContent='Sin conexión'; });
 }
 function _exHtml(e){
-  var thumb = (e.foto && /^https?:\/\//i.test(''+e.foto)) ? '<img src="'+esc(e.foto)+'" alt="" onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)" style="width:42px;height:42px;border-radius:9px;object-fit:cover;flex-shrink:0;cursor:pointer">' : '';
+  var _f=_exFoto(e.nombre, e.foto);
+  var thumb = _f ? '<img src="'+esc(_f)+'" alt="" onerror="this.style.display=\'none\'" onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)" style="width:42px;height:42px;border-radius:9px;object-fit:cover;flex-shrink:0;cursor:pointer">' : '';
   return '<div class="ex" onclick="toggleEx(this)"><div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>'+thumb+'<div class="ex-body"><div class="ex-name">'+esc(e.nombre||'')+'</div><div class="ex-meta">'+esc(e.meta||'')+'</div></div><button class="ex-see" onclick="event.stopPropagation();openEx(this.closest(\'.ex\').querySelector(\'.ex-name\').textContent)">👁</button></div>';
+}
+function _gymRailHtml(totalDays,totalEx){
+  // Logros de la semana (columna derecha). Las chips se prenden según lo que el
+  // cliente registró en sus hábitos (WDATA). Si no hay datos, quedan apagadas.
+  var hab=false,nut=false;
+  try{ if(typeof WDATA==='object'&&WDATA){ Object.keys(WDATA).forEach(function(k){ var d=WDATA[k]||{}; if(d.agua||d.sueno||d.pasos||d.habitos) hab=true; if(d.nutri) nut=true; }); } }catch(e){}
+  return '<aside class="gym-rail"><div class="gym-rail-card">'
+    +'<div class="gym-rail-h">🏆 Logros de la semana</div>'
+    +'<div class="gym-stat"><b>'+totalDays+'</b><span>días de entreno</span></div>'
+    +'<div class="gym-stat"><b>'+totalEx+'</b><span>ejercicios</span></div>'
+    +'<div class="gym-chips"><span class="gym-chip">💪 Gym</span><span class="gym-chip'+(hab?'':' off')+'">⭐ Hábitos</span><span class="gym-chip'+(nut?'':' off')+'">🍎 Nutrición</span></div>'
+    +'<p class="gym-rail-note">Marcá cada ejercicio al terminarlo y tocá 👁 si no sabés cómo se hace.</p>'
+    +'</div></aside>';
 }
 function renderRutinaWeek(wk){
   var sec=document.getElementById('s-rutina'); if(!sec) return;
-  sec.querySelectorAll('.day').forEach(function(d){ d.remove(); });
+  sec.querySelectorAll('.gym-2col,.day').forEach(function(d){ d.remove(); });
   var list=RUT_ALL.filter(function(e){ return (parseInt(e.semana,10)||1)===wk; });
   if(!list.length){ sec.insertAdjacentHTML('beforeend','<div class="day"><div class="day-h"><div class="d-name" style="color:var(--muted)">Sin ejercicios para esta semana</div></div></div>'); return; }
   // Agrupar por Día (título) y, dentro, por Bloque (sub-encabezado). El coach
@@ -687,7 +746,7 @@ function renderRutinaWeek(wk){
     if(!byDay[dia].bloques[bk]){ byDay[dia].bloques[bk]=[]; byDay[dia].ord.push(bk); }
     byDay[dia].bloques[bk].push(e); byDay[dia].n++;
   });
-  var html=order.map(function(dia){
+  var daysHtml=order.map(function(dia){
     var g=byDay[dia];
     var inner=g.ord.map(function(bk){
       var sub=bk?'<div style="padding:8px 15px;font-size:10.5px;font-weight:700;color:var(--rose);text-transform:uppercase;letter-spacing:.6px;background:var(--rose-light);border-top:1px solid var(--border)">'+esc(bk)+'</div>':'';
@@ -695,6 +754,7 @@ function renderRutinaWeek(wk){
     }).join('');
     return '<div class="day"><div class="day-h"><div class="d-name">'+esc(dia)+'</div><div class="d-prog">0/'+g.n+'</div></div>'+inner+'</div>';
   }).join('');
+  var html='<div class="gym-2col"><div class="gym-days">'+daysHtml+'</div>'+_gymRailHtml(order.length,list.length)+'</div>';
   sec.insertAdjacentHTML('beforeend', html);
 }
 function selRutWeek(w,el){ document.querySelectorAll('#s-rutina .wk').forEach(function(b){ b.classList.toggle('on',b===el); }); if(RUT_ALL.length) renderRutinaWeek(w); }
