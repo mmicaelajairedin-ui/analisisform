@@ -39,6 +39,11 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
 $$;
 GRANT EXECUTE ON FUNCTION public.pw_coach_owns_email(text) TO authenticated;
 
+-- ── 0) ENCENDER RLS en usuarios (el interruptor maestro) ─────────────────────
+-- Sin esto, las políticas de abajo quedan DORMIDAS y anon sigue leyendo todo.
+-- (Las tablas candidatos/informes/cv_publicados ya lo tenían; usuarios no.)
+ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
+
 -- ── 1) Borrar las políticas ABIERTAS ────────────────────────────────────────
 DROP POLICY IF EXISTS "permitir_login"               ON usuarios;  -- SELECT true
 DROP POLICY IF EXISTS "Permitir leer usuarios"        ON usuarios;  -- SELECT true (anon)
@@ -119,8 +124,11 @@ CREATE POLICY usuarios_coach_gestiona_cliente ON usuarios FOR UPDATE
 -- Logueado: coach ve su fila + sus clientes; admin ve todo.
 
 -- ============================================================================
--- ROLLBACK (restaura el estado anterior — políticas abiertas)
+-- ROLLBACK (restaura el estado anterior)
 -- ============================================================================
+-- El más rápido: apagar RLS (las políticas quedan dormidas, como antes):
+--   ALTER TABLE usuarios DISABLE ROW LEVEL SECURITY;
+-- O recrear las políticas abiertas:
 -- CREATE POLICY "permitir_login" ON usuarios FOR SELECT USING (true);
 -- CREATE POLICY "Permitir leer usuarios" ON usuarios FOR SELECT TO anon USING (true);
 -- CREATE POLICY "Permitir actualizar usuarios" ON usuarios FOR UPDATE TO anon USING (true);
