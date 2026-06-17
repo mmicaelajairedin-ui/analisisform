@@ -35,7 +35,14 @@
     if(inApp){
       document.documentElement.classList.add("pw-in-app");
       var s=document.createElement("style");
-      s.textContent=".pw-in-app [data-app-hide]{display:none !important;}";
+      // Oculta: (1) lo marcado a mano con data-app-hide, (2) CUALQUIER boton/link
+      // que abra Stripe o la pagina de planes (asi no hay que marcar uno por uno),
+      // y muestra los avisos .app-only ("gestioná tu plan en la web").
+      s.textContent=
+        ".pw-in-app [data-app-hide]{display:none !important;}"+
+        ".pw-in-app [data-url*='buy.stripe.com'],.pw-in-app [data-url*='billing.stripe.com'],.pw-in-app [data-url*='upgrade.html'],"+
+        ".pw-in-app a[href*='buy.stripe.com'],.pw-in-app a[href*='billing.stripe.com'],.pw-in-app a[href*='upgrade.html']{display:none !important;}"+
+        ".app-only{display:none !important;}.pw-in-app .app-only{display:block !important;}";
       (document.head||document.documentElement).appendChild(s);
     }
   }catch(e){ /* ante cualquier duda, NO marcamos in-app: la web sigue normal */ }
