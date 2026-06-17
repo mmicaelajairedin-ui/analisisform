@@ -190,18 +190,24 @@ Deno.serve(async (req: Request) => {
     return (a.coach.nombre || "").localeCompare(b.coach.nombre || "");
   });
 
-  const out = scored.map(({ coach: c, stats: s, avg, countryMatch }) => ({
-    nombre: c.nombre,
-    slug: c.slug,
-    titulo_profesional: c.titulo_profesional,
-    tagline: c.tagline,
-    especialidades: c.especialidades || [],
-    atiende: c.atiende,
-    anios_experiencia: c.anios_experiencia,
-    foto_perfil_url: c.foto_url,
-    country_match: countryMatch, // bandera para que el listado pueda mostrar badge
-    stats: { clientes_total: s.clientes, reviews_count: s.reviews, avg_rating: avg },
-  }));
+  const out = scored.map(({ coach: c, stats: s, avg, countryMatch }) => {
+    const cfg = (c.configuracion || {}) as Record<string, unknown>;
+    const foto = c.foto_url ||
+      (typeof cfg.foto_url === "string" ? cfg.foto_url : null) ||
+      (typeof cfg.foto_perfil === "string" ? cfg.foto_perfil : null);
+    return {
+      nombre: c.nombre,
+      slug: c.slug,
+      titulo_profesional: c.titulo_profesional,
+      tagline: c.tagline,
+      especialidades: c.especialidades || [],
+      atiende: c.atiende,
+      anios_experiencia: c.anios_experiencia,
+      foto_perfil_url: foto,
+      country_match: countryMatch, // bandera para que el listado pueda mostrar badge
+      stats: { clientes_total: s.clientes, reviews_count: s.reviews, avg_rating: avg },
+    };
+  });
 
   return json({
     coaches: out,

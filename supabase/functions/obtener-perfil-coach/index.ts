@@ -153,7 +153,7 @@ Deno.serve(async (req: Request) => {
       // un mailto a su email de login). Así el perfil nunca queda sin acción.
       whatsapp: str("whatsapp"),
       contacto_email: row.email,
-      foto_perfil_url: row.foto_url,
+      foto_perfil_url: row.foto_url || str("foto_url") || str("foto_perfil"),
       linkedin_url: str("linkedin_url"),
       instagram_url: str("instagram_url"),
       web_url: str("web_url"),
