@@ -869,7 +869,7 @@ function _demoSeedSes(tipo){
 }
 // Campos de `candidatos` que la coach puede editar en el demo y que el portal
 // del cliente sabe leer. Solo estos se vuelcan al overlay (no estado interno).
-var _DEMO_RAW_FIELDS=["nombre","email","cargo","whatsapp","rol","situacion","urgencia","sector","exp","ciudad","modalidad","educacion","idiomas","linkedin","linkedin_texto","objetivo","logro","extra","obstaculos","semana_activa","etapas","carta_presentacion","cv_texto","habilidades","acciones_progreso","edad","nivel","altura","peso","dias","lugar","equipo","lesiones","medicacion","restricciones","nutricion","fit_rutina","fit_antro","fit_habitos","fit_nutricion","ingresos","gastos","deudas","ahorro_actual","objetivo_ahorro","plazo","fin_pres","fin_objetivos","fin_deudas","fin_diagnostico"];
+var _DEMO_RAW_FIELDS=["nombre","email","cargo","whatsapp","rol","situacion","urgencia","sector","exp","ciudad","modalidad","educacion","idiomas","linkedin","linkedin_texto","objetivo","logro","extra","obstaculos","semana_activa","etapas","carta_presentacion","cv_texto","habilidades","acciones_progreso","edad","nivel","altura","peso","dias","lugar","equipo","lesiones","medicacion","restricciones","nutricion","fit_rutina","fit_antro","fit_habitos","fit_nutricion","ingresos","gastos","deudas","ahorro_actual","objetivo_ahorro","plazo","fin_pres","fin_objetivos","fin_deudas","fin_patrimonio","fin_diagnostico"];
 var _demoLastSnap="";
 // Snapshot del cliente de ejemplo → overlay del nicho. Se llama desde render()
 // (catch-all: cualquier edición del demo termina en un render). Con detección
@@ -1035,8 +1035,7 @@ function exampleFor(tipo){
     c.raw.fin_pres=JSON.stringify({vivienda:"750",alimentacion:"350",ocio:"150",ahorro:"350"});
     // Mismos datos que el portal del cliente, así el demo del coach financiero
     // se ve completo y coherente con lo que verá el cliente.
-    c.raw.fin_objetivos=JSON.stringify([{nombre:"🛟 Fondo de emergencia",meta:"3000",actual:"1200"},{nombre:"✈️ Vacaciones",meta:"1000",actual:"600"}]);
-    c.raw.fin_deudas=JSON.stringify([{nombre:"Tarjeta de crédito",monto:"1200",cuota:"400",estado:"Pagando"},{nombre:"Préstamo auto",monto:"2200",cuota:"",estado:"Después"}]);
+    c.raw.fin_objetivos="[]"; c.raw.fin_deudas="[]"; c.raw.fin_patrimonio="[]";
     c.raw.fin_diagnostico=JSON.stringify({salud:68,control:55,deuda:40,ahorro:50});
     c.inf={id:"ejemplo-informe-fin",d:{
       resumen:"María tiene ingresos estables (~2.400 €/mes) pero gasta casi todo y arrastra una deuda de tarjeta de 1.200 €. No tiene presupuesto ni fondo de emergencia. El objetivo es ordenar el gasto, salir de la deuda y empezar a ahorrar para la mudanza.",
@@ -2012,11 +2011,39 @@ function viewClienteDetalle(c){
       "<div class='cp-form-row-2'><div class='cp-form-row'><label class='cp-form-label'>Vivienda</label><input id='fp-vivienda' class='cp-form-input' value='"+esc(""+(FP.vivienda||""))+"' placeholder='750'></div><div class='cp-form-row'><label class='cp-form-label'>Alimentación</label><input id='fp-alim' class='cp-form-input' value='"+esc(""+(FP.alimentacion||""))+"' placeholder='350'></div></div>"+
       "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Ocio (máx)</label><input id='fp-ocio' class='cp-form-input' value='"+esc(""+(FP.ocio||""))+"' placeholder='150'></div><div class='cp-form-row'><label class='cp-form-label'>Ahorro (mín)</label><input id='fp-ahorro' class='cp-form-input' value='"+esc(""+(FP.ahorro||""))+"' placeholder='350'></div></div>"+
       "<button class='cp-btn cp-btn-primary' style='margin-top:14px' data-act='fin-pres-save' data-id='"+esc(c.id)+"'>Guardar presupuesto</button></div>";
-    var _objRows=FOBJ.length?FOBJ.map(function(o,i){var meta=parseFloat(o.meta)||0,act=parseFloat(o.actual)||0,pct=meta>0?Math.min(100,Math.round(act/meta*100)):0;return "<div style='display:flex;align-items:center;gap:10px;border-top:1px solid var(--pw-border);padding:8px 0'><div style='flex:1'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(o.nombre||"")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>€"+act+" / €"+meta+" · "+pct+"%</div></div><button class='cp-btn cp-btn-ghost' style='height:28px;font-size:11px;padding:0 9px' data-act='fin-obj-del' data-id='"+esc(c.id)+"' data-idx='"+i+"'>Quitar</button></div>";}).join(""):"<div style='font-size:13px;color:var(--pw-text-soft);padding:6px 0'>Sin objetivos todavía.</div>";
-    var _objCard="<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Objetivos de ahorro<span class='dot'>.</span></h3>"+_objRows+
-      "<div class='cp-form-row' style='margin-top:12px'><label class='cp-form-label'>Objetivo</label><input id='fo-nombre' class='cp-form-input' placeholder='Fondo de emergencia'></div>"+
-      "<div class='cp-form-row-2' style='margin-top:10px'><div class='cp-form-row'><label class='cp-form-label'>Meta (€)</label><input id='fo-meta' class='cp-form-input' placeholder='3000'></div><div class='cp-form-row'><label class='cp-form-label'>Ahorrado hoy (€)</label><input id='fo-actual' class='cp-form-input' placeholder='1200'></div></div>"+
-      "<button class='cp-btn cp-btn-primary' style='margin-top:12px' data-act='fin-obj-add' data-id='"+esc(c.id)+"'>Agregar objetivo</button></div>";
+    var _OBJ_ICO={viaje:'✈️',ahorro:'🛟',emprendimiento:'🚀',casa:'🏠',otro:'🎯'};
+    var _objRows=FOBJ.length?FOBJ.map(function(o,i){
+      var meta=parseFloat(o.meta)||0,act=parseFloat(o.actual)||0,pct=meta>0?Math.min(100,Math.round(act/meta*100)):0;
+      var ico=_OBJ_ICO[o.tipo]||'🎯';
+      var hilo=Array.isArray(o.hilo)?o.hilo:[];
+      var thread=hilo.length?("<div style='margin-top:8px;border-top:1px dashed var(--pw-border);padding-top:8px'>"+hilo.map(function(m){var me=(m.from==='coach');return "<div style='margin:4px 0;display:flex;"+(me?'justify-content:flex-end':'')+"'><div style='max-width:80%;font-size:12px;padding:6px 9px;border-radius:9px;background:"+(me?'#8C7B80':'#eee')+";color:"+(me?'#fff':'#333')+"'>"+esc(m.text)+"</div></div>";}).join("")+"</div>"):"";
+      return "<div style='border-top:1px solid var(--pw-border);padding:12px 0'>"+
+        "<div style='display:flex;align-items:center;gap:8px'><span style='font-size:17px' class='cp-emo'>"+ico+"</span><div style='flex:1;min-width:0'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(o.nombre||"")+(o.fecha?" <span style='font-weight:400;color:var(--pw-text-soft);font-size:11px'>· "+esc(o.fecha)+"</span>":"")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>€"+Math.round(act)+" / €"+Math.round(meta)+" · "+pct+"%</div></div><button class='cp-btn cp-btn-ghost' style='height:26px;font-size:11px;padding:0 8px' data-act='fin-obj-del' data-id='"+esc(c.id)+"' data-idx='"+i+"'>Quitar</button></div>"+
+        (o.porque?"<div style='font-size:12px;color:var(--pw-text-soft);font-style:italic;margin-top:5px'>“"+esc(o.porque)+"”</div>":"")+
+        "<div class='cp-form-row-2' style='margin-top:8px'><div class='cp-form-row'><label class='cp-form-label'>Aporte sugerido (€/mes)</label><input id='fo-aporte-"+i+"' class='cp-form-input' value='"+esc(""+(o.aporte!=null?o.aporte:""))+"' placeholder='150'></div><div class='cp-form-row'><label class='cp-form-label'>Avance hoy (€)</label><input id='fo-actual-"+i+"' class='cp-form-input' value='"+esc(""+(o.actual!=null?o.actual:""))+"' placeholder='1200'></div></div>"+
+        "<div class='cp-form-row' style='margin-top:8px'><label class='cp-form-label'>Consejo / nota para el cliente</label><textarea id='fo-nota-"+i+"' class='cp-form-input' style='min-height:46px' placeholder='Ej: apartá esto apenas cobrás…'>"+esc(o.nota||"")+"</textarea></div>"+
+        "<button class='cp-btn cp-btn-primary' style='margin-top:8px;height:30px;font-size:12px' data-act='fin-obj-coach-save' data-id='"+esc(c.id)+"' data-idx='"+i+"'>Guardar aporte + consejo</button>"+
+        thread+
+        "<div style='display:flex;gap:8px;margin-top:8px'><input id='fo-reply-"+i+"' class='cp-form-input' style='flex:1' placeholder='Responder en el hilo…'><button class='cp-btn cp-btn-ghost' style='white-space:nowrap' data-act='fin-obj-reply' data-id='"+esc(c.id)+"' data-idx='"+i+"'>Enviar</button></div>"+
+      "</div>";
+    }).join(""):"<div style='font-size:13px;color:var(--pw-text-soft);padding:6px 0'>El cliente todavía no creó metas. Podés crear una vos:</div>";
+    var _objTopts=[['viaje','✈️ Viaje'],['ahorro','🛟 Fondo / ahorro'],['emprendimiento','🚀 Emprendimiento'],['casa','🏠 Casa / propiedad'],['otro','🎯 Otro']].map(function(t){return "<option value='"+t[0]+"'>"+t[1]+"</option>";}).join("");
+    var _objCard="<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Metas<span class='dot'>.</span></h3>"+
+      "<div class='cp-form-hint' style='margin:4px 0 10px'>Las crea el cliente, pero podés sumar metas, fijar el <strong>aporte sugerido</strong>, dejar un <strong>consejo</strong> y responder en el hilo. El cliente lo ve en su portal.</div>"+_objRows+
+      "<div class='cp-form-row-2' style='margin-top:14px'><div class='cp-form-row'><label class='cp-form-label'>Nueva meta</label><input id='fo-nombre' class='cp-form-input' placeholder='Viaje a Japón'></div><div class='cp-form-row'><label class='cp-form-label'>Tipo</label><select id='fo-tipo' class='cp-form-input'>"+_objTopts+"</select></div></div>"+
+      "<div class='cp-form-row-2' style='margin-top:10px'><div class='cp-form-row'><label class='cp-form-label'>Meta (€)</label><input id='fo-meta' class='cp-form-input' placeholder='3000'></div><div class='cp-form-row'><label class='cp-form-label'>Ahorrado hoy (€)</label><input id='fo-actual' class='cp-form-input' placeholder='0'></div></div>"+
+      "<button class='cp-btn cp-btn-primary' style='margin-top:12px' data-act='fin-obj-add' data-id='"+esc(c.id)+"'>Agregar meta</button></div>";
+    var FPAT=[]; try{ FPAT=JSON.parse((c.raw&&c.raw.fin_patrimonio)||"[]")||[]; }catch(e){ FPAT=[]; }
+    var _PAT_ICO={inversion:'📈',propiedad:'🏠',efectivo:'💵',ahorro:'🏦',otro:'📦'};
+    var _PAT_LBL={inversion:'Inversión',propiedad:'Propiedad',efectivo:'Efectivo/cuenta',ahorro:'Ahorro',otro:'Otro'};
+    var _patTot=FPAT.reduce(function(s,p){return s+(parseFloat(p.valor)||0);},0);
+    var _patRows=FPAT.length?FPAT.map(function(p,i){return "<div style='display:flex;align-items:center;gap:10px;border-top:1px solid var(--pw-border);padding:8px 0'><span style='font-size:15px' class='cp-emo'>"+(_PAT_ICO[p.tipo]||'📦')+"</span><div style='flex:1;min-width:0'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(p.nombre||"")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(_PAT_LBL[p.tipo]||"")+" · €"+Math.round(parseFloat(p.valor)||0)+"</div></div><button class='cp-btn cp-btn-ghost' style='height:28px;font-size:11px;padding:0 9px' data-act='fin-pat-del' data-id='"+esc(c.id)+"' data-idx='"+i+"'>Quitar</button></div>";}).join(""):"<div style='font-size:13px;color:var(--pw-text-soft);padding:6px 0'>Sin activos cargados.</div>";
+    var _patTopts=Object.keys(_PAT_ICO).map(function(t){return "<option value='"+t+"'>"+_PAT_ICO[t]+" "+_PAT_LBL[t]+"</option>";}).join("");
+    var _patCard="<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Patrimonio<span class='dot'>.</span></h3>"+
+      "<div class='cp-form-hint' style='margin:4px 0 10px'>Activos del cliente (inversiones, propiedades, efectivo…). Total: <strong>€"+Math.round(_patTot)+"</strong>. El patrimonio neto (menos deudas) lo ve el cliente en su portal.</div>"+_patRows+
+      "<div class='cp-form-row-2' style='margin-top:14px'><div class='cp-form-row'><label class='cp-form-label'>Activo</label><input id='fpt-nombre' class='cp-form-input' placeholder='Acciones, Depto Centro…'></div><div class='cp-form-row'><label class='cp-form-label'>Tipo</label><select id='fpt-tipo' class='cp-form-input'>"+_patTopts+"</select></div></div>"+
+      "<div class='cp-form-row' style='margin-top:10px'><label class='cp-form-label'>Valor (€)</label><input id='fpt-valor' class='cp-form-input' placeholder='5000'></div>"+
+      "<button class='cp-btn cp-btn-primary' style='margin-top:12px' data-act='fin-pat-add' data-id='"+esc(c.id)+"'>Agregar activo</button></div>";
     var _deuRows=FDEU.length?FDEU.map(function(d,i){return "<div style='display:flex;align-items:center;gap:10px;border-top:1px solid var(--pw-border);padding:8px 0'><div style='flex:1'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(d.nombre||"")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>€"+esc(""+(d.monto||""))+(d.cuota?" · €"+esc(""+d.cuota)+"/mes":"")+" · "+esc(d.estado||"")+"</div></div><button class='cp-btn cp-btn-ghost' style='height:28px;font-size:11px;padding:0 9px' data-act='fin-deuda-del' data-id='"+esc(c.id)+"' data-idx='"+i+"'>Quitar</button></div>";}).join(""):"<div style='font-size:13px;color:var(--pw-text-soft);padding:6px 0'>Sin deudas cargadas.</div>";
     var _deuCard="<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Deudas (bola de nieve)<span class='dot'>.</span></h3>"+_deuRows+
       "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Deuda</label><input id='fd-nombre' class='cp-form-input' placeholder='Tarjeta de crédito'></div><div class='cp-form-row'><label class='cp-form-label'>Monto (€)</label><input id='fd-monto' class='cp-form-input' placeholder='1200'></div></div>"+
@@ -2031,7 +2058,7 @@ function viewClienteDetalle(c){
       "<label class='cp-btn cp-btn-ghost' style='cursor:pointer;height:34px;font-size:13px'>"+svg(IC.plus,14)+" Subir extracto (PDF)<input id='fin-pdf' type='file' accept='application/pdf' style='display:none'></label>"+
       "<span id='fin-pdf-st' style='font-size:12px;color:var(--pw-text-soft);margin-left:10px'></span>"+
       "<div id='fin-pdf-res' style='margin-top:12px'></div></div>";
-    body=_presCard+_iaCard+_objCard+_deuCard+_diagCard;
+    body=_presCard+_iaCard+_objCard+_patCard+_deuCard+_diagCard;
   } else if(t==="docs"){
     var liTxt=(c.raw&&(c.raw.linkedin_texto||""))||"";
     var cvTxt=(c.raw&&(c.raw.cv_url||c.raw.cv_texto||""))||"";
@@ -5361,17 +5388,50 @@ document.addEventListener("click", function(ev){
   function _finArrSave(id,col,arr,msg){
     var fc=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0];
     var j=JSON.stringify(arr); var p={}; p[col]=j;
+    if(fc && fc._example){ fc.raw[col]=j; toast(msg+" (demo)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(id),"PATCH",p)
       .then(function(r){ if(!r.ok) throw 0; if(fc&&fc.raw) fc.raw[col]=j; toast(msg); render(); })
       .catch(function(){ alert("No se pudo guardar. ¿Aplicaste la migración nicho_extra_fields.sql en Supabase?"); });
   }
   if(act==="fin-obj-add"){
     var foid=el.getAttribute("data-id"); if(!foid) return;
-    var fon=_val("fo-nombre"); if(!fon.trim()){ alert("Ponle nombre al objetivo."); return; }
+    var fon=_val("fo-nombre"); if(!fon.trim()){ alert("Ponle nombre a la meta."); return; }
     var foc=CLIENTS.filter(function(x){return String(x.id)===String(foid);})[0];
     var foa=[]; try{ foa=JSON.parse((foc&&foc.raw&&foc.raw.fin_objetivos)||"[]")||[]; }catch(e){ foa=[]; }
-    foa.push({nombre:fon,meta:_val("fo-meta"),actual:_val("fo-actual")});
-    _finArrSave(foid,"fin_objetivos",foa,"Objetivo agregado ✓"); return;
+    foa.push({tipo:_val("fo-tipo")||"otro",nombre:fon,meta:_val("fo-meta"),actual:_val("fo-actual"),hilo:[]});
+    _finArrSave(foid,"fin_objetivos",foa,"Meta agregada ✓"); return;
+  }
+  if(act==="fin-obj-coach-save"){
+    var ocsid=el.getAttribute("data-id"), ocsix=parseInt(el.getAttribute("data-idx"),10); if(!ocsid||isNaN(ocsix)) return;
+    var ocsc=CLIENTS.filter(function(x){return String(x.id)===String(ocsid);})[0];
+    var ocsa=[]; try{ ocsa=JSON.parse((ocsc&&ocsc.raw&&ocsc.raw.fin_objetivos)||"[]")||[]; }catch(e){ ocsa=[]; }
+    if(!ocsa[ocsix]) return;
+    ocsa[ocsix].aporte=_val("fo-aporte-"+ocsix); ocsa[ocsix].nota=_val("fo-nota-"+ocsix); ocsa[ocsix].actual=_val("fo-actual-"+ocsix);
+    _finArrSave(ocsid,"fin_objetivos",ocsa,"Consejo guardado ✓ — el cliente lo ve"); return;
+  }
+  if(act==="fin-obj-reply"){
+    var orid=el.getAttribute("data-id"), orix=parseInt(el.getAttribute("data-idx"),10); if(!orid||isNaN(orix)) return;
+    var ortx=_val("fo-reply-"+orix); if(!ortx.trim()) return;
+    var orc=CLIENTS.filter(function(x){return String(x.id)===String(orid);})[0];
+    var ora=[]; try{ ora=JSON.parse((orc&&orc.raw&&orc.raw.fin_objetivos)||"[]")||[]; }catch(e){ ora=[]; }
+    if(!ora[orix]) return;
+    ora[orix].hilo=Array.isArray(ora[orix].hilo)?ora[orix].hilo:[];
+    ora[orix].hilo.push({from:"coach",text:ortx.trim(),ts:Date.now()});
+    _finArrSave(orid,"fin_objetivos",ora,"Respuesta enviada ✓"); return;
+  }
+  if(act==="fin-pat-add"){
+    var paid=el.getAttribute("data-id"); if(!paid) return;
+    var pan=_val("fpt-nombre"); if(!pan.trim()){ alert("Ponle nombre al activo."); return; }
+    var pac=CLIENTS.filter(function(x){return String(x.id)===String(paid);})[0];
+    var paa=[]; try{ paa=JSON.parse((pac&&pac.raw&&pac.raw.fin_patrimonio)||"[]")||[]; }catch(e){ paa=[]; }
+    paa.push({tipo:_val("fpt-tipo")||"otro",nombre:pan,valor:_val("fpt-valor")});
+    _finArrSave(paid,"fin_patrimonio",paa,"Activo agregado ✓"); return;
+  }
+  if(act==="fin-pat-del"){
+    var pdi=el.getAttribute("data-id"), pdx=parseInt(el.getAttribute("data-idx"),10); if(!pdi||isNaN(pdx)) return;
+    var pdc=CLIENTS.filter(function(x){return String(x.id)===String(pdi);})[0];
+    var pda=[]; try{ pda=JSON.parse((pdc&&pdc.raw&&pdc.raw.fin_patrimonio)||"[]")||[]; }catch(e){ pda=[]; }
+    pda.splice(pdx,1); _finArrSave(pdi,"fin_patrimonio",pda,"Activo quitado ✓"); return;
   }
   if(act==="fin-obj-del"){
     var fodi=el.getAttribute("data-id"), fox=parseInt(el.getAttribute("data-idx"),10); if(!fodi||isNaN(fox)) return;
