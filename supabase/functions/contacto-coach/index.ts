@@ -103,6 +103,39 @@ Deno.serve(async (req: Request) => {
   const coachFirst = (coach.nombre || "").split(/\s+/)[0] || "coach";
   const leadFirst = nombre.split(/\s+/)[0] || nombre;
 
+  // ── Registrar el lead en contactos_chat (lo ve la admin en Contactos) ──
+  // Reusa el formato "Nombre · email → SOLICITA coach: <nombre> [<id>]" que el
+  // panel ya parsea y muestra como "Pidió coach". Así el contacto queda como
+  // solicitud, no solo como email.
+  const contactoTxt = `${nombre} · ${email} → SOLICITA coach: ${coach.nombre || "coach"} [${coach.id || coachId}]`;
+  const logTask = fetch(`${SB_URL}/rest/v1/contactos_chat`, {
+    method: "POST",
+    headers: { ...sbHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ contacto: contactoTxt, pagina: "contacto-coach" }),
+  }).then((r) => r.ok ? { log: "saved" } : { log: "failed", status: r.status })
+    .catch((e) => ({ log: "exception", detail: String(e).slice(0, 120) }));
+
+  // ── Crear la solicitud tipo "mensaje" (la ve el coach en su panel) ────
+  // estado='mensaje', monto/comisión 0 → no entra al flujo de pago de Stripe
+  // (aceptar/rechazar). El panel la muestra como contacto, con responder.
+  const solTask = fetch(`${SB_URL}/rest/v1/solicitudes`, {
+    method: "POST",
+    headers: { ...sbHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({
+      coach_id: coach.id || coachId,
+      candidato_nombre: nombre,
+      candidato_email: email,
+      servicio: "mensaje",
+      mensaje: mensaje,
+      monto: 0,
+      comision: 0,
+      estado: "mensaje",
+      created_at: new Date().toISOString(),
+    }),
+  }).then((r) => r.ok ? { sol: "saved" } : r.text().then((t) => ({ sol: "failed", status: r.status, detail: t.slice(0, 160) })))
+    .catch((e) => ({ sol: "exception", detail: String(e).slice(0, 120) }));
+
+
   const sendOne = (to: string, toName: string, subject: string, html: string, replyTo?: string) =>
     fetch(`${SB_URL}/functions/v1/send-email`, {
       method: "POST",
@@ -142,6 +175,8 @@ Deno.serve(async (req: Request) => {
 `;
 
   const results = await Promise.all([
+    logTask,
+    solTask,
     sendOne(coach.email, coach.nombre || "Coach", coachSubject, coachHtml, email)
       .then((r) => r.ok ? { coach: "sent" } : r.text().then((t) => ({ coach: "failed", status: r.status, detail: t.slice(0, 200) })))
       .catch((e) => ({ coach: "exception", detail: String(e).slice(0, 200) })),
