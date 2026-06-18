@@ -31,6 +31,10 @@
   var nav = (navigator.language || navigator.userLanguage || 'es').toLowerCase().slice(0, 2);
   var want = stored || (nav === 'es' ? 'es' : 'en');
 
+  // Persistir el idioma detectado para que el resto del sitio y los emails
+  // (que leen pw_lang) sigan el mismo idioma, aunque no haya tocado el toggle.
+  if (!stored) { try { localStorage.setItem('pw_lang', want); } catch (e) {} }
+
   if (want === 'en' && !isEN) { location.replace(cpURL); return; }
   if (want === 'es' && isEN) { location.replace(cpURL); return; }
 
