@@ -3855,9 +3855,9 @@ function viewAdmin(){
       var plan=cg.plan==="pro"?"Pro":(cg.plan==="basic"?"Basic":"—");
       var es=(cg.estado_sub||"").toString();
       var est = es==="activa"?["Activa","ok"]:es==="prueba"?["Prueba","warn"]:(es==="cancelada"||es==="vencida")?["Cancelada","danger"]:(u.activo===false?["Inactiva","danger"]:["Activa","ok"]);
-      var acc=["—",""];
+      var acc=["—",""], accMs=0;
       var la=cg.last_login||u.last_login;
-      if(la){ try{ var d=Math.floor((_now2-new Date(la))/_D2); acc=[d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"), d<=2?"ok":(d<=7?"warn":"danger")]; }catch(e){} }
+      if(la){ try{ accMs=+new Date(la)||0; var d=Math.floor((_now2-accMs)/_D2); acc=[d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"), d<=2?"ok":(d<=7?"warn":"danger")]; }catch(e){} }
       var cb=candByCoach[u.id]||{n:0,last:0};
       var altaMs=u.created_at?(_now2-new Date(u.created_at)):0;
       var alta=u.created_at?[ago(altaMs), altaMs/_D2>30?"":"ok"]:["—",""];
@@ -3874,13 +3874,15 @@ function viewAdmin(){
       var hasCal = !!(cg.calendly_url || cg.calendly);
       var hasStripe = !!(cg.stripe_account_id || cg.stripe_connect_account_id || cg.stripe_customer_id);
       var nInf = infByCoach[u.id] || 0;
-      return { id:u.id, activo:u.activo, email:u.email||"", tipo:((u.rol==="admin")?"admin":(cg.coach_type||"carrera")), n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, alta:alta, cli:(u.rol==="admin"?"—":cb.n), actv:actv, foto:hasFoto, cal:hasCal, stripe:hasStripe, inf:nInf, pw:cg.pathway_optin?"Sí":"No", com:"—", fotoUrl:(cg.foto_url||cg.foto_perfil||u.foto_url||""), pub:!!cg.perfil_publico_activo };
+      return { id:u.id, activo:u.activo, email:u.email||"", tipo:((u.rol==="admin")?"admin":(cg.coach_type||"carrera")), n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, accMs:accMs, alta:alta, cli:(u.rol==="admin"?"—":cb.n), actv:actv, foto:hasFoto, cal:hasCal, stripe:hasStripe, inf:nInf, pw:cg.pathway_optin?"Sí":"No", com:"—", fotoUrl:(cg.foto_url||cg.foto_perfil||u.foto_url||""), pub:!!cg.perfil_publico_activo };
     });
   }
-  // Inactivas al final: las activas se ven primero, las desactivadas abajo.
+  // Orden: activas primero (inactivas al final) y, dentro de cada grupo, por
+  // ÚLTIMA CONEXIÓN (más reciente arriba; las que nunca entraron quedan al fondo).
   coachesEng = coachesEng.slice().sort(function(a,b){
     var ai=(a.activo===false)?1:0, bi=(b.activo===false)?1:0;
-    return ai-bi;
+    if(ai!==bi) return ai-bi;
+    return (b.accMs||0)-(a.accMs||0);
   });
   var engRows = coachesEng.map(function(c){
     var off=(c.activo===false);
