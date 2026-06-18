@@ -403,24 +403,23 @@ function appendRef(url,coachId){
 // gestionan por Pathway (modelo de solicitud + comisión).
 function _coachCompleto(c){
   var cfg = c.configuracion || {};
-  // Minimo para aparecer: foto + Stripe (que pueda cobrar). La bio es opcional.
-  var foto = String(c.foto_url || cfg.foto_url || cfg.foto_perfil || '').trim();
-  var stripe = !!(cfg.stripe_account_id || cfg.stripe_connect_account_id || cfg.stripe_customer_id);
-  return !!(foto && stripe);
+  // Aparece apenas prende su perfil público (top-level o en configuracion).
+  // Ya no exigimos Stripe ni foto: el modelo es suscripción, no comisión.
+  return !!(c.perfil_publico_activo === true || cfg.perfil_publico_activo === true);
 }
 function buildCoachCard(c){
   var cfg = c.configuracion || {};
   var nombre = c.nombre || c.nombre_practica || 'Coach';
-  var coachType = (cfg.coach_type || (Array.isArray(cfg.especialidades) && cfg.especialidades[0]) || '').toString().toLowerCase();
-  var titulo = coachType.indexOf('fitness')>=0 ? 'Coach fitness'
-             : coachType.indexOf('financ')>=0 ? 'Coach financiero'
-             : (coachType.indexOf('carrera')>=0 || coachType.indexOf('career')>=0) ? 'Coach de carrera'
-             : (c.nombre_practica || 'Coach de carrera');
+  var ct = (cfg.coach_type || (Array.isArray(cfg.especialidades) && cfg.especialidades[0]) || '').toString().toLowerCase();
+  var nichoNorm = ct.indexOf('fitness')>=0 ? 'fitness' : (ct.indexOf('financ')>=0 ? 'financiero' : 'carrera');
+  var titulo = nichoNorm==='fitness' ? 'Coach de fitness' : nichoNorm==='financiero' ? 'Coach de finanzas' : 'Coach de carrera';
   var bio = c.bio || 'Coach certificado en Pathway. Acompaña a profesionales en su transición de carrera.';
   var foto = c.foto_url || cfg.foto_url || cfg.foto_perfil || '';
-  var mercados = Array.isArray(cfg.mercados) ? cfg.mercados : (cfg.mercado ? [cfg.mercado] : []);
-  var paisesAttr = mercados.join(' ');
-  var paisesLbl = mercados.length ? mercados.map(function(m){return m.charAt(0).toUpperCase()+m.slice(1);}).join(' · ') : 'Remoto';
+  // País: un solo país real (cfg.pais ISO que pone el coach en su panel). Sin "Remoto".
+  var PAIS_MAP = { ES:['espana','España'], AR:['argentina','Argentina'], MX:['mexico','México'], CL:['chile','Chile'], CO:['colombia','Colombia'], UY:['uruguay','Uruguay'], PE:['peru','Perú'] };
+  var pm = PAIS_MAP[String(cfg.pais||'').toUpperCase()] || null;
+  var paisesAttr = pm ? pm[0] : '';
+  var paisesLbl = pm ? pm[1] : 'Internacional';
   var especialidades = Array.isArray(cfg.especialidades) ? cfg.especialidades : [];
   var precioMent = cfg.precio_mentoria || 400;
   var precioSes = cfg.precio_sesion || 120;
@@ -445,7 +444,7 @@ function buildCoachCard(c){
   var paisMatchBadge = c.country_match
     ? '<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(45,106,79,.10);color:var(--pw-bosque);font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px;margin-bottom:6px"><span style="font-size:13px">📍</span> En tu país</span>'
     : '';
-  return '<article class="coach-card" data-pais="'+escH(paisesAttr)+'" data-nicho="'+escH(coachType)+'" data-coach-id="'+escH(c.id)+'">'
+  return '<article class="coach-card" data-pais="'+escH(paisesAttr)+'" data-nicho="'+escH(nichoNorm)+'" data-coach-id="'+escH(c.id)+'">'
     + '<div class="coach-top">'
     +   '<div class="coach-photo-round">'+fotoHtml+'</div>'
     +   '<div class="coach-info">'
@@ -517,9 +516,30 @@ function attachFilterTabs(){
   });
 }
 
+// Oculta los filtros (áreas / países) que no tienen ningún coach. Solo deja
+// los que existen + el "Todos".
+function pruneFilters(){
+  var cards = Array.prototype.slice.call(document.querySelectorAll('.coach-card'))
+    .filter(function(c){ return !c.classList.contains('coach-card--placeholder'); });
+  var nichos = {}, paises = {};
+  cards.forEach(function(c){
+    var n = (c.dataset.nicho||'').trim(); if(n) nichos[n] = 1;
+    (c.dataset.pais||'').split(/\s+/).forEach(function(p){ if(p) paises[p] = 1; });
+  });
+  var anyLatam = ['argentina','mexico','colombia','chile','peru','uruguay'].some(function(p){ return paises[p]; });
+  document.querySelectorAll('.filter-tab[data-nicho]').forEach(function(t){
+    if(t.dataset.nicho==='todos') return;
+    t.style.display = nichos[t.dataset.nicho] ? '' : 'none';
+  });
+  document.querySelectorAll('.filter-tab[data-pais]').forEach(function(t){
+    if(t.dataset.pais==='todos') return;
+    var show = t.dataset.pais==='latam' ? anyLatam : !!paises[t.dataset.pais];
+    t.style.display = show ? '' : 'none';
+  });
+}
 async function loadCoachesDirectory(){
   try {
-    var url = SB + '/rest/v1/usuarios?rol=in.(coach,admin)&activo=eq.true&select=id,nombre,email,foto_url,nombre_practica,bio,slug,configuracion&order=created_at.asc';
+    var url = SB + '/rest/v1/usuarios?rol=in.(coach,admin)&activo=eq.true&select=id,nombre,email,foto_url,nombre_practica,bio,slug,perfil_publico_activo,configuracion&order=created_at.asc';
     var r = await fetch(url, { headers:{ apikey:KEY, Authorization:'Bearer '+KEY } });
     if(!r.ok) throw new Error('HTTP '+r.status);
     var coaches = await r.json();
@@ -549,6 +569,7 @@ async function loadCoachesDirectory(){
       + '<div class="dir-empty" id="dir-empty">Todavía no hay coaches en este país. <a href="#directorio" style="color:var(--pw-bosque);text-decoration:underline;">Ver todos</a></div>';
     grid.innerHTML = html;
     attachFilterTabs();
+    pruneFilters();
   } catch (e) {
     console.warn('No se pudo cargar el directorio dinámico, usando fallback HTML:', e);
     attachFilterTabs();
