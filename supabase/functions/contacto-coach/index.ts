@@ -103,21 +103,13 @@ Deno.serve(async (req: Request) => {
   const coachFirst = (coach.nombre || "").split(/\s+/)[0] || "coach";
   const leadFirst = nombre.split(/\s+/)[0] || nombre;
 
-  // ── Registrar el lead en contactos_chat (lo ve la admin en Contactos) ──
-  // Reusa el formato "Nombre · email → SOLICITA coach: <nombre> [<id>]" que el
-  // panel ya parsea y muestra como "Pidió coach". Así el contacto queda como
-  // solicitud, no solo como email.
-  const contactoTxt = `${nombre} · ${email} → SOLICITA coach: ${coach.nombre || "coach"} [${coach.id || coachId}]`;
-  const logTask = fetch(`${SB_URL}/rest/v1/contactos_chat`, {
-    method: "POST",
-    headers: { ...sbHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify({ contacto: contactoTxt, pagina: "contacto-coach" }),
-  }).then((r) => r.ok ? { log: "saved" } : { log: "failed", status: r.status })
-    .catch((e) => ({ log: "exception", detail: String(e).slice(0, 120) }));
+  // Token del link mágico: el lead sigue la conversación en /c/<token> sin cuenta.
+  const token = crypto.randomUUID();
+  const convoUrl = `https://pathwaycareercoach.com/c/${token}`;
 
-  // ── Crear la solicitud tipo "mensaje" (la ve el coach en su panel) ────
-  // estado='mensaje', monto/comisión 0 → no entra al flujo de pago de Stripe
-  // (aceptar/rechazar). El panel la muestra como contacto, con responder.
+  // ── Crear la solicitud tipo "mensaje" con el hilo de conversación ─────
+  // estado='mensaje', monto/comisión 0 → no entra al flujo de pago. El panel la
+  // muestra en "Mensajes" con el hilo y "Responder". El token la liga a /c/<token>.
   const solTask = fetch(`${SB_URL}/rest/v1/solicitudes`, {
     method: "POST",
     headers: { ...sbHeaders, "Content-Type": "application/json", Prefer: "return=minimal" },
@@ -127,6 +119,9 @@ Deno.serve(async (req: Request) => {
       candidato_email: email,
       servicio: "mensaje",
       mensaje: mensaje,
+      token: token,
+      mensajes: [{ from: "lead", texto: mensaje, ts: Date.now() }],
+      lead_ultimo_at: new Date().toISOString(),
       monto: 0,
       comision: 0,
       estado: "mensaje",
@@ -160,22 +155,22 @@ Deno.serve(async (req: Request) => {
   <div style="font-size:13px;color:#5A6A60;margin-top:4px;">${escH(email)}</div>
   <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(45,106,79,.08);font-size:13.5px;color:#3A4A40;line-height:1.55;white-space:pre-wrap;">${escH(mensaje)}</div>
 </div>
-<p style="margin:18px 0 0;"><a href="mailto:${escH(email)}?subject=${encodeURIComponent("Re: tu mensaje en Pathway")}" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Responder →</a></p>
-<p style="font-size:12px;color:#888;margin-top:18px;">Respondé directo a este email y le llega a ${escH(leadFirst)}.</p>
+<p style="margin:18px 0 0;"><a href="https://pathwaycareercoach.com/panel-v2.html#mensajes" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ver y responder en Pathway →</a></p>
+<p style="font-size:12px;color:#888;margin-top:18px;">Respondés desde tu panel (sección <strong>Mensajes</strong>) y la conversación queda registrada con ${escH(leadFirst)}.</p>
 `;
 
   // ── Confirmación para el lead ─────────────────────────────────────
   const leadSubject = `Tu mensaje a ${coachFirst} · Pathway`;
   const leadHtml = `
 <p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">¡Hola ${escH(leadFirst)}! 😊</p>
-<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Recibimos tu mensaje para <strong>${escH(coach.nombre || "tu coach")}</strong> y ya se lo hicimos llegar. Te va a responder a este email.</p>
+<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Recibimos tu mensaje para <strong>${escH(coach.nombre || "tu coach")}</strong> y ya se lo hicimos llegar. Cuando responda, podés seguir la conversación acá mismo:</p>
+<p style="margin:16px 0;"><a href="${convoUrl}" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ver la conversación →</a></p>
 <div style="background:#fff;border:1px solid rgba(45,106,79,.10);border-radius:10px;padding:12px 14px;margin:16px 0;font-size:13.5px;color:#5A6A60;line-height:1.55;font-style:italic;white-space:pre-wrap;">Tu mensaje: "${escH(mensaje)}"</div>
 <p style="margin:14px 0 6px;color:#3A4A40;line-height:1.65;">Saludos,</p>
 <p style="margin:0;color:#1B4332;font-weight:600;">El equipo de Pathway</p>
 `;
 
   const results = await Promise.all([
-    logTask,
     solTask,
     sendOne(coach.email, coach.nombre || "Coach", coachSubject, coachHtml, email)
       .then((r) => r.ok ? { coach: "sent" } : r.text().then((t) => ({ coach: "failed", status: r.status, detail: t.slice(0, 200) })))

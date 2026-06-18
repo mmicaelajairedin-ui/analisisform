@@ -1603,16 +1603,20 @@ function viewMensajesInbox(){
                 .sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
   function mcard(s){
     var fecha=(""+(s.created_at||"")).replace("T"," ").slice(0,16);
-    return "<div class='cp-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+    var hilo=(Array.isArray(s.mensajes)&&s.mensajes.length)?s.mensajes:[{from:"lead",texto:s.mensaje||"",ts:0}];
+    var bubbles=hilo.map(function(m){ var me=(m.from==="coach");
+      return "<div style='display:flex;"+(me?"justify-content:flex-end":"")+";margin:4px 0'><div style='max-width:82%;font-size:13px;line-height:1.5;padding:9px 12px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word;background:"+(me?"var(--pw-bosque)":"#EEF3F0")+";color:"+(me?"#fff":"var(--pw-carbon)")+"'>"+esc(m.texto||"")+"</div></div>"; }).join("");
+    return "<div class='cp-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
       "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap'>"+
-        "<div><div style='font-family:var(--pw-serif);font-size:17px;color:var(--pw-carbon)'>"+esc(s.candidato_nombre||s.candidato_email||"Candidato")+"</div>"+
+        "<div><div style='font-family:var(--pw-serif);font-size:16px;color:var(--pw-carbon)'>"+esc(s.candidato_nombre||s.candidato_email||"Candidato")+"</div>"+
           "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.candidato_email||"")+"</div></div>"+
-        "<div style='text-align:right'><span style='display:inline-block;background:rgba(45,106,79,.10);color:var(--pw-bosque);font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px'>"+svg(IC.msg,11)+" Mail desde tu perfil</span>"+
+        "<div style='text-align:right'><span style='display:inline-block;background:rgba(45,106,79,.10);color:var(--pw-bosque);font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px'>Desde tu perfil</span>"+
           (fecha?"<div style='font-size:11px;color:var(--pw-text-muted);margin-top:4px'>"+esc(fecha)+"</div>":"")+"</div>"+
       "</div>"+
-      (s.mensaje ? "<div style='background:rgba(45,106,79,.04);border-left:3px solid var(--pw-bosque);border-radius:6px;padding:10px 14px;font-size:13.5px;color:var(--pw-text-soft);line-height:1.55;white-space:pre-wrap;word-wrap:break-word'>"+esc(s.mensaje)+"</div>" : "")+
-      "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
-        "<button class='cp-btn cp-btn-primary' data-act='sol-reply' data-em='"+esc(s.candidato_email||"")+"' data-nom='"+esc(s.candidato_nombre||"")+"'>"+svg(IC.msg,13)+" Responder por mail</button>"+
+      "<div style='background:var(--pw-niebla-2);border-radius:10px;padding:8px 10px'>"+bubbles+"</div>"+
+      "<div style='display:flex;gap:8px;align-items:flex-end'>"+
+        "<textarea id='convmsg-"+esc(s.id)+"' placeholder='Escribe tu respuesta… (se la mandamos por mail con el link a la conversación)' style='flex:1;min-height:40px;max-height:130px;border:1px solid var(--pw-border);border-radius:10px;padding:9px 12px;font-family:inherit;font-size:13px;resize:vertical;outline:none;box-sizing:border-box'></textarea>"+
+        "<button class='cp-btn cp-btn-primary' data-act='conv-reply' data-id='"+esc(s.id)+"'>"+svg(IC.msg,13)+" Responder</button>"+
       "</div></div></div>";
   }
   var body = msgs.length ? msgs.map(mcard).join("")
@@ -4688,6 +4692,29 @@ document.addEventListener("click", function(ev){
       subj:"Hola"+(lnom?(" "+lnom):"")+" 👋",
       body:"Hola"+(lnom?(" "+lnom):"")+",\n\nGracias por escribirnos desde la web. Soy "+((COACH&&COACH.firstName)||"tu coach")+". Contame en qué estás trabajando y vemos cómo te puedo ayudar.\n\n¿Te viene bien una llamada corta esta semana?" };
     render(); return;
+  }
+  if(act==="conv-reply"){
+    var cvid=el.getAttribute("data-id"); if(!cvid) return;
+    var cinp=document.getElementById("convmsg-"+cvid); var ctxt=cinp?(""+cinp.value).trim():""; if(!ctxt) return;
+    var csc=(RSOL||[]).filter(function(x){return String(x.id)===String(cvid);})[0];
+    if(!csc){ alert("No encontré la conversación."); return; }
+    var carr=Array.isArray(csc.mensajes)?csc.mensajes.slice():[];
+    if(!carr.length && csc.mensaje) carr=[{from:"lead",texto:csc.mensaje,ts:Date.now()}];
+    carr.push({from:"coach",texto:ctxt,ts:Date.now()});
+    _sbw("solicitudes?id=eq."+encodeURIComponent(cvid),"PATCH",{mensajes:carr,coach_ultimo_at:new Date().toISOString()})
+      .then(function(r){ if(!r.ok) throw 0;
+        csc.mensajes=carr;
+        if(csc.candidato_email && csc.token){
+          var link="https://pathwaycareercoach.com/c/"+csc.token;
+          var html="<p style='margin:0 0 12px;color:#3A4A40;line-height:1.6'>"+esc((COACH&&COACH.name)||"Tu coach")+" te respondió en Pathway.</p>"+
+            "<div style='background:#fff;border-left:3px solid #2D6A4F;border-radius:8px;padding:12px 14px;margin:12px 0;color:#3A4A40;white-space:pre-wrap'>"+esc(ctxt)+"</div>"+
+            "<p style='margin:14px 0'><a href='"+link+"' style='display:inline-block;padding:11px 22px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700'>Ver y responder →</a></p>";
+          fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:csc.candidato_email,to_name:csc.candidato_nombre||"",subject:"Respuesta de "+((COACH&&COACH.name)||"tu coach")+" · Pathway",html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){});
+        }
+        toast("Respuesta enviada ✓"); render();
+      })
+      .catch(function(){ alert("No se pudo enviar la respuesta."); });
+    return;
   }
   if(act==="sol-reply"){
     var sem=el.getAttribute("data-em")||""; if(!sem){ alert("Esta solicitud no tiene email."); return; }

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conversación · Pathway</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bosque:#2D6A4F;--carbon:#1B2E26;--muted:#6B7A72;--border:#E4ECE7;--bg:#F7FBF8;--serif:'Fraunces',Georgia,serif;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Inter,-apple-system,sans-serif;background:var(--bg);color:var(--carbon);-webkit-font-smoothing:antialiased;}
+.wrap{max-width:560px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:#fff;}
+.top{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:11px;position:sticky;top:0;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);z-index:5;}
+.top .av{width:40px;height:40px;border-radius:50%;background:var(--bosque);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-weight:600;font-size:17px;flex-shrink:0;}
+.top h1{font-family:var(--serif);font-size:17px;font-weight:600;line-height:1.1;}
+.top .sub{font-size:11.5px;color:var(--muted);margin-top:1px;}
+.thread{flex:1;padding:20px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;}
+.msg{max-width:80%;padding:11px 14px;border-radius:15px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;}
+.msg.coach{align-self:flex-start;background:#EEF3F0;color:var(--carbon);border-bottom-left-radius:5px;}
+.msg.lead{align-self:flex-end;background:var(--bosque);color:#fff;border-bottom-right-radius:5px;}
+.msg .who{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;opacity:.6;margin-bottom:3px;}
+.hint{text-align:center;color:var(--muted);font-size:12.5px;padding:8px 0;}
+.foot{border-top:1px solid var(--border);padding:14px 16px;background:#fff;position:sticky;bottom:0;display:flex;flex-direction:column;gap:10px;}
+.row{display:flex;gap:9px;align-items:flex-end;}
+textarea{flex:1;border:1px solid var(--border);border-radius:14px;padding:11px 14px;font-family:inherit;font-size:14px;resize:none;min-height:46px;max-height:120px;outline:none;}
+textarea:focus{border-color:var(--bosque);}
+.send{background:var(--bosque);color:#fff;border:none;border-radius:50%;width:46px;height:46px;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.send:disabled{opacity:.5;cursor:default;}
+.cta{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#FBF6E6;border:1px solid #ECDFB0;border-radius:13px;padding:11px 15px;}
+.cta .t{font-size:12.5px;color:#6b5a1f;font-weight:600;}
+.cta a{background:var(--bosque);color:#fff;text-decoration:none;font-weight:700;font-size:13px;padding:9px 16px;border-radius:10px;white-space:nowrap;}
+.center{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;padding:40px;color:var(--muted);font-size:14px;line-height:1.6;}
+.brand{padding:14px;text-align:center;font-size:11px;color:var(--muted);border-top:1px solid var(--border);}
+.brand b{color:var(--bosque);}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="center" id="loading">Cargando tu conversación…</div>
+</div>
+
+<script>
+var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function ini(n){return (String(n||'?').trim()[0]||'?').toUpperCase();}
+function getToken(){ var q=new URLSearchParams(location.search).get('t'); if(q) return q.trim(); var m=location.pathname.match(/\/c\/([A-Za-z0-9-]{12,})/); return m?m[1]:''; }
+var TOKEN=getToken(), DATA=null;
+
+function api(action, extra){
+  return fetch(SB+'/functions/v1/conversacion',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify(Object.assign({action:action,token:TOKEN},extra||{}))}).then(function(r){return r.json();});
+}
+function fmtPrecio(s){ var n=Number(s.precio!=null?s.precio:s.price); return isFinite(n)&&n>0?('€'+n):''; }
+
+function render(){
+  var coach=DATA.coach||{}, msgs=DATA.mensajes||[];
+  var precios=(coach.servicios||[]).map(function(s){return Number(s.precio!=null?s.precio:s.price);}).filter(function(n){return isFinite(n)&&n>0;});
+  var desde=precios.length?(' · desde €'+Math.min.apply(null,precios)):'';
+  var cta=coach.slug
+    ? '<div class="cta"><span class="t">¿Listo para empezar'+desde+'?</span><a href="/coach/'+esc(coach.slug)+'">Contratar →</a></div>'
+    : '';
+  var thread=msgs.length? msgs.map(function(m){
+      return '<div class="msg '+(m.from==='lead'?'lead':'coach')+'"><div class="who">'+(m.from==='lead'?'Tú':esc(coach.nombre))+'</div>'+esc(m.texto)+'</div>';
+    }).join('')
+    : '<div class="hint">Tu mensaje se envió. '+esc(coach.nombre)+' te va a responder por acá.</div>';
+  document.getElementById('wrap').innerHTML=
+    '<div class="top"><div class="av">'+esc(ini(coach.nombre))+'</div><div><h1>'+esc(coach.nombre)+'</h1><div class="sub">Conversación en Pathway</div></div></div>'+
+    '<div class="thread" id="thread">'+thread+'</div>'+
+    '<div class="foot">'+cta+
+      '<div class="row"><textarea id="msg" placeholder="Escribe tu respuesta…" rows="1"></textarea>'+
+        '<button class="send" id="send" aria-label="Enviar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button></div>'+
+    '</div>'+
+    '<div class="brand">Conversación segura · path<b>way</b>.</div>';
+  var t=document.getElementById('thread'); t.scrollTop=t.scrollHeight;
+  document.getElementById('send').onclick=enviar;
+  var ta=document.getElementById('msg');
+  ta.addEventListener('input',function(){ ta.style.height='auto'; ta.style.height=Math.min(120,ta.scrollHeight)+'px'; });
+}
+function enviar(){
+  var ta=document.getElementById('msg'), btn=document.getElementById('send');
+  var txt=(ta.value||'').trim(); if(!txt) return;
+  btn.disabled=true;
+  api('responder',{texto:txt}).then(function(j){
+    btn.disabled=false;
+    if(j&&j.ok){ DATA.mensajes=j.mensajes; render(); } else { alert('No se pudo enviar. Probá de nuevo.'); }
+  }).catch(function(){ btn.disabled=false; alert('Error de conexión.'); });
+}
+function start(){
+  if(!TOKEN){ document.getElementById('wrap').innerHTML='<div class="center">Link inválido. Pedile al coach que te reenvíe el enlace de la conversación.</div>'; return; }
+  api('get').then(function(j){
+    if(j&&j.ok){ DATA=j; render(); }
+    else { document.getElementById('wrap').innerHTML='<div class="center">No encontramos esta conversación.<br>El link puede haber expirado.</div>'; }
+  }).catch(function(){ document.getElementById('wrap').innerHTML='<div class="center">No se pudo cargar. Probá de nuevo en un rato.</div>'; });
+}
+start();
+</script>
+</body>
+</html>
