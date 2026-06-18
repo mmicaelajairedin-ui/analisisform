@@ -4577,7 +4577,7 @@ document.addEventListener("click", function(ev){
     state.inboxOpen=false; state.section="clientes"; state.clienteSel=igid; state.cliDetTab="mensajes"; state.cliWeek=null;
     render(); window.scrollTo(0,0); return;
   }
-  if(act.indexOf("nav:")===0){ state.section = act.slice(4); render(); window.scrollTo(0,0); return; }
+  if(act.indexOf("nav:")===0){ state.section = act.slice(4); render(); window.scrollTo(0,0); if(state.section==="solicitudes") syncSolicitudes(); return; }
   if(act.indexOf("cli:")===0){ state.cliFilter = act.slice(4); render(); return; }
   if(act.indexOf("cfg:")===0){ state.cfg = act.slice(4); render(); return; }
   if(act==="pub-toggle"){
@@ -6394,6 +6394,18 @@ function startMsgPolling(){
   document.addEventListener("visibilitychange", function(){
     if(document.visibilityState === "visible") pollMessages();
   });
+}
+// Reconcilia las solicitudes pendientes del coach contra Stripe (cargo directo
+// sobre su cuenta → no llega por webhook). Al abrir Solicitudes, las que el
+// candidato ya pagó pasan a "autorizada" y aparecen los botones Aceptar/Rechazar.
+var _solSyncing=false;
+function syncSolicitudes(){
+  if(!REAL || !RME || !RME.id || _solSyncing) return;
+  _solSyncing=true;
+  fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:"sync",coach_id:RME.id})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){ _solSyncing=false; if(j&&j.changed>0){ loadReal(); } })
+    .catch(function(){ _solSyncing=false; });
 }
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
