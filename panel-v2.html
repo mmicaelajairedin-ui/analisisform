@@ -1423,7 +1423,7 @@ var _CLI_SHORT={fit_antro:'Medidas',docs:'Docs'};
 function viewSidebar(){
   var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"],["config","Configuración","navConfig"]];
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
-  var _navSec = state.section==="solicitudes" ? "clientes" : state.section;
+  var _navSec = (state.section==="solicitudes"||state.section==="mensajes") ? "clientes" : state.section;
   // Burbuja guía: sigue el PROGRESO REAL — muestra siempre la fase incompleta
   // actual sobre su botón del menú, hasta completar sus sub-pasos. Confeti +
   // medalla SOLO al completar todos los sub-pasos de una fase (3 en total).
@@ -1490,8 +1490,10 @@ function viewSidebar(){
 function cliSolTabs(active){
   if(!state.pathwayOptIn && !(RSOL&&RSOL.length)) return "";
   var pend=(RSOL||[]).filter(function(s){return s.estado==="autorizada";}).length;
+  var nmsg=(RSOL||[]).filter(function(s){return s.estado==="mensaje";}).length;
   return "<div class='cp-filters' style='margin:0 0 4px'>"+
     "<button class='cp-chip "+(active==="clientes"?"is-on":"")+"' data-act='nav:clientes'>Clientes</button>"+
+    "<button class='cp-chip "+(active==="mensajes"?"is-on":"")+"' data-act='nav:mensajes'>Mensajes"+(nmsg?"<span class='cp-chip-count'>"+nmsg+"</span>":"")+"</button>"+
     "<button class='cp-chip "+(active==="sol"?"is-on":"")+"' data-act='nav:solicitudes'>Solicitudes"+(pend?"<span class='cp-chip-count'>"+pend+"</span>":"")+"</button></div>";
 }
 function viewSolicitudes(){
@@ -1581,10 +1583,37 @@ function viewSolicitudes(){
     "<div class='cp-card' style='background:var(--pw-niebla-2);border:1px solid var(--pw-border)'><div class='cp-card-pad'>"+
       "<div class='cp-eyebrow' style='margin-bottom:8px'>Cómo funciona</div>"+
       "<div style='font-size:13px;color:var(--pw-text);line-height:1.6'>El candidato <strong>paga primero</strong>: su tarjeta queda <strong>autorizada y retenida</strong> (todavía no se le cobra). Tienes <strong>24 h</strong> para responder. Si <strong>aceptas</strong>, se captura el pago: el dinero va <strong>directo a tu cuenta de cobro</strong> y Pathway retiene solo el <strong>20%</strong> de comisión. Si <strong>rechazas</strong> o pasan 24 h, la retención se libera y al candidato <strong>no se le cobra</strong>. Tus clientes propios no pasan por aquí (0% comisión).</div></div></div>"+
-    msgsHtml +
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperan tu respuesta<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span></div></div>"+
     pendHtml + waitHtml + histHtml;
+}
+// Bandeja de MENSAJES (mails, no chat): consultas que llegan desde el perfil
+// público del coach. Se responden por mail desde Pathway (con la firma).
+function viewMensajesInbox(){
+  var SOL = (REAL ? (RSOL||[]) : [
+    { id:"demo3", candidato_nombre:"Sofía Ramírez", candidato_email:"sofia.r@email.com", servicio:"mensaje", mensaje:"Hola, vi tu perfil y me interesa tu mentoría. Estoy en transición de marketing a producto, ¿podemos hablar?", estado:"mensaje", created_at:new Date(Date.now()-1*3600000).toISOString() }
+  ]);
+  var msgs = SOL.filter(function(s){ return s.estado==="mensaje"; })
+                .sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+  function mcard(s){
+    var fecha=(""+(s.created_at||"")).replace("T"," ").slice(0,16);
+    return "<div class='cp-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+      "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap'>"+
+        "<div><div style='font-family:var(--pw-serif);font-size:17px;color:var(--pw-carbon)'>"+esc(s.candidato_nombre||s.candidato_email||"Candidato")+"</div>"+
+          "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.candidato_email||"")+"</div></div>"+
+        "<div style='text-align:right'><span style='display:inline-block;background:rgba(45,106,79,.10);color:var(--pw-bosque);font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px'>"+svg(IC.msg,11)+" Mail desde tu perfil</span>"+
+          (fecha?"<div style='font-size:11px;color:var(--pw-text-muted);margin-top:4px'>"+esc(fecha)+"</div>":"")+"</div>"+
+      "</div>"+
+      (s.mensaje ? "<div style='background:rgba(45,106,79,.04);border-left:3px solid var(--pw-bosque);border-radius:6px;padding:10px 14px;font-size:13.5px;color:var(--pw-text-soft);line-height:1.55;white-space:pre-wrap;word-wrap:break-word'>"+esc(s.mensaje)+"</div>" : "")+
+      "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
+        "<button class='cp-btn cp-btn-primary' data-act='sol-reply' data-em='"+esc(s.candidato_email||"")+"' data-nom='"+esc(s.candidato_nombre||"")+"'>"+svg(IC.msg,13)+" Responder por mail</button>"+
+      "</div></div></div>";
+  }
+  var body = msgs.length ? msgs.map(mcard).join("")
+    : "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:42px 24px;color:var(--pw-text-soft);font-size:13px'>Todavía no tienes mensajes. Cuando alguien te escriba desde tu perfil público, su consulta te llega por mail y aparece acá.</div></div>";
+  return "<header class='cp-topbar'><div><h1 class='cp-h1'>Mensajes<span class='dot'>.</span></h1>"+
+      "<div class='cp-sub'>Consultas que te llegan por mail desde tu perfil público. Respondés desde Pathway, con tu firma.</div></div></header>"+
+    cliSolTabs("mensajes")+ body;
 }
 // Fases de arranque del coach con sub-pasos. María (ejemplo) NO cuenta como
 // cliente real. Cada fase completa = una medalla (bronce → plata → oro).
@@ -4501,7 +4530,7 @@ function render(){
     _demoSnapshot();
     if(state.section==="admin" && !RADMIN) state.section="resumen";
     _applyPanelBrand();
-    var sections = { resumen:viewResumen, clientes:viewClientes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin };
+    var sections = { resumen:viewResumen, clientes:viewClientes, mensajes:viewMensajesInbox, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin };
     var view = (sections[state.section]||viewResumen)();
     // Configuración usaba un contenedor angosto (760px) centrado, que la dejaba
     // "muy en el medio". Ahora usa el ancho normal, alineada como las demás pestañas.
