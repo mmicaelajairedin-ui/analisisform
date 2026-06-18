@@ -3991,7 +3991,7 @@ function viewAdmin(){
       (c.phone ? "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(c.phone)+"</div>" : "")+
       (badges ? "<div style='margin-top:6px'>"+badges+"</div>" : "");
     var actions = "";
-    if(c.email) actions += "<a href='mailto:"+esc(c.email)+"' class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px;text-decoration:none'>"+svg(IC.msg,13)+" Email</a>";
+    if(c.email) actions += "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='lead-mail' data-em='"+esc(c.email)+"' data-nom='"+esc(c.nombre||"")+"'>"+svg(IC.msg,13)+" Email</button>";
     if(wa)      actions += (actions?" ":"")+"<a href='https://wa.me/"+wa+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px;text-decoration:none'>"+svg(IC.wa,13)+" WhatsApp</a>";
     if(!actions) actions = "<span style='font-size:12px;color:var(--pw-text-soft)'>Sin contacto directo</span>";
     return "<tr><td>"+contactoCell+"</td>"+
@@ -4165,6 +4165,7 @@ function viewAdmin(){
               "<input id='cac-email' class='cp-form-input' style='flex:2;min-width:220px' placeholder='email del coach *'>"+
               "<input id='cac-nombre' class='cp-form-input' style='flex:1;min-width:150px' placeholder='nombre del coach *'>"+
               "<input id='cac-dias' class='cp-form-input' type='number' value='30' min='1' max='365' style='width:90px' title='Días de acceso'>"+
+              "<select id='cac-nicho' class='cp-form-input' style='width:130px' title='Nicho del coach'><option value='carrera'>Carrera</option><option value='fitness'>Fitness</option><option value='financiero'>Finanzas</option></select>"+
               "<button class='cp-btn cp-btn-primary' data-act='coach-access'>"+svg(IC.plus,12)+" Dar acceso</button>"+
             "</div>"+
             (cm ? "<div style='font-size:12px;font-weight:600;color:"+cmCol+"'>"+esc(cm.replace(/^(ok|err|…):/,""))+"</div>" : "")+
@@ -4603,6 +4604,14 @@ document.addEventListener("click", function(ev){
       body:msBody };
     render(); return;
   }
+  if(act==="lead-mail"){
+    var lem=el.getAttribute("data-em")||""; if(!lem){ alert("Este contacto no tiene email."); return; }
+    var lnom=(el.getAttribute("data-nom")||"").split(" ")[0];
+    state.mail={ open:true, to:lem,
+      subj:"Hola"+(lnom?(" "+lnom):"")+" 👋",
+      body:"Hola"+(lnom?(" "+lnom):"")+",\n\nGracias por escribirnos desde la web. Soy "+((COACH&&COACH.firstName)||"tu coach")+". Contame en qué estás trabajando y vemos cómo te puedo ayudar.\n\n¿Te viene bien una llamada corta esta semana?" };
+    render(); return;
+  }
   if(act==="msg-wa"){
     var wi=el.getAttribute("data-i"); var wt=_val("msg-"+wi);
     if(!wt.trim()){ alert("El mensaje está vacío."); return; }
@@ -4925,6 +4934,7 @@ document.addEventListener("click", function(ev){
     var caNombre=(_val("cac-nombre")||"").trim();
     var caDiasN=parseInt(_val("cac-dias")||"30",10);
     var caDias=Math.max(1,Math.min(365,isNaN(caDiasN)?30:caDiasN));
+    var caNicho=(_val("cac-nicho")||"carrera").trim();
     var setMsg=function(t,kind){ state.coachMsg=(kind||"…")+":"+t; render(); };
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(caEmail)){ setMsg("Email inválido.","err"); return; }
     setMsg("Procesando…","…");
@@ -4936,7 +4946,7 @@ document.addEventListener("click", function(ev){
         var base=cf.fecha_fin_prueba?new Date(cf.fecha_fin_prueba):new Date();
         if(isNaN(base.getTime())||base.getTime()<Date.now()) base=new Date();
         base.setDate(base.getDate()+caDias);
-        var nc=Object.assign({},cf,{plan:cf.plan||"pro",estado_sub:"prueba",fecha_fin_prueba:base.toISOString(),ultima_extension_admin:new Date().toISOString()});
+        var nc=Object.assign({},cf,{plan:cf.plan||"pro",estado_sub:"prueba",fecha_fin_prueba:base.toISOString(),coach_type:caNicho,ultima_extension_admin:new Date().toISOString()});
         return _sbw("usuarios?id=eq."+encodeURIComponent(coachRow.id),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Acceso +"+caDias+"d a "+caEmail+" ✓"); _sendCoachAccessEmail(caEmail, coachRow.nombre||"", false); setMsg("✓ "+caEmail+" tiene acceso hasta "+base.toLocaleDateString("es-ES")+" · email enviado","ok"); reloadCoaches(); });
       }
       if(anyRow){ setMsg('Ese email ya lo usa un usuario "'+(anyRow.rol||"?")+'", no un coach.',"err"); return; }
@@ -4944,7 +4954,7 @@ document.addEventListener("click", function(ev){
       // le mandamos un mail para activar su cuenta en registro.html.
       if(!caNombre){ setMsg("Pon el nombre del coach.","err"); return; }
       var trialEnd=new Date(Date.now()+caDias*86400000).toISOString();
-      return _sbw("usuarios","POST",{email:caEmail,nombre:caNombre,rol:"coach",activo:true,configuracion:{plan:"pro",estado_sub:"prueba",fecha_fin_prueba:trialEnd,creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){ if(!r.ok) throw 0; toast("Coach creado ✓"); _sendCoachAccessEmail(caEmail, caNombre, true); setMsg("✓ Coach creado. Le enviamos un email para activar su cuenta y elegir su contraseña.","ok"); reloadCoaches(); });
+      return _sbw("usuarios","POST",{email:caEmail,nombre:caNombre,rol:"coach",activo:true,configuracion:{plan:"pro",estado_sub:"prueba",fecha_fin_prueba:trialEnd,coach_type:caNicho,creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){ if(!r.ok) throw 0; toast("Coach creado ✓"); _sendCoachAccessEmail(caEmail, caNombre, true); setMsg("✓ Coach creado. Le enviamos un email para activar su cuenta y elegir su contraseña.","ok"); reloadCoaches(); });
     }).catch(function(){ setMsg("Error de conexión, o el email ya existe.","err"); });
     return;
   }
