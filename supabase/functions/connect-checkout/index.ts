@@ -254,6 +254,26 @@ Deno.serve(async (req: Request) => {
         }
       }
     }
+    // Aviso por mail al comprador (Pathway media; los mails no se exponen entre
+    // las partes). No rompemos el accept/reject si el mail falla.
+    try {
+      const buyerEmail = String(sol.candidato_email || "").trim();
+      if (buyerEmail) {
+        let coachNombre = "tu coach";
+        const cr = await fetch(`${SB}/rest/v1/usuarios?id=eq.${encodeURIComponent(sol.coach_id)}&select=nombre`, { headers: sbH(SRK) });
+        if (cr.ok) coachNombre = ((await cr.json())[0] || {}).nombre || coachNombre;
+        const bn = String(sol.candidato_nombre || "").split(" ")[0] || "";
+        const serv = sol.servicio_titulo || "tu servicio";
+        const html = action === "accept"
+          ? `<p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">¡Hola ${bn}! 🎉</p><p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;"><strong>${coachNombre}</strong> aceptó tu solicitud de <strong>${serv}</strong>. ¡Arrancan! Te va a contactar para coordinar los próximos pasos.</p>`
+          : `<p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">Hola ${bn},</p><p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Esta vez <strong>${coachNombre}</strong> no pudo tomar tu solicitud de <strong>${serv}</strong>. <strong>No se te cobró</strong> — la retención se liberó. Podés elegir otro coach cuando quieras.</p>`;
+        await fetch(`${SB}/functions/v1/send-email`, {
+          method: "POST",
+          headers: { ...sbH(SRK), "Content-Type": "application/json" },
+          body: JSON.stringify({ to: buyerEmail, to_name: bn, subject: action === "accept" ? `¡${coachNombre} aceptó tu solicitud! · Pathway` : "Sobre tu solicitud · Pathway", html, signature: "pathway" }),
+        });
+      }
+    } catch (_e) { /* el mail es best-effort */ }
     return json({ ok: true, estado: action === "accept" ? "aceptada" : "rechazada" });
   }
 
