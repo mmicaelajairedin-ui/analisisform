@@ -146,6 +146,14 @@ Deno.serve(async (req: Request) => {
       mi_enfoque: row.mi_enfoque,
       especialidades: row.especialidades || [],
       atiende: row.atiende,
+      // Versiones en inglés (las carga el coach en su panel → se guardan en
+      // configuracion). El perfil público las usa cuando el visitante navega en
+      // inglés; si están vacías, cae al texto original.
+      titulo_profesional_en: str("titulo_profesional_en"),
+      tagline_en: str("tagline_en"),
+      bio_publica_en: str("bio_en"),
+      mi_enfoque_en: str("mi_enfoque_en"),
+      atiende_en: str("atiende_en"),
       anios_experiencia: row.anios_experiencia,
       calendly_url: str("calendly_url"),
       // Canales de contacto de respaldo: si el coach no tiene Calendly, el
