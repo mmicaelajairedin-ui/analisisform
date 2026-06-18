@@ -1497,7 +1497,8 @@ function cliSolTabs(active){
 function viewSolicitudes(){
   var SOL = (REAL ? (RSOL||[]) : [
     { id:"demo1", candidato_nombre:"Lucía Fernández", candidato_email:"lucia.f@email.com", servicio:"mentoria", monto:400, comision:80, estado:"autorizada", created_at:new Date(Date.now()-3*3600000).toISOString(), expires_at:new Date(Date.now()+21*3600000).toISOString() },
-    { id:"demo2", candidato_nombre:"Marco Díaz", candidato_email:"marco.d@email.com", servicio:"sesion", monto:120, comision:24, estado:"autorizada", created_at:new Date(Date.now()-20*3600000).toISOString(), expires_at:new Date(Date.now()+4*3600000).toISOString() }
+    { id:"demo2", candidato_nombre:"Marco Díaz", candidato_email:"marco.d@email.com", servicio:"sesion", monto:120, comision:24, estado:"autorizada", created_at:new Date(Date.now()-20*3600000).toISOString(), expires_at:new Date(Date.now()+4*3600000).toISOString() },
+    { id:"demo3", candidato_nombre:"Sofía Ramírez", candidato_email:"sofia.r@email.com", servicio:"mensaje", mensaje:"Hola, vi tu perfil y me interesa tu mentoría. Estoy en transición de marketing a producto, ¿podemos hablar?", monto:0, comision:0, estado:"mensaje", created_at:new Date(Date.now()-1*3600000).toISOString() }
   ]);
   function _money(n){ return "€"+(Number(n)||0).toLocaleString("es-ES"); }
   // Si la solicitud guardó un servicio_titulo (modo nuevo de connect-checkout
@@ -1519,6 +1520,9 @@ function viewSolicitudes(){
   var pend = SOL.filter(function(s){ return s.estado==="autorizada"; });
   var waiting = SOL.filter(function(s){ return s.estado==="pendiente"; });
   var hist = SOL.filter(function(s){ return ["aceptada","rechazada","expirada"].indexOf(s.estado)>=0; });
+  // Contactos gratis desde el perfil público (estado="mensaje", monto 0).
+  // No entran al flujo de pago — solo se responden por email.
+  var msgs = SOL.filter(function(s){ return s.estado==="mensaje"; });
 
   function card(s){
     var neto=(Number(s.monto)||0)-(Number(s.comision)|| (Number(s.monto)||0)*0.2);
@@ -1539,6 +1543,25 @@ function viewSolicitudes(){
         "<button class='cp-btn cp-btn-primary beacon' data-act='sol-accept' data-id='"+esc(s.id)+"'>Aceptar y cobrar</button>"+
       "</div></div></div>";
   }
+  // Tarjeta de mensaje (contacto gratis): sin pago, solo responder por email.
+  function msgCard(s){
+    var fecha=(""+(s.created_at||"")).replace("T"," ").slice(0,16);
+    var mailto="mailto:"+encodeURIComponent(s.candidato_email||"")+"?subject="+encodeURIComponent("Re: tu mensaje en Pathway");
+    return "<div class='cp-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+      "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap'>"+
+        "<div><div style='font-family:var(--pw-serif);font-size:17px;color:var(--pw-carbon)'>"+esc(s.candidato_nombre||s.candidato_email||"Candidato")+"</div>"+
+          "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.candidato_email||"")+"</div></div>"+
+        "<div style='text-align:right'><span style='display:inline-block;background:rgba(45,106,79,.10);color:var(--pw-bosque);font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px'>Contacto desde tu perfil</span>"+
+          (fecha?"<div style='font-size:11px;color:var(--pw-text-muted);margin-top:4px'>"+esc(fecha)+"</div>":"")+"</div>"+
+      "</div>"+
+      (s.mensaje ? "<div style='background:rgba(45,106,79,.04);border-left:3px solid var(--pw-bosque);border-radius:6px;padding:10px 14px;font-size:13.5px;color:var(--pw-text-soft);line-height:1.55;white-space:pre-wrap;word-wrap:break-word'>"+esc(s.mensaje)+"</div>" : "")+
+      "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
+        "<a class='cp-btn cp-btn-primary' href='"+mailto+"'>Responder por email</a>"+
+      "</div></div></div>";
+  }
+  var msgsHtml = msgs.length
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes de tu perfil<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+msgs.length+"</span></div></div>"+msgs.map(msgCard).join("")
+    : "";
   var pendHtml = pend.length ? pend.map(card).join("")
     : "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:36px 24px;color:var(--pw-text-soft);font-size:13px'>No tienes solicitudes esperando tu respuesta.</div></div>";
   var waitHtml = waiting.length
@@ -1557,6 +1580,7 @@ function viewSolicitudes(){
     "<div class='cp-card' style='background:var(--pw-niebla-2);border:1px solid var(--pw-border)'><div class='cp-card-pad'>"+
       "<div class='cp-eyebrow' style='margin-bottom:8px'>Cómo funciona</div>"+
       "<div style='font-size:13px;color:var(--pw-text);line-height:1.6'>El candidato <strong>paga primero</strong>: su tarjeta queda <strong>autorizada y retenida</strong> (todavía no se le cobra). Tienes <strong>24 h</strong> para responder. Si <strong>aceptas</strong>, se captura el pago: el dinero va <strong>directo a tu cuenta de cobro</strong> y Pathway retiene solo el <strong>20%</strong> de comisión. Si <strong>rechazas</strong> o pasan 24 h, la retención se libera y al candidato <strong>no se le cobra</strong>. Tus clientes propios no pasan por aquí (0% comisión).</div></div></div>"+
+    msgsHtml +
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperan tu respuesta<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span></div></div>"+
     pendHtml + waitHtml + histHtml;
