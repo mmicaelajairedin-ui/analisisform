@@ -76,7 +76,10 @@ Deno.serve(async (req: Request) => {
   const tipoLbl = tipo === "coach"
     ? "COACH (quiere demo)"
     : tipo === "candidato" ? "CANDIDATO (busca trabajo)" : "Lead general";
-  const adminSubject = `Nuevo lead ${tipoLbl}: ${nombre}`;
+  // Asunto con emoji por tipo, para distinguirlo de un alta de coach (🎉) en la
+  // bandeja: 🟢 coach interesado · 🔵 candidato · 📩 contacto general.
+  const tipoEmoji = tipo === "coach" ? "🟢" : tipo === "candidato" ? "🔵" : "📩";
+  const adminSubject = `${tipoEmoji} Nuevo contacto · ${tipoLbl}: ${nombre}`;
   const replyTo = leadIsEmail ? contacto : "";
   const tipoBanner = tipo === "coach"
     ? `<div style="display:inline-block;background:#2D6A4F;color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;letter-spacing:.4px;text-transform:uppercase;">Coach · Quiere demo</div>`
