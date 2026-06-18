@@ -40,6 +40,7 @@ interface StripeSession {
   // 2. client_reference_id (URL ?client_reference_id=<uuid>)
   metadata?: { coach_id?: string; [k: string]: string | undefined };
   client_reference_id?: string;
+  payment_intent?: string;
 }
 
 interface StripeSubscriptionItem {
@@ -207,6 +208,36 @@ async function handlePackExpressPayment(session: StripeSession) {
     });
     return { result: "pack_express_created", email, amount };
   }
+}
+
+// ── Handler: compra de un servicio a un coach (marketplace / solicitudes) ────
+// connect-checkout creó la solicitud con estado='pendiente' + stripe_session_id.
+// Al completarse el pago la pasamos a 'autorizada' → le aparece al coach para
+// Aceptar/Rechazar (ventana 24 h).
+async function handleSolicitudPayment(
+  session: StripeSession,
+): Promise<{ matched: boolean; result?: unknown }> {
+  const { url: SB_URL, headers } = getSupabaseAuth();
+  const sid = session.id;
+  if (!sid) return { matched: false };
+  const r = await fetch(
+    `${SB_URL}/rest/v1/solicitudes?stripe_session_id=eq.${encodeURIComponent(sid)}&select=id,estado`,
+    { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+  );
+  const rows = r.ok ? await r.json() : [];
+  if (!Array.isArray(rows) || !rows.length) return { matched: false };
+  await fetch(
+    `${SB_URL}/rest/v1/solicitudes?stripe_session_id=eq.${encodeURIComponent(sid)}`,
+    {
+      method: "PATCH",
+      headers: { ...headers, Prefer: "return=minimal" },
+      body: JSON.stringify({
+        estado: "autorizada",
+        stripe_payment_intent: session.payment_intent || null,
+      }),
+    },
+  );
+  return { matched: true, result: { result: "solicitud_autorizada", id: rows[0].id, session: sid } };
 }
 
 // ── Handler: pago one-off del candidato (mentoría/sesión) ────
@@ -623,7 +654,11 @@ Deno.serve(async (req: Request) => {
       if (amountCents === 4000 || amountCents === 1000) {
         result = await handlePackExpressPayment(session);
       } else {
-        result = await handleClientPayment(session);
+        // Marketplace: ¿esta sesión corresponde a una SOLICITUD (compra de un
+        // servicio a un coach vía connect-checkout)? Si sí, la pasamos a
+        // 'autorizada' para que le aparezca al coach para Aceptar/Rechazar.
+        const sol = await handleSolicitudPayment(session);
+        result = sol.matched ? sol.result : await handleClientPayment(session);
       }
     }
   }
