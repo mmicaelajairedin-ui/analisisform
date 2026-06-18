@@ -147,6 +147,10 @@ Deno.serve(async (req: Request) => {
       "line_items[0][price_data][product_data][name]": nombreServicio,
       "payment_intent_data[capture_method]": "manual",
       "payment_intent_data[application_fee_amount]": String(fee),
+      // Lo que ve el comprador en el resumen de su banco: "PATHWAY" (no el
+      // nombre de la cuenta del coach). Sigue siendo cargo directo sobre la
+      // cuenta del coach — solo cambia el texto del extracto, no el modelo.
+      "payment_intent_data[statement_descriptor]": "PATHWAY",
       ...(cand.email ? { customer_email: String(cand.email) } : {}),
       success_url: successUrl,
       cancel_url: cancelUrl,
