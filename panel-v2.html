@@ -1590,7 +1590,8 @@ function viewSolicitudes(){
       "<div class='cp-eyebrow' style='margin-bottom:8px'>Cómo funciona</div>"+
       "<div style='font-size:13px;color:var(--pw-text);line-height:1.6'>El candidato <strong>paga primero</strong>: su tarjeta queda <strong>autorizada y retenida</strong> (todavía no se le cobra). Tienes <strong>24 h</strong> para responder. Si <strong>aceptas</strong>, se captura el pago: el dinero va <strong>directo a tu cuenta de cobro</strong> y Pathway retiene solo el <strong>20%</strong> de comisión. Si <strong>rechazas</strong> o pasan 24 h, la retención se libera y al candidato <strong>no se le cobra</strong>. Tus clientes propios no pasan por aquí (0% comisión).</div></div></div>"+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperan tu respuesta<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span></div></div>"+
+      "<div style='display:flex;align-items:center;gap:10px'><span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='sol-sync'>↻ Buscar pagos nuevos</button></div></div></div>"+
     pendHtml + waitHtml + histHtml;
 }
 // Bandeja de MENSAJES (mails, no chat): consultas que llegan desde el perfil
@@ -4808,7 +4809,16 @@ document.addEventListener("click", function(ev){
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; if(REAL){ saveCfg({ pathway_optin: state.pathwayOptIn }); } else { render(); } return; }
   if(act==="pw-connect"){ pwConnect(); return; }
   if(act==="pw-connect-check"){ state.stripe=null; _stripeReq=false; render(); return; }
-  if(act==="sol-accept" || act==="sol-reject"){
+  if(act==="sol-sync"){
+    if(!REAL){ alert("Demo: en producción busca en Stripe los pagos que el candidato ya autorizó."); return; }
+    toast("Buscando pagos nuevos en Stripe…");
+    _solSyncing=false; // forzar
+    fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:"sync",coach_id:RME.id})})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(j){ if(j&&j.changed>0){ toast(j.changed+" solicitud(es) actualizada(s) ✓"); loadReal(); } else { toast("Sin pagos nuevos por ahora."); } })
+      .catch(function(){ alert("No se pudo conectar con Stripe. Reintenta en un momento."); });
+    return;
+  }
     var solId=el.getAttribute("data-id"); if(!solId) return;
     if(!REAL){ alert("Demo: en producción esto acepta/rechaza la solicitud real."); return; }
     var doAccept=(act==="sol-accept");
@@ -4852,7 +4862,7 @@ document.addEventListener("click", function(ev){
   }
   if(act==="chat-newcli"){ state.chatPicker=true; render(); return; }
   if(act==="chat-picker-close"){ state.chatPicker=false; render(); return; }
-  if(act==="chat-sol"){ state.ai.open=false; state.chatPicker=false; state.section="solicitudes"; render(); window.scrollTo(0,0); return; }
+  if(act==="chat-sol"){ state.ai.open=false; state.chatPicker=false; state.section="solicitudes"; render(); window.scrollTo(0,0); syncSolicitudes(); return; }
   if(act==="chat-coach-back"){
     // Volver del hilo a la bandeja del coach.
     state.aiCoachThread = null;
