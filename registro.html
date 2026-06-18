@@ -365,6 +365,20 @@ function showSuccess(msg){
   document.getElementById('error-msg').textContent = '';
 }
 
+// ── Anti-abuso de trial (deteccion por dispositivo) ───────────────
+// Si en ESTE navegador ya se registro una cuenta de prueba, la proxima vez
+// no damos otra prueba gratis: se manda directo al pago. Excepcion: nombres
+// en la allowlist (ej. Gonzalo). Limitacion: es por navegador; con otro
+// dispositivo o incognito se evita (deteccion a prueba de balas = pedir
+// telefono o tarjeta).
+var PW_TRIAL_ALLOWLIST = ['gonzalo'];
+function _pwTrialUsedDevice(){ try{ return localStorage.getItem('pw_trial_used')==='1'; }catch(e){ return false; } }
+function _pwNombreExento(nombre){ var nl=(''+(nombre||'')).toLowerCase(); return PW_TRIAL_ALLOWLIST.some(function(n){ return n && nl.indexOf(n)>=0; }); }
+function _pwMandarAPagar(email){
+  try{ showError('Ya usaste tu prueba gratis en este dispositivo. Para seguir, suscribite — no perdés nada de lo que cargaste. Te llevamos al pago…'); }catch(e){}
+  setTimeout(function(){ window.location.href = STRIPE_LINK_BASIC_14D + (email ? '?prefilled_email='+encodeURIComponent(email) : ''); }, 2000);
+}
+
 async function registrar(){
   var nombre = document.getElementById('nombre').value.trim();
   var email = document.getElementById('email').value.trim().toLowerCase();
@@ -408,6 +422,9 @@ async function registrar(){
   if(password2 && password !== password2){ showError('Las contraseñas no coinciden.'); return; }
   // Especialidad y mercado son campos hidden que se completan en el panel
   // despues del registro — no validamos aqui (legacy del form viejo).
+
+  // Anti-abuso: si este dispositivo ya uso una prueba, directo al pago (salvo allowlist).
+  if(_pwTrialUsedDevice() && !_pwNombreExento(nombre)){ _pwMandarAPagar(email); return; }
 
   btn.disabled = true;
   loading.style.display = 'flex';
@@ -771,6 +788,9 @@ async function registrar(){
     var primerNombreOk = (nombre.split(' ')[0]) || nombre;
     showSuccess('¡Hola, ' + primerNombreOk + '! Te llevamos al panel...');
     btn.textContent = 'Listo';
+
+    // Marcar este dispositivo: ya uso una prueba (anti-abuso del trial).
+    try{ localStorage.setItem('pw_trial_used','1'); }catch(e){}
 
     var primerLogin = 'panel-v2.html?welcome=1';
     setTimeout(function(){

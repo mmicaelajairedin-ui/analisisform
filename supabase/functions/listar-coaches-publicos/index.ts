@@ -1,14 +1,12 @@
 // Supabase Edge Function — listar-coaches-publicos
 //
-// Lista coaches con perfil_publico_activo=true + stats agregados +
+// Lista coaches con perfil público activo + stats agregados +
 // RANKING inteligente para que no compitan unos pocos por todo el tráfico:
 //
-//   Hard filters (no aparecen si no cumplen):
-//     - perfil_publico_activo = true (ya filtraba antes)
-//     - slug no nulo (ya filtraba)
-//     - stripe_account_id presente (sino no se puede comprar)
-//     - al menos 1 servicio con precio en cfg.servicios
-//     - pathway_optin = true (acepto estar en el directorio)
+//   Visibilidad (basta con esto — aparece apenas prende el perfil):
+//     - perfil_publico_activo = true (top-level O en configuracion)
+//     - slug no nulo (top-level O en configuracion)
+//   (Antes se exigía Stripe + servicio con precio + opt-in; se quitó.)
 //
 //   Soft ranking (suma puntos, mayor = aparece primero):
 //     - Match de país del candidato (CF-IPCountry) vs cfg.pais  +1000
@@ -30,7 +28,7 @@ const CORS_HEADERS = {
 // Pedimos también `configuracion` para leer stripe_account_id, servicios,
 // pathway_optin, pais. Y `bio` para evaluar completitud del perfil.
 const COACH_FIELDS = [
-  "id","nombre","slug","titulo_profesional","tagline","bio",
+  "id","nombre","slug","perfil_publico_activo","titulo_profesional","tagline","bio",
   "especialidades","atiende","anios_experiencia","foto_url","configuracion",
 ].join(",");
 
@@ -38,6 +36,7 @@ interface CoachRow {
   id: string;
   nombre: string | null;
   slug: string | null;
+  perfil_publico_activo?: boolean | null;
   titulo_profesional: string | null;
   tagline: string | null;
   bio: string | null;
@@ -70,9 +69,11 @@ Deno.serve(async (req: Request) => {
 
   let coaches: CoachRow[];
   try {
+    // Activo en la columna top-level O en configuracion (fallback): algunos
+    // coaches no logran escribir las columnas top-level (permisos/slug único)
+    // y el panel guarda en configuracion. Así aparecen igual.
     const q = `${SB_URL}/rest/v1/usuarios` +
-      `?perfil_publico_activo=eq.true` +
-      `&slug=not.is.null` +
+      `?or=(perfil_publico_activo.eq.true,configuracion->>perfil_publico_activo.eq.true)` +
       `&select=${COACH_FIELDS}`;
     const r = await fetch(q, { headers });
     if (!r.ok) return json({ error: "supabase_error", status: r.status }, 502);
@@ -81,19 +82,21 @@ Deno.serve(async (req: Request) => {
     return json({ error: "supabase_unreachable" }, 502);
   }
 
-  // Hard filters: descartar coaches que no cumplen lo mínimo para vender.
-  coaches = coaches.filter((c) => {
+  // Slug y "activo" efectivos: top-level si existe, si no desde configuracion.
+  // Solo aparecen los que terminan con perfil activo + slug.
+  coaches = coaches.map((c) => {
     const cfg = (c.configuracion || {}) as Record<string, unknown>;
-    const hasStripe = typeof cfg.stripe_account_id === "string" && cfg.stripe_account_id.length > 0;
-    const servicios = Array.isArray(cfg.servicios) ? cfg.servicios : [];
-    const hasServicio = servicios.some((s: unknown) => {
-      const so = s as Record<string, unknown>;
-      const price = Number(so?.price ?? so?.precio ?? 0);
-      return price > 0;
-    });
-    const optedIn = cfg.pathway_optin === true;
-    return hasStripe && hasServicio && optedIn;
-  });
+    if (!c.slug && typeof cfg.slug === "string") c.slug = cfg.slug;
+    if (c.perfil_publico_activo !== true && cfg.perfil_publico_activo === true) {
+      c.perfil_publico_activo = true;
+    }
+    return c;
+  }).filter((c) => c.perfil_publico_activo === true && !!(c.slug && String(c.slug).trim()));
+
+  // Visibilidad: basta con tener el perfil público activo (slug + activo).
+  // (Antes se exigía Stripe + servicio con precio + opt-in; se quitó para que
+  // un coach aparezca apenas prende su perfil. El botón "Comprar" igual se
+  // muestra solo si tiene Stripe, vía obtener-perfil-coach.)
 
   const statsByCoach: Record<string, { clientes: number; reviews: number; sum: number }> = {};
   const solsByCoach: Record<string, number> = {};
@@ -187,18 +190,24 @@ Deno.serve(async (req: Request) => {
     return (a.coach.nombre || "").localeCompare(b.coach.nombre || "");
   });
 
-  const out = scored.map(({ coach: c, stats: s, avg, countryMatch }) => ({
-    nombre: c.nombre,
-    slug: c.slug,
-    titulo_profesional: c.titulo_profesional,
-    tagline: c.tagline,
-    especialidades: c.especialidades || [],
-    atiende: c.atiende,
-    anios_experiencia: c.anios_experiencia,
-    foto_perfil_url: c.foto_url,
-    country_match: countryMatch, // bandera para que el listado pueda mostrar badge
-    stats: { clientes_total: s.clientes, reviews_count: s.reviews, avg_rating: avg },
-  }));
+  const out = scored.map(({ coach: c, stats: s, avg, countryMatch }) => {
+    const cfg = (c.configuracion || {}) as Record<string, unknown>;
+    const foto = c.foto_url ||
+      (typeof cfg.foto_url === "string" ? cfg.foto_url : null) ||
+      (typeof cfg.foto_perfil === "string" ? cfg.foto_perfil : null);
+    return {
+      nombre: c.nombre,
+      slug: c.slug,
+      titulo_profesional: c.titulo_profesional,
+      tagline: c.tagline,
+      especialidades: c.especialidades || [],
+      atiende: c.atiende,
+      anios_experiencia: c.anios_experiencia,
+      foto_perfil_url: foto,
+      country_match: countryMatch, // bandera para que el listado pueda mostrar badge
+      stats: { clientes_total: s.clientes, reviews_count: s.reviews, avg_rating: avg },
+    };
+  });
 
   return json({
     coaches: out,

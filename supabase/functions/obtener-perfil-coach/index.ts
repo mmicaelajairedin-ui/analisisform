@@ -75,16 +75,29 @@ Deno.serve(async (req: Request) => {
 
   let row: UsuarioRow;
   try {
-    const q = `${SB_URL}/rest/v1/usuarios` +
+    // 1) Por columnas top-level (slug + activo).
+    const q1 = `${SB_URL}/rest/v1/usuarios` +
       `?slug=eq.${encodeURIComponent(slug)}` +
       `&perfil_publico_activo=eq.true` +
       `&select=${SELECT_FIELDS}` +
       `&limit=1`;
-    const sbRes = await fetch(q, { headers });
+    let sbRes = await fetch(q1, { headers });
     if (!sbRes.ok) return json({ error: "supabase_error", status: sbRes.status }, 502);
-    const rows: UsuarioRow[] = await sbRes.json();
+    let rows: UsuarioRow[] = await sbRes.json();
+    // 2) Fallback: slug + activo guardados en configuracion (algunos coaches no
+    //    pueden escribir las columnas top-level y el panel guarda ahí).
+    if (!rows.length) {
+      const q2 = `${SB_URL}/rest/v1/usuarios` +
+        `?configuracion->>slug=eq.${encodeURIComponent(slug)}` +
+        `&configuracion->>perfil_publico_activo=eq.true` +
+        `&select=${SELECT_FIELDS}` +
+        `&limit=1`;
+      sbRes = await fetch(q2, { headers });
+      if (sbRes.ok) rows = await sbRes.json();
+    }
     if (!rows.length) return json({ error: "not_found" }, 404);
     row = rows[0];
+    if (!row.slug) row.slug = slug; // el slug efectivo (vino de configuracion)
   } catch (_e) {
     return json({ error: "supabase_unreachable" }, 502);
   }
@@ -140,7 +153,7 @@ Deno.serve(async (req: Request) => {
       // un mailto a su email de login). Así el perfil nunca queda sin acción.
       whatsapp: str("whatsapp"),
       contacto_email: row.email,
-      foto_perfil_url: row.foto_url,
+      foto_perfil_url: row.foto_url || str("foto_url") || str("foto_perfil"),
       linkedin_url: str("linkedin_url"),
       instagram_url: str("instagram_url"),
       web_url: str("web_url"),
