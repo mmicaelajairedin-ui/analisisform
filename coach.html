@@ -413,7 +413,7 @@ img{max-width:100%;display:block;}
         var s = c.servicios[idx];
         if(!s) return;
         ev.preventDefault();
-        openComprarModal(c, s, idx);
+        iniciarCompra(c, idx, btn);
       };
     }
 
@@ -537,7 +537,35 @@ img{max-width:100%;display:block;}
     });
   };
 
-  /* ═══ Modal de compra de servicio ═══
+  /* ═══ Compra directa de servicio ═══
+   * El botón "Comprar €X" va DIRECTO al Checkout de Stripe del coach
+   * (connect-checkout/create). Stripe captura el email del comprador; no
+   * pedimos datos en un modal (para mensajes está el botón Contactar). */
+  function iniciarCompra(coach, idx, btn){
+    if(!coach) return;
+    var s = coach.servicios && coach.servicios[idx];
+    if(!s) return;
+    var prev = btn ? btn.innerHTML : '';
+    if(btn){ btn.disabled = true; btn.textContent = 'Conectando…'; }
+    fetch(SB_URL+'/functions/v1/connect-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer '+SB_ANON, apikey: SB_ANON },
+      body: JSON.stringify({ action: 'create', coach_id: coach.id, servicio_idx: idx, slug: coach.slug || '' })
+    }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, body: j }; }); })
+    .then(function(res){
+      if(!res.ok || !res.body || !res.body.url){
+        if(btn){ btn.disabled = false; btn.innerHTML = prev; }
+        alert((res.body && res.body.error) || 'No pudimos iniciar el pago. Vuelve a intentar en un momento.');
+        return;
+      }
+      window.location.href = res.body.url; // → Stripe Checkout del coach
+    }).catch(function(){
+      if(btn){ btn.disabled = false; btn.innerHTML = prev; }
+      alert('No hay conexión. Vuelve a intentar cuando recuperes internet.');
+    });
+  }
+
+  /* ═══ Modal de compra de servicio (legacy, ya no se abre) ═══
    * Se abre desde los botones "Comprar €X" de cada servicio. Envía POST a
    * la edge function connect-checkout/create, recibe la URL de Stripe
    * Checkout y redirige. La url incluye ?solicitud=ok|cancel al volver
