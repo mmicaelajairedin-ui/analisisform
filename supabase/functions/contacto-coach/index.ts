@@ -46,7 +46,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  let body: { coach_id?: string; slug?: string; nombre?: string; email?: string; mensaje?: string };
+  let body: { coach_id?: string; slug?: string; nombre?: string; email?: string; mensaje?: string; lang?: string };
   try {
     body = await req.json();
   } catch {
@@ -58,6 +58,9 @@ Deno.serve(async (req: Request) => {
   const nombre = (body.nombre || "").trim().slice(0, 100);
   const email = (body.email || "").trim().slice(0, 200);
   const mensaje = (body.mensaje || "").trim().slice(0, 1000);
+  // Idioma del lead (lo pasa el front según pw_lang). El email de confirmación
+  // al lead sale en ese idioma; la notificación al coach queda en español.
+  const lang = ((body.lang || "").trim().toLowerCase() === "en") ? "en" : "es";
 
   if (!nombre || !email || !mensaje) return json({ error: "campos_requeridos" }, 400);
   if (!isEmail(email)) return json({ error: "email_invalido" }, 400);
@@ -159,9 +162,18 @@ Deno.serve(async (req: Request) => {
 <p style="font-size:12px;color:#888;margin-top:18px;">Respondés desde tu panel (sección <strong>Mensajes</strong>) y la conversación queda registrada con ${escH(leadFirst)}.</p>
 `;
 
-  // ── Confirmación para el lead ─────────────────────────────────────
-  const leadSubject = `Tu mensaje a ${coachFirst} · Pathway`;
-  const leadHtml = `
+  // ── Confirmación para el lead (en su idioma) ──────────────────────
+  const leadSubject = lang === "en"
+    ? `Your message to ${coachFirst} · Pathway`
+    : `Tu mensaje a ${coachFirst} · Pathway`;
+  const leadHtml = lang === "en" ? `
+<p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">Hi ${escH(leadFirst)}! 😊</p>
+<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">We've received your message for <strong>${escH(coach.nombre || "your coach")}</strong> and passed it on. When they reply, you can follow the conversation right here:</p>
+<p style="margin:16px 0;"><a href="${convoUrl}" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">View the conversation →</a></p>
+<div style="background:#fff;border:1px solid rgba(45,106,79,.10);border-radius:10px;padding:12px 14px;margin:16px 0;font-size:13.5px;color:#5A6A60;line-height:1.55;font-style:italic;white-space:pre-wrap;">Your message: "${escH(mensaje)}"</div>
+<p style="margin:14px 0 6px;color:#3A4A40;line-height:1.65;">Best,</p>
+<p style="margin:0;color:#1B4332;font-weight:600;">The Pathway team</p>
+` : `
 <p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">¡Hola ${escH(leadFirst)}! 😊</p>
 <p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Recibimos tu mensaje para <strong>${escH(coach.nombre || "tu coach")}</strong> y ya se lo hicimos llegar. Cuando responda, podés seguir la conversación acá mismo:</p>
 <p style="margin:16px 0;"><a href="${convoUrl}" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ver la conversación →</a></p>
