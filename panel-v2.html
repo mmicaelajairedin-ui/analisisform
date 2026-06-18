@@ -6596,6 +6596,50 @@ if('serviceWorker' in navigator){
 }
 </script>
 
+<!-- Pull-to-refresh (ficha v2): deslizar hacia abajo desde el tope refresca los datos.
+     Solo en móvil y SOLO con el flag pw_ficha_v2 activo (admin/Micaela, opt-in). El botón
+     "Actualizar" sigue existiendo por ahora; se retira cuando se apruebe la ficha v2. -->
+<style>
+#pw-ptr{position:fixed;top:0;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:120;transform:translateY(-64px);}
+#pw-ptr .pw-ptr-c{margin-top:10px;width:34px;height:34px;border-radius:50%;background:#fff;box-shadow:0 4px 14px rgba(45,106,79,.18);display:flex;align-items:center;justify-content:center;}
+#pw-ptr .pw-ptr-r{width:20px;height:20px;border-radius:50%;border:2.5px solid #E8F2EC;border-top-color:#2D6A4F;}
+#pw-ptr.pw-ptr-go .pw-ptr-r{animation:pwPtrSpin .7s linear infinite;}
+@keyframes pwPtrSpin{to{transform:rotate(360deg);}}
+</style>
+<div id="pw-ptr" aria-hidden="true"><div class="pw-ptr-c"><div class="pw-ptr-r"></div></div></div>
+<script>
+(function(){
+  var ptr=document.getElementById('pw-ptr'); if(!ptr) return;
+  var mql=window.matchMedia('(max-width:900px)');
+  function on(){ try{ return localStorage.getItem('pw_ficha_v2')==='1'; }catch(e){ return false; } }
+  var sy=0,pull=0,armed=false,busy=false,TH=70;
+  function set(px){ ptr.style.transform='translateY('+(px-64)+'px)'; }
+  document.addEventListener('touchstart',function(e){
+    if(busy||!on()||!mql.matches||e.touches.length!==1) return;
+    if((window.scrollY||document.documentElement.scrollTop||0)>0) return;
+    sy=e.touches[0].clientY; armed=true; pull=0;
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    if(!armed||busy) return;
+    var dy=e.touches[0].clientY-sy;
+    if(dy<=0){ pull=0; set(0); return; }
+    pull=Math.min(dy*0.5,90); set(pull); e.preventDefault();
+  },{passive:false});
+  document.addEventListener('touchend',function(){
+    if(!armed||busy){ armed=false; return; }
+    armed=false;
+    if(pull>=TH){ fire(); } else { reset(); }
+  });
+  function reset(){ ptr.style.transition='transform .25s'; set(0); setTimeout(function(){ptr.style.transition='';},260); }
+  function fire(){
+    busy=true; ptr.classList.add('pw-ptr-go'); ptr.style.transition='transform .2s'; set(64);
+    var done=function(){ busy=false; ptr.classList.remove('pw-ptr-go'); reset(); try{ if(typeof toast==='function') toast('Actualizado ✓'); }catch(e){} };
+    var p; try{ p=(typeof loadReal==='function')?loadReal():null; }catch(e){ p=null; }
+    if(p&&p.then){ p.then(done,done); } else { setTimeout(done,1200); }
+  }
+})();
+</script>
+
 <!-- Barra de acciones flotante (arriba a la derecha): botón "Actualizar"
      siempre visible + chip "Instalar app" cuando el navegador lo soporta. -->
 <div id="pw-app-actions" style="position:fixed;top:14px;right:14px;z-index:95;display:flex;align-items:center;gap:10px;font-family:Inter,-apple-system,sans-serif;">

@@ -289,7 +289,7 @@ Por plantilla: **Enviar email** (Pro, vía Brevo) · **WhatsApp** · **Email man
 
 | # | Fase | Qué toca | Riesgo |
 |---|------|----------|--------|
-| 0 | Mockup aprobado + este doc | nada de prod | nulo |
+| 0 | ✅ Mockup aprobado + este doc (decisiones en §8.1) | nada de prod | nulo |
 | 1 | Header fijo + bottom nav (Carrera) | CSS/JS móvil de la ficha | bajo |
 | 2 | Perfil móvil: Proceso + Próximo paso + datos + acciones rápidas | UI Perfil | bajo |
 | 3 | Resto de secciones Carrera (Análisis, Acciones, Docs, Sesiones) en móvil | UI | bajo |
@@ -318,12 +318,62 @@ node scripts/check-guardrails.js` antes de commitear.
 
 ## 8. Decisiones a validar con la coach
 
+> **Estado: RESUELTAS en el mockup de alta fidelidad (junio 2026).** Ver §8.1.
+
 1. **Bottom nav en Fitness (6 tabs):** ¿"⋯ Más" para el menos usado, o scroll
    horizontal en la barra? (recomendado: 5 fijos + "Más").
 2. **WhatsApp en el header** vs. solo dentro de Perfil.
 3. **"Próximo paso":** ¿lo querés como bloque destacado en Perfil, o más discreto?
 4. **Mensajes/plantillas:** ¿hoja inferior (recomendado) o que siga siendo una pantalla?
 5. **Calendario fitness en Perfil:** ¿se queda en Perfil o va a su propia sección?
+
+---
+
+## 8.1 Decisiones resueltas en el mockup (junio 2026)
+
+El mockup clickeable (`mockup-ficha-cliente-movil.html`, gitignoreado — es un preview
+descartable) se iteró con la coach hasta aprobarlo. Decisiones finales:
+
+1. **Estilo = copia exacta del panel.** Se reusan las clases reales (`cp-card`,
+   `cp-card-hd`/`cp-card-title` con punto verde `.dot`, `cp-btn`/`cp-btn-primary`/
+   `cp-btn-ghost`, `cp-form-row*`/`cp-form-input`/`cp-form-textarea`, `cp-chip`,
+   `cp-client-pill`, `cp-eyebrow`) y los tokens `:root` del panel. Los **datos del
+   cliente se muestran como campos de formulario editables** (label + input), no como
+   filas de lectura. Nada de gradientes ni adornos inventados.
+
+2. **Medalla SOBRE la foto.** Se elimina la tarjeta "Proceso" aparte. La medalla va
+   como **badge circular sobre el avatar** del header (patrón `.cp-side-medal-badge`
+   del panel, con `medalla-<nivel>-sm.webp`). El estado CV/Informe se ve en la pestaña
+   **Docs** (pill por documento); la semana/mes puede ir como chip discreto. **No** se
+   incluye el bloque "Próximo paso" (decisión 3 → descartado, era un adorno).
+
+3. **Acciones: barra fina persistente, no tarjeta.** En vez de la tarjeta "Acciones
+   rápidas" (que se repetiría por pestaña), una **barra delgada fija debajo del header**
+   con **WhatsApp · Mensajes · Portal**, visible en todas las pestañas y una sola vez.
+   **"Desactivar cliente"** no es acción frecuente: baja al **pie del Perfil** como
+   botón discreto (`cli-deactivate`/`cli-reactivate`).
+
+4. **Mensajes/plantillas = hoja inferior (bottom sheet).** Confirmado. Se abre desde el
+   botón "Mensajes" de la barra fina. Selector de plantilla con `cp-chip`.
+
+5. **Refrescar = pull-to-refresh.** Se **elimina el botón "Actualizar"** de la barra
+   global (queda **Salir + Chat**). Refrescar se hace **deslizando hacia abajo desde el
+   tope** (spinner verde → "Soltá para actualizar" → llama a `loadReal()` → toast
+   "Actualizado ✓"). Solo en móvil, solo cuando el scroll está en el tope.
+
+6. **Barra global (Salir · Chat) arriba a la derecha.** El header de la ficha cede ese
+   espacio (contenido alineado a la izquierda: ‹ Volver · foto+medalla · nombre) para
+   que las burbujas globales `#pw-app-actions` no se choquen con él.
+
+7. **Bottom nav.** Tabs del nicho con emoji **gris** (`.cp-emo`) + label corto; activa
+   en verde (`cp-fmenu-item.is-on`: fondo `success-bg` + texto bosque). Fitness (6 tabs)
+   se resolvió con **scroll horizontal** en la barra; a re-confirmar en celular real
+   (alternativa: 5 + "Más").
+
+8. **Calendario fitness:** queda en **Perfil**, después de los datos.
+
+> Estas decisiones son la fuente de verdad para las fases de §6. El mockup muestra los
+> 3 nichos (Carrera/Fitness/Financiero) con datos de ejemplo (cliente María, etc.).
 
 ---
 
