@@ -1590,7 +1590,8 @@ function viewSolicitudes(){
       "<div class='cp-eyebrow' style='margin-bottom:8px'>Cómo funciona</div>"+
       "<div style='font-size:13px;color:var(--pw-text);line-height:1.6'>El candidato <strong>paga primero</strong>: su tarjeta queda <strong>autorizada y retenida</strong> (todavía no se le cobra). Tienes <strong>24 h</strong> para responder. Si <strong>aceptas</strong>, se captura el pago: el dinero va <strong>directo a tu cuenta de cobro</strong> y Pathway retiene solo el <strong>20%</strong> de comisión. Si <strong>rechazas</strong> o pasan 24 h, la retención se libera y al candidato <strong>no se le cobra</strong>. Tus clientes propios no pasan por aquí (0% comisión).</div></div></div>"+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperan tu respuesta<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span></div></div>"+
+      "<div style='display:flex;align-items:center;gap:10px'><span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='sol-sync'>↻ Buscar pagos nuevos</button></div></div></div>"+
     pendHtml + waitHtml + histHtml;
 }
 // Bandeja de MENSAJES (mails, no chat): consultas que llegan desde el perfil
@@ -2872,20 +2873,20 @@ function sigBlock(attached){
   // inicial, que siempre renderiza. Nunca una imagen rota.
   var isPhoto = /^https?:\/\//i.test(""+ph);
   var avatar = isPhoto
-    ? "<img src=\""+esc(ph)+"\" width='52' height='52' style='width:52px;height:52px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid "+ac+"' alt=\""+esc(nm)+"\">"
-    : "<div style='width:52px;height:52px;border-radius:50%;background:"+ac+";color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;font-weight:700;border:2px solid "+ac+"'>"+esc(sigInitial())+"</div>";
+    ? "<img src=\""+esc(ph)+"\" width='68' height='68' style='width:68px;height:68px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid "+ac+"' alt=\""+esc(nm)+"\">"
+    : "<div style='width:68px;height:68px;border-radius:50%;background:"+ac+";color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:24px;font-weight:700;border:2px solid "+ac+"'>"+esc(sigInitial())+"</div>";
   var lbl = "display:inline-block;min-width:46px;color:#9E9E9E;font-size:11px";
   var lnk = "color:#5A6A60;font-size:12px;text-decoration:none";
   var webHref = /^https?:\/\//i.test(""+web) ? web : ("https://"+web);
   var box = attached
     ? "border-top:1px solid #EDEAE8;border-left:3px solid "+ac+";background:#fff;padding:18px 20px;"
     : "border:1px solid #EDEAE8;border-left:3px solid "+ac+";background:#fff;border-radius:10px;padding:18px 20px;";
-  return "<div style='"+box+"display:flex;gap:22px;align-items:flex-start'>"+avatar+
-    "<div style='min-width:0;line-height:1.75'>"+
+  return "<div style='"+box+"display:flex;gap:26px;align-items:center'>"+avatar+
+    "<div style='min-width:0;line-height:1.4'>"+
       "<div style='font-size:15px;font-weight:700;color:#1B2E26'>"+esc(nm)+"</div>"+
-      "<div style='font-size:12px;color:#9E9E9E;margin:3px 0 11px'>"+esc(role)+" · Pathway</div>"+
-      (em?"<div style='margin-bottom:8px'><span style='"+lbl+"'>Email</span><a href=\"mailto:"+esc(em)+"\" style='"+lnk+"'>"+esc(em)+"</a></div>":"")+
-      "<div style='margin-bottom:13px'><span style='"+lbl+"'>Web</span><a href=\""+esc(webHref)+"\" style='"+lnk+"'>"+esc(web)+"</a></div>"+
+      "<div style='font-size:12px;color:#9E9E9E;margin:2px 0 8px'>"+esc(role)+" · Pathway</div>"+
+      (em?"<div style='margin-bottom:4px'><span style='"+lbl+"'>Email</span><a href=\"mailto:"+esc(em)+"\" style='"+lnk+"'>"+esc(em)+"</a></div>":"")+
+      "<div style='margin-bottom:9px'><span style='"+lbl+"'>Web</span><a href=\""+esc(webHref)+"\" style='"+lnk+"'>"+esc(web)+"</a></div>"+
       "<span style='display:inline-block;font-size:10px;font-weight:700;color:#2D6A4F;background:rgba(45,106,79,.10);padding:4px 10px;border-radius:100px'>Powered by Pathway</span>"+
     "</div></div>";
 }
@@ -4835,6 +4836,16 @@ document.addEventListener("click", function(ev){
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; if(REAL){ saveCfg({ pathway_optin: state.pathwayOptIn }); } else { render(); } return; }
   if(act==="pw-connect"){ pwConnect(); return; }
   if(act==="pw-connect-check"){ state.stripe=null; _stripeReq=false; render(); return; }
+  if(act==="sol-sync"){
+    if(!REAL){ alert("Demo: en producción busca en Stripe los pagos que el candidato ya autorizó."); return; }
+    toast("Buscando pagos nuevos en Stripe…");
+    _solSyncing=false; // forzar
+    fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:"sync",coach_id:RME.id})})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(j){ if(j&&j.changed>0){ toast(j.changed+" solicitud(es) actualizada(s) ✓"); loadReal(); } else { toast("Sin pagos nuevos por ahora."); } })
+      .catch(function(){ alert("No se pudo conectar con Stripe. Reintenta en un momento."); });
+    return;
+  }
   if(act==="sol-accept" || act==="sol-reject"){
     var solId=el.getAttribute("data-id"); if(!solId) return;
     if(!REAL){ alert("Demo: en producción esto acepta/rechaza la solicitud real."); return; }
@@ -4879,7 +4890,7 @@ document.addEventListener("click", function(ev){
   }
   if(act==="chat-newcli"){ state.chatPicker=true; render(); return; }
   if(act==="chat-picker-close"){ state.chatPicker=false; render(); return; }
-  if(act==="chat-sol"){ state.ai.open=false; state.chatPicker=false; state.section="solicitudes"; render(); window.scrollTo(0,0); return; }
+  if(act==="chat-sol"){ state.ai.open=false; state.chatPicker=false; state.section="solicitudes"; render(); window.scrollTo(0,0); syncSolicitudes(); return; }
   if(act==="chat-coach-back"){
     // Volver del hilo a la bandeja del coach.
     state.aiCoachThread = null;
