@@ -4596,6 +4596,57 @@ function _syncChatBtn(){
     btn.appendChild(wrap);
   }catch(e){}
 }
+// ── Prompt de reseña de Pathway ───────────────────────────────────────
+// Aparece SOLO después de varias visitas (no molesta al arranque). Cuenta las
+// visitas en localStorage por coach; al llegar al umbral muestra un modal para
+// puntuar Pathway. "Ahora no" lo pospone; al enviar no vuelve a aparecer.
+function _reviewKeys(){ var id=(REAL&&RME&&(RME.id||RME.email))||"x"; return { v:"pw_visits_"+id, r:"pw_review_"+id }; }
+function _maybeReviewPrompt(){
+  if(!REAL || !RME) return;
+  if(state.review && state.review.open) return;
+  var k=_reviewKeys();
+  var n=(parseInt(localStorage.getItem(k.v)||"0",10)||0)+1;
+  try{ localStorage.setItem(k.v,String(n)); }catch(e){}
+  var st=localStorage.getItem(k.r)||"";
+  if(st==="done") return;
+  var threshold=5; // tras ~5 ingresos
+  if(st.indexOf("snooze:")===0){ threshold=parseInt(st.slice(7),10)||(n+6); }
+  if(n>=threshold){
+    state.review={ open:true, rating:0, sent:false, high:false };
+    requestAnimationFrame(function(){ try{ render(); }catch(e){} });
+  }
+}
+function viewReviewModal(){
+  var rv=state.review||{}; var rt=rv.rating||0;
+  function star(i){ var on=i<=rt; return "<button data-act='review-star' data-n='"+i+"' aria-label='"+i+" de 5' style='background:none;border:none;cursor:pointer;font-size:33px;line-height:1;padding:2px 3px;color:"+(on?"#E9C46A":"var(--pw-border-strong)")+"'>★</button>"; }
+  var inner;
+  if(rv.sent){
+    inner = rv.high
+      ? "<div style='text-align:center'><div style='font-size:40px'>💚</div>"+
+          "<div style='font-family:var(--pw-serif);font-size:21px;color:var(--pw-bosque);margin:8px 0 6px'>¡Gracias"+((COACH&&COACH.firstName)?(", "+esc(COACH.firstName)):"")+"!</div>"+
+          "<p style='font-size:13.5px;color:var(--pw-text-soft);line-height:1.6;margin:0 0 16px'>¿Conocés a otro coach al que le sirva Pathway? Recomendarlo nos ayuda un montón.</p>"+
+          "<div style='display:flex;gap:10px;justify-content:center;flex-wrap:wrap'>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='review-close'>Cerrar</button>"+
+            "<button class='cp-btn cp-btn-primary' data-act='review-share'>Recomendar Pathway</button></div></div>"
+      : "<div style='text-align:center'><div style='font-size:40px'>🙏</div>"+
+          "<div style='font-family:var(--pw-serif);font-size:21px;color:var(--pw-bosque);margin:8px 0 6px'>¡Gracias por tu feedback!</div>"+
+          "<p style='font-size:13.5px;color:var(--pw-text-soft);line-height:1.6;margin:0 0 16px'>Lo leemos todo — nos ayuda a mejorar Pathway para vos.</p>"+
+          "<button class='cp-btn cp-btn-primary' data-act='review-close'>Cerrar</button></div>";
+  } else {
+    inner = "<div style='text-align:center'>"+
+      "<div style='font-family:var(--pw-serif);font-size:21px;color:var(--pw-carbon);margin-bottom:6px'>¿Cómo va tu experiencia con Pathway?</div>"+
+      "<p style='font-size:13px;color:var(--pw-text-soft);line-height:1.55;margin:0 0 14px'>Tu opinión nos ayuda a mejorar. Te toma 10 segundos.</p>"+
+      "<div style='display:flex;justify-content:center;gap:2px;margin-bottom:12px'>"+[1,2,3,4,5].map(star).join("")+"</div>"+
+      "<textarea id='review-comment' placeholder='¿Algo que quieras contarnos? (opcional)' style='width:100%;min-height:68px;max-height:150px;border:1px solid var(--pw-border);border-radius:12px;padding:10px 12px;font-family:inherit;font-size:13px;resize:vertical;outline:none;box-sizing:border-box;margin-bottom:14px'></textarea>"+
+      "<div style='display:flex;gap:10px;justify-content:center;flex-wrap:wrap'>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='review-later'>Ahora no</button>"+
+        "<button class='cp-btn cp-btn-primary' data-act='review-send'"+(rt?"":" disabled style='opacity:.5;cursor:not-allowed'")+">Enviar reseña</button></div></div>";
+  }
+  return "<div data-act='review-bg' style='position:fixed;inset:0;background:rgba(20,30,25,.55);z-index:300;display:flex;align-items:center;justify-content:center;padding:18px'>"+
+    "<div role='dialog' aria-modal='true' style='background:#fff;max-width:420px;width:100%;border-radius:18px;padding:26px 22px 22px;box-shadow:0 24px 60px rgba(0,0,0,.22);position:relative'>"+
+      "<button data-act='review-later' aria-label='Cerrar' style='position:absolute;top:12px;right:14px;background:none;border:none;font-size:22px;color:#9aa49e;cursor:pointer;line-height:1'>×</button>"+
+      inner+"</div></div>";
+}
 function render(){
   try{
     // Marca <html> con pw-v2 cuando la ficha v2 esta activa (admin/Micaela + flag).
@@ -4640,7 +4691,8 @@ function render(){
         viewAsistente()+"</div>"+
       (state.newOpen?viewNewModal():"")+
       (state.mail&&state.mail.open?viewMailModal():"")+
-      (state.genmat&&state.genmat.open?viewGenMatModal():"");
+      (state.genmat&&state.genmat.open?viewGenMatModal():"")+
+      (state.review&&state.review.open?viewReviewModal():"");
     var _same=(_vk===_lastViewKey);
     try{ var _scEl2=document.querySelector(".cp-scroll"); if(_scEl2) _scEl2.scrollTop=(_same?_prevScroll:0); }catch(e){}
     try{ if(_same){ window.scrollTo(0,_prevWin); } else { window.scrollTo(0,0); } }catch(e){}
@@ -4651,7 +4703,7 @@ function render(){
     _syncChatBtn();
     // Apenas entrás al panel (datos reales cargados), la cabra saluda y luego
     // se queda parada (o triste, si hace mucho que no entrabas).
-    if(!_cabraGreeted && REAL){ _cabraGreeted=true; cabraFlash(CABRA_SALUDA,2000); }
+    if(!_cabraGreeted && REAL){ _cabraGreeted=true; cabraFlash(CABRA_SALUDA,2000); try{ _maybeReviewPrompt(); }catch(e){} }
     // Chat: cuando hay un hilo abierto, bajar automáticamente al último mensaje.
     // (No se chequea state.ai.tab porque con 8/8 el chat se muestra aunque la
     // tab interna siga en "home" para el admin.)
@@ -4925,6 +4977,26 @@ document.addEventListener("click", function(ev){
   if(act==="pw-connect"){ pwConnect(); return; }
   if(act==="pw-connect-check"){ state.stripe=null; _stripeReq=false; render(); return; }
   if(act==="sol-pick"){ var pkid=el.getAttribute("data-id"); if(pkid){ state.solSel=pkid; render(); } return; }
+  // ── Prompt de reseña de Pathway ──
+  if(act==="review-star"){ if(state.review){ state.review.rating=parseInt(el.getAttribute("data-n"),10)||0; render(); } return; }
+  if(act==="review-later"){ if(state.review){ var _rk=_reviewKeys(); var _rn=parseInt(localStorage.getItem(_rk.v)||"0",10)||0; try{ localStorage.setItem(_rk.r,"snooze:"+(_rn+6)); }catch(e){} state.review.open=false; render(); } return; }
+  if(act==="review-bg"){ if(ev.target===el && state.review){ var _rk2=_reviewKeys(); var _rn2=parseInt(localStorage.getItem(_rk2.v)||"0",10)||0; try{ localStorage.setItem(_rk2.r,"snooze:"+(_rn2+6)); }catch(e){} state.review.open=false; render(); } return; }
+  if(act==="review-close"){ if(state.review) state.review.open=false; render(); return; }
+  if(act==="review-send"){
+    if(!state.review || !state.review.rating) return;
+    var _rrat=state.review.rating, _rcom=(_val("review-comment")||"").trim().slice(0,1000);
+    // Va a la MISMA tabla `reviews` que resena.html. Queda publica=false (default)
+    // hasta que la modere; testimonios.js solo muestra publica=true en la landing.
+    _sbw("reviews","POST",{ nombre:(COACH&&COACH.name)||(RME&&RME.nombre)||null, rating:_rrat, texto:_rcom||null, fuente:"coach-panel" }).catch(function(){});
+    try{ localStorage.setItem(_reviewKeys().r,"done"); }catch(e){}
+    state.review.sent=true; state.review.high=(_rrat>=4); render(); return;
+  }
+  if(act==="review-share"){
+    var _su="https://pathwaycareercoach.com/soy-coach.html", _st="Te recomiendo Pathway para gestionar tu coaching de carrera 💚";
+    if(navigator.share){ navigator.share({title:"Pathway",text:_st,url:_su}).catch(function(){}); }
+    else { try{ navigator.clipboard.writeText(_st+" "+_su); toast("Link copiado ✓"); }catch(e){} }
+    if(state.review) state.review.open=false; render(); return;
+  }
   if(act==="sol-sync"){
     if(!REAL){ alert("Demo: en producción busca en Stripe los pagos que el candidato ya autorizó."); return; }
     toast("Buscando pagos nuevos en Stripe…");
