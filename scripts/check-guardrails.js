@@ -327,6 +327,32 @@ const RULES = [
       return offenders.length ? offenders.join("; ") : null;
     },
   },
+  {
+    name: "alta de usuarios (auth-callback/registro): return=representation acotado, sin leer password_hash — Fase 4/5 RLS",
+    bug: "Crear/activar la fila en usuarios con Prefer:return=representation SIN " +
+         "acotar select hace que PostgREST devuelva todas las columnas, incluida " +
+         "password_hash (lectura revocada en Fase 4) → 42501 'permission denied for " +
+         "table usuarios' → la cuenta no se crea ('No pudimos crear tu cuenta' / " +
+         "'Error al crear la cuenta'). Paso en login con Google (auth-callback) y en " +
+         "el registro de coach (registro.html/registro-en.html). Cada POST/PATCH a " +
+         "usuarios con return=representation debe llevar select= sin password_hash.",
+    check() {
+      const files = ["auth-callback.html", "registro.html", "registro-en.html"];
+      const offenders = [];
+      for (const f of files) {
+        const s = read(f);
+        if (!s) continue;
+        // Bloques fetch a /rest/v1/usuarios con method POST o PATCH.
+        const calls = s.match(/fetch\(\s*[^)]*?\/rest\/v1\/usuarios[\s\S]*?method:\s*'(?:POST|PATCH)'[\s\S]*?\}\)/g) || [];
+        for (const c of calls) {
+          if (/return=representation/.test(c) && !/select=/.test(c)) {
+            offenders.push(f + " (escritura a usuarios con return=representation sin select → lee password_hash)");
+          }
+        }
+      }
+      return offenders.length ? offenders.join("; ") : null;
+    },
+  },
 ];
 
 let failures = 0;

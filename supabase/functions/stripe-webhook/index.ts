@@ -40,6 +40,7 @@ interface StripeSession {
   // 2. client_reference_id (URL ?client_reference_id=<uuid>)
   metadata?: { coach_id?: string; [k: string]: string | undefined };
   client_reference_id?: string;
+  payment_intent?: string;
 }
 
 interface StripeSubscriptionItem {
@@ -207,6 +208,84 @@ async function handlePackExpressPayment(session: StripeSession) {
     });
     return { result: "pack_express_created", email, amount };
   }
+}
+
+// ── Handler: compra de un servicio a un coach (marketplace / solicitudes) ────
+// connect-checkout creó la solicitud con estado='pendiente' + stripe_session_id.
+// Al completarse el pago la pasamos a 'autorizada' → le aparece al coach para
+// Aceptar/Rechazar (ventana 24 h).
+async function handleSolicitudPayment(
+  session: StripeSession,
+): Promise<{ matched: boolean; result?: unknown }> {
+  const { url: SB_URL, headers } = getSupabaseAuth();
+  const sid = session.id;
+  if (!sid) return { matched: false };
+  const r = await fetch(
+    `${SB_URL}/rest/v1/solicitudes?stripe_session_id=eq.${encodeURIComponent(sid)}&select=id,estado,coach_id,candidato_nombre,candidato_email,servicio_titulo,monto,notificada`,
+    { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+  );
+  const rows = r.ok ? await r.json() : [];
+  if (!Array.isArray(rows) || !rows.length) return { matched: false };
+  const sol = rows[0];
+  // Si la fila ya fue notificada (p.ej. el camino `sync` de connect-checkout se
+  // adelantó), no reenviamos los mails — solo aseguramos estado + payment_intent.
+  const yaNotificada = sol.notificada === true;
+  await fetch(
+    `${SB_URL}/rest/v1/solicitudes?stripe_session_id=eq.${encodeURIComponent(sid)}`,
+    {
+      method: "PATCH",
+      headers: { ...headers, Prefer: "return=minimal" },
+      body: JSON.stringify({
+        estado: "autorizada",
+        stripe_payment_intent: session.payment_intent || null,
+        notificada: true,
+      }),
+    },
+  );
+  if (yaNotificada) {
+    return { matched: true, result: { result: "solicitud_autorizada", id: sol.id, session: sid, skipped_emails: true } };
+  }
+
+  // Datos del coach (para los mails). El comprador no ve el mail del coach ni
+  // viceversa: Pathway media las notificaciones.
+  let coachNombre = "tu coach", coachEmail = "";
+  try {
+    const cr = await fetch(
+      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(sol.coach_id)}&select=nombre,email`,
+      { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+    );
+    if (cr.ok) { const u = (await cr.json())[0] || {}; coachNombre = u.nombre || coachNombre; coachEmail = u.email || ""; }
+  } catch (_e) { /* opcional */ }
+
+  const buyerEmail = sol.candidato_email || session.customer_details?.email || "";
+  const buyerName = (sol.candidato_nombre || session.customer_details?.name || "").split(" ")[0] || "";
+  const servicio = sol.servicio_titulo || "el servicio";
+
+  // Mail al comprador: confirmación.
+  if (buyerEmail) {
+    const html =
+      `<p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">¡Hola ${buyerName}! 🎉</p>` +
+      `<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Tu pago de <strong>${servicio}</strong> con <strong>${coachNombre}</strong> quedó confirmado. El pago está <strong>retenido</strong>: ${coachNombre} tiene <strong>24 h</strong> para aceptar y arrancar. Si no acepta, se te reembolsa automáticamente y no se te cobra.</p>` +
+      `<p style="margin:14px 0 0;color:#3A4A40;">Te avisamos por acá apenas tengas novedades.</p>`;
+    fetch(`${SB_URL}/functions/v1/send-email`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: buyerEmail, to_name: buyerName, subject: `Pago confirmado · ${servicio} con ${coachNombre}`, html, signature: "pathway" }),
+    }).catch(() => {});
+  }
+  // Mail al coach: aviso (sin exponer el mail del comprador).
+  if (coachEmail) {
+    const html =
+      `<p style="margin:0 0 12px;color:#3A4A40;line-height:1.6;"><strong>${sol.candidato_nombre || "Un candidato"}</strong> compró <strong>${servicio}</strong> y está esperando que lo aceptes (tenés 24 h).</p>` +
+      `<p style="margin:14px 0;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ver en mi panel →</a></p>`;
+    fetch(`${SB_URL}/functions/v1/send-email`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: coachEmail, to_name: coachNombre, subject: `💳 Nueva compra · ${servicio}`, html, signature: "pathway" }),
+    }).catch(() => {});
+  }
+
+  return { matched: true, result: { result: "solicitud_autorizada", id: sol.id, session: sid } };
 }
 
 // ── Handler: pago one-off del candidato (mentoría/sesión) ────
@@ -623,7 +702,11 @@ Deno.serve(async (req: Request) => {
       if (amountCents === 4000 || amountCents === 1000) {
         result = await handlePackExpressPayment(session);
       } else {
-        result = await handleClientPayment(session);
+        // Marketplace: ¿esta sesión corresponde a una SOLICITUD (compra de un
+        // servicio a un coach vía connect-checkout)? Si sí, la pasamos a
+        // 'autorizada' para que le aparezca al coach para Aceptar/Rechazar.
+        const sol = await handleSolicitudPayment(session);
+        result = sol.matched ? sol.result : await handleClientPayment(session);
       }
     }
   }

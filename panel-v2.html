@@ -1443,7 +1443,7 @@ var _CLI_SHORT={fit_antro:'Medidas',docs:'Docs'};
 function viewSidebar(){
   var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"],["config","Configuración","navConfig"]];
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
-  var _navSec = state.section==="solicitudes" ? "clientes" : state.section;
+  var _navSec = (state.section==="solicitudes"||state.section==="mensajes") ? "clientes" : state.section;
   // Burbuja guía: sigue el PROGRESO REAL — muestra siempre la fase incompleta
   // actual sobre su botón del menú, hasta completar sus sub-pasos. Confeti +
   // medalla SOLO al completar todos los sub-pasos de una fase (3 en total).
@@ -1510,14 +1510,17 @@ function viewSidebar(){
 function cliSolTabs(active){
   if(!state.pathwayOptIn && !(RSOL&&RSOL.length)) return "";
   var pend=(RSOL||[]).filter(function(s){return s.estado==="autorizada";}).length;
+  var nmsg=(RSOL||[]).filter(function(s){return s.estado==="mensaje";}).length;
   return "<div class='cp-filters' style='margin:0 0 4px'>"+
     "<button class='cp-chip "+(active==="clientes"?"is-on":"")+"' data-act='nav:clientes'>Clientes</button>"+
+    "<button class='cp-chip "+(active==="mensajes"?"is-on":"")+"' data-act='nav:mensajes'>Mensajes"+(nmsg?"<span class='cp-chip-count'>"+nmsg+"</span>":"")+"</button>"+
     "<button class='cp-chip "+(active==="sol"?"is-on":"")+"' data-act='nav:solicitudes'>Solicitudes"+(pend?"<span class='cp-chip-count'>"+pend+"</span>":"")+"</button></div>";
 }
 function viewSolicitudes(){
   var SOL = (REAL ? (RSOL||[]) : [
     { id:"demo1", candidato_nombre:"Lucía Fernández", candidato_email:"lucia.f@email.com", servicio:"mentoria", monto:400, comision:80, estado:"autorizada", created_at:new Date(Date.now()-3*3600000).toISOString(), expires_at:new Date(Date.now()+21*3600000).toISOString() },
-    { id:"demo2", candidato_nombre:"Marco Díaz", candidato_email:"marco.d@email.com", servicio:"sesion", monto:120, comision:24, estado:"autorizada", created_at:new Date(Date.now()-20*3600000).toISOString(), expires_at:new Date(Date.now()+4*3600000).toISOString() }
+    { id:"demo2", candidato_nombre:"Marco Díaz", candidato_email:"marco.d@email.com", servicio:"sesion", monto:120, comision:24, estado:"autorizada", created_at:new Date(Date.now()-20*3600000).toISOString(), expires_at:new Date(Date.now()+4*3600000).toISOString() },
+    { id:"demo3", candidato_nombre:"Sofía Ramírez", candidato_email:"sofia.r@email.com", servicio:"mensaje", mensaje:"Hola, vi tu perfil y me interesa tu mentoría. Estoy en transición de marketing a producto, ¿podemos hablar?", monto:0, comision:0, estado:"mensaje", created_at:new Date(Date.now()-1*3600000).toISOString() }
   ]);
   function _money(n){ return "€"+(Number(n)||0).toLocaleString("es-ES"); }
   // Si la solicitud guardó un servicio_titulo (modo nuevo de connect-checkout
@@ -1539,47 +1542,121 @@ function viewSolicitudes(){
   var pend = SOL.filter(function(s){ return s.estado==="autorizada"; });
   var waiting = SOL.filter(function(s){ return s.estado==="pendiente"; });
   var hist = SOL.filter(function(s){ return ["aceptada","rechazada","expirada"].indexOf(s.estado)>=0; });
+  // Contactos gratis desde el perfil público (estado="mensaje", monto 0).
+  // No entran al flujo de pago — solo se responden por email.
+  var msgs = SOL.filter(function(s){ return s.estado==="mensaje"; });
 
+  function _ini(nm){ var t=String(nm||"").trim(); return (t? t.charAt(0):"?").toUpperCase(); }
   function card(s){
-    var neto=(Number(s.monto)||0)-(Number(s.comision)|| (Number(s.monto)||0)*0.2);
-    return "<div class='cp-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-      "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap'>"+
-        "<div><div style='font-family:var(--pw-serif);font-size:17px;color:var(--pw-carbon)'>"+esc(s.candidato_nombre||s.candidato_email||"Candidato")+"</div>"+
-          "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.candidato_email||"")+" · "+_svc(s)+"</div></div>"+
-        "<div style='text-align:right'>"+_left(s.expires_at)+"<div style='font-size:11px;color:var(--pw-text-muted);margin-top:2px'>pagado y retenido</div></div>"+
+    var monto=Number(s.monto)||0;
+    var com=Number(s.comision)|| monto*0.2;
+    var neto=monto-com;
+    var timer=_left(s.expires_at);
+    return "<div class='cp-card cp-sol-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
+      // ── Cabecera: avatar + nombre + servicio + reloj ──
+      "<div style='display:flex;align-items:center;gap:12px'>"+
+        "<span style='flex:0 0 auto;width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--pw-sendero),var(--pw-bosque));color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--pw-serif);font-size:20px;font-weight:600;box-shadow:0 4px 12px rgba(45,106,79,.22)'>"+esc(_ini(s.candidato_nombre))+"</span>"+
+        "<div style='flex:1;min-width:0'>"+
+          "<div style='font-family:var(--pw-serif);font-size:17px;color:var(--pw-carbon);line-height:1.2'>"+esc(s.candidato_nombre||"Candidato")+"</div>"+
+          "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:4px;display:flex;align-items:center;gap:7px;flex-wrap:wrap'>"+_svc(s)+
+            "<span style='display:inline-flex;align-items:center;gap:4px;background:var(--pw-niebla-3);color:var(--pw-bosque);font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px'>✓ pagado y retenido</span></div>"+
+        "</div>"+
+        (timer? "<span style='flex:0 0 auto;background:var(--pw-niebla-2);border-radius:99px;padding:6px 13px;font-size:11.5px;white-space:nowrap'>"+timer+"</span>" : "")+
+      "</div>"+
+      // ── Bloque de plata: lo que gana la coach, protagonista ──
+      "<div style='display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:linear-gradient(135deg,var(--pw-bosque),var(--pw-bosque-dark));border-radius:16px;padding:18px 22px;color:#fff;box-shadow:0 8px 24px rgba(27,67,50,.18)'>"+
+        "<div><div style='font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;opacity:.82'>Ganás con esta solicitud</div>"+
+          "<div style='font-family:var(--pw-serif);font-size:36px;font-weight:600;line-height:1.02;margin-top:4px'>"+_money(neto)+"</div></div>"+
+        "<div style='text-align:right;font-size:12px;line-height:1.9;opacity:.92'>"+
+          "<div>Precio &nbsp;<strong style='font-size:13px'>"+_money(monto)+"</strong></div>"+
+          "<div>Comisión Pathway &nbsp;<strong style='font-size:13px'>−"+_money(com)+"</strong></div></div>"+
       "</div>"+
       (s.mensaje ? "<div style='background:rgba(45,106,79,.04);border-left:3px solid var(--pw-bosque);border-radius:6px;padding:10px 14px;font-size:13.5px;color:var(--pw-text-soft);line-height:1.55;white-space:pre-wrap;word-wrap:break-word'><div style='font-size:11px;font-weight:600;color:var(--pw-bosque);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px'>Mensaje del candidato</div>"+esc(s.mensaje)+"</div>" : "")+
-      "<div style='display:flex;gap:18px;flex-wrap:wrap;background:var(--pw-niebla-2);border-radius:10px;padding:12px 14px'>"+
-        "<div><div style='font-size:11px;color:var(--pw-text-soft)'>Cobrado al candidato</div><div style='font-family:var(--pw-serif);font-size:18px;color:var(--pw-carbon)'>"+_money(s.monto)+"</div></div>"+
-        "<div><div style='font-size:11px;color:var(--pw-text-soft)'>Comisión Pathway (20%)</div><div style='font-family:var(--pw-serif);font-size:18px;color:var(--pw-danger)'>−"+_money(s.comision||(Number(s.monto)||0)*0.2)+"</div></div>"+
-        "<div><div style='font-size:11px;color:var(--pw-text-soft)'>A tu favor (neto)</div><div style='font-family:var(--pw-serif);font-size:18px;color:var(--pw-bosque);font-weight:600'>"+_money(neto)+"</div></div>"+
-      "</div>"+
-      "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
+      "<div style='display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap'>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='sol-reply' data-em='"+esc(s.candidato_email||"")+"' data-nom='"+esc(s.candidato_nombre||"")+"'>"+svg(IC.msg,13)+" Responder</button>"+
         "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='sol-reject' data-id='"+esc(s.id)+"'>Rechazar</button>"+
-        "<button class='cp-btn cp-btn-primary beacon' data-act='sol-accept' data-id='"+esc(s.id)+"'>Aceptar y cobrar</button>"+
+        "<button class='cp-btn cp-btn-primary beacon' data-act='sol-accept' data-id='"+esc(s.id)+"'>Aceptar y cobrar "+_money(neto)+"</button>"+
       "</div></div></div>";
   }
+  // Tarjeta de mensaje (contacto gratis): sin pago, solo responder por email.
+  function msgCard(s){
+    var fecha=(""+(s.created_at||"")).replace("T"," ").slice(0,16);
+    var mailto="mailto:"+encodeURIComponent(s.candidato_email||"")+"?subject="+encodeURIComponent("Re: tu mensaje en Pathway");
+    return "<div class='cp-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+      "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap'>"+
+        "<div><div style='font-family:var(--pw-serif);font-size:17px;color:var(--pw-carbon)'>"+esc(s.candidato_nombre||"Candidato")+"</div>"+
+          "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.candidato_email||"")+"</div></div>"+
+        "<div style='text-align:right'><span style='display:inline-block;background:rgba(45,106,79,.10);color:var(--pw-bosque);font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px'>Contacto desde tu perfil</span>"+
+          (fecha?"<div style='font-size:11px;color:var(--pw-text-muted);margin-top:4px'>"+esc(fecha)+"</div>":"")+"</div>"+
+      "</div>"+
+      (s.mensaje ? "<div style='background:rgba(45,106,79,.04);border-left:3px solid var(--pw-bosque);border-radius:6px;padding:10px 14px;font-size:13.5px;color:var(--pw-text-soft);line-height:1.55;white-space:pre-wrap;word-wrap:break-word'>"+esc(s.mensaje)+"</div>" : "")+
+      "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
+        "<button class='cp-btn cp-btn-primary' data-act='sol-reply' data-em='"+esc(s.candidato_email||"")+"' data-nom='"+esc(s.candidato_nombre||"")+"'>"+svg(IC.msg,13)+" Responder</button>"+
+      "</div></div></div>";
+  }
+  var msgsHtml = msgs.length
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Mensajes de tu perfil<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+msgs.length+"</span></div></div>"+msgs.map(msgCard).join("")
+    : "";
   var pendHtml = pend.length ? pend.map(card).join("")
     : "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:36px 24px;color:var(--pw-text-soft);font-size:13px'>No tienes solicitudes esperando tu respuesta.</div></div>";
   var waitHtml = waiting.length
     ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperando pago del candidato<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+waiting.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
-        waiting.map(function(s){ return "<div style='display:flex;justify-content:space-between;font-size:13px;color:var(--pw-text-soft);border-bottom:1px solid var(--pw-border);padding:8px 0'><span>"+esc(s.candidato_nombre||s.candidato_email||"Candidato")+" · "+_svc(s)+"</span><span>"+_money(s.monto)+"</span></div>"; }).join("")+"</div></div>"
+        waiting.map(function(s){ return "<div style='display:flex;justify-content:space-between;font-size:13px;color:var(--pw-text-soft);border-bottom:1px solid var(--pw-border);padding:8px 0'><span>"+esc(s.candidato_nombre||"Candidato")+" · "+_svc(s)+"</span><span>"+_money(s.monto)+"</span></div>"; }).join("")+"</div></div>"
     : "";
   var histHtml = hist.length
     ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+hist.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
         hist.map(function(s){ var c=s.estado==="aceptada"?"var(--pw-bosque)":(s.estado==="rechazada"?"var(--pw-danger)":"var(--pw-text-muted)");
-          return "<div style='display:flex;justify-content:space-between;font-size:13px;border-bottom:1px solid var(--pw-border);padding:8px 0'><span style='color:var(--pw-carbon)'>"+esc(s.candidato_nombre||s.candidato_email||"Candidato")+" · "+_svc(s)+"</span><span style='color:"+c+";font-weight:600;text-transform:capitalize'>"+esc(s.estado)+" · "+_money(s.monto)+"</span></div>"; }).join("")+"</div></div>"
+          return "<div style='display:flex;justify-content:space-between;font-size:13px;border-bottom:1px solid var(--pw-border);padding:8px 0'><span style='color:var(--pw-carbon)'>"+esc(s.candidato_nombre||"Candidato")+" · "+_svc(s)+"</span><span style='color:"+c+";font-weight:600;text-transform:capitalize'>"+esc(s.estado)+" · "+_money(s.monto)+"</span></div>"; }).join("")+"</div></div>"
     : "";
 
+  var nAcc=hist.filter(function(s){return s.estado==="aceptada";}).length;
+  var nRej=hist.filter(function(s){return s.estado!=="aceptada";}).length; // rechazada + expirada
+  var nPend=pend.length+waiting.length;
+  function _stat(n,lbl,col){ return "<div style='flex:1;min-width:84px;text-align:center'><div style='font-family:var(--pw-serif);font-size:26px;font-weight:600;color:"+col+"'>"+n+"</div><div style='font-size:10.5px;color:var(--pw-text-soft);text-transform:uppercase;letter-spacing:.5px;margin-top:2px'>"+lbl+"</div></div>"; }
+  var statsCard="<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:12px;flex-wrap:wrap'>"+
+    _stat(nPend,"Pendientes","#8E7A35")+_stat(nAcc,"Aceptadas","var(--pw-bosque)")+_stat(nRej,"Rechazadas","var(--pw-danger)")+"</div></div>";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Solicitudes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Candidatos del directorio de Pathway que te eligieron.</div></div></header>"+
-    cliSolTabs("sol")+
+    cliSolTabs("sol")+ statsCard +
     "<div class='cp-card' style='background:var(--pw-niebla-2);border:1px solid var(--pw-border)'><div class='cp-card-pad'>"+
       "<div class='cp-eyebrow' style='margin-bottom:8px'>Cómo funciona</div>"+
       "<div style='font-size:13px;color:var(--pw-text);line-height:1.6'>El candidato <strong>paga primero</strong>: su tarjeta queda <strong>autorizada y retenida</strong> (todavía no se le cobra). Tienes <strong>24 h</strong> para responder. Si <strong>aceptas</strong>, se captura el pago: el dinero va <strong>directo a tu cuenta de cobro</strong> y Pathway retiene solo el <strong>20%</strong> de comisión. Si <strong>rechazas</strong> o pasan 24 h, la retención se libera y al candidato <strong>no se le cobra</strong>. Tus clientes propios no pasan por aquí (0% comisión).</div></div></div>"+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperan tu respuesta<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span></div></div>"+
+      "<div style='display:flex;align-items:center;gap:10px'><span class='cp-eyebrow'>"+pend.length+" · ventana 24 h</span>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='sol-sync'>↻ Buscar pagos nuevos</button></div></div></div>"+
     pendHtml + waitHtml + histHtml;
+}
+// Bandeja de MENSAJES (mails, no chat): consultas que llegan desde el perfil
+// público del coach. Se responden por mail desde Pathway (con la firma).
+function viewMensajesInbox(){
+  var SOL = (REAL ? (RSOL||[]) : [
+    { id:"demo3", candidato_nombre:"Sofía Ramírez", candidato_email:"sofia.r@email.com", servicio:"mensaje", mensaje:"Hola, vi tu perfil y me interesa tu mentoría. Estoy en transición de marketing a producto, ¿podemos hablar?", estado:"mensaje", created_at:new Date(Date.now()-1*3600000).toISOString() }
+  ]);
+  var msgs = SOL.filter(function(s){ return s.estado==="mensaje"; })
+                .sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+  function mcard(s){
+    var fecha=(""+(s.created_at||"")).replace("T"," ").slice(0,16);
+    var hilo=(Array.isArray(s.mensajes)&&s.mensajes.length)?s.mensajes:[{from:"lead",texto:s.mensaje||"",ts:0}];
+    var bubbles=hilo.map(function(m){ var me=(m.from==="coach");
+      return "<div style='display:flex;"+(me?"justify-content:flex-end":"")+";margin:4px 0'><div style='max-width:82%;font-size:13px;line-height:1.5;padding:9px 12px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word;background:"+(me?"var(--pw-bosque)":"#EEF3F0")+";color:"+(me?"#fff":"var(--pw-carbon)")+"'>"+esc(m.texto||"")+"</div></div>"; }).join("");
+    return "<div class='cp-card'><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+      "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap'>"+
+        "<div><div style='font-family:var(--pw-serif);font-size:16px;color:var(--pw-carbon)'>"+esc(s.candidato_nombre||"Candidato")+"</div>"+
+          "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:2px'>Su mail se revela cuando contrate</div></div>"+
+        "<div style='text-align:right'><span style='display:inline-block;background:rgba(45,106,79,.10);color:var(--pw-bosque);font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px'>Desde tu perfil</span>"+
+          (fecha?"<div style='font-size:11px;color:var(--pw-text-muted);margin-top:4px'>"+esc(fecha)+"</div>":"")+"</div>"+
+      "</div>"+
+      "<div style='background:var(--pw-niebla-2);border-radius:10px;padding:8px 10px'>"+bubbles+"</div>"+
+      "<div style='display:flex;gap:8px;align-items:flex-end'>"+
+        "<textarea id='convmsg-"+esc(s.id)+"' placeholder='Escribe tu respuesta… (se la mandamos por mail con el link a la conversación)' style='flex:1;min-height:40px;max-height:130px;border:1px solid var(--pw-border);border-radius:10px;padding:9px 12px;font-family:inherit;font-size:13px;resize:vertical;outline:none;box-sizing:border-box'></textarea>"+
+        "<button class='cp-btn cp-btn-primary' data-act='conv-reply' data-id='"+esc(s.id)+"'>"+svg(IC.msg,13)+" Responder</button>"+
+      "</div></div></div>";
+  }
+  var body = msgs.length ? msgs.map(mcard).join("")
+    : "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;padding:42px 24px;color:var(--pw-text-soft);font-size:13px'>Todavía no tienes mensajes. Cuando alguien te escriba desde tu perfil público, su consulta te llega por mail y aparece acá.</div></div>";
+  return "<header class='cp-topbar'><div><h1 class='cp-h1'>Mensajes<span class='dot'>.</span></h1>"+
+      "<div class='cp-sub'>Consultas que te llegan por mail desde tu perfil público. Respondés desde Pathway, con tu firma.</div></div></header>"+
+    cliSolTabs("mensajes")+ body;
 }
 // Fases de arranque del coach con sub-pasos. María (ejemplo) NO cuenta como
 // cliente real. Cada fase completa = una medalla (bronce → plata → oro).
@@ -2680,6 +2757,7 @@ function cfgProfile(){
   var slug = REAL ? (RPROF.slug||(RCFG&&RCFG.slug)||"") : "micaela-jairedin";
   var tit  = REAL ? (RPROF.titulo_profesional||"") : "Career Coach · 8 años en HR & Recruiting";
   var bio  = REAL ? (RPROF.bio||"") : "Ayudo a profesionales a encontrar el siguiente paso de su carrera.";
+  var titEn = v('titulo_profesional_en',''); var bioEn = v('bio_en','');
   if(state.pubActive===null) state.pubActive = REAL ? !!(RPROF.perfil_publico_activo || (RCFG&&RCFG.perfil_publico_activo)) : true;
   var pubActive = state.pubActive;
   var li = REAL ? (v("linkedin_url")||v("linkedin")) : "linkedin.com/in/micaelajairedin";
@@ -2730,9 +2808,13 @@ function cfgProfile(){
       "<div class='cp-form-row'><label class='cp-form-label'>URL de tu perfil (slug)</label><input id='cfp-slug' class='cp-form-input' value=\""+esc(slug)+"\" placeholder='tu-nombre'>"+
         "<span class='cp-form-hint'>Tu link público: <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code> · solo minúsculas, números y guiones</span></div>"+
       ib("bio","Completa tu título y bio")+"<div class='cp-form-row'><label class='cp-form-label'>Título profesional</label><input id='cfp-titulo' class='cp-form-input' value=\""+esc(tit)+"\"></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Professional title (English) <span style='font-weight:400;color:var(--pw-text-muted)'>· opcional</span></label><input id='cfp-titulo-en' class='cp-form-input' value=\""+esc(titEn)+"\" placeholder='Career Coach · 8 yrs in HR'></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Biografía corta</label>"+
         "<textarea id='cfp-bio' class='cp-form-textarea'>"+esc(bio)+"</textarea>"+
         "<span class='cp-form-hint'>Aparece en tu página pública.</span></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Short bio (English) <span style='font-weight:400;color:var(--pw-text-muted)'>· opcional</span></label>"+
+        "<textarea id='cfp-bio-en' class='cp-form-textarea' placeholder='Your bio in English'>"+esc(bioEn)+"</textarea>"+
+        "<span class='cp-form-hint'>Si la dejás vacía, los visitantes en inglés ven tu bio en español.</span></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>País donde ejercés</label>"+
         "<select id='cfp-pais' class='cp-form-input'>"+paisOptHtml+"</select>"+
         "<span class='cp-form-hint'>Lo usamos para mostrarte primero a los candidatos de tu mismo país. No lo mostramos públicamente.</span></div>"+
@@ -2756,6 +2838,10 @@ function cfgServices(){
           "<input id='svc-name' class='cp-form-input' value=\""+esc(s.name)+"\"></div>"+
         "<div class='cp-form-row' style='margin-bottom:10px'><label class='cp-form-label'>Descripción</label>"+
           "<input id='svc-desc' class='cp-form-input' value=\""+esc(s.desc)+"\"></div>"+
+        "<div class='cp-form-row' style='margin-bottom:10px'><label class='cp-form-label'>Name (English) <span style='font-weight:400;color:var(--pw-text-muted)'>· opcional</span></label>"+
+          "<input id='svc-name-en' class='cp-form-input' value=\""+esc(s.name_en||"")+"\"></div>"+
+        "<div class='cp-form-row' style='margin-bottom:10px'><label class='cp-form-label'>Description (English) <span style='font-weight:400;color:var(--pw-text-muted)'>· opcional</span></label>"+
+          "<input id='svc-desc-en' class='cp-form-input' value=\""+esc(s.desc_en||"")+"\"></div>"+
         "<div class='cp-form-row-2' style='margin-bottom:14px'>"+
           "<div class='cp-form-row'><label class='cp-form-label'>Precio (€)</label><input id='svc-price' type='number' min='0' class='cp-form-input' value='"+s.price+"'></div>"+
           "<div class='cp-form-row'><label class='cp-form-label'>Unidad</label><input id='svc-unit' class='cp-form-input' value=\""+esc(s.unit)+"\"></div></div>"+
@@ -2840,22 +2926,23 @@ function sigBlock(attached){
   // inicial, que siempre renderiza. Nunca una imagen rota.
   var isPhoto = /^https?:\/\//i.test(""+ph);
   var avatar = isPhoto
-    ? "<img src=\""+esc(ph)+"\" width='52' height='52' style='width:52px;height:52px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid "+ac+"' alt=\""+esc(nm)+"\">"
-    : "<div style='width:52px;height:52px;border-radius:50%;background:"+ac+";color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px;font-weight:700;border:2px solid "+ac+"'>"+esc(sigInitial())+"</div>";
+    ? "<img src=\""+esc(ph)+"\" width='68' height='68' style='width:68px;height:68px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid "+ac+"' alt=\""+esc(nm)+"\">"
+    : "<div style='width:68px;height:68px;border-radius:50%;background:"+ac+";color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:24px;font-weight:700;border:2px solid "+ac+"'>"+esc(sigInitial())+"</div>";
   var lbl = "display:inline-block;min-width:46px;color:#9E9E9E;font-size:11px";
   var lnk = "color:#5A6A60;font-size:12px;text-decoration:none";
   var webHref = /^https?:\/\//i.test(""+web) ? web : ("https://"+web);
   var box = attached
     ? "border-top:1px solid #EDEAE8;border-left:3px solid "+ac+";background:#fff;padding:18px 20px;"
     : "border:1px solid #EDEAE8;border-left:3px solid "+ac+";background:#fff;border-radius:10px;padding:18px 20px;";
-  return "<div style='"+box+"display:flex;gap:22px;align-items:flex-start'>"+avatar+
-    "<div style='min-width:0;line-height:1.75'>"+
+  return "<table style='"+box+"border-collapse:collapse'><tr>"+
+    "<td style='vertical-align:middle;text-align:center;padding-right:24px;width:68px'>"+avatar+"</td>"+
+    "<td style='vertical-align:middle;text-align:right;line-height:1.4'>"+
       "<div style='font-size:15px;font-weight:700;color:#1B2E26'>"+esc(nm)+"</div>"+
-      "<div style='font-size:12px;color:#9E9E9E;margin:3px 0 11px'>"+esc(role)+" · Pathway</div>"+
-      (em?"<div style='margin-bottom:8px'><span style='"+lbl+"'>Email</span><a href=\"mailto:"+esc(em)+"\" style='"+lnk+"'>"+esc(em)+"</a></div>":"")+
-      "<div style='margin-bottom:13px'><span style='"+lbl+"'>Web</span><a href=\""+esc(webHref)+"\" style='"+lnk+"'>"+esc(web)+"</a></div>"+
+      "<div style='font-size:12px;color:#9E9E9E;margin:2px 0 8px'>"+esc(role)+" · Pathway</div>"+
+      (em?"<div style='margin-bottom:4px'><span style='"+lbl+"'>Email</span><a href=\"mailto:"+esc(em)+"\" style='"+lnk+"'>"+esc(em)+"</a></div>":"")+
+      "<div style='margin-bottom:9px'><span style='"+lbl+"'>Web</span><a href=\""+esc(webHref)+"\" style='"+lnk+"'>"+esc(web)+"</a></div>"+
       "<span style='display:inline-block;font-size:10px;font-weight:700;color:#2D6A4F;background:rgba(45,106,79,.10);padding:4px 10px;border-radius:100px'>Powered by Pathway</span>"+
-    "</div></div>";
+    "</td></tr></table>";
 }
 function sigText(){
   var nm=(COACH&&COACH.name)||"Tu coach", role=(COACH&&COACH.role)||"Career Coach", em=(COACH&&COACH.email)||"";
@@ -3987,6 +4074,7 @@ function viewAdmin(){
     // Lo parseamos en partes para no mostrar todo en una sola celda fea.
     var pageLbl = {
       "solicitud-coach":"Pidió coach",
+      "contacto-coach":"Contactó coach",
       "soy-candidato-google":"Lead candidato",
       "soy-candidato":"Lead candidato",
       "soy-coach":"Interesada en ser coach",
@@ -4511,7 +4599,7 @@ function render(){
     _demoSnapshot();
     if(state.section==="admin" && !RADMIN) state.section="resumen";
     _applyPanelBrand();
-    var sections = { resumen:viewResumen, clientes:viewClientes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin };
+    var sections = { resumen:viewResumen, clientes:viewClientes, mensajes:viewMensajesInbox, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin };
     var view = (sections[state.section]||viewResumen)();
     // Configuración usaba un contenedor angosto (760px) centrado, que la dejaba
     // "muy en el medio". Ahora usa el ancho normal, alineada como las demás pestañas.
@@ -4587,7 +4675,7 @@ document.addEventListener("click", function(ev){
     state.inboxOpen=false; state.section="clientes"; state.clienteSel=igid; state.cliDetTab="mensajes"; state.cliWeek=null;
     render(); window.scrollTo(0,0); return;
   }
-  if(act.indexOf("nav:")===0){ state.section = act.slice(4); render(); window.scrollTo(0,0); return; }
+  if(act.indexOf("nav:")===0){ state.section = act.slice(4); render(); window.scrollTo(0,0); if(state.section==="solicitudes") syncSolicitudes(); return; }
   if(act.indexOf("cli:")===0){ state.cliFilter = act.slice(4); render(); return; }
   if(act.indexOf("cfg:")===0){ state.cfg = act.slice(4); render(); return; }
   if(act==="pub-toggle"){
@@ -4619,7 +4707,8 @@ document.addEventListener("click", function(ev){
     var pubA = !!state.pubActive;
     if(pubA && !sl){ alert("Para activar tu perfil público necesitas un slug. Escríbelo en «URL de tu perfil»."); var si=document.getElementById("cfp-slug"); if(si)si.focus(); return; }
     var nom=_val("cfp-nombre").trim(), titP=_val("cfp-titulo").trim(), bioP=_val("cfp-bio").trim();
-    var cfgPatch={ linkedin_url:_val("cfp-li").trim(), instagram_url:_val("cfp-ig").trim(), calendly_url:_val("cfp-cal").trim(), calendar_embed_url:_val("cfp-cal-emb").trim(), pais:_val("cfp-pais").trim().toUpperCase() };
+    var titEnP=_val("cfp-titulo-en").trim(), bioEnP=_val("cfp-bio-en").trim();
+    var cfgPatch={ linkedin_url:_val("cfp-li").trim(), instagram_url:_val("cfp-ig").trim(), calendly_url:_val("cfp-cal").trim(), calendar_embed_url:_val("cfp-cal-emb").trim(), pais:_val("cfp-pais").trim().toUpperCase(), titulo_profesional_en:titEnP, bio_en:bioEnP };
     if(window._cfpFoto){ cfgPatch.foto_url=window._cfpFoto; COACH.photo=window._cfpFoto; }
     var doSave=function(){
       RPROF={ slug:sl, titulo_profesional:titP, bio:bioP, perfil_publico_activo:pubA };
@@ -4662,6 +4751,37 @@ document.addEventListener("click", function(ev){
     state.mail={ open:true, to:lem,
       subj:"Hola"+(lnom?(" "+lnom):"")+" 👋",
       body:"Hola"+(lnom?(" "+lnom):"")+",\n\nGracias por escribirnos desde la web. Soy "+((COACH&&COACH.firstName)||"tu coach")+". Contame en qué estás trabajando y vemos cómo te puedo ayudar.\n\n¿Te viene bien una llamada corta esta semana?" };
+    render(); return;
+  }
+  if(act==="conv-reply"){
+    var cvid=el.getAttribute("data-id"); if(!cvid) return;
+    var cinp=document.getElementById("convmsg-"+cvid); var ctxt=cinp?(""+cinp.value).trim():""; if(!ctxt) return;
+    var csc=(RSOL||[]).filter(function(x){return String(x.id)===String(cvid);})[0];
+    if(!csc){ alert("No encontré la conversación."); return; }
+    var carr=Array.isArray(csc.mensajes)?csc.mensajes.slice():[];
+    if(!carr.length && csc.mensaje) carr=[{from:"lead",texto:csc.mensaje,ts:Date.now()}];
+    carr.push({from:"coach",texto:ctxt,ts:Date.now()});
+    _sbw("solicitudes?id=eq."+encodeURIComponent(cvid),"PATCH",{mensajes:carr,coach_ultimo_at:new Date().toISOString()})
+      .then(function(r){ if(!r.ok) throw 0;
+        csc.mensajes=carr;
+        if(csc.candidato_email && csc.token){
+          var link="https://pathwaycareercoach.com/c/"+csc.token;
+          var html="<p style='margin:0 0 12px;color:#3A4A40;line-height:1.6'>"+esc((COACH&&COACH.name)||"Tu coach")+" te respondió en Pathway.</p>"+
+            "<div style='background:#fff;border-left:3px solid #2D6A4F;border-radius:8px;padding:12px 14px;margin:12px 0;color:#3A4A40;white-space:pre-wrap'>"+esc(ctxt)+"</div>"+
+            "<p style='margin:14px 0'><a href='"+link+"' style='display:inline-block;padding:11px 22px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700'>Ver y responder →</a></p>";
+          fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:csc.candidato_email,to_name:csc.candidato_nombre||"",subject:"Respuesta de "+((COACH&&COACH.name)||"tu coach")+" · Pathway",html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){});
+        }
+        toast("Respuesta enviada ✓"); render();
+      })
+      .catch(function(){ alert("No se pudo enviar la respuesta."); });
+    return;
+  }
+  if(act==="sol-reply"){
+    var sem=el.getAttribute("data-em")||""; if(!sem){ alert("Esta solicitud no tiene email."); return; }
+    var snm=(el.getAttribute("data-nom")||"").split(" ")[0];
+    state.mail={ open:true, to:sem,
+      subj:"Re: tu mensaje en Pathway",
+      body:"Hola"+(snm?(" "+snm):"")+",\n\nGracias por escribirme desde mi perfil en Pathway. " };
     render(); return;
   }
   if(act==="msg-wa"){
@@ -4775,6 +4895,16 @@ document.addEventListener("click", function(ev){
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; if(REAL){ saveCfg({ pathway_optin: state.pathwayOptIn }); } else { render(); } return; }
   if(act==="pw-connect"){ pwConnect(); return; }
   if(act==="pw-connect-check"){ state.stripe=null; _stripeReq=false; render(); return; }
+  if(act==="sol-sync"){
+    if(!REAL){ alert("Demo: en producción busca en Stripe los pagos que el candidato ya autorizó."); return; }
+    toast("Buscando pagos nuevos en Stripe…");
+    _solSyncing=false; // forzar
+    fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:"sync",coach_id:RME.id})})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(j){ if(j&&j.changed>0){ toast(j.changed+" solicitud(es) actualizada(s) ✓"); loadReal(); } else { toast("Sin pagos nuevos por ahora."); } })
+      .catch(function(){ alert("No se pudo conectar con Stripe. Reintenta en un momento."); });
+    return;
+  }
   if(act==="sol-accept" || act==="sol-reject"){
     var solId=el.getAttribute("data-id"); if(!solId) return;
     if(!REAL){ alert("Demo: en producción esto acepta/rechaza la solicitud real."); return; }
@@ -4819,7 +4949,7 @@ document.addEventListener("click", function(ev){
   }
   if(act==="chat-newcli"){ state.chatPicker=true; render(); return; }
   if(act==="chat-picker-close"){ state.chatPicker=false; render(); return; }
-  if(act==="chat-sol"){ state.ai.open=false; state.chatPicker=false; state.section="solicitudes"; render(); window.scrollTo(0,0); return; }
+  if(act==="chat-sol"){ state.ai.open=false; state.chatPicker=false; state.section="solicitudes"; render(); window.scrollTo(0,0); syncSolicitudes(); return; }
   if(act==="chat-coach-back"){
     // Volver del hilo a la bandeja del coach.
     state.aiCoachThread = null;
@@ -5818,7 +5948,7 @@ document.addEventListener("click", function(ev){
     var si=state.svcEdit;
     if(si!=null && state.services[si]){
       var g=function(id){ var e=document.getElementById(id); return e?e.value:""; };
-      state.services[si]={ name:(g('svc-name').trim()||"Servicio"), desc:g('svc-desc').trim(), price:Math.max(0,parseInt(g('svc-price'),10)||0), unit:(g('svc-unit').trim()||"/sesión") };
+      state.services[si]={ name:(g('svc-name').trim()||"Servicio"), desc:g('svc-desc').trim(), price:Math.max(0,parseInt(g('svc-price'),10)||0), unit:(g('svc-unit').trim()||"/sesión"), name_en:g('svc-name-en').trim(), desc_en:g('svc-desc-en').trim() };
     }
     state._svcNew=false; state.svcEdit=null;
     if(REAL){ saveCfg({ servicios: state.services }); } else { render(); }
@@ -6397,6 +6527,18 @@ function startMsgPolling(){
     if(document.visibilityState === "visible") pollMessages();
   });
 }
+// Reconcilia las solicitudes pendientes del coach contra Stripe (cargo directo
+// sobre su cuenta → no llega por webhook). Al abrir Solicitudes, las que el
+// candidato ya pagó pasan a "autorizada" y aparecen los botones Aceptar/Rechazar.
+var _solSyncing=false, _solSyncedOnce=false;
+function syncSolicitudes(){
+  if(!REAL || !RME || !RME.id || _solSyncing) return;
+  _solSyncing=true;
+  fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:"sync",coach_id:RME.id})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){ _solSyncing=false; if(j&&j.changed>0){ loadReal(); } })
+    .catch(function(){ _solSyncing=false; });
+}
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
   if(!ME||!ME.id) return; // sin sesión → datos de ejemplo
@@ -6500,7 +6642,7 @@ function loadReal(){
         email: c.email||"", week: wk, medal: medal, last:{txt:lastTxt,state:lastSt},
         cvState: cvSet[em]?"published":"pending", reportState: rpSet[em]?"published":"pending",
         cvContenido: cvMap[em]||"",
-        source: "directo", notas: (c.notas_privadas!=null ? c.notas_privadas : (_isChat(c.notas_coach) ? "" : (c.notas_coach||""))), chat: _chatArr(c.notas_coach), raw:c, inf: infMap[em]||null, ses:(function(){try{return JSON.parse(c.sesiones_registro||"[]")||[];}catch(e){return [];}})(), photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
+        source: (c.pago_recibido ? "pathway" : "directo"), notas: (c.notas_privadas!=null ? c.notas_privadas : (_isChat(c.notas_coach) ? "" : (c.notas_coach||""))), chat: _chatArr(c.notas_coach), raw:c, inf: infMap[em]||null, ses:(function(){try{return JSON.parse(c.sesiones_registro||"[]")||[];}catch(e){return [];}})(), photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
       };
     });
     // Coach demo: siempre mostramos la María de ejemplo con el form "lleno"
@@ -6512,6 +6654,10 @@ function loadReal(){
     try{ _gameSyncServer(_gameBest(), coachMedalInfo().n); }catch(e){} // ranking admin
     render();
     _migrateFotoToUploadcare();
+    // Una sola vez por carga: reconciliar pagos pendientes con Stripe, así las
+    // solicitudes que el candidato ya pagó aparecen con Aceptar/Rechazar sin
+    // que el coach tenga que hacer nada.
+    if(!_solSyncedOnce && (RSOL||[]).some(function(s){return s.estado==="pendiente";})){ _solSyncedOnce=true; syncSolicitudes(); }
   }).catch(function(){ render(); });
 }
 

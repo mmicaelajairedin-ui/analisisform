@@ -58,6 +58,44 @@ function sbH(srk: string) {
   return { apikey: srk, Authorization: `Bearer ${srk}`, "Content-Type": "application/json" };
 }
 
+// ── Notificación: solicitud recién autorizada (pago retenido) ──────────
+// Mail al comprador (confirmación) + mail al coach (aviso). Pathway media:
+// los mails NO se exponen entre las partes. Best-effort — nunca rompe el flujo.
+// Se dispara desde el camino `sync` (el webhook hace lo mismo); la columna
+// `notificada` en la fila evita que se envíe dos veces.
+async function sendEmail(SB: string, SRK: string, to: string, toName: string, subject: string, html: string) {
+  try {
+    await fetch(`${SB}/functions/v1/send-email`, {
+      method: "POST",
+      headers: { ...sbH(SRK), "Content-Type": "application/json" },
+      body: JSON.stringify({ to, to_name: toName, subject, html, signature: "pathway" }),
+    });
+  } catch (_e) { /* best-effort */ }
+}
+async function notifyAutorizada(SB: string, SRK: string, sol: Record<string, any>) {
+  let coachNombre = "tu coach", coachEmail = "";
+  try {
+    const cr = await fetch(`${SB}/rest/v1/usuarios?id=eq.${encodeURIComponent(sol.coach_id)}&select=nombre,email`, { headers: sbH(SRK) });
+    if (cr.ok) { const u = (await cr.json())[0] || {}; coachNombre = u.nombre || coachNombre; coachEmail = u.email || ""; }
+  } catch (_e) { /* opcional */ }
+  const buyerEmail = String(sol.candidato_email || "").trim();
+  const buyerName = String(sol.candidato_nombre || "").split(" ")[0] || "";
+  const servicio = sol.servicio_titulo || "el servicio";
+  if (buyerEmail) {
+    const html =
+      `<p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">¡Hola ${buyerName}! 🎉</p>` +
+      `<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Tu pago de <strong>${servicio}</strong> con <strong>${coachNombre}</strong> quedó confirmado. El pago está <strong>retenido</strong>: ${coachNombre} tiene <strong>24 h</strong> para aceptar y arrancar. Si no acepta, se te reembolsa automáticamente y no se te cobra.</p>` +
+      `<p style="margin:14px 0 0;color:#3A4A40;">Te avisamos por aquí apenas tengas novedades.</p>`;
+    await sendEmail(SB, SRK, buyerEmail, buyerName, `Pago confirmado · ${servicio} con ${coachNombre}`, html);
+  }
+  if (coachEmail) {
+    const html =
+      `<p style="margin:0 0 12px;color:#3A4A40;line-height:1.6;"><strong>${sol.candidato_nombre || "Un candidato"}</strong> compró <strong>${servicio}</strong> y está esperando que lo aceptes (tienes 24 h).</p>` +
+      `<p style="margin:14px 0;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ver en mi panel →</a></p>`;
+    await sendEmail(SB, SRK, coachEmail, coachNombre, `💳 Nueva compra · ${servicio}`, html);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Method Not Allowed" }, 405);
@@ -147,6 +185,10 @@ Deno.serve(async (req: Request) => {
       "line_items[0][price_data][product_data][name]": nombreServicio,
       "payment_intent_data[capture_method]": "manual",
       "payment_intent_data[application_fee_amount]": String(fee),
+      // Lo que ve el comprador en el resumen de su banco: "PATHWAY" (no el
+      // nombre de la cuenta del coach). Sigue siendo cargo directo sobre la
+      // cuenta del coach — solo cambia el texto del extracto, no el modelo.
+      "payment_intent_data[statement_descriptor]": "PATHWAY",
       ...(cand.email ? { customer_email: String(cand.email) } : {}),
       success_url: successUrl,
       cancel_url: cancelUrl,
@@ -213,7 +255,125 @@ Deno.serve(async (req: Request) => {
         stripe_payment_intent: pi,
       }),
     });
+
+    // Al aceptar (pago capturado), el comprador pasa a ser CLIENTE del coach:
+    // creamos/activamos su fila en candidatos con el pago registrado. Si falta
+    // el email en la solicitud, lo sacamos de la sesión de Stripe.
+    if (action === "accept") {
+      let email = sol.candidato_email || "";
+      let nombre = sol.candidato_nombre || "";
+      if ((!email || !nombre) && sol.stripe_session_id) {
+        const s = await stripe(`/checkout/sessions/${sol.stripe_session_id}`, "GET", KEY, undefined, acct);
+        email = email || s.data?.customer_details?.email || "";
+        nombre = nombre || s.data?.customer_details?.name || "";
+      }
+      email = String(email || "").toLowerCase().trim();
+      if (email) {
+        const chk = await fetch(
+          `${SB}/rest/v1/candidatos?email=eq.${encodeURIComponent(email)}&select=id,coach_id`,
+          { headers: sbH(SRK) },
+        );
+        const ex = chk.ok ? await chk.json() : [];
+        const body: Record<string, unknown> = {
+          pago_recibido: true,
+          pago_monto: sol.monto,
+          pago_fecha: new Date().toISOString(),
+        };
+        if (Array.isArray(ex) && ex.length) {
+          if (!ex[0].coach_id) body.coach_id = sol.coach_id;
+          await fetch(`${SB}/rest/v1/candidatos?email=eq.${encodeURIComponent(email)}`, {
+            method: "PATCH", headers: { ...sbH(SRK), Prefer: "return=minimal" }, body: JSON.stringify(body),
+          });
+        } else {
+          await fetch(`${SB}/rest/v1/candidatos`, {
+            method: "POST", headers: { ...sbH(SRK), Prefer: "return=minimal" },
+            body: JSON.stringify({ ...body, email, nombre: nombre || email.split("@")[0], coach_id: sol.coach_id, activo: true }),
+          });
+        }
+      }
+    }
+    // Aviso por mail al comprador (Pathway media; los mails no se exponen entre
+    // las partes). No rompemos el accept/reject si el mail falla.
+    try {
+      const buyerEmail = String(sol.candidato_email || "").trim();
+      if (buyerEmail) {
+        let coachNombre = "tu coach";
+        const cr = await fetch(`${SB}/rest/v1/usuarios?id=eq.${encodeURIComponent(sol.coach_id)}&select=nombre`, { headers: sbH(SRK) });
+        if (cr.ok) coachNombre = ((await cr.json())[0] || {}).nombre || coachNombre;
+        const bn = String(sol.candidato_nombre || "").split(" ")[0] || "";
+        const serv = sol.servicio_titulo || "tu servicio";
+        const html = action === "accept"
+          ? `<p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">¡Hola ${bn}! 🎉</p><p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;"><strong>${coachNombre}</strong> aceptó tu solicitud de <strong>${serv}</strong>. ¡Arrancan! Te va a contactar para coordinar los próximos pasos.</p>`
+          : `<p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">Hola ${bn},</p><p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Esta vez <strong>${coachNombre}</strong> no pudo tomar tu solicitud de <strong>${serv}</strong>. <strong>No se te cobró</strong> — la retención se liberó. Podés elegir otro coach cuando quieras.</p>`;
+        await fetch(`${SB}/functions/v1/send-email`, {
+          method: "POST",
+          headers: { ...sbH(SRK), "Content-Type": "application/json" },
+          body: JSON.stringify({ to: buyerEmail, to_name: bn, subject: action === "accept" ? `¡${coachNombre} aceptó tu solicitud! · Pathway` : "Sobre tu solicitud · Pathway", html, signature: "pathway" }),
+        });
+      }
+    } catch (_e) { /* el mail es best-effort */ }
     return json({ ok: true, estado: action === "accept" ? "aceptada" : "rechazada" });
+  }
+
+  // ── SYNC: reconcilia las solicitudes pendientes del coach contra Stripe ──
+  // El cargo es directo sobre la cuenta conectada, así que no dependemos del
+  // webhook: cuando el coach abre su panel, consultamos cada sesión/PI y
+  // movemos pendiente → autorizada (con el PI + datos del comprador) si ya
+  // autorizó el pago; o → expirada si pasó la ventana sin pagar.
+  if (action === "sync") {
+    const coachId = String(p.coach_id || "").trim();
+    if (!coachId) return json({ error: "coach_id requerido" }, 400);
+    const r = await fetch(
+      `${SB}/rest/v1/solicitudes?coach_id=eq.${encodeURIComponent(coachId)}&estado=eq.pendiente&select=*&order=created_at.desc&limit=40`,
+      { headers: sbH(SRK) },
+    );
+    const pend = r.ok ? await r.json() : [];
+    const now = Date.now();
+    let changed = 0;
+    for (const sol of (Array.isArray(pend) ? pend : [])) {
+      const acct = sol.stripe_account_id;
+      let pi = sol.stripe_payment_intent || null;
+      let custEmail = "", custName = "";
+      if (sol.stripe_session_id) {
+        const s = await stripe(`/checkout/sessions/${sol.stripe_session_id}`, "GET", KEY, undefined, acct);
+        pi = pi || s.data?.payment_intent || null;
+        custEmail = s.data?.customer_details?.email || "";
+        custName = s.data?.customer_details?.name || "";
+      }
+      if (pi) {
+        const pir = await stripe(`/payment_intents/${pi}`, "GET", KEY, undefined, acct);
+        const st = pir.data?.status;
+        let nuevo = "";
+        if (st === "requires_capture") nuevo = "autorizada";
+        else if (st === "succeeded") nuevo = "aceptada";
+        else if (st === "canceled") nuevo = "rechazada";
+        if (nuevo) {
+          const patch: Record<string, unknown> = { estado: nuevo, stripe_payment_intent: pi };
+          if (custEmail && !sol.candidato_email) patch.candidato_email = custEmail;
+          if (custName && !sol.candidato_nombre) patch.candidato_nombre = custName;
+          // Notificar (mail al comprador + al coach) al pasar a 'autorizada',
+          // una sola vez. Así la notificación llega aunque el webhook no dispare.
+          if (nuevo === "autorizada" && !sol.notificada) {
+            await notifyAutorizada(SB, SRK, {
+              ...sol,
+              candidato_email: sol.candidato_email || custEmail,
+              candidato_nombre: sol.candidato_nombre || custName,
+            });
+            patch.notificada = true;
+          }
+          await fetch(`${SB}/rest/v1/solicitudes?id=eq.${encodeURIComponent(sol.id)}`, {
+            method: "PATCH", headers: { ...sbH(SRK), Prefer: "return=minimal" }, body: JSON.stringify(patch),
+          });
+          changed++;
+        }
+      } else if (sol.expires_at && new Date(sol.expires_at).getTime() < now) {
+        await fetch(`${SB}/rest/v1/solicitudes?id=eq.${encodeURIComponent(sol.id)}`, {
+          method: "PATCH", headers: { ...sbH(SRK), Prefer: "return=minimal" }, body: JSON.stringify({ estado: "expirada" }),
+        });
+        changed++;
+      }
+    }
+    return json({ ok: true, changed });
   }
 
   return json({ error: "Acción no reconocida" }, 400);
