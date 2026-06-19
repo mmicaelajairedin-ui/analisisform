@@ -58,6 +58,44 @@ function sbH(srk: string) {
   return { apikey: srk, Authorization: `Bearer ${srk}`, "Content-Type": "application/json" };
 }
 
+// ── Notificación: solicitud recién autorizada (pago retenido) ──────────
+// Mail al comprador (confirmación) + mail al coach (aviso). Pathway media:
+// los mails NO se exponen entre las partes. Best-effort — nunca rompe el flujo.
+// Se dispara desde el camino `sync` (el webhook hace lo mismo); la columna
+// `notificada` en la fila evita que se envíe dos veces.
+async function sendEmail(SB: string, SRK: string, to: string, toName: string, subject: string, html: string) {
+  try {
+    await fetch(`${SB}/functions/v1/send-email`, {
+      method: "POST",
+      headers: { ...sbH(SRK), "Content-Type": "application/json" },
+      body: JSON.stringify({ to, to_name: toName, subject, html, signature: "pathway" }),
+    });
+  } catch (_e) { /* best-effort */ }
+}
+async function notifyAutorizada(SB: string, SRK: string, sol: Record<string, any>) {
+  let coachNombre = "tu coach", coachEmail = "";
+  try {
+    const cr = await fetch(`${SB}/rest/v1/usuarios?id=eq.${encodeURIComponent(sol.coach_id)}&select=nombre,email`, { headers: sbH(SRK) });
+    if (cr.ok) { const u = (await cr.json())[0] || {}; coachNombre = u.nombre || coachNombre; coachEmail = u.email || ""; }
+  } catch (_e) { /* opcional */ }
+  const buyerEmail = String(sol.candidato_email || "").trim();
+  const buyerName = String(sol.candidato_nombre || "").split(" ")[0] || "";
+  const servicio = sol.servicio_titulo || "el servicio";
+  if (buyerEmail) {
+    const html =
+      `<p style="margin:0 0 14px;color:#1B2E26;font-size:16px;">¡Hola ${buyerName}! 🎉</p>` +
+      `<p style="margin:0 0 14px;color:#3A4A40;line-height:1.65;">Tu pago de <strong>${servicio}</strong> con <strong>${coachNombre}</strong> quedó confirmado. El pago está <strong>retenido</strong>: ${coachNombre} tiene <strong>24 h</strong> para aceptar y arrancar. Si no acepta, se te reembolsa automáticamente y no se te cobra.</p>` +
+      `<p style="margin:14px 0 0;color:#3A4A40;">Te avisamos por aquí apenas tengas novedades.</p>`;
+    await sendEmail(SB, SRK, buyerEmail, buyerName, `Pago confirmado · ${servicio} con ${coachNombre}`, html);
+  }
+  if (coachEmail) {
+    const html =
+      `<p style="margin:0 0 12px;color:#3A4A40;line-height:1.6;"><strong>${sol.candidato_nombre || "Un candidato"}</strong> compró <strong>${servicio}</strong> y está esperando que lo aceptes (tienes 24 h).</p>` +
+      `<p style="margin:14px 0;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ver en mi panel →</a></p>`;
+    await sendEmail(SB, SRK, coachEmail, coachNombre, `💳 Nueva compra · ${servicio}`, html);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Method Not Allowed" }, 405);
@@ -313,6 +351,16 @@ Deno.serve(async (req: Request) => {
           const patch: Record<string, unknown> = { estado: nuevo, stripe_payment_intent: pi };
           if (custEmail && !sol.candidato_email) patch.candidato_email = custEmail;
           if (custName && !sol.candidato_nombre) patch.candidato_nombre = custName;
+          // Notificar (mail al comprador + al coach) al pasar a 'autorizada',
+          // una sola vez. Así la notificación llega aunque el webhook no dispare.
+          if (nuevo === "autorizada" && !sol.notificada) {
+            await notifyAutorizada(SB, SRK, {
+              ...sol,
+              candidato_email: sol.candidato_email || custEmail,
+              candidato_nombre: sol.candidato_nombre || custName,
+            });
+            patch.notificada = true;
+          }
           await fetch(`${SB}/rest/v1/solicitudes?id=eq.${encodeURIComponent(sol.id)}`, {
             method: "PATCH", headers: { ...sbH(SRK), Prefer: "return=minimal" }, body: JSON.stringify(patch),
           });

@@ -221,12 +221,15 @@ async function handleSolicitudPayment(
   const sid = session.id;
   if (!sid) return { matched: false };
   const r = await fetch(
-    `${SB_URL}/rest/v1/solicitudes?stripe_session_id=eq.${encodeURIComponent(sid)}&select=id,estado,coach_id,candidato_nombre,candidato_email,servicio_titulo,monto`,
+    `${SB_URL}/rest/v1/solicitudes?stripe_session_id=eq.${encodeURIComponent(sid)}&select=id,estado,coach_id,candidato_nombre,candidato_email,servicio_titulo,monto,notificada`,
     { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
   );
   const rows = r.ok ? await r.json() : [];
   if (!Array.isArray(rows) || !rows.length) return { matched: false };
   const sol = rows[0];
+  // Si la fila ya fue notificada (p.ej. el camino `sync` de connect-checkout se
+  // adelantó), no reenviamos los mails — solo aseguramos estado + payment_intent.
+  const yaNotificada = sol.notificada === true;
   await fetch(
     `${SB_URL}/rest/v1/solicitudes?stripe_session_id=eq.${encodeURIComponent(sid)}`,
     {
@@ -235,9 +238,13 @@ async function handleSolicitudPayment(
       body: JSON.stringify({
         estado: "autorizada",
         stripe_payment_intent: session.payment_intent || null,
+        notificada: true,
       }),
     },
   );
+  if (yaNotificada) {
+    return { matched: true, result: { result: "solicitud_autorizada", id: sol.id, session: sid, skipped_emails: true } };
+  }
 
   // Datos del coach (para los mails). El comprador no ve el mail del coach ni
   // viceversa: Pathway media las notificaciones.
