@@ -1918,7 +1918,62 @@ function init(){
   });
 }
 
+// ── Consentimiento (primer ingreso) ──────────────────────────────────────
+// RGPD: al entrar por primera vez, el cliente acepta Términos + Privacidad
+// (obligatorio = base contractual) y, opcional y por separado, marketing
+// (consentimiento libre). Queda registrado en candidatos (consent_at,
+// consent_version, consent_marketing) como prueba que la ley exige (art. 7.1).
+var CONSENT_VERSION='2026-05-01';
+function needsConsent(){
+  if(COACH_PREVIEW) return false;                          // el coach viendo el portal no consiente
+  if(/ejemplo@pathwaycareercoach\.com/i.test(E||'')) return false; // cliente demo
+  return !(C && C.consent_at);
+}
+function showConsentGate(){
+  if(document.getElementById('consent-ov')) return;
+  var EN=(localStorage.getItem('mj_lang')==='en');
+  var legal=BASE+'/legales.html';
+  var ov=document.createElement('div');
+  ov.id='consent-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(27,46,38,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:var(--pw-sans,system-ui,-apple-system,sans-serif)';
+  ov.innerHTML=
+    "<div role='dialog' aria-modal='true' aria-labelledby='cons-h' style='background:#fff;max-width:440px;width:100%;border-radius:18px;padding:30px 26px;box-shadow:0 20px 60px rgba(0,0,0,.25)'>"+
+      "<div style='font-size:34px;line-height:1;margin-bottom:12px'>🤝</div>"+
+      "<h2 id='cons-h' style='font-family:var(--pw-serif,Georgia,serif);font-size:22px;font-weight:600;color:var(--pw-carbon,#1B2E26);margin:0 0 8px'>"+(EN?'Welcome — one quick step':'Te damos la bienvenida — un paso rápido')+"</h2>"+
+      "<p style='font-size:14px;color:#5A5A55;line-height:1.6;margin:0 0 18px'>"+(EN?'Before entering your space, please accept the terms so your coach can work with your data.':'Antes de entrar a tu espacio, aceptá los términos para que tu coach pueda trabajar con tus datos.')+"</p>"+
+      "<label style='display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:14px'>"+
+        "<input type='checkbox' id='cons-terms' style='width:18px;height:18px;margin-top:1px;accent-color:var(--pw-bosque,#2D6A4F);flex-shrink:0'>"+
+        "<span style='font-size:13.5px;color:#1a1a1a;line-height:1.55'>"+(EN?'I accept the ':'Acepto los ')+"<a href='"+legal+"' target='_blank' rel='noopener' style='color:var(--pw-bosque,#2D6A4F);font-weight:600'>"+(EN?'Terms and Privacy Policy':'Términos y la Política de Privacidad')+"</a>"+(EN?' and that my coach uses my data for the coaching service.':' y que mi coach use mis datos para el servicio de coaching.')+"</span>"+
+      "</label>"+
+      "<label style='display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:22px'>"+
+        "<input type='checkbox' id='cons-mkt' style='width:18px;height:18px;margin-top:1px;accent-color:var(--pw-bosque,#2D6A4F);flex-shrink:0'>"+
+        "<span style='font-size:13px;color:#5A5A55;line-height:1.55'>"+(EN?'(Optional) I want to receive tips, news and resources by email.':'(Opcional) Quiero recibir consejos, novedades y recursos por email.')+"</span>"+
+      "</label>"+
+      "<button id='cons-go' disabled style='width:100%;height:46px;border:none;border-radius:11px;background:var(--pw-bosque,#2D6A4F);color:#fff;font-weight:600;font-size:15px;cursor:not-allowed;opacity:.4;font-family:inherit'>"+(EN?'Accept and continue':'Acepto y continúo')+"</button>"+
+      "<p style='font-size:11px;color:#9a9a95;text-align:center;margin:12px 0 0'>"+(EN?'You can withdraw consent anytime by contacting your coach.':'Podés retirar el consentimiento cuando quieras contactando a tu coach.')+"</p>"+
+    "</div>";
+  document.body.appendChild(ov);
+  var cb=ov.querySelector('#cons-terms'), btn=ov.querySelector('#cons-go');
+  cb.addEventListener('change',function(){ btn.disabled=!cb.checked; btn.style.opacity=cb.checked?'1':'.4'; btn.style.cursor=cb.checked?'pointer':'not-allowed'; });
+  btn.addEventListener('click',function(){
+    if(!cb.checked) return;
+    btn.disabled=true; btn.style.opacity='.6'; btn.textContent=(EN?'Saving…':'Guardando…');
+    var mkt=!!ov.querySelector('#cons-mkt').checked;
+    var payload={ consent_at:new Date().toISOString(), consent_version:CONSENT_VERSION, consent_marketing:mkt };
+    function done(){ C.consent_at=payload.consent_at; C.consent_version=payload.consent_version; C.consent_marketing=mkt; var o=document.getElementById('consent-ov'); if(o)o.remove(); entrar(); }
+    pt('candidatos','email=eq.'+encodeURIComponent(E),payload).then(done).catch(function(){
+      // Si falla el guardado no bloqueamos al cliente: marcamos local y seguimos.
+      // pw-observe ya reporta el fallo del fetch a client_errors.
+      try{ localStorage.setItem('mj_consent_'+E, payload.consent_at); }catch(e){}
+      done();
+    });
+  });
+}
+
 function entrar(){
+  // Gate de consentimiento: si todavía no aceptó, lo mostramos y frenamos acá.
+  // Al aceptar se guarda la prueba y se vuelve a llamar a entrar().
+  if(needsConsent()){ showConsentGate(); return; }
   localStorage.setItem('mj_visited_'+E,'1');
   document.getElementById('landing').style.display='none';
   document.getElementById('app').style.display='block';

@@ -1129,7 +1129,7 @@ async function pwInit(){
     try{
       var rows=await sbGet('candidatos','email=eq.'+encodeURIComponent(EMAIL)+'&select=*');
       if(rows&&rows.length){
-        CRAW=rows[0]; CID=CRAW.id; applyClient(CRAW); applyProceso();
+        CRAW=rows[0]; CID=CRAW.id; applyClient(CRAW); applyProceso(); pwMaybeConsent();
         var inf=null;
         try{ var ir=await sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=data&order=created_at.desc&limit=1'); if(ir&&ir.length){ var dd=ir[0].data; inf=(typeof dd==='string')?JSON.parse(dd):dd; } }catch(e){}
         applyInforme(inf); applyLogros(inf);
@@ -1142,6 +1142,48 @@ async function pwInit(){
   } else { CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); applyLogros(null); _demoBrandFit(); }
   WEEK.forEach(colorDay);
   var td=document.querySelector('.hd[data-date="'+pwHoy()+'"]'); if(td) selectDay(td);
+}
+
+// ── Consentimiento (primer ingreso) — RGPD art. 7.1, ver consentimiento.sql ──
+var CONSENT_VERSION='2026-05-01';
+function pwMaybeConsent(){
+  if(_esDemoFit()) return;
+  if(new URLSearchParams(location.search).get('coach_view')) return; // coach en preview
+  if(!CID || (CRAW && CRAW.consent_at)) return;
+  pwConsentGate();
+}
+function pwConsentGate(){
+  if(document.getElementById('consent-ov')) return;
+  var ov=document.createElement('div');
+  ov.id='consent-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(27,46,38,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,sans-serif';
+  ov.innerHTML=
+    "<div role='dialog' aria-modal='true' style='background:#fff;max-width:440px;width:100%;border-radius:18px;padding:30px 26px;box-shadow:0 20px 60px rgba(0,0,0,.25)'>"+
+      "<div style='font-size:34px;line-height:1;margin-bottom:12px'>🤝</div>"+
+      "<h2 style='font-family:Georgia,serif;font-size:22px;font-weight:600;color:#1B2E26;margin:0 0 8px'>Te damos la bienvenida — un paso rápido</h2>"+
+      "<p style='font-size:14px;color:#5A5A55;line-height:1.6;margin:0 0 18px'>Antes de entrar a tu espacio, aceptá los términos para que tu coach pueda trabajar con tus datos.</p>"+
+      "<label style='display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:14px'>"+
+        "<input type='checkbox' id='cons-terms' style='width:18px;height:18px;margin-top:1px;accent-color:#2D6A4F;flex-shrink:0'>"+
+        "<span style='font-size:13.5px;color:#1a1a1a;line-height:1.55'>Acepto los <a href='/legales.html' target='_blank' rel='noopener' style='color:#2D6A4F;font-weight:600'>Términos y la Política de Privacidad</a> y que mi coach use mis datos para el servicio de coaching.</span>"+
+      "</label>"+
+      "<label style='display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:22px'>"+
+        "<input type='checkbox' id='cons-mkt' style='width:18px;height:18px;margin-top:1px;accent-color:#2D6A4F;flex-shrink:0'>"+
+        "<span style='font-size:13px;color:#5A5A55;line-height:1.55'>(Opcional) Quiero recibir consejos, novedades y recursos por email.</span>"+
+      "</label>"+
+      "<button id='cons-go' disabled style='width:100%;height:46px;border:none;border-radius:11px;background:#2D6A4F;color:#fff;font-weight:600;font-size:15px;cursor:not-allowed;opacity:.4'>Acepto y continúo</button>"+
+      "<p style='font-size:11px;color:#9a9a95;text-align:center;margin:12px 0 0'>Podés retirar el consentimiento cuando quieras contactando a tu coach.</p>"+
+    "</div>";
+  document.body.appendChild(ov);
+  var cb=ov.querySelector('#cons-terms'), btn=ov.querySelector('#cons-go');
+  cb.addEventListener('change',function(){ btn.disabled=!cb.checked; btn.style.opacity=cb.checked?'1':'.4'; btn.style.cursor=cb.checked?'pointer':'not-allowed'; });
+  btn.addEventListener('click',function(){
+    if(!cb.checked) return;
+    btn.disabled=true; btn.style.opacity='.6'; btn.textContent='Guardando…';
+    var mkt=!!ov.querySelector('#cons-mkt').checked;
+    var payload={ consent_at:new Date().toISOString(), consent_version:CONSENT_VERSION, consent_marketing:mkt };
+    function done(){ if(CRAW){CRAW.consent_at=payload.consent_at;CRAW.consent_marketing=mkt;} var o=document.getElementById('consent-ov'); if(o)o.remove(); }
+    sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),payload).then(done).catch(done);
+  });
 }
 
 async function toggleHabit(el){
