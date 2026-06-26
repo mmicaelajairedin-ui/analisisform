@@ -4983,43 +4983,36 @@ document.addEventListener("click", function(ev){
     if((RCOACHES||[]).some(function(u){return u&&u.email&&(""+u.email).toLowerCase().trim()===aem;})){ if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="⚠️ Ese email ya es de un coach/usuario — usá el email de tu cliente."; } return; }
     var aBtn=ev.currentTarget; if(aBtn) aBtn.disabled=true;
     if(aMsg){ aMsg.style.color="var(--pw-text-soft)"; aMsg.textContent="Enviando…"; }
-    var _sendInvite=function(theCode){
+    // Onboarding unificado: el alta crea el candidato + la cuenta de login y le
+    // manda UN email "creá tu contraseña y entrá a tu sesión" (en vez del link al
+    // formulario, que la gente ignoraba). Al entrar, el cliente acepta los
+    // términos y completa su perfil DENTRO del portal (menos fricción).
+    var _sendInvite=function(){
       var _ct=(typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||'carrera';
-      var link=(_ct==='fitness')?("https://pathwaycareercoach.com/pathway-fit-form.html?coach="+encodeURIComponent(RME.id))
-        :(_ct==='financiero')?("https://pathwaycareercoach.com/pathway-fin-form.html?coach="+encodeURIComponent(RME.id))
-        :("https://pathwaycareercoach.com/formulario.html?access="+encodeURIComponent(theCode));
       var cn=(COACH&&COACH.name)||"tu coach";
-      var primer=anom.split(" ")[0];
-      var html="<p style='font-size:15px'>Hola "+esc(primer)+",</p>"+
-        "<p style='font-size:15px;line-height:1.6'>"+esc(cn)+" te invitó a Pathway. Completa tu formulario para empezar — es el primer paso para armar tu plan.</p>"+
-        "<p style='margin:22px 0'><a href='"+link+"' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Completar mi formulario →</a></p>"+
-        "<p style='font-size:13px;color:#777'>O copia este link: "+esc(link)+"</p>";
-      fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:aem,to_name:anom,subject:cn+" te invitó a Pathway — completa tu formulario",html:html,reply_to:(COACH&&COACH.email)||"hi@pathwaycareercoach.com",signature:"coach",coach:{name:cn,email:(COACH&&COACH.email)||"",slug:(RCFG&&RCFG.slug)||"",photo:(COACH&&COACH.photo)||"",logo:(RCFG&&RCFG.logo_url)||"",pro:isProV()}})})
-        .then(function(r){ return r.ok; })
-        .then(function(ok){ if(aBtn) aBtn.disabled=false;
-          if(ok){ if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ Invitación enviada a "+anom+" ("+aem+")"; } if(aEl) aEl.value=""; if(aNomEl) aNomEl.value=""; }
-          else { if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo enviar. Reintenta."; } } })
-        .catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Sin conexión. Reintenta."; } });
-      // Crear el cliente al instante (merge por email → re-invitar no duplica),
-      // así el coach puede empezar a trabajar mientras el cliente completa el form.
+      // 1) Asegurar la cuenta de login del cliente. Sin contraseña usable: la crea
+      //    el propio cliente desde el email. Si ya existe, no la tocamos.
+      _sb("usuarios?email=eq."+encodeURIComponent(aem)+"&select=id").then(function(rows){
+        if(rows&&rows.length) return true;
+        return _sha256(""+Math.random()+Date.now()+aem).then(function(ph){
+          return _sbw("usuarios","POST",{email:aem,password_hash:ph,rol:"cliente",nombre:anom,activo:true,configuracion:{coach_type:_ct}});
+        });
+      }).then(function(){
+        // 2) Email "creá tu contraseña y entrá" (token de un solo uso vía password-reset).
+        return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:aem,welcome:true,coach_name:cn})});
+      }).then(function(r){ if(aBtn) aBtn.disabled=false;
+        var ok=r&&(r.ok||r.status===200);
+        if(ok){ if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ Acceso enviado a "+anom+" ("+aem+") — le llega un email para crear su contraseña y entrar a su sesión."; } if(aEl) aEl.value=""; if(aNomEl) aNomEl.value=""; }
+        else { if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo enviar el acceso. Reintenta."; } }
+      }).catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Sin conexión. Reintenta."; } });
+      // 3) Crear el candidato en tu lista (merge por email → re-invitar no duplica),
+      //    así podés empezar a trabajar mientras el cliente entra y completa su perfil.
       _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=merge-duplicates"})
         .then(function(h){ return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:anom,email:aem,coach_id:RME.id,nicho:_ct,semana_activa:1,activo:true})}); })
-        .then(function(r){ if(!r||!r.ok) return r.text().then(function(t){ throw new Error((r&&r.status)+" "+t); });
-          if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ "+anom+" agregado a tu lista — esperando que complete el formulario."; }
-          setTimeout(loadReal,500); })
-        .catch(function(e){ if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Invitación enviada, pero no pude agregarlo a tu lista ("+String(e).slice(0,80)+"). Avisame."; } });
+        .then(function(r){ if(r&&r.ok) setTimeout(loadReal,500); })
+        .catch(function(){});
     };
-    var code=((RCFG&&RCFG.access_code)||"").toString().trim();
-    if(code){ _sendInvite(code); }
-    else {
-      var gen=((RCFG&&RCFG.slug)||"coach").toString().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,24)+"-"+Math.random().toString(36).slice(2,7);
-      var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } merged.access_code=gen;
-      _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged})
-        .then(function(r){ if(!r.ok) throw 0; RCFG=merged;
-          try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
-          _sendInvite(gen); })
-        .catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo preparar el link. Reintenta."; } });
-    }
+    _sendInvite();
     return;
   }
   if(act==="mail-send"){

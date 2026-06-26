@@ -94,6 +94,45 @@ async function sendResetEmail(to: string, toName: string, link: string) {
   });
 }
 
+// ── Email de bienvenida (alta de cliente: "creá tu contraseña y entrá") ──────
+// Mismo mecanismo de token que el reset, pero con copy de bienvenida — el
+// cliente nunca tuvo contraseña, así que "restablecer" lo confundiría.
+async function sendWelcomeEmail(to: string, toName: string, link: string, coachName: string) {
+  const coach = (coachName || "").trim();
+  const intro = coach
+    ? `${coach} te dio acceso a tu espacio en Pathway.`
+    : `Te dieron acceso a tu espacio en Pathway.`;
+  const html = `
+    <p>Hola${toName ? " " + toName : ""},</p>
+    <p>${intro} Es tu portal privado para seguir tu proceso paso a paso.</p>
+    <p>Para entrar, creá tu contraseña — toma menos de un minuto:</p>
+    <p style="margin:24px 0;">
+      <a href="${link}" style="display:inline-block;background:#1F5740;color:#fff;
+         text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;">
+        Crear mi contraseña y entrar
+      </a>
+    </p>
+    <p style="font-size:13px;color:#5A5A55;">
+      Este enlace vence en ${TOKEN_TTL_MIN} minutos. Si vence, pedí uno nuevo
+      desde "¿Olvidaste tu contraseña?" en la pantalla de acceso.
+    </p>
+    <p style="font-size:13px;color:#5A5A55;">
+      Si el botón no funciona, copiá y pegá este enlace en tu navegador:<br>
+      <span style="word-break:break-all;">${link}</span>
+    </p>`;
+  await fetch(`${SB_URL}/functions/v1/send-email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to,
+      to_name: toName || undefined,
+      subject: coach ? `${coach} te dio acceso a Pathway — entrá a tu sesión` : "Tu acceso a Pathway — entrá a tu sesión",
+      html,
+      signature: "pathway",
+    }),
+  });
+}
+
 // ── Sincronizar la contraseña en auth.users (best-effort) ───────────────────
 // Si el usuario ya está en Supabase Auth, le actualizamos la contraseña; si no
 // existe, lo creamos. No es crítico: el login viejo usa usuarios.password_hash.
@@ -132,7 +171,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!SB_URL || !SERVICE) return json({ error: "env_missing" }, 500);
 
-  let body: { action?: string; email?: string; token?: string; password?: string };
+  let body: { action?: string; email?: string; token?: string; password?: string; welcome?: boolean; coach_name?: string };
   try {
     body = await req.json();
   } catch {
@@ -171,7 +210,11 @@ Deno.serve(async (req: Request) => {
           body: JSON.stringify({ email, token_hash: tokenHash, expires_at: expiresAt }),
         });
         const link = `${BASE}/recuperar-password.html?token=${token}&email=${encodeURIComponent(email)}`;
-        await sendResetEmail(email, user.nombre || "", link);
+        if (body.welcome === true) {
+          await sendWelcomeEmail(email, user.nombre || "", link, (body.coach_name || "").toString());
+        } else {
+          await sendResetEmail(email, user.nombre || "", link);
+        }
       } catch {
         // best-effort — no revelamos el fallo
       }
