@@ -29,12 +29,24 @@
     var minStars=parseInt(host.getAttribute('data-min-stars'))||1;
     var theme=host.getAttribute('data-theme')||'green';
 
-    // apikey duplicado en URL como fallback: si por algún proxy/CORS/cache el
-    // header se pierde, Kong (gateway de Supabase) también acepta apikey en
-    // la query. Sin esto el endpoint devolvía 400 "No API key found in request".
-    fetch(SB+'/rest/v1/reviews?publica=eq.true&select=nombre,rating,texto&order=rating.desc,created_at.desc&apikey='+encodeURIComponent(KEY),{
-      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Accept':'application/json'}
-    }).then(function(r){return r.ok?r.json():[];}).then(function(rows){
+    // data-coach="<slug>" -> SOLO reseñas de ese coach (su perfil publico).
+    // Sin data-coach (landing) -> reseñas de Pathway (coach_slug NULL).
+    // Fallback robusto: si la columna coach_slug todavia no existe, la landing
+    // reintenta sin filtro (sigue mostrando todo); el perfil de coach se oculta.
+    var coach=(host.getAttribute('data-coach')||'').trim().toLowerCase();
+    var SEL='select=nombre,rating,texto&order=rating.desc,created_at.desc';
+    function load(filterClause, isFallback){
+      // apikey duplicado en URL: si un proxy/CORS/cache pierde el header, Kong
+      // (gateway de Supabase) tambien acepta apikey en la query.
+      var url=SB+'/rest/v1/reviews?publica=eq.true&'+SEL+(filterClause?('&'+filterClause):'')+'&apikey='+encodeURIComponent(KEY);
+      fetch(url,{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Accept':'application/json'}})
+        .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+        .then(paint)
+        .catch(function(){ if(!isFallback && !coach){ load('',true); } else { host.style.display='none'; } });
+    }
+    load(coach ? ('coach_slug=eq.'+encodeURIComponent(coach)) : 'coach_slug=is.null', false);
+
+    function paint(rows){
       var reviews=[];
       rows.forEach(function(c){
         var stars=parseInt(c.rating,10);
@@ -111,7 +123,7 @@
       });
       html+='</div>';
       host.innerHTML=html;
-    }).catch(function(){host.style.display='none';});
+    }
   }
 
   if(document.readyState==='loading'){
