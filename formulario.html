@@ -2,6 +2,9 @@
 <html lang="es">
 <head>
 <script src="pw-observe.js"></script>
+<!-- pw-auth: en modo portal (cliente logueado) sube su JWT al guardar el intake
+     para que el UPDATE pase RLS. En intake anónimo es no-op (usa la anon key). -->
+<script src="pw-auth.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon-app.svg?v=2" type="image/svg+xml">
@@ -799,15 +802,27 @@ async function enviar(){
     'Panel: https://pathwaycareercoach.com/panel-v2.html';
 
   try{
-    // 1. Guardar candidato en Supabase (upsert por email para evitar duplicados)
-    var saveRes=await fetch(SB_URL+'/rest/v1/candidatos',{
-      method:'POST',
-      // ignore-duplicates (no merge): así la política RLS de INSERT anónimo
-      // alcanza sin dar UPDATE a anon. Re-envíos no pisan datos; el coach
-      // corrige desde el panel si hace falta.
-      headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal,resolution=ignore-duplicates'},
-      body:JSON.stringify({...d})
-    });
+    // 1. Guardar el intake en Supabase.
+    var saveRes;
+    if(PORTAL_MODE){
+      // Cliente logueado completando su perfil: el candidato YA existe (lo creó el
+      // alta), así que ACTUALIZAMOS su fila por email. pw-auth.js sube el JWT del
+      // cliente → la policy candidatos_update (email propio) permite el UPDATE.
+      saveRes=await fetch(SB_URL+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(d.email),{
+        method:'PATCH',
+        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'},
+        body:JSON.stringify({...d})
+      });
+    } else {
+      // Intake anónimo (pre-cuenta): INSERT con ignore-duplicates (no merge), así
+      // la política RLS de INSERT anónimo alcanza sin dar UPDATE a anon. Re-envíos
+      // no pisan datos; el coach corrige desde el panel si hace falta.
+      saveRes=await fetch(SB_URL+'/rest/v1/candidatos',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal,resolution=ignore-duplicates'},
+        body:JSON.stringify({...d})
+      });
+    }
     if(!saveRes.ok){var errText=await saveRes.text();throw new Error('Error guardando datos: '+saveRes.status+' '+errText);}
 
     // 2. Llamar a la Edge Function para generar el informe automáticamente

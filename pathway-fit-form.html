@@ -2,6 +2,8 @@
 <html lang="es">
 <head>
 <script src="pw-observe.js"></script>
+<!-- pw-auth: en modo portal (cliente logueado) sube su JWT al guardar el intake. -->
+<script src="pw-auth.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
@@ -254,6 +256,15 @@ function next(){
 var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 function _qp(k){ try{ return new URLSearchParams(location.search).get(k)||''; }catch(e){ return ''; } }
+// Modo portal: el cliente logueado completa su intake dentro de su sesión.
+var PORTAL_MODE=(_qp('portal')==='1');
+var PORTAL_RETURN='https://pathwaycareercoach.com/pathway-fit-cliente.html';
+function _applyPortalPrefill(){
+  if(!PORTAL_MODE) return;
+  var _pe=_qp('email').toLowerCase().trim(); var f=document.getElementById('email');
+  if(f&&_pe){ f.value=_pe; f.readOnly=true; f.style.background='#f3f3f1'; }
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',_applyPortalPrefill); else _applyPortalPrefill();
 function _selTxt(id){ var e=document.getElementById(id); if(!e)return ''; var s=e.querySelector('.opt.sel'); return s?s.textContent.trim():''; }
 function _val(id){ var e=document.getElementById(id); return e?(''+e.value).trim():''; }
 var _formFoto='';
@@ -283,8 +294,12 @@ function saveFit(){
   var cid=_qp('coach'); if(cid&&/^[0-9a-f-]{32,36}$/i.test(cid)) d.coach_id=cid;
   if(_formFoto) d.foto_perfil=_formFoto; // foto en el mismo INSERT (anon no puede UPDATE con RLS)
   _fitSaved=true;
-  // ignore-duplicates: con RLS, anon solo puede INSERT (no UPDATE/merge).
-  fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal,resolution=ignore-duplicates'},body:JSON.stringify(d)})
+  // Modo portal: el candidato YA existe (lo creó el alta) → PATCH por email con
+  // el JWT del cliente (pw-auth). Intake anónimo: INSERT con ignore-duplicates.
+  var _u=PORTAL_MODE? SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(email) : SB+'/rest/v1/candidatos';
+  var _m=PORTAL_MODE?'PATCH':'POST';
+  var _pf=PORTAL_MODE?'return=minimal':'return=minimal,resolution=ignore-duplicates';
+  fetch(_u,{method:_m,headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':_pf},body:JSON.stringify(d)})
     .then(function(r){ if(!r.ok){ _fitSaved=false; } }).catch(function(){ _fitSaved=false; });
 }
 function prev(){ if(i>0){ i--; render(); } }
@@ -299,6 +314,7 @@ function generar(){
     if(m){ m.innerHTML='Tu objetivo: <strong>'+obj+'</strong>. Tu coach ya recibió tus respuestas y está armando tu rutina y tu plan a medida. En tu primera sesión repasan juntos el punto de partida y los próximos pasos.'; m.style.display='block'; }
     document.getElementById('aPlan').style.display='block';
   },2200);
+  if(PORTAL_MODE){ setTimeout(function(){ location.href=PORTAL_RETURN; }, 4200); }
 }
 render();
 </script>

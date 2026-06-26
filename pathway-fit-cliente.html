@@ -1149,8 +1149,31 @@ var CONSENT_VERSION='2026-05-01';
 function pwMaybeConsent(){
   if(_esDemoFit()) return;
   if(new URLSearchParams(location.search).get('coach_view')) return; // coach en preview
-  if(!CID || (CRAW && CRAW.consent_at)) return;
+  if(!CID) return;
+  if(CRAW && CRAW.consent_at){ pwMaybeIntake(); return; }
   pwConsentGate();
+}
+// Intake dentro del portal (modo "mixto"): si falta completar el perfil, paso
+// destacado no bloqueante que abre el form de fitness en modo portal.
+function pwMaybeIntake(){
+  if(_esDemoFit()) return;
+  if(new URLSearchParams(location.search).get('coach_view')) return;
+  if(!CID) return;
+  if(CRAW && (CRAW.peso||CRAW.nivel||CRAW.dias||CRAW.lesiones||CRAW.medicacion)) return; // ya completó
+  try{ if(sessionStorage.getItem('pw_intake_later_'+EMAIL)==='1') return; }catch(e){}
+  if(document.getElementById('consent-ov')||document.getElementById('intake-ov')) return;
+  var url='https://pathwaycareercoach.com/pathway-fit-form.html?portal=1&email='+encodeURIComponent(EMAIL);
+  var ov=document.createElement('div'); ov.id='intake-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:99998;background:rgba(27,46,38,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,sans-serif';
+  ov.innerHTML="<div style='background:#fff;max-width:440px;width:100%;border-radius:18px;padding:30px 26px;box-shadow:0 20px 60px rgba(0,0,0,.25);text-align:center'>"+
+    "<div style='font-size:34px;line-height:1;margin-bottom:12px'>📝</div>"+
+    "<h2 style='font-family:Georgia,serif;font-size:22px;font-weight:600;color:#1B2E26;margin:0 0 8px'>Completá tu perfil</h2>"+
+    "<p style='font-size:14px;color:#5A5A55;line-height:1.6;margin:0 0 22px'>Te toma unos 2 minutos y permite que tu coach arme tu rutina y plan a medida.</p>"+
+    "<a href='"+url+"' style='display:block;text-decoration:none;height:46px;line-height:46px;border-radius:11px;background:#2D6A4F;color:#fff;font-weight:600;font-size:15px;margin-bottom:10px'>Completar ahora →</a>"+
+    "<button id='intake-later' style='background:none;border:none;color:#9a9a95;font-size:13px;cursor:pointer;font-family:inherit'>Lo hago más tarde</button>"+
+  "</div>";
+  document.body.appendChild(ov);
+  ov.querySelector('#intake-later').addEventListener('click',function(){ try{ sessionStorage.setItem('pw_intake_later_'+EMAIL,'1'); }catch(e){} ov.remove(); });
 }
 function pwConsentGate(){
   if(document.getElementById('consent-ov')) return;
@@ -1181,7 +1204,7 @@ function pwConsentGate(){
     btn.disabled=true; btn.style.opacity='.6'; btn.textContent='Guardando…';
     var mkt=!!ov.querySelector('#cons-mkt').checked;
     var payload={ consent_at:new Date().toISOString(), consent_version:CONSENT_VERSION, consent_marketing:mkt };
-    function done(){ if(CRAW){CRAW.consent_at=payload.consent_at;CRAW.consent_marketing=mkt;} var o=document.getElementById('consent-ov'); if(o)o.remove(); }
+    function done(){ if(CRAW){CRAW.consent_at=payload.consent_at;CRAW.consent_marketing=mkt;} var o=document.getElementById('consent-ov'); if(o)o.remove(); pwMaybeIntake(); }
     sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),payload).then(done).catch(done);
   });
 }
