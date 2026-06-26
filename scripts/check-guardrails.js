@@ -353,6 +353,25 @@ const RULES = [
       return offenders.length ? offenders.join("; ") : null;
     },
   },
+  {
+    name: "solicitudes vencidas: sin botón 'Aceptar y cobrar' (no se puede capturar) + fecha de vencimiento visible",
+    bug: "El panel dejaba apretar 'Aceptar y cobrar' en una solicitud con la " +
+         "ventana de 24 h vencida. Al vencer, Stripe libera la retención y la " +
+         "captura falla con un error genérico ('No se pudo procesar la solicitud'), " +
+         "que parece un bug cuando en realidad ya no hay nada que cobrar. Además " +
+         "'vencida' no decía CUÁNDO venció. Fix: solDetail calcula `venc` desde " +
+         "expires_at y, si venció, reemplaza los botones por una explicación clara; " +
+         "_fmtDT() muestra la fecha de vencimiento en la etiqueta y en el mensaje.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const offenders = [];
+      if (!/function\s+_fmtDT\b/.test(s)) offenders.push("falta _fmtDT() (fecha de vencimiento)");
+      if (!/var\s+venc\s*=[^;]*expires_at/.test(s)) offenders.push("falta el guard `venc` basado en expires_at en solDetail");
+      if (!/ya no se puede cobrar/.test(s)) offenders.push("falta el mensaje claro de ventana vencida");
+      return offenders.length ? offenders.join("; ") : null;
+    },
+  },
 ];
 
 let failures = 0;
