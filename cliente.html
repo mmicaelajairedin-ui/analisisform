@@ -1970,6 +1970,35 @@ function showConsentGate(){
   });
 }
 
+// ── Intake dentro del portal (modo "mixto") ──────────────────────────────
+// Si el cliente todavía no completó su perfil, le mostramos un paso destacado
+// (no bloqueante) para hacerlo DENTRO de su sesión, reusando el formulario en
+// modo portal (?portal=1). Así no depende de un email con el form que ignoran.
+function _intakePending(){
+  if(COACH_PREVIEW) return false;
+  if(/ejemplo@pathwaycareercoach\.com/i.test(E||'')) return false;
+  if(D) return false; // ya hay informe → completó el intake
+  return !(C && (C.cargo||C.objetivo||C.situacion||C.linkedin_texto||C.cv_url||C.experiencia||C.exp||C.habilidades||C.rol));
+}
+function maybeIntakePrompt(){
+  if(!_intakePending()) return;
+  try{ if(sessionStorage.getItem('pw_intake_later_'+E)==='1') return; }catch(e){}
+  if(document.getElementById('consent-ov')||document.getElementById('intake-ov')) return;
+  var EN=(localStorage.getItem('mj_lang')==='en');
+  var url='https://pathwaycareercoach.com/formulario.html?portal=1&email='+encodeURIComponent(E);
+  var ov=document.createElement('div'); ov.id='intake-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:99998;background:rgba(27,46,38,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:var(--pw-sans,system-ui,-apple-system,sans-serif)';
+  ov.innerHTML="<div style='background:#fff;max-width:440px;width:100%;border-radius:18px;padding:30px 26px;box-shadow:0 20px 60px rgba(0,0,0,.25);text-align:center'>"+
+    "<div style='font-size:34px;line-height:1;margin-bottom:12px'>📝</div>"+
+    "<h2 style='font-family:var(--pw-serif,Georgia,serif);font-size:22px;font-weight:600;color:var(--pw-carbon,#1B2E26);margin:0 0 8px'>"+(EN?'Complete your profile':'Completá tu perfil')+"</h2>"+
+    "<p style='font-size:14px;color:#5A5A55;line-height:1.6;margin:0 0 22px'>"+(EN?'It takes about 2 minutes and lets your coach build your personalized plan.':'Te toma unos 2 minutos y permite que tu coach arme tu plan personalizado.')+"</p>"+
+    "<a href='"+url+"' style='display:block;text-decoration:none;height:46px;line-height:46px;border-radius:11px;background:var(--pw-bosque,#2D6A4F);color:#fff;font-weight:600;font-size:15px;margin-bottom:10px'>"+(EN?'Complete now →':'Completar ahora →')+"</a>"+
+    "<button id='intake-later' style='background:none;border:none;color:#9a9a95;font-size:13px;cursor:pointer;font-family:inherit'>"+(EN?"I'll do it later":'Lo hago más tarde')+"</button>"+
+  "</div>";
+  document.body.appendChild(ov);
+  ov.querySelector('#intake-later').addEventListener('click',function(){ try{ sessionStorage.setItem('pw_intake_later_'+E,'1'); }catch(e){} ov.remove(); });
+}
+
 function entrar(){
   // Gate de consentimiento: si todavía no aceptó, lo mostramos y frenamos acá.
   // Al aceptar se guarda la prueba y se vuelve a llamar a entrar().
@@ -2057,9 +2086,13 @@ function entrar(){
   // no se ven.
   applyClientVisibility();
 
-  // Onboarding — solo la primera vez dentro del app
+  // Onboarding — solo la primera vez dentro del app. El primer login muestra el
+  // tour; el prompt de intake aparece desde el 2º ingreso (si sigue pendiente),
+  // así no se apilan dos overlays encima.
   if(!localStorage.getItem('mj_onboard_'+E)){
     setTimeout(function(){ startOnboarding(); }, 800);
+  } else {
+    setTimeout(maybeIntakePrompt, 600);
   }
 }
 

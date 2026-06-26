@@ -14,8 +14,12 @@
     var p=new URLSearchParams(location.search);
     var code=p.get('access')||'';
     var paid=p.get('paid')==='1';
-    var ok=paid||code==='mj2026';
+    // Modo portal: el cliente ya está logueado y completa su intake DENTRO de su
+    // sesión. Ya tiene cuenta y acceso, así que pasa el gate directamente.
+    var portal=p.get('portal')==='1';
+    var ok=paid||portal||code==='mj2026';
     if(paid)document.documentElement.setAttribute('data-paid','1');
+    if(portal)document.documentElement.setAttribute('data-portal','1');
     if(ok){document.documentElement.setAttribute('data-access','ok');return;}
     // Validación async contra Supabase: ¿hay algún coach con ese access_code?
     if(!code)return;
@@ -442,6 +446,19 @@ try{
   }
 }catch(e){}
 let cur=0, rVals={}, cvUrl='No subido', cvFile='No subido', ucWidget=null, consentGiven=false;
+// Modo portal: el cliente YA logueado completa su intake dentro de su sesión.
+// Prefijamos y bloqueamos su email (el de su cuenta) y, al terminar, lo
+// devolvemos a su portal. No se crea cuenta ni se manda email de contraseña
+// (ya existen). Lo activa ?portal=1&email=<su-email> desde el portal del cliente.
+var PORTAL_MODE=(new URLSearchParams(location.search).get('portal')==='1');
+var PORTAL_RETURN='https://pathwaycareercoach.com/cliente.html';
+function _applyPortalPrefill(){
+  if(!PORTAL_MODE) return;
+  var _pe=(new URLSearchParams(location.search).get('email')||'').toLowerCase().trim();
+  var f=document.getElementById('f-mai');
+  if(f&&_pe){ f.value=_pe; f.readOnly=true; f.style.background='#f3f3f1'; }
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',_applyPortalPrefill); else _applyPortalPrefill();
 
 const TX={
   es:{
@@ -831,8 +848,11 @@ async function enviar(){
       })
     }).catch(function(){});
 
-    // 4. Onboarding automático — crear usuario + enviar bienvenida
-    try{
+    // 4. Onboarding automático — crear usuario + enviar bienvenida.
+    //    En modo portal la cuenta YA existe (se creó al dar de alta al cliente) y
+    //    el cliente ya está logueado, así que saltamos esto: no recreamos la
+    //    cuenta ni reenviamos contraseña.
+    if(!PORTAL_MODE) try{
       var _email=(d.email||'').toLowerCase().trim();
       var _nombre=d.nombre||'';
       var _primerNombre=_nombre.split(' ')[0];
@@ -864,6 +884,7 @@ async function enviar(){
     }
 
     st.textContent='';
+    if(PORTAL_MODE){ location.href=PORTAL_RETURN; return; }
     go('done');
   }catch(err){
     console.error(err);
