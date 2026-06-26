@@ -80,7 +80,7 @@
       var sand=theme==='beige'?'#E9C46A':'#52B788';
       var titleColor=theme==='beige'?'#1B2E26':'#1B4332';
 
-      var heading='Lo que dicen de Pathway';
+      var heading=(host.getAttribute&&host.getAttribute('data-heading'))||'Lo que dicen de Pathway';
 
       var html='';
       html+='<div style="text-align:center;margin-bottom:36px;">';
