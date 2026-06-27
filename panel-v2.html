@@ -158,6 +158,18 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .cp-h1 em{font-style:italic;color:var(--pw-bosque);font-weight:500;}
 .cp-sub{font-size:13px;color:var(--pw-text-soft);margin-top:8px;}
 .cp-topbar-actions{display:flex;align-items:center;gap:10px;}
+/* ── Modo privado (enmascaramiento de datos sensibles) ── */
+.pw-sens{transition:filter .12s ease;border-radius:3px;}
+html.pw-private .pw-sens{filter:blur(5px);cursor:pointer;user-select:none;}
+html.pw-private .pw-sens:hover,html.pw-private .pw-sens.pw-reveal{filter:none;cursor:auto;user-select:auto;}
+html.pw-private input.pw-sens,html.pw-private textarea.pw-sens{cursor:pointer;}
+html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filter:none;cursor:text;}
+.cp-side-priv{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;color:rgba(255,255,255,.72);font:inherit;font-size:12px;cursor:pointer;padding:7px 4px;border-radius:8px;text-align:left;}
+.cp-side-priv:hover{background:rgba(255,255,255,.06);color:#fff;}
+.cp-side-priv .pw-sw{margin-left:auto;width:30px;height:17px;border-radius:99px;background:rgba(255,255,255,.22);position:relative;flex-shrink:0;transition:background .15s;}
+.cp-side-priv .pw-sw::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;transition:left .15s;}
+.cp-side-priv.on .pw-sw{background:var(--pw-sendero);}
+.cp-side-priv.on .pw-sw::after{left:15px;}
 .cp-search{display:flex;align-items:center;gap:8px;padding:0 12px;background:#fff;border:1px solid var(--pw-border);border-radius:10px;width:280px;height:38px;color:var(--pw-text-soft);transition:all .2s;}
 .cp-search:focus-within{border-color:var(--pw-bosque);box-shadow:var(--pw-focus-ring);}
 .cp-search input{border:none;outline:none;background:transparent;flex:1;font-size:13px;color:var(--pw-carbon);}
@@ -1154,6 +1166,8 @@ var IC = {
   arrowR:     "<line x1='5' y1='12' x2='19' y2='12'/><polyline points='12 5 19 12 12 19'/>",
   chevR:      "<polyline points='9 18 15 12 9 6'/>",
   search:     "<circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/>",
+  eye:        "<path d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z'/><circle cx='12' cy='12' r='3'/>",
+  eyeOff:     "<path d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24'/><line x1='1' y1='1' x2='23' y2='23'/>",
   copy:       "<rect x='9' y='9' width='13' height='13' rx='2' ry='2'/><path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/>",
   check:      "<polyline points='20 6 9 17 4 12'/>",
   qr:         "<rect x='3' y='3' width='7' height='7'/><rect x='14' y='3' width='7' height='7'/><rect x='3' y='14' width='7' height='7'/><line x1='14' y1='14' x2='14' y2='21'/><line x1='18' y1='14' x2='18' y2='18'/><line x1='21' y1='18' x2='18' y2='18'/>",
@@ -1180,12 +1194,21 @@ var IC = {
 };
 
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+/* Modo privado: envuelve un dato sensible (email, tel, salud, dinero…). Con el
+   modo activo el valor se ve difuminado y se revela al pasar el mouse o tocarlo.
+   El dato real sigue en el DOM (los botones de WhatsApp/Email funcionan igual),
+   solo se oculta visualmente para no exponerlo al compartir pantalla. */
+function sens(v){ return "<span class='pw-sens'>"+esc(v)+"</span>"; }
 
 /* ═══ App state ═══ */
 var state = {
   section: "resumen",
   demoTipo: (function(){ try{ return localStorage.getItem("pw_demo_tipo")||null; }catch(e){ return null; } })(),
   demoHideSwitch: (function(){ try{ return localStorage.getItem("pw_demo_hide_switch")==="1"; }catch(e){ return false; } })(),
+  // Modo privado: enmascara datos sensibles en pantalla. Activado por defecto
+  // (la primera vez), pensado para que al compartir pantalla/hacer demos no se
+  // expongan email, teléfono, datos de salud ni cifras financieras del cliente.
+  privacy: (function(){ try{ var v=localStorage.getItem("pw_privacy"); return v===null?true:(v==="1"); }catch(e){ return true; } })(),
   cliFilter: "all",
   cfg: "profile",
   brandAccent: "#2D6A4F",
@@ -1518,6 +1541,7 @@ function viewSidebar(){
     "<nav class='cp-side-nav cp-nav-app'>"+nav+"</nav>"+
     (cliNav?"<nav class='cp-side-nav cp-nav-cli'>"+cliNav+"</nav>":"")+
     "<div class='cp-side-foot'>"+
+      "<button class='cp-side-priv"+(state.privacy?" on":"")+"' data-act='privacy-toggle' title='Difumina email, teléfono, datos de salud y cifras financieras. Útil al compartir pantalla. Pasá el mouse o tocá un dato para verlo.' aria-pressed='"+(state.privacy?"true":"false")+"'>"+svg(state.privacy?IC.eyeOff:IC.eye,14)+" <span>Modo privado</span><span class='pw-sw' aria-hidden='true'></span></button>"+
       "<button class='cp-side-cta' data-act='nav:clientes'>"+svg(IC.plus,14)+" Sumar cliente</button>"+
       (function(){var s=((REAL?(RCFG&&RCFG.slug):(COACH&&COACH.slug))||"").toString().trim();
         return s
@@ -2551,32 +2575,35 @@ function viewClienteDetalle(c){
     var rvf=function(k){ return esc(rw[k]!=null?(""+rw[k]):""); };
     function fr(k,v,id){ return "<div class='cp-form-row'><label class='cp-form-label'>"+k+"</label><input id='"+id+"' class='cp-form-input' value=\""+v+"\"></div>"; }
     function ftA(k,v,id,ph){ return "<div class='cp-form-row'><label class='cp-form-label'>"+k+"</label><textarea id='"+id+"' class='cp-form-textarea' placeholder='"+esc(ph||"")+"'>"+v+"</textarea></div>"; }
+    // Variantes sensibles (clase pw-sens): se difuminan con el Modo privado.
+    function frS(k,v,id){ return "<div class='cp-form-row'><label class='cp-form-label'>"+k+"</label><input id='"+id+"' class='cp-form-input pw-sens' value=\""+v+"\"></div>"; }
+    function ftAS(k,v,id,ph){ return "<div class='cp-form-row'><label class='cp-form-label'>"+k+"</label><textarea id='"+id+"' class='cp-form-textarea pw-sens' placeholder='"+esc(ph||"")+"'>"+v+"</textarea></div>"; }
     var obst=esc(((rw.obstaculos||"")+"").split("|").filter(Boolean).join("\n"));
     var accUrl="https://pathwaycareercoach.com/cliente.html";
     var _hd="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Datos del cliente<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Del formulario · editable"+(REAL?"":" · ejemplo")+"</span></div>"+
         "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:11px'>"+
-          "<div class='cp-form-row-2'>"+fr("Nombre",esc(c.name),"cf-nombre")+fr("Email",esc(c.email||""),"cf-email")+"</div>";
+          "<div class='cp-form-row-2'>"+fr("Nombre",esc(c.name),"cf-nombre")+frS("Email",esc(c.email||""),"cf-email")+"</div>";
     var _ft;
     if(_tipo==='fitness'){
       // Intake fitness: datos estructurados que alimentan el informe IA y la
       // rutina. Columnas nuevas (ver migración fitness_intake_fields.sql).
-      _ft = "<div class='cp-form-row-2'>"+fr("Objetivo principal",esc(c.role),"cf-cargo")+fr("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+"</div>"+
+      _ft = "<div class='cp-form-row-2'>"+fr("Objetivo principal",esc(c.role),"cf-cargo")+frS("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+"</div>"+
         "<div class='cp-form-row-3'>"+fr("Edad",rvf("edad"),"cf-edad")+fr("Altura (cm)",rvf("altura"),"cf-altura")+fr("Peso inicial (kg)",rvf("peso"),"cf-peso")+"</div>"+
         "<div class='cp-form-row-2'>"+fr("Nivel de experiencia",rvf("nivel"),"cf-nivel")+fr("Días por semana",rvf("dias"),"cf-dias")+"</div>"+
         "<div class='cp-form-row-2'>"+fr("Dónde entrena",rvf("lugar"),"cf-lugar")+fr("Equipamiento",rvf("equipo"),"cf-equipo")+"</div>"+
         ftA("Objetivo",rvf("objetivo"),"cf-objetivo")+
-        ftA("Lesiones o condiciones médicas",rvf("lesiones"),"cf-lesiones","Ej: molestia de rodilla, no cargar sobre la cabeza…")+
-        "<div class='cp-form-row-2'>"+fr("Medicación relevante",rvf("medicacion"),"cf-medicacion")+fr("Restricciones alimentarias",rvf("restricciones"),"cf-restricciones")+"</div>"+
+        ftAS("Lesiones o condiciones médicas",rvf("lesiones"),"cf-lesiones","Ej: molestia de rodilla, no cargar sobre la cabeza…")+
+        "<div class='cp-form-row-2'>"+frS("Medicación relevante",rvf("medicacion"),"cf-medicacion")+fr("Restricciones alimentarias",rvf("restricciones"),"cf-restricciones")+"</div>"+
         ftA("Alimentación / hábitos actuales",rvf("nutricion"),"cf-nutricion")+
         ftA("Algo importante a tener en cuenta",rvf("extra"),"cf-extra")+
         ftA("Obstáculos (uno por línea)",obst,"cf-obstaculos","Cada línea es un obstáculo")+
         "<div class='cp-form-hint' style='margin:2px 0 0'>Las mediciones por fecha (peso, % grasa, IMO…) se cargan en <strong>Antropometría</strong> y el entrenamiento en <strong>Gym</strong>.</div>";
     } else if(_tipo==='financiero'){
       // Intake financiero: datos del nicho que alimentan el informe IA.
-      _ft = "<div class='cp-form-row-2'>"+fr("Objetivo principal",esc(c.role),"cf-cargo")+fr("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+"</div>"+
-        "<div class='cp-form-row-3'>"+fr("Edad",rvf("edad"),"cf-edad")+fr("Ingresos mensuales (€)",rvf("ingresos"),"cf-ingresos")+fr("Gastos mensuales (€)",rvf("gastos"),"cf-gastos")+"</div>"+
-        "<div class='cp-form-row-3'>"+fr("Deuda total (€)",rvf("deudas"),"cf-deudas")+fr("Ahorro actual (€)",rvf("ahorro_actual"),"cf-ahorro_actual")+fr("Meta de ahorro (€)",rvf("objetivo_ahorro"),"cf-objetivo_ahorro")+"</div>"+
+      _ft = "<div class='cp-form-row-2'>"+fr("Objetivo principal",esc(c.role),"cf-cargo")+frS("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+"</div>"+
+        "<div class='cp-form-row-3'>"+fr("Edad",rvf("edad"),"cf-edad")+frS("Ingresos mensuales (€)",rvf("ingresos"),"cf-ingresos")+frS("Gastos mensuales (€)",rvf("gastos"),"cf-gastos")+"</div>"+
+        "<div class='cp-form-row-3'>"+frS("Deuda total (€)",rvf("deudas"),"cf-deudas")+frS("Ahorro actual (€)",rvf("ahorro_actual"),"cf-ahorro_actual")+frS("Meta de ahorro (€)",rvf("objetivo_ahorro"),"cf-objetivo_ahorro")+"</div>"+
         "<div class='cp-form-row'>"+fr("Plazo de la meta",rvf("plazo"),"cf-plazo")+"</div>"+
         ftA("Objetivo",rvf("objetivo"),"cf-objetivo")+
         ftA("Algo importante a tener en cuenta",rvf("extra"),"cf-extra")+
@@ -2588,7 +2615,7 @@ function viewClienteDetalle(c){
           "<div class='cp-form-row-2'>"+fr("Sector",rvf("sector"),"cf-sector")+fr("Experiencia",esc(rw.exp!=null?(""+rw.exp):(rw.experiencia||"")),"cf-exp")+"</div>"+
           "<div class='cp-form-row-2'>"+fr("Ciudad",esc(rw.ciudad||rw.geo||rw.ubicacion||""),"cf-ciudad")+fr("Modalidad",rvf("modalidad"),"cf-modalidad")+"</div>"+
           "<div class='cp-form-row-2'>"+fr("Educación",rvf("educacion"),"cf-educacion")+fr("Idiomas",esc(rw.idiomas||rw.idioma||""),"cf-idiomas")+"</div>"+
-          "<div class='cp-form-row-2'>"+fr("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+fr("LinkedIn",rvf("linkedin"),"cf-linkedin")+"</div>"+
+          "<div class='cp-form-row-2'>"+frS("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+frS("LinkedIn",rvf("linkedin"),"cf-linkedin")+"</div>"+
           ftA("Objetivo",rvf("objetivo"),"cf-objetivo")+
           ftA("Logro destacado",rvf("logro"),"cf-logro")+
           ftA("Algo importante fuera del CV",rvf("extra"),"cf-extra")+
@@ -2635,7 +2662,7 @@ function viewClienteDetalle(c){
         "<div style='min-width:0'>"+
           "<button data-act='cli-back' style='background:none;border:none;cursor:pointer;padding:0;color:var(--pw-bosque);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;display:inline-flex;align-items:center;gap:4px;margin-bottom:4px'>‹ Volver a Clientes</button>"+
           "<h1 class='cp-h1'>"+((c.raw&&_isOnline(c.raw.cliente_last_seen))?"<span title='En línea' style='display:inline-block;width:10px;height:10px;border-radius:50%;background:#3DDC84;margin-right:8px;vertical-align:middle;box-shadow:0 0 0 3px rgba(61,220,132,.22)'></span>":"")+esc(c.name)+"<span class='dot'>.</span></h1>"+
-          "<div class='cp-sub'>"+((c.raw&&_isOnline(c.raw.cliente_last_seen))?"<span style='color:#1Fae5a;font-weight:700'>En línea ahora</span> · ":"")+esc(c.role)+" · "+esc(c.email||"")+(c.source==="pathway"?" · <span style='color:var(--pw-bosque);font-weight:700'>Pathway</span>":"")+"</div>"+
+          "<div class='cp-sub'>"+((c.raw&&_isOnline(c.raw.cliente_last_seen))?"<span style='color:#1Fae5a;font-weight:700'>En línea ahora</span> · ":"")+esc(c.role)+" · "+sens(c.email||"")+(c.source==="pathway"?" · <span style='color:var(--pw-bosque);font-weight:700'>Pathway</span>":"")+"</div>"+
         "</div>"+
       "</div>"+
       "<div class='cp-topbar-actions'>"+
@@ -4230,8 +4257,8 @@ function viewAdmin(){
     if(c.isInternal)    badges += "<span style='display:inline-block;background:var(--pw-niebla-2);color:var(--pw-text-soft);font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;margin-right:6px'>Prueba interna</span>";
     var contactoCell =
       "<div style='font-weight:600;color:var(--pw-carbon)'>"+esc(c.nombre)+"</div>"+
-      (c.email ? "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(c.email)+"</div>" : "")+
-      (c.phone ? "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(c.phone)+"</div>" : "")+
+      (c.email ? "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+sens(c.email)+"</div>" : "")+
+      (c.phone ? "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+sens(c.phone)+"</div>" : "")+
       (badges ? "<div style='margin-top:6px'>"+badges+"</div>" : "");
     var actions = "";
     // Abre el compositor in-app (con tu firma), no un mailto/Gmail suelto.
@@ -4712,6 +4739,7 @@ function render(){
     // Sirve para que el CSS oculte en movil cosas reemplazadas por la v2 (ej. el
     // boton "Actualizar", ya cubierto por el pull-to-refresh).
     try{ document.documentElement.classList.toggle('pw-v2', fichaV2()); }catch(e){}
+    try{ document.documentElement.classList.toggle('pw-private', !!state.privacy); }catch(e){}
     // Si hay sesión activa pero loadReal() todavía no terminó, mantener la
     // pantalla "Cargando tu panel…" en vez de pintar los datos de ejemplo
     // (Lucía Fernández, Marco Díaz, etc.). Sin esto, cualquier render que
@@ -4784,9 +4812,18 @@ function render(){
 
 /* ═══ Events ═══ */
 document.addEventListener("click", function(ev){
+  // Modo privado: tocar un dato difuminado lo revela (en desktop también se ve
+  // al pasar el mouse). No frena el resto de la delegación de clicks.
+  try{
+    if(document.documentElement.classList.contains("pw-private")){
+      var _sn=ev.target.closest(".pw-sens");
+      if(_sn) _sn.classList.toggle("pw-reveal");
+    }
+  }catch(e){}
   var el = ev.target.closest("[data-act]");
   if(!el) return;
   var act = el.getAttribute("data-act");
+  if(act==="privacy-toggle"){ state.privacy=!state.privacy; try{ localStorage.setItem("pw_privacy", state.privacy?"1":"0"); }catch(e){} render(); return; }
   if(act==="open"){ var ou=el.getAttribute("data-url"); if(ou){ var _w=window.open(ou,"_blank","noopener"); if(!_w){ location.href=ou; } } return; }
   // Portal del cliente: SIEMPRE en la misma pestaña ("pathway_portal"). Si ya
   // está abierta, la navega al cliente nuevo y le da foco — no abre mil pestañas.
@@ -4976,43 +5013,36 @@ document.addEventListener("click", function(ev){
     if((RCOACHES||[]).some(function(u){return u&&u.email&&(""+u.email).toLowerCase().trim()===aem;})){ if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="⚠️ Ese email ya es de un coach/usuario — usá el email de tu cliente."; } return; }
     var aBtn=ev.currentTarget; if(aBtn) aBtn.disabled=true;
     if(aMsg){ aMsg.style.color="var(--pw-text-soft)"; aMsg.textContent="Enviando…"; }
-    var _sendInvite=function(theCode){
+    // Onboarding unificado: el alta crea el candidato + la cuenta de login y le
+    // manda UN email "creá tu contraseña y entrá a tu sesión" (en vez del link al
+    // formulario, que la gente ignoraba). Al entrar, el cliente acepta los
+    // términos y completa su perfil DENTRO del portal (menos fricción).
+    var _sendInvite=function(){
       var _ct=(typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||'carrera';
-      var link=(_ct==='fitness')?("https://pathwaycareercoach.com/pathway-fit-form.html?coach="+encodeURIComponent(RME.id))
-        :(_ct==='financiero')?("https://pathwaycareercoach.com/pathway-fin-form.html?coach="+encodeURIComponent(RME.id))
-        :("https://pathwaycareercoach.com/formulario.html?access="+encodeURIComponent(theCode));
       var cn=(COACH&&COACH.name)||"tu coach";
-      var primer=anom.split(" ")[0];
-      var html="<p style='font-size:15px'>Hola "+esc(primer)+",</p>"+
-        "<p style='font-size:15px;line-height:1.6'>"+esc(cn)+" te invitó a Pathway. Completa tu formulario para empezar — es el primer paso para armar tu plan.</p>"+
-        "<p style='margin:22px 0'><a href='"+link+"' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Completar mi formulario →</a></p>"+
-        "<p style='font-size:13px;color:#777'>O copia este link: "+esc(link)+"</p>";
-      fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:aem,to_name:anom,subject:cn+" te invitó a Pathway — completa tu formulario",html:html,reply_to:(COACH&&COACH.email)||"hi@pathwaycareercoach.com",signature:"coach",coach:{name:cn,email:(COACH&&COACH.email)||"",slug:(RCFG&&RCFG.slug)||"",photo:(COACH&&COACH.photo)||"",logo:(RCFG&&RCFG.logo_url)||"",pro:isProV()}})})
-        .then(function(r){ return r.ok; })
-        .then(function(ok){ if(aBtn) aBtn.disabled=false;
-          if(ok){ if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ Invitación enviada a "+anom+" ("+aem+")"; } if(aEl) aEl.value=""; if(aNomEl) aNomEl.value=""; }
-          else { if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo enviar. Reintenta."; } } })
-        .catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Sin conexión. Reintenta."; } });
-      // Crear el cliente al instante (merge por email → re-invitar no duplica),
-      // así el coach puede empezar a trabajar mientras el cliente completa el form.
+      // 1) Asegurar la cuenta de login del cliente. Sin contraseña usable: la crea
+      //    el propio cliente desde el email. Si ya existe, no la tocamos.
+      _sb("usuarios?email=eq."+encodeURIComponent(aem)+"&select=id").then(function(rows){
+        if(rows&&rows.length) return true;
+        return _sha256(""+Math.random()+Date.now()+aem).then(function(ph){
+          return _sbw("usuarios","POST",{email:aem,password_hash:ph,rol:"cliente",nombre:anom,activo:true,configuracion:{coach_type:_ct}});
+        });
+      }).then(function(){
+        // 2) Email "creá tu contraseña y entrá" (token de un solo uso vía password-reset).
+        return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:aem,welcome:true,coach_name:cn})});
+      }).then(function(r){ if(aBtn) aBtn.disabled=false;
+        var ok=r&&(r.ok||r.status===200);
+        if(ok){ if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ Acceso enviado a "+anom+" ("+aem+") — le llega un email para crear su contraseña y entrar a su sesión."; } if(aEl) aEl.value=""; if(aNomEl) aNomEl.value=""; }
+        else { if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo enviar el acceso. Reintenta."; } }
+      }).catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Sin conexión. Reintenta."; } });
+      // 3) Crear el candidato en tu lista (merge por email → re-invitar no duplica),
+      //    así podés empezar a trabajar mientras el cliente entra y completa su perfil.
       _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=merge-duplicates"})
         .then(function(h){ return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:anom,email:aem,coach_id:RME.id,nicho:_ct,semana_activa:1,activo:true})}); })
-        .then(function(r){ if(!r||!r.ok) return r.text().then(function(t){ throw new Error((r&&r.status)+" "+t); });
-          if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ "+anom+" agregado a tu lista — esperando que complete el formulario."; }
-          setTimeout(loadReal,500); })
-        .catch(function(e){ if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Invitación enviada, pero no pude agregarlo a tu lista ("+String(e).slice(0,80)+"). Avisame."; } });
+        .then(function(r){ if(r&&r.ok) setTimeout(loadReal,500); })
+        .catch(function(){});
     };
-    var code=((RCFG&&RCFG.access_code)||"").toString().trim();
-    if(code){ _sendInvite(code); }
-    else {
-      var gen=((RCFG&&RCFG.slug)||"coach").toString().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,24)+"-"+Math.random().toString(36).slice(2,7);
-      var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } merged.access_code=gen;
-      _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged})
-        .then(function(r){ if(!r.ok) throw 0; RCFG=merged;
-          try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
-          _sendInvite(gen); })
-        .catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo preparar el link. Reintenta."; } });
-    }
+    _sendInvite();
     return;
   }
   if(act==="mail-send"){

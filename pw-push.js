@@ -199,7 +199,10 @@
             if (Notification.permission === "denied") {
               showBlocked();
             } else {
-              b.innerHTML = "<span style='color:#c0756e'>" + ((e && e.message) || "No se pudo activar.") + "</span>";
+              // El mensaje de error puede traer contenido no confiable → textContent
+              // (no innerHTML) para evitar inyección de HTML/JS.
+              b.innerHTML = "<span style='color:#c0756e'></span>";
+              b.firstChild.textContent = (e && e.message) || "No se pudo activar.";
               setTimeout(function () { if (b && b.parentNode) b.remove(); }, 4500);
             }
           }
