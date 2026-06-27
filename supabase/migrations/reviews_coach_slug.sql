@@ -17,9 +17,10 @@ CREATE INDEX IF NOT EXISTS idx_reviews_coach_slug ON reviews (coach_slug);
 -- Las reseñas existentes quedan con coach_slug = NULL => siguen siendo las
 -- reseñas de Pathway que aparecen en la landing. No hay que tocarlas.
 
--- 2a) Si YA insertaste las 2 reseñas con el placeholder '__TU_SLUG__',
---     corregilas a tu slug real con este UPDATE:
-UPDATE reviews SET coach_slug = 'micaela-jairedin' WHERE coach_slug = '__TU_SLUG__';
+-- 2a) Corregir el slug de las reseñas de Micaela a su slug REAL (sin guion):
+--     'micaelajairedin' (perfil: /coach.html?slug=micaelajairedin).
+UPDATE reviews SET coach_slug = 'micaelajairedin'
+WHERE coach_slug IN ('micaela-jairedin', '__TU_SLUG__');
 
 -- 2b) Si TODAVÍA no insertaste las 2 reseñas, corré este INSERT
 --     (si ya las tenés, NO lo corras de nuevo para no duplicarlas):
