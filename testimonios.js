@@ -118,9 +118,10 @@
         var ini=displayName.split(' ').filter(Boolean).slice(0,2).map(function(s){return s.charAt(0).toUpperCase();}).join('');
         html+='<div style="background:#fff;border:1.5px solid rgba(45,106,79,.12);border-radius:16px;padding:22px 24px;display:flex;flex-direction:column;gap:14px;transition:transform .2s,box-shadow .2s;" onmouseover="this.style.transform=\'translateY(-3px)\';this.style.boxShadow=\'0 12px 28px rgba(27,46,38,.08)\';" onmouseout="this.style.transform=\'\';this.style.boxShadow=\'\';">';
         html+='<div style="display:flex;gap:1px;">'+rs+'</div>';
-        // Clamp a 4 lineas (-webkit-line-clamp). El toggle se agrega abajo solo
-        // si el texto realmente desborda esas 4 lineas (chequeo post-render).
-        html+='<div id="'+uid+'_t'+idx+'" data-clamped="1" style="font-size:14px;color:#2A2A2A;line-height:1.6;font-style:italic;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;">"'+escH(r.text).replace(/\n/g,'<br>')+'"</div>';
+        // Clamp a 3 lineas (-webkit-line-clamp) para que las reseñas largas no
+        // queden como un bloque. El toggle se agrega abajo solo si el texto
+        // realmente desborda esas 3 lineas (chequeo post-render).
+        html+='<div id="'+uid+'_t'+idx+'" data-clamped="1" style="font-size:13px;color:#2A2A2A;line-height:1.55;font-style:italic;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">"'+escH(r.text).replace(/\n/g,'<br>')+'"</div>';
         html+='<button id="'+uid+'_b'+idx+'" type="button" style="display:none;align-self:flex-start;background:none;border:none;padding:0;margin:-4px 0 0;font:inherit;font-size:13px;font-weight:600;color:'+accent+';cursor:pointer;">Ver más</button>';
         html+='<div style="display:flex;align-items:center;gap:12px;margin-top:auto;padding-top:14px;border-top:1px solid rgba(45,106,79,.08);">';
         html+='<div style="width:40px;height:40px;border-radius:50%;background:'+accent+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;">'+ini+'</div>';
@@ -132,7 +133,7 @@
       host.innerHTML=html;
 
       // Post-render: mostrar el boton "Ver más" solo en las reseñas que
-      // desbordan las 4 lineas. Toggle entre clamp y texto completo.
+      // desbordan las 3 lineas. Toggle entre clamp y texto completo.
       displayed.forEach(function(r,idx){
         var txt=document.getElementById(uid+'_t'+idx);
         var btn=document.getElementById(uid+'_b'+idx);
@@ -148,7 +149,7 @@
               btn.textContent='Ver menos';
             }else{
               txt.style.display='-webkit-box';
-              txt.style.webkitLineClamp='4';
+              txt.style.webkitLineClamp='3';
               txt.setAttribute('data-clamped','1');
               btn.textContent='Ver más';
             }
