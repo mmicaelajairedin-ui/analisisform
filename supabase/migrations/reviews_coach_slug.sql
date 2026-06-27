@@ -9,19 +9,20 @@
 --   landing  (sin data-coach)        -> WHERE coach_slug IS NULL
 --   coach.html (data-coach="<slug>") -> WHERE coach_slug = '<slug>'
 --
--- Aplicar UNA vez en Supabase (SQL editor).
+-- Aplicar en Supabase (SQL editor).
 
--- 1) Columna + índice
+-- 1) Columna + índice  (idempotente: si ya lo corriste, no pasa nada)
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS coach_slug TEXT;
 CREATE INDEX IF NOT EXISTS idx_reviews_coach_slug ON reviews (coach_slug);
-
 -- Las reseñas existentes quedan con coach_slug = NULL => siguen siendo las
 -- reseñas de Pathway que aparecen en la landing. No hay que tocarlas.
 
--- 2) Cargar las 2 reseñas de clientes de Micaela en SU perfil de coach.
---    >>> Reemplazá  __TU_SLUG__  por tu slug real de coach (el de /coach/<slug>).
---    (las comillas simples internas van duplicadas '' por sintaxis SQL)
+-- 2a) Si YA insertaste las 2 reseñas con el placeholder '__TU_SLUG__',
+--     corregilas a tu slug real con este UPDATE:
+UPDATE reviews SET coach_slug = 'micaela-jairedin' WHERE coach_slug = '__TU_SLUG__';
 
+-- 2b) Si TODAVÍA no insertaste las 2 reseñas, corré este INSERT
+--     (si ya las tenés, NO lo corras de nuevo para no duplicarlas):
 INSERT INTO reviews (nombre, rating, texto, fuente, publica, coach_slug) VALUES
 (
   'Juan José Borregales Rivero',
@@ -29,7 +30,7 @@ INSERT INTO reviews (nombre, rating, texto, fuente, publica, coach_slug) VALUES
   'Everything was great. We are still working together, but Micaela''s advice was very helpful, and she went above and beyond to make sure I got the best advice. I would definitively recommend her and hire her again.',
   'upwork',
   true,
-  '__TU_SLUG__'
+  'micaela-jairedin'
 ),
 (
   'Juan Díaz',
@@ -37,8 +38,8 @@ INSERT INTO reviews (nombre, rating, texto, fuente, publica, coach_slug) VALUES
   'Micaela went above and beyond helping me review my CV and LinkedIn profile. Great, fast and clear communication. Her insights really helped me improve my CV.',
   'upwork',
   true,
-  '__TU_SLUG__'
+  'micaela-jairedin'
 );
 
--- Listo. Tu perfil /coach/__TU_SLUG__ mostrará estas 2 reseñas; la landing sigue
--- mostrando solo las de Pathway (coach_slug NULL).
+-- 3) Verificar que quedaron bien:
+-- SELECT nombre, rating, coach_slug, publica FROM reviews WHERE coach_slug = 'micaela-jairedin';
