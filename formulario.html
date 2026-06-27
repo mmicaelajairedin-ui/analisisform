@@ -599,15 +599,12 @@ function validateStep(n){
     if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) missing.push('f-mai');
   }
   if(n===2){
-    if(!rVals['r-sit']) missing.push('r-sit');
+    // Solo el objetivo es obligatorio (lo esencial para el informe IA). La
+    // situación pasó a opcional para bajar la fricción.
     if(!document.getElementById('f-obj').value.trim()) missing.push('f-obj');
   }
-  if(n===4){
-    if(!document.getElementById('f-car').value.trim()) missing.push('f-car');
-  }
-  if(n===5){
-    if(!document.getElementById('f-rol').value.trim()) missing.push('f-rol');
-  }
+  // Pasos 4 y 5 (cargo / rol buscado): ahora OPCIONALES — menos campos
+  // obligatorios = más gente que termina el formulario.
   if(missing.length){
     missing.forEach(function(id){
       var el=document.getElementById(id);
@@ -627,6 +624,7 @@ function go(n){
   }
   const curEl=document.getElementById('s'+cur);if(curEl)curEl.classList.remove('on');
   cur=n;
+  if(typeof n==='number') saveDraft(); // recordar en qué paso quedó
   if(n==='done'){const d=document.getElementById('s-done');if(d)d.classList.add('on');const p=document.getElementById('prog');if(p)p.style.width='100%';return;}
   const next=document.getElementById('s'+n);if(next)next.classList.add('on');
   const prog=document.getElementById('prog');if(prog)prog.style.width=(n>0?Math.round((n/7)*100):0)+'%';
@@ -647,8 +645,46 @@ function irAlPaso1(){
   go(1);
 }
 
-function selR(g,el){document.querySelectorAll('#'+g+' .opt').forEach(o=>o.classList.remove('sel'));el.classList.add('sel');rVals[g]=el.querySelector('span').textContent;}
+function selR(g,el){document.querySelectorAll('#'+g+' .opt').forEach(o=>o.classList.remove('sel'));el.classList.add('sel');rVals[g]=el.querySelector('span').textContent;saveDraft();}
 function togC(el){el.classList.toggle('sel');}
+
+/* ══ AUTOGUARDADO + RETOMAR ══
+   Guarda el avance en localStorage en cada cambio. Si el cliente se va y vuelve,
+   retoma donde quedó. Además es la red de seguridad anti-pérdida de datos: el
+   borrador SOLO se borra cuando el envío a Supabase salió OK (clearDraft en
+   enviar()). Si el guardado falla, los datos siguen acá para reintentar. */
+var DRAFT_KEY='pw_form_draft';
+var FIELD_IDS=['f-nom','f-mai','f-ciu','f-exp','f-sec','f-obj','f-li','f-por','f-car','f-log','f-ext','f-rol','f-emp','f-mod','f-sal','f-geo','f-not','f-resp','f-ski'];
+function saveDraft(){
+  try{
+    var d={cur:cur,rVals:rVals,fields:{},cvUrl:cvUrl,cvFile:cvFile};
+    FIELD_IDS.forEach(function(id){var el=document.getElementById(id);if(el)d.fields[id]=el.value;});
+    localStorage.setItem(DRAFT_KEY,JSON.stringify(d));
+  }catch(e){}
+}
+function clearDraft(){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
+function restoreDraft(){
+  try{
+    var raw=localStorage.getItem(DRAFT_KEY); if(!raw) return false;
+    var d=JSON.parse(raw); if(!d) return false;
+    if(d.fields) FIELD_IDS.forEach(function(id){var el=document.getElementById(id);if(el&&d.fields[id]!=null)el.value=d.fields[id];});
+    if(d.cvUrl){cvUrl=d.cvUrl;} if(d.cvFile){cvFile=d.cvFile;}
+    if(d.rVals){ rVals=d.rVals;
+      Object.keys(rVals).forEach(function(g){var grp=document.getElementById(g);if(grp){Array.prototype.forEach.call(grp.querySelectorAll('.opt'),function(o){var s=o.querySelector('span');if(s&&s.textContent===rVals[g])o.classList.add('sel');else o.classList.remove('sel');});}});
+    }
+    consentGiven=true; // ya había arrancado → no lo frenamos en el paso de consentimiento
+    var step=(typeof d.cur==='number'&&d.cur>=1&&d.cur<=7)?d.cur:1;
+    go(step);
+    return true;
+  }catch(e){ return false; }
+}
+document.addEventListener('input',function(ev){ if(ev.target&&ev.target.id&&FIELD_IDS.indexOf(ev.target.id)>=0) saveDraft(); });
+document.addEventListener('DOMContentLoaded',function(){
+  var restored=restoreDraft();
+  // En modo portal el cliente ya aceptó los términos en su portal → saltamos el
+  // paso 0 de consentimiento del form y arrancamos directo en el paso 1.
+  if(!restored && PORTAL_MODE){ consentGiven=true; go(1); }
+});
 
 function initUploadcare(){
   if(typeof uploadcare==='undefined')return;
@@ -824,6 +860,7 @@ async function enviar(){
       });
     }
     if(!saveRes.ok){var errText=await saveRes.text();throw new Error('Error guardando datos: '+saveRes.status+' '+errText);}
+    clearDraft(); // guardado OK → ya no hace falta el borrador local
 
     // 2. Llamar a la Edge Function para generar el informe automáticamente
     fetch(EDGE_URL,{
@@ -870,30 +907,22 @@ async function enviar(){
     if(!PORTAL_MODE) try{
       var _email=(d.email||'').toLowerCase().trim();
       var _nombre=d.nombre||'';
-      var _primerNombre=_nombre.split(' ')[0];
-      // Generar contraseña automática (8 chars alfanuméricos)
-      var _chars='abcdefghijkmnpqrstuvwxyz23456789';
-      var _autoPass='';for(var _pi=0;_pi<8;_pi++)_autoPass+=_chars[Math.floor(Math.random()*_chars.length)];
-      // Hash SHA-256
-      var _encoder=new TextEncoder();
-      var _buf=await crypto.subtle.digest('SHA-256',_encoder.encode(_autoPass));
+      // Contraseña NO usable: el cliente crea la suya desde el email (link de un
+      // solo uso). Antes se generaba una contraseña y se mandaba en TEXTO PLANO
+      // por email — eso se eliminó por seguridad.
+      var _rand=''+Math.random()+Date.now()+_email;
+      var _buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(_rand));
       var _hash=Array.from(new Uint8Array(_buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
-      // Crear usuario (INSERT con ignore-duplicates: si el email ya existe NO lo
-      // pisa — así no hace falta UPDATE anónimo en usuarios, que era el agujero
-      // de takeover. El alta es anónima pero acotada a rol='cliente' por RLS).
+      // Crear la cuenta (INSERT ignore-duplicates: si el email ya existe NO lo
+      // pisa — RLS acota el alta anónima a rol='cliente').
       await fetch(SB_URL+'/rest/v1/usuarios',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal,resolution=ignore-duplicates'},
         body:JSON.stringify({email:_email,password_hash:_hash,rol:'cliente',nombre:_nombre,activo:true})
       });
-      // Enviar email de bienvenida al cliente con sus datos de acceso
-      var _portalUrl='https://pathwaycareercoach.com/cliente.html';
-      await emailjs.send(SVC,TPL,{
-        to_email:_email,
-        name:_primerNombre,
-        subject:'Tu acceso al portal - Career Pathway',
-        message:'Hola '+_primerNombre+',\n\nGracias por completar el formulario. Ya tienes acceso a tu portal donde vamos a trabajar juntos durante las próximas semanas.\n\nTus datos de acceso:\nEmail: '+_email+'\nContraseña: '+_autoPass+'\n\nEntra desde aquí:\n'+_portalUrl+'\n\nGuarda estos datos. Cualquier duda, escríbeme.\n\nMicaela Jairedin\nCareer Coach & Recruiter'
-      });
+      // Email "creá tu contraseña y entrá" (token de un solo uso, vía Brevo).
+      // Reemplaza el viejo email con la contraseña en texto plano.
+      await fetch(SB_URL+'/functions/v1/password-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'request',email:_email,welcome:true})});
     }catch(_onbErr){
       console.warn('Onboarding automático falló (datos ya guardados):',_onbErr);
     }
