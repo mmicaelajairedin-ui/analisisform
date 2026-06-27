@@ -57,7 +57,6 @@
   @media(max-width:520px){#thanks-card{padding:18px 20px;gap:12px;}#thanks-card .check{width:30px;height:30px;}}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://ucarecdn.com/libs/widget/3.x/uploadcare.full.min.js"></script>
 <script>UPLOADCARE_PUBLIC_KEY='00db798991682d2a4da2';UPLOADCARE_LOCALE='es';UPLOADCARE_TABS='file';UPLOADCARE_IMAGES_ONLY=false;</script>
 <style>
@@ -405,8 +404,6 @@ function checkAccessCode(){
 </div>
 <script>
 
-emailjs.init('rPy7LSI615o_T5fbU');
-const SVC='Coach', TPL='template_7f00mbl';
 // Default fallback (admin/owner). Si la URL trae ?coach=<uuid>, se reemplaza por
 // el email del coach asignado en initCoachEmail().
 let CEMAIL='mmicaela.jairedin@gmail.com';
@@ -869,16 +866,17 @@ async function enviar(){
       body:JSON.stringify(d)
     }).catch(err=>console.warn('Informe automático falló (no crítico):',err));
 
-    // 3. Email de notificación al coach (no bloquea el éxito si falla)
-    try{
-      await emailjs.send(SVC,TPL,{
-        to_email:CEMAIL,
-        reply_to:d.email||'',
-        subject:'[Candidato] '+d.nombre+' — '+d.rol,
-        message:emailMsg
-      });
-    }catch(emailErr){
-      console.warn('Email de notificación falló (datos ya guardados):',emailErr);
+    // 3. Email de notificación al coach (no bloquea el éxito si falla). Va por la
+    //    Edge Function send-email (Brevo) — ya no se usa EmailJS desde el front,
+    //    así no queda su key pública expuesta en el navegador.
+    if(CEMAIL){
+      var _coachMsgHtml='<pre style="font-family:inherit;white-space:pre-wrap;font-size:14px">'+
+        emailMsg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</pre>';
+      fetch(SB_URL+'/functions/v1/send-email',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({to:CEMAIL,subject:'[Candidato] '+d.nombre+' — '+d.rol,html:_coachMsgHtml,reply_to:d.email||'',signature:'none'})
+      }).catch(function(){});
     }
 
     // 3b. Notificación admin — aviso a Micaela (hi@) de nuevo candidato
