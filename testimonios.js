@@ -94,6 +94,10 @@
 
       var heading=(host.getAttribute&&host.getAttribute('data-heading'))||'Lo que dicen de Pathway';
 
+      // Texto recortado a 4 lineas con toggle "Ver mas". Cada card lleva un id
+      // unico para poder enganchar el toggle despues de pintar el HTML.
+      var uid='tm'+Math.random().toString(36).slice(2,8);
+
       var html='';
       html+='<div style="text-align:center;margin-bottom:36px;">';
       html+='<div style="display:inline-flex;align-items:center;gap:10px;margin-bottom:14px;">';
@@ -108,13 +112,16 @@
       // sección simétrica con cualquier número par y los cards de cada fila
       // se estiran a la misma altura (default de CSS grid: align-items:stretch).
       html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:18px;align-items:stretch;max-width:880px;margin:0 auto;">';
-      displayed.forEach(function(r){
+      displayed.forEach(function(r,idx){
         var rs='';for(var i=1;i<=5;i++)rs+='<span style="color:'+(i<=r.stars?sand:'#E5E0DD')+';font-size:16px;">★</span>';
         var displayName=r._display||r.nombre||'Cliente Pathway';
         var ini=displayName.split(' ').filter(Boolean).slice(0,2).map(function(s){return s.charAt(0).toUpperCase();}).join('');
         html+='<div style="background:#fff;border:1.5px solid rgba(45,106,79,.12);border-radius:16px;padding:22px 24px;display:flex;flex-direction:column;gap:14px;transition:transform .2s,box-shadow .2s;" onmouseover="this.style.transform=\'translateY(-3px)\';this.style.boxShadow=\'0 12px 28px rgba(27,46,38,.08)\';" onmouseout="this.style.transform=\'\';this.style.boxShadow=\'\';">';
         html+='<div style="display:flex;gap:1px;">'+rs+'</div>';
-        html+='<div style="font-size:14px;color:#2A2A2A;line-height:1.6;font-style:italic;">"'+escH(r.text).replace(/\n/g,'<br>')+'"</div>';
+        // Clamp a 4 lineas (-webkit-line-clamp). El toggle se agrega abajo solo
+        // si el texto realmente desborda esas 4 lineas (chequeo post-render).
+        html+='<div id="'+uid+'_t'+idx+'" data-clamped="1" style="font-size:14px;color:#2A2A2A;line-height:1.6;font-style:italic;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;">"'+escH(r.text).replace(/\n/g,'<br>')+'"</div>';
+        html+='<button id="'+uid+'_b'+idx+'" type="button" style="display:none;align-self:flex-start;background:none;border:none;padding:0;margin:-4px 0 0;font:inherit;font-size:13px;font-weight:600;color:'+accent+';cursor:pointer;">Ver más</button>';
         html+='<div style="display:flex;align-items:center;gap:12px;margin-top:auto;padding-top:14px;border-top:1px solid rgba(45,106,79,.08);">';
         html+='<div style="width:40px;height:40px;border-radius:50%;background:'+accent+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;">'+ini+'</div>';
         html+='<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:'+titleColor+';">'+escH(displayName)+'</div></div>';
@@ -123,6 +130,31 @@
       });
       html+='</div>';
       host.innerHTML=html;
+
+      // Post-render: mostrar el boton "Ver más" solo en las reseñas que
+      // desbordan las 4 lineas. Toggle entre clamp y texto completo.
+      displayed.forEach(function(r,idx){
+        var txt=document.getElementById(uid+'_t'+idx);
+        var btn=document.getElementById(uid+'_b'+idx);
+        if(!txt||!btn) return;
+        if(txt.scrollHeight-txt.clientHeight>2){
+          btn.style.display='block';
+          btn.addEventListener('click',function(){
+            var clamped=txt.getAttribute('data-clamped')==='1';
+            if(clamped){
+              txt.style.webkitLineClamp='unset';
+              txt.style.display='block';
+              txt.setAttribute('data-clamped','0');
+              btn.textContent='Ver menos';
+            }else{
+              txt.style.display='-webkit-box';
+              txt.style.webkitLineClamp='4';
+              txt.setAttribute('data-clamped','1');
+              btn.textContent='Ver más';
+            }
+          });
+        }
+      });
     }
   }
 
