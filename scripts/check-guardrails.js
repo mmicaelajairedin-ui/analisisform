@@ -465,6 +465,29 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "Login: el paywall de pago (Stripe) es SOLO para coaches, nunca para clientes",
+    bug: "Un cliente que el coach agregó/desactivó (rol 'cliente', activo=false) veía " +
+         "el link de suscripción de COACH ('Pathway Basic €/mes') al iniciar sesión. " +
+         "El cliente NO paga suscripción (ya compró la mentoría aparte). El paywall que " +
+         "muestra el Stripe debe estar acotado a rol==='coach'; el cliente inactivo se " +
+         "bloquea con un mensaje neutral, sin link de pago.",
+    check() {
+      const offenders = [];
+      for (const f of ["login.html", "login-en.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        // Regresión: el guard del bloque que contiene el link de Stripe vuelve a ser
+        // rol!=='admin' (atrapa clientes) en vez de rol==='coach'.
+        if (/activo===false\s*&&\s*usuario\.rol!==['"]admin['"]\)\s*\{[\s\S]{0,240}?buy\.stripe\.com/.test(s))
+          offenders.push(f + " (Stripe gateado por rol!=='admin', atrapa clientes)");
+        // Debe existir el guard correcto del paywall (rol==='coach').
+        if (/buy\.stripe\.com/.test(s) && !/activo===false\s*&&\s*usuario\.rol===['"]coach['"]/.test(s))
+          offenders.push(f + " (falta el guard rol==='coach' del paywall)");
+      }
+      return offenders.length ? "Paywall de login mal acotado: " + offenders.join(", ") : null;
+    },
+  },
 ];
 
 let failures = 0;
