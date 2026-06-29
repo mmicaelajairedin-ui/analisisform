@@ -407,6 +407,26 @@ const RULES = [
     },
   },
   {
+    name: "Consentimiento se pide UNA sola vez (form no duplica el gate del portal)",
+    bug: "El cliente aceptaba el consentimiento en el formulario Y otra vez en el " +
+         "portal. Fix: en modo portal el form salta el paso de privacidad (PORTAL_MODE " +
+         "→ consentGiven=true), y en intake anónimo el form guarda consent_at para que " +
+         "el portal no lo vuelva a pedir. Esta regla evita que vuelva el doble pedido.",
+    check() {
+      for (const f of ["pathway-fit-form.html", "pathway-fin-form.html", "formulario.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        // En modo portal NO se vuelve a pedir consentimiento (se salta el paso).
+        if (!/PORTAL_MODE[\s\S]{0,80}consentGiven\s*=\s*true/.test(s))
+          return f + ": en modo portal debería saltar el paso de consentimiento (PORTAL_MODE → consentGiven=true).";
+        // En intake anónimo se registra consent_at para no re-pedirlo en el portal.
+        if (!/!PORTAL_MODE[\s\S]{0,80}consent_at/.test(s))
+          return f + ": el intake anónimo debería registrar consent_at (!PORTAL_MODE → d.consent_at).";
+      }
+      return null;
+    },
+  },
+  {
     name: "Nunca enviar la contraseña en texto plano por email",
     bug: "El form mandaba la contraseña autogenerada en TEXTO PLANO por email " +
          "(variable _autoPass). Se eliminó: ahora se manda un link de un solo uso " +
