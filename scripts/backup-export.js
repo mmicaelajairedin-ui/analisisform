@@ -16,8 +16,8 @@ const KEY = process.env.SUPABASE_SERVICE_KEY || "";
 // Las tablas con la data irremplazable del negocio.
 const TABLES = [
   "candidatos", "usuarios", "informes", "cv_publicados", "cv_express",
-  "contactos_chat", "leads_pricing", "solicitudes", "site_context",
-  "analytics_reports", "push_subscriptions",
+  "contactos_chat", "leads_pricing", "solicitudes",
+  "push_subscriptions",
 ];
 
 if (!KEY) { console.error("✗ Falta SUPABASE_SERVICE_KEY"); process.exit(1); }
