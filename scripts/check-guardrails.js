@@ -372,6 +372,99 @@ const RULES = [
       return offenders.length ? offenders.join("; ") : null;
     },
   },
+  {
+    name: "Modo privado: el panel enmascara datos sensibles (email, tel, salud, finanzas)",
+    bug: "Por minimización RGPD, el panel del coach difumina datos sensibles para no " +
+         "exponerlos al compartir pantalla. Si se quita el helper sens(), la clase " +
+         "pw-private, el interruptor (privacy-toggle) o los campos enmascarados " +
+         "(frS/ftAS de finanzas y salud), los datos vuelven a quedar a la vista.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function sens\s*\(/.test(s)) return "panel-v2.html: falta el helper sens() del Modo privado.";
+      if (!/pw-private/.test(s)) return "panel-v2.html: falta el enmascarado (clase pw-private).";
+      if (!/privacy-toggle/.test(s)) return "panel-v2.html: falta el interruptor del Modo privado (privacy-toggle).";
+      if (!/frS\("Ingresos mensuales/.test(s) || !/ftAS\("Lesiones/.test(s))
+        return "panel-v2.html: los datos financieros/de salud ya no usan los campos enmascarados (frS/ftAS).";
+      return null;
+    },
+  },
+  {
+    name: "Consentimiento (RGPD art. 7.1): gate en el primer ingreso de los 3 portales",
+    bug: "Al entrar por primera vez, el cliente acepta Términos+Privacidad y queda " +
+         "registrada la prueba (consent_at). Si se quita el gate, se pierde la base " +
+         "legal y la prueba que exige el RGPD.",
+    check() {
+      const c = read("cliente.html");
+      if (c && (!/needsConsent/.test(c) || !/showConsentGate/.test(c) || !/consent_at/.test(c)))
+        return "cliente.html: falta el gate de consentimiento (needsConsent/showConsentGate/consent_at).";
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (s && (!/pwMaybeConsent/.test(s) || !/consent_at/.test(s)))
+          return f + ": falta el gate de consentimiento (pwMaybeConsent/consent_at).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "Nunca enviar la contraseña en texto plano por email",
+    bug: "El form mandaba la contraseña autogenerada en TEXTO PLANO por email " +
+         "(variable _autoPass). Se eliminó: ahora se manda un link de un solo uso " +
+         "para que el cliente cree su contraseña. Esta regla evita que vuelva.",
+    check() {
+      const offenders = [];
+      for (const f of ["formulario.html", "pathway-fit-form.html", "pathway-fin-form.html"]) {
+        const s = read(f);
+        if (s && /_autoPass/.test(s)) offenders.push(f);
+      }
+      return offenders.length ? "vuelve a generar/enviar contraseña en texto plano (_autoPass): " + offenders.join(", ") : null;
+    },
+  },
+  {
+    name: "Sin EmailJS en el frontend (key pública expuesta) — emails por send-email (Brevo)",
+    bug: "EmailJS exponía su key pública en el navegador (riesgo de abuso/spam con tu " +
+         "cuenta). Se retiró: los emails salen por la Edge Function send-email. Esta " +
+         "regla evita que vuelva la key o emailjs.send al frontend.",
+    check() {
+      const offenders = [];
+      for (const f of ["formulario.html", "panel-v2.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (/rPy7LSI/.test(s)) offenders.push(f + " (key de EmailJS)");
+        if (/emailjs\.send\s*\(/.test(s)) offenders.push(f + " (emailjs.send)");
+      }
+      return offenders.length ? "EmailJS volvió al frontend: " + offenders.join(", ") : null;
+    },
+  },
+  {
+    name: "Intake en portal: guarda con PATCH (actualiza la fila existente, no INSERT ignorado)",
+    bug: "En modo portal el candidato YA existe (lo crea el alta), así que un INSERT " +
+         "ignore-duplicates NO guardaba el intake (se perdía). Debe hacer PATCH por " +
+         "email con el JWT del cliente (pw-auth.js) para que la policy RLS lo permita.",
+    check() {
+      for (const f of ["formulario.html", "pathway-fit-form.html", "pathway-fin-form.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/PORTAL_MODE/.test(s)) return f + ": perdió el modo portal (PORTAL_MODE).";
+        if (!/PATCH/.test(s)) return f + ": el guardado en modo portal ya no usa PATCH (el intake no se guardaría).";
+        if (!/pw-auth\.js/.test(s)) return f + ": ya no incluye pw-auth.js (sin JWT, el PATCH del intake falla por RLS).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "Formulario: autoguardado/retomar (red anti-pérdida de datos)",
+    bug: "Si fallaba la red, el cliente perdía todo lo que había escrito. El form " +
+         "guarda un borrador en localStorage en cada cambio y SOLO lo borra cuando " +
+         "el guardado a Supabase salió OK (clearDraft). Esta regla lo blinda.",
+    check() {
+      const s = read("formulario.html");
+      if (!s) return null;
+      if (!/saveDraft/.test(s) || !/restoreDraft/.test(s) || !/clearDraft/.test(s))
+        return "formulario.html: perdió el autoguardado (saveDraft/restoreDraft/clearDraft).";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;

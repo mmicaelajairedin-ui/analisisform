@@ -50,6 +50,20 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+// Borra el hash SHA-256 legacy una vez que el usuario ya está en Supabase Auth
+// (con su contraseña salteada). Best-effort: si falla, la migración igual sirve
+// (Auth ya es la fuente de verdad del login). Así el que entra queda sin el hash
+// viejo; el que nunca entra lo conserva, pero ilegible por RLS.
+async function clearLegacyHash(SB_URL: string, sbHeaders: Record<string, string>, email: string) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}`, {
+      method: "PATCH",
+      headers: { ...sbHeaders, Prefer: "return=minimal" },
+      body: JSON.stringify({ password_hash: null }),
+    });
+  } catch { /* best-effort */ }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -142,6 +156,7 @@ Deno.serve(async (req: Request) => {
     } catch (e) {
       return json({ error: "update_exception", detail: String(e).slice(0, 200) }, 502);
     }
+    await clearLegacyHash(SB_URL, sbHeaders, email); // ya está en Auth → borrar el hash viejo
     return json({ ok: true, auth_id: existingAuthId, action: "updated_password", legacy_id: legacyId });
   }
 
@@ -160,6 +175,7 @@ Deno.serve(async (req: Request) => {
       );
     }
     const u = await r.json();
+    await clearLegacyHash(SB_URL, sbHeaders, email); // ya está en Auth → borrar el hash viejo
     return json({ ok: true, auth_id: u.id, action: "created", legacy_id: legacyId });
   } catch (e) {
     return json({ error: "create_exception", detail: String(e).slice(0, 200) }, 502);
