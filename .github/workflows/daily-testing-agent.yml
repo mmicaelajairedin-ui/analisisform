@@ -181,6 +181,26 @@ jobs:
         run: |
           node tests/generate-report.js || true
 
+      - name: "🩺 Revisión de salud de usuarios"
+        id: health
+        if: always()
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          AGENT_TRIGGER_SECRET: ${{ secrets.AGENT_TRIGGER_SECRET }}
+        run: |
+          mkdir -p tests/results
+          URL=$(printf '%s' "$SUPABASE_PROJECT_URL" | tr -d '[:space:]' | sed 's:/*$::')
+          SECRET=$(printf '%s' "$AGENT_TRIGGER_SECRET" | tr -d '[:space:]')
+          COUNT=0
+          if [ -n "$URL" ] && [ -n "$SECRET" ]; then
+            curl -sS -X POST "${URL}/functions/v1/health-check" -H "X-Trigger-Secret: ${SECRET}" -H "Content-Type: application/json" --max-time 60 -o tests/results/health-resp.json || echo '{}' > tests/results/health-resp.json
+            node -e "let d={};try{d=JSON.parse(require('fs').readFileSync('tests/results/health-resp.json','utf8'))}catch(e){};require('fs').writeFileSync('tests/results/health.html',(d&&d.html)||'');require('fs').writeFileSync('tests/results/health-count.txt',String((d&&d.count)||0))" || true
+            [ -f tests/results/health-count.txt ] && COUNT=$(cat tests/results/health-count.txt)
+          else
+            echo "Faltan secrets SUPABASE_PROJECT_URL / AGENT_TRIGGER_SECRET — salto la salud"
+          fi
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+
       - name: "📧 Enviar reporte por email (Brevo)"
         if: always()
         run: |
@@ -197,13 +217,13 @@ jobs:
           fi
 
           SUBJECT="$EMOJI Reporte Testing Pathway — ${PASSED}/${TOTAL} tests OK"
-
-          # Leer HTML del reporte
-          if [ -f tests/results/report.html ]; then
-            REPORT_HTML=$(cat tests/results/report.html | python3 -c "import sys,json;print(json.dumps(sys.stdin.read()))")
-          else
-            REPORT_HTML='"<p>No se generó reporte HTML.</p>"'
+          HC="${{ steps.health.outputs.count }}"
+          if [ -n "$HC" ] && [ "$HC" != "0" ]; then
+            SUBJECT="$SUBJECT · 🩺 $HC para revisar"
           fi
+
+          # HTML del email = bloque de salud (si hay) + reporte de tests
+          REPORT_HTML=$(python3 -c "import json,os; ps=[open(f).read() for f in ['tests/results/health.html','tests/results/report.html'] if os.path.exists(f) and open(f).read().strip()]; print(json.dumps('<hr>'.join(ps) if ps else '<p>No se generó reporte.</p>'))")
 
           curl -s -X POST "https://api.brevo.com/v3/smtp/email" \
             -H "accept: application/json" \
