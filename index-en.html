@@ -775,6 +775,22 @@ s.parentNode.insertBefore(b, s);})(window.lintrk);
 .pw-mini-cta svg{width:14px;height:14px;}
 .pw-mini-cta.wa{color:#1f9e4f;}
 .pw-mini-cta.wa:hover{border-color:#25D366;background:rgba(37,211,102,.06);}
+/* Conversational chat: bubbles, quick replies, typing */
+.pw-msgs{display:flex;flex-direction:column;gap:8px;max-height:330px;overflow-y:auto;padding:2px;}
+.pw-msg{max-width:86%;font-size:13px;line-height:1.5;padding:9px 13px;border-radius:15px;animation:pw-chat-in .25s ease both;overflow-wrap:break-word;}
+.pw-msg.bot{align-self:flex-start;background:#F0F7F2;color:#1B2E26;border-bottom-left-radius:5px;}
+.pw-msg.user{align-self:flex-end;background:#2D6A4F;color:#fff;border-bottom-right-radius:5px;}
+.pw-typing{align-self:flex-start;background:#F0F7F2;border-radius:15px;border-bottom-left-radius:5px;padding:12px 14px;display:flex;gap:4px;animation:pw-chat-in .2s ease both;}
+.pw-typing span{width:6px;height:6px;border-radius:50%;background:#9bb3a6;animation:pw-blink 1.3s infinite;}
+.pw-typing span:nth-child(2){animation-delay:.2s;} .pw-typing span:nth-child(3){animation-delay:.4s;}
+@keyframes pw-blink{0%,60%,100%{opacity:.35;}30%{opacity:1;}}
+.pw-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px;}
+.pw-chip{display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border-radius:99px;border:1.5px solid rgba(45,106,79,.22);background:#fff;color:#2D6A4F;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;text-decoration:none;transition:all .15s;animation:pw-chat-in .25s ease both;}
+.pw-chip:hover{border-color:#2D6A4F;background:rgba(82,183,136,.08);transform:translateY(-1px);}
+.pw-chip.solid{background:#2D6A4F;color:#fff;border-color:#2D6A4F;}
+.pw-chip.solid:hover{background:#1B4332;}
+.pw-chip.wa{color:#1f9e4f;border-color:rgba(37,211,102,.4);}
+.pw-chip.wa:hover{background:rgba(37,211,102,.08);border-color:#25D366;}
 @keyframes pw-chat-in{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 @media(max-width:480px){.pw-chat-bubble{display:none;}.pw-chat-panel{right:8px;left:8px;width:auto;}}
 </style>
@@ -789,8 +805,10 @@ s.parentNode.insertBefore(b, s);})(window.lintrk);
 </div>
 <div class="pw-chat-panel" id="pw-chat-panel" role="dialog" aria-label="Chat with Pathway">
   <div class="pw-chat-head">
+    <div class="pw-chat-head-av"><svg width="22" height="20" viewBox="0 0 24 22" aria-hidden="true"><polygon points="9,21 17,6 25,21" fill="#2D6A4F"/><polygon points="0,21 7,9 14,21" fill="#52B788"/><circle cx="17" cy="4" r="3" fill="#E9C46A"/></svg></div>
     <div class="pw-chat-head-info">
-      <div class="pw-chat-head-name">Questions?</div>
+      <div class="pw-chat-head-name">Pathway</div>
+      <div class="pw-chat-head-sub">Usually replies in minutes</div>
     </div>
     <button class="pw-chat-head-x" onclick="pwChatClose()" aria-label="Close">×</button>
   </div>
@@ -867,18 +885,59 @@ s.parentNode.insertBefore(b, s);})(window.lintrk);
     '</div>';
   }
 
-  function render(){
-    var body=document.getElementById('pw-chat-body');
-    if(!body) return;
-    if(pwChatState==='choose') body.innerHTML=viewChoose();
-    else if(pwChatState==='coach') body.innerHTML=viewForm('coach');
-    else if(pwChatState==='candidato') body.innerHTML=viewForm('candidato');
-    else if(pwChatState==='sent') body.innerHTML=viewSent();
-    // Auto-focus al primer input si lo hay
-    setTimeout(function(){ var n=document.getElementById('pw-chat-nombre'); if(n) n.focus(); }, 80);
+  // ===== Conversational chat (Pathway) =====
+  var pwLog=[], pwChips=[], pwTyping=false;
+  function chatRender(){
+    var body=document.getElementById('pw-chat-body'); if(!body) return;
+    var h='<div class="pw-msgs" id="pw-msgs">';
+    pwLog.forEach(function(m){ h+='<div class="pw-msg '+m.who+'">'+m.html+'</div>'; });
+    if(pwTyping) h+='<div class="pw-typing"><span></span><span></span><span></span></div>';
+    h+='</div>';
+    if(pwChips.length && !pwTyping){
+      h+='<div class="pw-chips">';
+      pwChips.forEach(function(c,i){
+        if(c.href) h+='<a class="pw-chip'+(c.solid?' solid':'')+(c.wa?' wa':'')+'" href="'+c.href+'" target="_blank" rel="noopener" onclick="pwChip('+i+')">'+esc(c.label)+'</a>';
+        else h+='<button type="button" class="pw-chip'+(c.solid?' solid':'')+'" onclick="pwChip('+i+')">'+esc(c.label)+'</button>';
+      });
+      h+='</div>';
+    }
+    body.innerHTML=h;
+    var ms=document.getElementById('pw-msgs'); if(ms) ms.scrollTop=ms.scrollHeight;
   }
-
-  window.pwChatGo=function(step){ pwChatState=step; render(); };
+  function botTurn(msgs, chips){
+    pwTyping=true; pwChips=[]; chatRender();
+    setTimeout(function(){
+      pwTyping=false;
+      msgs.forEach(function(t){ pwLog.push({who:'bot', html:t}); });
+      pwChips=chips||[]; chatRender();
+    }, 800);
+  }
+  function chatStep(step){
+    if(step==='coach'){
+      botTurn(["Awesome! With Pathway you get your own platform with AI, scheduling and payments — all under your brand.","Want a quick demo or shall we chat?"],
+        [{label:"See a demo (11 min)", href:DEMO_URL, solid:true},
+         {label:"Chat on WhatsApp", href:WA_COACH, wa:true}]);
+    } else {
+      botTurn(["Pathway is where the career coaches who guide you 1:1 to your next job are.","Where would you like to start?"],
+        [{label:"See available coaches", href:COACHES_URL, solid:true},
+         {label:"A free call", href:CALL_30},
+         {label:"WhatsApp", href:WA_CAND, wa:true}]);
+    }
+  }
+  window.pwChip=function(i){
+    var c=pwChips[i]; if(!c) return;
+    pwLog.push({who:'user', html:esc(c.label)});
+    pwChips=[];
+    if(c.tap){ chatStep(c.tap); }
+    else { chatRender(); botTurn(["I opened that in a new tab. If you need anything else, just message me here."], []); }
+  };
+  function chatStart(){
+    pwLog=[]; pwChips=[]; pwTyping=false;
+    botTurn(["Hi! Welcome to Pathway.","What brings you here?"],
+      [{label:"I'm a coach", tap:'coach'},{label:"Looking for work", tap:'candidato'}]);
+  }
+  window.pwChatGo=function(){ chatStart(); };
+  function render(){ if(!pwLog.length) chatStart(); else chatRender(); }
 
   window.pwChatOpen=function(){
     window._pwChatTouched=true;
