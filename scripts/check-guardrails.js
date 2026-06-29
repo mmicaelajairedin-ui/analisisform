@@ -427,6 +427,37 @@ const RULES = [
     },
   },
   {
+    name: "Consentimiento al FINAL del form (menos fricción, no es un muro legal al entrar)",
+    bug: "El consentimiento abría el formulario como primera pantalla (un 'muro legal' " +
+         "que espantaba). Se movió al último paso, antes de guardar: sigue siendo " +
+         "obligatorio (gatea el envío) pero deja una primera impresión cálida. Esta " +
+         "regla evita que vuelva a colarse al inicio.",
+    check() {
+      // fit/fin: el consentimiento NO es la primera pantalla y va antes del análisis.
+      for (const f of ["pathway-fit-form.html", "pathway-fin-form.html"]) {
+        const s = read(f); if (!s) continue;
+        const onMatch = s.match(/<div class="step on"[^>]*id="([^"]+)"/);
+        if (onMatch && onMatch[1] === "stepConsent")
+          return f + ": el consentimiento no debe ser la primera pantalla (debe ir al final).";
+        const iC = s.indexOf('id="stepConsent"'), iA = s.indexOf('id="stepAnalisis"');
+        if (iC < 0 || iA < 0 || iC > iA)
+          return f + ": stepConsent debería ir al final, justo antes del análisis.";
+      }
+      // career: la casilla vive en el último paso (s7), no en s0; y enviar() la exige.
+      const c = read("formulario.html");
+      if (c) {
+        if (!/id="s7-consent"/.test(c))
+          return "formulario.html: el consentimiento debería estar en el último paso (id='s7-consent').";
+        const i0 = c.indexOf('id="s0"'), i1 = c.indexOf('id="s1"');
+        if (i0 >= 0 && i1 > i0 && /consent-cb/.test(c.slice(i0, i1)))
+          return "formulario.html: la casilla de consentimiento volvió a s0 (debe ir al final).";
+        if (!/if\s*\(\s*!consentGiven\s*\)/.test(c))
+          return "formulario.html: enviar() debería exigir consentGiven antes de guardar.";
+      }
+      return null;
+    },
+  },
+  {
     name: "Nunca enviar la contraseña en texto plano por email",
     bug: "El form mandaba la contraseña autogenerada en TEXTO PLANO por email " +
          "(variable _autoPass). Se eliminó: ahora se manda un link de un solo uso " +
