@@ -97,8 +97,9 @@ async function sendResetEmail(to: string, toName: string, link: string) {
 // ── Email de bienvenida (alta de cliente: "creá tu contraseña y entrá") ──────
 // Mismo mecanismo de token que el reset, pero con copy de bienvenida — el
 // cliente nunca tuvo contraseña, así que "restablecer" lo confundiría.
-async function sendWelcomeEmail(to: string, toName: string, link: string, coachName: string) {
+async function sendWelcomeEmail(to: string, toName: string, link: string, coachName: string, coachEmail?: string) {
   const coach = (coachName || "").trim();
+  const cEmail = (coachEmail || "").trim();
   const intro = coach
     ? `${coach} te dio acceso a tu espacio en Pathway.`
     : `Te dieron acceso a tu espacio en Pathway.`;
@@ -126,9 +127,17 @@ async function sendWelcomeEmail(to: string, toName: string, link: string, coachN
     body: JSON.stringify({
       to,
       to_name: toName || undefined,
-      subject: coach ? `${coach} te dio acceso a Pathway — entrá a tu sesión` : "Tu acceso a Pathway — entrá a tu sesión",
+      subject: coach ? `${coach} te dio acceso a tu espacio — entrá a tu sesión` : "Tu acceso a Pathway — entrá a tu sesión",
       html,
-      signature: "pathway",
+      // El cliente conoce a SU coach, no a "Pathway". Mandamos a nombre del coach
+      // (más aperturas, menos sensación de spam) PERO desde el dominio autenticado
+      // hi@pathwaycareercoach.com (SPF/DKIM ok) — el remitente real no cambia, solo
+      // el nombre visible. reply_to al coach para que las respuestas le lleguen a él.
+      from_name: coach || "Pathway",
+      reply_to: cEmail || undefined,
+      // Firma del coach al pie (no la genérica de Pathway) → email personal.
+      signature: coach ? "coach" : "pathway",
+      coach: coach ? { name: coach, email: cEmail || undefined } : undefined,
     }),
   });
 }
@@ -171,7 +180,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!SB_URL || !SERVICE) return json({ error: "env_missing" }, 500);
 
-  let body: { action?: string; email?: string; token?: string; password?: string; welcome?: boolean; coach_name?: string };
+  let body: { action?: string; email?: string; token?: string; password?: string; welcome?: boolean; coach_name?: string; coach_email?: string };
   try {
     body = await req.json();
   } catch {
@@ -211,7 +220,7 @@ Deno.serve(async (req: Request) => {
         });
         const link = `${BASE}/recuperar-password.html?token=${token}&email=${encodeURIComponent(email)}`;
         if (body.welcome === true) {
-          await sendWelcomeEmail(email, user.nombre || "", link, (body.coach_name || "").toString());
+          await sendWelcomeEmail(email, user.nombre || "", link, (body.coach_name || "").toString(), (body.coach_email || "").toString());
         } else {
           await sendResetEmail(email, user.nombre || "", link);
         }
