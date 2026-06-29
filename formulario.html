@@ -228,11 +228,7 @@ function checkAccessCode(){
       <div style="background:#f9f8f8;border-radius:12px;padding:1.25rem;margin-bottom:1.25rem;font-size:13px;color:#555;line-height:1.8;">
         Usaré lo que compartas aquí <strong>únicamente para preparar tu análisis y sesión</strong>. No comparto tus datos con nadie. Puedes pedirme que los elimine cuando quieras escribiéndome directamente
       </div>
-      <label style="display:flex;align-items:flex-start;gap:12px;margin-bottom:1.5rem;cursor:pointer;">
-        <input type="checkbox" id="consent-cb" onchange="togConsent(this)" style="width:18px;height:18px;margin-top:2px;accent-color:#2D6A4F;cursor:pointer;flex-shrink:0;">
-        <span style="font-size:13px;color:#1a1a1a;line-height:1.6;">Entiendo y acepto que mi coach use mis datos para el análisis y la sesión de coaching.</span>
-      </label>
-      <div class="nav"><button class="btn-next" id="consent-btn" onclick="irAlPaso1()" disabled style="opacity:.4;cursor:not-allowed;">Empezamos →</button></div>
+      <div class="nav"><button class="btn-next" id="consent-btn" onclick="go(1)">Empezamos →</button></div>
     </div>
 
     <div class="step" id="s1">
@@ -389,6 +385,14 @@ function checkAccessCode(){
         <p class="ai-q" id="ai-q"></p>
         <div class="field"><textarea id="f-resp" placeholder="Tu respuesta..." rows="3"></textarea></div>
       </div>
+      <!-- Consentimiento al final (último paso, antes de enviar). Sigue siendo
+           obligatorio y se registra (consent_at). En modo portal se oculta. -->
+      <div id="s7-consent" style="margin:1.25rem 0;">
+        <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;padding:14px 16px;border:1.5px solid #e5e5e5;border-radius:10px;">
+          <input type="checkbox" id="consent-cb" onchange="togConsent(this)" style="width:18px;height:18px;margin-top:2px;accent-color:#2D6A4F;cursor:pointer;flex-shrink:0;">
+          <span id="consent-txt" style="font-size:13px;color:#1a1a1a;line-height:1.6;">Acepto los <a href="/legales.html" target="_blank" rel="noopener" style="color:#2D6A4F;font-weight:600;">Términos y la Política de Privacidad</a> y que mi coach use mis datos para el análisis y la sesión de coaching.</span>
+        </label>
+      </div>
       <div class="nav"><button class="btn-back" onclick="go(6)">←</button><button class="btn-next" id="btn-send" onclick="enviar()" style="display:none;">Enviar →</button></div>
       <div class="send-st" id="send-st"></div>
     </div>
@@ -499,17 +503,17 @@ function setLang(l,btn){
   const t=TX[l];
   const s0title=document.querySelector('#s0 .stitle');
   const s0desc=document.querySelector('#s0 .sdesc');
-  const s0consent=document.querySelector('#s0 label span');
+  const s0consent=document.getElementById('consent-txt'); // ahora en el último paso (s7)
   const s0btn=document.getElementById('consent-btn');
   if(l==='en'){
     if(s0title)s0title.textContent="Hi, I'm glad you're here";
     if(s0desc)s0desc.textContent="This form helps me get to know you before our session. The more honest you are, the more useful our time together will be.";
-    if(s0consent)s0consent.textContent="I understand and agree that my coach may use my data for the analysis and coaching session.";
+    if(s0consent)s0consent.innerHTML="I accept the <a href=\"/legales.html\" target=\"_blank\" rel=\"noopener\" style=\"color:#2D6A4F;font-weight:600;\">Terms and Privacy Policy</a> and that my coach may use my data for the analysis and coaching session.";
     if(s0btn)s0btn.textContent="Let's start →";
   } else {
     if(s0title)s0title.textContent="Hola, me alegra que estés aquí";
     if(s0desc)s0desc.textContent="Este formulario me ayuda a conocerte antes de nuestra sesión. Cuanto más sincero/a seas, más útil será el tiempo que pasemos juntos.";
-    if(s0consent)s0consent.textContent="Entiendo y acepto que mi coach use mis datos para el análisis y la sesión de coaching.";
+    if(s0consent)s0consent.innerHTML="Acepto los <a href=\"/legales.html\" target=\"_blank\" rel=\"noopener\" style=\"color:#2D6A4F;font-weight:600;\">Términos y la Política de Privacidad</a> y que mi coach use mis datos para el análisis y la sesión de coaching.";
     if(s0btn)s0btn.textContent="Empezamos →";
   }
   // Thanks card (visible only when ?paid=1)
@@ -632,15 +636,9 @@ function go(n){
 
 function togConsent(el){
   consentGiven=el.checked;
-  const btn=document.getElementById('consent-btn');
-  btn.disabled=!consentGiven;
-  btn.style.opacity=consentGiven?'1':'.4';
-  btn.style.cursor=consentGiven?'pointer':'not-allowed';
-}
-
-function irAlPaso1(){
-  if(!consentGiven) return;
-  go(1);
+  // El consentimiento ahora vive en el último paso (s7) y habilita el botón Enviar.
+  var bs=document.getElementById('btn-send');
+  if(bs){ bs.disabled=!consentGiven; bs.style.opacity=consentGiven?'1':'.5'; bs.style.cursor=consentGiven?'pointer':'not-allowed'; }
 }
 
 function selR(g,el){document.querySelectorAll('#'+g+' .opt').forEach(o=>o.classList.remove('sel'));el.classList.add('sel');rVals[g]=el.querySelector('span').textContent;saveDraft();}
@@ -670,7 +668,8 @@ function restoreDraft(){
     if(d.rVals){ rVals=d.rVals;
       Object.keys(rVals).forEach(function(g){var grp=document.getElementById(g);if(grp){Array.prototype.forEach.call(grp.querySelectorAll('.opt'),function(o){var s=o.querySelector('span');if(s&&s.textContent===rVals[g])o.classList.add('sel');else o.classList.remove('sel');});}});
     }
-    consentGiven=true; // ya había arrancado → no lo frenamos en el paso de consentimiento
+    // El consentimiento ahora va al final (s7): no lo damos por hecho al retomar,
+    // el cliente lo tilda en el último paso.
     var step=(typeof d.cur==='number'&&d.cur>=1&&d.cur<=7)?d.cur:1;
     go(step);
     return true;
@@ -679,9 +678,13 @@ function restoreDraft(){
 document.addEventListener('input',function(ev){ if(ev.target&&ev.target.id&&FIELD_IDS.indexOf(ev.target.id)>=0) saveDraft(); });
 document.addEventListener('DOMContentLoaded',function(){
   var restored=restoreDraft();
-  // En modo portal el cliente ya aceptó los términos en su portal → saltamos el
-  // paso 0 de consentimiento del form y arrancamos directo en el paso 1.
-  if(!restored && PORTAL_MODE){ consentGiven=true; go(1); }
+  // En modo portal el cliente ya aceptó los términos en su portal → no le volvemos
+  // a pedir consentimiento: ocultamos la casilla del último paso y la damos por dada.
+  if(PORTAL_MODE){
+    consentGiven=true;
+    var _sc=document.getElementById('s7-consent'); if(_sc) _sc.style.display='none';
+    if(!restored) go(1);
+  }
 });
 
 function initUploadcare(){
@@ -745,7 +748,7 @@ function startAI(){
     if(msg){msg.textContent=t.aiMsg;msg.style.display='block';}
     const aq=document.getElementById('ai-q');if(aq)aq.textContent=t.aiQ;
     if(qb)qb.style.display='block';
-    if(bs){bs.style.display='block';bs.textContent=t.send;}
+    if(bs){bs.style.display='block';bs.textContent=t.send;bs.disabled=!consentGiven;bs.style.opacity=consentGiven?'1':'.5';bs.style.cursor=consentGiven?'pointer':'not-allowed';}
   },2000);
 }
 
@@ -753,6 +756,14 @@ async function enviar(){
   const t=TX[lang];
   const btn=document.getElementById('btn-send');
   const st=document.getElementById('send-st');
+  // Consentimiento obligatorio antes de guardar (RGPD): el dato se procesa solo
+  // después de aceptar. En modo portal ya viene aceptado desde el portal.
+  if(!consentGiven){
+    st.textContent=lang==='en'?'Please accept the terms to continue.':'Aceptá los términos para continuar.';
+    st.style.color='#C25B5B';
+    var _cb=document.getElementById('consent-cb'); if(_cb) _cb.focus();
+    return;
+  }
   btn.disabled=true;btn.textContent=t.sending;st.textContent=t.sending;st.style.color='#666';
 
   if(ucWidget&&cvFile==='No subido'&&ucWidget.value()!==null){
@@ -806,6 +817,9 @@ async function enviar(){
     if(!_cid){try{_cid=sessionStorage.getItem('pw_coach_id')||'';}catch(e){}}
     if(_cid&&/^[0-9a-f-]{32,36}$/i.test(_cid))d.coach_id=_cid;
   }catch(e){}
+
+  // Intake anónimo: registrar el consentimiento acá para que el portal (cliente.html) NO lo vuelva a pedir.
+  if(!PORTAL_MODE){ d.consent_at=new Date().toISOString(); d.consent_version='2026-05-01'; }
 
   const fecha=new Date().toLocaleDateString('es-ES');
   const liUrl=d.linkedin?'linkedin.com/in/'+d.linkedin:'No tiene';
