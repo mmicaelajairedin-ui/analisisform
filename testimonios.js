@@ -1,4 +1,4 @@
-// Testimonios públicos — Pathway Career Coach
+// Testimonios públicos — Pathway
 //
 // Lee reseñas de la tabla `reviews` (publica=true) desde Supabase y las
 // renderiza en cada <div data-testimonios> que encuentre.

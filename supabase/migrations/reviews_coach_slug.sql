@@ -1,4 +1,4 @@
--- Reseñas por coach — Pathway Career Coach
+-- Reseñas por coach — Pathway
 --
 -- Agrega una columna `coach_slug` a la tabla `reviews` para vincular cada
 -- reseña a un coach concreto.

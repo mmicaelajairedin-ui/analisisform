@@ -1,5 +1,5 @@
 -- ============================================================
--- Pathway Career Coach — Marketplace Schema Migration
+-- Pathway — Marketplace Schema Migration
 -- ============================================================
 -- EJECUTAR EN ORDEN. Hacer backup completo ANTES de ejecutar.
 -- Reemplazar 'UUID-MICAELA' con el UUID real de Micaela en auth.users
