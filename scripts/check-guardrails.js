@@ -375,15 +375,16 @@ const RULES = [
   {
     name: "Modo privado: el panel enmascara datos sensibles (email, tel, salud, finanzas)",
     bug: "Por minimización RGPD, el panel del coach difumina datos sensibles para no " +
-         "exponerlos al compartir pantalla. Si se quita el helper sens(), la clase " +
-         "pw-private, el interruptor (privacy-toggle) o los campos enmascarados " +
-         "(frS/ftAS de finanzas y salud), los datos vuelven a quedar a la vista.",
+         "exponerlos al compartir pantalla. El enmascarado está SIEMPRE activo (sin " +
+         "toggle): se revela al pasar el mouse o tocar el dato. Si se quita el helper " +
+         "sens(), la clase pw-private o los campos enmascarados (frS/ftAS de finanzas " +
+         "y salud), los datos vuelven a quedar a la vista.",
     check() {
       const s = read("panel-v2.html");
       if (!s) return null;
       if (!/function sens\s*\(/.test(s)) return "panel-v2.html: falta el helper sens() del Modo privado.";
       if (!/pw-private/.test(s)) return "panel-v2.html: falta el enmascarado (clase pw-private).";
-      if (!/privacy-toggle/.test(s)) return "panel-v2.html: falta el interruptor del Modo privado (privacy-toggle).";
+      if (!/classList\.add\('pw-private'\)/.test(s)) return "panel-v2.html: el enmascarado (pw-private) ya no se aplica siempre.";
       if (!/frS\("Ingresos mensuales/.test(s) || !/ftAS\("Lesiones/.test(s))
         return "panel-v2.html: los datos financieros/de salud ya no usan los campos enmascarados (frS/ftAS).";
       return null;
