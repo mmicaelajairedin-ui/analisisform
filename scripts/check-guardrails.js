@@ -465,6 +465,18 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "cliente.html: sin escaper inexistente (escH) — usa hh()",
+    bug: "cliente.html llamaba escH() (no definida) en la reseña y el toast de " +
+         "logros → ReferenceError que CRASHEABA la preview del coach (coach_view). " +
+         "Detectado en client_errors (pw-observe). El escaper real es hh().",
+    check() {
+      const s = read("cliente.html");
+      if (!s) return null;
+      if (/escH\s*\(/.test(s)) return "cliente.html volvió a usar escH() (no existe) — usá hh().";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
