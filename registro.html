@@ -777,18 +777,27 @@ async function registrar(){
       };
     });
     if (TRIAL_DRIP_ENABLED) {
-      fetch(SB + '/rest/v1/email_queue', {
-        method: 'POST',
-        headers: {
-          apikey: KEY,
-          Authorization: 'Bearer ' + KEY,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal'
-        },
-        body: JSON.stringify(queueInserts)
-      }).catch(function(){
-        console.warn('[trial-emails] no se pudieron programar');
-      });
+      // Programar los emails de recordatorio de trial. Si falla (red/servidor),
+      // reintenta una vez antes de rendirse — así la coach no se queda sin avisos.
+      var _postDrip = function(attempt){
+        return fetch(SB + '/rest/v1/email_queue', {
+          method: 'POST',
+          headers: {
+            apikey: KEY,
+            Authorization: 'Bearer ' + KEY,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal'
+          },
+          body: JSON.stringify(queueInserts)
+        }).then(function(r){
+          if(!r.ok && attempt < 2){ return new Promise(function(res){ setTimeout(res,1500); }).then(function(){ return _postDrip(attempt+1); }); }
+          if(!r.ok) console.warn('[trial-emails] no se pudieron programar (status '+r.status+')');
+        }).catch(function(){
+          if(attempt < 2){ return new Promise(function(res){ setTimeout(res,1500); }).then(function(){ return _postDrip(attempt+1); }); }
+          console.warn('[trial-emails] no se pudieron programar');
+        });
+      };
+      _postDrip(1);
     }
 
     // Éxito — trial sin tarjeta. La coach va DIRECTO al panel y usa los 14
