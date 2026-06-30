@@ -328,6 +328,19 @@ const RULES = [
     },
   },
   {
+    name: "portal carrera: Agendar NO cae al Calendly de Micaela",
+    bug: "El default de CALENDLY en cliente.html era el Calendly de Micaela. Un " +
+         "cliente de un coach que no configuró su Calendly agendaba sesión con " +
+         "MICAELA, no con su coach. Debe ser '' y el botón cae al chat (abrirAgenda).",
+    check() {
+      const s = read("cliente.html");
+      if (!s) return null;
+      return /var\s+CALENDLY\s*=\s*['"]https?:\/\/calendly/.test(s)
+        ? "cliente.html: CALENDLY default volvió a un Calendly hardcodeado (debe ser '')"
+        : null;
+    },
+  },
+  {
     name: "login liga auth_id vía RPC pw_link_auth_id (coach ve/crea clientes)",
     bug: "Sin auth_id ligado, pw_coach_id() devuelve NULL y el coach no ve ni " +
          "puede crear clientes (queda 'anónimo' para RLS → 409/403 al agregar). " +
