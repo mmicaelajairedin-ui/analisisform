@@ -5030,9 +5030,18 @@ document.addEventListener("click", function(ev){
         .then(function(h){ return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:anom,email:aem,coach_id:RME.id,nicho:_ct,semana_activa:1,activo:true})}); })
         .then(function(r){ if(aBtn) aBtn.disabled=false;
           if(!r||!r.ok){ if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo agregar el cliente a tu lista. Reintenta."; } return; }
-          if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ "+anom+" agregado a tu lista. Le enviamos un email para que cree su contraseña y entre."; }
-          if(aEl) aEl.value=""; if(aNomEl) aNomEl.value="";
-          setTimeout(loadReal,400);
+          // Si la ficha YA existía (p.ej. inactiva de un alta anterior), el INSERT
+          // ignore-duplicates no la toca → seguiría escondida. Un PATCH la reactiva
+          // (activo=true) sobre la fila de ESTE coach, así re-agregar SIEMPRE la
+          // trae de vuelta a la lista activa. Best-effort (no bloquea el alta).
+          var _cguard=(RME&&RME.rol!=="admin")?("&coach_id=eq."+encodeURIComponent(RME.id)):"";
+          _sbw("candidatos?email=eq."+encodeURIComponent(aem)+_cguard,"PATCH",{activo:true})
+            .catch(function(){})
+            .then(function(){
+              if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ "+anom+" agregado a tu lista. Le enviamos un email para que cree su contraseña y entre."; }
+              if(aEl) aEl.value=""; if(aNomEl) aNomEl.value="";
+              setTimeout(loadReal,400);
+            });
         })
         .catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Sin conexión. Reintenta."; } });
       // 2) En paralelo y best-effort: asegurar la cuenta de login del cliente y
