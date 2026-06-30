@@ -1,16 +1,17 @@
 // Supabase Edge Function — connect-checkout
 //
-// Carril marketplace Pathway. Cobro con RETENCIÓN (hold) + split 20%
+// Carril marketplace Pathway. Cobro con RETENCIÓN (hold) + split escalonado
+// (comisión por tramos según clientes pagos del coach; ver tierRate)
 // vía Stripe Connect, en cargo DIRECTO sobre la cuenta del coach
 // (header Stripe-Account): el dinero NUNCA pasa por la cuenta de
-// Pathway; Pathway solo cobra el 20% como application fee.
+// Pathway; Pathway solo cobra la comisión como application fee.
 //
 // Acciones (POST JSON):
 //   { action:"create", coach_id, servicio, candidato:{nombre,email} }
 //     → crea Checkout Session (capture_method=manual ⇒ autoriza, no
 //       cobra) + fila en `solicitudes` (estado pendiente). Devuelve {url}.
 //   { action:"accept", solicitud_id }
-//     → captura el PaymentIntent (coach cobra, Pathway 20%). estado=aceptada.
+//     → captura el PaymentIntent (coach cobra, Pathway su comisión). estado=aceptada.
 //   { action:"reject", solicitud_id }
 //     → cancela el PaymentIntent (hold liberado, sin cargo). estado=rechazada.
 //
@@ -23,7 +24,16 @@
 
 const STRIPE = "https://api.stripe.com/v1";
 const SITE = "https://pathwaycareercoach.com";
-const FEE_PCT = 0.20;
+// Comisión ESCALONADA de Pathway, según cuántos clientes pagos ya tiene el
+// coach vía Pathway (cada cliente cobra el % de su tramo). Baja la barrera de
+// entrada: los primeros casi gratis. Antes era 20% plano (const FEE_PCT=0.20).
+//   1–5 → 5% · 6–15 → 10% · 16–30 → 15% · 31+ → 18%
+function tierRate(n: number): number {
+  if (n <= 5) return 0.05;
+  if (n <= 15) return 0.10;
+  if (n <= 30) return 0.15;
+  return 0.18;
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -163,7 +173,19 @@ Deno.serve(async (req: Request) => {
       servicioTitulo = servicioLegacy === "sesion" ? "Sesión única" : "Mentoría 4 semanas";
     }
     const monto = Math.round(precio * 100);          // céntimos
-    const fee = Math.round(monto * FEE_PCT);          // 20% para Pathway
+    // Comisión ESCALONADA: contamos los clientes pagos previos del coach vía
+    // Pathway (candidatos con pago_recibido). Este pago es el cliente #(nPrev+1),
+    // y cobra el % de SU tramo (1–5 → 5% … 31+ → 18%). Antes era 20% plano.
+    let nPrev = 0;
+    try {
+      const cr = await fetch(
+        `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&pago_recibido=eq.true&select=id`,
+        { headers: { ...sbH(SRK), Prefer: "count=exact", Range: "0-0" } },
+      );
+      nPrev = parseInt((cr.headers.get("content-range") || "0/0").split("/")[1] || "0", 10) || 0;
+    } catch (_e) { nPrev = 0; }
+    const rate = tierRate(nPrev + 1);
+    const fee = Math.round(monto * rate);
     if (monto <= 0) return json({ error: "Precio inválido" }, 400);
 
     // success_url devuelve al perfil del coach (slug) cuando es disponible,
@@ -210,7 +232,7 @@ Deno.serve(async (req: Request) => {
         servicio_titulo: servicioTitulo,
         mensaje: mensaje || null,
         monto: precio,
-        comision: precio * FEE_PCT,
+        comision: precio * rate,
         estado: "pendiente",
         stripe_account_id: acct,
         stripe_session_id: sess.data.id,

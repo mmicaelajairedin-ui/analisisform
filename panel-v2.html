@@ -1562,6 +1562,10 @@ function cliSolTabs(active){
     "<button class='cp-chip "+(active==="clientes"?"is-on":"")+"' data-act='nav:clientes'>Clientes</button>"+
     "<button class='cp-chip "+((active==="sol"||active==="mensajes")?"is-on":"")+"' data-act='nav:solicitudes'>Solicitudes"+((pend+nmsg)?"<span class='cp-chip-count'>"+(pend+nmsg)+"</span>":"")+"</button></div>";
 }
+// Comisión escalonada de Pathway (espejo de tierRate en connect-checkout).
+// El % depende de cuántos clientes pagos (de Pathway) ya tiene el coach.
+function _pwTierRate(n){ if(n<=5)return 5; if(n<=15)return 10; if(n<=30)return 15; return 18; }
+function _pwCoachRate(){ var n=0; try{ n=(CLIENTS||[]).filter(function(c){return c&&c.source==="pathway";}).length; }catch(e){} return _pwTierRate(n+1); }
 function viewSolicitudes(){
   var SOL = (REAL ? (RSOL||[]) : [
     { id:"demo1", candidato_nombre:"Lucía Fernández", candidato_email:"lucia.f@email.com", servicio:"mentoria", monto:400, comision:80, estado:"autorizada", created_at:new Date(Date.now()-3*3600000).toISOString(), expires_at:new Date(Date.now()+21*3600000).toISOString() },
@@ -1617,7 +1621,7 @@ function viewSolicitudes(){
   // ── Fila compacta (columna izquierda): avatar + nombre + neto/consulta ──
   function solRow(s){
     var esMsg = s.estado==="mensaje";
-    var monto=Number(s.monto)||0, com=Number(s.comision)|| monto*0.2, neto=monto-com;
+    var monto=Number(s.monto)||0, com=Number(s.comision)|| monto*_pwCoachRate()/100, neto=monto-com;
     var sel = selSol && String(selSol.id)===String(s.id);
     var right = esMsg
       ? "<span style='display:inline-block;background:var(--pw-niebla-3);color:var(--pw-bosque);font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px'>Consulta</span>"
@@ -1635,7 +1639,7 @@ function viewSolicitudes(){
   function solDetail(s){
     if(!s) return "<div class='cp-card'><div class='cp-card-pad' style='display:flex;align-items:center;justify-content:center;text-align:center;min-height:320px;color:var(--pw-text-soft);font-size:13px;line-height:1.6'>Elegí una solicitud o consulta de la izquierda<br>para ver el detalle y responder.</div></div>";
     var esMsg = s.estado==="mensaje";
-    var monto=Number(s.monto)||0, com=Number(s.comision)|| monto*0.2, neto=monto-com;
+    var monto=Number(s.monto)||0, com=Number(s.comision)|| monto*_pwCoachRate()/100, neto=monto-com;
     var timer=_left(s.expires_at);
     var hilo=(Array.isArray(s.mensajes)&&s.mensajes.length)?s.mensajes:(s.mensaje?[{from:"lead",texto:s.mensaje,ts:0}]:[]);
     var bubbles = hilo.length
@@ -1731,7 +1735,7 @@ function viewSolicitudes(){
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Solicitudes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Compras y consultas que te llegan desde tu perfil de Pathway.</div></div></header>"+
     cliSolTabs("sol")+ statsCard +
-    "<div class='cp-reassurance' style='margin:0 0 4px'>El candidato <strong>paga primero</strong> (tarjeta retenida, todavía no se le cobra). Tienes <strong>24 h</strong>: si <strong>aceptas</strong>, cobras directo y Pathway retiene el <strong>20%</strong>; si rechazas o expira, no se le cobra. Tus clientes propios no pasan por aquí (0% comisión).</div>"+
+    "<div class='cp-reassurance' style='margin:0 0 4px'>El candidato <strong>paga primero</strong> (tarjeta retenida, todavía no se le cobra). Tienes <strong>24 h</strong>: si <strong>aceptas</strong>, cobras directo y Pathway retiene una <strong>comisión escalonada (desde 5%)</strong>; si rechazas o expira, no se le cobra. Tus clientes propios no pasan por aquí (0% comisión).</div>"+
     splitHtml + waitHtml + histHtml;
 }
 // Las consultas (estado="mensaje") ahora viven dentro de viewSolicitudes,
@@ -3361,7 +3365,7 @@ function cfgPathway(){
       "<span class='cp-eyebrow'>Cómo funciona</span></div>"+
       "<div class='cp-card-pad'><div class='cp-toggle' style='border-bottom:none;padding:4px 0'>"+
         "<div class='cp-toggle-body'><div class='cp-toggle-title'>Recibir clientes nuevos de Pathway</div>"+
-        "<div class='cp-toggle-desc'>Pathway te envía candidatos de su directorio. El candidato <strong>paga primero</strong> y su tarjeta queda <strong>retenida</strong> (no se le cobra todavía). Tienes <strong>24 h</strong> para aceptar o rechazar en la sección <strong>Solicitudes</strong>. Si aceptas, el dinero va <strong>directo a tu cuenta</strong> y Pathway retiene solo el <strong>20%</strong>; si rechazas o pasan 24 h, no se le cobra. Tus clientes propios no entran aquí (0% comisión).</div></div>"+
+        "<div class='cp-toggle-desc'>Pathway te envía candidatos de su directorio. El candidato <strong>paga primero</strong> y su tarjeta queda <strong>retenida</strong> (no se le cobra todavía). Tienes <strong>24 h</strong> para aceptar o rechazar en la sección <strong>Solicitudes</strong>. Si aceptas, el dinero va <strong>directo a tu cuenta</strong> y Pathway retiene una <strong>comisión escalonada (desde 5%)</strong>; si rechazas o pasan 24 h, no se le cobra. Tus clientes propios no entran aquí (0% comisión).</div></div>"+
         "<button class='cp-switch "+(optIn?"is-on":"")+"' data-act='pw-optin' aria-label='Recibir clientes de Pathway'><span></span></button></div></div></div>";
   if(!optIn){
     return toggleCard+
@@ -3382,16 +3386,16 @@ function cfgPathway(){
     } else if(st&&st.connected){
       connectCard = connHd+"<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● Cuenta conectada</span></div>"+
         "<div class='cp-card-pad'>"+
-          "<p style='margin:0 0 14px;font-size:13px;line-height:1.6;color:var(--pw-text-soft)'>Tu cuenta de Stripe está conectada y verificada. Cuando aceptes una solicitud, <strong>el dinero entra directo a tu cuenta bancaria</strong> y Pathway retiene solo el <strong>20%</strong>. Tú no tienes que hacer nada más.</p>"+
+          "<p style='margin:0 0 14px;font-size:13px;line-height:1.6;color:var(--pw-text-soft)'>Tu cuenta de Stripe está conectada y verificada. Cuando aceptes una solicitud, <strong>el dinero entra directo a tu cuenta bancaria</strong> y Pathway retiene una <strong>comisión escalonada (desde 5%)</strong>. Tú no tienes que hacer nada más.</p>"+
           moneyRow("Cobrado a clientes de Pathway","€0",{muted:true})+
-          moneyRow("Comisión Pathway (20%)","€0",{muted:true})+
+          moneyRow("Comisión Pathway (escalonada · "+_pwCoachRate()+"% ahora)","€0",{muted:true})+
           moneyRow("A tu favor (neto)","€0",{big:true,strongC:"var(--pw-bosque)",top:true})+
           "<p class='cp-reassurance' style='margin:14px 0 14px;border-radius:12px'>Todavía no recibiste pagos de Pathway. Cuando un cliente pague verás aquí el desglose real.</p>"+
           "<button class='cp-btn cp-btn-ghost' data-act='pw-connect'>Actualizar mis datos bancarios "+svg(IC.extLink,12)+"</button></div></div>";
     } else {
       connectCard = connHd+"<span class='cp-eyebrow' style='color:var(--pw-danger)'>● Falta conectar</span></div>"+
         "<div class='cp-card-pad'>"+
-          "<p style='margin:0 0 16px;font-size:13px;line-height:1.6;color:var(--pw-text-soft)'>Para cobrar a los clientes que Pathway te envía, conecta <strong>tu propia cuenta de Stripe</strong> (te pedirá tu banco e identidad, una sola vez). El candidato paga el monto que tú fijas, el dinero entra <strong>directo a tu cuenta</strong> y Pathway retiene solo el <strong>20%</strong> — nunca tocamos tu dinero.</p>"+
+          "<p style='margin:0 0 16px;font-size:13px;line-height:1.6;color:var(--pw-text-soft)'>Para cobrar a los clientes que Pathway te envía, conecta <strong>tu propia cuenta de Stripe</strong> (te pedirá tu banco e identidad, una sola vez). El candidato paga el monto que tú fijas, el dinero entra <strong>directo a tu cuenta</strong> y Pathway retiene una <strong>comisión escalonada (desde 5%)</strong> — nunca tocamos tu dinero.</p>"+
           "<button class='cp-btn cp-btn-primary' data-act='pw-connect'>Conectar mi cuenta de cobro "+svg(IC.extLink,12)+"</button>"+
           "<p style='margin:12px 0 0;font-size:11px;color:var(--pw-text-muted)'>Te lleva a Stripe para cargar tus datos de forma segura. Al terminar vuelves aquí automáticamente.</p></div></div>";
     }
@@ -3401,10 +3405,10 @@ function cfgPathway(){
     var net = Math.round(s.price*0.8);
     return "<div class='cp-service-card'><div><div class='cp-service-name'>"+esc(s.name||"Servicio")+"</div><div class='cp-service-desc'>"+esc(s.desc)+"</div></div>"+
       "<div style='text-align:right'><div class='cp-service-price'>€"+net+"<small> a tu favor</small></div>"+
-      "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:2px'>Precio €"+s.price+" · −20%</div></div></div>";
+      "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:2px'>Precio €"+s.price+" · −"+_pwCoachRate()+"%</div></div></div>";
   }).join("");
   var pricesCard = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tus precios para Pathway<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>Precio − 20%</span></div>"+
+      "<span class='cp-eyebrow'>Precio − comisión</span></div>"+
       "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+priceRows+"</div></div>";
   var earnings = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Dónde y cuándo cobras<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow' style='color:var(--pw-sendero)'>● Stripe conectado</span></div>"+
@@ -4598,7 +4602,7 @@ function viewAdmin(){
         (REAL
           ? "<div class='cp-card-pad' style='padding:18px 22px;color:var(--pw-text-soft);font-size:13px;line-height:1.6'>Los payouts a coaches se gestionan en <strong>Stripe</strong> y todavía no están cableados a este panel — por eso acá no se muestran importes (no hay datos reales que traer). <a href='"+esc(STRIPE_PORTAL)+"' target='_blank' rel='noopener' style='color:var(--pw-bosque);font-weight:600'>Ver en Stripe →</a></div></div>"
           : "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:640px'><thead><tr>"+
-            "<th>Coach</th><th>Bruto Pathway</th><th>Comisión 20%</th><th>Neto a pagar</th><th>Estado</th><th>Fecha</th>"+
+            "<th>Coach</th><th>Bruto Pathway</th><th>Comisión</th><th>Neto a pagar</th><th>Estado</th><th>Fecha</th>"+
           "</tr></thead><tbody>"+payoutRows+"</tbody></table></div></div>");
   } else {
     body = "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px'>"+
@@ -5137,7 +5141,7 @@ document.addEventListener("click", function(ev){
     var solId=el.getAttribute("data-id"); if(!solId) return;
     if(!REAL){ alert("Demo: en producción esto acepta/rechaza la solicitud real."); return; }
     var doAccept=(act==="sol-accept");
-    if(!confirm(doAccept?"¿Aceptar esta solicitud? Se captura el pago: cobras el neto y Pathway retiene el 20%.":"¿Rechazar esta solicitud? Se libera la retención y al candidato no se le cobra.")) return;
+    if(!confirm(doAccept?"¿Aceptar esta solicitud? Se captura el pago: cobras el neto y Pathway retiene su comisión escalonada (desde 5%).":"¿Rechazar esta solicitud? Se libera la retención y al candidato no se le cobra.")) return;
     if(_genBusy) return; _genBusy=true; toast(doAccept?"Aceptando y cobrando…":"Rechazando…");
     fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:doAccept?"accept":"reject",solicitud_id:solId})})
       .then(function(r){ _genBusy=false; if(!r.ok) throw 0; toast(doAccept?"Solicitud aceptada ✓ — pago capturado":"Solicitud rechazada ✓"); loadReal(); })
