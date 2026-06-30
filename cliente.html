@@ -2063,6 +2063,40 @@ function entrar(){
       _uavEl.textContent=ini(C.nombre);
     }
   }
+  // ── El cliente cambia su foto clickeando su círculo (avatar) ────────────
+  // La foto que sube se guarda en candidatos.foto_perfil, que el avatar lee
+  // PRIMERO → siempre tiene prioridad sobre la de Google o la del CV.
+  (function(){
+    var wrap=document.getElementById('sb-avatar-wrap');
+    if(!wrap) return;
+    if(getComputedStyle(wrap).position==='static') wrap.style.position='relative';
+    wrap.style.cursor='pointer'; wrap.title='Cambiar mi foto';
+    function _hint(w){ if(w&&!w.querySelector('.cli-foto-hint')){ var h=document.createElement('div'); h.className='cli-foto-hint'; h.textContent='✎'; h.style.cssText='position:absolute;right:-2px;bottom:-2px;width:28px;height:28px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2);pointer-events:none;'; w.appendChild(h); } }
+    _hint(wrap); // _setAv limpia el contenido en cada render → re-agregamos el lápiz
+    if(wrap._fotoWired) return; wrap._fotoWired=true;
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.style.display='none';
+    document.body.appendChild(inp);
+    wrap.addEventListener('click',function(){ inp.click(); });
+    inp.addEventListener('change',function(){
+      var f=inp.files&&inp.files[0]; if(!f) return;
+      if(f.size>5*1024*1024){ alert('La foto no puede pesar más de 5 MB.'); inp.value=''; return; }
+      var ext=((f.type||'image/png').split('/')[1]||'png').replace('jpeg','jpg');
+      var path='client-'+(''+E).replace(/[^a-z0-9]/gi,'_')+'-'+Date.now()+'.'+ext;
+      fetch(SB+'/storage/v1/object/avatars/'+encodeURIComponent(path),{
+        method:'POST',
+        headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'Content-Type':(f.type||'image/png'), 'x-upsert':'true' },
+        body:f
+      }).then(function(r){ if(!r.ok) throw 0;
+        var url=SB+'/storage/v1/object/public/avatars/'+path;
+        pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:url}).catch(function(){});
+        C.foto_perfil=url; try{localStorage.setItem('mj_foto_'+E,url);}catch(e){}
+        ['sb-avatar-wrap','top-avatar','sb-uav'].forEach(function(id){ var el=document.getElementById(id); if(!el)return; el.innerHTML=''; var im=document.createElement('img'); im.src=url; im.style.cssText='width:100%;height:100%;object-fit:cover;display:block;'+(id==='sb-uav'?'border-radius:50%;':''); el.appendChild(im); });
+        var mob=document.getElementById('mob-avatar'); if(mob) mob.innerHTML='<img src="'+url+'" style="width:100%;height:100%;object-fit:cover;border-radius:10px;">';
+        _hint(document.getElementById('sb-avatar-wrap'));
+      }).catch(function(){ alert('No se pudo subir la foto. Reintenta.'); });
+      inp.value='';
+    });
+  })();
   // foto_perfil se guarda solo desde cv.html (cuando la columna existe en Supabase)
   document.getElementById('sb-uname').textContent=C.nombre||'';
   document.getElementById('sb-uemail').textContent=E||'';
