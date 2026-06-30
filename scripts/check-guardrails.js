@@ -312,6 +312,22 @@ const RULES = [
     },
   },
   {
+    name: "panel: alta de cliente usa INSERT ignore-duplicates (RLS), no merge",
+    bug: "El alta inline del panel (alta-invitar) creaba el candidato con " +
+         "resolution=merge-duplicates. Bajo RLS estricto eso es un upsert que pide " +
+         "policy de UPDATE para anon → 403, y el .catch vacio lo tragaba: el cliente " +
+         "NUNCA aparecia en la lista del coach (pero salia '✓ enviado' igual). Debe " +
+         "usar ignore-duplicates, igual que formulario.html. Ver rls_strict.sql.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return "no existe panel-v2.html";
+      const m = s.match(/resolution=(merge|ignore)-duplicates"\}\)[\s\S]{0,120}rest\/v1\/candidatos/);
+      if (!m) return "no se encontro el INSERT de candidatos del alta de cliente";
+      return m[1] === "ignore" ? null
+        : "el alta de cliente usa merge-duplicates (debe ser ignore-duplicates bajo RLS estricto)";
+    },
+  },
+  {
     name: "login/registro: NO leen password_hash con la anon key (Fase 4 RLS)",
     bug: "El login y el registro viejos leian password_hash con la anon key " +
          "(login filtraba por &password_hash=eq; registro lo pedia en &select). " +

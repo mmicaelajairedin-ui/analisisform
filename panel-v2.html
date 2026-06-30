@@ -5020,28 +5020,33 @@ document.addEventListener("click", function(ev){
     var _sendInvite=function(){
       var _ct=(typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||'carrera';
       var cn=(COACH&&COACH.name)||"tu coach";
-      // 1) Asegurar la cuenta de login del cliente. Sin contraseña usable: la crea
-      //    el propio cliente desde el email. Si ya existe, no la tocamos.
+      // 1) LO PRIMERO: crear el candidato en TU lista para que aparezca abajo y
+      //    puedas empezar a llenar su ficha. Bajo RLS estricto hay que usar
+      //    ignore-duplicates (NO merge-duplicates): el upsert haría un UPDATE en
+      //    conflicto y pediría policy de UPDATE para anon → daba 403, y el
+      //    .catch vacío lo tragaba, así el cliente nunca aparecía. Ver
+      //    rls_strict.sql (mismo patrón que formulario.html). Re-invitar no duplica.
+      _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"})
+        .then(function(h){ return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:anom,email:aem,coach_id:RME.id,nicho:_ct,semana_activa:1,activo:true})}); })
+        .then(function(r){ if(aBtn) aBtn.disabled=false;
+          if(!r||!r.ok){ if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo agregar el cliente a tu lista. Reintenta."; } return; }
+          if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ "+anom+" agregado a tu lista. Le enviamos un email para que cree su contraseña y entre."; }
+          if(aEl) aEl.value=""; if(aNomEl) aNomEl.value="";
+          setTimeout(loadReal,400);
+        })
+        .catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Sin conexión. Reintenta."; } });
+      // 2) En paralelo y best-effort: asegurar la cuenta de login del cliente y
+      //    mandarle el email de bienvenida ("crea tu contraseña y entra"). Si esto
+      //    falla NO bloquea: el cliente ya está en tu lista y puedes re-invitarlo.
       _sb("usuarios?email=eq."+encodeURIComponent(aem)+"&select=id").then(function(rows){
         if(rows&&rows.length) return true;
         return _sha256(""+Math.random()+Date.now()+aem).then(function(ph){
           return _sbw("usuarios","POST",{email:aem,password_hash:ph,rol:"cliente",nombre:anom,activo:true,configuracion:{coach_type:_ct}});
         });
       }).then(function(){
-        // 2) Email "creá tu contraseña y entrá" (token de un solo uso vía password-reset).
         var _cemail=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
         return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:aem,welcome:true,coach_name:cn,coach_email:_cemail})});
-      }).then(function(r){ if(aBtn) aBtn.disabled=false;
-        var ok=r&&(r.ok||r.status===200);
-        if(ok){ if(aMsg){ aMsg.style.color="var(--pw-bosque)"; aMsg.textContent="✓ Acceso enviado a "+anom+" ("+aem+") — le llega un email para crear su contraseña y entrar a su sesión."; } if(aEl) aEl.value=""; if(aNomEl) aNomEl.value=""; }
-        else { if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="No se pudo enviar el acceso. Reintenta."; } }
-      }).catch(function(){ if(aBtn) aBtn.disabled=false; if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="Sin conexión. Reintenta."; } });
-      // 3) Crear el candidato en tu lista (merge por email → re-invitar no duplica),
-      //    así podés empezar a trabajar mientras el cliente entra y completa su perfil.
-      _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=merge-duplicates"})
-        .then(function(h){ return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:anom,email:aem,coach_id:RME.id,nicho:_ct,semana_activa:1,activo:true})}); })
-        .then(function(r){ if(r&&r.ok) setTimeout(loadReal,500); })
-        .catch(function(){});
+      }).catch(function(){});
     };
     _sendInvite();
     return;
