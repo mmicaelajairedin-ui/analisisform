@@ -49,8 +49,8 @@ Agencia (landing) → Cliente compra mentoria → Micaela le manda link al formu
 - Deploy: Cloudflare Pages (proyecto `analisisform`) con dominio custom `pathwaycareercoach.com` (fallback: analisisform.pages.dev). Auto-deploy en push a `main`.
 
 ## 🎨 REGLA DE DISENO — emojis del panel SIEMPRE en gris
-En **todos los paneles del coach** (panel-v2.html, pathway-fit-coach.html,
-pathway-fin-coach.html) los emojis de la interfaz van en **gris**, no a color
+En **el panel del coach** (panel-v2.html, multi-nicho) los emojis de la
+interfaz van en **gris**, no a color
 (se ve mas profesional y unificado). Usar la clase `.cp-emo`
 (`filter:grayscale(1)`) en vez de repetir el filtro inline:
 - Inline (emoji + texto): `<span class='cp-emo'>⚙️</span> Módulos`
