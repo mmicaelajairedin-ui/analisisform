@@ -328,6 +328,23 @@ const RULES = [
     },
   },
   {
+    name: "login liga auth_id vía RPC pw_link_auth_id (coach ve/crea clientes)",
+    bug: "Sin auth_id ligado, pw_coach_id() devuelve NULL y el coach no ve ni " +
+         "puede crear clientes (queda 'anónimo' para RLS → 409/403 al agregar). " +
+         "El PATCH directo lo bloqueaba la RLS (a admins por rol<>'admin', y a " +
+         "emails desajustados). login.html y auth-callback.html deben llamar la " +
+         "RPC SECURITY DEFINER pw_link_auth_id en cada login. Ver " +
+         "repair_auth_id_linking.sql.",
+    check() {
+      const offenders = [];
+      for (const f of ["login.html", "auth-callback.html"]) {
+        const s = read(f);
+        if (s && !/rpc\/pw_link_auth_id/.test(s)) offenders.push(f);
+      }
+      return offenders.length ? offenders.join(", ") + " ya no llama(n) pw_link_auth_id" : null;
+    },
+  },
+  {
     name: "login/registro: NO leen password_hash con la anon key (Fase 4 RLS)",
     bug: "El login y el registro viejos leian password_hash con la anon key " +
          "(login filtraba por &password_hash=eq; registro lo pedia en &select). " +
