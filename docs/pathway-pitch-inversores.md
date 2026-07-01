@@ -210,7 +210,7 @@ de ejecución, pero también un **riesgo de bus factor** que la ronda ayuda a mi
 
 **Coste variable a vigilar al escalar:** la **IA por uso** (cada informe/CV
 generado cuesta unos céntimos de Claude API). Hay que vigilar el **margen por
-cliente**, pero a $39–79/mes de suscripción el margen bruto es muy alto.
+cliente**, pero a $29–59/mes de suscripción el margen bruto es muy alto.
 
 ---
 
@@ -262,7 +262,7 @@ De **8 competidores analizados, 0 lo hacen** para el coach independiente.
 | **CoachPilot** | $35–100 | Fitness/IA | No | **No** |
 | **Profi.io** | (cerró dic-2025) | Terapeutas/equipos | No | — |
 | **Coaching.com** | listado +15–25% | General | No | Directorio pasivo |
-| **▸ PATHWAY** | **$39 / $79** (prop.) | **Carrera + IA (multi)** | **Sí** | **SÍ — marketplace** |
+| **▸ PATHWAY** | **$29 / $59** | **Carrera + IA (multi)** | **Sí** | **SÍ — marketplace** |
 
 **Competidores por nicho (los especialistas nos ganan en profundidad, no en cruce):**
 - **Fitness:** Trainerize, TrueCoach, Everfit, Harbiz (app móvil, videos, wearables, macros).
@@ -312,30 +312,34 @@ buscando empleo, que valora acompañamiento humano + herramientas modernas.
 
 ## H · Pricing
 
-> 🔴 **Decisión pendiente.** Hoy hay 3 números distintos en tus materiales:
-> el **sitio vivo** dice **$29/$59 USD**, tus **docs de negocio** dicen **€58/€89**,
-> y tu **análisis de precios** recomienda **$39/$79 USD**. Presento el **recomendado**
-> como go-forward (es el que sale de tu propio análisis y arregla el Basic). Confirmá.
+**Pricing vigente (el de la landing).**
 
 **Modelo:** suscripción recurrente del coach (MRR) + comisión de marketplace.
 
-| Plan | Precio (recomendado) | Para quién | Incluye |
+| Plan | Precio | Para quién | Incluye |
 |---|---|---|---|
-| **Basic** | **$39/mes** | Coaches que arrancan | Herramientas IA, perfil en directorio, botón de reserva + cobro Stripe, soporte email. *(Arreglar el límite: hoy limita a 5 clientes pero cuesta como plan ilimitado.)* |
-| **Pro** | **$79/mes** | Coaches que escalan con su marca | Clientes ilimitados, **white-label**, emails al cliente desde el panel, soporte prioritario. |
+| **Basic** | **$29/mes** | Coaches que arrancan | Hasta 5 clientes, herramientas IA, perfil en directorio, botón de reserva + cobro Stripe, soporte email. |
+| **Pro** | **$59/mes** | Coaches que escalan con su marca | Clientes ilimitados, **white-label**, emails al cliente desde el panel, soporte prioritario WhatsApp+email. |
 
 - **14 días gratis, sin tarjeta. Cancela cuando quieras** (sin permanencia).
 - Los **datos del cliente son del coach** (puede exportarlos si se va).
 
 **Fuentes de ingreso:**
-1. **Suscripción recurrente** ($39/$79) → el core, MRR predecible.
+1. **Suscripción recurrente** ($29/$59) → el core, MRR predecible.
 2. **Finder's fee 20%** — SOLO la primera vez que Pathway le trae un cliente nuevo vía marketplace. Después, **0%**: ese cliente es 100% del coach.
 3. **Clientes que el coach trae por su cuenta: 0% comisión, siempre.** (Incentivos alineados: no le comemos margen sobre su trabajo.)
 
 **Posicionamiento de precio (de tu mapa de valor):**
-La mayoría del mercado arranca entre **$19 y $39/mes**. A $39/$79 quedamos
-**accesibles pero premium-defendible** — el extra lo justifica lo único que nadie
-más da: **traer clientes** + white-label + multi-nicho.
+La mayoría del mercado arranca entre **$19 y $39/mes**. A **$29/$59** quedamos
+**dentro de la banda del mercado** (Basic al nivel de los planes de entrada, Pro
+cerca de Paperbell $57) — pero somos los únicos que además **traemos clientes** +
+white-label + multi-nicho, así que a igual precio ofrecemos más.
+
+> **Oportunidad de pricing (para Q&A con el inversor):** tu propio análisis sugiere
+> que el **Basic tiene poder de subida** ($29 con límite de 5 clientes está barato
+> vs. la competencia) y que el Pro podría escalar hacia ~$79 conforme se cierran
+> los gaps por nicho. Es decir: **hay palanca de precio hacia arriba sin salir de
+> la banda**, un buen argumento de upside de ingresos.
 
 **Pricing regional (LatAm):** España/Europa mantiene tarifa plena; un coach latino
 tiene **38–62%** del poder adquisitivo de uno español. Práctica Netflix/Spotify:
@@ -372,7 +376,7 @@ lista de espera · reuniones/demos hechas · emails enviados · usuarios registr
 > (tráfico Cloudflare semanal), `client_errors` (observabilidad). **Antes del
 > pitch, exportá los números reales de estos paneles y reemplazá los `[completar]`.**
 
-**Benchmarks de la liga (bajo ticket $39–79/mes, trial sin tarjeta) — no te midas contra enterprise:**
+**Benchmarks de la liga (bajo ticket $29–59/mes, trial sin tarjeta) — no te midas contra enterprise:**
 | Métrica | Meta sana | Fuente |
 |---|---|---|
 | Churn mensual | ≤5% (6–8% amarillo) | ChartMogul |
