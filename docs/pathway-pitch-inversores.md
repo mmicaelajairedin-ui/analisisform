@@ -164,23 +164,23 @@ salud (`health-check`).
 
 ## C · Equipo
 
-> 🔴 **A confirmar por vos.** Puse el escenario más probable según cómo está
-> construido el proyecto. Ajustá roles y nombres.
-
 **Micaela Jairedin — Fundadora / CEO.**
-- Background en **Talent Acquisition** (~8 años en RR.HH. y selección según tu bio pública).
+- Background en **Talent Acquisition** (~8 años en RR.HH. y selección).
 - Acompañó a **+200 profesionales** en transición de carrera.
-- Rol en Pathway: producto, ventas, onboarding manual de las primeras coaches, contenido/SEO, y —vía herramientas de IA (Claude Code)— el desarrollo del producto.
+- Rol en Pathway: **producto, ventas, onboarding** de las primeras coaches, contenido/SEO, y —vía herramientas de IA (Claude Code)— el **desarrollo del producto**.
 
-**Modelo de equipo actual:** *lean*. El producto se construyó con **asistencia de IA**,
-lo que explica cómo una sola persona levantó ~60 páginas + 20 funciones backend +
-CI + observabilidad. Esto es una **ventaja de coste** (ver sección D) y una señal
-de ejecución, pero también un **riesgo de bus factor** que la ronda ayuda a mitigar
-(primera contratación técnica/growth).
+**Gonzalo — Comercial (se incorpora en octubre).**
+- Se suma al equipo para cubrir la **parte comercial / ventas** a partir de **octubre 2026**.
+- Libera a la fundadora de la venta directa para que se concentre en producto y estrategia — clave justo cuando arranca la adquisición de coaches a escala.
 
-> **Para completar juntas:** ¿hay socio/a, colaborador/a de diseño, marketing o
-> desarrollo? ¿advisors/mentores? (Mencionás un mentor de finanzas/negocios —
-> si acepta figurar como advisor, suma credibilidad al pitch.)
+**Modelo de equipo actual:** *lean* y en crecimiento. El producto se construyó con
+**asistencia de IA**, lo que explica cómo un equipo mínimo levantó ~60 páginas +
+20 funciones backend + CI + observabilidad. Es una **ventaja de coste** (ver sección
+D) y una señal de ejecución; con Gonzalo en comercial desde octubre, se separan los
+dos motores del negocio: **construcción** (Micaela) y **ventas** (Gonzalo).
+
+> **Para seguir sumando al pitch:** un/a advisor da mucha credibilidad. Si el mentor
+> de finanzas/negocios con el que trabajás acepta figurar como advisor, súmalo acá.
 
 ---
 
