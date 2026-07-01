@@ -316,10 +316,22 @@ buscando empleo, que valora acompañamiento humano + herramientas modernas.
 
 **Modelo:** suscripción recurrente del coach (MRR) + comisión de marketplace.
 
+**Mensual (vigente en la landing):**
 | Plan | Precio | Para quién | Incluye |
 |---|---|---|---|
 | **Basic** | **$29/mes** | Coaches que arrancan | Hasta 5 clientes, herramientas IA, perfil en directorio, botón de reserva + cobro Stripe, soporte email. |
 | **Pro** | **$59/mes** | Coaches que escalan con su marca | Clientes ilimitados, **white-label**, emails al cliente desde el panel, soporte prioritario WhatsApp+email. |
+
+**Anual `[PROPUESTO — aún no está en la landing]`:** convención SaaS = **2 meses
+gratis** al pagar por año (≈17% de descuento). Sube el compromiso y baja el churn.
+| Plan | Anual | Equivale a | Ahorro |
+|---|---|---|---|
+| **Basic** | **$290/año** | ~$24/mes | 2 meses gratis |
+| **Pro** | **$590/año** | ~$49/mes | 2 meses gratis |
+
+> **Por qué agregar el anual (argumento para el inversor):** cobra 12 meses por
+> adelantado → mejora el *cash flow* y **reduce el churn** (el cliente ya pagó el año).
+> Es una de las palancas más baratas para subir el LTV. Recomendado activarlo pronto.
 
 - **14 días gratis, sin tarjeta. Cancela cuando quieras** (sin permanencia).
 - Los **datos del cliente son del coach** (puede exportarlos si se va).
