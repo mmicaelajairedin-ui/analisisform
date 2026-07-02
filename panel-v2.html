@@ -3977,6 +3977,19 @@ function _sendEmpleadoEmail(email, nombre){
 // ── Admin: sección Empleados ────────────────────────────────
 var REMPLE=null; // lista de empleados (rol=empleado)
 function reloadEmpleados(){ return _sb("usuarios?rol=eq.empleado&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc").then(function(rows){ REMPLE=rows||[]; render(); }); }
+// Números del comercial (carga manual). Viven en configuracion.stats:
+// { leads, contactos, demos, conversiones, comision }. No hay atribución
+// automática de leads a empleados todavía, así que se cargan a mano.
+function _empSt(u){
+  var s=(u&&u.configuracion&&u.configuracion.stats)||{};
+  var n=function(v){ v=parseInt(v,10); return isNaN(v)?0:v; };
+  var cmStr=(s.comision===0||s.comision)?(""+s.comision):"";
+  var cmNum=parseFloat(cmStr.replace(/[^0-9.\-]/g,"")); if(isNaN(cmNum)) cmNum=0;
+  var leads=n(s.leads), conv=n(s.conversiones);
+  return { leads:leads, contactos:n(s.contactos), demos:n(s.demos), conversiones:conv, comision:cmStr, comisionNum:cmNum,
+           tasa:(leads>0?Math.round(conv/leads*100):0) };
+}
+function _money(n){ n=Math.round((n||0)*100)/100; try{ return "$"+n.toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:2}); }catch(e){ return "$"+n; } }
 
 function _empleadosView(){
   var em=state.empMsg||"";
@@ -4002,16 +4015,36 @@ function _empleadosView(){
     rows=REMPLE.map(function(u){
       var off=u.activo===false;
       var ini=(((u.nombre||u.email||"?")+"").trim()[0]||"?").toUpperCase();
+      var st=_empSt(u);
+      var mini="<span>Leads <b style='color:var(--pw-carbon)'>"+st.leads+"</b></span>"+
+        "<span>Contactos <b style='color:var(--pw-carbon)'>"+st.contactos+"</b></span>"+
+        "<span>Demos <b style='color:var(--pw-carbon)'>"+st.demos+"</b></span>"+
+        "<span>Conv. <b style='color:var(--pw-bosque)'>"+st.conversiones+"</b></span>"+
+        "<span>Comisión <b style='color:var(--pw-carbon)'>"+_money(st.comisionNum)+"</b></span>";
       return "<div data-act='emple-view:"+esc(u.id)+"' style='display:grid;grid-template-columns:38px 1fr auto auto;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
         "<div style='width:34px;height:34px;border-radius:50%;background:var(--pw-bosque);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700'>"+esc(ini)+"</div>"+
-        "<div><div style='font-weight:600;color:var(--pw-carbon);font-size:14px'>"+esc(u.nombre||"—")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(u.email||"")+"</div></div>"+
+        "<div style='min-width:0'><div style='font-weight:600;color:var(--pw-carbon);font-size:14px'>"+esc(u.nombre||"—")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(u.email||"")+"</div>"+
+          "<div style='display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px;font-size:11.5px;color:var(--pw-text-soft)'>"+mini+"</div></div>"+
         "<span class='cp-bill-status' style='"+(off?"background:var(--pw-niebla-2);color:var(--pw-text-soft)":"background:var(--pw-success-bg);color:var(--pw-bosque)")+"'>"+(off?"Inactivo":"Activo")+"</span>"+
         "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 13px;font-size:12px' data-act='emple-view:"+esc(u.id)+"'>Ver ficha</button>"+
       "</div>";
     }).join("");
   }
+  // Totales del equipo comercial (suma de los números cargados a mano)
+  var totalsCard="";
+  if(REAL && REMPLE && REMPLE.length){
+    var T={leads:0,contactos:0,demos:0,conversiones:0,comision:0};
+    REMPLE.forEach(function(u){ var s=_empSt(u); T.leads+=s.leads; T.contactos+=s.contactos; T.demos+=s.demos; T.conversiones+=s.conversiones; T.comision+=s.comisionNum; });
+    var tasa=T.leads>0?Math.round(T.conversiones/T.leads*100):0;
+    var cell=function(v,k){ return "<div style='flex:1;min-width:88px'><div style='font-size:22px;font-weight:800;color:var(--pw-bosque);line-height:1'>"+v+"</div><div style='font-size:11px;color:var(--pw-text-soft);margin-top:4px;text-transform:uppercase;letter-spacing:.4px'>"+k+"</div></div>"; };
+    totalsCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Equipo comercial<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>"+REMPLE.length+" "+(REMPLE.length===1?"persona":"personas")+"</span></div>"+
+      "<div class='cp-card-pad' style='display:flex;flex-wrap:wrap;gap:16px'>"+
+        cell(T.leads,"Leads")+cell(T.contactos,"Contactos")+cell(T.demos,"Demos")+cell(T.conversiones,"Convirtieron")+cell(tasa+"%","Tasa conv.")+cell(_money(T.comision),"Comisión")+
+      "</div></div>";
+  }
   var listCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Empleados<span class='dot'>.</span></h3></div><div>"+rows+"</div></div>";
-  return addBox + listCard;
+  return addBox + totalsCard + listCard;
 }
 
 function _empleadoDetailCard(){
@@ -4022,6 +4055,24 @@ function _empleadoDetailCard(){
   var off=c.activo===false;
   var rowD=function(l,v){ return "<div style='display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--pw-border)'><span style='font-size:13px;color:var(--pw-text-soft)'>"+esc(l)+"</span><span style='font-size:13px;color:var(--pw-carbon);font-weight:600;text-align:right'>"+esc(v)+"</span></div>"; };
   var pend = cg.pendiente_activacion ? " · pendiente de activar" : "";
+  var st=_empSt(c);
+  var stField=function(id,lbl,val,ph){ return "<div style='flex:1;min-width:96px'>"+
+      "<label style='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-soft);display:block;margin-bottom:4px'>"+esc(lbl)+"</label>"+
+      "<input id='"+id+"' class='cp-form-input' inputmode='decimal' style='width:100%' value='"+esc(val)+"' placeholder='"+esc(ph||"0")+"'></div>"; };
+  var statsBlock="<div style='margin-top:20px;border-top:1px solid var(--pw-border);padding-top:16px'>"+
+    "<label style='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-soft);display:block;margin-bottom:5px'>Números del comercial</label>"+
+    "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5;margin-bottom:12px'>Cargá a mano lo que llevó: leads generados, contactos hechos, demos dadas, cuántos convirtieron y su comisión (USD). Todavía no se atribuyen solos, así que estos números son los que registres acá.</div>"+
+    "<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"+
+      stField("emp-st-leads","Leads",st.leads)+
+      stField("emp-st-contactos","Contactos",st.contactos)+
+      stField("emp-st-demos","Demos",st.demos)+
+      stField("emp-st-conv","Convirtieron",st.conversiones)+
+      stField("emp-st-comision","Comisión $",st.comision,"0")+
+    "</div>"+
+    "<div style='display:flex;align-items:center;gap:14px;flex-wrap:wrap'>"+
+      "<button class='cp-btn cp-btn-primary' data-act='emple-stats-save' data-id='"+esc(c.id)+"'>Guardar números</button>"+
+      "<span style='font-size:12.5px;color:var(--pw-text-soft)'>Tasa de conversión: <b style='color:var(--pw-bosque)'>"+st.tasa+"%</b> · Comisión: <b style='color:var(--pw-carbon)'>"+_money(st.comisionNum)+"</b></span>"+
+    "</div></div>";
   return "<div class='cp-card'>"+
     "<div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(c.nombre||c.email||"Empleado")+"<span class='dot'>.</span></h3>"+
       "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='emple-back'>← Volver</button></div>"+
@@ -4041,6 +4092,7 @@ function _empleadoDetailCard(){
         "<button class='cp-btn cp-btn-ghost' style='"+(off?"":"color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='emple-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>"+
         "<a class='cp-btn cp-btn-ghost' href='empleado.html?as="+esc(c.id)+"' target='_blank' rel='noopener' style='text-decoration:none'>Abrir su panel ↗</a>"+
       "</div>"+
+      statsBlock+
     "</div></div>";
 }
 function _coachDetailCard(){
@@ -5515,6 +5567,21 @@ document.addEventListener("click", function(ev){
       if(REMPLE){ REMPLE.forEach(function(u){ if(String(u.id)===String(esid)) u.nombre=enombre; }); }
       toast("Guardado ✓"); render();
     }).catch(function(){ alert("No se pudo guardar."); });
+    return;
+  }
+  if(act==="emple-stats-save"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var ssid=el.getAttribute("data-id"); if(!ssid) return;
+    var su=(REMPLE||[]).filter(function(u){return String(u.id)===String(ssid);})[0]; if(!su) return;
+    var toInt=function(x){ x=parseInt((""+(_val(x)||"")).replace(/[^0-9\-]/g,""),10); return isNaN(x)?0:Math.max(0,x); };
+    var comRaw=(""+(_val("emp-st-comision")||"")).replace(/[^0-9.\-]/g,"");
+    var comNum=parseFloat(comRaw); if(isNaN(comNum)) comNum=0;
+    var newStats={ leads:toInt("emp-st-leads"), contactos:toInt("emp-st-contactos"), demos:toInt("emp-st-demos"), conversiones:toInt("emp-st-conv"), comision:comNum };
+    var newCfg={}; var oldCfg=su.configuracion||{}; for(var k in oldCfg){ if(Object.prototype.hasOwnProperty.call(oldCfg,k)) newCfg[k]=oldCfg[k]; }
+    newCfg.stats=newStats;
+    _sbw("usuarios?id=eq."+encodeURIComponent(ssid),"PATCH",{configuracion:newCfg}).then(function(r){ if(!r.ok) throw 0;
+      su.configuracion=newCfg; toast("Números guardados ✓"); render();
+    }).catch(function(){ alert("No se pudieron guardar los números."); });
     return;
   }
   if(act==="emple-resend"){
