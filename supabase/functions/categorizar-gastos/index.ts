@@ -4,7 +4,8 @@
 // devuelve un JSON. Lo usa el panel del coach (nicho financiero).
 //
 // Body: { pdf_base64: "<base64 del PDF (con o sin prefijo data:)>" }
-// Respuesta: { total, moneda, categorias:[{nombre,monto}], resumen }
+// Respuesta: { total, moneda, meses, categorias:[{nombre,monto}],
+//             previsibles:[{nombre,monto,freq,mes,fuente}], resumen }
 //
 // Secret requerido (Supabase → Edge Functions → Secrets):
 //   ANTHROPIC_API_KEY — API key de Anthropic (sk-ant-...)
@@ -38,11 +39,19 @@ REGLAS DE PRECISIÓN:
 - Ignorá ingresos, sueldos, abonos, devoluciones y transferencias RECIBIDAS. Una transferencia ENVIADA a ahorro/inversión propia SÍ es "Ahorro"; una transferencia enviada a otra persona, clasificála por su concepto si se entiende, si no "Otros".
 - Si un comercio es ambiguo, elegí la categoría más probable según el nombre; no lo mandes a "Otros" por las dudas.
 
+GASTOS PREVISIBLES (predicción):
+Además de clasificar, identificá los "gastos previsibles": pagos periódicos o que van a volver, para que el cliente los tenga anticipados y no lo agarren por sorpresa. Incluí:
+- Suscripciones y cuotas recurrentes que veas repetirse (streaming, gimnasio, software, seguros mensuales, membresías…).
+- Gastos periódicos anuales/trimestrales que aparezcan en el extracto (seguro del coche, ITV, IBI, impuesto de circulación, cuota de autónomos, IRPF trimestral, seguro de hogar…).
+- Los que puedas INFERIR con ALTA confianza del contexto del extracto: si ves combustible/parking/seguro de auto → el cliente tiene coche, sumá sus previsibles típicos (seguro anual ~400, ITV ~45, impuesto de circulación ~120). Si ves colegio/guardería → material escolar (~300/año) y extraescolares. NO inventes situaciones sin evidencia en el extracto.
+- Para cada previsible estimá el monto por ocurrencia con lo que veas (o un valor típico si lo inferís), la frecuencia y, si se puede, el mes probable.
+
 Devolvé ÚNICAMENTE un JSON válido, sin texto antes ni después, con esta forma exacta:
-{"moneda":"<EUR|USD|ARS|...>","meses":[{"mes":"YYYY-MM","total":<number>,"categorias":[{"nombre":"Vivienda","monto":<number>}, ...],"sin_clasificar":[{"desc":"<comercio/concepto corto>","monto":<number>}, ...]}, ...],"categorias":[{"nombre":"Vivienda","monto":<number>}, ...],"total":<number>,"resumen":"<1-2 frases con lo más relevante>"}
+{"moneda":"<EUR|USD|ARS|...>","meses":[{"mes":"YYYY-MM","total":<number>,"categorias":[{"nombre":"Vivienda","monto":<number>}, ...],"sin_clasificar":[{"desc":"<comercio/concepto corto>","monto":<number>}, ...]}, ...],"categorias":[{"nombre":"Vivienda","monto":<number>}, ...],"total":<number>,"previsibles":[{"nombre":"<gasto corto, ej: Seguro del coche>","monto":<number por ocurrencia>,"freq":"<mensual|trimestral|anual|2/año>","mes":"<MM o vacío>","fuente":"<detectado|inferido>"}, ...],"resumen":"<1-2 frases con lo más relevante>"}
 - "meses": un objeto por cada mes presente, del más antiguo al más reciente. Incluí solo categorías con monto > 0.
 - "sin_clasificar": SOLO los movimientos que mandaste a la categoría "Otros" de ese mes (los que no pudiste clasificar con confianza), cada uno con una descripción corta del comercio/concepto y su monto. La SUMA de "sin_clasificar" debe ser igual al monto de la categoría "Otros" de ese mes. Si "Otros" es 0, devolvé [] . Máximo 15 movimientos por mes (si hay más, agrupá los chicos en uno "Otros varios").
 - "categorias" y "total": el PROMEDIO MENSUAL (suma de todos los meses / cantidad de meses), para representar un mes típico.
+- "previsibles": lista de gastos previsibles detectados o inferidos (máximo 10, sin duplicar). Si no hay ninguno con evidencia, devolvé [].
 - Montos como número, sin símbolo ni separador de miles.
 - Si no podés leer el PDF devolvé {"error":"no_legible"}.`;
 
@@ -73,7 +82,7 @@ Deno.serve(async (req: Request) => {
       },
       body: JSON.stringify({
         model: CLAUDE_MODEL,
-        max_tokens: 1500,
+        max_tokens: 2200,
         system: SYSTEM,
         messages: [{
           role: "user",

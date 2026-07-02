@@ -207,7 +207,7 @@
         <p class="h-sub">Adelántate a los gastos que ya sabemos que vienen — así ninguno te agarra por sorpresa.</p>
 
         <div class="card"><div class="card-body">
-          <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.5;">A partir de tu perfil y de lo que tu coach cargó (patrimonio, deudas), te anticipamos los gastos que conviene tener previstos. Ajustá el importe o la frecuencia, y sumá los tuyos si falta alguno.</p>
+          <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.5;">A partir de tu perfil, de lo que tu coach cargó (patrimonio, deudas) y de <b>tu extracto leído por IA</b>, te anticipamos los gastos que conviene tener previstos. Ajustá el importe o la frecuencia, y sumá los tuyos si falta alguno.</p>
           <div id="prev-facts"></div>
         </div></div>
 
@@ -506,6 +506,26 @@ function _prevSync(){
   PREV._det=det;
   if(changed) _prevSave();
 }
+// La IA leyó el extracto (categorizar-gastos) y devolvió previsibles reales →
+// los sumamos (dedupe por nombre). src:'ia' los distingue de los del perfil.
+function _prevIngestIA(arr){
+  if(!Array.isArray(arr)||!arr.length) return 0;
+  if(!PREV||typeof PREV!=='object') PREV={seen:[],items:[]};
+  if(!Array.isArray(PREV.items)) PREV.items=[];
+  var freqs={mensual:'mensual',trimestral:'trimestral',anual:'anual','2/año':'2/año','2/ano':'2/año'};
+  var added=0;
+  arr.forEach(function(p){
+    if(!p) return;
+    var nm=(''+(p.nombre||'')).trim(); if(!nm) return;
+    var low=nm.toLowerCase();
+    if(PREV.items.some(function(it){return (''+(it.n||'')).trim().toLowerCase()===low;})) return;
+    var f=freqs[(''+(p.freq||p.frecuencia||'anual')).toLowerCase()]||'anual';
+    PREV.items.push({n:nm, f:f, m:parseFloat(p.monto)||0, on:true, src:'ia', mes:(''+(p.mes||'')).slice(0,2)});
+    added++;
+  });
+  if(added){ _prevSave(); try{ renderPrev(); }catch(e){} }
+  return added;
+}
 window.prevSetAmount=function(i,v){ if(PREV.items[i]){ PREV.items[i].m=(''+v).replace(/[^0-9.]/g,''); _prevSave(); renderPrev(); } };
 window.prevSetFreq=function(i,f){ if(PREV.items[i]){ PREV.items[i].f=f; _prevSave(); renderPrev(); } };
 window.prevToggleOn=function(i){ if(PREV.items[i]){ PREV.items[i].on=!PREV.items[i].on; _prevSave(); renderPrev(); } };
@@ -520,12 +540,14 @@ function renderPrev(){
   var det = PREV._det || [];
   var fc=document.getElementById('prev-facts');
   if(fc){
-    fc.innerHTML = det.length
+    var head = det.length
       ? '<div style="font-size:12px;color:var(--muted);margin-bottom:9px;">Según tu perfil, tuvimos en cuenta:</div>'
         + det.map(function(d){ var f=PREV_FACTS[d.k]||{ic:'•',lbl:d.k};
             return '<span title="Porque '+esc(d.why)+'" style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:100px;border:1.5px solid var(--rose);background:var(--rose-light,#eef5f0);color:var(--rose);font-size:13px;font-weight:600;margin:0 8px 8px 0;">'+f.ic+' '+esc(f.lbl)+'</span>';
           }).join('')
-      : '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;">Todavía no tenemos datos suficientes para anticipar tus gastos. Cuando completes tu perfil y tu coach cargue tu patrimonio y tus deudas, van a aparecer acá.</div>';
+      : '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;">Todavía no tenemos datos suficientes para anticipar tus gastos. Cuando completes tu perfil, tu coach cargue tu patrimonio/deudas o subas tu extracto, van a aparecer acá.</div>';
+    var cta = '<div style="font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.55;">🔎 <b>La IA lee tu extracto</b> y detecta tus previsibles reales (seguros, cuotas, suscripciones). <button onclick="go(\'gastos\')" style="background:none;border:none;color:var(--rose);font-weight:600;cursor:pointer;padding:0;font-size:11.5px;">Subir extracto en Mis gastos →</button></div>';
+    fc.innerHTML = head + cta;
   }
   var lst=document.getElementById('prev-list');
   if(lst){
@@ -535,7 +557,7 @@ function renderPrev(){
         var opts=['anual','mensual','trimestral','2/año'].map(function(fr){return '<option value="'+fr+'"'+(it.f===fr?' selected':'')+'>'+_PREV_FLBL[fr]+'</option>';}).join('');
         return '<div class="card" style="margin-bottom:10px;opacity:'+(it.on?'1':'.5')+';"><div class="card-body" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
           +'<button onclick="prevToggleOn('+i+')" title="Incluir / excluir" style="width:22px;height:22px;border-radius:6px;border:1.5px solid var(--rose);background:'+(it.on?'var(--rose)':'#fff')+';color:#fff;cursor:pointer;flex-shrink:0;font-size:12px;line-height:1;">'+(it.on?'✓':'')+'</button>'
-          +'<div style="flex:1;min-width:130px;"><div style="font-weight:600;font-size:13.5px;color:var(--text);">'+esc(it.n)+'</div>'
+          +'<div style="flex:1;min-width:130px;"><div style="font-weight:600;font-size:13.5px;color:var(--text);">'+esc(it.n)+(it.src==='ia'?' <span title="Detectado por la IA en tu extracto" style="font-size:9.5px;font-weight:700;color:var(--rose);background:var(--rose-light,#eef5f0);border-radius:100px;padding:2px 7px;vertical-align:middle;white-space:nowrap;">🔎 de tu extracto</span>':'')+'</div>'
           +'<select onchange="prevSetFreq('+i+',this.value)" style="border:none;background:transparent;color:var(--muted);font-size:11.5px;cursor:pointer;font-family:inherit;padding:0;">'+opts+'</select></div>'
           +'<div style="display:flex;align-items:center;gap:2px;"><span style="color:var(--muted);font-size:13px;">€</span><input value="'+esc(it.m)+'" onchange="prevSetAmount('+i+',this.value)" inputmode="decimal" style="width:66px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;text-align:right;"></div>'
           +'<button onclick="prevDel('+i+')" title="Quitar" style="border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:16px;flex-shrink:0;">✕</button>'
@@ -1195,7 +1217,9 @@ document.addEventListener('change',function(ev){
         var merged=_gastosMerge(_gastosLoad(),nuevos);
         _gastosSave(merged);
         renderGastos();
-        if(st)st.textContent='Listo ✓ — '+nuevos.length+' '+(nuevos.length===1?'mes agregado':'meses agregados');
+        // La IA también detecta gastos previsibles del extracto → alimentan Previsibles
+        var _nia=0; try{ _nia=_prevIngestIA(j.previsibles); }catch(e){}
+        if(st)st.textContent='Listo ✓ — '+nuevos.length+' '+(nuevos.length===1?'mes agregado':'meses agregados')+(_nia?' · '+_nia+' previsible'+(_nia===1?'':'s')+' detectado'+(_nia===1?'':'s')+' 🔎':'');
       })
       .catch(function(){ if(st)st.textContent='Error de conexión. Prueba de nuevo en un rato.'; });
   };
