@@ -204,14 +204,32 @@
     if(pick){ container.querySelector('input[data-file="'+pick.dataset.pick+'"]').click(); }
   });
 
+  // Recorta a cuadrado centrado para que la foto NO se deforme (Gmail ignora object-fit)
+  function squareCrop(dataUrl, size){
+    return new Promise(function(res){
+      var img = new Image();
+      img.onload = function(){
+        var s = Math.min(img.width, img.height);
+        var sx = (img.width - s) / 2, sy = (img.height - s) / 2;
+        var c = document.createElement("canvas"); c.width = size; c.height = size;
+        c.getContext("2d").drawImage(img, sx, sy, s, s, 0, 0, size, size);
+        try{ res(c.toDataURL("image/jpeg", 0.92)); }catch(e){ res(dataUrl); }
+      };
+      img.onerror = function(){ res(dataUrl); };
+      img.src = dataUrl;
+    });
+  }
+
   document.addEventListener("change", function(e){
     var inp = e.target.closest("[data-file]");
     if(!inp || !inp.files || !inp.files[0]) return;
     var p = people.find(function(x){ return x.key === inp.dataset.file; });
     var reader = new FileReader();
     reader.onload = function(){
-      custom[p.key] = reader.result; // data:image/...;base64,...
-      renderPreview(p);
+      squareCrop(reader.result, 240).then(function(sq){
+        custom[p.key] = sq; // ya es cuadrada -> el circulo sale perfecto en cualquier cliente
+        renderPreview(p);
+      });
     };
     reader.readAsDataURL(inp.files[0]);
   });
