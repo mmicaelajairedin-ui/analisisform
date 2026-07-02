@@ -1,0 +1,63 @@
+name: "🚀 Coach Lifecycle — empujones de arranque"
+
+# Dispara la edge function coach-lifecycle todos los días a las 9:00 UTC.
+# La function recorre los coaches, calcula en qué momento de su arranque
+# están y a cada uno le manda el empujón que le corresponde (primer cliente,
+# primer informe IA, felicitación, reactivación). Si un coach PAGANTE está
+# por caerse, le avisa a Micaela. Anti-spam vía la tabla coach_nudges.
+#
+# Secrets requeridos en el repo (ya existen para weekly-analytics / notif-coach):
+#   SUPABASE_PROJECT_URL    https://<proyecto>.supabase.co
+#   AGENT_TRIGGER_SECRET    mismo valor que el secret de Supabase
+#
+# Setup (una vez): supabase functions deploy coach-lifecycle --no-verify-jwt
+# Trigger manual: Actions → Coach Lifecycle → Run workflow
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trigger-lifecycle:
+    name: "Disparar empujones a coaches"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "Setup secrets (sanitizar)"
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          AGENT_TRIGGER_SECRET: ${{ secrets.AGENT_TRIGGER_SECRET }}
+        run: |
+          URL=$(printf '%s' "$SUPABASE_PROJECT_URL" | tr -d '[:space:]' | sed 's:/*$::')
+          SECRET=$(printf '%s' "$AGENT_TRIGGER_SECRET" | tr -d '[:space:]')
+          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
+            echo "::error::Faltan secrets SUPABASE_PROJECT_URL o AGENT_TRIGGER_SECRET"
+            exit 1
+          fi
+          echo "URL chars: ${#URL} | Secret chars: ${#SECRET}"
+          echo "URL=$URL" >> $GITHUB_ENV
+          echo "SECRET=$SECRET" >> $GITHUB_ENV
+
+      - name: "🚀 Enviar empujones"
+        run: |
+          response=$(curl -sS -w "\n%{http_code}" -X POST \
+            "${URL}/functions/v1/coach-lifecycle" \
+            -H "X-Trigger-Secret: ${SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 200) || {
+              echo "::error::curl coach-lifecycle falló con exit code $?"
+              exit 1
+            }
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "HTTP $status"
+          echo "$body"
+          if [ "$status" != "200" ]; then
+            echo "::error::coach-lifecycle devolvió status $status"
+            exit 1
+          fi
