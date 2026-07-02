@@ -31,7 +31,7 @@
       +'<div style="font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#52B788;">Hola '+esc(nm)+'</div>'
       +'<div style="font-family:Georgia,serif;font-size:24px;line-height:1.25;color:#1B2E26;font-weight:bold;margin:8px 0 16px;">¿Tu marca… o una plantilla genérica?</div>'
       +'<div style="font-size:15px;line-height:1.65;color:#42514A;">Cuando le envías un CV o un plan a tu cliente, ¿lleva <b>tu logo y tu color</b>… o el de una web cualquiera?<br><br>Creamos <b>Pathway</b> para eso: tus clientes entran a un portal con tu marca y la IA hace el trabajo pesado.</div>'
-      +'<div style="height:22px;line-height:22px;font-size:0;">&nbsp;</div>'+BTN(DEMO,"Verlo en 11 minutos →")+'</td></tr>'); } },
+      +'<div style="height:22px;line-height:22px;font-size:0;">&nbsp;</div>'+BTN(DEMO,"Agendar demo (11 min) →")+'</td></tr>'); } },
 
     { n:"Invitación a demo", nicho:"general", s:"11 minutos y te muestro tu plataforma, {Nombre}", build:function(nm){ return WRAP(
       '<tr><td bgcolor="#2D6A4F" style="padding:40px 34px;text-align:center;font-family:Arial,Helvetica,sans-serif;">'
@@ -53,7 +53,7 @@
     { n:"Testimonio", nicho:"general", s:"de un Excel caótico a portal propio en una tarde", build:function(nm){ return WRAP(HEADER
       +'<tr><td style="padding:30px 32px 10px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#42514A;">Hola '+esc(nm)+', una coach que empezó como quizá estés vos hoy me dijo esto tras una semana:</td></tr>'
       +'<tr><td style="padding:6px 32px 8px;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td width="5" bgcolor="#52B788"></td><td style="padding:18px 22px;background:#F4F8F3;font-family:Georgia,serif;font-style:italic;font-size:18px;line-height:1.5;color:#26473A;">“Pasé de un Excel caótico a un portal con mi marca en una tarde.”</td></tr></table></td></tr>'
-      +'<tr><td style="padding:20px 32px 32px;font-family:Arial,Helvetica,sans-serif;">'+BTN(DEMO,"Ver la demo (11 min) →")+'</td></tr>'); } },
+      +'<tr><td style="padding:20px 32px 32px;font-family:Arial,Helvetica,sans-serif;">'+BTN(DEMO,"Agendar demo (11 min) →")+'</td></tr>'); } },
 
     { n:"Prueba de 14 días", nicho:"general", s:"tu prueba de 14 días está lista, {Nombre}", build:function(nm){ return WRAP(HEADER
       +'<tr><td style="padding:30px 32px 6px;font-family:Arial,Helvetica,sans-serif;"><div style="font-family:Georgia,serif;font-size:23px;color:#1B2E26;font-weight:bold;">Tu prueba de 14 días está lista 🎉</div><div style="font-size:15px;color:#42514A;line-height:1.6;margin-top:8px;">Hola '+esc(nm)+', activarla te lleva 3 pasos:</div></td></tr>'
