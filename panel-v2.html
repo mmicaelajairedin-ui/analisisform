@@ -1217,6 +1217,8 @@ var state = {
   estSel: null,
   coachSel: null,
   coachMsg: "",
+  empleSel: null,
+  empMsg: "",
   msgDraft: "",
   msgAdminDraft: "",
   aiThread: null,  // coach_id del hilo abierto dentro de la cabra (admin)
@@ -3952,18 +3954,84 @@ function _sendCoachAccessEmail(email, nombre, isNew){
   }
   return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:subject,html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){});
 }
-// Email de alta para un EMPLEADO (equipo comercial). No pasa por registro.html
-// (eso es para coaches): entra por login con Google o con contraseña que le dé el admin.
+// Email de alta para un EMPLEADO (equipo comercial). NO pasa por registro.html
+// (eso convierte en coach): usa su página de activación propia, que fija la
+// contraseña sin cambiar el rol. También puede entrar con Google.
 function _sendEmpleadoEmail(email, nombre){
   var fn=(""+(nombre||"")).split(" ")[0]||"";
   var saludo = fn ? ("Hola "+esc(fn)+",") : "Hola,";
-  var loginUrl="https://pathwaycareercoach.com/login.html";
+  var actUrl="https://pathwaycareercoach.com/activar-empleado.html?email="+encodeURIComponent(email);
   var subject="Tu acceso de empleado a Pathway";
   var html="<p style='font-size:15px'>"+saludo+"</p>"+
     "<p style='font-size:15px;line-height:1.6'>Te creamos un acceso de <b>empleado</b> en Pathway. Vas a tener un panel con las plantillas de email, tu firma corporativa y el chat con Micaela.</p>"+
-    "<p style='margin:22px 0'><a href='"+loginUrl+"' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a mi panel →</a></p>"+
-    "<p style='font-size:14px;line-height:1.6'>Entrá con <b>"+esc(email)+"</b> usando el botón <b>“Continuar con Google”</b>. Si tu email no es de Google, pedile la contraseña a tu administrador.</p>";
+    "<p style='margin:22px 0'><a href='"+actUrl+"' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Activar mi cuenta →</a></p>"+
+    "<p style='font-size:14px;line-height:1.6'>Elegís tu contraseña o entrás con <b>Continuar con Google</b>. Usá este mismo email ("+esc(email)+").</p>";
   return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:subject,html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){});
+}
+
+// ── Admin: sección Empleados ────────────────────────────────
+var REMPLE=null; // lista de empleados (rol=empleado)
+function reloadEmpleados(){ return _sb("usuarios?rol=eq.empleado&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc").then(function(rows){ REMPLE=rows||[]; render(); }); }
+
+function _empleadosView(){
+  var em=state.empMsg||"";
+  var emCol=em.indexOf("ok:")===0?"var(--pw-bosque)":em.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
+  var addBox = REAL ? (
+    "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Agregar empleado<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Email templates · Mi firma · Chat</span></div>"+
+      "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+        "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5'>Un <strong>empleado</strong> (equipo comercial) no maneja clientes: entra a un panel con las plantillas de email, su firma y el chat contigo. Le llega un mail para activar su cuenta (contraseña o Google).</div>"+
+        "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+          "<input id='emp-nombre' class='cp-form-input' style='flex:1;min-width:150px' placeholder='nombre del empleado *'>"+
+          "<input id='emp-email' class='cp-form-input' style='flex:2;min-width:220px' placeholder='email del empleado *'>"+
+          "<button class='cp-btn cp-btn-primary' data-act='empleado-crear'>"+svg(IC.plus,12)+" Agregar empleado</button>"+
+        "</div>"+
+        (em ? "<div style='font-size:12px;font-weight:600;color:"+emCol+"'>"+esc(em.replace(/^(ok|err|…):/,""))+"</div>" : "")+
+      "</div></div>"
+  ) : "";
+  var rows="";
+  if(!REAL){ rows="<div style='padding:22px 16px;color:var(--pw-text-soft);font-size:13px'>La lista aparece con el login real de admin.</div>"; }
+  else if(!REMPLE){ rows="<div style='padding:22px 16px;color:var(--pw-text-soft);font-size:13px'>Cargando…</div>"; }
+  else if(!REMPLE.length){ rows="<div style='padding:22px 16px;color:var(--pw-text-soft);font-size:13px'>Todavía no agregaste empleados. Usá el formulario de arriba.</div>"; }
+  else {
+    rows=REMPLE.map(function(u){
+      var off=u.activo===false;
+      var ini=(((u.nombre||u.email||"?")+"").trim()[0]||"?").toUpperCase();
+      return "<div data-act='emple-view:"+esc(u.id)+"' style='display:grid;grid-template-columns:38px 1fr auto auto;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
+        "<div style='width:34px;height:34px;border-radius:50%;background:var(--pw-bosque);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700'>"+esc(ini)+"</div>"+
+        "<div><div style='font-weight:600;color:var(--pw-carbon);font-size:14px'>"+esc(u.nombre||"—")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(u.email||"")+"</div></div>"+
+        "<span class='cp-bill-status' style='"+(off?"background:var(--pw-niebla-2);color:var(--pw-text-soft)":"background:var(--pw-success-bg);color:var(--pw-bosque)")+"'>"+(off?"Inactivo":"Activo")+"</span>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 13px;font-size:12px' data-act='emple-view:"+esc(u.id)+"'>Ver ficha</button>"+
+      "</div>";
+    }).join("");
+  }
+  var listCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Empleados<span class='dot'>.</span></h3></div><div>"+rows+"</div></div>";
+  return addBox + listCard;
+}
+
+function _empleadoDetailCard(){
+  var c=(REMPLE||[]).filter(function(u){return String(u.id)===String(state.empleSel);})[0];
+  if(!c) return "<div class='cp-card'><div class='cp-card-pad'><button class='cp-btn cp-btn-ghost' data-act='emple-back'>← Volver</button><p style='margin-top:14px;color:var(--pw-danger)'>Empleado no encontrado.</p></div></div>";
+  var cg=c.configuracion||{};
+  function fdate(s){ if(!s) return "—"; try{ return new Date(s).toLocaleDateString("es-ES"); }catch(e){ return "—"; } }
+  var off=c.activo===false;
+  var rowD=function(l,v){ return "<div style='display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--pw-border)'><span style='font-size:13px;color:var(--pw-text-soft)'>"+esc(l)+"</span><span style='font-size:13px;color:var(--pw-carbon);font-weight:600;text-align:right'>"+esc(v)+"</span></div>"; };
+  var pend = cg.pendiente_activacion ? " · pendiente de activar" : "";
+  return "<div class='cp-card'>"+
+    "<div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(c.nombre||c.email||"Empleado")+"<span class='dot'>.</span></h3>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='emple-back'>← Volver</button></div>"+
+    "<div class='cp-card-pad'>"+
+      rowD("Email", c.email||"—")+
+      rowD("Rol", "empleado"+pend)+
+      rowD("Estado", off?"Inactivo":"Activo")+
+      rowD("Alta", fdate(c.created_at))+
+      rowD("Creado por", cg.creado_por||"—")+
+      "<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:14px'>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='emple-resend' data-id='"+esc(c.id)+"'>Reenviar acceso</button>"+
+        "<button class='cp-btn cp-btn-ghost' style='"+(off?"":"color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='emple-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>"+
+        "<a class='cp-btn cp-btn-ghost' href='empleado.html' target='_blank' rel='noopener' style='text-decoration:none'>Abrir su panel ↗</a>"+
+      "</div>"+
+    "</div></div>";
 }
 function _coachDetailCard(){
   var c=(RCOACHES||[]).filter(function(u){return String(u.id)===String(state.coachSel);})[0];
@@ -4428,12 +4496,12 @@ function viewAdmin(){
         leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
   }
 
-  var tabs = [["coaches","Coaches"],["ranking","Ranking"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"]];
+  var tabs = [["coaches","Coaches"],["empleados","Empleados"],["ranking","Ranking"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"]];
   var tabBar = "<div class='cp-filters'>"+tabs.map(function(t){
     return "<button class='cp-chip "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'>"+t[1]+"</button>";
   }).join("")+"</div>";
   // Menu lateral del admin (mismo formato que Configuracion). Mismos data-act.
-  var _admIcon={resumen:'📊',coaches:'🎓',ranking:'🏆',contactos:'📥',cvx:'📄',resenas:'⭐',pagos:'💳'};
+  var _admIcon={resumen:'📊',coaches:'🎓',empleados:'🧑‍💼',ranking:'🏆',contactos:'📥',cvx:'📄',resenas:'⭐',pagos:'💳'};
   var adminMenu = "<nav class='cp-cfg-nav'>"+tabs.map(function(t){
     return "<button class='cp-cfg-nav-item "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'><span class='cp-emo'>"+(_admIcon[t[0]]||'•')+"</span><span>"+t[1]+"</span></button>";
   }).join("")+"</nav>";
@@ -4447,21 +4515,6 @@ function viewAdmin(){
     } else {
       var cm=state.coachMsg||"";
       var cmCol=cm.indexOf("ok:")===0?"var(--pw-bosque)":cm.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
-      var em=state.empMsg||"";
-      var emCol=em.indexOf("ok:")===0?"var(--pw-bosque)":em.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
-      var empBox = REAL ? (
-        "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Crear perfil de empleado<span class='dot'>.</span></h3>"+
-          "<span class='cp-eyebrow'>Email templates · Mi firma · Chat</span></div>"+
-          "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
-            "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5'>Un <strong>empleado</strong> (equipo comercial) no maneja clientes: entra a un panel con las plantillas de email, su firma y el chat contigo. Le llega un mail para entrar.</div>"+
-            "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
-              "<input id='emp-email' class='cp-form-input' style='flex:2;min-width:220px' placeholder='email del empleado *'>"+
-              "<input id='emp-nombre' class='cp-form-input' style='flex:1;min-width:150px' placeholder='nombre del empleado *'>"+
-              "<button class='cp-btn cp-btn-primary' data-act='empleado-crear'>"+svg(IC.plus,12)+" Crear empleado</button>"+
-            "</div>"+
-            (em ? "<div style='font-size:12px;font-weight:600;color:"+emCol+"'>"+esc(em.replace(/^(ok|err|…):/,""))+"</div>" : "")+
-          "</div></div>"
-      ) : "";
       var accBox = REAL ? (
         "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Dar acceso a un coach<span class='dot'>.</span></h3>"+
           "<span class='cp-eyebrow'>Suma días de acceso · fuera de Stripe</span></div>"+
@@ -4576,8 +4629,10 @@ function viewAdmin(){
       var _list = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<input class='cp-form-input' style='max-width:230px;height:34px' placeholder='Buscar coach…' oninput='cpCoachFilter(this.value)'></div>"+
         "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div></div>";
-      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) : (accBox + empBox + _list));
+      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) : (accBox + _list));
     }
+  } else if(state.adminTab==="empleados"){
+    body = (REAL && state.empleSel) ? _empleadoDetailCard() : _empleadosView();
   } else if(state.adminTab==="contactos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Popup de pricing<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Funnel</span></div><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
@@ -5198,7 +5253,7 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
-  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; render(); return; }
+  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } render(); return; }
   if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); return; }
   if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
   if(act.indexOf("estsel:")===0){ var _es=parseInt(act.slice(7),10); state.estSel=(state.estSel===_es?null:_es); render(); return; }
@@ -5435,8 +5490,28 @@ document.addEventListener("click", function(ev){
         if(any.rol==="empleado"){ setE("Ese email ya es un empleado.","err"); return; }
         setE('Ese email ya lo usa un usuario "'+(any.rol||"?")+'".',"err"); return;
       }
-      return _sbw("usuarios","POST",{email:eEmail,nombre:eNombre,rol:"empleado",activo:true,configuracion:{puesto:"comercial",creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){ if(!r.ok) throw 0; toast("Empleado creado ✓"); _sendEmpleadoEmail(eEmail, eNombre); setE("✓ Empleado creado. Le enviamos un email para entrar a su panel.","ok"); });
+      return _sbw("usuarios","POST",{email:eEmail,nombre:eNombre,rol:"empleado",activo:true,configuracion:{puesto:"comercial",creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){ if(!r.ok) throw 0; toast("Empleado creado ✓"); _sendEmpleadoEmail(eEmail, eNombre); setE("✓ Empleado creado. Le enviamos un email para activar su cuenta.","ok"); reloadEmpleados(); });
     }).catch(function(){ setE("Error de conexión, o el email ya existe.","err"); });
+    return;
+  }
+  if(act.indexOf("emple-view:")===0){ state.empleSel=act.slice(11); render(); window.scrollTo(0,0); return; }
+  if(act==="emple-back"){ state.empleSel=null; render(); return; }
+  if(act==="emple-resend"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var erid=el.getAttribute("data-id"); if(!erid) return;
+    var eu=(REMPLE||[]).filter(function(u){return String(u.id)===String(erid);})[0]; if(!eu) return;
+    _sendEmpleadoEmail(eu.email, eu.nombre||""); toast("Email reenviado ✓");
+    return;
+  }
+  if(act==="emple-toggle"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var etid=el.getAttribute("data-id"); if(!etid) return;
+    var eOn=el.getAttribute("data-on")==="1";
+    if(!confirm(eOn?"¿Reactivar el acceso de este empleado?":"¿Desactivar a este empleado? Pierde acceso a su panel hasta que lo reactives.")) return;
+    _sbw("usuarios?id=eq."+encodeURIComponent(etid),"PATCH",{activo:eOn}).then(function(r){ if(!r.ok) throw 0;
+      if(REMPLE){ REMPLE.forEach(function(u){ if(String(u.id)===String(etid)) u.activo=eOn; }); }
+      toast(eOn?"Empleado activado ✓":"Empleado desactivado ✓"); render();
+    }).catch(function(){ alert("No se pudo cambiar el estado."); });
     return;
   }
   if(act==="coach-toggle"){
