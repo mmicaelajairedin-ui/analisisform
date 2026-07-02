@@ -67,6 +67,10 @@
   .lead-name{font-weight:600;color:var(--carbon);}
   .lead-sub{font-size:11.5px;color:var(--texto-suave);}
   .addinfo{font-size:11px;color:var(--bosque);font-weight:600;cursor:pointer;margin-top:3px;display:inline-block;}
+  .sentinfo{font-size:11px;color:var(--texto-suave);margin-top:3px;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--texto-suave);padding:10px 18px 0;}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .legend i{width:10px;height:10px;border-radius:3px;display:inline-block;}
   select.nicho{border:1.5px solid var(--borde);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:12.5px;background:#fff;}
 
   .chan{width:32px;height:32px;border-radius:9px;border:1px solid var(--borde);background:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:15px;margin-right:6px;cursor:pointer;}
@@ -156,6 +160,12 @@
             <span class="chip" data-f="finanzas" onclick="setFiltro('finanzas',this)">Finanzas</span>
           </div>
         </div>
+        <div class="legend">
+          <span><i style="background:#8A968F"></i> Nuevo</span>
+          <span><i style="background:#2F6FB0"></i> Contactado</span>
+          <span><i style="background:#C99A2E"></i> En demo</span>
+          <span><i style="background:#2D6A4F"></i> Alta (coach)</span>
+        </div>
         <div class="tbl-scroll">
           <table>
             <thead><tr><th>Lead</th><th>Nicho</th><th>Canales</th><th>Demo</th><th>Estado</th><th>Cerrar</th></tr></thead>
@@ -200,13 +210,16 @@
   var _emIdx = -1;
   var CALENDLY = "https://calendly.com/mmicaela-jairedin/pathway-demo";
   var filtro = "todos";
+  var DAY = 86400000;
   var leads = [
-    { name:"Laura Gómez", email:"laura.gomez@email.com", tel:"", ig:"", nicho:"sin", estado:"nuevo", demo:false, nota:"", open:false },
-    { name:"@fit.conmarcos", email:"", tel:"", ig:"fit.conmarcos", nicho:"sin", estado:"nuevo", demo:false, nota:"", open:false },
-    { name:"Diego Paz", email:"", tel:"+34 622 000 111", ig:"", nicho:"sin", estado:"nuevo", demo:false, nota:"", open:false },
-    { name:"coachmartina", email:"coachmartina@gmail.com", tel:"", ig:"coachmartina", nicho:"sin", estado:"nuevo", demo:false, nota:"", open:false },
-    { name:"Sofía Ruiz", email:"sofia.finanzas@email.com", tel:"", ig:"sofi.finanzas", nicho:"sin", estado:"nuevo", demo:false, nota:"", open:false }
+    { name:"Laura Gómez", email:"laura.gomez@email.com", tel:"", ig:"", nicho:"carrera", estado:"contactado", demo:false, nota:"", open:false, sentAt:Date.now()-4*DAY, sentTpl:"La pregunta incómoda" },
+    { name:"@fit.conmarcos", email:"", tel:"", ig:"fit.conmarcos", nicho:"fitness", estado:"demo", demo:true, nota:"", open:false, sentAt:Date.now()-2*DAY, sentTpl:"Invitación a demo" },
+    { name:"Diego Paz", email:"", tel:"+34 622 000 111", ig:"", nicho:"sin", estado:"nuevo", demo:false, nota:"", open:false, sentAt:0, sentTpl:"" },
+    { name:"coachmartina", email:"coachmartina@gmail.com", tel:"", ig:"coachmartina", nicho:"carrera", estado:"contactado", demo:false, nota:"", open:false, sentAt:Date.now()-1*DAY, sentTpl:"La pregunta incómoda" },
+    { name:"Sofía Ruiz", email:"sofia.finanzas@email.com", tel:"", ig:"sofi.finanzas", nicho:"finanzas", estado:"nuevo", demo:false, nota:"", open:false, sentAt:0, sentTpl:"" }
   ];
+  function timeAgo(ts){ if(!ts) return ""; var d=Date.now()-ts, h=Math.floor(d/3600000), dd=Math.floor(d/DAY); if(dd>=1) return "hace "+dd+(dd===1?" día":" días"); if(h>=1) return "hace "+h+" h"; return "recién"; }
+  var COLOR={nuevo:"#8A968F",contactado:"#2F6FB0",demo:"#C99A2E",alta:"#2D6A4F"};
 
   function esc(s){ return (""+s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
   function opt(v,l,cur){ return "<option value='"+v+"' "+(cur===v?"selected":"")+">"+l+"</option>"; }
@@ -240,8 +253,10 @@
     leads.forEach(function(l,i){
       if(filtro!=="todos" && l.nicho!==filtro) return;
       var tr=document.createElement("tr");
+      var enviado = l.sentAt ? "<div class='sentinfo'><span class='emo'>✉️</span> enviado "+timeAgo(l.sentAt)+(l.sentTpl?(" · "+esc(l.sentTpl)):"")+"</div>" : "";
       tr.innerHTML=
-        "<td><div class='lead-name'>"+esc(l.name)+"</div><div class='lead-sub'>"+esc(l.email||l.tel||(l.ig?("@"+l.ig):""))+"</div>"+
+        "<td style='border-left:4px solid "+COLOR[l.estado]+"'><div class='lead-name'>"+esc(l.name)+"</div><div class='lead-sub'>"+esc(l.email||l.tel||(l.ig?("@"+l.ig):""))+"</div>"+
+          enviado+
           "<span class='addinfo' onclick='toggleInfo("+i+")'>"+(l.open?"− ocultar":"＋ info")+"</span>"+(l.nota?"<div class='nota-mark'>nota guardada</div>":"")+"</td>"+
         "<td><select class='nicho' onchange='setN("+i+",this.value)'>"+opt("sin","Sin asignar",l.nicho)+opt("carrera","Carrera",l.nicho)+opt("fitness","Fitness",l.nicho)+opt("finanzas","Finanzas",l.nicho)+"</select></td>"+
         "<td>"+canales(l,i)+"</td>"+
@@ -300,10 +315,14 @@
   function closeEmail(){ document.getElementById("emailModal").classList.remove("show"); _emIdx=-1; }
   function enviarEmail(){
     if(_emIdx<0) return;
-    if(leads[_emIdx].estado==="nuevo") leads[_emIdx].estado="contactado";
+    var l=leads[_emIdx];
+    if(l.estado==="nuevo") l.estado="contactado";
+    // Queda registrado: a quién y cuándo (para no perder el hilo)
+    l.sentAt = Date.now();
+    var k=parseInt(document.getElementById("em-tpl").value,10);
+    l.sentTpl = (k>=0 && TPLS[k]) ? TPLS[k].n : "Email personalizado";
     closeEmail();
     render();
-    // (preview) en real: se envía por la plataforma y queda registrado como enviado
   }
 
   function kpis(){
