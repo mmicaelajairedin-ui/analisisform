@@ -25,6 +25,12 @@
   .note{background:rgba(233,196,106,.15);border:1px solid rgba(201,154,46,.32);border-radius:14px;padding:16px 20px;font-size:13.5px;color:#5c4a1e;margin-bottom:30px;}
   .note b{color:#7a5f16;}
   .note ul{margin:8px 0 0 18px;} .note li{margin-bottom:3px;}
+  .toolbar{position:sticky;top:0;z-index:20;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;background:#fff;border:1px solid var(--borde);border-radius:16px;padding:14px 18px;margin-bottom:24px;box-shadow:0 4px 18px rgba(20,55,38,.07);}
+  .toolbar .fld{display:flex;flex-direction:column;gap:4px;}
+  .toolbar label{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--texto-suave);}
+  .toolbar input{font-family:inherit;font-size:14px;padding:9px 12px;border:1.5px solid var(--borde);border-radius:9px;background:var(--niebla);color:var(--carbon);min-width:170px;}
+  .toolbar input:focus{outline:none;border-color:var(--sendero);box-shadow:0 0 0 3px rgba(82,183,136,.15);}
+  .toolbar .hint{font-size:12px;color:var(--bosque);background:rgba(82,183,136,.12);padding:8px 12px;border-radius:9px;font-weight:600;margin-left:auto;align-self:center;}
   .sec-title{font-family:'Fraunces',Georgia,serif;font-size:21px;font-weight:600;margin:34px 0 4px;display:flex;align-items:center;gap:10px;}
   .sec-sub{font-size:13px;color:var(--texto-suave);margin-bottom:18px;}
   .tpl{background:#fff;border:1px solid var(--borde);border-radius:18px;padding:0;margin-bottom:20px;box-shadow:0 2px 14px rgba(20,55,38,.05);overflow:hidden;}
@@ -59,7 +65,10 @@
       <h1>Plantillas de email — Comercial</h1>
       <p class="lead">Emails para escribir menos y cerrar más. Personales, cortos y con un solo objetivo cada uno. Cambiá lo <span class="ph">{{resaltado}}</span>, copiá y enviá.</p>
     </div>
-    <button class="btn ghost" onclick="window.print()">🖨️ Guardar como PDF</button>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;">
+      <button class="btn" id="dl">📤 Descargar para enviar</button>
+      <button class="btn ghost" onclick="window.print()">🖨️ Guardar como PDF</button>
+    </div>
   </div>
 
   <div class="note">
@@ -70,6 +79,12 @@
       <li><b>Un solo enlace</b> por email. Ya vienen con tu Calendly y WhatsApp cargados.</li>
       <li>Personalizá la primera línea con algo de esa persona (su web, su post, su nicho). 5 segundos que cambian todo.</li>
     </ul>
+  </div>
+
+  <div class="toolbar">
+    <div class="fld"><label>Tu nombre</label><input id="myName" placeholder="Ej: Micaela"></div>
+    <div class="fld"><label>Nombre del lead (opcional)</label><input id="leadName" placeholder="Ej: Laura"></div>
+    <div class="hint">✨ Se completan solos en todas las plantillas al copiar</div>
   </div>
 
   <div id="coaches"></div>
@@ -174,10 +189,24 @@
 "Un saludo,\n{{tu nombre}}" }
   ];
 
+  // Campos que completan las plantillas
+  var myName = "", leadName = "";
+  var myEl = document.getElementById("myName"), leadEl = document.getElementById("leadName");
+  try{ myName = localStorage.getItem("pw_com_nombre") || ""; myEl.value = myName; }catch(e){}
+
+  // Sustituye los datos; lo que quede sin completar se muestra como [algo] (mas prolijo que {{ }})
+  function fill(text){
+    var n = leadName.trim(), y = myName.trim();
+    text = text.split("{{Nombre}}").join(n || "[nombre]");
+    text = text.split("{{tu nombre}}").join(y || "[tu nombre]");
+    return text.replace(/\{\{\s*([^}]+?)\s*\}\}/g, "[$1]");
+  }
+
   function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  // Pinta el texto ya completado y resalta lo que todavia falta editar ([...])
   function paint(text){
-    return esc(text)
-      .replace(/\{\{([^}]+)\}\}/g, '<span class="ph">{{$1}}</span>')
+    return esc(fill(text))
+      .replace(/\[([^\]]+)\]/g, '<span class="ph">[$1]</span>')
       .replace(/\n/g, "<br>");
   }
 
@@ -204,28 +233,48 @@
     + '</div>';
   }
 
-  var cH = '', cC = '';
-  T.forEach(function(t,i){ (t.aud==="coaches" ? (cH+=card(t,i)) : (cC+=card(t,i))); });
+  function renderAll(){
+    var cH = '', cC = '';
+    T.forEach(function(t,i){ (t.aud==="coaches" ? (cH+=card(t,i)) : (cC+=card(t,i))); });
+    document.getElementById("coaches").innerHTML =
+      '<div class="sec-title">🤝 Para coaches <span style="font-size:12px;font-weight:600;color:#6d5c60;background:rgba(140,123,128,.14);padding:3px 10px;border-radius:20px;">vender la plataforma</span></div>'
+      + '<div class="sec-sub">Próximo paso: demo de 11 min o trial de 14 días.</div>' + cH;
+    document.getElementById("candidatos").innerHTML =
+      '<div class="sec-title">🎯 Para candidatos <span style="font-size:12px;font-weight:600;color:#6d5c60;background:rgba(140,123,128,.14);padding:3px 10px;border-radius:20px;">busca trabajo</span></div>'
+      + '<div class="sec-sub">Próximo paso: llamada gratis de 30 min.</div>' + cC;
+  }
+  renderAll();
 
-  document.getElementById("coaches").innerHTML =
-    '<div class="sec-title">🤝 Para coaches <span style="font-size:12px;font-weight:600;color:#6d5c60;background:rgba(140,123,128,.14);padding:3px 10px;border-radius:20px;">vender la plataforma</span></div>'
-    + '<div class="sec-sub">Próximo paso: demo de 11 min o trial de 14 días.</div>' + cH;
-
-  document.getElementById("candidatos").innerHTML =
-    '<div class="sec-title">🎯 Para candidatos <span style="font-size:12px;font-weight:600;color:#6d5c60;background:rgba(140,123,128,.14);padding:3px 10px;border-radius:20px;">busca trabajo</span></div>'
-    + '<div class="sec-sub">Próximo paso: llamada gratis de 30 min.</div>' + cC;
+  // Los campos completan las plantillas en vivo
+  myEl.addEventListener("input", function(){
+    myName = myEl.value;
+    try{ localStorage.setItem("pw_com_nombre", myName); }catch(e){}
+    renderAll();
+  });
+  leadEl.addEventListener("input", function(){ leadName = leadEl.value; renderAll(); });
 
   document.addEventListener("click", function(e){
     var b = e.target.closest("[data-copy]");
     if(!b) return;
     var t = T[+b.dataset.i], what = b.dataset.copy, text;
-    if(what==="subject") text = t.subject;
-    else if(what==="body") text = t.body;
-    else text = "Asunto: " + t.subject + "\n\n" + t.body;
+    if(what==="subject") text = fill(t.subject);
+    else if(what==="body") text = fill(t.body);
+    else text = "Asunto: " + fill(t.subject) + "\n\n" + fill(t.body);
     copyText(text, function(){
       var ok = document.getElementById("ok-"+b.dataset.i);
       if(ok){ ok.classList.add("show"); setTimeout(function(){ ok.classList.remove("show"); }, 1600); }
     });
+  });
+
+  // Descargar esta misma página (autocontenida) para enviársela al comercial
+  document.getElementById("dl").addEventListener("click", function(){
+    var html = "<!doctype html>\n" + document.documentElement.outerHTML;
+    var blob = new Blob([html], {type:"text/html;charset=utf-8"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "plantillas-email-pathway.html";
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 100);
   });
 
   function copyText(text, done){
