@@ -382,6 +382,7 @@
     var ig=""; var mIg=c.match(/(?:instagram\.com\/|@)([a-z0-9._]{2,})/i); if(mIg && !(email&&email.indexOf(mIg[0])>=0)) ig=mIg[1];
     var tel=""; var mTel=c.replace(email,"").match(/\+?\d[\d\s().-]{6,}\d/); if(mTel) tel=mTel[0].trim();
     var row={empleado_id:(WHO&&WHO.id)||ME.id,nombre:n||c,email:email,telefono:tel,instagram:ig,nicho:"sin",estado:"nuevo"};
+    if(_existingKeys()[leadKey(row)]){ toast("Ese lead ya está en tu lista"); return; }
     document.getElementById("nombre").value=""; document.getElementById("contacto").value="";
     if(sb){ try{ var r=await sb.from('leads').insert(row).select().single(); if(r.error) throw r.error; LEADS.unshift(r.data); render(); return; }catch(e){ toast("No se pudo agregar"); } }
     row.id="tmp"+Date.now(); LEADS.unshift(row); render();
@@ -526,7 +527,30 @@
     if(!(email||tel||ig)) return null;
     return {nombre:name,email:email,telefono:tel,instagram:ig};
   }
-  function setImpRows(rows){ _impRows=rows.map(parseCells).filter(Boolean); document.getElementById('imp-count').textContent=_impRows.length?(_impRows.length+" leads detectados"):"No detectamos leads en lo pegado."; }
+  // Clave para detectar leads repetidos: email > teléfono (solo dígitos) > instagram > nombre
+  function _norm(s){ return (""+(s||"")).toLowerCase().trim(); }
+  function leadKey(r){
+    if(r.email) return 'e:'+_norm(r.email);
+    if(r.telefono) return 't:'+(""+r.telefono).replace(/\D/g,'');
+    if(r.instagram) return 'i:'+_norm(r.instagram);
+    return 'n:'+_norm(r.nombre);
+  }
+  function _existingKeys(){ var s={}; LEADS.forEach(function(l){ s[leadKey(l)]=true; }); return s; }
+  function setImpRows(rows){
+    var parsed=rows.map(parseCells).filter(Boolean);
+    var existing=_existingKeys(), seen={}, uniq=[], rep=0;
+    parsed.forEach(function(r){
+      var k=leadKey(r);
+      if(existing[k] || seen[k]){ rep++; return; } // ya lo tenés o está repetido en la lista
+      seen[k]=true; uniq.push(r);
+    });
+    _impRows=uniq;
+    var el=document.getElementById('imp-count');
+    if(!parsed.length){ el.textContent="No detectamos leads en lo pegado."; return; }
+    var msg=uniq.length+" lead"+(uniq.length===1?"":"s")+" nuevo"+(uniq.length===1?"":"s");
+    if(rep) msg+=" · "+rep+" repetido"+(rep===1?"":"s")+" se omiten";
+    el.textContent=msg;
+  }
   function parseImpText(){ var t=document.getElementById('imp-text').value||""; setImpRows(t.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean).map(function(l){return l.split(/[,;\t]/);})); }
   function impFile(e){ var f=e.target.files&&e.target.files[0]; if(!f) return; var nm=f.name.toLowerCase();
     if(nm.endsWith('.xlsx')||nm.endsWith('.xls')){
