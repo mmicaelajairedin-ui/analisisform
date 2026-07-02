@@ -3952,6 +3952,19 @@ function _sendCoachAccessEmail(email, nombre, isNew){
   }
   return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:subject,html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){});
 }
+// Email de alta para un EMPLEADO (equipo comercial). No pasa por registro.html
+// (eso es para coaches): entra por login con Google o con contraseña que le dé el admin.
+function _sendEmpleadoEmail(email, nombre){
+  var fn=(""+(nombre||"")).split(" ")[0]||"";
+  var saludo = fn ? ("Hola "+esc(fn)+",") : "Hola,";
+  var loginUrl="https://pathwaycareercoach.com/login.html";
+  var subject="Tu acceso de empleado a Pathway";
+  var html="<p style='font-size:15px'>"+saludo+"</p>"+
+    "<p style='font-size:15px;line-height:1.6'>Te creamos un acceso de <b>empleado</b> en Pathway. Vas a tener un panel con las plantillas de email, tu firma corporativa y el chat con Micaela.</p>"+
+    "<p style='margin:22px 0'><a href='"+loginUrl+"' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a mi panel →</a></p>"+
+    "<p style='font-size:14px;line-height:1.6'>Entrá con <b>"+esc(email)+"</b> usando el botón <b>“Continuar con Google”</b>. Si tu email no es de Google, pedile la contraseña a tu administrador.</p>";
+  return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:subject,html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){});
+}
 function _coachDetailCard(){
   var c=(RCOACHES||[]).filter(function(u){return String(u.id)===String(state.coachSel);})[0];
   if(!c) return "<div class='cp-card'><div class='cp-card-pad'><button class='cp-btn cp-btn-ghost' data-act='coach-back'>← Volver</button><p style='margin-top:14px;color:var(--pw-danger)'>Coach no encontrado.</p></div></div>";
@@ -4434,6 +4447,21 @@ function viewAdmin(){
     } else {
       var cm=state.coachMsg||"";
       var cmCol=cm.indexOf("ok:")===0?"var(--pw-bosque)":cm.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
+      var em=state.empMsg||"";
+      var emCol=em.indexOf("ok:")===0?"var(--pw-bosque)":em.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
+      var empBox = REAL ? (
+        "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Crear perfil de empleado<span class='dot'>.</span></h3>"+
+          "<span class='cp-eyebrow'>Email templates · Mi firma · Chat</span></div>"+
+          "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+            "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5'>Un <strong>empleado</strong> (equipo comercial) no maneja clientes: entra a un panel con las plantillas de email, su firma y el chat contigo. Le llega un mail para entrar.</div>"+
+            "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+              "<input id='emp-email' class='cp-form-input' style='flex:2;min-width:220px' placeholder='email del empleado *'>"+
+              "<input id='emp-nombre' class='cp-form-input' style='flex:1;min-width:150px' placeholder='nombre del empleado *'>"+
+              "<button class='cp-btn cp-btn-primary' data-act='empleado-crear'>"+svg(IC.plus,12)+" Crear empleado</button>"+
+            "</div>"+
+            (em ? "<div style='font-size:12px;font-weight:600;color:"+emCol+"'>"+esc(em.replace(/^(ok|err|…):/,""))+"</div>" : "")+
+          "</div></div>"
+      ) : "";
       var accBox = REAL ? (
         "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Dar acceso a un coach<span class='dot'>.</span></h3>"+
           "<span class='cp-eyebrow'>Suma días de acceso · fuera de Stripe</span></div>"+
@@ -4548,7 +4576,7 @@ function viewAdmin(){
       var _list = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<input class='cp-form-input' style='max-width:230px;height:34px' placeholder='Buscar coach…' oninput='cpCoachFilter(this.value)'></div>"+
         "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div></div>";
-      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) : (accBox + _list));
+      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) : (accBox + empBox + _list));
     }
   } else if(state.adminTab==="contactos"){
     body = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Popup de pricing<span class='dot'>.</span></h3>"+
@@ -5391,6 +5419,24 @@ document.addEventListener("click", function(ev){
       var trialEnd=new Date(Date.now()+caDias*86400000).toISOString();
       return _sbw("usuarios","POST",{email:caEmail,nombre:caNombre,rol:"coach",activo:true,configuracion:{plan:"pro",estado_sub:"prueba",fecha_fin_prueba:trialEnd,coach_type:caNicho,creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){ if(!r.ok) throw 0; toast("Coach creado ✓"); _sendCoachAccessEmail(caEmail, caNombre, true); setMsg("✓ Coach creado. Le enviamos un email para activar su cuenta y elegir su contraseña.","ok"); reloadCoaches(); });
     }).catch(function(){ setMsg("Error de conexión, o el email ya existe.","err"); });
+    return;
+  }
+  if(act==="empleado-crear"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var eEmail=(_val("emp-email")||"").trim().toLowerCase();
+    var eNombre=(_val("emp-nombre")||"").trim();
+    var setE=function(t,kind){ state.empMsg=(kind||"…")+":"+t; render(); };
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(eEmail)){ setE("Email inválido.","err"); return; }
+    if(!eNombre){ setE("Pon el nombre del empleado.","err"); return; }
+    setE("Procesando…","…");
+    _sb("usuarios?email=eq."+encodeURIComponent(eEmail)+"&select=id,rol,nombre").then(function(rows){
+      var any=(rows||[])[0];
+      if(any){
+        if(any.rol==="empleado"){ setE("Ese email ya es un empleado.","err"); return; }
+        setE('Ese email ya lo usa un usuario "'+(any.rol||"?")+'".',"err"); return;
+      }
+      return _sbw("usuarios","POST",{email:eEmail,nombre:eNombre,rol:"empleado",activo:true,configuracion:{puesto:"comercial",creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){ if(!r.ok) throw 0; toast("Empleado creado ✓"); _sendEmpleadoEmail(eEmail, eNombre); setE("✓ Empleado creado. Le enviamos un email para entrar a su panel.","ok"); });
+    }).catch(function(){ setE("Error de conexión, o el email ya existe.","err"); });
     return;
   }
   if(act==="coach-toggle"){
