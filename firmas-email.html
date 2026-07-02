@@ -39,13 +39,12 @@
   <p class="lead">Dos firmas corporativas con la identidad de Pathway (verde bosque, menta y logo). Listas para pegar en Gmail.</p>
 
   <div class="note">
-    <b>⚠️ Antes que nada — subí las fotos</b><br>
-    Las firmas apuntan a las fotos que me mandaste en estas rutas. Guardá cada foto (idealmente recortada cuadrada, ~400×400px) en la carpeta <code>assets/</code> del repo con estos nombres exactos y hacé push a <code>main</code>:
+    <b>📷 Poné la foto vos misma</b><br>
+    Tocá <b>“🖼️ Cambiar foto”</b> en cada firma y elegí la imagen desde tu compu o teléfono (mejor una foto cuadrada). La ves al instante en la vista previa y queda <b>embebida en la firma</b> cuando tocás “Copiar firma” — no hace falta subir nada al sitio.
     <ul class="steps">
-      <li><code>assets/firma-gonzalo.jpg</code> → foto de Gonzalo</li>
-      <li><code>assets/firma-micaela.jpg</code> → foto de Micaela</li>
+      <li><b>Consejo:</b> usá una foto ya recortada cuadrada para que el círculo salga centrado.</li>
+      <li>Si preferís que las fotos vivan en el dominio, también podés guardarlas como <code>assets/firma-gonzalo.jpg</code> y <code>assets/firma-micaela.jpg</code> y pushear a <code>main</code>.</li>
     </ul>
-    Hasta que estén en <b>main</b> y publicadas en el dominio, en el correo se van a ver rotas (esta página local sí las muestra si están en <code>assets/</code>). El resto de la firma ya funciona.
   </div>
 
   <!-- Cards se generan con JS para no duplicar el markup -->
@@ -111,6 +110,17 @@
     { key:"micaela", label:"Micaela Jairedin", name:"Micaela Jairedin", email:"micaelajairedin@pathwaycareercoach.com", file:"firma-micaela.jpg" }
   ];
 
+  var custom = {}; // fotos elegidas por el usuario (data URL), por persona
+
+  // Foto para la VISTA PREVIA: la elegida > la del repo
+  function previewPhoto(p){ return custom[p.key] || photo(p.file); }
+  // Foto para COPIAR: la elegida (embebida) > la URL absoluta del dominio
+  function copyPhoto(p){ return custom[p.key] || photoAbs(p.file); }
+
+  function renderPreview(p){
+    document.getElementById("prev-"+p.key).innerHTML = sig(p.name, p.email, previewPhoto(p));
+  }
+
   var container = document.getElementById("cards");
   people.forEach(function(p){
     var card = document.createElement("div");
@@ -118,12 +128,33 @@
     card.innerHTML = ''
       + '<h2>'+p.label+'</h2>'
       + '<div class="who">'+p.email+'</div>'
-      + '<div class="preview" id="prev-'+p.key+'">'+ sig(p.name, p.email, photo(p.file)) +'</div>'
+      + '<div class="preview" id="prev-'+p.key+'"></div>'
       + '<div class="btnrow">'
+      +   '<button class="btn ghost" data-pick="'+p.key+'">🖼️ Cambiar foto</button>'
       +   '<button class="btn" data-copy="'+p.key+'">📋 Copiar firma</button>'
       +   '<span class="ok" id="ok-'+p.key+'">¡Copiada!</span>'
+      +   '<input type="file" accept="image/*" data-file="'+p.key+'" style="display:none;">'
       + '</div>';
     container.appendChild(card);
+    renderPreview(p);
+  });
+
+  // Elegir foto desde el dispositivo -> se lee como data URL y se embebe
+  document.addEventListener("click", function(e){
+    var pick = e.target.closest("[data-pick]");
+    if(pick){ container.querySelector('input[data-file="'+pick.dataset.pick+'"]').click(); }
+  });
+
+  document.addEventListener("change", function(e){
+    var inp = e.target.closest("[data-file]");
+    if(!inp || !inp.files || !inp.files[0]) return;
+    var p = people.find(function(x){ return x.key === inp.dataset.file; });
+    var reader = new FileReader();
+    reader.onload = function(){
+      custom[p.key] = reader.result; // data:image/...;base64,...
+      renderPreview(p);
+    };
+    reader.readAsDataURL(inp.files[0]);
   });
 
   // Copiar la firma con formato (rich HTML) al portapapeles
@@ -131,7 +162,7 @@
     var btn = e.target.closest("[data-copy]");
     if(!btn) return;
     var p = people.find(function(x){ return x.key === btn.dataset.copy; });
-    var html = sig(p.name, p.email, photoAbs(p.file)); // versión con URL absoluta
+    var html = sig(p.name, p.email, copyPhoto(p));
     copyRich(html, function(){
       var ok = document.getElementById("ok-"+p.key);
       ok.classList.add("show");
