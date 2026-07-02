@@ -84,7 +84,7 @@
   .compose .cin,.compose select{border:1.5px solid var(--borde);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13.5px;background:#fff;width:100%;}
   .compose .cprow .cin,.compose .cprow select{flex:1;min-width:140px;width:auto;}
   .compose .cin:focus,.compose select:focus,.compose .editor:focus{outline:none;border-color:var(--sendero);box-shadow:0 0 0 3px rgba(82,183,136,.14);}
-  .compose .editor{flex:1;min-height:150px;margin-top:2px;}
+  .compose .editor{flex:1;min-height:150px;margin-top:2px;overflow:auto;}
   .compose .cft{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;}
   .compose .chint{font-size:11.5px;color:var(--texto-suave);}
   .tsl-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
@@ -281,6 +281,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="pw-sign.js"></script>
+<script src="pw-emails.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
   var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
@@ -289,15 +290,11 @@
   var COMISION_POR_ALTA = 30, DAY=86400000, filtro="activos", LEADS=[];
   var sb = (window.supabase) ? window.supabase.createClient(SB,KEY) : null;
   var COLOR={nuevo:"#8A968F",contactado:"#2F6FB0",demo:"#C99A2E",alta:"#2D6A4F",descartado:"#c9ccd0"};
-  // Plantillas en español neutro (sin voseo) + nicho
-  var TPLS=[
-    {n:"La pregunta incómoda",nicho:"general",s:"{Nombre}, una pregunta rápida",b:"Hola {Nombre}:\n\nCuando le envías un CV o un plan a tu cliente, ¿lleva tu marca o una plantilla genérica?\n\nCreamos Pathway para que tus clientes entren a un portal con TU marca y la IA haga el trabajo pesado.\n\n¿Te lo muestro en 11 minutos?"},
-    {n:"Invitación a demo",nicho:"general",s:"11 minutos y te muestro la plataforma",b:"Hola {Nombre}:\n\nCon 11 minutos y un café te muestro el portal con tu marca y las herramientas de IA. Sin compromiso.\n\n¿Reservamos un horario?"},
-    {n:"Portal con tu marca",nicho:"carrera",s:"{Nombre}, tu servicio con cara de producto",b:"Hola {Nombre}:\n\nTus clientes de carrera podrían entrar a un portal con tu marca donde ven su CV, su plan y su avance semana a semana.\n\n¿Te muestro cómo se vería con la tuya?"},
-    {n:"Seguimiento fitness",nicho:"fitness",s:"{Nombre}, seguimiento pro para tus clientes",b:"Hola {Nombre}:\n\nRutinas, medidas, nutrición y hábitos de tus clientes en un solo portal con tu marca, y la IA te ahorra el trabajo repetitivo.\n\n¿Lo vemos en una demo corta?"},
-    {n:"Coaching financiero",nicho:"finanzas",s:"{Nombre}, ordená las finanzas de tus clientes",b:"Hola {Nombre}:\n\nTus clientes verían su presupuesto, sus metas y su avance en un portal con tu marca, con la IA armando el análisis.\n\n¿Te muestro la plataforma en 11 minutos?"},
-    {n:"Para candidato",nicho:"carrera",s:"{Nombre}, tu CV merece una segunda mirada",b:"Hola {Nombre}:\n\nSi estás enviando CVs y no te responden, muchas veces no es tu perfil, es el formato.\n\nHagamos 30 minutos, gratis, para ordenar tu búsqueda."}
+  // Plantillas DISEÑADAS (única fuente: pw-emails.js). Fallback a texto si no cargó.
+  var TPLS = (window.PW_TEMPLATES && window.PW_TEMPLATES.length) ? window.PW_TEMPLATES : [
+    {n:"La pregunta incómoda",nicho:"general",s:"{Nombre}, una pregunta rápida",b:"Hola {Nombre}:\n\n¿Tu marca o una plantilla genérica? Te lo muestro en 11 minutos."}
   ];
+  function tplBody(t,nombre){ return t && t.build ? t.build(nombre||"") : esc(((t&&t.b)||"").replace(/\{Nombre\}/g,nombre||"")).replace(/\n/g,"<br>"); }
 
   function esc(s){ return (""+(s==null?"":s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
   function opt(v,l,cur){ return "<option value='"+v+"' "+(cur===v?"selected":"")+">"+l+"</option>"; }
@@ -445,10 +442,10 @@
     var l=byId(id); if(!l||!l.email) return; _emId=id;
     document.getElementById("em-to").textContent=l.email;
     var sel=document.getElementById("em-tpl"); sel.innerHTML="<option value='-1'>— Sin plantilla —</option>"+TPLS.map(function(t,k){return "<option value='"+k+"'>"+esc(t.n)+"</option>";}).join(""); sel.value="0";
-    var t=TPLS[0]; document.getElementById("em-subj").value=t.s.replace(/\{Nombre\}/g,l.nombre||""); document.getElementById("em-body").innerHTML=cuerpoHTML(t.b,l.nombre||"");
+    var t=TPLS[0]; document.getElementById("em-subj").value=(t.s||"").replace(/\{Nombre\}/g,l.nombre||""); document.getElementById("em-body").innerHTML=tplBody(t,l.nombre||"")+firmaHTML();
     document.getElementById("emailModal").classList.add("show");
   }
-  function aplicarTpl(){ var k=parseInt(document.getElementById("em-tpl").value,10),l=byId(_emId); if(!l) return; if(k<0){ document.getElementById("em-subj").value=""; document.getElementById("em-body").innerHTML=firmaHTML(); return; } var t=TPLS[k]; document.getElementById("em-subj").value=t.s.replace(/\{Nombre\}/g,l.nombre||""); document.getElementById("em-body").innerHTML=cuerpoHTML(t.b,l.nombre||""); }
+  function aplicarTpl(){ var k=parseInt(document.getElementById("em-tpl").value,10),l=byId(_emId); if(!l) return; if(k<0){ document.getElementById("em-subj").value=""; document.getElementById("em-body").innerHTML=firmaHTML(); return; } var t=TPLS[k]; document.getElementById("em-subj").value=(t.s||"").replace(/\{Nombre\}/g,l.nombre||""); document.getElementById("em-body").innerHTML=tplBody(t,l.nombre||"")+firmaHTML(); }
   function closeEmail(){ document.getElementById("emailModal").classList.remove("show"); _emId=null; }
   async function enviarEmail(){
     var l=byId(_emId); if(!l) return;
@@ -508,7 +505,7 @@
   function applyCompose(){
     var cur=currentTpl(), nombre=composeName();
     if(!cur){ document.getElementById('cp-subj').value=""; document.getElementById('cp-body').innerHTML=firmaHTML(); return; }
-    var t=cur.t; document.getElementById('cp-subj').value=t.s.replace(/\{Nombre\}/g,nombre); document.getElementById('cp-body').innerHTML=cuerpoHTML(t.b,nombre);
+    var t=cur.t; document.getElementById('cp-subj').value=(t.s||"").replace(/\{Nombre\}/g,nombre); document.getElementById('cp-body').innerHTML=tplBody(t,nombre)+firmaHTML();
   }
   async function composeSend(){
     var id=document.getElementById('cp-lead').value, l=id?byId(id):null;
