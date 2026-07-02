@@ -21,6 +21,9 @@ create table if not exists leads (
   nota          text,
   demo_agendada boolean default false,
   demo_fecha    timestamptz,
+  -- Último email enviado (para mostrar "enviado hace 4 días · plantilla")
+  ultimo_email_at  timestamptz,
+  ultimo_email_tpl text,
   -- Atribución de comisión: qué coach se dio de alta a partir de este lead
   alta_coach_id uuid references usuarios(id),
   alta_at       timestamptz,
