@@ -3661,10 +3661,11 @@ function viewMensajesAdminBody(){
   }
   // Dos pestañas: "Mis clientes" (la admin como coach) y "Coaches" (soporte a coaches).
   var adminTab = state.adminMsgTab || "clientes";
-  if(adminTab!=="clientes" && adminTab!=="coaches") adminTab="clientes";
+  if(["clientes","coaches","empleados"].indexOf(adminTab)<0) adminTab="clientes";
   var adminTabsBar = "<div style='display:flex;gap:6px;padding:8px 14px;border-bottom:1px solid var(--pw-border);background:var(--pw-niebla)'>"+
       "<button class='cp-chip "+(adminTab==="clientes"?"is-on":"")+"' data-act='admin-msgtab:clientes' style='height:28px;padding:0 14px;font-size:12px'>Mis clientes</button>"+
       "<button class='cp-chip "+(adminTab==="coaches"?"is-on":"")+"' data-act='admin-msgtab:coaches' style='height:28px;padding:0 14px;font-size:12px'>Coaches</button>"+
+      "<button class='cp-chip "+(adminTab==="empleados"?"is-on":"")+"' data-act='admin-msgtab:empleados' style='height:28px;padding:0 14px;font-size:12px'>Empleados</button>"+
     "</div>";
   // ── Pestaña "Mis clientes": misma lista que ve un coach con sus clientes ──
   if(adminTab==="clientes"){
@@ -3687,15 +3688,19 @@ function viewMensajesAdminBody(){
     if(!byCoach[k].last || new Date(m.created_at) > new Date(byCoach[k].last.created_at)) byCoach[k].last = m;
   });
   var threads = Object.keys(byCoach).map(function(k){ return byCoach[k]; });
+  // Separar coaches de empleados (mismos hilos en mensajes_admin_coach)
+  var _empSet={}; (REMPLE||[]).forEach(function(u){ _empSet[String(u.id)]=u; });
+  threads = threads.filter(function(t){ return (adminTab==="empleados") ? !!_empSet[t.coachId] : !_empSet[t.coachId]; });
   // Ordenar: no-leídos primero, después por mensaje más reciente
   threads.sort(function(a,b){
     if((b.unread>0) !== (a.unread>0)) return (b.unread>0)?1:-1;
     return new Date(b.last.created_at) - new Date(a.last.created_at);
   });
   if(!threads.length){
-    return adminTabsBar+"<div style='text-align:center;padding:28px 16px;color:var(--pw-text-soft);font-size:13px'>"+
-      "Todavía no hay conversaciones con coaches. Para empezar una, abre Admin → Coaches → Ver y escribe desde la ficha."+
-    "</div>";
+    var _emptyMsg = (adminTab==="empleados")
+      ? "Todavía no hay mensajes de empleados. Ellos te escriben desde su panel; también podés abrir Admin → Empleados → Abrir su panel."
+      : "Todavía no hay conversaciones con coaches. Para empezar una, abre Admin → Coaches → Ver y escribe desde la ficha.";
+    return adminTabsBar+"<div style='text-align:center;padding:28px 16px;color:var(--pw-text-soft);font-size:13px'>"+_emptyMsg+"</div>";
   }
   function fmtTime(s){
     try{
@@ -3710,8 +3715,8 @@ function viewMensajesAdminBody(){
   }
   function listAvA(url,name){ return avImg(url,name,"style='width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0'"); }
   var rows = threads.map(function(t){
-    var coach = (RCOACHES||[]).filter(function(u){return String(u.id)===t.coachId;})[0];
-    var name = (coach && (coach.nombre || coach.email)) || "Coach";
+    var coach = (RCOACHES||[]).filter(function(u){return String(u.id)===t.coachId;})[0] || _empSet[t.coachId];
+    var name = (coach && (coach.nombre || coach.email)) || (_empSet[t.coachId]?"Empleado":"Coach");
     var cPhoto = (coach && (coach.foto_url || (coach.configuracion && (coach.configuracion.foto_url || coach.configuracion.foto_perfil)))) || "";
     var preview = (t.last.body||"").replace(/\s+/g," ").slice(0, 70);
     if(t.last.body && t.last.body.length > 70) preview += "…";
@@ -6973,6 +6978,8 @@ function loadReal(){
     RADM = (ME.rol==="admin") ? { cands:_adminCands, cvx:res[7]||[], leads:[], resenas:res[10]||[], informes:res[8]||[] } : null;
     RSOL = res[9]||[];
     RMSG = res[11]||[];
+    // Empleados: para separar sus hilos de chat de los de coaches en la bandeja.
+    if(ME.rol==="admin" && REMPLE===null) reloadEmpleados();
     // Una vez cargados los mensajes iniciales, arrancar el polling. La
     // función es idempotente (no arranca un segundo timer si ya hay uno).
     startMsgPolling();
