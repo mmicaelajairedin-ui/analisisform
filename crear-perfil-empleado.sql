@@ -1,15 +1,14 @@
 -- ============================================================
--- Crear usuario EMPLEADO — Gonzalo Alcalde (equipo comercial)
+-- Crear un PERFIL EMPLEADO (equipo comercial) — plantilla genérica
 -- ============================================================
 -- Un "empleado" NO es coach: no tiene clientes ni panel de coach.
--- Al iniciar sesión, login/auth-callback lo mandan a /empleado.html,
--- un panel con: Email templates · Mi firma · Chat con Micaela.
+-- Con rol='empleado', al iniciar sesión login/auth-callback lo mandan a
+-- /empleado.html — panel con: Email templates · Mi firma · Chat con Micaela.
 --
--- Email ÚNICO del empleado: gonzaloalcalde@pathwaycareercoach.com
--- (Si además quisiera una cuenta de coach en el futuro, es aparte y no
---  interfiere con esta.)
+-- El acceso es 100% por ROL: creás la fila con rol='empleado' y ya entra.
+-- No hay lista de emails en el código, así que sirve para CUALQUIER empleado.
 --
--- Ejecutar en el SQL Editor de Supabase.
+-- Ejecutar en el SQL Editor de Supabase. Cambiá email y nombre.
 -- ============================================================
 
 -- (Opcional) Si la columna `rol` tiene un CHECK que no incluye 'empleado',
@@ -22,9 +21,9 @@
 -- PASO 1 — Crear (o actualizar) la fila del empleado.
 INSERT INTO usuarios (email, rol, nombre, activo, configuracion)
 VALUES (
-  'gonzaloalcalde@pathwaycareercoach.com',
+  'EMAIL_DEL_EMPLEADO',          -- ej: gonzaloalcalde@pathwaycareercoach.com
   'empleado',
-  'Gonzalo Alcalde',
+  'NOMBRE DEL EMPLEADO',         -- ej: Gonzalo Alcalde
   true,
   '{"puesto":"comercial"}'::jsonb
 )
@@ -33,25 +32,19 @@ ON CONFLICT (email) DO UPDATE
       nombre = COALESCE(usuarios.nombre, EXCLUDED.nombre),
       activo = true;
 
--- ============================================================
--- VERIFICACIÓN
--- ============================================================
+-- PASO 2 — Verificación
 SELECT id, email, nombre, rol, activo
 FROM usuarios
-WHERE email = 'gonzaloalcalde@pathwaycareercoach.com';
+WHERE email = 'EMAIL_DEL_EMPLEADO';
 
 -- ============================================================
--- CÓMO ENTRA GONZALO
+-- CÓMO ENTRA EL EMPLEADO
 -- ============================================================
--- Con el email de Pathway hay 2 formas según cómo esté ese buzón:
+-- A) Si el email usa Google (Workspace o Gmail):
+--    login.html → "Continuar con Google" → cae directo en /empleado.html.
 --
--- A) Si pathwaycareercoach.com usa Google Workspace:
---    → login.html → "Continuar con Google" con gonzaloalcalde@pathwaycareercoach.com
---    → cae directo en /empleado.html.
---
--- B) Con email + contraseña (sin Google):
---    → Supabase → Authentication → Users → "Add user"
---    → email: gonzaloalcalde@pathwaycareercoach.com  +  contraseña.
---    → Después entra por login.html con ese email y contraseña.
+-- B) Con email + contraseña:
+--    Supabase → Authentication → Users → "Add user" con ese email + contraseña.
+--    Después entra por login.html con ese email y contraseña.
 --    (La fila de usuarios de arriba ya define su rol = empleado.)
 -- ============================================================
