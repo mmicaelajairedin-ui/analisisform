@@ -70,6 +70,16 @@
   .comm .col-hd{font-family:var(--serif);font-size:15px;font-weight:600;margin-bottom:8px;padding-left:2px;}
   .frame-card{flex:1;background:#fff;border:1px solid var(--borde);border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(20,55,38,.04);}
   .frame-card iframe{width:100%;height:100%;border:0;display:block;}
+  .compose{padding:16px;overflow:auto;display:flex;flex-direction:column;}
+  .compose .cl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--texto-suave);margin:10px 0 5px;}
+  .compose .cl:first-child{margin-top:0;}
+  .compose .cprow{display:flex;gap:8px;flex-wrap:wrap;}
+  .compose .cin,.compose select{border:1.5px solid var(--borde);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13.5px;background:#fff;width:100%;}
+  .compose .cprow .cin,.compose .cprow select{flex:1;min-width:140px;width:auto;}
+  .compose .cin:focus,.compose select:focus,.compose .editor:focus{outline:none;border-color:var(--sendero);box-shadow:0 0 0 3px rgba(82,183,136,.14);}
+  .compose .editor{flex:1;min-height:150px;margin-top:2px;}
+  .compose .cft{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;}
+  .compose .chint{font-size:11.5px;color:var(--texto-suave);}
 
   .kpis{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
   .kpi{flex:1;min-width:92px;background:#fff;border:1px solid var(--borde);border-radius:13px;padding:12px 14px;}
@@ -146,8 +156,27 @@
 
     <div class="view" id="view-comm">
       <div class="comm">
-        <div class="col"><div class="col-hd">Email templates</div><div class="frame-card"><iframe id="if-tpl" data-src="plantillas-email-comercial.html" title="Email templates"></iframe></div></div>
-        <div class="col"><div class="col-hd">Mi firma</div><div class="frame-card"><iframe id="if-firma" data-src="firmas-email.html?panel=1" title="Mi firma"></iframe></div></div>
+        <div class="col">
+          <div class="col-hd">Redactar y enviar</div>
+          <div class="frame-card compose">
+            <label class="cl">Para</label>
+            <div class="cprow">
+              <select id="cp-lead" onchange="onPickLead()"><option value="">— Elegí un lead —</option></select>
+              <input id="cp-email" class="cin" placeholder="o escribí un email" oninput="document.getElementById('cp-lead').value=''">
+            </div>
+            <label class="cl">Plantilla</label>
+            <select id="cp-tpl" class="cin" onchange="applyCompose()"></select>
+            <label class="cl">Asunto</label>
+            <input id="cp-subj" class="cin">
+            <label class="cl">Mensaje · tu firma va incluida</label>
+            <div id="cp-body" class="editor" contenteditable="true"></div>
+            <div class="cft"><button class="btn" id="cp-send" onclick="composeSend()">Enviar email ✓</button><span class="chint">Preview arriba — editá lo que quieras antes de enviar.</span></div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="col-hd">Mi firma</div>
+          <div class="frame-card"><iframe id="if-firma" title="Mi firma"></iframe></div>
+        </div>
       </div>
     </div>
 
@@ -202,10 +231,14 @@
   var COMISION_POR_ALTA = 30, DAY=86400000, filtro="activos", LEADS=[];
   var sb = (window.supabase) ? window.supabase.createClient(SB,KEY) : null;
   var COLOR={nuevo:"#8A968F",contactado:"#2F6FB0",demo:"#C99A2E",alta:"#2D6A4F",descartado:"#c9ccd0"};
+  // Plantillas en español neutro (sin voseo) + nicho
   var TPLS=[
-    {n:"La pregunta incómoda",s:"{Nombre}, una pregunta rápida",b:"Hola {Nombre}:\n\nCuando le mandás un CV o un plan a tu cliente, ¿lleva tu marca o una plantilla genérica?\n\nCreamos Pathway para que tus clientes entren a un portal con TU marca y la IA haga el trabajo pesado.\n\n¿Te lo muestro en 11 minutos?"},
-    {n:"Invitación a demo",s:"11 minutos y te muestro la plataforma",b:"Hola {Nombre}:\n\nCon 11 minutos y un café te muestro el portal con tu marca y las herramientas de IA. Sin compromiso.\n\n¿Reservamos un horario?"},
-    {n:"Para candidato",s:"{Nombre}, tu CV merece una segunda mirada",b:"Hola {Nombre}:\n\nSi estás enviando CVs y no te responden, muchas veces no es tu perfil, es el formato.\n\nHagamos 30 minutos, gratis, para ordenar tu búsqueda."}
+    {n:"La pregunta incómoda",nicho:"general",s:"{Nombre}, una pregunta rápida",b:"Hola {Nombre}:\n\nCuando le envías un CV o un plan a tu cliente, ¿lleva tu marca o una plantilla genérica?\n\nCreamos Pathway para que tus clientes entren a un portal con TU marca y la IA haga el trabajo pesado.\n\n¿Te lo muestro en 11 minutos?"},
+    {n:"Invitación a demo",nicho:"general",s:"11 minutos y te muestro la plataforma",b:"Hola {Nombre}:\n\nCon 11 minutos y un café te muestro el portal con tu marca y las herramientas de IA. Sin compromiso.\n\n¿Reservamos un horario?"},
+    {n:"Portal con tu marca",nicho:"carrera",s:"{Nombre}, tu servicio con cara de producto",b:"Hola {Nombre}:\n\nTus clientes de carrera podrían entrar a un portal con tu marca donde ven su CV, su plan y su avance semana a semana.\n\n¿Te muestro cómo se vería con la tuya?"},
+    {n:"Seguimiento fitness",nicho:"fitness",s:"{Nombre}, seguimiento pro para tus clientes",b:"Hola {Nombre}:\n\nRutinas, medidas, nutrición y hábitos de tus clientes en un solo portal con tu marca, y la IA te ahorra el trabajo repetitivo.\n\n¿Lo vemos en una demo corta?"},
+    {n:"Coaching financiero",nicho:"finanzas",s:"{Nombre}, ordená las finanzas de tus clientes",b:"Hola {Nombre}:\n\nTus clientes verían su presupuesto, sus metas y su avance en un portal con tu marca, con la IA armando el análisis.\n\n¿Te muestro la plataforma en 11 minutos?"},
+    {n:"Para candidato",nicho:"carrera",s:"{Nombre}, tu CV merece una segunda mirada",b:"Hola {Nombre}:\n\nSi estás enviando CVs y no te responden, muchas veces no es tu perfil, es el formato.\n\nHagamos 30 minutos, gratis, para ordenar tu búsqueda."}
   ];
 
   function esc(s){ return (""+(s==null?"":s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -213,14 +246,24 @@
   function timeAgo(ts){ if(!ts) return ""; var t=new Date(ts).getTime(),d=Date.now()-t,h=Math.floor(d/3600000),dd=Math.floor(d/DAY); if(dd>=1) return "hace "+dd+(dd===1?" día":" días"); if(h>=1) return "hace "+h+" h"; return "recién"; }
   function toast(m){ var t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},1800); }
 
-  // Perfil
-  (function(){
-    var nombre=ME.nombre||(ME.email?ME.email.split('@')[0]:'Pathway Team');
+  // Perfil + previsualización de admin (?as=<empleadoId> abre el panel de ESE empleado)
+  var _asId = new URLSearchParams(location.search).get('as');
+  var WHO = ME;               // de quién es este panel (por defecto, el logueado)
+  function initProfile(){
+    var nombre=WHO.nombre||(WHO.email?WHO.email.split('@')[0]:'Pathway Team');
     document.getElementById('uname').textContent=nombre;
     var ph=document.getElementById('photo');
-    if(ME.foto_url){ ph.innerHTML="<img src='"+ME.foto_url+"' alt='' style='width:80px;height:80px;border-radius:50%;object-fit:cover'>"; }
-    else { ph.textContent=((''+nombre).trim()[0]||'·').toUpperCase(); }
-  })();
+    if(WHO.foto_url){ ph.innerHTML="<img src='"+WHO.foto_url+"' alt='' style='width:80px;height:80px;border-radius:50%;object-fit:cover'>"; }
+    else { ph.innerHTML=""; ph.textContent=((''+nombre).trim()[0]||'·').toUpperCase(); }
+  }
+  function setFirmaSrc(){ var ff=document.getElementById('if-firma'); if(ff) ff.src='firmas-email.html?panel=1&email='+encodeURIComponent(WHO.email||'')+'&name='+encodeURIComponent(WHO.nombre||''); }
+  async function resolveWho(){
+    if(ME.rol==='admin' && _asId && sb){
+      try{ var r=await sb.from('usuarios').select('id,nombre,email,foto_url,rol').eq('id',_asId).single(); if(!r.error && r.data) WHO=r.data; }catch(e){}
+    }
+    initProfile(); setFirmaSrc(); _loaded.comm=true;
+    await loadLeads(); _loaded.leads=true; fillCompose();
+  }
 
   // Tabs
   var _loaded={}, TITLES={comm:{t:"Comunicación",s:"Tus plantillas de email y tu firma, en un solo lugar."},leads:{t:"Leads",s:"Contactá, agendá demos y dá de alta coaches. Cada marca queda en tus métricas."}};
@@ -229,7 +272,7 @@
     document.querySelectorAll('.nav-item[data-tab]').forEach(function(b){ b.classList.toggle('on',b.dataset.tab===t); });
     document.getElementById('view-comm').hidden=(t!=='comm'); document.getElementById('view-leads').hidden=(t!=='leads');
     document.getElementById('ptitle').textContent=TITLES[t].t; document.getElementById('psub').textContent=TITLES[t].s;
-    if(t==='comm' && !_loaded.comm){ ['if-tpl','if-firma'].forEach(function(id){var f=document.getElementById(id);f.src=f.getAttribute('data-src');}); _loaded.comm=true; }
+    if(t==='comm' && !_loaded.comm){ setFirmaSrc(); _loaded.comm=true; }
     if(t==='leads' && !_loaded.leads){ _loaded.leads=true; loadLeads(); }
   }
 
@@ -237,7 +280,8 @@
   async function loadLeads(){
     if(!sb){ return; }
     try{
-      var r=await sb.from('leads').select('*').order('created_at',{ascending:false});
+      var q=sb.from('leads').select('*'); if(WHO&&WHO.id) q=q.eq('empleado_id',WHO.id);
+      var r=await q.order('created_at',{ascending:false});
       if(r.error) throw r.error;
       LEADS=r.data||[]; render();
     }catch(e){
@@ -298,7 +342,7 @@
     var email=(c.match(/[^\s,<>@]+@[^\s,<>@]+\.[^\s,<>@]+/)||[])[0]||"";
     var ig=""; var mIg=c.match(/(?:instagram\.com\/|@)([a-z0-9._]{2,})/i); if(mIg && !(email&&email.indexOf(mIg[0])>=0)) ig=mIg[1];
     var tel=""; var mTel=c.replace(email,"").match(/\+?\d[\d\s().-]{6,}\d/); if(mTel) tel=mTel[0].trim();
-    var row={empleado_id:ME.id,nombre:n||c,email:email,telefono:tel,instagram:ig,nicho:"sin",estado:"nuevo"};
+    var row={empleado_id:(WHO&&WHO.id)||ME.id,nombre:n||c,email:email,telefono:tel,instagram:ig,nicho:"sin",estado:"nuevo"};
     document.getElementById("nombre").value=""; document.getElementById("contacto").value="";
     if(sb){ try{ var r=await sb.from('leads').insert(row).select().single(); if(r.error) throw r.error; LEADS.unshift(r.data); render(); return; }catch(e){ toast("No se pudo agregar"); } }
     row.id="tmp"+Date.now(); LEADS.unshift(row); render();
@@ -316,7 +360,7 @@
 
   // ── Compositor ──
   var _emId=null;
-  function firmaHTML(){ return "<div class='firma' contenteditable='false'>—<br><b>"+esc(ME.nombre||"")+"</b><br>Pathway · pathwaycareercoach.com</div>"; }
+  function firmaHTML(){ return "<div class='firma' contenteditable='false'>—<br><b>"+esc(WHO.nombre||ME.nombre||"")+"</b><br>Pathway · pathwaycareercoach.com</div>"; }
   function cuerpoHTML(txt,nombre){ return esc((txt||"").replace(/\{Nombre\}/g,nombre||"")).replace(/\n/g,"<br>")+firmaHTML(); }
   function openEmail(id){
     var l=byId(id); if(!l||!l.email) return; _emId=id;
@@ -333,9 +377,9 @@
     var k=parseInt(document.getElementById("em-tpl").value,10), tplName=(k>=0&&TPLS[k])?TPLS[k].n:"Email personalizado";
     var btn=document.getElementById("em-send"); btn.disabled=true; btn.textContent="Enviando…";
     try{
-      await fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:l.email,to_name:l.nombre||"",subject:subj,html:html,reply_to:ME.email||"hi@pathwaycareercoach.com"})});
+      await fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:l.email,to_name:l.nombre||"",subject:subj,html:html,reply_to:WHO.email||ME.email||"hi@pathwaycareercoach.com"})});
       if(sb){
-        await sb.from('lead_emails').insert({lead_id:l.id,empleado_id:ME.id,asunto:subj,cuerpo:html,plantilla:tplName});
+        await sb.from('lead_emails').insert({lead_id:l.id,empleado_id:(WHO&&WHO.id)||ME.id,asunto:subj,cuerpo:html,plantilla:tplName});
         await sb.from('leads').update({estado:(l.estado==="nuevo"?"contactado":l.estado),ultimo_email_at:new Date().toISOString(),ultimo_email_tpl:tplName}).eq('id',l.id);
       }
       Object.assign(l,{estado:(l.estado==="nuevo"?"contactado":l.estado),ultimo_email_at:new Date().toISOString(),ultimo_email_tpl:tplName});
@@ -356,9 +400,48 @@
     document.getElementById("prof-bar").style.width=Math.min(100,(com%300)/300*100||(com>0?4:2))+"%";
   }
 
+  // ── Redactar y enviar (pestaña Comunicación) ──
+  var NLBL={general:'General',carrera:'Carrera',fitness:'Fitness',finanzas:'Finanzas'};
+  function fillCompose(){
+    var lsel=document.getElementById('cp-lead');
+    if(lsel){ var we=LEADS.filter(function(l){return l.email;}); lsel.innerHTML="<option value=''>— Elegí un lead —</option>"+we.map(function(l){return "<option value='"+l.id+"'>"+esc(l.nombre||l.email)+"</option>";}).join(""); }
+    var tsel=document.getElementById('cp-tpl');
+    if(tsel){ var html="<option value='-1'>— Sin plantilla —</option>";
+      Object.keys(NLBL).forEach(function(g){ var items=TPLS.map(function(t,k){return {t:t,k:k};}).filter(function(x){return (x.t.nicho||'general')===g;}); if(items.length) html+="<optgroup label='"+NLBL[g]+"'>"+items.map(function(x){return "<option value='"+x.k+"'>"+esc(x.t.n)+"</option>";}).join("")+"</optgroup>"; });
+      tsel.innerHTML=html; }
+    applyCompose();
+  }
+  function composeName(){ var id=document.getElementById('cp-lead').value; var l=id?byId(id):null; return l?(l.nombre||""):""; }
+  function onPickLead(){ document.getElementById('cp-email').value=""; applyCompose(); }
+  function applyCompose(){
+    var k=parseInt(document.getElementById('cp-tpl').value,10), nombre=composeName();
+    if(isNaN(k)||k<0){ document.getElementById('cp-subj').value=""; document.getElementById('cp-body').innerHTML=firmaHTML(); return; }
+    var t=TPLS[k]; document.getElementById('cp-subj').value=t.s.replace(/\{Nombre\}/g,nombre); document.getElementById('cp-body').innerHTML=cuerpoHTML(t.b,nombre);
+  }
+  async function composeSend(){
+    var id=document.getElementById('cp-lead').value, l=id?byId(id):null;
+    var to=l?l.email:(document.getElementById('cp-email').value||"").trim();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ toast("Poné un email válido o elegí un lead"); return; }
+    var subj=document.getElementById('cp-subj').value||"", html=document.getElementById('cp-body').innerHTML||"";
+    var k=parseInt(document.getElementById('cp-tpl').value,10), tplName=(k>=0&&TPLS[k])?TPLS[k].n:"Email personalizado";
+    var btn=document.getElementById('cp-send'); btn.disabled=true; btn.textContent="Enviando…";
+    try{
+      await fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:to,to_name:l?(l.nombre||""):"",subject:subj,html:html,reply_to:WHO.email||ME.email||"hi@pathwaycareercoach.com"})});
+      if(l && sb){
+        await sb.from('lead_emails').insert({lead_id:l.id,empleado_id:(WHO&&WHO.id)||ME.id,asunto:subj,cuerpo:html,plantilla:tplName});
+        await sb.from('leads').update({estado:(l.estado==="nuevo"?"contactado":l.estado),ultimo_email_at:new Date().toISOString(),ultimo_email_tpl:tplName}).eq('id',l.id);
+        Object.assign(l,{estado:(l.estado==="nuevo"?"contactado":l.estado),ultimo_email_at:new Date().toISOString(),ultimo_email_tpl:tplName}); render();
+      }
+      toast("Email enviado ✓");
+    }catch(e){ toast("No se pudo enviar. Reintentá."); }
+    btn.disabled=false; btn.textContent="Enviar email ✓";
+  }
+
   function toggleMsg(e){ if(e) e.stopPropagation(); document.getElementById('msgpop').classList.toggle('show'); }
   document.addEventListener('click',function(e){ if(!e.target.closest('.msgbtn') && !e.target.closest('.msgpop')){ document.getElementById('msgpop').classList.remove('show'); } });
   function cerrarSesion(){ try{ localStorage.removeItem('mj_user'); if(sb) sb.auth.signOut(); }catch(e){} window.location.href='/login.html'; }
+
+  resolveWho();
 </script>
 </body>
 </html>
