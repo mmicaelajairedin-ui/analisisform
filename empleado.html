@@ -142,6 +142,7 @@
   .estado{font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;white-space:nowrap;}
   .estado.nuevo{background:rgba(138,150,143,.16);color:var(--gris);} .estado.contactado{background:rgba(47,111,176,.14);color:var(--azul);}
   .estado.demo{background:rgba(201,154,46,.2);color:var(--ambar);} .estado.alta{background:rgba(45,106,79,.9);color:#fff;} .estado.descartado{background:rgba(138,150,143,.12);color:#aab;}
+  select.est-sel{border:1.5px solid var(--borde);border-left-width:4px;border-radius:8px;padding:5px 7px;font-family:inherit;font-size:12px;font-weight:700;background:#fff;cursor:pointer;}
   .detail td{background:var(--niebla);} .detail label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--texto-suave);display:block;margin:0 0 4px;}
   .detail .grid{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;} .detail .grid input{flex:1;min-width:150px;border:1.5px solid var(--borde);border-radius:9px;padding:8px 11px;font-family:inherit;font-size:13px;background:#fff;}
   .detail textarea{width:100%;min-height:50px;border:1.5px solid var(--borde);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13px;background:#fff;resize:vertical;}
@@ -293,7 +294,7 @@
     else { ph.innerHTML=""; ph.textContent=((''+nombre).trim()[0]||'·').toUpperCase(); }
   }
   function setFirmaSrc(){
-    var ff=document.getElementById('if-firma'); if(ff && !ff.src) ff.src='firmas-email.html?panel=1&email='+encodeURIComponent(WHO.email||'')+'&name='+encodeURIComponent(WHO.nombre||'');
+    var ff=document.getElementById('if-firma'); if(ff && !ff.src) ff.src='firmas-email.html?panel=1&email='+encodeURIComponent(WHO.email||'')+'&name='+encodeURIComponent(WHO.nombre||'')+'&photo='+encodeURIComponent(WHO.foto_url||'');
     var ft=document.getElementById('if-tpl'); if(ft && !ft.src) ft.src='plantillas-email-comercial.html?panel=1&name='+encodeURIComponent((WHO.nombre||'').split(' ')[0]||'');
   }
   async function resolveWho(){
@@ -356,12 +357,12 @@
         "<td><select class='nicho' onchange=\"setN('"+l.id+"',this.value)\">"+opt("sin","Sin asignar",l.nicho)+opt("carrera","Carrera",l.nicho)+opt("fitness","Fitness",l.nicho)+opt("finanzas","Finanzas",l.nicho)+"</select></td>"+
         "<td>"+canales(l)+"</td>"+
         "<td><a class='btn ghost sm' href='https://calendly.com/mmicaela-jairedin/pathway-demo' target='_blank' rel='noopener' onclick=\"contactado('"+l.id+"')\">Calendly</a> <button class='btn sm "+(l.demo_agendada?"":"ghost")+"' onclick=\"toggleDemo('"+l.id+"')\">"+(l.demo_agendada?"Agendada ✓":"Marcar agendada")+"</button></td>"+
-        "<td><span class='estado "+l.estado+"'>"+({nuevo:"Nuevo",contactado:"Contactado",demo:"Demo",alta:"Coach ✓",descartado:"Descartado"})[l.estado]+"</span></td>"+
+        "<td>"+estSel(l)+"</td>"+
         "<td><button class='btn sm' "+(l.estado==="alta"?"disabled style='opacity:.5'":"")+" onclick=\"alta('"+l.id+"')\">"+(l.estado==="alta"?"Alta ✓":"Dar alta coach")+"</button></td>";
       tb.appendChild(tr);
       if(l._open){
         var dr=document.createElement("tr"); dr.className="detail";
-        dr.innerHTML="<td colspan='6'><label>Contacto (agregá el que consigas)</label><div class='grid'>"+
+        dr.innerHTML="<td colspan='6'><label>Nombre</label><input id='e-nom-"+l.id+"' placeholder='Nombre del lead' value='"+esc(l.nombre)+"' style='margin-bottom:10px'><label>Contacto (agregá el que consigas)</label><div class='grid'>"+
           "<input id='e-email-"+l.id+"' placeholder='Email' value='"+esc(l.email)+"'><input id='e-tel-"+l.id+"' placeholder='Teléfono' value='"+esc(l.telefono)+"'><input id='e-ig-"+l.id+"' placeholder='Instagram (sin @)' value='"+esc(l.instagram)+"'></div>"+
           "<label>Nota</label><textarea id='e-nota-"+l.id+"'>"+esc(l.nota)+"</textarea><div style='margin-top:8px'><button class='btn sm' onclick=\"guardarInfo('"+l.id+"')\">Guardar</button></div></td>";
         tb.appendChild(dr);
@@ -370,6 +371,17 @@
     kpis();
   }
   function byId(id){ return LEADS.filter(function(l){return l.id===id;})[0]; }
+  // Estado editable a mano (por si tocaste el email pero no llegaste a contactar).
+  // "Alta" y "Descartado" tienen sus propias acciones; si el lead ya está así, se muestra pero
+  // igual podés volver a Nuevo/Contactado/Demo desde acá.
+  var EST_LBL={nuevo:"Nuevo",contactado:"Contactado",demo:"Demo",alta:"Coach ✓",descartado:"Descartado"};
+  function estSel(l){
+    var editables=["nuevo","contactado","demo"], h="";
+    if(editables.indexOf(l.estado)<0){ h+="<option value='"+l.estado+"' selected>"+EST_LBL[l.estado]+"</option>"; }
+    editables.forEach(function(s){ h+="<option value='"+s+"'"+(l.estado===s?" selected":"")+">"+EST_LBL[s]+"</option>"; });
+    return "<select class='est-sel' style='border-left-color:"+COLOR[l.estado]+"' onchange=\"setEstado('"+l.id+"',this.value)\">"+h+"</select>";
+  }
+  function setEstado(id,v){ var l=byId(id); if(!l||l.estado===v) return; patch(id,{estado:v}); }
   async function patch(id, obj){
     var l=byId(id); if(l) Object.assign(l,obj);
     render();
@@ -389,7 +401,8 @@
   }
   function toggleInfo(id){ var l=byId(id); if(l){ l._open=!l._open; render(); } }
   function guardarInfo(id){
-    patch(id,{ email:(document.getElementById("e-email-"+id).value||"").trim(), telefono:(document.getElementById("e-tel-"+id).value||"").trim(), instagram:(document.getElementById("e-ig-"+id).value||"").trim().replace(/^@/,""), nota:(document.getElementById("e-nota-"+id).value||"").trim() });
+    var _nom=(document.getElementById("e-nom-"+id).value||"").trim();
+    patch(id,{ nombre:_nom||byId(id).nombre, email:(document.getElementById("e-email-"+id).value||"").trim(), telefono:(document.getElementById("e-tel-"+id).value||"").trim(), instagram:(document.getElementById("e-ig-"+id).value||"").trim().replace(/^@/,""), nota:(document.getElementById("e-nota-"+id).value||"").trim() });
     var l=byId(id); if(l) l._open=false; render();
   }
   function setN(id,v){ patch(id,{nicho:v}); }
