@@ -3975,8 +3975,52 @@ function _sendEmpleadoEmail(email, nombre){
 }
 
 // ── Admin: sección Empleados ────────────────────────────────
-var REMPLE=null; // lista de empleados (rol=empleado)
-function reloadEmpleados(){ return _sb("usuarios?rol=eq.empleado&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc").then(function(rows){ REMPLE=rows||[]; render(); }); }
+var REMPLE=null;     // lista de empleados (rol=empleado)
+var REMPLEADS=null;  // métricas por empleado_id, calculadas desde la tabla `leads`
+var COMISION_POR_PAGO_EMP=10; // € por coach que PAGA tras la prueba — MISMO valor que empleado.html
+function reloadEmpleados(){
+  return Promise.all([
+    _sb("usuarios?rol=eq.empleado&select=id,nombre,email,rol,activo,configuracion,created_at&order=created_at.desc"),
+    _sb("leads?select=empleado_id,email,estado,demo_agendada").catch(function(){ return []; })
+  ]).then(function(r){ REMPLE=r[0]||[]; REMPLEADS=_buildEmpLeadStats(r[1]||[]); render(); })
+   .catch(function(){ if(REMPLE===null) REMPLE=[]; render(); });
+}
+// Agrupa los leads por empleado. `altaEmails` = emails de los leads dados de
+// alta (prueba iniciada); después se cruzan con los coaches que PAGARON para
+// contar conversiones reales y comisión.
+function _buildEmpLeadStats(rows){
+  var m={};
+  (rows||[]).forEach(function(l){
+    var k=String((l&&l.empleado_id)||""); if(!k) return;
+    var s=m[k]||(m[k]={leads:0,contactos:0,demos:0,altas:0,altaEmails:[]});
+    s.leads++;
+    if(l.estado==="descartado") return;           // descartado no suma al funnel activo
+    if(l.estado && l.estado!=="nuevo") s.contactos++;
+    if(l.demo_agendada || l.estado==="demo" || l.estado==="alta") s.demos++;
+    if(l.estado==="alta"){ s.altas++; var e=(""+(l.email||"")).toLowerCase().trim(); if(e) s.altaEmails.push(e); }
+  });
+  return m;
+}
+// Emails de coaches que ya pagaron (estado_sub=activa). Un lead cuenta como
+// "convirtió" (y genera comisión) solo si su coach está en este set.
+function _paidCoachEmails(){
+  var set={};
+  (RCOACHES||[]).forEach(function(u){
+    var cg=(u&&u.configuracion)||{};
+    if((""+(cg.estado_sub||"")).toLowerCase()==="activa"){ var e=(""+(u.email||"")).toLowerCase().trim(); if(e) set[e]=1; }
+  });
+  return set;
+}
+function _empSt(u){
+  var k=String((u&&u.id)||"");
+  var s=(REMPLEADS&&REMPLEADS[k])||{leads:0,contactos:0,demos:0,altas:0,altaEmails:[]};
+  var paid=_paidCoachEmails(), pagaron=0;
+  (s.altaEmails||[]).forEach(function(e){ if(paid[e]) pagaron++; });
+  return { leads:s.leads, contactos:s.contactos, demos:s.demos, altas:s.altas, pagaron:pagaron,
+           comision:pagaron*COMISION_POR_PAGO_EMP,
+           tasa:(s.leads>0?Math.round(pagaron/s.leads*100):0) };
+}
+function _eur(n){ try{ return "€"+Math.round(n||0).toLocaleString("es-ES"); }catch(e){ return "€"+Math.round(n||0); } }
 
 function _empleadosView(){
   var em=state.empMsg||"";
@@ -4002,16 +4046,36 @@ function _empleadosView(){
     rows=REMPLE.map(function(u){
       var off=u.activo===false;
       var ini=(((u.nombre||u.email||"?")+"").trim()[0]||"?").toUpperCase();
+      var st=_empSt(u);
+      var mini="<span>Leads <b style='color:var(--pw-carbon)'>"+st.leads+"</b></span>"+
+        "<span>Contactos <b style='color:var(--pw-carbon)'>"+st.contactos+"</b></span>"+
+        "<span>Demos <b style='color:var(--pw-carbon)'>"+st.demos+"</b></span>"+
+        "<span>Pagaron <b style='color:var(--pw-bosque)'>"+st.pagaron+"</b></span>"+
+        "<span>Comisión <b style='color:var(--pw-carbon)'>"+_eur(st.comision)+"</b></span>";
       return "<div data-act='emple-view:"+esc(u.id)+"' style='display:grid;grid-template-columns:38px 1fr auto auto;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
         "<div style='width:34px;height:34px;border-radius:50%;background:var(--pw-bosque);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700'>"+esc(ini)+"</div>"+
-        "<div><div style='font-weight:600;color:var(--pw-carbon);font-size:14px'>"+esc(u.nombre||"—")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(u.email||"")+"</div></div>"+
+        "<div style='min-width:0'><div style='font-weight:600;color:var(--pw-carbon);font-size:14px'>"+esc(u.nombre||"—")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(u.email||"")+"</div>"+
+          "<div style='display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px;font-size:11.5px;color:var(--pw-text-soft)'>"+mini+"</div></div>"+
         "<span class='cp-bill-status' style='"+(off?"background:var(--pw-niebla-2);color:var(--pw-text-soft)":"background:var(--pw-success-bg);color:var(--pw-bosque)")+"'>"+(off?"Inactivo":"Activo")+"</span>"+
         "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 13px;font-size:12px' data-act='emple-view:"+esc(u.id)+"'>Ver ficha</button>"+
       "</div>";
     }).join("");
   }
+  // Totales del equipo comercial — suma de los números reales de cada uno
+  var totalsCard="";
+  if(REAL && REMPLE && REMPLE.length){
+    var T={leads:0,contactos:0,demos:0,altas:0,pagaron:0,comision:0};
+    REMPLE.forEach(function(u){ var s=_empSt(u); T.leads+=s.leads; T.contactos+=s.contactos; T.demos+=s.demos; T.altas+=s.altas; T.pagaron+=s.pagaron; T.comision+=s.comision; });
+    var tasa=T.leads>0?Math.round(T.pagaron/T.leads*100):0;
+    var cell=function(v,k){ return "<div style='flex:1;min-width:80px'><div style='font-size:22px;font-weight:800;color:var(--pw-bosque);line-height:1'>"+v+"</div><div style='font-size:11px;color:var(--pw-text-soft);margin-top:4px;text-transform:uppercase;letter-spacing:.4px'>"+k+"</div></div>"; };
+    totalsCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Equipo comercial<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>"+REMPLE.length+" "+(REMPLE.length===1?"persona":"personas")+"</span></div>"+
+      "<div class='cp-card-pad' style='display:flex;flex-wrap:wrap;gap:16px'>"+
+        cell(T.leads,"Leads")+cell(T.contactos,"Contactos")+cell(T.demos,"Demos")+cell(T.altas,"Altas prueba")+cell(T.pagaron,"Pagaron")+cell(tasa+"%","Tasa conv.")+cell(_eur(T.comision),"Comisión")+
+      "</div></div>";
+  }
   var listCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Empleados<span class='dot'>.</span></h3></div><div>"+rows+"</div></div>";
-  return addBox + listCard;
+  return addBox + totalsCard + listCard;
 }
 
 function _empleadoDetailCard(){
@@ -4022,6 +4086,18 @@ function _empleadoDetailCard(){
   var off=c.activo===false;
   var rowD=function(l,v){ return "<div style='display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--pw-border)'><span style='font-size:13px;color:var(--pw-text-soft)'>"+esc(l)+"</span><span style='font-size:13px;color:var(--pw-carbon);font-weight:600;text-align:right'>"+esc(v)+"</span></div>"; };
   var pend = cg.pendiente_activacion ? " · pendiente de activar" : "";
+  var st=_empSt(c);
+  var sCell=function(v,k,accent){ return "<div style='flex:1;min-width:84px'><div style='font-size:22px;font-weight:800;line-height:1;color:"+(accent?"var(--pw-bosque)":"var(--pw-carbon)")+"'>"+v+"</div><div style='font-size:11px;color:var(--pw-text-soft);margin-top:4px;text-transform:uppercase;letter-spacing:.4px'>"+k+"</div></div>"; };
+  var loadingStats = (REMPLEADS===null);
+  var statsBlock="<div style='margin-top:20px;border-top:1px solid var(--pw-border);padding-top:16px'>"+
+    "<label style='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-soft);display:block;margin-bottom:5px'>Sus números</label>"+
+    "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5;margin-bottom:14px'>Se calculan solos desde los leads que carga en su panel. <b>Pagaron</b> = coaches que pagaron tras los 14 días de prueba; solo esos generan comisión (<b>€"+COMISION_POR_PAGO_EMP+"</b> cada uno).</div>"+
+    (loadingStats
+      ? "<div style='color:var(--pw-text-soft);font-size:13px'>Cargando…</div>"
+      : "<div style='display:flex;flex-wrap:wrap;gap:16px'>"+
+          sCell(st.leads,"Leads")+sCell(st.contactos,"Contactos")+sCell(st.demos,"Demos")+sCell(st.altas,"Altas prueba")+sCell(st.pagaron,"Pagaron",true)+sCell(st.tasa+"%","Tasa conv.")+sCell(_eur(st.comision),"Comisión",true)+
+        "</div>")+
+    "</div>";
   return "<div class='cp-card'>"+
     "<div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(c.nombre||c.email||"Empleado")+"<span class='dot'>.</span></h3>"+
       "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='emple-back'>← Volver</button></div>"+
@@ -4041,6 +4117,7 @@ function _empleadoDetailCard(){
         "<button class='cp-btn cp-btn-ghost' style='"+(off?"":"color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='emple-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>"+
         "<a class='cp-btn cp-btn-ghost' href='empleado.html?as="+esc(c.id)+"' target='_blank' rel='noopener' style='text-decoration:none'>Abrir su panel ↗</a>"+
       "</div>"+
+      statsBlock+
     "</div></div>";
 }
 function _coachDetailCard(){
@@ -4511,7 +4588,7 @@ function viewAdmin(){
     return "<button class='cp-chip "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'>"+t[1]+"</button>";
   }).join("")+"</div>";
   // Menu lateral del admin (mismo formato que Configuracion). Mismos data-act.
-  var _admIcon={resumen:'📊',coaches:'🎓',empleados:'🧑‍💼',ranking:'🏆',contactos:'📥',cvx:'📄',resenas:'⭐',pagos:'💳'};
+  var _admIcon={resumen:'📊',coaches:'🎓',empleados:'👥',ranking:'🏆',contactos:'📥',cvx:'📄',resenas:'⭐',pagos:'💳'};
   var adminMenu = "<nav class='cp-cfg-nav'>"+tabs.map(function(t){
     return "<button class='cp-cfg-nav-item "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'><span class='cp-emo'>"+(_admIcon[t[0]]||'•')+"</span><span>"+t[1]+"</span></button>";
   }).join("")+"</nav>";

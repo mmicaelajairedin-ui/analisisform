@@ -223,7 +223,8 @@
         <div class="kpis">
           <div class="kpi"><div class="n" id="k-cont">0</div><div class="l">Contactados</div></div>
           <div class="kpi"><div class="n" id="k-demo">0</div><div class="l">Demos</div></div>
-          <div class="kpi"><div class="n" id="k-alta">0</div><div class="l">Altas</div></div>
+          <div class="kpi"><div class="n" id="k-alta">0</div><div class="l">Altas (prueba)</div></div>
+          <div class="kpi"><div class="n" id="k-pago">0</div><div class="l">Pagaron</div></div>
           <div class="kpi acc"><div class="n" id="k-com">€0</div><div class="l">Comisión</div></div>
         </div>
         <div class="card add">
@@ -283,7 +284,8 @@
   var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
   var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
   var ME = window.__ME||{};
-  var COMISION_POR_ALTA = 30, DAY=86400000, filtro="activos", LEADS=[];
+  var COMISION_POR_PAGO = 10, DAY=86400000, filtro="activos", LEADS=[];
+  var PAID_EMAILS=null; // set de emails de coaches que ya pagaron (estado_sub=activa)
   var sb = (window.supabase) ? window.supabase.createClient(SB,KEY) : null;
   var COLOR={nuevo:"#8A968F",contactado:"#2F6FB0",demo:"#C99A2E",alta:"#2D6A4F",descartado:"#c9ccd0"};
   // Plantillas DISEÑADAS (única fuente: pw-emails.js). Fallback a texto si no cargó.
@@ -349,6 +351,7 @@
     }
     initProfile(); renderComm(); genSign(); _loaded.comm=true;
     await loadLeads(); _loaded.leads=true;
+    loadPaidCoaches();
   }
 
   // Tabs
@@ -453,7 +456,7 @@
   function setN(id,v){ patch(id,{nicho:v}); }
   function contactado(id){ var l=byId(id); if(l && l.estado==="nuevo") patch(id,{estado:"contactado"}); }
   function toggleDemo(id){ var l=byId(id); if(!l) return; var d=!l.demo_agendada; var st=l.estado; if(d && st!=="alta") st="demo"; else if(!d && st==="demo") st="contactado"; patch(id,{demo_agendada:d,demo_fecha:d?new Date().toISOString():null,estado:st}); }
-  function alta(id){ var l=byId(id); if(!l||l.estado==="alta") return; if(!confirm("¿Dar de alta este lead como coach? Suma tu comisión.")) return; patch(id,{estado:"alta",alta_at:new Date().toISOString()}); toast("¡Alta registrada!"); }
+  function alta(id){ var l=byId(id); if(!l||l.estado==="alta") return; if(!confirm("¿Dar de alta este lead como coach? La comisión (€"+COMISION_POR_PAGO+") se suma cuando el coach paga tras los 14 días de prueba.")) return; patch(id,{estado:"alta",alta_at:new Date().toISOString()}); toast("¡Alta registrada!"); }
   function descartar(id){ if(!confirm("¿Marcar como no interesado? Sale de tus activos.")) return; patch(id,{estado:"descartado"}); }
 
   // ── Firma aprobada (única fuente: pw-sign.js) ──
@@ -511,12 +514,28 @@
     var act=LEADS.filter(function(l){return l.estado!=="descartado";});
     var cont=act.filter(function(l){return l.estado!=="nuevo";}).length;
     var demo=act.filter(function(l){return l.demo_agendada||l.estado==="demo"||l.estado==="alta";}).length;
-    var alta=act.filter(function(l){return l.estado==="alta";}).length;
+    var altaLeads=act.filter(function(l){return l.estado==="alta";});
+    var alta=altaLeads.length;
+    // Comisión SOLO por coaches que pagaron tras la prueba (estado_sub=activa).
+    var pago = PAID_EMAILS ? altaLeads.filter(function(l){ return PAID_EMAILS[(""+(l.email||"")).toLowerCase().trim()]; }).length : 0;
     document.getElementById("k-cont").textContent=cont; document.getElementById("k-demo").textContent=demo; document.getElementById("k-alta").textContent=alta;
-    var com=alta*COMISION_POR_ALTA;
+    var kp=document.getElementById("k-pago"); if(kp) kp.textContent=pago;
+    var com=pago*COMISION_POR_PAGO;
     document.getElementById("k-com").textContent="€"+com;
     document.getElementById("prof-com").textContent="€"+com;
     document.getElementById("prof-bar").style.width=Math.min(100,(com%300)/300*100||(com>0?4:2))+"%";
+  }
+  // Qué altas terminaron pagando (para la comisión). Trae solo los emails de
+  // coaches con estado_sub=activa; se cruzan contra los leads dados de alta.
+  async function loadPaidCoaches(){
+    if(!sb){ PAID_EMAILS={}; return; }
+    try{
+      var r=await sb.from('usuarios').select('email').eq('rol','coach').eq('configuracion->>estado_sub','activa');
+      if(r.error) throw r.error;
+      var set={}; (r.data||[]).forEach(function(u){ var e=(""+(u.email||"")).toLowerCase().trim(); if(e) set[e]=1; });
+      PAID_EMAILS=set;
+    }catch(e){ PAID_EMAILS={}; }
+    kpis();
   }
 
   // ── Redactar y enviar (pestaña Comunicación) — plantillas como diapositivas por nicho ──
