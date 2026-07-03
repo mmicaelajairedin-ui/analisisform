@@ -2048,12 +2048,106 @@ function viewResumen(){
       "<div>"+cliRows+"</div></div>";
   }
   var pathCard = coachPath(); // sendero gamificado de la cabra (vacío si ya completó los 3)
+  // Fase 1 de la agenda nativa: SOLO admin (interruptor). Va ARRIBA, con el
+  // diseño del panel. Los demás coaches siguen con el calendario embebido (calCard).
+  var _agTop = RADMIN ? _agendaCard() : "";
   return "<div class='cp-greet'>"+
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+"<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>"+pendingReview+" pendiente"+(pendingReview===1?"":"s")+(_nx?" · "+_nxTxt:"")+"</div></div></div>"+
     pathCard+(pathCard?"":emptyState)+
+    _agTop+
     "<div class='cp-res-grid'>"+viewDashboard()+cliBlock+"</div>"+
-    calCard;
+    (RADMIN?"":calCard);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AGENDA NATIVA (Fase 1) — lee el Google Calendar REAL del coach vía la edge
+// function `calendar` (usa configuracion.gcal_ical_url) y la muestra arriba del
+// Resumen con la tipografía y las tarjetas del panel. Fotos: se cruzan con los
+// clientes de Pathway por el título del evento. Reemplaza el embed de Calendly.
+// Por ahora SOLO admin; se generaliza cuando esté aprobada.
+// ═══════════════════════════════════════════════════════════════════
+var _AG_DATA=null;
+function _agCoachEmail(){ return (""+((COACH&&COACH.email)||(RME&&RME.email)||"")).trim().toLowerCase(); }
+function _agEventTypes(){
+  var et=(REAL&&RCFG&&Object.prototype.toString.call(RCFG.event_types)==="[object Array]")?RCFG.event_types:null;
+  if(!et||!et.length) et=[{id:"intro",label:"Llamada 30 min"},{id:"sesion",label:"Sesión 45 min"}];
+  return et;
+}
+function _agMatchClient(title){
+  var t=(""+(title||"")).toLowerCase(), best=null;
+  (CLIENTS||[]).forEach(function(c){
+    if(c._example) return; var nm=(""+(c.name||"")).trim().toLowerCase(); if(!nm) return;
+    var p=nm.split(/\s+/);
+    if(t.indexOf(nm)>=0){ best=c; }
+    else if(p.length>=2 && t.indexOf(p[0])>=0 && t.indexOf(p[1])>=0){ best=c; }
+    else if(!best && p[0] && p[0].length>=4 && t.indexOf(p[0])>=0){ best=c; }
+  });
+  return best;
+}
+function _agTime(ms){ var d=new Date(ms); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
+function _agDayLabel(ms){
+  var d=new Date(ms); d.setHours(0,0,0,0); var t=new Date(); t.setHours(0,0,0,0);
+  var diff=Math.round((d-t)/86400000);
+  var DIAS=["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+  var base=DIAS[d.getDay()]+" "+d.getDate();
+  return diff===0?("Hoy · "+base):diff===1?("Mañana · "+base):base;
+}
+function _agEmpty(msg){ return "<div style='color:var(--pw-text-soft);font-size:13px;padding:12px 0;text-align:center'>"+esc(msg)+"</div>"; }
+function _agConnect(){
+  return "<div style='text-align:center;padding:12px 6px'>"+
+    "<div style='font-family:var(--pw-serif);font-size:16px;color:var(--pw-carbon);margin-bottom:4px'>Conectá tu Google Calendar</div>"+
+    "<p style='font-size:12.5px;color:var(--pw-text-soft);max-width:470px;margin:0 auto 12px;line-height:1.5'>Pegá la <strong>dirección secreta en formato iCal</strong> de tu Google Calendar (Google Calendar → Configuración → tu calendario → “Dirección secreta en formato iCal”).</p>"+
+    "<div style='display:flex;gap:8px;max-width:540px;margin:0 auto;flex-wrap:wrap'>"+
+      "<input id='ag-ical' class='cp-form-input' style='flex:1;min-width:220px' placeholder='https://calendar.google.com/calendar/ical/…/basic.ics'>"+
+      "<button class='cp-btn cp-btn-primary' data-act='ag-connect'>Conectar</button>"+
+    "</div></div>";
+}
+function _agRender(d){
+  if(d && d.unconfigured) return _agConnect();
+  var evs=(d&&Object.prototype.toString.call(d.events)==="[object Array]")?d.events:[];
+  if(!evs.length) return _agEmpty("No tenés sesiones próximas en tu Google Calendar. Cuando agendes una, aparece acá.");
+  var html="", lastDay="";
+  evs.forEach(function(e){
+    if(!e||!e.start) return;
+    var dl=_agDayLabel(e.start);
+    if(dl!==lastDay){ html+="<div class='cp-eyebrow' style='margin:14px 0 4px'>"+esc(dl)+"</div>"; lastDay=dl; }
+    var cli=_agMatchClient(e.title);
+    var av=cli
+      ? avImg(cli.photo,cli.name,"style='width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0'")
+      : "<div style='width:40px;height:40px;border-radius:50%;background:var(--pw-niebla-2);display:flex;align-items:center;justify-content:center;flex-shrink:0'><span class='cp-emo'>🗓️</span></div>";
+    var link=(e.location&&/^https?:\/\//.test(e.location))?e.location:"";
+    var join=link?"<a href='"+esc(link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px;text-decoration:none'>Entrar</a>":"";
+    html+="<div style='display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--pw-border)'>"+
+      "<div style='min-width:46px;text-align:center'><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+_agTime(e.start)+"</div></div>"+
+      av+
+      "<div style='flex:1;min-width:0'><div style='font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(e.title||"Sesión")+"</div>"+
+        (cli?"<div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(cli.role||"Cliente")+"</div>":"")+"</div>"+
+      join+"</div>";
+  });
+  return html;
+}
+function _agendaCard(){
+  var chips=_agEventTypes().map(function(t){ return "<span class='cp-chip' style='cursor:default'>"+esc(t.label)+"</span>"; }).join("");
+  return "<div class='cp-card' style='margin-bottom:16px'>"+
+    "<div class='cp-card-hd'>"+
+      "<h3 class='cp-card-title'><span class='cp-emo'>🗓️</span> Tu agenda<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow' style='display:inline-flex;align-items:center;gap:6px'><span style='width:7px;height:7px;border-radius:50%;background:var(--pw-sendero);display:inline-block'></span>En vivo · Google Calendar</span>"+
+    "</div>"+
+    "<div id='cp-agenda-body' class='cp-card-pad'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
+    "<div class='cp-card-pad' style='border-top:1px solid var(--pw-border);display:flex;gap:8px;align-items:center;flex-wrap:wrap'>"+
+      "<span class='cp-eyebrow' style='margin-right:2px'>Tipos de evento</span>"+chips+
+      "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px;margin-left:auto' data-act='ag-share'><span class='cp-emo'>🔗</span> Compartir mi link</button>"+
+    "</div></div>";
+}
+function _agendaLoad(){
+  var body=document.getElementById("cp-agenda-body"); if(!body) return;
+  var em=_agCoachEmail();
+  if(!em){ body.innerHTML=_agEmpty("No pudimos leer tu email de coach."); return; }
+  fetch(SB+"/functions/v1/calendar?email="+encodeURIComponent(em),{headers:{apikey:KEY,Authorization:"Bearer "+KEY}})
+    .then(function(r){ return r.ok?r.json():{events:[]}; })
+    .then(function(d){ _AG_DATA=d; var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agRender(d); })
+    .catch(function(){ var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agEmpty("No pudimos cargar tu calendario. Reintentá en un momento."); });
 }
 
 /* ═══ Clientes ═══ */
@@ -4985,6 +5079,14 @@ function render(){
     // próximo frame para que no quede arriba aunque el reflow llegue tarde.
     if(_same && _prevWin){ try{ requestAnimationFrame(function(){ try{ window.scrollTo(0,_prevWin); }catch(e){} }); }catch(e){} }
     _lastViewKey=_vk;
+    // Agenda nativa (Fase 1, solo admin): al pintar el Resumen, cargar el Google
+    // Calendar real. Si ya lo trajimos, reusar el cache; si no, ir a buscarlo.
+    if(state.section==="resumen" && RADMIN){
+      try{
+        if(_AG_DATA){ var _agb=document.getElementById("cp-agenda-body"); if(_agb) _agb.innerHTML=_agRender(_AG_DATA); }
+        else { _agendaLoad(); }
+      }catch(e){}
+    }
     _syncChatBtn();
     // Apenas entrás al panel (datos reales cargados), la cabra saluda y luego
     // se queda parada (o triste, si hace mucho que no entrabas).
@@ -5027,6 +5129,20 @@ document.addEventListener("click", function(ev){
   if(!el) return;
   var act = el.getAttribute("data-act");
   if(act==="open"){ var ou=el.getAttribute("data-url"); if(ou){ var _w=window.open(ou,"_blank","noopener"); if(!_w){ location.href=ou; } } return; }
+  // Agenda nativa (Fase 1): conectar el Google Calendar del coach (guarda el iCal).
+  if(act==="ag-connect"){
+    var _agi=document.getElementById("ag-ical"); var _agv=_agi?(""+_agi.value).trim():"";
+    if(!/^https:\/\/calendar\.google\.com\/calendar\/ical\//.test(_agv)){ alert("Pegá la dirección iCal secreta de Google Calendar (empieza con https://calendar.google.com/calendar/ical/…)."); return; }
+    saveCfg({gcal_ical_url:_agv}, null, function(){ _AG_DATA=null; toast("Calendario conectado ✓"); _agendaLoad(); });
+    return;
+  }
+  // Compartir el link de agendado (por ahora, el que ya tiene configurado el coach).
+  if(act==="ag-share"){
+    var _agu=(REAL&&RCFG&&RCFG.calendly_url)?RCFG.calendly_url:"";
+    if(_agu){ try{ navigator.clipboard && navigator.clipboard.writeText(_agu); }catch(e){} toast("Link de agendado copiado ✓"); }
+    else { toast("Configurá tu link de agendado en Configuración"); }
+    return;
+  }
   // Portal del cliente: SIEMPRE en la misma pestaña ("pathway_portal"). Si ya
   // está abierta, la navega al cliente nuevo y le da foco — no abre mil pestañas.
   // El panel sigue en su propia pestaña/sesión.
