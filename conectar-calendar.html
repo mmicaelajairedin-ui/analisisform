@@ -78,8 +78,11 @@ function conectar(){
 }
 function guardar(session){
   busy('Guardando la conexión…');
+  var ctrl = new AbortController();
+  var to = setTimeout(function(){ ctrl.abort(); }, 15000);
   fetch(SB+'/functions/v1/gcal-connect',{
     method:'POST',
+    signal: ctrl.signal,
     headers:{ 'Content-Type':'application/json', 'apikey':KEY, 'Authorization':'Bearer '+session.access_token },
     body:JSON.stringify({
       access_token: session.provider_token||'',
@@ -89,11 +92,16 @@ function guardar(session){
     })
   }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
     .then(function(res){
+      clearTimeout(to);
       if(res.ok && res.d && res.d.ok){ done(); }
       else if(res.d && res.d.error==='coach_not_found'){ failView('Tu email de Google ('+(res.d.email||'')+') no coincide con tu cuenta de Pathway. Escribime y lo resolvemos.'); }
       else { failView('No pudimos guardar la conexión ('+((res.d&&res.d.error)||'error')+').'); }
     })
-    .catch(function(){ failView('No pudimos guardar la conexión. Reintentá.'); });
+    .catch(function(e){
+      clearTimeout(to);
+      if(e && e.name==='AbortError'){ failView('Está tardando demasiado. Revisá que la función "gcal-connect" esté desplegada con Verify JWT OFF, y reintentá.'); }
+      else { failView('No pudimos guardar la conexión. Reintentá.'); }
+    });
 }
 // Al cargar: ¿venimos de vuelta del OAuth de Google?
 (function(){
