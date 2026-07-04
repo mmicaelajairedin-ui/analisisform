@@ -47,20 +47,26 @@ Deno.serve(async (req: Request) => {
     return json({ error: "auth_unreachable" }, 502);
   }
 
-  // 2) Leer el token de Google del body.
+  // 2) Leer el token de Google del body. `coach_id` (opcional) viene del panel
+  //    (mj_user en localStorage): así guardamos en LA cuenta de coach que está
+  //    usando el panel, aunque su Google sea otro email (usuario de prueba, etc.).
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch (_e) { return json({ error: "bad_body" }, 400); }
   const access_token = String(body.access_token || "");
   const refresh_token = String(body.refresh_token || "");
+  const coach_id = String(body.coach_id || "");
   const expiry = Number(body.expiry || (Date.now() + 3600000));
   if (!access_token) return json({ error: "no_access_token" }, 400);
 
   const sbHeaders = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
 
-  // 3) Buscar la fila del coach por su email verificado y mergear gcal.
+  // 3) Fila destino: por coach_id si vino (robusto), si no por el email verificado.
+  const filter = coach_id
+    ? `id=eq.${encodeURIComponent(coach_id)}`
+    : `email=eq.${encodeURIComponent(email)}`;
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=id,configuracion&limit=1`,
+      `${SB_URL}/rest/v1/usuarios?${filter}&select=id,configuracion&limit=1`,
       { headers: sbHeaders },
     );
     const rows = r.ok ? await r.json() : [];
