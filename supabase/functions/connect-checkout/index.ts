@@ -151,6 +151,7 @@ Deno.serve(async (req: Request) => {
     let servicioTag: string;       // legacy: 'sesion' | 'mentoria' | 'custom'
     let servicioIdx: number | null = null;
     let servicioTitulo: string;    // cacheado en la solicitud — sobrevive a renombres
+    let recurrente = false;        // servicio de suscripción → cobro cada 4 semanas
     if (hasIdx) {
       const idx = Math.floor(p.servicio_idx);
       const servicios = Array.isArray(cfg.servicios) ? cfg.servicios : [];
@@ -163,6 +164,7 @@ Deno.serve(async (req: Request) => {
       servicioTag = "custom";
       servicioIdx = idx;
       servicioTitulo = String(so.name ?? so.nombre ?? "Servicio");
+      recurrente = so.recurrente === true || so.suscripcion === true;
     } else {
       precio = Number(
         servicioLegacy === "sesion" ? (cfg.precio_sesion || 120) : (cfg.precio_mentoria || 400),
@@ -199,47 +201,77 @@ Deno.serve(async (req: Request) => {
       ? `${SITE}/coach/${encodeURIComponent(slug)}?solicitud=cancel`
       : `${SITE}/coaches.html?solicitud=cancel`;
 
-    const sess = await stripe("/checkout/sessions", "POST", KEY, {
-      mode: "payment",
+    // Parámetros comunes de la Checkout Session
+    const baseParams: Record<string, string> = {
       "line_items[0][quantity]": "1",
       "line_items[0][price_data][currency]": "eur",
       "line_items[0][price_data][unit_amount]": String(monto),
       "line_items[0][price_data][product_data][name]": nombreServicio,
-      "payment_intent_data[capture_method]": "manual",
-      "payment_intent_data[application_fee_amount]": String(fee),
-      // Lo que ve el comprador en el resumen de su banco: "PATHWAY" (no el
-      // nombre de la cuenta del coach). Sigue siendo cargo directo sobre la
-      // cuenta del coach — solo cambia el texto del extracto, no el modelo.
-      "payment_intent_data[statement_descriptor]": "PATHWAY",
       ...(cand.email ? { customer_email: String(cand.email) } : {}),
       success_url: successUrl,
       cancel_url: cancelUrl,
-    }, acct);
+    };
+    // Suscripción (cada 4 semanas): cargo directo al coach + comisión de Pathway
+    // como application_fee_percent en CADA ciclo. NO retiene plata. Arranca
+    // directo (sin el paso de "aceptar en 24 h" del pago único). La metadata
+    // viaja al webhook para crear/activar al candidato y gatear su acceso.
+    // Pago único: se mantiene EXACTAMENTE igual que antes (hold + accept).
+    const feePct = Math.round(rate * 1000) / 10; // p.ej. 0.05 → 5 (%)
+    const email = String(cand.email || "");
+    const params: Record<string, string> = recurrente
+      ? {
+        ...baseParams,
+        mode: "subscription",
+        "line_items[0][price_data][recurring][interval]": "week",
+        "line_items[0][price_data][recurring][interval_count]": "4",
+        "subscription_data[application_fee_percent]": String(feePct),
+        "subscription_data[metadata][pathway]": "client_sub",
+        "subscription_data[metadata][coach_id]": coachId,
+        "subscription_data[metadata][candidato_email]": email,
+        "subscription_data[metadata][candidato_nombre]": String(cand.nombre || ""),
+        "metadata[pathway]": "client_sub",
+        "metadata[coach_id]": coachId,
+        "metadata[candidato_email]": email,
+      }
+      : {
+        ...baseParams,
+        mode: "payment",
+        "payment_intent_data[capture_method]": "manual",
+        "payment_intent_data[application_fee_amount]": String(fee),
+        // Lo que ve el comprador en el resumen de su banco: "PATHWAY".
+        "payment_intent_data[statement_descriptor]": "PATHWAY",
+      };
+    const sess = await stripe("/checkout/sessions", "POST", KEY, params, acct);
     if (!sess.ok || !sess.data?.id) {
       return json({ error: "No se pudo crear el checkout", detail: sess.data?.error?.message || sess.status }, 502);
     }
 
-    const now = Date.now();
-    await fetch(`${SB}/rest/v1/solicitudes`, {
-      method: "POST",
-      headers: { ...sbH(SRK), Prefer: "return=minimal" },
-      body: JSON.stringify({
-        coach_id: coachId,
-        candidato_nombre: cand.nombre || null,
-        candidato_email: cand.email || null,
-        servicio: servicioTag,
-        servicio_idx: servicioIdx,
-        servicio_titulo: servicioTitulo,
-        mensaje: mensaje || null,
-        monto: precio,
-        comision: precio * rate,
-        estado: "pendiente",
-        stripe_account_id: acct,
-        stripe_session_id: sess.data.id,
-        created_at: new Date(now).toISOString(),
-        expires_at: new Date(now + 24 * 3600 * 1000).toISOString(),
-      }),
-    });
+    // Pago único → creamos la SOLICITUD (flujo aceptar/rechazar del coach).
+    // Suscripción → NO hay solicitud: arranca directo y el webhook activa al
+    // candidato al confirmarse el primer cobro.
+    if (!recurrente) {
+      const now = Date.now();
+      await fetch(`${SB}/rest/v1/solicitudes`, {
+        method: "POST",
+        headers: { ...sbH(SRK), Prefer: "return=minimal" },
+        body: JSON.stringify({
+          coach_id: coachId,
+          candidato_nombre: cand.nombre || null,
+          candidato_email: cand.email || null,
+          servicio: servicioTag,
+          servicio_idx: servicioIdx,
+          servicio_titulo: servicioTitulo,
+          mensaje: mensaje || null,
+          monto: precio,
+          comision: precio * rate,
+          estado: "pendiente",
+          stripe_account_id: acct,
+          stripe_session_id: sess.data.id,
+          created_at: new Date(now).toISOString(),
+          expires_at: new Date(now + 24 * 3600 * 1000).toISOString(),
+        }),
+      });
+    }
     return json({ url: sess.data.url });
   }
 

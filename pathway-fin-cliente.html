@@ -1115,8 +1115,39 @@ window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!i
 function pwInit(){
   if(_esDemo()){ CRAW=_demoCraw(); CID=null; applyClientFin(CRAW); _demoBrandFin(); return; }
   sbGet('candidatos','email=eq.'+encodeURIComponent(EMAIL)+'&select=*').then(function(rows){
-    if(rows&&rows.length){CRAW=rows[0];CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);pwMaybeConsent();}
+    if(rows&&rows.length){CRAW=rows[0];CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);pwMaybeConsent();pwSubGate(CRAW);}
   }).catch(function(){});
+}
+// ── Acceso atado a la suscripción (servicios "cada 4 semanas") ──
+// Cliente al día (o SIN suscripción → pago único / cortesía) → acceso normal.
+// Suscripción vencida → overlay para renovar (bloqueo suave: puede cerrarlo y
+// ver su info, pero lo empujamos a renovar). Nunca afecta a clientes sin sub.
+function _subVigente(c){
+  if(!c || !c.sub_id) return true;
+  var t=c.sub_vigente_hasta?Date.parse(c.sub_vigente_hasta):NaN;
+  if(!isNaN(t)) return Date.now() < (t + 3*24*3600*1000); // pagado hasta + 3 días de gracia
+  var est=(''+(c.sub_estado||'')).toLowerCase();
+  return !(est==='canceled'||est==='unpaid');
+}
+function pwSubGate(c){
+  try{
+    if(_subVigente(c)) return;
+    if(document.getElementById('sub-ov')) return;
+    var nombre=(c&&(''+(c.nombre||'')).trim().split(' ')[0])||'';
+    var renew='';
+    if(window.COACH_WHATS){ renew="<a href='"+window.COACH_WHATS+"' target='_blank' rel='noopener' style='display:block;text-decoration:none;height:46px;line-height:46px;border-radius:11px;background:#2D6A4F;color:#fff;font-weight:600;font-size:15px;margin-bottom:10px'>Renovar con mi coach →</a>"; }
+    else if(window.COACH_EMAIL){ renew="<a href='mailto:"+window.COACH_EMAIL+"?subject=Renovar%20mi%20plan' style='display:block;text-decoration:none;height:46px;line-height:46px;border-radius:11px;background:#2D6A4F;color:#fff;font-weight:600;font-size:15px;margin-bottom:10px'>Escribir a mi coach para renovar →</a>"; }
+    var ov=document.createElement('div'); ov.id='sub-ov';
+    ov.style.cssText='position:fixed;inset:0;z-index:99997;background:rgba(27,46,38,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,sans-serif';
+    ov.innerHTML="<div style='background:#fff;max-width:420px;width:100%;border-radius:18px;padding:30px 26px;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center'>"+
+      "<div style='font-size:38px;line-height:1;margin-bottom:10px'>🔒</div>"+
+      "<h2 style='font-family:Georgia,serif;font-size:22px;font-weight:600;color:#1B2E26;margin:0 0 8px'>Tu plan venció</h2>"+
+      "<p style='font-size:14px;color:#5A5A55;line-height:1.6;margin:0 0 20px'>"+(nombre?('Hola '+nombre+', para'):'Para')+" seguir usando tu portal necesitás renovar. Tus datos quedan guardados — cuando renueves, seguís donde estabas.</p>"+
+      renew+
+      "<button onclick=\"var o=document.getElementById('sub-ov'); if(o) o.remove();\" style='background:none;border:none;color:#9a9a95;font-size:13px;cursor:pointer;font-family:inherit'>Ver mi portal por ahora</button>"+
+    "</div>";
+    document.body.appendChild(ov);
+  }catch(e){}
 }
 // ── Consentimiento (primer ingreso) — RGPD art. 7.1, ver consentimiento.sql ──
 var CONSENT_VERSION='2026-05-01';

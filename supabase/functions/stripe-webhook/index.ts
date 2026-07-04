@@ -58,6 +58,7 @@ interface StripeSubscription {
   current_period_end?: number;
   trial_end?: number | null;
   items?: { data?: StripeSubscriptionItem[] };
+  metadata?: { pathway?: string; coach_id?: string; candidato_email?: string; candidato_nombre?: string; [k: string]: string | undefined };
 }
 
 interface StripeCustomer {
@@ -68,6 +69,10 @@ interface StripeCustomer {
 interface StripeEvent {
   id: string;
   type: string;
+  // Eventos de CUENTAS CONECTADAS (cargo directo) traen `account` con el id de
+  // la cuenta del coach. Los eventos de la plataforma (suscripción del coach a
+  // Pathway) NO lo traen. Así distinguimos suscripción de CLIENTE vs de COACH.
+  account?: string;
   data: { object: StripeSession | StripeSubscription | StripeCustomer };
 }
 
@@ -346,6 +351,79 @@ async function handleClientPayment(session: StripeSession) {
     });
     return { result: "created", email, amount, coach_id: coachId };
   }
+}
+
+// ── Suscripción del CLIENTE al coach (marketplace, cargo directo) ─────
+// Llega por webhook de CUENTA CONECTADA (ev.account presente). Identificamos
+// al candidato por metadata.candidato_email (seteada en connect-checkout).
+// Guardamos estado + "pagado hasta" para que el portal gatee el acceso.
+function subEstadoAccess(status: string): string {
+  if (status === "active" || status === "trialing") return "active";
+  if (status === "past_due") return "past_due";
+  return "canceled"; // canceled | unpaid | incomplete | incomplete_expired
+}
+async function upsertClientSub(email: string, fields: Record<string, unknown>) {
+  const { url: SB_URL, headers } = getSupabaseAuth();
+  const em = String(email || "").toLowerCase().trim();
+  if (!em) return { ok: false };
+  const chk = await fetch(
+    `${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(em)}&select=id,coach_id`,
+    { headers },
+  );
+  const ex = chk.ok ? await chk.json() : [];
+  if (Array.isArray(ex) && ex.length) {
+    const body = { ...fields } as Record<string, unknown>;
+    if (ex[0].coach_id && "coach_id" in body) delete body.coach_id;
+    const r = await fetch(`${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(em)}`, {
+      method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify(body),
+    });
+    return { ok: r.ok };
+  }
+  const r = await fetch(`${SB_URL}/rest/v1/candidatos`, {
+    method: "POST", headers: { ...headers, Prefer: "return=minimal" },
+    body: JSON.stringify({ email: em, activo: true, ...fields, nombre: (fields.nombre as string) || em.split("@")[0] }),
+  });
+  return { ok: r.ok };
+}
+async function handleClientSubCheckout(session: StripeSession) {
+  const md = session.metadata || {};
+  const email = String(md.candidato_email || session.customer_details?.email || session.customer_email || "");
+  const nombre = String(md.candidato_nombre || session.customer_details?.name || "");
+  if (!email) return { received: true, type: "client_sub_checkout", skipped: "sin email" };
+  const res = await upsertClientSub(email, {
+    pago_recibido: true,
+    pago_fecha: new Date().toISOString(),
+    coach_id: md.coach_id || undefined,
+    nombre: nombre || undefined,
+    sub_id: session.subscription || undefined,
+    sub_customer: session.customer || undefined,
+    sub_estado: "active",
+    sub_intervalo: "4w",
+  });
+  return { received: true, type: "client_sub_checkout", ok: res.ok, email };
+}
+async function handleClientSubEvent(sub: StripeSubscription) {
+  const md = sub.metadata || {};
+  const email = String(md.candidato_email || "");
+  const estado = subEstadoAccess(sub.status);
+  const fields: Record<string, unknown> = {
+    sub_id: sub.id,
+    sub_customer: sub.customer,
+    sub_estado: estado,
+    sub_intervalo: "4w",
+  };
+  if (sub.current_period_end) fields.sub_vigente_hasta = new Date(sub.current_period_end * 1000).toISOString();
+  if (estado === "active") fields.pago_recibido = true;
+  if (md.coach_id) fields.coach_id = md.coach_id;
+  if (email) {
+    const res = await upsertClientSub(email, fields);
+    return { received: true, type: "client_sub_event", status: sub.status, ok: res.ok };
+  }
+  const { url: SB_URL, headers } = getSupabaseAuth();
+  const r = await fetch(`${SB_URL}/rest/v1/candidatos?sub_id=eq.${encodeURIComponent(sub.id)}`, {
+    method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify(fields),
+  });
+  return { received: true, type: "client_sub_event", status: sub.status, ok: r.ok };
 }
 
 // ── Handler: suscripción del coach a Pathway ─────────────────
@@ -691,9 +769,15 @@ Deno.serve(async (req: Request) => {
   if (ev.type === "checkout.session.completed") {
     const session = ev.data.object as StripeSession;
     if (session.mode === "subscription") {
-      // Suscripción del coach — esperamos el evento customer.subscription.created
-      // que trae todos los detalles. Acá solo registramos.
-      result = { received: true, type: ev.type, skipped: "subscription-checkout" };
+      // Suscripción del CLIENTE al coach (cuenta conectada → ev.account) vs
+      // suscripción del COACH a Pathway (plataforma → sin account).
+      if (ev.account || session.metadata?.pathway === "client_sub") {
+        result = await handleClientSubCheckout(session);
+      } else {
+        // Suscripción del coach — esperamos customer.subscription.created
+        // que trae todos los detalles. Acá solo registramos.
+        result = { received: true, type: ev.type, skipped: "subscription-checkout" };
+      }
     } else {
       // Pack Express: pagos de €40 (4000) o €10 supplement (1000) van al
       // handler que registra el acceso en la tabla cv_express. Otros
@@ -718,8 +802,14 @@ Deno.serve(async (req: Request) => {
     ev.type === "customer.subscription.deleted"
   ) {
     const sub = ev.data.object as StripeSubscription;
-    const email = await getCustomerEmail(sub.customer);
-    result = await handleCoachSubscription(sub, email);
+    if (ev.account || sub.metadata?.pathway === "client_sub") {
+      // Suscripción del CLIENTE al coach (cuenta conectada) → gatea acceso al portal.
+      result = await handleClientSubEvent(sub);
+    } else {
+      // Suscripción del COACH a Pathway (plataforma).
+      const email = await getCustomerEmail(sub.customer);
+      result = await handleCoachSubscription(sub, email);
+    }
   }
 
   // Marcar evento como procesado para que reintentos de Stripe no
