@@ -109,28 +109,37 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
 async function verifyStripeSignature(
   payload: string,
   header: string | null,
-  secret: string,
+  secret: string | string[],
 ): Promise<boolean> {
-  if (!header || !secret) return false;
+  if (!header) return false;
+  // Aceptamos MÚLTIPLES secretos: uno por cada destino de webhook en Stripe.
+  // Hoy hay dos destinos a la MISMA URL — "Tu cuenta" (pagos a Pathway +
+  // suscripción del coach) y "Cuentas conectadas" (pagos/suscripciones del
+  // cliente al coach, cargo directo). Cada destino firma con su propio secreto.
+  const secrets = (Array.isArray(secret) ? secret : [secret]).filter(Boolean);
+  if (!secrets.length) return false;
   const parts = parseSigHeader(header);
   if (!parts.t || !parts.v1) return false;
   const nowSec = Math.floor(Date.now() / 1000);
   const ts = parseInt(parts.t, 10);
   if (Math.abs(nowSec - ts) > 300) return false;
   const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sigBuffer = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    encoder.encode(`${parts.t}.${payload}`),
-  );
-  return timingSafeEqual(new Uint8Array(sigBuffer), hexToBytes(parts.v1));
+  for (const sec of secrets) {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(sec),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sigBuffer = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode(`${parts.t}.${payload}`),
+    );
+    if (timingSafeEqual(new Uint8Array(sigBuffer), hexToBytes(parts.v1))) return true;
+  }
+  return false;
 }
 
 // ── Supabase helpers ─────────────────────────────────────────
@@ -735,11 +744,17 @@ async function getCustomerEmail(customerId: string): Promise<string | undefined>
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
-  const secret = Deno.env.get("STRIPE_WEBHOOK_SECRET") || "";
+  // Dos destinos de webhook (misma URL) → dos secretos. Probamos ambos.
+  //   STRIPE_WEBHOOK_SECRET         → destino "Tu cuenta"
+  //   STRIPE_WEBHOOK_SECRET_CONNECT → destino "Cuentas conectadas"
+  const secrets = [
+    Deno.env.get("STRIPE_WEBHOOK_SECRET") || "",
+    Deno.env.get("STRIPE_WEBHOOK_SECRET_CONNECT") || "",
+  ];
   const sigHeader = req.headers.get("stripe-signature");
   const rawBody = await req.text();
 
-  if (!(await verifyStripeSignature(rawBody, sigHeader, secret))) {
+  if (!(await verifyStripeSignature(rawBody, sigHeader, secrets))) {
     return new Response(JSON.stringify({ error: "Invalid signature" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
