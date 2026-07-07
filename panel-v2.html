@@ -2134,9 +2134,12 @@ function _agRender(d){
     var dl=_agDayLabel(e.start);
     if(dl!==lastDay){ html+="<div class='cp-eyebrow' style='margin:9px 0 2px'>"+esc(dl)+"</div>"; lastDay=dl; }
     var cli=_agMatchClient(e.title);
-    var av=cli
+    var typ=_agEventTypeFor(e.title); var col=(typ&&typ.color)||"#8C7B80"; var ico=(typ&&typ.icon)||"🗓️";
+    // Foto SOLO si matchea un cliente real (por nombre). Si no, círculo con el
+    // color del tipo de evento + su icono (nunca una cara que no corresponde).
+    var av=(cli&&cli.photo)
       ? avImg(cli.photo,cli.name,"style='width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0'")
-      : "<div style='width:28px;height:28px;border-radius:50%;background:var(--pw-niebla-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px'><span class='cp-emo'>🗓️</span></div>";
+      : "<div style='width:28px;height:28px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px'>"+ico+"</div>";
     var link=(e.location&&/^https?:\/\//.test(e.location))?e.location:"";
     var join=link?"<a href='"+esc(link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='height:25px;font-size:11px;padding:0 10px;text-decoration:none'>Entrar</a>":"";
     html+="<div style='display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--pw-border)'>"+
@@ -2147,21 +2150,32 @@ function _agRender(d){
   });
   return html;
 }
-// Tipos de evento del coach: defaults sensatos si no configuró nada (así NO le
-// pedimos que cargue nada — puede usarlos tal cual o editarlos).
+// Tipos de evento del coach: cada uno con color (para distinguir en el calendario)
+// e icono (cuando no hay foto del cliente). Defaults sensatos → no le pedimos nada.
+var _AG_COLORS=["#2D6A4F","#8C7B80","#C99A2E","#3F5DA9","#C0756E","#4C8C6E"];
+var _AG_ICONS=["🗓️","📞","💬","🎯","🏋️","💰","🧠","☕"];
 function _agTypes(){
   var t=(REAL&&RCFG&&Object.prototype.toString.call(RCFG.event_types)==="[object Array]")?RCFG.event_types:null;
-  if(!t || !t.length) t=[{label:"Llamada 30 min"},{label:"Sesión 45 min"}];
+  if(!t || !t.length) t=[{label:"Llamada 30 min",color:"#2D6A4F",icon:"📞"},{label:"Sesión 45 min",color:"#8C7B80",icon:"🗓️"}];
   return t;
 }
+// El tipo cuyo nombre aparece en el título del evento (para colorear la agenda).
+function _agEventTypeFor(title){
+  var t=(""+(title||"")).toLowerCase(), f=null;
+  _agTypes().forEach(function(x){ var l=(""+(x.label||"")).toLowerCase().trim(); if(l && t.indexOf(l)>=0) f=x; });
+  return f;
+}
 function _agTypesHtml(){
-  var rows=_agTypes().map(function(t,i){
-    return "<div style='display:flex;align-items:center;gap:4px;padding:2px 0'>"+
-      "<button data-act='ag-type-edit' data-i='"+i+"' title='Editar' style='flex:1;text-align:left;background:none;border:none;font-family:inherit;font-size:12px;color:var(--pw-carbon);cursor:pointer;padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'><span style='color:var(--pw-sendero)'>•</span> "+esc(t.label||"Evento")+"</button>"+
-      "<button class='cp-icon-btn' data-act='ag-type-del' data-i='"+i+"' title='Quitar' style='width:20px;height:20px;flex-shrink:0'>"+svg(IC.close,10)+"</button>"+
-    "</div>";
-  }).join("");
-  return rows+"<button class='cp-btn cp-btn-ghost' data-act='ag-type-add' style='height:25px;font-size:11px;padding:0 9px;margin-top:5px'>"+svg(IC.plus,11)+" Tipo</button>";
+  return _agTypes().map(function(t,i){
+    var col=t.color||"#8C7B80";
+    return "<button data-act='ag-open' data-i='"+i+"' style='display:flex;align-items:center;gap:7px;width:100%;text-align:left;background:#fff;border:1px solid var(--pw-border);border-radius:9px;font-family:inherit;font-size:12px;color:var(--pw-carbon);cursor:pointer;padding:7px 9px;margin-bottom:5px'>"+
+      "<span style='width:9px;height:9px;border-radius:50%;background:"+col+";flex-shrink:0'></span>"+
+      "<span style='flex-shrink:0'>"+(t.icon||"🗓️")+"</span>"+
+      "<span style='flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(t.label||"Evento")+"</span>"+
+      svg(IC.chevR,12,"style='opacity:.35;flex-shrink:0'")+
+    "</button>";
+  }).join("")+
+  "<button class='cp-btn cp-btn-ghost' data-act='ag-new' style='height:26px;font-size:11px;padding:0 9px;margin-top:2px'>"+svg(IC.plus,11)+" Tipo</button>";
 }
 function _agendaCard(){
   return "<div class='cp-card' style='margin-bottom:16px'>"+
@@ -2174,10 +2188,56 @@ function _agendaCard(){
       "<div style='flex:1;min-width:168px;background:var(--pw-niebla-2);border-radius:12px;padding:12px 14px'>"+
         "<div class='cp-eyebrow' style='margin-bottom:6px'>Tipos de evento</div>"+
         "<div id='cp-agenda-types'>"+_agTypesHtml()+"</div>"+
-        "<button class='cp-btn cp-btn-primary' data-act='ag-new' style='height:32px;font-size:12px;margin-top:12px;width:100%'>"+svg(IC.plus,13)+" Agendar nuevo</button>"+
+        "<button class='cp-btn cp-btn-primary' data-act='ag-cita' style='height:32px;font-size:12px;margin-top:12px;width:100%'>"+svg(IC.plus,13)+" Agendar cita</button>"+
       "</div>"+
     "</div>"+
   "</div>";
+}
+// Modal Pathway para tipos de evento y agendar cita (nada de prompts del navegador).
+function viewAgModal(){
+  var g=state.ag; if(!g) return "";
+  var types=_agTypes();
+  var t=(g.i>=0&&g.i<types.length)?types[g.i]:{label:"",color:_AG_COLORS[0],icon:_AG_ICONS[0]};
+  var curCol=g.color||t.color||_AG_COLORS[0], curIco=g.icon||t.icon||_AG_ICONS[0];
+  var body="", ttl="";
+  if(g.mode==="menu"){
+    ttl=esc(t.label||"Evento");
+    body="<div style='font-size:12.5px;color:var(--pw-text-soft);margin-bottom:14px'>¿Qué querés hacer con este tipo?</div>"+
+      "<button class='cp-btn cp-btn-primary' data-act='ag-cita' data-i='"+g.i+"' style='width:100%;margin-bottom:8px'>"+svg(IC.plus,13)+" Agendar una cita</button>"+
+      "<button class='cp-btn cp-btn-ghost' data-act='ag-to-link' style='width:100%;margin-bottom:14px'>"+svg(IC.extLink,13)+" Link para que reserven</button>"+
+      "<div style='display:flex;gap:8px'><button class='cp-btn cp-btn-ghost' data-act='ag-to-edit' style='flex:1'>Editar</button>"+
+      "<button class='cp-btn cp-btn-ghost' data-act='ag-del-type' style='flex:1;color:var(--pw-danger);border-color:rgba(192,117,110,.4)'>Borrar</button></div>";
+  } else if(g.mode==="edit"||g.mode==="new"){
+    ttl=(g.mode==="new")?"Nuevo tipo de evento":"Editar tipo";
+    var colDots=_AG_COLORS.map(function(c){ var on=(curCol===c); return "<button data-act='ag-pick-color' data-c='"+c+"' title='color' style='width:24px;height:24px;border-radius:50%;background:"+c+";border:2px solid "+(on?"var(--pw-carbon)":"#fff")+";box-shadow:0 0 0 1px var(--pw-border);cursor:pointer'></button>"; }).join("");
+    var icoBtns=_AG_ICONS.map(function(ic){ var on=(curIco===ic); return "<button data-act='ag-pick-icon' data-ic='"+ic+"' style='width:28px;height:28px;border-radius:8px;background:"+(on?"var(--pw-success-bg)":"#fff")+";border:1px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";cursor:pointer;font-size:15px'>"+ic+"</button>"; }).join("");
+    body="<div class='cp-form-row'><label class='cp-form-label'>Nombre</label><input id='ag-type-input' class='cp-form-input' value=\""+esc(t.label||"")+"\" placeholder='Ej. Sesión 45 min'></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Color (se distingue en el calendario)</label><div style='display:flex;gap:8px;flex-wrap:wrap'>"+colDots+"</div></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Icono (si no hay foto del cliente)</label><div style='display:flex;gap:6px;flex-wrap:wrap'>"+icoBtns+"</div></div>"+
+      "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-type'>Guardar</button></div>";
+  } else if(g.mode==="link"){
+    ttl="Link para reservar";
+    var bu=(REAL&&RCFG&&RCFG.booking_url)||"";
+    body="<div class='cp-form-row'><label class='cp-form-label'>Tu link de reservas</label><input id='ag-link-input' class='cp-form-input' value=\""+esc(bu)+"\" placeholder='Pegá tu link de «Horarios de citas» de Google'></div>"+
+      "<div style='font-size:11.5px;color:var(--pw-text-soft);margin-top:5px;line-height:1.5'>Creá tu página de reservas en Google Calendar → «Horarios de citas», pegá el link acá y se copia para compartir con quien quiera reservar.</div>"+
+      "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-link'>Guardar y copiar</button></div>";
+  } else if(g.mode==="cita"){
+    ttl="Agendar cita";
+    var opts=types.map(function(x,ix){ return "<option value='"+ix+"'"+(((g.i===ix)||(g.i<0&&ix===0))?" selected":"")+">"+esc(x.label||"Evento")+"</option>"; }).join("");
+    var _d=new Date(); var _dv=_d.getFullYear()+"-"+("0"+(_d.getMonth()+1)).slice(-2)+"-"+("0"+_d.getDate()).slice(-2);
+    body="<div class='cp-form-row'><label class='cp-form-label'>Tipo</label><select id='ag-cita-type' class='cp-form-input'>"+opts+"</select></div>"+
+      "<div class='cp-form-row-2'>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Día</label><input type='date' id='ag-cita-date' class='cp-form-input' value='"+_dv+"'></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Hora</label><input type='time' id='ag-cita-time' class='cp-form-input' value='10:00'></div>"+
+      "</div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Con quién (email, opcional)</label><input id='ag-cita-guest' class='cp-form-input' placeholder='cliente@email.com'></div>"+
+      "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:14px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-agendar'>Agendar cita</button></div>";
+  }
+  return "<div data-act='ag-close' style='position:fixed;inset:0;background:rgba(27,46,38,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px'>"+
+    "<div data-act='ag-stop' style='background:#fff;border-radius:18px;max-width:380px;width:100%;padding:22px 24px;box-shadow:0 24px 70px rgba(20,40,30,.28)'>"+
+      "<div style='display:flex;align-items:center;gap:8px;margin-bottom:14px'><span class='cp-emo'>🗓️</span><span style='font-family:var(--pw-serif);font-size:19px;font-weight:600;color:var(--pw-carbon)'>"+ttl+"</span></div>"+
+      body+
+    "</div></div>";
 }
 function _agendaLoad(){
   var body=document.getElementById("cp-agenda-body"); if(!body) return;
@@ -5144,7 +5204,8 @@ function render(){
       (state.newOpen?viewNewModal():"")+
       (state.mail&&state.mail.open?viewMailModal():"")+
       (state.genmat&&state.genmat.open?viewGenMatModal():"")+
-      (state.review&&state.review.open?viewReviewModal():"");
+      (state.review&&state.review.open?viewReviewModal():"")+
+      (state.ag?viewAgModal():"");
     var _same=(_vk===_lastViewKey);
     try{ var _scEl2=document.querySelector(".cp-scroll"); if(_scEl2) _scEl2.scrollTop=(_same?_prevScroll:0); }catch(e){}
     try{ if(_same){ window.scrollTo(0,_prevWin); } else { window.scrollTo(0,0); } }catch(e){}
@@ -5205,28 +5266,50 @@ document.addEventListener("click", function(ev){
   if(!el) return;
   var act = el.getAttribute("data-act");
   if(act==="open"){ var ou=el.getAttribute("data-url"); if(ou){ var _w=window.open(ou,"_blank","noopener"); if(!_w){ location.href=ou; } } return; }
-  // Agenda: tipos de evento (defaults editables) + agendar nuevo. Se guardan en
-  // el perfil por REST (saveCfg) — sin edge functions.
-  if(act==="ag-type-add"){
-    var _tn=prompt("Nuevo tipo de evento (ej. Sesión 30 min):",""); if(_tn==null) return; _tn=(""+_tn).trim(); if(!_tn) return;
-    var _tt=_agTypes().slice(); _tt.push({label:_tn}); saveCfg({event_types:_tt}); return;
+  // Agenda: tipos de evento + agendar cita. TODO con modales Pathway (nada de
+  // prompts del navegador). Se guarda en el perfil por REST (saveCfg).
+  if(act==="ag-open"){ state.ag={mode:"menu", i:parseInt(el.getAttribute("data-i"),10)}; render(); return; }
+  if(act==="ag-new"){ state.ag={mode:"new", i:-1, color:_AG_COLORS[0], icon:_AG_ICONS[0]}; render(); return; }
+  if(act==="ag-cita"){ var _ci=el.getAttribute("data-i"); state.ag={mode:"cita", i:_ci!=null?parseInt(_ci,10):-1}; render(); return; }
+  if(act==="ag-close"){ state.ag=null; render(); return; }
+  if(act==="ag-stop"){ return; }
+  if(act==="ag-to-edit"){ var _et=_agTypes(); var _ei=(state.ag&&state.ag.i); var _eo=(_ei>=0&&_ei<_et.length)?_et[_ei]:{}; state.ag={mode:"edit", i:_ei, color:(_eo.color||_AG_COLORS[0]), icon:(_eo.icon||_AG_ICONS[0])}; render(); return; }
+  if(act==="ag-to-link"){ state.ag={mode:"link", i:(state.ag&&state.ag.i)}; render(); return; }
+  if(act==="ag-pick-color"){ if(state.ag) state.ag.color=el.getAttribute("data-c"); render(); return; }
+  if(act==="ag-pick-icon"){ if(state.ag) state.ag.icon=el.getAttribute("data-ic"); render(); return; }
+  if(act==="ag-save-type"){
+    var _tv=(""+_val("ag-type-input")).trim(); if(!_tv){ toast("Escribí un nombre."); return; }
+    var _tt=_agTypes().slice(); var _gi=(state.ag&&state.ag.i);
+    var _tc=(state.ag&&state.ag.color)||_AG_COLORS[0], _tic=(state.ag&&state.ag.icon)||_AG_ICONS[0];
+    var _tobj={label:_tv, color:_tc, icon:_tic};
+    if(state.ag&&state.ag.mode==="new"){ _tt.push(_tobj); } else if(_gi>=0&&_gi<_tt.length){ _tt[_gi]=_tobj; }
+    state.ag=null; saveCfg({event_types:_tt}); return;
   }
-  if(act==="ag-type-edit"){
-    var _ti=parseInt(el.getAttribute("data-i"),10); var _te=_agTypes().slice(); if(!(_ti>=0&&_ti<_te.length)) return;
-    var _tv=prompt("Editar tipo de evento:",(_te[_ti]&&_te[_ti].label)||""); if(_tv==null) return; _tv=(""+_tv).trim();
-    if(_tv){ _te[_ti]={label:_tv}; } else { _te.splice(_ti,1); } saveCfg({event_types:_te}); return;
+  if(act==="ag-del-type"){
+    var _dt=_agTypes().slice(); var _di=(state.ag&&state.ag.i);
+    if(_di>=0&&_di<_dt.length) _dt.splice(_di,1);
+    state.ag=null; saveCfg({event_types:_dt}); return;
   }
-  if(act==="ag-type-del"){
-    var _di=parseInt(el.getAttribute("data-i"),10); var _dt=_agTypes().slice(); if(!(_di>=0&&_di<_dt.length)) return;
-    _dt.splice(_di,1); saveCfg({event_types:_dt}); return;
-  }
-  if(act==="ag-new"){
-    // Crear reunión directo en Google Calendar (sin pedir permiso de escritura);
-    // aparece en la agenda al recargar (la leemos de Google).
-    var _gw=window.open("https://calendar.google.com/calendar/u/0/r/eventedit","_blank","noopener");
-    if(!_gw) location.href="https://calendar.google.com/calendar/u/0/r/eventedit";
-    toast("Creá la reunión en Google — aparece en tu agenda al recargar.");
+  if(act==="ag-save-link"){
+    var _lu=(""+_val("ag-link-input")).trim();
+    state.ag=null;
+    saveCfg({booking_url:_lu}, null, function(){ if(_lu){ try{ navigator.clipboard && navigator.clipboard.writeText(_lu); }catch(e){} toast("Link guardado y copiado ✓"); } });
     return;
+  }
+  if(act==="ag-agendar"){
+    var _at=parseInt(_val("ag-cita-type"),10); var _ats=_agTypes(); var _atl=(_ats[_at]&&_ats[_at].label)||"Cita";
+    var _ad=_val("ag-cita-date"), _ah=_val("ag-cita-time"); if(!_ad||!_ah){ toast("Elegí día y hora."); return; }
+    var _ag2=(""+_val("ag-cita-guest")).trim();
+    var _adur=30; var _amm=_atl.match(/(\d+)\s*min/i); if(_amm) _adur=parseInt(_amm[1],10)||30;
+    var _ast=new Date(_ad+"T"+_ah); if(isNaN(_ast.getTime())){ toast("Fecha u hora inválida."); return; }
+    var _aen=new Date(_ast.getTime()+_adur*60000);
+    var _afmt=function(x){ return x.getFullYear()+("0"+(x.getMonth()+1)).slice(-2)+("0"+x.getDate()).slice(-2)+"T"+("0"+x.getHours()).slice(-2)+("0"+x.getMinutes()).slice(-2)+"00"; };
+    var _au="https://calendar.google.com/calendar/u/0/r/eventedit?text="+encodeURIComponent(_atl)+"&dates="+_afmt(_ast)+"/"+_afmt(_aen);
+    if(_ag2) _au+="&add="+encodeURIComponent(_ag2);
+    state.ag=null;
+    var _aw=window.open(_au,"_blank","noopener"); if(!_aw) location.href=_au;
+    toast("Cita cargada en Google — confirmá y aparece en tu agenda.");
+    render(); return;
   }
   // Portal del cliente: SIEMPRE en la misma pestaña ("pathway_portal"). Si ya
   // está abierta, la navega al cliente nuevo y le da foco — no abre mil pestañas.
