@@ -185,6 +185,28 @@
     return { close: close };
   };
 
+  /* ── Acceso directo: cabrita apoyada en la esquina que abre el juego ─────
+     Discreta (abajo-izquierda), se corre sola arriba del bottom-nav en móvil.
+     opts.onPlay = función que abre el juego (la define el portal, con su email
+     y su bonus→medalla). opts.label = texto del cartelito ('Jugar' por defecto). */
+  PWJ.mountLauncher = function(opts){
+    opts = opts || {};
+    injectStyle();
+    var old = document.getElementById('pwj-launcher');
+    if (old) old.remove();
+    var b = document.createElement('button');
+    b.id = 'pwj-launcher';
+    b.className = 'pwj-launcher';
+    b.type = 'button';
+    b.setAttribute('aria-label', opts.aria || 'Jugar a la cabra y sumar puntos');
+    b.innerHTML =
+      '<img class="pwj-launcher-goat" src="' + (opts.goat || 'assets/cabra/frente.gif') + '" alt="" onerror="this.style.display=\'none\'">' +
+      '<span class="pwj-launcher-lbl">' + (opts.label || '🎮 Jugar') + '</span>';
+    b.addEventListener('click', function(){ if (typeof opts.onPlay === 'function') opts.onPlay(); });
+    document.body.appendChild(b);
+    return b;
+  };
+
   /* ── CSS del motor, inyectado una sola vez (mismo festejo en todo lado) ─── */
   var styled = false;
   function injectStyle(){
@@ -211,6 +233,11 @@
       '@keyframes pwjPop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}' +
       '@keyframes pwjJump{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}' +
       '@keyframes pwjMedalIn{from{opacity:0;transform:scale(.3) rotate(-25deg)}to{opacity:1;transform:scale(1) rotate(0)}}' +
+      '.pwj-launcher{position:fixed;left:12px;bottom:20px;z-index:9990;display:flex;flex-direction:column;align-items:center;background:none;border:none;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent;}' +
+      '.pwj-launcher-goat{width:58px;height:58px;object-fit:contain;filter:drop-shadow(0 5px 6px rgba(20,55,38,.32));transition:transform .2s ease;margin-bottom:-7px;position:relative;z-index:1;}' +
+      '.pwj-launcher:hover .pwj-launcher-goat{transform:translateY(-5px) scale(1.06);}' +
+      '.pwj-launcher-lbl{font-family:Inter,-apple-system,sans-serif;font-size:10.5px;font-weight:800;color:#2D6A4F;background:#fff;padding:3px 11px;border-radius:11px;box-shadow:0 3px 10px rgba(0,0,0,.16);white-space:nowrap;}' +
+      '@media(max-width:760px){.pwj-launcher{bottom:78px;left:10px;}.pwj-launcher-goat{width:50px;height:50px;}}' +
       '@media(prefers-reduced-motion:reduce){.pwj-card,.pwj-goat,.pwj-medal-img{animation:none!important}}';
     var s = document.createElement('style');
     s.id = 'pwj-style';
