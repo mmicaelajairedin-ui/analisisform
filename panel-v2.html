@@ -2049,7 +2049,7 @@ function viewResumen(){
   var pathCard = coachPath(); // sendero gamificado de la cabra (vacío si ya completó los 3)
   // Fase 1 de la agenda nativa: SOLO admin (interruptor). Va ARRIBA, con el
   // diseño del panel. Los demás coaches siguen con el calendario embebido (calCard).
-  var _agTop = RADMIN ? _agendaCard() : "";
+  var _agTop = RADMIN ? (_agendaCard()+_resCard()) : "";
   return "<div class='cp-greet'>"+
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+"<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>"+pendingReview+" pendiente"+(pendingReview===1?"":"s")+(_nx?" · "+_nxTxt:"")+"</div></div></div>"+
@@ -2291,6 +2291,51 @@ function _agendaLoad(){
       _AG_DATA={events:evs}; b.innerHTML=_agRender({events:evs});
     })
     .catch(function(){ var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer tu calendario de Google. Reintentá en un momento."); });
+}
+
+// ═══ Reservas (citas del link público agendar.html) ═══
+// Las reservas que entran por el link viven en la tabla `citas`. Acá el coach
+// las ve dentro del panel (no solo en su Google) y las marca confirmada/cancelada.
+var _RES_DATA=null;
+function _resCard(){
+  return "<div class='cp-card' style='margin-bottom:16px'>"+
+    "<div class='cp-card-hd'>"+
+      "<h3 class='cp-card-title'><span class='cp-emo'>📥</span> Reservas<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Desde tu link de agenda</span>"+
+    "</div>"+
+    "<div class='cp-card-pad'><div id='cp-res-body'><div style='color:var(--pw-text-soft);font-size:13px;padding:8px 0'>Cargando reservas…</div></div></div>"+
+  "</div>";
+}
+function _resLoad(){
+  var body=document.getElementById("cp-res-body"); if(!body) return;
+  if(!RME||!RME.id){ body.innerHTML=""; return; }
+  var since=new Date(Date.now()-86400000).toISOString();
+  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+"&order=inicio.asc&select=id,nombre,email,tipo,inicio,estado")
+    .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); })
+    .catch(function(){ var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase."); });
+}
+function _resRender(list){
+  var rows=(list||[]).filter(function(r){ return r && r.estado!=="cancelada"; });
+  if(!rows.length) return "<div style='color:var(--pw-text-soft);font-size:13px;padding:8px 0;text-align:center'>Sin reservas nuevas. Cuando alguien use tu link de agenda, aparecen acá.</div>";
+  var lastDay="", html="";
+  rows.forEach(function(r){
+    var ms=+new Date(r.inicio); var typ=_agEventTypeFor(r.tipo); var col=(typ&&typ.color)||"#8C7B80";
+    var dl=_agDayLabel(ms); if(dl!==lastDay){ html+="<div class='cp-eyebrow' style='margin:9px 0 3px'>"+esc(dl)+"</div>"; lastDay=dl; }
+    var conf=(r.estado==="confirmada");
+    var mail="mailto:"+encodeURIComponent(r.email||"")+"?subject="+encodeURIComponent("Tu reserva")+"&body="+encodeURIComponent("Hola "+(""+(r.nombre||"")).split(" ")[0]+", ");
+    html+="<div style='display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
+      "<span style='min-width:42px;font-size:12px;font-weight:700;color:var(--pw-carbon)'>"+_agTime(ms)+"</span>"+
+      "<span style='width:9px;height:9px;border-radius:50%;background:"+col+";flex-shrink:0' title='"+esc((typ&&typ.label)||r.tipo||"")+"'></span>"+
+      "<div style='flex:1;min-width:0'>"+
+        "<div style='font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.nombre||"Alguien")+(conf?" <span style='color:var(--pw-bosque);font-size:11px;font-weight:700'>· confirmada</span>":"")+"</div>"+
+        "<div style='font-size:11px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div>"+
+      "</div>"+
+      "<a href='"+esc(mail)+"' class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;text-decoration:none' title='Escribir por email'>"+svg(IC.mail||IC.extLink,13)+"</a>"+
+      (conf?"":"<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-bosque)' title='Marcar confirmada' data-act='res-confirm' data-id='"+esc(r.id)+"'>"+svg(IC.check,14)+"</button>")+
+      "<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-danger)' title='Cancelar' data-act='res-cancel' data-id='"+esc(r.id)+"'>"+svg(IC.close,13)+"</button>"+
+    "</div>";
+  });
+  return html;
 }
 
 /* ═══ Clientes ═══ */
@@ -5249,6 +5294,9 @@ function render(){
         if(_agSavePending()){ /* guardando el token recién conectado */ }
         else if(_AG_DATA){ var _agb=document.getElementById("cp-agenda-body"); if(_agb) _agb.innerHTML=_agRender(_AG_DATA); }
         else { _agendaLoad(); }
+        // Reservas del link público: cache si ya lo trajimos, si no cargar.
+        if(_RES_DATA){ var _rsb=document.getElementById("cp-res-body"); if(_rsb) _rsb.innerHTML=_resRender(_RES_DATA); }
+        else { _resLoad(); }
       }catch(e){}
     }
     _syncChatBtn();
@@ -5305,6 +5353,15 @@ document.addEventListener("click", function(ev){
   if(act==="ag-pick-color"){ if(state.ag){ var _pl=document.getElementById("ag-type-input"); if(_pl) state.ag.label=_pl.value; state.ag.color=el.getAttribute("data-c"); } render(); return; }
   if(act==="ag-pick-icon"){ if(state.ag){ var _pl2=document.getElementById("ag-type-input"); if(_pl2) state.ag.label=_pl2.value; state.ag.icon=el.getAttribute("data-ic"); } render(); return; }
   if(act==="ag-copy-link"){ var _cl=el.getAttribute("data-link")||""; try{ if(navigator.clipboard) navigator.clipboard.writeText(_cl); }catch(e){} toast("Link copiado ✓"); return; }
+  if(act==="res-confirm"||act==="res-cancel"){
+    var _rid=el.getAttribute("data-id"); if(!_rid) return;
+    var _est=(act==="res-confirm")?"confirmada":"cancelada";
+    if(_RES_DATA){ _RES_DATA.forEach(function(r){ if(String(r.id)===String(_rid)) r.estado=_est; }); var _rb=document.getElementById("cp-res-body"); if(_rb) _rb.innerHTML=_resRender(_RES_DATA); }
+    _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
+      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Reserva confirmada ✓":"Reserva cancelada"); } else { toast("No se pudo actualizar la reserva."); _resLoad(); } })
+      .catch(function(){ toast("No se pudo actualizar la reserva."); _resLoad(); });
+    return;
+  }
   if(act==="ag-evtype"){ state.ag={mode:"evtype", key:(el.getAttribute("data-key")||""), evTitle:(el.getAttribute("data-title")||"")}; render(); return; }
   if(act==="ag-set-evtype"){
     var _si=parseInt(el.getAttribute("data-i"),10); var _sk=(state.ag&&state.ag.key)||"";

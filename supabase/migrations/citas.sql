@@ -29,6 +29,20 @@ CREATE POLICY citas_insert ON citas
   FOR INSERT TO anon, authenticated
   WITH CHECK (true);
 
+-- SELECT/UPDATE: para que el coach vea sus reservas y las marque
+-- confirmada/cancelada desde el panel. Igual que candidatos/informes hoy, el
+-- panel filtra por coach_id en el cliente (Capa 1). Cerrar en Sprint B con RLS
+-- estricto (auth.uid()) junto al resto — ver "SECURITY MODEL" en CLAUDE.md.
+DROP POLICY IF EXISTS citas_select ON citas;
+CREATE POLICY citas_select ON citas
+  FOR SELECT TO anon, authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS citas_update ON citas;
+CREATE POLICY citas_update ON citas
+  FOR UPDATE TO anon, authenticated
+  USING (true) WITH CHECK (true);
+
 -- Revisar reservas de un coach:
 --   SELECT inicio, nombre, email, tipo, estado
 --   FROM citas WHERE coach_id = '<coach_id>' ORDER BY inicio;
