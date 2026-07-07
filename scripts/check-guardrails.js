@@ -637,6 +637,20 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "juego: la cabra tiene piso (no flota arriba del escenario)",
+    bug: "En pw-cabra-juego.css la cabra (.pw-juego-cabra) no tenía posición " +
+         "vertical por defecto; el JS le pone 'bottom' recién al arrancar el " +
+         "juego, así que en la pantalla de inicio quedaba flotando arriba del " +
+         "escenario en vez de parada en el suelo. Debe tener 'bottom' en el CSS.",
+    check() {
+      const s = read("pw-cabra-juego.css");
+      if (!s) return null;
+      if (!/\.pw-juego-cabra\s*\{[^}]*\bbottom\s*:/.test(s))
+        return "pw-cabra-juego.css: .pw-juego-cabra perdió su 'bottom' → la cabra flota arriba del escenario.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
