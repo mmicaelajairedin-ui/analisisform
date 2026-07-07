@@ -556,10 +556,12 @@ const RULES = [
          "guarda un borrador en localStorage en cada cambio y SOLO lo borra cuando " +
          "el guardado a Supabase salió OK (clearDraft). Esta regla lo blinda.",
     check() {
-      const s = read("formulario.html");
-      if (!s) return null;
-      if (!/saveDraft/.test(s) || !/restoreDraft/.test(s) || !/clearDraft/.test(s))
-        return "formulario.html: perdió el autoguardado (saveDraft/restoreDraft/clearDraft).";
+      for (const f of ["formulario.html", "pathway-fit-form.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/saveDraft/.test(s) || !/restoreDraft/.test(s) || !/clearDraft/.test(s))
+          return f + ": perdió el autoguardado (saveDraft/restoreDraft/clearDraft).";
+      }
       return null;
     },
   },
@@ -616,6 +618,23 @@ const RULES = [
         return "pathway-fit-cliente.html: nadie llama a _clienteSinFicha() → el cliente real volvería a ver el demo.";
       if (!/pw-cabra-juego\.js/.test(s))
         return "pathway-fit-cliente.html: ya no carga pw-cabra-juego.js (el botón 'Jugar con la cabra' del cartel no funcionaría).";
+      // GARANTÍA: cliente logueado ve SIEMPRE su propio email (mj_user) — nunca el
+      // demo ni otro cliente, aunque la URL venga pelada.
+      if (!/rol===?['"]cliente['"][\s\S]{0,120}EMAIL=/.test(js))
+        return "pathway-fit-cliente.html: perdió el forzado del email propio (mj_user rol=cliente) → podría caer en el demo de María.";
+      return null;
+    },
+  },
+  {
+    name: "form fitness: al terminar vuelve al portal CON el email (no al demo)",
+    bug: "El formulario, al guardar en modo portal, redirigía a pathway-fit-cliente.html " +
+         "SIN el ?email → el portal quedaba sin email y mostraba el demo de María; el " +
+         "cliente creía que su carga se perdió. El retorno debe llevar el email.",
+    check() {
+      const s = read("pathway-fit-form.html");
+      if (!s) return null;
+      if (!/PORTAL_RETURN\s*\+\s*['"]\?email=/.test(s) && !/location\.href\s*=\s*_ru/.test(s))
+        return "pathway-fit-form.html: el retorno al portal ya no incluye el email → volvería al demo.";
       return null;
     },
   },

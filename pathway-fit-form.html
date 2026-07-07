@@ -315,6 +315,33 @@ function _onFoto(el){
       if(st) st.textContent='Foto lista ✓'; })
     .catch(function(){ if(st) st.textContent='No se pudo subir, seguí sin foto'; });
 }
+// ── Autoguardado (borrador) — RED ANTI-PÉRDIDA. Todo lo que el cliente escribe
+// se guarda en localStorage en cada cambio y SOLO se borra cuando el guardado a
+// Supabase salió OK. Si falla la red o cierra sin querer, al volver retoma. ──
+var _DRAFTK='pw_fitform_draft';
+function _draftKey(){ var e=((_val('email')||_qp('email'))||'').toLowerCase(); return _DRAFTK+(e?('_'+e):''); }
+function _reselOpt(gid,txt){ if(!txt) return; var g=document.getElementById(gid); if(!g) return; Array.prototype.forEach.call(g.querySelectorAll('.opt'),function(o){ o.classList.toggle('sel', o.textContent.trim()===txt); }); }
+function saveDraft(){
+  try{
+    var d={ nombre:_val('nombre'),email:_val('email'),edad:_val('edad'),sexo:_val('sexo'),peso:_val('peso'),altura:_val('altura'),
+      medicacion:_val('medicacion'),restricciones:_val('restricciones'),otra:_val('otra'),
+      objetivo:_selTxt('opts-objetivo'),nivel:_selTxt('opts-nivel'),dias:_selTxt('opts-dias'),lugar:_selTxt('opts-lugar'),lesiones:[] };
+    var cl=document.getElementById('copts-lesiones'); if(cl){ Array.prototype.forEach.call(cl.querySelectorAll('.copt.sel'),function(o){ d.lesiones.push(o.textContent.trim()); }); }
+    var s=JSON.stringify(d); localStorage.setItem(_draftKey(), s); localStorage.setItem(_DRAFTK, s);
+  }catch(e){}
+}
+function restoreDraft(){
+  try{
+    var raw=localStorage.getItem(_draftKey())||localStorage.getItem(_DRAFTK); if(!raw) return; var d=JSON.parse(raw); if(!d) return;
+    ['nombre','email','edad','sexo','peso','altura','medicacion','restricciones','otra'].forEach(function(k){ var el=document.getElementById(k); if(el&&d[k]&&!el.value){ el.value=d[k]; } });
+    _reselOpt('opts-objetivo',d.objetivo); _reselOpt('opts-nivel',d.nivel); _reselOpt('opts-dias',d.dias); _reselOpt('opts-lugar',d.lugar);
+    if(d.lesiones&&d.lesiones.length){ var cl=document.getElementById('copts-lesiones'); if(cl){ Array.prototype.forEach.call(cl.querySelectorAll('.copt'),function(o){ if(d.lesiones.indexOf(o.textContent.trim())>=0) o.classList.add('sel'); }); } }
+  }catch(e){}
+}
+function clearDraft(){ try{ localStorage.removeItem(_draftKey()); localStorage.removeItem(_DRAFTK); }catch(e){} }
+document.addEventListener('input', saveDraft);
+document.addEventListener('click', function(e){ if(e.target&&e.target.closest&&e.target.closest('.opt,.copt')) setTimeout(saveDraft,0); });
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',restoreDraft); else restoreDraft();
 var _fitSaved=false;
 function saveFit(){
   if(_fitSaved) return;
@@ -337,7 +364,7 @@ function saveFit(){
   var _m=PORTAL_MODE?'PATCH':'POST';
   var _pf=PORTAL_MODE?'return=minimal':'return=minimal,resolution=ignore-duplicates';
   fetch(_u,{method:_m,headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':_pf},body:JSON.stringify(d)})
-    .then(function(r){ if(!r.ok){ _fitSaved=false; } }).catch(function(){ _fitSaved=false; });
+    .then(function(r){ if(!r.ok){ _fitSaved=false; } else { clearDraft(); } }).catch(function(){ _fitSaved=false; });
 }
 function prev(){ if(i>0){ i--; render(); } }
 function generar(){
@@ -351,7 +378,10 @@ function generar(){
     if(m){ m.innerHTML='Tu objetivo: <strong>'+obj+'</strong>. Tu coach ya recibió tus respuestas y está armando tu rutina y tu plan a medida. En tu primera sesión repasan juntos el punto de partida y los próximos pasos.'; m.style.display='block'; }
     document.getElementById('aPlan').style.display='block';
   },2200);
-  if(PORTAL_MODE){ setTimeout(function(){ location.href=PORTAL_RETURN; }, 4200); }
+  // Volver al portal CON el email (y coach) → el portal carga la ficha REAL del
+  // cliente. Sin el email volvía a pathway-fit-cliente.html "pelado" y el portal
+  // caía en modo demo (reaparecían los datos de María → parecía que no guardó).
+  if(PORTAL_MODE){ var _re=encodeURIComponent(_qp('email')||_val('email').toLowerCase()); var _rc=_qp('coach'); var _ru=PORTAL_RETURN+'?email='+_re+(_rc?('&coach='+encodeURIComponent(_rc)):''); setTimeout(function(){ location.href=_ru; }, 4200); }
 }
 render();
 </script>
