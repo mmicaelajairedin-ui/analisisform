@@ -2147,15 +2147,36 @@ function _agRender(d){
   });
   return html;
 }
+// Tipos de evento del coach: defaults sensatos si no configuró nada (así NO le
+// pedimos que cargue nada — puede usarlos tal cual o editarlos).
+function _agTypes(){
+  var t=(REAL&&RCFG&&Object.prototype.toString.call(RCFG.event_types)==="[object Array]")?RCFG.event_types:null;
+  if(!t || !t.length) t=[{label:"Llamada 30 min"},{label:"Sesión 45 min"}];
+  return t;
+}
+function _agTypesHtml(){
+  var rows=_agTypes().map(function(t,i){
+    return "<div style='display:flex;align-items:center;gap:4px;padding:2px 0'>"+
+      "<button data-act='ag-type-edit' data-i='"+i+"' title='Editar' style='flex:1;text-align:left;background:none;border:none;font-family:inherit;font-size:12px;color:var(--pw-carbon);cursor:pointer;padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'><span style='color:var(--pw-sendero)'>•</span> "+esc(t.label||"Evento")+"</button>"+
+      "<button class='cp-icon-btn' data-act='ag-type-del' data-i='"+i+"' title='Quitar' style='width:20px;height:20px;flex-shrink:0'>"+svg(IC.close,10)+"</button>"+
+    "</div>";
+  }).join("");
+  return rows+"<button class='cp-btn cp-btn-ghost' data-act='ag-type-add' style='height:25px;font-size:11px;padding:0 9px;margin-top:5px'>"+svg(IC.plus,11)+" Tipo</button>";
+}
 function _agendaCard(){
-  // Fase 1: solo la vista del calendario real. La disponibilidad + tipos de
-  // evento + link propio para reservar (reemplazo de Calendly) son Fase 2.
   return "<div class='cp-card' style='margin-bottom:16px'>"+
     "<div class='cp-card-hd'>"+
       "<h3 class='cp-card-title'><span class='cp-emo'>🗓️</span> Tu agenda<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow' style='display:inline-flex;align-items:center;gap:6px'><span style='width:7px;height:7px;border-radius:50%;background:var(--pw-sendero);display:inline-block'></span>En vivo · Google Calendar</span>"+
     "</div>"+
-    "<div id='cp-agenda-body' class='cp-card-pad'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
+    "<div class='cp-card-pad' style='display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start'>"+
+      "<div id='cp-agenda-body' style='flex:2;min-width:230px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
+      "<div style='flex:1;min-width:168px;background:var(--pw-niebla-2);border-radius:12px;padding:12px 14px'>"+
+        "<div class='cp-eyebrow' style='margin-bottom:6px'>Tipos de evento</div>"+
+        "<div id='cp-agenda-types'>"+_agTypesHtml()+"</div>"+
+        "<button class='cp-btn cp-btn-primary' data-act='ag-new' style='height:32px;font-size:12px;margin-top:12px;width:100%'>"+svg(IC.plus,13)+" Agendar nuevo</button>"+
+      "</div>"+
+    "</div>"+
   "</div>";
 }
 function _agendaLoad(){
@@ -5184,8 +5205,29 @@ document.addEventListener("click", function(ev){
   if(!el) return;
   var act = el.getAttribute("data-act");
   if(act==="open"){ var ou=el.getAttribute("data-url"); if(ou){ var _w=window.open(ou,"_blank","noopener"); if(!_w){ location.href=ou; } } return; }
-  // (La agenda nativa Fase 1 se conecta desde Configuración → Tu perfil; el link
-  //  propio de disponibilidad para reservar es Fase 2, todavía no se comparte.)
+  // Agenda: tipos de evento (defaults editables) + agendar nuevo. Se guardan en
+  // el perfil por REST (saveCfg) — sin edge functions.
+  if(act==="ag-type-add"){
+    var _tn=prompt("Nuevo tipo de evento (ej. Sesión 30 min):",""); if(_tn==null) return; _tn=(""+_tn).trim(); if(!_tn) return;
+    var _tt=_agTypes().slice(); _tt.push({label:_tn}); saveCfg({event_types:_tt}); return;
+  }
+  if(act==="ag-type-edit"){
+    var _ti=parseInt(el.getAttribute("data-i"),10); var _te=_agTypes().slice(); if(!(_ti>=0&&_ti<_te.length)) return;
+    var _tv=prompt("Editar tipo de evento:",(_te[_ti]&&_te[_ti].label)||""); if(_tv==null) return; _tv=(""+_tv).trim();
+    if(_tv){ _te[_ti]={label:_tv}; } else { _te.splice(_ti,1); } saveCfg({event_types:_te}); return;
+  }
+  if(act==="ag-type-del"){
+    var _di=parseInt(el.getAttribute("data-i"),10); var _dt=_agTypes().slice(); if(!(_di>=0&&_di<_dt.length)) return;
+    _dt.splice(_di,1); saveCfg({event_types:_dt}); return;
+  }
+  if(act==="ag-new"){
+    // Crear reunión directo en Google Calendar (sin pedir permiso de escritura);
+    // aparece en la agenda al recargar (la leemos de Google).
+    var _gw=window.open("https://calendar.google.com/calendar/u/0/r/eventedit","_blank","noopener");
+    if(!_gw) location.href="https://calendar.google.com/calendar/u/0/r/eventedit";
+    toast("Creá la reunión en Google — aparece en tu agenda al recargar.");
+    return;
+  }
   // Portal del cliente: SIEMPRE en la misma pestaña ("pathway_portal"). Si ya
   // está abierta, la navega al cliente nuevo y le da foco — no abre mil pestañas.
   // El panel sigue en su propia pestaña/sesión.
