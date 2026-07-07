@@ -631,10 +631,37 @@ const RULES = [
          "SIN el ?email → el portal quedaba sin email y mostraba el demo de María; el " +
          "cliente creía que su carga se perdió. El retorno debe llevar el email.",
     check() {
-      const s = read("pathway-fit-form.html");
-      if (!s) return null;
-      if (!/PORTAL_RETURN\s*\+\s*['"]\?email=/.test(s) && !/location\.href\s*=\s*_ru/.test(s))
-        return "pathway-fit-form.html: el retorno al portal ya no incluye el email → volvería al demo.";
+      for (const f of ["pathway-fit-form.html", "pathway-fin-form.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/PORTAL_RETURN\s*\+\s*['"]\?email=/.test(s) && !/location\.href\s*=\s*_ru/.test(s))
+          return f + ": el retorno al portal ya no incluye el email → volvería al demo.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "finanzas: mismo blindaje que fitness (coach real, sin demo de María, autoguardado)",
+    bug: "El nicho finanzas arrastraba los MISMOS bugs que fitness: 'Lucía Finanzas' " +
+         "hardcodeada, el portal caía al demo de María para un cliente real sin ficha, y " +
+         "el form no autoguardaba. Se replicó el arreglo; esta regla evita la regresión.",
+    check() {
+      const form = read("pathway-fin-form.html");
+      if (form) {
+        const markup = form.replace(/<script[\s\S]*?<\/script>/gi, "");
+        if (/Luc[ií]a/.test(markup)) return "pathway-fin-form.html: volvió 'Lucía' en el contenido (debe adaptarse al coach real).";
+        const fjs = inlineJs(form);
+        if (!isDefined("_applyCoachBrand", fjs) || !isDefined("saveDraft", fjs))
+          return "pathway-fin-form.html: perdió la adaptación al coach o el autoguardado.";
+      }
+      const port = read("pathway-fin-cliente.html");
+      if (port) {
+        const pjs = inlineJs(port);
+        if (!isDefined("_clienteSinFicha", pjs) || !isDefined("renderPrepCard", pjs))
+          return "pathway-fin-cliente.html: perdió _clienteSinFicha()/renderPrepCard() (limpieza del demo del cliente real).";
+        if (!/rol===?['"]cliente['"][\s\S]{0,120}EMAIL=/.test(pjs))
+          return "pathway-fin-cliente.html: perdió el forzado del email propio (mj_user) → podría caer al demo de María.";
+      }
       return null;
     },
   },
