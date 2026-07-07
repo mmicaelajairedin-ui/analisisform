@@ -191,6 +191,7 @@
     <nav class="nav">
       <button class="nav-item on" data-tab="comm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg><span>Plantillas</span></button>
       <button class="nav-item" data-tab="leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/></svg><span>Leads</span></button>
+      <button class="nav-item" data-tab="reservas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span>Reservas</span></button>
     </nav>
     <div class="side-foot"><button class="side-link" onclick="cerrarSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Cerrar sesión</button></div>
   </aside>
@@ -241,6 +242,23 @@
           <div class="legend"><span><i style="background:#8A968F"></i> Nuevo</span><span><i style="background:#2F6FB0"></i> Contactado</span><span><i style="background:#C99A2E"></i> En demo</span><span><i style="background:#2D6A4F"></i> Alta (coach)</span></div>
           <div class="tbl-scroll"><table><thead><tr><th>Lead</th><th>Nicho</th><th>Canales</th><th>Demo</th><th>Estado</th><th>Cerrar</th></tr></thead><tbody id="rows"></tbody></table></div>
           <div class="empty" id="empty" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="view" id="view-reservas" hidden>
+      <div class="wrap">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-hd"><h3>Tu link para agendar demos</h3></div>
+          <p style="font-size:13px;color:var(--texto-suave);margin:0 0 10px">Compartilo con tus leads. Cuando reservan, la demo cae acá y en tu Google Calendar.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input id="mylink" readonly onclick="this.select()" style="flex:1;min-width:220px;padding:10px 12px;border:1.5px solid var(--borde);border-radius:10px;font-size:12.5px;font-family:inherit">
+            <button class="btn sm" onclick="copyMyLink()">Copiar</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><h3>Próximas reservas</h3></div>
+          <div id="res-list" style="padding:4px 2px"><div style="color:var(--texto-suave);font-size:13px;padding:8px 0">Cargando…</div></div>
         </div>
       </div>
     </div>
@@ -350,14 +368,46 @@
   }
 
   // Tabs
-  var _loaded={}, TITLES={comm:{t:"Plantillas de email",s:"Elegí el nicho, copiá la plantilla con diseño y pegala en tu correo."},leads:{t:"Leads",s:"Contactá, agendá demos y dá de alta coaches. Cada marca queda en tus métricas."}};
+  var _loaded={}, TITLES={comm:{t:"Plantillas de email",s:"Elegí el nicho, copiá la plantilla con diseño y pegala en tu correo."},leads:{t:"Leads",s:"Contactá, agendá demos y dá de alta coaches. Cada marca queda en tus métricas."},reservas:{t:"Reservas",s:"Las demos que agendaron con vos desde tu link. También caen en tu Google Calendar."}};
   document.querySelectorAll('.nav-item[data-tab]').forEach(function(b){ b.addEventListener('click',function(){ goTab(b.dataset.tab); }); });
   function goTab(t){
     document.querySelectorAll('.nav-item[data-tab]').forEach(function(b){ b.classList.toggle('on',b.dataset.tab===t); });
     document.getElementById('view-comm').hidden=(t!=='comm'); document.getElementById('view-leads').hidden=(t!=='leads');
+    var vr=document.getElementById('view-reservas'); if(vr) vr.hidden=(t!=='reservas');
     document.getElementById('ptitle').textContent=TITLES[t].t; document.getElementById('psub').textContent=TITLES[t].s;
     if(t==='comm' && !_loaded.comm){ renderComm(); _loaded.comm=true; }
     if(t==='leads' && !_loaded.leads){ _loaded.leads=true; loadLeads(); }
+    if(t==='reservas' && !_loaded.reservas){ _loaded.reservas=true; loadReservas(); }
+  }
+
+  // ── Reservas (citas del link público del empleado) ──
+  function myBookingLink(){ return 'https://pathwaycareercoach.com/agendar.html?c='+encodeURIComponent((WHO&&WHO.id)||ME.id||''); }
+  window.copyMyLink=function(){ var v=myBookingLink(); try{ navigator.clipboard&&navigator.clipboard.writeText(v); }catch(e){} toast('Link copiado ✓'); };
+  async function loadReservas(){
+    var li=document.getElementById('mylink'); if(li) li.value=myBookingLink();
+    var box=document.getElementById('res-list'); if(!box) return;
+    if(!sb || !(WHO&&WHO.id)){ box.innerHTML="<div style='color:var(--texto-suave);font-size:13px;padding:8px 0'>Iniciá sesión para ver tus reservas.</div>"; return; }
+    try{
+      var since=new Date(Date.now()-86400000).toISOString();
+      var r=await sb.from('citas').select('id,nombre,email,tipo,inicio,estado').eq('coach_id',WHO.id).gte('inicio',since).order('inicio',{ascending:true});
+      if(r.error) throw r.error;
+      renderReservas(r.data||[]);
+    }catch(e){ box.innerHTML="<div style='color:var(--texto-suave);font-size:13px;padding:8px 0'>No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase.</div>"; }
+  }
+  function renderReservas(rows){
+    var box=document.getElementById('res-list'); if(!box) return;
+    rows=(rows||[]).filter(function(r){ return r && r.estado!=='cancelada'; });
+    if(!rows.length){ box.innerHTML="<div style='color:var(--texto-suave);font-size:13px;padding:8px 0;text-align:center'>Sin reservas nuevas. Cuando alguien use tu link, aparece acá.</div>"; return; }
+    var DIAS=['dom','lun','mar','mié','jue','vie','sáb'], MES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    box.innerHTML=rows.map(function(r){
+      var d=new Date(r.inicio); var fecha=DIAS[d.getDay()]+' '+d.getDate()+' '+MES[d.getMonth()]+' · '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+      return "<div style='display:flex;align-items:center;gap:11px;padding:9px 2px;border-bottom:1px solid var(--borde)'>"+
+        "<div style='min-width:120px;font-size:12.5px;font-weight:700;color:var(--texto)'>"+esc(fecha)+"</div>"+
+        "<div style='flex:1;min-width:0'><div style='font-size:13.5px;font-weight:600'>"+esc(r.nombre||'Alguien')+"</div>"+
+        "<div style='font-size:11.5px;color:var(--texto-suave)'>"+esc(r.tipo||'')+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
+        (r.email?"<a class='btn ghost sm' href='mailto:"+esc(r.email)+"'>Email</a>":"")+
+      "</div>";
+    }).join('');
   }
 
   // ── Leads (Supabase) ──
@@ -400,7 +450,7 @@
           "<span class='addinfo' onclick=\"toggleInfo('"+l.id+"')\">"+(l._open?"− ocultar":"＋ info / editar")+"</span>"+(l.estado!=="descartado"?"<span class='addinfo' style='color:#aab' onclick=\"descartar('"+l.id+"')\">descartar</span>":"")+(l.nota?"<div class='nota-mark'>nota guardada</div>":"")+"</td>"+
         "<td><select class='nicho' onchange=\"setN('"+l.id+"',this.value)\">"+opt("sin","Sin asignar",l.nicho)+opt("carrera","Carrera",l.nicho)+opt("fitness","Fitness",l.nicho)+opt("finanzas","Finanzas",l.nicho)+"</select></td>"+
         "<td>"+canales(l)+"</td>"+
-        "<td><a class='btn ghost sm' href='https://calendly.com/mmicaela-jairedin/pathway-demo' target='_blank' rel='noopener' onclick=\"contactado('"+l.id+"')\">Calendly</a> <button class='btn sm "+(l.demo_agendada?"":"ghost")+"' onclick=\"toggleDemo('"+l.id+"')\">"+(l.demo_agendada?"Agendada ✓":"Marcar agendada")+"</button></td>"+
+        "<td><a class='btn ghost sm' href='"+myBookingLink()+"' target='_blank' rel='noopener' onclick=\"contactado('"+l.id+"')\">Agendar</a> <button class='btn sm "+(l.demo_agendada?"":"ghost")+"' onclick=\"toggleDemo('"+l.id+"')\">"+(l.demo_agendada?"Agendada ✓":"Marcar agendada")+"</button></td>"+
         "<td>"+estSel(l)+"</td>"+
         "<td><button class='btn sm' "+(l.estado==="alta"?"disabled style='opacity:.5'":"")+" onclick=\"alta('"+l.id+"')\">"+(l.estado==="alta"?"Alta ✓":"Dar alta coach")+"</button></td>";
       tb.appendChild(tr);
