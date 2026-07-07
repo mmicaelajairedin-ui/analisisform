@@ -666,6 +666,25 @@ const RULES = [
     },
   },
   {
+    name: "intake se guarda vía edge function (service role) — no lo bloquea RLS",
+    bug: "Con RLS estricto, el cliente solo puede escribir su fila si su email de " +
+         "Auth == candidatos.email. Si no tiene sesión o el email no coincide, el " +
+         "PATCH del formulario se rechaza en silencio → portal en blanco (clientes " +
+         "de Charlie). Los forms guardan por guardar-intake (service role, ignora " +
+         "RLS), con fallback al PATCH directo. Esta regla evita perder ese camino.",
+    check() {
+      if (!read("supabase/functions/guardar-intake/index.ts"))
+        return "falta la edge function guardar-intake (guarda el intake sin chocar con RLS).";
+      for (const f of ["pathway-fit-form.html", "pathway-fin-form.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/functions\/v1\/guardar-intake/.test(s))
+          return f + ": ya no llama a guardar-intake → el intake del cliente puede no guardarse bajo RLS.";
+      }
+      return null;
+    },
+  },
+  {
     name: "form fitness: se adapta al coach real, sin 'Gonza' hardcodeado",
     bug: "El formulario de evaluación fitness tenía 'Gonza Coach' fijo en el título, " +
          "en '<coach> está revisando tus datos…' y en el cierre → todos los clientes " +
