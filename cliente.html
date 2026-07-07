@@ -1018,6 +1018,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 </style>
 <script src="/pw-push.js?v=3"></script>
 <script src="/pw-auth.js?v=1"></script>
+<script src="/pathway-juego.js?v=1"></script>
 </head>
 <body>
 <a href="#mc" style="position:absolute;left:-999px;top:auto;width:1px;height:1px;overflow:hidden;z-index:999;" onfocus="this.style.cssText='position:fixed;left:12px;top:12px;z-index:999;padding:10px 16px;background:var(--brand);color:#fff;border-radius:8px;font-size:13px;font-weight:700;font-family:Inter,-apple-system,sans-serif;text-decoration:none;'" onblur="this.style.cssText='position:absolute;left:-999px;'">Ir al contenido</a>
@@ -2291,12 +2292,24 @@ function _pwIcon(item,sizePx){
   return item.ico||'';
 }
 
-var MEDALS=[
-  {min:0, ico:'', lbl:'', color:'var(--muted)', next:'Bronce'},
-  {min:2, ico:'🥉', iconUrl:'/assets/iconos/medalla-bronce.png', lbl:'Bronce', color:'#CD7F32', next:'Plata'},
-  {min:4, ico:'🥈', iconUrl:'/assets/iconos/medalla-plata.png',  lbl:'Plata',  color:'#A0A0A0', next:'Oro'},
-  {min:7, ico:'🏆', iconUrl:'/assets/iconos/medalla-oro.png',    lbl:'Oro',    color:'#DAA520', next:null}
+// Umbrales de medalla en PUNTOS (fuente única: pathway-juego.js · PWJ.MEDALS).
+// Bronce 200 · Plata 400 · Oro 600 → a 100 pts/logro son 2/4/6 logros.
+// Antes eran conteos 2/4/7; migrado a puntos SIN que nadie baje de medalla.
+var MEDALS=(window.PWJ&&PWJ.MEDALS)||[
+  {min:0,   ico:'', lbl:'', color:'var(--muted)', next:'Bronce'},
+  {min:200, ico:'🥉', iconUrl:'/assets/iconos/medalla-bronce.png', lbl:'Bronce', color:'#CD7F32', next:'Plata'},
+  {min:400, ico:'🥈', iconUrl:'/assets/iconos/medalla-plata.png',  lbl:'Plata',  color:'#A0A0A0', next:'Oro'},
+  {min:600, ico:'🏆', iconUrl:'/assets/iconos/medalla-oro.png',    lbl:'Oro',    color:'#DAA520', next:null}
 ];
+var PTS_LOGRO=(window.PWJ&&PWJ.PTS_LOGRO)||100;
+// Total de puntos del cliente: logros grandes (100 c/u) + bonus (juego/rachas,
+// hook para más adelante). La medalla se llena por ESTE total.
+function getPoints(){
+  var done=getAchievements().filter(function(a){return a.done;}).length;
+  var pts=done*PTS_LOGRO;
+  try{ pts+=(parseInt(localStorage.getItem('mj_bonus_pts_'+E),10)||0); }catch(e){}
+  return pts;
+}
 
 function getAchievements(){
   // Si C no está cargado todavía (puede pasar si _applyCoachBrand triggerea
@@ -2339,8 +2352,8 @@ function updSbMedal(){
   var el=document.getElementById('sb-medal');
   if(!el) return;
   var achs=getAchievements();
-  var n=achs.filter(function(a){return a.done;}).length;
-  var m=getMedalInfo(n);
+  var pts=getPoints();
+  var m=getMedalInfo(pts);
 
   // Detectar achievements recién desbloqueados (desde la última vez)
   var prevDoneKey='mj_achs_done_'+E;
@@ -2354,7 +2367,7 @@ function updSbMedal(){
       var ach=achs.find(function(a){return a.id===id;});
       if(!ach)return;
       setTimeout(function(){
-        showMilestoneCelebration({emoji:ach.ico,title:'¡'+ach.lbl+'!',sub:ach.sub,btn:'¡Sigue!'});
+        showMilestoneCelebration({emoji:ach.ico,title:'¡'+ach.lbl+'!',sub:ach.sub,btn:'¡Sigue!',points:PTS_LOGRO});
       },300+idx*200);
     });
   }
@@ -2375,13 +2388,13 @@ function updSbMedal(){
   }
   var o='';
   if(m.current.ico){
-    o+='<div class="sb-medal-lbl" style="color:'+m.current.color+';">Medalla '+m.current.lbl+'</div>';
+    o+='<div class="sb-medal-lbl" style="color:'+m.current.color+';">Medalla '+m.current.lbl+' · '+pts+' pts</div>';
   } else {
-    o+='<div class="sb-medal-lbl" style="color:var(--muted);">Sumá logros para tu medalla</div>';
+    o+='<div class="sb-medal-lbl" style="color:var(--muted);">'+pts+' pts — sumá para tu medalla</div>';
   }
   if(m.next){
     o+='<div class="sb-medal-bar"><div class="sb-medal-fill" style="width:'+m.pct+'%;background:'+(m.current.color||'var(--brand)')+';"></div></div>';
-    o+='<div class="sb-medal-next">'+(m.current.ico?'Vas por buen camino':(m.faltan+' logro'+(m.faltan!==1?'s':'')+' para '+m.next.lbl))+'</div>';
+    o+='<div class="sb-medal-next">'+m.faltan+' pts para '+m.next.lbl+'</div>';
   } else {
     o+='<div class="sb-medal-next" style="color:'+m.current.color+';font-weight:700;">&#10024; Nivel máximo</div>';
   }
@@ -2389,21 +2402,13 @@ function updSbMedal(){
 }
 
 function showMedalCelebration(medal){
-  // Confetti
-  var colors=['#8C7B80','#DAA520','#5B8C6E','#5B7FA6','#C4907A','#CD7F32'];
-  for(var i=0;i<30;i++){
-    var c=document.createElement('div');
-    c.className='confetti';
-    c.style.left=Math.random()*100+'vw';
-    c.style.background=colors[Math.floor(Math.random()*colors.length)];
-    c.style.animationDelay=(Math.random()*1.5)+'s';
-    c.style.animationDuration=(2+Math.random()*2)+'s';
-    c.style.width=(6+Math.random()*8)+'px';
-    c.style.height=(6+Math.random()*8)+'px';
-    document.body.appendChild(c);
-    setTimeout(function(){c.remove();},5000);
+  // Festejo unificado: cabra que salta + explosión de confeti + sonido + cartel.
+  if(window.PWJ){
+    PWJ.celebrate({kind:'medal', tier:medal, title:'¡Medalla '+medal.lbl+'!',
+      sub:'¡Felicitaciones! Desbloqueaste la medalla de '+medal.lbl+'. ¡Sigue así!', btn:'¡Genial!'});
+    return;
   }
-  // Modal
+  // Fallback si el motor no cargó (nunca rompe el portal): modal simple.
   var ov=document.createElement('div');
   ov.className='medal-celebrate';
   ov.innerHTML='<div class="medal-celebrate-card">'
@@ -2417,15 +2422,16 @@ function showMedalCelebration(medal){
 
 function rAchievementsCard(){
   var achs=getAchievements();
-  var n=achs.filter(function(a){return a.done;}).length;
-  var m=getMedalInfo(n);
+  var nDone=achs.filter(function(a){return a.done;}).length;
+  var pts=getPoints();
+  var m=getMedalInfo(pts);
 
   var o='<div class="card" style="margin-bottom:14px;"><details class="logros-c">';
   o+='<summary class="card-hd"><div style="flex:1;">';
   o+='<div class="card-lbl">Tu progreso</div>';
   o+='<div class="card-title" style="display:flex;align-items:center;gap:10px;">';
   if(m.current.iconUrl||m.current.ico) o+=_pwIcon(m.current,28)+' ';
-  o+='Logros <span style="font-size:12px;font-weight:600;color:'+m.current.color+';background:var(--bg);padding:2px 10px;border-radius:20px;">'+n+'/'+achs.length+'</span></div>';
+  o+='Logros <span style="font-size:12px;font-weight:600;color:'+m.current.color+';background:var(--bg);padding:2px 10px;border-radius:20px;">'+nDone+'/'+achs.length+'</span></div>';
   o+='</div><span class="lg-caret">▾</span></summary>';
   o+='<div class="card-body" style="padding:14px 16px;">';
 
@@ -2433,12 +2439,12 @@ function rAchievementsCard(){
   o+='<div class="medal-track">';
   for(var i=1;i<MEDALS.length;i++){
     var ml=MEDALS[i];
-    var reached=n>=ml.min;
+    var reached=pts>=ml.min;
     var isCurrent=(m.current===ml);
     // Línea entre medallas
     if(i>1){
       var prev=MEDALS[i-1];
-      var linePct=n>=ml.min?100:n>prev.min?((n-prev.min)/(ml.min-prev.min)*100):0;
+      var linePct=pts>=ml.min?100:pts>prev.min?((pts-prev.min)/(ml.min-prev.min)*100):0;
       o+='<div class="medal-line"><div class="medal-line-fill" style="width:'+Math.round(linePct)+'%;background:'+(reached?ml.color:'var(--border)');
       o+='"></div></div>';
     }
@@ -2452,7 +2458,7 @@ function rAchievementsCard(){
   // Mensaje de próximo objetivo
   if(m.next){
     o+='<div style="text-align:center;font-size:11px;color:var(--muted);margin-bottom:12px;">';
-    o+='<strong style="color:'+m.current.color+';">'+m.faltan+' logro'+(m.faltan!==1?'s':'')+' más</strong> para '+_pwIcon(m.next,20)+' '+m.next.lbl;
+    o+='<strong style="color:'+m.current.color+';">'+m.faltan+' pts más</strong> para '+_pwIcon(m.next,20)+' '+m.next.lbl;
     o+='</div>';
   } else {
     o+='<div style="text-align:center;padding:8px;margin-bottom:12px;background:linear-gradient(135deg,#FFF8E7,#FFFCF0);border-radius:8px;border:1.5px solid #DAA520;">';
@@ -2682,6 +2688,13 @@ function marcarSesionAgendada(){
 // Celebración genérica (más chica que la de semana)
 function showMilestoneCelebration(opts){
   opts=opts||{};
+  // Festejo unificado: cabra que salta + explosión de confeti + sonido + "+pts".
+  if(window.PWJ){
+    PWJ.celebrate({kind:'logro', title:opts.title||'¡Genial!', sub:opts.sub||'',
+      points:opts.points, btn:opts.btn||'¡Sigue!'});
+    return;
+  }
+  // Fallback si el motor no cargó (nunca rompe el portal): cartel sin confeti.
   var ov=document.createElement('div');
   ov.className='week-celeb-overlay';
   ov.innerHTML='<div class="week-celeb-card" style="max-width:380px;padding:2.5rem 2rem 1.75rem;">'
@@ -2690,17 +2703,6 @@ function showMilestoneCelebration(opts){
     +'<div class="week-celeb-sub">'+(opts.sub||'')+'</div>'
     +'<button class="week-celeb-btn" onclick="this.closest(\'.week-celeb-overlay\').remove()">'+(opts.btn||'¡Sigue!')+'</button>'
     +'</div>';
-  // Confetti (menos, más sutil)
-  var colors=['#52B788','#E9C46A','#F77F00','#8C7B80','#2D6A4F'];
-  for(var i=0;i<25;i++){
-    var c=document.createElement('div');
-    c.className='confetti-piece';
-    c.style.left=Math.random()*100+'%';
-    c.style.background=colors[i%colors.length];
-    c.style.animationDelay=(Math.random()*.3)+'s';
-    c.style.animationDuration=(2+Math.random()*1.2)+'s';
-    ov.appendChild(c);
-  }
   document.body.appendChild(ov);
   ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
 }
