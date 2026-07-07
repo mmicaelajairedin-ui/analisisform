@@ -596,6 +596,47 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "portal fitness: cliente real NO ve la plantilla demo (Gonza/Martín + datos inventados)",
+    bug: "Un cliente real cuyo alta no dejó ficha (o con el plan aún vacío) veía TODA " +
+         "la plantilla demo: coach 'Gonza', cliente 'Martín Ríos', antropometría, foco y " +
+         "timeline inventados. Ahora, si el cliente tiene email pero no hay ficha, se limpia " +
+         "el demo (_clienteSinFicha) y se muestra el cartel del coach 'preparando tu plan' " +
+         "(renderPrepCard) con su foto respirando; el timeline se arma con datos reales " +
+         "(renderTimeline). Esta regla blinda que esas funciones y sus llamadas sigan.",
+    check() {
+      const s = read("pathway-fit-cliente.html");
+      if (!s) return null;
+      const js = inlineJs(s);
+      for (const fn of ["_clienteSinFicha", "renderPrepCard", "renderTimeline", "_limpiarDemo"]) {
+        if (!isDefined(fn, js)) return "pathway-fit-cliente.html: falta " + fn + "() (limpieza del demo para el cliente real).";
+      }
+      // La rama "email sin ficha" debe limpiar el demo, no dejar la plantilla visible.
+      if (!/_clienteSinFicha\s*\(\s*\)/.test(js))
+        return "pathway-fit-cliente.html: nadie llama a _clienteSinFicha() → el cliente real volvería a ver el demo.";
+      if (!/pw-cabra-juego\.js/.test(s))
+        return "pathway-fit-cliente.html: ya no carga pw-cabra-juego.js (el botón 'Jugar con la cabra' del cartel no funcionaría).";
+      return null;
+    },
+  },
+  {
+    name: "email de bienvenida: la firma del coach sale con su FOTO (no la inicial)",
+    bug: "El email de acceso que recibe el cliente nuevo llevaba la firma del coach SIN " +
+         "foto (coachSig caía a la inicial) porque el panel/edge function nunca pasaban " +
+         "coach_photo. Ahora el alta manda coach_photo (URL http) y password-reset lo " +
+         "reenvía en coach.photo a send-email. Esta regla evita que se pierda de nuevo.",
+    check() {
+      const panel = read("panel-v2.html");
+      if (panel && /welcome:\s*true/.test(panel) && !/coach_photo/.test(panel))
+        return "panel-v2.html: el alta ya no manda coach_photo → la firma del email de bienvenida vuelve a salir sin foto.";
+      const pr = read("supabase/functions/password-reset/index.ts");
+      if (pr) {
+        if (!/coach_photo/.test(pr)) return "password-reset: dejó de aceptar coach_photo (firma sin foto).";
+        if (!/photo:\s*cPhoto/.test(pr)) return "password-reset: ya no pasa la foto en coach.photo a send-email (firma sin foto).";
+      }
+      return null;
+    },
+  },
 ];
 
 let failures = 0;

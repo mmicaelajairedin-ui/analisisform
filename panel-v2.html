@@ -5613,6 +5613,11 @@ document.addEventListener("click", function(ev){
           // (activo=true) sobre la fila de ESTE coach, así re-agregar SIEMPRE la
           // trae de vuelta a la lista activa. Best-effort (no bloquea el alta).
           var _cguard=(RME&&RME.rol!=="admin")?("&coach_id=eq."+encodeURIComponent(RME.id)):"";
+          // Reclamar ficha HUÉRFANA: si el cliente llenó el formulario público
+          // ANTES del alta, su fila quedó con coach_id NULL → invisible para el
+          // coach (la lista filtra por coach_id). La adoptamos para ESTE coach
+          // (solo toca filas sin dueño → no roba clientes de otro). Best-effort.
+          _sbw("candidatos?email=eq."+encodeURIComponent(aem)+"&coach_id=is.null","PATCH",{activo:true,coach_id:RME.id}).catch(function(){});
           _sbw("candidatos?email=eq."+encodeURIComponent(aem)+_cguard,"PATCH",{activo:true})
             .catch(function(){})
             .then(function(){
@@ -5632,7 +5637,13 @@ document.addEventListener("click", function(ev){
         });
       }).then(function(){
         var _cemail=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
-        return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:aem,welcome:true,coach_name:cn,coach_email:_cemail})});
+        // Foto del coach para la FIRMA del email de bienvenida. Solo URL http(s)
+        // (una data: URI no se ve en Gmail → coachSig cae a la inicial). Sin foto
+        // válida → inicial. Además el slug para el link a su web.
+        var _cfoto=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim();
+        if(!/^https?:\/\//i.test(_cfoto)) _cfoto="";
+        var _cslug=((RCFG&&RCFG.slug)||(COACH&&COACH.slug)||"").toString().trim();
+        return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:aem,welcome:true,coach_name:cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})});
       }).catch(function(){});
     };
     _sendInvite();
