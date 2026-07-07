@@ -88,7 +88,7 @@
     if(win){ var nx=_game.li+1;
       if(nx>=GAME_LEVELS.length){ t.textContent="¡Llegaste a la cima! 🏆"; p.textContent="Completaste los 3 niveles con "+_game.pts+" puntos."; btn.textContent="Jugar de nuevo"; btn.onclick=function(){_gameStart(0);}; }
       else { t.textContent="¡Nivel "+_game.L.n+" completado! 🎉"; p.innerHTML= nx===1?"Ahora con más piedras y árboles que suman puntos.":"Último nivel: las piedras vienen más seguidas."; btn.textContent="Ir al nivel "+(nx+1); btn.onclick=function(){_gameStart(nx);}; }
-    } else { t.textContent="¡Chocaste! 🪨"; p.innerHTML="Salta con <b>espacio</b>. Prueba de nuevo este nivel."; btn.textContent="Reintentar"; btn.onclick=function(){_gameStart(_game.li);}; }
+    } else { t.textContent="¡Chocaste!"; p.innerHTML="Salta con <b>espacio</b>. Prueba de nuevo este nivel."; btn.textContent="Reintentar"; btn.onclick=function(){_gameStart(_game.li);}; }
     ov.style.display="flex";
   }
   function _gameLoop(){
