@@ -201,7 +201,9 @@
       '.pwj-medal-img{position:absolute;right:-6px;top:-4px;width:52px;height:52px;object-fit:contain;filter:drop-shadow(0 4px 10px rgba(0,0,0,.25));animation:pwjMedalIn .6s .15s both cubic-bezier(.175,.885,.32,1.275);}' +
       '.pwj-title{font-family:"Fraunces",Georgia,serif;font-size:25px;font-weight:600;color:#1f2d26;letter-spacing:-.02em;margin-bottom:8px;}' +
       '.pwj-sub{font-size:14px;color:#5c6b63;line-height:1.55;margin-bottom:14px;}' +
-      '.pwj-pts{display:inline-block;font-family:Inter,-apple-system,sans-serif;font-weight:800;font-size:15px;color:#fff;background:var(--pwj-accent,#2D6A4F);padding:5px 16px;border-radius:20px;margin-bottom:16px;box-shadow:0 4px 14px rgba(0,0,0,.16);}' +
+      /* Ficha de PREMIO (puntos = oro), en su propia línea arriba del botón.
+         NO debe parecer un botón: sin sombra de CTA, color oro, no la acción verde. */
+      '.pwj-pts{display:block;width:-moz-fit-content;width:fit-content;margin:0 auto 16px;font-family:Inter,-apple-system,sans-serif;font-weight:800;font-size:15px;color:#8A6D0F;background:#FEF3C7;border:1.5px solid #F3D98B;padding:6px 18px;border-radius:20px;letter-spacing:.01em;}' +
       '.pwj-btn{display:inline-block;padding:12px 34px;background:var(--pwj-accent,#2D6A4F);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;font-family:Inter,-apple-system,sans-serif;cursor:pointer;transition:transform .15s,box-shadow .15s;}' +
       '.pwj-btn:hover{transform:translateY(-1.5px);box-shadow:0 8px 22px rgba(0,0,0,.2);}' +
       '.pwj-btn:active{transform:scale(.96);}' +
