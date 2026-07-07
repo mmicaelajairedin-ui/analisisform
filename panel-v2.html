@@ -2319,6 +2319,17 @@ function viewClienteDetalle(c){
     RUT.forEach(function(e){ var w=parseInt(e.semana,10)||1; if(!byWk[w]){byWk[w]=[];wkOrder.push(w);} byWk[w].push(e); });
     wkOrder.sort(function(a,b){ return a-b; });
     var maxWk=wkOrder.length?wkOrder[wkOrder.length-1]:0;
+    // Carga en contexto: un formulario inline por día/semana. state.frAdd = "id§semana§dia".
+    var _frAdd=state.frAdd||"";
+    var _isAdd=function(w,dia){ return _frAdd===(c.id+"§"+w+"§"+(dia||"")); };
+    var _openBtn=function(w,dia,label){ return "<button class='cp-btn cp-btn-ghost' style='height:28px;font-size:12px;padding:0 12px;margin-top:6px' data-act='fit-inline-open' data-id='"+esc(c.id)+"' data-w='"+w+"' data-dia='"+esc(dia||"")+"'>"+label+"</button>"; };
+    var _addForm=function(w,dia,needDia){
+      return "<div style='padding:11px;margin-top:8px;background:var(--pw-niebla-2,#f4f7f4);border:1px solid var(--pw-border);border-radius:10px;display:flex;flex-direction:column;gap:7px'>"+
+        (needDia?"<input id='fi-dia' class='cp-form-input' list='dl-dias' placeholder='Día (ej. Lunes · Tren superior)' value=\""+esc((dia&&dia!=='General')?dia:"")+"\">":"")+
+        "<input id='fi-nom' class='cp-form-input' list='dl-ejercicios' placeholder='Ejercicio (ej. Press de banca)'>"+
+        "<div style='display:flex;gap:7px'><input id='fi-reps' class='cp-form-input' style='flex:1;min-width:80px' placeholder='Series×reps (4×10)'><input id='fi-peso' class='cp-form-input' style='flex:1;min-width:70px' placeholder='Peso kg' inputmode='decimal'></div>"+
+        "<div style='display:flex;gap:7px'><button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='fit-inline-save' data-id='"+esc(c.id)+"' data-w='"+w+"' data-dia='"+esc(dia||"")+"' data-needdia='"+(needDia?1:0)+"'>Agregar</button><button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 12px' data-act='fit-inline-cancel'>Cerrar</button></div></div>";
+    };
     var rutRows=wkOrder.map(function(w){
       var byDay={}, dOrder=[];
       byWk[w].forEach(function(e){ var d=e.dia||"General"; if(!byDay[d]){byDay[d]=[];dOrder.push(d);} byDay[d].push(e); });
@@ -2347,33 +2358,24 @@ function viewClienteDetalle(c){
             "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px;margin-right:5px' data-act='fit-ex-edit' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Editar</button>"+
             "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px' data-act='fit-ex-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Quitar</button></div>";
         }).join("");
-        return "<div style='margin-top:10px'><div style='font-size:11px;font-weight:700;color:var(--pw-bosque);text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px'>"+esc(d)+"</div>"+exs+"</div>";
+        var addEx=_isAdd(w,d)?_addForm(w,d,false):_openBtn(w,d,"＋ Agregar ejercicio");
+        return "<div style='margin-top:12px'><div style='font-size:11px;font-weight:700;color:var(--pw-bosque);text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px'>"+esc(d)+"</div>"+exs+addEx+"</div>";
       }).join("");
       return "<div class='cp-card cp-card-pad'><div class='cp-card-hd' style='padding:0 0 8px;border:0;gap:8px;flex-wrap:wrap;align-items:center'>"+
         "<span style='font-family:var(--pw-serif,Georgia);font-weight:700;font-size:15px;color:var(--pw-bosque);white-space:nowrap'>📅 Semana "+w+"</span>"+
         "<input class='cp-form-input' style='flex:1;min-width:120px;max-width:250px' value=\""+esc(RUTSEM[w-1]||"")+"\" placeholder='Nombre opcional (ej. del 18 al 24)' onchange='_saveWkName(this,\""+esc(c.id)+"\","+w+")'>"+
-        "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='fit-wk-dup' data-id='"+esc(c.id)+"' data-wk='"+w+"' title='Copiar esta semana a la siguiente'>⧉ Duplicar</button></div>"+daysHtml+"</div>";
+        "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='fit-wk-dup' data-id='"+esc(c.id)+"' data-wk='"+w+"' title='Copiar esta semana a la siguiente'>⧉ Duplicar</button></div>"+daysHtml+(_isAdd(w,"")?_addForm(w,"",true):_openBtn(w,"","＋ Agregar día"))+"</div>";
     }).join("");
-    var wkOpts=""; for(var _w=1;_w<=Math.max(maxWk+1,4);_w++){ wkOpts+="<option value='"+_w+"'"+(_w===(maxWk||1)?" selected":"")+">Semana "+_w+"</option>"; }
-    body=_visBar('rutina','Gym')+"<div class='cp-form-hint' style='margin:0 0 12px'>Cada ejercicio va en una <strong>semana</strong> y un <strong>día</strong>. Cargalo acá arriba y aparece abajo agrupado. Para armar la <strong>Semana 2, 3…</strong> subí el número en <strong>Semana (Nº)</strong>, o tocá <strong>➕ Agregar semana</strong> abajo del todo. El cliente lo ve igual en su portal.</div>"+
-      "<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Agregar ejercicio<span class='dot'>.</span></h3>"+
-        "<div class='cp-form-row-3'><div class='cp-form-row'><label class='cp-form-label'>Semana (Nº)</label><input id='fr-sem' type='number' min='1' class='cp-form-input' value='"+(maxWk||1)+"'></div><div class='cp-form-row'><label class='cp-form-label'>Día</label><input id='fr-dia' class='cp-form-input' list='dl-dias' placeholder='Lunes'></div><div class='cp-form-row'><label class='cp-form-label'>Bloque</label><input id='fr-bloque' class='cp-form-input' list='dl-bloques' placeholder='Movilidad'></div></div>"+
-        "<datalist id='dl-dias'><option value='Lunes'></option><option value='Martes'></option><option value='Miércoles'></option><option value='Jueves'></option><option value='Viernes'></option><option value='Sábado'></option><option value='Domingo'></option><option value='Día 1'></option><option value='Día 2'></option><option value='Día 3'></option><option value='Día 4'></option><option value='Día 5'></option></datalist>"+
-        "<datalist id='dl-bloques'><option value='Movilidad'></option><option value='Calentamiento'></option><option value='Fuerza'></option><option value='Hipertrofia'></option><option value='Tren superior'></option><option value='Tren inferior'></option><option value='Empuje'></option><option value='Tracción'></option><option value='Pierna'></option><option value='Core'></option><option value='Cardio'></option><option value='Full body'></option><option value='Vuelta a la calma'></option></datalist>"+
-        "<div class='cp-form-row' style='margin-top:10px'><label class='cp-form-label'>Ejercicio</label><input id='fr-nom' class='cp-form-input' placeholder='Press de banca' list='dl-ejercicios' oninput='frAutoFoto()'></div>"+
-        "<datalist id='dl-ejercicios'>"+((window.PW_EXBANK&&PW_EXBANK.nombres||[]).map(function(n){return "<option value=\""+esc(n)+"\"></option>";}).join(""))+"</datalist>"+
-        "<div class='cp-form-row-2' style='margin-top:10px'><div class='cp-form-row'><label class='cp-form-label'>Series × reps</label><input id='fr-meta' class='cp-form-input' placeholder='4×10'></div><div class='cp-form-row'><label class='cp-form-label'>Peso (kg)</label><input id='fr-peso' class='cp-form-input' placeholder='60' inputmode='decimal'></div></div>"+
-        "<div id='fr-auto' style='display:none;align-items:center;gap:10px;margin-top:12px;padding:8px;background:var(--pw-bg,#f6f8f6);border-radius:9px'></div>"+
-        "<div style='display:flex;align-items:center;gap:12px;margin-top:10px'>"+
-          "<label class='cp-btn cp-btn-ghost' style='cursor:pointer;height:34px;font-size:13px'>"+svg(IC.plus,14)+" Usar otra foto<input id='fr-foto' type='file' accept='image/*' style='display:none'></label>"+
-          "<img id='fr-foto-prev' style='width:44px;height:44px;border-radius:8px;object-fit:cover;display:none'>"+
-          "<span id='fr-foto-st' style='font-size:12px;color:var(--pw-text-soft)'></span>"+
-        "</div>"+
-        "<button class='cp-btn cp-btn-primary' style='margin-top:14px' data-act='fit-ex-add' data-id='"+esc(c.id)+"'>Agregar ejercicio</button>"+
-      "</div>"+
-      "<div style='font-size:11px;font-weight:700;color:var(--pw-text-soft);text-transform:uppercase;letter-spacing:.6px;margin:16px 0 2px'>Rutina cargada</div>"+
-      (rutRows||"<div class='cp-card cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Todavía no cargaste ejercicios. Agrega el primero acá arriba 👆</div>")+
-      (RUT.length?("<button class='cp-btn cp-btn-ghost' style='margin-top:12px;width:100%;justify-content:center' data-act='fit-wk-new' data-wk='"+(maxWk+1)+"' data-id='"+esc(c.id)+"'>➕ Agregar Semana "+(maxWk+1)+"</button>"):"");
+    var _nw=maxWk+1;
+    var newWk=_isAdd(_nw,"")
+      ? "<div class='cp-card cp-card-pad'><div style='font-family:var(--pw-serif,Georgia);font-weight:700;font-size:15px;color:var(--pw-bosque);margin-bottom:2px'>📅 Semana "+_nw+"</div>"+_addForm(_nw,"",true)+"</div>"
+      : "<button class='cp-btn cp-btn-ghost' style='margin-top:12px;width:100%;justify-content:center' data-act='fit-inline-open' data-id='"+esc(c.id)+"' data-w='"+_nw+"' data-dia=''>➕ Agregar Semana "+_nw+"</button>";
+    var _DL="<datalist id='dl-dias'><option value='Lunes'></option><option value='Martes'></option><option value='Miércoles'></option><option value='Jueves'></option><option value='Viernes'></option><option value='Sábado'></option><option value='Domingo'></option><option value='Lunes · Tren superior'></option><option value='Miércoles · Tren inferior'></option><option value='Viernes · Full body'></option><option value='Empuje'></option><option value='Tracción'></option><option value='Pierna'></option></datalist>"+
+      "<datalist id='dl-ejercicios'>"+((window.PW_EXBANK&&PW_EXBANK.nombres||[]).map(function(n){return "<option value=\""+esc(n)+"\"></option>";}).join(""))+"</datalist>";
+    body=_visBar('rutina','Gym')+"<div class='cp-form-hint' style='margin:0 0 12px'>Armá la rutina en el lugar: dentro de cada día tocá <strong>＋ Agregar ejercicio</strong> (ya sabe la semana y el día). Sumá días y semanas con sus botones. El cliente lo ve igual en su portal.</div>"+
+      _DL+
+      (rutRows||"<div class='cp-card cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Todavía no hay ejercicios. Empezá con la Semana 1 👇</div>")+
+      newWk;
   } else if(t==="fin_pres"){
     var FP={}; try{ FP=JSON.parse((c.raw&&c.raw.fin_pres)||"{}")||{}; }catch(e){ FP={}; }
     var FOBJ=[]; try{ FOBJ=JSON.parse((c.raw&&c.raw.fin_objetivos)||"[]")||[]; }catch(e){ FOBJ=[]; }
@@ -6217,6 +6219,32 @@ document.addEventListener("click", function(ev){
     if(eec && eec._example){ eec.raw.fit_rutina=jE2; toast("Editado en el demo ✓ (no se guarda)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(eeid),"PATCH",{fit_rutina:jE2})
       .then(function(r){ if(!r.ok) throw 0; if(eec&&eec.raw) eec.raw.fit_rutina=jE2; toast("Ejercicio actualizado ✓"); render(); })
+      .catch(function(){ alert("No se pudo guardar."); });
+    return;
+  }
+  if(act==="fit-inline-open"){
+    var oid=el.getAttribute("data-id"), ow=el.getAttribute("data-w"), od=el.getAttribute("data-dia")||"";
+    state.frAdd=oid+"§"+ow+"§"+od; state.editEx=null; render();
+    setTimeout(function(){ var f=document.getElementById(od?"fi-nom":"fi-dia")||document.getElementById("fi-nom"); if(f){ try{ f.scrollIntoView({behavior:"smooth",block:"center"}); f.focus(); }catch(e){} } },120);
+    return;
+  }
+  if(act==="fit-inline-cancel"){ state.frAdd=null; render(); return; }
+  if(act==="fit-inline-save"){
+    var iid=el.getAttribute("data-id"); var iw=parseInt(el.getAttribute("data-w"),10)||1;
+    var need=el.getAttribute("data-needdia")==="1";
+    var inom=(_val("fi-nom")||"").trim(); if(!inom){ alert("Poné el nombre del ejercicio."); return; }
+    var idia=need?((_val("fi-dia")||"").trim()||"General"):(el.getAttribute("data-dia")||"General");
+    var ireps=(_val("fi-reps")||"").trim(), ipeso=(_val("fi-peso")||"").trim();
+    var imeta=ireps+(ipeso?((ireps?" · ":"")+ipeso+(/kg/i.test(ipeso)?"":" kg")):"");
+    var ic=CLIENTS.filter(function(x){return String(x.id)===String(iid);})[0];
+    var iarr=_rutToArr(ic&&ic.raw&&ic.raw.fit_rutina);
+    iarr.push({semana:iw,dia:idia,nombre:inom,meta:imeta,peso:ipeso,foto:""});
+    var ij=JSON.stringify(iarr);
+    state.frAdd=iid+"§"+iw+"§"+idia; // deja el form abierto en ese día para seguir cargando
+    var _refoc=function(){ setTimeout(function(){ var f=document.getElementById("fi-nom"); if(f){ try{ f.focus(); f.scrollIntoView({behavior:"smooth",block:"center"}); }catch(e){} } },120); };
+    if(ic && ic._example){ ic.raw.fit_rutina=ij; toast("Ejercicio agregado al demo ✓ (no se guarda)"); render(); _refoc(); return; }
+    _sbw("candidatos?id=eq."+encodeURIComponent(iid),"PATCH",{fit_rutina:ij})
+      .then(function(r){ if(!r.ok) throw 0; if(ic&&ic.raw) ic.raw.fit_rutina=ij; toast("Ejercicio agregado ✓"); render(); _refoc(); })
       .catch(function(){ alert("No se pudo guardar."); });
     return;
   }
