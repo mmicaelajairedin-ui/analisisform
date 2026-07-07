@@ -97,9 +97,11 @@ async function sendResetEmail(to: string, toName: string, link: string) {
 // ── Email de bienvenida (alta de cliente: "creá tu contraseña y entrá") ──────
 // Mismo mecanismo de token que el reset, pero con copy de bienvenida — el
 // cliente nunca tuvo contraseña, así que "restablecer" lo confundiría.
-async function sendWelcomeEmail(to: string, toName: string, link: string, coachName: string, coachEmail?: string) {
+async function sendWelcomeEmail(to: string, toName: string, link: string, coachName: string, coachEmail?: string, coachPhoto?: string, coachSlug?: string) {
   const coach = (coachName || "").trim();
   const cEmail = (coachEmail || "").trim();
+  const cPhoto = (coachPhoto || "").trim();
+  const cSlug = (coachSlug || "").trim();
   const intro = coach
     ? `${coach} te dio acceso a tu espacio en Pathway.`
     : `Te dieron acceso a tu espacio en Pathway.`;
@@ -137,7 +139,9 @@ async function sendWelcomeEmail(to: string, toName: string, link: string, coachN
       reply_to: cEmail || undefined,
       // Firma del coach al pie (no la genérica de Pathway) → email personal.
       signature: coach ? "coach" : "pathway",
-      coach: coach ? { name: coach, email: cEmail || undefined } : undefined,
+      // photo = la foto del coach (su cara) para que la firma salga con foto, no
+      // con la inicial. slug = link a su web pública. Ver coachSig en send-email.
+      coach: coach ? { name: coach, email: cEmail || undefined, photo: cPhoto || undefined, slug: cSlug || undefined } : undefined,
     }),
   });
 }
@@ -180,7 +184,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!SB_URL || !SERVICE) return json({ error: "env_missing" }, 500);
 
-  let body: { action?: string; email?: string; token?: string; password?: string; welcome?: boolean; coach_name?: string; coach_email?: string };
+  let body: { action?: string; email?: string; token?: string; password?: string; welcome?: boolean; coach_name?: string; coach_email?: string; coach_photo?: string; coach_slug?: string };
   try {
     body = await req.json();
   } catch {
@@ -220,7 +224,7 @@ Deno.serve(async (req: Request) => {
         });
         const link = `${BASE}/recuperar-password.html?token=${token}&email=${encodeURIComponent(email)}`;
         if (body.welcome === true) {
-          await sendWelcomeEmail(email, user.nombre || "", link, (body.coach_name || "").toString(), (body.coach_email || "").toString());
+          await sendWelcomeEmail(email, user.nombre || "", link, (body.coach_name || "").toString(), (body.coach_email || "").toString(), (body.coach_photo || "").toString(), (body.coach_slug || "").toString());
         } else {
           await sendResetEmail(email, user.nombre || "", link);
         }
