@@ -620,6 +620,28 @@ const RULES = [
     },
   },
   {
+    name: "form fitness: se adapta al coach real, sin 'Gonza' hardcodeado",
+    bug: "El formulario de evaluación fitness tenía 'Gonza Coach' fijo en el título, " +
+         "en '<coach> está revisando tus datos…' y en el cierre → todos los clientes " +
+         "veían 'Gonza' aunque su coach fuera otro. Ahora el form lee el coach real " +
+         "(?coach=<id> o, en portal, el coach del candidato por email) y pinta su " +
+         "nombre; fallback 'tu coach'. Esta regla evita que vuelva un nombre fijo.",
+    check() {
+      const s = read("pathway-fit-form.html");
+      if (!s) return null;
+      // Fuera de comentarios JS no debe quedar ningún 'Gonza' visible en el markup.
+      const markup = s.replace(/<script[\s\S]*?<\/script>/gi, "");
+      if (/Gonza/.test(markup))
+        return "pathway-fit-form.html: volvió a aparecer 'Gonza' en el contenido (debe adaptarse al coach real).";
+      const js = inlineJs(s);
+      if (!isDefined("_applyCoachBrand", js) || !isDefined("_setCoachTexts", js))
+        return "pathway-fit-form.html: falta la adaptación al coach (_applyCoachBrand/_setCoachTexts).";
+      if (!/id="fCoach"|id='fCoach'/.test(s) || !/id="doneChip"|id='doneChip'/.test(s))
+        return "pathway-fit-form.html: faltan los anclajes del coach (fCoach/doneChip) que pinta el nombre real.";
+      return null;
+    },
+  },
+  {
     name: "email de bienvenida: la firma del coach sale con su FOTO (no la inicial)",
     bug: "El email de acceso que recibe el cliente nuevo llevaba la firma del coach SIN " +
          "foto (coachSig caía a la inicial) porque el panel/edge function nunca pasaban " +
