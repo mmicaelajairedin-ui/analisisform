@@ -2135,7 +2135,7 @@ function _agGcalDiag(){
     var rt=(g&&g.refresh_token)||(lg&&lg.refresh_token);
     var exp=(g&&g.expiry)||(lg&&lg.expiry);
     var venc=(exp?(Date.now()>exp?("sí, hace "+Math.round((Date.now()-exp)/60000)+" min"):"no"):"—");
-    return "token: "+(tk?"sí":"NO")+" · vencido: "+venc+" · refresh: "+(rt?"sí":"NO");
+    return "token: "+(tk?"sí":"NO")+" · vencido: "+venc+" · refresh: "+(rt?"sí":"NO")+(_agRefreshErr?(" · "+_agRefreshErr):"");
   }catch(e){ return ""; }
 }
 function _agConnect(){
@@ -2337,9 +2337,11 @@ function viewAgModal(){
     // Invitar a un miembro del equipo (Gonzalo u otros) al evento → les llega la
     // invitación de Google. Es lo que reemplaza el flujo de Calendly.
     var _team=(_AG_TEAM||[]).filter(function(m){ return m && m.email && (!RME || String(m.id)!==String(RME.id)); });
-    var _tg=(g.team||[]);
-    var _teamHtml=_team.length? ("<div class='cp-form-row'><label class='cp-form-label'>Invitar al equipo</label><div style='display:flex;gap:6px;flex-wrap:wrap'>"+
-      _team.map(function(m){ var on=(_tg.indexOf(m.email)>=0); return "<button data-act='ag-team' data-email='"+esc(m.email)+"' style='display:inline-flex;align-items:center;gap:5px;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";border-radius:100px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--pw-carbon);font-family:inherit'>"+(on?"✓ ":"")+esc((""+(m.nombre||m.email)).split(" ")[0])+"</button>"; }).join("")+"</div></div>") : "";
+    var _tg=(g.team||[]); var _teamInner;
+    if(_AG_TEAM===null) _teamInner="<div style='font-size:12px;color:var(--pw-text-muted)'>Cargando equipo…</div>";
+    else if(!_team.length) _teamInner="<div style='font-size:12px;color:var(--pw-text-muted)'>No hay compañeros para invitar (creá empleados en tu equipo).</div>";
+    else _teamInner="<div style='display:flex;gap:6px;flex-wrap:wrap'>"+_team.map(function(m){ var on=(_tg.indexOf(m.email)>=0); return "<button data-act='ag-team' data-email='"+esc(m.email)+"' style='display:inline-flex;align-items:center;gap:5px;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";border-radius:100px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--pw-carbon);font-family:inherit'>"+(on?"✓ ":"")+esc((""+(m.nombre||m.email)).split(" ")[0])+"</button>"; }).join("")+"</div>";
+    var _teamHtml="<div class='cp-form-row'><label class='cp-form-label'>Invitar al equipo</label>"+_teamInner+"</div>";
     body="<div class='cp-form-row'><label class='cp-form-label'>Tipo</label><select id='ag-cita-type' class='cp-form-input'>"+opts+"</select></div>"+
       "<div class='cp-form-row-2'>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Día</label><input type='date' id='ag-cita-date' class='cp-form-input' value='"+_dv+"'></div>"+
@@ -2372,7 +2374,7 @@ function viewAgModal(){
 // Renueva el access_token de Google con el refresh_token (vía edge function
 // gcal-refresh, que es la única que puede usar el client_secret). Así la conexión
 // no se cae cada hora. Si falla o tarda, cae al botón de reconectar (como antes).
-var _agRefreshTried=false;
+var _agRefreshTried=false, _agRefreshErr="";
 function _agRefresh(){
   var g=(REAL&&RCFG&&RCFG.gcal)?RCFG.gcal:null;
   var b0=document.getElementById("cp-agenda-body");
@@ -2382,18 +2384,23 @@ function _agRefresh(){
   var done=false;
   var to=setTimeout(function(){ if(done)return; done=true; var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agConnect(); }, 12000);
   fetch(SB+"/functions/v1/gcal-refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refresh_token:g.refresh_token})})
-    .then(function(r){ return r.ok?r.json():null; })
-    .then(function(d){
+    .then(function(r){ return r.text().then(function(t){ return {ok:r.ok,status:r.status,t:t}; }); })
+    .then(function(res){
       if(done)return; done=true; clearTimeout(to);
       var b=document.getElementById("cp-agenda-body");
-      if(!d || !d.access_token){ if(b) b.innerHTML=_agConnect(); return; }
+      var d=null; try{ d=JSON.parse(res.t); }catch(e){}
+      if(!res.ok || !d || !d.access_token){
+        _agRefreshErr="renovar "+res.status+": "+((d&&d.error)||(""+(res.t||"")).slice(0,70)||"sin respuesta");
+        if(b) b.innerHTML=_agConnect(); return;
+      }
+      _agRefreshErr="";
       var ng={}; for(var k in g){ if(g.hasOwnProperty(k)) ng[k]=g[k]; } ng.access_token=d.access_token; ng.expiry=d.expiry||(Date.now()+3600000);
       var merged={}; for(var j in RCFG){ if(RCFG.hasOwnProperty(j)) merged[j]=RCFG[j]; } merged.gcal=ng; RCFG=merged;
       try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
       if(RME&&RME.id) _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).catch(function(){});
       _agendaLoad();
     })
-    .catch(function(){ if(done)return; done=true; clearTimeout(to); var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agConnect(); });
+    .catch(function(e){ if(done)return; done=true; clearTimeout(to); _agRefreshErr="renovar: no se pudo llamar a la función ("+((e&&e.message)||"red")+")"; var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agConnect(); });
 }
 function _agendaLoad(){
   var body=document.getElementById("cp-agenda-body"); if(!body) return;
