@@ -755,6 +755,24 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "aislamiento: la lista de clientes NO incluye huérfanos (ni para el admin)",
+    bug: "El admin cargaba la lista de clientes con 'coach_id.eq.él O coach_id IS " +
+         "NULL' → un cliente huérfano (sin coach) de OTRO nicho (ej. fitness) se " +
+         "colaba en el panel de otro coach (career). GRAVE: mezcla clientes entre " +
+         "coaches. La query de la lista (cf) debe filtrar SIEMPRE por coach_id " +
+         "propio, sin la cláusula coach_id.is.null.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const i = s.search(/var\s+cf\s*=/);
+      if (i < 0) return "panel-v2.html: no se encuentra la query 'cf' de la lista de clientes.";
+      const block = s.slice(i, i + 400);
+      if (/coach_id\.is\.null/.test(block))
+        return "panel-v2.html: la lista de clientes (cf) volvió a incluir coach_id.is.null → se cuelan clientes huérfanos de otros coaches/nichos.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
