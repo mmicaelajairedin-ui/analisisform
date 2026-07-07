@@ -444,7 +444,11 @@ function openEx(n){
 function closeEx(){document.getElementById('exModal').classList.remove('on');}
 function toggleObj(el){el.classList.toggle('done');var c=el.closest('.card'),a=c.querySelectorAll('.objc').length,d=c.querySelectorAll('.objc.done').length;if(a===d){fireConfetti();showToast('🏅 ¡Objetivos de la semana completados!');}}
 function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),3200);}
-function fireConfetti(){var c=['#2D6A4F','#52B788','#E9C46A','#A8633A','#2E7587'];for(var i=0;i<90;i++){var d=document.createElement('div');d.className='confetti';d.style.left=(Math.random()*100)+'vw';d.style.background=c[i%c.length];document.body.appendChild(d);var f=1900+Math.random()*1400,x=(Math.random()-.5)*240;d.animate([{transform:'translate(0,0) rotate(0)',opacity:1},{transform:'translate('+x+'px,110vh) rotate('+(Math.random()*720)+'deg)',opacity:.9}],{duration:f,easing:'cubic-bezier(.25,.6,.5,1)'});(function(e,m){setTimeout(()=>e.remove(),m);})(d,f);}}
+function fireConfetti(){
+  // Explosión unificada (pathway-juego.js) + sonidito. Fallback a la cortina vieja.
+  if(window.PWJ){ PWJ.burst(window.innerWidth/2, window.innerHeight*0.35, 64); PWJ.sound('point'); return; }
+  var c=['#2D6A4F','#52B788','#E9C46A','#A8633A','#2E7587'];for(var i=0;i<90;i++){var d=document.createElement('div');d.className='confetti';d.style.left=(Math.random()*100)+'vw';d.style.background=c[i%c.length];document.body.appendChild(d);var f=1900+Math.random()*1400,x=(Math.random()-.5)*240;d.animate([{transform:'translate(0,0) rotate(0)',opacity:1},{transform:'translate('+x+'px,110vh) rotate('+(Math.random()*720)+'deg)',opacity:.9}],{duration:f,easing:'cubic-bezier(.25,.6,.5,1)'});(function(e,m){setTimeout(()=>e.remove(),m);})(d,f);}
+}
 // ── Gráficos de progreso. Funciones reutilizables: arrancan con datos demo y
 //    se re-renderizan con los datos reales que cargó el coach (fit_antro). ──
 function _pn(x){ var n=parseFloat(x); return isNaN(n)?null:n; }
@@ -493,6 +497,7 @@ function renderPeso(data){
 <!-- El portal se accede por el link que comparte el coach (?email=<cliente>).
      No hay auto-login acá: la autenticación de clientes vive en login.html. -->
 <script src="pw-auth.js"></script>
+<script src="pathway-juego.js?v=1"></script>
 <script>
 // ===================================================================
 // Portal fitness — datos REALES desde la base de CAREER (la misma que usa el
@@ -978,6 +983,8 @@ function applyLogros(inf){
   // "Evaluación" = el cliente completó su intake. ANTES estaba hardcodeado en
   // true → salía "hecho" aunque no llenara nada. Ahora se ata a datos reales.
   var hasEval=!!((''+(CRAW.objetivo||'')).trim() || (''+(CRAW.nivel||'')).trim() || (''+(CRAW.peso||'')).trim() || (''+(CRAW.altura||'')).trim());
+  var LG_ID=['eval','diag','rut','antro','racha','ses'];
+  var LG_LBL=['Evaluación','Diagnóstico','Rutina','Antropometría','Racha de hábitos','Sesión'];
   var done=[hasEval, !!inf, hasRut, hasAntro, _habitStreak()>=7, hasSes];
   var n=done.filter(Boolean).length;
   var cnt=document.getElementById('dash-logros-count'); if(cnt) cnt.textContent='Tu progreso · Logros '+n+'/6';
@@ -990,10 +997,37 @@ function applyLogros(inf){
     for(var bx=0;bx<lbls.length;bx++){ lbls[bx].classList.toggle('on', bx<lvl); }
     for(var c2=0;c2<lines.length;c2++){ lines[c2].classList.toggle('on', c2<lvl-1); }
   }
-  var mName=n>=6?'oro':(n>=4?'plata':'bronce'), medalLbl=n>=6?'Oro':(n>=4?'Plata':'Bronce');
-  var lm=document.getElementById('dash-logros-medal'); if(lm){ lm.src='assets/iconos/medalla-'+mName+'.png'; lm.alt=medalLbl; }
-  var smb=document.querySelector('.sb-medal-badge img'); if(smb){ smb.src='assets/iconos/medalla-'+mName+'-sm.webp'; smb.alt=medalLbl; }
-  var sl=document.querySelector('.sb-medal-lbl'); if(sl) sl.textContent='Medalla '+medalLbl;
+  // Medalla por PUNTOS (fuente única: pathway-juego.js) — 100 pts/logro → 200/400/600.
+  // A <2 logros ya NO muestra "Bronce" falso (queda alineado al riel de arriba y a carrera).
+  var pts=n*100;
+  var m=(window.PWJ?PWJ.medal(pts):null);
+  var medalLbl=m?m.current.lbl:(n>=6?'Oro':n>=4?'Plata':n>=2?'Bronce':'');
+  var mName=medalLbl?medalLbl.toLowerCase():'';
+  var lm=document.getElementById('dash-logros-medal');
+  if(lm){ if(mName){ lm.src='assets/iconos/medalla-'+mName+'.png'; lm.alt=medalLbl; lm.style.visibility=''; } else { lm.style.visibility='hidden'; } }
+  var smb=document.querySelector('.sb-medal-badge img');
+  if(smb){ if(mName){ smb.src='assets/iconos/medalla-'+mName+'-sm.webp'; smb.alt=medalLbl; if(smb.parentNode)smb.parentNode.style.display='flex'; } else if(smb.parentNode){ smb.parentNode.style.display='none'; } }
+  var sl=document.querySelector('.sb-medal-lbl'); if(sl) sl.textContent= medalLbl?('Medalla '+medalLbl+' · '+pts+' pts'):(pts+' pts — sumá para tu medalla');
+  var smf=document.querySelector('.sb-medal-fill'); if(smf&&m) smf.style.width=m.pct+'%';
+  var smn=document.querySelector('.sb-medal-next'); if(smn) smn.textContent=(m&&m.next)?(m.faltan+' pts para '+m.next.lbl):(medalLbl==='Oro'?'✨ Nivel máximo':'');
+  // Festejo + persistencia (fitness antes NO tenía): celebrar solo cambios reales.
+  try{
+    var _ck='fit_'+((CRAW&&CRAW.email)||(typeof CID!=='undefined'&&CID)||'x');
+    var prevDone=JSON.parse(localStorage.getItem('mj_achs_'+_ck)||'[]');
+    var currDone=[]; for(var q=0;q<done.length;q++){ if(done[q]) currDone.push(LG_ID[q]); }
+    if(prevDone.length>0 && window.PWJ){
+      currDone.filter(function(id){return prevDone.indexOf(id)===-1;}).forEach(function(id,idx){
+        var li=LG_ID.indexOf(id); if(li<0)return;
+        setTimeout(function(){ PWJ.celebrate({kind:'logro',title:'¡'+LG_LBL[li]+'!',sub:'Sumaste un logro',points:100,btn:'¡Sigue!'}); }, 300+idx*220);
+      });
+    }
+    localStorage.setItem('mj_achs_'+_ck, JSON.stringify(currDone));
+    var prevMedal=localStorage.getItem('mj_medal_'+_ck)||'';
+    if(prevMedal && medalLbl && prevMedal!==medalLbl && m && window.PWJ){
+      PWJ.celebrate({kind:'medal',tier:m.current,title:'¡Medalla '+medalLbl+'!',sub:'¡Felicitaciones! Desbloqueaste la medalla de '+medalLbl+'. ¡Sigue así!',btn:'¡Genial!'});
+    }
+    if(medalLbl) localStorage.setItem('mj_medal_'+_ck, medalLbl);
+  }catch(e){}
 }
 
 // ── White-label: la marca del coach (nombre siempre; color+logo si es Pro) ──
