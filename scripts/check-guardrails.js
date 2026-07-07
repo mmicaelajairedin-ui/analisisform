@@ -692,6 +692,23 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "juego coach: el puntaje no se pisa para abajo entre dispositivos",
+    bug: "En panel-v2 el mejor puntaje del juego se leía solo de localStorage; " +
+         "en un dispositivo/navegador nuevo arrancaba en 0 y el primer juego " +
+         "PISABA el game_pts del servidor con un valor menor → el número y el " +
+         "ranking BAJABAN. Debe restaurar desde el servidor (máximo entre local " +
+         "y servidor) al cargar el panel, vía _gameRestoreOwn() en loadReal.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function\s+_gameRestoreOwn\b/.test(s))
+        return "panel-v2.html: falta _gameRestoreOwn() (restaurar el puntaje del juego desde el servidor).";
+      if (((s.match(/_gameRestoreOwn/g) || []).length) < 2)
+        return "panel-v2.html: _gameRestoreOwn() está definida pero no se llama (loadReal debe invocarla).";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;

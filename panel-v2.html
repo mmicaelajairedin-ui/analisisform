@@ -1371,7 +1371,7 @@ function _cabraCartel(msg){
 // Se desbloquea al terminar el onboarding. Optativo: se abre con "Jugar". Guarda
 // el mejor puntaje por coach (localStorage) → se muestra en el menú.
 var _game=null, _gameRAF=null;
-function _gameKey(){ var em=(typeof COACH!=="undefined"&&COACH&&COACH.email)||(REAL&&RME&&RME.email)||"x"; return "pw_game_pts_"+em; }
+function _gameKey(){ var em=(REAL&&RME&&RME.email)||(typeof COACH!=="undefined"&&COACH&&COACH.email)||"x"; return "pw_game_pts_"+em; }
 function _gameBest(){ try{ return parseInt(localStorage.getItem(_gameKey())||"0",10)||0; }catch(e){ return 0; } }
 function _gameSetBest(n){ try{ if(n>_gameBest()){ localStorage.setItem(_gameKey(),String(n)); _gameSyncServer(n,null); } }catch(e){} }
 // Guarda puntos/medalla del coach en su fila de usuarios (para el ranking del
@@ -1381,6 +1381,22 @@ function _gameSyncServer(pts,medal){
     var body={}; if(pts!=null) body.game_pts=pts; if(medal!=null) body.game_medal=medal;
     if(!Object.keys(body).length) return;
     _sbw("usuarios?id=eq."+encodeURIComponent(id),"PATCH",body).catch(function(){});
+  }catch(e){}
+}
+// Restaura el mejor puntaje del juego desde el servidor al cargar el panel.
+// FIX multi-dispositivo: sin esto, en un navegador/dispositivo nuevo el
+// localStorage arranca en 0, y el primer juego (aunque sea bajo) PISABA el
+// game_pts del servidor con un valor MENOR → el número y el ranking bajaban.
+// Ahora tomamos el máximo entre local y servidor antes de que puedas jugar.
+function _gameRestoreOwn(){
+  try{
+    var id=(REAL&&RME&&RME.id); if(!id||typeof _sb!=="function") return;
+    _sb("usuarios?id=eq."+encodeURIComponent(id)+"&select=game_pts").then(function(rows){
+      try{
+        var srv=(rows&&rows[0]&&parseInt(rows[0].game_pts||0,10))||0;
+        if(srv>_gameBest()){ localStorage.setItem(_gameKey(),String(srv)); if(typeof render==="function") render(); }
+      }catch(e){}
+    }).catch(function(){});
   }catch(e){}
 }
 var GAME_LEVELS=[
@@ -7517,6 +7533,7 @@ function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
   if(!ME||!ME.id) return; // sin sesión → datos de ejemplo
   REAL=true; RME=ME; RADMIN=(ME.rol==="admin");
+  _gameRestoreOwn(); // recupera tu mejor puntaje del servidor (fix multi-dispositivo)
   var cf = ME.rol==="admin"
     ? "select=*&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)"
     : "select=*&coach_id=eq."+encodeURIComponent(ME.id);
