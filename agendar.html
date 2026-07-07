@@ -100,7 +100,7 @@ function $(id){ return document.getElementById(id); }
 function esc(s){ return (''+(s==null?'':s)).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 function qp(k){ try{ return new URLSearchParams(location.search).get(k); }catch(e){ return null; } }
 
-var COACH='', FIRST='', EMAIL='', PHOTO='', SLUG='', WA='', TYPE=null, DUR=30, COLOR='#2D6A4F', PRO=false;
+var COACH='', FIRST='', EMAIL='', PHOTO='', SLUG='', WA='', TYPE=null, DUR=30, COLOR='#2D6A4F', PRO=false, FORCE_TYPE=null;
 var sel={day:null, time:null}, showAll=false;
 
 function initials(n){ var p=(''+(n||'')).trim().split(/\s+/); return (((p[0]||'')[0]||'')+((p[1]||'')[0]||'')).toUpperCase()||'·'; }
@@ -131,7 +131,10 @@ function applyCoachRow(u, t){
   DISP=normDisp(cfg.disponibilidad);
   var types=(Object.prototype.toString.call(cfg.event_types)==='[object Array]'&&cfg.event_types.length)?cfg.event_types
     :(TEAM?[{label:'Demo Pathway 15 min',color:'#2D6A4F',icon:'📅'}]:[{label:'Sesión 45 min',color:'#8C7B80'}]);
-  TIDX=(t>=0&&t<types.length)?t:0; TYPE=types[TIDX];
+  // Si el link es de un tipo COMPARTIDO (varias personas atienden), usamos ese
+  // tipo para todos (mismo nombre/color/duración), y cada persona con SU horario.
+  if(FORCE_TYPE){ TYPE=FORCE_TYPE; TIDX=0; }
+  else { TIDX=(t>=0&&t<types.length)?t:0; TYPE=types[TIDX]; }
   DUR=durFrom(TYPE.label); COLOR=TYPE.color||'#2D6A4F';
   sel={day:null,time:null}; showAll=false;
   renderPicker();
@@ -142,8 +145,34 @@ function loadCoach(c,t){
   fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(c)+'&select='+SAFE_SELECT+'&limit=1',
     { headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
     .then(_rowsOrErr)
-    .then(function(res){ if(res&&res._err){ fail('No pudimos cargar la reserva (error '+res.status+'). '+esc((''+(res.msg||'')).slice(0,160))); return; } if(!res||!res.length){ fail('No encontramos a esta persona. Revisá el link.'); return; } applyCoachRow(res[0],t); })
+    .then(function(res){
+      if(res&&res._err){ fail('No pudimos cargar la reserva (error '+res.status+'). '+esc((''+(res.msg||'')).slice(0,160))); return; }
+      if(!res||!res.length){ fail('No encontramos a esta persona. Revisá el link.'); return; }
+      var owner=res[0]; var ocfg=owner.configuracion||{};
+      var otypes=(Object.prototype.toString.call(ocfg.event_types)==='[object Array]')?ocfg.event_types:[];
+      var st=(t>=0&&t<otypes.length)?otypes[t]:null;
+      var ppl=(st&&Object.prototype.toString.call(st.people)==='[object Array]')?st.people.filter(Boolean):[];
+      // Tipo COMPARTIDO: si el tipo tiene varias personas, mostramos el selector
+      // con todas ellas (mismo tipo para todas), cada una con su disponibilidad.
+      if(ppl.length>1){ FORCE_TYPE=st; loadPeople(ppl, owner); return; }
+      applyCoachRow(owner,t);
+    })
     .catch(function(){ fail('No pudimos cargar la página de reservas. Reintentá en un momento.'); });
+}
+// Carga a las personas de un tipo compartido y arma el selector (como el team).
+function loadPeople(ids, owner){
+  TEAM=true;
+  fetch(SB+'/rest/v1/usuarios?id=in.('+ids.map(encodeURIComponent).join(',')+')&select='+SAFE_SELECT,
+    { headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
+    .then(_rowsOrErr)
+    .then(function(res){
+      var rows=(Object.prototype.toString.call(res)==='[object Array]')?res:[];
+      // Ordenar según el orden de `ids` (dueño primero).
+      TEAM_MEMBERS=ids.map(function(id){ return rows.filter(function(r){return String(r.id)===String(id);})[0]; }).filter(Boolean);
+      if(!TEAM_MEMBERS.length){ if(owner) applyCoachRow(owner,-1); return; }
+      applyCoachRow(TEAM_MEMBERS[0],-1);
+    })
+    .catch(function(){ if(owner) applyCoachRow(owner,-1); });
 }
 var TEAM_MEMBERS=[];
 function loadTeam(){
