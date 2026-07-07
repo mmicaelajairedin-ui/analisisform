@@ -17,7 +17,7 @@ const STEPS = [{
   eyebrow: "PASO 1 · BIENVENIDA",
   title: "Hola,\nsoy Cabra",
   body: "Voy a guiarte para configurar Pathway. En menos de lo que toma un café, vas a tener tu primer cliente activo. ¿Empezamos?",
-  cabra: "assets/mascota/cabra-saludando.gif",
+  cabra: "assets/cabra/atencion.png",
   Component: StepWelcome
 }, {
   id: "perfil",
@@ -25,7 +25,7 @@ const STEPS = [{
   eyebrow: "PASO 2 · TU PERFIL",
   title: "Cuando configures tu perfil",
   body: "Esto aparece en el panel de tu cliente.",
-  cabra: "assets/mascota/cabra-laptop.gif",
+  cabra: "assets/cabra/frente.gif",
   Component: StepPerfil
 }, {
   id: "link",
@@ -33,7 +33,7 @@ const STEPS = [{
   eyebrow: "PASO 3 · TU LINK",
   title: "Tu URL única en Pathway",
   body: "Esta es la dirección que vas a compartir en tu Instagram, LinkedIn, o donde sea. Elegila bien.",
-  cabra: "assets/mascota/cabra-thumbs-up.gif",
+  cabra: "assets/cabra/salta.gif",
   Component: StepLink
 }, {
   id: "pagos",
@@ -41,7 +41,7 @@ const STEPS = [{
   eyebrow: "PASO 4 · DINERO",
   title: "Tu dinero es tuyo. Siempre.",
   body: "Importante: hay dos formas en que llegan los clientes. Te explico la diferencia para que sepas cuándo cobras todo y cuándo Pathway retiene 20%.",
-  cabra: "assets/mascota/cabra-pensando.gif",
+  cabra: "assets/cabra/mira.png",
   Component: StepPagos,
   highlight: true
 }, {
@@ -50,7 +50,7 @@ const STEPS = [{
   eyebrow: "PASO 5 · PRIMER CLIENTE",
   title: "Creemos tu primer cliente",
   body: "Solo necesitas su nombre y email. Pathway le manda su acceso al portal automáticamente.",
-  cabra: "assets/mascota/cabra-saludando.gif",
+  cabra: "assets/cabra/atencion.png",
   Component: StepCliente
 }, {
   id: "formulario",
@@ -58,7 +58,7 @@ const STEPS = [{
   eyebrow: "PASO 6 · FORMULARIO",
   title: "El intake de tu cliente",
   body: "Antes de la primera sesión, tu cliente contesta un formulario de 7 pasos. Ahorra una hora de entrevista.",
-  cabra: "assets/mascota/cabra-laptop.gif",
+  cabra: "assets/cabra/frente.gif",
   Component: StepFormulario
 }, {
   id: "datos",
@@ -66,7 +66,7 @@ const STEPS = [{
   eyebrow: "PASO 7 · LLEGAN LOS DATOS",
   title: "Cuando completa el formulario",
   body: "Tu cliente envía sus datos y los recibes aquí. Un click y la IA arma el informe, el plan y la carta.",
-  cabra: "assets/mascota/cabra-pensando.gif",
+  cabra: "assets/cabra/mira.png",
   Component: StepDatosCliente
 }, {
   id: "informe",
@@ -74,7 +74,7 @@ const STEPS = [{
   eyebrow: "PASO 8 · INFORME IA",
   title: "Tu IA hace el trabajo pesado",
   body: "El informe está listo. Lo revisas con prioridades, llegas con la conversación armada a la primera sesión.",
-  cabra: "assets/mascota/cabra-pensando.gif",
+  cabra: "assets/cabra/mira.png",
   Component: StepInforme
 }, {
   id: "plan",
@@ -82,7 +82,7 @@ const STEPS = [{
   eyebrow: "PASO 9 · PLAN 4 SEMANAS",
   title: "Tu metodología, lista para enviar",
   body: "Pathway viene con un plan de 4 semanas pre-armado. Es tu metodología — ajústalo y envíalo.",
-  cabra: "assets/mascota/cabra-mapa.gif",
+  cabra: "assets/cabra/mira.png",
   Component: StepPlan
 }, {
   id: "medalla",
@@ -90,7 +90,7 @@ const STEPS = [{
   eyebrow: "PASO 10 · MEDALLA",
   title: "Lo lograste",
   body: "Configuraste todo. Ya puedes enviar tu link público y empezar a recibir prospectas. Una sorpresa para ti.",
-  cabra: "assets/mascota/cabra-logro.gif",
+  cabra: "assets/cabra/salta.gif",
   Component: StepEmailMedalla
 }];
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
@@ -278,7 +278,7 @@ function App() {
   }, /*#__PURE__*/React.createElement("div", {
     className: "tut-modal-skip-cabra"
   }, /*#__PURE__*/React.createElement("img", {
-    src: "assets/mascota/cabra-pensando.gif",
+    src: "assets/cabra/mira.png",
     alt: ""
   })), /*#__PURE__*/React.createElement("h3", null, "\xBFSaltar el tutorial?"), /*#__PURE__*/React.createElement("p", null, "Puedes volver cuando quieras desde el men\xFA de tu perfil. Te recomiendo terminarlo \u2014 solo te quedan ", STEPS.length - step - 1, " pasos."), /*#__PURE__*/React.createElement("div", {
     className: "tut-modal-skip-actions"
@@ -348,7 +348,7 @@ function SkippedScreen({
   }, /*#__PURE__*/React.createElement("div", {
     className: "tut-skipped-inner"
   }, /*#__PURE__*/React.createElement("img", {
-    src: "assets/mascota/cabra-saludando.gif",
+    src: "assets/cabra/atencion.png",
     alt: "",
     style: {
       width: 180,
