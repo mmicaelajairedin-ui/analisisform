@@ -2141,9 +2141,10 @@ function _agRender(d){
   if(d && d.error==="parse_failed") return _agEmpty("El calendario respondió pero no pudimos leer sus eventos. Verificá que sea la dirección iCal (termina en /basic.ics).");
   if(d && d.error && d.error!=="") return _agEmpty("No pudimos leer tu calendario ahora (\""+esc(d.error)+"\"). Revisá el link iCal en Configuración o reintentá en un momento.");
   var evs=(d&&Object.prototype.toString.call(d.events)==="[object Array]")?d.events:[];
-  // Compacto: solo la semana cercana (próximos 7 días).
-  var lim=Date.now()+7*86400000;
-  evs=evs.filter(function(e){ return e && e.start && e.start<=lim; });
+  // Compacto: solo la semana cercana (de hoy a +7 días). El fetch trae más para
+  // el calendario mensual, pero la LISTA solo muestra lo próximo.
+  var lim=Date.now()+7*86400000; var lo=new Date(); lo.setHours(0,0,0,0); var loMs=+lo;
+  evs=evs.filter(function(e){ return e && e.start && e.start>=loMs && e.start<=lim; });
   if(!evs.length) return _agEmpty("No tenés sesiones esta semana. Cuando agendes una, aparece acá.");
   var html="", lastDay="";
   evs.forEach(function(e){
@@ -2212,15 +2213,55 @@ function _agTypesHtml(){
   }).join("")+
   "<button class='cp-btn cp-btn-ghost' data-act='ag-new' style='height:26px;font-size:11px;padding:0 9px;margin-top:2px'>"+svg(IC.plus,11)+" Tipo</button>";
 }
+// Calendario mensual (columna del medio). En cada día con evento muestra el
+// ICONO del tipo (los que crea el coach), teñido con su color. Datos: Google
+// Calendar (_AG_DATA) + reservas (_RES_DATA).
+var _AG_MO=null;
+var _AG_MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+function _agMoKey(d){ return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+function _agMonthCal(){
+  return "<div class='cp-eyebrow' style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'>"+
+    "<span id='cp-agmo-title'>Mes</span>"+
+    "<span style='display:inline-flex;gap:6px'>"+
+      "<button class='cp-icon-btn' style='width:26px;height:26px;font-size:15px;line-height:1' data-act='ag-mo' data-d='-1' aria-label='Mes anterior'>‹</button>"+
+      "<button class='cp-icon-btn' style='width:26px;height:26px;font-size:15px;line-height:1' data-act='ag-mo' data-d='1' aria-label='Mes siguiente'>›</button>"+
+    "</span></div>"+
+    "<div id='cp-agenda-month'></div>";
+}
+function _agMonthRender(){
+  var box=document.getElementById("cp-agenda-month"); if(!box) return;
+  if(!_AG_MO){ var n=new Date(); _AG_MO={y:n.getFullYear(),m:n.getMonth()}; }
+  var y=_AG_MO.y, m=_AG_MO.m;
+  var tt=document.getElementById("cp-agmo-title"); if(tt) tt.textContent=_AG_MESES[m]+" "+y;
+  var byDay={};
+  function add(ts, typ){ var k=_agMoKey(new Date(ts)); (byDay[k]=byDay[k]||[]).push(typ); }
+  var evs=(_AG_DATA&&_AG_DATA.events)||[]; evs.forEach(function(e){ if(e&&e.start) add(e.start, _agTypeForEvent(e)); });
+  var res=_RES_DATA||[]; res.forEach(function(r){ if(!r||r.estado==="cancelada")return; add(+new Date(r.inicio), _agEventTypeFor(r.tipo)); });
+  var first=new Date(y,m,1); var startDow=(first.getDay()+6)%7; var daysIn=new Date(y,m+1,0).getDate();
+  var today=_agMoKey(new Date());
+  var html="<div style='display:grid;grid-template-columns:repeat(7,1fr);gap:3px'>";
+  ["L","M","X","J","V","S","D"].forEach(function(d){ html+="<div style='text-align:center;font-size:9px;font-weight:800;color:var(--pw-text-muted);padding:2px 0'>"+d+"</div>"; });
+  for(var i=0;i<startDow;i++){ html+="<div></div>"; }
+  for(var dd=1;dd<=daysIn;dd++){
+    var cd=new Date(y,m,dd); var k=_agMoKey(cd); var items=byDay[k]||[]; var isToday=(k===today);
+    var icons=""; items.slice(0,3).forEach(function(typ){ var ic=(typ&&typ.icon)||"🗓️"; icons+="<span style='font-size:9px;line-height:1'>"+ic+"</span>"; });
+    var bg=items.length?("background:"+((items[0]&&items[0].color)||"#8C7B80")+"18;"):"";
+    html+="<div title='"+(items.length?items.length+" evento(s)":"")+"' style='aspect-ratio:1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--pw-carbon);"+bg+(isToday?"border:2px solid var(--pw-bosque);font-weight:800;":"")+"'>"+
+      "<span>"+dd+"</span>"+(icons?"<span style='display:flex;gap:1px;margin-top:1px'>"+icons+"</span>":"")+"</div>";
+  }
+  html+="</div>";
+  box.innerHTML=html;
+}
 function _agendaCard(){
   return "<div class='cp-card' style='margin-bottom:16px'>"+
     "<div class='cp-card-hd'>"+
       "<h3 class='cp-card-title'><span class='cp-emo'>🗓️</span> Tu agenda<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow' style='display:inline-flex;align-items:center;gap:6px'><span style='width:7px;height:7px;border-radius:50%;background:var(--pw-sendero);display:inline-block'></span>En vivo · Google Calendar</span>"+
     "</div>"+
-    "<div class='cp-card-pad' style='display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start'>"+
-      "<div id='cp-agenda-body' style='flex:2;min-width:230px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
-      "<div style='flex:1;min-width:168px;background:var(--pw-niebla-2);border-radius:12px;padding:12px 14px'>"+
+    "<div class='cp-card-pad' style='display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start'>"+
+      "<div id='cp-agenda-body' style='flex:1.15;min-width:210px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
+      "<div style='flex:1.15;min-width:230px'>"+_agMonthCal()+"</div>"+
+      "<div style='flex:.9;min-width:168px;background:var(--pw-niebla-2);border-radius:12px;padding:12px 14px'>"+
         "<div class='cp-eyebrow' style='margin-bottom:6px'>Tipos de evento</div>"+
         "<div id='cp-agenda-types'>"+_agTypesHtml()+"</div>"+
         "<button class='cp-btn cp-btn-primary' data-act='ag-cita' style='height:32px;font-size:12px;margin-top:12px;width:100%'>"+svg(IC.plus,13)+" Agendar cita</button>"+
@@ -2340,9 +2381,13 @@ function _agendaLoad(){
   // Token vencido: si tenemos refresh_token, lo renovamos solo (no te pide reconectar).
   if(g.expiry && Date.now()>g.expiry){ if(g.refresh_token){ _agRefresh(); } else { body.innerHTML=_agConnect(); } return; }
   var now=new Date();
-  var q="timeMin="+encodeURIComponent(now.toISOString())+
-        "&timeMax="+encodeURIComponent(new Date(now.getTime()+14*86400000).toISOString())+
-        "&singleEvents=true&orderBy=startTime&maxResults=30";
+  // Ventana amplia (desde el inicio del mes visible hasta +60 días) para que el
+  // calendario mensual tenga datos. La lista filtra a futuro aparte.
+  var _moStart=new Date((_AG_MO?_AG_MO.y:now.getFullYear()),(_AG_MO?_AG_MO.m:now.getMonth()),1);
+  var _tmin=(_moStart<now?_moStart:new Date(now.getFullYear(),now.getMonth(),1));
+  var q="timeMin="+encodeURIComponent(_tmin.toISOString())+
+        "&timeMax="+encodeURIComponent(new Date(now.getTime()+60*86400000).toISOString())+
+        "&singleEvents=true&orderBy=startTime&maxResults=100";
   fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?"+q,{headers:{Authorization:"Bearer "+g.access_token}})
     .then(function(r){ if(r.ok) return r.json(); return r.json().catch(function(){return {};}).then(function(d){ return {_err:true,status:r.status,msg:(d&&d.error&&d.error.message)||""}; }); })
     .then(function(d){
@@ -2355,7 +2400,7 @@ function _agendaLoad(){
       _agRefreshTried=false;
       var items=(d&&Object.prototype.toString.call(d.items)==="[object Array]")?d.items:[];
       var evs=items.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null; return {id:e.id||"",title:e.summary||"Sesión",start:+new Date(s),location:e.hangoutLink||e.location||null}; }).filter(function(x){return !!x;});
-      _AG_DATA={events:evs}; b.innerHTML=_agRender({events:evs});
+      _AG_DATA={events:evs}; b.innerHTML=_agRender({events:evs}); _agMonthRender();
     })
     .catch(function(){ var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer tu calendario de Google. Reintentá en un momento."); });
 }
@@ -2378,7 +2423,7 @@ function _resLoad(){
   if(!RME||!RME.id){ body.innerHTML=""; return; }
   var since=new Date(Date.now()-86400000).toISOString();
   _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+"&order=inicio.asc&select=id,nombre,email,tipo,inicio,estado")
-    .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); })
+    .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); _agMonthRender(); })
     .catch(function(){ var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase."); });
 }
 function _resRender(list){
@@ -5364,6 +5409,7 @@ function render(){
         // Reservas del link público: cache si ya lo trajimos, si no cargar.
         if(_RES_DATA){ var _rsb=document.getElementById("cp-res-body"); if(_rsb) _rsb.innerHTML=_resRender(_RES_DATA); }
         else { _resLoad(); }
+        _agMonthRender(); // pinta el mes con lo que haya en cache (o vacío)
       }catch(e){}
     }
     _syncChatBtn();
@@ -5429,6 +5475,7 @@ document.addEventListener("click", function(ev){
       .catch(function(){ toast("No se pudo actualizar la reserva."); _resLoad(); });
     return;
   }
+  if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
   if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{days:[1,2,3,4,5],from:"09:00",to:"18:00"}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00")}; render(); return; }
   if(act==="ag-disp-day"){
     if(state.ag){ var _cf=document.getElementById("ag-disp-from"), _ct=document.getElementById("ag-disp-to"); if(_cf) state.ag.from=_cf.value; if(_ct) state.ag.to=_ct.value;
