@@ -137,7 +137,8 @@
   .res3 .card{padding-bottom:16px;}
   .res3 .card .card-hd{margin-bottom:12px;}
   .res3 .card>*:not(.card-hd){padding-left:18px;padding-right:18px;}
-  @media(max-width:1040px){ .res3{grid-template-columns:1fr;} }
+  .res3 .rescol+.rescol{border-left:1px solid var(--borde);padding-left:16px;}
+  @media(max-width:1040px){ .res3{grid-template-columns:1fr;} .res3 .rescol+.rescol{border-left:none;padding-left:0;} }
   /* Calendario mensual */
   .emcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
   .emcal-dow{text-align:center;font-size:10px;font-weight:800;letter-spacing:.3px;color:var(--texto-suave);padding:4px 0;}
@@ -458,11 +459,14 @@
   window.calNav=function(delta){ CAL_M+=delta; if(CAL_M<0){ CAL_M=11; CAL_Y--; } else if(CAL_M>11){ CAL_M=0; CAL_Y++; } renderCal(); };
   var MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   function _ymd(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  // Tipos de evento del empleado (para el color/icono del calendario, igual que el panel).
+  var EVT=[];
+  function _evFor(tipo){ var t=(''+(tipo||'')).toLowerCase(), f=null; EVT.forEach(function(x){ var l=(''+(x.label||'')).toLowerCase().trim(); if(l && t.indexOf(l)>=0) f=x; }); return f||{icon:'📅',color:'#2D6A4F'}; }
   function renderCal(){
     var box=document.getElementById('emcal'); if(!box) return;
     var tt=document.getElementById('cal-title'); if(tt) tt.textContent=MESES[CAL_M].charAt(0).toUpperCase()+MESES[CAL_M].slice(1)+' '+CAL_Y;
-    // días con reserva (por fecha local YYYY-MM-DD)
-    var has={}; RESALL.forEach(function(r){ if(r.estado==='cancelada') return; var d=new Date(r.inicio); has[_ymd(d)]=(has[_ymd(d)]||0)+1; });
+    // reservas por día (con su tipo, para color+icono)
+    var byDay={}; RESALL.forEach(function(r){ if(r.estado==='cancelada') return; var k=_ymd(new Date(r.inicio)); (byDay[k]=byDay[k]||[]).push(r); });
     var first=new Date(CAL_Y,CAL_M,1); var startDow=(first.getDay()+6)%7; // lunes=0
     var daysIn=new Date(CAL_Y,CAL_M+1,0).getDate();
     var today=_ymd(new Date());
@@ -470,9 +474,11 @@
     ['L','M','X','J','V','S','D'].forEach(function(d){ html+="<div class='emcal-dow'>"+d+"</div>"; });
     for(var i=0;i<startDow;i++){ html+="<div class='emcal-day muted'></div>"; }
     for(var dd=1;dd<=daysIn;dd++){
-      var cd=new Date(CAL_Y,CAL_M,dd); var key=_ymd(cd);
-      var cls='emcal-day'+(has[key]?' has':'')+(key===today?' today':'');
-      html+="<div class='"+cls+"'>"+dd+(has[key]?"<span class='emcal-dot'></span>":"")+"</div>";
+      var cd=new Date(CAL_Y,CAL_M,dd); var key=_ymd(cd); var items=byDay[key]||[];
+      var mk=''; items.slice(0,3).forEach(function(r){ var e=_evFor(r.tipo); mk+="<span title='"+esc(r.tipo||'Reserva')+"' style='display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:"+e.color+";box-shadow:0 0 0 1.5px #fff;font-size:8px;line-height:1'>"+e.icon+"</span>"; });
+      if(items.length>3) mk+="<span style='font-size:8px;font-weight:800;color:var(--texto-suave)'>+"+(items.length-3)+"</span>";
+      var cls='emcal-day'+(items.length?' has':'')+(key===today?' today':'');
+      html+="<div class='"+cls+"'>"+dd+(mk?"<span style='display:flex;gap:2px;margin-top:2px;align-items:center'>"+mk+"</span>":"")+"</div>";
     }
     html+="</div>";
     box.innerHTML=html;
@@ -480,7 +486,7 @@
   async function loadResumen(){
     var li=document.getElementById('mylink'); if(li) li.value=myBookingLink();
     // Disponibilidad actual del empleado.
-    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var d=cr.data&&cr.data[0]&&cr.data[0].configuracion&&cr.data[0].configuracion.disponibilidad; if(d&&d.days){ DISP={days:d.days.map(Number),from:d.from||'09:00',to:d.to||'18:00'}; } }catch(e){} }
+    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cr.data&&cr.data[0]&&cr.data[0].configuracion)||{}; var d=cfg.disponibilidad; if(d&&d.days){ DISP={days:d.days.map(Number),from:d.from||'09:00',to:d.to||'18:00'}; } if(Array.isArray(cfg.event_types)) EVT=cfg.event_types; }catch(e){} }
     renderDispDays();
     var box=document.getElementById('res-list');
     if(!sb || !(WHO&&WHO.id)){ if(box) box.innerHTML="<div style='color:var(--texto-suave);font-size:13px;padding:8px 0'>Iniciá sesión para ver tus reservas.</div>"; renderCal(); return; }
