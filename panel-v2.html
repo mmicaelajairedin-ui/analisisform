@@ -2079,14 +2079,14 @@ function _agSavePending(){
   if(!REAL || !RME || !RME.id) return false; // esperar a tener sesión real
   _agPendingDone=true;
   var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } merged.gcal=p;
-  var _b=document.getElementById("cp-agenda-body"); if(_b) _b.innerHTML="<div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Conectando tu calendario…</div>";
   _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).then(function(r){
     if(r&&r.ok){
       RCFG=merged;
       try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
       try{ localStorage.removeItem("pw_gcal_pending"); }catch(e){}
-      _AG_DATA=null; toast("Calendario conectado ✓"); _agendaLoad();
-    } else { _agPendingDone=false; var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agEmpty("No pudimos guardar la conexión. Reintentá."); }
+      _AG_DATA=null; toast("Calendario conectado ✓");
+      if(state.section==="resumen"){ try{ render(); }catch(e){} }
+    } else { _agPendingDone=false; toast("No pudimos guardar la conexión del calendario. Reintentá."); }
   }).catch(function(){ _agPendingDone=false; });
   return true;
 }
@@ -2169,10 +2169,14 @@ function _agendaLoad(){
         "&timeMax="+encodeURIComponent(new Date(now.getTime()+14*86400000).toISOString())+
         "&singleEvents=true&orderBy=startTime&maxResults=30";
   fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?"+q,{headers:{Authorization:"Bearer "+g.access_token}})
-    .then(function(r){ if(r.status===401||r.status===403) return {_expired:true}; return r.ok?r.json():{items:[]}; })
+    .then(function(r){ if(r.ok) return r.json(); return r.json().catch(function(){return {};}).then(function(d){ return {_err:true,status:r.status,msg:(d&&d.error&&d.error.message)||""}; }); })
     .then(function(d){
       var b=document.getElementById("cp-agenda-body"); if(!b) return;
-      if(d && d._expired){ b.innerHTML=_agConnect(); return; } // token venció → reconectar
+      if(d && d._err){
+        if(d.status===401){ b.innerHTML=_agConnect(); return; } // token venció → reconectar
+        b.innerHTML=_agEmpty("Google no dejó leer el calendario (error "+d.status+"). "+esc(d.msg||"Verificá que la Google Calendar API esté habilitada en tu proyecto."));
+        return;
+      }
       var items=(d&&Object.prototype.toString.call(d.items)==="[object Array]")?d.items:[];
       var evs=items.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null; return {title:e.summary||"Sesión",start:+new Date(s),location:e.hangoutLink||e.location||null}; }).filter(function(x){return !!x;});
       _AG_DATA={events:evs}; b.innerHTML=_agRender({events:evs});
@@ -7222,6 +7226,9 @@ function loadReal(){
     // función es idempotente (no arranca un segundo timer si ya hay uno).
     startMsgPolling();
     RCFG = usr.configuracion || ME.configuracion || {};
+    // Si volviste de conectar Google Calendar, persistí el token apenas hay sesión
+    // (no depende de estar en Resumen).
+    try{ _agSavePending(); }catch(e){}
     if(RCFG && RCFG.color_marca) state.brandAccent = RCFG.color_marca;
     RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), perfil_publico_activo:!!(usr.perfil_publico_activo || (RCFG&&RCFG.perfil_publico_activo)) };
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
