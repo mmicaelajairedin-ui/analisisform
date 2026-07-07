@@ -130,22 +130,24 @@ function applyCoachRow(u, t){
   sel={day:null,time:null}; showAll=false;
   renderPicker();
 }
+function _rowsOrErr(r){ if(r.ok) return r.json(); return r.text().then(function(t){ return {_err:true,status:r.status,msg:t}; }); }
 function loadCoach(c,t){
   CID=c;
   fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(c)+'&select='+SAFE_SELECT+'&limit=1',
     { headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
-    .then(function(r){ return r.ok?r.json():[]; })
-    .then(function(rows){ if(!rows||!rows.length){ fail('No encontramos a esta persona. Revisá el link.'); return; } applyCoachRow(rows[0],t); })
+    .then(_rowsOrErr)
+    .then(function(res){ if(res&&res._err){ fail('No pudimos cargar la reserva (error '+res.status+').'); return; } if(!res||!res.length){ fail('No encontramos a esta persona. Revisá el link.'); return; } applyCoachRow(res[0],t); })
     .catch(function(){ fail('No pudimos cargar la página de reservas. Reintentá en un momento.'); });
 }
 var TEAM_MEMBERS=[];
 function loadTeam(){
   fetch(SB+'/rest/v1/usuarios?rol=in.(admin,empleado)&activo=eq.true&select='+SAFE_SELECT+'&order=rol.asc',
     { headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
-    .then(function(r){ return r.ok?r.json():[]; })
-    .then(function(rows){
-      TEAM_MEMBERS=(Object.prototype.toString.call(rows)==='[object Array]')?rows:[];
-      if(!TEAM_MEMBERS.length){ fail('No pudimos cargar el equipo. Reintentá en un momento.'); return; }
+    .then(_rowsOrErr)
+    .then(function(res){
+      if(res&&res._err){ fail('No pudimos cargar el equipo (error '+res.status+'). '+esc((''+(res.msg||'')).slice(0,120))); return; }
+      TEAM_MEMBERS=(Object.prototype.toString.call(res)==='[object Array]')?res:[];
+      if(!TEAM_MEMBERS.length){ fail('No hay nadie disponible para reservar todavía.'); return; }
       // Sin pantalla previa: cargamos directo a la primera persona y el selector
       // queda ARRIBA para cambiar sin volver atrás.
       applyCoachRow(TEAM_MEMBERS[0],-1);
