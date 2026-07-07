@@ -1445,7 +1445,17 @@ async function pwInit(){
     try{
       var rows=await sbGet('candidatos','email=eq.'+encodeURIComponent(EMAIL)+'&select=*');
       if(rows&&rows.length){
-        CRAW=rows[0]; CID=CRAW.id; applyClient(CRAW); applyProceso(); pwMaybeConsent(); pwSubGate(CRAW);
+        // El form público insertaba UNA fila por envío → puede haber duplicados.
+        // Antes tomábamos rows[0] (arbitraria) → a veces una vacía o sin coach, y
+        // no se veían los datos ni el coach. Ahora: elegimos la fila MÁS COMPLETA
+        // y, si le falta coach_id, lo tomamos de CUALQUIER duplicado que lo tenga.
+        // Al quedar coach_id en CRAW, el link al formulario ya viaja con &coach=,
+        // así el próximo envío adopta las fichas huérfanas (auto-reparación).
+        var _score=function(r){ var n=0; ['peso','altura','edad','cargo','nivel','dias','lugar','fit_rutina','fit_antro','foto_perfil','sesiones_registro','nombre','objetivo'].forEach(function(k){ var v=r[k]; if(v!=null){ var s=(''+v).trim(); if(s!==''&&s!=='[]'&&s!=='{}') n++; } }); return n; };
+        rows.sort(function(a,b){ var d=_score(b)-_score(a); if(d) return d; return new Date(b.created_at||0)-new Date(a.created_at||0); });
+        CRAW=rows[0];
+        if(!CRAW.coach_id){ for(var _i=0;_i<rows.length;_i++){ if(rows[_i].coach_id){ CRAW.coach_id=rows[_i].coach_id; break; } } }
+        CID=CRAW.id; applyClient(CRAW); applyProceso(); pwMaybeConsent(); pwSubGate(CRAW);
         var inf=null;
         try{ var ir=await sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=data&order=created_at.desc&limit=1'); if(ir&&ir.length){ var dd=ir[0].data; inf=(typeof dd==='string')?JSON.parse(dd):dd; } }catch(e){}
         applyInforme(inf); applyLogros(inf);

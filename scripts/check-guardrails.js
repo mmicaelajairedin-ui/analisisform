@@ -701,8 +701,8 @@ const RULES = [
       const js = inlineJs(s);
       if (!isDefined("_applyCoachBrand", js) || !isDefined("_setCoachTexts", js))
         return "pathway-fit-form.html: falta la adaptación al coach (_applyCoachBrand/_setCoachTexts).";
-      if (!/id="fCoach"|id='fCoach'/.test(s) || !/id="doneChip"|id='doneChip'/.test(s))
-        return "pathway-fit-form.html: faltan los anclajes del coach (fCoach/doneChip) que pinta el nombre real.";
+      if (!/id="fCoachSep"|id='fCoachSep'/.test(s) || !/id="doneChip"|id='doneChip'/.test(s))
+        return "pathway-fit-form.html: faltan los anclajes del coach (fCoachSep/doneChip) que pinta el nombre real.";
       return null;
     },
   },
