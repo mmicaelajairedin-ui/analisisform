@@ -2288,13 +2288,41 @@ function viewAgModal(){
       body+
     "</div></div>";
 }
+// Renueva el access_token de Google con el refresh_token (vía edge function
+// gcal-refresh, que es la única que puede usar el client_secret). Así la conexión
+// no se cae cada hora. Si falla o tarda, cae al botón de reconectar (como antes).
+var _agRefreshTried=false;
+function _agRefresh(){
+  var g=(REAL&&RCFG&&RCFG.gcal)?RCFG.gcal:null;
+  var b0=document.getElementById("cp-agenda-body");
+  if(!g || !g.refresh_token){ if(b0) b0.innerHTML=_agConnect(); return; }
+  _agRefreshTried=true;
+  if(b0) b0.innerHTML="<div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Renovando la conexión con Google…</div>";
+  var done=false;
+  var to=setTimeout(function(){ if(done)return; done=true; var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agConnect(); }, 12000);
+  fetch(SB+"/functions/v1/gcal-refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refresh_token:g.refresh_token})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(d){
+      if(done)return; done=true; clearTimeout(to);
+      var b=document.getElementById("cp-agenda-body");
+      if(!d || !d.access_token){ if(b) b.innerHTML=_agConnect(); return; }
+      var ng={}; for(var k in g){ if(g.hasOwnProperty(k)) ng[k]=g[k]; } ng.access_token=d.access_token; ng.expiry=d.expiry||(Date.now()+3600000);
+      var merged={}; for(var j in RCFG){ if(RCFG.hasOwnProperty(j)) merged[j]=RCFG[j]; } merged.gcal=ng; RCFG=merged;
+      try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
+      if(RME&&RME.id) _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).catch(function(){});
+      _agendaLoad();
+    })
+    .catch(function(){ if(done)return; done=true; clearTimeout(to); var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agConnect(); });
+}
 function _agendaLoad(){
   var body=document.getElementById("cp-agenda-body"); if(!body) return;
   // Leemos el calendario DIRECTO de la API de Google desde el navegador, con el
   // token guardado en el perfil. Sin edge functions (que se colgaban). La API de
   // Google tiene CORS habilitado, así que se puede llamar desde acá.
   var g=(REAL&&RCFG&&RCFG.gcal)?RCFG.gcal:null;
-  if(!g || !g.access_token || (g.expiry && Date.now()>g.expiry)){ body.innerHTML=_agConnect(); return; }
+  if(!g || !g.access_token){ body.innerHTML=_agConnect(); return; }
+  // Token vencido: si tenemos refresh_token, lo renovamos solo (no te pide reconectar).
+  if(g.expiry && Date.now()>g.expiry){ if(g.refresh_token){ _agRefresh(); } else { body.innerHTML=_agConnect(); } return; }
   var now=new Date();
   var q="timeMin="+encodeURIComponent(now.toISOString())+
         "&timeMax="+encodeURIComponent(new Date(now.getTime()+14*86400000).toISOString())+
@@ -2304,10 +2332,11 @@ function _agendaLoad(){
     .then(function(d){
       var b=document.getElementById("cp-agenda-body"); if(!b) return;
       if(d && d._err){
-        if(d.status===401){ b.innerHTML=_agConnect(); return; } // token venció → reconectar
+        if(d.status===401){ if(g.refresh_token && !_agRefreshTried){ _agRefresh(); } else { b.innerHTML=_agConnect(); } return; } // token venció → renovar o reconectar
         b.innerHTML=_agEmpty("Google no dejó leer el calendario (error "+d.status+"). "+esc(d.msg||"Verificá que la Google Calendar API esté habilitada en tu proyecto."));
         return;
       }
+      _agRefreshTried=false;
       var items=(d&&Object.prototype.toString.call(d.items)==="[object Array]")?d.items:[];
       var evs=items.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null; return {id:e.id||"",title:e.summary||"Sesión",start:+new Date(s),location:e.hangoutLink||e.location||null}; }).filter(function(x){return !!x;});
       _AG_DATA={events:evs}; b.innerHTML=_agRender({events:evs});
