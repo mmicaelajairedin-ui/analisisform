@@ -971,7 +971,9 @@ function applyClient(c){
       var path='client-'+(''+EMAIL).replace(/[^a-z0-9]/gi,'_')+'-'+Date.now()+'.'+ext;
       fetch(SB+'/storage/v1/object/avatars/'+encodeURIComponent(path),{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':(f.type||'image/png'),'x-upsert':'true'},body:f})
         .then(function(r){ if(!r.ok) throw 0; var url=SB+'/storage/v1/object/public/avatars/'+path;
-          try{ sbPatch('candidatos','email=eq.'+encodeURIComponent(EMAIL),{foto_perfil:url}); c.foto_perfil=url; }catch(e){}
+          // Guardar la foto vía edge function (service role → ignora RLS, SIEMPRE
+          // persiste). Fallback al PATCH directo si no está deployada.
+          c.foto_perfil=url; try{ fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({email:EMAIL,data:{foto_perfil:url},coach_id:(CRAW&&CRAW.coach_id)||''})}).then(function(r){ if(!r||!r.ok) sbPatch('candidatos','email=eq.'+encodeURIComponent(EMAIL),{foto_perfil:url}); }).catch(function(){ sbPatch('candidatos','email=eq.'+encodeURIComponent(EMAIL),{foto_perfil:url}); }); }catch(e){}
           var b=document.querySelector('.sb-brand-foto'); if(b){ b.style.background='transparent'; b.innerHTML='<img src="'+url+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">'; _h(b); }
           var m=document.getElementById('meAv'); if(m){ m.style.background='transparent'; m.innerHTML='<img src="'+url+'" alt="" style="max-width:40px;max-height:40px;width:100%;height:100%;object-fit:cover;border-radius:50%">'; }
         }).catch(function(){ alert('No se pudo subir la foto. Reintenta.'); });
@@ -1279,6 +1281,20 @@ function _clienteSinFicha(){
   // Intentar traer el nombre real del cliente (best-effort).
   try{ sbGet('usuarios','email=eq.'+encodeURIComponent(EMAIL)+'&select=nombre').then(function(rows){ if(rows&&rows.length&&rows[0].nombre){ var h=document.querySelector('.sb-hello'); if(h) h.textContent='Hola, '+rows[0].nombre.split(' ')[0]; var f=document.querySelector('.sb-foot div'); if(f) f.textContent=rows[0].nombre; } }).catch(function(){}); }catch(e){}
   renderPrepCard();
+  _ensureFicha('fitness');
+}
+// Auto-reparar: si un cliente logueado NO tiene ficha en candidatos (se borró, o
+// el alta no la creó), la creamos ahora — así su FOTO y su formulario SÍ se
+// guardan (antes se perdían: sin fila, el PATCH por email no hacía nada). Queda
+// sin coach_id (huérfana) hasta que el coach la re-agregue (el alta la reclama).
+function _ensureFicha(niche){
+  if(!EMAIL || CID) return;
+  var body={ email:EMAIL, activo:true }; if(niche) body.nicho=niche;
+  try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'null'); if(mu&&mu.nombre) body.nombre=mu.nombre; }catch(e){}
+  fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation,resolution=ignore-duplicates'},body:JSON.stringify(body)})
+    .then(function(r){ return (r&&r.ok)?r.json():null; })
+    .then(function(rows){ if(rows&&rows.length){ CRAW=rows[0]; CID=CRAW.id; if(CRAW.coach_id) applyBrand(CRAW.coach_id); } })
+    .catch(function(){});
 }
 
 // ── Mensajería coach↔cliente (mismo modelo que career: candidatos.notas_coach) ──

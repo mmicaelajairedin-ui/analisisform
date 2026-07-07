@@ -50,6 +50,22 @@
   border:2px solid #D4A32E;display:flex;align-items:center;justify-content:center;
   font-size:14px;color:#fff;font-weight:800;text-shadow:0 1px 1px rgba(150,110,15,.6);box-shadow:0 3px 7px rgba(0,0,0,.22)}
 @media(min-width:620px){ .fin-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px} }
+/* ── Cartel "tu coach está preparando tu plan" — cliente nuevo con plan vacío.
+   La foto del coach "respira" (pulso) para que se sienta acompañado mientras
+   el coach arma el diagnóstico y el plan. Se apaga con prefers-reduced-motion. ── */
+.prep-card{background:linear-gradient(135deg,var(--rose-light),#fff);border:1px solid var(--rose-mid);border-radius:18px;padding:20px;margin-bottom:18px;box-shadow:0 6px 22px rgba(0,0,0,.05);}
+.prep-top{display:flex;align-items:center;gap:14px;}
+.prep-av{width:66px;height:66px;border-radius:50%;flex-shrink:0;background:var(--rose);color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;overflow:hidden;animation:prep-breathe 3.4s ease-in-out infinite;}
+.prep-av img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;}
+@keyframes prep-breathe{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(140,123,128,.38);}50%{transform:scale(1.055);box-shadow:0 0 0 12px rgba(140,123,128,0);}}
+@media(prefers-reduced-motion:reduce){.prep-av{animation:none;}}
+.prep-title{font-family:var(--serif);font-size:17px;font-weight:600;color:var(--text);margin:0 0 3px;}
+.prep-sub{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0;}
+.prep-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px;}
+.prep-chip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;padding:9px 13px;border-radius:11px;border:1px solid var(--rose-mid);background:#fff;color:var(--rose);cursor:pointer;transition:transform .12s,box-shadow .12s;font-family:inherit;}
+.prep-chip:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+.prep-chip.done{background:var(--rose-light);border-color:transparent;color:var(--rose);cursor:default;}
+.prep-chip.done:hover{transform:none;box-shadow:none;}
 </style>
 </head>
 <body>
@@ -104,6 +120,7 @@
 
         <div class="dash">
           <div class="dash-main">
+            <div id="prep-slot"></div>
             <div class="card"><div class="card-body">
               <div class="proceso-hd"><span class="eyebrow">📈 Tu evolución · ahorro</span><span class="proceso-badge" id="ahorro-delta">+€150 en 3 meses</span></div>
               <div id="chartAhorro" style="margin-top:8px;"></div>
@@ -184,7 +201,7 @@
 
             <div class="card"><div class="card-body">
               <span class="eyebrow">Actividad reciente</span>
-              <div style="margin-top:10px;">
+              <div style="margin-top:10px;" id="dash-timeline">
                 <div class="tl-item"><div class="tl-ic">📊</div><div class="tl-b"><b>Cargaste el cierre de marzo</b><p>hace 2 h</p></div></div>
                 <div class="tl-item"><div class="tl-ic">🐷</div><div class="tl-b"><b>40% del fondo de emergencia</b><p>ayer</p></div></div>
                 <div class="tl-item"><div class="tl-ic">📋</div><div class="tl-b"><b>Tu coach ajustó tu presupuesto</b><p>hace 3 días</p></div></div>
@@ -429,6 +446,12 @@ function setText(sel,txt){var e=document.querySelector(sel);if(e)e.textContent=t
 var CLIENTE_DEMO_FOTO='https://fucfze9g4e.ucarecd.net/0be4c644-0915-4325-96aa-b1c94651b42b/clientedemo.jpg';
 var COACH_DEMO_FOTO='https://fucfze9g4e.ucarecd.net/9713050f-340a-481e-9577-243c5fb106e2/coachdemo.jpg';
 var EMAIL=(new URLSearchParams(location.search).get('email')||new URLSearchParams(location.search).get('coach_view')||'').toLowerCase().trim();
+// GARANTÍA: un CLIENTE logueado ve SIEMPRE su propio espacio — nunca el demo de
+// María ni el de otro cliente. Forzamos su email de sesión (mj_user), aunque la
+// URL venga pelada o con otro email. No aplica al preview del coach (?coach_view).
+try{ var _mu=JSON.parse(localStorage.getItem('mj_user')||'null');
+  if(_mu&&_mu.rol==='cliente'&&_mu.email && !new URLSearchParams(location.search).get('coach_view')){ EMAIL=(''+_mu.email).toLowerCase().trim(); }
+}catch(e){}
 (function(){ try{ if(new URLSearchParams(location.search).get('coach_view')){
   var a=document.createElement('a'); a.href='/panel-v2.html'; a.textContent='← Volver al panel';
   a.style.cssText='position:fixed;bottom:calc(82px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);z-index:170;background:#1B4332;color:#fff;font-size:12.5px;font-weight:700;padding:8px 18px;border-radius:30px;text-decoration:none;box-shadow:0 4px 16px rgba(0,0,0,.3);font-family:Inter,-apple-system,sans-serif;white-space:nowrap';
@@ -447,7 +470,7 @@ function _esDemo(){return !EMAIL || /maria\.ejemplo@pathwaycareercoach\.com/i.te
 // flujo coach→cliente. Si no hay nada guardado, usa los datos de ejemplo.
 function _demoOverlay(niche){ try{ var v=localStorage.getItem('pw_demo_'+niche); if(v){ var o=JSON.parse(v); if(o&&typeof o==='object') return o; } }catch(e){} return null; }
 function _demoMerge(craw,niche){ var ov=_demoOverlay(niche); if(ov&&ov.raw){ for(var k in ov.raw){ if(ov.raw.hasOwnProperty(k)&&ov.raw[k]!=null) craw[k]=ov.raw[k]; } } return craw; }
-function _demoCraw(){return _demoMerge({nombre:'María García',email:EMAIL,foto_perfil:CLIENTE_DEMO_FOTO,semana_activa:3,situacion:'Empleada',objetivo:'Quiero ordenar las finanzas de la familia. Tenemos el coche y dos hijos en el colegio.',etapas:JSON.stringify(['Diagnóstico','Presupuesto','Salir de deudas','Hábito de ahorro']),fin_pres:JSON.stringify({vivienda:'750',alimentacion:'350',ocio:'150',ahorro:'350'}),fin_objetivos:JSON.stringify([{tipo:'viaje',nombre:'Viaje a Japón',meta:'4000',actual:'1500',fecha:'Dic 2026',porque:'Es mi sueño desde hace años',aporte:'200',nota:'Aparta el aporte apenas cobras, antes de gastar.',hilo:[{from:'cliente',text:'¿Llego para diciembre?',ts:1717000000000},{from:'coach',text:'Sí, con €200/mes llegas justo. ¡Vamos!',ts:1717100000000}]},{tipo:'ahorro',style:'pig',nombre:'Fondo de emergencia',meta:'3000',actual:'1200',fecha:'',porque:'Dormir tranquila ante imprevistos',aporte:'150',nota:'La meta son 3 meses de gastos. Vas muy bien.',hilo:[]}]),fin_patrimonio:JSON.stringify([{tipo:'inversion',nombre:'Acciones (broker)',valor:'2500'},{tipo:'efectivo',nombre:'Cuenta de ahorro',valor:'1800'}]),fin_deudas:JSON.stringify([{nombre:'Tarjeta de crédito',monto:'1200',cuota:'400',estado:'Pagando'}]),fin_diagnostico:JSON.stringify({salud:68,control:55,deuda:40,ahorro:50}),sesiones_registro:JSON.stringify([
+function _demoCraw(){return _demoMerge({nombre:'María García',email:EMAIL,foto_perfil:CLIENTE_DEMO_FOTO,semana_activa:3,situacion:'Empleada',notas_coach:JSON.stringify([{from:'coach',text:'¡Hola María! ¿Cómo venís con los gastos de este mes?',time:'ayer',ts:1},{from:'cliente',text:'¡Bien! Ya cancelé una suscripción que no usaba 🙌',time:'ayer',ts:2},{from:'coach',text:'Genial. Ese ahorro va directo al fondo de emergencia 🐷',time:'9:02',ts:3}]),objetivo:'Quiero ordenar las finanzas de la familia. Tenemos el coche y dos hijos en el colegio.',etapas:JSON.stringify(['Diagnóstico','Presupuesto','Salir de deudas','Hábito de ahorro']),fin_pres:JSON.stringify({vivienda:'750',alimentacion:'350',ocio:'150',ahorro:'350'}),fin_objetivos:JSON.stringify([{tipo:'viaje',nombre:'Viaje a Japón',meta:'4000',actual:'1500',fecha:'Dic 2026',porque:'Es mi sueño desde hace años',aporte:'200',nota:'Aparta el aporte apenas cobras, antes de gastar.',hilo:[{from:'cliente',text:'¿Llego para diciembre?',ts:1717000000000},{from:'coach',text:'Sí, con €200/mes llegas justo. ¡Vamos!',ts:1717100000000}]},{tipo:'ahorro',style:'pig',nombre:'Fondo de emergencia',meta:'3000',actual:'1200',fecha:'',porque:'Dormir tranquila ante imprevistos',aporte:'150',nota:'La meta son 3 meses de gastos. Vas muy bien.',hilo:[]}]),fin_patrimonio:JSON.stringify([{tipo:'inversion',nombre:'Acciones (broker)',valor:'2500'},{tipo:'efectivo',nombre:'Cuenta de ahorro',valor:'1800'}]),fin_deudas:JSON.stringify([{nombre:'Tarjeta de crédito',monto:'1200',cuota:'400',estado:'Pagando'}]),fin_diagnostico:JSON.stringify({salud:68,control:55,deuda:40,ahorro:50}),sesiones_registro:JSON.stringify([
   {fecha:'2026-04-04',trabajado:'Diagnóstico inicial + objetivos',acordado:'Cargar todos los gastos del mes y listar las deudas con su tasa.',acciones:'Cargar el cierre del mes\nListar todas mis deudas\nRevisar suscripciones',tareas_done:[0,2]},
   {fecha:'2026-04-18',trabajado:'Revisión del presupuesto + plan de deudas',acordado:'Atacar primero la tarjeta (mayor interés). Apartar el ahorro apenas cobras.',acciones:'Automatizar el ahorro mensual\nCancelar 1 suscripción que no uso',tareas_done:[],doc:'data:text/plain;charset=utf-8,Plan%20de%20finanzas%20-%20Abril%0A%0A1)%20Ahorro%20autom%C3%A1tico%3A%20350%0A2)%20Tarjeta%3A%20pagar%20400%2Fmes%0A3)%20Fondo%20de%20emergencia%3A%20meta%203000',doc_nombre:'Plan de finanzas.txt'}
 ])},'financiero');}
@@ -1072,7 +1095,9 @@ function applyClientFin(c){
       var path='client-'+(''+EMAIL).replace(/[^a-z0-9]/gi,'_')+'-'+Date.now()+'.'+ext;
       fetch(SB+'/storage/v1/object/avatars/'+encodeURIComponent(path),{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':(f.type||'image/png'),'x-upsert':'true'},body:f})
         .then(function(r){ if(!r.ok) throw 0; var url=SB+'/storage/v1/object/public/avatars/'+path;
-          try{ sbPatch('candidatos','email=eq.'+encodeURIComponent(EMAIL),{foto_perfil:url}); c.foto_perfil=url; }catch(e){}
+          // Guardar la foto vía edge function (service role → ignora RLS, SIEMPRE
+          // persiste). Fallback al PATCH directo si no está deployada.
+          c.foto_perfil=url; try{ fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({email:EMAIL,data:{foto_perfil:url},coach_id:(CRAW&&CRAW.coach_id)||''})}).then(function(r){ if(!r||!r.ok) sbPatch('candidatos','email=eq.'+encodeURIComponent(EMAIL),{foto_perfil:url}); }).catch(function(){ sbPatch('candidatos','email=eq.'+encodeURIComponent(EMAIL),{foto_perfil:url}); }); }catch(e){}
           var b=document.querySelector('.sb-brand-foto'); if(b){ b.style.background='transparent'; b.innerHTML='<img src="'+url+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">'; _h(b); }
           var m=document.getElementById('meAv'); if(m){ m.style.background='transparent'; m.innerHTML='<img src="'+url+'" alt="" style="max-width:40px;max-height:40px;width:100%;height:100%;object-fit:cover;border-radius:50%">'; }
         }).catch(function(){ alert('No se pudo subir la foto. Reintenta.'); });
@@ -1140,11 +1165,155 @@ function applyBrandFin(coachId){
     if(isPro && cfg.logo_url){ var _brand=document.querySelector('.sb-brand'); if(_brand){ _brand.innerHTML='<img src="'+esc(cfg.logo_url)+'" alt="" style="max-width:140px;max-height:42px;object-fit:contain;margin:0 auto;display:block">'; _brand.style.justifyContent='center'; } }
     var foto=cfg.foto_url||u.foto_url||'';
     var av=document.querySelector('.ptop-av'); if(av){ if(foto){av.style.background='transparent';av.innerHTML='<img src="'+esc(foto)+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">';}else if(u.nombre){av.textContent=(u.nombre[0]||'C').toUpperCase();} }
+    // Guardamos foto+nombre del coach para el cartel "estoy preparando tu plan"
+    // (la foto respira ahí). applyBrandFin es async → re-pintamos el cartel al llegar.
+    window.COACH_FOTO=foto||''; window.COACH_NOMBRE=u.nombre||'';
+    try{ renderPrepCard(); }catch(e){}
   }).catch(function(){});
 }
 function _demoBrandFin(){setText('.ptop-coach-name','Lucía Finanzas');var av=document.querySelector('.ptop-av');if(av){av.style.background='transparent';av.innerHTML='<img src="'+COACH_DEMO_FOTO+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">';}
   // El color de marca del coach demo viaja en el overlay que guarda el panel.
   var _ov=_demoOverlay('financiero'); if(_ov&&_ov.brand&&_ov.brand.color) _pwBrandVars(_ov.brand.color);}
+
+// ── Cliente nuevo: en vez de datos inventados de la plantilla (María/Lucía),
+// mostramos un cartel del coach ("estoy preparando tu plan") con su foto
+// respirando y 3 atajos: completar el formulario, subir la foto y jugar con la
+// cabra. Así el cliente avanza mientras el coach arma el diagnóstico. ─────────
+function _intakePendiente(){
+  if(!CRAW) return true;
+  return !((''+(CRAW.situacion||'')).trim()||(''+(CRAW.objetivo||'')).trim()||(''+(CRAW.fin_pres||'')).trim());
+}
+function _planVacioFin(){
+  // El plan lo arma el coach: sin diagnóstico, sin presupuesto y sin objetivos =
+  // todavía no hay nada cargado → mostramos el cartel de "preparando".
+  var diag=false; try{ diag=!!JSON.parse((CRAW&&CRAW.fin_diagnostico)||'null'); }catch(e){}
+  var pres=false; try{ var p=JSON.parse((CRAW&&CRAW.fin_pres)||'{}'); pres=p&&Object.keys(p).length>0; }catch(e){}
+  var obj=false; try{ obj=(JSON.parse((CRAW&&CRAW.fin_objetivos)||'[]')||[]).length>0; }catch(e){}
+  return !diag && !pres && !obj;
+}
+function abrirJuego(){
+  try{ window.PW_GAME_EMAIL=EMAIL||'demo'; }catch(e){}
+  if(typeof openJuego==='function'){ openJuego(); }
+  else if(typeof showToast==='function'){ showToast('🐐 El juego se está cargando… reintentá en un momento'); }
+}
+function _irFormulario(){
+  if(_esDemo()){ if(typeof showToast==='function') showToast('📝 En tu portal real, este botón abre tu formulario'); return; }
+  location.href='https://pathwaycareercoach.com/pathway-fin-form.html?portal=1&email='+encodeURIComponent(EMAIL)+((CRAW&&CRAW.coach_id)?('&coach='+encodeURIComponent(CRAW.coach_id)):'');
+}
+function _subirFoto(){ var w=document.querySelector('.sb-brand-foto'); if(w){ w.click(); } else if(typeof showToast==='function'){ showToast('Tocá tu avatar arriba a la izquierda para subir tu foto'); } }
+// Nombre/foto del coach: preferimos lo que cargó applyBrandFin; si todavía no
+// llegó, lo leemos de la cabecera ya pintada. Nunca "Lucía".
+function _coachNombre(){
+  if(window.COACH_NOMBRE) return window.COACH_NOMBRE;
+  var nm=document.querySelector('.ptop-coach-name'); var t=nm?(''+nm.textContent).replace(/\s+/g,' ').trim():'';
+  if(t && !/^tu coach$/i.test(t) && !/luc[ií]a/i.test(t)) return t;
+  return '';
+}
+function _coachFotoUrl(){
+  if(window.COACH_FOTO) return window.COACH_FOTO;
+  var im=document.querySelector('.ptop-av img'); return im?(im.getAttribute('src')||''):'';
+}
+// El cliente todavía tiene algo por hacer (formulario o foto).
+function _prepPendiente(){ return _intakePendiente() || !(CRAW&&CRAW.foto_perfil); }
+function renderPrepCard(){
+  var slot=document.getElementById('prep-slot'); if(!slot) return;
+  if(new URLSearchParams(location.search).get('coach_view')){ slot.innerHTML=''; return; } // coach en preview
+  // Se muestra SOLO mientras (a) el coach aún no cargó el plan Y (b) al cliente
+  // le falta hacer algo (formulario o foto). Cuando ya hizo lo suyo, o el coach
+  // cargó el plan, el cartel DESAPARECE.
+  if(!_planVacioFin() || !_prepPendiente()){ slot.innerHTML=''; return; }
+  var full=_coachNombre(); var first=full?full.split(' ')[0]:'';
+  var titleName=first||'Tu coach';
+  var foto=_coachFotoUrl();
+  var av=foto?('<img src="'+esc(foto)+'" alt="">'):((first?first[0]:'C').toUpperCase());
+  var chipForm=!_intakePendiente()
+    ? '<span class="prep-chip done">✓ Formulario completo</span>'
+    : '<button type="button" class="prep-chip" onclick="_irFormulario()">📝 Completar mi formulario</button>';
+  var chipFoto=(CRAW&&CRAW.foto_perfil)
+    ? '<span class="prep-chip done">✓ Foto lista</span>'
+    : '<button type="button" class="prep-chip" onclick="_subirFoto()">📷 Subir mi foto</button>';
+  slot.innerHTML=
+    '<div class="prep-card">'+
+      '<div class="prep-top">'+
+        '<div class="prep-av">'+av+'</div>'+
+        '<div>'+
+          '<p class="prep-title">'+esc(titleName)+' está preparando tu plan 💰</p>'+
+          '<p class="prep-sub">Mientras tanto, ayudanos a personalizarlo — así tu diagnóstico y tu plan salen a tu medida.</p>'+
+        '</div>'+
+      '</div>'+
+      '<div class="prep-actions">'+
+        chipForm+chipFoto+
+        '<button type="button" class="prep-chip" onclick="abrirJuego()">🐐 Jugar con la cabra</button>'+
+      '</div>'+
+    '</div>';
+}
+// Reemplaza el timeline de ejemplo (cierre de marzo, "tu coach ajustó…") por la
+// actividad REAL del cliente. Sin actividad → mensaje vacío, nunca datos falsos.
+function renderTimeline(){
+  var box=document.getElementById('dash-timeline'); if(!box) return;
+  var ev=[];
+  try{ (JSON.parse((CRAW&&CRAW.sesiones_registro)||'[]')||[]).forEach(function(s){ if(s&&s.fecha) ev.push({k:s.fecha,ic:'📅',b:'Sesión'+(s.trabajado?(': '+s.trabajado):''),sub:s.fecha}); }); }catch(e){}
+  try{ (JSON.parse((CRAW&&CRAW.fin_objetivos)||'[]')||[]).forEach(function(o){ if(o&&o.nombre) ev.push({k:'',ic:'🐷',b:'Objetivo: '+o.nombre,sub:'en marcha'}); }); }catch(e){}
+  try{ if(JSON.parse((CRAW&&CRAW.fin_diagnostico)||'null')) ev.push({k:'',ic:'📋',b:'Tu coach cargó tu diagnóstico',sub:'reciente'}); }catch(e){}
+  if(!ev.length){ box.innerHTML='<div style="font-size:12.5px;color:var(--muted);padding:6px 0;">Tu actividad va a aparecer acá a medida que avances 🚀</div>'; return; }
+  ev.sort(function(a,b){ return (b.k||'').localeCompare(a.k||''); });
+  box.innerHTML=ev.slice(0,5).map(function(e){ return '<div class="tl-item"><div class="tl-ic">'+e.ic+'</div><div class="tl-b"><b>'+esc(e.b)+'</b><p>'+esc(e.sub||'')+'</p></div></div>'; }).join('');
+}
+// Limpia lo que quedó hardcodeado de la plantilla demo (María/Lucía, tareas
+// pre-tildadas, fortalezas/foco inventados, chat de ejemplo) para un cliente REAL.
+function _limpiarDemo(){
+  renderTimeline();
+  // Tareas del mes pre-tildadas en el HTML → destildar para un cliente real.
+  document.querySelectorAll('#s-inicio .objc.done').forEach(function(o){ o.classList.remove('done'); });
+  // Card "Basado en tu diagnóstico" (fortalezas/potencial/foco de María) = plantilla,
+  // no se rellena con datos reales → ocultarla para el cliente real.
+  document.querySelectorAll('#s-inicio .eyebrow').forEach(function(e){ if(/Basado en tu diagn/i.test(e.textContent)){ var c=e.closest('.card'); if(c) c.style.display='none'; } });
+  // Chat de ejemplo (¡Hola! ¿Cómo vens…?) → estado real/vacío. renderMsgs limpia el
+  // recuadro cuando no hay mensajes; el guard extra cubre por si acaso.
+  if(typeof renderMsgs==='function'){ try{ renderMsgs(); }catch(e){} }
+  var _pm=document.getElementById('pmsgs'); if(_pm && !MSGS.length){ _pm.innerHTML='<div style="text-align:center;padding:18px;font-size:12px;color:var(--muted)">Sin mensajes aún. Escribe para empezar.</div>'; }
+  // Nombres de la plantilla ("Lucía") sueltos en subtítulos/agenda/timeline → nombre
+  // real del coach, o "tu coach".
+  var _fn=(window.COACH_NOMBRE||'').split(' ')[0]||'tu coach';
+  document.querySelectorAll('.h-sub').forEach(function(el){ if(/Luc[ií]a/.test(el.textContent)) el.textContent=el.textContent.replace(/Luc[ií]a/g,_fn); });
+  var _ag=document.querySelector('.agenda-h'); if(_ag && /Luc[ií]a/.test(_ag.textContent)) _ag.textContent='Habla con '+_fn;
+  document.querySelectorAll('.tl-b b').forEach(function(el){ if(/Luc[ií]a/.test(el.textContent)) el.textContent=el.textContent.replace(/Luc[ií]a/g,_fn); });
+  // Cabecera del coach: si applyBrandFin aún no puso el nombre real (o la ficha no
+  // tiene coach_id), no dejar "Lucía Finanzas" de la plantilla → "Tu coach".
+  var _cn=document.querySelector('.ptop-coach-name'); if(_cn && /luc[ií]a/i.test(_cn.textContent) && !window.COACH_NOMBRE){ _cn.textContent='Tu coach'; }
+}
+// Cliente real sin ficha en candidatos: limpiar TODO el demo y mostrar un estado
+// de bienvenida honesto (sin nombres ni datos inventados).
+function _clienteSinFicha(){
+  CRAW={ email:EMAIL }; CID=null; MSGS=[];
+  try{ renderDiagnostico(null); }catch(e){}
+  try{ applyLogrosFin(CRAW); }catch(e){}
+  _limpiarDemo();
+  // Saludo con el nombre del cliente (de su email) en vez de "María".
+  var _localName=(EMAIL||'').split('@')[0].replace(/[._-]+/g,' ').trim();
+  setText('.sb-hello','Hola'+(_localName?(', '+_localName):'')+' 👋');
+  var _ini=document.querySelector('.sb-brand-foto'); if(_ini){ _ini.style.background=''; _ini.innerHTML=''; _ini.textContent=((_localName[0]||'M')+'').toUpperCase(); }
+  // Cabecera del coach genérica hasta que sepamos quién es.
+  var nm=document.querySelector('.ptop-coach-name'); if(nm) nm.textContent='Tu coach';
+  var av=document.querySelector('.ptop-av'); if(av){ av.style.background=''; av.innerHTML=''; av.textContent='C'; }
+  // Intentar traer el nombre real del cliente (best-effort).
+  try{ sbGet('usuarios','email=eq.'+encodeURIComponent(EMAIL)+'&select=nombre').then(function(rows){ if(rows&&rows.length&&rows[0].nombre){ setText('.sb-hello','Hola, '+rows[0].nombre.split(' ')[0]+' 👋'); } }).catch(function(){}); }catch(e){}
+  renderPrepCard();
+  _ensureFicha('financiero');
+}
+// Auto-reparar: si un cliente logueado NO tiene ficha en candidatos (se borró, o
+// el alta no la creó), la creamos ahora — así su FOTO y su formulario SÍ se
+// guardan (antes se perdían: sin fila, el PATCH por email no hacía nada). Queda
+// sin coach_id (huérfana) hasta que el coach la re-agregue (el alta la reclama).
+function _ensureFicha(niche){
+  if(!EMAIL || CID) return;
+  var body={ email:EMAIL, activo:true }; if(niche) body.nicho=niche;
+  try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'null'); if(mu&&mu.nombre) body.nombre=mu.nombre; }catch(e){}
+  fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation,resolution=ignore-duplicates'},body:JSON.stringify(body)})
+    .then(function(r){ return (r&&r.ok)?r.json():null; })
+    .then(function(rows){ if(rows&&rows.length){ CRAW=rows[0]; CID=CRAW.id; if(CRAW.coach_id) applyBrandFin(CRAW.coach_id); } })
+    .catch(function(){});
+}
 
 // ── Puntuar Pathway (cliente) → candidatos.resena {plataforma:{stars,text,fecha}} ──
 window._revR=0;
@@ -1161,7 +1330,7 @@ window.pwSendReview=function(){
 function _mask(t){return (''+t).replace(/(\+?\d[\d\s\-().]{6,}\d)/g,'•••').replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g,'•••').replace(/\b(?:https?:\/\/|www\.)\S+/gi,'•••');}
 function _mkey(m){return (m&&m.from||'')+'|'+(m&&m.text||'')+'|'+(m&&(m.ts!=null?m.ts:(m.time||'')));}
 function _merge(a,b){var out=[],seen={};function add(arr){(arr||[]).forEach(function(m){if(!m)return;var k=_mkey(m);if(seen[k])return;seen[k]=true;out.push(m);});}add(a);add(b);out.sort(function(x,y){return((x&&x.ts)||0)-((y&&y.ts)||0);});return out;}
-function renderMsgs(){var box=document.getElementById('pmsgs');if(!box||!MSGS.length)return;box.innerHTML=MSGS.map(function(m){var me=(m.from==='cliente');return '<div class="pmsg '+(me?'me':'them')+'">'+esc(m.text)+'<div class="t">'+esc(m.time||'')+'</div></div>';}).join('');box.scrollTop=box.scrollHeight;}
+function renderMsgs(){var box=document.getElementById('pmsgs');if(!box)return;if(!MSGS.length){box.innerHTML='<div style="text-align:center;padding:18px;font-size:12px;color:var(--muted)">Sin mensajes aún. Escribe para empezar.</div>';return;}box.innerHTML=MSGS.map(function(m){var me=(m.from==='cliente');return '<div class="pmsg '+(me?'me':'them')+'">'+esc(m.text)+'<div class="t">'+esc(m.time||'')+'</div></div>';}).join('');box.scrollTop=box.scrollHeight;}
 function loadMsgs(){if(!CID)return;sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){if(!rows||!rows.length)return;var arr=[];try{arr=JSON.parse(rows[0].notas_coach||'[]');}catch(e){}if(!Array.isArray(arr))arr=[];var merged=_merge(MSGS,arr);if(merged.length!==MSGS.length){MSGS=merged;renderMsgs();}}).catch(function(){});}
 function startPoll(){if(_pollT||!CID)return;_pollT=setInterval(function(){if(document.visibilityState==='visible')loadMsgs();},30000);}
 window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!inp||!inp.value.trim())return;var txt=_mask(inp.value.trim());var now=new Date(),time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');MSGS.push({from:'cliente',text:txt,time:time,ts:now.getTime()});inp.value='';renderMsgs();if(window.COACH_EMAIL){try{fetch(SB+'/functions/v1/send-push',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({user_email:COACH_EMAIL,title:((CRAW&&CRAW.nombre)||'Tu cliente')+' te escribió',body:txt.slice(0,140),url:'/panel-v2.html',tag:'chat-'+EMAIL})}).catch(function(){});}catch(e){}}if(!CID)return;sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){var db=[];if(rows&&rows.length){try{var p=JSON.parse(rows[0].notas_coach||'[]');if(Array.isArray(p))db=p;}catch(e){}}var merged=_merge(db,MSGS);return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(){MSGS=merged;});}).catch(function(){});};
@@ -1169,8 +1338,9 @@ window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!i
 function pwInit(){
   if(_esDemo()){ CRAW=_demoCraw(); CID=null; applyClientFin(CRAW); _demoBrandFin(); return; }
   sbGet('candidatos','email=eq.'+encodeURIComponent(EMAIL)+'&select=*').then(function(rows){
-    if(rows&&rows.length){CRAW=rows[0];CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);pwMaybeConsent();pwSubGate(CRAW);}
-  }).catch(function(){});
+    if(rows&&rows.length){CRAW=rows[0];CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);pwMaybeConsent();pwSubGate(CRAW);_limpiarDemo();renderPrepCard();}
+    else { _clienteSinFicha(); } // Cliente REAL cuyo alta no dejó ficha → estado limpio + cartel, nunca el demo.
+  }).catch(function(){ if(!_esDemo()) _clienteSinFicha(); });
 }
 // ── Acceso atado a la suscripción (servicios "cada 4 semanas") ──
 // Cliente al día (o SIN suscripción → pago único / cortesía) → acceso normal.
@@ -1221,7 +1391,7 @@ function pwMaybeIntake(){
   if(CRAW && (CRAW.ingresos||CRAW.gastos||CRAW.situacion||CRAW.objetivo)) return; // ya completó
   try{ if(sessionStorage.getItem('pw_intake_later_'+EMAIL)==='1') return; }catch(e){}
   if(document.getElementById('consent-ov')||document.getElementById('intake-ov')) return;
-  var url='https://pathwaycareercoach.com/pathway-fin-form.html?portal=1&email='+encodeURIComponent(EMAIL);
+  var url='https://pathwaycareercoach.com/pathway-fin-form.html?portal=1&email='+encodeURIComponent(EMAIL)+((CRAW&&CRAW.coach_id)?('&coach='+encodeURIComponent(CRAW.coach_id)):'');
   var ov=document.createElement('div'); ov.id='intake-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:99998;background:rgba(27,46,38,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,sans-serif';
   ov.innerHTML="<div style='background:#fff;max-width:440px;width:100%;border-radius:18px;padding:30px 26px;box-shadow:0 20px 60px rgba(0,0,0,.25);text-align:center'>"+
