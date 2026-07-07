@@ -256,6 +256,16 @@
             <button class="btn sm" onclick="copyMyLink()">Copiar</button>
           </div>
         </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-hd"><h3>Mi disponibilidad</h3></div>
+          <p style="font-size:13px;color:var(--texto-suave);margin:0 0 10px">Qué días y en qué franja te pueden reservar desde tu link.</p>
+          <div id="disp-days" style="display:flex;gap:6px;margin-bottom:12px"></div>
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <label style="font-size:12px;color:var(--texto-suave)">Desde<br><input type="time" id="disp-from" value="09:00" style="padding:8px 10px;border:1.5px solid var(--borde);border-radius:9px;font-family:inherit"></label>
+            <label style="font-size:12px;color:var(--texto-suave)">Hasta<br><input type="time" id="disp-to" value="18:00" style="padding:8px 10px;border:1.5px solid var(--borde);border-radius:9px;font-family:inherit"></label>
+            <button class="btn sm" onclick="saveDisp()">Guardar</button>
+          </div>
+        </div>
         <div class="card">
           <div class="card-hd"><h3>Próximas reservas</h3></div>
           <div id="res-list" style="padding:4px 2px"><div style="color:var(--texto-suave);font-size:13px;padding:8px 0">Cargando…</div></div>
@@ -383,8 +393,34 @@
   // ── Reservas (citas del link público del empleado) ──
   function myBookingLink(){ return 'https://pathwaycareercoach.com/agendar.html?c='+encodeURIComponent((WHO&&WHO.id)||ME.id||''); }
   window.copyMyLink=function(){ var v=myBookingLink(); try{ navigator.clipboard&&navigator.clipboard.writeText(v); }catch(e){} toast('Link copiado ✓'); };
+  var DISP={days:[1,2,3,4,5],from:'09:00',to:'18:00'};
+  var DAYNAMES=[['L',1],['M',2],['X',3],['J',4],['V',5],['S',6],['D',0]];
+  function renderDispDays(){
+    var box=document.getElementById('disp-days'); if(!box) return;
+    box.innerHTML=DAYNAMES.map(function(p){ var on=(DISP.days.indexOf(p[1])>=0);
+      return "<button data-d='"+p[1]+"' onclick=\"toggleDispDay("+p[1]+")\" style='width:34px;height:34px;border-radius:50%;border:1.5px solid "+(on?'var(--bosque)':'var(--borde)')+";background:"+(on?'rgba(45,106,79,.1)':'#fff')+";color:"+(on?'var(--bosque)':'var(--texto-suave)')+";font-weight:700;font-family:inherit;cursor:pointer'>"+p[0]+"</button>";
+    }).join('');
+    var f=document.getElementById('disp-from'), t=document.getElementById('disp-to');
+    if(f) f.value=DISP.from||'09:00'; if(t) t.value=DISP.to||'18:00';
+  }
+  window.toggleDispDay=function(d){ var i=DISP.days.indexOf(d); if(i>=0) DISP.days.splice(i,1); else DISP.days.push(d); renderDispDays(); };
+  window.saveDisp=async function(){
+    var f=document.getElementById('disp-from'), t=document.getElementById('disp-to');
+    DISP.from=(f&&f.value)||'09:00'; DISP.to=(t&&t.value)||'18:00';
+    if(!DISP.days.length){ toast('Elegí al menos un día.'); return; }
+    if(!sb||!(WHO&&WHO.id)){ toast('Iniciá sesión.'); return; }
+    try{
+      var cur=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1);
+      var cfg=(cur.data&&cur.data[0]&&cur.data[0].configuracion)||{}; cfg.disponibilidad={days:DISP.days.slice(),from:DISP.from,to:DISP.to};
+      var up=await sb.from('usuarios').update({configuracion:cfg}).eq('id',WHO.id);
+      if(up.error) throw up.error; toast('Disponibilidad guardada ✓');
+    }catch(e){ toast('No se pudo guardar.'); }
+  };
   async function loadReservas(){
     var li=document.getElementById('mylink'); if(li) li.value=myBookingLink();
+    // Cargar disponibilidad actual del empleado.
+    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var d=cr.data&&cr.data[0]&&cr.data[0].configuracion&&cr.data[0].configuracion.disponibilidad; if(d&&d.days){ DISP={days:d.days.map(Number),from:d.from||'09:00',to:d.to||'18:00'}; } }catch(e){} }
+    renderDispDays();
     var box=document.getElementById('res-list'); if(!box) return;
     if(!sb || !(WHO&&WHO.id)){ box.innerHTML="<div style='color:var(--texto-suave);font-size:13px;padding:8px 0'>Iniciá sesión para ver tus reservas.</div>"; return; }
     try{

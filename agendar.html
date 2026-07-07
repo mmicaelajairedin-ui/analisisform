@@ -60,10 +60,10 @@
   .hb-ghost:hover{border-color:var(--sendero);}
   .hb-green{background:var(--bosque2);color:#fff;}
   .hb-green:hover{background:var(--bosque);}
-  .team-card{display:flex;align-items:center;gap:13px;width:100%;background:#fff;border:1.5px solid var(--borde);border-radius:16px;padding:13px 15px;margin-bottom:11px;cursor:pointer;font-family:inherit;transition:all .13s;color:var(--carbon);}
-  .team-card:hover{border-color:var(--sendero);transform:translateY(-1px);box-shadow:0 8px 20px rgba(27,67,50,.08);}
-  .back-team{background:none;border:none;color:var(--bosque2);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;padding:0 0 12px;display:inline-flex;align-items:center;gap:5px;}
-  .back-team:hover{text-decoration:underline;}
+  .who-row{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:4px;}
+  .who-pill{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1.5px solid var(--borde);border-radius:100px;padding:5px 13px 5px 5px;cursor:pointer;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--carbon);transition:all .13s;}
+  .who-pill:hover{border-color:var(--sendero);}
+  .who-pill.on{border-color:var(--bosque);background:var(--niebla2);box-shadow:0 0 0 1px var(--bosque);}
   .foot{text-align:center;font-size:11px;color:var(--muted);margin-top:22px;}
   .ok-ico{width:64px;height:64px;border-radius:50%;background:rgba(82,183,136,.16);display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 16px;}
   .spin{width:28px;height:28px;border:3px solid rgba(45,106,79,.2);border-top-color:var(--bosque2);border-radius:50%;animation:s .8s linear infinite;margin:40px auto;}
@@ -106,12 +106,24 @@ var TEAM=false, CID='', TIDX=-1;
   fail('Este link no es válido. Pedile que te compartan el link de reservas de nuevo.');
 })();
 
+// Campos que servimos a la página PÚBLICA. Solo lo necesario — NUNCA la
+// configuracion completa (que incluye el token de Google del coach).
+var SAFE_SELECT='id,nombre,email,foto_url,rol,ev:configuracion->event_types,slug:configuracion->>slug,cf1:configuracion->>foto_url,cf2:configuracion->>foto_perfil,plan:configuracion->>plan,disp:configuracion->disponibilidad,titp:configuracion->>titulo_profesional';
+var DISP=null;
+function normDisp(d){
+  var def={days:[1,2,3,4,5],from:'09:00',to:'18:00'};
+  if(!d || typeof d!=='object') return def;
+  var days=(Object.prototype.toString.call(d.days)==='[object Array]'&&d.days.length)?d.days.map(Number):def.days;
+  return { days:days, from:(/^\d{1,2}:\d{2}$/.test(d.from||'')?d.from:def.from), to:(/^\d{1,2}:\d{2}$/.test(d.to||'')?d.to:def.to) };
+}
+function memPhoto(u){ return u.foto_url||u.cf1||u.cf2||''; }
+function roleLabel(u){ if(u.titp) return u.titp; return (u.rol==='admin')?'Fundadora de Pathway':'Equipo Pathway'; }
+
 function applyCoachRow(u, t){
   COACH=u.nombre||'Pathway'; FIRST=(''+COACH).split(' ')[0]; EMAIL=(u.email||'').trim();
-  var cfg=u.configuracion||{};
-  PHOTO=u.foto_url||cfg.foto_url||cfg.foto_perfil||''; SLUG=cfg.slug||''; PRO=!!(cfg.plan==='pro'||cfg.pro);
-  CID=u.id||CID;
-  var types=(Object.prototype.toString.call(cfg.event_types)==='[object Array]'&&cfg.event_types.length)?cfg.event_types
+  PHOTO=memPhoto(u); SLUG=u.slug||''; PRO=(u.plan==='pro'); CID=u.id||CID;
+  DISP=normDisp(u.disp);
+  var types=(Object.prototype.toString.call(u.ev)==='[object Array]'&&u.ev.length)?u.ev
     :(TEAM?[{label:'Demo Pathway 15 min',color:'#2D6A4F',icon:'📅'}]:[{label:'Sesión 45 min',color:'#8C7B80'}]);
   TIDX=(t>=0&&t<types.length)?t:0; TYPE=types[TIDX];
   DUR=durFrom(TYPE.label); COLOR=TYPE.color||'#2D6A4F';
@@ -120,7 +132,7 @@ function applyCoachRow(u, t){
 }
 function loadCoach(c,t){
   CID=c;
-  fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(c)+'&select=id,nombre,email,foto_url,configuracion&limit=1',
+  fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(c)+'&select='+SAFE_SELECT+'&limit=1',
     { headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
     .then(function(r){ return r.ok?r.json():[]; })
     .then(function(rows){ if(!rows||!rows.length){ fail('No encontramos a esta persona. Revisá el link.'); return; } applyCoachRow(rows[0],t); })
@@ -128,34 +140,28 @@ function loadCoach(c,t){
 }
 var TEAM_MEMBERS=[];
 function loadTeam(){
-  fetch(SB+'/rest/v1/usuarios?rol=in.(admin,empleado)&activo=eq.true&select=id,nombre,email,foto_url,rol,configuracion&order=rol.asc',
+  fetch(SB+'/rest/v1/usuarios?rol=in.(admin,empleado)&activo=eq.true&select='+SAFE_SELECT+'&order=rol.asc',
     { headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
     .then(function(r){ return r.ok?r.json():[]; })
     .then(function(rows){
       TEAM_MEMBERS=(Object.prototype.toString.call(rows)==='[object Array]')?rows:[];
       if(!TEAM_MEMBERS.length){ fail('No pudimos cargar el equipo. Reintentá en un momento.'); return; }
-      if(TEAM_MEMBERS.length===1){ applyCoachRow(TEAM_MEMBERS[0],-1); return; }
-      renderTeam();
+      // Sin pantalla previa: cargamos directo a la primera persona y el selector
+      // queda ARRIBA para cambiar sin volver atrás.
+      applyCoachRow(TEAM_MEMBERS[0],-1);
     })
     .catch(function(){ fail('No pudimos cargar el equipo. Reintentá en un momento.'); });
 }
-function roleLabel(u){ var c=u.configuracion||{}; if(c.titulo_profesional) return c.titulo_profesional; return (u.rol==='admin')?'Fundadora de Pathway':'Equipo Pathway'; }
-function renderTeam(){
-  var cards=TEAM_MEMBERS.map(function(u,i){
-    var ph=u.foto_url||(u.configuracion&&(u.configuracion.foto_url||u.configuracion.foto_perfil))||'';
-    var av=ph?"<img src='"+esc(ph)+"' alt='' style='width:52px;height:52px;border-radius:50%;object-fit:cover;flex-shrink:0'>"
-      :"<div style='width:52px;height:52px;border-radius:50%;background:#2D6A4F;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--serif);font-size:20px;flex-shrink:0'>"+esc(initials(u.nombre))+"</div>";
-    return "<button class='team-card' data-pick='"+i+"'>"+av+
-      "<div style='text-align:left;flex:1;min-width:0'><div style='font-size:15px;font-weight:700'>"+esc(u.nombre||'Pathway')+"</div>"+
-      "<div style='font-size:12.5px;color:var(--soft)'>"+esc(roleLabel(u))+"</div></div>"+
-      "<span style='color:var(--muted);font-size:20px'>›</span></button>";
+// Selector de persona (arriba), solo en modo equipo con más de uno.
+function teamBar(){
+  if(!TEAM || TEAM_MEMBERS.length<2) return '';
+  var pills=TEAM_MEMBERS.map(function(u,i){
+    var on=(String(u.id)===String(CID)); var ph=memPhoto(u);
+    var av=ph?"<img src='"+esc(ph)+"' alt='' style='width:26px;height:26px;border-radius:50%;object-fit:cover'>"
+      :"<span style='width:26px;height:26px;border-radius:50%;background:#2D6A4F;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px'>"+esc(initials(u.nombre))+"</span>";
+    return "<button class='who-pill"+(on?' on':'')+"' data-pick='"+i+"'>"+av+"<span>"+esc((''+(u.nombre||'')).split(' ')[0])+"</span></button>";
   }).join('');
-  $('card').innerHTML=
-    "<div class='hd'><div style='font-family:var(--serif);font-size:24px;font-weight:500'>Reservá tu demo</div>"+
-      "<div style='font-size:13px;opacity:.9;margin-top:6px'>Elegí con quién querés hacerla</div></div>"+
-    "<div class='body' style='padding-bottom:24px'>"+cards+"</div>";
-  var box=document.querySelector('.body');
-  box.addEventListener('click',function(e){ var b=e.target.closest('[data-pick]'); if(!b) return; applyCoachRow(TEAM_MEMBERS[parseInt(b.getAttribute('data-pick'),10)],-1); });
+  return "<div class='lbl' style='margin-top:2px'>¿Con quién?</div><div class='who-row'>"+pills+"</div>";
 }
 
 function fail(t){
@@ -163,15 +169,18 @@ function fail(t){
     "<h1>Ups</h1><p class='sub'>"+esc(t)+"</p></div>";
 }
 
+function _hm(s){ var p=(''+s).split(':'); return parseInt(p[0],10)*60+parseInt(p[1]||'0',10); }
 function dayList(){
   var out=[], now=new Date(); now.setHours(0,0,0,0);
+  var disp=DISP||{days:[1,2,3,4,5]}; var days=(disp.days&&disp.days.length)?disp.days:[1,2,3,4,5];
   var DN=['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
-  for(var i=0;i<21;i++){ var d=new Date(now.getTime()+i*86400000); if(d.getDay()===0||d.getDay()===6) continue; out.push({d:d, dn:(i===0?'HOY':DN[d.getDay()]), dd:d.getDate()}); if(out.length>=10) break; }
+  for(var i=0;i<28;i++){ var d=new Date(now.getTime()+i*86400000); if(days.indexOf(d.getDay())<0) continue; out.push({d:d, dn:(i===0?'HOY':DN[d.getDay()]), dd:d.getDate()}); if(out.length>=10) break; }
   return out;
 }
 function slotList(){
-  var out=[], step=Math.max(DUR,30);
-  for(var m=9*60; m+DUR<=18*60; m+=step){ out.push(('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2)); }
+  var out=[], disp=DISP||{from:'09:00',to:'18:00'};
+  var f=_hm(disp.from||'09:00'), t=_hm(disp.to||'18:00'), step=Math.max(DUR,15);
+  for(var m=f; m+DUR<=t; m+=step){ out.push(('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2)); }
   return out;
 }
 function avHtml(){
@@ -189,20 +198,21 @@ function renderPicker(){
   var can=(sel.day!=null&&sel.time);
   var explore=SLUG?('https://pathwaycareercoach.com/coach/'+encodeURIComponent(SLUG)):'https://pathwaycareercoach.com';
   var mailHref='mailto:'+encodeURIComponent(EMAIL||'hi@pathwaycareercoach.com')+'?subject='+encodeURIComponent('Consulta antes de reservar')+'&body='+encodeURIComponent('Hola '+FIRST+', tengo una duda antes de reservar: ');
-  var backBtn=(TEAM&&TEAM_MEMBERS.length>1)?"<button class='back-team' id='back-team'>‹ Elegí otra persona</button>":"";
-  $('card').innerHTML=
-    "<div class='hd'>"+avHtml()+
-      "<h1>Reservá con "+esc(FIRST)+"</h1>"+
-      "<div class='type-pill'><span class='cdot' style='background:"+COLOR+"'></span>"+esc(TYPE.label||'Sesión')+"</div></div>"+
-    "<div class='body'>"+backBtn+
-      "<div class='lbl'>📅 Elegí el día</div><div class='days' id='days'>"+daysHtml+"</div>"+
+  var emptyDays=!days.length;
+  var pick = emptyDays
+    ? "<div class='lbl'>📅 Disponibilidad</div><div style='font-size:13px;color:var(--soft);padding:6px 0 10px'>"+esc(FIRST)+" todavía no cargó días disponibles. Probá con otra persona o escribile.</div>"
+    : "<div class='lbl'>📅 Elegí el día</div><div class='days' id='days'>"+daysHtml+"</div>"+
       "<div class='lbl'>🕑 Elegí la hora</div><div class='slots' id='slots'>"+slotsHtml+"</div>"+
       "<div class='lbl'>Tus datos</div>"+
       "<div class='field'><label>Tu nombre</label><input id='f-name' placeholder='Nombre y apellido'></div>"+
       "<div class='field'><label>Tu email</label><input id='f-email' type='email' placeholder='vos@email.com'></div>"+
       "<button class='btn btn-primary' id='confirm'"+(can?'':' disabled')+">Reservar mi sesión</button>"+
-      "<div class='msg' id='msg'></div>"+
-    "</div>"+
+      "<div class='msg' id='msg'></div>";
+  $('card').innerHTML=
+    "<div class='hd'>"+avHtml()+
+      "<h1>Reservá con "+esc(FIRST)+"</h1>"+
+      "<div class='type-pill'><span class='cdot' style='background:"+COLOR+"'></span>"+esc(TYPE.label||'Sesión')+"</div></div>"+
+    "<div class='body'>"+teamBar()+pick+"</div>"+
     "<div class='help'>"+
       "<h4>¿Tenés dudas o querés ver más?</h4>"+
       "<p>Escribile a "+esc(FIRST)+" antes de reservar, o conocé todo lo que Pathway ofrece.</p>"+
@@ -211,13 +221,14 @@ function renderPicker(){
         "<a class='hb-green' href='"+esc(explore)+"' target='_blank' rel='noopener'>✨ Explorar Pathway</a>"+
       "</div>"+
     "</div>";
-  $('days').addEventListener('click',function(e){ var d=e.target.closest('[data-day]'); if(!d) return; sel.day=parseInt(d.getAttribute('data-day'),10); renderPicker(); });
-  $('slots').addEventListener('click',function(e){
+  var wr=document.querySelector('.body');
+  if(wr) wr.addEventListener('click',function(e){ var p=e.target.closest('[data-pick]'); if(!p) return; applyCoachRow(TEAM_MEMBERS[parseInt(p.getAttribute('data-pick'),10)],-1); });
+  if($('days')) $('days').addEventListener('click',function(e){ var d=e.target.closest('[data-day]'); if(!d) return; sel.day=parseInt(d.getAttribute('data-day'),10); renderPicker(); });
+  if($('slots')) $('slots').addEventListener('click',function(e){
     var mo=e.target.closest('[data-more]'); if(mo){ showAll=(mo.getAttribute('data-more')==='1'); renderPicker(); return; }
     var s=e.target.closest('[data-slot]'); if(!s) return; sel.time=s.getAttribute('data-slot'); renderPicker();
   });
-  $('confirm').addEventListener('click', confirmar);
-  var bt=$('back-team'); if(bt) bt.addEventListener('click', function(){ sel={day:null,time:null}; renderTeam(); });
+  if($('confirm')) $('confirm').addEventListener('click', confirmar);
 }
 
 function fmt(x){ return x.getFullYear()+('0'+(x.getMonth()+1)).slice(-2)+('0'+x.getDate()).slice(-2)+'T'+('0'+x.getHours()).slice(-2)+('0'+x.getMinutes()).slice(-2)+'00'; }

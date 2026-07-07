@@ -2208,6 +2208,7 @@ function _agendaCard(){
         "<div class='cp-eyebrow' style='margin-bottom:6px'>Tipos de evento</div>"+
         "<div id='cp-agenda-types'>"+_agTypesHtml()+"</div>"+
         "<button class='cp-btn cp-btn-primary' data-act='ag-cita' style='height:32px;font-size:12px;margin-top:12px;width:100%'>"+svg(IC.plus,13)+" Agendar cita</button>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='ag-disp' style='height:30px;font-size:11px;margin-top:6px;width:100%'>🕑 Mi disponibilidad</button>"+
       "</div>"+
     "</div>"+
   "</div>";
@@ -2266,6 +2267,20 @@ function viewAgModal(){
       "</div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Con quién (email, opcional)</label><input id='ag-cita-guest' class='cp-form-input' placeholder='cliente@email.com'></div>"+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:14px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-agendar'>Agendar cita</button></div>";
+  } else if(g.mode==="disp"){
+    ttl="Mi disponibilidad";
+    var _dp=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{days:[1,2,3,4,5],from:"09:00",to:"18:00"};
+    var _dpd=(g.days!=null)?g.days:((Object.prototype.toString.call(_dp.days)==="[object Array]")?_dp.days.map(Number):[1,2,3,4,5]);
+    if(g.from!=null) _dp={days:_dpd,from:g.from,to:g.to};
+    var _DN=[["L",1],["M",2],["X",3],["J",4],["V",5],["S",6],["D",0]];
+    var _dchips=_DN.map(function(p){ var on=(_dpd.indexOf(p[1])>=0); return "<button data-act='ag-disp-day' data-d='"+p[1]+"' style='width:34px;height:34px;border-radius:50%;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";color:"+(on?"var(--pw-bosque)":"var(--pw-text-muted)")+";font-weight:700;font-family:inherit;cursor:pointer'>"+p[0]+"</button>"; }).join("");
+    body="<div style='font-size:12.5px;color:var(--pw-text-soft);margin-bottom:12px;line-height:1.5'>Qué días y en qué franja te pueden reservar desde tu link. Se aplica al instante.</div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Días</label><div style='display:flex;gap:6px'>"+_dchips+"</div></div>"+
+      "<div class='cp-form-row-2'>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Desde</label><input type='time' id='ag-disp-from' class='cp-form-input' value='"+esc(_dp.from||"09:00")+"'></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Hasta</label><input type='time' id='ag-disp-to' class='cp-form-input' value='"+esc(_dp.to||"18:00")+"'></div>"+
+      "</div>"+
+      "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-disp'>Guardar</button></div>";
   }
   return "<div data-act='ag-close' style='position:fixed;inset:0;background:rgba(27,46,38,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px'>"+
     "<div data-act='ag-stop' style='background:#fff;border-radius:18px;max-width:380px;width:100%;padding:22px 24px;box-shadow:0 24px 70px rgba(20,40,30,.28)'>"+
@@ -5368,6 +5383,18 @@ document.addEventListener("click", function(ev){
       .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Reserva confirmada ✓":"Reserva cancelada"); } else { toast("No se pudo actualizar la reserva."); _resLoad(); } })
       .catch(function(){ toast("No se pudo actualizar la reserva."); _resLoad(); });
     return;
+  }
+  if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{days:[1,2,3,4,5],from:"09:00",to:"18:00"}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00")}; render(); return; }
+  if(act==="ag-disp-day"){
+    if(state.ag){ var _cf=document.getElementById("ag-disp-from"), _ct=document.getElementById("ag-disp-to"); if(_cf) state.ag.from=_cf.value; if(_ct) state.ag.to=_ct.value;
+      var _dn=parseInt(el.getAttribute("data-d"),10); var _ds=(state.ag.days||[]).slice(); var _ix=_ds.indexOf(_dn); if(_ix>=0) _ds.splice(_ix,1); else _ds.push(_dn); state.ag.days=_ds; }
+    render(); return;
+  }
+  if(act==="ag-save-disp"){
+    var _sf=(""+_val("ag-disp-from"))||"09:00", _st=(""+_val("ag-disp-to"))||"18:00";
+    var _sd=(state.ag&&state.ag.days)?state.ag.days.slice():[1,2,3,4,5];
+    if(!_sd.length){ toast("Elegí al menos un día."); return; }
+    state.ag=null; saveCfg({disponibilidad:{days:_sd, from:_sf, to:_st}}); return;
   }
   if(act==="ag-evtype"){ state.ag={mode:"evtype", key:(el.getAttribute("data-key")||""), evTitle:(el.getAttribute("data-title")||"")}; render(); return; }
   if(act==="ag-set-evtype"){
