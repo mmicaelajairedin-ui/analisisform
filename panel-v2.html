@@ -2306,9 +2306,19 @@ function viewAgModal(){
     var curLbl=(g.label!=null)?g.label:(t.label||"");
     var colDots=_AG_COLORS.map(function(c){ var on=(curCol===c); return "<button data-act='ag-pick-color' data-c='"+c+"' title='color' style='width:30px;height:30px;border-radius:50%;background:"+c+";border:3px solid "+(on?"#fff":"transparent")+";box-shadow:0 0 0 "+(on?"2px "+c:"1px var(--pw-border)")+";cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800'>"+(on?"✓":"")+"</button>"; }).join("");
     var icoBtns=_AG_ICONS.map(function(ic){ var on=(curIco===ic); return "<button data-act='ag-pick-icon' data-ic='"+ic+"' style='width:32px;height:32px;border-radius:9px;background:"+(on?"var(--pw-success-bg)":"#fff")+";border:2px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";cursor:pointer;font-size:16px'>"+ic+"</button>"; }).join("");
+    // Quién atiende este tipo: vos + el equipo que agregues. El link del tipo
+    // muestra a TODOS los elegidos para que reserven con cualquiera.
+    var _curPpl=(g.people!=null)?g.people:((Object.prototype.toString.call(t.people)==="[object Array]"&&t.people.length)?t.people.slice():[(RME&&RME.id)]);
+    if(RME&&RME.id&&_curPpl.indexOf(RME.id)<0) _curPpl.unshift(RME.id);
+    var _pplHtml;
+    if(_AG_TEAM===null) _pplHtml="<div style='font-size:12px;color:var(--pw-text-muted)'>Cargando equipo…</div>";
+    else if(!(_AG_TEAM&&_AG_TEAM.length)) _pplHtml="<div style='font-size:12px;color:var(--pw-text-muted)'>Solo vos por ahora. Creá empleados para agregarlos.</div>";
+    else _pplHtml="<div style='display:flex;gap:6px;flex-wrap:wrap'>"+_AG_TEAM.map(function(m){ var on=(_curPpl.indexOf(m.id)>=0); var isMe=(RME&&String(m.id)===String(RME.id));
+      return "<button data-act='ag-pick-person' data-id='"+esc(m.id)+"'"+(isMe?" disabled":"")+" style='display:inline-flex;align-items:center;gap:5px;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";border-radius:100px;padding:5px 12px;font-size:12px;font-weight:600;cursor:"+(isMe?"default":"pointer")+";color:var(--pw-carbon);font-family:inherit;opacity:"+(isMe?"1":"1")+"'>"+(on?"✓ ":"")+esc((""+(m.nombre||m.email)).split(" ")[0])+(isMe?" (vos)":"")+"</button>"; }).join("")+"</div>";
     body="<div class='cp-form-row'><label class='cp-form-label'>Nombre</label><input id='ag-type-input' class='cp-form-input' value=\""+esc(curLbl)+"\" placeholder='Ej. Sesión 45 min'></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Color <span style='color:var(--pw-text-muted);font-weight:400'>— así se distingue en el calendario</span></label><div style='display:flex;gap:10px;flex-wrap:wrap;padding-top:2px'>"+colDots+"</div></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Icono <span style='color:var(--pw-text-muted);font-weight:400'>— se muestra en la agenda</span></label><div style='display:flex;gap:7px;flex-wrap:wrap;padding-top:2px'>"+icoBtns+"</div></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Quién atiende <span style='color:var(--pw-text-muted);font-weight:400'>— el link muestra a los elegidos</span></label>"+_pplHtml+"</div>"+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-type'>Guardar</button></div>";
   } else if(g.mode==="link"){
     ttl="Link para que reserven";
@@ -5496,12 +5506,13 @@ document.addEventListener("click", function(ev){
   // Agenda: tipos de evento + agendar cita. TODO con modales Pathway (nada de
   // prompts del navegador). Se guarda en el perfil por REST (saveCfg).
   if(act==="ag-open"){ state.ag={mode:"menu", i:parseInt(el.getAttribute("data-i"),10)}; render(); return; }
-  if(act==="ag-new"){ state.ag={mode:"new", i:-1, color:_AG_COLORS[0], icon:_AG_ICONS[0]}; render(); return; }
+  if(act==="ag-new"){ state.ag={mode:"new", i:-1, color:_AG_COLORS[0], icon:_AG_ICONS[0], people:[(RME&&RME.id)]}; _agTeamLoad(); render(); return; }
   if(act==="ag-cita"){ var _ci=el.getAttribute("data-i"); state.ag={mode:"cita", i:_ci!=null?parseInt(_ci,10):-1, team:[]}; _agTeamLoad(); render(); return; }
   if(act==="ag-team"){ if(state.ag){ var _em=el.getAttribute("data-email"); var _tt=(state.ag.team||[]).slice(); var _ix=_tt.indexOf(_em); if(_ix>=0) _tt.splice(_ix,1); else _tt.push(_em); state.ag.team=_tt; } render(); return; }
   if(act==="ag-close"){ state.ag=null; render(); return; }
   if(act==="ag-stop"){ return; }
-  if(act==="ag-to-edit"){ var _et=_agTypes(); var _ei=(state.ag&&state.ag.i); var _eo=(_ei>=0&&_ei<_et.length)?_et[_ei]:{}; state.ag={mode:"edit", i:_ei, label:(_eo.label||""), color:(_eo.color||_AG_COLORS[0]), icon:(_eo.icon||_AG_ICONS[0])}; render(); return; }
+  if(act==="ag-to-edit"){ var _et=_agTypes(); var _ei=(state.ag&&state.ag.i); var _eo=(_ei>=0&&_ei<_et.length)?_et[_ei]:{}; var _ppl=(Object.prototype.toString.call(_eo.people)==="[object Array]"&&_eo.people.length)?_eo.people.slice():[(RME&&RME.id)]; state.ag={mode:"edit", i:_ei, label:(_eo.label||""), color:(_eo.color||_AG_COLORS[0]), icon:(_eo.icon||_AG_ICONS[0]), people:_ppl}; _agTeamLoad(); render(); return; }
+  if(act==="ag-pick-person"){ if(state.ag){ var _pl3=document.getElementById("ag-type-input"); if(_pl3) state.ag.label=_pl3.value; var _pid=el.getAttribute("data-id"); if(RME&&String(_pid)===String(RME.id)) { render(); return; } var _pp=(state.ag.people||[]).slice(); var _pix=_pp.indexOf(_pid); if(_pix>=0) _pp.splice(_pix,1); else _pp.push(_pid); state.ag.people=_pp; } render(); return; }
   if(act==="ag-to-link"){ state.ag={mode:"link", i:(state.ag&&state.ag.i)}; render(); return; }
   if(act==="ag-pick-color"){ if(state.ag){ var _pl=document.getElementById("ag-type-input"); if(_pl) state.ag.label=_pl.value; state.ag.color=el.getAttribute("data-c"); } render(); return; }
   if(act==="ag-pick-icon"){ if(state.ag){ var _pl2=document.getElementById("ag-type-input"); if(_pl2) state.ag.label=_pl2.value; state.ag.icon=el.getAttribute("data-ic"); } render(); return; }
@@ -5541,7 +5552,9 @@ document.addEventListener("click", function(ev){
     var _tv=(""+_val("ag-type-input")).trim(); if(!_tv){ toast("Escribí un nombre."); return; }
     var _tt=_agTypes().slice(); var _gi=(state.ag&&state.ag.i);
     var _tc=(state.ag&&state.ag.color)||_AG_COLORS[0], _tic=(state.ag&&state.ag.icon)||_AG_ICONS[0];
-    var _tobj={label:_tv, color:_tc, icon:_tic};
+    var _tpl=(state.ag&&Object.prototype.toString.call(state.ag.people)==="[object Array]")?state.ag.people.filter(Boolean):[(RME&&RME.id)];
+    if(RME&&RME.id&&_tpl.indexOf(RME.id)<0) _tpl.unshift(RME.id);
+    var _tobj={label:_tv, color:_tc, icon:_tic, people:_tpl};
     if(state.ag&&state.ag.mode==="new"){ _tt.push(_tobj); } else if(_gi>=0&&_gi<_tt.length){ _tt[_gi]=_tobj; }
     state.ag=null; saveCfg({event_types:_tt}); return;
   }
