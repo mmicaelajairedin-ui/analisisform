@@ -575,6 +575,27 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "logros: motor de juego unificado (mismos umbrales en los 3 nichos)",
+    bug: "El sistema de medallas estaba duplicado y desincronizado por nicho " +
+         "(carrera pedía 7 logros para Oro, fitness/finanzas 6). Se unificó en " +
+         "pathway-juego.js con PUNTOS (Bronce 200 · Plata 400 · Oro 600) como " +
+         "fuente única. Si el motor desaparece, cambian los umbrales, o un portal " +
+         "deja de cargarlo, las medallas vuelven a desincronizarse entre nichos.",
+    check() {
+      const eng = read("pathway-juego.js");
+      if (!eng) return "falta pathway-juego.js (motor unificado de medalla/festejo).";
+      if (!/min:\s*200[\s\S]*?min:\s*400[\s\S]*?min:\s*600/.test(eng))
+        return "pathway-juego.js: los umbrales de medalla dejaron de ser 200/400/600 (fuente única de verdad).";
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/pathway-juego\.js/.test(s))
+          return f + " ya no carga pathway-juego.js (motor unificado de puntos/medalla).";
+      }
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
