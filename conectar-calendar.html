@@ -77,40 +77,24 @@ function conectar(){
   }).catch(function(e){ failView('Error al abrir Google: '+((e&&e.message)||'')); });
 }
 function guardar(session){
-  busy('Guardando la conexión…');
-  var tries = 0;
-  function attempt(){
-    tries++;
-    var ctrl = new AbortController();
-    var to = setTimeout(function(){ ctrl.abort(); }, 12000);
-    fetch(SB+'/functions/v1/gcal-connect',{
-      method:'POST',
-      signal: ctrl.signal,
-      headers:{ 'Content-Type':'application/json', 'apikey':KEY, 'Authorization':'Bearer '+session.access_token },
-      body:JSON.stringify({
-        access_token: session.provider_token||'',
-        refresh_token: session.provider_refresh_token||'',
-        coach_id: (MJ&&MJ.id)||'',
-        expiry: Date.now()+3600000
-      })
-    }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
-      .then(function(res){
-        clearTimeout(to);
-        if(res.ok && res.d && res.d.ok){ done(); return; }
-        // Función "dormida" (cold boot): reintentar unas veces.
-        if(res.d && res.d.code==='WORKER_RESOURCE_LIMIT' && tries<5){ busy('Guardando la conexión… (despertando el servidor, aguantá)'); setTimeout(attempt,1800); return; }
-        if(res.d && res.d.error==='coach_not_found'){ failView('Tu email de Google ('+(res.d.email||'')+') no coincide con tu cuenta de Pathway. Escribime y lo resolvemos.'); return; }
-        failView('No pudimos guardar la conexión ('+((res.d&&res.d.error)||'error')+').');
-      })
-      .catch(function(e){
-        clearTimeout(to);
-        // Timeout (cold boot lento) o reject (cold boot sin CORS): reintentar.
-        // Con cada intento el "worker" se va calentando y termina respondiendo.
-        if(tries<7){ busy('Guardando la conexión… (despertando el servidor, aguantá unos segundos)'); setTimeout(attempt, (e&&e.name==='AbortError')?600:1800); return; }
-        failView('No pudimos guardar la conexión. El servidor de Supabase tardó demasiado en despertar — probá "Reintentar" en un momento.');
-      });
+  // SIN edge functions (se colgaban). Guardamos el token de Google en localStorage
+  // y el panel lo persiste en tu perfil (por la misma vía REST que ya usa para todo)
+  // apenas entrás. Nada de servidores que se "duermen".
+  if(!session || !session.provider_token){
+    failView('Google no devolvió el permiso del calendario. Probá de nuevo y asegurate de ACEPTAR el acceso.');
+    return;
   }
-  attempt();
+  try{
+    localStorage.setItem('pw_gcal_pending', JSON.stringify({
+      access_token: session.provider_token,
+      expiry: Date.now() + 3600000,
+      email: (session.user && session.user.email) || '',
+      connected_at: new Date().toISOString()
+    }));
+    done();
+  }catch(e){
+    failView('No pudimos guardar la conexión en este navegador. Probá de nuevo.');
+  }
 }
 // Al cargar: ¿venimos de vuelta del OAuth de Google?
 (function(){
