@@ -323,11 +323,22 @@ function saveFin(){
   _finSaved=true;
   // Modo portal: el candidato YA existe (lo creó el alta) → PATCH por email con
   // el JWT del cliente (pw-auth). Intake anónimo: INSERT con ignore-duplicates.
-  var _u=PORTAL_MODE? SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(email) : SB+'/rest/v1/candidatos';
-  var _m=PORTAL_MODE?'PATCH':'POST';
-  var _pf=PORTAL_MODE?'return=minimal':'return=minimal,resolution=ignore-duplicates';
-  fetch(_u,{method:_m,headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':_pf},body:JSON.stringify(d)})
-    .then(function(r){ if(!r.ok){ _finSaved=false; } else { clearDraft(); } }).catch(function(){ _finSaved=false; });
+  var _H=function(pf){ return {'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':pf}; };
+  var _base=SB+'/rest/v1/candidatos';
+  if(PORTAL_MODE){
+    // UPSERT robusto: la ficha del cliente puede NO existir (el alta no la creó, o
+    // se borró — el caso de Charlie). Antes solo hacía PATCH → sin fila NO guardaba
+    // nada y el portal salía en blanco. Ahora: 1) creamos la fila si falta
+    // (ignore-duplicates: no pisa una existente), 2) la actualizamos con TODAS las
+    // respuestas. Así el intake SIEMPRE queda guardado.
+    fetch(_base,{method:'POST',headers:_H('return=minimal,resolution=ignore-duplicates'),body:JSON.stringify(d)})
+      .then(function(){ return fetch(_base+'?email=eq.'+encodeURIComponent(email),{method:'PATCH',headers:_H('return=minimal'),body:JSON.stringify(d)}); })
+      .then(function(r){ if(r&&r.ok){ clearDraft(); } else { _finSaved=false; } })
+      .catch(function(){ _finSaved=false; });
+  } else {
+    fetch(_base,{method:'POST',headers:_H('return=minimal,resolution=ignore-duplicates'),body:JSON.stringify(d)})
+      .then(function(r){ if(!r.ok){ _finSaved=false; } else { clearDraft(); } }).catch(function(){ _finSaved=false; });
+  }
 }
 function prev(){ if(i>0){ i--; render(); } }
 function generar(){

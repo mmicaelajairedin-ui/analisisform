@@ -1279,6 +1279,20 @@ function _clienteSinFicha(){
   // Intentar traer el nombre real del cliente (best-effort).
   try{ sbGet('usuarios','email=eq.'+encodeURIComponent(EMAIL)+'&select=nombre').then(function(rows){ if(rows&&rows.length&&rows[0].nombre){ var h=document.querySelector('.sb-hello'); if(h) h.textContent='Hola, '+rows[0].nombre.split(' ')[0]; var f=document.querySelector('.sb-foot div'); if(f) f.textContent=rows[0].nombre; } }).catch(function(){}); }catch(e){}
   renderPrepCard();
+  _ensureFicha('fitness');
+}
+// Auto-reparar: si un cliente logueado NO tiene ficha en candidatos (se borró, o
+// el alta no la creó), la creamos ahora — así su FOTO y su formulario SÍ se
+// guardan (antes se perdían: sin fila, el PATCH por email no hacía nada). Queda
+// sin coach_id (huérfana) hasta que el coach la re-agregue (el alta la reclama).
+function _ensureFicha(niche){
+  if(!EMAIL || CID) return;
+  var body={ email:EMAIL, activo:true }; if(niche) body.nicho=niche;
+  try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'null'); if(mu&&mu.nombre) body.nombre=mu.nombre; }catch(e){}
+  fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation,resolution=ignore-duplicates'},body:JSON.stringify(body)})
+    .then(function(r){ return (r&&r.ok)?r.json():null; })
+    .then(function(rows){ if(rows&&rows.length){ CRAW=rows[0]; CID=CRAW.id; if(CRAW.coach_id) applyBrand(CRAW.coach_id); } })
+    .catch(function(){});
 }
 
 // ── Mensajería coach↔cliente (mismo modelo que career: candidatos.notas_coach) ──
