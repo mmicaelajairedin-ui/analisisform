@@ -44,6 +44,22 @@ El chat vive en las dos puntas (portal del cliente **y** panel del coach). Hoy
 
 `check-parity.js` falla si alguna pantalla rompe este vocabulario.
 
+## Invariantes: detectar errores, no solo ausencias
+
+La matriz de familias dice si una pieza **está**. Los **invariantes** dicen si
+está **bien**. Detectan el caso "la pieza existe pero implementada mal/insegura",
+que la matriz de presencia no ve. Cada invariante que hoy se cumple queda
+congelado: si un clon futuro lo rompe, el test falla. Hoy vigentes:
+
+| Invariante | Qué error atrapa |
+|-----------|-------------------|
+| **chat-merge-safe** | enviar un mensaje escribiendo `notas_coach` **sin re-leer** antes → pisa los mensajes de la otra punta (pérdida de datos) |
+| **chat-escape** | renderizar `m.text` **crudo** (concatenado sin `esc()`/`hh()`) → inyección XSS |
+| **auth-expiry** | `sbGet` que no maneja **401/403** → token vencido muestra el portal vacío en vez de mandar a login |
+| **chat-dedup** | `_mkey` que no usa la clave canónica `from\|text\|ts` → mensajes duplicados o que no se emparejan |
+
+Al arreglar un bug de cableado nuevo, sumar un invariante acá para que no vuelva.
+
 > Pendiente (mejora, no bug): hoy son 4 implementaciones del mismo contrato. El
 > destino ideal es un único `pw-chat.js` que todas incluyan. El contrato protege
 > el "hoy" mientras tanto.
