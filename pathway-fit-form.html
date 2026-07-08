@@ -96,7 +96,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:#f5f5f3;color:#1a1a
 
   <div class="card">
     <div class="top">
-      <h1>Evaluación inicial · <span id="fCoach">tu coach</span></h1>
+      <h1>Evaluación inicial<span id="fCoachSep"></span></h1>
       <p>Con tus respuestas, tu coach arma tu análisis y tu plan a medida. Lleva 2 minutos.</p>
     </div>
     <div class="prog-bar"><div class="prog-fill" id="prog"></div></div>
@@ -275,7 +275,9 @@ function _coachHdr(){ try{ if(window.PWAUTH&&PWAUTH.headers) return PWAUTH.heade
 function _setCoachTexts(nombre){
   var full=(''+(nombre||'')).trim(); var first=full?full.split(' ')[0]:'';
   COACH_NOMBRE=full; COACH_FIRST=first;
-  var fc=document.getElementById('fCoach'); if(fc) fc.textContent=full||'tu coach';
+  // El título muestra el nombre del coach SI lo tenemos; si no, no muestra nada
+  // (queda "Evaluación inicial" a secas, nunca el placeholder "· tu coach").
+  var sep=document.getElementById('fCoachSep'); if(sep) sep.textContent=full?(' · '+full):'';
   var tc=document.getElementById('thinkCoach'); if(tc) tc.textContent=first||'Tu coach';
   var dc=document.getElementById('doneChip'); if(dc) dc.textContent=(first||'Tu coach')+' revisa tu análisis y arranca tu acompañamiento 💪';
 }
@@ -348,8 +350,12 @@ function saveFit(){
   var email=_val('email').toLowerCase(); if(!email) return;
   var les=[]; var cl=document.getElementById('copts-lesiones'); if(cl){ Array.prototype.forEach.call(cl.querySelectorAll('.copt.sel'),function(o){ les.push(o.textContent.trim()); }); }
   var otra=_val('otra'); if(otra) les.push(otra);
-  var d={ nicho:'fitness', nombre:_val('nombre'), email:email, edad:_val('edad'), peso:_val('peso'), altura:_val('altura'),
-    cargo:_selTxt('opts-objetivo')||'Mejorar mi físico', nivel:_selTxt('opts-nivel'),
+  var _obj=_selTxt('opts-objetivo')||'Mejorar mi físico';
+  var d={ nicho:'fitness', nombre:_val('nombre'), email:email, edad:_val('edad'), sexo:_val('sexo'), peso:_val('peso'), altura:_val('altura'),
+    // El objetivo se guarda en AMBOS: cargo (lo usa el panel como "Objetivo
+    // principal") y objetivo (lo lee la IA/edge function). Antes solo iba a cargo
+    // → el recuadro "Objetivo" del panel salía vacío y la IA podía perder el dato.
+    cargo:_obj, objetivo:_obj, nivel:_selTxt('opts-nivel'),
     dias:_selTxt('opts-dias'), lugar:_selTxt('opts-lugar'),
     lesiones:les.join(' · '), medicacion:_val('medicacion'), restricciones:_val('restricciones'),
     semana_activa:1, activo:true };
@@ -358,30 +364,30 @@ function saveFit(){
   // Intake anónimo: registrar el consentimiento acá para que el portal NO lo vuelva a pedir.
   if(!PORTAL_MODE){ d.consent_at=new Date().toISOString(); d.consent_version='2026-05-01'; }
   _fitSaved=true;
-  // Modo portal: el candidato YA existe (lo creó el alta) → PATCH por email con
-  // el JWT del cliente (pw-auth). Intake anónimo: INSERT con ignore-duplicates.
   var _H=function(pf){ return {'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':pf}; };
   var _base=SB+'/rest/v1/candidatos';
-  if(PORTAL_MODE){
-    // El guardado del cliente choca con RLS estricto: solo puede escribir su fila
-    // si su email de Auth == candidatos.email. Si no tiene sesión o el email no
-    // coincide EXACTO, el PATCH se rechaza en silencio → el portal queda en blanco
-    // (pasó con los clientes de Charlie). Solución: guardar por la edge function
-    // guardar-intake (service role → ignora RLS, SIEMPRE guarda). Si todavía no
-    // está deployada, caemos al upsert directo (funciona si el JWT matchea).
-    var _fb=function(){
+  // RAÍZ DEL BUG DE DUPLICADOS/HUÉRFANOS: el intake creaba una fila NUEVA por envío
+  // (INSERT) en vez de actualizar la ficha que ya existe → duplicados y fichas sin
+  // coach_id. Solución: SIEMPRE guardar por la edge function guardar-intake
+  // (service role): hace UPSERT por email (actualiza la fila existente, NO duplica)
+  // y adopta el coach_id si la ficha estaba huérfana. Vale para portal Y público.
+  // Solo si la edge function no responde caemos a un guardado directo (fallback).
+  var _fb=function(){
+    if(PORTAL_MODE){
+      // Cliente logueado: upsert con su JWT (RLS permite su propia fila).
       fetch(_base,{method:'POST',headers:_H('return=minimal,resolution=ignore-duplicates'),body:JSON.stringify(d)})
         .then(function(){ return fetch(_base+'?email=eq.'+encodeURIComponent(email),{method:'PATCH',headers:_H('return=minimal'),body:JSON.stringify(d)}); })
         .then(function(r){ if(r&&r.ok){ clearDraft(); } else { _fitSaved=false; } })
         .catch(function(){ _fitSaved=false; });
-    };
-    fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},body:JSON.stringify({email:email,data:d,coach_id:d.coach_id||_qp('coach')})})
-      .then(function(r){ if(r&&r.ok){ clearDraft(); } else { _fb(); } })
-      .catch(function(){ _fb(); });
-  } else {
-    fetch(_base,{method:'POST',headers:_H('return=minimal,resolution=ignore-duplicates'),body:JSON.stringify(d)})
-      .then(function(r){ if(!r.ok){ _fitSaved=false; } else { clearDraft(); } }).catch(function(){ _fitSaved=false; });
-  }
+    } else {
+      // Público anónimo (no puede UPDATE con RLS estricto): INSERT como último recurso.
+      fetch(_base,{method:'POST',headers:_H('return=minimal,resolution=ignore-duplicates'),body:JSON.stringify(d)})
+        .then(function(r){ if(!r.ok){ _fitSaved=false; } else { clearDraft(); } }).catch(function(){ _fitSaved=false; });
+    }
+  };
+  fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},body:JSON.stringify({email:email,data:d,coach_id:d.coach_id||_qp('coach')})})
+    .then(function(r){ if(r&&r.ok){ clearDraft(); } else { _fb(); } })
+    .catch(function(){ _fb(); });
 }
 function prev(){ if(i>0){ i--; render(); } }
 function generar(){

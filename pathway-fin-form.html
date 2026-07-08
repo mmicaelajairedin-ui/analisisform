@@ -321,30 +321,28 @@ function saveFin(){
   // Intake anónimo: registrar el consentimiento acá para que el portal NO lo vuelva a pedir.
   if(!PORTAL_MODE){ d.consent_at=new Date().toISOString(); d.consent_version='2026-05-01'; }
   _finSaved=true;
-  // Modo portal: el candidato YA existe (lo creó el alta) → PATCH por email con
-  // el JWT del cliente (pw-auth). Intake anónimo: INSERT con ignore-duplicates.
   var _H=function(pf){ return {'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':pf}; };
   var _base=SB+'/rest/v1/candidatos';
-  if(PORTAL_MODE){
-    // El guardado del cliente choca con RLS estricto: solo puede escribir su fila
-    // si su email de Auth == candidatos.email. Si no tiene sesión o el email no
-    // coincide EXACTO, el PATCH se rechaza en silencio → el portal queda en blanco
-    // (pasó con los clientes de Charlie). Solución: guardar por la edge function
-    // guardar-intake (service role → ignora RLS, SIEMPRE guarda). Si todavía no
-    // está deployada, caemos al upsert directo (funciona si el JWT matchea).
-    var _fb=function(){
+  // RAÍZ DEL BUG DE DUPLICADOS/HUÉRFANOS: el intake creaba una fila NUEVA por envío
+  // (INSERT) en vez de actualizar la ficha que ya existe → duplicados y fichas sin
+  // coach_id. Solución: SIEMPRE guardar por la edge function guardar-intake
+  // (service role): hace UPSERT por email (actualiza la fila existente, NO duplica)
+  // y adopta el coach_id si la ficha estaba huérfana. Vale para portal Y público.
+  // Solo si la edge function no responde caemos a un guardado directo (fallback).
+  var _fb=function(){
+    if(PORTAL_MODE){
       fetch(_base,{method:'POST',headers:_H('return=minimal,resolution=ignore-duplicates'),body:JSON.stringify(d)})
         .then(function(){ return fetch(_base+'?email=eq.'+encodeURIComponent(email),{method:'PATCH',headers:_H('return=minimal'),body:JSON.stringify(d)}); })
         .then(function(r){ if(r&&r.ok){ clearDraft(); } else { _finSaved=false; } })
         .catch(function(){ _finSaved=false; });
-    };
-    fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},body:JSON.stringify({email:email,data:d,coach_id:d.coach_id||_qp('coach')})})
-      .then(function(r){ if(r&&r.ok){ clearDraft(); } else { _fb(); } })
-      .catch(function(){ _fb(); });
-  } else {
-    fetch(_base,{method:'POST',headers:_H('return=minimal,resolution=ignore-duplicates'),body:JSON.stringify(d)})
-      .then(function(r){ if(!r.ok){ _finSaved=false; } else { clearDraft(); } }).catch(function(){ _finSaved=false; });
-  }
+    } else {
+      fetch(_base,{method:'POST',headers:_H('return=minimal,resolution=ignore-duplicates'),body:JSON.stringify(d)})
+        .then(function(r){ if(!r.ok){ _finSaved=false; } else { clearDraft(); } }).catch(function(){ _finSaved=false; });
+    }
+  };
+  fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},body:JSON.stringify({email:email,data:d,coach_id:d.coach_id||_qp('coach')})})
+    .then(function(r){ if(r&&r.ok){ clearDraft(); } else { _fb(); } })
+    .catch(function(){ _fb(); });
 }
 function prev(){ if(i>0){ i--; render(); } }
 function generar(){
