@@ -206,6 +206,7 @@
     </div>
     <nav class="nav">
       <button class="nav-item on" data-tab="resumen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span>Resumen</span></button>
+      <button class="nav-item" data-tab="calendario"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m9 15 2 2 4-4"/></svg><span>Calendario</span></button>
       <button class="nav-item" data-tab="comm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg><span>Plantillas</span></button>
       <button class="nav-item" data-tab="leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/></svg><span>Leads</span></button>
     </nav>
@@ -307,6 +308,29 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="view" id="view-calendario" hidden>
+      <div class="wrap">
+        <div class="kpis">
+          <div class="kpi"><div class="n" id="ck-total">0</div><div class="l">Reservas</div></div>
+          <div class="kpi"><div class="n" id="ck-prox">0</div><div class="l">Próximas</div></div>
+          <div class="kpi"><div class="n" id="ck-asis">0</div><div class="l">Asistieron</div></div>
+          <div class="kpi"><div class="n" id="ck-no">0</div><div class="l">No asistieron</div></div>
+          <div class="kpi acc"><div class="n" id="ck-rate">—</div><div class="l">% asistencia</div></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><h3>Reservas y asistencia</h3>
+            <div class="filters" id="cal-filters">
+              <span class="chip on" data-cf="proximas" onclick="setCalFiltro('proximas',this)">Próximas</span>
+              <span class="chip" data-cf="pasadas" onclick="setCalFiltro('pasadas',this)">Por marcar</span>
+              <span class="chip" data-cf="todas" onclick="setCalFiltro('todas',this)">Todas</span>
+            </div>
+          </div>
+          <p style="font-size:12px;color:var(--texto-suave);padding:10px 18px 0;margin:0">Marcá si la persona asistió a cada demo. Con eso salen tus métricas de arriba.</p>
+          <div id="cal-list" style="padding:6px 8px 14px"><div class="empty">Cargando…</div></div>
         </div>
       </div>
     </div>
@@ -425,14 +449,16 @@
   }
 
   // Tabs
-  var _loaded={}, TITLES={resumen:{t:"Resumen",s:"Tu calendario del mes, tus próximas reservas y tu disponibilidad."},comm:{t:"Plantillas de email",s:"Elegí el nicho, copiá la plantilla con diseño y pegala en tu correo."},leads:{t:"Leads",s:"Contactá, agendá demos y dá de alta coaches. Cada marca queda en tus métricas."}};
+  var _loaded={}, TITLES={resumen:{t:"Resumen",s:"Tu calendario del mes, tus próximas reservas y tu disponibilidad."},calendario:{t:"Calendario",s:"Todas tus reservas, marcá la asistencia y mirá tus métricas de demos."},comm:{t:"Plantillas de email",s:"Elegí el nicho, copiá la plantilla con diseño y pegala en tu correo."},leads:{t:"Leads",s:"Contactá, agendá demos y dá de alta coaches. Cada marca queda en tus métricas."}};
   document.querySelectorAll('.nav-item[data-tab]').forEach(function(b){ b.addEventListener('click',function(){ goTab(b.dataset.tab); }); });
   function goTab(t){
     document.querySelectorAll('.nav-item[data-tab]').forEach(function(b){ b.classList.toggle('on',b.dataset.tab===t); });
     var vres=document.getElementById('view-resumen'); if(vres) vres.hidden=(t!=='resumen');
+    var vcal=document.getElementById('view-calendario'); if(vcal) vcal.hidden=(t!=='calendario');
     document.getElementById('view-comm').hidden=(t!=='comm'); document.getElementById('view-leads').hidden=(t!=='leads');
     document.getElementById('ptitle').textContent=TITLES[t].t; document.getElementById('psub').textContent=TITLES[t].s;
     if(t==='resumen' && !_loaded.resumen){ _loaded.resumen=true; loadResumen(); }
+    if(t==='calendario' && !_loaded.calendario){ _loaded.calendario=true; loadCalendario(); }
     if(t==='comm' && !_loaded.comm){ renderComm(); _loaded.comm=true; }
     if(t==='leads' && !_loaded.leads){ _loaded.leads=true; loadLeads(); }
   }
@@ -713,6 +739,69 @@
     renderCal(); renderAgBody();
     if(GCAL&&GCAL.access_token){ await _agLoadGoogle(); }
   }
+
+  // ── Pestaña Calendario: reservas + asistencia + métricas ──
+  // La asistencia se guarda en citas.estado: asistio | no_asistio | reprogramada
+  // (además de los existentes pendiente/confirmada/cancelada).
+  var CALI=[], calFiltro='proximas';
+  window.setCalFiltro=function(f,el){ calFiltro=f; document.querySelectorAll('#cal-filters .chip').forEach(function(c){ c.classList.toggle('on',c===el); }); renderCalList(); };
+  async function loadCalendario(){
+    var box=document.getElementById('cal-list');
+    if(!sb || !(WHO&&WHO.id)){ if(box) box.innerHTML="<div class='empty'>Iniciá sesión para ver tus reservas.</div>"; return; }
+    try{
+      var from=new Date(Date.now()-120*86400000).toISOString();
+      var r=await sb.from('citas').select('id,nombre,email,tipo,inicio,estado').eq('coach_id',WHO.id).gte('inicio',from).order('inicio',{ascending:false});
+      if(r.error) throw r.error;
+      CALI=r.data||[]; renderCalMetrics(); renderCalList();
+    }catch(e){ if(box) box.innerHTML="<div class='empty'>No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase.</div>"; renderCalMetrics(); }
+  }
+  function renderCalMetrics(){
+    var vivas=CALI.filter(function(r){ return r.estado!=='cancelada'; });
+    var now=Date.now();
+    var prox=vivas.filter(function(r){ return +new Date(r.inicio)>=now && r.estado!=='asistio' && r.estado!=='no_asistio'; }).length;
+    var asis=CALI.filter(function(r){ return r.estado==='asistio'; }).length;
+    var no=CALI.filter(function(r){ return r.estado==='no_asistio'; }).length;
+    var rate=(asis+no)>0?Math.round(asis/(asis+no)*100)+'%':'—';
+    var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
+    set('ck-total',vivas.length); set('ck-prox',prox); set('ck-asis',asis); set('ck-no',no); set('ck-rate',rate);
+  }
+  function calVisibles(){
+    var now=Date.now();
+    return CALI.filter(function(r){
+      if(r.estado==='cancelada') return calFiltro==='todas';
+      if(calFiltro==='proximas') return +new Date(r.inicio)>=now && r.estado!=='asistio' && r.estado!=='no_asistio';
+      if(calFiltro==='pasadas') return +new Date(r.inicio)<now && r.estado!=='asistio' && r.estado!=='no_asistio'; // por marcar
+      return true;
+    });
+  }
+  function renderCalList(){
+    var box=document.getElementById('cal-list'); if(!box) return;
+    var rows=calVisibles();
+    if(!rows.length){ box.innerHTML="<div class='empty'>"+(calFiltro==='pasadas'?'Nada por marcar. ¡Al día!':calFiltro==='proximas'?'Sin reservas próximas. Cuando alguien use tu link, aparece acá.':'Todavía no hay reservas.')+"</div>"; return; }
+    var DIAS=['dom','lun','mar','mié','jue','vie','sáb'], MES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    box.innerHTML=rows.map(function(r){
+      var d=new Date(r.inicio); var e=_evFor(r.tipo);
+      var fecha=DIAS[d.getDay()]+' '+d.getDate()+' '+MES[d.getMonth()]+' · '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+      var mk=function(val,lbl){ var on=(r.estado===val); var col=val==='asistio'?'#2D6A4F':val==='no_asistio'?'#C0756E':'#C99A2E';
+        return "<button onclick=\"markAsistencia('"+r.id+"','"+val+"')\" style='padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?col:'var(--borde)')+";background:"+(on?col:'#fff')+";color:"+(on?'#fff':'var(--texto-suave)')+"'>"+lbl+"</button>"; };
+      var estadoTag=r.estado==='cancelada'?"<span class='estado descartado'>Cancelada</span>":"";
+      return "<div style='display:flex;align-items:center;gap:12px;padding:11px 12px;border-bottom:1px solid var(--borde);flex-wrap:wrap'>"+
+        "<span style='width:30px;height:30px;border-radius:50%;background:"+e.color+"22;border:1.5px solid "+e.color+";display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>"+e.icon+"</span>"+
+        "<div style='min-width:150px;font-size:12.5px;font-weight:700;color:var(--carbon)'>"+esc(fecha)+"</div>"+
+        "<div style='flex:1;min-width:120px'><div style='font-size:13.5px;font-weight:600'>"+esc(r.nombre||'Alguien')+"</div>"+
+        "<div style='font-size:11.5px;color:var(--texto-suave)'>"+esc(r.tipo||'')+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
+        estadoTag+
+        "<div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk('asistio','Asistió')+mk('no_asistio','No asistió')+mk('reprogramada','Reprogramó')+"</div>"+
+      "</div>";
+    }).join('');
+  }
+  window.markAsistencia=async function(id,val){
+    var r=CALI.filter(function(x){ return String(x.id)===String(id); })[0]; if(!r) return;
+    var prev=r.estado; r.estado=(r.estado===val?'confirmada':val); // volver a tocar el mismo = desmarca
+    renderCalMetrics(); renderCalList();
+    if(sb){ try{ var up=await sb.from('citas').update({estado:r.estado}).eq('id',id); if(up.error) throw up.error; }catch(e){ r.estado=prev; renderCalMetrics(); renderCalList(); toast('No se pudo guardar'); return; } }
+    toast(val==='asistio'?'Marcado: asistió ✓':val==='no_asistio'?'Marcado: no asistió':'Marcado: reprogramó');
+  };
 
   // ── Leads (Supabase) ──
   async function loadLeads(){
