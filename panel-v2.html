@@ -2135,7 +2135,7 @@ function _agGcalDiag(){
     var rt=(g&&g.refresh_token)||(lg&&lg.refresh_token);
     var exp=(g&&g.expiry)||(lg&&lg.expiry);
     var venc=(exp?(Date.now()>exp?("sí, hace "+Math.round((Date.now()-exp)/60000)+" min"):"no"):"—");
-    return "token: "+(tk?"sí":"NO")+" · vencido: "+venc+" · refresh: "+(rt?"sí":"NO");
+    return "token: "+(tk?"sí":"NO")+" · vencido: "+venc+" · refresh: "+(rt?"sí":"NO")+(_agRefreshErr?(" · "+_agRefreshErr):"");
   }catch(e){ return ""; }
 }
 function _agConnect(){
@@ -2165,19 +2165,10 @@ function _agRender(d){
     var dl=_agDayLabel(e.start);
     if(dl!==lastDay){ html+="<div class='cp-eyebrow' style='margin:9px 0 2px'>"+esc(dl)+"</div>"; lastDay=dl; }
     var typ=_agTypeForEvent(e); var col=(typ&&typ.color)||"#8C7B80"; var ico=(typ&&typ.icon)||"🗓️";
-    // Avatar del evento (también es el botón para cambiar el tipo):
-    //  · Si es reunión coach + cliente de Pathway → mostramos las DOS fotos.
-    //  · Si no → un círculo con el EMOJI del tipo, teñido con su color.
-    var _cli=_agMatchClient(e.title); var _coachPhoto=(COACH&&COACH.photo)||"";
-    var _avInner;
-    if(_cli && _cli.photo){
-      _avInner="<span style='display:inline-flex;align-items:center'>"+
-        (_coachPhoto?"<img src='"+esc(_coachPhoto)+"' alt='' style='width:26px;height:26px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-shadow:0 0 0 1px var(--pw-border)'>":"")+
-        "<img src='"+esc(_cli.photo)+"' alt='' style='width:26px;height:26px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-shadow:0 0 0 1px var(--pw-border);"+(_coachPhoto?"margin-left:-9px":"")+"'>"+
-      "</span>";
-    } else {
-      _avInner="<span style='width:28px;height:28px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:14px'>"+ico+"</span>";
-    }
+    // Avatar = círculo con el EMOJI del tipo (teñido con su color). NO adivinamos
+    // fotos de clientes: Google no da la foto de los invitados y el match por
+    // nombre se equivocaba (mostraba la cara de otro). El icono nunca miente.
+    var _avInner="<span style='width:28px;height:28px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:14px'>"+ico+"</span>";
     var av="<button data-act='ag-evtype' data-key=\""+esc(_agEvKey(e))+"\" data-title=\""+esc(e.title||"")+"\" title='Cambiar tipo de evento' style='background:none;border:none;cursor:pointer;padding:0;flex-shrink:0;display:flex;align-items:center'>"+_avInner+"</button>";
     var tname=(typ&&typ.label)?("<button data-act='ag-evtype' data-key=\""+esc(_agEvKey(e))+"\" data-title=\""+esc(e.title||"")+"\" style='display:inline-flex;align-items:center;gap:4px;background:"+col+"14;border:1px solid "+col+"55;border-radius:100px;padding:2px 8px;cursor:pointer;flex-shrink:0'><span style='font-size:10px;font-weight:700;color:"+col+";max-width:74px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(typ.label)+"</span></button>"):"<button data-act='ag-evtype' data-key=\""+esc(_agEvKey(e))+"\" data-title=\""+esc(e.title||"")+"\" style='font-size:10px;font-weight:700;color:var(--pw-text-muted);background:none;border:1px dashed var(--pw-border);border-radius:100px;padding:2px 8px;cursor:pointer;flex-shrink:0'>+ tipo</button>";
     var link=(e.location&&/^https?:\/\//.test(e.location))?e.location:"";
@@ -2306,9 +2297,19 @@ function viewAgModal(){
     var curLbl=(g.label!=null)?g.label:(t.label||"");
     var colDots=_AG_COLORS.map(function(c){ var on=(curCol===c); return "<button data-act='ag-pick-color' data-c='"+c+"' title='color' style='width:30px;height:30px;border-radius:50%;background:"+c+";border:3px solid "+(on?"#fff":"transparent")+";box-shadow:0 0 0 "+(on?"2px "+c:"1px var(--pw-border)")+";cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800'>"+(on?"✓":"")+"</button>"; }).join("");
     var icoBtns=_AG_ICONS.map(function(ic){ var on=(curIco===ic); return "<button data-act='ag-pick-icon' data-ic='"+ic+"' style='width:32px;height:32px;border-radius:9px;background:"+(on?"var(--pw-success-bg)":"#fff")+";border:2px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";cursor:pointer;font-size:16px'>"+ic+"</button>"; }).join("");
+    // Quién atiende este tipo: vos + el equipo que agregues. El link del tipo
+    // muestra a TODOS los elegidos para que reserven con cualquiera.
+    var _curPpl=(g.people!=null)?g.people:((Object.prototype.toString.call(t.people)==="[object Array]"&&t.people.length)?t.people.slice():[(RME&&RME.id)]);
+    if(RME&&RME.id&&_curPpl.indexOf(RME.id)<0) _curPpl.unshift(RME.id);
+    var _pplHtml;
+    if(_AG_TEAM===null) _pplHtml="<div style='font-size:12px;color:var(--pw-text-muted)'>Cargando equipo…</div>";
+    else if(!(_AG_TEAM&&_AG_TEAM.length)) _pplHtml="<div style='font-size:12px;color:var(--pw-text-muted)'>Solo vos por ahora. Creá empleados para agregarlos.</div>";
+    else _pplHtml="<div style='display:flex;gap:6px;flex-wrap:wrap'>"+_AG_TEAM.map(function(m){ var on=(_curPpl.indexOf(m.id)>=0); var isMe=(RME&&String(m.id)===String(RME.id));
+      return "<button data-act='ag-pick-person' data-id='"+esc(m.id)+"'"+(isMe?" disabled":"")+" style='display:inline-flex;align-items:center;gap:5px;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";border-radius:100px;padding:5px 12px;font-size:12px;font-weight:600;cursor:"+(isMe?"default":"pointer")+";color:var(--pw-carbon);font-family:inherit;opacity:"+(isMe?"1":"1")+"'>"+(on?"✓ ":"")+esc((""+(m.nombre||m.email)).split(" ")[0])+(isMe?" (vos)":"")+"</button>"; }).join("")+"</div>";
     body="<div class='cp-form-row'><label class='cp-form-label'>Nombre</label><input id='ag-type-input' class='cp-form-input' value=\""+esc(curLbl)+"\" placeholder='Ej. Sesión 45 min'></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Color <span style='color:var(--pw-text-muted);font-weight:400'>— así se distingue en el calendario</span></label><div style='display:flex;gap:10px;flex-wrap:wrap;padding-top:2px'>"+colDots+"</div></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Icono <span style='color:var(--pw-text-muted);font-weight:400'>— se muestra en la agenda</span></label><div style='display:flex;gap:7px;flex-wrap:wrap;padding-top:2px'>"+icoBtns+"</div></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Quién atiende <span style='color:var(--pw-text-muted);font-weight:400'>— el link muestra a los elegidos</span></label>"+_pplHtml+"</div>"+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-type'>Guardar</button></div>";
   } else if(g.mode==="link"){
     ttl="Link para que reserven";
@@ -2334,12 +2335,21 @@ function viewAgModal(){
     ttl="Agendar cita";
     var opts=types.map(function(x,ix){ return "<option value='"+ix+"'"+(((g.i===ix)||(g.i<0&&ix===0))?" selected":"")+">"+esc(x.label||"Evento")+"</option>"; }).join("");
     var _d=new Date(); var _dv=_d.getFullYear()+"-"+("0"+(_d.getMonth()+1)).slice(-2)+"-"+("0"+_d.getDate()).slice(-2);
+    // Invitar a un miembro del equipo (Gonzalo u otros) al evento → les llega la
+    // invitación de Google. Es lo que reemplaza el flujo de Calendly.
+    var _team=(_AG_TEAM||[]).filter(function(m){ return m && m.email && (!RME || String(m.id)!==String(RME.id)); });
+    var _tg=(g.team||[]); var _teamInner;
+    if(_AG_TEAM===null) _teamInner="<div style='font-size:12px;color:var(--pw-text-muted)'>Cargando equipo…</div>";
+    else if(!_team.length) _teamInner="<div style='font-size:12px;color:var(--pw-text-muted)'>No hay compañeros para invitar (creá empleados en tu equipo).</div>";
+    else _teamInner="<div style='display:flex;gap:6px;flex-wrap:wrap'>"+_team.map(function(m){ var on=(_tg.indexOf(m.email)>=0); return "<button data-act='ag-team' data-email='"+esc(m.email)+"' style='display:inline-flex;align-items:center;gap:5px;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";border-radius:100px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--pw-carbon);font-family:inherit'>"+(on?"✓ ":"")+esc((""+(m.nombre||m.email)).split(" ")[0])+"</button>"; }).join("")+"</div>";
+    var _teamHtml="<div class='cp-form-row'><label class='cp-form-label'>Invitar al equipo</label>"+_teamInner+"</div>";
     body="<div class='cp-form-row'><label class='cp-form-label'>Tipo</label><select id='ag-cita-type' class='cp-form-input'>"+opts+"</select></div>"+
       "<div class='cp-form-row-2'>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Día</label><input type='date' id='ag-cita-date' class='cp-form-input' value='"+_dv+"'></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Hora</label><input type='time' id='ag-cita-time' class='cp-form-input' value='10:00'></div>"+
       "</div>"+
-      "<div class='cp-form-row'><label class='cp-form-label'>Con quién (email, opcional)</label><input id='ag-cita-guest' class='cp-form-input' placeholder='cliente@email.com'></div>"+
+      _teamHtml+
+      "<div class='cp-form-row'><label class='cp-form-label'>Otro invitado (email, opcional)</label><input id='ag-cita-guest' class='cp-form-input' placeholder='cliente@email.com'></div>"+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:14px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-agendar'>Agendar cita</button></div>";
   } else if(g.mode==="disp"){
     ttl="Mi disponibilidad";
@@ -2365,7 +2375,7 @@ function viewAgModal(){
 // Renueva el access_token de Google con el refresh_token (vía edge function
 // gcal-refresh, que es la única que puede usar el client_secret). Así la conexión
 // no se cae cada hora. Si falla o tarda, cae al botón de reconectar (como antes).
-var _agRefreshTried=false;
+var _agRefreshTried=false, _agRefreshErr="";
 function _agRefresh(){
   var g=(REAL&&RCFG&&RCFG.gcal)?RCFG.gcal:null;
   var b0=document.getElementById("cp-agenda-body");
@@ -2375,18 +2385,23 @@ function _agRefresh(){
   var done=false;
   var to=setTimeout(function(){ if(done)return; done=true; var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agConnect(); }, 12000);
   fetch(SB+"/functions/v1/gcal-refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refresh_token:g.refresh_token})})
-    .then(function(r){ return r.ok?r.json():null; })
-    .then(function(d){
+    .then(function(r){ return r.text().then(function(t){ return {ok:r.ok,status:r.status,t:t}; }); })
+    .then(function(res){
       if(done)return; done=true; clearTimeout(to);
       var b=document.getElementById("cp-agenda-body");
-      if(!d || !d.access_token){ if(b) b.innerHTML=_agConnect(); return; }
+      var d=null; try{ d=JSON.parse(res.t); }catch(e){}
+      if(!res.ok || !d || !d.access_token){
+        _agRefreshErr="renovar "+res.status+": "+((d&&d.error)||(""+(res.t||"")).slice(0,70)||"sin respuesta");
+        if(b) b.innerHTML=_agConnect(); return;
+      }
+      _agRefreshErr="";
       var ng={}; for(var k in g){ if(g.hasOwnProperty(k)) ng[k]=g[k]; } ng.access_token=d.access_token; ng.expiry=d.expiry||(Date.now()+3600000);
       var merged={}; for(var j in RCFG){ if(RCFG.hasOwnProperty(j)) merged[j]=RCFG[j]; } merged.gcal=ng; RCFG=merged;
       try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
       if(RME&&RME.id) _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).catch(function(){});
       _agendaLoad();
     })
-    .catch(function(){ if(done)return; done=true; clearTimeout(to); var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agConnect(); });
+    .catch(function(e){ if(done)return; done=true; clearTimeout(to); _agRefreshErr="renovar: no se pudo llamar a la función ("+((e&&e.message)||"red")+")"; var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agConnect(); });
 }
 function _agendaLoad(){
   var body=document.getElementById("cp-agenda-body"); if(!body) return;
@@ -2425,6 +2440,14 @@ function _agendaLoad(){
 // ═══ Reservas (citas del link público agendar.html) ═══
 // Las reservas que entran por el link viven en la tabla `citas`. Acá el coach
 // las ve dentro del panel (no solo en su Google) y las marca confirmada/cancelada.
+// Miembros del equipo (admin + empleados activos) para invitar a un evento.
+var _AG_TEAM=null, _agTeamReq=false;
+function _agTeamLoad(){
+  if(_AG_TEAM || _agTeamReq) return; _agTeamReq=true;
+  _sb("usuarios?rol=in.(admin,empleado)&activo=eq.true&select=id,nombre,email&order=rol.asc")
+    .then(function(rows){ _AG_TEAM=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; if(state.ag&&(state.ag.mode==="cita"||state.ag.mode==="edit"||state.ag.mode==="new")){ try{ render(); }catch(e){} } })
+    .catch(function(){ _AG_TEAM=[]; if(state.ag){ try{ render(); }catch(e){} } });
+}
 var _RES_DATA=null;
 function _resCard(){
   return "<div class='cp-card' style='margin-bottom:16px'>"+
@@ -5480,11 +5503,13 @@ document.addEventListener("click", function(ev){
   // Agenda: tipos de evento + agendar cita. TODO con modales Pathway (nada de
   // prompts del navegador). Se guarda en el perfil por REST (saveCfg).
   if(act==="ag-open"){ state.ag={mode:"menu", i:parseInt(el.getAttribute("data-i"),10)}; render(); return; }
-  if(act==="ag-new"){ state.ag={mode:"new", i:-1, color:_AG_COLORS[0], icon:_AG_ICONS[0]}; render(); return; }
-  if(act==="ag-cita"){ var _ci=el.getAttribute("data-i"); state.ag={mode:"cita", i:_ci!=null?parseInt(_ci,10):-1}; render(); return; }
+  if(act==="ag-new"){ state.ag={mode:"new", i:-1, color:_AG_COLORS[0], icon:_AG_ICONS[0], people:[(RME&&RME.id)]}; _agTeamLoad(); render(); return; }
+  if(act==="ag-cita"){ var _ci=el.getAttribute("data-i"); state.ag={mode:"cita", i:_ci!=null?parseInt(_ci,10):-1, team:[]}; _agTeamLoad(); render(); return; }
+  if(act==="ag-team"){ if(state.ag){ var _em=el.getAttribute("data-email"); var _tt=(state.ag.team||[]).slice(); var _ix=_tt.indexOf(_em); if(_ix>=0) _tt.splice(_ix,1); else _tt.push(_em); state.ag.team=_tt; } render(); return; }
   if(act==="ag-close"){ state.ag=null; render(); return; }
   if(act==="ag-stop"){ return; }
-  if(act==="ag-to-edit"){ var _et=_agTypes(); var _ei=(state.ag&&state.ag.i); var _eo=(_ei>=0&&_ei<_et.length)?_et[_ei]:{}; state.ag={mode:"edit", i:_ei, label:(_eo.label||""), color:(_eo.color||_AG_COLORS[0]), icon:(_eo.icon||_AG_ICONS[0])}; render(); return; }
+  if(act==="ag-to-edit"){ var _et=_agTypes(); var _ei=(state.ag&&state.ag.i); var _eo=(_ei>=0&&_ei<_et.length)?_et[_ei]:{}; var _ppl=(Object.prototype.toString.call(_eo.people)==="[object Array]"&&_eo.people.length)?_eo.people.slice():[(RME&&RME.id)]; state.ag={mode:"edit", i:_ei, label:(_eo.label||""), color:(_eo.color||_AG_COLORS[0]), icon:(_eo.icon||_AG_ICONS[0]), people:_ppl}; _agTeamLoad(); render(); return; }
+  if(act==="ag-pick-person"){ if(state.ag){ var _pl3=document.getElementById("ag-type-input"); if(_pl3) state.ag.label=_pl3.value; var _pid=el.getAttribute("data-id"); if(RME&&String(_pid)===String(RME.id)) { render(); return; } var _pp=(state.ag.people||[]).slice(); var _pix=_pp.indexOf(_pid); if(_pix>=0) _pp.splice(_pix,1); else _pp.push(_pid); state.ag.people=_pp; } render(); return; }
   if(act==="ag-to-link"){ state.ag={mode:"link", i:(state.ag&&state.ag.i)}; render(); return; }
   if(act==="ag-pick-color"){ if(state.ag){ var _pl=document.getElementById("ag-type-input"); if(_pl) state.ag.label=_pl.value; state.ag.color=el.getAttribute("data-c"); } render(); return; }
   if(act==="ag-pick-icon"){ if(state.ag){ var _pl2=document.getElementById("ag-type-input"); if(_pl2) state.ag.label=_pl2.value; state.ag.icon=el.getAttribute("data-ic"); } render(); return; }
@@ -5524,7 +5549,9 @@ document.addEventListener("click", function(ev){
     var _tv=(""+_val("ag-type-input")).trim(); if(!_tv){ toast("Escribí un nombre."); return; }
     var _tt=_agTypes().slice(); var _gi=(state.ag&&state.ag.i);
     var _tc=(state.ag&&state.ag.color)||_AG_COLORS[0], _tic=(state.ag&&state.ag.icon)||_AG_ICONS[0];
-    var _tobj={label:_tv, color:_tc, icon:_tic};
+    var _tpl=(state.ag&&Object.prototype.toString.call(state.ag.people)==="[object Array]")?state.ag.people.filter(Boolean):[(RME&&RME.id)];
+    if(RME&&RME.id&&_tpl.indexOf(RME.id)<0) _tpl.unshift(RME.id);
+    var _tobj={label:_tv, color:_tc, icon:_tic, people:_tpl};
     if(state.ag&&state.ag.mode==="new"){ _tt.push(_tobj); } else if(_gi>=0&&_gi<_tt.length){ _tt[_gi]=_tobj; }
     state.ag=null; saveCfg({event_types:_tt}); return;
   }
@@ -5542,6 +5569,7 @@ document.addEventListener("click", function(ev){
     var _aen=new Date(_ast.getTime()+_adur*60000);
     var _afmt=function(x){ return x.getFullYear()+("0"+(x.getMonth()+1)).slice(-2)+("0"+x.getDate()).slice(-2)+"T"+("0"+x.getHours()).slice(-2)+("0"+x.getMinutes()).slice(-2)+"00"; };
     var _au="https://calendar.google.com/calendar/u/0/r/eventedit?text="+encodeURIComponent(_atl)+"&dates="+_afmt(_ast)+"/"+_afmt(_aen);
+    var _team=(state.ag&&state.ag.team)||[]; _team.forEach(function(em){ if(em) _au+="&add="+encodeURIComponent(em); });
     if(_ag2) _au+="&add="+encodeURIComponent(_ag2);
     state.ag=null;
     var _aw=window.open(_au,"_blank","noopener"); if(!_aw) location.href=_au;
