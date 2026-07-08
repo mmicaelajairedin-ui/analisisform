@@ -773,6 +773,150 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "chat: el nombre del cliente se escapa (anti-XSS)",
+    bug: "En la mensajería de cliente.html el nombre propio del cliente se metía " +
+         "crudo (sin hh()) mientras el resto sí se escapaba. Un nombre con HTML " +
+         "inyecta código — y el coach lo ejecuta al abrir el portal en coach_view.",
+    check() {
+      const s = read("cliente.html");
+      if (!s) return null;
+      return /isCoach\?hh\(COACH_FIRST\):nombre\)/.test(s)
+        ? "cliente.html: el nombre del cliente en el chat volvió a ir sin hh() (XSS)." : null;
+    },
+  },
+  {
+    name: "juego: abrirJuego una sola vez (registra el refresco de medalla)",
+    bug: "abrirJuego estaba definida DOS veces en fit/fin; por hoisting ganaba la " +
+         "simple, que NO seteaba PW_GAME_ONCLOSE → la medalla no se refrescaba al " +
+         "cerrar el juego. Debe quedar UNA sola def, la que registra el callback.",
+    check() {
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f); if (!s) continue;
+        const n = (s.match(/function abrirJuego\s*\(/g) || []).length;
+        if (n > 1) return f + ": abrirJuego está definida " + n + " veces (debe ser 1).";
+        if (n === 1 && !/PW_GAME_ONCLOSE/.test(s))
+          return f + ": abrirJuego ya no registra PW_GAME_ONCLOSE (la medalla no se refresca).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "aislamiento: PATCH/DELETE de candidatos por id lleva cg() (multi-tenant)",
+    bug: "El guard cg() (coach_id del coach logueado) estaba definido pero NUNCA " +
+         "aplicado a las escrituras de candidatos → un coach podía escribir sobre " +
+         "un candidato de otro coach conociendo su UUID. _sbw debe aplicar cg() a " +
+         "todo PATCH/DELETE de candidatos?id=eq.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const i = s.indexOf("function _sbw(");
+      if (i < 0) return "panel-v2.html: no se encuentra _sbw.";
+      const block = s.slice(i, i + 1100);
+      return /p \+= cg\(\)/.test(block)
+        ? null : "panel-v2.html: _sbw ya no aplica cg() a los PATCH/DELETE de candidatos?id= (fuga multi-tenant).";
+    },
+  },
+  {
+    name: "finanzas: guardado de objetivos/patrimonio/sesiones es merge-safe",
+    bug: "El cliente escribía fin_objetivos/fin_patrimonio/sesiones_registro con " +
+         "su snapshot en memoria → pisaba lo que el coach acababa de escribir. " +
+         "Debe re-leer la columna fresca antes de guardar (_sbColSave) y fusionar.",
+    check() {
+      const s = read("pathway-fin-cliente.html");
+      if (!s) return null;
+      if (!/function _sbColSave\(/.test(s))
+        return "pathway-fin-cliente.html: falta _sbColSave (guardado merge-safe).";
+      // _objSave y _patSave NO deben hacer un sbPatch directo de su columna.
+      if (/function _objSave\([^)]*\)\{[^}]*sbPatch\('candidatos'[^}]*fin_objetivos/.test(s.replace(/\s+/g, " ")))
+        return "pathway-fin-cliente.html: _objSave volvió a hacer sbPatch directo (pisa al coach).";
+      return null;
+    },
+  },
+  {
+    name: "panel: coach fusiona hilos de comentarios al guardar fin_objetivos",
+    bug: "El coach guardaba fin_objetivos desde su snapshot → pisaba los " +
+         "comentarios (hilo) que el cliente escribió. _finArrSave debe re-leer y " +
+         "fusionar los hilos (_hiloMerge) para fin_objetivos.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function _hiloMerge\(/.test(s)) return "panel-v2.html: falta _hiloMerge.";
+      const i = s.indexOf("function _finArrSave(");
+      if (i < 0) return "panel-v2.html: no se encuentra _finArrSave.";
+      return /_hiloMerge/.test(s.slice(i, i + 1600)) ? null
+        : "panel-v2.html: _finArrSave ya no fusiona los hilos (pisa comentarios del cliente).";
+    },
+  },
+  {
+    name: "carrera: la foto se persiste vía edge function (resiste RLS)",
+    bug: "cliente.html guardaba la foto con un PATCH anónimo por email. Con RLS " +
+         "estricto ese PATCH haría no-op silencioso → la foto se perdería en el " +
+         "próximo dispositivo. Debe ir por guardar-intake (service role) con " +
+         "fallback a PATCH, como fit/fin.",
+    check() {
+      const s = read("cliente.html");
+      if (!s) return null;
+      return /functions\/v1\/guardar-intake[\s\S]{0,220}foto_perfil/.test(s)
+        ? null : "cliente.html: la foto ya no se guarda vía guardar-intake (se romperá al activar RLS).";
+    },
+  },
+  {
+    name: "reservas: no hay doble-booking (lee citas + re-chequea al confirmar)",
+    bug: "reservar.html generaba los horarios solo desde la disponibilidad y NUNCA " +
+         "leía la tabla citas → dos personas podían reservar el mismo turno. Debe " +
+         "cargar las citas tomadas (loadCitas), marcarlas ocupadas, y re-chequear " +
+         "el hueco JUSTO antes de confirmar.",
+    check() {
+      for (const f of ["reservar.html", "agendar.html"]) {
+        const s = read(f); if (!s) continue;
+        if (!/function loadCitas\(/.test(s) || !/TAKEN/.test(s))
+          return f + ": ya no carga/marca los horarios tomados (riesgo de doble-booking).";
+        // Debe re-chequear en confirmar antes del POST.
+        if (!/inicio=eq\.[\s\S]{0,80}estado=neq\.cancelada[\s\S]{0,400}_commit/.test(s.replace(/\n/g, " ")))
+          return f + ": confirmar ya no re-chequea el hueco contra citas antes de reservar.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "puntos: coach y cliente ven la MISMA medalla (por puntos, no semana)",
+    bug: "El cliente calculaba la medalla por PUNTOS y el coach por semana_activa " +
+         "→ medallas distintas para la misma persona. Ahora el cliente persiste su " +
+         "total (candidatos.puntos) y el coach lo lee con los mismos umbrales.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p && !/c\.puntos/.test(p))
+        return "panel-v2.html: el coach ya no lee candidatos.puntos (volvió a la medalla por semana_activa, se desincroniza del cliente).";
+      // Los 3 portales deben persistir puntos y el mejor puntaje del juego.
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f); if (!s) continue;
+        if (!/PW_GAME_SYNC\s*=\s*function/.test(s))
+          return f + ": falta PW_GAME_SYNC (el puntaje del juego no se persiste → la medalla baja entre dispositivos).";
+        if (!/\{\s*puntos\s*:/.test(s))
+          return f + ": ya no persiste 'puntos' a Supabase (el coach no vería la misma medalla).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "finanzas: pwInit elige la ficha más completa y recupera coach_id",
+    bug: "El portal de finanzas tomaba rows[0] sin dedup → un cliente con ficha " +
+         "duplicada veía la ficha vacía (sin datos ni coach). Debe ordenar por " +
+         "completitud y recuperar coach_id de cualquier duplicado (como fitness).",
+    check() {
+      const s = read("pathway-fin-cliente.html");
+      if (!s) return null;
+      const i = s.indexOf("function pwInit(");
+      if (i < 0) return "pathway-fin-cliente.html: no se encuentra pwInit.";
+      const block = s.slice(i, i + 1200);
+      if (!/_score|rows\.sort/.test(block))
+        return "pathway-fin-cliente.html: pwInit ya no elige la ficha más completa (perdió el dedup por score).";
+      if (!/if\(!CRAW\.coach_id\)/.test(block))
+        return "pathway-fin-cliente.html: pwInit ya no recupera coach_id de los duplicados.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;

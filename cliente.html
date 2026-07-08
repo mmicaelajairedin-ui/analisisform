@@ -1915,6 +1915,18 @@ function init(){
       }
     }
     C=res[0][0];
+    // Restaurar el bonus del juego desde Supabase (candidatos.game_pts) para que
+    // la medalla NO baje al cambiar de dispositivo (antes el bonus vivía solo en
+    // localStorage de cada aparato). Tomamos el mayor entre lo local y lo persistido.
+    try{
+      var _srvBest=parseInt(C.game_pts||0,10)||0;
+      if(_srvBest>0){
+        var _locBest=parseInt(localStorage.getItem('pw_game_pts_'+E)||'0',10)||0;
+        if(_srvBest>_locBest) localStorage.setItem('pw_game_pts_'+E, String(_srvBest));
+        var _srvBonus=Math.min(150,_srvBest), _locBonus=parseInt(localStorage.getItem('mj_bonus_pts_'+E)||'0',10)||0;
+        if(_srvBonus>_locBonus) localStorage.setItem('mj_bonus_pts_'+E, String(_srvBonus));
+      }
+    }catch(e){}
     // ── PRIVACY GUARD: validar ownership de coach_view ────────────
     // Si la URL trae ?coach_view=email pero el cliente NO pertenece al
     // coach logueado, bloqueamos. Sin esto, cualquier coach podría ver
@@ -2071,9 +2083,9 @@ function entrar(){
   // Sincronizar foto a localStorage y Supabase si la encontramos
   if(_fotoSrc){
     try{localStorage.setItem('mj_foto_'+E,_fotoSrc);}catch(e){}
-    // Sync a candidatos.foto_perfil si no estaba ahí
+    // Sync a candidatos.foto_perfil si no estaba ahí (vía edge function, resiste RLS)
     if(!C.foto_perfil){
-      pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:_fotoSrc}).catch(function(){});
+      try{ fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({email:E,data:{foto_perfil:_fotoSrc},coach_id:(C&&C.coach_id)||''})}).then(function(r){ if(!r||!r.ok) pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:_fotoSrc}).catch(function(){}); }).catch(function(){ pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:_fotoSrc}).catch(function(){}); }); }catch(e){}
       C.foto_perfil=_fotoSrc;
     }
   }
@@ -2134,7 +2146,10 @@ function entrar(){
         body:f
       }).then(function(r){ if(!r.ok) throw 0;
         var url=SB+'/storage/v1/object/public/avatars/'+path;
-        pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:url}).catch(function(){});
+        // Persistir vía edge function (service role) con fallback a PATCH: así la
+        // foto se guarda aunque se active RLS estricto (el PATCH anónimo por email
+        // haría no-op silencioso y la foto se perdería en el próximo dispositivo).
+        try{ fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({email:E,data:{foto_perfil:url},coach_id:(C&&C.coach_id)||''})}).then(function(r){ if(!r||!r.ok) pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:url}).catch(function(){}); }).catch(function(){ pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:url}).catch(function(){}); }); }catch(e){}
         C.foto_perfil=url; try{localStorage.setItem('mj_foto_'+E,url);}catch(e){}
         ['sb-avatar-wrap','top-avatar','sb-uav'].forEach(function(id){ var el=document.getElementById(id); if(!el)return; el.innerHTML=''; var im=document.createElement('img'); im.src=url; im.style.cssText='width:100%;height:100%;object-fit:cover;display:block;'+(id==='sb-uav'?'border-radius:50%;':''); el.appendChild(im); });
         var mob=document.getElementById('mob-avatar'); if(mob) mob.innerHTML='<img src="'+url+'" style="width:100%;height:100%;object-fit:cover;border-radius:10px;">';
@@ -2323,6 +2338,13 @@ var JUEGO_BONUS_MAX=150;
 function abrirJuego(){
   try{
     window.PW_GAME_EMAIL=E;
+    // Persistir el mejor puntaje del juego a Supabase (nunca baja) para que el
+    // bonus de la medalla no se pierda entre dispositivos.
+    window.PW_GAME_SYNC=function(n){
+      try{ n=parseInt(n,10)||0; var cur=parseInt((C&&C.game_pts)||0,10)||0; if(n<=cur||COACH_PREVIEW) return;
+        if(C) C.game_pts=n; pt('candidatos','email=eq.'+encodeURIComponent(E),{game_pts:n}).catch(function(){});
+      }catch(e){}
+    };
     window.PW_GAME_ONCLOSE=function(){
       try{
         var best=parseInt(localStorage.getItem('pw_game_pts_'+E)||'0',10)||0;
@@ -2377,6 +2399,9 @@ function updSbMedal(){
   var achs=getAchievements();
   var pts=getPoints();
   var m=getMedalInfo(pts);
+  // Persistir el total a Supabase (fuente única) para que el COACH vea la MISMA
+  // medalla que el cliente. No se persiste en modo coach_view (solo lectura).
+  try{ if(E && !COACH_PREVIEW && C){ var _pp=parseInt(C.puntos!=null?C.puntos:-1,10); if(_pp!==pts){ C.puntos=pts; pt('candidatos','email=eq.'+encodeURIComponent(E),{puntos:pts}).catch(function(){}); } } }catch(e){}
 
   // Detectar achievements recién desbloqueados (desde la última vez)
   var prevDoneKey='mj_achs_done_'+E;
@@ -5111,7 +5136,7 @@ function _renderMsgs(){
     var isCoach=m.from==='coach';
     var av=isCoach?_cAv(COACH_PHOTO_URL,COACH_FIRST):_cAv(C&&C.foto_perfil,(C&&C.nombre)||nombre);
     var bubble='<div style="max-width:85%;padding:9px 13px;border-radius:'+(isCoach?'4px 14px 14px 14px':'14px 4px 14px 14px')+';background:'+(isCoach?'var(--brand-light)':'#EAF0FA')+';font-size:12px;color:var(--text);line-height:1.5;">'
-        +'<div style="font-size:9px;font-weight:700;color:'+(isCoach?'var(--brand)':'var(--blue)')+';margin-bottom:2px;">'+(isCoach?hh(COACH_FIRST):nombre)+'</div>'
+        +'<div style="font-size:9px;font-weight:700;color:'+(isCoach?'var(--brand)':'var(--blue)')+';margin-bottom:2px;">'+(isCoach?hh(COACH_FIRST):hh(nombre))+'</div>'
         +hh(m.text)
         +'<div style="font-size:9px;color:var(--muted);margin-top:3px;text-align:right;">'+hh(m.time||'')+'</div>'
       +'</div>';

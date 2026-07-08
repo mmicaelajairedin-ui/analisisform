@@ -293,12 +293,14 @@ Cada coach ve solo sus candidatos/informes/CVs. Estado actual del aislamiento:
 
 Admin (`ME.rol==='admin'`) ve los suyos + huerfanos (`coach_id IS NULL`).
 
-### Capa 2 — Defense-in-depth con coachGuard() (HECHO)
-Helper `coachGuard()` (linea ~1303) devuelve `&coach_id=eq.<ME.id>` para
-no-admin. Aplicado a queries individuales PATCH/DELETE criticas (toggle
-activo, sesiones_registro). Si un coach intenta escribir con un `id` ajeno
-(p.ej. abriendo devtools y haciendo PATCH con un UUID conocido), la query
-no matchea ninguna fila y no escribe nada.
+### Capa 2 — Defense-in-depth con cg()/coachGuard() (HECHO)
+Helper `cg()` en panel-v2 (y `coachGuard()` en el panel viejo) devuelve
+`&coach_id=eq.<ME.id>` para no-admin, `""` para admin. **Aplicado de forma
+CENTRALIZADA en `_sbw()`**: todo PATCH/DELETE a `candidatos?id=eq.` recibe
+`+cg()` automaticamente (una sola fuente, cubre los ~30 sitios). Si un coach
+intenta escribir con un `id` ajeno (p.ej. devtools + UUID conocido), la query
+no matchea ninguna fila y no escribe nada. Guardrail lo protege.
+(Antes cg() estaba definido pero NUNCA aplicado — fuga real, ya cerrada.)
 
 ### Capa 3 — RLS estricto en Supabase (PENDIENTE)
 **GAP DE SEGURIDAD CONOCIDO**: las tablas `candidatos`, `informes`,

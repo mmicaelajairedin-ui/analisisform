@@ -6878,11 +6878,24 @@ document.addEventListener("click", function(ev){
   }
   function _finArrSave(id,col,arr,msg){
     var fc=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0];
-    var j=JSON.stringify(arr); var p={}; p[col]=j;
-    if(fc && fc._example){ fc.raw[col]=j; toast(msg+" (demo)"); render(); return; }
-    _sbw("candidatos?id=eq."+encodeURIComponent(id),"PATCH",p)
-      .then(function(r){ if(!r.ok) throw 0; if(fc&&fc.raw) fc.raw[col]=j; toast(msg); render(); })
-      .catch(function(){ alert("No se pudo guardar. ¿Aplicaste la migración nicho_extra_fields.sql en Supabase?"); });
+    if(fc && fc._example){ fc.raw[col]=JSON.stringify(arr); toast(msg+" (demo)"); render(); return; }
+    var _write=function(finalArr){
+      var j=JSON.stringify(finalArr); var p={}; p[col]=j;
+      return _sbw("candidatos?id=eq."+encodeURIComponent(id),"PATCH",p)
+        .then(function(r){ if(!r.ok) throw 0; if(fc&&fc.raw) fc.raw[col]=j; toast(msg); render(); })
+        .catch(function(){ alert("No se pudo guardar. ¿Aplicaste la migración nicho_extra_fields.sql en Supabase?"); });
+    };
+    // Merge-safe: si es fin_objetivos, re-leo la columna FRESCA y fusiono los
+    // hilos de comentarios de cada meta (por si el cliente comentó mientras),
+    // así el guardado del coach no pisa los mensajes del cliente.
+    if(col==="fin_objetivos"){
+      _sb("candidatos?id=eq."+encodeURIComponent(id)+"&select="+col).then(function(rows){
+        var fresh=_chatArr(rows&&rows[0]?rows[0][col]:"[]");
+        var fBy={}; fresh.forEach(function(o){ fBy[_finK(o)]=o; });
+        var merged=(arr||[]).map(function(o){ var f=fBy[_finK(o)]; if(f&&((f.hilo&&f.hilo.length)||(o.hilo&&o.hilo.length))){ var m={}; for(var k in o) m[k]=o[k]; m.hilo=_hiloMerge(f.hilo,o.hilo); return m; } return o; });
+        _write(merged);
+      }).catch(function(){ _write(arr); });
+    } else { _write(arr); }
   }
   if(act==="fin-obj-add"){
     var foid=el.getAttribute("data-id"); if(!foid) return;
@@ -7575,6 +7588,11 @@ function _sbw(p,method,body){
   // que cualquier acción del demo (guardar antro, presupuesto, semana, etc.)
   // funcione en memoria sin romperse ni quedar trabada.
   if((method==="PATCH"||method==="DELETE") && _isExampleWrite(p)){ return Promise.resolve({ok:true,status:204,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}); }
+  // Aislamiento multi-tenant (Capa 2): todo PATCH/DELETE a un candidato por id se
+  // filtra por el coach_id del coach logueado. cg() devuelve "" para admin (ve
+  // todo). Así un coach no puede escribir sobre un candidato de OTRO coach aun
+  // conociendo su UUID: la query no matchea ninguna fila y no escribe nada.
+  if((method==="PATCH"||method==="DELETE") && /^candidatos\?id=eq\./.test(p) && p.indexOf("coach_id=")<0){ p += cg(); }
   return _hdr({"Content-Type":"application/json",Prefer:"return=minimal"}).then(function(h){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); });
 }
 var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy=false;
@@ -7611,6 +7629,10 @@ function _avCollect(avc){
   return { d:newD, prog:prog };
 }
 function _chatArr(s){ try{ var a=JSON.parse(s||"[]"); return Object.prototype.toString.call(a)==="[object Array]"?a:[]; }catch(e){ return []; } }
+// Clave estable de un item de finanzas + fusión (unión) de un hilo de
+// comentarios coach↔cliente, para que al guardar no se pisen entre puntas.
+function _finK(o){ return (o&&(o.id||o.nombre))||JSON.stringify(o); }
+function _hiloMerge(a,b){ var out=[],seen={}; function mk(m){ return (m&&m.from||"")+"|"+(m&&m.text||"")+"|"+(m&&(m.ts!=null?m.ts:(m.time||""))); } [a,b].forEach(function(arr){ (arr||[]).forEach(function(m){ if(!m)return; var k=mk(m); if(seen[k])return; seen[k]=true; out.push(m); }); }); out.sort(function(x,y){ return ((x&&x.ts)||0)-((y&&y.ts)||0); }); return out; }
 // Cuenta demo: habilita el selector Carrera/Fitness/Finanzas en el sidebar.
 function _isDemoCoach(){ try{ return !!(REAL && RME && ((""+(RME.email||"")).toLowerCase()==="demo.coach@pathway.com" || (RCFG&&RCFG.demo===true))); }catch(e){ return false; } }
 // Buscador de coaches (pestaña Coaches): oculta las tarjetas que no matchean.
@@ -7925,7 +7947,15 @@ function loadReal(){
     CLIENTS = list.map(function(c,i){
       var em=(""+(c.email||"")).toLowerCase().trim();
       var wk=parseInt(c.semana_activa,10); if(!(wk>=1)) wk=1;
-      var medal = wk>=4?"oro":(wk>=3?"plata":(wk>=2?"bronce":null));
+      // Medalla UNIFICADA con el portal del cliente: por PUNTOS (candidatos.puntos,
+      // mismos umbrales 200/400/600 que PWJ.MEDALS). Antes se calculaba por
+      // semana_activa → coach y cliente veían medallas distintas para la misma
+      // persona. Si el cliente aún no persistió puntos (no entró con la versión
+      // nueva), caemos al viejo cálculo por semana para no mostrar "sin medalla".
+      var _cpts=(c.puntos!=null)?parseInt(c.puntos,10):null;
+      var medal = (_cpts!=null && _cpts>0)
+        ? (_cpts>=600?"oro":(_cpts>=400?"plata":(_cpts>=200?"bronce":null)))
+        : (wk>=4?"oro":(wk>=3?"plata":(wk>=2?"bronce":null)));
       var lastTxt="—", lastSt="mid";
       try{ var sr=JSON.parse(c.sesiones_registro||"[]"); if(sr.length&&sr[sr.length-1].fecha){ var d=Math.floor((Date.now()-new Date(sr[sr.length-1].fecha))/86400000); lastTxt=d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"); lastSt=d<=2?"fresh":(d<=7?"mid":"stale"); } }catch(e){}
       return {

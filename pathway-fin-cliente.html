@@ -425,14 +425,20 @@ function renderSesiones(c){
 // El cliente marca sus tareas; se persiste en candidatos.sesiones_registro
 // (en demo no hay CID: solo actualiza la vista).
 window.toggleSesTarea=function(idx,ti){
-  var arr=[]; try{ arr=JSON.parse((CRAW&&CRAW.sesiones_registro)||'[]')||[]; }catch(e){ return; }
-  if(!arr[idx]) return;
-  if(!arr[idx].tareas_done) arr[idx].tareas_done=[];
-  var di=arr[idx].tareas_done.indexOf(ti);
-  if(di===-1) arr[idx].tareas_done.push(ti); else arr[idx].tareas_done.splice(di,1);
-  CRAW.sesiones_registro=JSON.stringify(arr);
-  if(CID) sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{sesiones_registro:CRAW.sesiones_registro}).catch(function(){});
-  renderSesiones(CRAW);
+  var _apply=function(arr){
+    if(!arr[idx]) return null;
+    if(!arr[idx].tareas_done) arr[idx].tareas_done=[];
+    var di=arr[idx].tareas_done.indexOf(ti);
+    if(di===-1) arr[idx].tareas_done.push(ti); else arr[idx].tareas_done.splice(di,1);
+    return arr;
+  };
+  if(!CID){ // demo / sin ficha: solo vista local
+    var arr0=[]; try{ arr0=JSON.parse((CRAW&&CRAW.sesiones_registro)||'[]')||[]; }catch(e){ return; }
+    var r=_apply(arr0); if(r==null) return; CRAW.sesiones_registro=JSON.stringify(r); renderSesiones(CRAW); return;
+  }
+  // Re-lee las sesiones FRESCAS (el coach pudo agregar sesiones) antes de aplicar
+  // el toggle, así no le pisamos lo suyo.
+  _sbColSave('sesiones_registro', _apply, function(){ renderSesiones(CRAW); });
 };
 // Red de seguridad para cuando RLS esté prendido: si una query da 401/403 (sin
 // sesión válida), mandamos a login. Mientras RLS esté apagado nunca se dispara.
@@ -625,9 +631,39 @@ var _IST='width:100%;height:38px;border:1px solid var(--border);border-radius:8p
 function _fv(id){ var e=document.getElementById(id); return e?e.value:''; }
 function _fn(id){ return parseFloat((''+_fv(id)).replace(',','.'))||0; }
 function _objLoad(){ if(_esDemo()){ try{ var v=localStorage.getItem('pw_demo_fin_objetivos'); if(v){ var a=JSON.parse(v); if(Array.isArray(a)) return a; } }catch(e){} } try{ var g=JSON.parse((CRAW&&CRAW.fin_objetivos)||'[]'); return Array.isArray(g)?g:[]; }catch(e){ return []; } }
-function _objSave(arr){ if(_esDemo()){ try{ localStorage.setItem('pw_demo_fin_objetivos',JSON.stringify(arr)); }catch(e){} } if(CRAW) CRAW.fin_objetivos=JSON.stringify(arr); if(CID){ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fin_objetivos:JSON.stringify(arr)}).catch(function(){}); } }
+// Guardado merge-safe de una columna JSON de candidatos: re-lee la columna
+// FRESCA de la base y recién ahí aplica el cambio, para NO pisar lo que escribió
+// la otra punta (el coach). applyFn(freshArr) devuelve el array a guardar.
+function _sbColSave(col, applyFn, onDone){
+  if(!CID) return;
+  sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select='+col).then(function(rows){
+    var fresh=[]; try{ fresh=JSON.parse((rows&&rows[0]&&rows[0][col])||'[]')||[]; }catch(e){}
+    if(!Array.isArray(fresh)) fresh=[];
+    var out=applyFn(fresh); if(out==null) return;
+    var j=JSON.stringify(out); if(CRAW) CRAW[col]=j;
+    var patch={}; patch[col]=j;
+    return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),patch).then(function(){ if(typeof onDone==='function') onDone(); });
+  }).catch(function(){});
+}
+// Fusiona objetivos/patrimonio preservando lo que escribió el coach: el CLIENTE
+// manda en qué items existen (agregar/borrar), pero los comentarios (hilo) y la
+// nota/aporte que puso el coach se conservan del remoto (no se pisan).
+function _finKey(o){ return (o&&(o.id||o.nombre))||JSON.stringify(o); }
+function _mergeFinArr(fresh, local){
+  if(!Array.isArray(fresh)||!fresh.length) return local;
+  var fBy={}; fresh.forEach(function(o){ fBy[_finKey(o)]=o; });
+  return (local||[]).map(function(o){
+    var f=fBy[_finKey(o)]; if(!f) return o;
+    var m={}; for(var k in o) m[k]=o[k];
+    m.hilo=_merge(f.hilo||[], o.hilo||[]);
+    if((o.nota==null||o.nota==='') && f.nota!=null) m.nota=f.nota;
+    if((o.aporte==null||o.aporte==='') && f.aporte!=null) m.aporte=f.aporte;
+    return m;
+  });
+}
+function _objSave(arr){ if(_esDemo()){ try{ localStorage.setItem('pw_demo_fin_objetivos',JSON.stringify(arr)); }catch(e){} if(CRAW) CRAW.fin_objetivos=JSON.stringify(arr); return; } if(CRAW) CRAW.fin_objetivos=JSON.stringify(arr); _sbColSave('fin_objetivos', function(fresh){ return _mergeFinArr(fresh, arr); }, function(){ if(typeof renderObjetivos==='function') renderObjetivos(); }); }
 function _patLoad(){ if(_esDemo()){ try{ var v=localStorage.getItem('pw_demo_fin_patrimonio'); if(v){ var a=JSON.parse(v); if(Array.isArray(a)) return a; } }catch(e){} } try{ var g=JSON.parse((CRAW&&CRAW.fin_patrimonio)||'[]'); return Array.isArray(g)?g:[]; }catch(e){ return []; } }
-function _patSave(arr){ if(_esDemo()){ try{ localStorage.setItem('pw_demo_fin_patrimonio',JSON.stringify(arr)); }catch(e){} } if(CRAW) CRAW.fin_patrimonio=JSON.stringify(arr); if(CID){ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fin_patrimonio:JSON.stringify(arr)}).catch(function(){}); } }
+function _patSave(arr){ if(_esDemo()){ try{ localStorage.setItem('pw_demo_fin_patrimonio',JSON.stringify(arr)); }catch(e){} if(CRAW) CRAW.fin_patrimonio=JSON.stringify(arr); return; } if(CRAW) CRAW.fin_patrimonio=JSON.stringify(arr); _sbColSave('fin_patrimonio', function(fresh){ return _mergeFinArr(fresh, arr); }); }
 function _deudasTotal(){ try{ return (JSON.parse((CRAW&&CRAW.fin_deudas)||'[]')||[]).reduce(function(s,d){return s+(parseFloat(d.monto)||0);},0); }catch(e){ return 0; } }
 var _OBJ_TIPOS={viaje:'✈️',ahorro:'🐷',emprendimiento:'🚀',casa:'🏠',otro:'🎯'};
 function _objIco(t){ return _OBJ_TIPOS[t]||'🎯'; }
@@ -826,10 +862,12 @@ function renderDiagnostico(d){
 var _pwGameC=null;
 function abrirJuego(){
   try{
-    window.PW_GAME_EMAIL=(_pwGameC&&_pwGameC.email)||(typeof CID!=='undefined'&&CID)||'x';
+    window.PW_GAME_EMAIL=EMAIL||(_pwGameC&&_pwGameC.email)||(typeof CID!=='undefined'&&CID)||'x';
+    window.PW_GAME_SYNC=function(n){ try{ n=parseInt(n,10)||0; var cur=parseInt((CRAW&&CRAW.game_pts)||0,10)||0; if(n<=cur||typeof CID==='undefined'||!CID) return; if(CRAW)CRAW.game_pts=n; sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{game_pts:n}).catch(function(){}); }catch(e){} };
     window.PW_GAME_ONCLOSE=function(){ try{ if(_pwGameC) applyLogrosFin(_pwGameC); }catch(e){} };
   }catch(e){}
-  if(typeof openJuego==='function') openJuego();
+  if(typeof openJuego==='function'){ openJuego(); }
+  else if(typeof showToast==='function'){ showToast('🐐 El juego se está cargando… reintentá en un momento'); }
 }
 function applyLogrosFin(c){
   var diag=false; try{ diag=!!JSON.parse(c.fin_diagnostico||'null'); }catch(e){}
@@ -848,7 +886,9 @@ function applyLogrosFin(c){
   // A <2 logros ya NO muestra "Bronce" falso (queda alineado al riel y a carrera).
   _pwGameC=c; // para refrescar la medalla al cerrar el juego
   var pts=n*100;
-  try{ pts+=Math.min(150, parseInt(localStorage.getItem('pw_game_pts_'+((c&&c.email)||(typeof CID!=='undefined'&&CID)||'x'))||'0',10)||0); }catch(e){}
+  try{ pts+=Math.min(150, parseInt(localStorage.getItem('pw_game_pts_'+(EMAIL||(c&&c.email)||(typeof CID!=='undefined'&&CID)||'x'))||'0',10)||0); }catch(e){}
+  // Persistir el total a Supabase (fuente única) → el coach ve la MISMA medalla.
+  try{ if(typeof CID!=='undefined'&&CID){ var _pp=parseInt((CRAW&&CRAW.puntos!=null)?CRAW.puntos:-1,10); if(_pp!==pts){ if(CRAW)CRAW.puntos=pts; sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{puntos:pts}).catch(function(){}); } } }catch(e){}
   var m=(window.PWJ?PWJ.medal(pts):null);
   var lbl=m?m.current.lbl:(n>=6?'Oro':n>=4?'Plata':n>=2?'Bronce':'');
   var mName=lbl?lbl.toLowerCase():'';
@@ -1191,11 +1231,9 @@ function _planVacioFin(){
   var obj=false; try{ obj=(JSON.parse((CRAW&&CRAW.fin_objetivos)||'[]')||[]).length>0; }catch(e){}
   return !diag && !pres && !obj;
 }
-function abrirJuego(){
-  try{ window.PW_GAME_EMAIL=EMAIL||'demo'; }catch(e){}
-  if(typeof openJuego==='function'){ openJuego(); }
-  else if(typeof showToast==='function'){ showToast('🐐 El juego se está cargando… reintentá en un momento'); }
-}
+/* abrirJuego unificada arriba (registra PW_GAME_ONCLOSE para refrescar la
+   medalla al cerrar el juego). Se eliminó la 2da definición que ganaba por
+   hoisting y NO registraba el callback. */
 function _irFormulario(){
   if(_esDemo()){ if(typeof showToast==='function') showToast('📝 En tu portal real, este botón abre tu formulario'); return; }
   location.href='https://pathwaycareercoach.com/pathway-fin-form.html?portal=1&email='+encodeURIComponent(EMAIL)+((CRAW&&CRAW.coach_id)?('&coach='+encodeURIComponent(CRAW.coach_id)):'');
@@ -1356,7 +1394,19 @@ window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!i
 function pwInit(){
   if(_esDemo()){ CRAW=_demoCraw(); CID=null; applyClientFin(CRAW); _demoBrandFin(); return; }
   sbGet('candidatos','email=eq.'+encodeURIComponent(EMAIL)+'&select=*').then(function(rows){
-    if(rows&&rows.length){CRAW=rows[0];CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);pwMaybeConsent();pwSubGate(CRAW);_limpiarDemo();renderPrepCard();}
+    if(rows&&rows.length){
+      // El form público puede dejar duplicados (fallback INSERT) → elegimos la
+      // fila MÁS COMPLETA y, si le falta coach_id, lo tomamos de cualquier
+      // duplicado que lo tenga (mismo fix que fitness). Así el cliente ve sus
+      // datos y el link al formulario viaja con &coach= (auto-reparación).
+      var _score=function(r){ var n=0; ['situacion','ingresos','gastos','fin_pres','fin_objetivos','fin_patrimonio','fin_deudas','fin_diagnostico','foto_perfil','sesiones_registro','nombre','objetivo'].forEach(function(k){ var v=r[k]; if(v!=null){ var s=(''+v).trim(); if(s!==''&&s!=='[]'&&s!=='{}') n++; } }); return n; };
+      rows.sort(function(a,b){ var d=_score(b)-_score(a); if(d) return d; return new Date(b.created_at||0)-new Date(a.created_at||0); });
+      CRAW=rows[0];
+      if(!CRAW.coach_id){ for(var _i=0;_i<rows.length;_i++){ if(rows[_i].coach_id){ CRAW.coach_id=rows[_i].coach_id; break; } } }
+      // Restaurar el bonus del juego desde Supabase (game_pts) → la medalla no baja entre dispositivos.
+      try{ var _gk='pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CRAW.id||'x'), _srv=parseInt(CRAW.game_pts||0,10)||0; if(_srv>0 && _srv>(parseInt(localStorage.getItem(_gk)||'0',10)||0)) localStorage.setItem(_gk,String(_srv)); }catch(e){}
+      CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);pwMaybeConsent();pwSubGate(CRAW);_limpiarDemo();renderPrepCard();
+    }
     else { _clienteSinFicha(); } // Cliente REAL cuyo alta no dejó ficha → estado limpio + cartel, nunca el demo.
   }).catch(function(){ if(!_esDemo()) _clienteSinFicha(); });
 }
