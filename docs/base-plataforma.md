@@ -48,6 +48,22 @@ El chat vive en las dos puntas (portal del cliente **y** panel del coach). Hoy
 > destino ideal es un único `pw-chat.js` que todas incluyan. El contrato protege
 > el "hoy" mientras tanto.
 
+## Líneas de producto (el mapa real)
+
+La plataforma no es "1 producto con nichos": son varias líneas, algunas sobre la
+base y otras como islas.
+
+| Línea | Portal | Formulario | Panel | Estado base |
+|-------|--------|-----------|-------|-------------|
+| **Carrera** (core) | `cliente.html` | `formulario.html` | `panel-v2.html` | define la base |
+| **Fitness** (nicho) | `pathway-fit-cliente` | `pathway-fit-form` | usa `panel-v2` | sobre la base |
+| **Finanzas** (nicho) | `pathway-fin-cliente` | `pathway-fin-form` | usa `panel-v2` | sobre la base (con huecos) |
+| **Empresas** (B2B nuevo) | *(por hacer)* | *(por hacer)* | `panel-empresa` | 🟡 maqueta, isla |
+| Express | — | `cv-express` | `admin-express` | isla |
+| Marketplace | — | `registro` | `coach` / `coaches` | isla |
+| Agenda | — | `reservar`=`agendar` | — | isla |
+| *Team interno* | — | — | `empleado.html` | fuera de paridad (no es producto) |
+
 ## Estado actual (julio 2026)
 
 Portales del cliente:
@@ -58,6 +74,13 @@ Portales del cliente:
 | `pathway-fit-cliente` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `pathway-fin-cliente` | ✓ | ✓ | ✓ | ✗ | ✗ |
 
+Paneles del coach:
+
+| Panel | datos reales | pw-auth | aislamiento | chat | presencia | medalla |
+|-------|:-----------:|:-------:|:-----------:|:----:|:---------:|:-------:|
+| `panel-v2` (core+nichos) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `panel-empresa` (B2B) | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
+
 \* `cliente.html` es del linaje async y podría cargar el informe con otro patrón
 (a confirmar). Por eso está en `report`, no en `enforce`.
 
@@ -66,6 +89,23 @@ Portales del cliente:
   de nicho → candidato a bajar a la base y sumar a fin/cliente.
 - **Informe de IA** en el arranque: fitness lo carga; finanzas no lo consulta.
   ¿Finanzas debería mostrar el informe? Si sí, es un bug a cerrar.
+- **`formulario.html`** (carrera) no tiene el branding de coach (`&coach=`) que
+  sí tienen los formularios de nicho.
+
+## El producto de Empresas: cablearlo SOBRE la base (no como isla)
+
+`panel-empresa.html` hoy es **maqueta** (UI `.ecw-`, sin datos ni auth). Es el
+momento ideal para que herede el cableado en vez de reinventarlo. Al cablearlo:
+
+1. Cargar **`pw-auth.js`** (fuente única de clave/URL + JWT).
+2. Usar los **helpers `sbGet/sbPatch`** compartidos, no funciones nuevas.
+3. **🔴 Aislamiento multi-empresa (`empresaGuard`)** desde el día 1: cada query
+   filtra por `empresa_id`. Es el equivalente B2B de `coachGuard`; sin esto, una
+   empresa podría ver datos de otra (agujero de seguridad).
+4. Si tiene chat, respetar el **contrato `notas_coach` `{from,text}`**, no el
+   sistema `mensajes` aparte.
+5. Reusar **medalla + foto + presencia** del panel base (o su contrato).
+Lo que SÍ puede diferir (contenido): la UI, las columnas de datos y las preguntas.
 
 ## Cómo trabajar con esto
 

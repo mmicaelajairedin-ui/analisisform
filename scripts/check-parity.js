@@ -4,14 +4,13 @@
 // y las piezas que aparecen en varias familias (chat, guardado, presencia…)
 // deben respetar el MISMO CONTRATO en todas. Cuando se clona una pantalla y
 // se le "cae" una pieza sin querer, o alguien rompe el contrato del chat, este
-// test lo detecta.
+// test lo detecta. También sirve de GUÍA: al construir un producto nuevo,
+// muestra qué cableado falta para que nazca sobre la base y no como isla.
 //
 // Dos niveles, para crecer SIN romper nada:
 //   enforce → si falta/está mal, el test FALLA (frena el merge).
 //   report  → solo se lista como hueco pendiente (no falla). A medida que
 //             cerramos un hueco, lo pasamos de "report" a "enforce".
-//
-// Al detectar un hueco nuevo trabajando: sumarlo acá (o subir su nivel).
 //
 // Correr local:  node scripts/check-parity.js
 const fs = require("fs");
@@ -22,31 +21,96 @@ const has = (s, ...res) => res.some((re) => re.test(s));
 // SPEC — la fuente de verdad de la base. Editar esto es "definir el estándar".
 // ===========================================================================
 
-// Familias: pantallas del mismo tipo que comparten cableado.
 const FAMILIAS = {
+  // -------- PORTALES DEL CLIENTE (coaching: carrera + nichos) --------
   portales: {
-    label: "Portal del cliente",
-    // cliente.html es de otra generación (async) — se marca aparte para no
-    // exigirle patrones del linaje pathway con nombres distintos.
+    label: "Portal del cliente (coaching)",
     members: {
-      "cliente.html":              { linaje: "base" },
+      "cliente.html":              { linaje: "base" },   // carrera (async, gen. vieja)
       "pathway-fit-cliente.html":  { linaje: "pathway" },
       "pathway-fin-cliente.html":  { linaje: "pathway" },
     },
-    // Cada pieza: cómo se detecta + nivel + a qué linaje aplica (opcional).
     piezas: [
-      { key: "chat",       label: "Chat coach↔cliente (notas_coach)",
+      { key: "chat",      label: "Chat coach↔cliente (notas_coach)",
         level: "enforce", detect: (s) => has(s, /notas_coach/) },
-      { key: "subGate",    label: "Gate de suscripción vigente",
+      { key: "subGate",   label: "Gate de suscripción vigente",
         level: "enforce", detect: (s) => has(s, /pwSubGate/) },
-      { key: "consent",    label: "Gate de consentimiento",
+      { key: "consent",   label: "Gate de consentimiento",
         level: "report",  linaje: "pathway", detect: (s) => has(s, /pwConsentGate/) },
-      { key: "presencia",  label: "Presencia (latido + coach en línea)",
+      { key: "presencia", label: "Presencia (latido + coach en línea)",
         level: "report",  detect: (s) => has(s, /pwBeat|refreshCoachPresence/) },
-      { key: "informe",    label: "Carga del informe/diagnóstico de IA",
-        level: "report",  detect: (s) => has(s, /sbGet\(\s*['"]informes|applyInforme|from\s*['"]informes|rest\/v1\/informes/) },
+      { key: "informe",   label: "Carga del informe/diagnóstico de IA",
+        level: "report",  detect: (s) => has(s, /sbGet\(\s*['"]informes|applyInforme|rest\/v1\/informes/) },
     ],
   },
+
+  // -------- PANELES DEL COACH (panel-v2 = referencia; empresa = nuevo B2B) --
+  paneles: {
+    label: "Panel del coach",
+    members: {
+      "panel-v2.html":       { linaje: "core" },      // carrera + fit + fin (multi-nicho)
+      "panel-empresa.html":  { linaje: "empresa" },   // producto B2B nuevo (aún maqueta)
+    },
+    // Todo en 'report': es la GUÍA de cableado del producto nuevo, no un gate.
+    piezas: [
+      { key: "datosReales", label: "Conectado a datos reales (no maqueta)",
+        level: "report", detect: (s) => has(s, /fetch\(\s*SB|rest\/v1|PWAUTH/) },
+      { key: "pwAuth",      label: "Auth por pw-auth.js (fuente única de clave)",
+        level: "report", detect: (s) => has(s, /pw-auth\.js/) },
+      { key: "aislamiento", label: "Aislamiento multi-tenant (coach/empresa)",
+        level: "report", detect: (s) => has(s, /candFilter|coachGuard|empresaGuard|empresa_id=eq|coach_id=eq/) },
+      { key: "chat",        label: "Chat contrato notas_coach",
+        level: "report", detect: (s) => has(s, /notas_coach/) },
+      { key: "presencia",   label: "Presencia (coach/cliente en línea)",
+        level: "report", detect: (s) => has(s, /pwBeat|refreshCoachPresence|last_seen/) },
+      { key: "medalla",     label: "Medalla + foto + progreso",
+        level: "report", detect: (s) => has(s, /cp-client-medal|cp-cli-medalbadge|medalla/) },
+    ],
+  },
+
+  // -------- FORMULARIOS DE INTAKE --------
+  formularios: {
+    label: "Formulario de intake",
+    members: {
+      "formulario.html":        { linaje: "base" },
+      "pathway-fit-form.html":  { linaje: "pathway" },
+      "pathway-fin-form.html":  { linaje: "pathway" },
+    },
+    piezas: [
+      { key: "stepEngine", label: "Motor de pasos",
+        level: "report", detect: (s) => has(s, /data-step|validateStep/) },
+      { key: "draft",      label: "Autoguardado/retomar (draft)",
+        level: "report", detect: (s) => has(s, /saveDraft|restoreDraft/) },
+      { key: "intakeSave", label: "Guardado del intake (candidatos)",
+        level: "report", detect: (s) => has(s, /guardar-intake|rest\/v1\/candidatos/) },
+      { key: "coachBrand", label: "Branding del coach (link con &coach=)",
+        level: "report", detect: (s) => has(s, /_fetchCoach|_applyCoachBrand|applyBrand/) },
+    ],
+  },
+
+  // -------- EDITORES DE DOCUMENTO (herramientas del cliente) --------
+  editores: {
+    label: "Editor de documento",
+    members: {
+      "cv.html":         { linaje: "doc" },
+      "carta.html":      { linaje: "doc" },
+      "cv-express.html": { linaje: "doc" },
+      "cv-ats.html":     { linaje: "doc" },
+    },
+    piezas: [
+      { key: "supaSave",  label: "Guardado a Supabase",
+        level: "report", detect: (s) => has(s, /rest\/v1|sbUpsert|fetch\(\s*SB/) },
+      { key: "pwAuth",    label: "Auth por pw-auth.js",
+        level: "report", detect: (s) => has(s, /pw-auth\.js/) },
+      { key: "pwObserve", label: "Observabilidad (pw-observe.js)",
+        level: "report", detect: (s) => has(s, /pw-observe\.js/) },
+    ],
+  },
+};
+
+// Pantallas internas / fuera de familias de producto (no se les exige paridad).
+const FUERA_DE_PARIDAD = {
+  "empleado.html": "Team interno de Pathway (leads/comisión) — no es producto de coaching",
 };
 
 // Contratos transversales: piezas que viven en varias familias y DEBEN verse
@@ -55,15 +119,11 @@ const CONTRATOS = [
   {
     key: "chat",
     label: "Contrato del chat coach↔cliente",
-    // Aplica a toda pantalla que use notas_coach como hilo de mensajes.
     aplicaA: (f, s) => has(s, /notas_coach/) && has(s, /from\s*:/),
-    // Reglas que el mensaje debe cumplir (vocabulario compartido).
     check(f, s) {
       const errs = [];
-      // 1) el emisor se llama `from` con valores 'coach' | 'cliente'
       if (!has(s, /from\s*:\s*['"](coach|cliente)['"]/))
         errs.push("no usa from:'coach'|'cliente' (vocabulario del chat)");
-      // 2) anti-drift: no colar variantes en inglés / otras claves de emisor
       if (has(s, /from\s*:\s*['"](client|user|me)['"]/))
         errs.push("usa un valor de `from` fuera del contrato (client/user/me)");
       if (has(s, /\bsender\s*:\s*['"]/))
@@ -83,31 +143,25 @@ line("═══ PARIDAD DE FAMILIAS ═══\n");
 for (const [famKey, fam] of Object.entries(FAMILIAS)) {
   line(`▸ ${fam.label} (${famKey})`);
   const files = Object.keys(fam.members);
-  // Cabecera de tabla
   const cols = fam.piezas.map((p) => p.key);
-  line("  " + "archivo".padEnd(30) + cols.map((c) => c.padEnd(11)).join(""));
+  line("  " + "archivo".padEnd(28) + cols.map((c) => c.padEnd(13)).join(""));
   for (const f of files) {
     const s = read(f);
     const linaje = fam.members[f].linaje;
     const cells = fam.piezas.map((p) => {
-      if (p.linaje && p.linaje !== linaje) return "—".padEnd(11); // no aplica
+      if (p.linaje && p.linaje !== linaje) return "—".padEnd(13);
       const ok = s ? p.detect(s) : false;
       if (!ok && p.level === "enforce") failed = true;
-      return (ok ? "✓" : (p.level === "enforce" ? "✗FALTA" : "·falta")).padEnd(11);
+      return (ok ? "✓" : (p.level === "enforce" ? "✗FALTA" : "·falta")).padEnd(13);
     });
-    line("  " + f.padEnd(30) + cells.join(""));
+    line("  " + f.padEnd(28) + cells.join(""));
   }
-  // Detalle de huecos "report" (informativo)
-  const huecos = [];
-  for (const f of files) {
-    const s = read(f); const linaje = fam.members[f].linaje;
-    for (const p of fam.piezas) {
-      if (p.level === "enforce") continue;
-      if (p.linaje && p.linaje !== linaje) continue;
-      if (s && !p.detect(s)) huecos.push(`${f} → falta ${p.label}`);
-    }
-  }
-  if (huecos.length) { line("  huecos pendientes (report):"); huecos.forEach((h) => line("    · " + h)); }
+  line("");
+}
+
+if (Object.keys(FUERA_DE_PARIDAD).length) {
+  line("▸ Fuera de paridad (internas / otra naturaleza)");
+  for (const [f, why] of Object.entries(FUERA_DE_PARIDAD)) line(`  · ${f} — ${why}`);
   line("");
 }
 
@@ -133,4 +187,5 @@ if (failed) {
   process.exit(1);
 } else {
   line("✓ Paridad OK — cableado 'enforce' presente y contratos respetados.");
+  line("  (los '·falta' son huecos 'report': guía de lo que falta cablear, no rompen el CI)");
 }
