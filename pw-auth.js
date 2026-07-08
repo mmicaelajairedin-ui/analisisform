@@ -60,16 +60,29 @@
   // ensure()) refresca ese token en background, así que se mantiene fresco.
   function tokenSync() {
     try {
-      var raw = localStorage.getItem("sb-ddxnrsnjdvtqhxunxnwj-auth-token");
-      if (!raw) return null;
-      var o = JSON.parse(raw);
-      var sess = o && (o.currentSession || o.session || o);
-      var t = sess && sess.access_token;
-      var exp = sess && sess.expires_at; // epoch en segundos
-      if (!t) return null;
-      // Si está vencido (o a < 10s de vencer) → null → fallback a anon.
-      if (exp && exp * 1000 < Date.now() + 10000) return null;
-      return t;
+      // supabase-js persiste la sesión bajo una key "sb-<algo>-auth-token", donde
+      // "<algo>" lo DERIVA del hostname de la URL del cliente. Con el dominio custom
+      // (api.pathwaycareercoach.com) eso NO es el ref del proyecto. Antes esta key
+      // estaba hardcodeada al ref viejo → nunca se encontraba el token y TODO caía a
+      // la anon key (invisible sin RLS, pero fatal con RLS: portales vacíos).
+      // Ahora recorremos cualquier key sb-*-auth-token y devolvemos el primer token
+      // válido (no vencido). Domain-agnóstico: sirve para cualquier dominio.
+      var now = Date.now();
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf("sb-") !== 0 || k.indexOf("-auth-token") < 0) continue;
+        try {
+          var o = JSON.parse(localStorage.getItem(k) || "null");
+          var sess = o && (o.currentSession || o.session || o);
+          var t = sess && sess.access_token;
+          var exp = sess && sess.expires_at; // epoch en segundos
+          if (!t) continue;
+          // Vencido (o a < 10s de vencer) → seguir buscando otra key.
+          if (exp && exp * 1000 < now + 10000) continue;
+          return t;
+        } catch (e) { /* key no parseable → probar la siguiente */ }
+      }
+      return null;
     } catch (e) {
       return null;
     }
