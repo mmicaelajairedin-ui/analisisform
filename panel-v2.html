@@ -2535,6 +2535,7 @@ function viewCalendario(){
       "<div class='cp-greet-sub'>Todas tus reservas, marcá la asistencia y mirá tus métricas.</div></div></div>"+
     _calOwnerChips()+
     "<div id='cp-cal-kpis' style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px'></div>"+
+    "<div id='cp-cal-metrics'></div>"+
     "<div style='display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start'>"+reservas+tipos+"</div>";
 }
 function _calFail(){ var b=document.getElementById("cp-cal-list"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase."); }
@@ -2555,7 +2556,7 @@ function _calLoad(){
     return;
   }
   _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+sel)
-    .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _calRenderKpis(); _calRenderList(); })
+    .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); })
     .catch(_calFail);
 }
 // Filtra por la persona elegida (solo admin); si no es admin, todo es suyo.
@@ -2570,6 +2571,45 @@ function _calRenderKpis(){
   var rate=(asis+no)>0?Math.round(asis/(asis+no)*100)+"%":"—";
   var kpi=function(n,l,acc){ return "<div class='cp-card' style='flex:1;min-width:108px;padding:14px 16px;"+(acc?"background:var(--pw-bosque);color:#fff":"")+"'><div style='font-family:var(--pw-serif);font-size:24px;font-weight:600;line-height:1'>"+n+"</div><div style='font-size:11.5px;margin-top:5px;color:"+(acc?"rgba(255,255,255,.85)":"var(--pw-text-soft)")+"'>"+l+"</div></div>"; };
   box.innerHTML=kpi(vivas.length,"Reservas")+kpi(prox,"Próximas")+kpi(asis,"Asistieron")+kpi(no,"No asistieron")+kpi(rate,"% asistencia",true);
+}
+// Métricas ricas: demos por semana (con % asistencia) + por tipo de evento.
+function _calWkStart(ms){ var x=new Date(ms); x.setHours(0,0,0,0); var dw=(x.getDay()+6)%7; x.setDate(x.getDate()-dw); return +x; }
+function _calRenderMetricsExtra(){
+  var box=document.getElementById("cp-cal-metrics"); if(!box) return;
+  var d=_calByOwner(_CAL_DATA).filter(function(r){ return r.estado!=="cancelada"; });
+  if(!d.length){ box.innerHTML=""; return; }
+  // ── Por semana (últimas 6) ──
+  var now=_calWkStart(Date.now()); var weeks=[]; for(var i=5;i>=0;i--) weeks.push(now-i*604800000);
+  var wk={}; weeks.forEach(function(w){ wk[w]={t:0,a:0}; });
+  d.forEach(function(r){ var w=_calWkStart(+new Date(r.inicio)); if(wk[w]!=null){ wk[w].t++; if(r.estado==="asistio") wk[w].a++; } });
+  var maxT=1; weeks.forEach(function(w){ if(wk[w].t>maxT) maxT=wk[w].t; });
+  var MES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  var bars=weeks.map(function(w){ var o=wk[w]; var h=Math.round(o.t/maxT*70); var dd=new Date(w);
+    return "<div style='flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0'>"+
+      "<div style='font-size:10px;font-weight:700;color:var(--pw-carbon);height:13px'>"+(o.t||"")+"</div>"+
+      "<div style='width:100%;max-width:26px;height:72px;display:flex;align-items:flex-end'>"+
+        "<div title='"+o.t+" demo(s) · "+(o.t?Math.round(o.a/o.t*100):0)+"% asist.' style='width:100%;height:"+Math.max(h,o.t?8:3)+"px;border-radius:5px 5px 0 0;background:"+(o.t?"var(--pw-border)":"var(--pw-niebla-2)")+";position:relative;overflow:hidden'>"+
+          (o.t?"<div style='position:absolute;bottom:0;left:0;right:0;height:"+Math.round(o.a/o.t*100)+"%;background:var(--pw-sendero)'></div>":"")+
+        "</div>"+
+      "</div>"+
+      "<div style='font-size:9px;color:var(--pw-text-muted)'>"+dd.getDate()+" "+MES[dd.getMonth()]+"</div>"+
+    "</div>"; }).join("");
+  // ── Por tipo de evento ──
+  var byType={}; d.forEach(function(r){ var typ=_agEventTypeFor(r.tipo); var k=(typ&&typ.label)||r.tipo||"Sin tipo"; if(!byType[k]) byType[k]={t:0,a:0,col:(typ&&typ.color)||"#8C7B80",ico:(typ&&typ.icon)||"🗓️"}; byType[k].t++; if(r.estado==="asistio") byType[k].a++; });
+  var typeRows=Object.keys(byType).map(function(k){ var o=byType[k]; var rate=o.a?Math.round(o.a/o.t*100):0;
+    return "<div style='display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
+      "<span style='width:22px;height:22px;border-radius:50%;background:"+o.col+"22;border:1.5px solid "+o.col+";display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0'>"+o.ico+"</span>"+
+      "<span style='flex:1;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(k)+"</span>"+
+      "<span style='font-size:12px;color:var(--pw-text-soft)'>"+o.t+" demo"+(o.t===1?"":"s")+"</span>"+
+      "<span style='font-size:11px;font-weight:700;color:"+(rate>=50?"var(--pw-bosque)":"var(--pw-text-muted)")+";min-width:64px;text-align:right'>"+rate+"% asist.</span>"+
+    "</div>"; }).join("");
+  box.innerHTML="<div class='cp-card' style='margin-bottom:16px'>"+
+    "<div class='cp-card-hd'><h3 class='cp-card-title'>Métricas<span class='dot'>.</span></h3><span class='cp-eyebrow' style='display:inline-flex;align-items:center;gap:6px'><span style='width:9px;height:9px;border-radius:2px;background:var(--pw-sendero);display:inline-block'></span>= asistieron</span></div>"+
+    "<div class='cp-card-pad' style='display:flex;gap:26px;flex-wrap:wrap'>"+
+      "<div style='flex:1.3;min-width:260px'><div class='cp-eyebrow' style='margin-bottom:12px'>Demos por semana</div><div style='display:flex;gap:6px;align-items:flex-end'>"+bars+"</div></div>"+
+      "<div style='flex:1;min-width:220px'><div class='cp-eyebrow' style='margin-bottom:4px'>Por tipo de evento</div>"+typeRows+"</div>"+
+    "</div>"+
+  "</div>";
 }
 function _calRenderList(){
   var box=document.getElementById("cp-cal-list"); if(!box) return;
@@ -5571,7 +5611,7 @@ function render(){
       }catch(e){}
     }
     if(state.section==="calendario"){
-      try{ if(_CAL_DATA){ _calRenderKpis(); _calRenderList(); } else { _calLoad(); } }catch(e){}
+      try{ if(_CAL_DATA){ _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); } else { _calLoad(); } }catch(e){}
     }
     _syncChatBtn();
     // Apenas entrás al panel (datos reales cargados), la cabra saluda y luego
@@ -5644,12 +5684,12 @@ document.addEventListener("click", function(ev){
     var _cid=el.getAttribute("data-id"), _cv=el.getAttribute("data-val"); if(!_cid||!_cv) return;
     var _cr=(_CAL_DATA||[]).filter(function(x){ return String(x.id)===String(_cid); })[0]; if(!_cr) return;
     var _cprev=_cr.estado; _cr.estado=(_cr.estado===_cv?"confirmada":_cv); // volver a tocar el mismo estado lo desmarca
-    _calRenderKpis(); _calRenderList();
+    _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra();
     // Admin puede marcar la de cualquiera (por id); un coach solo la suya (coachGuard).
     var _cq=RADMIN?("citas?id=eq."+encodeURIComponent(_cid)):("citas?id=eq."+encodeURIComponent(_cid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""));
     _sbw(_cq,"PATCH",{estado:_cr.estado})
-      .then(function(r){ if(r&&r.ok){ toast(_cv==="asistio"?"Marcado: asistió ✓":_cv==="no_asistio"?"Marcado: no asistió":"Marcado: reprogramó"); } else { _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); toast("No se pudo guardar."); } })
-      .catch(function(){ _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); toast("No se pudo guardar."); });
+      .then(function(r){ if(r&&r.ok){ toast(_cv==="asistio"?"Marcado: asistió ✓":_cv==="no_asistio"?"Marcado: no asistió":"Marcado: reprogramó"); } else { _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); } })
+      .catch(function(){ _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); });
     return;
   }
   if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
