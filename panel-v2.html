@@ -1164,6 +1164,7 @@ var IC = {
   logout:     "<path d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/><polyline points='16 17 21 12 16 7'/><line x1='21' y1='12' x2='9' y2='12'/>",
   arrowR:     "<line x1='5' y1='12' x2='19' y2='12'/><polyline points='12 5 19 12 12 19'/>",
   chevR:      "<polyline points='9 18 15 12 9 6'/>",
+  navCal:     "<rect x='3' y='4' width='18' height='18' rx='2'/><line x1='16' y1='2' x2='16' y2='6'/><line x1='8' y1='2' x2='8' y2='6'/><line x1='3' y1='10' x2='21' y2='10'/><path d='m9 15 2 2 4-4'/>",
   search:     "<circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/>",
   eye:        "<path d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z'/><circle cx='12' cy='12' r='3'/>",
   eyeOff:     "<path d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24'/><line x1='1' y1='1' x2='23' y2='23'/>",
@@ -1498,7 +1499,9 @@ function _cliTabs(tipo){ if(tipo==='fitness') return [["perfil","Perfil"],["plan
 var _CLI_ICON={perfil:'👤',plan:'📋',fit_rutina:'🏋️',fit_antro:'📐',fit_nutri:'🥗',sesiones:'🗓️',fin_pres:'💰',gestion:'⚙️',avance:'📈',docs:'📄',mensajes:'💬'};
 var _CLI_SHORT={fit_antro:'Medidas',docs:'Docs'};
 function viewSidebar(){
-  var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"],["config","Configuración","navConfig"]];
+  var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"]];
+  if(RADMIN) items.push(["calendario","Calendario","navCal"]); // agenda + asistencia + métricas (admin por ahora, igual que la agenda)
+  items.push(["config","Configuración","navConfig"]);
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
   if(puedeEmails()) items.push(["emails","Emails","navEmails"]);
   var _navSec = (state.section==="solicitudes"||state.section==="mensajes") ? "clientes" : state.section;
@@ -2488,6 +2491,70 @@ function _resRender(list){
     "</div>";
   });
   return html;
+}
+
+// ═══ Calendario (pestaña): reservas + asistencia + métricas ═══
+// Réplica de lo que se armó en el panel del empleado. La asistencia se guarda
+// en citas.estado: asistio | no_asistio | reprogramada (además de los ya
+// existentes pendiente/confirmada/cancelada).
+var _CAL_DATA=null, _calFiltro="proximas";
+function _calChip(f,lbl){ var on=(_calFiltro===f); return "<button data-act='cal-filtro' data-f='"+f+"' style='padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-bosque)":"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; }
+function viewCalendario(){
+  return "<div class='cp-greet'><div><h1 class='cp-greet-h1'>Calendario<span class='dot'>.</span></h1>"+
+      "<div class='cp-greet-sub'>Todas tus reservas, marcá la asistencia y mirá tus métricas.</div></div></div>"+
+    "<div id='cp-cal-kpis' style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px'></div>"+
+    "<div class='cp-card'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>Reservas y asistencia<span class='dot'>.</span></h3>"+
+        "<div style='display:flex;gap:6px;flex-wrap:wrap'>"+_calChip("proximas","Próximas")+_calChip("pormarcar","Por marcar")+_calChip("todas","Todas")+"</div>"+
+      "</div>"+
+      "<div class='cp-card-pad'><p style='font-size:12px;color:var(--pw-text-soft);margin:0 0 10px'>Marcá si la persona asistió a cada sesión. Con eso salen tus métricas de arriba.</p>"+
+        "<div id='cp-cal-list'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando…</div></div></div>"+
+    "</div>";
+}
+function _calLoad(){
+  var box=document.getElementById("cp-cal-list");
+  if(!RME||!RME.id){ if(box) box.innerHTML=_agEmpty("Iniciá sesión."); return; }
+  var from=new Date(Date.now()-120*86400000).toISOString();
+  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+"&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado")
+    .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _calRenderKpis(); _calRenderList(); })
+    .catch(function(){ var b=document.getElementById("cp-cal-list"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase."); });
+}
+function _calRenderKpis(){
+  var box=document.getElementById("cp-cal-kpis"); if(!box) return;
+  var d=_CAL_DATA||[]; var now=Date.now();
+  var vivas=d.filter(function(r){ return r.estado!=="cancelada"; });
+  var prox=vivas.filter(function(r){ return +new Date(r.inicio)>=now && r.estado!=="asistio" && r.estado!=="no_asistio"; }).length;
+  var asis=d.filter(function(r){ return r.estado==="asistio"; }).length;
+  var no=d.filter(function(r){ return r.estado==="no_asistio"; }).length;
+  var rate=(asis+no)>0?Math.round(asis/(asis+no)*100)+"%":"—";
+  var kpi=function(n,l,acc){ return "<div class='cp-card' style='flex:1;min-width:108px;padding:14px 16px;"+(acc?"background:var(--pw-bosque);color:#fff":"")+"'><div style='font-family:var(--pw-serif);font-size:24px;font-weight:600;line-height:1'>"+n+"</div><div style='font-size:11.5px;margin-top:5px;color:"+(acc?"rgba(255,255,255,.85)":"var(--pw-text-soft)")+"'>"+l+"</div></div>"; };
+  box.innerHTML=kpi(vivas.length,"Reservas")+kpi(prox,"Próximas")+kpi(asis,"Asistieron")+kpi(no,"No asistieron")+kpi(rate,"% asistencia",true);
+}
+function _calRenderList(){
+  var box=document.getElementById("cp-cal-list"); if(!box) return;
+  var now=Date.now();
+  var rows=(_CAL_DATA||[]).filter(function(r){
+    if(r.estado==="cancelada") return _calFiltro==="todas";
+    if(_calFiltro==="proximas") return +new Date(r.inicio)>=now && r.estado!=="asistio" && r.estado!=="no_asistio";
+    if(_calFiltro==="pormarcar") return +new Date(r.inicio)<now && r.estado!=="asistio" && r.estado!=="no_asistio";
+    return true;
+  });
+  if(!rows.length){ box.innerHTML="<div style='color:var(--pw-text-soft);font-size:13px;padding:14px 0;text-align:center'>"+(_calFiltro==="pormarcar"?"Nada por marcar. ¡Al día!":_calFiltro==="proximas"?"Sin reservas próximas. Cuando alguien use tu link, aparece acá.":"Todavía no hay reservas.")+"</div>"; return; }
+  var DIAS=["dom","lun","mar","mié","jue","vie","sáb"], MES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  box.innerHTML=rows.map(function(r){
+    var dd=new Date(r.inicio); var typ=_agEventTypeFor(r.tipo); var col=(typ&&typ.color)||"#8C7B80"; var ico=(typ&&typ.icon)||"🗓️";
+    var fecha=DIAS[dd.getDay()]+" "+dd.getDate()+" "+MES[dd.getMonth()]+" · "+_agTime(+dd);
+    var mk=function(val,lbl){ var on=(r.estado===val); var c=val==="asistio"?"var(--pw-bosque)":val==="no_asistio"?"var(--pw-danger)":"#C99A2E"; return "<button data-act='cal-asis' data-id='"+esc(r.id)+"' data-val='"+val+"' style='padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?c:"var(--pw-border)")+";background:"+(on?c:"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; };
+    var canc=(r.estado==="cancelada")?"<span style='font-size:11px;font-weight:700;color:var(--pw-text-muted)'>Cancelada</span>":"";
+    return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--pw-border);flex-wrap:wrap'>"+
+      "<span style='width:30px;height:30px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>"+ico+"</span>"+
+      "<div style='min-width:150px;font-size:12.5px;font-weight:700;color:var(--pw-carbon)'>"+esc(fecha)+"</div>"+
+      "<div style='flex:1;min-width:120px'><div style='font-size:13.5px;font-weight:600'>"+esc(r.nombre||"Alguien")+"</div>"+
+      "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
+      canc+
+      "<div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó")+"</div>"+
+    "</div>";
+  }).join("");
 }
 
 /* ═══ Clientes ═══ */
@@ -5413,9 +5480,10 @@ function render(){
     // hay cliente de ejemplo en pantalla (coach real con clientes propios).
     _demoSnapshot();
     if(state.section==="admin" && !RADMIN) state.section="resumen";
+    if(state.section==="calendario" && !RADMIN) state.section="resumen";
     if(state.section==="emails" && !puedeEmails()) state.section="resumen";
     _applyPanelBrand();
-    var sections = { resumen:viewResumen, clientes:viewClientes, mensajes:viewSolicitudes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin, emails:viewEmails };
+    var sections = { resumen:viewResumen, clientes:viewClientes, mensajes:viewSolicitudes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin, emails:viewEmails, calendario:viewCalendario };
     var view = (sections[state.section]||viewResumen)();
     // Configuración usaba un contenedor angosto (760px) centrado, que la dejaba
     // "muy en el medio". Ahora usa el ancho normal, alineada como las demás pestañas.
@@ -5457,6 +5525,9 @@ function render(){
         else { _resLoad(); }
         _agMonthRender(); // pinta el mes con lo que haya en cache (o vacío)
       }catch(e){}
+    }
+    if(state.section==="calendario"){
+      try{ if(_CAL_DATA){ _calRenderKpis(); _calRenderList(); } else { _calLoad(); } }catch(e){}
     }
     _syncChatBtn();
     // Apenas entrás al panel (datos reales cargados), la cabra saluda y luego
@@ -5521,6 +5592,17 @@ document.addEventListener("click", function(ev){
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
       .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Reserva confirmada ✓":"Reserva cancelada"); } else { toast("No se pudo actualizar la reserva."); _resLoad(); } })
       .catch(function(){ toast("No se pudo actualizar la reserva."); _resLoad(); });
+    return;
+  }
+  if(act==="cal-filtro"){ _calFiltro=el.getAttribute("data-f")||"proximas"; render(); return; }
+  if(act==="cal-asis"){
+    var _cid=el.getAttribute("data-id"), _cv=el.getAttribute("data-val"); if(!_cid||!_cv) return;
+    var _cr=(_CAL_DATA||[]).filter(function(x){ return String(x.id)===String(_cid); })[0]; if(!_cr) return;
+    var _cprev=_cr.estado; _cr.estado=(_cr.estado===_cv?"confirmada":_cv); // volver a tocar el mismo estado lo desmarca
+    _calRenderKpis(); _calRenderList();
+    _sbw("citas?id=eq."+encodeURIComponent(_cid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_cr.estado})
+      .then(function(r){ if(r&&r.ok){ toast(_cv==="asistio"?"Marcado: asistió ✓":_cv==="no_asistio"?"Marcado: no asistió":"Marcado: reprogramó"); } else { _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); toast("No se pudo guardar."); } })
+      .catch(function(){ _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); toast("No se pudo guardar."); });
     return;
   }
   if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
