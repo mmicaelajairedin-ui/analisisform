@@ -2501,8 +2501,18 @@ function _resRender(list){
 // Réplica de lo que se armó en el panel del empleado. La asistencia se guarda
 // en citas.estado: asistio | no_asistio | reprogramada (además de los ya
 // existentes pendiente/confirmada/cancelada).
-var _CAL_DATA=null, _calFiltro="proximas";
+var _CAL_DATA=null, _calFiltro="proximas", _CAL_TEAM=null, _calOwner="todas";
 function _calChip(f,lbl){ var on=(_calFiltro===f); return "<button data-act='cal-filtro' data-f='"+f+"' style='padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-bosque)":"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; }
+// Filtro por persona (solo admin): ver las demos del equipo o de cada uno.
+function _calFirst(n){ return (""+(n||"")).trim().split(" ")[0]||"Equipo"; }
+function _calOwnerName(cid){ if(RME&&String(cid)===String(RME.id)) return "Vos"; var u=(_CAL_TEAM||[]).filter(function(x){return String(x.id)===String(cid);})[0]; return _calFirst(u&&(u.nombre||u.email)); }
+function _calOwnerChips(){
+  if(!RADMIN) return "";
+  var oc=function(o,lbl){ var on=(_calOwner===o); return "<button data-act='cal-owner' data-o='"+esc(o)+"' style='padding:5px 11px;border-radius:20px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";color:"+(on?"var(--pw-bosque)":"var(--pw-text-soft)")+"'>"+esc(lbl)+"</button>"; };
+  var chips=oc("todas","Todo el equipo")+oc((RME&&RME.id)||"","Mías");
+  (_CAL_TEAM||[]).forEach(function(u){ if(RME&&String(u.id)===String(RME.id)) return; chips+=oc(u.id,_calFirst(u.nombre||u.email)); });
+  return "<div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center'><span style='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-muted);margin-right:2px'>Ver</span>"+chips+"</div>";
+}
 function viewCalendario(){
   var reservas="<div class='cp-card' style='flex:2 1 320px'>"+
       "<div class='cp-card-hd'><h3 class='cp-card-title'>Reservas y asistencia<span class='dot'>.</span></h3>"+
@@ -2522,20 +2532,36 @@ function viewCalendario(){
     "</div>";
   return "<div class='cp-greet'><div><h1 class='cp-greet-h1'>Calendario<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>Todas tus reservas, marcá la asistencia y mirá tus métricas.</div></div></div>"+
+    _calOwnerChips()+
     "<div id='cp-cal-kpis' style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px'></div>"+
     "<div style='display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start'>"+reservas+tipos+"</div>";
 }
+function _calFail(){ var b=document.getElementById("cp-cal-list"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase."); }
 function _calLoad(){
   var box=document.getElementById("cp-cal-list");
   if(!RME||!RME.id){ if(box) box.innerHTML=_agEmpty("Iniciá sesión."); return; }
   var from=new Date(Date.now()-120*86400000).toISOString();
-  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+"&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado")
+  var sel="&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id";
+  if(RADMIN){
+    // Admin: ve las demos de TODO su equipo (admin + empleados activos).
+    _sb("usuarios?rol=in.(admin,empleado)&activo=eq.true&select=id,nombre,email,rol").then(function(team){
+      _CAL_TEAM=(Object.prototype.toString.call(team)==="[object Array]")?team:[];
+      var ids=_CAL_TEAM.map(function(u){return u.id;}); if(ids.indexOf(RME.id)<0) ids.push(RME.id);
+      _sb("citas?coach_id=in.("+ids.map(encodeURIComponent).join(",")+")&inicio=gte."+encodeURIComponent(from)+sel)
+        .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; try{ render(); }catch(e){ _calRenderKpis(); _calRenderList(); } })
+        .catch(_calFail);
+    }).catch(function(){ _CAL_TEAM=[]; _calFail(); });
+    return;
+  }
+  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+sel)
     .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _calRenderKpis(); _calRenderList(); })
-    .catch(function(){ var b=document.getElementById("cp-cal-list"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase."); });
+    .catch(_calFail);
 }
+// Filtra por la persona elegida (solo admin); si no es admin, todo es suyo.
+function _calByOwner(list){ return (list||[]).filter(function(r){ return !(RADMIN && _calOwner!=="todas" && String(r.coach_id)!==String(_calOwner)); }); }
 function _calRenderKpis(){
   var box=document.getElementById("cp-cal-kpis"); if(!box) return;
-  var d=_CAL_DATA||[]; var now=Date.now();
+  var d=_calByOwner(_CAL_DATA); var now=Date.now();
   var vivas=d.filter(function(r){ return r.estado!=="cancelada"; });
   var prox=vivas.filter(function(r){ return +new Date(r.inicio)>=now && r.estado!=="asistio" && r.estado!=="no_asistio"; }).length;
   var asis=d.filter(function(r){ return r.estado==="asistio"; }).length;
@@ -2547,7 +2573,7 @@ function _calRenderKpis(){
 function _calRenderList(){
   var box=document.getElementById("cp-cal-list"); if(!box) return;
   var now=Date.now();
-  var rows=(_CAL_DATA||[]).filter(function(r){
+  var rows=_calByOwner(_CAL_DATA).filter(function(r){
     if(r.estado==="cancelada") return _calFiltro==="todas";
     if(_calFiltro==="proximas") return +new Date(r.inicio)>=now && r.estado!=="asistio" && r.estado!=="no_asistio";
     if(_calFiltro==="pormarcar") return +new Date(r.inicio)<now && r.estado!=="asistio" && r.estado!=="no_asistio";
@@ -2560,11 +2586,14 @@ function _calRenderList(){
     var fecha=DIAS[dd.getDay()]+" "+dd.getDate()+" "+MES[dd.getMonth()]+" · "+_agTime(+dd);
     var mk=function(val,lbl){ var on=(r.estado===val); var c=val==="asistio"?"var(--pw-bosque)":val==="no_asistio"?"var(--pw-danger)":"#C99A2E"; return "<button data-act='cal-asis' data-id='"+esc(r.id)+"' data-val='"+val+"' style='padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?c:"var(--pw-border)")+";background:"+(on?c:"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; };
     var canc=(r.estado==="cancelada")?"<span style='font-size:11px;font-weight:700;color:var(--pw-text-muted)'>Cancelada</span>":"";
+    // De quién es la demo (solo admin, cuando no es tuya).
+    var owner=(RADMIN && r.coach_id && String(r.coach_id)!==String(RME&&RME.id))?("<span title='Atiende' style='display:inline-flex;align-items:center;gap:4px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:100px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--pw-carbon)'>👤 "+esc(_calOwnerName(r.coach_id))+"</span>"):"";
     return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--pw-border);flex-wrap:wrap'>"+
       "<span style='width:30px;height:30px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>"+ico+"</span>"+
       "<div style='min-width:150px;font-size:12.5px;font-weight:700;color:var(--pw-carbon)'>"+esc(fecha)+"</div>"+
       "<div style='flex:1;min-width:120px'><div style='font-size:13.5px;font-weight:600'>"+esc(r.nombre||"Alguien")+"</div>"+
       "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
+      owner+
       canc+
       "<div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó")+"</div>"+
     "</div>";
@@ -5609,12 +5638,15 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="cal-filtro"){ _calFiltro=el.getAttribute("data-f")||"proximas"; render(); return; }
+  if(act==="cal-owner"){ _calOwner=el.getAttribute("data-o")||"todas"; render(); return; }
   if(act==="cal-asis"){
     var _cid=el.getAttribute("data-id"), _cv=el.getAttribute("data-val"); if(!_cid||!_cv) return;
     var _cr=(_CAL_DATA||[]).filter(function(x){ return String(x.id)===String(_cid); })[0]; if(!_cr) return;
     var _cprev=_cr.estado; _cr.estado=(_cr.estado===_cv?"confirmada":_cv); // volver a tocar el mismo estado lo desmarca
     _calRenderKpis(); _calRenderList();
-    _sbw("citas?id=eq."+encodeURIComponent(_cid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_cr.estado})
+    // Admin puede marcar la de cualquiera (por id); un coach solo la suya (coachGuard).
+    var _cq=RADMIN?("citas?id=eq."+encodeURIComponent(_cid)):("citas?id=eq."+encodeURIComponent(_cid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""));
+    _sbw(_cq,"PATCH",{estado:_cr.estado})
       .then(function(r){ if(r&&r.ok){ toast(_cv==="asistio"?"Marcado: asistió ✓":_cv==="no_asistio"?"Marcado: no asistió":"Marcado: reprogramó"); } else { _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); toast("No se pudo guardar."); } })
       .catch(function(){ _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); toast("No se pudo guardar."); });
     return;
