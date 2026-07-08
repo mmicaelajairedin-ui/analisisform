@@ -849,6 +849,19 @@ const RULES = [
     },
   },
   {
+    name: "carrera: la foto se persiste vía edge function (resiste RLS)",
+    bug: "cliente.html guardaba la foto con un PATCH anónimo por email. Con RLS " +
+         "estricto ese PATCH haría no-op silencioso → la foto se perdería en el " +
+         "próximo dispositivo. Debe ir por guardar-intake (service role) con " +
+         "fallback a PATCH, como fit/fin.",
+    check() {
+      const s = read("cliente.html");
+      if (!s) return null;
+      return /functions\/v1\/guardar-intake[\s\S]{0,220}foto_perfil/.test(s)
+        ? null : "cliente.html: la foto ya no se guarda vía guardar-intake (se romperá al activar RLS).";
+    },
+  },
+  {
     name: "reservas: no hay doble-booking (lee citas + re-chequea al confirmar)",
     bug: "reservar.html generaba los horarios solo desde la disponibilidad y NUNCA " +
          "leía la tabla citas → dos personas podían reservar el mismo turno. Debe " +

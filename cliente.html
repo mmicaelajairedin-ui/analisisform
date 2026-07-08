@@ -2083,9 +2083,9 @@ function entrar(){
   // Sincronizar foto a localStorage y Supabase si la encontramos
   if(_fotoSrc){
     try{localStorage.setItem('mj_foto_'+E,_fotoSrc);}catch(e){}
-    // Sync a candidatos.foto_perfil si no estaba ahí
+    // Sync a candidatos.foto_perfil si no estaba ahí (vía edge function, resiste RLS)
     if(!C.foto_perfil){
-      pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:_fotoSrc}).catch(function(){});
+      try{ fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({email:E,data:{foto_perfil:_fotoSrc},coach_id:(C&&C.coach_id)||''})}).then(function(r){ if(!r||!r.ok) pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:_fotoSrc}).catch(function(){}); }).catch(function(){ pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:_fotoSrc}).catch(function(){}); }); }catch(e){}
       C.foto_perfil=_fotoSrc;
     }
   }
@@ -2146,7 +2146,10 @@ function entrar(){
         body:f
       }).then(function(r){ if(!r.ok) throw 0;
         var url=SB+'/storage/v1/object/public/avatars/'+path;
-        pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:url}).catch(function(){});
+        // Persistir vía edge function (service role) con fallback a PATCH: así la
+        // foto se guarda aunque se active RLS estricto (el PATCH anónimo por email
+        // haría no-op silencioso y la foto se perdería en el próximo dispositivo).
+        try{ fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({email:E,data:{foto_perfil:url},coach_id:(C&&C.coach_id)||''})}).then(function(r){ if(!r||!r.ok) pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:url}).catch(function(){}); }).catch(function(){ pt('candidatos','email=eq.'+encodeURIComponent(E),{foto_perfil:url}).catch(function(){}); }); }catch(e){}
         C.foto_perfil=url; try{localStorage.setItem('mj_foto_'+E,url);}catch(e){}
         ['sb-avatar-wrap','top-avatar','sb-uav'].forEach(function(id){ var el=document.getElementById(id); if(!el)return; el.innerHTML=''; var im=document.createElement('img'); im.src=url; im.style.cssText='width:100%;height:100%;object-fit:cover;display:block;'+(id==='sb-uav'?'border-radius:50%;':''); el.appendChild(im); });
         var mob=document.getElementById('mob-avatar'); if(mob) mob.innerHTML='<img src="'+url+'" style="width:100%;height:100%;object-fit:cover;border-radius:10px;">';
