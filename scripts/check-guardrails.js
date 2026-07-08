@@ -849,6 +849,24 @@ const RULES = [
     },
   },
   {
+    name: "reservas: no hay doble-booking (lee citas + re-chequea al confirmar)",
+    bug: "reservar.html generaba los horarios solo desde la disponibilidad y NUNCA " +
+         "leía la tabla citas → dos personas podían reservar el mismo turno. Debe " +
+         "cargar las citas tomadas (loadCitas), marcarlas ocupadas, y re-chequear " +
+         "el hueco JUSTO antes de confirmar.",
+    check() {
+      for (const f of ["reservar.html", "agendar.html"]) {
+        const s = read(f); if (!s) continue;
+        if (!/function loadCitas\(/.test(s) || !/TAKEN/.test(s))
+          return f + ": ya no carga/marca los horarios tomados (riesgo de doble-booking).";
+        // Debe re-chequear en confirmar antes del POST.
+        if (!/inicio=eq\.[\s\S]{0,80}estado=neq\.cancelada[\s\S]{0,400}_commit/.test(s.replace(/\n/g, " ")))
+          return f + ": confirmar ya no re-chequea el hueco contra citas antes de reservar.";
+      }
+      return null;
+    },
+  },
+  {
     name: "puntos: coach y cliente ven la MISMA medalla (por puntos, no semana)",
     bug: "El cliente calculaba la medalla por PUNTOS y el coach por semana_activa " +
          "→ medallas distintas para la misma persona. Ahora el cliente persiste su " +
