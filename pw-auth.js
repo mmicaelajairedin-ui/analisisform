@@ -60,16 +60,29 @@
   // ensure()) refresca ese token en background, así que se mantiene fresco.
   function tokenSync() {
     try {
-      var raw = localStorage.getItem("sb-ddxnrsnjdvtqhxunxnwj-auth-token");
-      if (!raw) return null;
-      var o = JSON.parse(raw);
-      var sess = o && (o.currentSession || o.session || o);
-      var t = sess && sess.access_token;
-      var exp = sess && sess.expires_at; // epoch en segundos
-      if (!t) return null;
-      // Si está vencido (o a < 10s de vencer) → null → fallback a anon.
-      if (exp && exp * 1000 < Date.now() + 10000) return null;
-      return t;
+      // supabase-js persiste la sesión bajo una key "sb-<algo>-auth-token", donde
+      // "<algo>" lo DERIVA del hostname de la URL del cliente. Con el dominio custom
+      // (api.pathwaycareercoach.com) eso NO es el ref del proyecto. Antes esta key
+      // estaba hardcodeada al ref viejo → nunca se encontraba el token y TODO caía a
+      // la anon key (invisible sin RLS, pero fatal con RLS: portales vacíos).
+      // Ahora recorremos cualquier key sb-*-auth-token y devolvemos el primer token
+      // válido (no vencido). Domain-agnóstico: sirve para cualquier dominio.
+      var now = Date.now();
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf("sb-") !== 0 || k.indexOf("-auth-token") < 0) continue;
+        try {
+          var o = JSON.parse(localStorage.getItem(k) || "null");
+          var sess = o && (o.currentSession || o.session || o);
+          var t = sess && sess.access_token;
+          var exp = sess && sess.expires_at; // epoch en segundos
+          if (!t) continue;
+          // Vencido (o a < 10s de vencer) → seguir buscando otra key.
+          if (exp && exp * 1000 < now + 10000) continue;
+          return t;
+        } catch (e) { /* key no parseable → probar la siguiente */ }
+      }
+      return null;
     } catch (e) {
       return null;
     }
@@ -170,6 +183,36 @@
       return _origFetch(input, init);
     };
   }
+
+  // Gate de sesión para los portales de cliente: cuando (con RLS prendido) el
+  // cliente no tiene sesión, su ficha viene vacía. En vez de un portal en blanco,
+  // le mostramos una pantalla para iniciar sesión (reusa login.html, ya probado).
+  // Es un NO-OP hoy (RLS apagado): los portales solo lo llaman si la ficha vino
+  // vacía Y no hay sesión, cosa que hoy no pasa para un cliente real.
+  PWAUTH.showLoginGate = function () {
+    try {
+      if (document.getElementById("pw-login-gate")) return;
+      var d = document.createElement("div");
+      d.id = "pw-login-gate";
+      d.style.cssText = "position:fixed;inset:0;z-index:100000;background:#eef2ef;display:flex;align-items:center;justify-content:center;padding:24px;font-family:Inter,-apple-system,system-ui,sans-serif;";
+      d.innerHTML =
+        '<div style="max-width:340px;width:100%;text-align:center;background:#fff;border-radius:18px;padding:34px 26px;box-shadow:0 12px 44px rgba(0,0,0,.14);">' +
+          '<div style="font-size:38px;margin-bottom:12px;">🔒</div>' +
+          '<div style="font-family:Georgia,serif;font-size:21px;font-weight:600;color:#1b2e26;margin-bottom:8px;">Iniciá sesión para ver tu portal</div>' +
+          '<div style="font-size:14px;color:#5a6b62;line-height:1.55;margin-bottom:22px;">Por tu seguridad, entrá con tu cuenta para acceder a tus datos.</div>' +
+          '<button id="pw-gate-btn" type="button" style="display:inline-block;background:#2D6A4F;color:#fff;border:none;border-radius:11px;padding:13px 30px;font-size:15px;font-weight:700;cursor:pointer;">Iniciar sesión</button>' +
+        "</div>";
+      document.body.appendChild(d);
+      var b = document.getElementById("pw-gate-btn");
+      if (b) b.onclick = function () { location.href = "/login.html"; };
+    } catch (e) {}
+  };
+
+  // Interruptor del gate: en true → RLS estricto está ACTIVO en Supabase, y los
+  // portales/paneles sin sesión mandan a login (en vez de quedar vacíos). Se
+  // enciende el mismo día que se corre rls_strict.sql en la base. Reversible:
+  // si hay que hacer rollback del RLS en la base, volver esto a false y deployar.
+  PWAUTH.RLS_ON = true;
 
   // Bootea el SDK al cargar el script, para que arranque el autoRefreshToken y
   // mantenga fresco el token en localStorage (lo que lee headersSync()).

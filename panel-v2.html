@@ -1164,6 +1164,7 @@ var IC = {
   logout:     "<path d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/><polyline points='16 17 21 12 16 7'/><line x1='21' y1='12' x2='9' y2='12'/>",
   arrowR:     "<line x1='5' y1='12' x2='19' y2='12'/><polyline points='12 5 19 12 12 19'/>",
   chevR:      "<polyline points='9 18 15 12 9 6'/>",
+  navCal:     "<rect x='3' y='4' width='18' height='18' rx='2'/><line x1='16' y1='2' x2='16' y2='6'/><line x1='8' y1='2' x2='8' y2='6'/><line x1='3' y1='10' x2='21' y2='10'/><path d='m9 15 2 2 4-4'/>",
   search:     "<circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/>",
   eye:        "<path d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z'/><circle cx='12' cy='12' r='3'/>",
   eyeOff:     "<path d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24'/><line x1='1' y1='1' x2='23' y2='23'/>",
@@ -1498,7 +1499,9 @@ function _cliTabs(tipo){ if(tipo==='fitness') return [["perfil","Perfil"],["plan
 var _CLI_ICON={perfil:'👤',plan:'📋',fit_rutina:'🏋️',fit_antro:'📐',fit_nutri:'🥗',sesiones:'🗓️',fin_pres:'💰',gestion:'⚙️',avance:'📈',docs:'📄',mensajes:'💬'};
 var _CLI_SHORT={fit_antro:'Medidas',docs:'Docs'};
 function viewSidebar(){
-  var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"],["config","Configuración","navConfig"]];
+  var items = [["resumen","Resumen","navResumen"],["clientes","Clientes","navClientes"]];
+  if(RADMIN) items.push(["calendario","Calendario","navCal"]); // agenda + asistencia + métricas (admin por ahora, igual que la agenda)
+  items.push(["config","Configuración","navConfig"]);
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
   if(puedeEmails()) items.push(["emails","Emails","navEmails"]);
   var _navSec = (state.section==="solicitudes"||state.section==="mensajes") ? "clientes" : state.section;
@@ -1550,7 +1553,8 @@ function viewSidebar(){
       var opt=[['carrera','Carrera'],['fitness','Fitness'],['financiero','Finanzas']];
       return "<div class='cp-demo-switch'>"+
         "<div class='cp-demo-switch-lbl' style='display:flex;align-items:center;justify-content:space-between'>Demo · tipo de coach<button data-act='demo-switch-hide' title='Ocultar (para capturas)' style='background:none;border:none;color:rgba(255,255,255,.45);cursor:pointer;font-size:11px;line-height:1;padding:2px'>✕</button></div>"+
-        "<div class='cp-demo-switch-btns'>"+opt.map(function(o){var on=(dt===o[0]);return "<button class='cp-demo-switch-btn"+(on?" on":"")+"' data-act='demo-tipo:"+o[0]+"'>"+o[1]+"</button>";}).join("")+"</div></div>";
+        "<div class='cp-demo-switch-btns'>"+opt.map(function(o){var on=(dt===o[0]);return "<button class='cp-demo-switch-btn"+(on?" on":"")+"' data-act='demo-tipo:"+o[0]+"'>"+o[1]+"</button>";}).join("")+"</div>"+
+        "<a href='panel-empresa.html' style='display:block;margin-top:7px;text-align:center;font-size:11px;font-weight:700;color:#1B4332;background:var(--pw-amanecer);border-radius:8px;padding:7px 8px;text-decoration:none'><span class='cp-emo'>🏢</span> Ver demo Empresa</a>"+"</div>";
     })()+
     "<nav class='cp-side-nav cp-nav-app'>"+nav+"</nav>"+
     (cliNav?"<nav class='cp-side-nav cp-nav-cli'>"+cliNav+"</nav>":"")+
@@ -2065,7 +2069,7 @@ function viewResumen(){
   var pathCard = coachPath(); // sendero gamificado de la cabra (vacío si ya completó los 3)
   // Fase 1 de la agenda nativa: SOLO admin (interruptor). Va ARRIBA, con el
   // diseño del panel. Los demás coaches siguen con el calendario embebido (calCard).
-  var _agTop = RADMIN ? (_agendaCard()+_resCard()) : "";
+  var _agTop = RADMIN ? _agendaCard() : "";  // Reservas ahora va dentro de _agendaCard (col 3)
   return "<div class='cp-greet'>"+
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+"<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>"+pendingReview+" pendiente"+(pendingReview===1?"":"s")+(_nx?" · "+_nxTxt:"")+"</div></div></div>"+
@@ -2244,7 +2248,7 @@ function _agMonthRender(){
   var res=_RES_DATA||[]; res.forEach(function(r){ if(!r||r.estado==="cancelada")return; add(+new Date(r.inicio), _agEventTypeFor(r.tipo)); });
   var first=new Date(y,m,1); var startDow=(first.getDay()+6)%7; var daysIn=new Date(y,m+1,0).getDate();
   var today=_agMoKey(new Date());
-  var html="<div style='display:grid;grid-template-columns:repeat(7,1fr);gap:3px'>";
+  var html="<div style='display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;max-width:270px'>";
   ["L","M","X","J","V","S","D"].forEach(function(d){ html+="<div style='text-align:center;font-size:9px;font-weight:800;color:var(--pw-text-muted);padding:2px 0'>"+d+"</div>"; });
   for(var i=0;i<startDow;i++){ html+="<div></div>"; }
   for(var dd=1;dd<=daysIn;dd++){
@@ -2261,19 +2265,23 @@ function _agMonthRender(){
   box.innerHTML=html;
 }
 function _agendaCard(){
+  // Resumen liviano: solo la lista (Google) + el calendario del mes, con un link
+  // directo a la página Calendario (ahí viven Tipos de evento, Agendar cita y
+  // Mi disponibilidad, junto a la asistencia y las métricas).
   return "<div class='cp-card' style='margin-bottom:16px'>"+
     "<div class='cp-card-hd'>"+
       "<h3 class='cp-card-title'><span class='cp-emo'>🗓️</span> Tu agenda<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow' style='display:inline-flex;align-items:center;gap:6px'><span style='width:7px;height:7px;border-radius:50%;background:var(--pw-sendero);display:inline-block'></span>En vivo · Google Calendar</span>"+
+      "<div style='display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap'>"+
+        "<span class='cp-eyebrow' style='display:inline-flex;align-items:center;gap:6px'><span style='width:7px;height:7px;border-radius:50%;background:var(--pw-sendero);display:inline-block'></span>En vivo · Google Calendar</span>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='nav:calendario' style='height:30px;font-size:12px;padding:0 12px'>Ir a Calendario "+svg(IC.chevR,12)+"</button>"+
+      "</div>"+
     "</div>"+
-    "<div class='cp-card-pad' style='display:flex;gap:0;flex-wrap:wrap;align-items:stretch'>"+
-      "<div id='cp-agenda-body' style='flex:1.15;min-width:210px;padding-right:18px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
-      "<div style='flex:1.15;min-width:230px;padding:0 18px;border-left:1px solid var(--pw-border)'>"+_agMonthCal()+"</div>"+
-      "<div style='flex:.9;min-width:168px;margin-left:18px;background:var(--pw-niebla-2);border-radius:12px;padding:12px 14px'>"+
-        "<div class='cp-eyebrow' style='margin-bottom:6px'>Tipos de evento</div>"+
-        "<div id='cp-agenda-types'>"+_agTypesHtml()+"</div>"+
-        "<button class='cp-btn cp-btn-primary' data-act='ag-cita' style='height:32px;font-size:12px;margin-top:12px;width:100%'>"+svg(IC.plus,13)+" Agendar cita</button>"+
-        "<button class='cp-btn cp-btn-ghost' data-act='ag-disp' style='height:30px;font-size:11px;margin-top:6px;width:100%'>🕑 Mi disponibilidad</button>"+
+    "<div class='cp-card-pad' style='display:flex;gap:0;flex-wrap:wrap;align-items:flex-start'>"+
+      "<div id='cp-agenda-body' style='flex:1.1;min-width:190px;padding-right:16px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
+      "<div style='flex:0 0 auto;padding:0 16px;border-left:1px solid var(--pw-border)'>"+_agMonthCal()+"</div>"+
+      "<div style='flex:1;min-width:180px;padding-left:16px;border-left:1px solid var(--pw-border)'>"+
+        "<div class='cp-eyebrow' style='margin-bottom:8px'>Reservas <span style='color:var(--pw-text-muted);font-weight:400'>· desde tu link</span></div>"+
+        "<div id='cp-res-body'><div style='color:var(--pw-text-soft);font-size:13px;padding:8px 0'>Cargando reservas…</div></div>"+
       "</div>"+
     "</div>"+
   "</div>";
@@ -2391,7 +2399,7 @@ function _agRefresh(){
       var b=document.getElementById("cp-agenda-body");
       var d=null; try{ d=JSON.parse(res.t); }catch(e){}
       if(!res.ok || !d || !d.access_token){
-        _agRefreshErr="renovar "+res.status+": "+((d&&d.error)||(""+(res.t||"")).slice(0,70)||"sin respuesta");
+        _agRefreshErr="renovar "+res.status+": "+((d&&(d.detail||d.error))||(""+(res.t||"")).slice(0,70)||"sin respuesta");
         if(b) b.innerHTML=_agConnect(); return;
       }
       _agRefreshErr="";
@@ -2488,6 +2496,149 @@ function _resRender(list){
     "</div>";
   });
   return html;
+}
+
+// ═══ Calendario (pestaña): reservas + asistencia + métricas ═══
+// Réplica de lo que se armó en el panel del empleado. La asistencia se guarda
+// en citas.estado: asistio | no_asistio | reprogramada (además de los ya
+// existentes pendiente/confirmada/cancelada).
+var _CAL_DATA=null, _calFiltro="proximas", _CAL_TEAM=null, _calOwner="todas";
+function _calChip(f,lbl){ var on=(_calFiltro===f); return "<button data-act='cal-filtro' data-f='"+f+"' style='padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-bosque)":"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; }
+// Filtro por persona (solo admin): ver las demos del equipo o de cada uno.
+function _calFirst(n){ return (""+(n||"")).trim().split(" ")[0]||"Equipo"; }
+function _calOwnerName(cid){ if(RME&&String(cid)===String(RME.id)) return "Vos"; var u=(_CAL_TEAM||[]).filter(function(x){return String(x.id)===String(cid);})[0]; return _calFirst(u&&(u.nombre||u.email)); }
+function _calOwnerChips(){
+  if(!RADMIN) return "";
+  var oc=function(o,lbl){ var on=(_calOwner===o); return "<button data-act='cal-owner' data-o='"+esc(o)+"' style='padding:5px 11px;border-radius:20px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";color:"+(on?"var(--pw-bosque)":"var(--pw-text-soft)")+"'>"+esc(lbl)+"</button>"; };
+  var chips=oc("todas","Todo el equipo")+oc((RME&&RME.id)||"","Mías");
+  (_CAL_TEAM||[]).forEach(function(u){ if(RME&&String(u.id)===String(RME.id)) return; chips+=oc(u.id,_calFirst(u.nombre||u.email)); });
+  return "<div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center'><span style='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-muted);margin-right:2px'>Ver</span>"+chips+"</div>";
+}
+function viewCalendario(){
+  var reservas="<div class='cp-card' style='flex:2 1 320px'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>Reservas y asistencia<span class='dot'>.</span></h3>"+
+        "<div style='display:flex;gap:6px;flex-wrap:wrap'>"+_calChip("proximas","Próximas")+_calChip("pormarcar","Por marcar")+_calChip("todas","Todas")+"</div>"+
+      "</div>"+
+      "<div class='cp-card-pad'><p style='font-size:12px;color:var(--pw-text-soft);margin:0 0 10px'>Marcá si la persona asistió a cada sesión. Con eso salen tus métricas de arriba.</p>"+
+        "<div id='cp-cal-list'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando…</div></div></div>"+
+    "</div>";
+  // Tipos de evento + Agendar cita + Mi disponibilidad (movidos acá desde el Resumen).
+  var tipos="<div class='cp-card' style='flex:1 1 260px'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>Tipos de evento<span class='dot'>.</span></h3></div>"+
+      "<div class='cp-card-pad'>"+
+        "<div id='cp-agenda-types'>"+_agTypesHtml()+"</div>"+
+        "<button class='cp-btn cp-btn-primary' data-act='ag-cita' style='height:34px;font-size:12.5px;margin-top:12px;width:100%'>"+svg(IC.plus,13)+" Agendar cita</button>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='ag-disp' style='height:32px;font-size:12px;margin-top:6px;width:100%'>🕑 Mi disponibilidad</button>"+
+      "</div>"+
+    "</div>";
+  return "<div class='cp-greet'><div><h1 class='cp-greet-h1'>Calendario<span class='dot'>.</span></h1>"+
+      "<div class='cp-greet-sub'>Todas tus reservas, marcá la asistencia y mirá tus métricas.</div></div></div>"+
+    _calOwnerChips()+
+    "<div id='cp-cal-kpis' style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px'></div>"+
+    "<div id='cp-cal-metrics'></div>"+
+    "<div style='display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start'>"+reservas+tipos+"</div>";
+}
+function _calFail(){ var b=document.getElementById("cp-cal-list"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase."); }
+function _calLoad(){
+  var box=document.getElementById("cp-cal-list");
+  if(!RME||!RME.id){ if(box) box.innerHTML=_agEmpty("Iniciá sesión."); return; }
+  var from=new Date(Date.now()-120*86400000).toISOString();
+  var sel="&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id";
+  if(RADMIN){
+    // Admin: ve las demos de TODO su equipo (admin + empleados activos).
+    _sb("usuarios?rol=in.(admin,empleado)&activo=eq.true&select=id,nombre,email,rol").then(function(team){
+      _CAL_TEAM=(Object.prototype.toString.call(team)==="[object Array]")?team:[];
+      var ids=_CAL_TEAM.map(function(u){return u.id;}); if(ids.indexOf(RME.id)<0) ids.push(RME.id);
+      _sb("citas?coach_id=in.("+ids.map(encodeURIComponent).join(",")+")&inicio=gte."+encodeURIComponent(from)+sel)
+        .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; try{ render(); }catch(e){ _calRenderKpis(); _calRenderList(); } })
+        .catch(_calFail);
+    }).catch(function(){ _CAL_TEAM=[]; _calFail(); });
+    return;
+  }
+  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+sel)
+    .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); })
+    .catch(_calFail);
+}
+// Filtra por la persona elegida (solo admin); si no es admin, todo es suyo.
+function _calByOwner(list){ return (list||[]).filter(function(r){ return !(RADMIN && _calOwner!=="todas" && String(r.coach_id)!==String(_calOwner)); }); }
+function _calRenderKpis(){
+  var box=document.getElementById("cp-cal-kpis"); if(!box) return;
+  var d=_calByOwner(_CAL_DATA); var now=Date.now();
+  var vivas=d.filter(function(r){ return r.estado!=="cancelada"; });
+  var prox=vivas.filter(function(r){ return +new Date(r.inicio)>=now && r.estado!=="asistio" && r.estado!=="no_asistio"; }).length;
+  var asis=d.filter(function(r){ return r.estado==="asistio"; }).length;
+  var no=d.filter(function(r){ return r.estado==="no_asistio"; }).length;
+  var rate=(asis+no)>0?Math.round(asis/(asis+no)*100)+"%":"—";
+  var kpi=function(n,l,acc){ return "<div class='cp-card' style='flex:1;min-width:108px;padding:14px 16px;"+(acc?"background:var(--pw-bosque);color:#fff":"")+"'><div style='font-family:var(--pw-serif);font-size:24px;font-weight:600;line-height:1'>"+n+"</div><div style='font-size:11.5px;margin-top:5px;color:"+(acc?"rgba(255,255,255,.85)":"var(--pw-text-soft)")+"'>"+l+"</div></div>"; };
+  box.innerHTML=kpi(vivas.length,"Reservas")+kpi(prox,"Próximas")+kpi(asis,"Asistieron")+kpi(no,"No asistieron")+kpi(rate,"% asistencia",true);
+}
+// Métricas ricas: demos por semana (con % asistencia) + por tipo de evento.
+function _calWkStart(ms){ var x=new Date(ms); x.setHours(0,0,0,0); var dw=(x.getDay()+6)%7; x.setDate(x.getDate()-dw); return +x; }
+function _calRenderMetricsExtra(){
+  var box=document.getElementById("cp-cal-metrics"); if(!box) return;
+  var d=_calByOwner(_CAL_DATA).filter(function(r){ return r.estado!=="cancelada"; });
+  if(!d.length){ box.innerHTML=""; return; }
+  // ── Por semana (últimas 6) ──
+  var now=_calWkStart(Date.now()); var weeks=[]; for(var i=5;i>=0;i--) weeks.push(now-i*604800000);
+  var wk={}; weeks.forEach(function(w){ wk[w]={t:0,a:0}; });
+  d.forEach(function(r){ var w=_calWkStart(+new Date(r.inicio)); if(wk[w]!=null){ wk[w].t++; if(r.estado==="asistio") wk[w].a++; } });
+  var maxT=1; weeks.forEach(function(w){ if(wk[w].t>maxT) maxT=wk[w].t; });
+  var MES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  var bars=weeks.map(function(w){ var o=wk[w]; var h=Math.round(o.t/maxT*70); var dd=new Date(w);
+    return "<div style='flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0'>"+
+      "<div style='font-size:10px;font-weight:700;color:var(--pw-carbon);height:13px'>"+(o.t||"")+"</div>"+
+      "<div style='width:100%;max-width:26px;height:72px;display:flex;align-items:flex-end'>"+
+        "<div title='"+o.t+" demo(s) · "+(o.t?Math.round(o.a/o.t*100):0)+"% asist.' style='width:100%;height:"+Math.max(h,o.t?8:3)+"px;border-radius:5px 5px 0 0;background:"+(o.t?"var(--pw-border)":"var(--pw-niebla-2)")+";position:relative;overflow:hidden'>"+
+          (o.t?"<div style='position:absolute;bottom:0;left:0;right:0;height:"+Math.round(o.a/o.t*100)+"%;background:var(--pw-sendero)'></div>":"")+
+        "</div>"+
+      "</div>"+
+      "<div style='font-size:9px;color:var(--pw-text-muted)'>"+dd.getDate()+" "+MES[dd.getMonth()]+"</div>"+
+    "</div>"; }).join("");
+  // ── Por tipo de evento ──
+  var byType={}; d.forEach(function(r){ var typ=_agEventTypeFor(r.tipo); var k=(typ&&typ.label)||r.tipo||"Sin tipo"; if(!byType[k]) byType[k]={t:0,a:0,col:(typ&&typ.color)||"#8C7B80",ico:(typ&&typ.icon)||"🗓️"}; byType[k].t++; if(r.estado==="asistio") byType[k].a++; });
+  var typeRows=Object.keys(byType).map(function(k){ var o=byType[k]; var rate=o.a?Math.round(o.a/o.t*100):0;
+    return "<div style='display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
+      "<span style='width:22px;height:22px;border-radius:50%;background:"+o.col+"22;border:1.5px solid "+o.col+";display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0'>"+o.ico+"</span>"+
+      "<span style='flex:1;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(k)+"</span>"+
+      "<span style='font-size:12px;color:var(--pw-text-soft)'>"+o.t+" demo"+(o.t===1?"":"s")+"</span>"+
+      "<span style='font-size:11px;font-weight:700;color:"+(rate>=50?"var(--pw-bosque)":"var(--pw-text-muted)")+";min-width:64px;text-align:right'>"+rate+"% asist.</span>"+
+    "</div>"; }).join("");
+  box.innerHTML="<div class='cp-card' style='margin-bottom:16px'>"+
+    "<div class='cp-card-hd'><h3 class='cp-card-title'>Métricas<span class='dot'>.</span></h3><span class='cp-eyebrow' style='display:inline-flex;align-items:center;gap:6px'><span style='width:9px;height:9px;border-radius:2px;background:var(--pw-sendero);display:inline-block'></span>= asistieron</span></div>"+
+    "<div class='cp-card-pad' style='display:flex;gap:26px;flex-wrap:wrap'>"+
+      "<div style='flex:1.3;min-width:260px'><div class='cp-eyebrow' style='margin-bottom:12px'>Demos por semana</div><div style='display:flex;gap:6px;align-items:flex-end'>"+bars+"</div></div>"+
+      "<div style='flex:1;min-width:220px'><div class='cp-eyebrow' style='margin-bottom:4px'>Por tipo de evento</div>"+typeRows+"</div>"+
+    "</div>"+
+  "</div>";
+}
+function _calRenderList(){
+  var box=document.getElementById("cp-cal-list"); if(!box) return;
+  var now=Date.now();
+  var rows=_calByOwner(_CAL_DATA).filter(function(r){
+    if(r.estado==="cancelada") return _calFiltro==="todas";
+    if(_calFiltro==="proximas") return +new Date(r.inicio)>=now && r.estado!=="asistio" && r.estado!=="no_asistio";
+    if(_calFiltro==="pormarcar") return +new Date(r.inicio)<now && r.estado!=="asistio" && r.estado!=="no_asistio";
+    return true;
+  });
+  if(!rows.length){ box.innerHTML="<div style='color:var(--pw-text-soft);font-size:13px;padding:14px 0;text-align:center'>"+(_calFiltro==="pormarcar"?"Nada por marcar. ¡Al día!":_calFiltro==="proximas"?"Sin reservas próximas. Cuando alguien use tu link, aparece acá.":"Todavía no hay reservas.")+"</div>"; return; }
+  var DIAS=["dom","lun","mar","mié","jue","vie","sáb"], MES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  box.innerHTML=rows.map(function(r){
+    var dd=new Date(r.inicio); var typ=_agEventTypeFor(r.tipo); var col=(typ&&typ.color)||"#8C7B80"; var ico=(typ&&typ.icon)||"🗓️";
+    var fecha=DIAS[dd.getDay()]+" "+dd.getDate()+" "+MES[dd.getMonth()]+" · "+_agTime(+dd);
+    var mk=function(val,lbl){ var on=(r.estado===val); var c=val==="asistio"?"var(--pw-bosque)":val==="no_asistio"?"var(--pw-danger)":"#C99A2E"; return "<button data-act='cal-asis' data-id='"+esc(r.id)+"' data-val='"+val+"' style='padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?c:"var(--pw-border)")+";background:"+(on?c:"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; };
+    var canc=(r.estado==="cancelada")?"<span style='font-size:11px;font-weight:700;color:var(--pw-text-muted)'>Cancelada</span>":"";
+    // De quién es la demo (solo admin, cuando no es tuya).
+    var owner=(RADMIN && r.coach_id && String(r.coach_id)!==String(RME&&RME.id))?("<span title='Atiende' style='display:inline-flex;align-items:center;gap:4px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:100px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--pw-carbon)'>👤 "+esc(_calOwnerName(r.coach_id))+"</span>"):"";
+    return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--pw-border);flex-wrap:wrap'>"+
+      "<span style='width:30px;height:30px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>"+ico+"</span>"+
+      "<div style='min-width:150px;font-size:12.5px;font-weight:700;color:var(--pw-carbon)'>"+esc(fecha)+"</div>"+
+      "<div style='flex:1;min-width:120px'><div style='font-size:13.5px;font-weight:600'>"+esc(r.nombre||"Alguien")+"</div>"+
+      "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
+      owner+
+      canc+
+      "<div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó")+"</div>"+
+    "</div>";
+  }).join("");
 }
 
 /* ═══ Clientes ═══ */
@@ -2616,6 +2767,7 @@ function viewClienteDetalle(c){
       "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Peso (kg)</label><input id='fa-peso' class='cp-form-input' placeholder='78'></div><div class='cp-form-row'><label class='cp-form-label'>Masa grasa (kg)</label><input id='fa-grasa' class='cp-form-input' placeholder='14.5'></div></div>"+
       "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Masa muscular (kg)</label><input id='fa-musculo' class='cp-form-input' placeholder='46.6'></div><div class='cp-form-row'><label class='cp-form-label'>Masa ósea (kg)</label><input id='fa-oseo' class='cp-form-input' placeholder='10.05'></div></div>"+
       "<div class='cp-form-row-2' style='margin-top:12px'><div class='cp-form-row'><label class='cp-form-label'>Σ Pliegues (mm)</label><input id='fa-pliegues' class='cp-form-input' placeholder='82'></div><div class='cp-form-row'><label class='cp-form-label'>IMO (músc./óseo)</label><input id='fa-imo' class='cp-form-input' placeholder='4.63'></div></div>"+
+      "<div class='cp-form-hint' style='margin:8px 0 0'>Σ Pliegues es la suma total de los pliegues que midas (6 u 8 sitios, el protocolo que uses). La app la guarda y grafica en el tiempo — no hace la suma automáticamente. Usa siempre los mismos sitios para que la evolución sea comparable.</div>"+
       "<button class='cp-btn cp-btn-primary' style='margin-top:14px' data-act='fit-antro-save' data-id='"+esc(c.id)+"'>Guardar medición</button></div>"+histA;
   } else if(t==="fit_rutina"){
     var RUT=_rutToArr((c.raw&&c.raw.fit_rutina)||"");
@@ -5413,9 +5565,10 @@ function render(){
     // hay cliente de ejemplo en pantalla (coach real con clientes propios).
     _demoSnapshot();
     if(state.section==="admin" && !RADMIN) state.section="resumen";
+    if(state.section==="calendario" && !RADMIN) state.section="resumen";
     if(state.section==="emails" && !puedeEmails()) state.section="resumen";
     _applyPanelBrand();
-    var sections = { resumen:viewResumen, clientes:viewClientes, mensajes:viewSolicitudes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin, emails:viewEmails };
+    var sections = { resumen:viewResumen, clientes:viewClientes, mensajes:viewSolicitudes, solicitudes:viewSolicitudes, config:viewConfig, admin:viewAdmin, emails:viewEmails, calendario:viewCalendario };
     var view = (sections[state.section]||viewResumen)();
     // Configuración usaba un contenedor angosto (760px) centrado, que la dejaba
     // "muy en el medio". Ahora usa el ancho normal, alineada como las demás pestañas.
@@ -5457,6 +5610,9 @@ function render(){
         else { _resLoad(); }
         _agMonthRender(); // pinta el mes con lo que haya en cache (o vacío)
       }catch(e){}
+    }
+    if(state.section==="calendario"){
+      try{ if(_CAL_DATA){ _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); } else { _calLoad(); } }catch(e){}
     }
     _syncChatBtn();
     // Apenas entrás al panel (datos reales cargados), la cabra saluda y luego
@@ -5523,6 +5679,20 @@ document.addEventListener("click", function(ev){
       .catch(function(){ toast("No se pudo actualizar la reserva."); _resLoad(); });
     return;
   }
+  if(act==="cal-filtro"){ _calFiltro=el.getAttribute("data-f")||"proximas"; render(); return; }
+  if(act==="cal-owner"){ _calOwner=el.getAttribute("data-o")||"todas"; render(); return; }
+  if(act==="cal-asis"){
+    var _cid=el.getAttribute("data-id"), _cv=el.getAttribute("data-val"); if(!_cid||!_cv) return;
+    var _cr=(_CAL_DATA||[]).filter(function(x){ return String(x.id)===String(_cid); })[0]; if(!_cr) return;
+    var _cprev=_cr.estado; _cr.estado=(_cr.estado===_cv?"confirmada":_cv); // volver a tocar el mismo estado lo desmarca
+    _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra();
+    // Admin puede marcar la de cualquiera (por id); un coach solo la suya (coachGuard).
+    var _cq=RADMIN?("citas?id=eq."+encodeURIComponent(_cid)):("citas?id=eq."+encodeURIComponent(_cid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""));
+    _sbw(_cq,"PATCH",{estado:_cr.estado})
+      .then(function(r){ if(r&&r.ok){ toast(_cv==="asistio"?"Marcado: asistió ✓":_cv==="no_asistio"?"Marcado: no asistió":"Marcado: reprogramó"); } else { _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); } })
+      .catch(function(){ _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); });
+    return;
+  }
   if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
   if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{days:[1,2,3,4,5],from:"09:00",to:"18:00"}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00")}; render(); return; }
   if(act==="ag-disp-day"){
@@ -5571,9 +5741,16 @@ document.addEventListener("click", function(ev){
     var _au="https://calendar.google.com/calendar/u/0/r/eventedit?text="+encodeURIComponent(_atl)+"&dates="+_afmt(_ast)+"/"+_afmt(_aen);
     var _team=(state.ag&&state.ag.team)||[]; _team.forEach(function(em){ if(em) _au+="&add="+encodeURIComponent(em); });
     if(_ag2) _au+="&add="+encodeURIComponent(_ag2);
+    // Evento compartido: además de la invitación de Google, lo guardamos en la
+    // agenda (tabla citas) de cada compañero invitado, para que le aparezca en su
+    // panel aunque no use Google. Nombre = el invitado externo si lo hay, si no
+    // "con <tu nombre>".
+    var _shWith=_ag2?(_ag2.split("@")[0]):("con "+((COACH&&COACH.firstName)||(RME&&RME.nombre)||"el equipo"));
+    var _nInvited=0;
+    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ _nInvited++; _sbw("citas","POST",{coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_ast.toISOString(),estado:"confirmada"}).catch(function(){}); } });
     state.ag=null;
     var _aw=window.open(_au,"_blank","noopener"); if(!_aw) location.href=_au;
-    toast("Cita cargada en Google — confirmá y aparece en tu agenda.");
+    toast(_nInvited?("Cita agendada — le aparece a "+_nInvited+" del equipo y en Google."):"Cita cargada en Google — confirmá y aparece en tu agenda.");
     render(); return;
   }
   // Portal del cliente: SIEMPRE en la misma pestaña ("pathway_portal"). Si ya
@@ -7657,6 +7834,11 @@ function loadReal(){
   if(!ME||!ME.id) return; // sin sesión → datos de ejemplo
   REAL=true; RME=ME; RADMIN=(ME.rol==="admin");
   _gameRestoreOwn(); // recupera tu mejor puntaje del servidor (fix multi-dispositivo)
+  // Con RLS prendido, un coach sin sesión activa (o sin auth_id ligado) no vería
+  // sus clientes. En vez de un panel en blanco, lo mandamos a iniciar sesión de
+  // nuevo (el login le liga el auth_id → RLS empieza a andar para él). Dormido
+  // mientras PWAUTH.RLS_ON sea false (hoy) → cero cambio para las coaches activas.
+  try{ if(window.PWAUTH && PWAUTH.RLS_ON){ PWAUTH.hasSession().then(function(has){ if(!has && PWAUTH.showLoginGate) PWAUTH.showLoginGate(); }); } }catch(e){}
   // AISLAMIENTO ESTRICTO DE LA LISTA DE CLIENTES: cada coach (admin incluido) ve
   // SOLO sus clientes (coach_id propio). Antes el admin también veía los huérfanos
   // (coach_id IS NULL) de CUALQUIER nicho → un cliente de fitness sin asignar se
