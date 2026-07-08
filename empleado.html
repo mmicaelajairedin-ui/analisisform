@@ -768,6 +768,7 @@
     var _li=document.getElementById('mylink'); if(_li) _li.value=myBookingLink();
     var box=document.getElementById('cal-list');
     if(!sb || !(WHO&&WHO.id)){ if(box) box.innerHTML="<div class='empty'>Iniciá sesión para ver tus reservas.</div>"; return; }
+    if(!_loaded.leads){ _loaded.leads=true; try{ await loadLeads(); }catch(e){} } // para vincular demos ↔ leads
     try{
       var from=new Date(Date.now()-120*86400000).toISOString();
       var r=await sb.from('citas').select('id,nombre,email,tipo,inicio,estado').eq('coach_id',WHO.id).gte('inicio',from).order('inicio',{ascending:false});
@@ -794,6 +795,9 @@
       return true;
     });
   }
+  // Vínculo demo ↔ lead: por email. Si la persona que reservó está en tu lista de
+  // leads, la demo queda enlazada y así ves quién es tuyo para la comisión.
+  function _leadFor(r){ var e=_norm(r&&r.email); if(!e) return null; return (LEADS||[]).filter(function(l){ return _norm(l.email)===e; })[0]||null; }
   function renderCalList(){
     var box=document.getElementById('cal-list'); if(!box) return;
     var rows=calVisibles();
@@ -805,21 +809,36 @@
       var mk=function(val,lbl){ var on=(r.estado===val); var col=val==='asistio'?'#2D6A4F':val==='no_asistio'?'#C0756E':'#C99A2E';
         return "<button onclick=\"markAsistencia('"+r.id+"','"+val+"')\" style='padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?col:'var(--borde)')+";background:"+(on?col:'#fff')+";color:"+(on?'#fff':'var(--texto-suave)')+"'>"+lbl+"</button>"; };
       var estadoTag=r.estado==='cancelada'?"<span class='estado descartado'>Cancelada</span>":"";
+      // Badge del lead vinculado (o botón para agregarlo).
+      var L=_leadFor(r), leadTag="";
+      if(L){ var lc=COLOR[L.estado]||'#8A968F'; leadTag="<button onclick=\"goTab('leads')\" title='Ver en Leads' style='display:inline-flex;align-items:center;gap:5px;border:1.5px solid "+lc+";background:"+lc+"14;color:"+lc+";border-radius:100px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit'>🔗 "+esc((''+(L.nombre||L.email)).split(' ')[0])+" · "+esc(EST_LBL[L.estado]||L.estado)+"</button>"; }
+      else if(r.email){ leadTag="<button onclick=\"addLeadFromCita('"+r.id+"')\" style='border:1.5px dashed var(--borde);background:#fff;color:var(--texto-suave);border-radius:100px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit'>＋ A leads</button>"; }
       return "<div style='display:flex;align-items:center;gap:12px;padding:11px 12px;border-bottom:1px solid var(--borde);flex-wrap:wrap'>"+
         "<span style='width:30px;height:30px;border-radius:50%;background:"+e.color+"22;border:1.5px solid "+e.color+";display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>"+e.icon+"</span>"+
         "<div style='min-width:150px;font-size:12.5px;font-weight:700;color:var(--carbon)'>"+esc(fecha)+"</div>"+
         "<div style='flex:1;min-width:120px'><div style='font-size:13.5px;font-weight:600'>"+esc(r.nombre||'Alguien')+"</div>"+
         "<div style='font-size:11.5px;color:var(--texto-suave)'>"+esc(r.tipo||'')+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
+        (leadTag?"<div style='flex-shrink:0'>"+leadTag+"</div>":"")+
         estadoTag+
         "<div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk('asistio','Asistió')+mk('no_asistio','No asistió')+mk('reprogramada','Reprogramó')+"</div>"+
       "</div>";
     }).join('');
   }
+  // Agregar a leads la persona que reservó (queda como demo agendada).
+  window.addLeadFromCita=async function(id){
+    var r=CALI.filter(function(x){ return String(x.id)===String(id); })[0]; if(!r||!r.email){ return; }
+    if(_leadFor(r)){ goTab('leads'); return; }
+    var row={empleado_id:(WHO&&WHO.id)||ME.id,nombre:r.nombre||r.email.split('@')[0],email:r.email,telefono:'',instagram:'',nicho:'sin',estado:'demo',demo_agendada:true,demo_fecha:new Date().toISOString()};
+    if(sb){ try{ var res=await sb.from('leads').insert(row).select().single(); if(res.error) throw res.error; LEADS.unshift(res.data); toast('Agregado a leads ✓'); renderCalList(); try{ render(); }catch(e){} return; }catch(e){ toast('No se pudo agregar'); return; } }
+    row.id='tmp'+Date.now(); LEADS.unshift(row); renderCalList();
+  };
   window.markAsistencia=async function(id,val){
     var r=CALI.filter(function(x){ return String(x.id)===String(id); })[0]; if(!r) return;
     var prev=r.estado; r.estado=(r.estado===val?'confirmada':val); // volver a tocar el mismo = desmarca
     renderCalMetrics(); renderCalList();
     if(sb){ try{ var up=await sb.from('citas').update({estado:r.estado}).eq('id',id); if(up.error) throw up.error; }catch(e){ r.estado=prev; renderCalMetrics(); renderCalList(); toast('No se pudo guardar'); return; } }
+    // Si asistió y está enlazada a un lead, el lead avanza a "Demo" (alimenta la comisión).
+    if(r.estado==='asistio'){ var Lx=_leadFor(r); if(Lx){ var po={demo_agendada:true}; if(Lx.estado==='nuevo'||Lx.estado==='contactado') po.estado='demo'; try{ patch(Lx.id,po); }catch(e){} renderCalList(); } }
     toast(val==='asistio'?'Marcado: asistió ✓':val==='no_asistio'?'Marcado: no asistió':'Marcado: reprogramó');
   };
 
