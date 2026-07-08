@@ -71,7 +71,7 @@
       + '<td style="vertical-align:middle;padding-right:20px;">'+ph+'</td>'
       + '<td style="vertical-align:middle;border-left:2px solid '+divider+';padding-left:20px;">'
       +   '<div style="font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:bold;letter-spacing:2.5px;color:'+nameCol+';text-transform:uppercase;line-height:1.2;">'+esc(p.name)+'</div>'
-      +   '<div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:600;letter-spacing:2.5px;color:'+roleCol+';text-transform:uppercase;margin-top:4px;">Pathway Team</div>'
+      +   '<div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:600;letter-spacing:2.5px;color:'+roleCol+';text-transform:uppercase;margin-top:4px;">'+esc(p.role||'Pathway Team')+'</div>'
       +   '<div style="height:14px;line-height:14px;font-size:0;">&nbsp;</div>'
       +   '<div style="white-space:nowrap;">'
       +     badge('mailto:'+esc(p.email), m.mail, 'Email') + badge(WA, m.whats, 'WhatsApp') + badge(WEB, m.web, 'Web')
