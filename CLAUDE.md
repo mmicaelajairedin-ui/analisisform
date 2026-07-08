@@ -63,7 +63,7 @@ interfaz van en **gris**, no a color
 ## 🛡️ Blindaje del codigo — tests que no pueden mentir (junio 2026)
 Red de seguridad para que NO vuelvan bugs ya resueltos. Corren en CI en cada
 push/PR (`.github/workflows/syntax-check.yml`). **Antes de commitear, correr:**
-`node scripts/check-syntax.js && node scripts/check-smoke.js && node scripts/check-guardrails.js`
+`node scripts/check-syntax.js && node scripts/check-smoke.js && node scripts/check-guardrails.js && node scripts/check-parity.js`
 - **`scripts/check-syntax.js`** — valida el JS inline de cada .html (un error
   rompe la pagina entera).
 - **`scripts/check-smoke.js`** — verifica que cada handler (`onclick`...) llame a
@@ -71,6 +71,12 @@ push/PR (`.github/workflows/syntax-check.yml`). **Antes de commitear, correr:**
   botones e imagenes rotas. Si agrega falsos positivos, tunear los allowlists.
 - **`scripts/check-guardrails.js`** — "vacuna" bugs resueltos: cada arreglo suma
   una regla. **Al arreglar un bug nuevo, agregar una regla aca** para que no vuelva.
+- **`scripts/check-parity.js`** — la "base que se replica": verifica que las
+  pantallas del mismo tipo (familias: portales/paneles/formularios/editores)
+  tengan el mismo CABLEADO, que los contratos transversales (chat) se respeten,
+  y los INVARIANTES (chat merge-safe, anti-XSS, sesión vencida, dedup). Doc:
+  `docs/base-plataforma.md`. Dos niveles: `enforce` (falla) y `report` (lista
+  huecos). Al cerrar un hueco, subirlo de `report` a `enforce`.
 - **`pw-observe.js`** (observabilidad) — incluido en las 10 paginas clave.
   Registra en la tabla `client_errors` los errores reales de produccion:
   guardados a Supabase que fallan (intercepta `fetch`, atrapa los `.catch`
@@ -287,12 +293,14 @@ Cada coach ve solo sus candidatos/informes/CVs. Estado actual del aislamiento:
 
 Admin (`ME.rol==='admin'`) ve los suyos + huerfanos (`coach_id IS NULL`).
 
-### Capa 2 — Defense-in-depth con coachGuard() (HECHO)
-Helper `coachGuard()` (linea ~1303) devuelve `&coach_id=eq.<ME.id>` para
-no-admin. Aplicado a queries individuales PATCH/DELETE criticas (toggle
-activo, sesiones_registro). Si un coach intenta escribir con un `id` ajeno
-(p.ej. abriendo devtools y haciendo PATCH con un UUID conocido), la query
-no matchea ninguna fila y no escribe nada.
+### Capa 2 — Defense-in-depth con cg()/coachGuard() (HECHO)
+Helper `cg()` en panel-v2 (y `coachGuard()` en el panel viejo) devuelve
+`&coach_id=eq.<ME.id>` para no-admin, `""` para admin. **Aplicado de forma
+CENTRALIZADA en `_sbw()`**: todo PATCH/DELETE a `candidatos?id=eq.` recibe
+`+cg()` automaticamente (una sola fuente, cubre los ~30 sitios). Si un coach
+intenta escribir con un `id` ajeno (p.ej. devtools + UUID conocido), la query
+no matchea ninguna fila y no escribe nada. Guardrail lo protege.
+(Antes cg() estaba definido pero NUNCA aplicado — fuga real, ya cerrada.)
 
 ### Capa 3 — RLS estricto en Supabase (PENDIENTE)
 **GAP DE SEGURIDAD CONOCIDO**: las tablas `candidatos`, `informes`,

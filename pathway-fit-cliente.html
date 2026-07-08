@@ -13,6 +13,7 @@
   cambia por nicho es el contenido. Datos de ejemplo (DEMO).
 -->
 <link rel="stylesheet" href="pathway-portal.css?v=7">
+<link rel="stylesheet" href="pw-cabra-juego.css?v=1">
 <script src="pw-exbank.js"></script>
 <style>
 /* Ancho de lectura del portal: el .mc compartido es 1600 (lo usa finanzas para
@@ -50,6 +51,27 @@
 .gym-chip.off{background:#F0F0EE;color:#B4B4AE;}
 .gym-rail-note{font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:4px;}
 @media(max-width:880px){ .gym-2col{grid-template-columns:1fr;} .gym-rail{position:static;} }
+/* ── Cartel "tu coach está preparando tu plan" — cliente nuevo con plan vacío.
+   La foto del coach "respira" (pulso) para que se sienta acompañado mientras
+   el coach arma la rutina. Se apaga con prefers-reduced-motion. ── */
+.prep-card{background:linear-gradient(135deg,var(--rose-light),#fff);border:1px solid var(--rose-mid);border-radius:18px;padding:20px;margin-bottom:18px;box-shadow:0 6px 22px rgba(0,0,0,.05);}
+.prep-top{display:flex;align-items:center;gap:14px;}
+.prep-av{width:66px;height:66px;border-radius:50%;flex-shrink:0;background:var(--rose);color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;overflow:hidden;animation:prep-breathe 3.4s ease-in-out infinite;}
+.prep-av img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;}
+@keyframes prep-breathe{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(140,123,128,.38);}50%{transform:scale(1.055);box-shadow:0 0 0 12px rgba(140,123,128,0);}}
+@media(prefers-reduced-motion:reduce){.prep-av{animation:none;}}
+.prep-title{font-family:var(--serif);font-size:17px;font-weight:600;color:var(--text);margin:0 0 3px;}
+.prep-sub{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0;}
+.prep-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px;}
+.prep-chip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;padding:9px 13px;border-radius:11px;border:1px solid var(--rose-mid);background:#fff;color:var(--rose);cursor:pointer;transition:transform .12s,box-shadow .12s;font-family:inherit;}
+.prep-chip:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
+.prep-chip.done{background:var(--rose-light);border-color:transparent;color:var(--rose);cursor:default;}
+.prep-chip.done:hover{transform:none;box-shadow:none;}
+/* Lista del súper: cada ítem se puede TILDAR (como una lista de compras). */
+.super-cat li{cursor:pointer;user-select:none;transition:color .12s;}
+.super-cat li:hover{color:var(--rose);}
+.super-cat li.done{color:var(--muted);text-decoration:line-through;}
+.super-cat li.done::before{background:var(--rose);border-color:var(--rose);}
 </style>
 </head>
 <body>
@@ -83,6 +105,10 @@
     <div class="sb-foot">
       <div style="font-size:11px;font-weight:700;color:var(--text);">Martín Ríos</div>
       <div style="font-size:10px;color:var(--muted);margin-bottom:8px;">martin@email.com</div>
+      <button type="button" class="sb-juego" onclick="abrirJuego()" aria-label="Jugar a la cabra y sumar puntos" style="display:flex;align-items:center;gap:9px;width:100%;margin-bottom:8px;padding:7px 10px;background:var(--brand-light,#eef3f0);border:1px solid var(--border,#e6e1e4);border-radius:11px;cursor:pointer;text-align:left;">
+        <img src="https://szf7yzy2hz.ucarecd.net/088834f5-6934-4e64-97b2-52ebd8647c1d/CopyofUntitledDesign.png" alt="" onerror="this.onerror=null;this.src='assets/cabra/frente.gif'" style="width:34px;height:34px;object-fit:contain;flex-shrink:0;">
+        <span style="font-family:Inter,-apple-system,sans-serif;font-size:12.5px;font-weight:700;color:var(--brand,#2D6A4F);line-height:1.15;">🎮 Jugar<br><span style="font-weight:500;font-size:10.5px;color:var(--muted,#9AA0A6);">y sumar puntos</span></span>
+      </button>
       <button class="sb-out" onclick="pwLogout()">Cerrar sesión</button>
     </div>
   </aside>
@@ -104,6 +130,7 @@
 
         <div class="dash">
           <div class="dash-main">
+            <div id="prep-slot"></div>
             <div class="card"><div class="card-body">
               <span class="eyebrow">📋 Basado en tu evaluación</span>
               <p class="h-sec" style="margin:6px 0 14px;" id="dash-obj">Para tu objetivo: bajar grasa<em>.</em></p>
@@ -137,7 +164,7 @@
 
             <div class="card"><div class="card-body">
               <span class="eyebrow">Actividad reciente · Tu timeline</span>
-              <div style="margin-top:10px;">
+              <div style="margin-top:10px;" id="dash-timeline">
                 <div class="tl-item"><div class="tl-ic">⚖️</div><div class="tl-b"><b>Cargaste tu peso (-1 kg)</b><p>hace 2 h</p></div></div>
                 <div class="tl-item"><div class="tl-ic">🏋️</div><div class="tl-b"><b>Completaste el entreno de tren superior</b><p>ayer</p></div></div>
                 <div class="tl-item"><div class="tl-ic">📐</div><div class="tl-b"><b>Gonza cargó tu antropometría</b><p>hace 3 días</p></div></div>
@@ -414,9 +441,21 @@ function go(s){
 function toggleSb(){ document.getElementById('sb').classList.toggle('open'); document.getElementById('ov').classList.toggle('open'); }
 function toggleEx(el){
   el.classList.toggle('done');
-  var day=el.closest('.day'),t=day.querySelectorAll('.ex').length,d=day.querySelectorAll('.ex.done').length;
+  var day=el.closest('.day'); if(!day) return; // sin contenedor .day no contamos
+  var t=day.querySelectorAll('.ex').length,d=day.querySelectorAll('.ex.done').length;
   var pr=day.querySelector('.d-prog'); if(pr) pr.textContent=d+'/'+t;
-  if(t>0 && d===t && !day.classList.contains('celebrated')){ day.classList.add('celebrated'); fireConfetti(); showToast('💪 ¡Día completo! Gran trabajo.'); }
+  // Micro-feedback al marcar cada ejercicio (se siente que "prende").
+  if(el.classList.contains('done')){ try{ if(window.PWJ&&PWJ.sound) PWJ.sound('point'); }catch(e){} }
+  if(t>0 && d===t && !day.classList.contains('celebrated')){
+    day.classList.add('celebrated');
+    // Día completo → celebración CLARA (cabra + explosión + sonido), no un burst
+    // chico que se perdía. Fallback al confeti viejo si el motor no cargó.
+    try{
+      if(window.PWJ&&PWJ.celebrate){ PWJ.celebrate({kind:'logro',title:'¡Día de entreno completo! 💪',sub:'Gran trabajo — sumaste tu entreno de hoy',btn:'¡Seguir!'}); }
+      else { fireConfetti(); }
+    }catch(e){ try{ fireConfetti(); }catch(_e){} }
+    showToast('💪 ¡Día completo! Gran trabajo.');
+  }
   else if(d<t){ day.classList.remove('celebrated'); }
 }
 var EX={'Press de banca':['Acostate en el banco con los pies firmes.','Agarrá la barra un poco más ancho que los hombros.','Bajá controlando hasta rozar el pecho.','Empujá sin bloquear de golpe los codos.'],'Remo con barra':['Incliná el torso con la espalda recta.','Deja colgar la barra con los brazos estirados.','Tirá hacia el ombligo apretando la espalda.','Bajá despacio.'],'Press militar':['Barra a la altura de los hombros.','Empujá hasta estirar los brazos.','Bajá controlando.'],'Fondos en paralelas':['Sostené tu peso con los brazos estirados.','Bajá flexionando los codos.','Empujá hasta volver al inicio.'],'Curl de bíceps':['Mancuernas a los costados.','Sube flexionando el codo.','Bajá despacio.'],'Sentadilla':['Pies al ancho de los hombros.','Bajá llevando la cola atrás.','Muslos paralelos al piso.','Sube con los talones.'],'Peso muerto rumano':['Barra adelante de los muslos.','Bajá pegada a las piernas flexionando la cadera.','Vuelve arriba.'],'Zancadas':['Paso largo adelante.','Bajá hasta 90° ambas rodillas.','Cambiá de pierna.']};
@@ -444,7 +483,11 @@ function openEx(n){
 function closeEx(){document.getElementById('exModal').classList.remove('on');}
 function toggleObj(el){el.classList.toggle('done');var c=el.closest('.card'),a=c.querySelectorAll('.objc').length,d=c.querySelectorAll('.objc.done').length;if(a===d){fireConfetti();showToast('🏅 ¡Objetivos de la semana completados!');}}
 function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),3200);}
-function fireConfetti(){var c=['#2D6A4F','#52B788','#E9C46A','#A8633A','#2E7587'];for(var i=0;i<90;i++){var d=document.createElement('div');d.className='confetti';d.style.left=(Math.random()*100)+'vw';d.style.background=c[i%c.length];document.body.appendChild(d);var f=1900+Math.random()*1400,x=(Math.random()-.5)*240;d.animate([{transform:'translate(0,0) rotate(0)',opacity:1},{transform:'translate('+x+'px,110vh) rotate('+(Math.random()*720)+'deg)',opacity:.9}],{duration:f,easing:'cubic-bezier(.25,.6,.5,1)'});(function(e,m){setTimeout(()=>e.remove(),m);})(d,f);}}
+function fireConfetti(){
+  // Explosión unificada (pathway-juego.js) + sonidito. Fallback a la cortina vieja.
+  if(window.PWJ){ PWJ.burst(window.innerWidth/2, window.innerHeight*0.35, 64); PWJ.sound('point'); return; }
+  var c=['#2D6A4F','#52B788','#E9C46A','#A8633A','#2E7587'];for(var i=0;i<90;i++){var d=document.createElement('div');d.className='confetti';d.style.left=(Math.random()*100)+'vw';d.style.background=c[i%c.length];document.body.appendChild(d);var f=1900+Math.random()*1400,x=(Math.random()-.5)*240;d.animate([{transform:'translate(0,0) rotate(0)',opacity:1},{transform:'translate('+x+'px,110vh) rotate('+(Math.random()*720)+'deg)',opacity:.9}],{duration:f,easing:'cubic-bezier(.25,.6,.5,1)'});(function(e,m){setTimeout(()=>e.remove(),m);})(d,f);}
+}
 // ── Gráficos de progreso. Funciones reutilizables: arrancan con datos demo y
 //    se re-renderizan con los datos reales que cargó el coach (fit_antro). ──
 function _pn(x){ var n=parseFloat(x); return isNaN(n)?null:n; }
@@ -493,6 +536,8 @@ function renderPeso(data){
 <!-- El portal se accede por el link que comparte el coach (?email=<cliente>).
      No hay auto-login acá: la autenticación de clientes vive en login.html. -->
 <script src="pw-auth.js"></script>
+<script src="pathway-juego.js?v=1"></script>
+<script src="pw-cabra-juego.js?v=1"></script>
 <script>
 // ===================================================================
 // Portal fitness — datos REALES desde la base de CAREER (la misma que usa el
@@ -501,7 +546,7 @@ function renderPeso(data){
 // que marca el cliente se guardan en candidatos.fit_habitos.
 // Clave anon = pública (ok en frontend). cliente.html de career queda intacto.
 // ===================================================================
-var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+var SB='https://api.pathwaycareercoach.com';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 function _hdr(extra){ if(window.PWAUTH&&PWAUTH.headersSync) return PWAUTH.headersSync(extra); var h={'apikey':KEY,'Authorization':'Bearer '+KEY}; if(extra) for(var k in extra) h[k]=extra[k]; return h; }
 // Red de seguridad para cuando RLS esté prendido: 401/403 (sin sesión) → login.
@@ -583,6 +628,13 @@ function _isOnline(ts){ return !!(ts && (Date.now()-new Date(ts).getTime() < 900
 function pwBeat(){ if(!CID) return; try{ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{cliente_last_seen:new Date().toISOString()}); }catch(e){} }
 
 var EMAIL=(new URLSearchParams(location.search).get('email')||new URLSearchParams(location.search).get('coach_view')||'').toLowerCase().trim();
+// GARANTÍA: un CLIENTE logueado ve SIEMPRE su propio espacio — nunca el demo de
+// María ni el de otro cliente. Forzamos su email de sesión (mj_user), aunque la
+// URL venga pelada o con otro email. No aplica al preview del coach (?coach_view,
+// y el coach no es rol=cliente).
+try{ var _mu=JSON.parse(localStorage.getItem('mj_user')||'null');
+  if(_mu&&_mu.rol==='cliente'&&_mu.email && !new URLSearchParams(location.search).get('coach_view')){ EMAIL=(''+_mu.email).toLowerCase().trim(); }
+}catch(e){}
 // Si es el COACH mirando el portal de su cliente (?coach_view=), mostrar un
 // botón para volver al panel — si no, queda atrapado en el portal.
 (function(){ try{ if(new URLSearchParams(location.search).get('coach_view')){
@@ -740,11 +792,19 @@ function _renderWeekPlan(){
 //    semana, agrupada por sección. Se cachea en localStorage por hash del plan
 //    (solo se regenera si el coach cambia las comidas). Llamada perezosa desde go().
 function _superHash(s){ var h=5381; for(var i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))|0; } return (h>>>0).toString(36); }
+// Marcado (tildado) de los ítems del súper: se guarda por hash del plan, así los
+// tildes SOBREVIVEN al navegar y a recargar (la lista se cachea igual).
+function _superChecked(){ try{ var k=window._superCheckKey; if(!k) return {}; return JSON.parse(localStorage.getItem(k)||'{}')||{}; }catch(e){ return {}; } }
+function toggleSuperItem(el){
+  if(!el) return; el.classList.toggle('done');
+  try{ var k=window._superCheckKey; if(!k) return; var set=_superChecked(); var id=el.getAttribute('data-it')||''; if(el.classList.contains('done')) set[id]=1; else delete set[id]; localStorage.setItem(k, JSON.stringify(set)); }catch(e){}
+}
 function _superRender(out){
   var box=document.getElementById('nutri-super'); if(!box) return;
   if(!out||!out.categorias||!out.categorias.length){ box.innerHTML='<p style="font-size:12px;color:var(--muted)">'+esc((out&&out.nota)||'Tu coach todavía no cargó tu plan.')+'</p>'; return; }
+  var chk=_superChecked();
   var html=out.categorias.map(function(c){
-    var items=(c.items||[]).map(function(it){ return '<li>'+esc(it)+'</li>'; }).join('');
+    var items=(c.items||[]).map(function(it){ var on=chk[it]?' done':''; return '<li class="'+(on?'done':'')+'" onclick="toggleSuperItem(this)" data-it="'+esc(it)+'">'+esc(it)+'</li>'; }).join('');
     return '<div class="super-cat"><div class="super-cat-h">'+esc(c.nombre||'')+'</div><ul>'+items+'</ul></div>';
   }).join('');
   if(out.nota) html+='<p style="font-size:11px;color:var(--muted);margin-top:6px;">'+esc(out.nota)+'</p>';
@@ -757,6 +817,7 @@ function renderListaSuper(){
   var plan=(parts.join('\n')+((NUT&&NUT.pautas)?('\n'+NUT.pautas):'')).trim();
   if(!plan){ box.innerHTML='<p style="font-size:12px;color:var(--muted)">Tu coach todavía no cargó tu plan.</p>'; return; }
   var key='mj_superlista_'+_superHash(plan);
+  window._superCheckKey='mj_superchk_'+_superHash(plan); // tildes de esta lista
   try{ var cached=localStorage.getItem(key); if(cached){ _superRender(JSON.parse(cached)); return; } }catch(e){}
   box.innerHTML='<p style="font-size:12px;color:var(--muted)">Armando tu lista…</p>';
   fetch(SB+'/functions/v1/lista-super',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({plan:plan})})
@@ -910,7 +971,9 @@ function applyClient(c){
       var path='client-'+(''+EMAIL).replace(/[^a-z0-9]/gi,'_')+'-'+Date.now()+'.'+ext;
       fetch(SB+'/storage/v1/object/avatars/'+encodeURIComponent(path),{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':(f.type||'image/png'),'x-upsert':'true'},body:f})
         .then(function(r){ if(!r.ok) throw 0; var url=SB+'/storage/v1/object/public/avatars/'+path;
-          try{ sbPatch('candidatos','email=eq.'+encodeURIComponent(EMAIL),{foto_perfil:url}); c.foto_perfil=url; }catch(e){}
+          // Guardar la foto vía edge function (service role → ignora RLS, SIEMPRE
+          // persiste). Fallback al PATCH directo si no está deployada.
+          c.foto_perfil=url; try{ fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({email:EMAIL,data:{foto_perfil:url},coach_id:(CRAW&&CRAW.coach_id)||''})}).then(function(r){ if(!r||!r.ok) sbPatch('candidatos','email=eq.'+encodeURIComponent(EMAIL),{foto_perfil:url}); }).catch(function(){ sbPatch('candidatos','email=eq.'+encodeURIComponent(EMAIL),{foto_perfil:url}); }); }catch(e){}
           var b=document.querySelector('.sb-brand-foto'); if(b){ b.style.background='transparent'; b.innerHTML='<img src="'+url+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">'; _h(b); }
           var m=document.getElementById('meAv'); if(m){ m.style.background='transparent'; m.innerHTML='<img src="'+url+'" alt="" style="max-width:40px;max-height:40px;width:100%;height:100%;object-fit:cover;border-radius:50%">'; }
         }).catch(function(){ alert('No se pudo subir la foto. Reintenta.'); });
@@ -937,6 +1000,7 @@ function _focoActions(d){
   return (Object.prototype.toString.call(arr)==='[object Array]')?arr:[];
 }
 function applyInforme(inf){
+  window._tieneInforme=!!inf;
   if(!inf){
     var dg0=document.getElementById('dash-diag'); if(dg0)dg0.innerHTML='<div style="font-size:12.5px;color:var(--muted);padding:6px 0;">Tu coach todavía no cargó tu diagnóstico.</div>';
     var fz0=document.getElementById('dash-forta'); if(fz0)fz0.innerHTML='<div style="font-size:12.5px;color:var(--muted)">—</div>';
@@ -970,6 +1034,18 @@ function _habitStreak(){
   for(var i=0;i<90;i++){ var k=new Date(base); k.setDate(base.getDate()-i); var ds=k.toISOString().slice(0,10); var dd=WDATA[ds]; if(dd && HAB.every(function(h){return dd[h]===true;})) n++; else break; }
   return n;
 }
+// Abre "La cabra a la cima". Setea el email del cliente y, al cerrar, refresca
+// la medalla (el mejor puntaje del juego suma hasta 150 pts, ver applyLogros).
+var _pwGameInf=null;
+function abrirJuego(){
+  try{
+    window.PW_GAME_EMAIL=EMAIL||(CRAW&&CRAW.email)||CID||'x';
+    window.PW_GAME_SYNC=function(n){ try{ n=parseInt(n,10)||0; var cur=parseInt((CRAW&&CRAW.game_pts)||0,10)||0; if(n<=cur||!CID) return; CRAW.game_pts=n; sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{game_pts:n}).catch(function(){}); }catch(e){} };
+    window.PW_GAME_ONCLOSE=function(){ try{ applyLogros(_pwGameInf); }catch(e){} };
+  }catch(e){}
+  if(typeof openJuego==='function'){ openJuego(); }
+  else if(typeof showToast==='function'){ showToast('🐐 El juego se está cargando… reintentá en un momento'); }
+}
 function applyLogros(inf){
   if(!CRAW) return;
   var hasRut=false; try{ hasRut=_rutToArr(CRAW.fit_rutina||'').length>0; }catch(e){}
@@ -978,6 +1054,8 @@ function applyLogros(inf){
   // "Evaluación" = el cliente completó su intake. ANTES estaba hardcodeado en
   // true → salía "hecho" aunque no llenara nada. Ahora se ata a datos reales.
   var hasEval=!!((''+(CRAW.objetivo||'')).trim() || (''+(CRAW.nivel||'')).trim() || (''+(CRAW.peso||'')).trim() || (''+(CRAW.altura||'')).trim());
+  var LG_ID=['eval','diag','rut','antro','racha','ses'];
+  var LG_LBL=['Evaluación','Diagnóstico','Rutina','Antropometría','Racha de hábitos','Sesión'];
   var done=[hasEval, !!inf, hasRut, hasAntro, _habitStreak()>=7, hasSes];
   var n=done.filter(Boolean).length;
   var cnt=document.getElementById('dash-logros-count'); if(cnt) cnt.textContent='Tu progreso · Logros '+n+'/6';
@@ -990,10 +1068,42 @@ function applyLogros(inf){
     for(var bx=0;bx<lbls.length;bx++){ lbls[bx].classList.toggle('on', bx<lvl); }
     for(var c2=0;c2<lines.length;c2++){ lines[c2].classList.toggle('on', c2<lvl-1); }
   }
-  var mName=n>=6?'oro':(n>=4?'plata':'bronce'), medalLbl=n>=6?'Oro':(n>=4?'Plata':'Bronce');
-  var lm=document.getElementById('dash-logros-medal'); if(lm){ lm.src='assets/iconos/medalla-'+mName+'.png'; lm.alt=medalLbl; }
-  var smb=document.querySelector('.sb-medal-badge img'); if(smb){ smb.src='assets/iconos/medalla-'+mName+'-sm.webp'; smb.alt=medalLbl; }
-  var sl=document.querySelector('.sb-medal-lbl'); if(sl) sl.textContent='Medalla '+medalLbl;
+  // Medalla por PUNTOS (fuente única: pathway-juego.js) — 100 pts/logro → 200/400/600.
+  // A <2 logros ya NO muestra "Bronce" falso (queda alineado al riel de arriba y a carrera).
+  _pwGameInf=inf; // para refrescar la medalla al cerrar el juego
+  var pts=n*100;
+  try{ pts+=Math.min(150, parseInt(localStorage.getItem('pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CID||'x'))||'0',10)||0); }catch(e){}
+  // Persistir el total a Supabase (fuente única) → el coach ve la MISMA medalla.
+  try{ if(CID){ var _pp=parseInt(CRAW.puntos!=null?CRAW.puntos:-1,10); if(_pp!==pts){ CRAW.puntos=pts; sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{puntos:pts}).catch(function(){}); } } }catch(e){}
+  var m=(window.PWJ?PWJ.medal(pts):null);
+  var medalLbl=m?m.current.lbl:(n>=6?'Oro':n>=4?'Plata':n>=2?'Bronce':'');
+  var mName=medalLbl?medalLbl.toLowerCase():'';
+  var lm=document.getElementById('dash-logros-medal');
+  if(lm){ if(mName){ lm.src='assets/iconos/medalla-'+mName+'.png'; lm.alt=medalLbl; lm.style.visibility=''; } else { lm.style.visibility='hidden'; } }
+  var smb=document.querySelector('.sb-medal-badge img');
+  if(smb){ if(mName){ smb.src='assets/iconos/medalla-'+mName+'-sm.webp'; smb.alt=medalLbl; if(smb.parentNode)smb.parentNode.style.display='flex'; } else if(smb.parentNode){ smb.parentNode.style.display='none'; } }
+  var sl=document.querySelector('.sb-medal-lbl'); if(sl) sl.textContent= medalLbl?('Medalla '+medalLbl+' · '+pts+' pts'):(pts+' pts — sumá para tu medalla');
+  var smf=document.querySelector('.sb-medal-fill'); if(smf&&m) smf.style.width=m.pct+'%';
+  var _ghd=150; try{_ghd=150-Math.min(150,parseInt(localStorage.getItem('pw_game_pts_'+((CRAW&&CRAW.email)||CID||'x'))||'0',10)||0);}catch(e){}
+  var smn=document.querySelector('.sb-medal-next'); if(smn) smn.textContent=(m&&m.next)?(m.faltan+' pts para '+m.next.lbl+((m.faltan>0&&m.faltan<=_ghd)?' · 🎮 ¡juega para llegar!':'')):(medalLbl==='Oro'?'✨ Nivel máximo':'');
+  // Festejo + persistencia (fitness antes NO tenía): celebrar solo cambios reales.
+  try{
+    var _ck='fit_'+((CRAW&&CRAW.email)||(typeof CID!=='undefined'&&CID)||'x');
+    var prevDone=JSON.parse(localStorage.getItem('mj_achs_'+_ck)||'[]');
+    var currDone=[]; for(var q=0;q<done.length;q++){ if(done[q]) currDone.push(LG_ID[q]); }
+    if(prevDone.length>0 && window.PWJ){
+      currDone.filter(function(id){return prevDone.indexOf(id)===-1;}).forEach(function(id,idx){
+        var li=LG_ID.indexOf(id); if(li<0)return;
+        setTimeout(function(){ PWJ.celebrate({kind:'logro',title:'¡'+LG_LBL[li]+'!',sub:'Sumaste un logro',points:100,btn:'¡Sigue!'}); }, 300+idx*220);
+      });
+    }
+    localStorage.setItem('mj_achs_'+_ck, JSON.stringify(currDone));
+    var prevMedal=localStorage.getItem('mj_medal_'+_ck)||'';
+    if(prevMedal && medalLbl && prevMedal!==medalLbl && m && window.PWJ){
+      PWJ.celebrate({kind:'medal',tier:m.current,title:'¡Medalla '+medalLbl+'!',sub:'¡Felicitaciones! Desbloqueaste la medalla de '+medalLbl+'. ¡Sigue así!',btn:'¡Genial!'});
+    }
+    if(medalLbl) localStorage.setItem('mj_medal_'+_ck, medalLbl);
+  }catch(e){}
 }
 
 // ── White-label: la marca del coach (nombre siempre; color+logo si es Pro) ──
@@ -1048,7 +1158,164 @@ function applyBrand(coachId){
     var foto=cfg.foto_url||u.foto_url||'';
     if(foto&&av){ av.style.background='transparent'; av.innerHTML='<img src="'+esc(foto)+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">'; }
     else if(av&&u.nombre){ av.textContent=((u.nombre[0]||'C')+'').toUpperCase(); }
+    // Guardamos foto+nombre del coach para el cartel "estoy preparando tu plan"
+    // (la foto respira ahí). applyBrand es async → re-pintamos el cartel al llegar.
+    window.COACH_FOTO=foto||''; window.COACH_NOMBRE=u.nombre||'';
+    try{ renderPrepCard(); }catch(e){}
   }).catch(function(){});
+}
+
+// ── Cliente nuevo: en vez de datos inventados de la plantilla, mostramos un
+// cartel del coach ("estoy preparando tu plan") con su foto respirando y 3
+// atajos: completar el formulario, subir la foto y jugar con la cabra. Así el
+// cliente avanza mientras el coach arma la rutina. ─────────────────────────
+function _intakePendiente(){
+  if(!CRAW) return true;
+  return !((''+(CRAW.peso||'')).trim()||(''+(CRAW.nivel||'')).trim()||(''+(CRAW.dias||'')).trim()||(''+(CRAW.lesiones||'')).trim()||(''+(CRAW.altura||'')).trim());
+}
+function _planVacio(){
+  // El plan lo arma el coach: sin informe, sin rutina y sin antropometría =
+  // todavía no hay nada cargado → mostramos el cartel de "preparando".
+  if(window._tieneInforme) return false;
+  var hasRut=false,hasAntro=false;
+  try{ hasRut=_rutToArr((CRAW&&CRAW.fit_rutina)||'').length>0; }catch(e){}
+  try{ hasAntro=(JSON.parse((CRAW&&CRAW.fit_antro)||'[]')||[]).length>0; }catch(e){}
+  return !hasRut && !hasAntro;
+}
+/* abrirJuego unificada arriba (registra PW_GAME_ONCLOSE para refrescar la
+   medalla al cerrar el juego). Se eliminó la 2da definición que ganaba por
+   hoisting y NO registraba el callback. */
+function _irFormulario(){
+  if(_esDemoFit()){ if(typeof showToast==='function') showToast('📝 En tu portal real, este botón abre tu formulario'); return; }
+  location.href='https://pathwaycareercoach.com/pathway-fit-form.html?portal=1&email='+encodeURIComponent(EMAIL)+((CRAW&&CRAW.coach_id)?('&coach='+encodeURIComponent(CRAW.coach_id)):'');
+}
+function _subirFoto(){ var w=document.querySelector('.sb-brand-foto'); if(w){ w.click(); } else if(typeof showToast==='function'){ showToast('Tocá tu avatar arriba a la izquierda para subir tu foto'); } }
+// Nombre/foto del coach: preferimos lo que cargó applyBrand; si todavía no
+// llegó, lo leemos de la cabecera ya pintada. Nunca "Gonza".
+function _coachNombre(){
+  if(window.COACH_NOMBRE) return window.COACH_NOMBRE;
+  var nm=document.querySelector('.ptop-coach-name'); var t=nm?(''+nm.textContent).replace(/\s+/g,' ').trim():'';
+  if(t && !/^tu coach$/i.test(t) && !/gonza/i.test(t)) return t;
+  return '';
+}
+function _coachFotoUrl(){
+  if(window.COACH_FOTO) return window.COACH_FOTO;
+  var im=document.querySelector('.ptop-av img'); return im?(im.getAttribute('src')||''):'';
+}
+// El cliente todavía tiene algo por hacer (formulario o foto).
+function _prepPendiente(){ return _intakePendiente() || !(CRAW&&CRAW.foto_perfil); }
+function renderPrepCard(){
+  var slot=document.getElementById('prep-slot'); if(!slot) return;
+  if(new URLSearchParams(location.search).get('coach_view')){ slot.innerHTML=''; return; } // coach en preview
+  // Se muestra SOLO mientras (a) el coach aún no cargó el plan Y (b) al cliente
+  // le falta hacer algo (formulario o foto). Cuando ya hizo lo suyo, o el coach
+  // cargó el plan, el cartel DESAPARECE.
+  if(!_planVacio()){ slot.innerHTML=''; return; } // el coach ya cargó el plan → sin cartel
+  var full=_coachNombre(); var first=full?full.split(' ')[0]:'';
+  var titleName=first||'Tu coach';
+  var foto=_coachFotoUrl();
+  var av=foto?('<img src="'+esc(foto)+'" alt="">'):((first?first[0]:'C').toUpperCase());
+  // El cliente ya hizo su parte (formulario + foto) y el coach todavía no cargó el
+  // plan: en vez de esconder el cartel, lo tranquilizamos — su plan está en camino.
+  if(!_prepPendiente()){
+    slot.innerHTML=
+      '<div class="prep-card">'+
+        '<div class="prep-top">'+
+          '<div class="prep-av">'+av+'</div>'+
+          '<div>'+
+            '<p class="prep-title">'+esc(titleName)+' está trabajando en tu plan 💪</p>'+
+            '<p class="prep-sub">Ya tenemos todo lo tuyo. Te avisaremos apenas tu plan personalizado esté listo.</p>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
+    return;
+  }
+  var chipForm=!_intakePendiente()
+    ? '<span class="prep-chip done">✓ Formulario completo</span>'
+    : '<button type="button" class="prep-chip" onclick="_irFormulario()">📝 Completar mi formulario</button>';
+  var chipFoto=(CRAW&&CRAW.foto_perfil)
+    ? '<span class="prep-chip done">✓ Foto lista</span>'
+    : '<button type="button" class="prep-chip" onclick="_subirFoto()">📷 Subir mi foto</button>';
+  slot.innerHTML=
+    '<div class="prep-card">'+
+      '<div class="prep-top">'+
+        '<div class="prep-av">'+av+'</div>'+
+        '<div>'+
+          '<p class="prep-title">'+esc(titleName)+' está preparando tu plan 💪</p>'+
+          '<p class="prep-sub">Mientras tanto, ayudanos a personalizarlo — así tu rutina y tu plan salen a tu medida.</p>'+
+        '</div>'+
+      '</div>'+
+      '<div class="prep-actions">'+
+        chipForm+chipFoto+
+        '<button type="button" class="prep-chip" onclick="abrirJuego()">🐐 Jugar con la cabra</button>'+
+      '</div>'+
+    '</div>';
+}
+// Reemplaza el timeline de ejemplo (⚖️ -1 kg, Gonza cargó tu antro…) por la
+// actividad REAL del cliente. Sin actividad → mensaje vacío, nunca datos falsos.
+function renderTimeline(){
+  var box=document.getElementById('dash-timeline'); if(!box) return;
+  var ev=[];
+  try{ (JSON.parse((CRAW&&CRAW.fit_antro)||'[]')||[]).forEach(function(a){ if(a&&a.fecha) ev.push({t:a.fecha,ic:'📐',b:'Medición cargada'+(a.peso?(' · '+a.peso+' kg'):'')}); }); }catch(e){}
+  try{ (JSON.parse((CRAW&&CRAW.sesiones_registro)||'[]')||[]).forEach(function(s){ if(s&&s.fecha) ev.push({t:s.fecha,ic:'📅',b:'Sesión'+(s.trabajado?(': '+s.trabajado):'')}); }); }catch(e){}
+  if(!ev.length){ box.innerHTML='<div style="font-size:12.5px;color:var(--muted);padding:6px 0;">Tu actividad va a aparecer acá a medida que avances. 🚀</div>'; return; }
+  ev.sort(function(a,b){ return (b.t||'').localeCompare(a.t||''); });
+  box.innerHTML=ev.slice(0,5).map(function(e){ return '<div class="tl-item"><div class="tl-ic">'+e.ic+'</div><div class="tl-b"><b>'+esc(e.b)+'</b><p>'+esc(e.t)+'</p></div></div>'; }).join('');
+}
+// Limpia lo que quedó hardcodeado de la plantilla demo (Martín/Gonza, tareas
+// pre-tildadas, chat de ejemplo) cuando entra un cliente REAL.
+function _limpiarDemo(){
+  renderTimeline();
+  // Tarea "Entrenar 4 veces" viene pre-hecha en el HTML → destildar para real.
+  document.querySelectorAll('#s-inicio .objc.done').forEach(function(o){ if(!o.dataset.h) o.classList.remove('done'); });
+  // dash-obj: sin objetivo real, no dejar "bajar grasa" de ejemplo.
+  var obj=document.getElementById('dash-obj'); if(obj){ var o=(CRAW&&(CRAW.cargo||CRAW.objetivo))||''; obj.innerHTML=o?('Para tu objetivo: '+esc(o)+'<em>.</em>'):'Tu plan a medida<em>.</em>'; }
+  // Chat de ejemplo (¡Hola Martín!) → estado real/vacío.
+  if(typeof renderMsgs==='function'){ try{ renderMsgs(); }catch(e){} }
+  // Nombres de la plantilla (Gonza/Martín) que hayan quedado sueltos en subtítulos.
+  document.querySelectorAll('.h-sub').forEach(function(el){ el.textContent=el.textContent.replace(/\bGonza\b/g,(window.COACH_NOMBRE||'tu coach').split(' ')[0]); });
+  // Cabecera del coach: si applyBrand aún no puso el nombre real (o la ficha no
+  // tiene coach_id), no dejar "Gonza Coach" de la plantilla → "Tu coach".
+  var _cn=document.querySelector('.ptop-coach-name'); if(_cn && /gonza/i.test(_cn.textContent) && !window.COACH_NOMBRE){ _cn.textContent='Tu coach'; }
+  // Resto de textos de la plantilla con "Gonza" (logros: "Gonza armó tu plan";
+  // agenda: "Habla con Gonza") → nombre real del coach, o "tu coach".
+  var _fng=(window.COACH_NOMBRE||'').split(' ')[0]||'tu coach';
+  document.querySelectorAll('#dash-ach .ach p, .agenda-h').forEach(function(el){ if(/\bGonza\b/.test(el.textContent)) el.textContent=el.textContent.replace(/\bGonza\b/g,_fng); });
+}
+// Cliente real sin ficha en candidatos: limpiar TODO el demo y mostrar un
+// estado de bienvenida honesto (sin nombres ni datos inventados).
+function _clienteSinFicha(){
+  // Con RLS prendido, "sin ficha" para un cliente SIN sesión = bloqueo de RLS
+  // (no que no tenga datos). Ahí lo mandamos a iniciar sesión en vez de mostrar
+  // el portal vacío. Dormido mientras PWAUTH.RLS_ON sea false (hoy) → cero cambio.
+  try{ if(window.PWAUTH && PWAUTH.RLS_ON){ PWAUTH.hasSession().then(function(has){ if(!has && PWAUTH.showLoginGate) PWAUTH.showLoginGate(); }); } }catch(e){}
+  CRAW={ email:EMAIL }; CID=null; MSGS=[];
+  applyInforme(null); applyProceso();
+  _limpiarDemo();
+  // Saludo con el nombre del cliente (de usuarios) en vez de "Martín".
+  var _localName=(EMAIL||'').split('@')[0].replace(/[._-]+/g,' ').trim();
+  var hello=document.querySelector('.sb-hello'); if(hello) hello.textContent='Hola'+(_localName?(', '+_localName):'');
+  var foot=document.querySelector('.sb-foot'); if(foot){ var ds=foot.querySelectorAll('div'); if(ds[0]) ds[0].textContent=_localName||''; if(ds[1]) ds[1].textContent=EMAIL||''; }
+  // Cabecera del coach genérica hasta que sepamos quién es.
+  var nm=document.querySelector('.ptop-coach-name'); if(nm) nm.textContent='Tu coach';
+  var av=document.querySelector('.ptop-av'); if(av){ av.textContent='C'; }
+  // Intentar traer el nombre real del cliente (best-effort).
+  try{ sbGet('usuarios','email=eq.'+encodeURIComponent(EMAIL)+'&select=nombre').then(function(rows){ if(rows&&rows.length&&rows[0].nombre){ var h=document.querySelector('.sb-hello'); if(h) h.textContent='Hola, '+rows[0].nombre.split(' ')[0]; var f=document.querySelector('.sb-foot div'); if(f) f.textContent=rows[0].nombre; } }).catch(function(){}); }catch(e){}
+  renderPrepCard();
+  _ensureFicha('fitness');
+}
+// Auto-reparar: si un cliente logueado NO tiene ficha en candidatos (se borró, o
+// el alta no la creó), la creamos ahora — así su FOTO y su formulario SÍ se
+// guardan (antes se perdían: sin fila, el PATCH por email no hacía nada). Queda
+// sin coach_id (huérfana) hasta que el coach la re-agregue (el alta la reclama).
+function _ensureFicha(niche){
+  if(!EMAIL || CID) return;
+  var body={ email:EMAIL, activo:true }; if(niche) body.nicho=niche;
+  try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'null'); if(mu&&mu.nombre) body.nombre=mu.nombre; }catch(e){}
+  fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation,resolution=ignore-duplicates'},body:JSON.stringify(body)})
+    .then(function(r){ return (r&&r.ok)?r.json():null; })
+    .then(function(rows){ if(rows&&rows.length){ CRAW=rows[0]; CID=CRAW.id; if(CRAW.coach_id) applyBrand(CRAW.coach_id); } })
+    .catch(function(){});
 }
 
 // ── Mensajería coach↔cliente (mismo modelo que career: candidatos.notas_coach) ──
@@ -1129,6 +1396,13 @@ function _demoCrawFit(){
     nombre:'María García', email:EMAIL, cargo:'Recomposición · −5 kg de grasa, +músculo',
     foto_perfil:CLIENTE_DEMO_FOTO,
     semana_activa:2,
+    // Chat de EJEMPLO (solo demo). Un cliente real NO usa esto: sus mensajes
+    // salen de su propia candidatos.notas_coach y no se tocan.
+    notas_coach:JSON.stringify([
+      {from:'coach',text:'¡Hola María! ¿Cómo venís con los entrenos de esta semana?',time:'ayer',ts:1},
+      {from:'cliente',text:'¡Bien! La rodilla va mejor 🙌',time:'ayer',ts:2},
+      {from:'coach',text:'Genial. Mañana subimos un poco la carga en press 💪',time:'9:02',ts:3}
+    ]),
     sesiones_registro:JSON.stringify([
       {fecha:'2026-04-04',trabajado:'Evaluación inicial + objetivos',acordado:'Arrancar con 3 entrenos por semana y registrar el peso los domingos.',acciones:'Sacar fotos de progreso\nAnotar el peso del domingo\nCompletar 3 entrenos',tareas_done:[0,1]},
       {fecha:'2026-04-18',trabajado:'Revisión de técnica + ajuste de cargas',acordado:'Subir 5% la carga en empuje y sumar 10 min de movilidad pre-entreno.',acciones:'Grabar un set de sentadilla\nSumar movilidad antes de entrenar',tareas_done:[],doc:'data:text/plain;charset=utf-8,Plan%20de%20entrenamiento%20-%20Semana%204%0A%0A1)%20Press%20de%20banca%204x10%0A2)%20Remo%20con%20barra%204x12%0A3)%20Sentadilla%204x8%0A4)%20Movilidad%2010%20min',doc_nombre:'Plan de entrenamiento.txt'},
@@ -1192,16 +1466,33 @@ async function pwInit(){
     try{
       var rows=await sbGet('candidatos','email=eq.'+encodeURIComponent(EMAIL)+'&select=*');
       if(rows&&rows.length){
-        CRAW=rows[0]; CID=CRAW.id; applyClient(CRAW); applyProceso(); pwMaybeConsent(); pwSubGate(CRAW);
+        // El form público insertaba UNA fila por envío → puede haber duplicados.
+        // Antes tomábamos rows[0] (arbitraria) → a veces una vacía o sin coach, y
+        // no se veían los datos ni el coach. Ahora: elegimos la fila MÁS COMPLETA
+        // y, si le falta coach_id, lo tomamos de CUALQUIER duplicado que lo tenga.
+        // Al quedar coach_id en CRAW, el link al formulario ya viaja con &coach=,
+        // así el próximo envío adopta las fichas huérfanas (auto-reparación).
+        var _score=function(r){ var n=0; ['peso','altura','edad','cargo','nivel','dias','lugar','fit_rutina','fit_antro','foto_perfil','sesiones_registro','nombre','objetivo'].forEach(function(k){ var v=r[k]; if(v!=null){ var s=(''+v).trim(); if(s!==''&&s!=='[]'&&s!=='{}') n++; } }); return n; };
+        rows.sort(function(a,b){ var d=_score(b)-_score(a); if(d) return d; return new Date(b.created_at||0)-new Date(a.created_at||0); });
+        CRAW=rows[0];
+        if(!CRAW.coach_id){ for(var _i=0;_i<rows.length;_i++){ if(rows[_i].coach_id){ CRAW.coach_id=rows[_i].coach_id; break; } } }
+        // Restaurar el bonus del juego desde Supabase (game_pts) → la medalla no baja entre dispositivos.
+        try{ var _gk='pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CRAW.id||'x'), _srv=parseInt(CRAW.game_pts||0,10)||0; if(_srv>0 && _srv>(parseInt(localStorage.getItem(_gk)||'0',10)||0)) localStorage.setItem(_gk,String(_srv)); }catch(e){}
+        CID=CRAW.id; applyClient(CRAW); applyProceso(); pwMaybeConsent(); pwSubGate(CRAW);
         var inf=null;
         try{ var ir=await sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=data&order=created_at.desc&limit=1'); if(ir&&ir.length){ var dd=ir[0].data; inf=(typeof dd==='string')?JSON.parse(dd):dd; } }catch(e){}
         applyInforme(inf); applyLogros(inf);
+        _limpiarDemo(); renderPrepCard();
         pwBeat();
         setInterval(function(){ pwBeat(); if(CRAW&&CRAW.coach_id) refreshCoachPresence(CRAW.coach_id); }, 45000);
       } else if(_esDemoFit()){
         CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); applyLogros(null); _demoBrandFit();
+      } else {
+        // Cliente REAL cuyo alta no dejó ficha (o falló el guardado): NO mostrar la
+        // plantilla demo (Gonza/Martín + datos inventados). Estado limpio + cartel.
+        _clienteSinFicha();
       }
-    }catch(e){ if(_esDemoFit()){ CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); _demoBrandFit(); } }
+    }catch(e){ if(_esDemoFit()){ CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); _demoBrandFit(); } else { _clienteSinFicha(); } }
   } else { CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); applyLogros(null); _demoBrandFit(); }
   WEEK.forEach(colorDay);
   var td=document.querySelector('.hd[data-date="'+pwHoy()+'"]'); if(td) selectDay(td);
@@ -1225,7 +1516,7 @@ function pwMaybeIntake(){
   if(CRAW && (CRAW.peso||CRAW.nivel||CRAW.dias||CRAW.lesiones||CRAW.medicacion)) return; // ya completó
   try{ if(sessionStorage.getItem('pw_intake_later_'+EMAIL)==='1') return; }catch(e){}
   if(document.getElementById('consent-ov')||document.getElementById('intake-ov')) return;
-  var url='https://pathwaycareercoach.com/pathway-fit-form.html?portal=1&email='+encodeURIComponent(EMAIL);
+  var url='https://pathwaycareercoach.com/pathway-fit-form.html?portal=1&email='+encodeURIComponent(EMAIL)+((CRAW&&CRAW.coach_id)?('&coach='+encodeURIComponent(CRAW.coach_id)):'');
   var ov=document.createElement('div'); ov.id='intake-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:99998;background:rgba(27,46,38,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,sans-serif';
   ov.innerHTML="<div style='background:#fff;max-width:440px;width:100%;border-radius:18px;padding:30px 26px;box-shadow:0 20px 60px rgba(0,0,0,.25);text-align:center'>"+

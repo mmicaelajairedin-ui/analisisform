@@ -43,7 +43,7 @@
         "<button class='pw-juego-x' id='pwg-x' aria-label='Cerrar'>✕</button></div>"+
       "<div class='pw-juego-stage' id='pwg-stage'>"+
         "<img class='pw-juego-cabra' id='pwg-cabra' src='assets/cabra/frente.gif' alt=''>"+
-        "<div class='pw-juego-ov' id='pwg-ov'><div class='pw-juego-ovt'>La cabra a la cima "+CAB_ICO+"</div><div class='pw-juego-ovp'>◄ ► avanzar · <b>espacio</b> saltar piedras · saltá alto para las estrellas ⭐ · clic en la cabra para saludar</div><button class='pwg-startbtn' id='pwg-start'>Empezar →</button></div>"+
+        "<div class='pw-juego-ov' id='pwg-ov'><div class='pw-juego-ovt'>La cabra a la cima "+CAB_ICO+"</div><div class='pw-juego-ovp'>◄ ► avanzar · <b>espacio</b> saltar piedras · salta alto para las estrellas ⭐ · clic en la cabra para saludar</div><button class='pwg-startbtn' id='pwg-start'>Empezar →</button></div>"+
       "</div>"+
       "<div class='pw-juego-foot'>Mejor puntaje: <b id='pwg-best'>"+_gameBest()+"</b></div>"+
     "</div>";
@@ -88,7 +88,7 @@
     if(win){ var nx=_game.li+1;
       if(nx>=GAME_LEVELS.length){ t.textContent="¡Llegaste a la cima! 🏆"; p.textContent="Completaste los 3 niveles con "+_game.pts+" puntos."; btn.textContent="Jugar de nuevo"; btn.onclick=function(){_gameStart(0);}; }
       else { t.textContent="¡Nivel "+_game.L.n+" completado! 🎉"; p.innerHTML= nx===1?"Ahora con más piedras y árboles que suman puntos.":"Último nivel: las piedras vienen más seguidas."; btn.textContent="Ir al nivel "+(nx+1); btn.onclick=function(){_gameStart(nx);}; }
-    } else { t.textContent="¡Chocaste! 🪨"; p.innerHTML="Saltá con <b>espacio</b>. Prueba de nuevo este nivel."; btn.textContent="Reintentar"; btn.onclick=function(){_gameStart(_game.li);}; }
+    } else { t.textContent="¡Chocaste!"; p.innerHTML="Salta con <b>espacio</b>. Prueba de nuevo este nivel."; btn.textContent="Reintentar"; btn.onclick=function(){_gameStart(_game.li);}; }
     ov.style.display="flex";
   }
   function _gameLoop(){

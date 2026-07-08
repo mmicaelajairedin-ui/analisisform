@@ -88,8 +88,8 @@ body{font-family:'Inter',-apple-system,sans-serif;background:#f5f5f3;color:#1a1a
 
   <div class="card">
     <div class="top">
-      <h1>Evaluación inicial · Lucía Finanzas</h1>
-      <p>Con tus respuestas, armo tu diagnóstico financiero y tu plan a medida. Lleva 2 minutos.</p>
+      <h1>Evaluación inicial · <span id="fCoach">tu coach</span></h1>
+      <p>Con tus respuestas, tu coach arma tu diagnóstico financiero y tu plan a medida. Lleva 2 minutos.</p>
     </div>
     <div class="prog-bar"><div class="prog-fill" id="prog"></div></div>
 
@@ -98,8 +98,8 @@ body{font-family:'Inter',-apple-system,sans-serif;background:#f5f5f3;color:#1a1a
       <div class="stag">Paso 1 · Datos</div>
       <div class="stitle">Empecemos por lo básico</div>
       <div class="sdesc">Sin filtros: cuéntame desde dónde partes — es la única forma de ayudarte de verdad.</div>
-      <div class="field"><label>Tu nombre</label><input id="nombre" placeholder="Ej: Sofía"></div>
-      <div class="field"><label>Tu email</label><input id="email" type="email" placeholder="sofia@email.com"></div>
+      <div class="field"><label>Tu nombre</label><input id="nombre" placeholder="Ej: tu nombre y apellido"></div>
+      <div class="field"><label>Tu email</label><input id="email" type="email" placeholder="tucorreo@email.com"></div>
       <div class="field"><label>Tu foto (opcional)</label>
         <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1.5px dashed #ccc;border-radius:10px;padding:10px 14px;font-size:13px;color:#555;">📷 Subir foto<input id="foto" type="file" accept="image/*" style="display:none" onchange="_onFoto(this)"></label>
         <img id="foto-prev" style="display:none;width:56px;height:56px;border-radius:50%;object-fit:cover;margin-left:10px;vertical-align:middle">
@@ -161,7 +161,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:#f5f5f3;color:#1a1a
       <div class="stitle" id="aTitle">Listo 🎯</div>
       <div class="ai-box">
         <span class="ai-chip">✦ Análisis con IA</span>
-        <div class="ai-think" id="aThink"><span class="dots"><span></span><span></span><span></span></span> Lucía está revisando tus números…</div>
+        <div class="ai-think" id="aThink"><span class="dots"><span></span><span></span><span></span></span> <span id="thinkCoach">Tu coach</span> está revisando tus números…</div>
         <div class="ai-msg" id="aMsg" style="display:none;">
           Tu objetivo es <strong>salir de deudas</strong>. Hoy ahorras poco porque el gasto está cerca del ingreso. Lo primero: <strong>ordenar el presupuesto por categorías</strong> y atacar la deuda más chica primero (bola de nieve).
           <div class="tagrow"><span class="t">Salud financiera: 50/100</span><span class="t">Deuda: €3.400</span><span class="t">Meta: -€400/mes</span></div>
@@ -172,7 +172,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:#f5f5f3;color:#1a1a
         <div class="plan-item"><div class="plan-side"><div class="plan-num">1</div><div class="plan-l"></div></div><div class="plan-b"><b>Mes 1 · Diagnóstico</b><br><span>Mapear ingresos, gastos y deudas.</span></div></div>
         <div class="plan-item"><div class="plan-side"><div class="plan-num">2</div><div class="plan-l"></div></div><div class="plan-b"><b>Mes 2 · Presupuesto</b><br><span>Ordenar el gasto por categorías (50/30/20).</span></div></div>
         <div class="plan-item"><div class="plan-side"><div class="plan-num">3</div><div class="plan-l"></div></div><div class="plan-b"><b>Mes 3 · Salida de deudas</b><br><span>Atacar la deuda más chica primero.</span></div></div>
-        <div class="done-chip">Lucía revisa tu diagnóstico y arranca tu acompañamiento 💪</div>
+        <div class="done-chip" id="doneChip">Tu coach revisa tu diagnóstico y arranca tu acompañamiento 💪</div>
       </div>
     </div>
 
@@ -214,7 +214,7 @@ function next(){
   }
   if(i<steps.length-1){ i++; render(); if(i===steps.length-1){ saveFin(); generar(); } }
 }
-var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+var SB='https://api.pathwaycareercoach.com';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 function _qp(k){ try{ return new URLSearchParams(location.search).get(k)||''; }catch(e){ return ''; } }
 // Modo portal: el cliente logueado completa su intake dentro de su sesión.
@@ -233,6 +233,40 @@ function _applyPortalPrefill(){
   if(f&&_pe){ f.value=_pe; f.readOnly=true; f.style.background='#f3f3f1'; }
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',_applyPortalPrefill); else _applyPortalPrefill();
+// ── El formulario se ADAPTA al coach real (nunca queda "Lucía" ni otro coach) ──
+// Fuente del coach: 1) ?coach=<id> del link público, o 2) en modo portal, el
+// coach del candidato (por su email). Fallback SIEMPRE "tu coach", nunca un
+// nombre hardcodeado. Título, "revisando…" y cierre se pintan con ese nombre.
+var COACH_NOMBRE='', COACH_FIRST='';
+function _coachHdr(){ try{ if(window.PWAUTH&&PWAUTH.headers) return PWAUTH.headers({}); }catch(e){} return Promise.resolve({apikey:KEY,Authorization:'Bearer '+KEY}); }
+function _setCoachTexts(nombre){
+  var full=(''+(nombre||'')).trim(); var first=full?full.split(' ')[0]:'';
+  COACH_NOMBRE=full; COACH_FIRST=first;
+  var fc=document.getElementById('fCoach'); if(fc) fc.textContent=full||'tu coach';
+  var tc=document.getElementById('thinkCoach'); if(tc) tc.textContent=first||'Tu coach';
+  var dc=document.getElementById('doneChip'); if(dc) dc.textContent=(first||'Tu coach')+' revisa tu diagnóstico y arranca tu acompañamiento 💪';
+}
+function _fetchCoach(coachId){
+  if(!coachId||!/^[0-9a-f-]{32,36}$/i.test(coachId)) return;
+  window._coachId=coachId;
+  _coachHdr().then(function(h){ return fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(coachId)+'&select=nombre',{headers:h}); })
+    .then(function(r){ return r.ok?r.json():[]; })
+    .then(function(rows){ if(rows&&rows.length&&rows[0].nombre) _setCoachTexts(rows[0].nombre); })
+    .catch(function(){});
+}
+function _applyCoachBrand(){
+  _setCoachTexts(''); // default inmediato: "tu coach" (nunca Lucía) aunque falle la red
+  var cid=_qp('coach');
+  if(cid&&/^[0-9a-f-]{32,36}$/i.test(cid)){ _fetchCoach(cid); return; }
+  if(PORTAL_MODE){
+    var _pe=_qp('email').toLowerCase().trim(); if(!_pe) return;
+    _coachHdr().then(function(h){ return fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_pe)+'&select=coach_id',{headers:h}); })
+      .then(function(r){ return r.ok?r.json():[]; })
+      .then(function(rows){ if(rows&&rows.length&&rows[0].coach_id) _fetchCoach(rows[0].coach_id); })
+      .catch(function(){});
+  }
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',_applyCoachBrand); else _applyCoachBrand();
 function _selTxt(id){ var e=document.getElementById(id); if(!e)return ''; var s=e.querySelector('.opt.sel'); return s?s.textContent.trim():''; }
 function _val(id){ var e=document.getElementById(id); return e?(''+e.value).trim():''; }
 var _formFoto='';
@@ -248,6 +282,31 @@ function _onFoto(el){
       if(st) st.textContent='Foto lista ✓'; })
     .catch(function(){ if(st) st.textContent='No se pudo subir, seguí sin foto'; });
 }
+// ── Autoguardado (borrador) — RED ANTI-PÉRDIDA. Todo lo que el cliente escribe
+// se guarda en localStorage en cada cambio y SOLO se borra cuando el guardado a
+// Supabase salió OK. Si falla la red o cierra sin querer, al volver retoma. ──
+var _DRAFTK='pw_finform_draft';
+function _draftKey(){ var e=((_val('email')||_qp('email'))||'').toLowerCase(); return _DRAFTK+(e?('_'+e):''); }
+function _reselOpt(gid,txt){ if(!txt) return; var g=document.getElementById(gid); if(!g) return; Array.prototype.forEach.call(g.querySelectorAll('.opt'),function(o){ o.classList.toggle('sel', o.textContent.trim()===txt); }); }
+function saveDraft(){
+  try{
+    var d={ nombre:_val('nombre'),email:_val('email'),edad:_val('edad'),situacion:_val('situacion'),
+      ingresos:_val('ingresos'),gastos:_val('gastos'),deuDet:_val('deu-det'),contexto:_val('contexto'),
+      objetivo:_selTxt('opts-objetivo'),deudas:_selTxt('opts-deudas') };
+    var s=JSON.stringify(d); localStorage.setItem(_draftKey(), s); localStorage.setItem(_DRAFTK, s);
+  }catch(e){}
+}
+function restoreDraft(){
+  try{
+    var raw=localStorage.getItem(_draftKey())||localStorage.getItem(_DRAFTK); if(!raw) return; var d=JSON.parse(raw); if(!d) return;
+    [['nombre','nombre'],['email','email'],['edad','edad'],['situacion','situacion'],['ingresos','ingresos'],['gastos','gastos'],['deu-det','deuDet'],['contexto','contexto']].forEach(function(p){ var el=document.getElementById(p[0]); if(el&&d[p[1]]&&!el.value){ el.value=d[p[1]]; } });
+    _reselOpt('opts-objetivo',d.objetivo); _reselOpt('opts-deudas',d.deudas);
+  }catch(e){}
+}
+function clearDraft(){ try{ localStorage.removeItem(_draftKey()); localStorage.removeItem(_DRAFTK); }catch(e){} }
+document.addEventListener('input', saveDraft);
+document.addEventListener('click', function(e){ if(e.target&&e.target.closest&&e.target.closest('.opt')) setTimeout(saveDraft,0); });
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',restoreDraft); else restoreDraft();
 var _finSaved=false;
 function saveFin(){
   if(_finSaved) return;
@@ -262,13 +321,28 @@ function saveFin(){
   // Intake anónimo: registrar el consentimiento acá para que el portal NO lo vuelva a pedir.
   if(!PORTAL_MODE){ d.consent_at=new Date().toISOString(); d.consent_version='2026-05-01'; }
   _finSaved=true;
-  // Modo portal: el candidato YA existe (lo creó el alta) → PATCH por email con
-  // el JWT del cliente (pw-auth). Intake anónimo: INSERT con ignore-duplicates.
-  var _u=PORTAL_MODE? SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(email) : SB+'/rest/v1/candidatos';
-  var _m=PORTAL_MODE?'PATCH':'POST';
-  var _pf=PORTAL_MODE?'return=minimal':'return=minimal,resolution=ignore-duplicates';
-  fetch(_u,{method:_m,headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':_pf},body:JSON.stringify(d)})
-    .then(function(r){ if(!r.ok){ _finSaved=false; } }).catch(function(){ _finSaved=false; });
+  var _H=function(pf){ return {'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':pf}; };
+  var _base=SB+'/rest/v1/candidatos';
+  // RAÍZ DEL BUG DE DUPLICADOS/HUÉRFANOS: el intake creaba una fila NUEVA por envío
+  // (INSERT) en vez de actualizar la ficha que ya existe → duplicados y fichas sin
+  // coach_id. Solución: SIEMPRE guardar por la edge function guardar-intake
+  // (service role): hace UPSERT por email (actualiza la fila existente, NO duplica)
+  // y adopta el coach_id si la ficha estaba huérfana. Vale para portal Y público.
+  // Solo si la edge function no responde caemos a un guardado directo (fallback).
+  var _fb=function(){
+    if(PORTAL_MODE){
+      fetch(_base,{method:'POST',headers:_H('return=minimal,resolution=ignore-duplicates'),body:JSON.stringify(d)})
+        .then(function(){ return fetch(_base+'?email=eq.'+encodeURIComponent(email),{method:'PATCH',headers:_H('return=minimal'),body:JSON.stringify(d)}); })
+        .then(function(r){ if(r&&r.ok){ clearDraft(); } else { _finSaved=false; } })
+        .catch(function(){ _finSaved=false; });
+    } else {
+      fetch(_base,{method:'POST',headers:_H('return=minimal,resolution=ignore-duplicates'),body:JSON.stringify(d)})
+        .then(function(r){ if(!r.ok){ _finSaved=false; } else { clearDraft(); } }).catch(function(){ _finSaved=false; });
+    }
+  };
+  fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},body:JSON.stringify({email:email,data:d,coach_id:d.coach_id||_qp('coach')})})
+    .then(function(r){ if(r&&r.ok){ clearDraft(); } else { _fb(); } })
+    .catch(function(){ _fb(); });
 }
 function prev(){ if(i>0){ i--; render(); } }
 function generar(){
@@ -279,10 +353,13 @@ function generar(){
   setTimeout(function(){
     document.getElementById('aThink').style.display='none';
     var m=document.getElementById('aMsg');
-    if(m){ m.innerHTML='Tu objetivo: <strong>'+obj+'</strong>. Lucía ya recibió tus respuestas y está armando tu diagnóstico y tu plan a medida. En tu primera sesión repasan juntos los números y los próximos pasos.'; m.style.display='block'; }
+    if(m){ m.innerHTML='Tu objetivo: <strong>'+obj+'</strong>. '+(COACH_FIRST||'Tu coach')+' ya recibió tus respuestas y está armando tu diagnóstico y tu plan a medida. En tu primera sesión repasan juntos los números y los próximos pasos.'; m.style.display='block'; }
     document.getElementById('aPlan').style.display='block';
   },2200);
-  if(PORTAL_MODE){ setTimeout(function(){ location.href=PORTAL_RETURN; }, 4200); }
+  // Volver al portal CON el email (y coach) → el portal carga la ficha REAL del
+  // cliente. Sin el email volvía a pathway-fin-cliente.html "pelado" y el portal
+  // caía en modo demo (reaparecían los datos de María → parecía que no guardó).
+  if(PORTAL_MODE){ var _re=encodeURIComponent(_qp('email')||_val('email').toLowerCase()); var _rc=_qp('coach'); var _ru=PORTAL_RETURN+'?email='+_re+(_rc?('&coach='+encodeURIComponent(_rc)):''); setTimeout(function(){ location.href=_ru; }, 4200); }
 }
 render();
 </script>

@@ -27,7 +27,7 @@
     if(ok){document.documentElement.setAttribute('data-access','ok');return;}
     // Validación async contra Supabase: ¿hay algún coach con ese access_code?
     if(!code)return;
-    var SB='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+    var SB='https://api.pathwaycareercoach.com';
     var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
     fetch(SB+'/rest/v1/usuarios?rol=in.(coach,admin)&select=id,configuracion',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
       .then(function(r){return r.ok?r.json():[];})
@@ -413,9 +413,9 @@ function checkAccessCode(){
 // el email del coach asignado en initCoachEmail().
 let CEMAIL='mmicaela.jairedin@gmail.com';
 let COACH_ID=null;
-const SB_URL='https://ddxnrsnjdvtqhxunxnwj.supabase.co';
+const SB_URL='https://api.pathwaycareercoach.com';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
-const EDGE_URL='https://ddxnrsnjdvtqhxunxnwj.supabase.co/functions/v1/generar-informe';
+const EDGE_URL='https://api.pathwaycareercoach.com/functions/v1/generar-informe';
 
 // Carga el email del coach asignado. Fuentes por prioridad:
 //   1. URL ?coach=<uuid> (directo o por access_code auto-rewrite)
@@ -783,6 +783,7 @@ async function enviar(){
     ciudad:document.getElementById('f-ciu').value||'—',
     exp:document.getElementById('f-exp').value||'—',
     sector:document.getElementById('f-sec').value||'—',
+    nicho:'carrera', // el intake de carrera marca el nicho (antes nacía en null → la IA no sabía qué informe generar)
     situacion:rVals['r-sit']||'—',
     objetivo:document.getElementById('f-obj').value||'—',
     linkedin:document.getElementById('f-li').value||'',
@@ -856,6 +857,15 @@ async function enviar(){
       // Cliente logueado completando su perfil: el candidato YA existe (lo creó el
       // alta), así que ACTUALIZAMOS su fila por email. pw-auth.js sube el JWT del
       // cliente → la policy candidatos_update (email propio) permite el UPDATE.
+      // Guard anti-pérdida silenciosa: con RLS prendido, un PATCH sin sesión no
+      // matchea ninguna fila y devolvería 204 (ok) sin escribir nada. Si no hay
+      // sesión, mandamos a login para volver con JWT y que el guardado sí persista.
+      try{
+        if(window.PWAUTH && PWAUTH.RLS_ON){
+          var _has=await PWAUTH.hasSession();
+          if(!_has){ if(PWAUTH.showLoginGate) PWAUTH.showLoginGate(); return; }
+        }
+      }catch(e){}
       saveRes=await fetch(SB_URL+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(d.email),{
         method:'PATCH',
         headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'},
