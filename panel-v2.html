@@ -6701,11 +6701,24 @@ document.addEventListener("click", function(ev){
   }
   function _finArrSave(id,col,arr,msg){
     var fc=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0];
-    var j=JSON.stringify(arr); var p={}; p[col]=j;
-    if(fc && fc._example){ fc.raw[col]=j; toast(msg+" (demo)"); render(); return; }
-    _sbw("candidatos?id=eq."+encodeURIComponent(id),"PATCH",p)
-      .then(function(r){ if(!r.ok) throw 0; if(fc&&fc.raw) fc.raw[col]=j; toast(msg); render(); })
-      .catch(function(){ alert("No se pudo guardar. ¿Aplicaste la migración nicho_extra_fields.sql en Supabase?"); });
+    if(fc && fc._example){ fc.raw[col]=JSON.stringify(arr); toast(msg+" (demo)"); render(); return; }
+    var _write=function(finalArr){
+      var j=JSON.stringify(finalArr); var p={}; p[col]=j;
+      return _sbw("candidatos?id=eq."+encodeURIComponent(id),"PATCH",p)
+        .then(function(r){ if(!r.ok) throw 0; if(fc&&fc.raw) fc.raw[col]=j; toast(msg); render(); })
+        .catch(function(){ alert("No se pudo guardar. ¿Aplicaste la migración nicho_extra_fields.sql en Supabase?"); });
+    };
+    // Merge-safe: si es fin_objetivos, re-leo la columna FRESCA y fusiono los
+    // hilos de comentarios de cada meta (por si el cliente comentó mientras),
+    // así el guardado del coach no pisa los mensajes del cliente.
+    if(col==="fin_objetivos"){
+      _sb("candidatos?id=eq."+encodeURIComponent(id)+"&select="+col).then(function(rows){
+        var fresh=_chatArr(rows&&rows[0]?rows[0][col]:"[]");
+        var fBy={}; fresh.forEach(function(o){ fBy[_finK(o)]=o; });
+        var merged=(arr||[]).map(function(o){ var f=fBy[_finK(o)]; if(f&&((f.hilo&&f.hilo.length)||(o.hilo&&o.hilo.length))){ var m={}; for(var k in o) m[k]=o[k]; m.hilo=_hiloMerge(f.hilo,o.hilo); return m; } return o; });
+        _write(merged);
+      }).catch(function(){ _write(arr); });
+    } else { _write(arr); }
   }
   if(act==="fin-obj-add"){
     var foid=el.getAttribute("data-id"); if(!foid) return;
@@ -7439,6 +7452,10 @@ function _avCollect(avc){
   return { d:newD, prog:prog };
 }
 function _chatArr(s){ try{ var a=JSON.parse(s||"[]"); return Object.prototype.toString.call(a)==="[object Array]"?a:[]; }catch(e){ return []; } }
+// Clave estable de un item de finanzas + fusión (unión) de un hilo de
+// comentarios coach↔cliente, para que al guardar no se pisen entre puntas.
+function _finK(o){ return (o&&(o.id||o.nombre))||JSON.stringify(o); }
+function _hiloMerge(a,b){ var out=[],seen={}; function mk(m){ return (m&&m.from||"")+"|"+(m&&m.text||"")+"|"+(m&&(m.ts!=null?m.ts:(m.time||""))); } [a,b].forEach(function(arr){ (arr||[]).forEach(function(m){ if(!m)return; var k=mk(m); if(seen[k])return; seen[k]=true; out.push(m); }); }); out.sort(function(x,y){ return ((x&&x.ts)||0)-((y&&y.ts)||0); }); return out; }
 // Cuenta demo: habilita el selector Carrera/Fitness/Finanzas en el sidebar.
 function _isDemoCoach(){ try{ return !!(REAL && RME && ((""+(RME.email||"")).toLowerCase()==="demo.coach@pathway.com" || (RCFG&&RCFG.demo===true))); }catch(e){ return false; } }
 // Buscador de coaches (pestaña Coaches): oculta las tarjetas que no matchean.

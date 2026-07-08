@@ -818,6 +818,37 @@ const RULES = [
     },
   },
   {
+    name: "finanzas: guardado de objetivos/patrimonio/sesiones es merge-safe",
+    bug: "El cliente escribía fin_objetivos/fin_patrimonio/sesiones_registro con " +
+         "su snapshot en memoria → pisaba lo que el coach acababa de escribir. " +
+         "Debe re-leer la columna fresca antes de guardar (_sbColSave) y fusionar.",
+    check() {
+      const s = read("pathway-fin-cliente.html");
+      if (!s) return null;
+      if (!/function _sbColSave\(/.test(s))
+        return "pathway-fin-cliente.html: falta _sbColSave (guardado merge-safe).";
+      // _objSave y _patSave NO deben hacer un sbPatch directo de su columna.
+      if (/function _objSave\([^)]*\)\{[^}]*sbPatch\('candidatos'[^}]*fin_objetivos/.test(s.replace(/\s+/g, " ")))
+        return "pathway-fin-cliente.html: _objSave volvió a hacer sbPatch directo (pisa al coach).";
+      return null;
+    },
+  },
+  {
+    name: "panel: coach fusiona hilos de comentarios al guardar fin_objetivos",
+    bug: "El coach guardaba fin_objetivos desde su snapshot → pisaba los " +
+         "comentarios (hilo) que el cliente escribió. _finArrSave debe re-leer y " +
+         "fusionar los hilos (_hiloMerge) para fin_objetivos.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function _hiloMerge\(/.test(s)) return "panel-v2.html: falta _hiloMerge.";
+      const i = s.indexOf("function _finArrSave(");
+      if (i < 0) return "panel-v2.html: no se encuentra _finArrSave.";
+      return /_hiloMerge/.test(s.slice(i, i + 1600)) ? null
+        : "panel-v2.html: _finArrSave ya no fusiona los hilos (pisa comentarios del cliente).";
+    },
+  },
+  {
     name: "finanzas: pwInit elige la ficha más completa y recupera coach_id",
     bug: "El portal de finanzas tomaba rows[0] sin dedup → un cliente con ficha " +
          "duplicada veía la ficha vacía (sin datos ni coach). Debe ordenar por " +

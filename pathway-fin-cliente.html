@@ -425,14 +425,20 @@ function renderSesiones(c){
 // El cliente marca sus tareas; se persiste en candidatos.sesiones_registro
 // (en demo no hay CID: solo actualiza la vista).
 window.toggleSesTarea=function(idx,ti){
-  var arr=[]; try{ arr=JSON.parse((CRAW&&CRAW.sesiones_registro)||'[]')||[]; }catch(e){ return; }
-  if(!arr[idx]) return;
-  if(!arr[idx].tareas_done) arr[idx].tareas_done=[];
-  var di=arr[idx].tareas_done.indexOf(ti);
-  if(di===-1) arr[idx].tareas_done.push(ti); else arr[idx].tareas_done.splice(di,1);
-  CRAW.sesiones_registro=JSON.stringify(arr);
-  if(CID) sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{sesiones_registro:CRAW.sesiones_registro}).catch(function(){});
-  renderSesiones(CRAW);
+  var _apply=function(arr){
+    if(!arr[idx]) return null;
+    if(!arr[idx].tareas_done) arr[idx].tareas_done=[];
+    var di=arr[idx].tareas_done.indexOf(ti);
+    if(di===-1) arr[idx].tareas_done.push(ti); else arr[idx].tareas_done.splice(di,1);
+    return arr;
+  };
+  if(!CID){ // demo / sin ficha: solo vista local
+    var arr0=[]; try{ arr0=JSON.parse((CRAW&&CRAW.sesiones_registro)||'[]')||[]; }catch(e){ return; }
+    var r=_apply(arr0); if(r==null) return; CRAW.sesiones_registro=JSON.stringify(r); renderSesiones(CRAW); return;
+  }
+  // Re-lee las sesiones FRESCAS (el coach pudo agregar sesiones) antes de aplicar
+  // el toggle, así no le pisamos lo suyo.
+  _sbColSave('sesiones_registro', _apply, function(){ renderSesiones(CRAW); });
 };
 // Red de seguridad para cuando RLS esté prendido: si una query da 401/403 (sin
 // sesión válida), mandamos a login. Mientras RLS esté apagado nunca se dispara.
@@ -625,9 +631,39 @@ var _IST='width:100%;height:38px;border:1px solid var(--border);border-radius:8p
 function _fv(id){ var e=document.getElementById(id); return e?e.value:''; }
 function _fn(id){ return parseFloat((''+_fv(id)).replace(',','.'))||0; }
 function _objLoad(){ if(_esDemo()){ try{ var v=localStorage.getItem('pw_demo_fin_objetivos'); if(v){ var a=JSON.parse(v); if(Array.isArray(a)) return a; } }catch(e){} } try{ var g=JSON.parse((CRAW&&CRAW.fin_objetivos)||'[]'); return Array.isArray(g)?g:[]; }catch(e){ return []; } }
-function _objSave(arr){ if(_esDemo()){ try{ localStorage.setItem('pw_demo_fin_objetivos',JSON.stringify(arr)); }catch(e){} } if(CRAW) CRAW.fin_objetivos=JSON.stringify(arr); if(CID){ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fin_objetivos:JSON.stringify(arr)}).catch(function(){}); } }
+// Guardado merge-safe de una columna JSON de candidatos: re-lee la columna
+// FRESCA de la base y recién ahí aplica el cambio, para NO pisar lo que escribió
+// la otra punta (el coach). applyFn(freshArr) devuelve el array a guardar.
+function _sbColSave(col, applyFn, onDone){
+  if(!CID) return;
+  sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select='+col).then(function(rows){
+    var fresh=[]; try{ fresh=JSON.parse((rows&&rows[0]&&rows[0][col])||'[]')||[]; }catch(e){}
+    if(!Array.isArray(fresh)) fresh=[];
+    var out=applyFn(fresh); if(out==null) return;
+    var j=JSON.stringify(out); if(CRAW) CRAW[col]=j;
+    var patch={}; patch[col]=j;
+    return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),patch).then(function(){ if(typeof onDone==='function') onDone(); });
+  }).catch(function(){});
+}
+// Fusiona objetivos/patrimonio preservando lo que escribió el coach: el CLIENTE
+// manda en qué items existen (agregar/borrar), pero los comentarios (hilo) y la
+// nota/aporte que puso el coach se conservan del remoto (no se pisan).
+function _finKey(o){ return (o&&(o.id||o.nombre))||JSON.stringify(o); }
+function _mergeFinArr(fresh, local){
+  if(!Array.isArray(fresh)||!fresh.length) return local;
+  var fBy={}; fresh.forEach(function(o){ fBy[_finKey(o)]=o; });
+  return (local||[]).map(function(o){
+    var f=fBy[_finKey(o)]; if(!f) return o;
+    var m={}; for(var k in o) m[k]=o[k];
+    m.hilo=_merge(f.hilo||[], o.hilo||[]);
+    if((o.nota==null||o.nota==='') && f.nota!=null) m.nota=f.nota;
+    if((o.aporte==null||o.aporte==='') && f.aporte!=null) m.aporte=f.aporte;
+    return m;
+  });
+}
+function _objSave(arr){ if(_esDemo()){ try{ localStorage.setItem('pw_demo_fin_objetivos',JSON.stringify(arr)); }catch(e){} if(CRAW) CRAW.fin_objetivos=JSON.stringify(arr); return; } if(CRAW) CRAW.fin_objetivos=JSON.stringify(arr); _sbColSave('fin_objetivos', function(fresh){ return _mergeFinArr(fresh, arr); }, function(){ if(typeof renderObjetivos==='function') renderObjetivos(); }); }
 function _patLoad(){ if(_esDemo()){ try{ var v=localStorage.getItem('pw_demo_fin_patrimonio'); if(v){ var a=JSON.parse(v); if(Array.isArray(a)) return a; } }catch(e){} } try{ var g=JSON.parse((CRAW&&CRAW.fin_patrimonio)||'[]'); return Array.isArray(g)?g:[]; }catch(e){ return []; } }
-function _patSave(arr){ if(_esDemo()){ try{ localStorage.setItem('pw_demo_fin_patrimonio',JSON.stringify(arr)); }catch(e){} } if(CRAW) CRAW.fin_patrimonio=JSON.stringify(arr); if(CID){ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fin_patrimonio:JSON.stringify(arr)}).catch(function(){}); } }
+function _patSave(arr){ if(_esDemo()){ try{ localStorage.setItem('pw_demo_fin_patrimonio',JSON.stringify(arr)); }catch(e){} if(CRAW) CRAW.fin_patrimonio=JSON.stringify(arr); return; } if(CRAW) CRAW.fin_patrimonio=JSON.stringify(arr); _sbColSave('fin_patrimonio', function(fresh){ return _mergeFinArr(fresh, arr); }); }
 function _deudasTotal(){ try{ return (JSON.parse((CRAW&&CRAW.fin_deudas)||'[]')||[]).reduce(function(s,d){return s+(parseFloat(d.monto)||0);},0); }catch(e){ return 0; } }
 var _OBJ_TIPOS={viaje:'✈️',ahorro:'🐷',emprendimiento:'🚀',casa:'🏠',otro:'🎯'};
 function _objIco(t){ return _OBJ_TIPOS[t]||'🎯'; }
