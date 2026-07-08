@@ -63,7 +63,7 @@ interfaz van en **gris**, no a color
 ## 🛡️ Blindaje del codigo — tests que no pueden mentir (junio 2026)
 Red de seguridad para que NO vuelvan bugs ya resueltos. Corren en CI en cada
 push/PR (`.github/workflows/syntax-check.yml`). **Antes de commitear, correr:**
-`node scripts/check-syntax.js && node scripts/check-smoke.js && node scripts/check-guardrails.js`
+`node scripts/check-syntax.js && node scripts/check-smoke.js && node scripts/check-guardrails.js && node scripts/check-parity.js`
 - **`scripts/check-syntax.js`** — valida el JS inline de cada .html (un error
   rompe la pagina entera).
 - **`scripts/check-smoke.js`** — verifica que cada handler (`onclick`...) llame a
@@ -71,6 +71,12 @@ push/PR (`.github/workflows/syntax-check.yml`). **Antes de commitear, correr:**
   botones e imagenes rotas. Si agrega falsos positivos, tunear los allowlists.
 - **`scripts/check-guardrails.js`** — "vacuna" bugs resueltos: cada arreglo suma
   una regla. **Al arreglar un bug nuevo, agregar una regla aca** para que no vuelva.
+- **`scripts/check-parity.js`** — la "base que se replica": verifica que las
+  pantallas del mismo tipo (familias: portales/paneles/formularios/editores)
+  tengan el mismo CABLEADO, que los contratos transversales (chat) se respeten,
+  y los INVARIANTES (chat merge-safe, anti-XSS, sesión vencida, dedup). Doc:
+  `docs/base-plataforma.md`. Dos niveles: `enforce` (falla) y `report` (lista
+  huecos). Al cerrar un hueco, subirlo de `report` a `enforce`.
 - **`pw-observe.js`** (observabilidad) — incluido en las 10 paginas clave.
   Registra en la tabla `client_errors` los errores reales de produccion:
   guardados a Supabase que fallan (intercepta `fetch`, atrapa los `.catch`
