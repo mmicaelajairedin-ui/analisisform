@@ -184,6 +184,36 @@
     };
   }
 
+  // Gate de sesión para los portales de cliente: cuando (con RLS prendido) el
+  // cliente no tiene sesión, su ficha viene vacía. En vez de un portal en blanco,
+  // le mostramos una pantalla para iniciar sesión (reusa login.html, ya probado).
+  // Es un NO-OP hoy (RLS apagado): los portales solo lo llaman si la ficha vino
+  // vacía Y no hay sesión, cosa que hoy no pasa para un cliente real.
+  PWAUTH.showLoginGate = function () {
+    try {
+      if (document.getElementById("pw-login-gate")) return;
+      var d = document.createElement("div");
+      d.id = "pw-login-gate";
+      d.style.cssText = "position:fixed;inset:0;z-index:100000;background:#eef2ef;display:flex;align-items:center;justify-content:center;padding:24px;font-family:Inter,-apple-system,system-ui,sans-serif;";
+      d.innerHTML =
+        '<div style="max-width:340px;width:100%;text-align:center;background:#fff;border-radius:18px;padding:34px 26px;box-shadow:0 12px 44px rgba(0,0,0,.14);">' +
+          '<div style="font-size:38px;margin-bottom:12px;">🔒</div>' +
+          '<div style="font-family:Georgia,serif;font-size:21px;font-weight:600;color:#1b2e26;margin-bottom:8px;">Iniciá sesión para ver tu portal</div>' +
+          '<div style="font-size:14px;color:#5a6b62;line-height:1.55;margin-bottom:22px;">Por tu seguridad, entrá con tu cuenta para acceder a tus datos.</div>' +
+          '<button id="pw-gate-btn" type="button" style="display:inline-block;background:#2D6A4F;color:#fff;border:none;border-radius:11px;padding:13px 30px;font-size:15px;font-weight:700;cursor:pointer;">Iniciar sesión</button>' +
+        "</div>";
+      document.body.appendChild(d);
+      var b = document.getElementById("pw-gate-btn");
+      if (b) b.onclick = function () { location.href = "/login.html"; };
+    } catch (e) {}
+  };
+
+  // Interruptor del gate: HOY en false → el gate está DORMIDO (los portales no lo
+  // muestran nunca, comportamiento idéntico al actual). Se pone en true el día que
+  // se active RLS estricto (una línea), y ahí el portal sin sesión manda a login
+  // en vez de quedar vacío. Separar el flag del deploy hace el cambio reversible.
+  PWAUTH.RLS_ON = false;
+
   // Bootea el SDK al cargar el script, para que arranque el autoRefreshToken y
   // mantenga fresco el token en localStorage (lo que lee headersSync()).
   ensure();
