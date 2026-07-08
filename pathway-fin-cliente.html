@@ -826,10 +826,11 @@ function renderDiagnostico(d){
 var _pwGameC=null;
 function abrirJuego(){
   try{
-    window.PW_GAME_EMAIL=(_pwGameC&&_pwGameC.email)||(typeof CID!=='undefined'&&CID)||'x';
+    window.PW_GAME_EMAIL=EMAIL||(_pwGameC&&_pwGameC.email)||(typeof CID!=='undefined'&&CID)||'x';
     window.PW_GAME_ONCLOSE=function(){ try{ if(_pwGameC) applyLogrosFin(_pwGameC); }catch(e){} };
   }catch(e){}
-  if(typeof openJuego==='function') openJuego();
+  if(typeof openJuego==='function'){ openJuego(); }
+  else if(typeof showToast==='function'){ showToast('🐐 El juego se está cargando… reintentá en un momento'); }
 }
 function applyLogrosFin(c){
   var diag=false; try{ diag=!!JSON.parse(c.fin_diagnostico||'null'); }catch(e){}
@@ -1191,11 +1192,9 @@ function _planVacioFin(){
   var obj=false; try{ obj=(JSON.parse((CRAW&&CRAW.fin_objetivos)||'[]')||[]).length>0; }catch(e){}
   return !diag && !pres && !obj;
 }
-function abrirJuego(){
-  try{ window.PW_GAME_EMAIL=EMAIL||'demo'; }catch(e){}
-  if(typeof openJuego==='function'){ openJuego(); }
-  else if(typeof showToast==='function'){ showToast('🐐 El juego se está cargando… reintentá en un momento'); }
-}
+/* abrirJuego unificada arriba (registra PW_GAME_ONCLOSE para refrescar la
+   medalla al cerrar el juego). Se eliminó la 2da definición que ganaba por
+   hoisting y NO registraba el callback. */
 function _irFormulario(){
   if(_esDemo()){ if(typeof showToast==='function') showToast('📝 En tu portal real, este botón abre tu formulario'); return; }
   location.href='https://pathwaycareercoach.com/pathway-fin-form.html?portal=1&email='+encodeURIComponent(EMAIL)+((CRAW&&CRAW.coach_id)?('&coach='+encodeURIComponent(CRAW.coach_id)):'');
@@ -1338,7 +1337,17 @@ window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!i
 function pwInit(){
   if(_esDemo()){ CRAW=_demoCraw(); CID=null; applyClientFin(CRAW); _demoBrandFin(); return; }
   sbGet('candidatos','email=eq.'+encodeURIComponent(EMAIL)+'&select=*').then(function(rows){
-    if(rows&&rows.length){CRAW=rows[0];CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);pwMaybeConsent();pwSubGate(CRAW);_limpiarDemo();renderPrepCard();}
+    if(rows&&rows.length){
+      // El form público puede dejar duplicados (fallback INSERT) → elegimos la
+      // fila MÁS COMPLETA y, si le falta coach_id, lo tomamos de cualquier
+      // duplicado que lo tenga (mismo fix que fitness). Así el cliente ve sus
+      // datos y el link al formulario viaja con &coach= (auto-reparación).
+      var _score=function(r){ var n=0; ['situacion','ingresos','gastos','fin_pres','fin_objetivos','fin_patrimonio','fin_deudas','fin_diagnostico','foto_perfil','sesiones_registro','nombre','objetivo'].forEach(function(k){ var v=r[k]; if(v!=null){ var s=(''+v).trim(); if(s!==''&&s!=='[]'&&s!=='{}') n++; } }); return n; };
+      rows.sort(function(a,b){ var d=_score(b)-_score(a); if(d) return d; return new Date(b.created_at||0)-new Date(a.created_at||0); });
+      CRAW=rows[0];
+      if(!CRAW.coach_id){ for(var _i=0;_i<rows.length;_i++){ if(rows[_i].coach_id){ CRAW.coach_id=rows[_i].coach_id; break; } } }
+      CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);pwMaybeConsent();pwSubGate(CRAW);_limpiarDemo();renderPrepCard();
+    }
     else { _clienteSinFicha(); } // Cliente REAL cuyo alta no dejó ficha → estado limpio + cartel, nunca el demo.
   }).catch(function(){ if(!_esDemo()) _clienteSinFicha(); });
 }
