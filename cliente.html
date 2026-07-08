@@ -1915,6 +1915,18 @@ function init(){
       }
     }
     C=res[0][0];
+    // Restaurar el bonus del juego desde Supabase (candidatos.game_pts) para que
+    // la medalla NO baje al cambiar de dispositivo (antes el bonus vivía solo en
+    // localStorage de cada aparato). Tomamos el mayor entre lo local y lo persistido.
+    try{
+      var _srvBest=parseInt(C.game_pts||0,10)||0;
+      if(_srvBest>0){
+        var _locBest=parseInt(localStorage.getItem('pw_game_pts_'+E)||'0',10)||0;
+        if(_srvBest>_locBest) localStorage.setItem('pw_game_pts_'+E, String(_srvBest));
+        var _srvBonus=Math.min(150,_srvBest), _locBonus=parseInt(localStorage.getItem('mj_bonus_pts_'+E)||'0',10)||0;
+        if(_srvBonus>_locBonus) localStorage.setItem('mj_bonus_pts_'+E, String(_srvBonus));
+      }
+    }catch(e){}
     // ── PRIVACY GUARD: validar ownership de coach_view ────────────
     // Si la URL trae ?coach_view=email pero el cliente NO pertenece al
     // coach logueado, bloqueamos. Sin esto, cualquier coach podría ver
@@ -2323,6 +2335,13 @@ var JUEGO_BONUS_MAX=150;
 function abrirJuego(){
   try{
     window.PW_GAME_EMAIL=E;
+    // Persistir el mejor puntaje del juego a Supabase (nunca baja) para que el
+    // bonus de la medalla no se pierda entre dispositivos.
+    window.PW_GAME_SYNC=function(n){
+      try{ n=parseInt(n,10)||0; var cur=parseInt((C&&C.game_pts)||0,10)||0; if(n<=cur||COACH_PREVIEW) return;
+        if(C) C.game_pts=n; pt('candidatos','email=eq.'+encodeURIComponent(E),{game_pts:n}).catch(function(){});
+      }catch(e){}
+    };
     window.PW_GAME_ONCLOSE=function(){
       try{
         var best=parseInt(localStorage.getItem('pw_game_pts_'+E)||'0',10)||0;
@@ -2377,6 +2396,9 @@ function updSbMedal(){
   var achs=getAchievements();
   var pts=getPoints();
   var m=getMedalInfo(pts);
+  // Persistir el total a Supabase (fuente única) para que el COACH vea la MISMA
+  // medalla que el cliente. No se persiste en modo coach_view (solo lectura).
+  try{ if(E && !COACH_PREVIEW && C){ var _pp=parseInt(C.puntos!=null?C.puntos:-1,10); if(_pp!==pts){ C.puntos=pts; pt('candidatos','email=eq.'+encodeURIComponent(E),{puntos:pts}).catch(function(){}); } } }catch(e){}
 
   // Detectar achievements recién desbloqueados (desde la última vez)
   var prevDoneKey='mj_achs_done_'+E;

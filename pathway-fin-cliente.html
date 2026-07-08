@@ -863,6 +863,7 @@ var _pwGameC=null;
 function abrirJuego(){
   try{
     window.PW_GAME_EMAIL=EMAIL||(_pwGameC&&_pwGameC.email)||(typeof CID!=='undefined'&&CID)||'x';
+    window.PW_GAME_SYNC=function(n){ try{ n=parseInt(n,10)||0; var cur=parseInt((CRAW&&CRAW.game_pts)||0,10)||0; if(n<=cur||typeof CID==='undefined'||!CID) return; if(CRAW)CRAW.game_pts=n; sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{game_pts:n}).catch(function(){}); }catch(e){} };
     window.PW_GAME_ONCLOSE=function(){ try{ if(_pwGameC) applyLogrosFin(_pwGameC); }catch(e){} };
   }catch(e){}
   if(typeof openJuego==='function'){ openJuego(); }
@@ -885,7 +886,9 @@ function applyLogrosFin(c){
   // A <2 logros ya NO muestra "Bronce" falso (queda alineado al riel y a carrera).
   _pwGameC=c; // para refrescar la medalla al cerrar el juego
   var pts=n*100;
-  try{ pts+=Math.min(150, parseInt(localStorage.getItem('pw_game_pts_'+((c&&c.email)||(typeof CID!=='undefined'&&CID)||'x'))||'0',10)||0); }catch(e){}
+  try{ pts+=Math.min(150, parseInt(localStorage.getItem('pw_game_pts_'+(EMAIL||(c&&c.email)||(typeof CID!=='undefined'&&CID)||'x'))||'0',10)||0); }catch(e){}
+  // Persistir el total a Supabase (fuente única) → el coach ve la MISMA medalla.
+  try{ if(typeof CID!=='undefined'&&CID){ var _pp=parseInt((CRAW&&CRAW.puntos!=null)?CRAW.puntos:-1,10); if(_pp!==pts){ if(CRAW)CRAW.puntos=pts; sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{puntos:pts}).catch(function(){}); } } }catch(e){}
   var m=(window.PWJ?PWJ.medal(pts):null);
   var lbl=m?m.current.lbl:(n>=6?'Oro':n>=4?'Plata':n>=2?'Bronce':'');
   var mName=lbl?lbl.toLowerCase():'';
@@ -1382,6 +1385,8 @@ function pwInit(){
       rows.sort(function(a,b){ var d=_score(b)-_score(a); if(d) return d; return new Date(b.created_at||0)-new Date(a.created_at||0); });
       CRAW=rows[0];
       if(!CRAW.coach_id){ for(var _i=0;_i<rows.length;_i++){ if(rows[_i].coach_id){ CRAW.coach_id=rows[_i].coach_id; break; } } }
+      // Restaurar el bonus del juego desde Supabase (game_pts) → la medalla no baja entre dispositivos.
+      try{ var _gk='pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CRAW.id||'x'), _srv=parseInt(CRAW.game_pts||0,10)||0; if(_srv>0 && _srv>(parseInt(localStorage.getItem(_gk)||'0',10)||0)) localStorage.setItem(_gk,String(_srv)); }catch(e){}
       CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);pwMaybeConsent();pwSubGate(CRAW);_limpiarDemo();renderPrepCard();
     }
     else { _clienteSinFicha(); } // Cliente REAL cuyo alta no dejó ficha → estado limpio + cartel, nunca el demo.

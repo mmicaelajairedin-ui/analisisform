@@ -849,6 +849,26 @@ const RULES = [
     },
   },
   {
+    name: "puntos: coach y cliente ven la MISMA medalla (por puntos, no semana)",
+    bug: "El cliente calculaba la medalla por PUNTOS y el coach por semana_activa " +
+         "→ medallas distintas para la misma persona. Ahora el cliente persiste su " +
+         "total (candidatos.puntos) y el coach lo lee con los mismos umbrales.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p && !/c\.puntos/.test(p))
+        return "panel-v2.html: el coach ya no lee candidatos.puntos (volvió a la medalla por semana_activa, se desincroniza del cliente).";
+      // Los 3 portales deben persistir puntos y el mejor puntaje del juego.
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f); if (!s) continue;
+        if (!/PW_GAME_SYNC\s*=\s*function/.test(s))
+          return f + ": falta PW_GAME_SYNC (el puntaje del juego no se persiste → la medalla baja entre dispositivos).";
+        if (!/\{\s*puntos\s*:/.test(s))
+          return f + ": ya no persiste 'puntos' a Supabase (el coach no vería la misma medalla).";
+      }
+      return null;
+    },
+  },
+  {
     name: "finanzas: pwInit elige la ficha más completa y recupera coach_id",
     bug: "El portal de finanzas tomaba rows[0] sin dedup → un cliente con ficha " +
          "duplicada veía la ficha vacía (sin datos ni coach). Debe ordenar por " +

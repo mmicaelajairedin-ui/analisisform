@@ -1040,6 +1040,7 @@ var _pwGameInf=null;
 function abrirJuego(){
   try{
     window.PW_GAME_EMAIL=EMAIL||(CRAW&&CRAW.email)||CID||'x';
+    window.PW_GAME_SYNC=function(n){ try{ n=parseInt(n,10)||0; var cur=parseInt((CRAW&&CRAW.game_pts)||0,10)||0; if(n<=cur||!CID) return; CRAW.game_pts=n; sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{game_pts:n}).catch(function(){}); }catch(e){} };
     window.PW_GAME_ONCLOSE=function(){ try{ applyLogros(_pwGameInf); }catch(e){} };
   }catch(e){}
   if(typeof openJuego==='function'){ openJuego(); }
@@ -1071,7 +1072,9 @@ function applyLogros(inf){
   // A <2 logros ya NO muestra "Bronce" falso (queda alineado al riel de arriba y a carrera).
   _pwGameInf=inf; // para refrescar la medalla al cerrar el juego
   var pts=n*100;
-  try{ pts+=Math.min(150, parseInt(localStorage.getItem('pw_game_pts_'+((CRAW&&CRAW.email)||CID||'x'))||'0',10)||0); }catch(e){}
+  try{ pts+=Math.min(150, parseInt(localStorage.getItem('pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CID||'x'))||'0',10)||0); }catch(e){}
+  // Persistir el total a Supabase (fuente única) → el coach ve la MISMA medalla.
+  try{ if(CID){ var _pp=parseInt(CRAW.puntos!=null?CRAW.puntos:-1,10); if(_pp!==pts){ CRAW.puntos=pts; sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{puntos:pts}).catch(function(){}); } } }catch(e){}
   var m=(window.PWJ?PWJ.medal(pts):null);
   var medalLbl=m?m.current.lbl:(n>=6?'Oro':n>=4?'Plata':n>=2?'Bronce':'');
   var mName=medalLbl?medalLbl.toLowerCase():'';
@@ -1454,6 +1457,8 @@ async function pwInit(){
         rows.sort(function(a,b){ var d=_score(b)-_score(a); if(d) return d; return new Date(b.created_at||0)-new Date(a.created_at||0); });
         CRAW=rows[0];
         if(!CRAW.coach_id){ for(var _i=0;_i<rows.length;_i++){ if(rows[_i].coach_id){ CRAW.coach_id=rows[_i].coach_id; break; } } }
+        // Restaurar el bonus del juego desde Supabase (game_pts) → la medalla no baja entre dispositivos.
+        try{ var _gk='pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CRAW.id||'x'), _srv=parseInt(CRAW.game_pts||0,10)||0; if(_srv>0 && _srv>(parseInt(localStorage.getItem(_gk)||'0',10)||0)) localStorage.setItem(_gk,String(_srv)); }catch(e){}
         CID=CRAW.id; applyClient(CRAW); applyProceso(); pwMaybeConsent(); pwSubGate(CRAW);
         var inf=null;
         try{ var ir=await sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=data&order=created_at.desc&limit=1'); if(ir&&ir.length){ var dd=ir[0].data; inf=(typeof dd==='string')?JSON.parse(dd):dd; } }catch(e){}
