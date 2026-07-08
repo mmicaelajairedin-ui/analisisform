@@ -325,17 +325,9 @@
               <div id="ag-types" style="margin-bottom:4px"></div>
               <div style="font-size:11px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave);margin:16px 0 6px">Tu link para agendar</div>
               <p style="font-size:11.5px;color:var(--texto-suave);margin:0 0 8px;line-height:1.45">Compartilo con tus leads. La demo cae acá y en tu Google Calendar.</p>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
                 <input id="mylink" readonly onclick="this.select()" style="flex:1;min-width:130px;padding:9px 11px;border:1.5px solid var(--borde);border-radius:9px;font-size:11.5px;font-family:inherit">
                 <button class="btn sm" onclick="copyMyLink()">Copiar</button>
-              </div>
-              <div style="font-size:11px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave);margin-bottom:6px">Mi disponibilidad</div>
-              <p style="font-size:11.5px;color:var(--texto-suave);margin:0 0 10px;line-height:1.45">Qué días y franja te pueden reservar.</p>
-              <div id="disp-days" style="display:flex;gap:5px;margin-bottom:12px;flex-wrap:wrap"></div>
-              <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
-                <label style="font-size:11.5px;color:var(--texto-suave)">Desde<br><input type="time" id="disp-from" value="09:00" style="padding:7px 9px;border:1.5px solid var(--borde);border-radius:9px;font-family:inherit;font-size:12px"></label>
-                <label style="font-size:11.5px;color:var(--texto-suave)">Hasta<br><input type="time" id="disp-to" value="18:00" style="padding:7px 9px;border:1.5px solid var(--borde);border-radius:9px;font-family:inherit;font-size:12px"></label>
-                <button class="btn sm" onclick="saveDisp()">Guardar</button>
               </div>
             </div>
           </div>
@@ -556,7 +548,8 @@
           "<span style='opacity:.35;font-size:15px'>›</span></button>";
       }).join("")+
       "<button class='btn ghost sm' style='margin-top:2px' onclick='agNewType()'>＋ Tipo</button>"+
-      "<button class='btn' style='width:100%;margin-top:12px' onclick='agOpenCita(-1)'>＋ Agendar cita</button>";
+      "<button class='btn' style='width:100%;margin-top:12px' onclick='agOpenCita(-1)'>＋ Agendar cita</button>"+
+      "<button class='btn ghost' style='width:100%;margin-top:6px' onclick='agOpenDisp()'>🕑 Mi disponibilidad</button>";
   }
   // Miembros del equipo (admin + empleados activos) para invitar a una cita/tipo.
   var _TEAM=null, _teamReq=false;
@@ -598,9 +591,14 @@
     var url='https://calendar.google.com/calendar/u/0/r/eventedit?text='+encodeURIComponent(lbl)+'&dates='+fmt(st)+'/'+fmt(en);
     (AGST.team||[]).forEach(function(em){ if(em) url+='&add='+encodeURIComponent(em); });
     var guest=(_val('ag-cita-guest')||'').trim(); if(guest) url+='&add='+encodeURIComponent(guest);
+    // Evento compartido: además de Google, lo guardamos en la agenda (citas) de
+    // cada compañero invitado, para que le aparezca aunque no use Google.
+    var shWith=guest?(guest.split('@')[0]):('con '+((WHO&&(WHO.nombre||WHO.email))||'el equipo').split(' ')[0]);
+    var nInv=0;
+    (AGST.team||[]).forEach(function(em){ var m=(_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id&&sb){ nInv++; sb.from('citas').insert({coach_id:m.id,nombre:shWith,email:guest||'',tipo:lbl,inicio:st.toISOString(),estado:'confirmada'}).then(function(){},function(){}); } });
     agClose();
     var w=window.open(url,'_blank','noopener'); if(!w) location.href=url;
-    toast('Cita cargada en Google — confirmá y aparece en tu agenda.');
+    toast(nInv?('Cita agendada — le aparece a '+nInv+' del equipo y en Google.'):'Cita cargada en Google — confirmá y aparece en tu agenda.');
   };
   async function agSaveTypes(arr){
     EVT=arr;
@@ -655,9 +653,19 @@
         "<div class='fld'><label>Invitar al equipo</label>"+teamInner+"</div>"+
         "<div class='fld'><label>Otro invitado (email, opcional)</label><input id='ag-cita-guest' placeholder='cliente@email.com'></div></div>"+
         "<div class='modal-ft'><span></span><div style='display:flex;gap:8px'><button class='btn ghost' onclick='agClose()'>Cancelar</button><button class='btn' onclick='agAgendar()'>Agendar cita</button></div></div>";
+    } else if(AGST.mode==='disp'){
+      body=head('Mi disponibilidad')+"<div class='modal-bd'>"+
+        "<p style='font-size:12.5px;color:var(--texto-suave);margin-bottom:12px'>Qué días y en qué franja te pueden reservar desde tu link.</p>"+
+        "<div class='fld'><label>Días</label><div id='disp-days' style='display:flex;gap:6px;flex-wrap:wrap'></div></div>"+
+        "<div style='display:flex;gap:10px'><div class='fld' style='flex:1'><label>Desde</label><input type='time' id='disp-from' value='09:00'></div>"+
+        "<div class='fld' style='flex:1'><label>Hasta</label><input type='time' id='disp-to' value='18:00'></div></div></div>"+
+        "<div class='modal-ft'><span></span><div style='display:flex;gap:8px'><button class='btn ghost' onclick='agClose()'>Cancelar</button><button class='btn' onclick='saveDispModal()'>Guardar</button></div></div>";
     }
     card.innerHTML=body;
+    if(AGST.mode==='disp') renderDispDays();
   }
+  window.agOpenDisp=function(){ agOpen({mode:'disp'}); };
+  window.saveDispModal=async function(){ await saveDisp(); if(DISP.days&&DISP.days.length) agClose(); };
   // Col 1: agenda próxima (Google + reservas), agrupada por día. Como el panel.
   function _agConnectHtml(){
     return "<div style='text-align:center;padding:14px 6px'>"+
