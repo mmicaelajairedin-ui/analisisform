@@ -208,11 +208,11 @@
     } catch (e) {}
   };
 
-  // Interruptor del gate: HOY en false → el gate está DORMIDO (los portales no lo
-  // muestran nunca, comportamiento idéntico al actual). Se pone en true el día que
-  // se active RLS estricto (una línea), y ahí el portal sin sesión manda a login
-  // en vez de quedar vacío. Separar el flag del deploy hace el cambio reversible.
-  PWAUTH.RLS_ON = false;
+  // Interruptor del gate: en true → RLS estricto está ACTIVO en Supabase, y los
+  // portales/paneles sin sesión mandan a login (en vez de quedar vacíos). Se
+  // enciende el mismo día que se corre rls_strict.sql en la base. Reversible:
+  // si hay que hacer rollback del RLS en la base, volver esto a false y deployar.
+  PWAUTH.RLS_ON = true;
 
   // Bootea el SDK al cargar el script, para que arranque el autoRefreshToken y
   // mantenga fresco el token en localStorage (lo que lee headersSync()).
