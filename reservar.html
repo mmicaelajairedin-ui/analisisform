@@ -26,8 +26,9 @@
   @media(min-width:760px){ .wrap{max-width:920px;} }
   /* Pantallas simples (cargando / gracias / error) quedan angostas y centradas */
   .card:not(.book-card){max-width:480px;margin-left:auto;margin-right:auto;}
-  .brand{display:flex;align-items:center;justify-content:center;margin-bottom:18px;}
-  .brand img{height:56px;width:auto;max-width:220px;object-fit:contain;}
+  .brand{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:18px;}
+  .brand svg{width:28px;height:28px;}
+  .brand-word{font-family:var(--serif);font-size:23px;font-weight:600;color:var(--carbon);letter-spacing:-.5px;}
   .card{background:#fff;border:1px solid var(--borde);border-radius:22px;box-shadow:0 14px 46px rgba(20,55,38,.09);padding:0 0 28px;overflow:hidden;display:flex;flex-direction:column;}
   .card.two-col{padding:0;}
   .hd{background:linear-gradient(160deg,#2D6A4F 0%,#1B4332 100%);padding:22px 20px;text-align:center;color:#fff;position:relative;}
@@ -154,7 +155,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="brand"><img src="https://35ow6bgaww.ucarecd.net/88b84d54-bf31-4f12-a2b0-eaa1f34f4275/-/format/auto/-/quality/best/" alt="Pathway"></div>
+  <div class="brand"><svg viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,82 32,52 54,82" fill="#52B788"/><polygon points="34,82 58,28 82,82" fill="#2D6A4F"/><circle cx="58" cy="22" r="5" fill="#E9C46A"/></svg><span class="brand-word">pathway<span style="color:#52B788">.</span></span></div>
   <div class="card" id="card"><div class="spin"></div></div>
   <div class="foot">Reservas con Pathway · pathwaycareercoach.com</div>
 </div>
@@ -326,14 +327,12 @@ function renderPicker(){
     var on=(String(m.id)===String(CID)); var ph=memPhoto(m); var cc=(m.configuracion)||{};
     var av=ph?"<img src='"+esc(ph)+"' alt=''>":"<span class='pini'>"+esc(initials(m.nombre))+"</span>";
     var esp=cc.especialidad||(m.rol==='admin'?'Especialista en coaches':m.rol==='empleado'?'Especialista en negocios':'');
-    var rating=(+cc.rating)||5.0;
     return "<button class='pcard"+(on?' on':'')+"' data-pid='"+esc(m.id)+"'>"+
       "<span class='pradio'></span>"+av+
       "<div style='min-width:0;flex:1'>"+
         "<div class='pn'>"+esc(m.nombre||'Pathway')+"</div>"+
         "<div class='pr'>"+esc(roleLabel(m))+"</div>"+
         (esp?"<div class='pmeta'>"+esc(esp)+"</div>":"")+
-        "<div class='pstars'>★★★★★<b>"+rating.toFixed(1)+"</b></div>"+
         "<span class='pbadge'>"+esc(_availLabel(m))+"</span>"+
       "</div></button>";
   }).join('');
@@ -352,11 +351,7 @@ function renderPicker(){
       "<li><span class='ck'>✓</span> La plataforma por dentro</li>"+
       "<li><span class='ck'>✓</span> Cómo podemos trabajar mejor para tu proyecto</li>"+
     "</ul></div>"+
-    "<div class='bk-mock'><div class='mk-img'></div><div><div class='mk-t'>Demo personalizada de "+DUR+" min</div><div class='mk-s'>Vas a conocer la plataforma por dentro durante la reunión.</div></div></div>"+
-    "<div class='bk-proof'>"+
-      "<div class='av-row'><span>P</span><span>M</span><span>+</span></div>"+
-      "<div><div class='stars'>★★★★★</div><div class='pt'><b>+300 coaches</b> ya usan Pathway · 4.9/5</div></div>"+
-    "</div>"+
+    "<div class='bk-proof' id='bk-proof'></div>"+
     "<div class='bk-icons'>"+
       "<a href='"+esc(waHref)+"' target='_blank' rel='noopener' aria-label='WhatsApp' title='¿Dudas? Escribinos'>💬</a>"+
       "<a href='https://pathwaycareercoach.com' target='_blank' rel='noopener' aria-label='Web' title='Conocé Pathway'>🌐</a>"+
@@ -403,6 +398,28 @@ function renderPicker(){
     var s=e.target.closest('[data-slot]'); if(!s) return; sel.time=s.getAttribute('data-slot'); renderPicker();
   });
   if($('confirm')) $('confirm').addEventListener('click', confirmar);
+  renderProof();
+}
+
+// Prueba social REAL: coaches que usan Pathway (cantidad + fotos reales).
+var COACHES_PROOF=null;
+function loadProof(){
+  fetch(SB+'/rest/v1/usuarios?rol=eq.coach&activo=eq.true&select=nombre,foto_url,configuracion&order=created_at.desc&limit=8',
+    { headers:{ apikey:KEY, Authorization:'Bearer '+KEY, Prefer:'count=exact' } })
+    .then(function(r){ var cr=r.headers.get('content-range')||''; var total=parseInt((cr.split('/')[1]||'0'),10)||0; return r.json().then(function(rows){ rows=(Object.prototype.toString.call(rows)==='[object Array]'?rows:[]); COACHES_PROOF={total:(total||rows.length), rows:rows}; renderProof(); }); })
+    .catch(function(){});
+}
+function renderProof(){
+  var el=document.getElementById('bk-proof'); if(!el) return;
+  if(!COACHES_PROOF || !COACHES_PROOF.total){ el.innerHTML=''; return; } // sin dato real → no mostramos nada inventado
+  var withPhoto=(COACHES_PROOF.rows||[]).filter(function(u){ return memPhoto(u); });
+  var show=(withPhoto.length?withPhoto:(COACHES_PROOF.rows||[])).slice(0,4);
+  var avs=show.map(function(u){ var ph=memPhoto(u);
+    return ph?("<span style='background-image:url(\""+esc(ph)+"\");background-size:cover;background-position:center'></span>")
+             :("<span>"+esc(initials(u.nombre))+"</span>"); }).join('');
+  var t=COACHES_PROOF.total;
+  el.innerHTML=(avs?"<div class='av-row'>"+avs+"</div>":"")+
+    "<div class='pt'><b>"+t+" coach"+(t===1?"":"es")+"</b> ya "+(t===1?"usa":"usan")+" Pathway para acompañar a sus clientes.</div>";
 }
 
 function fmt(x){ return x.getFullYear()+('0'+(x.getMonth()+1)).slice(-2)+('0'+x.getDate()).slice(-2)+'T'+('0'+x.getHours()).slice(-2)+('0'+x.getMinutes()).slice(-2)+'00'; }
@@ -487,6 +504,7 @@ function ok(name, start, gurl){
 (function(){
   var c=qp('c'); var t=parseInt(qp('t'),10); if(isNaN(t)) t=-1;
   var team=qp('team');
+  try{ loadProof(); }catch(e){}   // prueba social real (coaches que ya usan Pathway)
   if(c){ loadCoach(c,t); return; }
   if(team){ TEAM=true; loadTeam(); return; }
   fail('Este link no es válido. Pedile que te compartan el link de reservas de nuevo.');
