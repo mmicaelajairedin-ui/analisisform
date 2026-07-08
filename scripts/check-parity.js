@@ -113,6 +113,69 @@ const FUERA_DE_PARIDAD = {
   "empleado.html": "Team interno de Pathway (leads/comisión) — no es producto de coaching",
 };
 
+// Extrae el cuerpo de una función por nombre (function X(){}, X=function(),
+// window.X=function()) por matching de llaves. Para chequear el CÓMO, no solo
+// el SI-existe.
+function fnBody(src, name) {
+  let m = new RegExp("function\\s+" + name + "\\s*\\(").exec(src);
+  if (!m) m = new RegExp("(?:window\\.)?" + name + "\\s*=\\s*function\\s*\\(").exec(src);
+  if (!m) return null;
+  let i = src.indexOf("{", m.index); if (i < 0) return null;
+  let depth = 1; i++;
+  while (i < src.length && depth > 0) { const c = src[i]; if (c === "{") depth++; else if (c === "}") depth--; i++; }
+  return src.slice(m.index, i);
+}
+
+// INVARIANTES — el CABLEADO no solo tiene que existir, tiene que estar BIEN.
+// Detecta el caso "la pieza está pero implementada mal/insegura", que la matriz
+// de presencia no ve. Cada invariante que hoy se cumple queda CONGELADO: si un
+// clon futuro lo rompe, el test falla.
+const INVARIANTES = [
+  {
+    key: "chat-merge-safe",
+    label: "Chat: re-lee antes de escribir (no pisa a la otra punta)",
+    porque: "Si al enviar se escribe notas_coach sin re-leer, se sobreescriben " +
+            "los mensajes que puso el coach (o el cliente) desde la otra punta.",
+    level: "enforce",
+    aplicaA: (s) => /notas_coach\s*:\s*JSON\.stringify|\{\s*notas_coach\s*:/.test(s),
+    check: (s) => /select=notas_coach/.test(s) ? null
+      : "escribe notas_coach sin re-leer antes (select=notas_coach) → puede pisar mensajes",
+  },
+  {
+    key: "chat-escape",
+    label: "Chat: escapa el texto del mensaje al render (anti-XSS)",
+    porque: "el texto del mensaje se mete en el DOM; si se concatena crudo (sin " +
+            "esc()/hh()) un mensaje con HTML puede inyectar código.",
+    level: "enforce",
+    // Aplica a cualquier pantalla de chat que renderice el texto del mensaje.
+    aplicaA: (s) => /notas_coach/.test(s) && /m\.text/.test(s),
+    // Anti-patrón: m.text concatenado directo a un string (…+m.text / m.text+…).
+    // Un render escapado usa esc(m.text) o hh(m.text), nunca +m.text crudo.
+    check: (s) => (/\+\s*m\.text/.test(s) || /m\.text\s*\+/.test(s))
+      ? "renderiza m.text crudo (concatenado sin esc()/hh()) → riesgo XSS" : null,
+  },
+  {
+    key: "auth-expiry",
+    label: "Datos: maneja sesión vencida (401/403 → login)",
+    porque: "Si sbGet no detecta 401/403, un token vencido muestra el portal " +
+            "vacío/roto en vez de mandar a login.",
+    level: "enforce",
+    aplicaA: (s) => fnBody(s, "sbGet") != null,
+    check: (s) => /_authExpired|401|403/.test(fnBody(s, "sbGet") || "") ? null
+      : "sbGet no maneja 401/403 (sesión vencida)",
+  },
+  {
+    key: "chat-dedup",
+    label: "Chat: clave de deduplicación canónica (from|text|ts)",
+    porque: "Los dos lados mergean por _mkey; si la clave cambia, los mensajes " +
+            "se duplican o no se emparejan.",
+    level: "enforce",
+    aplicaA: (s) => fnBody(s, "_mkey") != null,
+    check: (s) => { const b = fnBody(s, "_mkey") || ""; return (/from/.test(b) && /text/.test(b) && /ts|time/.test(b)) ? null
+      : "_mkey no usa la clave canónica from|text|ts"; },
+  },
+];
+
 // Contratos transversales: piezas que viven en varias familias y DEBEN verse
 // igual en todas para poder interoperar. El chat es el caso testigo.
 const CONTRATOS = [
@@ -165,8 +228,25 @@ if (Object.keys(FUERA_DE_PARIDAD).length) {
   line("");
 }
 
-line("═══ CONTRATOS TRANSVERSALES ═══\n");
 const htmlFiles = fs.readdirSync(".").filter((x) => x.endsWith(".html"));
+
+line("═══ INVARIANTES DE CABLEADO (detección de errores) ═══\n");
+for (const inv of INVARIANTES) {
+  line(`▸ ${inv.label} (${inv.key})`);
+  let any = false;
+  for (const f of htmlFiles) {
+    const s = read(f);
+    if (!inv.aplicaA(s)) continue;
+    any = true;
+    const err = inv.check(s);
+    if (err) { if (inv.level === "enforce") failed = true; line(`  ${inv.level === "enforce" ? "✗" : "·"} ${f}: ${err}`); }
+    else line(`  ✓ ${f}`);
+  }
+  if (!any) line("  (ninguna pantalla usa esta pieza todavía)");
+  line("");
+}
+
+line("═══ CONTRATOS TRANSVERSALES ═══\n");
 for (const c of CONTRATOS) {
   line(`▸ ${c.label} (${c.key})`);
   let any = false;
@@ -186,6 +266,6 @@ if (failed) {
   line("✗ Paridad: hay piezas 'enforce' faltantes o contratos rotos (ver arriba).");
   process.exit(1);
 } else {
-  line("✓ Paridad OK — cableado 'enforce' presente y contratos respetados.");
+  line("✓ Paridad OK — cableado presente, invariantes cumplidos, contratos respetados.");
   line("  (los '·falta' son huecos 'report': guía de lo que falta cablear, no rompen el CI)");
 }
