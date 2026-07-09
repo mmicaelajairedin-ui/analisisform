@@ -2621,11 +2621,14 @@ function _calRenderList(){
     var canc=(r.estado==="cancelada")?"<span style='font-size:11px;font-weight:700;color:var(--pw-text-muted)'>Cancelada</span>":"";
     // De quién es la demo (solo admin, cuando no es tuya).
     var owner=(RADMIN && r.coach_id && String(r.coach_id)!==String(RME&&RME.id))?("<span title='Atiende' style='display:inline-flex;align-items:center;gap:4px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:100px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--pw-carbon)'>👤 "+esc(_calOwnerName(r.coach_id))+"</span>"):"";
+    // Guardar como contacto: crea la ficha en la lista (dedup por email, sin pago
+    // ni email de bienvenida). Si después llena el formulario, se une por email.
+    var saveBtn=(r.email)?("<button data-act='cal-contact' data-nom=\""+esc(r.nombre||"")+"\" data-em=\""+esc(r.email)+"\" title='Guardarlo en tu lista de contactos' style='margin-top:4px;padding:3px 9px;border-radius:7px;font-size:10.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1px solid var(--pw-border);background:#fff;color:var(--pw-bosque)'>＋ Guardar como contacto</button>"):"";
     return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--pw-border);flex-wrap:wrap'>"+
       "<span style='width:30px;height:30px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>"+ico+"</span>"+
       "<div style='min-width:150px;font-size:12.5px;font-weight:700;color:var(--pw-carbon)'>"+esc(fecha)+"</div>"+
       "<div style='flex:1;min-width:120px'><div style='font-size:13.5px;font-weight:600'>"+esc(r.nombre||"Alguien")+"</div>"+
-      "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
+      "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div>"+saveBtn+"</div>"+
       owner+
       canc+
       "<div style='display:flex;flex-direction:column;gap:2px;align-items:flex-end'><div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó")+"</div>"+outc+"</div>"+
@@ -5703,6 +5706,29 @@ document.addEventListener("click", function(ev){
     _sbw(_rq,"PATCH",{estado:_rr.estado})
       .then(function(r){ if(r&&r.ok){ toast(_rv==="gano"?"👍 Marcado: fue bien":"👎 Marcado: no cerró"); } else { _rr.estado=_rprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); } })
       .catch(function(){ _rr.estado=_rprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); });
+    return;
+  }
+  if(act==="cal-contact"){
+    if(!REAL||!RME||!RME.id){ alert("Iniciá sesión primero."); return; }
+    var _knom=(el.getAttribute("data-nom")||"").trim(), _kem=(el.getAttribute("data-em")||"").trim().toLowerCase();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(_kem)){ toast("Esa reserva no tiene un email válido."); return; }
+    el.disabled=true;
+    var _kct=(typeof RCFG!=="undefined"&&RCFG&&RCFG.coach_type)||"carrera";
+    // INSERT con ignore-duplicates: si el email ya existe (cliente o contacto), no
+    // duplica ni pisa su estado. Se guarda como contacto (activo:false), sin pago
+    // ni email. Ver alta-invitar para el mismo patrón bajo RLS.
+    _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"})
+      .then(function(h){ return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:_knom||_kem.split("@")[0],email:_kem,coach_id:RME.id,nicho:_kct,activo:false})}); })
+      .then(function(r){
+        var _ya=r&&r.status===409;
+        if(!r||(!r.ok&&!_ya)){ el.disabled=false; toast("No se pudo guardar el contacto. Reintentá."); return; }
+        // Reclamar ficha huérfana (llenó el formulario público sin coach) para vos.
+        _sbw("candidatos?email=eq."+encodeURIComponent(_kem)+"&coach_id=is.null","PATCH",{coach_id:RME.id}).catch(function(){});
+        toast(_ya?"Ya estaba en tu lista ✓":"Guardado como contacto ✓");
+        el.textContent="✓ En tu lista"; el.style.color="var(--pw-text-muted)"; el.style.borderColor="var(--pw-border)";
+        setTimeout(loadReal,500);
+      })
+      .catch(function(){ el.disabled=false; toast("Sin conexión. Reintentá."); });
     return;
   }
   if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
