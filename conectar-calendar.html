@@ -109,6 +109,11 @@ function guardar(session){
 }
 // Al cargar: ¿venimos de vuelta del OAuth de Google?
 (function(){
+  // Si Google/Supabase devolvió un ERROR, mostralo tal cual (ej. invalid_client,
+  // redirect_uri_mismatch, access_denied). Así sabemos el motivo real.
+  var hp=new URLSearchParams((location.hash||'').replace(/^#/,'')); var sp=new URLSearchParams(location.search||'');
+  var oaErr=hp.get('error_description')||hp.get('error')||sp.get('error_description')||sp.get('error');
+  if(oaErr){ failView('Google rechazó la conexión: '+oaErr.replace(/\+/g,' ')); return; }
   var returning = (location.hash.indexOf('access_token')>=0) || (location.search.indexOf('code=')>=0);
   if(!returning) return; // primera visita → muestra el botón
   busy('Conectando con Google…');
@@ -117,7 +122,7 @@ function guardar(session){
     sbc().auth.getSession().then(function(res){
       var s=res && res.data && res.data.session;
       if(s && s.provider_token){ clearInterval(iv); guardar(s); }
-      else if(++tries>15){ clearInterval(iv); failView('No recibimos el permiso de Google. Probá de nuevo y aceptá el acceso al calendario.'); }
+      else if(++tries>30){ clearInterval(iv); failView(s?('Google no devolvió el permiso del calendario. Al aceptar, marcá la casilla del calendario. (Si sigue: revisá el Client Secret en Supabase → Auth → Google.)'):'No recibimos el permiso de Google. Probá de nuevo y aceptá el acceso al calendario.'); }
     });
   }, 400);
 })();
