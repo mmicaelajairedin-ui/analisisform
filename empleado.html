@@ -304,8 +304,10 @@
           <div class="kpi"><div class="n" id="ck-prox">0</div><div class="l">Próximas</div></div>
           <div class="kpi"><div class="n" id="ck-asis">0</div><div class="l">Asistieron</div></div>
           <div class="kpi"><div class="n" id="ck-no">0</div><div class="l">No asistieron</div></div>
+          <div class="kpi"><div class="n" id="ck-gano">0</div><div class="l">Fueron bien</div></div>
           <div class="kpi acc"><div class="n" id="ck-rate">—</div><div class="l">% asistencia</div></div>
         </div>
+        <div id="emp-cal-metrics"></div>
         <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
           <div class="card" style="flex:2 1 320px">
             <div class="card-hd"><h3>Reservas y asistencia</h3>
@@ -780,21 +782,41 @@
   function renderCalMetrics(){
     var vivas=CALI.filter(function(r){ return r.estado!=='cancelada'; });
     var now=Date.now();
-    var prox=vivas.filter(function(r){ return +new Date(r.inicio)>=now && r.estado!=='asistio' && r.estado!=='no_asistio'; }).length;
-    var asis=CALI.filter(function(r){ return r.estado==='asistio'; }).length;
+    var prox=vivas.filter(function(r){ return +new Date(r.inicio)>=now && !_attended(r.estado) && r.estado!=='no_asistio'; }).length;
+    var asis=CALI.filter(function(r){ return _attended(r.estado); }).length;
     var no=CALI.filter(function(r){ return r.estado==='no_asistio'; }).length;
+    var gano=CALI.filter(function(r){ return r.estado==='gano'; }).length;
     var rate=(asis+no)>0?Math.round(asis/(asis+no)*100)+'%':'—';
     var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
-    set('ck-total',vivas.length); set('ck-prox',prox); set('ck-asis',asis); set('ck-no',no); set('ck-rate',rate);
+    set('ck-total',vivas.length); set('ck-prox',prox); set('ck-asis',asis); set('ck-no',no); set('ck-gano',gano); set('ck-rate',rate);
+    renderCalMetricsExtra();
   }
   function calVisibles(){
     var now=Date.now();
     return CALI.filter(function(r){
       if(r.estado==='cancelada') return calFiltro==='todas';
-      if(calFiltro==='proximas') return +new Date(r.inicio)>=now && r.estado!=='asistio' && r.estado!=='no_asistio';
-      if(calFiltro==='pasadas') return +new Date(r.inicio)<now && r.estado!=='asistio' && r.estado!=='no_asistio'; // por marcar
+      if(calFiltro==='proximas') return +new Date(r.inicio)>=now && !_attended(r.estado) && r.estado!=='no_asistio';
+      if(calFiltro==='pasadas') return +new Date(r.inicio)<now && !_attended(r.estado) && r.estado!=='no_asistio'; // por marcar
       return true;
     });
+  }
+  // Métricas ricas: demos por semana (con % asistencia) + por tipo de evento.
+  function _wkStart(ms){ var x=new Date(ms); x.setHours(0,0,0,0); var dw=(x.getDay()+6)%7; x.setDate(x.getDate()-dw); return +x; }
+  function renderCalMetricsExtra(){
+    var box=document.getElementById('emp-cal-metrics'); if(!box) return;
+    var d=CALI.filter(function(r){ return r.estado!=='cancelada'; });
+    if(!d.length){ box.innerHTML=''; return; }
+    var now=_wkStart(Date.now()); var weeks=[]; for(var i=5;i>=0;i--) weeks.push(now-i*604800000);
+    var wk={}; weeks.forEach(function(w){ wk[w]={t:0,a:0}; });
+    d.forEach(function(r){ var w=_wkStart(+new Date(r.inicio)); if(wk[w]!=null){ wk[w].t++; if(_attended(r.estado)) wk[w].a++; } });
+    var maxT=1; weeks.forEach(function(w){ if(wk[w].t>maxT) maxT=wk[w].t; });
+    var MS=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    var bars=weeks.map(function(w){ var o=wk[w]; var h=Math.round(o.t/maxT*70); var dd=new Date(w);
+      return "<div style='flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0'><div style='font-size:10px;font-weight:800;color:var(--carbon);height:13px'>"+(o.t||"")+"</div><div style='width:100%;max-width:26px;height:72px;display:flex;align-items:flex-end'><div title='"+o.t+" demo(s) · "+(o.t?Math.round(o.a/o.t*100):0)+"% asist.' style='width:100%;height:"+Math.max(h,o.t?8:3)+"px;border-radius:5px 5px 0 0;background:var(--borde);position:relative;overflow:hidden'>"+(o.t?"<div style='position:absolute;bottom:0;left:0;right:0;height:"+Math.round(o.a/o.t*100)+"%;background:var(--sendero)'></div>":"")+"</div></div><div style='font-size:9px;color:var(--texto-suave)'>"+dd.getDate()+" "+MS[dd.getMonth()]+"</div></div>"; }).join("");
+    var byType={}; d.forEach(function(r){ var t=_evFor(r.tipo); var k=r.tipo||'Sin tipo'; if(!byType[k]) byType[k]={t:0,a:0,col:t.color,ico:t.icon}; byType[k].t++; if(_attended(r.estado)) byType[k].a++; });
+    var typeRows=Object.keys(byType).map(function(k){ var o=byType[k]; var rate=o.a?Math.round(o.a/o.t*100):0;
+      return "<div style='display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--borde)'><span style='width:22px;height:22px;border-radius:50%;background:"+o.col+"22;border:1.5px solid "+o.col+";display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0'>"+o.ico+"</span><span style='flex:1;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(k)+"</span><span style='font-size:12px;color:var(--texto-suave)'>"+o.t+" demo"+(o.t===1?"":"s")+"</span><span style='font-size:11px;font-weight:700;color:"+(rate>=50?'var(--bosque)':'var(--texto-suave)')+";min-width:64px;text-align:right'>"+rate+"% asist.</span></div>"; }).join("");
+    box.innerHTML="<div class='card' style='margin-bottom:16px'><div class='card-hd'><h3>Métricas</h3><span style='display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--texto-suave)'><span style='width:9px;height:9px;border-radius:2px;background:var(--sendero)'></span>= asistieron</span></div><div style='display:flex;gap:26px;flex-wrap:wrap;padding:16px 18px'><div style='flex:1.3;min-width:240px'><div style='font-size:11px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave);margin-bottom:12px'>Demos por semana</div><div style='display:flex;gap:6px;align-items:flex-end'>"+bars+"</div></div><div style='flex:1;min-width:220px'><div style='font-size:11px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave);margin-bottom:4px'>Por tipo de evento</div>"+typeRows+"</div></div></div>";
   }
   // Vínculo demo ↔ lead: por email. Si la persona que reservó está en tu lista de
   // leads, la demo queda enlazada y así ves quién es tuyo para la comisión.
@@ -807,8 +829,12 @@
     box.innerHTML=rows.map(function(r){
       var d=new Date(r.inicio); var e=_evFor(r.tipo);
       var fecha=DIAS[d.getDay()]+' '+d.getDate()+' '+MES[d.getMonth()]+' · '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
-      var mk=function(val,lbl){ var on=(r.estado===val); var col=val==='asistio'?'#2D6A4F':val==='no_asistio'?'#C0756E':'#C99A2E';
+      var mk=function(val,lbl){ var on=(val==='asistio'?_attended(r.estado):r.estado===val); var col=val==='asistio'?'#2D6A4F':val==='no_asistio'?'#C0756E':'#C99A2E';
         return "<button onclick=\"markAsistencia('"+r.id+"','"+val+"')\" style='padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?col:'var(--borde)')+";background:"+(on?col:'#fff')+";color:"+(on?'#fff':'var(--texto-suave)')+"'>"+lbl+"</button>"; };
+      // Resultado de la demo (solo si asistió): fue bien / mal.
+      var ob=function(val,lbl,col){ var on=(r.estado===val);
+        return "<button onclick=\"markResultado('"+r.id+"','"+val+"')\" style='padding:4px 10px;border-radius:8px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?col:'var(--borde)')+";background:"+(on?col:'#fff')+";color:"+(on?'#fff':'var(--texto-suave)')+"'>"+lbl+"</button>"; };
+      var out=_attended(r.estado)?("<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px'><span style='font-size:10.5px;color:var(--texto-suave);font-weight:700'>¿Cómo fue?</span>"+ob('gano','👍 Bien','#2D6A4F')+ob('perdio','👎 Mal','#C0756E')+"</div>"):"";
       var estadoTag=r.estado==='cancelada'?"<span class='estado descartado'>Cancelada</span>":"";
       // Badge del lead vinculado (o botón para agregarlo).
       var L=_leadFor(r), leadTag="";
@@ -821,7 +847,7 @@
         "<div style='font-size:11.5px;color:var(--texto-suave)'>"+esc(r.tipo||'')+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
         (leadTag?"<div style='flex-shrink:0'>"+leadTag+"</div>":"")+
         estadoTag+
-        "<div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk('asistio','Asistió')+mk('no_asistio','No asistió')+mk('reprogramada','Reprogramó')+"</div>"+
+        "<div style='display:flex;flex-direction:column;gap:2px;align-items:flex-end'><div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk('asistio','Asistió')+mk('no_asistio','No asistió')+mk('reprogramada','Reprogramó')+"</div>"+out+"</div>"+
       "</div>";
     }).join('');
   }
@@ -832,6 +858,17 @@
     var row={empleado_id:(WHO&&WHO.id)||ME.id,nombre:r.nombre||r.email.split('@')[0],email:r.email,telefono:'',instagram:'',nicho:'sin',estado:'demo',demo_agendada:true,demo_fecha:new Date().toISOString()};
     if(sb){ try{ var res=await sb.from('leads').insert(row).select().single(); if(res.error) throw res.error; LEADS.unshift(res.data); toast('Agregado a leads ✓'); renderCalList(); try{ render(); }catch(e){} return; }catch(e){ toast('No se pudo agregar'); return; } }
     row.id='tmp'+Date.now(); LEADS.unshift(row); renderCalList();
+  };
+  // "Asistió" incluye los estados de resultado (fue bien/mal).
+  function _attended(s){ return s==='asistio'||s==='gano'||s==='perdio'; }
+  window.markResultado=async function(id,val){
+    var r=CALI.filter(function(x){ return String(x.id)===String(id); })[0]; if(!r) return;
+    var prev=r.estado; r.estado=(r.estado===val?'asistio':val); // tocar de nuevo = vuelve a solo "asistió"
+    renderCalMetrics(); renderCalList();
+    if(sb){ try{ var up=await sb.from('citas').update({estado:r.estado}).eq('id',id); if(up.error) throw up.error; }catch(e){ r.estado=prev; renderCalMetrics(); renderCalList(); toast('No se pudo guardar'); return; } }
+    // Fue bien → dejamos el lead listo para dar de alta (queda en "Demo").
+    if(r.estado==='gano'){ var Lx=_leadFor(r); if(Lx){ var po={demo_agendada:true}; if(Lx.estado!=='alta'&&Lx.estado!=='descartado') po.estado='demo'; try{ patch(Lx.id,po); }catch(e){} renderCalList(); } }
+    toast(val==='gano'?'👍 Marcado: fue bien':'👎 Marcado: no cerró');
   };
   window.markAsistencia=async function(id,val){
     var r=CALI.filter(function(x){ return String(x.id)===String(id); })[0]; if(!r) return;
