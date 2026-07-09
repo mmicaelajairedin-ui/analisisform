@@ -228,29 +228,29 @@
         var idx=window.__pwRev.length; window.__pwRev.push(r);
         var rs='';for(var i=1;i<=5;i++)rs+='<span style="color:'+(i<=r.stars?sand:'#E5E0DD')+';font-size:13px;">★</span>';
         var dn=r._display||r.nombre||'Cliente Pathway';
-        return '<div role="button" tabindex="0" aria-label="Leer reseña de '+escH(dn)+'" onclick="__pwRevOpen('+idx+')" onkeydown="if(event.key===\'Enter\')__pwRevOpen('+idx+')" style="cursor:pointer;flex:0 0 auto;display:flex;align-items:center;gap:9px;height:54px;background:rgba(255,255,255,.5);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border:1px solid rgba(45,106,79,.10);border-radius:14px;padding:0 16px;">'+
+        return '<div role="button" tabindex="0" aria-label="Leer reseña de '+escH(dn)+'" onclick="__pwRevOpen('+idx+')" onkeydown="if(event.key===\'Enter\')__pwRevOpen('+idx+')" style="cursor:pointer;flex:0 0 auto;display:flex;align-items:center;gap:10px;height:64px;background:rgba(255,255,255,.5);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border:1px solid rgba(45,106,79,.10);border-radius:16px;padding:0 18px;">'+
           '<span style="display:flex;gap:1px;flex-shrink:0;">'+rs+'</span>'+
-          '<span style="max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px;font-style:italic;color:#2A2A2A;">"'+escH(r.text).replace(/\n/g,' ')+'"</span>'+
-          '<span style="font-size:12px;font-weight:700;color:'+titleColor+';white-space:nowrap;flex-shrink:0;">— '+escH(dn)+'</span>'+
-          '<span aria-hidden="true" style="font-size:14px;color:'+accent+';opacity:.55;flex-shrink:0;">＋</span>'+
+          '<span style="max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px;font-style:italic;color:#2A2A2A;">"'+escH(r.text).replace(/\n/g,' ')+'"</span>'+
+          '<span style="font-size:13px;font-weight:700;color:'+titleColor+';white-space:nowrap;flex-shrink:0;">— '+escH(dn)+'</span>'+
+          '<span aria-hidden="true" style="font-size:15px;color:'+accent+';opacity:.55;flex-shrink:0;">＋</span>'+
           '</div>';
       }
       function chipStat(s){
-        return '<div style="flex:0 0 auto;display:flex;align-items:center;gap:11px;height:54px;padding:0 10px;">'+
-          '<div style="width:42px;height:42px;border-radius:50%;background:'+s.tint+';display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">'+s.icon+'</div>'+
-          '<div style="line-height:1.12;"><div style="font-family:\'Fraunces\',Georgia,serif;font-size:20px;font-weight:600;color:'+s.col+';white-space:nowrap;">'+escH(s.num)+'</div>'+
-          '<div style="font-size:11.5px;color:#6a7a70;white-space:nowrap;">'+escH(s.label)+'</div></div>'+
+        return '<div style="flex:0 0 auto;display:flex;align-items:center;gap:12px;height:64px;padding:0 12px;">'+
+          '<div style="width:48px;height:48px;border-radius:50%;background:'+s.tint+';display:flex;align-items:center;justify-content:center;font-size:23px;flex-shrink:0;">'+s.icon+'</div>'+
+          '<div style="line-height:1.12;"><div style="font-family:\'Fraunces\',Georgia,serif;font-size:23px;font-weight:600;color:'+s.col+';white-space:nowrap;">'+escH(s.num)+'</div>'+
+          '<div style="font-size:12.5px;color:#6a7a70;white-space:nowrap;">'+escH(s.label)+'</div></div>'+
           '</div>';
       }
       function chipFace(f){
-        return '<div title="'+escH(f.nombre)+'" style="flex:0 0 auto;width:50px;height:50px;border-radius:50%;overflow:hidden;border:2px solid #fff;box-shadow:0 3px 10px rgba(27,46,38,.14);background:#eee;">'+
+        return '<div title="'+escH(f.nombre)+'" style="flex:0 0 auto;width:58px;height:58px;border-radius:50%;overflow:hidden;border:2.5px solid #fff;box-shadow:0 3px 12px rgba(27,46,38,.16);background:#eee;">'+
           '<img src="'+escH(f.foto)+'" alt="'+escH(f.nombre)+'" loading="lazy" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentNode.style.display=\'none\'"></div>';
       }
       function chipLogo(g){
         // Sin fondo — tipo sticker. Si el "logo" no es una imagen (p.ej. un link
         // de Instagram) el onerror lo oculta y no rompe la tira.
-        return '<div title="'+escH(g.nombre)+'" style="flex:0 0 auto;height:44px;display:flex;align-items:center;padding:0 6px;">'+
-          '<img src="'+escH(g.logo)+'" alt="'+escH(g.nombre)+'" loading="lazy" style="height:38px;width:auto;max-width:130px;object-fit:contain;filter:drop-shadow(0 2px 5px rgba(27,46,38,.20));" onerror="this.parentNode.style.display=\'none\'"></div>';
+        return '<div title="'+escH(g.nombre)+'" style="flex:0 0 auto;height:52px;display:flex;align-items:center;padding:0 8px;">'+
+          '<img src="'+escH(g.logo)+'" alt="'+escH(g.nombre)+'" loading="lazy" style="height:46px;width:auto;max-width:140px;object-fit:contain;filter:drop-shadow(0 2px 5px rgba(27,46,38,.20));" onerror="this.parentNode.style.display=\'none\'"></div>';
       }
 
       function render(faces,logos,paises,nCli,nInf){
@@ -268,7 +268,7 @@
         var dur=Math.max(30,Math.round(seq.length*3.5));
         var body=seq.join('');
         host.innerHTML='<div class="pw-mq-wrap" style="max-width:1160px;margin:0 auto;">'+
-          '<div class="pw-mq-track" style="gap:14px;padding:10px 8px;animation:pwmqL '+dur+'s linear infinite;">'+body+body+'</div></div>';
+          '<div class="pw-mq-track" style="gap:18px;padding:8px;animation:pwmqL '+dur+'s linear infinite;">'+body+body+'</div></div>';
       }
 
       function countRows(path){
