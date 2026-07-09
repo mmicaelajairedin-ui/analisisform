@@ -2148,12 +2148,13 @@ function _agGcalDiag(){
   }catch(e){ return ""; }
 }
 function _agConnect(){
-  var diag=(RADMIN)?("<div style='font-size:10.5px;color:var(--pw-text-muted);margin-top:12px;font-family:monospace'>"+esc(_agGcalDiag())+"</div>"):"";
+  // ETAPA 1: se conecta pegando el enlace iCal en Configuración (no OAuth de
+  // Google, que llega en la Etapa 2). Igual, abajo, las Reservas del link
+  // interno YA se ven sin necesidad de conectar nada.
   return "<div style='text-align:center;padding:14px 6px'>"+
-    "<div style='font-family:var(--pw-serif);font-size:16px;color:var(--pw-carbon);margin-bottom:4px'>Conectá tu Google Calendar</div>"+
-    "<p style='font-size:12.5px;color:var(--pw-text-soft);max-width:470px;margin:0 auto 14px;line-height:1.5'>Conectá tu cuenta de Google (un clic, sin pegar links) y tus sesiones reales aparecen acá.</p>"+
-    "<a class='cp-btn cp-btn-primary' href='/conectar-calendar.html' style='text-decoration:none'>Conectar con Google</a>"+
-    diag+
+    "<div style='font-family:var(--pw-serif);font-size:16px;color:var(--pw-carbon);margin-bottom:4px'>Mostrá tu calendario acá</div>"+
+    "<p style='font-size:12.5px;color:var(--pw-text-soft);max-width:470px;margin:0 auto 14px;line-height:1.5'>Pegá la <strong>dirección iCal</strong> de tu Google Calendar en Configuración y tus eventos aparecen en esta agenda. (Google → Configuración de tu calendario → «Dirección secreta en formato iCal», termina en <strong>/basic.ics</strong>.)</p>"+
+    "<button class='cp-btn cp-btn-primary' data-act='gocal'>Conectar mi calendario</button>"+
   "</div>";
 }
 function _agRender(d){
@@ -2418,36 +2419,16 @@ function _agRefresh(){
 }
 function _agendaLoad(){
   var body=document.getElementById("cp-agenda-body"); if(!body) return;
-  // Leemos el calendario DIRECTO de la API de Google desde el navegador, con el
-  // token guardado en el perfil. Sin edge functions (que se colgaban). La API de
-  // Google tiene CORS habilitado, así que se puede llamar desde acá.
-  var g=(REAL&&RCFG&&RCFG.gcal)?RCFG.gcal:null;
-  if(!g || !g.access_token){ body.innerHTML=_agConnect(); return; }
-  // Token vencido: si tenemos refresh_token, lo renovamos solo (no te pide reconectar).
-  if(g.expiry && Date.now()>g.expiry){ if(g.refresh_token){ _agRefresh(); } else { body.innerHTML=_agConnect(); } return; }
-  var now=new Date();
-  // Ventana amplia (desde el inicio del mes visible hasta +60 días) para que el
-  // calendario mensual tenga datos. La lista filtra a futuro aparte.
-  var _moStart=new Date((_AG_MO?_AG_MO.y:now.getFullYear()),(_AG_MO?_AG_MO.m:now.getMonth()),1);
-  var _tmin=(_moStart<now?_moStart:new Date(now.getFullYear(),now.getMonth(),1));
-  var q="timeMin="+encodeURIComponent(_tmin.toISOString())+
-        "&timeMax="+encodeURIComponent(new Date(now.getTime()+60*86400000).toISOString())+
-        "&singleEvents=true&orderBy=startTime&maxResults=100";
-  fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?"+q,{headers:{Authorization:"Bearer "+g.access_token}})
-    .then(function(r){ if(r.ok) return r.json(); return r.json().catch(function(){return {};}).then(function(d){ return {_err:true,status:r.status,msg:(d&&d.error&&d.error.message)||""}; }); })
-    .then(function(d){
-      var b=document.getElementById("cp-agenda-body"); if(!b) return;
-      if(d && d._err){
-        if(d.status===401){ if(g.refresh_token && !_agRefreshTried){ _agRefresh(); } else { b.innerHTML=_agConnect(); } return; } // token venció → renovar o reconectar
-        b.innerHTML=_agEmpty("Google no dejó leer el calendario (error "+d.status+"). "+esc(d.msg||"Verificá que la Google Calendar API esté habilitada en tu proyecto."));
-        return;
-      }
-      _agRefreshTried=false;
-      var items=(d&&Object.prototype.toString.call(d.items)==="[object Array]")?d.items:[];
-      var evs=items.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null; return {id:e.id||"",title:e.summary||"Sesión",start:+new Date(s),location:e.hangoutLink||e.location||null}; }).filter(function(x){return !!x;});
-      _AG_DATA={events:evs}; b.innerHTML=_agRender({events:evs}); _agMonthRender();
-    })
-    .catch(function(){ var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer tu calendario de Google. Reintentá en un momento."); });
+  // ETAPA 1: leemos el calendario del coach por su enlace iCal (edge function
+  // `calendar`, que fetchea configuracion.gcal_ical_url server-side por CORS y
+  // parsea los eventos). El coach solo pega su iCal en Configuración — sin OAuth.
+  // (La conexión directa con Google OAuth queda para la Etapa 2, ya verificada.)
+  var em=_agCoachEmail();
+  if(!em){ body.innerHTML=_agConnect(); return; }
+  fetch(SB+"/functions/v1/calendar?email="+encodeURIComponent(em),{headers:{apikey:KEY,Authorization:"Bearer "+KEY}})
+    .then(function(r){ return r.ok?r.json():r.json().catch(function(){ return {error:"http_"+r.status,events:[]}; }); })
+    .then(function(d){ var b=document.getElementById("cp-agenda-body"); if(!b) return; _AG_DATA=(d&&typeof d==="object")?d:{events:[]}; b.innerHTML=_agRender(_AG_DATA); _agMonthRender(); })
+    .catch(function(){ var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer tu calendario ahora. Reintentá en un momento."); });
 }
 
 // ═══ Reservas (citas del link público agendar.html) ═══

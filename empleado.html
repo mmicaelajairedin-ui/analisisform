@@ -331,6 +331,12 @@
                 <input id="mylink" readonly onclick="this.select()" style="flex:1;min-width:130px;padding:9px 11px;border:1.5px solid var(--borde);border-radius:9px;font-size:11.5px;font-family:inherit">
                 <button class="btn sm" onclick="copyMyLink()">Copiar</button>
               </div>
+              <div style="font-size:11px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave);margin:16px 0 6px">Tu Google Calendar (para la agenda)</div>
+              <p style="font-size:11.5px;color:var(--texto-suave);margin:0 0 8px;line-height:1.45">Pegá la <strong>dirección secreta en formato iCal</strong> de tu Google Calendar (Configuración del calendario → termina en <strong>/basic.ics</strong>). Con esto tus eventos aparecen en la agenda de arriba.</p>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                <input id="myical" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" style="flex:1;min-width:130px;padding:9px 11px;border:1.5px solid var(--borde);border-radius:9px;font-size:11.5px;font-family:inherit">
+                <button class="btn sm" onclick="saveIcal()">Guardar</button>
+              </div>
             </div>
           </div>
         </div>
@@ -480,6 +486,19 @@
     if(f) f.value=DISP.from||'09:00'; if(t) t.value=DISP.to||'18:00';
   }
   window.toggleDispDay=function(d){ var i=DISP.days.indexOf(d); if(i>=0) DISP.days.splice(i,1); else DISP.days.push(d); renderDispDays(); };
+  window.saveIcal=async function(){
+    var el=document.getElementById('myical'); var v=((el&&el.value)||'').trim();
+    if(v && !/^https:\/\/calendar\.google\.com\/calendar\/ical\//.test(v)){ toast('Pegá la dirección iCal (empieza con calendar.google.com/calendar/ical/…).'); return; }
+    if(!sb||!(WHO&&WHO.id)){ toast('Iniciá sesión.'); return; }
+    try{
+      var cur=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1);
+      var cfg=(cur.data&&cur.data[0]&&cur.data[0].configuracion)||{}; cfg.gcal_ical_url=v;
+      var up=await sb.from('usuarios').update({configuracion:cfg}).eq('id',WHO.id);
+      if(up.error) throw up.error;
+      try{ if(ME&&WHO.id===ME.id){ var mu=JSON.parse(localStorage.getItem('mj_user')||'{}'); mu.configuracion=cfg; localStorage.setItem('mj_user',JSON.stringify(mu)); } }catch(_){ }
+      toast('Calendario guardado ✓'); GEVENTS=[]; await _agLoadGoogle();
+    }catch(e){ toast('No se pudo guardar.'); }
+  };
   window.saveDisp=async function(){
     var f=document.getElementById('disp-from'), t=document.getElementById('disp-to');
     DISP.from=(f&&f.value)||'09:00'; DISP.to=(t&&t.value)||'18:00';
@@ -671,18 +690,20 @@
   window.saveDispModal=async function(){ await saveDisp(); if(DISP.days&&DISP.days.length) agClose(); };
   // Col 1: agenda próxima (Google + reservas), agrupada por día. Como el panel.
   function _agConnectHtml(){
+    // ETAPA 1: se conecta pegando el iCal en la config de abajo (no OAuth de Google,
+    // que llega en la Etapa 2). Las Reservas del link YA se ven sin conectar nada.
     return "<div style='text-align:center;padding:14px 6px'>"+
-      "<div style='font-family:var(--serif);font-size:16px;color:var(--carbon);margin-bottom:4px'>Conectá tu Google Calendar</div>"+
-      "<p style='font-size:12.5px;color:var(--texto-suave);margin:0 auto 14px;line-height:1.5'>Conectá tu cuenta de Google (un clic) y tus sesiones reales aparecen acá.</p>"+
-      "<a class='btn' href='/conectar-calendar.html?return=/empleado.html' style='text-decoration:none'>Conectar con Google</a>"+
+      "<div style='font-family:var(--serif);font-size:16px;color:var(--carbon);margin-bottom:4px'>Mostrá tu calendario acá</div>"+
+      "<p style='font-size:12.5px;color:var(--texto-suave);margin:0 auto 4px;line-height:1.5'>Pegá la <strong>dirección iCal</strong> de tu Google Calendar en «Tu Google Calendar» (acá abajo) y tus eventos aparecen en esta agenda.</p>"+
     "</div>";
   }
   function renderAgBody(){
     var box=document.getElementById('emag-body'); if(!box) return;
-    if(!(GCAL&&GCAL.access_token) && !RESALL.length){ box.innerHTML=_agConnectHtml(); return; }
+    var _hasCal=(GEVENTS&&GEVENTS.length)>0;
+    if(!_hasCal && !RESALL.length){ box.innerHTML=_agConnectHtml(); return; }
     var lo=new Date(); lo.setHours(0,0,0,0); var loMs=+lo, hi=Date.now()+7*86400000;
     var evs=_allEvents().filter(function(ev){ return ev.ms>=loMs && ev.ms<=hi; }).sort(function(a,b){ return a.ms-b.ms; });
-    if(!evs.length){ box.innerHTML=(GCAL&&GCAL.access_token)?"<div style='color:var(--texto-suave);font-size:13px;padding:12px 0;text-align:center'>No tenés sesiones esta semana. Cuando agendes una, aparece acá.</div>":_agConnectHtml(); return; }
+    if(!evs.length){ box.innerHTML=_hasCal?"<div style='color:var(--texto-suave);font-size:13px;padding:12px 0;text-align:center'>No tenés sesiones esta semana. Cuando agendes una, aparece acá.</div>":_agConnectHtml(); return; }
     var html="", lastDay="";
     evs.forEach(function(ev){
       var dl=_agDayLabel(ev.ms); if(dl!==lastDay){ html+="<div style='font-size:11px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave);margin:9px 0 2px'>"+esc(dl)+"</div>"; lastDay=dl; }
@@ -726,26 +747,24 @@
       await _agLoadGoogle();
     }catch(e){ renderAgBody(); }
   }
-  // Lee el calendario DIRECTO de la API de Google desde el navegador (CORS ok).
+  // ETAPA 1: lee el calendario del empleado por su iCal (edge function `calendar`,
+  // que fetchea configuracion.gcal_ical_url server-side por CORS y parsea eventos).
+  // Google OAuth directo queda para la Etapa 2 (app ya verificada).
   async function _agLoadGoogle(){
-    if(!(GCAL&&GCAL.access_token)){ renderAgBody(); return; }
-    if(GCAL.expiry && Date.now()>GCAL.expiry){ if(GCAL.refresh_token && !_agRefreshTried){ await _agRefreshEmp(); } else { GCAL=null; renderAgBody(); } return; }
-    var now=new Date();
-    var moStart=new Date(CAL_Y,CAL_M,1); var tmin=(moStart<now?moStart:new Date(now.getFullYear(),now.getMonth(),1));
-    var q="timeMin="+encodeURIComponent(tmin.toISOString())+"&timeMax="+encodeURIComponent(new Date(now.getTime()+60*86400000).toISOString())+"&singleEvents=true&orderBy=startTime&maxResults=100";
+    var em=((WHO&&WHO.email)||'').trim().toLowerCase();
+    if(!em){ renderCal(); renderAgBody(); return; }
     try{
-      var r=await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?"+q,{headers:{Authorization:"Bearer "+GCAL.access_token}});
-      if(!r.ok){ if(r.status===401){ if(GCAL.refresh_token && !_agRefreshTried){ await _agRefreshEmp(); } else { GCAL=null; renderAgBody(); } return; } renderAgBody(); return; }
-      var d=await r.json(); _agRefreshTried=false;
-      var items=(d&&Object.prototype.toString.call(d.items)==="[object Array]")?d.items:[];
-      GEVENTS=items.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null; return {id:e.id||"",title:e.summary||"Sesión",start:+new Date(s),join:e.hangoutLink||e.location||""}; }).filter(Boolean);
+      var r=await fetch(SB+"/functions/v1/calendar?email="+encodeURIComponent(em),{headers:{apikey:KEY,Authorization:"Bearer "+KEY}});
+      var d=await r.json().catch(function(){ return null; });
+      var evs=(d&&Object.prototype.toString.call(d.events)==="[object Array]")?d.events:[];
+      GEVENTS=evs.map(function(e){ if(!e||!e.start) return null; return {id:e.uid||e.title||"",title:e.title||"Sesión",start:e.start,join:e.meet||e.location||""}; }).filter(Boolean);
       renderCal(); renderAgBody();
-    }catch(e){ renderAgBody(); }
+    }catch(e){ renderCal(); renderAgBody(); }
   }
   async function loadResumen(){
     var li=document.getElementById('mylink'); if(li) li.value=myBookingLink();
     // Config del empleado: disponibilidad, tipos y token de Google.
-    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cr.data&&cr.data[0]&&cr.data[0].configuracion)||{}; var d=cfg.disponibilidad; if(d&&d.days){ DISP={days:d.days.map(Number),from:d.from||'09:00',to:d.to||'18:00'}; } if(Array.isArray(cfg.event_types)) EVT=cfg.event_types; if(cfg.gcal&&cfg.gcal.access_token) GCAL=cfg.gcal; }catch(e){} }
+    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cr.data&&cr.data[0]&&cr.data[0].configuracion)||{}; var d=cfg.disponibilidad; if(d&&d.days){ DISP={days:d.days.map(Number),from:d.from||'09:00',to:d.to||'18:00'}; } if(Array.isArray(cfg.event_types)) EVT=cfg.event_types; if(cfg.gcal&&cfg.gcal.access_token) GCAL=cfg.gcal; var _ic=document.getElementById('myical'); if(_ic&&cfg.gcal_ical_url) _ic.value=cfg.gcal_ical_url; }catch(e){} }
     renderDispDays(); renderTypes();
     await _agSavePendingEmp();
     if(!sb || !(WHO&&WHO.id)){ renderCal(); renderAgBody(); return; }
@@ -756,7 +775,7 @@
       if(!r.error) RESALL=r.data||[];
     }catch(e){}
     renderCal(); renderAgBody();
-    if(GCAL&&GCAL.access_token){ await _agLoadGoogle(); }
+    await _agLoadGoogle();
   }
 
   // ── Pestaña Calendario: reservas + asistencia + métricas ──
