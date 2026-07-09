@@ -28,6 +28,9 @@
     var max=parseInt(host.getAttribute('data-max'))||6;
     var minStars=parseInt(host.getAttribute('data-min-stars'))||1;
     var theme=host.getAttribute('data-theme')||'green';
+    // 'grid' (default, usado en perfiles de coach) o 'marquee' (tira en
+    // movimiento — la usa la landing para que no se lea "solo hay N reseñas").
+    var layout=(host.getAttribute('data-layout')||'grid').toLowerCase();
 
     // data-coach="<slug>" -> SOLO reseñas de ese coach (su perfil publico).
     // Sin data-coach (landing) -> reseñas de Pathway (coach_slug NULL).
@@ -94,19 +97,28 @@
 
       var heading=(host.getAttribute&&host.getAttribute('data-heading'))||'Lo que dicen de Pathway';
 
+      // Encabezado (estrellas + promedio + titulo) — compartido por ambos layouts.
+      var headingHtml='';
+      headingHtml+='<div style="text-align:center;margin-bottom:36px;">';
+      headingHtml+='<div style="display:inline-flex;align-items:center;gap:10px;margin-bottom:14px;">';
+      var stars='';for(var s=1;s<=5;s++)stars+='<span style="color:'+sand+';font-size:24px;">★</span>';
+      headingHtml+=stars;
+      headingHtml+='<span style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:500;color:'+titleColor+';">'+avg+'/5</span>';
+      headingHtml+='</div>';
+      headingHtml+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:clamp(28px,4vw,40px);font-weight:500;color:'+titleColor+';letter-spacing:-1.2px;line-height:1.15;margin-bottom:10px;">'+heading+'</h2>';
+      headingHtml+='</div>';
+
+      // ── Layout MARQUEE: tira horizontal en movimiento ─────────────────────
+      // Reseñas que se deslizan solas (loop infinito, pausa al hover) + una
+      // segunda tira con fotos REALES de coaches publicos. Como fluye, el ojo
+      // no cuenta "hay N": no crea friccion cuando todavia hay pocas.
+      if(layout==='marquee'){ paintMarquee(); return; }
+
       // Texto recortado a 4 lineas con toggle "Ver mas". Cada card lleva un id
       // unico para poder enganchar el toggle despues de pintar el HTML.
       var uid='tm'+Math.random().toString(36).slice(2,8);
 
-      var html='';
-      html+='<div style="text-align:center;margin-bottom:36px;">';
-      html+='<div style="display:inline-flex;align-items:center;gap:10px;margin-bottom:14px;">';
-      var stars='';for(var s=1;s<=5;s++)stars+='<span style="color:'+sand+';font-size:24px;">★</span>';
-      html+=stars;
-      html+='<span style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:500;color:'+titleColor+';">'+avg+'/5</span>';
-      html+='</div>';
-      html+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:clamp(28px,4vw,40px);font-weight:500;color:'+titleColor+';letter-spacing:-1.2px;line-height:1.15;margin-bottom:10px;">'+heading+'</h2>';
-      html+='</div>';
+      var html=headingHtml;
 
       // Grilla de 2 columnas en desktop/tablet (1 en mobile). Mantiene la
       // sección simétrica con cualquier número par y los cards de cada fila
@@ -156,6 +168,77 @@
           });
         }
       });
+    }
+
+    // ── Render del layout marquee ───────────────────────────────────────────
+    function paintMarquee(){
+      var uid='mq'+Math.random().toString(36).slice(2,8);
+      // Keyframes + mascaras de borde: se inyectan una sola vez por pagina.
+      if(!document.getElementById('pw-mq-css')){
+        var st=document.createElement('style'); st.id='pw-mq-css';
+        st.textContent=
+          '@keyframes pwmqL{from{transform:translateX(0)}to{transform:translateX(-50%)}}'+
+          '@keyframes pwmqR{from{transform:translateX(-50%)}to{transform:translateX(0)}}'+
+          '.pw-mq-wrap{position:relative;overflow:hidden;-webkit-mask:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);}'+
+          '.pw-mq-track{display:flex;width:max-content;}'+
+          '.pw-mq-wrap:hover .pw-mq-track{animation-play-state:paused;}'+
+          '@media(prefers-reduced-motion:reduce){.pw-mq-track{animation:none!important;transform:none!important;}.pw-mq-wrap{overflow-x:auto;-webkit-mask:none;mask:none;}}';
+        document.head.appendChild(st);
+      }
+
+      function mqCard(r){
+        var rs='';for(var i=1;i<=5;i++)rs+='<span style="color:'+(i<=r.stars?sand:'#E5E0DD')+';font-size:13px;">★</span>';
+        var dn=r._display||r.nombre||'Cliente Pathway';
+        var ini=dn.split(' ').filter(Boolean).slice(0,2).map(function(s){return s.charAt(0).toUpperCase();}).join('');
+        return '<div style="flex:0 0 auto;width:290px;background:#fff;border:1.5px solid rgba(45,106,79,.12);border-radius:14px;padding:15px 17px;display:flex;flex-direction:column;gap:8px;box-shadow:0 4px 14px rgba(27,46,38,.05);">'+
+          '<div style="display:flex;gap:1px;">'+rs+'</div>'+
+          '<div style="font-size:12.5px;color:#2A2A2A;line-height:1.5;font-style:italic;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:56px;">"'+escH(r.text).replace(/\n/g,' ')+'"</div>'+
+          '<div style="display:flex;align-items:center;gap:9px;margin-top:2px;">'+
+          '<div style="width:30px;height:30px;border-radius:50%;background:'+accent+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;">'+ini+'</div>'+
+          '<div style="font-size:12.5px;font-weight:700;color:'+titleColor+';">'+escH(dn)+'</div>'+
+          '</div></div>';
+      }
+      function faceBubble(f){
+        return '<div title="'+escH(f.nombre)+'" style="flex:0 0 auto;width:46px;height:46px;border-radius:50%;overflow:hidden;border:2px solid #fff;box-shadow:0 3px 10px rgba(27,46,38,.14);background:#eee;">'+
+          '<img src="'+escH(f.foto)+'" alt="'+escH(f.nombre)+'" loading="lazy" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentNode.style.display=\'none\'">'+
+          '</div>';
+      }
+
+      var durA=Math.max(24,displayed.length*9);
+      var cards='';displayed.forEach(function(r){cards+=mqCard(r);});
+      // Contenido duplicado ×2 -> el loop translateX(-50%) queda sin costura.
+      var html=headingHtml;
+      html+='<div class="pw-mq-wrap" style="max-width:1120px;margin:0 auto;">'+
+        '<div class="pw-mq-track" style="gap:16px;padding:8px 8px 12px;animation:pwmqL '+durA+'s linear infinite;">'+cards+cards+'</div>'+
+        '</div>';
+      html+='<div id="'+uid+'_faces" style="margin-top:24px;"></div>';
+      host.innerHTML=html;
+
+      // Fotos reales de coaches publicos para la segunda tira. Solo perfiles
+      // con perfil_publico_activo (consintieron aparecer) y foto cargada.
+      var fu=SB+'/rest/v1/usuarios?rol=in.(coach,admin)&activo=eq.true&select=nombre,foto_url,configuracion,perfil_publico_activo&apikey='+encodeURIComponent(KEY);
+      fetch(fu,{headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Accept':'application/json'}})
+        .then(function(r){return r.ok?r.json():[];})
+        .then(function(rows){
+          var faces=[];
+          (rows||[]).forEach(function(c){
+            var cfg=c.configuracion||{};
+            var pub=(c.perfil_publico_activo===true||cfg.perfil_publico_activo===true);
+            var foto=c.foto_url||cfg.foto_url||cfg.foto_perfil||'';
+            if(pub && foto){ faces.push({foto:foto,nombre:c.nombre||'Coach'}); }
+          });
+          var box=document.getElementById(uid+'_faces');
+          if(!box) return;
+          // Con menos de 2 caras una tira se lee vacia aunque se mueva: la ocultamos.
+          if(faces.length<2){ box.style.display='none'; return; }
+          var fh='';faces.forEach(function(f){fh+=faceBubble(f);});
+          var durB=Math.max(20,faces.length*7);
+          box.innerHTML='<div class="pw-mq-wrap" style="max-width:620px;margin:0 auto 12px;">'+
+            '<div class="pw-mq-track" style="gap:12px;padding:6px 8px;align-items:center;animation:pwmqR '+durB+'s linear infinite;">'+fh+fh+'</div>'+
+            '</div>'+
+            '<p style="text-align:center;font-size:13px;color:'+titleColor+';opacity:.72;margin:0;">Coaches de carrera, fitness y finanzas ya crean su espacio en Pathway</p>';
+        })
+        .catch(function(){ var box=document.getElementById(uid+'_faces'); if(box) box.style.display='none'; });
     }
   }
 
