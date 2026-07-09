@@ -320,7 +320,7 @@
         </div>
 
         <p class="h-sec">Fotos de progreso</p>
-        <div class="photos"><div class="photo"><span>📷</span><b>Mes 1</b>antes</div><div class="photo"><span>📷</span><b>Mes 3</b>ahora</div></div>
+        <div id="progFotos"></div>
       </section>
 
       <!-- ===== NUTRICIÓN ===== -->
@@ -437,6 +437,7 @@ function go(s){
     if(typeof renderListaSuper==='function') renderListaSuper();
     if(typeof _renderNutriTrack==='function') _renderNutriTrack();
   }
+  if(s==='progreso'){ if(typeof renderProgFotos==='function') renderProgFotos(); }
 }
 function toggleSb(){ document.getElementById('sb').classList.toggle('open'); document.getElementById('ov').classList.toggle('open'); }
 function toggleEx(el){
@@ -954,6 +955,77 @@ function applyVisFit(raw){
     document.querySelectorAll('[data-s="'+ds+'"]').forEach(function(b){ b.style.display=off?'none':''; });
     var sec=document.getElementById('s-'+ds); if(sec&&off){ sec.classList.remove('on'); sec.style.display='none'; }
   });
+}
+// ── Fotos de progreso ────────────────────────────────────────────────────
+// El cliente sube fotos (a Supabase Storage), les pone título y descripción y
+// las ve grandes en su sección de Antropometría. Se guardan en
+// candidatos.fit_fotos (JSON) con sbPatch directo (mismo patrón que hábitos/
+// nutrición: la RLS permite al cliente actualizar SU ficha). Migración:
+// supabase/migrations/fit_fotos.sql (ALTER TABLE candidatos ADD fit_fotos).
+var _progPendingUrl='';
+function _progArr(){ try{ return JSON.parse((CRAW&&CRAW.fit_fotos)||'[]')||[]; }catch(e){ return []; } }
+function _progPersist(arr,cb){
+  var j=JSON.stringify(arr); if(CRAW) CRAW.fit_fotos=j;
+  if(_esDemoFit()){ if(cb)cb(true); return; }
+  var q = (typeof CID!=='undefined'&&CID) ? ('id=eq.'+encodeURIComponent(CID)) : ('email=eq.'+encodeURIComponent(EMAIL));
+  sbPatch('candidatos',q,{fit_fotos:j}).then(function(r){ if(cb)cb(!!(r&&r.ok)); }).catch(function(){ if(cb)cb(false); });
+}
+function renderProgFotos(){
+  var box=document.getElementById('progFotos'); if(!box) return;
+  var arr=_progArr();
+  var cards=arr.map(function(p,ix){
+    return '<div style="position:relative;border-radius:12px;overflow:hidden;background:var(--card,#fff);border:1px solid rgba(0,0,0,.08);box-shadow:0 2px 8px rgba(0,0,0,.05)">'+
+      '<img src="'+esc(p.url)+'" alt="" style="width:100%;height:200px;object-fit:cover;display:block">'+
+      '<button onclick="_progDel('+ix+')" title="Borrar" style="position:absolute;top:6px;right:6px;width:26px;height:26px;border:none;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:14px;line-height:1;cursor:pointer">✕</button>'+
+      '<div style="padding:9px 11px">'+
+        (p.titulo?'<div style="font-weight:700;font-size:13px;color:var(--text,#1B2E26)">'+esc(p.titulo)+'</div>':'')+
+        (p.fecha?'<div style="font-size:10.5px;color:var(--muted,#8a968e);margin-top:1px">'+esc(p.fecha)+'</div>':'')+
+        (p.descripcion?'<div style="font-size:12px;color:var(--muted,#5a6a60);margin-top:4px;line-height:1.45">'+esc(p.descripcion)+'</div>':'')+
+      '</div>'+
+    '</div>';
+  }).join('');
+  var addTile='<button onclick="_progAdd()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:200px;border:2px dashed rgba(45,106,79,.3);border-radius:12px;background:transparent;color:var(--brand,#2D6A4F);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer"><span style="font-size:30px;line-height:1">＋</span>Agregar foto</button>';
+  box.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:8px">'+cards+addTile+'</div>'+
+    '<div id="progAddPanel"></div>'+
+    (arr.length?'':'<div style="font-size:12px;color:var(--muted,#8a968e);margin-top:2px">Sube fotos para ver tu evolución en el tiempo. Solo las ven tú y tu coach.</div>');
+}
+function _progAdd(){
+  if(_esDemoFit()){ showToast('📷 En tu portal real, aquí subes tus fotos de progreso'); return; }
+  var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.style.display='none'; document.body.appendChild(inp);
+  inp.addEventListener('change',function(){ var f=inp.files&&inp.files[0]; if(!f){ inp.remove(); return; }
+    if(f.size>5*1024*1024){ alert('La foto no puede pesar más de 5 MB.'); inp.remove(); return; }
+    var ext=((f.type||'image/png').split('/')[1]||'png').replace('jpeg','jpg');
+    var path='prog-'+(''+EMAIL).replace(/[^a-z0-9]/gi,'_')+'-'+Date.now()+'.'+ext;
+    var panel=document.getElementById('progAddPanel'); if(panel) panel.innerHTML='<div style="padding:10px;color:var(--muted,#888);font-size:13px">Subiendo foto…</div>';
+    fetch(SB+'/storage/v1/object/avatars/'+encodeURIComponent(path),{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':(f.type||'image/png'),'x-upsert':'true'},body:f})
+      .then(function(r){ if(!r.ok) throw 0; _progPendingUrl=SB+'/storage/v1/object/public/avatars/'+path; _progForm(); })
+      .catch(function(){ if(panel) panel.innerHTML=''; alert('No se pudo subir la foto. Reintenta.'); });
+    inp.remove();
+  });
+  inp.click();
+}
+function _progForm(){
+  var panel=document.getElementById('progAddPanel'); if(!panel) return;
+  var istyle='width:100%;padding:9px 11px;border:1px solid rgba(0,0,0,.15);border-radius:9px;font-size:14px;font-family:inherit;margin-bottom:8px;box-sizing:border-box';
+  panel.innerHTML='<div style="margin-top:12px;padding:14px;border:1px solid rgba(45,106,79,.2);border-radius:12px;background:var(--card,#fff)">'+
+    '<img src="'+esc(_progPendingUrl)+'" alt="" style="width:100%;max-height:240px;object-fit:cover;border-radius:10px;margin-bottom:10px">'+
+    '<input id="progTit" placeholder="Título (ej. Mes 1 · antes)" style="'+istyle+'">'+
+    '<textarea id="progDesc" placeholder="Descripción (opcional)" rows="2" style="'+istyle+';resize:vertical"></textarea>'+
+    '<div style="display:flex;gap:8px"><button onclick="_progSaveNew()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--brand,#2D6A4F);color:#fff;font-weight:700;font-size:14px;font-family:inherit;cursor:pointer">Guardar foto</button><button onclick="renderProgFotos()" style="padding:11px 16px;border:1px solid rgba(0,0,0,.15);border-radius:10px;background:transparent;color:var(--muted,#666);font-family:inherit;font-size:14px;cursor:pointer">Cancelar</button></div>'+
+  '</div>';
+}
+function _progSaveNew(){
+  if(!_progPendingUrl) return;
+  var tit=(document.getElementById('progTit')||{}).value||'';
+  var desc=(document.getElementById('progDesc')||{}).value||'';
+  var arr=_progArr(); arr.push({url:_progPendingUrl,titulo:(''+tit).trim(),descripcion:(''+desc).trim(),fecha:_ymd(new Date().toISOString())});
+  _progPendingUrl='';
+  _progPersist(arr,function(ok){ renderProgFotos(); showToast(ok?'📷 Foto agregada':'Guardado local — revisa tu conexión'); });
+}
+function _progDel(ix){
+  if(!confirm('¿Borrar esta foto?')) return;
+  var arr=_progArr(); if(ix<0||ix>=arr.length) return; arr.splice(ix,1);
+  _progPersist(arr,function(){ renderProgFotos(); });
 }
 function applyClient(c){
   var nm=c.nombre||c.email||'Cliente'; var fn=(''+nm).split(' ')[0];
