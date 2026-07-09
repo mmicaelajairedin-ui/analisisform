@@ -917,6 +917,48 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "reservas: la agenda del cliente usa el link INTERNO (no un Calendly externo)",
+    bug: "El botón «Agendar» del portal del cliente abría el Calendly externo del " +
+         "coach (fuga fuera de Pathway). Debe abrir /reservar.html?c=<coach_id> — la " +
+         "cita se guarda en `citas` y le llega al coach a Calendario, sin pagar Calendly.",
+    check() {
+      const targets = [
+        { f: "cliente.html", fn: "function abrirAgenda(" },
+        { f: "pathway-fit-cliente.html", fn: "function agendar(" },
+        { f: "pathway-fin-cliente.html", fn: "function agendar(" },
+      ];
+      for (const t of targets) {
+        const s = read(t.f);
+        if (!s) continue;
+        const i = s.indexOf(t.fn);
+        if (i < 0) return t.f + ": no se encuentra la función de agendar.";
+        const body = s.slice(i, i + 500);
+        if (!/reservar\.html\?c=/.test(body))
+          return t.f + ": agendar ya no abre el link interno /reservar.html?c=<coach_id> (¿volvió el Calendly externo?).";
+        if (/window\.open\(\s*COACH_CALENDLY\b/.test(body) || /window\.open\(\s*CALENDLY\b/.test(body))
+          return t.f + ": agendar volvió a abrir el Calendly externo del coach (fuga fuera de Pathway).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "config: el panel NO pide link de Calendly; da el link interno de reservas",
+    bug: "La config del coach pedía pegar un link de Calendly (externo, de pago). " +
+         "Ahora Pathway le DA su link interno (/reservar.html?c=<id>) y solo mantiene " +
+         "el iCal para ver sus eventos. No debe volver el campo cfp-cal (Calendly).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (/id='cfp-cal'/.test(s))
+        return "panel-v2.html: volvió el campo cfp-cal (pedido de link de Calendly). Debe darse el link interno.";
+      if (!/id='cfp-book'/.test(s))
+        return "panel-v2.html: falta el link interno de reservas (cfp-book) en la config.";
+      if (!/cfp-cal-ical/.test(s))
+        return "panel-v2.html: falta el campo de iCal (cfp-cal-ical) para ver los eventos en la agenda.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
