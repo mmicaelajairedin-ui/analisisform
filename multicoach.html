@@ -515,7 +515,7 @@ function _coachCard(c){
   +'<div class="cp-coach-top"><div class="cp-coach-av">'+_img(c)+c.ini+'</div>'
    +'<div style="min-width:0"><div class="cp-coach-nm">'+c.n+'</div><div class="cp-coach-meta">'+c.esp+'</div></div>'
    +'<span class="cp-coach-health '+h[0]+'">'+h[1]+'</span></div>'
-  +'<div class="cp-coach-stats"><div class="cp-coach-st"><div class="v">'+c.cli+'</div><div class="k">Clientes</div></div>'
+  +'<div class="cp-coach-stats"><div class="cp-coach-st"><div class="v">'+DB.clientes.filter(function(k){return k.coach===c.id;}).length+'</div><div class="k">Clientes</div></div>'
    +'<div class="cp-coach-st"><div class="v">'+c.ret+'%</div><div class="k">Retención</div></div>'
    +'<div class="cp-coach-st"><div class="v">'+(c.rat?'★'+c.rat:'—')+'</div><div class="k">Rating</div></div></div></article>';
 }
@@ -629,15 +629,52 @@ function _fillCoaches(){
  if(!base.length){box.innerHTML='<p class="csub">Sin coaches en esta vista.</p>';return;}
  box.innerHTML=NICHOS.map(function(ni){var g=base.filter(function(c){return c.nicho===ni.id;});if(!g.length)return '';return _nicheHd(ni,g.length)+'<section class="cp-coach-grid">'+g.map(_coachCard).join('')+'</section>';}).join('');
 }
-function fichaCoach(id){
- var c=_coach(id);if(!c)return;var v=document.getElementById('vscroll');v.scrollTop=0;
- var suyos=DB.clientes.filter(function(k){return k.coach===id;});
- v.innerHTML='<button class="fback" onclick="renderCoaches()">← Volver a Coaches</button>'
-  +'<div class="fh"><div class="fav">'+_img(c)+c.ini+'</div><div><h2>'+c.n+'</h2><div class="fsub">'+c.esp+' · '+({activo:'Activo',inactivo:'Suspendido',pendiente:'Invitación pendiente'}[c.est]||'')+'</div></div></div>'
-  +'<div class="fstats"><div class="fstat"><div class="l">Clientes</div><div class="n">'+suyos.length+'</div></div><div class="fstat"><div class="l">Retención</div><div class="n">'+c.ret+'%</div></div><div class="fstat"><div class="l">Valoración</div><div class="n">'+(c.rat?'★ '+c.rat:'—')+'</div></div></div>'
-  +'<div class="facts"><button class="fbtn p" onclick="__toast(\'Mensaje enviado a '+c.n+' ✓\')">✉️ Enviar mensaje</button><button class="fbtn '+(c.est==='activo'?'d':'')+'" onclick="toggleCoach(\''+c.id+'\')">'+(c.est==='activo'?'⏸️ Suspender coach':'▶️ Reactivar coach')+'</button></div>'
-  +'<div class="card"><div class="card-h"><h3>Clientes de '+c.n.split(" ")[0]+' ('+suyos.length+')</h3></div>'+(suyos.length?'<section class="cp-clients-grid" style="padding-top:6px">'+suyos.map(_clientCard).join('')+'</section>':'<p class="csub" style="margin:8px 0 0">Sin clientes asignados.</p>')+'</div>';
+var _curCoach=null,_coachTab='perfil';
+function fichaCoach(id){_curCoach=id;_coachTab='perfil';_renderCoachFicha();}
+function _goCoachTab(t){_coachTab=t;_renderCoachFicha();}
+function _coachBody(c,t){
+ var suyos=DB.clientes.filter(function(k){return k.coach===c.id;});
+ var esNutri=c.nicho==='nutricion';
+ if(t==='perfil'){
+  return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Datos del coach<span class="dot">.</span></h3>'
+   +'<div class="cp-infogrid">'+_info('Área',esNutri?'Nutrición':'Entrenamiento')+_info('Especialidad',c.esp)+_info('Estado',({activo:'Activo',inactivo:'Suspendido',pendiente:'Invitación pendiente'}[c.est]||'—'))+_info('Clientes',suyos.length)+_info('Retención',c.ret+'%')+_info('Valoración',c.rat?'★ '+c.rat:'—')+'</div></div>'
+   +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Sobre '+c.n.split(" ")[0]+'<span class="dot">.</span></h3><p style="font-size:13px;color:var(--pw-text-soft);line-height:1.55;margin:8px 0 0">Coach de '+(esNutri?'nutrición':'entrenamiento')+' especializado en '+c.esp.toLowerCase()+'. Acompaña a '+suyos.length+' clientes con seguimiento semanal y mediciones mensuales.</p></div>';
+ }
+ if(t==='clientes'){
+  return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Clientes de '+c.n.split(" ")[0]+' ('+suyos.length+')<span class="dot">.</span></h3>'+(suyos.length?'<section class="cp-clients-grid" style="margin-top:10px">'+suyos.map(_clientCard).join('')+'</section>':'<p class="csub" style="margin:8px 0 0">Sin clientes asignados.</p>')+'</div>';
+ }
+ if(t==='sesiones'){
+  var ses=[['✅','Fuerza · '+(suyos[0]?suyos[0].n:'Cliente'),'Lun 7 jul · 18:00 · realizada'],['📅','Revisión de plan · '+(suyos[1]?suyos[1].n:'Cliente'),'Vie 11 jul · 19:00 · agendada'],['📅','Medición mensual · '+(suyos[0]?suyos[0].n:'Cliente'),'Vie 8 ago · 18:00 · agendada']];
+  return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Agenda de '+c.n.split(" ")[0]+'<span class="dot">.</span></h3>'
+   +ses.map(function(s){return '<div class="cp-drow"><div class="dd"><span class="emo">'+s[0]+'</span></div><div class="dg"><div class="dn">'+s[1]+'</div><div class="ds">'+s[2]+'</div></div></div>';}).join('')+'</div>';
+ }
+ // rendimiento
+ return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Retención por mes<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 12px">% de clientes que renovaron.</div>'+_bars([['Abr',88],['May',90],['Jun',93],['Jul',c.ret]])+'</div>'
+  +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Actividad<span class="dot">.</span></h3><div class="cp-infogrid">'+_info('Sesiones este mes',c.ses)+_info('Clientes activos',suyos.filter(function(k){return k.est==='activo';}).length)+_info('Valoración',c.rat?'★ '+c.rat:'—')+_info('Retención',c.ret+'%')+'</div></div>';
 }
+function _renderCoachFicha(){
+ var c=_coach(_curCoach);if(!c)return;var v=document.getElementById('vscroll');v.scrollTop=0;var t=_coachTab;
+ var suyos=DB.clientes.filter(function(k){return k.coach===c.id;});
+ var h=_coachHealth(c);
+ var tabs=[['perfil','Perfil','👤'],['clientes','Clientes','👥'],['sesiones','Sesiones','🗓️'],['rendimiento','Rendimiento','📊']];
+ var menuV='<nav class="cp-cfg-nav">'+tabs.map(function(x){return '<button class="cp-cfg-nav-item'+(t===x[0]?' is-on':'')+'" onclick="_goCoachTab(\''+x[0]+'\')"><span class="cp-emo">'+x[2]+'</span><span>'+x[1]+'</span></button>';}).join('')+'</nav>';
+ var rail='<aside class="cp-ficha-rail">'
+  +'<div class="cp-card cp-card-pad" style="text-align:center"><div class="cp-eyebrow" style="margin-bottom:8px">Estado</div><span class="cp-coach-health '+h[0]+'" style="display:inline-block;margin-bottom:10px">'+h[1]+'</span>'
+   +'<div class="cp-coach-stats"><div class="cp-coach-st"><div class="v">'+suyos.length+'</div><div class="k">Clientes</div></div><div class="cp-coach-st"><div class="v">'+c.ret+'%</div><div class="k">Retención</div></div><div class="cp-coach-st"><div class="v">'+(c.rat?'★'+c.rat:'—')+'</div><div class="k">Rating</div></div></div></div>'
+  +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
+   +'<button class="cp-btn cp-btn-ghost" onclick="__toast(\'Mensaje enviado a '+c.n+' ✓\')"><span class="cp-emo">✉️</span> Enviar mensaje</button>'
+   +'<button class="cp-btn cp-btn-ghost" onclick="__toast(\'Abriendo WhatsApp…\')"><span class="cp-emo">📱</span> WhatsApp</button>'
+   +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" onclick="toggleCoach(\''+c.id+'\')">'+(c.est==='activo'?'Suspender coach':'Reactivar coach')+'</button></div>'
+  +'</aside>';
+ v.innerHTML='<header class="cp-topbar" style="align-items:center">'
+   +'<div style="display:flex;align-items:center;gap:16px;min-width:0"><div class="cp-cli-av">'+_img(c)+c.ini+'</div>'
+    +'<div style="min-width:0"><button class="fback" onclick="renderCoaches()" style="text-transform:uppercase;letter-spacing:1.2px;font-size:11px;font-weight:700;margin-bottom:4px">‹ Volver a Coaches</button>'
+     +'<h1 class="cp-h1">'+c.n+'<span class="dot">.</span></h1>'
+     +'<div class="cp-sub">'+c.esp+' · '+(esNutriCoach(c)?'Nutrición':'Entrenamiento')+'</div></div></div>'
+   +'<div class="cp-topbar-actions"><button class="cp-btn cp-btn-primary" onclick="__toast(\'Mensaje enviado a '+c.n+' ✓\')">✉️ Enviar mensaje</button></div></header>'
+   +'<div class="cp-ficha-layout3">'+menuV+'<div class="cp-cfg-panel">'+_coachBody(c,t)+'</div>'+rail+'</div>';
+}
+function esNutriCoach(c){return c.nicho==='nutricion';}
 function toggleCoach(id){
  var c=_coach(id);if(!c)return;
  if(c.est==='activo'){var suyos=DB.clientes.filter(function(k){return k.coach===id&&k.est==='activo';});__openModal('Suspender a '+c.n,'<p style="font-size:13.5px;color:var(--soft);margin:0;line-height:1.5">'+(suyos.length?'Tiene <b>'+suyos.length+' clientes activos</b>. Podés reasignarlos luego desde cada ficha. ':'')+'¿Suspender a este coach?</p>','Suspender',function(){c.est='inactivo';__mclose();__toast(c.n+' suspendido');fichaCoach(id);});}
