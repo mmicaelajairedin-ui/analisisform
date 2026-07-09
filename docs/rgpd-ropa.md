@@ -46,10 +46,11 @@ especial** y exigen:
 - **Consentimiento explícito** del cliente (no basta el general).
 - Minimización y medidas reforzadas.
 
-**Acción pendiente:** verificar que el consentimiento del formulario fitness sea
-**explícito para datos de salud** (casilla específica), no solo el consentimiento
-general. *(Hoy hay gate de consentimiento RGPD; falta confirmar el opt-in
-explícito de salud.)*
+**Estado (jul 2026):** el gate de consentimiento del portal fitness ya incluye
+una **casilla obligatoria de consentimiento explícito de datos de salud**
+(`cons-health`), separada del consentimiento general. Sin marcarla no se puede
+entrar. La versión de consentimiento se bumpeó (`2026-07-09-salud`) para que los
+clientes existentes vuelvan a consentir con esta casilla. ✅
 
 ---
 
@@ -148,7 +149,7 @@ hi@pathwaycareercoach.com. Existe `eliminar-cuenta.html` para la baja.
 escrito de respuesta en plazo (1 mes).
 
 ## 7. Pendientes para conformidad completa
-- [ ] Confirmar **consentimiento explícito de datos de salud** (fitness, art. 9).
+- [x] **Consentimiento explícito de datos de salud** (fitness, art. 9) — casilla obligatoria en el gate del portal ✅.
 - [ ] Firmar/registrar los **DPA de cada encargado** (ver otro doc).
 - [ ] Ofrecer **DPA a los coaches** (Pathway como encargado).
 - [ ] **Procedimiento de brechas** por escrito (notificación 72 h).
