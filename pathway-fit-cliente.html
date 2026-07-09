@@ -157,9 +157,11 @@
             <div class="card"><div class="card-body">
               <span class="eyebrow">Tus tareas de la semana</span>
               <p style="font-size:12px;color:var(--muted);margin:4px 0 12px;">Complétalas todas y ganas una medalla 🏅</p>
-              <div class="objc done" onclick="toggleObj(this)"><div class="objc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="objc-name">Entrenar 4 veces</div></div>
-              <div class="objc" onclick="toggleObj(this)"><div class="objc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="objc-name">Llegar a 8.000 pasos diarios</div></div>
-              <div class="objc" onclick="toggleObj(this)"><div class="objc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="objc-name">Cargar el peso del domingo</div></div>
+              <div id="dash-tareas">
+                <div class="objc" onclick="toggleObj(this)"><div class="objc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="objc-name">Entrenar 4 veces</div></div>
+                <div class="objc" onclick="toggleObj(this)"><div class="objc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="objc-name">Llegar a 8.000 pasos diarios</div></div>
+                <div class="objc" onclick="toggleObj(this)"><div class="objc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="objc-name">Cargar el peso del domingo</div></div>
+              </div>
             </div></div>
 
             <div class="card"><div class="card-body">
@@ -715,11 +717,13 @@ function fitCalNav(delta){
 
 // ── Mapear una medición → composición corporal para el donut ──
 function compOf(m){
-  var peso=_pn(m.peso)||0, gr=_pn(m.grasa), mus=_pn(m.musculo), os=_pn(m.oseo);
+  var peso=_pn(m.peso)||0, gr=_pn(m.grasa), mus=_pn(m.musculo), os=_pn(m.oseo), res=_pn(m.residual);
   var adip=(gr!=null)?gr:peso*0.18;
   mus=(mus!=null)?mus:peso*0.45; os=(os!=null)?os:peso*0.12;
+  // Masa residual: la carga el coach; si no, se estima con el resto del peso.
   var rest=Math.max(peso-mus-os-adip,0);
-  return [{n:'Muscular',v:+mus.toFixed(2),c:'#2D6A4F'},{n:'Adiposa',v:+adip.toFixed(2),c:'#A8633A'},{n:'Residual',v:+(rest*0.6).toFixed(2),c:'#E9C46A'},{n:'Ósea',v:+os.toFixed(2),c:'#2E7587'},{n:'Piel',v:+(rest*0.4).toFixed(2),c:'#8C5B6B'}];
+  res=(res!=null)?res:rest;
+  return [{n:'Muscular',v:+mus.toFixed(2),c:'#2D6A4F'},{n:'Adiposa',v:+adip.toFixed(2),c:'#A8633A'},{n:'Residual',v:+res.toFixed(2),c:'#E9C46A'},{n:'Ósea',v:+os.toFixed(2),c:'#2E7587'}];
 }
 function _mes(f){ var d=new Date(f); if(isNaN(d.getTime())) return (''+(f||'')).slice(5,7); return ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][d.getMonth()]; }
 
@@ -1339,10 +1343,24 @@ function renderTimeline(){
   ev.sort(function(a,b){ return (b.t||'').localeCompare(a.t||''); });
   box.innerHTML=ev.slice(0,5).map(function(e){ return '<div class="tl-item"><div class="tl-ic">'+e.ic+'</div><div class="tl-b"><b>'+esc(e.b)+'</b><p>'+esc(e.t)+'</p></div></div>'; }).join('');
 }
+// Tareas de la semana que carga el coach (candidatos.fit_tareas). Devuelve true
+// si había tareas reales; false si no (para mostrar estado vacío en cliente real).
+function renderTareas(){
+  var box=document.getElementById('dash-tareas'); if(!box) return false;
+  var arr=null; try{ arr=JSON.parse((CRAW&&CRAW.fit_tareas)||'null'); }catch(e){}
+  if(Object.prototype.toString.call(arr)==='[object Array]' && arr.length){
+    box.innerHTML=arr.map(function(t){ return '<div class="objc" onclick="toggleObj(this)"><div class="objc-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div><div class="objc-name">'+esc(t)+'</div></div>'; }).join('');
+    return true;
+  }
+  return false;
+}
 // Limpia lo que quedó hardcodeado de la plantilla demo (Martín/Gonza, tareas
 // pre-tildadas, chat de ejemplo) cuando entra un cliente REAL.
 function _limpiarDemo(){
   renderTimeline();
+  // Tareas de la semana: mostrar las que cargó el coach; si no cargó ninguna,
+  // NO dejar las de ejemplo (confunden al cliente real) → estado vacío.
+  if(!renderTareas()){ var _tb=document.getElementById('dash-tareas'); if(_tb) _tb.innerHTML='<div style="font-size:12.5px;color:var(--muted);padding:6px 0;">Tu coach cargará acá tus tareas de la semana.</div>'; }
   // Tarea "Entrenar 4 veces" viene pre-hecha en el HTML → destildar para real.
   document.querySelectorAll('#s-inicio .objc.done').forEach(function(o){ if(!o.dataset.h) o.classList.remove('done'); });
   // dash-obj: sin objetivo real, no dejar "bajar grasa" de ejemplo.
@@ -1485,10 +1503,11 @@ function _demoCrawFit(){
       {fecha:'2026-04-18',trabajado:'Revisión de técnica + ajuste de cargas',acordado:'Subir 5% la carga en empuje y sumar 10 min de movilidad pre-entreno.',acciones:'Grabar un set de sentadilla\nSumar movilidad antes de entrenar',tareas_done:[],doc:'data:text/plain;charset=utf-8,Plan%20de%20entrenamiento%20-%20Semana%204%0A%0A1)%20Press%20de%20banca%204x10%0A2)%20Remo%20con%20barra%204x12%0A3)%20Sentadilla%204x8%0A4)%20Movilidad%2010%20min',doc_nombre:'Plan de entrenamiento.txt'},
       {fecha:_dk(4),trabajado:'Medición mensual + ajuste de plan',acordado:'Mantener proteína en ~1.8 g/kg. Próxima medición en 4 semanas.'}
     ]),
+    fit_tareas:JSON.stringify(['Entrenar 4 veces','Llegar a 8.000 pasos diarios','Cargar el peso del domingo']),
     fit_antro:JSON.stringify([
-      {fecha:'2026-01-10',peso:'82',grasa:'24',musculo:'44.5',oseo:'10',pliegues:'110',imo:'4.45'},
-      {fecha:'2026-02-12',peso:'80',grasa:'21',musculo:'45.6',oseo:'10',pliegues:'96',imo:'4.56'},
-      {fecha:'2026-03-14',peso:'78',grasa:'18.6',musculo:'46.6',oseo:'10.05',pliegues:'82',imo:'4.63'}
+      {fecha:'2026-01-10',peso:'82',grasa:'24',musculo:'44.5',oseo:'10',residual:'3.5',pliegues:'110',imo:'4.45'},
+      {fecha:'2026-02-12',peso:'80',grasa:'21',musculo:'45.6',oseo:'10',residual:'3.4',pliegues:'96',imo:'4.56'},
+      {fecha:'2026-03-14',peso:'78',grasa:'18.6',musculo:'46.6',oseo:'10.05',residual:'2.75',pliegues:'82',imo:'4.63'}
     ]),
     fit_rutina:JSON.stringify([
       {semana:1,dia:'Lunes · Tren superior',nombre:'Press de banca',meta:'4×10 · 30 kg',rir:'2',descanso:'90 s',foto:''},
@@ -1571,6 +1590,7 @@ async function pwInit(){
       }
     }catch(e){ if(_esDemoFit()){ CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); _demoBrandFit(); } else { _clienteSinFicha(); } }
   } else { CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); applyLogros(null); _demoBrandFit(); }
+  renderTareas();
   WEEK.forEach(colorDay);
   var td=document.querySelector('.hd[data-date="'+pwHoy()+'"]'); if(td) selectDay(td);
 }
