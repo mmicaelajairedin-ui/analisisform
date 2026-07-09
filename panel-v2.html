@@ -2509,6 +2509,8 @@ function _resRender(list){
 // en citas.estado: asistio | no_asistio | reprogramada (además de los ya
 // existentes pendiente/confirmada/cancelada).
 var _CAL_DATA=null, _calFiltro="proximas", _CAL_TEAM=null, _calOwner="todas";
+// "Asistió" incluye los estados de resultado de la demo (fue bien/mal).
+function _attended(s){ return s==="asistio"||s==="gano"||s==="perdio"; }
 function _calChip(f,lbl){ var on=(_calFiltro===f); return "<button data-act='cal-filtro' data-f='"+f+"' style='padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-bosque)":"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; }
 // Filtro por persona (solo admin): ver las demos del equipo o de cada uno.
 function _calFirst(n){ return (""+(n||"")).trim().split(" ")[0]||"Equipo"; }
@@ -2571,12 +2573,13 @@ function _calRenderKpis(){
   var box=document.getElementById("cp-cal-kpis"); if(!box) return;
   var d=_calByOwner(_CAL_DATA); var now=Date.now();
   var vivas=d.filter(function(r){ return r.estado!=="cancelada"; });
-  var prox=vivas.filter(function(r){ return +new Date(r.inicio)>=now && r.estado!=="asistio" && r.estado!=="no_asistio"; }).length;
-  var asis=d.filter(function(r){ return r.estado==="asistio"; }).length;
+  var prox=vivas.filter(function(r){ return +new Date(r.inicio)>=now && !_attended(r.estado) && r.estado!=="no_asistio"; }).length;
+  var asis=d.filter(function(r){ return _attended(r.estado); }).length;
   var no=d.filter(function(r){ return r.estado==="no_asistio"; }).length;
+  var gano=d.filter(function(r){ return r.estado==="gano"; }).length;
   var rate=(asis+no)>0?Math.round(asis/(asis+no)*100)+"%":"—";
-  var kpi=function(n,l,acc){ return "<div class='cp-card' style='flex:1;min-width:108px;padding:14px 16px;"+(acc?"background:var(--pw-bosque);color:#fff":"")+"'><div style='font-family:var(--pw-serif);font-size:24px;font-weight:600;line-height:1'>"+n+"</div><div style='font-size:11.5px;margin-top:5px;color:"+(acc?"rgba(255,255,255,.85)":"var(--pw-text-soft)")+"'>"+l+"</div></div>"; };
-  box.innerHTML=kpi(vivas.length,"Reservas")+kpi(prox,"Próximas")+kpi(asis,"Asistieron")+kpi(no,"No asistieron")+kpi(rate,"% asistencia",true);
+  var kpi=function(n,l,acc){ return "<div class='cp-card' style='flex:1;min-width:100px;padding:14px 16px;"+(acc?"background:var(--pw-bosque);color:#fff":"")+"'><div style='font-family:var(--pw-serif);font-size:24px;font-weight:600;line-height:1'>"+n+"</div><div style='font-size:11.5px;margin-top:5px;color:"+(acc?"rgba(255,255,255,.85)":"var(--pw-text-soft)")+"'>"+l+"</div></div>"; };
+  box.innerHTML=kpi(vivas.length,"Reservas")+kpi(prox,"Próximas")+kpi(asis,"Asistieron")+kpi(no,"No asistieron")+kpi(gano,"Fueron bien")+kpi(rate,"% asistencia",true);
 }
 // Métricas ricas: demos por semana (con % asistencia) + por tipo de evento.
 function _calWkStart(ms){ var x=new Date(ms); x.setHours(0,0,0,0); var dw=(x.getDay()+6)%7; x.setDate(x.getDate()-dw); return +x; }
@@ -2587,7 +2590,7 @@ function _calRenderMetricsExtra(){
   // ── Por semana (últimas 6) ──
   var now=_calWkStart(Date.now()); var weeks=[]; for(var i=5;i>=0;i--) weeks.push(now-i*604800000);
   var wk={}; weeks.forEach(function(w){ wk[w]={t:0,a:0}; });
-  d.forEach(function(r){ var w=_calWkStart(+new Date(r.inicio)); if(wk[w]!=null){ wk[w].t++; if(r.estado==="asistio") wk[w].a++; } });
+  d.forEach(function(r){ var w=_calWkStart(+new Date(r.inicio)); if(wk[w]!=null){ wk[w].t++; if(_attended(r.estado)) wk[w].a++; } });
   var maxT=1; weeks.forEach(function(w){ if(wk[w].t>maxT) maxT=wk[w].t; });
   var MES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
   var bars=weeks.map(function(w){ var o=wk[w]; var h=Math.round(o.t/maxT*70); var dd=new Date(w);
@@ -2601,7 +2604,7 @@ function _calRenderMetricsExtra(){
       "<div style='font-size:9px;color:var(--pw-text-muted)'>"+dd.getDate()+" "+MES[dd.getMonth()]+"</div>"+
     "</div>"; }).join("");
   // ── Por tipo de evento ──
-  var byType={}; d.forEach(function(r){ var typ=_agEventTypeFor(r.tipo); var k=(typ&&typ.label)||r.tipo||"Sin tipo"; if(!byType[k]) byType[k]={t:0,a:0,col:(typ&&typ.color)||"#8C7B80",ico:(typ&&typ.icon)||"🗓️"}; byType[k].t++; if(r.estado==="asistio") byType[k].a++; });
+  var byType={}; d.forEach(function(r){ var typ=_agEventTypeFor(r.tipo); var k=(typ&&typ.label)||r.tipo||"Sin tipo"; if(!byType[k]) byType[k]={t:0,a:0,col:(typ&&typ.color)||"#8C7B80",ico:(typ&&typ.icon)||"🗓️"}; byType[k].t++; if(_attended(r.estado)) byType[k].a++; });
   var typeRows=Object.keys(byType).map(function(k){ var o=byType[k]; var rate=o.a?Math.round(o.a/o.t*100):0;
     return "<div style='display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
       "<span style='width:22px;height:22px;border-radius:50%;background:"+o.col+"22;border:1.5px solid "+o.col+";display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0'>"+o.ico+"</span>"+
@@ -2622,8 +2625,8 @@ function _calRenderList(){
   var now=Date.now();
   var rows=_calByOwner(_CAL_DATA).filter(function(r){
     if(r.estado==="cancelada") return _calFiltro==="todas";
-    if(_calFiltro==="proximas") return +new Date(r.inicio)>=now && r.estado!=="asistio" && r.estado!=="no_asistio";
-    if(_calFiltro==="pormarcar") return +new Date(r.inicio)<now && r.estado!=="asistio" && r.estado!=="no_asistio";
+    if(_calFiltro==="proximas") return +new Date(r.inicio)>=now && !_attended(r.estado) && r.estado!=="no_asistio";
+    if(_calFiltro==="pormarcar") return +new Date(r.inicio)<now && !_attended(r.estado) && r.estado!=="no_asistio";
     return true;
   });
   if(!rows.length){ box.innerHTML="<div style='color:var(--pw-text-soft);font-size:13px;padding:14px 0;text-align:center'>"+(_calFiltro==="pormarcar"?"Nada por marcar. ¡Al día!":_calFiltro==="proximas"?"Sin reservas próximas. Cuando alguien use tu link, aparece acá.":"Todavía no hay reservas.")+"</div>"; return; }
@@ -2631,7 +2634,10 @@ function _calRenderList(){
   box.innerHTML=rows.map(function(r){
     var dd=new Date(r.inicio); var typ=_agEventTypeFor(r.tipo); var col=(typ&&typ.color)||"#8C7B80"; var ico=(typ&&typ.icon)||"🗓️";
     var fecha=DIAS[dd.getDay()]+" "+dd.getDate()+" "+MES[dd.getMonth()]+" · "+_agTime(+dd);
-    var mk=function(val,lbl){ var on=(r.estado===val); var c=val==="asistio"?"var(--pw-bosque)":val==="no_asistio"?"var(--pw-danger)":"#C99A2E"; return "<button data-act='cal-asis' data-id='"+esc(r.id)+"' data-val='"+val+"' style='padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?c:"var(--pw-border)")+";background:"+(on?c:"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; };
+    var mk=function(val,lbl){ var on=(val==="asistio"?_attended(r.estado):r.estado===val); var c=val==="asistio"?"var(--pw-bosque)":val==="no_asistio"?"var(--pw-danger)":"#C99A2E"; return "<button data-act='cal-asis' data-id='"+esc(r.id)+"' data-val='"+val+"' style='padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?c:"var(--pw-border)")+";background:"+(on?c:"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; };
+    // Resultado de la demo (solo si asistió).
+    var ob=function(val,lbl){ var on=(r.estado===val); var c=val==="gano"?"var(--pw-bosque)":"var(--pw-danger)"; return "<button data-act='cal-res' data-id='"+esc(r.id)+"' data-val='"+val+"' style='padding:4px 10px;border-radius:8px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?c:"var(--pw-border)")+";background:"+(on?c:"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; };
+    var outc=_attended(r.estado)?("<div style='display:flex;gap:6px;align-items:center;margin-top:4px'><span style='font-size:10.5px;color:var(--pw-text-soft);font-weight:700'>¿Cómo fue?</span>"+ob("gano","👍 Bien")+ob("perdio","👎 Mal")+"</div>"):"";
     var canc=(r.estado==="cancelada")?"<span style='font-size:11px;font-weight:700;color:var(--pw-text-muted)'>Cancelada</span>":"";
     // De quién es la demo (solo admin, cuando no es tuya).
     var owner=(RADMIN && r.coach_id && String(r.coach_id)!==String(RME&&RME.id))?("<span title='Atiende' style='display:inline-flex;align-items:center;gap:4px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:100px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--pw-carbon)'>👤 "+esc(_calOwnerName(r.coach_id))+"</span>"):"";
@@ -2642,7 +2648,7 @@ function _calRenderList(){
       "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
       owner+
       canc+
-      "<div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó")+"</div>"+
+      "<div style='display:flex;flex-direction:column;gap:2px;align-items:flex-end'><div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó")+"</div>"+outc+"</div>"+
     "</div>";
   }).join("");
 }
@@ -5704,6 +5710,17 @@ document.addEventListener("click", function(ev){
     _sbw(_cq,"PATCH",{estado:_cr.estado})
       .then(function(r){ if(r&&r.ok){ toast(_cv==="asistio"?"Marcado: asistió ✓":_cv==="no_asistio"?"Marcado: no asistió":"Marcado: reprogramó"); } else { _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); } })
       .catch(function(){ _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); });
+    return;
+  }
+  if(act==="cal-res"){
+    var _rid2=el.getAttribute("data-id"), _rv=el.getAttribute("data-val"); if(!_rid2||!_rv) return;
+    var _rr=(_CAL_DATA||[]).filter(function(x){ return String(x.id)===String(_rid2); })[0]; if(!_rr) return;
+    var _rprev=_rr.estado; _rr.estado=(_rr.estado===_rv?"asistio":_rv); // tocar de nuevo = vuelve a solo "asistió"
+    _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra();
+    var _rq=RADMIN?("citas?id=eq."+encodeURIComponent(_rid2)):("citas?id=eq."+encodeURIComponent(_rid2)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""));
+    _sbw(_rq,"PATCH",{estado:_rr.estado})
+      .then(function(r){ if(r&&r.ok){ toast(_rv==="gano"?"👍 Marcado: fue bien":"👎 Marcado: no cerró"); } else { _rr.estado=_rprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); } })
+      .catch(function(){ _rr.estado=_rprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); });
     return;
   }
   if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
