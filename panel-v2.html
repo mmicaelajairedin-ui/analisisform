@@ -2148,12 +2148,13 @@ function _agGcalDiag(){
   }catch(e){ return ""; }
 }
 function _agConnect(){
-  var diag=(RADMIN)?("<div style='font-size:10.5px;color:var(--pw-text-muted);margin-top:12px;font-family:monospace'>"+esc(_agGcalDiag())+"</div>"):"";
+  // ETAPA 1: se conecta pegando el enlace iCal en Configuración (no OAuth de
+  // Google, que llega en la Etapa 2). Igual, abajo, las Reservas del link
+  // interno YA se ven sin necesidad de conectar nada.
   return "<div style='text-align:center;padding:14px 6px'>"+
-    "<div style='font-family:var(--pw-serif);font-size:16px;color:var(--pw-carbon);margin-bottom:4px'>Conectá tu Google Calendar</div>"+
-    "<p style='font-size:12.5px;color:var(--pw-text-soft);max-width:470px;margin:0 auto 14px;line-height:1.5'>Conectá tu cuenta de Google (un clic, sin pegar links) y tus sesiones reales aparecen acá.</p>"+
-    "<a class='cp-btn cp-btn-primary' href='/conectar-calendar.html' style='text-decoration:none'>Conectar con Google</a>"+
-    diag+
+    "<div style='font-family:var(--pw-serif);font-size:16px;color:var(--pw-carbon);margin-bottom:4px'>Mostrá tu calendario acá</div>"+
+    "<p style='font-size:12.5px;color:var(--pw-text-soft);max-width:470px;margin:0 auto 14px;line-height:1.5'>Pegá la <strong>dirección iCal</strong> de tu Google Calendar en Configuración y tus eventos aparecen en esta agenda. (Google → Configuración de tu calendario → «Dirección secreta en formato iCal», termina en <strong>/basic.ics</strong>.)</p>"+
+    "<button class='cp-btn cp-btn-primary' data-act='gocal'>Conectar mi calendario</button>"+
   "</div>";
 }
 function _agRender(d){
@@ -2418,36 +2419,16 @@ function _agRefresh(){
 }
 function _agendaLoad(){
   var body=document.getElementById("cp-agenda-body"); if(!body) return;
-  // Leemos el calendario DIRECTO de la API de Google desde el navegador, con el
-  // token guardado en el perfil. Sin edge functions (que se colgaban). La API de
-  // Google tiene CORS habilitado, así que se puede llamar desde acá.
-  var g=(REAL&&RCFG&&RCFG.gcal)?RCFG.gcal:null;
-  if(!g || !g.access_token){ body.innerHTML=_agConnect(); return; }
-  // Token vencido: si tenemos refresh_token, lo renovamos solo (no te pide reconectar).
-  if(g.expiry && Date.now()>g.expiry){ if(g.refresh_token){ _agRefresh(); } else { body.innerHTML=_agConnect(); } return; }
-  var now=new Date();
-  // Ventana amplia (desde el inicio del mes visible hasta +60 días) para que el
-  // calendario mensual tenga datos. La lista filtra a futuro aparte.
-  var _moStart=new Date((_AG_MO?_AG_MO.y:now.getFullYear()),(_AG_MO?_AG_MO.m:now.getMonth()),1);
-  var _tmin=(_moStart<now?_moStart:new Date(now.getFullYear(),now.getMonth(),1));
-  var q="timeMin="+encodeURIComponent(_tmin.toISOString())+
-        "&timeMax="+encodeURIComponent(new Date(now.getTime()+60*86400000).toISOString())+
-        "&singleEvents=true&orderBy=startTime&maxResults=100";
-  fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?"+q,{headers:{Authorization:"Bearer "+g.access_token}})
-    .then(function(r){ if(r.ok) return r.json(); return r.json().catch(function(){return {};}).then(function(d){ return {_err:true,status:r.status,msg:(d&&d.error&&d.error.message)||""}; }); })
-    .then(function(d){
-      var b=document.getElementById("cp-agenda-body"); if(!b) return;
-      if(d && d._err){
-        if(d.status===401){ if(g.refresh_token && !_agRefreshTried){ _agRefresh(); } else { b.innerHTML=_agConnect(); } return; } // token venció → renovar o reconectar
-        b.innerHTML=_agEmpty("Google no dejó leer el calendario (error "+d.status+"). "+esc(d.msg||"Verificá que la Google Calendar API esté habilitada en tu proyecto."));
-        return;
-      }
-      _agRefreshTried=false;
-      var items=(d&&Object.prototype.toString.call(d.items)==="[object Array]")?d.items:[];
-      var evs=items.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null; return {id:e.id||"",title:e.summary||"Sesión",start:+new Date(s),location:e.hangoutLink||e.location||null}; }).filter(function(x){return !!x;});
-      _AG_DATA={events:evs}; b.innerHTML=_agRender({events:evs}); _agMonthRender();
-    })
-    .catch(function(){ var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer tu calendario de Google. Reintentá en un momento."); });
+  // ETAPA 1: leemos el calendario del coach por su enlace iCal (edge function
+  // `calendar`, que fetchea configuracion.gcal_ical_url server-side por CORS y
+  // parsea los eventos). El coach solo pega su iCal en Configuración — sin OAuth.
+  // (La conexión directa con Google OAuth queda para la Etapa 2, ya verificada.)
+  var em=_agCoachEmail();
+  if(!em){ body.innerHTML=_agConnect(); return; }
+  fetch(SB+"/functions/v1/calendar?email="+encodeURIComponent(em),{headers:{apikey:KEY,Authorization:"Bearer "+KEY}})
+    .then(function(r){ return r.ok?r.json():r.json().catch(function(){ return {error:"http_"+r.status,events:[]}; }); })
+    .then(function(d){ var b=document.getElementById("cp-agenda-body"); if(!b) return; _AG_DATA=(d&&typeof d==="object")?d:{events:[]}; b.innerHTML=_agRender(_AG_DATA); _agMonthRender(); })
+    .catch(function(){ var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer tu calendario ahora. Reintentá en un momento."); });
 }
 
 // ═══ Reservas (citas del link público agendar.html) ═══
@@ -2640,11 +2621,14 @@ function _calRenderList(){
     var canc=(r.estado==="cancelada")?"<span style='font-size:11px;font-weight:700;color:var(--pw-text-muted)'>Cancelada</span>":"";
     // De quién es la demo (solo admin, cuando no es tuya).
     var owner=(RADMIN && r.coach_id && String(r.coach_id)!==String(RME&&RME.id))?("<span title='Atiende' style='display:inline-flex;align-items:center;gap:4px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:100px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--pw-carbon)'>👤 "+esc(_calOwnerName(r.coach_id))+"</span>"):"";
+    // Guardar como contacto: crea la ficha en la lista (dedup por email, sin pago
+    // ni email de bienvenida). Si después llena el formulario, se une por email.
+    var saveBtn=(r.email)?("<button data-act='cal-contact' data-nom=\""+esc(r.nombre||"")+"\" data-em=\""+esc(r.email)+"\" title='Guardarlo en tu lista de contactos' style='margin-top:4px;padding:3px 9px;border-radius:7px;font-size:10.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1px solid var(--pw-border);background:#fff;color:var(--pw-bosque)'>＋ Guardar como contacto</button>"):"";
     return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--pw-border);flex-wrap:wrap'>"+
       "<span style='width:30px;height:30px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>"+ico+"</span>"+
       "<div style='min-width:150px;font-size:12.5px;font-weight:700;color:var(--pw-carbon)'>"+esc(fecha)+"</div>"+
       "<div style='flex:1;min-width:120px'><div style='font-size:13.5px;font-weight:600'>"+esc(r.nombre||"Alguien")+"</div>"+
-      "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
+      "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div>"+saveBtn+"</div>"+
       owner+
       canc+
       "<div style='display:flex;flex-direction:column;gap:2px;align-items:flex-end'><div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó")+"</div>"+outc+"</div>"+
@@ -5741,6 +5725,29 @@ document.addEventListener("click", function(ev){
     _sbw(_rq,"PATCH",{estado:_rr.estado})
       .then(function(r){ if(r&&r.ok){ toast(_rv==="gano"?"👍 Marcado: fue bien":"👎 Marcado: no cerró"); } else { _rr.estado=_rprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); } })
       .catch(function(){ _rr.estado=_rprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); });
+    return;
+  }
+  if(act==="cal-contact"){
+    if(!REAL||!RME||!RME.id){ alert("Iniciá sesión primero."); return; }
+    var _knom=(el.getAttribute("data-nom")||"").trim(), _kem=(el.getAttribute("data-em")||"").trim().toLowerCase();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(_kem)){ toast("Esa reserva no tiene un email válido."); return; }
+    el.disabled=true;
+    var _kct=(typeof RCFG!=="undefined"&&RCFG&&RCFG.coach_type)||"carrera";
+    // INSERT con ignore-duplicates: si el email ya existe (cliente o contacto), no
+    // duplica ni pisa su estado. Se guarda como contacto (activo:false), sin pago
+    // ni email. Ver alta-invitar para el mismo patrón bajo RLS.
+    _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"})
+      .then(function(h){ return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:_knom||_kem.split("@")[0],email:_kem,coach_id:RME.id,nicho:_kct,activo:false})}); })
+      .then(function(r){
+        var _ya=r&&r.status===409;
+        if(!r||(!r.ok&&!_ya)){ el.disabled=false; toast("No se pudo guardar el contacto. Reintentá."); return; }
+        // Reclamar ficha huérfana (llenó el formulario público sin coach) para vos.
+        _sbw("candidatos?email=eq."+encodeURIComponent(_kem)+"&coach_id=is.null","PATCH",{coach_id:RME.id}).catch(function(){});
+        toast(_ya?"Ya estaba en tu lista ✓":"Guardado como contacto ✓");
+        el.textContent="✓ En tu lista"; el.style.color="var(--pw-text-muted)"; el.style.borderColor="var(--pw-border)";
+        setTimeout(loadReal,500);
+      })
+      .catch(function(){ el.disabled=false; toast("Sin conexión. Reintentá."); });
     return;
   }
   if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
