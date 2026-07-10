@@ -959,6 +959,27 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "reservas: los horarios se convierten a la zona del visitante",
+    bug: "La página de reserva interpretaba la disponibilidad del coach en la zona " +
+         "horaria de QUIEN MIRA: un visitante de Argentina veía '09:00' que en " +
+         "realidad era otra hora del coach. Debe interpretar la disponibilidad en la " +
+         "zona del coach (gcal iCal / disponibilidad.tz) y mostrar cada hueco en la " +
+         "hora LOCAL del visitante. El instante elegido (sel.ms) es absoluto (UTC).",
+    check() {
+      const s = read("reservar.html");
+      if (!s) return null;
+      if (!/_wallToUtc\(/.test(s) || !/_coachInstants\(/.test(s))
+        return "reservar.html: faltan los helpers de zona horaria (_wallToUtc/_coachInstants) — ¿se volvió a la hora del visitante?";
+      const i = s.indexOf("function confirmar(");
+      const sub = i >= 0 ? s.slice(i, i + 900) : s;
+      if (!/new Date\(sel\.ms\)/.test(sub))
+        return "reservar.html: confirmar ya no usa el instante absoluto sel.ms (¿volvió a construir la fecha en hora local del visitante?).";
+      if (/new Date\(d\.getFullYear\(\),\s*d\.getMonth\(\)[^)]*hm\[0\]/.test(s))
+        return "reservar.html: volvió a construir el horario en hora local del visitante (bug de zona horaria).";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;

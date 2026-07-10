@@ -169,7 +169,7 @@ function esc(s){ return (''+(s==null?'':s)).replace(/[&<>"']/g,function(c){retur
 function qp(k){ try{ return new URLSearchParams(location.search).get(k); }catch(e){ return null; } }
 
 var COACH='', FIRST='', EMAIL='', PHOTO='', SLUG='', WA='', TYPE=null, DUR=30, COLOR='#2D6A4F', PRO=false, FORCE_TYPE=null, CUR=null, ROLE='';
-var sel={day:null, time:null}, showAll=false;
+var sel={day:null, ms:null}, showAll=false;
 
 function initials(n){ var p=(''+(n||'')).trim().split(/\s+/); return (((p[0]||'')[0]||'')+((p[1]||'')[0]||'')).toUpperCase()||'·'; }
 function durFrom(label){ var m=(''+(label||'')).match(/(\d+)\s*min/i); return m?parseInt(m[1],10):(/(\d+)\s*h/i.test(''+label)?60:30); }
@@ -183,14 +183,70 @@ var TEAM=false, CID='', TIDX=-1;
 var SAFE_SELECT='id,nombre,email,foto_url,rol,configuracion';
 var DISP=null;
 var TAKEN={}; // { instanteMs: true } de las citas ya tomadas del coach (anti doble-booking)
-function _slotTs(dayIdx, tstr){ var L=dayList(), d=L[dayIdx]; if(!d) return null; var hm=(''+tstr).split(':'); return new Date(d.d.getFullYear(),d.d.getMonth(),d.d.getDate(),parseInt(hm[0],10)||0,parseInt(hm[1],10)||0).getTime(); }
+// ── Zonas horarias ──────────────────────────────────────────────────────────
+// La disponibilidad del coach se define en SU zona (p.ej. España). Al visitante
+// le mostramos esos MISMOS instantes convertidos a SU hora local (p.ej. si es de
+// Argentina, ve la hora argentina). Todo se guarda en UTC (toISOString), así que
+// coach y cliente siempre ven el mismo momento real, cada uno en su reloj.
+var DEFAULT_TZ='Europe/Madrid'; // fallback para coaches que aún no guardaron su tz
+function _coachTz(){ return (DISP&&DISP.tz)||DEFAULT_TZ; }
+function _viewerTz(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||''; }catch(e){ return ''; } }
+// Offset (ms) de una zona en un instante UTC dado.
+function _tzOffMs(utcMs,tz){
+  try{
+    var dtf=new Intl.DateTimeFormat('en-US',{timeZone:tz,hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    var m={}; dtf.formatToParts(new Date(utcMs)).forEach(function(p){ m[p.type]=p.value; });
+    var h=(m.hour==='24')?0:parseInt(m.hour,10);
+    var asUTC=Date.UTC(+m.year,+m.month-1,+m.day,h,+m.minute,+m.second);
+    return asUTC-utcMs;
+  }catch(e){ return 0; }
+}
+// Hora de pared (y/mo(1-12)/d/h/mi) EN una zona → instante UTC (ms). Doble pasada
+// por los bordes de horario de verano.
+function _wallToUtc(y,mo,d,h,mi,tz){ var g=Date.UTC(y,mo-1,d,h,mi,0); var o=_tzOffMs(g,tz); o=_tzOffMs(g-o,tz); return g-o; }
+// Y/M/D + día de semana de un instante, vistos EN una zona.
+function _ymdInTz(dateObj,tz){
+  var dtf=new Intl.DateTimeFormat('en-US',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'});
+  var m={}; dtf.formatToParts(dateObj).forEach(function(p){ m[p.type]=p.value; });
+  var WD={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
+  return {y:+m.year, mo:+m.month, d:+m.day, wd:WD[m.weekday]};
+}
+// Todos los instantes disponibles (UTC ms) de los próximos 28 días, según la
+// disponibilidad del coach interpretada en SU zona. Solo futuros.
+function _coachInstants(){
+  var disp=DISP||normDisp(null); var tz=_coachTz();
+  var days=(disp.days&&disp.days.length)?disp.days.map(Number):[1,2,3,4,5];
+  var f=_hm(disp.from||'09:00'), t=_hm(disp.to||'18:00'); if(t<=f) t+=1440;
+  var step=Math.max(DUR,15), now=Date.now(), base=new Date(), out=[];
+  for(var i=0;i<28;i++){
+    var ymd=_ymdInTz(new Date(base.getTime()+i*86400000), tz);
+    if(days.indexOf(ymd.wd)<0) continue;
+    for(var mnt=f; mnt+DUR<=t; mnt+=step){
+      var mm=mnt%1440, add=Math.floor(mnt/1440);
+      var ms=_wallToUtc(ymd.y, ymd.mo, ymd.d+add, Math.floor(mm/60), mm%60, tz);
+      if(ms>now+60000) out.push(ms);
+    }
+  }
+  out.sort(function(a,b){ return a-b; });
+  return out;
+}
+// Agrupa los instantes por el DÍA LOCAL del visitante; cada slot con su hora local.
+function _viewerGroups(){
+  var inst=_coachInstants(), groups=[], byKey={};
+  inst.forEach(function(ms){
+    var d=new Date(ms); var key=d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+    var g=byKey[key]; if(!g){ g={key:key, d:d, slots:[]}; byKey[key]=g; groups.push(g); }
+    g.slots.push({ms:ms, label:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)});
+  });
+  return groups.slice(0,10);
+}
 function _tzLabel(){ try{ var z=Intl.DateTimeFormat().resolvedOptions().timeZone; return z?(' ('+z+')'):''; }catch(e){ return ''; } }
 function loadCitas(){ TAKEN={}; if(!CID) return; fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(CID)+'&estado=neq.cancelada&select=inicio',{ headers:{ apikey:KEY, Authorization:'Bearer '+KEY } }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){ var T={}; (rows||[]).forEach(function(c){ if(!c||!c.inicio) return; var t=new Date(c.inicio).getTime(); if(!isNaN(t)) T[t]=true; }); TAKEN=T; renderPicker(); }).catch(function(){}); }
 function normDisp(d){
   var def={days:[1,2,3,4,5],from:'09:00',to:'18:00'};
   if(!d || typeof d!=='object') return def;
   var days=(Object.prototype.toString.call(d.days)==='[object Array]'&&d.days.length)?d.days.map(Number):def.days;
-  return { days:days, from:(/^\d{1,2}:\d{2}$/.test(d.from||'')?d.from:def.from), to:(/^\d{1,2}:\d{2}$/.test(d.to||'')?d.to:def.to) };
+  return { days:days, from:(/^\d{1,2}:\d{2}$/.test(d.from||'')?d.from:def.from), to:(/^\d{1,2}:\d{2}$/.test(d.to||'')?d.to:def.to), tz:(typeof d.tz==='string'&&d.tz)?d.tz:'' };
 }
 function memPhoto(u){ var c=u.configuracion||{}; return u.foto_url||c.foto_url||c.foto_perfil||''; }
 function roleLabel(u){ var c=u.configuracion||{}; if(c.titulo_profesional) return c.titulo_profesional; return (u.rol==='admin')?'Responsable de Pathway':(u.rol==='empleado')?'Responsable comercial':'Equipo Pathway'; }
@@ -209,7 +265,7 @@ function applyCoachRow(u, t){
   if(FORCE_TYPE){ TYPE=FORCE_TYPE; TIDX=0; }
   else { TIDX=(t>=0&&t<types.length)?t:0; TYPE=types[TIDX]; }
   DUR=durFrom(TYPE.label); COLOR=TYPE.color||'#2D6A4F';
-  sel={day:null,time:null}; showAll=false;
+  sel={day:null,ms:null}; showAll=false;
   renderPicker();
   loadCitas(); // trae los horarios ya tomados de este coach → se marcan ocupados
 }
@@ -284,11 +340,13 @@ function fail(t){
 function _hm(s){ var p=(''+s).split(':'); return parseInt(p[0],10)*60+parseInt(p[1]||'0',10); }
 var MES3=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
 function dayList(){
-  var out=[], now=new Date(); now.setHours(0,0,0,0);
-  var disp=DISP||{days:[1,2,3,4,5]}; var days=(disp.days&&disp.days.length)?disp.days:[1,2,3,4,5];
+  var groups=_viewerGroups();
   var DN=['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
-  for(var i=0;i<28;i++){ var d=new Date(now.getTime()+i*86400000); if(days.indexOf(d.getDay())<0) continue; out.push({d:d, dn:(i===0?'HOY':DN[d.getDay()]), dd:d.getDate(), mn:MES3[d.getMonth()]}); if(out.length>=10) break; }
-  return out;
+  var td=new Date(); td.setHours(0,0,0,0);
+  return groups.map(function(g){
+    var d=g.d; var isToday=(d.getFullYear()===td.getFullYear()&&d.getMonth()===td.getMonth()&&d.getDate()===td.getDate());
+    return {d:d, dn:(isToday?'HOY':DN[d.getDay()]), dd:d.getDate(), mn:MES3[d.getMonth()], slots:g.slots};
+  });
 }
 // Etiqueta de disponibilidad de una persona (hoy/mañana/día), según su config.
 function _availLabel(u){
@@ -313,13 +371,15 @@ function avHtml(){
 }
 function renderPicker(){
   var days=dayList();
+  if(sel.day==null && days.length) sel.day=0; // primer día disponible por defecto
   var daysHtml=days.map(function(x,i){ var on=(sel.day===i); return "<div class='day"+(on?' on':'')+"' data-day='"+i+"'><div class='dn'>"+x.dn+"</div><div class='dd'>"+x.dd+"</div><div class='dm'>"+x.mn+"</div></div>"; }).join('');
-  var all=slotList(), VIS=8;
+  var all=(sel.day!=null&&days[sel.day])?days[sel.day].slots:[], VIS=8;
   var shown=showAll?all:all.slice(0,VIS);
-  var slotsHtml=shown.map(function(s){ var on=(sel.time===s); var ts=(sel.day!=null)?_slotTs(sel.day,s):null; if(ts!=null&&TAKEN[ts]) return "<button class='slot' disabled title='Ya reservado' style='opacity:.38;text-decoration:line-through;cursor:not-allowed'>"+s+"</button>"; return "<button class='slot"+(on?' on':'')+"' data-slot='"+s+"'>"+s+"</button>"; }).join('');
+  var slotsHtml=shown.map(function(sl){ var on=(sel.ms===sl.ms); if(TAKEN[sl.ms]) return "<button class='slot' disabled title='Ya reservado' style='opacity:.38;text-decoration:line-through;cursor:not-allowed'>"+sl.label+"</button>"; return "<button class='slot"+(on?' on':'')+"' data-ms='"+sl.ms+"'>"+sl.label+"</button>"; }).join('');
+  if(!shown.length) slotsHtml="<div style='font-size:12.5px;color:var(--soft,#5A6A60);padding:6px 0'>No hay horarios este día. Elegí otro.</div>";
   if(!showAll && all.length>VIS) slotsHtml+="<button class='more' data-more='1'>Ver más horarios ("+(all.length-VIS)+") ▾</button>";
   else if(showAll && all.length>VIS) slotsHtml+="<button class='more' data-more='0'>Ver menos ▴</button>";
-  var can=(sel.day!=null&&sel.time);
+  var can=(sel.ms!=null);
   var waNum=WA||'34623816019';
   var waHref='https://wa.me/'+waNum+'?text='+encodeURIComponent('Hola '+FIRST+', tengo una duda antes de reservar una sesión.');
   var emptyDays=!days.length;
@@ -396,10 +456,10 @@ function renderPicker(){
 
   var bp=document.querySelector('.bk-people');
   if(bp) bp.addEventListener('click',function(e){ var p=e.target.closest('[data-pid]'); if(!p) return; var id=p.getAttribute('data-pid'); var m=people.filter(function(x){return String(x.id)===String(id);})[0]; if(m) applyCoachRow(m,-1); });
-  if($('days')) $('days').addEventListener('click',function(e){ var d=e.target.closest('[data-day]'); if(!d) return; sel.day=parseInt(d.getAttribute('data-day'),10); renderPicker(); });
+  if($('days')) $('days').addEventListener('click',function(e){ var d=e.target.closest('[data-day]'); if(!d) return; sel.day=parseInt(d.getAttribute('data-day'),10); sel.ms=null; showAll=false; renderPicker(); });
   if($('slots')) $('slots').addEventListener('click',function(e){
     var mo=e.target.closest('[data-more]'); if(mo){ showAll=(mo.getAttribute('data-more')==='1'); renderPicker(); return; }
-    var s=e.target.closest('[data-slot]'); if(!s) return; sel.time=s.getAttribute('data-slot'); renderPicker();
+    var s=e.target.closest('[data-ms]'); if(!s) return; sel.ms=parseInt(s.getAttribute('data-ms'),10); renderPicker();
   });
   if($('confirm')) $('confirm').addEventListener('click', confirmar);
   renderProof();
@@ -437,9 +497,8 @@ function confirmar(){
   var msg=($('f-msg')&&$('f-msg').value||'').trim();
   if(!name){ $('msg').textContent='Escribí tu nombre.'; return; }
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ $('msg').textContent='Escribí un email válido.'; return; }
-  if(sel.day==null||!sel.time){ $('msg').textContent='Elegí día y hora.'; return; }
-  var days=dayList(), d=days[sel.day].d, hm=sel.time.split(':');
-  var start=new Date(d.getFullYear(),d.getMonth(),d.getDate(),parseInt(hm[0],10),parseInt(hm[1],10));
+  if(sel.ms==null){ $('msg').textContent='Elegí día y hora.'; return; }
+  var start=new Date(sel.ms);
   var end=new Date(start.getTime()+DUR*60000);
   var tlabel=TYPE.label||'Sesión', fechaTxt=fechaLinda(start);
   var title=tlabel+' · '+name+' con '+FIRST;
@@ -468,7 +527,7 @@ function confirmar(){
     { headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
     .then(function(r){ return r.ok?r.json():null; })
     .then(function(ex){
-      if(ex && ex.length){ $('msg').textContent='Ese horario se acaba de ocupar 😕 Elegí otro, por favor.'; TAKEN[start.getTime()]=true; sel.time=null; renderPicker(); return; }
+      if(ex && ex.length){ $('msg').textContent='Ese horario se acaba de ocupar 😕 Elegí otro, por favor.'; TAKEN[start.getTime()]=true; sel.ms=null; renderPicker(); return; }
       _commit();
     })
     .catch(function(){ _commit(); }); // si no pudimos verificar, seguimos best-effort
