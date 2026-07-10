@@ -868,7 +868,8 @@ const RULES = [
          "cargar las citas tomadas (loadCitas), marcarlas ocupadas, y re-chequear " +
          "el hueco JUSTO antes de confirmar.",
     check() {
-      for (const f of ["reservar.html", "agendar.html"]) {
+      // Solo reservar.html es la página de reserva (agendar.html redirige a ella).
+      for (const f of ["reservar.html"]) {
         const s = read(f); if (!s) continue;
         if (!/function loadCitas\(/.test(s) || !/TAKEN/.test(s))
           return f + ": ya no carga/marca los horarios tomados (riesgo de doble-booking).";
@@ -977,6 +978,21 @@ const RULES = [
         return "reservar.html: confirmar ya no usa el instante absoluto sel.ms (¿volvió a construir la fecha en hora local del visitante?).";
       if (/new Date\(d\.getFullYear\(\),\s*d\.getMonth\(\)[^)]*hm\[0\]/.test(s))
         return "reservar.html: volvió a construir el horario en hora local del visitante (bug de zona horaria).";
+      return null;
+    },
+  },
+  {
+    name: "reservas: una sola página de reserva (agendar.html redirige a reservar.html)",
+    bug: "Existían DOS páginas de reserva (agendar.html y reservar.html). Al mejorar " +
+         "una (zona horaria, reserva interna) la otra quedaba vieja e incoherente. " +
+         "agendar.html debe ser solo un redirect a reservar.html (única fuente).",
+    check() {
+      const s = read("agendar.html");
+      if (!s) return null;
+      if (!/location\.replace\(\s*DESTINO/.test(s) || !/\/reservar\.html/.test(s))
+        return "agendar.html: dejó de redirigir a reservar.html (¿volvió a ser una página de reserva aparte?).";
+      if (/function confirmar\(/.test(s) || /function renderPicker\(/.test(s))
+        return "agendar.html: volvió a tener su propia lógica de reserva — debe redirigir a reservar.html, no duplicarla.";
       return null;
     },
   },
