@@ -2138,6 +2138,9 @@ function _agDayLabel(ms){
   return diff===0?("Hoy · "+base):diff===1?("Mañana · "+base):base;
 }
 function _agEmpty(msg){ return "<div style='color:var(--pw-text-soft);font-size:13px;padding:12px 0;text-align:center'>"+esc(msg)+"</div>"; }
+// Guarda lo que hay escrito en el modal de disponibilidad ANTES de re-renderizar
+// (al togglear un día o tocar los bloqueados), para no perder lo tipeado.
+function _agDispCapture(){ if(!state.ag) return; var f=document.getElementById("ag-disp-from"),t=document.getElementById("ag-disp-to"),n=document.getElementById("ag-disp-notice"),b=document.getElementById("ag-disp-buffer"); if(f) state.ag.from=f.value; if(t) state.ag.to=t.value; if(n) state.ag.notice=n.value; if(b) state.ag.buffer=b.value; }
 function _agGcalDiag(){
   // Estado del token (para diagnosticar por qué pide reconectar). Solo admin.
   try{
@@ -2369,17 +2372,28 @@ function viewAgModal(){
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:14px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-agendar'>Agendar cita</button></div>";
   } else if(g.mode==="disp"){
     ttl="Mi disponibilidad";
-    var _dp=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{days:[1,2,3,4,5],from:"09:00",to:"18:00"};
+    var _dp=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{};
     var _dpd=(g.days!=null)?g.days:((Object.prototype.toString.call(_dp.days)==="[object Array]")?_dp.days.map(Number):[1,2,3,4,5]);
-    if(g.from!=null) _dp={days:_dpd,from:g.from,to:g.to};
+    var _from=(g.from!=null)?g.from:(_dp.from||"09:00");
+    var _to=(g.to!=null)?g.to:(_dp.to||"18:00");
+    var _notice=(g.notice!=null)?g.notice:(_dp.min_notice_h!=null?_dp.min_notice_h:2);
+    var _buffer=(g.buffer!=null)?g.buffer:(_dp.buffer_min!=null?_dp.buffer_min:0);
+    var _bloq=(g.bloq!=null)?g.bloq:((Object.prototype.toString.call(_dp.bloqueados)==="[object Array]")?_dp.bloqueados.slice():[]);
     var _DN=[["L",1],["M",2],["X",3],["J",4],["V",5],["S",6],["D",0]];
     var _dchips=_DN.map(function(p){ var on=(_dpd.indexOf(p[1])>=0); return "<button data-act='ag-disp-day' data-d='"+p[1]+"' style='width:34px;height:34px;border-radius:50%;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";color:"+(on?"var(--pw-bosque)":"var(--pw-text-muted)")+";font-weight:700;font-family:inherit;cursor:pointer'>"+p[0]+"</button>"; }).join("");
+    var _bchips=_bloq.length?("<div style='display:flex;flex-wrap:wrap;gap:6px;margin-top:8px'>"+_bloq.map(function(d){ var lbl=(""+d).split("-").reverse().join("/"); return "<span style='display:inline-flex;align-items:center;gap:5px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:100px;padding:3px 5px 3px 11px;font-size:12px'>"+esc(lbl)+"<button data-act='ag-bloq-del' data-d='"+esc(d)+"' title='Quitar' style='border:none;background:none;cursor:pointer;color:var(--pw-text-muted);font-size:16px;line-height:1;padding:0 2px'>×</button></span>"; }).join("")+"</div>"):"<div style='font-size:11.5px;color:var(--pw-text-muted);margin-top:6px'>Sin días bloqueados.</div>";
     body="<div style='font-size:12.5px;color:var(--pw-text-soft);margin-bottom:12px;line-height:1.5'>Qué días y en qué franja te pueden reservar desde tu link. Se aplica al instante.</div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Días</label><div style='display:flex;gap:6px'>"+_dchips+"</div></div>"+
       "<div class='cp-form-row-2'>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Desde</label><input type='time' id='ag-disp-from' class='cp-form-input' value='"+esc(_dp.from||"09:00")+"'></div>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Hasta</label><input type='time' id='ag-disp-to' class='cp-form-input' value='"+esc(_dp.to||"18:00")+"'></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Desde</label><input type='time' id='ag-disp-from' class='cp-form-input' value='"+esc(_from)+"'></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Hasta</label><input type='time' id='ag-disp-to' class='cp-form-input' value='"+esc(_to)+"'></div>"+
       "</div>"+
+      "<div class='cp-form-row-2'>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Aviso mínimo (horas)</label><input type='number' min='0' step='1' id='ag-disp-notice' class='cp-form-input' value='"+esc(_notice)+"'><span class='cp-form-hint'>No te reservan con menos de estas horas.</span></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Margen entre sesiones (min)</label><input type='number' min='0' step='5' id='ag-disp-buffer' class='cp-form-input' value='"+esc(_buffer)+"'><span class='cp-form-hint'>Descanso antes/después de cada cita.</span></div>"+
+      "</div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Bloquear días (vacaciones, feriados)</label>"+
+        "<div style='display:flex;gap:6px'><input type='date' id='ag-disp-bloq' class='cp-form-input' style='flex:1'><button class='cp-btn cp-btn-ghost' data-act='ag-bloq-add'>Agregar</button></div>"+_bchips+"</div>"+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-disp'>Guardar</button></div>";
   }
   return "<div data-act='ag-close' style='position:fixed;inset:0;background:rgba(27,46,38,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px'>"+
@@ -2551,7 +2565,7 @@ function _calLoad(){
   var box=document.getElementById("cp-cal-list");
   if(!RME||!RME.id){ if(box) box.innerHTML=_agEmpty("Iniciá sesión."); return; }
   var from=new Date(Date.now()-120*86400000).toISOString();
-  var sel="&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id";
+  var sel="&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono";
   if(RADMIN){
     // Admin: ve las demos de TODO su equipo (admin + empleados activos).
     _sb("usuarios?rol=in.(admin,empleado)&activo=eq.true&select=id,nombre,email,rol").then(function(team){
@@ -2637,10 +2651,23 @@ function _calRenderList(){
     var canc=(r.estado==="cancelada")?"<span style='font-size:11px;font-weight:700;color:var(--pw-text-muted)'>Cancelada</span>":"";
     // De quién es la demo (solo admin, cuando no es tuya).
     var owner=(RADMIN && r.coach_id && String(r.coach_id)!==String(RME&&RME.id))?("<span title='Atiende' style='display:inline-flex;align-items:center;gap:4px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:100px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--pw-carbon)'>👤 "+esc(_calOwnerName(r.coach_id))+"</span>"):"";
+    // Guardar como contacto: crea la ficha en la lista (dedup por email, sin pago
+    // ni email de bienvenida). Si después llena el formulario, se une por email.
+    var saveBtn=(r.email)?("<button data-act='cal-contact' data-nom=\""+esc(r.nombre||"")+"\" data-em=\""+esc(r.email)+"\" title='Guardarlo en tu lista de contactos' style='margin-top:4px;padding:3px 9px;border-radius:7px;font-size:10.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1px solid var(--pw-border);background:#fff;color:var(--pw-bosque)'>＋ Guardar como contacto</button>"):"";
+    // Recordatorio por WhatsApp con 1 toque (si dejó teléfono). Abre el chat con
+    // el mensaje ya escrito; el coach solo toca enviar. Gratis, sin API.
+    var _tel=r.telefono?(""+r.telefono).replace(/[^0-9]/g,""):"";
+    var waBtn="";
+    if(_tel){
+      var _fn=(""+(r.nombre||"")).split(" ")[0]||"";
+      var _waTxt=encodeURIComponent("Hola "+_fn+", te recuerdo nuestra "+(r.tipo||"sesión")+" del "+fecha+". ¡Nos vemos!").replace(/'/g,"%27");
+      waBtn="<a href='https://wa.me/"+_tel+"?text="+_waTxt+"' target='_blank' rel='noopener' title='Enviar recordatorio por WhatsApp' style='margin-top:4px;margin-left:6px;padding:3px 9px;border-radius:7px;font-size:10.5px;font-weight:700;font-family:inherit;text-decoration:none;border:1px solid rgba(37,211,102,.4);background:rgba(37,211,102,.08);color:#1a8a45;display:inline-block'>💬 Recordar por WhatsApp</a>";
+    }
     return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--pw-border);flex-wrap:wrap'>"+
       "<span style='width:30px;height:30px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>"+ico+"</span>"+
       "<div style='min-width:150px;font-size:12.5px;font-weight:700;color:var(--pw-carbon)'>"+esc(fecha)+"</div>"+
       "<div style='flex:1;min-width:120px'><div style='font-size:13.5px;font-weight:600'>"+esc(r.nombre||"Alguien")+"</div>"+
+      "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div>"+saveBtn+waBtn+"</div>"+
       "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div></div>"+
       owner+
       canc+
@@ -5731,16 +5758,36 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
-  if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{days:[1,2,3,4,5],from:"09:00",to:"18:00"}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00")}; render(); return; }
+  if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00"), notice:(_d0.min_notice_h!=null?_d0.min_notice_h:2), buffer:(_d0.buffer_min!=null?_d0.buffer_min:0), bloq:((Object.prototype.toString.call(_d0.bloqueados)==="[object Array]")?_d0.bloqueados.slice():[])}; render(); return; }
   if(act==="ag-disp-day"){
-    if(state.ag){ var _cf=document.getElementById("ag-disp-from"), _ct=document.getElementById("ag-disp-to"); if(_cf) state.ag.from=_cf.value; if(_ct) state.ag.to=_ct.value;
-      var _dn=parseInt(el.getAttribute("data-d"),10); var _ds=(state.ag.days||[]).slice(); var _ix=_ds.indexOf(_dn); if(_ix>=0) _ds.splice(_ix,1); else _ds.push(_dn); state.ag.days=_ds; }
+    _agDispCapture();
+    if(state.ag){ var _dn=parseInt(el.getAttribute("data-d"),10); var _ds=(state.ag.days||[]).slice(); var _ix=_ds.indexOf(_dn); if(_ix>=0) _ds.splice(_ix,1); else _ds.push(_dn); state.ag.days=_ds; }
+    render(); return;
+  }
+  if(act==="ag-bloq-add"){
+    _agDispCapture();
+    var _bv=(""+_val("ag-disp-bloq")).trim();
+    if(state.ag && /^\d{4}-\d{2}-\d{2}$/.test(_bv)){ if(!state.ag.bloq) state.ag.bloq=[]; if(state.ag.bloq.indexOf(_bv)<0){ state.ag.bloq.push(_bv); state.ag.bloq.sort(); } }
+    else if(!/^\d{4}-\d{2}-\d{2}$/.test(_bv)){ toast("Elegí una fecha para bloquear."); return; }
+    render(); return;
+  }
+  if(act==="ag-bloq-del"){
+    _agDispCapture();
+    var _bd=el.getAttribute("data-d")||""; if(state.ag && state.ag.bloq){ var _bi=state.ag.bloq.indexOf(_bd); if(_bi>=0) state.ag.bloq.splice(_bi,1); }
     render(); return;
   }
   if(act==="ag-save-disp"){
-    var _sf=(""+_val("ag-disp-from"))||"09:00", _st=(""+_val("ag-disp-to"))||"18:00";
+    _agDispCapture();
     var _sd=(state.ag&&state.ag.days)?state.ag.days.slice():[1,2,3,4,5];
     if(!_sd.length){ toast("Elegí al menos un día."); return; }
+    var _sf=(state.ag&&state.ag.from)||"09:00", _st=(state.ag&&state.ag.to)||"18:00";
+    var _sn=Math.max(0,parseInt((state.ag&&state.ag.notice),10)||0);
+    var _sb=Math.max(0,parseInt((state.ag&&state.ag.buffer),10)||0);
+    var _sbloq=(state.ag&&state.ag.bloq)?state.ag.bloq.slice():[];
+    // Guardamos TU zona horaria: la disponibilidad se define en tu hora y la
+    // página de reserva la convierte a la hora local de cada visitante.
+    var _tz=""; try{ _tz=Intl.DateTimeFormat().resolvedOptions().timeZone||""; }catch(e){}
+    state.ag=null; saveCfg({disponibilidad:{days:_sd, from:_sf, to:_st, tz:_tz, min_notice_h:_sn, buffer_min:_sb, bloqueados:_sbloq}}); return;
     state.ag=null; saveCfg({disponibilidad:{days:_sd, from:_sf, to:_st}}); return;
   }
   if(act==="ag-evtype"){ state.ag={mode:"evtype", key:(el.getAttribute("data-key")||""), evTitle:(el.getAttribute("data-title")||"")}; render(); return; }
