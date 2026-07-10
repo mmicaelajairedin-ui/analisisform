@@ -62,6 +62,26 @@ const RULES = [
     },
   },
   {
+    name: "drag&drop universal: pw-dropzone incluido y subidas nuevas cableadas",
+    bug: "pw-dropzone.js convierte cada input[type=file] en dropzone sin tocar el " +
+         "guardado (soltar = feed al input + change). La foto del cliente (fcli-foto) " +
+         "persiste en candidatos.foto_perfil y el logo por archivo (cfb-logo-file) " +
+         "llena #cfb-logo. Si algo se desconecta, la subida por drop deja de andar.",
+    check() {
+      const dz = read("pw-dropzone.js");
+      if (!dz) return "falta pw-dropzone.js (helper de drag&drop universal).";
+      if (!/input\[type="file"\]/.test(dz)) return "pw-dropzone.js ya no registra los input[type=file].";
+      for (const f of ["panel-v2.html", "cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html", "cv.html"]) {
+        if (!/pw-dropzone\.js/.test(read(f))) return f + " ya no incluye pw-dropzone.js.";
+      }
+      const p = read("panel-v2.html");
+      if (!/fcli-foto/.test(p)) return "panel-v2.html perdio la subida de foto del cliente (fcli-foto).";
+      if (!/candidatos\?id=eq\.[\s\S]{0,160}foto_perfil/.test(p)) return "panel-v2.html: la foto del cliente ya no persiste en candidatos.foto_perfil.";
+      if (!/cfb-logo-file/.test(p)) return "panel-v2.html perdio la subida de logo por archivo (cfb-logo-file).";
+      return null;
+    },
+  },
+  {
     name: "esc() (anti-XSS) esta definida donde se usa",
     bug: "esc() escapa HTML para evitar inyeccion. Si un archivo la usa pero no la " +
          "define (ni la importa), hay un agujero de seguridad / pagina rota.",
