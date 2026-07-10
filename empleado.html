@@ -748,10 +748,28 @@
       await _agLoadGoogle();
     }catch(e){ renderAgBody(); }
   }
-  // ETAPA 1: lee el calendario del empleado por su iCal (edge function `calendar`,
-  // que fetchea configuracion.gcal_ical_url server-side por CORS y parsea eventos).
-  // Google OAuth directo queda para la Etapa 2 (app ya verificada).
+  // Usa LO QUE TENGAS: si ya conectó Google y el token sirve, su Google directo;
+  // si no, su enlace iCal (edge function `calendar`). Nunca queda sin agenda.
   async function _agLoadGoogle(){
+    if(GCAL&&GCAL.access_token){
+      if(GCAL.expiry && Date.now()>GCAL.expiry){ if(GCAL.refresh_token && !_agRefreshTried){ await _agRefreshEmp(); return; } }
+      else{
+        try{
+          var now=new Date();
+          var moStart=new Date(CAL_Y,CAL_M,1); var tmin=(moStart<now?moStart:new Date(now.getFullYear(),now.getMonth(),1));
+          var q="timeMin="+encodeURIComponent(tmin.toISOString())+"&timeMax="+encodeURIComponent(new Date(now.getTime()+60*86400000).toISOString())+"&singleEvents=true&orderBy=startTime&maxResults=100";
+          var gr=await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?"+q,{headers:{Authorization:"Bearer "+GCAL.access_token}});
+          if(gr.ok){
+            var gd=await gr.json(); _agRefreshTried=false;
+            var gitems=(gd&&Object.prototype.toString.call(gd.items)==="[object Array]")?gd.items:[];
+            GEVENTS=gitems.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null; return {id:e.id||"",title:e.summary||"Sesión",start:+new Date(s),join:e.hangoutLink||e.location||""}; }).filter(Boolean);
+            renderCal(); renderAgBody(); return;
+          }
+          if(gr.status===401 && GCAL.refresh_token && !_agRefreshTried){ await _agRefreshEmp(); return; }
+        }catch(e){}
+      }
+    }
+    // Fallback: iCal.
     var em=((WHO&&WHO.email)||'').trim().toLowerCase();
     if(!em){ renderCal(); renderAgBody(); return; }
     try{
