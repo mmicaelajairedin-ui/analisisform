@@ -7940,10 +7940,49 @@ function syncSolicitudes(){
     .then(function(j){ _solSyncing=false; if(j&&j.changed>0){ loadReal(); } })
     .catch(function(){ _solSyncing=false; });
 }
+// Gate de consentimiento del coach (primer ingreso al panel). Universal: atrapa
+// a TODO coach al iniciar sesión, sin importar cómo se registró (form, Google,
+// login directo). Guarda el consentimiento en usuarios.configuracion (sin cambio
+// de esquema). No aplica al admin (la dueña) ni al demo.
+var COACH_CONSENT_VERSION='2026-07-09';
+function _coachConsentGate(){
+  if(!RME || !RME.id || RME.rol==='admin') return;
+  var cfg=RME.configuracion; if(typeof cfg==='string'){ try{ cfg=JSON.parse(cfg); }catch(e){ cfg={}; } } if(!cfg||typeof cfg!=='object') cfg={};
+  if(cfg.consent_at) return; // ya aceptó
+  if(document.getElementById('coach-consent-ov')) return;
+  var ov=document.createElement('div'); ov.id='coach-consent-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(27,46,38,.6);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:Inter,system-ui,-apple-system,sans-serif';
+  ov.innerHTML=
+    "<div role='dialog' aria-modal='true' style='background:#fff;max-width:460px;width:100%;border-radius:18px;padding:30px 26px;box-shadow:0 20px 60px rgba(0,0,0,.28)'>"+
+      "<div style='font-size:34px;line-height:1;margin-bottom:12px'>🤝</div>"+
+      "<h2 style='font-family:Georgia,serif;font-size:22px;font-weight:600;color:#1B2E26;margin:0 0 8px'>Un paso rápido para empezar</h2>"+
+      "<p style='font-size:14px;color:#5A5A55;line-height:1.6;margin:0 0 18px'>Para usar Pathway con tus clientes necesitamos que aceptes los términos. Como vas a gestionar datos de tus clientes, esto incluye el Acuerdo de Tratamiento de Datos.</p>"+
+      "<label style='display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:20px'>"+
+        "<input type='checkbox' id='coach-cons-cb' style='width:18px;height:18px;margin-top:1px;accent-color:#2D6A4F;flex-shrink:0'>"+
+        "<span style='font-size:13.5px;color:#1a1a1a;line-height:1.55'>Acepto los <a href='/legales.html' target='_blank' rel='noopener' style='color:#2D6A4F;font-weight:600'>Términos</a>, la <a href='/privacidad.html' target='_blank' rel='noopener' style='color:#2D6A4F;font-weight:600'>Política de Privacidad</a> y el <a href='/dpa.html' target='_blank' rel='noopener' style='color:#2D6A4F;font-weight:600'>Acuerdo de Tratamiento de Datos</a>.</span>"+
+      "</label>"+
+      "<button id='coach-cons-go' disabled style='width:100%;height:46px;border:none;border-radius:11px;background:#2D6A4F;color:#fff;font-weight:600;font-size:15px;cursor:not-allowed;opacity:.4;font-family:inherit'>Acepto y continúo</button>"+
+      "<p style='font-size:11px;color:#9a9a95;text-align:center;margin:12px 0 0;line-height:1.5'>Los datos de tus clientes quedan aislados por coach y cifrados.</p>"+
+    "</div>";
+  document.body.appendChild(ov);
+  var cb=ov.querySelector('#coach-cons-cb'), btn=ov.querySelector('#coach-cons-go');
+  cb.addEventListener('change',function(){ btn.disabled=!cb.checked; btn.style.opacity=cb.checked?'1':'.4'; btn.style.cursor=cb.checked?'pointer':'not-allowed'; });
+  btn.addEventListener('click',function(){
+    if(!cb.checked) return;
+    btn.disabled=true; btn.style.opacity='.6'; btn.textContent='Guardando…';
+    var merged={}; for(var k in cfg){ if(cfg.hasOwnProperty(k)) merged[k]=cfg[k]; }
+    merged.consent_at=new Date().toISOString(); merged.consent_version=COACH_CONSENT_VERSION;
+    RME.configuracion=merged;
+    try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
+    function done(){ var o=document.getElementById('coach-consent-ov'); if(o)o.remove(); }
+    _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).then(done).catch(done);
+  });
+}
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
   if(!ME||!ME.id) return; // sin sesión → datos de ejemplo
   REAL=true; RME=ME; RADMIN=(ME.rol==="admin");
+  try{ _coachConsentGate(); }catch(e){}
   _gameRestoreOwn(); // recupera tu mejor puntaje del servidor (fix multi-dispositivo)
   // Con RLS prendido, un coach sin sesión activa (o sin auth_id ligado) no vería
   // sus clientes. En vez de un panel en blanco, lo mandamos a iniciar sesión de
