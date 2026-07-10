@@ -101,6 +101,7 @@
       <button class="ni" data-s="progreso" onclick="go('progreso')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 4-5"/></svg>Antropometría</button>
       <button class="ni" data-s="nutricion" onclick="go('nutricion')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 7c-1-2-3-3-5-3-2 4 0 11 3 14 1 1 3 1 4 0 3-3 5-10 3-14-2 0-4 1-5 3z"/><path d="M12 7c0-2 1.5-3.5 3.5-4"/></svg>Nutrición</button>
       <button class="ni" data-s="sesiones" onclick="go('sesiones')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M9 16l2 2 4-4"/></svg>Sesiones</button>
+      <button class="ni" data-s="comunidad" onclick="go('comunidad')" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>Comunidad</button>
     </nav>
     <div class="sb-foot">
       <div style="font-size:11px;font-weight:700;color:var(--text);">Martín Ríos</div>
@@ -397,9 +398,37 @@
         </div></div>
       </section>
 
+      <!-- ===== COMUNIDAD (revista de la empresa, read-only) ===== -->
+      <section class="sec" id="s-comunidad">
+        <p class="h-hero">Comunidad</p>
+        <p class="h-sub">Lo último de <span id="com-emp">tu gimnasio</span> — reaccioná a las publicaciones 👇</p>
+        <div id="com-avisos"></div>
+        <div id="com-revista"></div>
+        <div id="com-clases"></div>
+      </section>
+
     </div>
   </main>
 </div>
+<style>
+.com-aviso,.com-clase{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--border,#e6e1e4);font-size:13px;color:var(--text)}
+.com-aviso:first-of-type,.com-clase:first-of-type{border-top:none}
+.com-aviso>span,.com-clase>span{font-size:18px;flex-shrink:0}
+.com-clase small{display:block;color:var(--muted);font-size:11.5px;margin-top:1px}
+.rev-h{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.rev-a{width:32px;height:32px;border-radius:9px;background:var(--brand,#2D6A4F);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700;flex-shrink:0}
+.rev-h small{display:block;color:var(--muted);font-size:11px}
+.rev-msg{font-size:13.5px;color:var(--text);line-height:1.5;margin-bottom:10px}
+.rev-feat{position:relative;min-height:8px}
+.rev-img{position:relative;height:200px;border-radius:12px;overflow:hidden;background:linear-gradient(135deg,#3E8E63,#14352A);display:grid;place-items:center;margin-bottom:10px}
+.rev-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.rev-img>span{font-size:46px}
+.rev-react{display:flex;gap:8px}
+.rev-rb{background:#fff;border:1px solid var(--border,#e6e1e4);border-radius:99px;padding:6px 13px;font-size:16px;cursor:pointer;transition:transform .1s}
+.rev-rb:active{transform:scale(1.3)}
+.rev-float{position:absolute;bottom:50px;font-size:26px;pointer-events:none;z-index:5;animation:revup 1.5s ease-out forwards}
+@keyframes revup{0%{opacity:0;transform:translateY(0) scale(.6)}15%{opacity:1}100%{opacity:0;transform:translateY(-130px) scale(1.25)}}
+</style>
 
 <!-- Mobile -->
 <button class="hamburger" id="hb" onclick="toggleSb()">☰</button>
@@ -440,6 +469,42 @@ function go(s){
     if(typeof _renderNutriTrack==='function') _renderNutriTrack();
   }
   if(s==='progreso'){ if(typeof renderProgFotos==='function') renderProgFotos(); }
+  if(s==='comunidad'){ if(typeof renderComunidadCli==='function') renderComunidadCli(); }
+}
+// ── Comunidad de la empresa (read-only para el cliente): revista + avisos + clases ──
+function _jparseC(v){ try{ return JSON.parse(v||'null'); }catch(e){ return null; } }
+function _gateComunidad(){
+  var rev=_jparseC(CRAW&&CRAW.empresa_revista), avi=_jparseC(CRAW&&CRAW.empresa_avisos), cla=_jparseC(CRAW&&CRAW.empresa_clases);
+  var has=(Array.isArray(rev)&&rev.length)||(Array.isArray(avi)&&avi.length)||(Array.isArray(cla)&&cla.length);
+  document.querySelectorAll('[data-s="comunidad"]').forEach(function(b){ b.style.display=has?'':'none'; });
+  if(has) renderComunidadCli();
+}
+function renderComunidadCli(){
+  var rev=_jparseC(CRAW&&CRAW.empresa_revista); if(!Array.isArray(rev)) rev=[];
+  var avi=_jparseC(CRAW&&CRAW.empresa_avisos); if(!Array.isArray(avi)) avi=[];
+  var cla=_jparseC(CRAW&&CRAW.empresa_clases); if(!Array.isArray(cla)) cla=[];
+  if(CRAW&&CRAW.empresa_nombre){ var en=document.getElementById('com-emp'); if(en) en.textContent=CRAW.empresa_nombre; }
+  var avc=avi.filter(function(a){ return !a.para || a.para==='clientes'; });
+  var av=document.getElementById('com-avisos');
+  if(av) av.innerHTML = avc.length ? '<div class="card"><div class="card-body"><div class="eyebrow">Avisos</div>'+avc.map(function(a){ return '<div class="com-aviso"><span>📣</span><div>'+esc(a.txt||''+a)+'</div></div>'; }).join('')+'</div></div>' : '';
+  var rv=document.getElementById('com-revista');
+  if(rv) rv.innerHTML = rev.length ? rev.map(function(p,i){
+    var ini=esc((''+(p.autor||'GB')).slice(0,2).toUpperCase());
+    var img=p.foto?'<div class="rev-img"><img src="'+esc(p.foto)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"><span>'+esc(p.emo||'📸')+'</span></div>':'';
+    return '<div class="card"><div class="card-body"><div class="rev-h"><div class="rev-a">'+ini+'</div><div><b>'+esc(p.autor||'Tu gimnasio')+'</b><small>'+esc(p.time||'')+'</small></div></div>'+
+      '<div class="rev-msg">'+esc(p.txt||'')+'</div>'+
+      '<div class="rev-feat" id="revf-'+i+'">'+img+'</div>'+
+      '<div class="rev-react">'+['❤️','🔥','💪','👏'].map(function(e){ return '<button class="rev-rb" onclick="revReact('+i+',\''+e+'\')">'+e+'</button>'; }).join('')+'</div></div></div>';
+  }).join('') : '<div class="card"><div class="card-body"><p style="color:var(--muted);font-size:13px;margin:0">Todavía no hay publicaciones.</p></div></div>';
+  var cl=document.getElementById('com-clases');
+  if(cl) cl.innerHTML = cla.length ? '<div class="card"><div class="card-body"><div class="eyebrow">Próximas clases</div>'+cla.map(function(c){ return '<div class="com-clase"><span>🏋️</span><div><b>'+esc(c.nombre||'')+(c.hora?' · '+esc(c.hora):'')+'</b><small>'+esc(c.dia||'')+(c.coach?' · con '+esc(c.coach):'')+'</small></div></div>'; }).join('')+'</div></div>' : '';
+}
+function revReact(i,emo){
+  var f=document.getElementById('revf-'+i); if(!f) return;
+  var s=document.createElement('span'); s.className='rev-float'; s.textContent=emo;
+  s.style.left=(20+Math.random()*55)+'%'; f.appendChild(s);
+  setTimeout(function(){ s.remove(); },1500);
+  if(typeof showToast==='function') showToast(emo+' ¡Gracias por reaccionar!');
 }
 function toggleSb(){ document.getElementById('sb').classList.toggle('open'); document.getElementById('ov').classList.toggle('open'); }
 function toggleEx(el){
@@ -1504,6 +1569,19 @@ function _demoCrawFit(){
       {fecha:_dk(4),trabajado:'Medición mensual + ajuste de plan',acordado:'Mantener proteína en ~1.8 g/kg. Próxima medición en 4 semanas.'}
     ]),
     fit_tareas:JSON.stringify(['Entrenar 4 veces','Llegar a 8.000 pasos diarios','Cargar el peso del domingo']),
+    empresa_nombre:'Gym Boutique',
+    empresa_revista:JSON.stringify([
+      {autor:'Gym Boutique',time:'hace 2 horas',txt:'¡Qué increíble fue el evento del sábado! 💪 Gracias a todos por participar.',emo:'🤸',foto:'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=600&q=65'},
+      {autor:'Gym Boutique',time:'hace 1 día',txt:'Nueva clase de movilidad los martes 19h con Andrea 🧘 ¡Anotate!',emo:'🧘',foto:'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=600&q=65'}
+    ]),
+    empresa_avisos:JSON.stringify([
+      {para:'clientes',txt:'Recordá traer toalla y botella. El lunes cerramos a las 14h.'},
+      {para:'clientes',txt:'Medición corporal gratis este mes — pedila a tu coach.'}
+    ]),
+    empresa_clases:JSON.stringify([
+      {nombre:'Funcional',hora:'18:00',dia:'Lun · Mié · Vie',coach:'Sofía'},
+      {nombre:'Movilidad & Yoga',hora:'19:00',dia:'Mar · Jue',coach:'Andrea'}
+    ]),
     fit_antro:JSON.stringify([
       {fecha:'2026-01-10',peso:'82',grasa:'24',musculo:'44.5',oseo:'10',residual:'3.5',pliegues:'110',imo:'4.45'},
       {fecha:'2026-02-12',peso:'80',grasa:'21',musculo:'45.6',oseo:'10',residual:'3.4',pliegues:'96',imo:'4.56'},
@@ -1591,6 +1669,7 @@ async function pwInit(){
     }catch(e){ if(_esDemoFit()){ CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); _demoBrandFit(); } else { _clienteSinFicha(); } }
   } else { CRAW=_demoCrawFit(); CID=null; applyClient(CRAW); applyProceso(); applyLogros(null); _demoBrandFit(); }
   renderTareas();
+  _gateComunidad();
   WEEK.forEach(colorDay);
   var td=document.querySelector('.hd[data-date="'+pwHoy()+'"]'); if(td) selectDay(td);
 }

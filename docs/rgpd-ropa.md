@@ -103,7 +103,7 @@ clientes existentes vuelvan a consentir con esta casilla. ✅
 - **Finalidad:** agendar sesiones coach-cliente.
 - **Datos:** nombre, email, evento/horario.
 - **Base jurídica:** ejecución del servicio + consentimiento.
-- **Encargados:** **Calendly** y **Google Calendar** (si el coach conecta su calendario).
+- **Encargados:** **Google Calendar** (agenda nativa; el coach conecta su calendario). Calendly ya no se usa.
 - **Conservación:** mientras dure la relación.
 
 ### A8 · Autenticación (login con Google)
@@ -130,10 +130,11 @@ clientes existentes vuelvan a consentir con esta casilla. ✅
 ---
 
 ## 4. Transferencias internacionales
-Varios encargados están en **EE.UU.** (Anthropic, Stripe, Cloudflare, Google,
-Uploadcare; Supabase según la región elegida). Requieren mecanismo válido:
-**EU-US Data Privacy Framework (DPF)** o **Cláusulas Contractuales Tipo (SCC)**.
-Detalle por proveedor en `docs/rgpd-encargados-dpa.md`.
+La **base de datos principal (Supabase) está en la UE** — Frankfurt
+(eu-central-1), sin transferencia internacional. Otros encargados están en
+**EE.UU.** (Anthropic, Stripe, Cloudflare, Google, Uploadcare) y requieren
+mecanismo válido: **EU-US Data Privacy Framework (DPF)** o **Cláusulas
+Contractuales Tipo (SCC)**. Detalle por proveedor en `docs/rgpd-encargados-dpa.md`.
 
 ## 5. Medidas de seguridad (art. 32)
 - **RLS estricto** activo en las tablas con datos personales (aislamiento por coach — verificado).
