@@ -213,18 +213,24 @@ function _ymdInTz(dateObj,tz){
 }
 // Todos los instantes disponibles (UTC ms) de los próximos 28 días, según la
 // disponibilidad del coach interpretada en SU zona. Solo futuros.
+function _pad2(n){ return ('0'+n).slice(-2); }
 function _coachInstants(){
   var disp=DISP||normDisp(null); var tz=_coachTz();
   var days=(disp.days&&disp.days.length)?disp.days.map(Number):[1,2,3,4,5];
   var f=_hm(disp.from||'09:00'), t=_hm(disp.to||'18:00'); if(t<=f) t+=1440;
   var step=Math.max(DUR,15), now=Date.now(), base=new Date(), out=[];
+  // Aviso mínimo: no ofrecer huecos que empiecen antes de now + X horas.
+  var notice=Math.max(60000, ((disp.min_notice_h||0)*3600000));
+  var bloq=(Object.prototype.toString.call(disp.bloqueados)==='[object Array]')?disp.bloqueados:[];
   for(var i=0;i<28;i++){
     var ymd=_ymdInTz(new Date(base.getTime()+i*86400000), tz);
     if(days.indexOf(ymd.wd)<0) continue;
+    // Día bloqueado (vacaciones/feriado) — en la fecha del coach.
+    if(bloq.indexOf(ymd.y+'-'+_pad2(ymd.mo)+'-'+_pad2(ymd.d))>=0) continue;
     for(var mnt=f; mnt+DUR<=t; mnt+=step){
       var mm=mnt%1440, add=Math.floor(mnt/1440);
       var ms=_wallToUtc(ymd.y, ymd.mo, ymd.d+add, Math.floor(mm/60), mm%60, tz);
-      if(ms>now+60000) out.push(ms);
+      if(ms>now+notice) out.push(ms);
     }
   }
   out.sort(function(a,b){ return a-b; });
@@ -255,13 +261,24 @@ function loadBusy(){ BUSY=[]; var em=(''+(EMAIL||'')).trim().toLowerCase(); if(!
       renderPicker();
     }).catch(function(){});
 }
-// ¿El hueco [ms, ms+DUR) pisa algún evento real del calendario del coach?
-function _slotBusy(ms){ var a=ms, b=ms+DUR*60000; for(var i=0;i<BUSY.length;i++){ if(a<BUSY[i].e && b>BUSY[i].s) return true; } return false; }
+// ¿El hueco [ms, ms+DUR) pisa (o queda a menos del margen de) un evento del
+// calendario del coach O una reserva de Pathway? El margen (buffer) es el
+// descanso que el coach pide entre sesiones.
+function _slotBusy(ms){
+  var buf=((DISP&&DISP.buffer_min)||0)*60000;
+  var a=ms, b=ms+DUR*60000, dm=DUR*60000;
+  for(var i=0;i<BUSY.length;i++){ if(a < BUSY[i].e+buf && b > BUSY[i].s-buf) return true; }
+  for(var k in TAKEN){ if(!TAKEN.hasOwnProperty(k)) continue; var t=+k; if(isNaN(t)) continue; if(a < t+dm+buf && b > t-buf) return true; }
+  return false;
+}
 function normDisp(d){
   var def={days:[1,2,3,4,5],from:'09:00',to:'18:00'};
   if(!d || typeof d!=='object') return def;
   var days=(Object.prototype.toString.call(d.days)==='[object Array]'&&d.days.length)?d.days.map(Number):def.days;
-  return { days:days, from:(/^\d{1,2}:\d{2}$/.test(d.from||'')?d.from:def.from), to:(/^\d{1,2}:\d{2}$/.test(d.to||'')?d.to:def.to), tz:(typeof d.tz==='string'&&d.tz)?d.tz:'' };
+  return { days:days, from:(/^\d{1,2}:\d{2}$/.test(d.from||'')?d.from:def.from), to:(/^\d{1,2}:\d{2}$/.test(d.to||'')?d.to:def.to), tz:(typeof d.tz==='string'&&d.tz)?d.tz:'',
+    min_notice_h:(isFinite(+d.min_notice_h)?Math.max(0,+d.min_notice_h):0),
+    buffer_min:(isFinite(+d.buffer_min)?Math.max(0,+d.buffer_min):0),
+    bloqueados:(Object.prototype.toString.call(d.bloqueados)==='[object Array]')?d.bloqueados.slice():[] };
 }
 function memPhoto(u){ var c=u.configuracion||{}; return u.foto_url||c.foto_url||c.foto_perfil||''; }
 function roleLabel(u){ var c=u.configuracion||{}; if(c.titulo_profesional) return c.titulo_profesional; return (u.rol==='admin')?'Responsable de Pathway':(u.rol==='empleado')?'Responsable comercial':'Equipo Pathway'; }
