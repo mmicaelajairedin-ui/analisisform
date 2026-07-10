@@ -69,6 +69,31 @@ puede hacer en el próximo paso.)*
 
 ---
 
+## Cómo aceptar/firmar cada uno (paso a paso)
+
+> Regla general: la mayoría de estos DPA están **incorporados automáticamente**
+> en los términos que aceptaste al crear la cuenta. En esos casos "firmar" =
+> **descargar una copia y guardarla** en tu carpeta "DPA". Solo unos pocos piden
+> aceptar algo en el panel.
+
+**Auto-incorporados (no hay que firmar; solo guardar copia):**
+- **Stripe** → el DPA es parte del *Stripe Services Agreement* que ya aceptaste. Descargá `stripe.com/legal/dpa`.
+- **Cloudflare** → el *Customer DPA* aplica a todos los clientes automáticamente. Copia en `cloudflare.com/cloudflare-customer-dpa/`.
+- **Brevo** → empresa de la UE (Francia); DPA en sus condiciones. Copia en `brevo.com/gdpr/`. (El más tranquilo.)
+- **Mercado Pago** → se rige por los términos/privacidad que aceptaste al abrir la cuenta. Guardá el enlace de su política de privacidad.
+- **Supabase** → el DPA está incorporado en sus *Terms*. Guardá copia de `supabase.com/legal/dpa`. **Lo importante acá NO es firmar sino confirmar la REGIÓN (UE)**.
+
+**Piden un paso en el panel / solicitud:**
+- **Anthropic** → entrá a `console.anthropic.com` → *Settings / Legal* (o su trust center). Aceptá/solicitá el DPA y confirmá el modo **"no training"** (la API comercial no reentrena por defecto).
+- **Uploadcare** → cuenta → sección legal/trust (`uploadcare.com/about/trust/`). Si no está auto-incluido, **solicitá el DPA** por ahí.
+- **Calendly** → tienen DPA self-serve: `calendly.com/legal/data-processing-addendum`. Suele pedir **completar un formulario** con tus datos y lo aceptás.
+- **Google** → para OAuth/Calendar, aplica el *Cloud Data Processing Addendum*. Si usás Google Cloud console, se acepta ahí. Guardá copia de `cloud.google.com/terms/data-processing-addendum`.
+
+**Al terminar:** guardá todas las copias en una carpeta **"DPA"** (Drive/Notion)
+con la fecha. Eso cubre el requisito de "tener el DPA con cada encargado".
+
+---
+
 ## Checklist de cierre
 - [ ] Aceptar/registrar el DPA de cada encargado (tabla) con fecha.
 - [ ] Confirmar **región UE** en Supabase (o documentar la transferencia).
