@@ -2393,11 +2393,11 @@ var _agRefreshTried=false, _agRefreshErr="";
 function _agRefresh(){
   var g=(REAL&&RCFG&&RCFG.gcal)?RCFG.gcal:null;
   var b0=document.getElementById("cp-agenda-body");
-  if(!g || !g.refresh_token){ if(b0) b0.innerHTML=_agConnect(); return; }
+  if(!g || !g.refresh_token){ _agLoadIcal(); return; }
   _agRefreshTried=true;
   if(b0) b0.innerHTML="<div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Renovando la conexión con Google…</div>";
   var done=false;
-  var to=setTimeout(function(){ if(done)return; done=true; var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agConnect(); }, 12000);
+  var to=setTimeout(function(){ if(done)return; done=true; _agLoadIcal(); }, 12000);
   fetch(SB+"/functions/v1/gcal-refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refresh_token:g.refresh_token})})
     .then(function(r){ return r.text().then(function(t){ return {ok:r.ok,status:r.status,t:t}; }); })
     .then(function(res){
@@ -2406,23 +2406,54 @@ function _agRefresh(){
       var d=null; try{ d=JSON.parse(res.t); }catch(e){}
       if(!res.ok || !d || !d.access_token){
         _agRefreshErr="renovar "+res.status+": "+((d&&(d.detail||d.error))||(""+(res.t||"")).slice(0,70)||"sin respuesta");
-        if(b) b.innerHTML=_agConnect(); return;
+        _agLoadIcal(); return;
       }
       _agRefreshErr="";
       var ng={}; for(var k in g){ if(g.hasOwnProperty(k)) ng[k]=g[k]; } ng.access_token=d.access_token; ng.expiry=d.expiry||(Date.now()+3600000);
       var merged={}; for(var j in RCFG){ if(RCFG.hasOwnProperty(j)) merged[j]=RCFG[j]; } merged.gcal=ng; RCFG=merged;
       try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
       if(RME&&RME.id) _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).catch(function(){});
-      _agendaLoad();
+      _agLoadGoogleDirect(ng);
     })
-    .catch(function(e){ if(done)return; done=true; clearTimeout(to); _agRefreshErr="renovar: no se pudo llamar a la función ("+((e&&e.message)||"red")+")"; var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agConnect(); });
+    .catch(function(e){ if(done)return; done=true; clearTimeout(to); _agRefreshErr="renovar: no se pudo llamar a la función ("+((e&&e.message)||"red")+")"; _agLoadIcal(); });
 }
 function _agendaLoad(){
   var body=document.getElementById("cp-agenda-body"); if(!body) return;
-  // ETAPA 1: leemos el calendario del coach por su enlace iCal (edge function
-  // `calendar`, que fetchea configuracion.gcal_ical_url server-side por CORS y
-  // parsea los eventos). El coach solo pega su iCal en Configuración — sin OAuth.
-  // (La conexión directa con Google OAuth queda para la Etapa 2, ya verificada.)
+  // Usamos LO QUE TENGAS, en orden:
+  // 1) Si ya conectaste Google y el token sigue vivo → tu Google directo (no
+  //    rompemos una conexión que ya andaba).
+  // 2) Token vencido con refresh → lo renovamos solo.
+  // 3) Si no hay Google → tu enlace iCal (edge function `calendar`).
+  var g=(REAL&&RCFG&&RCFG.gcal)?RCFG.gcal:null;
+  if(g && g.access_token){
+    if(!g.expiry || Date.now()<g.expiry){ _agLoadGoogleDirect(g); return; }
+    if(g.refresh_token && !_agRefreshTried){ _agRefresh(); return; }
+  }
+  _agLoadIcal();
+}
+// Lee el Google Calendar del coach con su token OAuth. Si el token murió y no se
+// puede renovar, cae al iCal (así nunca te quedás sin agenda).
+function _agLoadGoogleDirect(g){
+  var body=document.getElementById("cp-agenda-body"); if(!body) return;
+  var now=new Date();
+  var _moStart=new Date((_AG_MO?_AG_MO.y:now.getFullYear()),(_AG_MO?_AG_MO.m:now.getMonth()),1);
+  var _tmin=(_moStart<now?_moStart:new Date(now.getFullYear(),now.getMonth(),1));
+  var q="timeMin="+encodeURIComponent(_tmin.toISOString())+"&timeMax="+encodeURIComponent(new Date(now.getTime()+60*86400000).toISOString())+"&singleEvents=true&orderBy=startTime&maxResults=100";
+  fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?"+q,{headers:{Authorization:"Bearer "+g.access_token}})
+    .then(function(r){ if(r.ok) return r.json(); return {_err:true,status:r.status}; })
+    .then(function(d){
+      var b=document.getElementById("cp-agenda-body"); if(!b) return;
+      if(d && d._err){ if(d.status===401 && g.refresh_token && !_agRefreshTried){ _agRefresh(); return; } _agLoadIcal(); return; }
+      _agRefreshTried=false;
+      var items=(d&&Object.prototype.toString.call(d.items)==="[object Array]")?d.items:[];
+      var evs=items.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null; return {id:e.id||"",title:e.summary||"Sesión",start:+new Date(s),location:e.hangoutLink||e.location||null}; }).filter(function(x){return !!x;});
+      _AG_DATA={events:evs}; b.innerHTML=_agRender({events:evs}); _agMonthRender();
+    })
+    .catch(function(){ _agLoadIcal(); });
+}
+// Lee el calendario por el enlace iCal (edge function `calendar`, server-side por CORS).
+function _agLoadIcal(){
+  var body=document.getElementById("cp-agenda-body"); if(!body) return;
   var em=_agCoachEmail();
   if(!em){ body.innerHTML=_agConnect(); return; }
   fetch(SB+"/functions/v1/calendar?email="+encodeURIComponent(em),{headers:{apikey:KEY,Authorization:"Bearer "+KEY}})
