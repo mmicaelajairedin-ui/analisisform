@@ -869,6 +869,31 @@ const RULES = [
     },
   },
   {
+    name: "diseño: white-label llega al token canónico --accent en toda la app",
+    bug: "Cada pantalla tenía su motor de marca con su token propio (--brand / " +
+         "--rose / --pw-bosque) → algo NUEVO no podía reusar el white-label. Ahora " +
+         "los motores además setean el token canónico --accent, y hay una base " +
+         "(pathway-base.css + pw-brand.js) para lo nuevo. Si un motor deja de setear " +
+         "--accent, lo nuevo (que usa var(--accent)) deja de seguir el color del coach.",
+    check() {
+      const need = [
+        ["pathway-fit-cliente.html", /setProperty\('--accent'/],
+        ["pathway-fin-cliente.html", /setProperty\('--accent'/],
+        ["cliente.html", /setProperty\('--accent'/],
+        ["panel-v2.html", /setProperty\("--accent"/],
+      ];
+      for (const [f, re] of need) {
+        const s = read(f); if (!s) continue;
+        if (!re.test(s)) return f + ": el motor de marca ya no setea el token canónico --accent (se rompe el white-label unificado).";
+      }
+      // La base canónica y el motor único deben existir.
+      const base = read("pathway-base.css");
+      if (base && !/--accent:/.test(base)) return "pathway-base.css: perdió el token --accent (base de diseño).";
+      if (!read("pw-brand.js")) return "falta pw-brand.js (motor único de white-label para lo nuevo).";
+      return null;
+    },
+  },
+  {
     name: "carrera: la foto se persiste vía edge function (resiste RLS)",
     bug: "cliente.html guardaba la foto con un PATCH anónimo por email. Con RLS " +
          "estricto ese PATCH haría no-op silencioso → la foto se perdería en el " +
