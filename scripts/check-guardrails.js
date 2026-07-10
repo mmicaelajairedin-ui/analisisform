@@ -869,6 +869,18 @@ const RULES = [
     },
   },
   {
+    name: "fitness: el coach VE el diario de nutrición del cliente (fit_nutri_log)",
+    bug: "El cliente anotaba lo que comió (fit_nutri_log) pero el panel del coach " +
+         "nunca lo leía → era un pozo negro. La pestaña Nutrición debe mostrar el " +
+         "diario del cliente (solo lectura).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      return /fit_nutri_log/.test(s) ? null
+        : "panel-v2.html: el coach ya no ve el diario de nutrición del cliente (fit_nutri_log).";
+    },
+  },
+  {
     name: "fitness: marcar ejercicios de la rutina SE GUARDA (y el coach lo ve)",
     bug: "toggleEx solo tachaba en pantalla → al recargar se perdía TODO lo " +
          "marcado y el coach nunca veía qué entrenó el cliente. Debe persistir por " +
