@@ -8168,7 +8168,16 @@ function loadReal(){
         ? (_cpts>=600?"oro":(_cpts>=400?"plata":(_cpts>=200?"bronce":null)))
         : (wk>=4?"oro":(wk>=3?"plata":(wk>=2?"bronce":null)));
       var lastTxt="—", lastSt="mid";
-      try{ var sr=JSON.parse(c.sesiones_registro||"[]"); if(sr.length&&sr[sr.length-1].fecha){ var d=Math.floor((Date.now()-new Date(sr[sr.length-1].fecha))/86400000); lastTxt=d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"); lastSt=d<=2?"fresh":(d<=7?"mid":"stale"); } }catch(e){}
+      try{
+        // "Última actividad" = lo más reciente entre el LOGIN real del cliente
+        // (cliente_last_seen, que el portal escribe al entrar) y la última sesión
+        // cargada por el coach. Antes solo miraba las sesiones → un cliente que
+        // entró y trabajó pero sin sesión registrada salía "—" (parecía inactivo).
+        var _t=[];
+        if(c.cliente_last_seen){ var _tl=new Date(c.cliente_last_seen).getTime(); if(!isNaN(_tl)) _t.push(_tl); }
+        var sr=JSON.parse(c.sesiones_registro||"[]"); if(sr.length&&sr[sr.length-1].fecha){ var _ts=new Date(sr[sr.length-1].fecha).getTime(); if(!isNaN(_ts)) _t.push(_ts); }
+        if(_t.length){ var d=Math.floor((Date.now()-Math.max.apply(null,_t))/86400000); lastTxt=d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"); lastSt=d<=2?"fresh":(d<=7?"mid":"stale"); }
+      }catch(e){}
       return {
         id: String(c.id||em||("c"+i)), name: c.nombre||c.email||"Cliente", role: c.cargo||"",
         email: c.email||"", week: wk, medal: medal, last:{txt:lastTxt,state:lastSt},
