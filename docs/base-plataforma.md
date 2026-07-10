@@ -134,3 +134,36 @@ Lo que SÍ puede diferir (contenido): la UI, las columnas de datos y las pregunt
 
 Corre junto a los otros guardianes:
 `node scripts/check-syntax.js && node scripts/check-smoke.js && node scripts/check-guardrails.js && node scripts/check-parity.js`
+
+## Diseño unificado + white-label (la 4ta garantía)
+
+Objetivo: que lo NUEVO nazca con la misma tipografía, espacios y colores, y que
+se pinte con el color de cada coach (+ sus variantes) sin reimplementar nada.
+
+**El token que manda: `--accent`.** Es el color del coach. Toda pieza nueva debe
+usar `var(--accent)` (y sus variantes `--accent-dark/-mid/-light/-soft`), nunca
+un hex suelto. Así el white-label la sigue sola.
+
+**Cómo estaba (fragmentado):** cada pantalla tenía su propio motor de marca con
+su propio token — `cliente.html`→`--brand`, fit/fin→`--rose`, panel→`--pw-bosque`.
+Reusar el white-label en algo nuevo era imposible.
+
+**Cómo quedó (unificado):**
+- **`pathway-base.css`** = base canónica de tokens (colores, `--accent` + variantes,
+  tipografía `--pw-serif/--pw-sans`, escala de espaciado `--sp-*`). Es para pantallas
+  NUEVAS (ej. el producto de empresas). *No se enlaza sobre portal.css/panel porque
+  sus clases de componente (`.app`, `.card`) chocarían.*
+- **`pw-brand.js`** = motor ÚNICO de white-label. `PWBrand.apply(colorDelCoach)`
+  aplica el color + variantes a `--accent*` (y a los históricos `--brand*`/`--rose*`).
+  Lo nuevo incluye este script y llama `PWBrand.apply(...)`.
+- **Los 4 motores viejos** (`_pwBrandVars`, `_applyCoachColor`, `_applyPanelBrand`)
+  ahora ADEMÁS setean `--accent`, así `var(--accent)` sigue al coach en TODA la app.
+  Guardrail: si un motor deja de setear `--accent`, el test falla.
+
+**Al construir algo nuevo:** incluí `pathway-base.css` + `pw-brand.js`, usá los
+tokens (`var(--accent)`, `--pw-serif`, `--sp-4`…) y llamá `PWBrand.apply(color)`.
+Queda unificado y white-label sin diseño desde cero.
+
+> Pendiente (convergencia gradual, sin apuro): unificar los 3 juegos de nombres de
+> token (`--brand`/`--rose`/`--pw-bosque`) en `--accent` a medida que se toque cada
+> pantalla. Hoy conviven vía alias; no se fuerza para no romper looks.
