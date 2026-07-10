@@ -1,0 +1,192 @@
+// Supabase Edge Function — recordatorios-citas
+//
+// Manda por EMAIL los recordatorios de las próximas sesiones reservadas por el
+// link (tabla `citas`). Lo dispara un cron (GitHub Actions) cada ~15 min.
+//
+// - 24 h antes: recordatorio "es mañana".
+// - 1 h antes:  recordatorio "es en un rato".
+// Idempotente: marca rem_24h_at / rem_1h_at para no repetir aunque el cron corra
+// muchas veces o se atrase. La hora se muestra en la zona de QUIEN reservó
+// (cliente_tz), cayendo a la del coach o Europe/Madrid.
+//
+// Desplegar:  supabase functions deploy recordatorios-citas --no-verify-jwt
+// Secrets (Supabase → Edge Functions → Secrets): ya existen para otros agentes
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AGENT_TRIGGER_SECRET, BREVO_API_KEY
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "content-type, authorization, x-trigger-secret",
+};
+
+const DEFAULT_TZ = "Europe/Madrid";
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+
+  const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+  const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const TRIGGER = Deno.env.get("AGENT_TRIGGER_SECRET") || "";
+  if (!SB_URL || !SB_KEY) return json({ error: "supabase_env_missing" }, 500);
+
+  // Auth: solo el cron con el secreto puede disparar.
+  const got = req.headers.get("x-trigger-secret") || "";
+  if (!TRIGGER || got !== TRIGGER) return json({ error: "unauthorized" }, 401);
+
+  const now = Date.now();
+  const inWin = new Date(now + 25 * 3600_000).toISOString(); // próximas 25 h
+
+  // Citas próximas (las 25 h que vienen). Filtramos por estado en el código
+  // (abajo) para incluir también las que aún no tienen estado seteado.
+  const q = `${SB_URL}/rest/v1/citas` +
+    `?select=id,nombre,email,tipo,inicio,estado,coach_id,cliente_tz,rem_24h_at,rem_1h_at` +
+    `&inicio=gte.${new Date(now).toISOString()}` +
+    `&inicio=lte.${inWin}` +
+    `&order=inicio.asc&limit=200`;
+  let citas: Cita[] = [];
+  try {
+    const r = await fetch(q, { headers: sbH(SB_KEY) });
+    if (!r.ok) return json({ error: "citas_query_failed", status: r.status }, 502);
+    citas = await r.json();
+  } catch (_e) { return json({ error: "citas_unreachable" }, 502); }
+
+  if (!citas.length) return json({ ok: true, enviados: 0, revisadas: 0 });
+
+  // Nombre + zona de los coaches involucrados (para personalizar y formatear hora).
+  const coachIds = [...new Set(citas.map((c) => c.coach_id).filter(Boolean))];
+  const coaches = await loadCoaches(SB_URL, SB_KEY, coachIds as string[]);
+
+  // Estados "terminales" que NO reciben recordatorio (ya pasó o se cerró).
+  const TERMINAL = ["cancelada", "asistio", "no_asistio", "gano", "perdio", "reprogramada"];
+
+  let enviados = 0;
+  for (const c of citas) {
+    if (TERMINAL.indexOf(c.estado || "") >= 0) continue;
+    if (!c.email || (c.email + "").indexOf("@") < 0) continue;
+    const startMs = new Date(c.inicio).getTime();
+    if (isNaN(startMs)) continue;
+    const hUntil = (startMs - now) / 3600_000;
+    const coach = coaches[c.coach_id || ""] || {};
+    const tz = c.cliente_tz || coach.tz || DEFAULT_TZ;
+
+    let kind: "1h" | "24h" | null = null;
+    // 1 h primero: si aplica, apaga también el de 24 h (no mandamos dos juntos).
+    if (!c.rem_1h_at && hUntil <= 1.5 && hUntil > -0.25) kind = "1h";
+    else if (!c.rem_24h_at && hUntil <= 24 && hUntil > 1.5) kind = "24h";
+    if (!kind) continue;
+
+    const ok = await sendReminder(SB_URL, SB_KEY, c, coach, tz, kind);
+    if (!ok) continue;
+
+    const patch: Record<string, string> = {};
+    patch.rem_1h_at = kind === "1h" ? new Date(now).toISOString() : (c.rem_1h_at || "");
+    if (kind === "1h") patch.rem_24h_at = c.rem_24h_at || new Date(now).toISOString();
+    if (kind === "24h") patch.rem_24h_at = new Date(now).toISOString();
+    // Limpiar claves vacías (no pisar con "").
+    for (const k of Object.keys(patch)) if (!patch[k]) delete patch[k];
+    try {
+      await fetch(`${SB_URL}/rest/v1/citas?id=eq.${encodeURIComponent(c.id)}`, {
+        method: "PATCH",
+        headers: { ...sbH(SB_KEY), "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify(patch),
+      });
+    } catch (_e) { /* si falla el marcado, el próximo cron podría reintentar */ }
+    enviados++;
+  }
+
+  return json({ ok: true, enviados, revisadas: citas.length });
+});
+
+interface Cita {
+  id: string; nombre?: string; email?: string; tipo?: string; inicio: string;
+  estado?: string; coach_id?: string; cliente_tz?: string;
+  rem_24h_at?: string | null; rem_1h_at?: string | null;
+}
+interface Coach { nombre?: string; email?: string; tz?: string; }
+
+function sbH(key: string) { return { apikey: key, Authorization: `Bearer ${key}` }; }
+
+async function loadCoaches(url: string, key: string, ids: string[]): Promise<Record<string, Coach>> {
+  const out: Record<string, Coach> = {};
+  if (!ids.length) return out;
+  try {
+    const list = ids.map((i) => `"${i}"`).join(",");
+    const r = await fetch(
+      `${url}/rest/v1/usuarios?id=in.(${list})&select=id,nombre,email,configuracion`,
+      { headers: sbH(key) },
+    );
+    if (!r.ok) return out;
+    const rows = await r.json();
+    for (const u of rows) {
+      const cfg = u.configuracion || {};
+      const tz = (cfg.disponibilidad && cfg.disponibilidad.tz) || "";
+      out[u.id] = { nombre: u.nombre, email: u.email, tz };
+    }
+  } catch (_e) { /* best-effort */ }
+  return out;
+}
+
+async function sendReminder(
+  url: string, key: string, c: Cita, coach: Coach, tz: string, kind: "1h" | "24h",
+): Promise<boolean> {
+  const first = (c.nombre || "").split(" ")[0] || "";
+  const coachName = coach.nombre || "tu coach";
+  const cuando = fmtFecha(c.inicio, tz);
+  const hora = fmtHora(c.inicio, tz);
+  const tipo = c.tipo || "sesión";
+  const subject = kind === "1h"
+    ? `⏰ Tu ${tipo} con ${coachName} es en un rato (${hora})`
+    : `📅 Recordatorio: tu ${tipo} con ${coachName} es mañana (${cuando})`;
+  const intro = kind === "1h"
+    ? `Tu <strong>${esc(tipo)}</strong> con ${esc(coachName)} es <strong>hoy a las ${esc(hora)}</strong>. ¡Te esperamos!`
+    : `Te recordamos tu <strong>${esc(tipo)}</strong> con ${esc(coachName)}: <strong>${esc(cuando)} a las ${esc(hora)}</strong>.`;
+
+  const html =
+    `<div style="font-family:Inter,-apple-system,'Segoe UI',sans-serif;max-width:480px;margin:0 auto">` +
+    `<p style="font-size:15px;color:#1B2E26">Hola ${esc(first)},</p>` +
+    `<p style="font-size:14px;line-height:1.6;color:#42504A">${intro}</p>` +
+    `<div style="background:#F0F5EF;border-radius:12px;padding:14px 16px;margin:14px 0;font-size:14px;color:#1B2E26">` +
+    `<div>📅 <strong>${esc(cuando)}</strong></div>` +
+    `<div style="margin-top:4px">⏰ <strong>${esc(hora)}</strong> <span style="color:#5A6A60;font-size:12px">(${esc(tz)})</span></div>` +
+    `<div style="margin-top:4px">💻 Online por Google Meet</div>` +
+    `</div>` +
+    `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">Si no podés en ese horario, respondé este email y lo reprogramamos.</p>` +
+    `</div>`;
+
+  try {
+    const r = await fetch(`${url}/functions/v1/send-email`, {
+      method: "POST",
+      headers: { ...sbH(key), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: c.email, to_name: c.nombre || "", subject, html,
+        reply_to: coach.email || "hi@pathwaycareercoach.com", signature: "pathway",
+      }),
+    });
+    return r.ok;
+  } catch (_e) { return false; }
+}
+
+function fmtFecha(iso: string, tz: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("es-ES", {
+      timeZone: tz, weekday: "long", day: "numeric", month: "long",
+    });
+  } catch (_e) { return new Date(iso).toLocaleDateString("es-ES"); }
+}
+function fmtHora(iso: string, tz: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString("es-ES", {
+      timeZone: tz, hour: "2-digit", minute: "2-digit",
+    });
+  } catch (_e) { return ""; }
+}
+function esc(s: unknown): string {
+  return ("" + (s == null ? "" : s)).replace(/[&<>"']/g, (ch) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]!));
+}
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status, headers: { ...CORS, "content-type": "application/json; charset=utf-8" },
+  });
+}
