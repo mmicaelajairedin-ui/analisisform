@@ -1012,6 +1012,23 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "recordatorios: la reserva guarda teléfono + zona del cliente",
+    bug: "Los recordatorios (email 24h/1h y el botón de WhatsApp) necesitan que al " +
+         "reservar se guarde el teléfono (para WhatsApp) y la zona horaria del " +
+         "cliente (para mostrar la hora en SU hora en el email). Si el POST a citas " +
+         "deja de mandar telefono/cliente_tz, los recordatorios quedan cojos.",
+    check() {
+      const s = read("reservar.html");
+      if (!s) return null;
+      const i = s.indexOf("coach_id:_cid");
+      if (i < 0) return "reservar.html: no se encuentra el POST a citas.";
+      const blk = s.slice(i, i + 200);
+      if (!/telefono:/.test(blk) || !/cliente_tz:/.test(blk))
+        return "reservar.html: el POST a citas ya no guarda telefono/cliente_tz (los recordatorios quedan sin datos).";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
