@@ -242,6 +242,21 @@ function _viewerGroups(){
 }
 function _tzLabel(){ try{ var z=Intl.DateTimeFormat().resolvedOptions().timeZone; return z?(' ('+z+')'):''; }catch(e){ return ''; } }
 function loadCitas(){ TAKEN={}; if(!CID) return; fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(CID)+'&estado=neq.cancelada&select=inicio',{ headers:{ apikey:KEY, Authorization:'Bearer '+KEY } }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){ var T={}; (rows||[]).forEach(function(c){ if(!c||!c.inicio) return; var t=new Date(c.inicio).getTime(); if(!isNaN(t)) T[t]=true; }); TAKEN=T; renderPicker(); }).catch(function(){}); }
+// Eventos REALES del calendario del coach (su iCal público, vía edge function
+// `calendar`). Con esto NO te reservan un hueco donde ya tenés algo — además de
+// las reservas de Pathway. Solo eventos con hora (los de "todo el día" tipo
+// cumpleaños no bloquean; las vacaciones se manejan aparte).
+var BUSY=[];
+function loadBusy(){ BUSY=[]; var em=(''+(EMAIL||'')).trim().toLowerCase(); if(!em||em.indexOf('@')<0) return;
+  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(em),{ headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(d){ var evs=(d&&Object.prototype.toString.call(d.events)==='[object Array]')?d.events:[];
+      BUSY=evs.map(function(e){ if(!e||e.start==null) return null; var s=+e.start; var en=e.end!=null?+e.end:(s+30*60000); if(isNaN(s)) return null; if(isNaN(en)||en<=s) en=s+30*60000; if((en-s)>=23*3600000) return null; return {s:s,e:en}; }).filter(Boolean);
+      renderPicker();
+    }).catch(function(){});
+}
+// ¿El hueco [ms, ms+DUR) pisa algún evento real del calendario del coach?
+function _slotBusy(ms){ var a=ms, b=ms+DUR*60000; for(var i=0;i<BUSY.length;i++){ if(a<BUSY[i].e && b>BUSY[i].s) return true; } return false; }
 function normDisp(d){
   var def={days:[1,2,3,4,5],from:'09:00',to:'18:00'};
   if(!d || typeof d!=='object') return def;
@@ -268,6 +283,7 @@ function applyCoachRow(u, t){
   sel={day:null,ms:null}; showAll=false;
   renderPicker();
   loadCitas(); // trae los horarios ya tomados de este coach → se marcan ocupados
+  loadBusy();  // trae los eventos reales de su calendario → también se bloquean
 }
 function _rowsOrErr(r){ if(r.ok) return r.json(); return r.text().then(function(t){ return {_err:true,status:r.status,msg:t}; }); }
 function loadCoach(c,t){
@@ -375,7 +391,7 @@ function renderPicker(){
   var daysHtml=days.map(function(x,i){ var on=(sel.day===i); return "<div class='day"+(on?' on':'')+"' data-day='"+i+"'><div class='dn'>"+x.dn+"</div><div class='dd'>"+x.dd+"</div><div class='dm'>"+x.mn+"</div></div>"; }).join('');
   var all=(sel.day!=null&&days[sel.day])?days[sel.day].slots:[], VIS=6;
   var shown=showAll?all:all.slice(0,VIS);
-  var slotsHtml=shown.map(function(sl){ var on=(sel.ms===sl.ms); if(TAKEN[sl.ms]) return "<button class='slot' disabled title='Ya reservado' style='opacity:.38;text-decoration:line-through;cursor:not-allowed'>"+sl.label+"</button>"; return "<button class='slot"+(on?' on':'')+"' data-ms='"+sl.ms+"'>"+sl.label+"</button>"; }).join('');
+  var slotsHtml=shown.map(function(sl){ var on=(sel.ms===sl.ms); if(TAKEN[sl.ms]||_slotBusy(sl.ms)) return "<button class='slot' disabled title='Ocupado' style='opacity:.38;text-decoration:line-through;cursor:not-allowed'>"+sl.label+"</button>"; return "<button class='slot"+(on?' on':'')+"' data-ms='"+sl.ms+"'>"+sl.label+"</button>"; }).join('');
   if(!shown.length) slotsHtml="<div style='font-size:12.5px;color:var(--soft,#5A6A60);padding:6px 0'>No hay horarios este día. Elegí otro.</div>";
   if(!showAll && all.length>VIS) slotsHtml+="<button class='more' data-more='1'>Ver más horarios ("+(all.length-VIS)+") ▾</button>";
   else if(showAll && all.length>VIS) slotsHtml+="<button class='more' data-more='0'>Ver menos ▴</button>";

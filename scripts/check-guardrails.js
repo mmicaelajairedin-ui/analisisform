@@ -996,6 +996,22 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "reservas: bloquea los horarios ocupados del calendario real del coach",
+    bug: "La reserva solo evitaba pisar OTRAS reservas de Pathway (tabla citas), " +
+         "pero NO miraba el Google/iCal del coach → le podían reservar encima de un " +
+         "evento real. Debe leer su calendario (edge function `calendar`) y marcar " +
+         "esos huecos como ocupados, además de las citas.",
+    check() {
+      const s = read("reservar.html");
+      if (!s) return null;
+      if (!/function loadBusy\(/.test(s) || !/functions\/v1\/calendar\?email=/.test(s))
+        return "reservar.html: ya no carga los eventos reales del coach (loadBusy) para bloquear ocupados.";
+      if (!/_slotBusy\(sl\.ms\)/.test(s))
+        return "reservar.html: el render de horarios ya no descarta los huecos ocupados del calendario (_slotBusy).";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
