@@ -869,6 +869,22 @@ const RULES = [
     },
   },
   {
+    name: "fitness: marcar ejercicios de la rutina SE GUARDA (y el coach lo ve)",
+    bug: "toggleEx solo tachaba en pantalla → al recargar se perdía TODO lo " +
+         "marcado y el coach nunca veía qué entrenó el cliente. Debe persistir por " +
+         "fecha en fit_ejercicios_done y marcar el día de gym en fit_habitos.",
+    check() {
+      const s = read("pathway-fit-cliente.html");
+      if (!s) return null;
+      const i = s.indexOf("function toggleEx(");
+      if (i < 0) return "pathway-fit-cliente.html: no se encuentra toggleEx.";
+      const block = s.slice(i, i + 900);
+      if (!/data-exk|EXDONE/.test(block) || !/_exSave|fit_ejercicios_done/.test(s))
+        return "pathway-fit-cliente.html: toggleEx volvió a NO persistir los ejercicios marcados (se pierden al recargar).";
+      return null;
+    },
+  },
+  {
     name: "diseño: white-label llega al token canónico --accent en toda la app",
     bug: "Cada pantalla tenía su motor de marca con su token propio (--brand / " +
          "--rose / --pw-bosque) → algo NUEVO no podía reusar el white-label. Ahora " +

@@ -507,8 +507,27 @@ function revReact(i,emo){
   if(typeof showToast==='function') showToast(emo+' ¡Gracias por reaccionar!');
 }
 function toggleSb(){ document.getElementById('sb').classList.toggle('open'); document.getElementById('ov').classList.toggle('open'); }
+// ── Ejercicios marcados (persisten por FECHA en candidatos.fit_ejercicios_done) ──
+// Antes toggleEx solo tachaba en pantalla → al recargar se perdía TODO y el coach
+// nunca veía qué entrenó. Ahora se guarda por día; al completar el día se marca
+// el gym en fit_habitos (que el coach ya ve en el calendario).
+var FED={}, EXDONE={};
+function _exKey(e){ return (parseInt(e.semana,10)||1)+'|'+((e.dia||'')+'')+'|'+((e.nombre||'')+''); }
+function _exToday(){ return (typeof pwHoy==='function')?pwHoy():''; }
+function _exLoad(){
+  try{ FED=JSON.parse((CRAW&&CRAW.fit_ejercicios_done)||'{}')||{}; }catch(e){ FED={}; }
+  if(!FED||typeof FED!=='object') FED={};
+  EXDONE=FED[_exToday()]=FED[_exToday()]||{};
+}
+function _exSave(){
+  if(!CID) return;
+  FED[_exToday()]=EXDONE; var j=JSON.stringify(FED); if(CRAW) CRAW.fit_ejercicios_done=j;
+  sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_ejercicios_done:j}).catch(function(){ if(typeof showToast==='function') showToast('⚠️ No se pudo guardar el ejercicio. Revisá tu conexión.'); });
+}
 function toggleEx(el){
   el.classList.toggle('done');
+  // Persistir el ejercicio marcado (por fecha) → sobrevive la recarga y el coach lo ve.
+  try{ var _k=el.getAttribute('data-exk'); if(_k){ if(el.classList.contains('done')) EXDONE[_k]=1; else delete EXDONE[_k]; _exSave(); } }catch(e){}
   var day=el.closest('.day'); if(!day) return; // sin contenedor .day no contamos
   var t=day.querySelectorAll('.ex').length,d=day.querySelectorAll('.ex.done').length;
   var pr=day.querySelector('.d-prog'); if(pr) pr.textContent=d+'/'+t;
@@ -516,8 +535,9 @@ function toggleEx(el){
   if(el.classList.contains('done')){ try{ if(window.PWJ&&PWJ.sound) PWJ.sound('point'); }catch(e){} }
   if(t>0 && d===t && !day.classList.contains('celebrated')){
     day.classList.add('celebrated');
-    // Día completo → celebración CLARA (cabra + explosión + sonido), no un burst
-    // chico que se perdía. Fallback al confeti viejo si el motor no cargó.
+    // Día completo → marcar el día de GYM en fit_habitos (el coach lo ve en el
+    // calendario 💪) y celebrar.
+    try{ var _td=_exToday(); if(_td && typeof WDATA==='object' && WDATA){ (WDATA[_td]=WDATA[_td]||{}).gym=true; if(typeof colorDay==='function') colorDay(_td); if(typeof renderFitCal==='function') renderFitCal(); if(CID) sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).catch(function(){}); } }catch(e){}
     try{
       if(window.PWJ&&PWJ.celebrate){ PWJ.celebrate({kind:'logro',title:'¡Día de entreno completo! 💪',sub:'Gran trabajo — sumaste tu entreno de hoy',btn:'¡Seguir!'}); }
       else { fireConfetti(); }
@@ -919,7 +939,7 @@ function toggleNutriHoy(){
   try{ if(typeof colorDay==='function') colorDay(hoy); }catch(e){}
   try{ if(typeof renderFitCal==='function') renderFitCal(); }catch(e){}
   if(!was){ try{ fireConfetti(); }catch(e){} showToast('🍎 ¡Nutrición de hoy cumplida!'); }
-  if(typeof CID!=='undefined'&&CID){ try{ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).catch(function(){}); }catch(e){} }
+  if(typeof CID!=='undefined'&&CID){ try{ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}).catch(function(){ if(typeof showToast==='function') showToast('⚠️ No se pudo guardar. Revisá tu conexión.'); }); }catch(e){} }
 }
 function selNutriDay(k){
   NUTDAY=k;
@@ -954,7 +974,8 @@ function _exHtml(e){
   var _rir=e.rir?(/rir/i.test(e.rir)?e.rir:('RIR '+e.rir)):'';
   var _ts='display:inline-block;margin-left:6px;padding:1px 7px;border-radius:6px;background:rgba(45,106,79,.09);font-size:10.5px;font-weight:600;color:var(--muted,#6b7a70);vertical-align:middle;white-space:nowrap';
   var _tags=(_rir?'<span style="'+_ts+'">'+esc(_rir)+'</span>':'')+(e.descanso?'<span style="'+_ts+'">⏱ '+esc(e.descanso)+'</span>':'');
-  return '<div class="ex" onclick="toggleEx(this)"><div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>'+thumb+'<div class="ex-body"><div class="ex-name">'+esc(e.nombre||'')+'</div><div class="ex-meta">'+esc(e.meta||'')+_tags+'</div></div></div>';
+  var _ek=_exKey(e), _edone=EXDONE[_ek]?' done':'';   // restaura lo marcado hoy
+  return '<div class="ex'+_edone+'" data-exk="'+esc(_ek)+'" onclick="toggleEx(this)"><div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>'+thumb+'<div class="ex-body"><div class="ex-name">'+esc(e.nombre||'')+'</div><div class="ex-meta">'+esc(e.meta||'')+_tags+'</div></div></div>';
 }
 function _gymRailHtml(totalDays,totalEx){
   // Logros de la semana (columna derecha). Las chips se prenden según lo que el
@@ -1655,7 +1676,7 @@ async function pwInit(){
         if(!CRAW.coach_id){ for(var _i=0;_i<rows.length;_i++){ if(rows[_i].coach_id){ CRAW.coach_id=rows[_i].coach_id; break; } } }
         // Restaurar el bonus del juego desde Supabase (game_pts) → la medalla no baja entre dispositivos.
         try{ var _gk='pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CRAW.id||'x'), _srv=parseInt(CRAW.game_pts||0,10)||0; if(_srv>0 && _srv>(parseInt(localStorage.getItem(_gk)||'0',10)||0)) localStorage.setItem(_gk,String(_srv)); }catch(e){}
-        CID=CRAW.id; applyClient(CRAW); applyProceso(); pwMaybeConsent(); pwSubGate(CRAW);
+        CID=CRAW.id; _exLoad(); applyClient(CRAW); applyProceso(); pwMaybeConsent(); pwSubGate(CRAW);
         var inf=null;
         try{ var ir=await sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=data&order=created_at.desc&limit=1'); if(ir&&ir.length){ var dd=ir[0].data; inf=(typeof dd==='string')?JSON.parse(dd):dd; } }catch(e){}
         applyInforme(inf); applyLogros(inf);
@@ -1754,7 +1775,7 @@ async function toggleHabit(el){
   colorDay(SELDAY);
   renderFitCal();
   if(!CID) return;
-  try{ await sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}); }catch(e){}
+  try{ var _r=await sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_habitos:JSON.stringify(WDATA)}); if(_r&&_r.ok===false) throw 0; }catch(e){ if(typeof showToast==='function') showToast('⚠️ No se pudo guardar el hábito. Revisá tu conexión.'); }
 }
 pwInit();
 // Demo: si el coach guarda una sesión en el panel (otra pestaña del mismo
