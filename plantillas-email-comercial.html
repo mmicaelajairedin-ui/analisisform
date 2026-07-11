@@ -75,6 +75,29 @@
   .ok.show{opacity:1;}
   #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--carbon);color:#fff;font-size:13px;font-weight:600;padding:11px 20px;border-radius:11px;box-shadow:0 12px 34px rgba(20,55,38,.28);opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;z-index:500;max-width:90vw;text-align:center;}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  /* --- Filtro Comercial / Informativo --- */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 22px;}
+  .ftab{display:inline-flex;align-items:center;gap:7px;padding:8px 15px;border-radius:100px;border:1.5px solid var(--borde);background:#fff;color:var(--carbon);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:all .14s;}
+  .ftab:hover{border-color:var(--sendero);}
+  .ftab .n{font-size:11px;font-weight:700;background:rgba(45,106,79,.10);color:var(--bosque);border-radius:100px;padding:2px 8px;}
+  .ftab.is-on{background:var(--carbon);color:#fff;border-color:var(--carbon);}
+  .ftab.is-on .n{background:rgba(255,255,255,.22);color:#fff;}
+  .ftab.com.is-on{background:var(--bosque);border-color:var(--bosque);}
+  .ftab.inf.is-on{background:#C99A2E;border-color:#C99A2E;}
+  /* --- Bandas de sección por tipo (separa comercial de informativo) --- */
+  .gsec{border-radius:16px;padding:4px 16px 18px;margin-bottom:20px;border:1px solid var(--borde);border-left-width:5px;}
+  .gsec.com{border-left-color:var(--sendero);background:linear-gradient(180deg,rgba(82,183,136,.07),rgba(82,183,136,0) 130px);}
+  .gsec.inf{border-left-color:#E9C46A;background:linear-gradient(180deg,rgba(233,196,106,.10),rgba(233,196,106,0) 130px);}
+  .gsec.hide{display:none;}
+  /* --- Nav del modal (flechas anterior/siguiente) --- */
+  .modal-nav{display:flex;align-items:center;gap:7px;flex-shrink:0;}
+  .mnav-btn{width:34px;height:34px;border-radius:9px;border:1.5px solid var(--borde);background:#fff;color:var(--bosque);font-size:16px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .14s;}
+  .mnav-btn:hover:not(:disabled){background:var(--bosque);color:#fff;border-color:var(--bosque);}
+  .mnav-btn:disabled{opacity:.32;cursor:default;}
+  .mnav-count{font-size:12px;font-weight:600;color:var(--texto-suave);min-width:42px;text-align:center;}
+  .edit-tip{font-size:12.5px;color:var(--bosque);background:rgba(82,183,136,.13);padding:8px 13px;border-radius:9px;margin:0 0 12px;font-weight:600;display:flex;align-items:center;gap:7px;}
+  .modal-body-wrap .pv-inner,.modal-body-wrap .pv-inner *{cursor:text;}
+  .modal-body-wrap .pv-inner a{cursor:pointer;}
   /* --- Modo panel (iframe embebido) --- */
   body.pmode{background:#fff;padding:12px 14px 30px;}
   body.pmode .head{display:none!important;}
@@ -105,6 +128,12 @@
     <div class="hint">✨ Se completan solos en los emails de contacto</div>
   </div>
 
+  <div class="filters" id="filters">
+    <button class="ftab is-on" data-filter="todas">Todas <span class="n" id="n-todas">0</span></button>
+    <button class="ftab com" data-filter="com">🟢 Comerciales <span class="n" id="n-com">0</span></button>
+    <button class="ftab inf" data-filter="inf">🟡 Informativos <span class="n" id="n-inf">0</span></button>
+  </div>
+
   <div id="g-coaches"></div>
   <div id="g-candidatos"></div>
   <div id="g-newsletter"></div>
@@ -116,11 +145,16 @@
   <div class="modal-bg" data-close></div>
   <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="m-name">
     <div class="modal-head">
-      <div><div class="modal-tag" id="m-tag"></div><div class="modal-title" id="m-name"></div></div>
-      <button class="modal-x" data-close aria-label="Cerrar">×</button>
+      <div style="min-width:0;"><div class="modal-tag" id="m-tag"></div><div class="modal-title" id="m-name"></div></div>
+      <div class="modal-nav">
+        <button class="mnav-btn" id="m-prev" aria-label="Email anterior" title="Anterior (←)">‹</button>
+        <span class="mnav-count" id="m-count">1 / 21</span>
+        <button class="mnav-btn" id="m-next" aria-label="Email siguiente" title="Siguiente (→)">›</button>
+        <button class="modal-x" data-close aria-label="Cerrar" style="margin-left:6px;">×</button>
+      </div>
     </div>
     <div class="modal-subj"><span class="lbl">Asunto</span><input id="m-subj" class="subj-in" aria-label="Asunto"><button class="btn ghost" id="m-copysubj">Copiar</button></div>
-    <div class="modal-body-wrap"><div class="pv-inner" id="m-body" contenteditable="true"></div></div>
+    <div class="modal-body-wrap"><div class="edit-tip">✏️ Editable — hacé clic en cualquier texto, titular o botón y escribí encima.</div><div class="pv-inner" id="m-body" contenteditable="true"></div></div>
     <div class="modal-actions">
       <button class="btn" id="m-copy">📋 Copiar con diseño</button>
       <button class="btn ghost" id="m-gmail">📤 Abrir en Gmail</button>
@@ -863,16 +897,38 @@
     +   '</div>'
     + '</div>';
   }
+  var ORDER = [];   // orden de navegación: índices de LIB en el orden en que se ven
   function renderAll(){
+    ORDER = [];
     GROUPS.forEach(function(g){
       var el = document.getElementById("g-"+g[0]); if(!el) return;
       var cards = "";
-      LIB.forEach(function(t,i){ if(t.group===g[0]) cards += ecard(t,i); });
+      LIB.forEach(function(t,i){ if(t.group===g[0]){ cards += ecard(t,i); ORDER.push(i); } });
       if(!cards){ el.innerHTML=""; return; }
-      el.innerHTML = '<div class="sec-title">'+g[1]+'<span class="type '+g[2]+'">'+(g[2]==="com"?"Comercial":"Informativo")+'</span></div><div class="sec-sub">'+g[3]+'</div><div class="grid">'+cards+'</div>';
+      el.innerHTML = '<div class="gsec '+g[2]+'" data-type="'+g[2]+'">'
+        + '<div class="sec-title">'+g[1]+'<span class="type '+g[2]+'">'+(g[2]==="com"?"Comercial":"Informativo")+'</span></div>'
+        + '<div class="sec-sub">'+g[3]+'</div><div class="grid">'+cards+'</div></div>';
     });
+    updateCounts();
+  }
+
+  // ---- Filtro Comercial / Informativo ----
+  var FILTER = "todas";
+  function groupType(group){ for(var k=0;k<GROUPS.length;k++){ if(GROUPS[k][0]===group) return GROUPS[k][2]; } return "com"; }
+  function visList(){ return ORDER.filter(function(i){ return FILTER==="todas" || groupType(LIB[i].group)===FILTER; }); }
+  function updateCounts(){
+    var com=0,inf=0; LIB.forEach(function(t){ (groupType(t.group)==="com")?com++:inf++; });
+    var a=document.getElementById("n-todas"), c=document.getElementById("n-com"), n=document.getElementById("n-inf");
+    if(a) a.textContent=com+inf; if(c) c.textContent=com; if(n) n.textContent=inf;
+  }
+  function applyFilter(f){
+    FILTER=f;
+    [].forEach.call(document.querySelectorAll(".ftab"), function(b){ b.classList.toggle("is-on", b.dataset.filter===f); });
+    [].forEach.call(document.querySelectorAll(".gsec"), function(s){ s.classList.toggle("hide", !(f==="todas" || s.dataset.type===f)); });
   }
   renderAll();
+  var _fbar=document.getElementById("filters");
+  if(_fbar) _fbar.addEventListener("click", function(e){ var b=e.target.closest(".ftab"); if(b) applyFilter(b.dataset.filter); });
 
   function refreshCard(i){
     var t = LIB[i];
@@ -893,14 +949,32 @@
   // ---- Modal ----
   var cur = -1;
   var modal = document.getElementById("modal");
-  function openModal(i){
+  function fillModal(i){
     cur = i; var t = LIB[i];
     document.getElementById("m-tag").textContent = t.tag;
     document.getElementById("m-name").textContent = t.name;
     document.getElementById("m-subj").value = t.subject;
     document.getElementById("m-body").innerHTML = t.html;
+    updateNav();
+    var w=document.querySelector(".modal-body-wrap"); if(w) w.scrollTop=0;
+  }
+  function openModal(i){
+    fillModal(i);
     modal.classList.add("show"); modal.setAttribute("aria-hidden","false");
     document.body.style.overflow = "hidden";
+  }
+  function updateNav(){
+    var vis=visList(); var pos=vis.indexOf(cur);
+    var cEl=document.getElementById("m-count"); if(cEl) cEl.textContent=(pos+1)+" / "+vis.length;
+    var pv=document.getElementById("m-prev"), nx=document.getElementById("m-next");
+    if(pv) pv.disabled = pos<=0;
+    if(nx) nx.disabled = pos>=vis.length-1;
+  }
+  function navModal(dir){
+    if(cur<0) return; saveModal();
+    var vis=visList(); var pos=vis.indexOf(cur), np=pos+dir;
+    if(np<0 || np>=vis.length) return;
+    fillModal(vis[np]);
   }
   function saveModal(){
     if(cur<0) return; var t = LIB[cur];
@@ -916,7 +990,17 @@
     var op = e.target.closest("[data-open]"); if(op){ openModal(+op.dataset.open); return; }
     var cl = e.target.closest("[data-close]"); if(cl){ closeModal(); }
   });
-  document.addEventListener("keydown", function(e){ if(e.key==="Escape" && cur>=0) closeModal(); });
+  document.getElementById("m-prev").addEventListener("click", function(){ navModal(-1); });
+  document.getElementById("m-next").addEventListener("click", function(){ navModal(1); });
+  document.addEventListener("keydown", function(e){
+    if(cur<0) return;
+    if(e.key==="Escape"){ closeModal(); return; }
+    // No cambiar de email mientras se edita texto (las flechas mueven el cursor).
+    var ae=document.activeElement;
+    if(ae && (ae.id==="m-subj" || ae.id==="m-body" || (ae.closest && ae.closest("#m-body")))) return;
+    if(e.key==="ArrowLeft") navModal(-1);
+    else if(e.key==="ArrowRight") navModal(1);
+  });
 
   function flashModalOk(){ var ok=document.getElementById("m-ok"); if(ok){ ok.classList.add("show"); setTimeout(function(){ ok.classList.remove("show"); },1600); } }
   document.getElementById("m-copy").addEventListener("click", function(){ saveModal(); copyRich(LIB[cur].html, function(){ flashModalOk(); toast("Email copiado ✓ — pegá en Gmail con Ctrl/Cmd+V"); }); });
