@@ -869,6 +869,23 @@ const RULES = [
     },
   },
   {
+    name: "registro: el alta abierta (trial gratis) está ABIERTA (coincide con la landing)",
+    bug: "El registro se cerró a 'solo invitación' de contrabando dentro de un PR " +
+         "sobre otra cosa (jul-2026), contradiciendo la landing que promete trial " +
+         "gratis. Reabierto: coach nuevo se auto-registra (POST) y el invitado activa " +
+         "(PATCH). El anti-abuso es la verificación de email, NO cerrar el registro.",
+    check() {
+      const s = read("registro.html");
+      if (!s) return null;
+      const flat = s.replace(/\s+/g, " ");
+      if (/if \( ?!activatingRow ?\) \{[^}]{0,260}(por invitación|showError\()/.test(flat))
+        return "registro.html: volvió a cerrar el alta abierta (bloquea a quien no fue invitado). La landing promete trial gratis.";
+      if (!/activatingRow[\s\S]{0,400}method: 'PATCH'[\s\S]{0,600}method: 'POST'/.test(s))
+        return "registro.html: se perdió el camino POST (crear cuenta nueva para un coach no invitado).";
+      return null;
+    },
+  },
+  {
     name: "fitness: el coach VE el diario de nutrición del cliente (fit_nutri_log)",
     bug: "El cliente anotaba lo que comió (fit_nutri_log) pero el panel del coach " +
          "nunca lo leía → era un pozo negro. La pestaña Nutrición debe mostrar el " +
