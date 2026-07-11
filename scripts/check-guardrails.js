@@ -1090,6 +1090,24 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "reordenar: pw-sortable incluido y el orden se guarda",
+    bug: "pw-sortable.js permite arrastrar-para-ordenar (tipos de evento, tarjetas " +
+         "de cliente). El orden DEBE guardarse: tipos → configuracion.event_types, " +
+         "clientes → configuracion.cliente_orden. Si se desconecta, el arrastre no " +
+         "persiste y se pierde al refrescar.",
+    check() {
+      const dz = read("pw-sortable.js");
+      if (!dz) return "falta pw-sortable.js (helper de arrastrar-para-ordenar).";
+      if (!/window\.pwSortable\s*=/.test(dz)) return "pw-sortable.js ya no expone window.pwSortable.";
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/pw-sortable\.js/.test(p)) return "panel-v2.html ya no incluye pw-sortable.js.";
+      if (!/saveCfg\(\{event_types:/.test(p)) return "panel-v2.html: el orden de tipos de evento ya no se guarda (event_types).";
+      if (!/saveCfg\(\{cliente_orden:/.test(p)) return "panel-v2.html: el orden de las tarjetas de cliente ya no se guarda (cliente_orden).";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
