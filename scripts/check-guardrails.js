@@ -71,7 +71,7 @@ const RULES = [
       const dz = read("pw-dropzone.js");
       if (!dz) return "falta pw-dropzone.js (helper de drag&drop universal).";
       if (!/input\[type="file"\]/.test(dz)) return "pw-dropzone.js ya no registra los input[type=file].";
-      for (const f of ["panel-v2.html", "cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html", "cv.html"]) {
+      for (const f of ["panel-v2.html", "cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html", "cv.html", "empleado.html", "multicoach.html"]) {
         if (!/pw-dropzone\.js/.test(read(f))) return f + " ya no incluye pw-dropzone.js.";
       }
       const p = read("panel-v2.html");
