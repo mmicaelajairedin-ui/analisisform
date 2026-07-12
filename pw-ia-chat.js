@@ -132,7 +132,7 @@
       "<div class='cp-iac-panel' role='dialog' aria-label='Chat IA Pathway'>" +
         "<div class='cp-iac-head'><span class='cp-iac-head-ico'>" + SPARK + "</span>" +
           "<div><div class='cp-iac-head-t'>IA Pathway</div><div class='cp-iac-head-s'>" +
-          (MODE === "coach" ? "Tu asistente de agenda" : "Tu asistente Pathway") + "</div></div>" +
+          "Tu asistente con IA" + "</div></div>" +
           "<button class='cp-iac-x' aria-label='Cerrar'>" + CLOSE_ICO + "</button></div>" +
         "<div class='cp-iac-scroll' id='cp-iac-scroll'>" + body + "</div>" +
         "<div class='cp-iac-compose'>" +
