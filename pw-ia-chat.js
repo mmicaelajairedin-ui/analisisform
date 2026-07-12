@@ -177,10 +177,12 @@
     var history = state.msgs.filter(function (m) { return m.txt; })
       .map(function (m) { return { role: (m.from === USER_ROLE ? "user" : "assistant"), content: m.txt }; });
     while (history.length && history[0].role !== "user") history.shift();
+    var email = "";
+    try { email = CFG.email || (window.EMAIL) || ((JSON.parse(localStorage.getItem("mj_user") || "null") || {}).email) || ""; } catch (e) {}
     fetch(SB + "/functions/v1/ia-pathway", {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: KEY, Authorization: "Bearer " + KEY },
-      body: JSON.stringify({ mode: MODE, messages: history, context: ctx() }),
+      body: JSON.stringify({ mode: MODE, page: location.pathname, email: email, messages: history, context: ctx() }),
     })
       .then(function (r) { return r.json(); })
       .then(function (j) {
