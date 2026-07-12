@@ -1865,6 +1865,7 @@ function init(){
     E=parsed.email.toLowerCase().trim();
   }
   if(!E){document.getElementById('load-err').textContent='Email no encontrado en sesión.';return;}
+  try{ _loadNextCita(); }catch(e){} // cita reservada por el link → "próxima sesión"
   document.getElementById('load-msg').textContent='Conectando con Supabase...';
   Promise.all([
     get('candidatos','email=eq.'+encodeURIComponent(E)+'&select=*&limit=1'),
@@ -2680,6 +2681,16 @@ function rMotivCard(){
 // el portal leía un campo aparte (proxima_sesion) que el coach nunca setea, así
 // que las sesiones agendadas desde el panel no aparecían acá. Fallback al campo
 // viejo por si algún dato histórico lo tiene. Genérico — vale para todos los nichos.
+// Próxima cita reservada por el link (tabla citas) — se muestra como "próxima
+// sesión" del cliente. Se busca por su email. Se re-renderiza al traerla.
+var _CITA_NEXT='';
+function _loadNextCita(){
+  if(!E) return;
+  fetch(SB+'/rest/v1/citas?email=eq.'+encodeURIComponent(E)+'&estado=neq.cancelada&inicio=gte.'+encodeURIComponent(new Date().toISOString())+'&order=inicio.asc&limit=1&select=inicio',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
+    .then(function(r){ return r.ok?r.json():[]; })
+    .then(function(rows){ var c=rows&&rows[0]; if(c&&c.inicio){ _CITA_NEXT=c.inicio; try{ render(); }catch(e){} } })
+    .catch(function(){});
+}
 function _proxSesion(){
   var arr=[]; try{arr=JSON.parse(C.sesiones_registro||'[]')||[];}catch(e){arr=[];}
   var now=Date.now(), best='', bestT=Infinity;
@@ -2689,6 +2700,8 @@ function _proxSesion(){
     var tt=d.getTime();
     if(!isNaN(tt)&&tt>=now&&tt<bestT){ bestT=tt; best=s.fecha+'T'+(s.hora||'00:00'); }
   });
+  // La cita del link (si es más próxima) gana.
+  if(_CITA_NEXT){ var ct=new Date(_CITA_NEXT).getTime(); if(!isNaN(ct)&&ct>=now&&ct<bestT){ bestT=ct; best=_CITA_NEXT; } }
   return best||C.proxima_sesion||'';
 }
 
