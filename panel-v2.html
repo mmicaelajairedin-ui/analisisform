@@ -4851,22 +4851,32 @@ function _iapData(){
 // Cada mensaje guarda html (para el DOM) y txt (texto plano para el historial
 // que se manda a Claude).
 function _iaChatSeed(){
-  var data=_iapData();
-  var lines=data.cards.map(function(c){ return "· "+c.text; });
-  var htmlIntro = lines.length
-    ? "Hola 👋 Soy tu IA Pathway. Miré tu semana:<br><br>"+lines.join("<br>")+"<br><br>¿En qué te ayudo? Puedo reordenar tu agenda, decirte quién necesita atención o guiarte por la plataforma."
-    : "Hola 👋 Soy tu IA Pathway. Todavía no veo sesiones agendadas esta semana. Puedo ayudarte a organizar tu agenda o guiarte por la plataforma — ¿qué necesitás?";
-  var txtIntro = htmlIntro.replace(/<br\s*\/?>/g," ").replace(/<[^>]+>/g,"");
-  return [{ from:"ia", html:htmlIntro, txt:txtIntro }];
+  // Saludo SIN números de agenda: los conteos salían de eventos del calendario
+  // (a veces personales) y no eran fiables. La agenda va como contexto rotulado
+  // por fuente para que la IA no afirme sesiones inventadas.
+  var htmlIntro = "Hola 👋 Soy tu IA Pathway. Puedo ayudarte a organizar tu semana, con tus clientes y con el uso de la plataforma. ¿En qué te doy una mano?";
+  return [{ from:"ia", html:htmlIntro, txt:htmlIntro }];
 }
 // Resumen de contexto (agenda + clientes) que viaja a la Edge Function para que
-// la IA razone sobre datos REALES, sin inventar.
+// la IA razone sobre datos REALES, sin inventar. La agenda se rotula por FUENTE:
+// eventos del Google Calendar (pueden incluir personales) vs sesiones registradas.
 function _iaChatContext(){
   var ctx={};
   try{ if(COACH&&COACH.name) ctx.coach=COACH.name; }catch(e){}
   try{
-    var d=_iapData();
-    ctx.agenda = d.cards.length ? d.cards.map(function(c){ return "- "+c.text.replace(/<[^>]+>/g,""); }).join("\n") : "Sin sesiones agendadas esta semana.";
+    var ses=_iapWeekSessions();
+    var fromGCal=(typeof _AG_DATA!=="undefined" && _AG_DATA && Object.prototype.toString.call(_AG_DATA.events)==="[object Array]" && _AG_DATA.events.length);
+    if(ses.length){
+      var DIAS=["lunes","martes","miércoles","jueves","viernes","sábado","domingo"];
+      var lines=ses.map(function(x){ var d=new Date(x.t); var di=(d.getDay()+6)%7; var hh=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); return "- "+DIAS[di]+" "+hh+" · "+(x.name||"(sin título)"); });
+      ctx.agenda = (fromGCal
+        ? "Eventos de tu Google Calendar esta semana (pueden incluir eventos personales, no solo sesiones de coaching):\n"
+        : "Sesiones registradas con tus clientes esta semana:\n") + lines.join("\n");
+    } else {
+      ctx.agenda = fromGCal
+        ? "No hay eventos en tu Google Calendar esta semana."
+        : "No hay sesiones registradas esta semana y tu Google Calendar no está conectado, así que no puedo ver tu agenda exacta.";
+    }
   }catch(e){}
   try{
     var cls=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c&&!c._example&&!(c.raw&&c.raw.activo===false);}):[];
