@@ -1014,8 +1014,10 @@ const RULES = [
       if (!s) return null;
       if (/id='cfp-cal'/.test(s))
         return "panel-v2.html: volvió el campo cfp-cal (pedido de link de Calendly). Debe darse el link interno.";
-      if (!/id='cfp-book'/.test(s))
-        return "panel-v2.html: falta el link interno de reservas (cfp-book) en la config.";
+      // El link de reservas (que le damos nosotros) vive en Calendario, compacto,
+      // con botón Copiar — no en el formulario del perfil.
+      if (!/copy-book/.test(s) || !/reservar\.html\?c=/.test(s))
+        return "panel-v2.html: falta el link interno de reservas (copy-book / reservar.html?c=).";
       if (!/cfp-cal-ical/.test(s))
         return "panel-v2.html: falta el campo de iCal (cfp-cal-ical) para ver los eventos en la agenda.";
       return null;
@@ -1087,6 +1089,25 @@ const RULES = [
       const blk = s.slice(i, i + 200);
       if (!/telefono:/.test(blk) || !/cliente_tz:/.test(blk))
         return "reservar.html: el POST a citas ya no guarda telefono/cliente_tz (los recordatorios quedan sin datos).";
+      return null;
+    },
+  },
+  {
+    name: "reservas: el cliente puede cancelar/reprogramar (token + página)",
+    bug: "El email de reserva lleva un link para cancelar/reprogramar solo. Depende " +
+         "de que reservar.html genere un token por cita y lo guarde, y de que exista " +
+         "gestionar-cita.html que busca la cita por ese token y la cancela.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        const i = r.indexOf("coach_id:_cid");
+        const blk = i >= 0 ? r.slice(i, i + 200) : "";
+        if (!/token:/.test(blk)) return "reservar.html: el POST a citas ya no guarda el token (sin token no hay link de cancelar/reprogramar).";
+      }
+      const g = read("gestionar-cita.html");
+      if (!g) return "falta gestionar-cita.html (cancelar/reprogramar por el cliente).";
+      if (!/token=eq\./.test(g)) return "gestionar-cita.html ya no busca la cita por token.";
+      if (!/estado:\s*'cancelada'/.test(g)) return "gestionar-cita.html ya no cancela la cita.";
       return null;
     },
   },
