@@ -2282,17 +2282,33 @@ function _agTypeForEvent(e){
   if(map){ var k=_agEvKey(e); if(k && map[k]!=null){ var ts=_agTypes(); var ix=map[k]; if(ix>=0&&ix<ts.length) return ts[ix]; } }
   return _agEventTypeFor(e.title);
 }
+// Manija de arrastre (6 puntitos) para reordenar listas con pw-sortable.
+function _gripSvg(){ return "<svg width='13' height='13' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'><circle cx='9' cy='6' r='1.7'/><circle cx='15' cy='6' r='1.7'/><circle cx='9' cy='12' r='1.7'/><circle cx='15' cy='12' r='1.7'/><circle cx='9' cy='18' r='1.7'/><circle cx='15' cy='18' r='1.7'/></svg>"; }
 function _agTypesHtml(){
-  return _agTypes().map(function(t,i){
+  return "<div id='cp-agtypes-list'>"+_agTypes().map(function(t,i){
     var col=t.color||"#8C7B80";
-    return "<button data-act='ag-open' data-i='"+i+"' style='display:flex;align-items:center;gap:7px;width:100%;text-align:left;background:#fff;border:1px solid var(--pw-border);border-radius:9px;font-family:inherit;font-size:12px;color:var(--pw-carbon);cursor:pointer;padding:7px 9px;margin-bottom:5px'>"+
-      "<span style='width:9px;height:9px;border-radius:50%;background:"+col+";flex-shrink:0'></span>"+
-      "<span style='flex-shrink:0'>"+(t.icon||"🗓️")+"</span>"+
-      "<span style='flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(t.label||"Evento")+"</span>"+
-      svg(IC.chevR,12,"style='opacity:.35;flex-shrink:0'")+
-    "</button>";
-  }).join("")+
+    return "<div data-sort='"+i+"' style='display:flex;align-items:center;gap:3px;margin-bottom:5px'>"+
+      "<span class='pw-grip' title='Arrastrá para ordenar' style='flex-shrink:0;width:15px'>"+_gripSvg()+"</span>"+
+      "<button data-act='ag-open' data-i='"+i+"' style='display:flex;align-items:center;gap:7px;flex:1;min-width:0;text-align:left;background:#fff;border:1px solid var(--pw-border);border-radius:9px;font-family:inherit;font-size:12px;color:var(--pw-carbon);cursor:pointer;padding:7px 9px'>"+
+        "<span style='width:9px;height:9px;border-radius:50%;background:"+col+";flex-shrink:0'></span>"+
+        "<span style='flex-shrink:0'>"+(t.icon||"🗓️")+"</span>"+
+        "<span style='flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(t.label||"Evento")+"</span>"+
+        svg(IC.chevR,12,"style='opacity:.35;flex-shrink:0'")+
+      "</button>"+
+    "</div>";
+  }).join("")+"</div>"+
   "<button class='cp-btn cp-btn-ghost' data-act='ag-new' style='height:26px;font-size:11px;padding:0 9px;margin-top:2px'>"+svg(IC.plus,11)+" Tipo</button>";
+}
+// Reordenar tipos de evento (arrastre) y guardar el nuevo orden.
+function _agReorderTypes(order){
+  var cur=_agTypes(); var arr=(order||[]).map(function(k){ return cur[parseInt(k,10)]; }).filter(Boolean);
+  if(arr.length!==cur.length) return;
+  saveCfg({event_types:arr});
+}
+// Activa el arrastre en la lista de tipos (se llama al pintar Calendario).
+function _wireAgTypesSort(){
+  var box=document.getElementById("cp-agtypes-list");
+  if(box && window.pwSortable) pwSortable(box, _agReorderTypes, {handle:".pw-grip", item:"[data-sort]"});
 }
 // Calendario mensual (columna del medio). En cada día con evento muestra el
 // ICONO del tipo (los que crea el coach), teñido con su color. Datos: Google
@@ -3501,6 +3517,10 @@ function viewClientes(){
   var list = (state.cliFilter==="inactive")
     ? pool.filter(isInactive)
     : pool.filter(function(c){ return !isInactive(c) && active.test(c); });
+  // Orden manual del coach (arrastrando las tarjetas). Se guarda en
+  // configuracion.cliente_orden; los que no están en el orden van al final.
+  var _cord=(REAL&&RCFG&&Object.prototype.toString.call(RCFG.cliente_orden)==="[object Array]")?RCFG.cliente_orden.map(String):[];
+  if(_cord.length) list.sort(function(a,b){ var ia=_cord.indexOf(String(a.id)); var ib=_cord.indexOf(String(b.id)); if(ia<0)ia=1e9; if(ib<0)ib=1e9; return ia-ib; });
   var chips = filters.map(function(f){
     var count = (f.id==="inactive")
       ? pool.filter(isInactive).length
@@ -3531,7 +3551,8 @@ function viewClientes(){
     var rpTxt = c.reportState==="published"?"publicado":"pendiente";
     var _inact = (c.last&&c.last.state==="stale") || (c.raw&&c.raw.activo===false);
     var askR = (_inact && c.email) ? "<button class='cp-btn cp-btn-ghost' style='height:26px;padding:0 10px;font-size:11px;margin-left:auto' data-act='cvx-resena' data-em='"+esc(c.email)+"' data-n='"+esc(c.name||"")+"'>Pedir reseña</button>" : "";
-    return "<article class='cp-client' data-act='cli-open:"+c.id+"' data-s='"+esc(((c.name||"")+" "+(c.email||"")+" "+(c.role||"")).toLowerCase())+"'"+(isPw?" style='border-color:var(--pw-border-strong)'":"")+">"+
+    return "<article class='cp-client' data-act='cli-open:"+c.id+"' data-sort='"+esc(c.id)+"' data-s='"+esc(((c.name||"")+" "+(c.email||"")+" "+(c.role||"")).toLowerCase())+"' style='position:relative"+(isPw?";border-color:var(--pw-border-strong)":"")+"'>"+
+      "<span class='pw-grip' title='Arrastrá para ordenar' onclick='event.stopPropagation()' style='position:absolute;top:9px;right:9px;opacity:.45;z-index:2'>"+_gripSvg()+"</span>"+
       "<header class='cp-client-head'>"+avImg(c.photo,c.name,"class='cp-client-photo'")+
         "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+(c._example?" <span style='font-size:10px;font-weight:700;color:var(--pw-bosque);background:var(--pw-success-bg);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.5px'>EJEMPLO</span>":"")+(_formPendiente(c)?" <span style='font-size:9.5px;font-weight:600;color:#8E7A35;background:rgba(233,196,106,.18);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.3px'>Form pendiente</span>":"")+"</div><div class='cp-client-role'>"+role+"</div></div>"+medal+"</header>"+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
@@ -3552,8 +3573,20 @@ function viewClientes(){
     "<div class='cp-filters cp-cli-filters'>"+
       "<div class='cp-sort'>Ordenar por: <select style='background:transparent;border:none;color:var(--pw-carbon);font-weight:600;cursor:pointer;outline:none'>"+
       "<option>Última actividad</option><option>Nombre</option><option>Semana del programa</option></select></div></div>"+
-    "<section class='cp-clients-grid'>"+cards+"</section>"+
+    "<section class='cp-clients-grid' id='cp-clients-grid'>"+cards+"</section>"+
     "<div id='cp-cli-empty' style='display:none;padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin resultados para tu búsqueda.</div>";
+}
+// Guarda el orden manual de las tarjetas de clientes (arrastre). Los ids que se
+// ven ahora van primero (en su nuevo orden); el resto que ya estaba guardado, atrás.
+function _cliReorder(order){
+  var shown=(order||[]).map(String);
+  var prev=(REAL&&RCFG&&Object.prototype.toString.call(RCFG.cliente_orden)==="[object Array]")?RCFG.cliente_orden.map(String):[];
+  var rest=prev.filter(function(id){ return shown.indexOf(id)<0; });
+  saveCfg({cliente_orden: shown.concat(rest)});
+}
+function _wireCliSort(){
+  var g=document.getElementById("cp-clients-grid");
+  if(g && window.pwSortable) pwSortable(g, _cliReorder, {handle:".pw-grip", item:".cp-client"});
 }
 
 /* ═══ Links ═══ */
@@ -5901,7 +5934,9 @@ function render(){
     }
     if(state.section==="calendario"){
       try{ if(_CAL_DATA){ _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); } else { _calLoad(); } }catch(e){}
+      try{ _wireAgTypesSort(); }catch(e){}
     }
+    if(state.section==="clientes"){ try{ _wireCliSort(); }catch(e){} }
     _syncChatBtn();
     // Apenas entrás al panel (datos reales cargados), la cabra saluda y luego
     // se queda parada (o triste, si hace mucho que no entrabas).
@@ -8690,5 +8725,6 @@ if('serviceWorker' in navigator){
 
 </script>
 <script src="pw-dropzone.js?v=1"></script>
+<script src="pw-sortable.js?v=1"></script>
 </body>
 </html>
