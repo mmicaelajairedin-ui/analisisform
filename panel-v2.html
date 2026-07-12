@@ -2154,7 +2154,7 @@ function viewResumen(){
 // clientes de Pathway por el título del evento. Reemplaza el embed de Calendly.
 // Por ahora SOLO admin; se generaliza cuando esté aprobada.
 // ═══════════════════════════════════════════════════════════════════
-var _AG_DATA=null, _agPendingDone=false;
+var _AG_DATA=null, _agPendingDone=false, _AG_MO_W=270;
 function _agCoachEmail(){ return (""+((COACH&&COACH.email)||(RME&&RME.email)||"")).trim().toLowerCase(); }
 // Persiste el token de Google (que dejó conectar-calendar.html en localStorage)
 // en el perfil del coach, por REST — la misma vía que el panel usa para todo.
@@ -2336,7 +2336,7 @@ function _agMonthRender(){
   var res=_RES_DATA||[]; res.forEach(function(r){ if(!r||r.estado==="cancelada")return; add(+new Date(r.inicio), _agEventTypeFor(r.tipo)); });
   var first=new Date(y,m,1); var startDow=(first.getDay()+6)%7; var daysIn=new Date(y,m+1,0).getDate();
   var today=_agMoKey(new Date());
-  var html="<div style='display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;max-width:270px'>";
+  var html="<div style='display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;max-width:"+(_AG_MO_W||270)+"px'>";
   ["L","M","X","J","V","S","D"].forEach(function(d){ html+="<div style='text-align:center;font-size:9px;font-weight:800;color:var(--pw-text-muted);padding:2px 0'>"+d+"</div>"; });
   for(var i=0;i<startDow;i++){ html+="<div></div>"; }
   for(var dd=1;dd<=daysIn;dd++){
@@ -2371,6 +2371,20 @@ function _agendaCard(){
         "<div class='cp-eyebrow' style='margin-bottom:8px'>Reservas <span style='color:var(--pw-text-muted);font-weight:400'>· desde tu link</span></div>"+
         "<div id='cp-res-body'><div style='color:var(--pw-text-soft);font-size:13px;padding:8px 0'>Cargando reservas…</div></div>"+
       "</div>"+
+    "</div>"+
+  "</div>";
+}
+// Misma agenda linda (lista de Google/iCal + mes) pero en la pestaña Calendario,
+// un poco más grande. Sin la columna de Reservas (acá ya está la de asistencia).
+function _agendaCalCard(){
+  return "<div class='cp-card' style='margin-bottom:16px'>"+
+    "<div class='cp-card-hd'>"+
+      "<h3 class='cp-card-title'><span class='cp-emo'>🗓️</span> Tu agenda<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow' style='display:inline-flex;align-items:center;gap:6px'><span style='width:7px;height:7px;border-radius:50%;background:var(--pw-sendero);display:inline-block'></span>En vivo</span>"+
+    "</div>"+
+    "<div class='cp-card-pad' style='display:flex;gap:0;flex-wrap:wrap;align-items:flex-start'>"+
+      "<div id='cp-agenda-body' style='flex:1.3;min-width:240px;padding-right:22px;font-size:14px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
+      "<div style='flex:0 0 auto;padding:0 4px 0 22px;border-left:1px solid var(--pw-border)'>"+_agMonthCal()+"</div>"+
     "</div>"+
   "</div>";
 }
@@ -2653,6 +2667,7 @@ function viewCalendario(){
   return "<div class='cp-greet'><div><h1 class='cp-greet-h1'>Calendario<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>Todas tus reservas, marcá la asistencia y mirá tus métricas.</div></div></div>"+
     _bookChip+
+    _agendaCalCard()+
     _calOwnerChips()+
     "<div id='cp-cal-kpis' style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px'></div>"+
     "<div id='cp-cal-metrics'></div>"+
@@ -3689,14 +3704,8 @@ function cfgProfile(){
       "<div class='cp-form-row'><label class='cp-form-label'>Biografía corta</label>"+
         "<textarea id='cfp-bio' class='cp-form-textarea'>"+esc(bio)+"</textarea>"+
         "<span class='cp-form-hint'>Aparece en tu página pública.</span></div>"+
-      // Versión en inglés (opcional) plegada: solo se abre si la coach atiende
-      // en inglés. Por defecto cerrada para no repetir Título + Bio dos veces.
-      "<details class='cp-en-toggle'"+((titEn||bioEn)?" open":"")+"><summary>+ Agregar versión en inglés (opcional)</summary>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Professional title (English)</label><input id='cfp-titulo-en' class='cp-form-input' value=\""+esc(titEn)+"\" placeholder='Career Coach · 8 yrs in HR'></div>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Short bio (English)</label>"+
-          "<textarea id='cfp-bio-en' class='cp-form-textarea' placeholder='Your bio in English'>"+esc(bioEn)+"</textarea>"+
-          "<span class='cp-form-hint'>Si la dejás vacía, los visitantes en inglés ven tu bio en español.</span></div>"+
-      "</details>"+
+      // (Versión en inglés eliminada: la página ya traduce sola, no hace falta
+      // cargar Título + Bio dos veces.)
       "<div class='cp-form-row'><label class='cp-form-label'>País donde ejercés</label>"+
         "<select id='cfp-pais' class='cp-form-input'>"+paisOptHtml+"</select>"+
         "<span class='cp-form-hint'>Lo usamos para mostrarte primero a los candidatos de tu mismo país. No lo mostramos públicamente.</span></div>"+
@@ -5943,6 +5952,7 @@ function render(){
     // Agenda nativa (Fase 1, solo admin): al pintar el Resumen, cargar el Google
     // Calendar real. Si ya lo trajimos, reusar el cache; si no, ir a buscarlo.
     if(state.section==="resumen"){
+      _AG_MO_W=270; // mes chico en el Resumen
       try{
         // 1) Si volviste de conectar Google, persistimos el token (REST) y carga solo.
         // 2) Si no, mostramos el cache o cargamos la agenda directo de Google.
@@ -5956,8 +5966,16 @@ function render(){
       }catch(e){}
     }
     if(state.section==="calendario"){
+      _AG_MO_W=340; // mes más grande en Calendario
       try{ if(_CAL_DATA){ _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); } else { _calLoad(); } }catch(e){}
       try{ _wireAgTypesSort(); }catch(e){}
+      // La agenda linda (lista Google/iCal + mes) también acá.
+      try{
+        if(_AG_DATA){ var _agbC=document.getElementById("cp-agenda-body"); if(_agbC) _agbC.innerHTML=_agRender(_AG_DATA); }
+        else { _agendaLoad(); }
+        if(!_RES_DATA) _resLoad(); // para los puntitos del mes
+        _agMonthRender();
+      }catch(e){}
     }
     if(state.section==="clientes"){ try{ _wireCliSort(); }catch(e){} }
     try{ _wireSvcSort(); }catch(e){}
@@ -6215,8 +6233,7 @@ document.addEventListener("click", function(ev){
     var pubA = !!state.pubActive;
     if(pubA && !sl){ alert("Para activar tu perfil público necesitas un slug. Escríbelo en «URL de tu perfil»."); var si=document.getElementById("cfp-slug"); if(si)si.focus(); return; }
     var nom=_val("cfp-nombre").trim(), titP=_val("cfp-titulo").trim(), bioP=_val("cfp-bio").trim();
-    var titEnP=_val("cfp-titulo-en").trim(), bioEnP=_val("cfp-bio-en").trim();
-    var cfgPatch={ gcal_ical_url:_val("cfp-cal-ical").trim(), pais:_val("cfp-pais").trim().toUpperCase(), titulo_profesional_en:titEnP, bio_en:bioEnP };
+    var cfgPatch={ gcal_ical_url:_val("cfp-cal-ical").trim(), pais:_val("cfp-pais").trim().toUpperCase() };
     _AG_DATA=null; // al guardar la config, forzar recarga de la agenda con el iCal nuevo
     if(window._cfpFoto){ cfgPatch.foto_url=window._cfpFoto; COACH.photo=window._cfpFoto; }
     var doSave=function(){
