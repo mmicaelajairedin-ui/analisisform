@@ -222,13 +222,9 @@
     </div>
 
     <div class="view" id="view-comm" hidden>
-      <div class="tpls-wrap">
-        <div class="tpls-bar">
-          <div class="tsl-chips" id="comm-chips"></div>
-          <input id="comm-lead" class="tpls-name" placeholder="Nombre del lead (opcional)" oninput="renderComm()">
-        </div>
-        <div id="comm-cards" class="tpls-grid"></div>
-      </div>
+      <!-- Mismo estudio de emails que ve la coach (Admin › Emails): una sola
+           fuente para que empleada y coach vean las MISMAS plantillas. -->
+      <iframe id="comm-frame" title="Plantillas de email" loading="lazy" style="width:100%;height:calc(100vh - 150px);min-height:520px;border:0;border-radius:16px;background:#fff;box-shadow:0 2px 12px rgba(20,55,38,.06)"></iframe>
     </div>
 
     <div class="view" id="view-leads" hidden>
@@ -448,7 +444,8 @@
     if(ME.rol==='admin' && _asId && sb){
       try{ var r=await sb.from('usuarios').select('id,nombre,email,foto_url,rol').eq('id',_asId).single(); if(!r.error && r.data) WHO=r.data; }catch(e){}
     }
-    initProfile(); renderComm(); genSign(); _loaded.comm=true;
+    initProfile(); genSign(); _loaded.comm=true;
+    var _cf=document.getElementById('comm-frame'); if(_cf && !_cf.getAttribute('src')){ _cf.src="plantillas-email-comercial.html?panel=1&name="+encodeURIComponent((WHO&&WHO.nombre)||ME.nombre||""); }
     // Resumen es la pestaña activa por defecto → el encabezado debe decir Resumen.
     document.getElementById('ptitle').textContent=TITLES.resumen.t;
     document.getElementById('psub').textContent=TITLES.resumen.s;
@@ -458,7 +455,7 @@
   }
 
   // Tabs
-  var _loaded={}, TITLES={resumen:{t:"Resumen",s:"Tu calendario del mes, tus próximas reservas y tu disponibilidad."},calendario:{t:"Calendario",s:"Todas tus reservas, marcá la asistencia y mirá tus métricas de demos."},comm:{t:"Plantillas de email",s:"Elegí el nicho, copiá la plantilla con diseño y pegala en tu correo."},leads:{t:"Leads",s:"Contactá, agendá demos y dá de alta coaches. Cada marca queda en tus métricas."}};
+  var _loaded={}, TITLES={resumen:{t:"Resumen",s:"Tu calendario del mes, tus próximas reservas y tu disponibilidad."},calendario:{t:"Calendario",s:"Todas tus reservas, marcá la asistencia y mirá tus métricas de demos."},comm:{t:"Plantillas de email",s:"Tocá un email para verlo, editarlo y copiarlo con diseño para pegar en Gmail."},leads:{t:"Leads",s:"Contactá, agendá demos y dá de alta coaches. Cada marca queda en tus métricas."}};
   document.querySelectorAll('.nav-item[data-tab]').forEach(function(b){ b.addEventListener('click',function(){ goTab(b.dataset.tab); }); });
   function goTab(t){
     document.querySelectorAll('.nav-item[data-tab]').forEach(function(b){ b.classList.toggle('on',b.dataset.tab===t); });
@@ -559,20 +556,32 @@
   }
   // ── Col 3: tipos de evento EDITABLES + Agendar cita (réplica del panel del coach) ──
   var _EMES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  function _gripSvg(){ return "<svg width='13' height='13' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'><circle cx='9' cy='6' r='1.7'/><circle cx='15' cy='6' r='1.7'/><circle cx='9' cy='12' r='1.7'/><circle cx='15' cy='12' r='1.7'/><circle cx='9' cy='18' r='1.7'/><circle cx='15' cy='18' r='1.7'/></svg>"; }
   function renderTypes(){
     var box=document.getElementById('ag-types'); if(!box) return;
     var types=agTypes();
     box.innerHTML="<div style='font-size:11px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave);margin-bottom:6px'>Tipos de evento</div>"+
-      types.map(function(t,i){ var col=t.color||'#2D6A4F';
-        return "<button onclick='agTypeMenu("+i+")' style='display:flex;align-items:center;gap:7px;width:100%;text-align:left;background:#fff;border:1px solid var(--borde);border-radius:9px;font-family:inherit;font-size:12px;color:var(--carbon);cursor:pointer;padding:7px 9px;margin-bottom:5px'>"+
-          "<span style='width:9px;height:9px;border-radius:50%;background:"+col+";flex-shrink:0'></span>"+
-          "<span style='flex-shrink:0'>"+(t.icon||'📅')+"</span>"+
-          "<span style='flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(t.label||'Evento')+"</span>"+
-          "<span style='opacity:.35;font-size:15px'>›</span></button>";
-      }).join("")+
+      "<div id='emp-agtypes-list'>"+types.map(function(t,i){ var col=t.color||'#2D6A4F';
+        return "<div data-sort='"+i+"' style='display:flex;align-items:center;gap:3px;margin-bottom:5px'>"+
+          "<span class='pw-grip' title='Arrastrá para ordenar' style='flex-shrink:0;width:15px'>"+_gripSvg()+"</span>"+
+          "<button onclick='agTypeMenu("+i+")' style='display:flex;align-items:center;gap:7px;flex:1;min-width:0;text-align:left;background:#fff;border:1px solid var(--borde);border-radius:9px;font-family:inherit;font-size:12px;color:var(--carbon);cursor:pointer;padding:7px 9px'>"+
+            "<span style='width:9px;height:9px;border-radius:50%;background:"+col+";flex-shrink:0'></span>"+
+            "<span style='flex-shrink:0'>"+(t.icon||'📅')+"</span>"+
+            "<span style='flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(t.label||'Evento')+"</span>"+
+            "<span style='opacity:.35;font-size:15px'>›</span></button>"+
+        "</div>";
+      }).join("")+"</div>"+
       "<button class='btn ghost sm' style='margin-top:2px' onclick='agNewType()'>＋ Tipo</button>"+
       "<button class='btn' style='width:100%;margin-top:12px' onclick='agOpenCita(-1)'>＋ Agendar cita</button>"+
       "<button class='btn ghost' style='width:100%;margin-top:6px' onclick='agOpenDisp()'>🕑 Mi disponibilidad</button>";
+    if(window.pwSortable){ var _l=document.getElementById('emp-agtypes-list'); if(_l) pwSortable(_l, agReorderTypes, {handle:'.pw-grip', item:'[data-sort]'}); }
+  }
+  // Reordenar tipos de evento (arrastre) y guardar el nuevo orden.
+  async function agReorderTypes(order){
+    var cur=agTypes(); var arr=(order||[]).map(function(k){ return cur[parseInt(k,10)]; }).filter(Boolean);
+    if(arr.length!==cur.length) return;
+    EVT=arr; renderTypes();
+    if(sb && WHO&&WHO.id){ try{ var cur2=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cur2.data&&cur2.data[0]&&cur2.data[0].configuracion)||{}; cfg.event_types=arr; await sb.from('usuarios').update({configuracion:cfg}).eq('id',WHO.id); try{ if(ME&&WHO.id===ME.id){ var mu=JSON.parse(localStorage.getItem('mj_user')||'{}'); mu.configuracion=cfg; localStorage.setItem('mj_user',JSON.stringify(mu)); } }catch(_){ } if(typeof toast==='function') toast('Orden guardado ✓'); }catch(e){ if(typeof toast==='function') toast('No se pudo guardar'); } }
   }
   // Miembros del equipo (admin + empleados activos) para invitar a una cita/tipo.
   var _TEAM=null, _teamReq=false;
@@ -1215,5 +1224,7 @@
 
   resolveWho();
 </script>
+<script src="pw-dropzone.js?v=1"></script>
+<script src="pw-sortable.js?v=1"></script>
 </body>
 </html>

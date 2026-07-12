@@ -40,7 +40,7 @@ Deno.serve(async (req: Request) => {
   // Citas próximas (las 25 h que vienen). Filtramos por estado en el código
   // (abajo) para incluir también las que aún no tienen estado seteado.
   const q = `${SB_URL}/rest/v1/citas` +
-    `?select=id,nombre,email,tipo,inicio,estado,coach_id,cliente_tz,rem_24h_at,rem_1h_at` +
+    `?select=id,nombre,email,tipo,inicio,estado,coach_id,cliente_tz,token,rem_24h_at,rem_1h_at` +
     `&inicio=gte.${new Date(now).toISOString()}` +
     `&inicio=lte.${inWin}` +
     `&order=inicio.asc&limit=200`;
@@ -100,7 +100,7 @@ Deno.serve(async (req: Request) => {
 
 interface Cita {
   id: string; nombre?: string; email?: string; tipo?: string; inicio: string;
-  estado?: string; coach_id?: string; cliente_tz?: string;
+  estado?: string; coach_id?: string; cliente_tz?: string; token?: string;
   rem_24h_at?: string | null; rem_1h_at?: string | null;
 }
 interface Coach { nombre?: string; email?: string; tz?: string; }
@@ -151,7 +151,9 @@ async function sendReminder(
     `<div style="margin-top:4px">⏰ <strong>${esc(hora)}</strong> <span style="color:#5A6A60;font-size:12px">(${esc(tz)})</span></div>` +
     `<div style="margin-top:4px">💻 Online por Google Meet</div>` +
     `</div>` +
-    `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">Si no podés en ese horario, respondé este email y lo reprogramamos.</p>` +
+    (c.token
+      ? `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">¿No podés en ese horario? <a href="https://pathwaycareercoach.com/gestionar-cita.html?t=${esc(c.token)}" style="color:#2D6A4F;font-weight:700">Cancelar o reprogramar</a>.</p>`
+      : `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">Si no podés en ese horario, respondé este email y lo reprogramamos.</p>`) +
     `</div>`;
 
   try {
