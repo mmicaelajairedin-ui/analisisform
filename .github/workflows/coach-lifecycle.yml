@@ -17,6 +17,11 @@ on:
   schedule:
     - cron: '0 9 * * *'
   workflow_dispatch:
+    inputs:
+      test_email:
+        description: "Prueba: manda los 4 emails SOLO a esta casilla (vacío = corrida real a los coaches)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -44,11 +49,19 @@ jobs:
           echo "SECRET=$SECRET" >> $GITHUB_ENV
 
       - name: "🚀 Enviar empujones"
+        env:
+          TEST_EMAIL: ${{ github.event.inputs.test_email }}
         run: |
+          BODY='{}'
+          if [ -n "$TEST_EMAIL" ]; then
+            BODY="{\"test_email\":\"$TEST_EMAIL\"}"
+            echo "Modo PRUEBA → enviando los 4 emails solo a $TEST_EMAIL"
+          fi
           response=$(curl -sS -w "\n%{http_code}" -X POST \
             "${URL}/functions/v1/coach-lifecycle" \
             -H "X-Trigger-Secret: ${SECRET}" \
             -H "Content-Type: application/json" \
+            --data "$BODY" \
             --max-time 200) || {
               echo "::error::curl coach-lifecycle falló con exit code $?"
               exit 1
