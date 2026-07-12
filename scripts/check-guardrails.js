@@ -71,7 +71,7 @@ const RULES = [
       const dz = read("pw-dropzone.js");
       if (!dz) return "falta pw-dropzone.js (helper de drag&drop universal).";
       if (!/input\[type="file"\]/.test(dz)) return "pw-dropzone.js ya no registra los input[type=file].";
-      for (const f of ["panel-v2.html", "cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html", "cv.html"]) {
+      for (const f of ["panel-v2.html", "cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html", "cv.html", "empleado.html", "multicoach.html"]) {
         if (!/pw-dropzone\.js/.test(read(f))) return f + " ya no incluye pw-dropzone.js.";
       }
       const p = read("panel-v2.html");
@@ -869,6 +869,35 @@ const RULES = [
     },
   },
   {
+    name: "registro: el alta abierta (trial gratis) está ABIERTA (coincide con la landing)",
+    bug: "El registro se cerró a 'solo invitación' de contrabando dentro de un PR " +
+         "sobre otra cosa (jul-2026), contradiciendo la landing que promete trial " +
+         "gratis. Reabierto: coach nuevo se auto-registra (POST) y el invitado activa " +
+         "(PATCH). El anti-abuso es la verificación de email, NO cerrar el registro.",
+    check() {
+      const s = read("registro.html");
+      if (!s) return null;
+      const flat = s.replace(/\s+/g, " ");
+      if (/if \( ?!activatingRow ?\) \{[^}]{0,260}(por invitación|showError\()/.test(flat))
+        return "registro.html: volvió a cerrar el alta abierta (bloquea a quien no fue invitado). La landing promete trial gratis.";
+      if (!/activatingRow[\s\S]{0,400}method: 'PATCH'[\s\S]{0,600}method: 'POST'/.test(s))
+        return "registro.html: se perdió el camino POST (crear cuenta nueva para un coach no invitado).";
+      return null;
+    },
+  },
+  {
+    name: "fitness: el coach VE el diario de nutrición del cliente (fit_nutri_log)",
+    bug: "El cliente anotaba lo que comió (fit_nutri_log) pero el panel del coach " +
+         "nunca lo leía → era un pozo negro. La pestaña Nutrición debe mostrar el " +
+         "diario del cliente (solo lectura).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      return /fit_nutri_log/.test(s) ? null
+        : "panel-v2.html: el coach ya no ve el diario de nutrición del cliente (fit_nutri_log).";
+    },
+  },
+  {
     name: "fitness: marcar ejercicios de la rutina SE GUARDA (y el coach lo ve)",
     bug: "toggleEx solo tachaba en pantalla → al recargar se perdía TODO lo " +
          "marcado y el coach nunca veía qué entrenó el cliente. Debe persistir por " +
@@ -1126,6 +1155,17 @@ const RULES = [
       if (!/pw-sortable\.js/.test(p)) return "panel-v2.html ya no incluye pw-sortable.js.";
       if (!/saveCfg\(\{event_types:/.test(p)) return "panel-v2.html: el orden de tipos de evento ya no se guarda (event_types).";
       if (!/saveCfg\(\{cliente_orden:/.test(p)) return "panel-v2.html: el orden de las tarjetas de cliente ya no se guarda (cliente_orden).";
+      // Efecto "settle" al soltar (arrastrar ya tiene sombra en begin()).
+      if (!/pw-sort-dropped/.test(dz)) return "pw-sortable.js perdio el efecto 'settle' al soltar.";
+      // Servicios del coach: reordenables y persisten en configuracion.servicios.
+      if (!/id=.cfg-services-list./.test(p)) return "panel-v2.html perdio el contenedor sortable de servicios (cfg-services-list).";
+      if (!/saveCfg\(\{\s*servicios:/.test(p)) return "panel-v2.html: el orden de servicios ya no se guarda (servicios).";
+      // Metas de ahorro del cliente: reordenables y persisten en fin_objetivos.
+      const fin = read("pathway-fin-cliente.html");
+      if (fin) {
+        if (!/pw-sortable\.js/.test(fin)) return "pathway-fin-cliente.html ya no incluye pw-sortable.js.";
+        if (!/function _metaReorder/.test(fin)) return "pathway-fin-cliente.html perdio el reordenar de metas (_metaReorder).";
+      }
       return null;
     },
   },

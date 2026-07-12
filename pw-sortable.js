@@ -117,6 +117,10 @@
         d.placeholder.parentNode.insertBefore(el, d.placeholder);
         d.placeholder.parentNode.removeChild(d.placeholder);
         document.body.classList.remove('pw-sorting');
+        // Efecto "settle" al soltar: un rebote suave (si la página no re-renderiza
+        // al instante). El re-render por red suele tardar, así que alcanza a verse.
+        el.classList.add('pw-sort-dropped');
+        (function (node) { setTimeout(function () { node.classList.remove('pw-sort-dropped'); }, 340); })(el);
         var order = itemsOf(container, itemSel).map(function (x) { return x.getAttribute('data-sort'); });
         try { if (typeof onReorder === 'function') onReorder(order); } catch (e) {}
         try { container.dispatchEvent(new CustomEvent('pw:reorder', { detail: { order: order }, bubbles: true })); } catch (e) {}
@@ -134,7 +138,7 @@
   // Estilo mínimo de la manija (si el que la usa no define uno propio).
   try {
     var st = document.createElement('style');
-    st.textContent = '.pw-grip{cursor:grab;touch-action:none;user-select:none;color:#9AA8A0;display:inline-flex;align-items:center;justify-content:center}.pw-grip:active{cursor:grabbing}body.pw-sorting{cursor:grabbing;user-select:none}body.pw-sorting *{cursor:grabbing !important}';
+    st.textContent = '.pw-grip{cursor:grab;touch-action:none;user-select:none;color:#9AA8A0;display:inline-flex;align-items:center;justify-content:center}.pw-grip:active{cursor:grabbing}body.pw-sorting{cursor:grabbing;user-select:none}body.pw-sorting *{cursor:grabbing !important}@keyframes pw-sort-settle{0%{transform:scale(1.05)}55%{transform:scale(.985)}100%{transform:scale(1)}}.pw-sort-dropped{animation:pw-sort-settle .30s cubic-bezier(.34,1.56,.64,1)}';
     document.head.appendChild(st);
   } catch (e) {}
 

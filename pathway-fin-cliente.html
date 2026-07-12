@@ -714,6 +714,17 @@ window.patCancel=function(){ window._patEdit=null; renderPatrimonio(); };
 window.patDel=function(i){ var A=_patLoad(); A.splice(i,1); _patSave(A); renderPatrimonio(); };
 window.patSave=function(){ var A=_patLoad(), e=window._patEdit||{i:'new'}; var o={tipo:_fv('pat-tipo')||'otro',nombre:_fv('pat-nombre').trim(),valor:_fn('pat-valor')}; if(!o.nombre){ alert('Ponle un nombre al activo.'); return; } var isNew=(e.i==='new'); if(isNew) A.push(o); else A[e.i]=o; _patSave(A); window._patEdit=null; renderPatrimonio(); if(isNew && o.valor>0){ showToast('📈 Patrimonio +€'+Math.round(o.valor)); } };
 // ── Metas ──
+// Reordenar METAS arrastrando. `order` = índices (data-sort) en el nuevo orden;
+// reordenamos y persistimos (_objSave actualiza cache y re-renderiza; _mergeFinArr
+// respeta el orden local).
+function _metaReorder(order){
+  var ord=(order||[]).map(function(x){ return parseInt(x,10); });
+  var O=_objLoad(), arr=[];
+  ord.forEach(function(ix){ if(O[ix]) arr.push(O[ix]); });
+  O.forEach(function(o,ix){ if(ord.indexOf(ix)<0) arr.push(o); });
+  _objSave(arr);
+  if(typeof renderObjetivos==='function') renderObjetivos();
+}
 function renderObjetivos(){
   var box=document.getElementById('fin-goals'); if(!box) return;
   if(window._objEdit){ box.innerHTML=_objForm(); return; }
@@ -723,7 +734,8 @@ function renderObjetivos(){
   var tPct=tMeta>0?Math.min(100,Math.round(tAct/tMeta*100)):0;
   var done=O.filter(function(o){ var m=parseFloat(o.meta)||0; return m>0&&(parseFloat(o.actual)||0)>=m; }).length;
   var summary='<div class="card" style="margin-bottom:12px"><div class="card-body"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span class="eyebrow">Tu progreso de ahorro</span><span id="obj-tcount" style="font-size:12px;color:var(--muted)">'+done+'/'+O.length+' metas'+(done?' 🏆':'')+'</span></div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><strong id="obj-tact">€'+Math.round(tAct)+'</strong><span id="obj-tgoal" style="color:var(--muted)">de €'+Math.round(tMeta)+'</span></div><div class="gbar"><i id="obj-tbar" style="width:'+tPct+'%"></i></div></div></div>';
-  box.innerHTML= summary+'<div class="fin-grid2">'+O.map(_objCard).join('')+'</div>';
+  box.innerHTML= summary+'<div class="fin-grid2" id="fin-goals-grid">'+O.map(_objCard).join('')+'</div>';
+  var _g=document.getElementById('fin-goals-grid'); if(_g && window.pwSortable) pwSortable(_g, _metaReorder, {handle:'.pw-grip', item:'[data-sort]'});
 }
 function _objCard(o,i){
   var meta=parseFloat(o.meta)||0, act=parseFloat(o.actual)||0;
@@ -733,10 +745,10 @@ function _objCard(o,i){
           : (o.fecha? 'Para '+esc(o.fecha) : 'Te faltan €'+Math.round(falta));
   var hilo=Array.isArray(o.hilo)?o.hilo:[], open=(window._objThread===i);
   var thread=open?('<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">'+(hilo.length?hilo.map(function(m){ var me=(m.from==='cliente'); return '<div style="margin:5px 0;display:flex;'+(me?'justify-content:flex-end':'')+'"><div style="max-width:82%;font-size:12px;padding:7px 10px;border-radius:10px;background:'+(me?'#2D6A4F':'#eef1ee')+';color:'+(me?'#fff':'#333')+'">'+esc(m.text)+'</div></div>'; }).join(''):'<div style="font-size:11.5px;color:var(--muted);padding:4px 0">Sin comentarios. Escribile a tu coach sobre esta meta.</div>')+'<div style="display:flex;gap:8px;margin-top:8px"><input id="objmsg-'+i+'" placeholder="Escribe un comentario…" style="flex:1;height:34px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:12.5px"><button onclick="objMsg('+i+')" class="btn" style="padding:0 14px;height:34px;font-size:12px">Enviar</button></div></div>'):'';
-  return '<div class="card fg-card" id="fgcard-'+i+'" style="margin:0">'+
+  return '<div class="card fg-card" id="fgcard-'+i+'" data-sort="'+i+'" style="margin:0">'+
     '<div class="fg-vis" id="fgvis-'+i+'">'+_objStack(o)+'</div>'+
     '<div class="fg-info">'+
-      '<div class="fg-top"><span class="fg-name">'+_objIco(o.tipo)+' '+esc(o.nombre||'Meta')+'</span>'+
+      '<div class="fg-top"><span class="pw-grip" title="Arrastrá para ordenar" style="cursor:grab;color:#9AA8A0;font-size:15px;margin-right:2px">⠿</span><span class="fg-name">'+_objIco(o.tipo)+' '+esc(o.nombre||'Meta')+'</span>'+
         '<div class="fg-sw"><button class="'+((o.style!=='pig')?'on':'')+'" onclick="objSetStyle('+i+',\'jar\')" title="Jarro">🫙</button><button class="'+((o.style==='pig')?'on':'')+'" onclick="objSetStyle('+i+',\'pig\')" title="Chancho">🐷</button></div>'+
         '<button class="fg-ico" onclick="objEdit('+i+')" title="Editar">✏️</button>'+
         '<button class="fg-ico" onclick="objDel('+i+')" title="Borrar">✕</button>'+
@@ -1573,5 +1585,6 @@ window.addEventListener('storage',function(e){ if(e.key==='pw_demo_financiero' &
 </script>
 <div class="toast" id="toast"></div>
 <script src="pw-dropzone.js?v=1"></script>
+<script src="pw-sortable.js?v=1"></script>
 </body>
 </html>
