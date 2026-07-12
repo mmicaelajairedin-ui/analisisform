@@ -134,18 +134,42 @@ async function handleCallback(){
     return showError('No pudimos cargar el cliente. Recarga la página.');
   }
 
-  // Esperar a que se procese el hash de la URL (Supabase lo hace al cargar)
-  await new Promise(function(r){ setTimeout(r, 200); });
+  // Si Google/Supabase devolvieron un error en la URL (?error= o #error=),
+  // mostrarlo claro en vez del genérico "no hay sesión" (p.ej. access_denied
+  // cuando el usuario cancela, o app no verificada).
+  var _oauthErr = params.get('error_description') || params.get('error');
+  if(!_oauthErr){
+    try{
+      var _hp = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+      _oauthErr = _hp.get('error_description') || _hp.get('error');
+    }catch(_e){}
+  }
+  if(_oauthErr){
+    return showError('Google no completó el inicio de sesión: ' + String(_oauthErr).replace(/\+/g,' ') + '. Volvé a intentar.');
+  }
 
-  // Obtener la sesion
-  var sessionRes;
+  // El intercambio del "code" de OAuth (flujo PKCE) es una llamada de red
+  // asíncrona que Supabase dispara al cargar la página. Un único getSession()
+  // corriendo 200ms después puede ganarle la carrera y devolver null → el
+  // usuario veía "No se encontró sesión activa". Reintentamos ~5s: apenas la
+  // sesión aparece, seguimos.
+  async function _getSessionRetry(){
+    for(var i=0;i<16;i++){
+      try{
+        var r = await sb.auth.getSession();
+        if(r && r.data && r.data.session) return r.data.session;
+      }catch(e){}
+      await new Promise(function(res){ setTimeout(res, 300); });
+    }
+    return null;
+  }
+
+  var session;
   try {
-    sessionRes = await sb.auth.getSession();
+    session = await _getSessionRetry();
   } catch(e) {
     return showError('Error obteniendo sesión: ' + e.message);
   }
-
-  var session = sessionRes && sessionRes.data && sessionRes.data.session;
   if(!session){
     return showError('No se encontró sesión activa. Prueba iniciar sesión de nuevo.');
   }
