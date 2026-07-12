@@ -25,6 +25,10 @@ const GO_CLIENTES = PANEL_URL + "?go=clientes";
 const PUBLIC_API = "https://api.pathwaycareercoach.com"; // dominio público de las functions (baja)
 const REPLY_TO = "hi@pathwaycareercoach.com";
 const DAY = 24 * 60 * 60 * 1000;
+// Arranque del onboarding: SOLO coaches registrados desde esta fecha reciben la
+// secuencia de bienvenida (no retroactivo). Para incluir a alguien anterior,
+// bajar esta fecha; para pausar, subirla al futuro.
+const ONBOARDING_FROM_TS = Date.parse("2026-07-12T00:00:00Z");
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -172,8 +176,10 @@ Deno.serve(async (req) => {
         const recientes = hist.some((h) => h.plantilla_id !== "admin_churn_alert" && h.sent_at && (now - +new Date(h.sent_at)) / DAY < 3);
 
         // ── Decisión: primero onboarding por tiempo, luego retención ──
+        // Solo coaches que se registran DESDE la fecha de arranque (no retroactivo:
+        // los coaches que ya existían antes NO reciben la secuencia de bienvenida).
         let onbStep = null;
-        if (dAlta <= 30) {  // solo coaches recientes entran a la secuencia
+        if (altaTs >= ONBOARDING_FROM_TS) {
           for (const s of ONB) {
             if (dAlta >= s.day && !sentEver(s.id)) { onbStep = s; break; }
           }
