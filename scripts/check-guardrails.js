@@ -1134,6 +1134,17 @@ const RULES = [
       if (!/pw-sortable\.js/.test(p)) return "panel-v2.html ya no incluye pw-sortable.js.";
       if (!/saveCfg\(\{event_types:/.test(p)) return "panel-v2.html: el orden de tipos de evento ya no se guarda (event_types).";
       if (!/saveCfg\(\{cliente_orden:/.test(p)) return "panel-v2.html: el orden de las tarjetas de cliente ya no se guarda (cliente_orden).";
+      // Efecto "settle" al soltar (arrastrar ya tiene sombra en begin()).
+      if (!/pw-sort-dropped/.test(dz)) return "pw-sortable.js perdio el efecto 'settle' al soltar.";
+      // Servicios del coach: reordenables y persisten en configuracion.servicios.
+      if (!/id=.cfg-services-list./.test(p)) return "panel-v2.html perdio el contenedor sortable de servicios (cfg-services-list).";
+      if (!/saveCfg\(\{\s*servicios:/.test(p)) return "panel-v2.html: el orden de servicios ya no se guarda (servicios).";
+      // Metas de ahorro del cliente: reordenables y persisten en fin_objetivos.
+      const fin = read("pathway-fin-cliente.html");
+      if (fin) {
+        if (!/pw-sortable\.js/.test(fin)) return "pathway-fin-cliente.html ya no incluye pw-sortable.js.";
+        if (!/function _metaReorder/.test(fin)) return "pathway-fin-cliente.html perdio el reordenar de metas (_metaReorder).";
+      }
       return null;
     },
   },
