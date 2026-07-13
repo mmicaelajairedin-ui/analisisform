@@ -2927,6 +2927,8 @@ function viewClienteDetalle(c){
     var maxWk=wkOrder.length?wkOrder[wkOrder.length-1]:0;
     // Carga en contexto: un formulario inline por día/semana. state.frAdd = "id§semana§dia".
     var _frAdd=state.frAdd||"";
+    // Unidad de peso de la rutina (kg o lb). Default: la última usada por el cliente.
+    var _ru=state.rutUnit||((RUT.length&&/\blb\b/i.test(RUT[RUT.length-1].meta||""))?"lb":"kg");
     var _isAdd=function(w,dia){ return _frAdd===(c.id+"§"+w+"§"+(dia||"")); };
     var _openBtn=function(w,dia,label){ return "<button class='cp-btn cp-btn-ghost' style='height:28px;font-size:12px;padding:0 12px;margin-top:6px' data-act='fit-inline-open' data-id='"+esc(c.id)+"' data-w='"+w+"' data-dia='"+esc(dia||"")+"'>"+label+"</button>"; };
     var _addForm=function(w,dia,needDia){
@@ -2934,7 +2936,8 @@ function viewClienteDetalle(c){
         (needDia?"<input id='fi-dia' class='cp-form-input' list='dl-dias' placeholder='Día (ej. Lunes · Tren superior)' value=\""+esc((dia&&dia!=='General')?dia:"")+"\">":"")+
         "<input id='fi-nom' class='cp-form-input' list='dl-ejercicios' placeholder='Ejercicio (ej. Press de banca)' oninput='fiPrev()'>"+
         "<div id='fi-prev' style='display:none;align-items:center;gap:10px;padding:7px 8px;background:var(--pw-bg,#f0f4f0);border-radius:8px'></div>"+
-        "<div style='display:flex;gap:7px'><input id='fi-reps' class='cp-form-input' style='flex:1;min-width:80px' placeholder='Series×reps (4×10)'><input id='fi-peso' class='cp-form-input' style='flex:1;min-width:70px' placeholder='Peso kg' inputmode='decimal'></div>"+
+        "<div style='display:flex;gap:7px;align-items:center;flex-wrap:wrap'><input id='fi-reps' class='cp-form-input' style='flex:1;min-width:80px' placeholder='Series×reps (4×10)'><input id='fi-peso' class='cp-form-input' style='flex:1;min-width:70px' placeholder='Peso ("+_ru+")' inputmode='decimal'>"+
+          "<div class='cp-filters' style='gap:4px'><button class='cp-chip "+(_ru==='kg'?'is-on':'')+"' style='padding:6px 11px' data-act='fit-rut-unit:kg'>kg</button><button class='cp-chip "+(_ru==='lb'?'is-on':'')+"' style='padding:6px 11px' data-act='fit-rut-unit:lb'>lb</button></div></div>"+
         "<div style='display:flex;gap:7px'><input id='fi-rir' class='cp-form-input' style='flex:1;min-width:80px' list='dl-rir' placeholder='RIR (opcional)'><input id='fi-desc' class='cp-form-input' style='flex:1;min-width:80px' list='dl-descanso' placeholder='Descanso (opcional)'></div>"+
         "<div style='display:flex;gap:7px'><button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='fit-inline-save' data-id='"+esc(c.id)+"' data-w='"+w+"' data-dia='"+esc(dia||"")+"' data-needdia='"+(needDia?1:0)+"'>Agregar</button><button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 12px' data-act='fit-inline-cancel'>Cerrar</button></div></div>";
     };
@@ -6831,7 +6834,7 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo cambiar el estado de la coach."); });
     return;
   }
-  if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.fitTareas=null; state.fitUnit=null; render(); window.scrollTo(0,0); return; }
+  if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.fitTareas=null; state.fitUnit=null; state.rutUnit=null; render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; state.fitTareas=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
   if(act==="cliweek-add"){ var _cwc=CLIENTS.filter(function(x){return String(x.id)===String(state.clienteSel);})[0]||{}; var _cur=state.cliWeek!=null?state.cliWeek:(_cwc.week||1); state.cliWeek=Math.max(4,_cur)+1; render(); return; }
@@ -7209,6 +7212,7 @@ document.addEventListener("click", function(ev){
   }
   // ── Fitness/Financiero: lo que el coach carga acá lo ve el cliente en su portal ──
   if(act.indexOf("fit-unit:")===0){ state.fitUnit=act.slice(9); render(); return; }
+  if(act.indexOf("fit-rut-unit:")===0){ state.rutUnit=act.slice(13); render(); return; }
   if(act==="fit-tareas-add"){ _tareasRead(); if(!state.fitTareas) state.fitTareas=[]; state.fitTareas.push(""); render(); return; }
   if(act==="fit-tareas-del"){ _tareasRead(); var tdi=parseInt(el.getAttribute("data-i"),10); if(!isNaN(tdi)&&state.fitTareas){ state.fitTareas.splice(tdi,1); render(); } return; }
   if(act==="fit-tareas-save"){
@@ -7304,7 +7308,8 @@ document.addEventListener("click", function(ev){
     var idia=need?((_val("fi-dia")||"").trim()||"General"):(el.getAttribute("data-dia")||"General");
     var ireps=(_val("fi-reps")||"").trim(), ipeso=(_val("fi-peso")||"").trim();
     var irir=(_val("fi-rir")||"").trim(), idesc=(_val("fi-desc")||"").trim();
-    var imeta=ireps+(ipeso?((ireps?" · ":"")+ipeso+(/kg/i.test(ipeso)?"":" kg")):"");
+    var _iru=state.rutUnit||"kg";
+    var imeta=ireps+(ipeso?((ireps?" · ":"")+ipeso+(/kg|lb/i.test(ipeso)?"":(" "+_iru))):"");
     var ic=CLIENTS.filter(function(x){return String(x.id)===String(iid);})[0];
     var iarr=_rutToArr(ic&&ic.raw&&ic.raw.fit_rutina);
     iarr.push({semana:iw,dia:idia,nombre:inom,meta:imeta,peso:ipeso,rir:irir,descanso:idesc,foto:""});
