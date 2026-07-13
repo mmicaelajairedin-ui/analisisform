@@ -1,27 +1,27 @@
--- FIX: el coach no podía guardar el diagnóstico/plan (tabla `informes`).
--- La generación por IA la hace la Edge Function con SERVICE ROLE (bypassa RLS),
--- pero la EDICIÓN del coach usa la anon key desde el navegador. Si RLS está
--- activo en `informes` sin política de UPDATE para anon, el PATCH se rechaza y
--- el diagnóstico "no se guarda". Estas políticas permisivas lo habilitan
--- (misma postura actual; el RLS estricto por coach_id es el Sprint B).
--- Idempotente. Solo aplica si RLS está activo; si está desactivado, son inertes.
+-- FIX (v2): el coach no puede guardar el diagnóstico/plan en `informes`.
+-- La v1 solo creó POLÍTICAS RLS, pero faltaba el GRANT de tabla: sin el GRANT,
+-- el rol `anon` (que usa el navegador) NO puede escribir aunque RLS esté apagado
+-- o aunque exista la política → "permission denied for table informes".
+-- Esta versión cubre AMBOS mecanismos (GRANT + política permisiva). Idempotente.
+
+-- 1) GRANTs de tabla — esto era lo que faltaba.
+GRANT SELECT, INSERT, UPDATE ON public.informes     TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.cv_publicados TO anon, authenticated;
+-- Por si algún id es serial/identity (el INSERT necesita la secuencia).
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+
+-- 2) Políticas RLS permisivas (inertes si RLS está desactivado; necesarias si está activo).
+--    Mantiene la postura permisiva actual (RLS estricto por coach_id = Sprint B).
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='informes') THEN
-    DROP POLICY IF EXISTS informes_anon_select ON public.informes;
-    CREATE POLICY informes_anon_select ON public.informes FOR SELECT TO anon USING (true);
-    DROP POLICY IF EXISTS informes_anon_insert ON public.informes;
-    CREATE POLICY informes_anon_insert ON public.informes FOR INSERT TO anon WITH CHECK (true);
-    DROP POLICY IF EXISTS informes_anon_update ON public.informes;
-    CREATE POLICY informes_anon_update ON public.informes FOR UPDATE TO anon USING (true) WITH CHECK (true);
+  IF to_regclass('public.informes') IS NOT NULL THEN
+    DROP POLICY IF EXISTS informes_anon_all ON public.informes;
+    CREATE POLICY informes_anon_all ON public.informes
+      FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
   END IF;
-  -- Mismo caso para los CV publicados (el coach/cliente edita el CV).
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='cv_publicados') THEN
-    DROP POLICY IF EXISTS cvpub_anon_select ON public.cv_publicados;
-    CREATE POLICY cvpub_anon_select ON public.cv_publicados FOR SELECT TO anon USING (true);
-    DROP POLICY IF EXISTS cvpub_anon_insert ON public.cv_publicados;
-    CREATE POLICY cvpub_anon_insert ON public.cv_publicados FOR INSERT TO anon WITH CHECK (true);
-    DROP POLICY IF EXISTS cvpub_anon_update ON public.cv_publicados;
-    CREATE POLICY cvpub_anon_update ON public.cv_publicados FOR UPDATE TO anon USING (true) WITH CHECK (true);
+  IF to_regclass('public.cv_publicados') IS NOT NULL THEN
+    DROP POLICY IF EXISTS cvpub_anon_all ON public.cv_publicados;
+    CREATE POLICY cvpub_anon_all ON public.cv_publicados
+      FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
   END IF;
 END $$;
