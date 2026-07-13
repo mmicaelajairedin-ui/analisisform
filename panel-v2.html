@@ -7136,17 +7136,23 @@ document.addEventListener("click", function(ev){
     d.alertas=_lines("pl-alert");
     d.mensaje_candidato=_val("pl-msg");
     var _saveProg=function(){ if(!avRes) return Promise.resolve(); return _sbw("candidatos?id=eq."+encodeURIComponent(psid),"PATCH",{acciones_progreso:JSON.stringify(avRes.prog)}).then(function(r){ if(r&&r.ok&&psc.raw) psc.raw.acciones_progreso=JSON.stringify(avRes.prog); }); };
-    if(psc.inf&&psc.inf.id){
-      _sbw("informes?id=eq."+encodeURIComponent(psc.inf.id),"PATCH",{data:JSON.stringify(d)})
-        .then(function(r){ if(!r.ok) throw 0; psc.inf.d=d; return _saveProg(); })
+    // Guardar YA en memoria: si la red/RLS falla, el texto del coach NO se pierde
+    // (queda en pantalla al re-renderizar) y puede reintentar.
+    if(psc.inf) psc.inf.d=d; else psc.inf={ d:d };
+    var _err=function(r){ return r.text().then(function(t){ var e=new Error("HTTP "+r.status+(t?(" · "+t.slice(0,160)):"")); throw e; }); };
+    var _fail=function(e){ var m=(e&&e.message)||e||""; var rls=/row-level|permission|denied|policy|401|403/i.test(""+m); alert("No se pudo guardar el diagnóstico.\n\n"+(rls?"Falta permiso de escritura en la tabla «informes» (RLS). Aplicá la migración informes_rls.sql en Supabase.":("Detalle: "+m))+"\n\nTu texto quedó en pantalla — no se perdió. Reintentá."); };
+    if(psc.inf&&psc.inf.id&&(""+psc.inf.id).indexOf("ejemplo")!==0){
+      var _pb={data:JSON.stringify(d)}; if(REAL&&RME&&RME.rol!=="admin") _pb.coach_id=RME.id;
+      _sbw("informes?id=eq."+encodeURIComponent(psc.inf.id),"PATCH",_pb)
+        .then(function(r){ if(!r.ok) return _err(r); return _saveProg(); })
         .then(function(){ toast("Guardado ✓ — ya lo ve el cliente"); render(); })
-        .catch(function(){ alert("No se pudo guardar."); });
+        .catch(_fail);
     } else {
       var ib={email:psc.email,data:JSON.stringify(d)}; if(REAL&&RME&&RME.rol!=="admin") ib.coach_id=RME.id;
       _sbw("informes","POST",ib)
-        .then(function(r){ if(!r.ok) throw 0; return _saveProg(); })
-        .then(function(){ toast("Plan creado ✓ — ya lo ve el cliente"); loadReal(); })
-        .catch(function(){ alert("No se pudo crear el plan."); });
+        .then(function(r){ if(!r.ok) return _err(r); return _saveProg(); })
+        .then(function(){ toast("Diagnóstico guardado ✓ — ya lo ve el cliente"); loadReal(); })
+        .catch(_fail);
     }
     return;
   }
