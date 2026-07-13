@@ -7145,17 +7145,25 @@ document.addEventListener("click", function(ev){
     if(psc.inf) psc.inf.d=d; else psc.inf={ d:d };
     var _err=function(r){ return r.text().then(function(t){ var e=new Error("HTTP "+r.status+(t?(" · "+t.slice(0,160)):"")); throw e; }); };
     var _fail=function(e){ var m=(e&&e.message)||e||""; var rls=/row-level|permission|denied|policy|401|403/i.test(""+m); alert("No se pudo guardar el diagnóstico.\n\n"+(rls?"Falta permiso de escritura en la tabla «informes» (RLS). Aplicá la migración informes_rls.sql en Supabase.":("Detalle: "+m))+"\n\nTu texto quedó en pantalla — no se perdió. Reintentá."); };
+    var _dj=JSON.stringify(d);
+    var _finPatch=function(){ toast("Diagnóstico guardado ✓ — ya lo ve el cliente"); loadReal(); };
     if(psc.inf&&psc.inf.id&&(""+psc.inf.id).indexOf("ejemplo")!==0){
-      var _pb={data:JSON.stringify(d)}; if(REAL&&RME&&RME.rol!=="admin") _pb.coach_id=RME.id;
+      // Ya tenemos el id del informe → UPDATE directo.
+      var _pb={data:_dj}; if(REAL&&RME&&RME.rol!=="admin") _pb.coach_id=RME.id;
       _sbw("informes?id=eq."+encodeURIComponent(psc.inf.id),"PATCH",_pb)
         .then(function(r){ if(!r.ok) return _err(r); return _saveProg(); })
         .then(function(){ toast("Guardado ✓ — ya lo ve el cliente"); render(); })
         .catch(_fail);
     } else {
-      var ib={email:psc.email,data:JSON.stringify(d)}; if(REAL&&RME&&RME.rol!=="admin") ib.coach_id=RME.id;
-      _sbw("informes","POST",ib)
+      // No tenemos id (el informe pudo crearlo la IA con otro/sin coach_id y por eso
+      // no se cargó). UPSERT por email para no chocar con el unique informes_email_unique:
+      // crea si no existe, ACTUALIZA si ya existe, y setea coach_id para que quede
+      // asociado a este coach y se cargue la próxima vez.
+      var ib={email:psc.email,data:_dj}; if(REAL&&RME&&RME.rol!=="admin") ib.coach_id=RME.id;
+      _hdr({"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"})
+        .then(function(h){ return fetch(SB+"/rest/v1/informes?on_conflict=email",{method:"POST",headers:h,body:JSON.stringify(ib)}); })
         .then(function(r){ if(!r.ok) return _err(r); return _saveProg(); })
-        .then(function(){ toast("Diagnóstico guardado ✓ — ya lo ve el cliente"); loadReal(); })
+        .then(_finPatch)
         .catch(_fail);
     }
     return;
