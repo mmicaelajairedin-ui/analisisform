@@ -128,7 +128,7 @@ h2{font-size:20px}
           <option value="2">2 por semana (M/J)</option>
         </select>
       </div>
-      <div><label>Hora</label><input type="time" id="hora" value="19:00"></div>
+      <div><label>Hora (España 🇪🇸)</label><input type="time" id="hora" value="19:00"><div class="hint" style="margin-top:4px">Zona Europe/Madrid</div></div>
       <div style="grid-column:1/-1"><label>Redes destino</label>
         <div class="redes" id="redes">
           <label class="chip on"><input type="checkbox" value="Instagram" checked> Instagram</label>
@@ -283,6 +283,16 @@ $('#dlGuion').onclick=()=>{const rows=window._rows;let md='GUIÓN DE GRABACIÓN 
   download('pathway-guion-grabacion.txt',md);toast('Guion descargado ✓')};
 
 /* ---------- runner (Blotato API) ---------- */
+const TZ='Europe/Madrid';
+function tzOffset(dateStr){ // -> "+02:00" for that date in Spain (DST-aware)
+  try{const [Y,M,D]=dateStr.split('-').map(Number);
+    const dt=new Date(Date.UTC(Y,M-1,D,12,0));
+    const p=new Intl.DateTimeFormat('en-US',{timeZone:TZ,timeZoneName:'longOffset'}).formatToParts(dt);
+    const off=(p.find(x=>x.type==='timeZoneName')||{}).value||'GMT+00:00';
+    return off.replace('GMT','')||'+00:00';
+  }catch(e){return '+02:00'}
+}
+function schedISO(fecha,hora){return fecha+'T'+hora+':00'+tzOffset(fecha)} // ISO 8601 con offset España
 function logLine(cls,html){const li=document.createElement('li');if(cls)li.className=cls;li.innerHTML=html;$('#loglist').appendChild(li);$('#loglist').scrollTop=9e9}
 async function programar(){
   const k=keys().blotato, R=redes(), rows=window._rows, A=accs();
@@ -295,7 +305,7 @@ async function programar(){
   for(const r of withVid){
     for(const net of R){
       const accId=A[net];
-      const payload={post:{accountId:accId||'',content:{text:r.caption,platform:net.toLowerCase().replace(' shorts','').replace('youtube','youtube'),mediaUrls:[r.video]},target:{targetType:net.toLowerCase().split(' ')[0]}},scheduledTime:r.fecha+'T'+r.hora+':00Z'};
+      const payload={post:{accountId:accId||'',content:{text:r.caption,platform:net.toLowerCase().replace(' shorts','').replace('youtube','youtube'),mediaUrls:[r.video]},target:{targetType:net.toLowerCase().split(' ')[0]}},scheduledTime:schedISO(r.fecha,r.hora)};
       try{
         const res=await fetch('https://backend.blotato.com/v2/posts',{method:'POST',headers:{'Content-Type':'application/json','blotato-api-key':k},body:JSON.stringify(payload)});
         if(res.ok){okc++;logLine('ok','<b>'+r.title+'</b> → '+net+' · '+r.fecha)}
