@@ -1141,6 +1141,29 @@ const RULES = [
     },
   },
   {
+    name: "reservas: se guarda de dónde llegó (atribución de canal)",
+    bug: "Al reservar se pregunta '¿Cómo me encontraste?' (Instagram, LinkedIn, " +
+         "Google…) y se guarda en citas.origen. El panel lo muestra por reserva y " +
+         "agregado en Métricas ('Por dónde llegan'), así el coach sabe qué canal le " +
+         "trae citas. Si el POST deja de mandar origen o el panel deja de leerlo/" +
+         "mostrarlo, se pierde la atribución.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        if (!/id='f-src'/.test(r)) return "reservar.html: falta el select '¿Cómo me encontraste?' (id=f-src).";
+        const i = r.indexOf("coach_id:_cid");
+        const blk = i >= 0 ? r.slice(i, i + 240) : "";
+        if (!/origen:/.test(blk)) return "reservar.html: el POST a citas ya no guarda origen (se pierde la atribución).";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/select=[^"']*origen/.test(p)) return "panel-v2.html: la query de citas ya no pide 'origen'.";
+        if (!/Por dónde llegan/.test(p)) return "panel-v2.html: falta el desglose 'Por dónde llegan' en Métricas.";
+      }
+      return null;
+    },
+  },
+  {
     name: "reordenar: pw-sortable incluido y el orden se guarda",
     bug: "pw-sortable.js permite arrastrar-para-ordenar (tipos de evento, tarjetas " +
          "de cliente). El orden DEBE guardarse: tipos → configuracion.event_types, " +
