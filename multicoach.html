@@ -473,7 +473,7 @@ body{margin:0;font-family:var(--sans);color:var(--carbon);background:var(--bg);-
 <div class="app">
   <!-- SIDEBAR -->
   <aside class="side">
-    <div class="logo"><div class="m">P</div><div><b>Pathway</b><small>MULTI-COACH</small></div></div>
+    <div class="logo" id="brandLogo"><div class="m">P</div><div><b>Pathway</b><small>MULTI-COACH</small></div></div>
     <div class="who">
       <div class="ph"><img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=70" alt="" onerror="this.style.display='none'"><span class="med">🏆</span></div>
       <div class="nm">Alex Gómez</div>
@@ -1011,11 +1011,12 @@ function _cfgBrand(){
  var sw=swatches.map(function(c){var on=CFG.color===c;return '<button onclick="_setColor(\''+c+'\')" style="width:38px;height:38px;border-radius:50%;background:'+c+';border:'+(on?'3px solid #fff':'2px solid transparent')+';box-shadow:'+(on?'0 0 0 2px '+c:'var(--pw-shadow-xs)')+';cursor:pointer;padding:0" aria-label="'+c+'"></button>';}).join('');
  return '<div class="cp-card"><div class="cp-card-hd"><h3 class="cp-card-title">Marca propia<span class="dot">.</span></h3><span class="cp-eyebrow">White-label</span></div>'
   +'<div class="cp-card-pad" style="display:flex;flex-direction:column;gap:18px">'
-   +'<p style="font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.55">Tu color y tu logo reemplazan los de Pathway en el <strong>portal que ven tus clientes</strong> y en tu página pública.</p>'
+   +'<p style="font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.55">Tu color y tu logo reemplazan los de Pathway en el <strong>portal que ven tus clientes</strong>, en tu página pública y en el <strong>logo de arriba a la izquierda</strong>. Sin logo cargado, se muestra Pathway.</p>'
    +'<div class="cp-form-row"><label class="cp-form-label">Color de marca</label><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+sw+'</div><span class="cp-form-hint">El cliente lo ve en su portal.</span></div>'
-   +'<div class="cp-form-row"><label class="cp-form-label">URL de tu logo</label><input id="cfb-logo" class="cp-form-input" placeholder="https://tu-sitio.com/logo.png" oninput="var p=document.getElementById(\'logoprev\');if(p){p.src=this.value;p.style.display=this.value?\'\':\'none\'}"><span class="cp-form-hint">PNG o SVG. Aparece arriba en el portal del cliente.</span></div>'
-   +'<div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--pw-text-soft)">Vista previa:</span><img id="logoprev" alt="logo" style="display:none;height:34px;width:auto;max-width:160px;object-fit:contain" onerror="this.style.display=\'none\'"></div>'
-   +'<div style="display:flex;justify-content:flex-start"><button class="cp-btn cp-btn-primary" onclick="__toast(\'Marca guardada ✓\')">Guardar marca</button></div></div></div>';
+   +'<div class="cp-form-row"><label class="cp-form-label">Nombre de la empresa</label><input id="cfb-name" class="cp-form-input" placeholder="Ej. Gym Boutique" value="'+((_mcBrand().nombre||'').replace(/"/g,'&quot;'))+'"><span class="cp-form-hint">Acompaña al logo en el menú.</span></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">URL de tu logo</label><input id="cfb-logo" class="cp-form-input" placeholder="https://tu-sitio.com/logo.png" value="'+((_mcBrand().logo||'').replace(/"/g,'&quot;'))+'" oninput="var p=document.getElementById(\'logoprev\');if(p){p.src=this.value;p.style.display=this.value?\'\':\'none\'}"><span class="cp-form-hint">PNG o SVG. Reemplaza a Pathway arriba y en el portal del cliente.</span></div>'
+   +'<div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--pw-text-soft)">Vista previa:</span><img id="logoprev" alt="logo" src="'+((_mcBrand().logo||'').replace(/"/g,'&quot;'))+'" style="'+(_mcBrand().logo?'':'display:none;')+'height:34px;width:auto;max-width:160px;object-fit:contain" onerror="this.style.display=\'none\'"></div>'
+   +'<div style="display:flex;justify-content:flex-start"><button class="cp-btn cp-btn-primary" onclick="_saveBrand()">Guardar marca</button></div></div></div>';
 }
 function _setColor(c){CFG.color=c;renderConfig();}
 function _cfgAccount(){
@@ -1164,6 +1165,42 @@ function _agSug(){
 // Cabra (mismo juego que el panel del coach) + cerrar sesión del demo.
 function jugarCabra(){ try{ window.PW_GAME_EMAIL='demo@multicoach'; }catch(e){} if(typeof openJuego==='function'){ openJuego(); } else { __toast('Cargando el juego…'); } }
 function cerrarSesion(){ window.location.href='/login.html'; }
+
+/* ===== Marca del sidebar (white-label) =====
+   Por defecto se muestra Pathway. Si la empresa carga su logo (Configuración →
+   Marca propia), ese logo REEMPLAZA al de Pathway arriba a la izquierda.
+   Se arma con DOM (no innerHTML con datos) para evitar XSS. Solo multicoach. */
+function _mcBrand(){ try{ return JSON.parse(localStorage.getItem('mc_brand')||'{}')||{}; }catch(_){ return {}; } }
+function renderBrandLogo(){
+  var el=document.getElementById('brandLogo'); if(!el) return;
+  var b=_mcBrand();
+  el.textContent='';
+  var m=document.createElement('div'); m.className='m';
+  var tx=document.createElement('div');
+  if(b.logo){
+    var img=document.createElement('img'); img.src=b.logo; img.alt='';
+    img.style.cssText='width:100%;height:100%;object-fit:contain;border-radius:6px';
+    img.onerror=function(){ m.textContent=((b.nombre||'M').charAt(0)||'M').toUpperCase(); };
+    m.appendChild(img);
+    var nb=document.createElement('b'); nb.textContent=b.nombre||'Mi empresa';
+    tx.appendChild(nb);
+  } else {
+    m.textContent='P';
+    var pb=document.createElement('b'); pb.textContent='Pathway';
+    var ps=document.createElement('small'); ps.textContent='MULTI-COACH';
+    tx.appendChild(pb); tx.appendChild(ps);
+  }
+  el.appendChild(m); el.appendChild(tx);
+}
+function _saveBrand(){
+  var n=(document.getElementById('cfb-name')||{}).value||'';
+  var l=(document.getElementById('cfb-logo')||{}).value||'';
+  var b=_mcBrand(); b.nombre=n.trim(); b.logo=l.trim();
+  try{ localStorage.setItem('mc_brand',JSON.stringify(b)); }catch(_){}
+  renderBrandLogo();
+  __toast(b.logo?'Marca aplicada ✓':'Marca guardada ✓');
+}
+renderBrandLogo();
 </script>
 <script src="pw-cabra-juego.js"></script>
 <script src="pw-dropzone.js?v=1"></script>
