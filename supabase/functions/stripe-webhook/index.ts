@@ -594,8 +594,9 @@ async function markLeadConversion(email: string, estadoSub: string): Promise<voi
 }
 
 // ── REFERRAL CREDIT ─────────────────────────────────────────
-// Extiende la fecha de fin de período del coach que refirió por +30 días
-// y le manda un email de confirmación.
+// Extiende la fecha de fin de período del coach que refirió por +15 días
+// y le manda un email de confirmación. (Programa "Entre coaches": +15 días
+// por cada recomendado que se suscribe.)
 async function creditReferrer(
   referrerId: string,
   referredEmail: string,
@@ -613,9 +614,9 @@ async function creditReferrer(
     const referrer = refs[0];
     const refCfg = referrer.configuracion || {};
 
-    // Extender fecha_fin_periodo por 30 días. Si no tiene, usamos hoy+30
+    // Extender fecha_fin_periodo por 15 días. Si no tiene, usamos hoy+15
     const base = refCfg.fecha_fin_periodo ? new Date(refCfg.fecha_fin_periodo) : new Date();
-    base.setDate(base.getDate() + 30);
+    base.setDate(base.getDate() + 15);
     const newEnd = base.toISOString();
 
     // Crear/actualizar array de referrals ganados
@@ -623,7 +624,7 @@ async function creditReferrer(
     earned.push({
       referred_email: referredEmail,
       credited_at: new Date().toISOString(),
-      months_granted: 1,
+      days_granted: 15,
     });
 
     const newRefCfg = {
@@ -663,15 +664,15 @@ async function sendReferralEmail(
       body: JSON.stringify({
         to: to,
         to_name: toName,
-        subject: "🎁 Ganaste tu mes gratis",
+        subject: "🎁 Ganaste 15 días gratis",
         html:
           `<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;">¡El coach que referiste pagó!</h2>` +
           `<p><strong>${referredEmail}</strong> acaba de completar su primer pago en Pathway.</p>` +
           `<div style="background:rgba(82,183,136,.08);border-left:3px solid #2D6A4F;border-radius:6px;padding:14px 16px;margin:18px 0;">` +
-          `<div style="font-size:13px;color:#2D6A4F;font-weight:800;">✓ Tu próxima renovación se extendió 30 días</div>` +
+          `<div style="font-size:13px;color:#2D6A4F;font-weight:800;">✓ Tu próxima renovación se extendió 15 días</div>` +
           `<div style="font-size:12px;color:#444;margin-top:4px;">Total de referrals exitosos: <strong>${totalReferrals}</strong></div>` +
           `</div>` +
-          `<p>Seguí compartiendo tu link desde el panel → Inicio. Por cada coach que paga, 1 mes gratis más.</p>` +
+          `<p>Seguí compartiendo tu link desde el panel → Inicio. Por cada coach que paga, 15 días gratis más.</p>` +
           `<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:12px 24px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel</a></p>`,
       }),
     });
