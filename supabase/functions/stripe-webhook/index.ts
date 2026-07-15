@@ -480,11 +480,12 @@ async function handleCoachSubscription(
 
   // Fetch usuario para mergear con configuracion existente
   const userRes = await fetch(
-    `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=configuracion`,
+    `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=configuracion,nombre`,
     { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
   );
   const users = userRes.ok ? await userRes.json() : [];
   const existingCfg = (users && users[0] && users[0].configuracion) || {};
+  const coachPrimer = String((users && users[0] && users[0].nombre) || "").split(" ")[0] || "";
 
   // Si el coach tiene es_pro_vitalicio=true (admin / demo coach whitelisteado),
   // NO sobreescribimos plan/activo/estado_sub aunque Stripe mande un cancel.
@@ -524,6 +525,16 @@ async function handleCoachSubscription(
       body: JSON.stringify(patchBody),
     },
   );
+
+  // ── CONFIRMACIÓN AL COACH: al PASAR a activa (primer pago o reactivación tras
+  // prueba vencida) Pathway manda su propia confirmación branded. NO se manda en
+  // cada cobro mensual (subscription.updated con estado ya activo → becameActive
+  // es false), así no spammea: el recibo fiscal de cada mes lo manda Stripe.
+  const becameActive =
+    (estado_sub === "activa") && (existingCfg.estado_sub !== "activa") && !isVitalicio;
+  if (becameActive) {
+    await sendCoachActivatedEmail(email, coachPrimer, plan);
+  }
 
   // ── REFERRAL CREDIT: si el nuevo coach paga por primera vez y
   // tiene `referred_by` guardado, dar 1 mes gratis al coach que lo refirió
@@ -647,6 +658,43 @@ async function creditReferrer(
     await sendReferralEmail(referrer.email, referrer.nombre || "", referredEmail, earned.length);
   } catch (e) {
     console.error("creditReferrer error:", e);
+  }
+}
+
+// ── CONFIRMACIÓN DE ACTIVACIÓN (branded, Pathway) ────────────
+// Se manda al coach cuando su cuenta pasa a activa (primer pago o reactivación).
+// Es la bienvenida/confirmación de Pathway; el recibo fiscal lo manda Stripe
+// aparte (Dashboard → Settings → Customer emails → Successful payments).
+async function sendCoachActivatedEmail(
+  to: string,
+  primer: string,
+  plan: "basic" | "pro",
+): Promise<void> {
+  const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+  const planLbl = plan === "pro" ? "Pro" : "Basic";
+  const precio = plan === "pro" ? "USD $59/mes" : "USD $29/mes";
+  const hola = primer ? `¡Hola ${primer}!` : "¡Hola!";
+  try {
+    await fetch(`${SB_URL}/functions/v1/send-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to,
+        to_name: primer || "",
+        subject: "✅ Tu cuenta de Pathway está activa",
+        reply_to: "hi@pathwaycareercoach.com",
+        html:
+          `<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 10px;">${hola} Tu cuenta está activa 🌱</h2>` +
+          `<p style="color:#3A4A40;line-height:1.65;margin:0 0 14px;">Tu suscripción <strong>${planLbl}</strong> (${precio}) quedó activa. ` +
+          `Retomás justo donde lo dejaste: <strong>tus clientes, informes y toda tu configuración siguen intactos</strong> — no empezás de cero.</p>` +
+          `<p style="margin:18px 0;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:12px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Entrar a mi panel →</a></p>` +
+          `<p style="color:#5A6A60;font-size:13px;line-height:1.6;margin:0 0 6px;">El comprobante de pago te llega por separado desde Stripe. ` +
+          `Podés cancelar cuando quieras, sin permanencia.</p>` +
+          `<p style="color:#5A6A60;font-size:13px;margin:0;">¿Alguna duda? Respondé este correo y te ayudamos. 💚</p>`,
+      }),
+    });
+  } catch (e) {
+    console.error("sendCoachActivatedEmail error:", e);
   }
 }
 
