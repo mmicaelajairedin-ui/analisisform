@@ -1189,15 +1189,14 @@ const RULES = [
     },
   },
   {
-    name: "calendario del panel: Agenda del día (hora por hora, libre/ocupado)",
-    bug: "La pestaña Calendario abre en la 'Agenda del día': el día hora por hora, " +
-         "con los huecos como 'Disponible' (según Mi disponibilidad) y los eventos/" +
-         "reservas en su hora. Si se desconecta, se pierde la vista de día del mockup.",
+    name: "calendario del panel: Agenda del día (solo lo agendado)",
+    bug: "La pestaña Calendario abre en la 'Agenda del día' del día (por defecto hoy), " +
+         "mostrando SOLO las sesiones/reservas agendadas (sin llenar de huecos). Si se " +
+         "desconecta, se pierde la vista de día del mockup.",
     check() {
       const p = read("panel-v2.html");
       if (!p) return null;
-      if (!/function _agDispWindow/.test(p)) return "panel-v2.html: falta _agDispWindow (ventana horaria del día).";
-      if (!/Disponible</.test(p)) return "panel-v2.html: la Agenda del día ya no marca los huecos 'Disponible'.";
+      if (!/function _agRenderDay/.test(p)) return "panel-v2.html: falta _agRenderDay (Agenda del día).";
       if (!/if\(!_AG_SEL_DAY\)\s*_AG_SEL_DAY=_agMoKey\(new Date\(\)\)/.test(p)) return "panel-v2.html: Calendario ya no abre en la Agenda del día (hoy).";
       return null;
     },
