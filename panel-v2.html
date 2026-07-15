@@ -6854,15 +6854,29 @@ document.addEventListener("click", function(ev){
     // Borrado DEFINITIVO e irreversible → aviso fuerte + segunda confirmación
     // escribiendo. Si tiene clientes, avisamos que quedan huérfanos (no se borran
     // sus datos, pero pierden a su coach).
-    var _w="¿ELIMINAR definitivamente la cuenta de "+cdname+"?\n\nBorra su acceso y su cuenta de coach. NO se puede deshacer.";
-    if(cdcli>0) _w+="\n\n⚠️ Tiene "+cdcli+" cliente(s) cargados: esos datos quedan huérfanos (no se borran, pero pierden su coach).";
-    if(!confirm(_w)) return;
+    if(!confirm("¿ELIMINAR definitivamente la cuenta de "+cdname+"?\n\nBorra su acceso y su cuenta de coach. NO se puede deshacer.")) return;
     var _typed=prompt("Para confirmar el borrado, escribí ELIMINAR (en mayúsculas):");
     if((""+(_typed||"")).trim().toUpperCase()!=="ELIMINAR"){ toast("Cancelado — no se eliminó nada"); return; }
-    _sbw("usuarios?id=eq."+encodeURIComponent(cdid),"DELETE",{})
+    // ¿Borrar TAMBIÉN los datos del coach (clientes/informes/CVs)? Solo se
+    // pregunta si tiene clientes; sin clientes no hay nada extra que borrar.
+    var _wipe = cdcli>0
+      ? confirm("¿Borrar TAMBIÉN sus "+cdcli+" cliente(s) y sus datos (informes, CVs)?\n\nAceptar = borra TODO.\nCancelar = elimina solo la cuenta y deja los datos de los clientes.")
+      : false;
+    var _idq="=eq."+encodeURIComponent(cdid);
+    _sbw("usuarios?id"+_idq,"DELETE",{})
       .then(function(r){ if(!r.ok) throw 0;
+        // Rastros del coach que no sirven sin él: nudges, solicitudes y su hilo
+        // de chat con soporte. Best-effort (no bloquean el resultado).
+        _sbw("coach_nudges?coach_id"+_idq,"DELETE",{}).catch(function(){});
+        _sbw("solicitudes?coach_id"+_idq,"DELETE",{}).catch(function(){});
+        _sbw("mensajes_admin_coach?coach_id"+_idq,"DELETE",{}).catch(function(){});
+        if(_wipe){
+          _sbw("informes?coach_id"+_idq,"DELETE",{}).catch(function(){});
+          _sbw("cv_publicados?coach_id"+_idq,"DELETE",{}).catch(function(){});
+          _sbw("candidatos?coach_id"+_idq,"DELETE",{}).catch(function(){});
+        }
         if(RCOACHES){ RCOACHES=RCOACHES.filter(function(u){ return String(u.id)!==String(cdid); }); }
-        toast("Cuenta eliminada ✓"); render(); })
+        toast(_wipe?"Cuenta y datos eliminados ✓":"Cuenta eliminada ✓"); render(); })
       .catch(function(){ alert("No se pudo eliminar la cuenta. Puede estar protegida por permisos (RLS) en Supabase."); });
     return;
   }
