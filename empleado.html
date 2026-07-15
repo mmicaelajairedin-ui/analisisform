@@ -243,7 +243,7 @@
         <div class="kpis">
           <div class="kpi"><div class="n" id="k-cont">0</div><div class="l">Contactados</div></div>
           <div class="kpi"><div class="n" id="k-demo">0</div><div class="l">Demos</div></div>
-          <div class="kpi"><div class="n" id="k-alta">0</div><div class="l">Altas (prueba)</div></div>
+          <div class="kpi"><div class="n" id="k-alta">0</div><div class="l">En prueba</div></div>
           <div class="kpi"><div class="n" id="k-pago">0</div><div class="l">Pagaron</div></div>
           <div class="kpi acc"><div class="n" id="k-com">€0</div><div class="l">Comisión</div></div>
         </div>
@@ -386,6 +386,7 @@
   var ME = window.__ME||{};
   var COMISION_POR_PAGO = 10, DAY=86400000, filtro="activos", LEADS=[];
   var PAID_EMAILS=null; // set de emails de coaches que ya pagaron (estado_sub=activa)
+  var TRIAL_EMAILS=null; // set de emails de coaches EN PRUEBA (estado_sub=prueba) — el trial de 14 días
   var sb = (window.supabase) ? window.supabase.createClient(SB,KEY) : null;
   var COLOR={nuevo:"#8A968F",contactado:"#2F6FB0",demo:"#C99A2E",alta:"#2D6A4F",descartado:"#c9ccd0"};
   // Plantillas DISEÑADAS (única fuente: pw-emails.js). Fallback a texto si no cargó.
@@ -461,6 +462,7 @@
     loadResumen(); _loaded.resumen=true;
     await loadLeads(); _loaded.leads=true;
     loadPaidCoaches();
+    loadTrialCoaches();
   }
 
   // Tabs
@@ -990,7 +992,7 @@
       var enviado=l.ultimo_email_at?"<div class='sentinfo'><span class='emo'>✉️</span> enviado "+timeAgo(l.ultimo_email_at)+(l.ultimo_email_tpl?(" · "+esc(l.ultimo_email_tpl)):"")+"</div>":"";
       var tr=document.createElement("tr");
       tr.innerHTML=
-        "<td style='border-left:4px solid "+COLOR[l.estado]+"'><div class='lead-name'>"+esc(l.nombre||"—")+"</div><div class='lead-sub'>"+esc(l.email||l.telefono||(l.instagram?("@"+l.instagram):"sin contacto"))+"</div>"+enviado+
+        "<td style='border-left:4px solid "+COLOR[l.estado]+"'><div class='lead-name'>"+esc(l.nombre||"—")+_leadAutoBadge(l)+"</div><div class='lead-sub'>"+esc(l.email||l.telefono||(l.instagram?("@"+l.instagram):"sin contacto"))+"</div>"+enviado+
           "<span class='addinfo' onclick=\"toggleInfo('"+l.id+"')\">"+(l._open?"− ocultar":"＋ info / editar")+"</span>"+(l.estado!=="descartado"?"<span class='addinfo' style='color:#aab' onclick=\"descartar('"+l.id+"')\">descartar</span>":"")+(l.nota?"<div class='nota-mark'>nota guardada</div>":"")+"</td>"+
         "<td><select class='nicho' onchange=\"setN('"+l.id+"',this.value)\">"+opt("sin","Sin asignar",l.nicho)+opt("carrera","Carrera",l.nicho)+opt("fitness","Fitness",l.nicho)+opt("finanzas","Finanzas",l.nicho)+"</select></td>"+
         "<td>"+canales(l)+"</td>"+
@@ -1099,14 +1101,24 @@
     btn.disabled=false; btn.textContent="Enviar ✓";
   }
 
+  // Estado REAL del lead según la cuenta del coach (por email): pagó / en prueba.
+  function _leadPaid(l){ return !!(PAID_EMAILS && PAID_EMAILS[_norm(l.email)]); }
+  function _leadTrial(l){ return !!(TRIAL_EMAILS && TRIAL_EMAILS[_norm(l.email)]); }
+  // Chip automático al lado del nombre: refleja el estado REAL de la cuenta del coach.
+  function _leadAutoBadge(l){
+    if(_leadPaid(l)) return " <span style='display:inline-block;background:#2D6A4F;color:#fff;border-radius:100px;padding:1px 8px;font-size:10px;font-weight:800;vertical-align:middle'>✅ Pagó · comisión</span>";
+    if(_leadTrial(l)) return " <span style='display:inline-block;background:rgba(201,154,46,.2);color:#8a5e0c;border-radius:100px;padding:1px 8px;font-size:10px;font-weight:800;vertical-align:middle'>🟢 En prueba</span>";
+    return "";
+  }
   function kpis(){
     var act=LEADS.filter(function(l){return l.estado!=="descartado";});
     var cont=act.filter(function(l){return l.estado!=="nuevo";}).length;
     var demo=act.filter(function(l){return l.demo_agendada||l.estado==="demo"||l.estado==="alta";}).length;
-    var altaLeads=act.filter(function(l){return l.estado==="alta";});
-    var alta=altaLeads.length;
-    // Comisión SOLO por coaches que pagaron tras la prueba (estado_sub=activa).
-    var pago = PAID_EMAILS ? altaLeads.filter(function(l){ return PAID_EMAILS[(""+(l.email||"")).toLowerCase().trim()]; }).length : 0;
+    // "En prueba": el coach tiene el trial activo (auto, según el acceso que diste)
+    // o lo marcaste "alta" a mano — y todavía NO pagó.
+    var alta=act.filter(function(l){ return !_leadPaid(l) && (_leadTrial(l) || l.estado==="alta"); }).length;
+    // "Pagaron": su email figura como coach con la suscripción activa (estado_sub=activa).
+    var pago=act.filter(_leadPaid).length;
     document.getElementById("k-cont").textContent=cont; document.getElementById("k-demo").textContent=demo; document.getElementById("k-alta").textContent=alta;
     var kp=document.getElementById("k-pago"); if(kp) kp.textContent=pago;
     var com=pago*COMISION_POR_PAGO;
@@ -1125,6 +1137,18 @@
       PAID_EMAILS=set;
     }catch(e){ PAID_EMAILS={}; }
     kpis();
+  }
+  // Coaches EN PRUEBA (estado_sub=prueba): los 14 días de trial que YA diste.
+  // Se cruzan por email contra tus leads → "En prueba" sale solo, sin marcar a mano.
+  async function loadTrialCoaches(){
+    if(!sb){ TRIAL_EMAILS={}; return; }
+    try{
+      var r=await sb.from('usuarios').select('email').eq('rol','coach').eq('configuracion->>estado_sub','prueba');
+      if(r.error) throw r.error;
+      var set={}; (r.data||[]).forEach(function(u){ var e=(""+(u.email||"")).toLowerCase().trim(); if(e) set[e]=1; });
+      TRIAL_EMAILS=set;
+    }catch(e){ TRIAL_EMAILS={}; }
+    kpis(); try{ render(); }catch(e){}
   }
 
   // ── Redactar y enviar (pestaña Comunicación) — plantillas como diapositivas por nicho ──

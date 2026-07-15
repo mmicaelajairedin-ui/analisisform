@@ -5111,12 +5111,14 @@ function _buildEmpLeadStats(rows){
   var m={};
   (rows||[]).forEach(function(l){
     var k=String((l&&l.empleado_id)||""); if(!k) return;
-    var s=m[k]||(m[k]={leads:0,contactos:0,demos:0,altas:0,altaEmails:[]});
+    var s=m[k]||(m[k]={leads:0,contactos:0,demos:0,altas:0,altaEmails:[],leadEmails:[]});
     s.leads++;
     if(l.estado==="descartado") return;           // descartado no suma al funnel activo
     if(l.estado && l.estado!=="nuevo") s.contactos++;
     if(l.demo_agendada || l.estado==="demo" || l.estado==="alta") s.demos++;
-    if(l.estado==="alta"){ s.altas++; var e=(""+(l.email||"")).toLowerCase().trim(); if(e) s.altaEmails.push(e); }
+    var e=(""+(l.email||"")).toLowerCase().trim();
+    s.leadEmails.push({e:e, estado:l.estado});    // para cruzar con prueba/pago (auto)
+    if(l.estado==="alta"){ s.altas++; if(e) s.altaEmails.push(e); }
   });
   return m;
 }
@@ -5130,12 +5132,27 @@ function _paidCoachEmails(){
   });
   return set;
 }
+// Coaches EN PRUEBA (estado_sub=prueba): el trial de 14 días ya otorgado. Se
+// cruza por email con los leads → "En prueba" sale solo, sin marcar a mano.
+function _trialCoachEmails(){
+  var set={};
+  (RCOACHES||[]).forEach(function(u){
+    var cg=(u&&u.configuracion)||{};
+    if((""+(cg.estado_sub||"")).toLowerCase()==="prueba"){ var e=(""+(u.email||"")).toLowerCase().trim(); if(e) set[e]=1; }
+  });
+  return set;
+}
 function _empSt(u){
   var k=String((u&&u.id)||"");
-  var s=(REMPLEADS&&REMPLEADS[k])||{leads:0,contactos:0,demos:0,altas:0,altaEmails:[]};
-  var paid=_paidCoachEmails(), pagaron=0;
-  (s.altaEmails||[]).forEach(function(e){ if(paid[e]) pagaron++; });
-  return { leads:s.leads, contactos:s.contactos, demos:s.demos, altas:s.altas, pagaron:pagaron,
+  var s=(REMPLEADS&&REMPLEADS[k])||{leads:0,contactos:0,demos:0,altas:0,altaEmails:[],leadEmails:[]};
+  var paid=_paidCoachEmails(), trial=_trialCoachEmails(), pagaron=0, enPrueba=0;
+  // "En prueba" y "Pagaron" salen del estado REAL de la cuenta del coach (auto),
+  // más las altas marcadas a mano que aún no pagaron.
+  (s.leadEmails||[]).forEach(function(x){
+    if(x.e && paid[x.e]) pagaron++;
+    else if((x.e && trial[x.e]) || x.estado==="alta") enPrueba++;
+  });
+  return { leads:s.leads, contactos:s.contactos, demos:s.demos, altas:enPrueba, pagaron:pagaron,
            comision:pagaron*COMISION_POR_PAGO_EMP,
            tasa:(s.leads>0?Math.round(pagaron/s.leads*100):0) };
 }
@@ -5190,7 +5207,7 @@ function _empleadosView(){
     totalsCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Equipo comercial<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow'>"+REMPLE.length+" "+(REMPLE.length===1?"persona":"personas")+"</span></div>"+
       "<div class='cp-card-pad' style='display:flex;flex-wrap:wrap;gap:16px'>"+
-        cell(T.leads,"Leads")+cell(T.contactos,"Contactos")+cell(T.demos,"Demos")+cell(T.altas,"Altas prueba")+cell(T.pagaron,"Pagaron")+cell(tasa+"%","Tasa conv.")+cell(_eur(T.comision),"Comisión")+
+        cell(T.leads,"Leads")+cell(T.contactos,"Contactos")+cell(T.demos,"Demos")+cell(T.altas,"En prueba")+cell(T.pagaron,"Pagaron")+cell(tasa+"%","Tasa conv.")+cell(_eur(T.comision),"Comisión")+
       "</div></div>";
   }
   var listCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Empleados<span class='dot'>.</span></h3></div><div>"+rows+"</div></div>";
@@ -5214,7 +5231,7 @@ function _empleadoDetailCard(){
     (loadingStats
       ? "<div style='color:var(--pw-text-soft);font-size:13px'>Cargando…</div>"
       : "<div style='display:flex;flex-wrap:wrap;gap:16px'>"+
-          sCell(st.leads,"Leads")+sCell(st.contactos,"Contactos")+sCell(st.demos,"Demos")+sCell(st.altas,"Altas prueba")+sCell(st.pagaron,"Pagaron",true)+sCell(st.tasa+"%","Tasa conv.")+sCell(_eur(st.comision),"Comisión",true)+
+          sCell(st.leads,"Leads")+sCell(st.contactos,"Contactos")+sCell(st.demos,"Demos")+sCell(st.altas,"En prueba")+sCell(st.pagaron,"Pagaron",true)+sCell(st.tasa+"%","Tasa conv.")+sCell(_eur(st.comision),"Comisión",true)+
         "</div>")+
     "</div>";
   return "<div class='cp-card'>"+
