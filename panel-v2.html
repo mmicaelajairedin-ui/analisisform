@@ -2169,7 +2169,7 @@ function viewResumen(){
 // clientes de Pathway por el título del evento. Reemplaza el embed de Calendly.
 // Por ahora SOLO admin; se generaliza cuando esté aprobada.
 // ═══════════════════════════════════════════════════════════════════
-var _AG_DATA=null, _agPendingDone=false, _AG_MO_W=270;
+var _AG_DATA=null, _agPendingDone=false, _AG_MO_W=270, _AG_SEL_DAY=null;
 function _agCoachEmail(){ return (""+((COACH&&COACH.email)||(RME&&RME.email)||"")).trim().toLowerCase(); }
 // Persiste el token de Google (que dejó conectar-calendar.html en localStorage)
 // en el perfil del coach, por REST — la misma vía que el panel usa para todo.
@@ -2340,6 +2340,52 @@ function _agMonthCal(){
     "</span></div>"+
     "<div id='cp-agenda-month'></div>";
 }
+// Mejor fuente de reservas para el calendario: si la pestaña Calendario ya
+// cargó _CAL_DATA (incluye al EQUIPO si sos admin + 120 días hacia atrás), usamos
+// esa; si no, la del Resumen (_RES_DATA, propia y reciente). Así los puntitos y el
+// detalle del día muestran también las demos de otros (p. ej. Gonzalo) y días
+// pasados.
+function _agReservas(){
+  if(Object.prototype.toString.call(_CAL_DATA)==="[object Array]") return _calByOwner(_CAL_DATA);
+  return _RES_DATA||[];
+}
+function _agDayFull(key){
+  var p=(""+key).split("-"); var d=new Date(+p[0],(+p[1]-1),+p[2]);
+  var DIAS=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+  return DIAS[d.getDay()]+" "+d.getDate()+" de "+(_AG_MESES[d.getMonth()]||"").toLowerCase();
+}
+// Detalle de un día (al tocarlo en el calendario): eventos de Google + reservas.
+function _agRenderDay(key){
+  var head="<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px'>"+
+    "<div class='cp-eyebrow' style='margin:0'>"+esc(_agDayFull(key))+"</div>"+
+    "<button data-act='ag-mo-clear' class='cp-btn cp-btn-ghost' style='height:26px;font-size:11px;padding:0 9px'>← Volver</button></div>";
+  var evs=((_AG_DATA&&_AG_DATA.events)||[]).filter(function(e){ return e&&e.start&&_agMoKey(new Date(e.start))===key; }).sort(function(a,b){ return a.start-b.start; });
+  var res=_agReservas().filter(function(r){ return r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key; }).sort(function(a,b){ return +new Date(a.inicio)-+new Date(b.inicio); });
+  if(!evs.length && !res.length) return head+_agEmpty("No hay nada agendado este día.");
+  var html=head;
+  evs.forEach(function(e){ var typ=_agTypeForEvent(e); var col=(typ&&typ.color)||"#8C7B80"; var ico=(typ&&typ.icon)||"🗓️"; var link=(e.location&&/^https?:\/\//.test(e.location))?e.location:"";
+    html+="<div style='display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--pw-border)'>"+
+      "<span style='min-width:40px;font-size:12px;font-weight:700;color:var(--pw-carbon)'>"+_agTime(e.start)+"</span>"+
+      "<span style='width:26px;height:26px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0'>"+ico+"</span>"+
+      "<div style='flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(e.title||"Sesión")+"</div>"+
+      (link?"<a href='"+esc(link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='height:25px;font-size:11px;padding:0 10px;text-decoration:none'>Entrar</a>":"")+
+    "</div>"; });
+  if(res.length){
+    html+="<div class='cp-eyebrow' style='margin:10px 0 2px'>Reservas de tu link</div>";
+    res.forEach(function(r){ var typ=_agEventTypeFor(r.tipo); var col=(typ&&typ.color)||"#8C7B80"; var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?(" · "+esc(_calOwnerName(r.coach_id))):"";
+      html+="<div style='display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--pw-border)'>"+
+        "<span style='min-width:40px;font-size:12px;font-weight:700;color:var(--pw-carbon)'>"+_agTime(+new Date(r.inicio))+"</span>"+
+        "<span style='width:9px;height:9px;border-radius:50%;background:"+col+";flex-shrink:0'></span>"+
+        "<div style='flex:1;min-width:0'><div style='font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.nombre||"Alguien")+_origenChip(r.origen)+"</div>"+
+        "<div style='font-size:11px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.tipo||"")+who+"</div></div>"+
+      "</div>"; });
+  }
+  return html;
+}
+function _agBodyRender(){ return _AG_SEL_DAY?_agRenderDay(_AG_SEL_DAY):_agRender(_AG_DATA); }
+// Tras cargar/refrescar las reservas del Calendario, repintar el mes (para que
+// aparezcan las demos del equipo/pasadas) y el detalle del día si hay uno abierto.
+function _agAfterCal(){ try{ _agMonthRender(); var _b=document.getElementById("cp-agenda-body"); if(_b && _AG_SEL_DAY) _b.innerHTML=_agBodyRender(); }catch(e){} }
 function _agMonthRender(){
   var box=document.getElementById("cp-agenda-month"); if(!box) return;
   if(!_AG_MO){ var n=new Date(); _AG_MO={y:n.getFullYear(),m:n.getMonth()}; }
@@ -2348,7 +2394,7 @@ function _agMonthRender(){
   var byDay={};
   function add(ts, typ){ var k=_agMoKey(new Date(ts)); (byDay[k]=byDay[k]||[]).push(typ); }
   var evs=(_AG_DATA&&_AG_DATA.events)||[]; evs.forEach(function(e){ if(e&&e.start) add(e.start, _agTypeForEvent(e)); });
-  var res=_RES_DATA||[]; res.forEach(function(r){ if(!r||r.estado==="cancelada")return; add(+new Date(r.inicio), _agEventTypeFor(r.tipo)); });
+  var res=_agReservas(); res.forEach(function(r){ if(!r||r.estado==="cancelada")return; add(+new Date(r.inicio), _agEventTypeFor(r.tipo)); });
   var first=new Date(y,m,1); var startDow=(first.getDay()+6)%7; var daysIn=new Date(y,m+1,0).getDate();
   var today=_agMoKey(new Date());
   var html="<div style='display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;max-width:"+(_AG_MO_W||270)+"px'>";
@@ -2361,7 +2407,9 @@ function _agMonthRender(){
       mk+="<span title='"+esc(lb)+"' style='display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:"+col+";box-shadow:0 0 0 1.5px #fff;font-size:8px;line-height:1'>"+ic+"</span>"; });
     if(items.length>3) mk+="<span style='font-size:8px;font-weight:800;color:var(--pw-text-muted)'>+"+(items.length-3)+"</span>";
     var bg=items.length?"background:var(--pw-niebla-2);":"";
-    html+="<div title='"+(items.length?items.length+" evento(s)":"")+"' style='aspect-ratio:1;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--pw-carbon);"+bg+(isToday?"border:2px solid var(--pw-bosque);font-weight:800;":"border:1px solid transparent;")+"'>"+
+    var isSel=(k===_AG_SEL_DAY);
+    var bord=isSel?"border:2px solid var(--pw-bosque);font-weight:800;background:var(--pw-success-bg);":(isToday?"border:2px solid var(--pw-bosque);font-weight:800;":"border:1px solid transparent;");
+    html+="<div data-act='ag-mo-day' data-k='"+k+"' title='"+(items.length?items.length+" evento(s) — tocá para ver":"Tocá para ver el día")+"' style='aspect-ratio:1;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--pw-carbon);cursor:pointer;"+bg+bord+"'>"+
       "<span>"+dd+"</span>"+(mk?"<span style='display:flex;gap:2px;margin-top:2px;align-items:center'>"+mk+"</span>":"")+"</div>";
   }
   html+="</div>";
@@ -2585,7 +2633,7 @@ function _agLoadGoogleDirect(g){
       _agRefreshTried=false;
       var items=(d&&Object.prototype.toString.call(d.items)==="[object Array]")?d.items:[];
       var evs=items.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null; return {id:e.id||"",title:e.summary||"Sesión",start:+new Date(s),location:e.hangoutLink||e.location||null}; }).filter(function(x){return !!x;});
-      _AG_DATA={events:evs}; b.innerHTML=_agRender({events:evs}); _agMonthRender();
+      _AG_DATA={events:evs}; b.innerHTML=_agBodyRender(); _agMonthRender();
     })
     .catch(function(){ _agLoadIcal(); });
 }
@@ -2596,7 +2644,7 @@ function _agLoadIcal(){
   if(!em){ body.innerHTML=_agConnect(); return; }
   fetch(SB+"/functions/v1/calendar?email="+encodeURIComponent(em),{headers:{apikey:KEY,Authorization:"Bearer "+KEY}})
     .then(function(r){ return r.ok?r.json():r.json().catch(function(){ return {error:"http_"+r.status,events:[]}; }); })
-    .then(function(d){ var b=document.getElementById("cp-agenda-body"); if(!b) return; _AG_DATA=(d&&typeof d==="object")?d:{events:[]}; b.innerHTML=_agRender(_AG_DATA); _agMonthRender(); })
+    .then(function(d){ var b=document.getElementById("cp-agenda-body"); if(!b) return; _AG_DATA=(d&&typeof d==="object")?d:{events:[]}; b.innerHTML=_agBodyRender(); _agMonthRender(); })
     .catch(function(){ var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer tu calendario ahora. Reintentá en un momento."); });
 }
 
@@ -2716,13 +2764,13 @@ function _calLoad(){
       _CAL_TEAM=(Object.prototype.toString.call(team)==="[object Array]")?team:[];
       var ids=_CAL_TEAM.map(function(u){return u.id;}); if(ids.indexOf(RME.id)<0) ids.push(RME.id);
       _sb("citas?coach_id=in.("+ids.map(encodeURIComponent).join(",")+")&inicio=gte."+encodeURIComponent(from)+sel)
-        .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; try{ render(); }catch(e){ _calRenderKpis(); _calRenderList(); } })
+        .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; try{ render(); }catch(e){ _calRenderKpis(); _calRenderList(); } _agAfterCal(); })
         .catch(_calFail);
     }).catch(function(){ _CAL_TEAM=[]; _calFail(); });
     return;
   }
   _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+sel)
-    .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); })
+    .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCal(); })
     .catch(_calFail);
 }
 // Filtra por la persona elegida (solo admin); si no es admin, todo es suyo.
@@ -6212,6 +6260,8 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
+  if(act==="ag-mo-day"){ var _mk=el.getAttribute("data-k")||""; _AG_SEL_DAY=(_AG_SEL_DAY===_mk)?null:_mk; var _mb=document.getElementById("cp-agenda-body"); if(_mb) _mb.innerHTML=_agBodyRender(); _agMonthRender(); return; }
+  if(act==="ag-mo-clear"){ _AG_SEL_DAY=null; var _mb2=document.getElementById("cp-agenda-body"); if(_mb2) _mb2.innerHTML=_agBodyRender(); _agMonthRender(); return; }
   if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; var _h0={}; if(_d0.horarios&&typeof _d0.horarios==="object"){ try{ _h0=JSON.parse(JSON.stringify(_d0.horarios)); }catch(e){ _h0={}; } } state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00"), notice:(_d0.min_notice_h!=null?_d0.min_notice_h:2), buffer:(_d0.buffer_min!=null?_d0.buffer_min:0), bloq:((Object.prototype.toString.call(_d0.bloqueados)==="[object Array]")?_d0.bloqueados.slice():[]), horarios:_h0}; render(); return; }
   if(act==="ag-hor-add"){
     _agDispCapture();

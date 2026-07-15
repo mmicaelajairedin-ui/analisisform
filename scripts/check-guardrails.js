@@ -1141,6 +1141,23 @@ const RULES = [
     },
   },
   {
+    name: "calendario del panel: día clickeable + incluye demos del equipo/pasadas",
+    bug: "En el panel, tocar un día del calendario debe mostrar los eventos de ese " +
+         "día (ag-mo-day → _agRenderDay). Y los puntitos/el detalle deben leer de " +
+         "_agReservas() (prefiere _CAL_DATA: incluye al equipo si es admin + días " +
+         "pasados), no solo _RES_DATA (propia y últimas 24h) — si no, no se ven las " +
+         "demos de otros coaches ni las de ayer.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/ag-mo-day/.test(p)) return "panel-v2.html: el calendario ya no responde al click en un día (falta ag-mo-day).";
+      if (!/function _agRenderDay/.test(p)) return "panel-v2.html: falta _agRenderDay (detalle del día).";
+      if (!/function _agReservas/.test(p)) return "panel-v2.html: falta _agReservas (fuente de reservas del calendario).";
+      if (!/var res\s*=\s*_agReservas\(\)/.test(p)) return "panel-v2.html: el mes ya no usa _agReservas() (no muestra demos del equipo/pasadas).";
+      return null;
+    },
+  },
+  {
     name: "reservas: horario por día (jueves distinto sin tocar el resto)",
     bug: "La disponibilidad admite un horario general (from/to) + overrides por " +
          "día en disponibilidad.horarios ({ '<weekday>': {from,to} }). reservar.html " +
