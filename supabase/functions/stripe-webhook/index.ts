@@ -681,16 +681,16 @@ async function sendCoachActivatedEmail(
       body: JSON.stringify({
         to,
         to_name: primer || "",
-        subject: "✅ Tu cuenta de Pathway está activa",
+        subject: "Tu cuenta de Pathway está activa",
         reply_to: "hi@pathwaycareercoach.com",
         html:
-          `<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 10px;">${hola} Tu cuenta está activa 🌱</h2>` +
+          `<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 10px;">${hola} Tu cuenta está activa</h2>` +
           `<p style="color:#3A4A40;line-height:1.65;margin:0 0 14px;">Tu suscripción <strong>${planLbl}</strong> (${precio}) quedó activa. ` +
           `Retomás justo donde lo dejaste: <strong>tus clientes, informes y toda tu configuración siguen intactos</strong> — no empezás de cero.</p>` +
           `<p style="margin:18px 0;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:12px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Entrar a mi panel →</a></p>` +
           `<p style="color:#5A6A60;font-size:13px;line-height:1.6;margin:0 0 6px;">El comprobante de pago te llega por separado desde Stripe. ` +
           `Podés cancelar cuando quieras, sin permanencia.</p>` +
-          `<p style="color:#5A6A60;font-size:13px;margin:0;">¿Alguna duda? Respondé este correo y te ayudamos. 💚</p>`,
+          `<p style="color:#5A6A60;font-size:13px;margin:0;">¿Alguna duda? Respondé este correo y te ayudamos.</p>`,
       }),
     });
   } catch (e) {

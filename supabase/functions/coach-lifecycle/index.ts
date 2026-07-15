@@ -55,7 +55,7 @@ function P(t) {
   return `<p style="font-family:Arial,sans-serif;font-size:15px;color:#40584C;line-height:1.65;text-align:center;margin:0 0 26px;">${t}</p>`;
 }
 // Plantilla simple (solo la usa la retención: reactivacion / aviso admin).
-function emailHtml(primer, icon, iconBg, inner, ctaText, ctaUrl, footer) {
+function emailHtml(primer, icon, iconBg, inner, ctaText, ctaUrl, footer, extraCta) {
   const foot = footer || "Recibes esto porque tienes tu cuenta de coach en Pathway. ¿No quieres estos recordatorios? Responde este mail y los damos de baja. 💚";
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#EAF1ED;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EAF1ED;padding:26px 12px;"><tr><td align="center">
@@ -64,12 +64,13 @@ function emailHtml(primer, icon, iconBg, inner, ctaText, ctaUrl, footer) {
 <span style="font-family:Georgia,serif;font-size:21px;color:#ffffff;font-weight:600;letter-spacing:-.5px;">Pathway <span style="color:#95D5B2;">&bull;</span></span>
 </td></tr>
 <tr><td style="background:#ffffff;padding:34px 34px 30px;border-left:1px solid #E3EFE8;border-right:1px solid #E3EFE8;">
-<div style="width:58px;height:58px;line-height:58px;text-align:center;background:${iconBg};border-radius:50%;font-size:27px;margin:0 auto 18px;">${icon}</div>
-<h2 style="font-family:Georgia,serif;font-size:21px;color:#1B4332;text-align:center;margin:0 0 12px;font-weight:600;">Hola ${esc(primer)}</h2>
+${icon ? `<div style="width:58px;height:58px;line-height:58px;text-align:center;background:${iconBg};border-radius:50%;font-size:27px;margin:0 auto 18px;">${icon}</div>` : ""}
+<h2 style="font-family:Georgia,serif;font-size:21px;color:#1B4332;text-align:center;margin:${icon ? "0" : "6px"} 0 12px;font-weight:600;">Hola ${esc(primer)}</h2>
 ${inner}
 <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="border-radius:11px;background:#2D6A4F;">
 <a href="${ctaUrl}" style="display:inline-block;padding:13px 30px;font-family:Arial,sans-serif;font-size:15px;color:#ffffff;font-weight:700;text-decoration:none;">${esc(ctaText)} &rarr;</a>
 </td></tr></table>
+${extraCta || ""}
 </td></tr>
 <tr><td style="background:#F3F8F5;border-radius:0 0 16px 16px;padding:16px 28px;text-align:center;border:1px solid #E3EFE8;border-top:none;">
 <p style="font-family:Arial,sans-serif;font-size:12px;color:#8A9A91;line-height:1.5;margin:0;">${foot}</p>
@@ -96,34 +97,39 @@ function fillOnb(html, primer, coachId) {
 // y reactiva la MISMA cuenta (el webhook matchea por email). El texto deja claro
 // que es una renovación de su cuenta, no un alta nueva.
 function trialEmail(kind, primer, plan, email) {
+  // Botón principal = SU plan (Basic sigue en Basic, Pro sigue en Pro). Si está
+  // en Basic, además un link secundario para pasar a Pro (upsell, nunca downsell).
   const payUrl = renewUrl(plan, email);
   const planLbl = plan === "pro" ? "Pro (USD $59/mes)" : "Basic (USD $29/mes)";
+  const upsell = plan === "basic"
+    ? `<p style="text-align:center;font-family:Arial,sans-serif;font-size:13px;color:#5A6A60;margin:16px 0 0;">¿Quieres más? <a href="${renewUrl("pro", email)}" style="color:#2D6A4F;font-weight:700;text-decoration:underline;">Pasar a Pro · USD $59/mes &rarr;</a></p>`
+    : "";
   const intactos = "tus clientes, informes y toda tu configuración siguen intactos — <strong>no empiezas de cero</strong>";
   if (kind === "trial_por_vencer") {
     return {
       subject: `${primer}, tu prueba de Pathway termina pronto`,
-      html: emailHtml(primer, "⏳", "#FBF3E2",
+      html: emailHtml(primer, "", "",
         P(`Tu prueba está por terminar. Para seguir <strong>sin cortes</strong> con tus clientes, activa tu plan hoy: ${intactos}. Cancelas cuando quieras, sin permanencia.`),
-        `Seguir con mi plan ${planLbl}`, payUrl),
-      push: { title: "Tu prueba termina pronto ⏳", body: "Activa tu plan y seguí sin cortes." },
+        `Seguir con mi plan ${planLbl}`, payUrl, null, upsell),
+      push: { title: "Tu prueba termina pronto", body: "Activa tu plan y seguí sin cortes." },
     };
   }
   if (kind === "trial_vencido") {
     return {
       subject: `${primer}, tu prueba terminó — reactiva tu cuenta`,
-      html: emailHtml(primer, "🌱", "#E9F5EF",
+      html: emailHtml(primer, "", "",
         P(`Tu prueba de Pathway terminó, pero <strong>tu cuenta y tus datos siguen guardados</strong>. Reactivala en un clic y retomá justo donde lo dejaste: ${intactos}. Desde <strong>${plan === "pro" ? "USD $59" : "USD $29"}/mes</strong>, cancelas cuando quieras.`),
-        `Reactivar mi cuenta · ${planLbl}`, payUrl),
-      push: { title: "Tu prueba terminó 🌱", body: "Reactivá tu cuenta en un clic." },
+        `Reactivar mi cuenta · ${planLbl}`, payUrl, null, upsell),
+      push: { title: "Tu prueba terminó", body: "Reactivá tu cuenta en un clic." },
     };
   }
   // trial_vencido_2 — último recordatorio unos días después
   return {
     subject: `${primer}, ¿seguimos? tu cuenta te espera`,
-    html: emailHtml(primer, "💚", "#E9F5EF",
+    html: emailHtml(primer, "", "",
       P(`Hace unos días terminó tu prueba. Todavía guardamos tu cuenta y tu data, pero no por mucho más. Si querés retomar con tus clientes, reactivá tu plan hoy: ${intactos}.`),
-      `Volver a Pathway · ${planLbl}`, payUrl),
-    push: { title: "Tu cuenta te espera 💚", body: "Reactivá tu plan antes de perder tu data." },
+      `Volver a Pathway · ${planLbl}`, payUrl, null, upsell),
+    push: { title: "Tu cuenta te espera", body: "Reactivá tu plan antes de perder tu data." },
   };
 }
 
