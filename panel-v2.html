@@ -556,6 +556,17 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 /* Dentro de grillas de 2/3 columnas el input llena su celda → columnas parejas, sin huecos. */
 .cp-form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px;}
 .cp-form-row-2 .cp-form-input,.cp-form-row-3 .cp-form-input{max-width:none;}
+/* Slider de rango (horario general): dos thumbs sobre una sola barra. */
+.cp-rng{position:relative;height:26px;}
+.cp-rng .cp-rng-track{position:absolute;top:11px;left:0;right:0;height:4px;border-radius:3px;background:var(--pw-border);}
+.cp-rng .cp-rng-fill{position:absolute;top:0;height:100%;border-radius:3px;background:var(--pw-sendero);}
+.cp-rng input[type=range]{position:absolute;top:0;left:0;width:100%;height:26px;margin:0;background:none;-webkit-appearance:none;appearance:none;pointer-events:none;}
+.cp-rng input[type=range]:focus{outline:none;}
+.cp-rng input[type=range]::-webkit-slider-runnable-track{height:4px;background:transparent;}
+.cp-rng input[type=range]::-moz-range-track{height:4px;background:transparent;}
+.cp-rng input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:19px;height:19px;border-radius:50%;background:var(--pw-bosque);border:3px solid #fff;box-shadow:0 1px 4px rgba(20,40,30,.28);cursor:grab;pointer-events:auto;margin-top:-7.5px;}
+.cp-rng input[type=range]::-moz-range-thumb{width:19px;height:19px;border-radius:50%;background:var(--pw-bosque);border:3px solid #fff;box-shadow:0 1px 4px rgba(20,40,30,.28);cursor:grab;pointer-events:auto;}
+.cp-rng input[type=range]:active::-webkit-slider-thumb{cursor:grabbing;}
 /* Campo + botón en la misma fila (ej. contraseña): menos scroll vertical. */
 .cp-inline-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;}
 .cp-inline-row .cp-form-row{flex:1;min-width:200px;}
@@ -2408,6 +2419,33 @@ function _agDayFull(key){
   return DIAS[d.getDay()]+" "+d.getDate()+" de "+(_AG_MESES[d.getMonth()]||"").toLowerCase();
 }
 function _hmMin(hm){ var p=(""+hm).split(":"); return (parseInt(p[0],10)||0)*60+(parseInt(p[1],10)||0); }
+// Slider de horario general (Mi disponibilidad): mantiene el rango sincronizado
+// con los inputs de hora (que siguen siendo la fuente que lee el guardado).
+function _minToHM(m){ m=Math.max(0,Math.min(1440,Math.round(m/15)*15)); var h=Math.floor(m/60)%24, mm=m%60; return ("0"+h).slice(-2)+":"+("0"+mm).slice(-2); }
+function _agRngPaint(){
+  var f=document.getElementById("ag-rng-from"), t=document.getElementById("ag-rng-to"), fill=document.getElementById("ag-rng-fill");
+  if(!f||!t||!fill) return;
+  var a=Math.min(+f.value,+t.value), b=Math.max(+f.value,+t.value);
+  fill.style.left=(a/14.4)+"%"; fill.style.width=((b-a)/14.4)+"%";
+  var lf=document.getElementById("ag-rng-lblfrom"), lt=document.getElementById("ag-rng-lblto");
+  if(lf) lf.textContent=_minToHM(a); if(lt) lt.textContent=_minToHM(b);
+}
+function _agRngSync(which){
+  var f=document.getElementById("ag-rng-from"), t=document.getElementById("ag-rng-to");
+  if(!f||!t) return;
+  if(+f.value>+t.value){ if(which==="to") f.value=t.value; else t.value=f.value; } // no cruzar los thumbs
+  var di=document.getElementById("ag-disp-from"), dt=document.getElementById("ag-disp-to");
+  if(di) di.value=_minToHM(f.value); if(dt) dt.value=_minToHM(t.value);
+  if(state.ag){ state.ag.from=_minToHM(f.value); state.ag.to=_minToHM(t.value); }
+  _agRngPaint();
+}
+function _agRngFromInputs(){
+  var di=document.getElementById("ag-disp-from"), dt=document.getElementById("ag-disp-to");
+  var f=document.getElementById("ag-rng-from"), t=document.getElementById("ag-rng-to");
+  if(di&&f) f.value=_hmMin(di.value); if(dt&&t){ var mt=_hmMin(dt.value); if(mt===0 && _hmMin(di?di.value:"")>0) mt=1440; t.value=mt; }
+  if(state.ag){ if(di) state.ag.from=di.value; if(dt) state.ag.to=dt.value; }
+  _agRngPaint();
+}
 // Ventana de disponibilidad (horas) del día según Mi disponibilidad (respeta el
 // horario por día). null = ese día no recibís reservas.
 function _agDispWindow(key){
@@ -2661,11 +2699,21 @@ function viewAgModal(){
     var _horKeys=Object.keys(_hor).filter(function(k){ return _dpd.indexOf(Number(k))>=0; }).sort(function(a,b){ return _ord(Number(a))-_ord(Number(b)); });
     var _horChips=_horKeys.length?("<div style='display:flex;flex-wrap:wrap;gap:6px;margin-top:8px'>"+_horKeys.map(function(k){ var h=_hor[k]||{}; var alld=(h.from==="00:00"&&(h.to==="23:59"||h.to==="00:00")); var lbl=_DNAME[Number(k)]+" · "+(alld?"todo el día":((h.from||"")+"–"+(h.to||""))); return "<span style='display:inline-flex;align-items:center;gap:5px;background:var(--pw-success-bg);border:1px solid var(--pw-bosque);border-radius:100px;padding:3px 5px 3px 11px;font-size:12px;font-weight:600;color:var(--pw-bosque)'>"+esc(lbl)+"<button data-act='ag-hor-del' data-d='"+esc(k)+"' title='Quitar' style='border:none;background:none;cursor:pointer;color:var(--pw-bosque);font-size:16px;line-height:1;padding:0 2px'>×</button></span>"; }).join("")+"</div>"):"";
     var _daySel=_dpd.slice().sort(function(a,b){ return _ord(a)-_ord(b); }).map(function(dn){ return "<option value='"+dn+"'>"+_DNAME[dn]+"</option>"; }).join("");
+    var _mfInit=_hmMin(_from), _mtInit=_hmMin(_to); if(_mtInit===0 && _mfInit>0) _mtInit=1440; var _aInit=Math.min(_mfInit,_mtInit), _bInit=Math.max(_mfInit,_mtInit);
     body="<div style='font-size:12.5px;color:var(--pw-text-soft);margin-bottom:12px;line-height:1.5'>Qué días y en qué franja te pueden reservar desde tu link. Se aplica al instante.</div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Días</label><div style='display:flex;gap:6px'>"+_dchips+"</div></div>"+
-      "<div class='cp-form-row-2'>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Desde (general)</label><input type='time' id='ag-disp-from' class='cp-form-input' value='"+esc(_from)+"'></div>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Hasta (general)</label><input type='time' id='ag-disp-to' class='cp-form-input' value='"+esc(_to)+"'></div>"+
+      "<div class='cp-form-row'>"+
+        "<div style='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px'><label class='cp-form-label' style='margin:0'>Horario general</label>"+
+          "<span style='font-size:13px;font-weight:700;color:var(--pw-bosque)'><span id='ag-rng-lblfrom'>"+esc(_from)+"</span> – <span id='ag-rng-lblto'>"+esc(_to)+"</span></span></div>"+
+        "<div class='cp-rng'>"+
+          "<div class='cp-rng-track'><div class='cp-rng-fill' id='ag-rng-fill' style='left:"+(_aInit/14.4)+"%;width:"+((_bInit-_aInit)/14.4)+"%'></div></div>"+
+          "<input type='range' id='ag-rng-from' min='0' max='1440' step='15' value='"+_mfInit+"' oninput='_agRngSync(\"from\")' aria-label='Desde'>"+
+          "<input type='range' id='ag-rng-to' min='0' max='1440' step='15' value='"+_mtInit+"' oninput='_agRngSync(\"to\")' aria-label='Hasta'>"+
+        "</div>"+
+        "<div style='display:flex;gap:10px;margin-top:9px'>"+
+          "<input type='time' id='ag-disp-from' class='cp-form-input' value='"+esc(_from)+"' oninput='_agRngFromInputs()' style='flex:1' aria-label='Desde (exacto)'>"+
+          "<input type='time' id='ag-disp-to' class='cp-form-input' value='"+esc(_to)+"' oninput='_agRngFromInputs()' style='flex:1' aria-label='Hasta (exacto)'>"+
+        "</div>"+
       "</div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>¿Un día con horario distinto?</label>"+
         "<div style='display:flex;gap:6px;align-items:center;flex-wrap:wrap'>"+
