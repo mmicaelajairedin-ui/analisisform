@@ -5353,6 +5353,7 @@ function viewAdmin(){
         +"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px' data-act='coach-paid:"+esc(c.id)+"'>Marcar pagado</button>"
         +"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px' data-act='coach-pass-reset' data-id='"+esc(c.id)+"' data-n='"+esc(c.n)+"'>Reset contraseña</button>"
         +"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px"+(off?"":";color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='coach-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>"
+        +"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='coach-delete' data-id='"+esc(c.id)+"' data-n='"+esc(c.n)+"' data-cli='"+esc(c.cli)+"'>Eliminar cuenta</button>"
         +"</div></details>";
     var alta=c.alta||["—",""], actv=c.actv||["—",""];
     var checkCell = function(on){ return on
@@ -6842,6 +6843,27 @@ document.addEventListener("click", function(ev){
         if(RCOACHES){ RCOACHES.forEach(function(u){ if(String(u.id)===String(ctid)) u.activo=turnOn; }); }
         toast(turnOn?"Coach reactivada ✓":"Coach desactivada ✓"); render(); })
       .catch(function(){ alert("No se pudo cambiar el estado de la coach."); });
+    return;
+  }
+  if(act==="coach-delete"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var cdid=el.getAttribute("data-id"); if(!cdid) return;
+    if(RME&&String(cdid)===String(RME.id)){ alert("No puedes eliminar tu propia cuenta."); return; }
+    var cdname=el.getAttribute("data-n")||"esta cuenta";
+    var cdcli=parseInt(el.getAttribute("data-cli")||"0",10)||0;
+    // Borrado DEFINITIVO e irreversible → aviso fuerte + segunda confirmación
+    // escribiendo. Si tiene clientes, avisamos que quedan huérfanos (no se borran
+    // sus datos, pero pierden a su coach).
+    var _w="¿ELIMINAR definitivamente la cuenta de "+cdname+"?\n\nBorra su acceso y su cuenta de coach. NO se puede deshacer.";
+    if(cdcli>0) _w+="\n\n⚠️ Tiene "+cdcli+" cliente(s) cargados: esos datos quedan huérfanos (no se borran, pero pierden su coach).";
+    if(!confirm(_w)) return;
+    var _typed=prompt("Para confirmar el borrado, escribí ELIMINAR (en mayúsculas):");
+    if((""+(_typed||"")).trim().toUpperCase()!=="ELIMINAR"){ toast("Cancelado — no se eliminó nada"); return; }
+    _sbw("usuarios?id=eq."+encodeURIComponent(cdid),"DELETE",{})
+      .then(function(r){ if(!r.ok) throw 0;
+        if(RCOACHES){ RCOACHES=RCOACHES.filter(function(u){ return String(u.id)!==String(cdid); }); }
+        toast("Cuenta eliminada ✓"); render(); })
+      .catch(function(){ alert("No se pudo eliminar la cuenta. Puede estar protegida por permisos (RLS) en Supabase."); });
     return;
   }
   if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.fitTareas=null; state.fitUnit=null; state.rutUnit=null; render(); window.scrollTo(0,0); return; }
