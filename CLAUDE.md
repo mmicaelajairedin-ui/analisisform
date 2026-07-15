@@ -326,6 +326,32 @@ cerrar este gap.
   - Si es individual: agregar `+coachGuard()` al final del query string
 - Test mental: si un atacante con devtools cambia el `id` por un UUID ajeno, ¿que ve/escribe?
 
+## Ciclo de vida del coach — vencimiento + renovacion (julio 2026)
+
+Cuando a un coach se le vence la prueba (cada uno tiene SU `fecha_fin_prueba`:
+14, 15 o 30 dias segun como se dio de alta), ahora hay dos cosas:
+
+1. **Estado real en el panel** (`panel-v2.html`, seccion Coaches): el badge de
+   estado deriva de `fecha_fin_prueba` + `estado_sub`, no solo de `estado_sub`.
+   Muestra **Pagó / Prueba · quedan N d / Vencida hace N d / Inactiva** (con
+   color). Antes un coach vencido sin pagar salia "Prueba" (amarillo) para
+   siempre — parecia activo. Un coach sin `fecha_fin_prueba` (cuentas viejas)
+   sigue como "Prueba" neutro.
+
+2. **Emails de renovacion automaticos** (`supabase/functions/coach-lifecycle`,
+   cron diario ya existente). Solo a coaches que NO pagaron:
+   - `trial_por_vencer` (faltan ≤3 d), `trial_vencido` (el dia), `trial_vencido_2`
+     (~3 d despues). Prioridad: renovacion > onboarding > retencion.
+   - El CTA va **DIRECTO al Stripe del plan que ya tenia** (Basic $29 / Pro $59)
+     con `?prefilled_email=` → paga en 1 clic y el **webhook reactiva su MISMA
+     cuenta** (match por email en `handleCoachSubscription`), nunca crea una nueva.
+   - `trial_vencido` tambien dispara un aviso interno a Micaela (`admin_trial_vencido`).
+   - Registro anti-spam en `coach_nudges` (1 empujon / 3 dias, cada plantilla 1 vez).
+   - **Requiere:** el webhook de suscripcion de Stripe (`customer.subscription.*`)
+     configurado para que "Pagó" se refleje solo. El paywall del panel
+     (`_paywallCheck`) tambien lleva ahora al Stripe del plan correcto.
+   - Deploy: `supabase functions deploy coach-lifecycle --no-verify-jwt`.
+
 ## PENDIENTE — Proximas mejoras
 - 🔒 **Cerrar gap de seguridad RLS en Supabase** (Sprint B, ver seccion "SECURITY MODEL"). Lo mas importante tecnicamente antes de escalar a 5+ coaches.
 - Paginas por pais: /coaching-carrera-espana.html, /coaching-carrera-argentina.html

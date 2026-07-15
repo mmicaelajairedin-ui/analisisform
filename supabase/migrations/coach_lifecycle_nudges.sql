@@ -16,7 +16,9 @@
 CREATE TABLE IF NOT EXISTS coach_nudges (
   id           BIGSERIAL PRIMARY KEY,
   coach_id     UUID NOT NULL,
-  -- welcome_no_client | has_client_no_ia | first_ia_done | reactivacion | admin_churn_alert
+  -- onb_bienvenida | onb_referido | onb_funciones | onb_review | reactivacion |
+  -- admin_churn_alert | trial_por_vencer | trial_vencido | trial_vencido_2 |
+  -- admin_trial_vencido
   plantilla_id TEXT NOT NULL,
   canal        TEXT,            -- email | push | email+push | admin
   sent_at      TIMESTAMPTZ NOT NULL DEFAULT now()
