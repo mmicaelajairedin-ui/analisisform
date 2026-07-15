@@ -1141,6 +1141,21 @@ const RULES = [
     },
   },
   {
+    name: "calendario del panel: rediseño (stats arriba + resumen semana)",
+    bug: "El Calendario del panel tiene la fila de stats de arriba (Hoy/Clientes/" +
+         "Esta semana/Asistencia) y la card 'Resumen de esta semana' con 5 tarjetas, " +
+         "calculadas de datos reales (_calStats). Si se desconecta, se pierde el " +
+         "rediseño estilo mockup.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _calStats/.test(p)) return "panel-v2.html: falta _calStats (números reales del calendario).";
+      if (!/cp-cal-topstats/.test(p)) return "panel-v2.html: falta la fila de stats de arriba (cp-cal-topstats).";
+      if (!/Resumen de esta semana/.test(p)) return "panel-v2.html: falta la card 'Resumen de esta semana'.";
+      return null;
+    },
+  },
+  {
     name: "disponibilidad: slider del horario general (coach + empleado)",
     bug: "El horario general de 'Mi disponibilidad' se ajusta con un slider de rango " +
          "(dos thumbs) además de los inputs de hora, en el panel del coach y en el del " +
