@@ -68,6 +68,27 @@ h2{font-size:20px}
 .log li b{color:var(--ink)}
 .log li.ok::before{content:'✓ ';color:var(--accent);font-weight:700}
 .log li.err::before{content:'✕ ';color:var(--warn);font-weight:700}
+/* view toggle */
+.vtog{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-left:6px}
+.vtog button{border:0;background:#fff;padding:7px 13px;font:inherit;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
+.vtog button.on{background:var(--accent);color:#fff}
+/* calendar */
+.cal{margin-top:10px}
+.cal .mo{font-family:'Fraunces',serif;font-weight:600;font-size:18px;margin:18px 0 10px;text-transform:capitalize}
+.cal .mo:first-child{margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.gh{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);text-align:center;padding:4px 0}
+.cell{min-height:74px;border:1px solid var(--line);border-radius:10px;padding:6px;background:#fff;font-size:12px}
+.cell.blank{background:transparent;border:0}
+.cell.we{background:#FBFCFB}
+.cell .dn{font-weight:700;color:var(--muted);font-size:12px}
+.cell.has{border-color:var(--accent)}
+.rchip{margin-top:4px;border-radius:7px;padding:4px 6px;line-height:1.25;border-left:3px solid var(--cc,#2D6A4F);background:var(--cb,#EDF5EE);cursor:pointer}
+.rchip .rt{font-weight:600;color:var(--ink);display:block;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rchip .rc{font-size:10px;color:var(--muted)}
+.rchip .rv{font-size:10px;font-weight:700}
+.rchip .rv.ok{color:var(--accent)} .rchip .rv.no{color:var(--warn)}
+@media(max-width:720px){.cell{min-height:54px;padding:4px}.rchip .rc{display:none}.gh{font-size:9px}}
 /* table */
 .tbl{width:100%;border-collapse:collapse;margin-top:8px;font-size:13.5px}
 .tbl th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);border-bottom:2px solid var(--line);padding:8px 10px}
@@ -172,10 +193,15 @@ h2{font-size:20px}
     <div class="note">Si editás en CapCut: exportá en <b>1080p · 30fps · calidad alta</b>. Si tu app te deja elegir bitrate, poné el máximo. Ese archivo cumple el spec → sube sin recomprimir.</div>
   </div>
 
-  <!-- TABLA -->
+  <!-- CALENDARIO / LISTA -->
   <div class="card">
-    <div class="actions" style="margin-bottom:6px"><h2>Los 27 reels</h2><span class="count" id="count2"></span></div>
-    <div style="overflow-x:auto">
+    <div class="actions" style="margin-bottom:2px">
+      <h2>Tu calendario</h2>
+      <div class="vtog"><button data-view="cal" class="on">📅 Calendario</button><button data-view="list">☰ Lista</button></div>
+      <span class="count" id="count2"></span>
+    </div>
+    <div id="calview" class="cal"></div>
+    <div id="listview" style="display:none;overflow-x:auto">
       <table class="tbl">
         <thead><tr><th>#</th><th>Fecha</th><th>Categoría</th><th>Título</th><th>Video (URL)</th><th>Estado</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
@@ -262,6 +288,46 @@ function render(){
     +'</tr>';
   }).join('');
   window._rows=rows;
+  renderCal(rows);
+}
+const CATCOL={prod:['#2D6A4F','#EAF3EC'],cur:['#3E6E8E','#E9F1F6'],aut:['#9A7636','#F5EFE3'],pol:['#B15C4A','#F7EAE6'],story:['#7A5A8E','#F0EBF5'],data:['#3F8577','#E7F2EF']};
+const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const GH=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+function renderCal(rows){
+  const byKey={}; rows.forEach((r,i)=>{byKey[r.fecha]=Object.assign({n:i+1},r)});
+  const first=new Date(rows[0].fecha+'T00:00:00'), last=new Date(rows[rows.length-1].fecha+'T00:00:00');
+  let html='', cursor=new Date(first.getFullYear(),first.getMonth(),1);
+  const endMonth=new Date(last.getFullYear(),last.getMonth(),1);
+  while(cursor<=endMonth){
+    const Y=cursor.getFullYear(), M=cursor.getMonth();
+    html+='<div class="mo">'+MESES[M]+' '+Y+'</div><div class="grid">';
+    GH.forEach(d=>html+='<div class="gh">'+d+'</div>');
+    const lead=(new Date(Y,M,1).getDay()+6)%7; // Monday-start
+    for(let i=0;i<lead;i++)html+='<div class="cell blank"></div>';
+    const days=new Date(Y,M+1,0).getDate();
+    for(let d=1;d<=days;d++){
+      const ds=Y+'-'+String(M+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      const wd=new Date(Y,M,d).getDay(), we=(wd===0||wd===6);
+      const r=byKey[ds];
+      html+='<div class="cell'+(we?' we':'')+(r?' has':'')+'"><div class="dn">'+d+'</div>';
+      if(r){const c=CATCOL[r.cat]||['#2D6A4F','#EDF5EE'];const ready=r.video&&r.video.length>4;
+        html+='<div class="rchip" data-open="'+(r.n-1)+'" style="--cc:'+c[0]+';--cb:'+c[1]+'" title="'+esc(r.title)+'">'
+          +'<span class="rt">'+esc(r.title)+'</span>'
+          +'<span class="rc">'+(CATN[r.cat]||r.cat)+' · '+r.hora+'</span> '
+          +'<span class="rv '+(ready?'ok':'no')+'">'+(ready?'● video':'○ falta')+'</span></div>';
+      }
+      html+='</div>';
+    }
+    html+='</div>';
+    cursor.setMonth(cursor.getMonth()+1);
+  }
+  document.getElementById('calview').innerHTML=html;
+}
+function setView(v){
+  document.querySelectorAll('.vtog button').forEach(b=>b.classList.toggle('on',b.dataset.view===v));
+  document.getElementById('calview').style.display=v==='cal'?'':'none';
+  document.getElementById('listview').style.display=v==='list'?'':'none';
+  LS.set('view',v);
 }
 
 /* ---------- helpers ---------- */
@@ -325,6 +391,8 @@ $('#run').onclick=programar;
 /* ---------- events ---------- */
 document.addEventListener('click',e=>{
   const t=e.target;
+  const vbtn=t.closest&&t.closest('.vtog button'); if(vbtn){setView(vbtn.dataset.view);return}
+  const chip=t.closest&&t.closest('.rchip'); if(chip){setView('list');const pos=+chip.dataset.open;const inp=document.querySelectorAll('#listview .vurl')[pos];if(inp){inp.scrollIntoView({block:'center',behavior:'smooth'});setTimeout(()=>inp.focus(),200)}return}
   if(t.dataset.toggle){const kr=t.closest('.conn').querySelector('.keyrow');kr.classList.toggle('show')}
   if(t.dataset.save){const id=t.dataset.save;const inp=t.closest('.keyrow').querySelector('input');const k=keys();k[id]=inp.value.trim();LS.set('keys',k);renderConns();toast(inp.value.trim()?'Conectado ✓':'Key borrada')}
   if(t.dataset.cap!=null)copy(window._rows[t.dataset.cap].caption);
@@ -339,7 +407,7 @@ document.addEventListener('input',e=>{
 $$('#redes .chip input').forEach(i=>i.onchange=e=>e.target.closest('.chip').classList.toggle('on',e.target.checked));
 ['#start','#cad','#hora'].forEach(s=>$(s).addEventListener('change',()=>{LS.set('start',$('#start').value);LS.set('cad',$('#cad').value);LS.set('hora',$('#hora').value);render()}));
 (function initAccs(){const a=accs();$$('[data-acc]').forEach(i=>{if(a[i.dataset.acc])i.value=a[i.dataset.acc]})})();
-renderConns();render();
+renderConns();render();setView(LS.get('view','cal'));
 </script>
 </body>
 </html>
