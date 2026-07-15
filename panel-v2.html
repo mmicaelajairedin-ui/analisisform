@@ -2473,20 +2473,16 @@ function _agRenderDay(key){
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); items.push({ms:+e.start, title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", sub:(typ&&typ.label)||"", durMin:_durMin((typ&&typ.label)||""), estado:""}); } });
   _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?(" · "+_calOwnerName(r.coach_id)):""; items.push({ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", link:"", sub:(r.tipo||"")+who, durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen}); } });
   items.sort(function(a,b){ return a.ms-b.ms; });
+  // Dedup: la misma sesión puede venir del Google Calendar Y de la reserva.
+  var _sd={}; items=items.filter(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(_sd[k]) return false; _sd[k]=1; return true; });
   var now=Date.now();
-  var rowFree=function(hm){
-    return "<div style='display:grid;grid-template-columns:40px 24px 1fr;align-items:center;min-height:38px'>"+
-      "<span style='font-size:12px;color:var(--pw-text-muted);font-weight:500'>"+hm+"</span>"+
-      "<span style='justify-self:center;width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid var(--pw-border-strong);z-index:1'></span>"+
-      "<span style='font-size:13px;color:var(--pw-text-muted)'>Disponible</span></div>";
-  };
   var rowEvent=function(it){
     var right="";
     if(_attended(it.estado)) right="<span style='width:20px;height:20px;border-radius:50%;background:var(--pw-sendero);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>"+_cIco('check',12)+"</span>";
     else if(it.ms>now && it.ms-now<=60*60000) right="<span style='font-size:10px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:3px 8px;border-radius:100px;flex-shrink:0;white-space:nowrap'>En "+Math.max(1,Math.round((it.ms-now)/60000))+" min</span>";
     else if(it.link) right="<a href='"+esc(it.link)+"' target='_blank' rel='noopener' aria-label='Entrar a la sesión' style='width:26px;height:26px;border-radius:8px;background:var(--pw-bosque);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none'>"+_cIco('video',13)+"</a>";
     var sub=(it.sub||"")+(it.durMin?(" · "+it.durMin+" min"):"");
-    return "<div style='display:grid;grid-template-columns:40px 24px 1fr;align-items:center;padding:3px 0'>"+
+    return "<div style='display:grid;grid-template-columns:40px 24px minmax(0,1fr);align-items:center;padding:3px 0'>"+
       "<span style='font-size:12px;color:var(--pw-text-soft);font-weight:600;align-self:flex-start;padding-top:14px'>"+_agTime(it.ms)+"</span>"+
       "<span style='justify-self:center;align-self:flex-start;margin-top:17px;width:9px;height:9px;border-radius:50%;background:"+it.col+";box-shadow:0 0 0 3px #fff;z-index:1'></span>"+
       "<div style='background:"+it.col+"1a;border-radius:10px;padding:9px 11px;display:flex;align-items:center;gap:10px'>"+
@@ -2496,22 +2492,15 @@ function _agRenderDay(key){
         right+
       "</div></div>";
   };
+  // Solo lo AGENDADO (a pedido): sin llenar de "Disponible". Si no hay nada, un aviso corto.
   var win=_agDispWindow(key), body="";
-  if(!win){
-    if(!items.length) body=_agEmpty("No recibís reservas este día. (Se define en Mi disponibilidad.)");
-    else items.forEach(function(it){ body+=rowEvent(it); });
+  if(!items.length){
+    body=_agEmpty(win?"Sin sesiones agendadas este día. ✨":"No recibís reservas este día. (Se define en Mi disponibilidad.)");
   } else {
-    var sH=parseInt((""+win.from).split(":")[0],10)||0;
-    var eMin=_hmMin(win.to); if(eMin<=_hmMin(win.from)) eMin+=1440;
-    var used={};
-    for(var h=sH; h*60<eMin; h++){
-      var hourItems=items.filter(function(it){ var m=new Date(it.ms); var mm=m.getHours()*60+m.getMinutes(); return mm>=h*60 && mm<(h+1)*60; });
-      if(hourItems.length){ hourItems.forEach(function(it){ body+=rowEvent(it); used[it.ms]=1; }); }
-      else body+=rowFree(("0"+(h%24)).slice(-2)+":00");
-    }
-    items.forEach(function(it){ if(!used[it.ms]) body+=rowEvent(it); });
+    items.forEach(function(it){ body+=rowEvent(it); });
   }
-  return head+"<div style='position:relative'><div style='position:absolute;left:52px;top:10px;bottom:10px;width:1.5px;background:var(--pw-border)'></div>"+body+"</div>";
+  var line=items.length?"<div style='position:absolute;left:52px;top:10px;bottom:10px;width:1.5px;background:var(--pw-border)'></div>":"";
+  return head+"<div style='position:relative'>"+line+body+"</div>";
 }
 function _agBodyRender(){ return _AG_SEL_DAY?_agRenderDay(_AG_SEL_DAY):_agRender(_AG_DATA); }
 // Tras cargar/refrescar las reservas del Calendario, repintar el mes (para que
@@ -2593,7 +2582,9 @@ function _agProxList(){
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); out.push({ms:+e.start, title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:"", durMin:_durMin((typ&&typ.label)||"")}); } });
   _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", link:"", email:r.email||"", durMin:_durMin(r.tipo||"")}); } } });
   out.sort(function(a,b){ return a.ms-b.ms; });
-  return out;
+  // Dedup: una misma sesión puede venir del Google Calendar Y de la reserva.
+  var seen={}, uniq=[]; out.forEach(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(!seen[k]){ seen[k]=1; uniq.push(x); } });
+  return uniq;
 }
 function _agProxItem(){ return _agProxList()[0]||null; }
 function _agProxRender(){
