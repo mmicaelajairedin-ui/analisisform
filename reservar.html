@@ -219,7 +219,8 @@ function _pad2(n){ return ('0'+n).slice(-2); }
 function _coachInstants(){
   var disp=DISP||normDisp(null); var tz=_coachTz();
   var days=(disp.days&&disp.days.length)?disp.days.map(Number):[1,2,3,4,5];
-  var f=_hm(disp.from||'09:00'), t=_hm(disp.to||'18:00'); if(t<=f) t+=1440;
+  var gf=_hm(disp.from||'09:00'), gt=_hm(disp.to||'18:00');
+  var hor=(disp.horarios&&typeof disp.horarios==='object')?disp.horarios:{};
   var step=Math.max(DUR,15), now=Date.now(), base=new Date(), out=[];
   // Aviso mínimo: no ofrecer huecos que empiecen antes de now + X horas.
   var notice=Math.max(60000, ((disp.min_notice_h||0)*3600000));
@@ -229,6 +230,10 @@ function _coachInstants(){
     if(days.indexOf(ymd.wd)<0) continue;
     // Día bloqueado (vacaciones/feriado) — en la fecha del coach.
     if(bloq.indexOf(ymd.y+'-'+_pad2(ymd.mo)+'-'+_pad2(ymd.d))>=0) continue;
+    // Horario de ESTE día: override por día si existe, si no el general.
+    var _hd=hor[String(ymd.wd)]; var f=gf, t=gt;
+    if(_hd){ if(/^\d{1,2}:\d{2}$/.test(_hd.from||'')) f=_hm(_hd.from); if(/^\d{1,2}:\d{2}$/.test(_hd.to||'')) t=_hm(_hd.to); }
+    if(t<=f) t+=1440;
     for(var mnt=f; mnt+DUR<=t; mnt+=step){
       var mm=mnt%1440, add=Math.floor(mnt/1440);
       var ms=_wallToUtc(ymd.y, ymd.mo, ymd.d+add, Math.floor(mm/60), mm%60, tz);
@@ -275,12 +280,23 @@ function _slotBusy(ms){
 }
 function normDisp(d){
   var def={days:[1,2,3,4,5],from:'09:00',to:'18:00'};
-  if(!d || typeof d!=='object') return def;
+  if(!d || typeof d!=='object') return { days:def.days.slice(), from:def.from, to:def.to, tz:'', min_notice_h:0, buffer_min:0, bloqueados:[], horarios:{} };
   var days=(Object.prototype.toString.call(d.days)==='[object Array]'&&d.days.length)?d.days.map(Number):def.days;
+  // Horario por día (opcional): { "<weekday>": {from,to} }. Si un día no está
+  // acá, usa el from/to general. Así se puede tener el jueves distinto sin tocar
+  // el resto.
+  var hor={};
+  if(d.horarios && typeof d.horarios==='object'){
+    for(var k in d.horarios){ if(!Object.prototype.hasOwnProperty.call(d.horarios,k)) continue;
+      var h=d.horarios[k];
+      if(h && typeof h==='object' && /^\d{1,2}:\d{2}$/.test(h.from||'') && /^\d{1,2}:\d{2}$/.test(h.to||'')) hor[String(Number(k))]={from:h.from, to:h.to};
+    }
+  }
   return { days:days, from:(/^\d{1,2}:\d{2}$/.test(d.from||'')?d.from:def.from), to:(/^\d{1,2}:\d{2}$/.test(d.to||'')?d.to:def.to), tz:(typeof d.tz==='string'&&d.tz)?d.tz:'',
     min_notice_h:(isFinite(+d.min_notice_h)?Math.max(0,+d.min_notice_h):0),
     buffer_min:(isFinite(+d.buffer_min)?Math.max(0,+d.buffer_min):0),
-    bloqueados:(Object.prototype.toString.call(d.bloqueados)==='[object Array]')?d.bloqueados.slice():[] };
+    bloqueados:(Object.prototype.toString.call(d.bloqueados)==='[object Array]')?d.bloqueados.slice():[],
+    horarios:hor };
 }
 function memPhoto(u){ var c=u.configuracion||{}; return u.foto_url||c.foto_url||c.foto_perfil||''; }
 function roleLabel(u){ var c=u.configuracion||{}; if(c.titulo_profesional) return c.titulo_profesional; return (u.rol==='admin')?'Responsable de Pathway':(u.rol==='empleado')?'Responsable comercial':'Equipo Pathway'; }
