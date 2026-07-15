@@ -63,7 +63,8 @@
       ".pw-ia-tab:hover{padding-right:11px;filter:brightness(1.06);}" +
       ".pw-ia-tab .pw-ia-tab-tx{writing-mode:vertical-rl;text-orientation:mixed;}" +
       ".pw-ia-tab svg{flex-shrink:0;}" +
-      "@media (max-width:900px){.pw-ia-tab{top:auto;bottom:118px;padding:11px 6px;font-size:11px;border-radius:11px 0 0 11px;}}" +
+      /* En móvil: icono redondo arriba a la derecha (no una pestaña que flota sobre el contenido) */
+      "@media (max-width:900px){.pw-ia-tab{top:9px;bottom:auto;right:10px;transform:none;flex-direction:row;width:40px;height:40px;padding:0;justify-content:center;border-radius:50%;box-shadow:0 4px 12px rgba(45,106,79,.28);}.pw-ia-tab .pw-ia-tab-tx{display:none;}}" +
       ".cp-iac-panel{position:fixed;right:14px;top:62px;z-index:97;width:352px;max-width:calc(100vw - 28px);height:520px;max-height:calc(100vh - 96px);background:#fff;border:1px solid #E5E7EB;border-radius:18px;box-shadow:0 22px 56px rgba(45,106,79,.22),0 4px 12px rgba(0,0,0,.08);display:flex;flex-direction:column;overflow:hidden;font-family:Inter,-apple-system,system-ui,sans-serif;animation:cpIacIn .22s ease;}" +
       "@keyframes cpIacIn{from{opacity:0;transform:translateY(-12px) scale(.97);}to{opacity:1;transform:translateY(0) scale(1);}}" +
       ".cp-iac-head{display:flex;align-items:center;gap:10px;padding:13px 12px 12px 15px;border-bottom:1px solid #E5E7EB;flex-shrink:0;}" +
