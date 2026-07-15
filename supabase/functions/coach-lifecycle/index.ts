@@ -6,10 +6,18 @@
 //       +5 d  → Referidos (+15 d)  (onb_referido)
 //       +9 d  → Funcionalidades    (onb_funciones)
 //       +14 d → Review             (onb_review)
-// (2) RETENCIÓN por comportamiento:
+// (2) RENOVACIÓN por vencimiento de la prueba (keyed a fecha_fin_prueba de CADA
+//     coach → respeta 14 / 15 / 30 días). Solo a coaches que NO pagaron:
+//       trial_por_vencer    — faltan <=3 d para vencer
+//       trial_vencido       — el día que vence (+ aviso admin_trial_vencido a Micaela)
+//       trial_vencido_2     — recordatorio ~3 d después
+//     El CTA va DIRECTO al Stripe del plan que ya tenía, con email precargado →
+//     reactiva su MISMA cuenta (webhook matchea por email), no crea una nueva.
+// (3) RETENCIÓN por comportamiento:
 //       reactivacion       — >=14 d sin entrar (con clientes o pagante)
 //       admin_churn_alert  — si además es PAGANTE → aviso a Micaela
 //
+// Prioridad: renovación > onboarding > retención.
 // Máx 1 empujón por coach por corrida (anti-spam vía coach_nudges; nunca dos en
 // menos de 3 días). Respeta opt-out (configuracion.notifs.lifecycle === false) y
 // la baja del pie de cada email (function unsubscribe). Admin / pro vitalicio: skip.
@@ -25,6 +33,16 @@ const GO_CLIENTES = PANEL_URL + "?go=clientes";
 const PUBLIC_API = "https://api.pathwaycareercoach.com"; // dominio público de las functions (baja)
 const REPLY_TO = "hi@pathwaycareercoach.com";
 const DAY = 24 * 60 * 60 * 1000;
+// Stripe: links de pago por plan. La renovación va DIRECTO acá (no a registro.html),
+// con el email del coach precargado → paga en 1 clic y el webhook reactiva su MISMA
+// cuenta (match por email), sin crear una cuenta nueva ni pedirle datos de vuelta.
+const STRIPE_BASIC = "https://buy.stripe.com/00waEX3Qke8gczqge78AE0d"; // $29/mes
+const STRIPE_PRO = "https://buy.stripe.com/eVq5kD86Ae8geHy1jd8AE0e"; // $59/mes
+// Link de renovación al plan que ya tenía el coach, con su email precargado.
+function renewUrl(plan, email) {
+  const base = plan === "pro" ? STRIPE_PRO : STRIPE_BASIC;
+  return base + "?prefilled_email=" + encodeURIComponent(String(email || ""));
+}
 // Arranque del onboarding: SOLO coaches registrados desde esta fecha reciben la
 // secuencia de bienvenida (no retroactivo). Para incluir a alguien anterior,
 // bajar esta fecha; para pausar, subirla al futuro.
@@ -69,6 +87,44 @@ function fillOnb(html, primer, coachId) {
     .split("{Nombre}").join(esc(primer))
     .split("{RefLink}").join(refLink)
     .split("{Baja}").join(bajaLink);
+}
+
+// ── Renovación: avisos por vencimiento de la prueba ──────────────
+// Se disparan según la fecha_fin_prueba de CADA coach (respeta 14 / 15 / 30 días,
+// porque leen SU fecha, no una fija). Solo a coaches que NO pagaron. El botón va
+// DIRECTO al Stripe del plan que ya tenía, con su email precargado: paga en 1 clic
+// y reactiva la MISMA cuenta (el webhook matchea por email). El texto deja claro
+// que es una renovación de su cuenta, no un alta nueva.
+function trialEmail(kind, primer, plan, email) {
+  const payUrl = renewUrl(plan, email);
+  const planLbl = plan === "pro" ? "Pro (USD $59/mes)" : "Basic (USD $29/mes)";
+  const intactos = "tus clientes, informes y toda tu configuración siguen intactos — <strong>no empiezas de cero</strong>";
+  if (kind === "trial_por_vencer") {
+    return {
+      subject: `${primer}, tu prueba de Pathway termina pronto`,
+      html: emailHtml(primer, "⏳", "#FBF3E2",
+        P(`Tu prueba está por terminar. Para seguir <strong>sin cortes</strong> con tus clientes, activa tu plan hoy: ${intactos}. Cancelas cuando quieras, sin permanencia.`),
+        `Seguir con mi plan ${planLbl}`, payUrl),
+      push: { title: "Tu prueba termina pronto ⏳", body: "Activa tu plan y seguí sin cortes." },
+    };
+  }
+  if (kind === "trial_vencido") {
+    return {
+      subject: `${primer}, tu prueba terminó — reactiva tu cuenta`,
+      html: emailHtml(primer, "🌱", "#E9F5EF",
+        P(`Tu prueba de Pathway terminó, pero <strong>tu cuenta y tus datos siguen guardados</strong>. Reactivala en un clic y retomá justo donde lo dejaste: ${intactos}. Desde <strong>${plan === "pro" ? "USD $59" : "USD $29"}/mes</strong>, cancelas cuando quieras.`),
+        `Reactivar mi cuenta · ${planLbl}`, payUrl),
+      push: { title: "Tu prueba terminó 🌱", body: "Reactivá tu cuenta en un clic." },
+    };
+  }
+  // trial_vencido_2 — último recordatorio unos días después
+  return {
+    subject: `${primer}, ¿seguimos? tu cuenta te espera`,
+    html: emailHtml(primer, "💚", "#E9F5EF",
+      P(`Hace unos días terminó tu prueba. Todavía guardamos tu cuenta y tu data, pero no por mucho más. Si querés retomar con tus clientes, reactivá tu plan hoy: ${intactos}.`),
+      `Volver a Pathway · ${planLbl}`, payUrl),
+    push: { title: "Tu cuenta te espera 💚", body: "Reactivá tu plan antes de perder tu data." },
+  };
 }
 
 async function countRows(url, headers) {
@@ -159,11 +215,15 @@ Deno.serve(async (req) => {
         const id = encodeURIComponent(String(u.id));
         const estadoSub = String(cfg.estado_sub || "");
         const isPaying = estadoSub === "activa";
+        const plan = String(cfg.plan || "") === "pro" ? "pro" : "basic";
         const altaTs = u.created_at ? +new Date(u.created_at) : 0;
         const seenRaw = cfg.last_login || u.last_seen || u.created_at || "";
         const seenTs = seenRaw ? +new Date(seenRaw) : 0;
         const dAlta = altaTs ? (now - altaTs) / DAY : 999;
         const dSeen = seenTs ? (now - seenTs) / DAY : 999;
+        // Días hasta el fin de la prueba de ESTE coach: >0 faltan, <=0 ya venció.
+        const finTs = cfg.fecha_fin_prueba ? +new Date(cfg.fecha_fin_prueba) : 0;
+        const dToExpiry = finTs ? (finTs - now) / DAY : null;
 
         const hRes = await fetch(
           `${SUPABASE_URL}/rest/v1/coach_nudges?coach_id=eq.${id}&select=plantilla_id,sent_at&order=sent_at.desc`,
@@ -175,23 +235,36 @@ Deno.serve(async (req) => {
         // Nunca dos empujones al coach en menos de 3 días (el aviso interno no cuenta).
         const recientes = hist.some((h) => h.plantilla_id !== "admin_churn_alert" && h.sent_at && (now - +new Date(h.sent_at)) / DAY < 3);
 
-        // ── Decisión: primero onboarding por tiempo, luego retención ──
-        // Solo coaches que se registran DESDE la fecha de arranque (no retroactivo:
-        // los coaches que ya existían antes NO reciben la secuencia de bienvenida).
+        // ── Decisión: PRIORIDAD (1) renovación por vencimiento, (2) onboarding, (3) retención ──
+        // (1) Renovación: solo coaches que NO pagaron y tienen fecha de fin de prueba.
+        //     Se elige la etapa MÁS avanzada que aún no se mandó, así aunque el cron
+        //     se saltee un día, cada coach recibe cada aviso una sola vez.
+        let trialKind = null;
+        if (!isPaying && finTs) {
+          if (dToExpiry <= -3 && !sentEver("trial_vencido_2")) trialKind = "trial_vencido_2";
+          else if (dToExpiry <= 0.5 && !sentEver("trial_vencido")) trialKind = "trial_vencido";
+          else if (dToExpiry <= 3 && !sentEver("trial_por_vencer")) trialKind = "trial_por_vencer";
+        }
+
+        // (2) Onboarding por tiempo. Solo coaches que se registran DESDE la fecha de
+        // arranque (no retroactivo: los que ya existían antes NO reciben la bienvenida).
         let onbStep = null;
-        if (altaTs >= ONBOARDING_FROM_TS) {
+        if (!trialKind && altaTs >= ONBOARDING_FROM_TS) {
           for (const s of ONB) {
             if (dAlta >= s.day && !sentEver(s.id)) { onbStep = s; break; }
           }
         }
-        let kind = onbStep ? onbStep.id : null;
+        let kind = trialKind || (onbStep ? onbStep.id : null);
         if (!kind && dSeen >= 14 && (isPaying || (await countRows(`${SUPABASE_URL}/rest/v1/candidatos?coach_id=eq.${id}&select=id`, sbHeaders)) > 0) && !sentWithin("reactivacion", 14)) {
           kind = "reactivacion";
         }
         if (!kind || recientes) { result.saltados++; continue; }
 
         let subject, html, push;
-        if (onbStep) {
+        if (trialKind) {
+          const t = trialEmail(trialKind, primer, plan, email);
+          subject = t.subject; html = t.html; push = t.push;
+        } else if (onbStep) {
           subject = fillOnb(onbStep.subject, primer, String(u.id));
           html = fillOnb(onbStep.html, primer, String(u.id));
           push = onbStep.push;
@@ -216,6 +289,17 @@ Deno.serve(async (req) => {
               P(`<strong>${esc(nombre)}</strong> (${esc(email)}) es coach <strong>pagante</strong> y lleva <strong>${dias} días</strong> sin entrar. Un mensaje personal tuyo ahora puede retenerlo.`),
               "Abrir el panel", PANEL_URL, "Aviso interno de Pathway — solo lo recibes tú como admin."));
           await recordNudge(String(u.id), "admin_churn_alert", "admin");
+          result.alertasAdmin++;
+        }
+
+        // Aviso a Micaela el día que se vence una prueba sin pago: para seguirlo
+        // personalmente (el panel ya lo muestra como "Vencida", esto es el empujón).
+        if (trialKind === "trial_vencido" && !sentWithin("admin_trial_vencido", 30)) {
+          await sendEmail(ADMIN_EMAIL, "Micaela", `⏰ Prueba vencida sin pago: ${nombre}`,
+            emailHtml("Micaela", "⏰", "#FBECEC",
+              P(`<strong>${esc(nombre)}</strong> (${esc(email)}) terminó su prueba y todavía no activó plan. Le mandamos el email de reactivación automático — un mensaje personal tuyo ahora puede terminar de convertirlo.`),
+              "Abrir el panel", PANEL_URL, "Aviso interno de Pathway — solo lo recibes tú como admin."));
+          await recordNudge(String(u.id), "admin_trial_vencido", "admin");
           result.alertasAdmin++;
         }
       } catch (e) {
