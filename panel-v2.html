@@ -2500,6 +2500,7 @@ function _agMonthRender(){
   }
   html+="</div>";
   box.innerHTML=html;
+  try{ _agProxRender(); }catch(e){} // refresca la card "Próxima sesión" con los mismos datos
 }
 function _agendaCard(){
   // Resumen liviano: solo la lista (Google) + el calendario del mes, con un link
@@ -2536,8 +2537,38 @@ function _agendaCalCard(){
       // Línea del costado ARRASTRABLE: tirá para agrandar/achicar el calendario. Se guarda.
       "<div id='cp-agmo-resize' onpointerdown='_agResizeStart(event)' title='Arrastrá para agrandar el calendario' style='flex:0 0 auto;width:12px;align-self:stretch;cursor:ew-resize;display:flex;align-items:center;justify-content:center;touch-action:none;border-left:1px solid var(--pw-border)'><div style='width:4px;height:46px;border-radius:3px;background:var(--pw-border)'></div></div>"+
       "<div style='flex:0 0 auto;padding:0 4px 0 14px'>"+_agMonthCal()+"</div>"+
+      "<div id='cp-agenda-prox' style='flex:1 1 220px;min-width:200px;padding-left:18px;border-left:1px solid var(--pw-border)'></div>"+
     "</div>"+
   "</div>";
+}
+// Próxima sesión (columna derecha, estilo mockup): la cita/evento futuro más
+// cercano, con hora, "En X min" y accesos. Google + reservas del link.
+function _agProxItem(){
+  var now=Date.now(), best=null;
+  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); if(!best||e.start<best.ms) best={ms:+e.start, title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:""}; } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); if(!best||ms<best.ms) best={ms:ms, title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:"", email:r.email||""}; } } });
+  return best;
+}
+function _agProxRender(){
+  var box=document.getElementById("cp-agenda-prox"); if(!box) return;
+  var it=_agProxItem();
+  if(!it){ box.innerHTML="<div class='cp-eyebrow' style='margin-bottom:8px'>Próxima sesión</div>"+_agEmpty("No tenés sesiones próximas."); return; }
+  var now=Date.now(); var mins=Math.round((it.ms-now)/60000);
+  var when=mins<=60?("En "+Math.max(1,mins)+" min"):(mins<=60*24?("En "+Math.round(mins/60)+" h"):_agDayFull(_agMoKey(new Date(it.ms))));
+  var badge="<span style='background:var(--pw-bosque);color:#fff;border-radius:100px;padding:2px 10px;font-size:11px;font-weight:800'>"+esc(when)+"</span>";
+  var cta=it.link
+    ? "<a href='"+esc(it.link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='width:100%;height:38px;font-size:13px;text-decoration:none;margin-top:12px'>Entrar a la sesión</a>"
+    : (it.email?"<a href='mailto:"+esc(it.email)+"' class='cp-btn cp-btn-primary' style='width:100%;height:38px;font-size:13px;text-decoration:none;margin-top:12px'>Escribirle</a>":"");
+  var verCli=it.email?"<button data-act='nav:clientes' class='cp-btn cp-btn-ghost' style='width:100%;height:32px;font-size:12px;margin-top:7px'>Ver en Clientes "+svg(IC.chevR,12)+"</button>":"";
+  box.innerHTML="<div class='cp-eyebrow' style='display:flex;align-items:center;justify-content:space-between;margin-bottom:10px'><span>Próxima sesión</span>"+badge+"</div>"+
+    "<div style='display:flex;align-items:center;gap:11px;margin-bottom:6px'>"+
+      "<span style='width:48px;height:48px;border-radius:50%;background:"+it.col+"22;border:2px solid "+it.col+";display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0'>"+it.ico+"</span>"+
+      "<div style='min-width:0'><div style='font-size:15px;font-weight:700;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.title)+"</div>"+
+        (it.sub?"<div style='font-size:12px;color:var(--pw-text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.sub)+"</div>":"")+"</div>"+
+    "</div>"+
+    "<div style='font-size:13px;color:var(--pw-carbon);font-weight:600;margin-top:8px'>🕐 "+esc(_agTime(it.ms))+" · <span style='text-transform:capitalize'>"+esc(_agDayFull(_agMoKey(new Date(it.ms))))+"</span></div>"+
+    (it.link?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:3px'>💻 Online</div>":"")+
+    cta+verCli;
 }
 // Modal Pathway para tipos de evento y agendar cita (nada de prompts del navegador).
 function viewAgModal(){
