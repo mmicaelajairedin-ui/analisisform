@@ -100,34 +100,38 @@ function trialEmail(kind, primer, plan, email) {
   // Botón principal = SU plan (Basic sigue en Basic, Pro sigue en Pro). Si está
   // en Basic, además un link secundario para pasar a Pro (upsell, nunca downsell).
   const payUrl = renewUrl(plan, email);
-  const planLbl = plan === "pro" ? "Pro (USD $59/mes)" : "Basic (USD $29/mes)";
-  // A los Basic: cuadro comparativo con lo que suma Pro (empujar el upgrade).
-  // A los Pro: nada (ya lo tienen). Es upsell, nunca downsell.
+  const planNom = plan === "pro" ? "Pro" : "Basic";
+  const precio = plan === "pro" ? "USD $59/mes" : "USD $29/mes";
+  // Precio en una línea sutil BAJO el botón (no adentro del botón).
+  const planTag =
+    `<p style="font-family:Arial,sans-serif;font-size:12.5px;color:#8A9A91;text-align:center;margin:12px 0 0;">Tu plan <strong style="color:#5A6A60;">${planNom}</strong> &middot; ${precio} &middot; cancelás cuando quieras</p>`;
+  // A los Basic: cuadro con lo que suma Pro. Botón OUTLINE (evita dos sólidos
+  // juntos). A los Pro: nada (ya lo tienen). Upsell, nunca downsell.
   const proBenefit = (t, sub) =>
     `<tr><td style="padding:3px 0;font-family:Arial,sans-serif;font-size:13px;color:#40584C;line-height:1.5;"><span style="color:#2D6A4F;font-weight:700;">&check;</span>&nbsp; ${t}${sub ? ` <span style="color:#8A9A91;">${sub}</span>` : ""}</td></tr>`;
   const upsell = plan === "basic"
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;background:#F3F8F5;border:1px solid #DCEBE1;border-radius:12px;"><tr><td style="padding:16px 18px;">
-<div style="font-family:Georgia,serif;font-size:15px;color:#1B4332;font-weight:700;margin-bottom:8px;text-align:center;">¿Y si pasás a Pro? Sumás:</div>
-<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">${proBenefit("Clientes ilimitados", "(Basic: hasta 5)")}${proBenefit("White-label: tu logo y colores en el portal", "")}${proBenefit("Envío de emails al cliente desde el panel", "")}${proBenefit("Soporte prioritario por WhatsApp", "")}</table>
-<div style="text-align:center;margin-top:14px;"><a href="${renewUrl("pro", email)}" style="display:inline-block;padding:11px 24px;background:#2D6A4F;color:#ffffff;border-radius:9px;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:700;">Pasar a Pro &middot; USD $59/mes &rarr;</a></div>
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:26px 0 0;background:#F3F8F5;border:1px solid #DCEBE1;border-radius:12px;"><tr><td style="padding:18px 20px;">
+<div style="font-family:Georgia,serif;font-size:15px;color:#1B4332;font-weight:700;margin-bottom:10px;text-align:center;">¿Querés vender más? Pasá a Pro</div>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">${proBenefit("Clientes ilimitados", "(Basic: hasta 5)")}${proBenefit("White-label: tu logo y colores en el portal")}${proBenefit("Envío de emails al cliente desde el panel")}${proBenefit("Soporte prioritario por WhatsApp")}</table>
+<div style="text-align:center;margin-top:16px;"><a href="${renewUrl("pro", email)}" style="display:inline-block;padding:10px 24px;background:#ffffff;border:1.5px solid #2D6A4F;color:#2D6A4F;border-radius:9px;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:700;">Pasar a Pro &middot; USD $59/mes &rarr;</a></div>
 </td></tr></table>`
     : "";
-  const intactos = "tus clientes, informes y toda tu configuración siguen intactos — <strong>no empiezas de cero</strong>";
+  const intactos = "tus clientes, informes y toda tu configuración siguen intactos — <strong>no empezás de cero</strong>";
   if (kind === "trial_por_vencer") {
     return {
       subject: `${primer}, tu prueba de Pathway termina pronto`,
       html: emailHtml(primer, "", "",
-        P(`Tu prueba está por terminar. Para seguir <strong>sin cortes</strong> con tus clientes, activa tu plan hoy: ${intactos}. Cancelas cuando quieras, sin permanencia.`),
-        `Seguir con mi plan ${planLbl}`, payUrl, null, upsell),
-      push: { title: "Tu prueba termina pronto", body: "Activa tu plan y seguí sin cortes." },
+        P(`Tu prueba está por terminar. Para seguir <strong>sin cortes</strong> con tus clientes, activá tu plan hoy: ${intactos}.`),
+        `Seguir con mi cuenta`, payUrl, null, planTag + upsell),
+      push: { title: "Tu prueba termina pronto", body: "Activá tu plan y seguí sin cortes." },
     };
   }
   if (kind === "trial_vencido") {
     return {
       subject: `${primer}, tu prueba terminó — reactiva tu cuenta`,
       html: emailHtml(primer, "", "",
-        P(`Tu prueba de Pathway terminó, pero <strong>tu cuenta y tus datos siguen guardados</strong>. Reactivala en un clic y retomá justo donde lo dejaste: ${intactos}. Desde <strong>${plan === "pro" ? "USD $59" : "USD $29"}/mes</strong>, cancelas cuando quieras.`),
-        `Reactivar mi cuenta · ${planLbl}`, payUrl, null, upsell),
+        P(`Tu prueba de Pathway terminó, pero <strong>tu cuenta y tus datos siguen guardados</strong>. Reactivala en un clic y retomá justo donde lo dejaste: ${intactos}.`),
+        `Reactivar mi cuenta`, payUrl, null, planTag + upsell),
       push: { title: "Tu prueba terminó", body: "Reactivá tu cuenta en un clic." },
     };
   }
@@ -136,7 +140,7 @@ function trialEmail(kind, primer, plan, email) {
     subject: `${primer}, ¿seguimos? tu cuenta te espera`,
     html: emailHtml(primer, "", "",
       P(`Hace unos días terminó tu prueba. Todavía guardamos tu cuenta y tu data, pero no por mucho más. Si querés retomar con tus clientes, reactivá tu plan hoy: ${intactos}.`),
-      `Volver a Pathway · ${planLbl}`, payUrl, null, upsell),
+      `Volver a Pathway`, payUrl, null, planTag + upsell),
     push: { title: "Tu cuenta te espera", body: "Reactivá tu plan antes de perder tu data." },
   };
 }
