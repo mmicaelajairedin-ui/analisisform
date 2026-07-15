@@ -5594,10 +5594,20 @@ function viewAdmin(){
       // Antes el fallback (sin estado_sub) era "Activa" → coaches que nunca pagaron
       // ni usaron nada salían "Activa" aunque tuvieran +1 mes. Default honesto: Prueba.
       var _vitC = cg.es_pro_vitalicio===true || u.rol==="admin";
+      // Estado de suscripcion REAL: deriva de fecha_fin_prueba, no solo de estado_sub.
+      // Antes un coach con la prueba vencida y sin pagar seguia saliendo "Prueba"
+      // (amarillo) para siempre -> parecia activo probando. Ahora distingue:
+      // Pago / En prueba (quedan N d) / Vencida hace N d / Inactiva. Cada coach usa
+      // SU propia fecha (14, 15 o 30 dias), asi que respeta que cada uno tiene la suya.
+      var _ffp = cg.fecha_fin_prueba ? new Date(cg.fecha_fin_prueba) : null;
+      var _ffpMs = (_ffp && !isNaN(_ffp.getTime())) ? _ffp.getTime() : null;
+      var _dLeft = (_ffpMs!=null) ? Math.ceil((_ffpMs - _now2)/_D2) : null;
       var est = (u.activo===false)?["Inactiva","danger"]
-        : (es==="activa"||_vitC)?["Activa","ok"]
+        : (es==="activa"||_vitC)?["Pagó","ok"]
         : (es==="cancelada"||es==="vencida")?["Cancelada","danger"]
-        : ["Prueba","warn"];
+        : (_ffpMs==null)?["Prueba","warn"]
+        : (_dLeft>0)?["Prueba · quedan "+_dLeft+" d",(_dLeft<=3?"warn":"ok")]
+        : ["Vencida hace "+Math.abs(_dLeft)+" d","danger"];
       var acc=["—",""], accMs=0;
       var la=cg.last_login||u.last_login;
       if(la){ try{ accMs=+new Date(la)||0; var d=Math.floor((_now2-accMs)/_D2); acc=[d<=0?"hoy":(d===1?"ayer":"hace "+d+" d"), d<=2?"ok":(d<=7?"warn":"danger")]; }catch(e){} }
@@ -5640,6 +5650,7 @@ function viewAdmin(){
         +"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px' data-act='coach-paid:"+esc(c.id)+"'>Marcar pagado</button>"
         +"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px' data-act='coach-pass-reset' data-id='"+esc(c.id)+"' data-n='"+esc(c.n)+"'>Reset contraseña</button>"
         +"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px"+(off?"":";color:var(--pw-danger);border-color:rgba(192,117,110,.4)")+"' data-act='coach-toggle' data-id='"+esc(c.id)+"' data-on='"+(off?"1":"0")+"'>"+(off?"Activar":"Desactivar")+"</button>"
+        +"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='coach-delete' data-id='"+esc(c.id)+"' data-n='"+esc(c.n)+"' data-cli='"+esc(c.cli)+"'>Eliminar cuenta</button>"
         +"</div></details>";
     var alta=c.alta||["—",""], actv=c.actv||["—",""];
     var checkCell = function(on){ return on
@@ -5667,7 +5678,7 @@ function viewAdmin(){
         "<div style='min-width:0;flex:1'><div class='cp-coach-nm'>"+esc(c.n)+"</div>"+
           "<div class='cp-coach-meta'>Alta "+esc(alta[0])+" · últ. acceso "+esc(c.acc[0])+"</div></div>"+
         "<span class='cp-coach-health "+_hc+"'>"+healthLbl+"</span></div>"+
-      "<div class='cp-coach-badges'><span class='cp-coach-b'>"+c.plan+"</span><span class='cp-coach-b'>"+(off?"Inactiva":esc(c.est[0]))+"</span></div>"+
+      "<div class='cp-coach-badges'><span class='cp-coach-b'>"+c.plan+"</span><span class='cp-coach-b' style='"+((c.est[1]==="ok")?"background:rgba(82,183,136,.14);color:var(--pw-bosque)":(c.est[1]==="danger")?"background:rgba(192,117,110,.16);color:var(--pw-danger)":"background:rgba(233,196,106,.22);color:#8a6d1b")+"'>"+(off?"Inactiva":esc(c.est[0]))+"</span></div>"+
       "<div class='cp-coach-stats'>"+_stat(c.cli,"Clientes")+_stat(infCell,"Informes IA")+_stat(esc(c.acc[0]),"Últ. acceso")+"</div>"+
       chipsRow+
       "<div class='cp-coach-acts'>"+tipoCell+"<span style='flex:1'></span>"+verBtn+moreMenu+"</div>"+
@@ -7243,6 +7254,41 @@ document.addEventListener("click", function(ev){
         if(RCOACHES){ RCOACHES.forEach(function(u){ if(String(u.id)===String(ctid)) u.activo=turnOn; }); }
         toast(turnOn?"Coach reactivada ✓":"Coach desactivada ✓"); render(); })
       .catch(function(){ alert("No se pudo cambiar el estado de la coach."); });
+    return;
+  }
+  if(act==="coach-delete"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var cdid=el.getAttribute("data-id"); if(!cdid) return;
+    if(RME&&String(cdid)===String(RME.id)){ alert("No puedes eliminar tu propia cuenta."); return; }
+    var cdname=el.getAttribute("data-n")||"esta cuenta";
+    var cdcli=parseInt(el.getAttribute("data-cli")||"0",10)||0;
+    // Borrado DEFINITIVO e irreversible → aviso fuerte + segunda confirmación
+    // escribiendo. Si tiene clientes, avisamos que quedan huérfanos (no se borran
+    // sus datos, pero pierden a su coach).
+    if(!confirm("¿ELIMINAR definitivamente la cuenta de "+cdname+"?\n\nBorra su acceso y su cuenta de coach. NO se puede deshacer.")) return;
+    var _typed=prompt("Para confirmar el borrado, escribí ELIMINAR (en mayúsculas):");
+    if((""+(_typed||"")).trim().toUpperCase()!=="ELIMINAR"){ toast("Cancelado — no se eliminó nada"); return; }
+    // ¿Borrar TAMBIÉN los datos del coach (clientes/informes/CVs)? Solo se
+    // pregunta si tiene clientes; sin clientes no hay nada extra que borrar.
+    var _wipe = cdcli>0
+      ? confirm("¿Borrar TAMBIÉN sus "+cdcli+" cliente(s) y sus datos (informes, CVs)?\n\nAceptar = borra TODO.\nCancelar = elimina solo la cuenta y deja los datos de los clientes.")
+      : false;
+    var _idq="=eq."+encodeURIComponent(cdid);
+    _sbw("usuarios?id"+_idq,"DELETE",{})
+      .then(function(r){ if(!r.ok) throw 0;
+        // Rastros del coach que no sirven sin él: nudges, solicitudes y su hilo
+        // de chat con soporte. Best-effort (no bloquean el resultado).
+        _sbw("coach_nudges?coach_id"+_idq,"DELETE",{}).catch(function(){});
+        _sbw("solicitudes?coach_id"+_idq,"DELETE",{}).catch(function(){});
+        _sbw("mensajes_admin_coach?coach_id"+_idq,"DELETE",{}).catch(function(){});
+        if(_wipe){
+          _sbw("informes?coach_id"+_idq,"DELETE",{}).catch(function(){});
+          _sbw("cv_publicados?coach_id"+_idq,"DELETE",{}).catch(function(){});
+          _sbw("candidatos?coach_id"+_idq,"DELETE",{}).catch(function(){});
+        }
+        if(RCOACHES){ RCOACHES=RCOACHES.filter(function(u){ return String(u.id)!==String(cdid); }); }
+        toast(_wipe?"Cuenta y datos eliminados ✓":"Cuenta eliminada ✓"); render(); })
+      .catch(function(){ alert("No se pudo eliminar la cuenta. Puede estar protegida por permisos (RLS) en Supabase."); });
     return;
   }
   if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.fitTareas=null; state.fitUnit=null; state.rutUnit=null; render(); window.scrollTo(0,0); return; }
@@ -9071,12 +9117,30 @@ function _paywallCheck(u){
       }
       var ff=fc.fecha_fin_prueba?new Date(fc.fecha_fin_prueba):null;
       if(ff && !isNaN(ff) && ff.getTime()>Date.now()){ window.location.reload(); return; }
-      var su=STRIPE_BASIC+"?prefilled_email="+encodeURIComponent(u.email||"");
+      // Renovacion en 1 clic: va DIRECTO al Stripe del plan que ya tenia el coach
+      // (Basic o Pro), con su email precargado. Asi paga sin pasos extra y el
+      // webhook reactiva su MISMA cuenta por email (no crea una nueva).
+      var _planPro=(fc.plan==="pro");
+      var su=(_planPro?STRIPE_PRO:STRIPE_BASIC)+"?prefilled_email="+encodeURIComponent(u.email||"");
+      var _precio=_planPro?"USD $59/mes":"USD $29/mes";
+      // Basic: cuadro comparativo con lo que suma Pro (empujar el upgrade).
+      // Pro: nada. Upsell, nunca downsell.
+      var _proUrl=STRIPE_PRO+"?prefilled_email="+encodeURIComponent(u.email||"");
+      var _upsell=_planPro?"":"<div style='margin-top:16px;padding:15px 16px;background:#F3F8F5;border:1px solid #DCEBE1;border-radius:12px;text-align:left'>"+
+        "<div style='font-size:13px;font-weight:700;color:#1B4332;margin-bottom:7px;text-align:center'>¿Y si pasás a Pro? Sumás:</div>"+
+        "<div style='font-size:12.5px;color:#40584C;line-height:1.9'>"+
+          "<span style='color:#2D6A4F;font-weight:700'>✓</span> Clientes ilimitados <span style='color:#8A9A91'>(Basic: hasta 5)</span><br>"+
+          "<span style='color:#2D6A4F;font-weight:700'>✓</span> White-label: tu logo y colores en el portal<br>"+
+          "<span style='color:#2D6A4F;font-weight:700'>✓</span> Envío de emails al cliente desde el panel<br>"+
+          "<span style='color:#2D6A4F;font-weight:700'>✓</span> Soporte prioritario por WhatsApp"+
+        "</div>"+
+        "<div style='text-align:center;margin-top:12px'><a href='"+_proUrl+"' style='display:inline-block;padding:10px 22px;background:#fff;border:1.5px solid #2D6A4F;color:#2D6A4F;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700'>Pasar a Pro · USD $59/mes →</a></div>"+
+      "</div>";
       // Dentro de la app de tienda NO se puede mostrar el cobro (Apple/Google
       // exigen su billing). Se renueva en la web -> mensaje sin link a Stripe.
       var _cta = window.PW_IN_APP
         ? "<p style='font-size:14px;color:#5A6A60;line-height:1.55;margin-bottom:20px'>Para seguir usando Pathway, renová tu suscripción entrando a <strong>pathwaycareercoach.com</strong> desde tu navegador.</p>"
-        : "<p style='font-size:14px;color:#5A6A60;line-height:1.55;margin-bottom:20px'>Activa tu suscripción para seguir usando Pathway con todos tus clientes, informes y configuración. <strong>USD $29/mes, cancelas cuando quieras.</strong></p><a href='"+su+"' style='display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;margin-bottom:10px'>Suscribirme →</a><br>";
+        : "<p style='font-size:14px;color:#5A6A60;line-height:1.55;margin-bottom:20px'>Reactiva tu cuenta y seguí donde lo dejaste: <strong>tus clientes, informes y configuración siguen intactos</strong>. <strong>"+_precio+", cancelas cuando quieras.</strong></p><a href='"+su+"' style='display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;margin-bottom:6px'>Reactivar mi cuenta →</a>"+_upsell+"<br>";
       document.body.innerHTML="<div style='position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#FAFDF9;font-family:Inter,sans-serif;padding:24px'><div style='background:#fff;border-radius:14px;padding:32px;max-width:480px;width:100%;text-align:center;box-shadow:0 8px 30px rgba(45,106,79,.1)'><div style='font-size:42px;margin-bottom:14px'>🌱</div><h1 style='font-family:Fraunces,Georgia,serif;font-size:24px;color:#1B2E26;margin-bottom:10px;letter-spacing:-.4px'>Tu prueba terminó</h1>"+_cta+"<a href='login.html' style='display:inline-block;padding:8px 18px;font-size:12px;color:#5A6A60;text-decoration:underline'>Cerrar sesión</a><p style='font-size:11px;color:#999;margin-top:18px;line-height:1.5'>¿Algún problema? Escríbenos a <a href='mailto:"+SUPPORT_EMAIL+"' style='color:#2D6A4F'>"+SUPPORT_EMAIL+"</a></p></div></div>";
     }).catch(function(){ window.location.href="login.html"; });
   return true;
