@@ -568,6 +568,9 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-rng input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:19px;height:19px;border-radius:50%;background:var(--pw-bosque);border:3px solid #fff;box-shadow:0 1px 4px rgba(20,40,30,.28);cursor:grab;pointer-events:auto;margin-top:-7.5px;}
 .cp-rng input[type=range]::-moz-range-thumb{width:19px;height:19px;border-radius:50%;background:var(--pw-bosque);border:3px solid #fff;box-shadow:0 1px 4px rgba(20,40,30,.28);cursor:grab;pointer-events:auto;}
 .cp-rng input[type=range]:active::-webkit-slider-thumb{cursor:grabbing;}
+/* Panel lateral (drawer) de Mi disponibilidad: entra deslizando desde la derecha. */
+@keyframes cp-drawer-in{from{transform:translateX(100%)}to{transform:translateX(0)}}
+.cp-drawer{animation:cp-drawer-in .22s var(--pw-ease,ease-out);}
 /* Campo + botón en la misma fila (ej. contraseña): menos scroll vertical. */
 .cp-inline-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;}
 .cp-inline-row .cp-form-row{flex:1;min-width:200px;}
@@ -2470,37 +2473,35 @@ function _agRenderDay(key){
     "<p style='font-size:12px;color:var(--pw-text-muted);margin:2px 0 12px;text-transform:capitalize'>"+esc(_agDayFull(key))+"</p>";
   // Unificar eventos del día (Google + citas del link).
   var items=[];
-  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); items.push({ms:+e.start, title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", sub:(typ&&typ.label)||"", durMin:_durMin((typ&&typ.label)||""), estado:""}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?(" · "+_calOwnerName(r.coach_id)):""; items.push({ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", link:"", sub:(r.tipo||"")+who, durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen}); } });
+  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); items.push({ms:+e.start, title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:""}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:"", durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who}); } });
   items.sort(function(a,b){ return a.ms-b.ms; });
   // Dedup: la misma sesión puede venir del Google Calendar Y de la reserva.
   var _sd={}; items=items.filter(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(_sd[k]) return false; _sd[k]=1; return true; });
   var now=Date.now();
+  // Fila limpia estilo "Tu agenda de hoy": hora · ícono · nombre + badge de tipo · duración/Meet.
   var rowEvent=function(it){
     var right="";
-    if(_attended(it.estado)) right="<span style='width:20px;height:20px;border-radius:50%;background:var(--pw-sendero);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>"+_cIco('check',12)+"</span>";
-    else if(it.ms>now && it.ms-now<=60*60000) right="<span style='font-size:10px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:3px 8px;border-radius:100px;flex-shrink:0;white-space:nowrap'>En "+Math.max(1,Math.round((it.ms-now)/60000))+" min</span>";
-    else if(it.link) right="<a href='"+esc(it.link)+"' target='_blank' rel='noopener' aria-label='Entrar a la sesión' style='width:26px;height:26px;border-radius:8px;background:var(--pw-bosque);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none'>"+_cIco('video',13)+"</a>";
-    var sub=(it.sub||"")+(it.durMin?(" · "+it.durMin+" min"):"");
-    return "<div style='display:grid;grid-template-columns:40px 24px minmax(0,1fr);align-items:center;padding:3px 0'>"+
-      "<span style='font-size:12px;color:var(--pw-text-soft);font-weight:600;align-self:flex-start;padding-top:14px'>"+_agTime(it.ms)+"</span>"+
-      "<span style='justify-self:center;align-self:flex-start;margin-top:17px;width:9px;height:9px;border-radius:50%;background:"+it.col+";box-shadow:0 0 0 3px #fff;z-index:1'></span>"+
-      "<div style='background:"+it.col+"1a;border-radius:10px;padding:9px 11px;display:flex;align-items:center;gap:10px'>"+
-        _cAvatar(it.title,it.col,30)+
-        "<div style='min-width:0;flex:1'><div style='font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.title)+(it.origen?_origenChip(it.origen):"")+"</div>"+
-          (sub?"<div style='font-size:11px;color:var(--pw-text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(sub)+"</div>":"")+"</div>"+
-        right+
-      "</div></div>";
+    if(_attended(it.estado)) right="<span style='width:22px;height:22px;border-radius:50%;background:var(--pw-sendero);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>"+_cIco('check',13)+"</span>";
+    else if(it.ms>now && it.ms-now<=60*60000) right="<span style='font-size:11px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 10px;border-radius:100px;flex-shrink:0;white-space:nowrap'>En "+Math.max(1,Math.round((it.ms-now)/60000))+" min</span>";
+    else if(it.link) right="<a href='"+esc(it.link)+"' target='_blank' rel='noopener' aria-label='Entrar a la sesión' style='width:28px;height:28px;border-radius:8px;background:var(--pw-bosque);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none'>"+_cIco('video',14)+"</a>";
+    var badge=it.tipo?("<span style='font-size:10.5px;font-weight:600;color:"+it.col+";background:"+it.col+"22;padding:2px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(it.tipo)+"</span>"):"";
+    var meta=[]; if(it.durMin) meta.push(it.durMin+" min"); if(it.link) meta.push("Google Meet"); if(it.who) meta.push(it.who);
+    return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--pw-border)'>"+
+      "<span style='font-size:14px;font-weight:700;color:var(--pw-carbon);width:46px;flex-shrink:0'>"+_agTime(it.ms)+"</span>"+
+      "<span style='width:40px;height:40px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0'><span class='cp-emo'>"+it.ico+"</span></span>"+
+      "<div style='flex:1;min-width:0'>"+
+        "<div style='display:flex;align-items:center;gap:7px;flex-wrap:wrap'><span style='font-weight:600;font-size:14px;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(it.title)+"</span>"+badge+(it.origen?_origenChip(it.origen):"")+"</div>"+
+        (meta.length?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(meta.join(" · "))+"</div>":"")+
+      "</div>"+
+      right+
+    "</div>";
   };
   // Solo lo AGENDADO (a pedido): sin llenar de "Disponible". Si no hay nada, un aviso corto.
   var win=_agDispWindow(key), body="";
-  if(!items.length){
-    body=_agEmpty(win?"Sin sesiones agendadas este día. ✨":"No recibís reservas este día. (Se define en Mi disponibilidad.)");
-  } else {
-    items.forEach(function(it){ body+=rowEvent(it); });
-  }
-  var line=items.length?"<div style='position:absolute;left:52px;top:10px;bottom:10px;width:1.5px;background:var(--pw-border)'></div>":"";
-  return head+"<div style='position:relative'>"+line+body+"</div>";
+  if(!items.length) body=_agEmpty(win?"Sin sesiones agendadas este día. ✨":"No recibís reservas este día. (Se define en Mi disponibilidad.)");
+  else items.forEach(function(it){ body+=rowEvent(it); });
+  return head+"<div>"+body+"</div>";
 }
 function _agBodyRender(){ return _AG_SEL_DAY?_agRenderDay(_AG_SEL_DAY):_agRender(_AG_DATA); }
 // Tras cargar/refrescar las reservas del Calendario, repintar el mes (para que
@@ -2745,6 +2746,18 @@ function viewAgModal(){
         "<div style='display:flex;gap:6px'><input type='date' id='ag-disp-bloq' class='cp-form-input' style='flex:1'><button class='cp-btn cp-btn-ghost' data-act='ag-bloq-add'>Agregar</button></div>"+_bchips+"</div>"+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-disp'>Guardar</button></div>";
   }
+  // "Mi disponibilidad" abre como panel lateral (drawer) desde la derecha, como
+  // el mockup; los demás modales quedan centrados.
+  if(g && g.mode==="disp"){
+    return "<div data-act='ag-close' style='position:fixed;inset:0;background:rgba(27,46,38,.45);display:flex;justify-content:flex-end;z-index:200'>"+
+      "<div data-act='ag-stop' class='cp-drawer' style='background:#fff;width:440px;max-width:94vw;height:100%;overflow:auto;padding:22px 24px;box-shadow:-16px 0 50px rgba(20,40,30,.22)'>"+
+        "<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px'>"+
+          "<div style='display:flex;align-items:center;gap:8px'><span class='cp-emo'>🗓️</span><span style='font-family:var(--pw-serif);font-size:19px;font-weight:600;color:var(--pw-carbon)'>"+ttl+"</span></div>"+
+          "<button data-act='ag-close' aria-label='Cerrar' style='background:none;border:none;cursor:pointer;color:var(--pw-text-muted);font-size:24px;line-height:1;padding:0 4px'>×</button>"+
+        "</div>"+
+        body+
+      "</div></div>";
+  }
   return "<div data-act='ag-close' style='position:fixed;inset:0;background:rgba(27,46,38,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px'>"+
     "<div data-act='ag-stop' style='background:#fff;border-radius:18px;max-width:380px;width:100%;padding:22px 24px;box-shadow:0 24px 70px rgba(20,40,30,.28)'>"+
       "<div style='display:flex;align-items:center;gap:8px;margin-bottom:14px'><span class='cp-emo'>🗓️</span><span style='font-family:var(--pw-serif);font-size:19px;font-weight:600;color:var(--pw-carbon)'>"+ttl+"</span></div>"+
@@ -2911,6 +2924,23 @@ var _CIC={
   chevR:"<polyline points='9 18 15 12 9 6'></polyline>"
 };
 function _durMin(label){ var m=(""+(label||"")).match(/(\d+)\s*min/i); return m?parseInt(m[1],10):null; }
+function _bookUrl(){ return "https://pathwaycareercoach.com/reservar.html?c="+encodeURIComponent((REAL&&RME&&RME.id)||""); }
+// Overlay con el código QR del link de reservas (imagen del servicio público qrserver).
+function _showQR(url){
+  var ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(27,46,38,.45);display:flex;align-items:center;justify-content:center;z-index:300;padding:20px";
+  ov.onclick=function(e){ if(e.target===ov && ov.parentNode) document.body.removeChild(ov); };
+  var qr="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data="+encodeURIComponent(url);
+  ov.innerHTML="<div style='background:#fff;border-radius:18px;max-width:320px;width:100%;padding:24px;text-align:center;box-shadow:0 24px 70px rgba(20,40,30,.28)'>"+
+    "<div style='font-family:var(--pw-serif);font-size:18px;font-weight:600;color:var(--pw-carbon);margin-bottom:4px'>Tu link de reservas</div>"+
+    "<div style='font-size:12px;color:var(--pw-text-soft);margin-bottom:14px'>Escaneá el código para reservar conmigo</div>"+
+    "<img src='"+qr+"' alt='Código QR' style='width:200px;height:200px;border-radius:12px;border:1px solid var(--pw-border)' onerror=\"this.style.display='none'\">"+
+    "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:12px;word-break:break-all'>"+esc(url)+"</div>"+
+    "<button data-qr-close='1' style='margin-top:16px;width:100%;height:38px;border:none;border-radius:10px;background:var(--pw-bosque);color:#fff;font-family:inherit;font-weight:600;font-size:13px;cursor:pointer'>Cerrar</button>"+
+  "</div>";
+  var cb=ov.querySelector("[data-qr-close]"); if(cb) cb.onclick=function(){ if(ov.parentNode) document.body.removeChild(ov); };
+  document.body.appendChild(ov);
+}
 function _cIco(name,sz){ return "<svg width='"+(sz||17)+"' height='"+(sz||17)+"' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>"+(_CIC[name]||"")+"</svg>"; }
 function _cInitials(n){ var p=(""+(n||"")).trim().split(/\s+/); return (((p[0]||"")[0]||"")+((p[1]||"")[0]||"")).toUpperCase()||"·"; }
 function _cAvatar(name,col,sz){ sz=sz||30; return "<span style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;background:"+(col||"#2D6A4F")+";color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:600;font-size:"+(sz>=48?"19px":sz>=36?"13px":"11px")+";flex-shrink:0'>"+esc(_cInitials(name))+"</span>"; }
@@ -2971,7 +3001,9 @@ function viewCalendario(){
     "<span style='display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:14px;color:var(--pw-bosque);min-width:0'>"+_cIco('cal',16)+"<span style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>Tu link de reservas</span></span>"+
     "<span style='color:var(--pw-text-muted);font-size:11px;white-space:nowrap'>te lo damos nosotros</span>"+
     "<div style='width:1px;height:22px;background:var(--pw-border);margin-left:auto'></div>"+
-    "<button data-act='copy-book' class='cp-btn cp-btn-primary' style='height:30px;font-size:12px;padding:0 16px'>Copiar</button>"+
+    "<button data-act='copy-book' style='display:inline-flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;color:var(--pw-text-soft);padding:6px 8px;border-radius:8px'><svg width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='9' width='13' height='13' rx='2'></rect><path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'></path></svg>Copiar</button>"+
+    "<button data-act='share-book' style='display:inline-flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;color:var(--pw-text-soft);padding:6px 8px;border-radius:8px'><svg width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='18' cy='5' r='3'></circle><circle cx='6' cy='12' r='3'></circle><circle cx='18' cy='19' r='3'></circle><line x1='8.59' y1='13.51' x2='15.42' y2='17.49'></line><line x1='15.41' y1='6.51' x2='8.59' y2='10.49'></line></svg>Compartir</button>"+
+    "<button data-act='qr-book' aria-label='Código QR' title='Ver código QR' style='display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);cursor:pointer;border-radius:8px;color:var(--pw-text-soft)'><svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='3' width='7' height='7'></rect><rect x='14' y='3' width='7' height='7'></rect><rect x='3' y='14' width='7' height='7'></rect><line x1='14' y1='14' x2='14' y2='14.01'></line><line x1='21' y1='14' x2='21' y2='21'></line><line x1='14' y1='21' x2='17.5' y2='21'></line><line x1='17.5' y1='17.5' x2='21' y2='17.5'></line></svg></button>"+
   "</div>";
   var header="<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:18px'>"+
     "<div><h1 class='cp-greet-h1'>Calendario<span class='dot'>.</span></h1>"+
@@ -6576,7 +6608,9 @@ document.addEventListener("click", function(ev){
   if(act==="ag-pick-color"){ if(state.ag){ var _pl=document.getElementById("ag-type-input"); if(_pl) state.ag.label=_pl.value; state.ag.color=el.getAttribute("data-c"); } render(); return; }
   if(act==="ag-pick-icon"){ if(state.ag){ var _pl2=document.getElementById("ag-type-input"); if(_pl2) state.ag.label=_pl2.value; state.ag.icon=el.getAttribute("data-ic"); } render(); return; }
   if(act==="ag-copy-link"){ var _cl=el.getAttribute("data-link")||""; try{ if(navigator.clipboard) navigator.clipboard.writeText(_cl); }catch(e){} toast("Link copiado ✓"); return; }
-  if(act==="copy-book"){ var _v="https://pathwaycareercoach.com/reservar.html?c="+encodeURIComponent((REAL&&RME&&RME.id)||""); try{ if(navigator.clipboard) navigator.clipboard.writeText(_v); }catch(e){} toast("Tu link de reservas está copiado ✓"); return; }
+  if(act==="copy-book"){ try{ if(navigator.clipboard) navigator.clipboard.writeText(_bookUrl()); }catch(e){} toast("Tu link de reservas está copiado ✓"); return; }
+  if(act==="share-book"){ var _su=_bookUrl(); if(navigator.share){ navigator.share({title:"Reservá conmigo en Pathway",url:_su}).catch(function(){}); } else { try{ if(navigator.clipboard) navigator.clipboard.writeText(_su); }catch(e){} toast("Link copiado ✓ (tu navegador no tiene compartir)"); } return; }
+  if(act==="qr-book"){ _showQR(_bookUrl()); return; }
   if(act==="res-confirm"||act==="res-cancel"){
     var _rid=el.getAttribute("data-id"); if(!_rid) return;
     var _est=(act==="res-confirm")?"confirmada":"cancelada";
