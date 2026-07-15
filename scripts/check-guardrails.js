@@ -1141,6 +1141,25 @@ const RULES = [
     },
   },
   {
+    name: "disponibilidad: slider del horario general (coach + empleado)",
+    bug: "El horario general de 'Mi disponibilidad' se ajusta con un slider de rango " +
+         "(dos thumbs) además de los inputs de hora, en el panel del coach y en el del " +
+         "empleado. El slider sincroniza con los inputs (que son la fuente del guardado). " +
+         "Si se desconecta, se pierde el slider del mockup.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/_agRngSync/.test(p)) return "panel-v2.html: falta el slider del horario general (_agRngSync).";
+        if (!/ag-rng-from/.test(p)) return "panel-v2.html: falta el input range del horario (ag-rng-from).";
+      }
+      const e = read("empleado.html");
+      if (e) {
+        if (!/_empRngSync/.test(e)) return "empleado.html: falta el slider del horario general (_empRngSync).";
+      }
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: card 'Próxima sesión'",
     bug: "En la pestaña Calendario, la columna derecha muestra la 'Próxima sesión' " +
          "(la cita/evento futuro más cercano) con hora, 'En X min' y acceso. Si se " +

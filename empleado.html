@@ -209,6 +209,16 @@
   .modal-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--borde);} .modal-hd h3{font-family:var(--serif);font-size:17px;font-weight:600;} .modal-hd .x{background:none;border:none;font-size:22px;color:#9aa49e;cursor:pointer;}
   .modal-bd{padding:16px 20px;overflow-y:auto;} .fld{margin-bottom:12px;} .fld label{display:block;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--texto-suave);margin-bottom:5px;}
   .fld .ro{font-size:14px;background:var(--niebla);border:1px solid var(--borde);border-radius:9px;padding:9px 12px;} .fld input,.tplpick select{width:100%;border:1.5px solid var(--borde);border-radius:9px;padding:10px 12px;font-family:inherit;font-size:14px;background:#fff;}
+  /* Slider de rango (horario general): dos thumbs sobre una sola barra. */
+  .rng{position:relative;height:26px;}
+  .rng .rng-track{position:absolute;top:11px;left:0;right:0;height:4px;border-radius:3px;background:var(--borde);}
+  .rng .rng-fill{position:absolute;top:0;height:100%;border-radius:3px;background:var(--sendero);}
+  .rng input[type=range]{position:absolute;top:0;left:0;width:100%;height:26px;margin:0;padding:0;background:none;-webkit-appearance:none;appearance:none;pointer-events:none;border:none;}
+  .rng input[type=range]:focus{outline:none;}
+  .rng input[type=range]::-webkit-slider-runnable-track{height:4px;background:transparent;}
+  .rng input[type=range]::-moz-range-track{height:4px;background:transparent;}
+  .rng input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:19px;height:19px;border-radius:50%;background:var(--bosque);border:3px solid #fff;box-shadow:0 1px 4px rgba(20,40,30,.28);cursor:grab;pointer-events:auto;margin-top:-7.5px;}
+  .rng input[type=range]::-moz-range-thumb{width:19px;height:19px;border-radius:50%;background:var(--bosque);border:3px solid #fff;box-shadow:0 1px 4px rgba(20,40,30,.28);cursor:grab;pointer-events:auto;}
   .tplpick{display:flex;gap:8px;align-items:center;flex-wrap:wrap;} .tplpick select{width:auto;padding:7px 9px;font-size:12.5px;}
   .editor{border:1.5px solid var(--borde);border-radius:11px;padding:14px 16px;min-height:170px;font-size:14px;line-height:1.6;color:#2b3a33;background:#fff;outline:none;} .editor:focus{border-color:var(--sendero);box-shadow:0 0 0 3px rgba(82,183,136,.12);}
   .editor .firma{margin-top:16px;padding-top:12px;border-top:2px solid var(--sendero);font-size:13px;} .editor .firma b{color:var(--bosque);}
@@ -527,7 +537,34 @@
     }).join('');
     var f=document.getElementById('disp-from'), t=document.getElementById('disp-to');
     if(f) f.value=DISP.from||'09:00'; if(t) t.value=DISP.to||'18:00';
+    var rf=document.getElementById('disp-rng-from'), rt=document.getElementById('disp-rng-to');
+    if(rf) rf.value=_hmM(DISP.from||'09:00'); if(rt){ var mt=_hmM(DISP.to||'18:00'); if(mt===0) mt=1440; rt.value=mt; }
+    _empRngPaint();
   }
+  // Slider del horario general: sincroniza con los inputs de hora (que son la
+  // fuente que lee saveDisp). Mismo comportamiento que el panel del coach.
+  function _hmM(hm){ var p=(""+hm).split(":"); return (parseInt(p[0],10)||0)*60+(parseInt(p[1],10)||0); }
+  function _minHM(m){ m=Math.max(0,Math.min(1440,Math.round(m/15)*15)); var h=Math.floor(m/60)%24, mm=m%60; return ("0"+h).slice(-2)+":"+("0"+mm).slice(-2); }
+  function _empRngPaint(){
+    var f=document.getElementById('disp-rng-from'), t=document.getElementById('disp-rng-to'), fill=document.getElementById('disp-fill'); if(!f||!t||!fill) return;
+    var a=Math.min(+f.value,+t.value), b=Math.max(+f.value,+t.value);
+    fill.style.left=(a/14.4)+"%"; fill.style.width=((b-a)/14.4)+"%";
+    var lf=document.getElementById('disp-lblfrom'), lt=document.getElementById('disp-lblto');
+    if(lf) lf.textContent=_minHM(a); if(lt) lt.textContent=_minHM(b);
+  }
+  window._empRngSync=function(which){
+    var f=document.getElementById('disp-rng-from'), t=document.getElementById('disp-rng-to'); if(!f||!t) return;
+    if(+f.value>+t.value){ if(which==='to') f.value=t.value; else t.value=f.value; }
+    var di=document.getElementById('disp-from'), dt=document.getElementById('disp-to');
+    if(di) di.value=_minHM(f.value); if(dt) dt.value=_minHM(t.value);
+    DISP.from=_minHM(f.value); DISP.to=_minHM(t.value); _empRngPaint();
+  };
+  window._empRngFromInputs=function(){
+    var di=document.getElementById('disp-from'), dt=document.getElementById('disp-to');
+    var f=document.getElementById('disp-rng-from'), t=document.getElementById('disp-rng-to');
+    if(di&&f) f.value=_hmM(di.value); if(dt&&t){ var mt=_hmM(dt.value); if(mt===0 && _hmM(di?di.value:'')>0) mt=1440; t.value=mt; }
+    if(di) DISP.from=di.value; if(dt) DISP.to=dt.value; _empRngPaint();
+  };
   window.toggleDispDay=function(d){ var i=DISP.days.indexOf(d); if(i>=0) DISP.days.splice(i,1); else DISP.days.push(d); renderDispDays(); };
   window.saveIcal=async function(){
     var el=document.getElementById('myical'); var v=((el&&el.value)||'').trim();
@@ -737,8 +774,14 @@
       body=head('Mi disponibilidad')+"<div class='modal-bd'>"+
         "<p style='font-size:12.5px;color:var(--texto-suave);margin-bottom:12px'>Qué días y en qué franja te pueden reservar desde tu link.</p>"+
         "<div class='fld'><label>Días</label><div id='disp-days' style='display:flex;gap:6px;flex-wrap:wrap'></div></div>"+
-        "<div style='display:flex;gap:10px'><div class='fld' style='flex:1'><label>Desde</label><input type='time' id='disp-from' value='09:00'></div>"+
-        "<div class='fld' style='flex:1'><label>Hasta</label><input type='time' id='disp-to' value='18:00'></div></div></div>"+
+        "<div class='fld'>"+
+          "<div style='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px'><label style='margin:0'>Horario general</label><span style='font-size:13px;font-weight:700;color:var(--bosque)'><span id='disp-lblfrom'>09:00</span> – <span id='disp-lblto'>18:00</span></span></div>"+
+          "<div class='rng'><div class='rng-track'><div class='rng-fill' id='disp-fill'></div></div>"+
+            "<input type='range' id='disp-rng-from' min='0' max='1440' step='15' value='540' oninput='_empRngSync(\"from\")' aria-label='Desde'>"+
+            "<input type='range' id='disp-rng-to' min='0' max='1440' step='15' value='1080' oninput='_empRngSync(\"to\")' aria-label='Hasta'>"+
+          "</div>"+
+          "<div style='display:flex;gap:10px;margin-top:9px'><input type='time' id='disp-from' value='09:00' oninput='_empRngFromInputs()' style='flex:1'><input type='time' id='disp-to' value='18:00' oninput='_empRngFromInputs()' style='flex:1'></div>"+
+        "</div></div>"+
         "<div class='modal-ft'><span></span><div style='display:flex;gap:8px'><button class='btn ghost' onclick='agClose()'>Cancelar</button><button class='btn' onclick='saveDispModal()'>Guardar</button></div></div>";
     }
     card.innerHTML=body;
