@@ -101,8 +101,16 @@ function trialEmail(kind, primer, plan, email) {
   // en Basic, además un link secundario para pasar a Pro (upsell, nunca downsell).
   const payUrl = renewUrl(plan, email);
   const planLbl = plan === "pro" ? "Pro (USD $59/mes)" : "Basic (USD $29/mes)";
+  // A los Basic: cuadro comparativo con lo que suma Pro (empujar el upgrade).
+  // A los Pro: nada (ya lo tienen). Es upsell, nunca downsell.
+  const proBenefit = (t, sub) =>
+    `<tr><td style="padding:3px 0;font-family:Arial,sans-serif;font-size:13px;color:#40584C;line-height:1.5;"><span style="color:#2D6A4F;font-weight:700;">&check;</span>&nbsp; ${t}${sub ? ` <span style="color:#8A9A91;">${sub}</span>` : ""}</td></tr>`;
   const upsell = plan === "basic"
-    ? `<p style="text-align:center;font-family:Arial,sans-serif;font-size:13px;color:#5A6A60;margin:16px 0 0;">¿Quieres más? <a href="${renewUrl("pro", email)}" style="color:#2D6A4F;font-weight:700;text-decoration:underline;">Pasar a Pro · USD $59/mes &rarr;</a></p>`
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;background:#F3F8F5;border:1px solid #DCEBE1;border-radius:12px;"><tr><td style="padding:16px 18px;">
+<div style="font-family:Georgia,serif;font-size:15px;color:#1B4332;font-weight:700;margin-bottom:8px;text-align:center;">¿Y si pasás a Pro? Sumás:</div>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">${proBenefit("Clientes ilimitados", "(Basic: hasta 5)")}${proBenefit("White-label: tu logo y colores en el portal", "")}${proBenefit("Envío de emails al cliente desde el panel", "")}${proBenefit("Soporte prioritario por WhatsApp", "")}</table>
+<div style="text-align:center;margin-top:14px;"><a href="${renewUrl("pro", email)}" style="display:inline-block;padding:11px 24px;background:#2D6A4F;color:#ffffff;border-radius:9px;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:700;">Pasar a Pro &middot; USD $59/mes &rarr;</a></div>
+</td></tr></table>`
     : "";
   const intactos = "tus clientes, informes y toda tu configuración siguen intactos — <strong>no empiezas de cero</strong>";
   if (kind === "trial_por_vencer") {
