@@ -259,9 +259,13 @@ Deno.serve(async (req) => {
         //     se saltee un día, cada coach recibe cada aviso una sola vez.
         let trialKind = null;
         if (!isPaying && finTs) {
-          if (dToExpiry <= -3 && !sentEver("trial_vencido_2")) trialKind = "trial_vencido_2";
+          // Orden por TONO, no solo por fecha: (1) aviso previo, (2) "reactivá"
+          // cálido, (3) última chance — y esta SOLO después de haber mandado el
+          // cálido. Así el backlog de vencidas (que nunca recibió nada) arranca
+          // con el cálido aunque lleve semanas vencido, no con la última chance.
+          if (dToExpiry > 0.5 && dToExpiry <= 3 && !sentEver("trial_por_vencer")) trialKind = "trial_por_vencer";
           else if (dToExpiry <= 0.5 && !sentEver("trial_vencido")) trialKind = "trial_vencido";
-          else if (dToExpiry <= 3 && !sentEver("trial_por_vencer")) trialKind = "trial_por_vencer";
+          else if (dToExpiry <= -3 && sentEver("trial_vencido") && !sentEver("trial_vencido_2")) trialKind = "trial_vencido_2";
         }
 
         // (2) Onboarding por tiempo. Solo coaches que se registran DESDE la fecha de
