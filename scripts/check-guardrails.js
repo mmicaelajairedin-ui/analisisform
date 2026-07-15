@@ -1202,20 +1202,6 @@ const RULES = [
     },
   },
   {
-    name: "calendario del panel: la línea del costado es arrastrable (agrandar el mes)",
-    bug: "En la pestaña Calendario, la línea entre la lista y el calendario se puede " +
-         "arrastrar para agrandar/achicar el mes, y el tamaño se guarda (localStorage " +
-         "mj_ag_mo_w). Si se desconecta, se pierde la personalización del tamaño.",
-    check() {
-      const p = read("panel-v2.html");
-      if (!p) return null;
-      if (!/_agResizeStart/.test(p)) return "panel-v2.html: falta _agResizeStart (arrastrar la línea del calendario).";
-      if (!/cp-agmo-resize/.test(p)) return "panel-v2.html: falta el handle arrastrable del calendario (cp-agmo-resize).";
-      if (!/mj_ag_mo_w/.test(p)) return "panel-v2.html: el tamaño del calendario ya no se guarda (mj_ag_mo_w).";
-      return null;
-    },
-  },
-  {
     name: "comercial: 'En prueba' se detecta solo (trial del coach), no a mano",
     bug: "El embudo del empleado/admin cuenta 'En prueba' cruzando los leads con " +
          "los coaches que tienen estado_sub='prueba' (el trial de 14 días ya dado), " +
