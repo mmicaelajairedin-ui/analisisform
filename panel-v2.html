@@ -2332,6 +2332,31 @@ function _wireAgTypesSort(){
 var _AG_MO=null;
 var _AG_MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 function _agMoKey(d){ return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+// Ancho del calendario del mes en la pestaña Calendario. Se puede arrastrar la
+// línea del costado para agrandarlo; queda guardado (como las personalizaciones
+// del panel). Clamp para que nunca rompa el layout.
+function _agSavedW(){ var w=340; try{ var v=parseInt(localStorage.getItem("mj_ag_mo_w"),10); if(!isNaN(v)) w=v; }catch(e){} return Math.max(280,Math.min(560,w)); }
+function _agSaveW(w){ try{ localStorage.setItem("mj_ag_mo_w", String(Math.max(280,Math.min(560,Math.round(w))))); }catch(e){} }
+function _agResizeStart(e){
+  try{ e.preventDefault(); }catch(_e){}
+  var startX=(e.touches&&e.touches[0]?e.touches[0].clientX:e.clientX);
+  var startW=_AG_MO_W||340;
+  var grid=function(){ return document.querySelector("#cp-agenda-month > div"); };
+  function mv(ev){
+    var x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
+    _AG_MO_W=Math.max(280,Math.min(560,Math.round(startW+(startX-x)))); // tirar a la izquierda = más grande
+    var g=grid(); if(g) g.style.maxWidth=_AG_MO_W+"px";
+  }
+  function up(){
+    document.removeEventListener("pointermove",mv);
+    document.removeEventListener("pointerup",up,true);
+    document.body.style.userSelect="";
+    _agSaveW(_AG_MO_W); try{ _agMonthRender(); }catch(_e){}
+  }
+  document.body.style.userSelect="none";
+  document.addEventListener("pointermove",mv);
+  document.addEventListener("pointerup",up,true);
+}
 function _agMonthCal(){
   return "<div class='cp-eyebrow' style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'>"+
     "<span id='cp-agmo-title'>Mes</span>"+
@@ -2446,9 +2471,11 @@ function _agendaCalCard(){
       "<h3 class='cp-card-title'><span class='cp-emo'>🗓️</span> Tu agenda<span class='dot'>.</span></h3>"+
       "<span class='cp-eyebrow' style='display:inline-flex;align-items:center;gap:6px'><span style='width:7px;height:7px;border-radius:50%;background:var(--pw-sendero);display:inline-block'></span>En vivo</span>"+
     "</div>"+
-    "<div class='cp-card-pad' style='display:flex;gap:0;flex-wrap:wrap;align-items:flex-start'>"+
-      "<div id='cp-agenda-body' style='flex:1.3;min-width:240px;padding-right:22px;font-size:14px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
-      "<div style='flex:0 0 auto;padding:0 4px 0 22px;border-left:1px solid var(--pw-border)'>"+_agMonthCal()+"</div>"+
+    "<div class='cp-card-pad' style='display:flex;gap:0;flex-wrap:wrap;align-items:stretch'>"+
+      "<div id='cp-agenda-body' style='flex:1.3;min-width:240px;padding-right:14px;font-size:14px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
+      // Línea del costado ARRASTRABLE: tirá para agrandar/achicar el calendario. Se guarda.
+      "<div id='cp-agmo-resize' onpointerdown='_agResizeStart(event)' title='Arrastrá para agrandar el calendario' style='flex:0 0 auto;width:12px;align-self:stretch;cursor:ew-resize;display:flex;align-items:center;justify-content:center;touch-action:none;border-left:1px solid var(--pw-border)'><div style='width:4px;height:46px;border-radius:3px;background:var(--pw-border)'></div></div>"+
+      "<div style='flex:0 0 auto;padding:0 4px 0 14px'>"+_agMonthCal()+"</div>"+
     "</div>"+
   "</div>";
 }
@@ -6149,7 +6176,7 @@ function render(){
       }catch(e){}
     }
     if(state.section==="calendario"){
-      _AG_MO_W=340; // mes más grande en Calendario
+      _AG_MO_W=_agSavedW(); // mes en Calendario: tamaño elegido (arrastrable), default 340
       try{ if(_CAL_DATA){ _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); } else { _calLoad(); } }catch(e){}
       try{ _wireAgTypesSort(); }catch(e){}
       // La agenda linda (lista Google/iCal + mes) también acá.
