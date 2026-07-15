@@ -1141,6 +1141,20 @@ const RULES = [
     },
   },
   {
+    name: "calendario del panel: Agenda del día (hora por hora, libre/ocupado)",
+    bug: "La pestaña Calendario abre en la 'Agenda del día': el día hora por hora, " +
+         "con los huecos como 'Disponible' (según Mi disponibilidad) y los eventos/" +
+         "reservas en su hora. Si se desconecta, se pierde la vista de día del mockup.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _agDispWindow/.test(p)) return "panel-v2.html: falta _agDispWindow (ventana horaria del día).";
+      if (!/Disponible</.test(p)) return "panel-v2.html: la Agenda del día ya no marca los huecos 'Disponible'.";
+      if (!/if\(!_AG_SEL_DAY\)\s*_AG_SEL_DAY=_agMoKey\(new Date\(\)\)/.test(p)) return "panel-v2.html: Calendario ya no abre en la Agenda del día (hoy).";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: la línea del costado es arrastrable (agrandar el mes)",
     bug: "En la pestaña Calendario, la línea entre la lista y el calendario se puede " +
          "arrastrar para agrandar/achicar el mes, y el tamaño se guarda (localStorage " +
