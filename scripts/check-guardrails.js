@@ -1141,6 +1141,148 @@ const RULES = [
     },
   },
   {
+    name: "disponibilidad: slider del horario general (coach + empleado)",
+    bug: "El horario general de 'Mi disponibilidad' se ajusta con un slider de rango " +
+         "(dos thumbs) además de los inputs de hora, en el panel del coach y en el del " +
+         "empleado. El slider sincroniza con los inputs (que son la fuente del guardado). " +
+         "Si se desconecta, se pierde el slider del mockup.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/_agRngSync/.test(p)) return "panel-v2.html: falta el slider del horario general (_agRngSync).";
+        if (!/ag-rng-from/.test(p)) return "panel-v2.html: falta el input range del horario (ag-rng-from).";
+      }
+      const e = read("empleado.html");
+      if (e) {
+        if (!/_empRngSync/.test(e)) return "empleado.html: falta el slider del horario general (_empRngSync).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "calendario del panel: card 'Próxima sesión'",
+    bug: "En la pestaña Calendario, la columna derecha muestra la 'Próxima sesión' " +
+         "(la cita/evento futuro más cercano) con hora, 'En X min' y acceso. Si se " +
+         "desconecta, se pierde esa card del mockup.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _agProxRender/.test(p)) return "panel-v2.html: falta _agProxRender (card Próxima sesión).";
+      if (!/cp-agenda-prox/.test(p)) return "panel-v2.html: falta la columna 'Próxima sesión' (cp-agenda-prox).";
+      if (!/Próxima sesión/.test(p)) return "panel-v2.html: la card 'Próxima sesión' ya no se muestra.";
+      return null;
+    },
+  },
+  {
+    name: "calendario del panel: Agenda del día (hora por hora, libre/ocupado)",
+    bug: "La pestaña Calendario abre en la 'Agenda del día': el día hora por hora, " +
+         "con los huecos como 'Disponible' (según Mi disponibilidad) y los eventos/" +
+         "reservas en su hora. Si se desconecta, se pierde la vista de día del mockup.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _agDispWindow/.test(p)) return "panel-v2.html: falta _agDispWindow (ventana horaria del día).";
+      if (!/Disponible</.test(p)) return "panel-v2.html: la Agenda del día ya no marca los huecos 'Disponible'.";
+      if (!/if\(!_AG_SEL_DAY\)\s*_AG_SEL_DAY=_agMoKey\(new Date\(\)\)/.test(p)) return "panel-v2.html: Calendario ya no abre en la Agenda del día (hoy).";
+      return null;
+    },
+  },
+  {
+    name: "calendario del panel: la línea del costado es arrastrable (agrandar el mes)",
+    bug: "En la pestaña Calendario, la línea entre la lista y el calendario se puede " +
+         "arrastrar para agrandar/achicar el mes, y el tamaño se guarda (localStorage " +
+         "mj_ag_mo_w). Si se desconecta, se pierde la personalización del tamaño.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/_agResizeStart/.test(p)) return "panel-v2.html: falta _agResizeStart (arrastrar la línea del calendario).";
+      if (!/cp-agmo-resize/.test(p)) return "panel-v2.html: falta el handle arrastrable del calendario (cp-agmo-resize).";
+      if (!/mj_ag_mo_w/.test(p)) return "panel-v2.html: el tamaño del calendario ya no se guarda (mj_ag_mo_w).";
+      return null;
+    },
+  },
+  {
+    name: "comercial: 'En prueba' se detecta solo (trial del coach), no a mano",
+    bug: "El embudo del empleado/admin cuenta 'En prueba' cruzando los leads con " +
+         "los coaches que tienen estado_sub='prueba' (el trial de 14 días ya dado), " +
+         "y 'Pagaron' con estado_sub='activa'. Si se desconecta la detección de " +
+         "prueba, el vendedor tiene que marcar 'alta' a mano y el embudo no refleja " +
+         "los accesos reales.",
+    check() {
+      const e = read("empleado.html");
+      if (e) {
+        if (!/loadTrialCoaches/.test(e)) return "empleado.html: falta loadTrialCoaches (detección automática de 'En prueba').";
+        if (!/estado_sub['"\\]*\)?,\s*['"]prueba['"]|estado_sub'?\s*,\s*'prueba'/.test(e) && !/'prueba'/.test(e)) return "empleado.html: ya no consulta coaches en 'prueba'.";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/_trialCoachEmails/.test(p)) return "panel-v2.html: falta _trialCoachEmails (admin: 'En prueba' automático).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "calendario del panel: día clickeable + incluye demos del equipo/pasadas",
+    bug: "En el panel, tocar un día del calendario debe mostrar los eventos de ese " +
+         "día (ag-mo-day → _agRenderDay). Y los puntitos/el detalle deben leer de " +
+         "_agReservas() (prefiere _CAL_DATA: incluye al equipo si es admin + días " +
+         "pasados), no solo _RES_DATA (propia y últimas 24h) — si no, no se ven las " +
+         "demos de otros coaches ni las de ayer.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/ag-mo-day/.test(p)) return "panel-v2.html: el calendario ya no responde al click en un día (falta ag-mo-day).";
+      if (!/function _agRenderDay/.test(p)) return "panel-v2.html: falta _agRenderDay (detalle del día).";
+      if (!/function _agReservas/.test(p)) return "panel-v2.html: falta _agReservas (fuente de reservas del calendario).";
+      if (!/var res\s*=\s*_agReservas\(\)/.test(p)) return "panel-v2.html: el mes ya no usa _agReservas() (no muestra demos del equipo/pasadas).";
+      return null;
+    },
+  },
+  {
+    name: "reservas: horario por día (jueves distinto sin tocar el resto)",
+    bug: "La disponibilidad admite un horario general (from/to) + overrides por " +
+         "día en disponibilidad.horarios ({ '<weekday>': {from,to} }). reservar.html " +
+         "debe aplicar el override del día si existe (si no, el general), y el panel " +
+         "debe poder editar/guardar esos overrides. Si se desconecta, se pierde el " +
+         "horario por día.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        if (!/horarios/.test(r)) return "reservar.html: normDisp/_coachInstants ya no maneja horarios por día.";
+        if (!/hor\[String\(ymd\.wd\)\]/.test(r)) return "reservar.html: _coachInstants ya no aplica el horario por día (override).";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/ag-hor-add/.test(p)) return "panel-v2.html: falta el control de horario por día (ag-hor-add).";
+        if (!/horarios:\s*_shor/.test(p)) return "panel-v2.html: el guardado de disponibilidad ya no incluye horarios por día.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: se guarda de dónde llegó (atribución de canal)",
+    bug: "Al reservar se pregunta '¿Cómo me encontraste?' (Instagram, LinkedIn, " +
+         "Google…) y se guarda en citas.origen. El panel lo muestra por reserva y " +
+         "agregado en Métricas ('Por dónde llegan'), así el coach sabe qué canal le " +
+         "trae citas. Si el POST deja de mandar origen o el panel deja de leerlo/" +
+         "mostrarlo, se pierde la atribución.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        if (!/id='f-src'/.test(r)) return "reservar.html: falta el select '¿Cómo me encontraste?' (id=f-src).";
+        const i = r.indexOf("coach_id:_cid");
+        const blk = i >= 0 ? r.slice(i, i + 240) : "";
+        if (!/origen:/.test(blk)) return "reservar.html: el POST a citas ya no guarda origen (se pierde la atribución).";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/select=[^"']*origen/.test(p)) return "panel-v2.html: la query de citas ya no pide 'origen'.";
+        if (!/Por dónde llegan/.test(p)) return "panel-v2.html: falta el desglose 'Por dónde llegan' en Métricas.";
+      }
+      return null;
+    },
+  },
+  {
     name: "reordenar: pw-sortable incluido y el orden se guarda",
     bug: "pw-sortable.js permite arrastrar-para-ordenar (tipos de evento, tarjetas " +
          "de cliente). El orden DEBE guardarse: tipos → configuracion.event_types, " +
