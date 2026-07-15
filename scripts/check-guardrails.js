@@ -1141,6 +1141,26 @@ const RULES = [
     },
   },
   {
+    name: "comercial: 'En prueba' se detecta solo (trial del coach), no a mano",
+    bug: "El embudo del empleado/admin cuenta 'En prueba' cruzando los leads con " +
+         "los coaches que tienen estado_sub='prueba' (el trial de 14 días ya dado), " +
+         "y 'Pagaron' con estado_sub='activa'. Si se desconecta la detección de " +
+         "prueba, el vendedor tiene que marcar 'alta' a mano y el embudo no refleja " +
+         "los accesos reales.",
+    check() {
+      const e = read("empleado.html");
+      if (e) {
+        if (!/loadTrialCoaches/.test(e)) return "empleado.html: falta loadTrialCoaches (detección automática de 'En prueba').";
+        if (!/estado_sub['"\\]*\)?,\s*['"]prueba['"]|estado_sub'?\s*,\s*'prueba'/.test(e) && !/'prueba'/.test(e)) return "empleado.html: ya no consulta coaches en 'prueba'.";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/_trialCoachEmails/.test(p)) return "panel-v2.html: falta _trialCoachEmails (admin: 'En prueba' automático).";
+      }
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: día clickeable + incluye demos del equipo/pasadas",
     bug: "En el panel, tocar un día del calendario debe mostrar los eventos de ese " +
          "día (ag-mo-day → _agRenderDay). Y los puntitos/el detalle deben leer de " +
