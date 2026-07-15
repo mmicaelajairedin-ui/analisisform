@@ -1141,6 +1141,20 @@ const RULES = [
     },
   },
   {
+    name: "calendario del panel: card 'Próxima sesión'",
+    bug: "En la pestaña Calendario, la columna derecha muestra la 'Próxima sesión' " +
+         "(la cita/evento futuro más cercano) con hora, 'En X min' y acceso. Si se " +
+         "desconecta, se pierde esa card del mockup.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _agProxRender/.test(p)) return "panel-v2.html: falta _agProxRender (card Próxima sesión).";
+      if (!/cp-agenda-prox/.test(p)) return "panel-v2.html: falta la columna 'Próxima sesión' (cp-agenda-prox).";
+      if (!/Próxima sesión/.test(p)) return "panel-v2.html: la card 'Próxima sesión' ya no se muestra.";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: Agenda del día (hora por hora, libre/ocupado)",
     bug: "La pestaña Calendario abre en la 'Agenda del día': el día hora por hora, " +
          "con los huecos como 'Disponible' (según Mi disponibilidad) y los eventos/" +
