@@ -58,6 +58,12 @@
     css.textContent =
       ".pw-ia-launch{background:" + ACCENT + ";border:none;border-radius:50%;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(45,106,79,.22);cursor:pointer;color:#fff;}" +
       ".pw-ia-launch--fixed{position:fixed;top:14px;right:14px;z-index:96;}" +
+      /* Pestañita en el borde derecho (drawer): discreta, no tapa nada. Igual en todos los paneles. */
+      ".pw-ia-tab{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:96;background:" + ACCENT + ";color:#fff;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:7px;padding:15px 7px;border-radius:13px 0 0 13px;box-shadow:-3px 0 14px rgba(27,67,50,.24);font-family:Inter,-apple-system,system-ui,sans-serif;font-size:12px;font-weight:600;letter-spacing:.4px;transition:padding-right .15s ease,filter .15s ease;}" +
+      ".pw-ia-tab:hover{padding-right:11px;filter:brightness(1.06);}" +
+      ".pw-ia-tab .pw-ia-tab-tx{writing-mode:vertical-rl;text-orientation:mixed;}" +
+      ".pw-ia-tab svg{flex-shrink:0;}" +
+      "@media (max-width:900px){.pw-ia-tab{top:auto;bottom:118px;padding:11px 6px;font-size:11px;border-radius:11px 0 0 11px;}}" +
       ".cp-iac-panel{position:fixed;right:14px;top:62px;z-index:97;width:352px;max-width:calc(100vw - 28px);height:520px;max-height:calc(100vh - 96px);background:#fff;border:1px solid #E5E7EB;border-radius:18px;box-shadow:0 22px 56px rgba(45,106,79,.22),0 4px 12px rgba(0,0,0,.08);display:flex;flex-direction:column;overflow:hidden;font-family:Inter,-apple-system,system-ui,sans-serif;animation:cpIacIn .22s ease;}" +
       "@keyframes cpIacIn{from{opacity:0;transform:translateY(-12px) scale(.97);}to{opacity:1;transform:translateY(0) scale(1);}}" +
       ".cp-iac-head{display:flex;align-items:center;gap:10px;padding:13px 12px 12px 15px;border-bottom:1px solid #E5E7EB;flex-shrink:0;}" +
@@ -94,15 +100,15 @@
 
   function launcher() {
     if (document.getElementById("pw-ia-btn")) return;
+    // Pestañita discreta en el borde derecho (igual en todos los paneles); no tapa
+    // los botones de arriba como hacía el ícono flotante.
     var btn = document.createElement("button");
     btn.id = "pw-ia-btn"; btn.type = "button";
     btn.setAttribute("aria-label", "Abrir IA Pathway"); btn.title = "IA Pathway";
-    btn.className = "pw-ia-launch";
-    btn.innerHTML = SPARK;
+    btn.className = "pw-ia-tab";
+    btn.innerHTML = SPARK + "<span class='pw-ia-tab-tx'>IA Pathway</span>";
     btn.addEventListener("click", open);
-    var bar = document.getElementById("pw-app-actions");
-    if (bar) bar.insertBefore(btn, bar.firstChild);
-    else { btn.classList.add("pw-ia-launch--fixed"); document.body.appendChild(btn); }
+    document.body.appendChild(btn);
   }
 
   function root() {
