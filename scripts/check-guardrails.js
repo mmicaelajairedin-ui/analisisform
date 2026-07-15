@@ -1141,6 +1141,27 @@ const RULES = [
     },
   },
   {
+    name: "reservas: horario por día (jueves distinto sin tocar el resto)",
+    bug: "La disponibilidad admite un horario general (from/to) + overrides por " +
+         "día en disponibilidad.horarios ({ '<weekday>': {from,to} }). reservar.html " +
+         "debe aplicar el override del día si existe (si no, el general), y el panel " +
+         "debe poder editar/guardar esos overrides. Si se desconecta, se pierde el " +
+         "horario por día.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        if (!/horarios/.test(r)) return "reservar.html: normDisp/_coachInstants ya no maneja horarios por día.";
+        if (!/hor\[String\(ymd\.wd\)\]/.test(r)) return "reservar.html: _coachInstants ya no aplica el horario por día (override).";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/ag-hor-add/.test(p)) return "panel-v2.html: falta el control de horario por día (ag-hor-add).";
+        if (!/horarios:\s*_shor/.test(p)) return "panel-v2.html: el guardado de disponibilidad ya no incluye horarios por día.";
+      }
+      return null;
+    },
+  },
+  {
     name: "reservas: se guarda de dónde llegó (atribución de canal)",
     bug: "Al reservar se pregunta '¿Cómo me encontraste?' (Instagram, LinkedIn, " +
          "Google…) y se guarda en citas.origen. El panel lo muestra por reserva y " +

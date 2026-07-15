@@ -2488,11 +2488,27 @@ function viewAgModal(){
     var _DN=[["L",1],["M",2],["X",3],["J",4],["V",5],["S",6],["D",0]];
     var _dchips=_DN.map(function(p){ var on=(_dpd.indexOf(p[1])>=0); return "<button data-act='ag-disp-day' data-d='"+p[1]+"' style='width:34px;height:34px;border-radius:50%;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";color:"+(on?"var(--pw-bosque)":"var(--pw-text-muted)")+";font-weight:700;font-family:inherit;cursor:pointer'>"+p[0]+"</button>"; }).join("");
     var _bchips=_bloq.length?("<div style='display:flex;flex-wrap:wrap;gap:6px;margin-top:8px'>"+_bloq.map(function(d){ var lbl=(""+d).split("-").reverse().join("/"); return "<span style='display:inline-flex;align-items:center;gap:5px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:100px;padding:3px 5px 3px 11px;font-size:12px'>"+esc(lbl)+"<button data-act='ag-bloq-del' data-d='"+esc(d)+"' title='Quitar' style='border:none;background:none;cursor:pointer;color:var(--pw-text-muted);font-size:16px;line-height:1;padding:0 2px'>×</button></span>"; }).join("")+"</div>"):"<div style='font-size:11.5px;color:var(--pw-text-muted);margin-top:6px'>Sin días bloqueados.</div>";
+    var _DNAME={0:"Domingo",1:"Lunes",2:"Martes",3:"Miércoles",4:"Jueves",5:"Viernes",6:"Sábado"};
+    var _ord=function(n){ return n===0?7:n; };
+    var _hor=(g.horarios&&typeof g.horarios==="object")?g.horarios:((_dp.horarios&&typeof _dp.horarios==="object")?_dp.horarios:{});
+    var _horKeys=Object.keys(_hor).filter(function(k){ return _dpd.indexOf(Number(k))>=0; }).sort(function(a,b){ return _ord(Number(a))-_ord(Number(b)); });
+    var _horChips=_horKeys.length?("<div style='display:flex;flex-wrap:wrap;gap:6px;margin-top:8px'>"+_horKeys.map(function(k){ var h=_hor[k]||{}; var alld=(h.from==="00:00"&&(h.to==="23:59"||h.to==="00:00")); var lbl=_DNAME[Number(k)]+" · "+(alld?"todo el día":((h.from||"")+"–"+(h.to||""))); return "<span style='display:inline-flex;align-items:center;gap:5px;background:var(--pw-success-bg);border:1px solid var(--pw-bosque);border-radius:100px;padding:3px 5px 3px 11px;font-size:12px;font-weight:600;color:var(--pw-bosque)'>"+esc(lbl)+"<button data-act='ag-hor-del' data-d='"+esc(k)+"' title='Quitar' style='border:none;background:none;cursor:pointer;color:var(--pw-bosque);font-size:16px;line-height:1;padding:0 2px'>×</button></span>"; }).join("")+"</div>"):"";
+    var _daySel=_dpd.slice().sort(function(a,b){ return _ord(a)-_ord(b); }).map(function(dn){ return "<option value='"+dn+"'>"+_DNAME[dn]+"</option>"; }).join("");
     body="<div style='font-size:12.5px;color:var(--pw-text-soft);margin-bottom:12px;line-height:1.5'>Qué días y en qué franja te pueden reservar desde tu link. Se aplica al instante.</div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Días</label><div style='display:flex;gap:6px'>"+_dchips+"</div></div>"+
       "<div class='cp-form-row-2'>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Desde</label><input type='time' id='ag-disp-from' class='cp-form-input' value='"+esc(_from)+"'></div>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Hasta</label><input type='time' id='ag-disp-to' class='cp-form-input' value='"+esc(_to)+"'></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Desde (general)</label><input type='time' id='ag-disp-from' class='cp-form-input' value='"+esc(_from)+"'></div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Hasta (general)</label><input type='time' id='ag-disp-to' class='cp-form-input' value='"+esc(_to)+"'></div>"+
+      "</div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>¿Un día con horario distinto?</label>"+
+        "<div style='display:flex;gap:6px;align-items:center;flex-wrap:wrap'>"+
+          "<select id='ag-hor-day' class='cp-form-input' style='flex:1;min-width:100px'>"+_daySel+"</select>"+
+          "<input type='time' id='ag-hor-from' class='cp-form-input' style='width:92px' value='00:00'>"+
+          "<input type='time' id='ag-hor-to' class='cp-form-input' style='width:92px' value='23:59'>"+
+          "<button class='cp-btn cp-btn-ghost' data-act='ag-hor-add'>Agregar</button>"+
+        "</div>"+
+        "<span class='cp-form-hint'>Ej: el jueves que teletrabajás, de 00:00 a 23:59 (todo el día). El resto de los días sigue con el horario general de arriba.</span>"+
+        _horChips+
       "</div>"+
       "<div class='cp-form-row-2'>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Aviso mínimo (horas)</label><input type='number' min='0' step='1' id='ag-disp-notice' class='cp-form-input' value='"+esc(_notice)+"'><span class='cp-form-hint'>No te reservan con menos de estas horas.</span></div>"+
@@ -6196,7 +6212,24 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
-  if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00"), notice:(_d0.min_notice_h!=null?_d0.min_notice_h:2), buffer:(_d0.buffer_min!=null?_d0.buffer_min:0), bloq:((Object.prototype.toString.call(_d0.bloqueados)==="[object Array]")?_d0.bloqueados.slice():[])}; render(); return; }
+  if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; var _h0={}; if(_d0.horarios&&typeof _d0.horarios==="object"){ try{ _h0=JSON.parse(JSON.stringify(_d0.horarios)); }catch(e){ _h0={}; } } state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00"), notice:(_d0.min_notice_h!=null?_d0.min_notice_h:2), buffer:(_d0.buffer_min!=null?_d0.buffer_min:0), bloq:((Object.prototype.toString.call(_d0.bloqueados)==="[object Array]")?_d0.bloqueados.slice():[]), horarios:_h0}; render(); return; }
+  if(act==="ag-hor-add"){
+    _agDispCapture();
+    if(state.ag){
+      var _hd=parseInt(_val("ag-hor-day"),10);
+      var _hf=(""+_val("ag-hor-from")).trim(), _ht=(""+_val("ag-hor-to")).trim();
+      if(isNaN(_hd)){ toast("Elegí un día."); return; }
+      if(!/^\d{1,2}:\d{2}$/.test(_hf)||!/^\d{1,2}:\d{2}$/.test(_ht)){ toast("Poné el horario desde y hasta."); return; }
+      if(!state.ag.horarios) state.ag.horarios={};
+      state.ag.horarios[_hd]={from:_hf, to:_ht};
+    }
+    render(); return;
+  }
+  if(act==="ag-hor-del"){
+    _agDispCapture();
+    var _hk=el.getAttribute("data-d")||""; if(state.ag&&state.ag.horarios){ delete state.ag.horarios[_hk]; delete state.ag.horarios[Number(_hk)]; }
+    render(); return;
+  }
   if(act==="ag-disp-day"){
     _agDispCapture();
     if(state.ag){ var _dn=parseInt(el.getAttribute("data-d"),10); var _ds=(state.ag.days||[]).slice(); var _ix=_ds.indexOf(_dn); if(_ix>=0) _ds.splice(_ix,1); else _ds.push(_dn); state.ag.days=_ds; }
@@ -6222,10 +6255,13 @@ document.addEventListener("click", function(ev){
     var _sn=Math.max(0,parseInt((state.ag&&state.ag.notice),10)||0);
     var _sb=Math.max(0,parseInt((state.ag&&state.ag.buffer),10)||0);
     var _sbloq=(state.ag&&state.ag.bloq)?state.ag.bloq.slice():[];
+    // Horario por día: solo guardamos overrides de días que siguen elegidos.
+    var _shor={};
+    if(state.ag&&state.ag.horarios){ for(var _hk in state.ag.horarios){ if(!Object.prototype.hasOwnProperty.call(state.ag.horarios,_hk)) continue; var _hn=Number(_hk); if(_sd.indexOf(_hn)<0) continue; var _hv=state.ag.horarios[_hk]; if(_hv&&/^\d{1,2}:\d{2}$/.test(_hv.from||"")&&/^\d{1,2}:\d{2}$/.test(_hv.to||"")) _shor[_hn]={from:_hv.from, to:_hv.to}; } }
     // Guardamos TU zona horaria: la disponibilidad se define en tu hora y la
     // página de reserva la convierte a la hora local de cada visitante.
     var _tz=""; try{ _tz=Intl.DateTimeFormat().resolvedOptions().timeZone||""; }catch(e){}
-    state.ag=null; saveCfg({disponibilidad:{days:_sd, from:_sf, to:_st, tz:_tz, min_notice_h:_sn, buffer_min:_sb, bloqueados:_sbloq}}); return;
+    state.ag=null; saveCfg({disponibilidad:{days:_sd, from:_sf, to:_st, tz:_tz, min_notice_h:_sn, buffer_min:_sb, bloqueados:_sbloq, horarios:_shor}}); return;
   }
   if(act==="ag-evtype"){ state.ag={mode:"evtype", key:(el.getAttribute("data-key")||""), evTitle:(el.getAttribute("data-title")||"")}; render(); return; }
   if(act==="ag-set-evtype"){
