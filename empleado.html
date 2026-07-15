@@ -316,7 +316,7 @@
         <!-- Tu agenda — réplica del panel del coach: lista (Google + reservas) | mes | configuración -->
         <div class="card">
           <div class="card-hd">
-            <h3><span class="emo">🗓️</span> Tu agenda</h3>
+            <h3><span class="emo">🗓️</span> Tu agenda de hoy</h3>
             <div style="display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap">
               <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--texto-suave)"><span style="width:7px;height:7px;border-radius:50%;background:var(--sendero);display:inline-block"></span> En vivo · Google Calendar</span>
               <button class="btn ghost sm" onclick="goTab('calendario')">Ir a Calendario ›</button>
@@ -632,8 +632,7 @@
     for(var i=0;i<startDow;i++){ html+="<div class='emcal-day muted'></div>"; }
     for(var dd=1;dd<=daysIn;dd++){
       var cd=new Date(CAL_Y,CAL_M,dd); var key=_ymd(cd); var items=byDay[key]||[];
-      var mk=''; items.slice(0,3).forEach(function(ev){ var e=_evFor(ev.tipoStr); mk+="<span title='"+esc(ev.tipoStr||ev.title||'Evento')+"' style='display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:"+e.color+";box-shadow:0 0 0 1.5px #fff;font-size:8px;line-height:1'>"+e.icon+"</span>"; });
-      if(items.length>3) mk+="<span style='font-size:8px;font-weight:800;color:var(--texto-suave)'>+"+(items.length-3)+"</span>";
+      var mk=''; items.slice(0,4).forEach(function(ev){ var e=_evFor(ev.tipoStr); mk+="<span title='"+esc(ev.tipoStr||ev.title||'Evento')+"' style='width:5px;height:5px;border-radius:50%;background:"+e.color+";display:inline-block'></span>"; });
       var cls='emcal-day'+(items.length?' has':'')+(key===today?' today':'')+(key===EM_SEL_DAY?' sel':'');
       html+="<div class='"+cls+"' onclick=\"emDaySel('"+key+"')\" style='cursor:pointer'>"+dd+(mk?"<span style='display:flex;gap:2px;margin-top:2px;align-items:center'>"+mk+"</span>":"")+"</div>";
     }
@@ -799,6 +798,25 @@
       "<p style='font-size:12.5px;color:var(--texto-suave);margin:0 auto 4px;line-height:1.5'>Pegá la <strong>dirección iCal</strong> de tu Google Calendar en «Tu Google Calendar» (acá abajo) y tus eventos aparecen en esta agenda.</p>"+
     "</div>";
   }
+  function _durMinE(label){ var m=(""+(label||"")).match(/(\d+)\s*min/i); return m?parseInt(m[1],10):null; }
+  // Fila limpia estilo "Tu agenda de hoy": hora · ícono del tipo · nombre + badge · dur/Meet.
+  function _empRowClean(ev){
+    var e=_evFor(ev.tipoStr); var col=e.color||'#2D6A4F', ico=e.icon||'📅', tipo=(e.label||'');
+    var dur=_durMinE(ev.tipoStr); var hasMeet=(ev.join&&/^https?:\/\//.test(ev.join)); var meta=[]; if(dur) meta.push(dur+' min'); if(hasMeet) meta.push('Google Meet');
+    var now=Date.now(), right='';
+    if(ev.ms>now && ev.ms-now<=3600000) right="<span style='font-size:11px;font-weight:600;color:var(--bosque);background:rgba(82,183,136,.16);padding:4px 10px;border-radius:100px;white-space:nowrap;flex-shrink:0'>En "+Math.max(1,Math.round((ev.ms-now)/60000))+" min</span>";
+    else if(hasMeet) right="<a href='"+esc(ev.join)+"' target='_blank' rel='noopener' class='btn sm' style='padding:4px 10px;font-size:11px;text-decoration:none'>Entrar</a>";
+    else if(ev.email) right="<a href='mailto:"+esc(ev.email)+"' class='btn ghost sm' style='padding:4px 10px;font-size:11px'>Email</a>";
+    var badge=tipo?("<span style='font-size:10.5px;font-weight:600;color:"+col+";background:"+col+"22;padding:2px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(tipo)+"</span>"):"";
+    return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--borde)'>"+
+      "<span style='font-size:14px;font-weight:700;color:var(--carbon);width:46px;flex-shrink:0'>"+_agTime(ev.ms)+"</span>"+
+      "<span style='width:40px;height:40px;border-radius:50%;background:"+col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0'>"+ico+"</span>"+
+      "<div style='flex:1;min-width:0'><div style='display:flex;align-items:center;gap:7px;flex-wrap:wrap'><span style='font-weight:600;font-size:14px;color:var(--carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(ev.title)+"</span>"+badge+"</div>"+
+        (meta.length?"<div style='font-size:12px;color:var(--texto-suave);margin-top:2px'>"+esc(meta.join(' · '))+"</div>":"")+"</div>"+
+      right+
+    "</div>";
+  }
+  function _empDedup(list){ var s={}; return list.filter(function(x){ var k=Math.round(x.ms/60000)+'|'+(''+(x.title||'')).toLowerCase().trim(); if(s[k]) return false; s[k]=1; return true; }); }
   function renderAgBody(){
     var box=document.getElementById('emag-body'); if(!box) return;
     // Día seleccionado en el calendario: mostramos SUS eventos (incluye días pasados).
@@ -806,34 +824,17 @@
       var p=EM_SEL_DAY.split('-'); var dsel=new Date(+p[0],+p[1]-1,+p[2]);
       var DIAS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
       var head="<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px'><div style='font-size:11px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave)'>"+esc(DIAS[dsel.getDay()]+' '+dsel.getDate()+' de '+MESES[dsel.getMonth()])+"</div><button class='btn ghost sm' style='padding:3px 9px;font-size:11px' onclick=\"emDaySel('"+EM_SEL_DAY+"')\">← Volver</button></div>";
-      var dEvs=_allEvents().filter(function(ev){ return _ymd(new Date(ev.ms))===EM_SEL_DAY; }).sort(function(a,b){ return a.ms-b.ms; });
+      var dEvs=_empDedup(_allEvents().filter(function(ev){ return _ymd(new Date(ev.ms))===EM_SEL_DAY; }).sort(function(a,b){ return a.ms-b.ms; }));
       if(!dEvs.length){ box.innerHTML=head+"<div style='color:var(--texto-suave);font-size:13px;padding:12px 0;text-align:center'>No hay nada agendado este día.</div>"; return; }
-      var dh=head;
-      dEvs.forEach(function(ev){ var e=_evFor(ev.tipoStr); var col=e.color, ico=e.icon;
-        var join=(ev.join&&/^https?:\/\//.test(ev.join))?"<a href='"+esc(ev.join)+"' target='_blank' rel='noopener' class='btn sm' style='padding:3px 10px;font-size:11px;text-decoration:none'>Entrar</a>":(ev.email?"<a class='btn ghost sm' style='padding:3px 10px;font-size:11px' href='mailto:"+esc(ev.email)+"'>Email</a>":"");
-        dh+="<div style='display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--borde)'>"+
-          "<span style='min-width:38px;font-size:12px;font-weight:700;color:var(--carbon)'>"+_agTime(ev.ms)+"</span>"+
-          "<span style='width:28px;height:28px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0'>"+ico+"</span>"+
-          "<div style='flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(ev.title)+"</div>"+join+"</div>"; });
-      box.innerHTML=dh; return;
+      box.innerHTML=head+dEvs.map(_empRowClean).join(''); return;
     }
     var _hasCal=(GEVENTS&&GEVENTS.length)>0;
     if(!_hasCal && !RESALL.length){ box.innerHTML=_agConnectHtml(); return; }
-    var lo=new Date(); lo.setHours(0,0,0,0); var loMs=+lo, hi=Date.now()+7*86400000;
-    var evs=_allEvents().filter(function(ev){ return ev.ms>=loMs && ev.ms<=hi; }).sort(function(a,b){ return a.ms-b.ms; });
-    if(!evs.length){ box.innerHTML=_hasCal?"<div style='color:var(--texto-suave);font-size:13px;padding:12px 0;text-align:center'>No tenés sesiones esta semana. Cuando agendes una, aparece acá.</div>":_agConnectHtml(); return; }
-    var html="", lastDay="";
-    evs.forEach(function(ev){
-      var dl=_agDayLabel(ev.ms); if(dl!==lastDay){ html+="<div style='font-size:11px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave);margin:9px 0 2px'>"+esc(dl)+"</div>"; lastDay=dl; }
-      var e=_evFor(ev.tipoStr); var col=e.color, ico=e.icon;
-      var join=(ev.join&&/^https?:\/\//.test(ev.join))?"<a href='"+esc(ev.join)+"' target='_blank' rel='noopener' class='btn sm' style='padding:3px 10px;font-size:11px;text-decoration:none'>Entrar</a>":(ev.email?"<a class='btn ghost sm' style='padding:3px 10px;font-size:11px' href='mailto:"+esc(ev.email)+"'>Email</a>":"");
-      html+="<div style='display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--borde)'>"+
-        "<span style='min-width:38px;font-size:12px;font-weight:700;color:var(--carbon)'>"+_agTime(ev.ms)+"</span>"+
-        "<span style='width:28px;height:28px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0'>"+ico+"</span>"+
-        "<div style='flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(ev.title)+"</div>"+
-        join+"</div>";
-    });
-    box.innerHTML=html;
+    // Hoy (estilo "Tu agenda de hoy"): solo lo agendado del día.
+    var tk=_ymd(new Date());
+    var evs=_empDedup(_allEvents().filter(function(ev){ return _ymd(new Date(ev.ms))===tk; }).sort(function(a,b){ return a.ms-b.ms; }));
+    if(!evs.length){ box.innerHTML="<div style='color:var(--texto-suave);font-size:13px;padding:14px 0;text-align:center'>Sin sesiones hoy. ✨</div>"; return; }
+    box.innerHTML=evs.map(_empRowClean).join('');
   }
   // Guarda el token de Google (que dejó conectar-calendar.html en localStorage) en
   // el perfil del empleado, igual que hace el panel del coach.
