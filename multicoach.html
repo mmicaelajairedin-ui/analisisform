@@ -580,20 +580,14 @@ body{margin:0;font-family:var(--sans);color:var(--carbon);background:var(--bg);-
           <div class="row"><div class="av" style="background:var(--amanecer);color:#5a4410"><span class="emo">🏆</span></div><div><div class="nm">Juan alcanzó su objetivo de peso</div><div class="sub">hace 1d</div></div></div>
         </div></div>
 
-        <!-- Ranking coaches -->
+        <!-- Ranking coaches (se llena desde DB en __hydrateDash) -->
         <div class="card"><div class="card-h"><h3>Ranking de coaches</h3><a onclick="__go('coaches')">Ver todos</a></div>
-          <div class="rowb row" onclick="__toast('Ficha de Sofía Ruiz — Etapa 2')"><div class="pos">1</div><div class="av" style="background:#E8F2EC;color:#2D6A4F">SR</div><div><div class="nm">Sofía Ruiz</div><div class="sub">18 clientes · 96% ret.</div></div><div class="rt"><span class="star">★ 4.9</span></div></div>
-          <div class="rowb row" onclick="__toast('Ficha de Luis Márquez — Etapa 2')"><div class="pos">2</div><div class="av" style="background:#EAF3EF;color:#2D6A4F">LM</div><div><div class="nm">Luis Márquez</div><div class="sub">15 clientes · 93% ret.</div></div><div class="rt"><span class="star">★ 4.8</span></div></div>
-          <div class="rowb row" onclick="__toast('Ficha de Andrea Torres — Etapa 2')"><div class="pos">3</div><div class="av" style="background:#F0F7F2;color:#2D6A4F">AT</div><div><div class="nm">Andrea Torres</div><div class="sub">14 clientes · 89% ret.</div></div><div class="rt"><span class="star">★ 4.7</span></div></div>
-          <div class="rowb row" onclick="__toast('Ficha de Pablo García — Etapa 2')"><div class="pos">4</div><div class="av" style="background:#E8F2EC;color:#2D6A4F">PG</div><div><div class="nm">Pablo García</div><div class="sub">12 clientes · 87% ret.</div></div><div class="rt"><span class="star">★ 4.6</span></div></div>
+          <div id="dash-ranking"></div>
         </div>
 
-        <!-- Clientes en riesgo -->
+        <!-- Clientes en riesgo (se llena desde DB en __hydrateDash) -->
         <div class="card"><div class="card-h"><h3>Clientes en riesgo</h3><a onclick="__go('clientes')">Ver todos</a></div>
-          <div class="rowb row" onclick="__riesgo('Roberto Díaz','12 días')"><div class="av" style="background:#E8F2EC;color:#2D6A4F">RD</div><div><div class="nm">Roberto Díaz</div><div class="sub">Sin actividad hace 12d</div></div><span class="pill alto" style="margin-left:auto">Alto</span></div>
-          <div class="rowb row" onclick="__riesgo('Carla Méndez','9 días')"><div class="av" style="background:#EAF3EF;color:#2D6A4F">CM</div><div><div class="nm">Carla Méndez</div><div class="sub">Sin actividad hace 9d</div></div><span class="pill medio" style="margin-left:auto">Medio</span></div>
-          <div class="rowb row" onclick="__riesgo('Tomás Silva','7 días')"><div class="av" style="background:#F0F7F2;color:#2D6A4F">TS</div><div><div class="nm">Tomás Silva</div><div class="sub">Sin actividad hace 7d</div></div><span class="pill medio" style="margin-left:auto">Medio</span></div>
-          <div class="rowb row" onclick="__riesgo('Elena Rodríguez','5 días')"><div class="av" style="background:#E8F2EC;color:#2D6A4F">ER</div><div><div class="nm">Elena Rodríguez</div><div class="sub">Sin actividad hace 5d</div></div><span class="pill bajo" style="margin-left:auto">Bajo</span></div>
+          <div id="dash-riesgo"></div>
         </div>
 
         </div>
@@ -640,7 +634,7 @@ function __go(s){
   if(!impl){__toast('Sección «'+s+'» — Etapa próxima');__hl(_sec);return;}
   _sec=s;__hl(s);
   var d=document.getElementById('view-dashboard'),p=document.getElementById('view-panel');
-  if(s==='dashboard'){p.style.display='none';d.style.display='';window.scrollTo(0,0);}
+  if(s==='dashboard'){p.style.display='none';d.style.display='';window.scrollTo(0,0);__hydrateDash();}
   else{d.style.display='none';p.style.display='flex';document.getElementById('vscroll').scrollTop=0;if(s==='clientes')renderClientes();else if(s==='coaches')renderCoaches();else if(s==='agenda')renderAgenda();else if(s==='comunidad')renderComunidad();else renderConfig();}
 }
 document.getElementById('nav').addEventListener('click',function(e){var a=e.target.closest('a');if(a)__go(a.getAttribute('data-s'));});
@@ -731,6 +725,34 @@ var DB={
 var _kf='todos',_ks='',_cf='todos';
 function _coach(id){for(var i=0;i<DB.coaches.length;i++)if(DB.coaches[i].id===id)return DB.coaches[i];return null;}
 function _cli(id){for(var i=0;i<DB.clientes.length;i++)if(DB.clientes[i].id===id)return DB.clientes[i];return null;}
+// Dashboard = RESUMEN: todos sus números salen del DB (no hardcodeados), igual que
+// el Resumen del coach resume de sus datos. KPIs + ranking + clientes en riesgo.
+function __hydrateDash(){
+  try{
+    var act=DB.clientes.filter(function(k){return k.est==='activo';});
+    var coA=DB.coaches.filter(function(c){return c.est==='activo';});
+    var ses=coA.reduce(function(s,c){return s+(Number(c.ses)||0);},0);
+    var objPct=act.length?Math.round(act.filter(function(k){return k.med==='published';}).length/act.length*100):0;
+    var ret=coA.length?Math.round(coA.reduce(function(s,c){return s+(Number(c.ret)||0);},0)/coA.length):0;
+    var ing=act.length*95; // estimación €95/cliente/mes (demo, escala con los clientes)
+    var K=document.querySelectorAll('.kpis .kpi .n');
+    if(K[0])K[0].textContent=act.length;
+    if(K[1])K[1].textContent=ses;
+    if(K[2])K[2].textContent=objPct+'%';
+    if(K[3])K[3].textContent=ret+'%';
+    if(K[4])K[4].textContent='€'+ing.toLocaleString('es-ES');
+    // Sin histórico en el demo → no mostramos deltas inventados
+    Array.prototype.forEach.call(document.querySelectorAll('.kpis .kpi .d'),function(d){ d.style.display='none'; });
+    var _av=function(c){ return c.foto?"<div class='av' style='overflow:hidden'><img src='"+c.foto+"' alt='' style='width:100%;height:100%;object-fit:cover' onerror=\"this.style.display='none';this.parentNode.textContent='"+c.ini+"'\"></div>":"<div class='av' style='background:#E8F2EC;color:#2D6A4F'>"+c.ini+"</div>"; };
+    var rk=coA.slice().sort(function(a,b){ return (b.cli-a.cli)||(b.ret-a.ret); }).slice(0,4);
+    var rkBox=document.getElementById('dash-ranking');
+    if(rkBox){ rkBox.innerHTML=rk.map(function(c,i){ return "<div class='rowb row' onclick=\"__toast('Ficha de "+c.n+" — Etapa 2')\"><div class='pos'>"+(i+1)+"</div>"+_av(c)+"<div><div class='nm'>"+c.n+"</div><div class='sub'>"+c.cli+" cliente"+(c.cli===1?"":"s")+" · "+c.ret+"% ret.</div></div><div class='rt'><span class='star'>★ "+c.rat+"</span></div></div>"; }).join(''); }
+    var rg=act.filter(function(k){return k.lastState!=='fresh';}).sort(function(a,b){ return (a.lastState==='stale'?0:1)-(b.lastState==='stale'?0:1); }).slice(0,5);
+    var rgBox=document.getElementById('dash-riesgo');
+    if(rgBox){ rgBox.innerHTML=rg.length?rg.map(function(k){ var alto=k.lastState==='stale'; return "<div class='rowb row' onclick=\"__riesgo('"+k.n+"','"+(k.ult||'')+"')\"><div class='av' style='background:#E8F2EC;color:#2D6A4F'>"+k.ini+"</div><div><div class='nm'>"+k.n+"</div><div class='sub'>Sin actividad "+(k.ult||'')+"</div></div><span class='pill "+(alto?'alto':'medio')+"' style='margin-left:auto'>"+(alto?'Alto':'Medio')+"</span></div>"; }).join(''):"<div style='padding:18px;text-align:center;color:var(--muted);font-size:13px'>Ningún cliente en riesgo ✓</div>"; }
+  }catch(e){}
+}
+__hydrateDash(); // el dashboard es la vista inicial → poblarlo desde DB al cargar
 function _ini(n){return n.trim().split(/\s+/).map(function(w){return w.charAt(0);}).slice(0,2).join('').toUpperCase();}
 function _img(o){return o.foto?'<img src="'+o.foto+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">':'';}
 function _estPill(e){var m={activo:['act','Activo'],inactivo:['sus','Inactivo'],suspendido:['sus','Suspendido'],pendiente:['pend','Invitación enviada']};var x=m[e]||m.act;return '<span class="pill '+x[0]+'">'+x[1]+'</span>';}
