@@ -2230,6 +2230,14 @@ function viewResumen(){
     var nuevosPrev=reales.filter(function(c){return _inMonth(c,_pmKey);}).length;
     var _n2=Date.now(), prox=0, sesMes=0;
     reales.forEach(function(c){ if(c.raw&&c.raw.activo===false)return; (c.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var d=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")); var t=d.getTime(); if(isNaN(t))return; if(t>=_n2)prox++; if((d.getFullYear()+"-"+d.getMonth())===_mKey)sesMes++; }); });
+    // Desglose Pathway vs directo (dato de "Clientes de Pathway")
+    var _pw=reales.filter(function(c){return !(c.raw&&c.raw.activo===false) && c.source==="pathway";}).length;
+    var _dir=activos-_pw;
+    // Ingresos del mes: neto (monto − comisión) de solicitudes ACEPTADAS este mes.
+    // Fuente = "Clientes de Pathway" (tabla solicitudes, ya cargada en RSOL).
+    var ingresos=0;
+    var _fmtMoney=function(n){ return "€"+(Number(n)||0).toLocaleString("es-ES"); };
+    try{ (typeof RSOL!=="undefined"&&RSOL?RSOL:[]).forEach(function(s){ if(!s||s.estado!=="aceptada")return; var ca=s.created_at?new Date(s.created_at):null; if(!ca||isNaN(ca.getTime()))return; if((ca.getFullYear()+"-"+ca.getMonth())!==_mKey)return; var monto=Number(s.monto)||0, com=Number(s.comision); if(!(com>=0)) com=monto*(typeof _pwCoachRate==="function"?_pwCoachRate():5)/100; ingresos+=Math.max(0,monto-com); }); }catch(e){}
     // Medalla de clientes (logro del coach por cantidad de clientes activos)
     var cm=clientMedalInfo();
     var medalBlock = cm.name
@@ -2248,10 +2256,11 @@ function viewResumen(){
     return "<div class='cp-card' style='margin-bottom:16px'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📊</span> Mi negocio<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver clientes</button></div>"+
       "<div class='cp-card-pad'>"+medalBlock+
         "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px'>"+
-          _tile(activos,"Clientes activos","🟢","")+
+          _tile(activos,"Clientes activos","🟢",(activos?("<span style='color:var(--pw-text-muted)'>"+_pw+" de Pathway · "+_dir+" directo"+(_dir===1?"":"s")+"</span>"):""))+
           _tile(nuevos,"Nuevos este mes","✨",_delta(nuevos,nuevosPrev))+
           _tile(sesMes,"Sesiones este mes","📅","")+
           _tile(prox,"Próximas sesiones","⏰","")+
+          _tile(_fmtMoney(ingresos),"Ingresos del mes","💰","")+
         "</div>"+
       "</div></div>";
   })();
