@@ -1189,15 +1189,21 @@ const RULES = [
     },
   },
   {
-    name: "calendario del panel: Agenda del día (solo lo agendado)",
+    name: "calendario del panel: Agenda del día (solo lo agendado) + asistencia inline + toggle Hoy/Semana",
     bug: "La pestaña Calendario abre en la 'Agenda del día' del día (por defecto hoy), " +
-         "mostrando SOLO las sesiones/reservas agendadas (sin llenar de huecos). Si se " +
-         "desconecta, se pierde la vista de día del mockup.",
+         "mostrando SOLO las sesiones/reservas agendadas (sin llenar de huecos). Cada reserva " +
+         "pasada trae botones para marcar asistió/no asistió DESDE la agenda (cal-asis, suma a " +
+         "las analíticas) y la cabecera tiene un toggle Hoy | Semana. Si se desconecta, se " +
+         "pierde la vista de día del mockup, el marcado inline o el toggle.",
     check() {
       const p = read("panel-v2.html");
       if (!p) return null;
       if (!/function _agRenderDay/.test(p)) return "panel-v2.html: falta _agRenderDay (Agenda del día).";
       if (!/if\(!_AG_SEL_DAY\)\s*_AG_SEL_DAY=_agMoKey\(new Date\(\)\)/.test(p)) return "panel-v2.html: Calendario ya no abre en la Agenda del día (hoy).";
+      if (!/id:r\.id/.test(p)) return "panel-v2.html: las reservas de la agenda ya no llevan id (no se puede marcar asistencia inline).";
+      if (!/data-act='cal-asis'[^]{0,120}data-val='asistio'/.test(p)) return "panel-v2.html: la agenda del día ya no tiene el botón de marcar asistencia inline (cal-asis).";
+      if (!/act==="ag-hoy"/.test(p)) return "panel-v2.html: falta el toggle 'Hoy' de la agenda (ag-hoy).";
+      if (!/function _agAfterCalBody/.test(p)) return "panel-v2.html: falta _agAfterCalBody (refrescar la agenda tras marcar asistencia).";
       return null;
     },
   },

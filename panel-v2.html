@@ -2394,7 +2394,7 @@ function _agRender(d){
 // Tipos de evento del coach: cada uno con color (para distinguir en el calendario)
 // e icono (cuando no hay foto del cliente). Defaults sensatos → no le pedimos nada.
 var _AG_COLORS=["#2D6A4F","#2FB3A3","#3F6FB5","#7B6CD9","#C86FA6","#E8788A","#E0894A","#D9A441","#7BA23F","#C0756E","#8C7B80","#5C7A99"];
-var _AG_ICONS=["🗓️","📞","💬","🎯","🏋️","💰","🧠","☕"];
+var _AG_ICONS=["🗓️","📞","💬","🎯","🏋️","💰","🧠","☕","🎥","🤝","📋","✨","🚀","📈","❤️","🍎","🧘","🎓","💼","📅"];
 function _agTypes(){
   var t=(REAL&&RCFG&&Object.prototype.toString.call(RCFG.event_types)==="[object Array]")?RCFG.event_types:null;
   if(!t || !t.length) t=[{label:"Llamada 30 min",color:"#2D6A4F",icon:"📞"},{label:"Sesión 45 min",color:"#8C7B80",icon:"🗓️"}];
@@ -2502,6 +2502,13 @@ function _agReservas(){
   if(Object.prototype.toString.call(_CAL_DATA)==="[object Array]") return _calByOwner(_CAL_DATA);
   return _RES_DATA||[];
 }
+// Foto REAL del cliente (candidatos.foto_perfil) por email — para la agenda/próxima.
+// Match por email (no por nombre: eso se equivocaba). Solo devuelve una URL real.
+function _cliFotoByEmail(email){
+  email=(""+(email||"")).trim().toLowerCase(); if(!email) return "";
+  try{ var L=window.CLIENTS||[]; for(var i=0;i<L.length;i++){ var x=L[i]; if(x && (""+(x.email||"")).trim().toLowerCase()===email){ var f=(x.raw&&x.raw.foto_perfil)||""; return (/^https?:\/\//.test(f))?f:""; } } }catch(e){}
+  return "";
+}
 function _agDayFull(key){
   var p=(""+key).split("-"); var d=new Date(+p[0],(+p[1]-1),+p[2]);
   var DIAS=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
@@ -2552,32 +2559,45 @@ function _agDispWindow(key){
 // Eventos de Google + reservas del link, ubicados en su hora; huecos = "Disponible".
 function _agRenderDay(key,compact){
   var isToday=(key===_agMoKey(new Date()));
-  var head=compact?"":("<div style='display:flex;align-items:baseline;justify-content:space-between;gap:8px'>"+
+  // En el Resumen (compacto) mostramos un mini-encabezado con "← Hoy" cuando estás
+  // viendo OTRO día (en Calendario el propio toggle Hoy|Semana ya muestra el día).
+  var head=compact
+    ? ((state.section==="resumen" && !isToday)
+        ? ("<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px'>"+
+            "<span style='font-size:12.5px;font-weight:700;color:var(--pw-carbon);text-transform:capitalize'>"+esc(_agDayFull(key))+"</span>"+
+            "<button data-act='ag-mo-clear' style='background:none;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--pw-bosque)'>← Hoy</button></div>")
+        : "")
+    : ("<div style='display:flex;align-items:baseline;justify-content:space-between;gap:8px'>"+
     "<h3 style='font-family:var(--pw-serif);font-weight:500;font-size:18px;margin:0'>Agenda del día</h3>"+
     "<button data-act='ag-mo-clear' style='background:none;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--pw-bosque)'>"+(isToday?"Hoy":"Ver semana")+"</button></div>"+
     "<p style='font-size:12px;color:var(--pw-text-muted);margin:2px 0 12px;text-transform:capitalize'>"+esc(_agDayFull(key))+"</p>");
   // Unificar eventos del día (Google + citas del link).
   var items=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); items.push({ms:+e.start, title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:""}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:"", durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:"", durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_cliFotoByEmail(r.email)}); } });
   items.sort(function(a,b){ return a.ms-b.ms; });
   // Dedup: la misma sesión puede venir del Google Calendar Y de la reserva.
   var _sd={}; items=items.filter(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(_sd[k]) return false; _sd[k]=1; return true; });
   var now=Date.now();
   // Fila limpia estilo "Tu agenda de hoy": hora · ícono · nombre + badge de tipo · duración/Meet.
   var rowEvent=function(it){
-    var right="";
-    if(_attended(it.estado)) right="<span style='width:22px;height:22px;border-radius:50%;background:var(--pw-sendero);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>"+_cIco('check',13)+"</span>";
+    var right="", isRes=(it.id!=null);
+    // Marcar asistencia INLINE desde la agenda (una sola tocada, suma a las analíticas).
+    if(_attended(it.estado)) right=(isRes?"<button data-act='cal-asis' data-id='"+esc(it.id)+"' data-val='asistio' title='Asistió — tocá para desmarcar'":"<span")+" style='width:22px;height:22px;border-radius:50%;background:var(--pw-sendero);color:#fff;border:none;cursor:"+(isRes?"pointer":"default")+";display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>"+_cIco('check',13)+(isRes?"</button>":"</span>");
+    else if(isRes && it.estado==="no_asistio") right="<button data-act='cal-asis' data-id='"+esc(it.id)+"' data-val='no_asistio' title='No asistió — tocá para desmarcar' style='font-size:11px;font-weight:600;color:var(--pw-danger);background:rgba(214,69,69,.1);border:none;padding:4px 9px;border-radius:100px;cursor:pointer;flex-shrink:0;white-space:nowrap'>No vino</button>";
+    else if(isRes && it.ms<=now) right="<span style='display:inline-flex;gap:5px;flex-shrink:0'>"+
+      "<button data-act='cal-asis' data-id='"+esc(it.id)+"' data-val='asistio' title='Asistió' style='width:26px;height:26px;border-radius:7px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-bosque);cursor:pointer;display:inline-flex;align-items:center;justify-content:center'>"+_cIco('check',13)+"</button>"+
+      "<button data-act='cal-asis' data-id='"+esc(it.id)+"' data-val='no_asistio' title='No asistió' style='width:26px;height:26px;border-radius:7px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-danger);cursor:pointer;display:inline-flex;align-items:center;justify-content:center'>"+_cIco('xc',13)+"</button></span>";
     else if(it.ms>now && it.ms-now<=60*60000) right="<span style='font-size:11px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 10px;border-radius:100px;flex-shrink:0;white-space:nowrap'>En "+Math.max(1,Math.round((it.ms-now)/60000))+" min</span>";
     else if(it.link) right="<a href='"+esc(it.link)+"' target='_blank' rel='noopener' aria-label='Entrar a la sesión' style='width:28px;height:28px;border-radius:8px;background:var(--pw-bosque);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none'>"+_cIco('video',14)+"</a>";
     var badge=it.tipo?("<span style='font-size:10.5px;font-weight:600;color:"+it.col+";background:"+it.col+"22;padding:2px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(it.tipo)+"</span>"):"";
     var meta=[]; if(it.durMin) meta.push(it.durMin+" min"); if(it.link) meta.push("Google Meet"); if(it.who) meta.push(it.who);
-    return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--pw-border)'>"+
-      "<span style='font-size:14px;font-weight:700;color:var(--pw-carbon);width:46px;flex-shrink:0'>"+_agTime(it.ms)+"</span>"+
-      "<span style='width:40px;height:40px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0'><span class='cp-emo'>"+it.ico+"</span></span>"+
+    return "<div style='display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--pw-border)'>"+
+      "<span style='font-size:13px;font-weight:700;color:var(--pw-carbon);width:42px;flex-shrink:0'>"+_agTime(it.ms)+"</span>"+
+      "<span style='width:34px;height:34px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:100%;height:100%;border-radius:50%;object-fit:cover'>":it.ico)+"</span>"+
       "<div style='flex:1;min-width:0'>"+
-        "<div style='display:flex;align-items:center;gap:7px;flex-wrap:wrap'><span style='font-weight:600;font-size:14px;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(it.title)+"</span>"+badge+(it.origen?_origenChip(it.origen):"")+"</div>"+
-        (meta.length?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(meta.join(" · "))+"</div>":"")+
+        "<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(it.title)+"</span>"+badge+(it.origen?_origenChip(it.origen):"")+"</div>"+
+        (meta.length?"<div style='font-size:11.5px;color:var(--pw-text-soft);margin-top:1px'>"+esc(meta.join(" · "))+"</div>":"")+
       "</div>"+
       right+
     "</div>";
@@ -2589,12 +2609,23 @@ function _agRenderDay(key,compact){
   return head+"<div>"+body+"</div>";
 }
 function _agBodyRender(){
-  if(state.section==="resumen") return _agRenderDay(_agMoKey(new Date()),true); // "Tu agenda de hoy" compacta
-  return _AG_SEL_DAY?_agRenderDay(_AG_SEL_DAY):_agRender(_AG_DATA);
+  if(state.section==="resumen") return _agRenderDay(_AG_SEL_DAY||_agMoKey(new Date()),true); // hoy por defecto; si tocás un día del mes, muestra ese
+  // Calendario: cabecera fija con toggle Hoy | Semana. El cuerpo cambia según el modo.
+  var isWeek=!_AG_SEL_DAY, todayKey=_agMoKey(new Date()), isToday=(_AG_SEL_DAY===todayKey);
+  var sub=isWeek?"Esta semana":_agDayFull(_AG_SEL_DAY);
+  var seg=function(lbl,active,act,k){ return "<button data-act='"+act+"'"+(k?" data-k='"+k+"'":"")+" style='flex:1;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;padding:5px 0;border-radius:7px;background:"+(active?"#fff":"transparent")+";color:"+(active?"var(--pw-bosque)":"var(--pw-text-muted)")+";box-shadow:"+(active?"var(--pw-shadow-sm)":"none")+"'>"+lbl+"</button>"; };
+  var head="<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px'>"+
+      "<h3 style='font-family:var(--pw-serif);font-weight:500;font-size:16px;margin:0'>Tu agenda</h3>"+
+      "<div style='display:flex;gap:2px;background:var(--pw-niebla-2);border-radius:9px;padding:2px;width:148px;flex-shrink:0'>"+seg("Hoy",isToday,"ag-hoy",todayKey)+seg("Semana",isWeek,"ag-mo-clear")+"</div>"+
+    "</div>"+
+    "<p style='font-size:11.5px;color:var(--pw-text-muted);margin:0 0 9px;text-transform:capitalize'>"+esc(sub)+"</p>";
+  return head+(isWeek?_agRender(_AG_DATA):_agRenderDay(_AG_SEL_DAY,true));
 }
 // Tras cargar/refrescar las reservas del Calendario, repintar el mes (para que
 // aparezcan las demos del equipo/pasadas) y el detalle del día si hay uno abierto.
 function _agAfterCal(){ try{ _agMonthRender(); var _b=document.getElementById("cp-agenda-body"); if(_b && _AG_SEL_DAY) _b.innerHTML=_agBodyRender(); }catch(e){} }
+// Repinta SOLO el cuerpo de la agenda (tras marcar asistencia inline), sin importar el modo.
+function _agAfterCalBody(){ try{ var _b=document.getElementById("cp-agenda-body"); if(_b) _b.innerHTML=_agBodyRender(); _agMonthRender(); }catch(e){} }
 function _agMonthRender(){
   var box=document.getElementById("cp-agenda-month"); if(!box) return;
   if(!_AG_MO){ var n=new Date(); _AG_MO={y:n.getFullYear(),m:n.getMonth()}; }
@@ -2650,10 +2681,10 @@ function _agendaCard(){
 // un poco más grande. Sin la columna de Reservas (acá ya está la de asistencia).
 function _agendaCalCard(){
   // 3 cards separadas (como el mockup): Agenda del día | Mes | Próxima sesión.
-  return "<div style='display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-start'>"+
-    "<section class='cp-card' style='flex:1 1 280px;min-width:260px'><div class='cp-card-pad' style='padding:18px'><div id='cp-agenda-body' style='font-size:14px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div></div></section>"+
-    "<section class='cp-card' style='flex:1.3 1 320px;min-width:280px'><div class='cp-card-pad' style='padding:18px'>"+_agMonthCal()+"</div></section>"+
-    "<section class='cp-card' style='flex:1 1 240px;min-width:230px'><div class='cp-card-pad' style='padding:18px'><div id='cp-agenda-prox'></div></div></section>"+
+  return "<div style='display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-start'>"+
+    "<section class='cp-card' style='flex:1 1 280px;min-width:260px'><div class='cp-card-pad' style='padding:14px'><div id='cp-agenda-body' style='font-size:13.5px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div></div></section>"+
+    "<section class='cp-card' style='flex:1.3 1 320px;min-width:280px'><div class='cp-card-pad' style='padding:14px'>"+_agMonthCal()+"</div></section>"+
+    "<section class='cp-card' style='flex:1 1 240px;min-width:230px'><div class='cp-card-pad' style='padding:14px'><div id='cp-agenda-prox'></div></div></section>"+
   "</div>";
 }
 // Próxima sesión (columna derecha, estilo mockup): la cita/evento futuro más
@@ -2661,7 +2692,7 @@ function _agendaCalCard(){
 function _agProxList(){
   var now=Date.now(), out=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); out.push({ms:+e.start, title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:"", durMin:_durMin((typ&&typ.label)||"")}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", link:"", email:r.email||"", durMin:_durMin(r.tipo||"")}); } } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", link:"", email:r.email||"", durMin:_durMin(r.tipo||""), foto:_cliFotoByEmail(r.email)}); } } });
   out.sort(function(a,b){ return a.ms-b.ms; });
   // Dedup: una misma sesión puede venir del Google Calendar Y de la reserva.
   var seen={}, uniq=[]; out.forEach(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(!seen[k]){ seen[k]=1; uniq.push(x); } });
@@ -2679,7 +2710,7 @@ function _agProxRender(){
     "<h3 style='font-family:var(--pw-serif);font-weight:500;font-size:18px;margin:0'>Próxima sesión</h3>"+
     "<span style='font-size:10px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 9px;border-radius:100px;white-space:nowrap'>"+esc(when)+"</span></div>";
   var card="<div style='background:"+acc+"14;border:1px solid "+acc+"33;border-radius:14px;padding:16px'>"+
-    "<div style='display:flex;align-items:center;gap:14px'>"+_cAvatar(it.title,acc,58)+
+    "<div style='display:flex;align-items:center;gap:14px'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:58px;height:58px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid "+acc+"55'>":_cAvatar(it.title,acc,58))+
       "<div style='min-width:0'><div style='font-family:var(--pw-serif);font-size:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.title)+"</div>"+
         (it.sub?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.sub)+"</div>":"")+"</div></div>"+
     "<div style='display:flex;flex-direction:column;gap:8px;margin-top:14px;font-size:13px;color:var(--pw-text-soft)'>"+
@@ -6708,12 +6739,12 @@ document.addEventListener("click", function(ev){
     var _cid=el.getAttribute("data-id"), _cv=el.getAttribute("data-val"); if(!_cid||!_cv) return;
     var _cr=(_CAL_DATA||[]).filter(function(x){ return String(x.id)===String(_cid); })[0]; if(!_cr) return;
     var _cprev=_cr.estado; _cr.estado=(_cr.estado===_cv?"confirmada":_cv); // volver a tocar el mismo estado lo desmarca
-    _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra();
+    _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCalBody();
     // Admin puede marcar la de cualquiera (por id); un coach solo la suya (coachGuard).
     var _cq=RADMIN?("citas?id=eq."+encodeURIComponent(_cid)):("citas?id=eq."+encodeURIComponent(_cid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""));
     _sbw(_cq,"PATCH",{estado:_cr.estado})
-      .then(function(r){ if(r&&r.ok){ toast(_cv==="asistio"?"Marcado: asistió ✓":_cv==="no_asistio"?"Marcado: no asistió":"Marcado: reprogramó"); } else { _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); } })
-      .catch(function(){ _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); toast("No se pudo guardar."); });
+      .then(function(r){ if(r&&r.ok){ toast(_cv==="asistio"?"Marcado: asistió ✓":_cv==="no_asistio"?"Marcado: no asistió":"Marcado: reprogramó"); } else { _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCalBody(); toast("No se pudo guardar."); } })
+      .catch(function(){ _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCalBody(); toast("No se pudo guardar."); });
     return;
   }
   if(act==="cal-res"){
@@ -6752,6 +6783,7 @@ document.addEventListener("click", function(ev){
   }
   if(act==="ag-mo"){ if(!_AG_MO){var _mn=new Date();_AG_MO={y:_mn.getFullYear(),m:_mn.getMonth()};} var _md=parseInt(el.getAttribute("data-d"),10)||0; _AG_MO.m+=_md; if(_AG_MO.m<0){_AG_MO.m=11;_AG_MO.y--;}else if(_AG_MO.m>11){_AG_MO.m=0;_AG_MO.y++;} _agMonthRender(); return; }
   if(act==="ag-mo-day"){ var _mk=el.getAttribute("data-k")||""; _AG_SEL_DAY=(_AG_SEL_DAY===_mk)?null:_mk; var _mb=document.getElementById("cp-agenda-body"); if(_mb) _mb.innerHTML=_agBodyRender(); _agMonthRender(); return; }
+  if(act==="ag-hoy"){ _AG_SEL_DAY=_agMoKey(new Date()); var _mbh=document.getElementById("cp-agenda-body"); if(_mbh) _mbh.innerHTML=_agBodyRender(); _agMonthRender(); return; }
   if(act==="ag-mo-clear"){ _AG_SEL_DAY=null; var _mb2=document.getElementById("cp-agenda-body"); if(_mb2) _mb2.innerHTML=_agBodyRender(); _agMonthRender(); return; }
   if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; var _h0={}; if(_d0.horarios&&typeof _d0.horarios==="object"){ try{ _h0=JSON.parse(JSON.stringify(_d0.horarios)); }catch(e){ _h0={}; } } state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00"), notice:(_d0.min_notice_h!=null?_d0.min_notice_h:2), buffer:(_d0.buffer_min!=null?_d0.buffer_min:0), bloq:((Object.prototype.toString.call(_d0.bloqueados)==="[object Array]")?_d0.bloqueados.slice():[]), horarios:_h0}; render(); return; }
   if(act==="ag-hor-add"){

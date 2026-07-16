@@ -58,7 +58,9 @@ interfaz van en **gris**, no a color
 - La clase vive en `pathway-panel.css` (paneles de nicho) y en el `<style>` de
   `panel-v2.html`. **Una sola fuente de verdad** — al sumar un emoji nuevo,
   envolverlo en `.cp-emo`. Excepciones a color (contenido, NO chrome): los iconos
-  del calendario fitness (💪⭐🍎), banderas de país y medallas de logro.
+  del calendario fitness (💪⭐🍎), banderas de país, medallas de logro y el **emoji
+  del tipo de evento en la agenda** (lo elige la coach por cita: en `_agRenderDay`
+  el avatar muestra la foto real del cliente si existe, si no el emoji del tipo a color).
 
 ## 🛡️ Blindaje del codigo — tests que no pueden mentir (junio 2026)
 Red de seguridad para que NO vuelvan bugs ya resueltos. Corren en CI en cada

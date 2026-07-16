@@ -617,7 +617,7 @@
   function _allEvents(){
     var out=[];
     GEVENTS.forEach(function(e){ if(e&&e.start) out.push({ms:e.start,title:e.title||'Sesión',tipoStr:e.title||'',email:'',join:e.join||''}); });
-    RESALL.forEach(function(r){ if(!r||r.estado==='cancelada')return; out.push({ms:+new Date(r.inicio),title:r.nombre||'Alguien',tipoStr:r.tipo||'',email:r.email||'',join:''}); });
+    RESALL.forEach(function(r){ if(!r||r.estado==='cancelada')return; out.push({id:r.id,estado:r.estado||'',ms:+new Date(r.inicio),title:r.nombre||'Alguien',tipoStr:r.tipo||'',email:r.email||'',join:''}); });
     return out;
   }
   function renderCal(){
@@ -803,16 +803,22 @@
   function _empRowClean(ev){
     var e=_evFor(ev.tipoStr); var col=e.color||'#2D6A4F', ico=e.icon||'📅', tipo=(e.label||'');
     var dur=_durMinE(ev.tipoStr); var hasMeet=(ev.join&&/^https?:\/\//.test(ev.join)); var meta=[]; if(dur) meta.push(dur+' min'); if(hasMeet) meta.push('Google Meet');
-    var now=Date.now(), right='';
-    if(ev.ms>now && ev.ms-now<=3600000) right="<span style='font-size:11px;font-weight:600;color:var(--bosque);background:rgba(82,183,136,.16);padding:4px 10px;border-radius:100px;white-space:nowrap;flex-shrink:0'>En "+Math.max(1,Math.round((ev.ms-now)/60000))+" min</span>";
+    var now=Date.now(), right='', isRes=(ev.id!=null);
+    // Marcar asistencia INLINE desde la agenda (una tocada → suma a las métricas del embudo).
+    if(isRes && _attended(ev.estado)) right="<button onclick=\"markAsistencia('"+ev.id+"','asistio')\" title='Asistió — tocá para desmarcar' style='width:22px;height:22px;border-radius:50%;background:var(--sendero);color:#fff;border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>✓</button>";
+    else if(isRes && ev.estado==='no_asistio') right="<button onclick=\"markAsistencia('"+ev.id+"','no_asistio')\" title='No asistió — tocá para desmarcar' style='font-size:11px;font-weight:700;color:#C0756E;background:rgba(192,117,110,.12);border:none;padding:4px 9px;border-radius:100px;cursor:pointer;flex-shrink:0;white-space:nowrap'>No vino</button>";
+    else if(isRes && ev.ms<=now) right="<span style='display:inline-flex;gap:5px;flex-shrink:0'>"+
+      "<button onclick=\"markAsistencia('"+ev.id+"','asistio')\" title='Asistió' style='width:26px;height:26px;border-radius:7px;border:1px solid var(--borde);background:#fff;color:var(--bosque);cursor:pointer;font-size:13px;font-weight:800'>✓</button>"+
+      "<button onclick=\"markAsistencia('"+ev.id+"','no_asistio')\" title='No asistió' style='width:26px;height:26px;border-radius:7px;border:1px solid var(--borde);background:#fff;color:#C0756E;cursor:pointer;font-size:13px;font-weight:800'>✕</button></span>";
+    else if(ev.ms>now && ev.ms-now<=3600000) right="<span style='font-size:11px;font-weight:600;color:var(--bosque);background:rgba(82,183,136,.16);padding:4px 10px;border-radius:100px;white-space:nowrap;flex-shrink:0'>En "+Math.max(1,Math.round((ev.ms-now)/60000))+" min</span>";
     else if(hasMeet) right="<a href='"+esc(ev.join)+"' target='_blank' rel='noopener' class='btn sm' style='padding:4px 10px;font-size:11px;text-decoration:none'>Entrar</a>";
     else if(ev.email) right="<a href='mailto:"+esc(ev.email)+"' class='btn ghost sm' style='padding:4px 10px;font-size:11px'>Email</a>";
     var badge=tipo?("<span style='font-size:10.5px;font-weight:600;color:"+col+";background:"+col+"22;padding:2px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(tipo)+"</span>"):"";
-    return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--borde)'>"+
-      "<span style='font-size:14px;font-weight:700;color:var(--carbon);width:46px;flex-shrink:0'>"+_agTime(ev.ms)+"</span>"+
-      "<span style='width:40px;height:40px;border-radius:50%;background:"+col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0'>"+ico+"</span>"+
-      "<div style='flex:1;min-width:0'><div style='display:flex;align-items:center;gap:7px;flex-wrap:wrap'><span style='font-weight:600;font-size:14px;color:var(--carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(ev.title)+"</span>"+badge+"</div>"+
-        (meta.length?"<div style='font-size:12px;color:var(--texto-suave);margin-top:2px'>"+esc(meta.join(' · '))+"</div>":"")+"</div>"+
+    return "<div style='display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--borde)'>"+
+      "<span style='font-size:13px;font-weight:700;color:var(--carbon);width:42px;flex-shrink:0'>"+_agTime(ev.ms)+"</span>"+
+      "<span style='width:34px;height:34px;border-radius:50%;background:"+col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0'>"+ico+"</span>"+
+      "<div style='flex:1;min-width:0'><div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(ev.title)+"</span>"+badge+"</div>"+
+        (meta.length?"<div style='font-size:11.5px;color:var(--texto-suave);margin-top:1px'>"+esc(meta.join(' · '))+"</div>":"")+"</div>"+
       right+
     "</div>";
   }
@@ -1027,12 +1033,16 @@
     toast(val==='gano'?'👍 Marcado: fue bien':'👎 Marcado: no cerró');
   };
   window.markAsistencia=async function(id,val){
-    var r=CALI.filter(function(x){ return String(x.id)===String(id); })[0]; if(!r) return;
-    var prev=r.estado; r.estado=(r.estado===val?'confirmada':val); // volver a tocar el mismo = desmarca
-    renderCalMetrics(); renderCalList();
-    if(sb){ try{ var up=await sb.from('citas').update({estado:r.estado}).eq('id',id); if(up.error) throw up.error; }catch(e){ r.estado=prev; renderCalMetrics(); renderCalList(); toast('No se pudo guardar'); return; } }
+    // La cita puede venir de la lista de asistencia (CALI) o de la agenda (RESALL).
+    var r=CALI.filter(function(x){ return String(x.id)===String(id); })[0];
+    var rr=RESALL.filter(function(x){ return String(x.id)===String(id); })[0];
+    var base=r||rr; if(!base) return;
+    var prev=base.estado, next=(base.estado===val?'confirmada':val); // volver a tocar el mismo = desmarca
+    if(r) r.estado=next; if(rr) rr.estado=next;
+    renderCalMetrics(); renderCalList(); renderCal(); renderAgBody();
+    if(sb){ try{ var up=await sb.from('citas').update({estado:next}).eq('id',id); if(up.error) throw up.error; }catch(e){ if(r) r.estado=prev; if(rr) rr.estado=prev; renderCalMetrics(); renderCalList(); renderCal(); renderAgBody(); toast('No se pudo guardar'); return; } }
     // Si asistió y está enlazada a un lead, el lead avanza a "Demo" (alimenta la comisión).
-    if(r.estado==='asistio'){ var Lx=_leadFor(r); if(Lx){ var po={demo_agendada:true}; if(Lx.estado==='nuevo'||Lx.estado==='contactado') po.estado='demo'; try{ patch(Lx.id,po); }catch(e){} renderCalList(); } }
+    if(next==='asistio'){ var Lx=_leadFor(base); if(Lx){ var po={demo_agendada:true}; if(Lx.estado==='nuevo'||Lx.estado==='contactado') po.estado='demo'; try{ patch(Lx.id,po); }catch(e){} renderCalList(); } }
     toast(val==='asistio'?'Marcado: asistió ✓':val==='no_asistio'?'Marcado: no asistió':'Marcado: reprogramó');
   };
 
