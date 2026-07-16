@@ -205,6 +205,10 @@ details.logros-c[open]>summary .lg-caret{transform:rotate(180deg);}
 .cal-d.ses-day{background:var(--brand-light);color:var(--brand);font-weight:600;border:1.5px solid var(--brand);}
 .cal-d.prev{color:#ddd;}
 ._calday:hover{filter:brightness(.95);}
+/* "Te escriben": puntito rojo que late + halo suave para llamar la atención. */
+@keyframes pwAttn{0%,100%{transform:scale(1)}30%{transform:scale(1.35)}60%{transform:scale(.92)}}
+@keyframes pwHalo{0%{box-shadow:0 0 0 0 rgba(214,73,91,.55)}100%{box-shadow:0 0 0 10px rgba(214,73,91,0)}}
+.pw-attn{animation:pwAttn 1s ease-in-out 4,pwHalo 1.4s ease-out 3;}
 /* Calendario del mes — mismo diseño .pwcal-* que fitness/finanzas/coach (con el tema de carrera) */
 .pwcal-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
 .pwcal-h b{font-size:14px;font-weight:700;color:var(--brand);}
@@ -5336,16 +5340,37 @@ function _syncMsgsToDB(msgs){
   }).catch(function(){});
 }
 
+// Ruidito de "te escriben": chime suave de dos notas (WebAudio, sin archivo).
+// Los navegadores bloquean audio antes de la 1ª interacción → queda en no-op
+// silencioso hasta que el cliente toca algo, y ahí ya suena.
+var _pwAC=null;
+function _pwDing(){
+  try{
+    var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+    _pwAC=_pwAC||new AC(); var ctx=_pwAC; if(ctx.state==='suspended'){ try{ctx.resume();}catch(e){} }
+    var t=ctx.currentTime;
+    [784,1047].forEach(function(f,i){
+      var o=ctx.createOscillator(),g=ctx.createGain(); o.type='sine'; o.frequency.value=f;
+      var st=t+i*0.11; g.gain.setValueAtTime(0.0001,st); g.gain.exponentialRampToValueAtTime(0.06,st+0.02); g.gain.exponentialRampToValueAtTime(0.0001,st+0.22);
+      o.connect(g); g.connect(ctx.destination); o.start(st); o.stop(st+0.24);
+    });
+  }catch(e){}
+}
+// Puntito rojo que LATE unos segundos cuando llega algo nuevo.
+function _pwPulse(el){ if(!el) return; try{ el.classList.add('pw-attn'); setTimeout(function(){ el.classList.remove('pw-attn'); },4500); }catch(e){} }
+function _pwOnIncoming(){ _pwDing(); _pwPulse(document.getElementById('msg-badge')); _pwPulse(document.getElementById('msg-bell-btn')); }
+var _pwChimeReady=false; // no sonar en la primera carga (mensajes viejos)
+
 function _loadMsgsFromDB(){
   if(!E)return;
   fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E)+'&select=notas_coach',{
     headers:H()
   }).then(function(r){return r.json();}).then(function(rows){
-    if(!rows||!rows.length)return;
+    if(!rows||!rows.length){ _pwChimeReady=true; return; }
     var raw=rows[0].notas_coach||'';
     var dbMsgs;
     try{dbMsgs=JSON.parse(raw);}catch(e){return;}
-    if(!Array.isArray(dbMsgs))return;
+    if(!Array.isArray(dbMsgs)){ _pwChimeReady=true; return; }
     // Merge por clave estable (no por longitud): conserva tanto lo local como
     // lo del coach que llegó mientras tanto, sin duplicar.
     var local=_getMsgs();
@@ -5362,11 +5387,14 @@ function _loadMsgsFromDB(){
       if(newCoach>0){
         var badge=document.getElementById('msg-badge');
         if(badge){badge.style.display='flex';badge.textContent=newCoach;}
+        // Ruidito + puntito rojo que late (solo si no es la carga inicial).
+        if(_pwChimeReady && !_msgsOpen) _pwOnIncoming();
         // Si el chat está abierto, esos mensajes ya se están viendo → marcarlos leídos.
         if(_msgsOpen) setTimeout(_markCoachMsgsRead,200);
       }
     }
-  }).catch(function(){});
+    _pwChimeReady=true;
+  }).catch(function(){ _pwChimeReady=true; });
 }
 
 // Cargar mensajes al iniciar para mostrar badge
