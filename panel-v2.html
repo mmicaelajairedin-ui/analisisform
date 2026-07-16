@@ -4822,13 +4822,37 @@ function _coachMicaBubbles(){
   }
   return bubbles;
 }
+// "Visto": ojito ABIERTO = leído, ojito CERRADO = enviado (sin leer todavía).
+function _vistoEye(read,col){
+  if(read) return "<span title='Visto' style='margin-left:5px;color:"+(col||'currentColor')+";display:inline-block;vertical-align:-2px'><svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z'/><circle cx='12' cy='12' r='2.6'/></svg></span>";
+  return "<span title='Enviado' style='margin-left:5px;color:var(--pw-text-muted,#9aa0a6);display:inline-block;vertical-align:-2px'><svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M2 9s3.6 6 10 6 10-6 10-6'/><path d='M5 13l-1.4 2M19 13l1.4 2M9.2 15.2l-.6 2.2M14.8 15.2l.6 2.2'/></svg></span>";
+}
+// "Visto" del lado del coach: al abrir la conversación, marca los mensajes del
+// cliente como leídos (r:1) y lo persiste merge-safe (re-lee, marca, PATCH con
+// coach-guard vía _sbw). Refresca CLIENTS[].chat para que el cliente vea el ojito.
+function _coachMarkClientRead(threadId){
+  if(!threadId||threadId==="mica") return;
+  try{
+    _sb("candidatos?id=eq."+encodeURIComponent(threadId)+"&select=notas_coach").then(function(rows){
+      var arr=_chatArr(rows&&rows[0]?rows[0].notas_coach:"[]");
+      var changed=false;
+      arr.forEach(function(m){ if(m&&m.from==="cliente"&&!m.r){ m.r=1; changed=true; } });
+      if(!changed) return;
+      return _sbw("candidatos?id=eq."+encodeURIComponent(threadId),"PATCH",{notas_coach:JSON.stringify(arr)}).then(function(r){
+        if(r&&r.ok){ CLIENTS.forEach(function(x){ if(String(x.id)===String(threadId)){ x.chat=arr; if(x.raw) x.raw.notas_coach=JSON.stringify(arr); } }); }
+      });
+    }).catch(function(){});
+  }catch(e){}
+}
 function _coachClientBubbles(c){
   var fn = ((c.name||"Cliente")+"").split(" ")[0];
   var bubbles = (c.chat&&c.chat.length?c.chat:[]).map(function(m){
     var isCoach=(m&&m.from==="coach");
     var av=isCoach?_chatAv(COACH&&COACH.photo,(COACH&&COACH.name)):_chatAv(c.photo,c.name);
+    // "Visto": ojito ABIERTO = leído por el cliente, CERRADO = enviado. Solo en los propios del coach.
+    var tick=isCoach?_vistoEye(m&&m.r,"var(--pw-sendero)"):"";
     var col = "<div style='display:flex;flex-direction:column;align-items:"+(isCoach?"flex-end":"flex-start")+";gap:3px;max-width:85%'>"+
-      "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+(isCoach?esc((COACH&&COACH.firstName)||"Tú"):esc(fn))+(m&&m.time?" · "+esc(m.time):"")+"</div>"+
+      "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+(isCoach?esc((COACH&&COACH.firstName)||"Tú"):esc(fn))+(m&&m.time?" · "+esc(m.time):"")+tick+"</div>"+
       "<div style='background:"+(isCoach?"var(--pw-bosque);color:#fff":"var(--pw-niebla-2);color:var(--pw-carbon)")+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m&&m.text||"")+"</div>"+
     "</div>";
     return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+(isCoach?"flex-end":"flex-start")+";margin-bottom:10px'>"+(isCoach?(col+av):(av+col))+"</div>";
@@ -7254,6 +7278,10 @@ document.addEventListener("click", function(ev){
     state.msgDraft = "";
     state.chatPicker = false;
     render();
+    // "Visto": al abrir la conversación de un cliente, marcar sus mensajes como
+    // leídos (el cliente verá el ojito abierto en los suyos). "mica" es el hilo
+    // de soporte admin↔coach (mensajes_admin_coach), no aplica acá.
+    if(ckey!=="mica") _coachMarkClientRead(ckey);
     return;
   }
   if(act==="chat-newcli"){ state.chatPicker=true; render(); return; }

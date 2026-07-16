@@ -471,7 +471,7 @@ function go(s){
   }
   if(s==='progreso'){ if(typeof renderProgFotos==='function') renderProgFotos(); }
   if(s==='comunidad'){ if(typeof renderComunidadCli==='function') renderComunidadCli(); }
-  if(s==='chat'){ try{ _markChatSeen(); }catch(e){} }
+  if(s==='chat'){ try{ _markChatSeen(); }catch(e){} try{ setTimeout(_markCoachRead,300); }catch(e){} }
 }
 // ── Comunidad de la empresa (read-only para el cliente): revista + avisos + clases ──
 function _jparseC(v){ try{ return JSON.parse(v||'null'); }catch(e){ return null; } }
@@ -1547,18 +1547,36 @@ var MSGS=[], _pollT=null;
 // Se enmascaran datos de contacto (teléfono/email/links) antes de enviar.
 function _mask(t){ return (''+t).replace(/(\+?\d[\d\s\-().]{6,}\d)/g,'•••').replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g,'•••').replace(/\b(?:https?:\/\/|www\.)\S+/gi,'•••'); }
 function _mkey(m){ return (m&&m.from||'')+'|'+(m&&m.text||'')+'|'+(m&&(m.ts!=null?m.ts:(m.time||''))); }
-function _merge(a,b){ var out=[],seen={}; function add(arr){(arr||[]).forEach(function(m){ if(!m) return; var k=_mkey(m); if(seen[k]) return; seen[k]=true; out.push(m); });} add(a); add(b); out.sort(function(x,y){ return((x&&x.ts)||0)-((y&&y.ts)||0); }); return out; }
+// Merge-safe: si el mismo mensaje viene de dos fuentes y una lo marca leído
+// (r:1), gana el "leído" (OR) → el "visto" sobrevive al merge.
+function _merge(a,b){ var out=[],seen={}; function add(arr){(arr||[]).forEach(function(m){ if(!m) return; var k=_mkey(m); if(seen[k]!=null){ if(m.r) out[seen[k]].r=1; return; } seen[k]=out.length; out.push(m); });} add(a); add(b); out.sort(function(x,y){ return((x&&x.ts)||0)-((y&&y.ts)||0); }); return out; }
+function _readSig(arr){ return (arr||[]).filter(function(m){return m&&m.r;}).map(_mkey).join(','); }
+// "Visto": ojito ABIERTO = leído por el coach, CERRADO = enviado (sin leer).
+function _vistoEye(read,col){
+  if(read) return "<span title='Visto' style='margin-left:5px;color:"+(col||'currentColor')+";display:inline-block;vertical-align:-2px'><svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z'/><circle cx='12' cy='12' r='2.6'/></svg></span>";
+  return "<span title='Enviado' style='margin-left:5px;color:var(--muted,#9aa0a6);display:inline-block;vertical-align:-2px'><svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M2 9s3.6 6 10 6 10-6 10-6'/><path d='M5 13l-1.4 2M19 13l1.4 2M9.2 15.2l-.6 2.2M14.8 15.2l.6 2.2'/></svg></span>";
+}
 function renderMsgs(){
   var box=document.getElementById('pmsgs'); if(!box) return;
   if(!MSGS.length){ box.innerHTML='<div style="text-align:center;padding:18px;font-size:12px;color:var(--muted)">Sin mensajes aún. Escribe para empezar.</div>'; return; }
-  box.innerHTML=MSGS.map(function(m){ var coach=m.from==='coach'; return '<div class="pmsg '+(coach?'them':'me')+'">'+esc(m.text||'')+'<div class="t">'+esc(m.time||'')+'</div></div>'; }).join('');
+  box.innerHTML=MSGS.map(function(m){ var coach=m.from==='coach'; var tick=coach?'':_vistoEye(m.r,'var(--brand)'); return '<div class="pmsg '+(coach?'them':'me')+'">'+esc(m.text||'')+'<div class="t">'+esc(m.time||'')+tick+'</div></div>'; }).join('');
   box.scrollTop=box.scrollHeight;
+}
+// "Visto": marca los mensajes del coach como leídos y lo persiste merge-safe.
+function _markCoachRead(){
+  var changed=false; (MSGS||[]).forEach(function(m){ if(m&&m.from==='coach'&&!m.r){ m.r=1; changed=true; } });
+  if(!changed) return; renderMsgs();
+  if(!CID) return;
+  sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){
+    var db=[]; if(rows&&rows.length){ try{ var p=JSON.parse(rows[0].notas_coach||'[]'); if(Array.isArray(p)) db=p; }catch(e){} }
+    var merged=_merge(db,MSGS); return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(){ MSGS=merged; });
+  }).catch(function(){});
 }
 function loadMsgs(){
   if(!CID) return;
   sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){
     if(!rows||!rows.length) return; var arr=[]; try{ arr=JSON.parse(rows[0].notas_coach||'[]'); }catch(e){} if(!Array.isArray(arr)) arr=[];
-    var merged=_merge(MSGS,arr); if(merged.length!==MSGS.length){ MSGS=merged; renderMsgs(); try{ renderNotifs(); }catch(e){} }
+    var merged=_merge(MSGS,arr); if(merged.length!==MSGS.length || _readSig(merged)!==_readSig(MSGS)){ MSGS=merged; renderMsgs(); try{ renderNotifs(); }catch(e){} var _onChat=(document.getElementById('s-chat')||{}).classList; if(_onChat&&_onChat.contains('on')) setTimeout(_markCoachRead,200); }
   }).catch(function(){});
 }
 function startMsgPoll(){ if(_pollT||!CID) return; _pollT=setInterval(function(){ if(document.visibilityState==='visible') loadMsgs(); },30000); }
