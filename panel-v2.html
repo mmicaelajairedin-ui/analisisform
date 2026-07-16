@@ -2080,7 +2080,12 @@ function viewDashboard(){
   // ── Avance de clientes (análisis: si van cumpliendo objetivos) ──
   var cliActive=CLIENTS.filter(function(c){return c&&!c._example&&!(c.raw&&c.raw.activo===false);});
   var anaRows=cliActive.length?cliActive.slice(0,6).map(function(c){
-    var objs=[!!(c.raw),c.reportState==="published",c.cvState==="published",!!(c.raw&&c.raw.carta_presentacion)];
+    // Objetivos por NICHO: carrera mide CV/carta/informe; fitness/finanzas usan
+    // hitos genéricos (formulario, diagnóstico, sesión agendada, semana 2+).
+    var _nq=(c.raw&&c.raw.nicho)||"carrera";
+    var objs=(_nq==="carrera")
+      ? [!!(c.raw),c.reportState==="published",c.cvState==="published",!!(c.raw&&c.raw.carta_presentacion)]
+      : [!!(c.raw),c.reportState==="published",!!(c.ses&&c.ses.length),(c.week||1)>=2];
     var doneN=objs.filter(Boolean).length; var p=Math.round(doneN/objs.length*100);
     var hl=c.last&&c.last.state==="stale"?{t:"Sin actividad",col:"var(--pw-danger)"}:(c.last&&c.last.state==="mid"?{t:"En seguimiento",col:"#8E7A35"}:{t:"Al día",col:"var(--pw-bosque)"});
     return "<div class='cp-todo-row' data-act='cli-open:"+esc(c.id)+"' style='cursor:pointer;flex-direction:column;align-items:stretch;gap:8px'><div style='display:flex;align-items:center;gap:10px'><img src='"+esc(c.photo)+"' style='width:34px;height:34px;border-radius:50%;object-fit:cover'><div style='flex:1'><div class='cp-todo-head'>"+esc(c.name)+"</div><div class='cp-todo-meta'>Semana "+c.week+"/4 · "+doneN+"/4 objetivos</div></div><span style='font-size:11px;font-weight:600;color:"+hl.col+"'>"+hl.t+"</span></div><div style='height:7px;border-radius:99px;background:var(--pw-niebla-2);overflow:hidden'><span style='display:block;height:100%;width:"+p+"%;background:linear-gradient(90deg,var(--pw-sendero),var(--pw-bosque))'></span></div></div>";
@@ -2099,7 +2104,7 @@ function viewDashboard(){
   return goalCard+anaCard;
 }
 function viewResumen(){
-  var greet = "Buenos días";
+  var greet=(function(){var h=new Date().getHours();return h<12?"Buenos días":(h<20?"Buenas tardes":"Buenas noches");})();
   var pendingReview = CLIENTS.filter(function(c){return c.reportState==="pending";}).length;
   var stale = CLIENTS.filter(function(c){return c.last.state==="stale";});
   function _score(c){ return (c.last&&c.last.state==="stale"?3:0)+(c.reportState==="pending"?2:0)+(c.cvState==="pending"?1:0); }
@@ -2172,6 +2177,25 @@ function viewResumen(){
       "<div>"+cliRows+"</div></div>";
   }
   var pathCard = coachPath(); // sendero gamificado de la cabra (vacío si ya completó los 3)
+  // ── Mi negocio: resumen real de la práctica del coach ──
+  var negocioCard = (function(){
+    if(!(CLIENTS && CLIENTS.length)) return "";
+    var reales=CLIENTS.filter(function(c){return c&&!c._example;});
+    var activos=reales.filter(function(c){return !(c.raw&&c.raw.activo===false);}).length;
+    var inact=reales.filter(function(c){return c.raw&&c.raw.activo===false;}).length;
+    var _mN=new Date(), _mKey=_mN.getFullYear()+"-"+_mN.getMonth();
+    var nuevos=reales.filter(function(c){ var ca=c.raw&&c.raw.created_at; if(!ca)return false; var d=new Date(ca); return !isNaN(d.getTime())&&(d.getFullYear()+"-"+d.getMonth())===_mKey; }).length;
+    var _n2=Date.now(), prox=0;
+    reales.forEach(function(c){ if(c.raw&&c.raw.activo===false)return; (c.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var t=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")).getTime(); if(!isNaN(t)&&t>=_n2)prox++; }); });
+    function _tile(n,lbl,emo){ return "<div style='background:var(--pw-niebla-2);border-radius:12px;padding:14px 16px'><div style='display:flex;align-items:center;gap:6px'><span class='cp-emo' style='font-size:14px'>"+emo+"</span><span style='font-family:var(--pw-serif);font-size:26px;font-weight:600;color:var(--pw-carbon);line-height:1'>"+n+"</span></div><div style='font-size:11.5px;color:var(--pw-text-soft);font-weight:500;margin-top:4px'>"+lbl+"</div></div>"; }
+    return "<div class='cp-card' style='margin-bottom:16px'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📊</span> Mi negocio<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver clientes</button></div>"+
+      "<div class='cp-card-pad' style='display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px'>"+
+        _tile(activos,"Clientes activos","🟢")+
+        _tile(nuevos,"Nuevos este mes","✨")+
+        _tile(prox,"Próximas sesiones","📅")+
+        _tile(inact,"Inactivos","💤")+
+      "</div></div>";
+  })();
   // Agenda nativa para TODOS los coaches: lista de Google (iCal) + mes + Reservas
   // del link interno. Reemplaza el viejo embed de Calendly (calCard, ya sin uso).
   var _agTop = _agendaCard();  // Reservas ahora va dentro de _agendaCard (col 3)
@@ -2179,6 +2203,7 @@ function viewResumen(){
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+"<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>"+pendingReview+" pendiente"+(pendingReview===1?"":"s")+(_nx?" · "+_nxTxt:"")+"</div></div></div>"+
     pathCard+(pathCard?"":emptyState)+
+    negocioCard+
     _agTop+
     "<div class='cp-res-grid'>"+viewDashboard()+cliBlock+"</div>";
 }
