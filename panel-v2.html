@@ -5493,7 +5493,9 @@ function _sendCoachAccessEmail(email, nombre, isNew){
       "<p style='margin:22px 0'><a href='"+loginUrl+"' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a mi panel →</a></p>"+
       "<p style='font-size:14px'>Entra con tu email y tu contraseña de siempre.</p>";
   }
-  return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:subject,html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){});
+  // Devuelve Promise<boolean>: true si el email salió (para que el panel pueda
+  // confirmarlo o avisar que hay que reenviarlo a mano). Nunca rechaza.
+  return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:subject,html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).then(function(r){ return !!(r&&r.ok); }).catch(function(){ return false; });
 }
 // Email de alta para un EMPLEADO (equipo comercial). NO pasa por registro.html
 // (eso convierte en coach): usa su página de activación propia, que fija la
@@ -7427,6 +7429,18 @@ document.addEventListener("click", function(ev){
     var setMsg=function(t,kind){ state.coachMsg=(kind||"…")+":"+t; render(); };
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(caEmail)){ setMsg("Email inválido.","err"); return; }
     setMsg("Procesando…","…");
+    // Watchdog anti-cuelgue: si la red se cae o el token queda trabado, el cartel
+    // NO puede quedar en "Procesando…" para siempre (era el sintoma reportado).
+    // A los 25s, si nada confirmo, avisamos que reintente. _caEnd cierra el flujo
+    // una sola vez (gana quien llega primero: el resultado real o el watchdog).
+    var _caLock=false;
+    var _caTimer=setTimeout(function(){ if(_caLock)return; _caLock=true; setMsg("Tardó demasiado y no se confirmó (revisá tu conexión). Reintentá.","err"); },25000);
+    var _caEnd=function(t,kind){ if(_caLock)return; _caLock=true; clearTimeout(_caTimer); setMsg(t,kind); };
+    // Escritura con 1 reintento SOLO ante fallo de red (fetch rechaza). Un error
+    // real del server (4xx/5xx) resuelve con !ok y pasa derecho al manejo de abajo,
+    // no se reintenta. Un POST duplicado reintentado choca con el UNIQUE de email
+    // y devuelve 409, que tratamos como "ya existe" (no rompe).
+    var _caWrite=function(p,method,body){ return _sbw(p,method,body).catch(function(){ return _sbw(p,method,body); }); };
     _sb("usuarios?email=eq."+encodeURIComponent(caEmail)+"&select=id,rol,configuracion,nombre").then(function(rows){
       var coachRow=null,anyRow=null;
       (rows||[]).forEach(function(u){ if(!anyRow)anyRow=u; if((u.rol==="coach"||u.rol==="admin")&&!coachRow)coachRow=u; });
@@ -7436,15 +7450,29 @@ document.addEventListener("click", function(ev){
         if(isNaN(base.getTime())||base.getTime()<Date.now()) base=new Date();
         base.setDate(base.getDate()+caDias);
         var nc=Object.assign({},cf,{plan:cf.plan||"pro",estado_sub:"prueba",fecha_fin_prueba:base.toISOString(),coach_type:caNicho,ultima_extension_admin:new Date().toISOString()});
-        return _sbw("usuarios?id=eq."+encodeURIComponent(coachRow.id),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Acceso +"+caDias+"d a "+caEmail+" ✓"); _sendCoachAccessEmail(caEmail, coachRow.nombre||"", false); setMsg("✓ "+caEmail+" tiene acceso hasta "+base.toLocaleDateString("es-ES")+" · email enviado","ok"); reloadCoaches(); });
+        return _caWrite("usuarios?id=eq."+encodeURIComponent(coachRow.id),"PATCH",{configuracion:nc,activo:true}).then(function(r){
+          if(!r||!r.ok) throw new Error("no se pudo guardar (código "+((r&&r.status)||"sin respuesta")+")");
+          reloadCoaches();
+          return _sendCoachAccessEmail(caEmail, coachRow.nombre||caNombre, false).then(function(sent){
+            _caEnd(sent?("✓ "+caEmail+" tiene acceso hasta "+base.toLocaleDateString("es-ES")+" · email enviado ✉️"):("✓ Acceso extendido hasta "+base.toLocaleDateString("es-ES")+", PERO el email no salió — reenviale el login a mano."),sent?"ok":"err");
+          });
+        });
       }
-      if(anyRow){ setMsg('Ese email ya lo usa un usuario "'+(anyRow.rol||"?")+'", no un coach.',"err"); return; }
+      if(anyRow){ _caEnd('Ese email ya lo usa un usuario "'+(anyRow.rol||"?")+'", no un coach.',"err"); return; }
       // Coach nuevo: lo creamos SIN contraseña (el coach la elige al activar) y
       // le mandamos un mail para activar su cuenta en registro.html.
-      if(!caNombre){ setMsg("Pon el nombre del coach.","err"); return; }
+      if(!caNombre){ _caEnd("Pon el nombre del coach.","err"); return; }
       var trialEnd=new Date(Date.now()+caDias*86400000).toISOString();
-      return _sbw("usuarios","POST",{email:caEmail,nombre:caNombre,rol:"coach",activo:true,configuracion:{plan:"pro",estado_sub:"prueba",fecha_fin_prueba:trialEnd,coach_type:caNicho,creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){ if(!r.ok) throw 0; toast("Coach creado ✓"); _sendCoachAccessEmail(caEmail, caNombre, true); setMsg("✓ Coach creado. Le enviamos un email para activar su cuenta y elegir su contraseña.","ok"); reloadCoaches(); });
-    }).catch(function(){ setMsg("Error de conexión, o el email ya existe.","err"); });
+      return _caWrite("usuarios","POST",{email:caEmail,nombre:caNombre,rol:"coach",activo:true,configuracion:{plan:"pro",estado_sub:"prueba",fecha_fin_prueba:trialEnd,coach_type:caNicho,creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){
+        // 201 Created = ok. 409 = ya existía por email (intento previo que sí entró)
+        // → seguimos al email igual, así SIEMPRE le llega el link de activación.
+        if(!r||(!r.ok && r.status!==409)) throw new Error("no se pudo crear (código "+((r&&r.status)||"sin respuesta")+")");
+        reloadCoaches();
+        return _sendCoachAccessEmail(caEmail, caNombre, true).then(function(sent){
+          _caEnd(sent?("✓ Coach creado. Le enviamos el email para activar su cuenta y elegir contraseña."):("✓ Coach creado, PERO el email no salió. Enviale este link a mano: pathwaycareercoach.com/registro.html?email="+caEmail),sent?"ok":"err");
+        });
+      });
+    }).catch(function(e){ _caEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintentá.","err"); });
     return;
   }
   if(act==="empleado-crear"){
