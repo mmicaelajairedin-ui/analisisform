@@ -205,6 +205,23 @@ details.logros-c[open]>summary .lg-caret{transform:rotate(180deg);}
 .cal-d.ses-day{background:var(--brand-light);color:var(--brand);font-weight:600;border:1.5px solid var(--brand);}
 .cal-d.prev{color:#ddd;}
 ._calday:hover{filter:brightness(.95);}
+/* Calendario del mes — mismo diseño .pwcal-* que fitness/finanzas/coach (con el tema de carrera) */
+.pwcal-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.pwcal-h b{font-size:14px;font-weight:700;color:var(--brand);}
+.pwcal-nav{display:flex;gap:6px;}
+.pwcal-nav button{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--border);background:#fff;color:var(--text2);font-size:15px;cursor:pointer;line-height:1;}
+.pwcal-nav button:disabled{opacity:.4;cursor:default;}
+.pwcal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;}
+.pwcal-dow span{text-align:center;font-size:9px;font-weight:700;color:var(--muted);}
+.pwcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.pwcal-cell{position:relative;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--text2);background:var(--brand-light,#F7F2F3);}
+.pwcal-cell.empty{background:none;}
+.pwcal-cell.fut{color:#cbc4c6;}
+.pwcal-cell.today{outline:1.5px solid var(--brand);color:var(--brand);}
+.pwcal-cell.meas{background:var(--brand-light);box-shadow:inset 0 0 0 1px var(--brand);color:var(--brand);}
+.pwcal-mtag{position:absolute;top:3px;right:4px;font-size:8px;color:var(--brand);}
+.pwcal-legend{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;font-size:10.5px;color:var(--text2);margin-top:10px;}
+.pwcal-legend .sq{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--brand-light);box-shadow:inset 0 0 0 1px var(--brand);vertical-align:-1px;margin-right:3px;}
 
 .ses-col{padding:18px 16px;display:flex;flex-direction:column;}
 .ses-coach{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);}
@@ -2754,6 +2771,37 @@ function rCalendlyCard(){
   return o;
 }
 
+// Calendario del mes — mismo diseño .pwcal-* que fitness/finanzas/coach.
+// Días marcados = sesiones registradas por el coach (sesiones_registro) +
+// próxima cita reservada por el link. Datos REALES del cliente.
+function rCliCalCard(){
+  var o='<div class="card" style="margin-bottom:14px;"><div class="card-body">';
+  o+='<div class="pwcal-h"><b id="cliCalTitle">—</b><div class="pwcal-nav"><button type="button" onclick="cliCalNav(-1)" aria-label="Mes anterior">‹</button><button type="button" id="cliCalNext" onclick="cliCalNav(1)" aria-label="Mes siguiente">›</button></div></div>';
+  o+='<div class="pwcal-dow"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>';
+  o+='<div class="pwcal-grid" id="cliCalGrid"></div>';
+  o+='<div class="pwcal-legend"><span><span class="sq"></span>Sesión con tu coach</span></div>';
+  o+='</div></div>';
+  return o;
+}
+var CLICAL_Y=null, CLICAL_M=null;
+function _cymd(f){ if(!f)return""; var s=""+f; if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10); var d=new Date(s); return isNaN(d.getTime())?"":d.toISOString().slice(0,10); }
+function renderCliCal(){
+  var grid=document.getElementById('cliCalGrid'); if(!grid) return;
+  var now=new Date();
+  if(CLICAL_Y==null){ CLICAL_Y=now.getFullYear(); CLICAL_M=now.getMonth(); }
+  var y=CLICAL_Y, m=CLICAL_M, meas={};
+  try{ (JSON.parse((C&&C.sesiones_registro)||'[]')||[]).forEach(function(s){ var k=_cymd(s&&s.fecha); if(k)meas[k]=1; }); }catch(e){}
+  if(_CITA_NEXT){ var kk=_cymd(_CITA_NEXT); if(kk)meas[kk]=1; }
+  var MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][m];
+  var t=document.getElementById('cliCalTitle'); if(t)t.textContent=MES+' '+y;
+  var startDow=(new Date(y,m,1).getDay()+6)%7, nd=new Date(y,m+1,0).getDate(), todayK=_cymd(now), cells="";
+  for(var i=0;i<startDow;i++) cells+="<div class='pwcal-cell empty'></div>";
+  for(var d=1;d<=nd;d++){ var key=y+'-'+('0'+(m+1)).slice(-2)+'-'+('0'+d).slice(-2); var fut=key>todayK; var cls='pwcal-cell'+(meas[key]?' meas':'')+(key===todayK?' today':'')+(fut?' fut':''); cells+="<div class='"+cls+"'>"+(meas[key]?"<span class='pwcal-mtag'>●</span>":"")+d+"</div>"; }
+  grid.innerHTML=cells;
+  var nx=document.getElementById('cliCalNext'); if(nx){ nx.disabled=(y===now.getFullYear()&&m===now.getMonth()); }
+}
+function cliCalNav(delta){ var now=new Date(); if(CLICAL_Y==null){CLICAL_Y=now.getFullYear();CLICAL_M=now.getMonth();} CLICAL_M+=delta; if(CLICAL_M<0){CLICAL_M=11;CLICAL_Y--;} if(CLICAL_M>11){CLICAL_M=0;CLICAL_Y++;} if(CLICAL_Y>now.getFullYear()||(CLICAL_Y===now.getFullYear()&&CLICAL_M>now.getMonth())){CLICAL_Y=now.getFullYear();CLICAL_M=now.getMonth();} renderCliCal(); }
+
 function marcarSesionAgendada(){
   var k='mj_sesion_clicked_'+E;
   var first=!localStorage.getItem(k);
@@ -2916,6 +2964,7 @@ function render(sec){
   if(sec==='empleos'&&!st.canEmpleos){el.innerHTML=_blockedScreen('empleos');_updateNavLocks();return;}
   // Pasa el gate — render normal
   _renderMain(sec);
+  if(sec==='semana'){ try{ renderCliCal(); }catch(e){} }
   _updateNavLocks();
   // El nombre del coach demo ("Micaela") queda hardcodeado en strings que se
   // generan acá (logros, feed, sesión) DESPUÉS del brandeo, así que no los toca
@@ -3520,6 +3569,7 @@ function rSemana(){
   o+=rAchievementsCard();
   o+=rMotivCard();
   o+=rCalendlyCard();
+  o+=rCliCalCard();
   // Mi diagnóstico — chico, en la columna derecha
   o+='<div class="card"><div class="card-hd"><div><div class="card-lbl">'+t('your_diagnosis')+'</div><div class="card-title">'+t('current_situation')+'</div></div></div><div class="card-body">';
   if(D&&D.scores&&D.scores.length){

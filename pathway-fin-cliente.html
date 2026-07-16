@@ -190,6 +190,14 @@
             </div>
 
             <div class="card"><div class="card-body">
+              <span class="eyebrow">Tu mes</span>
+              <div class="pwcal-h"><b id="finCalTitle">—</b><div class="pwcal-nav"><button type="button" onclick="finCalNav(-1)" aria-label="Mes anterior">‹</button><button type="button" id="finCalNext" onclick="finCalNav(1)" aria-label="Mes siguiente">›</button></div></div>
+              <div class="pwcal-dow"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+              <div class="pwcal-grid" id="finCalGrid"></div>
+              <div class="pwcal-legend"><span><span class="sq"></span>Sesión con tu coach</span></div>
+            </div></div>
+
+            <div class="card"><div class="card-body">
               <span class="eyebrow">Mi diagnóstico · Situación actual</span>
               <div style="margin-top:12px;">
                 <div class="diag-row"><div class="diag-top"><b>Salud financiera</b><span class="v">68%</span></div><div class="diag-bar"><i style="width:68%"></i></div></div>
@@ -405,8 +413,29 @@ function _loadNextCita(){
     .then(function(rows){ var c=rows&&rows[0]; if(c&&c.inicio){ _CITA_NEXT=c.inicio; try{ if(typeof CRAW!=='undefined'&&CRAW) renderSesiones(CRAW); }catch(e){} } })
     .catch(function(){});
 }
+/* Calendario del mes — mismo diseño .pwcal-* que fitness y el coach. Días con
+   sesión (sesiones_registro) o próxima cita resaltados. */
+var FINCAL_Y=null, FINCAL_M=null;
+function _fymd(f){ if(!f)return""; var s=""+f; if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10); var d=new Date(s); return isNaN(d.getTime())?"":d.toISOString().slice(0,10); }
+function renderFinCal(){
+  var grid=document.getElementById('finCalGrid'); if(!grid) return;
+  var now=new Date();
+  if(FINCAL_Y==null){ FINCAL_Y=now.getFullYear(); FINCAL_M=now.getMonth(); }
+  var y=FINCAL_Y, m=FINCAL_M, meas={};
+  try{ (JSON.parse((typeof CRAW!=='undefined'&&CRAW&&CRAW.sesiones_registro)||'[]')||[]).forEach(function(s){ var k=_fymd(s&&s.fecha); if(k)meas[k]=1; }); }catch(e){}
+  if(_CITA_NEXT){ var kk=_fymd(_CITA_NEXT); if(kk)meas[kk]=1; }
+  var MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][m];
+  var t=document.getElementById('finCalTitle'); if(t)t.textContent=MES+' '+y;
+  var startDow=(new Date(y,m,1).getDay()+6)%7, nd=new Date(y,m+1,0).getDate(), todayK=_fymd(now), cells="";
+  for(var i=0;i<startDow;i++) cells+="<div class='pwcal-cell empty'></div>";
+  for(var d=1;d<=nd;d++){ var key=y+'-'+('0'+(m+1)).slice(-2)+'-'+('0'+d).slice(-2); var fut=key>todayK; var cls='pwcal-cell'+(meas[key]?' meas':'')+(key===todayK?' today':'')+(fut?' fut':''); cells+="<div class='"+cls+"'>"+(meas[key]?"<span class='pwcal-mtag'>●</span>":"")+d+"</div>"; }
+  grid.innerHTML=cells;
+  var nx=document.getElementById('finCalNext'); if(nx){ nx.disabled=(y===now.getFullYear()&&m===now.getMonth()); }
+}
+function finCalNav(delta){ var now=new Date(); if(FINCAL_Y==null){FINCAL_Y=now.getFullYear();FINCAL_M=now.getMonth();} FINCAL_M+=delta; if(FINCAL_M<0){FINCAL_M=11;FINCAL_Y--;} if(FINCAL_M>11){FINCAL_M=0;FINCAL_Y++;} if(FINCAL_Y>now.getFullYear()||(FINCAL_Y===now.getFullYear()&&FINCAL_M>now.getMonth())){FINCAL_Y=now.getFullYear();FINCAL_M=now.getMonth();} renderFinCal(); }
 function renderSesiones(c){
   if(!_citaTried){ _citaTried=true; try{ _loadNextCita(); }catch(e){} }
+  try{ renderFinCal(); }catch(e){}
   var arr=[]; try{ arr=JSON.parse((c&&c.sesiones_registro)||'[]')||[]; }catch(e){}
   // Hero: próxima sesión futura
   var hero=document.getElementById('ses-hero');
