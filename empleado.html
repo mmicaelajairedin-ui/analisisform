@@ -1238,6 +1238,28 @@
       "<p style='font-size:13px;color:#777'>Usá este mismo email ("+esc(email)+") al activar.</p>";
     return fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:"Activa tu cuenta de Pathway",html:html,reply_to:(WHO&&WHO.email)||(ME&&ME.email)||"hi@pathwaycareercoach.com",signature:"pathway"})}).then(function(r){ return !!(r&&r.ok); }).catch(function(){ return false; });
   }
+  // Registra el alta en las MÉTRICAS del equipo: crea (o actualiza) un lead en
+  // estado 'alta' atribuido a este empleado. Así el coach dado de alta cuenta en
+  // su embudo/comisión y en el funnel del admin, y "En prueba"/"Pagaron" se
+  // auto-detectan cruzando el email con el estado de la cuenta. Best-effort: si
+  // falla, NO rompe el alta (el coach ya quedó creado).
+  function _ecRegisterLead(email,nombre,nicho){
+    if(!sb||!email) return Promise.resolve();
+    var nichoLead=(nicho==='financiero')?'finanzas':(nicho||'sin');
+    var eid=(WHO&&WHO.id)||(ME&&ME.id);
+    var now=new Date().toISOString();
+    return sb.from('leads').select('id').eq('empleado_id',eid).ilike('email',email).limit(1).then(function(res){
+      var found=res&&res.data&&res.data[0];
+      if(found){
+        var upd={estado:'alta',alta_at:now,nicho:nichoLead};
+        return sb.from('leads').update(upd).eq('id',found.id).then(function(){
+          if(typeof LEADS!=='undefined'&&LEADS){ var l=LEADS.filter(function(x){return x.id===found.id;})[0]; if(l) Object.assign(l,upd); }
+        });
+      }
+      var row={empleado_id:eid,nombre:nombre||email,email:email,nicho:nichoLead,estado:'alta',alta_at:now};
+      return sb.from('leads').insert(row).select().single().then(function(r){ if(r&&r.data&&typeof LEADS!=='undefined'&&LEADS){ LEADS.unshift(r.data); } });
+    }).catch(function(){});
+  }
   function empDarAcceso(){
     var email=((document.getElementById('ec-email')||{}).value||'').trim().toLowerCase();
     var nombre=((document.getElementById('ec-nombre')||{}).value||'').trim();
@@ -1264,8 +1286,9 @@
         return doPost().catch(function(){ return doPost(); }).then(function(r){
           // 201 = ok. 409 = ya existía por email → seguimos al email igual.
           if(!r||(!r.ok && r.status!==409)) throw new Error('no se pudo crear (código '+((r&&r.status)||'sin respuesta')+')');
+          _ecRegisterLead(email,nombre,nicho);
           return _empSendCoachEmail(email,nombre).then(function(sent){
-            end(sent?('✓ Coach creado. Le enviamos el email para activar su cuenta.'):('✓ Coach creado, PERO el email no salió. Enviale este link a mano: pathwaycareercoach.com/registro.html?email='+email),sent?'ok':'err');
+            end(sent?('✓ Coach creado y sumado a tus métricas. Le enviamos el email para activar su cuenta.'):('✓ Coach creado (queda en tus métricas), PERO el email no salió. Enviale este link a mano: pathwaycareercoach.com/registro.html?email='+email),sent?'ok':'err');
             var e1=document.getElementById('ec-email'); if(e1)e1.value=''; var e2=document.getElementById('ec-nombre'); if(e2)e2.value='';
           });
         });
