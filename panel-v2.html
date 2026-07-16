@@ -2230,6 +2230,9 @@ function viewResumen(){
     var nuevosPrev=reales.filter(function(c){return _inMonth(c,_pmKey);}).length;
     var _n2=Date.now(), prox=0, sesMes=0;
     reales.forEach(function(c){ if(c.raw&&c.raw.activo===false)return; (c.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var d=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")); var t=d.getTime(); if(isNaN(t))return; if(t>=_n2)prox++; if((d.getFullYear()+"-"+d.getMonth())===_mKey)sesMes++; }); });
+    // + reservas del link (tabla citas) → el Resumen resume TODO el calendario, no
+    // solo lo cargado a mano. (Se ignoran las canceladas.)
+    try{ (typeof RCITAS!=="undefined"&&RCITAS?RCITAS:[]).forEach(function(ct){ if(!ct||!ct.inicio)return; if((""+(ct.estado||"")).toLowerCase()==="cancelada")return; var d=new Date(ct.inicio); var t=d.getTime(); if(isNaN(t))return; if(t>=_n2)prox++; if((d.getFullYear()+"-"+d.getMonth())===_mKey)sesMes++; }); }catch(e){}
     // Desglose Pathway vs directo (dato de "Clientes de Pathway")
     var _pw=reales.filter(function(c){return !(c.raw&&c.raw.activo===false) && c.source==="pathway";}).length;
     var _dir=activos-_pw;
@@ -8520,7 +8523,7 @@ function demoGenerateExample(){
     }
   },620);
 }
-var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[];
+var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[];
 
 // Perfil "empleado" (equipo comercial): rol genérico, sin lista de emails.
 // La sección "Emails" (plantillas de venta) la ven admin y empleados.
@@ -8738,7 +8741,11 @@ function loadReal(){
     extra[0], extra[1], extra[2], extra[3], extra[4],
     _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc"),
     (ME.rol==="admin" ? _sb("reviews?select=nombre,rating,texto,created_at&order=created_at.desc&limit=200") : Promise.resolve([])),
-    msgQ
+    msgQ,
+    // Reservas del link (tabla citas) desde el inicio del mes → el Resumen suma
+    // estas sesiones junto a las cargadas a mano (sesiones_registro). Fuente única
+    // de sesiones = Calendario. Falla suave: si la tabla no existe, queda [].
+    _sb("citas?coach_id=eq."+encodeURIComponent(ME.id)+"&inicio=gte."+encodeURIComponent((function(){var d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.toISOString();})())+"&select=inicio,estado&order=inicio.asc").catch(function(){return [];})
   ]).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
     RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
@@ -8759,6 +8766,7 @@ function loadReal(){
     RADM = (ME.rol==="admin") ? { cands:_adminCands, cvx:res[7]||[], leads:[], resenas:res[10]||[], informes:res[8]||[] } : null;
     RSOL = res[9]||[];
     RMSG = res[11]||[];
+    RCITAS = res[12]||[];
     // Empleados: para separar sus hilos de chat de los de coaches en la bandeja.
     if(ME.rol==="admin" && REMPLE===null) reloadEmpleados();
     // Una vez cargados los mensajes iniciales, arrancar el polling. La
