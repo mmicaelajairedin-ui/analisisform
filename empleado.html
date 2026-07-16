@@ -259,6 +259,17 @@
   <div class="main">
     <div class="top">
       <div><div class="h1" id="ptitle">Resumen</div><div class="sub" id="psub">Tu calendario del mes, tus próximas reservas y tu disponibilidad.</div></div>
+      <div style="display:flex;align-items:center;gap:12px">
+      <div class="emp-notif" id="emp-notif" style="position:relative">
+        <button class="emp-bell" id="emp-bell" onclick="empNotif(event)" aria-label="Notificaciones" title="Notificaciones" style="width:40px;height:40px;border-radius:50%;border:1.5px solid var(--line,#e6e8ea);background:#fff;color:var(--muted,#6b7280);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;position:relative">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span id="emp-bell-badge" style="display:none;position:absolute;top:-3px;right:-3px;background:#d1495b;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;border:2px solid #fff">0</span>
+        </button>
+        <div class="emp-notif-dd" id="emp-notif-dd" style="display:none;position:absolute;top:48px;right:0;width:290px;max-width:86vw;background:#fff;border:1.5px solid var(--line,#e6e8ea);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.14);z-index:260;overflow:hidden">
+          <div style="padding:11px 15px;border-bottom:1px solid var(--line,#eee);font-size:13px;font-weight:700;color:#1f2937">Notificaciones</div>
+          <div id="emp-notif-list" style="max-height:320px;overflow-y:auto;padding:6px"></div>
+        </div>
+      </div>
       <div class="emp-menu" id="emp-menu" style="position:relative">
         <button class="emp-mbtn" id="emp-mbtn" onclick="empUserMenu(event)" aria-label="Menú de cuenta" aria-haspopup="true">
           <span class="emp-mbtn-tx"><b id="emp-btn-name">—</b><small>Team Pathway</small></span>
@@ -271,6 +282,7 @@
           </div>
           <div class="emp-mfoot"><button class="emp-mitem emp-mout" onclick="cerrarSesion()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Cerrar sesión</button></div>
         </div>
+      </div>
       </div>
     </div>
 
@@ -524,6 +536,7 @@
     await loadLeads(); _loaded.leads=true;
     loadPaidCoaches();
     loadTrialCoaches();
+    try{ empRenderNotifs(); }catch(e){}
   }
 
   // Tabs
@@ -933,7 +946,7 @@
       var r=await sb.from('citas').select('id,nombre,email,tipo,inicio,estado').eq('coach_id',WHO.id).gte('inicio',from).order('inicio',{ascending:true});
       if(!r.error) RESALL=r.data||[];
     }catch(e){}
-    renderCal(); renderAgBody();
+    renderCal(); renderAgBody(); try{ empRenderNotifs(); }catch(e){}
     await _agLoadGoogle();
   }
 
@@ -1069,7 +1082,7 @@
       var q=sb.from('leads').select('*'); if(WHO&&WHO.id) q=q.eq('empleado_id',WHO.id);
       var r=await q.order('created_at',{ascending:false});
       if(r.error) throw r.error;
-      LEADS=r.data||[]; render();
+      LEADS=r.data||[]; render(); try{ empRenderNotifs(); }catch(e){}
     }catch(e){
       document.getElementById('rows').innerHTML="";
       var em=document.getElementById('empty'); em.style.display="block";
@@ -1431,6 +1444,39 @@
   function empUserMenu(e){ if(e){ e.stopPropagation(); } var m=document.getElementById('emp-menu'); if(m) m.classList.toggle('open'); }
   function empCloseMenu(){ var m=document.getElementById('emp-menu'); if(m) m.classList.remove('open'); }
   document.addEventListener('click',function(e){ var m=document.getElementById('emp-menu'); if(m && m.classList.contains('open') && !m.contains(e.target)) empCloseMenu(); });
+
+  // ── Notificaciones del equipo (datos REALES): leads nuevos sin contactar +
+  //    próximas reservas/demos. Mismo patrón unificado que los portales de cliente. ──
+  function _empNotifData(){
+    var out=[];
+    try{
+      var nuevos=(LEADS||[]).filter(function(l){ return l && (l.estado==='nuevo'||!l.estado); }).length;
+      if(nuevos>0) out.push({ico:'🌱',t:(nuevos===1?'1 lead nuevo':nuevos+' leads nuevos'),sub:'Sin contactar todavía',tab:'leads'});
+    }catch(e){}
+    try{
+      var now=Date.now(), prox=(typeof RESALL!=='undefined'&&RESALL)?RESALL.filter(function(r){ return r && r.estado!=='cancelada' && new Date(r.inicio).getTime()>=now; }):[];
+      if(prox.length>0){
+        var next=prox.slice().sort(function(a,b){ return new Date(a.inicio)-new Date(b.inicio); })[0];
+        var d=new Date(next.inicio);
+        var sub=d.toLocaleDateString('es-ES',{weekday:'short',day:'numeric',month:'short'})+' · '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+        out.push({ico:'📅',t:(prox.length===1?'1 reserva próxima':prox.length+' reservas próximas'),sub:sub,tab:'calendario'});
+      }
+    }catch(e){}
+    return out;
+  }
+  function empRenderNotifs(){
+    var data=_empNotifData();
+    var b=document.getElementById('emp-bell-badge');
+    if(b){ if(data.length>0){ b.textContent=(data.length>9?'9+':data.length); b.style.display='block'; } else b.style.display='none'; }
+    var list=document.getElementById('emp-notif-list');
+    if(list){
+      if(!data.length){ list.innerHTML='<div style="text-align:center;padding:22px 12px;font-size:12.5px;color:var(--muted,#6b7280)">Estás al día ✓</div>'; }
+      else list.innerHTML=data.map(function(it){ return '<button onclick="empNotifGo(\''+it.tab+'\')" style="display:flex;gap:10px;align-items:center;padding:10px;border-radius:10px;cursor:pointer;text-align:left;width:100%;border:none;background:#fff;font-family:inherit"><span style="width:32px;height:32px;border-radius:9px;background:#f1f4f2;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">'+it.ico+'</span><span style="flex:1;min-width:0"><b style="font-size:12.5px;font-weight:700;color:#1f2937;display:block">'+esc(it.t)+'</b><small style="font-size:11px;color:var(--muted,#6b7280)">'+esc(it.sub||'')+'</small></span></button>'; }).join('');
+    }
+  }
+  function empNotif(e){ if(e){ e.stopPropagation(); } var dd=document.getElementById('emp-notif-dd'); if(!dd) return; var open=dd.style.display==='block'; dd.style.display=open?'none':'block'; if(!open) empRenderNotifs(); }
+  function empNotifGo(tab){ var dd=document.getElementById('emp-notif-dd'); if(dd) dd.style.display='none'; if(typeof goTab==='function') goTab(tab); }
+  document.addEventListener('click',function(e){ var dd=document.getElementById('emp-notif-dd'); if(dd && dd.style.display==='block'){ var bell=document.getElementById('emp-notif'); if(bell && !bell.contains(e.target)) dd.style.display='none'; } });
 
   resolveWho();
 </script>
