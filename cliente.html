@@ -158,7 +158,9 @@ body{background:var(--bg);}
 .main-sub{font-size:14px;color:var(--text2);margin-top:3px;line-height:1.6;}
 
 /* CARD base */
-.card{background:var(--white);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;margin-bottom:20px;}
+.card{background:var(--white);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;margin-bottom:20px;transition:transform .18s cubic-bezier(.16,1,.3,1),box-shadow .18s;}
+.card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.09);}
+@media(prefers-reduced-motion:reduce){.card{transition:none;}.card:hover{transform:none;}}
 .card-hd{padding:16px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
 details.logros-c>summary.card-hd{cursor:pointer;list-style:none;gap:10px;}
 details.logros-c>summary.card-hd::-webkit-details-marker{display:none;}
@@ -205,6 +207,33 @@ details.logros-c[open]>summary .lg-caret{transform:rotate(180deg);}
 .cal-d.ses-day{background:var(--brand-light);color:var(--brand);font-weight:600;border:1.5px solid var(--brand);}
 .cal-d.prev{color:#ddd;}
 ._calday:hover{filter:brightness(.95);}
+/* "Te escriben": puntito rojo que late + halo suave para llamar la atención. */
+@keyframes pwAttn{0%,100%{transform:scale(1)}30%{transform:scale(1.35)}60%{transform:scale(.92)}}
+@keyframes pwHalo{0%{box-shadow:0 0 0 0 rgba(214,73,91,.55)}100%{box-shadow:0 0 0 10px rgba(214,73,91,0)}}
+.pw-attn{animation:pwAttn 1s ease-in-out 4,pwHalo 1.4s ease-out 3;}
+/* Micro-interacciones SaaS: apertura de dropdowns + entrada de mensajes del chat. */
+@keyframes pwDD{from{opacity:0;transform:translateY(-6px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes pwMsgIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+#msg-panel,#notif-panel{transform-origin:top right;animation:pwDD .18s cubic-bezier(.16,1,.3,1);}
+.pw-msgs-in > *{animation:pwMsgIn .34s cubic-bezier(.16,1,.3,1) both;}
+@media(prefers-reduced-motion:reduce){.pw-attn,.pw-msgs-in>*,#msg-panel,#notif-panel{animation:none!important}}
+/* Calendario del mes — mismo diseño .pwcal-* que fitness/finanzas/coach (con el tema de carrera) */
+.pwcal-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.pwcal-h b{font-size:14px;font-weight:700;color:var(--brand);}
+.pwcal-nav{display:flex;gap:6px;}
+.pwcal-nav button{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--border);background:#fff;color:var(--text2);font-size:15px;cursor:pointer;line-height:1;}
+.pwcal-nav button:disabled{opacity:.4;cursor:default;}
+.pwcal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;}
+.pwcal-dow span{text-align:center;font-size:9px;font-weight:700;color:var(--muted);}
+.pwcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.pwcal-cell{position:relative;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--text2);background:var(--brand-light,#F7F2F3);}
+.pwcal-cell.empty{background:none;}
+.pwcal-cell.fut{color:#cbc4c6;}
+.pwcal-cell.today{outline:1.5px solid var(--brand);color:var(--brand);}
+.pwcal-cell.meas{background:var(--brand-light);box-shadow:inset 0 0 0 1px var(--brand);color:var(--brand);}
+.pwcal-mtag{position:absolute;top:3px;right:4px;font-size:8px;color:var(--brand);}
+.pwcal-legend{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;font-size:10.5px;color:var(--text2);margin-top:10px;}
+.pwcal-legend .sq{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--brand-light);box-shadow:inset 0 0 0 1px var(--brand);vertical-align:-1px;margin-right:3px;}
 
 .ses-col{padding:18px 16px;display:flex;flex-direction:column;}
 .ses-coach{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);}
@@ -2754,6 +2783,37 @@ function rCalendlyCard(){
   return o;
 }
 
+// Calendario del mes — mismo diseño .pwcal-* que fitness/finanzas/coach.
+// Días marcados = sesiones registradas por el coach (sesiones_registro) +
+// próxima cita reservada por el link. Datos REALES del cliente.
+function rCliCalCard(){
+  var o='<div class="card" style="margin-bottom:14px;"><div class="card-body">';
+  o+='<div class="pwcal-h"><b id="cliCalTitle">—</b><div class="pwcal-nav"><button type="button" onclick="cliCalNav(-1)" aria-label="Mes anterior">‹</button><button type="button" id="cliCalNext" onclick="cliCalNav(1)" aria-label="Mes siguiente">›</button></div></div>';
+  o+='<div class="pwcal-dow"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>';
+  o+='<div class="pwcal-grid" id="cliCalGrid"></div>';
+  o+='<div class="pwcal-legend"><span><span class="sq"></span>Sesión con tu coach</span></div>';
+  o+='</div></div>';
+  return o;
+}
+var CLICAL_Y=null, CLICAL_M=null;
+function _cymd(f){ if(!f)return""; var s=""+f; if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10); var d=new Date(s); return isNaN(d.getTime())?"":d.toISOString().slice(0,10); }
+function renderCliCal(){
+  var grid=document.getElementById('cliCalGrid'); if(!grid) return;
+  var now=new Date();
+  if(CLICAL_Y==null){ CLICAL_Y=now.getFullYear(); CLICAL_M=now.getMonth(); }
+  var y=CLICAL_Y, m=CLICAL_M, meas={};
+  try{ (JSON.parse((C&&C.sesiones_registro)||'[]')||[]).forEach(function(s){ var k=_cymd(s&&s.fecha); if(k)meas[k]=1; }); }catch(e){}
+  if(_CITA_NEXT){ var kk=_cymd(_CITA_NEXT); if(kk)meas[kk]=1; }
+  var MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][m];
+  var t=document.getElementById('cliCalTitle'); if(t)t.textContent=MES+' '+y;
+  var startDow=(new Date(y,m,1).getDay()+6)%7, nd=new Date(y,m+1,0).getDate(), todayK=_cymd(now), cells="";
+  for(var i=0;i<startDow;i++) cells+="<div class='pwcal-cell empty'></div>";
+  for(var d=1;d<=nd;d++){ var key=y+'-'+('0'+(m+1)).slice(-2)+'-'+('0'+d).slice(-2); var fut=key>todayK; var cls='pwcal-cell'+(meas[key]?' meas':'')+(key===todayK?' today':'')+(fut?' fut':''); cells+="<div class='"+cls+"'>"+(meas[key]?"<span class='pwcal-mtag'>●</span>":"")+d+"</div>"; }
+  grid.innerHTML=cells;
+  var nx=document.getElementById('cliCalNext'); if(nx){ nx.disabled=(y===now.getFullYear()&&m===now.getMonth()); }
+}
+function cliCalNav(delta){ var now=new Date(); if(CLICAL_Y==null){CLICAL_Y=now.getFullYear();CLICAL_M=now.getMonth();} CLICAL_M+=delta; if(CLICAL_M<0){CLICAL_M=11;CLICAL_Y--;} if(CLICAL_M>11){CLICAL_M=0;CLICAL_Y++;} if(CLICAL_Y>now.getFullYear()||(CLICAL_Y===now.getFullYear()&&CLICAL_M>now.getMonth())){CLICAL_Y=now.getFullYear();CLICAL_M=now.getMonth();} renderCliCal(); }
+
 function marcarSesionAgendada(){
   var k='mj_sesion_clicked_'+E;
   var first=!localStorage.getItem(k);
@@ -2916,6 +2976,7 @@ function render(sec){
   if(sec==='empleos'&&!st.canEmpleos){el.innerHTML=_blockedScreen('empleos');_updateNavLocks();return;}
   // Pasa el gate — render normal
   _renderMain(sec);
+  if(sec==='semana'){ try{ renderCliCal(); }catch(e){} }
   _updateNavLocks();
   // El nombre del coach demo ("Micaela") queda hardcodeado en strings que se
   // generan acá (logros, feed, sesión) DESPUÉS del brandeo, así que no los toca
@@ -3520,6 +3581,7 @@ function rSemana(){
   o+=rAchievementsCard();
   o+=rMotivCard();
   o+=rCalendlyCard();
+  o+=rCliCalCard();
   // Mi diagnóstico — chico, en la columna derecha
   o+='<div class="card"><div class="card-hd"><div><div class="card-lbl">'+t('your_diagnosis')+'</div><div class="card-title">'+t('current_situation')+'</div></div></div><div class="card-body">';
   if(D&&D.scores&&D.scores.length){
@@ -5141,6 +5203,8 @@ function toggleMsgs(){
   if(!panel)return;
   if(_msgsOpen){
     panel.style.display='block';
+    // Entrada SaaS: los mensajes suben con un fade al abrir (una sola vez).
+    try{ var _ml=document.getElementById('msg-list'); if(_ml){ _ml.classList.add('pw-msgs-in'); setTimeout(function(){ _ml.classList.remove('pw-msgs-in'); },700); } }catch(e){}
     if(btn) btn.style.background='var(--brand-light)';
     _renderMsgs();
     // Cerrar al click fuera
@@ -5156,12 +5220,19 @@ function toggleMsgs(){
     },10);
     // También cargar desde Supabase
     _loadMsgsFromDB();
+    // Marcar como leídos los mensajes del coach (el coach verá "visto").
+    setTimeout(_markCoachMsgsRead,300);
   } else {
     panel.style.display='none';
     if(btn) btn.style.background='#fff';
   }
 }
 
+// Indicador de "visto": ojito ABIERTO = leído, ojito CERRADO = enviado (sin leer).
+function _vistoEye(read,col){
+  if(read) return "<span title='Visto' style='margin-left:6px;color:"+(col||'currentColor')+";display:inline-block;vertical-align:-3px'><svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z'/><circle cx='12' cy='12' r='2.6'/></svg></span>";
+  return "<span title='Enviado' style='margin-left:6px;color:var(--muted,#9aa0a6);display:inline-block;vertical-align:-3px'><svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M2 9s3.6 6 10 6 10-6 10-6'/><path d='M5 13l-1.4 2M19 13l1.4 2M9.2 15.2l-.6 2.2M14.8 15.2l.6 2.2'/></svg></span>";
+}
 function _renderMsgs(){
   var list=document.getElementById('msg-list');
   if(!list)return;
@@ -5174,10 +5245,13 @@ function _renderMsgs(){
   list.innerHTML=msgs.map(function(m){
     var isCoach=m.from==='coach';
     var av=isCoach?_cAv(COACH_PHOTO_URL,COACH_FIRST):_cAv(C&&C.foto_perfil,(C&&C.nombre)||nombre);
+    // "Visto" solo en los mensajes propios del cliente: ojito cerrado = enviado,
+    // ojito abierto = leído por el coach.
+    var tick=isCoach?'':_vistoEye(m.r,'var(--blue)');
     var bubble='<div style="max-width:85%;padding:9px 13px;border-radius:'+(isCoach?'4px 14px 14px 14px':'14px 4px 14px 14px')+';background:'+(isCoach?'var(--brand-light)':'#EAF0FA')+';font-size:12px;color:var(--text);line-height:1.5;">'
         +'<div style="font-size:9px;font-weight:700;color:'+(isCoach?'var(--brand)':'var(--blue)')+';margin-bottom:2px;">'+(isCoach?hh(COACH_FIRST):hh(nombre))+'</div>'
         +hh(m.text)
-        +'<div style="font-size:9px;color:var(--muted);margin-top:3px;text-align:right;">'+hh(m.time||'')+'</div>'
+        +'<div style="font-size:9px;color:var(--muted);margin-top:3px;text-align:right;">'+hh(m.time||'')+tick+'</div>'
       +'</div>';
     return '<div style="display:flex;align-items:flex-end;gap:6px;justify-content:'+(isCoach?'flex-start':'flex-end')+';margin-bottom:6px;">'
       +(isCoach?(av+bubble):(bubble+av))+'</div>';
@@ -5220,6 +5294,14 @@ function sendMsg(){
   }
 }
 
+// "Visto": cuando el cliente abre/lee el chat, marca los mensajes del coach
+// como leídos (r:1) y lo persiste merge-safe. El coach verá ✓✓ en los suyos.
+function _markCoachMsgsRead(){
+  var msgs=_getMsgs(), changed=false;
+  msgs.forEach(function(m){ if(m&&m.from==='coach'&&!m.r){ m.r=1; changed=true; } });
+  if(changed){ _saveMsgs(msgs); _renderMsgs(); _syncMsgsToDB(msgs); }
+}
+
 // Clave de deduplicación estable: emisor + contenido + timestamp. Así el
 // merge no depende de la longitud del array y no genera duplicados aunque el
 // mismo mensaje venga del local y de la DB.
@@ -5228,7 +5310,10 @@ function _msgKey(m){
 }
 function _mergeMsgs(a,b){
   var out=[],seen={};
-  function add(arr){ (arr||[]).forEach(function(m){ if(!m)return; var k=_msgKey(m); if(seen[k])return; seen[k]=true; out.push(m); }); }
+  // Merge-safe: dedup por clave estable. Si el mismo mensaje viene de dos
+  // fuentes y una lo marca leído (r:1), gana el "leído" (OR) → el "visto" no
+  // se pierde aunque llegue de otro dispositivo o de la DB.
+  function add(arr){ (arr||[]).forEach(function(m){ if(!m)return; var k=_msgKey(m); if(seen[k]!=null){ if(m.r) out[seen[k]].r=1; return; } seen[k]=out.length; out.push(m); }); }
   add(a); add(b);
   out.sort(function(x,y){
     var tx=(x&&x.ts!=null)?x.ts:0, ty=(y&&y.ts!=null)?y.ts:0;
@@ -5265,21 +5350,44 @@ function _syncMsgsToDB(msgs){
   }).catch(function(){});
 }
 
+// Ruidito de "te escriben": chime suave de dos notas (WebAudio, sin archivo).
+// Los navegadores bloquean audio antes de la 1ª interacción → queda en no-op
+// silencioso hasta que el cliente toca algo, y ahí ya suena.
+var _pwAC=null;
+function _pwDing(){
+  try{
+    var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+    _pwAC=_pwAC||new AC(); var ctx=_pwAC; if(ctx.state==='suspended'){ try{ctx.resume();}catch(e){} }
+    var t=ctx.currentTime;
+    [784,1047].forEach(function(f,i){
+      var o=ctx.createOscillator(),g=ctx.createGain(); o.type='sine'; o.frequency.value=f;
+      var st=t+i*0.11; g.gain.setValueAtTime(0.0001,st); g.gain.exponentialRampToValueAtTime(0.06,st+0.02); g.gain.exponentialRampToValueAtTime(0.0001,st+0.22);
+      o.connect(g); g.connect(ctx.destination); o.start(st); o.stop(st+0.24);
+    });
+  }catch(e){}
+}
+// Puntito rojo que LATE unos segundos cuando llega algo nuevo.
+function _pwPulse(el){ if(!el) return; try{ el.classList.add('pw-attn'); setTimeout(function(){ el.classList.remove('pw-attn'); },4500); }catch(e){} }
+function _pwOnIncoming(){ _pwDing(); _pwPulse(document.getElementById('msg-badge')); _pwPulse(document.getElementById('msg-bell-btn')); }
+var _pwChimeReady=false; // no sonar en la primera carga (mensajes viejos)
+
 function _loadMsgsFromDB(){
   if(!E)return;
   fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E)+'&select=notas_coach',{
     headers:H()
   }).then(function(r){return r.json();}).then(function(rows){
-    if(!rows||!rows.length)return;
+    if(!rows||!rows.length){ _pwChimeReady=true; return; }
     var raw=rows[0].notas_coach||'';
     var dbMsgs;
     try{dbMsgs=JSON.parse(raw);}catch(e){return;}
-    if(!Array.isArray(dbMsgs))return;
+    if(!Array.isArray(dbMsgs)){ _pwChimeReady=true; return; }
     // Merge por clave estable (no por longitud): conserva tanto lo local como
     // lo del coach que llegó mientras tanto, sin duplicar.
     var local=_getMsgs();
     var merged=_mergeMsgs(local,dbMsgs);
-    if(merged.length!==local.length){
+    // Firma de "leídos" para detectar cambios de visto (misma longitud, distinto r).
+    function _readSig(arr){ return (arr||[]).filter(function(m){return m&&m.r;}).map(_msgKey).join(','); }
+    if(merged.length!==local.length || _readSig(merged)!==_readSig(local)){
       _saveMsgs(merged);
       _renderMsgs();
       // Badge si hay mensajes del coach que no estaban en el local.
@@ -5289,9 +5397,14 @@ function _loadMsgsFromDB(){
       if(newCoach>0){
         var badge=document.getElementById('msg-badge');
         if(badge){badge.style.display='flex';badge.textContent=newCoach;}
+        // Ruidito + puntito rojo que late (solo si no es la carga inicial).
+        if(_pwChimeReady && !_msgsOpen) _pwOnIncoming();
+        // Si el chat está abierto, esos mensajes ya se están viendo → marcarlos leídos.
+        if(_msgsOpen) setTimeout(_markCoachMsgsRead,200);
       }
     }
-  }).catch(function(){});
+    _pwChimeReady=true;
+  }).catch(function(){ _pwChimeReady=true; });
 }
 
 // Cargar mensajes al iniciar para mostrar badge

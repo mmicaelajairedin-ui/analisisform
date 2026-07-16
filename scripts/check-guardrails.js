@@ -1234,6 +1234,30 @@ const RULES = [
     },
   },
   {
+    name: "admin: 'Dar acceso a un coach' no se cuelga y confirma el email",
+    bug: "El botón coach-access (crear/extender coach) ponía 'Procesando…' y, si el " +
+         "POST se colgaba (red/token trabado), quedaba así para siempre sin crear al " +
+         "coach ni avisar. Y el email de activación era fire-and-forget: si no salía, " +
+         "nadie se enteraba. Fix: watchdog (_caEnd cierra una sola vez + timeout que " +
+         "corta el 'Procesando'), errores con código HTTP real, y _sendCoachAccessEmail " +
+         "devuelve Promise<boolean> para confirmar/avisar si el email no salió.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="coach-access"/.test(p)) return "panel-v2.html: falta el handler coach-access.";
+      // El email debe reportar si salió (boolean), no ser fire-and-forget.
+      if (!/function _sendCoachAccessEmail/.test(p)) return "panel-v2.html: falta _sendCoachAccessEmail.";
+      if (!/send-email[\s\S]{0,400}?\.then\(function\(r\)\{\s*return\s*!!\(r&&r\.ok\)/.test(p))
+        return "panel-v2.html: _sendCoachAccessEmail volvió a ser fire-and-forget (no confirma si el email salió).";
+      // Watchdog: coach-access no puede quedar 'Procesando…' para siempre.
+      const seg = p.slice(p.indexOf('act==="coach-access"'));
+      if (!/setTimeout\([\s\S]{0,200}?"Procesando|_caTimer\s*=\s*setTimeout/.test(seg) || !/clearTimeout/.test(seg))
+        return "panel-v2.html: coach-access perdió el watchdog anti-cuelgue (puede quedar en 'Procesando…').";
+      if (!/\bsent\b/.test(seg)) return "panel-v2.html: coach-access ya no confirma si el email de activación salió.";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: día clickeable + incluye demos del equipo/pasadas",
     bug: "En el panel, tocar un día del calendario debe mostrar los eventos de ese " +
          "día (ag-mo-day → _agRenderDay). Y los puntitos/el detalle deben leer de " +
@@ -1344,6 +1368,22 @@ const RULES = [
         if (!/pw-sortable\.js/.test(fin)) return "pathway-fin-cliente.html ya no incluye pw-sortable.js.";
         if (!/function _metaReorder/.test(fin)) return "pathway-fin-cliente.html perdio el reordenar de metas (_metaReorder).";
       }
+      return null;
+    },
+  },
+  {
+    name: "leads: importar no genera duplicados (dedup antes de insertar)",
+    bug: "doImport insertaba _impRows sin re-chequear contra la lista completa; " +
+         "una vista desactualizada o una re-importacion creaban leads duplicados. " +
+         "Ahora relee todos los leads y deduplica con leadKey justo antes de insertar.",
+    check() {
+      const e = read("empleado.html");
+      if (!e) return null;
+      const m = e.match(/async function doImport\(\)\s*\{[\s\S]*?\n  \}/);
+      if (!m) return "empleado.html: no se encontro doImport().";
+      const body = m[0];
+      if (!/loadLeads\(\)/.test(body)) return "empleado.html: doImport ya no relee la lista completa antes de importar.";
+      if (!/leadKey\(/.test(body)) return "empleado.html: doImport ya no deduplica con leadKey antes de insertar.";
       return null;
     },
   },
