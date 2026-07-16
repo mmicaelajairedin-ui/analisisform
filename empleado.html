@@ -1079,7 +1079,7 @@
   async function loadLeads(){
     if(!sb){ return; }
     try{
-      var q=sb.from('leads').select('*'); if(WHO&&WHO.id) q=q.eq('empleado_id',WHO.id);
+      var q=sb.from('leads').select('*').limit(5000); if(WHO&&WHO.id) q=q.eq('empleado_id',WHO.id);
       var r=await q.order('created_at',{ascending:false});
       if(r.error) throw r.error;
       LEADS=r.data||[]; render(); try{ empRenderNotifs(); }catch(e){}
@@ -1445,11 +1445,19 @@
   async function doImport(){
     if(!_impRows.length){ toast('Nada para importar'); return; }
     var btn=document.getElementById('imp-go'); btn.disabled=true; btn.textContent='Importando…';
-    var rows=_impRows.map(function(r){ return {empleado_id:(WHO&&WHO.id)||ME.id,nombre:r.nombre,email:r.email,telefono:r.telefono,instagram:r.instagram,nicho:'sin',estado:'nuevo'}; });
     try{
+      // Releer la lista COMPLETA de leads y deduplicar de nuevo justo antes de insertar,
+      // así una vista desactualizada o una re-importación no generan duplicados.
+      if(sb){ try{ await loadLeads(); }catch(e){} }
+      var existing=_existingKeys(), seen={}, fresh=[], skip=0;
+      _impRows.forEach(function(r){ var k=leadKey(r); if(existing[k]||seen[k]){ skip++; return; } seen[k]=true; fresh.push(r); });
+      if(!fresh.length){ toast('Esos leads ya estaban en tu lista'); closeImport(); btn.disabled=false; btn.textContent='Importar'; return; }
+      var rows=fresh.map(function(r){ return {empleado_id:(WHO&&WHO.id)||ME.id,nombre:r.nombre,email:r.email,telefono:r.telefono,instagram:r.instagram,nicho:'sin',estado:'nuevo'}; });
       if(sb){ var r=await sb.from('leads').insert(rows).select(); if(r.error) throw r.error; (r.data||[]).forEach(function(x){LEADS.unshift(x);}); }
       else { rows.forEach(function(x,i){x.id='tmp'+Date.now()+i;LEADS.unshift(x);}); }
-      render(); fillCompose(); toast(rows.length+' leads importados ✓'); closeImport();
+      render(); fillCompose();
+      toast(rows.length+' lead'+(rows.length===1?'':'s')+' importado'+(rows.length===1?'':'s')+(skip?' · '+skip+' repetido'+(skip===1?'':'s')+' omitido'+(skip===1?'':'s'):'')+' ✓');
+      closeImport();
     }catch(e){ toast('No se pudo importar'); }
     btn.disabled=false; btn.textContent='Importar';
   }

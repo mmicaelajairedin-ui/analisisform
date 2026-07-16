@@ -1341,6 +1341,22 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "leads: importar no genera duplicados (dedup antes de insertar)",
+    bug: "doImport insertaba _impRows sin re-chequear contra la lista completa; " +
+         "una vista desactualizada o una re-importacion creaban leads duplicados. " +
+         "Ahora relee todos los leads y deduplica con leadKey justo antes de insertar.",
+    check() {
+      const e = read("empleado.html");
+      if (!e) return null;
+      const m = e.match(/async function doImport\(\)\s*\{[\s\S]*?\n  \}/);
+      if (!m) return "empleado.html: no se encontro doImport().";
+      const body = m[0];
+      if (!/loadLeads\(\)/.test(body)) return "empleado.html: doImport ya no relee la lista completa antes de importar.";
+      if (!/leadKey\(/.test(body)) return "empleado.html: doImport ya no deduplica con leadKey antes de insertar.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
