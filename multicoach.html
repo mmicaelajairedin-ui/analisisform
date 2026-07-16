@@ -553,11 +553,9 @@ body{margin:0;font-family:var(--sans);color:var(--carbon);background:var(--bg);-
     <div class="top">
       <div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input placeholder="Buscar clientes, coaches, sesiones…"><kbd>⌘K</kbd></div>
       <div class="sp"></div>
-      <div class="ico" onclick="__notif(this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="dot">3</span>
+      <div class="ico" onclick="__notif(this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="dot" id="mc-notif-dot" style="display:none">0</span>
         <div class="dd" id="dd-notif" onclick="event.stopPropagation()">
-          <div class="di"><span class="emo">🔴</span><div><b>2 coaches sin actividad</b><small>Pablo y Laura hace 7+ días</small></div></div>
-          <div class="di"><span class="emo">🟡</span><div><b>4 clientes en riesgo</b><small>Sin sesión hace 5-12 días</small></div></div>
-          <div class="di"><span class="emo">🟢</span><div><b>6 clientes completaron su programa</b><small>Este mes</small></div></div>
+          <div id="dd-notif-list"></div>
         </div>
       </div>
       <div class="ico" onclick="__toast('Chat — Etapa próxima')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="dot">12</span></div>
@@ -689,7 +687,37 @@ function _sesDel(i){var k=_cli(_curCli);if(!k||!k.sesDocs)return;k.sesDocs.splic
 // dropdowns
 function __closeDD(){document.querySelectorAll('.dd').forEach(function(d){d.classList.remove('open');});}
 document.addEventListener('click',__closeDD);
-function __notif(el){var d=el.querySelector('.dd');var was=d.classList.contains('open');__closeDD();if(!was){d.classList.add('open');event.stopPropagation();}}
+function __notif(el){var d=el.querySelector('.dd');var was=d.classList.contains('open');__closeDD();if(!was){try{mcRenderNotifs();}catch(e){}d.classList.add('open');event.stopPropagation();}}
+function _mcEsc(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+// Notificaciones del dueño: derivadas de los MISMOS datos del panel (DB), así el
+// badge y la lista coinciden con el ranking/riesgo del dashboard (no un "3" fijo).
+function mcNotifData(){
+  var out=[];
+  try{
+    if(DB&&DB.coaches){
+      var inact=DB.coaches.filter(function(c){return c&&c.est==='inactivo';});
+      if(inact.length) out.push({emo:'🔴',t:inact.length+(inact.length===1?' coach sin actividad':' coaches sin actividad'),s:inact.map(function(c){return c.n;}).slice(0,3).join(', '),go:function(){__go('coaches');}});
+    }
+    if(DB&&DB.clientes){
+      var riesgo=DB.clientes.filter(function(k){return k&&k.est==='activo'&&(k.lastState==='stale'||k.lastState==='mid');});
+      if(riesgo.length) out.push({emo:'🟡',t:riesgo.length+(riesgo.length===1?' cliente en riesgo':' clientes en riesgo'),s:'Sin sesión reciente',go:function(){__go('clientes');}});
+      var pend=DB.clientes.filter(function(k){return k&&(k.plan==='pending'||k.med==='pending');});
+      if(pend.length) out.push({emo:'🟢',t:pend.length+(pend.length===1?' plan por publicar':' planes por publicar'),s:'Clientes esperando su material',go:function(){__go('clientes');}});
+    }
+  }catch(e){}
+  return out;
+}
+window._MC_NOTIF=[];
+function mcRenderNotifs(){
+  var data=mcNotifData(); window._MC_NOTIF=data;
+  var dot=document.getElementById('mc-notif-dot');
+  if(dot){ if(data.length){ dot.textContent=data.length; dot.style.display=''; } else dot.style.display='none'; }
+  var list=document.getElementById('dd-notif-list');
+  if(list){
+    if(!data.length){ list.innerHTML='<div class="di"><div><b>Todo en orden ✓</b><small>Sin alertas por ahora</small></div></div>'; }
+    else list.innerHTML=data.map(function(it,i){return '<div class="di" style="cursor:pointer" onclick="(window._MC_NOTIF['+i+']||{}).go&&window._MC_NOTIF['+i+'].go()"><span class="emo">'+it.emo+'</span><div><b>'+_mcEsc(it.t)+'</b><small>'+_mcEsc(it.s||'')+'</small></div></div>';}).join('');
+  }
+}
 function __crearMenu(btn){__openModal('¿Qué querés crear?','<div style="display:flex;flex-direction:column;gap:8px">'+['Nuevo cliente','Asignar coach','Nueva sesión','Crear programa','Publicar en Comunidad'].map(function(x){return '<button class="mbtn g" style="text-align:left" onclick="__mclose();(\''+x+'\'==\'Nuevo cliente\'?__nuevoCliente:\''+x+'\'==\'Asignar coach\'?__asignarCoach:\''+x+'\'==\'Nueva sesión\'?__nuevaSesion:\''+x+'\'==\'Crear programa\'?__crearPrograma:__publicar)()">'+x+'</button>';}).join('')+'</div>','Cerrar',function(){__mclose();});document.getElementById('__mo').style.display='none';}
 // reacciones flotantes
 function react(btn,emoji){var f=btn.closest('.feat');var b=btn.querySelector('b');if(b)b.textContent=(parseInt(b.textContent,10)||0)+1;var e=document.createElement('span');e.className='floatemo';e.textContent=emoji;e.style.left=(15+Math.random()*65)+'%';f.appendChild(e);setTimeout(function(){e.remove();},1500);}
@@ -807,6 +835,7 @@ function mcApplyNiche(){
  var fn=m.owner.split(' ')[0];
  setTx('mc-greet','Buen día, '+fn+' 👋');setTx('mc-owner-nm',m.owner);setTx('mc-owner-rl',m.role+' · '+m.marca);setTx('mc-me-nm',m.owner);setTx('mc-me-av',m.ownerIni);setTx('mc-comsub',m.comSub);setTx('mc-nav-coaches',m.coachCap);setTx('mc-rank-h','Ranking de '+m.coachLow);setTx('mc-qa-asignar','Asignar '+DET().coachSing.toLowerCase());
  setHT('mc-kpis',mcKpis());setHT('actividad',m.act.map(mcActRow).join(''));setHT('mc-ranking',mcRanking());setHT('mc-riesgo',mcRiesgo());setHT('mc-com',mcComDash());
+ try{mcRenderNotifs();}catch(e){}
  mcSetAgenda();
  if(_sec==='clientes')renderClientes();else if(_sec==='coaches')renderCoaches();else if(_sec==='agenda')renderAgenda();
 }

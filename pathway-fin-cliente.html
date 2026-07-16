@@ -112,7 +112,11 @@
       <!-- INICIO -->
       <section class="sec on" id="s-inicio">
         <div class="ptop">
-          <span class="ptop-ic" onclick="go('chat')" style="cursor:pointer" title="Mensajes con tu coach" role="button" aria-label="Mensajes"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg><span class="ptop-badge">2</span></span>
+          <span class="ptop-ic" id="pwChatIc" onclick="pnotifGo('chat')" style="cursor:pointer" title="Mensajes con tu coach" role="button" aria-label="Mensajes"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="ptop-badge" id="pwChatBadge" style="display:none">0</span></span>
+          <span class="ptop-wrap">
+            <span class="ptop-ic" id="pwNotifIc" onclick="pnotifToggle(event)" style="cursor:pointer" title="Notificaciones" role="button" aria-label="Notificaciones"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg><span class="ptop-badge" id="pwNotifBadge" style="display:none">0</span></span>
+            <div class="pnotif-dd" id="pwNotifDD"><div class="pnotif-hd">Notificaciones<small id="pwNotifCount"></small></div><div class="pnotif-list" id="pwNotifList"></div></div>
+          </span>
           <div class="ptop-coach"><div class="ptop-coach-txt"><div class="ptop-coach-name">Lucía Finanzas</div><div class="ptop-coach-role">Coach Financiero</div></div><div class="ptop-av">L</div></div>
         </div>
         <p class="h-hero">Mi mes<em>.</em></p>
@@ -350,6 +354,7 @@ function go(s){
   document.querySelector('.main').scrollTo({top:0,behavior:'smooth'});
   try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(e){}
   if(window.innerWidth<=900 && document.getElementById('sb').classList.contains('open')) toggleSb();
+  if(s==='chat'){ try{ _markChatSeen(); }catch(e){} }
 }
 function toggleSb(){document.getElementById('sb').classList.toggle('open');document.getElementById('ov').classList.toggle('open');}
 // Gauge
@@ -410,7 +415,7 @@ function _loadNextCita(){
   var em=(typeof EMAIL!=='undefined'?EMAIL:''); if(!em) return;
   fetch(SB+'/rest/v1/citas?email=eq.'+encodeURIComponent(em)+'&estado=neq.cancelada&inicio=gte.'+encodeURIComponent(new Date().toISOString())+'&order=inicio.asc&limit=1&select=inicio',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
     .then(function(r){ return r.ok?r.json():[]; })
-    .then(function(rows){ var c=rows&&rows[0]; if(c&&c.inicio){ _CITA_NEXT=c.inicio; try{ if(typeof CRAW!=='undefined'&&CRAW) renderSesiones(CRAW); }catch(e){} } })
+    .then(function(rows){ var c=rows&&rows[0]; if(c&&c.inicio){ _CITA_NEXT=c.inicio; try{ if(typeof CRAW!=='undefined'&&CRAW) renderSesiones(CRAW); }catch(e){} try{ renderNotifs(); }catch(e){} } })
     .catch(function(){});
 }
 /* Calendario del mes — mismo diseño .pwcal-* que fitness y el coach. Días con
@@ -1235,7 +1240,7 @@ function applyClientFin(c){
   try{ _prevSync(); renderPrev(); }catch(e){}
   renderSesiones(c);
   try{MSGS=JSON.parse(c.notas_coach||'[]')||[];}catch(e){MSGS=[];} if(!Array.isArray(MSGS))MSGS=[];
-  renderMsgs(); startPoll();
+  renderMsgs(); startPoll(); try{ renderNotifs(); }catch(e){}
   applyVisFin(c.visibilidad);
 }
 
@@ -1466,8 +1471,46 @@ function _mask(t){return (''+t).replace(/(\+?\d[\d\s\-().]{6,}\d)/g,'•••')
 function _mkey(m){return (m&&m.from||'')+'|'+(m&&m.text||'')+'|'+(m&&(m.ts!=null?m.ts:(m.time||'')));}
 function _merge(a,b){var out=[],seen={};function add(arr){(arr||[]).forEach(function(m){if(!m)return;var k=_mkey(m);if(seen[k])return;seen[k]=true;out.push(m);});}add(a);add(b);out.sort(function(x,y){return((x&&x.ts)||0)-((y&&y.ts)||0);});return out;}
 function renderMsgs(){var box=document.getElementById('pmsgs');if(!box)return;if(!MSGS.length){box.innerHTML='<div style="text-align:center;padding:18px;font-size:12px;color:var(--muted)">Sin mensajes aún. Escribe para empezar.</div>';return;}box.innerHTML=MSGS.map(function(m){var me=(m.from==='cliente');return '<div class="pmsg '+(me?'me':'them')+'">'+esc(m.text)+'<div class="t">'+esc(m.time||'')+'</div></div>';}).join('');box.scrollTop=box.scrollHeight;}
-function loadMsgs(){if(!CID)return;sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){if(!rows||!rows.length)return;var arr=[];try{arr=JSON.parse(rows[0].notas_coach||'[]');}catch(e){}if(!Array.isArray(arr))arr=[];var merged=_merge(MSGS,arr);if(merged.length!==MSGS.length){MSGS=merged;renderMsgs();}}).catch(function(){});}
+function loadMsgs(){if(!CID)return;sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){if(!rows||!rows.length)return;var arr=[];try{arr=JSON.parse(rows[0].notas_coach||'[]');}catch(e){}if(!Array.isArray(arr))arr=[];var merged=_merge(MSGS,arr);if(merged.length!==MSGS.length){MSGS=merged;renderMsgs();try{renderNotifs();}catch(e){}}}).catch(function(){});}
 function startPoll(){if(_pollT||!CID)return;_pollT=setInterval(function(){if(document.visibilityState==='visible')loadMsgs();},30000);}
+
+// ── Notificaciones del cliente (unificado con career/fitness): mensajes sin leer
+//    del coach + próxima sesión. Chat "sin leer" = mensajes del coach con ts mayor
+//    al último momento en que el cliente abrió el chat (guardado en localStorage). ──
+function _notifSeenKey(){ return 'pw_chat_seen_'+((typeof EMAIL!=='undefined'&&EMAIL)||'anon'); }
+function _chatSeenTs(){ var v=0; try{ v=parseInt(localStorage.getItem(_notifSeenKey()),10)||0; }catch(e){} return v; }
+function _unreadChat(){ var seen=_chatSeenTs(),n=0; (MSGS||[]).forEach(function(m){ if(m&&m.from==='coach'&&(m.ts||0)>seen) n++; }); return n; }
+function _markChatSeen(){ try{ localStorage.setItem(_notifSeenKey(),String(Date.now())); }catch(e){} try{ renderNotifs(); }catch(e){} }
+function _proxSesTxt(){
+  var now=Date.now(), best=null;
+  try{ (JSON.parse((CRAW&&CRAW.sesiones_registro)||'[]')||[]).forEach(function(s){ if(!s||!s.fecha)return; var d=new Date(s.fecha+(s.hora?'T'+s.hora:'T23:59')); var t=d.getTime(); if(!isNaN(t)&&t>=now&&(!best||t<best.t)) best={t:t,d:d}; }); }catch(e){}
+  if(typeof _CITA_NEXT!=='undefined'&&_CITA_NEXT){ var cd=new Date(_CITA_NEXT),ct=cd.getTime(); if(!isNaN(ct)&&ct>=now&&(!best||ct<best.t)) best={t:ct,d:cd}; }
+  if(!best) return '';
+  return best.d.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+('0'+best.d.getHours()).slice(-2)+':'+('0'+best.d.getMinutes()).slice(-2);
+}
+function _notifData(){
+  var out=[], u=_unreadChat();
+  if(u>0) out.push({ico:'💬',t:(u===1?'1 mensaje de tu coach':u+' mensajes de tu coach'),sub:'Toca para leerlo',go:'chat'});
+  var ps=_proxSesTxt();
+  if(ps) out.push({ico:'📅',t:'Próxima sesión',sub:ps,go:'sesiones'});
+  else out.push({ico:'📅',t:'Agenda tu próxima sesión',sub:'Elige día y hora con tu coach',go:'sesiones'});
+  return out;
+}
+function renderNotifs(){
+  var u=_unreadChat();
+  var cb=document.getElementById('pwChatBadge'); if(cb){ if(u>0){ cb.textContent=(u>9?'9+':u); cb.style.display='block'; } else cb.style.display='none'; }
+  var data=_notifData();
+  var nb=document.getElementById('pwNotifBadge'); if(nb){ if(data.length>0){ nb.textContent=(data.length>9?'9+':data.length); nb.style.display='block'; } else nb.style.display='none'; }
+  var cnt=document.getElementById('pwNotifCount'); if(cnt) cnt.textContent=data.length?data.length+' nuevas':'';
+  var list=document.getElementById('pwNotifList');
+  if(list){
+    if(!data.length){ list.innerHTML='<div class="pnotif-empty">Estás al día ✓</div>'; }
+    else list.innerHTML=data.map(function(it){ return '<button class="pnotif-it" onclick="pnotifGo(\''+it.go+'\')"><span class="em">'+it.ico+'</span><span style="flex:1;min-width:0"><b>'+esc(it.t)+'</b><small>'+esc(it.sub||'')+'</small></span></button>'; }).join('');
+  }
+}
+function pnotifToggle(e){ if(e){try{e.stopPropagation();}catch(_e){}} var dd=document.getElementById('pwNotifDD'); if(!dd) return; var open=dd.classList.contains('open'); dd.classList.remove('open'); if(!open){ try{ renderNotifs(); }catch(_e){} dd.classList.add('open'); } }
+function pnotifGo(sec){ var dd=document.getElementById('pwNotifDD'); if(dd) dd.classList.remove('open'); if(sec==='chat'){ try{ _markChatSeen(); }catch(e){} } if(typeof go==='function') go(sec); }
+document.addEventListener('click',function(ev){ var dd=document.getElementById('pwNotifDD'); if(dd&&dd.classList.contains('open')){ var ic=document.getElementById('pwNotifIc'); if(!(ic&&ic.contains(ev.target))&&!dd.contains(ev.target)) dd.classList.remove('open'); } });
 window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!inp||!inp.value.trim())return;var txt=_mask(inp.value.trim());var now=new Date(),time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');MSGS.push({from:'cliente',text:txt,time:time,ts:now.getTime()});inp.value='';renderMsgs();if(window.COACH_EMAIL){try{fetch(SB+'/functions/v1/send-push',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({user_email:COACH_EMAIL,title:((CRAW&&CRAW.nombre)||'Tu cliente')+' te escribió',body:txt.slice(0,140),url:'/panel-v2.html',tag:'chat-'+EMAIL})}).catch(function(){});}catch(e){}}if(!CID)return;sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){var db=[];if(rows&&rows.length){try{var p=JSON.parse(rows[0].notas_coach||'[]');if(Array.isArray(p))db=p;}catch(e){}}var merged=_merge(db,MSGS);return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(){MSGS=merged;});}).catch(function(){});};
 
 function pwInit(){
@@ -1629,9 +1672,13 @@ document.addEventListener('change',function(ev){
   ev.target.value=''; // permitir volver a subir el mismo archivo
 });
 pwInit();
+window.addEventListener('load',function(){ [900,2600].forEach(function(t){ setTimeout(function(){ try{ renderNotifs(); }catch(e){} },t); }); });
 // Demo: si el coach guarda una sesión en el panel (otra pestaña del mismo
 // navegador), refrescamos el portal para que se vea al instante.
 window.addEventListener('storage',function(e){ if(e.key==='pw_demo_financiero' && _esDemo()) location.reload(); });
+// Expuestas al scope global: las llaman los onclick del HTML (pnotifToggle/pnotifGo)
+// y go() que vive en otro <script> (_markChatSeen). El resto queda dentro del IIFE.
+window.pnotifToggle=pnotifToggle; window.pnotifGo=pnotifGo; window.renderNotifs=renderNotifs; window._markChatSeen=_markChatSeen;
 })();
 </script>
 <div class="toast" id="toast"></div>
