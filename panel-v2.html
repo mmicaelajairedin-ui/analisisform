@@ -2310,7 +2310,7 @@ function _agRender(d){
 // Tipos de evento del coach: cada uno con color (para distinguir en el calendario)
 // e icono (cuando no hay foto del cliente). Defaults sensatos → no le pedimos nada.
 var _AG_COLORS=["#2D6A4F","#2FB3A3","#3F6FB5","#7B6CD9","#C86FA6","#E8788A","#E0894A","#D9A441","#7BA23F","#C0756E","#8C7B80","#5C7A99"];
-var _AG_ICONS=["🗓️","📞","💬","🎯","🏋️","💰","🧠","☕"];
+var _AG_ICONS=["🗓️","📞","💬","🎯","🏋️","💰","🧠","☕","🎥","🤝","📋","✨","🚀","📈","❤️","🍎","🧘","🎓","💼","📅"];
 function _agTypes(){
   var t=(REAL&&RCFG&&Object.prototype.toString.call(RCFG.event_types)==="[object Array]")?RCFG.event_types:null;
   if(!t || !t.length) t=[{label:"Llamada 30 min",color:"#2D6A4F",icon:"📞"},{label:"Sesión 45 min",color:"#8C7B80",icon:"🗓️"}];
@@ -2418,6 +2418,13 @@ function _agReservas(){
   if(Object.prototype.toString.call(_CAL_DATA)==="[object Array]") return _calByOwner(_CAL_DATA);
   return _RES_DATA||[];
 }
+// Foto REAL del cliente (candidatos.foto_perfil) por email — para la agenda/próxima.
+// Match por email (no por nombre: eso se equivocaba). Solo devuelve una URL real.
+function _cliFotoByEmail(email){
+  email=(""+(email||"")).trim().toLowerCase(); if(!email) return "";
+  try{ var L=window.CLIENTS||[]; for(var i=0;i<L.length;i++){ var x=L[i]; if(x && (""+(x.email||"")).trim().toLowerCase()===email){ var f=(x.raw&&x.raw.foto_perfil)||""; return (/^https?:\/\//.test(f))?f:""; } } }catch(e){}
+  return "";
+}
 function _agDayFull(key){
   var p=(""+key).split("-"); var d=new Date(+p[0],(+p[1]-1),+p[2]);
   var DIAS=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
@@ -2475,7 +2482,7 @@ function _agRenderDay(key,compact){
   // Unificar eventos del día (Google + citas del link).
   var items=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); items.push({ms:+e.start, title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:""}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:"", durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:"", durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_cliFotoByEmail(r.email)}); } });
   items.sort(function(a,b){ return a.ms-b.ms; });
   // Dedup: la misma sesión puede venir del Google Calendar Y de la reserva.
   var _sd={}; items=items.filter(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(_sd[k]) return false; _sd[k]=1; return true; });
@@ -2495,7 +2502,7 @@ function _agRenderDay(key,compact){
     var meta=[]; if(it.durMin) meta.push(it.durMin+" min"); if(it.link) meta.push("Google Meet"); if(it.who) meta.push(it.who);
     return "<div style='display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--pw-border)'>"+
       "<span style='font-size:13px;font-weight:700;color:var(--pw-carbon);width:42px;flex-shrink:0'>"+_agTime(it.ms)+"</span>"+
-      "<span style='width:34px;height:34px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0'><span class='cp-emo'>"+it.ico+"</span></span>"+
+      "<span style='width:34px;height:34px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:100%;height:100%;border-radius:50%;object-fit:cover'>":it.ico)+"</span>"+
       "<div style='flex:1;min-width:0'>"+
         "<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(it.title)+"</span>"+badge+(it.origen?_origenChip(it.origen):"")+"</div>"+
         (meta.length?"<div style='font-size:11.5px;color:var(--pw-text-soft);margin-top:1px'>"+esc(meta.join(" · "))+"</div>":"")+
@@ -2593,7 +2600,7 @@ function _agendaCalCard(){
 function _agProxList(){
   var now=Date.now(), out=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); out.push({ms:+e.start, title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:"", durMin:_durMin((typ&&typ.label)||"")}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", link:"", email:r.email||"", durMin:_durMin(r.tipo||"")}); } } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", link:"", email:r.email||"", durMin:_durMin(r.tipo||""), foto:_cliFotoByEmail(r.email)}); } } });
   out.sort(function(a,b){ return a.ms-b.ms; });
   // Dedup: una misma sesión puede venir del Google Calendar Y de la reserva.
   var seen={}, uniq=[]; out.forEach(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(!seen[k]){ seen[k]=1; uniq.push(x); } });
@@ -2611,7 +2618,7 @@ function _agProxRender(){
     "<h3 style='font-family:var(--pw-serif);font-weight:500;font-size:18px;margin:0'>Próxima sesión</h3>"+
     "<span style='font-size:10px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 9px;border-radius:100px;white-space:nowrap'>"+esc(when)+"</span></div>";
   var card="<div style='background:"+acc+"14;border:1px solid "+acc+"33;border-radius:14px;padding:16px'>"+
-    "<div style='display:flex;align-items:center;gap:14px'>"+_cAvatar(it.title,acc,58)+
+    "<div style='display:flex;align-items:center;gap:14px'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:58px;height:58px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid "+acc+"55'>":_cAvatar(it.title,acc,58))+
       "<div style='min-width:0'><div style='font-family:var(--pw-serif);font-size:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.title)+"</div>"+
         (it.sub?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.sub)+"</div>":"")+"</div></div>"+
     "<div style='display:flex;flex-direction:column;gap:8px;margin-top:14px;font-size:13px;color:var(--pw-text-soft)'>"+
