@@ -137,7 +137,11 @@ body{margin:0;font-family:var(--sans);color:var(--carbon);background:var(--bg);-
 .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px}
 @media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:640px){.kpis{grid-template-columns:1fr 1fr}}
-.kpi{background:#fff;border:1px solid var(--border);border-radius:14px;padding:15px 16px;box-shadow:var(--sh)}
+.kpi{background:#fff;border:1px solid var(--border);border-radius:14px;padding:15px 16px;box-shadow:var(--sh);transition:transform .18s cubic-bezier(.16,1,.3,1),box-shadow .18s}
+.kpi:hover{transform:translateY(-3px);box-shadow:0 10px 26px rgba(45,106,79,.13)}
+@keyframes pwSecIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.pw-sec-in{animation:pwSecIn .34s cubic-bezier(.16,1,.3,1)}
+@media(prefers-reduced-motion:reduce){.pw-sec-in,.kpi:hover{animation:none;transform:none}}
 .kpi .h{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
 .kpi .h .ic2{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:14px}
 .kpi .n{font-family:var(--ser);font-weight:500;font-size:27px;letter-spacing:-.8px;margin:8px 0 5px}
@@ -153,7 +157,8 @@ body{margin:0;font-family:var(--sans);color:var(--carbon);background:var(--bg);-
   .scroll,.community,.view2{overflow:visible}
   .community{border-left:none;border-top:1px solid var(--border)}
 }
-.card{background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--sh);padding:16px 18px}
+.card{background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--sh);padding:16px 18px;transition:transform .18s cubic-bezier(.16,1,.3,1),box-shadow .18s}
+.card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(45,106,79,.12)}
 .card-h{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px}
 .card-h h3{font-family:var(--ser);font-weight:500;font-size:17px;letter-spacing:-.4px;margin:0}
 .card-h a{font-size:12px;font-weight:600;color:var(--bosque);cursor:pointer;text-decoration:none}
@@ -642,8 +647,9 @@ function __go(s){
   if(!impl){__toast('Sección «'+s+'» — Etapa próxima');__hl(_sec);return;}
   _sec=s;__hl(s);
   var d=document.getElementById('view-dashboard'),p=document.getElementById('view-panel');
-  if(s==='dashboard'){p.style.display='none';d.style.display='';window.scrollTo(0,0);}
-  else{d.style.display='none';p.style.display='flex';document.getElementById('vscroll').scrollTop=0;if(s==='clientes')renderClientes();else if(s==='coaches')renderCoaches();else if(s==='agenda')renderAgenda();else if(s==='comunidad')renderComunidad();else renderConfig();}
+  function _anim(el){ if(!el)return; el.classList.remove('pw-sec-in'); void el.offsetWidth; el.classList.add('pw-sec-in'); }
+  if(s==='dashboard'){p.style.display='none';d.style.display='';window.scrollTo(0,0);_anim(d);try{mcCountUp();}catch(e){}}
+  else{d.style.display='none';p.style.display='flex';document.getElementById('vscroll').scrollTop=0;if(s==='clientes')renderClientes();else if(s==='coaches')renderCoaches();else if(s==='agenda')renderAgenda();else if(s==='comunidad')renderComunidad();else renderConfig();_anim(p);}
 }
 document.getElementById('nav').addEventListener('click',function(e){var a=e.target.closest('a');if(a)__go(a.getAttribute('data-s'));});
 // Comunidad en el dashboard: cerrar/expandir (no está en el menú). "Ver todas" abre la página.
@@ -825,7 +831,26 @@ var MCN={
 var MC_N='fitness',DB,NICHOS;
 function NM(){return MCN[MC_N];}
 function mcActRow(a){return '<div class="row"><div class="av" style="background:'+a[1]+(a[1]==='var(--amanecer)'?';color:#5a4410':'')+'"><span class="emo">'+a[0]+'</span></div><div><div class="nm">'+a[2]+'</div><div class="sub">'+a[3]+'</div></div></div>';}
-function mcKpis(){return NM().kpis.map(function(k){return '<div class="kpi"><div class="h"><span class="ic2" style="background:'+k[4]+'"><span class="emo">'+k[0]+'</span></span>'+k[1]+'</div><div class="n">'+k[2]+'</div><div class="d">'+k[3]+' <span>vs mes anterior</span></div></div>';}).join('');}
+// Contadores que suben de 0 al valor. Parte el string en prefijo+número+sufijo
+// (ej. "$14.2K" → $ / 14.2 / K, "78%" → 78 / %) y anima sólo el número.
+function _mcNumSpan(val){
+  var m=(''+val).match(/^([^\d-]*)([\d.,]+)(.*)$/); if(!m) return '<span>'+val+'</span>';
+  var target=parseFloat(m[2].replace(',','.')); if(isNaN(target)) return '<span>'+val+'</span>';
+  var dec=(m[2].indexOf('.')>=0||m[2].indexOf(',')>=0)?1:0;
+  return "<span class='mc-count' data-pre=\""+m[1]+"\" data-suf=\""+m[3]+"\" data-dec='"+dec+"' data-cv='"+target+"'>"+val+"</span>";
+}
+function mcCountUp(){
+  try{ if(window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+    document.querySelectorAll('.mc-count').forEach(function(el){
+      var t=parseFloat(el.getAttribute('data-cv')); if(isNaN(t)) return;
+      var pre=el.getAttribute('data-pre')||'', suf=el.getAttribute('data-suf')||'', dec=parseInt(el.getAttribute('data-dec'),10)||0, start=null, dur=720;
+      function fmt(v){ return pre+(dec? v.toFixed(dec) : Math.round(v).toLocaleString('es-ES'))+suf; }
+      function step(ts){ if(start==null)start=ts; var p=Math.min(1,(ts-start)/dur); var e=1-Math.pow(1-p,3); el.textContent=fmt(t*e); if(p<1)requestAnimationFrame(step); else el.textContent=fmt(t); }
+      el.textContent=fmt(0); requestAnimationFrame(step);
+    });
+  }catch(e){}
+}
+function mcKpis(){return NM().kpis.map(function(k){return '<div class="kpi"><div class="h"><span class="ic2" style="background:'+k[4]+'"><span class="emo">'+k[0]+'</span></span>'+k[1]+'</div><div class="n">'+_mcNumSpan(k[2])+'</div><div class="d">'+k[3]+' <span>vs mes anterior</span></div></div>';}).join('');}
 function mcRanking(){return DB.coaches.slice().sort(function(a,b){return b.rat-a.rat;}).slice(0,4).map(function(c,i){return '<div class="rowb row" onclick="fichaCoach(\''+c.id+'\')"><div class="pos">'+(i+1)+'</div><div class="av" style="background:#E8F2EC;color:#2D6A4F">'+c.ini+'</div><div><div class="nm">'+c.n+'</div><div class="sub">'+c.cli+' clientes · '+c.ret+'% ret.</div></div><div class="rt"><span class="star">★ '+c.rat+'</span></div></div>';}).join('');}
 function mcRiesgo(){var rk={stale:0,mid:1,fresh:2},pill={stale:['alto','Alto'],mid:['medio','Medio'],fresh:['bajo','Bajo']};return DB.clientes.filter(function(k){return k.est==='activo';}).slice().sort(function(a,b){return rk[a.lastState]-rk[b.lastState];}).slice(0,4).map(function(k){var p=pill[k.lastState]||pill.fresh;return '<div class="rowb row" onclick="fichaCliente(\''+k.id+'\')"><div class="av" style="background:#E8F2EC;color:#2D6A4F">'+k.ini+'</div><div><div class="nm">'+k.n+'</div><div class="sub">Últ. actividad '+k.ult+'</div></div><span class="pill '+p[0]+'" style="margin-left:auto">'+p[1]+'</span></div>';}).join('');}
 function mcComDash(){var m=NM(),p=m.post;var reacts='<div class="react">'+p.reacts.map(function(r){return '<button class="rb" onclick="react(this,\''+r[0]+'\')">'+r[0]+' <b>'+r[1]+'</b></button>';}).join('')+'</div>';var feat=p.img?'<div class="feat"><div class="img"><span class="emo">🤸</span><img src="'+p.img+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"></div>'+reacts+'</div>':reacts;var post='<div class="post"><div class="ph"><div class="a">'+m.ini+'</div><div><b>'+m.marca+'</b><small>hace 2 horas</small></div></div><div class="msg">'+p.msg+'</div>'+feat+'</div>';var minis=m.minis.map(function(x){return '<div class="mini"><div><div class="k">'+x[0]+'</div>'+(x[1]?'<b>'+x[1]+'</b>':'')+'<p>'+x[2]+'</p></div></div>';}).join('');return post+minis;}
@@ -839,6 +864,7 @@ function mcApplyNiche(){
  setTx('mc-greet','Buen día, '+fn+' 👋');setTx('mc-owner-nm',m.owner);setTx('mc-owner-rl',m.role+' · '+m.marca);setTx('mc-me-nm',m.owner);setTx('mc-me-av',m.ownerIni);setTx('mc-comsub',m.comSub);setTx('mc-nav-coaches',m.coachCap);setTx('mc-rank-h','Ranking de '+m.coachLow);setTx('mc-qa-asignar','Asignar '+DET().coachSing.toLowerCase());
  setHT('mc-kpis',mcKpis());setHT('actividad',m.act.map(mcActRow).join(''));setHT('mc-ranking',mcRanking());setHT('mc-riesgo',mcRiesgo());setHT('mc-com',mcComDash());
  try{mcRenderNotifs();}catch(e){}
+ try{mcCountUp();}catch(e){}
  mcSetAgenda();
  if(_sec==='clientes')renderClientes();else if(_sec==='coaches')renderCoaches();else if(_sec==='agenda')renderAgenda();
 }
