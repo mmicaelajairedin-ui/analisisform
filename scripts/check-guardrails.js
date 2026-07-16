@@ -1368,6 +1368,30 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "tracking de anuncios: pw-pixel.js presente, incluido y capturando origen",
+    bug: "pw-pixel.js carga el Meta Pixel y captura de qué anuncio/campaña vino cada " +
+         "visitante (window.pwAttr, first-touch). Si se borra el archivo, se saca de " +
+         "las landings, o el chatbot deja de guardar `origen`, se pierde la trazabilidad " +
+         "de qué anuncio trae leads (no se puede optimizar la inversión en ads).",
+    check() {
+      const px = read("pw-pixel.js");
+      if (!px) return "falta pw-pixel.js (Meta Pixel + atribución de origen).";
+      if (!/window\.pwAttr\s*=/.test(px)) return "pw-pixel.js ya no expone window.pwAttr() (captura de origen).";
+      if (!/PW_META_PIXEL_ID/.test(px)) return "pw-pixel.js perdió la config del Pixel ID de Meta.";
+      // Debe estar incluido en las páginas por donde entran los anuncios.
+      for (const f of ["index.html", "soy-coach.html", "registro.html", "formulario.html"]) {
+        if (read(f) && !/pw-pixel\.js/.test(read(f))) return f + " ya no incluye pw-pixel.js (deja de trackear los anuncios).";
+      }
+      // El chatbot de la landing debe guardar el origen del lead en contactos_chat.
+      const idx = read("index.html");
+      if (idx && !/pwAttr\(\)/.test(idx)) return "index.html: el chatbot ya no adjunta el origen (pwAttr) al lead.";
+      // El registro debe guardar el origen en configuracion.
+      const reg = read("registro.html");
+      if (reg && !/configuracion\.origen\s*=/.test(reg)) return "registro.html: el alta ya no guarda el origen del anuncio (configuracion.origen).";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;

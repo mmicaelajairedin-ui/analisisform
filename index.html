@@ -328,6 +328,8 @@ s.parentNode.insertBefore(b, s);})(window.lintrk);
 <noscript>
 <img height="1" width="1" style="display:none;" alt="" src="https://px.ads.linkedin.com/collect/?pid=9057762&fmt=gif" />
 </noscript>
+<!-- Meta Pixel + atribución de origen (Meta/Instagram Ads). Config: pw-pixel.js -->
+<script src="/pw-pixel.js"></script>
 <style>
 /* Fixes responsive del landing (bloque dedicado, ultimo => prioridad). */
 @media (max-width: 760px){
@@ -1082,12 +1084,27 @@ s.parentNode.insertBefore(b, s);})(window.lintrk);
     var btn=document.getElementById('pw-chat-send'); if(btn) btn.disabled=true;
     var contactoStr=nombre+' · '+contacto+(msg?' — '+msg:'');
     var pagina='landing-chat-'+(tipo||'gen');
-    // Best-effort: guardar el lead en contactos_chat.
-    fetch(SB_URL+'/rest/v1/contactos_chat',{
-      method:'POST',
-      headers:{apikey:SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-      body:JSON.stringify({contacto:contactoStr,pagina:pagina})
-    }).catch(function(){});
+    // Origen del lead (de qué anuncio/campaña vino) — lo captura pw-pixel.js.
+    var origen=(window.pwAttr?pwAttr():null);
+    var _base={contacto:contactoStr,pagina:pagina};
+    // Best-effort: guardar el lead en contactos_chat (con su origen). Si la
+    // columna `origen` todavía no existe en Supabase (migración sin aplicar),
+    // el insert con origen falla → reintentamos SIN origen para no perder el lead.
+    function _saveLead(body){
+      return fetch(SB_URL+'/rest/v1/contactos_chat',{
+        method:'POST',
+        headers:{apikey:SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify(body)
+      });
+    }
+    if(origen&&origen.utm_source){
+      var _withOrigen={contacto:contactoStr,pagina:pagina,origen:origen};
+      _saveLead(_withOrigen).then(function(r){ if(!r||!r.ok) _saveLead(_base).catch(function(){}); }).catch(function(){ _saveLead(_base).catch(function(){}); });
+    } else {
+      _saveLead(_base).catch(function(){});
+    }
+    // Evento de conversión a Meta: este lead cuenta como "Lead" para optimizar los anuncios.
+    if(window.pwTrackLead) pwTrackLead({content_category:(tipo||'gen')});
     // Llamar al edge function que manda los 2 emails (a la persona + a Mica).
     fetch(SB_URL+'/functions/v1/notif-landing-lead',{
       method:'POST',
