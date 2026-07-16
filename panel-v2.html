@@ -91,6 +91,10 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .cp-ficha-cal{flex:0 0 320px;max-width:340px;}
 .cp-ficha-cal .cp-card{margin:0;}
 @media (max-width:760px){.cp-ficha-cols{grid-template-columns:1fr;}.cp-ficha-menu{flex-direction:row;flex-wrap:wrap;position:static;}.cp-fmenu-item{width:auto;}.cp-ficha-cal{flex:1 1 100%;max-width:none;}}
+/* "Te escriben": puntito rojo que late + halo cuando llega un mensaje nuevo. */
+@keyframes pwAttn{0%,100%{transform:scale(1)}30%{transform:scale(1.35)}60%{transform:scale(.92)}}
+@keyframes pwHalo{0%{box-shadow:0 0 0 0 rgba(194,69,69,.55)}100%{box-shadow:0 0 0 10px rgba(194,69,69,0)}}
+.pw-attn{animation:pwAttn 1s ease-in-out 4,pwHalo 1.4s ease-out 3;}
 /* Calendario del cliente en la ficha (solo-lectura) */
 .pwcal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;}
 .pwcal-dow span{text-align:center;font-size:9px;font-weight:700;color:var(--pw-text-soft);}
@@ -6545,10 +6549,15 @@ function _syncUserMenu(){
 /* Notificaciones del coach: mensajes sin leer + informes por generar + solicitudes por cobrar */
 function _pwNotifData(){
   var out=[];
+  // Clientes que te escribieron (chat coach↔cliente) y todavía no abriste.
+  try{
+    var cu=(typeof _cliUnread!=="undefined"&&_cliUnread)?Object.keys(_cliUnread).length:0;
+    if(cu>0) out.push({ n:cu, ico:"💬", text:(cu===1?"1 cliente te escribió":cu+" clientes te escribieron"), act:"chat-open" });
+  }catch(e){}
   try{
     var unread=0;
     if(typeof RMSG!=="undefined"&&RMSG){ for(var i=0;i<RMSG.length;i++){ var m=RMSG[i]; if(!m.leido_en && ((typeof RADMIN!=="undefined"&&RADMIN&&!m.from_admin)||(!(typeof RADMIN!=="undefined"&&RADMIN)&&m.from_admin))) unread++; } }
-    if(unread>0) out.push({ n:unread, ico:"💬", text:(unread===1?"1 mensaje sin leer":unread+" mensajes sin leer"), act:"chat-open" });
+    if(unread>0) out.push({ n:unread, ico:"💬", text:(unread===1?"1 mensaje de soporte":unread+" mensajes de soporte"), act:"chat-open" });
   }catch(e){}
   try{
     var pr=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c.reportState==="pending";}).length:0;
@@ -7279,7 +7288,7 @@ document.addEventListener("click", function(ev){
     // "Visto": al abrir la conversación de un cliente, marcar sus mensajes como
     // leídos (el cliente verá el ojito abierto en los suyos). "mica" es el hilo
     // de soporte admin↔coach (mensajes_admin_coach), no aplica acá.
-    if(ckey!=="mica") _coachMarkClientRead(ckey);
+    if(ckey!=="mica"){ _coachMarkClientRead(ckey); try{ _pwClearCliUnread(ckey); }catch(e){} }
     return;
   }
   if(act==="chat-newcli"){ state.chatPicker=true; render(); return; }
@@ -9100,6 +9109,46 @@ function pollMessages(){
     if(hasNew) render();
   }).catch(function(){});
 }
+// ── "Te escriben": ruidito + puntito rojo cuando un CLIENTE le escribe al coach ──
+var _pwAC=null;
+function _pwDing(){
+  try{ var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return; _pwAC=_pwAC||new AC(); var ctx=_pwAC; if(ctx.state==="suspended"){ try{ctx.resume();}catch(e){} } var t=ctx.currentTime;
+    [784,1047].forEach(function(f,i){ var o=ctx.createOscillator(),g=ctx.createGain(); o.type="sine"; o.frequency.value=f; var st=t+i*0.11; g.gain.setValueAtTime(0.0001,st); g.gain.exponentialRampToValueAtTime(0.06,st+0.02); g.gain.exponentialRampToValueAtTime(0.0001,st+0.22); o.connect(g); g.connect(ctx.destination); o.start(st); o.stop(st+0.24); });
+  }catch(e){}
+}
+function _pwPulse(el){ if(!el) return; try{ el.classList.add("pw-attn"); setTimeout(function(){ el.classList.remove("pw-attn"); },4500); }catch(e){} }
+// Mapa clienteId → ts del último mensaje de cliente ya visto; set de clientes con
+// mensaje sin leer; flag para no sonar en la primera pasada (mensajes viejos).
+var _cliChatSeen={}, _cliUnread={}, _cliChatReady=false;
+function _syncChatBadge(){
+  var n=Object.keys(_cliUnread).length, b=document.getElementById("pw-chat-badge");
+  if(b){ if(n>0){ b.textContent=(n>9?"9+":n); b.style.display="flex"; } else b.style.display="none"; }
+}
+function _pwClearCliUnread(id){ if(id!=null && _cliUnread[String(id)]){ delete _cliUnread[String(id)]; _syncChatBadge(); try{ _syncNotifBadge(); }catch(e){} } }
+function pollClientChats(){
+  if(!REAL || !RME || !RME.id) return;
+  if(document.visibilityState !== "visible") return;
+  var path = RADMIN
+    ? "candidatos?select=id,notas_coach&limit=500"
+    : "candidatos?coach_id=eq."+encodeURIComponent(RME.id)+"&select=id,notas_coach&limit=500";
+  _sb(path).then(function(rows){
+    if(!Array.isArray(rows)) return;
+    var anyNew=false;
+    rows.forEach(function(row){
+      var id=String(row.id), arr=_chatArr(row.notas_coach), maxTs=0;
+      arr.forEach(function(m){ if(m&&m.from==="cliente"){ var ts=m.ts||0; if(ts>maxTs) maxTs=ts; } });
+      var prev=_cliChatSeen[id];
+      if(prev!=null && maxTs>prev && String(state.aiCoachThread)!==id){ anyNew=true; _cliUnread[id]=true; }
+      _cliChatSeen[id]=maxTs;
+      // Refrescar el chat en memoria para que el hilo abierto y el "visto" se actualicen.
+      CLIENTS.forEach(function(x){ if(String(x.id)===id){ x.chat=arr; if(x.raw) x.raw.notas_coach=row.notas_coach; } });
+    });
+    _syncChatBadge();
+    try{ _syncNotifBadge(); }catch(e){}
+    if(anyNew && _cliChatReady){ _pwDing(); _pwPulse(document.getElementById("pw-chat-btn")); _pwPulse(document.getElementById("pw-notif-btn")); render(); }
+    _cliChatReady=true;
+  }).catch(function(){ _cliChatReady=true; });
+}
 // Presencia: el coach marca que está en línea; el cliente lo ve con un puntito.
 function _isOnline(ts){ return !!(ts && (Date.now()-new Date(ts).getTime() < 90000)); }
 // "Form pendiente": invitado/creado pero sin datos del formulario todavía.
@@ -9125,7 +9174,8 @@ function refreshCliPresence(){
 function startMsgPolling(){
   if(_msgPollTimer) return;
   coachBeat();
-  _msgPollTimer = setInterval(function(){ pollMessages(); coachBeat(); refreshCliPresence(); }, 25000);
+  _msgPollTimer = setInterval(function(){ pollMessages(); pollClientChats(); coachBeat(); refreshCliPresence(); }, 25000);
+  try{ pollClientChats(); }catch(e){} // primera pasada: fija el baseline (no suena)
   document.addEventListener("visibilitychange", function(){
     if(document.visibilityState === "visible") pollMessages();
   });
@@ -9538,8 +9588,9 @@ if('serviceWorker' in navigator){
     <span style="writing-mode:vertical-rl;text-orientation:mixed;">IA Pathway</span>
   </button>
   <button id="pw-chat-btn" type="button" aria-label="Abrir chat con Pathway" title="Chat" data-act="chat-open"
-    style="background:#fff;border:1px solid rgba(45,106,79,.14);border-radius:50%;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(45,106,79,.10);cursor:pointer;font-family:inherit;color:var(--pw-bosque);">
+    style="position:relative;background:#fff;border:1px solid rgba(45,106,79,.14);border-radius:50%;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(45,106,79,.10);cursor:pointer;font-family:inherit;color:var(--pw-bosque);">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+    <span id="pw-chat-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:#C24545;color:#fff;font-size:10px;font-weight:700;align-items:center;justify-content:center;border:2px solid var(--pw-niebla-2);">0</span>
   </button>
   <!-- Notificaciones -->
   <div id="pw-notif" style="position:relative;">
