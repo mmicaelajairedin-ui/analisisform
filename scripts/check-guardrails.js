@@ -1268,6 +1268,11 @@ const RULES = [
         if (!/ag-hor-add/.test(p)) return "panel-v2.html: falta el control de horario por día (ag-hor-add).";
         if (!/horarios:\s*_shor/.test(p)) return "panel-v2.html: el guardado de disponibilidad ya no incluye horarios por día.";
       }
+      const e = read("empleado.html");
+      if (e) {
+        if (!/addDispHor/.test(e)) return "empleado.html: falta el control de horario por día (addDispHor).";
+        if (!/horarios:\s*_hor/.test(e)) return "empleado.html: el guardado de disponibilidad ya no incluye horarios por día.";
+      }
       return null;
     },
   },

@@ -529,8 +529,10 @@
   // ── Reservas (citas del link público del empleado) ──
   function myBookingLink(){ return 'https://pathwaycareercoach.com/reservar.html?c='+encodeURIComponent((WHO&&WHO.id)||ME.id||''); }
   window.copyMyLink=function(){ var v=myBookingLink(); try{ navigator.clipboard&&navigator.clipboard.writeText(v); }catch(e){} toast('Link copiado ✓'); };
-  var DISP={days:[1,2,3,4,5],from:'09:00',to:'18:00'};
+  var DISP={days:[1,2,3,4,5],from:'09:00',to:'18:00',horarios:{}};
   var DAYNAMES=[['L',1],['M',2],['X',3],['J',4],['V',5],['S',6],['D',0]];
+  var DNAME_FULL={0:'Domingo',1:'Lunes',2:'Martes',3:'Miércoles',4:'Jueves',5:'Viernes',6:'Sábado'};
+  function _dord(n){ return n===0?7:n; }
   function renderDispDays(){
     var box=document.getElementById('disp-days'); if(!box) return;
     box.innerHTML=DAYNAMES.map(function(p){ var on=(DISP.days.indexOf(p[1])>=0);
@@ -540,7 +542,7 @@
     if(f) f.value=DISP.from||'09:00'; if(t) t.value=DISP.to||'18:00';
     var rf=document.getElementById('disp-rng-from'), rt=document.getElementById('disp-rng-to');
     if(rf) rf.value=_hmM(DISP.from||'09:00'); if(rt){ var mt=_hmM(DISP.to||'18:00'); if(mt===0) mt=1440; rt.value=mt; }
-    _empRngPaint();
+    _empRngPaint(); renderDispHor();
   }
   // Slider del horario general: sincroniza con los inputs de hora (que son la
   // fuente que lee saveDisp). Mismo comportamiento que el panel del coach.
@@ -567,6 +569,24 @@
     if(di) DISP.from=di.value; if(dt) DISP.to=dt.value; _empRngPaint();
   };
   window.toggleDispDay=function(d){ var i=DISP.days.indexOf(d); if(i>=0) DISP.days.splice(i,1); else DISP.days.push(d); renderDispDays(); };
+  // Horario por día (override): el jueves que teletrabaja, todo el día, sin tocar el resto.
+  function renderDispHor(){
+    if(!DISP.horarios||typeof DISP.horarios!=='object') DISP.horarios={};
+    var sel=document.getElementById('disp-hor-day');
+    if(sel){ var ds=DISP.days.slice().sort(function(a,b){ return _dord(a)-_dord(b); });
+      sel.innerHTML=ds.map(function(dn){ return "<option value='"+dn+"'>"+DNAME_FULL[dn]+"</option>"; }).join(''); }
+    var box=document.getElementById('disp-hor-chips'); if(!box) return;
+    var keys=Object.keys(DISP.horarios).filter(function(k){ return DISP.days.indexOf(Number(k))>=0; }).sort(function(a,b){ return _dord(Number(a))-_dord(Number(b)); });
+    box.innerHTML=keys.length?("<div style='display:flex;flex-wrap:wrap;gap:6px;margin-top:8px'>"+keys.map(function(k){ var h=DISP.horarios[k]||{}; var alld=(h.from==='00:00'&&(h.to==='23:59'||h.to==='00:00')); var lbl=DNAME_FULL[Number(k)]+' · '+(alld?'todo el día':((h.from||'')+'–'+(h.to||''))); return "<span style='display:inline-flex;align-items:center;gap:5px;background:rgba(45,106,79,.1);border:1px solid var(--bosque);border-radius:100px;padding:3px 5px 3px 11px;font-size:12px;font-weight:600;color:var(--bosque)'>"+esc(lbl)+"<button onclick=\"delDispHor('"+esc(k)+"')\" title='Quitar' style='border:none;background:none;cursor:pointer;color:var(--bosque);font-size:16px;line-height:1;padding:0 2px'>×</button></span>"; }).join('')+"</div>"):'';
+  }
+  window.addDispHor=function(){
+    var ds=document.getElementById('disp-hor-day'), hf=document.getElementById('disp-hor-from'), ht=document.getElementById('disp-hor-to');
+    if(!ds) return; var wd=String(Number(ds.value)); var f=(hf&&hf.value)||'00:00', t=(ht&&ht.value)||'23:59';
+    if(!/^\d{1,2}:\d{2}$/.test(f)||!/^\d{1,2}:\d{2}$/.test(t)){ toast('Poné una hora válida.'); return; }
+    if(!DISP.horarios||typeof DISP.horarios!=='object') DISP.horarios={};
+    DISP.horarios[wd]={from:f,to:t}; renderDispHor();
+  };
+  window.delDispHor=function(wd){ if(DISP.horarios) delete DISP.horarios[String(wd)]; renderDispHor(); };
   window.saveIcal=async function(){
     var el=document.getElementById('myical'); var v=((el&&el.value)||'').trim();
     if(v && !/^https:\/\/calendar\.google\.com\/calendar\/ical\//.test(v)){ toast('Pegá la dirección iCal (empieza con calendar.google.com/calendar/ical/…).'); return; }
@@ -588,7 +608,8 @@
     try{
       var cur=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1);
       var _tz=""; try{ _tz=Intl.DateTimeFormat().resolvedOptions().timeZone||""; }catch(e){}
-      var cfg=(cur.data&&cur.data[0]&&cur.data[0].configuracion)||{}; cfg.disponibilidad={days:DISP.days.slice(),from:DISP.from,to:DISP.to,tz:_tz};
+      var _hor={}; if(DISP.horarios&&typeof DISP.horarios==='object'){ Object.keys(DISP.horarios).forEach(function(k){ if(DISP.days.indexOf(Number(k))>=0){ var h=DISP.horarios[k]; if(h&&h.from&&h.to) _hor[String(Number(k))]={from:h.from,to:h.to}; } }); }
+      var cfg=(cur.data&&cur.data[0]&&cur.data[0].configuracion)||{}; cfg.disponibilidad={days:DISP.days.slice(),from:DISP.from,to:DISP.to,tz:_tz,horarios:_hor};
       var up=await sb.from('usuarios').update({configuracion:cfg}).eq('id',WHO.id);
       if(up.error) throw up.error; toast('Disponibilidad guardada ✓');
     }catch(e){ toast('No se pudo guardar.'); }
@@ -782,6 +803,16 @@
             "<input type='range' id='disp-rng-to' min='0' max='1440' step='15' value='1080' oninput='_empRngSync(\"to\")' aria-label='Hasta'>"+
           "</div>"+
           "<div style='display:flex;gap:10px;margin-top:9px'><input type='time' id='disp-from' value='09:00' oninput='_empRngFromInputs()' style='flex:1'><input type='time' id='disp-to' value='18:00' oninput='_empRngFromInputs()' style='flex:1'></div>"+
+        "</div>"+
+        "<div class='fld'><label>¿Un día con horario distinto?</label>"+
+          "<div style='display:flex;gap:6px;align-items:center;flex-wrap:wrap'>"+
+            "<select id='disp-hor-day' style='flex:1;min-width:100px'></select>"+
+            "<input type='time' id='disp-hor-from' style='width:92px' value='00:00'>"+
+            "<input type='time' id='disp-hor-to' style='width:92px' value='23:59'>"+
+            "<button class='btn ghost sm' onclick='addDispHor()'>Agregar</button>"+
+          "</div>"+
+          "<div style='font-size:11.5px;color:var(--texto-suave);margin-top:6px'>Ej: el jueves que teletrabajás, de 00:00 a 23:59 (todo el día). El resto sigue con el horario general de arriba.</div>"+
+          "<div id='disp-hor-chips'></div>"+
         "</div></div>"+
         "<div class='modal-ft'><span></span><div style='display:flex;gap:8px'><button class='btn ghost' onclick='agClose()'>Cancelar</button><button class='btn' onclick='saveDispModal()'>Guardar</button></div></div>";
     }
@@ -923,7 +954,7 @@
   async function loadResumen(){
     var li=document.getElementById('mylink'); if(li) li.value=myBookingLink();
     // Config del empleado: disponibilidad, tipos y token de Google.
-    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cr.data&&cr.data[0]&&cr.data[0].configuracion)||{}; var d=cfg.disponibilidad; if(d&&d.days){ DISP={days:d.days.map(Number),from:d.from||'09:00',to:d.to||'18:00'}; } if(Array.isArray(cfg.event_types)) EVT=cfg.event_types; if(cfg.gcal&&cfg.gcal.access_token) GCAL=cfg.gcal; var _ic=document.getElementById('myical'); if(_ic&&cfg.gcal_ical_url) _ic.value=cfg.gcal_ical_url; }catch(e){} }
+    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cr.data&&cr.data[0]&&cr.data[0].configuracion)||{}; var d=cfg.disponibilidad; if(d&&d.days){ DISP={days:d.days.map(Number),from:d.from||'09:00',to:d.to||'18:00',horarios:(d.horarios&&typeof d.horarios==='object')?d.horarios:{}}; } if(Array.isArray(cfg.event_types)) EVT=cfg.event_types; if(cfg.gcal&&cfg.gcal.access_token) GCAL=cfg.gcal; var _ic=document.getElementById('myical'); if(_ic&&cfg.gcal_ical_url) _ic.value=cfg.gcal_ical_url; }catch(e){} }
     renderDispDays(); renderTypes();
     await _agSavePendingEmp();
     if(!sb || !(WHO&&WHO.id)){ renderCal(); renderAgBody(); return; }
@@ -944,7 +975,7 @@
   window.setCalFiltro=function(f,el){ calFiltro=f; document.querySelectorAll('#cal-filters .chip').forEach(function(c){ c.classList.toggle('on',c===el); }); renderCalList(); };
   async function loadCalendario(){
     // Config (tipos, link, disponibilidad) — ahora vive en esta pestaña.
-    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cr.data&&cr.data[0]&&cr.data[0].configuracion)||{}; var dsp=cfg.disponibilidad; if(dsp&&dsp.days){ DISP={days:dsp.days.map(Number),from:dsp.from||'09:00',to:dsp.to||'18:00'}; } if(Array.isArray(cfg.event_types)) EVT=cfg.event_types; }catch(e){} }
+    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cr.data&&cr.data[0]&&cr.data[0].configuracion)||{}; var dsp=cfg.disponibilidad; if(dsp&&dsp.days){ DISP={days:dsp.days.map(Number),from:dsp.from||'09:00',to:dsp.to||'18:00',horarios:(dsp.horarios&&typeof dsp.horarios==='object')?dsp.horarios:{}}; } if(Array.isArray(cfg.event_types)) EVT=cfg.event_types; }catch(e){} }
     renderTypes(); renderDispDays();
     var _li=document.getElementById('mylink'); if(_li) _li.value=myBookingLink();
     var box=document.getElementById('cal-list');
