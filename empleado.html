@@ -596,7 +596,8 @@
   // ── Agenda de Google (réplica del panel del coach) ──────────────────────────
   // Col 1: próximas sesiones (Google Calendar + reservas). Col 2: calendario del
   // mes con el icono de cada tipo. Col 3: tipos, link y disponibilidad.
-  var RESALL=[], GEVENTS=[], GCAL=null; var _now=new Date(); var CAL_Y=_now.getFullYear(), CAL_M=_now.getMonth(); var EM_SEL_DAY=null;
+  var RESALL=[], GEVENTS=[], GCAL=null; var _now=new Date(); var CAL_Y=_now.getFullYear(), CAL_M=_now.getMonth(); var EM_SEL_DAY=null; var EM_AG_VIEW='hoy';
+  window.emAgView=function(v){ EM_AG_VIEW=v; EM_SEL_DAY=null; renderCal(); renderAgBody(); };
   window.calNav=function(delta){ CAL_M+=delta; if(CAL_M<0){ CAL_M=11; CAL_Y--; } else if(CAL_M>11){ CAL_M=0; CAL_Y++; } renderCal(); };
   // Tocar un día del calendario → ver los eventos de ese día (igual que el panel del coach).
   window.emDaySel=function(key){ EM_SEL_DAY=(EM_SEL_DAY===key)?null:key; renderCal(); renderAgBody(); };
@@ -836,11 +837,26 @@
     }
     var _hasCal=(GEVENTS&&GEVENTS.length)>0;
     if(!_hasCal && !RESALL.length){ box.innerHTML=_agConnectHtml(); return; }
+    // Cabecera con toggle Hoy | Semana (igual que el panel del coach).
+    var seg=function(lbl,active,v){ return "<button onclick=\"emAgView('"+v+"')\" style='flex:1;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;padding:5px 0;border-radius:7px;background:"+(active?'#fff':'transparent')+";color:"+(active?'var(--bosque)':'var(--texto-suave)')+";box-shadow:"+(active?'0 1px 3px rgba(0,0,0,.08)':'none')+"'>"+lbl+"</button>"; };
+    var isWeek=(EM_AG_VIEW==='semana');
+    var toggle="<div style='display:flex;justify-content:flex-end;margin-bottom:8px'><div style='display:flex;gap:2px;background:var(--niebla);border:1px solid var(--borde);border-radius:9px;padding:2px;width:148px'>"+seg('Hoy',!isWeek,'hoy')+seg('Semana',isWeek,'semana')+"</div></div>";
+    if(isWeek){
+      // Semana: de hoy a +7 días, agrupado por día.
+      var lo=new Date(); lo.setHours(0,0,0,0); var loMs=+lo, hiMs=loMs+7*86400000;
+      var wEvs=_empDedup(_allEvents().filter(function(ev){ return ev.ms>=loMs && ev.ms<=hiMs; }).sort(function(a,b){ return a.ms-b.ms; }));
+      if(!wEvs.length){ box.innerHTML=toggle+"<div style='color:var(--texto-suave);font-size:13px;padding:14px 0;text-align:center'>Sin sesiones esta semana. ✨</div>"; return; }
+      var DIAS2=['dom','lun','mar','mié','jue','vie','sáb'], html='', last='';
+      wEvs.forEach(function(ev){ var d=new Date(ev.ms); var dl=DIAS2[d.getDay()]+' '+d.getDate()+' de '+MESES[d.getMonth()];
+        if(dl!==last){ html+="<div style='font-size:10.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave);margin:10px 0 2px'>"+esc(dl)+"</div>"; last=dl; }
+        html+=_empRowClean(ev); });
+      box.innerHTML=toggle+html; return;
+    }
     // Hoy (estilo "Tu agenda de hoy"): solo lo agendado del día.
     var tk=_ymd(new Date());
     var evs=_empDedup(_allEvents().filter(function(ev){ return _ymd(new Date(ev.ms))===tk; }).sort(function(a,b){ return a.ms-b.ms; }));
-    if(!evs.length){ box.innerHTML="<div style='color:var(--texto-suave);font-size:13px;padding:14px 0;text-align:center'>Sin sesiones hoy. ✨</div>"; return; }
-    box.innerHTML=evs.map(_empRowClean).join('');
+    if(!evs.length){ box.innerHTML=toggle+"<div style='color:var(--texto-suave);font-size:13px;padding:14px 0;text-align:center'>Sin sesiones hoy. ✨</div>"; return; }
+    box.innerHTML=toggle+evs.map(_empRowClean).join('');
   }
   // Guarda el token de Google (que dejó conectar-calendar.html en localStorage) en
   // el perfil del empleado, igual que hace el panel del coach.

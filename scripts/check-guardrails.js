@@ -1204,6 +1204,12 @@ const RULES = [
       if (!/data-act='cal-asis'[^]{0,120}data-val='asistio'/.test(p)) return "panel-v2.html: la agenda del día ya no tiene el botón de marcar asistencia inline (cal-asis).";
       if (!/act==="ag-hoy"/.test(p)) return "panel-v2.html: falta el toggle 'Hoy' de la agenda (ag-hoy).";
       if (!/function _agAfterCalBody/.test(p)) return "panel-v2.html: falta _agAfterCalBody (refrescar la agenda tras marcar asistencia).";
+      const e = read("empleado.html");
+      if (e) {
+        if (!/id:r\.id/.test(e)) return "empleado.html: las reservas de la agenda ya no llevan id (no se puede marcar asistencia inline).";
+        if (!/markAsistencia\('"\+ev\.id\+"'/.test(e) && !/onclick=\\"markAsistencia\('"\+ev\.id/.test(e)) return "empleado.html: la agenda ya no tiene el botón de marcar asistencia inline.";
+        if (!/window\.emAgView/.test(e)) return "empleado.html: falta el toggle Hoy/Semana de la agenda (emAgView).";
+      }
       return null;
     },
   },
