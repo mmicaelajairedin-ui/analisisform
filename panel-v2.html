@@ -2244,6 +2244,17 @@ function viewResumen(){
     var nuevosPrev=reales.filter(function(c){return _inMonth(c,_pmKey);}).length;
     var _n2=Date.now(), prox=0, sesMes=0;
     reales.forEach(function(c){ if(c.raw&&c.raw.activo===false)return; (c.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var d=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")); var t=d.getTime(); if(isNaN(t))return; if(t>=_n2)prox++; if((d.getFullYear()+"-"+d.getMonth())===_mKey)sesMes++; }); });
+    // + reservas del link (tabla citas) → el Resumen resume TODO el calendario, no
+    // solo lo cargado a mano. (Se ignoran las canceladas.)
+    try{ (typeof RCITAS!=="undefined"&&RCITAS?RCITAS:[]).forEach(function(ct){ if(!ct||!ct.inicio)return; if((""+(ct.estado||"")).toLowerCase()==="cancelada")return; var d=new Date(ct.inicio); var t=d.getTime(); if(isNaN(t))return; if(t>=_n2)prox++; if((d.getFullYear()+"-"+d.getMonth())===_mKey)sesMes++; }); }catch(e){}
+    // Desglose Pathway vs directo (dato de "Clientes de Pathway")
+    var _pw=reales.filter(function(c){return !(c.raw&&c.raw.activo===false) && c.source==="pathway";}).length;
+    var _dir=activos-_pw;
+    // Ingresos del mes: neto (monto − comisión) de solicitudes ACEPTADAS este mes.
+    // Fuente = "Clientes de Pathway" (tabla solicitudes, ya cargada en RSOL).
+    var ingresos=0;
+    var _fmtMoney=function(n){ return "€"+(Number(n)||0).toLocaleString("es-ES"); };
+    try{ (typeof RSOL!=="undefined"&&RSOL?RSOL:[]).forEach(function(s){ if(!s||s.estado!=="aceptada")return; var ca=s.created_at?new Date(s.created_at):null; if(!ca||isNaN(ca.getTime()))return; if((ca.getFullYear()+"-"+ca.getMonth())!==_mKey)return; var monto=Number(s.monto)||0, com=Number(s.comision); if(!(com>=0)) com=monto*(typeof _pwCoachRate==="function"?_pwCoachRate():5)/100; ingresos+=Math.max(0,monto-com); }); }catch(e){}
     // Medalla de clientes (logro del coach por cantidad de clientes activos)
     var cm=clientMedalInfo();
     var medalBlock = cm.name
@@ -2262,10 +2273,11 @@ function viewResumen(){
     return "<div class='cp-card' style='margin-bottom:16px'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📊</span> Mi negocio<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver clientes</button></div>"+
       "<div class='cp-card-pad'>"+medalBlock+
         "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px'>"+
-          _tile(activos,"Clientes activos","🟢","")+
+          _tile(activos,"Clientes activos","🟢",(activos?("<span style='color:var(--pw-text-muted)'>"+_pw+" de Pathway · "+_dir+" directo"+(_dir===1?"":"s")+"</span>"):""))+
           _tile(nuevos,"Nuevos este mes","✨",_delta(nuevos,nuevosPrev))+
           _tile(sesMes,"Sesiones este mes","📅","")+
           _tile(prox,"Próximas sesiones","⏰","")+
+          _tile(_fmtMoney(ingresos),"Ingresos del mes","💰","")+
         "</div>"+
       "</div></div>";
   })();
@@ -8961,7 +8973,7 @@ function demoGenerateExample(){
     }
   },620);
 }
-var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[];
+var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[];
 
 // Perfil "empleado" (equipo comercial): rol genérico, sin lista de emails.
 // La sección "Emails" (plantillas de venta) la ven admin y empleados.
@@ -9179,7 +9191,11 @@ function loadReal(){
     extra[0], extra[1], extra[2], extra[3], extra[4],
     _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc"),
     (ME.rol==="admin" ? _sb("reviews?select=nombre,rating,texto,created_at&order=created_at.desc&limit=200") : Promise.resolve([])),
-    msgQ
+    msgQ,
+    // Reservas del link (tabla citas) desde el inicio del mes → el Resumen suma
+    // estas sesiones junto a las cargadas a mano (sesiones_registro). Fuente única
+    // de sesiones = Calendario. Falla suave: si la tabla no existe, queda [].
+    _sb("citas?coach_id=eq."+encodeURIComponent(ME.id)+"&inicio=gte."+encodeURIComponent((function(){var d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.toISOString();})())+"&select=inicio,estado&order=inicio.asc").catch(function(){return [];})
   ]).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
     RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
@@ -9200,6 +9216,7 @@ function loadReal(){
     RADM = (ME.rol==="admin") ? { cands:_adminCands, cvx:res[7]||[], leads:[], resenas:res[10]||[], informes:res[8]||[] } : null;
     RSOL = res[9]||[];
     RMSG = res[11]||[];
+    RCITAS = res[12]||[];
     // Empleados: para separar sus hilos de chat de los de coaches en la bandeja.
     if(ME.rol==="admin" && REMPLE===null) reloadEmpleados();
     // Una vez cargados los mensajes iniciales, arrancar el polling. La
