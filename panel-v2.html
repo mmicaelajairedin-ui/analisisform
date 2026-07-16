@@ -103,6 +103,7 @@ input,textarea,select{font-family:inherit;color:inherit;}
 /* Transición al cambiar de sección + skeleton shimmer de carga. */
 @keyframes pwSecIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .pw-sec-in{animation:pwSecIn .34s cubic-bezier(.16,1,.3,1);}
+@keyframes pwSpin{to{transform:rotate(360deg)}}
 @keyframes pwShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .pw-skel{background:linear-gradient(90deg,var(--pw-niebla-2) 25%,#eef3f0 37%,var(--pw-niebla-2) 63%);background-size:200% 100%;animation:pwShimmer 1.3s linear infinite;border-radius:8px;}
 .pw-skel-card{background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:18px;box-shadow:var(--pw-shadow-sm);}
@@ -904,6 +905,8 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   #pw-usermenu-panel,#pw-notif-panel{ width:min(286px,calc(100vw - 24px)) !important; }
   #pw-app-actions .pw-um-item{ padding:13px 14px !important; font-size:14px !important; }
   #pw-app-actions .pw-um-item svg{ width:19px !important; height:19px !important; }
+  /* Pull-to-refresh propio: evitamos que el navegador recargue la página solo. */
+  html,body{ overscroll-behavior-y:contain; }
   /* Inbox al lado de los otros, mismo tamaño y estilo. */
   .cp-inbox-fab{ top:10px; right:104px; }
   .cp-inbox-btn{ width:38px; height:38px; }
@@ -9570,6 +9573,49 @@ function _paywallCheck(u){
   // Watchdog: nunca dejar "Cargando…" colgado. Si en 6s no se pintó el panel, pintarlo igual.
   setTimeout(function(){ if(!document.querySelector(".cp-app")){ render(); } },6000);
   setTimeout(function(){ if(!document.querySelector(".cp-app")){ render(); } },12000);
+})();
+
+// ── Pull-to-refresh (móvil): al bajar la pantalla estando arriba de todo, se
+//    actualiza el panel (loadReal). Reemplaza al botón "Actualizar" en móvil. ──
+(function(){
+  var startY=0, active=false, dist=0, refreshing=false, ind=null;
+  var TH=64; // umbral (px de arrastre) para disparar
+  function _mk(){
+    if(ind) return ind;
+    ind=document.createElement("div"); ind.id="pw-ptr";
+    ind.style.cssText="position:fixed;top:0;left:0;right:0;display:flex;align-items:flex-end;justify-content:center;height:0;overflow:hidden;z-index:130;pointer-events:none;transition:height .18s ease;";
+    ind.innerHTML="<div style='margin-bottom:8px;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--pw-border);border-radius:99px;padding:8px 15px;box-shadow:0 6px 20px rgba(45,106,79,.16);font-family:Inter,-apple-system,sans-serif;font-size:12.5px;font-weight:600;color:var(--pw-bosque)'><span id='pw-ptr-ic' style='display:inline-block;font-size:15px;transition:transform .18s'>↓</span><span id='pw-ptr-tx'>Bajá para actualizar</span></div>";
+    document.body.appendChild(ind); return ind;
+  }
+  function _scrollTop(){ return window.pageYOffset||document.documentElement.scrollTop||document.body.scrollTop||0; }
+  function _set(h){ _mk().style.height=Math.max(0,h)+"px"; }
+  document.addEventListener("touchstart",function(e){
+    if(refreshing||e.touches.length!==1) return;
+    if(_scrollTop()>2) return;
+    startY=e.touches[0].clientY; active=true; dist=0;
+  },{passive:true});
+  document.addEventListener("touchmove",function(e){
+    if(!active||refreshing) return;
+    dist=e.touches[0].clientY-startY;
+    if(dist<=0 || _scrollTop()>2){ active=false; _set(0); return; }
+    var h=Math.min(dist*0.5,84); _set(h);
+    var tx=document.getElementById("pw-ptr-tx"), ic=document.getElementById("pw-ptr-ic");
+    if(h>=TH*0.5){ if(tx)tx.textContent="Soltá para actualizar"; if(ic){ic.textContent="↻"; ic.style.transform="rotate(180deg)";} }
+    else { if(tx)tx.textContent="Bajá para actualizar"; if(ic){ic.textContent="↓"; ic.style.transform="none";} }
+  },{passive:true});
+  document.addEventListener("touchend",function(){
+    if(!active||refreshing) return; active=false;
+    var h=parseFloat(_mk().style.height)||0;
+    if(h>=TH*0.5) _run(); else _set(0);
+  });
+  function _run(){
+    refreshing=true; _set(46);
+    var tx=document.getElementById("pw-ptr-tx"), ic=document.getElementById("pw-ptr-ic");
+    if(tx)tx.textContent="Actualizando…"; if(ic){ic.textContent="↻"; ic.style.transform="none"; ic.style.animation="pwSpin .7s linear infinite";}
+    function done(){ refreshing=false; _set(0); if(ic)ic.style.animation=""; }
+    try{ var p=loadReal(); if(p&&p.then){ p.then(done,done); setTimeout(done,4000); } else setTimeout(done,1400); }
+    catch(e){ setTimeout(done,1200); }
+  }
 })();
 </script>
 <script>
