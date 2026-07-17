@@ -332,6 +332,28 @@ const RULES = [
     },
   },
   {
+    name: "pw-auth.js: headers() nunca se cuelga (anti 'Procesando…' infinito)",
+    bug: "TODO fetch (lectura y escritura) del panel/portales espera a " +
+         "PWAUTH.headers() → token() → ensure(), y ensure() carga el SDK de " +
+         "Supabase desde un CDN. Si el CDN no responde o un refresh de sesión se " +
+         "stallea, headers() no resolvía nunca y CUALQUIER acción quedaba en " +
+         "'Procesando…' para siempre (agregar coach/cliente, enviar chat). Fix: " +
+         "headers() corre contra un timeout y cae al token de localStorage/anon; " +
+         "y la carga del SDK tiene su propio timeout. No quitar ninguno de los dos.",
+    check() {
+      const s = read("pw-auth.js");
+      if (!s) return "no existe pw-auth.js";
+      // headers() debe tener una carrera contra timeout con fallback a tokenSync.
+      const seg = s.slice(s.indexOf("headers: function"));
+      if (!/setTimeout\([\s\S]{0,120}?finish\(tokenSync\(\)\)/.test(seg))
+        return "pw-auth.js: headers() perdió el timeout anti-cuelgue (podría quedar en 'Procesando…' para siempre).";
+      // La carga del SDK por CDN también debe tener timeout (no dejar ensure() colgado).
+      if (!/onerror[\s\S]{0,60}?resolve\(null\)/.test(s) || !/setTimeout\(function\s*\(\)\s*\{\s*resolve\(null\)/.test(s))
+        return "pw-auth.js: la carga del SDK perdió su timeout/fallback (ensure() podría colgarse).";
+      return null;
+    },
+  },
+  {
     name: "panel: alta de cliente usa INSERT ignore-duplicates (RLS), no merge",
     bug: "El alta inline del panel (alta-invitar) creaba el candidato con " +
          "resolution=merge-duplicates. Bajo RLS estricto eso es un upsert que pide " +

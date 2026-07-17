@@ -45,10 +45,14 @@
       }
       var s = document.createElement("script");
       s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
-      s.onload = init;
-      s.onerror = function () {
-        resolve(null);
-      };
+      // Anti-cuelgue: si el CDN no responde (bloqueado, caído, red lenta), el
+      // script tag puede quedar pendiente sin disparar onload NI onerror. Sin este
+      // timeout, ensure() nunca resolvería y TODA lectura/escritura quedaría
+      // colgada en "Procesando…". A los 6s seguimos sin SDK (headers cae al token
+      // de localStorage / anon).
+      var _to = setTimeout(function () { resolve(null); }, 6000);
+      s.onload = function () { clearTimeout(_to); init(); };
+      s.onerror = function () { clearTimeout(_to); resolve(null); };
       document.head.appendChild(s);
     });
     return _ready;
@@ -112,10 +116,27 @@
     // headers(extra) → Promise<{apikey, Authorization, ...extra}>
     // Usa el JWT si hay sesión; si no, la anon key.
     headers: function (extra) {
-      return token().then(function (t) {
-        var h = { apikey: ANON, Authorization: "Bearer " + (t || ANON) };
-        if (extra) for (var k in extra) if (extra.hasOwnProperty(k)) h[k] = extra[k];
-        return h;
+      // Anti-cuelgue (bug "se queda procesando…"): token() puede tardar o no
+      // resolver nunca si el SDK del CDN no cargó o un refresh de sesión se
+      // stallea. Como TODO fetch (lectura y escritura) espera acá, un token()
+      // colgado congela la app entera. Solución: carrera contra un timeout — a
+      // los 3.5s resolvemos con el token que YA está en localStorage (el SDK lo
+      // mantiene fresco en background) o, en última instancia, la anon key. Así
+      // ninguna acción queda trabada; a lo sumo, si el token venció, el server
+      // responde 401 y el flujo normal manda a re-loguear (mejor que colgarse).
+      return new Promise(function (resolve) {
+        var done = false;
+        function finish(t) {
+          if (done) return; done = true;
+          var h = { apikey: ANON, Authorization: "Bearer " + (t || tokenSync() || ANON) };
+          if (extra) for (var k in extra) if (extra.hasOwnProperty(k)) h[k] = extra[k];
+          resolve(h);
+        }
+        var timer = setTimeout(function () { finish(tokenSync()); }, 3500);
+        token().then(
+          function (t) { clearTimeout(timer); finish(t); },
+          function () { clearTimeout(timer); finish(tokenSync()); }
+        );
       });
     },
     // Versión SÍNCRONA de headers() (lee el token de localStorage). Úsala para
