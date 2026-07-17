@@ -1258,6 +1258,32 @@ const RULES = [
     },
   },
   {
+    name: "admin: 'Dar acceso a un coach' SIEMPRE ofrece el link directo de activación",
+    bug: "Al crear un coach, si la escritura al panel fallaba o el email automático no " +
+         "salía, la coach quedaba sin forma de dar acceso ('no me llegó la invitación'). " +
+         "Fix: se muestra un link directo (registro.html?email=) apenas se intenta crear " +
+         "un coach nuevo — se setea ANTES del POST, así se ve aunque la escritura o el " +
+         "email fallen (registro.html crea/activa la cuenta al entrar). Además el email " +
+         "de coach-access se sanea (sin espacios) para que un pegado con espacio no lo rechace.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="coach-access"/.test(p)) return null; // otra regla cubre la ausencia del handler
+      const seg = p.slice(p.indexOf('act==="coach-access"'));
+      const seg2 = seg.slice(0, 8000);
+      // Email saneado sin espacios (evita el "no estaba bien el mail" por pegar con espacio).
+      if (!/cac-email[\s\S]{0,80}?replace\(\/\\s\+\/g,\s*""\)/.test(seg2))
+        return "panel-v2.html: coach-access dejó de sanear el email (replace de espacios).";
+      // El link directo se setea en state.coachLink DENTRO del flujo de coach nuevo.
+      if (!/state\.coachLink\s*=\s*caLink/.test(seg2))
+        return "panel-v2.html: coach-access ya no setea el link directo de activación (state.coachLink).";
+      // Y el render lo muestra con botón de copiar (handler ag-copy-link).
+      if (!/state\.coachLink/.test(p) || !/data-act='ag-copy-link'\s+data-link='"\+esc\(cLink\)/.test(p))
+        return "panel-v2.html: el link directo de activación ya no se renderiza con botón Copiar.";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: día clickeable + incluye demos del equipo/pasadas",
     bug: "En el panel, tocar un día del calendario debe mostrar los eventos de ese " +
          "día (ag-mo-day → _agRenderDay). Y los puntitos/el detalle deben leer de " +

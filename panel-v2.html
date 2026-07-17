@@ -1394,6 +1394,7 @@ var state = {
   estSel: null,
   coachSel: null,
   coachMsg: "",
+  coachLink: "",
   empleSel: null,
   empMsg: "",
   msgDraft: "",
@@ -4953,13 +4954,23 @@ function _chatBandejaRows(includeMica){
     rows += row({ key:"mica", name:"Soporte Pathway", avatarHtml:listAv(ADMIN_PHOTO,"Pathway"), preview:micaPrev, time:micaLast?fmtRel(micaLast.created_at):"", unread:micaUnread });
   }
   // 2) Un item por cada cliente real del coach (los desactivados no aparecen)
+  var _nCli=0, _nInact=0;
   (CLIENTS||[]).forEach(function(c){
-    if(c.raw && c.raw.activo===false) return;
+    if(c.raw && c.raw.activo===false){ _nInact++; return; }
+    _nCli++;
     var chat = c.chat||[];
     var last = chat.length ? chat[chat.length-1] : null;
     var prev = last ? ((last.from==="coach"?"Tú: ":((c.name||"").split(" ")[0]+": "))+prevTxt(last.text)) : "Iniciar conversación";
     rows += row({ key:String(c.id), name:c.name||"Cliente", avatarHtml:listAv(c.photo,c.name||"Cliente"), preview:prev, time:last?(last.time||""):"", unread:0 });
   });
+  // Estado vacío: sin clientes activos, la lista quedaba en blanco y parecía roto
+  // ("no me aparecen"). Explicamos qué hacer según el caso (ninguno / todos inactivos).
+  if(_nCli===0){
+    var _emptyTxt = _nInact>0
+      ? ("Tenés "+_nInact+" cliente"+(_nInact>1?"s":"")+" desactivado"+(_nInact>1?"s":"")+". Reactivalo"+(_nInact>1?"s":"")+" en la sección Clientes para poder chatear.")
+      : "Todavía no tenés clientes acá. Agregá uno con “+ Cliente” o invitalo desde la sección Clientes; al aparecer en tu lista podrás chatear.";
+    rows += "<div style='padding:22px 16px;text-align:center;color:var(--pw-text-soft);font-size:12.5px;line-height:1.5'>"+esc(_emptyTxt)+"</div>";
+  }
   return rows;
 }
 // Barra superior de la bandeja del chat: acceso a Solicitudes de Pathway
@@ -6240,6 +6251,20 @@ function viewAdmin(){
     } else {
       var cm=state.coachMsg||"";
       var cmCol=cm.indexOf("ok:")===0?"var(--pw-bosque)":cm.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
+      var cLink=state.coachLink||"";
+      // Caja del link directo de activación. Se muestra apenas se intenta crear un
+      // coach nuevo (pase lo que pase con la escritura/email): input de solo lectura
+      // + botón Copiar (reusa el handler genérico ag-copy-link) + WhatsApp.
+      var cLinkBox = cLink ? (
+        "<div style='display:flex;flex-direction:column;gap:6px;background:var(--pw-success-bg);border:1px solid var(--pw-border);border-radius:10px;padding:10px 12px'>"+
+          "<span style='font-size:11.5px;font-weight:700;color:var(--pw-bosque)'>Link directo de activación (siempre funciona)</span>"+
+          "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+            "<input class='cp-form-input' style='flex:1;min-width:220px;font-size:12px' readonly value='"+esc(cLink)+"' onclick='this.select()'>"+
+            "<button class='cp-btn cp-btn-primary' style='height:38px;padding:0 14px;font-size:12.5px' data-act='ag-copy-link' data-link='"+esc(cLink)+"'>Copiar link</button>"+
+            "<a class='cp-btn cp-btn-ghost' style='height:38px;padding:0 14px;font-size:12.5px;display:inline-flex;align-items:center' href='https://wa.me/?text="+encodeURIComponent("Para activar tu cuenta de coach en Pathway entrá acá: "+cLink)+"' target='_blank' rel='noopener'>Enviar por WhatsApp</a>"+
+          "</div>"+
+        "</div>"
+      ) : "";
       var accBox = REAL ? (
         "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Dar acceso a un coach<span class='dot'>.</span></h3>"+
           "<span class='cp-eyebrow'>Suma días de acceso · fuera de Stripe</span></div>"+
@@ -6253,6 +6278,7 @@ function viewAdmin(){
               "<button class='cp-btn cp-btn-primary' data-act='coach-access'>"+svg(IC.plus,12)+" Dar acceso</button>"+
             "</div>"+
             (cm ? "<div style='font-size:12px;font-weight:600;color:"+cmCol+"'>"+esc(cm.replace(/^(ok|err|…):/,""))+"</div>" : "")+
+            cLinkBox+
           "</div></div>"
       ) : "";
       // Dos sub-pestañas: "Coaches" (lista + buscador) y "Analíticas" (KPIs).
@@ -7314,7 +7340,7 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
-  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } render(); return; }
+  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } render(); return; }
   if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); return; }
   if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
   if(act.indexOf("estsel:")===0){ var _es=parseInt(act.slice(7),10); state.estSel=(state.estSel===_es?null:_es); render(); return; }
@@ -7514,11 +7540,18 @@ document.addEventListener("click", function(ev){
   }
   if(act==="coach-access"){
     if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
-    var caEmail=(_val("cac-email")||"").trim().toLowerCase();
+    // Email saneado: sacamos TODOS los espacios (un espacio pegado al copiar era
+    // lo que hacía "no estaba bien el mail"). Un email nunca lleva espacios.
+    var caEmail=(_val("cac-email")||"").replace(/\s+/g,"").toLowerCase();
     var caNombre=(_val("cac-nombre")||"").trim();
     var caDiasN=parseInt(_val("cac-dias")||"30",10);
     var caDias=Math.max(1,Math.min(365,isNaN(caDiasN)?30:caDiasN));
     var caNicho=(_val("cac-nicho")||"carrera").trim();
+    // Link directo de activación: SIEMPRE funciona (registro.html crea/activa la
+    // cuenta del coach aunque la escritura de acá o el email automático fallen).
+    // Es la red de seguridad para que nunca te quedes sin poder dar acceso.
+    var caLink="https://pathwaycareercoach.com/registro.html?email="+encodeURIComponent(caEmail);
+    state.coachLink="";
     var setMsg=function(t,kind){ state.coachMsg=(kind||"…")+":"+t; render(); };
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(caEmail)){ setMsg("Email inválido.","err"); return; }
     setMsg("Procesando…","…");
@@ -7555,6 +7588,11 @@ document.addEventListener("click", function(ev){
       // Coach nuevo: lo creamos SIN contraseña (el coach la elige al activar) y
       // le mandamos un mail para activar su cuenta en registro.html.
       if(!caNombre){ _caEnd("Pon el nombre del coach.","err"); return; }
+      // Mostramos el link de activación DESDE YA: pase lo que pase con la escritura
+      // o el email, la coach siempre puede copiar y mandar este link (registro.html
+      // crea/activa la cuenta al entrar). Así "no me llegó la invitación" se resuelve
+      // en 1 clic sin depender del email automático.
+      state.coachLink=caLink;
       var trialEnd=new Date(Date.now()+caDias*86400000).toISOString();
       return _caWrite("usuarios","POST",{email:caEmail,nombre:caNombre,rol:"coach",activo:true,configuracion:{plan:"pro",estado_sub:"prueba",fecha_fin_prueba:trialEnd,coach_type:caNicho,creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){
         // 201 Created = ok. 409 = ya existía por email (intento previo que sí entró)
@@ -7562,10 +7600,16 @@ document.addEventListener("click", function(ev){
         if(!r||(!r.ok && r.status!==409)) throw new Error("no se pudo crear (código "+((r&&r.status)||"sin respuesta")+")");
         reloadCoaches();
         return _sendCoachAccessEmail(caEmail, caNombre, true).then(function(sent){
-          _caEnd(sent?("✓ Coach creado. Le enviamos el email para activar su cuenta y elegir contraseña."):("✓ Coach creado, PERO el email no salió. Enviale este link a mano: pathwaycareercoach.com/registro.html?email="+caEmail),sent?"ok":"err");
+          _caEnd(sent?("✓ Coach creado. Le llegó el email de activación — y por las dudas, copiale este link directo:"):("✓ Coach creado. El email automático no salió — copiá este link y mandáselo vos (con eso activa su cuenta):"),"ok");
         });
       });
-    }).catch(function(e){ _caEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintentá.","err"); });
+    }).catch(function(e){
+      // Si estábamos creando un coach nuevo (ya seteamos el link), no la dejamos
+      // sin salida: el link directo activa la cuenta igual aunque esta escritura
+      // haya fallado. Si era otra cosa, mostramos el error tal cual.
+      if(state.coachLink){ _caEnd("No se pudo confirmar la creación desde el panel, pero podés darle acceso igual: copiá este link y mandáselo (crea su cuenta al activar).","err"); }
+      else { _caEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintentá.","err"); }
+    });
     return;
   }
   if(act==="empleado-crear"){
