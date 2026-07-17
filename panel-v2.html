@@ -108,6 +108,21 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .pw-skel{background:linear-gradient(90deg,var(--pw-niebla-2) 25%,#eef3f0 37%,var(--pw-niebla-2) 63%);background-size:200% 100%;animation:pwShimmer 1.3s linear infinite;border-radius:8px;}
 .pw-skel-card{background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:18px;box-shadow:var(--pw-shadow-sm);}
 @media(prefers-reduced-motion:reduce){.pw-attn,.pw-msgs-in>*,#pw-notif-panel,#pw-usermenu-panel,.pw-sec-in,.pw-count{animation:none!important}}
+/* Cuadros plegables (móvil): el encabezado se toca para abrir/cerrar. El chevron
+   redondo hace de "botón" para que se note que es tocable. Press 3D en las tarjetas. */
+.cp-hd-toggle{cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.cp-hd-chev{margin-left:8px;width:28px;height:28px;border-radius:50%;background:var(--pw-niebla-2);color:var(--pw-bosque);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:inset 0 0 0 1px var(--pw-border);transition:transform .3s cubic-bezier(.16,1,.3,1),background .15s;}
+.cp-hd-toggle:active .cp-hd-chev{background:var(--pw-niebla-3);transform:scale(.9);}
+.cp-card.is-collapsed .cp-hd-chev{transform:rotate(-90deg);}
+.cp-card.is-collapsed{box-shadow:var(--pw-shadow-sm);}
+.cp-card.is-collapsed .cp-card-pad{display:none;}
+.cp-card.is-collapsed .cp-card-hd{border-bottom:none;}
+@media (max-width:900px){
+  .cp-scroll .cp-card{ margin-bottom:12px !important; }
+  .cp-card{ transition:transform .13s ease, box-shadow .18s var(--pw-ease); }
+  .cp-card:active{ transform:scale(.985); box-shadow:0 2px 8px rgba(45,106,79,.10); }
+  .cp-card.is-collapsed .cp-card-hd{ padding-top:15px; padding-bottom:15px; }
+}
 /* Calendario del cliente en la ficha (solo-lectura) */
 .pwcal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;}
 .pwcal-dow span{text-align:center;font-size:9px;font-weight:700;color:var(--pw-text-soft);}
@@ -6720,6 +6735,7 @@ function render(){
     // Al NAVEGAR (cambia la vista): transición de entrada + contadores que suben.
     // En un re-render de la misma vista (polling, guardados) no se re-anima.
     if(!_same){ try{ var _cc=document.querySelector(".cp-container"); if(_cc) _cc.classList.add("pw-sec-in"); }catch(e){} try{ _pwCountUp(); }catch(e){} }
+    try{ _enhanceCards(); }catch(e){}
     _lastViewKey=_vk;
     try{ _syncUserMenu(); }catch(e){}
     try{ _syncNotifBadge(); }catch(e){}
@@ -9200,6 +9216,34 @@ function _pwCountUp(){
       function fmtv(v){ if(fmt==="money") return "€"+Math.round(v).toLocaleString("es-ES"); return ""+Math.round(v); }
       function step(ts){ if(start==null)start=ts; var p=Math.min(1,(ts-start)/dur); var e=1-Math.pow(1-p,3); el.textContent=fmtv(target*e); if(p<1) requestAnimationFrame(step); else el.textContent=fmtv(target); }
       el.textContent=fmtv(0); requestAnimationFrame(step);
+    });
+  }catch(e){}
+}
+// ── Cuadros plegables en móvil: cada .cp-card con encabezado y cuerpo se puede
+//    plegar tocando el header. Estado por título, guardado en localStorage, y se
+//    re-aplica en cada render (el panel se reconstruye entero). Solo en móvil. ──
+var _cardCollapsed=(function(){ try{ return JSON.parse(localStorage.getItem("mj_cards_coll")||"{}")||{}; }catch(e){ return {}; } })();
+function _enhanceCards(){
+  try{
+    if(window.innerWidth>900) return;
+    var CHEV="<svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>";
+    document.querySelectorAll(".cp-scroll .cp-card").forEach(function(card){
+      if(card.dataset.collReady) return;
+      var hd=card.querySelector(".cp-card-hd"), body=card.querySelector(".cp-card-pad");
+      if(!hd||!body) return;
+      var titleEl=hd.querySelector(".cp-card-title"); var key=titleEl?titleEl.textContent.replace(/\s+/g," ").trim():"";
+      if(!key) return;
+      card.dataset.collReady="1"; card.dataset.ckey=key;
+      hd.classList.add("cp-hd-toggle");
+      var chev=document.createElement("span"); chev.className="cp-hd-chev"; chev.setAttribute("aria-hidden","true"); chev.innerHTML=CHEV;
+      hd.appendChild(chev);
+      if(_cardCollapsed[key]) card.classList.add("is-collapsed");
+      hd.addEventListener("click",function(e){
+        if(e.target.closest("button,a,input,select,textarea,label")) return; // no plegar si tocás un control
+        var col=card.classList.toggle("is-collapsed");
+        if(col) _cardCollapsed[key]=1; else delete _cardCollapsed[key];
+        try{ localStorage.setItem("mj_cards_coll",JSON.stringify(_cardCollapsed)); }catch(_e){}
+      });
     });
   }catch(e){}
 }
