@@ -354,6 +354,35 @@ const RULES = [
     },
   },
   {
+    name: "reservas: preguntas propias del coach + respuestas visibles (sin defaults)",
+    bug: "Cada coach arma sus propias preguntas en su tipo de evento (event_types" +
+         "[].questions). NO hay preguntas predefinidas del sistema: reservar.html " +
+         "dejó de tener f-msg/f-src hardcodeados y solo muestra lo que el coach " +
+         "cargó (qFields). Las respuestas se guardan en citas.respuestas y el coach " +
+         "las ve en su lista de reservas (_citaAnswers). El INSERT reintenta sin " +
+         "'respuestas' si la columna no existe, y el panel lee con select=* para no " +
+         "romper la lista donde falta la migración.",
+    check() {
+      const p = read("panel-v2.html"), r = read("reservar.html");
+      if (!p || !r) return null;
+      // Panel: el tipo de evento guarda 'questions' y existe el armador.
+      if (!/ag-q-add/.test(p) || !/function _agCollectQuestions/.test(p))
+        return "panel-v2.html: se perdió el armador de preguntas del tipo de evento (ag-q-add / _agCollectQuestions).";
+      if (!/label:_tv,\s*color:_tc,\s*icon:_tic,\s*people:_tpl,\s*questions:_tq/.test(p))
+        return "panel-v2.html: el tipo de evento ya no guarda las preguntas (questions) al guardar.";
+      if (!/function _citaAnswers/.test(p))
+        return "panel-v2.html: el coach ya no ve las respuestas de las reservas (_citaAnswers).";
+      // Reservar: sin defaults del sistema + render dinámico + guardado resiliente.
+      if (/id='f-msg'/.test(r) || /id='f-src'/.test(r))
+        return "reservar.html: volvieron las preguntas predefinidas del sistema (f-msg/f-src); deben salir SOLO las del coach.";
+      if (!/function qFields/.test(r) || !/function collectAnswers/.test(r))
+        return "reservar.html: se perdió el render/colecta de las preguntas del coach.";
+      if (!/_postCita\(false\)/.test(r))
+        return "reservar.html: el guardado de la reserva perdió el reintento sin 'respuestas' (rompe si falta la columna).";
+      return null;
+    },
+  },
+  {
     name: "panel: alta de cliente usa INSERT ignore-duplicates (RLS), no merge",
     bug: "El alta inline del panel (alta-invitar) creaba el candidato con " +
          "resolution=merge-duplicates. Bajo RLS estricto eso es un upsert que pide " +
@@ -1369,22 +1398,26 @@ const RULES = [
   },
   {
     name: "reservas: se guarda de dónde llegó (atribución de canal)",
-    bug: "Al reservar se pregunta '¿Cómo me encontraste?' (Instagram, LinkedIn, " +
-         "Google…) y se guarda en citas.origen. El panel lo muestra por reserva y " +
-         "agregado en Métricas ('Por dónde llegan'), así el coach sabe qué canal le " +
-         "trae citas. Si el POST deja de mandar origen o el panel deja de leerlo/" +
-         "mostrarlo, se pierde la atribución.",
+    bug: "El coach sabe por qué canal le llegan las reservas (citas.origen), que el " +
+         "panel muestra por reserva y agregado en Métricas ('Por dónde llegan'). " +
+         "Ya NO hay una pregunta fija del sistema: la atribución se deriva de una " +
+         "pregunta que el coach agrega ('de dónde nos conocés') y su respuesta se " +
+         "mapea a origen. Si el POST deja de mandar origen, se pierde el mapeo, o el " +
+         "panel deja de leerlo/mostrarlo, se pierde la atribución.",
     check() {
       const r = read("reservar.html");
       if (r) {
-        if (!/id='f-src'/.test(r)) return "reservar.html: falta el select '¿Cómo me encontraste?' (id=f-src).";
         const i = r.indexOf("coach_id:_cid");
-        const blk = i >= 0 ? r.slice(i, i + 240) : "";
+        const blk = i >= 0 ? r.slice(i, i + 260) : "";
         if (!/origen:/.test(blk)) return "reservar.html: el POST a citas ya no guarda origen (se pierde la atribución).";
+        // La atribución ahora se deriva de una pregunta del coach → origen.
+        if (!/origen\s*=\s*x\.a/.test(r)) return "reservar.html: se perdió el mapeo de la pregunta de canal a origen.";
       }
       const p = read("panel-v2.html");
       if (p) {
-        if (!/select=[^"']*origen/.test(p)) return "panel-v2.html: la query de citas ya no pide 'origen'.";
+        // La lista de reservas lee con select=* (trae origen si existe) y las
+        // métricas siguen leyendo origen explícito. Basta con que aparezca alguno.
+        if (!/select=\*/.test(p) && !/select=[^"']*origen/.test(p)) return "panel-v2.html: la query de citas ya no trae 'origen' (ni select=*).";
         if (!/Por dónde llegan/.test(p)) return "panel-v2.html: falta el desglose 'Por dónde llegan' en Métricas.";
       }
       return null;
