@@ -1031,15 +1031,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .streak-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;background:linear-gradient(135deg,#FF8A3D,#F77F00);color:#fff;font-size:11px;font-weight:600;font-family:Inter,-apple-system,sans-serif;box-shadow:0 2px 8px rgba(247,127,0,.35);}
 
 /* === Shell mobile más limpio + override de modo oscuro === */
-/* Fondo un toque verde en móvil para que las burbujas blancas resalten. */
+/* Fondo neutro (casi blanco) — unificado con el resto de Pathway, sin verde. */
 @media (max-width:900px){
-  body, .main, #mc{ background:#F0F7F2 !important; }
+  body, .main, #mc{ background:var(--bg) !important; }
 }
 /* El portal está diseñado en claro. Override agresivo para que NO se vea
    oscuro aunque el navegador/Android fuerce dark mode (Chrome auto-dark). */
 @media (prefers-color-scheme: dark){
   html, body, .app, .main, #mc, .sb{
-    background:#F0F7F2 !important; color:var(--text) !important; color-scheme:light only;
+    background:var(--bg) !important; color:var(--text) !important; color-scheme:light only;
   }
   .card, .bnav, input, textarea, select, .ses-ta, .btn-p{
     background:#fff !important; color:var(--text) !important;
@@ -4560,9 +4560,12 @@ function _toggleApplied(jobKeyEnc,btn){
     applied[jobKey]={ts:Date.now()};
   }
   localStorage.setItem(appliedKey,JSON.stringify(applied));
-  // Limpiar cache de empleos HTML para que en próximo render se actualice visual
-  _empleosCache=null;
-  localStorage.removeItem('mj_empleos_'+(E||''));
+  // NO borramos el cache de empleos: Mica pidió que la lista cargue una vez y
+  // quede guardada. Antes esto hacía _empleosCache=null + removeItem, así que
+  // marcar un empleo como "postulado" borraba TODA la lista y la próxima visita
+  // volvía a llamar a la IA (quedaba "vacío o cargando"). Ahora solo tocamos el
+  // botón/tarjeta en el DOM y al final re-guardamos el HTML vivo (abajo) para
+  // que el estado persista sin re-fetch.
   // Re-render simple de la sección empleos
   if(btn){
     var card=btn.closest('[data-job-key]');
@@ -4597,6 +4600,13 @@ function _toggleApplied(jobKeyEnc,btn){
       showSaveToast();
       // Actualizar el contador arriba sin recargar toda la sección
       _refreshPostulacionesCounter();
+      // Re-guardar el cache con el estado "postulado" ya aplicado en el DOM,
+      // para que la lista siga cacheada (no se pierde al navegar/recargar).
+      var _mcEmp=document.getElementById('mc-empleos');
+      if(_mcEmp){
+        _empleosCache=_mcEmp.innerHTML;
+        try{localStorage.setItem('mj_empleos_'+(E||''),JSON.stringify({html:_mcEmp.innerHTML,ts:Date.now()}));}catch(e){}
+      }
     }
   }
 }
