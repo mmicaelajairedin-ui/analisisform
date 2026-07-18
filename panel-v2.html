@@ -1347,6 +1347,7 @@ var state = {
   estSel: null,
   coachSel: null,
   coachMsg: "",
+  genInforme: null,
   empleSel: null,
   empMsg: "",
   msgDraft: "",
@@ -3643,8 +3644,12 @@ function viewClienteDetalle(c){
     }
     body=_planIntro+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:10px;flex-wrap:wrap;align-items:center'>"+
-        "<button class='cp-btn cp-btn-primary"+(hasInf?"":" beacon")+"' data-act='genmat:informe' data-id='"+esc(c.id)+"'>"+(hasInf?"Regenerar con IA":"Generar con IA")+"</button>"+
-        "<span style='font-size:12px;color:var(--pw-text-soft)'>"+(hasInf?"Informe creado. Edita lo que quieras y guarda.":"Aún no hay informe. Genera con IA o escríbelo y guarda.")+"</span>"+
+        (String(state.genInforme)===String(c.id)
+          ? "<button class='cp-btn cp-btn-primary' disabled style='opacity:.75;cursor:progress'>⏳ Generando análisis…</button>"+
+            "<span style='font-size:12px;color:var(--pw-text-soft)'>La IA está escribiendo el análisis — puede tardar ~30&nbsp;segundos. No cierres esta pantalla.</span>"
+          : "<button class='cp-btn cp-btn-primary"+(hasInf?"":" beacon")+"' data-act='genmat:informe' data-id='"+esc(c.id)+"'>"+(hasInf?"Regenerar con IA":"Generar con IA")+"</button>"+
+            "<span style='font-size:12px;color:var(--pw-text-soft)'>"+(hasInf?"Informe creado. Edita lo que quieras y guarda.":"Aún no hay informe. Genera con IA o escríbelo y guarda.")+"</span>"
+        )+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Diagnóstico<span class='dot'>.</span></h3><span class='cp-eyebrow'>Lo que ve el cliente</span></div>"+
         "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
@@ -7854,7 +7859,11 @@ document.addEventListener("click", function(ev){
     var liP=_val("pa-li").trim(), cvP=_val("pa-cv").trim();
     var liUse=liP||rw.linkedin_texto||"";
     var patch={}; if(liP) patch.linkedin_texto=liP; if(cvP) patch.cv_url=cvP;
-    if(state.genmat){ state.genmat=null; render(); }
+    // Estado visible: el botón de la ficha pasa a "⏳ Generando análisis…" hasta
+    // que termina (la IA tarda ~30s y antes no había ninguna señal persistente).
+    state.genInforme=gi;
+    if(state.genmat){ state.genmat=null; }
+    render();
     if(Object.keys(patch).length) _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",patch);
     _genBusy=true; toast("Generando informe… puede tardar un momento");
     // Nicho para elegir el prompt de la IA. FUENTE DE VERDAD = el nicho del CLIENTE
@@ -7867,8 +7876,8 @@ document.addEventListener("click", function(ev){
       ingresos:rw.ingresos,gastos:rw.gastos,deudas:rw.deudas,objetivo_ahorro:rw.objetivo_ahorro,plazo:rw.plazo,ahorro_actual:rw.ahorro_actual};
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify(_giBody)})
       .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
-      .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); setTimeout(loadReal,1300); })
-      .catch(function(){ _genBusy=false; alert("No se pudo generar el informe. Reintenta en unos minutos."); });
+      .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.genInforme=null; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); render(); setTimeout(loadReal,1300); })
+      .catch(function(){ _genBusy=false; state.genInforme=null; render(); alert("No se pudo generar el informe. Reintenta en unos minutos."); });
     return;
   }
   if(act==="gen-cv"){
