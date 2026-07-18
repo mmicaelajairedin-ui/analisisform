@@ -1,0 +1,11 @@
+-- Respuestas de las preguntas personalizadas que cada coach arma para su tipo
+-- de evento (renta, nivel, LinkedIn, "de dónde nos conocés", etc.). Quien
+-- reserva las responde en reservar.html y el coach las ve en su lista de
+-- reservas (panel-v2). Se guarda como JSON: [{ "q": "...", "a": "..." }].
+-- Opcional: si el coach no armó preguntas, queda NULL.
+--
+-- Nota: el frontend está blindado para funcionar aunque esta columna todavía
+-- no exista (el INSERT reintenta sin 'respuestas' y la lista usa select=*), así
+-- que aplicar esta migración solo AGREGA la capacidad de guardar/mostrar las
+-- respuestas; no es un requisito para que las reservas sigan funcionando.
+ALTER TABLE citas ADD COLUMN IF NOT EXISTS respuestas jsonb;

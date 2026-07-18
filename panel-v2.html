@@ -64,7 +64,7 @@
 }
 *,*::before,*::after{box-sizing:border-box;}
 html{scroll-behavior:smooth;}
-body{margin:0;font-family:var(--pw-sans);font-size:var(--pw-fs-body-lg);line-height:var(--pw-lh-body);color:var(--pw-text);background:var(--pw-niebla);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow:hidden;}
+body{margin:0;font-family:var(--pw-sans);font-size:var(--pw-fs-body-lg);line-height:var(--pw-lh-body);color:var(--pw-text);background:#E6EEE8;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow:hidden;}
 a{color:inherit;text-decoration:none;}
 button{font-family:inherit;cursor:pointer;border:none;background:transparent;color:inherit;}
 input,textarea,select{font-family:inherit;color:inherit;}
@@ -108,6 +108,21 @@ input,textarea,select{font-family:inherit;color:inherit;}
 .pw-skel{background:linear-gradient(90deg,var(--pw-niebla-2) 25%,#eef3f0 37%,var(--pw-niebla-2) 63%);background-size:200% 100%;animation:pwShimmer 1.3s linear infinite;border-radius:8px;}
 .pw-skel-card{background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:18px;box-shadow:var(--pw-shadow-sm);}
 @media(prefers-reduced-motion:reduce){.pw-attn,.pw-msgs-in>*,#pw-notif-panel,#pw-usermenu-panel,.pw-sec-in,.pw-count{animation:none!important}}
+/* Cuadros plegables (móvil): el encabezado se toca para abrir/cerrar. El chevron
+   redondo hace de "botón" para que se note que es tocable. Press 3D en las tarjetas. */
+.cp-hd-toggle{cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.cp-hd-chev{margin-left:8px;width:28px;height:28px;border-radius:50%;background:var(--pw-niebla-2);color:var(--pw-bosque);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:inset 0 0 0 1px var(--pw-border);transition:transform .3s cubic-bezier(.16,1,.3,1),background .15s;}
+.cp-hd-toggle:active .cp-hd-chev{background:var(--pw-niebla-3);transform:scale(.9);}
+.cp-card.is-collapsed .cp-hd-chev{transform:rotate(-90deg);}
+.cp-card.is-collapsed{box-shadow:var(--pw-shadow-sm);}
+.cp-card.is-collapsed .cp-card-pad{display:none;}
+.cp-card.is-collapsed .cp-card-hd{border-bottom:none;}
+@media (max-width:900px){
+  .cp-scroll .cp-card{ margin-bottom:12px !important; }
+  .cp-card{ transition:transform .13s ease, box-shadow .18s var(--pw-ease); }
+  .cp-card:active{ transform:scale(.985); box-shadow:0 2px 8px rgba(45,106,79,.10); }
+  .cp-card.is-collapsed .cp-card-hd{ padding-top:15px; padding-bottom:15px; }
+}
 /* Calendario del cliente en la ficha (solo-lectura) */
 .pwcal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;}
 .pwcal-dow span{text-align:center;font-size:9px;font-weight:700;color:var(--pw-text-soft);}
@@ -948,7 +963,7 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   .cp-ai-panel--chat{ top:58px; bottom:auto; left:8px; right:8px; height:74vh; max-height:74vh; }
   /* === Shell del panel mobile: limpio y claro === */
   /* Fondo un toque verde para que las burbujas blancas resalten. */
-  body, .cp-main, .cp-scroll, .cp-container{ background:#F0F7F2 !important; }
+  body, .cp-main, .cp-scroll, .cp-container{ background:#E6EEE8 !important; }
   /* Bottom nav: blanco con texto verde, no más verde oscuro pesado. */
   .cp-side{
     background:#fff !important;
@@ -991,7 +1006,7 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
    principales con !important para vencer al auto-darkening de Chrome/WebView. */
 @media (prefers-color-scheme: dark) {
   html, body, .cp-app, .cp-main, .cp-scroll, .cp-container, .cp-topbar{
-    background:#F0F7F2 !important; color:#1B2E26 !important; color-scheme:light only;
+    background:#E6EEE8 !important; color:#1B2E26 !important; color-scheme:light only;
   }
   .cp-card, .cp-card-pad,
   .cp-search, .cp-form-input, .cp-form-textarea, .cp-form-select,
@@ -1379,6 +1394,7 @@ var state = {
   estSel: null,
   coachSel: null,
   coachMsg: "",
+  coachLink: "",
   empleSel: null,
   empMsg: "",
   msgDraft: "",
@@ -2448,6 +2464,25 @@ function _agTypes(){
   if(!t || !t.length) t=[{label:"Llamada 30 min",color:"#2D6A4F",icon:"📞"},{label:"Sesión 45 min",color:"#8C7B80",icon:"🗓️"}];
   return t;
 }
+// Guarda el nombre tipeado del tipo de evento antes de un re-render del modal
+// (mismo patrón que usan los pickers de color/icono para no perderlo).
+function _agPreserveTypeLabel(){ try{ if(!state.ag) return; var e=document.getElementById("ag-type-input"); if(e) state.ag.label=e.value; }catch(x){} }
+// Vuelca lo tipeado en el armador de preguntas (texto, obligatoria, opciones) a
+// state.ag.questions. Se llama antes de cada re-render/guardado para no perderlo.
+// El tipo (corto/largo/opciones/tel) ya vive en el estado (lo setean los botones).
+function _agCollectQuestions(){
+  try{
+    if(!state.ag) return;
+    var qs=(Object.prototype.toString.call(state.ag.questions)==="[object Array]")?state.ag.questions:[];
+    for(var i=0;i<qs.length;i++){
+      if(!qs[i]||typeof qs[i]!=="object") qs[i]={q:"",type:"corto",req:false,opts:[]};
+      var te=document.getElementById("agq-"+i); if(te) qs[i].q=te.value;
+      var rq=document.getElementById("agqr-"+i); if(rq) qs[i].req=!!rq.checked;
+      var op=document.getElementById("agqo-"+i); if(op) qs[i].opts=op.value.split(",").map(function(s){return s.trim();}).filter(Boolean);
+    }
+    state.ag.questions=qs;
+  }catch(x){}
+}
 // El tipo cuyo nombre aparece en el título del evento (para colorear la agenda).
 function _agEventTypeFor(title){
   var t=(""+(title||"")).toLowerCase(), f=null;
@@ -2808,10 +2843,33 @@ function viewAgModal(){
     else if(!(_AG_TEAM&&_AG_TEAM.length)) _pplHtml="<div style='font-size:12px;color:var(--pw-text-muted)'>Solo vos por ahora. Creá empleados para agregarlos.</div>";
     else _pplHtml="<div style='display:flex;gap:6px;flex-wrap:wrap'>"+_AG_TEAM.map(function(m){ var on=(_curPpl.indexOf(m.id)>=0); var isMe=(RME&&String(m.id)===String(RME.id));
       return "<button data-act='ag-pick-person' data-id='"+esc(m.id)+"'"+(isMe?" disabled":"")+" style='display:inline-flex;align-items:center;gap:5px;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";border-radius:100px;padding:5px 12px;font-size:12px;font-weight:600;cursor:"+(isMe?"default":"pointer")+";color:var(--pw-carbon);font-family:inherit;opacity:"+(isMe?"1":"1")+"'>"+(on?"✓ ":"")+esc((""+(m.nombre||m.email)).split(" ")[0])+(isMe?" (vos)":"")+"</button>"; }).join("")+"</div>";
+    // Armador de preguntas para quien reserva. Cada coach arma las suyas; si no
+    // agrega ninguna, el link de reservas NO muestra preguntas (cero por defecto).
+    var _QT=[["corto","Respuesta corta"],["largo","Texto largo"],["opciones","Opción múltiple"],["tel","Teléfono"]];
+    var _qs=(Object.prototype.toString.call(g.questions)==="[object Array]")?g.questions:[];
+    var _qRows=_qs.map(function(q,qi){
+      var typeBtns=_QT.map(function(tt){ var on=((q.type||"corto")===tt[0]);
+        return "<button data-act='ag-q-settype' data-i='"+qi+"' data-t='"+tt[0]+"' style='font-size:11px;font-weight:600;padding:5px 9px;border-radius:8px;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";color:"+(on?"var(--pw-bosque)":"var(--pw-text-soft)")+";cursor:pointer;font-family:inherit'>"+tt[1]+"</button>"; }).join("");
+      var optsField=((q.type||"corto")==="opciones")?("<input id='agqo-"+qi+"' class='cp-form-input' style='margin-top:6px;font-size:12px' placeholder='Opciones separadas por coma (ej: Instagram, LinkedIn, Otro)' value=\""+esc((Object.prototype.toString.call(q.opts)==="[object Array]"?q.opts:[]).join(", "))+"\">"):"";
+      return "<div style='border:1px solid var(--pw-border);border-radius:11px;padding:10px;margin-bottom:8px;background:var(--pw-niebla)'>"+
+        "<div style='display:flex;gap:8px;align-items:flex-start'>"+
+          "<input id='agq-"+qi+"' class='cp-form-input' style='flex:1' placeholder='Escribí la pregunta…' value=\""+esc(q.q||"")+"\">"+
+          "<button data-act='ag-q-del' data-i='"+qi+"' title='Borrar' style='background:none;border:none;color:var(--pw-text-muted);font-size:15px;cursor:pointer;padding:6px;flex-shrink:0'>🗑</button>"+
+        "</div>"+
+        "<div style='display:flex;gap:5px;flex-wrap:wrap;margin-top:7px'>"+typeBtns+"</div>"+
+        optsField+
+        "<label style='display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--pw-text-soft);margin-top:8px;cursor:pointer'><input type='checkbox' id='agqr-"+qi+"' "+(q.req?"checked":"")+"> Obligatoria</label>"+
+      "</div>";
+    }).join("");
+    var _qHtml="<div class='cp-form-row'><label class='cp-form-label'>Preguntas para quien reserva <span style='color:var(--pw-text-muted);font-weight:400'>— opcional; si no agregás ninguna, no se muestra nada</span></label>"+
+      _qRows+
+      "<button data-act='ag-q-add' style='width:100%;border:1.5px dashed var(--pw-border-strong);background:transparent;color:var(--pw-bosque);border-radius:10px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit'>+ Agregar pregunta</button>"+
+    "</div>";
     body="<div class='cp-form-row'><label class='cp-form-label'>Nombre</label><input id='ag-type-input' class='cp-form-input' value=\""+esc(curLbl)+"\" placeholder='Ej. Sesión 45 min'></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Color <span style='color:var(--pw-text-muted);font-weight:400'>— así se distingue en el calendario</span></label><div style='display:flex;gap:10px;flex-wrap:wrap;padding-top:2px'>"+colDots+"</div></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Icono <span style='color:var(--pw-text-muted);font-weight:400'>— se muestra en la agenda</span></label><div style='display:flex;gap:7px;flex-wrap:wrap;padding-top:2px'>"+icoBtns+"</div></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Quién atiende <span style='color:var(--pw-text-muted);font-weight:400'>— el link muestra a los elegidos</span></label>"+_pplHtml+"</div>"+
+      _qHtml+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-type'>Guardar</button></div>";
   } else if(g.mode==="link"){
     ttl="Link para que reserven";
@@ -3026,9 +3084,82 @@ function _resLoad(){
   var body=document.getElementById("cp-res-body"); if(!body) return;
   if(!RME||!RME.id){ body.innerHTML=""; return; }
   var since=new Date(Date.now()-86400000).toISOString();
-  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+"&order=inicio.asc&select=id,nombre,email,tipo,inicio,estado")
+  // select=* (no una lista fija) para que traiga 'respuestas' si esa columna ya
+  // existe, sin romper la lista de reservas en las cuentas donde todavía no se
+  // aplicó la migración (una lista fija con una columna inexistente da 400).
+  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+"&order=inicio.asc&select=*")
     .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); _agMonthRender(); })
     .catch(function(){ var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase."); });
+}
+// ── Informes guardados como archivos (tabla informes_guardados) ──
+// Lista los informes guardados de un cliente (por email + coach_id) en la
+// sección "Informes ✨ IA Pathway" de la pestaña Documentos. Resiliente: si la
+// tabla no existe todavía (SQL sin correr), _sb devuelve [] y mostramos el vacío.
+function _infFilesLoad(cid){
+  var box=document.getElementById("cp-inf-files-"+cid); if(!box) return;
+  var c=(CLIENTS||[]).filter(function(x){return String(x.id)===String(cid);})[0]; if(!c){ box.innerHTML=""; return; }
+  var email=((c.raw&&c.raw.email)||c.email||"").toLowerCase().trim();
+  if(!email){ box.innerHTML="<div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>Este cliente no tiene email.</div>"; return; }
+  _sb("informes_guardados?email=eq."+encodeURIComponent(email)+cg()+"&order=created_at.desc&select=*").then(function(rows){
+    rows=Object.prototype.toString.call(rows)==="[object Array]"?rows:[];
+    if(!rows.length){ box.innerHTML="<div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>Todavía no guardaste informes de este cliente.</div>"; return; }
+    box.innerHTML=rows.map(function(r){
+      var dt=r.created_at?new Date(r.created_at):null;
+      var when=(dt&&!isNaN(dt))?dt.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"}):"";
+      return "<div style='display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--pw-border);border-radius:11px;margin-bottom:7px;background:var(--pw-niebla)'>"+
+        "<span class='cp-emo' style='font-size:17px'>📄</span>"+
+        "<div style='flex:1;min-width:0'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(r.titulo||"Informe")+"</div><div style='font-size:11px;color:var(--pw-text-muted)'>"+esc(when)+"</div></div>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='inf-open' data-fid='"+esc(r.id)+"'>Abrir</button>"+
+      "</div>";
+    }).join("");
+  }).catch(function(){ box.innerHTML="<div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>No se pudieron cargar los informes.</div>"; });
+}
+// Renderiza el contenido de un informe guardado (objeto d) como texto legible.
+// Genérico: recorre las claves con texto o listas y las muestra con su título.
+function _infReadable(d){
+  if(typeof d==="string"){ try{ d=JSON.parse(d); }catch(e){ return "<p style='font-size:13px;white-space:pre-wrap'>"+esc(d)+"</p>"; } }
+  if(!d||typeof d!=="object") return "<p style='color:var(--pw-text-soft)'>Sin contenido.</p>";
+  var labels={resumen:"Resumen",resumen_ejecutivo:"Resumen",situacion:"Situación",fortalezas:"Fortalezas",areas:"A mejorar",areas_mejora:"A mejorar",mejoras:"A mejorar",estrategia:"Estrategia",cv_acciones:"CV",linkedin_acciones:"LinkedIn",networking_acciones:"Networking",preguntas:"Preguntas de entrevista"};
+  var out="";
+  Object.keys(d).forEach(function(k){
+    var v=d[k]; if(v==null) return;
+    var isArr=Object.prototype.toString.call(v)==="[object Array]";
+    if(!isArr && typeof v!=="string") return;
+    if(isArr && !v.length) return;
+    if(!isArr && !(""+v).trim()) return;
+    out+="<div style='margin-bottom:13px'><div style='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--pw-bosque);margin-bottom:3px'>"+esc(labels[k]||k)+"</div>";
+    if(isArr){ out+="<ul style='margin:0;padding-left:18px'>"+v.map(function(x){return "<li style='font-size:13px;line-height:1.5;margin-bottom:3px'>"+esc(""+x)+"</li>";}).join("")+"</ul>"; }
+    else { out+="<p style='font-size:13px;line-height:1.55;margin:0'>"+esc(""+v).replace(/\n/g,"<br>")+"</p>"; }
+    out+="</div>";
+  });
+  return out||"<p style='color:var(--pw-text-soft)'>Sin contenido de texto.</p>";
+}
+// Overlay de solo-lectura para ver un informe guardado. Se inyecta en el body
+// (fuera del render principal) y se quita al cerrar — no toca el pipeline.
+function _infShowOverlay(titulo, d){
+  try{
+    var prev=document.getElementById("cp-inf-view"); if(prev) prev.remove();
+    var ov=document.createElement("div");
+    ov.id="cp-inf-view";
+    ov.style.cssText="position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:170;display:flex;align-items:center;justify-content:center;padding:20px";
+    ov.innerHTML="<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl,0 20px 60px rgba(0,0,0,.25));width:560px;max-width:100%;max-height:88vh;overflow:auto'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(titulo||"Informe")+"<span class='dot'>.</span></h3><button class='cp-icon-btn' id='cp-inf-view-x' title='Cerrar'>✕</button></div>"+
+      "<div class='cp-card-pad'>"+_infReadable(d)+"</div>"+
+    "</div>";
+    ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+    document.body.appendChild(ov);
+    var x=document.getElementById("cp-inf-view-x"); if(x) x.onclick=function(){ ov.remove(); };
+  }catch(e){}
+}
+// Respuestas de una reserva → [{q,a}]. Tolerante: acepta el JSON ya parseado o
+// como string; si viene vacío o roto, devuelve []. Filtra items sin q ni a.
+function _citaAnswers(r){
+  try{
+    var v=r&&r.respuestas; if(!v) return [];
+    var arr=(typeof v==="string")?JSON.parse(v):v;
+    if(Object.prototype.toString.call(arr)!=="[object Array]") return [];
+    return arr.filter(function(x){ return x && (x.q||x.a); }).map(function(x){ return {q:(""+(x.q||"")), a:(""+(x.a||""))}; });
+  }catch(e){ return []; }
 }
 function _resRender(list){
   var rows=(list||[]).filter(function(r){ return r && r.estado!=="cancelada"; });
@@ -3039,16 +3170,23 @@ function _resRender(list){
     var dl=_agDayLabel(ms); if(dl!==lastDay){ html+="<div class='cp-eyebrow' style='margin:9px 0 3px'>"+esc(dl)+"</div>"; lastDay=dl; }
     var conf=(r.estado==="confirmada");
     var mail="mailto:"+encodeURIComponent(r.email||"")+"?subject="+encodeURIComponent("Tu reserva")+"&body="+encodeURIComponent("Hola "+(""+(r.nombre||"")).split(" ")[0]+", ");
-    html+="<div style='display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
-      "<span style='min-width:42px;font-size:12px;font-weight:700;color:var(--pw-carbon)'>"+_agTime(ms)+"</span>"+
-      "<span style='width:9px;height:9px;border-radius:50%;background:"+col+";flex-shrink:0' title='"+esc((typ&&typ.label)||r.tipo||"")+"'></span>"+
-      "<div style='flex:1;min-width:0'>"+
-        "<div style='font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.nombre||"Alguien")+(conf?" <span style='color:var(--pw-bosque);font-size:11px;font-weight:700'>· confirmada</span>":"")+"</div>"+
-        "<div style='font-size:11px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div>"+
+    // Respuestas de las preguntas del coach (si las hay). Se guardan en
+    // citas.respuestas como JSON [{q,a}]. Las mostramos debajo del nombre.
+    var _ans=_citaAnswers(r);
+    var _ansHtml=_ans.length?("<div style='margin:5px 0 2px 51px;display:flex;flex-direction:column;gap:3px'>"+_ans.map(function(a){ return "<div style='font-size:11.5px;color:var(--pw-text-soft);line-height:1.4'><span style='color:var(--pw-text-muted)'>"+esc(a.q)+":</span> <strong style='color:var(--pw-carbon);font-weight:600'>"+esc(a.a)+"</strong></div>"; }).join("")+"</div>"):"";
+    html+="<div style='padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
+      "<div style='display:flex;align-items:center;gap:9px'>"+
+        "<span style='min-width:42px;font-size:12px;font-weight:700;color:var(--pw-carbon)'>"+_agTime(ms)+"</span>"+
+        "<span style='width:9px;height:9px;border-radius:50%;background:"+col+";flex-shrink:0' title='"+esc((typ&&typ.label)||r.tipo||"")+"'></span>"+
+        "<div style='flex:1;min-width:0'>"+
+          "<div style='font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.nombre||"Alguien")+(conf?" <span style='color:var(--pw-bosque);font-size:11px;font-weight:700'>· confirmada</span>":"")+"</div>"+
+          "<div style='font-size:11px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div>"+
+        "</div>"+
+        "<a href='"+esc(mail)+"' class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;text-decoration:none' title='Escribir por email'>"+svg(IC.mail||IC.extLink,13)+"</a>"+
+        (conf?"":"<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-bosque)' title='Marcar confirmada' data-act='res-confirm' data-id='"+esc(r.id)+"'>"+svg(IC.check,14)+"</button>")+
+        "<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-danger)' title='Cancelar' data-act='res-cancel' data-id='"+esc(r.id)+"'>"+svg(IC.close,13)+"</button>"+
       "</div>"+
-      "<a href='"+esc(mail)+"' class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;text-decoration:none' title='Escribir por email'>"+svg(IC.mail||IC.extLink,13)+"</a>"+
-      (conf?"":"<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-bosque)' title='Marcar confirmada' data-act='res-confirm' data-id='"+esc(r.id)+"'>"+svg(IC.check,14)+"</button>")+
-      "<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-danger)' title='Cancelar' data-act='res-cancel' data-id='"+esc(r.id)+"'>"+svg(IC.close,13)+"</button>"+
+      _ansHtml+
     "</div>";
   });
   return html;
@@ -3633,8 +3771,19 @@ function viewClienteDetalle(c){
     // pega en una sección colapsada (no abruma) y debajo van las 3 filas de docs.
     body="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Documentos del cliente<span class='dot'>.</span></h3><span class='cp-eyebrow'>Acciones agrupadas</span></div>"+
         "<div class='cp-card-pad'>"+
-          ((!c._example && rpSt[0]!=="Publicado")?"<div style='font-size:12px;color:#8E7A35;background:rgba(233,196,106,.16);border-radius:10px;padding:9px 12px;margin-bottom:6px'>⚠️ El <strong>análisis</strong> se genera en la pestaña <strong>Análisis</strong>. Sin análisis, el portal del cliente se ve vacío.</div>":"")+
           _docRow(true,"CV optimizado","Se abre en su editor · descargable en PDF desde ahí",cvSt[0],cvSt[1],"data-act='genmat:cv' data-id='"+esc(c.id)+"'",cvUrl,"cv")+
+          // Qué versión del CV ve el cliente: con diseño (lindo), ATS (plano) o ambos.
+          // Estilo "radio" (no botones sólidos): un puntito marca la elegida.
+          (_visOn("cv") ? ("<div style='padding:2px 0 12px;margin-top:-4px'>"+
+            "<div style='font-size:11.5px;color:var(--pw-text-soft);margin-bottom:8px'>Qué versión ve el cliente</div>"+
+            "<div style='display:flex;flex-wrap:wrap;gap:8px'>"+
+              [["ambos","Con diseño + ATS"],["lindo","Solo con diseño"],["ats","Solo ATS"]].map(function(v){
+                var on=((_visC.cv_estilo||"ambos")===v[0]);
+                return "<button data-act='cvestilo:"+v[0]+"' data-id='"+esc(c.id)+"' style='display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:99px;font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer;transition:border-color .15s,background .15s;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";color:"+(on?"var(--pw-bosque)":"var(--pw-text-soft)")+"'>"+
+                  "<span style='width:15px;height:15px;border-radius:50%;flex-shrink:0;border:2px solid "+(on?"var(--pw-bosque)":"var(--pw-border-strong,#c8d5cd)")+";display:inline-flex;align-items:center;justify-content:center'>"+(on?"<span style='width:7px;height:7px;border-radius:50%;background:var(--pw-bosque)'></span>":"")+"</span>"+
+                  v[1]+"</button>";
+              }).join("")+
+            "</div></div>") : "")+
           // Fila LinkedIn: ahora SE GENERA desde el panel (misma IA que usa el cliente en su portal).
           "<div style='border-top:1px solid var(--pw-border);padding:14px 0 4px'>"+
             "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:14px'>"+
@@ -3652,7 +3801,18 @@ function viewClienteDetalle(c){
               "<div><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>Recursos</div><div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>Material de apoyo por semana en su portal.</div></div>"+
               "<span style='display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--pw-text-soft)'>"+(_visOn("recursos")?"Visible":"Oculto")+"<button class='cp-switch "+(_visOn("recursos")?"is-on":"")+"' data-act='clivis:recursos' data-id='"+esc(c.id)+"'><span></span></button></span>"+
             "</div></div>"+
-        "</div></div>";
+        "</div></div>"+
+        // Informes ✨ IA Pathway: se guardan como ARCHIVOS por cliente (podés tener
+        // varios; no se pisan). El informe se genera/edita en Análisis; acá guardás
+        // una copia con fecha. La lista se carga async en _infFilesLoad (clidet:docs).
+        "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Informes <span style='color:var(--pw-amanecer)'>✨</span> IA Pathway<span class='dot'>.</span></h3><span class='cp-eyebrow'>Se guardan por cliente</span></div>"+
+          "<div class='cp-card-pad'>"+
+            "<div id='cp-inf-files-"+esc(c.id)+"'><div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>Cargando…</div></div>"+
+            "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px'>"+
+              "<button class='cp-btn cp-btn-primary' data-act='inf-save' data-id='"+esc(c.id)+"'><span class='cp-emo'>💾</span> Guardar el informe actual como archivo</button>"+
+              "<span style='font-size:12px;color:var(--pw-text-soft)'>El informe se genera/edita en <strong>Análisis</strong>. Guardá una copia acá y tené varios.</span>"+
+            "</div>"+
+          "</div></div>";
   } else if(t==="plan"){
     var D=_exHide?{}:((c.inf&&c.inf.d)||{});
     var PETN=etapasDe(c, _tipo);
@@ -3679,8 +3839,8 @@ function viewClienteDetalle(c){
     }
     body=_planIntro+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:10px;flex-wrap:wrap;align-items:center'>"+
-        "<button class='cp-btn cp-btn-primary"+(hasInf?"":" beacon")+"' data-act='genmat:informe' data-id='"+esc(c.id)+"'>"+(hasInf?"Regenerar con IA":"Generar con IA")+"</button>"+
-        "<span style='font-size:12px;color:var(--pw-text-soft)'>"+(hasInf?"Informe creado. Edita lo que quieras y guarda.":"Aún no hay informe. Genera con IA o escríbelo y guarda.")+"</span>"+
+        "<button class='cp-btn cp-btn-primary"+(hasInf?"":" beacon")+"' data-act='genmat:informe' data-id='"+esc(c.id)+"'>"+(hasInf?"Regenerar con <span style='color:var(--pw-amanecer)'>✨</span> IA Pathway":"Generar con <span style='color:var(--pw-amanecer)'>✨</span> IA Pathway")+"</button>"+
+        "<span style='font-size:12px;color:var(--pw-text-soft)'>"+(hasInf?"Informe creado. Edita lo que quieras y guarda.":"Aún no hay informe. Genera con <span style='color:var(--pw-amanecer)'>✨</span> IA Pathway o escríbelo y guarda.")+"</span>"+
       "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Diagnóstico<span class='dot'>.</span></h3><span class='cp-eyebrow'>Lo que ve el cliente</span></div>"+
         "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
@@ -4458,7 +4618,7 @@ function viewGenMatModal(){
   var rw=c.raw||{};
   var li=esc(rw.linkedin_texto||"");
   var cv=esc(rw.cv_url||rw.cv_texto||"");
-  var titles={informe:"Generar análisis con IA",cv:"Generar CV optimizado",carta:"Generar carta de presentación",linkedin:"Generar análisis de LinkedIn"};
+  var titles={informe:"Generar análisis con <span style='color:var(--pw-amanecer)'>✨</span> IA Pathway",cv:"Generar CV optimizado",carta:"Generar carta de presentación",linkedin:"Generar análisis de LinkedIn"};
   // Un solo campo por tipo (como el preview). El handler real lee pa-li/pa-cv del
   // DOM; lo que no se pega acá usa lo ya guardado del cliente.
   // El campo del informe se adapta al nicho: fitness/finanzas NO piden LinkedIn
@@ -4476,7 +4636,7 @@ function viewGenMatModal(){
   var act={informe:"gen-informe",cv:"gen-cv",carta:"gen-carta",linkedin:"gen-linkedin"}[g.kind]||"gen-informe";
   return "<div data-act='genmat-bg' style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:160;display:flex;align-items:center;justify-content:center;padding:20px'>"+
     "<div data-act='genmat-stop' style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:520px;max-width:100%;max-height:90vh;overflow:auto'>"+
-      "<div class='cp-card-hd'><h3 class='cp-card-title'>"+(titles[g.kind]||"Generar con IA")+"<span class='dot'>.</span></h3>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>"+(titles[g.kind]||"Generar con <span style='color:var(--pw-amanecer)'>✨</span> IA Pathway")+"<span class='dot'>.</span></h3>"+
         "<button class='cp-icon-btn' data-act='genmat-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
       "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
         "<div class='cp-form-hint' style='margin:0'>Pega el texto del material y la IA lo usa para generarlo.</div>"+
@@ -4940,13 +5100,23 @@ function _chatBandejaRows(includeMica){
     rows += row({ key:"mica", name:"Soporte Pathway", avatarHtml:listAv(ADMIN_PHOTO,"Pathway"), preview:micaPrev, time:micaLast?fmtRel(micaLast.created_at):"", unread:micaUnread });
   }
   // 2) Un item por cada cliente real del coach (los desactivados no aparecen)
+  var _nCli=0, _nInact=0;
   (CLIENTS||[]).forEach(function(c){
-    if(c.raw && c.raw.activo===false) return;
+    if(c.raw && c.raw.activo===false){ _nInact++; return; }
+    _nCli++;
     var chat = c.chat||[];
     var last = chat.length ? chat[chat.length-1] : null;
     var prev = last ? ((last.from==="coach"?"Tú: ":((c.name||"").split(" ")[0]+": "))+prevTxt(last.text)) : "Iniciar conversación";
     rows += row({ key:String(c.id), name:c.name||"Cliente", avatarHtml:listAv(c.photo,c.name||"Cliente"), preview:prev, time:last?(last.time||""):"", unread:0 });
   });
+  // Estado vacío: sin clientes activos, la lista quedaba en blanco y parecía roto
+  // ("no me aparecen"). Explicamos qué hacer según el caso (ninguno / todos inactivos).
+  if(_nCli===0){
+    var _emptyTxt = _nInact>0
+      ? ("Tenés "+_nInact+" cliente"+(_nInact>1?"s":"")+" desactivado"+(_nInact>1?"s":"")+". Reactivalo"+(_nInact>1?"s":"")+" en la sección Clientes para poder chatear.")
+      : "Todavía no tenés clientes acá. Agregá uno con “+ Cliente” o invitalo desde la sección Clientes; al aparecer en tu lista podrás chatear.";
+    rows += "<div style='padding:22px 16px;text-align:center;color:var(--pw-text-soft);font-size:12.5px;line-height:1.5'>"+esc(_emptyTxt)+"</div>";
+  }
   return rows;
 }
 // Barra superior de la bandeja del chat: acceso a Solicitudes de Pathway
@@ -6227,6 +6397,20 @@ function viewAdmin(){
     } else {
       var cm=state.coachMsg||"";
       var cmCol=cm.indexOf("ok:")===0?"var(--pw-bosque)":cm.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
+      var cLink=state.coachLink||"";
+      // Caja del link directo de activación. Se muestra apenas se intenta crear un
+      // coach nuevo (pase lo que pase con la escritura/email): input de solo lectura
+      // + botón Copiar (reusa el handler genérico ag-copy-link) + WhatsApp.
+      var cLinkBox = cLink ? (
+        "<div style='display:flex;flex-direction:column;gap:6px;background:var(--pw-success-bg);border:1px solid var(--pw-border);border-radius:10px;padding:10px 12px'>"+
+          "<span style='font-size:11.5px;font-weight:700;color:var(--pw-bosque)'>Link directo de activación (siempre funciona)</span>"+
+          "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+            "<input class='cp-form-input' style='flex:1;min-width:220px;font-size:12px' readonly value='"+esc(cLink)+"' onclick='this.select()'>"+
+            "<button class='cp-btn cp-btn-primary' style='height:38px;padding:0 14px;font-size:12.5px' data-act='ag-copy-link' data-link='"+esc(cLink)+"'>Copiar link</button>"+
+            "<a class='cp-btn cp-btn-ghost' style='height:38px;padding:0 14px;font-size:12.5px;display:inline-flex;align-items:center' href='https://wa.me/?text="+encodeURIComponent("Para activar tu cuenta de coach en Pathway entrá acá: "+cLink)+"' target='_blank' rel='noopener'>Enviar por WhatsApp</a>"+
+          "</div>"+
+        "</div>"
+      ) : "";
       var accBox = REAL ? (
         "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Dar acceso a un coach<span class='dot'>.</span></h3>"+
           "<span class='cp-eyebrow'>Suma días de acceso · fuera de Stripe</span></div>"+
@@ -6240,6 +6424,7 @@ function viewAdmin(){
               "<button class='cp-btn cp-btn-primary' data-act='coach-access'>"+svg(IC.plus,12)+" Dar acceso</button>"+
             "</div>"+
             (cm ? "<div style='font-size:12px;font-weight:600;color:"+cmCol+"'>"+esc(cm.replace(/^(ok|err|…):/,""))+"</div>" : "")+
+            cLinkBox+
           "</div></div>"
       ) : "";
       // Dos sub-pestañas: "Coaches" (lista + buscador) y "Analíticas" (KPIs).
@@ -6722,6 +6907,7 @@ function render(){
     // Al NAVEGAR (cambia la vista): transición de entrada + contadores que suben.
     // En un re-render de la misma vista (polling, guardados) no se re-anima.
     if(!_same){ try{ var _cc=document.querySelector(".cp-container"); if(_cc) _cc.classList.add("pw-sec-in"); }catch(e){} try{ _pwCountUp(); }catch(e){} }
+    try{ _enhanceCards(); }catch(e){}
     _lastViewKey=_vk;
     try{ _syncUserMenu(); }catch(e){}
     try{ _syncNotifBadge(); }catch(e){}
@@ -6803,16 +6989,23 @@ document.addEventListener("click", function(ev){
   // Agenda: tipos de evento + agendar cita. TODO con modales Pathway (nada de
   // prompts del navegador). Se guarda en el perfil por REST (saveCfg).
   if(act==="ag-open"){ state.ag={mode:"menu", i:parseInt(el.getAttribute("data-i"),10)}; render(); return; }
-  if(act==="ag-new"){ state.ag={mode:"new", i:-1, color:_AG_COLORS[0], icon:_AG_ICONS[0], people:[(RME&&RME.id)]}; _agTeamLoad(); render(); return; }
+  if(act==="ag-new"){ state.ag={mode:"new", i:-1, color:_AG_COLORS[0], icon:_AG_ICONS[0], people:[(RME&&RME.id)], questions:[]}; _agTeamLoad(); render(); return; }
   if(act==="ag-cita"){ var _ci=el.getAttribute("data-i"); state.ag={mode:"cita", i:_ci!=null?parseInt(_ci,10):-1, team:[]}; _agTeamLoad(); render(); return; }
   if(act==="ag-team"){ if(state.ag){ var _em=el.getAttribute("data-email"); var _tt=(state.ag.team||[]).slice(); var _ix=_tt.indexOf(_em); if(_ix>=0) _tt.splice(_ix,1); else _tt.push(_em); state.ag.team=_tt; } render(); return; }
   if(act==="ag-close"){ state.ag=null; render(); return; }
   if(act==="ag-stop"){ return; }
-  if(act==="ag-to-edit"){ var _et=_agTypes(); var _ei=(state.ag&&state.ag.i); var _eo=(_ei>=0&&_ei<_et.length)?_et[_ei]:{}; var _ppl=(Object.prototype.toString.call(_eo.people)==="[object Array]"&&_eo.people.length)?_eo.people.slice():[(RME&&RME.id)]; state.ag={mode:"edit", i:_ei, label:(_eo.label||""), color:(_eo.color||_AG_COLORS[0]), icon:(_eo.icon||_AG_ICONS[0]), people:_ppl}; _agTeamLoad(); render(); return; }
+  if(act==="ag-to-edit"){ var _et=_agTypes(); var _ei=(state.ag&&state.ag.i); var _eo=(_ei>=0&&_ei<_et.length)?_et[_ei]:{}; var _ppl=(Object.prototype.toString.call(_eo.people)==="[object Array]"&&_eo.people.length)?_eo.people.slice():[(RME&&RME.id)]; var _pq=[]; try{ if(Object.prototype.toString.call(_eo.questions)==="[object Array]") _pq=JSON.parse(JSON.stringify(_eo.questions)); }catch(e){ _pq=[]; } state.ag={mode:"edit", i:_ei, label:(_eo.label||""), color:(_eo.color||_AG_COLORS[0]), icon:(_eo.icon||_AG_ICONS[0]), people:_ppl, questions:_pq}; _agTeamLoad(); render(); return; }
   if(act==="ag-pick-person"){ if(state.ag){ var _pl3=document.getElementById("ag-type-input"); if(_pl3) state.ag.label=_pl3.value; var _pid=el.getAttribute("data-id"); if(RME&&String(_pid)===String(RME.id)) { render(); return; } var _pp=(state.ag.people||[]).slice(); var _pix=_pp.indexOf(_pid); if(_pix>=0) _pp.splice(_pix,1); else _pp.push(_pid); state.ag.people=_pp; } render(); return; }
   if(act==="ag-to-link"){ state.ag={mode:"link", i:(state.ag&&state.ag.i)}; render(); return; }
   if(act==="ag-pick-color"){ if(state.ag){ var _pl=document.getElementById("ag-type-input"); if(_pl) state.ag.label=_pl.value; state.ag.color=el.getAttribute("data-c"); } render(); return; }
   if(act==="ag-pick-icon"){ if(state.ag){ var _pl2=document.getElementById("ag-type-input"); if(_pl2) state.ag.label=_pl2.value; state.ag.icon=el.getAttribute("data-ic"); } render(); return; }
+  // ── Armador de preguntas del tipo de evento ──
+  // _agCollectQuestions() vuelca lo que la coach escribió en los inputs a
+  // state.ag.questions ANTES de cualquier re-render (agregar/borrar/cambiar tipo)
+  // o guardado, para no perder lo tipeado (los inputs se re-renderizan).
+  if(act==="ag-q-add"){ if(state.ag){ _agPreserveTypeLabel(); _agCollectQuestions(); state.ag.questions=(state.ag.questions||[]).concat([{q:"",type:"corto",req:false,opts:[]}]); } render(); return; }
+  if(act==="ag-q-del"){ if(state.ag){ _agPreserveTypeLabel(); _agCollectQuestions(); var _qi=parseInt(el.getAttribute("data-i"),10); var _qq=(state.ag.questions||[]).slice(); if(_qi>=0&&_qi<_qq.length) _qq.splice(_qi,1); state.ag.questions=_qq; } render(); return; }
+  if(act==="ag-q-settype"){ if(state.ag){ _agPreserveTypeLabel(); _agCollectQuestions(); var _qti=parseInt(el.getAttribute("data-i"),10); var _qtt=el.getAttribute("data-t")||"corto"; var _qq2=(state.ag.questions||[]).slice(); if(_qti>=0&&_qti<_qq2.length){ _qq2[_qti].type=_qtt; if(_qtt!=="opciones") { /* mantenemos opts por si vuelve */ } } state.ag.questions=_qq2; } render(); return; }
   if(act==="ag-copy-link"){ var _cl=el.getAttribute("data-link")||""; try{ if(navigator.clipboard) navigator.clipboard.writeText(_cl); }catch(e){} toast("Link copiado ✓"); return; }
   if(act==="copy-book"){ try{ if(navigator.clipboard) navigator.clipboard.writeText(_bookUrl()); }catch(e){} toast("Tu link de reservas está copiado ✓"); return; }
   if(act==="share-book"){ var _su=_bookUrl(); if(navigator.share){ navigator.share({title:"Reservá conmigo en Pathway",url:_su}).catch(function(){}); } else { try{ if(navigator.clipboard) navigator.clipboard.writeText(_su); }catch(e){} toast("Link copiado ✓ (tu navegador no tiene compartir)"); } return; }
@@ -6944,7 +7137,15 @@ document.addEventListener("click", function(ev){
     var _tc=(state.ag&&state.ag.color)||_AG_COLORS[0], _tic=(state.ag&&state.ag.icon)||_AG_ICONS[0];
     var _tpl=(state.ag&&Object.prototype.toString.call(state.ag.people)==="[object Array]")?state.ag.people.filter(Boolean):[(RME&&RME.id)];
     if(RME&&RME.id&&_tpl.indexOf(RME.id)<0) _tpl.unshift(RME.id);
-    var _tobj={label:_tv, color:_tc, icon:_tic, people:_tpl};
+    // Preguntas del armador: juntamos lo tipeado y descartamos las vacías (sin
+    // texto). Cada una: {q, type, req, opts}. Si no hay ninguna, queda [].
+    _agCollectQuestions();
+    var _tq=((state.ag&&state.ag.questions)||[]).filter(function(q){ return q && (""+(q.q||"")).trim(); }).map(function(q){
+      var o={q:(""+q.q).trim(), type:(q.type||"corto"), req:!!q.req};
+      if(o.type==="opciones") o.opts=(Object.prototype.toString.call(q.opts)==="[object Array]"?q.opts:[]).filter(Boolean);
+      return o;
+    });
+    var _tobj={label:_tv, color:_tc, icon:_tic, people:_tpl, questions:_tq};
     if(state.ag&&state.ag.mode==="new"){ _tt.push(_tobj); } else if(_gi>=0&&_gi<_tt.length){ _tt[_gi]=_tobj; }
     state.ag=null; saveCfg({event_types:_tt}); return;
   }
@@ -7300,7 +7501,7 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
-  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } render(); return; }
+  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } render(); return; }
   if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); return; }
   if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
   if(act.indexOf("estsel:")===0){ var _es=parseInt(act.slice(7),10); state.estSel=(state.estSel===_es?null:_es); render(); return; }
@@ -7500,11 +7701,18 @@ document.addEventListener("click", function(ev){
   }
   if(act==="coach-access"){
     if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
-    var caEmail=(_val("cac-email")||"").trim().toLowerCase();
+    // Email saneado: sacamos TODOS los espacios (un espacio pegado al copiar era
+    // lo que hacía "no estaba bien el mail"). Un email nunca lleva espacios.
+    var caEmail=(_val("cac-email")||"").replace(/\s+/g,"").toLowerCase();
     var caNombre=(_val("cac-nombre")||"").trim();
     var caDiasN=parseInt(_val("cac-dias")||"30",10);
     var caDias=Math.max(1,Math.min(365,isNaN(caDiasN)?30:caDiasN));
     var caNicho=(_val("cac-nicho")||"carrera").trim();
+    // Link directo de activación: SIEMPRE funciona (registro.html crea/activa la
+    // cuenta del coach aunque la escritura de acá o el email automático fallen).
+    // Es la red de seguridad para que nunca te quedes sin poder dar acceso.
+    var caLink="https://pathwaycareercoach.com/registro.html?email="+encodeURIComponent(caEmail);
+    state.coachLink="";
     var setMsg=function(t,kind){ state.coachMsg=(kind||"…")+":"+t; render(); };
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(caEmail)){ setMsg("Email inválido.","err"); return; }
     setMsg("Procesando…","…");
@@ -7541,6 +7749,11 @@ document.addEventListener("click", function(ev){
       // Coach nuevo: lo creamos SIN contraseña (el coach la elige al activar) y
       // le mandamos un mail para activar su cuenta en registro.html.
       if(!caNombre){ _caEnd("Pon el nombre del coach.","err"); return; }
+      // Mostramos el link de activación DESDE YA: pase lo que pase con la escritura
+      // o el email, la coach siempre puede copiar y mandar este link (registro.html
+      // crea/activa la cuenta al entrar). Así "no me llegó la invitación" se resuelve
+      // en 1 clic sin depender del email automático.
+      state.coachLink=caLink;
       var trialEnd=new Date(Date.now()+caDias*86400000).toISOString();
       return _caWrite("usuarios","POST",{email:caEmail,nombre:caNombre,rol:"coach",activo:true,configuracion:{plan:"pro",estado_sub:"prueba",fecha_fin_prueba:trialEnd,coach_type:caNicho,creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){
         // 201 Created = ok. 409 = ya existía por email (intento previo que sí entró)
@@ -7548,10 +7761,16 @@ document.addEventListener("click", function(ev){
         if(!r||(!r.ok && r.status!==409)) throw new Error("no se pudo crear (código "+((r&&r.status)||"sin respuesta")+")");
         reloadCoaches();
         return _sendCoachAccessEmail(caEmail, caNombre, true).then(function(sent){
-          _caEnd(sent?("✓ Coach creado. Le enviamos el email para activar su cuenta y elegir contraseña."):("✓ Coach creado, PERO el email no salió. Enviale este link a mano: pathwaycareercoach.com/registro.html?email="+caEmail),sent?"ok":"err");
+          _caEnd(sent?("✓ Coach creado. Le llegó el email de activación — y por las dudas, copiale este link directo:"):("✓ Coach creado. El email automático no salió — copiá este link y mandáselo vos (con eso activa su cuenta):"),"ok");
         });
       });
-    }).catch(function(e){ _caEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintentá.","err"); });
+    }).catch(function(e){
+      // Si estábamos creando un coach nuevo (ya seteamos el link), no la dejamos
+      // sin salida: el link directo activa la cuenta igual aunque esta escritura
+      // haya fallado. Si era otra cosa, mostramos el error tal cual.
+      if(state.coachLink){ _caEnd("No se pudo confirmar la creación desde el panel, pero podés darle acceso igual: copiá este link y mandáselo (crea su cuenta al activar).","err"); }
+      else { _caEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintentá.","err"); }
+    });
     return;
   }
   if(act==="empleado-crear"){
@@ -7703,16 +7922,47 @@ document.addEventListener("click", function(ev){
     var cid=el.getAttribute("data-id")||state.clienteSel;
     var cli=(CLIENTS||[]).filter(function(x){return String(x.id)===String(cid);})[0];
     if(!cli){ return; }
-    var curVis={}; try{ curVis=JSON.parse((cli.raw&&cli.raw.visibilidad)||"{}")||{}; }catch(e){}
-    var def={cv:true,carta:true,linkedin:true,recursos:true,sesiones:true,rutina:true,antropometria:true,nutricion:true,finanzas:true,progreso:true};
-    var newVis=Object.assign({},def,curVis); newVis[vk]=!newVis[vk];
-    cli.raw=cli.raw||{}; cli.raw.visibilidad=JSON.stringify(newVis);
-    _sbw("candidatos?id=eq."+encodeURIComponent(cid),"PATCH",{visibilidad:JSON.stringify(newVis)})
-      .catch(function(){});
-    render();
+    // Objetivo = lo opuesto a lo que ve el coach ahora (visible por defecto).
+    var _memV={}; try{ _memV=JSON.parse((cli.raw&&cli.raw.visibilidad)||"{}")||{}; }catch(e){}
+    var _target=(_memV[vk]===false); // si estaba oculto → mostrar; si visible → ocultar
+    _saveCliVis(cid, function(v){ v[vk]=_target; }); // SET idempotente → merge-safe
     return;
   }
-  if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); render(); return; }
+  if(act.indexOf("cvestilo:")===0){
+    // Qué versión del CV ve el cliente: ambos | lindo | ats. Guardado merge-safe.
+    var _cve=act.slice(9);
+    var cid2=el.getAttribute("data-id")||state.clienteSel;
+    _saveCliVis(cid2, function(v){ v.cv_estilo=_cve; });
+    return;
+  }
+  if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); render(); if(state.cliDetTab==="docs"){ requestAnimationFrame(function(){ try{ _infFilesLoad(state.clienteSel); }catch(e){} }); } return; }
+  // Guardar el informe actual (c.inf.d, generado en Análisis) como un ARCHIVO
+  // nuevo en informes_guardados. Podés guardar varios; no se pisan.
+  if(act==="inf-save"){
+    var _isid=el.getAttribute("data-id"); var _isc=(CLIENTS||[]).filter(function(x){return String(x.id)===String(_isid);})[0];
+    if(!_isc||!_isc.inf||!_isc.inf.d){ alert("Primero generá el informe en la pestaña Análisis. Después guardás una copia acá."); return; }
+    var _isem=((_isc.raw&&_isc.raw.email)||_isc.email||"").toLowerCase().trim();
+    if(!_isem){ alert("Este cliente no tiene email."); return; }
+    var _isnow=new Date();
+    var _istit="Informe · "+_isnow.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"});
+    var _isbtn=ev&&ev.currentTarget; if(_isbtn) _isbtn.disabled=true;
+    _sbw("informes_guardados","POST",{coach_id:(RME&&RME.id)||null,email:_isem,titulo:_istit,contenido:_isc.inf.d}).then(function(r){
+      if(_isbtn) _isbtn.disabled=false;
+      if(r&&r.ok){ toast("Informe guardado como archivo ✓"); _infFilesLoad(_isid); }
+      else { alert("No se pudo guardar. Si es la primera vez, aplicá la migración informes_guardados.sql en Supabase."); }
+    }).catch(function(){ if(_isbtn) _isbtn.disabled=false; alert("Sin conexión. Reintentá."); });
+    return;
+  }
+  // Abrir un informe guardado en un overlay de solo lectura.
+  if(act==="inf-open"){
+    var _iofid=el.getAttribute("data-fid"); if(!_iofid) return;
+    _sb("informes_guardados?id=eq."+encodeURIComponent(_iofid)+cg()+"&select=*").then(function(rows){
+      var r=(Object.prototype.toString.call(rows)==="[object Array]"&&rows[0])?rows[0]:null;
+      if(!r){ toast("No se pudo abrir el informe."); return; }
+      _infShowOverlay(r.titulo||"Informe", r.contenido);
+    }).catch(function(){ toast("No se pudo abrir el informe."); });
+    return;
+  }
   if(act.indexOf("demo-tipo:")===0){ state.demoTipo=act.slice(10); try{ localStorage.setItem("pw_demo_tipo",state.demoTipo); }catch(e){} if(CLIENTS.length===1 && CLIENTS[0] && CLIENTS[0]._example){ CLIENTS=[exampleFor(state.demoTipo)]; } toast("Demo: panel "+state.demoTipo); render(); return; }
   if(act==="demo-switch-hide"){ state.demoHideSwitch=true; try{ localStorage.setItem("pw_demo_hide_switch","1"); }catch(e){} render(); return; }
   if(act==="demo-switch-show"){ state.demoHideSwitch=false; try{ localStorage.removeItem("pw_demo_hide_switch"); }catch(e){} render(); return; }
@@ -9204,6 +9454,56 @@ function _pwCountUp(){
       el.textContent=fmtv(0); requestAnimationFrame(step);
     });
   }catch(e){}
+}
+// ── Cuadros plegables en móvil: cada .cp-card con encabezado y cuerpo se puede
+//    plegar tocando el header. Estado por título, guardado en localStorage, y se
+//    re-aplica en cada render (el panel se reconstruye entero). Solo en móvil. ──
+var _cardCollapsed=(function(){ try{ return JSON.parse(localStorage.getItem("mj_cards_coll")||"{}")||{}; }catch(e){ return {}; } })();
+function _enhanceCards(){
+  try{
+    if(window.innerWidth>900) return;
+    var CHEV="<svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>";
+    document.querySelectorAll(".cp-scroll .cp-card").forEach(function(card){
+      if(card.dataset.collReady) return;
+      var hd=card.querySelector(".cp-card-hd"), body=card.querySelector(".cp-card-pad");
+      if(!hd||!body) return;
+      var titleEl=hd.querySelector(".cp-card-title"); var key=titleEl?titleEl.textContent.replace(/\s+/g," ").trim():"";
+      if(!key) return;
+      card.dataset.collReady="1"; card.dataset.ckey=key;
+      hd.classList.add("cp-hd-toggle");
+      var chev=document.createElement("span"); chev.className="cp-hd-chev"; chev.setAttribute("aria-hidden","true"); chev.innerHTML=CHEV;
+      hd.appendChild(chev);
+      if(_cardCollapsed[key]) card.classList.add("is-collapsed");
+      hd.addEventListener("click",function(e){
+        if(e.target.closest("button,a,input,select,textarea,label")) return; // no plegar si tocás un control
+        var col=card.classList.toggle("is-collapsed");
+        if(col) _cardCollapsed[key]=1; else delete _cardCollapsed[key];
+        try{ localStorage.setItem("mj_cards_coll",JSON.stringify(_cardCollapsed)); }catch(_e){}
+      });
+    });
+  }catch(e){}
+}
+// Guardado ROBUSTO de la visibilidad del portal (switches + versión de CV).
+// apply(v) debe SETEAR valores (no alternar), para que sea idempotente. Flujo:
+// 1) aplica en memoria y pinta ya (optimista); 2) re-lee de la DB, aplica el
+// MISMO cambio y escribe → merge-safe: nunca pisa/borra otras claves aunque el
+// estado en memoria esté viejo. Si falla, avisa y no deja el cambio "fantasma".
+function _saveCliVis(cid, apply){
+  var cli=(CLIENTS||[]).filter(function(x){return String(x.id)===String(cid);})[0];
+  if(!cli) return;
+  var mem={}; try{ mem=JSON.parse((cli.raw&&cli.raw.visibilidad)||"{}")||{}; }catch(e){}
+  apply(mem);
+  cli.raw=cli.raw||{}; cli.raw.visibilidad=JSON.stringify(mem);
+  try{ render(); }catch(e){}
+  _sb("candidatos?id=eq."+encodeURIComponent(cid)+"&select=visibilidad").then(function(rows){
+    var db={}; try{ db=JSON.parse((rows&&rows[0]&&rows[0].visibilidad)||"{}")||{}; }catch(e){}
+    apply(db);
+    var c2=(CLIENTS||[]).filter(function(x){return String(x.id)===String(cid);})[0];
+    if(c2){ c2.raw=c2.raw||{}; c2.raw.visibilidad=JSON.stringify(db); }
+    return _sbw("candidatos?id=eq."+encodeURIComponent(cid),"PATCH",{visibilidad:JSON.stringify(db)}).then(function(r){
+      if(!r||!r.ok){ try{ toast("No se pudo guardar la visibilidad. Reintentá."); }catch(e){} }
+    });
+  }).catch(function(){ try{ toast("Sin conexión — la visibilidad no se guardó."); }catch(e){} });
 }
 // Mapa clienteId → ts del último mensaje de cliente ya visto; set de clientes con
 // mensaje sin leer; flag para no sonar en la primera pasada (mensajes viejos).
