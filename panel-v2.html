@@ -6609,7 +6609,31 @@ function viewAdmin(){
       var _list = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<input class='cp-form-input' style='max-width:230px;height:34px' placeholder='Buscar coach…' oninput='cpCoachFilter(this.value)'></div>"+
         "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div></div>";
-      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) : (accBox + _list));
+      // ── Sin asignar (clientes huérfanos: coach_id NULL) ──────────────
+      // Entraron al form/reserva SIN el link etiquetado de un coach, así que
+      // nadie los "posee" y no aparecen en la lista de ningún coach. Antes eran
+      // invisibles hasta para el admin. Acá el admin los ve y los asigna al coach
+      // que corresponde (responde "¿de quién es este cliente?"). RADM.cands ya
+      // excluye los de ejemplo/demo (se filtran en loadReal).
+      var _orphans = ((RADM&&RADM.cands)||[]).filter(function(x){ return x && !x.coach_id; })
+        .sort(function(a,b){ return (+new Date(b.created_at||0))-(+new Date(a.created_at||0)); });
+      var _orphCoachOpts = coachesEng.map(function(c){ return "<option value='"+esc(c.id)+"'>"+esc(c.n)+"</option>"; }).join("");
+      var _orphRows = _orphans.map(function(o){
+        var _onm=o.nombre||(""+(o.email||"")).split("@")[0]||"Sin nombre";
+        var _otip=o.nicho?((""+o.nicho).charAt(0).toUpperCase()+(""+o.nicho).slice(1)):"—";
+        var _ofch=o.created_at?(""+o.created_at).slice(0,10):"";
+        return "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 0;border-top:1px solid var(--pw-border)'>"+
+          "<div style='min-width:0;flex:1'><div style='font-weight:600;color:var(--pw-carbon);font-size:13px'>"+esc(_onm)+"</div>"+
+            "<div style='font-size:12px;color:var(--pw-text-soft)'>"+sens(o.email||"—")+" · "+esc(_otip)+(_ofch?" · "+esc(_ofch):"")+"</div></div>"+
+          "<select id='orph-sel-"+esc(o.id)+"' class='cp-form-input' style='height:32px;width:auto;font-size:12px;padding:4px 10px'>"+_orphCoachOpts+"</select>"+
+          "<button class='cp-btn cp-btn-primary' style='height:32px;padding:0 14px;font-size:12px' data-act='orphan-assign' data-id='"+esc(o.id)+"'>Asignar</button>"+
+        "</div>";
+      }).join("");
+      var _orphCard = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Sin asignar<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+_orphans.length+" cliente"+(_orphans.length===1?"":"s")+" sin coach</span></div><div class='cp-card-pad'>"+
+        (_orphans.length ? ("<div style='font-size:12px;color:var(--pw-text-soft);margin-bottom:2px'>Entraron sin el link de un coach. Asigná cada uno al que corresponde.</div>"+_orphRows)
+          : "<div style='font-size:13px;color:var(--pw-text-soft);text-align:center;padding:10px 0'>No hay clientes sin asignar. 🎉</div>")+
+      "</div></div>";
+      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) : (accBox + _orphCard + _list));
     }
   } else if(state.adminTab==="empleados"){
     body = (REAL && state.empleSel) ? _empleadoDetailCard() : _empleadosView();
@@ -7904,6 +7928,19 @@ document.addEventListener("click", function(ev){
         if(RCOACHES){ RCOACHES.forEach(function(u){ if(String(u.id)===String(ctid)) u.activo=turnOn; }); }
         toast(turnOn?"Coach reactivada ✓":"Coach desactivada ✓"); render(); })
       .catch(function(){ alert("No se pudo cambiar el estado de la coach."); });
+    return;
+  }
+  if(act==="orphan-assign"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var oaId=el.getAttribute("data-id"); if(!oaId) return;
+    var oaCoach=_val("orph-sel-"+oaId); if(!oaCoach){ alert("Elegí un coach."); return; }
+    // Asigna SOLO si sigue sin coach (coach_id is.null) → si alguien lo adoptó
+    // entre medio, no le roba el cliente a ese coach (la query no matchea).
+    _sbw("candidatos?id=eq."+encodeURIComponent(oaId)+"&coach_id=is.null","PATCH",{coach_id:oaCoach})
+      .then(function(r){ if(!r.ok) throw 0;
+        if(RADM&&RADM.cands){ RADM.cands.forEach(function(x){ if(String(x.id)===String(oaId)) x.coach_id=oaCoach; }); }
+        toast("Cliente asignado ✓"); render(); })
+      .catch(function(){ alert("No se pudo asignar. Reintentá."); });
     return;
   }
   if(act==="coach-delete"){
