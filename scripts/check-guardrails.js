@@ -354,6 +354,30 @@ const RULES = [
     },
   },
   {
+    name: "informes: se guardan varios como archivos por cliente (no se pisan)",
+    bug: "El informe con IA se guardaba UNO por cliente (informes, unique email) y " +
+         "se pisaba al regenerar. Ahora la ficha (pestaña Documentos) tiene la sección " +
+         "'Informes ✨ IA Pathway': guardás VARIOS como archivos en la tabla nueva " +
+         "informes_guardados (por email + coach_id, aislado), con lista y visor. La " +
+         "carga es resiliente (si falta la migración, muestra vacío, no rompe).",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="inf-save"/.test(p) || !/act==="inf-open"/.test(p))
+        return "panel-v2.html: faltan los handlers de informes guardados (inf-save/inf-open).";
+      if (!/function _infFilesLoad/.test(p))
+        return "panel-v2.html: falta _infFilesLoad (lista de informes guardados por cliente).";
+      if (!/informes_guardados/.test(p))
+        return "panel-v2.html: ya no se usa la tabla informes_guardados.";
+      // Aislamiento: la consulta de informes guardados filtra por coach (cg()).
+      if (!/informes_guardados\?[^"']*"\+encodeURIComponent\([^)]*\)\+cg\(\)/.test(p) && !/informes_guardados[\s\S]{0,120}?cg\(\)/.test(p))
+        return "panel-v2.html: la lista de informes guardados perdió el filtro por coach (cg()).";
+      if (!read("supabase/migrations/informes_guardados.sql"))
+        return "falta la migración informes_guardados.sql.";
+      return null;
+    },
+  },
+  {
     name: "reservas: preguntas propias del coach + respuestas visibles (sin defaults)",
     bug: "Cada coach arma sus propias preguntas en su tipo de evento (event_types" +
          "[].questions). NO hay preguntas predefinidas del sistema: reservar.html " +

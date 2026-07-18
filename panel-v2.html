@@ -3091,6 +3091,66 @@ function _resLoad(){
     .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); _agMonthRender(); })
     .catch(function(){ var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase."); });
 }
+// ── Informes guardados como archivos (tabla informes_guardados) ──
+// Lista los informes guardados de un cliente (por email + coach_id) en la
+// sección "Informes ✨ IA Pathway" de la pestaña Documentos. Resiliente: si la
+// tabla no existe todavía (SQL sin correr), _sb devuelve [] y mostramos el vacío.
+function _infFilesLoad(cid){
+  var box=document.getElementById("cp-inf-files-"+cid); if(!box) return;
+  var c=(CLIENTS||[]).filter(function(x){return String(x.id)===String(cid);})[0]; if(!c){ box.innerHTML=""; return; }
+  var email=((c.raw&&c.raw.email)||c.email||"").toLowerCase().trim();
+  if(!email){ box.innerHTML="<div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>Este cliente no tiene email.</div>"; return; }
+  _sb("informes_guardados?email=eq."+encodeURIComponent(email)+cg()+"&order=created_at.desc&select=*").then(function(rows){
+    rows=Object.prototype.toString.call(rows)==="[object Array]"?rows:[];
+    if(!rows.length){ box.innerHTML="<div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>Todavía no guardaste informes de este cliente.</div>"; return; }
+    box.innerHTML=rows.map(function(r){
+      var dt=r.created_at?new Date(r.created_at):null;
+      var when=(dt&&!isNaN(dt))?dt.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"}):"";
+      return "<div style='display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--pw-border);border-radius:11px;margin-bottom:7px;background:var(--pw-niebla)'>"+
+        "<span class='cp-emo' style='font-size:17px'>📄</span>"+
+        "<div style='flex:1;min-width:0'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(r.titulo||"Informe")+"</div><div style='font-size:11px;color:var(--pw-text-muted)'>"+esc(when)+"</div></div>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='inf-open' data-fid='"+esc(r.id)+"'>Abrir</button>"+
+      "</div>";
+    }).join("");
+  }).catch(function(){ box.innerHTML="<div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>No se pudieron cargar los informes.</div>"; });
+}
+// Renderiza el contenido de un informe guardado (objeto d) como texto legible.
+// Genérico: recorre las claves con texto o listas y las muestra con su título.
+function _infReadable(d){
+  if(typeof d==="string"){ try{ d=JSON.parse(d); }catch(e){ return "<p style='font-size:13px;white-space:pre-wrap'>"+esc(d)+"</p>"; } }
+  if(!d||typeof d!=="object") return "<p style='color:var(--pw-text-soft)'>Sin contenido.</p>";
+  var labels={resumen:"Resumen",resumen_ejecutivo:"Resumen",situacion:"Situación",fortalezas:"Fortalezas",areas:"A mejorar",areas_mejora:"A mejorar",mejoras:"A mejorar",estrategia:"Estrategia",cv_acciones:"CV",linkedin_acciones:"LinkedIn",networking_acciones:"Networking",preguntas:"Preguntas de entrevista"};
+  var out="";
+  Object.keys(d).forEach(function(k){
+    var v=d[k]; if(v==null) return;
+    var isArr=Object.prototype.toString.call(v)==="[object Array]";
+    if(!isArr && typeof v!=="string") return;
+    if(isArr && !v.length) return;
+    if(!isArr && !(""+v).trim()) return;
+    out+="<div style='margin-bottom:13px'><div style='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--pw-bosque);margin-bottom:3px'>"+esc(labels[k]||k)+"</div>";
+    if(isArr){ out+="<ul style='margin:0;padding-left:18px'>"+v.map(function(x){return "<li style='font-size:13px;line-height:1.5;margin-bottom:3px'>"+esc(""+x)+"</li>";}).join("")+"</ul>"; }
+    else { out+="<p style='font-size:13px;line-height:1.55;margin:0'>"+esc(""+v).replace(/\n/g,"<br>")+"</p>"; }
+    out+="</div>";
+  });
+  return out||"<p style='color:var(--pw-text-soft)'>Sin contenido de texto.</p>";
+}
+// Overlay de solo-lectura para ver un informe guardado. Se inyecta en el body
+// (fuera del render principal) y se quita al cerrar — no toca el pipeline.
+function _infShowOverlay(titulo, d){
+  try{
+    var prev=document.getElementById("cp-inf-view"); if(prev) prev.remove();
+    var ov=document.createElement("div");
+    ov.id="cp-inf-view";
+    ov.style.cssText="position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:170;display:flex;align-items:center;justify-content:center;padding:20px";
+    ov.innerHTML="<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl,0 20px 60px rgba(0,0,0,.25));width:560px;max-width:100%;max-height:88vh;overflow:auto'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(titulo||"Informe")+"<span class='dot'>.</span></h3><button class='cp-icon-btn' id='cp-inf-view-x' title='Cerrar'>✕</button></div>"+
+      "<div class='cp-card-pad'>"+_infReadable(d)+"</div>"+
+    "</div>";
+    ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+    document.body.appendChild(ov);
+    var x=document.getElementById("cp-inf-view-x"); if(x) x.onclick=function(){ ov.remove(); };
+  }catch(e){}
+}
 // Respuestas de una reserva → [{q,a}]. Tolerante: acepta el JSON ya parseado o
 // como string; si viene vacío o roto, devuelve []. Filtra items sin q ni a.
 function _citaAnswers(r){
@@ -3730,7 +3790,18 @@ function viewClienteDetalle(c){
               "<div><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>Recursos</div><div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>Material de apoyo por semana en su portal.</div></div>"+
               "<span style='display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--pw-text-soft)'>"+(_visOn("recursos")?"Visible":"Oculto")+"<button class='cp-switch "+(_visOn("recursos")?"is-on":"")+"' data-act='clivis:recursos' data-id='"+esc(c.id)+"'><span></span></button></span>"+
             "</div></div>"+
-        "</div></div>";
+        "</div></div>"+
+        // Informes ✨ IA Pathway: se guardan como ARCHIVOS por cliente (podés tener
+        // varios; no se pisan). El informe se genera/edita en Análisis; acá guardás
+        // una copia con fecha. La lista se carga async en _infFilesLoad (clidet:docs).
+        "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Informes <span style='color:var(--pw-amanecer)'>✨</span> IA Pathway<span class='dot'>.</span></h3><span class='cp-eyebrow'>Se guardan por cliente</span></div>"+
+          "<div class='cp-card-pad'>"+
+            "<div id='cp-inf-files-"+esc(c.id)+"'><div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>Cargando…</div></div>"+
+            "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px'>"+
+              "<button class='cp-btn cp-btn-primary' data-act='inf-save' data-id='"+esc(c.id)+"'><span class='cp-emo'>💾</span> Guardar el informe actual como archivo</button>"+
+              "<span style='font-size:12px;color:var(--pw-text-soft)'>El informe se genera/edita en <strong>Análisis</strong>. Guardá una copia acá y tené varios.</span>"+
+            "</div>"+
+          "</div></div>";
   } else if(t==="plan"){
     var D=_exHide?{}:((c.inf&&c.inf.d)||{});
     var PETN=etapasDe(c, _tipo);
@@ -7847,7 +7918,34 @@ document.addEventListener("click", function(ev){
     render();
     return;
   }
-  if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); render(); return; }
+  if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); render(); if(state.cliDetTab==="docs"){ requestAnimationFrame(function(){ try{ _infFilesLoad(state.clienteSel); }catch(e){} }); } return; }
+  // Guardar el informe actual (c.inf.d, generado en Análisis) como un ARCHIVO
+  // nuevo en informes_guardados. Podés guardar varios; no se pisan.
+  if(act==="inf-save"){
+    var _isid=el.getAttribute("data-id"); var _isc=(CLIENTS||[]).filter(function(x){return String(x.id)===String(_isid);})[0];
+    if(!_isc||!_isc.inf||!_isc.inf.d){ alert("Primero generá el informe en la pestaña Análisis. Después guardás una copia acá."); return; }
+    var _isem=((_isc.raw&&_isc.raw.email)||_isc.email||"").toLowerCase().trim();
+    if(!_isem){ alert("Este cliente no tiene email."); return; }
+    var _isnow=new Date();
+    var _istit="Informe · "+_isnow.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"});
+    var _isbtn=ev&&ev.currentTarget; if(_isbtn) _isbtn.disabled=true;
+    _sbw("informes_guardados","POST",{coach_id:(RME&&RME.id)||null,email:_isem,titulo:_istit,contenido:_isc.inf.d}).then(function(r){
+      if(_isbtn) _isbtn.disabled=false;
+      if(r&&r.ok){ toast("Informe guardado como archivo ✓"); _infFilesLoad(_isid); }
+      else { alert("No se pudo guardar. Si es la primera vez, aplicá la migración informes_guardados.sql en Supabase."); }
+    }).catch(function(){ if(_isbtn) _isbtn.disabled=false; alert("Sin conexión. Reintentá."); });
+    return;
+  }
+  // Abrir un informe guardado en un overlay de solo lectura.
+  if(act==="inf-open"){
+    var _iofid=el.getAttribute("data-fid"); if(!_iofid) return;
+    _sb("informes_guardados?id=eq."+encodeURIComponent(_iofid)+cg()+"&select=*").then(function(rows){
+      var r=(Object.prototype.toString.call(rows)==="[object Array]"&&rows[0])?rows[0]:null;
+      if(!r){ toast("No se pudo abrir el informe."); return; }
+      _infShowOverlay(r.titulo||"Informe", r.contenido);
+    }).catch(function(){ toast("No se pudo abrir el informe."); });
+    return;
+  }
   if(act.indexOf("demo-tipo:")===0){ state.demoTipo=act.slice(10); try{ localStorage.setItem("pw_demo_tipo",state.demoTipo); }catch(e){} if(CLIENTS.length===1 && CLIENTS[0] && CLIENTS[0]._example){ CLIENTS=[exampleFor(state.demoTipo)]; } toast("Demo: panel "+state.demoTipo); render(); return; }
   if(act==="demo-switch-hide"){ state.demoHideSwitch=true; try{ localStorage.setItem("pw_demo_hide_switch","1"); }catch(e){} render(); return; }
   if(act==="demo-switch-show"){ state.demoHideSwitch=false; try{ localStorage.removeItem("pw_demo_hide_switch"); }catch(e){} render(); return; }
