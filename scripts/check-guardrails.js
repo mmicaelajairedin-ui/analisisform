@@ -1359,6 +1359,40 @@ const RULES = [
     },
   },
   {
+    name: "admin: crear coach pasa por la edge function crear-coach (RLS no lo bloquea)",
+    bug: "El botón 'Dar acceso a un coach' hacía un POST directo a usuarios con rol='coach' " +
+         "desde el navegador. Con RLS estricto en usuarios (usuarios_hardening.sql), la anon " +
+         "key / un JWT no-admin solo pueden crear rol='cliente' → el INSERT se rechazaba con " +
+         "403 y 'no anda agregar coach'. Fix: la creación/extensión va por la edge function " +
+         "crear-coach (service role), que verifica que quien llama es admin (JWT → /auth/v1/user) " +
+         "y escribe salteando RLS.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="coach-access"/.test(p)) return null; // otra regla cubre la ausencia del handler
+      const start = p.indexOf('act==="coach-access"');
+      const endMarker = p.indexOf('act==="empleado-crear"', start);
+      const seg = endMarker > start ? p.slice(start, endMarker) : p.slice(start, start + 6000);
+      // El handler debe llamar a la edge function crear-coach...
+      if (!/functions\/v1\/crear-coach/.test(seg))
+        return "panel-v2.html: coach-access ya no llama a la edge function crear-coach (¿volvió al POST directo que RLS bloquea?).";
+      // ...y NO volver a escribir un usuario rol='coach' directo desde el navegador.
+      if (/rol:\s*["']coach["']/.test(seg))
+        return "panel-v2.html: coach-access volvió a crear un usuario rol='coach' directo (RLS lo bloquea). Debe ir por crear-coach.";
+      // La edge function debe existir, usar service role y verificar admin antes de escribir.
+      const fn = read("supabase/functions/crear-coach/index.ts");
+      if (!fn) return "falta supabase/functions/crear-coach/index.ts (la creación de coach depende de esta función).";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "crear-coach: ya no usa service role (no podría saltear el RLS de usuarios).";
+      if (!/not_admin/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "crear-coach: perdió la verificación de admin (JWT → /auth/v1/user). No debe crear coaches sin verificar admin.";
+      // Y debe estar en el workflow de auto-deploy (si no, nunca llega a producción).
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy crear-coach/.test(wf))
+        return "deploy-functions.yml: falta el paso para desplegar crear-coach (la fn quedaría sin publicar).";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: día clickeable + incluye demos del equipo/pasadas",
     bug: "En el panel, tocar un día del calendario debe mostrar los eventos de ese " +
          "día (ag-mo-day → _agRenderDay). Y los puntitos/el detalle deben leer de " +

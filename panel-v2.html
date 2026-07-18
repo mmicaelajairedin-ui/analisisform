@@ -7806,53 +7806,41 @@ document.addEventListener("click", function(ev){
     var _caLock=false;
     var _caTimer=setTimeout(function(){ if(_caLock)return; _caLock=true; setMsg("Tardó demasiado y no se confirmó (revisá tu conexión). Reintentá.","err"); },25000);
     var _caEnd=function(t,kind){ if(_caLock)return; _caLock=true; clearTimeout(_caTimer); setMsg(t,kind); };
-    // Escritura con 1 reintento SOLO ante fallo de red (fetch rechaza). Un error
-    // real del server (4xx/5xx) resuelve con !ok y pasa derecho al manejo de abajo,
-    // no se reintenta. Un POST duplicado reintentado choca con el UNIQUE de email
-    // y devuelve 409, que tratamos como "ya existe" (no rompe).
-    var _caWrite=function(p,method,body){ return _sbw(p,method,body).catch(function(){ return _sbw(p,method,body); }); };
-    _sb("usuarios?email=eq."+encodeURIComponent(caEmail)+"&select=id,rol,configuracion,nombre").then(function(rows){
-      var coachRow=null,anyRow=null;
-      (rows||[]).forEach(function(u){ if(!anyRow)anyRow=u; if((u.rol==="coach"||u.rol==="admin")&&!coachRow)coachRow=u; });
-      if(coachRow){
-        var cf=coachRow.configuracion||{};
-        var base=cf.fecha_fin_prueba?new Date(cf.fecha_fin_prueba):new Date();
-        if(isNaN(base.getTime())||base.getTime()<Date.now()) base=new Date();
-        base.setDate(base.getDate()+caDias);
-        var nc=Object.assign({},cf,{plan:cf.plan||"pro",estado_sub:"prueba",fecha_fin_prueba:base.toISOString(),coach_type:caNicho,ultima_extension_admin:new Date().toISOString()});
-        return _caWrite("usuarios?id=eq."+encodeURIComponent(coachRow.id),"PATCH",{configuracion:nc,activo:true}).then(function(r){
-          if(!r||!r.ok) throw new Error("no se pudo guardar (código "+((r&&r.status)||"sin respuesta")+")");
-          reloadCoaches();
-          return _sendCoachAccessEmail(caEmail, coachRow.nombre||caNombre, false).then(function(sent){
-            _caEnd(sent?("✓ "+caEmail+" tiene acceso hasta "+base.toLocaleDateString("es-ES")+" · email enviado ✉️"):("✓ Acceso extendido hasta "+base.toLocaleDateString("es-ES")+", PERO el email no salió — reenviale el login a mano."),sent?"ok":"err");
-          });
-        });
+    // Alta/extensión del coach vía edge function `crear-coach` (service role).
+    // ANTES esto hacía un POST directo a `usuarios` con rol='coach', que RLS
+    // rechaza (la anon key / un JWT no-admin solo pueden crear rol='cliente') →
+    // "no anda agregar coach". Ahora la función lo hace de forma segura tras
+    // verificar que sos admin; le mandamos tu JWT de admin en los headers (_hdr).
+    _hdr({"Content-Type":"application/json"}).then(function(h){
+      return fetch(SB+"/functions/v1/crear-coach",{method:"POST",headers:h,body:JSON.stringify({email:caEmail,nombre:caNombre,dias:caDias,nicho:caNicho})});
+    }).then(function(r){
+      return r.json().catch(function(){return {};}).then(function(d){ return {status:r.status,ok:r.ok,d:d||{}}; });
+    }).then(function(res){
+      var d=res.d;
+      if(!res.ok){
+        if(res.status===403||d.error==="not_admin"){ _caEnd("Tu sesión de admin no está activa. Cerrá sesión, volvé a entrar y reintentá.","err"); return; }
+        if(d.error==="email_in_use"){ _caEnd('Ese email ya lo usa un usuario "'+(d.rol||"?")+'", no un coach.',"err"); return; }
+        if(d.error==="email_invalid"){ _caEnd("Email inválido.","err"); return; }
+        if(d.error==="nombre_required"){ _caEnd("Poné el nombre del coach.","err"); return; }
+        _caEnd("No se pudo completar (código "+(res.status||"?")+"). Reintentá.","err"); return;
       }
-      if(anyRow){ _caEnd('Ese email ya lo usa un usuario "'+(anyRow.rol||"?")+'", no un coach.',"err"); return; }
-      // Coach nuevo: lo creamos SIN contraseña (el coach la elige al activar) y
-      // le mandamos un mail para activar su cuenta en registro.html.
-      if(!caNombre){ _caEnd("Pon el nombre del coach.","err"); return; }
-      // Mostramos el link de activación DESDE YA: pase lo que pase con la escritura
-      // o el email, la coach siempre puede copiar y mandar este link (registro.html
-      // crea/activa la cuenta al entrar). Así "no me llegó la invitación" se resuelve
-      // en 1 clic sin depender del email automático.
-      state.coachLink=caLink;
-      var trialEnd=new Date(Date.now()+caDias*86400000).toISOString();
-      return _caWrite("usuarios","POST",{email:caEmail,nombre:caNombre,rol:"coach",activo:true,configuracion:{plan:"pro",estado_sub:"prueba",fecha_fin_prueba:trialEnd,coach_type:caNicho,creado_por_admin:true,creado_por:(RME&&RME.email)||"",pendiente_activacion:true}}).then(function(r){
-        // 201 Created = ok. 409 = ya existía por email (intento previo que sí entró)
-        // → seguimos al email igual, así SIEMPRE le llega el link de activación.
-        if(!r||(!r.ok && r.status!==409)) throw new Error("no se pudo crear (código "+((r&&r.status)||"sin respuesta")+")");
-        reloadCoaches();
-        return _sendCoachAccessEmail(caEmail, caNombre, true).then(function(sent){
+      reloadCoaches();
+      if(d.mode==="extended"){
+        var fin=d.fecha_fin_prueba?new Date(d.fecha_fin_prueba):null;
+        var finTxt=(fin&&!isNaN(fin.getTime()))?fin.toLocaleDateString("es-ES"):"";
+        _sendCoachAccessEmail(caEmail, d.nombre||caNombre, false).then(function(sent){
+          _caEnd(sent?("✓ "+caEmail+" tiene acceso"+(finTxt?" hasta "+finTxt:"")+" · email enviado ✉️"):("✓ Acceso extendido"+(finTxt?" hasta "+finTxt:"")+", PERO el email no salió — reenviale el login a mano."),sent?"ok":"err");
+        });
+      } else {
+        // Coach nuevo: mostramos el link de activación por las dudas (por si el
+        // email automático no llega, ella lo copia y se lo manda).
+        state.coachLink=caLink;
+        _sendCoachAccessEmail(caEmail, caNombre, true).then(function(sent){
           _caEnd(sent?("✓ Coach creado. Le llegó el email de activación — y por las dudas, copiale este link directo:"):("✓ Coach creado. El email automático no salió — copiá este link y mandáselo vos (con eso activa su cuenta):"),"ok");
         });
-      });
+      }
     }).catch(function(e){
-      // Si estábamos creando un coach nuevo (ya seteamos el link), no la dejamos
-      // sin salida: el link directo activa la cuenta igual aunque esta escritura
-      // haya fallado. Si era otra cosa, mostramos el error tal cual.
-      if(state.coachLink){ _caEnd("No se pudo confirmar la creación desde el panel, pero podés darle acceso igual: copiá este link y mandáselo (crea su cuenta al activar).","err"); }
-      else { _caEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintentá.","err"); }
+      _caEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintentá.","err");
     });
     return;
   }
