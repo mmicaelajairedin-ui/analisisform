@@ -3164,6 +3164,44 @@ function _infShowOverlay(titulo, d){
     var x=document.getElementById("cp-inf-view-x"); if(x) x.onclick=function(){ ov.remove(); };
   }catch(e){}
 }
+// ── Preparar próxima sesión (IA Pathway) ──
+// Arma una preparación corta con lo que YA sabemos del cliente: el análisis
+// (c.inf.d) + las sesiones registradas (c.ses). NO hace una llamada nueva a la
+// IA (usa lo ya generado): es instantáneo, sin edge function ni deploy.
+function _prepFirst(s,max){ s=(""+(s||"")).replace(/\s+/g," ").trim(); if(!s) return ""; var m=s.match(/^[^.!?]{8,}[.!?]/); var t=m?m[0]:s; return t.length>(max||150)?t.slice(0,(max||150)).replace(/\s+\S*$/,"")+"…":t; }
+function _prepSesionInsights(c){
+  var out=[], d=(c&&c.inf&&c.inf.d)||{}, ses=(c&&c.ses)||[];
+  // Retomá: última sesión pasada → tareas pendientes o lo acordado.
+  var past=ses.filter(function(s){ if(!s||!s.fecha) return false; var t=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")); return !isNaN(t)&&t.getTime()<Date.now(); }).sort(function(a,b){ return (""+(b.fecha||"")).localeCompare(""+(a.fecha||"")); });
+  var last=past[0];
+  if(last){
+    var tA=(last.acciones||"").split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean), dn=last.tareas_done||[], pend=[];
+    tA.forEach(function(tx,ti){ if(dn.indexOf(ti)===-1) pend.push(tx); });
+    if(pend.length) out.push({tag:"Retomá", text:"Le quedó pendiente: "+pend.slice(0,2).join(" · ")});
+    else if((""+(last.acordado||"")).trim()) out.push({tag:"Retomá", text:_prepFirst(last.acordado,180)});
+    else if((""+(last.trabajado||"")).trim()) out.push({tag:"Retomá", text:"La última sesión trabajaron: "+_prepFirst(last.trabajado,150)});
+  }
+  // Foco de hoy: estrategia del análisis (o el primer gap).
+  var gaps=Object.prototype.toString.call(d.gaps)==="[object Array]"?d.gaps:[];
+  if((""+(d.estrategia||"")).trim()) out.push({tag:"Foco de hoy", text:_prepFirst(d.estrategia,180)});
+  else if(gaps.length) out.push({tag:"Foco de hoy", text:"Trabajar: "+_prepFirst(gaps[0],150)});
+  // Ojo / Aprovechá: una alerta o una fortaleza del análisis.
+  var al=Object.prototype.toString.call(d.alertas)==="[object Array]"?d.alertas:[];
+  var fo=Object.prototype.toString.call(d.fortalezas)==="[object Array]"?d.fortalezas:[];
+  if(al.length) out.push({tag:"Ojo", text:_prepFirst(al[0],150)});
+  else if(fo.length) out.push({tag:"Aprovechá", text:_prepFirst(fo[0],150)});
+  return out;
+}
+function _prepSesionHtml(c){
+  var ins=_prepSesionInsights(c);
+  if(!ins.length) return "<div style='margin-top:11px;background:var(--pw-niebla-2);border-radius:12px;padding:13px 15px;font-size:12.5px;color:var(--pw-text-soft);line-height:1.5'>Generá el <strong>Análisis</strong> del cliente (y registrá alguna sesión) y acá te armo la preparación con eso.</div>";
+  var tagCol={"Retomá":"var(--pw-bosque)","Foco de hoy":"#8a6d1e","Ojo":"var(--pw-danger)","Aprovechá":"var(--pw-bosque)"};
+  var fn=(""+((c&&c.name)||"")).split(" ")[0]||"tu cliente";
+  return "<div style='margin-top:11px;background:var(--pw-success-bg);border:1px solid var(--pw-border);border-radius:12px;padding:13px 15px'>"+
+    "<div style='font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--pw-bosque);margin-bottom:9px'><span style='color:var(--pw-amanecer)'>✨</span> IA Pathway · con lo que ya sabemos de "+esc(fn)+"</div>"+
+    ins.map(function(x){ return "<div style='display:flex;gap:9px;align-items:flex-start;margin-bottom:7px'><span style='font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:6px;background:#fff;color:"+(tagCol[x.tag]||"var(--pw-bosque)")+";flex-shrink:0;margin-top:1px'>"+esc(x.tag)+"</span><span style='font-size:13px;line-height:1.5;color:var(--pw-carbon)'>"+esc(x.text)+"</span></div>"; }).join("")+
+  "</div>";
+}
 // Respuestas de una reserva → [{q,a}]. Tolerante: acepta el JSON ya parseado o
 // como string; si viene vacío o roto, devuelve []. Filtra items sin q ni a.
 function _citaAnswers(r){
@@ -3919,6 +3957,13 @@ function viewClienteDetalle(c){
           ? "<a href='"+esc(_calU)+"' target='_blank' rel='noopener' class='cp-btn' style='background:#fff;color:var(--pw-bosque-dark);text-decoration:none'>"+svg(IC.extLink,13)+" Agendar</a>"
           : "<button class='cp-btn' style='background:#fff;color:var(--pw-bosque-dark)' data-act='gocal'>Configurar agenda</button>")+
         "</div>"+
+      // Preparar próxima sesión con IA Pathway: un botón a demanda que arma una
+      // preparación corta con lo que YA sabemos del cliente (análisis + sesiones).
+      // Colapsado es solo un botón (no ensucia); no toca nada del resto.
+      "<div class='cp-card' style='margin-bottom:14px'><div class='cp-card-pad' style='padding:12px 14px'>"+
+        "<button class='cp-btn "+(state.sesPrepOpen?"cp-btn-ghost":"cp-btn-primary")+"' style='width:100%' data-act='prep-sesion' data-id='"+esc(c.id)+"'>"+(state.sesPrepOpen?"Ocultar preparación":"<span style='color:var(--pw-amanecer)'>✨</span> Preparar próxima sesión con IA Pathway")+"</button>"+
+        (state.sesPrepOpen?_prepSesionHtml(c):"")+
+      "</div></div>"+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Sesiones<span class='dot'>.</span></h3>"+
         "<div style='display:flex;align-items:center;gap:12px;margin-left:auto'>"+
           "<span style='display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:600;color:var(--pw-text-soft)'>"+(_svOn?"El cliente la ve":"Oculta")+"<button class='cp-switch "+(_svOn?"is-on":"")+"' data-act='clivis:sesiones' data-id='"+esc(c.id)+"'><span></span></button></span>"+
@@ -7883,7 +7928,7 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo eliminar la cuenta. Puede estar protegida por permisos (RLS) en Supabase."); });
     return;
   }
-  if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.fitTareas=null; state.fitUnit=null; state.rutUnit=null; render(); window.scrollTo(0,0); return; }
+  if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.fitTareas=null; state.fitUnit=null; state.rutUnit=null; state.sesPrepOpen=false; render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; state.fitTareas=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
   if(act==="cliweek-add"){ var _cwc=CLIENTS.filter(function(x){return String(x.id)===String(state.clienteSel);})[0]||{}; var _cur=state.cliWeek!=null?state.cliWeek:(_cwc.week||1); state.cliWeek=Math.max(4,_cur)+1; render(); return; }
@@ -7948,7 +7993,9 @@ document.addEventListener("click", function(ev){
     _saveCliVis(cid2, function(v){ v.cv_estilo=_cve; });
     return;
   }
-  if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); render(); if(state.cliDetTab==="docs"){ requestAnimationFrame(function(){ try{ _infFilesLoad(state.clienteSel); }catch(e){} }); } return; }
+  if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); state.sesPrepOpen=false; render(); if(state.cliDetTab==="docs"){ requestAnimationFrame(function(){ try{ _infFilesLoad(state.clienteSel); }catch(e){} }); } return; }
+  // Preparar próxima sesión con IA Pathway (a demanda; arma la prep con el análisis + sesiones).
+  if(act==="prep-sesion"){ state.sesPrepOpen=!state.sesPrepOpen; render(); return; }
   // Guardar el informe actual (c.inf.d, generado en Análisis) como un ARCHIVO
   // nuevo en informes_guardados. Podés guardar varios; no se pisan.
   if(act==="inf-save"){
