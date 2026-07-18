@@ -1301,20 +1301,26 @@ const RULES = [
     },
   },
   {
-    name: "fitness: sin etapas/acciones — el plan del cliente son las Tareas de la semana",
-    bug: "En fitness las etapas + acciones (heredadas de carrera) quedaban " +
-         "desconectadas: el panel NO debe embeber _avanceHtml para fitness y el " +
-         "portal fitness NO debe mostrar el 'Foco de esta semana'. El plan del " +
-         "cliente fitness son las 'Tareas de la semana' (fit_tareas). Si vuelve el " +
-         "embed o el foco, reaparece la duplicación que la coach pidió sacar.",
+    name: "fitness/financiero: sin acciones-foco desconectadas (el plan real es otro)",
+    bug: "Las 'acciones' (cv_acciones… agrupadas por etapa) NO llegan al cliente en " +
+         "fitness ni financiero, así que el panel NO debe embeber _avanceHtml para " +
+         "esos nichos y sus portales NO deben mostrar el 'Foco' estático. En fitness " +
+         "el plan son las 'Tareas de la semana'; en financiero, las etapas SÍ se ven " +
+         "(como 'Plan por meses', leen c.etapas) + objetivos/presupuesto/deudas. Si " +
+         "vuelve el embed o el foco, reaparece la parte desconectada.",
     check() {
       const p = read("panel-v2.html");
-      if (p && !/_tipo==='carrera'\|\|_tipo==='fitness'/.test(p))
-        return "panel-v2.html: el nicho fitness volvió a embeber las etapas/acciones (_avanceHtml).";
+      if (p && !/_tipo==='carrera'\|\|_tipo==='fitness'\|\|_tipo==='financiero'/.test(p))
+        return "panel-v2.html: fitness/financiero volvió a embeber las acciones desconectadas (_avanceHtml).";
       const f = read("pathway-fit-cliente.html");
       if (f) {
         if (/Foco de esta semana/.test(f)) return "pathway-fit-cliente.html: volvió el 'Foco de esta semana' (acciones) — debía quedar solo las Tareas de la semana.";
         if (!/Tus tareas de la semana/.test(f)) return "pathway-fit-cliente.html: falta 'Tus tareas de la semana' (el plan del cliente fitness).";
+      }
+      const fn = read("pathway-fin-cliente.html");
+      if (fn) {
+        if (/Foco de este mes/.test(fn)) return "pathway-fin-cliente.html: volvió el 'Foco de este mes' estático (desconectado).";
+        if (!/plan-step/.test(fn)) return "pathway-fin-cliente.html: falta el 'Plan por meses' (plan-step) que SÍ lee las etapas del coach.";
       }
       return null;
     },
