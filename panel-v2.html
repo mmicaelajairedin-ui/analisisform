@@ -2459,9 +2459,17 @@ function _agRender(d){
 // e icono (cuando no hay foto del cliente). Defaults sensatos → no le pedimos nada.
 var _AG_COLORS=["#2D6A4F","#2FB3A3","#3F6FB5","#7B6CD9","#C86FA6","#E8788A","#E0894A","#D9A441","#7BA23F","#C0756E","#8C7B80","#5C7A99"];
 var _AG_ICONS=["🗓️","📞","💬","🎯","🏋️","💰","🧠","☕","🎥","🤝","📋","✨","🚀","📈","❤️","🍎","🧘","🎓","💼","📅"];
+// Tipos de evento por defecto según el nicho del coach (emojis lindos y del rubro).
+// Solo aplican si el coach todavía no creó los suyos (puede editarlos cuando quiera).
+function _agTypesDefault(){
+  var n; try{ n=(typeof _isDemoCoach==="function"&&_isDemoCoach())?(state.demoTipo||"carrera"):((RCFG&&RCFG.coach_type)||"carrera"); }catch(e){ n="carrera"; }
+  if(n==="fitness") return [{label:"Entrenamiento",color:"#2D6A4F",icon:"🏋️"},{label:"Medición",color:"#3F6FB5",icon:"📐"},{label:"Llamada inicial",color:"#E0894A",icon:"📞"}];
+  if(n==="financiero") return [{label:"Revisión de finanzas",color:"#2D6A4F",icon:"💰"},{label:"Presupuesto",color:"#3F6FB5",icon:"📊"},{label:"Llamada inicial",color:"#E0894A",icon:"📞"}];
+  return [{label:"Llamada 30 min",color:"#2D6A4F",icon:"📞"},{label:"Sesión de CV",color:"#3F6FB5",icon:"📄"},{label:"Seguimiento",color:"#E0894A",icon:"💬"}];
+}
 function _agTypes(){
   var t=(REAL&&RCFG&&Object.prototype.toString.call(RCFG.event_types)==="[object Array]")?RCFG.event_types:null;
-  if(!t || !t.length) t=[{label:"Llamada 30 min",color:"#2D6A4F",icon:"📞"},{label:"Sesión 45 min",color:"#8C7B80",icon:"🗓️"}];
+  if(!t || !t.length) t=_agTypesDefault();
   return t;
 }
 // Guarda el nombre tipeado del tipo de evento antes de un re-render del modal
@@ -2774,14 +2782,19 @@ function _agendaCalCard(){
 // cercano, con hora, "En X min" y accesos. Google + reservas del link.
 function _agProxList(){
   var now=Date.now(), out=[];
-  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); out.push({ms:+e.start, title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:"", durMin:_durMin((typ&&typ.label)||"")}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", link:"", email:r.email||"", durMin:_durMin(r.tipo||""), foto:_cliFotoByEmail(r.email)}); } } });
+  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); out.push({ms:+e.start, title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:"", durMin:_durMin((typ&&typ.label)||"")}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:"", email:r.email||"", durMin:_durMin(r.tipo||""), foto:_cliFotoByEmail(r.email)}); } } });
   out.sort(function(a,b){ return a.ms-b.ms; });
   // Dedup: una misma sesión puede venir del Google Calendar Y de la reserva.
   var seen={}, uniq=[]; out.forEach(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(!seen[k]){ seen[k]=1; uniq.push(x); } });
   return uniq;
 }
 function _agProxItem(){ return _agProxList()[0]||null; }
+// Avatar de la Próxima sesión / En tu lista: foto real del cliente si existe; si no,
+// el EMOJI del tipo de evento a color (no iniciales tipo "L3", que quedaban feas).
+function _agProxAv(it,sz){ var acc=it.col||"#8C7B80";
+  if(it.foto) return "<img src='"+esc(it.foto)+"' alt='' style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid "+acc+"55'>";
+  return "<span style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;background:"+acc+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:"+Math.round(sz*0.44)+"px;flex-shrink:0'>"+(it.ico||"🗓️")+"</span>"; }
 function _agProxRender(){
   var box=document.getElementById("cp-agenda-prox"); if(!box) return;
   var list=_agProxList(), it=list[0];
@@ -2793,7 +2806,7 @@ function _agProxRender(){
     "<h3 style='font-family:var(--pw-serif);font-weight:500;font-size:18px;margin:0'>Próxima sesión</h3>"+
     "<span style='font-size:10px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 9px;border-radius:100px;white-space:nowrap'>"+esc(when)+"</span></div>";
   var card="<div style='background:"+acc+"14;border:1px solid "+acc+"33;border-radius:14px;padding:16px'>"+
-    "<div style='display:flex;align-items:center;gap:14px'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:58px;height:58px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid "+acc+"55'>":_cAvatar(it.title,acc,58))+
+    "<div style='display:flex;align-items:center;gap:14px'>"+_agProxAv(it,58)+
       "<div style='min-width:0'><div style='font-family:var(--pw-serif);font-size:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.title)+"</div>"+
         (it.sub?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.sub)+"</div>":"")+"</div></div>"+
     "<div style='display:flex;flex-direction:column;gap:8px;margin-top:14px;font-size:13px;color:var(--pw-text-soft)'>"+
@@ -2808,7 +2821,7 @@ function _agProxRender(){
     lista="<div style='margin-top:16px;padding-top:14px;border-top:1px solid var(--pw-border)'>"+
       "<div style='font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--pw-text-muted);font-weight:600;margin-bottom:8px'>En tu lista</div>"+
       rest.map(function(x){ return "<div style='display:flex;align-items:center;gap:10px;padding:6px 0'>"+
-        "<span style='font-size:11px;font-weight:600;color:var(--pw-text-soft);width:34px'>"+_agTime(x.ms)+"</span>"+_cAvatar(x.title,x.col,28)+
+        "<span style='font-size:11px;font-weight:600;color:var(--pw-text-soft);width:34px'>"+_agTime(x.ms)+"</span>"+_agProxAv(x,28)+
         "<div style='flex:1;min-width:0'><div style='font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(x.title)+"</div>"+
           (x.sub?"<div style='font-size:11px;color:var(--pw-text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(x.sub)+"</div>":"")+"</div></div>"; }).join("")+
     "</div>";
