@@ -1498,6 +1498,27 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "móvil: pull-to-refresh (bajar para actualizar) en los 3 portales del cliente",
+    bug: "En el panel del coach ya se bajaba para actualizar, pero los portales del " +
+         "cliente (carrera/fitness/finanzas) no tenían el gesto: la coach bajaba la " +
+         "pantalla y no pasaba nada. Se agregó el mismo pull-to-refresh (indicador " +
+         "#cli-ptr + recarga al soltar) para que el móvil se sienta igual en toda la " +
+         "app. Si se cae de alguno de los portales, ese portal vuelve a quedar sin " +
+         "'actualizar para abajo'.",
+    check() {
+      const portals = ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      for (const f of portals) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/cli-ptr/.test(s)) return f + ": se perdió el pull-to-refresh móvil (indicador #cli-ptr).";
+        // El gesto debe engancharse a touchstart/touchmove/touchend y recargar al soltar.
+        if (!/addEventListener\(['"]touchmove['"]/.test(s)) return f + ": el pull-to-refresh ya no escucha touchmove.";
+        if (!/location\.reload\(\)/.test(s)) return f + ": el pull-to-refresh ya no recarga (location.reload) al soltar.";
+      }
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
