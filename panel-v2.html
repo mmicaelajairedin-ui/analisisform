@@ -2370,7 +2370,7 @@ function viewResumen(){
     function _delta(cur,prev){ var d=cur-prev; if(d>0)return "<span style='color:var(--pw-sendero);font-weight:600'>↑ "+d+"</span> <span style='color:var(--pw-text-muted)'>vs mes anterior</span>"; if(d<0)return "<span style='color:var(--pw-danger);font-weight:600'>↓ "+Math.abs(d)+"</span> <span style='color:var(--pw-text-muted)'>vs mes anterior</span>"; return "<span style='color:var(--pw-text-muted)'>igual que el mes pasado</span>"; }
     // Estilo unificado de KPI (igual al de multicoach .kpi / el screenshot):
     // ícono gris + label arriba, número grande serif, delta abajo.
-    function _tile(n,lbl,emo,sub,cv,fmt){ var _ns="font-family:'Inter',-apple-system,sans-serif;font-weight:800;font-size:40px;letter-spacing:-1.5px;color:var(--pw-carbon);line-height:1"; var num=(cv!=null)?("<span class='pw-count' data-cv='"+cv+"'"+(fmt?" data-fmt='"+fmt+"'":"")+" style='"+_ns+"'>"+n+"</span>"):("<span style='"+_ns+"'>"+n+"</span>"); return "<div style='background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:14px 16px;box-shadow:var(--pw-shadow-sm)'><div style='display:flex;align-items:center;gap:8px;font-size:12px;color:var(--pw-text-muted);font-weight:500'><span style='display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'><span class='cp-emo' style='font-size:16px'>"+emo+"</span></span>"+lbl+"</div><div style='margin:8px 0 4px'>"+num+"</div>"+(sub?"<div style='font-size:11.5px;font-weight:600;line-height:1.3'>"+sub+"</div>":"")+"</div>"; }
+    function _tile(n,lbl,emo,sub,cv,fmt){ var _ns="font-family:'Inter',-apple-system,sans-serif;font-weight:700;font-size:30px;letter-spacing:-1px;color:var(--pw-carbon);line-height:1"; var num=(cv!=null)?("<span class='pw-count' data-cv='"+cv+"'"+(fmt?" data-fmt='"+fmt+"'":"")+" style='"+_ns+"'>"+n+"</span>"):("<span style='"+_ns+"'>"+n+"</span>"); return "<div style='background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:14px 16px;box-shadow:var(--pw-shadow-sm)'><div style='display:flex;align-items:center;gap:8px;font-size:12px;color:var(--pw-text-muted);font-weight:500'><span style='display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'><span class='cp-emo' style='font-size:16px'>"+emo+"</span></span>"+lbl+"</div><div style='margin:8px 0 4px'>"+num+"</div>"+(sub?"<div style='font-size:11.5px;font-weight:600;line-height:1.3'>"+sub+"</div>":"")+"</div>"; }
     return "<div class='cp-card' style='margin-bottom:13px'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📊</span> Mi negocio<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver clientes</button></div>"+
       "<div class='cp-card-pad'>"+medalBlock+
         "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px'>"+
@@ -2699,6 +2699,38 @@ function _agDispWindow(key){
 }
 // Agenda del día: el día hora por hora (libre/ocupado), como en el mockup.
 // Eventos de Google + reservas del link, ubicados en su hora; huecos = "Disponible".
+// Dedup de la agenda: la MISMA sesión puede venir del Google Calendar Y de la
+// reserva del link (tabla citas). Antes deduplicábamos por (minuto|título
+// EXACTO), pero el título de Google ("Llamada 30 min - Alejandra") ≠ el nombre de
+// la reserva ("Alejandra") → la misma cita salía DUPLICADA. Ahora: en el mismo
+// minuto, si hay un evento de Google (sin id) y una reserva de ESTE coach (con
+// id, sin 'who') cuyos nombres se solapan, es la misma sesión: queda la reserva
+// (más rica: asistencia/origen) y le pasamos el link de Meet.
+function _agMergeDup(items){
+  items.sort(function(a,b){ return a.ms-b.ms; });
+  var byMin={};
+  items.forEach(function(x){ var m=Math.round(x.ms/60000); (byMin[m]=byMin[m]||[]).push(x); });
+  Object.keys(byMin).forEach(function(m){
+    var arr=byMin[m]; if(arr.length<2) return;
+    var res=arr.filter(function(x){ return x.id!=null && !x.who; });
+    if(!res.length) return;
+    arr.filter(function(x){ return x.id==null; }).forEach(function(g){
+      var gt=(""+(g.title||"")).toLowerCase();
+      var match=res.filter(function(r){
+        var rn=(""+(r.title||"")).toLowerCase().trim(); if(!rn) return false;
+        var first=rn.split(/\s+/)[0];
+        return gt.indexOf(rn)>=0 || (first.length>=3 && gt.indexOf(first)>=0);
+      })[0];
+      if(match){ if(!match.link && g.link) match.link=g.link; g._dup=1; }
+    });
+  });
+  var seen={};
+  return items.filter(function(x){
+    if(x._dup) return false;
+    var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim();
+    if(seen[k]) return false; seen[k]=1; return true;
+  });
+}
 function _agRenderDay(key,compact){
   var isToday=(key===_agMoKey(new Date()));
   // En el Resumen (compacto) mostramos un mini-encabezado con "← Hoy" cuando estás
@@ -2717,9 +2749,7 @@ function _agRenderDay(key,compact){
   var items=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); items.push({ms:+e.start, title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:""}); } });
   _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:"", durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_cliFotoByEmail(r.email)}); } });
-  items.sort(function(a,b){ return a.ms-b.ms; });
-  // Dedup: la misma sesión puede venir del Google Calendar Y de la reserva.
-  var _sd={}; items=items.filter(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(_sd[k]) return false; _sd[k]=1; return true; });
+  items=_agMergeDup(items);
   var now=Date.now();
   // Fila limpia estilo "Tu agenda de hoy": hora · ícono · nombre + badge de tipo · duración/Meet.
   var rowEvent=function(it){
@@ -2773,10 +2803,15 @@ function _agMonthRender(){
   if(!_AG_MO){ var n=new Date(); _AG_MO={y:n.getFullYear(),m:n.getMonth()}; }
   var y=_AG_MO.y, m=_AG_MO.m;
   var tt=document.getElementById("cp-agmo-title"); if(tt) tt.textContent=_AG_MESES[m]+" "+y;
+  // Mismo dedup que la agenda del día: juntamos eventos de Google + reservas por
+  // día y fusionamos la MISMA sesión (Google + reserva) para NO contarla dos
+  // veces en el marcador del mes.
+  var byDayItems={};
+  function addItem(ts,typ,title,id,link,who){ var k=_agMoKey(new Date(ts)); (byDayItems[k]=byDayItems[k]||[]).push({ms:+new Date(ts),typ:typ,title:title,id:id,link:link,who:who}); }
+  var evs=(_AG_DATA&&_AG_DATA.events)||[]; evs.forEach(function(e){ if(e&&e.start) addItem(e.start,_agTypeForEvent(e),e.title||"",null,(e.location&&/^https?:\/\//.test(e.location))?e.location:"",""); });
+  var res=_agReservas(); res.forEach(function(r){ if(!r||r.estado==="cancelada")return; var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":""; addItem(+new Date(r.inicio),_agEventTypeFor(r.tipo),r.nombre||"",r.id,"",who); });
   var byDay={};
-  function add(ts, typ){ var k=_agMoKey(new Date(ts)); (byDay[k]=byDay[k]||[]).push(typ); }
-  var evs=(_AG_DATA&&_AG_DATA.events)||[]; evs.forEach(function(e){ if(e&&e.start) add(e.start, _agTypeForEvent(e)); });
-  var res=_agReservas(); res.forEach(function(r){ if(!r||r.estado==="cancelada")return; add(+new Date(r.inicio), _agEventTypeFor(r.tipo)); });
+  Object.keys(byDayItems).forEach(function(k){ byDay[k]=_agMergeDup(byDayItems[k]).map(function(x){ return x.typ; }); });
   var first=new Date(y,m,1); var startDow=(first.getDay()+6)%7; var daysIn=new Date(y,m+1,0).getDate();
   var today=_agMoKey(new Date());
   // Mismo diseño .pwcal-* que el calendario del cliente (grilla + iconos + día
@@ -3366,20 +3401,23 @@ function _calStats(){
   vivas.forEach(function(r){ if(+new Date(r.inicio)>=m0 && r.email) cli[(""+r.email).toLowerCase()]=1; });
   return {hoy:hoy.length,hoyPend:hoyPend,wk:wkCount,wkDelta:wkCount-wkPCount,prox:prox,asis:asis,no:no,gano:gano,rate:rate,vivas:vivas.length,clientes:Object.keys(cli).length};
 }
+// Emoji canónico por tipo de stat (mismo lenguaje que _tile de "Mi negocio":
+// emoji en color, SIN caja atrás). Antes _statMini/_statBig usaban un ícono SVG
+// dentro de una caja tinteada → se veían distinto que "Mi negocio". Unificado.
+function _statEmoji(ico){ return ({cal:"📅",users:"👥",clock:"⏰",trend:"📈",checkc:"✅",xc:"❌"})[ico]||"📊"; }
 function _statMini(ico,label,big,sub,subCol){
   return "<div style='display:flex;gap:11px;align-items:flex-start;padding:2px 16px'>"+
-    "<span style='width:34px;height:34px;flex-shrink:0;border-radius:9px;background:var(--brand-soft);color:var(--accent);display:inline-flex;align-items:center;justify-content:center'>"+_cIco(ico,17)+"</span>"+
+    "<span class='cp-emo' style='font-size:20px;flex-shrink:0;line-height:1;margin-top:3px'>"+_statEmoji(ico)+"</span>"+
     "<div style='min-width:0'><div style='font-size:11.5px;color:var(--pw-text-muted);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(label)+"</div>"+
-      "<div style='font-family:var(--pw-sans);font-size:30px;font-weight:700;letter-spacing:-1px;line-height:1.1;margin-top:2px'>"+big+"</div>"+
+      "<div style='font-family:'Inter',-apple-system,sans-serif;font-size:30px;font-weight:700;letter-spacing:-1px;line-height:1.1;margin-top:2px;color:var(--pw-carbon)'>"+big+"</div>"+
       "<div style='font-size:12px;color:"+(subCol||"var(--pw-text-soft)")+";margin-top:1px'>"+esc(sub||"")+"</div></div>"+
   "</div>";
 }
 function _statBig(ico,icoBg,icoCol,big,label,sub,subCol){
-  return "<div style='border:1px solid var(--pw-border);border-radius:14px;padding:14px'>"+
-    "<span style='width:34px;height:34px;border-radius:9px;background:"+icoBg+";color:"+icoCol+";display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px'>"+_cIco(ico,17)+"</span>"+
-    "<div style='font-family:var(--pw-sans);font-size:28px;font-weight:700;letter-spacing:-.8px;line-height:1'>"+big+"</div>"+
-    "<div style='font-size:12px;font-weight:600;margin-top:5px'>"+esc(label)+"</div>"+
-    (sub?"<div style='font-size:11px;color:"+(subCol||"var(--pw-text-muted)")+";font-weight:600;margin-top:2px'>"+esc(sub)+"</div>":"")+
+  return "<div style='background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:14px 16px;box-shadow:var(--pw-shadow-sm)'>"+
+    "<div style='display:flex;align-items:center;gap:8px;font-size:12px;color:var(--pw-text-muted);font-weight:500'><span class='cp-emo' style='font-size:16px'>"+_statEmoji(ico)+"</span>"+esc(label)+"</div>"+
+    "<div style='font-family:'Inter',-apple-system,sans-serif;font-weight:700;font-size:30px;letter-spacing:-1px;color:var(--pw-carbon);line-height:1;margin:8px 0 4px'>"+big+"</div>"+
+    (sub?"<div style='font-size:11.5px;color:"+(subCol||"var(--pw-text-muted)")+";font-weight:600;line-height:1.3'>"+esc(sub)+"</div>":"")+
   "</div>";
 }
 function viewCalendario(){
