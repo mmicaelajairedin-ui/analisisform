@@ -1436,6 +1436,24 @@ const RULES = [
     },
   },
   {
+    name: "paywall: reactivación por reseña (+15 días) para inactivos hace 15+ días, una sola vez",
+    bug: "En el paywall 'Tu prueba terminó', a los coaches inactivos hace 15+ días " +
+         "(recuperación) se les ofrece dejar una reseña a cambio de reactivar 15 días. " +
+         "El grant pone fecha_fin_prueba=hoy+15 en modo 'prueba' (para que tras vencer " +
+         "vuelva el paywall a pedir tarjeta) y marca resena_bonus_usado (una sola vez). " +
+         "Los recién vencidos no la ven (que paguen). Si se rompe, se pierde el anzuelo " +
+         "de recuperación o se regalan días indebidos.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/_diasVenc\s*>=\s*15/.test(p)) return "panel-v2.html: la oferta de reseña ya no filtra por inactivo hace 15+ días.";
+      if (!/resena_bonus_usado/.test(p)) return "panel-v2.html: falta el flag resena_bonus_usado (una sola vez) en la reactivación por reseña.";
+      if (!/act==="pw-resena-send"/.test(p)) return "panel-v2.html: falta el handler que otorga los 15 días por reseña (pw-resena-send).";
+      if (!/estado_sub:"prueba"[\s\S]{0,80}resena_bonus_usado/.test(p) && !/resena_bonus_usado[\s\S]{0,80}estado_sub:"prueba"/.test(p) && !/fecha_fin_prueba:new Date\(Date\.now\(\)\+15/.test(p)) return "panel-v2.html: el grant de reactivación ya no extiende 15 días en modo prueba.";
+      return null;
+    },
+  },
+  {
     name: "sesiones: 'Mis temas / dudas' en los TRES portales (guardan notas_progreso)",
     bug: "La sección Preparación con 'Mis temas / dudas' (el cliente anota qué hablar " +
          "en la sesión y se guarda en candidatos.notas_progreso) debe estar en los tres " +
