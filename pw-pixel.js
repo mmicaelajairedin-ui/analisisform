@@ -137,4 +137,35 @@
   window.pwTrackTrial    = function (p) { track('StartTrial', p); };           // arrancó el trial gratis
   window.pwTrackDemo     = function (p) { track('Schedule', p); };             // agendó una demo
   window.pwTrackPurchase = function (p) { track('Purchase', p); };             // pagó
+
+  // ===========================================================================
+  // Auto-atribución de leads (una sola fuente de verdad): intercepta cualquier
+  // POST a contactos_chat en la página y (1) le adjunta el origen del anuncio y
+  // (2) dispara el evento Lead a Meta. Así cada formulario de contacto del sitio
+  // (soy-candidato, coaches, etc.) queda cubierto sin tocarlo uno por uno.
+  // A prueba de errores: ante cualquier duda, deja el fetch original intacto.
+  if (!window.__pwLeadHook) {
+    window.__pwLeadHook = true;
+    var _fetch = window.fetch;
+    if (typeof _fetch === 'function') {
+      window.fetch = function (input, init) {
+        try {
+          var url = (typeof input === 'string') ? input : (input && input.url) || '';
+          var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+          if (method === 'POST' && /\/rest\/v1\/contactos_chat(\?|$)/.test(url) && init && typeof init.body === 'string') {
+            var a = window.pwAttr ? window.pwAttr() : null;
+            if (a && a.utm_source) {
+              var parsed = JSON.parse(init.body);
+              var attach = function (o) { if (o && typeof o === 'object' && o.origen == null) o.origen = a; return o; };
+              parsed = Array.isArray(parsed) ? parsed.map(attach) : attach(parsed);
+              init = Object.assign({}, init, { body: JSON.stringify(parsed) });
+            }
+            // Evento de conversión: este contacto cuenta como Lead (no-op si no hay pixel/consent).
+            try { window.pwTrackLead && window.pwTrackLead(); } catch (e) {}
+          }
+        } catch (e) { /* nunca romper un guardado por culpa del tracking */ }
+        return _fetch.apply(this, arguments.length > 1 ? [input, init] : [input]);
+      };
+    }
+  }
 })();
