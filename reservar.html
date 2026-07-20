@@ -557,6 +557,20 @@ function renderProof(){
 // zona del coach y el evento quedaba corrido respecto de la reserva.
 function fmt(x){ function p(n){return('0'+n).slice(-2);} return x.getUTCFullYear()+p(x.getUTCMonth()+1)+p(x.getUTCDate())+'T'+p(x.getUTCHours())+p(x.getUTCMinutes())+'00Z'; }
 function fechaLinda(x){ return x.toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long'})+' · '+('0'+x.getHours()).slice(-2)+':'+('0'+x.getMinutes()).slice(-2)+' h'; }
+// Nombre corto de una zona ("America/Argentina/Buenos_Aires" → "Buenos Aires").
+function _tzShort(tz){ try{ return (''+(tz||'')).split('/').pop().replace(/_/g,' '); }catch(e){ return ''+(tz||''); } }
+// Fecha+hora de un instante EN una zona concreta (para mostrarle a cada uno SU
+// hora, no la del otro). Evita el clásico "el cliente cree que es a las 21 y el
+// coach a las 9" cuando están en zonas distintas.
+function fechaEnTz(x,tz){
+  if(!tz) return fechaLinda(x);
+  try{
+    var f=new Intl.DateTimeFormat('es',{timeZone:tz,weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',hour12:false});
+    var m={}; f.formatToParts(x).forEach(function(p){ m[p.type]=p.value; });
+    var h=(m.hour==='24')?'00':m.hour;
+    return m.weekday+' '+m.day+' de '+m.month+' · '+h+':'+m.minute+' h';
+  }catch(e){ return fechaLinda(x); }
+}
 
 // Render de las preguntas que armó el coach (cero por defecto: si no cargó
 // ninguna, no se muestra nada). Tipos: corto, largo, opciones (radios), tel.
@@ -608,7 +622,14 @@ function confirmar(){
   // respuesta como 'origen' para que las Métricas ("Por dónde llegan") sigan
   // funcionando. Si no la agregó, origen queda vacío (sin default impuesto).
   answers.forEach(function(x){ if(!origen && /d[oó]nde.*conoc|c[oó]mo.*(encontr|lleg|conoc)|how did you (find|hear)/i.test(x.q||'')) origen=x.a; });
-  var tlabel=TYPE.label||'Sesión', fechaTxt=fechaLinda(start);
+  var tlabel=TYPE.label||'Sesión';
+  // Cada uno ve SU hora (no la del otro). fechaCli = hora local de quien reserva;
+  // fechaCoach = misma reunión en la zona del coach. Si las zonas difieren, cada
+  // email muestra también la hora del otro, con la ciudad, para que nadie se
+  // confunda (evita "el cliente cree las 21 y el coach las 9").
+  var _coTz=_coachTz(), fechaCli=fechaEnTz(start,vtz), fechaCoach=fechaEnTz(start,_coTz);
+  var _F={ cli:fechaCli, coach:fechaCoach, cliTz:_tzShort(vtz), coTz:_tzShort(_coTz), diff:(!!_coTz && !!vtz && _coTz!==vtz) };
+  var fechaTxt=fechaCli;
   var title=tlabel+' · '+name+' con '+FIRST;
   var gurl='https://calendar.google.com/calendar/u/0/r/eventedit?text='+encodeURIComponent(title)+
     '&dates='+fmt(start)+'/'+fmt(end)+'&details='+encodeURIComponent('Reserva desde Pathway.\nNombre: '+name+'\nEmail: '+email+(answersTxt?('\n\n'+answersTxt):''));
@@ -631,7 +652,7 @@ function confirmar(){
     try{ _postCita(true); }catch(e){}
     TAKEN[start.getTime()]=true;
     // 2) Emails de confirmación (Brevo) — al que reserva y al coach (con respuestas).
-    sendEmails(name, email, tlabel, fechaTxt, gurl, _manage, origen, answers);
+    sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers);
     // 3) Google Calendar para que quede en el calendario del coach.
     var w=window.open(gurl,'_blank'); if(!w){ location.href=gurl; }
     ok(name, start, gurl);
@@ -651,8 +672,13 @@ function confirmar(){
 
 // Token aleatorio para el link de gestionar la cita (cancelar/reprogramar).
 function _tok(){ try{ var a=new Uint8Array(16); crypto.getRandomValues(a); return Array.prototype.map.call(a,function(b){return ('0'+b.toString(16)).slice(-2);}).join(''); }catch(e){ return (Date.now().toString(36)+Math.random().toString(36).slice(2,10)); } }
-function sendEmails(name, email, tlabel, fechaTxt, gurl, manageUrl, origen, answers){
+function sendEmails(name, email, tlabel, F, gurl, manageUrl, origen, answers){
   var brand=(PRO?COACH:'Pathway');
+  // Nota de zona horaria: solo si coach y cliente están en zonas distintas.
+  var _cliOtherTz=F.diff?('<div style="font-size:12.5px;color:#7A8A80;margin-top:5px">Para '+esc(FIRST)+' es a las '+esc(((F.coach||'').split(' · ')[1]||F.coach))+' ('+esc(F.coTz)+').</div>'):'';
+  var _coachCliLine=F.diff
+    ? '<p style="background:#FFF7E6;border:1px solid #F0DCA8;border-radius:10px;padding:10px 14px;font-size:13.5px;color:#7A5B10"><strong>Ojo con la zona horaria:</strong> para '+esc(name)+' es <strong style="text-transform:capitalize">'+esc(F.cli)+'</strong> ('+esc(F.cliTz)+').</p>'
+    : '';
   // Al cliente
   var htmlCli='<div style="background:#FAFDF9;padding:26px 16px;font-family:Inter,-apple-system,Segoe UI,Arial,sans-serif;color:#1B2E26">'+
     '<div style="max-width:480px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #E4EFE4">'+
@@ -663,8 +689,8 @@ function sendEmails(name, email, tlabel, fechaTxt, gurl, manageUrl, origen, answ
       '<p style="font-size:15px;margin:0 0 14px">Hola '+esc(name)+',</p>'+
       '<p style="font-size:14px;line-height:1.6;color:#42504A;margin:0 0 18px">Reservaste tu <strong>'+esc(tlabel)+'</strong> con '+esc(FIRST)+'. Te esperamos:</p>'+
       '<div style="background:#F0F5EF;border-radius:12px;padding:16px 18px;margin-bottom:18px">'+
-        '<div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700">Cuándo</div>'+
-        '<div style="font-size:16px;font-weight:700;color:#1B4332;text-transform:capitalize">'+esc(fechaTxt)+'</div></div>'+
+        '<div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700">Cuándo'+(F.diff?' · tu hora ('+esc(F.cliTz)+')':'')+'</div>'+
+        '<div style="font-size:16px;font-weight:700;color:#1B4332;text-transform:capitalize">'+esc(F.cli)+'</div>'+_cliOtherTz+'</div>'+
       '<a href="'+esc(gurl)+'" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px">Agregar a mi Google Calendar</a>'+
       (manageUrl?('<p style="font-size:12.5px;color:#8A968E;margin-top:18px;line-height:1.5">¿No puedes en ese horario? <a href="'+esc(manageUrl)+'" style="color:#2D6A4F;font-weight:700">Cancelar o reprogramar</a>.</p>'):'<p style="font-size:12.5px;color:#8A968E;margin-top:18px;line-height:1.5">Si necesitas reprogramar, responde este email y coordinamos.</p>')+
     '</div></div></div>';
@@ -674,7 +700,8 @@ function sendEmails(name, email, tlabel, fechaTxt, gurl, manageUrl, origen, answ
     var htmlCoach='<div style="font-family:Inter,-apple-system,Segoe UI,Arial,sans-serif;color:#1B2E26">'+
       '<h2 style="font-family:Georgia,serif;color:#1B4332">Nueva reserva 📅</h2>'+
       '<p><strong>'+esc(name)+'</strong> reservó una <strong>'+esc(tlabel)+'</strong>.</p>'+
-      '<p style="background:#F0F5EF;border-radius:10px;padding:12px 14px;text-transform:capitalize"><strong>'+esc(fechaTxt)+'</strong></p>'+
+      '<p style="background:#F0F5EF;border-radius:10px;padding:12px 14px"><span style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700">Cuándo'+(F.diff?' · tu hora ('+esc(F.coTz)+')':'')+'</span><br><strong style="text-transform:capitalize">'+esc(F.coach)+'</strong></p>'+
+      _coachCliLine+
       '<p style="font-size:14px">Contacto: <a href="mailto:'+esc(email)+'">'+esc(email)+'</a></p>'+
       (origen?('<p style="font-size:14px">Te encontró por: <strong>'+esc(origen)+'</strong></p>'):'')+
       ((answers&&answers.length)?('<div style="background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0"><div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700;margin-bottom:6px">Sus respuestas</div>'+answers.map(function(x){ return '<div style="font-size:13.5px;margin-bottom:7px"><span style="color:#7A8A80">'+esc(x.q)+':</span> <strong>'+esc(x.a)+'</strong></div>'; }).join('')+'</div>'):'')+

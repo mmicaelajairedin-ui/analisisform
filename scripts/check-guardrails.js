@@ -1027,6 +1027,27 @@ const RULES = [
     },
   },
   {
+    name: "reservas: cada email muestra SU hora (coach y cliente en zonas distintas)",
+    bug: "Los emails de confirmación usaban la MISMA fechaTxt (calculada en el " +
+         "navegador del que reserva = hora del cliente) para AMBOS: el email del " +
+         "coach mostraba la hora del CLIENTE, no la suya. Con coach y cliente en " +
+         "zonas distintas → 'el cliente cree que es a las 21 y el coach a las 9'. " +
+         "Fix: fechaEnTz(instante, zona) da la hora en cada zona; el cliente ve F.cli " +
+         "(su hora) y el coach F.coach (la suya), y si difieren, cada uno ve también " +
+         "la hora del otro con la ciudad.",
+    check() {
+      const s = read("reservar.html"); if (!s) return null;
+      if (!/function fechaEnTz\(/.test(s))
+        return "reservar.html: falta fechaEnTz() — los emails podrían volver a mostrar una sola zona.";
+      // El email del coach usa SU hora (F.coach) y el del cliente la suya (F.cli).
+      if (!/esc\(F\.coach\)/.test(s))
+        return "reservar.html: el email del coach ya no muestra SU hora (F.coach).";
+      if (!/esc\(F\.cli\)/.test(s))
+        return "reservar.html: el email del cliente ya no usa su hora local (F.cli).";
+      return null;
+    },
+  },
+  {
     name: "reservas: no hay doble-booking (lee citas + re-chequea al confirmar)",
     bug: "reservar.html generaba los horarios solo desde la disponibilidad y NUNCA " +
          "leía la tabla citas → dos personas podían reservar el mismo turno. Debe " +
