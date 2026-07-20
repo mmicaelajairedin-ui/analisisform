@@ -989,6 +989,25 @@ const RULES = [
     },
   },
   {
+    name: "diseño: número de KPI del panel no se infla (chico, como multicoach)",
+    bug: "El número de _tile ('Mi negocio') se revirtió varias veces a 46px/900 → " +
+         "se veía gigante y no matcheaba multicoach ni el resto de las KPI. Debe " +
+         "quedar chico (~26px, peso 700), igual que _statMini/_statBig y multicoach " +
+         "(.kpi .n). Esta regla evita que vuelva a inflarse en un merge.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      const m = p.match(/function _tile\([^)]*\)\{[\s\S]{0,160}?font-size:(\d+)px/);
+      if (!m) return "panel-v2.html: no se encontró el número de _tile (¿cambió la función?).";
+      const px = parseInt(m[1], 10);
+      if (px > 30) return "panel-v2.html: el número de _tile quedó en " + px + "px (muy grande). Debe ser ~26px, como multicoach.";
+      // multicoach .kpi .n también chico (no volver a 40/46).
+      const mc = read("multicoach.html");
+      if (mc) { const km = mc.match(/\.kpi \.n\{[^}]*font-size:(\d+)px/); if (km && parseInt(km[1], 10) > 30) return "multicoach.html: .kpi .n quedó en " + km[1] + "px (muy grande)."; }
+      return null;
+    },
+  },
+  {
     name: "diseño: white-label llega al token canónico --accent en toda la app",
     bug: "Cada pantalla tenía su motor de marca con su token propio (--brand / " +
          "--rose / --pw-bosque) → algo NUEVO no podía reusar el white-label. Ahora " +
