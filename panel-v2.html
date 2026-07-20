@@ -7187,6 +7187,40 @@ document.addEventListener("click", function(ev){
   var el = ev.target.closest("[data-act]");
   if(!el) return;
   var act = el.getAttribute("data-act");
+  // ── Reactivación por reseña (en el paywall "Tu prueba terminó") ──
+  if(act==="pw-resena"){
+    var _pc=document.getElementById("pw-paywall-card"); if(!_pc) return;
+    window._PW_RATING=5;
+    _pc.innerHTML="<div style='font-size:40px;margin-bottom:8px'>🌟</div>"+
+      "<h1 style='font-family:Fraunces,Georgia,serif;font-size:22px;color:#1B2E26;margin-bottom:6px'>Tu opinión nos ayuda</h1>"+
+      "<p style='font-size:13px;color:#5A6A60;line-height:1.5;margin-bottom:14px'>Contanos cómo te fue con Pathway y te reactivamos 15 días.</p>"+
+      "<div id='pw-stars' style='font-size:34px;letter-spacing:5px;margin-bottom:12px;user-select:none'>"+[1,2,3,4,5].map(function(i){return "<span data-act='pw-star' data-n='"+i+"' style='color:#C99A2E;cursor:pointer'>★</span>";}).join("")+"</div>"+
+      "<textarea id='pw-resena-txt' rows='4' placeholder='Qué te gustó, qué mejorarías…' style='width:100%;padding:11px 12px;border:1.5px solid #DCEBE1;border-radius:10px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box;margin-bottom:12px;outline:none'></textarea>"+
+      "<button data-act='pw-resena-send' style='width:100%;padding:13px;background:#2D6A4F;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit'>Enviar y reactivar 15 días</button>"+
+      "<div id='pw-resena-st' style='font-size:12px;color:#7A8B82;margin-top:10px;min-height:16px'></div>"+
+      "<div style='margin-top:6px'><a href='#' data-act='pw-resena-cancel' style='font-size:12px;color:#9AA69F;text-decoration:underline'>Volver</a></div>";
+    return;
+  }
+  if(act==="pw-star"){ window._PW_RATING=parseInt(el.getAttribute("data-n"),10)||5; var _ss=document.getElementById("pw-stars"); if(_ss){ [].forEach.call(_ss.children,function(sp,ix){ sp.style.opacity=(ix<window._PW_RATING)?"1":".28"; }); } return; }
+  if(act==="pw-resena-cancel"){ if(ev.preventDefault)ev.preventDefault(); location.reload(); return; }
+  if(act==="pw-resena-send"){
+    var _rctx=window._PW_RESENA; if(!_rctx) return;
+    var _rrt=window._PW_RATING||5; var _rtx=((document.getElementById("pw-resena-txt")||{}).value||"").trim();
+    var _rst=document.getElementById("pw-resena-st"); if(_rst) _rst.textContent="Guardando…";
+    el.disabled=true;
+    var _rcfg=Object.assign({}, _rctx.cfg||{}, {fecha_fin_prueba:new Date(Date.now()+15*86400000).toISOString(), estado_sub:"prueba", resena_bonus_usado:true, resena_bonus_at:new Date().toISOString()});
+    var _rh=(window.PWAUTH&&PWAUTH.headersSync?PWAUTH.headersSync():{apikey:KEY,Authorization:"Bearer "+KEY}); _rh=Object.assign({},_rh,{"Content-Type":"application/json"});
+    // 1) guardar la reseña (5★ se publica sola; menos, queda para que la coach la revise)
+    fetch(SB+"/rest/v1/reviews",{method:"POST",headers:_rh,body:JSON.stringify({nombre:(_rctx.email?(""+_rctx.email).split("@")[0]:"Coach"), rating:_rrt, texto:_rtx||null, fuente:"coach-reactivacion", publica:(_rrt>=5)})}).catch(function(){});
+    // 2) reactivar la cuenta 15 días (modo prueba → tras vencer, vuelve el paywall a pedir tarjeta)
+    fetch(SB+"/rest/v1/usuarios?id=eq."+encodeURIComponent(_rctx.id),{method:"PATCH",headers:Object.assign({},_rh,{Prefer:"return=minimal"}),body:JSON.stringify({activo:true, configuracion:_rcfg})})
+      .then(function(r){ if(r&&(r.ok||r.status===204)){ try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=_rcfg; mu.activo=true; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
+        var _pc2=document.getElementById("pw-paywall-card"); if(_pc2) _pc2.innerHTML="<div style='font-size:54px;margin-bottom:6px'>🎉</div><div style='font-family:Fraunces,Georgia,serif;font-size:34px;color:#2D6A4F;font-weight:700;line-height:1'>+15 días</div><p style='font-size:14px;color:#5A6A60;margin-top:10px;line-height:1.5'>¡Gracias! Tu cuenta está activa de nuevo.<br>Te llevamos a tu panel…</p>";
+        setTimeout(function(){ location.reload(); },2400); }
+        else { el.disabled=false; if(_rst) _rst.textContent="No se pudo guardar. Reintentá."; } })
+      .catch(function(){ el.disabled=false; if(_rst) _rst.textContent="Sin conexión. Reintentá."; });
+    return;
+  }
   if(act==="open"){ var ou=el.getAttribute("data-url"); if(ou){ var _w=window.open(ou,"_blank","noopener"); if(!_w){ location.href=ou; } } return; }
   if(act==="rail-toggle"){ state.railCollapsed=!state.railCollapsed; var _rap=document.querySelector(".cp-app"); var _rsd=document.querySelector(".cp-side"); if(_rap)_rap.classList.toggle("rail",state.railCollapsed); if(_rsd)_rsd.classList.toggle("rail",state.railCollapsed); return; }
   // Agenda: tipos de evento + agendar cita. TODO con modales Pathway (nada de
@@ -10105,12 +10139,26 @@ function _paywallCheck(u){
         "</div>"+
         "<div style='text-align:center;margin-top:12px'><a href='"+_proUrl+"' style='display:inline-block;padding:10px 22px;background:#fff;border:1.5px solid #2D6A4F;color:#2D6A4F;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700'>Pasar a Pro · USD $59/mes →</a></div>"+
       "</div>";
+      // Oferta de reactivación por reseña: SOLO a coaches inactivos hace 15+ días
+      // (recuperación) que NO la hayan usado ya. Los recién vencidos (Alejandra,
+      // Daniel…) no la ven → que paguen. Una sola vez por coach (resena_bonus_usado).
+      var _ffpD=fc.fecha_fin_prueba?new Date(fc.fecha_fin_prueba):null;
+      var _diasVenc=(_ffpD&&!isNaN(_ffpD))?Math.floor((Date.now()-_ffpD.getTime())/86400000):0;
+      var _resenaElegible=(_diasVenc>=15 && fc.resena_bonus_usado!==true && !window.PW_IN_APP);
+      window._PW_RESENA={id:u.id, email:u.email||"", cfg:fc};
+      var _resenaOffer=_resenaElegible
+        ? "<div style='margin-top:20px;padding-top:18px;border-top:1px solid #E3EFE8'>"+
+            "<div style='font-size:13.5px;color:#1B4332;font-weight:700;margin-bottom:4px'>🌟 ¿O preferís volver gratis?</div>"+
+            "<div style='font-size:12.5px;color:#5A6A60;line-height:1.5;margin-bottom:12px'>Dejanos tu reseña y te reactivamos <strong>15 días</strong> para que sigas donde lo dejaste.</div>"+
+            "<button data-act='pw-resena' style='padding:12px 24px;background:#E9C46A;color:#1F5740;border:none;border-radius:9px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit'>Dejar mi reseña y ganar 15 días</button>"+
+          "</div>"
+        : "";
       // Dentro de la app de tienda NO se puede mostrar el cobro (Apple/Google
       // exigen su billing). Se renueva en la web -> mensaje sin link a Stripe.
       var _cta = window.PW_IN_APP
         ? "<p style='font-size:14px;color:#5A6A60;line-height:1.55;margin-bottom:20px'>Para seguir usando Pathway, renová tu suscripción entrando a <strong>pathwaycareercoach.com</strong> desde tu navegador.</p>"
         : "<p style='font-size:14px;color:#5A6A60;line-height:1.55;margin-bottom:20px'>Reactiva tu cuenta y seguí donde lo dejaste: <strong>tus clientes, informes y configuración siguen intactos</strong>. <strong>"+_precio+", cancelas cuando quieras.</strong></p><a href='"+su+"' style='display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;margin-bottom:6px'>Reactivar mi cuenta →</a>"+_upsell+"<br>";
-      document.body.innerHTML="<div style='position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#FCFDFC;font-family:Inter,sans-serif;padding:24px'><div style='background:#fff;border-radius:14px;padding:32px;max-width:480px;width:100%;text-align:center;box-shadow:0 8px 30px rgba(31,42,35,.1)'><div style='font-size:42px;margin-bottom:14px'>🌱</div><h1 style='font-family:Fraunces,Georgia,serif;font-size:24px;color:#1B2E26;margin-bottom:10px;letter-spacing:-.4px'>Tu prueba terminó</h1>"+_cta+"<a href='login.html' style='display:inline-block;padding:8px 18px;font-size:12px;color:#5A6A60;text-decoration:underline'>Cerrar sesión</a><p style='font-size:11px;color:#999;margin-top:18px;line-height:1.5'>¿Algún problema? Escríbenos a <a href='mailto:"+SUPPORT_EMAIL+"' style='color:#2D6A4F'>"+SUPPORT_EMAIL+"</a></p></div></div>";
+      document.body.innerHTML="<div style='position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#FCFDFC;font-family:Inter,sans-serif;padding:24px'><div id='pw-paywall-card' style='background:#fff;border-radius:14px;padding:32px;max-width:480px;width:100%;text-align:center;box-shadow:0 8px 30px rgba(31,42,35,.1)'><div style='font-size:42px;margin-bottom:14px'>🌱</div><h1 style='font-family:Fraunces,Georgia,serif;font-size:24px;color:#1B2E26;margin-bottom:10px;letter-spacing:-.4px'>Tu prueba terminó</h1>"+_cta+_resenaOffer+"<div style='margin-top:16px'><a href='login.html' style='display:inline-block;padding:8px 18px;font-size:12px;color:#5A6A60;text-decoration:underline'>Cerrar sesión</a></div><p style='font-size:11px;color:#999;margin-top:12px;line-height:1.5'>¿Algún problema? Escríbenos a <a href='mailto:"+SUPPORT_EMAIL+"' style='color:#2D6A4F'>"+SUPPORT_EMAIL+"</a></p></div></div>";
     }).catch(function(){ window.location.href="login.html"; });
   return true;
 }
