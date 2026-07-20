@@ -90,6 +90,20 @@ function fillOnb(html, primer, coachId) {
     .split("{Baja}").join(bajaLink);
 }
 
+// ── Reactivación por reseña: email a coaches inactivos hace 15+ días (recuperación).
+// El botón lleva al panel → como su prueba venció, cae en el paywall donde está la
+// oferta "dejá tu reseña y reactivá 15 días". Mismo diseño de marca (verde/dorado).
+const RESENA_REACTIV_HTML = "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"background:#EFF3EE;padding:22px;font-family:Arial,Helvetica,sans-serif;\"><tr><td align=\"center\"><table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"600\" style=\"width:600px;max-width:600px;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #E4EDE6;\">"+
+"<tr><td style=\"padding:20px 30px;border-bottom:1px solid #EEF3EE;\"><img src=\"https://pathwaycareercoach.com/logo-horizontal.png\" width=\"130\" alt=\"Pathway\" style=\"display:block;border:0;\"></td></tr>"+
+"<tr><td style=\"padding:22px 26px 6px;\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background:#E9C46A;border-radius:16px;\"><tr><td valign=\"middle\" style=\"padding:16px 6px 16px 22px;\"><div style=\"font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#1F5740;font-weight:bold;opacity:.8;\">Te extrañamos · y te lo premiamos</div><div style=\"font-family:Georgia,serif;font-size:24px;line-height:1.15;color:#1B2E26;font-weight:bold;margin-top:6px;\">Volvé gratis: <span style=\"color:#1F5740;\">15 días</span> por tu reseña</div></td><td width=\"118\" valign=\"middle\" align=\"right\" style=\"padding-right:14px;\"><img src=\"https://pathwaycareercoach.com/assets/cabra/salta.gif\" width=\"104\" alt=\"\" style=\"display:block;border:0;\"></td></tr></table></td></tr>"+
+"<tr><td style=\"padding:20px 30px 2px;\"><div style=\"font-size:15px;line-height:1.65;color:#42514A;\">Hola {Nombre}, ¡cuánto tiempo! Pathway sumó cosas nuevas desde que no entrás: un <b>calendario propio</b> (ya no necesitás Calendly) y la <b>IA de Pathway</b> que te prepara las próximas sesiones sola.<br><br>Y para que vuelvas a probarlo: dejanos tu reseña y te <b>reactivamos 15 días gratis</b>, con tus clientes y tu configuración intactos.</div></td></tr>"+
+"<tr><td align=\"center\" style=\"padding:18px 30px 6px;\"><div style=\"font-family:Georgia,serif;font-size:44px;font-weight:bold;color:#2D6A4F;line-height:1;\">+15 días</div><div style=\"font-size:13.5px;color:#42514A;margin-top:6px;\">gratis · por dejar tu reseña</div></td></tr>"+
+"<tr><td align=\"center\" style=\"padding:16px 30px 2px;\"><span style=\"font-size:34px;line-height:1;color:#C99A2E;padding:0 3px;\">&#9733;</span><span style=\"font-size:34px;line-height:1;color:#C99A2E;padding:0 3px;\">&#9733;</span><span style=\"font-size:34px;line-height:1;color:#C99A2E;padding:0 3px;\">&#9733;</span><span style=\"font-size:34px;line-height:1;color:#C99A2E;padding:0 3px;\">&#9733;</span><span style=\"font-size:34px;line-height:1;color:#C99A2E;padding:0 3px;\">&#9733;</span></td></tr>"+
+"<tr><td align=\"center\" style=\"padding:14px 30px 6px;\"><table cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td bgcolor=\"#2D6A4F\" style=\"border-radius:11px;\"><a href=\"https://pathwaycareercoach.com/panel-v2.html\" style=\"display:inline-block;padding:15px 34px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1;font-weight:bold;color:#fff;text-decoration:none;border-radius:11px;\">Volver y dejar mi reseña</a></td></tr></table></td></tr>"+
+"<tr><td style=\"padding:10px 30px 26px;\"><div style=\"font-size:12.5px;color:#7A8B82;line-height:1.6;text-align:center;\">Entrás, dejás tu reseña (estrellas + comentario) y reactivamos tus 15 días al instante.</div></td></tr>"+
+"<tr><td style=\"padding:20px 30px;background:#fff;border-top:1px solid #EBF1EC;font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#9AA69F;text-align:center;line-height:1.7;\"><img src=\"https://pathwaycareercoach.com/logo-horizontal.png\" width=\"92\" alt=\"Pathway\" style=\"display:block;margin:0 auto 8px;border:0;opacity:.8;\"><a href=\"https://pathwaycareercoach.com\" style=\"color:#2D6A4F;text-decoration:none;font-weight:bold;\">pathwaycareercoach.com</a> &middot; Coaching de carrera con IA<br>Recibís este correo porque sos parte de Pathway.<br><a href=\"{Baja}\" style=\"color:#9AA69F;text-decoration:underline;\">Darme de baja</a></td></tr>"+
+"</table></td></tr></table>";
+
 // ── Renovación: avisos por vencimiento de la prueba ──────────────
 // Se disparan según la fecha_fin_prueba de CADA coach (respeta 14 / 15 / 30 días,
 // porque leen SU fecha, no una fija). Solo a coaches que NO pagaron. El botón va
@@ -207,6 +221,9 @@ Deno.serve(async (req) => {
       const ok = await sendEmail(testEmail, "Micaela", fillOnb(s.subject, "Micaela", sampleId), fillOnb(s.html, "Micaela", sampleId));
       out.push({ id: s.id, ok });
     }
+    // También la reactivación por reseña (para previsualizarla antes de activarla).
+    const okR = await sendEmail(testEmail, "Micaela", "🌟 Volvé gratis: 15 días por tu reseña", fillOnb(RESENA_REACTIV_HTML, "Micaela", sampleId));
+    out.push({ id: "reactivacion_resena", ok: okR });
     return new Response(JSON.stringify({ test: true, to: testEmail, sent: out }), { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
@@ -277,6 +294,13 @@ Deno.serve(async (req) => {
           }
         }
         let kind = trialKind || (onbStep ? onbStep.id : null);
+        // Reactivación por reseña: mismo segmento que la oferta del paywall — prueba
+        // vencida hace 15+ días, sin pagar, sin reseña y sin usar el bono. Los recién
+        // vencidos (Alejandra, Daniel…) no entran → que paguen. Una sola vez por coach.
+        const dVenc = finTs ? (now - finTs) / DAY : 0;
+        if (!kind && !isPaying && finTs && dVenc >= 15 && cfg.resena_bonus_usado !== true && cfg.review_done !== true && !sentEver("reactivacion_resena")) {
+          kind = "reactivacion_resena";
+        }
         if (!kind && dSeen >= 14 && (isPaying || (await countRows(`${SUPABASE_URL}/rest/v1/candidatos?coach_id=eq.${id}&select=id`, sbHeaders)) > 0) && !sentWithin("reactivacion", 14)) {
           kind = "reactivacion";
         }
@@ -290,6 +314,10 @@ Deno.serve(async (req) => {
           subject = fillOnb(onbStep.subject, primer, String(u.id));
           html = fillOnb(onbStep.html, primer, String(u.id));
           push = onbStep.push;
+        } else if (kind === "reactivacion_resena") {
+          subject = "🌟 Volvé gratis: 15 días por tu reseña";
+          html = fillOnb(RESENA_REACTIV_HTML, primer, String(u.id));
+          push = { title: "Volvé gratis 15 días 🌟", body: "Dejá tu reseña y reactivamos tu cuenta." };
         } else { // reactivacion
           subject = "👋 Te extrañamos por acá";
           html = emailHtml(primer, "👋", "#E9F5EF",
