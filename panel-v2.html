@@ -9643,20 +9643,33 @@ function saveCfg(cfgPatch, usuariosExtra, onDone){
     if(typeof onDone==="function"){ try{ onDone(); }catch(e){} }
     toast("Configuración guardada ✓"); render();
   }
-  _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",body)
-    .then(function(r){
-      if(r.ok){ _ok(); return; }
+  // Guardado verificado: pedimos return=representation y confirmamos que la
+  // escritura afectó AL MENOS 1 fila. Bajo RLS estricto, si el JWT venció y la
+  // request cae a la anon key, la policy no matchea (el coach tiene password) →
+  // 0 filas → 204. Con return=minimal eso pasaba como "ok" y mostrábamos
+  // "guardado ✓" sin guardar nada (pérdida silenciosa). Ahora 0 filas = error real.
+  function _saveUsuarios(b){
+    return _hdr({"Content-Type":"application/json",Prefer:"return=representation"}).then(function(h){
+      return fetch(SB+"/rest/v1/usuarios?id=eq."+encodeURIComponent(RME.id)+"&select=id",{method:"PATCH",headers:h,body:JSON.stringify(b)});
+    }).then(function(r){
+      if(r.status===401||r.status===403){ if(typeof _authExpired==="function")_authExpired(); return {ok:false,rows:0}; }
+      if(!r.ok){ return {ok:false,rows:0}; }
+      return r.json().then(function(a){ return {ok:true,rows:(a&&a.length)||0}; }).catch(function(){ return {ok:true,rows:1}; });
+    });
+  }
+  _saveUsuarios(body)
+    .then(function(res){
+      if(res.ok && res.rows>=1){ _ok(); return; }
       // Fallback: si las columnas top-level fallan (p.ej. slug UNIQUE ya usado,
       // o la columna no existe en este entorno), reintentamos guardando SOLO
       // configuracion. Así el estado igual persiste (lo leemos desde ahí) y el
       // toggle no "se sale" al refrescar.
       if(usuariosExtra){
-        return _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged})
-          .then(function(r2){ if(!r2.ok) throw 0; _ok(); });
+        return _saveUsuarios({configuracion:merged}).then(function(r2){ if(!(r2.ok&&r2.rows>=1)) throw 0; _ok(); });
       }
       throw 0;
     })
-    .catch(function(){ alert("No se pudo guardar la configuración."); });
+    .catch(function(){ alert("No se pudo guardar la configuración. Si el problema sigue, puede que tu sesión haya vencido: cerrá sesión y volvé a entrar."); });
 }
 var _stripeReq=false;
 function loadStripeStatus(){
