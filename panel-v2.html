@@ -2700,36 +2700,41 @@ function _agDispWindow(key){
 // Agenda del día: el día hora por hora (libre/ocupado), como en el mockup.
 // Eventos de Google + reservas del link, ubicados en su hora; huecos = "Disponible".
 // Dedup de la agenda: la MISMA sesión puede venir del Google Calendar Y de la
-// reserva del link (tabla citas). Antes deduplicábamos por (minuto|título
-// EXACTO), pero el título de Google ("Llamada 30 min - Alejandra") ≠ el nombre de
-// la reserva ("Alejandra") → la misma cita salía DUPLICADA. Ahora: en el mismo
-// minuto, si hay un evento de Google (sin id) y una reserva de ESTE coach (con
-// id, sin 'who') cuyos nombres se solapan, es la misma sesión: queda la reserva
-// (más rica: asistencia/origen) y le pasamos el link de Meet.
+// reserva del link (citas), o de dos calendarios de Google. Antes deduplicábamos
+// por (minuto|título EXACTO), pero el título de Google ("Llamada 30 min -
+// Alejandra") ≠ el nombre de la reserva ("Alejandra") → la misma cita salía
+// DUPLICADA (en la agenda, en el mes y como "Próxima sesión" + "En tu lista").
+// Ahora: en el MISMO minuto, cualquier par de eventos cuyos NOMBRES se solapan es
+// la misma sesión → se fusiona en uno (queda el que tenga id = la reserva, más
+// rica; se le pasa el link de Meet / email del otro). No fusiona sesiones de
+// coaches DISTINTOS del equipo (who diferente).
 function _agMergeDup(items){
   items.sort(function(a,b){ return a.ms-b.ms; });
+  function _norm(s){ return (""+(s||"")).toLowerCase().replace(/\s+/g," ").trim(); }
+  function _overlap(x,y){ x=_norm(x); y=_norm(y); if(!x||!y) return false;
+    if(x===y) return true; if(x.indexOf(y)>=0||y.indexOf(x)>=0) return true;
+    var xf=x.split(" ")[0], yf=y.split(" ")[0];
+    return (xf.length>=3 && y.indexOf(xf)>=0) || (yf.length>=3 && x.indexOf(yf)>=0); }
   var byMin={};
   items.forEach(function(x){ var m=Math.round(x.ms/60000); (byMin[m]=byMin[m]||[]).push(x); });
   Object.keys(byMin).forEach(function(m){
     var arr=byMin[m]; if(arr.length<2) return;
-    var res=arr.filter(function(x){ return x.id!=null && !x.who; });
-    if(!res.length) return;
-    arr.filter(function(x){ return x.id==null; }).forEach(function(g){
-      var gt=(""+(g.title||"")).toLowerCase();
-      var match=res.filter(function(r){
-        var rn=(""+(r.title||"")).toLowerCase().trim(); if(!rn) return false;
-        var first=rn.split(/\s+/)[0];
-        return gt.indexOf(rn)>=0 || (first.length>=3 && gt.indexOf(first)>=0);
-      })[0];
-      if(match){ if(!match.link && g.link) match.link=g.link; g._dup=1; }
-    });
+    for(var i=0;i<arr.length;i++){ if(arr[i]._dup) continue;
+      for(var j=i+1;j<arr.length;j++){ if(arr[j]._dup) continue;
+        var a=arr[i], b=arr[j];
+        if(a.who && b.who && a.who!==b.who) continue; // coaches distintos: NO fusionar
+        if(!_overlap(a.title, b.title)) continue;
+        var keep, drp;
+        if(a.id!=null && b.id==null){ keep=a; drp=b; }
+        else if(b.id!=null && a.id==null){ keep=b; drp=a; }
+        else { keep=a; drp=b; }
+        if(!keep.link && drp.link) keep.link=drp.link;
+        if(!keep.email && drp.email) keep.email=drp.email;
+        drp._dup=1;
+      }
+    }
   });
-  var seen={};
-  return items.filter(function(x){
-    if(x._dup) return false;
-    var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim();
-    if(seen[k]) return false; seen[k]=1; return true;
-  });
+  return items.filter(function(x){ return !x._dup; });
 }
 function _agRenderDay(key,compact){
   var isToday=(key===_agMoKey(new Date()));
@@ -2904,7 +2909,10 @@ function _agProxRender(){
     (it.link?"<a href='"+esc(it.link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='width:100%;height:40px;font-size:14px;text-decoration:none;margin-top:16px;gap:8px;justify-content:center'>"+_cIco('video',15)+" Entrar a la sesión</a>":(it.email?"<a href='mailto:"+esc(it.email)+"' class='cp-btn cp-btn-primary' style='width:100%;height:40px;font-size:14px;text-decoration:none;margin-top:16px;justify-content:center'>Escribirle</a>":""))+
     (it.email?"<button data-act='nav:clientes' class='cp-btn cp-btn-ghost' style='width:100%;height:36px;font-size:13px;margin-top:8px;gap:6px;justify-content:center'>Ver perfil del cliente "+_cIco('chevR',14)+"</button>":"")+
   "</div>";
-  var rest=list.slice(1,3), lista="";
+  // "En tu lista" NUNCA repite la próxima (list[0]): la excluimos por hora+nombre,
+  // por si algún duplicado se coló pese al dedup (ej. dos eventos del mismo origen).
+  var _itk=Math.round(it.ms/60000)+"|"+(""+(it.title||"")).toLowerCase().trim();
+  var rest=list.slice(1).filter(function(x){ return (Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim())!==_itk; }).slice(0,2), lista="";
   if(rest.length){
     lista="<div style='margin-top:16px;padding-top:14px;border-top:1px solid var(--pw-border)'>"+
       "<div style='font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--pw-text-muted);font-weight:600;margin-bottom:8px'>En tu lista</div>"+
