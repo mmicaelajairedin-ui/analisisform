@@ -1729,6 +1729,35 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "auth: un 401 al entrar reintenta (no expulsa) si hay sesión válida",
+    bug: "Al entrar recién logueada, una lectura podía salir ANTES de que el " +
+         "token se adjunte (SDK del CDN booteando) → 401 → y _authExpired " +
+         "deslogueaba al toque: 'entro, demora unos segundos y me tira de vuelta " +
+         "al login'. Le pasaba al panel del coach Y a los portales del cliente. " +
+         "Ahora, ante 401/403, si HAY sesión válida se reintenta UNA vez " +
+         "(recargando) en vez de desloguear; solo sin sesión se va al login. El " +
+         "presupuesto de reintento (sessionStorage pw_auth_retry) se resetea en " +
+         "cada login fresco (login.html + auth-callback).",
+    check() {
+      // Panel + los 2 portales con _authExpired: debe existir el reintento
+      // guardado por sesión y el chequeo de sesión antes de desloguear.
+      var guarded = ["panel-v2.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      for (var i = 0; i < guarded.length; i++) {
+        var s = read(guarded[i]);
+        if (!s) continue;
+        if (!/function _authExpired/.test(s)) return guarded[i] + ": falta _authExpired.";
+        if (!/pw_auth_retry/.test(s)) return guarded[i] + ": _authExpired ya no reintenta (pw_auth_retry) — vuelve a expulsar al toque.";
+        if (!/hasSession|_tokenNow/.test(s)) return guarded[i] + ": _authExpired ya no verifica si hay sesión antes de desloguear.";
+      }
+      // El presupuesto de reintento se resetea en cada login fresco.
+      var lg = read("login.html");
+      if (lg && !/removeItem\(['"]pw_auth_retry/.test(lg)) return "login.html: no resetea pw_auth_retry en el login fresco.";
+      var ac = read("auth-callback.html");
+      if (ac && !/removeItem\(['"]pw_auth_retry/.test(ac)) return "auth-callback.html: no resetea pw_auth_retry en el login fresco.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;

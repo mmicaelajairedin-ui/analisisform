@@ -9504,8 +9504,34 @@ var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 function _hdr(extra){ return (window.PWAUTH?PWAUTH.headers(extra):Promise.resolve(Object.assign({apikey:KEY,Authorization:"Bearer "+KEY},extra||{}))); }
 // Red de seguridad para cuando RLS esté prendido: 401/403 (sin sesión) → login.
 // Mientras RLS esté apagado nunca se dispara (la anon key no da 401).
-var _authGone=false;
-function _authExpired(){ if(_authGone)return; _authGone=true; try{ location.href="login.html"; }catch(e){} }
+var _authGone=false,_authChecking=false;
+// ¿Hay AHORA un JWT real en localStorage? (sync, no depende del SDK del CDN).
+function _tokenNow(){ try{ var h=(window.PWAUTH&&PWAUTH.headersSync)?PWAUTH.headersSync():null; return !!(h&&h.Authorization&&h.Authorization!=="Bearer "+KEY); }catch(e){ return false; } }
+// Un 401/403 NO siempre es "sesión vencida". Al entrar recién logueada, una
+// lectura puede salir ANTES de que el token se adjunte (el SDK del CDN todavía
+// booteando) → 401 → y antes esto la deslogueaba al toque: "entro, demora unos
+// segundos y me tira de vuelta al login". Ahora: si HAY sesión válida, el 401
+// fue una carrera de tiempos → reintentamos UNA vez recargando (con el token ya
+// listo entra). Solo si de verdad NO hay sesión, vamos al login.
+function _authExpired(){
+  if(_authGone||_authChecking) return;
+  _authChecking=true;
+  var check; try{ check=(window.PWAUTH&&PWAUTH.hasSession)?PWAUTH.hasSession():Promise.resolve(_tokenNow()); }catch(e){ check=Promise.resolve(_tokenNow()); }
+  // hasSession() puede colgarse si el SDK no carga → a los 4s caemos al chequeo
+  // sync de localStorage para no quedar trabadas.
+  var timed=new Promise(function(res){ setTimeout(function(){ res(_tokenNow()); },4000); });
+  Promise.race([check,timed]).then(function(has){
+    _authChecking=false; if(_authGone) return;
+    if(has){
+      var tried=false; try{ tried=sessionStorage.getItem("pw_auth_retry")==="1"; }catch(e){}
+      if(!tried){ try{ sessionStorage.setItem("pw_auth_retry","1"); }catch(e){} location.reload(); return; }
+      // Ya reintentamos y sigue 401 CON sesión válida: NO desloguear en loop.
+      // Mejor dejar el panel abierto (lecturas vacías) que rebotar sin fin.
+      return;
+    }
+    _authGone=true; try{ location.href="login.html"; }catch(e){}
+  },function(){ _authChecking=false; });
+}
 function _sb(p){ return _hdr().then(function(h){ return fetch(SB+"/rest/v1/"+p,{headers:h}); }).then(function(r){ if(r.status===401||r.status===403){_authExpired();return [];} return r.ok?r.json():[];}).catch(function(){return [];}); }
 // ¿El path apunta a un cliente de ejemplo (que no existe en la base)?
 function _isExampleWrite(p){
