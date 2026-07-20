@@ -880,9 +880,21 @@ Deno.serve(async (req: Request) => {
       if (ev.account || session.metadata?.pathway === "client_sub") {
         result = await handleClientSubCheckout(session);
       } else {
-        // Suscripción del coach — esperamos customer.subscription.created
-        // que trae todos los detalles. Acá solo registramos.
-        result = { received: true, type: ev.type, skipped: "subscription-checkout" };
+        // Suscripción del COACH a Pathway. Normalmente `customer.subscription.created`
+        // trae todos los detalles y activa la cuenta. PERO si ese evento no está
+        // habilitado en Stripe (o falta STRIPE_SECRET_KEY para resolver el email),
+        // el coach pagaría y NO se activaría en silencio. RED DE SEGURIDAD: activamos
+        // también desde acá con los datos de la propia sesión (email + monto directos,
+        // sin depender de la API de Stripe). Es idempotente con subscription.created
+        // (setea el mismo estado; el email de "cuenta activa" sale una sola vez).
+        const email = session.customer_details?.email || session.customer_email || "";
+        const miniSub = {
+          id: session.subscription || "",
+          customer: session.customer || "",
+          status: "active",
+          items: { data: [{ price: { id: "", unit_amount: session.amount_total || 0 } }] },
+        } as StripeSubscription;
+        result = await handleCoachSubscription(miniSub, email);
       }
     } else {
       // Pack Express: pagos de €40 (4000) o €10 supplement (1000) van al
