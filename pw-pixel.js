@@ -22,8 +22,8 @@
   'use strict';
 
   // ===========================================================================
-  // ⚙️  CONFIG — reemplazar por tu Pixel ID de Meta (Events Manager).
-  var PW_META_PIXEL_ID = 'TU_PIXEL_ID';
+  // ⚙️  CONFIG — Pixel ID de Meta (Events Manager). Pathway Career Coach.
+  var PW_META_PIXEL_ID = '1037557745446059';
   // ===========================================================================
 
   var STORE_KEY = 'pw_attr';       // first-touch (persistente)
