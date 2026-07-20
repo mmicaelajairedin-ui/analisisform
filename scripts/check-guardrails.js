@@ -1588,6 +1588,31 @@ const RULES = [
     },
   },
   {
+    name: "tracking de anuncios: pw-pixel.js presente, incluido y capturando origen",
+    bug: "pw-pixel.js carga el Meta Pixel y captura de qué anuncio/campaña vino cada " +
+         "visitante (window.pwAttr, first-touch). Si se borra el archivo, se saca de " +
+         "las landings, o el chatbot deja de guardar `origen`, se pierde la trazabilidad " +
+         "de qué anuncio trae leads (no se puede optimizar la inversión en ads).",
+    check() {
+      const px = read("pw-pixel.js");
+      if (!px) return "falta pw-pixel.js (Meta Pixel + atribución de origen).";
+      if (!/window\.pwAttr\s*=/.test(px)) return "pw-pixel.js ya no expone window.pwAttr() (captura de origen).";
+      if (!/PW_META_PIXEL_ID/.test(px)) return "pw-pixel.js perdió la config del Pixel ID de Meta.";
+      // Debe estar incluido en las páginas por donde entran los anuncios.
+      for (const f of ["index.html", "soy-coach.html", "registro.html", "formulario.html"]) {
+        if (read(f) && !/pw-pixel\.js/.test(read(f))) return f + " ya no incluye pw-pixel.js (deja de trackear los anuncios).";
+      }
+      // El interceptor central debe adjuntar el origen a los POST de contactos_chat
+      // (cubre soy-candidato, coaches, etc. de una sola vez).
+      if (!/contactos_chat[\s\S]{0,400}o\.origen\s*=\s*a/.test(px))
+        return "pw-pixel.js: se perdió el interceptor que adjunta el origen a los leads de contactos_chat.";
+      // El registro debe guardar el origen en configuracion.
+      const reg = read("registro.html");
+      if (reg && !/configuracion\.origen\s*=/.test(reg)) return "registro.html: el alta ya no guarda el origen del anuncio (configuracion.origen).";
+      return null;
+    },
+  },
+  {
     name: "móvil: pull-to-refresh (bajar para actualizar) en los 3 portales del cliente",
     bug: "En el panel del coach ya se bajaba para actualizar, pero los portales del " +
          "cliente (carrera/fitness/finanzas) no tenían el gesto: la coach bajaba la " +
@@ -1604,6 +1629,35 @@ const RULES = [
         // El gesto debe engancharse a touchstart/touchmove/touchend y recargar al soltar.
         if (!/addEventListener\(['"]touchmove['"]/.test(s)) return f + ": el pull-to-refresh ya no escucha touchmove.";
         if (!/location\.reload\(\)/.test(s)) return f + ": el pull-to-refresh ya no recarga (location.reload) al soltar.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "consentimiento de cookies (RGPD): los trackers de terceros cargan SOLO tras aceptar",
+    bug: "Meta Pixel y LinkedIn Insight cargaban sin consentimiento → incumple RGPD " +
+         "(hay público en España). pw-consent.js muestra el banner y gatea: el pixel " +
+         "solo carga si pwConsent()==='granted', y el tag de LinkedIn se envuelve en " +
+         "_pwLoadLinkedIn() disparado por consentimiento. Si esto se rompe, los píxeles " +
+         "vuelven a cargar sin permiso.",
+    check() {
+      const c = read("pw-consent.js");
+      if (!c) return "falta pw-consent.js (banner de consentimiento RGPD).";
+      if (!/window\.pwConsent\s*=/.test(c) || !/window\.pwOnConsent\s*=/.test(c))
+        return "pw-consent.js ya no expone pwConsent()/pwOnConsent() (la gate del pixel deja de funcionar).";
+      // El pixel debe cargar gateado, no de una.
+      const px = read("pw-pixel.js");
+      if (px && !/pwConsent|pwOnConsent/.test(px))
+        return "pw-pixel.js ya no consulta el consentimiento (el Meta Pixel volvería a cargar sin permiso).";
+      // pw-consent.js debe estar incluido donde está el pixel / los trackers.
+      for (const f of ["index.html", "soy-coach.html", "registro.html", "formulario.html"]) {
+        if (read(f) && !/pw-consent\.js/.test(read(f))) return f + " ya no incluye pw-consent.js (el pixel cargaría sin gate).";
+      }
+      // Las páginas con LinkedIn Insight deben gatearlo (envuelto en _pwLoadLinkedIn).
+      for (const f of ["index.html", "index-en.html", "registro.html", "registro-en.html"]) {
+        const s = read(f);
+        if (s && /snap\.licdn\.com\/li\.lms-analytics/.test(s) && !/_pwLoadLinkedIn/.test(s))
+          return f + ": el LinkedIn Insight Tag ya no está gateado por consentimiento (_pwLoadLinkedIn).";
       }
       return null;
     },
