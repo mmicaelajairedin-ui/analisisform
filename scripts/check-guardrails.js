@@ -1436,6 +1436,22 @@ const RULES = [
     },
   },
   {
+    name: "sesiones: 'Mis temas / dudas' en los TRES portales (guardan notas_progreso)",
+    bug: "La sección Preparación con 'Mis temas / dudas' (el cliente anota qué hablar " +
+         "en la sesión y se guarda en candidatos.notas_progreso) debe estar en los tres " +
+         "portales del cliente: carrera, fitness y financiero. Si falta en alguno, se " +
+         "pierde la función y se rompe la unificación.",
+    check() {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/Mis temas/.test(s)) return f + ": falta 'Mis temas / dudas' (Preparación de Sesiones).";
+        if (!/notas_progreso/.test(s)) return f + ": 'Mis temas / dudas' ya no guarda en notas_progreso.";
+      }
+      return null;
+    },
+  },
+  {
     name: "fitness/financiero: sin acciones-foco desconectadas (el plan real es otro)",
     bug: "Las 'acciones' (cv_acciones… agrupadas por etapa) NO llegan al cliente en " +
          "fitness ni financiero, así que el panel NO debe embeber _avanceHtml para " +
