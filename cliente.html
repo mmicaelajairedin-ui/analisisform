@@ -5563,6 +5563,66 @@ if('serviceWorker' in navigator){
   setTimeout(tryPrompt, 6000);
 })();
 </script>
+<script>
+// ── Pull-to-refresh (móvil) en el portal del cliente: al bajar la pantalla
+//    estando arriba de todo, se recarga para traer datos frescos. Mismo gesto
+//    que en el panel del coach, para que el móvil se sienta igual en toda la app.
+(function(){
+  if(!window.matchMedia || !window.matchMedia('(max-width:900px)').matches){
+    // Se reevalúa por si rotan el teléfono / cambian de tamaño.
+    window.addEventListener('resize',function h(){ if(window.matchMedia('(max-width:900px)').matches){ window.removeEventListener('resize',h); _init(); } });
+    return;
+  }
+  _init();
+  function _init(){
+    var startY=0, active=false, dist=0, refreshing=false, ind=null;
+    var TH=64;
+    try{ document.documentElement.style.overscrollBehaviorY='contain'; document.body.style.overscrollBehaviorY='contain'; }catch(e){}
+    try{ var st=document.createElement('style'); st.textContent='@keyframes cliPtrSpin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }catch(e){}
+    function _mk(){
+      if(ind) return ind;
+      ind=document.createElement('div'); ind.id='cli-ptr';
+      ind.style.cssText='position:fixed;top:0;left:0;right:0;display:flex;align-items:flex-end;justify-content:center;height:0;overflow:hidden;z-index:400;pointer-events:none;transition:height .18s ease;';
+      ind.innerHTML="<div style='margin-bottom:8px;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--border,#e6e0dc);border-radius:99px;padding:8px 15px;box-shadow:0 6px 20px rgba(0,0,0,.14);font-family:Inter,-apple-system,sans-serif;font-size:12.5px;font-weight:600;color:var(--accent,#8C7B80)'><span id='cli-ptr-ic' style='display:inline-block;font-size:15px;transition:transform .18s'>↓</span><span id='cli-ptr-tx'>Bajá para actualizar</span></div>";
+      document.body.appendChild(ind); return ind;
+    }
+    // El scroll en móvil puede estar en .main o en la ventana: sólo estamos
+    // "arriba de todo" si AMBOS están en el tope.
+    function _atTop(){
+      var m=document.querySelector('.main');
+      var ms=(m && m.scrollHeight>m.clientHeight+4)?m.scrollTop:0;
+      var ws=window.pageYOffset||document.documentElement.scrollTop||document.body.scrollTop||0;
+      return Math.max(ms,ws)<=2;
+    }
+    function _set(h){ _mk().style.height=Math.max(0,h)+'px'; }
+    document.addEventListener('touchstart',function(e){
+      if(refreshing||e.touches.length!==1) return;
+      if(!_atTop()) return;
+      startY=e.touches[0].clientY; active=true; dist=0;
+    },{passive:true});
+    document.addEventListener('touchmove',function(e){
+      if(!active||refreshing) return;
+      dist=e.touches[0].clientY-startY;
+      if(dist<=0 || !_atTop()){ active=false; _set(0); return; }
+      var h=Math.min(dist*0.5,84); _set(h);
+      var tx=document.getElementById('cli-ptr-tx'), ic=document.getElementById('cli-ptr-ic');
+      if(h>=TH*0.5){ if(tx)tx.textContent='Soltá para actualizar'; if(ic){ic.textContent='↻'; ic.style.transform='rotate(180deg)';} }
+      else { if(tx)tx.textContent='Bajá para actualizar'; if(ic){ic.textContent='↓'; ic.style.transform='none';} }
+    },{passive:true});
+    document.addEventListener('touchend',function(){
+      if(!active||refreshing) return; active=false;
+      var h=parseFloat(_mk().style.height)||0;
+      if(h>=TH*0.5) _run(); else _set(0);
+    });
+    function _run(){
+      refreshing=true; _set(46);
+      var tx=document.getElementById('cli-ptr-tx'), ic=document.getElementById('cli-ptr-ic');
+      if(tx)tx.textContent='Actualizando…'; if(ic){ic.textContent='↻'; ic.style.animation='cliPtrSpin .7s linear infinite';}
+      setTimeout(function(){ try{ location.reload(); }catch(e){ refreshing=false; _set(0); } }, 260);
+    }
+  }
+})();
+</script>
 <script src="pw-dropzone.js?v=1"></script>
 </body>
 </html>
