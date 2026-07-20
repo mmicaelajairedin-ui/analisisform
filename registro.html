@@ -597,15 +597,39 @@ async function registrar(){
           body: JSON.stringify(userData)
         });
 
-    if(!res.ok){
+    var coach;
+    if(res.ok){
+      coach = (await res.json())[0];
+    } else if(res.status === 401 || res.status === 403){
+      // RLS estricto (Fase 5): el POST/PATCH anon con rol='coach' está bloqueado
+      // por policy. Fallback: crear/activar la cuenta vía la edge function
+      // registrar-coach (service role, sanitiza campos peligrosos). Hoy —sin RLS—
+      // este camino NO se usa (el POST anon entra directo), así que no cambia nada.
+      try {
+        var _rr = await fetch(SB + '/functions/v1/registrar-coach', {
+          method: 'POST',
+          headers: {'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'},
+          body: JSON.stringify(userData)
+        });
+        var _rj = await _rr.json().catch(function(){ return {}; });
+        if(!_rr.ok || !_rj.ok){
+          showError('Error al crear la cuenta: ' + (_rj.error || _rr.status));
+          btn.disabled = false; loading.style.display = 'none';
+          return;
+        }
+        coach = _rj;
+      } catch(_e){
+        showError('Error de red al crear la cuenta. Probá de nuevo.');
+        btn.disabled = false; loading.style.display = 'none';
+        return;
+      }
+    } else {
       var errBody = await res.text();
       console.error('Error creando usuario:', errBody);
       showError('Error al crear la cuenta: ' + (errBody.slice(0, 100) || res.status));
       btn.disabled = false; loading.style.display = 'none';
       return;
     }
-
-    var coach = (await res.json())[0];
 
     // Eventos de conversión a Meta: registro completo + arranque del trial gratis.
     // Es la señal que Meta usa para optimizar los anuncios hacia altas reales.
