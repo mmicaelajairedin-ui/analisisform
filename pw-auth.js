@@ -170,7 +170,11 @@
   //   • Solo toca headers en objeto plano (los fetch inline del código). Si la
   //     request viene del SDK de Supabase (Request/Headers), no la toca: el SDK
   //     ya manda su propio JWT.
-  var RLS_TABLES = /\/rest\/v1\/(candidatos|informes|cv_publicados)\b/;
+  // `usuarios` incluido: bajo RLS estricto, el coach edita SU fila (config, perfil)
+  // y la policy usuarios_self_update exige el JWT. El interceptor solo sube el
+  // token cuando HAY sesión (tok truthy); el registro/intake anónimo (sin sesión)
+  // no se ve afectado. Los reads públicos del directorio siguen andando con o sin JWT.
+  var RLS_TABLES = /\/rest\/v1\/(candidatos|informes|cv_publicados|usuarios)\b/;
   var _origFetch = (typeof window !== "undefined" && window.fetch)
     ? window.fetch.bind(window) : null;
   if (_origFetch) {
