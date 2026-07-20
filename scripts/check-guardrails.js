@@ -423,6 +423,34 @@ const RULES = [
     },
   },
   {
+    name: "helpers de escritura verifican el guardado (no return=minimal mentiroso bajo RLS)",
+    bug: "Con RLS activo, un PATCH/POST sin sesión válida no matchea filas y con " +
+         "return=minimal devuelve 2xx r.ok=true → los helpers mostraban 'guardado ✓' " +
+         "sin escribir (pérdida silenciosa de datos del usuario). Los helpers centrales " +
+         "(_sbw, pt, sbPatch) deben pedir return=representation y que r.ok/el resultado " +
+         "refleje que volvió ≥1 fila.",
+    check() {
+      var specs = [
+        { f: "panel-v2.html", fn: "_sbw" },
+        { f: "cliente.html", fn: "pt" },
+        { f: "pathway-fit-cliente.html", fn: "sbPatch" },
+        { f: "pathway-fin-cliente.html", fn: "sbPatch" },
+      ];
+      for (var k = 0; k < specs.length; k++) {
+        var sp = specs[k], s = read(sp.f);
+        if (!s) return sp.f + ": no existe";
+        var i = s.indexOf("function " + sp.fn + "(");
+        if (i < 0) return sp.f + ": no se encontró el helper " + sp.fn;
+        var body = s.slice(i, i + 1700);
+        if (!/return=representation/.test(body))
+          return sp.f + ": " + sp.fn + " ya no pide return=representation (volvería a 'mentir' que guardó bajo RLS)";
+        if (!/rows|\.length/.test(body))
+          return sp.f + ": " + sp.fn + " no verifica cuántas filas escribió (rows/.length)";
+      }
+      return null;
+    },
+  },
+  {
     name: "panel: saveCfg verifica que realmente guardó (no miente con return=minimal)",
     bug: "Tras activar RLS en `usuarios` (usuarios_hardening.sql), un PATCH sin " +
          "sesión autenticada matchea 0 filas. saveCfg usaba return=minimal → 204 " +

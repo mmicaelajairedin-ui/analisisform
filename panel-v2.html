@@ -9521,7 +9521,19 @@ function _sbw(p,method,body){
   // todo). Así un coach no puede escribir sobre un candidato de OTRO coach aun
   // conociendo su UUID: la query no matchea ninguna fila y no escribe nada.
   if((method==="PATCH"||method==="DELETE") && /^candidatos\?id=eq\./.test(p) && p.indexOf("coach_id=")<0){ p += cg(); }
-  return _hdr({"Content-Type":"application/json",Prefer:"return=minimal"}).then(function(h){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); });
+  // Guardado VERIFICADO (antes: return=minimal → 204 r.ok=true aunque RLS bloqueara
+  // 0 filas = "guardado ✓" mentiroso). Ahora pedimos return=representation y r.ok
+  // refleja el ÉXITO REAL: HTTP ok Y ≥1 fila afectada. Los ~97 call-sites solo
+  // leen .ok, así que el cambio es transparente. 401/403 → aviso de sesión vencida.
+  var _fail=function(st){ return {ok:false,status:st,rows:0,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; };
+  return _hdr({"Content-Type":"application/json",Prefer:"return=representation"}).then(function(h){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); })
+    .then(function(r){
+      if(r.status===401||r.status===403){ try{ _authExpired(); }catch(e){} return _fail(r.status); }
+      if(!r.ok){ return _fail(r.status); }
+      return r.json().then(function(a){ var n=(a&&a.length)||0; return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);},text:function(){return Promise.resolve(JSON.stringify(a));}}; },
+        // 2xx sin cuerpo parseable (raro con representation): no marcar falso error.
+        function(){ return {ok:true,status:r.status,rows:1,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; });
+    });
 }
 var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy=false;
 var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
