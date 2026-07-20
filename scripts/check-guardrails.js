@@ -1611,6 +1611,35 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "consentimiento de cookies (RGPD): los trackers de terceros cargan SOLO tras aceptar",
+    bug: "Meta Pixel y LinkedIn Insight cargaban sin consentimiento → incumple RGPD " +
+         "(hay público en España). pw-consent.js muestra el banner y gatea: el pixel " +
+         "solo carga si pwConsent()==='granted', y el tag de LinkedIn se envuelve en " +
+         "_pwLoadLinkedIn() disparado por consentimiento. Si esto se rompe, los píxeles " +
+         "vuelven a cargar sin permiso.",
+    check() {
+      const c = read("pw-consent.js");
+      if (!c) return "falta pw-consent.js (banner de consentimiento RGPD).";
+      if (!/window\.pwConsent\s*=/.test(c) || !/window\.pwOnConsent\s*=/.test(c))
+        return "pw-consent.js ya no expone pwConsent()/pwOnConsent() (la gate del pixel deja de funcionar).";
+      // El pixel debe cargar gateado, no de una.
+      const px = read("pw-pixel.js");
+      if (px && !/pwConsent|pwOnConsent/.test(px))
+        return "pw-pixel.js ya no consulta el consentimiento (el Meta Pixel volvería a cargar sin permiso).";
+      // pw-consent.js debe estar incluido donde está el pixel / los trackers.
+      for (const f of ["index.html", "soy-coach.html", "registro.html", "formulario.html"]) {
+        if (read(f) && !/pw-consent\.js/.test(read(f))) return f + " ya no incluye pw-consent.js (el pixel cargaría sin gate).";
+      }
+      // Las páginas con LinkedIn Insight deben gatearlo (envuelto en _pwLoadLinkedIn).
+      for (const f of ["index.html", "index-en.html", "registro.html", "registro-en.html"]) {
+        const s = read(f);
+        if (s && /snap\.licdn\.com\/li\.lms-analytics/.test(s) && !/_pwLoadLinkedIn/.test(s))
+          return f + ": el LinkedIn Insight Tag ya no está gateado por consentimiento (_pwLoadLinkedIn).";
+      }
+      return null;
+    },
+  },
 ];
 
 let failures = 0;

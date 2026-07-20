@@ -91,9 +91,10 @@
   };
 
   // ===========================================================================
-  // Meta Pixel — solo si hay un ID real cargado.
+  // Meta Pixel — carga SOLO si hay un ID real Y consentimiento de cookies (RGPD).
   var ID_OK = /^\d{6,}$/.test(PW_META_PIXEL_ID);
-  if (ID_OK) {
+  function loadMetaPixel() {
+    if (window.__pwPixelLoaded) return; window.__pwPixelLoaded = true;
     /* eslint-disable */
     !function (f, b, e, v, n, t, s) {
       if (f.fbq) return; n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments) };
@@ -102,6 +103,19 @@
     }(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
     /* eslint-enable */
     try { window.fbq('init', PW_META_PIXEL_ID); window.fbq('track', 'PageView'); } catch (e) {}
+  }
+  if (ID_OK) {
+    if (window.pwConsent) {
+      // Sistema de consentimiento presente (pw-consent.js): cargar solo si aceptó.
+      if (window.pwConsent() === 'granted') loadMetaPixel();
+      else if (window.pwOnConsent) window.pwOnConsent(loadMetaPixel);
+    } else {
+      // Sin pw-consent.js cargado: fallback conservador — NO cargar hasta que
+      // llegue un consentimiento (por si el script de consent aparece después).
+      window.addEventListener('pw-consent-change', function (e) {
+        if (e && e.detail && e.detail.value === 'granted') loadMetaPixel();
+      });
+    }
   }
 
   // ===========================================================================
