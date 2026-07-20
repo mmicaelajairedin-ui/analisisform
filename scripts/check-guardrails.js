@@ -1581,9 +1581,10 @@ const RULES = [
       for (const f of ["index.html", "soy-coach.html", "registro.html", "formulario.html"]) {
         if (read(f) && !/pw-pixel\.js/.test(read(f))) return f + " ya no incluye pw-pixel.js (deja de trackear los anuncios).";
       }
-      // El chatbot de la landing debe guardar el origen del lead en contactos_chat.
-      const idx = read("index.html");
-      if (idx && !/pwAttr\(\)/.test(idx)) return "index.html: el chatbot ya no adjunta el origen (pwAttr) al lead.";
+      // El interceptor central debe adjuntar el origen a los POST de contactos_chat
+      // (cubre soy-candidato, coaches, etc. de una sola vez).
+      if (!/contactos_chat[\s\S]{0,400}o\.origen\s*=\s*a/.test(px))
+        return "pw-pixel.js: se perdió el interceptor que adjunta el origen a los leads de contactos_chat.";
       // El registro debe guardar el origen en configuracion.
       const reg = read("registro.html");
       if (reg && !/configuracion\.origen\s*=/.test(reg)) return "registro.html: el alta ya no guarda el origen del anuncio (configuracion.origen).";

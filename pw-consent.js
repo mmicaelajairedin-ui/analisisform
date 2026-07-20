@@ -41,37 +41,55 @@
     });
   };
 
+  var _prevOverflow = '';
   function decide(v) { window.__pwConsent = v; save(v); emit(v); removeBar(); }
-  function removeBar() { var b = document.getElementById('pw-consent-bar'); if (b && b.parentNode) b.parentNode.removeChild(b); }
+  function removeBar() {
+    var b = document.getElementById('pw-consent-bar');
+    if (b && b.parentNode) b.parentNode.removeChild(b);
+    try { document.documentElement.style.overflow = _prevOverflow; } catch (e) {}
+  }
 
   function buildBar() {
     if (document.getElementById('pw-consent-bar')) return;
-    var bar = document.createElement('div');
-    bar.id = 'pw-consent-bar';
-    bar.setAttribute('role', 'dialog');
-    bar.setAttribute('aria-label', 'Aviso de cookies');
-    bar.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483000;' +
-      'max-width:720px;margin:0 auto;background:#fff;border:1px solid rgba(45,106,79,.22);' +
-      'box-shadow:0 10px 34px rgba(0,0,0,.16);border-radius:14px;padding:15px 18px;' +
+    // Overlay centrado con fondo oscuro (modal) → más visible = más aceptaciones.
+    var ov = document.createElement('div');
+    ov.id = 'pw-consent-bar';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-modal', 'true');
+    ov.setAttribute('aria-label', 'Aviso de cookies');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(20,30,25,.55);' +
+      'display:flex;align-items:center;justify-content:center;padding:20px;' +
       'font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#1a1a1a;' +
-      'display:flex;gap:14px;align-items:center;flex-wrap:wrap';
-    bar.innerHTML =
-      '<div style="flex:1;min-width:220px;font-size:13.5px;line-height:1.5">' +
-        '🍪 Usamos cookies propias y de terceros (Meta, LinkedIn) para medir nuestras ' +
-        'campañas y mejorar la web. Podés aceptarlas o rechazarlas. ' +
-        '<a href="/privacidad.html" style="color:#2D6A4F;font-weight:600;text-decoration:underline">Más info</a>.' +
-      '</div>' +
-      '<div style="display:flex;gap:8px;flex-shrink:0">' +
-        '<button type="button" id="pw-consent-no" style="padding:9px 16px;border-radius:10px;' +
-          'border:1.5px solid rgba(45,106,79,.3);background:#fff;color:#2D6A4F;font-weight:600;' +
-          'font-size:13px;cursor:pointer;font-family:inherit">Rechazar</button>' +
-        '<button type="button" id="pw-consent-yes" style="padding:9px 20px;border-radius:10px;' +
-          'border:0;background:#2D6A4F;color:#fff;font-weight:700;font-size:13px;cursor:pointer;' +
-          'font-family:inherit">Aceptar</button>' +
+      'opacity:0;transition:opacity .22s ease';
+    ov.innerHTML =
+      '<div style="background:#fff;max-width:440px;width:100%;border-radius:18px;' +
+        'box-shadow:0 24px 60px rgba(0,0,0,.28);padding:28px 26px 22px;text-align:center;' +
+        'transform:translateY(8px);transition:transform .22s ease">' +
+        '<div style="font-size:40px;line-height:1;margin-bottom:10px">🍪</div>' +
+        '<h3 style="margin:0 0 8px;font-size:19px;font-weight:700;color:#1B2E26">Tu privacidad</h3>' +
+        '<p style="margin:0 0 20px;font-size:14px;line-height:1.55;color:#4A5A50">' +
+          'Usamos cookies propias y de terceros (Meta, LinkedIn) para medir nuestras ' +
+          'campañas y mejorar la web. Podés aceptarlas o rechazarlas — vos elegís. ' +
+          '<a href="/privacidad.html" style="color:#2D6A4F;font-weight:600;text-decoration:underline">Más info</a>.' +
+        '</p>' +
+        '<div style="display:flex;gap:10px;flex-direction:column">' +
+          '<button type="button" id="pw-consent-yes" style="width:100%;padding:13px;border-radius:12px;' +
+            'border:0;background:#2D6A4F;color:#fff;font-weight:700;font-size:15px;cursor:pointer;' +
+            'font-family:inherit">Aceptar cookies</button>' +
+          '<button type="button" id="pw-consent-no" style="width:100%;padding:11px;border-radius:12px;' +
+            'border:0;background:transparent;color:#7A8A80;font-weight:600;font-size:13px;cursor:pointer;' +
+            'font-family:inherit">Rechazar</button>' +
+        '</div>' +
       '</div>';
-    (document.body || document.documentElement).appendChild(bar);
+    var host = document.body || document.documentElement;
+    host.appendChild(ov);
+    try { _prevOverflow = document.documentElement.style.overflow; document.documentElement.style.overflow = 'hidden'; } catch (e) {}
+    // Animación de entrada suave.
+    requestAnimationFrame(function () { ov.style.opacity = '1'; var c = ov.firstChild; if (c) c.style.transform = 'translateY(0)'; });
     document.getElementById('pw-consent-yes').addEventListener('click', function () { decide('granted'); });
     document.getElementById('pw-consent-no').addEventListener('click', function () { decide('denied'); });
+    // Click en el fondo oscuro: no decide nada (forzamos una elección explícita).
+    ov.addEventListener('click', function (e) { if (e.target === ov) { /* mantener el modal */ } });
   }
 
   // Reabrir el banner (para un link "Preferencias de cookies").
