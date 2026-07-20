@@ -423,6 +423,26 @@ const RULES = [
     },
   },
   {
+    name: "panel: saveCfg verifica que realmente guardó (no miente con return=minimal)",
+    bug: "Tras activar RLS en `usuarios` (usuarios_hardening.sql), un PATCH sin " +
+         "sesión autenticada matchea 0 filas. saveCfg usaba return=minimal → 204 " +
+         "r.ok=true y mostraba 'Configuración guardada ✓' SIN escribir nada (foto, " +
+         "perfil, recursos del coach de fitness/finanzas se perdían). Debe pedir " +
+         "return=representation y confirmar que volvió ≥1 fila antes de dar OK.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return "no existe panel-v2.html";
+      const m = s.match(/function saveCfg\([\s\S]*?\n\}/);
+      if (!m) return "no se encontró la función saveCfg";
+      const body = m[0];
+      if (!/return=representation/.test(body))
+        return "saveCfg ya no pide return=representation (volvería a 'mentir' que guardó bajo RLS)";
+      if (!/rows\s*>=\s*1|\.n\s*>\s*0/.test(body))
+        return "saveCfg no verifica que la escritura devolvió filas (rows>=1); un 0-filas por RLS pasaría como éxito";
+      return null;
+    },
+  },
+  {
     name: "portal carrera: Agendar NO cae al Calendly de Micaela",
     bug: "El default de CALENDLY en cliente.html era el Calendly de Micaela. Un " +
          "cliente de un coach que no configuró su Calendly agendaba sesión con " +
