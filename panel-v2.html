@@ -721,7 +721,9 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
    otro), no lado a lado. Así la agenda tiene lugar para sus 3 columnas internas
    (lista + mes + reservas) sin encimarse ni dejar huecos. */
 .cp-dash-top{display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:16px;align-items:start;}
-.cp-dash-mid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px;align-items:start;}
+/* align-items:stretch → todas las cards de la fila quedan del MISMO alto (aunque
+   una tenga menos contenido), sin bordes irregulares ni espacio muerto al lado. */
+.cp-dash-mid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px;align-items:stretch;}
 @media(max-width:1120px){.cp-dash-mid{grid-template-columns:1fr 1fr;}}
 @media(max-width:820px){.cp-res-grid{columns:1;}}
 @media(max-width:720px){.cp-dash-mid{grid-template-columns:1fr;}}
@@ -730,7 +732,7 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
    de 2 columnas del dashboard, mide ~la mitad y las 3 columnas internas no entran.
    Default = apilado (siempre entra, nada se encima); si la card es ancha, 3 cols. */
 .cp-ag-grid{container-type:inline-size;}
-.cp-ag-cols{display:grid;grid-template-columns:1fr;gap:16px;align-items:start;}
+.cp-ag-cols{display:grid;grid-template-columns:1fr;gap:16px;align-items:stretch;}
 .cp-ag-cols>div{min-width:0;}
 .cp-ag-cols>.cp-ag-cal,.cp-ag-cols>.cp-ag-res{border-top:1px solid var(--pw-border);padding-top:14px;}
 @container (min-width:700px){
@@ -2359,7 +2361,7 @@ function viewResumen(){
     function _delta(cur,prev){ var d=cur-prev; if(d>0)return "<span style='color:var(--pw-sendero);font-weight:600'>↑ "+d+"</span> <span style='color:var(--pw-text-muted)'>vs mes anterior</span>"; if(d<0)return "<span style='color:var(--pw-danger);font-weight:600'>↓ "+Math.abs(d)+"</span> <span style='color:var(--pw-text-muted)'>vs mes anterior</span>"; return "<span style='color:var(--pw-text-muted)'>igual que el mes pasado</span>"; }
     // Estilo unificado de KPI (igual al de multicoach .kpi / el screenshot):
     // ícono gris + label arriba, número grande serif, delta abajo.
-    function _tile(n,lbl,emo,sub,cv,fmt){ var _ns="font-family:Inter,-apple-system,sans-serif;font-weight:900;font-size:44px;letter-spacing:-1px;color:var(--pw-carbon);line-height:1"; var num=(cv!=null)?("<span class='pw-count' data-cv='"+cv+"'"+(fmt?" data-fmt='"+fmt+"'":"")+" style='"+_ns+"'>"+n+"</span>"):("<span style='"+_ns+"'>"+n+"</span>"); return "<div style='background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:14px 16px;box-shadow:var(--pw-shadow-sm)'><div style='display:flex;align-items:center;gap:8px;font-size:12px;color:var(--pw-text-muted);font-weight:500'><span style='display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'><span class='cp-emo' style='font-size:16px'>"+emo+"</span></span>"+lbl+"</div><div style='margin:8px 0 4px'>"+num+"</div>"+(sub?"<div style='font-size:11.5px;font-weight:600;line-height:1.3'>"+sub+"</div>":"")+"</div>"; }
+    function _tile(n,lbl,emo,sub,cv,fmt){ var _ns="font-family:Inter,-apple-system,sans-serif;font-weight:900;font-size:46px;letter-spacing:-1.2px;color:var(--pw-carbon);line-height:1"; var num=(cv!=null)?("<span class='pw-count' data-cv='"+cv+"'"+(fmt?" data-fmt='"+fmt+"'":"")+" style='"+_ns+"'>"+n+"</span>"):("<span style='"+_ns+"'>"+n+"</span>"); return "<div style='background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:14px 16px;box-shadow:var(--pw-shadow-sm)'><div style='display:flex;align-items:center;gap:8px;font-size:12px;color:var(--pw-text-muted);font-weight:500'><span style='display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'><span class='cp-emo' style='font-size:16px'>"+emo+"</span></span>"+lbl+"</div><div style='margin:8px 0 4px'>"+num+"</div>"+(sub?"<div style='font-size:11.5px;font-weight:600;line-height:1.3'>"+sub+"</div>":"")+"</div>"; }
     return "<div class='cp-card' style='margin-bottom:13px'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📊</span> Mi negocio<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver clientes</button></div>"+
       "<div class='cp-card-pad'>"+
         "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px'>"+
@@ -2426,6 +2428,12 @@ function _agMatchClient(title){
   return best;
 }
 function _agTime(ms){ var d=new Date(ms); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
+// Hora local de la PERSONA que reservó (según su cliente_tz guardado al reservar).
+function _agTimeInTz(ms,tz){ if(!tz) return ""; try{ return new Intl.DateTimeFormat("es",{timeZone:tz,hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(ms)); }catch(e){ return ""; } }
+// Nombre corto de una zona ("America/Santiago" → "Santiago").
+function _tzCity(tz){ if(!tz) return ""; var p=(""+tz).split("/"); return (p[p.length-1]||"").replace(/_/g," "); }
+// Valor para <input type=datetime-local> a partir de un instante, en TU hora local.
+function _dtLocalVal(ms){ var d=new Date(ms); function p(n){return("0"+n).slice(-2);} return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes()); }
 function _agDayLabel(ms){
   var d=new Date(ms); d.setHours(0,0,0,0); var t=new Date(); t.setHours(0,0,0,0);
   var diff=Math.round((d-t)/86400000);
@@ -2688,6 +2696,43 @@ function _agDispWindow(key){
 }
 // Agenda del día: el día hora por hora (libre/ocupado), como en el mockup.
 // Eventos de Google + reservas del link, ubicados en su hora; huecos = "Disponible".
+// Dedup de la agenda: la MISMA sesión puede venir del Google Calendar Y de la
+// reserva del link (citas), o de dos calendarios de Google. Antes deduplicábamos
+// por (minuto|título EXACTO), pero el título de Google ("Llamada 30 min -
+// Alejandra") ≠ el nombre de la reserva ("Alejandra") → la misma cita salía
+// DUPLICADA (en la agenda, en el mes y como "Próxima sesión" + "En tu lista").
+// Ahora: en el MISMO minuto, cualquier par de eventos cuyos NOMBRES se solapan es
+// la misma sesión → se fusiona en uno (queda el que tenga id = la reserva, más
+// rica; se le pasa el link de Meet / email del otro). No fusiona sesiones de
+// coaches DISTINTOS del equipo (who diferente).
+function _agMergeDup(items){
+  items.sort(function(a,b){ return a.ms-b.ms; });
+  function _norm(s){ return (""+(s||"")).toLowerCase().replace(/\s+/g," ").trim(); }
+  function _overlap(x,y){ x=_norm(x); y=_norm(y); if(!x||!y) return false;
+    if(x===y) return true; if(x.indexOf(y)>=0||y.indexOf(x)>=0) return true;
+    var xf=x.split(" ")[0], yf=y.split(" ")[0];
+    return (xf.length>=3 && y.indexOf(xf)>=0) || (yf.length>=3 && x.indexOf(yf)>=0); }
+  var byMin={};
+  items.forEach(function(x){ var m=Math.round(x.ms/60000); (byMin[m]=byMin[m]||[]).push(x); });
+  Object.keys(byMin).forEach(function(m){
+    var arr=byMin[m]; if(arr.length<2) return;
+    for(var i=0;i<arr.length;i++){ if(arr[i]._dup) continue;
+      for(var j=i+1;j<arr.length;j++){ if(arr[j]._dup) continue;
+        var a=arr[i], b=arr[j];
+        if(a.who && b.who && a.who!==b.who) continue; // coaches distintos: NO fusionar
+        if(!_overlap(a.title, b.title)) continue;
+        var keep, drp;
+        if(a.id!=null && b.id==null){ keep=a; drp=b; }
+        else if(b.id!=null && a.id==null){ keep=b; drp=a; }
+        else { keep=a; drp=b; }
+        if(!keep.link && drp.link) keep.link=drp.link;
+        if(!keep.email && drp.email) keep.email=drp.email;
+        drp._dup=1;
+      }
+    }
+  });
+  return items.filter(function(x){ return !x._dup; });
+}
 function _agRenderDay(key,compact){
   var isToday=(key===_agMoKey(new Date()));
   // En el Resumen (compacto) mostramos un mini-encabezado con "← Hoy" cuando estás
@@ -2706,9 +2751,7 @@ function _agRenderDay(key,compact){
   var items=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); items.push({ms:+e.start, title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:""}); } });
   _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:"", durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_cliFotoByEmail(r.email)}); } });
-  items.sort(function(a,b){ return a.ms-b.ms; });
-  // Dedup: la misma sesión puede venir del Google Calendar Y de la reserva.
-  var _sd={}; items=items.filter(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(_sd[k]) return false; _sd[k]=1; return true; });
+  items=_agMergeDup(items);
   var now=Date.now();
   // Fila limpia estilo "Tu agenda de hoy": hora · ícono · nombre + badge de tipo · duración/Meet.
   var rowEvent=function(it){
@@ -2762,10 +2805,15 @@ function _agMonthRender(){
   if(!_AG_MO){ var n=new Date(); _AG_MO={y:n.getFullYear(),m:n.getMonth()}; }
   var y=_AG_MO.y, m=_AG_MO.m;
   var tt=document.getElementById("cp-agmo-title"); if(tt) tt.textContent=_AG_MESES[m]+" "+y;
+  // Mismo dedup que la agenda del día: juntamos eventos de Google + reservas por
+  // día y fusionamos la MISMA sesión (Google + reserva) para NO contarla dos
+  // veces en el marcador del mes.
+  var byDayItems={};
+  function addItem(ts,typ,title,id,link,who){ var k=_agMoKey(new Date(ts)); (byDayItems[k]=byDayItems[k]||[]).push({ms:+new Date(ts),typ:typ,title:title,id:id,link:link,who:who}); }
+  var evs=(_AG_DATA&&_AG_DATA.events)||[]; evs.forEach(function(e){ if(e&&e.start) addItem(e.start,_agTypeForEvent(e),e.title||"",null,(e.location&&/^https?:\/\//.test(e.location))?e.location:"",""); });
+  var res=_agReservas(); res.forEach(function(r){ if(!r||r.estado==="cancelada")return; var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":""; addItem(+new Date(r.inicio),_agEventTypeFor(r.tipo),r.nombre||"",r.id,"",who); });
   var byDay={};
-  function add(ts, typ){ var k=_agMoKey(new Date(ts)); (byDay[k]=byDay[k]||[]).push(typ); }
-  var evs=(_AG_DATA&&_AG_DATA.events)||[]; evs.forEach(function(e){ if(e&&e.start) add(e.start, _agTypeForEvent(e)); });
-  var res=_agReservas(); res.forEach(function(r){ if(!r||r.estado==="cancelada")return; add(+new Date(r.inicio), _agEventTypeFor(r.tipo)); });
+  Object.keys(byDayItems).forEach(function(k){ byDay[k]=_agMergeDup(byDayItems[k]).map(function(x){ return x.typ; }); });
   var first=new Date(y,m,1); var startDow=(first.getDay()+6)%7; var daysIn=new Date(y,m+1,0).getDate();
   var today=_agMoKey(new Date());
   // Mismo diseño .pwcal-* que el calendario del cliente (grilla + iconos + día
@@ -2814,7 +2862,9 @@ function _agendaCard(){
 // un poco más grande. Sin la columna de Reservas (acá ya está la de asistencia).
 function _agendaCalCard(){
   // 3 cards separadas (como el mockup): Agenda del día | Mes | Próxima sesión.
-  return "<div style='display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-start'>"+
+  // align-items:stretch → las 3 cajas quedan del MISMO alto (aunque una tenga
+  // menos contenido), sin bordes irregulares ni espacio muerto al costado.
+  return "<div style='display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;align-items:stretch'>"+
     "<section class='cp-card' style='flex:1 1 280px;min-width:260px'><div class='cp-card-pad' style='padding:14px'><div id='cp-agenda-body' style='font-size:13.5px'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div></div></section>"+
     "<section class='cp-card' style='flex:1.3 1 320px;min-width:280px'><div class='cp-card-pad' style='padding:14px'>"+_agMonthCal()+"</div></section>"+
     "<section class='cp-card' style='flex:1 1 240px;min-width:230px'><div class='cp-card-pad' style='padding:14px'><div id='cp-agenda-prox'></div></div></section>"+
@@ -2825,11 +2875,11 @@ function _agendaCalCard(){
 function _agProxList(){
   var now=Date.now(), out=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); out.push({ms:+e.start, title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:"", durMin:_durMin((typ&&typ.label)||"")}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:"", email:r.email||"", durMin:_durMin(r.tipo||""), foto:_cliFotoByEmail(r.email)}); } } });
-  out.sort(function(a,b){ return a.ms-b.ms; });
-  // Dedup: una misma sesión puede venir del Google Calendar Y de la reserva.
-  var seen={}, uniq=[]; out.forEach(function(x){ var k=Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim(); if(!seen[k]){ seen[k]=1; uniq.push(x); } });
-  return uniq;
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, id:r.id, who:(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":"", title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:"", email:r.email||"", durMin:_durMin(r.tipo||""), foto:_cliFotoByEmail(r.email)}); } } });
+  // Dedup robusto (mismo helper que la agenda): fusiona la MISMA sesión que viene
+  // de Google + de la reserva aunque el título no sea idéntico. Sin esto, la misma
+  // cita salía como "Próxima sesión" y OTRA VEZ abajo en "En tu lista".
+  return _agMergeDup(out);
 }
 function _agProxItem(){ return _agProxList()[0]||null; }
 // Avatar de la Próxima sesión / En tu lista: foto real del cliente si existe; si no,
@@ -2858,7 +2908,10 @@ function _agProxRender(){
     (it.link?"<a href='"+esc(it.link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='width:100%;height:40px;font-size:14px;text-decoration:none;margin-top:16px;gap:8px;justify-content:center'>"+_cIco('video',15)+" Entrar a la sesión</a>":(it.email?"<a href='mailto:"+esc(it.email)+"' class='cp-btn cp-btn-primary' style='width:100%;height:40px;font-size:14px;text-decoration:none;margin-top:16px;justify-content:center'>Escribirle</a>":""))+
     (it.email?"<button data-act='nav:clientes' class='cp-btn cp-btn-ghost' style='width:100%;height:36px;font-size:13px;margin-top:8px;gap:6px;justify-content:center'>Ver perfil del cliente "+_cIco('chevR',14)+"</button>":"")+
   "</div>";
-  var rest=list.slice(1,3), lista="";
+  // "En tu lista" NUNCA repite la próxima (list[0]): la excluimos por hora+nombre,
+  // por si algún duplicado se coló pese al dedup (ej. dos eventos del mismo origen).
+  var _itk=Math.round(it.ms/60000)+"|"+(""+(it.title||"")).toLowerCase().trim();
+  var rest=list.slice(1).filter(function(x){ return (Math.round(x.ms/60000)+"|"+(""+(x.title||"")).toLowerCase().trim())!==_itk; }).slice(0,2), lista="";
   if(rest.length){
     lista="<div style='margin-top:16px;padding-top:14px;border-top:1px solid var(--pw-border)'>"+
       "<div style='font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--pw-text-muted);font-weight:600;margin-bottom:8px'>En tu lista</div>"+
@@ -3267,6 +3320,19 @@ function _resRender(list){
     // citas.respuestas como JSON [{q,a}]. Las mostramos debajo del nombre.
     var _ans=_citaAnswers(r);
     var _ansHtml=_ans.length?("<div style='margin:5px 0 2px 51px;display:flex;flex-direction:column;gap:3px'>"+_ans.map(function(a){ return "<div style='font-size:11.5px;color:var(--pw-text-soft);line-height:1.4'><span style='color:var(--pw-text-muted)'>"+esc(a.q)+":</span> <strong style='color:var(--pw-carbon);font-weight:600'>"+esc(a.a)+"</strong></div>"; }).join("")+"</div>"):"";
+    // Zona horaria de la PERSONA (guardada al reservar). Si su hora local difiere
+    // de la tuya, la mostramos — así detectás cruces de horario (causa típica de
+    // "no se presentó").
+    var _rid=String(r.id!=null?r.id:""), _ctz=r.cliente_tz||"", _hLocal=_ctz?_agTimeInTz(ms,_ctz):"", _hMine=_agTime(ms), _fn=(""+(r.nombre||"")).split(" ")[0]||"la persona";
+    var _tzHtml=_ctz?("<div style='font-size:11px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px'><span class='cp-emo'>🌎</span> "+esc(_tzCity(_ctz))+((_hLocal&&_hLocal!==_hMine)?(" · <strong style='color:var(--pw-carbon);font-weight:600'>"+esc(_hLocal)+" para "+esc(_fn)+"</strong>"):"")+"</div>"):"";
+    // Editor inline para reprogramar la hora (se despliega con el botón del reloj).
+    var _editHtml="<div id='rh-"+esc(_rid)+"' style='display:none;margin:7px 0 3px 51px;padding:9px 11px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:10px'>"+
+      "<div style='font-size:11.5px;color:var(--pw-text-soft);margin-bottom:6px'>Nueva fecha y hora <span style='color:var(--pw-text-muted)'>(en tu hora)</span></div>"+
+      "<div style='display:flex;gap:7px;flex-wrap:wrap;align-items:center'>"+
+        "<input type='datetime-local' id='rhi-"+esc(_rid)+"' value='"+esc(_dtLocalVal(ms))+"' style='font-family:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--pw-border-input);border-radius:8px;color:var(--pw-carbon)'>"+
+        "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 12px' data-act='res-hora-save' data-id='"+esc(_rid)+"'>Guardar</button>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 10px' data-act='res-hora-cancel' data-id='"+esc(_rid)+"'>Cancelar</button>"+
+      "</div></div>";
     html+="<div style='padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
       "<div style='display:flex;align-items:center;gap:9px'>"+
         "<span style='min-width:42px;font-size:12px;font-weight:700;color:var(--pw-carbon)'>"+_agTime(ms)+"</span>"+
@@ -3274,12 +3340,15 @@ function _resRender(list){
         "<div style='flex:1;min-width:0'>"+
           "<div style='font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.nombre||"Alguien")+(conf?" <span style='color:var(--pw-bosque);font-size:11px;font-weight:700'>· confirmada</span>":"")+"</div>"+
           "<div style='font-size:11px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div>"+
+          _tzHtml+
         "</div>"+
         "<a href='"+esc(mail)+"' class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;text-decoration:none' title='Escribir por email'>"+svg(IC.mail||IC.extLink,13)+"</a>"+
+        "<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-text-soft)' title='Cambiar la hora' data-act='res-hora' data-id='"+esc(_rid)+"'>"+_cIco('clock',13)+"</button>"+
         (conf?"":"<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-bosque)' title='Marcar confirmada' data-act='res-confirm' data-id='"+esc(r.id)+"'>"+svg(IC.check,14)+"</button>")+
         "<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-danger)' title='Cancelar' data-act='res-cancel' data-id='"+esc(r.id)+"'>"+svg(IC.close,13)+"</button>"+
       "</div>"+
       _ansHtml+
+      _editHtml+
     "</div>";
   });
   return html;
@@ -3355,20 +3424,23 @@ function _calStats(){
   vivas.forEach(function(r){ if(+new Date(r.inicio)>=m0 && r.email) cli[(""+r.email).toLowerCase()]=1; });
   return {hoy:hoy.length,hoyPend:hoyPend,wk:wkCount,wkDelta:wkCount-wkPCount,prox:prox,asis:asis,no:no,gano:gano,rate:rate,vivas:vivas.length,clientes:Object.keys(cli).length};
 }
+// Emoji canónico por tipo de stat (mismo lenguaje que _tile de "Mi negocio":
+// emoji en color, SIN caja atrás). Antes _statMini/_statBig usaban un ícono SVG
+// dentro de una caja tinteada → se veían distinto que "Mi negocio". Unificado.
+function _statEmoji(ico){ return ({cal:"📅",users:"👥",clock:"⏰",trend:"📈",checkc:"✅",xc:"❌",next:"📆"})[ico]||"📊"; }
 function _statMini(ico,label,big,sub,subCol){
   return "<div style='display:flex;gap:11px;align-items:flex-start;padding:2px 16px'>"+
-    "<span style='width:34px;height:34px;flex-shrink:0;border-radius:9px;background:var(--brand-soft);color:var(--accent);display:inline-flex;align-items:center;justify-content:center'>"+_cIco(ico,17)+"</span>"+
+    "<span class='cp-emo' style='font-size:20px;flex-shrink:0;line-height:1;margin-top:3px'>"+_statEmoji(ico)+"</span>"+
     "<div style='min-width:0'><div style='font-size:11.5px;color:var(--pw-text-muted);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(label)+"</div>"+
-      "<div style='font-family:var(--pw-sans);font-size:30px;font-weight:700;letter-spacing:-1px;line-height:1.1;margin-top:2px'>"+big+"</div>"+
+      "<div style='font-family:Inter,-apple-system,sans-serif;font-size:30px;font-weight:700;letter-spacing:-1px;line-height:1.1;margin-top:2px;color:var(--pw-carbon)'>"+big+"</div>"+
       "<div style='font-size:12px;color:"+(subCol||"var(--pw-text-soft)")+";margin-top:1px'>"+esc(sub||"")+"</div></div>"+
   "</div>";
 }
 function _statBig(ico,icoBg,icoCol,big,label,sub,subCol){
-  return "<div style='border:1px solid var(--pw-border);border-radius:14px;padding:14px'>"+
-    "<span style='width:34px;height:34px;border-radius:9px;background:"+icoBg+";color:"+icoCol+";display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px'>"+_cIco(ico,17)+"</span>"+
-    "<div style='font-family:var(--pw-sans);font-size:28px;font-weight:700;letter-spacing:-.8px;line-height:1'>"+big+"</div>"+
-    "<div style='font-size:12px;font-weight:600;margin-top:5px'>"+esc(label)+"</div>"+
-    (sub?"<div style='font-size:11px;color:"+(subCol||"var(--pw-text-muted)")+";font-weight:600;margin-top:2px'>"+esc(sub)+"</div>":"")+
+  return "<div style='background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:14px 16px;box-shadow:var(--pw-shadow-sm)'>"+
+    "<div style='display:flex;align-items:center;gap:8px;font-size:12px;color:var(--pw-text-muted);font-weight:500'><span class='cp-emo' style='font-size:16px'>"+_statEmoji(ico)+"</span>"+esc(label)+"</div>"+
+    "<div style='font-family:Inter,-apple-system,sans-serif;font-weight:700;font-size:30px;letter-spacing:-1px;color:var(--pw-carbon);line-height:1;margin:8px 0 4px'>"+big+"</div>"+
+    (sub?"<div style='font-size:11.5px;color:"+(subCol||"var(--pw-text-muted)")+";font-weight:600;line-height:1.3'>"+esc(sub)+"</div>":"")+
   "</div>";
 }
 function viewCalendario(){
@@ -3414,7 +3486,8 @@ function viewCalendario(){
     _calOwnerChips()+
     "<div id='cp-cal-kpis' style='margin-bottom:13px'></div>"+
     "<div id='cp-cal-metrics'></div>"+
-    "<div style='display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start'>"+reservas+tipos+"</div>";
+    // align-items:stretch → Reservas y Tipos de evento quedan del mismo alto.
+    "<div style='display:flex;gap:16px;flex-wrap:wrap;align-items:stretch'>"+reservas+tipos+"</div>";
 }
 function _calFail(){ var b=document.getElementById("cp-cal-list"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplicá la migración citas.sql en Supabase."); }
 function _calLoad(){
@@ -3442,14 +3515,16 @@ function _calByOwner(list){ return (list||[]).filter(function(r){ return !(RADMI
 function _calRenderKpis(){
   var s=_calStats();
   var deltaTxt=function(n){ return (n>0?"+"+n:""+n)+" vs semana pasada"; };
-  // Fila de stats de arriba (Hoy / Clientes / Esta semana / Asistencia).
+  // Fila de stats de arriba: SOLO stats de "hoy / próximo / clientes". Las
+  // semanales (Reservas + Asistencia) NO van acá porque ya están en la card
+  // "Resumen de esta semana" de abajo → antes se veían repetidas (mismo número
+  // arriba y abajo). Acá quedan las que NO están en esa card.
   var top=document.getElementById("cp-cal-topstats");
   if(top){
     top.innerHTML=
       _statMini("cal","Sesiones hoy",""+s.hoy,(s.hoyPend?s.hoyPend+" pendiente"+(s.hoyPend===1?"":"s"):"al día"))+
-      _statMini("users","Clientes activos",""+s.clientes,"este mes")+
-      _statMini("clock","Esta semana",""+s.wk,"reservas")+
-      _statMini("trend","Asistencia",(s.rate==null?"—":s.rate+"%"),(s.asis+s.no>0?(s.asis+" de "+(s.asis+s.no)):"sin marcar"),(s.rate!=null&&s.rate>=50?"var(--pw-sendero)":"var(--pw-text-soft)"));
+      _statMini("next","Próximas sesiones",""+s.prox,"agendadas")+
+      _statMini("users","Clientes activos",""+s.clientes,"este mes");
     // Ocultar la card superior de stats si no hay panel (ej. layout viejo). No-op.
     top.parentNode && (top.parentNode.style.display="flex");
   }
@@ -7145,6 +7220,20 @@ document.addEventListener("click", function(ev){
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
       .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Reserva confirmada ✓":"Reserva cancelada"); } else { toast("No se pudo actualizar la reserva."); _resLoad(); } })
       .catch(function(){ toast("No se pudo actualizar la reserva."); _resLoad(); });
+    return;
+  }
+  if(act==="res-hora"){ var _rid=el.getAttribute("data-id"); if(!_rid) return; var _b=document.getElementById("rh-"+_rid); if(_b) _b.style.display=(_b.style.display==="none"?"block":"none"); return; }
+  if(act==="res-hora-cancel"){ var _rid=el.getAttribute("data-id"); var _b=document.getElementById("rh-"+_rid); if(_b) _b.style.display="none"; return; }
+  if(act==="res-hora-save"){
+    var _rid=el.getAttribute("data-id"); if(!_rid) return;
+    var _inp=document.getElementById("rhi-"+_rid); var _v=_inp&&_inp.value; if(!_v){ toast("Elegí una fecha y hora."); return; }
+    var _ms=new Date(_v).getTime(); if(isNaN(_ms)){ toast("Fecha no válida."); return; }
+    var _iso=new Date(_ms).toISOString();
+    // La hora se elige EN TU zona (datetime-local se interpreta como tu hora local) y se guarda en UTC.
+    if(_RES_DATA){ _RES_DATA.forEach(function(r){ if(String(r.id)===String(_rid)) r.inicio=_iso; }); _RES_DATA.sort(function(a,b){ return +new Date(a.inicio)-+new Date(b.inicio); }); var _rb=document.getElementById("cp-res-body"); if(_rb) _rb.innerHTML=_resRender(_RES_DATA); }
+    _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{inicio:_iso})
+      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓"); try{ _agAfterCal(); }catch(_e){} } else { toast("No se pudo cambiar la hora."); _resLoad(); } })
+      .catch(function(){ toast("No se pudo cambiar la hora."); _resLoad(); });
     return;
   }
   if(act==="cal-filtro"){ _calFiltro=el.getAttribute("data-f")||"proximas"; render(); return; }
