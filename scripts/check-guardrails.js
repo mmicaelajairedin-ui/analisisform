@@ -332,6 +332,81 @@ const RULES = [
     },
   },
   {
+    name: "pw-auth.js: headers() nunca se cuelga (anti 'Procesando…' infinito)",
+    bug: "TODO fetch (lectura y escritura) del panel/portales espera a " +
+         "PWAUTH.headers() → token() → ensure(), y ensure() carga el SDK de " +
+         "Supabase desde un CDN. Si el CDN no responde o un refresh de sesión se " +
+         "stallea, headers() no resolvía nunca y CUALQUIER acción quedaba en " +
+         "'Procesando…' para siempre (agregar coach/cliente, enviar chat). Fix: " +
+         "headers() corre contra un timeout y cae al token de localStorage/anon; " +
+         "y la carga del SDK tiene su propio timeout. No quitar ninguno de los dos.",
+    check() {
+      const s = read("pw-auth.js");
+      if (!s) return "no existe pw-auth.js";
+      // headers() debe tener una carrera contra timeout con fallback a tokenSync.
+      const seg = s.slice(s.indexOf("headers: function"));
+      if (!/setTimeout\([\s\S]{0,120}?finish\(tokenSync\(\)\)/.test(seg))
+        return "pw-auth.js: headers() perdió el timeout anti-cuelgue (podría quedar en 'Procesando…' para siempre).";
+      // La carga del SDK por CDN también debe tener timeout (no dejar ensure() colgado).
+      if (!/onerror[\s\S]{0,60}?resolve\(null\)/.test(s) || !/setTimeout\(function\s*\(\)\s*\{\s*resolve\(null\)/.test(s))
+        return "pw-auth.js: la carga del SDK perdió su timeout/fallback (ensure() podría colgarse).";
+      return null;
+    },
+  },
+  {
+    name: "informes: se guardan varios como archivos por cliente (no se pisan)",
+    bug: "El informe con IA se guardaba UNO por cliente (informes, unique email) y " +
+         "se pisaba al regenerar. Ahora la ficha (pestaña Documentos) tiene la sección " +
+         "'Informes ✨ IA Pathway': guardás VARIOS como archivos en la tabla nueva " +
+         "informes_guardados (por email + coach_id, aislado), con lista y visor. La " +
+         "carga es resiliente (si falta la migración, muestra vacío, no rompe).",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="inf-save"/.test(p) || !/act==="inf-open"/.test(p))
+        return "panel-v2.html: faltan los handlers de informes guardados (inf-save/inf-open).";
+      if (!/function _infFilesLoad/.test(p))
+        return "panel-v2.html: falta _infFilesLoad (lista de informes guardados por cliente).";
+      if (!/informes_guardados/.test(p))
+        return "panel-v2.html: ya no se usa la tabla informes_guardados.";
+      // Aislamiento: la consulta de informes guardados filtra por coach (cg()).
+      if (!/informes_guardados\?[^"']*"\+encodeURIComponent\([^)]*\)\+cg\(\)/.test(p) && !/informes_guardados[\s\S]{0,120}?cg\(\)/.test(p))
+        return "panel-v2.html: la lista de informes guardados perdió el filtro por coach (cg()).";
+      if (!read("supabase/migrations/informes_guardados.sql"))
+        return "falta la migración informes_guardados.sql.";
+      return null;
+    },
+  },
+  {
+    name: "reservas: preguntas propias del coach + respuestas visibles (sin defaults)",
+    bug: "Cada coach arma sus propias preguntas en su tipo de evento (event_types" +
+         "[].questions). NO hay preguntas predefinidas del sistema: reservar.html " +
+         "dejó de tener f-msg/f-src hardcodeados y solo muestra lo que el coach " +
+         "cargó (qFields). Las respuestas se guardan en citas.respuestas y el coach " +
+         "las ve en su lista de reservas (_citaAnswers). El INSERT reintenta sin " +
+         "'respuestas' si la columna no existe, y el panel lee con select=* para no " +
+         "romper la lista donde falta la migración.",
+    check() {
+      const p = read("panel-v2.html"), r = read("reservar.html");
+      if (!p || !r) return null;
+      // Panel: el tipo de evento guarda 'questions' y existe el armador.
+      if (!/ag-q-add/.test(p) || !/function _agCollectQuestions/.test(p))
+        return "panel-v2.html: se perdió el armador de preguntas del tipo de evento (ag-q-add / _agCollectQuestions).";
+      if (!/label:_tv,\s*color:_tc,\s*icon:_tic,\s*people:_tpl,\s*questions:_tq/.test(p))
+        return "panel-v2.html: el tipo de evento ya no guarda las preguntas (questions) al guardar.";
+      if (!/function _citaAnswers/.test(p))
+        return "panel-v2.html: el coach ya no ve las respuestas de las reservas (_citaAnswers).";
+      // Reservar: sin defaults del sistema + render dinámico + guardado resiliente.
+      if (/id='f-msg'/.test(r) || /id='f-src'/.test(r))
+        return "reservar.html: volvieron las preguntas predefinidas del sistema (f-msg/f-src); deben salir SOLO las del coach.";
+      if (!/function qFields/.test(r) || !/function collectAnswers/.test(r))
+        return "reservar.html: se perdió el render/colecta de las preguntas del coach.";
+      if (!/_postCita\(false\)/.test(r))
+        return "reservar.html: el guardado de la reserva perdió el reintento sin 'respuestas' (rompe si falta la columna).";
+      return null;
+    },
+  },
+  {
     name: "panel: alta de cliente usa INSERT ignore-duplicates (RLS), no merge",
     bug: "El alta inline del panel (alta-invitar) creaba el candidato con " +
          "resolution=merge-duplicates. Bajo RLS estricto eso es un upsert que pide " +
@@ -1258,6 +1333,66 @@ const RULES = [
     },
   },
   {
+    name: "admin: 'Dar acceso a un coach' SIEMPRE ofrece el link directo de activación",
+    bug: "Al crear un coach, si la escritura al panel fallaba o el email automático no " +
+         "salía, la coach quedaba sin forma de dar acceso ('no me llegó la invitación'). " +
+         "Fix: se muestra un link directo (registro.html?email=) apenas se intenta crear " +
+         "un coach nuevo — se setea ANTES del POST, así se ve aunque la escritura o el " +
+         "email fallen (registro.html crea/activa la cuenta al entrar). Además el email " +
+         "de coach-access se sanea (sin espacios) para que un pegado con espacio no lo rechace.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="coach-access"/.test(p)) return null; // otra regla cubre la ausencia del handler
+      const seg = p.slice(p.indexOf('act==="coach-access"'));
+      const seg2 = seg.slice(0, 8000);
+      // Email saneado sin espacios (evita el "no estaba bien el mail" por pegar con espacio).
+      if (!/cac-email[\s\S]{0,80}?replace\(\/\\s\+\/g,\s*""\)/.test(seg2))
+        return "panel-v2.html: coach-access dejó de sanear el email (replace de espacios).";
+      // El link directo se setea en state.coachLink DENTRO del flujo de coach nuevo.
+      if (!/state\.coachLink\s*=\s*caLink/.test(seg2))
+        return "panel-v2.html: coach-access ya no setea el link directo de activación (state.coachLink).";
+      // Y el render lo muestra con botón de copiar (handler ag-copy-link).
+      if (!/state\.coachLink/.test(p) || !/data-act='ag-copy-link'\s+data-link='"\+esc\(cLink\)/.test(p))
+        return "panel-v2.html: el link directo de activación ya no se renderiza con botón Copiar.";
+      return null;
+    },
+  },
+  {
+    name: "admin: crear coach pasa por la edge function crear-coach (RLS no lo bloquea)",
+    bug: "El botón 'Dar acceso a un coach' hacía un POST directo a usuarios con rol='coach' " +
+         "desde el navegador. Con RLS estricto en usuarios (usuarios_hardening.sql), la anon " +
+         "key / un JWT no-admin solo pueden crear rol='cliente' → el INSERT se rechazaba con " +
+         "403 y 'no anda agregar coach'. Fix: la creación/extensión va por la edge function " +
+         "crear-coach (service role), que verifica que quien llama es admin (JWT → /auth/v1/user) " +
+         "y escribe salteando RLS.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="coach-access"/.test(p)) return null; // otra regla cubre la ausencia del handler
+      const start = p.indexOf('act==="coach-access"');
+      const endMarker = p.indexOf('act==="empleado-crear"', start);
+      const seg = endMarker > start ? p.slice(start, endMarker) : p.slice(start, start + 6000);
+      // El handler debe llamar a la edge function crear-coach...
+      if (!/functions\/v1\/crear-coach/.test(seg))
+        return "panel-v2.html: coach-access ya no llama a la edge function crear-coach (¿volvió al POST directo que RLS bloquea?).";
+      // ...y NO volver a escribir un usuario rol='coach' directo desde el navegador.
+      if (/rol:\s*["']coach["']/.test(seg))
+        return "panel-v2.html: coach-access volvió a crear un usuario rol='coach' directo (RLS lo bloquea). Debe ir por crear-coach.";
+      // La edge function debe existir, usar service role y verificar admin antes de escribir.
+      const fn = read("supabase/functions/crear-coach/index.ts");
+      if (!fn) return "falta supabase/functions/crear-coach/index.ts (la creación de coach depende de esta función).";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "crear-coach: ya no usa service role (no podría saltear el RLS de usuarios).";
+      if (!/not_admin/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "crear-coach: perdió la verificación de admin (JWT → /auth/v1/user). No debe crear coaches sin verificar admin.";
+      // Y debe estar en el workflow de auto-deploy (si no, nunca llega a producción).
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy crear-coach/.test(wf))
+        return "deploy-functions.yml: falta el paso para desplegar crear-coach (la fn quedaría sin publicar).";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: día clickeable + incluye demos del equipo/pasadas",
     bug: "En el panel, tocar un día del calendario debe mostrar los eventos de ese " +
          "día (ag-mo-day → _agRenderDay). Y los puntitos/el detalle deben leer de " +
@@ -1301,23 +1436,86 @@ const RULES = [
     },
   },
   {
+    name: "paywall: reactivación por reseña (+15 días) para inactivos hace 15+ días, una sola vez",
+    bug: "En el paywall 'Tu prueba terminó', a los coaches inactivos hace 15+ días " +
+         "(recuperación) se les ofrece dejar una reseña a cambio de reactivar 15 días. " +
+         "El grant pone fecha_fin_prueba=hoy+15 en modo 'prueba' (para que tras vencer " +
+         "vuelva el paywall a pedir tarjeta) y marca resena_bonus_usado (una sola vez). " +
+         "Los recién vencidos no la ven (que paguen). Si se rompe, se pierde el anzuelo " +
+         "de recuperación o se regalan días indebidos.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/_diasVenc\s*>=\s*15/.test(p)) return "panel-v2.html: la oferta de reseña ya no filtra por inactivo hace 15+ días.";
+      if (!/resena_bonus_usado/.test(p)) return "panel-v2.html: falta el flag resena_bonus_usado (una sola vez) en la reactivación por reseña.";
+      if (!/act==="pw-resena-send"/.test(p)) return "panel-v2.html: falta el handler que otorga los 15 días por reseña (pw-resena-send).";
+      if (!/estado_sub:"prueba"[\s\S]{0,80}resena_bonus_usado/.test(p) && !/resena_bonus_usado[\s\S]{0,80}estado_sub:"prueba"/.test(p) && !/fecha_fin_prueba:new Date\(Date\.now\(\)\+15/.test(p)) return "panel-v2.html: el grant de reactivación ya no extiende 15 días en modo prueba.";
+      return null;
+    },
+  },
+  {
+    name: "sesiones: 'Mis temas / dudas' en los TRES portales (guardan notas_progreso)",
+    bug: "La sección Preparación con 'Mis temas / dudas' (el cliente anota qué hablar " +
+         "en la sesión y se guarda en candidatos.notas_progreso) debe estar en los tres " +
+         "portales del cliente: carrera, fitness y financiero. Si falta en alguno, se " +
+         "pierde la función y se rompe la unificación.",
+    check() {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/Mis temas/.test(s)) return f + ": falta 'Mis temas / dudas' (Preparación de Sesiones).";
+        if (!/notas_progreso/.test(s)) return f + ": 'Mis temas / dudas' ya no guarda en notas_progreso.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "fitness/financiero: sin acciones-foco desconectadas (el plan real es otro)",
+    bug: "Las 'acciones' (cv_acciones… agrupadas por etapa) NO llegan al cliente en " +
+         "fitness ni financiero, así que el panel NO debe embeber _avanceHtml para " +
+         "esos nichos y sus portales NO deben mostrar el 'Foco' estático. En fitness " +
+         "el plan son las 'Tareas de la semana'; en financiero, las etapas SÍ se ven " +
+         "(como 'Plan por meses', leen c.etapas) + objetivos/presupuesto/deudas. Si " +
+         "vuelve el embed o el foco, reaparece la parte desconectada.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p && !/_tipo==='carrera'\|\|_tipo==='fitness'\|\|_tipo==='financiero'/.test(p))
+        return "panel-v2.html: fitness/financiero volvió a embeber las acciones desconectadas (_avanceHtml).";
+      const f = read("pathway-fit-cliente.html");
+      if (f) {
+        if (/Foco de esta semana/.test(f)) return "pathway-fit-cliente.html: volvió el 'Foco de esta semana' (acciones) — debía quedar solo las Tareas de la semana.";
+        if (!/Tus tareas de la semana/.test(f)) return "pathway-fit-cliente.html: falta 'Tus tareas de la semana' (el plan del cliente fitness).";
+      }
+      const fn = read("pathway-fin-cliente.html");
+      if (fn) {
+        if (/Foco de este mes/.test(fn)) return "pathway-fin-cliente.html: volvió el 'Foco de este mes' estático (desconectado).";
+        if (!/plan-step/.test(fn)) return "pathway-fin-cliente.html: falta el 'Plan por meses' (plan-step) que SÍ lee las etapas del coach.";
+      }
+      return null;
+    },
+  },
+  {
     name: "reservas: se guarda de dónde llegó (atribución de canal)",
-    bug: "Al reservar se pregunta '¿Cómo me encontraste?' (Instagram, LinkedIn, " +
-         "Google…) y se guarda en citas.origen. El panel lo muestra por reserva y " +
-         "agregado en Métricas ('Por dónde llegan'), así el coach sabe qué canal le " +
-         "trae citas. Si el POST deja de mandar origen o el panel deja de leerlo/" +
-         "mostrarlo, se pierde la atribución.",
+    bug: "El coach sabe por qué canal le llegan las reservas (citas.origen), que el " +
+         "panel muestra por reserva y agregado en Métricas ('Por dónde llegan'). " +
+         "Ya NO hay una pregunta fija del sistema: la atribución se deriva de una " +
+         "pregunta que el coach agrega ('de dónde nos conocés') y su respuesta se " +
+         "mapea a origen. Si el POST deja de mandar origen, se pierde el mapeo, o el " +
+         "panel deja de leerlo/mostrarlo, se pierde la atribución.",
     check() {
       const r = read("reservar.html");
       if (r) {
-        if (!/id='f-src'/.test(r)) return "reservar.html: falta el select '¿Cómo me encontraste?' (id=f-src).";
         const i = r.indexOf("coach_id:_cid");
-        const blk = i >= 0 ? r.slice(i, i + 240) : "";
+        const blk = i >= 0 ? r.slice(i, i + 260) : "";
         if (!/origen:/.test(blk)) return "reservar.html: el POST a citas ya no guarda origen (se pierde la atribución).";
+        // La atribución ahora se deriva de una pregunta del coach → origen.
+        if (!/origen\s*=\s*x\.a/.test(r)) return "reservar.html: se perdió el mapeo de la pregunta de canal a origen.";
       }
       const p = read("panel-v2.html");
       if (p) {
-        if (!/select=[^"']*origen/.test(p)) return "panel-v2.html: la query de citas ya no pide 'origen'.";
+        // La lista de reservas lee con select=* (trae origen si existe) y las
+        // métricas siguen leyendo origen explícito. Basta con que aparezca alguno.
+        if (!/select=\*/.test(p) && !/select=[^"']*origen/.test(p)) return "panel-v2.html: la query de citas ya no trae 'origen' (ni select=*).";
         if (!/Por dónde llegan/.test(p)) return "panel-v2.html: falta el desglose 'Por dónde llegan' en Métricas.";
       }
       return null;
@@ -1389,6 +1587,27 @@ const RULES = [
       // El registro debe guardar el origen en configuracion.
       const reg = read("registro.html");
       if (reg && !/configuracion\.origen\s*=/.test(reg)) return "registro.html: el alta ya no guarda el origen del anuncio (configuracion.origen).";
+      return null;
+    },
+  },
+  {
+    name: "móvil: pull-to-refresh (bajar para actualizar) en los 3 portales del cliente",
+    bug: "En el panel del coach ya se bajaba para actualizar, pero los portales del " +
+         "cliente (carrera/fitness/finanzas) no tenían el gesto: la coach bajaba la " +
+         "pantalla y no pasaba nada. Se agregó el mismo pull-to-refresh (indicador " +
+         "#cli-ptr + recarga al soltar) para que el móvil se sienta igual en toda la " +
+         "app. Si se cae de alguno de los portales, ese portal vuelve a quedar sin " +
+         "'actualizar para abajo'.",
+    check() {
+      const portals = ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      for (const f of portals) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/cli-ptr/.test(s)) return f + ": se perdió el pull-to-refresh móvil (indicador #cli-ptr).";
+        // El gesto debe engancharse a touchstart/touchmove/touchend y recargar al soltar.
+        if (!/addEventListener\(['"]touchmove['"]/.test(s)) return f + ": el pull-to-refresh ya no escucha touchmove.";
+        if (!/location\.reload\(\)/.test(s)) return f + ": el pull-to-refresh ya no recarga (location.reload) al soltar.";
+      }
       return null;
     },
   },
