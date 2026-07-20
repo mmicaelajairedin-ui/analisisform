@@ -441,7 +441,7 @@ async function handleCoachSubscription(
   customerEmail?: string,
 ) {
   if (!customerEmail) return { result: "no-email" };
-  const email = customerEmail.toLowerCase();
+  const email = customerEmail.trim().toLowerCase();
   const { url: SB_URL, headers } = getSupabaseAuth();
 
   // Mapear estado Stripe → estado local
@@ -483,7 +483,19 @@ async function handleCoachSubscription(
     `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=configuracion,nombre`,
     { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
   );
-  const users = userRes.ok ? await userRes.json() : [];
+  const users = userRes.ok ? await userRes.json() : null;
+
+  // RED DE SEGURIDAD: si el pago NO coincide con ningún coach registrado (pagó
+  // con un email distinto al del registro, o pagó sin registrarse antes), el
+  // PATCH de abajo actualizaría 0 filas y con `return=minimal` esto pasaba como
+  // "ok" → el coach pagaba y NUNCA se activaba, en silencio. Ahora avisamos a la
+  // admin para reconciliar a mano. (Si el fetch falló -users null-, no alertamos:
+  // es transitorio y el evento se reintenta.)
+  if (userRes.ok && Array.isArray(users) && users.length === 0) {
+    await sendUnmatchedPaymentAlert(email, plan, String(sub.customer || ""));
+    return { result: "coach-not-found-alerted", email };
+  }
+
   const existingCfg = (users && users[0] && users[0].configuracion) || {};
   const coachPrimer = String((users && users[0] && users[0].nombre) || "").split(" ")[0] || "";
 
@@ -698,6 +710,36 @@ async function sendCoachActivatedEmail(
   }
 }
 
+// Aviso a la admin cuando entra un pago que no coincide con ningún coach
+// registrado, para que lo reconcilie a mano (evita la pérdida silenciosa).
+async function sendUnmatchedPaymentAlert(
+  email: string,
+  plan: string,
+  customerId: string,
+): Promise<void> {
+  const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+  try {
+    await fetch(`${SB_URL}/functions/v1/send-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: "hi@pathwaycareercoach.com",
+        to_name: "Micaela",
+        subject: "⚠️ Pago de coach sin cuenta que coincida — revisar",
+        reply_to: "hi@pathwaycareercoach.com",
+        html:
+          `<h2 style="font-family:Fraunces,Georgia,serif;color:#B0413A;margin:0 0 10px;">Pago recibido sin cuenta que coincida</h2>` +
+          `<p style="color:#3A4A40;line-height:1.65;margin:0 0 14px;">Entró un pago de suscripción <strong>${plan}</strong>, pero ningún coach registrado tiene el email <strong>${email}</strong>. ` +
+          `El cobro se hizo en Stripe, pero la cuenta <strong>no se activó automáticamente</strong>.</p>` +
+          `<p style="color:#3A4A40;line-height:1.65;margin:0 0 14px;">Qué hacer: buscá al coach (quizá se registró con otro email) y activá/vinculá su cuenta desde el panel de Coaches, o pedile que se registre con este email exacto.</p>` +
+          `<p style="color:#5A6A60;font-size:13px;margin:0;">Stripe customer: ${customerId}</p>`,
+      }),
+    });
+  } catch (e) {
+    console.error("sendUnmatchedPaymentAlert error:", e);
+  }
+}
+
 async function sendReferralEmail(
   to: string,
   toName: string,
@@ -838,9 +880,21 @@ Deno.serve(async (req: Request) => {
       if (ev.account || session.metadata?.pathway === "client_sub") {
         result = await handleClientSubCheckout(session);
       } else {
-        // Suscripción del coach — esperamos customer.subscription.created
-        // que trae todos los detalles. Acá solo registramos.
-        result = { received: true, type: ev.type, skipped: "subscription-checkout" };
+        // Suscripción del COACH a Pathway. Normalmente `customer.subscription.created`
+        // trae todos los detalles y activa la cuenta. PERO si ese evento no está
+        // habilitado en Stripe (o falta STRIPE_SECRET_KEY para resolver el email),
+        // el coach pagaría y NO se activaría en silencio. RED DE SEGURIDAD: activamos
+        // también desde acá con los datos de la propia sesión (email + monto directos,
+        // sin depender de la API de Stripe). Es idempotente con subscription.created
+        // (setea el mismo estado; el email de "cuenta activa" sale una sola vez).
+        const email = session.customer_details?.email || session.customer_email || "";
+        const miniSub = {
+          id: session.subscription || "",
+          customer: session.customer || "",
+          status: "active",
+          items: { data: [{ price: { id: "", unit_amount: session.amount_total || 0 } }] },
+        } as StripeSubscription;
+        result = await handleCoachSubscription(miniSub, email);
       }
     } else {
       // Pack Express: pagos de €40 (4000) o €10 supplement (1000) van al

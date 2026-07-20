@@ -76,10 +76,11 @@ CREATE POLICY usuarios_intake_cliente ON usuarios FOR INSERT
   WITH CHECK (rol = 'cliente');
 
 -- Usuario autenticado creando su PROPIA fila (login con Google → auth-callback).
+-- No puede auto-asignarse rol='admin' (misma restricción que usuarios_self_update).
 DROP POLICY IF EXISTS usuarios_self_insert ON usuarios;
 CREATE POLICY usuarios_self_insert ON usuarios FOR INSERT
   TO authenticated
-  WITH CHECK (lower(email) = public.pw_email());
+  WITH CHECK (lower(email) = public.pw_email() AND rol <> 'admin');
 
 -- Coach (autenticado) creando un cliente desde el panel.
 DROP POLICY IF EXISTS usuarios_coach_crea_cliente ON usuarios;
