@@ -868,11 +868,17 @@ async function enviar(){
           if(!_has){ if(PWAUTH.showLoginGate) PWAUTH.showLoginGate(); return; }
         }
       }catch(e){}
+      // Usar el JWT del cliente (PWAUTH), NO la anon key: bajo RLS el UPDATE de la
+      // propia fila se autoriza por auth.uid(); con anon no matchea nada. Y pedir
+      // return=representation para confirmar que escribió ≥1 fila (no mentir).
+      var _pHdr=(window.PWAUTH&&PWAUTH.headersSync)?PWAUTH.headersSync({'Content-Type':'application/json','Prefer':'return=representation'}):{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation'};
       saveRes=await fetch(SB_URL+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(d.email),{
         method:'PATCH',
-        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'},
+        headers:_pHdr,
         body:JSON.stringify({...d})
       });
+      if(saveRes.status===401||saveRes.status===403){ if(window.PWAUTH&&PWAUTH.showLoginGate)PWAUTH.showLoginGate(); throw new Error('Tu sesión venció. Volvé a iniciar sesión y reintentá.'); }
+      if(saveRes.ok){ var _prows=await saveRes.json().catch(function(){return null;}); if(Array.isArray(_prows)&&_prows.length===0){ throw new Error('No se pudo guardar tu perfil: tu sesión no está activa. Cerrá sesión, volvé a entrar y reintentá.'); } }
     } else {
       // Intake anónimo (pre-cuenta): INSERT con ignore-duplicates (no merge), así
       // la política RLS de INSERT anónimo alcanza sin dar UPDATE a anon. Re-envíos

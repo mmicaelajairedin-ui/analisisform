@@ -1041,24 +1041,26 @@ function guardar(){
   if(st){st.textContent='Guardando...';st.style.color='#888';}
   var emailClean=_email.toLowerCase().trim();
   var contenido=JSON.stringify(_d);
-  var h=H({'Content-Type':'application/json','Prefer':'return=minimal'});
-  // 1. Intentar PATCH
+  // Guardado VERIFICADO: return=representation para saber si REALMENTE escribió.
+  // Antes, con return=minimal, un PATCH que RLS bloqueaba (0 filas) daba 204 y
+  // mostraba "✓ Guardado" sin guardar el CV. Ahora: PATCH; si no matcheó ninguna
+  // fila (CV nuevo o RLS), POST; y solo declaramos éxito si volvió ≥1 fila.
+  var h=H({'Content-Type':'application/json','Prefer':'return=representation'});
+  var _n=function(r){ if(r.status===401||r.status===403) return -2; if(!r.ok) return -1; return r.json().then(function(a){return (a&&a.length)||0;},function(){return 1;}); };
   fetch(SB+'/rest/v1/cv_publicados?email=eq.'+enc(emailClean),{
     method:'PATCH', headers:h,
     body:JSON.stringify({contenido:contenido,updated_at:new Date().toISOString()})
-  }).then(function(r){
-    if(r.status===404||(r.status===400&&!r.ok)){
-      // 2. Si falla, POST
-      return fetch(SB+'/rest/v1/cv_publicados',{
-        method:'POST', headers:h,
-        body:JSON.stringify({email:emailClean,contenido:contenido})
-      });
-    }
-    return r;
-  }).then(function(r){
-    var ok=r.ok||r.status===204||r.status===201||r.status===200;
+  }).then(_n).then(function(n){
+    if(n>=1 || n===-2) return n;
+    // 0 filas: CV nuevo (o RLS) → intentar POST y verificar de nuevo.
+    return fetch(SB+'/rest/v1/cv_publicados',{
+      method:'POST', headers:h,
+      body:JSON.stringify({email:emailClean,contenido:contenido})
+    }).then(_n);
+  }).then(function(res){
+    var ok=(typeof res==='number' && res>=1);
     if(st){
-      st.textContent=ok?'✓ Guardado':'Error '+r.status;
+      st.textContent=ok?'✓ Guardado':(res===-2?'Sesión vencida — reingresá':'No se pudo guardar');
       st.style.color=ok?'#5A8C6E':'#C0756E';
     }
     // Sync foto to candidatos.foto_perfil so cliente.html can display it
