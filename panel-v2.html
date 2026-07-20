@@ -6391,6 +6391,11 @@ function viewAdmin(){
       // Heurística: si el email es el de la admin (mmicaela.jairedin) es una
       // prueba interna — la marcamos para distinguirla.
       var isInternal = /mmicaela\.jairedin@gmail\.com/i.test(email);
+      // Origen del anuncio/campaña (lo captura pw-pixel.js al entrar el lead).
+      var org = x.origen;
+      if(org && typeof org==="string"){ try{ org=JSON.parse(org); }catch(e){ org=null; } }
+      var adSrc = (org && org.utm_source) ? (""+org.utm_source) : "";
+      var adCamp = (org && org.utm_campaign) ? (""+org.utm_campaign) : "";
       return {
         nombre: nombre || "—",
         email: email,
@@ -6400,6 +6405,8 @@ function viewAdmin(){
         isInternal: isInternal,
         pagSlug: pagSlug,
         pagLbl: pageLbl[pagSlug] || pagSlug,
+        adSrc: adSrc,
+        adCamp: adCamp,
         f: (""+(x.fecha||"")).replace("T"," ").slice(0,16)
       };
     });
@@ -6420,11 +6427,25 @@ function viewAdmin(){
     if(c.email) actions += "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='lead-mail' data-em='"+esc(c.email)+"' data-nom='"+esc(c.nombre||"")+"'>"+svg(IC.msg,13)+" Email</button>";
     if(wa)      actions += (actions?" ":"")+"<a href='https://wa.me/"+wa+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px;text-decoration:none'>"+svg(IC.wa,13)+" WhatsApp</a>";
     if(!actions) actions = "<span style='font-size:12px;color:var(--pw-text-soft)'>Sin contacto directo</span>";
+    // Chip del anuncio/campaña de donde vino el lead (si lo trae pw-pixel.js).
+    var adChip = c.adSrc
+      ? "<div style='margin-top:4px'><span title='Anuncio/campaña de origen' style='display:inline-flex;align-items:center;gap:3px;background:rgba(24,119,242,.10);border:1px solid rgba(24,119,242,.25);border-radius:100px;padding:1px 8px;font-size:10.5px;font-weight:700;color:#1877F2;vertical-align:middle'>"+_origenIco(c.adSrc)+" "+esc(c.adSrc)+(c.adCamp?" · "+esc(c.adCamp):"")+"</span></div>"
+      : "";
     return "<tr><td>"+contactoCell+"</td>"+
-      "<td style='font-size:12.5px;color:var(--pw-text)'>"+esc(c.pagLbl)+"</td>"+
+      "<td style='font-size:12.5px;color:var(--pw-text)'>"+esc(c.pagLbl)+adChip+"</td>"+
       "<td style='color:var(--pw-text-soft);font-size:12.5px;white-space:nowrap'>"+esc(c.f)+"</td>"+
       "<td style='text-align:right;white-space:nowrap'>"+actions+"</td></tr>";
   }).join("");
+  // Resumen "por campaña": agrupa los contactos que trajeron origen de anuncio,
+  // para ver de un vistazo qué campaña trae más leads.
+  var _campAgg={}, _campTot=0;
+  contactos.forEach(function(c){ if(!c.adSrc) return; var k=c.adCamp||c.adSrc; _campAgg[k]=(_campAgg[k]||0)+1; _campTot++; });
+  var _campKeys=Object.keys(_campAgg).sort(function(a,b){ return _campAgg[b]-_campAgg[a]; });
+  var campCard = _campTot
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Leads por anuncio<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+_campTot+" con origen de campaña</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
+        _campKeys.map(function(k){ var n=_campAgg[k], pct=Math.round(n/_campTot*100); return "<div style='display:flex;align-items:center;gap:10px'><span style='flex:0 0 160px;font-size:12.5px;font-weight:600;color:var(--pw-carbon);overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+esc(k)+"</span><div style='flex:1;height:8px;background:var(--pw-niebla-2);border-radius:99px;overflow:hidden'><div style='width:"+pct+"%;height:100%;background:#1877F2'></div></div><span style='flex:0 0 auto;font-size:12px;color:var(--pw-text-soft)'>"+n+"</span></div>"; }).join("")+
+      "</div></div>"
+    : "";
   var _resenas=(REAL && RADM && RADM.resenas) ? RADM.resenas : [];
   var _revMap={}, _revList=[], _revSum=0, _revN=0;
   // Fuente 1: tabla `reviews` (reseñas del form de CV Express, resena.html)
@@ -6746,6 +6767,7 @@ function viewAdmin(){
           ? fc((A.leadsTot||"—"),"Leads pricing")+fc((A.leadsTrial||"—"),"En trial"+(A.leadsTot?" · "+Math.round(A.leadsTrial/A.leadsTot*100)+"%":""))+fc("<span style='color:var(--pw-bosque)'>"+(A.leadsPago||"—")+"</span>","Pagaron"+(A.leadsTot?" · "+Math.round(A.leadsPago/A.leadsTot*100)+"%":""))
           : fc("128","Capturados")+fc("41","Registrados · 32%")+fc("23","En trial · 18%")+fc("<span style='color:var(--pw-bosque)'>9</span>","Pagaron · 7%"))+
       "</div></div>"+
+      campCard+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Contactos del chatbot<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>"+contactos.length+" · desde la web</span></div>"+
         "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:560px'><thead><tr>"+
@@ -9917,7 +9939,7 @@ function loadReal(){
   var cf = "select=*&coach_id=eq."+encodeURIComponent(ME.id);
   var extra = ME.rol==="admin"
     ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id&order=created_at.desc"),
-        _sb("contactos_chat?select=contacto,pagina,fecha&pagina=neq.resena-cvexpress&order=fecha.desc&limit=30"),
+        _sb("contactos_chat?select=contacto,pagina,fecha,origen&pagina=neq.resena-cvexpress&order=fecha.desc&limit=30"),
         _sb("candidatos?select=id,created_at,coach_id,email,resena,nombre,nicho,activo,semana_activa"),
         _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
         _sb("informes?select=coach_id") ]
