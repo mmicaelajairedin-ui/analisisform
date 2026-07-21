@@ -4421,6 +4421,11 @@ function viewClienteDetalle(c){
     body=_hd+_ft+
           "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'><button class='cp-btn cp-btn-ghost' data-act='clidet:perfil'>Descartar</button><button class='cp-btn cp-btn-primary' data-act='cli-save' data-id='"+esc(c.id)+"'>Guardar cambios</button></div>"+
         "</div></div>"+
+        "<div class='cp-card'><div class='cp-card-pad' style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'>"+
+          "<div><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'><span class='cp-emo'>✉️</span> Invitación al portal</div>"+
+            "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px;max-width:360px'>Le reenvía el email para crear su contraseña y entrar. Úsalo si el cliente dice que no le llegó (revisa también su carpeta de spam).</div></div>"+
+          "<button class='cp-btn cp-btn-primary' data-act='reinvitar' data-id='"+esc(c.id)+"' style='white-space:nowrap'>"+svg(IC.extLink,14)+" Reenviar invitación</button>"+
+        "</div></div>"+
         ((c.raw&&c.raw.activo===false)?"<div class='cp-card'><div class='cp-card-pad'><div style='font-size:12.5px;color:var(--pw-danger);font-weight:600'>Acceso desactivado — el cliente no puede entrar al portal ni aparece en el chat. Reactívalo desde el panel de la derecha.</div></div></div>":"")+
         (fichaV2()?"<div class='cp-cli-deact-v2'>"+((c.raw&&c.raw.activo===false)
           ? "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-bosque);border-color:var(--pw-bosque)' data-act='cli-reactivate' data-id='"+esc(c.id)+"'>Activar cliente</button>"
@@ -7970,10 +7975,37 @@ document.addEventListener("click", function(ev){
         var _cfoto=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim();
         if(!/^https?:\/\//i.test(_cfoto)) _cfoto="";
         var _cslug=((RCFG&&RCFG.slug)||(COACH&&COACH.slug)||"").toString().trim();
-        return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:aem,welcome:true,coach_name:cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})});
+        return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:aem,name:anom,welcome:true,coach_name:cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})});
+      }).then(function(res){ return (res&&res.json)?res.json().catch(function(){return{};}):{}; })
+      .then(function(j){
+        // Si el email NO salió, avisamos claro (antes fallaba en silencio) y guiamos
+        // al botón "Reenviar invitación" de la ficha.
+        if(j && j.sent===false && aMsg){ aMsg.style.color="#8E7A35"; aMsg.textContent="✓ "+anom+" agregado a tu lista — pero el email de invitación no salió. Abre su ficha y toca \"Reenviar invitación\"."; }
       }).catch(function(){});
     };
     _sendInvite();
+    return;
+  }
+  if(act==="reinvitar"){
+    var riId=el.getAttribute("data-id"); if(!riId) return;
+    var riC=(CLIENTS||[]).filter(function(x){return String(x.id)===String(riId);})[0];
+    if(!riC){ toast("No encontramos al cliente."); return; }
+    var riEm=((riC.email)||"").toLowerCase().trim();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(riEm)){ toast("Ese cliente no tiene un email válido en su ficha."); return; }
+    if(riC._example){ toast("Es un cliente de ejemplo — en tu cuenta real sí se reenvía."); return; }
+    var riBtn=ev.currentTarget; if(riBtn) riBtn.disabled=true;
+    toast("Reenviando invitación…");
+    var riCn=(COACH&&COACH.name)||"tu coach";
+    var riCe=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
+    var riCf=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim(); if(!/^https?:\/\//i.test(riCf)) riCf="";
+    var riCs=((RCFG&&RCFG.slug)||(COACH&&COACH.slug)||"").toString().trim();
+    fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:riEm,name:(riC.name||""),welcome:true,coach_name:riCn,coach_email:riCe,coach_photo:riCf,coach_slug:riCs})})
+      .then(function(res){ return (res&&res.json)?res.json().catch(function(){return{};}):{}; })
+      .then(function(j){ if(riBtn) riBtn.disabled=false;
+        if(j && j.sent===true){ toast("✓ Invitación reenviada a "+riEm+". Pídele que revise también spam."); }
+        else { toast("No se pudo enviar el email ahora. Reintenta en un momento."); }
+      })
+      .catch(function(){ if(riBtn) riBtn.disabled=false; toast("Sin conexión. Reintenta."); });
     return;
   }
   if(act==="mail-send"){
