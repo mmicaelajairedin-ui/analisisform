@@ -50,15 +50,34 @@ los **límites** (cuántos coaches / cuántos clientes). Mismo ciclo de vida que
 el coach individual (14 días de prueba → paga → activa). Números de ejemplo
 (ajustables, el esquema no depende de ellos):
 
-| Tipo (`plan`) | Coaches (`max_coaches`) | Clientes (`max_clientes`) | Precio | Para |
-|---------------|-------------------------|---------------------------|--------|------|
-| `prueba` | 3 | 15 | gratis 14 días | que lo pruebe |
-| `red` | 8 | 100 | $X/mes | red chica/media |
-| `red_pro` | ilimitado (NULL) | ilimitado (NULL) | $Y/mes | red grande + white-label |
+| Tipo (`plan`) | Coaches (`max_coaches`) | Clientes (`max_clientes`) | Precio |
+|---------------|-------------------------|---------------------------|--------|
+| `boutique` | 3 | 45 | $149/mes |
+| `studio` | 8 | 120 | $249/mes |
+| `pro` | ilimitado (NULL) | ilimitado (NULL) | $399+/mes |
 
-`max_coaches`/`max_clientes` en NULL = ilimitado. El `multicoach.html` avisa y
-bloquea el alta al llegar al tope ("llegaste a tus 3 coaches"). El precio es
-externo (Stripe), como con los coaches.
+`max_coaches`/`max_clientes` en NULL = ilimitado (~15 clientes por coach). El
+`multicoach.html` avisa y bloquea el alta al llegar al tope ("llegaste a tus 3
+coaches"). El precio es externo (Stripe). Todos arrancan con prueba de N días
+(la elige el admin al dar de alta).
+
+### Beneficios por plan (propuesta — más allá de los cupos)
+
+Los cupos (coaches/clientes) los enforcea el sistema HOY. Los demás beneficios
+se gatean a medida que se construye cada feature (marcar acá cuál está activo).
+
+| Beneficio | Boutique | Studio | Pro |
+|-----------|:--------:|:------:|:---:|
+| Panel del dueño (ver red, asignar clientes) | ✅ | ✅ | ✅ |
+| White-label (logo + colores en el portal) | ✅ | ✅ | ✅ |
+| Comunidad: avisos + revista | ✅ | ✅ | ✅ |
+| Recursos compartidos de la red | ✅ | ✅ | ✅ |
+| Clases / webinars de la empresa | — | ✅ | ✅ |
+| Analytics de la red (ranking, clientes en riesgo) | básico | completo | completo + agente IA semanal |
+| Nichos (fitness/carrera/finanzas) | 1 | hasta 3 | multi-nicho |
+| Soporte | email | WhatsApp prioritario | dedicado + onboarding/migración |
+| Dominio propio / subdominio | — | — | ✅ |
+| Coaches y clientes | 3 / 45 | 8 / 120 | ilimitado |
 
 ## Mapa de archivos (canónico vs a retirar)
 

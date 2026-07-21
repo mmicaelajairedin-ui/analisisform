@@ -43,11 +43,15 @@ function json(body: unknown, status = 200): Response {
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-// Límites por plan. NULL = ilimitado.
+// Límites por plan. NULL = ilimitado. (~15 clientes por coach.)
+//   boutique $149 → 3 coaches / 45 clientes
+//   studio   $249 → 8 coaches / 120 clientes
+//   pro      $399+ → ilimitado / ilimitado
 function planLimits(plan: string): { max_coaches: number | null; max_clientes: number | null } {
   if (plan === "pro") return { max_coaches: null, max_clientes: null };
+  if (plan === "studio") return { max_coaches: 8, max_clientes: 120 };
   // boutique (default)
-  return { max_coaches: 3, max_clientes: 15 };
+  return { max_coaches: 3, max_clientes: 45 };
 }
 
 // Resuelve el JWT del que llama → email verificado por Supabase Auth.
@@ -107,7 +111,7 @@ Deno.serve(async (req: Request) => {
   const nombre = (body.nombre || "").toString().trim();
   const nombreRed = (body.nombre_red || "").toString().trim();
   const nicho = (body.nicho || "carrera").toString().trim() || "carrera";
-  const plan = (body.plan === "pro") ? "pro" : "boutique";
+  const plan = (body.plan === "pro" || body.plan === "studio") ? body.plan : "boutique";
   const lim = planLimits(plan);
   const diasN = parseInt(String(body.dias ?? "14"), 10);
   const dias = Math.max(1, Math.min(365, isNaN(diasN) ? 14 : diasN));
