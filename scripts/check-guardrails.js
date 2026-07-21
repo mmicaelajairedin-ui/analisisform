@@ -1536,6 +1536,29 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: el dueño suspende/quita coaches (edge function, libera clientes)",
+    bug: "El dueño suspende, reactiva o quita a un coach de su red. Escritura " +
+         "privilegiada (activo/org_id de usuarios + liberar candidatos) → edge " +
+         "function eliminar-coach-red (service role, gateada al owner, verifica que " +
+         "el coach es de su org). 'quitar' libera a sus clientes (coach_id=null) y " +
+         "no borra la cuenta. Ver docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function quitarCoach\(/.test(mc) || !/function _coachAction\(/.test(mc)) return "multicoach.html: falta quitarCoach/_coachAction.";
+      if (!/functions\/v1\/eliminar-coach-red/.test(mc)) return "multicoach.html: ya no llama a eliminar-coach-red (¿volvió a solo-demo?).";
+      const fn = read("supabase/functions/eliminar-coach-red/index.ts");
+      if (!fn) return "falta supabase/functions/eliminar-coach-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "eliminar-coach-red: ya no usa service role.";
+      if (!/not_owner/.test(fn) || !/auth\/v1\/user/.test(fn)) return "eliminar-coach-red: perdió el gate del owner.";
+      if (!/coachInOrg/.test(fn)) return "eliminar-coach-red: ya no verifica que el coach es de la org.";
+      if (!/coach_id:\s*null/.test(fn)) return "eliminar-coach-red: 'quitar' ya no libera a los clientes (coach_id=null).";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy eliminar-coach-red/.test(wf)) return "deploy-functions.yml: falta desplegar eliminar-coach-red.";
+      return null;
+    },
+  },
+  {
     name: "multicoach: el dueño suma coaches con el tope del plan (edge function)",
     bug: "El dueño suma coaches a su red. Es alta privilegiada (usuarios rol='coach' " +
          "con org_id) → va por la edge function agregar-coach-red (service role, " +

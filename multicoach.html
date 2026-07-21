@@ -1299,7 +1299,8 @@ function _renderCoachFicha(){
   +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
    +'<button class="cp-btn cp-btn-ghost" onclick="__toast(\'Mensaje enviado a '+c.n+' ✓\')"><span class="cp-emo">✉️</span> Enviar mensaje</button>'
    +'<button class="cp-btn cp-btn-ghost" onclick="__toast(\'Abriendo WhatsApp…\')"><span class="cp-emo">📱</span> WhatsApp</button>'
-   +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" onclick="toggleCoach(\''+c.id+'\')">'+(c.est==='activo'?'Suspender '+DET().coachSing.toLowerCase():'Reactivar '+DET().coachSing.toLowerCase())+'</button></div>'
+   +'<button class="cp-btn cp-btn-ghost" onclick="toggleCoach(\''+c.id+'\')">'+(c.est==='activo'?'Suspender '+DET().coachSing.toLowerCase():'Reactivar '+DET().coachSing.toLowerCase())+'</button>'
+   +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" onclick="quitarCoach(\''+c.id+'\')"><span class="cp-emo">🗑️</span> Quitar de la red</button></div>'
   +'</aside>';
  v.innerHTML='<header class="cp-topbar" style="align-items:center">'
    +'<div style="display:flex;align-items:center;gap:16px;min-width:0"><div class="cp-cli-av" title="Arrastra una foto" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_avatarDrop(event,\'coach\')">'+_img(c)+c.ini+'</div>'
@@ -1310,10 +1311,34 @@ function _renderCoachFicha(){
    +'<div class="cp-ficha-layout3">'+menuV+'<div class="cp-cfg-panel">'+_coachBody(c,t)+'</div>'+rail+'</div>';
 }
 function esNutriCoach(c){return c.nicho==='nutricion';}
+// Suspender / reactivar / quitar coach. En real va por eliminar-coach-red
+// (service role, gateada al owner); en demo aplica local.
+function _coachAction(id,modo,cb){
+ var c=_coach(id); if(!c)return;
+ function _localApply(){
+  if(modo==='suspender')c.est='inactivo';
+  else if(modo==='reactivar')c.est='activo';
+  else if(modo==='quitar'){ (DB.clientes||[]).forEach(function(k){ if(String(k.coach)===String(id))k.coach=''; }); DB.coaches=(DB.coaches||[]).filter(function(x){return String(x.id)!==String(id);}); }
+ }
+ if(!MC_REAL){ _localApply(); cb&&cb(true,{}); return; }
+ _hdr({'Content-Type':'application/json'}).then(function(h){
+  return fetch(SB+'/functions/v1/eliminar-coach-red',{method:'POST',headers:h,body:JSON.stringify({coach_id:id,modo:modo})});
+ }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
+  if(!res.ok||!res.d.ok){ __toast(res.d.error==='not_owner'?'Tu sesión no está activa — reingresá':'No se pudo. Reintentá'); cb&&cb(false); return; }
+  _localApply(); cb&&cb(true,res.d);
+ }).catch(function(){ __toast('Error de conexión. Reintentá'); cb&&cb(false); });
+}
 function toggleCoach(id){
  var c=_coach(id);if(!c)return;
- if(c.est==='activo'){var suyos=DB.clientes.filter(function(k){return k.coach===id&&k.est==='activo';});__openModal('Suspender a '+c.n,'<p style="font-size:13.5px;color:var(--soft);margin:0;line-height:1.5">'+(suyos.length?'Tiene <b>'+suyos.length+' clientes activos</b>. Puedes reasignarlos luego desde cada ficha. ':'')+'¿Suspender a este coach?</p>','Suspender',function(){c.est='inactivo';__mclose();__toast(c.n+' suspendido');fichaCoach(id);});}
- else{c.est='activo';__toast(c.n+' reactivado ✓');fichaCoach(id);}
+ if(c.est==='activo'){var suyos=DB.clientes.filter(function(k){return String(k.coach)===String(id)&&k.est==='activo';});__openModal('Suspender a '+c.n,'<p style="font-size:13.5px;color:var(--soft);margin:0;line-height:1.5">'+(suyos.length?'Tiene <b>'+suyos.length+' clientes activos</b> (siguen con él, pero pierde acceso al panel). ':'')+'¿Suspender a este coach?</p>','Suspender',function(){_coachAction(id,'suspender',function(ok){if(ok){__mclose();__toast(c.n+' suspendido');fichaCoach(id);}});});}
+ else{_coachAction(id,'reactivar',function(ok){if(ok){__toast(c.n+' reactivado ✓');fichaCoach(id);}});}
+}
+function quitarCoach(id){
+ var c=_coach(id);if(!c)return;
+ var suyos=DB.clientes.filter(function(k){return String(k.coach)===String(id);});
+ __openModal('Quitar a '+c.n+' de la red','<p style="font-size:13.5px;color:var(--soft);margin:0;line-height:1.5">'+(suyos.length?'Sus <b>'+suyos.length+' clientes</b> quedan <b>sin coach</b> para que los reasignes. ':'')+'Sale de tu red y se libera un lugar del cupo. Su cuenta no se borra. ¿Continuar?</p>','Quitar de la red',function(){
+  _coachAction(id,'quitar',function(ok,d){ if(ok){ __mclose(); __toast(c.n+' quitado de la red'+(d&&d.liberados?' · '+d.liberados+' clientes liberados':'')); mcApplyNiche(); renderCoaches(); } });
+ });
 }
 // Modal de éxito con el link de activación (el dueño se lo manda al coach).
 function _mcCoachLink(nombre,email){
