@@ -263,6 +263,13 @@ body{margin:0;font-family:var(--sans);color:var(--carbon);background:var(--bg);-
 .cp-client{background:#fff;border:1px solid var(--pw-border);border-radius:16px;padding:16px 18px 14px;box-shadow:var(--pw-shadow-xs);display:flex;flex-direction:column;gap:12px;cursor:pointer;transition:all .2s var(--pw-ease)}
 .cp-client:hover{transform:translateY(-2px);box-shadow:var(--pw-shadow-md);border-color:var(--pw-border-strong)}
 .cp-client.off{opacity:.55}
+/* Arrastrar un coach a un cliente para asignarlo (tira de coaches + destino). */
+.mc-coachstrip{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:2px 0 12px;padding:10px 12px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:var(--sh)}
+.mc-cs-lbl{font-size:11.5px;color:var(--muted);margin-right:2px}
+.mc-cchip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px 5px 5px;border:1px solid var(--border);border-radius:100px;background:var(--bg);font-size:12px;font-weight:600;color:var(--carbon);cursor:grab;user-select:none}
+.mc-cchip:active{cursor:grabbing}
+.mc-cchip-av{width:22px;height:22px;border-radius:50%;background:#EEF2ED;color:#667068;display:grid;place-items:center;font-size:10px;font-weight:700}
+.cp-client.drop-on{outline:2px dashed var(--sendero);outline-offset:2px;background:var(--pw-niebla-2)}
 .cp-client-head{display:flex;align-items:center;gap:11px}
 .cp-client-photo{width:44px;height:44px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:15px;overflow:hidden;position:relative;background:linear-gradient(135deg,var(--sendero),var(--bosque))}
 .cp-client-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
@@ -778,6 +785,20 @@ function __sel(id,opts){return '<select id="'+id+'" class="inp">'+opts.map(funct
 function __openModal(title,body,ok,onOk){__mclose();var ov=document.createElement('div');ov.id='__modal';ov.className='modalov';ov.innerHTML='<div class="modal"><div class="mh">'+title+'</div><div class="mb">'+body+'</div><div class="mf"><button class="mbtn g" id="__mc">Cancelar</button><button class="mbtn p" id="__mo">'+ok+'</button></div></div>';document.body.appendChild(ov);ov.addEventListener('click',function(e){if(e.target===ov)__mclose();});document.getElementById('__mc').onclick=__mclose;document.getElementById('__mo').onclick=onOk;}
 function __act(icon,bg,titulo,sub){var box=document.getElementById('actividad');var el=document.createElement('div');el.className='row';el.innerHTML='<div class="av" style="background:'+bg+'"><span class="emo">'+icon+'</span></div><div><div class="nm">'+titulo+'</div><div class="sub">'+sub+' · recién</div></div>';box.insertBefore(el,box.firstChild);}
 function __nuevoCliente(){var cs=DB.coaches.filter(function(c){return c.est==='activo';});__openModal('Nuevo cliente',__inp('nc-n','Nombre y apellido')+__inp('nc-e','email@cliente.com')+'<div><span class="lbl">Coach</span><select id="nc-c" class="inp">'+cs.map(function(c){return '<option value="'+c.id+'">'+c.n+'</option>';}).join('')+'</select></div>','Agregar',function(){var n=document.getElementById('nc-n').value.trim();if(!n)return;var cid=document.getElementById('nc-c').value;var c=_coach(cid);DB.clientes.push({id:'k'+(DB.clientes.length+1)+'x',n:n,ini:_ini(n),nicho:(c?c.nicho:'entreno'),coach:cid,est:'activo',prog:'Onboarding',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién'});if(c)c.cli++;__act('➕','var(--bosque)','Nuevo cliente: '+n,'Asignado a '+(c?c.n:''));__mclose();__toast('Cliente '+n+' agregado ✓');if(_sec==='clientes')_fillClientes();else if(_sec==='coaches')renderCoaches();});}
+// Reasigna un cliente a un coach (compartido: dropdown de la ficha, drag y el
+// modal). En real va por la edge function asignar-cliente; en demo es local.
+function _reassign(cliId,coachId,cb){
+  var cli=_cli(cliId), co=_coach(coachId); if(!cli||!co){ cb&&cb(false); return; }
+  if(String(cli.coach)===String(coachId)){ cb&&cb(true); return; } // ya es su coach
+  function _local(){ var prev=cli.coach; cli.coach=coachId; var pc=_coach(prev); if(pc&&pc.cli>0)pc.cli--; co.cli=(co.cli||0)+1; }
+  if(!MC_REAL){ _local(); __toast(cli.n+' → '+co.n+' ✓'); cb&&cb(true); return; }
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    return fetch(SB+'/functions/v1/asignar-cliente',{method:'POST',headers:h,body:JSON.stringify({cliente_id:cliId,coach_id:coachId})});
+  }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
+    if(!res.ok||!res.d.ok){ __toast(res.d.error==='not_owner'?'Tu sesión no está activa — reingresá':'No se pudo asignar. Reintentá'); cb&&cb(false); return; }
+    _local(); __toast(cli.n+' → '+co.n+' ✓'); cb&&cb(true);
+  }).catch(function(){ __toast('Error de conexión. Reintentá'); cb&&cb(false); });
+}
 function __asignarCoach(){
   var sing=DET().coachSing;
   var cls=(DB.clientes||[]), cos=(DB.coaches||[]).filter(function(c){return c.est==='activo';});
@@ -1077,10 +1098,19 @@ function _focusEnd(id){var el=document.getElementById(id);if(el){var v=el.value;
 function _nicheHd(ni,n){return '<div class="nichehd"><span class="ne">'+ni.emo+'</span>'+ni.lbl+'<span class="nc">'+n+'</span></div>';}
 
 /* tarjeta de CLIENTE — misma que el panel */
+// Drag coach → cliente (asignar arrastrando). Solo real; en mobile se usa el
+// dropdown de la ficha. _dragCoach guarda el coach que se está arrastrando.
+var _dragCoach=null;
+function _dragCoachStart(e,id){ _dragCoach=id; try{ e.dataTransfer.setData('text/plain',id); e.dataTransfer.effectAllowed='move'; }catch(_){ } }
+function _dragCoachEnd(){ _dragCoach=null; }
+function _cliDragOver(e){ if(!_dragCoach)return; e.preventDefault(); e.currentTarget.classList.add('drop-on'); }
+function _cliDragLeave(e){ e.currentTarget.classList.remove('drop-on'); }
+function _cliDrop(e,cliId){ e.preventDefault(); e.currentTarget.classList.remove('drop-on'); var co=_dragCoach||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); _dragCoach=null; if(!co)return; _reassign(cliId,co,function(ok){ if(ok&&_sec==='clientes')_fillClientes(); }); }
 function _clientCard(k){
  var c=_coach(k.coach);var off=(k.est!=='activo');
  var dots=[1,2,3,4].map(function(w){var cls=w<k.week?'is-done':(w===k.week?'is-current':'');return '<span class="cp-week-dot '+cls+'"></span>';}).join('');
- return '<article class="cp-client'+(off?' off':'')+'" onclick="fichaCliente(\''+k.id+'\')">'
+ var drop=MC_REAL?(' data-cli="'+k.id+'" ondragover="_cliDragOver(event)" ondragleave="_cliDragLeave(event)" ondrop="_cliDrop(event,\''+k.id+'\')"'):'';
+ return '<article class="cp-client'+(off?' off':'')+'"'+drop+' onclick="fichaCliente(\''+k.id+'\')">'
   +'<header class="cp-client-head"><div class="cp-client-photo">'+_img(k)+k.ini+'</div>'
    +'<div class="cp-client-id"><div class="cp-client-name">'+k.n+'</div><div class="cp-client-role">'+(c?c.n:'Sin coach')+' · '+k.prog+'</div></div></header>'
   +'<div class="cp-client-last is-'+k.lastState+'">Última actividad · '+k.ult+'</div>'
@@ -1102,12 +1132,22 @@ function _coachCard(c){
 }
 
 /* --- CLIENTES --- */
+// Tira de coaches arrastrables (real + desktop). En mobile no molesta: se usa
+// el dropdown de la ficha para cambiar de coach.
+function _coachStrip(){
+ if(!MC_REAL)return '';
+ var act=(DB.coaches||[]).filter(function(c){return c.est==='activo';});
+ if(!act.length)return '';
+ return '<div class="mc-coachstrip"><span class="mc-cs-lbl">Arrastrá un coach sobre un cliente para asignarlo →</span>'+
+  act.map(function(c){return '<div class="mc-cchip" draggable="true" ondragstart="_dragCoachStart(event,\''+c.id+'\')" ondragend="_dragCoachEnd()"><span class="mc-cchip-av">'+c.ini+'</span>'+_mcEsc(c.n.split(" ")[0])+'</div>';}).join('')+'</div>';
+}
 function _countK(f){return DB.clientes.filter(function(k){if(f==='activo')return k.est==='activo';if(f==='inactivo')return k.est!=='activo';if(f==='riesgo')return k.est==='activo'&&k.lastState!=='fresh';return true;}).length;}
 function renderClientes(){
  var v=document.getElementById('vscroll');
  var chips=[['todos','Todos'],['activo','Activos'],['riesgo','Sin actividad'],['inactivo','Inactivos']];
  v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+_countK('activo')+' activos</p></div><button class="crear" onclick="__nuevoCliente()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo cliente</button></header>'
   +'<div class="searchbar"><input id="kq" class="inp" placeholder="Buscar por nombre o coach…" oninput="_ks=this.value;_fillClientes()" value="'+_ks+'"></div>'
+  +_coachStrip()
   +'<div class="cp-filters" id="kchips">'+chips.map(function(c){return '<button class="cp-chip'+(_kf===c[0]?' is-on':'')+'" data-f="'+c[0]+'" onclick="_setKf(\''+c[0]+'\')">'+c[1]+'<span class="cp-chip-count">'+_countK(c[0])+'</span></button>';}).join('')+'</div>'
   +'<div id="klist"></div>';
  _fillClientes();_focusEnd('kq');
@@ -1129,12 +1169,21 @@ var _curCli=null,_cliTab='perfil';
 function fichaCliente(id){_curCli=id;_cliTab='perfil';_renderFicha();}
 function _goCliTab(t){_cliTab=t;_renderFicha();}
 function _info(k,v){return '<div class="cp-info"><div class="k">'+k+'</div><div class="v">'+(v||'—')+'</div></div>';}
+// Celda del coach en la ficha del cliente: en real es un dropdown para
+// CAMBIAR de coach al instante; en demo es texto.
+function _coachCell(k){
+ var c=_coach(k.coach), sing=DET().coachSing;
+ var act=(DB.coaches||[]).filter(function(x){return x.est==='activo';});
+ if(!MC_REAL||!act.length) return _info(sing,c?c.n:'Sin coach');
+ var opts=(k.coach?'':'<option value="" selected>Sin coach</option>')+act.map(function(x){return '<option value="'+x.id+'"'+(String(x.id)===String(k.coach)?' selected':'')+'>'+_mcEsc(x.n)+'</option>';}).join('');
+ return '<div class="cp-info"><div class="k">'+sing+'</div><div class="v"><select class="inp" style="height:30px;padding:0 6px;font-size:12.5px;font-weight:600" onchange="if(this.value)_reassign(\''+k.id+'\',this.value,function(ok){if(ok)_renderFicha();})">'+opts+'</select></div></div>';
+}
 function _bars(rows){return rows.map(function(r){return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:28px;font-size:11px;color:var(--pw-text-soft)">'+r[0]+'</span><div style="flex:1;height:8px;border-radius:5px;background:var(--pw-niebla-3);overflow:hidden"><i style="display:block;height:100%;width:'+r[1]+'%;background:var(--pw-bosque);border-radius:5px"></i></div><span style="width:34px;text-align:right;font-size:11px;font-weight:600;color:var(--pw-carbon)">'+r[1]+'%</span></div>';}).join('');}
 function _visBar(lbl){return '<div class="cp-card cp-card-pad" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="font-size:12.5px;color:var(--pw-text-soft)">'+lbl+' en el portal del cliente</div><span style="display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--pw-text-soft)">El cliente lo ve<button class="cp-switch is-on" onclick="this.classList.toggle(\'is-on\');__toast(this.classList.contains(\'is-on\')?\'Visible para el cliente\':\'Oculto para el cliente\')"><span></span></button></span></div>';}
 function _cliBody(k,c,t){
  if(t==='perfil'){
   return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Datos del cliente<span class="dot">.</span></h3>'
-   +'<div class="cp-infogrid">'+_info(DET().coachSing,c?c.n:'—')+_info('Programa',k.prog)+_info('Semana','Sem '+k.week+'/4')+_info('Última actividad',k.ult)+_info('Estado',k.est==='activo'?'Activo':'Inactivo')+_info('Área',_areaLbl(k.nicho))+'</div></div>'
+   +'<div class="cp-infogrid">'+_coachCell(k)+_info('Programa',k.prog)+_info('Semana','Sem '+k.week+'/4')+_info('Última actividad',k.ult)+_info('Estado',k.est==='activo'?'Activo':'Inactivo')+_info('Área',_areaLbl(k.nicho))+'</div></div>'
    +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Constancia del mes<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 12px">% de días con actividad registrada.</div>'+_bars([['Abr',62],['May',74],['Jun',80],['Jul',68]])+'</div>';
  }
  if(t==='plan'){
