@@ -184,7 +184,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (!SB_URL || !SERVICE) return json({ error: "env_missing" }, 500);
 
-  let body: { action?: string; email?: string; token?: string; password?: string; welcome?: boolean; coach_name?: string; coach_email?: string; coach_photo?: string; coach_slug?: string };
+  let body: { action?: string; email?: string; token?: string; password?: string; welcome?: boolean; name?: string; coach_name?: string; coach_email?: string; coach_photo?: string; coach_slug?: string };
   try {
     body = await req.json();
   } catch {
@@ -197,21 +197,39 @@ Deno.serve(async (req: Request) => {
 
   // ── REQUEST ───────────────────────────────────────────────────────────────
   if (action === "request") {
-    // Buscar el usuario. Si no existe, igual devolvemos ok (no revelar).
-    let user: { nombre?: string } | null = null;
-    try {
-      const r = await fetch(
-        `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=id,nombre&limit=1`,
-        { headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` } },
-      );
-      if (r.ok) {
-        const rows = await r.json();
-        if (Array.isArray(rows) && rows.length) user = rows[0];
-      }
-    } catch {
-      // best-effort
+    const lookupUser = async (): Promise<{ nombre?: string } | null> => {
+      try {
+        const r = await fetch(
+          `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=id,nombre&limit=1`,
+          { headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` } },
+        );
+        if (r.ok) {
+          const rows = await r.json();
+          if (Array.isArray(rows) && rows.length) return rows[0];
+        }
+      } catch { /* best-effort */ }
+      return null;
+    };
+    let user = await lookupUser();
+
+    // Bienvenida (alta de cliente): si el usuario aún NO existe, lo creamos acá con
+    // el SERVICE role. Antes dependíamos del INSERT anon del panel, que RLS bloquea
+    // → la fila no se creaba, la función no encontraba al usuario y NUNCA mandaba el
+    // email (el fallo se tragaba en silencio). Ésa era la causa de "la invitación no
+    // llega". Ahora la cuenta se garantiza acá y la invitación SIEMPRE se manda.
+    if (!user && body.welcome === true) {
+      try {
+        const ph = await sha256Hex(randomToken() + email);
+        await fetch(`${SB_URL}/rest/v1/usuarios`, {
+          method: "POST",
+          headers: { ...svcHeaders, Prefer: "return=minimal,resolution=ignore-duplicates" },
+          body: JSON.stringify({ email, password_hash: ph, rol: "cliente", nombre: (body.name || "").toString().trim(), activo: true }),
+        });
+      } catch { /* best-effort */ }
+      user = await lookupUser(); // re-consultar (recién creado, o por carrera con el panel)
     }
 
+    let sent = false;
     if (user) {
       const token = randomToken();
       const tokenHash = await sha256Hex(token);
@@ -224,15 +242,18 @@ Deno.serve(async (req: Request) => {
         });
         const link = `${BASE}/recuperar-password.html?token=${token}&email=${encodeURIComponent(email)}`;
         if (body.welcome === true) {
-          await sendWelcomeEmail(email, user.nombre || "", link, (body.coach_name || "").toString(), (body.coach_email || "").toString(), (body.coach_photo || "").toString(), (body.coach_slug || "").toString());
+          await sendWelcomeEmail(email, user.nombre || (body.name || "").toString().trim(), link, (body.coach_name || "").toString(), (body.coach_email || "").toString(), (body.coach_photo || "").toString(), (body.coach_slug || "").toString());
         } else {
           await sendResetEmail(email, user.nombre || "", link);
         }
+        sent = true;
       } catch {
-        // best-effort — no revelamos el fallo
+        // best-effort — no revelamos el detalle, pero sí si se mandó o no (abajo)
       }
     }
-    return json({ ok: true });
+    // Devolvemos `sent` para que el panel pueda avisar al coach si la invitación
+    // realmente salió (antes siempre decía "ok" aunque no mandara nada).
+    return json({ ok: true, sent });
   }
 
   // ── CONFIRM ─────────────────────────────────────────────────────────────────
