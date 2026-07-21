@@ -45,15 +45,19 @@ function capturarErrores(page) {
   return errores;
 }
 
-// Verifica que renderizó una app real: no quedó en el login, hay UI interactiva
-// y contenido sustancial. Una página en blanco o de error no tiene botones.
+// Verifica que renderizó una app real. La plataforma es un SPA: primero pinta el
+// cascarón y DESPUÉS carga datos y renderiza. Por eso ESPERAMOS (poll) a que haya
+// contenido sustancial, en vez de sacar una foto instantánea apenas aparece el
+// primer botón (que daba falsos negativos: "quedó casi vacío" con 51 chars). Si
+// tras 15s sigue casi vacío → ahí sí es un panel roto y el test falla.
 async function verificarRender(page) {
   expect(page.url(), 'Quedó en el login → credenciales o sesión fallaron').not.toContain('login.html');
-  await page.locator('button, a[href], [role="button"]').first().waitFor({ state: 'visible', timeout: 20000 });
+  await expect.poll(
+    async () => ((await page.locator('body').innerText().catch(() => '')) || '').trim().length,
+    { timeout: 15000, message: 'El portal no cargó contenido (quedó casi vacío tras 15s)' },
+  ).toBeGreaterThan(120);
   const interactivos = await page.locator('button, a[href], [role="button"]').count();
   expect(interactivos, 'No renderizó UI (sin botones ni links)').toBeGreaterThan(0);
-  const texto = (await page.locator('body').innerText().catch(() => '')) || '';
-  expect(texto.trim().length, 'Quedó casi vacío').toBeGreaterThan(120);
 }
 
 // Recorre las secciones del panel del coach clickeando el sidebar. Best-effort:
@@ -69,12 +73,12 @@ async function navegarPanel(page) {
 // Entra por login.html. El submit se dispara con Enter en el password (login.html
 // tiene onkeydown → entrar()); NO clickeamos el botón porque tiene una animación
 // (.beacon) que lo vuelve "no estable" para Playwright y el click se cuelga.
-async function entrar(page, email, password) {
+async function entrar(page, email, password, urlPat) {
   await page.goto(`${BASE}login.html`, { waitUntil: 'domcontentloaded' });
   await page.fill('#email', email);
   await page.fill('#password', password);
   await Promise.all([
-    page.waitForURL(/panel-v2|empleado|cliente|pathway-(fit|fin)-cliente|multicoach|empresa/i, { timeout: 25000 }),
+    page.waitForURL(urlPat || /panel-v2|empleado|cliente|pathway-(fit|fin)-cliente|multicoach|empresa/i, { timeout: 25000 }),
     page.locator('#password').press('Enter'),
   ]);
 }
@@ -100,6 +104,21 @@ test.describe('🤖 Bot de usuaria — recorre cada panel', () => {
 // Chequeamos que cargue y renderice sin errores. (El recorrido logueado del
 // dueño del gym se suma cuando esté lista su cuenta de empresa.)
 test.describe('🏋️ Panel multi-coach (gym) — carga y renderiza', () => {
+  test('Dueño del gym entra y ve su red (si hay credenciales)', async ({ page }) => {
+    const email = process.env.TEST_GYM_EMAIL;
+    const password = process.env.TEST_GYM_PASSWORD;
+    test.skip(!email || !password, 'Sin TEST_GYM_EMAIL/PASSWORD — se saltea');
+
+    const errores = capturarErrores(page);
+    await entrar(page, /** @type {string} */(email), /** @type {string} */(password), /multicoach|empresa|panel-v2/i);
+    // Si el login lo dejó en el panel del coach, vamos a su multicoach.
+    if (!/multicoach|empresa/i.test(page.url())) {
+      await page.goto(`${BASE}multicoach.html`, { waitUntil: 'domcontentloaded' });
+    }
+    await verificarRender(page);
+    expect(errores, 'Errores de JS en el panel multi-coach:\n' + errores.join('\n')).toHaveLength(0);
+  });
+
   test('multicoach.html carga y renderiza sin errores de JS', async ({ page }) => {
     const errores = capturarErrores(page);
     await page.goto(`${BASE}multicoach.html`, { waitUntil: 'domcontentloaded' });
