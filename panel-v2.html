@@ -1828,7 +1828,7 @@ function cliSolTabs(active){
 // El % depende de cuántos clientes pagos (de Pathway) ya tiene el coach.
 function _pwTierRate(n){ if(n<=5)return 5; if(n<=15)return 10; if(n<=30)return 15; return 18; }
 function _pwCoachRate(){ var n=0; try{ n=(CLIENTS||[]).filter(function(c){return c&&c.source==="pathway";}).length; }catch(e){} return _pwTierRate(n+1); }
-function viewSolicitudes(){
+function viewSolicitudes(embedded){
   var SOL = (REAL ? (RSOL||[]) : [
     { id:"demo1", candidato_nombre:"Lucía Fernández", candidato_email:"lucia.f@email.com", servicio:"mentoria", monto:400, comision:80, estado:"autorizada", created_at:new Date(Date.now()-3*3600000).toISOString(), expires_at:new Date(Date.now()+21*3600000).toISOString() },
     { id:"demo2", candidato_nombre:"Marco Díaz", candidato_email:"marco.d@email.com", servicio:"sesion", monto:120, comision:24, estado:"autorizada", created_at:new Date(Date.now()-20*3600000).toISOString(), expires_at:new Date(Date.now()+4*3600000).toISOString() },
@@ -1994,11 +1994,15 @@ function viewSolicitudes(){
   function _stat(n,lbl,col){ return "<div style='flex:1;min-width:84px;text-align:center'><div style='font-family:var(--pw-sans);font-size:26px;font-weight:700;letter-spacing:-.8px;color:"+col+"'>"+n+"</div><div style='font-size:10.5px;color:var(--pw-text-soft);text-transform:uppercase;letter-spacing:.5px;margin-top:2px'>"+lbl+"</div></div>"; }
   var statsCard="<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:12px;flex-wrap:wrap'>"+
     _stat(nPend,"Pendientes","#8E7A35")+_stat(nAcc,"Aceptadas","var(--pw-bosque)")+_stat(nRej,"Rechazadas","var(--pw-danger)")+"</div></div>";
-  return "<header class='cp-topbar'><div><h1 class='cp-h1'>Solicitudes<span class='dot'>.</span></h1>"+
-      "<div class='cp-sub'>Compras y consultas que te llegan desde tu perfil de Pathway.</div></div></header>"+
-    cliSolTabs("sol")+ statsCard +
+  var _body = statsCard +
     "<div class='cp-reassurance' style='margin:0 0 4px'>El candidato <strong>paga primero</strong> (tarjeta retenida, todavía no se le cobra). Tienes <strong>24 h</strong>: si <strong>aceptas</strong>, cobras directo y Pathway retiene una <strong>comisión escalonada (desde 5%)</strong>; si rechazas o expira, no se le cobra. Tus clientes propios no pasan por aquí (0% comisión).</div>"+
     splitHtml + waitHtml + histHtml;
+  // Modo embebido: Solicitudes vive DENTRO de la página de Clientes (mismo scroll),
+  // así que devolvemos solo el cuerpo, sin cabecera ni pestañas propias.
+  if(embedded) return _body;
+  return "<header class='cp-topbar'><div><h1 class='cp-h1'>Solicitudes<span class='dot'>.</span></h1>"+
+      "<div class='cp-sub'>Compras y consultas que te llegan desde tu perfil de Pathway.</div></div></header>"+
+    cliSolTabs("sol")+ _body;
 }
 // Las consultas (estado="mensaje") ahora viven dentro de viewSolicitudes,
 // en la misma bandeja que las compras. Ya no hay vista de Mensajes aparte.
@@ -4507,7 +4511,11 @@ function viewClientes(){
       "<div class='cp-sub'>"+sub+"</div></div>"+
       "<div class='cp-topbar-actions'><div class='cp-search'>"+svg(IC.search,14)+
         "<input id='cp-cli-search' placeholder='Buscar por nombre o email…'></div></div></header>"+
-    cliSolTabs("clientes")+
+    // Solicitudes de Pathway EN LA MISMA página (no una vista aparte): arriba de
+    // la grilla, solo cuando hay algo (en demo siempre, para mostrar el marketplace).
+    ((!REAL || (typeof RSOL!=="undefined" && RSOL && RSOL.length))
+      ? "<section style='margin:0 0 18px'><h3 class='cp-card-title' style='margin:0 0 10px'><span class='cp-emo'>📨</span> Solicitudes de Pathway<span class='dot'>.</span></h3>"+viewSolicitudes(true)+"</section>"
+      : "")+
     banner+
     linksCard()+
     "<div class='cp-filters cp-cli-filters'>"+
@@ -7485,7 +7493,7 @@ document.addEventListener("click", function(ev){
     state.inboxOpen=false; state.section="clientes"; state.clienteSel=igid; state.cliDetTab="mensajes"; state.cliWeek=null;
     render(); window.scrollTo(0,0); return;
   }
-  if(act.indexOf("nav:")===0){ state.section = act.slice(4); render(); window.scrollTo(0,0); if(state.section==="solicitudes") syncSolicitudes(); return; }
+  if(act.indexOf("nav:")===0){ state.section = act.slice(4); render(); window.scrollTo(0,0); if(state.section==="solicitudes"||state.section==="clientes") syncSolicitudes(); return; }
   if(act.indexOf("cli:")===0){ state.cliFilter = act.slice(4); render(); return; }
   if(act.indexOf("cfg:")===0){ state.cfg = act.slice(4); render(); return; }
   if(act==="pub-toggle"){
@@ -7825,7 +7833,7 @@ document.addEventListener("click", function(ev){
   }
   if(act==="chat-newcli"){ state.chatPicker=true; render(); return; }
   if(act==="chat-picker-close"){ state.chatPicker=false; render(); return; }
-  if(act==="chat-sol"){ state.ai.open=false; state.chatPicker=false; state.section="solicitudes"; render(); window.scrollTo(0,0); syncSolicitudes(); return; }
+  if(act==="chat-sol"){ state.ai.open=false; state.chatPicker=false; state.section="clientes"; render(); window.scrollTo(0,0); syncSolicitudes(); return; }
   if(act==="chat-coach-back"){
     // Volver del hilo a la bandeja del coach.
     state.aiCoachThread = null;
