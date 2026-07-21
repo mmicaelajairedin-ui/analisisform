@@ -44,9 +44,10 @@ function json(body: unknown, status = 200): Response {
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-// Resuelve el JWT del que llama → email verificado por Supabase Auth (null si
-// el token no corresponde a un usuario real, ej. es la anon key).
-async function callerEmail(token: string): Promise<string | null> {
+// Resuelve el JWT del que llama → { id (auth user id), email }. El id es el
+// vínculo ESTABLE con usuarios.auth_id (el email del login puede no coincidir
+// con el email de la ficha).
+async function callerIdentity(token: string): Promise<{ id: string; email: string } | null> {
   if (!token || token === ANON) return null;
   try {
     const r = await fetch(`${SB_URL}/auth/v1/user`, {
@@ -54,18 +55,24 @@ async function callerEmail(token: string): Promise<string | null> {
     });
     if (!r.ok) return null;
     const u = await r.json();
+    const id = (u && u.id) ? String(u.id) : "";
     const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
-    return EMAIL_RE.test(em) ? em : null;
+    if (!id && !EMAIL_RE.test(em)) return null;
+    return { id, email: EMAIL_RE.test(em) ? em : "" };
   } catch {
     return null;
   }
 }
 
-// ¿Ese email es rol='admin' en usuarios? (con service role, sin RLS).
-async function isAdmin(email: string): Promise<boolean> {
+// ¿Es admin? Matchea por auth_id (link estable) O por email (case-insensitive).
+async function isAdmin(id: string, email: string): Promise<boolean> {
+  const ors: string[] = [];
+  if (id) ors.push(`auth_id.eq.${encodeURIComponent(id)}`);
+  if (email) ors.push(`email.ilike.${encodeURIComponent(email)}`);
+  if (!ors.length) return false;
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?email=ilike.${encodeURIComponent(email)}&rol=eq.admin&select=id&limit=1`,
+      `${SB_URL}/rest/v1/usuarios?or=(${ors.join(",")})&rol=eq.admin&select=id&limit=1`,
       { headers: svc },
     );
     if (!r.ok) return false;
@@ -84,11 +91,12 @@ Deno.serve(async (req: Request) => {
   // ── Gate de admin ────────────────────────────────────────────────
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
-  const adminEmail = await callerEmail(token);
-  if (!adminEmail || !(await isAdmin(adminEmail))) {
+  const who = await callerIdentity(token);
+  if (!who || !(await isAdmin(who.id, who.email))) {
     // 403 claro: la sesión de admin no está activa / no es admin.
     return json({ error: "not_admin" }, 403);
   }
+  const adminEmail = who.email;
 
   // ── Input ────────────────────────────────────────────────────────
   let body: { email?: string; nombre?: string; dias?: number | string; nicho?: string };

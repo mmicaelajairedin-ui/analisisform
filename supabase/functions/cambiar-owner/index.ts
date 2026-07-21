@@ -27,19 +27,26 @@ function json(body: unknown, status = 200): Response {
 }
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-async function callerEmail(token: string): Promise<string | null> {
+async function callerIdentity(token: string): Promise<{ id: string; email: string } | null> {
   if (!token || token === ANON) return null;
   try {
     const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
     if (!r.ok) return null;
     const u = await r.json();
+    const id = (u && u.id) ? String(u.id) : "";
     const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
-    return EMAIL_RE.test(em) ? em : null;
+    if (!id && !EMAIL_RE.test(em)) return null;
+    return { id, email: EMAIL_RE.test(em) ? em : "" };
   } catch { return null; }
 }
-async function isAdmin(email: string): Promise<boolean> {
+// Admin por auth_id (link estable) O email (el email del login puede no coincidir con el de la ficha).
+async function isAdmin(id: string, email: string): Promise<boolean> {
+  const ors: string[] = [];
+  if (id) ors.push(`auth_id.eq.${encodeURIComponent(id)}`);
+  if (email) ors.push(`email.ilike.${encodeURIComponent(email)}`);
+  if (!ors.length) return false;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/usuarios?email=ilike.${encodeURIComponent(email)}&rol=eq.admin&select=id&limit=1`, { headers: svc });
+    const r = await fetch(`${SB_URL}/rest/v1/usuarios?or=(${ors.join(",")})&rol=eq.admin&select=id&limit=1`, { headers: svc });
     if (!r.ok) return false;
     const rows = await r.json();
     return Array.isArray(rows) && rows.length > 0;
@@ -59,8 +66,10 @@ Deno.serve(async (req: Request) => {
 
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
-  const adminEmail = await callerEmail(token);
-  if (!adminEmail || !(await isAdmin(adminEmail))) return json({ error: "not_admin" }, 403);
+  const who = await callerIdentity(token);
+  if (!who) return json({ error: "no_session" }, 403);
+  if (!(await isAdmin(who.id, who.email))) return json({ error: "not_admin", email: who.email }, 403);
+  const adminEmail = who.email;
 
   let body: { org_id?: string; nuevo_owner_id?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
