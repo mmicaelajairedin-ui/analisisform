@@ -10,7 +10,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<link rel="icon" href="/favicon-app.svg?v=3" type="image/svg+xml">
+<link rel="icon" href="/favicon-app.svg?v=4" type="image/svg+xml">
 <title>Análisis de perfil profesional</title>
 <script>
   // Gate síncrono: ?paid=1 (Stripe redirect) o ?access=<code> (manual coach)
@@ -161,7 +161,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:#FCFDFC;color:#1520
 <div id="access-gate" style="min-height:100vh;background:#FAFDF9;padding:2rem 1rem;font-family:'Inter',sans-serif;">
   <div style="max-width:480px;margin:3rem auto 0;">
     <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:2rem;">
-      <svg width="26" height="26" viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,82 32,52 54,82" fill="#52B788"/><polygon points="34,82 58,28 82,82" fill="#2D6A4F"/><circle cx="58" cy="22" r="5" fill="#E9C46A"/></svg>
+      <svg width="26" height="26" viewBox="0 0 100 100" aria-hidden="true"><polygon points="36.2,35.2 52.8,54.3 52.8,81.8 7.4,81.8" fill="#215C44"/><polygon points="67.9,45.8 92.6,81.8 43.1,81.8" fill="#267A54"/><circle cx="75.4" cy="27.8" r="10.3" fill="#F8CA45"/></svg>
       <span style="font-family:'Fraunces',Georgia,serif;font-size:22px;color:#1B2E26;font-weight:600;letter-spacing:-.8px;">pathway<span style="color:#52B788;">.</span></span>
     </div>
     <h1 style="font-family:'Fraunces',Georgia,serif;font-size:28px;font-weight:500;color:#1B2E26;letter-spacing:-1px;line-height:1.2;margin-bottom:.6rem;">Formulario privado</h1>
@@ -198,7 +198,7 @@ function checkAccessCode(){
 <div class="wrap">
   <div class="brand-top">
     <a href="/" class="brand-mark" aria-label="Volver a Pathway">
-      <svg width="22" height="22" viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,82 32,52 54,82" fill="#52B788"/><polygon points="34,82 58,28 82,82" fill="#2D6A4F"/><circle cx="58" cy="22" r="5" fill="#E9C46A"/></svg>
+      <svg width="22" height="22" viewBox="0 0 100 100" aria-hidden="true"><polygon points="36.2,35.2 52.8,54.3 52.8,81.8 7.4,81.8" fill="#215C44"/><polygon points="67.9,45.8 92.6,81.8 43.1,81.8" fill="#267A54"/><circle cx="75.4" cy="27.8" r="10.3" fill="#F8CA45"/></svg>
       <span>pathway<span style="color:#52B788;">.</span></span>
     </a>
     <div class="lang-bar">
@@ -868,11 +868,17 @@ async function enviar(){
           if(!_has){ if(PWAUTH.showLoginGate) PWAUTH.showLoginGate(); return; }
         }
       }catch(e){}
+      // Usar el JWT del cliente (PWAUTH), NO la anon key: bajo RLS el UPDATE de la
+      // propia fila se autoriza por auth.uid(); con anon no matchea nada. Y pedir
+      // return=representation para confirmar que escribió ≥1 fila (no mentir).
+      var _pHdr=(window.PWAUTH&&PWAUTH.headersSync)?PWAUTH.headersSync({'Content-Type':'application/json','Prefer':'return=representation'}):{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation'};
       saveRes=await fetch(SB_URL+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(d.email),{
         method:'PATCH',
-        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'},
+        headers:_pHdr,
         body:JSON.stringify({...d})
       });
+      if(saveRes.status===401||saveRes.status===403){ if(window.PWAUTH&&PWAUTH.showLoginGate)PWAUTH.showLoginGate(); throw new Error('Tu sesión venció. Volvé a iniciar sesión y reintentá.'); }
+      if(saveRes.ok){ var _prows=await saveRes.json().catch(function(){return null;}); if(Array.isArray(_prows)&&_prows.length===0){ throw new Error('No se pudo guardar tu perfil: tu sesión no está activa. Cerrá sesión, volvé a entrar y reintentá.'); } }
     } else {
       // Intake anónimo (pre-cuenta): INSERT con ignore-duplicates (no merge), así
       // la política RLS de INSERT anónimo alcanza sin dar UPDATE a anon. Re-envíos

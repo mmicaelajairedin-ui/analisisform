@@ -103,12 +103,23 @@ Deno.serve(async (req: Request) => {
   const coachId = (body.coach_id || "").toString().trim();
   const validCoach = /^[0-9a-f-]{32,36}$/i.test(coachId) ? coachId : "";
 
+  // El cliente HEREDA la red (org_id) de su coach: así un cliente que carga un
+  // coach de un multicoach aparece en el panel del dueño. Coach individual (sin
+  // red) → org_id queda null y nada cambia.
+  let coachOrg: string | null = null;
+  if (validCoach) {
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(validCoach)}&select=org_id&limit=1`, { headers: svc });
+      if (r.ok) { const rows = await r.json(); coachOrg = (Array.isArray(rows) && rows[0] && rows[0].org_id) || null; }
+    } catch { /* sin red */ }
+  }
+
   try {
     if (existing) {
       // UPDATE de la ficha existente (service role → sin RLS). Solo whitelist.
       // Adopta coach_id si la ficha estaba huérfana y el form trae uno válido.
       const patch = { ...fields };
-      if (!existing.coach_id && validCoach) (patch as Record<string, unknown>).coach_id = validCoach;
+      if (!existing.coach_id && validCoach) { (patch as Record<string, unknown>).coach_id = validCoach; if (coachOrg) (patch as Record<string, unknown>).org_id = coachOrg; }
       if (Object.keys(patch).length === 0) return json({ ok: true, id: existing.id, noop: true });
       const r = await fetch(
         `${SB_URL}/rest/v1/candidatos?id=eq.${encodeURIComponent(existing.id)}`,
@@ -119,7 +130,7 @@ Deno.serve(async (req: Request) => {
     } else {
       // INSERT nuevo (cliente sin ficha: se borró o el alta no la creó).
       const ins: Record<string, unknown> = { ...fields, email, activo: true };
-      if (validCoach) ins.coach_id = validCoach;
+      if (validCoach) { ins.coach_id = validCoach; if (coachOrg) ins.org_id = coachOrg; }
       if (ins.semana_activa == null) ins.semana_activa = 1;
       const r = await fetch(
         `${SB_URL}/rest/v1/candidatos`,

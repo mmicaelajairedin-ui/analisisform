@@ -27,6 +27,27 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: los helpers de fetch (_sb/_sbw) no se re-declaran como local",
+    bug: "Un `var _sb` local (el buffer de la agenda, ag-save-disp) TAPABA la " +
+         "función global _sb() en todo el scope del dispatcher de acciones → " +
+         "cualquier _sb(\"...\") ahí tiraba 'Uncaught TypeError: _sb is not a " +
+         "function' y crasheaba el panel para el usuario. Ningún helper global de " +
+         "fetch puede re-declararse como variable local (sombrea al global).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const offenders = [];
+      for (const h of ["_sb", "_sbw"]) {
+        // `function _sb(` es la definición global (OK); `var/let/const _sb =`
+        // como local la sombrea → prohibido.
+        if (new RegExp("\\b(?:var|let|const)\\s+" + h + "\\s*=", "").test(s)) offenders.push(h);
+      }
+      if (offenders.length)
+        return "panel-v2.html re-declara helper(s) de fetch como local (sombrea la función global): " + offenders.join(", ") + ".";
+      return null;
+    },
+  },
+  {
     name: "auth-callback: foto de Google se setea/refresca, respeta la propia",
     bug: "La foto del coach por Google no aparecia (se guardaba en foto_perfil " +
          "y el panel lee foto_url). La de Google se setea si no tiene foto Y se " +
@@ -420,6 +441,54 @@ const RULES = [
       if (!m) return "no se encontro el INSERT de candidatos del alta de cliente";
       return m[1] === "ignore" ? null
         : "el alta de cliente usa merge-duplicates (debe ser ignore-duplicates bajo RLS estricto)";
+    },
+  },
+  {
+    name: "helpers de escritura verifican el guardado (no return=minimal mentiroso bajo RLS)",
+    bug: "Con RLS activo, un PATCH/POST sin sesión válida no matchea filas y con " +
+         "return=minimal devuelve 2xx r.ok=true → los helpers mostraban 'guardado ✓' " +
+         "sin escribir (pérdida silenciosa de datos del usuario). Los helpers centrales " +
+         "(_sbw, pt, sbPatch) deben pedir return=representation y que r.ok/el resultado " +
+         "refleje que volvió ≥1 fila.",
+    check() {
+      var specs = [
+        { f: "panel-v2.html", fn: "_sbw" },
+        { f: "cliente.html", fn: "pt" },
+        { f: "pathway-fit-cliente.html", fn: "sbPatch" },
+        { f: "pathway-fin-cliente.html", fn: "sbPatch" },
+      ];
+      for (var k = 0; k < specs.length; k++) {
+        var sp = specs[k], s = read(sp.f);
+        if (!s) return sp.f + ": no existe";
+        var i = s.indexOf("function " + sp.fn + "(");
+        if (i < 0) return sp.f + ": no se encontró el helper " + sp.fn;
+        var body = s.slice(i, i + 1700);
+        if (!/return=representation/.test(body))
+          return sp.f + ": " + sp.fn + " ya no pide return=representation (volvería a 'mentir' que guardó bajo RLS)";
+        if (!/rows|\.length/.test(body))
+          return sp.f + ": " + sp.fn + " no verifica cuántas filas escribió (rows/.length)";
+      }
+      return null;
+    },
+  },
+  {
+    name: "panel: saveCfg verifica que realmente guardó (no miente con return=minimal)",
+    bug: "Tras activar RLS en `usuarios` (usuarios_hardening.sql), un PATCH sin " +
+         "sesión autenticada matchea 0 filas. saveCfg usaba return=minimal → 204 " +
+         "r.ok=true y mostraba 'Configuración guardada ✓' SIN escribir nada (foto, " +
+         "perfil, recursos del coach de fitness/finanzas se perdían). Debe pedir " +
+         "return=representation y confirmar que volvió ≥1 fila antes de dar OK.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return "no existe panel-v2.html";
+      const m = s.match(/function saveCfg\([\s\S]*?\n\}/);
+      if (!m) return "no se encontró la función saveCfg";
+      const body = m[0];
+      if (!/return=representation/.test(body))
+        return "saveCfg ya no pide return=representation (volvería a 'mentir' que guardó bajo RLS)";
+      if (!/rows\s*>=\s*1|\.n\s*>\s*0/.test(body))
+        return "saveCfg no verifica que la escritura devolvió filas (rows>=1); un 0-filas por RLS pasaría como éxito";
+      return null;
     },
   },
   {
@@ -989,6 +1058,26 @@ const RULES = [
     },
   },
   {
+    name: "diseño: número de KPI del panel en tamaño INTERMEDIO (ni gigante ni chico)",
+    bug: "El número de _tile ('Mi negocio') se fue a los extremos varias veces: 46px " +
+         "(gigante) o 26px (muy chico). La coach pidió, por ahora, un TAMAÑO INTERMEDIO " +
+         "(~32px, peso 700), igual en panel-v2 y multicoach (.kpi .n). Esta regla lo " +
+         "mantiene en el rango intermedio (28–36px): frena que lo inflen a 46 y que lo achiquen a 26.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      const m = p.match(/function _tile\([^)]*\)\{[\s\S]{0,160}?font-size:(\d+)px/);
+      if (!m) return "panel-v2.html: no se encontró el número de _tile (¿cambió la función?).";
+      const px = parseInt(m[1], 10);
+      if (px > 36) return "panel-v2.html: el número de _tile quedó en " + px + "px (muy grande). Debe ser intermedio (~32px).";
+      if (px < 28) return "panel-v2.html: el número de _tile quedó en " + px + "px (muy chico). Debe ser intermedio (~32px), como pidió la coach.";
+      // multicoach .kpi .n en el mismo rango intermedio (ni 46 ni 26).
+      const mc = read("multicoach.html");
+      if (mc) { const km = mc.match(/\.kpi \.n\{[^}]*font-size:(\d+)px/); if (km) { const kp = parseInt(km[1], 10); if (kp > 36) return "multicoach.html: .kpi .n quedó en " + kp + "px (muy grande)."; if (kp < 28) return "multicoach.html: .kpi .n quedó en " + kp + "px (muy chico)."; } }
+      return null;
+    },
+  },
+  {
     name: "diseño: white-label llega al token canónico --accent en toda la app",
     bug: "Cada pantalla tenía su motor de marca con su token propio (--brand / " +
          "--rose / --pw-bosque) → algo NUEVO no podía reusar el white-label. Ahora " +
@@ -1285,6 +1374,54 @@ const RULES = [
     },
   },
   {
+    name: "ficha del cliente: guía del próximo paso que se mueve sola (Análisis → Documentos)",
+    bug: "Dentro de la ficha del cliente, la guía muestra el próximo paso del coach con " +
+         "ese cliente (genera el diagnóstico, después arma el CV) con un hint arriba y la " +
+         "pestaña destino 'respirando' (cp-guide-here). Avanza sola según reportState/cvState. " +
+         "Si se desconecta, el coach vuelve a quedar sin saber qué hacer con el cliente.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _cliNextStep/.test(p)) return "panel-v2.html: falta _cliNextStep (guía del próximo paso por cliente).";
+      if (!/cp-cli-next/.test(p)) return "panel-v2.html: falta el hint 'Próximo paso' (cp-cli-next) en la ficha del cliente.";
+      if (!/_beacon\(/.test(p)) return "panel-v2.html: la pestaña destino ya no 'respira' (falta _beacon/cp-guide-here en las pestañas de la ficha).";
+      return null;
+    },
+  },
+  {
+    name: "ficha del cliente: pestañas en cascada dominó (de a una, en orden) en los 3 nichos",
+    bug: "Las pestañas del cliente aparecen DE A UNA a medida que avanza (base siempre + " +
+         "cadena por nicho). CANDADO: una pestaña con datos se muestra siempre y el siguiente " +
+         "eslabón se abre solo cuando el anterior ya tiene contenido → nunca oculta algo con " +
+         "datos y no rompe a los coaches que ya trabajan. Config para carrera/fitness/financiero.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _cliVisibleTabs/.test(p)) return "panel-v2.html: falta _cliVisibleTabs (cascada de pestañas).";
+      if (!/_CLI_CASCADE\s*=/.test(p)) return "panel-v2.html: falta la config _CLI_CASCADE (cadena por nicho).";
+      // El candado: una pestaña con datos se muestra (if(open || has)).
+      if (!/if\(open \|\| has\)\s*shown\[step\.tab\]=true/.test(p)) return "panel-v2.html: _cliVisibleTabs ya no muestra una pestaña con datos (candado roto).";
+      if (!/carrera:.*fitness:.*financiero:/s.test(p)) return "panel-v2.html: la cascada no cubre los 3 nichos (carrera/fitness/financiero).";
+      if (!/_cliVisibleTabs\(c,_tipo,_cliTabs\(_tipo\)\)/.test(p)) return "panel-v2.html: la ficha del cliente ya no aplica la cascada _cliVisibleTabs.";
+      return null;
+    },
+  },
+  {
+    name: "ficha del cliente: '+ Agregar paso' arma las fases desde cero (sin esqueleto fijo de 4)",
+    bug: "En finanzas (Gestión) el coach arma SUS fases desde cero: un cliente nuevo no " +
+         "muestra ninguna fase, solo '+ Agregar paso'; cada fase que suma aparece (state.faseAdd " +
+         "por cliente, se resetea al abrir/guardar). NO se fuerza un mínimo de 4 fases vacías. Si " +
+         "vuelve el esqueleto fijo, el coach siente que se adapta a la plataforma en vez de al revés.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/data-act='fase-add'/.test(p)) return "panel-v2.html: falta el botón '+ Agregar paso' (fase-add) en el editor de fases.";
+      if (!/state\.faseAdd/.test(p)) return "panel-v2.html: falta el contador de fases agregadas por cliente (state.faseAdd).";
+      if (/var _gMax\s*=\s*Math\.max\(4,\s*_gWk\)/.test(p)) return "panel-v2.html: volvió el esqueleto fijo de 4 fases (Math.max(4,_gWk)).";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: Agenda del día (solo lo agendado) + asistencia inline + toggle Hoy/Semana",
     bug: "La pestaña Calendario abre en la 'Agenda del día' del día (por defecto hoy), " +
          "mostrando SOLO las sesiones/reservas agendadas (sin llenar de huecos). Cada reserva " +
@@ -1410,6 +1547,230 @@ const RULES = [
       const wf = read(".github/workflows/deploy-functions.yml");
       if (wf && !/functions deploy crear-coach/.test(wf))
         return "deploy-functions.yml: falta el paso para desplegar crear-coach (la fn quedaría sin publicar).";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: el dueño suspende/quita coaches (edge function, libera clientes)",
+    bug: "El dueño suspende, reactiva o quita a un coach de su red. Escritura " +
+         "privilegiada (activo/org_id de usuarios + liberar candidatos) → edge " +
+         "function eliminar-coach-red (service role, gateada al owner, verifica que " +
+         "el coach es de su org). 'quitar' libera a sus clientes (coach_id=null) y " +
+         "no borra la cuenta. Ver docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function quitarCoach\(/.test(mc) || !/function _coachAction\(/.test(mc)) return "multicoach.html: falta quitarCoach/_coachAction.";
+      if (!/functions\/v1\/eliminar-coach-red/.test(mc)) return "multicoach.html: ya no llama a eliminar-coach-red (¿volvió a solo-demo?).";
+      const fn = read("supabase/functions/eliminar-coach-red/index.ts");
+      if (!fn) return "falta supabase/functions/eliminar-coach-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "eliminar-coach-red: ya no usa service role.";
+      if (!/not_owner/.test(fn) || !/auth\/v1\/user/.test(fn)) return "eliminar-coach-red: perdió el gate del owner.";
+      if (!/coachInOrg/.test(fn)) return "eliminar-coach-red: ya no verifica que el coach es de la org.";
+      if (!/coach_id:\s*null/.test(fn)) return "eliminar-coach-red: 'quitar' ya no libera a los clientes (coach_id=null).";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy eliminar-coach-red/.test(wf)) return "deploy-functions.yml: falta desplegar eliminar-coach-red.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: el dueño suma coaches con el tope del plan (edge function)",
+    bug: "El dueño suma coaches a su red. Es alta privilegiada (usuarios rol='coach' " +
+         "con org_id) → va por la edge function agregar-coach-red (service role, " +
+         "gateada al owner), que respeta max_coaches del plan (cap_reached). Nada de " +
+         "INSERT directo desde el navegador (RLS lo bloquea). Ver docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function invitarCoach\(/.test(mc)) return "multicoach.html: falta invitarCoach.";
+      const seg = mc.slice(mc.indexOf("function invitarCoach("), mc.indexOf("function invitarCoach(") + 2800);
+      if (!/functions\/v1\/agregar-coach-red/.test(seg))
+        return "multicoach.html: invitarCoach ya no llama a agregar-coach-red (¿volvió a solo-demo?).";
+      if (!/cap_reached/.test(seg)) return "multicoach.html: invitarCoach ya no maneja el tope del plan (cap_reached).";
+      const fn = read("supabase/functions/agregar-coach-red/index.ts");
+      if (!fn) return "falta supabase/functions/agregar-coach-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "agregar-coach-red: ya no usa service role.";
+      if (!/not_owner/.test(fn) || !/auth\/v1\/user/.test(fn)) return "agregar-coach-red: perdió el gate del owner.";
+      if (!/max_coaches/.test(fn) || !/cap_reached/.test(fn)) return "agregar-coach-red: ya no respeta el tope max_coaches.";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy agregar-coach-red/.test(wf)) return "deploy-functions.yml: falta desplegar agregar-coach-red.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: los clientes entran a la red (intake hereda org_id + alta real)",
+    bug: "Un cliente de una red debe aparecer en el panel del dueño (filtra por " +
+         "org_id). Por eso: (1) guardar-intake hace que el cliente HEREDE el org_id " +
+         "de su coach, y (2) 'Nuevo cliente' del dueño crea el candidato de verdad " +
+         "vía agregar-cliente-red (service role, gate owner, tope max_clientes). " +
+         "Sin esto el panel del dueño no se llena de clientes reales.",
+    check() {
+      const gi = read("supabase/functions/guardar-intake/index.ts");
+      if (gi && !/coachOrg/.test(gi)) return "guardar-intake: el cliente ya no hereda el org_id de su coach (no aparecería en la red).";
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      const seg = mc.slice(mc.indexOf("function __nuevoCliente("), mc.indexOf("function __nuevoCliente(") + 2200);
+      if (!/functions\/v1\/agregar-cliente-red/.test(seg))
+        return "multicoach.html: __nuevoCliente ya no crea el cliente real (agregar-cliente-red).";
+      const fn = read("supabase/functions/agregar-cliente-red/index.ts");
+      if (!fn) return "falta supabase/functions/agregar-cliente-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn) || !/not_owner/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "agregar-cliente-red: debe usar service role y gatear al owner.";
+      if (!/max_clientes/.test(fn) || !/cap_reached/.test(fn)) return "agregar-cliente-red: ya no respeta el tope max_clientes.";
+      if (!/org_id:\s*org\.id/.test(fn)) return "agregar-cliente-red: el cliente ya no queda en la org.";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy agregar-cliente-red/.test(wf)) return "deploy-functions.yml: falta desplegar agregar-cliente-red.";
+      return null;
+    },
+  },
+  {
+    name: "admin: cambiar el dueño de una red (transferir, el anterior queda coach)",
+    bug: "Transferir una red a otro dueño (promover un coach a owner, bajar al " +
+         "dueño anterior a coach) es privilegiado → edge function cambiar-owner " +
+         "(service role + gate admin). Ver docs/multicoach-modelo.md.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="mc-transfer"/.test(p)) return "panel-v2.html: falta el handler mc-transfer.";
+      if (!/functions\/v1\/cambiar-owner/.test(p)) return "panel-v2.html: mc-transfer ya no llama a cambiar-owner.";
+      const fn = read("supabase/functions/cambiar-owner/index.ts");
+      if (!fn) return "falta supabase/functions/cambiar-owner/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn) || !/not_admin/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "cambiar-owner: debe usar service role y gatear al admin.";
+      if (!/rol:\s*["']owner["']/.test(fn) || !/rol:\s*["']coach["']/.test(fn))
+        return "cambiar-owner: debe promover al nuevo (owner) y bajar al anterior (coach).";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy cambiar-owner/.test(wf)) return "deploy-functions.yml: falta desplegar cambiar-owner.";
+      return null;
+    },
+  },
+  {
+    name: "admin: convertir un coach en multicoach (edge function, pasa sus clientes)",
+    bug: "Promover un coach a dueño de su red (rol='owner' + crear org + pasarle " +
+         "sus clientes) es privilegiado → edge function convertir-multicoach " +
+         "(service role + gate admin). El owner sigue siendo coach de su red " +
+         "(asignar-cliente acepta coach_id con rol owner). Ver docs/multicoach-modelo.md.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="mc-convert"/.test(p)) return "panel-v2.html: falta el handler mc-convert.";
+      if (!/functions\/v1\/convertir-multicoach/.test(p)) return "panel-v2.html: mc-convert ya no llama a convertir-multicoach.";
+      const fn = read("supabase/functions/convertir-multicoach/index.ts");
+      if (!fn) return "falta supabase/functions/convertir-multicoach/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn) || !/not_admin/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "convertir-multicoach: debe usar service role y gatear al admin.";
+      if (!/rol:\s*["']owner["']/.test(fn) || !/organizaciones/.test(fn))
+        return "convertir-multicoach: debe crear la org y promover a rol='owner'.";
+      if (!/candidatos\?coach_id=eq\./.test(fn) || !/org_id:\s*orgId/.test(fn))
+        return "convertir-multicoach: debe pasar los clientes del coach a la nueva org.";
+      // El owner también es coach asignable.
+      const asg = read("supabase/functions/asignar-cliente/index.ts");
+      if (asg && !/rol=in\.\(coach,owner\)/.test(asg))
+        return "asignar-cliente: el owner debe poder ser destino de asignación (rol in coach,owner).";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy convertir-multicoach/.test(wf)) return "deploy-functions.yml: falta desplegar convertir-multicoach.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: asignar cliente→coach va por edge function (no PATCH directo)",
+    bug: "El dueño reasigna un cliente a uno de sus coaches. Es una escritura " +
+         "privilegiada: NO puede ir por un PATCH directo del navegador (RLS lo " +
+         "bloquea, como pasó con 'no anda agregar coach'). Va por la edge function " +
+         "asignar-cliente, gateada al owner de la org y que verifica que cliente y " +
+         "coach son de ESA empresa. Ver docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function __asignarCoach\(/.test(mc)) return "multicoach.html: falta __asignarCoach.";
+      const seg = mc.slice(mc.indexOf("function __asignarCoach("));
+      const body = seg.slice(0, 2600);
+      if (!/functions\/v1\/asignar-cliente/.test(body))
+        return "multicoach.html: __asignarCoach ya no llama a la edge function asignar-cliente.";
+      const fn = read("supabase/functions/asignar-cliente/index.ts");
+      if (!fn) return "falta supabase/functions/asignar-cliente/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "asignar-cliente: ya no usa service role.";
+      if (!/not_owner/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "asignar-cliente: perdió el gate del owner (JWT → /auth/v1/user).";
+      if (!/belongsToOrg/.test(fn) || !/org_id=eq\./.test(fn))
+        return "asignar-cliente: debe verificar que cliente y coach son de la misma org.";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy asignar-cliente/.test(wf))
+        return "deploy-functions.yml: falta el paso para desplegar asignar-cliente.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: el dueño logueado ve su RED REAL (no la maqueta)",
+    bug: "multicoach.html arrancaba SIEMPRE con datos demo (Alex Gómez inventado). " +
+         "Ahora, si entra un usuario rol='owner', carga su organización + coaches + " +
+         "clientes por org_id desde Supabase (mcBoot→mcLoadReal), y el login rutea al " +
+         "owner a multicoach.html. Si algo falla cae a demo (nunca en blanco). Ver " +
+         "docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      // Bootstrap por sesión: owner → real; si no → demo.
+      if (!/function mcBoot\(/.test(mc)) return "multicoach.html: falta mcBoot() (arranque por sesión).";
+      if (!/rol===['"]owner['"]/.test(mc)) return "multicoach.html: mcBoot ya no distingue al owner (rol='owner').";
+      if (!/function mcLoadReal\(/.test(mc)) return "multicoach.html: falta mcLoadReal() (carga de la red real).";
+      // La lectura de la red va por la edge function mi-red (la RLS de candidatos
+      // no deja que el owner lea a los clientes de sus coaches directo).
+      if (!/functions\/v1\/mi-red/.test(mc))
+        return "multicoach.html: mcLoadReal ya no lee la red por la edge function mi-red (los clientes vendrían vacíos por RLS).";
+      const miRed = read("supabase/functions/mi-red/index.ts");
+      if (!miRed) return "falta supabase/functions/mi-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(miRed) || !/not_owner/.test(miRed) || !/org_id=eq\./.test(miRed))
+        return "mi-red: debe usar service role, gatear al owner y filtrar por org_id.";
+      const wfr = read(".github/workflows/deploy-functions.yml");
+      if (wfr && !/functions deploy mi-red/.test(wfr)) return "deploy-functions.yml: falta desplegar mi-red.";
+      // Debe leer la org y filtrar coaches/clientes por org_id (fallback directo).
+      if (!/organizaciones/.test(mc) || !/org_id=eq\./.test(mc))
+        return "multicoach.html: mcLoadReal ya no lee organizaciones / filtra por org_id.";
+      // Fallback a demo ante error (no dejar el panel en blanco).
+      if (!/MC_REAL=false;\s*mcApplyNiche\(\)/.test(mc))
+        return "multicoach.html: mcLoadReal perdió el fallback a demo (podría quedar en blanco).";
+      // El login debe rutear al owner a su panel de red.
+      const lg = read("login.html");
+      if (lg && !/rol===['"]owner['"][\s\S]{0,120}multicoach\.html/.test(lg))
+        return "login.html: el owner ya no se rutea a multicoach.html.";
+      return null;
+    },
+  },
+  {
+    name: "admin: 'Dar acceso a un multicoach' crea la empresa vía crear-multicoach",
+    bug: "El alta de un multicoach (dueño de red) debe crear la ORGANIZACIÓN con sus " +
+         "límites según el plan (Boutique 3/15 · Pro ilimitado) y el owner rol='owner', " +
+         "salteando RLS de forma segura. Va por la edge function crear-multicoach (service " +
+         "role + gate de admin), NUNCA por un POST directo desde el navegador. Ver " +
+         "docs/multicoach-modelo.md.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="mc-access"/.test(p)) return "panel-v2.html: falta el handler mc-access (Dar acceso a un multicoach).";
+      const start = p.indexOf('act==="mc-access"');
+      const endMarker = p.indexOf('act==="empleado-crear"', start);
+      const seg = endMarker > start ? p.slice(start, endMarker) : p.slice(start, start + 6000);
+      if (!/functions\/v1\/crear-multicoach/.test(seg))
+        return "panel-v2.html: mc-access ya no llama a la edge function crear-multicoach.";
+      if (/rol:\s*["']owner["']/.test(seg))
+        return "panel-v2.html: mc-access crea un usuario rol='owner' directo (RLS lo bloquea). Debe ir por crear-multicoach.";
+      // La edge function debe existir, usar service role, verificar admin y crear la org.
+      const fn = read("supabase/functions/crear-multicoach/index.ts");
+      if (!fn) return "falta supabase/functions/crear-multicoach/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "crear-multicoach: ya no usa service role (no saltearía RLS).";
+      if (!/not_admin/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "crear-multicoach: perdió la verificación de admin (JWT → /auth/v1/user).";
+      if (!/organizaciones/.test(fn) || !/rol:\s*["']owner["']/.test(fn))
+        return "crear-multicoach: debe crear la fila en organizaciones y el owner rol='owner'.";
+      // La migración de la base debe existir (la tabla organizaciones + org_id).
+      const mig = read("supabase/migrations/organizaciones.sql");
+      if (!mig || !/CREATE TABLE IF NOT EXISTS organizaciones/.test(mig))
+        return "falta supabase/migrations/organizaciones.sql (tabla organizaciones + org_id).";
+      // Y debe estar en el workflow de auto-deploy.
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy crear-multicoach/.test(wf))
+        return "deploy-functions.yml: falta el paso para desplegar crear-multicoach.";
       return null;
     },
   },
@@ -1659,6 +2020,35 @@ const RULES = [
         if (s && /snap\.licdn\.com\/li\.lms-analytics/.test(s) && !/_pwLoadLinkedIn/.test(s))
           return f + ": el LinkedIn Insight Tag ya no está gateado por consentimiento (_pwLoadLinkedIn).";
       }
+      return null;
+    },
+  },
+  {
+    name: "auth: un 401 al entrar reintenta (no expulsa) si hay sesión válida",
+    bug: "Al entrar recién logueada, una lectura podía salir ANTES de que el " +
+         "token se adjunte (SDK del CDN booteando) → 401 → y _authExpired " +
+         "deslogueaba al toque: 'entro, demora unos segundos y me tira de vuelta " +
+         "al login'. Le pasaba al panel del coach Y a los portales del cliente. " +
+         "Ahora, ante 401/403, si HAY sesión válida se reintenta UNA vez " +
+         "(recargando) en vez de desloguear; solo sin sesión se va al login. El " +
+         "presupuesto de reintento (sessionStorage pw_auth_retry) se resetea en " +
+         "cada login fresco (login.html + auth-callback).",
+    check() {
+      // Panel + los 2 portales con _authExpired: debe existir el reintento
+      // guardado por sesión y el chequeo de sesión antes de desloguear.
+      var guarded = ["panel-v2.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      for (var i = 0; i < guarded.length; i++) {
+        var s = read(guarded[i]);
+        if (!s) continue;
+        if (!/function _authExpired/.test(s)) return guarded[i] + ": falta _authExpired.";
+        if (!/pw_auth_retry/.test(s)) return guarded[i] + ": _authExpired ya no reintenta (pw_auth_retry) — vuelve a expulsar al toque.";
+        if (!/hasSession|_tokenNow/.test(s)) return guarded[i] + ": _authExpired ya no verifica si hay sesión antes de desloguear.";
+      }
+      // El presupuesto de reintento se resetea en cada login fresco.
+      var lg = read("login.html");
+      if (lg && !/removeItem\(['"]pw_auth_retry/.test(lg)) return "login.html: no resetea pw_auth_retry en el login fresco.";
+      var ac = read("auth-callback.html");
+      if (ac && !/removeItem\(['"]pw_auth_retry/.test(ac)) return "auth-callback.html: no resetea pw_auth_retry en el login fresco.";
       return null;
     },
   },

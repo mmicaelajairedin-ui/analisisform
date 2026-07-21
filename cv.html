@@ -4,7 +4,7 @@
 <script src="pw-observe.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" href="/favicon-app.svg?v=3" type="image/svg+xml">
+<link rel="icon" href="/favicon-app.svg?v=4" type="image/svg+xml">
 <meta name="robots" content="noindex">
 <title>CV</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -322,7 +322,7 @@ html,body{height:100%;background:#F4F4F4;font-family:'Inter',sans-serif;}
 <!-- ── SIDEBAR ── -->
 <div class="sidebar">
   <div style="padding:14px 20px 10px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #EDE8E8;">
-    <svg width="20" height="20" viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,82 32,52 54,82" fill="#52B788"/><polygon points="34,82 58,28 82,82" fill="#2D6A4F"/><circle cx="58" cy="22" r="5" fill="#E9C46A"/></svg>
+    <svg width="20" height="20" viewBox="0 0 100 100" aria-hidden="true"><polygon points="36.2,35.2 52.8,54.3 52.8,81.8 7.4,81.8" fill="#215C44"/><polygon points="67.9,45.8 92.6,81.8 43.1,81.8" fill="#267A54"/><circle cx="75.4" cy="27.8" r="10.3" fill="#F8CA45"/></svg>
     <span style="font-family:'Fraunces',Georgia,serif;font-size:17px;font-weight:600;color:#1B4332;letter-spacing:-.5px;line-height:1;">pathway<span style="color:#52B788;">.</span></span>
   </div>
   <div class="sb-logo">
@@ -1064,24 +1064,26 @@ function guardar(){
   if(st){st.textContent='Guardando...';st.style.color='#888';}
   var emailClean=_email.toLowerCase().trim();
   var contenido=JSON.stringify(_d);
-  var h=H({'Content-Type':'application/json','Prefer':'return=minimal'});
-  // 1. Intentar PATCH
+  // Guardado VERIFICADO: return=representation para saber si REALMENTE escribió.
+  // Antes, con return=minimal, un PATCH que RLS bloqueaba (0 filas) daba 204 y
+  // mostraba "✓ Guardado" sin guardar el CV. Ahora: PATCH; si no matcheó ninguna
+  // fila (CV nuevo o RLS), POST; y solo declaramos éxito si volvió ≥1 fila.
+  var h=H({'Content-Type':'application/json','Prefer':'return=representation'});
+  var _n=function(r){ if(r.status===401||r.status===403) return -2; if(!r.ok) return -1; return r.json().then(function(a){return (a&&a.length)||0;},function(){return 1;}); };
   fetch(SB+'/rest/v1/cv_publicados?email=eq.'+enc(emailClean),{
     method:'PATCH', headers:h,
     body:JSON.stringify({contenido:contenido,updated_at:new Date().toISOString()})
-  }).then(function(r){
-    if(r.status===404||(r.status===400&&!r.ok)){
-      // 2. Si falla, POST
-      return fetch(SB+'/rest/v1/cv_publicados',{
-        method:'POST', headers:h,
-        body:JSON.stringify({email:emailClean,contenido:contenido})
-      });
-    }
-    return r;
-  }).then(function(r){
-    var ok=r.ok||r.status===204||r.status===201||r.status===200;
+  }).then(_n).then(function(n){
+    if(n>=1 || n===-2) return n;
+    // 0 filas: CV nuevo (o RLS) → intentar POST y verificar de nuevo.
+    return fetch(SB+'/rest/v1/cv_publicados',{
+      method:'POST', headers:h,
+      body:JSON.stringify({email:emailClean,contenido:contenido})
+    }).then(_n);
+  }).then(function(res){
+    var ok=(typeof res==='number' && res>=1);
     if(st){
-      st.textContent=ok?'✓ Guardado':'Error '+r.status;
+      st.textContent=ok?'✓ Guardado':(res===-2?'Sesión vencida — reingresá':'No se pudo guardar');
       st.style.color=ok?'#5A8C6E':'#C0756E';
     }
     // Sync foto to candidatos.foto_perfil so cliente.html can display it

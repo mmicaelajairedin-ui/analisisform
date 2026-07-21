@@ -3,7 +3,7 @@
 <head>
 <script src="pw-observe.js"></script>
 <meta charset="UTF-8">
-<link rel="icon" href="/favicon-app.svg?v=3" type="image/svg+xml">
+<link rel="icon" href="/favicon-app.svg?v=4" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
 <title>Pathway Fit · Mi portal</title>
@@ -81,7 +81,7 @@
   <!-- Sidebar (desktop) -->
   <aside class="sb" id="sb">
     <div class="sb-brand">
-      <svg width="24" height="24" viewBox="0 0 100 100"><polygon points="10,82 32,52 54,82" fill="var(--rose-mid)"/><polygon points="34,82 58,28 82,82" fill="var(--rose)"/><circle cx="58" cy="22" r="5" fill="#E9C46A"/></svg>
+      <svg width="24" height="24" viewBox="0 0 100 100"><polygon points="36.2,35.2 52.8,54.3 52.8,81.8 7.4,81.8" fill="var(--rose-mid)"/><polygon points="67.9,45.8 92.6,81.8 43.1,81.8" fill="var(--rose)"/><circle cx="75.4" cy="27.8" r="10.3" fill="#F8CA45"/></svg>
       <span style="font-family:var(--serif);font-size:18px;font-weight:600;color:var(--text);letter-spacing:-.5px;">pathway<span style="color:var(--rose)">.</span></span>
     </div>
     <div class="sb-user" style="text-align:center;">
@@ -642,6 +642,16 @@ function renderPeso(data){
 <script>
 window.PW_IA_CFG={
   mode:"cliente",
+  // Accesos directos por nicho (fitness): lleva directo a la sección + paso a paso.
+  onNav:function(s){ try{ go(s); }catch(e){} },
+  starters:[{emoji:"💪",label:"Mi rutina",section:"rutina"},{emoji:"🍎",label:"Nutrición",section:"nutricion"},{emoji:"📅",label:"Sesiones",section:"sesiones"}],
+  shortcuts:[
+    {re:/(rutina|entrena|ejercicio|\bgym\b|gimnasio|pesas|serie|repetici)/i, emoji:"💪", label:"Mi rutina", section:"rutina", how:"Andá a <b>Rutina</b> → ahí ves tus ejercicios y marcás lo que hiciste."},
+    {re:/(nutrici|comida|dieta|aliment|macro|calor[ií]a|prote[ií]na|receta)/i, emoji:"🍎", label:"Nutrición", section:"nutricion", how:"Andá a <b>Nutrición</b> → tu plan de alimentación y el registro de comidas."},
+    {re:/(progreso|medici|\bpeso\b|antropo|cintura|foto de progreso|avance|evoluci)/i, emoji:"📈", label:"Mi progreso", section:"progreso", how:"Andá a <b>Progreso</b> → cargás mediciones y ves tu evolución."},
+    {re:/(sesi[oó]n|agendar|\bcoach|entrenador|\bcita|llamada)/i, emoji:"📅", label:"Sesiones", section:"sesiones", how:"Andá a <b>Sesiones</b> → agendás con tu coach y ves la preparación."},
+    {re:/(comunidad|grupo|foro)/i, emoji:"👥", label:"Comunidad", section:"comunidad", how:"Andá a <b>Comunidad</b> → novedades y tu grupo."}
+  ],
   greeting:"Hola 👋 Soy tu IA Pathway. Puedo ayudarte con tu plan, tus rutinas, tu nutrición, tus sesiones y a moverte por el portal. ¿En qué te doy una mano?",
   // Contexto REAL del cliente (fitness). CRAW = fila de candidatos ya cargada.
   context:function(){
@@ -676,10 +686,29 @@ var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 function _hdr(extra){ if(window.PWAUTH&&PWAUTH.headersSync) return PWAUTH.headersSync(extra); var h={'apikey':KEY,'Authorization':'Bearer '+KEY}; if(extra) for(var k in extra) h[k]=extra[k]; return h; }
 // Red de seguridad para cuando RLS esté prendido: 401/403 (sin sesión) → login.
 // Mientras RLS esté apagado nunca se dispara (la anon key no da 401).
-var _authGone=false;
-function _authExpired(){ if(_authGone)return; _authGone=true; try{ location.href='login.html'; }catch(e){} }
+var _authGone=false,_authChecking=false;
+function _tokenNow(){ try{ var h=(window.PWAUTH&&PWAUTH.headersSync)?PWAUTH.headersSync():null; return !!(h&&h.Authorization&&h.Authorization!=="Bearer "+KEY); }catch(e){ return false; } }
+// Un 401/403 no siempre es "sesión vencida": al entrar recién logueado, una
+// lectura puede salir ANTES de que el token se adjunte → 401 → y esto antes
+// deslogueaba al toque ("entro y me tira de vuelta al login"). Ahora: si HAY
+// sesión válida, reintentamos UNA vez recargando; solo sin sesión vamos al login.
+function _authExpired(){
+  if(_authGone||_authChecking) return;
+  _authChecking=true;
+  var check; try{ check=(window.PWAUTH&&PWAUTH.hasSession)?PWAUTH.hasSession():Promise.resolve(_tokenNow()); }catch(e){ check=Promise.resolve(_tokenNow()); }
+  var timed=new Promise(function(res){ setTimeout(function(){ res(_tokenNow()); },4000); });
+  Promise.race([check,timed]).then(function(has){
+    _authChecking=false; if(_authGone) return;
+    if(has){
+      var tried=false; try{ tried=sessionStorage.getItem('pw_auth_retry')==='1'; }catch(e){}
+      if(!tried){ try{ sessionStorage.setItem('pw_auth_retry','1'); }catch(e){} location.reload(); return; }
+      return; // ya reintentamos y sigue con sesión válida → no desloguear en loop
+    }
+    _authGone=true; try{ location.href='login.html'; }catch(e){}
+  },function(){ _authChecking=false; });
+}
 function sbGet(t,q){ return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:_hdr()}).then(function(r){ if(r.status===401||r.status===403){_authExpired();return [];} return r.json();}); }
-function sbPatch(t,q,d){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:_hdr({'Content-Type':'application/json','Prefer':'return=minimal'}),body:JSON.stringify(d)}); }
+function sbPatch(t,q,d){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:_hdr({'Content-Type':'application/json','Prefer':'return=representation'}),body:JSON.stringify(d)}).then(function(r){ if(r.status===401||r.status===403){_authExpired();return {ok:false,status:r.status,rows:0};} if(!r.ok)return {ok:false,status:r.status,rows:0}; return r.json().then(function(a){var n=(a&&a.length)||0;return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);}};},function(){return {ok:true,status:r.status,rows:1};}); }); }
 function pwHoy(){ return new Date().toISOString().slice(0,10); }
 function esc(s){ return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 var COACH_CALENDLY='', COACH_ID='';
@@ -758,7 +787,7 @@ window.guardarNotas=function(){
   if(CRAW) CRAW.notas_progreso=val;
   var st=document.getElementById('nst'); if(st) st.textContent='Guardando…';
   var q=(typeof CID!=='undefined'&&CID)?('id=eq.'+encodeURIComponent(CID)):('email=eq.'+encodeURIComponent(EMAIL));
-  sbPatch('candidatos',q,{notas_progreso:val}).then(function(r){ if(st){ st.textContent=(r&&r.ok)?'✓ Guardado':'✓ Guardado'; setTimeout(function(){ st.textContent=''; },2500); } }).catch(function(){ if(st){ st.textContent='Sin conexión — se reintenta'; } });
+  sbPatch('candidatos',q,{notas_progreso:val}).then(function(r){ if(st){ st.textContent=(r&&r.ok)?'✓ Guardado':'No se pudo guardar'; setTimeout(function(){ st.textContent=''; },2500); } }).catch(function(){ if(st){ st.textContent='Sin conexión — se reintenta'; } });
 };
 window.toggleSesTarea=function(idx,ti){
   var arr=[]; try{ arr=JSON.parse((CRAW&&CRAW.sesiones_registro)||'[]')||[]; }catch(e){ return; }

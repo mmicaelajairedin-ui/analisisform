@@ -65,7 +65,7 @@ async function callerEmail(token: string): Promise<string | null> {
 async function isAdmin(email: string): Promise<boolean> {
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.admin&select=id&limit=1`,
+      `${SB_URL}/rest/v1/usuarios?email=ilike.${encodeURIComponent(email)}&rol=eq.admin&select=id&limit=1`,
       { headers: svc },
     );
     if (!r.ok) return false;
