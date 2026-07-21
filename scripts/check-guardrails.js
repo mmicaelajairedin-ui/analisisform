@@ -1504,6 +1504,30 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: el dueño suma coaches con el tope del plan (edge function)",
+    bug: "El dueño suma coaches a su red. Es alta privilegiada (usuarios rol='coach' " +
+         "con org_id) → va por la edge function agregar-coach-red (service role, " +
+         "gateada al owner), que respeta max_coaches del plan (cap_reached). Nada de " +
+         "INSERT directo desde el navegador (RLS lo bloquea). Ver docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function invitarCoach\(/.test(mc)) return "multicoach.html: falta invitarCoach.";
+      const seg = mc.slice(mc.indexOf("function invitarCoach("), mc.indexOf("function invitarCoach(") + 2800);
+      if (!/functions\/v1\/agregar-coach-red/.test(seg))
+        return "multicoach.html: invitarCoach ya no llama a agregar-coach-red (¿volvió a solo-demo?).";
+      if (!/cap_reached/.test(seg)) return "multicoach.html: invitarCoach ya no maneja el tope del plan (cap_reached).";
+      const fn = read("supabase/functions/agregar-coach-red/index.ts");
+      if (!fn) return "falta supabase/functions/agregar-coach-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "agregar-coach-red: ya no usa service role.";
+      if (!/not_owner/.test(fn) || !/auth\/v1\/user/.test(fn)) return "agregar-coach-red: perdió el gate del owner.";
+      if (!/max_coaches/.test(fn) || !/cap_reached/.test(fn)) return "agregar-coach-red: ya no respeta el tope max_coaches.";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy agregar-coach-red/.test(wf)) return "deploy-functions.yml: falta desplegar agregar-coach-red.";
+      return null;
+    },
+  },
+  {
     name: "multicoach: asignar cliente→coach va por edge function (no PATCH directo)",
     bug: "El dueño reasigna un cliente a uno de sus coaches. Es una escritura " +
          "privilegiada: NO puede ir por un PATCH directo del navegador (RLS lo " +

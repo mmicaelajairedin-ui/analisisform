@@ -1201,7 +1201,9 @@ function renderCoaches(){
  var v=document.getElementById('vscroll');
  var chips=[['todos','Todos'],['activo','Activos'],['inactivo','Suspendidos'],['pendiente','Invitaciones']];
  var cnt=function(f){return f==='todos'?DB.coaches.length:DB.coaches.filter(function(c){return c.est===f;}).length;};
- v.innerHTML='<header class="vhead"><div><h1>'+NM().coachCap+'</h1><p class="hi-s">'+cnt('activo')+' activos · '+DB.clientes.length+' clientes acompañados</p></div><button class="crear" onclick="invitarCoach()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Invitar '+DET().coachSing.toLowerCase()+'</button></header>'
+ var _maxC=(MC_REAL&&MC_ORG&&MC_ORG.max_coaches!=null)?MC_ORG.max_coaches:null;
+ var _sub=MC_REAL?((DB.coaches.length)+(_maxC!=null?(' de '+_maxC+' de tu plan'):' coaches')+' · '+cnt('activo')+' activos'):(cnt('activo')+' activos · '+DB.clientes.length+' clientes acompañados');
+ v.innerHTML='<header class="vhead"><div><h1>'+NM().coachCap+'</h1><p class="hi-s">'+_sub+'</p></div><button class="crear" onclick="invitarCoach()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Invitar '+DET().coachSing.toLowerCase()+'</button></header>'
   +'<div class="cp-filters" id="cchips">'+chips.map(function(c){return '<button class="cp-chip'+(_cf===c[0]?' is-on':'')+'" onclick="_setCf(\''+c[0]+'\')">'+c[1]+'<span class="cp-chip-count">'+cnt(c[0])+'</span></button>';}).join('')+'</div>'
   +'<div id="clist"></div>';
  _fillCoaches();
@@ -1264,8 +1266,45 @@ function toggleCoach(id){
  if(c.est==='activo'){var suyos=DB.clientes.filter(function(k){return k.coach===id&&k.est==='activo';});__openModal('Suspender a '+c.n,'<p style="font-size:13.5px;color:var(--soft);margin:0;line-height:1.5">'+(suyos.length?'Tiene <b>'+suyos.length+' clientes activos</b>. Puedes reasignarlos luego desde cada ficha. ':'')+'¿Suspender a este coach?</p>','Suspender',function(){c.est='inactivo';__mclose();__toast(c.n+' suspendido');fichaCoach(id);});}
  else{c.est='activo';__toast(c.n+' reactivado ✓');fichaCoach(id);}
 }
+// Modal de éxito con el link de activación (el dueño se lo manda al coach).
+function _mcCoachLink(nombre,email){
+ var link='https://pathwaycareercoach.com/registro.html?email='+encodeURIComponent(email);
+ __openModal(_mcEsc(nombre)+' sumado ✓',
+  '<div style="font-size:12.5px;color:var(--soft);line-height:1.5;margin-bottom:8px">Mandale este link para que active su cuenta y elija su contraseña:</div>'+
+  '<input class="inp" readonly value="'+_mcEsc(link)+'" onclick="this.select()" style="font-size:12px">'+
+  '<div style="display:flex;gap:8px;margin-top:10px"><button class="mbtn p" onclick="(navigator.clipboard&&navigator.clipboard.writeText(this.getAttribute(\'data-l\')));__toast(\'Link copiado ✓\')" data-l="'+_mcEsc(link)+'">Copiar link</button>'+
+  '<a class="mbtn g" href="https://wa.me/?text='+encodeURIComponent('Activá tu cuenta de coach en Pathway: '+link)+'" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center">WhatsApp</a></div>',
+  'Listo',function(){__mclose();});
+}
 function invitarCoach(){
- var sing=DET().coachSing.toLowerCase(),nlbl=NM().emo+' '+MC_N.charAt(0).toUpperCase()+MC_N.slice(1),areas=NICHOS.map(function(c){return c.lbl;});
+ var sing=DET().coachSing.toLowerCase();
+ if(MC_REAL){
+  var maxC=(MC_ORG&&MC_ORG.max_coaches!=null)?MC_ORG.max_coaches:null, have=(DB.coaches||[]).length;
+  if(maxC!=null && have>=maxC){ __toast('Llegaste a tus '+maxC+' coaches. Subí de plan para sumar más.'); return; }
+  var capTxt=maxC!=null?('Vas <b>'+have+' de '+maxC+'</b> de tu plan.'):'Coaches <b>ilimitados</b> en tu plan.';
+  __openModal('Sumar '+sing,
+   '<div style="font-size:12px;color:var(--soft);background:var(--pw-niebla-3);border-radius:9px;padding:9px 11px;margin-bottom:4px">'+capTxt+' Hereda el nicho de tu empresa. Le llega un link para activar su cuenta.</div>'+
+   __inp('ic-n','Nombre y apellido')+__inp('ic-e','email@empresa.com'),
+   'Sumar '+sing,function(){
+    var n=(document.getElementById('ic-n').value||'').trim(), em=(document.getElementById('ic-e').value||'').trim().toLowerCase();
+    if(!n){__toast('Poné el nombre');return;} if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){__toast('Email inválido');return;}
+    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Sumando…';}
+    _hdr({'Content-Type':'application/json'}).then(function(h){
+     return fetch(SB+'/functions/v1/agregar-coach-red',{method:'POST',headers:h,body:JSON.stringify({email:em,nombre:n})});
+    }).then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d||{}};});}).then(function(res){
+     if(!res.ok||!res.d.ok){
+      var er=res.d.error, msg=er==='cap_reached'?('Llegaste a tus '+res.d.max+' coaches. Subí de plan.'):er==='email_in_use'?('Ese email ya lo usa un usuario "'+(res.d.rol||'?')+'".'):er==='not_owner'?'Tu sesión no está activa — reingresá':'No se pudo sumar. Reintentá';
+      if(ok){ok.disabled=false;ok.textContent='Sumar '+sing;} __toast(msg); return;
+     }
+     DB.coaches.push({id:res.d.coach_id||('c'+have+'x'),n:n,ini:_mcIni(n),nicho:(NICHOS&&NICHOS[0]&&NICHOS[0].id)||'',rat:0,ret:null,cli:0,ses:0,esp:'',est:'pendiente',foto:''});
+     mcApplyNiche(); if(_sec==='coaches')renderCoaches();
+     _mcCoachLink(n,em);
+    }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Sumar '+sing;} __toast('Error de conexión. Reintentá'); });
+   });
+  return;
+ }
+ // Demo (prospecto): alta local en la maqueta.
+ var nlbl=NM().emo+' '+MC_N.charAt(0).toUpperCase()+MC_N.slice(1),areas=NICHOS.map(function(c){return c.lbl;});
  __openModal('Invitar '+sing,'<div style="font-size:12px;color:var(--soft);background:var(--pw-niebla-3);border-radius:9px;padding:9px 11px;margin-bottom:4px">El '+sing+' hereda el nicho de tu empresa: <b>'+nlbl+'</b> (definido en el panel admin). Elige su área.</div>'+__inp('ic-n','Nombre y apellido')+__inp('ic-e','email@empresa.com')+'<div><span class="lbl">Área</span>'+__sel('ic-nz',areas)+'</div>'+__inp('ic-s','Especialidad'),'Enviar invitación',function(){
   var n=document.getElementById('ic-n').value.trim();if(!n)return;var s=document.getElementById('ic-s').value.trim()||'General';var sel=document.getElementById('ic-nz').value;var nz=(NICHOS.filter(function(c){return c.lbl===sel;})[0]||NICHOS[0]).id;
   DB.coaches.push({id:'c'+(DB.coaches.length+1)+'x',n:n,ini:_ini(n),nicho:nz,rat:0,ret:0,cli:0,ses:0,esp:s,est:'pendiente',foto:''});
