@@ -1483,6 +1483,34 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: asignar cliente→coach va por edge function (no PATCH directo)",
+    bug: "El dueño reasigna un cliente a uno de sus coaches. Es una escritura " +
+         "privilegiada: NO puede ir por un PATCH directo del navegador (RLS lo " +
+         "bloquea, como pasó con 'no anda agregar coach'). Va por la edge function " +
+         "asignar-cliente, gateada al owner de la org y que verifica que cliente y " +
+         "coach son de ESA empresa. Ver docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function __asignarCoach\(/.test(mc)) return "multicoach.html: falta __asignarCoach.";
+      const seg = mc.slice(mc.indexOf("function __asignarCoach("));
+      const body = seg.slice(0, 2600);
+      if (!/functions\/v1\/asignar-cliente/.test(body))
+        return "multicoach.html: __asignarCoach ya no llama a la edge function asignar-cliente.";
+      const fn = read("supabase/functions/asignar-cliente/index.ts");
+      if (!fn) return "falta supabase/functions/asignar-cliente/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "asignar-cliente: ya no usa service role.";
+      if (!/not_owner/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "asignar-cliente: perdió el gate del owner (JWT → /auth/v1/user).";
+      if (!/belongsToOrg/.test(fn) || !/org_id=eq\./.test(fn))
+        return "asignar-cliente: debe verificar que cliente y coach son de la misma org.";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy asignar-cliente/.test(wf))
+        return "deploy-functions.yml: falta el paso para desplegar asignar-cliente.";
+      return null;
+    },
+  },
+  {
     name: "multicoach: el dueño logueado ve su RED REAL (no la maqueta)",
     bug: "multicoach.html arrancaba SIEMPRE con datos demo (Alex Gómez inventado). " +
          "Ahora, si entra un usuario rol='owner', carga su organización + coaches + " +
