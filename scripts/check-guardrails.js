@@ -27,6 +27,27 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: los helpers de fetch (_sb/_sbw) no se re-declaran como local",
+    bug: "Un `var _sb` local (el buffer de la agenda, ag-save-disp) TAPABA la " +
+         "función global _sb() en todo el scope del dispatcher de acciones → " +
+         "cualquier _sb(\"...\") ahí tiraba 'Uncaught TypeError: _sb is not a " +
+         "function' y crasheaba el panel para el usuario. Ningún helper global de " +
+         "fetch puede re-declararse como variable local (sombrea al global).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const offenders = [];
+      for (const h of ["_sb", "_sbw"]) {
+        // `function _sb(` es la definición global (OK); `var/let/const _sb =`
+        // como local la sombrea → prohibido.
+        if (new RegExp("\\b(?:var|let|const)\\s+" + h + "\\s*=", "").test(s)) offenders.push(h);
+      }
+      if (offenders.length)
+        return "panel-v2.html re-declara helper(s) de fetch como local (sombrea la función global): " + offenders.join(", ") + ".";
+      return null;
+    },
+  },
+  {
     name: "auth-callback: foto de Google se setea/refresca, respeta la propia",
     bug: "La foto del coach por Google no aparecia (se guardaba en foto_perfil " +
          "y el panel lee foto_url). La de Google se setea si no tiene foto Y se " +
