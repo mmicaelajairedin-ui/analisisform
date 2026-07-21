@@ -1060,10 +1060,9 @@ const RULES = [
   {
     name: "diseño: número de KPI del panel en tamaño INTERMEDIO (ni gigante ni chico)",
     bug: "El número de _tile ('Mi negocio') se fue a los extremos varias veces: 46px " +
-         "(gigante, decisión de una sesión) o 26px (muy chico, otra). La coach pidió " +
-         "un TAMAÑO INTERMEDIO (~32px, peso 700), igual en panel-v2 y multicoach " +
-         "(.kpi .n). Esta regla lo mantiene en el rango intermedio (28–36px): frena " +
-         "que lo inflen a 46 y que lo achiquen a 26.",
+         "(gigante) o 26px (muy chico). La coach pidió, por ahora, un TAMAÑO INTERMEDIO " +
+         "(~32px, peso 700), igual en panel-v2 y multicoach (.kpi .n). Esta regla lo " +
+         "mantiene en el rango intermedio (28–36px): frena que lo inflen a 46 y que lo achiquen a 26.",
     check() {
       const p = read("panel-v2.html");
       if (!p) return null;
@@ -1371,6 +1370,39 @@ const RULES = [
       if (!/function _agProxRender/.test(p)) return "panel-v2.html: falta _agProxRender (card Próxima sesión).";
       if (!/cp-agenda-prox/.test(p)) return "panel-v2.html: falta la columna 'Próxima sesión' (cp-agenda-prox).";
       if (!/Próxima sesión/.test(p)) return "panel-v2.html: la card 'Próxima sesión' ya no se muestra.";
+      return null;
+    },
+  },
+  {
+    name: "ficha del cliente: guía del próximo paso que se mueve sola (Análisis → Documentos)",
+    bug: "Dentro de la ficha del cliente, la guía muestra el próximo paso del coach con " +
+         "ese cliente (genera el diagnóstico, después arma el CV) con un hint arriba y la " +
+         "pestaña destino 'respirando' (cp-guide-here). Avanza sola según reportState/cvState. " +
+         "Si se desconecta, el coach vuelve a quedar sin saber qué hacer con el cliente.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _cliNextStep/.test(p)) return "panel-v2.html: falta _cliNextStep (guía del próximo paso por cliente).";
+      if (!/cp-cli-next/.test(p)) return "panel-v2.html: falta el hint 'Próximo paso' (cp-cli-next) en la ficha del cliente.";
+      if (!/_beacon\(/.test(p)) return "panel-v2.html: la pestaña destino ya no 'respira' (falta _beacon/cp-guide-here en las pestañas de la ficha).";
+      return null;
+    },
+  },
+  {
+    name: "ficha del cliente: pestañas en cascada dominó (de a una, en orden) en los 3 nichos",
+    bug: "Las pestañas del cliente aparecen DE A UNA a medida que avanza (base siempre + " +
+         "cadena por nicho). CANDADO: una pestaña con datos se muestra siempre y el siguiente " +
+         "eslabón se abre solo cuando el anterior ya tiene contenido → nunca oculta algo con " +
+         "datos y no rompe a los coaches que ya trabajan. Config para carrera/fitness/financiero.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _cliVisibleTabs/.test(p)) return "panel-v2.html: falta _cliVisibleTabs (cascada de pestañas).";
+      if (!/_CLI_CASCADE\s*=/.test(p)) return "panel-v2.html: falta la config _CLI_CASCADE (cadena por nicho).";
+      // El candado: una pestaña con datos se muestra (if(open || has)).
+      if (!/if\(open \|\| has\)\s*shown\[step\.tab\]=true/.test(p)) return "panel-v2.html: _cliVisibleTabs ya no muestra una pestaña con datos (candado roto).";
+      if (!/carrera:.*fitness:.*financiero:/s.test(p)) return "panel-v2.html: la cascada no cubre los 3 nichos (carrera/fitness/financiero).";
+      if (!/_cliVisibleTabs\(c,_tipo,_cliTabs\(_tipo\)\)/.test(p)) return "panel-v2.html: la ficha del cliente ya no aplica la cascada _cliVisibleTabs.";
       return null;
     },
   },
