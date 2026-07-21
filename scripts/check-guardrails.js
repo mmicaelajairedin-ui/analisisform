@@ -1535,6 +1535,19 @@ const RULES = [
     },
   },
   {
+    name: "pago/plan: no se abre Stripe dos veces (freno anti doble-tap en el handler 'open')",
+    bug: "Al 'ver plan'/pagar, en móvil un doble-tap (o click fantasma) abría Stripe DOS " +
+         "veces. El handler act==='open' frena la MISMA URL si se repite en <1.8s " +
+         "(window._pwLastOpen). Si se saca, vuelve el doble-abrir.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="open"/.test(p)) return null;
+      if (!/window\._pwLastOpen/.test(p)) return "panel-v2.html: el handler 'open' ya no frena el doble-abrir (falta window._pwLastOpen) → Stripe se abre dos veces.";
+      return null;
+    },
+  },
+  {
     name: "admin: crear coach pasa por la edge function crear-coach (RLS no lo bloquea)",
     bug: "El botón 'Dar acceso a un coach' hacía un POST directo a usuarios con rol='coach' " +
          "desde el navegador. Con RLS estricto en usuarios (usuarios_hardening.sql), la anon " +
