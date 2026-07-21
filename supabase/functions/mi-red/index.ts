@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
   if (!email) return json({ error: "not_owner" }, 403);
 
   // Owner + su org.
-  const owners = await q(`usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=id,org_id,configuracion&limit=1`);
+  const owners = await q(`usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=id,nombre,email,activo,foto_url,configuracion,org_id&limit=1`);
   const owner = owners[0];
   const orgId = owner && owner.org_id;
   if (!orgId) return json({ error: "not_owner" }, 403);
@@ -67,5 +67,7 @@ Deno.serve(async (req: Request) => {
   const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion`);
   const clientes = await q(`candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc`);
 
-  return json({ ok: true, org, coaches, clientes });
+  // owner también es un coach asignable ("el owner es coach aunque luego no
+  // quiera atender"). Se devuelve aparte para marcarlo como "Vos".
+  return json({ ok: true, org, owner, coaches, clientes });
 });

@@ -1583,6 +1583,34 @@ const RULES = [
     },
   },
   {
+    name: "admin: convertir un coach en multicoach (edge function, pasa sus clientes)",
+    bug: "Promover un coach a dueño de su red (rol='owner' + crear org + pasarle " +
+         "sus clientes) es privilegiado → edge function convertir-multicoach " +
+         "(service role + gate admin). El owner sigue siendo coach de su red " +
+         "(asignar-cliente acepta coach_id con rol owner). Ver docs/multicoach-modelo.md.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="mc-convert"/.test(p)) return "panel-v2.html: falta el handler mc-convert.";
+      if (!/functions\/v1\/convertir-multicoach/.test(p)) return "panel-v2.html: mc-convert ya no llama a convertir-multicoach.";
+      const fn = read("supabase/functions/convertir-multicoach/index.ts");
+      if (!fn) return "falta supabase/functions/convertir-multicoach/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn) || !/not_admin/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "convertir-multicoach: debe usar service role y gatear al admin.";
+      if (!/rol:\s*["']owner["']/.test(fn) || !/organizaciones/.test(fn))
+        return "convertir-multicoach: debe crear la org y promover a rol='owner'.";
+      if (!/candidatos\?coach_id=eq\./.test(fn) || !/org_id:\s*orgId/.test(fn))
+        return "convertir-multicoach: debe pasar los clientes del coach a la nueva org.";
+      // El owner también es coach asignable.
+      const asg = read("supabase/functions/asignar-cliente/index.ts");
+      if (asg && !/rol=in\.\(coach,owner\)/.test(asg))
+        return "asignar-cliente: el owner debe poder ser destino de asignación (rol in coach,owner).";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy convertir-multicoach/.test(wf)) return "deploy-functions.yml: falta desplegar convertir-multicoach.";
+      return null;
+    },
+  },
+  {
     name: "multicoach: asignar cliente→coach va por edge function (no PATCH directo)",
     bug: "El dueño reasigna un cliente a uno de sus coaches. Es una escritura " +
          "privilegiada: NO puede ir por un PATCH directo del navegador (RLS lo " +

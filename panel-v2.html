@@ -6814,6 +6814,27 @@ function viewAdmin(){
             mcLinkBox+
           "</div></div>"
       ) : "";
+      // ── Convertir un coach existente en multicoach (dueño de su red) ────
+      // Pasa a rol='owner', se le crea la empresa y SUS clientes van a su red
+      // (siguen asignados a él; él es coach de su propia red). Ver docs.
+      var _coachOpts = (RCOACHES||[]).filter(function(u){ return u && u.rol==="coach"; })
+        .map(function(u){ return "<option value='"+esc(u.id)+"'>"+esc(u.nombre||u.email||"Coach")+" ("+esc(u.email||"")+")</option>"; }).join("");
+      var mcCm=state.mccMsg||"";
+      var mcCmCol=mcCm.indexOf("ok:")===0?"var(--pw-bosque)":mcCm.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
+      var convBox = (REAL && _coachOpts) ? (
+        "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Convertir un coach en multicoach<span class='dot'>.</span></h3>"+
+          "<span class='cp-eyebrow'>Un coach que ya tenés pasa a ser dueño de su red</span></div>"+
+          "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+            "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5'>Elegí un coach y su plan: pasa a <strong>dueño de su propia red</strong> y sus clientes actuales pasan con él (los sigue atendiendo o los reparte a los coaches que sume). Él es coach de su propia red.</div>"+
+            "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+              "<select id='mcc-coach' class='cp-form-input' style='flex:2;min-width:240px'>"+_coachOpts+"</select>"+
+              "<select id='mcc-plan' class='cp-form-input' style='width:240px'><option value='boutique'>Boutique · 3 coaches / 45 clientes</option><option value='studio'>Studio · 8 / 120</option><option value='pro'>Pro · ilimitado</option></select>"+
+              "<input id='mcc-dias' class='cp-form-input' type='number' value='14' min='1' max='365' style='width:90px' title='Días de prueba'>"+
+              "<button class='cp-btn cp-btn-primary' data-act='mc-convert'>"+svg(IC.plus,12)+" Convertir</button>"+
+            "</div>"+
+            (mcCm ? "<div style='font-size:12px;font-weight:600;color:"+mcCmCol+"'>"+esc(mcCm.replace(/^(ok|err|…):/,""))+"</div>" : "")+
+          "</div></div>"
+      ) : "";
       // Dos sub-pestañas: "Coaches" (lista + buscador) y "Analíticas" (KPIs).
       // Separar saca el "choclo" y hace que las analíticas no carguen de gusto.
       var _cv = state.coachView||"lista";
@@ -6937,7 +6958,7 @@ function viewAdmin(){
         (_orphans.length ? ("<div style='font-size:12px;color:var(--pw-text-soft);margin-bottom:2px'>Entraron sin el link de un coach. Asigná cada uno al que corresponde.</div>"+_orphRows)
           : "<div style='font-size:13px;color:var(--pw-text-soft);text-align:center;padding:10px 0'>No hay clientes sin asignar. 🎉</div>")+
       "</div></div>";
-      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) : (accBox + mcBox + _orphCard + _list));
+      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) : (accBox + mcBox + convBox + _orphCard + _list));
     }
   } else if(state.adminTab==="empleados"){
     body = (REAL && state.empleSel) ? _empleadoDetailCard() : _empleadosView();
@@ -7961,7 +7982,7 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
-  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } render(); return; }
+  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } render(); return; }
   if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); return; }
   if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
   if(act.indexOf("estsel:")===0){ var _es=parseInt(act.slice(7),10); state.estSel=(state.estSel===_es?null:_es); render(); return; }
@@ -8271,6 +8292,41 @@ document.addEventListener("click", function(ev){
       }
     }).catch(function(e){
       _mcEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintenta.","err");
+    });
+    return;
+  }
+  if(act==="mc-convert"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    // Convertir un coach existente en multicoach (dueño de su red) vía la edge
+    // function convertir-multicoach (service role + gate admin).
+    var mccCoach=_val("mcc-coach")||"";
+    var mccPlan=(_val("mcc-plan")||"boutique").trim();
+    var mccDiasN=parseInt(_val("mcc-dias")||"14",10);
+    var mccDias=Math.max(1,Math.min(365,isNaN(mccDiasN)?14:mccDiasN));
+    var setMcc=function(t,kind){ state.mccMsg=(kind||"…")+":"+t; render(); };
+    if(!mccCoach){ setMcc("Elegí un coach.","err"); return; }
+    var _cc=(RCOACHES||[]).filter(function(u){return String(u.id)===String(mccCoach);})[0];
+    var _ccName=(_cc&&(_cc.nombre||_cc.email))||"el coach";
+    if(!confirm("¿Convertir a "+_ccName+" en multicoach (dueño de su red)? Sus clientes pasan a su red y él queda como dueño.")) return;
+    setMcc("Procesando…","…");
+    var _mccLock=false;
+    var _mccTimer=setTimeout(function(){ if(_mccLock)return; _mccLock=true; setMcc("Tardó demasiado (revisa tu conexión). Reintenta.","err"); },25000);
+    var _mccEnd=function(t,kind){ if(_mccLock)return; _mccLock=true; clearTimeout(_mccTimer); setMcc(t,kind); };
+    _hdr({"Content-Type":"application/json"}).then(function(h){
+      return fetch(SB+"/functions/v1/convertir-multicoach",{method:"POST",headers:h,body:JSON.stringify({coach_id:mccCoach,plan:mccPlan,dias:mccDias})});
+    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
+      var d=res.d;
+      if(!res.ok||!d.ok){
+        if(res.status===403||d.error==="not_admin"){ _mccEnd("Tu sesión de admin no está activa. Reingresá y reintentá.","err"); return; }
+        if(d.error==="ya_es_owner"){ _mccEnd("Ese coach ya es un multicoach.","err"); return; }
+        if(d.error==="org_write_failed"){ _mccEnd("No se pudo crear la empresa. ¿Aplicaste organizaciones.sql en Supabase?","err"); return; }
+        _mccEnd("No se pudo convertir (código "+(res.status||"?")+"). Reintenta.","err"); return;
+      }
+      var planTxt=(d.plan==="pro")?"Pro":(d.plan==="studio")?"Studio":"Boutique";
+      reloadCoaches();
+      _mccEnd("✓ "+_ccName+" ahora es multicoach ("+planTxt+")"+(d.movidos?" · "+d.movidos+" clientes pasaron a su red":"")+". Al entrar verá su panel de red.","ok");
+    }).catch(function(e){
+      _mccEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintenta.","err");
     });
     return;
   }

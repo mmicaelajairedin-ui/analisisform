@@ -91,8 +91,10 @@ Deno.serve(async (req: Request) => {
   if (!cliente_id || !coach_id) return json({ error: "missing_ids" }, 400);
 
   // ── El cliente Y el coach deben ser de ESTA empresa ──────────────
+  // El coach destino puede ser un coach O el propio dueño (el owner también
+  // atiende clientes: "el owner es coach aunque luego no quiera atender").
   if (!(await belongsToOrg("candidatos", cliente_id, orgId))) return json({ error: "cliente_ajeno" }, 403);
-  if (!(await belongsToOrg("usuarios", coach_id, orgId, "&rol=eq.coach"))) return json({ error: "coach_ajeno" }, 403);
+  if (!(await belongsToOrg("usuarios", coach_id, orgId, "&rol=in.(coach,owner)"))) return json({ error: "coach_ajeno" }, 403);
 
   // ── Asignar ──────────────────────────────────────────────────────
   try {
