@@ -592,15 +592,38 @@ async function registrar(){
           body: JSON.stringify(userData)
         });
 
-    if(!res.ok){
+    var coach;
+    if(res.ok){
+      coach = (await res.json())[0];
+    } else if(res.status === 401 || res.status === 403){
+      // Strict RLS (Phase 5): anon POST/PATCH with rol='coach' is blocked by
+      // policy. Fallback: create/activate via the registrar-coach edge function
+      // (service role, sanitizes fields). Today —no RLS— this path is NOT used.
+      try {
+        var _rr = await fetch(SB + '/functions/v1/registrar-coach', {
+          method: 'POST',
+          headers: {'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'},
+          body: JSON.stringify(userData)
+        });
+        var _rj = await _rr.json().catch(function(){ return {}; });
+        if(!_rr.ok || !_rj.ok){
+          showError('Error creating the account: ' + (_rj.error || _rr.status));
+          btn.disabled = false; loading.style.display = 'none';
+          return;
+        }
+        coach = _rj;
+      } catch(_e){
+        showError('Network error creating the account. Please try again.');
+        btn.disabled = false; loading.style.display = 'none';
+        return;
+      }
+    } else {
       var errBody = await res.text();
       console.error('Error creando usuario:', errBody);
       showError('Error creating the account: ' + (errBody.slice(0, 100) || res.status));
       btn.disabled = false; loading.style.display = 'none';
       return;
     }
-
-    var coach = (await res.json())[0];
 
     // Meta conversion events: completed registration + trial start (ad optimization signal).
     try { if(window.pwTrackReg) pwTrackReg(); if(window.pwTrackTrial) pwTrackTrial(); } catch(e){}

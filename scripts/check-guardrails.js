@@ -423,6 +423,54 @@ const RULES = [
     },
   },
   {
+    name: "helpers de escritura verifican el guardado (no return=minimal mentiroso bajo RLS)",
+    bug: "Con RLS activo, un PATCH/POST sin sesión válida no matchea filas y con " +
+         "return=minimal devuelve 2xx r.ok=true → los helpers mostraban 'guardado ✓' " +
+         "sin escribir (pérdida silenciosa de datos del usuario). Los helpers centrales " +
+         "(_sbw, pt, sbPatch) deben pedir return=representation y que r.ok/el resultado " +
+         "refleje que volvió ≥1 fila.",
+    check() {
+      var specs = [
+        { f: "panel-v2.html", fn: "_sbw" },
+        { f: "cliente.html", fn: "pt" },
+        { f: "pathway-fit-cliente.html", fn: "sbPatch" },
+        { f: "pathway-fin-cliente.html", fn: "sbPatch" },
+      ];
+      for (var k = 0; k < specs.length; k++) {
+        var sp = specs[k], s = read(sp.f);
+        if (!s) return sp.f + ": no existe";
+        var i = s.indexOf("function " + sp.fn + "(");
+        if (i < 0) return sp.f + ": no se encontró el helper " + sp.fn;
+        var body = s.slice(i, i + 1700);
+        if (!/return=representation/.test(body))
+          return sp.f + ": " + sp.fn + " ya no pide return=representation (volvería a 'mentir' que guardó bajo RLS)";
+        if (!/rows|\.length/.test(body))
+          return sp.f + ": " + sp.fn + " no verifica cuántas filas escribió (rows/.length)";
+      }
+      return null;
+    },
+  },
+  {
+    name: "panel: saveCfg verifica que realmente guardó (no miente con return=minimal)",
+    bug: "Tras activar RLS en `usuarios` (usuarios_hardening.sql), un PATCH sin " +
+         "sesión autenticada matchea 0 filas. saveCfg usaba return=minimal → 204 " +
+         "r.ok=true y mostraba 'Configuración guardada ✓' SIN escribir nada (foto, " +
+         "perfil, recursos del coach de fitness/finanzas se perdían). Debe pedir " +
+         "return=representation y confirmar que volvió ≥1 fila antes de dar OK.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return "no existe panel-v2.html";
+      const m = s.match(/function saveCfg\([\s\S]*?\n\}/);
+      if (!m) return "no se encontró la función saveCfg";
+      const body = m[0];
+      if (!/return=representation/.test(body))
+        return "saveCfg ya no pide return=representation (volvería a 'mentir' que guardó bajo RLS)";
+      if (!/rows\s*>=\s*1|\.n\s*>\s*0/.test(body))
+        return "saveCfg no verifica que la escritura devolvió filas (rows>=1); un 0-filas por RLS pasaría como éxito";
+      return null;
+    },
+  },
+  {
     name: "portal carrera: Agendar NO cae al Calendly de Micaela",
     bug: "El default de CALENDLY en cliente.html era el Calendly de Micaela. Un " +
          "cliente de un coach que no configuró su Calendly agendaba sesión con " +
@@ -989,6 +1037,23 @@ const RULES = [
     },
   },
   {
+    name: "diseño: número de KPI de 'Mi negocio' GRANDE y en negrita (lo pidió la coach)",
+    bug: "La coach pidió EXPRESAMENTE que los números de 'Mi negocio' (panel-v2, _tile) " +
+         "sean GRANDES y en NEGRITA (46px, peso 900): 'el tamaño de los números sigue chico " +
+         "y tiene que ser negrita'. Se los achicaron a 32px/700 varias veces. Esta regla " +
+         "mantiene el tamaño grande y el peso fuerte que ella eligió.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      const m = p.match(/function _tile\([^)]*\)\{[\s\S]{0,200}?font-weight:(\d+);font-size:(\d+)px/);
+      if (!m) return "panel-v2.html: no se encontró el número de _tile (¿cambió la función?).";
+      const weight = parseInt(m[1], 10), px = parseInt(m[2], 10);
+      if (px < 40) return "panel-v2.html: el número de _tile quedó en " + px + "px (chico). La coach lo pidió GRANDE (~46px).";
+      if (weight < 800) return "panel-v2.html: el número de _tile quedó con peso " + weight + " (fino). La coach lo pidió en NEGRITA (900).";
+      return null;
+    },
+  },
+  {
     name: "diseño: white-label llega al token canónico --accent en toda la app",
     bug: "Cada pantalla tenía su motor de marca con su token propio (--brand / " +
          "--rose / --pw-bosque) → algo NUEVO no podía reusar el white-label. Ahora " +
@@ -1024,6 +1089,27 @@ const RULES = [
       if (!s) return null;
       return /functions\/v1\/guardar-intake[\s\S]{0,220}foto_perfil/.test(s)
         ? null : "cliente.html: la foto ya no se guarda vía guardar-intake (se romperá al activar RLS).";
+    },
+  },
+  {
+    name: "reservas: cada email muestra SU hora (coach y cliente en zonas distintas)",
+    bug: "Los emails de confirmación usaban la MISMA fechaTxt (calculada en el " +
+         "navegador del que reserva = hora del cliente) para AMBOS: el email del " +
+         "coach mostraba la hora del CLIENTE, no la suya. Con coach y cliente en " +
+         "zonas distintas → 'el cliente cree que es a las 21 y el coach a las 9'. " +
+         "Fix: fechaEnTz(instante, zona) da la hora en cada zona; el cliente ve F.cli " +
+         "(su hora) y el coach F.coach (la suya), y si difieren, cada uno ve también " +
+         "la hora del otro con la ciudad.",
+    check() {
+      const s = read("reservar.html"); if (!s) return null;
+      if (!/function fechaEnTz\(/.test(s))
+        return "reservar.html: falta fechaEnTz() — los emails podrían volver a mostrar una sola zona.";
+      // El email del coach usa SU hora (F.coach) y el del cliente la suya (F.cli).
+      if (!/esc\(F\.coach\)/.test(s))
+        return "reservar.html: el email del coach ya no muestra SU hora (F.coach).";
+      if (!/esc\(F\.cli\)/.test(s))
+        return "reservar.html: el email del cliente ya no usa su hora local (F.cli).";
+      return null;
     },
   },
   {
@@ -1426,6 +1512,70 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: el dueño logueado ve su RED REAL (no la maqueta)",
+    bug: "multicoach.html arrancaba SIEMPRE con datos demo (Alex Gómez inventado). " +
+         "Ahora, si entra un usuario rol='owner', carga su organización + coaches + " +
+         "clientes por org_id desde Supabase (mcBoot→mcLoadReal), y el login rutea al " +
+         "owner a multicoach.html. Si algo falla cae a demo (nunca en blanco). Ver " +
+         "docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      // Bootstrap por sesión: owner → real; si no → demo.
+      if (!/function mcBoot\(/.test(mc)) return "multicoach.html: falta mcBoot() (arranque por sesión).";
+      if (!/rol===['"]owner['"]/.test(mc)) return "multicoach.html: mcBoot ya no distingue al owner (rol='owner').";
+      if (!/function mcLoadReal\(/.test(mc)) return "multicoach.html: falta mcLoadReal() (carga de la red real).";
+      // Debe leer la org y filtrar coaches/clientes por org_id.
+      if (!/organizaciones/.test(mc) || !/org_id=eq\./.test(mc))
+        return "multicoach.html: mcLoadReal ya no lee organizaciones / filtra por org_id.";
+      // Fallback a demo ante error (no dejar el panel en blanco).
+      if (!/MC_REAL=false;\s*mcApplyNiche\(\)/.test(mc))
+        return "multicoach.html: mcLoadReal perdió el fallback a demo (podría quedar en blanco).";
+      // El login debe rutear al owner a su panel de red.
+      const lg = read("login.html");
+      if (lg && !/rol===['"]owner['"][\s\S]{0,120}multicoach\.html/.test(lg))
+        return "login.html: el owner ya no se rutea a multicoach.html.";
+      return null;
+    },
+  },
+  {
+    name: "admin: 'Dar acceso a un multicoach' crea la empresa vía crear-multicoach",
+    bug: "El alta de un multicoach (dueño de red) debe crear la ORGANIZACIÓN con sus " +
+         "límites según el plan (Boutique 3/15 · Pro ilimitado) y el owner rol='owner', " +
+         "salteando RLS de forma segura. Va por la edge function crear-multicoach (service " +
+         "role + gate de admin), NUNCA por un POST directo desde el navegador. Ver " +
+         "docs/multicoach-modelo.md.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="mc-access"/.test(p)) return "panel-v2.html: falta el handler mc-access (Dar acceso a un multicoach).";
+      const start = p.indexOf('act==="mc-access"');
+      const endMarker = p.indexOf('act==="empleado-crear"', start);
+      const seg = endMarker > start ? p.slice(start, endMarker) : p.slice(start, start + 6000);
+      if (!/functions\/v1\/crear-multicoach/.test(seg))
+        return "panel-v2.html: mc-access ya no llama a la edge function crear-multicoach.";
+      if (/rol:\s*["']owner["']/.test(seg))
+        return "panel-v2.html: mc-access crea un usuario rol='owner' directo (RLS lo bloquea). Debe ir por crear-multicoach.";
+      // La edge function debe existir, usar service role, verificar admin y crear la org.
+      const fn = read("supabase/functions/crear-multicoach/index.ts");
+      if (!fn) return "falta supabase/functions/crear-multicoach/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "crear-multicoach: ya no usa service role (no saltearía RLS).";
+      if (!/not_admin/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "crear-multicoach: perdió la verificación de admin (JWT → /auth/v1/user).";
+      if (!/organizaciones/.test(fn) || !/rol:\s*["']owner["']/.test(fn))
+        return "crear-multicoach: debe crear la fila en organizaciones y el owner rol='owner'.";
+      // La migración de la base debe existir (la tabla organizaciones + org_id).
+      const mig = read("supabase/migrations/organizaciones.sql");
+      if (!mig || !/CREATE TABLE IF NOT EXISTS organizaciones/.test(mig))
+        return "falta supabase/migrations/organizaciones.sql (tabla organizaciones + org_id).";
+      // Y debe estar en el workflow de auto-deploy.
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy crear-multicoach/.test(wf))
+        return "deploy-functions.yml: falta el paso para desplegar crear-multicoach.";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: día clickeable + incluye demos del equipo/pasadas",
     bug: "En el panel, tocar un día del calendario debe mostrar los eventos de ese " +
          "día (ag-mo-day → _agRenderDay). Y los puntitos/el detalle deben leer de " +
@@ -1671,6 +1821,35 @@ const RULES = [
         if (s && /snap\.licdn\.com\/li\.lms-analytics/.test(s) && !/_pwLoadLinkedIn/.test(s))
           return f + ": el LinkedIn Insight Tag ya no está gateado por consentimiento (_pwLoadLinkedIn).";
       }
+      return null;
+    },
+  },
+  {
+    name: "auth: un 401 al entrar reintenta (no expulsa) si hay sesión válida",
+    bug: "Al entrar recién logueada, una lectura podía salir ANTES de que el " +
+         "token se adjunte (SDK del CDN booteando) → 401 → y _authExpired " +
+         "deslogueaba al toque: 'entro, demora unos segundos y me tira de vuelta " +
+         "al login'. Le pasaba al panel del coach Y a los portales del cliente. " +
+         "Ahora, ante 401/403, si HAY sesión válida se reintenta UNA vez " +
+         "(recargando) en vez de desloguear; solo sin sesión se va al login. El " +
+         "presupuesto de reintento (sessionStorage pw_auth_retry) se resetea en " +
+         "cada login fresco (login.html + auth-callback).",
+    check() {
+      // Panel + los 2 portales con _authExpired: debe existir el reintento
+      // guardado por sesión y el chequeo de sesión antes de desloguear.
+      var guarded = ["panel-v2.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      for (var i = 0; i < guarded.length; i++) {
+        var s = read(guarded[i]);
+        if (!s) continue;
+        if (!/function _authExpired/.test(s)) return guarded[i] + ": falta _authExpired.";
+        if (!/pw_auth_retry/.test(s)) return guarded[i] + ": _authExpired ya no reintenta (pw_auth_retry) — vuelve a expulsar al toque.";
+        if (!/hasSession|_tokenNow/.test(s)) return guarded[i] + ": _authExpired ya no verifica si hay sesión antes de desloguear.";
+      }
+      // El presupuesto de reintento se resetea en cada login fresco.
+      var lg = read("login.html");
+      if (lg && !/removeItem\(['"]pw_auth_retry/.test(lg)) return "login.html: no resetea pw_auth_retry en el login fresco.";
+      var ac = read("auth-callback.html");
+      if (ac && !/removeItem\(['"]pw_auth_retry/.test(ac)) return "auth-callback.html: no resetea pw_auth_retry en el login fresco.";
       return null;
     },
   },

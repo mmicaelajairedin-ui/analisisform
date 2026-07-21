@@ -259,6 +259,20 @@ async function hashPassword(password){
   return hashArray.map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
+// Cuando el email+contraseña no entra, NO dejamos a la persona en un callejón
+// sin salida ("contraseña incorrecta" y nada más). Muchas coaches vienen del
+// login viejo y su contraseña todavía no está en el sistema nuevo: la solución
+// real es entrar con Google (1 clic) o restablecer la contraseña (queda lista
+// en el sistema nuevo). Mostramos ESO, no solo el error.
+function _wrongCredsHelp(email){
+  var error=document.getElementById('error');
+  var isEn=_lng==='en';
+  var reset='recuperar-password.html'+(email?('?email='+encodeURIComponent(email)):'');
+  error.innerHTML = (isEn
+    ? "Wrong email or password.<div style='margin-top:8px;font-weight:400;color:#5A5A55;line-height:1.6'>Can't get in? Try <a href='javascript:void(0)' onclick=\"document.getElementById('btn-google').click()\" style='color:var(--bosque);font-weight:600'>Continue with Google</a> (one click) or <a href='"+reset+"' style='color:var(--bosque);font-weight:600'>reset your password</a> — it takes a minute and you'll be in.</div>"
+    : "Email o contraseña incorrectos.<div style='margin-top:8px;font-weight:400;color:#5A5A55;line-height:1.6'>¿No podés entrar? Probá <a href='javascript:void(0)' onclick=\"document.getElementById('btn-google').click()\" style='color:var(--bosque);font-weight:600'>Entrar con Google</a> (un clic) o <a href='"+reset+"' style='color:var(--bosque);font-weight:600'>restablecé tu contraseña</a> — tarda un minuto y quedás adentro.</div>");
+}
+
 async function entrar(){
   var email=document.getElementById('email').value.trim().toLowerCase();
   var password=document.getElementById('password').value;
@@ -293,7 +307,7 @@ async function entrar(){
         clearTimeout(_mt);
         if(!_mr.ok){
           // 401 = credenciales mal; otro = problema de red/servidor.
-          error.textContent = (_mr.status===401) ? TXT[_lng].err_wrong : TXT[_lng].err_net;
+          if(_mr.status===401){ _wrongCredsHelp(email); } else { error.textContent=TXT[_lng].err_net; }
           btn.disabled=false;loading.style.display='none';
           return;
         }
@@ -305,7 +319,7 @@ async function entrar(){
       // Reintentar ya con el auth user creado/sincronizado.
       _si=await _sbAuth.auth.signInWithPassword({email:email,password:password});
       if(_si.error){
-        error.textContent=TXT[_lng].err_wrong;
+        _wrongCredsHelp(email);
         btn.disabled=false;loading.style.display='none';
         return;
       }
@@ -323,7 +337,7 @@ async function entrar(){
     var rows=await res.json();
 
     if(!rows||!rows.length){
-      error.textContent=TXT[_lng].err_wrong;
+      _wrongCredsHelp(email);
       btn.disabled=false;loading.style.display='none';
       return;
     }
@@ -341,7 +355,11 @@ async function entrar(){
         btn.disabled=false;loading.style.display='none';
         return;
       }
-      var stripeUrl = 'https://buy.stripe.com/00waEX3Qke8gczqge78AE0d';
+      // Rutear al plan que tenía el coach (Pro $59 vs Basic $29), no siempre Basic.
+      var _plan = (usuario.configuracion && usuario.configuracion.plan) || 'basic';
+      var stripeUrl = _plan==='pro'
+        ? 'https://buy.stripe.com/eVq5kD86Ae8geHy1jd8AE0e'
+        : 'https://buy.stripe.com/00waEX3Qke8gczqge78AE0d';
       // Dentro de la app de tienda no se muestra el link de pago (se renueva en la web).
       error.innerHTML = window.PW_IN_APP
         ? 'Tu cuenta está pendiente de pago. Renueva tu suscripción entrando a <strong>pathwaycareercoach.com</strong> desde tu navegador.'
@@ -381,8 +399,15 @@ async function entrar(){
       }catch(e){}
     }
 
+    // Login fresco → damos un presupuesto nuevo de reintento al panel/portal.
+    // (El panel, ante un 401 por carrera de token al entrar, reintenta UNA vez
+    // recargando en vez de desloguear; esto resetea ese "una vez" por login.)
+    try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
     var _v='v='+Date.now();
-    if(usuario.rol==='coach'||usuario.rol==='admin'){
+    if(usuario.rol==='owner'){
+      // Dueño de una red (multicoach) → su panel de red.
+      window.location.href=BASE+'/multicoach.html?'+_v;
+    } else if(usuario.rol==='coach'||usuario.rol==='admin'){
       window.location.href=BASE+'/panel-v2.html?'+_v;
     } else if(usuario.rol==='empleado'){
       // Empleado (equipo comercial): panel propio mínimo con las plantillas.
