@@ -1037,21 +1037,23 @@ const RULES = [
     },
   },
   {
-    name: "diseño: número de KPI del panel no se infla (chico, como multicoach)",
-    bug: "El número de _tile ('Mi negocio') se revirtió varias veces a 46px/900 → " +
-         "se veía gigante y no matcheaba multicoach ni el resto de las KPI. Debe " +
-         "quedar chico (~26px, peso 700), igual que _statMini/_statBig y multicoach " +
-         "(.kpi .n). Esta regla evita que vuelva a inflarse en un merge.",
+    name: "diseño: número de KPI del panel en tamaño INTERMEDIO (ni gigante ni chico)",
+    bug: "El número de _tile ('Mi negocio') se fue a los extremos varias veces: 46px " +
+         "(gigante, decisión de una sesión) o 26px (muy chico, otra). La coach pidió " +
+         "un TAMAÑO INTERMEDIO (~32px, peso 700), igual en panel-v2 y multicoach " +
+         "(.kpi .n). Esta regla lo mantiene en el rango intermedio (28–36px): frena " +
+         "que lo inflen a 46 y que lo achiquen a 26.",
     check() {
       const p = read("panel-v2.html");
       if (!p) return null;
       const m = p.match(/function _tile\([^)]*\)\{[\s\S]{0,160}?font-size:(\d+)px/);
       if (!m) return "panel-v2.html: no se encontró el número de _tile (¿cambió la función?).";
       const px = parseInt(m[1], 10);
-      if (px > 30) return "panel-v2.html: el número de _tile quedó en " + px + "px (muy grande). Debe ser ~26px, como multicoach.";
-      // multicoach .kpi .n también chico (no volver a 40/46).
+      if (px > 36) return "panel-v2.html: el número de _tile quedó en " + px + "px (muy grande). Debe ser intermedio (~32px).";
+      if (px < 28) return "panel-v2.html: el número de _tile quedó en " + px + "px (muy chico). Debe ser intermedio (~32px), como pidió la coach.";
+      // multicoach .kpi .n en el mismo rango intermedio (ni 46 ni 26).
       const mc = read("multicoach.html");
-      if (mc) { const km = mc.match(/\.kpi \.n\{[^}]*font-size:(\d+)px/); if (km && parseInt(km[1], 10) > 30) return "multicoach.html: .kpi .n quedó en " + km[1] + "px (muy grande)."; }
+      if (mc) { const km = mc.match(/\.kpi \.n\{[^}]*font-size:(\d+)px/); if (km) { const kp = parseInt(km[1], 10); if (kp > 36) return "multicoach.html: .kpi .n quedó en " + kp + "px (muy grande)."; if (kp < 28) return "multicoach.html: .kpi .n quedó en " + kp + "px (muy chico)."; } }
       return null;
     },
   },
