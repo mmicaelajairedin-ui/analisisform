@@ -78,7 +78,10 @@ async function entrar(page, email, password, urlPat) {
   await page.fill('#email', email);
   await page.fill('#password', password);
   await Promise.all([
-    page.waitForURL(urlPat || /panel-v2|empleado|cliente|pathway-(fit|fin)-cliente|multicoach|empresa/i, { timeout: 25000 }),
+    // waitUntil:'commit' → resuelve apenas navega a la URL nueva, sin esperar a
+    // que la página PESADA (multicoach carga datos + imágenes) termine de cargar
+    // entera. El contenido lo espera después verificarRender (poll).
+    page.waitForURL(urlPat || /panel-v2|empleado|cliente|pathway-(fit|fin)-cliente|multicoach|empresa/i, { timeout: 25000, waitUntil: 'commit' }),
     page.locator('#password').press('Enter'),
   ]);
 }
