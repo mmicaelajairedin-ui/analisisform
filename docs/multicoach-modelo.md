@@ -66,6 +66,10 @@ coaches"). El precio es externo (Stripe). Todos arrancan con prueba de N días
 Los cupos (coaches/clientes) los enforcea el sistema HOY. Los demás beneficios
 se gatean a medida que se construye cada feature (marcar acá cuál está activo).
 
+> **Nicho:** cada multicoach tiene UN solo nicho (fitness / carrera / finanzas),
+> elegido por el admin al darlo de alta y fijo. No se mezclan nichos ni es un
+> beneficio de plan — toda la red opera en ese nicho.
+
 | Beneficio | Boutique | Studio | Pro |
 |-----------|:--------:|:------:|:---:|
 | Panel del dueño (ver red, asignar clientes) | ✅ | ✅ | ✅ |
@@ -74,7 +78,6 @@ se gatean a medida que se construye cada feature (marcar acá cuál está activo
 | Recursos compartidos de la red | ✅ | ✅ | ✅ |
 | Clases / webinars de la empresa | — | ✅ | ✅ |
 | Analytics de la red (ranking, clientes en riesgo) | básico | completo | completo + agente IA semanal |
-| Nichos (fitness/carrera/finanzas) | 1 | hasta 3 | multi-nicho |
 | Soporte | email | WhatsApp prioritario | dedicado + onboarding/migración |
 | Dominio propio / subdominio | — | — | ✅ |
 | Coaches y clientes | 3 / 45 | 8 / 120 | ilimitado |
