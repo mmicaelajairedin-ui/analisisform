@@ -1517,6 +1517,37 @@ const RULES = [
     },
   },
   {
+    name: "invitación al cliente: la cuenta se crea server-side + botón Reenviar (el email siempre puede salir)",
+    bug: "Al dar de alta un cliente, la fila de login en 'usuarios' se creaba con la anon key " +
+         "→ RLS la bloqueaba → la función password-reset no encontraba al usuario y NUNCA " +
+         "mandaba el email de invitación (fallo silencioso: era la causa de 'no me llega'). " +
+         "Fix: password-reset crea la cuenta con SERVICE role cuando welcome=true, devuelve " +
+         "`sent`, y el panel tiene 'Reenviar invitación' + avisa si el email no salió.",
+    check() {
+      const pr = read("supabase/functions/password-reset/index.ts");
+      if (pr) {
+        if (!/!user && body\.welcome === true/.test(pr)) return "password-reset: ya no crea la cuenta server-side cuando welcome=true (vuelve el fallo silencioso 'no me llega la invitación').";
+        if (!/return json\(\{ ok: true, sent \}\)/.test(pr)) return "password-reset: ya no devuelve `sent` (el panel no puede avisar si el email salió).";
+      }
+      const p = read("panel-v2.html");
+      if (p && !/data-act='reinvitar'/.test(p)) return "panel-v2.html: falta el botón 'Reenviar invitación' (reinvitar) en la ficha del cliente.";
+      return null;
+    },
+  },
+  {
+    name: "pago/plan: no se abre Stripe dos veces (freno anti doble-tap en el handler 'open')",
+    bug: "Al 'ver plan'/pagar, en móvil un doble-tap (o click fantasma) abría Stripe DOS " +
+         "veces. El handler act==='open' frena la MISMA URL si se repite en <1.8s " +
+         "(window._pwLastOpen). Si se saca, vuelve el doble-abrir.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="open"/.test(p)) return null;
+      if (!/window\._pwLastOpen/.test(p)) return "panel-v2.html: el handler 'open' ya no frena el doble-abrir (falta window._pwLastOpen) → Stripe se abre dos veces.";
+      return null;
+    },
+  },
+  {
     name: "admin: crear coach pasa por la edge function crear-coach (RLS no lo bloquea)",
     bug: "El botón 'Dar acceso a un coach' hacía un POST directo a usuarios con rol='coach' " +
          "desde el navegador. Con RLS estricto en usuarios (usuarios_hardening.sql), la anon " +

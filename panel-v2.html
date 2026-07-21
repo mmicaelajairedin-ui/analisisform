@@ -13,7 +13,7 @@
      La frescura la garantiza `_headers` con must-revalidate. -->
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Pathway</title>
-<link rel="icon" href="/favicon-app.svg?v=4" type="image/svg+xml">
+<link rel="icon" href="/favicon-app.svg?v=5" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=4">
 <link rel="manifest" href="/manifest.json?v=5">
 <meta name="theme-color" content="#2D6A4F">
@@ -758,6 +758,15 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 @keyframes pwFadeIn{from{opacity:0}to{opacity:1}}
 .cp-ai-scrim{display:none;}
 @media (max-width:900px){ .cp-ai-scrim{display:block;position:fixed;inset:0;background:rgba(20,42,30,.34);z-index:59;animation:pwFadeIn .2s ease;} }
+/* Móvil: el chat (y el widget de la cabra) dejan de ser un panel de 340px que
+   se sale de la pantalla → pasan a ser una "hoja" anclada abajo, a todo el ancho
+   con márgenes, y como mucho 82vh de alto (queda ~un dedo de fondo atenuado
+   arriba para tocar y cerrar). Antes tapaba todo. */
+@media (max-width:600px){
+  .cp-ai-panel{left:10px;right:10px;bottom:10px;top:auto;width:auto;max-height:82vh;}
+  .cp-ai-panel--chat{top:auto;bottom:10px;left:10px;right:10px;width:auto;height:82vh;max-height:82vh;}
+  .cp-ai-panel--guide{height:auto;max-height:82vh;}
+}
 @keyframes cpChatIn{from{opacity:0;transform:translateY(-12px) scale(.97);}to{opacity:1;transform:translateY(0) scale(1);}}
 /* Cabecera del chat: limpia (blanca con acentos verdes), no el bloque verde pesado. */
 .cp-ai-panel--chat .cp-ai-head{background:#fff;color:var(--pw-carbon);border-bottom:1px solid var(--pw-border);}
@@ -1783,7 +1792,7 @@ function viewSidebar(){
     "<a href='#' class='cp-side-brand' data-act='nav:resumen'>"+
       ((REAL && isProV() && RCFG && RCFG.logo_url)
         ? "<img src='"+esc(RCFG.logo_url)+"' alt='' style='max-width:150px;max-height:34px;object-fit:contain'>"
-        : "<svg width='24' height='24' viewBox='0 0 100 100' aria-hidden='true'><polygon points='10,82 32,52 54,82' fill='var(--pw-sendero)'/><polygon points='34,82 58,28 82,82' fill='#2D6A4F'/><circle cx='58' cy='22' r='5' fill='#E9C46A'/></svg>"+
+        : "<svg width='24' height='24' viewBox='0 0 100 100' aria-hidden='true'><polygon points='36.2,35.2 52.8,54.3 52.8,81.8 7.4,81.8' fill='#215C44'/><polygon points='67.9,45.8 92.6,81.8 43.1,81.8' fill='#267A54'/><circle cx='75.4' cy='27.8' r='10.3' fill='#F8CA45'/></svg>"+
           "<span class='cp-side-brand-word'>pathway<span style='color:var(--pw-sendero)'>.</span></span>")+"</a>"+
     "<button class='cp-rail-toggle' data-act='rail-toggle' title='Colapsar / expandir menú' aria-label='Colapsar o expandir menú'><svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M15 18l-6-6 6-6'/></svg><span class='rl-txt'>Colapsar</span></button>"+
     "<div class='cp-side-coach'>"+
@@ -4411,6 +4420,11 @@ function viewClienteDetalle(c){
     // (recuperar-password). Por eso se quitó la tarjeta "Acceso del cliente".
     body=_hd+_ft+
           "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'><button class='cp-btn cp-btn-ghost' data-act='clidet:perfil'>Descartar</button><button class='cp-btn cp-btn-primary' data-act='cli-save' data-id='"+esc(c.id)+"'>Guardar cambios</button></div>"+
+        "</div></div>"+
+        "<div class='cp-card'><div class='cp-card-pad' style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'>"+
+          "<div><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'><span class='cp-emo'>✉️</span> Invitación al portal</div>"+
+            "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px;max-width:360px'>Le reenvía el email para crear su contraseña y entrar. Úsalo si el cliente dice que no le llegó (revisa también su carpeta de spam).</div></div>"+
+          "<button class='cp-btn cp-btn-primary' data-act='reinvitar' data-id='"+esc(c.id)+"' style='white-space:nowrap'>"+svg(IC.extLink,14)+" Reenviar invitación</button>"+
         "</div></div>"+
         ((c.raw&&c.raw.activo===false)?"<div class='cp-card'><div class='cp-card-pad'><div style='font-size:12.5px;color:var(--pw-danger);font-weight:600'>Acceso desactivado — el cliente no puede entrar al portal ni aparece en el chat. Reactívalo desde el panel de la derecha.</div></div></div>":"")+
         (fichaV2()?"<div class='cp-cli-deact-v2'>"+((c.raw&&c.raw.activo===false)
@@ -7511,7 +7525,15 @@ document.addEventListener("click", function(ev){
       .catch(function(){ el.disabled=false; if(_rst) _rst.textContent="Sin conexión. Reintentá."; });
     return;
   }
-  if(act==="open"){ var ou=el.getAttribute("data-url"); if(ou){ var _w=window.open(ou,"_blank","noopener"); if(!_w){ location.href=ou; } } return; }
+  if(act==="open"){ var ou=el.getAttribute("data-url"); if(ou){
+      // Freno anti doble-abrir: en móvil un doble-tap (o un click fantasma) abría
+      // Stripe DOS VECES. Si es la misma URL en <1.8s, ignoramos el segundo.
+      var _on=Date.now();
+      if(window._pwLastOpen && window._pwLastOpen.u===ou && (_on-window._pwLastOpen.t)<1800){ return; }
+      window._pwLastOpen={u:ou,t:_on};
+      // Preferimos pestaña nueva (el panel queda atrás, se vuelve al terminar). Solo
+      // si el navegador la bloquea, navegamos en la misma pestaña como último recurso.
+      var _w=window.open(ou,"_blank","noopener"); if(!_w){ location.href=ou; } } return; }
   if(act==="rail-toggle"){ state.railCollapsed=!state.railCollapsed; var _rap=document.querySelector(".cp-app"); var _rsd=document.querySelector(".cp-side"); if(_rap)_rap.classList.toggle("rail",state.railCollapsed); if(_rsd)_rsd.classList.toggle("rail",state.railCollapsed); return; }
   // Agenda: tipos de evento + agendar cita. TODO con modales Pathway (nada de
   // prompts del navegador). Se guarda en el perfil por REST (saveCfg).
@@ -7961,10 +7983,37 @@ document.addEventListener("click", function(ev){
         var _cfoto=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim();
         if(!/^https?:\/\//i.test(_cfoto)) _cfoto="";
         var _cslug=((RCFG&&RCFG.slug)||(COACH&&COACH.slug)||"").toString().trim();
-        return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:aem,welcome:true,coach_name:cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})});
+        return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:aem,name:anom,welcome:true,coach_name:cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})});
+      }).then(function(res){ return (res&&res.json)?res.json().catch(function(){return{};}):{}; })
+      .then(function(j){
+        // Si el email NO salió, avisamos claro (antes fallaba en silencio) y guiamos
+        // al botón "Reenviar invitación" de la ficha.
+        if(j && j.sent===false && aMsg){ aMsg.style.color="#8E7A35"; aMsg.textContent="✓ "+anom+" agregado a tu lista — pero el email de invitación no salió. Abre su ficha y toca \"Reenviar invitación\"."; }
       }).catch(function(){});
     };
     _sendInvite();
+    return;
+  }
+  if(act==="reinvitar"){
+    var riId=el.getAttribute("data-id"); if(!riId) return;
+    var riC=(CLIENTS||[]).filter(function(x){return String(x.id)===String(riId);})[0];
+    if(!riC){ toast("No encontramos al cliente."); return; }
+    var riEm=((riC.email)||"").toLowerCase().trim();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(riEm)){ toast("Ese cliente no tiene un email válido en su ficha."); return; }
+    if(riC._example){ toast("Es un cliente de ejemplo — en tu cuenta real sí se reenvía."); return; }
+    var riBtn=ev.currentTarget; if(riBtn) riBtn.disabled=true;
+    toast("Reenviando invitación…");
+    var riCn=(COACH&&COACH.name)||"tu coach";
+    var riCe=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
+    var riCf=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim(); if(!/^https?:\/\//i.test(riCf)) riCf="";
+    var riCs=((RCFG&&RCFG.slug)||(COACH&&COACH.slug)||"").toString().trim();
+    fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:riEm,name:(riC.name||""),welcome:true,coach_name:riCn,coach_email:riCe,coach_photo:riCf,coach_slug:riCs})})
+      .then(function(res){ return (res&&res.json)?res.json().catch(function(){return{};}):{}; })
+      .then(function(j){ if(riBtn) riBtn.disabled=false;
+        if(j && j.sent===true){ toast("✓ Invitación reenviada a "+riEm+". Pídele que revise también spam."); }
+        else { toast("No se pudo enviar el email ahora. Reintenta en un momento."); }
+      })
+      .catch(function(){ if(riBtn) riBtn.disabled=false; toast("Sin conexión. Reintenta."); });
     return;
   }
   if(act==="mail-send"){
@@ -10834,7 +10883,7 @@ if('serviceWorker' in navigator){
     <div style="background:#fff;border:1px solid var(--pw-border);border-radius:99px;padding:6px 8px 6px 10px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 18px rgba(31,42,35,.14);">
       <span style="display:inline-flex;align-items:center;gap:9px;font-size:13px;color:var(--pw-carbon);font-weight:500;">
         <span aria-hidden="true" style="display:inline-flex;width:34px;height:34px;border-radius:8px;background:#fff;border:1px solid rgba(31,42,35,.18);align-items:center;justify-content:center;overflow:hidden;">
-          <svg width="22" height="22" viewBox="0 0 100 100" aria-hidden="true"><polygon points="10,82 32,52 54,82" fill="#52B788"/><polygon points="34,82 58,28 82,82" fill="#2D6A4F"/><circle cx="58" cy="22" r="5" fill="#E9C46A"/></svg>
+          <svg width="22" height="22" viewBox="0 0 100 100" aria-hidden="true"><polygon points="36.2,35.2 52.8,54.3 52.8,81.8 7.4,81.8" fill="#215C44"/><polygon points="67.9,45.8 92.6,81.8 43.1,81.8" fill="#267A54"/><circle cx="75.4" cy="27.8" r="10.3" fill="#F8CA45"/></svg>
         </span>
         Instalá Pathway como app
       </span>

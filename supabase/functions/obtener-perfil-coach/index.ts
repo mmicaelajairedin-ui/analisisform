@@ -32,7 +32,21 @@ const SELECT_FIELDS = [
   "anios_experiencia",
   "foto_url",
   "configuracion",
+  "activo",
 ].join(",");
+
+// ¿La suscripción del coach está VIGENTE? Un coach con la prueba vencida y sin
+// pagar no debe tener perfil público accesible (aunque alguien tenga el link
+// directo). Cuando paga, el webhook pone estado_sub='activa' y vuelve solo.
+function subVigente(cfg: Record<string, unknown>): boolean {
+  if (cfg.es_pro_vitalicio === true) return true;
+  const estado = String(cfg.estado_sub || "");
+  if (estado === "activa") return true;
+  if (estado === "cancelada" || estado === "vencida") return false;
+  const ff = cfg.fecha_fin_prueba;
+  if (ff) { const t = Date.parse(String(ff)); if (!isNaN(t)) return t > Date.now(); }
+  return true; // sin datos concluyentes → no ocultar (cuentas viejas)
+}
 
 interface UsuarioRow {
   id: string;
@@ -48,6 +62,7 @@ interface UsuarioRow {
   anios_experiencia: number | null;
   foto_url: string | null;
   configuracion: Record<string, unknown> | null;
+  activo?: boolean | null;
 }
 
 interface CandReview { resena: string | null }
@@ -97,6 +112,11 @@ Deno.serve(async (req: Request) => {
     }
     if (!rows.length) return json({ error: "not_found" }, 404);
     row = rows[0];
+    // Gate de suscripción: si la prueba venció y no pagó (o está de baja), el
+    // perfil público no existe públicamente (mismo criterio que el directorio).
+    if (row.activo === false || !subVigente((row.configuracion || {}) as Record<string, unknown>)) {
+      return json({ error: "not_found" }, 404);
+    }
     if (!row.slug) row.slug = slug; // el slug efectivo (vino de configuracion)
   } catch (_e) {
     return json({ error: "supabase_unreachable" }, 502);
