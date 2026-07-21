@@ -509,7 +509,7 @@ window.guardarNotas=function(){
   if(typeof CRAW!=='undefined'&&CRAW) CRAW.notas_progreso=val;
   var st=document.getElementById('nst'); if(st) st.textContent='Guardando…';
   var q=(typeof CID!=='undefined'&&CID)?('id=eq.'+encodeURIComponent(CID)):('email=eq.'+encodeURIComponent(EMAIL));
-  sbPatch('candidatos',q,{notas_progreso:val}).then(function(r){ if(st){ st.textContent=(r&&r.ok)?'✓ Guardado':'✓ Guardado'; setTimeout(function(){ st.textContent=''; },2500); } }).catch(function(){ if(st){ st.textContent='Sin conexión — se reintenta'; } });
+  sbPatch('candidatos',q,{notas_progreso:val}).then(function(r){ if(st){ st.textContent=(r&&r.ok)?'✓ Guardado':'No se pudo guardar'; setTimeout(function(){ st.textContent=''; },2500); } }).catch(function(){ if(st){ st.textContent='Sin conexión — se reintenta'; } });
 };
 window.toggleSesTarea=function(idx,ti){
   var _apply=function(arr){
@@ -529,10 +529,29 @@ window.toggleSesTarea=function(idx,ti){
 };
 // Red de seguridad para cuando RLS esté prendido: si una query da 401/403 (sin
 // sesión válida), mandamos a login. Mientras RLS esté apagado nunca se dispara.
-var _authGone=false;
-function _authExpired(){ if(_authGone)return; _authGone=true; try{ location.href='login.html'; }catch(e){} }
+var _authGone=false,_authChecking=false;
+function _tokenNow(){ try{ var h=(window.PWAUTH&&PWAUTH.headersSync)?PWAUTH.headersSync():null; return !!(h&&h.Authorization&&h.Authorization!=="Bearer "+KEY); }catch(e){ return false; } }
+// Un 401/403 no siempre es "sesión vencida": al entrar recién logueado, una
+// lectura puede salir ANTES de que el token se adjunte → 401 → y esto antes
+// deslogueaba al toque ("entro y me tira de vuelta al login"). Ahora: si HAY
+// sesión válida, reintentamos UNA vez recargando; solo sin sesión vamos al login.
+function _authExpired(){
+  if(_authGone||_authChecking) return;
+  _authChecking=true;
+  var check; try{ check=(window.PWAUTH&&PWAUTH.hasSession)?PWAUTH.hasSession():Promise.resolve(_tokenNow()); }catch(e){ check=Promise.resolve(_tokenNow()); }
+  var timed=new Promise(function(res){ setTimeout(function(){ res(_tokenNow()); },4000); });
+  Promise.race([check,timed]).then(function(has){
+    _authChecking=false; if(_authGone) return;
+    if(has){
+      var tried=false; try{ tried=sessionStorage.getItem('pw_auth_retry')==='1'; }catch(e){}
+      if(!tried){ try{ sessionStorage.setItem('pw_auth_retry','1'); }catch(e){} location.reload(); return; }
+      return; // ya reintentamos y sigue con sesión válida → no desloguear en loop
+    }
+    _authGone=true; try{ location.href='login.html'; }catch(e){}
+  },function(){ _authChecking=false; });
+}
 function sbGet(t,q){return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:_hdr()}).then(function(r){ if(r.status===401||r.status===403){_authExpired();return [];} return r.json();});}
-function sbPatch(t,q,d){return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:_hdr({'Content-Type':'application/json',Prefer:'return=minimal'}),body:JSON.stringify(d)});}
+function sbPatch(t,q,d){return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:_hdr({'Content-Type':'application/json',Prefer:'return=representation'}),body:JSON.stringify(d)}).then(function(r){if(r.status===401||r.status===403){_authExpired();return {ok:false,status:r.status,rows:0};}if(!r.ok)return {ok:false,status:r.status,rows:0};return r.json().then(function(a){var n=(a&&a.length)||0;return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);}};},function(){return {ok:true,status:r.status,rows:1};});});}
 function esc(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function setText(sel,txt){var e=document.querySelector(sel);if(e)e.textContent=txt;}
 // Fotos demo (guardadas una sola vez, usadas en todos los demos):

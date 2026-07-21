@@ -566,23 +566,25 @@ function guardar(){
 
   st.textContent='Guardando...';st.style.color='#888';
 
-  // PATCH directo a candidatos — funciona con service key via anon si RLS lo permite
-  // Si falla, guardamos en localStorage como backup
+  // PATCH directo a candidatos. Guardado VERIFICADO: return=representation para
+  // saber si REALMENTE escribió (antes, con return=minimal, un 0-filas por RLS
+  // daba 204 y mostraba "✓ Guardada" aunque solo quedara el backup local).
   fetch(SB+'/rest/v1/candidatos?email=eq.'+enc(_email),{
     method:'PATCH',
-    headers:H({'Content-Type':'application/json','Prefer':'return=minimal'}),
+    headers:H({'Content-Type':'application/json','Prefer':'return=representation'}),
     body:JSON.stringify(payload)
   }).then(function(r){
-    if(r.ok||r.status===204){
+    // Siempre dejamos el backup local (no se pierde el texto).
+    localStorage.setItem('carta_'+_email, cartaTexto);
+    return (r.ok ? r.json().then(function(a){return (a&&a.length)||0;},function(){return 1;}) : Promise.resolve(0)).then(function(n){
+    if(n>=1){
       st.textContent='✓ Guardada';st.style.color='#5A8C6E';
-      // Backup en localStorage
-      localStorage.setItem('carta_'+_email, cartaTexto);
     } else {
-      // Fallback: guardar en localStorage
-      localStorage.setItem('carta_'+_email, cartaTexto);
+      // No escribió en la base (RLS / sesión) → queda guardada localmente.
       st.textContent='✓ Guardada localmente';st.style.color='#8C7B80';
     }
     setTimeout(function(){st.textContent='';st.style.color='';},3000);
+    });
   }).catch(function(){
     localStorage.setItem('carta_'+_email, cartaTexto);
     st.textContent='✓ Guardada localmente';st.style.color='#8C7B80';

@@ -423,6 +423,34 @@ const RULES = [
     },
   },
   {
+    name: "helpers de escritura verifican el guardado (no return=minimal mentiroso bajo RLS)",
+    bug: "Con RLS activo, un PATCH/POST sin sesión válida no matchea filas y con " +
+         "return=minimal devuelve 2xx r.ok=true → los helpers mostraban 'guardado ✓' " +
+         "sin escribir (pérdida silenciosa de datos del usuario). Los helpers centrales " +
+         "(_sbw, pt, sbPatch) deben pedir return=representation y que r.ok/el resultado " +
+         "refleje que volvió ≥1 fila.",
+    check() {
+      var specs = [
+        { f: "panel-v2.html", fn: "_sbw" },
+        { f: "cliente.html", fn: "pt" },
+        { f: "pathway-fit-cliente.html", fn: "sbPatch" },
+        { f: "pathway-fin-cliente.html", fn: "sbPatch" },
+      ];
+      for (var k = 0; k < specs.length; k++) {
+        var sp = specs[k], s = read(sp.f);
+        if (!s) return sp.f + ": no existe";
+        var i = s.indexOf("function " + sp.fn + "(");
+        if (i < 0) return sp.f + ": no se encontró el helper " + sp.fn;
+        var body = s.slice(i, i + 1700);
+        if (!/return=representation/.test(body))
+          return sp.f + ": " + sp.fn + " ya no pide return=representation (volvería a 'mentir' que guardó bajo RLS)";
+        if (!/rows|\.length/.test(body))
+          return sp.f + ": " + sp.fn + " no verifica cuántas filas escribió (rows/.length)";
+      }
+      return null;
+    },
+  },
+  {
     name: "panel: saveCfg verifica que realmente guardó (no miente con return=minimal)",
     bug: "Tras activar RLS en `usuarios` (usuarios_hardening.sql), un PATCH sin " +
          "sesión autenticada matchea 0 filas. saveCfg usaba return=minimal → 204 " +
@@ -1698,6 +1726,35 @@ const RULES = [
         if (s && /snap\.licdn\.com\/li\.lms-analytics/.test(s) && !/_pwLoadLinkedIn/.test(s))
           return f + ": el LinkedIn Insight Tag ya no está gateado por consentimiento (_pwLoadLinkedIn).";
       }
+      return null;
+    },
+  },
+  {
+    name: "auth: un 401 al entrar reintenta (no expulsa) si hay sesión válida",
+    bug: "Al entrar recién logueada, una lectura podía salir ANTES de que el " +
+         "token se adjunte (SDK del CDN booteando) → 401 → y _authExpired " +
+         "deslogueaba al toque: 'entro, demora unos segundos y me tira de vuelta " +
+         "al login'. Le pasaba al panel del coach Y a los portales del cliente. " +
+         "Ahora, ante 401/403, si HAY sesión válida se reintenta UNA vez " +
+         "(recargando) en vez de desloguear; solo sin sesión se va al login. El " +
+         "presupuesto de reintento (sessionStorage pw_auth_retry) se resetea en " +
+         "cada login fresco (login.html + auth-callback).",
+    check() {
+      // Panel + los 2 portales con _authExpired: debe existir el reintento
+      // guardado por sesión y el chequeo de sesión antes de desloguear.
+      var guarded = ["panel-v2.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      for (var i = 0; i < guarded.length; i++) {
+        var s = read(guarded[i]);
+        if (!s) continue;
+        if (!/function _authExpired/.test(s)) return guarded[i] + ": falta _authExpired.";
+        if (!/pw_auth_retry/.test(s)) return guarded[i] + ": _authExpired ya no reintenta (pw_auth_retry) — vuelve a expulsar al toque.";
+        if (!/hasSession|_tokenNow/.test(s)) return guarded[i] + ": _authExpired ya no verifica si hay sesión antes de desloguear.";
+      }
+      // El presupuesto de reintento se resetea en cada login fresco.
+      var lg = read("login.html");
+      if (lg && !/removeItem\(['"]pw_auth_retry/.test(lg)) return "login.html: no resetea pw_auth_retry en el login fresco.";
+      var ac = read("auth-callback.html");
+      if (ac && !/removeItem\(['"]pw_auth_retry/.test(ac)) return "auth-callback.html: no resetea pw_auth_retry en el login fresco.";
       return null;
     },
   },

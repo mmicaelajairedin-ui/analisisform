@@ -894,8 +894,19 @@ function mcRanking(){return DB.coaches.slice().sort(function(a,b){return b.rat-a
 function mcRiesgo(){var rk={stale:0,mid:1,fresh:2},pill={stale:['alto','Alto'],mid:['medio','Medio'],fresh:['bajo','Bajo']};return DB.clientes.filter(function(k){return k.est==='activo';}).slice().sort(function(a,b){return rk[a.lastState]-rk[b.lastState];}).slice(0,4).map(function(k){var p=pill[k.lastState]||pill.fresh;return '<div class="rowb row" onclick="fichaCliente(\''+k.id+'\')"><div class="av" style="background:#EEF2ED;color:#667068">'+k.ini+'</div><div><div class="nm">'+k.n+'</div><div class="sub">Últ. actividad '+k.ult+'</div></div><span class="pill '+p[0]+'" style="margin-left:auto">'+p[1]+'</span></div>';}).join('');}
 function mcComDash(){var m=NM(),p=m.post;var reacts='<div class="react">'+p.reacts.map(function(r){return '<button class="rb" onclick="react(this,\''+r[0]+'\')">'+r[0]+' <b>'+r[1]+'</b></button>';}).join('')+'</div>';var feat=p.img?'<div class="feat"><div class="img"><span class="emo">🤸</span><img src="'+p.img+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"></div>'+reacts+'</div>':reacts;var post='<div class="post"><div class="ph"><div class="a">'+m.ini+'</div><div><b>'+m.marca+'</b><small>hace 2 horas</small></div></div><div class="msg">'+p.msg+'</div>'+feat+'</div>';var minis=m.minis.map(function(x){return '<div class="mini"><div><div class="k">'+x[0]+'</div>'+(x[1]?'<b>'+x[1]+'</b>':'')+'<p>'+x[2]+'</p></div></div>';}).join('');return post+minis;}
 function mcSetNiche(n){if(!MCN[n]||n===MC_N)return;MC_N=n;mcApplyNiche();__toast('Demo: '+NM().marca);}
+// Recursos de ejemplo POR NICHO (demo). Se cargan según el nicho elegido para que
+// el coach entienda QUÉ va en "Recursos". URLs de búsqueda → nunca links rotos.
+var MC_RECURSOS={
+ fitness:[{titulo:'Rutina de gimnasio para principiantes (video)',url:'https://www.youtube.com/results?search_query=rutina+gimnasio+principiantes'},{titulo:'Guía de alimentación saludable (OMS)',url:'https://www.who.int/es/news-room/fact-sheets/detail/healthy-diet'},{titulo:'Técnica correcta de los ejercicios básicos',url:'https://www.youtube.com/results?search_query=tecnica+correcta+ejercicios+gimnasio'},{titulo:'Cómo crear el hábito de entrenar',url:'https://www.youtube.com/results?search_query=como+crear+el+habito+de+entrenar'}],
+ carrera:[{titulo:'Cómo armar un CV de alto impacto',url:'https://zety.es/blog/cv-de-alto-impacto'},{titulo:'Cómo crear un buen perfil de LinkedIn',url:'https://www.linkedin.com/help/linkedin/answer/a548467'},{titulo:'Técnicas de búsqueda de empleo',url:'https://es.indeed.com/orientacion-laboral/buscar-trabajo/tecnicas-busqueda-empleo'},{titulo:'Preguntas frecuentes en entrevistas',url:'https://www.indeed.com/orientacion-profesional/entrevistas/guia-preguntas-para-entrevista'}],
+ finanzas:[{titulo:'Cómo armar un presupuesto mensual (video)',url:'https://www.youtube.com/results?search_query=como+hacer+un+presupuesto+mensual'},{titulo:'Método 50/30/20 para organizar gastos',url:'https://www.youtube.com/results?search_query=metodo+50+30+20+finanzas+personales'},{titulo:'Cómo crear un fondo de emergencia',url:'https://www.youtube.com/results?search_query=como+armar+un+fondo+de+emergencia'},{titulo:'Estrategias para salir de deudas',url:'https://www.youtube.com/results?search_query=como+salir+de+deudas+paso+a+paso'}]
+};
+var MC_REC_LABEL={fitness:'Fitness',carrera:'Carrera',finanzas:'Finanzas'};
+var MC_REC_EJEMPLOS={fitness:'rutinas de entrenamiento, guías de nutrición, videos de técnica o de hábitos',carrera:'guías de CV, perfil de LinkedIn, tips de entrevista o cómo buscar empleo',finanzas:'plantillas de presupuesto, guías de ahorro, salir de deudas o inversión básica'};
+function _mcDefRecursos(){ return (MC_RECURSOS[MC_N]||MC_RECURSOS.fitness).map(function(x){return {titulo:x.titulo,url:x.url};}); }
 function mcApplyNiche(){
  var m=NM();DB={coaches:m.coaches,clientes:m.clientes};NICHOS=m.cats;
+ try{ CFG.recursos=_mcDefRecursos(); }catch(e){}
  var setTx=function(id,t){var el=document.getElementById(id);if(el)el.textContent=t;};
  var setHT=function(id,h){var el=document.getElementById(id);if(el)el.innerHTML=h;};
  [].forEach.call(document.querySelectorAll('#mc-nswitch button'),function(b){b.classList.toggle('on',b.getAttribute('data-n')===MC_N);});
@@ -1218,7 +1229,7 @@ function _nuevoReto(){__openModal('Nuevo reto',__inp('nr-n','Nombre del reto')+_
 
 /* ===== Configuración — misma estructura del panel (Perfil · Recursos · Marca propia · Mi cuenta), SIN "Clientes de Pathway" ===== */
 var _cfgSec='profile';
-var CFG={color:(_mcBrand().color||'#2D6A4F'),recursos:[{titulo:'Guía de primeros pasos en el gym',url:'https://…'},{titulo:'Plan de alimentación base',url:'https://…'},{titulo:'Videos de técnica de ejercicios',url:'https://…'}]};
+var CFG={color:(_mcBrand().color||'#2D6A4F'),recursos:_mcDefRecursos()};
 function renderConfig(){
  var v=document.getElementById('vscroll');
  var secs=[['profile','Perfil','👤'],['recursos','Recursos','📚'],['brand','Marca propia','🎨'],['account','Mi cuenta','💳']];
@@ -1240,12 +1251,13 @@ function _cfgProfile(){
    +'<div style="display:flex;gap:10px;justify-content:flex-end"><button class="cp-btn cp-btn-primary" onclick="__toast(\'Perfil guardado ✓\')">Guardar cambios</button></div></div></div>';
 }
 function _cfgRecursos(){
+ var _nlbl=MC_REC_LABEL[MC_N]||'Fitness', _ej=MC_REC_EJEMPLOS[MC_N]||MC_REC_EJEMPLOS.fitness;
  var rows=CFG.recursos.map(function(r,i){return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:9px"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px"><input class="cp-form-input" value="'+r.titulo+'" placeholder="Título del recurso"><input class="cp-form-input" value="'+r.url+'" placeholder="https://… (link)" style="font-size:12px;color:var(--pw-text-soft)"></div><button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4);height:40px;padding:0 13px" onclick="_recDel('+i+')" title="Quitar">✕</button></div>';}).join('')
-  ||'<div style="text-align:center;color:var(--pw-text-soft);font-size:13px;padding:20px 10px">Todavía no cargaste recursos.</div>';
- return '<div class="cp-card"><div class="cp-card-hd"><h3 class="cp-card-title">Recursos del portal<span class="dot">.</span></h3><span class="cp-eyebrow">Los ve el cliente</span></div>'
-  +'<div class="cp-card-pad"><p class="cp-reassurance" style="margin:0 0 16px">Tú los definís y <strong>solo los ve el cliente</strong> en la sección Recursos de su portal. Los coaches no los editan. Edita el título/link o quita los que no uses con la <strong>✕</strong>.</p>'
+  ||'<div style="text-align:center;color:var(--pw-text-soft);font-size:13px;padding:18px 10px;line-height:1.6">Todavía no cargaste recursos propios — tus clientes ven los de ejemplo.<br>Tocá <strong>Cargar ejemplos de '+_nlbl+'</strong>, o <strong>Agregar recurso</strong> para poner el tuyo.</div>';
+ return '<div class="cp-card"><div class="cp-card-hd"><h3 class="cp-card-title">Recursos del portal<span class="dot">.</span></h3><span class="cp-eyebrow">'+_nlbl+'</span></div>'
+  +'<div class="cp-card-pad"><p class="cp-reassurance" style="margin:0 0 16px">Son <strong>enlaces útiles</strong> que <strong>solo ve el cliente</strong> en la sección Recursos de su portal — para '+_nlbl.toLowerCase()+', por ejemplo: '+_ej+'. Edita el título/link o quita los que no uses con la <strong>✕</strong>.</p>'
   +'<div id="recrows">'+rows+'</div>'
-  +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px"><button class="cp-btn cp-btn-ghost" onclick="_recAdd()">+ Agregar recurso</button><button class="cp-btn cp-btn-primary" style="margin-left:auto" onclick="__toast(\'Recursos guardados ✓\')">Guardar</button></div></div></div>';
+  +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px"><button class="cp-btn cp-btn-ghost" onclick="_recAdd()">+ Agregar recurso</button><button class="cp-btn cp-btn-ghost" onclick="CFG.recursos=_mcDefRecursos();renderConfig()">Cargar ejemplos de '+_nlbl+'</button><button class="cp-btn cp-btn-primary" style="margin-left:auto" onclick="__toast(\'Recursos guardados ✓\')">Guardar</button></div></div></div>';
 }
 function _recAdd(){CFG.recursos.push({titulo:'',url:''});renderConfig();}
 function _recDel(i){CFG.recursos.splice(i,1);renderConfig();}
