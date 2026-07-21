@@ -784,7 +784,34 @@ function __inp(id,ph){return '<div><input id="'+id+'" class="inp" placeholder="'
 function __sel(id,opts){return '<select id="'+id+'" class="inp">'+opts.map(function(o){return '<option>'+o+'</option>';}).join('')+'</select>';}
 function __openModal(title,body,ok,onOk){__mclose();var ov=document.createElement('div');ov.id='__modal';ov.className='modalov';ov.innerHTML='<div class="modal"><div class="mh">'+title+'</div><div class="mb">'+body+'</div><div class="mf"><button class="mbtn g" id="__mc">Cancelar</button><button class="mbtn p" id="__mo">'+ok+'</button></div></div>';document.body.appendChild(ov);ov.addEventListener('click',function(e){if(e.target===ov)__mclose();});document.getElementById('__mc').onclick=__mclose;document.getElementById('__mo').onclick=onOk;}
 function __act(icon,bg,titulo,sub){var box=document.getElementById('actividad');var el=document.createElement('div');el.className='row';el.innerHTML='<div class="av" style="background:'+bg+'"><span class="emo">'+icon+'</span></div><div><div class="nm">'+titulo+'</div><div class="sub">'+sub+' · recién</div></div>';box.insertBefore(el,box.firstChild);}
-function __nuevoCliente(){var cs=DB.coaches.filter(function(c){return c.est==='activo';});__openModal('Nuevo cliente',__inp('nc-n','Nombre y apellido')+__inp('nc-e','email@cliente.com')+'<div><span class="lbl">Coach</span><select id="nc-c" class="inp">'+cs.map(function(c){return '<option value="'+c.id+'">'+c.n+'</option>';}).join('')+'</select></div>','Agregar',function(){var n=document.getElementById('nc-n').value.trim();if(!n)return;var cid=document.getElementById('nc-c').value;var c=_coach(cid);DB.clientes.push({id:'k'+(DB.clientes.length+1)+'x',n:n,ini:_ini(n),nicho:(c?c.nicho:'entreno'),coach:cid,est:'activo',prog:'Onboarding',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién'});if(c)c.cli++;__act('➕','var(--bosque)','Nuevo cliente: '+n,'Asignado a '+(c?c.n:''));__mclose();__toast('Cliente '+n+' agregado ✓');if(_sec==='clientes')_fillClientes();else if(_sec==='coaches')renderCoaches();});}
+function __nuevoCliente(){
+ var cs=DB.coaches.filter(function(c){return c.est==='activo';});
+ if(MC_REAL){
+  var maxK=(MC_ORG&&MC_ORG.max_clientes!=null)?MC_ORG.max_clientes:null, haveK=(DB.clientes||[]).length;
+  if(maxK!=null&&haveK>=maxK){ __toast('Llegaste a tus '+maxK+' clientes. Subí de plan para sumar más.'); return; }
+  if(!cs.length){ __toast('Primero sumá un coach a tu red'); return; }
+ }
+ var coachOpts=cs.map(function(c){return '<option value="'+c.id+'">'+_mcEsc(c.n)+(c.esOwner?' (vos)':'')+'</option>';}).join('');
+ __openModal('Nuevo cliente',__inp('nc-n','Nombre y apellido')+__inp('nc-e','email@cliente.com')+'<div><span class="lbl">Coach</span><select id="nc-c" class="inp">'+coachOpts+'</select></div>','Agregar',function(){
+  var n=(document.getElementById('nc-n').value||'').trim(), em=(document.getElementById('nc-e').value||'').trim().toLowerCase();
+  var cid=document.getElementById('nc-c').value; var c=_coach(cid);
+  if(!n){__toast('Poné el nombre');return;}
+  if(!MC_REAL){ DB.clientes.push({id:'k'+(DB.clientes.length+1)+'x',n:n,ini:_ini(n),nicho:(c?c.nicho:(NICHOS[0]&&NICHOS[0].id)||''),coach:cid,est:'activo',prog:'Onboarding',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién'}); if(c)c.cli++; __act('➕','var(--bosque)','Nuevo cliente: '+n,'Asignado a '+(c?c.n:'')); __mclose(); __toast('Cliente '+n+' agregado ✓'); if(_sec==='clientes')_fillClientes();else if(_sec==='coaches')renderCoaches(); return; }
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){__toast('Email inválido');return;}
+  var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Agregando…';}
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+   return fetch(SB+'/functions/v1/agregar-cliente-red',{method:'POST',headers:h,body:JSON.stringify({nombre:n,email:em,coach_id:cid})});
+  }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
+   if(!res.ok||!res.d.ok){
+    var er=res.d.error, msg=er==='cap_reached'?('Llegaste a tus '+res.d.max+' clientes. Subí de plan.'):er==='coach_ajeno'?'Elegí un coach de tu red.':er==='not_owner'?'Tu sesión no está activa — reingresá':'No se pudo agregar. Reintentá';
+    if(ok){ok.disabled=false;ok.textContent='Agregar';} __toast(msg); return;
+   }
+   DB.clientes.push({id:res.d.id||('k'+haveK+'x'),n:n,ini:_mcIni(n),nicho:(c?c.nicho:(NICHOS[0]&&NICHOS[0].id)||''),coach:cid,est:'activo',prog:'',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién',email:em});
+   if(c)c.cli=(c.cli||0)+1;
+   __mclose(); __toast('Cliente '+n+' agregado a tu red ✓'); mcApplyNiche(); if(_sec==='clientes')_fillClientes();else if(_sec==='coaches')renderCoaches();
+  }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Agregar';} __toast('Error de conexión. Reintentá'); });
+ });
+}
 // Reasigna un cliente a un coach (compartido: dropdown de la ficha, drag y el
 // modal). En real va por la edge function asignar-cliente; en demo es local.
 function _reassign(cliId,coachId,cb){

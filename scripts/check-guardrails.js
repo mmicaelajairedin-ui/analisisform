@@ -1583,6 +1583,32 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: los clientes entran a la red (intake hereda org_id + alta real)",
+    bug: "Un cliente de una red debe aparecer en el panel del dueño (filtra por " +
+         "org_id). Por eso: (1) guardar-intake hace que el cliente HEREDE el org_id " +
+         "de su coach, y (2) 'Nuevo cliente' del dueño crea el candidato de verdad " +
+         "vía agregar-cliente-red (service role, gate owner, tope max_clientes). " +
+         "Sin esto el panel del dueño no se llena de clientes reales.",
+    check() {
+      const gi = read("supabase/functions/guardar-intake/index.ts");
+      if (gi && !/coachOrg/.test(gi)) return "guardar-intake: el cliente ya no hereda el org_id de su coach (no aparecería en la red).";
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      const seg = mc.slice(mc.indexOf("function __nuevoCliente("), mc.indexOf("function __nuevoCliente(") + 2200);
+      if (!/functions\/v1\/agregar-cliente-red/.test(seg))
+        return "multicoach.html: __nuevoCliente ya no crea el cliente real (agregar-cliente-red).";
+      const fn = read("supabase/functions/agregar-cliente-red/index.ts");
+      if (!fn) return "falta supabase/functions/agregar-cliente-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn) || !/not_owner/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "agregar-cliente-red: debe usar service role y gatear al owner.";
+      if (!/max_clientes/.test(fn) || !/cap_reached/.test(fn)) return "agregar-cliente-red: ya no respeta el tope max_clientes.";
+      if (!/org_id:\s*org\.id/.test(fn)) return "agregar-cliente-red: el cliente ya no queda en la org.";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy agregar-cliente-red/.test(wf)) return "deploy-functions.yml: falta desplegar agregar-cliente-red.";
+      return null;
+    },
+  },
+  {
     name: "admin: cambiar el dueño de una red (transferir, el anterior queda coach)",
     bug: "Transferir una red a otro dueño (promover un coach a owner, bajar al " +
          "dueño anterior a coach) es privilegiado → edge function cambiar-owner " +
