@@ -93,10 +93,11 @@ Deno.serve(async (req: Request) => {
   // ── Gate de admin ────────────────────────────────────────────────
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
+  // Diagnóstico fino: distinguir "no llegó la sesión" (el navegador mandó la
+  // anon key en vez del JWT del admin) de "el email no es admin en la base".
   const adminEmail = await callerEmail(token);
-  if (!adminEmail || !(await isAdmin(adminEmail))) {
-    return json({ error: "not_admin" }, 403);
-  }
+  if (!adminEmail) return json({ error: "no_session", hint: "el navegador no mandó tu login (JWT). Reingresá." }, 403);
+  if (!(await isAdmin(adminEmail))) return json({ error: "not_admin", email: adminEmail }, 403);
 
   // ── Input ────────────────────────────────────────────────────────
   let body: { email?: string; nombre?: string; nombre_red?: string; plan?: string; nicho?: string; dias?: number | string };
