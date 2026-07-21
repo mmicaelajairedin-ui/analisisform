@@ -29,13 +29,29 @@ const CORS_HEADERS = {
 // pathway_optin, pais. Y `bio` para evaluar completitud del perfil.
 const COACH_FIELDS = [
   "id","nombre","slug","perfil_publico_activo","titulo_profesional","tagline","bio",
-  "especialidades","atiende","anios_experiencia","foto_url","configuracion",
+  "especialidades","atiende","anios_experiencia","foto_url","configuracion","activo",
 ].join(",");
+
+// ¿La suscripción del coach está VIGENTE? Un coach con la prueba vencida y sin
+// pagar NO debe aparecer en el directorio público (no tiene acceso a la
+// plataforma → no puede atender a nadie). Cuando paga, el webhook pone
+// estado_sub='activa' y vuelve a aparecer solo. Conservador: ante datos poco
+// claros (cuentas viejas sin fecha ni estado), NO ocultamos.
+function subVigente(cfg: Record<string, unknown>): boolean {
+  if (cfg.es_pro_vitalicio === true) return true;                 // admin / demo / whitelist
+  const estado = String(cfg.estado_sub || "");
+  if (estado === "activa") return true;                            // pagó
+  if (estado === "cancelada" || estado === "vencida") return false; // baja / vencida
+  const ff = cfg.fecha_fin_prueba;                                 // en prueba → ¿sigue vigente?
+  if (ff) { const t = Date.parse(String(ff)); if (!isNaN(t)) return t > Date.now(); }
+  return true; // sin datos concluyentes → no ocultar (cuentas viejas)
+}
 
 interface CoachRow {
   id: string;
   nombre: string | null;
   slug: string | null;
+  activo?: boolean | null;
   perfil_publico_activo?: boolean | null;
   titulo_profesional: string | null;
   tagline: string | null;
@@ -91,7 +107,12 @@ Deno.serve(async (req: Request) => {
       c.perfil_publico_activo = true;
     }
     return c;
-  }).filter((c) => c.perfil_publico_activo === true && !!(c.slug && String(c.slug).trim()));
+  }).filter((c) =>
+    c.perfil_publico_activo === true &&
+    !!(c.slug && String(c.slug).trim()) &&
+    c.activo !== false &&                                  // baja explícita → fuera
+    subVigente((c.configuracion || {}) as Record<string, unknown>) // prueba vencida sin pagar → fuera
+  );
 
   // Visibilidad: basta con tener el perfil público activo (slug + activo).
   // (Antes se exigía Stripe + servicio con precio + opt-in; se quitó para que
