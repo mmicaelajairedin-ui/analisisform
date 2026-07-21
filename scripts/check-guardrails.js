@@ -1279,17 +1279,19 @@ const RULES = [
     },
   },
   {
-    name: "ficha del cliente: pestañas en cascada segura (nuevo ve lo esencial, en marcha ve todo)",
-    bug: "Un cliente NUEVO (carrera, sin ningún avance) ve solo las pestañas esenciales " +
-         "(Perfil/Análisis/Sesiones) y el resto aparece cuando avanza. CANDADO: ante cualquier " +
-         "señal de avance (informe/CV publicado, carta, etapas, sesiones, semana>1) muestra TODAS " +
-         "→ nunca oculta una pestaña con datos y no rompe a los coaches que ya trabajan.",
+    name: "ficha del cliente: pestañas en cascada dominó (de a una, en orden) en los 3 nichos",
+    bug: "Las pestañas del cliente aparecen DE A UNA a medida que avanza (base siempre + " +
+         "cadena por nicho). CANDADO: una pestaña con datos se muestra siempre y el siguiente " +
+         "eslabón se abre solo cuando el anterior ya tiene contenido → nunca oculta algo con " +
+         "datos y no rompe a los coaches que ya trabajan. Config para carrera/fitness/financiero.",
     check() {
       const p = read("panel-v2.html");
       if (!p) return null;
       if (!/function _cliVisibleTabs/.test(p)) return "panel-v2.html: falta _cliVisibleTabs (cascada de pestañas).";
-      // El candado: debe devolver TODAS las pestañas cuando el cliente está en marcha.
-      if (!/if\(enMarcha\)\s*return allTabs/.test(p)) return "panel-v2.html: _cliVisibleTabs ya no muestra TODAS las pestañas a un cliente en marcha (candado roto).";
+      if (!/_CLI_CASCADE\s*=/.test(p)) return "panel-v2.html: falta la config _CLI_CASCADE (cadena por nicho).";
+      // El candado: una pestaña con datos se muestra (if(open || has)).
+      if (!/if\(open \|\| has\)\s*shown\[step\.tab\]=true/.test(p)) return "panel-v2.html: _cliVisibleTabs ya no muestra una pestaña con datos (candado roto).";
+      if (!/carrera:.*fitness:.*financiero:/s.test(p)) return "panel-v2.html: la cascada no cubre los 3 nichos (carrera/fitness/financiero).";
       if (!/_cliVisibleTabs\(c,_tipo,_cliTabs\(_tipo\)\)/.test(p)) return "panel-v2.html: la ficha del cliente ya no aplica la cascada _cliVisibleTabs.";
       return null;
     },

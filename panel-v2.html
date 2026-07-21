@@ -3739,20 +3739,42 @@ function _cliNextStep(c, tipo){
   if(tipo==='carrera' && !pub(c.cvState)) return { tab:"docs", label:"Arma el CV y la carta en Documentos" };
   return null; // ya está en marcha
 }
-// Cascada de pestañas: un cliente NUEVO (sin ningún avance) ve solo lo esencial;
-// el resto aparece cuando el cliente avanza. CANDADO: ante cualquier señal de
-// avance mostramos TODAS las pestañas → nunca ocultamos algo con datos y NO
-// rompe a los coaches que ya trabajan. Por ahora solo carrera (fitness/finanzas
-// se revisan aparte). "pending" = vacío (no cuenta como avance); solo "published".
+// Cascada de pestañas (dominó): las pestañas del cliente aparecen DE A UNA, en
+// orden, a medida que el coach avanza — da tranquilidad y no abruma. Config por
+// nicho: `base` = pestañas siempre visibles (quién es · diagnosticar · agendar);
+// `chain` = orden de aparición, cada eslabón con su señal de datos.
+// CANDADO (no rompe a quien ya trabaja): una pestaña que YA tiene datos se muestra
+// siempre; el siguiente eslabón se abre solo cuando el anterior ya tiene contenido.
+var _CLI_CASCADE = {
+  carrera: { base:{perfil:1,plan:1,sesiones:1}, chain:[
+    { tab:"docs",   data:function(c){ return c.cvState==="published" || !!(c.raw&&c.raw.carta_presentacion); } },
+    { tab:"avance", data:function(c){ return !!(c.raw&&c.raw.etapas); } },
+  ]},
+  fitness: { base:{perfil:1,plan:1,sesiones:1}, chain:[
+    { tab:"fit_rutina", data:function(c){ return !!(c.raw&&c.raw.fit_rutina); } },
+    { tab:"fit_antro",  data:function(c){ return !!(c.raw&&c.raw.fit_antro); } },
+    { tab:"fit_nutri",  data:function(c){ return !!(c.raw&&(c.raw.fit_nutricion||c.raw.fit_nutri_log)); } },
+  ]},
+  financiero: { base:{perfil:1,plan:1,sesiones:1}, chain:[
+    { tab:"fin_pres", data:function(c){ return !!(c.raw&&(c.raw.fin_pres||c.raw.fin_objetivos||c.raw.fin_patrimonio||c.raw.fin_deudas||c.raw.fin_diagnostico)); } },
+    { tab:"gestion",  data:function(c){ return !!(c.raw&&(c.raw.fin_pres||c.raw.fin_objetivos||c.raw.fin_patrimonio||c.raw.fin_deudas||c.raw.fin_diagnostico)); } },
+  ]},
+};
 function _cliVisibleTabs(c, tipo, allTabs){
-  if(!c || c._example || tipo!=='carrera') return allTabs;
-  var pub=function(v){ return v==="published"; };
-  var enMarcha = pub(c.reportState) || pub(c.cvState)
-    || !!(c.raw && (c.raw.carta_presentacion || c.raw.etapas))
-    || !!(c.ses && c.ses.length) || (c.week||1) > 1;
-  if(enMarcha) return allTabs;              // en marcha → TODAS (igual que hoy)
-  var base={ perfil:1, plan:1, sesiones:1 };// cliente nuevo: quién es · diagnosticar · agendar
-  return allTabs.filter(function(x){ return base[x[0]]; });
+  if(!c || c._example) return allTabs;                    // demo/ejemplos: todas (previsualización)
+  var cfg=_CLI_CASCADE[tipo]; if(!cfg) return allTabs;    // nicho sin config: todas (safe)
+  var shown={};
+  for(var k in cfg.base){ if(cfg.base.hasOwnProperty(k)) shown[k]=true; }
+  // El hito "Análisis publicado" abre el primer eslabón; cada siguiente se abre
+  // cuando el anterior YA tiene datos. Candado: un eslabón con datos se muestra
+  // siempre (aunque el hito no esté), así nunca se oculta algo con contenido.
+  var open = (c.reportState==="published");
+  cfg.chain.forEach(function(step){
+    var has=true; try{ has=!!step.data(c); }catch(e){ has=true; }  // ante error → mostrar (safe)
+    if(open || has) shown[step.tab]=true;
+    open = (open && has);                                          // el siguiente necesita ESTE con datos
+  });
+  return allTabs.filter(function(x){ return shown[x[0]]; });
 }
 function viewClienteDetalle(c){
   function pill2(txt,kind){
