@@ -1037,19 +1037,22 @@ const RULES = [
     },
   },
   {
-    name: "diseño: número de KPI de 'Mi negocio' GRANDE y en negrita (lo pidió la coach)",
-    bug: "La coach pidió EXPRESAMENTE que los números de 'Mi negocio' (panel-v2, _tile) " +
-         "sean GRANDES y en NEGRITA (46px, peso 900): 'el tamaño de los números sigue chico " +
-         "y tiene que ser negrita'. Se los achicaron a 32px/700 varias veces. Esta regla " +
-         "mantiene el tamaño grande y el peso fuerte que ella eligió.",
+    name: "diseño: número de KPI del panel en tamaño INTERMEDIO (ni gigante ni chico)",
+    bug: "El número de _tile ('Mi negocio') se fue a los extremos varias veces: 46px " +
+         "(gigante) o 26px (muy chico). La coach pidió, por ahora, un TAMAÑO INTERMEDIO " +
+         "(~32px, peso 700), igual en panel-v2 y multicoach (.kpi .n). Esta regla lo " +
+         "mantiene en el rango intermedio (28–36px): frena que lo inflen a 46 y que lo achiquen a 26.",
     check() {
       const p = read("panel-v2.html");
       if (!p) return null;
-      const m = p.match(/function _tile\([^)]*\)\{[\s\S]{0,200}?font-weight:(\d+);font-size:(\d+)px/);
+      const m = p.match(/function _tile\([^)]*\)\{[\s\S]{0,160}?font-size:(\d+)px/);
       if (!m) return "panel-v2.html: no se encontró el número de _tile (¿cambió la función?).";
-      const weight = parseInt(m[1], 10), px = parseInt(m[2], 10);
-      if (px < 40) return "panel-v2.html: el número de _tile quedó en " + px + "px (chico). La coach lo pidió GRANDE (~46px).";
-      if (weight < 800) return "panel-v2.html: el número de _tile quedó con peso " + weight + " (fino). La coach lo pidió en NEGRITA (900).";
+      const px = parseInt(m[1], 10);
+      if (px > 36) return "panel-v2.html: el número de _tile quedó en " + px + "px (muy grande). Debe ser intermedio (~32px).";
+      if (px < 28) return "panel-v2.html: el número de _tile quedó en " + px + "px (muy chico). Debe ser intermedio (~32px), como pidió la coach.";
+      // multicoach .kpi .n en el mismo rango intermedio (ni 46 ni 26).
+      const mc = read("multicoach.html");
+      if (mc) { const km = mc.match(/\.kpi \.n\{[^}]*font-size:(\d+)px/); if (km) { const kp = parseInt(km[1], 10); if (kp > 36) return "multicoach.html: .kpi .n quedó en " + kp + "px (muy grande)."; if (kp < 28) return "multicoach.html: .kpi .n quedó en " + kp + "px (muy chico)."; } }
       return null;
     },
   },
