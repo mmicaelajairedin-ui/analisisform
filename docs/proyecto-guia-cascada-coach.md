@@ -103,12 +103,18 @@ Las pestañas del cliente aparecen **de a una** a medida que avanza (menos abrum
 - Ajuste demo: la foto que sube el coach en la cuenta demo se mantiene durante la
   sesión (solo en pantalla, sin guardar). Handler `#cfp-foto`, rama demo.
 - "Mi negocio" sin ceros; Solicitudes dentro de Clientes; copy en neutro.
+- **"+ Agregar paso" (finanzas · Gestión):** el coach arma SUS fases desde cero.
+  Un cliente nuevo no muestra ninguna fase — solo "+ Agregar paso"; cada una que
+  suma aparece (guardadas en `etapas`; `state.faseAdd` cuenta las filas agregadas
+  sin guardar, por cliente; se resetea al abrir/guardar). Se quitó el esqueleto
+  fijo de 4 (`Math.max(4,_gWk)`). Handlers: `fase-add`, `cli-savefases` (trima
+  fases vacías del final). Guardrail: *"'+ Agregar paso' arma las fases desde cero"*.
 
 **Pendiente (extender SOBRE esta base, no recrear):**
-- **"+ Agregar paso":** que el coach arme SUS propias fases (elige/agrega, se
-  suman de a una, sin candados: lo no agregado no se ve). Reusar el mecanismo de
-  las fases/`etapas` que ya existe (chips de semanas/meses en Gestión y en el
-  editor de plan); no inventar UI nueva.
+- **Replicar "+ Agregar paso" en carrera (pestaña Acciones/`_avanceHtml`) y en
+  fitness (semanas de rutina):** hoy siguen usando su propio editor de fases con
+  mínimo fijo. Mismo patrón que finanzas (arrancar vacío + `fase-add`), reusando
+  `etapas`; no inventar UI nueva.
 
 ## Cómo extender sin recrear
 
