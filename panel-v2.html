@@ -1740,7 +1740,7 @@ function _gameLoop(){
 /* ═══ Sidebar ═══ */
 // Nicho y pestañas del cliente (fuente única: la usa la ficha y la barra móvil contextual).
 function _cliNicho(c){ return _isDemoCoach() ? (state.demoTipo||'carrera') : ((c&&c.raw&&c.raw.nicho)||(typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||(c&&c.raw&&c.raw.configuracion&&c.raw.configuracion.tipo)||'carrera'); }
-function _cliTabs(tipo){ if(tipo==='fitness') return [["perfil","Perfil"],["plan","Análisis"],["fit_rutina","Gym"],["fit_antro","Antropometría"],["fit_nutri","Nutrición"],["sesiones","Sesiones"]]; if(tipo==='financiero') return [["perfil","Perfil"],["plan","Análisis"],["fin_pres","Finanzas"],["sesiones","Sesiones"],["gestion","Gestión"]]; return [["perfil","Perfil"],["plan","Análisis"],["docs","Documentos"],["avance","Acciones"],["sesiones","Sesiones"]]; }
+function _cliTabs(tipo){ if(tipo==='fitness') return [["perfil","Perfil"],["plan","Análisis"],["fit_rutina","Gym"],["fit_antro","Antropometría"],["fit_nutri","Nutrición"],["sesiones","Sesiones"]]; if(tipo==='financiero') return [["perfil","Perfil"],["plan","Análisis"],["fin_pres","Finanzas"],["gestion","Gestión"],["sesiones","Sesiones"]]; return [["perfil","Perfil"],["plan","Análisis"],["docs","Documentos"],["avance","Acciones"],["sesiones","Sesiones"]]; }
 var _CLI_ICON={perfil:'👤',plan:'📋',fit_rutina:'🏋️',fit_antro:'📐',fit_nutri:'🥗',sesiones:'🗓️',fin_pres:'💰',gestion:'⚙️',avance:'📈',docs:'📄',mensajes:'💬'};
 var _CLI_SHORT={fit_antro:'Medidas',docs:'Docs'};
 function viewSidebar(){
@@ -3740,10 +3740,24 @@ function _avanceHtml(c, embed){
 function _cliNextStep(c, tipo){
   if(!c) return null;
   var pub=function(v){ return v==="published"; };
+  var has=function(f){ return !!(c.raw && c.raw[f]); };
   // Paso 1 (los 3 nichos): generar el diagnóstico/análisis del cliente.
   if(!pub(c.reportState)) return { tab:"plan", label:(tipo==='carrera'?"Genera el diagnóstico en Análisis":"Genera el análisis del cliente") };
-  // Paso 2 (carrera): armar el CV y la carta.
-  if(tipo==='carrera' && !pub(c.cvState)) return { tab:"docs", label:"Arma el CV y la carta en Documentos" };
+  // Del paso 2 en adelante, la guía sigue el mismo dominó de _CLI_CASCADE por nicho.
+  if(tipo==='fitness'){
+    if(!has('fit_rutina')) return { tab:"fit_rutina", label:"Arma la rutina en Gym" };
+    if(!has('fit_antro'))  return { tab:"fit_antro",  label:"Carga la primera medición en Antropometría" };
+    if(!has('fit_nutricion') && !has('fit_nutri_log')) return { tab:"fit_nutri", label:"Arma el plan de nutrición" };
+    return null;
+  }
+  if(tipo==='financiero'){
+    if(!has('fin_pres') && !has('fin_objetivos') && !has('fin_patrimonio') && !has('fin_deudas') && !has('fin_diagnostico'))
+      return { tab:"fin_pres", label:"Arma el plan de finanzas" };
+    if(!has('etapas')) return { tab:"gestion", label:"Define los meses del plan en Gestión" };
+    return null;
+  }
+  // carrera: armar el CV y la carta (si no hay CV publicado ni carta).
+  if(!pub(c.cvState) && !has('carta_presentacion')) return { tab:"docs", label:"Arma el CV y la carta en Documentos" };
   return null; // ya está en marcha
 }
 // Cascada de pestañas (dominó): las pestañas del cliente aparecen DE A UNA, en
@@ -3764,7 +3778,7 @@ var _CLI_CASCADE = {
   ]},
   financiero: { base:{perfil:1,plan:1,sesiones:1}, chain:[
     { tab:"fin_pres", data:function(c){ return !!(c.raw&&(c.raw.fin_pres||c.raw.fin_objetivos||c.raw.fin_patrimonio||c.raw.fin_deudas||c.raw.fin_diagnostico)); } },
-    { tab:"gestion",  data:function(c){ return !!(c.raw&&(c.raw.fin_pres||c.raw.fin_objetivos||c.raw.fin_patrimonio||c.raw.fin_deudas||c.raw.fin_diagnostico)); } },
+    { tab:"gestion",  data:function(c){ return !!(c.raw&&(c.raw.fin_pres||c.raw.fin_objetivos||c.raw.fin_patrimonio||c.raw.fin_deudas||c.raw.fin_diagnostico||c.raw.etapas)); } },
   ]},
 };
 function _cliVisibleTabs(c, tipo, allTabs){
@@ -9636,7 +9650,14 @@ document.addEventListener("change", function(ev){
             toast("Foto guardada ✓"); }
             else { toast("Foto lista — pulsa Guardar cambios"); } })
           .catch(function(){ toast("Foto lista — pulsa Guardar cambios"); });
-      } else { toast("Foto lista — pulsa Guardar cambios"); }
+      } else {
+        // Demo (o sesión sin usuario): no guardamos nada, pero mantenemos la foto
+        // durante la sesión (solo en pantalla) para poder grabar recorridos de la
+        // plataforma sin que se revierta al re-renderizar. Se resetea al recargar.
+        if(typeof COACH!=="undefined" && COACH) COACH.photo=url;
+        try{ render(); }catch(e){}
+        toast("Foto aplicada (demo — no se guarda)");
+      }
     })
     .catch(function(e){ console.error("avatar upload:", e); alert("No se pudo subir la foto. Reintenta."); });
 });
