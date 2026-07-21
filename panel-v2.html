@@ -1769,7 +1769,7 @@ function viewSidebar(){
     var _csel=(typeof CLIENTS!=='undefined'&&CLIENTS)?CLIENTS.filter(function(x){return String(x.id)===String(state.clienteSel);})[0]:null;
     if(_csel){
       cliNav="<button class='cp-side-nav-item cp-cli-back' data-act='cli-back'><span class='cp-side-nav-icon' style='font-size:20px;line-height:1'>‹</span><span>Clientes</span></button>"+
-        _cliTabs(_cliNicho(_csel)).map(function(x){ return "<button class='cp-side-nav-item "+(state.cliDetTab===x[0]?"is-active":"")+"' data-act='clidet:"+x[0]+"'><span class='cp-side-nav-icon cp-cli-ico' style='font-size:18px;line-height:1'>"+(_CLI_ICON[x[0]]||'•')+"</span><span>"+(_CLI_SHORT[x[0]]||x[1])+"</span></button>"; }).join("");
+        _cliVisibleTabs(_csel,_cliNicho(_csel),_cliTabs(_cliNicho(_csel))).map(function(x){ return "<button class='cp-side-nav-item "+(state.cliDetTab===x[0]?"is-active":"")+"' data-act='clidet:"+x[0]+"'><span class='cp-side-nav-icon cp-cli-ico' style='font-size:18px;line-height:1'>"+(_CLI_ICON[x[0]]||'•')+"</span><span>"+(_CLI_SHORT[x[0]]||x[1])+"</span></button>"; }).join("");
     }
   }
   return "<aside class='cp-side"+(state.clienteSel?" cli-open":"")+(state.railCollapsed?" rail":"")+"'>"+
@@ -3739,6 +3739,21 @@ function _cliNextStep(c, tipo){
   if(tipo==='carrera' && !pub(c.cvState)) return { tab:"docs", label:"Arma el CV y la carta en Documentos" };
   return null; // ya está en marcha
 }
+// Cascada de pestañas: un cliente NUEVO (sin ningún avance) ve solo lo esencial;
+// el resto aparece cuando el cliente avanza. CANDADO: ante cualquier señal de
+// avance mostramos TODAS las pestañas → nunca ocultamos algo con datos y NO
+// rompe a los coaches que ya trabajan. Por ahora solo carrera (fitness/finanzas
+// se revisan aparte). "pending" = vacío (no cuenta como avance); solo "published".
+function _cliVisibleTabs(c, tipo, allTabs){
+  if(!c || c._example || tipo!=='carrera') return allTabs;
+  var pub=function(v){ return v==="published"; };
+  var enMarcha = pub(c.reportState) || pub(c.cvState)
+    || !!(c.raw && (c.raw.carta_presentacion || c.raw.etapas))
+    || !!(c.ses && c.ses.length) || (c.week||1) > 1;
+  if(enMarcha) return allTabs;              // en marcha → TODAS (igual que hoy)
+  var base={ perfil:1, plan:1, sesiones:1 };// cliente nuevo: quién es · diagnosticar · agendar
+  return allTabs.filter(function(x){ return base[x[0]]; });
+}
 function viewClienteDetalle(c){
   function pill2(txt,kind){
     var st = kind==="ok" ? "background:var(--pw-success-bg);color:var(--pw-bosque)"
@@ -3777,7 +3792,9 @@ function viewClienteDetalle(c){
   // (no a cliente.html, que es el de carrera). Mismo patron ?coach_view / ?email.
   if(_tipo==='fitness'){ portalUrl=PB+"/pathway-fit-cliente.html?coach_view="+cem; accessUrl=PB+"/pathway-fit-cliente.html?email="+cem; }
   else if(_tipo==='financiero'){ portalUrl=PB+"/pathway-fin-cliente.html?coach_view="+cem; accessUrl=PB+"/pathway-fin-cliente.html?email="+cem; }
-  var tabs=_cliTabs(_tipo);
+  var tabs=_cliVisibleTabs(c,_tipo,_cliTabs(_tipo));
+  // Si la pestaña activa quedó fuera de la cascada (cliente nuevo), volvemos a Perfil.
+  if(!tabs.some(function(x){return x[0]===t;})){ t="perfil"; state.cliDetTab="perfil"; }
   // Guía que se mueve sola: el próximo paso con este cliente. La pestaña destino
   // "respira" (mismo latido que la guía del sidebar) y arriba va un hint con la acción.
   var _cliNext=_cliNextStep(c,_tipo);
