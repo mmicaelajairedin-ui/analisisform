@@ -1264,6 +1264,21 @@ const RULES = [
     },
   },
   {
+    name: "ficha del cliente: guía del próximo paso que se mueve sola (Análisis → Documentos)",
+    bug: "Dentro de la ficha del cliente, la guía muestra el próximo paso del coach con " +
+         "ese cliente (genera el diagnóstico, después arma el CV) con un hint arriba y la " +
+         "pestaña destino 'respirando' (cp-guide-here). Avanza sola según reportState/cvState. " +
+         "Si se desconecta, el coach vuelve a quedar sin saber qué hacer con el cliente.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _cliNextStep/.test(p)) return "panel-v2.html: falta _cliNextStep (guía del próximo paso por cliente).";
+      if (!/cp-cli-next/.test(p)) return "panel-v2.html: falta el hint 'Próximo paso' (cp-cli-next) en la ficha del cliente.";
+      if (!/_beacon\(/.test(p)) return "panel-v2.html: la pestaña destino ya no 'respira' (falta _beacon/cp-guide-here en las pestañas de la ficha).";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: Agenda del día (solo lo agendado) + asistencia inline + toggle Hoy/Semana",
     bug: "La pestaña Calendario abre en la 'Agenda del día' del día (por defecto hoy), " +
          "mostrando SOLO las sesiones/reservas agendadas (sin llenar de huecos). Cada reserva " +
