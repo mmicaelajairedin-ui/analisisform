@@ -1740,7 +1740,7 @@ function _gameLoop(){
 /* ═══ Sidebar ═══ */
 // Nicho y pestañas del cliente (fuente única: la usa la ficha y la barra móvil contextual).
 function _cliNicho(c){ return _isDemoCoach() ? (state.demoTipo||'carrera') : ((c&&c.raw&&c.raw.nicho)||(typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||(c&&c.raw&&c.raw.configuracion&&c.raw.configuracion.tipo)||'carrera'); }
-function _cliTabs(tipo){ if(tipo==='fitness') return [["perfil","Perfil"],["plan","Análisis"],["fit_rutina","Gym"],["fit_antro","Antropometría"],["fit_nutri","Nutrición"],["sesiones","Sesiones"]]; if(tipo==='financiero') return [["perfil","Perfil"],["plan","Análisis"],["fin_pres","Finanzas"],["sesiones","Sesiones"],["gestion","Gestión"]]; return [["perfil","Perfil"],["plan","Análisis"],["docs","Documentos"],["avance","Acciones"],["sesiones","Sesiones"]]; }
+function _cliTabs(tipo){ if(tipo==='fitness') return [["perfil","Perfil"],["plan","Análisis"],["fit_rutina","Gym"],["fit_antro","Antropometría"],["fit_nutri","Nutrición"],["sesiones","Sesiones"]]; if(tipo==='financiero') return [["perfil","Perfil"],["plan","Análisis"],["fin_pres","Finanzas"],["gestion","Gestión"],["sesiones","Sesiones"]]; return [["perfil","Perfil"],["plan","Análisis"],["docs","Documentos"],["avance","Acciones"],["sesiones","Sesiones"]]; }
 var _CLI_ICON={perfil:'👤',plan:'📋',fit_rutina:'🏋️',fit_antro:'📐',fit_nutri:'🥗',sesiones:'🗓️',fin_pres:'💰',gestion:'⚙️',avance:'📈',docs:'📄',mensajes:'💬'};
 var _CLI_SHORT={fit_antro:'Medidas',docs:'Docs'};
 function viewSidebar(){
@@ -3740,10 +3740,24 @@ function _avanceHtml(c, embed){
 function _cliNextStep(c, tipo){
   if(!c) return null;
   var pub=function(v){ return v==="published"; };
+  var has=function(f){ return !!(c.raw && c.raw[f]); };
   // Paso 1 (los 3 nichos): generar el diagnóstico/análisis del cliente.
   if(!pub(c.reportState)) return { tab:"plan", label:(tipo==='carrera'?"Genera el diagnóstico en Análisis":"Genera el análisis del cliente") };
-  // Paso 2 (carrera): armar el CV y la carta.
-  if(tipo==='carrera' && !pub(c.cvState)) return { tab:"docs", label:"Arma el CV y la carta en Documentos" };
+  // Del paso 2 en adelante, la guía sigue el mismo dominó de _CLI_CASCADE por nicho.
+  if(tipo==='fitness'){
+    if(!has('fit_rutina')) return { tab:"fit_rutina", label:"Arma la rutina en Gym" };
+    if(!has('fit_antro'))  return { tab:"fit_antro",  label:"Carga la primera medición en Antropometría" };
+    if(!has('fit_nutricion') && !has('fit_nutri_log')) return { tab:"fit_nutri", label:"Arma el plan de nutrición" };
+    return null;
+  }
+  if(tipo==='financiero'){
+    if(!has('fin_pres') && !has('fin_objetivos') && !has('fin_patrimonio') && !has('fin_deudas') && !has('fin_diagnostico'))
+      return { tab:"fin_pres", label:"Arma el plan de finanzas" };
+    if(!has('etapas')) return { tab:"gestion", label:"Define los meses del plan en Gestión" };
+    return null;
+  }
+  // carrera: armar el CV y la carta (si no hay CV publicado ni carta).
+  if(!pub(c.cvState) && !has('carta_presentacion')) return { tab:"docs", label:"Arma el CV y la carta en Documentos" };
   return null; // ya está en marcha
 }
 // Cascada de pestañas (dominó): las pestañas del cliente aparecen DE A UNA, en
@@ -3764,7 +3778,7 @@ var _CLI_CASCADE = {
   ]},
   financiero: { base:{perfil:1,plan:1,sesiones:1}, chain:[
     { tab:"fin_pres", data:function(c){ return !!(c.raw&&(c.raw.fin_pres||c.raw.fin_objetivos||c.raw.fin_patrimonio||c.raw.fin_deudas||c.raw.fin_diagnostico)); } },
-    { tab:"gestion",  data:function(c){ return !!(c.raw&&(c.raw.fin_pres||c.raw.fin_objetivos||c.raw.fin_patrimonio||c.raw.fin_deudas||c.raw.fin_diagnostico)); } },
+    { tab:"gestion",  data:function(c){ return !!(c.raw&&(c.raw.fin_pres||c.raw.fin_objetivos||c.raw.fin_patrimonio||c.raw.fin_deudas||c.raw.fin_diagnostico||c.raw.etapas)); } },
   ]},
 };
 function _cliVisibleTabs(c, tipo, allTabs){
@@ -4308,25 +4322,36 @@ function viewClienteDetalle(c){
     var visRows=visItems.map(function(v){var on=cliVisCur[v[0]];return "<div class='cp-toggle'><div class='cp-toggle-body'><div class='cp-toggle-title'>"+v[1]+"</div></div><button class='cp-switch "+(on?"is-on":"")+"' data-act='clivis:"+v[0]+"' data-id='"+esc(c.id)+"'><span></span></button></div>";}).join("");
     // Control de semana del proceso (fit/fin no tienen pestaña "Avance" como carrera).
     var _gWk=state.cliWeek!=null?state.cliWeek:(c.week||1);
-    // El editor de fases arranca EN BLANCO (lo que guardó el coach, o vacío) —
-    // no inventamos nombres. Acepta cualquier cantidad de fases.
+    // Fases del cliente: las arma el COACH desde cero (no hay esqueleto fijo de 4).
+    // Un cliente nuevo no muestra ninguna fase — solo "+ Agregar paso". Cada fase
+    // que suma aparece; lo no agregado no se ve. _gETN = las guardadas; _addN =
+    // filas extra que agregó en esta sesión sin guardar (state.faseAdd por cliente).
     var _gETN=[]; try{ var _eR=JSON.parse((c.raw&&c.raw.etapas)||"null"); if(Object.prototype.toString.call(_eR)==="[object Array]") _gETN=_eR; }catch(e){ _gETN=[]; }
+    while(_gETN.length && !((""+_gETN[_gETN.length-1]).trim())) _gETN.pop(); // descarta vacías del final
     var _unit=(_tipo==='financiero')?'Mes':'Semana';
-    var _gMax=Math.max(4,_gWk); var _gNums=[]; for(var _gi=1;_gi<=_gMax;_gi++)_gNums.push(_gi);
-    var _gChips=_gNums.map(function(n){return "<button class='cp-chip "+(_gWk===n?"is-on":"")+"' data-act='cliweek:"+n+"'>"+_unit+" "+n+(_gETN[n-1]?" · "+esc(_gETN[n-1]):"")+"</button>";}).join("")+
-      "<button class='cp-chip' data-act='cliweek-add' title='Agregar "+_unit.toLowerCase()+"'>+ "+_unit.toLowerCase()+"</button>";
-    var weekCard=(_tipo==='financiero')
+    var _addN=(state.faseAdd && String(state.faseAdd.id)===String(c.id)) ? state.faseAdd.n : 0;
+    var _faseTot=_gETN.length + _addN;
+    // weekCard: marca en qué fase está el cliente (una chip por fase YA definida).
+    var _gChips=_gETN.length
+      ? _gETN.map(function(nm,_i){var n=_i+1;return "<button class='cp-chip "+(_gWk===n?"is-on":"")+"' data-act='cliweek:"+n+"'>"+_unit+" "+n+((""+nm).trim()?" · "+esc(nm):"")+"</button>";}).join("")
+      : "";
+    var weekCard=(_tipo==='financiero' && _gETN.length)
       ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+_unit+" del proceso<span class='dot'>.</span></h3><span class='cp-eyebrow'>En qué "+_unit.toLowerCase()+" está el cliente</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
           "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.5'>Ahora está en <strong style='color:var(--pw-carbon)'>"+_unit+" "+_gWk+"</strong>. Marca su avance y resalta la "+_unit.toLowerCase()+" actual en su portal.</div>"+
           "<div class='cp-filters'>"+_gChips+"</div>"+
           "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cli-saveweek' data-id='"+esc(c.id)+"'>Guardar "+_unit.toLowerCase()+"</button></div></div></div>"
       : "";
-    var _faseRows=_gNums.map(function(n){ return "<div class='cp-form-row'><label class='cp-form-label'>Fase "+n+"</label><input id='gfase-"+(n-1)+"' class='cp-form-input' value='"+esc(_gETN[n-1]||"")+"' placeholder='Lo que quieras (ej. Mes 1 · Adaptación / Semana 1 · Fuerza)'></div>"; }).join("");
+    var _gNumsA=[]; for(var _gi=1;_gi<=_faseTot;_gi++)_gNumsA.push(_gi);
+    var _faseRows=_faseTot
+      ? _gNumsA.map(function(n){ return "<div class='cp-form-row'><label class='cp-form-label'>"+_unit+" "+n+"</label><input id='gfase-"+(n-1)+"' class='cp-form-input' value='"+esc(_gETN[n-1]||"")+"' placeholder='Lo que quieras (ej. Mes 1 · Adaptación / Bloque de fuerza)'></div>"; }).join("")
+      : "<div class='cp-form-hint' style='margin:0'>Todavía no armaste el plan de este cliente. Agregá la primera fase con <strong>+ Agregar paso</strong> — sumás las que quieras, en tu orden. El cliente las ve en su plan.</div>";
     var faseCard=(_tipo==='financiero')
-      ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Nombres de las fases<span class='dot'>.</span></h3><span class='cp-eyebrow'>Como quieras organizarlo</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
-          "<div class='cp-form-hint' style='margin:0'>Nombra cada fase como quieras — por <strong>semanas</strong> o por <strong>meses</strong>, lo que uses con tu cliente (ej. \"Mes 1 · Adaptación\", \"Bloque de fuerza\"…). Agrega las que necesites con el botón <strong>+ "+_unit.toLowerCase()+"</strong> de arriba — sin límite. El cliente las ve en su plan.</div>"+
+      ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Las fases del plan<span class='dot'>.</span></h3><span class='cp-eyebrow'>Las armás vos, como trabajás</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
           _faseRows+
-          "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cli-savefases' data-id='"+esc(c.id)+"' data-n='"+_gMax+"'>Guardar fases</button></div></div></div>"
+          "<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:2px'>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='fase-add' data-id='"+esc(c.id)+"'>+ Agregar paso</button>"+
+            (_faseTot?"<button class='cp-btn cp-btn-primary' data-act='cli-savefases' data-id='"+esc(c.id)+"' data-n='"+_faseTot+"'>Guardar fases</button>":"")+
+          "</div></div></div>"
       : "";
     body=weekCard+faseCard+"<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Qué ve el cliente en su portal<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>Visibilidad · se guarda por cliente</span></div><div class='cp-card-pad'>"+visRows+"</div></div>";
@@ -8499,7 +8524,7 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo eliminar la cuenta. Puede estar protegida por permisos (RLS) en Supabase."); });
     return;
   }
-  if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.fitTareas=null; state.fitUnit=null; state.rutUnit=null; state.sesPrepOpen=false; render(); window.scrollTo(0,0); return; }
+  if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.faseAdd=null; state.fitTareas=null; state.fitUnit=null; state.rutUnit=null; state.sesPrepOpen=false; render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; state.fitTareas=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
   if(act==="cliweek-add"){ var _cwc=CLIENTS.filter(function(x){return String(x.id)===String(state.clienteSel);})[0]||{}; var _cur=state.cliWeek!=null?state.cliWeek:(_cwc.week||1); state.cliWeek=Math.max(4,_cur)+1; render(); return; }
@@ -8534,11 +8559,14 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo guardar la semana."); });
     return;
   }
+  if(act==="fase-add"){ var faid=el.getAttribute("data-id"); if(!faid) return; var _cur=(state.faseAdd && String(state.faseAdd.id)===String(faid))?state.faseAdd.n:0; state.faseAdd={id:faid, n:_cur+1}; render(); return; }
   if(act==="cli-savefases"){
     var sfid=el.getAttribute("data-id"); if(!sfid) return;
-    var sfn=parseInt(el.getAttribute("data-n"),10)||4;
+    var sfn=parseInt(el.getAttribute("data-n"),10)||0;
     var sfc=CLIENTS.filter(function(x){return String(x.id)===String(sfid);})[0];
     var fArr=[]; for(var _fi=0;_fi<sfn;_fi++){ fArr.push((_val("gfase-"+_fi)||"").trim()); }
+    while(fArr.length && !fArr[fArr.length-1]) fArr.pop(); // descarta fases vacías del final
+    state.faseAdd=null; // las filas extra ya se guardaron (o se descartaron si iban vacías)
     var fJ=JSON.stringify(fArr);
     if(sfc && sfc._example){ if(sfc.raw) sfc.raw.etapas=fJ; toast("Fases guardadas en el demo ✓ (no se guarda — es el cliente de ejemplo)"); render(); return; }
     _sbw("candidatos?id=eq."+encodeURIComponent(sfid),"PATCH",{etapas:fJ})
@@ -9742,7 +9770,14 @@ document.addEventListener("change", function(ev){
             toast("Foto guardada ✓"); }
             else { toast("Foto lista — pulsa Guardar cambios"); } })
           .catch(function(){ toast("Foto lista — pulsa Guardar cambios"); });
-      } else { toast("Foto lista — pulsa Guardar cambios"); }
+      } else {
+        // Demo (o sesión sin usuario): no guardamos nada, pero mantenemos la foto
+        // durante la sesión (solo en pantalla) para poder grabar recorridos de la
+        // plataforma sin que se revierta al re-renderizar. Se resetea al recargar.
+        if(typeof COACH!=="undefined" && COACH) COACH.photo=url;
+        try{ render(); }catch(e){}
+        toast("Foto aplicada (demo — no se guarda)");
+      }
     })
     .catch(function(e){ console.error("avatar upload:", e); alert("No se pudo subir la foto. Reintenta."); });
 });

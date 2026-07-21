@@ -1407,6 +1407,21 @@ const RULES = [
     },
   },
   {
+    name: "ficha del cliente: '+ Agregar paso' arma las fases desde cero (sin esqueleto fijo de 4)",
+    bug: "En finanzas (Gestión) el coach arma SUS fases desde cero: un cliente nuevo no " +
+         "muestra ninguna fase, solo '+ Agregar paso'; cada fase que suma aparece (state.faseAdd " +
+         "por cliente, se resetea al abrir/guardar). NO se fuerza un mínimo de 4 fases vacías. Si " +
+         "vuelve el esqueleto fijo, el coach siente que se adapta a la plataforma en vez de al revés.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/data-act='fase-add'/.test(p)) return "panel-v2.html: falta el botón '+ Agregar paso' (fase-add) en el editor de fases.";
+      if (!/state\.faseAdd/.test(p)) return "panel-v2.html: falta el contador de fases agregadas por cliente (state.faseAdd).";
+      if (/var _gMax\s*=\s*Math\.max\(4,\s*_gWk\)/.test(p)) return "panel-v2.html: volvió el esqueleto fijo de 4 fases (Math.max(4,_gWk)).";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: Agenda del día (solo lo agendado) + asistencia inline + toggle Hoy/Semana",
     bug: "La pestaña Calendario abre en la 'Agenda del día' del día (por defecto hoy), " +
          "mostrando SOLO las sesiones/reservas agendadas (sin llenar de huecos). Cada reserva " +
