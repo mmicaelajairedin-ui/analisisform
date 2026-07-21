@@ -6036,7 +6036,9 @@ function viewIAPathway(){
 function _iaChatScrollDown(){ try{ requestAnimationFrame(function(){ var s=document.getElementById("cp-iac-scroll"); if(s) s.scrollTop=s.scrollHeight; var i=document.getElementById("iac-input"); if(i && state.iaChat && state.iaChat.open && !state.iaChat.busy) i.focus(); }); }catch(e){} }
 
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
-function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; render(); }); }
+function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
+// Redes (multicoaches) para la gestión desde el admin (transferir dueño).
+function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
 // Email de acceso al coach. isNew=true → coach recién creado por el admin:
 // le mandamos a activar su cuenta y ELEGIR su contraseña (link a registro,
 // nunca le mandamos una contraseña). isNew=false → renovación: ya tiene
@@ -6844,6 +6846,30 @@ function viewAdmin(){
             (mcCm ? "<div style='font-size:12px;font-weight:600;color:"+mcCmCol+"'>"+esc(mcCm.replace(/^(ok|err|…):/,""))+"</div>" : "")+
           "</div></div>"
       ) : "";
+      // ── Cambiar el dueño de una red (transferir) ───────────────────────
+      // El nuevo dueño es un coach de esa red; el anterior queda como coach.
+      var mcT=state.mctMsg||"";
+      var mcTCol=mcT.indexOf("ok:")===0?"var(--pw-bosque)":mcT.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
+      var transferBox = (REAL && RORGS && RORGS.length) ? (
+        "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Cambiar el dueño de una red<span class='dot'>.</span></h3>"+
+          "<span class='cp-eyebrow'>El nuevo dueño es un coach de esa red; el anterior queda como coach</span></div>"+
+          "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+          RORGS.map(function(o){
+            var suCoaches=(RCOACHES||[]).filter(function(u){ return u && u.rol==="coach" && String(u.org_id)===String(o.id); });
+            var opts=suCoaches.map(function(u){ return "<option value='"+esc(u.id)+"'>"+esc(u.nombre||u.email||"Coach")+"</option>"; }).join("");
+            var row="<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center;border:1px solid var(--pw-border);border-radius:12px;padding:10px 12px'>"+
+              "<div style='flex:1;min-width:180px'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(o.nombre||"Red")+"</div><div style='font-size:11.5px;color:var(--pw-text-soft)'>Dueño: "+esc(o.owner_email||"—")+" · "+esc(o.plan||"")+"</div></div>";
+            if(suCoaches.length){
+              row+="<select id='mct-"+esc(o.id)+"' class='cp-form-input' style='width:200px'>"+opts+"</select>"+
+                "<button class='cp-btn cp-btn-ghost' data-act='mc-transfer' data-org='"+esc(o.id)+"'>Hacer dueño</button>";
+            } else {
+              row+="<span style='font-size:12px;color:var(--pw-text-soft)'>Sumá un coach a esta red para poder transferirla.</span>";
+            }
+            return row+"</div>";
+          }).join("")+
+          (mcT ? "<div style='font-size:12px;font-weight:600;color:"+mcTCol+"'>"+esc(mcT.replace(/^(ok|err|…):/,""))+"</div>" : "")+
+          "</div></div>"
+      ) : "";
       // Dos sub-pestañas: "Coaches" (lista + buscador) y "Analíticas" (KPIs).
       // Separar saca el "choclo" y hace que las analíticas no carguen de gusto.
       var _cv = state.coachView||"lista";
@@ -6967,7 +6993,7 @@ function viewAdmin(){
         (_orphans.length ? ("<div style='font-size:12px;color:var(--pw-text-soft);margin-bottom:2px'>Entraron sin el link de un coach. Asigná cada uno al que corresponde.</div>"+_orphRows)
           : "<div style='font-size:13px;color:var(--pw-text-soft);text-align:center;padding:10px 0'>No hay clientes sin asignar. 🎉</div>")+
       "</div></div>";
-      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) : (accBox + mcBox + convBox + _orphCard + _list));
+      body = _tabs + (_cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) : (accBox + mcBox + convBox + transferBox + _orphCard + _list));
     }
   } else if(state.adminTab==="empleados"){
     body = (REAL && state.empleSel) ? _empleadoDetailCard() : _empleadosView();
@@ -7991,7 +8017,7 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
-  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } render(); return; }
+  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.mctMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } render(); return; }
   if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); return; }
   if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
   if(act.indexOf("estsel:")===0){ var _es=parseInt(act.slice(7),10); state.estSel=(state.estSel===_es?null:_es); render(); return; }
@@ -8337,6 +8363,30 @@ document.addEventListener("click", function(ev){
     }).catch(function(e){
       _mccEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintenta.","err");
     });
+    return;
+  }
+  if(act==="mc-transfer"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    // Transferir la red a otro dueño (un coach de esa red) vía cambiar-owner.
+    var mctOrg=el.getAttribute("data-org"); if(!mctOrg) return;
+    var mctNuevo=_val("mct-"+mctOrg)||"";
+    var setMct=function(t,kind){ state.mctMsg=(kind||"…")+":"+t; render(); };
+    if(!mctNuevo){ setMct("Elegí el nuevo dueño.","err"); return; }
+    var _nc=(RCOACHES||[]).filter(function(u){return String(u.id)===String(mctNuevo);})[0];
+    var _ncName=(_nc&&(_nc.nombre||_nc.email))||"ese coach";
+    if(!confirm("¿Hacer dueño de la red a "+_ncName+"? El dueño actual queda como coach.")) return;
+    setMct("Procesando…","…");
+    _hdr({"Content-Type":"application/json"}).then(function(h){
+      return fetch(SB+"/functions/v1/cambiar-owner",{method:"POST",headers:h,body:JSON.stringify({org_id:mctOrg,nuevo_owner_id:mctNuevo})});
+    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
+      if(!res.ok||!res.d.ok){
+        if(res.status===403||res.d.error==="not_admin"){ setMct("Tu sesión de admin no está activa. Reingresá.","err"); return; }
+        if(res.d.error==="nuevo_owner_ajeno"){ setMct("Ese coach no es de esta red.","err"); return; }
+        setMct("No se pudo transferir. Reintenta.","err"); return;
+      }
+      reloadCoaches();
+      setMct("✓ "+_ncName+" ahora es el dueño. El anterior quedó como coach.","ok");
+    }).catch(function(){ setMct("Error de conexión. Reintenta.","err"); });
     return;
   }
   if(act==="empleado-crear"){
@@ -9961,7 +10011,7 @@ function demoGenerateExample(){
     }
   },620);
 }
-var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[];
+var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[], RORGS=null;
 
 // Perfil "empleado" (equipo comercial): rol genérico, sin lista de emails.
 // La sección "Emails" (plantillas de venta) la ven admin y empleados.

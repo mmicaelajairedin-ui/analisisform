@@ -1583,6 +1583,27 @@ const RULES = [
     },
   },
   {
+    name: "admin: cambiar el dueño de una red (transferir, el anterior queda coach)",
+    bug: "Transferir una red a otro dueño (promover un coach a owner, bajar al " +
+         "dueño anterior a coach) es privilegiado → edge function cambiar-owner " +
+         "(service role + gate admin). Ver docs/multicoach-modelo.md.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="mc-transfer"/.test(p)) return "panel-v2.html: falta el handler mc-transfer.";
+      if (!/functions\/v1\/cambiar-owner/.test(p)) return "panel-v2.html: mc-transfer ya no llama a cambiar-owner.";
+      const fn = read("supabase/functions/cambiar-owner/index.ts");
+      if (!fn) return "falta supabase/functions/cambiar-owner/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn) || !/not_admin/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "cambiar-owner: debe usar service role y gatear al admin.";
+      if (!/rol:\s*["']owner["']/.test(fn) || !/rol:\s*["']coach["']/.test(fn))
+        return "cambiar-owner: debe promover al nuevo (owner) y bajar al anterior (coach).";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy cambiar-owner/.test(wf)) return "deploy-functions.yml: falta desplegar cambiar-owner.";
+      return null;
+    },
+  },
+  {
     name: "admin: convertir un coach en multicoach (edge function, pasa sus clientes)",
     bug: "Promover un coach a dueño de su red (rol='owner' + crear org + pasarle " +
          "sus clientes) es privilegiado → edge function convertir-multicoach " +
