@@ -73,7 +73,7 @@ Deno.serve(async (req: Request) => {
   // ── Traer datos (service role → sin RLS) ──────────────────────────────────
   const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   const [coaches, cands, errs, informes] = await Promise.all([
-    q("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,auth_id"),
+    q("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,auth_id,last_seen,configuracion"),
     q("candidatos?select=*"),
     q(`client_errors?select=ts,kind,email,page,detail&ts=gte.${since}&order=ts.desc&limit=400`),
     q("informes?select=email"),
@@ -90,13 +90,17 @@ Deno.serve(async (req: Request) => {
   type Issue = { sev: "alta" | "media"; t: string; d: string; items: string[] };
   const issues: Issue[] = [];
 
-  // 1) Coaches con sesión sin ligar (auth_id null)
-  const noAuth = realCoaches.filter((c) => c.rol === "coach" && !c.auth_id);
+  // 1) Coaches sin ligar (auth_id null) que SÍ entraron hace poco → el linkeo
+  //    falló de verdad. A los que NO entraron recién no los mostramos: la sesión
+  //    se liga sola cuando vuelven a entrar, y no tiene sentido avisar de algo
+  //    que no se puede forzar y que se arregla solo.
+  const ultimoLogin = (c: any) => (c.configuracion && c.configuracion.last_login) || c.last_seen || null;
+  const noAuth = realCoaches.filter((c) => c.rol === "coach" && !c.auth_id && ultimoLogin(c) && ageDays(ultimoLogin(c)) <= 7);
   if (noAuth.length) {
     issues.push({
       sev: "alta",
-      t: "Coaches con la sesión sin ligar",
-      d: "No tienen auth_id: cuando entran pueden NO ver ni agregar clientes. Que cierren sesión y vuelvan a entrar.",
+      t: "Coaches que entraron pero no ligaron la sesión",
+      d: "Entraron en los últimos 7 días y aún no tienen auth_id: el linkeo (migrate-user-to-auth / pw_link_auth_id) puede estar fallando para ellos. Los que no entraron hace poco no se listan: ligan solos al volver a entrar.",
       items: noAuth.map((c) => `${c.nombre || "—"} · ${c.email || ""}`),
     });
   }
