@@ -1483,6 +1483,33 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: el dueño logueado ve su RED REAL (no la maqueta)",
+    bug: "multicoach.html arrancaba SIEMPRE con datos demo (Alex Gómez inventado). " +
+         "Ahora, si entra un usuario rol='owner', carga su organización + coaches + " +
+         "clientes por org_id desde Supabase (mcBoot→mcLoadReal), y el login rutea al " +
+         "owner a multicoach.html. Si algo falla cae a demo (nunca en blanco). Ver " +
+         "docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      // Bootstrap por sesión: owner → real; si no → demo.
+      if (!/function mcBoot\(/.test(mc)) return "multicoach.html: falta mcBoot() (arranque por sesión).";
+      if (!/rol===['"]owner['"]/.test(mc)) return "multicoach.html: mcBoot ya no distingue al owner (rol='owner').";
+      if (!/function mcLoadReal\(/.test(mc)) return "multicoach.html: falta mcLoadReal() (carga de la red real).";
+      // Debe leer la org y filtrar coaches/clientes por org_id.
+      if (!/organizaciones/.test(mc) || !/org_id=eq\./.test(mc))
+        return "multicoach.html: mcLoadReal ya no lee organizaciones / filtra por org_id.";
+      // Fallback a demo ante error (no dejar el panel en blanco).
+      if (!/MC_REAL=false;\s*mcApplyNiche\(\)/.test(mc))
+        return "multicoach.html: mcLoadReal perdió el fallback a demo (podría quedar en blanco).";
+      // El login debe rutear al owner a su panel de red.
+      const lg = read("login.html");
+      if (lg && !/rol===['"]owner['"][\s\S]{0,120}multicoach\.html/.test(lg))
+        return "login.html: el owner ya no se rutea a multicoach.html.";
+      return null;
+    },
+  },
+  {
     name: "admin: 'Dar acceso a un multicoach' crea la empresa vía crear-multicoach",
     bug: "El alta de un multicoach (dueño de red) debe crear la ORGANIZACIÓN con sus " +
          "límites según el plan (Boutique 3/15 · Pro ilimitado) y el owner rol='owner', " +
