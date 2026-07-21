@@ -70,17 +70,32 @@ se gatean a medida que se construye cada feature (marcar acá cuál está activo
 > elegido por el admin al darlo de alta y fijo. No se mezclan nichos ni es un
 > beneficio de plan — toda la red opera en ese nicho.
 
+Lógica de los saltos: **Studio = monetizar** (dar clases y cobrar). **Pro =
+operar la red grande** (la plata y la agenda de muchos coaches, automatizado).
+
 | Beneficio | Boutique | Studio | Pro |
 |-----------|:--------:|:------:|:---:|
+| Coaches y clientes | 3 / 45 | 8 / 120 | ilimitado |
 | Panel del dueño (ver red, asignar clientes) | ✅ | ✅ | ✅ |
 | White-label (logo + colores en el portal) | ✅ | ✅ | ✅ |
 | Comunidad: avisos + revista | ✅ | ✅ | ✅ |
+| Chat interno de la empresa (dueño ↔ coaches ↔ equipo) | ✅ | ✅ | ✅ |
 | Recursos compartidos de la red | ✅ | ✅ | ✅ |
 | Clases / webinars de la empresa | — | ✅ | ✅ |
+| Cobrar a clientes (pagos) | — | ✅ | ✅ |
 | Analytics de la red (ranking, clientes en riesgo) | básico | completo | completo + agente IA semanal |
-| Soporte | email | WhatsApp prioritario | dedicado + onboarding/migración |
+| Agenda unificada / calendario grupal de la red | — | — | ✅ |
+| Emails a clientes / campañas de la red | — | — | ✅ |
+| Reparto de pagos a coaches (comisiones) | — | — | ✅ |
+| Datos del negocio (ingresos, retención, rendimiento por coach · exportable) | — | — | ✅ |
+| Automatizaciones (onboarding, recordatorios) | — | — | ✅ |
 | Dominio propio / subdominio | — | — | ✅ |
-| Coaches y clientes | 3 / 45 | 8 / 120 | ilimitado |
+| Soporte | email | WhatsApp prioritario | dedicado + onboarding/migración |
+
+> **Nota de build:** pagos, comisiones y agenda unificada son features grandes
+> (procesar plata, repartir a cada coach, calendario central). Definen qué
+> desbloquea cada plan; se construyen por etapas. Hoy el sistema solo enforcea
+> los cupos (coaches/clientes).
 
 ## Mapa de archivos (canónico vs a retirar)
 
