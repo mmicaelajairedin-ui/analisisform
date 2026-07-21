@@ -1481,6 +1481,43 @@ const RULES = [
     },
   },
   {
+    name: "admin: 'Dar acceso a un multicoach' crea la empresa vía crear-multicoach",
+    bug: "El alta de un multicoach (dueño de red) debe crear la ORGANIZACIÓN con sus " +
+         "límites según el plan (Boutique 3/15 · Pro ilimitado) y el owner rol='owner', " +
+         "salteando RLS de forma segura. Va por la edge function crear-multicoach (service " +
+         "role + gate de admin), NUNCA por un POST directo desde el navegador. Ver " +
+         "docs/multicoach-modelo.md.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="mc-access"/.test(p)) return "panel-v2.html: falta el handler mc-access (Dar acceso a un multicoach).";
+      const start = p.indexOf('act==="mc-access"');
+      const endMarker = p.indexOf('act==="empleado-crear"', start);
+      const seg = endMarker > start ? p.slice(start, endMarker) : p.slice(start, start + 6000);
+      if (!/functions\/v1\/crear-multicoach/.test(seg))
+        return "panel-v2.html: mc-access ya no llama a la edge function crear-multicoach.";
+      if (/rol:\s*["']owner["']/.test(seg))
+        return "panel-v2.html: mc-access crea un usuario rol='owner' directo (RLS lo bloquea). Debe ir por crear-multicoach.";
+      // La edge function debe existir, usar service role, verificar admin y crear la org.
+      const fn = read("supabase/functions/crear-multicoach/index.ts");
+      if (!fn) return "falta supabase/functions/crear-multicoach/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn)) return "crear-multicoach: ya no usa service role (no saltearía RLS).";
+      if (!/not_admin/.test(fn) || !/auth\/v1\/user/.test(fn))
+        return "crear-multicoach: perdió la verificación de admin (JWT → /auth/v1/user).";
+      if (!/organizaciones/.test(fn) || !/rol:\s*["']owner["']/.test(fn))
+        return "crear-multicoach: debe crear la fila en organizaciones y el owner rol='owner'.";
+      // La migración de la base debe existir (la tabla organizaciones + org_id).
+      const mig = read("supabase/migrations/organizaciones.sql");
+      if (!mig || !/CREATE TABLE IF NOT EXISTS organizaciones/.test(mig))
+        return "falta supabase/migrations/organizaciones.sql (tabla organizaciones + org_id).";
+      // Y debe estar en el workflow de auto-deploy.
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy crear-multicoach/.test(wf))
+        return "deploy-functions.yml: falta el paso para desplegar crear-multicoach.";
+      return null;
+    },
+  },
+  {
     name: "calendario del panel: día clickeable + incluye demos del equipo/pasadas",
     bug: "En el panel, tocar un día del calendario debe mostrar los eventos de ese " +
          "día (ag-mo-day → _agRenderDay). Y los puntitos/el detalle deben leer de " +
