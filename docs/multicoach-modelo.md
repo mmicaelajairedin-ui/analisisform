@@ -34,13 +34,31 @@ Un coach/cliente **sin** `org_id` = modelo normal (coach individual): no cambia
 nada para ellos.
 
 - `organizaciones` (tabla nueva) — la red/empresa: nombre, owner_email, plan,
-  nicho, marca (white-label), activo.
+  nicho, marca (white-label), límites (max_coaches/max_clientes), prueba/pago
+  (estado_sub, fecha_fin_prueba), activo.
 - `usuarios.org_id` — a qué red pertenece el coach. El dueño es un `usuarios`
   con `rol='owner'` y `org_id` = su propia org.
 - `candidatos.org_id` — de qué empresa es el cliente. Sigue teniendo `coach_id`
   = el coach asignado dentro de esa red.
 
 Migración: `supabase/migrations/organizaciones.sql` (aditiva y segura).
+
+## Planes / tipos de multicoach
+
+Al dar de alta un multicoach, Micaela elige el **tipo** (prueba o comprado) y
+los **límites** (cuántos coaches / cuántos clientes). Mismo ciclo de vida que
+el coach individual (14 días de prueba → paga → activa). Números de ejemplo
+(ajustables, el esquema no depende de ellos):
+
+| Tipo (`plan`) | Coaches (`max_coaches`) | Clientes (`max_clientes`) | Precio | Para |
+|---------------|-------------------------|---------------------------|--------|------|
+| `prueba` | 3 | 15 | gratis 14 días | que lo pruebe |
+| `red` | 8 | 100 | $X/mes | red chica/media |
+| `red_pro` | ilimitado (NULL) | ilimitado (NULL) | $Y/mes | red grande + white-label |
+
+`max_coaches`/`max_clientes` en NULL = ilimitado. El `multicoach.html` avisa y
+bloquea el alta al llegar al tope ("llegaste a tus 3 coaches"). El precio es
+externo (Stripe), como con los coaches.
 
 ## Mapa de archivos (canónico vs a retirar)
 

@@ -17,15 +17,25 @@ CREATE TABLE IF NOT EXISTS organizaciones (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre       TEXT NOT NULL,               -- nombre de la red/empresa
   owner_email  TEXT NOT NULL,               -- el multicoach (dueño de la red)
-  plan         TEXT DEFAULT 'basico',       -- qué habilita el plan (ver abajo)
+  plan         TEXT DEFAULT 'prueba',       -- prueba | red | red_pro (el tipo de multicoach)
   nicho        TEXT,                         -- fitness | carrera | finanzas | multi
   marca        JSONB DEFAULT '{}'::jsonb,    -- white-label (logo, color) del owner
+  -- ── Límites del plan (cuántos coaches / clientes puede tener) ──────────
+  -- NULL = ilimitado (plan grande). El multicoach.html avisa y bloquea el
+  -- alta cuando la red llega al tope (ej: "llegaste a tus 3 coaches").
+  max_coaches  INT,                          -- tope de coaches (NULL = ilimitado)
+  max_clientes INT,                          -- tope de clientes (NULL = ilimitado)
+  -- ── Prueba / pago (misma lógica que el trial de 14 días de los coaches) ─
+  estado_sub       TEXT DEFAULT 'prueba',    -- prueba | activa | vencida | inactiva
+  fecha_fin_prueba DATE,                     -- cuándo se le vence la prueba
   activo       BOOLEAN DEFAULT true,
   created_at   TIMESTAMPTZ DEFAULT now()
 );
 
 COMMENT ON COLUMN organizaciones.plan IS
-  'Define qué puede hacer el dueño. Ej: basico | pro | red (llevar toda la red). Vos lo setéas al dar de alta el multicoach.';
+  'El tipo de multicoach. Ej: prueba (14 días, ~3 coaches/15 clientes) | red (~8 coaches/100 clientes) | red_pro (ilimitado + white-label). Los números viven en max_coaches/max_clientes; el precio es externo (Stripe). Vos lo setéas al dar de alta.';
+COMMENT ON COLUMN organizaciones.estado_sub IS
+  'prueba mientras está en los 14 días; activa cuando pagó; vencida/inactiva si no renovó. Igual que el ciclo de vida del coach individual.';
 
 -- ── El coach pertenece a una organización (NULL = coach individual normal) ─
 ALTER TABLE usuarios   ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES organizaciones(id);
