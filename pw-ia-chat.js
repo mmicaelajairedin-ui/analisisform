@@ -32,6 +32,19 @@
   var state = { open: false, msgs: null, draft: "", busy: false };
   var USER_ROLE = MODE === "coach" ? "coach" : "cliente"; // valor de `from` propio (contrato de chat)
 
+  // ── Accesos directos (chips) ──────────────────────────────────────────────
+  // La página anfitriona pasa su catálogo por CFG.shortcuts (por nicho) y una
+  // función CFG.onNav(section) para navegar. Según lo que la IA mencione en su
+  // respuesta, ofrecemos un botón que lleva directo a esa sección + el paso a
+  // paso (how). CFG.starters = accesos que van en el saludo.
+  var SHORTCUTS = (CFG.shortcuts && CFG.shortcuts.length ? CFG.shortcuts : []).map(function (s) {
+    return { re: (s.re instanceof RegExp ? s.re : new RegExp(s.re || "$^", "i")), label: s.label, emoji: s.emoji || "", section: s.section, how: s.how || "" };
+  });
+  var STARTERS = (CFG.starters && CFG.starters.length ? CFG.starters : []).map(function (s) {
+    return { label: s.label, emoji: s.emoji || "", section: s.section, how: s.how || "" };
+  });
+  function iaSuggest(text) { var t = "" + (text || ""), out = []; for (var i = 0; i < SHORTCUTS.length && out.length < 2; i++) { if (SHORTCUTS[i].re.test(t)) out.push(SHORTCUTS[i]); } return out; }
+
   function esc(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -47,7 +60,7 @@
         ? "Hola 👋 Soy tu IA Pathway. Puedo ayudarte con tu agenda de la semana y con el uso de la plataforma. ¿Qué necesitás?"
         : "Hola 👋 Soy tu IA Pathway. Puedo ayudarte con tu proceso, tus documentos y a moverte por la plataforma. ¿En qué te doy una mano?");
     var txt = g.replace(/<br\s*\/?>/g, " ").replace(/<[^>]+>/g, "");
-    return [{ from: "ia", html: g, txt: txt }];
+    return [{ from: "ia", html: g, txt: txt, acts: STARTERS.slice() }];
   }
 
   // ── estilos (se inyectan una vez) ──
@@ -85,6 +98,12 @@
       ".pw-wa-fine-tx{display:flex;flex-direction:column;line-height:1.3;min-width:0;}.pw-wa-fine-tx b{font-size:13px;font-weight:700;color:#2B2B2B;}.pw-wa-fine-tx span{font-size:11.5px;color:#6b7280;}" +
       ".pw-wa-fine-ico{width:34px;height:34px;border-radius:50%;background:#25D366;color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}" +
       ".cp-iac-warow{display:flex;margin:-2px 0 10px 2px;}" +
+      /* Accesos directos (chips) + paso a paso: respuesta corta + botón que lleva a la sección. */
+      ".pw-ia-acts{display:flex;flex-wrap:wrap;gap:7px;margin:-2px 0 11px 2px;}" +
+      ".pw-ia-chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #E5E7EB;border-radius:100px;padding:7px 13px;font-family:inherit;font-size:12.5px;font-weight:600;color:" + ACCENT + ";cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.05);transition:border-color .15s,transform .15s;}" +
+      ".pw-ia-chip:hover{border-color:" + ACCENT + ";transform:translateY(-1px);}" +
+      ".pw-ia-how{font-size:11.5px;line-height:1.5;color:#49524D;background:#F3F5F4;border-radius:10px;padding:8px 11px;margin:0 0 11px 2px;max-width:90%;}" +
+      ".pw-ia-how b{font-weight:700;color:#2B2B2B;}" +
       ".cp-iac-compose{display:flex;gap:8px;padding:10px 12px 12px;flex-shrink:0;background:#fff;border-top:1px solid #E5E7EB;}" +
       ".cp-iac-compose input{flex:1;border:1px solid #E5E7EB;border-radius:11px;padding:10px 13px;font-size:14px;font-family:inherit;background:#F7F8F7;outline:none;}" +
       ".cp-iac-compose input:focus{border-color:" + ACCENT + ";background:#fff;}" +
@@ -131,8 +150,14 @@
     var body = state.msgs.map(function (m) {
       var mine = (m.from === USER_ROLE);
       var wa = (!mine && m.wa) ? waRow() : "";
+      var acts = "";
+      if (!mine && m.acts && m.acts.length) {
+        var chips = "<div class='pw-ia-acts'>" + m.acts.map(function (a) { return "<button class='pw-ia-chip' data-iago='" + esc(a.section) + "'>" + esc(a.emoji || "") + " " + esc(a.label) + "</button>"; }).join("") + "</div>";
+        var howA = null; for (var hi = 0; hi < m.acts.length; hi++) { if (m.acts[hi].how) { howA = m.acts[hi]; break; } }
+        acts = chips + (howA ? "<div class='pw-ia-how'>👉 " + howA.how + "</div>" : "");
+      }
       return "<div class='cp-iac-row cp-iac-row-" + (mine ? "me" : "them") + "'><div class='cp-iac-bubble " +
-        (mine ? "cp-iac-me" : "cp-iac-them") + "'>" + m.html + "</div></div>" + wa;
+        (mine ? "cp-iac-me" : "cp-iac-them") + "'>" + m.html + "</div></div>" + acts + wa;
     }).join("");
     if (state.busy) body += "<div class='cp-iac-row cp-iac-row-them'><div class='cp-iac-bubble cp-iac-them cp-iac-typing'><span></span><span></span><span></span></div></div>";
     r.innerHTML =
@@ -149,6 +174,10 @@
       "</div>";
     var x = r.querySelector(".cp-iac-x"); if (x) x.onclick = close;
     var send = r.querySelector(".cp-iac-send"); if (send) send.onclick = onSend;
+    // Accesos directos: navegar en el portal anfitrión y cerrar el chat.
+    Array.prototype.forEach.call(r.querySelectorAll("[data-iago]"), function (b) {
+      b.onclick = function () { var s = b.getAttribute("data-iago"); if (!s) return; state.open = false; render(); try { if (typeof CFG.onNav === "function") CFG.onNav(s); } catch (e) {} };
+    });
     var inp = r.querySelector("#iac-input");
     if (inp) {
       inp.oninput = function () { state.draft = inp.value; };
@@ -195,7 +224,7 @@
       .then(function (j) {
         state.busy = false;
         var reply = (j && j.reply) || "No pude responderte ahora.";
-        state.msgs.push({ from: "ia", html: esc(reply).replace(/\n/g, "<br>"), txt: reply, wa: !!(j && j.escalate) });
+        state.msgs.push({ from: "ia", html: esc(reply).replace(/\n/g, "<br>"), txt: reply, wa: !!(j && j.escalate), acts: iaSuggest(reply) });
         render();
       })
       .catch(function () {
