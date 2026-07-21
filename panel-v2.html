@@ -852,6 +852,8 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-iac-acts{display:flex;flex-wrap:wrap;gap:7px;margin:-2px 0 11px 2px;}
 .cp-iac-chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--pw-border);border-radius:100px;padding:7px 13px;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--pw-bosque);cursor:pointer;box-shadow:var(--pw-shadow-xs);transition:border-color .15s,box-shadow .15s,transform .15s;}
 .cp-iac-chip:hover{border-color:var(--pw-bosque);box-shadow:0 4px 12px rgba(45,106,79,.12);transform:translateY(-1px);}
+.cp-iac-how{font-size:11.5px;line-height:1.5;color:var(--pw-text-soft);background:var(--pw-niebla-2);border-radius:10px;padding:8px 11px;margin:0 0 11px 2px;max-width:90%;}
+.cp-iac-how b{font-weight:700;color:var(--pw-carbon);}
 /* Botón WhatsApp "fino": tarjeta clara + ícono verde chico (no botón sólido).
    Reutilizable en toda la plataforma vía .pw-wa-fine. */
 .pw-wa-fine{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;max-width:270px;background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:10px 12px;text-decoration:none;box-shadow:var(--pw-shadow-xs);transition:border-color .15s,box-shadow .15s,transform .15s;}
@@ -5909,13 +5911,20 @@ function _iapData(){
 // Accesos directos del chat IA: según lo que la IA MENCIONE en su respuesta,
 // ofrecemos un botón que lleva directo a esa sección (respuesta corta + botón,
 // en vez de un muro de texto). Detección por palabras clave sobre el texto.
+// Ordenado de MÁS específico a más genérico: así "preparar mi sesión" gana sobre
+// "agendar", y "informe" apunta a generarlo (no solo a "clientes"). El `how` es el
+// paso a paso EXACTO (qué botón tocar), porque esas acciones viven dentro de la
+// ficha de cada cliente y el chat no sabe cuál — pero te lleva al lugar justo.
 var _IA_SHORTCUTS=[
-  {sec:"calendario", label:"Ir al calendario", emoji:"📅", re:/(agenda|agendar|calendario|reuni[oó]n|sesi[oó]n|\bcita|disponibilidad|reserva|horario)/i},
-  {sec:"clientes", label:"Ver mis clientes", emoji:"👥", re:/(cliente|informe|documento|\bcv\b|carta|ficha|linkedin)/i},
+  {sec:"clientes", label:"Preparar una sesión", emoji:"📝", re:/(prepar(ar|aci[oó]n|o|e|á)|antes de (la|mi|una) (sesi|reuni)|qu[eé] (trabajar|hablar|ver|hacer) en (la|mi|una) (sesi|reuni))/i, how:"Abrí el cliente → pestaña <b>Sesión</b> → botón «Preparar próxima sesión con IA Pathway». Te arma la prep con lo que ya sabemos de esa persona."},
+  {sec:"clientes", label:"Crear un informe", emoji:"📄", re:/(informe|reporte|diagn[oó]stico)/i, how:"Abrí el cliente → pestaña <b>Documentos</b> → botón «Generar con IA Pathway». Lo genera solo y después lo editás y guardás."},
+  {sec:"clientes", label:"Documentos del cliente", emoji:"🗂️", re:/(\bcv\b|curr[ií]culum|carta de presentaci[oó]n|linkedin)/i, how:"Abrí el cliente → pestaña <b>Documentos</b> → ahí generás CV, carta o LinkedIn con IA Pathway."},
+  {sec:"calendario", label:"Ir al calendario", emoji:"📅", re:/(agendar|nueva sesi[oó]n|reservar|calendario|disponibilidad|programar|\bcita|horario|reuni[oó]n)/i, how:"Creás una nueva sesión eligiendo el cliente, la fecha y la hora (presencial u online)."},
+  {sec:"clientes", label:"Ver mis clientes", emoji:"👥", re:/(cliente|ficha)/i},
   {sec:"config", label:"Ir a Configuración", emoji:"⚙️", re:/(configuraci|\bperfil|marca propia|recurso|link de reserva|conectar|google calendar|integraci|tu foto|slug)/i},
   {sec:"solicitudes", label:"Ver solicitudes", emoji:"📨", re:/(solicitud|mensaje nuevo|pendiente de)/i}
 ];
-function _iaSuggest(text){ var t=""+(text||""), out=[]; for(var i=0;i<_IA_SHORTCUTS.length && out.length<2;i++){ var s=_IA_SHORTCUTS[i]; if(s.re.test(t)) out.push({sec:s.sec,label:s.label,emoji:s.emoji}); } return out; }
+function _iaSuggest(text){ var t=""+(text||""), out=[]; for(var i=0;i<_IA_SHORTCUTS.length && out.length<2;i++){ var s=_IA_SHORTCUTS[i]; if(s.re.test(t)) out.push({sec:s.sec,label:s.label,emoji:s.emoji,how:s.how||""}); } return out; }
 function _iaChatSeed(){
   // Saludo SIN números de agenda: los conteos salían de eventos del calendario
   // (a veces personales) y no eran fiables. La agenda va como contexto rotulado
@@ -5989,7 +5998,15 @@ function viewIAPathway(){
     var mine = m.from==="coach";
     var cls = mine ? "cp-iac-me" : "cp-iac-them";
     var wa = (!mine && m.wa) ? "<div class='cp-iac-warow'>"+waBtn+"</div>" : "";
-    var acts = (!mine && m.acts && m.acts.length) ? "<div class='cp-iac-acts'>"+m.acts.map(function(a){ return "<button class='cp-iac-chip' data-act='iachat-go' data-sec='"+esc(a.sec)+"'>"+esc(a.emoji||"")+" "+esc(a.label)+"</button>"; }).join("")+"</div>" : "";
+    var acts = "";
+    if(!mine && m.acts && m.acts.length){
+      var _chips="<div class='cp-iac-acts'>"+m.acts.map(function(a){ return "<button class='cp-iac-chip' data-act='iachat-go' data-sec='"+esc(a.sec)+"'>"+esc(a.emoji||"")+" "+esc(a.label)+"</button>"; }).join("")+"</div>";
+      // Paso a paso EXACTO (qué clickear) del primer acceso que lo tenga. El texto
+      // es estático del catálogo (_IA_SHORTCUTS), por eso va como HTML (los <b>).
+      var _howA=null; for(var _hi=0;_hi<m.acts.length;_hi++){ if(m.acts[_hi].how){ _howA=m.acts[_hi]; break; } }
+      var _how=_howA ? "<div class='cp-iac-how'>👉 "+_howA.how+"</div>" : "";
+      acts=_chips+_how;
+    }
     return "<div class='cp-iac-row cp-iac-row-"+(mine?"me":"them")+"'><div class='cp-iac-bubble "+cls+"'>"+m.html+"</div></div>"+acts+wa;
   }).join("");
   if(state.iaChat.busy) body += "<div class='cp-iac-row cp-iac-row-them'><div class='cp-iac-bubble cp-iac-them cp-iac-typing'><span></span><span></span><span></span></div></div>";
