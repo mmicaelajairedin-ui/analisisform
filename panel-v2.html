@@ -847,6 +847,11 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-iac-them b{font-weight:700;color:var(--pw-bosque);}
 .cp-iac-me{background:var(--pw-bosque);color:#fff;border-bottom-right-radius:5px;}
 .cp-iac-warow{display:flex;margin:-2px 0 10px 2px;}
+/* Accesos directos (chips) del chat IA: respuesta corta + botón que lleva a la
+   sección. Van debajo de la burbuja de la IA. */
+.cp-iac-acts{display:flex;flex-wrap:wrap;gap:7px;margin:-2px 0 11px 2px;}
+.cp-iac-chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--pw-border);border-radius:100px;padding:7px 13px;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--pw-bosque);cursor:pointer;box-shadow:var(--pw-shadow-xs);transition:border-color .15s,box-shadow .15s,transform .15s;}
+.cp-iac-chip:hover{border-color:var(--pw-bosque);box-shadow:0 4px 12px rgba(45,106,79,.12);transform:translateY(-1px);}
 /* Botón WhatsApp "fino": tarjeta clara + ícono verde chico (no botón sólido).
    Reutilizable en toda la plataforma vía .pw-wa-fine. */
 .pw-wa-fine{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;max-width:270px;background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:10px 12px;text-decoration:none;box-shadow:var(--pw-shadow-xs);transition:border-color .15s,box-shadow .15s,transform .15s;}
@@ -5901,12 +5906,22 @@ function _iapData(){
 // conversación. Sin botones — es un chat: el coach escribe y la IA responde.
 // Cada mensaje guarda html (para el DOM) y txt (texto plano para el historial
 // que se manda a Claude).
+// Accesos directos del chat IA: según lo que la IA MENCIONE en su respuesta,
+// ofrecemos un botón que lleva directo a esa sección (respuesta corta + botón,
+// en vez de un muro de texto). Detección por palabras clave sobre el texto.
+var _IA_SHORTCUTS=[
+  {sec:"calendario", label:"Ir al calendario", emoji:"📅", re:/(agenda|agendar|calendario|reuni[oó]n|sesi[oó]n|\bcita|disponibilidad|reserva|horario)/i},
+  {sec:"clientes", label:"Ver mis clientes", emoji:"👥", re:/(cliente|informe|documento|\bcv\b|carta|ficha|linkedin)/i},
+  {sec:"config", label:"Ir a Configuración", emoji:"⚙️", re:/(configuraci|\bperfil|marca propia|recurso|link de reserva|conectar|google calendar|integraci|tu foto|slug)/i},
+  {sec:"solicitudes", label:"Ver solicitudes", emoji:"📨", re:/(solicitud|mensaje nuevo|pendiente de)/i}
+];
+function _iaSuggest(text){ var t=""+(text||""), out=[]; for(var i=0;i<_IA_SHORTCUTS.length && out.length<2;i++){ var s=_IA_SHORTCUTS[i]; if(s.re.test(t)) out.push({sec:s.sec,label:s.label,emoji:s.emoji}); } return out; }
 function _iaChatSeed(){
   // Saludo SIN números de agenda: los conteos salían de eventos del calendario
   // (a veces personales) y no eran fiables. La agenda va como contexto rotulado
   // por fuente para que la IA no afirme sesiones inventadas.
   var htmlIntro = "Hola 👋 Soy tu IA Pathway. Puedo ayudarte a organizar tu semana, con tus clientes y con el uso de la plataforma. ¿En qué te doy una mano?";
-  return [{ from:"ia", html:htmlIntro, txt:htmlIntro }];
+  return [{ from:"ia", html:htmlIntro, txt:htmlIntro, acts:[{sec:"calendario",label:"Mi calendario",emoji:"📅"},{sec:"clientes",label:"Mis clientes",emoji:"👥"},{sec:"config",label:"Configuración",emoji:"⚙️"}] }];
 }
 // Resumen de contexto (agenda + clientes) que viaja a la Edge Function para que
 // la IA razone sobre datos REALES, sin inventar. La agenda se rotula por FUENTE:
@@ -5951,7 +5966,7 @@ function _iaChatAsk(){
     .then(function(j){
       state.iaChat.busy=false;
       var reply=(j&&j.reply)||"No pude responderte ahora.";
-      state.iaChat.msgs.push({ from:"ia", html:esc(reply).replace(/\n/g,"<br>"), txt:reply, wa:!!(j&&j.escalate) });
+      state.iaChat.msgs.push({ from:"ia", html:esc(reply).replace(/\n/g,"<br>"), txt:reply, wa:!!(j&&j.escalate), acts:_iaSuggest(reply) });
       render(); _iaChatScrollDown();
     })
     .catch(function(){
@@ -5974,7 +5989,8 @@ function viewIAPathway(){
     var mine = m.from==="coach";
     var cls = mine ? "cp-iac-me" : "cp-iac-them";
     var wa = (!mine && m.wa) ? "<div class='cp-iac-warow'>"+waBtn+"</div>" : "";
-    return "<div class='cp-iac-row cp-iac-row-"+(mine?"me":"them")+"'><div class='cp-iac-bubble "+cls+"'>"+m.html+"</div></div>"+wa;
+    var acts = (!mine && m.acts && m.acts.length) ? "<div class='cp-iac-acts'>"+m.acts.map(function(a){ return "<button class='cp-iac-chip' data-act='iachat-go' data-sec='"+esc(a.sec)+"'>"+esc(a.emoji||"")+" "+esc(a.label)+"</button>"; }).join("")+"</div>" : "";
+    return "<div class='cp-iac-row cp-iac-row-"+(mine?"me":"them")+"'><div class='cp-iac-bubble "+cls+"'>"+m.html+"</div></div>"+acts+wa;
   }).join("");
   if(state.iaChat.busy) body += "<div class='cp-iac-row cp-iac-row-them'><div class='cp-iac-bubble cp-iac-them cp-iac-typing'><span></span><span></span><span></span></div></div>";
   return "<div class='cp-iac-panel' role='dialog' aria-label='Chat IA Pathway'>"+
@@ -9313,6 +9329,7 @@ document.addEventListener("click", function(ev){
     render(); _iaChatScrollDown(); return;
   }
   if(act==="iachat-close"){ if(state.iaChat) state.iaChat.open=false; render(); return; }
+  if(act==="iachat-go"){ var _isec=el.getAttribute("data-sec")||""; if(!_isec) return; if(state.iaChat) state.iaChat.open=false; state.section=_isec; if(_isec==="config" && !state.cfg) state.cfg="profile"; render(); window.scrollTo(0,0); if(_isec==="solicitudes"){ try{ syncSolicitudes(); }catch(e){} } return; }
   if(act==="iachat-send"){
     if(state.iaChat.busy) return;
     var inp=document.getElementById("iac-input"); var txt=inp?(""+inp.value).trim():"";
