@@ -1036,24 +1036,37 @@ function mcKpisReal(){
 function mcLoadReal(owner){
   MC_REAL=true; MC_OWNER=owner;
   var sw=document.getElementById('mc-nswitch'); if(sw)sw.style.display='none'; // sin selector demo
-  var orgId=owner.org_id||(owner.configuracion&&owner.configuracion.org_id)||'';
-  var email=(owner.email||'').toLowerCase();
-  var orgQ = orgId ? ('id=eq.'+encodeURIComponent(orgId)) : ('owner_email=eq.'+encodeURIComponent(email));
-  return mcGet('organizaciones', orgQ+'&select=*&limit=1').then(function(orgs){
-    var org=(orgs&&orgs[0])||null; MC_ORG=org;
+  // La red se lee por la edge function mi-red (service role, gateada al owner):
+  // la RLS de candidatos NO deja que el dueño lea a los clientes de sus coaches,
+  // así que la lectura directa devolvería la lista vacía. mi-red la trae completa.
+  function _apply(org,coaches,clientes){
+    MC_ORG=org||null;
     MC_PLAN=(org&&org.plan)||(owner.configuracion&&owner.configuracion.plan)||'boutique';
     MC_N=mcNichoKey(org?org.nicho:(owner.configuracion&&owner.configuracion.coach_type)); NICHOS=NM().cats;
-    var oid=org?org.id:null;
-    return Promise.all([
-      oid?mcGet('usuarios','org_id=eq.'+encodeURIComponent(oid)+'&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion'):Promise.resolve([]),
-      oid?mcGet('candidatos','org_id=eq.'+encodeURIComponent(oid)+'&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc'):Promise.resolve([])
-    ]);
-  }).then(function(res){
-    var coaches=res[0]||[], clientes=res[1]||[];
-    var cnt={}; clientes.forEach(function(c){ if(c.coach_id)cnt[c.coach_id]=(cnt[c.coach_id]||0)+1; });
-    DB={ coaches:coaches.map(function(u){return mcMapCoach(u,cnt[u.id]);}), clientes:clientes.map(mcMapCli) };
+    var cnt={}; (clientes||[]).forEach(function(c){ if(c.coach_id)cnt[c.coach_id]=(cnt[c.coach_id]||0)+1; });
+    DB={ coaches:(coaches||[]).map(function(u){return mcMapCoach(u,cnt[u.id]);}), clientes:(clientes||[]).map(mcMapCli) };
     mcApplyNiche();
-  }).catch(function(){ MC_REAL=false; mcApplyNiche(); }); // fallback a demo, nunca en blanco
+  }
+  return _hdr({'Content-Type':'application/json'}).then(function(h){
+    return fetch(SB+'/functions/v1/mi-red',{method:'POST',headers:h});
+  }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+    if(d&&d.ok){ _apply(d.org,d.coaches,d.clientes); return; }
+    throw new Error('mi-red');
+  }).catch(function(){
+    // Fallback: lectura directa (por si mi-red aún no está desplegada). Los
+    // coaches sí se leen (policy de directorio); los clientes pueden venir
+    // vacíos si la RLS estricta está activa — mi-red lo resuelve.
+    var orgId=owner.org_id||(owner.configuracion&&owner.configuracion.org_id)||'';
+    var email=(owner.email||'').toLowerCase();
+    var orgQ = orgId ? ('id=eq.'+encodeURIComponent(orgId)) : ('owner_email=eq.'+encodeURIComponent(email));
+    return mcGet('organizaciones', orgQ+'&select=*&limit=1').then(function(orgs){
+      var org=(orgs&&orgs[0])||null; var oid=org?org.id:null;
+      return Promise.all([
+        oid?mcGet('usuarios','org_id=eq.'+encodeURIComponent(oid)+'&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion'):Promise.resolve([]),
+        oid?mcGet('candidatos','org_id=eq.'+encodeURIComponent(oid)+'&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc'):Promise.resolve([])
+      ]).then(function(res){ _apply(org,res[0],res[1]); });
+    }).catch(function(){ MC_REAL=false; mcApplyNiche(); }); // demo, nunca en blanco
+  });
 }
 // Arranque: si hay un dueño logueado → red real; si no → demo (prospecto).
 function mcBoot(){

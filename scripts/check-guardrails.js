@@ -1624,7 +1624,17 @@ const RULES = [
       if (!/function mcBoot\(/.test(mc)) return "multicoach.html: falta mcBoot() (arranque por sesión).";
       if (!/rol===['"]owner['"]/.test(mc)) return "multicoach.html: mcBoot ya no distingue al owner (rol='owner').";
       if (!/function mcLoadReal\(/.test(mc)) return "multicoach.html: falta mcLoadReal() (carga de la red real).";
-      // Debe leer la org y filtrar coaches/clientes por org_id.
+      // La lectura de la red va por la edge function mi-red (la RLS de candidatos
+      // no deja que el owner lea a los clientes de sus coaches directo).
+      if (!/functions\/v1\/mi-red/.test(mc))
+        return "multicoach.html: mcLoadReal ya no lee la red por la edge function mi-red (los clientes vendrían vacíos por RLS).";
+      const miRed = read("supabase/functions/mi-red/index.ts");
+      if (!miRed) return "falta supabase/functions/mi-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(miRed) || !/not_owner/.test(miRed) || !/org_id=eq\./.test(miRed))
+        return "mi-red: debe usar service role, gatear al owner y filtrar por org_id.";
+      const wfr = read(".github/workflows/deploy-functions.yml");
+      if (wfr && !/functions deploy mi-red/.test(wfr)) return "deploy-functions.yml: falta desplegar mi-red.";
+      // Debe leer la org y filtrar coaches/clientes por org_id (fallback directo).
       if (!/organizaciones/.test(mc) || !/org_id=eq\./.test(mc))
         return "multicoach.html: mcLoadReal ya no lee organizaciones / filtra por org_id.";
       // Fallback a demo ante error (no dejar el panel en blanco).
