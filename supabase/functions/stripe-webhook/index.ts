@@ -457,14 +457,14 @@ async function handleCoachSubscription(
   const estado_sub = statusMap[sub.status] || "prueba";
 
   // Detectar plan por monto del Payment Link (USD desde jun-2026; EUR = legacy):
-  //   $29/mes (2900) o €58 (5800) → "basic"
-  //   $59/mes (5900) o €89 (8900) → "pro"
+  //   Mensual: $29 (2900) o €58 (5800) → basic · $59 (5900) o €89 (8900) → pro
+  //   Anual (25% off = 3 meses gratis): $261 (26100) → basic · $531 (53100) → pro
   // Fallback legacy (Payment Links viejos sin precios estandar): mes=basic, año=pro.
   const item = sub.items?.data?.[0];
   const unitAmount = item?.price?.unit_amount || 0;
   let plan: "basic" | "pro";
-  if (unitAmount === 5900 || unitAmount === 8900) plan = "pro";
-  else if (unitAmount === 2900 || unitAmount === 5800) plan = "basic";
+  if (unitAmount === 5900 || unitAmount === 8900 || unitAmount === 53100) plan = "pro";
+  else if (unitAmount === 2900 || unitAmount === 5800 || unitAmount === 26100) plan = "basic";
   else {
     const interval = item?.price?.recurring?.interval || "month";
     plan = interval === "year" ? "pro" : "basic";
