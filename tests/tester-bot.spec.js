@@ -103,6 +103,42 @@ test.describe('🤖 Bot de usuaria — recorre cada panel', () => {
   });
 });
 
+// ✉️ Invitación al cliente — el problema histórico "no me llega la invitación".
+// El bot entra como coach, abre un cliente y toca "Reenviar invitación": si el
+// email SALE de verdad, el panel dice "Invitación reenviada" (el backend devuelve
+// sent=true). Así el reporte diario avisa solo si el alta+email funciona, sin
+// tener que preguntarle a ningún coach. Manda UN email/día al inbox de prueba.
+test.describe('✉️ Invitación al cliente — el email sale de verdad', () => {
+  const coach = CUENTAS.find((c) => c && (c.nav || /coach/i.test(c.label || '')));
+  test('el coach reenvía la invitación y el email sale (sent=true)', async ({ page }) => {
+    test.skip(!coach, 'Sin cuenta de coach de prueba (TEST_ACCOUNTS/TEST_COACH_*) — se saltea');
+    const errores = capturarErrores(page);
+    await entrar(page, /** @type {any} */(coach).email, /** @type {any} */(coach).pass, /panel-v2/i);
+    await verificarRender(page);
+    // Ir a Clientes.
+    await page.locator('[data-act="nav:clientes"]').first().click({ timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(900);
+    // Abrir el primer cliente de la lista.
+    const card = page.locator('[data-act^="cli-open:"]').first();
+    const hay = await card.count().catch(() => 0);
+    test.skip(hay === 0, 'El coach de prueba no tiene clientes cargados — se saltea');
+    // La fila puede estar fuera de vista o cubierta (resuelve pero no clickea).
+    // La traemos a la vista y, si aún se resiste, forzamos el click.
+    await card.scrollIntoViewIfNeeded().catch(() => {});
+    await card.click({ timeout: 8000 }).catch(async () => { await card.click({ force: true }); });
+    await page.waitForTimeout(900);
+    // El botón "Reenviar invitación" vive en la ficha (pestaña Perfil, por defecto).
+    const btn = page.locator('[data-act="reinvitar"]').first();
+    await expect(btn, 'No apareció "Reenviar invitación" en la ficha (¿desplegado el fix?)').toBeVisible({ timeout: 8000 });
+    await btn.click();
+    // Debe confirmar que SALIÓ. Si dice "no se pudo enviar", el email está roto
+    // (típicamente BREVO_API_KEY) → el test falla y el reporte lo marca.
+    await expect(page.locator('body'), 'La invitación no confirmó envío (¿email/Brevo caído?)').toContainText(/invitaci[oó]n reenviada/i, { timeout: 15000 });
+    await expect(page.locator('body')).not.toContainText(/no se pudo enviar/i);
+    expect(errores, 'Errores de JS al reenviar invitación:\n' + errores.join('\n')).toHaveLength(0);
+  });
+});
+
 // Panel multi-coach (gimnasio / consultora): la vista de equipo bajo una marca.
 // Chequeamos que cargue y renderice sin errores. (El recorrido logueado del
 // dueño del gym se suma cuando esté lista su cuenta de empresa.)

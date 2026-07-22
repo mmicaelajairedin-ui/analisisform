@@ -27,6 +27,23 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: reseña del coach — no se pide de nuevo si ya la dejó (flag server)",
+    bug: "El modal de reseña se marcaba 'ya reseñó' SOLO en localStorage (por " +
+         "dispositivo) → el mismo coach entraba desde otra compu / limpiaba caché " +
+         "y le volvía a salir, dejando reseñas duplicadas. Debe: (1) _maybeReviewPrompt " +
+         "cortar si RCFG.review_done, y (2) el handler review-send persistir " +
+         "review_done en configuracion (server).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/_maybeReviewPrompt[\s\S]{0,500}RCFG\s*&&\s*RCFG\.review_done/.test(s))
+        return "panel-v2.html: _maybeReviewPrompt ya no corta con RCFG.review_done → volvería a pedir reseña cross-device.";
+      if (!/review-send[\s\S]{0,600}RCFG\.review_done\s*=\s*true[\s\S]{0,300}configuracion/.test(s))
+        return "panel-v2.html: el handler review-send ya no persiste review_done al server → reseñas duplicadas.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: los helpers de fetch (_sb/_sbw) no se re-declaran como local",
     bug: "Un `var _sb` local (el buffer de la agenda, ag-save-disp) TAPABA la " +
          "función global _sb() en todo el scope del dispatcher de acciones → " +
@@ -1517,6 +1534,37 @@ const RULES = [
     },
   },
   {
+    name: "invitación al cliente: la cuenta se crea server-side + botón Reenviar (el email siempre puede salir)",
+    bug: "Al dar de alta un cliente, la fila de login en 'usuarios' se creaba con la anon key " +
+         "→ RLS la bloqueaba → la función password-reset no encontraba al usuario y NUNCA " +
+         "mandaba el email de invitación (fallo silencioso: era la causa de 'no me llega'). " +
+         "Fix: password-reset crea la cuenta con SERVICE role cuando welcome=true, devuelve " +
+         "`sent`, y el panel tiene 'Reenviar invitación' + avisa si el email no salió.",
+    check() {
+      const pr = read("supabase/functions/password-reset/index.ts");
+      if (pr) {
+        if (!/!user && body\.welcome === true/.test(pr)) return "password-reset: ya no crea la cuenta server-side cuando welcome=true (vuelve el fallo silencioso 'no me llega la invitación').";
+        if (!/return json\(\{ ok: true, sent \}\)/.test(pr)) return "password-reset: ya no devuelve `sent` (el panel no puede avisar si el email salió).";
+      }
+      const p = read("panel-v2.html");
+      if (p && !/data-act='reinvitar'/.test(p)) return "panel-v2.html: falta el botón 'Reenviar invitación' (reinvitar) en la ficha del cliente.";
+      return null;
+    },
+  },
+  {
+    name: "pago/plan: no se abre Stripe dos veces (freno anti doble-tap en el handler 'open')",
+    bug: "Al 'ver plan'/pagar, en móvil un doble-tap (o click fantasma) abría Stripe DOS " +
+         "veces. El handler act==='open' frena la MISMA URL si se repite en <1.8s " +
+         "(window._pwLastOpen). Si se saca, vuelve el doble-abrir.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/act==="open"/.test(p)) return null;
+      if (!/window\._pwLastOpen/.test(p)) return "panel-v2.html: el handler 'open' ya no frena el doble-abrir (falta window._pwLastOpen) → Stripe se abre dos veces.";
+      return null;
+    },
+  },
+  {
     name: "admin: crear coach pasa por la edge function crear-coach (RLS no lo bloquea)",
     bug: "El botón 'Dar acceso a un coach' hacía un POST directo a usuarios con rol='coach' " +
          "desde el navegador. Con RLS estricto en usuarios (usuarios_hardening.sql), la anon " +
@@ -1594,6 +1642,45 @@ const RULES = [
       if (!/max_coaches/.test(fn) || !/cap_reached/.test(fn)) return "agregar-coach-red: ya no respeta el tope max_coaches.";
       const wf = read(".github/workflows/deploy-functions.yml");
       if (wf && !/functions deploy agregar-coach-red/.test(wf)) return "deploy-functions.yml: falta desplegar agregar-coach-red.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: chat dueño↔coach (mensaje-red, no se mezcla con Pathway)",
+    bug: "El dueño chatea con cada coach de su red por un canal PROPIO " +
+         "(mensajes_owner_coach), separado del soporte de Pathway (mensajes_admin_" +
+         "coach). Las escrituras van por la edge function mensaje-red (service role, " +
+         "gateada al dueño de la org o al propio coach). Ver docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function _loadCoachChat\(/.test(mc) || !/function _sendCoachChat\(/.test(mc)) return "multicoach.html: falta el chat dueño↔coach (_loadCoachChat/_sendCoachChat).";
+      if (!/functions\/v1\/mensaje-red/.test(mc)) return "multicoach.html: el chat ya no usa mensaje-red.";
+      const fn = read("supabase/functions/mensaje-red/index.ts");
+      if (!fn) return "falta supabase/functions/mensaje-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn) || !/no_session/.test(fn)) return "mensaje-red: debe usar service role y gatear la sesión.";
+      if (!/isOwner/.test(fn) || !/isSelf/.test(fn)) return "mensaje-red: debe permitir solo al dueño de la org o al propio coach.";
+      const mig = read("supabase/migrations/mensajes_owner_coach.sql");
+      if (!mig || !/CREATE TABLE IF NOT EXISTS mensajes_owner_coach/.test(mig)) return "falta la migración mensajes_owner_coach.sql.";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy mensaje-red/.test(wf)) return "deploy-functions.yml: falta desplegar mensaje-red.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: tablero del equipo (arrastrar cliente entre coaches + confirmación)",
+    bug: "La página Coaches muestra cada coach con SUS clientes debajo; se arrastra " +
+         "un cliente de un coach a otro y, tras un cartel de confirmación, se reasigna " +
+         "por _reassign (edge function asignar-cliente). Es el pedido de la coach: mover " +
+         "clientes entre coaches en una sola pantalla.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function _teamGroup\(/.test(mc) || !/function _teamDrop\(/.test(mc)) return "multicoach.html: falta el tablero del equipo (_teamGroup/_teamDrop).";
+      const seg = mc.slice(mc.indexOf("function _teamDrop("), mc.indexOf("function _teamDrop(") + 900);
+      if (!/__openModal\(/.test(seg)) return "multicoach.html: _teamDrop ya no confirma antes de mover (falta el cartel).";
+      if (!/_reassign\(/.test(seg)) return "multicoach.html: _teamDrop ya no reasigna vía _reassign (asignar-cliente).";
+      if (!/function _fillCoaches\([\s\S]{0,400}_teamGroup\(/.test(mc)) return "multicoach.html: la página Coaches ya no arma el tablero por coach.";
       return null;
     },
   },
@@ -1734,6 +1821,44 @@ const RULES = [
       const lg = read("login.html");
       if (lg && !/rol===['"]owner['"][\s\S]{0,120}multicoach\.html/.test(lg))
         return "login.html: el owner ya no se rutea a multicoach.html.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: en modo REAL nada de maqueta (empty-states honestos)",
+    bug: "El panel del dueño (multicoach.html) mostraba datos inventados hasta cuando " +
+         "cargaba una red REAL: barras de constancia (62/74/80%), planes/mediciones/" +
+         "sesiones de ejemplo, ranking con nombres falsos (María López), posts de la " +
+         "revista con foto de stock, plan 'Studio $199' hardcodeado y una cara de " +
+         "Unsplash como foto del dueño. No estaba para mandárselo a nadie. Ahora, con " +
+         "MC_REAL=true, esos bloques caen a empty-states honestos (_mcEmptyCard), el " +
+         "'chrome' de demo (.mc-demo-only) se oculta, la comunidad y la agenda arrancan " +
+         "en blanco, el plan/foto/nombre salen de la org real, y no quedan 'null%'.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      // Helper de empty-state para las fichas.
+      if (!/function _mcEmptyCard\(/.test(mc))
+        return "multicoach.html: falta _mcEmptyCard() (empty-state honesto de las fichas en modo real).";
+      // El chrome de demo se marca y se oculta en real.
+      if (!/mc-demo-only/.test(mc))
+        return "multicoach.html: se perdió la clase mc-demo-only (chrome de maqueta que se oculta en real).";
+      if (!/querySelectorAll\(['"]\.mc-demo-only['"]\)[\s\S]{0,80}display=MC_REAL\?['"]none['"]/.test(mc))
+        return "multicoach.html: mcApplyNiche ya no oculta .mc-demo-only en modo real.";
+      // La comunidad arranca vacía para una red real (nada de posts/ranking inventados).
+      if (!/DBCOM=\{posts:\[\],avisos:\[\],clases:\[\],retos:\[\],ranking:\[\]\}/.test(mc))
+        return "multicoach.html: la comunidad ya no arranca en blanco en modo real (DBCOM con seed falso).";
+      // La agenda arranca vacía en real (sin eventos de ejemplo).
+      if (!/AGW=MC_REAL\?\[\]:/.test(mc))
+        return "multicoach.html: la agenda ya no arranca vacía en modo real (mcSetAgenda con seed falso).";
+      // Las fichas gatean sus bloques de datos por MC_REAL.
+      if (!/MC_REAL\?_mcEmptyCard\('Constancia del mes'/.test(mc))
+        return "multicoach.html: la ficha del cliente ya no gatea la 'Constancia del mes' en modo real (barras inventadas).";
+      // El plan de la cuenta sale de la org real, no del 'Studio $199' hardcodeado.
+      if (/hasta 10 coaches y 300 clientes\. \$199\/mes/.test(mc))
+        return "multicoach.html: la Config sigue con el plan 'Studio $199' hardcodeado (debe salir de _mcPlanMeta/MC_ORG).";
+      if (!/function _mcPlanMeta\(/.test(mc))
+        return "multicoach.html: falta _mcPlanMeta() (plan/límites reales de la org en Config).";
       return null;
     },
   },

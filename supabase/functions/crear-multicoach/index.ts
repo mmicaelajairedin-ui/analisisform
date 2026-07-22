@@ -54,8 +54,10 @@ function planLimits(plan: string): { max_coaches: number | null; max_clientes: n
   return { max_coaches: 3, max_clientes: 45 };
 }
 
-// Resuelve el JWT del que llama → email verificado por Supabase Auth.
-async function callerEmail(token: string): Promise<string | null> {
+// Resuelve el JWT del que llama → { id (auth user id), email }. El id es el
+// vínculo ESTABLE con usuarios.auth_id: el email del login (ej. Gmail) puede NO
+// coincidir con el email de la ficha (ej. hi@...), pero el auth_id sí.
+async function callerIdentity(token: string): Promise<{ id: string; email: string } | null> {
   if (!token || token === ANON) return null;
   try {
     const r = await fetch(`${SB_URL}/auth/v1/user`, {
@@ -63,18 +65,24 @@ async function callerEmail(token: string): Promise<string | null> {
     });
     if (!r.ok) return null;
     const u = await r.json();
+    const id = (u && u.id) ? String(u.id) : "";
     const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
-    return EMAIL_RE.test(em) ? em : null;
+    if (!id && !EMAIL_RE.test(em)) return null;
+    return { id, email: EMAIL_RE.test(em) ? em : "" };
   } catch {
     return null;
   }
 }
 
-// ¿Ese email es rol='admin' en usuarios? (con service role, sin RLS).
-async function isAdmin(email: string): Promise<boolean> {
+// ¿Es admin? Matchea por auth_id (link estable) O por email (case-insensitive).
+async function isAdmin(id: string, email: string): Promise<boolean> {
+  const ors: string[] = [];
+  if (id) ors.push(`auth_id.eq.${encodeURIComponent(id)}`);
+  if (email) ors.push(`email.ilike.${encodeURIComponent(email)}`);
+  if (!ors.length) return false;
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.admin&select=id&limit=1`,
+      `${SB_URL}/rest/v1/usuarios?or=(${ors.join(",")})&rol=eq.admin&select=id&limit=1`,
       { headers: svc },
     );
     if (!r.ok) return false;
@@ -95,9 +103,10 @@ Deno.serve(async (req: Request) => {
   const token = auth.replace(/^Bearer\s+/i, "").trim();
   // Diagnóstico fino: distinguir "no llegó la sesión" (el navegador mandó la
   // anon key en vez del JWT del admin) de "el email no es admin en la base".
-  const adminEmail = await callerEmail(token);
-  if (!adminEmail) return json({ error: "no_session", hint: "el navegador no mandó tu login (JWT). Reingresá." }, 403);
-  if (!(await isAdmin(adminEmail))) return json({ error: "not_admin", email: adminEmail }, 403);
+  const who = await callerIdentity(token);
+  if (!who) return json({ error: "no_session", hint: "el navegador no mandó tu login (JWT). Reingresá." }, 403);
+  if (!(await isAdmin(who.id, who.email))) return json({ error: "not_admin", email: who.email }, 403);
+  const adminEmail = who.email;
 
   // ── Input ────────────────────────────────────────────────────────
   let body: { email?: string; nombre?: string; nombre_red?: string; plan?: string; nicho?: string; dias?: number | string };
