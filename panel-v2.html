@@ -3315,7 +3315,10 @@ function _infShowOverlay(titulo, d){
 // IA (usa lo ya generado): es instantáneo, sin edge function ni deploy.
 function _prepFirst(s,max){ s=(""+(s||"")).replace(/\s+/g," ").trim(); if(!s) return ""; var m=s.match(/^[^.!?]{8,}[.!?]/); var t=m?m[0]:s; return t.length>(max||150)?t.slice(0,(max||150)).replace(/\s+\S*$/,"")+"…":t; }
 function _prepSesionInsights(c){
-  var out=[], d=(c&&c.inf&&c.inf.d)||{}, ses=(c&&c.ses)||[];
+  var out=[], d=(c&&c.inf&&c.inf.d)||{}, ses=(c&&c.ses)||[], raw=(c&&c.raw)||{};
+  // Su meta: el objetivo del cliente (contexto rápido, para no arrancar de cero).
+  var meta=(""+(raw.objetivo||d.objetivo||raw.situacion||"")).trim();
+  if(meta) out.push({tag:"Su meta", text:_prepFirst(meta,170)});
   // Retomá: última sesión pasada → tareas pendientes o lo acordado.
   var past=ses.filter(function(s){ if(!s||!s.fecha) return false; var t=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")); return !isNaN(t)&&t.getTime()<Date.now(); }).sort(function(a,b){ return (""+(b.fecha||"")).localeCompare(""+(a.fecha||"")); });
   var last=past[0];
@@ -3328,7 +3331,7 @@ function _prepSesionInsights(c){
   }
   // Foco de hoy: estrategia del análisis (o el primer gap).
   var gaps=Object.prototype.toString.call(d.gaps)==="[object Array]"?d.gaps:[];
-  if((""+(d.estrategia||"")).trim()) out.push({tag:"Foco de hoy", text:_prepFirst(d.estrategia,180)});
+  if((""+(d.estrategia||"")).trim()) out.push({tag:"Foco de hoy", text:_prepFirst(d.estrategia,240)});
   else if(gaps.length) out.push({tag:"Foco de hoy", text:"Trabajar: "+_prepFirst(gaps[0],150)});
   // Ojo / Aprovechá: una alerta o una fortaleza del análisis.
   var al=Object.prototype.toString.call(d.alertas)==="[object Array]"?d.alertas:[];
@@ -3340,7 +3343,7 @@ function _prepSesionInsights(c){
 function _prepSesionHtml(c){
   var ins=_prepSesionInsights(c);
   if(!ins.length) return "<div style='margin-top:11px;background:var(--pw-niebla-2);border-radius:12px;padding:13px 15px;font-size:12.5px;color:var(--pw-text-soft);line-height:1.5'>Genera el <strong>Análisis</strong> del cliente (y registra alguna sesión) y aquí te armo la preparación con eso.</div>";
-  var tagCol={"Retomá":"var(--pw-bosque)","Foco de hoy":"#8a6d1e","Ojo":"var(--pw-danger)","Aprovechá":"var(--pw-bosque)"};
+  var tagCol={"Su meta":"var(--pw-bosque-dark)","Retomá":"var(--pw-bosque)","Foco de hoy":"#8a6d1e","Ojo":"var(--pw-danger)","Aprovechá":"var(--pw-bosque)"};
   var fn=(""+((c&&c.name)||"")).split(" ")[0]||"tu cliente";
   return "<div style='margin-top:11px;background:var(--pw-success-bg);border:1px solid var(--pw-border);border-radius:12px;padding:13px 15px'>"+
     "<div style='font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--pw-bosque);margin-bottom:9px'><svg width='13' height='13' viewBox='0 0 24 24' fill='#E9C46A' style='display:inline-block;vertical-align:-1px' aria-hidden='true'><path d='M12 2l1.7 5.1L18.8 8.8l-4.9 1.7L12 15.6l-1.9-5.1L5.2 8.8l4.9-1.7z'/><path d='M18.6 14l.7 2.2 2.2.7-2.2.7-.7 2.2-.7-2.2-2.2-.7 2.2-.7z'/><path d='M5.3 15.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z'/></svg> IA Pathway · con lo que ya sabemos de "+esc(fn)+"</div>"+
@@ -6078,6 +6081,9 @@ function viewIAPathway(){
       "<button class='cp-iac-x' data-act='iachat-close' aria-label='Cerrar'>"+svg(IC.close,16,"stroke-width='2.2'")+"</button>"+
     "</div>"+
     "<div class='cp-iac-scroll' id='cp-iac-scroll'>"+body+"</div>"+
+    "<div style='display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px 0'>"+
+      "<button class='cp-ai-chip' data-act='ia-prep-pick'>🗓️ Preparar una sesión</button>"+
+    "</div>"+
     "<div class='cp-iac-compose'>"+
       "<input id='iac-input' type='text' placeholder='Escribe tu consulta…' value='"+esc(state.iaChat.draft||"")+"' autocomplete='off'"+(state.iaChat.busy?" disabled":"")+">"+
       "<button class='cp-iac-send' data-act='iachat-send' aria-label='Enviar'"+(state.iaChat.busy?" disabled":"")+">"+svg(IC.arrowR,17,"stroke-width='2.4'")+"</button>"+
@@ -8911,6 +8917,28 @@ document.addEventListener("click", function(ev){
   if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); state.sesPrepOpen=false; render(); if(state.cliDetTab==="docs"){ requestAnimationFrame(function(){ try{ _infFilesLoad(state.clienteSel); }catch(e){} }); } return; }
   // Preparar próxima sesión con IA Pathway (a demanda; arma la prep con el análisis + sesiones).
   if(act==="prep-sesion"){ state.sesPrepOpen=!state.sesPrepOpen; render(); return; }
+  // IA Pathway → "Preparar una sesión": muestra el selector de clientes en el chat.
+  if(act==="ia-prep-pick"){
+    if(!state.iaChat.msgs) state.iaChat.msgs=_iaChatSeed();
+    var _pcls=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c&&!c._example&&!(c.raw&&c.raw.activo===false);}):[];
+    var _phtml;
+    if(!_pcls.length){ _phtml="Todavía no tenés clientes activos para preparar una sesión."; }
+    else{
+      _phtml="¿Con qué cliente querés preparar la sesión?<div style='display:flex;flex-wrap:wrap;gap:6px;margin-top:9px'>"+
+        _pcls.map(function(c){ return "<button class='cp-ai-chip' data-act='prep-open:"+esc(c.id)+"'>"+esc(c.name||"Cliente")+"</button>"; }).join("")+"</div>";
+    }
+    state.iaChat.msgs.push({from:"ia",html:_phtml,txt:"¿Con qué cliente?"});
+    render(); _iaChatScrollDown(); return;
+  }
+  // Al elegir el cliente → lo llevamos a su ficha, pestaña Sesiones, con la
+  // preparación ya abierta.
+  if(act.indexOf("prep-open:")===0){
+    state.iaChat.open=false;
+    state.section="clientes"; state.clienteSel=act.slice(10);
+    state.cliDetTab="sesiones"; state.sesPrepOpen=true;
+    render(); try{ window.scrollTo(0,0); }catch(e){}
+    return;
+  }
   // Guardar el informe actual (c.inf.d, generado en Análisis) como un ARCHIVO
   // nuevo en informes_guardados. Puedes guardar varios; no se pisan.
   if(act==="inf-save"){
