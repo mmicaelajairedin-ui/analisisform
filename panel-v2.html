@@ -1795,12 +1795,21 @@ function viewSidebar(){
       "</div>"+
       "<div class='cp-side-coach-name'>"+esc(COACH.name)+"</div>"+
       "<div class='cp-side-coach-role'>"+esc(coachRoleLabel())+"<span class='cp-side-plan'>"+(state.plan==="pro"?"Pro":"Basic")+"</span></div>"+
-      // Entrada a Logros Pathway: abre el perfil (badges + puntos + medalla, todo junto)
-      "<button class='cp-side-logros' data-act='perfil-open' title='Ver tus badges, puntos y medalla' style='margin-top:10px;width:100%;max-width:172px;display:flex;align-items:center;justify-content:center;gap:7px;background:none;border:none;padding:6px 8px;cursor:pointer;font-family:var(--pw-sans);font-size:12.5px;font-weight:700;color:var(--pw-bosque)'>"+
-        "<svg width='16' height='16' viewBox='0 0 24 24' aria-hidden='true'><path d='M7 4h10v5a5 5 0 0 1-10 0z' fill='#E9C46A'/><path d='M7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3' fill='none' stroke='#D4A24C' stroke-width='2' stroke-linecap='round'/><path d='M9 20h6v-1a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1zM11 14h2v4h-2z' fill='#D4A24C'/></svg>"+
-        "Logros Pathway"+
-        "<svg width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' style='opacity:.55'><path d='M9 18l6-6-6-6'/></svg>"+
-      "</button>"+
+      // Admin ve "Logros Pathway" (abre el perfil con badges/puntos/medalla).
+      // El resto (coaches) sigue viendo su medalla por clientes, como antes —
+      // rollout por fases: la gamificación se muestra primero solo a la admin.
+      (RADMIN
+        ? "<button class='cp-side-logros' data-act='perfil-open' title='Ver tus badges, puntos y medalla' style='margin-top:10px;width:100%;max-width:172px;display:flex;align-items:center;justify-content:center;gap:7px;background:none;border:none;padding:6px 8px;cursor:pointer;font-family:var(--pw-sans);font-size:12.5px;font-weight:700;color:var(--pw-bosque)'>"+
+            "<svg width='16' height='16' viewBox='0 0 24 24' aria-hidden='true'><path d='M7 4h10v5a5 5 0 0 1-10 0z' fill='#E9C46A'/><path d='M7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3' fill='none' stroke='#D4A24C' stroke-width='2' stroke-linecap='round'/><path d='M9 20h6v-1a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1zM11 14h2v4h-2z' fill='#D4A24C'/></svg>"+
+            "Logros Pathway"+
+            "<svg width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' style='opacity:.55'><path d='M9 18l6-6-6-6'/></svg>"+
+          "</button>"
+        : (function(){ var m=clientMedalInfo();
+            if(!m.name) return "<div class='cp-side-medal-info'><div class='cp-side-medal-info-line'>Suma tu primer cliente 🏅</div></div>";
+            if(!m.next) return "<div class='cp-side-medal-info' title='Medalla máxima'><div class='cp-side-medal-info-line'>🏆 Medalla oro · "+m.n+" clientes</div></div>";
+            var pct=Math.min(100,Math.round(m.n/m.next.at*100));
+            return "<div class='cp-side-medal-info' title='Tu medalla por clientes activos'><div class='cp-side-medal-info-line' style='text-transform:capitalize'>Medalla "+m.name+" · faltan "+(m.next.at-m.n)+" para "+m.next.name+"</div><div class='cp-side-medal-info-bar'><span style='width:"+pct+"%'></span></div></div>"; })()
+      )+
       "</div>"+
     (function(){
       if(!_isDemoCoach()) return "";
@@ -7335,7 +7344,7 @@ document.addEventListener("click", function(ev){
 });
 // El badge se asienta cuando los datos terminan de cargar (por si el último
 // render corrió antes de que llegaran).
-window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} },t); }); });
+window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} try{ if(!_gamiOn()){ var _nb=document.getElementById("pw-nov-btn"); if(_nb) _nb.style.display="none"; } }catch(e){} },t); }); });
 
 // ═══ Drawers laterales: Novedades (revista semanal) + Perfil (puntos/medallas/badges) ═══
 // Se embeben las páginas ya aprobadas (novedades-preview.html / perfil-preview.html)
@@ -7454,7 +7463,12 @@ function pwCheckAutoBadges(){
 // medalla), SIN caja blanca, que después se achica y VUELA hasta "Logros
 // Pathway" en el sidebar → la gente entiende que todo se guarda ahí. Sirve para
 // badges, puntos y medallas (mismo efecto para todo).
+// Gamificación visible SOLO para admin por ahora (rollout por fases: primero
+// Micaela, después coaches/clientes). Los datos igual se acumulan; lo que se
+// gatea es lo que se VE (token Novedades, entrada Logros, animaciones).
+function _gamiOn(){ return (typeof RADMIN!=="undefined" && RADMIN); }
 function pwRewardBurst(innerHTML, opts){
+  if(!_gamiOn()) return;
   opts=opts||{};
   try{
     var ov=document.createElement("div");
