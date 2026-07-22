@@ -1730,6 +1730,50 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: CANAL DE EQUIPO (chat grupal dueño+coaches, via canal-red)",
+    bug: "Además del 1-a-1, la red tiene un CANAL grupal: un solo hilo compartido " +
+         "donde el dueño y TODOS sus coaches escriben y leen (la 'sala del equipo'). " +
+         "Va por una tabla propia (mensajes_red_canal) y una edge function propia " +
+         "(canal-red, service role) gateada a los MIEMBROS de esa org (dueño o coach " +
+         "con ese org_id). El dueño lo ve en multicoach.html (sección Canal); el coach " +
+         "en su bandeja de chat (panel-v2.html). Ver docs/multicoach-modelo.md.",
+    check() {
+      // Migración de la tabla del canal.
+      const mig = read("supabase/migrations/mensajes_red_canal.sql");
+      if (!mig || !/CREATE TABLE IF NOT EXISTS mensajes_red_canal/.test(mig))
+        return "falta la migración mensajes_red_canal.sql (tabla del canal de equipo).";
+      // Edge function: service role + gate por miembro de la org + acciones.
+      const fn = read("supabase/functions/canal-red/index.ts");
+      if (!fn) return "falta supabase/functions/canal-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn) || !/no_session/.test(fn))
+        return "canal-red: debe usar service role y gatear la sesión.";
+      if (!/esMiembro/.test(fn) || !/org_id/.test(fn))
+        return "canal-red: debe permitir solo a los miembros (dueño/coach) de esa org.";
+      // Deploy.
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy canal-red/.test(wf))
+        return "deploy-functions.yml: falta desplegar canal-red.";
+      // Lado del dueño: sección Canal en multicoach.html.
+      const mc = read("multicoach.html");
+      if (mc) {
+        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (sección Canal del equipo).";
+        if (!/functions\/v1\/canal-red/.test(mc)) return "multicoach.html: el canal ya no usa la edge function canal-red.";
+        if (!/data-s="canal"/.test(mc)) return "multicoach.html: falta el item 'Canal del equipo' en el menú.";
+      }
+      // Lado del coach: hilo 'canal' en la bandeja de panel-v2.html.
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _loadCanalThread\(/.test(p) || !/function _coachCanalBubbles\(/.test(p))
+          return "panel-v2.html: falta el canal de equipo del coach (_loadCanalThread/_coachCanalBubbles).";
+        if (!/key:"canal"|aiCoachThread==="canal"/.test(p))
+          return "panel-v2.html: la bandeja del coach ya no ofrece el canal del equipo.";
+        if (!/action:"send",org_id:RME\.org_id/.test(p))
+          return "panel-v2.html: el coach ya no envía al canal por org_id (canal-red).";
+      }
+      return null;
+    },
+  },
+  {
     name: "multicoach: tablero del equipo (arrastrar cliente entre coaches + confirmación)",
     bug: "La página Coaches muestra cada coach con SUS clientes debajo; se arrastra " +
          "un cliente de un coach a otro y, tras un cartel de confirmación, se reasigna " +

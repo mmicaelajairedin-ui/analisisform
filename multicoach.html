@@ -593,6 +593,7 @@ body{margin:0;font-family:var(--sans);color:var(--carbon);background:var(--bg);-
       <a class="on" data-s="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Dashboard</a>
       <a data-s="coaches"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg><span id="mc-nav-coaches">Coaches</span></a>
       <a data-s="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Agenda</a>
+      <a data-s="canal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Canal del equipo</a>
       <!-- "Configuración" salió del sidebar: vive en el menú del avatar (arriba a la derecha) -->
     </nav>
     <div class="mc-foot">
@@ -705,13 +706,13 @@ function __toast(m){var t=document.getElementById('toast');t.textContent=m;t.cla
 var _sec='dashboard';
 function __hl(s){document.querySelectorAll('#nav a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-s')===s);});}
 function __go(s){
-  var impl=(s==='dashboard'||s==='clientes'||s==='coaches'||s==='config'||s==='agenda'||s==='comunidad');
+  var impl=(s==='dashboard'||s==='clientes'||s==='coaches'||s==='config'||s==='agenda'||s==='comunidad'||s==='canal');
   if(!impl){__toast('Sección «'+s+'» — Etapa próxima');__hl(_sec);return;}
   _sec=s;__hl(s);
   var d=document.getElementById('view-dashboard'),p=document.getElementById('view-panel');
   function _anim(el){ if(!el)return; el.classList.remove('pw-sec-in'); void el.offsetWidth; el.classList.add('pw-sec-in'); }
   if(s==='dashboard'){p.style.display='none';d.style.display='';window.scrollTo(0,0);_anim(d);try{mcCountUp();}catch(e){}}
-  else{d.style.display='none';p.style.display='flex';document.getElementById('vscroll').scrollTop=0;if(s==='clientes')renderClientes();else if(s==='coaches')renderCoaches();else if(s==='agenda')renderAgenda();else if(s==='comunidad')renderComunidad();else renderConfig();_anim(p);}
+  else{d.style.display='none';p.style.display='flex';document.getElementById('vscroll').scrollTop=0;if(s==='clientes')renderClientes();else if(s==='coaches')renderCoaches();else if(s==='agenda')renderAgenda();else if(s==='comunidad')renderComunidad();else if(s==='canal')renderCanal();else renderConfig();_anim(p);}
 }
 document.getElementById('nav').addEventListener('click',function(e){var a=e.target.closest('a');if(a)__go(a.getAttribute('data-s'));});
 // Comunidad en el dashboard: cerrar/expandir (no está en el menú). "Ver todas" abre la página.
@@ -1477,6 +1478,62 @@ function _sendCoachChat(coachId){
   if(!d||!d.ok){ __toast('No se pudo enviar'); return; }
   i.value=''; _loadCoachChat(coachId);
  }).catch(function(){ i.disabled=false; __toast('Error de conexión'); });
+}
+/* ═══ CANAL DE EQUIPO (grupo dueño+coaches, via canal-red) ═══
+   Un solo hilo compartido de la red. El dueño lo ve/escribe acá; los coaches
+   desde su panel (bandeja del chat). En demo se muestra un ejemplo. */
+var MC_CANAL=null, _mcCanalBusy=false;
+var _MC_CANAL_DEMO=[
+ {autor_nombre:'María López', autor_rol:'coach', body:'¡Buen lunes equipo! Arranco con 3 sesiones hoy 💪', created_at:'2026-07-20T09:10:00Z'},
+ {autor_nombre:'Alex Gómez', autor_rol:'owner', body:'Genial. Recuerden cargar las mediciones de la semana antes del viernes.', created_at:'2026-07-20T09:25:00Z'},
+ {autor_nombre:'Juan Pérez', autor_rol:'coach', body:'Listo. ¿Sumamos una clase extra el sábado? Hay demanda.', created_at:'2026-07-20T10:02:00Z'}
+];
+function renderCanal(){
+ var v=document.getElementById('vscroll');
+ v.innerHTML='<header class="cp-topbar" style="align-items:flex-end"><div><h1 class="cp-h1">Canal del equipo<span class="dot">.</span></h1><div class="cp-sub">Un chat grupal con <b>todos tus coaches</b> — lo ven y escriben todos.</div></div></header>'
+  +'<div class="cp-card" style="display:flex;flex-direction:column;max-width:760px;overflow:hidden">'
+  +'<div id="mc-canal-box" style="display:flex;flex-direction:column;gap:0;padding:16px 18px;min-height:280px;max-height:56vh;overflow-y:auto"></div>'
+  +'<div style="display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--pw-border);background:#fff">'
+   +'<input id="mc-canal-in" class="inp" placeholder="Escribe al equipo…" onkeydown="if(event.key===\'Enter\')_sendCanal()">'
+   +'<button class="cp-btn cp-btn-primary" onclick="_sendCanal()">Enviar</button></div></div>';
+ if(MC_REAL){ MC_CANAL=null; _fillCanal(); _loadCanal(function(){ if(_sec==='canal')_fillCanal(); }); }
+ else { MC_CANAL=_MC_CANAL_DEMO.slice(); _fillCanal(); }
+}
+function _canalBubble(m){
+ var mine=MC_REAL?(MC_OWNER&&String(m.autor_id)===String(MC_OWNER.id)):(m.autor_rol==='owner');
+ var nm=(m.autor_nombre||'').split(' ')[0]||'Alguien';
+ var who=mine?'Tú':(nm+(m.autor_rol==='owner'?' · Dueño':''));
+ var t=''; try{ t=new Date(m.created_at).toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }catch(e){}
+ return '<div style="display:flex;flex-direction:column;align-items:'+(mine?'flex-end':'flex-start')+';gap:3px;margin-bottom:10px">'
+  +'<div style="font-size:10.5px;color:var(--pw-text-soft)">'+_mcEsc(who)+' · '+_mcEsc(t)+'</div>'
+  +'<div class="cp-bub '+(mine?'me':'them')+'" style="max-width:78%">'+_mcEsc(m.body)+'</div></div>';
+}
+function _fillCanal(){
+ var box=document.getElementById('mc-canal-box'); if(!box)return;
+ if(MC_REAL&&MC_CANAL==null){ box.innerHTML='<div class="csub" style="padding:12px">Cargando…</div>'; return; }
+ var ms=(MC_CANAL||[]).slice().sort(function(a,b){return new Date(a.created_at)-new Date(b.created_at);});
+ box.innerHTML = ms.length ? ms.map(_canalBubble).join('') : '<div class="csub" style="padding:18px;text-align:center;line-height:1.55">El canal está en blanco. Escribe el primer mensaje — lo ven todos tus coaches.</div>';
+ box.scrollTop=box.scrollHeight;
+}
+function _loadCanal(cb){
+ if(!MC_REAL||!MC_ORG||!MC_ORG.id){ MC_CANAL=[]; cb&&cb(); return; }
+ _hdr({'Content-Type':'application/json'}).then(function(h){
+  return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'thread',org_id:MC_ORG.id})});
+ }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+  MC_CANAL=(d&&d.ok&&d.mensajes)?d.mensajes:[]; cb&&cb();
+ }).catch(function(){ MC_CANAL=[]; cb&&cb(); });
+}
+function _sendCanal(){
+ var i=document.getElementById('mc-canal-in'); if(!i)return; var t=(i.value||'').trim(); if(!t)return;
+ if(!MC_REAL){ MC_CANAL.push({autor_nombre:(MC_OWNER&&MC_OWNER.nombre)||'Tú',autor_rol:'owner',body:t,created_at:new Date().toISOString()}); i.value=''; _fillCanal(); return; }
+ if(_mcCanalBusy)return; _mcCanalBusy=true; i.disabled=true;
+ _hdr({'Content-Type':'application/json'}).then(function(h){
+  return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'send',org_id:MC_ORG.id,texto:t})});
+ }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+  _mcCanalBusy=false; i.disabled=false;
+  if(!d||!d.ok){ __toast('No se pudo enviar'); return; }
+  i.value=''; _loadCanal(function(){ _fillCanal(); });
+ }).catch(function(){ _mcCanalBusy=false; i.disabled=false; __toast('Error de conexión'); });
 }
 function esNutriCoach(c){return c.nicho==='nutricion';}
 // Suspender / reactivar / quitar coach. En real va por eliminar-coach-red
