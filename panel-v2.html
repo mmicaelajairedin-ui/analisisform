@@ -6316,7 +6316,7 @@ function viewIAPathway(){
 function _iaChatScrollDown(){ try{ requestAnimationFrame(function(){ var s=document.getElementById("cp-iac-scroll"); if(s) s.scrollTop=s.scrollHeight; var i=document.getElementById("iac-input"); if(i && state.iaChat && state.iaChat.open && !state.iaChat.busy) i.focus(); }); }catch(e){} }
 
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
-function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
+function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,xp,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
 // Redes (multicoaches) para la gestión desde el admin (transferir dueño).
 function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
 // Email de acceso al coach. isNew=true → coach recién creado por el admin:
@@ -6603,11 +6603,12 @@ function _coachChatBlock(c){
 // de usuarios (cada coach escribe su fila; ver _gameSyncServer + migración).
 function _adminRanking(){
   var meds=["","bronce","plata","oro"];
-  var rows=(RCOACHES||[]).slice().sort(function(a,b){ return (b.game_pts||0)-(a.game_pts||0); });
+  var _tot=function(c){ return (c.game_pts||0)+(c.xp||0); };   // puntos totales (juego + acciones)
+  var rows=(RCOACHES||[]).slice().sort(function(a,b){ return _tot(b)-_tot(a); });
   if(!rows.length) return "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-text-soft);font-size:13px;padding:30px'>Todavía no hay puntajes. Cuando los coaches jueguen, aparecen aquí.</div></div>";
   var head="<div style='display:grid;grid-template-columns:32px 38px 1fr auto auto;gap:12px;padding:8px 14px;border-bottom:1px solid var(--pw-border);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-muted)'><span style='text-align:center'>#</span><span></span><span>Coach</span><span>Medalla</span><span>Puntos</span></div>";
   var list=rows.map(function(c,i){
-    var pts=c.game_pts||0, med=meds[c.game_medal||0]||"";
+    var pts=_tot(c), med=meds[c.game_medal||0]||"";
     var medImg=med?"<img src='assets/iconos/medalla-"+med+"-sm.webp' alt='"+med+"' style='width:26px;height:26px;object-fit:contain' title='Medalla "+med+"'>":"<span style='display:inline-block;width:26px'></span>";
     var rankCol=i===0?"#D9A441":i===1?"#9AA0A6":i===2?"#C0865A":"var(--pw-text-soft)";
     var nm=c.nombre||c.email||"Coach";
@@ -6619,7 +6620,7 @@ function _adminRanking(){
       "<span style='font-family:var(--pw-serif);font-size:16px;font-weight:700;color:var(--pw-bosque)'>"+pts+"</span>"+
     "</div>";
   }).join("");
-  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🏆</span> Ranking de coaches<span class='dot'>.</span></h3><span class='cp-eyebrow'>Por puntos del juego</span></div>"+head+list+"</div>";
+  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🏆</span> Ranking de coaches<span class='dot'>.</span></h3><span class='cp-eyebrow'>Por puntos totales</span></div>"+head+list+"</div>";
 }
 // Pestaña Novedades del admin: inscripciones al sorteo + sugerencias/ideas/encuesta
 // que llegan de la revista (tabla revista_feedback).
@@ -7737,20 +7738,22 @@ function _rankQFrom(list){
     var _ini=function(n){ var pr=(""+n).trim().split(/\s+/); return (((pr[0]||"")[0]||"")+((pr[1]||"")[0]||"")).toUpperCase()||"·"; };
     var _adm={}; try{ (RCOACHES||[]).forEach(function(c){ if(c&&c.rol==="admin") _adm[String(c.id)]=1; }); }catch(e){}
     if(RME) _adm[String(RME.id)]=1;
-    var _src=list;
-    if(!(_src&&_src.length) && typeof RCOACHES!=="undefined" && RCOACHES && RCOACHES.length){
-      _src=RCOACHES.map(function(c){ return {coach_id:c.id,nombre:c.nombre,pts:(c.game_pts||0),rol:c.rol}; });
-    }
-    if(!(_src&&_src.length)) return "";
-    var _ls=_src.filter(function(c){
+    // Foto real de cada coach (por id) para el podio.
+    var _photo={}; try{ (RCOACHES||[]).forEach(function(c){ if(c&&c.id) _photo[String(c.id)]=c.foto_url||""; }); }catch(e){}
+    // SOLO el ranking real del período (semana/mes). Sin fallback a acumulado: el
+    // podio arranca de cero y se llena a medida que los coaches suman puntos —
+    // no muestra gente que nunca usó la app.
+    if(!(list&&list.length)) return "";
+    var _ls=list.filter(function(c){
       if(!c||!c.nombre) return false;
+      if((c.pts||0)<=0) return false;                             // solo quien realmente sumó
       if(/bot|test|ejemplo|demo/i.test(c.nombre)) return false;   // sin bots/demos
       if(c.rol==="admin") return false;
       if(_adm[String(c.coach_id)]) return false;                  // sin admin/vos
       return true;
     }).sort(function(a,b){ return (b.pts||0)-(a.pts||0); });
     if(!_ls.length) return "";
-    var _top=_ls.slice(0,3).map(function(c){ return {n:c.nombre,i:_ini(c.nombre),p:(c.pts||0).toLocaleString("es-ES")}; });
+    var _top=_ls.slice(0,3).map(function(c){ return {n:c.nombre,i:_ini(c.nombre),p:(c.pts||0).toLocaleString("es-ES"),photo:_photo[String(c.coach_id)]||""}; });
     var _mp=-1; for(var _i=0;_i<_ls.length;_i++){ if(RME&&String(_ls[_i].coach_id)===String(RME.id)){ _mp=_i+1; break; } }
     var _me=(_mp>0)?{pos:_mp,pts:(_ls[_mp-1].pts||0).toLocaleString("es-ES")}:null;
     return "&rank="+encodeURIComponent(JSON.stringify({top:_top,me:_me}));
@@ -11157,7 +11160,7 @@ function loadReal(){
   // sin asignar se manejan por adopción al invitar (por email), no mezclados acá.
   var cf = "select=*&coach_id=eq."+encodeURIComponent(ME.id);
   var extra = ME.rol==="admin"
-    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id&order=created_at.desc"),
+    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,xp,auth_id&order=created_at.desc"),
         _sb("contactos_chat?select=contacto,pagina,fecha,origen&pagina=neq.resena-cvexpress&order=fecha.desc&limit=30"),
         _sb("candidatos?select=id,created_at,coach_id,email,resena,nombre,nicho,activo,semana_activa"),
         _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
