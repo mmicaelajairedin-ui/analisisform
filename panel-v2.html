@@ -7277,26 +7277,34 @@ function _syncUserMenu(){
   _syncNotifBadge();
 }
 /* Notificaciones del coach: mensajes sin leer + informes por generar + solicitudes por cobrar */
+// "Descartadas": al clickear una notificación se guarda su key + cantidad. No
+// vuelve a aparecer hasta que la cantidad SUBA (actividad nueva). Así dejan de
+// "seguir apareciendo" una vez que la coach ya las atendió.
+function _notifDismKey(){ var id=(REAL&&RME&&(RME.id||RME.email))||"x"; return "pw_notifdism_"+id; }
+function _notifDismissed(){ try{ return JSON.parse(localStorage.getItem(_notifDismKey())||"{}")||{}; }catch(e){ return {}; } }
+function _notifDismiss(key,count){ try{ var d=_notifDismissed(); d[key]=parseInt(count,10)||0; localStorage.setItem(_notifDismKey(),JSON.stringify(d)); }catch(e){} }
 function _pwNotifData(){
   var out=[];
   // Clientes que te escribieron (chat coach↔cliente) y todavía no abriste.
   try{
     var cu=(typeof _cliUnread!=="undefined"&&_cliUnread)?Object.keys(_cliUnread).length:0;
-    if(cu>0) out.push({ n:cu, ico:"💬", text:(cu===1?"1 cliente te escribió":cu+" clientes te escribieron"), act:"chat-open" });
+    if(cu>0) out.push({ n:cu, key:"chat", ico:"💬", text:(cu===1?"1 cliente te escribió":cu+" clientes te escribieron"), act:"chat-open" });
   }catch(e){}
   try{
     var unread=0;
     if(typeof RMSG!=="undefined"&&RMSG){ for(var i=0;i<RMSG.length;i++){ var m=RMSG[i]; if(!m.leido_en && ((typeof RADMIN!=="undefined"&&RADMIN&&!m.from_admin)||(!(typeof RADMIN!=="undefined"&&RADMIN)&&m.from_admin))) unread++; } }
-    if(unread>0) out.push({ n:unread, ico:"💬", text:(unread===1?"1 mensaje de soporte":unread+" mensajes de soporte"), act:"chat-open" });
+    if(unread>0) out.push({ n:unread, key:"support", ico:"💬", text:(unread===1?"1 mensaje de soporte":unread+" mensajes de soporte"), act:"chat-open" });
   }catch(e){}
   try{
     var pr=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c.reportState==="pending";}).length:0;
-    if(pr>0) out.push({ n:pr, ico:"📄", text:(pr===1?"1 informe por generar":pr+" informes por generar"), go:"clientes" });
+    if(pr>0) out.push({ n:pr, key:"informes", ico:"📄", text:(pr===1?"1 informe por generar":pr+" informes por generar"), go:"clientes" });
   }catch(e){}
   try{
     var sol=(typeof RSOL!=="undefined"&&RSOL)?RSOL.filter(function(s){return s.estado==="autorizada";}).length:0;
-    if(sol>0) out.push({ n:sol, ico:"✅", text:(sol===1?"1 solicitud por cobrar":sol+" solicitudes por cobrar"), go:"clientes" });
+    if(sol>0) out.push({ n:sol, key:"solic", ico:"✅", text:(sol===1?"1 solicitud por cobrar":sol+" solicitudes por cobrar"), go:"clientes" });
   }catch(e){}
+  // Sacar las que ya se descartaron (clickeadas) mientras no haya MÁS que antes.
+  try{ var _dm=_notifDismissed(); out=out.filter(function(it){ var dv=_dm[it.key]; return !(it.key && dv!=null && it.n<=dv); }); }catch(e){}
   return out;
 }
 function _syncNotifBadge(){
@@ -7320,9 +7328,17 @@ function pwNotif(e){
     } else {
       list.innerHTML=data.map(function(it){
         var a=it.act?("data-act='"+it.act+"'"):("data-act='asist-go' data-go='"+(it.go||"clientes")+"'");
-        return "<button class='pw-um-item' "+a+"><span style='filter:grayscale(1)'>"+it.ico+"</span><span>"+it.text+"</span></button>";
+        return "<button class='pw-um-item' "+a+" data-nkey='"+(it.key||"")+"' data-ncount='"+(it.n||0)+"'><span style='filter:grayscale(1)'>"+it.ico+"</span><span>"+it.text+"</span></button>";
       }).join("");
     }
+    // Al clickear un item: descartarlo (para que no siga apareciendo) y cerrar el
+    // panel. La navegación la hace el dispatcher global (data-act) igual.
+    list.onclick=function(ev){
+      var b=ev.target.closest("[data-nkey]"); if(!b) return;
+      try{ _notifDismiss(b.getAttribute("data-nkey"), b.getAttribute("data-ncount")); }catch(_e){}
+      pan.style.display="none";
+      try{ _syncNotifBadge(); }catch(_e){}
+    };
   }
   pan.style.display="block";
 }

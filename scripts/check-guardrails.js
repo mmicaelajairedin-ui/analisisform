@@ -27,6 +27,21 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: las notificaciones se descartan al clickear (no siguen apareciendo)",
+    bug: "Las notificaciones se derivan de pendientes y no se marcaban como vistas → " +
+         "seguían apareciendo aunque la coach ya las hubiera atendido. Ahora _pwNotifData " +
+         "filtra las descartadas (_notifDismissed) y pwNotif registra el descarte al click.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/_pwNotifData[\s\S]{0,1200}_notifDismissed\(\)/.test(s))
+        return "panel-v2.html: _pwNotifData ya no filtra por _notifDismissed → las notificaciones vuelven a aparecer.";
+      if (!/_notifDismiss\(/.test(s))
+        return "panel-v2.html: falta el registro de descarte de notificaciones (_notifDismiss).";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: reseña del coach — no se pide de nuevo si ya la dejó (flag server)",
     bug: "El modal de reseña se marcaba 'ya reseñó' SOLO en localStorage (por " +
          "dispositivo) → el mismo coach entraba desde otra compu / limpiaba caché " +
