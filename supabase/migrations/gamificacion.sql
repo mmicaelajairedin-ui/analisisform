@@ -24,10 +24,14 @@ CREATE TABLE IF NOT EXISTS revista_feedback (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- RLS: anon puede INSERT (el panel usa la anon key), nadie lee desde el cliente.
+-- RLS: anon puede INSERT (el panel usa la anon key) y SELECT (el admin lee el
+-- feedback desde la pestaña Novedades del panel — mismo modelo de frontend
+-- filtering que el resto de la app, sin auth server-side todavía).
 ALTER TABLE revista_feedback ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS revista_feedback_insert ON revista_feedback;
 CREATE POLICY revista_feedback_insert ON revista_feedback FOR INSERT TO anon WITH CHECK (true);
+DROP POLICY IF EXISTS revista_feedback_select ON revista_feedback;
+CREATE POLICY revista_feedback_select ON revista_feedback FOR SELECT TO anon USING (true);
 
 -- Consultar feedback (desde el panel de admin / SQL):
 --   SELECT tipo, valor, count(*) FROM revista_feedback GROUP BY 1,2 ORDER BY 3 DESC;

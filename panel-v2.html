@@ -6393,6 +6393,31 @@ function _adminRanking(){
   }).join("");
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🏆</span> Ranking de coaches<span class='dot'>.</span></h3><span class='cp-eyebrow'>Por puntos del juego</span></div>"+head+list+"</div>";
 }
+// Pestaña Novedades del admin: inscripciones al sorteo + sugerencias/ideas/encuesta
+// que llegan de la revista (tabla revista_feedback).
+var RFEED=null;
+function _loadFeed(){ _sb("revista_feedback?select=tipo,valor,semana,coach_id,created_at&order=created_at.desc&limit=300").then(function(rows){ RFEED=rows||[]; render(); }); }
+function _feedCoachName(id){ if(!id) return "Coach"; var c=(RCOACHES||[]).filter(function(x){return String(x.id)===String(id);})[0]; return c?(c.nombre||c.email||"Coach"):"Coach"; }
+function _adminNovedades(){
+  if(RFEED===null){ _loadFeed(); return "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-text-soft);font-size:13px;padding:30px'>Cargando novedades…</div></div>"; }
+  var sorteo=RFEED.filter(function(r){return r.tipo==="sorteo";});
+  var sug=RFEED.filter(function(r){return r.tipo==="idea"||r.tipo==="encuesta";});
+  function _fecha(s){ return s?(""+s).slice(0,10):""; }
+  var sorteoRows = sorteo.length ? sorteo.map(function(r){
+    return "<div style='display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border-bottom:1px solid var(--pw-border)'>"+
+      "<span style='font-size:13.5px;font-weight:600;color:var(--pw-carbon)'>"+esc(_feedCoachName(r.coach_id))+"</span>"+
+      "<span style='font-size:11.5px;color:var(--pw-text-muted)'>"+esc(_fecha(r.created_at))+"</span></div>";
+  }).join("") : "<div style='padding:22px 14px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Todavía nadie se anotó al sorteo.</div>";
+  var sugRows = sug.length ? sug.map(function(r){
+    var txt=(""+(r.valor||"")).replace(/^sugerencia:\s*/i,"");
+    var badge=r.tipo==="encuesta"?"<span style='font-size:10px;font-weight:700;color:var(--pw-bosque);background:var(--pw-success-bg);border-radius:100px;padding:2px 8px;margin-right:8px'>voto/idea</span>":"";
+    return "<div style='padding:11px 14px;border-bottom:1px solid var(--pw-border)'>"+
+      "<div style='font-size:13.5px;color:var(--pw-carbon);line-height:1.4'>"+badge+esc(txt)+"</div>"+
+      "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:3px'>"+esc(_feedCoachName(r.coach_id))+" · "+esc(_fecha(r.created_at))+"</div></div>";
+  }).join("") : "<div style='padding:22px 14px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Sin sugerencias todavía.</div>";
+  return "<div class='cp-card' style='margin-bottom:16px'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🎁</span> Inscriptos al sorteo<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+sorteo.length+" este período</span></div>"+sorteoRows+"</div>"+
+    "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>💡</span> Sugerencias e ideas<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+sug.length+" de la revista</span></div>"+sugRows+"</div>";
+}
 function viewAdmin(){
   function kpi(eyebrow, big, sub){
     return "<div class='cp-card cp-card-pad' style='display:flex;flex-direction:column;gap:6px'>"+
@@ -6791,12 +6816,12 @@ function viewAdmin(){
         leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
   }
 
-  var tabs = [["coaches","Coaches"],["empleados","Empleados"],["ranking","Ranking"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"],["emails","Emails"]];
+  var tabs = [["coaches","Coaches"],["empleados","Empleados"],["ranking","Ranking"],["novedades","Novedades"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"],["emails","Emails"]];
   var tabBar = "<div class='cp-filters'>"+tabs.map(function(t){
     return "<button class='cp-chip "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'>"+t[1]+"</button>";
   }).join("")+"</div>";
   // Menu lateral del admin (mismo formato que Configuracion). Mismos data-act.
-  var _admIcon={resumen:'📊',coaches:'🎓',empleados:'👥',ranking:'🏆',contactos:'📥',cvx:'📄',resenas:'⭐',pagos:'💳',emails:'📧'};
+  var _admIcon={resumen:'📊',coaches:'🎓',empleados:'👥',ranking:'🏆',novedades:'📰',contactos:'📥',cvx:'📄',resenas:'⭐',pagos:'💳',emails:'📧'};
   var adminMenu = "<nav class='cp-cfg-nav'>"+tabs.map(function(t){
     return "<button class='cp-cfg-nav-item "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'><span class='cp-emo'>"+(_admIcon[t[0]]||'•')+"</span><span>"+t[1]+"</span></button>";
   }).join("")+"</nav>";
@@ -6804,6 +6829,8 @@ function viewAdmin(){
   var body;
   if(state.adminTab==="ranking"){
     body = _adminRanking();
+  } else if(state.adminTab==="novedades"){
+    body = _adminNovedades();
   } else if(state.adminTab==="coaches"){
     if(REAL && state.coachSel){
       body = _coachDetailCard();
