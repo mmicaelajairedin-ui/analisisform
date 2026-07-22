@@ -975,6 +975,9 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   /* IA Pathway: en móvil es un icono más arriba (no una pestaña flotante, así no ocupa espacio) */
   #pw-app-actions #pw-ia-btn{ position:static !important; transform:none !important; width:38px !important; height:38px !important; border-radius:50% !important; padding:0 !important; }
   #pw-app-actions #pw-ia-btn span{ display:none !important; }
+  /* Novedades: en móvil sigue siendo pestañita lateral (token al costado), solo texto */
+  #pw-app-actions #pw-nov-btn{ position:fixed !important; top:50% !important; right:0 !important; transform:translateY(-50%) !important; width:auto !important; height:auto !important; border-radius:12px 0 0 12px !important; padding:14px 7px !important; font-size:0 !important; }
+  #pw-app-actions #pw-nov-btn span{ display:inline !important; font-size:12px !important; }
   /* Avatar: círculo con la foto (nombre/rol y chevron se ocultan en móvil) */
   #pw-app-actions #pw-usermenu-btn{ padding:0 !important; overflow:visible !important; }
   #pw-app-actions #pw-um-btn-tx{ display:none !important; }
@@ -1802,12 +1805,21 @@ function viewSidebar(){
       "</div>"+
       "<div class='cp-side-coach-name'>"+esc(COACH.name)+"</div>"+
       "<div class='cp-side-coach-role'>"+esc(coachRoleLabel())+"<span class='cp-side-plan'>"+(state.plan==="pro"?"Pro":"Basic")+"</span></div>"+
-      (function(){ // premio del coach = medalla por clientes activos, con progreso a la siguiente (métrica real)
-        var m=clientMedalInfo();
-        if(!m.name) return "<div class='cp-side-medal-info'><div class='cp-side-medal-info-line'>Suma tu primer cliente 🏅</div></div>";
-        if(!m.next) return "<div class='cp-side-medal-info' title='Medalla máxima'><div class='cp-side-medal-info-line'>🏆 Medalla oro · "+m.n+" clientes</div></div>";
-        var pct=Math.min(100,Math.round(m.n/m.next.at*100));
-        return "<div class='cp-side-medal-info' title='Tu medalla por clientes activos'><div class='cp-side-medal-info-line' style='text-transform:capitalize'>Medalla "+m.name+" · faltan "+(m.next.at-m.n)+" para "+m.next.name+"</div><div class='cp-side-medal-info-bar'><span style='width:"+pct+"%'></span></div></div>"; })()+
+      // Admin ve "Logros Pathway" (abre el perfil con badges/puntos/medalla).
+      // El resto (coaches) sigue viendo su medalla por clientes, como antes —
+      // rollout por fases: la gamificación se muestra primero solo a la admin.
+      (RADMIN
+        ? "<button class='cp-side-logros' data-act='perfil-open' title='Ver tus badges, puntos y medalla' style='margin-top:10px;width:100%;max-width:172px;display:flex;align-items:center;justify-content:center;gap:7px;background:none;border:none;padding:6px 8px;cursor:pointer;font-family:var(--pw-sans);font-size:12.5px;font-weight:700;color:var(--pw-bosque)'>"+
+            "<svg width='16' height='16' viewBox='0 0 24 24' aria-hidden='true'><path d='M7 4h10v5a5 5 0 0 1-10 0z' fill='#E9C46A'/><path d='M7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3' fill='none' stroke='#D4A24C' stroke-width='2' stroke-linecap='round'/><path d='M9 20h6v-1a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1zM11 14h2v4h-2z' fill='#D4A24C'/></svg>"+
+            "Logros Pathway"+
+            "<svg width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' style='opacity:.55'><path d='M9 18l6-6-6-6'/></svg>"+
+          "</button>"
+        : (function(){ var m=clientMedalInfo();
+            if(!m.name) return "<div class='cp-side-medal-info'><div class='cp-side-medal-info-line'>Suma tu primer cliente 🏅</div></div>";
+            if(!m.next) return "<div class='cp-side-medal-info' title='Medalla máxima'><div class='cp-side-medal-info-line'>🏆 Medalla oro · "+m.n+" clientes</div></div>";
+            var pct=Math.min(100,Math.round(m.n/m.next.at*100));
+            return "<div class='cp-side-medal-info' title='Tu medalla por clientes activos'><div class='cp-side-medal-info-line' style='text-transform:capitalize'>Medalla "+m.name+" · faltan "+(m.next.at-m.n)+" para "+m.next.name+"</div><div class='cp-side-medal-info-bar'><span style='width:"+pct+"%'></span></div></div>"; })()
+      )+
       "</div>"+
     (function(){
       if(!_isDemoCoach()) return "";
@@ -7351,7 +7363,232 @@ document.addEventListener("click", function(ev){
 });
 // El badge se asienta cuando los datos terminan de cargar (por si el último
 // render corrió antes de que llegaran).
-window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} },t); }); });
+window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} try{ if(!_gamiOn()){ var _nb=document.getElementById("pw-nov-btn"); if(_nb) _nb.style.display="none"; } }catch(e){} },t); }); });
+
+// ═══ Drawers laterales: Novedades (revista semanal) + Perfil (puntos/medallas/badges) ═══
+// Se embeben las páginas ya aprobadas (novedades-preview.html / perfil-preview.html)
+// vía iframe: lo que ve la coach es idéntico al diseño aprobado, sin riesgo de
+// colisión de estilos con el panel. Admin (RADMIN) ve las 8 semanas + selector;
+// el resto ve solo la semana que rota ese lunes.
+// Los drawers son nodos ESTÁTICos (fuera de #root) que se muestran/ocultan con
+// display; así render() nunca recrea el iframe y la revista carga una sola vez.
+function _openDrawer(which){
+  var id = which==="perfil" ? "pw-perfil-drawer" : "pw-nov-drawer";
+  var frameId = which==="perfil" ? "pw-perfil-frame" : "pw-nov-frame";
+  var base = which==="perfil" ? "perfil-preview.html" : "novedades-preview.html";
+  var otherId = which==="perfil" ? "pw-nov-drawer" : "pw-perfil-drawer";
+  try{ var other=document.getElementById(otherId); if(other) other.style.display="none"; }catch(e){}
+  var d=document.getElementById(id); if(!d) return;
+  var fr=document.getElementById(frameId);
+  var admin=(typeof RADMIN!=="undefined"&&RADMIN)?"&admin=1":"";
+  if(which==="perfil"){
+    // El perfil se recarga en cada apertura con los datos REALES del coach:
+    // badges ganados + puntos totales (cabra + acciones) + medalla real por
+    // clientes activos (bronce/plata/oro). Así refleja lo que de verdad tiene.
+    var earned="", pts="", clients="";
+    try{ earned=pwBadgesGet().join(","); }catch(e){}
+    try{ pts=pwTotalPoints(); }catch(e){}
+    try{ clients=clientMedalInfo().n; }catch(e){}
+    if(fr) fr.setAttribute("src", base+"?embed=1"+admin+"&badges="+encodeURIComponent(earned)+"&pts="+encodeURIComponent(pts)+"&clients="+encodeURIComponent(clients));
+  } else if(fr && !fr.getAttribute("src")){
+    var ref=(REAL&&RME&&RME.id)?("&ref="+encodeURIComponent(RME.id)):"";
+    fr.setAttribute("src", base+"?embed=1"+admin+ref);
+  }
+  d.style.display="flex";
+}
+function _closeDrawer(which){
+  var id = which==="perfil" ? "pw-perfil-drawer" : "pw-nov-drawer";
+  var d=document.getElementById(id); if(d) d.style.display="none";
+}
+
+// ═══ Sistema de premiación: BADGES (colección) ═══
+// Un solo lugar donde se definen y se ganan los badges. Se guardan por coach en
+// localStorage (y, si existe la columna `usuarios.badges`, se sincronizan best-effort).
+// El badge NO da puntos (los puntos son la cabra + acciones); el badge ES el premio.
+var PW_BADGES = {
+  "nivel-1":      {t:"Nivel 1",      s:"¡Comenzaste tu camino!"},
+  "early-adopter":{t:"Early Adopter",s:"Gracias por estar desde el inicio."},
+  "explorador":   {t:"Explorador",   s:"Probaste funciones nuevas de Pathway."},
+  "enfocado":     {t:"Enfocado",     s:"Constancia que da resultados."},
+  "coach-pro":    {t:"Coach Pro",    s:"Vas en camino al siguiente nivel."},
+  "top-coach":    {t:"Top Coach",    s:"Entraste al ranking del mes."},
+  "comunidad":    {t:"Comunidad",    s:"Participas en la comunidad."},
+  "productivo":   {t:"Productivo",   s:"Ahorras tiempo con Pathway."},
+  "embajador":    {t:"Embajador",    s:"Dejaste tu reseña. ¡Gracias por recomendar Pathway!"},
+  "leyenda":      {t:"Leyenda",      s:"Máximo nivel alcanzado."}
+};
+// ═══ Sistema de premiación: PUNTOS / XP (la moneda) ═══
+// UNA sola cuenta de puntos = puntos de la cabra (game_pts, ya real) + XP por
+// acciones reales del coach. Los badges NO dan puntos (son colección aparte).
+function _gamiId(){ return (REAL&&RME&&(RME.id||RME.email))||(typeof COACH!=="undefined"&&COACH&&COACH.email)||"x"; }
+function _xpKey(){ return "pw_xp_"+_gamiId(); }
+function _xpLogKey(){ return "pw_xplog_"+_gamiId(); }
+function pwXpGet(){ try{ return parseInt(localStorage.getItem(_xpKey())||"0",10)||0; }catch(e){ return 0; } }
+function pwXpLog(){ try{ return JSON.parse(localStorage.getItem(_xpLogKey())||"[]")||[]; }catch(e){ return []; } }
+// Puntos totales que ve el coach = cabra + acciones. Una sola barra.
+function pwTotalPoints(){ var g=0; try{ g=(typeof _gameBest==="function")?(_gameBest()||0):((RME&&RME.game_pts)||0); }catch(e){} return (g||0)+pwXpGet(); }
+function pwAddXP(n,reason){
+  n=parseInt(n,10)||0; if(!n) return;
+  var cur=pwXpGet()+n;
+  try{ localStorage.setItem(_xpKey(), String(cur)); }catch(e){}
+  try{ var log=pwXpLog(); log.unshift({n:n,r:reason||"",t:(new Date()).getTime()}); log=log.slice(0,25); localStorage.setItem(_xpLogKey(), JSON.stringify(log)); }catch(e){}
+  // Best-effort a Supabase (solo si existe la columna usuarios.xp; si no, no rompe).
+  try{ if(REAL&&RME&&RME.id){ _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{xp:cur}).catch(function(){}); } }catch(e){}
+  try{ pwRewardBurst(
+    "<div style='display:inline-flex;align-items:center;gap:9px;background:linear-gradient(135deg,#FBF3DC,#F3E4B8);border:1px solid #EAD189;border-radius:100px;padding:13px 24px;box-shadow:0 10px 26px rgba(27,67,50,.20)'><span style='font-size:24px'>⭐</span><b style=\"font-family:var(--pw-serif);font-size:24px;color:#8a6a1e\">+"+n+" pts</b></div>"+
+    "<div style='font:600 12.5px var(--pw-sans);color:var(--pw-text-soft);margin-top:8px;text-shadow:0 1px 4px rgba(255,255,255,.9)'>"+(reason||"")+"</div>", {small:true}); }catch(e){}
+}
+function _badgesKey(){ var id=(REAL&&RME&&(RME.id||RME.email))||(typeof COACH!=="undefined"&&COACH&&COACH.email)||"x"; return "pw_badges_"+id; }
+function pwBadgesGet(){ try{ return JSON.parse(localStorage.getItem(_badgesKey())||"[]")||[]; }catch(e){ return []; } }
+function pwHasBadge(id){ return pwBadgesGet().indexOf(id)>=0; }
+function pwAwardBadge(id,opts){
+  if(!PW_BADGES[id]) return false;
+  var cur=pwBadgesGet(); if(cur.indexOf(id)>=0) return false; // ya lo tiene → no repetir
+  cur.push(id);
+  try{ localStorage.setItem(_badgesKey(), JSON.stringify(cur)); }catch(e){}
+  // Best-effort a Supabase (solo si existe la columna badges; si no, no rompe nada).
+  try{ if(REAL&&RME&&RME.id){ _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{badges:cur}).catch(function(){}); } }catch(e){}
+  if(!(opts&&opts.silent)){ try{ pwBadgeCelebrate(id); }catch(e){} }
+  return true;
+}
+// Chequeo automático de badges (por tiempo de uso, clientes, informes). Corre al
+// cargar; los que se ganan por hito de tiempo/volumen no lanzan celebración (silent).
+// Reglas: docs/gamificacion-pathway.md.
+// Marca una función usada; al destrabar 3 distintas → badge Explorador.
+function pwMarkFeature(name){
+  try{
+    var k="pw_feats_"+_gamiId(), set=JSON.parse(localStorage.getItem(k)||"[]")||[];
+    if(set.indexOf(name)<0){ set.push(name); localStorage.setItem(k,JSON.stringify(set)); }
+    if(set.length>=3) pwAwardBadge("explorador");
+  }catch(e){}
+}
+function pwCheckAutoBadges(){
+  try{
+    pwAwardBadge("nivel-1",{silent:true});                       // primer ingreso / semana 1
+    var cl=0; try{ cl=clientMedalInfo().n; }catch(e){}
+    if(cl>=3) pwAwardBadge("enfocado",{silent:true});            // 3 clientes activos (constancia)
+    // productivo: tiene clientes que avanzaron varias semanas (semana_activa≥3)
+    var pw=0; try{ pw=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c&&!c._example&&c.raw&&(parseInt(c.raw.semana_activa,10)||0)>=3;}).length:0; }catch(e){}
+    if(pw>=1) pwAwardBadge("productivo",{silent:true});
+    // comunidad: si algún coach se registró con tu link de referido (referido_por = mi id)
+    try{ if(REAL&&RME&&RME.id&&!pwHasBadge("comunidad")){ _sb("usuarios?referido_por=eq."+encodeURIComponent(RME.id)+"&select=id&limit=1").then(function(rows){ if(rows&&rows.length){ pwAwardBadge("comunidad"); } }); } }catch(e){}
+    var applyAge=function(created){
+      if(!created) return;
+      var days=((new Date()).getTime()-new Date(created).getTime())/86400000;
+      if(days>=14)  pwAwardBadge("early-adopter",{silent:true}); // 2 semanas
+      if(days>=120) pwAwardBadge("coach-pro",{silent:true});     // 4 meses
+      if(days>=180) pwAwardBadge("top-coach",{silent:true});     // 6 meses
+      if(days>=365) pwAwardBadge("leyenda",{silent:true});       // 1 año
+    };
+    if(RME&&RME.created_at) applyAge(RME.created_at);
+    else if(REAL&&RME&&RME.id){ _sb("usuarios?id=eq."+encodeURIComponent(RME.id)+"&select=created_at").then(function(rows){ if(rows&&rows[0]&&rows[0].created_at){ RME.created_at=rows[0].created_at; applyAge(rows[0].created_at); } }); }
+    pwCheckMedal(); // siembra/actualiza el tier de medalla (no festeja en el primer load)
+  }catch(e){}
+}
+// Celebración al desbloquear (badge grande + confetti). Autocontenida.
+// ═══ Animación UNIFICADA de premio ═══
+// Confeti "bomba" detrás + el premio grande en el centro (badge / +puntos /
+// medalla), SIN caja blanca, que después se achica y VUELA hasta "Logros
+// Pathway" en el sidebar → la gente entiende que todo se guarda ahí. Sirve para
+// badges, puntos y medallas (mismo efecto para todo).
+// Gamificación visible SOLO para admin por ahora (rollout por fases: primero
+// Micaela, después coaches/clientes). Los datos igual se acumulan; lo que se
+// gatea es lo que se VE (token Novedades, entrada Logros, animaciones).
+function _gamiOn(){ return (typeof RADMIN!=="undefined" && RADMIN); }
+function pwRewardBurst(innerHTML, opts){
+  if(!_gamiOn()) return;
+  opts=opts||{};
+  try{
+    var ov=document.createElement("div");
+    ov.style.cssText="position:fixed;inset:0;z-index:9600;pointer-events:none;overflow:hidden";
+    document.body.appendChild(ov);
+    var cx=Math.round(window.innerWidth/2), cy=Math.round(window.innerHeight*0.42);
+    var cols=["#52B788","#E9C46A","#2D6A4F","#D4A24C","#B97A3D","#A8AFB5"];
+    var N=opts.small?26:46;
+    for(var i=0;i<N;i++){
+      var s=document.createElement("span");
+      var sz=6+Math.round(Math.random()*6);
+      s.style.cssText="position:fixed;left:"+cx+"px;top:"+cy+"px;width:"+sz+"px;height:"+sz+"px;background:"+cols[i%cols.length]+";border-radius:1px";
+      ov.appendChild(s);
+      var ang=Math.random()*Math.PI*2, dist=90+Math.random()*240;
+      var dx=Math.cos(ang)*dist, dy=Math.sin(ang)*dist;
+      try{ s.animate([{transform:"translate(0,0) rotate(0deg)",opacity:1},{transform:"translate("+dx.toFixed(0)+"px,"+(dy+130).toFixed(0)+"px) rotate("+(Math.random()*720-360).toFixed(0)+"deg)",opacity:0}],{duration:900+Math.random()*500,easing:"cubic-bezier(.15,.7,.3,1)",fill:"forwards"}); }catch(e){}
+    }
+    var el=document.createElement("div");
+    el.style.cssText="position:fixed;left:"+cx+"px;top:"+cy+"px;transform:translate(-50%,-50%) scale(.3);opacity:0;text-align:center;will-change:transform,opacity";
+    el.innerHTML=innerHTML;
+    ov.appendChild(el);
+    var tgt=document.querySelector(".cp-side-logros");
+    var tr=tgt?tgt.getBoundingClientRect():{left:20,top:window.innerHeight-70,width:120,height:30};
+    var ddx=(tr.left+tr.width/2)-cx, ddy=(tr.top+tr.height/2)-cy;
+    try{ el.animate([{transform:"translate(-50%,-50%) scale(.3)",opacity:0},{transform:"translate(-50%,-50%) scale(1.08)",opacity:1},{transform:"translate(-50%,-50%) scale(1)",opacity:1}],{duration:440,easing:"cubic-bezier(.2,1.3,.4,1)",fill:"forwards"}); }catch(e){ el.style.opacity=1; el.style.transform="translate(-50%,-50%) scale(1)"; }
+    setTimeout(function(){
+      try{ el.animate([{transform:"translate(-50%,-50%) scale(1)",opacity:1},{transform:"translate(calc(-50% + "+ddx.toFixed(0)+"px),calc(-50% + "+ddy.toFixed(0)+"px)) scale(.12)",opacity:0}],{duration:720,easing:"cubic-bezier(.5,0,.75,0)",fill:"forwards"}); }catch(e){}
+      setTimeout(function(){ try{ if(tgt) tgt.animate([{transform:"scale(1)"},{transform:"scale(1.18)"},{transform:"scale(1)"}],{duration:440,easing:"ease-out"}); }catch(e){} }, 650);
+    }, 1080);
+    setTimeout(function(){ try{ ov.remove(); }catch(e){} }, 2000);
+  }catch(e){}
+}
+function pwBadgeCelebrate(id){
+  var b=PW_BADGES[id]||{t:id,s:""};
+  pwRewardBurst(
+    "<img src='assets/badges/"+id+".png' alt='' style='width:150px;display:block;margin:0 auto;filter:drop-shadow(0 12px 22px rgba(27,67,50,.32))'>"+
+    "<div style='font:800 11px/1 var(--pw-sans);letter-spacing:2px;text-transform:uppercase;color:var(--pw-sendero);margin-top:8px;text-shadow:0 1px 4px rgba(255,255,255,.9)'>¡Nuevo badge!</div>"+
+    "<div style='font-family:var(--pw-serif);font-weight:700;font-size:20px;color:var(--pw-bosque-dark);text-shadow:0 1px 8px rgba(255,255,255,.95)'>"+b.t+"</div>"
+  );
+}
+// Medalla: cuando sube de tier (bronce→plata→oro por clientes). Mismo efecto.
+function pwCheckMedal(){
+  try{
+    var m=clientMedalInfo(); if(!m.name) return;
+    var k="pw_medal_"+_gamiId(), last=localStorage.getItem(k)||"", order={bronce:1,plata:2,oro:3};
+    if((order[m.name]||0)>(order[last]||0)){
+      localStorage.setItem(k,m.name);
+      if(last){ pwRewardBurst(
+        "<img src='assets/iconos/medalla-"+m.name+"-sm.webp' alt='' style='width:118px;display:block;margin:0 auto;filter:drop-shadow(0 12px 22px rgba(27,67,50,.32))'>"+
+        "<div style='font-family:var(--pw-serif);font-weight:700;font-size:20px;color:var(--pw-bosque-dark);margin-top:6px;text-transform:capitalize;text-shadow:0 1px 8px rgba(255,255,255,.95)'>¡Medalla "+m.name+"!</div>"); }
+    }
+  }catch(e){}
+}
+// Puente con las páginas embebidas (revista/perfil): cierran el drawer o abren
+// la sección/función REAL del panel según lo que toque el coach en una card.
+window.addEventListener("message",function(ev){
+  var d=ev&&ev.data; if(!d) return;
+  if(d==="pw-close-drawer"){ _closeDrawer("nov"); _closeDrawer("perfil"); return; }
+  if(typeof d!=="object") return;
+  if(d.pw==="perfil"){ _openDrawer("perfil"); return; }
+  if(d.pw==="nav"){
+    var ok={resumen:1,clientes:1,calendario:1,admin:1};
+    if(!ok[d.to]) return;
+    _closeDrawer("nov"); _closeDrawer("perfil");
+    try{ state.section=d.to; render(); window.scrollTo(0,0); }catch(e){}
+    return;
+  }
+  if(d.pw==="ia"){
+    _closeDrawer("nov");
+    try{
+      if(!state.iaChat) state.iaChat={open:false,msgs:null,draft:"",busy:false};
+      state.iaChat.open=true;
+      if(!state.iaChat.msgs) state.iaChat.msgs=_iaChatSeed();
+      render(); try{ _iaChatScrollDown(); }catch(e){}
+    }catch(e){}
+    return;
+  }
+  if(d.pw==="review"){ _closeDrawer("nov"); try{ state.review={open:true,rating:0,sent:false,high:false}; render(); }catch(e){} return; }
+  // Feedback de la revista (idea / encuesta / sorteo) → guarda en revista_feedback.
+  if(d.pw==="idea"||d.pw==="encuesta"||d.pw==="sorteo"){
+    try{
+      var _wk=0; try{ _wk=pwIsoWeek()%8; }catch(e){}
+      var _body={ tipo:d.pw, valor:(d.text||d.value||null), semana:_wk };
+      if(REAL&&RME&&RME.id) _body.coach_id=RME.id;
+      _sbw("revista_feedback","POST",_body).catch(function(){});
+    }catch(e){}
+    return;
+  }
+});
+// Semana ISO (para etiquetar el feedback de la revista con la edición vigente).
+function pwIsoWeek(){ var now=new Date(); var d=new Date(Date.UTC(now.getFullYear(),now.getMonth(),now.getDate())); var day=d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-day); var ys=new Date(Date.UTC(d.getUTCFullYear(),0,1)); return Math.ceil((((d-ys)/86400000)+1)/7); }
+
 function render(){
   try{
     // Marca <html> con pw-v2 cuando la ficha v2 esta activa (admin/Micaela + flag).
@@ -8070,7 +8307,10 @@ document.addEventListener("click", function(ev){
     // aunque entre desde otra compu o limpie caché. Antes solo se guardaba local.
     RCFG=RCFG||{}; RCFG.review_done=true;
     if(REAL&&RME&&RME.id){ var _rvm={}; for(var _rvk in RCFG){ if(RCFG.hasOwnProperty(_rvk)) _rvm[_rvk]=RCFG[_rvk]; } _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:_rvm}).catch(function(){}); }
-    state.review.sent=true; state.review.high=(_rrat>=4); render(); return;
+    state.review.sent=true; state.review.high=(_rrat>=4); render();
+    // Premiación: dejar una reseña desbloquea el badge Embajador (una sola vez).
+    try{ pwAwardBadge("embajador"); }catch(e){}
+    return;
   }
   if(act==="review-share"){
     var _su="https://pathwaycareercoach.com/soy-coach.html", _st="Te recomiendo Pathway para gestionar tu coaching de carrera 💚";
@@ -8725,6 +8965,8 @@ document.addEventListener("click", function(ev){
     var resetLink="https://pathwaycareercoach.com/recuperar-password.html?email="+encodeURIComponent(em);
     var finish=function(){
       state.newOpen=false; toast("Cliente creado ✓");
+      try{ pwAddXP(50,"Cliente nuevo"); }catch(e){}
+      try{ setTimeout(function(){ pwCheckMedal(); pwCheckAutoBadges(); }, 1500); }catch(e){}
       // Si el alta vino desde el juego, al cerrar el email de bienvenida volvemos
       // al Resumen para ver a la cabra caminar al próximo paso.
       if(state.fromGame){ state.fromGame=false; state._gameReturn=true; }
@@ -8924,11 +9166,12 @@ document.addEventListener("click", function(ev){
       ingresos:rw.ingresos,gastos:rw.gastos,deudas:rw.deudas,objetivo_ahorro:rw.objetivo_ahorro,plazo:rw.plazo,ahorro_actual:rw.ahorro_actual};
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify(_giBody)})
       .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
-      .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.genInforme=null; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); render(); setTimeout(loadReal,1300); })
+      .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.genInforme=null; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); try{ pwAddXP(30,"Informe generado"); pwMarkFeature("informe"); pwCheckAutoBadges(); }catch(e){} render(); setTimeout(loadReal,1300); })
       .catch(function(){ _genBusy=false; state.genInforme=null; render(); alert("No se pudo generar el informe. Reintenta en unos minutos."); });
     return;
   }
   if(act==="gen-cv"){
+    try{ pwMarkFeature("cv"); }catch(e){}
     var gv=el.getAttribute("data-id"), rv=rawOf(gv);
     if(!rv){ alert("No tengo los datos del formulario de este cliente."); return; }
     if(_genBusy) return;
@@ -9526,6 +9769,11 @@ document.addEventListener("click", function(ev){
   }
   if(act==="juego-open"){ openJuego(); return; }
   if(act==="juego-close"){ closeJuego(); return; }
+  if(act==="nov-open"){ _openDrawer("nov"); return; }
+  if(act==="nov-close"){ _closeDrawer("nov"); return; }
+  if(act==="perfil-open"){ _openDrawer("perfil"); return; }
+  if(act==="perfil-close"){ _closeDrawer("perfil"); return; }
+  if(act==="nov-stop"||act==="perfil-stop"){ return; }
   if(act==="wgoal-add"){ var _wi=document.getElementById("wgoal-input"); var _wv=_wi?(""+_wi.value).trim():""; if(!_wv) return; var _wa=_wgoals(); _wa.push({t:_wv,done:false}); _wgoalsSave(_wa); render(); return; }
   if(act.indexOf("wgoal-toggle:")===0){ var _wt=parseInt(act.slice(13),10); var _wb=_wgoals(); if(_wb[_wt]){ _wb[_wt].done=!_wb[_wt].done; _wgoalsSave(_wb); render(); } return; }
   if(act.indexOf("wgoal-del:")===0){ var _wd2=parseInt(act.slice(10),10); var _wc=_wgoals(); if(_wd2>=0&&_wd2<_wc.length){ _wc.splice(_wd2,1); _wgoalsSave(_wc); render(); } return; }
@@ -9543,6 +9791,7 @@ document.addEventListener("click", function(ev){
   }
   if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; state.aiThread=null; state.aiCoachThread=null; state.msgAdminDraft=""; state.msgDraft=""; state.chatPicker=false; render(); return; }
   if(act==="iachat-open"){
+    try{ pwMarkFeature("ia"); }catch(e){}
     if(!state.iaChat) state.iaChat={open:false,msgs:null,draft:"",busy:false};
     state.iaChat.open=true;
     if(!state.iaChat.msgs) state.iaChat.msgs=_iaChatSeed();
@@ -10841,18 +11090,23 @@ if('serviceWorker' in navigator){
 <!-- Barra de acciones flotante (arriba a la derecha): botón "Actualizar"
      siempre visible + chip "Instalar app" cuando el navegador lo soporta. -->
 <div id="pw-app-actions" style="position:fixed;top:14px;right:14px;z-index:95;display:flex;align-items:center;gap:10px;font-family:Inter,-apple-system,sans-serif;">
-  <!-- IA Pathway: pestañita discreta en el borde derecho (no tapa los botones) -->
+  <!-- IA Pathway: pastilla verde con estrella + texto -->
   <button id="pw-ia-btn" type="button" aria-label="Abrir IA Pathway" title="IA Pathway" data-act="iachat-open"
-    style="position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:96;background:var(--pw-bosque);border:none;border-radius:13px 0 0 13px;padding:15px 7px;display:flex;flex-direction:column;align-items:center;gap:7px;box-shadow:-3px 0 14px rgba(27,67,50,.24);cursor:pointer;font-family:inherit;color:#fff;font-size:12px;font-weight:600;letter-spacing:.4px;">
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="#E9C46A" aria-hidden="true"><path d="M12 3l1.6 4.8L18 9l-4.4 1.2L12 15l-1.6-4.8L6 9l4.4-1.2z"/><path d="M18 14.5l.7 2.1L21 17.5l-2.3.9L18 21l-.7-2.6L15 17.5l2.3-.9z"/></svg>
-    <span style="writing-mode:vertical-rl;text-orientation:mixed;">IA Pathway</span>
+    style="position:relative;background:var(--pw-bosque);border:none;border-radius:100px;height:40px;padding:0 16px 0 14px;display:inline-flex;align-items:center;gap:7px;box-shadow:0 4px 12px rgba(27,67,50,.24);cursor:pointer;font-family:Inter,-apple-system,sans-serif;font-size:13px;font-weight:700;color:#fff;white-space:nowrap;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#E9C46A" aria-hidden="true"><path d="M12 3l1.6 4.8L18 9l-4.4 1.2L12 15l-1.6-4.8L6 9l4.4-1.2z"/><path d="M18 14.5l.7 2.1L21 17.5l-2.3.9L18 21l-.7-2.6L15 17.5l2.3-.9z"/></svg>
+    <span>IA Pathway</span>
   </button>
   <button id="pw-chat-btn" type="button" aria-label="Abrir chat con Pathway" title="Chat" data-act="chat-open"
     style="position:relative;background:#fff;border:1px solid rgba(31,42,35,.14);border-radius:50%;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(31,42,35,.10);cursor:pointer;font-family:inherit;color:var(--pw-bosque);">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
     <span id="pw-chat-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:#C24545;color:#fff;font-size:10px;font-weight:700;align-items:center;justify-content:center;border:2px solid var(--pw-niebla-2);">0</span>
   </button>
-  <!-- Notificaciones -->
+  <!-- Novedades: pestañita (token) en el borde derecho. Se abre en drawer, se
+       cierra con ✕ y se puede volver a ver cuando quieran desde acá. -->
+  <button id="pw-nov-btn" type="button" data-act="nov-open" aria-label="Novedades" title="Novedades"
+    style="position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:96;background:var(--pw-bosque);border:none;border-radius:13px 0 0 13px;padding:16px 8px;display:flex;align-items:center;justify-content:center;box-shadow:-3px 0 14px rgba(27,67,50,.24);cursor:pointer;font-family:inherit;color:#fff;font-size:12.5px;font-weight:600;letter-spacing:.5px;">
+    <span style="writing-mode:vertical-rl;text-orientation:mixed;">Novedades</span>
+  </button>
   <div id="pw-notif" style="position:relative;">
     <button id="pw-notif-btn" type="button" aria-label="Notificaciones" title="Notificaciones" onclick="pwNotif(event)"
       style="position:relative;background:#fff;border:1px solid rgba(31,42,35,.14);border-radius:50%;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(31,42,35,.10);cursor:pointer;font-family:inherit;color:var(--pw-carbon);">
@@ -10878,6 +11132,7 @@ if('serviceWorker' in navigator){
     <div id="pw-usermenu-panel" role="menu" style="display:none;position:absolute;top:48px;right:0;width:230px;background:#fff;border:1px solid var(--pw-border);border-radius:14px;box-shadow:0 14px 38px rgba(31,42,35,.20);overflow:hidden;z-index:200;">
       <div style="padding:6px;">
         <button class="pw-um-item" data-act="asist-go" data-go="config|profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Perfil</button>
+        <button class="pw-um-item" data-act="perfil-open" onclick="try{document.getElementById('pw-usermenu-panel').style.display='none';}catch(e){}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 8.5 22 9.3 17 14 18.3 21 12 17.5 5.7 21 7 14 2 9.3 9 8.5 12 2"/></svg>Puntos y logros</button>
         <button class="pw-um-item" data-act="asist-go" data-go="config|recursos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Recursos</button>
         <button class="pw-um-item" data-act="asist-go" data-go="config|brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.688-1.687h1.996c3.094 0 5.543-2.55 5.543-5.65C22 6.5 17.5 2 12 2z"/></svg>Marca propia</button>
         <button class="pw-um-item" data-act="asist-go" data-go="config|pathway"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Clientes de Pathway</button>
@@ -10900,6 +11155,21 @@ if('serviceWorker' in navigator){
       <a href="/instalar.html" target="_blank" rel="noopener" style="color:var(--pw-bosque);font-size:11.5px;text-decoration:underline;font-weight:500;">Guía</a>
       <button id="pw-install-x" aria-label="Cerrar" style="background:none;border:none;color:#888;font-size:18px;cursor:pointer;padding:0 6px 0 2px;line-height:1;">×</button>
     </div>
+  </div>
+</div>
+
+<!-- Drawer Novedades (revista semanal) — nodo estático, iframe carga una sola vez -->
+<div id="pw-nov-drawer" data-act="nov-close" style="display:none;position:fixed;inset:0;background:rgba(27,46,38,.14);justify-content:flex-end;z-index:210;">
+  <div data-act="nov-stop" class="cp-drawer" style="position:relative;width:412px;max-width:96vw;height:100%;background:#FBFAF6;border-left:1px solid var(--pw-border);box-shadow:-16px 0 50px rgba(20,40,30,.16);overflow:hidden;">
+    <button data-act="nov-close" aria-label="Cerrar" title="Cerrar" style="position:absolute;top:12px;right:14px;z-index:3;width:30px;height:30px;border-radius:50%;border:1px solid var(--pw-border);background:rgba(255,255,255,.92);cursor:pointer;color:var(--pw-text-muted);font-size:13px;line-height:1;box-shadow:0 2px 8px rgba(20,40,30,.10);">✕</button>
+    <iframe id="pw-nov-frame" title="Novedades" style="width:100%;height:100%;border:none;background:transparent;display:block;"></iframe>
+  </div>
+</div>
+<!-- Drawer Perfil (puntos, medallas, badges) — nodo estático -->
+<div id="pw-perfil-drawer" data-act="perfil-close" style="display:none;position:fixed;inset:0;background:rgba(27,46,38,.14);justify-content:flex-end;z-index:210;">
+  <div data-act="perfil-stop" class="cp-drawer" style="position:relative;width:412px;max-width:96vw;height:100%;background:#F8F5EF;border-left:1px solid var(--pw-border);box-shadow:-16px 0 50px rgba(20,40,30,.16);overflow:hidden;">
+    <button data-act="perfil-close" aria-label="Cerrar" title="Cerrar" style="position:absolute;top:12px;right:14px;z-index:3;width:30px;height:30px;border-radius:50%;border:1px solid var(--pw-border);background:rgba(255,255,255,.92);cursor:pointer;color:var(--pw-text-muted);font-size:13px;line-height:1;box-shadow:0 2px 8px rgba(20,40,30,.10);">✕</button>
+    <iframe id="pw-perfil-frame" title="Mi perfil" style="width:100%;height:100%;border:none;background:transparent;display:block;"></iframe>
   </div>
 </div>
 <script>
