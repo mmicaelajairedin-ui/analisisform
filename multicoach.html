@@ -270,6 +270,20 @@ body{margin:0;font-family:var(--sans);color:var(--carbon);background:var(--bg);-
 .mc-cchip:active{cursor:grabbing}
 .mc-cchip-av{width:22px;height:22px;border-radius:50%;background:#EEF2ED;color:#667068;display:grid;place-items:center;font-size:10px;font-weight:700}
 .cp-client.drop-on{outline:2px dashed var(--sendero);outline-offset:2px;background:var(--pw-niebla-2)}
+/* Tablero del equipo: cada coach con sus clientes debajo; se arrastra un
+   cliente de un coach a otro para reasignarlo. */
+.mc-team-group{background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:12px;box-shadow:var(--sh);transition:background .15s,outline-color .15s}
+.mc-team-group.drop-on{outline:2px dashed var(--sendero);outline-offset:2px;background:var(--pw-niebla-2)}
+.mc-team-unassigned{border-style:dashed}
+.mc-team-head{display:flex;align-items:center;gap:11px;cursor:pointer;margin-bottom:10px}
+.mc-team-clientes{display:flex;flex-wrap:wrap;gap:8px}
+.mc-team-empty{font-size:12px;color:var(--muted);padding:4px 2px}
+.mc-team-cli{display:inline-flex;align-items:center;gap:7px;padding:5px 12px 5px 5px;border:1px solid var(--border);border-radius:100px;background:var(--bg);font-size:12.5px;font-weight:600;color:var(--carbon);cursor:grab;user-select:none;max-width:220px}
+.mc-team-cli:active{cursor:grabbing}
+.mc-team-cli.off{opacity:.5}
+.mc-team-cli-av{width:24px;height:24px;border-radius:50%;overflow:hidden;background:#EEF2ED;color:#667068;display:grid;place-items:center;font-size:10px;font-weight:700;flex-shrink:0}
+.mc-team-cli-av img{width:100%;height:100%;object-fit:cover}
+.mc-team-cli-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cp-client-head{display:flex;align-items:center;gap:11px}
 .cp-client-photo{width:44px;height:44px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:15px;overflow:hidden;position:relative;background:linear-gradient(135deg,var(--sendero),var(--bosque))}
 .cp-client-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
@@ -1303,11 +1317,51 @@ function renderCoaches(){
  _fillCoaches();
 }
 function _setCf(f){_cf=f;renderCoaches();}
+// Tablero del equipo: cada coach con sus clientes debajo. Se arrastra un
+// cliente de un coach a otro → cartel de confirmación → reasigna.
 function _fillCoaches(){
  var box=document.getElementById('clist');if(!box)return;
  var base=DB.coaches.filter(function(c){if(_cf==='todos')return true;return c.est===_cf;});
  if(!base.length){box.innerHTML='<p class="csub">Sin coaches en esta vista.</p>';return;}
- box.innerHTML=NICHOS.map(function(ni){var g=base.filter(function(c){return c.nicho===ni.id;});if(!g.length)return '';return _nicheHd(ni,g.length)+'<section class="cp-coach-grid">'+g.map(_coachCard).join('')+'</section>';}).join('');
+ var html=base.map(function(c){ return _teamGroup(c, DB.clientes.filter(function(k){return String(k.coach)===String(c.id);})); }).join('');
+ if(_cf==='todos'){ var sin=DB.clientes.filter(function(k){return !k.coach;}); if(sin.length) html+=_teamGroupSin(sin); }
+ box.innerHTML=html;
+}
+function _teamGroup(c, clientes){
+ var h=_coachHealth(c);
+ var drop=MC_REAL?(' ondragover="_teamOver(event)" ondragleave="_teamLeave(event)" ondrop="_teamDrop(event,\''+c.id+'\')"'):'';
+ var head='<div class="mc-team-head" onclick="fichaCoach(\''+c.id+'\')"><div class="cp-coach-av">'+_img(c)+c.ini+'</div>'
+  +'<div style="min-width:0;flex:1"><div class="cp-coach-nm">'+_mcEsc(c.n)+(c.esOwner?' <span class="pro" style="font-size:8px;vertical-align:middle">Vos</span>':'')+'</div>'
+  +'<div class="cp-coach-meta">'+clientes.length+' cliente'+(clientes.length===1?'':'s')+(c.esp?' · '+_mcEsc(c.esp):'')+'</div></div>'
+  +'<span class="cp-coach-health '+h[0]+'">'+h[1]+'</span></div>';
+ var cli=clientes.length ? '<div class="mc-team-clientes">'+clientes.map(_teamCliCard).join('')+'</div>'
+  : '<div class="mc-team-empty">Sin clientes'+(MC_REAL?' · arrastrá uno acá':'')+'</div>';
+ return '<section class="mc-team-group"'+drop+' data-coach="'+c.id+'">'+head+cli+'</section>';
+}
+function _teamGroupSin(clientes){
+ var drop=MC_REAL?(' ondragover="_teamOver(event)" ondragleave="_teamLeave(event)" ondrop="_teamDrop(event,\'\')"'):'';
+ return '<section class="mc-team-group mc-team-unassigned"'+drop+'><div class="mc-team-head"><div class="cp-coach-av" style="background:#EEF2ED;color:#667068">?</div><div style="flex:1"><div class="cp-coach-nm">Sin asignar</div><div class="cp-coach-meta">'+clientes.length+' cliente'+(clientes.length===1?'':'s')+' esperando coach</div></div></div><div class="mc-team-clientes">'+clientes.map(_teamCliCard).join('')+'</div></section>';
+}
+function _teamCliCard(k){
+ var drag=MC_REAL?(' draggable="true" ondragstart="_dragCliStart(event,\''+k.id+'\')" ondragend="_dragCliEnd()"'):'';
+ return '<div class="mc-team-cli'+(k.est!=='activo'?' off':'')+'"'+drag+' onclick="fichaCliente(\''+k.id+'\')" title="'+_mcEsc(k.n)+'"><div class="mc-team-cli-av">'+_img(k)+k.ini+'</div><span class="mc-team-cli-n">'+_mcEsc(k.n)+'</span></div>';
+}
+// Drag de un CLIENTE entre coaches (tablero del equipo).
+var _dragCli=null;
+function _dragCliStart(e,id){ _dragCli=id; try{e.dataTransfer.setData('text/plain',id);e.dataTransfer.effectAllowed='move';}catch(_){ } }
+function _dragCliEnd(){ _dragCli=null; }
+function _teamOver(e){ if(!_dragCli)return; e.preventDefault(); e.currentTarget.classList.add('drop-on'); }
+function _teamLeave(e){ e.currentTarget.classList.remove('drop-on'); }
+function _teamDrop(e,coachId){
+ e.preventDefault(); e.currentTarget.classList.remove('drop-on');
+ var cliId=_dragCli||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); _dragCli=null;
+ if(!cliId)return; var cli=_cli(cliId); if(!cli)return;
+ if(!coachId){ __toast('Arrastralo sobre un coach'); return; }
+ if(String(cli.coach)===String(coachId)){ return; } // ya es su coach
+ var co=_coach(coachId), prev=_coach(cli.coach);
+ __openModal('Cambiar de coach',
+  '<p style="font-size:13.5px;color:var(--soft);margin:0;line-height:1.55">¿Mover a <b>'+_mcEsc(cli.n)+'</b>'+(prev?(' de <b>'+_mcEsc(prev.n)+'</b>'):'')+' a <b>'+_mcEsc(co.n)+'</b>?<br><span style="color:var(--muted)">El cliente va a ver a '+_mcEsc(co.n.split(" ")[0])+' como su coach.</span></p>',
+  'Sí, mover', function(){ _reassign(cliId, coachId, function(ok){ __mclose(); if(ok && _sec==='coaches') _fillCoaches(); }); });
 }
 var _curCoach=null,_coachTab='perfil';
 function fichaCoach(id){_curCoach=id;_coachTab='perfil';_renderCoachFicha();}

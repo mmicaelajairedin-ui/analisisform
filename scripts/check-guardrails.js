@@ -1629,6 +1629,23 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: tablero del equipo (arrastrar cliente entre coaches + confirmación)",
+    bug: "La página Coaches muestra cada coach con SUS clientes debajo; se arrastra " +
+         "un cliente de un coach a otro y, tras un cartel de confirmación, se reasigna " +
+         "por _reassign (edge function asignar-cliente). Es el pedido de la coach: mover " +
+         "clientes entre coaches en una sola pantalla.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function _teamGroup\(/.test(mc) || !/function _teamDrop\(/.test(mc)) return "multicoach.html: falta el tablero del equipo (_teamGroup/_teamDrop).";
+      const seg = mc.slice(mc.indexOf("function _teamDrop("), mc.indexOf("function _teamDrop(") + 900);
+      if (!/__openModal\(/.test(seg)) return "multicoach.html: _teamDrop ya no confirma antes de mover (falta el cartel).";
+      if (!/_reassign\(/.test(seg)) return "multicoach.html: _teamDrop ya no reasigna vía _reassign (asignar-cliente).";
+      if (!/function _fillCoaches\([\s\S]{0,400}_teamGroup\(/.test(mc)) return "multicoach.html: la página Coaches ya no arma el tablero por coach.";
+      return null;
+    },
+  },
+  {
     name: "multicoach: los clientes entran a la red (intake hereda org_id + alta real)",
     bug: "Un cliente de una red debe aparecer en el panel del dueño (filtra por " +
          "org_id). Por eso: (1) guardar-intake hace que el cliente HEREDE el org_id " +
