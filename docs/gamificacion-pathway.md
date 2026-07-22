@@ -57,20 +57,19 @@ además la medalla de la cabra y la de onboarding; la del perfil es la de client
 Los que faltan (`explorador`, `comunidad`) se encienden cuando exista el tracking
 de funciones usadas y el sistema de referidos.
 
-### 🔨 Badges NUEVOS a crear (para que no queden huecos)
-Momentos fuertes del recorrido del coach que **hoy no tienen badge**. Si creás el
-arte (mismo estilo acuarela, `assets/badges/<id>.png`), los cableo:
+### Regla de oro: NO badge para todo
+Los badges son solo para lo **especial/distintivo**. La progresión del día a día
+la cubren **puntos** (acciones frecuentes) y **medallas** (clientes). Con los 10
+badges alcanza — no hace falta crear uno por cada hito.
 
-| id sugerido | Se gana cuando… | Por qué suma |
-|---|---|---|
-| `primer-cliente` | Activás tu **primer** cliente | El hito nº1, hoy solo hay badge a los 3 (`enfocado`) |
-| `primer-informe` | Generás tu **primer informe con IA** | El momento "wow" del producto |
-| `racha` | Usás Pathway **N semanas seguidas** | Constancia / retención |
-| `primera-venta` | Tu **primer cobro** (cliente que paga) | Hito de negocio real |
-| `perfil-completo` | Completás tu **perfil / marca propia** | Cierra el onboarding |
+- Frecuente / progresión → **puntos** (cliente +50, informe +30, cabra…).
+- Rango por clientes → **medalla** (bronce/plata/oro).
+- Especial / colección → **badge** (reseña, referido, tiempo, funciones).
 
-Recomendación: al menos `primer-cliente`, `primer-informe` y `racha` — son los
-tres que más motivan y marcan el recorrido temprano.
+### Referido = badge Comunidad (no días)
+La card **Referido** de la revista ya NO ofrece "+15 días" (era difícil de
+entregar si ya pagaron). Ahora **recomendar a un coach que se suma = badge
+Comunidad**. Falta el sistema de referidos (link + tracking) para otorgarlo solo.
 
 ---
 
