@@ -72,7 +72,16 @@ button{font-family:inherit;cursor:pointer;border:none;background:transparent;col
 input,textarea,select{font-family:inherit;color:inherit;}
 
 /* ═══ Layout shell ═══ */
-.cp-app{display:grid;grid-template-columns:248px 1fr;height:100vh;}
+.cp-app{display:grid;grid-template-columns:248px 1fr;height:100vh;transition:width .22s var(--pw-ease,ease);}
+/* Novedades como columna lateral: al abrirla, el panel se achica y le deja lugar. */
+body.pw-nov-open .cp-app{ width:calc(100% - 360px); }
+body.pw-nov-open #pw-nov-drawer{ display:flex !important; }
+body.pw-nov-open #pw-app-actions{ right:374px; }
+@media(max-width:900px){
+  body.pw-nov-open .cp-app{ width:100%; }
+  #pw-nov-drawer{ width:100vw; }
+  body.pw-nov-open #pw-app-actions{ right:14px; }
+}
 .cp-main{display:flex;flex-direction:column;min-width:0;height:100vh;}
 .cp-scroll{flex:1;overflow-y:auto;padding:56px 36px 88px;}
 .cp-scroll::-webkit-scrollbar{width:8px;}
@@ -1801,6 +1810,11 @@ function viewSidebar(){
     return "<div class='cp-side-nav-wrap'>"+bub+"<button class='cp-side-nav-item "+(_navSec===it[0]?"is-active":"")+((_gStep && it[0]===_gStep.target)?" cp-guide-here":"")+"' data-act='nav:"+it[0]+"' title='"+esc(it[1])+"'>"+
       "<span class='cp-side-nav-icon'>"+svg(IC[it[2]],16,"class='cp-side-nav-icon'")+"</span><span>"+it[1]+"</span></button></div>";
   }).join("");
+  // Novedades: columna lateral (solo admin por ahora). Abre/colapsa la columna.
+  if(RADMIN){
+    nav += "<div class='cp-side-nav-wrap'><button class='cp-side-nav-item' data-act='nov-open' title='Novedades'>"+
+      "<span class='cp-side-nav-icon'>"+svg("M4 22h13a2 2 0 0 0 2-2V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16a2 2 0 0 1-2 2 2 2 0 0 1-2-2V8a1 1 0 0 1 1-1h1M8 7h6M8 11h6M8 15h4",16,"class='cp-side-nav-icon'")+"</span><span>Novedades</span></button></div>";
+  }
   // Barra móvil contextual: si hay un cliente abierto, abajo salen SUS pestañas
   // (con '‹ Clientes' para volver) en vez de las secciones del panel.
   var cliNav="";
@@ -7627,7 +7641,8 @@ function _openDrawer(which){
   var frameId = which==="perfil" ? "pw-perfil-frame" : "pw-nov-frame";
   var base = which==="perfil" ? "perfil-preview.html" : "novedades-preview.html";
   var otherId = which==="perfil" ? "pw-nov-drawer" : "pw-perfil-drawer";
-  try{ var other=document.getElementById(otherId); if(other) other.style.display="none"; }catch(e){}
+  // Cerrar el otro: perfil es overlay (display); novedades es columna (body class).
+  try{ if(otherId==="pw-nov-drawer"){ document.body.classList.remove("pw-nov-open"); } else { var other=document.getElementById(otherId); if(other) other.style.display="none"; } }catch(e){}
   var d=document.getElementById(id); if(!d) return;
   var fr=document.getElementById(frameId);
   var admin=(typeof RADMIN!=="undefined"&&RADMIN)?"&admin=1":"";
@@ -7651,9 +7666,13 @@ function _openDrawer(which){
     var ref=(REAL&&RME&&RME.id)?("&ref="+encodeURIComponent(RME.id)):"";
     fr.setAttribute("src", base+"?embed=1"+admin+ref+_monthRankQ());
   }
-  d.style.display="flex";
+  // Novedades = columna lateral (achica el panel vía body.pw-nov-open).
+  // Perfil = overlay (display).
+  if(which==="nov"){ document.body.classList.add("pw-nov-open"); }
+  else { d.style.display="flex"; }
 }
 function _closeDrawer(which){
+  if(which==="nov"){ document.body.classList.remove("pw-nov-open"); return; }
   var id = which==="perfil" ? "pw-perfil-drawer" : "pw-nov-drawer";
   var d=document.getElementById(id); if(d) d.style.display="none";
 }
@@ -11547,12 +11566,7 @@ if('serviceWorker' in navigator){
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
     <span id="pw-chat-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:#C24545;color:#fff;font-size:10px;font-weight:700;align-items:center;justify-content:center;border:2px solid var(--pw-niebla-2);">0</span>
   </button>
-  <!-- Novedades: pestañita (token) en el borde derecho. Se abre en drawer, se
-       cierra con ✕ y se puede volver a ver cuando quieran desde acá. -->
-  <button id="pw-nov-btn" type="button" data-act="nov-open" aria-label="Novedades" title="Novedades"
-    style="position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:96;background:var(--pw-bosque);border:none;border-radius:13px 0 0 13px;padding:16px 8px;display:flex;align-items:center;justify-content:center;box-shadow:-3px 0 14px rgba(27,67,50,.24);cursor:pointer;font-family:inherit;color:#fff;font-size:12.5px;font-weight:600;letter-spacing:.5px;">
-    <span style="writing-mode:vertical-rl;text-orientation:mixed;">Novedades</span>
-  </button>
+  <!-- Novedades ahora vive como columna lateral del panel (se abre desde el sidebar). -->
   <div id="pw-notif" style="position:relative;">
     <button id="pw-notif-btn" type="button" aria-label="Notificaciones" title="Notificaciones" onclick="pwNotif(event)"
       style="position:relative;background:#fff;border:1px solid rgba(31,42,35,.14);border-radius:50%;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(31,42,35,.10);cursor:pointer;font-family:inherit;color:var(--pw-carbon);">
@@ -11605,11 +11619,11 @@ if('serviceWorker' in navigator){
 </div>
 
 <!-- Drawer Novedades (revista semanal) — nodo estático, iframe carga una sola vez -->
-<div id="pw-nov-drawer" data-act="nov-close" style="display:none;position:fixed;inset:0;background:rgba(27,46,38,.14);justify-content:flex-end;z-index:210;">
-  <div data-act="nov-stop" class="cp-drawer" style="position:relative;width:412px;max-width:96vw;height:100%;background:#FBFAF6;border-left:1px solid var(--pw-border);box-shadow:-16px 0 50px rgba(20,40,30,.16);overflow:hidden;">
-    <button data-act="nov-close" aria-label="Cerrar" title="Cerrar" style="position:absolute;top:12px;right:14px;z-index:3;width:30px;height:30px;border-radius:50%;border:1px solid var(--pw-border);background:rgba(255,255,255,.92);cursor:pointer;color:var(--pw-text-muted);font-size:13px;line-height:1;box-shadow:0 2px 8px rgba(20,40,30,.10);">✕</button>
-    <iframe id="pw-nov-frame" title="Novedades" style="width:100%;height:100%;border:none;background:transparent;display:block;"></iframe>
-  </div>
+<!-- Novedades: COLUMNA fija a la derecha que achica el contenido (como Multinicho),
+     no un overlay. Se colapsa con ›; se reabre desde el ítem del sidebar. -->
+<div id="pw-nov-drawer" style="display:none;position:fixed;top:0;right:0;bottom:0;width:360px;max-width:100vw;z-index:80;background:#FBFAF6;border-left:1px solid var(--pw-border);box-shadow:-8px 0 28px rgba(20,40,30,.07);flex-direction:column;">
+  <button data-act="nov-close" aria-label="Colapsar Novedades" title="Colapsar" style="position:absolute;top:12px;right:12px;z-index:3;width:28px;height:28px;border-radius:8px;border:1px solid var(--pw-border);background:rgba(255,255,255,.95);cursor:pointer;color:var(--pw-text-muted);font-size:16px;line-height:1;box-shadow:0 2px 8px rgba(20,40,30,.08);">›</button>
+  <iframe id="pw-nov-frame" title="Novedades" style="flex:1;width:100%;border:none;background:transparent;display:block;"></iframe>
 </div>
 <!-- Drawer Perfil (puntos, medallas, badges) — nodo estático -->
 <div id="pw-perfil-drawer" data-act="perfil-close" style="display:none;position:fixed;inset:0;background:rgba(27,46,38,.14);justify-content:flex-end;z-index:210;">
