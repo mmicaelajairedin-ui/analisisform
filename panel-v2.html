@@ -7333,6 +7333,32 @@ document.addEventListener("click", function(ev){
 // El badge se asienta cuando los datos terminan de cargar (por si el último
 // render corrió antes de que llegaran).
 window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} },t); }); });
+
+// ═══ Drawers laterales: Novedades (revista semanal) + Perfil (puntos/medallas/badges) ═══
+// Se embeben las páginas ya aprobadas (novedades-preview.html / perfil-preview.html)
+// vía iframe: lo que ve la coach es idéntico al diseño aprobado, sin riesgo de
+// colisión de estilos con el panel. Admin (RADMIN) ve las 8 semanas + selector;
+// el resto ve solo la semana que rota ese lunes.
+// Los drawers son nodos ESTÁTICos (fuera de #root) que se muestran/ocultan con
+// display; así render() nunca recrea el iframe y la revista carga una sola vez.
+function _openDrawer(which){
+  var id = which==="perfil" ? "pw-perfil-drawer" : "pw-nov-drawer";
+  var frameId = which==="perfil" ? "pw-perfil-frame" : "pw-nov-frame";
+  var base = which==="perfil" ? "perfil-preview.html" : "novedades-preview.html";
+  var otherId = which==="perfil" ? "pw-nov-drawer" : "pw-perfil-drawer";
+  try{ var other=document.getElementById(otherId); if(other) other.style.display="none"; }catch(e){}
+  var d=document.getElementById(id); if(!d) return;
+  var fr=document.getElementById(frameId);
+  if(fr && !fr.getAttribute("src")){ fr.setAttribute("src", base+"?embed=1"+((typeof RADMIN!=="undefined"&&RADMIN)?"&admin=1":"")); }
+  d.style.display="flex";
+}
+function _closeDrawer(which){
+  var id = which==="perfil" ? "pw-perfil-drawer" : "pw-nov-drawer";
+  var d=document.getElementById(id); if(d) d.style.display="none";
+}
+// El botón ✕ interno de las páginas embebidas avisa por postMessage para cerrar el drawer.
+window.addEventListener("message",function(ev){ if(ev&&ev.data==="pw-close-drawer"){ _closeDrawer("nov"); _closeDrawer("perfil"); } });
+
 function render(){
   try{
     // Marca <html> con pw-v2 cuando la ficha v2 esta activa (admin/Micaela + flag).
@@ -9468,6 +9494,11 @@ document.addEventListener("click", function(ev){
   }
   if(act==="juego-open"){ openJuego(); return; }
   if(act==="juego-close"){ closeJuego(); return; }
+  if(act==="nov-open"){ _openDrawer("nov"); return; }
+  if(act==="nov-close"){ _closeDrawer("nov"); return; }
+  if(act==="perfil-open"){ _openDrawer("perfil"); return; }
+  if(act==="perfil-close"){ _closeDrawer("perfil"); return; }
+  if(act==="nov-stop"||act==="perfil-stop"){ return; }
   if(act==="wgoal-add"){ var _wi=document.getElementById("wgoal-input"); var _wv=_wi?(""+_wi.value).trim():""; if(!_wv) return; var _wa=_wgoals(); _wa.push({t:_wv,done:false}); _wgoalsSave(_wa); render(); return; }
   if(act.indexOf("wgoal-toggle:")===0){ var _wt=parseInt(act.slice(13),10); var _wb=_wgoals(); if(_wb[_wt]){ _wb[_wt].done=!_wb[_wt].done; _wgoalsSave(_wb); render(); } return; }
   if(act.indexOf("wgoal-del:")===0){ var _wd2=parseInt(act.slice(10),10); var _wc=_wgoals(); if(_wd2>=0&&_wd2<_wc.length){ _wc.splice(_wd2,1); _wgoalsSave(_wc); render(); } return; }
@@ -10795,6 +10826,11 @@ if('serviceWorker' in navigator){
     <span id="pw-chat-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:#C24545;color:#fff;font-size:10px;font-weight:700;align-items:center;justify-content:center;border:2px solid var(--pw-niebla-2);">0</span>
   </button>
   <!-- Notificaciones -->
+  <button id="pw-nov-btn" type="button" data-act="nov-open" aria-label="Novedades" title="Novedades"
+    style="position:relative;background:#fff;border:1px solid rgba(31,42,35,.14);border-radius:50%;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(31,42,35,.10);cursor:pointer;font-family:inherit;color:var(--pw-carbon);">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.3L18 9l-4.1 1.7L12 15l-1.9-4.3L6 9l4.1-1.7L12 3z"/><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"/></svg>
+    <span id="pw-nov-dot" style="position:absolute;top:-2px;right:-2px;width:9px;height:9px;border-radius:50%;background:#52B788;border:2px solid var(--pw-niebla-2);"></span>
+  </button>
   <div id="pw-notif" style="position:relative;">
     <button id="pw-notif-btn" type="button" aria-label="Notificaciones" title="Notificaciones" onclick="pwNotif(event)"
       style="position:relative;background:#fff;border:1px solid rgba(31,42,35,.14);border-radius:50%;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(31,42,35,.10);cursor:pointer;font-family:inherit;color:var(--pw-carbon);">
@@ -10820,6 +10856,7 @@ if('serviceWorker' in navigator){
     <div id="pw-usermenu-panel" role="menu" style="display:none;position:absolute;top:48px;right:0;width:230px;background:#fff;border:1px solid var(--pw-border);border-radius:14px;box-shadow:0 14px 38px rgba(31,42,35,.20);overflow:hidden;z-index:200;">
       <div style="padding:6px;">
         <button class="pw-um-item" data-act="asist-go" data-go="config|profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Perfil</button>
+        <button class="pw-um-item" data-act="perfil-open" onclick="try{document.getElementById('pw-usermenu-panel').style.display='none';}catch(e){}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 8.5 22 9.3 17 14 18.3 21 12 17.5 5.7 21 7 14 2 9.3 9 8.5 12 2"/></svg>Puntos y logros</button>
         <button class="pw-um-item" data-act="asist-go" data-go="config|recursos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Recursos</button>
         <button class="pw-um-item" data-act="asist-go" data-go="config|brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.688-1.687h1.996c3.094 0 5.543-2.55 5.543-5.65C22 6.5 17.5 2 12 2z"/></svg>Marca propia</button>
         <button class="pw-um-item" data-act="asist-go" data-go="config|pathway"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Clientes de Pathway</button>
@@ -10842,6 +10879,21 @@ if('serviceWorker' in navigator){
       <a href="/instalar.html" target="_blank" rel="noopener" style="color:var(--pw-bosque);font-size:11.5px;text-decoration:underline;font-weight:500;">Guía</a>
       <button id="pw-install-x" aria-label="Cerrar" style="background:none;border:none;color:#888;font-size:18px;cursor:pointer;padding:0 6px 0 2px;line-height:1;">×</button>
     </div>
+  </div>
+</div>
+
+<!-- Drawer Novedades (revista semanal) — nodo estático, iframe carga una sola vez -->
+<div id="pw-nov-drawer" data-act="nov-close" style="display:none;position:fixed;inset:0;background:rgba(27,46,38,.14);justify-content:flex-end;z-index:210;">
+  <div data-act="nov-stop" class="cp-drawer" style="position:relative;width:412px;max-width:96vw;height:100%;background:#FBFAF6;border-left:1px solid var(--pw-border);box-shadow:-16px 0 50px rgba(20,40,30,.16);overflow:hidden;">
+    <button data-act="nov-close" aria-label="Cerrar" title="Cerrar" style="position:absolute;top:12px;right:14px;z-index:3;width:30px;height:30px;border-radius:50%;border:1px solid var(--pw-border);background:rgba(255,255,255,.92);cursor:pointer;color:var(--pw-text-muted);font-size:13px;line-height:1;box-shadow:0 2px 8px rgba(20,40,30,.10);">✕</button>
+    <iframe id="pw-nov-frame" title="Novedades" style="width:100%;height:100%;border:none;background:transparent;display:block;"></iframe>
+  </div>
+</div>
+<!-- Drawer Perfil (puntos, medallas, badges) — nodo estático -->
+<div id="pw-perfil-drawer" data-act="perfil-close" style="display:none;position:fixed;inset:0;background:rgba(27,46,38,.14);justify-content:flex-end;z-index:210;">
+  <div data-act="perfil-stop" class="cp-drawer" style="position:relative;width:412px;max-width:96vw;height:100%;background:#F8F5EF;border-left:1px solid var(--pw-border);box-shadow:-16px 0 50px rgba(20,40,30,.16);overflow:hidden;">
+    <button data-act="perfil-close" aria-label="Cerrar" title="Cerrar" style="position:absolute;top:12px;right:14px;z-index:3;width:30px;height:30px;border-radius:50%;border:1px solid var(--pw-border);background:rgba(255,255,255,.92);cursor:pointer;color:var(--pw-text-muted);font-size:13px;line-height:1;box-shadow:0 2px 8px rgba(20,40,30,.10);">✕</button>
+    <iframe id="pw-perfil-frame" title="Mi perfil" style="width:100%;height:100%;border:none;background:transparent;display:block;"></iframe>
   </div>
 </div>
 <script>
