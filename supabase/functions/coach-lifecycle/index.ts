@@ -38,9 +38,14 @@ const DAY = 24 * 60 * 60 * 1000;
 // cuenta (match por email), sin crear una cuenta nueva ni pedirle datos de vuelta.
 const STRIPE_BASIC = "https://buy.stripe.com/00waEX3Qke8gczqge78AE0d"; // $29/mes
 const STRIPE_PRO = "https://buy.stripe.com/eVq5kD86Ae8geHy1jd8AE0e"; // $59/mes
-// Link de renovación al plan que ya tenía el coach, con su email precargado.
-function renewUrl(plan, email) {
-  const base = plan === "pro" ? STRIPE_PRO : STRIPE_BASIC;
+const STRIPE_BASIC_ANUAL = "https://buy.stripe.com/8x2dR9fz25BK42Ud1V8AE0f"; // $261/año
+const STRIPE_PRO_ANUAL = "https://buy.stripe.com/6oU00j2Mg7JS1UM5zt8AE0g"; // $531/año
+// Link de renovación al plan+facturación que ya tenía el coach, con su email precargado.
+function renewUrl(plan, email, billing) {
+  const anual = billing === "anual";
+  const base = plan === "pro"
+    ? (anual ? STRIPE_PRO_ANUAL : STRIPE_PRO)
+    : (anual ? STRIPE_BASIC_ANUAL : STRIPE_BASIC);
   return base + "?prefilled_email=" + encodeURIComponent(String(email || ""));
 }
 // Arranque del onboarding: SOLO coaches registrados desde esta fecha reciben la
@@ -110,12 +115,17 @@ const RESENA_REACTIV_HTML = "<table cellpadding=\"0\" cellspacing=\"0\" border=\
 // DIRECTO al Stripe del plan que ya tenía, con su email precargado: paga en 1 clic
 // y reactiva la MISMA cuenta (el webhook matchea por email). El texto deja claro
 // que es una renovación de su cuenta, no un alta nueva.
-function trialEmail(kind, primer, plan, email) {
-  // Botón principal = SU plan (Basic sigue en Basic, Pro sigue en Pro). Si está
-  // en Basic, además un link secundario para pasar a Pro (upsell, nunca downsell).
-  const payUrl = renewUrl(plan, email);
+function trialEmail(kind, primer, plan, email, billing) {
+  // Botón principal = SU plan+facturación (Basic sigue en Basic, mensual sigue
+  // mensual). Si está en Basic, además un link secundario para pasar a Pro
+  // (upsell, nunca downsell) respetando su misma facturación.
+  const anual = billing === "anual";
+  const payUrl = renewUrl(plan, email, billing);
   const planNom = plan === "pro" ? "Pro" : "Basic";
-  const precio = plan === "pro" ? "USD $59/mes" : "USD $29/mes";
+  const precio = plan === "pro"
+    ? (anual ? "USD $531/año" : "USD $59/mes")
+    : (anual ? "USD $261/año" : "USD $29/mes");
+  const precioPro = anual ? "USD $531/año" : "USD $59/mes";
   // Precio en una línea sutil BAJO el botón (no adentro del botón).
   const planTag =
     `<p style="font-family:Arial,sans-serif;font-size:12.5px;color:#8A9A91;text-align:center;margin:12px 0 0;">Tu plan <strong style="color:#5A6A60;">${planNom}</strong> &middot; ${precio} &middot; cancelás cuando quieras</p>`;
@@ -127,7 +137,7 @@ function trialEmail(kind, primer, plan, email) {
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:26px 0 0;background:#F3F8F5;border:1px solid #DCEBE1;border-radius:12px;"><tr><td style="padding:18px 20px;">
 <div style="font-family:Georgia,serif;font-size:15px;color:#1B4332;font-weight:700;margin-bottom:10px;text-align:center;">¿Querés vender más? Pasá a Pro</div>
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">${proBenefit("Clientes ilimitados", "(Basic: hasta 5)")}${proBenefit("White-label: tu logo y colores en el portal")}${proBenefit("Envío de emails al cliente desde el panel")}${proBenefit("Soporte prioritario por WhatsApp")}</table>
-<div style="text-align:center;margin-top:16px;"><a href="${renewUrl("pro", email)}" style="display:inline-block;padding:10px 24px;background:#ffffff;border:1.5px solid #2D6A4F;color:#2D6A4F;border-radius:9px;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:700;">Pasar a Pro &middot; USD $59/mes &rarr;</a></div>
+<div style="text-align:center;margin-top:16px;"><a href="${renewUrl("pro", email, billing)}" style="display:inline-block;padding:10px 24px;background:#ffffff;border:1.5px solid #2D6A4F;color:#2D6A4F;border-radius:9px;text-decoration:none;font-family:Arial,sans-serif;font-size:14px;font-weight:700;">Pasar a Pro &middot; ${precioPro} &rarr;</a></div>
 </td></tr></table>`
     : "";
   const intactos = "tus clientes, informes y toda tu configuración siguen intactos — <strong>no empezás de cero</strong>";
@@ -251,6 +261,7 @@ Deno.serve(async (req) => {
         const estadoSub = String(cfg.estado_sub || "");
         const isPaying = estadoSub === "activa";
         const plan = String(cfg.plan || "") === "pro" ? "pro" : "basic";
+        const billing = String(cfg.billing || "") === "anual" ? "anual" : "mensual";
         const altaTs = u.created_at ? +new Date(u.created_at) : 0;
         const seenRaw = cfg.last_login || u.last_seen || u.created_at || "";
         const seenTs = seenRaw ? +new Date(seenRaw) : 0;
@@ -308,7 +319,7 @@ Deno.serve(async (req) => {
 
         let subject, html, push;
         if (trialKind) {
-          const t = trialEmail(trialKind, primer, plan, email);
+          const t = trialEmail(trialKind, primer, plan, email, billing);
           subject = t.subject; html = t.html; push = t.push;
         } else if (onbStep) {
           subject = fillOnb(onbStep.subject, primer, String(u.id));

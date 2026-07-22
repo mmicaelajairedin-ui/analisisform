@@ -27,6 +27,21 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: las notificaciones se descartan al clickear (no siguen apareciendo)",
+    bug: "Las notificaciones se derivan de pendientes y no se marcaban como vistas → " +
+         "seguían apareciendo aunque la coach ya las hubiera atendido. Ahora _pwNotifData " +
+         "filtra las descartadas (_notifDismissed) y pwNotif registra el descarte al click.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/_notifDismissed\(\)[\s\S]{0,160}out\.filter/.test(s))
+        return "panel-v2.html: _pwNotifData ya no filtra las notificaciones descartadas → vuelven a aparecer.";
+      if (!/_notifDismiss\(\s*b\.getAttribute/.test(s))
+        return "panel-v2.html: pwNotif ya no registra el descarte al clickear una notificación.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: reseña del coach — no se pide de nuevo si ya la dejó (flag server)",
     bug: "El modal de reseña se marcaba 'ya reseñó' SOLO en localStorage (por " +
          "dispositivo) → el mismo coach entraba desde otra compu / limpiaba caché " +
@@ -1565,6 +1580,23 @@ const RULES = [
     },
   },
   {
+    name: "plan: un coach con suscripción ACTIVA cambia de plan por el portal de Stripe (no doble cobro)",
+    bug: "El selector de plan del panel deja pagar/cambiar sin salir de Pathway. Para un coach " +
+         "en prueba/vencido el CTA abre un Payment Link (checkout nuevo). Pero para un coach que " +
+         "YA paga (estado_sub='activa'), abrir un Payment Link crearía una SEGUNDA suscripción → " +
+         "doble cobro. El cambio de plan de un activo DEBE ir al portal de Stripe (STRIPE_PORTAL), " +
+         "que hace el cambio con prorrateo sobre la MISMA suscripción.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/var isActive=\(est==="activa"\)/.test(p)) return null; // feature no presente
+      // El CTA "Cambiar a ..." (coach que YA paga) debe apuntar a STRIPE_PORTAL, no a un
+      // Payment Link nuevo (crearía una 2da suscripción → doble cobro).
+      if (!/esc\(STRIPE_PORTAL\)\+"'>Cambiar a /.test(p)) return "panel-v2.html: el CTA 'Cambiar a…' de un coach con suscripción ACTIVA ya no usa STRIPE_PORTAL → si vuelve a un Payment Link (stripeSubUrl) se crea una 2da suscripción y hay doble cobro.";
+      return null;
+    },
+  },
+  {
     name: "admin: crear coach pasa por la edge function crear-coach (RLS no lo bloquea)",
     bug: "El botón 'Dar acceso a un coach' hacía un POST directo a usuarios con rol='coach' " +
          "desde el navegador. Con RLS estricto en usuarios (usuarios_hardening.sql), la anon " +
@@ -1664,6 +1696,36 @@ const RULES = [
       if (!mig || !/CREATE TABLE IF NOT EXISTS mensajes_owner_coach/.test(mig)) return "falta la migración mensajes_owner_coach.sql.";
       const wf = read(".github/workflows/deploy-functions.yml");
       if (wf && !/functions deploy mensaje-red/.test(wf)) return "deploy-functions.yml: falta desplegar mensaje-red.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: el coach le RESPONDE al dueño desde su panel (mensaje-red)",
+    bug: "El chat dueño↔coach quedaba a medias: el dueño escribía desde multicoach.html " +
+         "pero el coach no veía ni podía contestar desde su panel (panel-v2.html). Ahora, " +
+         "si el coach pertenece a una red (usuarios.org_id), su bandeja de chat (dentro de " +
+         "la cabra) suma un hilo 'Dueño de tu red' — igual que 'Soporte Pathway' — que lee " +
+         "y envía por la MISMA edge function mensaje-red (el coach usa su propio id como " +
+         "coach_id; el backend lo valida con isSelf). Sin sesión real degrada con un aviso, " +
+         "no rompe. Ver docs/multicoach-modelo.md.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      // El coach carga su org_id (para saber si está en una red).
+      if (!/perfil_publico_activo,org_id/.test(p))
+        return "panel-v2.html: la carga del coach ya no trae org_id (no sabría si está en una red).";
+      // Helpers del hilo con el dueño.
+      if (!/function _loadRedThread\(/.test(p) || !/function _coachRedBubbles\(/.test(p))
+        return "panel-v2.html: falta el chat con el dueño de la red (_loadRedThread/_coachRedBubbles).";
+      // Debe ir por la edge function mensaje-red (no un PATCH directo).
+      if (!/functions\/v1\/mensaje-red/.test(p))
+        return "panel-v2.html: el chat con la red ya no usa la edge function mensaje-red.";
+      // La bandeja suma la fila 'red' solo para coaches en una org.
+      if (!/data-thread='red'|aiCoachThread==="red"|key:"red"/.test(p))
+        return "panel-v2.html: la bandeja ya no ofrece el hilo con el dueño de la red.";
+      // El envío usa el PROPIO id del coach como coach_id (isSelf en el backend).
+      if (!/action:"send",coach_id:RME\.id/.test(p))
+        return "panel-v2.html: el coach ya no envía con su propio id (mensaje-red isSelf).";
       return null;
     },
   },
