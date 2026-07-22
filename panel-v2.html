@@ -6316,7 +6316,7 @@ function viewIAPathway(){
 function _iaChatScrollDown(){ try{ requestAnimationFrame(function(){ var s=document.getElementById("cp-iac-scroll"); if(s) s.scrollTop=s.scrollHeight; var i=document.getElementById("iac-input"); if(i && state.iaChat && state.iaChat.open && !state.iaChat.busy) i.focus(); }); }catch(e){} }
 
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
-function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,xp,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
+function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
 // Redes (multicoaches) para la gestión desde el admin (transferir dueño).
 function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
 // Email de acceso al coach. isNew=true → coach recién creado por el admin:
@@ -6603,7 +6603,7 @@ function _coachChatBlock(c){
 // de usuarios (cada coach escribe su fila; ver _gameSyncServer + migración).
 function _adminRanking(){
   var meds=["","bronce","plata","oro"];
-  var _tot=function(c){ return (c.game_pts||0)+(c.xp||0); };   // puntos totales (juego + acciones)
+  var _tot=function(c){ return (c.game_pts||0)+(c.xp||0); };   // total (juego + acciones si existe xp)
   var rows=(RCOACHES||[]).slice().sort(function(a,b){ return _tot(b)-_tot(a); });
   if(!rows.length) return "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-text-soft);font-size:13px;padding:30px'>Todavía no hay puntajes. Cuando los coaches jueguen, aparecen aquí.</div></div>";
   var head="<div style='display:grid;grid-template-columns:32px 38px 1fr auto auto;gap:12px;padding:8px 14px;border-bottom:1px solid var(--pw-border);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-muted)'><span style='text-align:center'>#</span><span></span><span>Coach</span><span>Medalla</span><span>Puntos</span></div>";
@@ -6620,7 +6620,7 @@ function _adminRanking(){
       "<span style='font-family:var(--pw-serif);font-size:16px;font-weight:700;color:var(--pw-bosque)'>"+pts+"</span>"+
     "</div>";
   }).join("");
-  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🏆</span> Ranking de coaches<span class='dot'>.</span></h3><span class='cp-eyebrow'>Por puntos totales</span></div>"+head+list+"</div>";
+  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🏆</span> Ranking de coaches<span class='dot'>.</span></h3><span class='cp-eyebrow'>Por puntos del juego</span></div>"+head+list+"</div>";
 }
 // Pestaña Novedades del admin: inscripciones al sorteo + sugerencias/ideas/encuesta
 // que llegan de la revista (tabla revista_feedback).
@@ -7672,10 +7672,19 @@ function _openDrawer(which){
     if(fr) fr.setAttribute("src", base+"?embed=1"+admin+"&badges="+encodeURIComponent(earned)+"&pts="+encodeURIComponent(pts)+"&clients="+encodeURIComponent(clients)+"&photo="+encodeURIComponent(photo)+"&name="+encodeURIComponent(nm)+extraP+_weekRankQ());
   } else if(fr && !fr.getAttribute("src")){
     var ref=(REAL&&RME&&RME.id)?("&ref="+encodeURIComponent(RME.id)):"";
-    // Cada coach ve la edición de SU propia semana: semana 1 → edición 1, y así.
-    // edN = semanas completas desde el alta (0-based); la revista hace loop de 8.
+    // Qué edición ve cada coach: semanas desde su "arranque", y su arranque es el
+    // MÁS RECIENTE entre el lanzamiento (lunes 2026-07-20) y su alta. Así:
+    //  · los coaches actuales arrancan TODOS en la edición 1 esta semana y avanzan
+    //    juntos cada lunes;
+    //  · los que se dan de alta más adelante empiezan en SU semana 1 (desde su alta).
+    // La revista hace loop de 8.
     var edN=0;
-    try{ if(RME&&RME.created_at){ var _c=new Date(RME.created_at).getTime(); if(!isNaN(_c)){ edN=Math.floor(((new Date()).getTime()-_c)/604800000); if(edN<0) edN=0; } } }catch(e){}
+    try{
+      var _L=Date.UTC(2026,6,20);
+      var _c=(RME&&RME.created_at)?new Date(RME.created_at).getTime():0; if(isNaN(_c)) _c=0;
+      var _anchor=Math.max(_L,_c);
+      edN=Math.floor(((new Date()).getTime()-_anchor)/604800000); if(edN<0) edN=0;
+    }catch(e){}
     fr.setAttribute("src", base+"?embed=1&ed="+edN+ref+_monthRankQ());
   }
   // Novedades = columna lateral (achica el panel vía body.pw-nov-open).
@@ -7912,6 +7921,7 @@ window.addEventListener("message",function(ev){
     }catch(e){}
     return;
   }
+  if(d.pw==="novclose"){ _closeDrawer("nov"); return; }
   if(d.pw==="review"){ _closeDrawer("nov"); try{ state.review={open:true,rating:0,sent:false,high:false}; render(); }catch(e){} return; }
   if(d.pw==="juego"){ _closeDrawer("nov"); try{ openJuego(); }catch(e){} return; }
   if(d.pw==="calcfg"){ _closeDrawer("nov"); try{ state.section="config"; state.cfg="profile"; render(); window.scrollTo(0,0); }catch(e){} return; }
@@ -11160,7 +11170,7 @@ function loadReal(){
   // sin asignar se manejan por adopción al invitar (por email), no mezclados acá.
   var cf = "select=*&coach_id=eq."+encodeURIComponent(ME.id);
   var extra = ME.rol==="admin"
-    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,xp,auth_id&order=created_at.desc"),
+    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id&order=created_at.desc"),
         _sb("contactos_chat?select=contacto,pagina,fecha,origen&pagina=neq.resena-cvexpress&order=fecha.desc&limit=30"),
         _sb("candidatos?select=id,created_at,coach_id,email,resena,nombre,nicho,activo,semana_activa"),
         _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
@@ -11642,9 +11652,10 @@ if('serviceWorker' in navigator){
 <!-- Novedades: COLUMNA fija a la derecha que achica el contenido (como Multinicho),
      no un overlay. Se colapsa con ›; se reabre desde el ítem del sidebar. -->
 <div id="pw-nov-drawer" style="display:none;position:fixed;top:0;right:0;bottom:0;width:360px;max-width:100vw;z-index:80;background:#FBFAF6;border-left:1px solid var(--pw-border);box-shadow:-8px 0 28px rgba(20,40,30,.07);flex-direction:column;padding-top:60px;">
-  <!-- El botón de colapsar va a la IZQUIERDA: la barra superior (IA/chat/notif/
-       cuenta) vive arriba a la derecha y taparía un botón puesto a la derecha. -->
-  <button data-act="nov-close" aria-label="Colapsar Novedades" title="Colapsar" style="position:absolute;top:16px;left:12px;z-index:3;width:30px;height:30px;border-radius:9px;border:1px solid var(--pw-border);background:rgba(255,255,255,.95);cursor:pointer;color:var(--pw-text-muted);font-size:17px;line-height:1;box-shadow:0 2px 8px rgba(20,40,30,.08);">›</button>
+  <!-- Cerrar la columna: lo hace el ✕ del propio header de Novedades (dentro del
+       iframe), que avisa por postMessage {pw:'novclose'}. Así queda al lado del
+       título y nada de la barra superior lo tapa. El padding-top baja el header
+       para que la barra (IA/chat/notif/cuenta) no lo solape. -->
   <iframe id="pw-nov-frame" title="Novedades" style="flex:1;width:100%;border:none;background:transparent;display:block;"></iframe>
 </div>
 <!-- Drawer Perfil (puntos, medallas, badges) — nodo estático -->
