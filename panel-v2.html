@@ -7194,6 +7194,10 @@ function _syncChatBtn(){
 function _reviewKeys(){ var id=(REAL&&RME&&(RME.id||RME.email))||"x"; return { v:"pw_visits_"+id, r:"pw_review_"+id }; }
 function _maybeReviewPrompt(){
   if(!REAL || !RME) return;
+  // Ya dejó reseña (flag en el server = cross-device): no volver a pedirla
+  // aunque entre desde otra compu o haya limpiado el localStorage. Antes solo
+  // miraba localStorage → un mismo coach dejaba varias reseñas.
+  if(RCFG && RCFG.review_done) return;
   if(state.review && state.review.open) return;
   var k=_reviewKeys();
   var n=(parseInt(localStorage.getItem(k.v)||"0",10)||0)+1;
@@ -8062,6 +8066,10 @@ document.addEventListener("click", function(ev){
     // hasta que la modere; testimonios.js solo muestra publica=true en la landing.
     _sbw("reviews","POST",{ nombre:(COACH&&COACH.name)||(RME&&RME.nombre)||null, rating:_rrat, texto:_rcom||null, fuente:"coach-panel" }).catch(function(){});
     try{ localStorage.setItem(_reviewKeys().r,"done"); }catch(e){}
+    // Persistir el flag en el server (cross-device): así NO se le vuelve a pedir
+    // aunque entre desde otra compu o limpie caché. Antes solo se guardaba local.
+    RCFG=RCFG||{}; RCFG.review_done=true;
+    if(REAL&&RME&&RME.id){ var _rvm={}; for(var _rvk in RCFG){ if(RCFG.hasOwnProperty(_rvk)) _rvm[_rvk]=RCFG[_rvk]; } _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:_rvm}).catch(function(){}); }
     state.review.sent=true; state.review.high=(_rrat>=4); render(); return;
   }
   if(act==="review-share"){

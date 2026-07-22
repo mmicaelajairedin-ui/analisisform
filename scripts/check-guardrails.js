@@ -27,6 +27,23 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: reseña del coach — no se pide de nuevo si ya la dejó (flag server)",
+    bug: "El modal de reseña se marcaba 'ya reseñó' SOLO en localStorage (por " +
+         "dispositivo) → el mismo coach entraba desde otra compu / limpiaba caché " +
+         "y le volvía a salir, dejando reseñas duplicadas. Debe: (1) _maybeReviewPrompt " +
+         "cortar si RCFG.review_done, y (2) el handler review-send persistir " +
+         "review_done en configuracion (server).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/_maybeReviewPrompt[\s\S]{0,500}RCFG\s*&&\s*RCFG\.review_done/.test(s))
+        return "panel-v2.html: _maybeReviewPrompt ya no corta con RCFG.review_done → volvería a pedir reseña cross-device.";
+      if (!/review-send[\s\S]{0,600}RCFG\.review_done\s*=\s*true[\s\S]{0,300}configuracion/.test(s))
+        return "panel-v2.html: el handler review-send ya no persiste review_done al server → reseñas duplicadas.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: los helpers de fetch (_sb/_sbw) no se re-declaran como local",
     bug: "Un `var _sb` local (el buffer de la agenda, ag-save-disp) TAPABA la " +
          "función global _sb() en todo el scope del dispatcher de acciones → " +
