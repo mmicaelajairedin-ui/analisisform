@@ -3294,9 +3294,36 @@ function _infShowOverlay(titulo, d){
 function _prepFirst(s,max){ s=(""+(s||"")).replace(/\s+/g," ").trim(); if(!s) return ""; var m=s.match(/^[^.!?]{8,}[.!?]/); var t=m?m[0]:s; return t.length>(max||150)?t.slice(0,(max||150)).replace(/\s+\S*$/,"")+"…":t; }
 function _prepSesionInsights(c){
   var out=[], d=(c&&c.inf&&c.inf.d)||{}, ses=(c&&c.ses)||[], raw=(c&&c.raw)||{};
+  var nicho=_cliNicho(c);
   // Su meta: el objetivo del cliente (contexto rápido, para no arrancar de cero).
-  var meta=(""+(raw.objetivo||d.objetivo||raw.situacion||"")).trim();
+  // Fallbacks por nicho: finanzas suele traerlo en cargo/objetivo_ahorro.
+  var meta=(""+(raw.objetivo||d.objetivo||raw.situacion||raw.objetivo_ahorro||raw.cargo||(c&&c.role)||"")).trim();
   if(meta) out.push({tag:"Su meta", text:_prepFirst(meta,170)});
+  // Datos propios del nicho que el análisis genérico no captura: en fitness la
+  // última medición + progreso; en finanzas el avance del objetivo + la deuda.
+  if(nicho==="fitness"){
+    var ant=[]; try{ ant=JSON.parse(raw.fit_antro||"[]")||[]; }catch(e){ ant=[]; }
+    if(ant.length){
+      var aN=ant[ant.length-1]||{}, a0=ant[0]||{}, parts=[];
+      var pN=parseFloat(aN.peso), gN=parseFloat(aN.grasa);
+      if(!isNaN(pN)) parts.push(pN+" kg");
+      if(!isNaN(gN)) parts.push(gN+"% grasa");
+      var p0=parseFloat(a0.peso), delta="";
+      if(ant.length>1 && !isNaN(p0) && !isNaN(pN)){ var dd=Math.round((pN-p0)*10)/10; if(Math.abs(dd)>=0.1) delta=" · "+(dd<0?"bajó ":"subió ")+Math.abs(dd)+" kg desde el inicio"; }
+      if(parts.length) out.push({tag:"Su avance", text:"Última medición "+(aN.fecha?"("+aN.fecha+") ":"")+parts.join(" · ")+delta});
+    }
+  } else if(nicho==="financiero"){
+    var objs=[]; try{ objs=JSON.parse(raw.fin_objetivos||"[]")||[]; }catch(e){ objs=[]; }
+    if(objs.length){
+      var o=objs[0]||{}, mA=parseFloat(o.actual), mM=parseFloat(o.meta), txt="Meta: "+(o.nombre||"su ahorro");
+      if(!isNaN(mA)&&!isNaN(mM)&&mM>0) txt+=" — €"+Math.round(mA)+"/€"+Math.round(mM)+" ("+Math.round(mA/mM*100)+"%)";
+      if(o.aporte) txt+=" · aporta €"+o.aporte+"/mes";
+      out.push({tag:"Su avance", text:txt});
+    }
+    var deu=[]; try{ deu=JSON.parse(raw.fin_deudas||"[]")||[]; }catch(e){ deu=[]; }
+    var dtot=deu.reduce(function(s,x){ var m=parseFloat(x&&x.monto); return s+(isNaN(m)?0:m); },0);
+    if(dtot>0) out.push({tag:"Deuda", text:(deu.length===1?("Pendiente: "+((deu[0].nombre)||"deuda")+" €"+Math.round(dtot)+(deu[0].estado?" ("+deu[0].estado+")":"")):(deu.length+" deudas · €"+Math.round(dtot)+" en total"))});
+  }
   // Retomá: última sesión pasada → tareas pendientes o lo acordado.
   var past=ses.filter(function(s){ if(!s||!s.fecha) return false; var t=new Date(s.fecha+(s.hora?"T"+s.hora:"T23:59")); return !isNaN(t)&&t.getTime()<Date.now(); }).sort(function(a,b){ return (""+(b.fecha||"")).localeCompare(""+(a.fecha||"")); });
   var last=past[0];
@@ -3321,7 +3348,7 @@ function _prepSesionInsights(c){
 function _prepSesionHtml(c){
   var ins=_prepSesionInsights(c);
   if(!ins.length) return "<div style='margin-top:11px;background:var(--pw-niebla-2);border-radius:12px;padding:13px 15px;font-size:12.5px;color:var(--pw-text-soft);line-height:1.5'>Genera el <strong>Análisis</strong> del cliente (y registra alguna sesión) y aquí te armo la preparación con eso.</div>";
-  var tagCol={"Su meta":"var(--pw-bosque-dark)","Retomá":"var(--pw-bosque)","Foco de hoy":"#8a6d1e","Ojo":"var(--pw-danger)","Aprovechá":"var(--pw-bosque)"};
+  var tagCol={"Su meta":"var(--pw-bosque-dark)","Su avance":"var(--pw-bosque-dark)","Retomá":"var(--pw-bosque)","Foco de hoy":"#8a6d1e","Ojo":"var(--pw-danger)","Deuda":"var(--pw-danger)","Aprovechá":"var(--pw-bosque)"};
   var fn=(""+((c&&c.name)||"")).split(" ")[0]||"tu cliente";
   return "<div style='margin-top:11px;background:var(--pw-success-bg);border:1px solid var(--pw-border);border-radius:12px;padding:13px 15px'>"+
     "<div style='font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--pw-bosque);margin-bottom:9px'><svg width='13' height='13' viewBox='0 0 24 24' fill='#E9C46A' style='display:inline-block;vertical-align:-1px' aria-hidden='true'><path d='M12 2l1.7 5.1L18.8 8.8l-4.9 1.7L12 15.6l-1.9-5.1L5.2 8.8l4.9-1.7z'/><path d='M18.6 14l.7 2.2 2.2.7-2.2.7-.7 2.2-.7-2.2-2.2-.7 2.2-.7z'/><path d='M5.3 15.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z'/></svg> IA Pathway · con lo que ya sabemos de "+esc(fn)+"</div>"+
