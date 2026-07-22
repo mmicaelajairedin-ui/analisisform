@@ -7372,7 +7372,8 @@ function _openDrawer(which){
     try{ clients=clientMedalInfo().n; }catch(e){}
     if(fr) fr.setAttribute("src", base+"?embed=1"+admin+"&badges="+encodeURIComponent(earned)+"&pts="+encodeURIComponent(pts)+"&clients="+encodeURIComponent(clients));
   } else if(fr && !fr.getAttribute("src")){
-    fr.setAttribute("src", base+"?embed=1"+admin);
+    var ref=(REAL&&RME&&RME.id)?("&ref="+encodeURIComponent(RME.id)):"";
+    fr.setAttribute("src", base+"?embed=1"+admin+ref);
   }
   d.style.display="flex";
 }
@@ -7434,6 +7435,14 @@ function pwAwardBadge(id,opts){
 // Chequeo automático de badges (por tiempo de uso, clientes, informes). Corre al
 // cargar; los que se ganan por hito de tiempo/volumen no lanzan celebración (silent).
 // Reglas: docs/gamificacion-pathway.md.
+// Marca una función usada; al destrabar 3 distintas → badge Explorador.
+function pwMarkFeature(name){
+  try{
+    var k="pw_feats_"+_gamiId(), set=JSON.parse(localStorage.getItem(k)||"[]")||[];
+    if(set.indexOf(name)<0){ set.push(name); localStorage.setItem(k,JSON.stringify(set)); }
+    if(set.length>=3) pwAwardBadge("explorador");
+  }catch(e){}
+}
 function pwCheckAutoBadges(){
   try{
     pwAwardBadge("nivel-1",{silent:true});                       // primer ingreso / semana 1
@@ -7442,8 +7451,8 @@ function pwCheckAutoBadges(){
     // productivo: tiene clientes que avanzaron varias semanas (semana_activa≥3)
     var pw=0; try{ pw=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c&&!c._example&&c.raw&&(parseInt(c.raw.semana_activa,10)||0)>=3;}).length:0; }catch(e){}
     if(pw>=1) pwAwardBadge("productivo",{silent:true});
-    // comunidad (referir a alguien) y explorador (varias funciones) → requieren
-    // sistema de referidos y tracking de features; se otorgan cuando existan.
+    // comunidad: si algún coach se registró con tu link de referido (referido_por = mi id)
+    try{ if(REAL&&RME&&RME.id&&!pwHasBadge("comunidad")){ _sb("usuarios?referido_por=eq."+encodeURIComponent(RME.id)+"&select=id&limit=1").then(function(rows){ if(rows&&rows.length){ pwAwardBadge("comunidad"); } }); } }catch(e){}
     var applyAge=function(created){
       if(!created) return;
       var days=((new Date()).getTime()-new Date(created).getTime())/86400000;
@@ -7546,7 +7555,20 @@ window.addEventListener("message",function(ev){
     }catch(e){}
     return;
   }
+  if(d.pw==="review"){ _closeDrawer("nov"); try{ state.review={open:true,rating:0,sent:false,high:false}; render(); }catch(e){} return; }
+  // Feedback de la revista (idea / encuesta / sorteo) → guarda en revista_feedback.
+  if(d.pw==="idea"||d.pw==="encuesta"||d.pw==="sorteo"){
+    try{
+      var _wk=0; try{ _wk=pwIsoWeek()%8; }catch(e){}
+      var _body={ tipo:d.pw, valor:(d.text||d.value||null), semana:_wk };
+      if(REAL&&RME&&RME.id) _body.coach_id=RME.id;
+      _sbw("revista_feedback","POST",_body).catch(function(){});
+    }catch(e){}
+    return;
+  }
 });
+// Semana ISO (para etiquetar el feedback de la revista con la edición vigente).
+function pwIsoWeek(){ var now=new Date(); var d=new Date(Date.UTC(now.getFullYear(),now.getMonth(),now.getDate())); var day=d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-day); var ys=new Date(Date.UTC(d.getUTCFullYear(),0,1)); return Math.ceil((((d-ys)/86400000)+1)/7); }
 
 function render(){
   try{
@@ -9086,11 +9108,12 @@ document.addEventListener("click", function(ev){
       ingresos:rw.ingresos,gastos:rw.gastos,deudas:rw.deudas,objetivo_ahorro:rw.objetivo_ahorro,plazo:rw.plazo,ahorro_actual:rw.ahorro_actual};
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify(_giBody)})
       .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
-      .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.genInforme=null; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); try{ pwAddXP(30,"Informe generado"); pwCheckAutoBadges(); }catch(e){} render(); setTimeout(loadReal,1300); })
+      .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.genInforme=null; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); try{ pwAddXP(30,"Informe generado"); pwMarkFeature("informe"); pwCheckAutoBadges(); }catch(e){} render(); setTimeout(loadReal,1300); })
       .catch(function(){ _genBusy=false; state.genInforme=null; render(); alert("No se pudo generar el informe. Reintenta en unos minutos."); });
     return;
   }
   if(act==="gen-cv"){
+    try{ pwMarkFeature("cv"); }catch(e){}
     var gv=el.getAttribute("data-id"), rv=rawOf(gv);
     if(!rv){ alert("No tengo los datos del formulario de este cliente."); return; }
     if(_genBusy) return;
@@ -9710,6 +9733,7 @@ document.addEventListener("click", function(ev){
   }
   if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; state.aiThread=null; state.aiCoachThread=null; state.msgAdminDraft=""; state.msgDraft=""; state.chatPicker=false; render(); return; }
   if(act==="iachat-open"){
+    try{ pwMarkFeature("ia"); }catch(e){}
     if(!state.iaChat) state.iaChat={open:false,msgs:null,draft:"",busy:false};
     state.iaChat.open=true;
     if(!state.iaChat.msgs) state.iaChat.msgs=_iaChatSeed();
