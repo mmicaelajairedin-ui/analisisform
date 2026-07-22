@@ -10827,7 +10827,7 @@ function demoGenerateExample(){
     }
   },620);
 }
-var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[], RORGS=null;
+var REAL=false, RCFG={}, RCFG_READY=false, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[], RORGS=null;
 // RED (multicoach): si el coach pertenece a una org, RRED guarda el nombre de la
 // red / dueño y RREDMSG el hilo de chat con el dueño (via edge function mensaje-red).
 // RCANALMSG es el CANAL DE EQUIPO (grupo dueño+coaches, via canal-red).
@@ -10843,6 +10843,9 @@ function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURI
 function _gameReturnMaybe(){ if(state._gameReturn){ state._gameReturn=false; state.section="resumen"; window.scrollTo(0,0); } }
 function saveCfg(cfgPatch, usuariosExtra, onDone){
   if(!RME||!RME.id){ alert("Inicia sesión para guardar."); return; }
+  // Red de seguridad: no guardar si la config todavía no cargó — evita pisar lo
+  // guardado (link del calendario, etc.) con un objeto vacío si la carga falló.
+  if(REAL && !RCFG_READY){ try{ toast("Tu configuración se está cargando. Esperá unos segundos y volvé a guardar."); }catch(e){} return; }
   var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; }
   for(var j in cfgPatch){ if(cfgPatch.hasOwnProperty(j)) merged[j]=cfgPatch[j]; }
   var body={ configuracion: merged }; if(usuariosExtra){ for(var u in usuariosExtra){ if(usuariosExtra.hasOwnProperty(u)) body[u]=usuariosExtra[u]; } }
@@ -11200,7 +11203,11 @@ function loadReal(){
     // estas sesiones junto a las cargadas a mano (sesiones_registro). Fuente única
     // de sesiones = Calendario. Falla suave: si la tabla no existe, queda [].
     _sb("citas?coach_id=eq."+encodeURIComponent(ME.id)+"&inicio=gte."+encodeURIComponent((function(){var d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.toISOString();})())+"&select=inicio,estado&order=inicio.asc").catch(function(){return [];})
-  ]).then(function(res){
+  // RED DE SEGURIDAD: cada query falla SUAVE (devuelve vacío) para que UNA que
+  // se rompa (p.ej. una columna que no existe) NO tumbe la carga entera y deje
+  // el panel en blanco. Se ve vacía SOLO esa parte; el resto (config, link del
+  // calendario, clientes) igual carga. Antes un solo error borraba todo a la vista.
+  ].map(function(p){ return (p&&typeof p.then==="function")?p.catch(function(){return [];}):p; })).then(function(res){
     var cands=res[0]||[], cvR=res[1]||[], inf=res[2]||[], usr=(res[3]||[])[0]||{};
     RCOACHES=res[4]||[]; RCONTACTS=res[5]||[];
     // informes: conteo por coach desde la query liviana (res[8] = solo coach_id de
@@ -11227,6 +11234,7 @@ function loadReal(){
     // función es idempotente (no arranca un segundo timer si ya hay uno).
     startMsgPolling();
     RCFG = usr.configuracion || ME.configuracion || {};
+    RCFG_READY = true;   // la config ya cargó (server o respaldo local) → guardar es seguro
     // El token de Google puede haber quedado SOLO en este navegador (localStorage)
     // si el guardado a Supabase falló o llegó después. No lo perdamos entre
     // recargas/deploys: si la config de Supabase no trae gcal pero el navegador sí,
