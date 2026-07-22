@@ -34,10 +34,10 @@ const RULES = [
     check() {
       const s = read("panel-v2.html");
       if (!s) return null;
-      if (!/_pwNotifData[\s\S]{0,1200}_notifDismissed\(\)/.test(s))
-        return "panel-v2.html: _pwNotifData ya no filtra por _notifDismissed → las notificaciones vuelven a aparecer.";
-      if (!/_notifDismiss\(/.test(s))
-        return "panel-v2.html: falta el registro de descarte de notificaciones (_notifDismiss).";
+      if (!/_notifDismissed\(\)[\s\S]{0,160}out\.filter/.test(s))
+        return "panel-v2.html: _pwNotifData ya no filtra las notificaciones descartadas → vuelven a aparecer.";
+      if (!/_notifDismiss\(\s*b\.getAttribute/.test(s))
+        return "panel-v2.html: pwNotif ya no registra el descarte al clickear una notificación.";
       return null;
     },
   },
