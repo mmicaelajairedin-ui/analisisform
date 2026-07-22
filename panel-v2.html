@@ -7842,6 +7842,9 @@ document.addEventListener("click", function(ev){
       var _on=Date.now();
       if(window._pwLastOpen && window._pwLastOpen.u===ou && (_on-window._pwLastOpen.t)<1800){ return; }
       window._pwLastOpen={u:ou,t:_on};
+      // Si abre un pago/portal de Stripe: al volver al panel refrescamos su estado
+      // solo (visibilitychange), sin que tenga que tocar "Ya pagué".
+      if(REAL && /(buy\.stripe\.com|billing\.stripe\.com)/.test(ou)){ window._pwAwaitPay=_on; }
       // Preferimos pestaña nueva (el panel queda atrás, se vuelve al terminar). Solo
       // si el navegador la bloquea, navegamos en la misma pestaña como último recurso.
       var _w=window.open(ou,"_blank","noopener"); if(!_w){ location.href=ou; } } return; }
@@ -10291,14 +10294,17 @@ function _planSel(){
   return _planUI;
 }
 // Tras volver de Stripe: re-lee la fila del coach y refresca plan/estado sin recargar.
-function _planRefresh(){
-  var id=(RME&&RME.id); if(!id){ toast("No hay sesión activa."); return; }
-  toast("Actualizando tu estado…");
+// silent=true → sin toasts de proceso (autorefresh al volver del pago); solo avisa
+// si la suscripción quedó activa o cambió de plan.
+function _planRefresh(silent){
+  var id=(RME&&RME.id); if(!id){ if(!silent) toast("No hay sesión activa."); return; }
+  if(!silent) toast("Actualizando tu estado…");
+  var _prevEst=(RCFG&&RCFG.estado_sub)||"", _prevPlan=state.plan;
   var h=(window.PWAUTH&&PWAUTH.headersSync?PWAUTH.headersSync():{apikey:KEY,Authorization:"Bearer "+KEY});
   fetch(SB+"/rest/v1/usuarios?id=eq."+encodeURIComponent(id)+"&select=configuracion,activo",{headers:h})
     .then(function(r){ return (r&&r.ok)?r.json():null; })
     .then(function(rows){
-      if(!rows||!rows[0]){ toast("No se pudo actualizar. Reintentá."); return; }
+      if(!rows||!rows[0]){ if(!silent) toast("No se pudo actualizar. Reintentá."); return; }
       var cfg=rows[0].configuracion||{};
       RCFG=cfg;
       var _vit=(cfg.es_pro_vitalicio===true)||RADMIN;
@@ -10306,10 +10312,14 @@ function _planRefresh(){
       if(COACH) COACH.plan=(state.plan==="pro"?"Pro":"Basic");
       try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=cfg; if(rows[0].activo!=null) mu.activo=rows[0].activo; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
       _planUI=null;
-      toast((cfg.estado_sub==="activa")?"¡Listo! Tu suscripción está activa ✓":"Estado actualizado.");
+      var _nowEst=(cfg.estado_sub||"");
+      var _becameActive=(_nowEst==="activa" && _prevEst!=="activa");
+      var _planChanged=(state.plan!==_prevPlan);
+      if(silent){ if(_becameActive) toast("¡Listo! Tu suscripción está activa ✓"); else if(_planChanged) toast("Tu plan se actualizó a "+(state.plan==="pro"?"Pro":"Basic")+" ✓"); }
+      else { toast(_nowEst==="activa"?"¡Listo! Tu suscripción está activa ✓":"Estado actualizado."); }
       render();
     })
-    .catch(function(){ toast("Sin conexión. Reintentá."); });
+    .catch(function(){ if(!silent) toast("Sin conexión. Reintentá."); });
 }
 function supportMail(subject){ return "mailto:"+SUPPORT_EMAIL+"?subject="+encodeURIComponent(subject); }
 var SB="https://api.pathwaycareercoach.com";
@@ -10732,7 +10742,16 @@ function startMsgPolling(){
   _msgPollTimer = setInterval(function(){ pollMessages(); pollClientChats(); coachBeat(); refreshCliPresence(); }, 25000);
   try{ pollClientChats(); }catch(e){} // primera pasada: fija el baseline (no suena)
   document.addEventListener("visibilitychange", function(){
-    if(document.visibilityState === "visible") pollMessages();
+    if(document.visibilityState !== "visible") return;
+    pollMessages();
+    // ¿Volvió de un pago/portal de Stripe? Refrescamos su plan/estado en silencio
+    // (el webhook ya lo actualizó del lado servidor). Si el webhook aún no llegó,
+    // reintentamos una vez ~6s después. Sin toasts salvo que algo haya cambiado.
+    if(window._pwAwaitPay){
+      window._pwAwaitPay=0;
+      try{ _planRefresh(true); }catch(e){}
+      setTimeout(function(){ try{ if((RCFG&&RCFG.estado_sub)!=="activa") _planRefresh(true); }catch(e){} },6000);
+    }
   });
 }
 // Reconcilia las solicitudes pendientes del coach contra Stripe (cargo directo
