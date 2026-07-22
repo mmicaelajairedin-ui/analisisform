@@ -7335,7 +7335,7 @@ document.addEventListener("click", function(ev){
 });
 // El badge se asienta cuando los datos terminan de cargar (por si el último
 // render corrió antes de que llegaran).
-window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} },t); }); });
+window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} },t); }); });
 
 // ═══ Drawers laterales: Novedades (revista semanal) + Perfil (puntos/medallas/badges) ═══
 // Se embeben las páginas ya aprobadas (novedades-preview.html / perfil-preview.html)
@@ -7354,12 +7354,14 @@ function _openDrawer(which){
   var fr=document.getElementById(frameId);
   var admin=(typeof RADMIN!=="undefined"&&RADMIN)?"&admin=1":"";
   if(which==="perfil"){
-    // El perfil se recarga en cada apertura con los badges/puntos REALES del coach
-    // (badges ganados en localStorage + game_pts). Así refleja lo que de verdad tiene.
-    var earned=""; var pts="";
+    // El perfil se recarga en cada apertura con los datos REALES del coach:
+    // badges ganados + puntos totales (cabra + acciones) + medalla real por
+    // clientes activos (bronce/plata/oro). Así refleja lo que de verdad tiene.
+    var earned="", pts="", clients="";
     try{ earned=pwBadgesGet().join(","); }catch(e){}
-    try{ pts=(typeof _gameBest==="function")?(_gameBest()||0):((RME&&RME.game_pts)||0); }catch(e){}
-    if(fr) fr.setAttribute("src", base+"?embed=1"+admin+"&badges="+encodeURIComponent(earned)+"&pts="+encodeURIComponent(pts));
+    try{ pts=pwTotalPoints(); }catch(e){}
+    try{ clients=clientMedalInfo().n; }catch(e){}
+    if(fr) fr.setAttribute("src", base+"?embed=1"+admin+"&badges="+encodeURIComponent(earned)+"&pts="+encodeURIComponent(pts)+"&clients="+encodeURIComponent(clients));
   } else if(fr && !fr.getAttribute("src")){
     fr.setAttribute("src", base+"?embed=1"+admin);
   }
@@ -7386,18 +7388,62 @@ var PW_BADGES = {
   "embajador":    {t:"Embajador",    s:"Dejaste tu reseña. ¡Gracias por recomendar Pathway!"},
   "leyenda":      {t:"Leyenda",      s:"Máximo nivel alcanzado."}
 };
+// ═══ Sistema de premiación: PUNTOS / XP (la moneda) ═══
+// UNA sola cuenta de puntos = puntos de la cabra (game_pts, ya real) + XP por
+// acciones reales del coach. Los badges NO dan puntos (son colección aparte).
+function _gamiId(){ return (REAL&&RME&&(RME.id||RME.email))||(typeof COACH!=="undefined"&&COACH&&COACH.email)||"x"; }
+function _xpKey(){ return "pw_xp_"+_gamiId(); }
+function _xpLogKey(){ return "pw_xplog_"+_gamiId(); }
+function pwXpGet(){ try{ return parseInt(localStorage.getItem(_xpKey())||"0",10)||0; }catch(e){ return 0; } }
+function pwXpLog(){ try{ return JSON.parse(localStorage.getItem(_xpLogKey())||"[]")||[]; }catch(e){ return []; } }
+// Puntos totales que ve el coach = cabra + acciones. Una sola barra.
+function pwTotalPoints(){ var g=0; try{ g=(typeof _gameBest==="function")?(_gameBest()||0):((RME&&RME.game_pts)||0); }catch(e){} return (g||0)+pwXpGet(); }
+function pwAddXP(n,reason){
+  n=parseInt(n,10)||0; if(!n) return;
+  var cur=pwXpGet()+n;
+  try{ localStorage.setItem(_xpKey(), String(cur)); }catch(e){}
+  try{ var log=pwXpLog(); log.unshift({n:n,r:reason||"",t:(new Date()).getTime()}); log=log.slice(0,25); localStorage.setItem(_xpLogKey(), JSON.stringify(log)); }catch(e){}
+  // Best-effort a Supabase (solo si existe la columna usuarios.xp; si no, no rompe).
+  try{ if(REAL&&RME&&RME.id){ _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{xp:cur}).catch(function(){}); } }catch(e){}
+  try{ toast("+"+n+" pts · "+(reason||"")); }catch(e){}
+}
 function _badgesKey(){ var id=(REAL&&RME&&(RME.id||RME.email))||(typeof COACH!=="undefined"&&COACH&&COACH.email)||"x"; return "pw_badges_"+id; }
 function pwBadgesGet(){ try{ return JSON.parse(localStorage.getItem(_badgesKey())||"[]")||[]; }catch(e){ return []; } }
 function pwHasBadge(id){ return pwBadgesGet().indexOf(id)>=0; }
-function pwAwardBadge(id){
+function pwAwardBadge(id,opts){
   if(!PW_BADGES[id]) return false;
   var cur=pwBadgesGet(); if(cur.indexOf(id)>=0) return false; // ya lo tiene → no repetir
   cur.push(id);
   try{ localStorage.setItem(_badgesKey(), JSON.stringify(cur)); }catch(e){}
   // Best-effort a Supabase (solo si existe la columna badges; si no, no rompe nada).
   try{ if(REAL&&RME&&RME.id){ _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{badges:cur}).catch(function(){}); } }catch(e){}
-  try{ pwBadgeCelebrate(id); }catch(e){}
+  if(!(opts&&opts.silent)){ try{ pwBadgeCelebrate(id); }catch(e){} }
   return true;
+}
+// Chequeo automático de badges (por tiempo de uso, clientes, informes). Corre al
+// cargar; los que se ganan por hito de tiempo/volumen no lanzan celebración (silent).
+// Reglas: docs/gamificacion-pathway.md.
+function pwCheckAutoBadges(){
+  try{
+    pwAwardBadge("nivel-1",{silent:true});                       // primer ingreso / semana 1
+    var cl=0; try{ cl=clientMedalInfo().n; }catch(e){}
+    if(cl>=3) pwAwardBadge("enfocado",{silent:true});            // 3 clientes activos (constancia)
+    // productivo: tiene clientes que avanzaron varias semanas (semana_activa≥3)
+    var pw=0; try{ pw=(typeof CLIENTS!=="undefined"&&CLIENTS)?CLIENTS.filter(function(c){return c&&!c._example&&c.raw&&(parseInt(c.raw.semana_activa,10)||0)>=3;}).length:0; }catch(e){}
+    if(pw>=1) pwAwardBadge("productivo",{silent:true});
+    // comunidad (referir a alguien) y explorador (varias funciones) → requieren
+    // sistema de referidos y tracking de features; se otorgan cuando existan.
+    var applyAge=function(created){
+      if(!created) return;
+      var days=((new Date()).getTime()-new Date(created).getTime())/86400000;
+      if(days>=14)  pwAwardBadge("early-adopter",{silent:true}); // 2 semanas
+      if(days>=120) pwAwardBadge("coach-pro",{silent:true});     // 4 meses
+      if(days>=180) pwAwardBadge("top-coach",{silent:true});     // 6 meses
+      if(days>=365) pwAwardBadge("leyenda",{silent:true});       // 1 año
+    };
+    if(RME&&RME.created_at) applyAge(RME.created_at);
+    else if(REAL&&RME&&RME.id){ _sb("usuarios?id=eq."+encodeURIComponent(RME.id)+"&select=created_at").then(function(rows){ if(rows&&rows[0]&&rows[0].created_at){ RME.created_at=rows[0].created_at; applyAge(rows[0].created_at); } }); }
+  }catch(e){}
 }
 // Celebración al desbloquear (badge grande + confetti). Autocontenida.
 function pwBadgeCelebrate(id){
@@ -8783,6 +8829,7 @@ document.addEventListener("click", function(ev){
     var resetLink="https://pathwaycareercoach.com/recuperar-password.html?email="+encodeURIComponent(em);
     var finish=function(){
       state.newOpen=false; toast("Cliente creado ✓");
+      try{ pwAddXP(50,"Cliente nuevo"); }catch(e){}
       // Si el alta vino desde el juego, al cerrar el email de bienvenida volvemos
       // al Resumen para ver a la cabra caminar al próximo paso.
       if(state.fromGame){ state.fromGame=false; state._gameReturn=true; }
@@ -8982,7 +9029,7 @@ document.addEventListener("click", function(ev){
       ingresos:rw.ingresos,gastos:rw.gastos,deudas:rw.deudas,objetivo_ahorro:rw.objetivo_ahorro,plazo:rw.plazo,ahorro_actual:rw.ahorro_actual};
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify(_giBody)})
       .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
-      .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.genInforme=null; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); render(); setTimeout(loadReal,1300); })
+      .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.genInforme=null; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); try{ pwAddXP(30,"Informe generado"); pwCheckAutoBadges(); }catch(e){} render(); setTimeout(loadReal,1300); })
       .catch(function(){ _genBusy=false; state.genInforme=null; render(); alert("No se pudo generar el informe. Reintenta en unos minutos."); });
     return;
   }

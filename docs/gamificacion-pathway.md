@@ -24,23 +24,53 @@ Hay **una sola cuenta de puntos (XP)** por coach. Suma de tres fuentes reales:
 > los puntos de la cabra + los de cumplir cosas + los del reto**. Es UNA sola
 > barra, no cuentas separadas.
 
-### Medallas (bronce / plata / oro) — el "nivel de un vistazo"
-Ya existen en el portal del cliente. Son el **resumen rápido** del avance
-(círculos en el perfil). Cinco categorías, cada una sube de nivel con su métrica:
+### Medallas (bronce / plata / oro) — la REAL de Pathway
+**No son 5 categorías inventadas.** Pathway ya tiene UNA medalla que sube de
+tier según **clientes activos** (`clientMedalInfo()` en `panel-v2.html`):
 
-| Medalla | Sube con | Nivel de ejemplo |
+| Medalla | Se logra con |
+|---|---|
+| 🥉 **Bronce** | 1 cliente activo |
+| 🥈 **Plata** | 5 clientes activos |
+| 🥇 **Oro** | 10 clientes activos |
+
+El perfil muestra el tier actual + "faltan N clientes para el próximo". (Existen
+además la medalla de la cabra y la de onboarding; la del perfil es la de clientes.)
+
+### Badges (la colección coleccionable) — reglas de desbloqueo
+`assets/badges/`. El badge **NO da puntos**: ganar el badge ES el premio.
+**Reglas definidas por la coach** (✅ = ya se otorga solo en el código):
+
+| Badge | Se gana cuando… | ¿Automático hoy? |
 |---|---|---|
-| **Constancia** | semanas activo | Nivel 3 |
-| **Racha** | días seguidos usando Pathway | 5 días |
-| **Comunidad** | reacciones/encuestas/ideas | Nivel 2 |
-| **Enfoque** | retos/desafíos completados | Nivel 4 |
-| **Impacto** | clientes activados / informes | Nivel 1 |
+| `nivel-1` | Primer ingreso / semana 1 | ✅ |
+| `early-adopter` | 2 semanas de uso | ✅ (por `created_at`) |
+| `enfocado` | 3 clientes activos | ✅ |
+| `productivo` | Tiene clientes que avanzaron **varias semanas** (semana_activa ≥ 3) | ✅ |
+| `explorador` | Destrabó **varias funciones** de Pathway | 🔧 falta tracking de features |
+| `comunidad` | **Refirió a alguien** (un coach se sumó con su link) | 🔧 falta sistema de referidos |
+| `embajador` | **Dejó una reseña** | ✅ |
+| `coach-pro` | 4 meses de uso | ✅ (por `created_at`) |
+| `top-coach` | 6 meses de uso | ✅ (por `created_at`) |
+| `leyenda` | 1 año de uso | ✅ (por `created_at`) |
 
-### Badges (los 10 acuarela) — la colección coleccionable
-`assets/badges/`. **No se gana uno por semana** — se ganan **por evento**.
-- **De nivel (por XP):** `nivel-1`, `coach-pro`, `leyenda`.
-- **De logro (por acción):** `early-adopter` (60 días), `explorador`,
-  `enfocado`, `productivo`, `comunidad`, `embajador`, `top-coach`.
+Los que faltan (`explorador`, `comunidad`) se encienden cuando exista el tracking
+de funciones usadas y el sistema de referidos.
+
+### 🔨 Badges NUEVOS a crear (para que no queden huecos)
+Momentos fuertes del recorrido del coach que **hoy no tienen badge**. Si creás el
+arte (mismo estilo acuarela, `assets/badges/<id>.png`), los cableo:
+
+| id sugerido | Se gana cuando… | Por qué suma |
+|---|---|---|
+| `primer-cliente` | Activás tu **primer** cliente | El hito nº1, hoy solo hay badge a los 3 (`enfocado`) |
+| `primer-informe` | Generás tu **primer informe con IA** | El momento "wow" del producto |
+| `racha` | Usás Pathway **N semanas seguidas** | Constancia / retención |
+| `primera-venta` | Tu **primer cobro** (cliente que paga) | Hito de negocio real |
+| `perfil-completo` | Completás tu **perfil / marca propia** | Cierra el onboarding |
+
+Recomendación: al menos `primer-cliente`, `primer-informe` y `racha` — son los
+tres que más motivan y marcan el recorrido temprano.
 
 ---
 

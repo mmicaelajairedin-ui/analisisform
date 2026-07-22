@@ -124,7 +124,7 @@ body{font-family:var(--sans);color:var(--ink);background:var(--crema);min-height
   </div>
 
   <!-- NIVEL -->
-  <div class="sec">
+  <div class="sec" id="secNivel">
     <div class="eyebrow" style="margin-bottom:2px">Mi nivel</div>
     <div class="niv">
       <div class="niv-l">
@@ -139,7 +139,7 @@ body{font-family:var(--sans);color:var(--ink);background:var(--crema);min-height
       </div>
     </div>
   </div>
-  <div class="hr"></div>
+  <div class="hr" id="hrNivel"></div>
 
   <!-- MEDALLAS -->
   <div class="sec">
@@ -156,7 +156,7 @@ body{font-family:var(--sans);color:var(--ink);background:var(--crema);min-height
   <div class="hr"></div>
 
   <!-- LOGROS -->
-  <div class="sec">
+  <div class="sec" id="secActividad">
     <div class="seehead"><div class="eyebrow">🏆 Actividad reciente</div><a class="seeall">Ver todos</a></div>
     <div id="ach"></div>
   </div>
@@ -189,12 +189,19 @@ var BADGES=[
   {f:'embajador',  t:'Embajador'},
   {f:'leyenda',    t:'Leyenda', lock:true}
 ];
-// Modo real: el panel pasa ?badges=<ganados>&pts=<puntos>. Presente (aunque vacío)
-// = modo real → se bloquean los badges que el coach NO ganó y se muestran sus
-// puntos/nivel reales. Sin esos params, queda el look demo.
+// ── Modo real (integrado al sistema de Pathway) ──────────────────────────
+// El panel pasa ?badges=<ganados>&pts=<total>&clients=<activos>. Con eso:
+//  · badges: se bloquean los que el coach NO ganó.
+//  · puntos: total real = cabra + acciones (una sola cuenta).
+//  · medalla: la REAL de Pathway → bronce/plata/oro por clientes activos.
+//  · se ocultan las secciones inventadas (nivel Coach Pro, actividad falsa).
 var _P=new URLSearchParams(location.search);
 var _REALP=_P.has('badges');
 var _EARNED=(_P.get('badges')||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
+function _set(sel,html){ var e=document.querySelector(sel); if(e) e.innerHTML=html; }
+function _hide(id){ var e=document.getElementById(id); if(e) e.style.display='none'; }
+function _cap(s){ return s?(s.charAt(0).toUpperCase()+s.slice(1)):s; }
+
 document.getElementById('badges').innerHTML=BADGES.map(function(b){
   var locked = _REALP ? (_EARNED.indexOf(b.f)<0) : !!b.lock;
   return "<div class='badge"+(locked?' lock':'')+"'>"+
@@ -202,30 +209,40 @@ document.getElementById('badges').innerHTML=BADGES.map(function(b){
     (locked?"<span class='lk'>🔒</span>":"")+
     "<div class='badge-t'>"+esc(b.t)+"</div></div>";
 }).join('');
-// Puntos + nivel reales (coherentes con docs/gamificacion-pathway.md)
-if(_P.has('pts')){
+
+if(_REALP){
+  // Puntos totales reales
   var _pts=parseInt(_P.get('pts')||'0',10)||0;
-  var _fmt=_pts.toLocaleString('es-ES');
-  var _name,_base,_next;
-  if(_pts>=1400){ _name='Coach Elite'; _base=1400; _next=null; }
-  else if(_pts>=500){ _name='Coach Pro'; _base=500; _next=1400; }
-  else { _name='Coach'; _base=0; _next=500; }
-  var _lvl=Math.max(1,Math.floor(_pts/200)+1);
-  function _set(sel,html){ var e=document.querySelector(sel); if(e) e.innerHTML=html; }
-  _set('.pts-big',_fmt+" <small>pts</small>");
+  _set('.pts-big', _pts.toLocaleString('es-ES')+" <small>pts</small>");
   var _pd=document.querySelector('.pts-delta'); if(_pd) _pd.style.display='none';
-  _set('.prole','🐐 '+_name);
-  _set('.niv-t','Nivel '+_lvl+' · '+_name);
-  if(_next){
-    _set('.niv-x','Te faltan <b>'+(_next-_pts).toLocaleString('es-ES')+' pts</b> para llegar a '+(_next===1400?'Coach Elite':'Coach Pro'));
-    var _pct=Math.max(3,Math.min(100,Math.round((_pts-_base)/(_next-_base)*100)));
-    var _nf=document.querySelector('.niv-fill'); if(_nf) _nf.style.width=_pct+'%';
-    _set('.niv-cap',_fmt+' / '+_next.toLocaleString('es-ES')+' pts');
-  } else {
-    _set('.niv-x','¡Alcanzaste el nivel máximo!');
-    var _nf2=document.querySelector('.niv-fill'); if(_nf2) _nf2.style.width='100%';
-    _set('.niv-cap',_fmt+' pts');
-  }
+  // Nivel inventado (Coach Pro/Elite) y actividad demo: fuera hasta tener datos reales
+  _hide('secNivel'); _hide('hrNivel'); _hide('secActividad');
+  // Medalla REAL de Pathway: bronce(1+) / plata(5+) / oro(10+) por clientes activos
+  var _cl=parseInt(_P.get('clients')||'0',10)||0;
+  var TIERS=[
+    {k:'bronce',t:'Bronce',at:1, c:'#B97A3D'},
+    {k:'plata', t:'Plata', at:5, c:'#A8AFB5'},
+    {k:'oro',   t:'Oro',   at:10,c:'#D4A24C'}
+  ];
+  var _mhtml=TIERS.map(function(m){
+    var got=_cl>=m.at;
+    return "<div class='medal"+(got?'':' lock')+"' style='flex:1'>"+
+      "<div class='medal-ic' style='background:"+(got?m.c:'#E7E4DB')+";"+(got?'':'color:#B9BCB4;box-shadow:none')+"'>"+
+        (got?"<svg viewBox='0 0 24 24' fill='none' stroke='#fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>"
+            :"<svg viewBox='0 0 24 24' fill='none' stroke='#B9BCB4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='5' y='11' width='14' height='9' rx='2'/><path d='M8 11V7a4 4 0 0 1 8 0v4'/></svg>")+
+      "</div>"+
+      "<div class='medal-t'>"+m.t+"</div>"+
+      "<div class='medal-s'>"+(got?'Lograda':(m.at+' cliente'+(m.at>1?'s':'')))+"</div></div>";
+  }).join('');
+  _set('#medals',_mhtml);
+  // Encabezado + subtítulo de la medalla con el estado real
+  var _cur = _cl>=10?'oro':(_cl>=5?'plata':(_cl>=1?'bronce':''));
+  var _nx  = _cl>=10?null:(_cl>=5?{t:'Oro',at:10}:(_cl>=1?{t:'Plata',at:5}:{t:'Bronce',at:1}));
+  var _sub = _nx ? ("Te faltan <b>"+(_nx.at-_cl)+" cliente"+((_nx.at-_cl)>1?'s':'')+"</b> para "+_nx.t) : "¡Medalla máxima!";
+  var _mh=document.querySelector('#medals');
+  if(_mh){ var _cap2=document.createElement('div'); _cap2.style.cssText='font:500 12px var(--sans);color:var(--ink-soft);margin-top:12px;text-align:center'; _cap2.innerHTML=_sub; _mh.parentNode.appendChild(_cap2); }
+  // Rol bajo el nombre: la medalla real (no "Coach Pro")
+  _set('.prole','🐐 '+(_cur?('Medalla '+_cap(_cur)):'Coach'));
 }
 
 var ACH=[
