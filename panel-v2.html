@@ -4819,7 +4819,7 @@ function cfgProfile(){
         "<select id='cfp-pais' class='cp-form-input'>"+paisOptHtml+"</select>"+
         "<span class='cp-form-hint'>Lo usamos para mostrarte primero a los candidatos de tu mismo país. No lo mostramos públicamente.</span></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Tu Google Calendar (para ver tus eventos en la agenda)</label>"+
-        "<input id='cfp-cal-ical' class='cp-form-input' value=\""+esc(gi)+"\" placeholder='https://calendar.google.com/calendar/ical/…/public/basic.ics'>"+
+        "<input id='cfp-cal-ical' class='cp-form-input' value=\""+esc(gi)+"\" placeholder='https://calendar.google.com/calendar/ical/…/public/basic.ics' onchange='_autoSaveCal(this)'>"+
         "<span class='cp-form-hint'>Para ver tus eventos aquí, pega el <strong>enlace público</strong> de tu Google Calendar:<br>"+
           "1) En Google Calendar entra a <strong>Configuración</strong> (⚙️) y elige <strong>tu calendario</strong>.<br>"+
           "2) En <strong>«Permisos de acceso a los eventos»</strong> tildá <strong>«Ponerlo a disposición del público»</strong>.<br>"+
@@ -10844,7 +10844,20 @@ function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURI
 // Si una acción del juego (alta de cliente) terminó y dejó pendiente volver al
 // Resumen, lo hacemos al cerrar el modal de email → la cabra camina al próximo paso.
 function _gameReturnMaybe(){ if(state._gameReturn){ state._gameReturn=false; state.section="resumen"; window.scrollTo(0,0); } }
-function saveCfg(cfgPatch, usuariosExtra, onDone){
+// Autoguardado del link de calendario: al pegarlo/salir del campo se guarda solo
+// (no hace falta apretar "Guardar"), así no queda "sin conectar". Protegido por
+// RCFG_READY para no pisar la config si todavía no cargó. Guarda SOLO ese campo
+// (saveCfg fusiona sobre el resto, es merge-safe).
+function _autoSaveCal(inp){
+  try{
+    if(!REAL || !RCFG_READY || !inp) return;
+    var v=(""+(inp.value||"")).trim();
+    if(v===(""+((RCFG&&RCFG.gcal_ical_url)||""))) return;   // sin cambios → no guardar
+    saveCfg({ gcal_ical_url:v }, null, null, { noRender:true, toast:"Link de calendario guardado ✓" });
+  }catch(e){}
+}
+function saveCfg(cfgPatch, usuariosExtra, onDone, opts){
+  opts=opts||{};
   if(!RME||!RME.id){ alert("Inicia sesión para guardar."); return; }
   // Red de seguridad: no guardar si la config todavía no cargó — evita pisar lo
   // guardado (link del calendario, etc.) con un objeto vacío si la carga falló.
@@ -10857,6 +10870,9 @@ function saveCfg(cfgPatch, usuariosExtra, onDone){
     try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; if(usuariosExtra&&usuariosExtra.nombre)mu.nombre=usuariosExtra.nombre; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
     if(usuariosExtra&&usuariosExtra.nombre){ COACH.name=usuariosExtra.nombre; COACH.firstName=(""+usuariosExtra.nombre).split(" ")[0]; }
     if(typeof onDone==="function"){ try{ onDone(); }catch(e){} }
+    // Autoguardado (noRender): confirma sin re-renderizar el formulario, para no
+    // perder foco ni tragarse un click al botón Guardar si editó otros campos.
+    if(opts.noRender){ try{ toast(opts.toast||"Guardado ✓"); }catch(e){} return; }
     toast("Configuración guardada ✓"); render();
   }
   // Guardado verificado: pedimos return=representation y confirmamos que la
