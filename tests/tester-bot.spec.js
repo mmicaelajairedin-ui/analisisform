@@ -139,6 +139,41 @@ test.describe('✉️ Invitación al cliente — el email sale de verdad', () =>
   });
 });
 
+// 💳 Selector de plan del coach — cambiar de plan / pagar SIN salir del panel.
+// El plan vive como sub-pestaña de Config (Mi cuenta), así que la navegación del
+// sidebar (navegarPanel) NO lo alcanza → esta pantalla estaría sin cubrir. Acá el
+// bot entra como coach, abre Config → Mi cuenta, y togglea Mensual/Anual + elige
+// Basic/Pro. Cada click re-renderiza cfgPlan; si algo tira un error de JS o el
+// selector deja de renderizar, el reporte diario lo marca. NO clickea el CTA de
+// pago (no abre Stripe) — solo el toggle y los tiles, que son locales.
+test.describe('💳 Selector de plan — cambiar de plan sin salir del panel', () => {
+  const coach = CUENTAS.find((c) => c && (c.nav || /coach/i.test(c.label || '')));
+  test('el coach abre su plan y togglea Anual/Mensual + Basic/Pro sin errores', async ({ page }) => {
+    test.skip(!coach, 'Sin cuenta de coach de prueba (TEST_ACCOUNTS/TEST_COACH_*) — se saltea');
+    const errores = capturarErrores(page);
+    await entrar(page, /** @type {any} */(coach).email, /** @type {any} */(coach).pass, /panel-v2/i);
+    await verificarRender(page);
+    // Config (sidebar) → Mi cuenta (sub-pestaña donde vive el plan).
+    await page.locator('[data-act="nav:config"]').first().click({ timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.locator('[data-act="cfg:account"]').first().click({ timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    // Si el coach de prueba es vitalicio/admin no hay selector (es correcto) → se saltea.
+    const hay = await page.locator('[data-act="psel-bill"]').count().catch(() => 0);
+    test.skip(hay === 0, 'Coach vitalicio/admin sin selector de plan — se saltea');
+    // Togglear facturación y plan (locales, re-renderizan cfgPlan). No tocamos el CTA de pago.
+    await page.locator('[data-act="psel-bill"][data-b="anual"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.locator('[data-act="psel-plan"][data-p="pro"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.locator('[data-act="psel-bill"][data-b="mensual"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    // Tras togglear, el selector debe seguir renderizado (no se rompió el re-render).
+    await expect(page.locator('.cp-psel-tiles'), 'El selector de plan dejó de renderizar tras togglear').toBeVisible({ timeout: 6000 });
+    expect(errores, 'Errores de JS en el selector de plan:\n' + errores.join('\n')).toHaveLength(0);
+  });
+});
+
 // Panel multi-coach (gimnasio / consultora): la vista de equipo bajo una marca.
 // Chequeamos que cargue y renderice sin errores. (El recorrido logueado del
 // dueño del gym se suma cuando esté lista su cuenta de empresa.)

@@ -1580,6 +1580,23 @@ const RULES = [
     },
   },
   {
+    name: "plan: un coach con suscripción ACTIVA cambia de plan por el portal de Stripe (no doble cobro)",
+    bug: "El selector de plan del panel deja pagar/cambiar sin salir de Pathway. Para un coach " +
+         "en prueba/vencido el CTA abre un Payment Link (checkout nuevo). Pero para un coach que " +
+         "YA paga (estado_sub='activa'), abrir un Payment Link crearía una SEGUNDA suscripción → " +
+         "doble cobro. El cambio de plan de un activo DEBE ir al portal de Stripe (STRIPE_PORTAL), " +
+         "que hace el cambio con prorrateo sobre la MISMA suscripción.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/var isActive=\(est==="activa"\)/.test(p)) return null; // feature no presente
+      // El CTA "Cambiar a ..." (coach que YA paga) debe apuntar a STRIPE_PORTAL, no a un
+      // Payment Link nuevo (crearía una 2da suscripción → doble cobro).
+      if (!/esc\(STRIPE_PORTAL\)\+"'>Cambiar a /.test(p)) return "panel-v2.html: el CTA 'Cambiar a…' de un coach con suscripción ACTIVA ya no usa STRIPE_PORTAL → si vuelve a un Payment Link (stripeSubUrl) se crea una 2da suscripción y hay doble cobro.";
+      return null;
+    },
+  },
+  {
     name: "admin: crear coach pasa por la edge function crear-coach (RLS no lo bloquea)",
     bug: "El botón 'Dar acceso a un coach' hacía un POST directo a usuarios con rol='coach' " +
          "desde el navegador. Con RLS estricto en usuarios (usuarios_hardening.sql), la anon " +
