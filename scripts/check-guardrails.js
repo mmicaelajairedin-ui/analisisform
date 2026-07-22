@@ -27,6 +27,25 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: una query rota no deja el panel en blanco (carga con red)",
+    bug: "Agregar una columna inexistente (p.ej. xp) a un select hacía que UNA query " +
+         "rechazara y el Promise.all entero fallara → coaches, ranking, analíticas y config " +
+         "se veían VACÍOS (parecía que se borraron los datos). Ahora cada query del load " +
+         "falla suave (.catch → []) y saveCfg no guarda hasta que la config cargó (RCFG_READY), " +
+         "para no pisar el link del calendario con vacío.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/\.map\(function\(p\)\{\s*return \(p&&typeof p\.then==="function"\)\?p\.catch/.test(s))
+        return "panel-v2.html: el Promise.all del load ya no envuelve cada query con .catch → una query rota vuelve a blanquear todo el panel.";
+      if (!/RCFG_READY\s*=\s*true/.test(s))
+        return "panel-v2.html: no se marca RCFG_READY al cargar la config.";
+      if (!/if\(REAL && !RCFG_READY\)[\s\S]{0,120}return;/.test(s))
+        return "panel-v2.html: saveCfg ya no se protege con RCFG_READY → podría guardar config vacía y pisar lo guardado.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: las notificaciones se descartan al clickear (no siguen apareciendo)",
     bug: "Las notificaciones se derivan de pendientes y no se marcaban como vistas → " +
          "seguían apareciendo aunque la coach ya las hubiera atendido. Ahora _pwNotifData " +
