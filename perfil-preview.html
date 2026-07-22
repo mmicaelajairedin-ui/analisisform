@@ -189,12 +189,44 @@ var BADGES=[
   {f:'embajador',  t:'Embajador'},
   {f:'leyenda',    t:'Leyenda', lock:true}
 ];
+// Modo real: el panel pasa ?badges=<ganados>&pts=<puntos>. Presente (aunque vacío)
+// = modo real → se bloquean los badges que el coach NO ganó y se muestran sus
+// puntos/nivel reales. Sin esos params, queda el look demo.
+var _P=new URLSearchParams(location.search);
+var _REALP=_P.has('badges');
+var _EARNED=(_P.get('badges')||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
 document.getElementById('badges').innerHTML=BADGES.map(function(b){
-  return "<div class='badge"+(b.lock?' lock':'')+"'>"+
+  var locked = _REALP ? (_EARNED.indexOf(b.f)<0) : !!b.lock;
+  return "<div class='badge"+(locked?' lock':'')+"'>"+
     "<img src='assets/badges/"+b.f+".png' alt='"+esc(b.t)+"'>"+
-    (b.lock?"<span class='lk'>🔒</span>":"")+
+    (locked?"<span class='lk'>🔒</span>":"")+
     "<div class='badge-t'>"+esc(b.t)+"</div></div>";
 }).join('');
+// Puntos + nivel reales (coherentes con docs/gamificacion-pathway.md)
+if(_P.has('pts')){
+  var _pts=parseInt(_P.get('pts')||'0',10)||0;
+  var _fmt=_pts.toLocaleString('es-ES');
+  var _name,_base,_next;
+  if(_pts>=1400){ _name='Coach Elite'; _base=1400; _next=null; }
+  else if(_pts>=500){ _name='Coach Pro'; _base=500; _next=1400; }
+  else { _name='Coach'; _base=0; _next=500; }
+  var _lvl=Math.max(1,Math.floor(_pts/200)+1);
+  function _set(sel,html){ var e=document.querySelector(sel); if(e) e.innerHTML=html; }
+  _set('.pts-big',_fmt+" <small>pts</small>");
+  var _pd=document.querySelector('.pts-delta'); if(_pd) _pd.style.display='none';
+  _set('.prole','🐐 '+_name);
+  _set('.niv-t','Nivel '+_lvl+' · '+_name);
+  if(_next){
+    _set('.niv-x','Te faltan <b>'+(_next-_pts).toLocaleString('es-ES')+' pts</b> para llegar a '+(_next===1400?'Coach Elite':'Coach Pro'));
+    var _pct=Math.max(3,Math.min(100,Math.round((_pts-_base)/(_next-_base)*100)));
+    var _nf=document.querySelector('.niv-fill'); if(_nf) _nf.style.width=_pct+'%';
+    _set('.niv-cap',_fmt+' / '+_next.toLocaleString('es-ES')+' pts');
+  } else {
+    _set('.niv-x','¡Alcanzaste el nivel máximo!');
+    var _nf2=document.querySelector('.niv-fill'); if(_nf2) _nf2.style.width='100%';
+    _set('.niv-cap',_fmt+' pts');
+  }
+}
 
 var ACH=[
   {ic:'🔥',t:'¡Racha de 5 días!',s:'Usaste Pathway 5 días seguidos.',p:'+50 pts',w:'Hoy'},

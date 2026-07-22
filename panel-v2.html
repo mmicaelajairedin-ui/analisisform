@@ -7352,12 +7352,73 @@ function _openDrawer(which){
   try{ var other=document.getElementById(otherId); if(other) other.style.display="none"; }catch(e){}
   var d=document.getElementById(id); if(!d) return;
   var fr=document.getElementById(frameId);
-  if(fr && !fr.getAttribute("src")){ fr.setAttribute("src", base+"?embed=1"+((typeof RADMIN!=="undefined"&&RADMIN)?"&admin=1":"")); }
+  var admin=(typeof RADMIN!=="undefined"&&RADMIN)?"&admin=1":"";
+  if(which==="perfil"){
+    // El perfil se recarga en cada apertura con los badges/puntos REALES del coach
+    // (badges ganados en localStorage + game_pts). Así refleja lo que de verdad tiene.
+    var earned=""; var pts="";
+    try{ earned=pwBadgesGet().join(","); }catch(e){}
+    try{ pts=(typeof _gameBest==="function")?(_gameBest()||0):((RME&&RME.game_pts)||0); }catch(e){}
+    if(fr) fr.setAttribute("src", base+"?embed=1"+admin+"&badges="+encodeURIComponent(earned)+"&pts="+encodeURIComponent(pts));
+  } else if(fr && !fr.getAttribute("src")){
+    fr.setAttribute("src", base+"?embed=1"+admin);
+  }
   d.style.display="flex";
 }
 function _closeDrawer(which){
   var id = which==="perfil" ? "pw-perfil-drawer" : "pw-nov-drawer";
   var d=document.getElementById(id); if(d) d.style.display="none";
+}
+
+// ═══ Sistema de premiación: BADGES (colección) ═══
+// Un solo lugar donde se definen y se ganan los badges. Se guardan por coach en
+// localStorage (y, si existe la columna `usuarios.badges`, se sincronizan best-effort).
+// El badge NO da puntos (los puntos son la cabra + acciones); el badge ES el premio.
+var PW_BADGES = {
+  "nivel-1":      {t:"Nivel 1",      s:"¡Comenzaste tu camino!"},
+  "early-adopter":{t:"Early Adopter",s:"Gracias por estar desde el inicio."},
+  "explorador":   {t:"Explorador",   s:"Probaste funciones nuevas de Pathway."},
+  "enfocado":     {t:"Enfocado",     s:"Constancia que da resultados."},
+  "coach-pro":    {t:"Coach Pro",    s:"Vas en camino al siguiente nivel."},
+  "top-coach":    {t:"Top Coach",    s:"Entraste al ranking del mes."},
+  "comunidad":    {t:"Comunidad",    s:"Participas en la comunidad."},
+  "productivo":   {t:"Productivo",   s:"Ahorras tiempo con Pathway."},
+  "embajador":    {t:"Embajador",    s:"Dejaste tu reseña. ¡Gracias por recomendar Pathway!"},
+  "leyenda":      {t:"Leyenda",      s:"Máximo nivel alcanzado."}
+};
+function _badgesKey(){ var id=(REAL&&RME&&(RME.id||RME.email))||(typeof COACH!=="undefined"&&COACH&&COACH.email)||"x"; return "pw_badges_"+id; }
+function pwBadgesGet(){ try{ return JSON.parse(localStorage.getItem(_badgesKey())||"[]")||[]; }catch(e){ return []; } }
+function pwHasBadge(id){ return pwBadgesGet().indexOf(id)>=0; }
+function pwAwardBadge(id){
+  if(!PW_BADGES[id]) return false;
+  var cur=pwBadgesGet(); if(cur.indexOf(id)>=0) return false; // ya lo tiene → no repetir
+  cur.push(id);
+  try{ localStorage.setItem(_badgesKey(), JSON.stringify(cur)); }catch(e){}
+  // Best-effort a Supabase (solo si existe la columna badges; si no, no rompe nada).
+  try{ if(REAL&&RME&&RME.id){ _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{badges:cur}).catch(function(){}); } }catch(e){}
+  try{ pwBadgeCelebrate(id); }catch(e){}
+  return true;
+}
+// Celebración al desbloquear (badge grande + confetti). Autocontenida.
+function pwBadgeCelebrate(id){
+  var b=PW_BADGES[id]||{t:id,s:""};
+  var ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;z-index:9500;display:flex;align-items:center;justify-content:center;background:rgba(20,30,25,.5);backdrop-filter:blur(3px);animation:cpAiIn .25s ease";
+  var conf=""; var cols=["#52B788","#E9C46A","#2D6A4F","#D4A24C"];
+  for(var i=0;i<14;i++){ conf+="<span style='position:absolute;left:"+(5+i*7)+"%;top:"+(6+(i%4)*8)+"px;width:7px;height:7px;border-radius:1px;background:"+cols[i%4]+";opacity:.75;transform:rotate(20deg)'></span>"; }
+  ov.innerHTML="<div style='background:#fff;border-radius:22px;padding:26px 30px 24px;max-width:322px;width:90%;text-align:center;box-shadow:0 24px 60px rgba(20,40,30,.28);position:relative;overflow:hidden'>"+
+    "<div style='position:absolute;left:0;right:0;top:0;height:44px;overflow:hidden;pointer-events:none'>"+conf+"</div>"+
+    "<div style='font:800 11px/1 var(--pw-sans);letter-spacing:2px;text-transform:uppercase;color:var(--pw-sendero);margin-bottom:2px;position:relative'>Nuevo badge</div>"+
+    "<div style='font-family:var(--pw-serif);font-weight:700;font-size:19px;color:var(--pw-bosque-dark);position:relative'>¡Lo desbloqueaste!</div>"+
+    "<img src='assets/badges/"+id+".png' alt='' style='width:150px;margin:12px auto 6px;display:block;filter:drop-shadow(0 8px 16px rgba(27,67,50,.22))'>"+
+    "<div style='font-family:var(--pw-serif);font-weight:600;font-size:18px;color:var(--pw-bosque-dark)'>"+b.t+"</div>"+
+    "<p style='font:400 13px/1.5 var(--pw-sans);color:var(--pw-text-soft);margin:4px 0 16px'>"+b.s+"</p>"+
+    "<button type='button' id='pw-badge-cel-go' style='width:100%;height:46px;border:none;border-radius:14px;background:var(--pw-bosque);color:#fff;font:700 14px var(--pw-sans);cursor:pointer'>Ver en mi perfil</button>"+
+  "</div>";
+  ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+  var go=document.getElementById("pw-badge-cel-go");
+  if(go) go.addEventListener("click",function(){ ov.remove(); try{ _openDrawer("perfil"); }catch(e){} });
 }
 // Puente con las páginas embebidas (revista/perfil): cierran el drawer o abren
 // la sección/función REAL del panel según lo que toque el coach en una card.
@@ -8064,7 +8125,10 @@ document.addEventListener("click", function(ev){
     // hasta que la modere; testimonios.js solo muestra publica=true en la landing.
     _sbw("reviews","POST",{ nombre:(COACH&&COACH.name)||(RME&&RME.nombre)||null, rating:_rrat, texto:_rcom||null, fuente:"coach-panel" }).catch(function(){});
     try{ localStorage.setItem(_reviewKeys().r,"done"); }catch(e){}
-    state.review.sent=true; state.review.high=(_rrat>=4); render(); return;
+    state.review.sent=true; state.review.high=(_rrat>=4); render();
+    // Premiación: dejar una reseña desbloquea el badge Embajador (una sola vez).
+    try{ pwAwardBadge("embajador"); }catch(e){}
+    return;
   }
   if(act==="review-share"){
     var _su="https://pathwaycareercoach.com/soy-coach.html", _st="Te recomiendo Pathway para gestionar tu coaching de carrera 💚";
