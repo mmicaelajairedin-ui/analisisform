@@ -1808,6 +1808,44 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: en modo REAL nada de maqueta (empty-states honestos)",
+    bug: "El panel del dueño (multicoach.html) mostraba datos inventados hasta cuando " +
+         "cargaba una red REAL: barras de constancia (62/74/80%), planes/mediciones/" +
+         "sesiones de ejemplo, ranking con nombres falsos (María López), posts de la " +
+         "revista con foto de stock, plan 'Studio $199' hardcodeado y una cara de " +
+         "Unsplash como foto del dueño. No estaba para mandárselo a nadie. Ahora, con " +
+         "MC_REAL=true, esos bloques caen a empty-states honestos (_mcEmptyCard), el " +
+         "'chrome' de demo (.mc-demo-only) se oculta, la comunidad y la agenda arrancan " +
+         "en blanco, el plan/foto/nombre salen de la org real, y no quedan 'null%'.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      // Helper de empty-state para las fichas.
+      if (!/function _mcEmptyCard\(/.test(mc))
+        return "multicoach.html: falta _mcEmptyCard() (empty-state honesto de las fichas en modo real).";
+      // El chrome de demo se marca y se oculta en real.
+      if (!/mc-demo-only/.test(mc))
+        return "multicoach.html: se perdió la clase mc-demo-only (chrome de maqueta que se oculta en real).";
+      if (!/querySelectorAll\(['"]\.mc-demo-only['"]\)[\s\S]{0,80}display=MC_REAL\?['"]none['"]/.test(mc))
+        return "multicoach.html: mcApplyNiche ya no oculta .mc-demo-only en modo real.";
+      // La comunidad arranca vacía para una red real (nada de posts/ranking inventados).
+      if (!/DBCOM=\{posts:\[\],avisos:\[\],clases:\[\],retos:\[\],ranking:\[\]\}/.test(mc))
+        return "multicoach.html: la comunidad ya no arranca en blanco en modo real (DBCOM con seed falso).";
+      // La agenda arranca vacía en real (sin eventos de ejemplo).
+      if (!/AGW=MC_REAL\?\[\]:/.test(mc))
+        return "multicoach.html: la agenda ya no arranca vacía en modo real (mcSetAgenda con seed falso).";
+      // Las fichas gatean sus bloques de datos por MC_REAL.
+      if (!/MC_REAL\?_mcEmptyCard\('Constancia del mes'/.test(mc))
+        return "multicoach.html: la ficha del cliente ya no gatea la 'Constancia del mes' en modo real (barras inventadas).";
+      // El plan de la cuenta sale de la org real, no del 'Studio $199' hardcodeado.
+      if (/hasta 10 coaches y 300 clientes\. \$199\/mes/.test(mc))
+        return "multicoach.html: la Config sigue con el plan 'Studio $199' hardcodeado (debe salir de _mcPlanMeta/MC_ORG).";
+      if (!/function _mcPlanMeta\(/.test(mc))
+        return "multicoach.html: falta _mcPlanMeta() (plan/límites reales de la org en Config).";
+      return null;
+    },
+  },
+  {
     name: "admin: 'Dar acceso a un multicoach' crea la empresa vía crear-multicoach",
     bug: "El alta de un multicoach (dueño de red) debe crear la ORGANIZACIÓN con sus " +
          "límites según el plan (Boutique 3/15 · Pro ilimitado) y el owner rol='owner', " +
