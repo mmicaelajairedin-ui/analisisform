@@ -1629,6 +1629,28 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: chat dueño↔coach (mensaje-red, no se mezcla con Pathway)",
+    bug: "El dueño chatea con cada coach de su red por un canal PROPIO " +
+         "(mensajes_owner_coach), separado del soporte de Pathway (mensajes_admin_" +
+         "coach). Las escrituras van por la edge function mensaje-red (service role, " +
+         "gateada al dueño de la org o al propio coach). Ver docs/multicoach-modelo.md.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function _loadCoachChat\(/.test(mc) || !/function _sendCoachChat\(/.test(mc)) return "multicoach.html: falta el chat dueño↔coach (_loadCoachChat/_sendCoachChat).";
+      if (!/functions\/v1\/mensaje-red/.test(mc)) return "multicoach.html: el chat ya no usa mensaje-red.";
+      const fn = read("supabase/functions/mensaje-red/index.ts");
+      if (!fn) return "falta supabase/functions/mensaje-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn) || !/no_session/.test(fn)) return "mensaje-red: debe usar service role y gatear la sesión.";
+      if (!/isOwner/.test(fn) || !/isSelf/.test(fn)) return "mensaje-red: debe permitir solo al dueño de la org o al propio coach.";
+      const mig = read("supabase/migrations/mensajes_owner_coach.sql");
+      if (!mig || !/CREATE TABLE IF NOT EXISTS mensajes_owner_coach/.test(mig)) return "falta la migración mensajes_owner_coach.sql.";
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy mensaje-red/.test(wf)) return "deploy-functions.yml: falta desplegar mensaje-red.";
+      return null;
+    },
+  },
+  {
     name: "multicoach: tablero del equipo (arrastrar cliente entre coaches + confirmación)",
     bug: "La página Coaches muestra cada coach con SUS clientes debajo; se arrastra " +
          "un cliente de un coach a otro y, tras un cartel de confirmación, se reasigna " +

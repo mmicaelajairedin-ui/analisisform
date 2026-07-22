@@ -1384,6 +1384,12 @@ function _coachBody(c,t){
   return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Agenda de '+c.n.split(" ")[0]+'<span class="dot">.</span></h3>'
    +ses.map(function(s){return '<div class="cp-drow"><div class="dd"><span class="emo">'+s[0]+'</span></div><div class="dg"><div class="dn">'+s[1]+'</div><div class="ds">'+s[2]+'</div></div></div>';}).join('')+'</div>';
  }
+ if(t==='mensajes'){
+  return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Mensajes con '+_mcEsc(c.n.split(" ")[0])+'<span class="dot">.</span></h3>'
+   +'<div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 8px">Chat privado con tu coach — los clientes no lo ven.</div>'
+   +'<div id="ocmsgbox" style="display:flex;flex-direction:column;gap:8px;margin:8px 0;max-height:360px;overflow-y:auto"></div>'
+   +'<div style="display:flex;gap:8px"><input id="ocmsgin" class="inp" placeholder="Escribí un mensaje…" onkeydown="if(event.key===\'Enter\')_sendCoachChat(\''+c.id+'\')"><button class="cp-btn cp-btn-primary" onclick="_sendCoachChat(\''+c.id+'\')">Enviar</button></div></div>';
+ }
  // rendimiento
  return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Retención por mes<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 12px">% de clientes que renovaron.</div>'+_bars([['Abr',88],['May',90],['Jun',93],['Jul',c.ret]])+'</div>'
   +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Actividad<span class="dot">.</span></h3><div class="cp-infogrid">'+_info('Sesiones este mes',c.ses)+_info('Clientes activos',suyos.filter(function(k){return k.est==='activo';}).length)+_info('Valoración',c.rat?'★ '+c.rat:'—')+_info('Retención',c.ret+'%')+'</div></div>';
@@ -1393,12 +1399,13 @@ function _renderCoachFicha(){
  var suyos=DB.clientes.filter(function(k){return k.coach===c.id;});
  var h=_coachHealth(c);
  var tabs=[['perfil','Perfil','👤'],['clientes','Clientes','👥'],['sesiones','Sesiones','🗓️'],['rendimiento','Rendimiento','📊']];
+ if(!c.esOwner) tabs.push(['mensajes','Mensajes','💬']); // chat dueño↔coach (el dueño no se chatea a sí mismo)
  var menuV='<nav class="cp-cfg-nav">'+tabs.map(function(x){return '<button class="cp-cfg-nav-item'+(t===x[0]?' is-on':'')+'" onclick="_goCoachTab(\''+x[0]+'\')"><span class="cp-emo">'+x[2]+'</span><span>'+x[1]+'</span></button>';}).join('')+'</nav>';
  var rail='<aside class="cp-ficha-rail">'
   +'<div class="cp-card cp-card-pad" style="text-align:center"><div class="cp-eyebrow" style="margin-bottom:8px">Estado</div><span class="cp-coach-health '+h[0]+'" style="display:inline-block;margin-bottom:10px">'+h[1]+'</span>'
    +'<div class="cp-coach-stats"><div class="cp-coach-st"><div class="v">'+suyos.length+'</div><div class="k">Clientes</div></div><div class="cp-coach-st"><div class="v">'+c.ret+'%</div><div class="k">Retención</div></div><div class="cp-coach-st"><div class="v">'+(c.rat?'★'+c.rat:'—')+'</div><div class="k">Rating</div></div></div></div>'
   +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
-   +'<button class="cp-btn cp-btn-ghost" onclick="__toast(\'Mensaje enviado a '+c.n+' ✓\')"><span class="cp-emo">✉️</span> Enviar mensaje</button>'
+   +(c.esOwner?'':'<button class="cp-btn cp-btn-ghost" onclick="_goCoachTab(\'mensajes\')"><span class="cp-emo">✉️</span> Enviar mensaje</button>')
    +'<button class="cp-btn cp-btn-ghost" onclick="__toast(\'Abriendo WhatsApp…\')"><span class="cp-emo">📱</span> WhatsApp</button>'
    +(c.esOwner?'<div style="font-size:11.5px;color:var(--soft);line-height:1.4">Sos el dueño de la red. Podés atender clientes como un coach más; para cambiar quién es el dueño, se hace desde el panel admin.</div>':(''
    +'<button class="cp-btn cp-btn-ghost" onclick="toggleCoach(\''+c.id+'\')">'+(c.est==='activo'?'Suspender '+DET().coachSing.toLowerCase():'Reactivar '+DET().coachSing.toLowerCase())+'</button>'
@@ -1409,8 +1416,35 @@ function _renderCoachFicha(){
     +'<div style="min-width:0"><button class="fback" onclick="renderCoaches()" style="text-transform:uppercase;letter-spacing:1.2px;font-size:11px;font-weight:700;margin-bottom:4px">‹ Volver a Coaches</button>'
      +'<h1 class="cp-h1">'+c.n+'<span class="dot">.</span></h1>'
      +'<div class="cp-sub">'+c.esp+' · '+_areaLbl(c.nicho)+'</div></div></div>'
-   +'<div class="cp-topbar-actions"><button class="cp-btn cp-btn-primary" onclick="__toast(\'Mensaje enviado a '+c.n+' ✓\')">✉️ Enviar mensaje</button></div></header>'
+   +(c.esOwner?'':'<div class="cp-topbar-actions"><button class="cp-btn cp-btn-primary" onclick="_goCoachTab(\'mensajes\')">✉️ Enviar mensaje</button></div>')+'</header>'
    +'<div class="cp-ficha-layout3">'+menuV+'<div class="cp-cfg-panel">'+_coachBody(c,t)+'</div>'+rail+'</div>';
+ if(t==='mensajes'){ try{ _loadCoachChat(c.id); }catch(e){} }
+}
+// Chat dueño↔coach (real via mensaje-red; en demo local).
+function _loadCoachChat(coachId){
+ var box=document.getElementById('ocmsgbox'); if(!box) return;
+ if(!MC_REAL){ box.innerHTML='<div class="cp-bub them">¡Hola! ¿Cómo va todo?</div><div class="cp-bub me">Todo bien 👍 (demo)</div>'; return; }
+ box.innerHTML='<div class="csub" style="padding:8px">Cargando…</div>';
+ _hdr({'Content-Type':'application/json'}).then(function(h){
+  return fetch(SB+'/functions/v1/mensaje-red',{method:'POST',headers:h,body:JSON.stringify({action:'thread',coach_id:coachId})});
+ }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+  if(!d||!d.ok){ box.innerHTML='<div class="csub" style="padding:8px">No se pudo cargar el chat.</div>'; return; }
+  var ms=d.mensajes||[];
+  box.innerHTML = ms.length ? ms.map(function(m){ return '<div class="cp-bub '+(m.from_owner?'me':'them')+'">'+_mcEsc(m.body)+'</div>'; }).join('') : '<div class="csub" style="padding:8px">Todavía no hay mensajes. Escribile a tu coach 👇</div>';
+  box.scrollTop=box.scrollHeight;
+ }).catch(function(){ box.innerHTML='<div class="csub" style="padding:8px">Error de conexión.</div>'; });
+}
+function _sendCoachChat(coachId){
+ var i=document.getElementById('ocmsgin'); if(!i) return; var t=(i.value||'').trim(); if(!t) return;
+ if(!MC_REAL){ var box=document.getElementById('ocmsgbox'); var b=document.createElement('div'); b.className='cp-bub me'; b.textContent=t; box.appendChild(b); i.value=''; box.scrollTop=box.scrollHeight; return; }
+ i.disabled=true;
+ _hdr({'Content-Type':'application/json'}).then(function(h){
+  return fetch(SB+'/functions/v1/mensaje-red',{method:'POST',headers:h,body:JSON.stringify({action:'send',coach_id:coachId,texto:t})});
+ }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+  i.disabled=false;
+  if(!d||!d.ok){ __toast('No se pudo enviar'); return; }
+  i.value=''; _loadCoachChat(coachId);
+ }).catch(function(){ i.disabled=false; __toast('Error de conexión'); });
 }
 function esNutriCoach(c){return c.nicho==='nutricion';}
 // Suspender / reactivar / quitar coach. En real va por eliminar-coach-red
