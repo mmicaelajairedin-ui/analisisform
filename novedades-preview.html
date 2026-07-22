@@ -389,8 +389,7 @@ body.embed.admin .switch{display:inline-flex;margin:0 16px 4px;flex-wrap:wrap}
   <h1 class="demo-h">Novedades</h1>
   <p class="demo-sub">Una revista premium dentro del panel. Cada semana es una edición distinta con su propia portada. Rota sola cada lunes — todos los coaches ven la misma edición. Previsualizá las 4 antes de publicar.</p>
 
-  <div class="switch" id="switch"></div>
-  <div class="demo-note"><span class="demo-dot"></span> Esta semana se mostraría la <b id="auto-lbl">Edición 1</b> · rotación automática cada lunes</div>
+  <div class="demo-note"><span class="demo-dot"></span> Cada coach ve la edición de <b id="auto-lbl">su propia semana</b> · sin selector</div>
 
   <div class="stage">
     <div class="panel">
@@ -1204,27 +1203,23 @@ var WEEKS=[
 ];
 function buildFeed(w){var cards=WEEKS[w]||WEEKS[0];return cards.map(function(f){return f();}).join('');}
 function isoWeek(){var now=new Date();var d=new Date(Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()));var day=d.getUTCDay()||7;d.setUTCDate(d.getUTCDate()+4-day);var ys=new Date(Date.UTC(d.getUTCFullYear(),0,1));return Math.ceil((((d-ys)/86400000)+1)/7);}
-var curWeek=isoWeek()%WEEKS.length;
-function renderSwitch(){
-  var sw=document.getElementById('switch');if(!sw)return;sw.style.display='';sw.innerHTML='';
-  WEEKS.forEach(function(_,i){var b=document.createElement('button');b.textContent='Semana '+(i+1);b.className=(i===curWeek?'on':'');b.onclick=function(){curWeek=i;render();};sw.appendChild(b);});
-  var n=document.querySelector('.demo-note');if(n)n.style.display='';
-  var al=document.getElementById('auto-lbl');if(al)al.textContent='Semana '+(curWeek+1)+' de '+WEEKS.length+' · 3 novedades c/u';
-}
+// La edición que ve cada persona depende de SU propia semana en Pathway:
+// entra → edición 1 su primera semana, edición 2 la siguiente, y así (loop de 8).
+// El panel pasa ?ed=<semanas desde el alta, 0-based>. Sin ese dato cae a la
+// rotación por semana ISO (solo para la preview suelta). El selector de semanas
+// NO se muestra para nadie: cada quien ve solo la edición que le toca.
+function _edParam(){var m=/[?&]ed=(\d+)/.exec(location.search);return m?parseInt(m[1],10):null;}
+var _ed=_edParam();
+var curWeek=(((_ed!==null?_ed:isoWeek())%WEEKS.length)+WEEKS.length)%WEEKS.length;
 function render(){
   document.getElementById('scroll').innerHTML=buildFeed(curWeek);
   document.getElementById('ph-meta').textContent='La semana #'+isoWeek();
   document.getElementById('ph-dots').innerHTML='';
-  Array.prototype.forEach.call(document.querySelectorAll('#switch button'),function(b,i){b.className=(i===curWeek?'on':'');});
   document.getElementById('scroll').scrollTop=0;
 }
-// Modo embebido: ?embed=1 lo mete en el drawer del panel (sin el chrome del
-// preview). ?admin=1 muestra el selector de semanas (solo la coach admin puede
-// ver las 8; el resto ve solo la suya, la que rota ese lunes).
+// Modo embebido: ?embed=1 lo mete en el drawer del panel (sin el chrome del preview).
 var EMBED=/[?&]embed=1/.test(location.search);
-var ADMIN=/[?&]admin=1/.test(location.search);
-if(EMBED){document.body.classList.add('embed');if(ADMIN)document.body.classList.add('admin');}
-if(!EMBED||ADMIN)renderSwitch();
+if(EMBED){document.body.classList.add('embed');}
 render();
 </script>
 </body>
