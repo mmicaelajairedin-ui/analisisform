@@ -1720,7 +1720,7 @@ function _gameSpawn(){ var st=document.getElementById("pwg-stage"),L=_game.L,r=M
   _game.obs.push({el:el,x:w,type:type,scored:false}); }
 function _gameEnd(win){
   _game.over=true; if(_gameRAF){cancelAnimationFrame(_gameRAF);_gameRAF=null;}
-  _gameSetBest(_game.pts); var bs=document.getElementById("pwg-best"); if(bs)bs.textContent=_gameBest();
+  _gameSetBest(_game.pts); try{ pwMonthAdd(_game.pts); }catch(e){} var bs=document.getElementById("pwg-best"); if(bs)bs.textContent=_gameBest();
   var ov=document.getElementById("pwg-ov"),t=ov.querySelector(".pw-juego-ovt"),p=ov.querySelector(".pw-juego-ovp"),btn=document.getElementById("pwg-start");
   if(win){ var nx=_game.li+1;
     if(nx>=GAME_LEVELS.length){ t.textContent="¡Llegaste a la cima! 🏆"; p.textContent="Completaste los 3 niveles con "+_game.pts+" puntos."; btn.textContent="Jugar de nuevo"; btn.onclick=function(){_gameStart(0);}; }
@@ -7390,7 +7390,7 @@ document.addEventListener("click", function(ev){
 });
 // El badge se asienta cuando los datos terminan de cargar (por si el último
 // render corrió antes de que llegaran).
-window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} try{ if(!_gamiOn()){ var _nb=document.getElementById("pw-nov-btn"); if(_nb) _nb.style.display="none"; } }catch(e){} },t); }); });
+window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} try{ if(!_gamiOn()){ var _nb=document.getElementById("pw-nov-btn"); if(_nb) _nb.style.display="none"; } }catch(e){} try{ if(_gamiOn()&&RMONTH===null) _loadMonthRank(); }catch(e){} },t); }); });
 
 // ═══ Drawers laterales: Novedades (revista semanal) + Perfil (puntos/medallas/badges) ═══
 // Se embeben las páginas ya aprobadas (novedades-preview.html / perfil-preview.html)
@@ -7418,24 +7418,11 @@ function _openDrawer(which){
     try{ clients=clientMedalInfo().n; }catch(e){}
     try{ photo=(typeof COACH!=="undefined"&&COACH&&COACH.photo)||""; }catch(e){}
     try{ nm=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||""; }catch(e){}
-    if(fr) fr.setAttribute("src", base+"?embed=1"+admin+"&badges="+encodeURIComponent(earned)+"&pts="+encodeURIComponent(pts)+"&clients="+encodeURIComponent(clients)+"&photo="+encodeURIComponent(photo)+"&name="+encodeURIComponent(nm));
+    try{ if(RMONTH===null) _loadMonthRank(); }catch(e){}
+    if(fr) fr.setAttribute("src", base+"?embed=1"+admin+"&badges="+encodeURIComponent(earned)+"&pts="+encodeURIComponent(pts)+"&clients="+encodeURIComponent(clients)+"&photo="+encodeURIComponent(photo)+"&name="+encodeURIComponent(nm)+_monthRankQ());
   } else if(fr && !fr.getAttribute("src")){
     var ref=(REAL&&RME&&RME.id)?("&ref="+encodeURIComponent(RME.id)):"";
-    // Ranking REAL de coaches (top 3 por game_pts) para la card "Los coaches del mes".
-    var rankQ="";
-    try{
-      if(typeof RCOACHES!=="undefined" && RCOACHES && RCOACHES.length){
-        var _ini=function(n){ var pr=(""+n).trim().split(/\s+/); return (((pr[0]||"")[0]||"")+((pr[1]||"")[0]||"")).toUpperCase()||"·"; };
-        var _ls=RCOACHES.filter(function(c){ return c&&c.nombre&&!/bot|test|ejemplo|demo/i.test(c.nombre); })
-          .map(function(c){ return {id:c.id,nombre:c.nombre,pts:(c.game_pts||0),foto:(c.foto_url||"")}; })
-          .sort(function(a,b){ return b.pts-a.pts; });
-        var _top=_ls.slice(0,3).map(function(c){ return {n:c.nombre,i:_ini(c.nombre),p:(c.pts||0).toLocaleString("es-ES"),photo:c.foto||""}; });
-        var _mp=-1; for(var _i=0;_i<_ls.length;_i++){ if(RME&&_ls[_i].id===RME.id){ _mp=_i+1; break; } }
-        var _me=(_mp>0)?{pos:_mp,pts:(_ls[_mp-1].pts||0).toLocaleString("es-ES")}:null;
-        rankQ="&rank="+encodeURIComponent(JSON.stringify({top:_top,me:_me}));
-      }
-    }catch(e){}
-    fr.setAttribute("src", base+"?embed=1"+admin+ref+rankQ);
+    fr.setAttribute("src", base+"?embed=1"+admin+ref+_monthRankQ());
   }
   d.style.display="flex";
 }
@@ -7458,7 +7445,11 @@ var PW_BADGES = {
   "comunidad":    {t:"Comunidad",    s:"Participas en la comunidad."},
   "productivo":   {t:"Productivo",   s:"Ahorras tiempo con Pathway."},
   "embajador":    {t:"Embajador",    s:"Dejaste tu reseña. ¡Gracias por recomendar Pathway!"},
-  "leyenda":      {t:"Leyenda",      s:"Máximo nivel alcanzado."}
+  "leyenda":      {t:"Leyenda",      s:"Máximo nivel alcanzado."},
+  "fundador":       {t:"Fundador",       s:"Usuario desde el lanzamiento de Pathway."},
+  "primer_ingreso": {t:"Primer ingreso", s:"Cobraste tu primera sesión."},
+  "influencer":     {t:"Influencer",     s:"Compartiste tu link 50 veces."},
+  "racha_30_dias":  {t:"Racha 30 días",  s:"¡Todo un hábito! 30 días de racha."}
 };
 // ═══ Sistema de premiación: PUNTOS / XP (la moneda) ═══
 // UNA sola cuenta de puntos = puntos de la cabra (game_pts, ya real) + XP por
@@ -7470,6 +7461,24 @@ function pwXpGet(){ try{ return parseInt(localStorage.getItem(_xpKey())||"0",10)
 function pwXpLog(){ try{ return JSON.parse(localStorage.getItem(_xpLogKey())||"[]")||[]; }catch(e){ return []; } }
 // Puntos totales que ve el coach = cabra + acciones. Una sola barra.
 function pwTotalPoints(){ var g=0; try{ g=(typeof _gameBest==="function")?(_gameBest()||0):((RME&&RME.game_pts)||0); }catch(e){} return (g||0)+pwXpGet(); }
+// Ranking MENSUAL: suma los puntos ganados al mes en curso (se reinicia solo cada mes).
+function pwMonthKey(){ var d=new Date(); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2); }
+function pwMonthAdd(n){ n=parseInt(n,10)||0; if(!n||!(REAL&&RME&&RME.id)) return; try{ _hdr({"Content-Type":"application/json"}).then(function(h){ fetch(SB+"/rest/v1/rpc/pw_add_month_pts",{method:"POST",headers:h,body:JSON.stringify({p_coach:RME.id,p_ym:pwMonthKey(),p_n:n,p_nombre:(RME.nombre||"")})}).catch(function(){}); }); }catch(e){} }
+// Ranking del mes en curso (para el podio "Los coaches del mes").
+var RMONTH=null;
+function _loadMonthRank(){ try{ _sb("ranking_mensual?ym=eq."+pwMonthKey()+"&select=coach_id,nombre,pts&order=pts.desc&limit=50").then(function(rows){ RMONTH=rows||[]; }); }catch(e){} }
+// Arma el &rank= (top 3 del mes + tu posición) para el podio de la revista/perfil.
+function _monthRankQ(){
+  try{
+    if(!(RMONTH&&RMONTH.length)) return "";
+    var _ini=function(n){ var pr=(""+n).trim().split(/\s+/); return (((pr[0]||"")[0]||"")+((pr[1]||"")[0]||"")).toUpperCase()||"·"; };
+    var _ls=RMONTH.filter(function(c){ return c&&c.nombre&&!/bot|test|ejemplo|demo/i.test(c.nombre)&&(c.pts||0)>0; });
+    var _top=_ls.slice(0,3).map(function(c){ return {n:c.nombre,i:_ini(c.nombre),p:(c.pts||0).toLocaleString("es-ES")}; });
+    var _mp=-1; for(var _i=0;_i<_ls.length;_i++){ if(RME&&String(_ls[_i].coach_id)===String(RME.id)){ _mp=_i+1; break; } }
+    var _me=(_mp>0)?{pos:_mp,pts:(_ls[_mp-1].pts||0).toLocaleString("es-ES")}:null;
+    return "&rank="+encodeURIComponent(JSON.stringify({top:_top,me:_me}));
+  }catch(e){ return ""; }
+}
 function pwAddXP(n,reason){
   n=parseInt(n,10)||0; if(!n) return;
   var cur=pwXpGet()+n;
@@ -7477,6 +7486,7 @@ function pwAddXP(n,reason){
   try{ var log=pwXpLog(); log.unshift({n:n,r:reason||"",t:(new Date()).getTime()}); log=log.slice(0,25); localStorage.setItem(_xpLogKey(), JSON.stringify(log)); }catch(e){}
   // Best-effort a Supabase (solo si existe la columna usuarios.xp; si no, no rompe).
   try{ if(REAL&&RME&&RME.id){ _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{xp:cur}).catch(function(){}); } }catch(e){}
+  pwMonthAdd(n);  // cuenta para el ranking del mes
   try{ pwRewardBurst(
     "<div style='display:inline-flex;align-items:center;gap:9px;background:linear-gradient(135deg,#FBF3DC,#F3E4B8);border:1px solid #EAD189;border-radius:100px;padding:13px 24px;box-shadow:0 10px 26px rgba(27,67,50,.20)'><span style='font-size:24px'>⭐</span><b style=\"font-family:var(--pw-serif);font-size:24px;color:#8a6a1e\">+"+n+" pts</b></div>"+
     "<div style='font:600 12.5px var(--pw-sans);color:var(--pw-text-soft);margin-top:8px;text-shadow:0 1px 4px rgba(255,255,255,.9)'>"+(reason||"")+"</div>", {small:true}); }catch(e){}
@@ -7508,6 +7518,9 @@ function pwMarkFeature(name){
 function pwCheckAutoBadges(){
   try{
     pwAwardBadge("nivel-1",{silent:true});                       // primer ingreso / semana 1
+    pwAwardBadge("fundador",{silent:true});                      // usuario del lanzamiento (etapa actual)
+    // primer_ingreso (cobró 1ª sesión), influencer (compartió 50 veces) y
+    // racha_30_dias (30 días de racha) → requieren datos de pagos/compartidos/racha larga.
     var cl=0; try{ cl=clientMedalInfo().n; }catch(e){}
     if(cl>=3) pwAwardBadge("enfocado",{silent:true});            // 3 clientes activos (constancia)
     // productivo: tiene clientes que avanzaron varias semanas (semana_activa≥3)
