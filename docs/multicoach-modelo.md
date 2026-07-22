@@ -115,6 +115,30 @@ operar la red grande** (la plata y la agenda de muchos coaches, automatizado).
   clases` (migración `empresa_cliente.sql`). El **portal del cliente ya los
   muestra** read-only (pestaña Comunidad, solo aparece si hay contenido).
 
+## Chat de la red (dueño ↔ coaches)
+
+Dos canales, ambos separados del soporte de Pathway (`mensajes_admin_coach`) y
+gateados por edge function con service role (nadie escribe/lee directo con la
+anon key):
+
+1. **1-a-1 dueño ↔ un coach** — tabla `mensajes_owner_coach`, edge function
+   `mensaje-red`. El dueño lo abre desde la ficha del coach en `multicoach.html`
+   (pestaña Mensajes); el coach responde desde su bandeja de chat en
+   `panel-v2.html` (hilo "Dueño de tu red", junto a "Soporte Pathway"). El coach
+   usa su propio id como `coach_id` → el backend lo valida con `isSelf`, así que
+   ambos ven el MISMO hilo (keyed por `org_id`+`coach_id`).
+2. **Canal de equipo (grupo)** — tabla `mensajes_red_canal`, edge function
+   `canal-red`. Un solo hilo compartido por org: el dueño + TODOS sus coaches
+   escriben y leen ("sala del equipo"). El dueño lo ve en la sección **Canal del
+   equipo** de `multicoach.html`; el coach en su bandeja (hilo "Canal · <red>").
+   Gate: `esMiembro` = dueño o coach con ese `org_id`. Cada mensaje guarda
+   `autor_id/autor_nombre/autor_rol` (denormalizado) para pintar la burbuja.
+
+Sin sesión real (JWT) los dos canales degradan con un aviso ("volvé a iniciar
+sesión"), no rompen. Aplicar migraciones `mensajes_owner_coach.sql` y
+`mensajes_red_canal.sql`; las edge functions se despliegan solas al mergear a
+`main` (`deploy-functions.yml`).
+
 ## Qué falta — plan por etapas
 
 1. **[BASE] La empresa existe** — migración `organizaciones.sql` + `org_id` en
