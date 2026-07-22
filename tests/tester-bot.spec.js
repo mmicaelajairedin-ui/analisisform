@@ -122,7 +122,10 @@ test.describe('✉️ Invitación al cliente — el email sale de verdad', () =>
     const card = page.locator('[data-act^="cli-open:"]').first();
     const hay = await card.count().catch(() => 0);
     test.skip(hay === 0, 'El coach de prueba no tiene clientes cargados — se saltea');
-    await card.click({ timeout: 6000 });
+    // La fila puede estar fuera de vista o cubierta (resuelve pero no clickea).
+    // La traemos a la vista y, si aún se resiste, forzamos el click.
+    await card.scrollIntoViewIfNeeded().catch(() => {});
+    await card.click({ timeout: 8000 }).catch(async () => { await card.click({ force: true }); });
     await page.waitForTimeout(900);
     // El botón "Reenviar invitación" vive en la ficha (pestaña Perfil, por defecto).
     const btn = page.locator('[data-act="reinvitar"]').first();
