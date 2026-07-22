@@ -1683,6 +1683,36 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: el coach le RESPONDE al dueño desde su panel (mensaje-red)",
+    bug: "El chat dueño↔coach quedaba a medias: el dueño escribía desde multicoach.html " +
+         "pero el coach no veía ni podía contestar desde su panel (panel-v2.html). Ahora, " +
+         "si el coach pertenece a una red (usuarios.org_id), su bandeja de chat (dentro de " +
+         "la cabra) suma un hilo 'Dueño de tu red' — igual que 'Soporte Pathway' — que lee " +
+         "y envía por la MISMA edge function mensaje-red (el coach usa su propio id como " +
+         "coach_id; el backend lo valida con isSelf). Sin sesión real degrada con un aviso, " +
+         "no rompe. Ver docs/multicoach-modelo.md.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      // El coach carga su org_id (para saber si está en una red).
+      if (!/perfil_publico_activo,org_id/.test(p))
+        return "panel-v2.html: la carga del coach ya no trae org_id (no sabría si está en una red).";
+      // Helpers del hilo con el dueño.
+      if (!/function _loadRedThread\(/.test(p) || !/function _coachRedBubbles\(/.test(p))
+        return "panel-v2.html: falta el chat con el dueño de la red (_loadRedThread/_coachRedBubbles).";
+      // Debe ir por la edge function mensaje-red (no un PATCH directo).
+      if (!/functions\/v1\/mensaje-red/.test(p))
+        return "panel-v2.html: el chat con la red ya no usa la edge function mensaje-red.";
+      // La bandeja suma la fila 'red' solo para coaches en una org.
+      if (!/data-thread='red'|aiCoachThread==="red"|key:"red"/.test(p))
+        return "panel-v2.html: la bandeja ya no ofrece el hilo con el dueño de la red.";
+      // El envío usa el PROPIO id del coach como coach_id (isSelf en el backend).
+      if (!/action:"send",coach_id:RME\.id/.test(p))
+        return "panel-v2.html: el coach ya no envía con su propio id (mensaje-red isSelf).";
+      return null;
+    },
+  },
+  {
     name: "multicoach: tablero del equipo (arrastrar cliente entre coaches + confirmación)",
     bug: "La página Coaches muestra cada coach con SUS clientes debajo; se arrastra " +
          "un cliente de un coach a otro y, tras un cartel de confirmación, se reasigna " +

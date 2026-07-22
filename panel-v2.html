@@ -5414,6 +5414,59 @@ function _coachClientBubbles(c){
   }
   return bubbles;
 }
+/* ═══ Chat con el DUEÑO de la red (multicoach) ═══
+ * Solo para coaches que pertenecen a una org (RME.org_id). Espeja "Soporte
+ * Pathway" pero contra la edge function mensaje-red (from_owner=true = el dueño).
+ * Requiere sesión real (JWT) igual que el panel del dueño; si no hay, degrada
+ * con un aviso claro (no rompe). */
+function _redLabel(){ return (RRED&&RRED.nombre)?RRED.nombre:"Dueño de tu red"; }
+// Best-effort: nombre de la red (para la fila y las burbujas). Si la RLS de
+// organizaciones no deja leer, queda el genérico "Dueño de tu red".
+function _loadRedInfo(){
+  if(!RME||!RME.org_id) return;
+  _sb("organizaciones?id=eq."+encodeURIComponent(RME.org_id)+"&select=nombre").then(function(rows){
+    var o=(rows||[])[0]; if(o&&o.nombre){ RRED=RRED||{}; RRED.nombre=o.nombre; if(state.ai&&state.ai.open) render(); }
+  }).catch(function(){});
+}
+// Carga el hilo dueño↔coach por la edge function (el coach usa su PROPIO id como
+// coach_id; el backend lo valida con isSelf). Degrada suave ante 403/sin sesión.
+function _loadRedThread(cb){
+  if(!REAL||!RME||!RME.id){ RREDMSG=[]; cb&&cb(); return; }
+  _hdr({"Content-Type":"application/json"}).then(function(h){
+    return fetch(SB+"/functions/v1/mensaje-red",{method:"POST",headers:h,body:JSON.stringify({action:"thread",coach_id:RME.id})});
+  }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {status:r.status,d:d||{}}; }); }).then(function(res){
+    if(res.d&&res.d.ok){ RREDMSG=res.d.mensajes||[]; RRED=RRED||{}; RRED.err=null; }
+    else { RREDMSG=[]; RRED=RRED||{}; RRED.err=(res.status===403?"no_session":"error"); }
+    cb&&cb();
+  }).catch(function(){ RREDMSG=[]; RRED=RRED||{}; RRED.err="error"; cb&&cb(); });
+}
+function _coachRedBubbles(){
+  if(RRED&&RRED.err==="no_session"){
+    return "<div style='text-align:center;padding:24px 12px;color:var(--pw-text-soft);font-size:12.5px;line-height:1.55'>Para chatear con tu red, vuelve a iniciar sesión (tu sesión no está activa).</div>";
+  }
+  if(RREDMSG==null){
+    return "<div style='text-align:center;padding:24px 12px;color:var(--pw-text-soft);font-size:12.5px'>Cargando…</div>";
+  }
+  function fmtTime(s){ try{ return new Date(s).toLocaleString("es-ES",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
+  var who0=_redLabel();
+  var bubbles=(RREDMSG||[]).slice().sort(function(a,b){ return new Date(a.created_at)-new Date(b.created_at); }).map(function(m){
+    var mine=!m.from_owner; // el coach es from_owner=false
+    var bg=mine?"var(--pw-bosque)":"var(--pw-niebla-2)";
+    var color=mine?"#fff":"var(--pw-carbon)";
+    var align=mine?"flex-end":"flex-start";
+    var who=mine?"Tú":who0;
+    var av=mine?_chatAv(COACH&&COACH.photo,(COACH&&COACH.name)):_chatAv(ADMIN_PHOTO,who0);
+    var col="<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
+      "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(m.body)+"</div>"+
+    "</div>";
+    return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
+  }).join("");
+  if(!bubbles){
+    bubbles="<div style='text-align:center;padding:24px 12px;color:var(--pw-text-soft);font-size:12.5px;line-height:1.55'>Sin mensajes todavía con "+esc(who0)+". Escribe abajo — le llega al dueño de tu red.</div>";
+  }
+  return bubbles;
+}
 /* Filas de la bandeja de chat (Soporte Pathway opcional + un item por cliente).
  * Reutilizado por la bandeja del coach y por la pestaña "Mis clientes" del admin. */
 function _chatBandejaRows(includeMica){
@@ -5456,6 +5509,15 @@ function _chatBandejaRows(includeMica){
     var micaUnread = (RMSG||[]).filter(function(m){ return m.from_admin && !m.leido_en; }).length;
     var micaPrev = micaLast ? ((micaLast.from_admin?"Micaela: ":"Tú: ")+prevTxt(micaLast.body)) : "Soporte y dudas de la plataforma";
     rows += row({ key:"mica", name:"Soporte Pathway", avatarHtml:listAv(ADMIN_PHOTO,"Pathway"), preview:micaPrev, time:micaLast?fmtRel(micaLast.created_at):"", unread:micaUnread });
+    // 1b) Dueño de la red — solo si un COACH pertenece a una org (multicoach).
+    // El propio dueño (rol='owner') gestiona su red desde multicoach.html, no acá.
+    if(REAL && RME && RME.org_id && !RADMIN && RME.rol!=="owner"){
+      var redMsgs = (RREDMSG||[]).slice().sort(function(a,b){ return new Date(a.created_at)-new Date(b.created_at); });
+      var redLast = redMsgs[redMsgs.length-1];
+      var redUnread = (RREDMSG||[]).filter(function(m){ return m.from_owner && !m.leido_en; }).length;
+      var redPrev = redLast ? ((redLast.from_owner?"":"Tú: ")+prevTxt(redLast.body)) : "Mensajes con el dueño de tu red";
+      rows += row({ key:"red", name:_redLabel(), avatarHtml:listAv(ADMIN_PHOTO,_redLabel()), preview:redPrev, time:redLast?fmtRel(redLast.created_at):"", unread:redUnread });
+    }
   }
   // 2) Un item por cada cliente real del coach (los desactivados no aparecen)
   var _nCli=0, _nInact=0;
@@ -5521,6 +5583,10 @@ function viewMensajesBody(){
     if(state.aiCoachThread==="mica"){
       var headM = backBtn+"<span style='font-size:13px;font-weight:600;color:var(--pw-carbon);margin-left:2px'>Soporte Pathway</span></div>";
       return headM+"<div class='cp-ai-msgs' style='display:flex;flex-direction:column;gap:0;padding:14px 16px'>"+_coachMicaBubbles()+"</div>";
+    }
+    if(state.aiCoachThread==="red"){
+      var headR = backBtn+"<span style='font-size:13px;font-weight:600;color:var(--pw-carbon);margin-left:2px'>"+esc(_redLabel())+"</span></div>";
+      return headR+"<div class='cp-ai-msgs' style='display:flex;flex-direction:column;gap:0;padding:14px 16px'>"+_coachRedBubbles()+"</div>";
     }
     var cli = (CLIENTS||[]).filter(function(x){ return String(x.id)===String(state.aiCoachThread); })[0];
     if(!cli){
@@ -5831,6 +5897,8 @@ function viewAsistente(){
     var cPh;
     if(state.aiCoachThread==="mica"){
       cPh = "Escribe a Micaela…";
+    } else if(state.aiCoachThread==="red"){
+      cPh = "Escribe al dueño de tu red…";
     } else {
       var _cc = (CLIENTS||[]).filter(function(x){ return String(x.id)===String(state.aiCoachThread); })[0];
       var _cfn = _cc ? ((_cc.name||"el cliente")+"").split(" ")[0] : "el cliente";
@@ -8391,9 +8459,11 @@ document.addEventListener("click", function(ev){
     // Click en un item de la bandeja del coach (Soporte Pathway o un cliente).
     var ckey = el.getAttribute("data-thread");
     if(!ckey) return;
-    state.aiCoachThread = ckey;   // "mica" o el id del cliente
+    state.aiCoachThread = ckey;   // "mica", "red" o el id del cliente
     state.msgDraft = "";
     state.chatPicker = false;
+    // Hilo con el dueño de la red → cargar por la edge function y re-render.
+    if(ckey==="red"){ RREDMSG=null; render(); _loadRedThread(function(){ if(state.aiCoachThread==="red"){ render(); _animCoachMsgs(); } }); return; }
     render();
     // "Visto": al abrir la conversación de un cliente, marcar sus mensajes como
     // leídos (el cliente verá el ojito abierto en los suyos). "mica" es el hilo
@@ -8422,6 +8492,24 @@ document.addEventListener("click", function(ev){
     var ccTxt = ((ccInput && ccInput.value) || state.msgDraft || "").trim();
     if(!ccTxt){ return; }
     var ccBtn = ev.currentTarget; if(ccBtn) ccBtn.disabled = true;
+    if(ccThread==="red"){
+      // ── Coach → dueño de la red (mensaje-red, from_owner=false) ──
+      if(!REAL || !RME || !RME.id){ alert("Inicia sesión primero."); if(ccBtn) ccBtn.disabled=false; return; }
+      if(_redBusy){ if(ccBtn) ccBtn.disabled=false; return; } _redBusy=true;
+      state.msgDraft = ccTxt; // conservar por si falla
+      _hdr({"Content-Type":"application/json"}).then(function(h){
+        return fetch(SB+"/functions/v1/mensaje-red",{method:"POST",headers:h,body:JSON.stringify({action:"send",coach_id:RME.id,texto:ccTxt})});
+      }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {status:r.status,d:d||{}}; }); }).then(function(res){
+        _redBusy=false;
+        if(!res.d||!res.d.ok){
+          alert(res.status===403?"Tu sesión no está activa — vuelve a iniciar sesión para chatear con tu red.":"No se pudo enviar. Reintenta.");
+          if(ccBtn) ccBtn.disabled=false; return;
+        }
+        state.msgDraft="";
+        _loadRedThread(function(){ render(); _animCoachMsgs(); });
+      }).catch(function(){ _redBusy=false; alert("Error de conexión. Reintenta."); if(ccBtn) ccBtn.disabled=false; });
+      return;
+    }
     if(ccThread==="mica"){
       // ── Coach → admin (Soporte Pathway) ──
       if(!REAL || !RME || !RME.id){ alert("Inicia sesión primero."); if(ccBtn) ccBtn.disabled=false; return; }
@@ -10405,6 +10493,9 @@ function demoGenerateExample(){
   },620);
 }
 var REAL=false, RCFG={}, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[], RORGS=null;
+// RED (multicoach): si el coach pertenece a una org, RRED guarda el nombre de la
+// red / dueño y RREDMSG el hilo de chat con el dueño (via edge function mensaje-red).
+var RRED=null, RREDMSG=null, _redBusy=false;
 
 // Perfil "empleado" (equipo comercial): rol genérico, sin lista de emails.
 // La sección "Emails" (plantillas de venta) la ven admin y empleados.
@@ -10755,7 +10846,7 @@ function loadReal(){
     // completo de toda la plataforma -> arranque lento.
     _sb("cv_publicados?select=email,contenido,coach_id"+(RADMIN?"&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)":"&coach_id=eq."+encodeURIComponent(ME.id))),
     _sb("informes?select=email,id,data,coach_id"+(RADMIN?"&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)":"&coach_id=eq."+encodeURIComponent(ME.id))+"&order=created_at.desc"),
-    _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion,slug,titulo_profesional,bio,perfil_publico_activo"),
+    _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion,slug,titulo_profesional,bio,perfil_publico_activo,org_id"),
     extra[0], extra[1], extra[2], extra[3], extra[4],
     _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc"),
     (ME.rol==="admin" ? _sb("reviews?select=nombre,rating,texto,created_at&order=created_at.desc&limit=200") : Promise.resolve([])),
@@ -10808,6 +10899,10 @@ function loadReal(){
     if(RCFG && RCFG.color_marca) state.brandAccent=RCFG.color_marca;
     if(RCFG) state.pathwayOptIn = !!RCFG.pathway_optin;
     var cname = ME.nombre || usr.nombre || "Coach";
+    // ¿Este coach pertenece a una RED (multicoach)? El org_id manda; si lo hay,
+    // se habilita el chat con el dueño de la red (mismo patrón que Soporte Pathway).
+    RME.org_id = usr.org_id || (RME.configuracion&&RME.configuracion.org_id) || null;
+    if(RME.org_id && !RADMIN && RME.rol!=="owner"){ try{ _loadRedInfo(); }catch(e){} }
     var cfg = RCFG;
     var _vit = (cfg&&cfg.es_pro_vitalicio===true) || RADMIN;
     var planEff = _vit ? "pro" : (cfg&&cfg.plan==="pro" ? "pro" : "basic");
