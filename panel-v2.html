@@ -1758,17 +1758,23 @@ function _gameBurst(x,y,color){ var st=document.getElementById("pwg-stage"); if(
 function _gameShake(){ var b=document.querySelector(".pw-juego-box"); if(!b) return; b.classList.remove("pwg-shake"); void b.offsetWidth; b.classList.add("pwg-shake"); setTimeout(function(){ b.classList.remove("pwg-shake"); },360); }
 function _gameCombo(n){ var el=document.getElementById("pwg-combo"); if(!el) return; if(n>=2){ el.textContent="Combo x"+n+" 🔥"; el.classList.remove("on"); void el.offsetWidth; el.classList.add("on"); } else { el.classList.remove("on"); } }
 /* ── Skins desbloqueables por mejor puntaje (cosmético, sin assets nuevos) ── */
+// Las skins con `cls` son recolor por CSS de la cabra clásica (ya caminan solas).
+// Las que traen `sprites` son una cabra DISTINTA con su propia animación (walk =
+// caminar, jump = festejo), separada de un video y sin fondo.
 var PW_SKINS=[
-  {id:"",       name:"Clásica",    min:0,    cls:""},
-  {id:"dorada", name:"Dorada",     min:300,  cls:"skin-dorada"},
-  {id:"agua",   name:"Aguamarina", min:600,  cls:"skin-agua"},
-  {id:"arco",   name:"Arcoíris",   min:1000, cls:"skin-arco"}
+  {id:"",           name:"Clásica",    min:0,    cls:""},
+  {id:"dorada",     name:"Dorada",     min:300,  cls:"skin-dorada"},
+  {id:"montanista", name:"Montañista", min:600,  cls:"", sprites:{walk:"assets/cabra/skins/montanista-camina.gif", jump:"assets/cabra/skins/montanista-festeja.gif"}, preview:"assets/cabra/skins/montanista-camina.gif"},
+  {id:"arco",       name:"Arcoíris",   min:1000, cls:"skin-arco"}
 ];
 function _gameSkinKey(){ return "pw_game_skin_"+((typeof REAL!=="undefined"&&REAL&&RME&&RME.email)||(typeof COACH!=="undefined"&&COACH&&COACH.email)||"x"); }
 function _gameSkinCur(){ try{ var id=localStorage.getItem(_gameSkinKey())||""; var best=_gameBest(); var sk=PW_SKINS.filter(function(x){return x.id===id;})[0]; if(sk&&best>=sk.min) return sk; }catch(e){} return PW_SKINS[0]; }
-function _gameApplySkin(){ var c=document.getElementById("pwg-cabra"); if(!c) return; PW_SKINS.forEach(function(s){ if(s.cls) c.classList.remove(s.cls); }); var sk=_gameSkinCur(); if(sk.cls) c.classList.add(sk.cls); }
+function _gameApplySkin(){ var c=document.getElementById("pwg-cabra"); if(!c) return; PW_SKINS.forEach(function(s){ if(s.cls) c.classList.remove(s.cls); }); var sk=_gameSkinCur(); if(sk.cls) c.classList.add(sk.cls);
+  // Cabra con sprites propios (Montañista): mostramos su caminar ya en la pantalla
+  // de inicio; si es recolor/clásica, la cabra verde de siempre.
+  c.src=(sk.sprites&&sk.sprites.walk)||"assets/cabra/frente.gif"; }
 function _gameRenderSkins(){ var box=document.getElementById("pwg-skins"); if(!box) return; var best=_gameBest(), cur=_gameSkinCur().id;
-  box.innerHTML=PW_SKINS.map(function(s){ var un=best>=s.min; return "<button class='pwg-skin"+(s.id===cur?" on":"")+(un?"":" lock")+"' data-skin='"+s.id+"' title='"+esc(s.name)+(un?"":" · se desbloquea a "+s.min+" pts")+"'><img src='assets/cabra/frente.gif' alt='' class='"+esc(s.cls)+"'>"+(un?"":"<span class='pwg-skin-lock'>🔒"+s.min+"</span>")+"</button>"; }).join(""); }
+  box.innerHTML=PW_SKINS.map(function(s){ var un=best>=s.min; return "<button class='pwg-skin"+(s.id===cur?" on":"")+(un?"":" lock")+"' data-skin='"+s.id+"' title='"+esc(s.name)+(un?"":" · se desbloquea a "+s.min+" pts")+"'><img src='"+esc(s.preview||"assets/cabra/frente.gif")+"' alt='' class='"+esc(s.cls)+"'>"+(un?"":"<span class='pwg-skin-lock'>🔒"+s.min+"</span>")+"</button>"; }).join(""); }
 function _gamePickSkin(id){ try{ var best=_gameBest(); var sk=PW_SKINS.filter(function(x){return x.id===id;})[0]; if(!sk||best<sk.min) return; localStorage.setItem(_gameSkinKey(),id); _gameApplySkin(); _gameRenderSkins(); }catch(e){} }
 function openJuego(){
   closeJuego();
@@ -1815,7 +1821,7 @@ function _gameStart(li){
   var L=GAME_LEVELS[li], stage=document.getElementById("pwg-stage"); if(!stage) return;
   stage.querySelectorAll(".pwg-ob,.pwg-pop,.pwg-particle").forEach(function(e){e.remove();});
   document.getElementById("pwg-ov").style.display="none";
-  _game={li:li,L:L,pts:0,saltos:0,dir:1,cabraY:0,vy:0,jumping:false,nextSpawn:340,obs:[],waveT:0,over:false,combo:0};
+  _game={li:li,L:L,pts:0,saltos:0,dir:1,cabraY:0,vy:0,jumping:false,nextSpawn:340,obs:[],waveT:0,over:false,combo:0,sprites:(_gameSkinCur()||{}).sprites||null};
   document.getElementById("pwg-lvl").textContent="Nivel "+L.n+" · "+L.name;
   document.getElementById("pwg-tgt").textContent=L.target;
   _gameCombo(0); _gameApplySkin(); _gameHUD();
@@ -1853,7 +1859,11 @@ function _gameLoop(){
   // runner de verdad: solo hay que saltar (tocar / espacio).
   _game.nextSpawn-=sp; _game.obs.forEach(function(o){o.x-=sp;o.el.style.left=o.x+"px";}); if(_game.nextSpawn<=0){ _gameSpawn(); _game.nextSpawn=_game.L.gap+Math.random()*60; }
   if(_game.jumping){ _game.cabraY+=_game.vy; _game.vy-=0.72; if(_game.cabraY<=0){_game.cabraY=0;_game.jumping=false;_game.vy=0;} }
-  var src=_game.waveT>0?"assets/cabra/atencion.png":(_game.jumping?"assets/cabra/salta.gif":"assets/cabra/camina.gif");
+  // Skin con cabra propia (Montañista) → usa SUS sprites (walk/jump); si no, la
+  // cabra clásica (recoloreada por CSS según la skin).
+  var src=_game.sprites
+    ? (_game.jumping?_game.sprites.jump:_game.sprites.walk)
+    : (_game.waveT>0?"assets/cabra/atencion.png":(_game.jumping?"assets/cabra/salta.gif":"assets/cabra/camina.gif"));
   if(_game.waveT>0)_game.waveT--;
   if(cabra){ var cur=cabra.getAttribute("src"); if(cur!==src) cabra.src=src; cabra.style.bottom=(44+_game.cabraY)+"px"; }
   for(var i=_game.obs.length-1;i>=0;i--){ var o=_game.obs[i]; var over=o.x>CX-44&&o.x<CX+44;
