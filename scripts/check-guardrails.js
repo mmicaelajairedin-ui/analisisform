@@ -1765,7 +1765,8 @@ const RULES = [
          "de panel-v2.html Y en pw-cabra-juego.js) y un botón flotante (.cp-mobjuego, " +
          "la cabrita) que aparece solo en móvil y abre el mismo juego.",
     check() {
-      // 6 niveles en las dos copias del juego, y el cierre no hardcodea '3'.
+      // 6 niveles en las dos copias del juego, cierre no hardcodea '3', y se
+      // puede jugar en el celular (tocar la pantalla = saltar).
       for (const f of ["panel-v2.html", "pw-cabra-juego.js"]) {
         const s = read(f);
         if (!s) continue;
@@ -1773,6 +1774,8 @@ const RULES = [
           return f + ": el juego perdió los niveles nuevos (falta el nivel 6 'Cima').";
         if (/Completaste los 3 niveles/.test(s))
           return f + ": el texto final del juego volvió a hardcodear '3 niveles' (debe usar GAME_LEVELS.length).";
+        if (!/addEventListener\("touchstart"[\s\S]{0,120}_gameJump\(\)/.test(s))
+          return f + ": el juego ya no es jugable al tacto (falta touchstart→_gameJump para móvil).";
       }
       // Botón flotante del juego en móvil (panel del coach).
       const p = read("panel-v2.html");

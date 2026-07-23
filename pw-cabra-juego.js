@@ -46,7 +46,7 @@
         "<button class='pw-juego-x' id='pwg-x' aria-label='Cerrar'>✕</button></div>"+
       "<div class='pw-juego-stage' id='pwg-stage'>"+
         "<img class='pw-juego-cabra' id='pwg-cabra' src='assets/cabra/frente.gif' alt=''>"+
-        "<div class='pw-juego-ov' id='pwg-ov'><div class='pw-juego-ovt'>La cabra a la cima "+CAB_ICO+"</div><div class='pw-juego-ovp'>◄ ► avanzar · <b>espacio</b> saltar piedras · salta alto para las estrellas ⭐ · clic en la cabra para saludar</div><button class='pwg-startbtn' id='pwg-start'>Empezar →</button></div>"+
+        "<div class='pw-juego-ov' id='pwg-ov'><div class='pw-juego-ovt'>La cabra a la cima "+CAB_ICO+"</div><div class='pw-juego-ovp'><b>Toca la pantalla</b> o <b>barra espaciadora</b> para saltar las piedras · salta alto para las estrellas ⭐<br><span style='opacity:.8;font-size:.92em'>En la compu: ◄ ► para avanzar · en el celular, gíralo horizontal 🔁</span></div><button class='pwg-startbtn' id='pwg-start'>Empezar →</button></div>"+
       "</div>"+
       "<div class='pw-juego-foot'>Mejor puntaje: <b id='pwg-best'>"+_gameBest()+"</b></div>"+
     "</div>";
@@ -56,6 +56,13 @@
     document.getElementById("pwg-start").onclick=function(){ _gameStart(0); };
     document.getElementById("pwg-cabra").addEventListener("click",function(ev){ ev.stopPropagation(); if(_game&&!_game.over) _game.waveT=70; });
     document.addEventListener("keydown",_gameKeyDown); document.addEventListener("keyup",_gameKeyUp);
+    // Móvil/táctil: tocar la pantalla = saltar (en desktop se usa la barra
+    // espaciadora). Si el juego no arrancó todavía, el primer toque lo inicia.
+    var _stage=document.getElementById("pwg-stage");
+    if(_stage){ _stage.addEventListener("touchstart",function(ev){
+      if(_game&&!_game.over){ ev.preventDefault(); _gameJump(); }
+      else if(!_game){ var sb=document.getElementById("pwg-start"); if(sb){ ev.preventDefault(); _gameStart(0); } }
+    },{passive:false}); }
   }
   function closeJuego(){
     if(_gameRAF){ cancelAnimationFrame(_gameRAF); _gameRAF=null; }
