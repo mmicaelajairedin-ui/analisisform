@@ -78,6 +78,28 @@ const RULES = [
     },
   },
   {
+    name: "panel-v2: abrir la campana marca las notis como vistas (no vuelven al reentrar)",
+    bug: "La coach abría la campana, veía las notificaciones y al reentrar volvían a " +
+         "salir SIN marcar: solo se marcaban al clickear cada una (y clickear navega, " +
+         "así que las que solo miraba quedaban no-leídas para siempre). Ahora abrir el " +
+         "panel marca TODO el set como visto (persistidas→leídas server+local; " +
+         "contadores→descartados al conteo actual) y hay un fallback LOCAL de leídas " +
+         "por si el PATCH al server no llega.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // Abrir el panel marca el set como visto.
+      if (!/data\.forEach\(function\(it\)\{[\s\S]{0,220}_pwMarkCoachNotifRead\(it\.id\)[\s\S]{0,120}_notifDismiss\(it\.key/.test(s))
+        return "panel-v2.html: abrir la campana ya no marca las notificaciones como vistas → vuelven a salir al reentrar.";
+      // Fallback local de leídas aplicado al cargar del server.
+      if (!/_notifReadHas\(n\.id\)[\s\S]{0,40}n\.leida\s*=\s*true/.test(s))
+        return "panel-v2.html: el fallback local de notis leídas ya no se aplica al cargar → si el server no guardó, reaparecen.";
+      if (!/_pwMarkCoachNotifRead[\s\S]{0,80}_notifReadAdd\(id\)/.test(s))
+        return "panel-v2.html: _pwMarkCoachNotifRead ya no guarda el 'leído' local → sin defensa si falla el PATCH.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: reseña del coach — no se pide de nuevo si ya la dejó (flag server)",
     bug: "El modal de reseña se marcaba 'ya reseñó' SOLO en localStorage (por " +
          "dispositivo) → el mismo coach entraba desde otra compu / limpiaba caché " +

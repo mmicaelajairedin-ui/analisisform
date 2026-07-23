@@ -7701,6 +7701,13 @@ function _syncUserMenu(){
 function _notifDismKey(){ var id=(REAL&&RME&&(RME.id||RME.email))||"x"; return "pw_notifdism_"+id; }
 function _notifDismissed(){ try{ return JSON.parse(localStorage.getItem(_notifDismKey())||"{}")||{}; }catch(e){ return {}; } }
 function _notifDismiss(key,count){ try{ var d=_notifDismissed(); d[key]=parseInt(count,10)||0; localStorage.setItem(_notifDismKey(),JSON.stringify(d)); }catch(e){} }
+// Fallback LOCAL de "leídas" para las notificaciones persistidas del coach: si el
+// PATCH al server no llega (red caída, RLS), igual quedan marcadas en ESTE
+// navegador y no vuelven a salir al reentrar. Es el par del `leida` del server.
+function _notifReadKey(){ var id=(REAL&&RME&&(RME.id||RME.email))||"x"; return "pw_notifread_"+id; }
+function _notifReadSet(){ try{ return JSON.parse(localStorage.getItem(_notifReadKey())||"[]")||[]; }catch(e){ return []; } }
+function _notifReadHas(id){ try{ return _notifReadSet().indexOf(String(id))>=0; }catch(e){ return false; } }
+function _notifReadAdd(id){ try{ var a=_notifReadSet(); id=String(id); if(a.indexOf(id)<0){ a.push(id); if(a.length>300) a=a.slice(-300); localStorage.setItem(_notifReadKey(),JSON.stringify(a)); } }catch(e){} }
 // ── Notificaciones persistidas del COACH (para='coach') — eventos discretos que
 // escriben los portales del cliente (p.ej. "X completó una tarea"). Se suman al
 // bell junto a los contadores vivos que ya existían, con leído/no-leído real. ──
@@ -7712,6 +7719,9 @@ function _pwLoadCoachNotif(){
     .then(function(r){ return (r&&r.ok)?r.json():[]; })
     .then(function(list){
       _PWCOACHNOTIF=(list&&list.length)?list:[];
+      // Defensa en profundidad: lo marcado leído en este navegador manda aunque el
+      // server siga diciendo no-leída (por si el PATCH previo no llegó).
+      try{ _PWCOACHNOTIF.forEach(function(n){ if(n && _notifReadHas(n.id)) n.leida=true; }); }catch(e){}
       var unread=_PWCOACHNOTIF.filter(function(n){return !n.leida;}).length;
       if(_pwCoachNotifReady && _pwCoachNotifPrev>=0 && unread>_pwCoachNotifPrev){ try{_pwDing();}catch(e){} try{_pwPulse(document.getElementById("pw-notif-btn"));}catch(e){} }
       _pwCoachNotifPrev=unread; _pwCoachNotifReady=true;
@@ -7719,6 +7729,7 @@ function _pwLoadCoachNotif(){
     }).catch(function(){});
 }
 function _pwMarkCoachNotifRead(id){
+  try{ _notifReadAdd(id); }catch(e){}
   for(var i=0;i<_PWCOACHNOTIF.length;i++){ if(String(_PWCOACHNOTIF[i].id)===String(id)){ _PWCOACHNOTIF[i].leida=true; break; } }
   _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/rest/v1/notificaciones?id=eq."+encodeURIComponent(id),{method:"PATCH",headers:h,body:JSON.stringify({leida:true})}); }).catch(function(){});
   try{ _syncNotifBadge(); }catch(e){}
@@ -7778,8 +7789,18 @@ function pwNotif(e){
         return "<button class='pw-um-item' "+a+" data-nkey='"+(it.key||"")+"' data-ncount='"+(it.n||0)+"'><span style='filter:grayscale(1)'>"+it.ico+"</span><span>"+it.text+"</span></button>";
       }).join("");
     }
-    // Al clickear un item: descartarlo (para que no siga apareciendo) y cerrar el
-    // panel. La navegación la hace el dispatcher global (data-act) igual.
+    // Abrir el panel = "ya las vi": marca TODO el set actual como visto para que al
+    // reentrar no vuelvan a salir sin marcar. Los eventos persistidos se marcan
+    // leídos (server + local); los contadores vivos se descartan al conteo actual
+    // (si aparece algo NUEVO —más informes, más solicitudes— vuelve a avisar).
+    try{
+      data.forEach(function(it){
+        if(it.persist){ if(it.id!=null) _pwMarkCoachNotifRead(it.id); }
+        else if(it.key){ _notifDismiss(it.key, it.n); }
+      });
+      _syncNotifBadge();
+    }catch(_e){}
+    // Al clickear un item: navega (data-act) y ya quedó marcado como visto al abrir.
     list.onclick=function(ev){
       // Evento persistido: marcar leído (la navegación al cliente la hace el
       // dispatcher global via data-act='cli-open').
