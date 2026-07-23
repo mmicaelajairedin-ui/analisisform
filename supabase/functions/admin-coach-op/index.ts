@@ -39,25 +39,35 @@ function json(body: unknown, status = 200): Response {
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const isUuid = (s: string) => /^[0-9a-f-]{32,36}$/i.test(s);
 
-// JWT del que llama → email verificado por Supabase Auth (null si no es un
-// usuario real, ej. la anon key).
-async function callerEmail(token: string): Promise<string | null> {
-  if (!token || token === ANON) return null;
+// JWT del que llama → identidad verificada por Supabase Auth (email + uid).
+// Devuelve {email, uid}: cualquiera de los dos puede venir null. La anon key no
+// es un usuario real → {null, null}.
+async function callerIdentity(token: string): Promise<{ email: string | null; uid: string | null }> {
+  if (!token || token === ANON) return { email: null, uid: null };
   try {
     const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
-    if (!r.ok) return null;
+    if (!r.ok) return { email: null, uid: null };
     const u = await r.json();
     const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
-    return EMAIL_RE.test(em) ? em : null;
+    const uid = (u && u.id ? String(u.id) : "").trim();
+    return { email: EMAIL_RE.test(em) ? em : null, uid: isUuid(uid) ? uid : null };
   } catch {
-    return null;
+    return { email: null, uid: null };
   }
 }
 
-async function isAdmin(email: string): Promise<boolean> {
+// Admin si el que llama coincide con una fila usuarios rol='admin' por EMAIL del
+// JWT O por auth_id (= auth.uid del JWT). El chequeo por auth_id cubre el caso
+// real: la coach entra con Google (mmicaela...@gmail.com) pero su fila admin usa
+// otro email de marca (hi@...); su auth_id SÍ está ligado, así que por ahí pasa.
+async function isAdmin(email: string | null, uid: string | null): Promise<boolean> {
+  const ors: string[] = [];
+  if (email) ors.push(`email.ilike.${email}`);
+  if (uid) ors.push(`auth_id.eq.${uid}`);
+  if (!ors.length) return false;
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?email=ilike.${encodeURIComponent(email)}&rol=eq.admin&select=id&limit=1`,
+      `${SB_URL}/rest/v1/usuarios?or=(${encodeURIComponent(ors.join(","))})&rol=eq.admin&select=id&limit=1`,
       { headers: svc },
     );
     if (!r.ok) return false;
@@ -73,11 +83,11 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
   if (!SB_URL || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
 
-  // ── Gate de admin (por email del JWT, no por auth_id) ─────────────
+  // ── Gate de admin (por email del JWT O por auth_id) ───────────────
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
-  const adminEmail = await callerEmail(token);
-  if (!adminEmail || !(await isAdmin(adminEmail))) return json({ error: "not_admin" }, 403);
+  const who = await callerIdentity(token);
+  if ((!who.email && !who.uid) || !(await isAdmin(who.email, who.uid))) return json({ error: "not_admin" }, 403);
 
   // ── Input ─────────────────────────────────────────────────────────
   let body: { op?: string; coach_id?: string; dias?: number | string };
