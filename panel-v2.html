@@ -217,6 +217,10 @@ body.pw-nov-open #pw-nov-btn{ display:none !important; }
 .cp-side-juego .cp-side-juego-tx{display:flex;flex-direction:column;line-height:1.15;}
 .cp-side-juego b{font-size:12.5px;font-weight:700;color:var(--pw-carbon);}
 .cp-side-juego small{font-size:10.5px;font-weight:500;color:var(--pw-text-soft);}
+/* Botón flotante de la cabra (juego) — SOLO móvil. En desktop el juego vive en
+   el sidebar (.cp-side-foot), que en móvil se oculta; sin esto el coach no lo
+   encontraba desde el teléfono. */
+.cp-mobjuego{display:none;}
 .cp-side-link{display:inline-flex;align-items:center;gap:6px;padding:6px 8px;font-size:11px;color:var(--pw-text-soft);border-radius:6px;}
 .cp-side-link:hover{color:var(--pw-carbon);background:var(--pw-niebla-3);}
 /* Menú de cuenta (avatar arriba a la derecha): Perfil, Recursos, Marca propia, Clientes de Pathway, Mi cuenta, Cerrar sesión */
@@ -937,6 +941,18 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
     box-shadow:0 10px 30px rgba(31,42,35,.28),0 2px 8px rgba(0,0,0,.12);
   }
   .cp-side-brand,.cp-side-coach,.cp-side-foot{ display:none; }
+  /* El juego se oculta con .cp-side-foot; lo reponemos como botón flotante
+     (la cabrita) arriba de la barra de navegación, para que el coach lo tenga
+     a mano desde el teléfono. */
+  .cp-mobjuego{
+    display:flex; align-items:center; justify-content:center;
+    position:fixed; right:14px; bottom:calc(84px + env(safe-area-inset-bottom));
+    width:52px; height:52px; border-radius:50%;
+    background:#fff; border:1px solid var(--pw-border);
+    box-shadow:0 8px 22px rgba(31,42,35,.28),0 2px 6px rgba(0,0,0,.12);
+    z-index:60; cursor:pointer; padding:0;
+  }
+  .cp-mobjuego img{ width:40px; height:40px; object-fit:contain; }
   .cp-side-nav{ flex-direction:row; flex:1; gap:0; }
   .cp-side-nav-wrap{ flex:1; display:flex; }
   .cp-side-nav-wrap > .cp-side-nav-item{ flex:1; }
@@ -1714,7 +1730,7 @@ function openJuego(){
       "<button class='pw-juego-x' data-act='juego-close' aria-label='Cerrar'>✕</button></div>"+
     "<div class='pw-juego-stage' id='pwg-stage'>"+
       "<img class='pw-juego-cabra' id='pwg-cabra' src='assets/cabra/frente.gif' alt=''>"+
-      "<div class='pw-juego-ov' id='pwg-ov'><div class='pw-juego-ovt'>La cabra a la cima "+CAB_ICO+"</div><div class='pw-juego-ovp'>◄ ► avanzar · <b>espacio</b> saltar piedras · saltá alto para las estrellas ⭐ · clic en la cabra para saludar</div><button class='cp-btn cp-btn-primary' id='pwg-start' style='height:42px'>Empezar →</button></div>"+
+      "<div class='pw-juego-ov' id='pwg-ov'><div class='pw-juego-ovt'>La cabra a la cima "+CAB_ICO+"</div><div class='pw-juego-ovp'><b>Toca la pantalla</b> o <b>barra espaciadora</b> para saltar las piedras · salta alto para las estrellas ⭐<br><span style='opacity:.8;font-size:.92em'>En la compu: ◄ ► para avanzar · en el celular, gíralo horizontal 🔁</span></div><button class='cp-btn cp-btn-primary' id='pwg-start' style='height:42px'>Empezar →</button></div>"+
     "</div>"+
     "<div class='pw-juego-foot'>Mejor puntaje: <b id='pwg-best'>"+_gameBest()+"</b></div>"+
   "</div>";
@@ -1723,6 +1739,13 @@ function openJuego(){
   document.getElementById("pwg-start").onclick=function(){ _gameStart(0); };
   document.getElementById("pwg-cabra").addEventListener("click",function(ev){ ev.stopPropagation(); if(_game&&!_game.over) _game.waveT=70; });
   document.addEventListener("keydown",_gameKeyDown); document.addEventListener("keyup",_gameKeyUp);
+  // Móvil/táctil: tocar la pantalla = saltar (en desktop, barra espaciadora).
+  // Si el juego no arrancó, el primer toque lo inicia.
+  var _stage=document.getElementById("pwg-stage");
+  if(_stage){ _stage.addEventListener("touchstart",function(ev){
+    if(_game&&!_game.over){ ev.preventDefault(); _gameJump(); }
+    else if(!_game){ ev.preventDefault(); _gameStart(0); }
+  },{passive:false}); }
 }
 function closeJuego(){
   if(_gameRAF){ cancelAnimationFrame(_gameRAF); _gameRAF=null; }
@@ -1758,7 +1781,7 @@ function _gameEnd(win){
   if(win){ var nx=_game.li+1;
     if(nx>=GAME_LEVELS.length){ t.textContent="¡Llegaste a la cima! 🏆"; p.textContent="Completaste los "+GAME_LEVELS.length+" niveles con "+_game.pts+" puntos."; btn.textContent="Jugar de nuevo"; btn.onclick=function(){_gameStart(0);}; }
     else { t.textContent="¡Nivel "+_game.L.n+" completado! 🎉"; p.innerHTML="Siguiente: <b>"+esc(GAME_LEVELS[nx].name)+"</b> — más rápido y con obstáculos más seguidos."; btn.textContent="Ir al nivel "+(nx+1); btn.onclick=function(){_gameStart(nx);}; }
-  } else { t.textContent="¡Chocaste!"; p.innerHTML="Saltá con <b>espacio</b>. Prueba de nuevo este nivel."; btn.textContent="Reintentar"; btn.onclick=function(){_gameStart(_game.li);}; }
+  } else { t.textContent="¡Chocaste! 🪨"; p.innerHTML="Toca la pantalla o <b>espacio</b> para saltar. Prueba de nuevo este nivel."; btn.textContent="Reintentar"; btn.onclick=function(){_gameStart(_game.li);}; }
   ov.style.display="flex";
 }
 function _gameLoop(){
@@ -1784,6 +1807,13 @@ function _gameLoop(){
   _gameRAF=requestAnimationFrame(_gameLoop);
 }
 /* ═══ Sidebar ═══ */
+// Botón flotante de la cabra (juego) para MÓVIL — el juego del sidebar se oculta
+// en pantallas chicas, así que lo reponemos acá. Mismo data-act que el del sidebar.
+function viewMobJuego(){
+  return "<button class='cp-mobjuego' data-act='juego-open' aria-label='Jugar a la cabra y sumar puntos'>"+
+    "<img src='https://szf7yzy2hz.ucarecd.net/088834f5-6934-4e64-97b2-52ebd8647c1d/CopyofUntitledDesign.png' alt='' onerror=\"this.onerror=null;this.src='assets/cabra/frente.gif'\">"+
+  "</button>";
+}
 // Nicho y pestañas del cliente (fuente única: la usa la ficha y la barra móvil contextual).
 function _cliNicho(c){ return _isDemoCoach() ? (state.demoTipo||'carrera') : ((c&&c.raw&&c.raw.nicho)||(typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||(c&&c.raw&&c.raw.configuracion&&c.raw.configuracion.tipo)||'carrera'); }
 function _cliTabs(tipo){ if(tipo==='fitness') return [["perfil","Perfil"],["plan","Análisis"],["fit_rutina","Gym"],["fit_antro","Antropometría"],["fit_nutri","Nutrición"],["sesiones","Sesiones"]]; if(tipo==='financiero') return [["perfil","Perfil"],["plan","Análisis"],["fin_pres","Finanzas"],["gestion","Gestión"],["sesiones","Sesiones"]]; return [["perfil","Perfil"],["plan","Análisis"],["docs","Documentos"],["avance","Acciones"],["sesiones","Sesiones"]]; }
@@ -8034,7 +8064,7 @@ function render(){
     document.getElementById("root").innerHTML =
       "<div class='cp-app"+(state.railCollapsed?" rail":"")+"'>"+viewSidebar()+
         "<div class='cp-main'><div class='cp-scroll'><div class='cp-container"+(_narrow?" cp-container--narrow":"")+"'>"+view+"</div></div></div>"+
-        viewAsistente()+viewIAPathway()+"</div>"+
+        viewAsistente()+viewIAPathway()+viewMobJuego()+"</div>"+
       (state.newOpen?viewNewModal():"")+
       (state.mail&&state.mail.open?viewMailModal():"")+
       (state.genmat&&state.genmat.open?viewGenMatModal():"")+

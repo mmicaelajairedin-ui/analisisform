@@ -24,7 +24,10 @@
   var GAME_LEVELS=[
     {n:1,name:"Perfil",target:100,gap:330,trees:false},
     {n:2,name:"Cliente",target:200,gap:255,trees:true},
-    {n:3,name:"Sesión",target:320,gap:170,trees:true}
+    {n:3,name:"Sesión",target:320,gap:170,trees:true},
+    {n:4,name:"Informe",target:450,gap:150,trees:true},
+    {n:5,name:"Oferta",target:600,gap:135,trees:true},
+    {n:6,name:"Cima",target:780,gap:120,trees:true}
   ];
   var ROCK_SVG="<svg width='40' height='30' viewBox='0 0 40 30'><path d='M4 28 Q0 17 9 13 Q12 3 23 5 Q36 6 36 18 Q39 28 31 28 Z' fill='#8A8D8B' stroke='#636664' stroke-width='1.6' stroke-linejoin='round'/><path d='M12 13 Q17 9 24 12' stroke='#AFB2B0' stroke-width='2' fill='none' stroke-linecap='round'/></svg>";
   var TREE_SVG="<svg width='42' height='56' viewBox='0 0 42 56'><rect x='18' y='42' width='6' height='13' rx='1.5' fill='#6F5A40'/><polygon points='21,4 35,25 7,25' fill='#2D6A4F'/><polygon points='21,16 38,41 4,41' fill='#357A5B'/><polygon points='21,28 41,52 1,52' fill='#3E8B66'/></svg>";
@@ -43,7 +46,7 @@
         "<button class='pw-juego-x' id='pwg-x' aria-label='Cerrar'>✕</button></div>"+
       "<div class='pw-juego-stage' id='pwg-stage'>"+
         "<img class='pw-juego-cabra' id='pwg-cabra' src='assets/cabra/frente.gif' alt=''>"+
-        "<div class='pw-juego-ov' id='pwg-ov'><div class='pw-juego-ovt'>La cabra a la cima "+CAB_ICO+"</div><div class='pw-juego-ovp'>◄ ► avanzar · <b>espacio</b> saltar piedras · salta alto para las estrellas ⭐ · clic en la cabra para saludar</div><button class='pwg-startbtn' id='pwg-start'>Empezar →</button></div>"+
+        "<div class='pw-juego-ov' id='pwg-ov'><div class='pw-juego-ovt'>La cabra a la cima "+CAB_ICO+"</div><div class='pw-juego-ovp'><b>Toca la pantalla</b> o <b>barra espaciadora</b> para saltar las piedras · salta alto para las estrellas ⭐<br><span style='opacity:.8;font-size:.92em'>En la compu: ◄ ► para avanzar · en el celular, gíralo horizontal 🔁</span></div><button class='pwg-startbtn' id='pwg-start'>Empezar →</button></div>"+
       "</div>"+
       "<div class='pw-juego-foot'>Mejor puntaje: <b id='pwg-best'>"+_gameBest()+"</b></div>"+
     "</div>";
@@ -53,6 +56,13 @@
     document.getElementById("pwg-start").onclick=function(){ _gameStart(0); };
     document.getElementById("pwg-cabra").addEventListener("click",function(ev){ ev.stopPropagation(); if(_game&&!_game.over) _game.waveT=70; });
     document.addEventListener("keydown",_gameKeyDown); document.addEventListener("keyup",_gameKeyUp);
+    // Móvil/táctil: tocar la pantalla = saltar (en desktop se usa la barra
+    // espaciadora). Si el juego no arrancó todavía, el primer toque lo inicia.
+    var _stage=document.getElementById("pwg-stage");
+    if(_stage){ _stage.addEventListener("touchstart",function(ev){
+      if(_game&&!_game.over){ ev.preventDefault(); _gameJump(); }
+      else if(!_game){ var sb=document.getElementById("pwg-start"); if(sb){ ev.preventDefault(); _gameStart(0); } }
+    },{passive:false}); }
   }
   function closeJuego(){
     if(_gameRAF){ cancelAnimationFrame(_gameRAF); _gameRAF=null; }
@@ -86,8 +96,8 @@
     _gameSetBest(_game.pts); var bs=document.getElementById("pwg-best"); if(bs)bs.textContent=_gameBest();
     var ov=document.getElementById("pwg-ov"),t=ov.querySelector(".pw-juego-ovt"),p=ov.querySelector(".pw-juego-ovp"),btn=document.getElementById("pwg-start");
     if(win){ var nx=_game.li+1;
-      if(nx>=GAME_LEVELS.length){ t.textContent="¡Llegaste a la cima! 🏆"; p.textContent="Completaste los 3 niveles con "+_game.pts+" puntos."; btn.textContent="Jugar de nuevo"; btn.onclick=function(){_gameStart(0);}; }
-      else { t.textContent="¡Nivel "+_game.L.n+" completado! 🎉"; p.innerHTML= nx===1?"Ahora con más piedras y árboles que suman puntos.":"Último nivel: las piedras vienen más seguidas."; btn.textContent="Ir al nivel "+(nx+1); btn.onclick=function(){_gameStart(nx);}; }
+      if(nx>=GAME_LEVELS.length){ t.textContent="¡Llegaste a la cima! 🏆"; p.textContent="Completaste los "+GAME_LEVELS.length+" niveles con "+_game.pts+" puntos."; btn.textContent="Jugar de nuevo"; btn.onclick=function(){_gameStart(0);}; }
+      else { t.textContent="¡Nivel "+_game.L.n+" completado! 🎉"; p.innerHTML= (nx===GAME_LEVELS.length-1)?"Último nivel: ¡la cima está cerca!":(nx===1?"Ahora con más piedras y árboles que suman puntos.":"Cada nivel viene más rápido — ¡sigue subiendo!"); btn.textContent="Ir al nivel "+(nx+1); btn.onclick=function(){_gameStart(nx);}; }
     } else { t.textContent="¡Chocaste!"; p.innerHTML="Salta con <b>espacio</b>. Prueba de nuevo este nivel."; btn.textContent="Reintentar"; btn.onclick=function(){_gameStart(_game.li);}; }
     ov.style.display="flex";
   }
