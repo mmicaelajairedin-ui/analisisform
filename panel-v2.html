@@ -191,6 +191,27 @@ body.pw-nov-open #pw-nov-btn{ display:none !important; }
 .pw-juego-ovp{font-size:13.5px;color:#CDE9D7;max-width:360px;line-height:1.5;}
 .pw-juego-foot{padding:10px 16px;color:rgba(255,255,255,.72);font-size:12px;text-align:center;}
 .pw-juego-foot b{color:#fff;}
+/* ── Juego: game feel (combo · shake · partículas · mute) + skins ── */
+.pw-juego-box.pwg-shake{animation:pwgShake .34s ease;}
+@keyframes pwgShake{0%,100%{transform:translate(0,0)}18%{transform:translate(-7px,3px)}36%{transform:translate(7px,-2px)}54%{transform:translate(-5px,2px)}72%{transform:translate(5px,-1px)}}
+.pwg-combo{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:9;font-weight:900;font-size:21px;color:#F2C14E;text-shadow:0 2px 0 rgba(20,55,38,.55);pointer-events:none;opacity:0;}
+.pwg-combo.on{opacity:1;animation:pwgComboPulse .34s ease;}
+@keyframes pwgComboPulse{0%{transform:translateX(-50%) scale(.7)}60%{transform:translateX(-50%) scale(1.28)}100%{transform:translateX(-50%) scale(1)}}
+.pwg-particle{position:absolute;z-index:7;width:8px;height:8px;border-radius:2px;pointer-events:none;will-change:transform,opacity;}
+.pw-juego-mute{background:rgba(255,255,255,.14);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:13px;}
+.pwg-skins-lbl{font-size:10.5px;color:#CDE9D7;text-transform:uppercase;letter-spacing:.6px;margin-top:8px;}
+.pwg-skins{display:flex;gap:9px;justify-content:center;flex-wrap:wrap;margin-top:2px;}
+.pwg-skin{position:relative;width:46px;height:46px;border-radius:12px;border:2px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.pwg-skin img{width:38px;height:38px;object-fit:contain;}
+.pwg-skin.on{border-color:#F2C14E;box-shadow:0 0 0 2px rgba(242,193,78,.4);}
+.pwg-skin.lock{cursor:not-allowed;}
+.pwg-skin.lock img{filter:grayscale(1) brightness(.5);}
+.pwg-skin-lock{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10.5px;color:#fff;background:rgba(15,42,30,.55);font-weight:800;}
+/* Skins de la cabra (filtros; incluyen la sombra base) */
+.skin-dorada{filter:drop-shadow(0 5px 6px rgba(20,55,38,.35)) sepia(.72) saturate(2.4) hue-rotate(-14deg) brightness(1.06);}
+.skin-agua{filter:drop-shadow(0 5px 6px rgba(20,55,38,.35)) saturate(1.7) hue-rotate(135deg);}
+.skin-arco{animation:pwgHue 3s linear infinite;}
+@keyframes pwgHue{0%{filter:drop-shadow(0 5px 6px rgba(20,55,38,.35)) hue-rotate(0deg) saturate(1.7)}100%{filter:drop-shadow(0 5px 6px rgba(20,55,38,.35)) hue-rotate(360deg) saturate(1.7)}}
 .cp-side-plan{font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;background:var(--pw-amanecer);color:var(--pw-carbon);padding:2px 6px;border-radius:100px;}
 .cp-demo-switch{padding:8px 4px 10px;border-bottom:1px solid var(--pw-border);}
 .cp-demo-switch-lbl{font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--pw-text-soft);margin-bottom:6px;padding:0 4px;}
@@ -1720,24 +1741,60 @@ var TREE_SVG="<svg width='42' height='56' viewBox='0 0 42 56'><rect x='18' y='42
 var STAR_SVG="<svg width='34' height='34' viewBox='0 0 34 34'><polygon points='17,2 21,12 32,12.5 23.5,19 26.5,30 17,23.5 7.5,30 10.5,19 2,12.5 13,12' fill='#F2C14E' stroke='#D9A441' stroke-width='1.2' stroke-linejoin='round'/></svg>";
 function _gameKeyDown(e){ if(!_game) return; if(e.key==="ArrowRight"){_game.dir=1;e.preventDefault();} else if(e.key==="ArrowLeft"){_game.dir=-1;e.preventDefault();} else if(e.key===" "||e.code==="Space"){e.preventDefault(); _gameJump();} }
 function _gameKeyUp(e){ if(!_game) return; if((e.key==="ArrowRight"&&_game.dir===1)||(e.key==="ArrowLeft"&&_game.dir===-1)) _game.dir=0; }
-function _gameJump(){ if(!_game||_game.jumping||_game.over) return; _game.jumping=true; _game.vy=13; }
+function _gameJump(){ if(!_game||_game.jumping||_game.over) return; _game.jumping=true; _game.vy=13; _gameSound("jump"); }
+/* ── Game feel: sonido (WebAudio, sin assets), partículas y temblor ── */
+var _gameActx=null, _gameMuted=(function(){ try{ return localStorage.getItem("pw_game_mute")==="1"; }catch(e){ return false; } })();
+function _gameToggleMute(){ _gameMuted=!_gameMuted; try{ localStorage.setItem("pw_game_mute",_gameMuted?"1":"0"); }catch(e){} var b=document.getElementById("pwg-mute"); if(b) b.textContent=_gameMuted?"🔇":"🔊"; }
+function _gameSound(kind){ if(_gameMuted) return; try{
+  var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return; if(!_gameActx) _gameActx=new AC();
+  var ac=_gameActx, now=ac.currentTime, f={jump:520,star:880,combo:1046,crash:150,win:660}[kind]||440;
+  var o=ac.createOscillator(), g=ac.createGain(); o.connect(g); g.connect(ac.destination);
+  o.type=(kind==="crash")?"sawtooth":"sine"; o.frequency.setValueAtTime(f,now);
+  if(kind==="win"){ o.frequency.setValueAtTime(f,now); o.frequency.setValueAtTime(f*1.25,now+.09); o.frequency.setValueAtTime(f*1.5,now+.18); }
+  g.gain.setValueAtTime(.0001,now); g.gain.exponentialRampToValueAtTime(.16,now+.01); g.gain.exponentialRampToValueAtTime(.0001,now+(kind==="crash"?.28:.17));
+  o.start(now); o.stop(now+.3);
+}catch(e){} }
+function _gameBurst(x,y,color){ var st=document.getElementById("pwg-stage"); if(!st) return; for(var i=0;i<9;i++){ (function(){ var p=document.createElement("div"); p.className="pwg-particle"; p.style.background=color||"#F2C14E"; p.style.left=x+"px"; p.style.bottom=y+"px"; st.appendChild(p); var ang=Math.random()*Math.PI*2, dist=24+Math.random()*26, dx=Math.cos(ang)*dist, dy=Math.sin(ang)*dist+14; try{ p.animate([{transform:"translate(0,0) scale(1)",opacity:1},{transform:"translate("+dx.toFixed(1)+"px,"+(-dy).toFixed(1)+"px) scale(.4)",opacity:0}],{duration:520,easing:"cubic-bezier(.2,.7,.3,1)"}); }catch(e){} setTimeout(function(){ p.remove(); },560); })(); } }
+function _gameShake(){ var b=document.querySelector(".pw-juego-box"); if(!b) return; b.classList.remove("pwg-shake"); void b.offsetWidth; b.classList.add("pwg-shake"); setTimeout(function(){ b.classList.remove("pwg-shake"); },360); }
+function _gameCombo(n){ var el=document.getElementById("pwg-combo"); if(!el) return; if(n>=2){ el.textContent="Combo x"+n+" 🔥"; el.classList.remove("on"); void el.offsetWidth; el.classList.add("on"); } else { el.classList.remove("on"); } }
+/* ── Skins desbloqueables por mejor puntaje (cosmético, sin assets nuevos) ── */
+var PW_SKINS=[
+  {id:"",       name:"Clásica",    min:0,    cls:""},
+  {id:"dorada", name:"Dorada",     min:300,  cls:"skin-dorada"},
+  {id:"agua",   name:"Aguamarina", min:600,  cls:"skin-agua"},
+  {id:"arco",   name:"Arcoíris",   min:1000, cls:"skin-arco"}
+];
+function _gameSkinKey(){ return "pw_game_skin_"+((typeof REAL!=="undefined"&&REAL&&RME&&RME.email)||(typeof COACH!=="undefined"&&COACH&&COACH.email)||"x"); }
+function _gameSkinCur(){ try{ var id=localStorage.getItem(_gameSkinKey())||""; var best=_gameBest(); var sk=PW_SKINS.filter(function(x){return x.id===id;})[0]; if(sk&&best>=sk.min) return sk; }catch(e){} return PW_SKINS[0]; }
+function _gameApplySkin(){ var c=document.getElementById("pwg-cabra"); if(!c) return; PW_SKINS.forEach(function(s){ if(s.cls) c.classList.remove(s.cls); }); var sk=_gameSkinCur(); if(sk.cls) c.classList.add(sk.cls); }
+function _gameRenderSkins(){ var box=document.getElementById("pwg-skins"); if(!box) return; var best=_gameBest(), cur=_gameSkinCur().id;
+  box.innerHTML=PW_SKINS.map(function(s){ var un=best>=s.min; return "<button class='pwg-skin"+(s.id===cur?" on":"")+(un?"":" lock")+"' data-skin='"+s.id+"' title='"+esc(s.name)+(un?"":" · se desbloquea a "+s.min+" pts")+"'><img src='assets/cabra/frente.gif' alt='' class='"+esc(s.cls)+"'>"+(un?"":"<span class='pwg-skin-lock'>🔒"+s.min+"</span>")+"</button>"; }).join(""); }
+function _gamePickSkin(id){ try{ var best=_gameBest(); var sk=PW_SKINS.filter(function(x){return x.id===id;})[0]; if(!sk||best<sk.min) return; localStorage.setItem(_gameSkinKey(),id); _gameApplySkin(); _gameRenderSkins(); }catch(e){} }
 function openJuego(){
   closeJuego();
   var o=document.createElement("div"); o.id="pw-juego"; o.className="pw-juego";
   o.innerHTML="<div class='pw-juego-box'>"+
     "<div class='pw-juego-hud'><span class='pw-juego-lvl' id='pwg-lvl'>La cabra a la cima</span>"+
       "<span class='pw-juego-pts'><b id='pwg-pts'>0</b> / <span id='pwg-tgt'>100</span> pts · <span id='pwg-saltos'>0</span> saltos</span>"+
+      "<button class='pw-juego-mute' id='pwg-mute' aria-label='Silenciar'>"+(_gameMuted?"🔇":"🔊")+"</button>"+
       "<button class='pw-juego-x' data-act='juego-close' aria-label='Cerrar'>✕</button></div>"+
     "<div class='pw-juego-stage' id='pwg-stage'>"+
       "<img class='pw-juego-cabra' id='pwg-cabra' src='assets/cabra/frente.gif' alt=''>"+
-      "<div class='pw-juego-ov' id='pwg-ov'><div class='pw-juego-ovt'>La cabra a la cima "+CAB_ICO+"</div><div class='pw-juego-ovp'><b>Toca la pantalla</b> o <b>barra espaciadora</b> para saltar las piedras · salta alto para las estrellas ⭐<br><span style='opacity:.8;font-size:.92em'>En la compu: ◄ ► para avanzar · en el celular, gíralo horizontal 🔁</span></div><button class='cp-btn cp-btn-primary' id='pwg-start' style='height:42px'>Empezar →</button></div>"+
+      "<div class='pwg-combo' id='pwg-combo'></div>"+
+      "<div class='pw-juego-ov' id='pwg-ov'><div class='pw-juego-ovt'>La cabra a la cima "+CAB_ICO+"</div><div class='pw-juego-ovp'><b>Toca la pantalla</b> o <b>barra espaciadora</b> para saltar. La cabra corre sola — salta las piedras 🪨 y agarra las estrellas ⭐ (encadénalas para hacer combo 🔥)<br><span style='opacity:.8;font-size:.92em'>En el celular, gíralo horizontal 🔁</span></div>"+
+        "<div class='pwg-skins-lbl'>Tu cabra</div><div class='pwg-skins' id='pwg-skins'></div>"+
+        "<button class='cp-btn cp-btn-primary' id='pwg-start' style='height:42px;margin-top:6px'>Empezar →</button></div>"+
     "</div>"+
     "<div class='pw-juego-foot'>Mejor puntaje: <b id='pwg-best'>"+_gameBest()+"</b></div>"+
   "</div>";
   document.body.appendChild(o);
   o.addEventListener("click",function(e){ if(e.target===o) closeJuego(); });
   document.getElementById("pwg-start").onclick=function(){ _gameStart(0); };
+  document.getElementById("pwg-mute").onclick=function(ev){ ev.stopPropagation(); _gameToggleMute(); };
   document.getElementById("pwg-cabra").addEventListener("click",function(ev){ ev.stopPropagation(); if(_game&&!_game.over) _game.waveT=70; });
+  // Selector de skins (delegado; se re-dibuja al elegir).
+  var _sk=document.getElementById("pwg-skins"); if(_sk){ _sk.addEventListener("click",function(ev){ var b=ev.target.closest&&ev.target.closest(".pwg-skin"); if(b) _gamePickSkin(b.getAttribute("data-skin")); }); }
+  _gameRenderSkins(); _gameApplySkin();
   document.addEventListener("keydown",_gameKeyDown); document.addEventListener("keyup",_gameKeyUp);
   // Móvil/táctil: tocar la pantalla = saltar (en desktop, barra espaciadora).
   // Si el juego no arrancó, el primer toque lo inicia.
@@ -1756,12 +1813,12 @@ function closeJuego(){
 }
 function _gameStart(li){
   var L=GAME_LEVELS[li], stage=document.getElementById("pwg-stage"); if(!stage) return;
-  stage.querySelectorAll(".pwg-ob,.pwg-pop").forEach(function(e){e.remove();});
+  stage.querySelectorAll(".pwg-ob,.pwg-pop,.pwg-particle").forEach(function(e){e.remove();});
   document.getElementById("pwg-ov").style.display="none";
-  _game={li:li,L:L,pts:0,saltos:0,dir:0,cabraY:0,vy:0,jumping:false,nextSpawn:340,obs:[],waveT:0,over:false};
+  _game={li:li,L:L,pts:0,saltos:0,dir:1,cabraY:0,vy:0,jumping:false,nextSpawn:340,obs:[],waveT:0,over:false,combo:0};
   document.getElementById("pwg-lvl").textContent="Nivel "+L.n+" · "+L.name;
   document.getElementById("pwg-tgt").textContent=L.target;
-  _gameHUD();
+  _gameCombo(0); _gameApplySkin(); _gameHUD();
   if(_gameRAF) cancelAnimationFrame(_gameRAF);
   _gameRAF=requestAnimationFrame(_gameLoop);
 }
@@ -1776,7 +1833,10 @@ function _gameSpawn(){ var st=document.getElementById("pwg-stage"),L=_game.L,r=M
   _game.obs.push({el:el,x:w,type:type,scored:false}); }
 function _gameEnd(win){
   _game.over=true; if(_gameRAF){cancelAnimationFrame(_gameRAF);_gameRAF=null;}
+  _gameCombo(0);
+  if(win){ _gameSound("win"); } else { _gameShake(); _gameSound("crash"); }
   _gameSetBest(_game.pts); try{ pwRankAdd(_game.pts); }catch(e){} var bs=document.getElementById("pwg-best"); if(bs)bs.textContent=_gameBest();
+  _gameRenderSkins(); // por si el nuevo puntaje desbloqueó una skin
   var ov=document.getElementById("pwg-ov"),t=ov.querySelector(".pw-juego-ovt"),p=ov.querySelector(".pw-juego-ovp"),btn=document.getElementById("pwg-start");
   if(win){ var nx=_game.li+1;
     if(nx>=GAME_LEVELS.length){ t.textContent="¡Llegaste a la cima! 🏆"; p.textContent="Completaste los "+GAME_LEVELS.length+" niveles con "+_game.pts+" puntos."; btn.textContent="Jugar de nuevo"; btn.onclick=function(){_gameStart(0);}; }
@@ -1788,9 +1848,12 @@ function _gameLoop(){
   if(!_game||_game.over) return;
   var st=document.getElementById("pwg-stage"); if(!st){ return; }
   var cabra=document.getElementById("pwg-cabra"), sp=(_game.L&&_game.L.speed)||4.4, CX=130;
-  if(_game.dir>0){ _game.nextSpawn-=sp; _game.obs.forEach(function(o){o.x-=sp;o.el.style.left=o.x+"px";}); if(_game.nextSpawn<=0){ _gameSpawn(); _game.nextSpawn=_game.L.gap+Math.random()*60; } }
+  // Auto-run: el mundo se desplaza SIEMPRE (la cabra corre sola). Antes solo
+  // avanzaba con la flecha derecha → en el celular no venía nada. Ahora es un
+  // runner de verdad: solo hay que saltar (tocar / espacio).
+  _game.nextSpawn-=sp; _game.obs.forEach(function(o){o.x-=sp;o.el.style.left=o.x+"px";}); if(_game.nextSpawn<=0){ _gameSpawn(); _game.nextSpawn=_game.L.gap+Math.random()*60; }
   if(_game.jumping){ _game.cabraY+=_game.vy; _game.vy-=0.72; if(_game.cabraY<=0){_game.cabraY=0;_game.jumping=false;_game.vy=0;} }
-  var src=_game.waveT>0?"assets/cabra/atencion.png":(_game.jumping?"assets/cabra/salta.gif":(_game.dir>0?"assets/cabra/camina.gif":"assets/cabra/frente.gif"));
+  var src=_game.waveT>0?"assets/cabra/atencion.png":(_game.jumping?"assets/cabra/salta.gif":"assets/cabra/camina.gif");
   if(_game.waveT>0)_game.waveT--;
   if(cabra){ var cur=cabra.getAttribute("src"); if(cur!==src) cabra.src=src; cabra.style.bottom=(44+_game.cabraY)+"px"; }
   for(var i=_game.obs.length-1;i>=0;i--){ var o=_game.obs[i]; var over=o.x>CX-44&&o.x<CX+44;
@@ -1799,8 +1862,9 @@ function _gameLoop(){
       if(!o.scored && o.x<CX-32){ o.scored=true; _game.pts+=25; _game.saltos++; _gamePop("+25"); _gameHUD(); if(_game.pts>=_game.L.target) return _gameEnd(true); }
     } else if(o.type==="tree"){
       if(!o.scored && o.x<CX-32){ o.scored=true; _game.pts+=10; _gamePop("+10"); _gameHUD(); if(_game.pts>=_game.L.target) return _gameEnd(true); }
-    } else { // estrella: hay que saltar ALTO para agarrarla (si no, pasa de largo)
-      if(over && !o.scored && _game.cabraY>42){ o.scored=true; _game.pts+=50; _gamePop("+50"); o.el.style.transition="opacity .2s,transform .2s"; o.el.style.opacity="0"; o.el.style.transform="scale(1.6)"; _gameHUD(); if(_game.pts>=_game.L.target) return _gameEnd(true); }
+    } else if(!o.scored){ // estrella: saltar ALTO para agarrarla; encadenarlas = combo
+      if(over && _game.cabraY>42){ o.scored=true; _game.combo=(_game.combo||0)+1; var gain=50*_game.combo; _game.pts+=gain; _gamePop("+"+gain); _gameCombo(_game.combo); _gameSound(_game.combo>1?"combo":"star"); _gameBurst(o.x,150,"#F2C14E"); o.el.style.transition="opacity .2s,transform .2s"; o.el.style.opacity="0"; o.el.style.transform="scale(1.6)"; _gameHUD(); if(_game.pts>=_game.L.target) return _gameEnd(true); }
+      else if(o.x<CX-40){ o.scored=true; if(_game.combo){ _game.combo=0; _gameCombo(0); } } // estrella perdida → corta el combo
     }
     if(o.x<-70){ o.el.remove(); _game.obs.splice(i,1); }
   }
