@@ -830,6 +830,26 @@ const RULES = [
     },
   },
   {
+    name: "diagnóstico se guarda vía edge function guardar-informe (resiste RLS)",
+    bug: "Con RLS estricto (rls_close_informes_cv_leak.sql) el UPDATE de informes " +
+         "exige coach_id = pw_coach_id(). Las filas que creó generar-informe quedaban " +
+         "con coach_id NULL → el coach no podía guardar el diagnóstico (\"permission " +
+         "denied / row-level\"). El panel guarda por guardar-informe (service role, " +
+         "estampa el coach_id del dueño), con fallback al PATCH directo. Esta regla " +
+         "evita perder ese camino Y que generar-informe vuelva a crear huérfanos.",
+    check() {
+      if (!read("supabase/functions/guardar-informe/index.ts"))
+        return "falta la edge function guardar-informe (guarda el diagnóstico sin chocar con RLS).";
+      const p = read("panel-v2.html") || "";
+      if (!/functions\/v1\/guardar-informe/.test(p))
+        return "panel-v2.html: ya no llama a guardar-informe → el diagnóstico puede no guardarse bajo RLS.";
+      const gi = read("supabase/functions/generar-informe/index.ts") || "";
+      if (gi && !/coach_id/.test(gi))
+        return "generar-informe: saveInforme ya no estampa coach_id → vuelve a crear informes huérfanos que el coach no puede editar.";
+      return null;
+    },
+  },
+  {
     name: "intake se guarda vía edge function (service role) — no lo bloquea RLS",
     bug: "Con RLS estricto, el cliente solo puede escribir su fila si su email de " +
          "Auth == candidatos.email. Si no tiene sesión o el email no coincide, el " +
