@@ -215,6 +215,35 @@ const RULES = [
     },
   },
   {
+    name: "IA Pathway / Novedades / Perfil: el mismo botón abre Y cierra (toggle)",
+    bug: "El coach tocaba el botón de IA Pathway (o Novedades/Perfil), se abría, y al " +
+         "tocarlo de nuevo NO se cerraba: el handler solo hacía open=true. Los tres " +
+         "triggers deben ser toggle (si ya está abierto, el mismo botón lo cierra). " +
+         "Además, el marcador de Novedades no debe ocultarse en desktop cuando la " +
+         "columna está abierta, si no no queda botón para re-tocar y cerrar.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // IA Pathway: el handler iachat-open tiene que tener la rama de cierre.
+      const ia = s.search(/act===?["']iachat-open["']/);
+      if (ia < 0) return "panel-v2.html ya no tiene el handler iachat-open.";
+      const iaBlock = s.slice(ia, ia + 500);
+      if (!/state\.iaChat\.open\b[^]*?open\s*=\s*false/.test(iaBlock))
+        return "el handler iachat-open ya no togglea: al re-tocar el botón no cierra el chat de IA.";
+      // Novedades: el handler nov-open tiene que mirar si ya está abierta para cerrar.
+      const nv = s.search(/act===?["']nov-open["']/);
+      if (nv < 0) return "panel-v2.html ya no tiene el handler nov-open.";
+      const nvBlock = s.slice(nv, nv + 220);
+      if (!/pw-nov-open/.test(nvBlock) || !/_closeDrawer/.test(nvBlock))
+        return "el handler nov-open ya no togglea: al re-tocar Novedades no cierra la columna.";
+      // En desktop el marcador de Novedades debe REUBICARSE al abrir (asa para
+      // cerrar), no esconderse. Se permite ocultarlo solo dentro del @media móvil.
+      if (!/body\.pw-nov-open\s+#pw-nov-btn\{\s*right:360px/.test(s))
+        return "el marcador de Novedades ya no queda como asa para cerrar en desktop (right:360px).";
+      return null;
+    },
+  },
+  {
     name: "auth-callback hace merge por persona (no duplica usuarios con 2 emails)",
     bug: "Una misma persona con dos emails (su email de negocio + el Gmail con el " +
          "que entra por Google) creaba un usuario NUEVO por cada email. El login " +
