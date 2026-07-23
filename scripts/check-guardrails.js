@@ -1757,6 +1757,35 @@ const RULES = [
     },
   },
   {
+    name: "juego de la cabra: 6 niveles + accesible en móvil (coach)",
+    bug: "Dos cosas del juego 'La cabra a la cima': (1) llegaba solo al nivel 3 " +
+         "(pedido: más niveles) y (2) en el panel del coach el botón del juego vive " +
+         "en el pie del sidebar (.cp-side-foot), que se OCULTA en móvil — un coach " +
+         "desde el teléfono no lo encontraba. Ahora hay 6 niveles (en la copia inline " +
+         "de panel-v2.html Y en pw-cabra-juego.js) y un botón flotante (.cp-mobjuego, " +
+         "la cabrita) que aparece solo en móvil y abre el mismo juego.",
+    check() {
+      // 6 niveles en las dos copias del juego, y el cierre no hardcodea '3'.
+      for (const f of ["panel-v2.html", "pw-cabra-juego.js"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/\{n:6,name:"Cima"/.test(s))
+          return f + ": el juego perdió los niveles nuevos (falta el nivel 6 'Cima').";
+        if (/Completaste los 3 niveles/.test(s))
+          return f + ": el texto final del juego volvió a hardcodear '3 niveles' (debe usar GAME_LEVELS.length).";
+      }
+      // Botón flotante del juego en móvil (panel del coach).
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function viewMobJuego\(/.test(p) || !/cp-mobjuego/.test(p))
+          return "panel-v2.html: falta el botón flotante del juego en móvil (.cp-mobjuego/viewMobJuego).";
+        if (!/viewMobJuego\(\)/.test(p) || p.indexOf("viewMobJuego()") === p.indexOf("function viewMobJuego("))
+          return "panel-v2.html: viewMobJuego() está definido pero no se inserta en el shell.";
+      }
+      return null;
+    },
+  },
+  {
     name: "multicoach: tablero del equipo (arrastrar cliente entre coaches + confirmación)",
     bug: "La página Coaches muestra cada coach con SUS clientes debajo; se arrastra " +
          "un cliente de un coach a otro y, tras un cartel de confirmación, se reasigna " +
