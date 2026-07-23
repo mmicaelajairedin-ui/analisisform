@@ -881,6 +881,21 @@ const RULES = [
     },
   },
   {
+    name: "admin: extender trial / marcar pagado van por edge function (resiste RLS)",
+    bug: "El PATCH directo a usuarios para extender trial / marcar pagado fallaba " +
+         "bajo RLS: exigía auth_id ligado + policy de admin. admin-coach-op verifica " +
+         "al admin por EMAIL del JWT y escribe con service role → funciona aunque el " +
+         "auth_id no esté ligado. Esta regla evita volver al PATCH directo frágil.",
+    check() {
+      if (!read("supabase/functions/admin-coach-op/index.ts"))
+        return "falta la edge function admin-coach-op (extender trial / marcar pagado sin chocar con RLS).";
+      const p = read("panel-v2.html") || "";
+      if (!/functions\/v1\/admin-coach-op/.test(p))
+        return "panel-v2.html: ya no llama a admin-coach-op → extender/marcar pagado puede fallar bajo RLS.";
+      return null;
+    },
+  },
+  {
     name: "diagnóstico se guarda vía edge function guardar-informe (resiste RLS)",
     bug: "Con RLS estricto (rls_close_informes_cv_leak.sql) el UPDATE de informes " +
          "exige coach_id = pw_coach_id(). Las filas que creó generar-informe quedaban " +
