@@ -8916,7 +8916,7 @@ document.addEventListener("click", function(ev){
       base.setDate(base.getDate()+30);
       var nc=Object.assign({},cf,{fecha_fin_prueba:base.toISOString(),estado_sub:"prueba",ultima_extension_admin:new Date().toISOString()});
       return _sbw("usuarios?id=eq."+encodeURIComponent(ctId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Trial extendido +30 días ✓"); reloadCoaches(); });
-    }).catch(function(){ alert("No se pudo extender el trial."); });
+    }).catch(function(){ alert("No se pudo extender el trial.\n\nSi no cambió nada, tu sesión de admin pudo vencer (RLS): cerrá sesión y volvé a entrar para renovar tu acceso, y reintentá."); });
     return;
   }
   if(act.indexOf("coach-paid:")===0){
@@ -8928,7 +8928,7 @@ document.addEventListener("click", function(ev){
       var cf=u.configuracion||{};
       var nc=Object.assign({},cf,{estado_sub:"activa",fecha_fin_prueba:null,marcado_pagado_admin:true,marcado_pagado_at:new Date().toISOString()});
       return _sbw("usuarios?id=eq."+encodeURIComponent(cpId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Coach marcado como pagado ✓"); reloadCoaches(); });
-    }).catch(function(){ alert("No se pudo marcar como pagado."); });
+    }).catch(function(){ alert("No se pudo marcar como pagado.\n\nSi no cambió nada, tu sesión de admin pudo vencer (RLS): cerrá sesión y volvé a entrar para renovar tu acceso, y reintentá."); });
     return;
   }
   if(act.indexOf("coach-plan:")===0){
@@ -10044,28 +10044,37 @@ document.addEventListener("click", function(ev){
     // (queda en pantalla al re-renderizar) y puede reintentar.
     if(psc.inf) psc.inf.d=d; else psc.inf={ d:d };
     var _err=function(r){ return r.text().then(function(t){ var e=new Error("HTTP "+r.status+(t?(" · "+t.slice(0,160)):"")); throw e; }); };
-    var _fail=function(e){ var m=(e&&e.message)||e||""; var rls=/row-level|permission|denied|policy|401|403/i.test(""+m); alert("No se pudo guardar el diagnóstico.\n\n"+(rls?"Falta permiso de escritura en la tabla «informes» (RLS). Aplica la migración informes_rls.sql en Supabase.":("Detalle: "+m))+"\n\nTu texto quedó en pantalla — no se perdió. Reintenta."); };
+    var _fail=function(e){ var m=(e&&e.message)||e||""; var rls=/row-level|permission|denied|policy|401|403|not_owner/i.test(""+m); alert("No se pudo guardar el diagnóstico.\n\n"+(rls?"El servidor rechazó el guardado (permisos). Si acabás de activar RLS, falta desplegar la función «guardar-informe» en Supabase.":("Detalle: "+m))+"\n\nTu texto quedó en pantalla — no se perdió. Reintenta."); };
     var _dj=JSON.stringify(d);
     var _finPatch=function(){ toast("Diagnóstico guardado ✓ — ya lo ve el cliente"); loadReal(); };
-    if(psc.inf&&psc.inf.id&&(""+psc.inf.id).indexOf("ejemplo")!==0){
-      // Ya tenemos el id del informe → UPDATE directo.
-      var _pb={data:_dj}; if(REAL&&RME&&RME.rol!=="admin") _pb.coach_id=RME.id;
-      _sbw("informes?id=eq."+encodeURIComponent(psc.inf.id),"PATCH",_pb)
-        .then(function(r){ if(!r.ok) return _err(r); return _saveProg(); })
-        .then(function(){ toast("Guardado ✓ — ya lo ve el cliente"); render(); })
-        .catch(_fail);
-    } else {
-      // No tenemos id (el informe pudo crearlo la IA con otro/sin coach_id y por eso
-      // no se cargó). UPSERT por email para no chocar con el unique informes_email_unique:
-      // crea si no existe, ACTUALIZA si ya existe, y setea coach_id para que quede
-      // asociado a este coach y se cargue la próxima vez.
+    // Guardado directo a informes: sirve para admin o coach con JWT ligado. Es el
+    // FALLBACK si la edge function no está disponible (no desplegada / offline).
+    var _directSave=function(){
+      if(psc.inf&&psc.inf.id&&(""+psc.inf.id).indexOf("ejemplo")!==0){
+        // Ya tenemos el id del informe → UPDATE directo.
+        var _pb={data:_dj}; if(REAL&&RME&&RME.rol!=="admin") _pb.coach_id=RME.id;
+        return _sbw("informes?id=eq."+encodeURIComponent(psc.inf.id),"PATCH",_pb)
+          .then(function(r){ if(!r.ok) return _err(r); return _saveProg(); })
+          .then(function(){ toast("Guardado ✓ — ya lo ve el cliente"); render(); });
+      }
+      // Sin id (lo pudo crear la IA sin coach_id): UPSERT por email para no chocar
+      // con el unique informes_email_unique.
       var ib={email:psc.email,data:_dj}; if(REAL&&RME&&RME.rol!=="admin") ib.coach_id=RME.id;
-      _hdr({"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"})
+      return _hdr({"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"})
         .then(function(h){ return fetch(SB+"/rest/v1/informes?on_conflict=email",{method:"POST",headers:h,body:JSON.stringify(ib)}); })
         .then(function(r){ if(!r.ok) return _err(r); return _saveProg(); })
-        .then(_finPatch)
-        .catch(_fail);
-    }
+        .then(_finPatch);
+    };
+    // Camino principal: edge function con SERVICE ROLE → bypassa el RLS estricto y
+    // estampa coach_id del dueño real, reparando de paso las filas huérfanas
+    // (coach_id NULL) que dejó generar-informe. Si la function falla o no está
+    // desplegada, cae al guardado directo.
+    var _eb={email:psc.email,data:_dj}; if(REAL&&RME&&RME.id) _eb.coach_id=RME.id;
+    fetch(SB+"/functions/v1/guardar-informe",{method:"POST",headers:{"Content-Type":"application/json",apikey:KEY,Authorization:"Bearer "+KEY},body:JSON.stringify(_eb)})
+      .then(function(r){ if(!r.ok) return r.text().then(function(t){ throw new Error("HTTP "+r.status+(t?(" · "+t.slice(0,160)):"")); }); return r.json(); })
+      .then(function(){ return _saveProg(); })
+      .then(_finPatch)
+      .catch(function(){ return _directSave().catch(_fail); });
     return;
   }
   if(act==="av-add"){
