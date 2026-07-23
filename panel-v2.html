@@ -8238,26 +8238,42 @@ document.addEventListener("click", function(ev){
     if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
     var ctId=act.slice(12);
     if(!confirm("¿Extender el trial de este coach +30 días?")) return;
-    _sb("usuarios?id=eq."+encodeURIComponent(ctId)+"&select=configuracion").then(function(rows){
-      var u=rows&&rows[0]; if(!u){ alert("Coach no encontrado."); return; }
-      var cf=u.configuracion||{}; var base=cf.fecha_fin_prueba?new Date(cf.fecha_fin_prueba):new Date();
-      if(isNaN(base.getTime())||base.getTime()<Date.now()) base=new Date();
-      base.setDate(base.getDate()+30);
-      var nc=Object.assign({},cf,{fecha_fin_prueba:base.toISOString(),estado_sub:"prueba",ultima_extension_admin:new Date().toISOString()});
-      return _sbw("usuarios?id=eq."+encodeURIComponent(ctId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Trial extendido +30 días ✓"); reloadCoaches(); });
-    }).catch(function(){ alert("No se pudo extender el trial.\n\nSi no cambió nada, tu sesión de admin pudo vencer (RLS): cerrá sesión y volvé a entrar para renovar tu acceso, y reintentá."); });
+    var _ctReLogin=function(){ alert("No pudimos verificar tu sesión de admin.\n\nCerrá sesión y volvé a entrar (así se renueva tu acceso), y reintentá."); };
+    // Fallback: PATCH directo (sirve si el admin tiene el auth_id ligado y la
+    // policy usuarios_admin_all aplicada). Se usa solo si la edge function no está.
+    var _ctDirect=function(){
+      return _sb("usuarios?id=eq."+encodeURIComponent(ctId)+"&select=configuracion").then(function(rows){
+        var u=rows&&rows[0]; if(!u){ alert("Coach no encontrado."); return; }
+        var cf=u.configuracion||{}; var base=cf.fecha_fin_prueba?new Date(cf.fecha_fin_prueba):new Date();
+        if(isNaN(base.getTime())||base.getTime()<Date.now()) base=new Date();
+        base.setDate(base.getDate()+30);
+        var nc=Object.assign({},cf,{fecha_fin_prueba:base.toISOString(),estado_sub:"prueba",ultima_extension_admin:new Date().toISOString()});
+        return _sbw("usuarios?id=eq."+encodeURIComponent(ctId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Trial extendido +30 días ✓"); reloadCoaches(); });
+      }).catch(function(){ alert("No se pudo extender el trial.\n\nSi no cambió nada, tu sesión de admin pudo vencer (RLS): cerrá sesión y volvé a entrar para renovar tu acceso, y reintentá."); });
+    };
+    // Camino principal: edge function admin-coach-op (verifica admin por email del
+    // JWT y escribe con service role → no depende del auth_id ni de la policy).
+    _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"extend_trial",coach_id:ctId,dias:30})}); })
+      .then(function(r){ if(r.status===403){ _ctReLogin(); return null; } if(!r.ok) return _ctDirect(); return r.json().then(function(){ toast("Trial extendido +30 días ✓"); reloadCoaches(); }); })
+      .catch(function(){ return _ctDirect(); });
     return;
   }
   if(act.indexOf("coach-paid:")===0){
     if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
     var cpId=act.slice(11);
     if(!confirm("¿Marcar este coach como pagado? Acceso permanente (estado activo, sin trial).")) return;
-    _sb("usuarios?id=eq."+encodeURIComponent(cpId)+"&select=configuracion").then(function(rows){
-      var u=rows&&rows[0]; if(!u){ alert("Coach no encontrado."); return; }
-      var cf=u.configuracion||{};
-      var nc=Object.assign({},cf,{estado_sub:"activa",fecha_fin_prueba:null,marcado_pagado_admin:true,marcado_pagado_at:new Date().toISOString()});
-      return _sbw("usuarios?id=eq."+encodeURIComponent(cpId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Coach marcado como pagado ✓"); reloadCoaches(); });
-    }).catch(function(){ alert("No se pudo marcar como pagado.\n\nSi no cambió nada, tu sesión de admin pudo vencer (RLS): cerrá sesión y volvé a entrar para renovar tu acceso, y reintentá."); });
+    var _cpReLogin=function(){ alert("No pudimos verificar tu sesión de admin.\n\nCerrá sesión y volvé a entrar (así se renueva tu acceso), y reintentá."); };
+    var _cpDirect=function(){
+      return _sb("usuarios?id=eq."+encodeURIComponent(cpId)+"&select=configuracion").then(function(rows){
+        var u=rows&&rows[0]; if(!u){ alert("Coach no encontrado."); return; }
+        var cf=u.configuracion||{};
+        var nc=Object.assign({},cf,{estado_sub:"activa",fecha_fin_prueba:null,marcado_pagado_admin:true,marcado_pagado_at:new Date().toISOString()});
+        return _sbw("usuarios?id=eq."+encodeURIComponent(cpId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Coach marcado como pagado ✓"); reloadCoaches(); });
+      }).catch(function(){ alert("No se pudo marcar como pagado.\n\nSi no cambió nada, tu sesión de admin pudo vencer (RLS): cerrá sesión y volvé a entrar para renovar tu acceso, y reintentá."); });
+    };
+    _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"mark_paid",coach_id:cpId})}); })
+      .then(function(r){ if(r.status===403){ _cpReLogin(); return null; } if(!r.ok) return _cpDirect(); return r.json().then(function(){ toast("Coach marcado como pagado ✓"); reloadCoaches(); }); })
+      .catch(function(){ return _cpDirect(); });
     return;
   }
   if(act.indexOf("coach-plan:")===0){
