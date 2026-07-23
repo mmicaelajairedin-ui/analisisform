@@ -27,6 +27,23 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: reservas duplicadas se deduplican (lista + KPIs + agenda)",
+    bug: "La misma cita podía quedar guardada dos veces en `citas` (doble submit " +
+         "del link, reintento de red) y salía REPETIDA en 'Reservas y asistencia', " +
+         "en las métricas y en la agenda. El dedup se aplica de forma central en " +
+         "_calByOwner() (por coach+minuto+persona), así ningún consumidor cuenta doble.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function\s+_calDedup\s*\(/.test(s))
+        return "panel-v2.html perdio _calDedup() (dedup de reservas duplicadas).";
+      // _calByOwner DEBE pasar su resultado por _calDedup (fuente única del dedup).
+      if (!/function\s+_calByOwner\s*\(list\)\s*\{\s*return\s+_calDedup\s*\(/.test(s))
+        return "panel-v2.html: _calByOwner ya no aplica _calDedup → las reservas duplicadas vuelven a la lista/KPIs/agenda.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: una query rota no deja el panel en blanco (carga con red)",
     bug: "Agregar una columna inexistente (p.ej. xp) a un select hacía que UNA query " +
          "rechazara y el Promise.all entero fallara → coaches, ranking, analíticas y config " +
