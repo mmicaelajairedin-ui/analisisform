@@ -1855,6 +1855,16 @@ const RULES = [
           return "panel-v2.html: falta el botón flotante del juego en móvil (.cp-mobjuego/viewMobJuego).";
         if (!/viewMobJuego\(\)/.test(p) || p.indexOf("viewMobJuego()") === p.indexOf("function viewMobJuego("))
           return "panel-v2.html: viewMobJuego() está definido pero no se inserta en el shell.";
+        // Auto-run: el mundo corre solo (no gatear el scroll con la flecha). Si
+        // vuelve el gate dir>0, en el celular no viene nada → injugable.
+        if (/if\(_game\.dir>0\)\{\s*_game\.nextSpawn/.test(p))
+          return "panel-v2.html: el juego volvió a gatear el scroll con la flecha (dir>0) → injugable en móvil; debe auto-correr.";
+        // Game feel (más pro): sonido, partículas, combo.
+        if (!/function _gameSound\(/.test(p) || !/function _gameBurst\(/.test(p) || !/function _gameCombo\(/.test(p))
+          return "panel-v2.html: el juego perdió el 'game feel' (sonido/partículas/combo).";
+        // Skins cosméticas desbloqueables por puntaje.
+        if (!/var PW_SKINS=/.test(p) || !/function _gameApplySkin\(/.test(p))
+          return "panel-v2.html: el juego perdió las skins desbloqueables (PW_SKINS/_gameApplySkin).";
       }
       return null;
     },
