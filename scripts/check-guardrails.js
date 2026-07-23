@@ -40,6 +40,10 @@ const RULES = [
       // _calByOwner DEBE pasar su resultado por _calDedup (fuente única del dedup).
       if (!/function\s+_calByOwner\s*\(list\)\s*\{\s*return\s+_calDedup\s*\(/.test(s))
         return "panel-v2.html: _calByOwner ya no aplica _calDedup → las reservas duplicadas vuelven a la lista/KPIs/agenda.";
+      // _resRender (widget 'Reservas · desde tu link' del Resumen) usa _RES_DATA,
+      // que NO pasa por _calByOwner → tiene que deduplicar por su cuenta.
+      if (!/function\s+_resRender\s*\(list\)\s*\{\s*var\s+rows\s*=\s*_calDedup\s*\(/.test(s))
+        return "panel-v2.html: _resRender ya no deduplica → los duplicados vuelven en 'Reservas · desde tu link' del Resumen.";
       return null;
     },
   },
