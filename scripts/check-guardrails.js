@@ -27,6 +27,25 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: una query rota no deja el panel en blanco (carga con red)",
+    bug: "Agregar una columna inexistente (p.ej. xp) a un select hacía que UNA query " +
+         "rechazara y el Promise.all entero fallara → coaches, ranking, analíticas y config " +
+         "se veían VACÍOS (parecía que se borraron los datos). Ahora cada query del load " +
+         "falla suave (.catch → []) y saveCfg no guarda hasta que la config cargó (RCFG_READY), " +
+         "para no pisar el link del calendario con vacío.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/\.map\(function\(p\)\{\s*return \(p&&typeof p\.then==="function"\)\?p\.catch/.test(s))
+        return "panel-v2.html: el Promise.all del load ya no envuelve cada query con .catch → una query rota vuelve a blanquear todo el panel.";
+      if (!/RCFG_READY\s*=\s*true/.test(s))
+        return "panel-v2.html: no se marca RCFG_READY al cargar la config.";
+      if (!/if\(REAL && !RCFG_READY\)[\s\S]{0,120}return;/.test(s))
+        return "panel-v2.html: saveCfg ya no se protege con RCFG_READY → podría guardar config vacía y pisar lo guardado.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: las notificaciones se descartan al clickear (no siguen apareciendo)",
     bug: "Las notificaciones se derivan de pendientes y no se marcaban como vistas → " +
          "seguían apareciendo aunque la coach ya las hubiera atendido. Ahora _pwNotifData " +
@@ -862,6 +881,26 @@ const RULES = [
     },
   },
   {
+    name: "diagnóstico se guarda vía edge function guardar-informe (resiste RLS)",
+    bug: "Con RLS estricto (rls_close_informes_cv_leak.sql) el UPDATE de informes " +
+         "exige coach_id = pw_coach_id(). Las filas que creó generar-informe quedaban " +
+         "con coach_id NULL → el coach no podía guardar el diagnóstico (\"permission " +
+         "denied / row-level\"). El panel guarda por guardar-informe (service role, " +
+         "estampa el coach_id del dueño), con fallback al PATCH directo. Esta regla " +
+         "evita perder ese camino Y que generar-informe vuelva a crear huérfanos.",
+    check() {
+      if (!read("supabase/functions/guardar-informe/index.ts"))
+        return "falta la edge function guardar-informe (guarda el diagnóstico sin chocar con RLS).";
+      const p = read("panel-v2.html") || "";
+      if (!/functions\/v1\/guardar-informe/.test(p))
+        return "panel-v2.html: ya no llama a guardar-informe → el diagnóstico puede no guardarse bajo RLS.";
+      const gi = read("supabase/functions/generar-informe/index.ts") || "";
+      if (gi && !/coach_id/.test(gi))
+        return "generar-informe: saveInforme ya no estampa coach_id → vuelve a crear informes huérfanos que el coach no puede editar.";
+      return null;
+    },
+  },
+  {
     name: "intake se guarda vía edge function (service role) — no lo bloquea RLS",
     bug: "Con RLS estricto, el cliente solo puede escribir su fila si su email de " +
          "Auth == candidatos.email. Si no tiene sesión o el email no coincide, el " +
@@ -1580,6 +1619,23 @@ const RULES = [
     },
   },
   {
+    name: "plan: un coach con suscripción ACTIVA cambia de plan por el portal de Stripe (no doble cobro)",
+    bug: "El selector de plan del panel deja pagar/cambiar sin salir de Pathway. Para un coach " +
+         "en prueba/vencido el CTA abre un Payment Link (checkout nuevo). Pero para un coach que " +
+         "YA paga (estado_sub='activa'), abrir un Payment Link crearía una SEGUNDA suscripción → " +
+         "doble cobro. El cambio de plan de un activo DEBE ir al portal de Stripe (STRIPE_PORTAL), " +
+         "que hace el cambio con prorrateo sobre la MISMA suscripción.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/var isActive=\(est==="activa"\)/.test(p)) return null; // feature no presente
+      // El CTA "Cambiar a ..." (coach que YA paga) debe apuntar a STRIPE_PORTAL, no a un
+      // Payment Link nuevo (crearía una 2da suscripción → doble cobro).
+      if (!/esc\(STRIPE_PORTAL\)\+"'>Cambiar a /.test(p)) return "panel-v2.html: el CTA 'Cambiar a…' de un coach con suscripción ACTIVA ya no usa STRIPE_PORTAL → si vuelve a un Payment Link (stripeSubUrl) se crea una 2da suscripción y hay doble cobro.";
+      return null;
+    },
+  },
+  {
     name: "admin: crear coach pasa por la edge function crear-coach (RLS no lo bloquea)",
     bug: "El botón 'Dar acceso a un coach' hacía un POST directo a usuarios con rol='coach' " +
          "desde el navegador. Con RLS estricto en usuarios (usuarios_hardening.sql), la anon " +
@@ -1679,6 +1735,80 @@ const RULES = [
       if (!mig || !/CREATE TABLE IF NOT EXISTS mensajes_owner_coach/.test(mig)) return "falta la migración mensajes_owner_coach.sql.";
       const wf = read(".github/workflows/deploy-functions.yml");
       if (wf && !/functions deploy mensaje-red/.test(wf)) return "deploy-functions.yml: falta desplegar mensaje-red.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: el coach le RESPONDE al dueño desde su panel (mensaje-red)",
+    bug: "El chat dueño↔coach quedaba a medias: el dueño escribía desde multicoach.html " +
+         "pero el coach no veía ni podía contestar desde su panel (panel-v2.html). Ahora, " +
+         "si el coach pertenece a una red (usuarios.org_id), su bandeja de chat (dentro de " +
+         "la cabra) suma un hilo 'Dueño de tu red' — igual que 'Soporte Pathway' — que lee " +
+         "y envía por la MISMA edge function mensaje-red (el coach usa su propio id como " +
+         "coach_id; el backend lo valida con isSelf). Sin sesión real degrada con un aviso, " +
+         "no rompe. Ver docs/multicoach-modelo.md.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      // El coach carga su org_id (para saber si está en una red).
+      if (!/perfil_publico_activo,org_id/.test(p))
+        return "panel-v2.html: la carga del coach ya no trae org_id (no sabría si está en una red).";
+      // Helpers del hilo con el dueño.
+      if (!/function _loadRedThread\(/.test(p) || !/function _coachRedBubbles\(/.test(p))
+        return "panel-v2.html: falta el chat con el dueño de la red (_loadRedThread/_coachRedBubbles).";
+      // Debe ir por la edge function mensaje-red (no un PATCH directo).
+      if (!/functions\/v1\/mensaje-red/.test(p))
+        return "panel-v2.html: el chat con la red ya no usa la edge function mensaje-red.";
+      // La bandeja suma la fila 'red' solo para coaches en una org.
+      if (!/data-thread='red'|aiCoachThread==="red"|key:"red"/.test(p))
+        return "panel-v2.html: la bandeja ya no ofrece el hilo con el dueño de la red.";
+      // El envío usa el PROPIO id del coach como coach_id (isSelf en el backend).
+      if (!/action:"send",coach_id:RME\.id/.test(p))
+        return "panel-v2.html: el coach ya no envía con su propio id (mensaje-red isSelf).";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: CANAL DE EQUIPO (chat grupal dueño+coaches, via canal-red)",
+    bug: "Además del 1-a-1, la red tiene un CANAL grupal: un solo hilo compartido " +
+         "donde el dueño y TODOS sus coaches escriben y leen (la 'sala del equipo'). " +
+         "Va por una tabla propia (mensajes_red_canal) y una edge function propia " +
+         "(canal-red, service role) gateada a los MIEMBROS de esa org (dueño o coach " +
+         "con ese org_id). El dueño lo ve en multicoach.html (sección Canal); el coach " +
+         "en su bandeja de chat (panel-v2.html). Ver docs/multicoach-modelo.md.",
+    check() {
+      // Migración de la tabla del canal.
+      const mig = read("supabase/migrations/mensajes_red_canal.sql");
+      if (!mig || !/CREATE TABLE IF NOT EXISTS mensajes_red_canal/.test(mig))
+        return "falta la migración mensajes_red_canal.sql (tabla del canal de equipo).";
+      // Edge function: service role + gate por miembro de la org + acciones.
+      const fn = read("supabase/functions/canal-red/index.ts");
+      if (!fn) return "falta supabase/functions/canal-red/index.ts.";
+      if (!/SERVICE_ROLE_KEY/.test(fn) || !/no_session/.test(fn))
+        return "canal-red: debe usar service role y gatear la sesión.";
+      if (!/esMiembro/.test(fn) || !/org_id/.test(fn))
+        return "canal-red: debe permitir solo a los miembros (dueño/coach) de esa org.";
+      // Deploy.
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (wf && !/functions deploy canal-red/.test(wf))
+        return "deploy-functions.yml: falta desplegar canal-red.";
+      // Lado del dueño: sección Canal en multicoach.html.
+      const mc = read("multicoach.html");
+      if (mc) {
+        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (sección Canal del equipo).";
+        if (!/functions\/v1\/canal-red/.test(mc)) return "multicoach.html: el canal ya no usa la edge function canal-red.";
+        if (!/data-s="canal"/.test(mc)) return "multicoach.html: falta el item 'Canal del equipo' en el menú.";
+      }
+      // Lado del coach: hilo 'canal' en la bandeja de panel-v2.html.
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _loadCanalThread\(/.test(p) || !/function _coachCanalBubbles\(/.test(p))
+          return "panel-v2.html: falta el canal de equipo del coach (_loadCanalThread/_coachCanalBubbles).";
+        if (!/key:"canal"|aiCoachThread==="canal"/.test(p))
+          return "panel-v2.html: la bandeja del coach ya no ofrece el canal del equipo.";
+        if (!/action:"send",org_id:RME\.org_id/.test(p))
+          return "panel-v2.html: el coach ya no envía al canal por org_id (canal-red).";
+      }
       return null;
     },
   },

@@ -425,20 +425,35 @@ async function saveInforme(email: string, candidato_id: number | null, data: Rec
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
     Deno.env.get("SERVICE_ROLE_KEY") || "";
   if (!SB_URL || !SERVICE_KEY) return;
+  const svc = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
+  const em = email.toLowerCase();
   try {
-    await fetch(`${SB_URL}/rest/v1/informes`, {
+    // Estampar coach_id = dueño real del cliente. Si no se hace, la fila queda
+    // huérfana (coach_id NULL) y bajo RLS estricto el coach no puede editarla
+    // después (el UPDATE exige coach_id = pw_coach_id()). Así se evita el bug.
+    let coach_id: string | null = null;
+    let cid = candidato_id;
+    try {
+      const cr = await fetch(
+        `${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(em)}&select=id,coach_id&limit=1`,
+        { headers: svc },
+      );
+      if (cr.ok) {
+        const rows = await cr.json();
+        if (Array.isArray(rows) && rows[0]) {
+          coach_id = rows[0].coach_id || null;
+          if (cid == null && rows[0].id != null) cid = rows[0].id;
+        }
+      }
+    } catch { /* sin dueño conocido → queda como estaba */ }
+    const row: Record<string, unknown> = { email: em, candidato_id: cid, data: JSON.stringify(data) };
+    if (coach_id) row.coach_id = coach_id;
+    // Upsert por email (merge): si ya existe el informe, lo actualiza en vez de
+    // fallar por el unique constraint (informes_email_unique).
+    await fetch(`${SB_URL}/rest/v1/informes?on_conflict=email`, {
       method: "POST",
-      headers: {
-        apikey: SERVICE_KEY,
-        Authorization: `Bearer ${SERVICE_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({
-        email: email.toLowerCase(),
-        candidato_id: candidato_id,
-        data: JSON.stringify(data),
-      }),
+      headers: { ...svc, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(row),
     });
   } catch (e) {
     console.error("[saveInforme] error", e);
