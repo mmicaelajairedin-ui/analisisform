@@ -3756,8 +3756,29 @@ function _calLoad(){
     .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCal(); })
     .catch(_calFail);
 }
+// Dedup de reservas duplicadas: la MISMA cita puede quedar guardada dos veces en
+// `citas` (doble submit del link, reintento de red, etc.) y salía repetida en la
+// lista, en las métricas y en la agenda. Se consideran la misma si coinciden
+// coach + minuto de inicio + persona (email si hay; si no, nombre normalizado).
+// Se conserva la "mejor" fila (estado más resuelto: asistió/no asistió/reprogramó
+// > confirmada > pendiente > cancelada), así no se pierde una marca de asistencia.
+function _calRank(r){ var s=r&&r.estado; if(s==="asistio"||s==="gano"||s==="perdio"||s==="no_asistio"||s==="reprogramada") return 3; if(s==="confirmada") return 2; if(s==="cancelada") return 0; return 1; }
+function _calDedup(list){
+  if(Object.prototype.toString.call(list)!=="[object Array]") return list||[];
+  var seen={}, out=[];
+  list.forEach(function(r){
+    var min=Math.round(+new Date(r.inicio)/60000);
+    var who=(""+((r.email||r.nombre)||"")).trim().toLowerCase().replace(/\s+/g," ");
+    if(!who || isNaN(min)){ out.push(r); return; } // sin datos para comparar: no arriesgar
+    var key=(r.coach_id||"")+"|"+min+"|"+who;
+    if(seen[key]==null){ seen[key]=out.length; out.push(r); return; }
+    var idx=seen[key]; if(_calRank(r)>_calRank(out[idx])) out[idx]=r; // quedarse con la mejor
+  });
+  return out;
+}
 // Filtra por la persona elegida (solo admin); si no es admin, todo es suyo.
-function _calByOwner(list){ return (list||[]).filter(function(r){ return !(RADMIN && _calOwner!=="todas" && String(r.coach_id)!==String(_calOwner)); }); }
+// Aplica el dedup de forma central → lista, KPIs, métricas y agenda quedan sin repetidos.
+function _calByOwner(list){ return _calDedup((list||[]).filter(function(r){ return !(RADMIN && _calOwner!=="todas" && String(r.coach_id)!==String(_calOwner)); })); }
 function _calRenderKpis(){
   var s=_calStats();
   var deltaTxt=function(n){ return (n>0?"+"+n:""+n)+" vs semana pasada"; };
