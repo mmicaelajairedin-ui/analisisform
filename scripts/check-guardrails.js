@@ -83,6 +83,30 @@ const RULES = [
     },
   },
   {
+    name: "portales del cliente: abrir la campana marca las notis como vistas (no vuelven)",
+    bug: "Mismo bug que en el panel, en los 3 portales del cliente: las notificaciones " +
+         "solo se marcaban leídas al TOCAR cada una (y tocar navega), así que al reentrar " +
+         "volvían a salir sin marcar. Abrir el panel debe marcar TODO como visto, con " +
+         "fallback local por si el PATCH no llega.",
+    check() {
+      const files = ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      for (const f of files) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/function _notifMarkAllSeen\(/.test(s))
+          return f + ": falta _notifMarkAllSeen → abrir la campana ya no marca las notis como vistas.";
+        // Abrir el panel invoca _notifMarkAllSeen (toggleNotifs en carrera, pnotifToggle en fit/fin).
+        if (!/_notifMarkAllSeen\(\)/.test(s.replace("function _notifMarkAllSeen(", "")))
+          return f + ": _notifMarkAllSeen está definida pero no se llama al abrir la campana.";
+        if (!/_notifApplyLocalRead\(\)/.test(s))
+          return f + ": no se aplica el 'leído' local al cargar → si el server no guardó, reaparecen.";
+        if (!/_notifReadAdd\(/.test(s))
+          return f + ": no se guarda el 'leído' local → sin defensa si falla el PATCH.";
+      }
+      return null;
+    },
+  },
+  {
     name: "panel-v2: reseña del coach — no se pide de nuevo si ya la dejó (flag server)",
     bug: "El modal de reseña se marcaba 'ya reseñó' SOLO en localStorage (por " +
          "dispositivo) → el mismo coach entraba desde otra compu / limpiaba caché " +
