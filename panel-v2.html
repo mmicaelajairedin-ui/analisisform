@@ -7554,8 +7554,32 @@ function _syncUserMenu(){
 function _notifDismKey(){ var id=(REAL&&RME&&(RME.id||RME.email))||"x"; return "pw_notifdism_"+id; }
 function _notifDismissed(){ try{ return JSON.parse(localStorage.getItem(_notifDismKey())||"{}")||{}; }catch(e){ return {}; } }
 function _notifDismiss(key,count){ try{ var d=_notifDismissed(); d[key]=parseInt(count,10)||0; localStorage.setItem(_notifDismKey(),JSON.stringify(d)); }catch(e){} }
+// ── Notificaciones persistidas del COACH (para='coach') — eventos discretos que
+// escriben los portales del cliente (p.ej. "X completó una tarea"). Se suman al
+// bell junto a los contadores vivos que ya existían, con leído/no-leído real. ──
+var _PWCOACHNOTIF=[], _pwCoachNotifPrev=-1, _pwCoachNotifReady=false;
+function _pwLoadCoachNotif(){
+  var em=(typeof _agCoachEmail==="function")?_agCoachEmail():"";
+  if(!em) return;
+  _hdr().then(function(h){ return fetch(SB+"/rest/v1/notificaciones?email=eq."+encodeURIComponent(em)+"&para=eq.coach&order=ts.desc&limit=30",{headers:h}); })
+    .then(function(r){ return (r&&r.ok)?r.json():[]; })
+    .then(function(list){
+      _PWCOACHNOTIF=(list&&list.length)?list:[];
+      var unread=_PWCOACHNOTIF.filter(function(n){return !n.leida;}).length;
+      if(_pwCoachNotifReady && _pwCoachNotifPrev>=0 && unread>_pwCoachNotifPrev){ try{_pwDing();}catch(e){} try{_pwPulse(document.getElementById("pw-notif-btn"));}catch(e){} }
+      _pwCoachNotifPrev=unread; _pwCoachNotifReady=true;
+      try{ _syncNotifBadge(); }catch(e){}
+    }).catch(function(){});
+}
+function _pwMarkCoachNotifRead(id){
+  for(var i=0;i<_PWCOACHNOTIF.length;i++){ if(String(_PWCOACHNOTIF[i].id)===String(id)){ _PWCOACHNOTIF[i].leida=true; break; } }
+  _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/rest/v1/notificaciones?id=eq."+encodeURIComponent(id),{method:"PATCH",headers:h,body:JSON.stringify({leida:true})}); }).catch(function(){});
+  try{ _syncNotifBadge(); }catch(e){}
+}
 function _pwNotifData(){
   var out=[];
+  // Eventos persistidos del coach primero (no leídos), con su id para marcarlos.
+  try{ (_PWCOACHNOTIF||[]).forEach(function(n){ if(n&&!n.leida) out.push({ persist:true, id:n.id, n:1, ico:(n.icon||"✅"), text:(n.titulo||"Novedad")+(n.detalle?(" · "+n.detalle):""), cliid:(n.sec||"") }); }); }catch(e){}
   // Clientes que te escribieron (chat coach↔cliente) y todavía no abriste.
   try{
     var cu=(typeof _cliUnread!=="undefined"&&_cliUnread)?Object.keys(_cliUnread).length:0;
@@ -7598,6 +7622,11 @@ function pwNotif(e){
       list.innerHTML="<div style='padding:16px 12px;text-align:center;color:var(--pw-text-muted);font-size:12.5px'>Estás al día ✓</div>";
     } else {
       list.innerHTML=data.map(function(it){
+        if(it.persist){
+          // Evento del cliente: texto viene de datos del cliente → SIEMPRE esc().
+          var goCli=it.cliid?(" data-act='cli-open:"+esc(it.cliid)+"'"):"";
+          return "<button class='pw-um-item'"+goCli+" data-npersist='"+esc(it.id)+"'><span style='filter:grayscale(1)'>"+it.ico+"</span><span>"+esc(it.text)+"</span></button>";
+        }
         var a=it.act?("data-act='"+it.act+"'"):("data-act='asist-go' data-go='"+(it.go||"clientes")+"'");
         return "<button class='pw-um-item' "+a+" data-nkey='"+(it.key||"")+"' data-ncount='"+(it.n||0)+"'><span style='filter:grayscale(1)'>"+it.ico+"</span><span>"+it.text+"</span></button>";
       }).join("");
@@ -7605,6 +7634,10 @@ function pwNotif(e){
     // Al clickear un item: descartarlo (para que no siga apareciendo) y cerrar el
     // panel. La navegación la hace el dispatcher global (data-act) igual.
     list.onclick=function(ev){
+      // Evento persistido: marcar leído (la navegación al cliente la hace el
+      // dispatcher global via data-act='cli-open').
+      var p=ev.target.closest("[data-npersist]");
+      if(p){ try{ _pwMarkCoachNotifRead(p.getAttribute("data-npersist")); }catch(_e){} pan.style.display="none"; return; }
       var b=ev.target.closest("[data-nkey]"); if(!b) return;
       try{ _notifDismiss(b.getAttribute("data-nkey"), b.getAttribute("data-ncount")); }catch(_e){}
       pan.style.display="none";
@@ -7638,7 +7671,7 @@ document.addEventListener("click", function(ev){
 });
 // El badge se asienta cuando los datos terminan de cargar (por si el último
 // render corrió antes de que llegaran).
-window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} try{ if(!_gamiOn()){ var _nb=document.getElementById("pw-nov-btn"); if(_nb) _nb.style.display="none"; } }catch(e){} try{ if(_gamiOn()&&(RMONTH===null||RWEEK===null)) _loadRanks(); }catch(e){} },t); }); });
+window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _pwLoadCoachNotif(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} try{ if(!_gamiOn()){ var _nb=document.getElementById("pw-nov-btn"); if(_nb) _nb.style.display="none"; } }catch(e){} try{ if(_gamiOn()&&(RMONTH===null||RWEEK===null)) _loadRanks(); }catch(e){} },t); }); });
 
 // ═══ Drawers laterales: Novedades (revista semanal) + Perfil (puntos/medallas/badges) ═══
 // Se embeben las páginas ya aprobadas (novedades-preview.html / perfil-preview.html)
