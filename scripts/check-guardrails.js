@@ -27,6 +27,25 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: una query rota no deja el panel en blanco (carga con red)",
+    bug: "Agregar una columna inexistente (p.ej. xp) a un select hacía que UNA query " +
+         "rechazara y el Promise.all entero fallara → coaches, ranking, analíticas y config " +
+         "se veían VACÍOS (parecía que se borraron los datos). Ahora cada query del load " +
+         "falla suave (.catch → []) y saveCfg no guarda hasta que la config cargó (RCFG_READY), " +
+         "para no pisar el link del calendario con vacío.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/\.map\(function\(p\)\{\s*return \(p&&typeof p\.then==="function"\)\?p\.catch/.test(s))
+        return "panel-v2.html: el Promise.all del load ya no envuelve cada query con .catch → una query rota vuelve a blanquear todo el panel.";
+      if (!/RCFG_READY\s*=\s*true/.test(s))
+        return "panel-v2.html: no se marca RCFG_READY al cargar la config.";
+      if (!/if\(REAL && !RCFG_READY\)[\s\S]{0,120}return;/.test(s))
+        return "panel-v2.html: saveCfg ya no se protege con RCFG_READY → podría guardar config vacía y pisar lo guardado.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: las notificaciones se descartan al clickear (no siguen apareciendo)",
     bug: "Las notificaciones se derivan de pendientes y no se marcaban como vistas → " +
          "seguían apareciendo aunque la coach ya las hubiera atendido. Ahora _pwNotifData " +
@@ -862,6 +881,41 @@ const RULES = [
     },
   },
   {
+    name: "admin: extender trial / marcar pagado van por edge function (resiste RLS)",
+    bug: "El PATCH directo a usuarios para extender trial / marcar pagado fallaba " +
+         "bajo RLS: exigía auth_id ligado + policy de admin. admin-coach-op verifica " +
+         "al admin por EMAIL del JWT y escribe con service role → funciona aunque el " +
+         "auth_id no esté ligado. Esta regla evita volver al PATCH directo frágil.",
+    check() {
+      if (!read("supabase/functions/admin-coach-op/index.ts"))
+        return "falta la edge function admin-coach-op (extender trial / marcar pagado sin chocar con RLS).";
+      const p = read("panel-v2.html") || "";
+      if (!/functions\/v1\/admin-coach-op/.test(p))
+        return "panel-v2.html: ya no llama a admin-coach-op → extender/marcar pagado puede fallar bajo RLS.";
+      return null;
+    },
+  },
+  {
+    name: "diagnóstico se guarda vía edge function guardar-informe (resiste RLS)",
+    bug: "Con RLS estricto (rls_close_informes_cv_leak.sql) el UPDATE de informes " +
+         "exige coach_id = pw_coach_id(). Las filas que creó generar-informe quedaban " +
+         "con coach_id NULL → el coach no podía guardar el diagnóstico (\"permission " +
+         "denied / row-level\"). El panel guarda por guardar-informe (service role, " +
+         "estampa el coach_id del dueño), con fallback al PATCH directo. Esta regla " +
+         "evita perder ese camino Y que generar-informe vuelva a crear huérfanos.",
+    check() {
+      if (!read("supabase/functions/guardar-informe/index.ts"))
+        return "falta la edge function guardar-informe (guarda el diagnóstico sin chocar con RLS).";
+      const p = read("panel-v2.html") || "";
+      if (!/functions\/v1\/guardar-informe/.test(p))
+        return "panel-v2.html: ya no llama a guardar-informe → el diagnóstico puede no guardarse bajo RLS.";
+      const gi = read("supabase/functions/generar-informe/index.ts") || "";
+      if (gi && !/coach_id/.test(gi))
+        return "generar-informe: saveInforme ya no estampa coach_id → vuelve a crear informes huérfanos que el coach no puede editar.";
+      return null;
+    },
+  },
+  {
     name: "intake se guarda vía edge function (service role) — no lo bloquea RLS",
     bug: "Con RLS estricto, el cliente solo puede escribir su fila si su email de " +
          "Auth == candidatos.email. Si no tiene sesión o el email no coincide, el " +
@@ -1576,6 +1630,23 @@ const RULES = [
       if (!p) return null;
       if (!/act==="open"/.test(p)) return null;
       if (!/window\._pwLastOpen/.test(p)) return "panel-v2.html: el handler 'open' ya no frena el doble-abrir (falta window._pwLastOpen) → Stripe se abre dos veces.";
+      return null;
+    },
+  },
+  {
+    name: "plan: un coach con suscripción ACTIVA cambia de plan por el portal de Stripe (no doble cobro)",
+    bug: "El selector de plan del panel deja pagar/cambiar sin salir de Pathway. Para un coach " +
+         "en prueba/vencido el CTA abre un Payment Link (checkout nuevo). Pero para un coach que " +
+         "YA paga (estado_sub='activa'), abrir un Payment Link crearía una SEGUNDA suscripción → " +
+         "doble cobro. El cambio de plan de un activo DEBE ir al portal de Stripe (STRIPE_PORTAL), " +
+         "que hace el cambio con prorrateo sobre la MISMA suscripción.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/var isActive=\(est==="activa"\)/.test(p)) return null; // feature no presente
+      // El CTA "Cambiar a ..." (coach que YA paga) debe apuntar a STRIPE_PORTAL, no a un
+      // Payment Link nuevo (crearía una 2da suscripción → doble cobro).
+      if (!/esc\(STRIPE_PORTAL\)\+"'>Cambiar a /.test(p)) return "panel-v2.html: el CTA 'Cambiar a…' de un coach con suscripción ACTIVA ya no usa STRIPE_PORTAL → si vuelve a un Payment Link (stripeSubUrl) se crea una 2da suscripción y hay doble cobro.";
       return null;
     },
   },

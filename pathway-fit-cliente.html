@@ -794,7 +794,15 @@ window.toggleSesTarea=function(idx,ti){
   if(!arr[idx]) return;
   if(!arr[idx].tareas_done) arr[idx].tareas_done=[];
   var di=arr[idx].tareas_done.indexOf(ti);
-  if(di===-1) arr[idx].tareas_done.push(ti); else arr[idx].tareas_done.splice(di,1);
+  if(di===-1){
+    arr[idx].tareas_done.push(ti);
+    // Avisar al COACH (evento discreto persistido para='coach').
+    try{ if(window.COACH_EMAIL && typeof _notifPost==='function'){
+      var _tt=((''+(arr[idx].acciones||'')).split('\n').filter(function(x){return x.trim();})[ti]||'').slice(0,80);
+      var _cn=(CRAW&&CRAW.nombre)?(''+CRAW.nombre).split(' ')[0]:'Tu cliente';
+      _notifPost([{email:(''+COACH_EMAIL).toLowerCase(),para:'coach',tipo:'task_done',clave:'taskdone:'+EMAIL+':'+idx+':'+ti,titulo:_cn+' completó una tarea',detalle:_tt,sec:CID||'',icon:'✅'}]);
+    } }catch(e){}
+  } else arr[idx].tareas_done.splice(di,1);
   CRAW.sesiones_registro=JSON.stringify(arr);
   if(CID) sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{sesiones_registro:CRAW.sesiones_registro}).catch(function(){});
   renderSesiones(CRAW);
@@ -1243,7 +1251,7 @@ function applyClient(c){
   try{ WDATA=JSON.parse(c.fit_habitos||'{}')||{}; }catch(e){ WDATA={}; }
   renderFitCal();
   try{ MSGS=JSON.parse(c.notas_coach||'[]')||[]; }catch(e){ MSGS=[]; } if(!Array.isArray(MSGS)) MSGS=[];
-  renderMsgs(); startMsgPoll(); try{ renderNotifs(); }catch(e){}
+  renderMsgs(); startMsgPoll(); try{ renderNotifs(); }catch(e){} try{ _notifSync(); }catch(e){}
   if(c.coach_id) applyBrand(c.coach_id);
 }
 
@@ -1643,24 +1651,63 @@ function _proxSesTxt(){
   if(!best) return '';
   return best.d.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})+' · '+('0'+best.d.getHours()).slice(-2)+':'+('0'+best.d.getMinutes()).slice(-2);
 }
-function _notifData(){
-  var out=[], u=_unreadChat();
-  if(u>0) out.push({ico:'💬',t:(u===1?'1 mensaje de tu coach':u+' mensajes de tu coach'),sub:'Toca para leerlo',go:'chat'});
-  var ps=_proxSesTxt();
-  if(ps) out.push({ico:'📅',t:'Próxima sesión',sub:ps,go:'sesiones'});
-  else out.push({ico:'📅',t:'Agenda tu próxima sesión',sub:'Elige día y hora con tu coach',go:'sesiones'});
-  return out;
+// ── Centro de notificaciones PERSISTIDO (tabla `notificaciones`, leído por
+// ítem). Misma lógica que el portal de carrera: ojito cerrado = sin leer,
+// abierto = leído; al tocar marca leída y navega. Migración: notificaciones.sql
+var _NOTIFS=[], _notifPrevUnread=-1, _notifChimeReady2=false;
+function _notifPost(rows){
+  if(!rows||!rows.length) return Promise.resolve();
+  return fetch(SB+'/rest/v1/notificaciones?on_conflict=email,clave',{method:'POST',headers:_hdr({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'}),body:JSON.stringify(rows)}).catch(function(){});
+}
+// Acciones del coach visibles desde el portal fitness → eventos con clave estable.
+function _notifEvents(){
+  var ev=[], C=(typeof CRAW!=='undefined'&&CRAW)?CRAW:{};
+  var ss=[]; try{ ss=JSON.parse(C.sesiones_registro||'[]')||[]; }catch(e){}
+  ss.forEach(function(s){ if(!s||!s.fecha) return;
+    ev.push({tipo:'sesion',clave:'sesion:'+s.fecha+(s.hora?('T'+s.hora):''),titulo:'Nueva sesión registrada',detalle:(s.trabajado||'Revisá el detalle y tus tareas'),sec:'sesiones',icon:'📅'});
+    var tk=(''+(s.acciones||'')).split('\n').filter(function(x){return x.trim();});
+    if(tk.length) ev.push({tipo:'tareas',clave:'tareas:'+s.fecha+':'+tk.length,titulo:tk.length+' tarea'+(tk.length>1?'s':'')+' nueva'+(tk.length>1?'s':''),detalle:'Tu coach te dejó tareas',sec:'sesiones',icon:'✅'});
+  });
+  if(C.fit_tareas){ var _ft=(''+C.fit_tareas); if(_ft.length>2) ev.push({tipo:'fit_tareas',clave:'fittareas:'+_ft.length,titulo:'Tus tareas de la semana',detalle:'Tu coach actualizó tus tareas',sec:'inicio',icon:'✅'}); }
+  if(C.fit_antro){ var _fa=(''+C.fit_antro); if(_fa.length>2) ev.push({tipo:'mediciones',clave:'antro:'+_fa.length,titulo:'Tus mediciones están listas',detalle:'Tu coach cargó tu antropometría',sec:'progreso',icon:'📊'}); }
+  if(typeof _CITA_NEXT!=='undefined' && _CITA_NEXT) ev.push({tipo:'cita',clave:'cita:'+_CITA_NEXT,titulo:'Sesión agendada',detalle:'Tenés una sesión próxima con tu coach',sec:'sesiones',icon:'📅'});
+  return ev;
+}
+function _notifSync(){
+  if(typeof EMAIL==='undefined'||!EMAIL) return;
+  var ev=_notifEvents();
+  sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=created_at&order=created_at.desc&limit=1')
+    .then(function(rows){ if(rows&&rows.length&&rows[0].created_at) ev.push({tipo:'informe',clave:'informe:'+rows[0].created_at,titulo:'Tu diagnóstico está listo',detalle:'Tu coach actualizó tu análisis',sec:'inicio',icon:'⭐'}); })
+    .catch(function(){})
+    .then(function(){
+      var em=(''+EMAIL).toLowerCase();
+      var rows=ev.map(function(n){ return {email:em,para:'cliente',tipo:n.tipo,clave:n.clave,titulo:n.titulo,detalle:n.detalle||'',sec:n.sec||'',icon:n.icon||''}; });
+      _notifPost(rows).then(function(){ return sbGet('notificaciones','email=eq.'+encodeURIComponent(EMAIL)+'&order=ts.desc&limit=40'); })
+        .then(function(list){ _NOTIFS=(list&&list.length)?list:[]; renderNotifs(); }).catch(function(){});
+    });
+}
+// Al tocar: marca leída (persiste) → ojito abierto, y navega a la sección.
+function _notifClick(id){
+  var n=null; for(var i=0;i<_NOTIFS.length;i++){ if(String(_NOTIFS[i].id)===String(id)){ n=_NOTIFS[i]; break; } }
+  if(!n) return;
+  if(!n.leida){ n.leida=true; if(typeof sbPatch==='function') sbPatch('notificaciones','id=eq.'+encodeURIComponent(n.id),{leida:true}); }
+  var dd=document.getElementById('pwNotifDD'); if(dd) dd.classList.remove('open');
+  renderNotifs();
+  if(typeof go==='function' && n.sec) go(n.sec);
 }
 function renderNotifs(){
   var u=_unreadChat();
   var cb=document.getElementById('pwChatBadge'); if(cb){ if(u>0){ cb.textContent=(u>9?'9+':u); cb.style.display='block'; } else cb.style.display='none'; }
-  var data=_notifData();
-  var nb=document.getElementById('pwNotifBadge'); if(nb){ if(data.length>0){ nb.textContent=(data.length>9?'9+':data.length); nb.style.display='block'; } else nb.style.display='none'; }
-  var cnt=document.getElementById('pwNotifCount'); if(cnt) cnt.textContent=data.length?data.length+' nuevas':'';
+  var unread=_NOTIFS.filter(function(n){return !n.leida;}).length;
+  var nb=document.getElementById('pwNotifBadge'); if(nb){ if(unread>0){ nb.textContent=(unread>9?'9+':unread); nb.style.display='block'; } else nb.style.display='none'; }
+  var cnt=document.getElementById('pwNotifCount'); if(cnt) cnt.textContent=unread?(unread+' sin leer'):'';
+  // Sonido unificado (mismo _pwDing del chat): solo si crecieron las no-leídas.
+  if(_notifChimeReady2 && _notifPrevUnread>=0 && unread>_notifPrevUnread){ try{_pwDing();}catch(e){} try{_pwPulse(document.getElementById('pwNotifBadge'));}catch(e){} }
+  _notifPrevUnread=unread; _notifChimeReady2=true;
   var list=document.getElementById('pwNotifList');
   if(list){
-    if(!data.length){ list.innerHTML='<div class="pnotif-empty">Estás al día ✓</div>'; }
-    else list.innerHTML=data.map(function(it){ return '<button class="pnotif-it" onclick="pnotifGo(\''+it.go+'\')"><span class="em">'+it.ico+'</span><span style="flex:1;min-width:0"><b>'+esc(it.t)+'</b><small>'+esc(it.sub||'')+'</small></span></button>'; }).join('');
+    if(!_NOTIFS.length){ list.innerHTML='<div class="pnotif-empty">Estás al día ✓</div>'; }
+    else list.innerHTML=_NOTIFS.map(function(n){ var read=!!n.leida; return '<button class="pnotif-it" onclick="_notifClick(\''+n.id+'\')"><span class="em">'+(n.icon||'🔔')+'</span><span style="flex:1;min-width:0"><b style="font-weight:'+(read?'600':'800')+'">'+esc(n.titulo||'')+'</b><small style="'+(read?'':'font-weight:600')+'">'+esc(n.detalle||'')+'</small></span>'+_vistoEye(read,'')+'</button>'; }).join('');
   }
 }
 function pnotifToggle(e){ if(e){try{e.stopPropagation();}catch(_e){}} var dd=document.getElementById('pwNotifDD'); if(!dd) return; var open=dd.classList.contains('open'); dd.classList.remove('open'); if(!open){ try{ renderNotifs(); }catch(_e){} dd.classList.add('open'); } }

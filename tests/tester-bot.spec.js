@@ -60,11 +60,13 @@ async function verificarRender(page) {
   expect(interactivos, 'No renderizó UI (sin botones ni links)').toBeGreaterThan(0);
 }
 
-// Recorre las secciones del panel del coach clickeando el sidebar. Best-effort:
-// cada click puede fallar sin romper — lo que importa es que ninguna sección
-// dispare un error de JS (queda registrado en el listener de pageerror).
+// Recorre las secciones clickeando el sidebar. Cubre el panel del COACH
+// (.cp-side-nav-item) Y los portales del CLIENTE de los 3 nichos —carrera,
+// fitness y finanzas— que usan .ni. Best-effort: cada click puede fallar sin
+// romper; lo que importa es que ninguna sección dispare un error de JS (queda
+// registrado en el listener de pageerror).
 async function navegarPanel(page) {
-  const items = await page.locator('.cp-side-nav-item').all();
+  const items = await page.locator('.cp-side-nav-item, .ni').all();
   for (const it of items) {
     try { await it.click({ timeout: 3000 }); await page.waitForTimeout(350); } catch (_e) { /* seguimos */ }
   }
@@ -92,7 +94,7 @@ test.describe('🤖 Bot de usuaria — recorre cada panel', () => {
       const errores = capturarErrores(page);
       await entrar(page, c.email, c.pass);
       await verificarRender(page);
-      if (c.nav) await navegarPanel(page); // navega las secciones del panel del coach
+      await navegarPanel(page); // recorre las secciones (panel del coach o portal del cliente)
       expect(errores, `Errores de JS (${c.label}):\n` + errores.join('\n')).toHaveLength(0);
     });
   }
@@ -136,6 +138,41 @@ test.describe('✉️ Invitación al cliente — el email sale de verdad', () =>
     await expect(page.locator('body'), 'La invitación no confirmó envío (¿email/Brevo caído?)').toContainText(/invitaci[oó]n reenviada/i, { timeout: 15000 });
     await expect(page.locator('body')).not.toContainText(/no se pudo enviar/i);
     expect(errores, 'Errores de JS al reenviar invitación:\n' + errores.join('\n')).toHaveLength(0);
+  });
+});
+
+// 💳 Selector de plan del coach — cambiar de plan / pagar SIN salir del panel.
+// El plan vive como sub-pestaña de Config (Mi cuenta), así que la navegación del
+// sidebar (navegarPanel) NO lo alcanza → esta pantalla estaría sin cubrir. Acá el
+// bot entra como coach, abre Config → Mi cuenta, y togglea Mensual/Anual + elige
+// Basic/Pro. Cada click re-renderiza cfgPlan; si algo tira un error de JS o el
+// selector deja de renderizar, el reporte diario lo marca. NO clickea el CTA de
+// pago (no abre Stripe) — solo el toggle y los tiles, que son locales.
+test.describe('💳 Selector de plan — cambiar de plan sin salir del panel', () => {
+  const coach = CUENTAS.find((c) => c && (c.nav || /coach/i.test(c.label || '')));
+  test('el coach abre su plan y togglea Anual/Mensual + Basic/Pro sin errores', async ({ page }) => {
+    test.skip(!coach, 'Sin cuenta de coach de prueba (TEST_ACCOUNTS/TEST_COACH_*) — se saltea');
+    const errores = capturarErrores(page);
+    await entrar(page, /** @type {any} */(coach).email, /** @type {any} */(coach).pass, /panel-v2/i);
+    await verificarRender(page);
+    // Config (sidebar) → Mi cuenta (sub-pestaña donde vive el plan).
+    await page.locator('[data-act="nav:config"]').first().click({ timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.locator('[data-act="cfg:account"]').first().click({ timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    // Si el coach de prueba es vitalicio/admin no hay selector (es correcto) → se saltea.
+    const hay = await page.locator('[data-act="psel-bill"]').count().catch(() => 0);
+    test.skip(hay === 0, 'Coach vitalicio/admin sin selector de plan — se saltea');
+    // Togglear facturación y plan (locales, re-renderizan cfgPlan). No tocamos el CTA de pago.
+    await page.locator('[data-act="psel-bill"][data-b="anual"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.locator('[data-act="psel-plan"][data-p="pro"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.locator('[data-act="psel-bill"][data-b="mensual"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    // Tras togglear, el selector debe seguir renderizado (no se rompió el re-render).
+    await expect(page.locator('.cp-psel-tiles'), 'El selector de plan dejó de renderizar tras togglear').toBeVisible({ timeout: 6000 });
+    expect(errores, 'Errores de JS en el selector de plan:\n' + errores.join('\n')).toHaveLength(0);
   });
 });
 
