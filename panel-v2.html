@@ -820,12 +820,13 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-ag-grid{container-type:inline-size;}
 .cp-ag-cols{display:grid;grid-template-columns:1fr;gap:16px;align-items:stretch;}
 .cp-ag-cols>div{min-width:0;}
-.cp-ag-cols>.cp-ag-cal,.cp-ag-cols>.cp-ag-res{border-top:1px solid var(--pw-border);padding-top:14px;}
-@container (min-width:700px){
-  .cp-ag-cols{grid-template-columns:minmax(0,.9fr) minmax(240px,320px) minmax(0,.85fr);gap:0;}
-  .cp-ag-cols>.cp-ag-list{padding-right:16px;}
-  .cp-ag-cols>.cp-ag-cal{border-top:none;padding:0 16px;border-left:1px solid var(--pw-border);}
-  .cp-ag-cols>.cp-ag-res{border-top:none;padding:0 0 0 16px;border-left:1px solid var(--pw-border);}
+.cp-ag-cols>.cp-ag-res{border-top:1px solid var(--pw-border);padding-top:14px;}
+@container (min-width:620px){
+  /* Solo 2 columnas: el mes (izq) + Reservas (der, la más ancha). La lista
+     "agenda del día" vive en la pestaña Calendario — acá era redundante. */
+  .cp-ag-cols{grid-template-columns:minmax(250px,340px) minmax(0,1fr);gap:0;}
+  .cp-ag-cols>.cp-ag-cal{border-top:none;padding:0 18px 0 0;}
+  .cp-ag-cols>.cp-ag-res{border-top:none;padding:0 0 0 18px;border-left:1px solid var(--pw-border);}
 }
 /* Modo chat: el panel baja desde el ícono de chat de arriba (no desde la cabra). */
 .cp-ai-panel--chat{top:62px;bottom:auto;right:14px;animation:cpChatIn .22s var(--pw-ease-out);}
@@ -2883,6 +2884,33 @@ function _agResLink(r){
     return "";
   }catch(e){ return ""; }
 }
+// Sala de sesión DENTRO de Pathway (sala.html): mismo room que el link del cliente
+// (Pathway-<coach>-<hora>), pero con panel de notas/tareas/objetivos/timer. El coach
+// entra como moderador (mod=1); lleva la cita para poder guardar el resultado.
+function _agSalaUrl(r){
+  try{
+    if(!r||!r.inicio) return "";
+    var cid=(r.coach_id||(REAL&&RME&&RME.id)||"x");
+    var room="Pathway-"+cid+"-"+(new Date(r.inicio).getTime());
+    var coach=(RME&&(RME.nombre||RME.name))||"Coach";
+    return "sala.html?room="+encodeURIComponent(room)+"&mod=1"+
+      "&cita="+encodeURIComponent(r.id!=null?r.id:"")+
+      "&con="+encodeURIComponent(r.nombre||"")+
+      "&email="+encodeURIComponent(r.email||"")+
+      "&name="+encodeURIComponent(coach);
+  }catch(e){ return ""; }
+}
+// Botones de asistencia (asistió / no vino) — MISMA lógica que la agenda del día,
+// reusable en Reservas. Tocar el estado activo lo desmarca (lo maneja cal-asis).
+function _asisBtns(id,estado,ms){
+  var eid=esc(id);
+  if(_attended(estado)) return "<button data-act='cal-asis' data-id='"+eid+"' data-val='asistio' title='Asistió — toca para desmarcar' style='width:28px;height:28px;border-radius:8px;background:var(--pw-sendero);color:#fff;border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>"+_cIco('check',14)+"</button>";
+  if(estado==="no_asistio") return "<button data-act='cal-asis' data-id='"+eid+"' data-val='no_asistio' title='No asistió — toca para desmarcar' style='font-size:11px;font-weight:600;color:var(--pw-danger);background:rgba(214,69,69,.1);border:none;padding:5px 10px;border-radius:100px;cursor:pointer;flex-shrink:0;white-space:nowrap'>No vino</button>";
+  if(ms<=Date.now()) return "<span style='display:inline-flex;gap:5px;flex-shrink:0'>"+
+    "<button data-act='cal-asis' data-id='"+eid+"' data-val='asistio' title='Asistió' style='width:28px;height:28px;border-radius:8px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-bosque);cursor:pointer;display:inline-flex;align-items:center;justify-content:center'>"+_cIco('check',14)+"</button>"+
+    "<button data-act='cal-asis' data-id='"+eid+"' data-val='no_asistio' title='No asistió' style='width:28px;height:28px;border-radius:8px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-danger);cursor:pointer;display:inline-flex;align-items:center;justify-content:center'>"+_cIco('xc',14)+"</button></span>";
+  return "";
+}
 // Foto REAL del cliente (candidatos.foto_perfil) por email — para la agenda/próxima.
 // Match por email (no por nombre: eso se equivocaba). Solo devuelve una URL real.
 function _cliFotoByEmail(email){
@@ -3090,7 +3118,6 @@ function _agendaCard(){
     "</div>"+
     "<div class='cp-card-pad cp-ag-grid'>"+
      "<div class='cp-ag-cols'>"+
-      "<div id='cp-agenda-body' class='cp-ag-list'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
       "<div class='cp-ag-cal'>"+_agMonthCal()+"</div>"+
       "<div class='cp-ag-res'>"+
         "<div class='cp-eyebrow' style='margin-bottom:8px'>Reservas <span style='color:var(--pw-text-muted);font-weight:400'>· desde tu link</span></div>"+
@@ -3607,8 +3634,9 @@ function _resRender(list){
         "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 12px' data-act='res-hora-save' data-id='"+esc(_rid)+"'>Guardar</button>"+
         "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 10px' data-act='res-hora-cancel' data-id='"+esc(_rid)+"'>Cancelar</button>"+
       "</div></div>";
+    var _salaU=_agSalaUrl(r), _asisH=_asisBtns(_rid,r.estado,ms);
     html+="<div style='padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
-      "<div style='display:flex;align-items:center;gap:9px'>"+
+      "<div style='display:flex;align-items:center;gap:8px'>"+
         "<span style='min-width:42px;font-size:12px;font-weight:700;color:var(--pw-carbon)'>"+_agTime(ms)+"</span>"+
         "<span style='width:9px;height:9px;border-radius:50%;background:"+col+";flex-shrink:0' title='"+esc((typ&&typ.label)||r.tipo||"")+"'></span>"+
         "<div style='flex:1;min-width:0'>"+
@@ -3616,6 +3644,8 @@ function _resRender(list){
           "<div style='font-size:11px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div>"+
           _tzHtml+
         "</div>"+
+        _asisH+
+        (_salaU?("<a href='"+esc(_salaU)+"' target='_blank' rel='noopener' class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;background:var(--pw-bosque);color:#fff;text-decoration:none' title='Entrar a la sala de sesión'>"+_cIco('video',14)+"</a>"):"")+
         "<a href='"+esc(mail)+"' class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;text-decoration:none' title='Escribir por email'>"+svg(IC.mail||IC.extLink,13)+"</a>"+
         "<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-text-soft)' title='Cambiar la hora' data-act='res-hora' data-id='"+esc(_rid)+"'>"+_cIco('clock',13)+"</button>"+
         (conf?"":"<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-bosque)' title='Marcar confirmada' data-act='res-confirm' data-id='"+esc(r.id)+"'>"+svg(IC.check,14)+"</button>")+
@@ -8435,7 +8465,7 @@ document.addEventListener("click", function(ev){
     var _tg=[]; [ (typeof _CAL_DATA!=="undefined"?_CAL_DATA:null), (typeof _RES_DATA!=="undefined"?_RES_DATA:null) ].forEach(function(arr){ if(Object.prototype.toString.call(arr)==="[object Array]"){ arr.forEach(function(x){ if(x&&String(x.id)===String(_cid)) _tg.push(x); }); } });
     if(!_tg.length) return;
     var _cprev=_tg[0].estado, _cnew=(_cprev===_cv?"confirmada":_cv); // volver a tocar el mismo estado lo desmarca
-    var _repaint=function(){ try{ _calRenderKpis(); }catch(e){} try{ _calRenderList(); }catch(e){} try{ _calRenderMetricsExtra(); }catch(e){} try{ _agAfterCalBody(); }catch(e){} };
+    var _repaint=function(){ try{ _calRenderKpis(); }catch(e){} try{ _calRenderList(); }catch(e){} try{ _calRenderMetricsExtra(); }catch(e){} try{ _agAfterCalBody(); }catch(e){} try{ if(typeof _RES_DATA!=="undefined"&&_RES_DATA){ var _rb=document.getElementById("cp-res-body"); if(_rb) _rb.innerHTML=_resRender(_RES_DATA); } }catch(e){} };
     _tg.forEach(function(x){ x.estado=_cnew; }); _repaint();
     // Admin puede marcar la de cualquiera (por id); un coach solo la suya (coachGuard).
     var _cq=RADMIN?("citas?id=eq."+encodeURIComponent(_cid)):("citas?id=eq."+encodeURIComponent(_cid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""));

@@ -129,51 +129,47 @@ function waitState(t,s,isErr){ var w=document.getElementById('wait'); if(!w) ret
   var se=document.getElementById('wait-s'); se.textContent=s; se.className='s'+(isErr?' err':''); }
 function hideWait(){ var w=document.getElementById('wait'); if(w) w.style.display='none'; }
 
-// 1) Pedir el JWT a jaas-token (el server firma; nunca vemos la clave)
-function getToken(){
-  return fetch(SB+'/functions/v1/jaas-token',{method:'POST',
-    headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},
-    body:JSON.stringify({room:ROOM,name:NAME,email:EMAIL,moderator:MOD})
-  }).then(function(r){ return r.json().then(function(j){ if(!r.ok) throw j; return j; }); });
-}
-
-// 2) Cargar el script de JaaS (incluye el App ID) y arrancar la videollamada
+// Video CENTRALIZADO por Pathway: embebemos meet.jit.si con el MISMO room que el
+// link del cliente (Pathway-<coach>-<hora>). Así coach y cliente SIEMPRE caen en
+// la misma sala, sin token ni login. El valor de Pathway es el panel alrededor
+// (objetivos/notas/tareas/resultado), no el video en sí. JaaS (white-label) queda
+// para cuando también enrutemos al cliente por la Sala.
+var JITSI_HOST='meet.jit.si';
+var DIRECT='https://'+JITSI_HOST+'/'+ROOM;   // link directo (fallback si el embed no carga)
 function loadScript(src){ return new Promise(function(res,rej){ var s=document.createElement('script'); s.src=src; s.async=true; s.onload=res; s.onerror=function(){ rej(new Error('no_script')); }; document.head.appendChild(s); }); }
 
 var api=null, TSTART=0, tInt=null;
-function startTimer(){ TSTART=Date.now(); var el=document.getElementById('timer'); tInt=setInterval(function(){ var s=Math.floor((Date.now()-TSTART)/1000); el.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); },1000); }
+function startTimer(){ if(tInt) return; TSTART=Date.now(); var el=document.getElementById('timer'); tInt=setInterval(function(){ var s=Math.floor((Date.now()-TSTART)/1000); el.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); },1000); }
+
+// Botón para abrir el video en una pestaña aparte (sirve si el iframe se bloquea).
+function directBtn(){ return '<a class="btn btn-p" href="'+DIRECT+'" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;margin-top:6px">Abrir la videollamada ↗</a>'; }
 
 function boot(){
   waitState('Preparando la sala…','Cargamos tu videollamada dentro de Pathway.');
-  getToken().then(function(tok){
-    if(!tok || !tok.jwt || !tok.appId) throw new Error('token_incompleto');
-    var appId = tok.appId;
-    return loadScript('https://8x8.vc/'+appId+'/external_api.js').then(function(){
-      /* global JitsiMeetExternalAPI */
-      if(typeof JitsiMeetExternalAPI==='undefined') throw new Error('no_api');
-      api = new JitsiMeetExternalAPI('8x8.vc',{
-        roomName: appId+'/'+tok.room,
-        jwt: tok.jwt,
-        parentNode: document.getElementById('jaas'),
-        configOverwrite:{ prejoinPageEnabled:false, disableDeepLinking:true },
-        userInfo:{ displayName:NAME, email:EMAIL }
-      });
-      // Entré yo → sala lista. Si estoy solo, muestro la espera con la cabra.
-      api.addListener('videoConferenceJoined', function(){
-        startTimer();
-        var n = api.getNumberOfParticipants ? api.getNumberOfParticipants() : 1;
-        if(n>1){ hideWait(); document.getElementById('estado').textContent='En llamada'; }
-        else { waitState('Esperando a que se una '+(WHO||'la otra persona')+'…','Mientras tanto, jugá con la cabra 🐐 (próximamente) — no es tiempo muerto.'); document.getElementById('estado').textContent='Esperando'; }
-      });
-      api.addListener('participantJoined', function(){ hideWait(); document.getElementById('estado').textContent='En llamada'; });
-      api.addListener('participantLeft', function(){ document.getElementById('estado').textContent='Solo en sala'; });
-      api.addListener('readyToClose', function(){ document.getElementById('estado').textContent='Llamada terminada'; hideWait(); });
+  loadScript('https://'+JITSI_HOST+'/external_api.js').then(function(){
+    /* global JitsiMeetExternalAPI */
+    if(typeof JitsiMeetExternalAPI==='undefined') throw new Error('no_api');
+    api = new JitsiMeetExternalAPI(JITSI_HOST,{
+      roomName: ROOM,
+      parentNode: document.getElementById('jaas'),
+      configOverwrite:{ prejoinPageEnabled:false, disableDeepLinking:true },
+      interfaceConfigOverwrite:{ MOBILE_APP_PROMO:false, SHOW_JITSI_WATERMARK:false },
+      userInfo:{ displayName:NAME, email:EMAIL }
     });
+    // Entré yo → sala lista. Si estoy solo, muestro la espera con la cabra.
+    api.addListener('videoConferenceJoined', function(){
+      startTimer();
+      var n = api.getNumberOfParticipants ? api.getNumberOfParticipants() : 1;
+      if(n>1){ hideWait(); document.getElementById('estado').textContent='En llamada'; }
+      else { waitState('Esperando a que se una '+(WHO||'la otra persona')+'…','Mientras tanto, jugá con la cabra 🐐 (próximamente) — no es tiempo muerto.'); document.getElementById('estado').textContent='Esperando'; }
+    });
+    api.addListener('participantJoined', function(){ hideWait(); document.getElementById('estado').textContent='En llamada'; });
+    api.addListener('participantLeft', function(){ document.getElementById('estado').textContent='Solo en sala'; });
+    api.addListener('readyToClose', function(){ document.getElementById('estado').textContent='Llamada terminada'; hideWait(); });
   }).catch(function(e){
     var code=(e && (e.error||e.message))||'error';
-    if(code==='jaas_secrets_missing') waitState('Falta configurar JaaS','Cargá JAAS_APP_ID / JAAS_KID / JAAS_PRIVATE_KEY en los Secrets de Supabase y deployá jaas-token.',true);
-    else if(code==='no_script'||code==='no_api') waitState('No cargó el video','No se pudo cargar JaaS (revisá el App ID / conexión).',true);
-    else waitState('No pudimos abrir la sala','Deployá la función jaas-token (supabase functions deploy jaas-token --no-verify-jwt) y reintentá. Detalle: '+code,true);
+    waitState('No cargó el video acá','Abrí la videollamada en una pestaña nueva — es la misma sala. Detalle: '+code,true);
+    try{ var se=document.getElementById('wait-s'); if(se) se.insertAdjacentHTML('afterend',directBtn()); }catch(_e){}
     try{ console.error('[sala]',e); }catch(_e){}
   });
 }
