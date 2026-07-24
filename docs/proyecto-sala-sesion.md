@@ -30,6 +30,31 @@ puerta de conversión**: entra directo a su panel con su historia y va al Modo
 Sesión. La puerta (primera llamada/demo) es **solo para lo nuevo que viene de
 afuera** (`origen=pathway`).
 
+### El lado de la oferta en detalle — cómo crece el coach
+
+```
+CLIENTE PATHWAY ──comisión escalonada──▶ (Pathway cobra) ─── lo atiende un ───▶ COACH / equipo de coach
+                                                                                        │
+                                                        ┌───────────────────────────────┴──────────────┐
+                                                     VA BIEN                                          VA MAL
+                                                        │                                                │
+                                          ┌─────────────┴─────────────┐                        retención / soporte
+                                    + NUEVO MULTICOACH          + NUEVO COACH (referido)         (coach-lifecycle)
+                                    (convertir-multicoach)      (registrar-coach.referred_by)
+                                                        │
+                                    TRAE SUS clientes (origen=propio) ──▶ 0% comisión ──▶ más oferta ↺
+```
+
+- **Coach que VA BIEN** → se **multiplica**: crece a **multicoach**
+  (`convertir-multicoach`) o **refiere un coach nuevo** (`referred_by`, ya existe).
+- Ese coach/multicoach nuevo **trae SUS propios clientes** → `origen=propio` →
+  **0% comisión** (no pasa por la puerta de conversión).
+- **Coach que VA MAL** → **retención/soporte** (`coach-lifecycle` ya avisa
+  vencimientos y renovación). *(confirmar el destino de esta rama)*.
+
+Así: **Pathway cobra comisión solo de lo que TRAE (`origen=pathway`); lo que el
+coach trae es 0%. El círculo crece porque los coaches exitosos se multiplican.**
+
 La Sala es el mismo cascarón (video JaaS embebido); lo que cambia es el **panel
 al costado** y el **botón de cierre**, según el `kind`:
 
