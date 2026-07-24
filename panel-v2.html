@@ -3522,6 +3522,30 @@ function _infFilesLoad(cid){
     }).join("");
   }).catch(function(){ box.innerHTML="<div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>No se pudieron cargar los informes.</div>"; });
 }
+// ── Registro de la Sala en la ficha (pestaña Sesiones) ──
+// Lee las citas de este cliente que la Sala completó (resultado + notas_llamada)
+// y las muestra. Así lo trabajado en la videollamada queda en la historia del
+// cliente y no se pierde. Respeta el aislamiento por coach (cg()).
+function _salaHistLoad(cid){
+  var box=document.getElementById("cp-sala-hist"); if(!box) return;
+  var c=(CLIENTS||[]).filter(function(x){return String(x.id)===String(cid);})[0]; if(!c){ box.innerHTML=""; return; }
+  var email=((c.raw&&c.raw.email)||c.email||"").toLowerCase().trim();
+  if(!email){ box.innerHTML=""; return; }
+  _sb("citas?email=eq."+encodeURIComponent(email)+cg()+"&select=inicio,tipo,resultado,notas_llamada&order=inicio.desc").then(function(rows){
+    rows=Object.prototype.toString.call(rows)==="[object Array]"?rows:[];
+    rows=rows.filter(function(x){ return x && (x.resultado||x.notas_llamada); });
+    if(!rows.length){ box.innerHTML=""; return; }
+    var RL={convirtio:["Avanzó","var(--pw-bosque)"],seguimiento:["Lo piensa","#C99A2E"],perdido:["Por ahora no","var(--pw-text-soft)"],gano:["Fue bien","var(--pw-bosque)"],perdio:["No cerró","var(--pw-danger)"]};
+    box.innerHTML="<div class='cp-card' style='margin-bottom:14px'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🎥</span> Registro de la Sala<span class='dot'>.</span></h3></div><div class='cp-card-pad'>"+
+      rows.map(function(x){
+        var d=new Date(x.inicio); var when=isNaN(d)?"":d.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"})+" · "+d.toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+        var rl=RL[x.resultado]; var badge=rl?("<span style='font-size:11px;font-weight:700;color:#fff;background:"+rl[1]+";padding:2px 9px;border-radius:100px;white-space:nowrap'>"+esc(rl[0])+"</span>"):"";
+        var nt=x.notas_llamada?("<div style='font-size:12.5px;color:var(--pw-carbon);white-space:pre-wrap;margin-top:6px;background:var(--pw-niebla-2);border-radius:10px;padding:10px 12px;line-height:1.5'>"+esc(x.notas_llamada)+"</div>"):"";
+        return "<div style='padding:10px 0;border-bottom:1px solid var(--pw-border)'><div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'><span style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(when)+"</span>"+(x.tipo?"<span style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(x.tipo)+"</span>":"")+"<span style='margin-left:auto'>"+badge+"</span></div>"+nt+"</div>";
+      }).join("")+
+    "</div></div>";
+  }).catch(function(){ box.innerHTML=""; });
+}
 // Renderiza el contenido de un informe guardado (objeto d) como texto legible.
 // Genérico: recorre las claves con texto o listas y las muestra con su título.
 function _infReadable(d){
@@ -4501,6 +4525,10 @@ function viewClienteDetalle(c){
     var _calU=(REAL&&RCFG&&RCFG.calendly_url)?RCFG.calendly_url:"";
     var _svC={}; try{ _svC=JSON.parse((c.raw&&c.raw.visibilidad)||"{}")||{}; }catch(e){}
     var _svOn=_svC.sesiones!==false;
+    // Registro de la Sala: contenedor que _salaHistLoad() llena con las citas de
+    // este cliente que la Sala completó (resultado + notas). Así el trabajo de la
+    // Sala NO se pierde: queda visible en la ficha.
+    var _salaHist="<div id='cp-sala-hist'></div>";
     body="<div class='cp-ses-hero'>"+
         "<div><div class='cp-ses-hero-lbl'>"+(prox?"● Próxima sesión":"Sin sesión agendada")+"</div>"+
         "<div class='cp-ses-hero-date'>"+(prox?esc(prox.s.fecha)+(prox.s.hora?" · "+esc(prox.s.hora):""):"No hay sesiones futuras")+"</div>"+
@@ -4509,6 +4537,7 @@ function viewClienteDetalle(c){
           ? "<a href='"+esc(_calU)+"' target='_blank' rel='noopener' class='cp-btn' style='background:#fff;color:var(--pw-bosque-dark);text-decoration:none'>"+svg(IC.extLink,13)+" Agendar</a>"
           : "<button class='cp-btn' style='background:#fff;color:var(--pw-bosque-dark)' data-act='gocal'>Configurar agenda</button>")+
         "</div>"+
+      _salaHist+
       // Preparar próxima sesión con IA Pathway: un botón a demanda que arma una
       // preparación corta con lo que YA sabemos del cliente (análisis + sesiones).
       // Colapsado es solo un botón (no ensucia); no toca nada del resto.
@@ -9618,7 +9647,7 @@ document.addEventListener("click", function(ev){
     _saveCliVis(cid2, function(v){ v.cv_estilo=_cve; });
     return;
   }
-  if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); state.sesPrepOpen=false; render(); if(state.cliDetTab==="docs"){ requestAnimationFrame(function(){ try{ _infFilesLoad(state.clienteSel); }catch(e){} }); } return; }
+  if(act.indexOf("clidet:")===0){ state.cliDetTab=act.slice(7); state.sesPrepOpen=false; render(); if(state.cliDetTab==="docs"){ requestAnimationFrame(function(){ try{ _infFilesLoad(state.clienteSel); }catch(e){} }); } if(state.cliDetTab==="sesiones"){ requestAnimationFrame(function(){ try{ _salaHistLoad(state.clienteSel); }catch(e){} }); } return; }
   // Preparar próxima sesión con IA Pathway (a demanda; arma la prep con el análisis + sesiones).
   if(act==="prep-sesion"){ state.sesPrepOpen=!state.sesPrepOpen; render(); return; }
   // IA Pathway → "Preparar una sesión": muestra el selector de clientes en el chat.
@@ -9641,6 +9670,7 @@ document.addEventListener("click", function(ev){
     state.section="clientes"; state.clienteSel=act.slice(10);
     state.cliDetTab="sesiones"; state.sesPrepOpen=true;
     render(); try{ window.scrollTo(0,0); }catch(e){}
+    requestAnimationFrame(function(){ try{ _salaHistLoad(state.clienteSel); }catch(e){} });
     return;
   }
   // Guardar el informe actual (c.inf.d, generado en Análisis) como un ARCHIVO
