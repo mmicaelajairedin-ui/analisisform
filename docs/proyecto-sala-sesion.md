@@ -147,6 +147,22 @@ use JaaS.
 - Google Meet NO se puede embeber; por eso JaaS. (El Meet automático nativo sigue
   siendo Fase 4 de la agenda, OAuth de Google, trabado.)
 
+## 4b. El cierre de cada modo — conversión + pago (qué sale en la Sala)
+
+El pago y la conversión **salen desde la misma Sala**, como botón de cierre:
+
+| Modo | Botón de cierre | Qué hace | Función | Plata |
+|---|---|---|---|---|
+| **Demo** (admin/empleado) | **Convertir en coach / multicoach** | crea cuenta + manda al Stripe de suscripción | `crear-coach` / `crear-multicoach` + `stripe-webhook` | coach paga su **plan** (suscripción) |
+| **Primera llamada** (coach) | **Dar acceso** + **Cobrar servicio** | crea cliente + portal · cobra servicio | `guardar-intake` + `connect-checkout` | cliente paga → **comisión escalonada** (con hold) |
+| **Sesión** (coach) | **Cerrar en 1 clic** (resumen + tareas + próxima cita) | cierra la sesión, sin conversión | `generar-informe` + `sesiones_registro` | **0%** (propio, ya adentro) |
+
+- **Acceso ≠ pago:** "Dar acceso" crea el cliente gratis; el **cobro** es un botón
+  aparte (cuando el coach le vende un servicio). Puede haber acceso sin pago.
+- ⚠️ **A verificar en `connect-checkout`:** que un cliente `origen=propio` pague
+  **0% comisión** aunque cobre vía Stripe Connect (hoy `tierRate` cuenta clientes
+  pagos vía Pathway — confirmar que no le aplique a los propios).
+
 ## 5. La plata — DOS carriles distintos (no mezclar)
 
 1. **Cliente paga al coach → comisión de Pathway**: Stripe **Connect**
