@@ -157,6 +157,22 @@ El pago y la conversión **salen desde la misma Sala**, como botón de cierre:
 | **Primera llamada** (coach) | **Dar acceso** + **Cobrar servicio** | crea cliente + portal · cobra servicio | `guardar-intake` + `connect-checkout` | cliente paga → **comisión escalonada** (con hold) |
 | **Sesión** (coach) | **Cerrar en 1 clic** (resumen + tareas + próxima cita) | cierra la sesión, sin conversión | `generar-informe` + `sesiones_registro` | **0%** (propio, ya adentro) |
 
+### Resultado de una llamada de conversión (no es sí/no)
+
+Una **primera llamada** o **demo** no cierra siempre en esa sesión. Tres salidas
+(para que el embudo NO gotee):
+
+| Salida | Qué pasa | Con qué |
+|---|---|---|
+| ✅ **Convirtió** | cliente/coach nuevo | dar acceso / cobrar · o crear coach |
+| 🟡 **Todavía no** ("va mal" de la llamada) | **reagendar** + marcar **en seguimiento** (la lead sigue caliente) | agenda (`citas`) + estado del lead + recordatorio (`notificaciones`/`recordatorios-citas`) + chat |
+| ⚪ **Perdido** | descartar | estado del lead = `perdido` |
+
+La lead lleva un **estado**: `nuevo → llamada → convirtió | en_seguimiento | perdido`.
+Esto alimenta el funnel y el seguimiento no se pierde. *(Ojo: este "va mal" es de
+la LLAMADA — distinto del "va mal" del COACH de la sección de oferta, que es
+retención/soporte.)*
+
 - **Acceso ≠ pago:** "Dar acceso" crea el cliente gratis; el **cobro** es un botón
   aparte (cuando el coach le vende un servicio). Puede haber acceso sin pago.
 - 🔴 **HALLAZGO CONFIRMADO en `connect-checkout` (plata real):** hoy la comisión se
@@ -195,6 +211,16 @@ El pago y la conversión **salen desde la misma Sala**, como botón de cierre:
 2. **Coach paga a Pathway (suscripción)**: `crear-coach`/`crear-multicoach` +
    `stripe-webhook`. Es el cierre de la **demo**. Carril aparte.
 
+3. **Comisión comercial del EMPLEADO (Gonzalo) — carril interno, NO romper.**
+   Cada **lead que gestiona un empleado y se convierte en COACH** (alta) se le
+   **atribuye** para su comisión. Tabla `leads` (`leads_empleados.sql`, campo de
+   atribución lead→coach), medido en la vista `v_empleado_metricas`. Es por
+   **altas de coaches**, no por Stripe.
+   > ⚠️ **Al construir el cierre de la Demo** (`convertir en coach` → `crear-coach`),
+   > **preservar el vínculo lead→coach** (la atribución del empleado). Si se pierde,
+   > Gonzalo pierde su comisión. La Demo la corren admin/empleado → el lead ya tiene
+   > `empleado_id`; el alta debe escribir el coach resultante en la atribución del lead.
+
 **Acceso ≠ pago:** "dar acceso" crea el cliente + portal (gratis); la comisión
 recién sale cuando el coach le **cobra su servicio** vía connect-checkout.
 
@@ -211,6 +237,14 @@ viaja en el lead (busca coach de carrera/fitness/finanzas), no solo en la sesió
 público** (aparece en el directorio, `listar-coaches-publicos`/`slug`) Pathway
 puede **traerle leads** → esos son `origen=pathway` → comisión. O sea: **"clientes
 Pathway" solo existen para coaches con perfil público ON.**
+
+**El cliente Pathway es del MARKETPLACE, no de un coach fijo → rematch.** Como
+Pathway hace el **match**, puede ofrecerle **otros coaches del mismo nicho**
+(`listar-coaches-publicos` filtra por nicho; el nicho viaja en el lead). Por eso:
+(a) Pathway cobra comisión (provee la oferta y el match); (b) **el lead no se va
+del funnel** aunque una primera llamada no cierre → se le ofrece **otro coach del
+nicho** (otra salida del "no convirtió"). El cliente **propio** es del coach, **sin
+rematch**.
 
 **Backfill de `origen` (decisión tomada):** los clientes que ya existen se marcan
 **`propio` por defecto** (nadie es `pathway` hasta que el marketplace se lo trajo).
