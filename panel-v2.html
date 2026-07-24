@@ -8634,7 +8634,7 @@ document.addEventListener("click", function(ev){
   }
   if(act.indexOf("brand:")===0){ state.brandAccent = act.slice(6); _applyPanelBrand(); if(REAL) saveCfg({ color_marca: act.slice(6) }); else render(); return; }
   if(act==="cfg-save-brand"){
-    if(!isProV()){ alert("La marca propia es una función Pro (USD $59/mes). La activas en Configuración › Mi plan."); return; }
+    if(!proGate("brand")) return;
     saveCfg({ color_marca: state.brandAccent, logo_url: _val("cfb-logo").trim() });
     return;
   }
@@ -8823,7 +8823,7 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="mail-send"){
-    if(!isProV()){ alert("Enviar emails al cliente desde el panel es una función Pro (USD $59/mes). Puedes copiar el texto y mandarlo por WhatsApp o tu correo. La activas en Configuración › Mi plan."); return; }
+    if(!proGate("mensajeria")) return;
     var mto=state.mail.to, msub=_val("mp-sub")||"Mensaje de tu coach", mbody=_val("mp-body");
     if(!mto){ alert("Este cliente no tiene email."); return; }
     var mreply=(REAL&&RME&&RME.email)||(COACH&&COACH.email)||"hi@pathwaycareercoach.com";
@@ -9594,7 +9594,7 @@ document.addEventListener("click", function(ev){
     if(!REAL||!RME){ alert("Inicia sesión para crear clientes reales."); return; }
     if(state.plan!=="pro"){
       var _own=CLIENTS.filter(function(x){return x.source!=="pathway";}).length;
-      if(_own>=5){ if(confirm("Tu plan Basic permite hasta 5 clientes. ¿Quieres ver los planes para ampliar a Pro?")) window.open(UPGRADE_URL,"_blank","noopener"); return; }
+      if(_own>=5){ pwUpgrade("clientes"); return; }
     }
     state.newOpen=true; render(); return;
   }
@@ -9786,10 +9786,7 @@ document.addEventListener("click", function(ev){
       var _thisC=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0];
       var _hasOwn=_thisC && _thisC.reportState==="published";
       var _withInf=CLIENTS.filter(function(x){return x.reportState==="published";}).length;
-      if(!_hasOwn && _withInf>=5){
-        if(confirm("Tu plan Basic incluye informes para hasta 5 clientes (ya tienes "+_withInf+"). Para generar informes a más clientes, pasa a Pro. ¿Ver los planes?")) window.open(UPGRADE_URL,"_blank","noopener");
-        return;
-      }
+      if(!_hasOwn && _withInf>=5){ pwUpgrade("clientes"); return; }
     }
     var liP=_val("pa-li").trim(), cvP=_val("pa-cv").trim();
     var liUse=liP||rw.linkedin_texto||"";
@@ -10860,6 +10857,44 @@ function stripeUrl(which){ var base=which==="pro"?STRIPE_PRO:STRIPE_BASIC; var e
 // Link de checkout con el email del coach precargado (paga en 1 clic; el webhook
 // reactiva/actualiza SU cuenta por email → el panel se entera del pago solo).
 function stripeSubUrl(plan,billing){ var em=(COACH&&COACH.email)||(REAL&&RME&&RME.email)||""; return stripeSubLink(plan,billing)+(em?"?prefilled_email="+encodeURIComponent(em):""); }
+// ── Candado Pro: "probalo gratis, pagá para guardar" ────────────────────────
+// La función Pro se VE y se puede editar en Basic; al GUARDAR/ENVIAR/AGREGAR,
+// si el coach es Basic se abre este modal (en vez de la acción). Upsell, no bloqueo.
+var PRO_FEATS={
+  brand:{t:"Marca propia",d:"Tu logo y tus colores reemplazan los de Pathway en el portal que ven tus clientes."},
+  mensajeria:{t:"Mensajería al cliente",d:"Enviá emails y plantillas a tus clientes directo desde el panel, con tu firma."},
+  clientes:{t:"Clientes ilimitados",d:"Sumá todos los clientes que quieras. En el plan Basic el tope es 5."}
+};
+function proGate(feat){ if(isProV()) return true; pwUpgrade(feat); return false; }
+function pwUpgrade(feat){
+  var f=PRO_FEATS[feat]||{t:"Función Pro",d:"Disponible en el plan Pro."};
+  var anual=(RCFG&&RCFG.billing==="anual");
+  var url=stripeSubUrl("pro",anual?"anual":"mensual");
+  var price=anual?"USD $531/año":"USD $59/mes";
+  var old=document.getElementById("pw-up-ov"); if(old) old.remove();
+  var ov=document.createElement("div"); ov.id="pw-up-ov";
+  ov.style.cssText="position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(20,40,30,.55)";
+  ov.innerHTML="<div style='width:100%;max-width:420px;background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(20,55,38,.32);overflow:hidden;font-family:var(--pw-sans)'>"+
+    "<div style='background:linear-gradient(135deg,#1B4332,#2D6A4F);padding:26px 26px 22px;text-align:center;color:#fff'>"+
+      "<div style='width:52px;height:52px;margin:0 auto 12px;border-radius:50%;background:rgba(233,196,106,.22);display:flex;align-items:center;justify-content:center'><span style='font-size:26px'>👑</span></div>"+
+      "<div style='font-family:var(--pw-serif);font-size:22px;font-weight:600;letter-spacing:-.4px'>Desbloqueá "+esc(f.t)+"</div>"+
+      "<div style='font-size:13px;opacity:.88;margin-top:6px;line-height:1.5'>"+esc(f.d)+"</div>"+
+    "</div>"+
+    "<div style='padding:20px 24px 24px'>"+
+      "<div style='font-size:11px;font-weight:800;color:var(--pw-text-muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:9px'>Con Pro sumás</div>"+
+      "<div style='font-size:13px;color:var(--pw-carbon);line-height:1.95'>"+
+        "<div><span style='color:var(--pw-bosque);font-weight:800'>✓</span> Clientes ilimitados</div>"+
+        "<div><span style='color:var(--pw-bosque);font-weight:800'>✓</span> Tu logo y colores en el portal (white-label)</div>"+
+        "<div><span style='color:var(--pw-bosque);font-weight:800'>✓</span> Enviar emails al cliente desde el panel</div>"+
+        "<div><span style='color:var(--pw-bosque);font-weight:800'>✓</span> Soporte prioritario por WhatsApp</div>"+
+      "</div>"+
+      "<a href='"+esc(url)+"' target='_blank' rel='noopener' style='display:block;margin-top:17px;text-align:center;background:var(--pw-bosque);color:#fff;text-decoration:none;padding:13px;border-radius:11px;font-size:14px;font-weight:700'>Pasar a Pro · "+price+" →</a>"+
+      "<button id='pw-up-x' type='button' style='display:block;width:100%;margin-top:8px;background:none;border:0;color:var(--pw-text-muted);font-size:13px;font-weight:600;cursor:pointer;padding:8px'>Seguir en Basic por ahora</button>"+
+    "</div></div>";
+  document.body.appendChild(ov);
+  ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+  var x=document.getElementById("pw-up-x"); if(x) x.onclick=function(){ ov.remove(); };
+}
 // Precios por plan × facturación (anual = 25% off = 3 meses gratis).
 var PLAN_PRICE={
   basic:{ mensual:{big:"$29",unit:"/mes",per:"USD $29 / mes"}, anual:{big:"$261",unit:"/año",per:"USD $261 / año",note:"≈ $21,75/mes · ahorrás 25%"} },

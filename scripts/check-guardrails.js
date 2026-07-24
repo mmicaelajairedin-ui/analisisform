@@ -2475,6 +2475,32 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "candado Pro 'probá gratis, pagá para guardar': la función Pro se ve pero al guardar/enviar abre el modal de upgrade (no alert feo)",
+    bug: "El coach Basic VE y prueba las funciones Pro (marca propia, mensajería, +clientes), " +
+         "pero al GUARDAR/ENVIAR/AGREGAR se abre un modal de upgrade de Pathway (proGate/pwUpgrade) " +
+         "con CTA al Stripe del plan Pro con el email precargado. En multi-coach, al llegar al tope " +
+         "de coaches/clientes se abre mcUpgrade con los planes (Boutique/Studio/Pro). " +
+         "Si se rompe (vuelve el alert()/confirm() seco o el gate escondido), se pierde el upsell " +
+         "que empuja Basic→Pro y la conversión.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function proGate\(/.test(p) || !/function pwUpgrade\(/.test(p)) return "panel-v2.html: falta el guard/modal de upgrade (proGate/pwUpgrade).";
+        if (!/if\(!proGate\("brand"\)\) return;/.test(p)) return "panel-v2.html: el guardado de marca propia ya no pasa por proGate('brand').";
+        if (!/if\(!proGate\("mensajeria"\)\) return;/.test(p)) return "panel-v2.html: el envío de email (mail-send) ya no pasa por proGate('mensajeria').";
+        if (/act==="cfg-save-brand"[\s\S]{0,80}alert\(/.test(p)) return "panel-v2.html: volvió el alert() feo en el guardado de marca propia.";
+        if (/act==="mail-send"[\s\S]{0,80}alert\("Enviar emails/.test(p)) return "panel-v2.html: volvió el alert() feo en mail-send.";
+        if (!/stripeSubUrl\("pro"/.test(p)) return "panel-v2.html: el modal de upgrade ya no apunta al Stripe del plan Pro con email precargado.";
+      }
+      const m = read("multicoach.html");
+      if (m) {
+        if (!/function mcUpgrade\(/.test(m)) return "multicoach.html: falta el modal de upgrade de red (mcUpgrade).";
+        if (!/mcUpgrade\('clientes'\)/.test(m) || !/mcUpgrade\('coaches'\)/.test(m)) return "multicoach.html: los topes de clientes/coaches ya no abren mcUpgrade.";
+      }
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
