@@ -95,6 +95,28 @@ Implica: `reservar.html` filtra los `event_types` ofrecidos **según el contexto
 (público → primera_llamada · portal cliente → sesion · admin/empleado → demo),
 no muestra todos a todos.
 
+### El coach NO crea tipos de llamada (blindaje de atribución)
+
+**Riesgo:** si el `origen` dependiera del tipo que elige el coach, un coach podría
+mandar un link de "Sesión" a un desconocido y quedaría como `propio` (0%) cuando
+debería ser cliente Pathway. Por eso:
+
+1. **El `kind` y el `origen` los decide el SISTEMA**, no el coach:
+   - Agenda alguien que **ya es cliente** del coach (está en el sistema) →
+     `sesion`, `origen=propio`.
+   - Agenda alguien **nuevo desde lo público** → `primera_llamada`,
+     `origen=pathway`.
+   - Aunque el coach mande "el link de sesión" a un desconocido, el sistema ve que
+     **no es cliente conocido** → lo trata como primera llamada. **No se puede
+     reclasificar para esquivar comisión.**
+2. **El coach NO crea tipos de llamada nuevos.** Los bookables (que generan
+   link/reserva) son **canónicos** (`sesion`, `primera_llamada`; `demo_pathway`
+   solo admin/empleado).
+3. De los canónicos, el coach **edita solo lo cosmético**: **duración, ícono,
+   color, nombre** — **nunca el link ni el `kind`**.
+4. El coach **sí** puede agregar **"categorías" sin link de llamada** (etiquetas
+   para organizar lo suyo; no agendan, no generan sala).
+
 ## 2. Tipos de evento CANÓNICOS (no texto libre)
 
 Hoy `usuarios.configuracion.event_types` es texto libre → dos coaches escriben
