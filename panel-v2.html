@@ -8429,14 +8429,19 @@ document.addEventListener("click", function(ev){
   if(act==="cal-owner"){ _calOwner=el.getAttribute("data-o")||"todas"; render(); return; }
   if(act==="cal-asis"){
     var _cid=el.getAttribute("data-id"), _cv=el.getAttribute("data-val"); if(!_cid||!_cv) return;
-    var _cr=(_CAL_DATA||[]).filter(function(x){ return String(x.id)===String(_cid); })[0]; if(!_cr) return;
-    var _cprev=_cr.estado; _cr.estado=(_cr.estado===_cv?"confirmada":_cv); // volver a tocar el mismo estado lo desmarca
-    _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCalBody();
+    // La cita puede vivir en _CAL_DATA (pestaña Calendario) O en _RES_DATA (Resumen).
+    // Antes solo miraba _CAL_DATA → desde el Resumen no encontraba nada y no marcaba.
+    // Ahora actualiza TODAS las referencias (ambas listas) para que repinte donde sea.
+    var _tg=[]; [ (typeof _CAL_DATA!=="undefined"?_CAL_DATA:null), (typeof _RES_DATA!=="undefined"?_RES_DATA:null) ].forEach(function(arr){ if(Object.prototype.toString.call(arr)==="[object Array]"){ arr.forEach(function(x){ if(x&&String(x.id)===String(_cid)) _tg.push(x); }); } });
+    if(!_tg.length) return;
+    var _cprev=_tg[0].estado, _cnew=(_cprev===_cv?"confirmada":_cv); // volver a tocar el mismo estado lo desmarca
+    var _repaint=function(){ try{ _calRenderKpis(); }catch(e){} try{ _calRenderList(); }catch(e){} try{ _calRenderMetricsExtra(); }catch(e){} try{ _agAfterCalBody(); }catch(e){} };
+    _tg.forEach(function(x){ x.estado=_cnew; }); _repaint();
     // Admin puede marcar la de cualquiera (por id); un coach solo la suya (coachGuard).
     var _cq=RADMIN?("citas?id=eq."+encodeURIComponent(_cid)):("citas?id=eq."+encodeURIComponent(_cid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""));
-    _sbw(_cq,"PATCH",{estado:_cr.estado})
-      .then(function(r){ if(r&&r.ok){ toast(_cv==="asistio"?"Marcado: asistió ✓":_cv==="no_asistio"?"Marcado: no asistió":"Marcado: reprogramó"); } else { _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCalBody(); toast("No se pudo guardar."); } })
-      .catch(function(){ _cr.estado=_cprev; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCalBody(); toast("No se pudo guardar."); });
+    _sbw(_cq,"PATCH",{estado:_cnew})
+      .then(function(r){ if(r&&r.ok){ toast(_cv==="asistio"?"Marcado: asistió ✓":_cv==="no_asistio"?"Marcado: no asistió":"Marcado: reprogramó"); } else { _tg.forEach(function(x){ x.estado=_cprev; }); _repaint(); toast("No se pudo guardar."); } })
+      .catch(function(){ _tg.forEach(function(x){ x.estado=_cprev; }); _repaint(); toast("No se pudo guardar."); });
     return;
   }
   if(act==="cal-res"){
