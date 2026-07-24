@@ -132,9 +132,14 @@ Pathway los trae **predefinidos** (no se crean duplicados).
 
 El **tipo es canónico**, la **sala es única por reserva**: `Pathway-<coach_id>-<cita_id>`
 (determinística → coach y cliente arman la misma; única → dos clientes nunca
-colisionan; notas/grabación quedan por-sesión). La "sala fija" (Meet/Zoom
-personal, ya en `configuracion.sala_video`) queda como **fallback** para quien no
-use JaaS.
+colisionan; notas/grabación quedan por-sesión).
+
+**Pathway CENTRALIZA el video (decisión tomada).** TODAS las llamadas van por la
+**Sala de Pathway** (hoy un Jitsi determinístico; luego la Sala JaaS embebida). Se
+**quitó** la opción de Meet/Zoom propio del coach (`configuracion.sala_video`:
+banner, campo de config y su uso en `reservar.html`/panel). Motivo: el video es de
+Pathway → habilita notas/tareas/grabación/cabra **dentro** de Pathway y evita la
+fuga. El coach no elige dónde se hace la llamada.
 
 ## 4. El video: JaaS (8x8) embebido
 
@@ -146,6 +151,12 @@ use JaaS.
   "notas IA de la llamada".
 - Google Meet NO se puede embeber; por eso JaaS. (El Meet automático nativo sigue
   siendo Fase 4 de la agenda, OAuth de Google, trabado.)
+- **Sala de espera con la cabra 🐐 (reusar, no crear).** Si el otro tarda en unirse,
+  en vez de pantalla muerta → aparece el **juego de la cabra** que ya existe
+  (`openJuego`/`pw-juego`, `assets/cabra`). Se detecta con los eventos de JaaS
+  (`videoConferenceJoined`/`participantJoined`): **solo/esperando** → cabra jugable;
+  **entra el otro** → se guarda y arranca la llamada. La espera suma puntos
+  (gamificación que ya existe), no es tiempo muerto.
 
 ## 4b. El cierre de cada modo — conversión + pago (qué sale en la Sala)
 
@@ -156,6 +167,35 @@ El pago y la conversión **salen desde la misma Sala**, como botón de cierre:
 | **Demo** (admin/empleado) | **Convertir en coach / multicoach** | crea cuenta + manda al Stripe de suscripción | `crear-coach` / `crear-multicoach` + `stripe-webhook` | coach paga su **plan** (suscripción) |
 | **Primera llamada** (coach) | **Dar acceso** + **Cobrar servicio** | crea cliente + portal · cobra servicio | `guardar-intake` + `connect-checkout` | cliente paga → **comisión escalonada** (con hold) |
 | **Sesión** (coach) | **Cerrar en 1 clic** (resumen + tareas + próxima cita) | cierra la sesión, sin conversión | `generar-informe` + `sesiones_registro` | **0%** (propio, ya adentro) |
+
+### Resultado de una llamada de conversión (no es sí/no)
+
+Una **primera llamada** o **demo** no cierra siempre en esa sesión. Tres salidas
+(para que el embudo NO gotee):
+
+| Salida | Qué pasa | Con qué |
+|---|---|---|
+| ✅ **Convirtió** | cliente/coach nuevo | dar acceso / cobrar · o crear coach |
+| 🟡 **Todavía no** ("va mal" de la llamada) | **reagendar** + marcar **en seguimiento** (la lead sigue caliente) | agenda (`citas`) + estado del lead + recordatorio (`notificaciones`/`recordatorios-citas`) + chat |
+| ⚪ **Perdido** | descartar | estado del lead = `perdido` |
+
+La lead lleva un **estado**: `nuevo → llamada → convirtió | en_seguimiento | perdido`.
+Esto alimenta el funnel y el seguimiento no se pierde. *(Ojo: este "va mal" es de
+la LLAMADA — distinto del "va mal" del COACH de la sección de oferta, que es
+retención/soporte.)*
+
+**Confirmación de DOS LADOS (coach + cliente) — evita duplicar.** El resultado no
+lo decide solo el coach: después de la llamada **ambos dicen cómo fue**.
+- **Match = ambos confirman que fue bien** → se crea la relación **UNA sola vez**
+  (por eso "no duplica").
+- Si no es mutuo → feedback + seguimiento.
+
+Qué le sale a cada uno al terminar:
+- **Cliente (primera llamada):** *Cómo fue* (feedback/reseña — reusa el sistema de
+  reseñas que ya existe) · *Buscar otro coach* del nicho (rematch) · o *escribir
+  cómo fue + "que me hablen más adelante"* (seguimiento).
+- **Prospecto (demo):** *Iniciar prueba ahora* · *Ver planes* · *Reagendar*. Match
+  = coach y prospecto confirman → alta (sin duplicar).
 
 - **Acceso ≠ pago:** "Dar acceso" crea el cliente gratis; el **cobro** es un botón
   aparte (cuando el coach le vende un servicio). Puede haber acceso sin pago.
@@ -195,6 +235,16 @@ El pago y la conversión **salen desde la misma Sala**, como botón de cierre:
 2. **Coach paga a Pathway (suscripción)**: `crear-coach`/`crear-multicoach` +
    `stripe-webhook`. Es el cierre de la **demo**. Carril aparte.
 
+3. **Comisión comercial del EMPLEADO (Gonzalo) — carril interno, NO romper.**
+   Cada **lead que gestiona un empleado y se convierte en COACH** (alta) se le
+   **atribuye** para su comisión. Tabla `leads` (`leads_empleados.sql`, campo de
+   atribución lead→coach), medido en la vista `v_empleado_metricas`. Es por
+   **altas de coaches**, no por Stripe.
+   > ⚠️ **Al construir el cierre de la Demo** (`convertir en coach` → `crear-coach`),
+   > **preservar el vínculo lead→coach** (la atribución del empleado). Si se pierde,
+   > Gonzalo pierde su comisión. La Demo la corren admin/empleado → el lead ya tiene
+   > `empleado_id`; el alta debe escribir el coach resultante en la atribución del lead.
+
 **Acceso ≠ pago:** "dar acceso" crea el cliente + portal (gratis); la comisión
 recién sale cuando el coach le **cobra su servicio** vía connect-checkout.
 
@@ -211,6 +261,14 @@ viaja en el lead (busca coach de carrera/fitness/finanzas), no solo en la sesió
 público** (aparece en el directorio, `listar-coaches-publicos`/`slug`) Pathway
 puede **traerle leads** → esos son `origen=pathway` → comisión. O sea: **"clientes
 Pathway" solo existen para coaches con perfil público ON.**
+
+**El cliente Pathway es del MARKETPLACE, no de un coach fijo → rematch.** Como
+Pathway hace el **match**, puede ofrecerle **otros coaches del mismo nicho**
+(`listar-coaches-publicos` filtra por nicho; el nicho viaja en el lead). Por eso:
+(a) Pathway cobra comisión (provee la oferta y el match); (b) **el lead no se va
+del funnel** aunque una primera llamada no cierre → se le ofrece **otro coach del
+nicho** (otra salida del "no convirtió"). El cliente **propio** es del coach, **sin
+rematch**.
 
 **Backfill de `origen` (decisión tomada):** los clientes que ya existen se marcan
 **`propio` por defecto** (nadie es `pathway` hasta que el marketplace se lo trajo).
