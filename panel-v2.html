@@ -3684,6 +3684,18 @@ function _notifResReprog(r, iso){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(iso, r.cliente_tz);
   _notifResCliente(r.email, r.nombre, "Tu sesión cambió de horario", "<p>Hola "+esc(fn)+", <strong>moví tu sesión</strong>"+(f?(" al "+esc(f)):"")+".</p><p>Si ese horario no te sirve, responde y coordinamos.</p>");
 }
+// Confirmación al cliente con la hora CORRECTA (AM/PM, su zona) + link para entrar.
+// Se dispara al "Confirmar" la reserva — sirve para reenviarle la buena si hubo lío.
+function _confirmCliente(r){
+  if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(r.inicio, r.cliente_tz);
+  var cid=(r.coach_id||(RME&&RME.id)||"x"); var room="Pathway-"+cid+"-"+(new Date(r.inicio).getTime());
+  var coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
+  var join="https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&con="+encodeURIComponent(coach);
+  var inner="<p>Hola "+esc(fn)+", tu sesión está <strong>confirmada</strong>. 🎉</p>"+
+    "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Cuándo · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
+    "<a href='"+join+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>";
+  _notifResCliente(r.email, r.nombre, "Reserva confirmada · tu sesión", inner);
+}
 function _resRender(list){
   var rows=_calDedup(list||[]).filter(function(r){ return r && r.estado!=="cancelada"; });
   if(!rows.length) return "<div style='color:var(--pw-text-soft);font-size:13px;padding:8px 0;text-align:center'>Sin reservas nuevas. Cuando alguien use tu link de agenda, aparecen aquí.</div>";
@@ -3726,7 +3738,7 @@ function _resRender(list){
         "</div>"+
         _stChip+
         "<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-text-soft)' title='Reprogramar' data-act='res-hora' data-id='"+esc(_rid)+"'>"+_cIco('clock',13)+"</button>"+
-        (conf?"":"<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-bosque)' title='Marcar confirmada' data-act='res-confirm' data-id='"+esc(r.id)+"'>"+svg(IC.check,14)+"</button>")+
+        (conf?"":"<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-bosque)' title='Confirmar y enviarle el email al cliente' data-act='res-confirm' data-id='"+esc(r.id)+"'>"+svg(IC.check,14)+"</button>")+
         "<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-danger)' title='Cancelar' data-act='res-cancel' data-id='"+esc(r.id)+"'>"+svg(IC.close,13)+"</button>"+
       "</div>"+
       _ansHtml+
@@ -8529,7 +8541,7 @@ document.addEventListener("click", function(ev){
     var _est=(act==="res-confirm")?"confirmada":"cancelada";
     if(_RES_DATA){ _RES_DATA.forEach(function(r){ if(String(r.id)===String(_rid)) r.estado=_est; }); var _rb=document.getElementById("cp-res-body"); if(_rb) _rb.innerHTML=_resRender(_RES_DATA); }
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
-      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Reserva confirmada ✓":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel") _notifResCancel(_rr); } else { toast("No se pudo actualizar la reserva."); _resLoad(); } })
+      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Confirmada ✓ — le mandamos el email al cliente":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel") _notifResCancel(_rr); else _confirmCliente(_rr); } else { toast("No se pudo actualizar la reserva."); _resLoad(); } })
       .catch(function(){ toast("No se pudo actualizar la reserva."); _resLoad(); });
     return;
   }
