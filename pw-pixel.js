@@ -91,8 +91,26 @@
   };
 
   // ===========================================================================
-  // Meta Pixel — carga SOLO si hay un ID real Y consentimiento de cookies (RGPD).
-  var ID_OK = /^\d{6,}$/.test(PW_META_PIXEL_ID);
+  // Dentro de la app de tienda (iOS/Android) NUNCA cargamos el pixel de Meta:
+  // la app sigue el modelo "reader" (iniciar sesión y usar), sin seguimiento
+  // publicitario. Así la ficha de Privacidad puede declarar "sin tracking" y es
+  // 100% cierto. Detecta ?app=1, el flag pw_native o Capacitor nativo. (La
+  // atribución local de utm_* sigue funcionando: es localStorage, no es tracking.)
+  var IN_APP = (function () {
+    try {
+      var qs = new URLSearchParams(location.search || '');
+      if (qs.get('app') === '1') return true;
+      if (localStorage.getItem('pw_native') === '1') return true;
+      var C = window.Capacitor;
+      if (C && (typeof C.isNativePlatform === 'function' ? C.isNativePlatform() : C.isNative)) return true;
+    } catch (e) {}
+    return false;
+  })();
+
+  // ===========================================================================
+  // Meta Pixel — carga SOLO si hay un ID real, consentimiento de cookies (RGPD)
+  // Y NO estamos dentro de la app de tienda.
+  var ID_OK = /^\d{6,}$/.test(PW_META_PIXEL_ID) && !IN_APP;
   function loadMetaPixel() {
     if (window.__pwPixelLoaded) return; window.__pwPixelLoaded = true;
     /* eslint-disable */
