@@ -1655,6 +1655,17 @@ function _proxSesTxt(){
 // ítem). Misma lógica que el portal de carrera: ojito cerrado = sin leer,
 // abierto = leído; al tocar marca leída y navega. Migración: notificaciones.sql
 var _NOTIFS=[], _notifPrevUnread=-1, _notifChimeReady2=false;
+// Fallback LOCAL de "leídas": lo marcado leído en ESTE navegador manda aunque el
+// server siga diciendo no-leída (por si el PATCH no llegó). Al reentrar, las que ya
+// viste NO vuelven a salir sin marcar.
+function _notifReadKey(){ return 'pw_notifread_'+((typeof EMAIL!=='undefined'&&EMAIL)||'anon'); }
+function _notifReadSet(){ try{ return JSON.parse(localStorage.getItem(_notifReadKey())||'[]')||[]; }catch(e){ return []; } }
+function _notifReadHas(id){ try{ return _notifReadSet().indexOf(String(id))>=0; }catch(e){ return false; } }
+function _notifReadAdd(id){ try{ var a=_notifReadSet(); id=String(id); if(a.indexOf(id)<0){ a.push(id); if(a.length>300) a=a.slice(-300); localStorage.setItem(_notifReadKey(),JSON.stringify(a)); } }catch(e){} }
+function _notifApplyLocalRead(){ try{ _NOTIFS.forEach(function(n){ if(n && _notifReadHas(n.id)) n.leida=true; }); }catch(e){} }
+// Abrir el panel = "ya las vi": marca TODO como leído (local + server) para que no
+// vuelvan a salir sin marcar al reentrar.
+function _notifMarkAllSeen(){ try{ _NOTIFS.forEach(function(n){ if(n && !n.leida){ n.leida=true; _notifReadAdd(n.id); if(typeof sbPatch==='function') sbPatch('notificaciones','id=eq.'+encodeURIComponent(n.id),{leida:true}); } }); }catch(e){} }
 function _notifPost(rows){
   if(!rows||!rows.length) return Promise.resolve();
   return fetch(SB+'/rest/v1/notificaciones?on_conflict=email,clave',{method:'POST',headers:_hdr({'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates,return=minimal'}),body:JSON.stringify(rows)}).catch(function(){});
@@ -1683,14 +1694,14 @@ function _notifSync(){
       var em=(''+EMAIL).toLowerCase();
       var rows=ev.map(function(n){ return {email:em,para:'cliente',tipo:n.tipo,clave:n.clave,titulo:n.titulo,detalle:n.detalle||'',sec:n.sec||'',icon:n.icon||''}; });
       _notifPost(rows).then(function(){ return sbGet('notificaciones','email=eq.'+encodeURIComponent(EMAIL)+'&order=ts.desc&limit=40'); })
-        .then(function(list){ _NOTIFS=(list&&list.length)?list:[]; renderNotifs(); }).catch(function(){});
+        .then(function(list){ _NOTIFS=(list&&list.length)?list:[]; _notifApplyLocalRead(); renderNotifs(); }).catch(function(){});
     });
 }
 // Al tocar: marca leída (persiste) → ojito abierto, y navega a la sección.
 function _notifClick(id){
   var n=null; for(var i=0;i<_NOTIFS.length;i++){ if(String(_NOTIFS[i].id)===String(id)){ n=_NOTIFS[i]; break; } }
   if(!n) return;
-  if(!n.leida){ n.leida=true; if(typeof sbPatch==='function') sbPatch('notificaciones','id=eq.'+encodeURIComponent(n.id),{leida:true}); }
+  if(!n.leida){ n.leida=true; _notifReadAdd(n.id); if(typeof sbPatch==='function') sbPatch('notificaciones','id=eq.'+encodeURIComponent(n.id),{leida:true}); }
   var dd=document.getElementById('pwNotifDD'); if(dd) dd.classList.remove('open');
   renderNotifs();
   if(typeof go==='function' && n.sec) go(n.sec);
@@ -1710,7 +1721,7 @@ function renderNotifs(){
     else list.innerHTML=_NOTIFS.map(function(n){ var read=!!n.leida; return '<button class="pnotif-it" onclick="_notifClick(\''+n.id+'\')"><span class="em">'+(n.icon||'🔔')+'</span><span style="flex:1;min-width:0"><b style="font-weight:'+(read?'600':'800')+'">'+esc(n.titulo||'')+'</b><small style="'+(read?'':'font-weight:600')+'">'+esc(n.detalle||'')+'</small></span>'+_vistoEye(read,'')+'</button>'; }).join('');
   }
 }
-function pnotifToggle(e){ if(e){try{e.stopPropagation();}catch(_e){}} var dd=document.getElementById('pwNotifDD'); if(!dd) return; var open=dd.classList.contains('open'); dd.classList.remove('open'); if(!open){ try{ renderNotifs(); }catch(_e){} dd.classList.add('open'); } }
+function pnotifToggle(e){ if(e){try{e.stopPropagation();}catch(_e){}} var dd=document.getElementById('pwNotifDD'); if(!dd) return; var open=dd.classList.contains('open'); dd.classList.remove('open'); if(!open){ try{ _notifMarkAllSeen(); }catch(_e){} try{ renderNotifs(); }catch(_e){} dd.classList.add('open'); } }
 function pnotifGo(sec){ var dd=document.getElementById('pwNotifDD'); if(dd) dd.classList.remove('open'); if(sec==='chat'){ try{ _markChatSeen(); }catch(e){} } if(typeof go==='function') go(sec); }
 document.addEventListener('click',function(ev){ var dd=document.getElementById('pwNotifDD'); if(dd&&dd.classList.contains('open')){ var ic=document.getElementById('pwNotifIc'); if(!(ic&&ic.contains(ev.target))&&!dd.contains(ev.target)) dd.classList.remove('open'); } });
 function sendMsg(){
