@@ -173,6 +173,19 @@ Esto alimenta el funnel y el seguimiento no se pierde. *(Ojo: este "va mal" es d
 la LLAMADA — distinto del "va mal" del COACH de la sección de oferta, que es
 retención/soporte.)*
 
+**Confirmación de DOS LADOS (coach + cliente) — evita duplicar.** El resultado no
+lo decide solo el coach: después de la llamada **ambos dicen cómo fue**.
+- **Match = ambos confirman que fue bien** → se crea la relación **UNA sola vez**
+  (por eso "no duplica").
+- Si no es mutuo → feedback + seguimiento.
+
+Qué le sale a cada uno al terminar:
+- **Cliente (primera llamada):** *Cómo fue* (feedback/reseña — reusa el sistema de
+  reseñas que ya existe) · *Buscar otro coach* del nicho (rematch) · o *escribir
+  cómo fue + "que me hablen más adelante"* (seguimiento).
+- **Prospecto (demo):** *Iniciar prueba ahora* · *Ver planes* · *Reagendar*. Match
+  = coach y prospecto confirman → alta (sin duplicar).
+
 - **Acceso ≠ pago:** "Dar acceso" crea el cliente gratis; el **cobro** es un botón
   aparte (cuando el coach le vende un servicio). Puede haber acceso sin pago.
 - 🔴 **HALLAZGO CONFIRMADO en `connect-checkout` (plata real):** hoy la comisión se
