@@ -2859,6 +2859,19 @@ function _agReservas(){
   if(Object.prototype.toString.call(_CAL_DATA)==="[object Array]") return _calByOwner(_CAL_DATA);
   return _calDedup(_RES_DATA||[]);
 }
+// La sala fija que configuró el coach (Meet/Zoom), o "" si no puso ninguna.
+function _agSalaFija(){ try{ return (REAL&&RCFG&&RCFG.sala_video&&/^https?:\/\//.test(RCFG.sala_video))?RCFG.sala_video:""; }catch(e){ return ""; } }
+// Link de videollamada de UNA reserva, SIEMPRE presente: la sala fija del coach
+// si la configuró; si no, una sala automática de Pathway (Jitsi, sin OAuth)
+// determinística por coach+horario → IDÉNTICA a la que arma reservar.html para el
+// cliente. Garantiza que ninguna reserva quede sin link (no puede volver a pasar).
+function _agResLink(r){
+  try{
+    var sv=_agSalaFija(); if(sv) return sv;
+    if(r&&r.inicio){ var cid=(r.coach_id||(REAL&&RME&&RME.id)||"x"); return "https://meet.jit.si/Pathway-"+cid+"-"+(new Date(r.inicio).getTime()); }
+    return "";
+  }catch(e){ return ""; }
+}
 // Foto REAL del cliente (candidatos.foto_perfil) por email — para la agenda/próxima.
 // Match por email (no por nombre: eso se equivocaba). Solo devuelve una URL real.
 function _cliFotoByEmail(email){
@@ -2983,7 +2996,7 @@ function _agRenderDay(key,compact){
     else if(it.ms>now && it.ms-now<=60*60000) right="<span style='font-size:11px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 10px;border-radius:100px;flex-shrink:0;white-space:nowrap'>En "+Math.max(1,Math.round((it.ms-now)/60000))+" min</span>";
     else if(it.link) right="<a href='"+esc(it.link)+"' target='_blank' rel='noopener' aria-label='Entrar a la sesión' style='width:28px;height:28px;border-radius:8px;background:var(--pw-bosque);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none'>"+_cIco('video',14)+"</a>";
     var badge=it.tipo?("<span style='font-size:10.5px;font-weight:600;color:"+it.col+";background:"+it.col+"22;padding:2px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(it.tipo)+"</span>"):"";
-    var meta=[]; if(it.durMin) meta.push(it.durMin+" min"); if(it.link) meta.push("Google Meet"); if(it.who) meta.push(it.who);
+    var meta=[]; if(it.durMin) meta.push(it.durMin+" min"); if(it.link) meta.push("Videollamada"); if(it.who) meta.push(it.who);
     return "<div style='display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--pw-border)'>"+
       "<span style='font-size:13px;font-weight:700;color:var(--pw-carbon);width:42px;flex-shrink:0'>"+_agTime(it.ms)+"</span>"+
       "<span style='width:34px;height:34px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:100%;height:100%;border-radius:50%;object-fit:cover'>":it.ico)+"</span>"+
@@ -3029,7 +3042,7 @@ function _agMonthRender(){
   var byDayItems={};
   function addItem(ts,typ,title,id,link,who){ var k=_agMoKey(new Date(ts)); (byDayItems[k]=byDayItems[k]||[]).push({ms:+new Date(ts),typ:typ,title:title,id:id,link:link,who:who}); }
   var evs=(_AG_DATA&&_AG_DATA.events)||[]; evs.forEach(function(e){ if(e&&e.start) addItem(e.start,_agTypeForEvent(e),e.title||"",null,(e.location&&/^https?:\/\//.test(e.location))?e.location:"",""); });
-  var res=_agReservas(); res.forEach(function(r){ if(!r||r.estado==="cancelada")return; var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":""; addItem(+new Date(r.inicio),_agEventTypeFor(r.tipo),r.nombre||"",r.id,"",who); });
+  var res=_agReservas(); res.forEach(function(r){ if(!r||r.estado==="cancelada")return; var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":""; addItem(+new Date(r.inicio),_agEventTypeFor(r.tipo),r.nombre||"",r.id,_agResLink(r),who); });
   var byDay={};
   Object.keys(byDayItems).forEach(function(k){ byDay[k]=_agMergeDup(byDayItems[k]).map(function(x){ return x.typ; }); });
   var first=new Date(y,m,1); var startDow=(first.getDay()+6)%7; var daysIn=new Date(y,m+1,0).getDate();
@@ -3070,6 +3083,7 @@ function _agendaCard(){
       "<div class='cp-ag-cal'>"+_agMonthCal()+"</div>"+
       "<div class='cp-ag-res'>"+
         "<div class='cp-eyebrow' style='margin-bottom:8px'>Reservas <span style='color:var(--pw-text-muted);font-weight:400'>· desde tu link</span></div>"+
+        (_agSalaFija()?"":"<button data-act='nav:calendario' title='Configurar mi sala de videollamada' style='display:block;width:100%;text-align:left;background:var(--pw-success-bg,#EEF5F0);border:1px solid var(--pw-border);border-radius:10px;padding:9px 11px;margin-bottom:9px;cursor:pointer;font-family:inherit'><span style='font-size:12px;font-weight:700;color:var(--pw-bosque)'>🎥 Tus reservas ya tienen sala de videollamada automática</span><div style='font-size:11px;color:var(--pw-text-soft);margin-top:2px'>¿Preferís tu propio Meet/Zoom? Configuralo en el Calendario →</div></button>")+
         "<div id='cp-res-body'><div style='color:var(--pw-text-soft);font-size:13px;padding:8px 0'>Cargando reservas…</div></div>"+
       "</div>"+
      "</div>"+
@@ -3093,7 +3107,7 @@ function _agendaCalCard(){
 function _agProxList(){
   var now=Date.now(), out=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); out.push({ms:+e.start, title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:"", durMin:_durMin((typ&&typ.label)||"")}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, id:r.id, who:(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":"", title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:"", email:r.email||"", durMin:_durMin(r.tipo||""), foto:_cliFotoByEmail(r.email)}); } } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, id:r.id, who:(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":"", title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:_agResLink(r), email:r.email||"", durMin:_durMin(r.tipo||""), foto:_cliFotoByEmail(r.email)}); } } });
   // Dedup robusto (mismo helper que la agenda): fusiona la MISMA sesión que viene
   // de Google + de la reserva aunque el título no sea idéntico. Sin esto, la misma
   // cita salía como "Próxima sesión" y OTRA VEZ abajo en "En tu lista".
@@ -3121,7 +3135,7 @@ function _agProxRender(){
         (it.sub?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.sub)+"</div>":"")+"</div></div>"+
     "<div style='display:flex;flex-direction:column;gap:8px;margin-top:14px;font-size:13px;color:var(--pw-text-soft)'>"+
       "<span style='display:inline-flex;align-items:center;gap:8px'>"+_cIco('clock',14)+esc(timeRange)+" · <span style='text-transform:capitalize'>"+esc(_agDayFull(_agMoKey(new Date(it.ms))))+"</span></span>"+
-      (it.link?"<span style='display:inline-flex;align-items:center;gap:8px'>"+_cIco('video',14)+"Google Meet</span>":"")+
+      (it.link?"<span style='display:inline-flex;align-items:center;gap:8px'>"+_cIco('video',14)+"Videollamada</span>":"")+
     "</div>"+
     (it.link?"<a href='"+esc(it.link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='width:100%;height:40px;font-size:14px;text-decoration:none;margin-top:16px;gap:8px;justify-content:center'>"+_cIco('video',15)+" Entrar a la sesión</a>":(it.email?"<a href='mailto:"+esc(it.email)+"' class='cp-btn cp-btn-primary' style='width:100%;height:40px;font-size:14px;text-decoration:none;margin-top:16px;justify-content:center'>Escribirle</a>":""))+
     (it.email?"<button data-act='nav:clientes' class='cp-btn cp-btn-ghost' style='width:100%;height:36px;font-size:13px;margin-top:8px;gap:6px;justify-content:center'>Ver perfil del cliente "+_cIco('chevR',14)+"</button>":"")+
@@ -3285,6 +3299,7 @@ function viewAgModal(){
         "<div class='cp-form-row'><label class='cp-form-label'>Aviso mínimo (horas)</label><input type='number' min='0' step='1' id='ag-disp-notice' class='cp-form-input' value='"+esc(_notice)+"'><span class='cp-form-hint'>No te reservan con menos de estas horas.</span></div>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Margen entre sesiones (min)</label><input type='number' min='0' step='5' id='ag-disp-buffer' class='cp-form-input' value='"+esc(_buffer)+"'><span class='cp-form-hint'>Descanso antes/después de cada cita.</span></div>"+
       "</div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Sala de videollamada (link fijo)</label><input id='ag-disp-sala' class='cp-form-input' placeholder='https://meet.google.com/xxx-xxxx-xxx o tu link de Zoom' value='"+esc((REAL&&RCFG&&RCFG.sala_video)||"")+"'><span class='cp-form-hint'>Tu link fijo de Meet o Zoom. Entra automático en cada reserva (email, calendario y panel). Sin esto, las reservas quedan sin link y el calendario te avisa.</span></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Bloquear días (vacaciones, feriados)</label>"+
         "<div style='display:flex;gap:6px'><input type='date' id='ag-disp-bloq' class='cp-form-input' style='flex:1'><button class='cp-btn cp-btn-ghost' data-act='ag-bloq-add'>Agregar</button></div>"+_bchips+"</div>"+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-disp'>Guardar</button></div>";
@@ -8500,7 +8515,8 @@ document.addEventListener("click", function(ev){
     // Guardamos TU zona horaria: la disponibilidad se define en tu hora y la
     // página de reserva la convierte a la hora local de cada visitante.
     var _tz=""; try{ _tz=Intl.DateTimeFormat().resolvedOptions().timeZone||""; }catch(e){}
-    state.ag=null; saveCfg({disponibilidad:{days:_sd, from:_sf, to:_st, tz:_tz, min_notice_h:_sn, buffer_min:_sbuf, bloqueados:_sbloq, horarios:_shor}}); return;
+    var _svideo=""; try{ var _svEl=document.getElementById("ag-disp-sala"); if(_svEl) _svideo=(""+(_svEl.value||"")).trim(); }catch(e){}
+    state.ag=null; saveCfg({disponibilidad:{days:_sd, from:_sf, to:_st, tz:_tz, min_notice_h:_sn, buffer_min:_sbuf, bloqueados:_sbloq, horarios:_shor}, sala_video:_svideo}); return;
   }
   if(act==="ag-evtype"){ state.ag={mode:"evtype", key:(el.getAttribute("data-key")||""), evTitle:(el.getAttribute("data-title")||"")}; render(); return; }
   if(act==="ag-set-evtype"){
