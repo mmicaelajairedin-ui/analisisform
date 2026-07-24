@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <script src="pw-observe.js"></script>
+<script src="/pw-native.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
@@ -4295,6 +4296,17 @@ function verCVATS(){
 // ══ NOTIFICACIONES ══════════════════════════════════
 var _notifsOpen=false;
 var _notifs=[];
+// Fallback LOCAL de "leídas": lo marcado leído en ESTE navegador manda aunque el
+// server siga diciendo no-leída (por si el PATCH no llegó). Así, al reentrar, las
+// que ya viste NO vuelven a salir sin marcar.
+function _notifReadKey(){ return 'pw_notifread_'+((typeof E!=='undefined'&&E)||'anon'); }
+function _notifReadSet(){ try{ return JSON.parse(localStorage.getItem(_notifReadKey())||'[]')||[]; }catch(e){ return []; } }
+function _notifReadHas(id){ try{ return _notifReadSet().indexOf(String(id))>=0; }catch(e){ return false; } }
+function _notifReadAdd(id){ try{ var a=_notifReadSet(); id=String(id); if(a.indexOf(id)<0){ a.push(id); if(a.length>300) a=a.slice(-300); localStorage.setItem(_notifReadKey(),JSON.stringify(a)); } }catch(e){} }
+function _notifApplyLocalRead(){ try{ _notifs.forEach(function(n){ if(n && _notifReadHas(n.id)) n.leida=true; }); }catch(e){} }
+// Abrir el panel = "ya las vi": marca TODO como leído (local + server) para que no
+// vuelvan a salir sin marcar al reentrar.
+function _notifMarkAllSeen(){ try{ _notifs.forEach(function(n){ if(n && !n.leida){ n.leida=true; _notifReadAdd(n.id); if(typeof pt==='function') pt('notificaciones','id=eq.'+encodeURIComponent(n.id),{leida:true}).catch(function(){}); } }); }catch(e){} }
 
 // ══════════════════════════════════════════════════════════
 // CENTRO DE NOTIFICACIONES (campanita) — persistido en backend.
@@ -4349,7 +4361,7 @@ function _notifSync(ev){
   var rows=ev.map(function(n){ return {email:em,para:'cliente',tipo:n.tipo,clave:n.clave,titulo:n.titulo,detalle:n.detalle||'',sec:n.sec||'',icon:n.icon||'',color:n.color||'var(--brand)'}; });
   _notifPost(rows)
     .then(function(){ return get('notificaciones','email=eq.'+encodeURIComponent(E)+'&order=ts.desc&limit=40'); })
-    .then(function(list){ _notifs=(list&&list.length)?list:[]; _notifRefreshBadge(); })
+    .then(function(list){ _notifs=(list&&list.length)?list:[]; _notifApplyLocalRead(); _notifRefreshBadge(); })
     .catch(function(){});
 }
 
@@ -4392,7 +4404,7 @@ function _notifRender(){
 function _notifClick(id){
   var n=null; for(var i=0;i<_notifs.length;i++){ if(String(_notifs[i].id)===String(id)){ n=_notifs[i]; break; } }
   if(!n) return;
-  if(!n.leida){ n.leida=true; pt('notificaciones','id=eq.'+encodeURIComponent(n.id),{leida:true}).catch(function(){}); }
+  if(!n.leida){ n.leida=true; _notifReadAdd(n.id); pt('notificaciones','id=eq.'+encodeURIComponent(n.id),{leida:true}).catch(function(){}); }
   _notifRefreshBadge();
   toggleNotifs(); // cerrar el panel
   if(n.sec==='calendly'){ if(typeof abrirAgenda==='function') abrirAgenda(); return; }
@@ -4485,6 +4497,8 @@ function toggleNotifs(){
         }
       });
     },10);
+    // Abrir = ya las vi: marca el set como leído (no vuelven sin marcar al reentrar).
+    _notifMarkAllSeen();
     // Renderizar (fuente de verdad = tabla notificaciones, con ojito por ítem)
     _notifRender();
   } else {
@@ -5837,5 +5851,7 @@ if('serviceWorker' in navigator){
 })();
 </script>
 <script src="pw-dropzone.js?v=1"></script>
+<script>/* Móvil: si el campo enfocado quedaría tapado por el teclado, lo subimos a la vista. Solo agrega, no cambia nada. */
+document.addEventListener('focusin',function(e){var t=e.target;if(!t||!t.matches||!t.matches('input,textarea,[contenteditable="true"]'))return;setTimeout(function(){try{var r=t.getBoundingClientRect();var vh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;if(r.bottom>vh*0.5)t.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){}} ,300);});</script>
 </body>
 </html>

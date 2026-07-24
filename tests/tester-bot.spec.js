@@ -60,13 +60,21 @@ async function verificarRender(page) {
   expect(interactivos, 'No renderizó UI (sin botones ni links)').toBeGreaterThan(0);
 }
 
-// Recorre las secciones del panel del coach clickeando el sidebar. Best-effort:
-// cada click puede fallar sin romper — lo que importa es que ninguna sección
-// dispare un error de JS (queda registrado en el listener de pageerror).
+// Recorre las secciones clickeando el sidebar. Cubre el panel del COACH
+// (.cp-side-nav-item) Y los portales del CLIENTE de los 3 nichos —carrera,
+// fitness y finanzas— que usan .ni. Best-effort: cada click puede fallar sin
+// romper; lo que importa es que ninguna sección dispare un error de JS (queda
+// registrado en el listener de pageerror).
 async function navegarPanel(page) {
-  const items = await page.locator('.cp-side-nav-item').all();
+  const items = await page.locator('.cp-side-nav-item, .ni').all();
+  // Presupuesto acotado: recorrer TODAS las secciones con 3s de espera por click
+  // podía superar por sí solo el timeout del test en paneles con muchas secciones
+  // (dueño multicoach) → falsa alarma "timeout" sin que nada esté roto. Cap total
+  // de ~15s + click más corto: sigue cubriendo el recorrido y deja margen al test.
+  const deadline = Date.now() + 15000;
   for (const it of items) {
-    try { await it.click({ timeout: 3000 }); await page.waitForTimeout(350); } catch (_e) { /* seguimos */ }
+    if (Date.now() > deadline) break;
+    try { await it.click({ timeout: 1200 }); await page.waitForTimeout(250); } catch (_e) { /* seguimos */ }
   }
 }
 
@@ -92,7 +100,7 @@ test.describe('🤖 Bot de usuaria — recorre cada panel', () => {
       const errores = capturarErrores(page);
       await entrar(page, c.email, c.pass);
       await verificarRender(page);
-      if (c.nav) await navegarPanel(page); // navega las secciones del panel del coach
+      await navegarPanel(page); // recorre las secciones (panel del coach o portal del cliente)
       expect(errores, `Errores de JS (${c.label}):\n` + errores.join('\n')).toHaveLength(0);
     });
   }

@@ -27,6 +27,27 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: reservas duplicadas se deduplican (lista + KPIs + agenda)",
+    bug: "La misma cita podía quedar guardada dos veces en `citas` (doble submit " +
+         "del link, reintento de red) y salía REPETIDA en 'Reservas y asistencia', " +
+         "en las métricas y en la agenda. El dedup se aplica de forma central en " +
+         "_calByOwner() (por coach+minuto+persona), así ningún consumidor cuenta doble.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function\s+_calDedup\s*\(/.test(s))
+        return "panel-v2.html perdio _calDedup() (dedup de reservas duplicadas).";
+      // _calByOwner DEBE pasar su resultado por _calDedup (fuente única del dedup).
+      if (!/function\s+_calByOwner\s*\(list\)\s*\{\s*return\s+_calDedup\s*\(/.test(s))
+        return "panel-v2.html: _calByOwner ya no aplica _calDedup → las reservas duplicadas vuelven a la lista/KPIs/agenda.";
+      // _resRender (widget 'Reservas · desde tu link' del Resumen) usa _RES_DATA,
+      // que NO pasa por _calByOwner → tiene que deduplicar por su cuenta.
+      if (!/function\s+_resRender\s*\(list\)\s*\{\s*var\s+rows\s*=\s*_calDedup\s*\(/.test(s))
+        return "panel-v2.html: _resRender ya no deduplica → los duplicados vuelven en 'Reservas · desde tu link' del Resumen.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: una query rota no deja el panel en blanco (carga con red)",
     bug: "Agregar una columna inexistente (p.ej. xp) a un select hacía que UNA query " +
          "rechazara y el Promise.all entero fallara → coaches, ranking, analíticas y config " +
@@ -57,6 +78,52 @@ const RULES = [
         return "panel-v2.html: _pwNotifData ya no filtra las notificaciones descartadas → vuelven a aparecer.";
       if (!/_notifDismiss\(\s*b\.getAttribute/.test(s))
         return "panel-v2.html: pwNotif ya no registra el descarte al clickear una notificación.";
+      return null;
+    },
+  },
+  {
+    name: "panel-v2: abrir la campana marca las notis como vistas (no vuelven al reentrar)",
+    bug: "La coach abría la campana, veía las notificaciones y al reentrar volvían a " +
+         "salir SIN marcar: solo se marcaban al clickear cada una (y clickear navega, " +
+         "así que las que solo miraba quedaban no-leídas para siempre). Ahora abrir el " +
+         "panel marca TODO el set como visto (persistidas→leídas server+local; " +
+         "contadores→descartados al conteo actual) y hay un fallback LOCAL de leídas " +
+         "por si el PATCH al server no llega.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // Abrir el panel marca el set como visto.
+      if (!/data\.forEach\(function\(it\)\{[\s\S]{0,220}_pwMarkCoachNotifRead\(it\.id\)[\s\S]{0,120}_notifDismiss\(it\.key/.test(s))
+        return "panel-v2.html: abrir la campana ya no marca las notificaciones como vistas → vuelven a salir al reentrar.";
+      // Fallback local de leídas aplicado al cargar del server.
+      if (!/_notifReadHas\(n\.id\)[\s\S]{0,40}n\.leida\s*=\s*true/.test(s))
+        return "panel-v2.html: el fallback local de notis leídas ya no se aplica al cargar → si el server no guardó, reaparecen.";
+      if (!/_pwMarkCoachNotifRead[\s\S]{0,80}_notifReadAdd\(id\)/.test(s))
+        return "panel-v2.html: _pwMarkCoachNotifRead ya no guarda el 'leído' local → sin defensa si falla el PATCH.";
+      return null;
+    },
+  },
+  {
+    name: "portales del cliente: abrir la campana marca las notis como vistas (no vuelven)",
+    bug: "Mismo bug que en el panel, en los 3 portales del cliente: las notificaciones " +
+         "solo se marcaban leídas al TOCAR cada una (y tocar navega), así que al reentrar " +
+         "volvían a salir sin marcar. Abrir el panel debe marcar TODO como visto, con " +
+         "fallback local por si el PATCH no llega.",
+    check() {
+      const files = ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      for (const f of files) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/function _notifMarkAllSeen\(/.test(s))
+          return f + ": falta _notifMarkAllSeen → abrir la campana ya no marca las notis como vistas.";
+        // Abrir el panel invoca _notifMarkAllSeen (toggleNotifs en carrera, pnotifToggle en fit/fin).
+        if (!/_notifMarkAllSeen\(\)/.test(s.replace("function _notifMarkAllSeen(", "")))
+          return f + ": _notifMarkAllSeen está definida pero no se llama al abrir la campana.";
+        if (!/_notifApplyLocalRead\(\)/.test(s))
+          return f + ": no se aplica el 'leído' local al cargar → si el server no guardó, reaparecen.";
+        if (!/_notifReadAdd\(/.test(s))
+          return f + ": no se guarda el 'leído' local → sin defensa si falla el PATCH.";
+      }
       return null;
     },
   },
@@ -177,6 +244,26 @@ const RULES = [
     },
   },
   {
+    name: "demo: el coach de ejemplo luce badge/medalla/puntos y arranque completo",
+    bug: "El coach demo (demo.coach@pathway.com) se usa para MOSTRAR la plataforma " +
+         "a prospectos, pero tenía badge/medalla/puntos en cero y el arranque en 0/3 " +
+         "— parecía una cuenta vacía. Los getters de gamificación deben devolver " +
+         "valores de demo cuando _isDemoCoach().",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function clientMedalInfo\(\)\{[\s\S]{0,220}_isDemoCoach\(\)\)\s*return\s*\{[^}]*plata/.test(s))
+        return "panel-v2.html: clientMedalInfo ya no da medalla de demo → el demo se ve sin medalla.";
+      if (!/function pwTotalPoints\(\)\{[\s\S]{0,120}_isDemoCoach\(\)\)\s*return\s*640/.test(s))
+        return "panel-v2.html: pwTotalPoints ya no da puntos de demo → el demo muestra 0 pts.";
+      if (!/function pwBadgesGet\(\)\{[\s\S]{0,160}_isDemoCoach\(\)\)\s*return\s*\[/.test(s))
+        return "panel-v2.html: pwBadgesGet ya no da badges de demo → el demo no muestra colección.";
+      if (!/_isDemoCoach\(\)\)\s*phases\.forEach\(function\(p\)\{\s*p\.done=true/.test(s))
+        return "panel-v2.html: el arranque del demo ya no se completa → 'Empieza por aquí' vuelve a 0/3.";
+      return null;
+    },
+  },
+  {
     name: "auth-callback liga auth_id en login con Google (Etapa 2 / RLS)",
     bug: "Los que entran con Google deben quedar ligados a Supabase Auth (auth_id) " +
          "para que RLS los reconozca. Si se quita, Google queda sin identidad ligada.",
@@ -211,6 +298,35 @@ const RULES = [
       const block = s.slice(i, i + 1200);
       if (!/saveCfg\s*\(/.test(block))
         return "el handler pub-toggle ya no llama a saveCfg() — el toggle no persiste y al refrescar se apaga.";
+      return null;
+    },
+  },
+  {
+    name: "IA Pathway / Novedades / Perfil: el mismo botón abre Y cierra (toggle)",
+    bug: "El coach tocaba el botón de IA Pathway (o Novedades/Perfil), se abría, y al " +
+         "tocarlo de nuevo NO se cerraba: el handler solo hacía open=true. Los tres " +
+         "triggers deben ser toggle (si ya está abierto, el mismo botón lo cierra). " +
+         "Además, el marcador de Novedades no debe ocultarse en desktop cuando la " +
+         "columna está abierta, si no no queda botón para re-tocar y cerrar.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // IA Pathway: el handler iachat-open tiene que tener la rama de cierre.
+      const ia = s.search(/act===?["']iachat-open["']/);
+      if (ia < 0) return "panel-v2.html ya no tiene el handler iachat-open.";
+      const iaBlock = s.slice(ia, ia + 500);
+      if (!/state\.iaChat\.open\b[^]*?open\s*=\s*false/.test(iaBlock))
+        return "el handler iachat-open ya no togglea: al re-tocar el botón no cierra el chat de IA.";
+      // Novedades: el handler nov-open tiene que mirar si ya está abierta para cerrar.
+      const nv = s.search(/act===?["']nov-open["']/);
+      if (nv < 0) return "panel-v2.html ya no tiene el handler nov-open.";
+      const nvBlock = s.slice(nv, nv + 220);
+      if (!/pw-nov-open/.test(nvBlock) || !/_closeDrawer/.test(nvBlock))
+        return "el handler nov-open ya no togglea: al re-tocar Novedades no cierra la columna.";
+      // En desktop el marcador de Novedades debe REUBICARSE al abrir (asa para
+      // cerrar), no esconderse. Se permite ocultarlo solo dentro del @media móvil.
+      if (!/body\.pw-nov-open\s+#pw-nov-btn\{\s*right:360px/.test(s))
+        return "el marcador de Novedades ya no queda como asa para cerrar en desktop (right:360px).";
       return null;
     },
   },
@@ -877,6 +993,21 @@ const RULES = [
         if (!/rol===?['"]cliente['"][\s\S]{0,120}EMAIL=/.test(pjs))
           return "pathway-fin-cliente.html: perdió el forzado del email propio (mj_user) → podría caer al demo de María.";
       }
+      return null;
+    },
+  },
+  {
+    name: "admin: extender trial / marcar pagado van por edge function (resiste RLS)",
+    bug: "El PATCH directo a usuarios para extender trial / marcar pagado fallaba " +
+         "bajo RLS: exigía auth_id ligado + policy de admin. admin-coach-op verifica " +
+         "al admin por EMAIL del JWT y escribe con service role → funciona aunque el " +
+         "auth_id no esté ligado. Esta regla evita volver al PATCH directo frágil.",
+    check() {
+      if (!read("supabase/functions/admin-coach-op/index.ts"))
+        return "falta la edge function admin-coach-op (extender trial / marcar pagado sin chocar con RLS).";
+      const p = read("panel-v2.html") || "";
+      if (!/functions\/v1\/admin-coach-op/.test(p))
+        return "panel-v2.html: ya no llama a admin-coach-op → extender/marcar pagado puede fallar bajo RLS.";
       return null;
     },
   },
@@ -1795,9 +1926,11 @@ const RULES = [
       // Lado del dueño: sección Canal en multicoach.html.
       const mc = read("multicoach.html");
       if (mc) {
-        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (sección Canal del equipo).";
+        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (el canal/chat del equipo).";
         if (!/functions\/v1\/canal-red/.test(mc)) return "multicoach.html: el canal ya no usa la edge function canal-red.";
-        if (!/data-s="canal"/.test(mc)) return "multicoach.html: falta el item 'Canal del equipo' en el menú.";
+        // El canal es EL chat: se abre desde el ícono de chat del topbar (__go('canal')),
+        // no como una pestaña más del sidebar. Debe seguir siendo accesible.
+        if (!/onclick="__go\('canal'\)"/.test(mc)) return "multicoach.html: el ícono de chat ya no abre el canal del equipo (__go('canal')).";
       }
       // Lado del coach: hilo 'canal' en la bandeja de panel-v2.html.
       const p = read("panel-v2.html");
@@ -1808,6 +1941,48 @@ const RULES = [
           return "panel-v2.html: la bandeja del coach ya no ofrece el canal del equipo.";
         if (!/action:"send",org_id:RME\.org_id/.test(p))
           return "panel-v2.html: el coach ya no envía al canal por org_id (canal-red).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "juego de la cabra: 6 niveles + accesible en móvil (coach)",
+    bug: "Dos cosas del juego 'La cabra a la cima': (1) llegaba solo al nivel 3 " +
+         "(pedido: más niveles) y (2) en el panel del coach el botón del juego vive " +
+         "en el pie del sidebar (.cp-side-foot), que se OCULTA en móvil — un coach " +
+         "desde el teléfono no lo encontraba. Ahora hay 6 niveles (en la copia inline " +
+         "de panel-v2.html Y en pw-cabra-juego.js) y un botón flotante (.cp-mobjuego, " +
+         "la cabrita) que aparece solo en móvil y abre el mismo juego.",
+    check() {
+      // 6 niveles en las dos copias del juego, cierre no hardcodea '3', y se
+      // puede jugar en el celular (tocar la pantalla = saltar).
+      for (const f of ["panel-v2.html", "pw-cabra-juego.js"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/\{n:6,name:"Cima"/.test(s))
+          return f + ": el juego perdió los niveles nuevos (falta el nivel 6 'Cima').";
+        if (/Completaste los 3 niveles/.test(s))
+          return f + ": el texto final del juego volvió a hardcodear '3 niveles' (debe usar GAME_LEVELS.length).";
+        if (!/addEventListener\("touchstart"[\s\S]{0,120}_gameJump\(\)/.test(s))
+          return f + ": el juego ya no es jugable al tacto (falta touchstart→_gameJump para móvil).";
+      }
+      // Botón flotante del juego en móvil (panel del coach).
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function viewMobJuego\(/.test(p) || !/cp-mobjuego/.test(p))
+          return "panel-v2.html: falta el botón flotante del juego en móvil (.cp-mobjuego/viewMobJuego).";
+        if (!/viewMobJuego\(\)/.test(p) || p.indexOf("viewMobJuego()") === p.indexOf("function viewMobJuego("))
+          return "panel-v2.html: viewMobJuego() está definido pero no se inserta en el shell.";
+        // Auto-run: el mundo corre solo (no gatear el scroll con la flecha). Si
+        // vuelve el gate dir>0, en el celular no viene nada → injugable.
+        if (/if\(_game\.dir>0\)\{\s*_game\.nextSpawn/.test(p))
+          return "panel-v2.html: el juego volvió a gatear el scroll con la flecha (dir>0) → injugable en móvil; debe auto-correr.";
+        // Game feel (más pro): sonido, partículas, combo.
+        if (!/function _gameSound\(/.test(p) || !/function _gameBurst\(/.test(p) || !/function _gameCombo\(/.test(p))
+          return "panel-v2.html: el juego perdió el 'game feel' (sonido/partículas/combo).";
+        // Skins cosméticas desbloqueables por puntaje.
+        if (!/var PW_SKINS=/.test(p) || !/function _gameApplySkin\(/.test(p))
+          return "panel-v2.html: el juego perdió las skins desbloqueables (PW_SKINS/_gameApplySkin).";
       }
       return null;
     },
@@ -2342,6 +2517,32 @@ const RULES = [
       if (r) {
         if (!/meet\.jit\.si/.test(r)) return "reservar.html: se cayo la sala automatica (Jitsi) — la reserva podria salir sin link.";
         if (!/location=/.test(r)) return "reservar.html: el evento de Google ya no incluye el link de la videollamada (location).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "candado Pro 'probá gratis, pagá para guardar': la función Pro se ve pero al guardar/enviar abre el modal de upgrade (no alert feo)",
+    bug: "El coach Basic VE y prueba las funciones Pro (marca propia, mensajería, +clientes), " +
+         "pero al GUARDAR/ENVIAR/AGREGAR se abre un modal de upgrade de Pathway (proGate/pwUpgrade) " +
+         "con CTA al Stripe del plan Pro con el email precargado. En multi-coach, al llegar al tope " +
+         "de coaches/clientes se abre mcUpgrade con los planes (Boutique/Studio/Pro). " +
+         "Si se rompe (vuelve el alert()/confirm() seco o el gate escondido), se pierde el upsell " +
+         "que empuja Basic→Pro y la conversión.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function proGate\(/.test(p) || !/function pwUpgrade\(/.test(p)) return "panel-v2.html: falta el guard/modal de upgrade (proGate/pwUpgrade).";
+        if (!/if\(!proGate\("brand"\)\) return;/.test(p)) return "panel-v2.html: el guardado de marca propia ya no pasa por proGate('brand').";
+        if (!/if\(!proGate\("mensajeria"\)\) return;/.test(p)) return "panel-v2.html: el envío de email (mail-send) ya no pasa por proGate('mensajeria').";
+        if (/act==="cfg-save-brand"[\s\S]{0,80}alert\(/.test(p)) return "panel-v2.html: volvió el alert() feo en el guardado de marca propia.";
+        if (/act==="mail-send"[\s\S]{0,80}alert\("Enviar emails/.test(p)) return "panel-v2.html: volvió el alert() feo en mail-send.";
+        if (!/stripeSubUrl\("pro"/.test(p)) return "panel-v2.html: el modal de upgrade ya no apunta al Stripe del plan Pro con email precargado.";
+      }
+      const m = read("multicoach.html");
+      if (m) {
+        if (!/function mcUpgrade\(/.test(m)) return "multicoach.html: falta el modal de upgrade de red (mcUpgrade).";
+        if (!/mcUpgrade\('clientes'\)/.test(m) || !/mcUpgrade\('coaches'\)/.test(m)) return "multicoach.html: los topes de clientes/coaches ya no abren mcUpgrade.";
       }
       return null;
     },
