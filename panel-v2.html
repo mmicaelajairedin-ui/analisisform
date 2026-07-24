@@ -3659,6 +3659,30 @@ function _citaAnswers(r){
     return arr.filter(function(x){ return x && (x.q||x.a); }).map(function(x){ return {q:(""+(x.q||"")), a:(""+(x.a||""))}; });
   }catch(e){ return []; }
 }
+// ── Aviso al cliente cuando el coach cancela o reprograma una reserva ──
+// (antes no se le avisaba nada; ahora recibe un email claro por send-email).
+function _fechaCli(iso, tz){
+  try{ var d=new Date(iso); tz=(""+(tz||"")).trim();
+    var opt={weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'};
+    if(tz) opt.timeZone=tz;
+    var s=d.toLocaleString('es-ES',opt); return s.charAt(0).toUpperCase()+s.slice(1);
+  }catch(e){ return ""; }
+}
+function _notifResCliente(email,nombre,subject,inner){
+  email=(""+(email||"")).trim(); if(!email) return;
+  var coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"tu coach";
+  var html="<div style='font-family:Inter,-apple-system,Arial,sans-serif;color:#1B2E26;font-size:14px;line-height:1.6'>"+inner+
+    "<p style='font-size:12.5px;color:#8A968E;margin-top:18px'>— "+esc(coach)+" · Pathway</p></div>";
+  try{ fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:subject,html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){}); }catch(e){}
+}
+function _notifResCancel(r){
+  if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(r.inicio, r.cliente_tz);
+  _notifResCliente(r.email, r.nombre, "Tu sesión fue cancelada", "<p>Hola "+esc(fn)+", te aviso que <strong>cancelé la sesión</strong>"+(f?(" del "+esc(f)):"")+".</p><p>Si quieres, responde este email y reprogramamos.</p>");
+}
+function _notifResReprog(r, iso){
+  if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(iso, r.cliente_tz);
+  _notifResCliente(r.email, r.nombre, "Tu sesión cambió de horario", "<p>Hola "+esc(fn)+", <strong>moví tu sesión</strong>"+(f?(" al "+esc(f)):"")+".</p><p>Si ese horario no te sirve, responde y coordinamos.</p>");
+}
 function _resRender(list){
   var rows=_calDedup(list||[]).filter(function(r){ return r && r.estado!=="cancelada"; });
   if(!rows.length) return "<div style='color:var(--pw-text-soft);font-size:13px;padding:8px 0;text-align:center'>Sin reservas nuevas. Cuando alguien use tu link de agenda, aparecen aquí.</div>";
@@ -8499,10 +8523,12 @@ document.addEventListener("click", function(ev){
   if(act==="qr-book"){ _showQR(_bookUrl()); return; }
   if(act==="res-confirm"||act==="res-cancel"){
     var _rid=el.getAttribute("data-id"); if(!_rid) return;
+    var _rr=(_RES_DATA||[]).filter(function(x){ return String(x.id)===String(_rid); })[0];
+    if(act==="res-cancel" && !confirm("¿Cancelar la reserva? Se le avisa al cliente por email.")) return;
     var _est=(act==="res-confirm")?"confirmada":"cancelada";
     if(_RES_DATA){ _RES_DATA.forEach(function(r){ if(String(r.id)===String(_rid)) r.estado=_est; }); var _rb=document.getElementById("cp-res-body"); if(_rb) _rb.innerHTML=_resRender(_RES_DATA); }
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
-      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Reserva confirmada ✓":"Reserva cancelada"); } else { toast("No se pudo actualizar la reserva."); _resLoad(); } })
+      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Reserva confirmada ✓":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel") _notifResCancel(_rr); } else { toast("No se pudo actualizar la reserva."); _resLoad(); } })
       .catch(function(){ toast("No se pudo actualizar la reserva."); _resLoad(); });
     return;
   }
@@ -8514,9 +8540,10 @@ document.addEventListener("click", function(ev){
     var _ms=new Date(_v).getTime(); if(isNaN(_ms)){ toast("Fecha no válida."); return; }
     var _iso=new Date(_ms).toISOString();
     // La hora se elige EN TU zona (datetime-local se interpreta como tu hora local) y se guarda en UTC.
+    var _rrh=(_RES_DATA||[]).filter(function(x){ return String(x.id)===String(_rid); })[0];
     if(_RES_DATA){ _RES_DATA.forEach(function(r){ if(String(r.id)===String(_rid)) r.inicio=_iso; }); _RES_DATA.sort(function(a,b){ return +new Date(a.inicio)-+new Date(b.inicio); }); var _rb=document.getElementById("cp-res-body"); if(_rb) _rb.innerHTML=_resRender(_RES_DATA); }
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{inicio:_iso})
-      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓"); try{ _agAfterCal(); }catch(_e){} } else { toast("No se pudo cambiar la hora."); _resLoad(); } })
+      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso); try{ _agAfterCal(); }catch(_e){} } else { toast("No se pudo cambiar la hora."); _resLoad(); } })
       .catch(function(){ toast("No se pudo cambiar la hora."); _resLoad(); });
     return;
   }
