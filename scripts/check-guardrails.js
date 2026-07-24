@@ -223,6 +223,20 @@ const RULES = [
     },
   },
   {
+    name: "móvil: la burbuja de aviso del chat/notif no se recorta (overflow)",
+    bug: "En móvil los botones de la barra llevan overflow:hidden para verse " +
+         "circulares, pero eso RECORTABA la burbuja de aviso (foto de quien " +
+         "escribió / contador) que asoma por la esquina → quedaba escondida. " +
+         "Los botones de chat y notificaciones deben llevar overflow:visible.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/#pw-app-actions\s+#pw-chat-btn,\s*#pw-app-actions\s+#pw-notif-btn\{\s*overflow:visible/.test(s))
+        return "panel-v2.html: el chat/notif ya no fuerzan overflow:visible → la burbuja de aviso se vuelve a recortar en móvil.";
+      return null;
+    },
+  },
+  {
     name: "demo: el coach de ejemplo luce badge/medalla/puntos y arranque completo",
     bug: "El coach demo (demo.coach@pathway.com) se usa para MOSTRAR la plataforma " +
          "a prospectos, pero tenía badge/medalla/puntos en cero y el arranque en 0/3 " +
