@@ -25,7 +25,7 @@
 const APNS_KEY_P8    = Deno.env.get("APNS_KEY_P8") || "";
 const APNS_KEY_ID    = Deno.env.get("APNS_KEY_ID") || "";
 const APNS_TEAM_ID   = Deno.env.get("APNS_TEAM_ID") || "";
-const APNS_BUNDLE_ID = Deno.env.get("APNS_BUNDLE_ID") || "com.pathwaycareercoach.app";
+const APNS_BUNDLE_ID = Deno.env.get("APNS_BUNDLE_ID") || "com.pathwaycareercoach.twa";
 const APNS_ENV       = (Deno.env.get("APNS_ENV") || "production").toLowerCase();
 const APNS_HOST      = APNS_ENV === "sandbox" ? "api.sandbox.push.apple.com" : "api.push.apple.com";
 

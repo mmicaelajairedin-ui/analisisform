@@ -59,7 +59,7 @@ npx cap open ios      # abre Xcode
 En **Xcode**:
 1. Panel izquierdo → **App** → **Signing & Capabilities**:
    - **Team**: tu cuenta de Apple Developer.
-   - **Bundle Identifier**: `com.pathwaycareercoach.app`.
+   - **Bundle Identifier**: `com.pathwaycareercoach.twa`.
    - **+ Capability** → agregá **Push Notifications** (para las notificaciones).
 2. **General** → **Display Name**: `Pathway`; **App Icon**: imagen **1024×1024 px**
    (podés partir de `logo-mark.png` / `icon-512.png` escalada a 1024).
@@ -91,8 +91,18 @@ npx cap sync
 npx cap open android   # abre Android Studio
 ```
 
+**Actualización de una app EXISTENTE (prueba cerrada con PWABuilder):** como ya
+hay una app en Play con el package `com.pathwaycareercoach.twa` (versión 1.0.0.1),
+esto es un UPDATE, no una app nueva. Por eso:
+- El `appId` del proyecto ya es `com.pathwaycareercoach.twa` (coincide).
+- **Firmá con TU keystore existente** (`signing.keystore`, alias `pathway-key`) —
+  NO crees una clave nueva, o Google rechaza la actualización.
+- Subí el **versionCode** en `android/app/build.gradle` a un número mayor que el
+  actual (poné `versionCode 2` o más).
+
 En **Android Studio**: **Build → Generate Signed Bundle / APK → Android App
-Bundle (.aab)** → subilo a Google Play Console.
+Bundle (.aab)** → elegí **Choose existing…** y seleccioná tu `signing.keystore` →
+subí el `.aab` a la MISMA app en Google Play Console.
 
 > **Nota sobre la API 36:** Capacitor 6 viene por defecto en API 34. Bumpear
 > `variables.gradle` a 36 funciona si Android Studio tiene el SDK 36 y un Android
@@ -114,7 +124,7 @@ El registro del dispositivo ya está hecho (`pw-native.js` → tabla
 3. Deploy de la función: `supabase functions deploy send-push-apns --no-verify-jwt`
 4. Cargá los secrets en Supabase (Edge Functions → Secrets):
    `APNS_KEY_P8` (contenido del .p8), `APNS_KEY_ID`, `APNS_TEAM_ID`,
-   `APNS_BUNDLE_ID` = `com.pathwaycareercoach.app`, `APNS_ENV` = `production`.
+   `APNS_BUNDLE_ID` = `com.pathwaycareercoach.twa`, `APNS_ENV` = `production`.
 5. Probá con un POST: `{ "emails": ["tu@email.com"], "title": "Hola", "body": "Prueba" }`
 
 > ⚠️ La función `send-push-apns` está escrita pero **sin probar en producción**
