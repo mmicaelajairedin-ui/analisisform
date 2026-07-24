@@ -1,87 +1,139 @@
-# Pathway — App para iOS (App Store)
+# Pathway — App móvil (iOS + Android) con Capacitor
 
-Esta carpeta arma la app de iPhone de Pathway usando **Capacitor**. La app es
-un "envoltorio" que carga tu sitio en vivo (`pathwaycareercoach.com`) dentro de
-una app nativa. Reutiliza el 100% de la plataforma web: no hay código duplicado.
+Esta carpeta arma la app de Pathway usando **Capacitor**. La app es un
+"envoltorio" nativo que carga tu sitio en vivo (`pathwaycareercoach.com`) dentro
+de una app real. Reutiliza el 100% de la plataforma web: no hay código duplicado,
+y **la misma base sirve para iOS y para Android** (Google Play).
 
 ## ⚠️ Lo que ya está resuelto (importante)
 
-- La app abre `https://pathwaycareercoach.com/login.html?app=1`. Ese `?app=1`
-  activa `pw-app.js`, que **oculta todos los botones de pago dentro de la app**.
-  Esto es obligatorio: Apple exige su propio cobro (30%) para suscripciones
-  digitales compradas *dentro* de la app. Modelo "reader" (como Netflix/Spotify):
-  la coach se suscribe en la WEB con Stripe, y la app es solo "iniciá sesión y usá".
-- En la web normal (fuera de la app) nada de esto se activa: los cobros siguen igual.
+- **Sin comisión de Apple/Google**: la app abre
+  `https://pathwaycareercoach.com/login.html?app=1`. Ese `?app=1` (y la detección
+  de Capacitor en `pw-native.js`) **ocultan todos los botones de pago dentro de la
+  app**. Modelo "reader" (Netflix/Spotify): la coach se suscribe en la WEB con
+  Stripe, y la app es solo "iniciá sesión y usá". En la web normal nada de esto se
+  activa: los cobros siguen igual.
+- **Capa nativa (`pw-native.js`, en la raíz del repo)** — solo actúa dentro de la
+  app; en la web es un no-op. Se encarga de:
+  - Barra de estado con el color de marca + ocultar el splash al cargar.
+  - Abrir los links a **otros dominios** en Safari/Chrome del sistema (no traba la
+    app en una web ajena — ayuda con la regla 4.2 de Apple).
+  - **Notificaciones push nativas**: pide permiso y guarda el token del dispositivo
+    en Supabase (tabla `native_push_tokens`), si el usuario inició sesión.
 
-## Requisitos (una sola vez, en tu Mac)
+---
 
-1. **Mac con macOS** actualizado.
-2. **Xcode** — instalalo gratis desde la Mac App Store (pesa varios GB).
-3. **Node.js 18 o superior** — descargalo de https://nodejs.org (versión LTS).
-4. **CocoaPods** — abrí la Terminal y corré: `sudo gem install cocoapods`
-5. Tu cuenta de **Apple Developer** ya activa (los US$99/año) y el contrato de
-   licencia aceptado en https://developer.apple.com/account (¡el aviso que viste!).
+## Requisitos (una sola vez)
 
-## Pasos para compilar (en la Terminal de tu Mac)
+**Para iOS (necesitás Mac):**
+1. **Mac con macOS** actualizado + **Xcode** (gratis, Mac App Store).
+2. **CocoaPods**: en la Terminal → `sudo gem install cocoapods`
+3. Cuenta **Apple Developer** activa (US$99/año) y contrato de licencia aceptado
+   en https://developer.apple.com/account (¡el aviso que viste!).
+
+**Para Android (sirve cualquier PC/Mac):**
+1. **Android Studio** (gratis) con el **SDK de Android 16 (API 36)** instalado
+   (Android Studio → Settings → SDK Manager → marcá "Android 16 / API 36").
+2. Cuenta **Google Play Console** (US$25, pago único).
+
+**Para ambos:**
+- **Node.js 18+** (https://nodejs.org, versión LTS).
+
+---
+
+## Pasos comunes (en la Terminal)
 
 ```bash
-# 1. Entrá a esta carpeta
 cd app-ios
-
-# 2. Instalá las dependencias
 npm install
-
-# 3. Generá el proyecto nativo de iOS (esto crea la subcarpeta ios/)
-npx cap add ios
-
-# 4. Sincronizá la configuración
-npx cap sync
-
-# 5. Abrí el proyecto en Xcode
-npx cap open ios
 ```
 
-## Dentro de Xcode
+## Compilar para iOS
 
-1. En el panel izquierdo, clic en **App** (el proyecto, arriba de todo).
-2. Pestaña **Signing & Capabilities**:
-   - **Team**: elegí tu cuenta de Apple Developer.
-   - **Bundle Identifier**: dejá `com.pathwaycareercoach.app` (o el que registres).
-3. Pestaña **General**:
-   - **Display Name**: `Pathway`
-   - **App Icon**: arrastrá tu ícono (necesitás una imagen **1024×1024 px**, sin
-     transparencia — podés partir de `logo-mark.png` o `icon-512.png` del repo y
-     escalarla a 1024).
-4. Elegí un simulador (ej. "iPhone 15") arriba y apretá ▶ (Play) para **probarla**.
-5. Cuando esté OK: menú **Product → Archive** → **Distribute App** → **App Store
-   Connect** → subir.
+```bash
+npx cap add ios       # genera la carpeta ios/ (solo en Mac)
+npx cap sync
+npx cap open ios      # abre Xcode
+```
 
-## En App Store Connect (https://appstoreconnect.apple.com)
+En **Xcode**:
+1. Panel izquierdo → **App** → **Signing & Capabilities**:
+   - **Team**: tu cuenta de Apple Developer.
+   - **Bundle Identifier**: `com.pathwaycareercoach.app`.
+   - **+ Capability** → agregá **Push Notifications** (para las notificaciones).
+2. **General** → **Display Name**: `Pathway`; **App Icon**: imagen **1024×1024 px**
+   (podés partir de `logo-mark.png` / `icon-512.png` escalada a 1024).
+3. **Privacy Manifest**: File → Add Files to "App"… → elegí `app-ios/PrivacyInfo.xcprivacy`
+   (marcá el target "App"). Apple lo exige para aprobar.
+4. Elegí un simulador y ▶ para probar. Cuando esté OK:
+   **Product → Archive → Distribute App → App Store Connect**.
 
-1. **Apps → +  → Nueva app**. Plataforma iOS, nombre "Pathway", bundle id el de arriba.
-2. Completá: descripción, capturas de pantalla (iPhone), categoría (Business /
-   Productivity), política de privacidad (ya tenés `privacidad.html`).
-3. **Clasificación por edades**: respondé las preguntas (incluidas las nuevas de
-   redes sociales que te avisó Apple).
-4. **Cumplimiento UE (DSA)**: declará tu condición de comerciante.
-5. Enviá a revisión.
+## Compilar para Android (API 36 / Android 16)
 
-## ⚠️ Riesgo a tener en cuenta: regla 4.2 de Apple
+```bash
+npx cap add android   # genera la carpeta android/
+```
 
-Apple a veces rechaza apps que son "solo una web envuelta" sin valor nativo.
-Para reducir el riesgo, el próximo paso recomendado es agregar **notificaciones
-push nativas** (Pathway ya tiene la infraestructura: `pw-push.js` + edge function
-`send-push`). Con Capacitor se suma el plugin `@capacitor/push-notifications`.
-Si Apple rechaza por 4.2, ese es el primer refuerzo a implementar.
+Luego editá **`android/variables.gradle`** y poné API 36 (Google Play exige
+apuntar a una API reciente):
 
-## Cambiar contenido de la app
+```gradle
+ext {
+    minSdkVersion = 23
+    compileSdkVersion = 36
+    targetSdkVersion = 36        // Android 16
+    // ...dejá el resto como viene
+}
+```
+
+```bash
+npx cap sync
+npx cap open android   # abre Android Studio
+```
+
+En **Android Studio**: **Build → Generate Signed Bundle / APK → Android App
+Bundle (.aab)** → subilo a Google Play Console.
+
+> **Nota sobre la API 36:** Capacitor 6 viene por defecto en API 34. Bumpear
+> `variables.gradle` a 36 funciona si Android Studio tiene el SDK 36 y un Android
+> Gradle Plugin reciente (8.6+). Si el build se queja, la alternativa limpia es
+> actualizar a **Capacitor 7** (`npm i @capacitor/core@7 @capacitor/cli@7
+> @capacitor/android@7 …`), que ya apunta a APIs nuevas.
+
+---
+
+## Notificaciones push — para que realmente lleguen
+
+El registro del dispositivo ya está hecho (`pw-native.js` → tabla
+`native_push_tokens`). Falta la parte de **envío**, que necesita tus credenciales:
+
+**iOS (APNs):**
+1. En https://developer.apple.com/account → Keys → crea una **APNs Auth Key** (.p8).
+   Anotá el **Key ID** y tu **Team ID**.
+2. Aplicá la migración `supabase/migrations/native_push_tokens.sql`.
+3. Deploy de la función: `supabase functions deploy send-push-apns --no-verify-jwt`
+4. Cargá los secrets en Supabase (Edge Functions → Secrets):
+   `APNS_KEY_P8` (contenido del .p8), `APNS_KEY_ID`, `APNS_TEAM_ID`,
+   `APNS_BUNDLE_ID` = `com.pathwaycareercoach.app`, `APNS_ENV` = `production`.
+5. Probá con un POST: `{ "emails": ["tu@email.com"], "title": "Hola", "body": "Prueba" }`
+
+> ⚠️ La función `send-push-apns` está escrita pero **sin probar en producción**
+> todavía. Hay que testearla con las credenciales reales antes de conectarla a los
+> disparadores automáticos (nuevo cliente, chat, etc.). Lo hacemos juntas cuando
+> tengas la APNs Key.
+
+---
+
+## Ventaja clave: contenido siempre actualizado
 
 Como la app carga el sitio en vivo, **cualquier cambio que publiques en la web
-aparece automáticamente en la app** — sin recompilar ni volver a subir a Apple.
-Solo hay que recompilar y re-subir si cambiás algo *nativo* (ícono, nombre,
-permisos, plugins).
+aparece solo en la app** — sin recompilar ni volver a subir. Solo recompilás y
+re-subís si cambiás algo *nativo* (ícono, nombre, permisos, plugins).
 
-## Android (a futuro)
+## App Store Connect / Play Console — fichas
 
-Con esta misma base, agregar Android es casi gratis: `npx cap add android` y
-abrir en Android Studio. Google Play cuesta US$25 (pago único) y no necesita Mac.
+- Descripción, capturas (iPhone / Android), categoría (Business / Productivity).
+- Política de privacidad: ya tenés `privacidad.html`.
+- **Clasificación por edades**: respondé las preguntas (incluidas las nuevas de
+  redes sociales que te avisó Apple).
+- **Cumplimiento UE (DSA)**: declará tu condición de comerciante.
