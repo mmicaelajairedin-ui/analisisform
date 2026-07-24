@@ -223,6 +223,26 @@ const RULES = [
     },
   },
   {
+    name: "demo: el coach de ejemplo luce badge/medalla/puntos y arranque completo",
+    bug: "El coach demo (demo.coach@pathway.com) se usa para MOSTRAR la plataforma " +
+         "a prospectos, pero tenía badge/medalla/puntos en cero y el arranque en 0/3 " +
+         "— parecía una cuenta vacía. Los getters de gamificación deben devolver " +
+         "valores de demo cuando _isDemoCoach().",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function clientMedalInfo\(\)\{[\s\S]{0,220}_isDemoCoach\(\)\)\s*return\s*\{[^}]*plata/.test(s))
+        return "panel-v2.html: clientMedalInfo ya no da medalla de demo → el demo se ve sin medalla.";
+      if (!/function pwTotalPoints\(\)\{[\s\S]{0,120}_isDemoCoach\(\)\)\s*return\s*640/.test(s))
+        return "panel-v2.html: pwTotalPoints ya no da puntos de demo → el demo muestra 0 pts.";
+      if (!/function pwBadgesGet\(\)\{[\s\S]{0,160}_isDemoCoach\(\)\)\s*return\s*\[/.test(s))
+        return "panel-v2.html: pwBadgesGet ya no da badges de demo → el demo no muestra colección.";
+      if (!/_isDemoCoach\(\)\)\s*phases\.forEach\(function\(p\)\{\s*p\.done=true/.test(s))
+        return "panel-v2.html: el arranque del demo ya no se completa → 'Empieza por aquí' vuelve a 0/3.";
+      return null;
+    },
+  },
+  {
     name: "auth-callback liga auth_id en login con Google (Etapa 2 / RLS)",
     bug: "Los que entran con Google deben quedar ligados a Supabase Auth (auth_id) " +
          "para que RLS los reconozca. Si se quita, Google queda sin identidad ligada.",
