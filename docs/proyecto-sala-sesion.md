@@ -73,6 +73,28 @@ al costado** y el **botón de cierre**, según el `kind`:
 > El resultado de la *primera llamada* se registra: **convirtió** (cliente nuevo →
 > comisión al cobrar) **o no** — dato que alimenta el funnel.
 
+### El punto de ENTRADA define qué tipo se ofrece (y la sala)
+
+La misma acción (agendar) genera un tipo/modo/sala distinto según **de dónde
+entra** la persona:
+
+| Dónde se agenda | Quién es | Tipo → modo | `origen` |
+|---|---|---|---|
+| **Landing pública** / **link para compartir** del coach | persona **nueva de afuera** | `primera_llamada` ("cliente Pathway") → conversión cliente | `pathway` |
+| **Portal del cliente** (ya con acceso) | **cliente existente** del coach | `sesion` → sesión (0%, con historia) | `propio` |
+| Link que comparte **admin/empleado** | prospecto de **coach** | `demo_pathway` → conversión coach | (lado coach) |
+
+- En lo **público** (landing + link del coach) se ofrece **`primera_llamada`**
+  porque es alguien de afuera a quien **Pathway le da acceso** → posible cliente
+  nuevo (`origen=pathway`).
+- El **cliente que ya está adentro** agenda **`sesion`** desde su portal
+  (`origen=propio`, 0%).
+- La **`demo_pathway`** solo aparece en el link/flujo de **admin/empleado**.
+
+Implica: `reservar.html` filtra los `event_types` ofrecidos **según el contexto**
+(público → primera_llamada · portal cliente → sesion · admin/empleado → demo),
+no muestra todos a todos.
+
 ## 2. Tipos de evento CANÓNICOS (no texto libre)
 
 Hoy `usuarios.configuracion.event_types` es texto libre → dos coaches escriben
