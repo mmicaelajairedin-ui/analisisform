@@ -58,12 +58,20 @@ coach trae es 0%. El círculo crece porque los coaches exitosos se multiplican.*
 La Sala es el mismo cascarón (video JaaS embebido); lo que cambia es el **panel
 al costado** y el **botón de cierre**, según el `kind`:
 
-| kind (del sistema, fijo) | label (el coach lo renombra) | Modo | Cierre |
-|---|---|---|---|
-| `sesion` | "Sesión", "Entreno"… | Sesión (cliente adentro) | Cerrar en 1 clic: resumen IA + tareas + próxima cita |
-| `primera_llamada` | "Primera llamada gratis" | Conversión cliente | Dar acceso + (después) cobrar servicio → comisión |
-| `demo_pathway` | "Demo Pathway" | Conversión coach | Convertir en coach / multicoach → suscripción |
-| `personal` | libre | Solo agenda | (sin Sala) |
+| kind (fijo) | Quién lo usa | label (renombrable) | Modo | Cierre |
+|---|---|---|---|---|
+| `sesion` | **Coach** | "Sesión", "Entreno"… | Sesión (cliente adentro, 0%) | Cerrar en 1 clic: resumen IA + tareas + próxima cita |
+| `primera_llamada` | **Coach** | "Primera llamada gratis" | Conversión cliente (**puede salir cliente nuevo o no**) | Dar acceso → (después) cobrar servicio → comisión |
+| `demo_pathway` | **SOLO admin / empleado** (Micaela, Gonzalo) | "Demo Pathway" | Conversión **coach** | Agregar coach / multicoach → suscripción |
+| `personal` | Cualquiera | libre | Solo agenda | (sin Sala) |
+
+> **Cada nivel tiene su puerta** (modelo de 3 niveles Pathway → Coach → Cliente):
+> - **Pathway (admin/empleado)** corre la *Demo* → suma **coaches**. `demo_pathway`
+>   solo se muestra si `rol ∈ {admin, empleado}` (Gonzalo = empleado comercial).
+> - **Coach** corre *Primera llamada* → suma **clientes** (o no convierte) · y
+>   *Sesión* → atiende a los que ya tiene (0%, con su historia).
+> El resultado de la *primera llamada* se registra: **convirtió** (cliente nuevo →
+> comisión al cobrar) **o no** — dato que alimenta el funnel.
 
 ## 2. Tipos de evento CANÓNICOS (no texto libre)
 
