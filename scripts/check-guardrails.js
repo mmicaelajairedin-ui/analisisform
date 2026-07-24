@@ -1906,9 +1906,11 @@ const RULES = [
       // Lado del dueño: sección Canal en multicoach.html.
       const mc = read("multicoach.html");
       if (mc) {
-        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (sección Canal del equipo).";
+        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (el canal/chat del equipo).";
         if (!/functions\/v1\/canal-red/.test(mc)) return "multicoach.html: el canal ya no usa la edge function canal-red.";
-        if (!/data-s="canal"/.test(mc)) return "multicoach.html: falta el item 'Canal del equipo' en el menú.";
+        // El canal es EL chat: se abre desde el ícono de chat del topbar (__go('canal')),
+        // no como una pestaña más del sidebar. Debe seguir siendo accesible.
+        if (!/onclick="__go\('canal'\)"/.test(mc)) return "multicoach.html: el ícono de chat ya no abre el canal del equipo (__go('canal')).";
       }
       // Lado del coach: hilo 'canal' en la bandeja de panel-v2.html.
       const p = read("panel-v2.html");
