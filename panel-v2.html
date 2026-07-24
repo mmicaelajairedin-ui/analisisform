@@ -9330,12 +9330,19 @@ document.addEventListener("click", function(ev){
     var _pp=act.slice(11).split(":"); var newPlan=_pp[0]; var cplId=_pp[1];
     if(newPlan!=="pro"&&newPlan!=="basic"){ return; }
     if(!confirm(newPlan==="pro"?"¿Pasar este coach al plan Pro? Quedan habilitadas todas las funciones Pro.":"¿Bajar este coach al plan Basic?")) return;
-    _sb("usuarios?id=eq."+encodeURIComponent(cplId)+"&select=configuracion").then(function(rows){
-      var u=rows&&rows[0]; if(!u){ alert("Coach no encontrado."); return; }
-      var cf=u.configuracion||{};
-      var nc=Object.assign({},cf,{plan:newPlan});
-      return _sbw("usuarios?id=eq."+encodeURIComponent(cplId),"PATCH",{configuracion:nc}).then(function(r){ if(!r.ok) throw 0; toast(newPlan==="pro"?"Coach ahora es Pro ✓":"Coach pasado a Basic ✓"); reloadCoaches(); });
-    }).catch(function(){ alert("No se pudo cambiar el plan."); });
+    var _okMsg=function(){ toast(newPlan==="pro"?"Coach ahora es Pro ✓":"Coach pasado a Basic ✓"); reloadCoaches(); };
+    // Igual que 'marcar pagado': va por la edge function (resiste RLS). El PATCH
+    // directo (fallback) lo bloquea RLS, por eso antes no dejaba pasar a Pro.
+    var _cpDirect=function(){
+      return _sb("usuarios?id=eq."+encodeURIComponent(cplId)+"&select=configuracion").then(function(rows){
+        var u=rows&&rows[0]; if(!u){ alert("Coach no encontrado."); return; }
+        var nc=Object.assign({},u.configuracion||{},{plan:newPlan});
+        return _sbw("usuarios?id=eq."+encodeURIComponent(cplId),"PATCH",{configuracion:nc}).then(function(r){ if(!r.ok) throw 0; _okMsg(); });
+      }).catch(function(){ alert("No se pudo cambiar el plan.\n\nSi no cambió nada, tu sesión de admin pudo vencer (RLS): cerrá sesión y volvé a entrar, y reintentá."); });
+    };
+    _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"set_plan",coach_id:cplId,plan:newPlan})}); })
+      .then(function(r){ if(r.status===403){ alert("No pudimos verificar tu sesión de admin.\n\nCerrá sesión y volvé a entrar, y reintentá."); return null; } if(!r.ok) return _cpDirect(); return r.json().then(function(){ _okMsg(); }); })
+      .catch(function(){ return _cpDirect(); });
     return;
   }
   if(act==="coach-access"){
