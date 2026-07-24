@@ -387,11 +387,6 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-greet img{width:64px;height:64px;border-radius:50%;object-fit:cover;flex-shrink:0;box-shadow:var(--pw-shadow-sm);}
 .cp-greet-h1{font-family:var(--pw-serif);font-size:30px;font-weight:600;letter-spacing:-1.2px;line-height:1.05;color:var(--pw-carbon);margin:0;}
 .cp-greet-h1 .dot{color:var(--pw-sendero);}
-/* Cabra siempre visible arriba: abre el juego (openJuego, data-act='juego'). Reusa
-   el asset y el handler existentes — sin datos nuevos. Override del .cp-greet img circular. */
-.cp-goat{margin-left:auto;flex-shrink:0;width:54px;height:54px;border:none;background:transparent;cursor:pointer;padding:0;display:grid;place-items:center;border-radius:14px;}
-.cp-goat img{width:48px;height:48px;border-radius:0;box-shadow:none;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(27,67,50,.16));transition:transform .15s;}
-.cp-goat:hover img{transform:translateY(-2px) rotate(-4deg);}
 .cp-greet-sub{font-size:14px;color:var(--pw-text-soft);margin-top:4px;}
 .cp-action-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
 .cp-action{background:#fff;border:1px solid var(--pw-border);border-radius:16px;padding:14px 20px;cursor:pointer;transition:all .2s var(--pw-ease);display:flex;flex-direction:column;gap:8px;position:relative;overflow:hidden;text-align:left;}
@@ -1089,9 +1084,6 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   /* IA Pathway: en móvil es un icono más arriba (no una pestaña flotante, así no ocupa espacio) */
   #pw-app-actions #pw-ia-btn{ position:static !important; transform:none !important; width:38px !important; height:38px !important; border-radius:50% !important; padding:0 !important; }
   #pw-app-actions #pw-ia-btn span{ display:none !important; }
-  /* Novedades: en móvil sigue siendo pestañita lateral (token al costado), solo texto */
-  #pw-app-actions #pw-nov-btn{ position:fixed !important; top:50% !important; right:0 !important; transform:translateY(-50%) !important; width:auto !important; height:auto !important; border-radius:12px 0 0 12px !important; padding:14px 7px !important; font-size:0 !important; }
-  #pw-app-actions #pw-nov-btn span{ display:inline !important; font-size:12px !important; }
   /* Avatar: círculo con la foto (nombre/rol y chevron se ocultan en móvil) */
   /* Cuenta (login) como en la web: chip con nombre + rol, no un círculo más
      (para que la barra no quede 'todas pastillas' iguales). */
@@ -1101,8 +1093,10 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   #pw-app-actions #pw-um-btn-role{ font-size:8.5px !important; }
   #pw-app-actions #pw-usermenu-av{ width:30px !important; height:30px !important; }
   #pw-app-actions #pw-usermenu-chev{ display:block !important; width:12px; height:12px; }
-  /* El badge de notificaciones no se recorta */
-  #pw-app-actions #pw-notif-btn{ overflow:visible !important; }
+  /* Notificaciones: en móvil la campana sale de la barra y pasa al menú del
+     avatar (ítem "Notificaciones"). El panel (#pw-notif-panel) sigue anclado al
+     viewport con position:fixed, así que se abre igual desde el ítem. */
+  #pw-app-actions #pw-notif-btn{ display:none !important; }
   /* Desplegables (perfil + notificaciones): en móvil los anclamos al viewport
      con position:fixed. En iOS Safari un panel position:absolute dentro de la
      barra fixed se "escapa" del ancla y cae al fondo de la pantalla — por eso el
@@ -2639,7 +2633,6 @@ function viewResumen(){
   return "<div class='cp-greet'>"+
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+"<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>"+_greetSub+"</div></div>"+
-      "<button class='cp-goat' data-act='juego' aria-label='La cabra a la cima — jugar' title='Jugar con la cabra'><img src='assets/cabra/frente.gif' alt=''></button>"+
       "</div>"+
     pathCard+(pathCard?"":emptyState)+
     "<div class='cp-dash-top'>"+_agTop+negocioCard+"</div>"+
@@ -7898,6 +7891,8 @@ function _syncNotifBadge(){
     var tot=data.reduce(function(s,x){return s+(x.n||0);},0);
     var b=document.getElementById("pw-notif-badge");
     if(b){ if(tot>0){ b.textContent=(tot>9?"9+":tot); b.style.display="flex"; } else { b.style.display="none"; } }
+    var bm=document.getElementById("pw-notif-badge-mob");
+    if(bm){ if(tot>0){ bm.textContent=(tot>9?"9+":tot); bm.style.display="inline-flex"; } else { bm.style.display="none"; } }
   }catch(e){}
 }
 function pwNotif(e){
@@ -7966,7 +7961,10 @@ document.addEventListener("click", function(ev){
   var np=document.getElementById("pw-notif-panel");
   if(np&&np.style.display==="block"){
     var nb=document.getElementById("pw-notif-btn");
-    if(!(nb&&nb.contains(ev.target))){ np.style.display="none"; }
+    // El ítem "Notificaciones" del menú del avatar (móvil) abre el panel: no lo
+    // contamos como click "afuera" o se cerraría en el mismo evento que lo abre.
+    var fromItem=ev.target.closest&&ev.target.closest('[data-act="notif-open"]');
+    if(!fromItem && !(nb&&nb.contains(ev.target)) && !np.contains(ev.target)){ np.style.display="none"; }
   }
 });
 // El badge se asienta cuando los datos terminan de cargar (por si el último
@@ -10558,6 +10556,7 @@ document.addEventListener("click", function(ev){
   }
   if(act==="juego-open"){ openJuego(); return; }
   if(act==="juego-close"){ closeJuego(); return; }
+  if(act==="notif-open"){ try{ var _unp=document.getElementById("pw-usermenu-panel"); if(_unp) _unp.style.display="none"; var _unw=document.getElementById("pw-usermenu"); if(_unw) _unw.classList.remove("is-open"); }catch(e){} try{ var _np2=document.getElementById("pw-notif-panel"); if(_np2) _np2.style.display="none"; }catch(e){} pwNotif(); return; }
   if(act==="nov-open"){ if(document.body.classList.contains("pw-nov-open")){ _closeDrawer("nov"); } else { _openDrawer("nov"); } return; }
   if(act==="nov-close"){ _closeDrawer("nov"); return; }
   if(act==="perfil-open"){ var _pd=document.getElementById("pw-perfil-drawer"); if(_pd&&_pd.style.display!=="none"&&_pd.style.display!==""){ _closeDrawer("perfil"); } else { _openDrawer("perfil"); } return; }
@@ -12062,6 +12061,7 @@ if('serviceWorker' in navigator){
     </button>
     <div id="pw-usermenu-panel" role="menu" style="display:none;position:absolute;top:48px;right:0;width:230px;background:#fff;border:1px solid var(--pw-border);border-radius:14px;box-shadow:0 14px 38px rgba(31,42,35,.20);overflow:hidden;z-index:200;">
       <div style="padding:6px;">
+        <button class="pw-um-item pw-um-mob" data-act="notif-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Notificaciones<span id="pw-notif-badge-mob" style="display:none;margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:#C24545;color:#fff;font-size:10px;font-weight:700;align-items:center;justify-content:center;">0</span></button>
         <button class="pw-um-item pw-um-mob" data-act="nov-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l16-5v12L3 14z"/><path d="M11.5 16.5a2.5 2.5 0 0 1-5-.5"/></svg>Novedades</button>
         <button class="pw-um-item" data-act="asist-go" data-go="config|profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Perfil</button>
         <button class="pw-um-item" data-act="perfil-open" onclick="try{document.getElementById('pw-usermenu-panel').style.display='none';}catch(e){}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 8.5 22 9.3 17 14 18.3 21 12 17.5 5.7 21 7 14 2 9.3 9 8.5 12 2"/></svg>Puntos y logros</button>
