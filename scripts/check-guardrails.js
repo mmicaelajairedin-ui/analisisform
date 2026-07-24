@@ -2509,13 +2509,12 @@ const RULES = [
     check() {
       var p = read("panel-v2.html");
       if (p) {
-        if (!/function _agResLink/.test(p)) return "panel-v2.html: falta _agResLink() — las reservas ya no derivan su link garantizado.";
-        if (!/meet\.jit\.si/.test(p)) return "panel-v2.html: se cayo la sala automatica (Jitsi) — una reserva sin sala fija quedaria sin link.";
-        if (!/ag-disp-sala/.test(p)) return "panel-v2.html: falta el campo para configurar la sala de videollamada.";
+        if (!/function _agResLink/.test(p)) return "panel-v2.html: falta _agResLink() — las reservas ya no derivan su link centralizado.";
+        if (!/meet\.jit\.si/.test(p)) return "panel-v2.html: se cayo la sala centralizada de Pathway (Jitsi) — una reserva quedaria sin link.";
       }
       var r = read("reservar.html");
       if (r) {
-        if (!/meet\.jit\.si/.test(r)) return "reservar.html: se cayo la sala automatica (Jitsi) — la reserva podria salir sin link.";
+        if (!/meet\.jit\.si/.test(r)) return "reservar.html: se cayo la sala centralizada de Pathway (Jitsi) — la reserva podria salir sin link.";
         if (!/location=/.test(r)) return "reservar.html: el evento de Google ya no incluye el link de la videollamada (location).";
       }
       return null;

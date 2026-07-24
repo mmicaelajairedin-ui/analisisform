@@ -132,9 +132,14 @@ Pathway los trae **predefinidos** (no se crean duplicados).
 
 El **tipo es canónico**, la **sala es única por reserva**: `Pathway-<coach_id>-<cita_id>`
 (determinística → coach y cliente arman la misma; única → dos clientes nunca
-colisionan; notas/grabación quedan por-sesión). La "sala fija" (Meet/Zoom
-personal, ya en `configuracion.sala_video`) queda como **fallback** para quien no
-use JaaS.
+colisionan; notas/grabación quedan por-sesión).
+
+**Pathway CENTRALIZA el video (decisión tomada).** TODAS las llamadas van por la
+**Sala de Pathway** (hoy un Jitsi determinístico; luego la Sala JaaS embebida). Se
+**quitó** la opción de Meet/Zoom propio del coach (`configuracion.sala_video`:
+banner, campo de config y su uso en `reservar.html`/panel). Motivo: el video es de
+Pathway → habilita notas/tareas/grabación/cabra **dentro** de Pathway y evita la
+fuga. El coach no elige dónde se hace la llamada.
 
 ## 4. El video: JaaS (8x8) embebido
 
