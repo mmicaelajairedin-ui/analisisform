@@ -13,12 +13,22 @@
 ## 1. El modelo — una Sala, tres modos, un círculo
 
 ```
-Pathway trae (marketplace/landing/chatbot)  →  PRIMERA LLAMADA / DEMO  →  se convierte en…
-                                                    (la Sala)               ├─ CLIENTE → comisión escalonada
-                                                                            └─ COACH / multicoach → suscripción
-                                                                                    │
-                              el coach nuevo trae/atiende más clientes Pathway ─────┘  (vuelve a empezar)
+NUEVO de afuera (origen=pathway)  →  PRIMERA LLAMADA / DEMO  →  se convierte en…
+  marketplace/landing/chatbot          (Sala, modo conversión)   ├─ CLIENTE Pathway → comisión escalonada
+                                                                  └─ COACH / multicoach → suscripción
+                                                                          │
+        más COACHES = más oferta que atiende y ATRAE más leads ──────────┘  (crece la OFERTA, no el cliente)
+
+YA ADENTRO (origen=propio: cliente del coach o que ya pagó)  →  entra DIRECTO a su panel
+  NO viene de afuera · 0% comisión · no se convierte              con sesiones + historia → Modo Sesión
 ```
+
+**Clave:** lo que recircula y cierra el círculo es la **oferta** (más demos → más
+coaches → más capacidad para atraer/atender leads), **no los clientes**. Un
+cliente que ya está adentro (propio del coach, o que ya pagó) **no vuelve a la
+puerta de conversión**: entra directo a su panel con su historia y va al Modo
+Sesión. La puerta (primera llamada/demo) es **solo para lo nuevo que viene de
+afuera** (`origen=pathway`).
 
 La Sala es el mismo cascarón (video JaaS embebido); lo que cambia es el **panel
 al costado** y el **botón de cierre**, según el `kind`:
