@@ -2322,6 +2322,30 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "reservas: link de videollamada (sala fija) + aviso si falta",
+    why: "Una reserva salio SIN link de videollamada y no se avisaba: ni el coach " +
+         "ni el cliente tenian por donde entrar a la llamada. El Meet automatico de " +
+         "Google es Fase 4 (trabada por la verificacion de Google). Solucion " +
+         "replicable para TODOS: el coach configura una SALA FIJA " +
+         "(configuracion.sala_video) que entra en todas las reservas (panel + evento " +
+         "de Google en reservar.html); si NO la configuro, el panel lo AVISA. Que no " +
+         "vuelva a pasar en silencio.",
+    check() {
+      var p = read("panel-v2.html");
+      if (p) {
+        if (!/function _agSalaLink/.test(p)) return "panel-v2.html: falta _agSalaLink() — las reservas ya no toman el link de la sala fija.";
+        if (!/sin link de videollamada/i.test(p)) return "panel-v2.html: falta el aviso cuando no hay sala configurada (el problema dejo de saltar en el calendario).";
+        if (!/ag-disp-sala/.test(p)) return "panel-v2.html: falta el campo para configurar la sala de videollamada.";
+      }
+      var r = read("reservar.html");
+      if (r) {
+        if (!/SALA\s*=/.test(r)) return "reservar.html: ya no lee la sala fija del coach (window.SALA).";
+        if (!/location=/.test(r)) return "reservar.html: el evento de Google ya no incluye el link de la videollamada (location).";
+      }
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
