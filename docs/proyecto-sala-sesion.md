@@ -206,6 +206,17 @@ lead → demo → conversión → comisión/suscripción → funnel. Hoy está f
 ese hilo **no se atribuye la comisión** ni se ve el funnel. El **nicho** también
 viaja en el lead (busca coach de carrera/fitness/finanzas), no solo en la sesión.
 
+**El marketplace es OPT-IN (perfil público).** Un coach, por defecto, solo agrega
+**sus** clientes → `origen=propio`, **0% siempre**. Recién **si prende su perfil
+público** (aparece en el directorio, `listar-coaches-publicos`/`slug`) Pathway
+puede **traerle leads** → esos son `origen=pathway` → comisión. O sea: **"clientes
+Pathway" solo existen para coaches con perfil público ON.**
+
+**Backfill de `origen` (decisión tomada):** los clientes que ya existen se marcan
+**`propio` por defecto** (nadie es `pathway` hasta que el marketplace se lo trajo).
+Es lo seguro: no cobra comisión de más. Los `pathway` viejos, si los hay, se
+ajustan a mano.
+
 ## 7. Mapa: cada función de Pathway → su rol en el modelo
 
 | Función / pieza (existe) | Qué hace hoy | Rol en la Sala / el círculo |
