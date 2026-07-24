@@ -146,6 +146,12 @@ use JaaS.
   "notas IA de la llamada".
 - Google Meet NO se puede embeber; por eso JaaS. (El Meet automático nativo sigue
   siendo Fase 4 de la agenda, OAuth de Google, trabado.)
+- **Sala de espera con la cabra 🐐 (reusar, no crear).** Si el otro tarda en unirse,
+  en vez de pantalla muerta → aparece el **juego de la cabra** que ya existe
+  (`openJuego`/`pw-juego`, `assets/cabra`). Se detecta con los eventos de JaaS
+  (`videoConferenceJoined`/`participantJoined`): **solo/esperando** → cabra jugable;
+  **entra el otro** → se guarda y arranca la llamada. La espera suma puntos
+  (gamificación que ya existe), no es tiempo muerto.
 
 ## 4b. El cierre de cada modo — conversión + pago (qué sale en la Sala)
 
