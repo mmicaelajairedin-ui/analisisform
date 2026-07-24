@@ -48,7 +48,18 @@ function b64url(input: string | ArrayBuffer | Uint8Array): string {
 }
 
 // PEM (PKCS8) → ArrayBuffer para importar la clave.
+// OJO: Web Crypto SOLO importa PKCS8 ("BEGIN PRIVATE KEY"). ssh-keygen genera
+// PKCS1 ("BEGIN RSA PRIVATE KEY") → hay que convertirla antes:
+//   openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in jaasauth.key -out jaas-pkcs8.key
 function pemToArrayBuffer(pem: string): ArrayBuffer {
+  if (/BEGIN RSA PRIVATE KEY/.test(pem)) {
+    // PKCS1: Web Crypto no la puede importar. Error claro con la solución.
+    throw new Error(
+      "private_key_pkcs1: la clave está en PKCS1 (BEGIN RSA PRIVATE KEY). " +
+      "Convertila a PKCS8 con: openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt " +
+      "-in jaasauth.key -out jaas-pkcs8.key  → y pegá jaas-pkcs8.key en JAAS_PRIVATE_KEY.",
+    );
+  }
   const b64 = pem
     .replace(/-----BEGIN PRIVATE KEY-----/g, "")
     .replace(/-----END PRIVATE KEY-----/g, "")
