@@ -159,9 +159,19 @@ El pago y la conversión **salen desde la misma Sala**, como botón de cierre:
 
 - **Acceso ≠ pago:** "Dar acceso" crea el cliente gratis; el **cobro** es un botón
   aparte (cuando el coach le vende un servicio). Puede haber acceso sin pago.
-- ⚠️ **A verificar en `connect-checkout`:** que un cliente `origen=propio` pague
-  **0% comisión** aunque cobre vía Stripe Connect (hoy `tierRate` cuenta clientes
-  pagos vía Pathway — confirmar que no le aplique a los propios).
+- 🔴 **HALLAZGO CONFIRMADO en `connect-checkout` (plata real):** hoy la comisión se
+  aplica a **TODO** cliente que paga, **sin distinguir propio vs pathway**:
+  - Línea ~184: cuenta `candidatos?coach_id=eq.X&pago_recibido=eq.true` → **todos
+    los pagos, sin filtro de `origen`**.
+  - Línea ~189-190: `fee = monto * tierRate(nPrev+1)` → comisión a **todo** servicio.
+  - **Consecuencias:** (1) un cliente **propio** pagaría comisión (debería ser 0%);
+    (2) los propios **inflan `nPrev`** → tramo más alto también para los pathway.
+  - **Causa raíz:** `candidatos` **no tiene campo `origen`** (gap del hilo). No puede
+    distinguir. Hoy solo "zafa" si Connect se usa únicamente para el marketplace —
+    nada lo garantiza; en la Sala (cobrar a un propio) se rompe.
+  - **Fix (con la fase del hilo):** agregar `origen` a `candidatos` → en
+    connect-checkout `fee=0` si `origen=propio`, y contar **solo `origen=pathway`**
+    para el tramo.
 
 ## 5. La plata — DOS carriles distintos (no mezclar)
 
