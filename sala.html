@@ -64,7 +64,12 @@
   .out .mid{background:var(--amanecer);color:#5a4611}
   .out .no{background:var(--niebla-2);color:var(--soft);border:1px solid var(--border)}
   :where(button,input,textarea,.row):focus-visible{outline:2px solid var(--bosque);outline-offset:2px;border-radius:8px}
+  /* La espera cubre el video (fondo sólido) para que NUNCA se superponga texto
+     con la pantalla de meet. */
+  .wait{background:radial-gradient(120% 120% at 30% 10%,#183328,var(--stage));}
+  #wait-play{margin-top:4px}
 </style>
+<link rel="stylesheet" href="pw-cabra-juego.css">
 </head>
 <body>
 <div class="app">
@@ -82,6 +87,7 @@
         <img src="assets/cabra/frente.gif" alt="" onerror="this.style.display='none'">
         <div class="t" id="wait-t">Preparando la sala…</div>
         <div class="s" id="wait-s">Un momento — cargamos tu videollamada dentro de Pathway.</div>
+        <button class="btn btn-p" id="wait-play" style="display:none">🐐 Jugar mientras esperas</button>
       </div>
     </section>
 
@@ -90,7 +96,7 @@
         <div class="cb" id="objetivos"><div style="font-size:12.5px;color:var(--muted);padding:4px 0">Los objetivos de la sesión aparecen acá.</div></div></div>
 
       <div class="card"><div class="ch"><h2>Notas</h2><span class="saved" id="saved"></span></div>
-        <div class="cb"><textarea id="notas" placeholder="Anotá lo que va saliendo…"></textarea></div></div>
+        <div class="cb"><textarea id="notas" placeholder="Anota lo que va saliendo…"></textarea></div></div>
 
       <div class="card"><div class="ch"><h2>Tareas</h2><span class="ey">en vivo</span></div>
         <div class="cb"><div class="addrow"><input id="tin" placeholder="Nueva tarea… (Enter)"><button class="btn btn-p" id="tadd">+</button></div>
@@ -98,14 +104,15 @@
 
       <div class="card"><div class="ch"><h2>¿Cómo fue?</h2><span class="ey">al terminar</span></div>
         <div class="cb"><div class="out">
-          <button class="btn ok" data-res="convirtio">✅ Convirtió</button>
-          <button class="btn mid" data-res="seguimiento">🟡 Seguir</button>
-          <button class="btn no" data-res="perdido">⚪ No</button>
+          <button class="btn ok" data-res="convirtio">✅ Avanza</button>
+          <button class="btn mid" data-res="seguimiento">🟡 Lo piensa</button>
+          <button class="btn no" data-res="perdido">⚪ Por ahora no</button>
         </div><div id="out-msg" style="font-size:11.5px;color:var(--soft);margin-top:9px"></div></div></div>
     </aside>
   </div>
 </div>
 
+<script src="pw-cabra-juego.js"></script>
 <script>
 "use strict";
 var SB='https://api.pathwaycareercoach.com';
@@ -121,13 +128,25 @@ var CITA = qp('cita') || '';
 var WHO  = qp('con') || '';                          // nombre del otro (para el header)
 
 document.getElementById('who-name').textContent = WHO ? ('Sesión con '+WHO) : 'Sala de sesión';
-document.getElementById('who-sub').textContent = MOD ? 'Sos el anfitrión' : ('Entrás como '+NAME);
+document.getElementById('who-sub').textContent = MOD ? 'Eres el anfitrión' : ('Entras como '+NAME);
 document.getElementById('who-av').textContent = (WHO||NAME||'?').trim().charAt(0).toUpperCase();
 
+function showPlay(on){ var b=document.getElementById('wait-play'); if(b) b.style.display=on?'inline-block':'none'; }
 function waitState(t,s,isErr){ var w=document.getElementById('wait'); if(!w) return;
   w.style.display='flex'; document.getElementById('wait-t').textContent=t;
-  var se=document.getElementById('wait-s'); se.textContent=s; se.className='s'+(isErr?' err':''); }
-function hideWait(){ var w=document.getElementById('wait'); if(w) w.style.display='none'; }
+  var se=document.getElementById('wait-s'); se.textContent=s; se.className='s'+(isErr?' err':'');
+  showPlay(false); }
+function hideWait(){ var w=document.getElementById('wait'); if(w) w.style.display='none'; showPlay(false); try{ if(typeof closeJuego==='function') closeJuego(); }catch(e){} }
+// Sala de espera con el JUEGO de la cabra (el mismo de la app). No es tiempo
+// muerto: mientras la otra persona se une, se puede jugar.
+function waitAlone(){
+  waitState('Esperando a que se una '+(WHO||'la otra persona')+'…','No es tiempo muerto: juega un rato mientras tanto. 🐐');
+  showPlay(true);
+}
+try{
+  var _wp=document.getElementById('wait-play');
+  if(_wp) _wp.onclick=function(){ try{ if(typeof openJuego==='function') openJuego(); }catch(e){} };
+}catch(e){}
 
 // Video CENTRALIZADO por Pathway: embebemos meet.jit.si con el MISMO room que el
 // link del cliente (Pathway-<coach>-<hora>). Así coach y cliente SIEMPRE caen en
@@ -156,19 +175,22 @@ function boot(){
       interfaceConfigOverwrite:{ MOBILE_APP_PROMO:false, SHOW_JITSI_WATERMARK:false },
       userInfo:{ displayName:NAME, email:EMAIL }
     });
-    // Entré yo → sala lista. Si estoy solo, muestro la espera con la cabra.
+    // Mientras meet muestra SU pantalla (prejoin/lobby), ocultamos NUESTRO overlay
+    // para que no se superpongan los textos. Lo volvemos a mostrar (con el juego)
+    // recién cuando ya entré y estoy sola/o.
+    hideWait();
     api.addListener('videoConferenceJoined', function(){
       startTimer();
       var n = api.getNumberOfParticipants ? api.getNumberOfParticipants() : 1;
       if(n>1){ hideWait(); document.getElementById('estado').textContent='En llamada'; }
-      else { waitState('Esperando a que se una '+(WHO||'la otra persona')+'…','Mientras tanto, jugá con la cabra 🐐 (próximamente) — no es tiempo muerto.'); document.getElementById('estado').textContent='Esperando'; }
+      else { waitAlone(); document.getElementById('estado').textContent='Esperando'; }
     });
     api.addListener('participantJoined', function(){ hideWait(); document.getElementById('estado').textContent='En llamada'; });
     api.addListener('participantLeft', function(){ document.getElementById('estado').textContent='Solo en sala'; });
     api.addListener('readyToClose', function(){ document.getElementById('estado').textContent='Llamada terminada'; hideWait(); });
   }).catch(function(e){
     var code=(e && (e.error||e.message))||'error';
-    waitState('No cargó el video acá','Abrí la videollamada en una pestaña nueva — es la misma sala. Detalle: '+code,true);
+    waitState('No cargó el video acá','Abre la videollamada en una pestaña nueva — es la misma sala. Detalle: '+code,true);
     try{ var se=document.getElementById('wait-s'); if(se) se.insertAdjacentHTML('afterend',directBtn()); }catch(_e){}
     try{ console.error('[sala]',e); }catch(_e){}
   });
