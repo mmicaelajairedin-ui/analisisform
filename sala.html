@@ -148,14 +148,25 @@ try{
   if(_wp) _wp.onclick=function(){ try{ if(typeof openJuego==='function') openJuego(); }catch(e){} };
 }catch(e){}
 
-// Video CENTRALIZADO por Pathway: embebemos meet.jit.si con el MISMO room que el
-// link del cliente (Pathway-<coach>-<hora>). Así coach y cliente SIEMPRE caen en
-// la misma sala, sin token ni login. El valor de Pathway es el panel alrededor
-// (objetivos/notas/tareas/resultado), no el video en sí. JaaS (white-label) queda
-// para cuando también enrutemos al cliente por la Sala.
-var JITSI_HOST='meet.jit.si';
-var DIRECT='https://'+JITSI_HOST+'/'+ROOM;   // link directo (fallback si el embed no carga)
+// Video CENTRALIZADO por Pathway con JaaS (8x8) WHITE-LABEL: sin la marca de
+// meet.jit.si, se ve como Pathway. Coach y cliente entran los dos por esta Sala
+// con el MISMO room (Pathway-<coach>-<hora>) → caen juntos. Si hay jaas-token
+// desplegado, firmamos un JWT (rol moderador, sala privada); si no, el embed
+// igual funciona con el solo App ID. El valor de Pathway es el panel alrededor.
+var APP_ID='vpaas-magic-cookie-640bc6c7694142fabd738d7c51d325dd';
+var DIRECT='https://8x8.vc/'+APP_ID+'/'+ROOM;   // link directo (fallback si el embed no carga)
 function loadScript(src){ return new Promise(function(res,rej){ var s=document.createElement('script'); s.src=src; s.async=true; s.onload=res; s.onerror=function(){ rej(new Error('no_script')); }; document.head.appendChild(s); }); }
+
+// JWT opcional (mejor experiencia: moderador, sin "esperando anfitrión"). Si la
+// función no está desplegada o falla, seguimos sin token (el App ID alcanza).
+function getToken(){
+  try{
+    return fetch(SB+'/functions/v1/jaas-token',{method:'POST',
+      headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},
+      body:JSON.stringify({room:ROOM,name:NAME,email:EMAIL,moderator:MOD})
+    }).then(function(r){ return r.ok?r.json():null; }).catch(function(){ return null; });
+  }catch(e){ return Promise.resolve(null); }
+}
 
 var api=null, TSTART=0, tInt=null;
 function startTimer(){ if(tInt) return; TSTART=Date.now(); var el=document.getElementById('timer'); tInt=setInterval(function(){ var s=Math.floor((Date.now()-TSTART)/1000); el.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); },1000); }
@@ -165,16 +176,20 @@ function directBtn(){ return '<a class="btn btn-p" href="'+DIRECT+'" target="_bl
 
 function boot(){
   waitState('Preparando la sala…','Cargamos tu videollamada dentro de Pathway.');
-  loadScript('https://'+JITSI_HOST+'/external_api.js').then(function(){
+  loadScript('https://8x8.vc/'+APP_ID+'/external_api.js').then(function(){
     /* global JitsiMeetExternalAPI */
     if(typeof JitsiMeetExternalAPI==='undefined') throw new Error('no_api');
-    api = new JitsiMeetExternalAPI(JITSI_HOST,{
-      roomName: ROOM,
+    return getToken();
+  }).then(function(tok){
+    var opts={
+      roomName: ((tok&&tok.appId)||APP_ID)+'/'+((tok&&tok.room)||ROOM),
       parentNode: document.getElementById('jaas'),
       configOverwrite:{ prejoinPageEnabled:false, disableDeepLinking:true },
-      interfaceConfigOverwrite:{ MOBILE_APP_PROMO:false, SHOW_JITSI_WATERMARK:false },
+      interfaceConfigOverwrite:{ MOBILE_APP_PROMO:false },
       userInfo:{ displayName:NAME, email:EMAIL }
-    });
+    };
+    if(tok&&tok.jwt) opts.jwt=tok.jwt;
+    api = new JitsiMeetExternalAPI('8x8.vc',opts);
     // Mientras meet muestra SU pantalla (prejoin/lobby), ocultamos NUESTRO overlay
     // para que no se superpongan los textos. Lo volvemos a mostrar (con el juego)
     // recién cuando ya entré y estoy sola/o.

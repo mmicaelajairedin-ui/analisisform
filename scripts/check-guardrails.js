@@ -2500,22 +2500,29 @@ const RULES = [
   {
     name: "reservas: link de videollamada SIEMPRE presente (garantia)",
     why: "Una reserva salio SIN link de videollamada: ni el coach ni el cliente " +
-         "tenian por donde entrar. El Meet automatico de Google es Fase 4 (trabada). " +
-         "GARANTIA replicable para TODOS: toda reserva tiene link SI o SI — la sala " +
-         "fija del coach (configuracion.sala_video) si la configuro, o una sala " +
-         "automatica de Pathway (Jitsi, sin OAuth) determinista por coach+horario. " +
-         "reservar.html arma el mismo link que el panel deriva (_agResLink), asi el " +
-         "cliente y el coach entran al MISMO lugar. No puede volver a pasar.",
+         "tenian por donde entrar. GARANTIA replicable para TODOS: el link lo damos " +
+         "NOSOTROS y abre nuestra Sala (sala.html, JaaS white-label). El room es " +
+         "determinista por coach+horario (Pathway-<coach>-<hora>): el panel del coach " +
+         "(_agSalaUrl/_agResLink) y reservar.html arman EXACTAMENTE el mismo → coach y " +
+         "cliente caen en la MISMA sala. sala.html embebe JaaS con el App ID. " +
+         "No puede volver a pasar.",
     check() {
       var p = read("panel-v2.html");
       if (p) {
-        if (!/function _agResLink/.test(p)) return "panel-v2.html: falta _agResLink() — las reservas ya no derivan su link centralizado.";
-        if (!/meet\.jit\.si/.test(p)) return "panel-v2.html: se cayo la sala centralizada de Pathway (Jitsi) — una reserva quedaria sin link.";
+        if (!/function _agSalaUrl/.test(p)) return "panel-v2.html: falta _agSalaUrl() — las reservas ya no derivan su sala centralizada.";
+        if (!/sala\.html\?room=/.test(p)) return "panel-v2.html: _agSalaUrl ya no arma el link a la Sala (sala.html?room=).";
+        if (!/Pathway-/.test(p)) return "panel-v2.html: se cayo el room determinista compartido (Pathway-<coach>-<hora>).";
       }
       var r = read("reservar.html");
       if (r) {
-        if (!/meet\.jit\.si/.test(r)) return "reservar.html: se cayo la sala centralizada de Pathway (Jitsi) — la reserva podria salir sin link.";
+        if (!/sala\.html\?room=/.test(r)) return "reservar.html: el cliente ya no entra por la Sala centralizada (sala.html?room=).";
+        if (!/Pathway-/.test(r)) return "reservar.html: se cayo el room determinista compartido con el coach.";
         if (!/location=/.test(r)) return "reservar.html: el evento de Google ya no incluye el link de la videollamada (location).";
+      }
+      var s = read("sala.html");
+      if (s) {
+        if (!/vpaas-magic-cookie-/.test(s)) return "sala.html: se cayo el App ID de JaaS (8x8) — la Sala no embebe el video white-label.";
+        if (!/8x8\.vc/.test(s)) return "sala.html: la Sala ya no carga JaaS (8x8.vc).";
       }
       return null;
     },
