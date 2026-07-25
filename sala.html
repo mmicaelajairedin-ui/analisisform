@@ -317,33 +317,45 @@ function wireControls(){
   };
 }
 
-// ── Gate por horario: la sala se ABRE cerca de la reunión, no siempre ──
-// Coach entra hasta 60 min antes (para preparar); el cliente, 15 min antes.
-// Hasta 60 min después del final sigue abierta. Fuera de eso, avisa (no carga video).
+// ── Gate por horario: la sala se ABRE 5 min antes de la reunión (para los dos) ──
+// Antes de eso, pantalla de cuenta regresiva ("faltan X"). Se abre SOLA al llegar.
+// Sigue abierta hasta 60 min después del final. Sin hora (link casual) → no gatea.
 function _gateState(){
-  if(!STARTms) return 'open';                 // sin hora (link viejo/casual) → no gatear
+  if(!STARTms) return 'open';
   var now=Date.now();
-  var openFrom = STARTms - (MOD?60:15)*60000;
+  var openFrom = STARTms - 5*60000;   // 5 min antes, coach y cliente igual
   var closeAt  = STARTms + ((parseInt(DUR,10)||60) + 60)*60000;
   if(now < openFrom) return 'early';
   if(now > closeAt)  return 'late';
   return 'open';
 }
-function _startLabel(){ try{ return new Date(STARTms).toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
+function _hhmm(ms){ try{ return new Date(ms).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
+function _fmtLeft(ms){
+  var s=Math.max(0,Math.floor(ms/1000)), h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+  if(h>0) return h+' h '+m+' min';
+  if(m>0) return m+' min '+('0'+sec).slice(-2)+' s';
+  return sec+' s';
+}
 function _hideCtrls(on){ var c=el('ctrls'); if(c) c.style.display=on?'none':'flex'; }
-var _booted=false;
-function _enter(){ if(_booted) return; _booted=true; _hideCtrls(false); boot(); }
+var _booted=false, _gateTimer=null;
+function _enter(){ if(_booted) return; _booted=true; if(_gateTimer){ clearInterval(_gateTimer); _gateTimer=null; } _hideCtrls(false); boot(); }
 function startSala(){
   if(_booted) return;
   var g=_gateState();
+  if(g==='late'){ _hideCtrls(true); var w=el('wait'); if(w) w.style.display='flex'; el('wait-t').textContent='Esta reunión ya terminó'; var se=el('wait-s'); if(se){ se.className='s err'; se.textContent='Si necesitás, coordiná otra con '+(WHO||'la otra persona')+'.'; } showPlay(false); return; }
   if(g==='early'){
     _hideCtrls(true);
-    waitState('La sala se abre poco antes','Tu reunión es el '+_startLabel()+'. Volvé un rato antes y entrás directo — esta pantalla se abre sola.');
-    // El coach puede entrar antes para preparar/probar; el cliente espera.
-    if(MOD){ try{ var se=el('wait-s'); if(se && !el('gate-in')){ se.insertAdjacentHTML('afterend','<button id="gate-in" class="btn btn-p" style="margin-top:8px">Entrar igual (preparar)</button>'); el('gate-in').onclick=_enter; } }catch(e){} }
-    setTimeout(startSala, 30000); return;
+    var w2=el('wait'); if(w2) w2.style.display='flex'; showPlay(false);
+    el('estado').textContent='Falta poco';
+    var tick=function(){
+      if(_booted) return;
+      if(_gateState()!=='early'){ _enter(); return; }   // llegó la hora → se abre sola
+      el('wait-t').textContent='Tu reunión es a las '+_hhmm(STARTms);
+      var se2=el('wait-s'); if(se2){ se2.className='s'; se2.textContent='Faltan '+_fmtLeft(STARTms-Date.now())+' · esta pantalla se abre sola cuando empiece.'; }
+    };
+    tick(); if(!_gateTimer) _gateTimer=setInterval(tick,1000);
+    return;
   }
-  if(g==='late'){ _hideCtrls(true); waitState('Esta reunión ya terminó','Si necesitás, coordiná otra con '+(WHO||'la otra persona')+'.',true); return; }
   _enter();
 }
 startSala();
