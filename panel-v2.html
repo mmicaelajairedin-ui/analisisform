@@ -1269,16 +1269,37 @@ function makeAvatar(name, hueOverride){
     "</svg>";
   return "data:image/svg+xml;utf8,"+encodeURIComponent(svg);
 }
-// <img> que cae a iniciales si no hay foto o la foto está rota
+// <img> que cae a iniciales si no hay foto o la foto está rota.
+// Todas las fotos que pasan por acá salen NÍTIDAS: _thumb() le pide a Uploadcare
+// el recorte al tamaño real (leído del width:NNpx del attrs, o 120 por defecto),
+// así no se ven borrosas en miniatura. (_thumb ignora las no-Uploadcare y las
+// iniciales data:, así que es seguro para todos los casos.)
 function avImg(src, name, attrs){
   var fb = makeAvatar(name);
-  var s = (src && (""+src).trim()) ? src : fb;
+  var px=120; try{ var mw=(""+(attrs||"")).match(/width:\s*(\d+)px/); if(mw) px=parseInt(mw[1],10)||120; }catch(e){}
+  var s = (src && (""+src).trim()) ? _thumb(src, px) : fb;
   return "<img src=\""+esc(s)+"\" onerror=\"this.onerror=null;this.src='"+fb+"'\" alt=\""+esc(name||"")+"\" "+(attrs||"")+">";
+}
+// Miniatura NÍTIDA. Las fotos viven en Uploadcare (ucarecdn); si se cargan
+// full-res y el navegador las achica a 26-40px se ven borrosas/pixeladas. Acá
+// le pedimos al CDN el recorte cuadrado EXACTO al tamaño que se muestra (×2 en
+// pantallas retina) con calidad smart y formato auto (webp). Fuente ÚNICA: al
+// renderizar una foto chica, envolverla en _thumb(url, px). No-Uploadcare o
+// data: se devuelven igual.
+function _thumb(url, px){
+  url=""+(url||""); if(!url || /^data:/i.test(url)) return url;
+  if(!/ucarecd(n)?\.(net|com)/i.test(url)) return url;             // solo Uploadcare
+  if(/\/-\/(scale_crop|resize|preview)\b/.test(url)) return url;   // ya trae operación → no duplicar
+  var dpr=1; try{ if(window.devicePixelRatio>1) dpr=2; }catch(e){}
+  var s=Math.max(1,Math.round((px||40)*dpr));
+  var ops="-/scale_crop/"+s+"x"+s+"/center/-/quality/smart/-/format/auto/";
+  var m=url.match(/^(https?:\/\/[^\/]+\/[0-9a-fA-F-]{36}\/)(.*)$/);  // …/<uuid>/<resto>
+  return m ? (m[1]+ops+m[2]) : url;
 }
 // Avatar chico para las burbujas de chat. Solo muestra foto si es URL real
 // (http). Si no hay foto, devuelve "" (la burbuja queda como estaba).
 function _chatAv(url, name){
-  if(/^(https?:|data:)/i.test(""+(url||""))) return "<img src=\""+esc(url)+"\" style=\"width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0\" alt=\"\">";
+  if(/^(https?:|data:)/i.test(""+(url||""))) return "<img src=\""+esc(_thumb(url,28))+"\" style=\"width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0\" alt=\"\">";
   var ini=(""+(name||"")).trim().split(/\s+/).map(function(w){return w.charAt(0)||"";}).slice(0,2).join("").toUpperCase()||"?";
   return "<div style=\"width:28px;height:28px;border-radius:50%;background:var(--pw-bosque);color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700\">"+esc(ini)+"</div>";
 }
@@ -3227,10 +3248,10 @@ function _agProxAv(it,sz){ var acc=it.col||"#8C7B80";
 function _proxDualAv(it){
   var acc=it.col||"#8C7B80", sz=40;
   var _cli = it.foto
-    ? "<img src='"+esc(it.foto)+"' alt='' style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;object-fit:cover;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.14)'>"
+    ? "<img src='"+esc(_thumb(it.foto,sz))+"' alt='' style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;object-fit:cover;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.14)'>"
     : "<span style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;background:"+acc+"26;border:2.5px solid #fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px'>"+(it.ico||"🗓️")+"</span>";
   var _co = (COACH&&COACH.photo)
-    ? "<img src='"+esc(COACH.photo)+"' alt='' style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;object-fit:cover;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.14)'>"
+    ? "<img src='"+esc(_thumb(COACH.photo,sz))+"' alt='' style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;object-fit:cover;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.14)'>"
     : "<span style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;background:var(--pw-bosque);color:#fff;border:2.5px solid #fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:15px'>"+esc((((COACH&&COACH.name)||"C")+"").charAt(0).toUpperCase())+"</span>";
   return "<div style='display:flex;align-items:center;flex-shrink:0'>"+_co+"<span style='margin-left:-13px'>"+_cli+"</span></div>";
 }
@@ -3258,7 +3279,7 @@ function _agProxRender(){
   if(_resumen){
     var rest=list.slice(1).slice(0,4);
     var rows=rest.length?rest.map(function(x){
-      var _xav=x.foto?("<img src='"+esc(x.foto)+"' alt='' style='width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0'>"):("<span style='width:26px;height:26px;border-radius:50%;background:"+(x.col||"#8C7B80")+"22;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0'>"+(x.ico||"🗓️")+"</span>");
+      var _xav=x.foto?("<img src='"+esc(_thumb(x.foto,26))+"' alt='' style='width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0'>"):("<span style='width:26px;height:26px;border-radius:50%;background:"+(x.col||"#8C7B80")+"22;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0'>"+(x.ico||"🗓️")+"</span>");
       return "<div style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border)'>"+
         "<span style='font-size:11px;font-weight:700;color:var(--pw-text-soft);width:40px;flex-shrink:0'>"+_agTime(x.ms)+"</span>"+_xav+
         "<div style='min-width:0'><div style='font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(x.title)+"</div>"+

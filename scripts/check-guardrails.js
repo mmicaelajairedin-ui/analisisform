@@ -219,6 +219,46 @@ const RULES = [
     },
   },
   {
+    name: "agenda: SIEMPRE detecta la foto (cliente Y coach con cuenta Pathway)",
+    bug: "La 'Próxima sesión' salía con el avatar por defecto cuando la reunión " +
+         "era con otro coach: _cliFotoByEmail solo miraba TUS clientes (window.CLIENTS) " +
+         "y no la lista de coaches (RCOACHES), donde vive la foto de una cuenta Pathway. " +
+         "Este bug volvió VARIAS veces al refactorizar; por eso queda vacunado: la " +
+         "función debe cruzar el email contra AMBAS fuentes.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const m = s.match(/function _cliFotoByEmail\([\s\S]*?\n\}/);
+      if (!m) return "panel-v2.html: falta la función _cliFotoByEmail (resolución de foto por email).";
+      const body = m[0];
+      if (!/window\.CLIENTS/.test(body))
+        return "_cliFotoByEmail dejó de buscar la foto entre tus clientes (window.CLIENTS).";
+      if (!/RCOACHES/.test(body))
+        return "_cliFotoByEmail dejó de buscar la foto en la lista de coaches (RCOACHES): las reuniones con otra cuenta Pathway vuelven a salir sin foto.";
+      return null;
+    },
+  },
+  {
+    name: "fotos nítidas: las miniaturas de Uploadcare piden el recorte al tamaño real",
+    bug: "Las fotos se cargaban full-res y el navegador las achicaba a 26-40px → " +
+         "se veían borrosas/pixeladas en miniatura (pedido varias veces). _thumb() " +
+         "le pide a Uploadcare el scale_crop exacto (×2 retina) y avImg lo aplica a " +
+         "TODO avatar. Si se pierde, las miniaturas vuelven a verse borrosas.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function _thumb\(/.test(s))
+        return "panel-v2.html: falta el helper _thumb() (miniaturas nítidas de Uploadcare).";
+      if (!/scale_crop/.test(s))
+        return "_thumb() ya no pide scale_crop a Uploadcare: las fotos vuelven a verse borrosas en miniatura.";
+      // avImg (el renderizador único de avatares) debe pasar por _thumb.
+      const m = s.match(/function avImg\([\s\S]*?\n\}/);
+      if (m && !/_thumb\(/.test(m[0]))
+        return "avImg() dejó de pasar la foto por _thumb(): las miniaturas de la lista/ranking vuelven a verse borrosas.";
+      return null;
+    },
+  },
+  {
     name: "drag&drop universal: pw-dropzone incluido y subidas nuevas cableadas",
     bug: "pw-dropzone.js convierte cada input[type=file] en dropzone sin tocar el " +
          "guardado (soltar = feed al input + change). La foto del cliente (fcli-foto) " +
