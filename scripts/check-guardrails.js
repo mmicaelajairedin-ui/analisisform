@@ -320,9 +320,9 @@ const RULES = [
     },
   },
   {
-    name: "IA Pathway / Novedades / Perfil: el mismo botón abre Y cierra (toggle)",
-    bug: "El coach tocaba el botón de IA Pathway (o Novedades/Perfil), se abría, y al " +
-         "tocarlo de nuevo NO se cerraba: el handler solo hacía open=true. Los tres " +
+    name: "IA Pathway / Novedades / Perfil / Chat: el mismo botón abre Y cierra (toggle)",
+    bug: "El coach tocaba el botón de IA Pathway (o Novedades/Perfil/Chat), se abría, y al " +
+         "tocarlo de nuevo NO se cerraba: el handler solo hacía open=true. Los cuatro " +
          "triggers deben ser toggle (si ya está abierto, el mismo botón lo cierra). " +
          "Además, el marcador de Novedades no debe ocultarse en desktop cuando la " +
          "columna está abierta, si no no queda botón para re-tocar y cerrar.",
@@ -335,6 +335,12 @@ const RULES = [
       const iaBlock = s.slice(ia, ia + 500);
       if (!/state\.iaChat\.open\b[^]*?open\s*=\s*false/.test(iaBlock))
         return "el handler iachat-open ya no togglea: al re-tocar el botón no cierra el chat de IA.";
+      // Chat de mensajes: el handler chat-open tiene que cerrar si ya está abierto en modo chat.
+      const ch = s.search(/act===?["']chat-open["']/);
+      if (ch < 0) return "panel-v2.html ya no tiene el handler chat-open.";
+      const chBlock = s.slice(ch, ch + 400);
+      if (!/state\.ai\.open\s*&&\s*state\.ai\.mode===?["']chat["'][^]*?open\s*=\s*false/.test(chBlock))
+        return "el handler chat-open ya no togglea: al re-tocar el botón del chat no lo cierra.";
       // Novedades: el handler nov-open tiene que mirar si ya está abierta para cerrar.
       const nv = s.search(/act===?["']nov-open["']/);
       if (nv < 0) return "panel-v2.html ya no tiene el handler nov-open.";
