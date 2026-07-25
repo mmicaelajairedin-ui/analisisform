@@ -48,6 +48,24 @@ const RULES = [
     },
   },
   {
+    name: "agenda: 'Invitar al equipo' solo para el equipo interno (admin/empleado)",
+    bug: "En 'Agendar cita' y en el editor de tipo salía 'Invitar al equipo' con " +
+         "Micaela (admin) y Gonzalo (empleado) a TODOS los coaches. Ese equipo es el " +
+         "INTERNO de Pathway, no el del coach cliente. Ahora _agTeamLoad no carga la " +
+         "lista y la sección no se muestra salvo que el usuario sea admin o empleado.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // _agTeamLoad debe cortar (dejar _AG_TEAM=[]) para no-admin/no-empleado.
+      if (!/function\s+_agTeamLoad\s*\(\)\s*\{\s*if\(!\(typeof RADMIN[\s\S]{0,140}\)\)\{\s*_AG_TEAM=\[\];\s*return;\s*\}/.test(s))
+        return "panel-v2.html: _agTeamLoad ya no corta para no-admin/no-empleado → el equipo interno (Micaela/Gonzalo) vuelve a filtrarse a todos los coaches.";
+      // La sección "Invitar al equipo" debe estar detrás del gate RADMIN||isEmpleado.
+      if (!/_agTeamOk\s*=\s*\(typeof RADMIN[\s\S]{0,120}isEmpleado[\s\S]{0,40}\);[\s\S]{0,120}_teamHtml\s*=\s*_agTeamOk\s*\?/.test(s))
+        return "panel-v2.html: 'Invitar al equipo' ya no está gateado por admin/empleado → vuelve a salirle a los coaches cliente.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: una query rota no deja el panel en blanco (carga con red)",
     bug: "Agregar una columna inexistente (p.ej. xp) a un select hacía que UNA query " +
          "rechazara y el Promise.all entero fallara → coaches, ranking, analíticas y config " +
