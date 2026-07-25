@@ -3198,30 +3198,55 @@ function _agProxItem(){ return _agProxList()[0]||null; }
 function _agProxAv(it,sz){ var acc=it.col||"#8C7B80";
   if(it.foto) return "<img src='"+esc(it.foto)+"' alt='' style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid "+acc+"55'>";
   return "<span style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;background:"+acc+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:"+Math.round(sz*0.44)+"px;flex-shrink:0'>"+(it.ico||"🗓️")+"</span>"; }
+// Dos avatares superpuestos: la coach (COACH.photo) + la otra persona (it.foto si
+// tiene cuenta/foto en Pathway). Es una llamada 1:1 → se ven las dos caras.
+function _proxDualAv(it){
+  var acc=it.col||"#8C7B80", sz=40;
+  var _cli = it.foto
+    ? "<img src='"+esc(it.foto)+"' alt='' style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;object-fit:cover;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.14)'>"
+    : "<span style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;background:"+acc+"26;border:2.5px solid #fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px'>"+(it.ico||"🗓️")+"</span>";
+  var _co = (COACH&&COACH.photo)
+    ? "<img src='"+esc(COACH.photo)+"' alt='' style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;object-fit:cover;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.14)'>"
+    : "<span style='width:"+sz+"px;height:"+sz+"px;border-radius:50%;background:var(--pw-bosque);color:#fff;border:2.5px solid #fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:15px'>"+esc((((COACH&&COACH.name)||"C")+"").charAt(0).toUpperCase())+"</span>";
+  return "<div style='display:flex;align-items:center;flex-shrink:0'>"+_co+"<span style='margin-left:-13px'>"+_cli+"</span></div>";
+}
 function _agProxRender(){
   var box=document.getElementById("cp-agenda-prox"); if(!box) return;
   var list=_agProxList(), it=list[0];
-  if(!it){ box.innerHTML="<h3 style='font-family:var(--pw-serif);font-weight:500;font-size:18px;margin:0 0 10px'>Próxima sesión</h3>"+_agEmpty("No tienes sesiones próximas."); return; }
+  var _resumen=(typeof state!=="undefined" && state.section==="resumen");
+  if(!it){ box.innerHTML="<div class='cp-eyebrow' style='margin-bottom:8px'>Próxima sesión</div>"+_agEmpty("No tienes sesiones próximas."); return; }
   var now=Date.now(), mins=Math.round((it.ms-now)/60000), when;
   if(mins<=60) when="En "+Math.max(1,mins)+" min"; else if(mins<=60*24) when="En "+Math.round(mins/60)+" h"; else { var _dd=new Date(it.ms); when=("0"+_dd.getDate()).slice(-2)+"/"+("0"+(_dd.getMonth()+1)).slice(-2); }
-  var acc=it.col, timeRange=_agTime(it.ms)+(it.durMin?(" - "+_agTime(it.ms+it.durMin*60000)):"");
-  var head="<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:12px'>"+
-    "<h3 style='font-family:var(--pw-serif);font-weight:500;font-size:18px;margin:0'>Próxima sesión</h3>"+
-    "<span style='font-size:10px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 9px;border-radius:100px;white-space:nowrap'>"+esc(when)+"</span></div>";
-  var card="<div style='background:"+acc+"14;border:1px solid "+acc+"33;border-radius:14px;padding:16px'>"+
-    "<div style='display:flex;align-items:center;gap:14px'>"+_agProxAv(it,58)+
-      "<div style='min-width:0'><div style='font-family:var(--pw-serif);font-size:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.title)+"</div>"+
-        (it.sub?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.sub)+"</div>":"")+"</div></div>"+
-    "<div style='display:flex;flex-direction:column;gap:8px;margin-top:14px;font-size:13px;color:var(--pw-text-soft)'>"+
-      "<span style='display:inline-flex;align-items:center;gap:8px'>"+_cIco('clock',14)+esc(timeRange)+" · <span style='text-transform:capitalize'>"+esc(_agDayFull(_agMoKey(new Date(it.ms))))+"</span></span>"+
-      (it.link?"<span style='display:inline-flex;align-items:center;gap:8px'>"+_cIco('video',14)+"Videollamada</span>":"")+
+  var acc=it.col||"#8C7B80", timeRange=_agTime(it.ms)+(it.durMin?(" - "+_agTime(it.ms+it.durMin*60000)):"");
+  var _dia=esc(_agDayFull(_agMoKey(new Date(it.ms))));
+  // Hero COMPACTO: dos fotos + nombre + tipo·hora en una línea + badge "En X" + Entrar.
+  var hero="<div style='background:"+acc+"12;border:1px solid "+acc+"30;border-radius:14px;padding:13px 14px'>"+
+    "<div style='display:flex;align-items:center;gap:11px'>"+_proxDualAv(it)+
+      "<div style='min-width:0;flex:1'><div style='font-weight:600;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.title)+"</div>"+
+        "<div style='font-size:11.5px;color:var(--pw-text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+(it.sub?esc(it.sub)+" · ":"")+"<span style='text-transform:capitalize'>"+_dia+"</span> · "+esc(timeRange)+"</div></div>"+
+      "<span style='font-size:10px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:3px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(when)+"</span>"+
     "</div>"+
-    (it.link?"<a href='"+esc(it.link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='width:100%;height:40px;font-size:14px;text-decoration:none;margin-top:16px;gap:8px;justify-content:center'>"+_cIco('video',15)+" Entrar a la sesión</a>":(it.email?"<a href='mailto:"+esc(it.email)+"' class='cp-btn cp-btn-primary' style='width:100%;height:40px;font-size:14px;text-decoration:none;margin-top:16px;justify-content:center'>Escribirle</a>":""))+
-    (it.email?"<button data-act='nav:clientes' class='cp-btn cp-btn-ghost' style='width:100%;height:36px;font-size:13px;margin-top:8px;gap:6px;justify-content:center'>Ver mis clientes "+_cIco('chevR',14)+"</button>":"")+
+    (it.link?"<a href='"+esc(it.link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='width:100%;height:38px;font-size:13.5px;text-decoration:none;margin-top:12px;gap:7px;justify-content:center'>"+_cIco('video',14)+" Entrar a la sesión</a>":(it.email?"<a href='mailto:"+esc(it.email)+"' class='cp-btn cp-btn-primary' style='width:100%;height:38px;font-size:13.5px;text-decoration:none;margin-top:12px;justify-content:center'>Escribirle</a>":""))+
   "</div>";
-  // Sin "En tu lista": el resto de las reservas ya están en "Reservas y asistencia"
-  // acá abajo (con Unirse + gestión). Acá solo la PRÓXIMA (para entrar rápido).
-  box.innerHTML=head+card;
+  // Segunda columna "Próximas reuniones" (resumen chico) — SOLO en el Resumen (en
+  // Calendario la lista completa ya está abajo, no la repetimos).
+  var _restHtml="";
+  if(_resumen){
+    var rest=list.slice(1).slice(0,4);
+    var rows=rest.length?rest.map(function(x){
+      var _xav=x.foto?("<img src='"+esc(x.foto)+"' alt='' style='width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0'>"):("<span style='width:26px;height:26px;border-radius:50%;background:"+(x.col||"#8C7B80")+"22;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0'>"+(x.ico||"🗓️")+"</span>");
+      return "<div style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border)'>"+
+        "<span style='font-size:11px;font-weight:700;color:var(--pw-text-soft);width:40px;flex-shrink:0'>"+_agTime(x.ms)+"</span>"+_xav+
+        "<div style='min-width:0'><div style='font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(x.title)+"</div>"+
+          (x.sub?"<div style='font-size:10.5px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(x.sub)+"</div>":"")+"</div></div>";
+    }).join(""):"<div style='font-size:12px;color:var(--pw-text-muted);padding:8px 0'>Nada más por ahora.</div>";
+    _restHtml="<div style='flex:1 1 190px;min-width:180px'><div class='cp-eyebrow' style='margin-bottom:6px'>Próximas reuniones</div>"+rows+"</div>";
+  }
+  box.innerHTML=_resumen
+    ? "<div style='display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start'>"+
+        "<div style='flex:1.1 1 240px;min-width:230px'><div class='cp-eyebrow' style='margin-bottom:8px'>Próxima sesión</div>"+hero+"</div>"+_restHtml+
+      "</div>"
+    : "<h3 style='font-family:var(--pw-serif);font-weight:500;font-size:17px;margin:0 0 10px'>Próxima sesión</h3>"+hero;
 }
 // Modal Pathway para tipos de evento y agendar cita (nada de prompts del navegador).
 function viewAgModal(){
