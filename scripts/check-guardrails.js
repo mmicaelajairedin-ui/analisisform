@@ -2890,6 +2890,19 @@ const RULES = [
     },
   },
   {
+    name: "comisión: entrar desde 'busco coach' (marketplace) marca al cliente 'pathway' por email",
+    why: "Si el cliente entra desde el perfil público (busco coach) tiene que quedar 'pathway' " +
+         "(paga comisión), no 'propio'. El link del perfil (coach.html) lleva &mp=1 y reservar.html " +
+         "marca el candidato origen='pathway' por email al reservar (no solo al pagar).",
+    check() {
+      const c = read("coach.html");
+      if (c && /reservar\.html\?c=/.test(c) && !/&mp=1/.test(c)) return "coach.html: los links de reservar del perfil público ya no llevan &mp=1 (no se detecta el marketplace).";
+      const r = read("reservar.html");
+      if (r && /qp\(['"]mp['"]\)===['"]1['"]/.test(r) && !/origen:['"]pathway['"]/.test(r)) return "reservar.html: la reserva del marketplace (mp=1) ya no marca origen='pathway'.";
+      return null;
+    },
+  },
+  {
     name: "candado Pro 'probá gratis, pagá para guardar': la función Pro se ve pero al guardar/enviar abre el modal de upgrade (no alert feo)",
     bug: "El coach Basic VE y prueba las funciones Pro (marca propia, mensajería, +clientes), " +
          "pero al GUARDAR/ENVIAR/AGREGAR se abre un modal de upgrade de Pathway (proGate/pwUpgrade) " +
