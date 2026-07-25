@@ -215,7 +215,8 @@ var VIEWER_TZ = _viewerTz() || DEFAULT_TZ;
 function _setTz(tz){ if(!tz) return; VIEWER_TZ=tz; try{ sel.day=null; sel.ms=null; }catch(e){} renderPicker(); }
 // Hora HH:MM de un instante EN la zona elegida por el visitante.
 function _hmInViewerTz(ms){
-  try{ var f=new Intl.DateTimeFormat('en-GB',{timeZone:VIEWER_TZ,hour:'2-digit',minute:'2-digit',hour12:false}); var m={}; f.formatToParts(new Date(ms)).forEach(function(p){ m[p.type]=p.value; }); var h=(m.hour==='24')?'00':m.hour; return h+':'+m.minute; }
+  // AM/PM (12h) a propósito: "01:00" en 24h se confunde con la 1pm (LatAm usa AM/PM).
+  try{ var f=new Intl.DateTimeFormat('en-US',{timeZone:VIEWER_TZ,hour:'numeric',minute:'2-digit',hour12:true}); return f.format(new Date(ms)); }
   catch(e){ var d=new Date(ms); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
 }
 // Opciones del selector de zona: comunes de LatAm/España + la detectada.
@@ -279,11 +280,17 @@ function _coachInstants(){
   return out;
 }
 // Agrupa los instantes por el DÍA LOCAL del visitante; cada slot con su hora local.
+// Hora (0-23) de un instante EN una zona.
+function _hourInTz(ms,tz){ try{ var f=new Intl.DateTimeFormat('en-GB',{timeZone:tz,hour:'2-digit',hour12:false}); var h=parseInt(f.format(new Date(ms)),10); return (h===24)?0:h; }catch(e){ return new Date(ms).getHours(); } }
 function _viewerGroups(){
-  // Agrupa por DÍA y etiqueta cada hueco EN LA ZONA ELEGIDA (VIEWER_TZ), no la del
-  // navegador — así el visitante ve la hora correcta aunque su dispositivo esté mal.
+  // SOLO la disponibilidad real del coach, en la hora del visitante (AM/PM). PERO
+  // no le ofrecemos horarios que a ÉL le caen de madrugada/noche (p.ej. la 1 AM):
+  // eso no se agenda. Si no hay ninguno que le sirva, el empty-state lo manda a
+  // coordinar por WhatsApp. El horario que elige se guarda TAL CUAL (nunca se cambia).
   var inst=_coachInstants(), groups=[], byKey={};
   inst.forEach(function(ms){
+    var hh=_hourInTz(ms, VIEWER_TZ);
+    if(hh<7 || hh>=22) return; // de 7:00 a 21:59 en la hora del cliente
     var y=_ymdInTz(new Date(ms), VIEWER_TZ); var key=y.y+'-'+y.mo+'-'+y.d;
     var g=byKey[key]; if(!g){ g={key:key, ymd:y, d:new Date(ms), slots:[]}; byKey[key]=g; groups.push(g); }
     g.slots.push({ms:ms, label:_hmInViewerTz(ms)});
@@ -548,15 +555,19 @@ function renderPicker(){
     "<div class='stp'><div class='num'>3</div><div class='lab'>Confirmación</div><div class='sub'>Reserva</div></div>"+
   "</div>";
   var title=isDemo?("Conocé Pathway en una demo personalizada de "+DUR+" minutos"):("Reserva tu "+esc(TYPE.label||'sesión'));
+  // Banner PROMINENTE de zona: el cliente ve, de entrada, que los horarios están
+  // en SU hora (y puede cambiar la ciudad). Evita el "creí que era la 1pm".
+  // (El bloque de duración/formato/precio ahora vive en la columna izquierda —
+  //  `aboutHtml` —, por eso acá ya no va el viejo `meta`.)
+  var tzBanner="<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#EAF5EE;border:1px solid #CDE7D6;border-radius:10px;padding:9px 12px;margin:2px 0 12px;font-size:12.5px;color:#1B4332'>"+
+    "<span>🕐 <strong>Horarios en tu hora:</strong></span>"+
+    "<select id='tz-sel' onchange='_setTz(this.value)' style='font-size:12.5px;padding:6px 9px;border:1px solid #CDE7D6;border-radius:9px;background:#fff;color:#1B2E26;font-family:inherit;cursor:pointer;max-width:210px'>"+_tzOptions()+"</select>"+
+    "<span style='color:#5A6A60'>cámbiala si no es la tuya</span>"+
+  "</div>";
   var pick = emptyDays
-    ? "<div class='lbl'>Disponibilidad</div><div style='font-size:13px;color:var(--soft);padding:6px 0 10px'>"+esc(FIRST)+" todavía no cargó días disponibles. Prueba con otra persona o escribile.</div>"
-    : "<div class='lbl'>Elige el día</div><div class='days' id='days'>"+daysHtml+"</div>"+
+    ? "<div class='lbl'>Disponibilidad</div>"+tzBanner+"<div style='font-size:13px;color:var(--soft);padding:2px 0 10px'>No hay horarios que te queden bien en tu zona por ahora. Escribile a "+esc(FIRST)+" y coordinan uno directamente.</div><a href='"+waHref+"' target='_blank' rel='noopener' style='display:inline-block;background:#25D366;color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:700;font-size:13px'>Escribir por WhatsApp</a>"
+    : tzBanner+"<div class='lbl'>Elige el día</div><div class='days' id='days'>"+daysHtml+"</div>"+
       "<div class='lbl'>Elige el horario</div><div class='slots' id='slots'>"+slotsHtml+"</div>"+
-      "<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px;font-size:12.5px;color:#5A6A60'>"+
-        "<span>🕐 Horarios en:</span>"+
-        "<select id='tz-sel' onchange='_setTz(this.value)' style='font-size:12.5px;padding:6px 9px;border:1px solid #D8E5DD;border-radius:9px;background:#fff;color:#1B2E26;font-family:inherit;cursor:pointer;max-width:230px'>"+_tzOptions()+"</select>"+
-      "</div>"+
-      "<div style='font-size:11px;color:#8A968E;margin-top:4px'>¿La hora no coincide con la tuya? Elige tu ciudad/zona arriba — así reservas en tu hora correcta.</div>"+
       "<div class='lbl'>Cuéntanos tus datos</div>"+
       "<div class='bk-form2'>"+
         "<div class='field'><input id='f-name' placeholder='Nombre y apellido'></div>"+
@@ -619,10 +630,10 @@ function _tzShort(tz){ try{ return (''+(tz||'')).split('/').pop().replace(/_/g,'
 function fechaEnTz(x,tz){
   if(!tz) return fechaLinda(x);
   try{
-    var f=new Intl.DateTimeFormat('es',{timeZone:tz,weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',hour12:false});
-    var m={}; f.formatToParts(x).forEach(function(p){ m[p.type]=p.value; });
-    var h=(m.hour==='24')?'00':m.hour;
-    return m.weekday+' '+m.day+' de '+m.month+' · '+h+':'+m.minute+' h';
+    // Fecha en español + hora en AM/PM (inequívoca): "lunes 27 de julio · 1:00 PM".
+    var f=new Intl.DateTimeFormat('es',{timeZone:tz,weekday:'long',day:'numeric',month:'long'});
+    var t=new Intl.DateTimeFormat('en-US',{timeZone:tz,hour:'numeric',minute:'2-digit',hour12:true});
+    return f.format(x)+' · '+t.format(x);
   }catch(e){ return fechaLinda(x); }
 }
 
@@ -693,14 +704,18 @@ function confirmar(){
   // del coach arma EXACTAMENTE el mismo → coach y cliente caen en la MISMA sala.
   // No usa Meet/Zoom del coach.
   var _room='Pathway-'+(CID||'x')+'-'+start.getTime();
-  var _link=location.origin+'/sala.html?room='+encodeURIComponent(_room)+'&mod=0&name='+encodeURIComponent(name)+'&email='+encodeURIComponent(email)+'&con='+encodeURIComponent(FIRST||'');
+  var _link=location.origin+'/sala.html?room='+encodeURIComponent(_room)+'&mod=0&name='+encodeURIComponent(name)+'&email='+encodeURIComponent(email)+'&con='+encodeURIComponent(FIRST||'')+'&start='+start.getTime()+'&dur='+(DUR||60);
   var gurl='https://calendar.google.com/calendar/u/0/r/eventedit?text='+encodeURIComponent(title)+
     '&dates='+fmt(start)+'/'+fmt(end)+'&location='+encodeURIComponent(_link)+'&details='+encodeURIComponent('Reserva desde Pathway.\nNombre: '+name+'\nEmail: '+email+'\n\nLink de la videollamada: '+_link+(answersTxt?('\n\n'+answersTxt):''));
-  if(EMAIL) gurl+='&add='+encodeURIComponent(EMAIL);
+  // OJO: NO agregamos '&add=' (no invitamos a nadie). Si invitáramos, Google le
+  // mandaría un email de invitación que puede traer su Meet automático → dos links.
+  // Cada persona agrega el evento a SU propio calendario al tocar el botón.
 
   var _cid=(CID||qp('c')), _iso=start.toISOString();
   // Token único de la reserva → link para cancelar/reprogramar (va en el email).
   var _tk=_tok(), _manage=location.origin+'/gestionar-cita.html?t='+_tk;
+  // Invitación de calendario (.ics) con SOLO nuestro link (sin Meet de Google).
+  var _ics=_icsBuild(title, +start, +end, _link, _tk);
   // Guarda la cita. Reintenta SIN 'respuestas' si esa columna todavía no existe
   // en la base (así la reserva nunca se pierde por falta de la migración).
   var _postCita=function(withResp){
@@ -714,10 +729,11 @@ function confirmar(){
     // 1) Registro best-effort en la base (para que el coach lo vea aunque no use Google).
     try{ _postCita(true); }catch(e){}
     TAKEN[start.getTime()]=true;
-    // 2) Emails de confirmación (Brevo) — al que reserva y al coach (con respuestas).
-    sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers);
-    // 3) Google Calendar para que quede en el calendario del coach.
-    var w=window.open(gurl,'_blank'); if(!w){ location.href=gurl; }
+    // 2) Emails de confirmación (Brevo). El botón "Agregar a Google Calendar" abre
+    //    Google con el evento cargado (guardar y listo) — sin invitar a nadie, así
+    //    NO aparece el Meet automático. El .ics va adjunto solo como respaldo para
+    //    Apple/Outlook. NADA automático a Google: la cita ya quedó en el panel.
+    sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
     ok(name, start, gurl);
   };
   // Re-chequeo anti doble-booking JUSTO antes de confirmar: si el hueco se ocupó
@@ -735,7 +751,20 @@ function confirmar(){
 
 // Token aleatorio para el link de gestionar la cita (cancelar/reprogramar).
 function _tok(){ try{ var a=new Uint8Array(16); crypto.getRandomValues(a); return Array.prototype.map.call(a,function(b){return ('0'+b.toString(16)).slice(-2);}).join(''); }catch(e){ return (Date.now().toString(36)+Math.random().toString(36).slice(2,10)); } }
-function sendEmails(name, email, tlabel, F, gurl, manageUrl, origen, answers){
+// Invitación de calendario (.ics) — se agrega a CUALQUIER calendario (Google/
+// Apple/Outlook) con SOLO nuestro link, SIN el Meet que Google pega solo. Es la
+// forma limpia de "agregar al calendario" sin que queden dos links.
+function _icsBuild(title, startMs, endMs, link, tk){
+  function z(n){ return ('0'+n).slice(-2); }
+  function utc(d){ d=new Date(d); return d.getUTCFullYear()+z(d.getUTCMonth()+1)+z(d.getUTCDate())+'T'+z(d.getUTCHours())+z(d.getUTCMinutes())+z(d.getUTCSeconds())+'Z'; }
+  function e(s){ return (''+(s||'')).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n'); }
+  var raw=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Pathway//Reserva//ES','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+    'UID:'+(tk||utc(Date.now()))+'@pathwaycareercoach.com','DTSTAMP:'+utc(Date.now()),'DTSTART:'+utc(startMs),'DTEND:'+utc(endMs),
+    'SUMMARY:'+e(title),'DESCRIPTION:'+e('Tu sesión en Pathway. Entra por este link: '+link),'LOCATION:'+e(link),'END:VEVENT','END:VCALENDAR'].join('\r\n');
+  var b64=''; try{ b64=btoa(unescape(encodeURIComponent(raw))); }catch(_e){}
+  return { raw:raw, b64:b64, url:'data:text/calendar;charset=utf-8,'+encodeURIComponent(raw) };
+}
+function sendEmails(name, email, tlabel, F, gurl, manageUrl, origen, answers, joinLink, icsB64){
   var brand=(PRO?COACH:'Pathway');
   // Nota de zona horaria: solo si coach y cliente están en zonas distintas.
   var _cliOtherTz=F.diff?('<div style="font-size:12.5px;color:#7A8A80;margin-top:5px">Para '+esc(FIRST)+' es a las '+esc(((F.coach||'').split(' · ')[1]||F.coach))+' ('+esc(F.coTz)+').</div>'):'';
@@ -754,10 +783,12 @@ function sendEmails(name, email, tlabel, F, gurl, manageUrl, origen, answers){
       '<div style="background:#F0F5EF;border-radius:12px;padding:16px 18px;margin-bottom:18px">'+
         '<div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700">Cuándo'+(F.diff?' · tu hora ('+esc(F.cliTz)+')':'')+'</div>'+
         '<div style="font-size:16px;font-weight:700;color:#1B4332;text-transform:capitalize">'+esc(F.cli)+'</div>'+_cliOtherTz+'</div>'+
-      '<a href="'+esc(gurl)+'" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px">Agregar a mi Google Calendar</a>'+
-      (manageUrl?('<p style="font-size:12.5px;color:#8A968E;margin-top:18px;line-height:1.5">¿No puedes en ese horario? <a href="'+esc(manageUrl)+'" style="color:#2D6A4F;font-weight:700">Cancelar o reprogramar</a>.</p>'):'<p style="font-size:12.5px;color:#8A968E;margin-top:18px;line-height:1.5">Si necesitas reprogramar, responde este email y coordinamos.</p>')+
+      '<a href="'+esc(joinLink)+'" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px">Entrar a la videollamada</a>'+
+      '<div style="margin-top:12px"><a href="'+esc(gurl)+'" style="display:inline-block;background:#fff;color:#1B4332;border:1.5px solid #CFE3D4;text-decoration:none;padding:10px 20px;border-radius:10px;font-weight:700;font-size:13.5px">📅 Agregar a Google Calendar</a></div>'+
+      '<p style="font-size:11.5px;color:#9AA69E;margin-top:8px;line-height:1.5">Se abre Google Calendar, tocas <strong>Guardar</strong> y listo. (Adjuntamos la invitación por si usas Apple/Outlook.)</p>'+
+      (manageUrl?('<p style="font-size:12.5px;color:#8A968E;margin-top:12px;line-height:1.5">¿No puedes en ese horario? <a href="'+esc(manageUrl)+'" style="color:#2D6A4F;font-weight:700">Cancelar o reprogramar</a>.</p>'):'<p style="font-size:12.5px;color:#8A968E;margin-top:12px;line-height:1.5">Si necesitas reprogramar, responde este email y coordinamos.</p>')+
     '</div></div></div>';
-  postEmail({ to:email, to_name:name, subject:'✅ Reserva confirmada · '+tlabel+' con '+FIRST, html:htmlCli, reply_to:(EMAIL||'hi@pathwaycareercoach.com'), signature:'none' });
+  postEmail({ to:email, to_name:name, subject:'✅ Reserva confirmada · '+tlabel+' con '+FIRST, html:htmlCli, reply_to:(EMAIL||'hi@pathwaycareercoach.com'), signature:'none', attachment:(icsB64?[{content:icsB64, name:'sesion.ics'}]:undefined) });
   // Al coach
   if(EMAIL){
     var htmlCoach='<div style="font-family:Inter,-apple-system,Segoe UI,Arial,sans-serif;color:#1B2E26">'+
@@ -768,9 +799,10 @@ function sendEmails(name, email, tlabel, F, gurl, manageUrl, origen, answers){
       '<p style="font-size:14px">Contacto: <a href="mailto:'+esc(email)+'">'+esc(email)+'</a></p>'+
       (origen?('<p style="font-size:14px">Te encontró por: <strong>'+esc(origen)+'</strong></p>'):'')+
       ((answers&&answers.length)?('<div style="background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0"><div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700;margin-bottom:6px">Sus respuestas</div>'+answers.map(function(x){ return '<div style="font-size:13.5px;margin-bottom:7px"><span style="color:#7A8A80">'+esc(x.q)+':</span> <strong>'+esc(x.a)+'</strong></div>'; }).join('')+'</div>'):'')+
-      '<a href="'+esc(gurl)+'" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:6px 0 0">Agregar a mi Google Calendar</a>'+
-      '<p style="font-size:13px;color:#5A6A60;margin-top:14px">También la ves en tu agenda del panel.</p>';
-    postEmail({ to:EMAIL, to_name:COACH, subject:'📅 Nueva reserva de '+name, html:htmlCoach, reply_to:email, signature:'pathway' });
+      '<a href="'+esc(joinLink)+'" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:6px 8px 0 0">Entrar a la videollamada</a>'+
+      '<a href="'+esc(gurl)+'" style="display:inline-block;background:#fff;color:#1B4332;border:1.5px solid #CFE3D4;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700;font-size:13.5px;margin:6px 0 0">📅 Agregar a Google Calendar</a>'+
+      '<p style="font-size:13px;color:#5A6A60;margin-top:14px">Se abre Google, guardás y listo. También la ves en tu agenda del panel.</p>';
+    postEmail({ to:EMAIL, to_name:COACH, subject:'📅 Nueva reserva de '+name, html:htmlCoach, reply_to:email, signature:'pathway', attachment:(icsB64?[{content:icsB64, name:'sesion.ics'}]:undefined) });
   }
 }
 function postEmail(payload){
@@ -779,14 +811,14 @@ function postEmail(payload){
   }catch(e){}
 }
 
-function ok(name, start, gurl){
+function ok(name, start, gcalUrl){
   $('card').className='card';
   $('card').innerHTML=
     "<div class='center'><div class='ok-ico'>🎉</div>"+
     "<h1>¡Reserva enviada!</h1>"+
-    "<p class='sub'>Elegiste <strong style='text-transform:capitalize'>"+esc(fechaLinda(start))+"</strong>.<br>Te mandamos un email de confirmación a tu correo.</p>"+
-    "<a class='btn btn-primary' href='"+esc(gurl)+"' target='_blank' rel='noopener' style='margin-top:20px'>Agregar a Google Calendar</a>"+
-    "<p class='hint'>¿No se abrió Google? Ya te llega la confirmación por email"+(EMAIL?(", o escribile a "+esc(FIRST)+" a <strong>"+esc(EMAIL)+"</strong>"):"")+".</p></div>";
+    "<p class='sub'>Elegiste <strong style='text-transform:capitalize'>"+esc(fechaLinda(start))+"</strong>.<br>Te mandamos un email de confirmación con el link de la videollamada.</p>"+
+    "<a class='btn btn-primary' href='"+esc(gcalUrl)+"' target='_blank' rel='noopener' style='margin-top:20px'>Agregar a Google Calendar</a>"+
+    "<p class='hint'>Se abre Google Calendar: tocá <strong>Guardar</strong> y listo. Igual te llega todo por email"+(EMAIL?(", o escribile a "+esc(FIRST)+" a <strong>"+esc(EMAIL)+"</strong>"):"")+".</p></div>";
 }
 
 // Arranque (al FINAL, cuando SAFE_SELECT y todas las funciones ya están definidas).

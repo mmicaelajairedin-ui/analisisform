@@ -99,7 +99,7 @@ Deno.serve(async (req: Request) => {
   const op = (body.op || "").toString();
   const coachId = (body.coach_id || "").toString().trim();
   if (!isUuid(coachId)) return json({ error: "coach_id_invalid" }, 400);
-  if (op !== "extend_trial" && op !== "mark_paid") return json({ error: "op_invalid" }, 400);
+  if (op !== "extend_trial" && op !== "mark_paid" && op !== "set_plan") return json({ error: "op_invalid" }, 400);
 
   // ── Leer la config actual del coach objetivo ──────────────────────
   let cur: { configuracion: Record<string, unknown> | null } | null = null;
@@ -126,6 +126,9 @@ Deno.serve(async (req: Request) => {
     cfg.fecha_fin_prueba = base.toISOString();
     cfg.estado_sub = "prueba";
     cfg.ultima_extension_admin = nowIso;
+  } else if (op === "set_plan") {
+    cfg.plan = (body.plan === "pro") ? "pro" : "basic";
+    cfg.plan_admin_at = nowIso;
   } else { // mark_paid
     cfg.estado_sub = "activa";
     cfg.fecha_fin_prueba = null;

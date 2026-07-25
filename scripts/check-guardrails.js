@@ -48,6 +48,24 @@ const RULES = [
     },
   },
   {
+    name: "agenda: 'Invitar al equipo' solo para el equipo interno (admin/empleado)",
+    bug: "En 'Agendar cita' y en el editor de tipo salía 'Invitar al equipo' con " +
+         "Micaela (admin) y Gonzalo (empleado) a TODOS los coaches. Ese equipo es el " +
+         "INTERNO de Pathway, no el del coach cliente. Ahora _agTeamLoad no carga la " +
+         "lista y la sección no se muestra salvo que el usuario sea admin o empleado.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // _agTeamLoad debe cortar (dejar _AG_TEAM=[]) para no-admin/no-empleado.
+      if (!/function\s+_agTeamLoad\s*\(\)\s*\{\s*if\(!\(typeof RADMIN[\s\S]{0,140}\)\)\{\s*_AG_TEAM=\[\];\s*return;\s*\}/.test(s))
+        return "panel-v2.html: _agTeamLoad ya no corta para no-admin/no-empleado → el equipo interno (Micaela/Gonzalo) vuelve a filtrarse a todos los coaches.";
+      // La sección "Invitar al equipo" debe estar detrás del gate RADMIN||isEmpleado.
+      if (!/_agTeamOk\s*=\s*\(typeof RADMIN[\s\S]{0,120}isEmpleado[\s\S]{0,40}\);[\s\S]{0,120}_teamHtml\s*=\s*_agTeamOk\s*\?/.test(s))
+        return "panel-v2.html: 'Invitar al equipo' ya no está gateado por admin/empleado → vuelve a salirle a los coaches cliente.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: una query rota no deja el panel en blanco (carga con red)",
     bug: "Agregar una columna inexistente (p.ej. xp) a un select hacía que UNA query " +
          "rechazara y el Promise.all entero fallara → coaches, ranking, analíticas y config " +
@@ -244,6 +262,81 @@ const RULES = [
     },
   },
   {
+    name: "chat: el aviso es por FOTOS (varias personas) y sin número rojo que tape",
+    bug: "El aviso del chat mostraba la foto de quien escribió con un número rojo " +
+         "encima que le tapaba la cara, y solo una persona. Ahora muestra hasta 5 " +
+         "fotitos (varias personas), sin número rojo, POR FUERA de la pastilla " +
+         "(en móvil, arriba del botón; el padding-top de la barra les deja lugar).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // _syncChatBtn junta varios remitentes (senders) y NO pinta el punto rojo.
+      if (!/senders\.slice\(0,\s*5\)/.test(s))
+        return "panel-v2.html: el chat ya no muestra varias fotitos (senders.slice(0,5)).";
+      if (/_syncChatBtn[\s\S]{0,2600}dot\.textContent\s*=\s*[^;]*unread/.test(s))
+        return "panel-v2.html: volvió el número rojo sobre la foto del chat.";
+      // el contador rojo del chat queda apagado (avisamos por fotos).
+      if (!/_syncChatBadge[\s\S]{0,180}pw-chat-badge[\s\S]{0,60}display="none"/.test(s))
+        return "panel-v2.html: el contador rojo del chat volvió a mostrarse (tapa la foto).";
+      // en móvil las fotitos van ARRIBA del botón (por fuera de la pastilla).
+      if (!/#pw-app-actions \.pw-chat-notif\{[^}]*bottom:calc\(100% \+ 3px\)/.test(s))
+        return "panel-v2.html: en móvil las fotitos ya no se apoyan arriba del botón → vuelven a quedar dentro/cortadas.";
+      return null;
+    },
+  },
+  {
+    name: "portales del cliente: aviso de chat = foto del coach, sin número rojo",
+    bug: "Igual que en el panel: cuando el coach le escribe al cliente, el ícono " +
+         "de chat mostraba un número rojo. Ahora muestra la FOTO del coach (con " +
+         "respiración), sin número rojo que la tape, en los 3 portales.",
+    check() {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/function _syncCoachChatPhoto\(/.test(s))
+          return f + ": falta _syncCoachChatPhoto → el aviso de chat no muestra la foto del coach.";
+        if (!/\.pw-chat-photo\{[^}]*pwChatBreathe/.test(s))
+          return f + ": la foto del chat ya no 'respira' (falta la animación pwChatBreathe).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "chat: se refresca seguido (no vuelve a 25/30s de latencia)",
+    bug: "El chat refrescaba fijo cada 25s (panel) / 30s (portales) → escribías y " +
+         "el mensaje 'no llegaba' hasta pasado mucho tiempo. Ahora el panel es " +
+         "adaptativo (6s con el chat abierto) y los portales del cliente 12s.",
+    check() {
+      const pv = read("panel-v2.html");
+      if (pv) {
+        if (/_msgPollTimer\s*=\s*setInterval\([^)]*25000\)/.test(pv))
+          return "panel-v2.html: el chat volvió al refresco fijo de 25s.";
+        if (!/_fast\?6000/.test(pv))
+          return "panel-v2.html: se perdió el refresco rápido (6s) del chat abierto.";
+      }
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (s && /(loadMsgs|_pollMsgs)[^;]{0,60}[,]\s*30000\)/.test(s))
+          return f + ": el chat del cliente volvió a 30s de latencia.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "móvil: la burbuja de aviso del chat/notif no se recorta (overflow)",
+    bug: "En móvil los botones de la barra llevan overflow:hidden para verse " +
+         "circulares, pero eso RECORTABA la burbuja de aviso (foto de quien " +
+         "escribió / contador) que asoma por la esquina → quedaba escondida. " +
+         "Los botones de chat y notificaciones deben llevar overflow:visible.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/#pw-app-actions\s+#pw-chat-btn,\s*#pw-app-actions\s+#pw-notif-btn\{\s*overflow:visible/.test(s))
+        return "panel-v2.html: el chat/notif ya no fuerzan overflow:visible → la burbuja de aviso se vuelve a recortar en móvil.";
+      return null;
+    },
+  },
+  {
     name: "demo: el coach de ejemplo luce badge/medalla/puntos y arranque completo",
     bug: "El coach demo (demo.coach@pathway.com) se usa para MOSTRAR la plataforma " +
          "a prospectos, pero tenía badge/medalla/puntos en cero y el arranque en 0/3 " +
@@ -302,9 +395,9 @@ const RULES = [
     },
   },
   {
-    name: "IA Pathway / Novedades / Perfil: el mismo botón abre Y cierra (toggle)",
-    bug: "El coach tocaba el botón de IA Pathway (o Novedades/Perfil), se abría, y al " +
-         "tocarlo de nuevo NO se cerraba: el handler solo hacía open=true. Los tres " +
+    name: "IA Pathway / Novedades / Perfil / Chat: el mismo botón abre Y cierra (toggle)",
+    bug: "El coach tocaba el botón de IA Pathway (o Novedades/Perfil/Chat), se abría, y al " +
+         "tocarlo de nuevo NO se cerraba: el handler solo hacía open=true. Los cuatro " +
          "triggers deben ser toggle (si ya está abierto, el mismo botón lo cierra). " +
          "Además, el marcador de Novedades no debe ocultarse en desktop cuando la " +
          "columna está abierta, si no no queda botón para re-tocar y cerrar.",
@@ -317,6 +410,12 @@ const RULES = [
       const iaBlock = s.slice(ia, ia + 500);
       if (!/state\.iaChat\.open\b[^]*?open\s*=\s*false/.test(iaBlock))
         return "el handler iachat-open ya no togglea: al re-tocar el botón no cierra el chat de IA.";
+      // Chat de mensajes: el handler chat-open tiene que cerrar si ya está abierto en modo chat.
+      const ch = s.search(/act===?["']chat-open["']/);
+      if (ch < 0) return "panel-v2.html ya no tiene el handler chat-open.";
+      const chBlock = s.slice(ch, ch + 400);
+      if (!/state\.ai\.open\s*&&\s*state\.ai\.mode===?["']chat["'][^]*?open\s*=\s*false/.test(chBlock))
+        return "el handler chat-open ya no togglea: al re-tocar el botón del chat no lo cierra.";
       // Novedades: el handler nov-open tiene que mirar si ya está abierta para cerrar.
       const nv = s.search(/act===?["']nov-open["']/);
       if (nv < 0) return "panel-v2.html ya no tiene el handler nov-open.";
@@ -2523,6 +2622,173 @@ const RULES = [
       if (s) {
         if (!/vpaas-magic-cookie-/.test(s)) return "sala.html: se cayo el App ID de JaaS (8x8) — la Sala no embebe el video white-label.";
         if (!/8x8\.vc/.test(s)) return "sala.html: la Sala ya no carga JaaS (8x8.vc).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: horarios en AM/PM (no 24h) — un cliente confundió 01:00 con 1pm",
+    why: "Un cliente en México reservó lo que en su hora eran las 01:00 (1am) pero lo " +
+         "leyó como '1pm' porque se mostraba en 24h ('01:00 H'). LatAm usa AM/PM. Los " +
+         "horarios del picker y las fechas de los emails deben ir en AM/PM para que " +
+         "nadie confunda la madrugada con la tarde.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        // Solo el DISPLAY debe ir en AM/PM (_hmInViewerTz para los slots, fechaEnTz
+        // para los emails). Los hour12:false internos (offset de zona, _hourInTz) son
+        // cálculos, no formato — no se tocan.
+        const disp = (r.match(/function _hmInViewerTz[\s\S]*?\n\}/) || [""])[0] + (r.match(/function fechaEnTz[\s\S]*?\n\}/) || [""])[0];
+        if (!/hour12:\s*true/.test(disp)) return "reservar.html: los horarios/fechas visibles ya no van en AM/PM (hour12:true) — se confunde 1am con 1pm.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: solo horarios coherentes para el cliente (no ofrecer la 1 AM)",
+    why: "No se le puede ofrecer al cliente un horario que a ÉL le cae de madrugada " +
+         "(la disponibilidad del coach en Madrid caía 1am para México). _viewerGroups " +
+         "filtra por la hora del cliente (_hourInTz) para no mostrar esos huecos.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        if (!/function _hourInTz/.test(r)) return "reservar.html: falta _hourInTz() — el filtro de horarios cómodos.";
+        if (!/_hourInTz\(ms/.test(r)) return "reservar.html: _viewerGroups ya no filtra por la hora del cliente (podría ofrecer la 1 AM).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: cancelar/reprogramar/confirmar le AVISAN al cliente por email",
+    why: "Antes el coach cancelaba/reprogramaba y al cliente no le llegaba nada (tenía " +
+         "que avisarle a mano). Ahora cada acción manda un email al cliente por send-email. " +
+         "Si se rompe, el cliente se queda sin saber que su cita cambió.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _notifResCancel/.test(p) || !/function _notifResReprog/.test(p) || !/function _confirmCliente/.test(p))
+          return "panel-v2.html: falta algún aviso al cliente (_notifResCancel / _notifResReprog / _confirmCliente).";
+        if (!/_notifResCancel\(/.test(p) || !/_notifResReprog\(/.test(p) || !/_confirmCliente\(/.test(p))
+          return "panel-v2.html: un aviso al cliente está definido pero no se dispara (cancelar/reprogramar/confirmar).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: al reprogramar, el email lleva el link NUEVO de la Sala (mismo room que el coach)",
+    why: "El room de la videollamada lleva la hora dentro (Pathway-<coach>-<ms>). Al mover la hora " +
+         "cambia el room: si el email de reprogramación no manda el link nuevo, el cliente reusa el " +
+         "viejo y coach y cliente caen en salas DISTINTAS (nunca se encuentran). _notifResReprog debe " +
+         "construir el link con la hora nueva (_salaClientLink(r, iso)).",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _salaClientLink/.test(p)) return "panel-v2.html: falta _salaClientLink (link de la Sala para el cliente).";
+        // _notifResReprog debe usar el link (con la hora nueva) dentro de su cuerpo.
+        const m = p.match(/function _notifResReprog[\s\S]*?\n\}/);
+        if (m && !/_salaClientLink\(/.test(m[0])) return "panel-v2.html: _notifResReprog ya no manda el link nuevo de la Sala — el cliente entra a la sala vieja.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: la flecha 'volver al panel' se oculta para el cliente (id='back')",
+    why: "El guard escondía la flecha con el('back') pero el ancla tenía class y no id → el() (getElementById) " +
+         "devolvía null y nunca se ocultaba: el cliente veía un '‹' que lo mandaba al panel/login del coach. " +
+         "El ancla debe tener id='back'.",
+    check() {
+      const s = read("sala.html");
+      if (s && /el\(['"]back['"]\)/.test(s)) {
+        if (!/class=["']back["'][^>]*id=["']back["']|id=["']back["'][^>]*class=["']back["']/.test(s))
+          return "sala.html: el ancla 'volver' no tiene id='back' — el guard no la oculta para el cliente.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: chat casual propio (mismo en móvil y web, sin el chat nativo distinto por equipo)",
+    why: "El chat nativo de la videollamada se ve distinto en móvil vs web. Usamos uno propio que viaja por " +
+         "el transporte de la llamada (sendChatMessage / incomingMessage) para que sea idéntico en todos lados. " +
+         "Si se rompe, el chat vuelve a ser inconsistente o desaparece.",
+    check() {
+      const s = read("sala.html");
+      if (s) {
+        if (!/id=["']chatp["']/.test(s)) return "sala.html: falta el panel de chat propio (#chatp).";
+        if (!/executeCommand\(['"]sendChatMessage['"]/.test(s)) return "sala.html: el chat propio ya no envía por sendChatMessage.";
+        if (!/addListener\(['"]incomingMessage['"]/.test(s)) return "sala.html: el chat propio ya no escucha incomingMessage — no llegan los mensajes.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: el cliente también ve el gate (su link lleva start+dur)",
+    why: "El gate (cuenta regresiva / 'ya terminó', 5 min antes) depende de STARTms, que " +
+         "viene de ?start=. Si el link del cliente no lo lleva, STARTms=0 y el cliente entra " +
+         "SIEMPRE sin gate (contradice 'se abre 5 min antes para los dos'). El link del " +
+         "cliente (reservar.html _link y _salaClientLink del panel) debe incluir &start= y &dur=.",
+    check() {
+      const r = read("reservar.html");
+      if (r && /var _link=location\.origin\+'\/sala\.html/.test(r)) {
+        const m = r.match(/var _link=location\.origin\+'\/sala\.html[^;]*/);
+        if (m && (!/&start='/.test(m[0]) || !/&dur='/.test(m[0]))) return "reservar.html: el link del cliente a la Sala ya no lleva start/dur — el cliente entra sin gate.";
+      }
+      const p = read("panel-v2.html");
+      if (p && /function _salaClientLink/.test(p)) {
+        const m = p.match(/function _salaClientLink[\s\S]*?\n\}/);
+        if (m && (!/&start="/.test(m[0]) || !/&dur="/.test(m[0]))) return "panel-v2.html: _salaClientLink ya no lleva start/dur — el cliente entra sin gate.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: subir archivo en la videollamada lo guarda en Documentos del cliente",
+    why: "Un archivo subido en la Sala tiene que quedar en Documentos del cliente (tabla " +
+         "informes_guardados, con el coach_id correcto para que el coach lo vea vía cg()). " +
+         "Requiere que la Sala reciba ?coach= (lo pone _agSalaUrl) y que _infFilesLoad sepa " +
+         "mostrar un archivo (contenido.url) como link de descarga, no como overlay de informe.",
+    check() {
+      const s = read("sala.html");
+      if (s) {
+        if (!/informes_guardados/.test(s)) return "sala.html: subir archivo ya no guarda en informes_guardados (Documentos del cliente).";
+        if (!/storage\/v1\/object\/avatars\//.test(s)) return "sala.html: la subida de archivo ya no va al bucket de Storage.";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/&coach="\+encodeURIComponent\(\(RME&&RME\.id\)/.test(p)) return "panel-v2.html: _agSalaUrl ya no pasa &coach= — los archivos subidos no quedarían bajo el coach.";
+        if (!/var _fileUrl=/.test(p) || !/_c\.url/.test(p)) return "panel-v2.html: _infFilesLoad ya no distingue un archivo (contenido.url) de un informe.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: los botones de los emails del panel usan comillas dobles (a prueba de apóstrofos)",
+    why: "esc() del panel NO escapa la comilla simple. Si el href va en atributo con comillas " +
+         "simples y el link trae un nombre con apóstrofo (O'Brien), la comilla cierra el atributo " +
+         "y el botón apunta a una URL rota. encodeURIComponent SÍ escapa la comilla doble, así que " +
+         "los href de _notifResReprog/_confirmCliente deben ir con comillas dobles.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (/href='"\+join\+"'/.test(p)) return "panel-v2.html: hay un href con comillas simples alrededor de +join+ — se rompe con apóstrofos.";
+        if (/href='"\+_gc\+"'/.test(p)) return "panel-v2.html: hay un href con comillas simples alrededor de +_gc+ — se rompe con apóstrofos.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "admin: 'Pasar a Pro/Basic' va por edge function (resiste RLS), no PATCH directo",
+    why: "El botón hacía un PATCH directo a usuarios que RLS bloquea → tocabas OK y no " +
+         "pasaba nada. Debe ir por admin-coach-op con op:set_plan (como 'marcar pagado'). " +
+         "Además la función tiene que estar en el auto-deploy, si no el cambio no llega a prod.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p && /coach-plan:/.test(p)) {
+        if (!/op:\s*["']set_plan["']|"op":"set_plan"/.test(p)) return "panel-v2.html: 'Pasar a Pro/Basic' ya no usa admin-coach-op (op:set_plan) — vuelve a fallar por RLS.";
+      }
+      const w = read(".github/workflows/deploy-functions.yml");
+      if (w) {
+        if (!/functions deploy admin-coach-op/.test(w)) return "deploy-functions.yml: admin-coach-op no está en el auto-deploy — los cambios no llegarían a producción.";
+        if (!/functions deploy jaas-token/.test(w)) return "deploy-functions.yml: jaas-token no está en el auto-deploy — la Sala quedaría sin token.";
       }
       return null;
     },
