@@ -196,17 +196,24 @@ Deno.serve(async (req: Request) => {
     // Si la columna origen no existe todavía, contamos como antes (todos).
     let nPrev = 0;
     try {
-      let cr = await fetch(
+      const cr = await fetch(
         `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&pago_recibido=eq.true&origen=eq.pathway&select=id`,
         { headers: { ...sbH(SRK), Prefer: "count=exact", Range: "0-0" } },
       );
-      if (!cr.ok) {
-        cr = await fetch(
+      if (cr.ok) {
+        nPrev = parseInt((cr.headers.get("content-range") || "0/0").split("/")[1] || "0", 10) || 0;
+      } else if (cr.status === 400) {
+        // Solo si la columna origen todavía no existe (400) contamos como antes (todos).
+        const cr2 = await fetch(
           `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&pago_recibido=eq.true&select=id`,
           { headers: { ...sbH(SRK), Prefer: "count=exact", Range: "0-0" } },
         );
+        nPrev = parseInt((cr2.headers.get("content-range") || "0/0").split("/")[1] || "0", 10) || 0;
+      } else {
+        // Error transitorio (5xx/red): NO inflamos el tramo → nPrev=0 (tramo más bajo,
+        // dirección segura para el coach, nunca cobra de más).
+        nPrev = 0;
       }
-      nPrev = parseInt((cr.headers.get("content-range") || "0/0").split("/")[1] || "0", 10) || 0;
     } catch (_e) { nPrev = 0; }
     // Propio → 0%. Marketplace → tramo por nPrev.
     const rate = isPropio ? 0 : tierRate(nPrev + 1);
@@ -247,7 +254,9 @@ Deno.serve(async (req: Request) => {
         mode: "subscription",
         "line_items[0][price_data][recurring][interval]": "week",
         "line_items[0][price_data][recurring][interval_count]": "4",
-        "subscription_data[application_fee_percent]": String(feePct),
+        // Cliente propio (rate=0) → NO mandamos application_fee (0% de forma
+        // garantizada, sin depender de que Stripe acepte "0").
+        ...(fee > 0 ? { "subscription_data[application_fee_percent]": String(feePct) } : {}),
         "subscription_data[metadata][pathway]": "client_sub",
         "subscription_data[metadata][coach_id]": coachId,
         "subscription_data[metadata][candidato_email]": email,
@@ -260,7 +269,8 @@ Deno.serve(async (req: Request) => {
         ...baseParams,
         mode: "payment",
         "payment_intent_data[capture_method]": "manual",
-        "payment_intent_data[application_fee_amount]": String(fee),
+        // Propio (fee=0) → sin application_fee_amount (comisión 0 garantizada).
+        ...(fee > 0 ? { "payment_intent_data[application_fee_amount]": String(fee) } : {}),
         // Lo que ve el comprador en el resumen de su banco: "PATHWAY".
         "payment_intent_data[statement_descriptor]": "PATHWAY",
       };
