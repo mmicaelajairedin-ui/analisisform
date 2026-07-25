@@ -27,6 +27,45 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "panel-v2: reservas duplicadas se deduplican (lista + KPIs + agenda)",
+    bug: "La misma cita podía quedar guardada dos veces en `citas` (doble submit " +
+         "del link, reintento de red) y salía REPETIDA en 'Reservas y asistencia', " +
+         "en las métricas y en la agenda. El dedup se aplica de forma central en " +
+         "_calByOwner() (por coach+minuto+persona), así ningún consumidor cuenta doble.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function\s+_calDedup\s*\(/.test(s))
+        return "panel-v2.html perdio _calDedup() (dedup de reservas duplicadas).";
+      // _calByOwner DEBE pasar su resultado por _calDedup (fuente única del dedup).
+      if (!/function\s+_calByOwner\s*\(list\)\s*\{\s*return\s+_calDedup\s*\(/.test(s))
+        return "panel-v2.html: _calByOwner ya no aplica _calDedup → las reservas duplicadas vuelven a la lista/KPIs/agenda.";
+      // _resRender (widget 'Reservas · desde tu link' del Resumen) usa _RES_DATA,
+      // que NO pasa por _calByOwner → tiene que deduplicar por su cuenta.
+      if (!/function\s+_resRender\s*\(list\)\s*\{\s*var\s+rows\s*=\s*_calDedup\s*\(/.test(s))
+        return "panel-v2.html: _resRender ya no deduplica → los duplicados vuelven en 'Reservas · desde tu link' del Resumen.";
+      return null;
+    },
+  },
+  {
+    name: "agenda: 'Invitar al equipo' solo para el equipo interno (admin/empleado)",
+    bug: "En 'Agendar cita' y en el editor de tipo salía 'Invitar al equipo' con " +
+         "Micaela (admin) y Gonzalo (empleado) a TODOS los coaches. Ese equipo es el " +
+         "INTERNO de Pathway, no el del coach cliente. Ahora _agTeamLoad no carga la " +
+         "lista y la sección no se muestra salvo que el usuario sea admin o empleado.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // _agTeamLoad debe cortar (dejar _AG_TEAM=[]) para no-admin/no-empleado.
+      if (!/function\s+_agTeamLoad\s*\(\)\s*\{\s*if\(!\(typeof RADMIN[\s\S]{0,140}\)\)\{\s*_AG_TEAM=\[\];\s*return;\s*\}/.test(s))
+        return "panel-v2.html: _agTeamLoad ya no corta para no-admin/no-empleado → el equipo interno (Micaela/Gonzalo) vuelve a filtrarse a todos los coaches.";
+      // La sección "Invitar al equipo" debe estar detrás del gate RADMIN||isEmpleado.
+      if (!/_agTeamOk\s*=\s*\(typeof RADMIN[\s\S]{0,120}isEmpleado[\s\S]{0,40}\);[\s\S]{0,120}_teamHtml\s*=\s*_agTeamOk\s*\?/.test(s))
+        return "panel-v2.html: 'Invitar al equipo' ya no está gateado por admin/empleado → vuelve a salirle a los coaches cliente.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: una query rota no deja el panel en blanco (carga con red)",
     bug: "Agregar una columna inexistente (p.ej. xp) a un select hacía que UNA query " +
          "rechazara y el Promise.all entero fallara → coaches, ranking, analíticas y config " +
@@ -1959,9 +1998,11 @@ const RULES = [
       // Lado del dueño: sección Canal en multicoach.html.
       const mc = read("multicoach.html");
       if (mc) {
-        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (sección Canal del equipo).";
+        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (el canal/chat del equipo).";
         if (!/functions\/v1\/canal-red/.test(mc)) return "multicoach.html: el canal ya no usa la edge function canal-red.";
-        if (!/data-s="canal"/.test(mc)) return "multicoach.html: falta el item 'Canal del equipo' en el menú.";
+        // El canal es EL chat: se abre desde el ícono de chat del topbar (__go('canal')),
+        // no como una pestaña más del sidebar. Debe seguir siendo accesible.
+        if (!/onclick="__go\('canal'\)"/.test(mc)) return "multicoach.html: el ícono de chat ya no abre el canal del equipo (__go('canal')).";
       }
       // Lado del coach: hilo 'canal' en la bandeja de panel-v2.html.
       const p = read("panel-v2.html");
@@ -2525,6 +2566,128 @@ const RULES = [
       if (lg && !/removeItem\(['"]pw_auth_retry/.test(lg)) return "login.html: no resetea pw_auth_retry en el login fresco.";
       var ac = read("auth-callback.html");
       if (ac && !/removeItem\(['"]pw_auth_retry/.test(ac)) return "auth-callback.html: no resetea pw_auth_retry en el login fresco.";
+      return null;
+    },
+  },
+  {
+    name: "reservas: link de videollamada SIEMPRE presente (garantia)",
+    why: "Una reserva salio SIN link de videollamada: ni el coach ni el cliente " +
+         "tenian por donde entrar. GARANTIA replicable para TODOS: el link lo damos " +
+         "NOSOTROS y abre nuestra Sala (sala.html, JaaS white-label). El room es " +
+         "determinista por coach+horario (Pathway-<coach>-<hora>): el panel del coach " +
+         "(_agSalaUrl/_agResLink) y reservar.html arman EXACTAMENTE el mismo → coach y " +
+         "cliente caen en la MISMA sala. sala.html embebe JaaS con el App ID. " +
+         "No puede volver a pasar.",
+    check() {
+      var p = read("panel-v2.html");
+      if (p) {
+        if (!/function _agSalaUrl/.test(p)) return "panel-v2.html: falta _agSalaUrl() — las reservas ya no derivan su sala centralizada.";
+        if (!/sala\.html\?room=/.test(p)) return "panel-v2.html: _agSalaUrl ya no arma el link a la Sala (sala.html?room=).";
+        if (!/Pathway-/.test(p)) return "panel-v2.html: se cayo el room determinista compartido (Pathway-<coach>-<hora>).";
+      }
+      var r = read("reservar.html");
+      if (r) {
+        if (!/sala\.html\?room=/.test(r)) return "reservar.html: el cliente ya no entra por la Sala centralizada (sala.html?room=).";
+        if (!/Pathway-/.test(r)) return "reservar.html: se cayo el room determinista compartido con el coach.";
+        if (!/location=/.test(r)) return "reservar.html: el evento de Google ya no incluye el link de la videollamada (location).";
+      }
+      var s = read("sala.html");
+      if (s) {
+        if (!/vpaas-magic-cookie-/.test(s)) return "sala.html: se cayo el App ID de JaaS (8x8) — la Sala no embebe el video white-label.";
+        if (!/8x8\.vc/.test(s)) return "sala.html: la Sala ya no carga JaaS (8x8.vc).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: horarios en AM/PM (no 24h) — un cliente confundió 01:00 con 1pm",
+    why: "Un cliente en México reservó lo que en su hora eran las 01:00 (1am) pero lo " +
+         "leyó como '1pm' porque se mostraba en 24h ('01:00 H'). LatAm usa AM/PM. Los " +
+         "horarios del picker y las fechas de los emails deben ir en AM/PM para que " +
+         "nadie confunda la madrugada con la tarde.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        // Solo el DISPLAY debe ir en AM/PM (_hmInViewerTz para los slots, fechaEnTz
+        // para los emails). Los hour12:false internos (offset de zona, _hourInTz) son
+        // cálculos, no formato — no se tocan.
+        const disp = (r.match(/function _hmInViewerTz[\s\S]*?\n\}/) || [""])[0] + (r.match(/function fechaEnTz[\s\S]*?\n\}/) || [""])[0];
+        if (!/hour12:\s*true/.test(disp)) return "reservar.html: los horarios/fechas visibles ya no van en AM/PM (hour12:true) — se confunde 1am con 1pm.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: solo horarios coherentes para el cliente (no ofrecer la 1 AM)",
+    why: "No se le puede ofrecer al cliente un horario que a ÉL le cae de madrugada " +
+         "(la disponibilidad del coach en Madrid caía 1am para México). _viewerGroups " +
+         "filtra por la hora del cliente (_hourInTz) para no mostrar esos huecos.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        if (!/function _hourInTz/.test(r)) return "reservar.html: falta _hourInTz() — el filtro de horarios cómodos.";
+        if (!/_hourInTz\(ms/.test(r)) return "reservar.html: _viewerGroups ya no filtra por la hora del cliente (podría ofrecer la 1 AM).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: cancelar/reprogramar/confirmar le AVISAN al cliente por email",
+    why: "Antes el coach cancelaba/reprogramaba y al cliente no le llegaba nada (tenía " +
+         "que avisarle a mano). Ahora cada acción manda un email al cliente por send-email. " +
+         "Si se rompe, el cliente se queda sin saber que su cita cambió.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _notifResCancel/.test(p) || !/function _notifResReprog/.test(p) || !/function _confirmCliente/.test(p))
+          return "panel-v2.html: falta algún aviso al cliente (_notifResCancel / _notifResReprog / _confirmCliente).";
+        if (!/_notifResCancel\(/.test(p) || !/_notifResReprog\(/.test(p) || !/_confirmCliente\(/.test(p))
+          return "panel-v2.html: un aviso al cliente está definido pero no se dispara (cancelar/reprogramar/confirmar).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "admin: 'Pasar a Pro/Basic' va por edge function (resiste RLS), no PATCH directo",
+    why: "El botón hacía un PATCH directo a usuarios que RLS bloquea → tocabas OK y no " +
+         "pasaba nada. Debe ir por admin-coach-op con op:set_plan (como 'marcar pagado'). " +
+         "Además la función tiene que estar en el auto-deploy, si no el cambio no llega a prod.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p && /coach-plan:/.test(p)) {
+        if (!/op:\s*["']set_plan["']|"op":"set_plan"/.test(p)) return "panel-v2.html: 'Pasar a Pro/Basic' ya no usa admin-coach-op (op:set_plan) — vuelve a fallar por RLS.";
+      }
+      const w = read(".github/workflows/deploy-functions.yml");
+      if (w) {
+        if (!/functions deploy admin-coach-op/.test(w)) return "deploy-functions.yml: admin-coach-op no está en el auto-deploy — los cambios no llegarían a producción.";
+        if (!/functions deploy jaas-token/.test(w)) return "deploy-functions.yml: jaas-token no está en el auto-deploy — la Sala quedaría sin token.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "candado Pro 'probá gratis, pagá para guardar': la función Pro se ve pero al guardar/enviar abre el modal de upgrade (no alert feo)",
+    bug: "El coach Basic VE y prueba las funciones Pro (marca propia, mensajería, +clientes), " +
+         "pero al GUARDAR/ENVIAR/AGREGAR se abre un modal de upgrade de Pathway (proGate/pwUpgrade) " +
+         "con CTA al Stripe del plan Pro con el email precargado. En multi-coach, al llegar al tope " +
+         "de coaches/clientes se abre mcUpgrade con los planes (Boutique/Studio/Pro). " +
+         "Si se rompe (vuelve el alert()/confirm() seco o el gate escondido), se pierde el upsell " +
+         "que empuja Basic→Pro y la conversión.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function proGate\(/.test(p) || !/function pwUpgrade\(/.test(p)) return "panel-v2.html: falta el guard/modal de upgrade (proGate/pwUpgrade).";
+        if (!/if\(!proGate\("brand"\)\) return;/.test(p)) return "panel-v2.html: el guardado de marca propia ya no pasa por proGate('brand').";
+        if (!/if\(!proGate\("mensajeria"\)\) return;/.test(p)) return "panel-v2.html: el envío de email (mail-send) ya no pasa por proGate('mensajeria').";
+        if (/act==="cfg-save-brand"[\s\S]{0,80}alert\(/.test(p)) return "panel-v2.html: volvió el alert() feo en el guardado de marca propia.";
+        if (/act==="mail-send"[\s\S]{0,80}alert\("Enviar emails/.test(p)) return "panel-v2.html: volvió el alert() feo en mail-send.";
+        if (!/stripeSubUrl\("pro"/.test(p)) return "panel-v2.html: el modal de upgrade ya no apunta al Stripe del plan Pro con email precargado.";
+      }
+      const m = read("multicoach.html");
+      if (m) {
+        if (!/function mcUpgrade\(/.test(m)) return "multicoach.html: falta el modal de upgrade de red (mcUpgrade).";
+        if (!/mcUpgrade\('clientes'\)/.test(m) || !/mcUpgrade\('coaches'\)/.test(m)) return "multicoach.html: los topes de clientes/coaches ya no abren mcUpgrade.";
+      }
       return null;
     },
   },
