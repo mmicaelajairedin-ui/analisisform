@@ -3541,6 +3541,22 @@ function _infFilesLoad(cid){
     }).join("");
   }).catch(function(){ box.innerHTML="<div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>No se pudieron cargar los informes.</div>"; });
 }
+// El blob que guarda la Sala (notas_llamada) viene como "NOTAS:\n… \n\nOBJETIVOS:\n
+// [x] … \n\nTAREAS:\n[ ] …". Lo separamos de nuevo para mostrarlo lindo (no un
+// bloque de texto). Cada línea de objetivos/tareas puede venir con [x]/[ ].
+function _salaParseBlob(b){
+  b=(""+(b||"")).trim(); var out={notas:"",obj:[],tar:[]}; if(!b) return out;
+  function items(s){ return s.split(/\n/).map(function(l){return l.trim();}).filter(Boolean).map(function(l){ var m=l.match(/^\[([ xX])\]\s*(.*)$/); return m?{done:/x/i.test(m[1]),txt:m[2]}:{done:false,txt:l}; }); }
+  var matched=false;
+  b.split(/\n\n+/).forEach(function(ch){
+    var mo=ch.match(/^(NOTAS|OBJETIVOS|TAREAS):\s*([\s\S]*)$/i);
+    if(!mo){ if(!out.notas) out.notas=ch.trim(); return; }
+    matched=true; var k=mo[1].toUpperCase(), body=mo[2].trim();
+    if(k==="NOTAS") out.notas=body; else if(k==="OBJETIVOS") out.obj=items(body); else out.tar=items(body);
+  });
+  if(!matched && !out.notas) out.notas=b;
+  return out;
+}
 // ── Registro de la Sala en la ficha (pestaña Sesiones) ──
 // Lee las citas de este cliente que la Sala completó (resultado + notas_llamada)
 // y las muestra. Así lo trabajado en la videollamada queda en la historia del
@@ -3559,7 +3575,10 @@ function _salaHistLoad(cid){
       rows.map(function(x){
         var d=new Date(x.inicio); var when=isNaN(d)?"":d.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"})+" · "+d.toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
         var rl=RL[x.resultado]; var badge=rl?("<span style='font-size:11px;font-weight:700;color:#fff;background:"+rl[1]+";padding:2px 9px;border-radius:100px;white-space:nowrap'>"+esc(rl[0])+"</span>"):"";
-        var nt=x.notas_llamada?("<div style='font-size:12.5px;color:var(--pw-carbon);white-space:pre-wrap;margin-top:6px;background:var(--pw-niebla-2);border-radius:10px;padding:10px 12px;line-height:1.5'>"+esc(x.notas_llamada)+"</div>"):"";
+        var P=_salaParseBlob(x.notas_llamada);
+        function _lst(t,arr){ if(!arr.length) return ""; return "<div style='margin-top:8px'><div style='font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:3px'>"+t+"</div>"+arr.map(function(it){ return "<div style='font-size:12.5px;color:"+(it.done?"var(--pw-text-muted)":"var(--pw-carbon)")+";line-height:1.5"+(it.done?";text-decoration:line-through":"")+"'>"+(it.done?"✓":"○")+" "+esc(it.txt)+"</div>"; }).join("")+"</div>"; }
+        var secs=(P.notas?"<div style='font-size:12.5px;color:var(--pw-carbon);white-space:pre-wrap;line-height:1.5'>"+esc(P.notas)+"</div>":"")+_lst("Objetivos",P.obj)+_lst("Tareas",P.tar);
+        var nt=secs?("<div style='margin-top:6px;background:var(--pw-niebla-2);border-radius:10px;padding:10px 12px'>"+secs+"</div>"):"";
         return "<div style='padding:10px 0;border-bottom:1px solid var(--pw-border)'><div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'><span style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(when)+"</span>"+(x.tipo?"<span style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(x.tipo)+"</span>":"")+"<span style='margin-left:auto'>"+badge+"</span></div>"+nt+"</div>";
       }).join("")+
     "</div></div>";
