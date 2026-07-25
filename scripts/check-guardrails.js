@@ -281,6 +281,23 @@ const RULES = [
     },
   },
   {
+    name: "portales del cliente: aviso de chat = foto del coach, sin número rojo",
+    bug: "Igual que en el panel: cuando el coach le escribe al cliente, el ícono " +
+         "de chat mostraba un número rojo. Ahora muestra la FOTO del coach (con " +
+         "respiración), sin número rojo que la tape, en los 3 portales.",
+    check() {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/function _syncCoachChatPhoto\(/.test(s))
+          return f + ": falta _syncCoachChatPhoto → el aviso de chat no muestra la foto del coach.";
+        if (!/\.pw-chat-photo\{[^}]*pwChatBreathe/.test(s))
+          return f + ": la foto del chat ya no 'respira' (falta la animación pwChatBreathe).";
+      }
+      return null;
+    },
+  },
+  {
     name: "chat: se refresca seguido (no vuelve a 25/30s de latencia)",
     bug: "El chat refrescaba fijo cada 25s (panel) / 30s (portales) → escribías y " +
          "el mensaje 'no llegaba' hasta pasado mucho tiempo. Ahora el panel es " +

@@ -85,6 +85,10 @@ body{background:var(--bg);}
 .skel{background:var(--border);border-radius:6px;position:relative;overflow:hidden;}
 .skel::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);animation:skelShine 1.5s infinite;}
 @keyframes skelShine{0%{transform:translateX(-100%);}100%{transform:translateX(100%);}}
+/* Aviso de chat = FOTO del coach (sin número rojo que la tape) + respiración. */
+@keyframes pwChatBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+.pw-chat-photo{transform-origin:center;animation:pwChatBreathe 2.2s ease-in-out infinite;}
+@media(prefers-reduced-motion:reduce){.pw-chat-photo{animation:none;}}
 .skel-line{height:12px;margin-bottom:8px;}
 .skel-line.w60{width:60%;}.skel-line.w80{width:80%;}.skel-line.w40{width:40%;}.skel-line.w100{width:100%;}
 .skel-circle{width:48px;height:48px;border-radius:50%;}
@@ -5540,9 +5544,8 @@ function _renderMsgs(){
       +(isCoach?(av+bubble):(bubble+av))+'</div>';
   }).join('');
   list.scrollTop=list.scrollHeight;
-  // Quitar badge
-  var badge=document.getElementById('msg-badge');
-  if(badge) badge.style.display='none';
+  // Quitar aviso (foto + badge) al abrir/leer el chat
+  _syncCoachChatPhoto(0);
 }
 
 function sendMsg(){
@@ -5652,6 +5655,22 @@ function _pwDing(){
 // Puntito rojo que LATE unos segundos cuando llega algo nuevo.
 function _pwPulse(el){ if(!el) return; try{ el.classList.add('pw-attn'); setTimeout(function(){ el.classList.remove('pw-attn'); },4500); }catch(e){} }
 function _pwOnIncoming(){ _pwDing(); _pwPulse(document.getElementById('msg-badge')); _pwPulse(document.getElementById('msg-bell-btn')); }
+// Aviso del chat con el coach = su FOTO (sin número rojo que la tape), con
+// respiración. Igual que el botón de chat del panel del coach.
+function _syncCoachChatPhoto(n){
+  try{
+    var ic=document.getElementById('msg-bell-btn'); if(!ic) return;
+    var badge=document.getElementById('msg-badge'); if(badge) badge.style.display='none';
+    var old=ic.querySelector('.pw-chat-photo'); if(old) old.remove();
+    if(!(n>0)) return;
+    ic.style.position='relative';
+    var url=(typeof COACH_PHOTO_URL!=='undefined'&&COACH_PHOTO_URL)||'';
+    var bg=/^https?:/.test(url)?("#fff url('"+url+"') center/cover no-repeat"):"var(--brand,#2D6A4F)";
+    var av=document.createElement('span'); av.className='pw-chat-photo';
+    av.setAttribute('style','position:absolute;top:-8px;right:-8px;width:19px;height:19px;border-radius:50%;border:2px solid #fff;background:'+bg+';box-shadow:0 2px 6px rgba(0,0,0,.2);pointer-events:none');
+    ic.appendChild(av);
+  }catch(e){}
+}
 var _pwChimeReady=false; // no sonar en la primera carga (mensajes viejos)
 
 function _loadMsgsFromDB(){
@@ -5678,8 +5697,7 @@ function _loadMsgsFromDB(){
       local.forEach(function(m){ localKeys[_msgKey(m)]=true; });
       var newCoach=dbMsgs.filter(function(m){return m&&m.from==='coach'&&!localKeys[_msgKey(m)];}).length;
       if(newCoach>0){
-        var badge=document.getElementById('msg-badge');
-        if(badge){badge.style.display='flex';badge.textContent=newCoach;}
+        _syncCoachChatPhoto(newCoach);
         // Ruidito + puntito rojo que late (solo si no es la carga inicial).
         if(_pwChimeReady && !_msgsOpen) _pwOnIncoming();
         // Si el chat está abierto, esos mensajes ya se están viendo → marcarlos leídos.
