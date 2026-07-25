@@ -223,6 +223,27 @@ const RULES = [
     },
   },
   {
+    name: "chat: se refresca seguido (no vuelve a 25/30s de latencia)",
+    bug: "El chat refrescaba fijo cada 25s (panel) / 30s (portales) → escribías y " +
+         "el mensaje 'no llegaba' hasta pasado mucho tiempo. Ahora el panel es " +
+         "adaptativo (6s con el chat abierto) y los portales del cliente 12s.",
+    check() {
+      const pv = read("panel-v2.html");
+      if (pv) {
+        if (/_msgPollTimer\s*=\s*setInterval\([^)]*25000\)/.test(pv))
+          return "panel-v2.html: el chat volvió al refresco fijo de 25s.";
+        if (!/_fast\?6000/.test(pv))
+          return "panel-v2.html: se perdió el refresco rápido (6s) del chat abierto.";
+      }
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (s && /(loadMsgs|_pollMsgs)[^;]{0,60}[,]\s*30000\)/.test(s))
+          return f + ": el chat del cliente volvió a 30s de latencia.";
+      }
+      return null;
+    },
+  },
+  {
     name: "móvil: la burbuja de aviso del chat/notif no se recorta (overflow)",
     bug: "En móvil los botones de la barra llevan overflow:hidden para verse " +
          "circulares, pero eso RECORTABA la burbuja de aviso (foto de quien " +

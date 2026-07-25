@@ -7586,7 +7586,7 @@ function _syncChatBtn(){
     btn.style.position="relative";
     var wrap=document.createElement("span");
     wrap.className="pw-chat-notif";
-    wrap.setAttribute("style","position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:#fff url('"+photo+"') center/cover no-repeat;box-shadow:0 2px 6px rgba(0,0,0,.18);pointer-events:none");
+    wrap.setAttribute("style","position:absolute;top:-10px;right:-10px;width:20px;height:20px;border-radius:50%;border:2px solid #fff;background:#fff url('"+photo+"') center/cover no-repeat;box-shadow:0 2px 6px rgba(0,0,0,.18);pointer-events:none");
     var dot=document.createElement("span");
     dot.setAttribute("style","position:absolute;top:-4px;right:-4px;min-width:14px;height:14px;padding:0 3px;border-radius:99px;background:var(--pw-danger);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff");
     dot.textContent=unread>9?"9+":String(unread);
@@ -10430,6 +10430,8 @@ document.addEventListener("click", function(ev){
     // Chat de mensajes (soporte Pathway + clientes), desde el ícono de arriba.
     state.ai.open=true; state.ai.bubbleOpen=false; state.ai.mode="chat"; state.ai.tab="mensajes";
     state.chatPicker=false; state.aiCoachThread=null; state.aiThread=null;
+    // Al abrir el chat, traer lo último YA (sin esperar al próximo refresco).
+    try{ pollMessages(); pollClientChats(); }catch(e){}
     render(); _animCoachMsgs(); return;
   }
   if(act==="ai-close"){ state.ai.open=false; state.ai.bubbleOpen=true; state.aiThread=null; state.aiCoachThread=null; state.msgAdminDraft=""; state.msgDraft=""; state.chatPicker=false; render(); return; }
@@ -11331,7 +11333,16 @@ function refreshCliPresence(){
 function startMsgPolling(){
   if(_msgPollTimer) return;
   coachBeat();
-  _msgPollTimer = setInterval(function(){ pollMessages(); pollClientChats(); coachBeat(); refreshCliPresence(); }, 25000);
+  // Refresco ADAPTATIVO (self-loop con setTimeout): con el chat ABIERTO
+  // (conversación en vivo) refrescamos rápido —6s— para que los mensajes lleguen
+  // casi al toque, sobre todo en el celular; con el chat cerrado, más espaciado
+  // —18s— para no cargar de más. Antes era fijo cada 25s → se sentía lento.
+  var _pollTick=function(){
+    try{ pollMessages(); pollClientChats(); coachBeat(); refreshCliPresence(); }catch(e){}
+    var _fast=false; try{ _fast=!!(state && state.ai && state.ai.open && state.ai.mode==="chat"); }catch(e){}
+    _msgPollTimer = setTimeout(_pollTick, _fast?6000:18000);
+  };
+  _msgPollTimer = setTimeout(_pollTick, 6000);
   try{ pollClientChats(); }catch(e){} // primera pasada: fija el baseline (no suena)
   document.addEventListener("visibilitychange", function(){
     if(document.visibilityState !== "visible") return;
