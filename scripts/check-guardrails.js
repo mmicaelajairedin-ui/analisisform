@@ -2755,7 +2755,7 @@ const RULES = [
       const p = read("panel-v2.html");
       if (p) {
         if (!/&coach="\+encodeURIComponent\(\(RME&&RME\.id\)/.test(p)) return "panel-v2.html: _agSalaUrl ya no pasa &coach= — los archivos subidos no quedarían bajo el coach.";
-        if (!/contenido&&typeof r\.contenido==="object"&&r\.contenido\.url/.test(p)) return "panel-v2.html: _infFilesLoad ya no distingue un archivo (contenido.url) de un informe.";
+        if (!/var _fileUrl=/.test(p) || !/_c\.url/.test(p)) return "panel-v2.html: _infFilesLoad ya no distingue un archivo (contenido.url) de un informe.";
       }
       return null;
     },
