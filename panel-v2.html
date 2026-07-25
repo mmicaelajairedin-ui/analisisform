@@ -3046,20 +3046,23 @@ function _agRenderDay(key,compact){
   // Unificar eventos del día (Google + citas del link).
   var items=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); items.push({ms:+e.start, title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:""}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:"", durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_cliFotoByEmail(r.email)}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:_agSalaUrl(r), durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_cliFotoByEmail(r.email)}); } });
   items=_agMergeDup(items);
   var now=Date.now();
   // Fila limpia estilo "Tu agenda de hoy": hora · ícono · nombre + badge de tipo · duración/Meet.
   var rowEvent=function(it){
     var right="", isRes=(it.id!=null);
-    // Marcar asistencia INLINE desde la agenda (una sola tocada, suma a las analíticas).
+    // Solo se pregunta asistencia si la reunión YA TERMINÓ (inicio + duración).
+    // Antes de eso (futura o en curso) → botón de UNIRSE. No preguntar "asistió"
+    // a algo que todavía no pasó.
+    var ended=(it.ms + (it.durMin||60)*60000) < now;
     if(_attended(it.estado)) right=(isRes?"<button data-act='cal-asis' data-id='"+esc(it.id)+"' data-val='asistio' title='Asistió — toca para desmarcar'":"<span")+" style='width:22px;height:22px;border-radius:50%;background:var(--pw-sendero);color:#fff;border:none;cursor:"+(isRes?"pointer":"default")+";display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>"+_cIco('check',13)+(isRes?"</button>":"</span>");
     else if(isRes && it.estado==="no_asistio") right="<button data-act='cal-asis' data-id='"+esc(it.id)+"' data-val='no_asistio' title='No asistió — toca para desmarcar' style='font-size:11px;font-weight:600;color:var(--pw-danger);background:rgba(214,69,69,.1);border:none;padding:4px 9px;border-radius:100px;cursor:pointer;flex-shrink:0;white-space:nowrap'>No vino</button>";
-    else if(isRes && it.ms<=now) right="<span style='display:inline-flex;gap:5px;flex-shrink:0'>"+
+    else if(isRes && ended) right="<span style='display:inline-flex;gap:5px;flex-shrink:0'>"+
       "<button data-act='cal-asis' data-id='"+esc(it.id)+"' data-val='asistio' title='Asistió' style='width:26px;height:26px;border-radius:7px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-bosque);cursor:pointer;display:inline-flex;align-items:center;justify-content:center'>"+_cIco('check',13)+"</button>"+
       "<button data-act='cal-asis' data-id='"+esc(it.id)+"' data-val='no_asistio' title='No asistió' style='width:26px;height:26px;border-radius:7px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-danger);cursor:pointer;display:inline-flex;align-items:center;justify-content:center'>"+_cIco('xc',13)+"</button></span>";
+    else if(it.link) right="<a href='"+esc(it.link)+"' target='_blank' rel='noopener' aria-label='Unirse a la sesión' title='Unirse' style='width:28px;height:28px;border-radius:8px;background:var(--pw-bosque);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none'>"+_cIco('video',14)+"</a>";
     else if(it.ms>now && it.ms-now<=60*60000) right="<span style='font-size:11px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 10px;border-radius:100px;flex-shrink:0;white-space:nowrap'>En "+Math.max(1,Math.round((it.ms-now)/60000))+" min</span>";
-    else if(it.link) right="<a href='"+esc(it.link)+"' target='_blank' rel='noopener' aria-label='Entrar a la sesión' style='width:28px;height:28px;border-radius:8px;background:var(--pw-bosque);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none'>"+_cIco('video',14)+"</a>";
     var badge=it.tipo?("<span style='font-size:10.5px;font-weight:600;color:"+it.col+";background:"+it.col+"22;padding:2px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(it.tipo)+"</span>"):"";
     var meta=[]; if(it.durMin) meta.push(it.durMin+" min"); if(it.link) meta.push("Videollamada"); if(it.who) meta.push(it.who);
     return "<div style='display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--pw-border)'>"+
@@ -4051,6 +4054,13 @@ function _calRenderList(){
   box.innerHTML=rows.map(function(r){
     var dd=new Date(r.inicio); var typ=_agEventTypeFor(r.tipo); var col=(typ&&typ.color)||"#8C7B80"; var ico=(typ&&typ.icon)||"🗓️";
     var fecha=DIAS[dd.getDay()]+" "+dd.getDate()+" "+MES[dd.getMonth()]+" · "+_agTime(+dd);
+    // ¿Ya pasó? (terminó = inicio + duración). Solo entonces se pregunta asistencia.
+    // Si todavía no pasó → botón "Unirse" (entrar a la sala). Si ya está marcada,
+    // igual mostramos asistencia (para corregir).
+    var _ended=(+dd + (_durMin(r.tipo||"")||60)*60000) < now;
+    var _marked=_attended(r.estado)||r.estado==="no_asistio"||r.estado==="reprogramada";
+    var _showAsis=_ended||_marked;
+    var _salaU=_agSalaUrl(r);
     var mk=function(val,lbl){ var on=(val==="asistio"?_attended(r.estado):r.estado===val); var c=val==="asistio"?"var(--pw-bosque)":val==="no_asistio"?"var(--pw-danger)":"#C99A2E"; return "<button data-act='cal-asis' data-id='"+esc(r.id)+"' data-val='"+val+"' style='padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?c:"var(--pw-border)")+";background:"+(on?c:"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; };
     // Resultado de la demo (solo si asistió).
     var ob=function(val,lbl){ var on=(r.estado===val); var c=val==="gano"?"var(--pw-bosque)":"var(--pw-danger)"; return "<button data-act='cal-res' data-id='"+esc(r.id)+"' data-val='"+val+"' style='padding:4px 10px;border-radius:8px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?c:"var(--pw-border)")+";background:"+(on?c:"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; };
@@ -4077,7 +4087,11 @@ function _calRenderList(){
       "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(r.tipo||"")+(r.email?(" · "+esc(r.email)):"")+"</div>"+saveBtn+waBtn+"</div>"+
       owner+
       canc+
-      "<div style='display:flex;flex-direction:column;gap:2px;align-items:flex-end'><div style='display:flex;gap:6px;flex-wrap:wrap'>"+mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó")+"</div>"+outc+"</div>"+
+      "<div style='display:flex;flex-direction:column;gap:2px;align-items:flex-end'><div style='display:flex;gap:6px;flex-wrap:wrap'>"+
+        (_showAsis
+          ? (mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó"))
+          : (_salaU?("<a href='"+esc(_salaU)+"' target='_blank' rel='noopener' style='display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;background:var(--pw-bosque);color:#fff'>"+_cIco('video',13)+" Unirse</a>"):"<span style='font-size:11.5px;color:var(--pw-text-soft)'>Aún no empezó</span>"))+
+      "</div>"+(_showAsis?outc:"")+"</div>"+
     "</div>";
   }).join("");
 }
