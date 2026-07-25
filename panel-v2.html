@@ -3273,7 +3273,7 @@ function viewAgModal(){
     body="<div class='cp-form-row'><label class='cp-form-label'>Nombre</label><input id='ag-type-input' class='cp-form-input' value=\""+esc(curLbl)+"\" placeholder='Ej. Sesión 45 min'></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Color <span style='color:var(--pw-text-muted);font-weight:400'>— así se distingue en el calendario</span></label><div style='display:flex;gap:10px;flex-wrap:wrap;padding-top:2px'>"+colDots+"</div></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Icono <span style='color:var(--pw-text-muted);font-weight:400'>— se muestra en la agenda</span></label><div style='display:flex;gap:7px;flex-wrap:wrap;padding-top:2px'>"+icoBtns+"</div></div>"+
-      "<div class='cp-form-row'><label class='cp-form-label'>Quién atiende <span style='color:var(--pw-text-muted);font-weight:400'>— el link muestra a los elegidos</span></label>"+_pplHtml+"</div>"+
+      ((typeof RADMIN!=="undefined" && (RADMIN || (typeof isEmpleado==="function" && isEmpleado())))?("<div class='cp-form-row'><label class='cp-form-label'>Quién atiende <span style='color:var(--pw-text-muted);font-weight:400'>— el link muestra a los elegidos</span></label>"+_pplHtml+"</div>"):"")+
       _qHtml+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:16px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-save-type'>Guardar</button></div>";
   } else if(g.mode==="link"){
@@ -3307,7 +3307,10 @@ function viewAgModal(){
     if(_AG_TEAM===null) _teamInner="<div style='font-size:12px;color:var(--pw-text-muted)'>Cargando equipo…</div>";
     else if(!_team.length) _teamInner="<div style='font-size:12px;color:var(--pw-text-muted)'>No hay compañeros para invitar (crea empleados en tu equipo).</div>";
     else _teamInner="<div style='display:flex;gap:6px;flex-wrap:wrap'>"+_team.map(function(m){ var on=(_tg.indexOf(m.email)>=0); return "<button data-act='ag-team' data-email='"+esc(m.email)+"' style='display:inline-flex;align-items:center;gap:5px;border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";border-radius:100px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--pw-carbon);font-family:inherit'>"+(on?"✓ ":"")+esc((""+(m.nombre||m.email)).split(" ")[0])+"</button>"; }).join("")+"</div>";
-    var _teamHtml="<div class='cp-form-row'><label class='cp-form-label'>Invitar al equipo</label>"+_teamInner+"</div>";
+    // "Invitar al equipo" solo para el equipo interno (admin/empleado). Un coach
+    // cliente normal no tiene equipo Pathway: le queda solo "Otro invitado".
+    var _agTeamOk=(typeof RADMIN!=="undefined" && (RADMIN || (typeof isEmpleado==="function" && isEmpleado())));
+    var _teamHtml=_agTeamOk?("<div class='cp-form-row'><label class='cp-form-label'>Invitar al equipo</label>"+_teamInner+"</div>"):"";
     body="<div class='cp-form-row'><label class='cp-form-label'>Tipo</label><select id='ag-cita-type' class='cp-form-input'>"+opts+"</select></div>"+
       "<div class='cp-form-row-2'>"+
         "<div class='cp-form-row'><label class='cp-form-label'>Día</label><input type='date' id='ag-cita-date' class='cp-form-input' value='"+_dv+"'></div>"+
@@ -3469,8 +3472,12 @@ function _agLoadIcal(){
 // Las reservas que entran por el link viven en la tabla `citas`. Acá el coach
 // las ve dentro del panel (no solo en su Google) y las marca confirmada/cancelada.
 // Miembros del equipo (admin + empleados activos) para invitar a un evento.
+// SOLO el equipo interno de Pathway (admin Micaela + empleados) tiene "equipo":
+// un coach cliente normal no debe ver ni cargar esta lista (es gente de Pathway,
+// no suya). Para no-privilegiados queda vacío y la sección ni se muestra.
 var _AG_TEAM=null, _agTeamReq=false;
 function _agTeamLoad(){
+  if(!(typeof RADMIN!=="undefined" && (RADMIN || (typeof isEmpleado==="function" && isEmpleado())))){ _AG_TEAM=[]; return; }
   if(_AG_TEAM || _agTeamReq) return; _agTeamReq=true;
   _sb("usuarios?rol=in.(admin,empleado)&activo=eq.true&select=id,nombre,email&order=rol.asc")
     .then(function(rows){ _AG_TEAM=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; if(state.ag&&(state.ag.mode==="cita"||state.ag.mode==="edit"||state.ag.mode==="new")){ try{ render(); }catch(e){} } })
