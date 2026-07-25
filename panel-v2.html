@@ -2961,11 +2961,23 @@ function _agSalaUrl(r){
 }
 // Botones de asistencia (asistió / no vino) — MISMA lógica que la agenda del día,
 // reusable en Reservas. Tocar el estado activo lo desmarca (lo maneja cal-asis).
-// Foto REAL del cliente (candidatos.foto_perfil) por email — para la agenda/próxima.
-// Match por email (no por nombre: eso se equivocaba). Solo devuelve una URL real.
+// Extrae una foto REAL (http) de adentro del CV (cv_publicados.contenido._photo).
+// Es el fallback que faltaba: si el cliente subió foto en cv.html pero no está en
+// candidatos.foto_perfil, igual la detectamos.
+function _cvPhoto(cvJson){
+  try{ if(!cvJson) return ""; var cv=(typeof cvJson==="string")?JSON.parse(cvJson):cvJson;
+    var p=cv && (cv._photo||cv.foto||cv.photo||(cv.datos&&cv.datos.foto)||(cv.perfil&&cv.perfil.foto));
+    return (p && /^https?:\/\//.test(p))?p:""; }catch(e){ return ""; }
+}
+// Foto REAL del cliente por email — para la agenda/próxima. x.photo ya se resuelve
+// con TODOS los orígenes (foto_perfil → foto_url → foto del CV → si nada, avatar
+// generado). Acá devolvemos SOLO si es una foto real (http), no el avatar generado.
 function _cliFotoByEmail(email){
   email=(""+(email||"")).trim().toLowerCase(); if(!email) return "";
-  try{ var L=window.CLIENTS||[]; for(var i=0;i<L.length;i++){ var x=L[i]; if(x && (""+(x.email||"")).trim().toLowerCase()===email){ var f=(x.raw&&x.raw.foto_perfil)||""; return (/^https?:\/\//.test(f))?f:""; } } }catch(e){}
+  try{ var L=window.CLIENTS||[]; for(var i=0;i<L.length;i++){ var x=L[i]; if(x && (""+(x.email||"")).trim().toLowerCase()===email){
+    var cands=[ x.photo, (x.raw&&x.raw.foto_perfil), (x.raw&&x.raw.foto_url), _cvPhoto(x.cvContenido) ];
+    for(var j=0;j<cands.length;j++){ if(cands[j] && /^https?:\/\//.test(cands[j])) return cands[j]; }
+  } } }catch(e){}
   return "";
 }
 function _agDayFull(key){
@@ -11960,7 +11972,7 @@ function loadReal(){
         email: c.email||"", week: wk, medal: medal, last:{txt:lastTxt,state:lastSt},
         cvState: cvSet[em]?"published":"pending", reportState: rpSet[em]?"published":"pending",
         cvContenido: cvMap[em]||"",
-        source: (c.pago_recibido ? "pathway" : "directo"), notas: (c.notas_privadas!=null ? c.notas_privadas : (_isChat(c.notas_coach) ? "" : (c.notas_coach||""))), chat: _chatArr(c.notas_coach), raw:c, inf: infMap[em]||null, ses:(function(){try{return JSON.parse(c.sesiones_registro||"[]")||[];}catch(e){return [];}})(), photo: c.foto_perfil || makeAvatar(c.nombre||c.email||"Cliente")
+        source: (c.pago_recibido ? "pathway" : "directo"), notas: (c.notas_privadas!=null ? c.notas_privadas : (_isChat(c.notas_coach) ? "" : (c.notas_coach||""))), chat: _chatArr(c.notas_coach), raw:c, inf: infMap[em]||null, ses:(function(){try{return JSON.parse(c.sesiones_registro||"[]")||[];}catch(e){return [];}})(), photo: (function(){ var _f=c.foto_perfil||c.foto_url||_cvPhoto(cvMap[em]); return (_f && /^https?:\/\//.test(_f))?_f:makeAvatar(c.nombre||c.email||"Cliente"); })()
       };
     });
     // Coach demo: siempre mostramos la María de ejemplo con el form "lleno"
