@@ -3690,12 +3690,14 @@ function _fechaCli(iso, tz){
     return s.charAt(0).toUpperCase()+s.slice(1);
   }catch(e){ return ""; }
 }
-function _notifResCliente(email,nombre,subject,inner){
+function _notifResCliente(email,nombre,subject,inner,icsB64){
   email=(""+(email||"")).trim(); if(!email) return;
   var coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"tu coach";
   var html="<div style='font-family:Inter,-apple-system,Arial,sans-serif;color:#1B2E26;font-size:14px;line-height:1.6'>"+inner+
     "<p style='font-size:12.5px;color:#8A968E;margin-top:18px'>— "+esc(coach)+" · Pathway</p></div>";
-  try{ fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:email,to_name:nombre||"",subject:subject,html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"})}).catch(function(){}); }catch(e){}
+  var _body={to:email,to_name:nombre||"",subject:subject,html:html,reply_to:"hi@pathwaycareercoach.com",signature:"pathway"};
+  if(icsB64) _body.attachment=[{content:icsB64, name:"sesion.ics"}];  // agregar al calendario (opcional, solo link Pathway, sin Meet)
+  try{ fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(_body)}).catch(function(){}); }catch(e){}
 }
 function _notifResCancel(r){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(r.inicio, r.cliente_tz);
@@ -3709,26 +3711,45 @@ function _salaClientLink(r, iso){
   var coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
   return "https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&email="+encodeURIComponent(r.email||"")+"&con="+encodeURIComponent(coach);
 }
+// Invitación .ics OPCIONAL (agregar el evento al calendario si quieren) con SOLO
+// el link de la Sala — sin Meet, sin sync automático. Misma idea que reservar.html.
+function _icsBuild(title, startMs, endMs, link, uid){
+  function z(n){ return ("0"+n).slice(-2); }
+  function utc(d){ d=new Date(d); return d.getUTCFullYear()+z(d.getUTCMonth()+1)+z(d.getUTCDate())+"T"+z(d.getUTCHours())+z(d.getUTCMinutes())+z(d.getUTCSeconds())+"Z"; }
+  function e(s){ return (""+(s||"")).replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\r?\n/g,"\\n"); }
+  var raw=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Pathway//Reserva//ES","CALSCALE:GREGORIAN","METHOD:PUBLISH","BEGIN:VEVENT",
+    "UID:"+(uid||utc(Date.now()))+"@pathwaycareercoach.com","DTSTAMP:"+utc(Date.now()),"DTSTART:"+utc(startMs),"DTEND:"+utc(endMs),
+    "SUMMARY:"+e(title),"DESCRIPTION:"+e("Tu sesión en Pathway. Entra por este link: "+link),"LOCATION:"+e(link),"END:VEVENT","END:VCALENDAR"].join("\r\n");
+  var b64=""; try{ b64=btoa(unescape(encodeURIComponent(raw))); }catch(_e){}
+  return { raw:raw, b64:b64 };
+}
+// .ics de una cita para el cliente (hora nueva si se pasa iso). Duración = _durMin.
+function _resIcs(r, iso){
+  var _s=+new Date(iso||r.inicio); var _dm=(_durMin(r.tipo||"")||60);
+  var _coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
+  return _icsBuild((r.tipo||"Sesión")+(_coach?(" con "+_coach):""), _s, _s+_dm*60000, _salaClientLink(r, iso), (r.token||r.id));
+}
 function _notifResReprog(r, iso){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(iso, r.cliente_tz);
   // Al mover la hora cambia el room de la Sala → hay que mandarle el link NUEVO,
   // si no el cliente reusa el viejo y quedan en salas distintas.
-  var join=_salaClientLink(r, iso);
+  var join=_salaClientLink(r, iso); var _ics=_resIcs(r, iso);
   _notifResCliente(r.email, r.nombre, "Tu sesión cambió de horario",
     "<p>Hola "+esc(fn)+", <strong>moví tu sesión</strong>"+(f?(" al <strong>"+esc(f)+"</strong>"):"")+".</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Nuevo horario · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
     "<a href='"+join+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"+
-    "<p style='font-size:12.5px;color:#8A968E;margin-top:14px'>Usa este link nuevo para entrar. Si ese horario no te sirve, responde y coordinamos.</p>");
+    "<p style='font-size:12.5px;color:#8A968E;margin-top:14px'>Usa este link nuevo para entrar. Adjuntamos la invitación nueva (📎 sesion.ics) por si quieres actualizar tu calendario. Si ese horario no te sirve, responde y coordinamos.</p>", _ics.b64);
 }
 // Confirmación al cliente con la hora CORRECTA (AM/PM, su zona) + link para entrar.
 // Se dispara al "Confirmar" la reserva — sirve para reenviarle la buena si hubo lío.
 function _confirmCliente(r){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(r.inicio, r.cliente_tz);
-  var join=_salaClientLink(r, null);
+  var join=_salaClientLink(r, null); var _ics=_resIcs(r, null);
   var inner="<p>Hola "+esc(fn)+", tu sesión está <strong>confirmada</strong>. 🎉</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Cuándo · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
-    "<a href='"+join+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>";
-  _notifResCliente(r.email, r.nombre, "Reserva confirmada · tu sesión", inner);
+    "<a href='"+join+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"+
+    "<p style='font-size:12.5px;color:#8A968E;margin-top:14px'>📎 Adjuntamos la invitación (sesion.ics) por si quieres agregarla a tu calendario.</p>";
+  _notifResCliente(r.email, r.nombre, "Reserva confirmada · tu sesión", inner, _ics.b64);
 }
 function _resRender(list){
   var rows=_calDedup(list||[]).filter(function(r){ return r && r.estado!=="cancelada"; });
@@ -8617,12 +8638,7 @@ document.addEventListener("click", function(ev){
     var _rrh=(_RES_DATA||[]).filter(function(x){ return String(x.id)===String(_rid); })[0];
     if(_RES_DATA){ _RES_DATA.forEach(function(r){ if(String(r.id)===String(_rid)) r.inicio=_iso; }); _RES_DATA.sort(function(a,b){ return +new Date(a.inicio)-+new Date(b.inicio); }); var _rb=document.getElementById("cp-res-body"); if(_rb) _rb.innerHTML=_resRender(_RES_DATA); }
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{inicio:_iso})
-      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso);
-          // Mueve también el evento en el Google Calendar del coach (si estaba sincronizado).
-          try{ if(_rrh&&_rrh.gcal_event_id){ var _dm=(_durMin(_rrh.tipo||"")||60); var _endISO=new Date(_ms+_dm*60000).toISOString();
-            _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/functions/v1/gcal-push",{method:"POST",headers:h,body:JSON.stringify({coach_id:(RME&&RME.id),op:"update",event_id:_rrh.gcal_event_id,event:{summary:(_rrh.tipo||"Sesión")+" con "+(_rrh.nombre||""),startISO:_iso,endISO:_endISO,attendeeEmail:_rrh.email}})}); }).catch(function(){});
-          } }catch(_e){}
-          try{ _agAfterCal(); }catch(_e){} } else { toast("No se pudo cambiar la hora."); _resLoad(); } })
+      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso); try{ _agAfterCal(); }catch(_e){} } else { toast("No se pudo cambiar la hora."); _resLoad(); } })
       .catch(function(){ toast("No se pudo cambiar la hora."); _resLoad(); });
     return;
   }
