@@ -3697,17 +3697,30 @@ function _notifResCancel(r){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(r.inicio, r.cliente_tz);
   _notifResCliente(r.email, r.nombre, "Tu sesión fue cancelada", "<p>Hola "+esc(fn)+", te aviso que <strong>cancelé la sesión</strong>"+(f?(" del "+esc(f)):"")+".</p><p>Si quieres, responde este email y reprogramamos.</p>");
 }
+// Link de la Sala PARA EL CLIENTE (mod=0). El room es determinístico por
+// coach+hora → el mismo que arma el panel del coach en _agSalaUrl. Si se pasa
+// un `iso` (reprogramación), usa la hora NUEVA → los dos caen en la misma sala.
+function _salaClientLink(r, iso){
+  var cid=(r.coach_id||(RME&&RME.id)||"x"); var room="Pathway-"+cid+"-"+(new Date(iso||r.inicio).getTime());
+  var coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
+  return "https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&email="+encodeURIComponent(r.email||"")+"&con="+encodeURIComponent(coach);
+}
 function _notifResReprog(r, iso){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(iso, r.cliente_tz);
-  _notifResCliente(r.email, r.nombre, "Tu sesión cambió de horario", "<p>Hola "+esc(fn)+", <strong>moví tu sesión</strong>"+(f?(" al "+esc(f)):"")+".</p><p>Si ese horario no te sirve, responde y coordinamos.</p>");
+  // Al mover la hora cambia el room de la Sala → hay que mandarle el link NUEVO,
+  // si no el cliente reusa el viejo y quedan en salas distintas.
+  var join=_salaClientLink(r, iso);
+  _notifResCliente(r.email, r.nombre, "Tu sesión cambió de horario",
+    "<p>Hola "+esc(fn)+", <strong>moví tu sesión</strong>"+(f?(" al <strong>"+esc(f)+"</strong>"):"")+".</p>"+
+    "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Nuevo horario · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
+    "<a href='"+join+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"+
+    "<p style='font-size:12.5px;color:#8A968E;margin-top:14px'>Usa este link nuevo para entrar. Si ese horario no te sirve, responde y coordinamos.</p>");
 }
 // Confirmación al cliente con la hora CORRECTA (AM/PM, su zona) + link para entrar.
 // Se dispara al "Confirmar" la reserva — sirve para reenviarle la buena si hubo lío.
 function _confirmCliente(r){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(r.inicio, r.cliente_tz);
-  var cid=(r.coach_id||(RME&&RME.id)||"x"); var room="Pathway-"+cid+"-"+(new Date(r.inicio).getTime());
-  var coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
-  var join="https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&con="+encodeURIComponent(coach);
+  var join=_salaClientLink(r, null);
   var inner="<p>Hola "+esc(fn)+", tu sesión está <strong>confirmada</strong>. 🎉</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Cuándo · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
     "<a href='"+join+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>";
@@ -3795,7 +3808,11 @@ var _CIC={
   check:"<polyline points='20 6 9 17 4 12'></polyline>",
   chevR:"<polyline points='9 18 15 12 9 6'></polyline>"
 };
-function _durMin(label){ var m=(""+(label||"")).match(/(\d+)\s*min/i); return m?parseInt(m[1],10):null; }
+// Duración en minutos a partir del label del tipo. Debe COINCIDIR con durFrom()
+// de reservar.html (misma reserva → misma duración): "NN min" → NN; si hay "N h"
+// → 60; si no dice nada → 30 (antes devolvía null y el panel asumía 60, corriendo
+// la asistencia y el cierre de la Sala ~30 min para tipos sin "min" en el nombre).
+function _durMin(label){ var s=(""+(label||"")); var m=s.match(/(\d+)\s*min/i); return m?parseInt(m[1],10):(/(\d+)\s*h/i.test(s)?60:30); }
 function _bookUrl(){ return "https://pathwaycareercoach.com/reservar.html?c="+encodeURIComponent((REAL&&RME&&RME.id)||""); }
 // Overlay con el código QR del link de reservas (imagen del servicio público qrserver).
 function _showQR(url){
@@ -8596,7 +8613,12 @@ document.addEventListener("click", function(ev){
     var _rrh=(_RES_DATA||[]).filter(function(x){ return String(x.id)===String(_rid); })[0];
     if(_RES_DATA){ _RES_DATA.forEach(function(r){ if(String(r.id)===String(_rid)) r.inicio=_iso; }); _RES_DATA.sort(function(a,b){ return +new Date(a.inicio)-+new Date(b.inicio); }); var _rb=document.getElementById("cp-res-body"); if(_rb) _rb.innerHTML=_resRender(_RES_DATA); }
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{inicio:_iso})
-      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso); try{ _agAfterCal(); }catch(_e){} } else { toast("No se pudo cambiar la hora."); _resLoad(); } })
+      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso);
+          // Mueve también el evento en el Google Calendar del coach (si estaba sincronizado).
+          try{ if(_rrh&&_rrh.gcal_event_id){ var _dm=(_durMin(_rrh.tipo||"")||60); var _endISO=new Date(_ms+_dm*60000).toISOString();
+            _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/functions/v1/gcal-push",{method:"POST",headers:h,body:JSON.stringify({coach_id:(RME&&RME.id),op:"update",event_id:_rrh.gcal_event_id,event:{summary:(_rrh.tipo||"Sesión")+" con "+(_rrh.nombre||""),startISO:_iso,endISO:_endISO,attendeeEmail:_rrh.email}})}); }).catch(function(){});
+          } }catch(_e){}
+          try{ _agAfterCal(); }catch(_e){} } else { toast("No se pudo cambiar la hora."); _resLoad(); } })
       .catch(function(){ toast("No se pudo cambiar la hora."); _resLoad(); });
     return;
   }

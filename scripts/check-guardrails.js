@@ -2671,6 +2671,52 @@ const RULES = [
     },
   },
   {
+    name: "reservas: al reprogramar, el email lleva el link NUEVO de la Sala (mismo room que el coach)",
+    why: "El room de la videollamada lleva la hora dentro (Pathway-<coach>-<ms>). Al mover la hora " +
+         "cambia el room: si el email de reprogramación no manda el link nuevo, el cliente reusa el " +
+         "viejo y coach y cliente caen en salas DISTINTAS (nunca se encuentran). _notifResReprog debe " +
+         "construir el link con la hora nueva (_salaClientLink(r, iso)).",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _salaClientLink/.test(p)) return "panel-v2.html: falta _salaClientLink (link de la Sala para el cliente).";
+        // _notifResReprog debe usar el link (con la hora nueva) dentro de su cuerpo.
+        const m = p.match(/function _notifResReprog[\s\S]*?\n\}/);
+        if (m && !/_salaClientLink\(/.test(m[0])) return "panel-v2.html: _notifResReprog ya no manda el link nuevo de la Sala — el cliente entra a la sala vieja.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: la flecha 'volver al panel' se oculta para el cliente (id='back')",
+    why: "El guard escondía la flecha con el('back') pero el ancla tenía class y no id → el() (getElementById) " +
+         "devolvía null y nunca se ocultaba: el cliente veía un '‹' que lo mandaba al panel/login del coach. " +
+         "El ancla debe tener id='back'.",
+    check() {
+      const s = read("sala.html");
+      if (s && /el\(['"]back['"]\)/.test(s)) {
+        if (!/class=["']back["'][^>]*id=["']back["']|id=["']back["'][^>]*class=["']back["']/.test(s))
+          return "sala.html: el ancla 'volver' no tiene id='back' — el guard no la oculta para el cliente.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: chat casual propio (mismo en móvil y web, sin el chat nativo distinto por equipo)",
+    why: "El chat nativo de la videollamada se ve distinto en móvil vs web. Usamos uno propio que viaja por " +
+         "el transporte de la llamada (sendChatMessage / incomingMessage) para que sea idéntico en todos lados. " +
+         "Si se rompe, el chat vuelve a ser inconsistente o desaparece.",
+    check() {
+      const s = read("sala.html");
+      if (s) {
+        if (!/id=["']chatp["']/.test(s)) return "sala.html: falta el panel de chat propio (#chatp).";
+        if (!/executeCommand\(['"]sendChatMessage['"]/.test(s)) return "sala.html: el chat propio ya no envía por sendChatMessage.";
+        if (!/addListener\(['"]incomingMessage['"]/.test(s)) return "sala.html: el chat propio ya no escucha incomingMessage — no llegan los mensajes.";
+      }
+      return null;
+    },
+  },
+  {
     name: "admin: 'Pasar a Pro/Basic' va por edge function (resiste RLS), no PATCH directo",
     why: "El botón hacía un PATCH directo a usuarios que RLS bloquea → tocabas OK y no " +
          "pasaba nada. Debe ir por admin-coach-op con op:set_plan (como 'marcar pagado'). " +
