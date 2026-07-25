@@ -1330,16 +1330,23 @@
     var nichoLead=(nicho==='financiero')?'finanzas':(nicho||'sin');
     var eid=(WHO&&WHO.id)||(ME&&ME.id);
     var now=new Date().toISOString();
-    return sb.from('leads').select('id').eq('empleado_id',eid).ilike('email',email).limit(1).then(function(res){
-      var found=res&&res.data&&res.data[0];
-      if(found){
-        var upd={estado:'alta',alta_at:now,nicho:nichoLead};
-        return sb.from('leads').update(upd).eq('id',found.id).then(function(){
-          if(typeof LEADS!=='undefined'&&LEADS){ var l=LEADS.filter(function(x){return x.id===found.id;})[0]; if(l) Object.assign(l,upd); }
-        });
-      }
-      var row={empleado_id:eid,nombre:nombre||email,email:email,nicho:nichoLead,estado:'alta',alta_at:now};
-      return sb.from('leads').insert(row).select().single().then(function(r){ if(r&&r.data&&typeof LEADS!=='undefined'&&LEADS){ LEADS.unshift(r.data); } });
+    // Resolvemos el id del coach recién creado (por email) para escribir
+    // alta_coach_id → la atribución lead→coach queda por ID, no SOLO por email
+    // (que se rompe si el coach después paga con otro correo). Es la base para
+    // que la comisión de Gonzalo no se pierda por un mismatch de email.
+    return sb.from('usuarios').select('id').ilike('email',email).limit(1).then(function(ur){
+      var coachId=(ur&&ur.data&&ur.data[0]&&ur.data[0].id)||null;
+      return sb.from('leads').select('id').eq('empleado_id',eid).ilike('email',email).limit(1).then(function(res){
+        var found=res&&res.data&&res.data[0];
+        if(found){
+          var upd={estado:'alta',alta_at:now,nicho:nichoLead}; if(coachId) upd.alta_coach_id=coachId;
+          return sb.from('leads').update(upd).eq('id',found.id).then(function(){
+            if(typeof LEADS!=='undefined'&&LEADS){ var l=LEADS.filter(function(x){return x.id===found.id;})[0]; if(l) Object.assign(l,upd); }
+          });
+        }
+        var row={empleado_id:eid,nombre:nombre||email,email:email,nicho:nichoLead,estado:'alta',alta_at:now}; if(coachId) row.alta_coach_id=coachId;
+        return sb.from('leads').insert(row).select().single().then(function(r){ if(r&&r.data&&typeof LEADS!=='undefined'&&LEADS){ LEADS.unshift(r.data); } });
+      });
     }).catch(function(){});
   }
   function empDarAcceso(){
