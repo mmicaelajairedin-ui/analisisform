@@ -2528,6 +2528,72 @@ const RULES = [
     },
   },
   {
+    name: "reservas: horarios en AM/PM (no 24h) — un cliente confundió 01:00 con 1pm",
+    why: "Un cliente en México reservó lo que en su hora eran las 01:00 (1am) pero lo " +
+         "leyó como '1pm' porque se mostraba en 24h ('01:00 H'). LatAm usa AM/PM. Los " +
+         "horarios del picker y las fechas de los emails deben ir en AM/PM para que " +
+         "nadie confunda la madrugada con la tarde.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        // Solo el DISPLAY debe ir en AM/PM (_hmInViewerTz para los slots, fechaEnTz
+        // para los emails). Los hour12:false internos (offset de zona, _hourInTz) son
+        // cálculos, no formato — no se tocan.
+        const disp = (r.match(/function _hmInViewerTz[\s\S]*?\n\}/) || [""])[0] + (r.match(/function fechaEnTz[\s\S]*?\n\}/) || [""])[0];
+        if (!/hour12:\s*true/.test(disp)) return "reservar.html: los horarios/fechas visibles ya no van en AM/PM (hour12:true) — se confunde 1am con 1pm.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: solo horarios coherentes para el cliente (no ofrecer la 1 AM)",
+    why: "No se le puede ofrecer al cliente un horario que a ÉL le cae de madrugada " +
+         "(la disponibilidad del coach en Madrid caía 1am para México). _viewerGroups " +
+         "filtra por la hora del cliente (_hourInTz) para no mostrar esos huecos.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        if (!/function _hourInTz/.test(r)) return "reservar.html: falta _hourInTz() — el filtro de horarios cómodos.";
+        if (!/_hourInTz\(ms/.test(r)) return "reservar.html: _viewerGroups ya no filtra por la hora del cliente (podría ofrecer la 1 AM).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: cancelar/reprogramar/confirmar le AVISAN al cliente por email",
+    why: "Antes el coach cancelaba/reprogramaba y al cliente no le llegaba nada (tenía " +
+         "que avisarle a mano). Ahora cada acción manda un email al cliente por send-email. " +
+         "Si se rompe, el cliente se queda sin saber que su cita cambió.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _notifResCancel/.test(p) || !/function _notifResReprog/.test(p) || !/function _confirmCliente/.test(p))
+          return "panel-v2.html: falta algún aviso al cliente (_notifResCancel / _notifResReprog / _confirmCliente).";
+        if (!/_notifResCancel\(/.test(p) || !/_notifResReprog\(/.test(p) || !/_confirmCliente\(/.test(p))
+          return "panel-v2.html: un aviso al cliente está definido pero no se dispara (cancelar/reprogramar/confirmar).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "admin: 'Pasar a Pro/Basic' va por edge function (resiste RLS), no PATCH directo",
+    why: "El botón hacía un PATCH directo a usuarios que RLS bloquea → tocabas OK y no " +
+         "pasaba nada. Debe ir por admin-coach-op con op:set_plan (como 'marcar pagado'). " +
+         "Además la función tiene que estar en el auto-deploy, si no el cambio no llega a prod.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p && /coach-plan:/.test(p)) {
+        if (!/op:\s*["']set_plan["']|"op":"set_plan"/.test(p)) return "panel-v2.html: 'Pasar a Pro/Basic' ya no usa admin-coach-op (op:set_plan) — vuelve a fallar por RLS.";
+      }
+      const w = read(".github/workflows/deploy-functions.yml");
+      if (w) {
+        if (!/functions deploy admin-coach-op/.test(w)) return "deploy-functions.yml: admin-coach-op no está en el auto-deploy — los cambios no llegarían a producción.";
+        if (!/functions deploy jaas-token/.test(w)) return "deploy-functions.yml: jaas-token no está en el auto-deploy — la Sala quedaría sin token.";
+      }
+      return null;
+    },
+  },
+  {
     name: "candado Pro 'probá gratis, pagá para guardar': la función Pro se ve pero al guardar/enviar abre el modal de upgrade (no alert feo)",
     bug: "El coach Basic VE y prueba las funciones Pro (marca propia, mensajería, +clientes), " +
          "pero al GUARDAR/ENVIAR/AGREGAR se abre un modal de upgrade de Pathway (proGate/pwUpgrade) " +
