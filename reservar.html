@@ -431,17 +431,6 @@ function loadTeam(){
     .catch(function(){ fail('No pudimos cargar el equipo. Reintenta en un momento.'); });
 }
 // Selector de persona (arriba), solo en modo equipo con más de uno.
-function teamBar(){
-  if(!TEAM || TEAM_MEMBERS.length<2) return '';
-  var pills=TEAM_MEMBERS.map(function(u,i){
-    var on=(String(u.id)===String(CID)); var ph=memPhoto(u);
-    var av=ph?"<img src='"+esc(ph)+"' alt='' style='width:26px;height:26px;border-radius:50%;object-fit:cover'>"
-      :"<span style='width:26px;height:26px;border-radius:50%;background:#2D6A4F;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px'>"+esc(initials(u.nombre))+"</span>";
-    return "<button class='who-pill"+(on?' on':'')+"' data-pick='"+i+"'>"+av+"<span>"+esc((''+(u.nombre||'')).split(' ')[0])+"</span></button>";
-  }).join('');
-  return "<div class='lbl' style='margin-top:2px'>¿Con quién?</div><div class='who-row'>"+pills+"</div>";
-}
-
 function fail(t){
   $('card').className='card';
   $('card').innerHTML="<div class='center'><div class='ok-ico' style='background:rgba(192,117,110,.14)'>😕</div>"+
@@ -726,15 +715,25 @@ function confirmar(){
       .catch(function(){ if(withResp) return _postCita(false); });
   };
   var _commit=function(){
-    // 1) Registro best-effort en la base (para que el coach lo vea aunque no use Google).
-    try{ _postCita(true); }catch(e){}
-    TAKEN[start.getTime()]=true;
-    // 2) Emails de confirmación (Brevo). El botón "Agregar a Google Calendar" abre
-    //    Google con el evento cargado (guardar y listo) — sin invitar a nadie, así
-    //    NO aparece el Meet automático. El .ics va adjunto solo como respaldo para
-    //    Apple/Outlook. NADA automático a Google: la cita ya quedó en el panel.
-    sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
-    ok(name, start, gurl);
+    // 1) Guarda la cita y ESPERA el resultado. Antes era fire-and-forget: si el
+    //    INSERT fallaba (red, body raro), igual salía "¡Reserva enviada!" sin fila
+    //    en la base → no aparecía en el panel, sin recordatorios. Ahora se verifica
+    //    (_postCita ya reintenta una vez) y se avisa suave si no quedó guardada.
+    var _finish=function(saved){
+      TAKEN[start.getTime()]=true;
+      // 1b) Si viene de "reprogramar" (gestionar-cita manda &reprog=<token viejo>),
+      //     recién AHORA que la nueva quedó guardada cancelamos la vieja → el cliente
+      //     nunca se queda sin turno si abandonaba a mitad.
+      try{ var _rp=qp('reprog'); if(saved && _rp){ fetch(SB+'/rest/v1/citas?token=eq.'+encodeURIComponent(_rp),{ method:'PATCH', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json', Prefer:'return=minimal' }, body:JSON.stringify({ estado:'cancelada' }) }).catch(function(){}); } }catch(e){}
+      // 2) Emails de confirmación (Brevo). "Agregar a Google Calendar" abre Google
+      //    con el evento cargado (sin invitar a nadie → sin Meet). El .ics va adjunto
+      //    solo como respaldo para Apple/Outlook.
+      sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
+      ok(name, start, gurl, saved);
+    };
+    var _p; try{ _p=_postCita(true); }catch(e){ _p=null; }
+    if(_p && _p.then){ _p.then(function(r){ _finish(!!(r && r.ok)); }).catch(function(){ _finish(false); }); }
+    else { _finish(false); }
   };
   // Re-chequeo anti doble-booking JUSTO antes de confirmar: si el hueco se ocupó
   // recién (otra persona reservó mientras), no confirmamos y pedimos elegir otro.
@@ -811,14 +810,17 @@ function postEmail(payload){
   }catch(e){}
 }
 
-function ok(name, start, gcalUrl){
+function ok(name, start, gcalUrl, saved){
   $('card').className='card';
+  // Si la cita no se pudo registrar (saved=false), el email igual sale, pero avisamos
+  // suave para que el cliente reconfirme y no quede una reserva "fantasma".
+  var _warn=(saved===false)?("<p class='hint' style='color:#B45309;background:#FEF3E2;border:1px solid #F5D9A8;border-radius:10px;padding:9px 12px;margin-top:12px'>Puede que no se haya registrado del todo. Si no te llega el email en unos minutos"+(EMAIL?(", escribile a "+esc(FIRST)+" a <strong>"+esc(EMAIL)+"</strong>"):"")+".</p>"):"";
   $('card').innerHTML=
     "<div class='center'><div class='ok-ico'>🎉</div>"+
     "<h1>¡Reserva enviada!</h1>"+
-    "<p class='sub'>Elegiste <strong style='text-transform:capitalize'>"+esc(fechaLinda(start))+"</strong>.<br>Te mandamos un email de confirmación con el link de la videollamada.</p>"+
+    "<p class='sub'>Elegiste <strong style='text-transform:capitalize'>"+esc(fechaEnTz(start, VIEWER_TZ))+"</strong>.<br>Te mandamos un email de confirmación con el link de la videollamada.</p>"+
     "<a class='btn btn-primary' href='"+esc(gcalUrl)+"' target='_blank' rel='noopener' style='margin-top:20px'>Agregar a Google Calendar</a>"+
-    "<p class='hint'>Se abre Google Calendar: tocá <strong>Guardar</strong> y listo. Igual te llega todo por email"+(EMAIL?(", o escribile a "+esc(FIRST)+" a <strong>"+esc(EMAIL)+"</strong>"):"")+".</p></div>";
+    "<p class='hint'>Se abre Google Calendar: tocá <strong>Guardar</strong> y listo. Igual te llega todo por email"+(EMAIL?(", o escribile a "+esc(FIRST)+" a <strong>"+esc(EMAIL)+"</strong>"):"")+".</p>"+_warn+"</div>";
 }
 
 // Arranque (al FINAL, cuando SAFE_SELECT y todas las funciones ya están definidas).

@@ -79,20 +79,44 @@ function render(){
       "<a class='btn btn-primary' href='/reservar.html?c="+encodeURIComponent(CITA.coach_id||'')+"'>Reservar de nuevo</a>";
     return;
   }
-  $('card').innerHTML=
-    "<h1>Tu reserva</h1>"+
-    "<p class='sub'>Hola "+esc((''+(CITA.nombre||'')).split(' ')[0])+", acá puedes cancelar o reprogramar.</p>"+
-    "<div class='box'>"+
+  var _box="<div class='box'>"+
       "<div class='k'>"+esc(CITA.tipo||'Sesión')+"</div>"+
       "<div class='v'>"+esc(cuando)+"</div>"+
       "<div class='t'>⏰ "+esc(hora)+(tz?(" <span style='color:var(--muted)'>("+esc(tz)+")</span>"):"")+"</div>"+
-    "</div>"+
-    (pasada?"<p class='sub'>Esta reserva ya pasó.</p>":"")+
+    "</div>";
+  // Una reserva que YA pasó no se cancela ni reprograma (no tiene sentido): solo
+  // ofrecemos reservar otra.
+  if(pasada){
+    $('card').innerHTML=
+      "<h1>Tu reserva</h1>"+
+      "<p class='sub'>Hola "+esc((''+(CITA.nombre||'')).split(' ')[0])+", esta reserva ya pasó.</p>"+
+      _box+
+      "<a class='btn btn-primary' href='/reservar.html?c="+encodeURIComponent(CITA.coach_id||'')+"'>Reservar otro horario</a>";
+    return;
+  }
+  $('card').innerHTML=
+    "<h1>Tu reserva</h1>"+
+    "<p class='sub'>Hola "+esc((''+(CITA.nombre||'')).split(' ')[0])+", acá puedes cancelar o reprogramar.</p>"+
+    _box+
     "<button class='btn btn-primary' id='btn-re'>Reprogramar (elegir otro horario)</button>"+
     "<button class='btn btn-danger' id='btn-cancel'>Cancelar la reserva</button>"+
     "<div class='msg' id='msg'></div>";
   $('btn-cancel').onclick=doCancel;
   $('btn-re').onclick=doReprogramar;
+}
+// Avisa al coach por email que el cliente canceló (antes no se enteraba). Busca su
+// email por coach_id y manda el aviso; best-effort.
+function _notifyCoachCancel(){
+  try{
+    if(!CITA||!CITA.coach_id) return;
+    fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(CITA.coach_id)+'&select=email,nombre&limit=1',{ headers:H() })
+      .then(function(r){ return r.ok?r.json():[]; })
+      .then(function(u){ var co=(u&&u[0])||{}; if(!co.email) return;
+        var tz=CITA.cliente_tz||''; var cuando=fmtFecha(CITA.inicio,tz)+' · '+fmtHora(CITA.inicio,tz);
+        var html="<div style='font-family:Inter,Arial,sans-serif;color:#1B2E26'><h2 style='font-family:Georgia,serif;color:#1B4332'>Reserva cancelada</h2><p><strong>"+esc(CITA.nombre||CITA.email||'Un cliente')+"</strong> canceló su <strong>"+esc(CITA.tipo||'sesión')+"</strong> del <strong>"+esc(cuando)+"</strong>.</p><p style='font-size:13px;color:#5A6A60'>El horario quedó libre en tu agenda.</p></div>";
+        fetch(SB+'/functions/v1/send-email',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ to:co.email, to_name:co.nombre||'', subject:'❌ '+(CITA.nombre||'Un cliente')+' canceló su reserva', html:html, reply_to:(CITA.email||undefined), signature:'pathway' }) }).catch(function(){});
+      }).catch(function(){});
+  }catch(e){}
 }
 
 function _patchCancelada(){
@@ -105,6 +129,7 @@ function doCancel(){
   _patchCancelada()
     .then(function(r){
       if(!r.ok) throw 0;
+      _notifyCoachCancel();   // avisar al coach que se liberó el horario
       $('card').innerHTML="<div class='ico'>✅</div><h1>Reserva cancelada</h1>"+
         "<p class='sub'>Listo, liberamos el horario. Si quieres, puedes reservar otro momento.</p>"+
         "<a class='btn btn-primary' href='/reservar.html?c="+encodeURIComponent(CITA.coach_id||'')+"'>Reservar otro horario</a>";
@@ -113,12 +138,10 @@ function doCancel(){
 }
 
 function doReprogramar(){
-  // Reprogramar = cancelar esta (libera el hueco) y volver a la página de reserva
-  // para elegir un horario nuevo con el mismo coach.
-  $('msg').textContent='Preparando…';
-  _patchCancelada()
-    .then(function(){ location.href='/reservar.html?c='+encodeURIComponent(CITA.coach_id||''); })
-    .catch(function(){ location.href='/reservar.html?c='+encodeURIComponent(CITA.coach_id||''); });
+  // Reprogramar SIN perder el turno: NO cancelamos ahora. Vamos a reservar con el
+  // token viejo (&reprog=) → reservar.html cancela la cita vieja SOLO cuando la
+  // nueva se confirma. Si el cliente abandona, su turno original sigue en pie.
+  location.href='/reservar.html?c='+encodeURIComponent(CITA.coach_id||'')+'&reprog='+encodeURIComponent(TOKEN);
 }
 
 load();

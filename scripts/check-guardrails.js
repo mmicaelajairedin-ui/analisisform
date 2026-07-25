@@ -2675,6 +2675,67 @@ const RULES = [
     },
   },
   {
+    name: "reservas: cancelar/confirmar/reprogramar sincroniza AMBAS listas (Resumen + Calendario)",
+    why: "Una cita vive en _RES_DATA (Resumen) y _CAL_DATA (Calendario/Agenda). Si una acción " +
+         "toca solo una, la otra queda vieja: una cancelada sigue apareciendo, o la hora vieja, " +
+         "y el 'Unirse' del mes manda a la sala vieja. Los handlers res-confirm/res-cancel/res-hora-save " +
+         "deben usar _syncCitaLocal (toca ambas) + _repaintCitas. Es el aislamiento entre flujos.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _syncCitaLocal/.test(p) || !/function _repaintCitas/.test(p)) return "panel-v2.html: faltan _syncCitaLocal/_repaintCitas (sincronización entre vistas del calendario).";
+        // Los tres handlers de gestión deben pasar por _syncCitaLocal.
+        const m = p.match(/act==="res-confirm"[\s\S]*?act==="res-hora-save"[\s\S]*?return;\s*\}/);
+        if (m && (m[0].match(/_syncCitaLocal\(/g) || []).length < 2) return "panel-v2.html: cancelar/confirmar/reprogramar ya no sincronizan ambas listas (una vista queda vieja).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "recordatorio de cita: lleva el link de la Sala y NO dice Google Meet",
+    why: "El email recordatorio (1h/24h) es el último aviso antes de la sesión. Antes decía " +
+         "'Online por Google Meet' (falso, el video es la Sala de Pathway/JaaS) y no traía botón " +
+         "para entrar → el cliente no sabía cómo unirse. Debe armar el link Pathway-<coach>-<start> " +
+         "y ofrecer 'Entrar a la videollamada'.",
+    check() {
+      const t = read("supabase/functions/recordatorios-citas/index.ts");
+      if (t) {
+        if (/Google Meet/.test(t)) return "recordatorios-citas: el recordatorio vuelve a decir 'Google Meet' (el video es la Sala de Pathway).";
+        if (!/sala\.html\?room=/.test(t) || !/Entrar a la videollamada/.test(t)) return "recordatorios-citas: el recordatorio ya no lleva el link/botón de la Sala.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: reprogramar desde el link del cliente NO le hace perder el turno",
+    why: "Antes gestionar-cita cancelaba la cita ANTES de mandar a reservar → si el cliente " +
+         "abandonaba, perdía su turno sin nada a cambio. Ahora reprogramar manda a reservar con " +
+         "&reprog=<token> y la cita vieja se cancela SOLO cuando la nueva se confirma.",
+    check() {
+      const g = read("gestionar-cita.html");
+      if (g) {
+        if (/function doReprogramar[\s\S]*?_patchCancelada\(/.test(g)) return "gestionar-cita.html: reprogramar vuelve a cancelar antes de reservar (el cliente puede perder el turno).";
+        if (!/reprog='\+encodeURIComponent\(TOKEN\)/.test(g)) return "gestionar-cita.html: reprogramar ya no pasa &reprog= (no se puede cancelar la vieja al confirmar la nueva).";
+      }
+      const r = read("reservar.html");
+      if (r && !/qp\('reprog'\)/.test(r)) return "reservar.html: ya no cancela la cita vieja al confirmar la reprogramación (&reprog).";
+      return null;
+    },
+  },
+  {
+    name: "reservas: el cliente que cancela desde su link le AVISA al coach",
+    why: "Antes el cliente cancelaba desde gestionar-cita y el coach no se enteraba (la fila pasaba " +
+         "a cancelada y desaparecía de su panel sin aviso). Ahora se le manda un email al coach.",
+    check() {
+      const g = read("gestionar-cita.html");
+      if (g) {
+        if (!/function _notifyCoachCancel/.test(g)) return "gestionar-cita.html: falta _notifyCoachCancel (avisar al coach de la cancelación).";
+        if (!/_notifyCoachCancel\(\)/.test(g)) return "gestionar-cita.html: _notifyCoachCancel está definido pero no se dispara al cancelar.";
+      }
+      return null;
+    },
+  },
+  {
     name: "reservas: al reprogramar, el email lleva el link NUEVO de la Sala (mismo room que el coach)",
     why: "El room de la videollamada lleva la hora dentro (Pathway-<coach>-<ms>). Al mover la hora " +
          "cambia el room: si el email de reprogramación no manda el link nuevo, el cliente reusa el " +

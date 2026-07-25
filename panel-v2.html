@@ -2945,15 +2945,6 @@ function _agSalaUrl(r){
 }
 // Botones de asistencia (asistió / no vino) — MISMA lógica que la agenda del día,
 // reusable en Reservas. Tocar el estado activo lo desmarca (lo maneja cal-asis).
-function _asisBtns(id,estado,ms){
-  var eid=esc(id);
-  if(_attended(estado)) return "<button data-act='cal-asis' data-id='"+eid+"' data-val='asistio' title='Asistió — toca para desmarcar' style='width:28px;height:28px;border-radius:8px;background:var(--pw-sendero);color:#fff;border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>"+_cIco('check',14)+"</button>";
-  if(estado==="no_asistio") return "<button data-act='cal-asis' data-id='"+eid+"' data-val='no_asistio' title='No asistió — toca para desmarcar' style='font-size:11px;font-weight:600;color:var(--pw-danger);background:rgba(214,69,69,.1);border:none;padding:5px 10px;border-radius:100px;cursor:pointer;flex-shrink:0;white-space:nowrap'>No vino</button>";
-  if(ms<=Date.now()) return "<span style='display:inline-flex;gap:5px;flex-shrink:0'>"+
-    "<button data-act='cal-asis' data-id='"+eid+"' data-val='asistio' title='Asistió' style='width:28px;height:28px;border-radius:8px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-bosque);cursor:pointer;display:inline-flex;align-items:center;justify-content:center'>"+_cIco('check',14)+"</button>"+
-    "<button data-act='cal-asis' data-id='"+eid+"' data-val='no_asistio' title='No asistió' style='width:28px;height:28px;border-radius:8px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-danger);cursor:pointer;display:inline-flex;align-items:center;justify-content:center'>"+_cIco('xc',14)+"</button></span>";
-  return "";
-}
 // Foto REAL del cliente (candidatos.foto_perfil) por email — para la agenda/próxima.
 // Match por email (no por nombre: eso se equivocaba). Solo devuelve una URL real.
 function _cliFotoByEmail(email){
@@ -3223,7 +3214,7 @@ function _agProxRender(){
       (it.link?"<span style='display:inline-flex;align-items:center;gap:8px'>"+_cIco('video',14)+"Videollamada</span>":"")+
     "</div>"+
     (it.link?"<a href='"+esc(it.link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='width:100%;height:40px;font-size:14px;text-decoration:none;margin-top:16px;gap:8px;justify-content:center'>"+_cIco('video',15)+" Entrar a la sesión</a>":(it.email?"<a href='mailto:"+esc(it.email)+"' class='cp-btn cp-btn-primary' style='width:100%;height:40px;font-size:14px;text-decoration:none;margin-top:16px;justify-content:center'>Escribirle</a>":""))+
-    (it.email?"<button data-act='nav:clientes' class='cp-btn cp-btn-ghost' style='width:100%;height:36px;font-size:13px;margin-top:8px;gap:6px;justify-content:center'>Ver perfil del cliente "+_cIco('chevR',14)+"</button>":"")+
+    (it.email?"<button data-act='nav:clientes' class='cp-btn cp-btn-ghost' style='width:100%;height:36px;font-size:13px;margin-top:8px;gap:6px;justify-content:center'>Ver mis clientes "+_cIco('chevR',14)+"</button>":"")+
   "</div>";
   // "En tu lista" NUNCA repite la próxima (list[0]): la excluimos por hora+nombre,
   // por si algún duplicado se coló pese al dedup (ej. dos eventos del mismo origen).
@@ -3504,14 +3495,26 @@ function _agTeamLoad(){
     .catch(function(){ _AG_TEAM=[]; if(state.ag){ try{ render(); }catch(e){} } });
 }
 var _RES_DATA=null;
-function _resCard(){
-  return "<div class='cp-card' style='margin-bottom:13px'>"+
-    "<div class='cp-card-hd'>"+
-      "<h3 class='cp-card-title'><span class='cp-emo'>📥</span> Reservas<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>Desde tu link de agenda</span>"+
-    "</div>"+
-    "<div class='cp-card-pad'><div id='cp-res-body'><div style='color:var(--pw-text-soft);font-size:13px;padding:8px 0'>Cargando reservas…</div></div></div>"+
-  "</div>";
+// ── Aislamiento entre vistas del calendario ──────────────────────────────────
+// Una misma cita vive en DOS listas cacheadas: _RES_DATA (Resumen) y _CAL_DATA
+// (Calendario/Agenda). Si una acción toca solo una, la otra queda desincronizada
+// (cancelada que sigue viva, hora vieja, "Unirse" a la sala vieja). Estos helpers
+// tocan AMBAS y repintan TODAS las vistas — igual que ya hace cal-asis.
+function _findCita(id){
+  var arrs=[ (typeof _RES_DATA!=="undefined"?_RES_DATA:null), (typeof _CAL_DATA!=="undefined"?_CAL_DATA:null) ];
+  for(var i=0;i<arrs.length;i++){ if(Object.prototype.toString.call(arrs[i])==="[object Array]"){ var f=arrs[i].filter(function(x){ return x&&String(x.id)===String(id); })[0]; if(f) return f; } }
+  return null;
+}
+function _syncCitaLocal(id, patch){
+  var arrs=[ (typeof _RES_DATA!=="undefined"?_RES_DATA:null), (typeof _CAL_DATA!=="undefined"?_CAL_DATA:null) ];
+  arrs.forEach(function(arr){ if(Object.prototype.toString.call(arr)==="[object Array]"){ arr.forEach(function(x){ if(x&&String(x.id)===String(id)){ for(var k in patch){ if(Object.prototype.hasOwnProperty.call(patch,k)) x[k]=patch[k]; } } }); if(patch&&patch.inicio) arr.sort(function(a,b){ return +new Date(a.inicio)-+new Date(b.inicio); }); } });
+}
+function _repaintCitas(){
+  try{ _calRenderKpis(); }catch(e){}
+  try{ _calRenderList(); }catch(e){}
+  try{ _calRenderMetricsExtra(); }catch(e){}
+  try{ _agAfterCalBody(); }catch(e){}
+  try{ var _rb=document.getElementById("cp-res-body"); if(_rb && typeof _RES_DATA!=="undefined" && _RES_DATA) _rb.innerHTML=_resRender(_RES_DATA); }catch(e){}
 }
 function _resLoad(){
   var body=document.getElementById("cp-res-body"); if(!body) return;
@@ -3981,7 +3984,7 @@ function viewCalendario(){
       "<div class='cp-greet-sub'>Gestiona tus reservas, sesiones y disponibilidad.</div></div>"+
     "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px'>"+
       "<button class='cp-btn cp-btn-primary' data-act='ag-cita' style='height:40px;font-size:14px;padding:0 18px'>"+svg(IC.plus,15)+" Nueva cita</button>"+
-      "<button class='cp-btn cp-btn-ghost' data-act='ag-disp' style='height:40px;font-size:14px;padding:0 16px'>"+_cIco('cal',15)+" Ver disponibilidad</button>"+
+      "<button class='cp-btn cp-btn-ghost' data-act='ag-disp' style='height:40px;font-size:14px;padding:0 16px'>"+_cIco('cal',15)+" Mi disponibilidad</button>"+
     "</div>"+
   "</div>";
   var statsRow="<div style='display:flex;gap:16px;flex-wrap:wrap;margin-bottom:13px'>"+
@@ -8668,13 +8671,15 @@ document.addEventListener("click", function(ev){
   if(act==="qr-book"){ _showQR(_bookUrl()); return; }
   if(act==="res-confirm"||act==="res-cancel"){
     var _rid=el.getAttribute("data-id"); if(!_rid) return;
-    var _rr=(_RES_DATA||[]).filter(function(x){ return String(x.id)===String(_rid); })[0];
+    var _rr=_findCita(_rid);
     if(act==="res-cancel" && !confirm("¿Cancelar la reserva? Se le avisa al cliente por email.")) return;
     var _est=(act==="res-confirm")?"confirmada":"cancelada";
-    if(_RES_DATA){ _RES_DATA.forEach(function(r){ if(String(r.id)===String(_rid)) r.estado=_est; }); var _rb=document.getElementById("cp-res-body"); if(_rb) _rb.innerHTML=_resRender(_RES_DATA); }
+    var _prevEst=_rr?_rr.estado:null;
+    // Optimista en AMBAS listas (Resumen + Calendario) → ninguna vista queda vieja.
+    _syncCitaLocal(_rid,{estado:_est}); _repaintCitas();
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
-      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Confirmada ✓ — le mandamos el email al cliente":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel") _notifResCancel(_rr); else _confirmCliente(_rr); } else { toast("No se pudo actualizar la reserva."); _resLoad(); } })
-      .catch(function(){ toast("No se pudo actualizar la reserva."); _resLoad(); });
+      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Confirmada ✓ — le mandamos el email al cliente":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel") _notifResCancel(_rr); else _confirmCliente(_rr); } else { _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); } })
+      .catch(function(){ _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); });
     return;
   }
   if(act==="res-hora"){ var _rid=el.getAttribute("data-id"); if(!_rid) return; var _b=document.getElementById("rh-"+_rid); if(_b) _b.style.display=(_b.style.display==="none"?"block":"none"); return; }
@@ -8685,11 +8690,13 @@ document.addEventListener("click", function(ev){
     var _ms=new Date(_v).getTime(); if(isNaN(_ms)){ toast("Fecha no válida."); return; }
     var _iso=new Date(_ms).toISOString();
     // La hora se elige EN TU zona (datetime-local se interpreta como tu hora local) y se guarda en UTC.
-    var _rrh=(_RES_DATA||[]).filter(function(x){ return String(x.id)===String(_rid); })[0];
-    if(_RES_DATA){ _RES_DATA.forEach(function(r){ if(String(r.id)===String(_rid)) r.inicio=_iso; }); _RES_DATA.sort(function(a,b){ return +new Date(a.inicio)-+new Date(b.inicio); }); var _rb=document.getElementById("cp-res-body"); if(_rb) _rb.innerHTML=_resRender(_RES_DATA); }
+    var _rrh=_findCita(_rid); var _prevIso=_rrh?_rrh.inicio:null;
+    // Actualiza AMBAS listas (Resumen + Calendario) → el mes/agenda no queda con la
+    // hora vieja y el "Unirse" no manda a la sala vieja.
+    _syncCitaLocal(_rid,{inicio:_iso}); _repaintCitas();
     _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{inicio:_iso})
-      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso); try{ _agAfterCal(); }catch(_e){} } else { toast("No se pudo cambiar la hora."); _resLoad(); } })
-      .catch(function(){ toast("No se pudo cambiar la hora."); _resLoad(); });
+      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso); } else { _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); } })
+      .catch(function(){ _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); });
     return;
   }
   if(act==="cal-filtro"){ _calFiltro=el.getAttribute("data-f")||"proximas"; render(); return; }
