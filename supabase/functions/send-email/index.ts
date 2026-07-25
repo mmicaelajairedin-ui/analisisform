@@ -219,6 +219,12 @@ Deno.serve(async (req: Request) => {
       .trim();
   }
   if (body.reply_to) payload.replyTo = { email: body.reply_to };
+  // Adjuntos (ej. invitación de calendario .ics). Brevo: [{content:<base64>, name}].
+  if (Array.isArray(body.attachment) && body.attachment.length) {
+    payload.attachment = body.attachment
+      .filter((a: Record<string, unknown>) => a && a.content && a.name)
+      .slice(0, 5);
+  }
   // List-Unsubscribe mejora la entregabilidad en Microsoft/Gmail.
   payload.headers = {
     "List-Unsubscribe": "<mailto:hi@pathwaycareercoach.com?subject=unsubscribe>",
