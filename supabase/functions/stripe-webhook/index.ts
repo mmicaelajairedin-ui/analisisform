@@ -358,6 +358,13 @@ async function handleClientPayment(session: StripeSession) {
         activo: true,
       }),
     });
+    // Cliente NUEVO del marketplace (pagó por Connect) → origen='pathway' (cuenta
+    // para el tramo y paga comisión). Best-effort: si la columna no existe, no rompe.
+    try {
+      await fetch(`${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(email)}`, {
+        method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ origen: "pathway" }),
+      });
+    } catch (_e) { /* la columna origen quizá no existe aún */ }
     return { result: "created", email, amount, coach_id: coachId };
   }
 }
@@ -392,6 +399,12 @@ async function upsertClientSub(email: string, fields: Record<string, unknown>) {
     method: "POST", headers: { ...headers, Prefer: "return=minimal" },
     body: JSON.stringify({ email: em, activo: true, ...fields, nombre: (fields.nombre as string) || em.split("@")[0] }),
   });
+  // Cliente NUEVO de suscripción del marketplace → origen='pathway' (best-effort).
+  try {
+    await fetch(`${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(em)}`, {
+      method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ origen: "pathway" }),
+    });
+  } catch (_e) { /* la columna origen quizá no existe aún */ }
   return { ok: r.ok };
 }
 async function handleClientSubCheckout(session: StripeSession) {

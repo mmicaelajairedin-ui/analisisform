@@ -175,19 +175,42 @@ Deno.serve(async (req: Request) => {
       servicioTitulo = servicioLegacy === "sesion" ? "Sesión única" : "Mentoría 4 semanas";
     }
     const monto = Math.round(precio * 100);          // céntimos
+    // ¿Es cliente PROPIO del coach? (candidatos.origen='propio'). Si lo es, la
+    // comisión es 0% — lo trajo el coach, no el marketplace. Solo los 'pathway'
+    // (traídos por el marketplace) pagan comisión. Si el candidato no existe o la
+    // columna origen todavía no está (migración sin aplicar) → cobra como HOY.
+    const _em = String(cand.email || "").toLowerCase().trim();
+    let isPropio = false;
+    if (_em) {
+      try {
+        const orq = await fetch(
+          `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&email=eq.${encodeURIComponent(_em)}&select=origen&limit=1`,
+          { headers: sbH(SRK) },
+        );
+        if (orq.ok) { const orows = await orq.json(); isPropio = Array.isArray(orows) && orows.length > 0 && orows[0].origen === "propio"; }
+      } catch (_e) { isPropio = false; }
+    }
     // Comisión ESCALONADA: contamos los clientes pagos previos del coach vía
-    // Pathway (candidatos con pago_recibido). Este pago es el cliente #(nPrev+1),
-    // y cobra el % de SU tramo (1–5 → 5% … 31+ → 18%). Antes era 20% plano.
+    // Pathway (candidatos pago_recibido Y origen='pathway'). Este pago es el
+    // cliente #(nPrev+1) y cobra el % de SU tramo (1–5 → 5% … 31+ → 18%).
+    // Si la columna origen no existe todavía, contamos como antes (todos).
     let nPrev = 0;
     try {
-      const cr = await fetch(
-        `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&pago_recibido=eq.true&select=id`,
+      let cr = await fetch(
+        `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&pago_recibido=eq.true&origen=eq.pathway&select=id`,
         { headers: { ...sbH(SRK), Prefer: "count=exact", Range: "0-0" } },
       );
+      if (!cr.ok) {
+        cr = await fetch(
+          `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&pago_recibido=eq.true&select=id`,
+          { headers: { ...sbH(SRK), Prefer: "count=exact", Range: "0-0" } },
+        );
+      }
       nPrev = parseInt((cr.headers.get("content-range") || "0/0").split("/")[1] || "0", 10) || 0;
     } catch (_e) { nPrev = 0; }
-    const rate = tierRate(nPrev + 1);
-    const fee = Math.round(monto * rate);
+    // Propio → 0%. Marketplace → tramo por nPrev.
+    const rate = isPropio ? 0 : tierRate(nPrev + 1);
+    const fee = Math.round(monto * rate);            // 0 si es propio
     if (monto <= 0) return json({ error: "Precio inválido" }, 400);
 
     // success_url devuelve al perfil del coach (slug) cuando es disponible,
@@ -343,6 +366,14 @@ Deno.serve(async (req: Request) => {
             method: "POST", headers: { ...sbH(SRK), Prefer: "return=minimal" },
             body: JSON.stringify({ ...body, email, nombre: nombre || email.split("@")[0], coach_id: sol.coach_id, activo: true }),
           });
+          // Cliente NUEVO que pagó por el marketplace → origen='pathway' (así cuenta
+          // para el tramo y paga comisión). Best-effort: si la columna origen no
+          // existe todavía, no rompe el alta (queda para cuando se aplique la migración).
+          try {
+            await fetch(`${SB}/rest/v1/candidatos?email=eq.${encodeURIComponent(email)}`, {
+              method: "PATCH", headers: { ...sbH(SRK), Prefer: "return=minimal" }, body: JSON.stringify({ origen: "pathway" }),
+            });
+          } catch (_e) { /* la columna origen quizá no existe aún */ }
         }
       }
     }

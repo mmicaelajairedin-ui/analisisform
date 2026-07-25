@@ -2871,6 +2871,25 @@ const RULES = [
     },
   },
   {
+    name: "comisión: 0% a clientes propios; solo 'pathway' paga y cuenta para el tramo",
+    why: "El coach NO debe pagar comisión por SUS clientes (origen='propio' → 0%). Solo los " +
+         "traídos por el marketplace (origen='pathway') pagan y cuentan para el tramo escalonado. " +
+         "connect-checkout mira el origen del candidato (rate=0 si propio) y cuenta solo pathway; el " +
+         "alta de un cliente pago del marketplace (accept + webhook) estampa origen='pathway'. " +
+         "Es SEGURO: si la columna origen aún no existe, se comporta como antes (cobra a todos).",
+    check() {
+      const c = read("supabase/functions/connect-checkout/index.ts");
+      if (c) {
+        if (!/isPropio\s*\?\s*0\s*:\s*tierRate/.test(c)) return "connect-checkout: la comisión ya no pone 0% a los clientes propios (isPropio ? 0 : tierRate).";
+        if (!/origen=eq\.pathway/.test(c)) return "connect-checkout: el tramo ya no cuenta solo los clientes 'pathway'.";
+        if (!/origen:\s*"pathway"/.test(c)) return "connect-checkout: el cliente nuevo del marketplace ya no se marca origen='pathway'.";
+      }
+      const w = read("supabase/functions/stripe-webhook/index.ts");
+      if (w && !/origen:\s*"pathway"/.test(w)) return "stripe-webhook: el cliente nuevo del marketplace ya no se marca origen='pathway'.";
+      return null;
+    },
+  },
+  {
     name: "candado Pro 'probá gratis, pagá para guardar': la función Pro se ve pero al guardar/enviar abre el modal de upgrade (no alert feo)",
     bug: "El coach Basic VE y prueba las funciones Pro (marca propia, mensajería, +clientes), " +
          "pero al GUARDAR/ENVIAR/AGREGAR se abre un modal de upgrade de Pathway (proGate/pwUpgrade) " +
