@@ -2721,6 +2721,61 @@ const RULES = [
     },
   },
   {
+    name: "sala: el cliente también ve el gate (su link lleva start+dur)",
+    why: "El gate (cuenta regresiva / 'ya terminó', 5 min antes) depende de STARTms, que " +
+         "viene de ?start=. Si el link del cliente no lo lleva, STARTms=0 y el cliente entra " +
+         "SIEMPRE sin gate (contradice 'se abre 5 min antes para los dos'). El link del " +
+         "cliente (reservar.html _link y _salaClientLink del panel) debe incluir &start= y &dur=.",
+    check() {
+      const r = read("reservar.html");
+      if (r && /var _link=location\.origin\+'\/sala\.html/.test(r)) {
+        const m = r.match(/var _link=location\.origin\+'\/sala\.html[^;]*/);
+        if (m && (!/&start='/.test(m[0]) || !/&dur='/.test(m[0]))) return "reservar.html: el link del cliente a la Sala ya no lleva start/dur — el cliente entra sin gate.";
+      }
+      const p = read("panel-v2.html");
+      if (p && /function _salaClientLink/.test(p)) {
+        const m = p.match(/function _salaClientLink[\s\S]*?\n\}/);
+        if (m && (!/&start="/.test(m[0]) || !/&dur="/.test(m[0]))) return "panel-v2.html: _salaClientLink ya no lleva start/dur — el cliente entra sin gate.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: subir archivo en la videollamada lo guarda en Documentos del cliente",
+    why: "Un archivo subido en la Sala tiene que quedar en Documentos del cliente (tabla " +
+         "informes_guardados, con el coach_id correcto para que el coach lo vea vía cg()). " +
+         "Requiere que la Sala reciba ?coach= (lo pone _agSalaUrl) y que _infFilesLoad sepa " +
+         "mostrar un archivo (contenido.url) como link de descarga, no como overlay de informe.",
+    check() {
+      const s = read("sala.html");
+      if (s) {
+        if (!/informes_guardados/.test(s)) return "sala.html: subir archivo ya no guarda en informes_guardados (Documentos del cliente).";
+        if (!/storage\/v1\/object\/avatars\//.test(s)) return "sala.html: la subida de archivo ya no va al bucket de Storage.";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/&coach="\+encodeURIComponent\(\(RME&&RME\.id\)/.test(p)) return "panel-v2.html: _agSalaUrl ya no pasa &coach= — los archivos subidos no quedarían bajo el coach.";
+        if (!/contenido&&typeof r\.contenido==="object"&&r\.contenido\.url/.test(p)) return "panel-v2.html: _infFilesLoad ya no distingue un archivo (contenido.url) de un informe.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: los botones de los emails del panel usan comillas dobles (a prueba de apóstrofos)",
+    why: "esc() del panel NO escapa la comilla simple. Si el href va en atributo con comillas " +
+         "simples y el link trae un nombre con apóstrofo (O'Brien), la comilla cierra el atributo " +
+         "y el botón apunta a una URL rota. encodeURIComponent SÍ escapa la comilla doble, así que " +
+         "los href de _notifResReprog/_confirmCliente deben ir con comillas dobles.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (/href='"\+join\+"'/.test(p)) return "panel-v2.html: hay un href con comillas simples alrededor de +join+ — se rompe con apóstrofos.";
+        if (/href='"\+_gc\+"'/.test(p)) return "panel-v2.html: hay un href con comillas simples alrededor de +_gc+ — se rompe con apóstrofos.";
+      }
+      return null;
+    },
+  },
+  {
     name: "admin: 'Pasar a Pro/Basic' va por edge function (resiste RLS), no PATCH directo",
     why: "El botón hacía un PATCH directo a usuarios que RLS bloquea → tocabas OK y no " +
          "pasaba nada. Debe ir por admin-coach-op con op:set_plan (como 'marcar pagado'). " +

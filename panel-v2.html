@@ -2932,6 +2932,7 @@ function _agSalaUrl(r){
     var coach=(RME&&(RME.nombre||RME.name))||"Coach";
     var typ=_agEventTypeFor(r.tipo);
     return "sala.html?room="+encodeURIComponent(room)+"&mod=1"+
+      "&coach="+encodeURIComponent((RME&&RME.id)||"")+   // dueño → los archivos subidos van a SUS Documentos
       "&cita="+encodeURIComponent(r.id!=null?r.id:"")+
       "&con="+encodeURIComponent(r.nombre||"")+
       "&email="+encodeURIComponent(r.email||"")+
@@ -3538,10 +3539,17 @@ function _infFilesLoad(cid){
     box.innerHTML=rows.map(function(r){
       var dt=r.created_at?new Date(r.created_at):null;
       var when=(dt&&!isNaN(dt))?dt.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"}):"";
+      // Un archivo subido en la Sala guarda contenido:{url,name,kind:'archivo'} → link
+      // directo de descarga. Un informe IA (contenido = objeto del reporte) → overlay.
+      var _fileUrl=(r.contenido&&typeof r.contenido==="object"&&r.contenido.url)?r.contenido.url:"";
+      var _ico=_fileUrl?"📎":"📄";
+      var _act=_fileUrl
+        ? "<a class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px;display:inline-flex;align-items:center' href=\""+esc(_fileUrl)+"\" target='_blank' rel='noopener'>Abrir</a>"
+        : "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='inf-open' data-fid='"+esc(r.id)+"'>Abrir</button>";
       return "<div style='display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--pw-border);border-radius:11px;margin-bottom:7px;background:var(--pw-niebla)'>"+
-        "<span class='cp-emo' style='font-size:17px'>📄</span>"+
-        "<div style='flex:1;min-width:0'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(r.titulo||"Informe")+"</div><div style='font-size:11px;color:var(--pw-text-muted)'>"+esc(when)+"</div></div>"+
-        "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='inf-open' data-fid='"+esc(r.id)+"'>Abrir</button>"+
+        "<span class='cp-emo' style='font-size:17px'>"+_ico+"</span>"+
+        "<div style='flex:1;min-width:0'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(r.titulo||"Informe")+"</div><div style='font-size:11px;color:var(--pw-text-muted)'>"+esc(when)+(_fileUrl?" · archivo de la Sala":"")+"</div></div>"+
+        _act+
       "</div>";
     }).join("");
   }).catch(function(){ box.innerHTML="<div style='font-size:12px;color:var(--pw-text-soft);padding:4px 0'>No se pudieron cargar los informes.</div>"; });
@@ -3550,14 +3558,15 @@ function _infFilesLoad(cid){
 // [x] … \n\nTAREAS:\n[ ] …". Lo separamos de nuevo para mostrarlo lindo (no un
 // bloque de texto). Cada línea de objetivos/tareas puede venir con [x]/[ ].
 function _salaParseBlob(b){
-  b=(""+(b||"")).trim(); var out={notas:"",obj:[],tar:[]}; if(!b) return out;
+  b=(""+(b||"")).trim(); var out={notas:"",obj:[],tar:[],rec:[]}; if(!b) return out;
   function items(s){ return s.split(/\n/).map(function(l){return l.trim();}).filter(Boolean).map(function(l){ var m=l.match(/^\[([ xX])\]\s*(.*)$/); return m?{done:/x/i.test(m[1]),txt:m[2]}:{done:false,txt:l}; }); }
+  function res(s){ return s.split(/\n/).map(function(l){return l.trim();}).filter(Boolean).map(function(l){ var i=l.lastIndexOf(" | "); return i>=0?{name:l.slice(0,i),url:l.slice(i+3)}:{name:l,url:""}; }); }
   var matched=false;
   b.split(/\n\n+/).forEach(function(ch){
-    var mo=ch.match(/^(NOTAS|OBJETIVOS|TAREAS):\s*([\s\S]*)$/i);
+    var mo=ch.match(/^(NOTAS|OBJETIVOS|TAREAS|RECURSOS):\s*([\s\S]*)$/i);
     if(!mo){ if(!out.notas) out.notas=ch.trim(); return; }
     matched=true; var k=mo[1].toUpperCase(), body=mo[2].trim();
-    if(k==="NOTAS") out.notas=body; else if(k==="OBJETIVOS") out.obj=items(body); else out.tar=items(body);
+    if(k==="NOTAS") out.notas=body; else if(k==="OBJETIVOS") out.obj=items(body); else if(k==="TAREAS") out.tar=items(body); else out.rec=res(body);
   });
   if(!matched && !out.notas) out.notas=b;
   return out;
@@ -3582,7 +3591,8 @@ function _salaHistLoad(cid){
         var rl=RL[x.resultado]; var badge=rl?("<span style='font-size:11px;font-weight:700;color:#fff;background:"+rl[1]+";padding:2px 9px;border-radius:100px;white-space:nowrap'>"+esc(rl[0])+"</span>"):"";
         var P=_salaParseBlob(x.notas_llamada);
         function _lst(t,arr){ if(!arr.length) return ""; return "<div style='margin-top:8px'><div style='font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:3px'>"+t+"</div>"+arr.map(function(it){ return "<div style='font-size:12.5px;color:"+(it.done?"var(--pw-text-muted)":"var(--pw-carbon)")+";line-height:1.5"+(it.done?";text-decoration:line-through":"")+"'>"+(it.done?"✓":"○")+" "+esc(it.txt)+"</div>"; }).join("")+"</div>"; }
-        var secs=(P.notas?"<div style='font-size:12.5px;color:var(--pw-carbon);white-space:pre-wrap;line-height:1.5'>"+esc(P.notas)+"</div>":"")+_lst("Objetivos",P.obj)+_lst("Tareas",P.tar);
+        function _rlst(arr){ if(!arr.length) return ""; return "<div style='margin-top:8px'><div style='font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:3px'>Documentos</div>"+arr.map(function(it){ return it.url?("<a href=\""+esc(it.url)+"\" target='_blank' rel='noopener' style='display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--pw-bosque);text-decoration:none;padding:2px 0'>📎 "+esc(it.name)+"</a><br>"):("<div style='font-size:12.5px'>📎 "+esc(it.name)+"</div>"); }).join("")+"</div>"; }
+        var secs=(P.notas?"<div style='font-size:12.5px;color:var(--pw-carbon);white-space:pre-wrap;line-height:1.5'>"+esc(P.notas)+"</div>":"")+_lst("Objetivos",P.obj)+_lst("Tareas",P.tar)+_rlst(P.rec);
         var nt=secs?("<div style='margin-top:6px;background:var(--pw-niebla-2);border-radius:10px;padding:10px 12px'>"+secs+"</div>"):"";
         return "<div style='padding:10px 0;border-bottom:1px solid var(--pw-border)'><div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'><span style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(when)+"</span>"+(x.tipo?"<span style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(x.tipo)+"</span>":"")+"<span style='margin-left:auto'>"+badge+"</span></div>"+nt+"</div>";
       }).join("")+
@@ -3731,9 +3741,10 @@ function _notifResCancel(r){
 // coach+hora → el mismo que arma el panel del coach en _agSalaUrl. Si se pasa
 // un `iso` (reprogramación), usa la hora NUEVA → los dos caen en la misma sala.
 function _salaClientLink(r, iso){
-  var cid=(r.coach_id||(RME&&RME.id)||"x"); var room="Pathway-"+cid+"-"+(new Date(iso||r.inicio).getTime());
+  var _ms=new Date(iso||r.inicio).getTime(); var cid=(r.coach_id||(RME&&RME.id)||"x"); var room="Pathway-"+cid+"-"+_ms;
   var coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
-  return "https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&email="+encodeURIComponent(r.email||"")+"&con="+encodeURIComponent(coach);
+  // start+dur → el cliente también ve el gate (cuenta regresiva / "ya terminó"), igual que el coach.
+  return "https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&email="+encodeURIComponent(r.email||"")+"&con="+encodeURIComponent(coach)+"&start="+_ms+"&dur="+(_durMin(r.tipo||"")||60);
 }
 // Invitación .ics OPCIONAL (agregar el evento al calendario si quieren) con SOLO
 // el link de la Sala — sin Meet, sin sync automático. Misma idea que reservar.html.
@@ -3772,8 +3783,8 @@ function _notifResReprog(r, iso){
   _notifResCliente(r.email, r.nombre, "Tu sesión cambió de horario",
     "<p>Hola "+esc(fn)+", <strong>moví tu sesión</strong>"+(f?(" al <strong>"+esc(f)+"</strong>"):"")+".</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Nuevo horario · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
-    "<a href='"+join+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"+
-    "<div style='margin-top:12px'><a href='"+_gc+"' style='display:inline-block;background:#fff;color:#1B4332;border:1.5px solid #CFE3D4;text-decoration:none;padding:10px 18px;border-radius:10px;font-weight:700;font-size:13px'>📅 Actualizar en Google Calendar</a></div>"+
+    "<a href=\""+join+"\" style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"+
+    "<div style='margin-top:12px'><a href=\""+_gc+"\" style='display:inline-block;background:#fff;color:#1B4332;border:1.5px solid #CFE3D4;text-decoration:none;padding:10px 18px;border-radius:10px;font-weight:700;font-size:13px'>📅 Actualizar en Google Calendar</a></div>"+
     "<p style='font-size:12px;color:#9AA69E;margin-top:8px'>Se abre Google, guardas el nuevo horario y listo. Si ese horario no te sirve, responde y coordinamos.</p>", _ics.b64);
 }
 // Confirmación al cliente con la hora CORRECTA (AM/PM, su zona) + link para entrar.
@@ -3783,8 +3794,8 @@ function _confirmCliente(r){
   var join=_salaClientLink(r, null); var _ics=_resIcs(r, null); var _gc=_gcalUrl(r, null);
   var inner="<p>Hola "+esc(fn)+", tu sesión está <strong>confirmada</strong>. 🎉</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Cuándo · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
-    "<a href='"+join+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"+
-    "<div style='margin-top:12px'><a href='"+_gc+"' style='display:inline-block;background:#fff;color:#1B4332;border:1.5px solid #CFE3D4;text-decoration:none;padding:10px 18px;border-radius:10px;font-weight:700;font-size:13px'>📅 Agregar a Google Calendar</a></div>"+
+    "<a href=\""+join+"\" style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"+
+    "<div style='margin-top:12px'><a href=\""+_gc+"\" style='display:inline-block;background:#fff;color:#1B4332;border:1.5px solid #CFE3D4;text-decoration:none;padding:10px 18px;border-radius:10px;font-weight:700;font-size:13px'>📅 Agregar a Google Calendar</a></div>"+
     "<p style='font-size:12px;color:#9AA69E;margin-top:8px'>Se abre Google, guardas y listo.</p>";
   _notifResCliente(r.email, r.nombre, "Reserva confirmada · tu sesión", inner, _ics.b64);
 }

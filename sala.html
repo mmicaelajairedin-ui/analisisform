@@ -222,8 +222,9 @@
       </section>
 
       <section class="card">
-        <div class="ch"><h2><span class="hi">📎</span> Recursos compartidos</h2><button class="lnk" id="res-all">Ver todos</button></div>
-        <div class="cb" id="recursos"><p class="empty">Comparte un recurso con la persona (guía, PDF, checklist). Aparece en su portal.</p></div>
+        <div class="ch"><h2><span class="hi">📎</span> Recursos compartidos</h2><button class="lnk" id="res-add">+ Subir archivo</button></div>
+        <div class="cb" id="recursos"><p class="empty">Sube una guía, PDF o checklist durante la sesión. Queda en <strong>Documentos</strong> del cliente en tu panel.</p></div>
+        <input type="file" id="res-file" style="display:none" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.txt,.csv">
       </section>
     </div>
   </div>
@@ -248,6 +249,7 @@ var WHO  = qp('con') || '';                          // nombre del otro
 var TIPO = qp('tipo') || '';
 var DUR  = qp('dur') || '';
 var STARTms = parseInt(qp('start')||'0',10)||0;
+var COACHID = qp('coach') || '';                     // dueño de la cita (para Documentos)
 
 el('who-name').textContent = WHO ? ('Sesión con '+WHO) : 'Sala de sesión';
 el('ntx').textContent = WHO || NAME;
@@ -285,6 +287,7 @@ function getToken(){
 }
 var api=null, TSTART=0, tInt=null;
 function startTimer(){ if(tInt) return; TSTART=Date.now(); var t=el('timer'); tInt=setInterval(function(){ var s=Math.floor((Date.now()-TSTART)/1000); t.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); },1000); }
+function stopTimer(){ if(tInt){ clearInterval(tInt); tInt=null; } }
 function directBtn(){ return '<a class="btn btn-p" href="'+DIRECT+'" target="_blank" rel="noopener" style="margin-top:6px">Abrir la videollamada ↗</a>'; }
 
 function boot(){
@@ -337,11 +340,14 @@ function boot(){
     });
     api.addListener('participantJoined', function(){ hideWait(); el('estado').textContent='En llamada'; });
     api.addListener('participantLeft', function(){ el('estado').textContent='Solo en sala'; });
-    api.addListener('readyToClose', function(){ el('estado').textContent='Llamada terminada'; hideWait(); });
+    api.addListener('readyToClose', function(){ el('estado').textContent='Llamada terminada'; stopTimer(); hideWait(); });
     api.addListener('audioMuteStatusChanged', function(e){ el('c-mic').classList.toggle('off', !!(e&&e.muted)); });
     api.addListener('videoMuteStatusChanged', function(e){ el('c-cam').classList.toggle('off', !!(e&&e.muted)); });
   }).catch(function(e){
     var code=(e && (e.error||e.message))||'error';
+    // Si JaaS no cargó, api es null → los botones mic/cam/compartir/participantes
+    // no harían nada. Ocultamos la barra y ofrecemos abrir en pestaña nueva.
+    try{ _hideCtrls(true); }catch(_e){}
     waitState('No cargó el video acá','Abre la videollamada en una pestaña nueva — es la misma sala. Detalle: '+code,true);
     try{ var se=el('wait-s'); if(se) se.insertAdjacentHTML('afterend',directBtn()); }catch(_e){}
     try{ console.error('[sala]',e); }catch(_e){}
@@ -408,12 +414,12 @@ function startSala(){
 startSala();
 
 // Móvil: al deslizar para ver las funciones, la cámara (sticky arriba) se achica.
-try{ if(window.matchMedia && window.matchMedia('(max-width:1000px)').matches){
-  window.addEventListener('scroll', function(){ document.body.classList.toggle('scrolled', (window.scrollY||document.documentElement.scrollTop||0) > 40); }, {passive:true});
-} }catch(e){}
+// Se ata SIEMPRE (aunque se cargue en desktop y luego se rote/achique a móvil);
+// el chequeo de tamaño va DENTRO del handler.
+try{ window.addEventListener('scroll', function(){ var mob=window.matchMedia&&window.matchMedia('(max-width:1000px)').matches; document.body.classList.toggle('scrolled', !!mob && (window.scrollY||document.documentElement.scrollTop||0) > 40); }, {passive:true}); }catch(e){}
 
 // ── Finalizar sesión (guarda el registro antes de salir) ──
-function finalizar(){ try{ saveSesion(); }catch(e){}
+function finalizar(){ try{ saveSesion(); }catch(e){} try{ stopTimer(); }catch(e){}
   if(MOD){ setTimeout(function(){ location.href='panel-v2.html'; },250); }
   else { el('estado').textContent='Sesión terminada'; waitState('Gracias por venir 🙌','Puedes cerrar esta pestaña.'); } }
 el('finbtn').onclick=function(){ try{ api&&api.executeCommand('hangup'); }catch(e){} setTimeout(finalizar,400); };
@@ -451,8 +457,45 @@ el('tadd').onclick=function(){ addTask(el('tin').value); el('tin').focus(); };
 el('tin').addEventListener('keydown',function(e){ if(e.key==='Enter') addTask(el('tin').value); });
 tRender();
 
-// ── Recursos: por ahora, link a los documentos del cliente en el panel ──
-el('res-all').onclick=function(){ location.href='panel-v2.html'; };
+// ── Recursos: subir un archivo en la videollamada → queda en DOCUMENTOS del
+// cliente (tabla informes_guardados, la misma que lee la pestaña Documentos del
+// panel) y se referencia en el registro de la sesión. Sube a Supabase Storage
+// (bucket público 'avatars', mismo patrón que _uploadDoc del panel). Solo el
+// coach (mod=1) ve esta sección; el cliente no. ──
+var RES=[];
+function resRender(){
+  var box=el('recursos'); if(!box) return;
+  if(!RES.length){ box.innerHTML='<p class="empty">Sube una guía, PDF o checklist durante la sesión. Queda en <strong>Documentos</strong> del cliente en tu panel.</p>'; return; }
+  box.innerHTML=RES.map(function(r){
+    if(r.up) return '<div style="display:flex;align-items:center;gap:9px;padding:8px 0;font-size:13px;color:var(--soft);border-bottom:1px solid var(--border)"><span>⏳</span><span style="flex:1">'+esc(r.name)+'</span><span style="font-size:11px">Subiendo…</span></div>';
+    if(r.err) return '<div style="display:flex;align-items:center;gap:9px;padding:8px 0;font-size:13px;color:var(--danger);border-bottom:1px solid var(--border)"><span>⚠️</span><span style="flex:1">'+esc(r.name)+'</span><span style="font-size:11px">No subió — reintenta</span></div>';
+    return '<a href="'+esc(r.url)+'" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:9px;padding:8px 0;text-decoration:none;color:var(--carbon);font-size:13.5px;border-bottom:1px solid var(--border)"><span>📄</span><span style="flex:1">'+esc(r.name)+'</span><span style="font-size:11px;color:var(--ok);font-weight:600">✓ en Documentos</span></a>';
+  }).join('');
+}
+function resUpload(f){
+  if(!f) return;
+  var item={name:f.name||'archivo', url:'', up:true, err:false}; RES.push(item); resRender();
+  var clean=(f.name||'archivo').replace(/[^\w.\-]+/g,'_');
+  var path='doc-'+(COACHID||'sala')+'-'+Date.now()+'-'+clean;
+  fetch(SB+'/storage/v1/object/avatars/'+encodeURIComponent(path),{method:'POST',
+    headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':(f.type||'application/octet-stream'),'x-upsert':'true'},body:f})
+    .then(function(r){ if(!r||!r.ok) throw new Error('upload'); return SB+'/storage/v1/object/public/avatars/'+path; })
+    .then(function(url){
+      item.url=url; item.up=false; resRender();
+      // 1) Documentos del cliente (informes_guardados) — misma tabla que la pestaña Documentos.
+      if(EMAIL){ fetch(SB+'/rest/v1/informes_guardados',{method:'POST',
+        headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
+        body:JSON.stringify({ coach_id:(COACHID||null), email:(''+EMAIL).toLowerCase().trim(), titulo:item.name, contenido:{url:url, name:item.name, kind:'archivo'} })}).catch(function(){}); }
+      // 2) Referencia en el registro de la sesión (para verlo también en Sesiones).
+      try{ if(CITA) saveSesion(); }catch(_e){}
+    })
+    .catch(function(){ item.up=false; item.err=true; resRender(); });
+}
+(function(){
+  var ra=el('res-add'), rf=el('res-file');
+  if(ra&&rf) ra.onclick=function(){ rf.click(); };
+  if(rf) rf.addEventListener('change',function(){ var f=rf.files&&rf.files[0]; if(f) resUpload(f); rf.value=''; });
+})();
 
 // ── Chat casual (propio, MISMO en móvil y web; transporte = la videollamada) ──
 var CHATP=el('chatp'), CHATBODY=el('chat-body'), CHATI=el('chat-i'), CHATUNREAD=0, CHAT_HASMSG=false;
@@ -485,10 +528,14 @@ function sesionBlob(){
   if(nt) L.push('NOTAS:\n'+nt);
   if(objetivos&&objetivos.length) L.push('OBJETIVOS:\n'+objetivos.map(function(o){ return (o.done?'[x] ':'[ ] ')+o.t; }).join('\n'));
   if(tareas&&tareas.length) L.push('TAREAS:\n'+tareas.map(function(o){ return (o.done?'[x] ':'[ ] ')+o.t; }).join('\n'));
+  var _rf=(RES||[]).filter(function(r){ return r && r.url && !r.up && !r.err; });
+  if(_rf.length) L.push('RECURSOS:\n'+_rf.map(function(r){ return r.name+' | '+r.url; }).join('\n'));
   return L.join('\n\n');
 }
 function saveSesion(res){
-  if(!CITA) return Promise.resolve(false);
+  // Solo el coach (mod=1) guarda. Blindaje: si un cliente abriera un link con
+  // cita (no debería), su blob vacío NO pisa las notas del coach.
+  if(!CITA || !MOD) return Promise.resolve(false);
   var body={ notas_llamada: sesionBlob() };
   if(res) body.resultado=res;
   return fetch(SB+'/rest/v1/citas?id=eq.'+encodeURIComponent(CITA),{method:'PATCH',keepalive:true,
