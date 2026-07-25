@@ -3821,19 +3821,14 @@ function _resRender(list){
     // "no se presentó").
     var _rid=String(r.id!=null?r.id:""), _ctz=r.cliente_tz||"", _hLocal=_ctz?_agTimeInTz(ms,_ctz):"", _hMine=_agTime(ms), _fn=(""+(r.nombre||"")).split(" ")[0]||"la persona";
     var _tzHtml=_ctz?("<div style='font-size:11px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px'><span class='cp-emo'>🌎</span> "+esc(_tzCity(_ctz))+((_hLocal&&_hLocal!==_hMine)?(" · <strong style='color:var(--pw-carbon);font-weight:600'>"+esc(_hLocal)+" para "+esc(_fn)+"</strong>"):"")+"</div>"):"";
-    // Editor inline para reprogramar la hora (se despliega con el botón del reloj).
-    var _editHtml="<div id='rh-"+esc(_rid)+"' style='display:none;margin:7px 0 3px 51px;padding:9px 11px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:10px'>"+
-      "<div style='font-size:11.5px;color:var(--pw-text-soft);margin-bottom:6px'>Nueva fecha y hora <span style='color:var(--pw-text-muted)'>(en tu hora)</span></div>"+
-      "<div style='display:flex;gap:7px;flex-wrap:wrap;align-items:center'>"+
-        "<input type='datetime-local' id='rhi-"+esc(_rid)+"' value='"+esc(_dtLocalVal(ms))+"' style='font-family:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--pw-border-input);border-radius:8px;color:var(--pw-carbon)'>"+
-        "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 12px' data-act='res-hora-save' data-id='"+esc(_rid)+"'>Guardar</button>"+
-        "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 10px' data-act='res-hora-cancel' data-id='"+esc(_rid)+"'>Cancelar</button>"+
-      "</div></div>";
-    // Reservas = vista liviana. El estado (asistió/no vino) va como texto de solo
-    // lectura; la asistencia y el botón de unirse viven en la agenda del día. Acá
-    // solo las 3 acciones de gestión: reprogramar · confirmar · cancelar.
+    // Resumen = vista para MIRAR y ENTRAR rápido. La gestión (reprogramar/confirmar/
+    // cancelar) vive en la pestaña Calendario, no acá — así el Resumen no se llena de
+    // botones. Acá: estado de solo lectura + "Unirse" si la reunión todavía no pasó.
     var _stTxt=_attended(r.estado)?"Asistió":(r.estado==="no_asistio"?"No vino":"");
     var _stChip=_stTxt?("<span style='font-size:11px;font-weight:700;flex-shrink:0;color:"+(_stTxt==="No vino"?"var(--pw-danger)":"var(--pw-bosque)")+"'>"+_stTxt+"</span>"):"";
+    var _rEnded=(ms + (_durMin(r.tipo||"")||60)*60000) < Date.now();
+    var _rJoin=(!_rEnded && !_attended(r.estado) && r.estado!=="no_asistio")?_agSalaUrl(r):"";
+    var _joinBtn=_rJoin?("<a href='"+esc(_rJoin)+"' target='_blank' rel='noopener' title='Entrar a la videollamada' style='flex-shrink:0;display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:8px;font-size:11.5px;font-weight:700;text-decoration:none;background:var(--pw-bosque);color:#fff'>"+_cIco('video',12)+" Unirse</a>"):"";
     html+="<div style='padding:7px 0;border-bottom:1px solid var(--pw-border)'>"+
       "<div style='display:flex;align-items:center;gap:8px'>"+
         "<span style='min-width:42px;font-size:12px;font-weight:700;color:var(--pw-carbon)'>"+_agTime(ms)+"</span>"+
@@ -3844,12 +3839,9 @@ function _resRender(list){
           _tzHtml+
         "</div>"+
         _stChip+
-        "<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-text-soft)' title='Reprogramar' data-act='res-hora' data-id='"+esc(_rid)+"'>"+_cIco('clock',13)+"</button>"+
-        (conf?"":"<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-bosque)' title='Confirmar y enviarle el email al cliente' data-act='res-confirm' data-id='"+esc(r.id)+"'>"+svg(IC.check,14)+"</button>")+
-        "<button class='cp-icon-btn' style='width:28px;height:28px;flex-shrink:0;color:var(--pw-danger)' title='Cancelar' data-act='res-cancel' data-id='"+esc(r.id)+"'>"+svg(IC.close,13)+"</button>"+
+        _joinBtn+
       "</div>"+
       _ansHtml+
-      _editHtml+
     "</div>";
   });
   return html;
@@ -4178,6 +4170,23 @@ function _calRenderList(){
       var _waTxt=encodeURIComponent("Hola "+_fn+", te recuerdo nuestra "+(r.tipo||"sesión")+" del "+fecha+". ¡Nos vemos!").replace(/'/g,"%27");
       waBtn="<a href='https://wa.me/"+_tel+"?text="+_waTxt+"' target='_blank' rel='noopener' title='Enviar recordatorio por WhatsApp' style='margin-top:4px;margin-left:6px;padding:3px 9px;border-radius:7px;font-size:10.5px;font-weight:700;font-family:inherit;text-decoration:none;border:1px solid rgba(37,211,102,.4);background:rgba(37,211,102,.08);color:#1a8a45;display:inline-block'>💬 Recordar por WhatsApp</a>";
     }
+    // Gestión (reprogramar · confirmar · cancelar): el Calendario ES donde se gestiona
+    // (el Resumen es solo para ver/entrar). Solo para reservas FUTURAS sin marcar.
+    var _rid=String(r.id!=null?r.id:""), _conf=(r.estado==="confirmada"), _mgmt="", _editHtml="";
+    if(!_showAsis && r.estado!=="cancelada"){
+      _mgmt="<div style='display:flex;gap:5px;margin-top:5px;justify-content:flex-end'>"+
+        "<button class='cp-icon-btn' style='width:28px;height:28px;color:var(--pw-text-soft)' title='Reprogramar' data-act='res-hora' data-id='"+esc(_rid)+"'>"+_cIco('clock',13)+"</button>"+
+        (_conf?"":"<button class='cp-icon-btn' style='width:28px;height:28px;color:var(--pw-bosque)' title='Confirmar y avisar al cliente' data-act='res-confirm' data-id='"+esc(_rid)+"'>"+svg(IC.check,14)+"</button>")+
+        "<button class='cp-icon-btn' style='width:28px;height:28px;color:var(--pw-danger)' title='Cancelar' data-act='res-cancel' data-id='"+esc(_rid)+"'>"+svg(IC.close,13)+"</button>"+
+      "</div>";
+      _editHtml="<div id='rh-"+esc(_rid)+"' style='display:none;width:100%;flex-basis:100%;margin-top:8px;padding:9px 11px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:10px'>"+
+        "<div style='font-size:11.5px;color:var(--pw-text-soft);margin-bottom:6px'>Nueva fecha y hora <span style='color:var(--pw-text-muted)'>(en tu hora)</span></div>"+
+        "<div style='display:flex;gap:7px;flex-wrap:wrap;align-items:center'>"+
+          "<input type='datetime-local' id='rhi-"+esc(_rid)+"' value='"+esc(_dtLocalVal(+dd))+"' style='font-family:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--pw-border-input);border-radius:8px;color:var(--pw-carbon)'>"+
+          "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 12px' data-act='res-hora-save' data-id='"+esc(_rid)+"'>Guardar</button>"+
+          "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 10px' data-act='res-hora-cancel' data-id='"+esc(_rid)+"'>Cancelar</button>"+
+        "</div></div>";
+    }
     return "<div style='display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--pw-border);flex-wrap:wrap'>"+
       "<span style='width:30px;height:30px;border-radius:50%;background:"+col+"22;border:1.5px solid "+col+";display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>"+ico+"</span>"+
       "<div style='min-width:150px;font-size:12.5px;font-weight:700;color:var(--pw-carbon)'>"+esc(fecha)+"</div>"+
@@ -4189,7 +4198,8 @@ function _calRenderList(){
         (_showAsis
           ? (mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó"))
           : (_salaU?("<a href='"+esc(_salaU)+"' target='_blank' rel='noopener' style='display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;background:var(--pw-bosque);color:#fff'>"+_cIco('video',13)+" Unirse</a>"):"<span style='font-size:11.5px;color:var(--pw-text-soft)'>Aún no empezó</span>"))+
-      "</div>"+(_showAsis?outc:"")+"</div>"+
+      "</div>"+(_showAsis?outc:"")+_mgmt+"</div>"+
+      _editHtml+
     "</div>";
   }).join("");
 }

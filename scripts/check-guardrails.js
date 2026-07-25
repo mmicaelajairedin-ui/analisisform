@@ -2692,6 +2692,22 @@ const RULES = [
     },
   },
   {
+    name: "calendario: se GESTIONA desde Calendario; el Resumen es solo para ver/entrar",
+    why: "Decisión de UX de la coach: el Resumen es para MIRAR y entrar rápido (Unirse), " +
+         "NO para acciones. Reprogramar/confirmar/cancelar viven en la pestaña Calendario. " +
+         "Si los botones de gestión vuelven al Resumen, se llena de botones (lo que no quiere).",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        const cal = p.match(/function _calRenderList\(\)\{[\s\S]*?\}\)\.join\(""\);\s*\}/);
+        if (cal && (!/data-act='res-confirm'/.test(cal[0]) || !/data-act='res-hora'/.test(cal[0]))) return "panel-v2.html: la pestaña Calendario ya no tiene la gestión (reprogramar/confirmar/cancelar).";
+        const res = p.match(/function _resRender\(list\)\{[\s\S]*?return html;\s*\}/);
+        if (res && /data-act='res-cancel'/.test(res[0])) return "panel-v2.html: el Resumen volvió a tener botones de acción (debe ser solo ver + Unirse).";
+      }
+      return null;
+    },
+  },
+  {
     name: "recordatorio de cita: lleva el link de la Sala y NO dice Google Meet",
     why: "El email recordatorio (1h/24h) es el último aviso antes de la sesión. Antes decía " +
          "'Online por Google Meet' (falso, el video es la Sala de Pathway/JaaS) y no traía botón " +
