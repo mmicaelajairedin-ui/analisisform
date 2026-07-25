@@ -264,19 +264,23 @@ const RULES = [
   {
     name: "chat: el aviso es por FOTOS (varias personas) y sin número rojo que tape",
     bug: "El aviso del chat mostraba la foto de quien escribió con un número rojo " +
-         "encima que le tapaba la cara, y solo una persona. Ahora muestra hasta 3 " +
-         "fotitos (varias personas), sin número rojo, con una 'respiración' suave.",
+         "encima que le tapaba la cara, y solo una persona. Ahora muestra hasta 5 " +
+         "fotitos (varias personas), sin número rojo, POR FUERA de la pastilla " +
+         "(en móvil, arriba del botón; el padding-top de la barra les deja lugar).",
     check() {
       const s = read("panel-v2.html");
       if (!s) return null;
       // _syncChatBtn junta varios remitentes (senders) y NO pinta el punto rojo.
-      if (!/senders\.slice\(0,\s*3\)/.test(s))
-        return "panel-v2.html: el chat ya no muestra varias fotitos (senders.slice(0,3)).";
+      if (!/senders\.slice\(0,\s*5\)/.test(s))
+        return "panel-v2.html: el chat ya no muestra varias fotitos (senders.slice(0,5)).";
       if (/_syncChatBtn[\s\S]{0,2600}dot\.textContent\s*=\s*[^;]*unread/.test(s))
         return "panel-v2.html: volvió el número rojo sobre la foto del chat.";
       // el contador rojo del chat queda apagado (avisamos por fotos).
       if (!/_syncChatBadge[\s\S]{0,180}pw-chat-badge[\s\S]{0,60}display="none"/.test(s))
         return "panel-v2.html: el contador rojo del chat volvió a mostrarse (tapa la foto).";
+      // en móvil las fotitos van ARRIBA del botón (por fuera de la pastilla).
+      if (!/#pw-app-actions \.pw-chat-notif\{[^}]*bottom:calc\(100% \+ 3px\)/.test(s))
+        return "panel-v2.html: en móvil las fotitos ya no se apoyan arriba del botón → vuelven a quedar dentro/cortadas.";
       return null;
     },
   },
