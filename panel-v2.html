@@ -2974,9 +2974,17 @@ function _cvPhoto(cvJson){
 // generado). Acá devolvemos SOLO si es una foto real (http), no el avatar generado.
 function _cliFotoByEmail(email){
   email=(""+(email||"")).trim().toLowerCase(); if(!email) return "";
+  // 1) Entre TUS clientes (foto_perfil → foto_url → foto del CV).
   try{ var L=window.CLIENTS||[]; for(var i=0;i<L.length;i++){ var x=L[i]; if(x && (""+(x.email||"")).trim().toLowerCase()===email){
     var cands=[ x.photo, (x.raw&&x.raw.foto_perfil), (x.raw&&x.raw.foto_url), _cvPhoto(x.cvContenido) ];
     for(var j=0;j<cands.length;j++){ if(cands[j] && /^https?:\/\//.test(cands[j])) return cands[j]; }
+  } } }catch(e){}
+  // 2) Si la reunión es con alguien que tiene cuenta en Pathway (otro coach/admin),
+  //    su foto NO está en tus clientes sino en la lista de coaches. La buscamos ahí
+  //    para que SIEMPRE detecte la foto (no salga el avatar por defecto).
+  try{ var C=(typeof RCOACHES!=="undefined"&&RCOACHES)?RCOACHES:[]; for(var k=0;k<C.length;k++){ var u=C[k]; if(u && (""+(u.email||"")).trim().toLowerCase()===email){
+    var cg=u.configuracion||{}; var c2=[ u.foto_url, cg.foto_url, cg.foto_perfil ];
+    for(var m=0;m<c2.length;m++){ if(c2[m] && /^https?:\/\//.test(c2[m])) return c2[m]; }
   } } }catch(e){}
   return "";
 }
@@ -5288,6 +5296,9 @@ function cfgProfile(){
         "<span class='cp-form-hint'>Lo usamos para mostrarte primero a los candidatos de tu mismo país. No lo mostramos públicamente.</span></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Tu Google Calendar (para ver tus eventos en la agenda)</label>"+
         "<input id='cfp-cal-ical' class='cp-form-input' value=\""+esc(gi)+"\" placeholder='https://calendar.google.com/calendar/ical/…/public/basic.ics' onchange='_autoSaveCal(this)'>"+
+        (gi
+          ? "<span style='display:inline-flex;align-items:center;gap:6px;margin-top:7px;font-size:12px;font-weight:600;color:var(--pw-bosque)'><span style='width:8px;height:8px;border-radius:50%;background:var(--pw-bosque);display:inline-block'></span>Calendario vinculado ✓ — se guarda solo al pegar el link.</span>"
+          : "<span style='display:inline-flex;align-items:center;gap:6px;margin-top:7px;font-size:12px;font-weight:600;color:var(--pw-text-muted)'><span style='width:8px;height:8px;border-radius:50%;background:#C9C7C4;display:inline-block'></span>Sin vincular — pega el link de abajo y se guarda solo.</span>")+
         "<span class='cp-form-hint'>Para ver tus eventos aquí, pega el <strong>enlace público</strong> de tu Google Calendar:<br>"+
           "1) En Google Calendar entra a <strong>Configuración</strong> (⚙️) y elige <strong>tu calendario</strong>.<br>"+
           "2) En <strong>«Permisos de acceso a los eventos»</strong> tildá <strong>«Ponerlo a disposición del público»</strong>.<br>"+
@@ -11465,7 +11476,10 @@ function _gameReturnMaybe(){ if(state._gameReturn){ state._gameReturn=false; sta
 // (saveCfg fusiona sobre el resto, es merge-safe).
 function _autoSaveCal(inp){
   try{
-    if(!REAL || !RCFG_READY || !inp) return;
+    if(!REAL || !inp) return;
+    // Si la config todavía no cargó, NO descartamos lo que pegó (antes se perdía
+    // en silencio y quedaba "sin vincular"): reintentamos en 1 s hasta que cargue.
+    if(!RCFG_READY){ setTimeout(function(){ _autoSaveCal(inp); }, 1000); return; }
     var v=(""+(inp.value||"")).trim();
     if(v===(""+((RCFG&&RCFG.gcal_ical_url)||""))) return;   // sin cambios → no guardar
     saveCfg({ gcal_ical_url:v }, null, null, { noRender:true, toast:"Link de calendario guardado ✓" });
