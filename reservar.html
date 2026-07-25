@@ -678,7 +678,9 @@ function confirmar(){
   var _link=location.origin+'/sala.html?room='+encodeURIComponent(_room)+'&mod=0&name='+encodeURIComponent(name)+'&email='+encodeURIComponent(email)+'&con='+encodeURIComponent(FIRST||'');
   var gurl='https://calendar.google.com/calendar/u/0/r/eventedit?text='+encodeURIComponent(title)+
     '&dates='+fmt(start)+'/'+fmt(end)+'&location='+encodeURIComponent(_link)+'&details='+encodeURIComponent('Reserva desde Pathway.\nNombre: '+name+'\nEmail: '+email+'\n\nLink de la videollamada: '+_link+(answersTxt?('\n\n'+answersTxt):''));
-  if(EMAIL) gurl+='&add='+encodeURIComponent(EMAIL);
+  // OJO: NO agregamos '&add=' (no invitamos a nadie). Si invitáramos, Google le
+  // mandaría un email de invitación que puede traer su Meet automático → dos links.
+  // Cada persona agrega el evento a SU propio calendario al tocar el botón.
 
   var _cid=(CID||qp('c')), _iso=start.toISOString();
   // Token único de la reserva → link para cancelar/reprogramar (va en el email).
@@ -698,13 +700,12 @@ function confirmar(){
     // 1) Registro best-effort en la base (para que el coach lo vea aunque no use Google).
     try{ _postCita(true); }catch(e){}
     TAKEN[start.getTime()]=true;
-    // 2) Emails de confirmación (Brevo) — al que reserva y al coach (con respuestas).
-    //    Llevan el .ics adjunto: agregar el evento al calendario es OPCIONAL (si la
-    //    persona quiere), con SOLO nuestro link de la Sala (sin Meet). NO hay sync
-    //    automático a Google: la cita ya queda en el panel de Pathway; el evento en
-    //    el Google de cada uno aparece únicamente si eligen agregarlo con el .ics.
+    // 2) Emails de confirmación (Brevo). El botón "Agregar a Google Calendar" abre
+    //    Google con el evento cargado (guardar y listo) — sin invitar a nadie, así
+    //    NO aparece el Meet automático. El .ics va adjunto solo como respaldo para
+    //    Apple/Outlook. NADA automático a Google: la cita ya quedó en el panel.
     sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
-    ok(name, start, _ics.url);
+    ok(name, start, gurl);
   };
   // Re-chequeo anti doble-booking JUSTO antes de confirmar: si el hueco se ocupó
   // recién (otra persona reservó mientras), no confirmamos y pedimos elegir otro.
@@ -754,7 +755,8 @@ function sendEmails(name, email, tlabel, F, gurl, manageUrl, origen, answers, jo
         '<div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700">Cuándo'+(F.diff?' · tu hora ('+esc(F.cliTz)+')':'')+'</div>'+
         '<div style="font-size:16px;font-weight:700;color:#1B4332;text-transform:capitalize">'+esc(F.cli)+'</div>'+_cliOtherTz+'</div>'+
       '<a href="'+esc(joinLink)+'" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px">Entrar a la videollamada</a>'+
-      '<p style="font-size:12.5px;color:#8A968E;margin-top:14px;line-height:1.5">📎 Adjuntamos la invitación (<strong>sesion.ics</strong>): ábrela para agregarla a tu calendario (Google, Apple u Outlook).</p>'+
+      '<div style="margin-top:12px"><a href="'+esc(gurl)+'" style="display:inline-block;background:#fff;color:#1B4332;border:1.5px solid #CFE3D4;text-decoration:none;padding:10px 20px;border-radius:10px;font-weight:700;font-size:13.5px">📅 Agregar a Google Calendar</a></div>'+
+      '<p style="font-size:11.5px;color:#9AA69E;margin-top:8px;line-height:1.5">Se abre Google Calendar, tocas <strong>Guardar</strong> y listo. (Adjuntamos la invitación por si usas Apple/Outlook.)</p>'+
       (manageUrl?('<p style="font-size:12.5px;color:#8A968E;margin-top:12px;line-height:1.5">¿No puedes en ese horario? <a href="'+esc(manageUrl)+'" style="color:#2D6A4F;font-weight:700">Cancelar o reprogramar</a>.</p>'):'<p style="font-size:12.5px;color:#8A968E;margin-top:12px;line-height:1.5">Si necesitas reprogramar, responde este email y coordinamos.</p>')+
     '</div></div></div>';
   postEmail({ to:email, to_name:name, subject:'✅ Reserva confirmada · '+tlabel+' con '+FIRST, html:htmlCli, reply_to:(EMAIL||'hi@pathwaycareercoach.com'), signature:'none', attachment:(icsB64?[{content:icsB64, name:'sesion.ics'}]:undefined) });
@@ -768,8 +770,9 @@ function sendEmails(name, email, tlabel, F, gurl, manageUrl, origen, answers, jo
       '<p style="font-size:14px">Contacto: <a href="mailto:'+esc(email)+'">'+esc(email)+'</a></p>'+
       (origen?('<p style="font-size:14px">Te encontró por: <strong>'+esc(origen)+'</strong></p>'):'')+
       ((answers&&answers.length)?('<div style="background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0"><div style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700;margin-bottom:6px">Sus respuestas</div>'+answers.map(function(x){ return '<div style="font-size:13.5px;margin-bottom:7px"><span style="color:#7A8A80">'+esc(x.q)+':</span> <strong>'+esc(x.a)+'</strong></div>'; }).join('')+'</div>'):'')+
-      '<a href="'+esc(joinLink)+'" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:6px 0 0">Entrar a la videollamada</a>'+
-      '<p style="font-size:13px;color:#5A6A60;margin-top:14px">📎 Te adjuntamos la invitación (<strong>sesion.ics</strong>) para tu calendario. También la ves en tu agenda del panel.</p>';
+      '<a href="'+esc(joinLink)+'" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:6px 8px 0 0">Entrar a la videollamada</a>'+
+      '<a href="'+esc(gurl)+'" style="display:inline-block;background:#fff;color:#1B4332;border:1.5px solid #CFE3D4;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700;font-size:13.5px;margin:6px 0 0">📅 Agregar a Google Calendar</a>'+
+      '<p style="font-size:13px;color:#5A6A60;margin-top:14px">Se abre Google, guardás y listo. También la ves en tu agenda del panel.</p>';
     postEmail({ to:EMAIL, to_name:COACH, subject:'📅 Nueva reserva de '+name, html:htmlCoach, reply_to:email, signature:'pathway', attachment:(icsB64?[{content:icsB64, name:'sesion.ics'}]:undefined) });
   }
 }
@@ -779,14 +782,14 @@ function postEmail(payload){
   }catch(e){}
 }
 
-function ok(name, start, icsUrl){
+function ok(name, start, gcalUrl){
   $('card').className='card';
   $('card').innerHTML=
     "<div class='center'><div class='ok-ico'>🎉</div>"+
     "<h1>¡Reserva enviada!</h1>"+
     "<p class='sub'>Elegiste <strong style='text-transform:capitalize'>"+esc(fechaLinda(start))+"</strong>.<br>Te mandamos un email de confirmación con el link de la videollamada.</p>"+
-    "<a class='btn btn-primary' href='"+esc(icsUrl)+"' download='sesion.ics' style='margin-top:20px'>Agregar al calendario</a>"+
-    "<p class='hint'>Se descarga la invitación (.ics): ábrela para sumarla a tu calendario. Igual te llega todo por email"+(EMAIL?(", o escribile a "+esc(FIRST)+" a <strong>"+esc(EMAIL)+"</strong>"):"")+".</p></div>";
+    "<a class='btn btn-primary' href='"+esc(gcalUrl)+"' target='_blank' rel='noopener' style='margin-top:20px'>Agregar a Google Calendar</a>"+
+    "<p class='hint'>Se abre Google Calendar: tocá <strong>Guardar</strong> y listo. Igual te llega todo por email"+(EMAIL?(", o escribile a "+esc(FIRST)+" a <strong>"+esc(EMAIL)+"</strong>"):"")+".</p></div>";
 }
 
 // Arranque (al FINAL, cuando SAFE_SELECT y todas las funciones ya están definidas).
