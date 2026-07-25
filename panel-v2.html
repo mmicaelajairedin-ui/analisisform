@@ -270,6 +270,8 @@ body.pw-nov-open #pw-nov-btn{ right:360px; border-radius:0 13px 13px 0; box-shad
 .cp-mobjuego{display:none;}
 .cp-side-link{display:inline-flex;align-items:center;gap:6px;padding:6px 8px;font-size:11px;color:var(--pw-text-soft);border-radius:6px;}
 .cp-side-link:hover{color:var(--pw-carbon);background:var(--pw-niebla-3);}
+/* Bloques solo-móvil: ocultos en escritorio; el @media(max-width:900px) los muestra. */
+.cp-only-mobile{display:none;}
 /* Menú de cuenta (avatar arriba a la derecha): Perfil, Recursos, Marca propia, Clientes de Pathway, Mi cuenta, Cerrar sesión */
 .pw-um-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 12px;border:none;background:none;border-radius:9px;font-family:inherit;font-size:13px;font-weight:500;color:var(--pw-text-soft);cursor:pointer;transition:background .13s,color .13s;}
 .pw-um-mob{display:none !important;} /* ítems del menú que solo aparecen en móvil (Novedades) */
@@ -1105,10 +1107,12 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   #pw-app-actions #pw-um-btn-role{ font-size:8.5px !important; }
   #pw-app-actions #pw-usermenu-av{ width:30px !important; height:30px !important; }
   #pw-app-actions #pw-usermenu-chev{ display:block !important; width:12px; height:12px; }
-  /* Notificaciones: en móvil la campana sale de la barra y pasa al menú del
-     avatar (ítem "Notificaciones"). El panel (#pw-notif-panel) sigue anclado al
-     viewport con position:fixed, así que se abre igual desde el ítem. */
-  #pw-app-actions #pw-notif-btn{ display:none !important; }
+  /* Notificaciones: la campana queda como pastilla propia en la barra (con su
+     badge rojo visible). NO va dentro del menú del avatar — eso alargaba el
+     desplegable. Círculo de 38px como los demás, pero overflow visible para que
+     el badge no se recorte. */
+  #pw-app-actions #pw-notif-btn{ width:38px !important; height:38px !important; padding:0 !important; border-radius:50% !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; overflow:visible !important; }
+  #pw-app-actions #pw-notif-btn svg{ width:18px !important; height:18px !important; }
   /* Desplegables (perfil + notificaciones): en móvil los anclamos al viewport
      con position:fixed. En iOS Safari un panel position:absolute dentro de la
      barra fixed se "escapa" del ancla y cae al fondo de la pantalla — por eso el
@@ -1160,6 +1164,8 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   .cp-dash-hidecol{ display:none !important; }
   /* Calendario: oculto en móvil (a pedido). El Resumen muestra el resto. */
   .cp-cal-card{ display:none !important; }
+  /* Bloques que solo aparecen en móvil (ej. tarjeta 'Próxima sesión' del Inicio). */
+  .cp-only-mobile{ display:block !important; }
   .cp-cabra-img-wrap{ width:96px; height:96px; }
   .cp-cabra-bubble{ width:240px; }
   .cp-ai-panel{ left:8px; right:8px; bottom:86px; width:auto; height:72vh; max-height:72vh; }
@@ -2650,6 +2656,10 @@ function viewResumen(){
       "<div><h1 class='cp-greet-h1'>"+greet+", "+esc(COACH.firstName)+"<span class='dot'>.</span></h1>"+
       "<div class='cp-greet-sub'>"+_greetSub+"</div></div>"+
       "</div>"+
+    // Móvil: tarjeta "Próxima sesión" con botón para unirse a la videollamada.
+    // Reusa _agProxRender() (se llena solo cuando carga la agenda, igual que en
+    // Calendario). Oculta en escritorio (ahí ya vive en la pág. Calendario).
+    "<div class='cp-only-mobile' style='margin-bottom:13px'><div class='cp-card'><div class='cp-card-pad' style='padding:16px'><div id='cp-inicio-prox'></div></div></div></div>"+
     pathCard+(pathCard?"":emptyState)+
     "<div class='cp-dash-top'>"+_agTop+negocioCard+"</div>"+
     viewDashboard()+
@@ -3140,6 +3150,7 @@ function _agMonthRender(){
     "<div class='pwcal-grid'>"+cells+"</div>"+
   "</div>";
   try{ _agProxRender(); }catch(e){} // refresca la card "Próxima sesión" con los mismos datos
+  try{ _agProxMiniRender(); }catch(e){} // versión minimal para el Inicio en móvil (#cp-inicio-prox)
 }
 function _agendaCard(){
   // Resumen liviano: solo la lista (Google) + el calendario del mes, con un link
@@ -3190,6 +3201,26 @@ function _agProxList(){
   return _agMergeDup(out);
 }
 function _agProxItem(){ return _agProxList()[0]||null; }
+// Tarjeta "Próxima sesión" MINIMAL para el Inicio en móvil (estilo mockup: card
+// verde con hora + nombre + subtítulo + botón para unirse a la videollamada).
+// Se llena sola desde _agMonthRender (misma data que la agenda). Reusa _agProxItem.
+function _agProxMiniRender(){
+  var box=document.getElementById("cp-inicio-prox"); if(!box) return;
+  var it=null; try{ it=_agProxItem(); }catch(e){}
+  var slab="<div class='cp-eyebrow' style='letter-spacing:.1em;margin-bottom:10px'>Próxima sesión</div>";
+  if(!it){ box.innerHTML=slab+"<div style='color:var(--pw-text-soft);font-size:13px'>No tienes sesiones próximas.</div>"; return; }
+  var t=""; try{ t=_agTime(it.ms); }catch(e){}
+  var btn=it.link
+    ? "<a href='"+esc(it.link)+"' target='_blank' rel='noopener' style='background:#fff;color:var(--pw-bosque);border-radius:11px;padding:10px 14px;font-size:12.5px;font-weight:700;font-family:inherit;text-decoration:none;white-space:nowrap;flex-shrink:0'>Unirse</a>"
+    : (it.email?"<a href='mailto:"+esc(it.email)+"' style='background:#fff;color:var(--pw-bosque);border-radius:11px;padding:10px 14px;font-size:12.5px;font-weight:700;font-family:inherit;text-decoration:none;white-space:nowrap;flex-shrink:0'>Escribir</a>":"");
+  box.innerHTML=slab+
+    "<div style='background:linear-gradient(150deg,#40916C,#2D6A4F);color:#fff;border-radius:18px;padding:16px;display:flex;align-items:center;gap:14px'>"+
+      "<div style='font-family:var(--pw-serif);font-size:26px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;flex-shrink:0'>"+esc(t)+"</div>"+
+      "<div style='flex:1;min-width:0'><div style='font-family:var(--pw-serif);font-size:18px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.title)+"</div>"+
+        (it.sub?"<div style='font-size:12.5px;color:rgba(255,255,255,.85);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.sub)+(it.durMin?" · "+it.durMin+" min":"")+"</div>":"")+"</div>"+
+      btn+
+    "</div>";
+}
 // Avatar de la Próxima sesión / En tu lista: foto real del cliente si existe; si no,
 // el EMOJI del tipo de evento a color (no iniciales tipo "L3", que quedaban feas).
 function _agProxAv(it,sz){ var acc=it.col||"#8C7B80";
@@ -8064,8 +8095,6 @@ function _syncNotifBadge(){
     var tot=data.reduce(function(s,x){return s+(x.n||0);},0);
     var b=document.getElementById("pw-notif-badge");
     if(b){ if(tot>0){ b.textContent=(tot>9?"9+":tot); b.style.display="flex"; } else { b.style.display="none"; } }
-    var bm=document.getElementById("pw-notif-badge-mob");
-    if(bm){ if(tot>0){ bm.textContent=(tot>9?"9+":tot); bm.style.display="inline-flex"; } else { bm.style.display="none"; } }
   }catch(e){}
 }
 function pwNotif(e){
@@ -12242,7 +12271,6 @@ if('serviceWorker' in navigator){
     </button>
     <div id="pw-usermenu-panel" role="menu" style="display:none;position:absolute;top:48px;right:0;width:230px;background:#fff;border:1px solid var(--pw-border);border-radius:14px;box-shadow:0 14px 38px rgba(31,42,35,.20);overflow:hidden;z-index:200;">
       <div style="padding:6px;">
-        <button class="pw-um-item pw-um-mob" data-act="notif-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Notificaciones<span id="pw-notif-badge-mob" style="display:none;margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:#C24545;color:#fff;font-size:10px;font-weight:700;align-items:center;justify-content:center;">0</span></button>
         <button class="pw-um-item pw-um-mob" data-act="nov-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l16-5v12L3 14z"/><path d="M11.5 16.5a2.5 2.5 0 0 1-5-.5"/></svg>Novedades</button>
         <button class="pw-um-item" data-act="asist-go" data-go="config|profile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Perfil</button>
         <button class="pw-um-item" data-act="perfil-open" onclick="try{document.getElementById('pw-usermenu-panel').style.display='none';}catch(e){}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 8.5 22 9.3 17 14 18.3 21 12 17.5 5.7 21 7 14 2 9.3 9 8.5 12 2"/></svg>Puntos y logros</button>
