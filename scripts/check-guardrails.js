@@ -262,6 +262,77 @@ const RULES = [
     },
   },
   {
+    name: "chat: el aviso es por FOTOS (varias personas) y sin número rojo que tape",
+    bug: "El aviso del chat mostraba la foto de quien escribió con un número rojo " +
+         "encima que le tapaba la cara, y solo una persona. Ahora muestra hasta 3 " +
+         "fotitos (varias personas), sin número rojo, con una 'respiración' suave.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // _syncChatBtn junta varios remitentes (senders) y NO pinta el punto rojo.
+      if (!/senders\.slice\(0,\s*3\)/.test(s))
+        return "panel-v2.html: el chat ya no muestra varias fotitos (senders.slice(0,3)).";
+      if (/_syncChatBtn[\s\S]{0,2600}dot\.textContent\s*=\s*[^;]*unread/.test(s))
+        return "panel-v2.html: volvió el número rojo sobre la foto del chat.";
+      // el contador rojo del chat queda apagado (avisamos por fotos).
+      if (!/_syncChatBadge[\s\S]{0,180}pw-chat-badge[\s\S]{0,60}display="none"/.test(s))
+        return "panel-v2.html: el contador rojo del chat volvió a mostrarse (tapa la foto).";
+      return null;
+    },
+  },
+  {
+    name: "portales del cliente: aviso de chat = foto del coach, sin número rojo",
+    bug: "Igual que en el panel: cuando el coach le escribe al cliente, el ícono " +
+         "de chat mostraba un número rojo. Ahora muestra la FOTO del coach (con " +
+         "respiración), sin número rojo que la tape, en los 3 portales.",
+    check() {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/function _syncCoachChatPhoto\(/.test(s))
+          return f + ": falta _syncCoachChatPhoto → el aviso de chat no muestra la foto del coach.";
+        if (!/\.pw-chat-photo\{[^}]*pwChatBreathe/.test(s))
+          return f + ": la foto del chat ya no 'respira' (falta la animación pwChatBreathe).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "chat: se refresca seguido (no vuelve a 25/30s de latencia)",
+    bug: "El chat refrescaba fijo cada 25s (panel) / 30s (portales) → escribías y " +
+         "el mensaje 'no llegaba' hasta pasado mucho tiempo. Ahora el panel es " +
+         "adaptativo (6s con el chat abierto) y los portales del cliente 12s.",
+    check() {
+      const pv = read("panel-v2.html");
+      if (pv) {
+        if (/_msgPollTimer\s*=\s*setInterval\([^)]*25000\)/.test(pv))
+          return "panel-v2.html: el chat volvió al refresco fijo de 25s.";
+        if (!/_fast\?6000/.test(pv))
+          return "panel-v2.html: se perdió el refresco rápido (6s) del chat abierto.";
+      }
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (s && /(loadMsgs|_pollMsgs)[^;]{0,60}[,]\s*30000\)/.test(s))
+          return f + ": el chat del cliente volvió a 30s de latencia.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "móvil: la burbuja de aviso del chat/notif no se recorta (overflow)",
+    bug: "En móvil los botones de la barra llevan overflow:hidden para verse " +
+         "circulares, pero eso RECORTABA la burbuja de aviso (foto de quien " +
+         "escribió / contador) que asoma por la esquina → quedaba escondida. " +
+         "Los botones de chat y notificaciones deben llevar overflow:visible.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/#pw-app-actions\s+#pw-chat-btn,\s*#pw-app-actions\s+#pw-notif-btn\{\s*overflow:visible/.test(s))
+        return "panel-v2.html: el chat/notif ya no fuerzan overflow:visible → la burbuja de aviso se vuelve a recortar en móvil.";
+      return null;
+    },
+  },
+  {
     name: "demo: el coach de ejemplo luce badge/medalla/puntos y arranque completo",
     bug: "El coach demo (demo.coach@pathway.com) se usa para MOSTRAR la plataforma " +
          "a prospectos, pero tenía badge/medalla/puntos en cero y el arranque en 0/3 " +
