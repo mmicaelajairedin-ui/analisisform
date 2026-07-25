@@ -3153,28 +3153,15 @@ function _agMonthRender(){
   try{ _agProxMiniRender(); }catch(e){} // versión minimal para el Inicio en móvil (#cp-inicio-prox)
 }
 function _agendaCard(){
-  // Resumen liviano: solo la lista (Google) + el calendario del mes, con un link
-  // directo a la página Calendario (ahí viven Tipos de evento, Agendar cita y
-  // Mi disponibilidad, junto a la asistencia y las métricas).
+  // Resumen = SOLO LO IMPORTANTE para entrar rápido: la Próxima sesión (con
+  // "Entrar"). El mes, la lista completa y la gestión viven en la pestaña
+  // Calendario → no repetimos acá (antes salía agenda del día + mes + reservas).
   return "<div class='cp-card' style='margin-bottom:13px'>"+
     "<div class='cp-card-hd'>"+
-      "<h3 class='cp-card-title'><span class='cp-emo'>🗓️</span> Tu agenda de hoy<span class='dot'>.</span></h3>"+
-      "<div style='display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap'>"+
-        "<span class='cp-eyebrow' style='display:inline-flex;align-items:center;gap:6px'><span style='width:7px;height:7px;border-radius:50%;background:var(--pw-sendero);display:inline-block'></span>En vivo</span>"+
-        "<button class='cp-btn cp-btn-ghost' data-act='nav:calendario' style='height:30px;font-size:12px;padding:0 12px'>Ir al calendario "+svg(IC.chevR,12)+"</button>"+
-      "</div>"+
+      "<h3 class='cp-card-title'><span class='cp-emo'>🗓️</span> Tu agenda<span class='dot'>.</span></h3>"+
+      "<button class='cp-btn cp-btn-ghost' data-act='nav:calendario' style='height:30px;font-size:12px;padding:0 12px'>Ir al calendario "+svg(IC.chevR,12)+"</button>"+
     "</div>"+
-    "<div class='cp-card-pad cp-ag-grid'>"+
-     "<div class='cp-ag-cols'>"+
-      "<div id='cp-agenda-body' class='cp-ag-list'><div style='color:var(--pw-text-soft);font-size:13px;padding:10px 0'>Cargando tu agenda…</div></div>"+
-      "<div class='cp-ag-cal'>"+_agMonthCal()+"</div>"+
-      "<div class='cp-ag-res'>"+
-        "<div class='cp-eyebrow' style='margin-bottom:8px'>Reservas <span style='color:var(--pw-text-muted);font-weight:400'>· desde tu link</span></div>"+
-        ""+ /* Pathway centraliza las llamadas: sin opción de Meet/Zoom propio del coach */
-        "<div id='cp-res-body'><div style='color:var(--pw-text-soft);font-size:13px;padding:8px 0'>Cargando reservas…</div></div>"+
-      "</div>"+
-     "</div>"+
-    "</div>"+
+    "<div class='cp-card-pad'><div id='cp-agenda-prox'></div></div>"+
   "</div>";
 }
 // Misma agenda linda (lista de Google/iCal + mes) pero en la pestaña Calendario,
@@ -3544,7 +3531,7 @@ function _resLoad(){
   // existe, sin romper la lista de reservas en las cuentas donde todavía no se
   // aplicó la migración (una lista fija con una columna inexistente da 400).
   _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+"&order=inicio.asc&select=*")
-    .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); _agMonthRender(); })
+    .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); _agMonthRender(); try{ _agProxRender(); }catch(e){} })
     .catch(function(){ var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplica la migración citas.sql en Supabase."); });
 }
 // ── Informes guardados como archivos (tabla informes_guardados) ──
@@ -8564,10 +8551,11 @@ function render(){
         if(_agSavePending()){ /* guardando el token recién conectado */ }
         else if(_AG_DATA){ var _agb=document.getElementById("cp-agenda-body"); if(_agb) _agb.innerHTML=_agBodyRender(); }
         else { _agendaLoad(); }
-        // Reservas del link público: cache si ya lo trajimos, si no cargar.
-        if(_RES_DATA){ var _rsb=document.getElementById("cp-res-body"); if(_rsb) _rsb.innerHTML=_resRender(_RES_DATA); }
-        else { _resLoad(); }
-        _agMonthRender(); // pinta el mes con lo que haya en cache (o vacío)
+        // Reservas del link público: cache si ya lo trajimos, si no cargar (alimenta
+        // la Próxima sesión). El Resumen ya no muestra la lista completa (solo Próxima).
+        if(!_RES_DATA) _resLoad();
+        _agMonthRender();      // no-op si no hay mes en el Resumen (guardado)
+        try{ _agProxRender(); }catch(e){}  // Próxima sesión, independiente del mes
       }catch(e){}
     }
     if(state.section==="calendario"){
