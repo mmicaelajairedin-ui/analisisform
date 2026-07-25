@@ -1472,6 +1472,71 @@ EXAMPLE_CLIENT.raw.sesiones_registro = JSON.stringify(EXAMPLE_CLIENT.ses);
 // false, su informe/CV se muestran como "pendientes" para que el coach viva
 // el momento de generarlos. No toca datos reales ni llama a la API.
 var _exGen=false;
+// ── DEMO RICO: además de María, un roster de clientes de ejemplo (con fotos,
+// progreso variado, informe, CV, sesiones pasadas y PRÓXIMAS reuniones) para que
+// el panel se vea como el de un coach activo — como la maqueta del multi-coach.
+// Solo demo (_isDemoCoach). Fotos reales de randomuser (con fallback por CSS).
+function _demoRoster(tipo){
+  tipo=tipo||"carrera";
+  var P="https://randomuser.me/api/portraits/", D=Date.now(), DAY=86400000;
+  function ymd(off){ var d=new Date(D+off*DAY); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+  // Rol/objetivo por nicho para cada personaje.
+  var ROLE={
+    carrera:[["Product Manager → Head of Product","Liderar producto y equipo","SaaS B2B","Barcelona"],
+             ["Diseñadora UX → rol senior","Dar el salto a UX Lead","Producto digital","Valencia"],
+             ["Analista → Data Lead","Pasar de reporting a estrategia de datos","Banca","Madrid"],
+             ["Primer empleo tras la carrera","Conseguir su primer trabajo en tech","Tech","Sevilla"]],
+    fitness:[["Fuerza · +10 kg en press banca","Ganar fuerza sin lesionarse","","Barcelona"],
+             ["Recomposición · −6 kg de grasa","Bajar grasa y ganar músculo","","Valencia"],
+             ["Running · primera 10K","Correr 10K en 3 meses","","Madrid"],
+             ["Vuelta al gym tras lesión","Retomar el hábito de forma segura","","Sevilla"]],
+    financiero:[["Ordenar finanzas y ahorrar","Ahorrar el 20% cada mes","","Barcelona"],
+             ["Salir de deudas en 6 meses","Cancelar la tarjeta y el préstamo","","Valencia"],
+             ["Primeras inversiones","Armar una cartera diversificada","","Madrid"],
+             ["Fondo de emergencia","3 meses de gastos ahorrados","","Sevilla"]]
+  };
+  var PEOPLE=[
+    {id:"demo-diego", name:"Diego Paz",       photo:P+"men/45.jpg",   week:4, medal:"plata",  state:"fresh", ago:"hace 3 h",  cv:"published", rep:"published", nextIn:2, nextH:18},
+    {id:"demo-sofia", name:"Sofía Luna",      photo:P+"women/65.jpg", week:3, medal:"bronce", state:"fresh", ago:"hace 1 d",  cv:"published", rep:"published", nextIn:4, nextH:11},
+    {id:"demo-mateo", name:"Mateo Ríos",      photo:P+"men/32.jpg",   week:2, medal:"",       state:"mid",   ago:"hace 6 d",  cv:"published", rep:"published", nextIn:0, nextH:0},
+    {id:"demo-lucia", name:"Lucía Fernández", photo:P+"women/44.jpg", week:1, medal:"",       state:"stale", ago:"hace 13 d", cv:"pending",   rep:"published", nextIn:0, nextH:0}
+  ];
+  var R=(ROLE[tipo]||ROLE.carrera);
+  return PEOPLE.map(function(p,i){
+    var r=R[i]||R[0], email=p.id+"@pathwaycareercoach.com", fn=p.name.split(" ")[0];
+    var ses=[{fecha:ymd(-7-i*2),hora:"",trabajado:"Llamada inicial",acordado:"Diagnóstico y plan de las 4 semanas.",acciones:"",tareas_done:[]}];
+    if(p.nextIn>0) ses.unshift({fecha:ymd(p.nextIn),hora:p.nextH+":00",trabajado:"Sesión de seguimiento",acordado:"Revisar avances de la semana "+p.week+".",acciones:"",tareas_done:[]});
+    var cvTxt=(tipo==="carrera")?[p.name.toUpperCase(),r[0]+" · "+r[3],"","PERFIL",r[1]+". Con experiencia y ganas de dar el próximo paso.","","EXPERIENCIA","· Resultados medibles en su área (métricas de impacto).","· Trabajo en equipo y foco en objetivos.","","HABILIDADES","Comunicación · Trabajo en equipo · Inglés B2/C1"].join("\n"):"";
+    return {
+      _example:true, id:p.id, name:p.name, role:r[0], email:email, week:p.week, medal:p.medal,
+      last:{txt:p.ago,state:p.state}, cvState:p.cv, reportState:p.rep,
+      cvContenido:cvTxt, source:(i%2?"pathway":"directo"), chat:[],
+      notas:"Cliente de ejemplo para que veas el panel con varios clientes. No es real.",
+      photo:p.photo,
+      raw:{ nombre:p.name, email:email, cargo:r[0], semana_activa:p.week, activo:true, nicho:tipo,
+        situacion:"En proceso", sector:r[2], ciudad:r[3], objetivo:r[1],
+        created_at:new Date(D-(3+i*9)*DAY).toISOString(),
+        idiomas:"Español (nativo) · Inglés B2", whatsapp:"+34 6"+(10+i)+" "+(100+i*7)+" "+(200+i*11),
+        cv_texto:cvTxt, sesiones_registro:JSON.stringify(ses) },
+      inf:{ id:p.id+"-inf", d:{
+        resumen:fn+" avanza bien en su proceso. Foco: "+r[1].toLowerCase()+".",
+        scores:[{label:"Claridad de objetivo",val:60+i*7},{label:"Avance del plan",val:55+i*9},{label:"Constancia",val:50+i*8},{label:"Motivación",val:70+i*5}],
+        fortalezas:["Compromiso con el proceso","Objetivo claro","Buena comunicación con el coach"],
+        gaps:["Mantener la constancia semana a semana","Aplicar lo trabajado entre sesiones"],
+        estrategia:"Acompañar a "+fn+" semana a semana hacia: "+r[1]+".",
+        mensaje_candidato:fn+", vas por buen camino. Seguimos paso a paso 💪"
+      } },
+      ses:ses
+    };
+  });
+}
+// Reuniones/reservas demo (RCITAS) para que la card "Próxima sesión" muestre algo.
+function _demoCitas(tipo){
+  var roster=_demoRoster(tipo), D=Date.now(), DAY=86400000, out=[];
+  roster.forEach(function(c){ var s=(c.ses||[])[0]; if(s&&s.hora){ var ms=+new Date(s.fecha+"T"+(s.hora.length===5?s.hora:("0"+s.hora)));
+    if(ms>D) out.push({id:c.id+"-cita", inicio:new Date(ms).toISOString(), nombre:c.name, tipo:"Sesión de seguimiento", email:c.email, estado:"confirmada", coach_id:(REAL&&RME&&RME.id)||"demo"}); } });
+  return out;
+}
 // María según el nicho del demo: mismo personaje, datos coherentes con el
 // prompt de cada nicho (fitness / finanzas). Carrera = la María de siempre.
 // Aplica el overlay guardado del nicho (lo que la coach editó en el demo)
@@ -2478,7 +2543,10 @@ function _coachPathRender(ph,doneN){
 // y en la pestaña "Negocio" (móvil), sin duplicar la lógica.
 function _negocioKpisHtml(){
   if(!(CLIENTS && CLIENTS.length)) return "";
-  var reales=CLIENTS.filter(function(c){return c&&!c._example;});
+  // En el DEMO los KPIs usan los clientes de ejemplo (para verse ricos como la
+  // maqueta); para un coach real, solo clientes reales.
+  var _demoC=(typeof _isDemoCoach==="function"&&_isDemoCoach());
+  var reales=CLIENTS.filter(function(c){return c&&(_demoC||!c._example);});
   var activos=reales.filter(function(c){return !(c.raw&&c.raw.activo===false);}).length;
   var _mN=new Date(), _mKey=_mN.getFullYear()+"-"+_mN.getMonth();
   var _pmN=new Date(_mN.getFullYear(),_mN.getMonth()-1,1), _pmKey=_pmN.getFullYear()+"-"+_pmN.getMonth();
@@ -9944,7 +10012,7 @@ document.addEventListener("click", function(ev){
     }).catch(function(){ toast("No se pudo abrir el informe."); });
     return;
   }
-  if(act.indexOf("demo-tipo:")===0){ state.demoTipo=act.slice(10); try{ localStorage.setItem("pw_demo_tipo",state.demoTipo); }catch(e){} if(CLIENTS.length===1 && CLIENTS[0] && CLIENTS[0]._example){ CLIENTS=[exampleFor(state.demoTipo)]; } toast("Demo: panel "+state.demoTipo); render(); return; }
+  if(act.indexOf("demo-tipo:")===0){ state.demoTipo=act.slice(10); try{ localStorage.setItem("pw_demo_tipo",state.demoTipo); }catch(e){} if(CLIENTS.length && CLIENTS.every(function(c){return c&&c._example;})){ CLIENTS=[exampleFor(state.demoTipo)].concat(_demoRoster(state.demoTipo)); try{ RCITAS=_demoCitas(state.demoTipo); }catch(e){} } toast("Demo: panel "+state.demoTipo); render(); return; }
   if(act==="demo-switch-hide"){ state.demoHideSwitch=true; try{ localStorage.setItem("pw_demo_hide_switch","1"); }catch(e){} render(); return; }
   if(act==="demo-switch-show"){ state.demoHideSwitch=false; try{ localStorage.removeItem("pw_demo_hide_switch"); }catch(e){} render(); return; }
   if(act==="cli-deactivate" || act==="cli-reactivate"){
@@ -12019,7 +12087,7 @@ function loadReal(){
     // Coach demo: siempre mostramos la María de ejemplo con el form "lleno"
     // según el tipo elegido (Carrera/Fitness/Finanzas), ignorando clientes
     // reales — así el demo de los 3 nichos sale limpio y coherente.
-    if(_isDemoCoach()){ CLIENTS=[exampleFor(state.demoTipo||"carrera")]; }
+    if(_isDemoCoach()){ var _dt=state.demoTipo||"carrera"; CLIENTS=[exampleFor(_dt)].concat(_demoRoster(_dt)); try{ RCITAS=_demoCitas(_dt); }catch(e){} }
     else if(REAL && !CLIENTS.length){ CLIENTS=[exampleFor("carrera")]; }
     _realLoaded=true; // ya hay datos reales: recién ahora el chequeo de medallas es fiable
     try{ _gameSyncServer(_gameBest(), coachMedalInfo().n); }catch(e){} // ranking admin
