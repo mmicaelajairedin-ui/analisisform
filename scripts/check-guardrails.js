@@ -223,6 +223,25 @@ const RULES = [
     },
   },
   {
+    name: "chat: el aviso es por FOTOS (varias personas) y sin número rojo que tape",
+    bug: "El aviso del chat mostraba la foto de quien escribió con un número rojo " +
+         "encima que le tapaba la cara, y solo una persona. Ahora muestra hasta 3 " +
+         "fotitos (varias personas), sin número rojo, con una 'respiración' suave.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // _syncChatBtn junta varios remitentes (senders) y NO pinta el punto rojo.
+      if (!/senders\.slice\(0,\s*3\)/.test(s))
+        return "panel-v2.html: el chat ya no muestra varias fotitos (senders.slice(0,3)).";
+      if (/_syncChatBtn[\s\S]{0,2600}dot\.textContent\s*=\s*[^;]*unread/.test(s))
+        return "panel-v2.html: volvió el número rojo sobre la foto del chat.";
+      // el contador rojo del chat queda apagado (avisamos por fotos).
+      if (!/_syncChatBadge[\s\S]{0,180}pw-chat-badge[\s\S]{0,60}display="none"/.test(s))
+        return "panel-v2.html: el contador rojo del chat volvió a mostrarse (tapa la foto).";
+      return null;
+    },
+  },
+  {
     name: "chat: se refresca seguido (no vuelve a 25/30s de latencia)",
     bug: "El chat refrescaba fijo cada 25s (panel) / 30s (portales) → escribías y " +
          "el mensaje 'no llegaba' hasta pasado mucho tiempo. Ahora el panel es " +

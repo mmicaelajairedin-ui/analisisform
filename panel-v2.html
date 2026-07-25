@@ -115,6 +115,9 @@ body.pw-nov-open #pw-nov-btn{ right:360px; border-radius:0 13px 13px 0; box-shad
 @keyframes pwAttn{0%,100%{transform:scale(1)}30%{transform:scale(1.35)}60%{transform:scale(.92)}}
 @keyframes pwHalo{0%{box-shadow:0 0 0 0 rgba(194,69,69,.55)}100%{box-shadow:0 0 0 10px rgba(194,69,69,0)}}
 .pw-attn{animation:pwAttn 1s ease-in-out 4,pwHalo 1.4s ease-out 3;}
+/* La burbuja de fotos del chat "respira" suave para avisar sin número rojo. */
+@keyframes pwChatBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+.pw-chat-notif{transform-origin:center;animation:pwChatBreathe 2.2s ease-in-out infinite;}
 /* Micro-interacciones SaaS: apertura de dropdowns + entrada de mensajes del chat. */
 @keyframes pwDD{from{opacity:0;transform:translateY(-6px) scale(.97)}to{opacity:1;transform:none}}
 @keyframes pwMsgIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
@@ -127,7 +130,7 @@ body.pw-nov-open #pw-nov-btn{ right:360px; border-radius:0 13px 13px 0; box-shad
 @keyframes pwShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .pw-skel{background:linear-gradient(90deg,var(--pw-niebla-2) 25%,#EEF1EE 37%,var(--pw-niebla-2) 63%);background-size:200% 100%;animation:pwShimmer 1.3s linear infinite;border-radius:8px;}
 .pw-skel-card{background:#fff;border:1px solid var(--pw-border);border-radius:14px;padding:18px;box-shadow:var(--pw-shadow-sm);}
-@media(prefers-reduced-motion:reduce){.pw-attn,.pw-msgs-in>*,#pw-notif-panel,#pw-usermenu-panel,.pw-sec-in,.pw-count{animation:none!important}}
+@media(prefers-reduced-motion:reduce){.pw-attn,.pw-msgs-in>*,#pw-notif-panel,#pw-usermenu-panel,.pw-sec-in,.pw-count,.pw-chat-notif{animation:none!important}}
 /* Cuadros plegables (móvil): el encabezado se toca para abrir/cerrar. El chevron
    redondo hace de "botón" para que se note que es tocable. Press 3D en las tarjetas. */
 .cp-hd-toggle{cursor:pointer;-webkit-tap-highlight-color:transparent;}
@@ -7567,30 +7570,45 @@ function _syncChatBtn(){
   try{
     var btn=document.getElementById("pw-chat-btn"); if(!btn) return;
     var old=btn.querySelector(".pw-chat-notif"); if(old) old.remove();
-    var unread=0, lastMsg=null;
+    // El aviso ahora es por FOTOS (no número rojo, que tapaba la cara). Apagamos
+    // el contador rojo viejo del chat.
+    var oldBadge=document.getElementById("pw-chat-badge"); if(oldBadge) oldBadge.style.display="none";
+
+    // Junta a TODOS los que te escribieron sin leer —clientes + coaches/soporte—
+    // sin repetir, con su foto (o inicial si no tiene). Si son varias personas,
+    // aparecen varias fotitos apiladas.
+    var senders=[], seen={};
+    var add=function(key,url,name){ key=String(key||""); if(!key||seen[key]) return; seen[key]=1; senders.push({url:url,name:name}); };
+    // 1) Clientes que te escribieron (por id) con su foto.
+    try{ Object.keys(_cliUnread||{}).forEach(function(id){
+      var c=(CLIENTS||[]).filter(function(x){return String(x.id)===String(id);})[0];
+      var ph=(c&&c.raw&&c.raw.foto_perfil)||""; if(!/^https?:\/\//.test(ph)) ph="";
+      add("cli:"+id, ph, (c&&(c.name||(c.raw&&c.raw.nombre)))||"");
+    }); }catch(e){}
+    // 2) Soporte/coaches sin leer (RMSG), más recientes primero.
     if(RMSG){
-      for(var i=0;i<RMSG.length;i++){ var m=RMSG[i];
-        if(!m.leido_en && ((RADMIN && !m.from_admin) || (!RADMIN && m.from_admin))){
-          unread++;
-          if(!lastMsg || new Date(m.created_at)>new Date(lastMsg.created_at)) lastMsg=m;
-        }
-      }
+      var un=RMSG.filter(function(m){ return m && !m.leido_en && ((RADMIN&&!m.from_admin)||(!RADMIN&&m.from_admin)); });
+      un.sort(function(a,b){ return new Date(b.created_at)-new Date(a.created_at); });
+      un.forEach(function(m){
+        if(RADMIN){
+          var co=(RCOACHES||[]).filter(function(u){return String(u.id)===String(m.coach_id);})[0];
+          var ph=(co&&(co.foto_url||(co.configuracion&&(co.configuracion.foto_url||co.configuracion.foto_perfil))))||ADMIN_PHOTO;
+          add("co:"+(m.coach_id||"x"), ph, (co&&co.nombre)||"Coach");
+        } else { add("soporte", ADMIN_PHOTO, "Pathway"); }
+      });
     }
-    if(!unread) return;
-    // Foto de quien escribió: coach → Pathway/Mica; admin → foto del coach.
-    var photo=ADMIN_PHOTO;
-    if(RADMIN && lastMsg){
-      var co=(RCOACHES||[]).filter(function(u){return String(u.id)===String(lastMsg.coach_id);})[0];
-      photo=(co && (co.foto_url || (co.configuracion && (co.configuracion.foto_url||co.configuracion.foto_perfil)))) || ADMIN_PHOTO;
-    }
+    if(!senders.length) return;
+
     btn.style.position="relative";
     var wrap=document.createElement("span");
-    wrap.className="pw-chat-notif";
-    wrap.setAttribute("style","position:absolute;top:-10px;right:-10px;width:20px;height:20px;border-radius:50%;border:2px solid #fff;background:#fff url('"+photo+"') center/cover no-repeat;box-shadow:0 2px 6px rgba(0,0,0,.18);pointer-events:none");
-    var dot=document.createElement("span");
-    dot.setAttribute("style","position:absolute;top:-4px;right:-4px;min-width:14px;height:14px;padding:0 3px;border-radius:99px;background:var(--pw-danger);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff");
-    dot.textContent=unread>9?"9+":String(unread);
-    wrap.appendChild(dot);
+    wrap.className="pw-chat-notif";          // la "respiración" (breathe) la da el CSS
+    wrap.setAttribute("style","position:absolute;top:-10px;right:-10px;display:flex;align-items:center;pointer-events:none");
+    senders.slice(0,3).forEach(function(s,i){
+      var url=(/^https?:\/\//.test(s.url))?s.url:((typeof makeAvatar==="function")?makeAvatar(s.name):"");
+      var av=document.createElement("span");
+      av.setAttribute("style","width:20px;height:20px;border-radius:50%;border:2px solid #fff;background:#fff"+(url?(" url('"+url+"') center/cover no-repeat"):"")+";box-shadow:0 2px 6px rgba(0,0,0,.18);"+(i?"margin-left:-9px;":"")+"position:relative;z-index:"+(9-i));
+      wrap.appendChild(av);
+    });
     btn.appendChild(wrap);
   }catch(e){}
 }
@@ -11280,8 +11298,10 @@ function _saveCliVis(cid, apply){
 // mensaje sin leer; flag para no sonar en la primera pasada (mensajes viejos).
 var _cliChatSeen={}, _cliUnread={}, _cliChatReady=false;
 function _syncChatBadge(){
-  var n=Object.keys(_cliUnread).length, b=document.getElementById("pw-chat-badge");
-  if(b){ if(n>0){ b.textContent=(n>9?"9+":n); b.style.display="flex"; } else b.style.display="none"; }
+  // El aviso del chat ahora es por FOTOS (ver _syncChatBtn). El contador rojo
+  // queda apagado para no tapar la cara de quien escribió.
+  var b=document.getElementById("pw-chat-badge"); if(b) b.style.display="none";
+  try{ _syncChatBtn(); }catch(e){}
 }
 function _pwClearCliUnread(id){ if(id!=null && _cliUnread[String(id)]){ delete _cliUnread[String(id)]; _syncChatBadge(); try{ _syncNotifBadge(); }catch(e){} } }
 function pollClientChats(){
