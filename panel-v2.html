@@ -11725,7 +11725,38 @@ function _authExpired(){
     _authGone=true; try{ location.href="login.html"; }catch(e){}
   },function(){ _authChecking=false; });
 }
-function _sb(p){ return _hdr().then(function(h){ return fetch(SB+"/rest/v1/"+p,{headers:h}); }).then(function(r){ if(r.status===401||r.status===403){_authExpired();return [];} return r.ok?r.json():[];}).catch(function(){return [];}); }
+// Self-healing de sesión: cuando el access_token vence, el SDK a veces no lo
+// renovó todavía y el request sale con la anon key → RLS lo rechaza (401/403).
+// _pwRefresh fuerza un refreshSession y devuelve si quedó una sesión válida.
+// Deduplicado: refrescos concurrentes comparten la MISMA promesa (no estampida).
+var _pwRefreshing=null;
+function _pwRefresh(){
+  if(_pwRefreshing) return _pwRefreshing;
+  _pwRefreshing=(function(){
+    try{
+      if(!(window.PWAUTH&&PWAUTH.ensure)) return Promise.resolve(false);
+      return PWAUTH.ensure().then(function(c){
+        if(!c||!c.auth||!c.auth.refreshSession) return false;
+        return c.auth.refreshSession().then(function(r){ return !!(r&&r.data&&r.data.session&&r.data.session.access_token); },function(){ return false; });
+      },function(){ return false; });
+    }catch(e){ return Promise.resolve(false); }
+  })();
+  _pwRefreshing.then(function(){ setTimeout(function(){ _pwRefreshing=null; },2000); },function(){ _pwRefreshing=null; });
+  return _pwRefreshing;
+}
+// _sb (lecturas): si da 401/403, refresca el JWT y reintenta UNA vez antes de
+// mandar a login. Un token vencido ya no vacía el panel: se renueva solo.
+function _sb(p){
+  var _do=function(){ return _hdr().then(function(h){ return fetch(SB+"/rest/v1/"+p,{headers:h}); }); };
+  return _do().then(function(r){
+    if(r.status===401||r.status===403){
+      return _pwRefresh().then(function(ok){ if(!ok){ _authExpired(); return []; }
+        return _do().then(function(r2){ if(r2.status===401||r2.status===403){ _authExpired(); return []; } return r2.ok?r2.json():[]; }, function(){ return []; });
+      });
+    }
+    return r.ok?r.json():[];
+  }).catch(function(){return [];});
+}
 // PATCH de la PROPIA fila del coach en `usuarios` (config, perfil, gamificación),
 // a prueba de RLS Fase 5. Con RLS estricto, si NO viaja el JWT (sesión vencida o
 // login viejo) el PATCH directo lo rechaza y el guardado se perdía EN SILENCIO
@@ -11761,14 +11792,24 @@ function _sbw(p,method,body){
   // refleja el ÉXITO REAL: HTTP ok Y ≥1 fila afectada. Los ~97 call-sites solo
   // leen .ok, así que el cambio es transparente. 401/403 → aviso de sesión vencida.
   var _fail=function(st){ return {ok:false,status:st,rows:0,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; };
-  return _hdr({"Content-Type":"application/json",Prefer:"return=representation"}).then(function(h){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); })
-    .then(function(r){
-      if(r.status===401||r.status===403){ try{ _authExpired(); }catch(e){} return _fail(r.status); }
-      if(!r.ok){ return _fail(r.status); }
-      return r.json().then(function(a){ var n=(a&&a.length)||0; return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);},text:function(){return Promise.resolve(JSON.stringify(a));}}; },
-        // 2xx sin cuerpo parseable (raro con representation): no marcar falso error.
-        function(){ return {ok:true,status:r.status,rows:1,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; });
-    });
+  var _parse=function(r){
+    if(!r.ok){ return _fail(r.status); }
+    return r.json().then(function(a){ var n=(a&&a.length)||0; return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);},text:function(){return Promise.resolve(JSON.stringify(a));}}; },
+      // 2xx sin cuerpo parseable (raro con representation): no marcar falso error.
+      function(){ return {ok:true,status:r.status,rows:1,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; });
+  };
+  var _do=function(){ return _hdr({"Content-Type":"application/json",Prefer:"return=representation"}).then(function(h){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); }); };
+  // Self-healing: un 401/403 = sesión vencida (0 filas escritas → seguro reintentar,
+  // incluso un POST). Refrescamos el JWT y reintentamos UNA vez; solo si sigue
+  // fallando avisamos sesión vencida. Antes un token vencido perdía el guardado.
+  return _do().then(function(r){
+    if(r.status===401||r.status===403){
+      return _pwRefresh().then(function(ok){ if(!ok){ try{ _authExpired(); }catch(e){} return _fail(r.status); }
+        return _do().then(function(r2){ if(r2.status===401||r2.status===403){ try{ _authExpired(); }catch(e){} return _fail(r2.status); } return _parse(r2); });
+      });
+    }
+    return _parse(r);
+  });
 }
 var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy = false, _genBusyTimer = null;
 // _genBusy es un candado GLOBAL que comparten varias operaciones pesadas (generar

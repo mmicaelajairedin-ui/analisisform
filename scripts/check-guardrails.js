@@ -3207,6 +3207,24 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "sesión self-healing: un 401/403 refresca el JWT y reintenta (no pierde el guardado ni expulsa)",
+    bug: "Cuando el access_token de Supabase vencía, el request salía con la anon key y RLS lo " +
+         "rechazaba (401/403). Antes _sbw/_sb mandaban directo a login y el guardado se perdía. " +
+         "Ahora, ante un 401/403, _pwRefresh fuerza refreshSession y se reintenta UNA vez; solo si " +
+         "sigue fallando se avisa sesión vencida. Es la cura de raíz para que 'ande solo' sin volver " +
+         "a parchar cada guardado. Si se rompe, vuelven los guardados perdidos por sesión vencida.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _pwRefresh\(/.test(p) || !/refreshSession\(/.test(p)) return "panel-v2.html: falta _pwRefresh (refresco de sesión self-healing).";
+      // _sbw debe reintentar tras refrescar, no expulsar directo en el 401/403.
+      const w = p.slice(p.indexOf("function _sbw("), p.indexOf("function _sbw(") + 2700);
+      if (!/_pwRefresh\(\)/.test(w)) return "panel-v2.html: _sbw ya no refresca+reintenta ante 401/403 (perdería el guardado por sesión vencida).";
+      if (!/_pwRefresh\(\)/.test(p.slice(p.indexOf("function _sb(p)"), p.indexOf("function _sb(p)") + 700))) return "panel-v2.html: _sb ya no refresca+reintenta ante 401/403.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
