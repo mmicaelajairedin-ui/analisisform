@@ -3319,9 +3319,10 @@ const RULES = [
       // criterio que computeSteps del panel), no a todos.
       if (!/pathway_optin/.test(s))
         return "coach-lifecycle: el nudge de Stripe dejo de respetar pathway_optin (molestaria a coaches con clientes propios).";
-      // Reusa la plantilla existente, no recrea uuna nueva.
-      if (!/function stageEmail\(/.test(s) || !/emailHtml\(/.test(s))
-        return "coach-lifecycle: stageEmail dejo de reusar emailHtml (se estaria recreando la plantilla).";
+      // Reusa una plantilla con el chrome de onboarding (logo+cabra+footer), no
+      // recrea una nueva por email. stageEmail arma via brandedEmail.
+      if (!/function stageEmail\(/.test(s) || !/function brandedEmail\(/.test(s) || !/brandedEmail\(/.test(s))
+        return "coach-lifecycle: stageEmail dejo de reusar la plantilla linda (brandedEmail).";
       // El nudge de etapa tiene prioridad sobre el onboarding por tiempo.
       if (!/trialKind \|\| stageKind \|\|/.test(s))
         return "coach-lifecycle: el nudge por etapa perdio prioridad sobre el onboarding por dias.";
