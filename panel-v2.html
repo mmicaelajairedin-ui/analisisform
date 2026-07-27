@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="es">
 <head>
+<script src="/pw-polyfill.js"></script>
 <script src="pw-observe.js"></script>
 <script src="pw-events.js"></script>
 <script src="/pw-native.js"></script>
@@ -2764,6 +2765,7 @@ function viewResumen(){
       "</div>"+
     pathCard+(pathCard?"":emptyState)+
     "<div class='cp-dash-top'>"+_agTop+negocioCard+"</div>"+
+    _seguimientosCard()+
     viewDashboard()+
     cliBlock;
 }
@@ -2787,7 +2789,7 @@ function _agSavePending(){
   if(!REAL || !RME || !RME.id) return false; // esperar a tener sesión real
   _agPendingDone=true;
   var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } merged.gcal=p;
-  _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).then(function(r){
+  _selfPatchUsuarios({configuracion:merged}).then(function(r){
     if(r&&r.ok){
       RCFG=merged;
       try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
@@ -3052,7 +3054,7 @@ function _agSalaUrl(r){
       "&start="+encodeURIComponent(new Date(r.inicio).getTime())+
       "&tipo="+encodeURIComponent((typ&&typ.label)||r.tipo||"")+
       "&dur="+encodeURIComponent(_durMin(r.tipo||"")||"")+
-      "&foto="+encodeURIComponent(_cliFotoByEmail(r.email)||"");
+      "&foto="+encodeURIComponent(_persFoto(r.email,r.nombre)||"");
   }catch(e){ return ""; }
 }
 // Botones de asistencia (asistió / no vino) — MISMA lógica que la agenda del día,
@@ -3083,6 +3085,105 @@ function _cliFotoByEmail(email){
     for(var m=0;m<c2.length;m++){ if(c2[m] && /^https?:\/\//.test(c2[m])) return c2[m]; }
   } } }catch(e){}
   return "";
+}
+// Foto por NOMBRE — para reuniones con otro coach (p.ej. Gustavo) donde la cita
+// guarda el nombre pero no el email. Busca en clientes y en la lista de coaches.
+function _cliFotoByName(name){
+  name=(""+(name||"")).trim().toLowerCase(); if(!name) return "";
+  try{ var L=window.CLIENTS||[]; for(var i=0;i<L.length;i++){ var x=L[i]; if(x && (""+(x.name||x.nombre||"")).trim().toLowerCase()===name){
+    var cands=[ x.photo, (x.raw&&x.raw.foto_perfil), (x.raw&&x.raw.foto_url), _cvPhoto(x.cvContenido) ];
+    for(var j=0;j<cands.length;j++){ if(cands[j] && /^https?:\/\//.test(cands[j])) return cands[j]; }
+  } } }catch(e){}
+  try{ var C=(typeof RCOACHES!=="undefined"&&RCOACHES)?RCOACHES:[]; for(var k=0;k<C.length;k++){ var u=C[k]; if(u && (""+(u.nombre||u.name||"")).trim().toLowerCase()===name){
+    var cg=u.configuracion||{}; var c2=[ u.foto_url, cg.foto_url, cg.foto_perfil ];
+    for(var m=0;m<c2.length;m++){ if(c2[m] && /^https?:\/\//.test(c2[m])) return c2[m]; }
+  } } }catch(e){}
+  return "";
+}
+// Foto de la otra persona de una cita: email primero, nombre como respaldo.
+function _persFoto(email,name){ return _cliFotoByEmail(email) || _cliFotoByName(name); }
+// La OTRA persona de un evento de Google Calendar: el asistente que NO sos vos.
+// Devuelve {email,name}. Si el evento no trae asistentes, saca el nombre del
+// título ("Sesión con Gustavo" / "Reunión: Gustavo" → "Gustavo").
+function _agEventOther(e){
+  var myEmail=(""+(_agCoachEmail()||(RME&&RME.email)||"")).trim().toLowerCase();
+  var atts=(e&&Object.prototype.toString.call(e.attendees)==="[object Array]")?e.attendees:[];
+  for(var i=0;i<atts.length;i++){ var a=atts[i]; if(a&&!a.self&&(""+(a.email||"")).trim().toLowerCase()!==myEmail){
+    return {email:a.email||"",name:a.name||""}; } }
+  // Sin asistentes → intento con el título.
+  var t=(""+((e&&e.title)||"")).replace(/^\s*(sesi[oó]n|reuni[oó]n|llamada|cita|meet(ing)?)\s*(con|:|-|–|con:)?\s*/i,"").trim();
+  return {email:"",name:t};
+}
+// ── Detalle de UNA reunión (click en la fila de la agenda) ──────────────────
+// Overlay Pathway con TODO lo de esa cita: con quién, tipo, fecha/hora, duración,
+// estado, contacto y el link para entrar. Antes las filas no se podían abrir.
+function _agEstadoLbl(e){ e=(""+(e||"")).toLowerCase();
+  if(e==="asistio") return {t:"Asistió",c:"var(--pw-sendero)"};
+  if(e==="no_asistio") return {t:"No asistió",c:"var(--pw-danger)"};
+  if(e==="cancelada") return {t:"Cancelada",c:"var(--pw-danger)"};
+  if(e==="reprogramada") return {t:"Reprogramada",c:"var(--pw-amanecer)"};
+  return {t:"Confirmada",c:"var(--pw-bosque)"};
+}
+function _agCitaDetalle(id){
+  // Evento de Google (id "g:<id>") → armo el detalle desde el calendario cargado.
+  if(String(id).indexOf("g:")===0){
+    var gid=String(id).slice(2), e=null;
+    try{ ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(x){ if(x&&String(x.id)===gid) e=x; }); }catch(err){}
+    if(e){ var o=_agEventOther(e); return _agDetalleRender({
+      nombre:o.name||e.title||"Reunión", email:o.email||"", tipo:(_agTypeForEvent(e)||{}).label||"",
+      ms:+e.start, durMin:(e.end&&e.end>e.start)?Math.round((e.end-e.start)/60000):60,
+      estado:"", origen:"", telefono:"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"",
+      foto:_persFoto(o.email,o.name), col:(_agTypeForEvent(e)||{}).color||"#4285F4", ico:(_agTypeForEvent(e)||{}).icon||"📅",
+      esGoogle:true, desc:e.desc||"" }); }
+    return;
+  }
+  var r=null; try{ (_agReservas()||[]).forEach(function(x){ if(x&&String(x.id)===String(id)) r=x; }); }catch(e){}
+  if(!r) return;
+  var typ=_agEventTypeFor(r.tipo)||{}, col=(typ.color)||"#8C7B80", ico=(typ.icon)||"🗓️";
+  var ms=+new Date(r.inicio), durMin=_durMin(r.tipo||"")||60;
+  return _agDetalleRender({
+    nombre:r.nombre||"Sesión", email:r.email||"", tipo:typ.label||r.tipo||"", ms:ms, durMin:durMin,
+    estado:r.estado||"", origen:r.origen||"", telefono:r.telefono||"", link:_agResLink(r),
+    foto:_persFoto(r.email,r.nombre), col:col, ico:ico, esGoogle:false, desc:"" });
+}
+// Dibuja el overlay de detalle a partir de un objeto normalizado (reserva o Google).
+function _agDetalleRender(r){
+  var col=r.col||"#8C7B80", ico=r.ico||"🗓️";
+  var ms=r.ms, durMin=r.durMin||60;
+  var dia=""; try{ dia=_agDayFull(_agMoKey(new Date(ms))); }catch(e){}
+  var rango=_agTime(ms)+(durMin?(" – "+_agTime(ms+durMin*60000)):"");
+  var foto=r.foto;
+  var est=_agEstadoLbl(r.estado);
+  var link=r.link;
+  var av=foto
+    ? "<img src='"+esc(_thumb(foto,58))+"' alt='' style='width:58px;height:58px;border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,.6)'>"
+    : "<span style='width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.22);display:inline-flex;align-items:center;justify-content:center;font-size:28px'>"+ico+"</span>";
+  var rows=function(lbl,val){ return val?("<div style='display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--pw-border)'>"+
+    "<span style='font-size:11.5px;font-weight:700;color:var(--pw-text-muted);width:78px;flex-shrink:0;text-transform:uppercase;letter-spacing:.4px'>"+esc(lbl)+"</span>"+
+    "<span style='font-size:13px;color:var(--pw-carbon);flex:1;min-width:0'>"+val+"</span></div>"):""; };
+  var contacto=[];
+  if(r.email) contacto.push("<a href='mailto:"+esc(r.email)+"' style='color:var(--pw-bosque);text-decoration:none'>"+esc(r.email)+"</a>");
+  if(r.telefono) contacto.push("<a href='https://wa.me/"+esc((""+r.telefono).replace(/[^0-9]/g,""))+"' target='_blank' rel='noopener' style='color:var(--pw-bosque);text-decoration:none'>"+esc(r.telefono)+" · WhatsApp</a>");
+  var old=document.getElementById("pw-cita-ov"); if(old) old.remove();
+  var ov=document.createElement("div"); ov.id="pw-cita-ov";
+  ov.style.cssText="position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(20,40,30,.55)";
+  ov.innerHTML="<div style='width:100%;max-width:430px;background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(20,55,38,.32);overflow:hidden;font-family:var(--pw-sans)'>"+
+    "<div style='background:linear-gradient(135deg,"+col+"cc,"+col+");padding:22px 24px;color:#fff;display:flex;align-items:center;gap:14px'>"+av+
+      "<div style='min-width:0'><div style='font-family:var(--pw-serif);font-size:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.nombre||"Sesión")+"</div>"+
+        "<div style='font-size:12.5px;opacity:.9;margin-top:2px'>"+esc((r.tipo||"Reunión"))+(r.esGoogle?" · Google Calendar":"")+"</div></div></div>"+
+    "<div style='padding:16px 24px 22px'>"+
+      rows("Estado","<span style='font-weight:700;color:"+est.c+"'>"+esc(est.t)+"</span>")+
+      rows("Cuándo","<span style='text-transform:capitalize'>"+esc(dia)+"</span> · "+esc(rango))+
+      rows("Duración",esc(durMin+" min"))+
+      rows("Contacto",contacto.join("<br>"))+
+      (r.desc?rows("Notas",esc(r.desc)):"")+
+      rows("Origen",r.origen?_origenChip(r.origen):"")+
+      (link?"<a href='"+esc(link)+"' target='_blank' rel='noopener' style='display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;background:var(--pw-bosque);color:#fff;text-decoration:none;padding:13px;border-radius:11px;font-size:14px;font-weight:700'>"+_cIco('video',15)+" "+(r.esGoogle?"Abrir la videollamada":"Entrar a la sala")+"</a>":"")+
+      "<button id='pw-cita-x' type='button' style='display:block;width:100%;margin-top:8px;background:none;border:0;color:var(--pw-text-muted);font-size:13px;font-weight:600;cursor:pointer;padding:8px'>Cerrar</button>"+
+    "</div></div>";
+  document.body.appendChild(ov);
+  ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+  var x=document.getElementById("pw-cita-x"); if(x) x.onclick=function(){ ov.remove(); };
 }
 function _agDayFull(key){
   var p=(""+key).split("-"); var d=new Date(+p[0],(+p[1]-1),+p[2]);
@@ -3185,8 +3286,8 @@ function _agRenderDay(key,compact){
     "<p style='font-size:12px;color:var(--pw-text-muted);margin:2px 0 12px;text-transform:capitalize'>"+esc(_agDayFull(key))+"</p>");
   // Unificar eventos del día (Google + citas del link).
   var items=[];
-  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); items.push({ms:+e.start, title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:""}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:_agSalaUrl(r), durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_cliFotoByEmail(r.email)}); } });
+  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); var o=_agEventOther(e); items.push({ms:+e.start, evid:e.id||"", title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:"", email:o.email||"", who2:o.name||"", foto:_persFoto(o.email,o.name)}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:_agSalaUrl(r), durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_persFoto(r.email,r.nombre)}); } });
   items=_agMergeDup(items);
   var now=Date.now();
   // Fila limpia estilo "Tu agenda de hoy": hora · ícono · nombre + badge de tipo · duración/Meet.
@@ -3205,12 +3306,19 @@ function _agRenderDay(key,compact){
     else if(it.ms>now && it.ms-now<=60*60000) right="<span style='font-size:11px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 10px;border-radius:100px;flex-shrink:0;white-space:nowrap'>En "+Math.max(1,Math.round((it.ms-now)/60000))+" min</span>";
     var badge=it.tipo?("<span style='font-size:10.5px;font-weight:600;color:"+it.col+";background:"+it.col+"22;padding:2px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(it.tipo)+"</span>"):"";
     var meta=[]; if(it.durMin) meta.push(it.durMin+" min"); if(it.link) meta.push("Videollamada"); if(it.who) meta.push(it.who);
+    // El bloque central (foto + nombre) abre el DETALLE de la reunión. Los botones
+    // de la derecha (unirse / asistencia) siguen con su propia acción. Sirve tanto
+    // para reservas de Pathway (it.id) como para eventos de Google (it.evid → "g:").
+    var _detId=(it.id!=null)?(""+it.id):(it.evid?("g:"+it.evid):"");
+    var _clk=_detId?(" data-act='cita-det' data-id='"+esc(_detId)+"' style='cursor:pointer;flex:1;min-width:0;display:flex;align-items:center;gap:10px'"):(" style='flex:1;min-width:0;display:flex;align-items:center;gap:10px'");
     return "<div style='display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--pw-border)'>"+
       "<span style='font-size:13px;font-weight:700;color:var(--pw-carbon);width:42px;flex-shrink:0'>"+_agTime(it.ms)+"</span>"+
-      "<span style='width:34px;height:34px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:100%;height:100%;border-radius:50%;object-fit:cover'>":it.ico)+"</span>"+
-      "<div style='flex:1;min-width:0'>"+
-        "<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(it.title)+"</span>"+badge+(it.origen?_origenChip(it.origen):"")+"</div>"+
-        (meta.length?"<div style='font-size:11.5px;color:var(--pw-text-soft);margin-top:1px'>"+esc(meta.join(" · "))+"</div>":"")+
+      "<div"+_clk+" title='"+(_detId?"Ver detalle de la reunión":"")+"'>"+
+        "<span style='width:34px;height:34px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:100%;height:100%;border-radius:50%;object-fit:cover'>":it.ico)+"</span>"+
+        "<div style='flex:1;min-width:0'>"+
+          "<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(it.title)+"</span>"+badge+(it.origen?_origenChip(it.origen):"")+"</div>"+
+          (meta.length?"<div style='font-size:11.5px;color:var(--pw-text-soft);margin-top:1px'>"+esc(meta.join(" · "))+"</div>":"")+
+        "</div>"+
       "</div>"+
       right+
     "</div>";
@@ -3301,8 +3409,8 @@ function _agendaCalCard(){
 // cercano, con hora, "En X min" y accesos. Google + reservas del link.
 function _agProxList(){
   var now=Date.now(), out=[];
-  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); out.push({ms:+e.start, title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:"", durMin:_durMin((typ&&typ.label)||"")}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, id:r.id, who:(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":"", title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:_agResLink(r), email:r.email||"", durMin:_durMin(r.tipo||""), foto:_cliFotoByEmail(r.email)}); } } });
+  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); var o=_agEventOther(e); out.push({ms:+e.start, evid:e.id||"", title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:o.email||"", who2:o.name||"", durMin:_durMin((typ&&typ.label)||""), foto:_persFoto(o.email,o.name)}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, id:r.id, who:(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":"", title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:_agResLink(r), email:r.email||"", durMin:_durMin(r.tipo||""), foto:_persFoto(r.email,r.nombre)}); } } });
   // Dedup robusto (mismo helper que la agenda): fusiona la MISMA sesión que viene
   // de Google + de la reserva aunque el título no sea idéntico. Sin esto, la misma
   // cita salía como "Próxima sesión" y OTRA VEZ abajo en "En tu lista".
@@ -3351,7 +3459,9 @@ function _agProxRender(){
     var rest=list.slice(1).slice(0,4);
     var rows=rest.length?rest.map(function(x){
       var _xav=x.foto?("<img src='"+esc(_thumb(x.foto,26))+"' alt='' style='width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0'>"):("<span style='width:26px;height:26px;border-radius:50%;background:"+(x.col||"#8C7B80")+"22;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0'>"+(x.ico||"🗓️")+"</span>");
-      return "<div style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border)'>"+
+      var _xid=(x.id!=null)?(""+x.id):(x.evid?("g:"+x.evid):"");
+      var _rc=_xid?(" data-act='cita-det' data-id='"+esc(_xid)+"' style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border);cursor:pointer' title='Ver detalle de la reunión'"):(" style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border)'");
+      return "<div"+_rc+">"+
         "<span style='font-size:11px;font-weight:700;color:var(--pw-text-soft);width:40px;flex-shrink:0'>"+_agTime(x.ms)+"</span>"+_xav+
         "<div style='min-width:0'><div style='font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(x.title)+"</div>"+
           (x.sub?"<div style='font-size:10.5px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(x.sub)+"</div>":"")+"</div></div>";
@@ -3562,7 +3672,7 @@ function _agRefresh(){
       var ng={}; for(var k in g){ if(g.hasOwnProperty(k)) ng[k]=g[k]; } ng.access_token=d.access_token; ng.expiry=d.expiry||(Date.now()+3600000);
       var merged={}; for(var j in RCFG){ if(RCFG.hasOwnProperty(j)) merged[j]=RCFG[j]; } merged.gcal=ng; RCFG=merged;
       try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
-      if(RME&&RME.id) _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).catch(function(){});
+      if(RME&&RME.id) _selfPatchUsuarios({configuracion:merged}).catch(function(){});
       _agLoadGoogleDirect(ng);
     })
     .catch(function(e){ if(done)return; done=true; clearTimeout(to); _agRefreshErr="renovar: no se pudo llamar a la función ("+((e&&e.message)||"red")+")"; _agLoadIcal(); });
@@ -3599,7 +3709,12 @@ function _agLoadGoogleDirect(g){
       if(d && d._err){ if(d.status===401 && g.refresh_token && !_agRefreshTried){ _agRefresh(); return; } _agLoadIcal(); return; }
       _agRefreshTried=false;
       var items=(d&&Object.prototype.toString.call(d.items)==="[object Array]")?d.items:[];
-      var evs=items.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null; return {id:e.id||"",title:e.summary||"Sesión",start:+new Date(s),location:e.hangoutLink||e.location||null}; }).filter(function(x){return !!x;});
+      var evs=items.map(function(e){ var s=e.start&&(e.start.dateTime||e.start.date); if(!s) return null;
+        var en=e.end&&(e.end.dateTime||e.end.date);
+        var atts=(Object.prototype.toString.call(e.attendees)==="[object Array]")?e.attendees:[];
+        return {id:e.id||"",title:e.summary||"Sesión",start:+new Date(s),
+          end:en?+new Date(en):0, location:e.hangoutLink||e.location||null, desc:e.description||"",
+          attendees:atts.map(function(a){ return {email:a.email||"",name:a.displayName||"",self:!!a.self,organizer:!!a.organizer}; })}; }).filter(function(x){return !!x;});
       _AG_DATA={events:evs};
       var b=document.getElementById("cp-agenda-body"); if(b) b.innerHTML=_agBodyRender();
       _agMonthRender(); try{ _agProxRender(); }catch(e){}   // refresca mes + "Próxima sesión" con los eventos de Google
@@ -3663,6 +3778,98 @@ function _resLoad(){
   _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+"&order=inicio.asc&select=*")
     .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); _agMonthRender(); try{ _agProxRender(); }catch(e){} })
     .catch(function(){ var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplica la migración citas.sql en Supabase."); });
+}
+// ═══ Seguimientos / historial de llamadas (embudo llamada → cliente) ═══
+// La Sala guarda en cada cita un `resultado` (convirtio/seguimiento/perdido) +
+// `notas_llamada`. Antes eso quedaba enterrado: si marcabas "Lo piensa" no
+// aparecía en ningún lado para seguir, y no había historial global de llamadas.
+// Acá se conectan los puntos: los "Lo piensa" salen como pendientes en el
+// Resumen (con WhatsApp/email + Convertir/Descartar), hay historial filtrable y
+// "Convertir en cliente" crea la ficha (las notas ya se cruzan por email en la
+// ficha, "Registro de la Sala"). Usa columnas que YA existen → sin migración.
+var _SEG_DATA=null, _SEG_FILTER="todas";
+var _SEG_RL={convirtio:["Avanzó","var(--pw-bosque)"],seguimiento:["Lo piensa","#C99A2E"],perdido:["Por ahora no","var(--pw-text-soft)"],gano:["Fue bien","var(--pw-bosque)"],perdio:["No cerró","var(--pw-danger)"]};
+function _segDemo(){
+  var now=Date.now(), D=86400000;
+  return [
+    {id:"seg-d1", nombre:"Carla Méndez", email:"carla.mendez@email.com", telefono:"+34600111222", tipo:"Llamada exploratoria", inicio:new Date(now-2*D).toISOString(), estado:"confirmada", resultado:"seguimiento", notas_llamada:"NOTAS:\nLe interesa el plan Pro, lo quiere hablar con su socia. Volver a escribir el jueves.\n\nOBJETIVOS:\n"},
+    {id:"seg-d2", nombre:"Bruno Salas", email:"bruno.salas@email.com", telefono:"+34600333444", tipo:"Llamada exploratoria", inicio:new Date(now-5*D).toISOString(), estado:"confirmada", resultado:"seguimiento", notas_llamada:"NOTAS:\nMuy interesado, pide propuesta por escrito. Enviar y seguir.\n\n"},
+    {id:"seg-d3", nombre:"Valentina Rey", email:"valen.rey@email.com", telefono:"", tipo:"Llamada exploratoria", inicio:new Date(now-9*D).toISOString(), estado:"confirmada", resultado:"convirtio", notas_llamada:"NOTAS:\nCerró el plan mensual. ¡Arranca la semana que viene!\n\n"},
+    {id:"seg-d4", nombre:"Andrés Coto", email:"andres.coto@email.com", telefono:"", tipo:"Llamada exploratoria", inicio:new Date(now-14*D).toISOString(), estado:"confirmada", resultado:"perdido", notas_llamada:"NOTAS:\nPor ahora no, presupuesto ajustado. Reintentar en 3 meses.\n\n"}
+  ];
+}
+function _segLoad(){
+  if(typeof _isDemoCoach==="function" && _isDemoCoach()){ _SEG_DATA=_segDemo(); try{ _segFill(); }catch(e){} return; }
+  if(!(REAL&&RME&&RME.id)){ _SEG_DATA=[]; try{ _segFill(); }catch(e){} return; }
+  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&select=id,nombre,email,telefono,tipo,inicio,estado,resultado,notas_llamada&order=inicio.desc&limit=300")
+    .then(function(rows){ rows=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _SEG_DATA=rows.filter(function(x){ return x && x.resultado; }); try{ _segFill(); }catch(e){} })
+    .catch(function(){ _SEG_DATA=[]; try{ _segFill(); }catch(e){} });
+}
+function _segPend(){ return (_SEG_DATA||[]).filter(function(x){ return x.resultado==="seguimiento"; }); }
+function _segFill(){
+  var b=document.getElementById("cp-seg-body"); if(b) b.innerHTML=_segBodyHtml();
+  var cnt=document.getElementById("cp-seg-count"); if(cnt){ var n=_segPend().length; cnt.textContent=n?("· "+n+" pendiente"+(n===1?"":"s")):""; }
+  var hb=document.getElementById("cp-seg-hist-body"); if(hb) hb.innerHTML=_segHistHtml();
+}
+function _seguimientosCard(){
+  return "<div class='cp-card' id='cp-seg-card' style='margin-bottom:14px'>"+
+    "<div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📞</span> Seguimientos <span id='cp-seg-count' style='font-weight:600;color:var(--pw-text-muted);font-size:12.5px'></span><span class='dot'>.</span></h3>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='seg-hist'>Ver historial</button></div>"+
+    "<div class='cp-card-pad'><div id='cp-seg-body'>"+_segBodyHtml()+"</div></div></div>";
+}
+function _segBodyHtml(){
+  if(_SEG_DATA===null) return "<div style='font-size:12.5px;color:var(--pw-text-muted);padding:8px 0'>Cargando…</div>";
+  var pend=_segPend();
+  if(!pend.length) return "<div style='font-size:12.5px;color:var(--pw-text-soft);padding:10px 0;line-height:1.6'>Sin seguimientos pendientes. Cuando en una llamada marques <strong style='color:#C99A2E'>Lo piensa</strong>, la persona aparece acá para que le sigas el hilo.</div>";
+  return pend.slice(0,6).map(_segRow).join("")+(pend.length>6?("<button class='cp-btn cp-btn-ghost' style='width:100%;height:34px;font-size:12.5px;margin-top:8px' data-act='seg-hist'>Ver los "+pend.length+" seguimientos</button>"):"");
+}
+function _segRow(x){
+  var d=new Date(x.inicio); var when=isNaN(d)?"":d.toLocaleDateString("es-ES",{day:"2-digit",month:"short"});
+  var P={}; try{ P=_salaParseBlob(x.notas_llamada)||{}; }catch(e){}
+  var nota=(""+(P.notas||"")).trim(); if(nota.length>110) nota=nota.slice(0,110)+"…";
+  var foto=_persFoto(x.email,x.nombre);
+  var av=foto?("<img src='"+esc(_thumb(foto,34))+"' alt='' style='width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0'>"):("<span style='width:34px;height:34px;border-radius:50%;background:#C99A2E22;display:inline-flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>🟡</span>");
+  var tel=(""+(x.telefono||"")).replace(/[^0-9]/g,"");
+  var contact=tel?("<a href='https://wa.me/"+esc(tel)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 10px;text-decoration:none'>WhatsApp</a>"):(x.email?("<a href='mailto:"+esc(x.email)+"' class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 10px;text-decoration:none'>Email</a>"):"");
+  return "<div style='display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--pw-border)'>"+av+
+    "<div style='flex:1;min-width:0'>"+
+      "<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--pw-carbon)'>"+esc(x.nombre||"Sin nombre")+"</span>"+(when?"<span style='font-size:11px;color:var(--pw-text-muted)'>"+esc(when)+"</span>":"")+"</div>"+
+      (nota?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px;line-height:1.45'>"+esc(nota)+"</div>":"")+
+      "<div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:8px'>"+contact+
+        "<button class='cp-btn cp-btn-primary' style='height:30px;font-size:12px;padding:0 12px' data-act='seg-convert' data-id='"+esc(x.id)+"'>Convertir en cliente</button>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 10px;color:var(--pw-text-muted)' data-act='seg-descartar' data-id='"+esc(x.id)+"'>Descartar</button>"+
+      "</div>"+
+    "</div>"+
+  "</div>";
+}
+function _segChipsHtml(){
+  var opt=[["todas","Todas"],["seguimiento","Lo piensa"],["convirtio","Avanzó"],["perdido","Por ahora no"]];
+  return opt.map(function(o){ var on=(_SEG_FILTER===o[0]); return "<button data-act='seg-filter' data-f='"+o[0]+"' style='border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";color:"+(on?"var(--pw-bosque)":"var(--pw-text-soft)")+";border-radius:100px;padding:5px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit'>"+o[1]+"</button>"; }).join("");
+}
+function _segHistHtml(){
+  if(_SEG_DATA===null) return "<div style='font-size:12.5px;color:var(--pw-text-muted);padding:14px 0'>Cargando…</div>";
+  var rows=(_SEG_DATA||[]).filter(function(x){ return _SEG_FILTER==="todas"?true:(x.resultado===_SEG_FILTER); });
+  if(!rows.length) return "<div style='font-size:12.5px;color:var(--pw-text-muted);padding:14px 0'>Nada acá todavía. Las llamadas con resultado aparecen cuando cierres una sesión en la Sala.</div>";
+  return rows.map(function(x){
+    var d=new Date(x.inicio); var when=isNaN(d)?"":d.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"});
+    var rl=_SEG_RL[x.resultado]; var badge=rl?("<span style='font-size:10.5px;font-weight:700;color:#fff;background:"+rl[1]+";padding:2px 9px;border-radius:100px;white-space:nowrap'>"+esc(rl[0])+"</span>"):"";
+    var P={}; try{ P=_salaParseBlob(x.notas_llamada)||{}; }catch(e){} var nota=(""+(P.notas||"")).trim();
+    return "<div style='padding:11px 0;border-bottom:1px solid var(--pw-border)'><div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'><span style='font-weight:600;font-size:13px;color:var(--pw-carbon)'>"+esc(x.nombre||"Sin nombre")+"</span><span style='font-size:11px;color:var(--pw-text-muted)'>"+esc(when)+"</span><span style='margin-left:auto'>"+badge+"</span></div>"+(nota?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:3px;line-height:1.45'>"+esc(nota.length>220?nota.slice(0,220)+"…":nota)+"</div>":"")+"</div>";
+  }).join("");
+}
+function _segHistModal(){
+  var old=document.getElementById("pw-seg-ov"); if(old) old.remove();
+  var ov=document.createElement("div"); ov.id="pw-seg-ov";
+  ov.style.cssText="position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(20,40,30,.55)";
+  ov.innerHTML="<div style='width:100%;max-width:480px;max-height:82vh;display:flex;flex-direction:column;background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(20,55,38,.32);overflow:hidden;font-family:var(--pw-sans)'>"+
+    "<div style='padding:18px 22px 12px;border-bottom:1px solid var(--pw-border);flex-shrink:0'>"+
+      "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px'><h3 style='font-family:var(--pw-serif);font-weight:600;font-size:18px;margin:0'>Historial de llamadas</h3><button data-act='seg-hist-close' aria-label='Cerrar' style='border:0;background:none;font-size:24px;line-height:1;color:var(--pw-text-muted);cursor:pointer'>×</button></div>"+
+      "<div id='cp-seg-hist-chips' style='display:flex;gap:6px;flex-wrap:wrap;margin-top:12px'>"+_segChipsHtml()+"</div>"+
+    "</div>"+
+    "<div id='cp-seg-hist-body' style='padding:4px 22px 20px;overflow-y:auto'>"+_segHistHtml()+"</div>"+
+  "</div>";
+  document.body.appendChild(ov);
+  ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
 }
 // ── Informes guardados como archivos (tabla informes_guardados) ──
 // Lista los informes guardados de un cliente (por email + coach_id) en la
@@ -8441,7 +8648,7 @@ function pwAddXP(n,reason){
   try{ localStorage.setItem(_xpKey(), String(cur)); }catch(e){}
   try{ var log=pwXpLog(); log.unshift({n:n,r:reason||"",t:(new Date()).getTime()}); log=log.slice(0,25); localStorage.setItem(_xpLogKey(), JSON.stringify(log)); }catch(e){}
   // Best-effort a Supabase (solo si existe la columna usuarios.xp; si no, no rompe).
-  try{ if(REAL&&RME&&RME.id){ _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{xp:cur}).catch(function(){}); } }catch(e){}
+  try{ if(REAL&&RME&&RME.id){ _selfPatchUsuarios({xp:cur}).catch(function(){}); } }catch(e){}
   pwRankAdd(n);  // cuenta para el ranking (semana + mes)
   try{ pwRewardBurst(
     "<div style='display:inline-flex;align-items:center;gap:9px;background:linear-gradient(135deg,#FBF3DC,#F3E4B8);border:1px solid #EAD189;border-radius:100px;padding:13px 24px;box-shadow:0 10px 26px rgba(27,67,50,.20)'><span style='font-size:24px'>⭐</span><b style=\"font-family:var(--pw-serif);font-size:24px;color:#8a6a1e\">+"+n+" pts</b></div>"+
@@ -8456,7 +8663,7 @@ function pwAwardBadge(id,opts){
   cur.push(id);
   try{ localStorage.setItem(_badgesKey(), JSON.stringify(cur)); }catch(e){}
   // Best-effort a Supabase (solo si existe la columna badges; si no, no rompe nada).
-  try{ if(REAL&&RME&&RME.id){ _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{badges:cur}).catch(function(){}); } }catch(e){}
+  try{ if(REAL&&RME&&RME.id){ _selfPatchUsuarios({badges:cur}).catch(function(){}); } }catch(e){}
   if(!(opts&&opts.silent)){ try{ pwBadgeCelebrate(id); }catch(e){} }
   return true;
 }
@@ -8693,6 +8900,7 @@ function render(){
         // Reservas del link público: cache si ya lo trajimos, si no cargar (alimenta
         // la Próxima sesión). El Resumen ya no muestra la lista completa (solo Próxima).
         if(!_RES_DATA) _resLoad();
+        if(_SEG_DATA===null) _segLoad();   // seguimientos pendientes (embudo llamada→cliente)
         _agMonthRender();      // no-op si no hay mes en el Resumen (guardado)
         try{ _agProxRender(); }catch(e){}  // Próxima sesión, independiente del mes
       }catch(e){}
@@ -8856,6 +9064,52 @@ document.addEventListener("click", function(ev){
   }
   if(act==="cal-filtro"){ _calFiltro=el.getAttribute("data-f")||"proximas"; render(); return; }
   if(act==="cal-owner"){ _calOwner=el.getAttribute("data-o")||"todas"; render(); return; }
+  if(act==="cita-det"){
+    var _did=el.getAttribute("data-id"); if(_did){ try{ _agCitaDetalle(_did); }catch(e){} } return;
+  }
+  if(act==="seg-hist"){ try{ _segHistModal(); }catch(e){} return; }
+  if(act==="seg-hist-close"){ var _so=document.getElementById("pw-seg-ov"); if(_so) _so.remove(); return; }
+  if(act==="seg-filter"){
+    _SEG_FILTER=el.getAttribute("data-f")||"todas";
+    var _sc=document.getElementById("cp-seg-hist-chips"); if(_sc) _sc.innerHTML=_segChipsHtml();
+    var _shb=document.getElementById("cp-seg-hist-body"); if(_shb) _shb.innerHTML=_segHistHtml();
+    return;
+  }
+  if(act==="seg-descartar"){
+    var _sdid=el.getAttribute("data-id"); var _sdc=(_SEG_DATA||[]).filter(function(x){return String(x.id)===String(_sdid);})[0]; if(!_sdc) return;
+    if(typeof _isDemoCoach==="function" && _isDemoCoach()){ _sdc.resultado="perdido"; _segFill(); toast("Demo: marcado como 'por ahora no'."); return; }
+    _sbw("citas?id=eq."+encodeURIComponent(_sdid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"perdido"})
+      .then(function(r){ if(r&&r.ok){ _sdc.resultado="perdido"; _segFill(); toast("Marcado: por ahora no."); } else toast("No se pudo guardar."); })
+      .catch(function(){ toast("No se pudo guardar."); });
+    return;
+  }
+  if(act==="seg-convert"){
+    var _scid=el.getAttribute("data-id"); var _scc=(_SEG_DATA||[]).filter(function(x){return String(x.id)===String(_scid);})[0]; if(!_scc) return;
+    if(typeof _isDemoCoach==="function" && _isDemoCoach()){ _scc.resultado="convirtio"; _segFill(); toast("Demo: así un lead se vuelve cliente y sus notas quedan en la ficha ✓"); return; }
+    var _sem=(""+(_scc.email||"")).toLowerCase().trim();
+    if(!_sem){ toast("Esta llamada no tiene email — agregáselo para poder crear su ficha."); return; }
+    var _snm=_scc.nombre||_sem.split("@")[0];
+    var _snicho=((typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||"carrera");
+    // 1) Alta del candidato con ignore-duplicates: si ya existe, no lo pisa.
+    _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
+      return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:_snm,email:_sem,whatsapp:_scc.telefono||"",coach_id:(RME&&RME.id)||"",nicho:_snicho,semana_activa:1,activo:true,origen:"llamada"})});
+    }).then(function(){
+      // Login del cliente: check-first (si ya tiene cuenta, no lo recreamos → sin
+      // 409 ni ruido en client_errors). rol='cliente' lo permite el RLS anon.
+      _sb("usuarios?email=eq."+encodeURIComponent(_sem)+"&select=id&limit=1").then(function(_ur){
+        if(_ur&&_ur.length) return;
+        _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
+          return fetch(SB+"/rest/v1/usuarios",{method:"POST",headers:h,body:JSON.stringify({email:_sem,rol:"cliente",nombre:_snm,activo:true})});
+        }).catch(function(){});
+      }).catch(function(){});
+      _sbw("citas?id=eq."+encodeURIComponent(_scid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"convirtio"}).catch(function(){});
+      _scc.resultado="convirtio"; _segFill();
+      toast("¡"+_snm+" ahora es cliente! Su ficha ya tiene las notas de la llamada.");
+      try{ pwAddXP(50,"Cliente nuevo"); }catch(e){}
+      try{ loadReal(); }catch(e){}
+    }).catch(function(){ toast("No se pudo convertir. Revisa el email o créalo desde Clientes."); });
+    return;
+  }
   if(act==="cal-asis"){
     var _cid=el.getAttribute("data-id"), _cv=el.getAttribute("data-val"); if(!_cid||!_cv) return;
     // La cita puede vivir en _CAL_DATA (pestaña Calendario) O en _RES_DATA (Resumen).
@@ -8978,20 +9232,37 @@ document.addEventListener("click", function(ev){
     var _adur=30; var _amm=_atl.match(/(\d+)\s*min/i); if(_amm) _adur=parseInt(_amm[1],10)||30;
     var _ast=new Date(_ad+"T"+_ah); if(isNaN(_ast.getTime())){ toast("Fecha u hora inválida."); return; }
     var _aen=new Date(_ast.getTime()+_adur*60000);
-    var _afmt=function(x){ return x.getFullYear()+("0"+(x.getMonth()+1)).slice(-2)+("0"+x.getDate()).slice(-2)+"T"+("0"+x.getHours()).slice(-2)+("0"+x.getMinutes()).slice(-2)+"00"; };
-    var _au="https://calendar.google.com/calendar/u/0/r/eventedit?text="+encodeURIComponent(_atl)+"&dates="+_afmt(_ast)+"/"+_afmt(_aen);
-    var _team=(state.ag&&state.ag.team)||[]; _team.forEach(function(em){ if(em) _au+="&add="+encodeURIComponent(em); });
-    if(_ag2) _au+="&add="+encodeURIComponent(_ag2);
-    // Evento compartido: además de la invitación de Google, lo guardamos en la
-    // agenda (tabla citas) de cada compañero invitado, para que le aparezca en su
-    // panel aunque no use Google. Nombre = el invitado externo si lo hay, si no
-    // "con <tu nombre>".
     var _shWith=_ag2?(_ag2.split("@")[0]):("con "+((COACH&&COACH.firstName)||(RME&&RME.nombre)||"el equipo"));
-    var _nInvited=0;
-    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ _nInvited++; _sbw("citas","POST",{coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_ast.toISOString(),estado:"confirmada"}).catch(function(){}); } });
+    var _iso=_ast.toISOString();
+    var _team=(state.ag&&state.ag.team)||[];   // capturar ANTES de limpiar state.ag
     state.ag=null;
-    var _aw=window.open(_au,"_blank","noopener"); if(!_aw) location.href=_au;
-    toast(_nInvited?("Cita agendada — le aparece a "+_nInvited+" del equipo y en Google."):"Cita cargada en Google — confirma y aparece en tu agenda.");
+    // Demo: no escribir en la base, solo mostrar el éxito.
+    if(typeof _isDemoCoach==="function" && _isDemoCoach()){ toast("Cita agendada ✓ (demo)"); render(); return; }
+    // 1) GUARDAR la cita en Pathway (tabla citas) para EL COACH → aparece en SU
+    //    agenda sin depender de Google. Antes esto NO se guardaba (solo abría
+    //    Google Calendar) → por eso "no aparecían las citas" y terminabas en Google.
+    _sbw("citas","POST",{coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel"})
+      .then(function(r){
+        if(r&&r.ok) toast("Cita agendada ✓ — ya está en tu agenda"); else toast("No se pudo guardar la cita. Reintenta.");
+        try{ _resLoad(); }catch(e){} try{ _calLoad(); }catch(e){}
+      })
+      .catch(function(){ toast("No se pudo guardar la cita. Reintenta."); });
+    // 2) Compañeros de equipo invitados: cada uno recibe la cita en SU panel.
+    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ _sbw("citas","POST",{coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_iso,estado:"confirmada",origen:"panel"}).catch(function(){}); } });
+    // 3) EMAIL de confirmación al invitado (si dejó email) con el link de la Sala + .ics
+    if(_ag2 && /@/.test(_ag2)){
+      try{
+        var _r={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2, tipo:_atl, inicio:_iso};
+        var _lnk=_salaClientLink(_r);
+        var _ics=_icsBuild("Sesión · Pathway", _ast.getTime(), _aen.getTime(), _lnk);
+        var _f=_fechaCli(_iso);
+        var _coachNm=(COACH&&COACH.name)||(RME&&RME.nombre)||"Pathway";
+        var _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"):"")+".</p>"+
+          "<p style='margin:16px 0'><a href='"+esc(_lnk)+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700'>Entrar a la sesión</a></p>"+
+          "<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";
+        _notifResCliente(_ag2, _shWith, "Tu sesión con "+_coachNm+" está agendada", _inner, _ics&&_ics.b64);
+      }catch(e){}
+    }
     render(); return;
   }
   // Portal del cliente: SIEMPRE en la misma pestaña ("pathway_portal"). Si ya
@@ -9320,7 +9591,7 @@ document.addEventListener("click", function(ev){
     // Persistir el flag en el server (cross-device): así NO se le vuelve a pedir
     // aunque entre desde otra compu o limpie caché. Antes solo se guardaba local.
     RCFG=RCFG||{}; RCFG.review_done=true;
-    if(REAL&&RME&&RME.id){ var _rvm={}; for(var _rvk in RCFG){ if(RCFG.hasOwnProperty(_rvk)) _rvm[_rvk]=RCFG[_rvk]; } _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:_rvm}).catch(function(){}); }
+    if(REAL&&RME&&RME.id){ var _rvm={}; for(var _rvk in RCFG){ if(RCFG.hasOwnProperty(_rvk)) _rvm[_rvk]=RCFG[_rvk]; } _selfPatchUsuarios({configuracion:_rvm}).catch(function(){}); }
     state.review.sent=true; state.review.high=(_rrat>=4); render();
     // Premiación: dejar una reseña desbloquea el badge Embajador (una sola vez).
     try{ pwAwardBadge("embajador"); }catch(e){}
@@ -9347,10 +9618,10 @@ document.addEventListener("click", function(ev){
     if(!REAL){ alert("Demo: en producción esto acepta/rechaza la solicitud real."); return; }
     var doAccept=(act==="sol-accept");
     if(!confirm(doAccept?"¿Aceptar esta solicitud? Se captura el pago: cobras el neto y Pathway retiene su comisión escalonada (desde 5%).":"¿Rechazar esta solicitud? Se libera la retención y al candidato no se le cobra.")) return;
-    if(_genBusy) return; _genBusy=true; toast(doAccept?"Aceptando y cobrando…":"Rechazando…");
+    if(_genBusy) return; _busyOn(); toast(doAccept?"Aceptando y cobrando…":"Rechazando…");
     fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:doAccept?"accept":"reject",solicitud_id:solId})})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; toast(doAccept?"Solicitud aceptada ✓ — pago capturado":"Solicitud rechazada ✓"); loadReal(); })
-      .catch(function(){ _genBusy=false; alert("No se pudo procesar la solicitud. Reintenta en un momento."); });
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0; toast(doAccept?"Solicitud aceptada ✓ — pago capturado":"Solicitud rechazada ✓"); loadReal(); })
+      .catch(function(){ _busyOff(); alert("No se pudo procesar la solicitud. Reintenta en un momento."); });
     return;
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
@@ -9465,7 +9736,7 @@ document.addEventListener("click", function(ev){
       return;
     }
     // ── Coach → cliente (chat directo, candidatos.notas_coach) ──
-    if(_genBusy){ if(ccBtn) ccBtn.disabled=false; return; } _genBusy=true;
+    if(_genBusy){ if(ccBtn) ccBtn.disabled=false; return; } _busyOn();
     var ccNow=new Date();
     var ccTime=ccNow.getDate()+"/"+(1+ccNow.getMonth())+" "+ccNow.getHours()+":"+String(ccNow.getMinutes()).padStart(2,"0");
     var ccMsg={from:"coach",text:ccTxt,time:ccTime,ts:ccNow.getTime()};
@@ -9473,13 +9744,13 @@ document.addEventListener("click", function(ev){
       var arr=_chatArr(rows&&rows[0]?rows[0].notas_coach:"[]");
       arr.push(ccMsg);
       return _sbw("candidatos?id=eq."+encodeURIComponent(ccThread),"PATCH",{notas_coach:JSON.stringify(arr)}).then(function(r){
-        _genBusy=false;
+        _busyOff();
         if(!r.ok){ alert("No se pudo enviar el mensaje. Reintenta."); if(ccBtn) ccBtn.disabled=false; return; }
         CLIENTS.forEach(function(x){ if(String(x.id)===String(ccThread)){ x.chat=arr; if(x.raw) x.raw.notas_coach=JSON.stringify(arr); } });
         state.msgDraft = "";
         render();
       });
-    }).catch(function(){ _genBusy=false; alert("No se pudo enviar el mensaje. Reintenta."); if(ccBtn) ccBtn.disabled=false; });
+    }).catch(function(){ _busyOff(); alert("No se pudo enviar el mensaje. Reintenta."); if(ccBtn) ccBtn.disabled=false; });
     return;
   }
   if(act==="chat-cabra-back"){
@@ -9920,7 +10191,7 @@ document.addEventListener("click", function(ev){
     _sbw("reviews","POST",{nombre:(ME&&ME.nombre)||(COACH&&COACH.name)||"Coach",rating:crn,texto:crt,fuente:"coach",publica:true})
       .then(function(r){ if(!r.ok) throw 0;
         RCFG=RCFG||{}; RCFG.review_done=true;
-        if(REAL&&RME&&RME.id){ var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).catch(function(){}); }
+        if(REAL&&RME&&RME.id){ var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } _selfPatchUsuarios({configuracion:merged}).catch(function(){}); }
         state.coachRev=0; toast("¡Gracias por tu reseña! 🙌"); render(); })
       .catch(function(){ alert("No se pudo publicar la reseña."); });
     return;
@@ -10185,7 +10456,7 @@ document.addEventListener("click", function(ev){
     var chid=el.getAttribute("data-id"); if(!chid) return;
     var inp=document.getElementById("chatmsg"); var txt=inp?(""+inp.value).trim():"";
     if(!txt) return;
-    if(_genBusy) return; _genBusy=true; if(inp) inp.disabled=true;
+    if(_genBusy) return; _busyOn(); if(inp) inp.disabled=true;
     var now=new Date();
     var time=now.getDate()+"/"+(1+now.getMonth())+" "+now.getHours()+":"+String(now.getMinutes()).padStart(2,"0");
     var msg={from:"coach",text:txt,time:time,ts:now.getTime()};
@@ -10196,13 +10467,13 @@ document.addEventListener("click", function(ev){
     if(_targetCli && _targetCli._example){
       var _ea=_chatArr(_targetCli.raw?_targetCli.raw.notas_coach:"[]"); _ea.push(msg);
       _targetCli.chat=_ea; if(_targetCli.raw) _targetCli.raw.notas_coach=JSON.stringify(_ea);
-      _genBusy=false; if(inp){ inp.value=""; inp.disabled=false; } render(); return;
+      _busyOff(); if(inp){ inp.value=""; inp.disabled=false; } render(); return;
     }
     _sb("candidatos?id=eq."+encodeURIComponent(chid)+"&select=notas_coach").then(function(rows){
       var arr=_chatArr(rows&&rows[0]?rows[0].notas_coach:"[]");
       arr.push(msg);
       return _sbw("candidatos?id=eq."+encodeURIComponent(chid),"PATCH",{notas_coach:JSON.stringify(arr)}).then(function(r){
-        _genBusy=false; if(!r.ok){ if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintenta."); return; }
+        _busyOff(); if(!r.ok){ if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintenta."); return; }
         CLIENTS.forEach(function(x){ if(String(x.id)===String(chid)){ x.chat=arr; if(x.raw) x.raw.notas_coach=JSON.stringify(arr); } });
         // Push notification al cliente (best effort).
         if(_targetEmail){
@@ -10225,7 +10496,7 @@ document.addEventListener("click", function(ev){
         }
         render();
       });
-    }).catch(function(){ _genBusy=false; if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintenta."); });
+    }).catch(function(){ _busyOff(); if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintenta."); });
     return;
   }
   if(act==="etapa-save"){
@@ -10260,7 +10531,7 @@ document.addEventListener("click", function(ev){
     if(state.genmat){ state.genmat=null; }
     render();
     if(Object.keys(patch).length) _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",patch);
-    _genBusy=true; toast("Generando informe… puede tardar un momento");
+    _busyOn(); toast("Generando informe… puede tardar un momento");
     // Nicho para elegir el prompt de la IA. FUENTE DE VERDAD = el nicho del CLIENTE
     // (rw.nicho, que el form setea a 'fitness'/'financiero'), NO la config del coach:
     // si coach_type está mal/vacío, un cliente de fitness recibía un informe de
@@ -10270,9 +10541,9 @@ document.addEventListener("click", function(ev){
       nivel:rw.nivel,dias:rw.dias,lugar:rw.lugar,equipo:rw.equipo,peso:rw.peso,altura:rw.altura,lesiones:rw.lesiones,medicacion:rw.medicacion,restricciones:rw.restricciones,nutricion:rw.nutricion,
       ingresos:rw.ingresos,gastos:rw.gastos,deudas:rw.deudas,objetivo_ahorro:rw.objetivo_ahorro,plazo:rw.plazo,ahorro_actual:rw.ahorro_actual};
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify(_giBody)})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
       .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.genInforme=null; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); try{ pwAddXP(30,"Informe generado"); pwMarkFeature("informe"); pwCheckAutoBadges(); }catch(e){} render(); setTimeout(loadReal,1300); })
-      .catch(function(){ _genBusy=false; state.genInforme=null; render(); alert("No se pudo generar el informe. Reintenta en unos minutos."); });
+      .catch(function(){ _busyOff(); state.genInforme=null; render(); alert("No se pudo generar el informe. Reintenta en unos minutos."); });
     return;
   }
   if(act==="gen-cv"){
@@ -10285,9 +10556,9 @@ document.addEventListener("click", function(ev){
     var vliUse=vliP||rv.linkedin_texto||"", vcvUse=vcvP||rv.cv_url||"";
     var vc=CLIENTS.filter(function(x){return String(x.id)===String(gv);})[0]||{};
     if(state.genmat){ state.genmat=null; render(); }
-    _genBusy=true; toast("Generando CV… puede tardar un momento");
+    _busyOn(); toast("Generando CV… puede tardar un momento");
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"generar_cv",nombre:rv.nombre,email:rv.email,ciudad:rv.ciudad||rv.geo,exp:rv.exp||rv.experiencia,sector:rv.sector,cargo:rv.cargo,rol:rv.rol,modalidad:rv.modalidad,geo:rv.geo||rv.ciudad,urgencia:rv.urgencia,habilidades:rv.habilidades,logro:rv.logro,extra:rv.extra,linkedin:rv.linkedin,cv_url:vcvUse,obstaculos:rv.obstaculos,nicho:rv.nicho,scores:rv.scores,linkedin_texto:vliUse,urgencia_inmediata:rv.urgencia_inmediata})})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
       .then(function(j){
         if(!j||(!j.cv_data&&!j.cv_texto)){ alert("La IA no devolvió un CV. Prueba de nuevo o usa tu panel actual."); return; }
         var cont=JSON.stringify(j.cv_data||{texto:j.cv_texto||""});
@@ -10299,7 +10570,7 @@ document.addEventListener("click", function(ev){
           _sbw("cv_publicados","POST",pb).then(done).catch(function(){ alert("No se pudo guardar el CV."); });
         }
       })
-      .catch(function(){ _genBusy=false; alert("No se pudo generar el CV desde aquí. Prueba en tu panel actual."); });
+      .catch(function(){ _busyOff(); alert("No se pudo generar el CV desde aquí. Prueba en tu panel actual."); });
     return;
   }
   if(act==="gen-carta"){
@@ -10309,11 +10580,11 @@ document.addEventListener("click", function(ev){
     if(gc==="ejemplo-maria"){ demoGenerateExample(); return; }
     var cliP=_val("pa-li").trim();
     if(state.genmat){ state.genmat=null; render(); }
-    _genBusy=true; toast("Generando carta…");
+    _busyOn(); toast("Generando carta…");
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"generar_informe",nombre:rc.nombre,email:rc.email,ciudad:rc.ciudad,linkedin:rc.linkedin,experiencia:rc.exp||rc.experiencia,sector:rc.sector,cargo:rc.cargo,rol:rc.rol,empresa:rc.empresa,logro:rc.logro,habilidades:rc.habilidades,obstaculos:rc.obstaculos,nicho:rc.nicho,objetivo:rc.objetivo,situacion:rc.situacion,linkedin_texto:cliP||rc.linkedin_texto||""})})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
       .then(function(j){ var ct=j&&(j.carta||j.carta_texto||j.texto); if(ct){ _sbw("candidatos?id=eq."+encodeURIComponent(gc),"PATCH",{carta_presentacion:ct}); var _cc=CLIENTS.filter(function(x){return String(x.id)===String(gc);})[0]; if(_cc&&_cc.raw) _cc.raw.carta_presentacion=ct; toast("Carta generada ✓ — el cliente ya la ve en su portal"); } else { alert("La IA no devolvió la carta. Reintenta."); } })
-      .catch(function(){ _genBusy=false; alert("No se pudo generar la carta. Reintenta en unos minutos."); });
+      .catch(function(){ _busyOff(); alert("No se pudo generar la carta. Reintenta en unos minutos."); });
     return;
   }
   if(act==="gen-linkedin"){
@@ -10324,10 +10595,10 @@ document.addEventListener("click", function(ev){
     var llP=_val("pa-li").trim(), llUse=llP||rl.linkedin_texto||"";
     if(!llUse){ alert("Pega el texto del perfil de LinkedIn del cliente para analizarlo."); return; }
     if(state.genmat){ state.genmat=null; render(); }
-    _genBusy=true; toast("Analizando LinkedIn… puede tardar un momento");
+    _busyOn(); toast("Analizando LinkedIn… puede tardar un momento");
     // Reusa la MISMA acción que el portal del cliente: accion 'analizar_linkedin'.
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"analizar_linkedin",nombre:rl.nombre||"",sector:rl.sector||"",rol:rl.rol||rl.cargo||"",ciudad:rl.ciudad||rl.geo||"",linkedin_texto:llUse,objetivo:rl.objetivo||"",experiencia:rl.exp||rl.experiencia||"",educacion:rl.educacion||"",habilidades:rl.habilidades||""})})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
       .then(function(a){
         if(!a||typeof a!=="object"){ alert("La IA no devolvió el análisis de LinkedIn. Reintenta."); return; }
         var patch={linkedin_texto:llUse, linkedin_analisis:JSON.stringify(a)};
@@ -10336,7 +10607,7 @@ document.addEventListener("click", function(ev){
           .then(function(rr){ if(!rr.ok) throw 0; var _lc=CLIENTS.filter(function(x){return String(x.id)===String(gl);})[0]; if(_lc&&_lc.raw){ _lc.raw.linkedin_texto=llUse; _lc.raw.linkedin_analisis=patch.linkedin_analisis; if(patch.linkedin_titular) _lc.raw.linkedin_titular=patch.linkedin_titular; } toast("LinkedIn analizado ✓ — el cliente lo ve en su portal"); render(); })
           .catch(function(){ alert("No se pudo guardar el análisis. Si falta la columna, corré: ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_analisis TEXT;"); });
       })
-      .catch(function(){ _genBusy=false; alert("No se pudo analizar el LinkedIn. Reintenta en unos minutos."); });
+      .catch(function(){ _busyOff(); alert("No se pudo analizar el LinkedIn. Reintenta en unos minutos."); });
     return;
   }
   if(act==="mat-save"){
@@ -11196,7 +11467,7 @@ document.addEventListener("change", function(ev){
       // el panel lee de ahí). No tocamos un foto_url a nivel tabla por si no existe.
       if(REAL && RME && RME.id){
         var _m={}; for(var k in (RCFG||{})){ if(RCFG.hasOwnProperty(k)) _m[k]=RCFG[k]; } _m.foto_url=url;
-        _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:_m})
+        _selfPatchUsuarios({configuracion:_m})
           .then(function(r){ if(r&&r.ok){ RCFG=_m; if(COACH) COACH.photo=url;
             try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=_m; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
             toast("Foto guardada ✓"); }
@@ -11443,6 +11714,22 @@ function _authExpired(){
   },function(){ _authChecking=false; });
 }
 function _sb(p){ return _hdr().then(function(h){ return fetch(SB+"/rest/v1/"+p,{headers:h}); }).then(function(r){ if(r.status===401||r.status===403){_authExpired();return [];} return r.ok?r.json():[];}).catch(function(){return [];}); }
+// PATCH de la PROPIA fila del coach en `usuarios` (config, perfil, gamificación),
+// a prueba de RLS Fase 5. Con RLS estricto, si NO viaja el JWT (sesión vencida o
+// login viejo) el PATCH directo lo rechaza y el guardado se perdía EN SILENCIO
+// (observado en client_errors: PATCH /rest/v1/usuarios rechazado para coaches
+// reales). Ahora: intenta directo y, si falla, reintenta por la edge function
+// coach-self-save (service role, lista blanca SIN rol/password → sin escalada).
+function _selfPatchUsuarios(fields){
+  if(!(REAL&&RME&&RME.id)) return Promise.resolve({ok:false});
+  return _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",fields).then(function(r){
+    if(r&&r.ok) return r;
+    return fetch(SB+"/functions/v1/coach-self-save",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id:RME.id,email:(RME&&RME.email)||"",fields:fields})})
+      .then(function(x){ return {ok:!!(x&&x.ok),status:(x&&x.status)||0,rows:(x&&x.ok)?1:0}; })
+      .catch(function(){ return {ok:false,status:0,rows:0}; });
+  });
+}
 // ¿El path apunta a un cliente de ejemplo (que no existe en la base)?
 function _isExampleWrite(p){
   try{ var m=(""+p).match(/candidatos\?id=eq\.([^&]+)/); if(!m) return false; var id=decodeURIComponent(m[1]); return CLIENTS.some(function(x){ return x && x._example && String(x.id)===String(id); }); }catch(e){ return false; }
@@ -11471,7 +11758,14 @@ function _sbw(p,method,body){
         function(){ return {ok:true,status:r.status,rows:1,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; });
     });
 }
-var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy=false;
+var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy = false, _genBusyTimer = null;
+// _genBusy es un candado GLOBAL que comparten varias operaciones pesadas (generar
+// informe/CV/carta, cobros, Stripe, enviar mensaje…). Si UNA se cuelga o se olvida
+// de soltarlo, TODOS los botones con `if(_genBusy) return` quedan muertos (típico:
+// "el botón no anda"). Para que NO se pueda romper así, el candado se AUTO-LIBERA:
+// al prenderlo se arma un watchdog que lo suelta a los 90 s pase lo que pase.
+function _busyOn(){ _genBusy = true; try{ if(_genBusyTimer) clearTimeout(_genBusyTimer); _genBusyTimer = setTimeout(function(){ _genBusy = false; _genBusyTimer = null; }, 90000); }catch(e){} }
+function _busyOff(){ _genBusy = false; try{ if(_genBusyTimer){ clearTimeout(_genBusyTimer); _genBusyTimer = null; } }catch(e){} }
 var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
 var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
 function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0]; return (c&&c.raw)||null; }
@@ -11554,7 +11848,7 @@ function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.s
   try{ if(typeof msg==="string" && msg.indexOf("✓")>=0){ _cabraDidSomething=true; cabraFlash("assets/cabra/salta.gif",1300); } }catch(e){} }
 function demoConfetti(){ var c=["#1F5740","#8C7B80","#E8B04B","#C0756E","#5B8C7B"]; for(var k=0;k<60;k++){ (function(k){ var p=document.createElement("div"); p.className="cp-conf"; p.style.left=(Math.random()*100)+"vw"; p.style.background=c[k%c.length]; p.style.animationDelay=(Math.random()*0.3)+"s"; document.body.appendChild(p); setTimeout(function(){ p.remove(); },2600); })(k); } }
 function demoGenerateExample(){
-  if(_genBusy) return; _genBusy=true;
+  if(_genBusy) return; _busyOn();
   var steps=["Leyendo el material de María…","Analizando su perfil de LinkedIn…","Detectando fortalezas y brechas…","Redactando el plan de 4 semanas…","Generando su carta de presentación…"];
   var ov=document.createElement("div"); ov.className="cp-demo-overlay";
   ov.innerHTML="<div class='cp-demo-card'><div class='cp-demo-spin'></div><div class='cp-demo-title'>✨ Generando con IA</div><div class='cp-demo-step' id='cp-demo-step'>"+steps[0]+"</div><div class='cp-demo-bar'><span id='cp-demo-fill'></span></div><div class='cp-demo-note'>Demo · no consume créditos</div></div>";
@@ -11565,7 +11859,7 @@ function demoGenerateExample(){
     i++;
     if(i<n){ if(stepEl) stepEl.textContent=steps[i]; if(fillEl) fillEl.style.width=Math.round((i+1)/n*92+8)+"%"; }
     else { clearInterval(iv); if(fillEl) fillEl.style.width="100%";
-      setTimeout(function(){ ov.remove(); _genBusy=false; _exGen=true; state.cliDetTab="plan"; render(); window.scrollTo(0,0); demoConfetti(); toast("Informe de María generado ✓ — así de rápido con tus clientes"); },480);
+      setTimeout(function(){ ov.remove(); _busyOff(); _exGen=true; state.cliDetTab="plan"; render(); window.scrollTo(0,0); demoConfetti(); toast("Informe de María generado ✓ — así de rápido con tus clientes"); },480);
     }
   },620);
 }
@@ -11656,11 +11950,11 @@ function loadStripeStatus(){
 }
 function pwConnect(){
   if(!REAL||!RME||!RME.id){ alert("Inicia sesión para conectar tu cuenta de cobro."); return; }
-  if(_genBusy) return; _genBusy=true; toast("Abriendo Stripe…");
+  if(_genBusy) return; _busyOn(); toast("Abriendo Stripe…");
   fetch(SB+"/functions/v1/connect-onboard",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:"onboard",coach_id:RME.id,email:(COACH&&COACH.email)||RME.email||""})})
     .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { ok:r.ok, status:r.status, j:j }; }); })
     .then(function(res){
-      _genBusy=false;
+      _busyOff();
       if(res.ok && res.j && res.j.url){ window.location.href=res.j.url; return; }
       // Mostrar el error real de la edge function para que se pueda diagnosticar.
       var msg = "No se pudo abrir la conexión con Stripe.";
@@ -11669,7 +11963,7 @@ function pwConnect(){
       if(!res.j){ msg += "\n\nHTTP " + (res.status||"?") + " — la edge function no respondió JSON. Revisa los logs en Supabase → Edge Functions → connect-onboard → Logs."; }
       alert(msg);
     })
-    .catch(function(e){ _genBusy=false; alert("Error de red conectando con Stripe.\n\n"+(e&&e.message?e.message:"")); });
+    .catch(function(e){ _busyOff(); alert("Error de red conectando con Stripe.\n\n"+(e&&e.message?e.message:"")); });
 }
 /* Polling del chat: re-pide mensajes_admin_coach periódicamente y, si hay
  * nuevos, re-renderiza. Sin esto, los mensajes solo aparecen al refrescar
@@ -11932,7 +12226,7 @@ function _coachConsentGate(){
     RME.configuracion=merged;
     try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
     function done(){ var o=document.getElementById('coach-consent-ov'); if(o)o.remove(); }
-    _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged}).then(done).catch(done);
+    _selfPatchUsuarios({configuracion:merged}).then(done).catch(done);
   });
 }
 function loadReal(){
@@ -12139,7 +12433,7 @@ function _migrateFotoToUploadcare(){
     _uploadAvatar(blob, ext)
       .then(function(url){
         var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } merged.foto_url=url;
-        return _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{configuracion:merged,foto_url:url}).then(function(r){
+        return _selfPatchUsuarios({configuracion:merged,foto_url:url}).then(function(r){
           if(r && r.ok){ RCFG=merged; COACH.photo=url;
             try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; mu.foto_url=url; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
             render();

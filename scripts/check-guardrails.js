@@ -239,6 +239,55 @@ const RULES = [
     },
   },
   {
+    name: "portales: fichas duplicadas se MERGEAN (lo que el coach guardó no se pierde)",
+    bug: "El portal elegía la ficha 'más completa' de un email con duplicados, pero esa " +
+         "podía no tener lo que el coach acababa de guardar (p.ej. nutrición) → 'lo guardé " +
+         "y no se ve'. Ahora se rellenan los campos vacíos de la ficha elegida con los de " +
+         "cualquier duplicado. Debe estar en fitness y finanzas (mismo patrón CRAW=rows[0]).",
+    check() {
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        // Debe existir el fill de campos vacíos desde los duplicados (rows[_r]).
+        if (!/_isEmpty\(CRAW\[_k\]\)\s*&&\s*!_isEmpty\(_o\[_k\]\)/.test(s))
+          return f + ": se perdió el merge de fichas duplicadas → el coach guarda y el cliente no lo ve.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "candado global _genBusy se auto-libera (un botón no queda muerto para siempre)",
+    bug: "_genBusy es un lock GLOBAL que comparten operaciones pesadas (generar informe/" +
+         "CV, cobros, Stripe, enviar mensaje). Si una se cuelga y no lo suelta, TODO botón " +
+         "con `if(_genBusy) return` queda muerto — típico 'el botón de mensajería no anda'. " +
+         "_busyOn() debe armar un watchdog que libere el candado solo.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const m = s.match(/function _busyOn\([\s\S]*?\n\}/);
+      if (!m) return "panel-v2.html: falta _busyOn() (candado con auto-liberación).";
+      if (!/setTimeout/.test(m[0]) || !/_genBusy\s*=\s*false/.test(m[0]))
+        return "_busyOn() ya no arma el watchdog que libera _genBusy → un botón puede quedar muerto para siempre.";
+      return null;
+    },
+  },
+  {
+    name: "login no crashea en navegadores viejos: pw-polyfill.js antes del SDK",
+    bug: "En webviews in-app / navegadores viejos (sin Array.prototype.at, ES2022) el " +
+         "SDK de Supabase crasheaba con '.at is not a function' y el usuario NO podía " +
+         "entrar. pw-polyfill.js parchea .at() y debe cargarse ANTES que cualquier SDK.",
+    check() {
+      const poly = read("pw-polyfill.js");
+      if (!poly) return "falta pw-polyfill.js (parche de navegadores viejos).";
+      if (!/prototype\s*,\s*["']at["']|prototype\.at/.test(poly) && !/def\(Array\.prototype,\s*"at"/.test(poly))
+        return "pw-polyfill.js ya no parchea Array.prototype.at → login vuelve a crashear en navegadores viejos.";
+      for (const f of ["login.html", "login-en.html", "panel-v2.html", "cliente.html"]) {
+        if (!/pw-polyfill\.js/.test(read(f))) return f + " ya no carga pw-polyfill.js (login/panel crashea en webviews viejos).";
+      }
+      return null;
+    },
+  },
+  {
     name: "admin: eliminar cuenta de coach va por edge function (resiste RLS), no DELETE directo",
     bug: "El panel borraba con DELETE directo a `usuarios` con la anon key → RLS lo " +
          "bloqueaba y salía 'No se pudo eliminar... protegida por RLS'. Debe ir por la " +
@@ -1591,7 +1640,7 @@ const RULES = [
       if (!s) return null;
       const i = s.indexOf("function pwInit(");
       if (i < 0) return "pathway-fin-cliente.html: no se encuentra pwInit.";
-      const block = s.slice(i, i + 1200);
+      const block = s.slice(i, i + 2000); // ventana amplia: entra el merge de duplicados sin falsos positivos
       if (!/_score|rows\.sort/.test(block))
         return "pathway-fin-cliente.html: pwInit ya no elige la ficha más completa (perdió el dedup por score).";
       if (!/if\(!CRAW\.coach_id\)/.test(block))
@@ -3029,6 +3078,72 @@ const RULES = [
       if (m) {
         if (!/function mcUpgrade\(/.test(m)) return "multicoach.html: falta el modal de upgrade de red (mcUpgrade).";
         if (!/mcUpgrade\('clientes'\)/.test(m) || !/mcUpgrade\('coaches'\)/.test(m)) return "multicoach.html: los topes de clientes/coaches ya no abren mcUpgrade.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "agenda: 'Agendar cita' del coach GUARDA en Pathway (tabla citas) + avisa por email, no solo abre Google",
+    bug: "El handler ag-agendar del coach NO guardaba su propia cita en la tabla citas: " +
+         "solo armaba una URL de Google Calendar y abría una pestaña (window.open eventedit). " +
+         "Resultado: la cita no aparecía en el panel de Pathway, no se podía agendar sin Google " +
+         "y no salía ningún email → la coach terminaba usando Google. Ahora ag-agendar hace " +
+         "_sbw('citas','POST',{coach_id:RME.id,...}) para el coach, recarga la agenda (_resLoad/_calLoad) " +
+         "y manda el email de confirmación (_notifResCliente) con el link de la Sala. " +
+         "Si vuelve el window.open a calendar.google.com o desaparece el POST a citas del propio coach, regresa el bug.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      const i = p.indexOf('act==="ag-agendar"');
+      if (i < 0) return "panel-v2.html: no se encontró el handler ag-agendar.";
+      const body = p.slice(i, i + 3600);
+      if (!/_sbw\("citas","POST",\{coach_id:\(RME&&RME\.id\)/.test(body)) return "panel-v2.html: ag-agendar ya no guarda la cita del coach en la tabla citas (POST con coach_id=RME.id).";
+      if (!/_resLoad\(\)/.test(body) || !/_calLoad\(\)/.test(body)) return "panel-v2.html: ag-agendar ya no recarga la agenda tras guardar (_resLoad/_calLoad).";
+      if (!/_notifResCliente\(/.test(body)) return "panel-v2.html: ag-agendar ya no manda el email de confirmación al invitado (_notifResCliente).";
+      if (/window\.open\([^)]*calendar\.google\.com/.test(body) || /location\.href=_au/.test(body)) return "panel-v2.html: ag-agendar volvió a forzar Google Calendar (window.open eventedit) en vez de guardar en Pathway.";
+      return null;
+    },
+  },
+  {
+    name: "embudo de ventas: los 'Lo piensa' salen como seguimientos + historial + 'Convertir en cliente'",
+    bug: "El resultado de una llamada (citas.resultado) quedaba enterrado: marcar 'Lo piensa' (seguimiento) " +
+         "no aparecía en ningún lado para hacer seguimiento y no había historial de llamadas. Ahora el Resumen " +
+         "muestra la tarjeta Seguimientos (_seguimientosCard) con los pendientes, hay un historial filtrable " +
+         "(_segHistModal) y 'Convertir en cliente' (seg-convert) crea la ficha del candidato + marca la cita " +
+         "resultado=convirtio, para que las notas de la llamada queden en la ficha (se cruzan por email).",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _seguimientosCard\(/.test(p) || !/function _segHistModal\(/.test(p)) return "panel-v2.html: falta la tarjeta/historial de seguimientos (_seguimientosCard/_segHistModal).";
+      if (!/_seguimientosCard\(\)\+/.test(p)) return "panel-v2.html: la tarjeta de Seguimientos ya no se renderiza en el Resumen.";
+      if (!/act==="seg-convert"/.test(p)) return "panel-v2.html: falta el handler 'Convertir en cliente' (seg-convert).";
+      const seg = p.slice(p.indexOf('act==="seg-convert"'), p.indexOf('act==="seg-convert"') + 2000);
+      if (!/fetch\(SB\+"\/rest\/v1\/candidatos"/.test(seg)) return "panel-v2.html: seg-convert ya no da de alta el candidato (POST candidatos).";
+      if (!/resultado:"convirtio"/.test(seg)) return "panel-v2.html: seg-convert ya no marca la cita como convertida (resultado=convirtio).";
+      if (!/if\(_SEG_DATA===null\) _segLoad\(\)/.test(p)) return "panel-v2.html: el Resumen ya no dispara la carga de seguimientos (_segLoad).";
+      return null;
+    },
+  },
+  {
+    name: "config del coach: el guardado a usuarios resiste RLS (JWT vencido) vía coach-self-save, no se pierde en silencio",
+    bug: "Con RLS Fase 5 (usuarios_hardening.sql) el UPDATE de usuarios exige el JWT del coach. Si la " +
+         "sesión de Supabase venció o entró con el login viejo, el PATCH caía a la anon key y RLS lo " +
+         "rechazaba: la config/perfil NO se guardaba y el coach ni se enteraba (fire-and-forget). " +
+         "Ahora _selfPatchUsuarios intenta directo y, si falla, reintenta por la edge function " +
+         "coach-self-save (service role, lista blanca SIN rol/password → sin escalada). Los guardados " +
+         "de configuracion/foto_url/xp/badges del propio coach pasan por ese helper.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _selfPatchUsuarios\(/.test(p)) return "panel-v2.html: falta el helper _selfPatchUsuarios (guardado resistente a RLS).";
+        if (!/coach-self-save/.test(p)) return "panel-v2.html: el helper ya no reintenta por la edge function coach-self-save.";
+        // El guardado principal de config del coach debe ir por el helper, no por _sbw directo a usuarios.
+        if (/_sbw\("usuarios\?id=eq\."\+encodeURIComponent\(RME\.id\),"PATCH",\{configuracion/.test(p)) return "panel-v2.html: un guardado de configuracion del coach volvió a _sbw directo (se pierde con RLS si no hay JWT).";
+      }
+      const fn = read("supabase/functions/coach-self-save/index.ts");
+      if (fn !== null) {
+        if (/ALLOWED[\s\S]{0,200}password_hash/.test(fn) || /ALLOWED[\s\S]{0,200}"rol"/.test(fn)) return "coach-self-save: la lista blanca NO puede incluir rol/password_hash (riesgo de escalada).";
+        if (!/SERVICE_ROLE_KEY/.test(fn)) return "coach-self-save: la función debe usar el service role para bypassear RLS.";
       }
       return null;
     },
