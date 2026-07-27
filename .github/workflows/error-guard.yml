@@ -1,0 +1,64 @@
+name: "🛡️ Guardia de errores"
+
+# Dispara la edge function error-guard cada ~30 min. Revisa la tabla
+# client_errors y, si hay errores NUEVOS, le manda a la coach un email-resumen
+# (una reserva que no se guardó, un email que no salió, un error de JS). Es
+# idempotente: marca notified_at, así no repite el mismo aviso.
+#
+# Secrets requeridos en el repo (ya existen para los otros agentes):
+#   SUPABASE_PROJECT_URL   https://<proyecto>.supabase.co
+#   AGENT_TRIGGER_SECRET   mismo valor que el secret en Supabase
+#
+# Setup (una vez):
+#   1) Aplicar migration client_errors_notified.sql (agrega notified_at)
+#   2) supabase functions deploy error-guard --no-verify-jwt (lo hace el deploy auto)
+#   3) Secret REPORT_EMAIL_TO en Supabase = a dónde llega el aviso
+# Trigger manual: Actions → Guardia de errores → Run workflow
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guardia:
+    name: "Revisar errores nuevos y avisar"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "Setup secrets (sanitizar)"
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          AGENT_TRIGGER_SECRET: ${{ secrets.AGENT_TRIGGER_SECRET }}
+        run: |
+          URL=$(printf '%s' "$SUPABASE_PROJECT_URL" | tr -d '[:space:]' | sed 's:/*$::')
+          SECRET=$(printf '%s' "$AGENT_TRIGGER_SECRET" | tr -d '[:space:]')
+          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
+            echo "::error::Faltan secrets SUPABASE_PROJECT_URL o AGENT_TRIGGER_SECRET"
+            exit 1
+          fi
+          echo "URL=$URL" >> $GITHUB_ENV
+          echo "SECRET=$SECRET" >> $GITHUB_ENV
+
+      - name: "🛡️ Disparar guardia de errores"
+        run: |
+          response=$(curl -sS -w "\n%{http_code}" -X POST \
+            "${URL}/functions/v1/error-guard" \
+            -H "X-Trigger-Secret: ${SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 200) || {
+              echo "::error::curl error-guard falló con exit code $?"
+              exit 1
+            }
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "HTTP $status"
+          echo "$body"
+          if [ "$status" != "200" ]; then
+            echo "::error::error-guard devolvió status $status"
+            exit 1
+          fi
