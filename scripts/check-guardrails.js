@@ -239,6 +239,22 @@ const RULES = [
     },
   },
   {
+    name: "login no crashea en navegadores viejos: pw-polyfill.js antes del SDK",
+    bug: "En webviews in-app / navegadores viejos (sin Array.prototype.at, ES2022) el " +
+         "SDK de Supabase crasheaba con '.at is not a function' y el usuario NO podía " +
+         "entrar. pw-polyfill.js parchea .at() y debe cargarse ANTES que cualquier SDK.",
+    check() {
+      const poly = read("pw-polyfill.js");
+      if (!poly) return "falta pw-polyfill.js (parche de navegadores viejos).";
+      if (!/prototype\s*,\s*["']at["']|prototype\.at/.test(poly) && !/def\(Array\.prototype,\s*"at"/.test(poly))
+        return "pw-polyfill.js ya no parchea Array.prototype.at → login vuelve a crashear en navegadores viejos.";
+      for (const f of ["login.html", "login-en.html", "panel-v2.html", "cliente.html"]) {
+        if (!/pw-polyfill\.js/.test(read(f))) return f + " ya no carga pw-polyfill.js (login/panel crashea en webviews viejos).";
+      }
+      return null;
+    },
+  },
+  {
     name: "admin: eliminar cuenta de coach va por edge function (resiste RLS), no DELETE directo",
     bug: "El panel borraba con DELETE directo a `usuarios` con la anon key → RLS lo " +
          "bloqueaba y salía 'No se pudo eliminar... protegida por RLS'. Debe ir por la " +
