@@ -186,6 +186,7 @@ Deno.serve(async (req: Request) => {
       instagram_url: str("instagram_url"),
       web_url: str("web_url"),
       servicios: arr("servicios"),
+      moneda: str("moneda") || "eur",
       videos: arr("videos"),
       links: arr("links"),
       stats: { clientes_total, reviews_count, avg_rating },

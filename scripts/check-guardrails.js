@@ -260,6 +260,35 @@ const RULES = [
     },
   },
   {
+    name: "servicios: la moneda NO está clavada en euros (coaches de todo el mundo)",
+    bug: "Los coaches son de todo el mundo → los precios no siempre son en euros. El " +
+         "coach elige su moneda en el editor de Servicios; se estampa en cada servicio " +
+         "(s.moneda) y se usa en el perfil público y en el checkout de Stripe. Si algo " +
+         "vuelve a clavar 'eur', un coach de México/Argentina/etc. cobraría mal.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/PW_MONEDAS/.test(p) || !/function _monSym/.test(p))
+          return "panel-v2.html: falta el selector de monedas (PW_MONEDAS/_monSym).";
+        if (!/id='svc-moneda'/.test(p))
+          return "panel-v2.html: falta el <select> de moneda en el editor de servicios.";
+        if (!/moneda: *_mc\b/.test(p) && !/moneda: *_mc2\b/.test(p))
+          return "panel-v2.html: al guardar servicios ya no se persiste la moneda (cfg.moneda).";
+      }
+      const cc = read("supabase/functions/connect-checkout/index.ts");
+      if (cc) {
+        if (/\[currency\]": *"eur"/.test(cc))
+          return "connect-checkout: la moneda de Stripe volvió a estar clavada en 'eur'.";
+        if (!/MONEDAS_OK/.test(cc) || !/ZERO_DECIMAL/.test(cc))
+          return "connect-checkout: falta la validación de moneda o el manejo de zero-decimal (CLP cobraría 100×).";
+      }
+      const ch = read("coach.html");
+      if (ch && !/MON_SYM/.test(ch))
+        return "coach.html: el perfil público perdió el mapa de símbolos de moneda.";
+      return null;
+    },
+  },
+  {
     name: "videollamada admin ↔ coach/empleado: sonar por el chat de soporte",
     bug: "Micaela (soporte) llama a un coach/empleado desde su chat (bandeja o ficha): " +
          "📹 → mensaje 'call' en mensajes_admin_coach → al coach le SUENA en su panel " +

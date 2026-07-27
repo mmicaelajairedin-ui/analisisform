@@ -5643,7 +5643,34 @@ function cfgProfile(){
         "<button class='cp-btn cp-btn-primary' data-act='cfg-save-profile'>Guardar cambios</button></div>"+
     "</div></div>";
 }
+// Monedas soportadas (Stripe las cobra todas). Los coaches son de todo el mundo
+// → no todo es en euros. Símbolos prefijados para los distintos "$" (US$, MX$,
+// AR$…) para que no se confundan entre sí.
+var PW_MONEDAS=[
+  {code:"eur",sym:"€",label:"Euro (€)"},
+  {code:"usd",sym:"US$",label:"Dólar estadounidense (US$)"},
+  {code:"gbp",sym:"£",label:"Libra esterlina (£)"},
+  {code:"mxn",sym:"MX$",label:"Peso mexicano (MX$)"},
+  {code:"ars",sym:"AR$",label:"Peso argentino (AR$)"},
+  {code:"cop",sym:"COL$",label:"Peso colombiano (COL$)"},
+  {code:"clp",sym:"CL$",label:"Peso chileno (CL$)"},
+  {code:"pen",sym:"S/",label:"Sol peruano (S/)"},
+  {code:"brl",sym:"R$",label:"Real brasileño (R$)"},
+  {code:"uyu",sym:"$U",label:"Peso uruguayo ($U)"},
+  {code:"cad",sym:"CA$",label:"Dólar canadiense (CA$)"},
+  {code:"chf",sym:"CHF",label:"Franco suizo (CHF)"}
+];
+function _monSym(code){ code=(""+(code||"eur")).toLowerCase(); for(var i=0;i<PW_MONEDAS.length;i++){ if(PW_MONEDAS[i].code===code) return PW_MONEDAS[i].sym; } return "€"; }
+function _monCode(){ try{ return (""+((RCFG&&RCFG.moneda)||"eur")).toLowerCase(); }catch(e){ return "eur"; } }
+// Cambio de moneda en el selector: actualiza en memoria y re-renderiza para que
+// los símbolos (€ / US$ / …) se vean al instante. Persiste al Guardar servicios.
+function _svcMonedaChange(el){ try{ var v=(""+(el&&el.value||"eur")).toLowerCase(); if(RCFG) RCFG.moneda=v; render(); }catch(e){} }
+// Lee la moneda elegida del selector (o la config) y la ESTAMPA en cada servicio,
+// para que el perfil público (coach.html lee s.moneda) y el checkout usen la misma.
+function _monRead(){ var e=document.getElementById("svc-moneda"); return (""+((e&&e.value)||_monCode()||"eur")).toLowerCase(); }
+function _stampMoneda(list,cur){ (list||[]).forEach(function(s){ if(s&&typeof s==="object") s.moneda=cur; }); return list; }
 function cfgServices(){
+  var _cur=_monCode(), _sym=_monSym(_cur);
   var cards = state.services.map(function(s,i){
     if(state.svcEdit===i){
       return "<div class='cp-service-card' style='display:block'>"+
@@ -5656,7 +5683,7 @@ function cfgServices(){
         "<div class='cp-form-row' style='margin-bottom:10px'><label class='cp-form-label'>Description (English) <span style='font-weight:400;color:var(--pw-text-muted)'>· opcional</span></label>"+
           "<input id='svc-desc-en' class='cp-form-input' value=\""+esc(s.desc_en||"")+"\"></div>"+
         "<div class='cp-form-row-2' style='margin-bottom:14px'>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>Precio (€)</label><input id='svc-price' type='number' min='0' class='cp-form-input' value='"+s.price+"'></div>"+
+          "<div class='cp-form-row'><label class='cp-form-label'>Precio ("+esc(_sym)+")</label><input id='svc-price' type='number' min='0' class='cp-form-input' value='"+s.price+"'></div>"+
           "<div class='cp-form-row'><label class='cp-form-label'>Unidad</label><input id='svc-unit' class='cp-form-input' value=\""+esc(s.unit)+"\"></div></div>"+
         "<label class='cp-form-row' style='display:flex;align-items:flex-start;gap:9px;margin-bottom:14px;cursor:pointer;padding:10px 12px;border:1px solid var(--pw-border);border-radius:9px;background:"+(s.recurrente?"var(--pw-success-bg,#eef5f0)":"#fff")+"'>"+
           "<input id='svc-recurrente' type='checkbox' "+(s.recurrente?"checked":"")+" style='width:17px;height:17px;margin-top:1px;accent-color:var(--pw-bosque);flex-shrink:0'>"+
@@ -5667,12 +5694,16 @@ function cfgServices(){
           "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='svc-save'>Guardar</button></div></div></div>";
     }
     return "<div class='cp-service-card' data-sort='"+i+"'><div><div class='cp-service-name'>"+esc(s.name||"Servicio sin nombre")+(s.recurrente?" <span style='font-size:10px;font-weight:600;color:var(--pw-bosque);background:var(--pw-success-bg,#eef5f0);border-radius:100px;padding:2px 8px;vertical-align:middle'>🔁 cada 4 semanas</span>":"")+"</div><div class='cp-service-desc'>"+esc(s.desc)+"</div></div>"+
-      "<div style='display:flex;align-items:center;gap:14px'><span class='pw-grip' title='Arrastra para ordenar' style='opacity:.4;cursor:grab'>"+_gripSvg()+"</span><div style='text-align:right'><div class='cp-service-price'>€"+s.price+"<small> "+(s.recurrente?"/4 sem":esc(s.unit))+"</small></div></div>"+
+      "<div style='display:flex;align-items:center;gap:14px'><span class='pw-grip' title='Arrastra para ordenar' style='opacity:.4;cursor:grab'>"+_gripSvg()+"</span><div style='text-align:right'><div class='cp-service-price'>"+esc(_sym)+s.price+"<small> "+(s.recurrente?"/4 sem":esc(s.unit))+"</small></div></div>"+
       "<button class='cp-icon-btn' title='Editar' data-act='svc-edit:"+i+"'>"+svg(IC.edit,15)+"</button></div></div>";
   }).join("");
+  var monedaOpts = PW_MONEDAS.map(function(m){ return "<option value='"+m.code+"'"+(m.code===_cur?" selected":"")+">"+esc(m.label)+"</option>"; }).join("");
   return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Servicios y precios<span class='dot'>.</span></h3>"+
     "<button class='cp-btn cp-btn-primary' style='height:32px;padding:0 14px;font-size:12px' data-act='svc-add'>"+svg(IC.plus,12)+" Añadir servicio</button></div>"+
     "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+      "<div class='cp-form-row' style='margin-bottom:2px'><label class='cp-form-label'>Moneda</label>"+
+        "<select id='svc-moneda' class='cp-form-input' onchange='_svcMonedaChange(this)'>"+monedaOpts+"</select>"+
+        "<span class='cp-form-hint'>La moneda en la que cobrás. Se aplica a <strong>todos</strong> tus servicios y es la que se le cobra al cliente. Los coaches somos de todo el mundo — no tiene que ser euros.</span></div>"+
       "<div id='cfg-services-list' style='display:flex;flex-direction:column;gap:10px'>"+cards+"</div>"+
       "<p class='cp-reassurance' style='margin-top:6px'><strong>Tú defines el precio.</strong> Es lo que paga el cliente. <span style='color:var(--pw-text-muted)'>Arrastra ⠿ para reordenar.</span></p>"+
       "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='cfg-save-services'>Guardar servicios</button></div></div></div>";
@@ -9415,7 +9446,7 @@ document.addEventListener("click", function(ev){
     } else { doSave(); }
     return;
   }
-  if(act==="cfg-save-services"){ saveCfg({ servicios: state.services }); return; }
+  if(act==="cfg-save-services"){ var _mc=_monRead(); _stampMoneda(state.services,_mc); if(RCFG) RCFG.moneda=_mc; saveCfg({ servicios: state.services, moneda: _mc }); return; }
   // ── Recursos del portal (editar / agregar / borrar / guardar) ──
   if(act==="rec-add"){ _recRead(); if(!state.recursos) state.recursos=[]; state.recursos.push({titulo:"",url:""}); render(); return; }
   if(act==="rec-del"){ _recRead(); var _ri=parseInt(el.getAttribute("data-i"),10); if(state.recursos && _ri>=0) state.recursos.splice(_ri,1); render(); return; }
@@ -11280,10 +11311,11 @@ document.addEventListener("click", function(ev){
     if(si!=null && state.services[si]){
       var g=function(id){ var e=document.getElementById(id); return e?e.value:""; };
       var gc=function(id){ var e=document.getElementById(id); return !!(e&&e.checked); };
-      state.services[si]={ name:(g('svc-name').trim()||"Servicio"), desc:g('svc-desc').trim(), price:Math.max(0,parseInt(g('svc-price'),10)||0), unit:(g('svc-unit').trim()||"/sesión"), name_en:g('svc-name-en').trim(), desc_en:g('svc-desc-en').trim(), recurrente:gc('svc-recurrente') };
+      state.services[si]={ name:(g('svc-name').trim()||"Servicio"), desc:g('svc-desc').trim(), price:Math.max(0,parseInt(g('svc-price'),10)||0), unit:(g('svc-unit').trim()||"/sesión"), name_en:g('svc-name-en').trim(), desc_en:g('svc-desc-en').trim(), recurrente:gc('svc-recurrente'), moneda:_monRead() };
     }
     state._svcNew=false; state.svcEdit=null;
-    if(REAL){ saveCfg({ servicios: state.services }); } else { render(); }
+    var _mc2=_monRead(); _stampMoneda(state.services,_mc2); if(RCFG) RCFG.moneda=_mc2;
+    if(REAL){ saveCfg({ servicios: state.services, moneda: _mc2 }); } else { render(); }
     return;
   }
   if(act==="cabra-poke"){
