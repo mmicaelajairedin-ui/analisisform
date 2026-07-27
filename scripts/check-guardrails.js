@@ -260,6 +260,32 @@ const RULES = [
     },
   },
   {
+    name: "videollamada admin ↔ coach/empleado: sonar por el chat de soporte",
+    bug: "Micaela (soporte) llama a un coach/empleado desde su chat (bandeja o ficha): " +
+         "📹 → mensaje 'call' en mensajes_admin_coach → al coach le SUENA en su panel " +
+         "(PWCall.ingest en el poll), Aceptar/Rechazar/perdida, y queda como mensaje en " +
+         "el hilo. Si se corta el cableado, la llamada al equipo deja de sonar.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/call-coach-start/.test(p))
+        return "panel-v2.html: falta el handler call-coach-start (📹 admin → coach/empleado).";
+      if (!/data-act='call-coach-start'/.test(p))
+        return "panel-v2.html: falta el botón 📹 en el compose del chat de soporte.";
+      if (!/function _pwCallPoll/.test(p) || !/PWCall\.ingest/.test(p))
+        return "panel-v2.html: el receptor ya no procesa la llamada entrante (_pwCallPoll/PWCall.ingest).";
+      if (!/function _pwCallSetup/.test(p) || !/role:"client"/.test(p))
+        return "panel-v2.html: el coach/empleado ya no se configura como receptor de la llamada.";
+      if (!/function startPwCallWatch/.test(p))
+        return "panel-v2.html: falta el vigía rápido del timbre (startPwCallWatch) → el poll de 45 s se pierde la llamada.";
+      if (!/function _callCoachMissed/.test(p))
+        return "panel-v2.html: falta el watchdog de llamada perdida admin↔coach (_callCoachMissed).";
+      if (!/function _msgBodyText/.test(p) || !/_pwCallDec/.test(p))
+        return "panel-v2.html: sin _msgBodyText/_pwCallDec el payload de la llamada se mostraría como JSON crudo en el chat.";
+      return null;
+    },
+  },
+  {
     name: "portales: fichas duplicadas se MERGEAN (lo que el coach guardó no se pierde)",
     bug: "El portal elegía la ficha 'más completa' de un email con duplicados, pero esa " +
          "podía no tener lo que el coach acababa de guardar (p.ej. nutrición) → 'lo guardé " +
