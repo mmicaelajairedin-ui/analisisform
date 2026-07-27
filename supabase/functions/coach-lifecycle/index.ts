@@ -90,7 +90,7 @@ ${extraCta || ""}
 // familia de onboarding. No recrea nada nuevo: reusa el logo y los GIFs de la
 // cabra que ya existen. `title`/`eyebrow`/`ctaText` son texto plano (se escapan);
 // `bodyHtml` es HTML (permite <strong>).
-function brandedEmail({ primer, eyebrow, title, cabra, accent, bodyHtml, reward, ctaText, ctaUrl, coachId }) {
+function brandedEmail({ primer, eyebrow, title, cabra, accent, bodyHtml, reward, ctaText, ctaUrl, coachId, greet }) {
   const baja = PUBLIC_API + "/functions/v1/unsubscribe?u=" + encodeURIComponent(coachId);
   const goat = HOST + "/assets/cabra/" + cabra;
   const logo = HOST + "/logo-horizontal.png";
@@ -99,8 +99,8 @@ function brandedEmail({ primer, eyebrow, title, cabra, accent, bodyHtml, reward,
   // (ej. "badges/enfocado.png" o "iconos/medalla-bronce.png"). Nada inventado:
   // referencia la metodología de Logros que ya está armada (puntos/medallas/badges).
   const rewardRow = reward ? `<tr><td style="padding:4px 30px 2px;"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F4F8F3;border:1px solid #DCEBE1;border-radius:12px;"><tr>
-<td width="78" valign="middle" style="padding:12px 4px 12px 14px;"><img src="${HOST}/assets/${reward.img}" width="60" alt="" style="display:block;border:0;"></td>
-<td valign="middle" style="padding:12px 16px 12px 6px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#42514A;line-height:1.5;">${reward.text}</td>
+<td width="96" valign="middle" style="padding:12px 4px 12px 16px;"><img src="${HOST}/assets/${reward.img}" width="75" alt="" style="display:block;border:0;"></td>
+<td valign="middle" style="padding:12px 16px 12px 8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#42514A;line-height:1.5;">${reward.text}</td>
 </tr></table></td></tr>` : "";
   return `<table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#EFF3EE;padding:22px;font-family:Arial,Helvetica,sans-serif;"><tr><td align="center">
 <table cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #E4EDE6;">
@@ -110,7 +110,7 @@ function brandedEmail({ primer, eyebrow, title, cabra, accent, bodyHtml, reward,
 <td valign="middle" style="padding-left:8px;"><div style="font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:#E9C46A;font-weight:bold;">${esc(eyebrow)}</div><div style="font-family:Georgia,serif;font-size:25px;line-height:1.18;color:#fff;font-weight:bold;margin-top:8px;">${esc(title)}</div></td>
 </tr></table></td></tr>
 ${accent ? `<tr><td bgcolor="#E9C46A" style="padding:12px 30px;text-align:center;"><span style="font-size:13.5px;color:#1F5740;font-weight:bold;">${esc(accent)}</span></td></tr>` : ""}
-<tr><td style="padding:24px 30px 6px;"><div style="font-size:15.5px;line-height:1.65;color:#42514A;">Hola ${esc(primer)}, ${bodyHtml}</div></td></tr>
+<tr><td style="padding:24px 30px 6px;"><div style="font-size:15.5px;line-height:1.65;color:#42514A;">${greet === false ? "" : `Hola ${esc(primer)}, `}${bodyHtml}</div></td></tr>
 ${rewardRow}
 <tr><td style="padding:18px 30px 26px;"><table cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="#2D6A4F" style="border-radius:11px;"><a href="${ctaUrl}" style="display:inline-block;padding:15px 32px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1;font-weight:bold;color:#fff;text-decoration:none;border-radius:11px;">${esc(ctaText)}</a></td></tr></table></td></tr>
 <tr><td style="padding:20px 30px;background:#fff;border-top:1px solid #EBF1EC;font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#9AA69F;text-align:center;line-height:1.7;"><img src="${logo}" width="92" alt="Pathway" style="display:block;margin:0 auto 8px;border:0;opacity:.8;"><a href="${HOST}" style="color:#2D6A4F;text-decoration:none;font-weight:bold;">pathwaycareercoach.com</a> &middot; Coaching de carrera con IA<br>Recibes este correo porque tienes tu cuenta en Pathway.<br><a href="${baja}" style="color:#9AA69F;text-decoration:underline;">Darme de baja</a></td></tr>
@@ -138,48 +138,43 @@ function fillOnb(html, primer, coachId) {
 function stageEmail(kind, primer, coachId) {
   const S = {
     stage_perfil: {
-      subject: `${primer}, preséntate: completa tu perfil (2 min)`,
-      eyebrow: "Primer paso", title: "Preséntate a tus clientes", cabra: "atencion.png",
-      accent: "Tu cuenta ya está activa — sin tarjeta, sin vueltas.",
-      bodyHtml: "ya tienes tu cuenta lista 🎉. El próximo paso es <strong>completar tu perfil público</strong>: suma foto, bio y servicios para que el cliente sepa quién eres. Son 2 minutos y es lo que hace que tu portal se vea tuyo.",
-      // Recompensa real: la colección de Logros (puntos/medallas/badges) ya existe;
-      // este es el arranque del camino. Sin prometer un badge puntual que no se otorgue.
-      reward: { img: "badges/nivel-1.png", text: "🏅 Todo lo que haces suma en <b>Logros Pathway</b>: puntos, medallas y badges. Tu camino ya arrancó." },
-      cta: "Completar mi perfil", url: PANEL_URL,
-      push: { title: "Completa tu perfil 🪪", body: "Foto, bio y servicios. 2 minutos." },
+      subject: `${primer}, completa tu perfil`,
+      eyebrow: "Paso 1", title: "Completa tu perfil", cabra: "atencion.png", accent: "",
+      bodyHtml: "Suma foto, bio y servicios. Es lo que tus clientes ven de ti.",
+      reward: { img: "badges/nivel-1.png", text: "Suma a tu colección de <b>Logros</b>." },
+      cta: "Completar perfil", url: PANEL_URL,
+      push: { title: "Completa tu perfil", body: "Foto, bio y servicios." },
     },
     stage_stripe: {
-      subject: `${primer}, conecta tu cobro para recibir clientes`,
-      eyebrow: "Siguiente paso", title: "Conecta tu cobro", cabra: "frente.gif", accent: "",
-      bodyHtml: "tu perfil ya está 👏. Como aceptas clientes de Pathway, el siguiente paso es <strong>conectar Stripe</strong> — sin esto no puedes cobrarles. Lleva 2 minutos y el dinero va directo a tu cuenta: Pathway nunca lo toca.",
-      reward: { img: "iconos/medalla-bronce.png", text: "🥉 Con el cobro listo ya puedes sumar clientes — y cada cliente activo te acerca a tu primera <b>medalla</b>." },
+      subject: `${primer}, conecta tu cobro`,
+      eyebrow: "Paso 2", title: "Conecta tu cobro", cabra: "frente.gif", accent: "",
+      bodyHtml: "Conecta Stripe para cobrar a tus clientes. El dinero va directo a tu cuenta.",
+      reward: { img: "iconos/medalla-bronce.png", text: "Con clientes activos ganas tu <b>medalla</b>." },
       cta: "Conectar Stripe", url: PANEL_URL,
-      push: { title: "Conecta tu cobro 💳", body: "2 minutos y ya puedes recibir clientes." },
+      push: { title: "Conecta tu cobro", body: "Cobra a tus clientes directo a tu cuenta." },
     },
     stage_invitar: {
       subject: `${primer}, suma tu primer cliente (+50 puntos)`,
-      eyebrow: "El paso que enciende todo", title: "Suma tu primer cliente", cabra: "salta.gif", accent: "",
-      bodyHtml: "ya está todo listo 💪. Ahora el paso que enciende todo: <strong>suma tu primer cliente</strong>. En 2 minutos ves tu portal funcionando de verdad — su avance, su CV y su primer informe, todo con tu marca.",
-      // Recompensa real: agregar un cliente da +50 pts ("Cliente nuevo") y avanza
-      // hacia la medalla (por clientes activos) y el badge Enfocado (3 clientes).
-      reward: { img: "badges/enfocado.png", text: "⭐ Sumar tu primer cliente te da <b>+50 puntos</b> al instante y te acerca a tu medalla y al badge <b>Enfocado</b>." },
-      cta: "Sumar mi primer cliente", url: GO_CLIENTES,
-      push: { title: "Suma tu primer cliente 🎯", body: "+50 puntos y enciendes todo." },
+      eyebrow: "Paso 3", title: "Suma tu primer cliente", cabra: "salta.gif", accent: "",
+      bodyHtml: "Invita a tu primer cliente y verás tu portal funcionando: su avance, su CV y su informe.",
+      reward: { img: "badges/enfocado.png", text: "<b>+50 puntos</b> al instante y avanzas al badge <b>Enfocado</b>." },
+      cta: "Sumar cliente", url: GO_CLIENTES,
+      push: { title: "Suma tu primer cliente", body: "+50 puntos." },
     },
     stage_cliente: {
-      subject: `${primer}, tu cliente todavía no entró`,
-      eyebrow: "Un empujón", title: "Tu cliente todavía no entró", cabra: "mira.png", accent: "",
-      bodyHtml: "invitaste a un cliente pero todavía no entró a su portal. A veces el correo se traspapela — un mensaje tuyo por WhatsApp suele destrabarlo. Desde tu panel puedes <strong>reenviarle el acceso</strong> en un clic.",
-      reward: { img: "badges/productivo.png", text: "🏅 Cuando tu cliente entra y avanza, subes de <b>medalla</b> y te acercas al badge <b>Productivo</b>." },
-      cta: "Ver a mi cliente", url: GO_CLIENTES,
-      push: { title: "Tu cliente no entró aún ⏳", body: "Reenvíale el acceso en un clic." },
+      subject: `${primer}, tu cliente no entró`,
+      eyebrow: "Recordatorio", title: "Tu cliente no entró", cabra: "mira.png", accent: "",
+      bodyHtml: "Invitaste a un cliente y todavía no entró. Reenvíale el acceso desde tu panel.",
+      reward: { img: "badges/productivo.png", text: "Cuando avanza, ganas el badge <b>Productivo</b>." },
+      cta: "Ver cliente", url: GO_CLIENTES,
+      push: { title: "Tu cliente no entró", body: "Reenvíale el acceso." },
     },
   };
   const s = S[kind];
   if (!s) return null;
   return {
     subject: s.subject, push: s.push,
-    html: brandedEmail({ primer, eyebrow: s.eyebrow, title: s.title, cabra: s.cabra, accent: s.accent, bodyHtml: s.bodyHtml, reward: s.reward, ctaText: s.cta, ctaUrl: s.url, coachId }),
+    html: brandedEmail({ primer, eyebrow: s.eyebrow, title: s.title, cabra: s.cabra, accent: s.accent, bodyHtml: s.bodyHtml, reward: s.reward, ctaText: s.cta, ctaUrl: s.url, coachId, greet: false }),
   };
 }
 
