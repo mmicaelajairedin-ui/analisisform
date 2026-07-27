@@ -2764,6 +2764,7 @@ function viewResumen(){
       "</div>"+
     pathCard+(pathCard?"":emptyState)+
     "<div class='cp-dash-top'>"+_agTop+negocioCard+"</div>"+
+    _seguimientosCard()+
     viewDashboard()+
     cliBlock;
 }
@@ -3776,6 +3777,98 @@ function _resLoad(){
   _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+"&order=inicio.asc&select=*")
     .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); _agMonthRender(); try{ _agProxRender(); }catch(e){} })
     .catch(function(){ var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplica la migración citas.sql en Supabase."); });
+}
+// ═══ Seguimientos / historial de llamadas (embudo llamada → cliente) ═══
+// La Sala guarda en cada cita un `resultado` (convirtio/seguimiento/perdido) +
+// `notas_llamada`. Antes eso quedaba enterrado: si marcabas "Lo piensa" no
+// aparecía en ningún lado para seguir, y no había historial global de llamadas.
+// Acá se conectan los puntos: los "Lo piensa" salen como pendientes en el
+// Resumen (con WhatsApp/email + Convertir/Descartar), hay historial filtrable y
+// "Convertir en cliente" crea la ficha (las notas ya se cruzan por email en la
+// ficha, "Registro de la Sala"). Usa columnas que YA existen → sin migración.
+var _SEG_DATA=null, _SEG_FILTER="todas";
+var _SEG_RL={convirtio:["Avanzó","var(--pw-bosque)"],seguimiento:["Lo piensa","#C99A2E"],perdido:["Por ahora no","var(--pw-text-soft)"],gano:["Fue bien","var(--pw-bosque)"],perdio:["No cerró","var(--pw-danger)"]};
+function _segDemo(){
+  var now=Date.now(), D=86400000;
+  return [
+    {id:"seg-d1", nombre:"Carla Méndez", email:"carla.mendez@email.com", telefono:"+34600111222", tipo:"Llamada exploratoria", inicio:new Date(now-2*D).toISOString(), estado:"confirmada", resultado:"seguimiento", notas_llamada:"NOTAS:\nLe interesa el plan Pro, lo quiere hablar con su socia. Volver a escribir el jueves.\n\nOBJETIVOS:\n"},
+    {id:"seg-d2", nombre:"Bruno Salas", email:"bruno.salas@email.com", telefono:"+34600333444", tipo:"Llamada exploratoria", inicio:new Date(now-5*D).toISOString(), estado:"confirmada", resultado:"seguimiento", notas_llamada:"NOTAS:\nMuy interesado, pide propuesta por escrito. Enviar y seguir.\n\n"},
+    {id:"seg-d3", nombre:"Valentina Rey", email:"valen.rey@email.com", telefono:"", tipo:"Llamada exploratoria", inicio:new Date(now-9*D).toISOString(), estado:"confirmada", resultado:"convirtio", notas_llamada:"NOTAS:\nCerró el plan mensual. ¡Arranca la semana que viene!\n\n"},
+    {id:"seg-d4", nombre:"Andrés Coto", email:"andres.coto@email.com", telefono:"", tipo:"Llamada exploratoria", inicio:new Date(now-14*D).toISOString(), estado:"confirmada", resultado:"perdido", notas_llamada:"NOTAS:\nPor ahora no, presupuesto ajustado. Reintentar en 3 meses.\n\n"}
+  ];
+}
+function _segLoad(){
+  if(typeof _isDemoCoach==="function" && _isDemoCoach()){ _SEG_DATA=_segDemo(); try{ _segFill(); }catch(e){} return; }
+  if(!(REAL&&RME&&RME.id)){ _SEG_DATA=[]; try{ _segFill(); }catch(e){} return; }
+  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&select=id,nombre,email,telefono,tipo,inicio,estado,resultado,notas_llamada&order=inicio.desc&limit=300")
+    .then(function(rows){ rows=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _SEG_DATA=rows.filter(function(x){ return x && x.resultado; }); try{ _segFill(); }catch(e){} })
+    .catch(function(){ _SEG_DATA=[]; try{ _segFill(); }catch(e){} });
+}
+function _segPend(){ return (_SEG_DATA||[]).filter(function(x){ return x.resultado==="seguimiento"; }); }
+function _segFill(){
+  var b=document.getElementById("cp-seg-body"); if(b) b.innerHTML=_segBodyHtml();
+  var cnt=document.getElementById("cp-seg-count"); if(cnt){ var n=_segPend().length; cnt.textContent=n?("· "+n+" pendiente"+(n===1?"":"s")):""; }
+  var hb=document.getElementById("cp-seg-hist-body"); if(hb) hb.innerHTML=_segHistHtml();
+}
+function _seguimientosCard(){
+  return "<div class='cp-card' id='cp-seg-card' style='margin-bottom:14px'>"+
+    "<div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📞</span> Seguimientos <span id='cp-seg-count' style='font-weight:600;color:var(--pw-text-muted);font-size:12.5px'></span><span class='dot'>.</span></h3>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='seg-hist'>Ver historial</button></div>"+
+    "<div class='cp-card-pad'><div id='cp-seg-body'>"+_segBodyHtml()+"</div></div></div>";
+}
+function _segBodyHtml(){
+  if(_SEG_DATA===null) return "<div style='font-size:12.5px;color:var(--pw-text-muted);padding:8px 0'>Cargando…</div>";
+  var pend=_segPend();
+  if(!pend.length) return "<div style='font-size:12.5px;color:var(--pw-text-soft);padding:10px 0;line-height:1.6'>Sin seguimientos pendientes. Cuando en una llamada marques <strong style='color:#C99A2E'>Lo piensa</strong>, la persona aparece acá para que le sigas el hilo.</div>";
+  return pend.slice(0,6).map(_segRow).join("")+(pend.length>6?("<button class='cp-btn cp-btn-ghost' style='width:100%;height:34px;font-size:12.5px;margin-top:8px' data-act='seg-hist'>Ver los "+pend.length+" seguimientos</button>"):"");
+}
+function _segRow(x){
+  var d=new Date(x.inicio); var when=isNaN(d)?"":d.toLocaleDateString("es-ES",{day:"2-digit",month:"short"});
+  var P={}; try{ P=_salaParseBlob(x.notas_llamada)||{}; }catch(e){}
+  var nota=(""+(P.notas||"")).trim(); if(nota.length>110) nota=nota.slice(0,110)+"…";
+  var foto=_persFoto(x.email,x.nombre);
+  var av=foto?("<img src='"+esc(_thumb(foto,34))+"' alt='' style='width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0'>"):("<span style='width:34px;height:34px;border-radius:50%;background:#C99A2E22;display:inline-flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0'>🟡</span>");
+  var tel=(""+(x.telefono||"")).replace(/[^0-9]/g,"");
+  var contact=tel?("<a href='https://wa.me/"+esc(tel)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 10px;text-decoration:none'>WhatsApp</a>"):(x.email?("<a href='mailto:"+esc(x.email)+"' class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 10px;text-decoration:none'>Email</a>"):"");
+  return "<div style='display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--pw-border)'>"+av+
+    "<div style='flex:1;min-width:0'>"+
+      "<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--pw-carbon)'>"+esc(x.nombre||"Sin nombre")+"</span>"+(when?"<span style='font-size:11px;color:var(--pw-text-muted)'>"+esc(when)+"</span>":"")+"</div>"+
+      (nota?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px;line-height:1.45'>"+esc(nota)+"</div>":"")+
+      "<div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:8px'>"+contact+
+        "<button class='cp-btn cp-btn-primary' style='height:30px;font-size:12px;padding:0 12px' data-act='seg-convert' data-id='"+esc(x.id)+"'>Convertir en cliente</button>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 10px;color:var(--pw-text-muted)' data-act='seg-descartar' data-id='"+esc(x.id)+"'>Descartar</button>"+
+      "</div>"+
+    "</div>"+
+  "</div>";
+}
+function _segChipsHtml(){
+  var opt=[["todas","Todas"],["seguimiento","Lo piensa"],["convirtio","Avanzó"],["perdido","Por ahora no"]];
+  return opt.map(function(o){ var on=(_SEG_FILTER===o[0]); return "<button data-act='seg-filter' data-f='"+o[0]+"' style='border:1.5px solid "+(on?"var(--pw-bosque)":"var(--pw-border)")+";background:"+(on?"var(--pw-success-bg)":"#fff")+";color:"+(on?"var(--pw-bosque)":"var(--pw-text-soft)")+";border-radius:100px;padding:5px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit'>"+o[1]+"</button>"; }).join("");
+}
+function _segHistHtml(){
+  if(_SEG_DATA===null) return "<div style='font-size:12.5px;color:var(--pw-text-muted);padding:14px 0'>Cargando…</div>";
+  var rows=(_SEG_DATA||[]).filter(function(x){ return _SEG_FILTER==="todas"?true:(x.resultado===_SEG_FILTER); });
+  if(!rows.length) return "<div style='font-size:12.5px;color:var(--pw-text-muted);padding:14px 0'>Nada acá todavía. Las llamadas con resultado aparecen cuando cierres una sesión en la Sala.</div>";
+  return rows.map(function(x){
+    var d=new Date(x.inicio); var when=isNaN(d)?"":d.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"});
+    var rl=_SEG_RL[x.resultado]; var badge=rl?("<span style='font-size:10.5px;font-weight:700;color:#fff;background:"+rl[1]+";padding:2px 9px;border-radius:100px;white-space:nowrap'>"+esc(rl[0])+"</span>"):"";
+    var P={}; try{ P=_salaParseBlob(x.notas_llamada)||{}; }catch(e){} var nota=(""+(P.notas||"")).trim();
+    return "<div style='padding:11px 0;border-bottom:1px solid var(--pw-border)'><div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'><span style='font-weight:600;font-size:13px;color:var(--pw-carbon)'>"+esc(x.nombre||"Sin nombre")+"</span><span style='font-size:11px;color:var(--pw-text-muted)'>"+esc(when)+"</span><span style='margin-left:auto'>"+badge+"</span></div>"+(nota?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:3px;line-height:1.45'>"+esc(nota.length>220?nota.slice(0,220)+"…":nota)+"</div>":"")+"</div>";
+  }).join("");
+}
+function _segHistModal(){
+  var old=document.getElementById("pw-seg-ov"); if(old) old.remove();
+  var ov=document.createElement("div"); ov.id="pw-seg-ov";
+  ov.style.cssText="position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(20,40,30,.55)";
+  ov.innerHTML="<div style='width:100%;max-width:480px;max-height:82vh;display:flex;flex-direction:column;background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(20,55,38,.32);overflow:hidden;font-family:var(--pw-sans)'>"+
+    "<div style='padding:18px 22px 12px;border-bottom:1px solid var(--pw-border);flex-shrink:0'>"+
+      "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px'><h3 style='font-family:var(--pw-serif);font-weight:600;font-size:18px;margin:0'>Historial de llamadas</h3><button data-act='seg-hist-close' aria-label='Cerrar' style='border:0;background:none;font-size:24px;line-height:1;color:var(--pw-text-muted);cursor:pointer'>×</button></div>"+
+      "<div id='cp-seg-hist-chips' style='display:flex;gap:6px;flex-wrap:wrap;margin-top:12px'>"+_segChipsHtml()+"</div>"+
+    "</div>"+
+    "<div id='cp-seg-hist-body' style='padding:4px 22px 20px;overflow-y:auto'>"+_segHistHtml()+"</div>"+
+  "</div>";
+  document.body.appendChild(ov);
+  ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
 }
 // ── Informes guardados como archivos (tabla informes_guardados) ──
 // Lista los informes guardados de un cliente (por email + coach_id) en la
@@ -8806,6 +8899,7 @@ function render(){
         // Reservas del link público: cache si ya lo trajimos, si no cargar (alimenta
         // la Próxima sesión). El Resumen ya no muestra la lista completa (solo Próxima).
         if(!_RES_DATA) _resLoad();
+        if(_SEG_DATA===null) _segLoad();   // seguimientos pendientes (embudo llamada→cliente)
         _agMonthRender();      // no-op si no hay mes en el Resumen (guardado)
         try{ _agProxRender(); }catch(e){}  // Próxima sesión, independiente del mes
       }catch(e){}
@@ -8971,6 +9065,42 @@ document.addEventListener("click", function(ev){
   if(act==="cal-owner"){ _calOwner=el.getAttribute("data-o")||"todas"; render(); return; }
   if(act==="cita-det"){
     var _did=el.getAttribute("data-id"); if(_did){ try{ _agCitaDetalle(_did); }catch(e){} } return;
+  }
+  if(act==="seg-hist"){ try{ _segHistModal(); }catch(e){} return; }
+  if(act==="seg-hist-close"){ var _so=document.getElementById("pw-seg-ov"); if(_so) _so.remove(); return; }
+  if(act==="seg-filter"){
+    _SEG_FILTER=el.getAttribute("data-f")||"todas";
+    var _sc=document.getElementById("cp-seg-hist-chips"); if(_sc) _sc.innerHTML=_segChipsHtml();
+    var _shb=document.getElementById("cp-seg-hist-body"); if(_shb) _shb.innerHTML=_segHistHtml();
+    return;
+  }
+  if(act==="seg-descartar"){
+    var _sdid=el.getAttribute("data-id"); var _sdc=(_SEG_DATA||[]).filter(function(x){return String(x.id)===String(_sdid);})[0]; if(!_sdc) return;
+    if(typeof _isDemoCoach==="function" && _isDemoCoach()){ _sdc.resultado="perdido"; _segFill(); toast("Demo: marcado como 'por ahora no'."); return; }
+    _sbw("citas?id=eq."+encodeURIComponent(_sdid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"perdido"})
+      .then(function(r){ if(r&&r.ok){ _sdc.resultado="perdido"; _segFill(); toast("Marcado: por ahora no."); } else toast("No se pudo guardar."); })
+      .catch(function(){ toast("No se pudo guardar."); });
+    return;
+  }
+  if(act==="seg-convert"){
+    var _scid=el.getAttribute("data-id"); var _scc=(_SEG_DATA||[]).filter(function(x){return String(x.id)===String(_scid);})[0]; if(!_scc) return;
+    if(typeof _isDemoCoach==="function" && _isDemoCoach()){ _scc.resultado="convirtio"; _segFill(); toast("Demo: así un lead se vuelve cliente y sus notas quedan en la ficha ✓"); return; }
+    var _sem=(""+(_scc.email||"")).toLowerCase().trim();
+    if(!_sem){ toast("Esta llamada no tiene email — agregáselo para poder crear su ficha."); return; }
+    var _snm=_scc.nombre||_sem.split("@")[0];
+    var _snicho=((typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||"carrera");
+    // 1) Alta del candidato con ignore-duplicates: si ya existe, no lo pisa.
+    _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
+      return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:_snm,email:_sem,whatsapp:_scc.telefono||"",coach_id:(RME&&RME.id)||"",nicho:_snicho,semana_activa:1,activo:true,origen:"llamada"})});
+    }).then(function(){
+      _sbw("usuarios","POST",{email:_sem,rol:"cliente",nombre:_snm,activo:true}).catch(function(){});      // login best-effort
+      _sbw("citas?id=eq."+encodeURIComponent(_scid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"convirtio"}).catch(function(){});
+      _scc.resultado="convirtio"; _segFill();
+      toast("¡"+_snm+" ahora es cliente! Su ficha ya tiene las notas de la llamada.");
+      try{ pwAddXP(50,"Cliente nuevo"); }catch(e){}
+      try{ loadReal(); }catch(e){}
+    }).catch(function(){ toast("No se pudo convertir. Revisa el email o créalo desde Clientes."); });
+    return;
   }
   if(act==="cal-asis"){
     var _cid=el.getAttribute("data-id"), _cv=el.getAttribute("data-val"); if(!_cid||!_cv) return;

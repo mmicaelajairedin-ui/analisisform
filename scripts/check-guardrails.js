@@ -3071,6 +3071,26 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "embudo de ventas: los 'Lo piensa' salen como seguimientos + historial + 'Convertir en cliente'",
+    bug: "El resultado de una llamada (citas.resultado) quedaba enterrado: marcar 'Lo piensa' (seguimiento) " +
+         "no aparecía en ningún lado para hacer seguimiento y no había historial de llamadas. Ahora el Resumen " +
+         "muestra la tarjeta Seguimientos (_seguimientosCard) con los pendientes, hay un historial filtrable " +
+         "(_segHistModal) y 'Convertir en cliente' (seg-convert) crea la ficha del candidato + marca la cita " +
+         "resultado=convirtio, para que las notas de la llamada queden en la ficha (se cruzan por email).",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _seguimientosCard\(/.test(p) || !/function _segHistModal\(/.test(p)) return "panel-v2.html: falta la tarjeta/historial de seguimientos (_seguimientosCard/_segHistModal).";
+      if (!/_seguimientosCard\(\)\+/.test(p)) return "panel-v2.html: la tarjeta de Seguimientos ya no se renderiza en el Resumen.";
+      if (!/act==="seg-convert"/.test(p)) return "panel-v2.html: falta el handler 'Convertir en cliente' (seg-convert).";
+      const seg = p.slice(p.indexOf('act==="seg-convert"'), p.indexOf('act==="seg-convert"') + 1400);
+      if (!/fetch\(SB\+"\/rest\/v1\/candidatos"/.test(seg)) return "panel-v2.html: seg-convert ya no da de alta el candidato (POST candidatos).";
+      if (!/resultado:"convirtio"/.test(seg)) return "panel-v2.html: seg-convert ya no marca la cita como convertida (resultado=convirtio).";
+      if (!/if\(_SEG_DATA===null\) _segLoad\(\)/.test(p)) return "panel-v2.html: el Resumen ya no dispara la carga de seguimientos (_segLoad).";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
