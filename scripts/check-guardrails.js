@@ -3268,6 +3268,21 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "loop cerrado: metricas mide la efectividad de los nudges y el panel la muestra",
+    bug: "El loop se cierra midiendo nudge -> evento del paso: de los que recibieron el empujon, cuantos avanzaron despues. metricas lo calcula (lee coach_nudges) y el panel lo renderiza como consumidor.",
+    check() {
+      const m = read("supabase/functions/metricas/index.ts");
+      const p = read("panel-v2.html");
+      if (m) {
+        if (!/coach_nudges/.test(m)) return "metricas: dejo de leer coach_nudges (no puede medir la efectividad de los nudges).";
+        if (!/\bnudges\b/.test(m)) return "metricas: no devuelve `nudges` (efectividad por etapa).";
+      }
+      if (p && !/Efectividad de los nudges/.test(p))
+        return "panel-v2: se perdio la tarjeta de Efectividad de los nudges en el tab Analiticas.";
+      return null;
+    },
+  },
   // ── Embudo event-native: los 3 eventos server-side de facturacion ──
   {
     name: "event bus: TrialStarted se emite al arrancar la prueba (crear-coach + registrar-coach)",
