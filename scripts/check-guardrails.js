@@ -239,6 +239,31 @@ const RULES = [
     },
   },
   {
+    name: "agenda: los eventos de Google cargan aunque el Resumen no tenga #cp-agenda-body",
+    bug: "Al simplificar el calendario se dejó de renderizar #cp-agenda-body, pero " +
+         "_agendaLoad/_agLoadIcal/_agLoadGoogleDirect arrancaban con 'if(!body) return' " +
+         "sobre ese elemento → _AG_DATA (eventos de Google/iCal) NUNCA se cargaba y las " +
+         "sesiones que estaban en tu Google NO aparecían en el panel ('sale en Google " +
+         "pero no en el panel'). Los loaders deben cargar SIEMPRE y setear _AG_DATA, " +
+         "escribiendo en #cp-agenda-body solo si existe.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // Ningún loader del calendario debe cortar por falta de #cp-agenda-body.
+      for (const fn of ["_agendaLoad", "_agLoadIcal", "_agLoadGoogleDirect"]) {
+        const m = s.match(new RegExp("function " + fn + "\\([\\s\\S]*?\\n\\}"));
+        if (!m) return "panel-v2.html: falta la función " + fn + " (carga de la agenda).";
+        if (/getElementById\("cp-agenda-body"\)\s*;\s*if\s*\(!\s*body\s*\)\s*return\s*;/.test(m[0]))
+          return fn + " vuelve a cortar por !cp-agenda-body: los eventos de Google no cargan en el panel.";
+      }
+      // _agLoadIcal DEBE poblar _AG_DATA (si no, la agenda queda vacía).
+      const mi = s.match(/function _agLoadIcal\([\s\S]*?\n\}/);
+      if (mi && !/_AG_DATA\s*=/.test(mi[0]))
+        return "_agLoadIcal ya no setea _AG_DATA: la agenda del panel queda sin eventos.";
+      return null;
+    },
+  },
+  {
     name: "fotos nítidas: las miniaturas de Uploadcare piden el recorte al tamaño real",
     bug: "Las fotos se cargaban full-res y el navegador las achicaba a 26-40px → " +
          "se veían borrosas/pixeladas en miniatura (pedido varias veces). _thumb() " +
