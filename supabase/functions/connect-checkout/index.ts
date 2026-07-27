@@ -152,6 +152,11 @@ Deno.serve(async (req: Request) => {
     let servicioIdx: number | null = null;
     let servicioTitulo: string;    // cacheado en la solicitud — sobrevive a renombres
     let recurrente = false;        // servicio de suscripción → cobro cada 4 semanas
+    // Moneda del coach (los coaches son de todo el mundo → no todo es en euros).
+    // Se toma del servicio (s.moneda) o de la config del coach (cfg.moneda), se
+    // valida contra una lista soportada por Stripe, y por defecto es 'eur'.
+    const MONEDAS_OK = new Set(["eur","usd","gbp","mxn","ars","cop","clp","pen","brl","uyu","cad","chf"]);
+    let moneda = "eur";
     if (hasIdx) {
       const idx = Math.floor(p.servicio_idx);
       const servicios = Array.isArray(cfg.servicios) ? cfg.servicios : [];
@@ -165,6 +170,8 @@ Deno.serve(async (req: Request) => {
       servicioIdx = idx;
       servicioTitulo = String(so.name ?? so.nombre ?? "Servicio");
       recurrente = so.recurrente === true || so.suscripcion === true;
+      const rawMon = String(so.moneda ?? cfg.moneda ?? "eur").toLowerCase();
+      if (MONEDAS_OK.has(rawMon)) moneda = rawMon;
     } else {
       precio = Number(
         servicioLegacy === "sesion" ? (cfg.precio_sesion || 120) : (cfg.precio_mentoria || 400),
@@ -173,8 +180,14 @@ Deno.serve(async (req: Request) => {
         " con " + (coach.nombre || "tu coach");
       servicioTag = servicioLegacy;
       servicioTitulo = servicioLegacy === "sesion" ? "Sesión única" : "Mentoría 4 semanas";
+      const rawMon = String(cfg.moneda ?? "eur").toLowerCase();
+      if (MONEDAS_OK.has(rawMon)) moneda = rawMon;
     }
-    const monto = Math.round(precio * 100);          // céntimos
+    // Stripe "zero-decimal": el importe NO se multiplica por 100 (p.ej. CLP). Si
+    // no lo tratamos, 50.000 CLP saldría 100× más caro. Solo CLP está en nuestra
+    // lista, pero dejamos el set completo por si sumamos otra.
+    const ZERO_DECIMAL = new Set(["bif","clp","djf","gnf","jpy","kmf","krw","mga","pyg","rwf","ugx","vnd","vuv","xaf","xof","xpf"]);
+    const monto = ZERO_DECIMAL.has(moneda) ? Math.round(precio) : Math.round(precio * 100);
     // ¿Es cliente PROPIO del coach? (candidatos.origen='propio'). Si lo es, la
     // comisión es 0% — lo trajo el coach, no el marketplace. Solo los 'pathway'
     // (traídos por el marketplace) pagan comisión. Si el candidato no existe o la
@@ -234,7 +247,7 @@ Deno.serve(async (req: Request) => {
     // Parámetros comunes de la Checkout Session
     const baseParams: Record<string, string> = {
       "line_items[0][quantity]": "1",
-      "line_items[0][price_data][currency]": "eur",
+      "line_items[0][price_data][currency]": moneda,
       "line_items[0][price_data][unit_amount]": String(monto),
       "line_items[0][price_data][product_data][name]": nombreServicio,
       ...(cand.email ? { customer_email: String(cand.email) } : {}),

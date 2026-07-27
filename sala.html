@@ -259,6 +259,7 @@ var DUR  = qp('dur') || '';
 var STARTms = parseInt(qp('start')||'0',10)||0;
 var COACHID = qp('coach') || '';                     // dueño de la cita (para Documentos)
 var KIND = qp('kind') || 'sesion';                   // modo de la Sala: sesion | primera_llamada | demo_pathway | personal (viejas sin kind → sesion)
+var FOTO = qp('foto') || '';                          // avatar en la videollamada
 
 // ── Rol por IDENTIDAD, no por el link ─────────────────────────────────────
 // El room es "Pathway-<coachId>-<ms>". Si tu sesión de Pathway (mj_user) es el
@@ -273,7 +274,17 @@ var KIND = qp('kind') || 'sesion';                   // modo de la Sala: sesion 
       var owner=m?m[1]:(COACHID||'');
       if(owner && String(u.id)===String(owner)){ MOD=true; if(u.nombre) NAME=u.nombre; }
       else { MOD=false; if(u.nombre) NAME=u.nombre; if(u.email) EMAIL=u.email; }
+      // Tu propia foto (la que sos VOS al entrar) tiene prioridad sobre la del
+      // link → así el otro te ve con tu foto real en la videollamada. Antes no se
+      // pasaba ninguna → Jitsi mostraba solo tus iniciales.
+      var _uf=(u.foto_url) || (u.configuracion && (u.configuracion.foto_url || u.configuracion.foto_perfil)) || '';
+      if(_uf) FOTO=_uf;
     }
+    // Cliente: su foto suele estar en mj_foto_<email> (no en mj_user).
+    if(!FOTO && EMAIL){ var _cf=localStorage.getItem('mj_foto_'+(''+EMAIL).toLowerCase()); if(_cf) FOTO=_cf; }
+    // Solo URLs http(s) reales: un avatar data-URI hincharía el JWT (y puede
+    // pasarse de largo). Si no es URL, Jitsi muestra las iniciales (como antes).
+    if(FOTO && !/^https?:\/\//.test(FOTO)) FOTO='';
   }catch(e){}
 })();
 
@@ -307,7 +318,7 @@ function getToken(){
   try{
     return fetch(SB+'/functions/v1/jaas-token',{method:'POST',
       headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},
-      body:JSON.stringify({room:ROOM,name:NAME,email:EMAIL,moderator:MOD})
+      body:JSON.stringify({room:ROOM,name:NAME,email:EMAIL,avatar:FOTO,moderator:MOD})
     }).then(function(r){ return r.ok?r.json():null; }).catch(function(){ return null; });
   }catch(e){ return Promise.resolve(null); }
 }
@@ -352,7 +363,7 @@ function boot(){
         DISABLE_VIDEO_BACKGROUND:false,
         FILM_STRIP_MAX_HEIGHT:0
       },
-      userInfo:{ displayName:NAME, email:EMAIL }
+      userInfo:{ displayName:NAME, email:EMAIL, avatarURL:FOTO }
     };
     if(tok&&tok.jwt) opts.jwt=tok.jwt;
     api = new JitsiMeetExternalAPI('8x8.vc',opts);

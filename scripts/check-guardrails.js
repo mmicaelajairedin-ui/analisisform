@@ -260,6 +260,81 @@ const RULES = [
     },
   },
   {
+    name: "Sala: tu foto real viaja a la videollamada (no solo iniciales)",
+    bug: "Un coach en llamada con soporte/otro no veía la foto del otro: la Sala nunca " +
+         "pasaba el avatar a Jitsi. Ahora sala.html toma tu foto (mj_user o mj_foto_<email>) " +
+         "y la manda al JWT (avatar) y a userInfo.avatarURL. Si se corta, vuelven las iniciales.",
+    check() {
+      const s = read("sala.html");
+      if (!s) return null;
+      if (!/avatar:FOTO/.test(s))
+        return "sala.html: el token de la videollamada ya no lleva tu avatar (avatar:FOTO).";
+      if (!/avatarURL:FOTO/.test(s))
+        return "sala.html: Jitsi ya no recibe tu foto (userInfo.avatarURL).";
+      if (!/mj_foto_/.test(s) || !/foto_url/.test(s))
+        return "sala.html: se perdió la búsqueda de tu foto (mj_user.foto_url / mj_foto_<email>).";
+      const jt = read("supabase/functions/jaas-token/index.ts");
+      if (jt && !/avatar/.test(jt))
+        return "jaas-token: el JWT ya no incluye el claim de avatar.";
+      return null;
+    },
+  },
+  {
+    name: "servicios: la moneda NO está clavada en euros (coaches de todo el mundo)",
+    bug: "Los coaches son de todo el mundo → los precios no siempre son en euros. El " +
+         "coach elige su moneda en el editor de Servicios; se estampa en cada servicio " +
+         "(s.moneda) y se usa en el perfil público y en el checkout de Stripe. Si algo " +
+         "vuelve a clavar 'eur', un coach de México/Argentina/etc. cobraría mal.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/PW_MONEDAS/.test(p) || !/function _monSym/.test(p))
+          return "panel-v2.html: falta el selector de monedas (PW_MONEDAS/_monSym).";
+        if (!/id='svc-moneda'/.test(p))
+          return "panel-v2.html: falta el <select> de moneda en el editor de servicios.";
+        if (!/moneda: *_mc\b/.test(p) && !/moneda: *_mc2\b/.test(p))
+          return "panel-v2.html: al guardar servicios ya no se persiste la moneda (cfg.moneda).";
+      }
+      const cc = read("supabase/functions/connect-checkout/index.ts");
+      if (cc) {
+        if (/\[currency\]": *"eur"/.test(cc))
+          return "connect-checkout: la moneda de Stripe volvió a estar clavada en 'eur'.";
+        if (!/MONEDAS_OK/.test(cc) || !/ZERO_DECIMAL/.test(cc))
+          return "connect-checkout: falta la validación de moneda o el manejo de zero-decimal (CLP cobraría 100×).";
+      }
+      const ch = read("coach.html");
+      if (ch && !/MON_SYM/.test(ch))
+        return "coach.html: el perfil público perdió el mapa de símbolos de moneda.";
+      return null;
+    },
+  },
+  {
+    name: "videollamada admin ↔ coach/empleado: sonar por el chat de soporte",
+    bug: "Micaela (soporte) llama a un coach/empleado desde su chat (bandeja o ficha): " +
+         "📹 → mensaje 'call' en mensajes_admin_coach → al coach le SUENA en su panel " +
+         "(PWCall.ingest en el poll), Aceptar/Rechazar/perdida, y queda como mensaje en " +
+         "el hilo. Si se corta el cableado, la llamada al equipo deja de sonar.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/call-coach-start/.test(p))
+        return "panel-v2.html: falta el handler call-coach-start (📹 admin → coach/empleado).";
+      if (!/data-act='call-coach-start'/.test(p))
+        return "panel-v2.html: falta el botón 📹 en el compose del chat de soporte.";
+      if (!/function _pwCallPoll/.test(p) || !/PWCall\.ingest/.test(p))
+        return "panel-v2.html: el receptor ya no procesa la llamada entrante (_pwCallPoll/PWCall.ingest).";
+      if (!/function _pwCallSetup/.test(p) || !/role:"client"/.test(p))
+        return "panel-v2.html: el coach/empleado ya no se configura como receptor de la llamada.";
+      if (!/function startPwCallWatch/.test(p))
+        return "panel-v2.html: falta el vigía rápido del timbre (startPwCallWatch) → el poll de 45 s se pierde la llamada.";
+      if (!/function _callCoachMissed/.test(p))
+        return "panel-v2.html: falta el watchdog de llamada perdida admin↔coach (_callCoachMissed).";
+      if (!/function _msgBodyText/.test(p) || !/_pwCallDec/.test(p))
+        return "panel-v2.html: sin _msgBodyText/_pwCallDec el payload de la llamada se mostraría como JSON crudo en el chat.";
+      return null;
+    },
+  },
+  {
     name: "portales: fichas duplicadas se MERGEAN (lo que el coach guardó no se pierde)",
     bug: "El portal elegía la ficha 'más completa' de un email con duplicados, pero esa " +
          "podía no tener lo que el coach acababa de guardar (p.ej. nutrición) → 'lo guardé " +
@@ -3291,6 +3366,21 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "loop cerrado: metricas mide la efectividad de los nudges y el panel la muestra",
+    bug: "El loop se cierra midiendo nudge -> evento del paso: de los que recibieron el empujon, cuantos avanzaron despues. metricas lo calcula (lee coach_nudges) y el panel lo renderiza como consumidor.",
+    check() {
+      const m = read("supabase/functions/metricas/index.ts");
+      const p = read("panel-v2.html");
+      if (m) {
+        if (!/coach_nudges/.test(m)) return "metricas: dejo de leer coach_nudges (no puede medir la efectividad de los nudges).";
+        if (!/\bnudges\b/.test(m)) return "metricas: no devuelve `nudges` (efectividad por etapa).";
+      }
+      if (p && !/Efectividad de los nudges/.test(p))
+        return "panel-v2: se perdio la tarjeta de Efectividad de los nudges en el tab Analiticas.";
+      return null;
+    },
+  },
   // ── Embudo event-native: los 3 eventos server-side de facturacion ──
   {
     name: "event bus: TrialStarted se emite al arrancar la prueba (crear-coach + registrar-coach)",
@@ -3349,6 +3439,21 @@ const RULES = [
       // El nudge de etapa tiene prioridad sobre el onboarding por tiempo.
       if (!/trialKind \|\| stageKind \|\|/.test(s))
         return "coach-lifecycle: el nudge por etapa perdio prioridad sobre el onboarding por dias.";
+      return null;
+    },
+  },
+  {
+    name: "referidos: la recompensa es el badge Comunidad, no 15 dias (regalar dias a quien paga sale caro)",
+    bug: "Decision de negocio: referir da el badge Comunidad (ya se otorga solo), no 15 dias gratis. El credito de dias del backend quedo apagado. Si vuelve el '15 dias' al email de referidos o se prende el credito sin querer, es una regresion.",
+    check() {
+      const cl = read("supabase/functions/coach-lifecycle/index.ts");
+      const sw = read("supabase/functions/stripe-webhook/index.ts");
+      if (cl) {
+        if (!/function referralBadgeEmail\(/.test(cl)) return "coach-lifecycle: falta referralBadgeEmail (email de referidos por badge).";
+        if (!/onb_referido"\s*\?\s*referralBadgeEmail/.test(cl)) return "coach-lifecycle: onb_referido dejo de usar referralBadgeEmail (volveria al email viejo de 15 dias).";
+      }
+      if (sw && !/REFERRAL_DAYS_CREDIT_ENABLED\s*=\s*false/.test(sw))
+        return "stripe-webhook: se reactivo el credito de 15 dias por referido (REFERRAL_DAYS_CREDIT_ENABLED). Confirmalo a proposito si es intencional.";
       return null;
     },
   },

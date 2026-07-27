@@ -32,10 +32,26 @@ base y el híbrido desaparece.
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["ok","generado_at","ventana_dias","config","kpis","embudo","coaches","tiempos","resumen","fuentes"],
+  "required": ["ok","generado_at","ventana_dias","config","kpis","embudo","nudges","coaches","tiempos","resumen","fuentes"],
   "properties": {
     "ok": { "type": "boolean" },
     "generado_at": { "type": "string", "format": "date-time" },
+    "nudges": {
+      "type": "array",
+      "description": "Loop cerrado: de los coaches que recibieron cada nudge de etapa, cuántos dieron el paso DESPUÉS (evento del paso con ts > sent_at). stage_cliente se mide por consent_at del cliente.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "paso":      { "type": "string" },
+          "evento":    { "type": "string" },
+          "enviados":  { "type": "integer" },
+          "avanzaron": { "type": "integer" },
+          "pct":       { "type": ["integer","null"] },
+          "fuente":    { "const": "eventos" },
+          "estado":    { "type": "string" }
+        }
+      }
+    },
     "ventana_dias": { "type": "integer", "minimum": 1, "maximum": 365 },
 
     "config": {

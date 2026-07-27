@@ -90,6 +90,7 @@ async function sbGet(path: string): Promise<unknown[]> {
 interface Evento { tipo: string; dominio: string | null; actor_email: string | null; actor_rol: string | null; entidad_id: string | null; ts: string; }
 interface Usuario { id: string; email: string; nombre: string | null; created_at: string; configuracion: Record<string, unknown> | null; activo: boolean | null; }
 interface Candidato { coach_id: string | null; email: string | null; consent_at: string | null; }
+interface Nudge { coach_id: string; plantilla_id: string; sent_at: string; }
 
 // KPI con metadata de fuente (anti-híbrido-permanente).
 function kpi(valor: number | string | null, unidad: string, fuente: string, migrar: string, estado: string, label = "") {
@@ -112,10 +113,12 @@ Deno.serve(async (req: Request) => {
 
   // ── Lecturas (service role) ──
   const cutoff = new Date(now - 365 * 86400_000).toISOString();
-  const [eventos, usuariosRaw, candidatos] = await Promise.all([
+  const [eventos, usuariosRaw, candidatos, nudgesRaw] = await Promise.all([
     sbGet(`eventos?select=tipo,dominio,actor_email,actor_rol,entidad_id,ts&ts=gte.${cutoff}&order=ts.desc&limit=20000`) as Promise<Evento[]>,
     sbGet(`usuarios?rol=eq.coach&select=id,email,nombre,created_at,configuracion,activo&limit=5000`) as Promise<Usuario[]>,
     sbGet(`candidatos?select=coach_id,email,consent_at&limit=50000`) as Promise<Candidato[]>,
+    // Loop cerrado: los nudges por etapa que se enviaron (coach-lifecycle).
+    sbGet(`coach_nudges?select=coach_id,plantilla_id,sent_at&plantilla_id=in.(stage_perfil,stage_stripe,stage_invitar,stage_cliente)&order=sent_at.desc&limit=8000`) as Promise<Nudge[]>,
   ]);
 
   // ── Calidad de dato: fuera los coaches SUSPENDIDOS ────────────────────────
@@ -136,6 +139,16 @@ Deno.serve(async (req: Request) => {
   const evAccepted = new Set<string>();          // cliente emails con ClientAccepted
   const act: Record<string, { last: number; ev14: number }> = {}; // actividad por coach
   const embudoEv: Record<string, number> = {};   // conteo de eventos por tipo en ventana (para referencia)
+  // Loop cerrado: por coach, el ts MÁS RECIENTE de cada evento-de-paso (perfil/
+  // stripe/invitó). Sirve para saber si el paso se dio DESPUÉS del nudge.
+  const stepEvMax: Record<string, Record<string, number>> = {};
+  const STEP_TIPOS = new Set(["ProfileCompleted", "StripeConnected", "ClientInvited"]);
+  const markStep = (email: string, tipo: string, ts: string) => {
+    if (!email || !STEP_TIPOS.has(tipo)) return;
+    const t = new Date(ts).getTime();
+    const m = stepEvMax[email] || (stepEvMax[email] = {});
+    if (t > (m[tipo] || 0)) m[tipo] = t;
+  };
 
   const bump = (coach: string, ts: string) => {
     if (!coach) return;
@@ -153,16 +166,24 @@ Deno.serve(async (req: Request) => {
     if (e.tipo === "ClientInvited" && esCoach) { (evInvited[em] || (evInvited[em] = new Set())).add((e.entidad_id || "").toLowerCase()); bump(em, e.ts); }
     if (e.tipo === "ProfileCompleted" && esCoach) { evProfile.add(em); bump(em, e.ts); }
     if (e.tipo === "SessionCompleted" && esCoach) bump(em, e.ts);
+    // Loop cerrado: guardá el ts del evento-de-paso del coach (perfil/stripe/invitó;
+    // los tres se emiten con actor_rol de coach).
+    if (esCoach) markStep(em, e.tipo, e.ts);
   }
 
   // ── Índices base (candidatos por coach) ──
   const clientesPorCoachId: Record<string, { total: number; entraron: number }> = {};
+  const consentMaxByCoachId: Record<string, number> = {}; // último "cliente entró" por coach (loop cerrado stage_cliente)
   for (const c of candidatos) {
     const cid = String(c.coach_id || "");
     if (!cid) continue;
     const b = clientesPorCoachId[cid] || (clientesPorCoachId[cid] = { total: 0, entraron: 0 });
     b.total++;
-    if (c.consent_at) b.entraron++; // el cliente entró y aceptó = proxy base de ClientAccepted
+    if (c.consent_at) {
+      b.entraron++; // el cliente entró y aceptó = proxy base de ClientAccepted
+      const t = new Date(c.consent_at).getTime();
+      if (t > (consentMaxByCoachId[cid] || 0)) consentMaxByCoachId[cid] = t;
+    }
   }
 
   const truthy = (v: unknown) => v === true || (typeof v === "string" && v.length > 0) || (typeof v === "number" && v > 0);
@@ -271,6 +292,39 @@ Deno.serve(async (req: Request) => {
 
   const pct = (n: number) => Math.round((n / total) * 100);
 
+  // ── LOOP CERRADO: efectividad de los nudges por etapa ─────────────────────
+  // De los coaches que recibieron cada nudge, ¿cuántos dieron el paso DESPUÉS
+  // (evento del paso con ts > sent_at)? stage_cliente se mide por consent_at del
+  // cliente (el que entra es el cliente, no el coach). Solo coaches vivos (el map
+  // por id excluye suspendidos/eliminados). Una fila por (coach, paso) — sentEver.
+  const emailById: Record<string, string> = {};
+  for (const u of usuarios) emailById[String(u.id)] = (u.email || "").toLowerCase();
+  const NUDGE_STEP: Record<string, { evento: string; label: string }> = {
+    stage_perfil:  { evento: "ProfileCompleted", label: "Perfil" },
+    stage_stripe:  { evento: "StripeConnected",  label: "Stripe" },
+    stage_invitar: { evento: "ClientInvited",    label: "Invitó cliente" },
+    stage_cliente: { evento: "ClientAccepted",   label: "Cliente entró" },
+  };
+  const nAgg: Record<string, { enviados: number; avanzaron: number }> = {
+    stage_perfil: { enviados: 0, avanzaron: 0 }, stage_stripe: { enviados: 0, avanzaron: 0 },
+    stage_invitar: { enviados: 0, avanzaron: 0 }, stage_cliente: { enviados: 0, avanzaron: 0 },
+  };
+  for (const n of nudgesRaw) {
+    const agg = nAgg[n.plantilla_id]; if (!agg) continue;
+    const email = emailById[String(n.coach_id)]; if (!email) continue; // suspendido/eliminado
+    agg.enviados++;
+    const sentMs = new Date(n.sent_at).getTime();
+    const avanzo = n.plantilla_id === "stage_cliente"
+      ? (consentMaxByCoachId[String(n.coach_id)] || 0) > sentMs
+      : ((stepEvMax[email] && stepEvMax[email][NUDGE_STEP[n.plantilla_id].evento]) || 0) > sentMs;
+    if (avanzo) agg.avanzaron++;
+  }
+  const nudges = Object.keys(NUDGE_STEP).map((k) => {
+    const a = nAgg[k]; const s = NUDGE_STEP[k];
+    return { paso: s.label, evento: s.evento, enviados: a.enviados, avanzaron: a.avanzaron,
+             pct: a.enviados ? Math.round((a.avanzaron / a.enviados) * 100) : null, fuente: "eventos", estado: "🟡" };
+  });
+
   return json({
     ok: true,
     generado_at: new Date().toISOString(),
@@ -291,6 +345,7 @@ Deno.serve(async (req: Request) => {
       mrr:                 kpi(mrr, "usd", "base_temporal", "PaymentSucceeded + plan por eventos", "🟡", "MRR (" + PRECIOS.moneda + ")"),
     },
     embudo,
+    nudges,
     coaches: coaches
       .map((c) => { const { _created, ...rest } = c; return rest; })
       .sort((a, b) => a.health_score - b.health_score),
