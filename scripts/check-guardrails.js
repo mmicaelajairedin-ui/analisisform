@@ -3330,6 +3330,21 @@ const RULES = [
     },
   },
   {
+    name: "referidos: la recompensa es el badge Comunidad, no 15 dias (regalar dias a quien paga sale caro)",
+    bug: "Decision de negocio: referir da el badge Comunidad (ya se otorga solo), no 15 dias gratis. El credito de dias del backend quedo apagado. Si vuelve el '15 dias' al email de referidos o se prende el credito sin querer, es una regresion.",
+    check() {
+      const cl = read("supabase/functions/coach-lifecycle/index.ts");
+      const sw = read("supabase/functions/stripe-webhook/index.ts");
+      if (cl) {
+        if (!/function referralBadgeEmail\(/.test(cl)) return "coach-lifecycle: falta referralBadgeEmail (email de referidos por badge).";
+        if (!/onb_referido"\s*\?\s*referralBadgeEmail/.test(cl)) return "coach-lifecycle: onb_referido dejo de usar referralBadgeEmail (volveria al email viejo de 15 dias).";
+      }
+      if (sw && !/REFERRAL_DAYS_CREDIT_ENABLED\s*=\s*false/.test(sw))
+        return "stripe-webhook: se reactivo el credito de 15 dias por referido (REFERRAL_DAYS_CREDIT_ENABLED). Confirmalo a proposito si es intencional.";
+      return null;
+    },
+  },
+  {
     name: "deploy: metricas y registrar-coach estan en el workflow de deploy",
     bug: "Si la edge function no esta en deploy-functions.yml, se mergea pero NUNCA se despliega (el dashboard cargaria contra una version vieja o inexistente).",
     check() {

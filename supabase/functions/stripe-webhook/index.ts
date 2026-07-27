@@ -578,9 +578,16 @@ async function handleCoachSubscription(
     await emitEvento({ tipo: "PaymentSucceeded", dominio: "Billing", actor_email: email, actor_rol: "coach", entidad_tipo: "coach", entidad_id: email, page: "stripe-webhook", payload: { plan, monto: unitAmount, moneda: (item?.price?.currency || "usd") } });
   }
 
-  // ── REFERRAL CREDIT: si el nuevo coach paga por primera vez y
-  // tiene `referred_by` guardado, dar 1 mes gratis al coach que lo refirió
+  // ── REFERRAL CREDIT (DESACTIVADO) ──────────────────────────────
+  // Antes: al pagar un referido, se le daban 15 días gratis al que lo refirió
+  // (creditReferrer). Decisión de negocio (jul-2026): regalar días a coaches que
+  // YA pagan sale caro; la recompensa por referir pasó a ser el badge **Comunidad**
+  // (se otorga solo cuando alguien se registra con tu link — panel-v2 · pwCheckAutoBadges).
+  // El crédito en días se conserva SOLO para reactivar (reseña), no para referidos.
+  // Para reactivar el crédito de referidos, poner el flag en true.
+  const REFERRAL_DAYS_CREDIT_ENABLED = false;
   const paidTransition =
+    REFERRAL_DAYS_CREDIT_ENABLED &&
     (estado_sub === "activa") &&
     (existingCfg.estado_sub !== "activa") &&
     existingCfg.referred_by &&
