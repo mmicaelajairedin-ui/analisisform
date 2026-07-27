@@ -12143,11 +12143,21 @@ function _isOnline(ts){ return !!(ts && (Date.now()-new Date(ts).getTime() < 900
 function _formPendiente(c){ if(!c||c._example||!c.raw) return false; var r=c.raw; return !(c.inf||r.cargo||r.objetivo||r.nivel||r.peso||r.ingresos||r.situacion||r.linkedin_texto||r.cv_url||r.experiencia||r.habilidades); }
 function coachBeat(){ if(!REAL||!RME||!RME.id) return; _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{last_seen:new Date().toISOString()}); }
 // Mientras el coach mira la ficha de un cliente, refrescamos su presencia.
+// La columna cliente_last_seen viene de la migración presence_last_seen.sql; si
+// esa cuenta NO la aplicó, el select da 400 y —como esto corre por timer— se
+// repetía decenas de veces ensuciando client_errors. Ahora, al primer 400 se
+// DESACTIVA la consulta (la presencia queda sin efecto hasta aplicar el SQL,
+// pero sin spamear errores). Usa fetch directo para poder ver el status.
+var _presenceOff=false;
 function refreshCliPresence(){
-  if(!REAL||!state.clienteSel) return;
+  if(_presenceOff||!REAL||!state.clienteSel) return;
   var c=CLIENTS.filter(function(x){return String(x.id)===String(state.clienteSel);})[0];
   if(!c||!c.raw||!c.email) return;
-  _sb("candidatos?email=eq."+encodeURIComponent((""+c.email).toLowerCase().trim())+"&select=cliente_last_seen").then(function(rows){
+  var _q="candidatos?email=eq."+encodeURIComponent((""+c.email).toLowerCase().trim())+"&select=cliente_last_seen";
+  _hdr().then(function(h){ return fetch(SB+"/rest/v1/"+_q,{headers:h}); }).then(function(r){
+    if(r.status===400){ _presenceOff=true; return null; }   // columna no aplicada → no insistir
+    return r.ok?r.json():null;
+  }).then(function(rows){
     if(rows&&rows[0]){ var was=_isOnline(c.raw.cliente_last_seen); c.raw.cliente_last_seen=rows[0].cliente_last_seen; if(_isOnline(c.raw.cliente_last_seen)!==was) render(); }
   }).catch(function(){});
 }
