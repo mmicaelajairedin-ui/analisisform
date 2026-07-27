@@ -90,8 +90,9 @@ base y el híbrido desaparece.
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["email","activado","health_score","health_dim","estado","velocidad","fuente"],
+        "required": ["id","email","activado","health_score","health_dim","estado","velocidad","fuente"],
         "properties": {
+          "id":                 { "type": "string", "description": "usuarios.id — lo usa el drill-down coach-view del tab Analíticas." },
           "email":              { "type": "string" },
           "nombre":             { "type": ["string","null"] },
           "perfil":             { "type": "boolean" },

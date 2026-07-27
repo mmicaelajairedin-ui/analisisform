@@ -192,7 +192,7 @@ Deno.serve(async (req: Request) => {
     const estado = health >= 70 ? "verde" : health < 40 ? "riesgo" : "medio";
 
     return {
-      email, nombre: u.nombre || null,
+      id: u.id, email, nombre: u.nombre || null,
       perfil, stripe, invitados, clientes_entraron: clientesEntraron,
       activado, paga, en_prueba: enPrueba,
       eventos_14d: a.ev14, dias_sin_actividad: diasSinAct,

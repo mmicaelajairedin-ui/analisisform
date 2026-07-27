@@ -3216,6 +3216,30 @@ const RULES = [
       if (!s) return null;
       if (!/isAdmin/.test(s) || !/forbidden/.test(s))
         return "metricas: se perdio el gate de admin (isAdmin / 403 forbidden).";
+      if (!/\bid:\s*u\.id\b/.test(s))
+        return "metricas: el objeto por coach debe incluir `id` (lo usa el drill-down coach-view del tab Analiticas).";
+      return null;
+    },
+  },
+  // ── Enriquecimiento del tab Analiticas con Health Score (consumidor de metricas) ──
+  {
+    name: "analiticas: tarjeta Health Score cableada como consumidor puro de metricas",
+    bug: "el tab Analiticas se ENRIQUECE (no se reescribe): la tarjeta de Health Score consume metricas y reusa el drill-down coach-view. No debe recalcular negocio en el front.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // El contenedor lazy existe dentro de la rama del tab Analiticas.
+      if (!/id='ceo-dash'/.test(s))
+        return "panel-v2: falta el contenedor #ceo-dash del Health Score en el tab Analiticas.";
+      // Se carga de la edge function metricas (fuente unica), no calcula en el front.
+      if (!/functions\/v1\/metricas/.test(s))
+        return "panel-v2: el Health Score dejo de consumir la edge function metricas.";
+      // Reusa el drill-down que ya existe (no duplica ficha de coach).
+      if (!/data-act='coach-view:"\+E\(c\.id\)/.test(s))
+        return "panel-v2: la tarjeta de Health Score dejo de reusar el drill-down coach-view.";
+      // El tab viejo NO se elimino: el embudo de implementacion sigue vivo.
+      if (!/Embudo de implementaci[oó]n/.test(s))
+        return "panel-v2: se perdio el Embudo de implementacion del tab Analiticas (era ENRIQUECER, no reescribir).";
       return null;
     },
   },
