@@ -7971,17 +7971,14 @@ function viewAdmin(){
       // Tres sub-pestañas: "Agregar" (dar acceso coach/multicoach/convertir/
       // transferir + sin asignar), "Coaches" (lista + buscador) y "Analíticas"
       // (KPIs). Separar saca el "choclo" de una sola pantalla larga.
-      // ── LEGACY (Nivel 1) ──────────────────────────────────────────────────
-      // El tab "Analíticas" calcula el embudo/health en el FRONTEND desde tablas
-      // base. Se reemplaza por el Dashboard CEO (consumidor de la edge function
-      // `metricas`, toda la lógica en backend) y se RETIRA cuando esté validado.
-      // NO agregar features nuevas acá. Ref: docs/metricas-spec.md §11.
+      // ── Nivel 1: este tab se ENRIQUECERÁ (no se reescribe) con el motor backend
+      // `metricas` — se sumará una tarjeta de Health Score 0–100 por dimensión,
+      // reusando el drill-down `coach-view` que ya existe. Ref: docs/metricas-spec.md.
       var _cv = state.coachView||"lista";
       var _tabs = "<div style='display:flex;gap:6px;margin-bottom:2px'>"+
         "<button class='cp-chip "+(_cv==="agregar"?"is-on":"")+"' data-act='coachview:agregar'>Agregar</button>"+
         "<button class='cp-chip "+(_cv==="lista"?"is-on":"")+"' data-act='coachview:lista'>Coaches</button>"+
-        "<button class='cp-chip "+(_cv==="ceo"?"is-on":"")+"' data-act='coachview:ceo'>Dashboard CEO</button>"+
-        "<button class='cp-chip "+(_cv==="analiticas"?"is-on":"")+"' data-act='coachview:analiticas'>Analíticas · Legacy</button>"+
+        "<button class='cp-chip "+(_cv==="analiticas"?"is-on":"")+"' data-act='coachview:analiticas'>Analíticas</button>"+
       "</div>";
       var _kpis = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
         fc("<span style='color:var(--pw-bosque)'>"+(A?A.act7:5)+"</span>","Activas esta semana")+
@@ -8100,7 +8097,6 @@ function viewAdmin(){
           : "<div style='font-size:13px;color:var(--pw-text-soft);text-align:center;padding:10px 0'>No hay clientes sin asignar. 🎉</div>")+
       "</div></div>";
       body = _tabs + (
-        _cv==="ceo"        ? "<div id='ceo-dash'><div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-text-soft);padding:34px'>Cargando métricas…</div></div></div>" :
         _cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) :
         _cv==="agregar"    ? (accBox + mcBox + convBox + transferBox + _orphCard) :
         _list
@@ -9639,8 +9635,7 @@ document.addEventListener("click", function(ev){
   if(act==="psel-plan"){ _planSel().plan=(el.getAttribute("data-p")==="pro")?"pro":"basic"; render(); return; }
   if(act==="plan-refresh"){ _planRefresh(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.mctMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } if(state.adminTab==="novedades"){ RFEED=null; } render(); return; }
-  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); if(state.coachView==="ceo") setTimeout(_ceoLoad,0); return; }
-  if(act==="ceo-reload"){ _ceoLoad(); return; }
+  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); return; }
   if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
   if(act.indexOf("estsel:")===0){ var _es=parseInt(act.slice(7),10); state.estSel=(state.estSel===_es?null:_es); render(); return; }
   if(act==="coach-back"){ state.coachSel=null; state.msgAdminDraft=""; render(); return; }
@@ -11704,9 +11699,10 @@ var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 // key si PWAUTH no cargó, para no romper nada mientras RLS esté apagado.
 function _hdr(extra){ return (window.PWAUTH?PWAUTH.headers(extra):Promise.resolve(Object.assign({apikey:KEY,Authorization:"Bearer "+KEY},extra||{}))); }
 
-// ── Dashboard CEO (Nivel 1) — CONSUMIDOR PURO de la edge function `metricas`.
-// Toda la lógica de negocio vive en el backend; acá SOLO se renderiza la
-// respuesta (nada se calcula en el front). Admin-only. Ref: docs/metricas-spec.md.
+// ── Helpers del motor backend (Nivel 1) — PARKED, todavía NO cableados.
+// Base para ENRIQUECER el tab Analíticas con `metricas` (Health Score 0–100 por
+// dimensión), reusando el drill-down coach-view que ya existe. Se cablean recién
+// después de validar `metricas`. Hoy no se llaman. Ref: docs/metricas-spec.md.
 function _ceoErr(msg){ return "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-danger);padding:26px;font-size:13px'>"+msg+"</div></div>"; }
 function _ceoLoad(){
   var box=document.getElementById('ceo-dash'); if(!box) return;
