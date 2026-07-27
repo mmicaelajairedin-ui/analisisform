@@ -11053,24 +11053,34 @@ document.addEventListener("click", function(ev){
     var avid=el.getAttribute("data-id"); if(!avid) return;
     var avc=CLIENTS.filter(function(x){return String(x.id)===String(avid);})[0]; if(!avc) return;
     var avRes=_avCollect(avc);
+    var _avData=JSON.stringify(avRes.d);
     var saveProg=function(){
       return _sbw("candidatos?id=eq."+encodeURIComponent(avid),"PATCH",{acciones_progreso:JSON.stringify(avRes.prog)})
         .then(function(r){ if(!r.ok) throw 0; if(avc.raw) avc.raw.acciones_progreso=JSON.stringify(avRes.prog); });
     };
-    if(avc.inf&&avc.inf.id){
-      _sbw("informes?id=eq."+encodeURIComponent(avc.inf.id),"PATCH",{data:JSON.stringify(avRes.d)})
-        .then(function(r){ if(!r.ok) throw 0; return saveProg(); })
-        .then(function(){ toast("Avance guardado ✓ — el cliente lo ve"); render(); })
-        .catch(function(){ alert("No se pudo guardar el avance. ¿Aplicaste el SQL de candidatos (etapas, acciones_progreso)?"); });
-    } else if(avc.email){
-      var aib={ email:avc.email, data:JSON.stringify(avRes.d) }; if(REAL&&RME&&RME.rol!=="admin") aib.coach_id=RME.id;
-      _sbw("informes","POST",aib)
-        .then(function(r){ if(!r.ok) throw 0; return saveProg(); })
-        .then(function(){ toast("Avance guardado ✓ — el cliente lo ve"); loadReal(); })
-        .catch(function(){ alert("No se pudo guardar el avance. ¿Aplicaste el SQL de candidatos (etapas, acciones_progreso)?"); });
-    } else {
-      saveProg().then(function(){ toast("Avance guardado ✓"); render(); }).catch(function(){ alert("No se pudo guardar el avance."); });
+    var _avFail=function(){ alert("No se pudo guardar el avance. ¿Aplicaste el SQL de candidatos (etapas, acciones_progreso)?"); };
+    // Guardado directo (fallback): sirve para admin o coach con JWT ligado.
+    var _avDirect=function(){
+      if(avc.inf&&avc.inf.id){
+        return _sbw("informes?id=eq."+encodeURIComponent(avc.inf.id),"PATCH",{data:_avData}).then(function(r){ if(!r.ok) throw 0; return saveProg(); });
+      }
+      var aib={ email:avc.email, data:_avData }; if(REAL&&RME&&RME.rol!=="admin") aib.coach_id=RME.id;
+      return _sbw("informes","POST",aib).then(function(r){ if(!r.ok) throw 0; return saveProg(); });
+    };
+    if(!avc.email && !(avc.inf&&avc.inf.id)){
+      saveProg().then(function(){ toast("Avance guardado ✓"); render(); }).catch(_avFail); return;
     }
+    // Camino principal: MISMO que el diagnóstico → edge function guardar-informe
+    // (service role, bypassa el RLS Fase 5). Antes el avance iba directo a
+    // informes y para un coach sin JWT daba 403 (POST informes rechazado). Si la
+    // function falla, cae al guardado directo.
+    var _aeb={ email:avc.email||"", data:_avData }; if(REAL&&RME&&RME.id) _aeb.coach_id=RME.id;
+    (avc.email
+      ? fetch(SB+"/functions/v1/guardar-informe",{method:"POST",headers:{"Content-Type":"application/json",apikey:KEY,Authorization:"Bearer "+KEY},body:JSON.stringify(_aeb)})
+          .then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(saveProg)
+      : _avDirect())
+      .then(function(){ toast("Avance guardado ✓ — el cliente lo ve"); loadReal(); })
+      .catch(function(){ _avDirect().then(function(){ toast("Avance guardado ✓ — el cliente lo ve"); loadReal(); }).catch(_avFail); });
     return;
   }
   if(act==="ses-task-add"){
