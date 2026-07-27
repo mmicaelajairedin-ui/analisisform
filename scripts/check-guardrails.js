@@ -239,6 +239,23 @@ const RULES = [
     },
   },
   {
+    name: "portales: fichas duplicadas se MERGEAN (lo que el coach guardó no se pierde)",
+    bug: "El portal elegía la ficha 'más completa' de un email con duplicados, pero esa " +
+         "podía no tener lo que el coach acababa de guardar (p.ej. nutrición) → 'lo guardé " +
+         "y no se ve'. Ahora se rellenan los campos vacíos de la ficha elegida con los de " +
+         "cualquier duplicado. Debe estar en fitness y finanzas (mismo patrón CRAW=rows[0]).",
+    check() {
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        // Debe existir el fill de campos vacíos desde los duplicados (rows[_r]).
+        if (!/_isEmpty\(CRAW\[_k\]\)\s*&&\s*!_isEmpty\(_o\[_k\]\)/.test(s))
+          return f + ": se perdió el merge de fichas duplicadas → el coach guarda y el cliente no lo ve.";
+      }
+      return null;
+    },
+  },
+  {
     name: "candado global _genBusy se auto-libera (un botón no queda muerto para siempre)",
     bug: "_genBusy es un lock GLOBAL que comparten operaciones pesadas (generar informe/" +
          "CV, cobros, Stripe, enviar mensaje). Si una se cuelga y no lo suelta, TODO botón " +
@@ -1623,7 +1640,7 @@ const RULES = [
       if (!s) return null;
       const i = s.indexOf("function pwInit(");
       if (i < 0) return "pathway-fin-cliente.html: no se encuentra pwInit.";
-      const block = s.slice(i, i + 1200);
+      const block = s.slice(i, i + 2000); // ventana amplia: entra el merge de duplicados sin falsos positivos
       if (!/_score|rows\.sort/.test(block))
         return "pathway-fin-cliente.html: pwInit ya no elige la ficha más completa (perdió el dedup por score).";
       if (!/if\(!CRAW\.coach_id\)/.test(block))

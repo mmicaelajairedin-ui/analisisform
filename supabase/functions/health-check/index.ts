@@ -149,9 +149,9 @@ Deno.serve(async (req: Request) => {
   const dups = Object.keys(seen).filter((em) => seen[em] > 1);
   if (dups.length) {
     issues.push({
-      sev: "media",
-      t: "Emails de cliente duplicados",
-      d: "El mismo email aparece en más de un cliente. Puede confundir el acceso.",
+      sev: "alta",
+      t: "Fichas de cliente duplicadas (mismo email)",
+      d: "El mismo email tiene 2 o más fichas. Esto ROMPE EL GUARDADO: guardás datos en una ficha y el cliente lee la OTRA ('lo guardé y no se ve'). Unificá y borrá la que sobra.",
       items: dups.map((em) => `${em} (×${seen[em]})`),
     });
   }
@@ -273,6 +273,7 @@ Deno.serve(async (req: Request) => {
   const BUG_TITLES = new Set([
     "Coaches que entraron pero no ligaron la sesión",
     "Cuentas de coach duplicadas (mismo nombre)",
+    "Fichas de cliente duplicadas (mismo email)",
     "Guardados que la base rechazó",
     "Páginas que crashearon",
     "Funciones del servidor que fallaron",
