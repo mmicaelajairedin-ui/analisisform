@@ -94,6 +94,28 @@ async function saveAccountId(
   });
 }
 
+// ── Event Store (Pathway OS) — emite un evento server-side (best-effort). ──
+// Espejo server de pw-events.js. NUNCA rompe el flujo. Ref: eventos.sql.
+async function emitEvento(sbUrl: string, srk: string, ev: Record<string, unknown>) {
+  try {
+    await fetch(`${sbUrl}/rest/v1/eventos`, {
+      method: "POST",
+      headers: { ...sbHeaders(srk), Prefer: "return=minimal" },
+      body: JSON.stringify({ source: "server", ...ev }),
+    });
+  } catch { /* best-effort, jamás bloquea */ }
+}
+
+// Marca en configuracion que ya se emitió StripeConnected (dedup del evento).
+async function markConnectedEmitido(sbUrl: string, srk: string, coachId: string, cfg: any) {
+  const merged = { ...(cfg || {}), stripe_connected_at: new Date().toISOString() };
+  await fetch(`${sbUrl}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}`, {
+    method: "PATCH",
+    headers: { ...sbHeaders(srk), Prefer: "return=minimal" },
+    body: JSON.stringify({ configuracion: merged }),
+  });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Method Not Allowed" }, 405);
@@ -124,8 +146,16 @@ Deno.serve(async (req: Request) => {
     const r = await stripe(`/accounts/${accountId}`, "GET", STRIPE_KEY);
     if (!r.ok) return json({ connected: false, details_submitted: false });
     const a = r.data || {};
+    const connected = !!(a.charges_enabled && a.payouts_enabled);
+    // Embudo: la primera vez que la cuenta queda operativa, emitimos
+    // StripeConnected. Dedup por cfg.stripe_connected_at → una sola vez, aunque
+    // el panel consulte el status muchas veces. Best-effort, no bloquea.
+    if (connected && !cfg.stripe_connected_at) {
+      await markConnectedEmitido(SB_URL, SRK, coachId, cfg);
+      await emitEvento(SB_URL, SRK, { tipo: "StripeConnected", dominio: "Billing", actor_email: coach.email || null, actor_rol: "coach", actor_id: String(coachId), entidad_tipo: "coach", entidad_id: coach.email || String(coachId), page: "connect-onboard", payload: { account_id: accountId } });
+    }
     return json({
-      connected: !!(a.charges_enabled && a.payouts_enabled),
+      connected,
       details_submitted: !!a.details_submitted,
     });
   }

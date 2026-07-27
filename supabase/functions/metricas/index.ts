@@ -234,14 +234,14 @@ Deno.serve(async (req: Request) => {
   const fases: Array<{ fase: string; label: string; evento: string | null; valor: number | null; fuente: string; estado: string }> = [
     { fase: "lead", label: "Lead", evento: "LeadCreated", valor: null, fuente: "base_temporal", estado: "🔴" },
     { fase: "demo", label: "Demo", evento: null, valor: null, fuente: "base_temporal", estado: "🔴" },
-    { fase: "trial", label: "Trial Started", evento: "TrialStarted", valor: total, fuente: "base_temporal", estado: "🔴" },
+    { fase: "trial", label: "Trial Started", evento: "TrialStarted", valor: total, fuente: "mixto", estado: "🟡" },
     { fase: "perfil", label: "Profile Completed", evento: "ProfileCompleted", valor: nPerfil, fuente: "mixto", estado: "🟡" },
-    { fase: "stripe", label: "Stripe Connected", evento: "StripeConnected", valor: nStripe, fuente: "base_temporal", estado: "🔴" },
+    { fase: "stripe", label: "Stripe Connected", evento: "StripeConnected", valor: nStripe, fuente: "mixto", estado: "🟡" },
     { fase: "invito", label: "First Client Invited", evento: "ClientInvited", valor: nPrimerCli, fuente: "mixto", estado: "🟡" },
     { fase: "acepto", label: "First Client Accepted", evento: "ClientAccepted", valor: nWow, fuente: "mixto", estado: "🟡" },
     { fase: "sesion", label: "First Session/Task", evento: "SessionCompleted", valor: nSesion, fuente: "eventos", estado: "🟡" },
     { fase: "wow", label: "WOW Reached", evento: null, valor: nAct, fuente: "mixto", estado: "🟡" },
-    { fase: "pago", label: "Subscription Paid", evento: "PaymentSucceeded", valor: nPaga, fuente: "base_temporal", estado: "🔴" },
+    { fase: "pago", label: "Subscription Paid", evento: "PaymentSucceeded", valor: nPaga, fuente: "mixto", estado: "🟡" },
     { fase: "retenido", label: "Retained (30d)", evento: null, valor: null, fuente: "base_temporal", estado: "🔴" },
   ];
   // pct del anterior (sobre fases con valor)
@@ -303,8 +303,8 @@ Deno.serve(async (req: Request) => {
       { kpi: "WOW / First Client Accepted", fuente_actual: "mixto", fuente_objetivo: "eventos", condicion: "cobertura de eventos", estado: "🟡" },
       { kpi: "Activación", fuente_actual: "mixto", fuente_objetivo: "eventos", condicion: "eventos de fase + 8 sem", estado: "🟡" },
       { kpi: "Health Score", fuente_actual: "mixto", fuente_objetivo: "eventos", condicion: "Health v2 (sesiones/tareas/logins)", estado: "🟡" },
-      { kpi: "Trial iniciado / Trial→Pago", fuente_actual: "base_temporal", fuente_objetivo: "eventos", condicion: "TrialStarted+PaymentSucceeded + 90 días", estado: "🔴" },
-      { kpi: "Stripe / Pago (embudo)", fuente_actual: "base_temporal", fuente_objetivo: "eventos", condicion: "cablear StripeConnected/PaymentSucceeded", estado: "🔴" },
+      { kpi: "Trial iniciado / Trial→Pago", fuente_actual: "mixto", fuente_objetivo: "eventos", condicion: "TrialStarted+PaymentSucceeded ya se emiten; falta cohorte de 90 días para contar por evento", estado: "🟡" },
+      { kpi: "Stripe / Pago (embudo)", fuente_actual: "mixto", fuente_objetivo: "eventos", condicion: "StripeConnected/PaymentSucceeded cableados; el conteo sigue en base hasta cobertura total", estado: "🟡" },
       { kpi: "Métricas temporales (TTV, etc.)", fuente_actual: "base_temporal", fuente_objetivo: "eventos", condicion: "cohorte post-bus + eventos server-side", estado: "🔴" },
     ],
   });

@@ -3264,6 +3264,54 @@ const RULES = [
       return null;
     },
   },
+  // ── Embudo event-native: los 3 eventos server-side de facturacion ──
+  {
+    name: "event bus: TrialStarted se emite al arrancar la prueba (crear-coach + registrar-coach)",
+    bug: "Fase 'Trial' del embudo: el coach arranca su prueba. Se emite en el alta (admin) y en el auto-registro.",
+    check() {
+      const cc = read("supabase/functions/crear-coach/index.ts");
+      const rc = read("supabase/functions/registrar-coach/index.ts");
+      if (cc && !/pwEmit|emitEvento/.test(cc)) return "crear-coach: no hay emisor de eventos.";
+      if (cc && !/"TrialStarted"/.test(cc)) return "crear-coach: se borro el emit de TrialStarted.";
+      if (rc && !/"TrialStarted"/.test(rc)) return "registrar-coach: se borro el emit de TrialStarted.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: StripeConnected se emite (una vez) al conectar el cobro (connect-onboard)",
+    bug: "Fase 'Stripe' del embudo: el coach conecta Connect. Dedup por cfg.stripe_connected_at para no contar cada poll de status.",
+    check() {
+      const s = read("supabase/functions/connect-onboard/index.ts");
+      if (!s) return null;
+      if (!/"StripeConnected"/.test(s)) return "connect-onboard: se borro el emit de StripeConnected.";
+      if (!/stripe_connected_at/.test(s)) return "connect-onboard: se perdio el dedup (stripe_connected_at) — StripeConnected se contaria en cada poll de status.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: PaymentSucceeded se emite (una vez) al pagar la suscripcion (stripe-webhook)",
+    bug: "Fase 'Pago' del embudo: el coach paga por primera vez. Guardado por becameActive → una vez por transicion, no en cada cobro mensual.",
+    check() {
+      const s = read("supabase/functions/stripe-webhook/index.ts");
+      if (!s) return null;
+      if (!/"PaymentSucceeded"/.test(s)) return "stripe-webhook: se borro el emit de PaymentSucceeded.";
+      // Debe estar dentro del bloque becameActive (no en cada subscription.updated).
+      const i = s.indexOf("becameActive"), j = s.indexOf('"PaymentSucceeded"');
+      if (i < 0 || j < 0 || !/if \(becameActive\)/.test(s)) return "stripe-webhook: PaymentSucceeded ya no depende de becameActive (se contaria cada cobro).";
+      return null;
+    },
+  },
+  {
+    name: "deploy: metricas y registrar-coach estan en el workflow de deploy",
+    bug: "Si la edge function no esta en deploy-functions.yml, se mergea pero NUNCA se despliega (el dashboard cargaria contra una version vieja o inexistente).",
+    check() {
+      const y = read(".github/workflows/deploy-functions.yml");
+      if (!y) return null;
+      if (!/deploy metricas/i.test(y)) return "deploy-functions.yml: falta el step de deploy de metricas.";
+      if (!/deploy registrar-coach/i.test(y)) return "deploy-functions.yml: falta el step de deploy de registrar-coach.";
+      return null;
+    },
+  },
   {
     name: "white-label de red: la marca del dueño (organizaciones.marca) llega a los 3 portales del cliente",
     bug: "El white-label es el corazón de lo que se vende en multi-coach ('tu marca, no la de Pathway'). " +

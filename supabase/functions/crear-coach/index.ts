@@ -44,6 +44,20 @@ function json(body: unknown, status = 200): Response {
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+// ── Event Store (Pathway OS) — emite un evento server-side (best-effort). ──
+// Espejo server de pw-events.js. NUNCA rompe el flujo: si el insert falla, el
+// alta igual sale bien. La tabla `eventos` tiene RLS anon-insert; el service
+// role la ignora. Ref: supabase/migrations/eventos.sql, docs/domain-events.md.
+async function emitEvento(ev: Record<string, unknown>): Promise<void> {
+  try {
+    await fetch(`${SB_URL}/rest/v1/eventos`, {
+      method: "POST",
+      headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ source: "server", ...ev }),
+    });
+  } catch { /* best-effort, jamás bloquea */ }
+}
+
 // Resuelve el JWT del que llama → { id (auth user id), email }. El id es el
 // vínculo ESTABLE con usuarios.auth_id (el email del login puede no coincidir
 // con el email de la ficha).
@@ -194,5 +208,7 @@ Deno.serve(async (req: Request) => {
   } catch {
     return json({ error: "write_failed" }, 502);
   }
+  // Embudo: arranca la prueba del coach (alta por el admin/empleado).
+  await emitEvento({ tipo: "TrialStarted", dominio: "Billing", actor_email: email, actor_rol: "coach", entidad_tipo: "coach", entidad_id: email, page: "crear-coach", payload: { via: "admin", nicho, dias, creado_por: adminEmail } });
   return json({ ok: true, mode: "created", fecha_fin_prueba: trialEnd });
 });

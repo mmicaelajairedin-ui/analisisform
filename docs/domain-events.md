@@ -45,15 +45,15 @@ todavía no hay suscriptores; se construyen en el Nivel 1–2.
 | Evento | Lo emite (dominio) | Lo escuchan | Cuándo |
 |--------|--------------------|-------------|--------|
 | `LeadCreated` | Commercial | Analytics · Commercial | entra un lead (landing, chat, alta manual) |
-| `TrialStarted` | Commercial | Analytics · Activation · Notifications | el coach arranca su prueba de 14 días |
+| ✅ `TrialStarted` | Billing | Analytics · Activation · Notifications | el coach arranca su prueba (alta admin o auto-registro) |
 | ✅ `ProfileCompleted` | Activation | Activation · Analytics | el coach completa perfil + branding |
-| `StripeConnected` | Billing | Activation · Analytics | el coach conecta su cobro (Connect) |
+| ✅ `StripeConnected` | Billing | Activation · Analytics | el coach conecta su cobro (Connect) |
 | ✅ `ClientInvited` | Coaching | Client · Activation · Analytics | el coach invita a su primer/otro cliente |
 | ✅ `ClientAccepted` | Client | Coaching · Activation · Analytics · Notifications | el cliente acepta la invitación |
 | ✅ `SessionCompleted` | Coaching | AI · Analytics · HealthScore · Notifications · Marketplace | se realiza/registra una sesión |
 | `TaskCompleted` | Client | Coaching · Analytics · Automation | el cliente marca una tarea hecha |
 | `WowReached` | Activation | Analytics · Commercial | hubo interacción real (momento WOW) |
-| `PaymentSucceeded` | Billing | Marketplace · Ledger · Analytics · Commercial | entra un pago (coach o cliente) |
+| ✅ `PaymentSucceeded` | Billing | Marketplace · Ledger · Analytics · Commercial | el coach paga por primera vez (o reactiva) |
 | `ProgramFinished` | Coaching | Renovación · AI · Analytics · Notifications | termina un programa (4 semanas) |
 | `CoachInactive` | HealthScore | CustomerSuccess · Notifications · Admin | el coach baja su actividad (riesgo) |
 | `ClientInactive` | HealthScore | Coaching · Notifications | el cliente deja de entrar |
@@ -98,18 +98,21 @@ async function emit(tipo: string, e: Record<string, unknown>) {
 Para el siguiente paso, sin inventar nada nuevo — solo **agregar** una llamada
 `emit`/`pwEmit` en el punto donde la acción ya ocurre hoy:
 
-| Evento | Punto de cableado existente |
-|--------|-----------------------------|
-| `TrialStarted` | `stripe-webhook` (status `trialing`) · `crear-coach` · `coach-lifecycle` |
-| `PaymentSucceeded` | `stripe-webhook` (`becameActive` / `handleClientPayment`) |
-| `ClientInvited` / `ClientAccepted` | `panel-v2.html` (asignar/crear cliente) · `guardar-intake` |
-| `SessionCompleted` | donde se registra la sesión (`sesiones_registro`) |
-| `ProgramFinished` | cierre de semana/programa en el panel |
-| `MarketplaceSold` | `connect-checkout` (accept) · `stripe-webhook` (solicitud) |
+| Evento | Punto de cableado | Estado |
+|--------|-------------------|--------|
+| ✅ `TrialStarted` | `crear-coach` (alta admin, mode `created`) · `registrar-coach` (auto-registro, mode `created` — NO en `activated`, ya lo contó crear-coach) | cableado |
+| ✅ `StripeConnected` | `connect-onboard` (action `status`, cuando la cuenta queda operativa; dedup por `cfg.stripe_connected_at`) | cableado |
+| ✅ `PaymentSucceeded` | `stripe-webhook` (`becameActive` en `handleCoachSubscription` — 1 vez por transición a pago, no en cada cobro) | cableado |
+| ✅ `ClientInvited` / `ClientAccepted` | `panel-v2.html` (alta) · `cliente.html` (consentimiento) | cableado |
+| ✅ `SessionCompleted` | `panel-v2.html` (`ses-add`) | cableado |
+| `ProgramFinished` | cierre de semana/programa en el panel | pendiente |
+| `MarketplaceSold` | `connect-checkout` (accept) · `stripe-webhook` (solicitud) | pendiente |
 
-**Empezar por los de activación** (`TrialStarted`, `ProfileCompleted`,
-`ClientInvited`, `ClientAccepted`, `WowReached`): son la prioridad #1 y no tocan
-la plata.
+Los tres nuevos (`TrialStarted`, `StripeConnected`, `PaymentSucceeded`) son
+**server-side**: cada edge function tiene su helper `emitEvento()` (best-effort,
+nunca bloquea). En `metricas`, sus fases del embudo pasaron de `base_temporal`🔴 a
+`mixto`🟡 — el evento ya se emite, pero el CONTEO se sigue derivando de las tablas
+base hasta tener cobertura completa (un coach viejo no tiene evento retroactivo).
 
 ## Reglas para no enredarlo
 

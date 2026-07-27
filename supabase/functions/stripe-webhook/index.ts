@@ -158,6 +158,20 @@ function getSupabaseAuth() {
   };
 }
 
+// ── Event Store (Pathway OS) — emite un evento server-side (best-effort). ──
+// Espejo server de pw-events.js. NUNCA rompe el flujo del webhook: si el insert
+// falla, Stripe igual recibe 200 y el pago se procesa. Ref: eventos.sql.
+async function emitEvento(ev: Record<string, unknown>): Promise<void> {
+  try {
+    const { url, headers } = getSupabaseAuth();
+    await fetch(`${url}/rest/v1/eventos`, {
+      method: "POST",
+      headers: { ...headers, Prefer: "return=minimal" },
+      body: JSON.stringify({ source: "server", ...ev }),
+    });
+  } catch { /* best-effort, jamás bloquea el webhook */ }
+}
+
 // ── Lookup: ¿quién es el coach por defecto? ─────────────────
 // Usamos al admin (owner Pathway) como fallback cuando no viene
 // coach_id en metadata. Garantiza que ningún candidato quede huérfano.
@@ -559,6 +573,9 @@ async function handleCoachSubscription(
     (estado_sub === "activa") && (existingCfg.estado_sub !== "activa") && !isVitalicio;
   if (becameActive) {
     await sendCoachActivatedEmail(email, coachPrimer, plan);
+    // Embudo: el coach pagó por primera vez (o reactivó tras prueba vencida).
+    // Guardado por becameActive → una sola vez por transición, no en cada cobro.
+    await emitEvento({ tipo: "PaymentSucceeded", dominio: "Billing", actor_email: email, actor_rol: "coach", entidad_tipo: "coach", entidad_id: email, page: "stripe-webhook", payload: { plan, monto: unitAmount, moneda: (item?.price?.currency || "usd") } });
   }
 
   // ── REFERRAL CREDIT: si el nuevo coach paga por primera vez y
