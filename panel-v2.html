@@ -89,8 +89,14 @@ body.pw-nov-open #pw-app-actions{ right:374px; }
    como asa para CERRARLA (mismo botón que la abre = toggle). En móvil la columna
    es a pantalla completa: ahí se esconde y se cierra con el ✕ de su propio header. */
 body.pw-nov-open #pw-nov-btn{ right:360px; border-radius:0 13px 13px 0; box-shadow:3px 0 14px rgba(27,67,50,.24); }
+/* Con Novedades abierta, el chat (FAB + panel) se corre a la izquierda de la
+   columna para no quedar tapado por ella (drawer z-index 80 > chat 60). */
+body.pw-nov-open .cp-ai-fab{ right:382px; }
+body.pw-nov-open .cp-ai-panel{ right:380px; }
 @media(max-width:900px){
   body.pw-nov-open .cp-app{ width:100%; }
+  body.pw-nov-open .cp-ai-fab{ right:22px; }
+  body.pw-nov-open .cp-ai-panel{ right:20px; }
   #pw-nov-drawer{ width:100vw; }
   body.pw-nov-open #pw-app-actions{ right:14px; }
   body.pw-nov-open #pw-nov-btn{ display:none !important; }
@@ -826,6 +832,9 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 /* align-items:stretch → todas las cards de la fila quedan del MISMO alto (aunque
    una tenga menos contenido), sin bordes irregulares ni espacio muerto al lado. */
 .cp-dash-mid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px;align-items:stretch;}
+.cp-more-rest[hidden]{display:none;}
+.cp-more-btn{width:100%;text-align:center;background:none;border:none;border-top:1px solid var(--pw-border);color:var(--pw-bosque);font-size:12.5px;font-weight:700;cursor:pointer;padding:11px 8px;font-family:inherit;}
+.cp-more-btn:hover{background:var(--pw-niebla-2);}
 @media(max-width:1120px){.cp-dash-mid{grid-template-columns:1fr 1fr;}}
 @media(max-width:820px){.cp-res-grid{columns:1;}}
 @media(max-width:720px){.cp-dash-mid{grid-template-columns:1fr;}}
@@ -2598,6 +2607,17 @@ function _wgoals(){ try{ return JSON.parse(localStorage.getItem(_wgoalKey())||"[
 function _wgoalsSave(a){ try{ localStorage.setItem(_wgoalKey(), JSON.stringify(a)); }catch(e){} }
 // Dashboard del coach (preview con ?dash=1): agenda, objetivos de la semana,
 // avance de clientes (análisis), clientes y calendario — todo con datos REALES.
+// Muestra las primeras `vis` filas y esconde el resto detrás de un "Ver más"
+// inline (toggle sin re-render), para que las tarjetas no queden en un choclo
+// largo. Recibe un ARRAY de filas HTML.
+function _cpMore(rowsArr, vis){
+  rowsArr=rowsArr||[];
+  if(rowsArr.length<=vis) return rowsArr.join("");
+  var n=rowsArr.length-vis;
+  return rowsArr.slice(0,vis).join("")+
+    "<div class='cp-more-rest' hidden>"+rowsArr.slice(vis).join("")+"</div>"+
+    "<button type='button' class='cp-more-btn' onclick=\"var r=this.previousElementSibling;if(r.hasAttribute('hidden')){r.removeAttribute('hidden');this.textContent='Ver menos';}else{r.setAttribute('hidden','');this.textContent='Ver más ("+n+")';}\">Ver más ("+n+")</button>";
+}
 function viewDashboard(){
   var now=Date.now();
   function _sdt(s){ return new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")).getTime(); }
@@ -2643,7 +2663,7 @@ function viewDashboard(){
   }
   // Ranking: ordenado por avance (objetivos*10 + semana) — el que más progresó arriba.
   var _rankCli=cliActive.slice().sort(function(a,b){ return (_cliObjN(b)*10+(b.week||1))-(_cliObjN(a)*10+(a.week||1)); });
-  var anaRows=cliActive.length?_rankCli.slice(0,6).map(function(c,i){
+  var anaRows=cliActive.length?_cpMore(_rankCli.map(function(c,i){
     var doneN=_cliObjN(c); var p=Math.round(doneN/4*100);
     var pos=/^(bronce|plata|oro)$/.test(""+(c.medal||""))
       ? "<div class='pos'><img src='assets/iconos/medalla-"+c.medal+"-sm.webp' alt='Medalla "+esc(c.medal)+"'></div>"
@@ -2651,16 +2671,16 @@ function viewDashboard(){
     return "<div class='cp-rankrow' data-act='cli-open:"+esc(c.id)+"'>"+pos+avImg(c.photo,c.name,"class='av'")+
       "<div class='bd'><div class='nm'>"+esc(c.name)+"</div><div class='sub'>Semana "+(c.week||1)+"/4 · "+doneN+"/4 objetivos</div></div>"+
       "<span class='rt'>"+p+"%</span></div>";
-  }).join(""):"<div style='padding:24px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Sin clientes activos para analizar.</div>";
+  }),4):"<div style='padding:24px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Sin clientes activos para analizar.</div>";
   var anaCard=cliActive.length?("<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🏆</span> Ranking de clientes<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver todos</button></div>"+anaRows+"</div>"):"";
   // ── Clientes en riesgo (sin actividad) — mismo diseño que el dashboard de Multi-Coach ──
-  var _riesgo=cliActive.filter(function(c){return c.last&&(c.last.state==="stale"||c.last.state==="mid");}).sort(function(a,b){ return (a.last.state==="stale"?0:1)-(b.last.state==="stale"?0:1); }).slice(0,5);
-  var riesgoRows=_riesgo.length?_riesgo.map(function(c){
+  var _riesgo=cliActive.filter(function(c){return c.last&&(c.last.state==="stale"||c.last.state==="mid");}).sort(function(a,b){ return (a.last.state==="stale"?0:1)-(b.last.state==="stale"?0:1); });
+  var riesgoRows=_riesgo.length?_cpMore(_riesgo.map(function(c){
     var alto=c.last.state==="stale";
     return "<div class='cp-rankrow' data-act='cli-open:"+esc(c.id)+"'>"+avImg(c.photo,c.name,"class='av'")+
       "<div class='bd'><div class='nm'>"+esc(c.name)+"</div><div class='sub'>"+esc((c.last&&c.last.txt)||"Sin actividad")+"</div></div>"+
       "<span class='cp-pill "+(alto?"alto":"medio")+"'>"+(alto?"Alto":"Medio")+"</span></div>";
-  }).join(""):"<div style='padding:22px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Ningún cliente en riesgo. ¡Todo al día! ✓</div>";
+  }),4):"<div style='padding:22px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Ningún cliente en riesgo. ¡Todo al día! ✓</div>";
   var riesgoCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>⚠️</span> Clientes en riesgo<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver todos</button></div>"+riesgoRows+"</div>";
   // ── Tus clientes ──
   function _nextSesTxt(c){ var ns=null;(c.ses||[]).forEach(function(s){if(!s||!s.fecha)return;var t=_sdt(s);if(isNaN(t)||t<now)return;if(!ns||t<ns.t)ns={t:t,s:s};});if(!ns)return "—";var d=new Date(ns.t);d.setHours(0,0,0,0);var td=new Date();td.setHours(0,0,0,0);var diff=Math.round((d-td)/86400000);var pre=diff===0?"Hoy":diff===1?"Mañana":new Date(ns.t).toLocaleDateString("es-ES",{day:"2-digit",month:"short"});return pre+(ns.s.hora?" "+ns.s.hora:""); }
@@ -2733,7 +2753,7 @@ function viewResumen(){
   // único en móvil, donde el calendario se oculta, para que no quede en blanco).
   var cliBlock = "";
   if(CLIENTS && CLIENTS.length){
-    var cliRows = CLIENTS.slice(0,10).map(function(c){
+    var cliRows = _cpMore(CLIENTS.map(function(c){
       var stTxt = (c.last && c.last.txt && c.last.txt!=="—") ? c.last.txt : (c.role||"Cliente");
       var stCls = (c.last && c.last.state==="stale") ? "is-now" : "is-soon";
       return "<div class='cp-todo-row' data-act='cli-open:"+esc(c.id)+"' style='cursor:pointer'>"+
@@ -2741,7 +2761,7 @@ function viewResumen(){
         "<div class='cp-todo-body'><div class='cp-todo-head'>"+esc(c.name)+"</div><div class='cp-todo-meta'>"+esc(stTxt)+"</div></div>"+
         "<span class='cp-todo-time "+stCls+"'>Sem "+(c.week||1)+"</span>"+
         svg(IC.chevR,14,"class='cp-todo-arrow'")+"</div>";
-    }).join("");
+    }),4);
     cliBlock = "<div class='cp-card'>"+
       "<div class='cp-card-hd'><h3 class='cp-card-title'>Tus clientes<span class='dot'>.</span></h3>"+
         "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 14px' data-act='nav:clientes'>Ver todos</button></div>"+
@@ -3808,12 +3828,15 @@ function _segLoad(){
 }
 function _segPend(){ return (_SEG_DATA||[]).filter(function(x){ return x.resultado==="seguimiento"; }); }
 function _segFill(){
+  var card=document.getElementById("cp-seg-card"); if(card) card.style.display=_segPend().length?"":"none";
   var b=document.getElementById("cp-seg-body"); if(b) b.innerHTML=_segBodyHtml();
   var cnt=document.getElementById("cp-seg-count"); if(cnt){ var n=_segPend().length; cnt.textContent=n?("· "+n+" pendiente"+(n===1?"":"s")):""; }
   var hb=document.getElementById("cp-seg-hist-body"); if(hb) hb.innerHTML=_segHistHtml();
 }
 function _seguimientosCard(){
-  return "<div class='cp-card' id='cp-seg-card' style='margin-bottom:14px'>"+
+  // Vacía o cargando → no se muestra (arranca oculta; _segFill la revela si hay pendientes).
+  var _hide=(_SEG_DATA===null)||!_segPend().length;
+  return "<div class='cp-card' id='cp-seg-card' style='margin-bottom:14px"+(_hide?";display:none":"")+"'>"+
     "<div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>📞</span> Seguimientos <span id='cp-seg-count' style='font-weight:600;color:var(--pw-text-muted);font-size:12.5px'></span><span class='dot'>.</span></h3>"+
       "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='seg-hist'>Ver historial</button></div>"+
     "<div class='cp-card-pad'><div id='cp-seg-body'>"+_segBodyHtml()+"</div></div></div>";
