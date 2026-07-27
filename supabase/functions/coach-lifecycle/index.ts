@@ -95,6 +95,49 @@ function fillOnb(html, primer, coachId) {
     .split("{Baja}").join(bajaLink);
 }
 
+// ── Nudge por ETAPA (Workflow Intelligence) ──────────────────────
+// REUSA la plantilla emailHtml() ya existente y el MISMO texto que la guía del
+// panel (STEPS.tip*), para no inventar copy ni recrear nada. El botón lleva al
+// panel, donde la guía (cabra) sigue el paso → el email es solo el empujón, la
+// guía in-app es el destino. Español neutro (tú), igual que el resto de emails.
+function stageEmail(kind, primer, coachId) {
+  const S = {
+    stage_perfil: {
+      icon: "🪪", bg: "#EAF3EC",
+      subject: `${primer}, preséntate: completa tu perfil (2 min)`,
+      inner: P("Ya tienes tu cuenta lista 🎉. El próximo paso es <strong>completar tu perfil público</strong>: suma foto, bio y servicios para que el cliente sepa quién eres. Son 2 minutos y es lo que hace que tu portal se vea tuyo."),
+      cta: "Completar mi perfil", url: PANEL_URL,
+      push: { title: "Completa tu perfil 🪪", body: "Foto, bio y servicios. 2 minutos." },
+    },
+    stage_stripe: {
+      icon: "💳", bg: "#EAF3EC",
+      subject: `${primer}, conecta tu cobro para recibir clientes`,
+      inner: P("Tu perfil ya está 👏. Como aceptas clientes de Pathway, el siguiente paso es <strong>conectar Stripe</strong> — sin esto no puedes cobrarles. Lleva 2 minutos y el dinero va directo a tu cuenta: Pathway nunca lo toca."),
+      cta: "Conectar Stripe", url: PANEL_URL,
+      push: { title: "Conecta tu cobro 💳", body: "2 minutos y ya puedes recibir clientes." },
+    },
+    stage_invitar: {
+      icon: "🎯", bg: "#FDF3DA",
+      subject: `${primer}, suma tu primer cliente`,
+      inner: P("Ya está todo listo 💪. Ahora el paso que enciende todo: <strong>suma tu primer cliente</strong>. En 2 minutos ves tu portal funcionando de verdad — su avance, su CV y su primer informe, todo con tu marca."),
+      cta: "Sumar mi primer cliente", url: GO_CLIENTES,
+      push: { title: "Suma tu primer cliente 🎯", body: "Es el paso que enciende todo." },
+    },
+    stage_cliente: {
+      icon: "⏳", bg: "#FDF3DA",
+      subject: `${primer}, tu cliente todavía no entró`,
+      inner: P("Invitaste a un cliente pero todavía no entró a su portal. A veces el correo se traspapela — un mensaje tuyo por WhatsApp suele destrabarlo. Desde tu panel puedes <strong>reenviarle el acceso</strong> en un clic."),
+      cta: "Ver a mi cliente", url: GO_CLIENTES,
+      push: { title: "Tu cliente no entró aún ⏳", body: "Reenvíale el acceso en un clic." },
+    },
+  };
+  const s = S[kind];
+  if (!s) return null;
+  const baja = PUBLIC_API + "/functions/v1/unsubscribe?u=" + encodeURIComponent(coachId);
+  const foot = `Recibes esto porque tienes tu cuenta de coach en Pathway. <a href="${baja}" style="color:#8A9A91;">Darme de baja</a>.`;
+  return { subject: s.subject, push: s.push, html: emailHtml(primer, s.icon, s.bg, s.inner, s.cta, s.url, foot) };
+}
+
 // ── Reactivación por reseña: email a coaches inactivos hace 15+ días (recuperación).
 // El botón lleva al panel → como su prueba venció, cae en el paywall donde está la
 // oferta "dejá tu reseña y reactivá 15 días". Mismo diseño de marca (verde/dorado).
@@ -231,6 +274,12 @@ Deno.serve(async (req) => {
       const ok = await sendEmail(testEmail, "Micaela", fillOnb(s.subject, "Micaela", sampleId), fillOnb(s.html, "Micaela", sampleId));
       out.push({ id: s.id, ok });
     }
+    // Los 4 nudges POR ETAPA (Workflow Intelligence) — para revisarlos también.
+    for (const k of ["stage_perfil", "stage_stripe", "stage_invitar", "stage_cliente"]) {
+      const t = stageEmail(k, "Micaela", sampleId);
+      const ok = await sendEmail(testEmail, "Micaela", t.subject, t.html);
+      out.push({ id: k, ok });
+    }
     // También la reactivación por reseña (para previsualizarla antes de activarla).
     const okR = await sendEmail(testEmail, "Micaela", "🌟 Volvé gratis: 15 días por tu reseña", fillOnb(RESENA_REACTIV_HTML, "Micaela", sampleId));
     out.push({ id: "reactivacion_resena", ok: okR });
@@ -296,15 +345,48 @@ Deno.serve(async (req) => {
           else if (dToExpiry <= -3 && sentEver("trial_vencido") && !sentEver("trial_vencido_2")) trialKind = "trial_vencido_2";
         }
 
-        // (2) Onboarding por tiempo. Solo coaches que se registran DESDE la fecha de
-        // arranque (no retroactivo: los que ya existían antes NO reciben la bienvenida).
+        // (2a) WORKFLOW INTELLIGENCE — nudge POR ETAPA (estado real, no días).
+        // Filosofía: "¿qué necesita este coach para avanzar HOY?". Mira lo que YA
+        // hizo y lo ayuda SOLO con el próximo paso pendiente — nunca empuja un paso
+        // que ya dio (esa es la regla de oro). 5 reglas, no 40. Mismo gate que el
+        // onboarding (no retroactivo) y mismo anti-spam (1 empujón / 3 días).
+        let stageKind = null;
+        if (!trialKind && altaTs >= ONBOARDING_FROM_TS) {
+          const candRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/candidatos?coach_id=eq.${id}&select=created_at,consent_at`,
+            { headers: sbHeaders },
+          );
+          const cand = candRes.ok ? await candRes.json() : [];
+          // Estado REAL del coach — MISMAS señales que la guía del panel
+          // (panel-v2.html · computeSteps), para no contradecirla ni inventar otra
+          // definición de "hecho". cfg === configuracion.
+          const perfilOk = !!(cfg.slug || cfg.bio || cfg.titulo || cfg.foto_url || cfg.perfil_publico_activo === true);
+          // Stripe SOLO es paso obligatorio si la coach aceptó clientes de Pathway
+          // (pathway_optin). Con clientes propios cobra directo (0% comisión) y NO
+          // necesita Connect → no se la molesta. Igual que optPw en computeSteps.
+          const stripePendiente = !!cfg.pathway_optin && !(cfg.stripe_account_id || cfg.stripe_connected_at);
+          const invitados = cand.length;
+          const entraron = cand.filter((c) => c.consent_at).length;
+          const invitSinAceptar3d = cand.some((c) => !c.consent_at && c.created_at && (now - +new Date(c.created_at)) / DAY >= 3);
+          // El PRÓXIMO paso pendiente, en orden del embudo. Cada uno UNA vez (sentEver).
+          if (!perfilOk && dAlta >= 2 && !sentEver("stage_perfil")) stageKind = "stage_perfil";                 // 1. TrialStarted → faltó el perfil (2 d)
+          else if (perfilOk && stripePendiente && !sentEver("stage_stripe")) stageKind = "stage_stripe";        // 2. ProfileCompleted → falta Stripe (solo si acepta Pathway)
+          else if (perfilOk && !stripePendiente && invitados === 0 && !sentEver("stage_invitar")) stageKind = "stage_invitar"; // 3. listo para cobrar → falta invitar cliente
+          else if (invitados > 0 && entraron === 0 && invitSinAceptar3d && !sentEver("stage_cliente")) stageKind = "stage_cliente"; // 4. ClientInvited → no aceptó en 3 d
+          // (Regla 5, ClientAccepted → onboarding al cliente, ya lo cubre la
+          //  invitación que crea la cuenta y manda el acceso — no se duplica acá.)
+        }
+
+        // (2b) Onboarding por TIEMPO (nurture: bienvenida/referidos/review). Se
+        // conserva, pero el nudge de ETAPA tiene prioridad: si hay un paso pendiente,
+        // se ayuda con eso primero; el nurture cae en la próxima corrida.
         let onbStep = null;
         if (!trialKind && altaTs >= ONBOARDING_FROM_TS) {
           for (const s of ONB) {
             if (dAlta >= s.day && !sentEver(s.id)) { onbStep = s; break; }
           }
         }
-        let kind = trialKind || (onbStep ? onbStep.id : null);
+        let kind = trialKind || stageKind || (onbStep ? onbStep.id : null);
         // Reactivación por reseña: mismo segmento que la oferta del paywall — prueba
         // vencida hace 15+ días, sin pagar, sin reseña y sin usar el bono. Los recién
         // vencidos (Alejandra, Daniel…) no entran → que paguen. Una sola vez por coach.
@@ -320,6 +402,9 @@ Deno.serve(async (req) => {
         let subject, html, push;
         if (trialKind) {
           const t = trialEmail(trialKind, primer, plan, email, billing);
+          subject = t.subject; html = t.html; push = t.push;
+        } else if (stageKind) {
+          const t = stageEmail(stageKind, primer, String(u.id));
           subject = t.subject; html = t.html; push = t.push;
         } else if (onbStep) {
           subject = fillOnb(onbStep.subject, primer, String(u.id));

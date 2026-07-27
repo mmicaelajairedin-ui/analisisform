@@ -3306,6 +3306,29 @@ const RULES = [
     },
   },
   {
+    name: "workflow intelligence: nudges por ETAPA en coach-lifecycle (estado real, no dias)",
+    bug: "El motor debe ayudar con el PROXIMO paso pendiente y NUNCA empujar un paso ya hecho. Reusa emailHtml/coach_nudges; Stripe solo si pathway_optin (igual que computeSteps del panel). No recrear la guia.",
+    check() {
+      const s = read("supabase/functions/coach-lifecycle/index.ts");
+      if (!s) return null;
+      // Las 4 reglas de etapa existen.
+      for (const k of ["stage_perfil", "stage_stripe", "stage_invitar", "stage_cliente"]) {
+        if (!s.includes(k)) return "coach-lifecycle: falta la regla de etapa " + k + ".";
+      }
+      // Regla de oro: Stripe solo se empuja si acepta clientes de Pathway (mismo
+      // criterio que computeSteps del panel), no a todos.
+      if (!/pathway_optin/.test(s))
+        return "coach-lifecycle: el nudge de Stripe dejo de respetar pathway_optin (molestaria a coaches con clientes propios).";
+      // Reusa la plantilla existente, no recrea uuna nueva.
+      if (!/function stageEmail\(/.test(s) || !/emailHtml\(/.test(s))
+        return "coach-lifecycle: stageEmail dejo de reusar emailHtml (se estaria recreando la plantilla).";
+      // El nudge de etapa tiene prioridad sobre el onboarding por tiempo.
+      if (!/trialKind \|\| stageKind \|\|/.test(s))
+        return "coach-lifecycle: el nudge por etapa perdio prioridad sobre el onboarding por dias.";
+      return null;
+    },
+  },
+  {
     name: "deploy: metricas y registrar-coach estan en el workflow de deploy",
     bug: "Si la edge function no esta en deploy-functions.yml, se mergea pero NUNCA se despliega (el dashboard cargaria contra una version vieja o inexistente).",
     check() {
