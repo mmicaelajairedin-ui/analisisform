@@ -3051,7 +3051,7 @@ function _agSalaUrl(r){
       "&start="+encodeURIComponent(new Date(r.inicio).getTime())+
       "&tipo="+encodeURIComponent((typ&&typ.label)||r.tipo||"")+
       "&dur="+encodeURIComponent(_durMin(r.tipo||"")||"")+
-      "&foto="+encodeURIComponent(_cliFotoByEmail(r.email)||"");
+      "&foto="+encodeURIComponent(_persFoto(r.email,r.nombre)||"");
   }catch(e){ return ""; }
 }
 // Botones de asistencia (asistió / no vino) — MISMA lógica que la agenda del día,
@@ -3083,6 +3083,22 @@ function _cliFotoByEmail(email){
   } } }catch(e){}
   return "";
 }
+// Foto por NOMBRE — para reuniones con otro coach (p.ej. Gustavo) donde la cita
+// guarda el nombre pero no el email. Busca en clientes y en la lista de coaches.
+function _cliFotoByName(name){
+  name=(""+(name||"")).trim().toLowerCase(); if(!name) return "";
+  try{ var L=window.CLIENTS||[]; for(var i=0;i<L.length;i++){ var x=L[i]; if(x && (""+(x.name||x.nombre||"")).trim().toLowerCase()===name){
+    var cands=[ x.photo, (x.raw&&x.raw.foto_perfil), (x.raw&&x.raw.foto_url), _cvPhoto(x.cvContenido) ];
+    for(var j=0;j<cands.length;j++){ if(cands[j] && /^https?:\/\//.test(cands[j])) return cands[j]; }
+  } } }catch(e){}
+  try{ var C=(typeof RCOACHES!=="undefined"&&RCOACHES)?RCOACHES:[]; for(var k=0;k<C.length;k++){ var u=C[k]; if(u && (""+(u.nombre||u.name||"")).trim().toLowerCase()===name){
+    var cg=u.configuracion||{}; var c2=[ u.foto_url, cg.foto_url, cg.foto_perfil ];
+    for(var m=0;m<c2.length;m++){ if(c2[m] && /^https?:\/\//.test(c2[m])) return c2[m]; }
+  } } }catch(e){}
+  return "";
+}
+// Foto de la otra persona de una cita: email primero, nombre como respaldo.
+function _persFoto(email,name){ return _cliFotoByEmail(email) || _cliFotoByName(name); }
 function _agDayFull(key){
   var p=(""+key).split("-"); var d=new Date(+p[0],(+p[1]-1),+p[2]);
   var DIAS=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
@@ -3185,7 +3201,7 @@ function _agRenderDay(key,compact){
   // Unificar eventos del día (Google + citas del link).
   var items=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); items.push({ms:+e.start, title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:""}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:_agSalaUrl(r), durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_cliFotoByEmail(r.email)}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", tipo:(typ&&typ.label)||r.tipo||"", link:_agSalaUrl(r), durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_persFoto(r.email,r.nombre)}); } });
   items=_agMergeDup(items);
   var now=Date.now();
   // Fila limpia estilo "Tu agenda de hoy": hora · ícono · nombre + badge de tipo · duración/Meet.
@@ -3301,7 +3317,7 @@ function _agendaCalCard(){
 function _agProxList(){
   var now=Date.now(), out=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); out.push({ms:+e.start, title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:"", durMin:_durMin((typ&&typ.label)||"")}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, id:r.id, who:(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":"", title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:_agResLink(r), email:r.email||"", durMin:_durMin(r.tipo||""), foto:_cliFotoByEmail(r.email)}); } } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, id:r.id, who:(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":"", title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||"🗓️", link:_agResLink(r), email:r.email||"", durMin:_durMin(r.tipo||""), foto:_persFoto(r.email,r.nombre)}); } } });
   // Dedup robusto (mismo helper que la agenda): fusiona la MISMA sesión que viene
   // de Google + de la reserva aunque el título no sea idéntico. Sin esto, la misma
   // cita salía como "Próxima sesión" y OTRA VEZ abajo en "En tu lista".
