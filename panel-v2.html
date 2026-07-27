@@ -9883,22 +9883,24 @@ document.addEventListener("click", function(ev){
     var _wipe = cdcli>0
       ? confirm("¿Borrar TAMBIÉN sus "+cdcli+" cliente(s) y sus datos (informes, CVs)?\n\nAceptar = borra TODO.\nCancelar = elimina solo la cuenta y deja los datos de los clientes.")
       : false;
-    var _idq="=eq."+encodeURIComponent(cdid);
-    _sbw("usuarios?id"+_idq,"DELETE",{})
-      .then(function(r){ if(!r.ok) throw 0;
-        // Rastros del coach que no sirven sin él: nudges, solicitudes y su hilo
-        // de chat con soporte. Best-effort (no bloquean el resultado).
-        _sbw("coach_nudges?coach_id"+_idq,"DELETE",{}).catch(function(){});
-        _sbw("solicitudes?coach_id"+_idq,"DELETE",{}).catch(function(){});
-        _sbw("mensajes_admin_coach?coach_id"+_idq,"DELETE",{}).catch(function(){});
-        if(_wipe){
-          _sbw("informes?coach_id"+_idq,"DELETE",{}).catch(function(){});
-          _sbw("cv_publicados?coach_id"+_idq,"DELETE",{}).catch(function(){});
-          _sbw("candidatos?coach_id"+_idq,"DELETE",{}).catch(function(){});
-        }
+    // Borrado por EDGE FUNCTION (service role) — el DELETE directo a `usuarios`
+    // con la anon key lo bloquea RLS ("protegida por RLS"). admin-coach-op corre
+    // con service role, borra la cuenta (y sus datos si _wipe) y deja huérfanos
+    // los clientes si no. Mismo camino que extender trial / marcar pagado.
+    _hdr({"Content-Type":"application/json"})
+      .then(function(h){ return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"delete_coach", coach_id:cdid, wipe:_wipe})}); })
+      .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok, j:j}; }); })
+      .then(function(res){
+        if(!res.ok || !res.j || res.j.ok!==true){ throw ((res.j&&res.j.error)||"error"); }
         if(RCOACHES){ RCOACHES=RCOACHES.filter(function(u){ return String(u.id)!==String(cdid); }); }
-        toast(_wipe?"Cuenta y datos eliminados ✓":"Cuenta eliminada ✓"); render(); })
-      .catch(function(){ alert("No se pudo eliminar la cuenta. Puede estar protegida por permisos (RLS) en Supabase."); });
+        toast(_wipe?"Cuenta y datos eliminados ✓":"Cuenta eliminada ✓"); render();
+      })
+      .catch(function(e){
+        var _m = (e==="cannot_delete_admin") ? "No se puede eliminar: es una cuenta de administrador."
+          : (e==="not_admin") ? "No se pudo eliminar: necesitás permisos de admin (cerrá sesión y volvé a entrar)."
+          : "No se pudo eliminar la cuenta. Probá de nuevo en un momento.";
+        alert(_m);
+      });
     return;
   }
   if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.faseAdd=null; state.fitTareas=null; state.fitUnit=null; state.rutUnit=null; state.sesPrepOpen=false; render(); window.scrollTo(0,0); return; }

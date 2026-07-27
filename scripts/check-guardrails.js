@@ -239,6 +239,28 @@ const RULES = [
     },
   },
   {
+    name: "admin: eliminar cuenta de coach va por edge function (resiste RLS), no DELETE directo",
+    bug: "El panel borraba con DELETE directo a `usuarios` con la anon key → RLS lo " +
+         "bloqueaba y salía 'No se pudo eliminar... protegida por RLS'. Debe ir por la " +
+         "edge function admin-coach-op (op:delete_coach, service role), igual que extender " +
+         "trial / marcar pagado.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        // No debe volver el DELETE directo a usuarios (lo bloquea RLS).
+        if (/_sbw\("usuarios\?id"\s*\+\s*_idq\s*,\s*"DELETE"/.test(p))
+          return "panel-v2.html: coach-delete volvió al DELETE directo de usuarios (lo bloquea RLS). Debe usar admin-coach-op.";
+        // Debe existir la vía nueva: op delete_coach por admin-coach-op.
+        if (!/delete_coach/.test(p))
+          return "panel-v2.html: coach-delete ya no usa op:delete_coach (admin-coach-op).";
+      }
+      const fn = read("supabase/functions/admin-coach-op/index.ts");
+      if (fn && !/op === "delete_coach"/.test(fn))
+        return "admin-coach-op ya no soporta la op delete_coach → el borrado de cuenta vuelve a fallar por RLS.";
+      return null;
+    },
+  },
+  {
     name: "agenda: los eventos de Google cargan aunque el Resumen no tenga #cp-agenda-body",
     bug: "Al simplificar el calendario se dejó de renderizar #cp-agenda-body, pero " +
          "_agendaLoad/_agLoadIcal/_agLoadGoogleDirect arrancaban con 'if(!body) return' " +

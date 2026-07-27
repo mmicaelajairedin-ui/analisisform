@@ -90,7 +90,7 @@ Deno.serve(async (req: Request) => {
   if ((!who.email && !who.uid) || !(await isAdmin(who.email, who.uid))) return json({ error: "not_admin" }, 403);
 
   // ── Input ─────────────────────────────────────────────────────────
-  let body: { op?: string; coach_id?: string; dias?: number | string };
+  let body: { op?: string; coach_id?: string; dias?: number | string; plan?: string; wipe?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -99,7 +99,7 @@ Deno.serve(async (req: Request) => {
   const op = (body.op || "").toString();
   const coachId = (body.coach_id || "").toString().trim();
   if (!isUuid(coachId)) return json({ error: "coach_id_invalid" }, 400);
-  if (op !== "extend_trial" && op !== "mark_paid" && op !== "set_plan") return json({ error: "op_invalid" }, 400);
+  if (op !== "extend_trial" && op !== "mark_paid" && op !== "set_plan" && op !== "delete_coach") return json({ error: "op_invalid" }, 400);
 
   // ── Leer la config actual del coach objetivo ──────────────────────
   let cur: { configuracion: Record<string, unknown> | null } | null = null;
@@ -113,6 +113,54 @@ Deno.serve(async (req: Request) => {
     return json({ error: "db_unreachable" }, 502);
   }
   if (!cur) return json({ error: "coach_not_found" }, 404);
+
+  // ── Borrado de cuenta (irreversible) ──────────────────────────────
+  // El panel hacía DELETE directo a `usuarios` con la anon key → RLS lo
+  // bloqueaba ("protegida por RLS"). Acá corre con SERVICE ROLE, así que sí
+  // puede borrar. wipe=true borra también sus clientes/informes/CVs; wipe=false
+  // deja esos datos pero los DESLIGA (coach_id=null → quedan como huérfanos que
+  // el admin puede reasignar), lo que además evita cualquier FK al borrar.
+  if (op === "delete_coach") {
+    if ((cur as { rol?: string }).rol === "admin") return json({ error: "cannot_delete_admin" }, 403);
+    const wipe = body.wipe === true;
+    const idq = `coach_id=eq.${encodeURIComponent(coachId)}`;
+    const del = (path: string) =>
+      fetch(`${SB_URL}/rest/v1/${path}`, { method: "DELETE", headers: { ...svc, Prefer: "return=minimal" } }).catch(() => null);
+    const nullify = (table: string) =>
+      fetch(`${SB_URL}/rest/v1/${table}?${idq}`, {
+        method: "PATCH",
+        headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ coach_id: null }),
+      }).catch(() => null);
+    // Rastros que no sirven sin el coach (best-effort).
+    await del(`coach_nudges?${idq}`);
+    await del(`solicitudes?${idq}`);
+    await del(`mensajes_admin_coach?${idq}`);
+    if (wipe) {
+      await del(`informes?${idq}`);
+      await del(`cv_publicados?${idq}`);
+      await del(`candidatos?${idq}`);
+    } else {
+      // Dejar los datos, pero sin coach (huérfanos) → sin romper FKs.
+      await nullify("candidatos");
+      await nullify("informes");
+      await nullify("cv_publicados");
+    }
+    // La cuenta, al final. Este es el DELETE que RLS bloqueaba desde el panel.
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}`, {
+        method: "DELETE",
+        headers: { ...svc, Prefer: "return=minimal" },
+      });
+      if (!r.ok) {
+        const t = await r.text().catch(() => "");
+        return json({ error: "delete_failed", status: r.status, detail: t.slice(0, 200) }, 502);
+      }
+    } catch {
+      return json({ error: "delete_failed" }, 502);
+    }
+    return json({ ok: true, op, coach_id: coachId, wiped: wipe });
+  }
 
   const cfg: Record<string, unknown> = (cur.configuracion && typeof cur.configuracion === "object") ? { ...cur.configuracion } : {};
   const nowIso = new Date().toISOString();
