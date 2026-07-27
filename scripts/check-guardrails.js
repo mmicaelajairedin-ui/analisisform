@@ -260,6 +260,26 @@ const RULES = [
     },
   },
   {
+    name: "consentimiento del coach: se guarda UNA vez y no se vuelve a pedir",
+    bug: "El coach veía 'aceptar términos' en CADA login. El gate estampaba consent_at " +
+         "solo en RME.configuracion, pero saveCfg reconstruye TODA la configuración desde " +
+         "RCFG → el siguiente guardado (servicios/calendario) borraba el consent del server " +
+         "y volvía a pedirlo. Fix: estampar también en RCFG + flag local anti-nag + no " +
+         "perderlo al recargar RCFG desde el server.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/RCFG\.consent_at\s*=/.test(p))
+        return "panel-v2.html: el gate ya no estampa el consentimiento en RCFG → un guardado posterior lo borra y se re-pide.";
+      if (!/mj_consent_/.test(p))
+        return "panel-v2.html: falta el flag local anti-nag del consentimiento (mj_consent_<id>).";
+      // La recarga de RCFG desde el server debe conservar el consent ya aceptado.
+      if (!/!RCFG\.consent_at/.test(p))
+        return "panel-v2.html: al recargar RCFG del server ya no se conserva el consent_at previo.";
+      return null;
+    },
+  },
+  {
     name: "Sala: tu foto real viaja a la videollamada (no solo iniciales)",
     bug: "Un coach en llamada con soporte/otro no veía la foto del otro: la Sala nunca " +
          "pasaba el avatar a Jitsi. Ahora sala.html toma tu foto (mj_user o mj_foto_<email>) " +

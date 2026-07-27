@@ -12607,7 +12607,13 @@ var COACH_CONSENT_VERSION='2026-07-09';
 function _coachConsentGate(){
   if(!RME || !RME.id || RME.rol==='admin') return;
   var cfg=RME.configuracion; if(typeof cfg==='string'){ try{ cfg=JSON.parse(cfg); }catch(e){ cfg={}; } } if(!cfg||typeof cfg!=='object') cfg={};
-  if(cfg.consent_at) return; // ya aceptó
+  // Ya aceptó si está en SU config (server), en RCFG (copia viva) o en el flag
+  // local de ESTE navegador. El flag local es el seguro anti-nag: aunque el
+  // guardado al server falle o una config posterior lo pise, no le volvemos a
+  // pedir en el mismo navegador.
+  if(cfg.consent_at) return;
+  try{ if(typeof RCFG==='object' && RCFG && RCFG.consent_at) return; }catch(e){}
+  try{ if(localStorage.getItem('mj_consent_'+RME.id)) return; }catch(e){}
   if(document.getElementById('coach-consent-ov')) return;
   var ov=document.createElement('div'); ov.id='coach-consent-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(27,46,38,.6);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:Inter,system-ui,-apple-system,sans-serif';
@@ -12629,9 +12635,19 @@ function _coachConsentGate(){
   btn.addEventListener('click',function(){
     if(!cb.checked) return;
     btn.disabled=true; btn.style.opacity='.6'; btn.textContent='Guardando…';
-    var merged={}; for(var k in cfg){ if(cfg.hasOwnProperty(k)) merged[k]=cfg[k]; }
+    // Base = la config MÁS actual (RCFG viva si ya cargó, si no la de mj_user).
+    // Clave: estampamos el consentimiento en RCFG TAMBIÉN, porque cualquier
+    // guardado posterior (servicios, calendario, perfil) reconstruye TODA la
+    // configuración desde RCFG → si no lo llevara, borraría el consent del server
+    // y el coach lo tendría que aceptar de nuevo la próxima vez. Ese era el bug.
+    var base=cfg; try{ if(typeof RCFG==='object' && RCFG && Object.keys(RCFG).length) base=RCFG; }catch(e){}
+    var merged={}; for(var k in base){ if(base.hasOwnProperty(k)) merged[k]=base[k]; }
     merged.consent_at=new Date().toISOString(); merged.consent_version=COACH_CONSENT_VERSION;
     RME.configuracion=merged;
+    try{ if(typeof RCFG==='object' && RCFG){ RCFG.consent_at=merged.consent_at; RCFG.consent_version=merged.consent_version; } }catch(e){}
+    // Seguro local anti-nag: se pone YA, antes de la red. Aunque el server falle,
+    // este navegador no vuelve a pedirlo.
+    try{ localStorage.setItem('mj_consent_'+RME.id, merged.consent_version||'1'); }catch(e){}
     try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
     function done(){ var o=document.getElementById('coach-consent-ov'); if(o)o.remove(); }
     _selfPatchUsuarios({configuracion:merged}).then(done).catch(done);
@@ -12717,6 +12733,17 @@ function loadReal(){
     // función es idempotente (no arranca un segundo timer si ya hay uno).
     startMsgPolling();
     RCFG = usr.configuracion || ME.configuracion || {};
+    // No perder el consentimiento ya aceptado: si el server viene sin consent_at
+    // pero YA lo aceptó (en mj_user o en el flag local), lo conservamos en RCFG
+    // para que el próximo guardado no lo borre y no se lo volvamos a pedir.
+    try{
+      if(RCFG && !RCFG.consent_at){
+        var _prevC=(ME.configuracion&&ME.configuracion.consent_at)||null;
+        var _prevV=(ME.configuracion&&ME.configuracion.consent_version)||COACH_CONSENT_VERSION;
+        if(!_prevC){ try{ if(localStorage.getItem('mj_consent_'+RME.id)) _prevC=new Date().toISOString(); }catch(e){} }
+        if(_prevC){ RCFG.consent_at=_prevC; RCFG.consent_version=_prevV; }
+      }
+    }catch(e){}
     RCFG_READY = true;   // la config ya cargó (server o respaldo local) → guardar es seguro
     // El token de Google puede haber quedado SOLO en este navegador (localStorage)
     // si el guardado a Supabase falló o llegó después. No lo perdamos entre
