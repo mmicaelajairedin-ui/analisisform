@@ -3099,6 +3099,55 @@ function _cliFotoByName(name){
 }
 // Foto de la otra persona de una cita: email primero, nombre como respaldo.
 function _persFoto(email,name){ return _cliFotoByEmail(email) || _cliFotoByName(name); }
+// ── Detalle de UNA reunión (click en la fila de la agenda) ──────────────────
+// Overlay Pathway con TODO lo de esa cita: con quién, tipo, fecha/hora, duración,
+// estado, contacto y el link para entrar. Antes las filas no se podían abrir.
+function _agEstadoLbl(e){ e=(""+(e||"")).toLowerCase();
+  if(e==="asistio") return {t:"Asistió",c:"var(--pw-sendero)"};
+  if(e==="no_asistio") return {t:"No asistió",c:"var(--pw-danger)"};
+  if(e==="cancelada") return {t:"Cancelada",c:"var(--pw-danger)"};
+  if(e==="reprogramada") return {t:"Reprogramada",c:"var(--pw-amanecer)"};
+  return {t:"Confirmada",c:"var(--pw-bosque)"};
+}
+function _agCitaDetalle(id){
+  var r=null; try{ (_agReservas()||[]).forEach(function(x){ if(x&&String(x.id)===String(id)) r=x; }); }catch(e){}
+  if(!r) return;
+  var typ=_agEventTypeFor(r.tipo)||{}, col=(typ.color)||"#8C7B80", ico=(typ.icon)||"🗓️";
+  var ms=+new Date(r.inicio), durMin=_durMin(r.tipo||"")||60;
+  var dia=""; try{ dia=_agDayFull(_agMoKey(new Date(ms))); }catch(e){}
+  var rango=_agTime(ms)+(durMin?(" – "+_agTime(ms+durMin*60000)):"");
+  var foto=_persFoto(r.email,r.nombre);
+  var est=_agEstadoLbl(r.estado);
+  var link=_agResLink(r);
+  var av=foto
+    ? "<img src='"+esc(_thumb(foto,58))+"' alt='' style='width:58px;height:58px;border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,.6)'>"
+    : "<span style='width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.22);display:inline-flex;align-items:center;justify-content:center;font-size:28px'>"+ico+"</span>";
+  var rows=function(lbl,val){ return val?("<div style='display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--pw-border)'>"+
+    "<span style='font-size:11.5px;font-weight:700;color:var(--pw-text-muted);width:78px;flex-shrink:0;text-transform:uppercase;letter-spacing:.4px'>"+esc(lbl)+"</span>"+
+    "<span style='font-size:13px;color:var(--pw-carbon);flex:1;min-width:0'>"+val+"</span></div>"):""; };
+  var contacto=[];
+  if(r.email) contacto.push("<a href='mailto:"+esc(r.email)+"' style='color:var(--pw-bosque);text-decoration:none'>"+esc(r.email)+"</a>");
+  if(r.telefono) contacto.push("<a href='https://wa.me/"+esc((""+r.telefono).replace(/[^0-9]/g,""))+"' target='_blank' rel='noopener' style='color:var(--pw-bosque);text-decoration:none'>"+esc(r.telefono)+" · WhatsApp</a>");
+  var old=document.getElementById("pw-cita-ov"); if(old) old.remove();
+  var ov=document.createElement("div"); ov.id="pw-cita-ov";
+  ov.style.cssText="position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(20,40,30,.55)";
+  ov.innerHTML="<div style='width:100%;max-width:430px;background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(20,55,38,.32);overflow:hidden;font-family:var(--pw-sans)'>"+
+    "<div style='background:linear-gradient(135deg,"+col+"cc,"+col+");padding:22px 24px;color:#fff;display:flex;align-items:center;gap:14px'>"+av+
+      "<div style='min-width:0'><div style='font-family:var(--pw-serif);font-size:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(r.nombre||"Sesión")+"</div>"+
+        "<div style='font-size:12.5px;opacity:.9;margin-top:2px'>"+esc((typ.label||r.tipo||"Reunión"))+"</div></div></div>"+
+    "<div style='padding:16px 24px 22px'>"+
+      rows("Estado","<span style='font-weight:700;color:"+est.c+"'>"+esc(est.t)+"</span>")+
+      rows("Cuándo","<span style='text-transform:capitalize'>"+esc(dia)+"</span> · "+esc(rango))+
+      rows("Duración",esc(durMin+" min"))+
+      rows("Contacto",contacto.join("<br>"))+
+      rows("Origen",r.origen?_origenChip(r.origen):"")+
+      (link?"<a href='"+esc(link)+"' target='_blank' rel='noopener' style='display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;background:var(--pw-bosque);color:#fff;text-decoration:none;padding:13px;border-radius:11px;font-size:14px;font-weight:700'>"+_cIco('video',15)+" Entrar a la sala</a>":"")+
+      "<button id='pw-cita-x' type='button' style='display:block;width:100%;margin-top:8px;background:none;border:0;color:var(--pw-text-muted);font-size:13px;font-weight:600;cursor:pointer;padding:8px'>Cerrar</button>"+
+    "</div></div>";
+  document.body.appendChild(ov);
+  ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+  var x=document.getElementById("pw-cita-x"); if(x) x.onclick=function(){ ov.remove(); };
+}
 function _agDayFull(key){
   var p=(""+key).split("-"); var d=new Date(+p[0],(+p[1]-1),+p[2]);
   var DIAS=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
@@ -3220,12 +3269,17 @@ function _agRenderDay(key,compact){
     else if(it.ms>now && it.ms-now<=60*60000) right="<span style='font-size:11px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 10px;border-radius:100px;flex-shrink:0;white-space:nowrap'>En "+Math.max(1,Math.round((it.ms-now)/60000))+" min</span>";
     var badge=it.tipo?("<span style='font-size:10.5px;font-weight:600;color:"+it.col+";background:"+it.col+"22;padding:2px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(it.tipo)+"</span>"):"";
     var meta=[]; if(it.durMin) meta.push(it.durMin+" min"); if(it.link) meta.push("Videollamada"); if(it.who) meta.push(it.who);
+    // El bloque central (foto + nombre) abre el DETALLE de la reunión. Los botones
+    // de la derecha (unirse / asistencia) siguen con su propia acción.
+    var _clk=isRes?(" data-act='cita-det' data-id='"+esc(it.id)+"' style='cursor:pointer;flex:1;min-width:0;display:flex;align-items:center;gap:10px'"):(" style='flex:1;min-width:0;display:flex;align-items:center;gap:10px'");
     return "<div style='display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--pw-border)'>"+
       "<span style='font-size:13px;font-weight:700;color:var(--pw-carbon);width:42px;flex-shrink:0'>"+_agTime(it.ms)+"</span>"+
-      "<span style='width:34px;height:34px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:100%;height:100%;border-radius:50%;object-fit:cover'>":it.ico)+"</span>"+
-      "<div style='flex:1;min-width:0'>"+
-        "<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(it.title)+"</span>"+badge+(it.origen?_origenChip(it.origen):"")+"</div>"+
-        (meta.length?"<div style='font-size:11.5px;color:var(--pw-text-soft);margin-top:1px'>"+esc(meta.join(" · "))+"</div>":"")+
+      "<div"+_clk+" title='"+(isRes?"Ver detalle de la reunión":"")+"'>"+
+        "<span style='width:34px;height:34px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:100%;height:100%;border-radius:50%;object-fit:cover'>":it.ico)+"</span>"+
+        "<div style='flex:1;min-width:0'>"+
+          "<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(it.title)+"</span>"+badge+(it.origen?_origenChip(it.origen):"")+"</div>"+
+          (meta.length?"<div style='font-size:11.5px;color:var(--pw-text-soft);margin-top:1px'>"+esc(meta.join(" · "))+"</div>":"")+
+        "</div>"+
       "</div>"+
       right+
     "</div>";
@@ -3366,7 +3420,8 @@ function _agProxRender(){
     var rest=list.slice(1).slice(0,4);
     var rows=rest.length?rest.map(function(x){
       var _xav=x.foto?("<img src='"+esc(_thumb(x.foto,26))+"' alt='' style='width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0'>"):("<span style='width:26px;height:26px;border-radius:50%;background:"+(x.col||"#8C7B80")+"22;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0'>"+(x.ico||"🗓️")+"</span>");
-      return "<div style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border)'>"+
+      var _rc=(x.id!=null)?(" data-act='cita-det' data-id='"+esc(x.id)+"' style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border);cursor:pointer' title='Ver detalle de la reunión'"):(" style='display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--pw-border)'");
+      return "<div"+_rc+">"+
         "<span style='font-size:11px;font-weight:700;color:var(--pw-text-soft);width:40px;flex-shrink:0'>"+_agTime(x.ms)+"</span>"+_xav+
         "<div style='min-width:0'><div style='font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(x.title)+"</div>"+
           (x.sub?"<div style='font-size:10.5px;color:var(--pw-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(x.sub)+"</div>":"")+"</div></div>";
@@ -8871,6 +8926,9 @@ document.addEventListener("click", function(ev){
   }
   if(act==="cal-filtro"){ _calFiltro=el.getAttribute("data-f")||"proximas"; render(); return; }
   if(act==="cal-owner"){ _calOwner=el.getAttribute("data-o")||"todas"; render(); return; }
+  if(act==="cita-det"){
+    var _did=el.getAttribute("data-id"); if(_did){ try{ _agCitaDetalle(_did); }catch(e){} } return;
+  }
   if(act==="cal-asis"){
     var _cid=el.getAttribute("data-id"), _cv=el.getAttribute("data-val"); if(!_cid||!_cv) return;
     // La cita puede vivir en _CAL_DATA (pestaña Calendario) O en _RES_DATA (Resumen).
