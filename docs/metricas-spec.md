@@ -153,9 +153,10 @@ base y el híbrido desaparece.
     "resumen": {
       "type": "object",
       "properties": {
-        "coaches_total":     { "type": "integer" },
+        "coaches_total":     { "type": "integer", "description": "roster VIVO (excluye eliminados y suspendidos)" },
         "coaches_activados": { "type": "integer" },
         "coaches_en_riesgo": { "type": "integer" },
+        "coaches_suspendidos_excluidos": { "type": "integer", "description": "coaches activo=false sacados del cálculo (transparencia)" },
         "clientes_entraron": { "type": "integer" },
         "eventos_leidos":    { "type": "integer" }
       }

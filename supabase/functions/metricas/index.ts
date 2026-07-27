@@ -88,7 +88,7 @@ async function sbGet(path: string): Promise<unknown[]> {
 }
 
 interface Evento { tipo: string; dominio: string | null; actor_email: string | null; actor_rol: string | null; entidad_id: string | null; ts: string; }
-interface Usuario { id: string; email: string; nombre: string | null; created_at: string; configuracion: Record<string, unknown> | null; }
+interface Usuario { id: string; email: string; nombre: string | null; created_at: string; configuracion: Record<string, unknown> | null; activo: boolean | null; }
 interface Candidato { coach_id: string | null; email: string | null; consent_at: string | null; }
 
 // KPI con metadata de fuente (anti-híbrido-permanente).
@@ -112,11 +112,21 @@ Deno.serve(async (req: Request) => {
 
   // ── Lecturas (service role) ──
   const cutoff = new Date(now - 365 * 86400_000).toISOString();
-  const [eventos, usuarios, candidatos] = await Promise.all([
+  const [eventos, usuariosRaw, candidatos] = await Promise.all([
     sbGet(`eventos?select=tipo,dominio,actor_email,actor_rol,entidad_id,ts&ts=gte.${cutoff}&order=ts.desc&limit=20000`) as Promise<Evento[]>,
-    sbGet(`usuarios?rol=eq.coach&select=id,email,nombre,created_at,configuracion&limit=5000`) as Promise<Usuario[]>,
+    sbGet(`usuarios?rol=eq.coach&select=id,email,nombre,created_at,configuracion,activo&limit=5000`) as Promise<Usuario[]>,
     sbGet(`candidatos?select=coach_id,email,consent_at&limit=50000`) as Promise<Candidato[]>,
   ]);
+
+  // ── Calidad de dato: fuera los coaches SUSPENDIDOS ────────────────────────
+  // Eliminado = la fila de usuarios se borró → ya no llega acá.
+  // Suspendido = activo=false (lo pone el admin con set_active, o una suscripción
+  // cancelada/impaga desde Stripe). Esos NO son roster vivo: ensucian el Health
+  // Score y el embudo (aparecían como coaches reales). Se excluyen del cálculo;
+  // se reporta cuántos se sacaron para que el número sea transparente, no mágico.
+  // `activo` null/undefined (cuentas viejas sin la columna) = se conservan.
+  const suspendidos = usuariosRaw.filter((u) => u.activo === false).length;
+  const usuarios = usuariosRaw.filter((u) => u.activo !== false);
 
   const isTest = (e: Evento) => /^(manual|console)$/.test(String(e.dominio || "")) || e.tipo === "TestEvent";
 
@@ -296,6 +306,7 @@ Deno.serve(async (req: Request) => {
       coaches_total: coaches.length,
       coaches_activados: nAct,
       coaches_en_riesgo: nRiesgo,
+      coaches_suspendidos_excluidos: suspendidos,
       clientes_entraron: coaches.reduce((s, c) => s + c.clientes_entraron, 0),
       eventos_leidos: eventos.filter((e) => !isTest(e)).length,
     },

@@ -3239,6 +3239,10 @@ const RULES = [
         return "metricas: se perdio el gate de admin (isAdmin / 403 forbidden).";
       if (!/\bid:\s*u\.id\b/.test(s))
         return "metricas: el objeto por coach debe incluir `id` (lo usa el drill-down coach-view del tab Analiticas).";
+      // Calidad de dato: los coaches SUSPENDIDOS (activo=false) no ensucian el
+      // Health Score ni el embudo. Los eliminados ya no están en la tabla.
+      if (!/activo\s*!==\s*false/.test(s))
+        return "metricas: se dejó de excluir a los coaches suspendidos (activo=false) — ensuciarían el Health Score y el embudo.";
       return null;
     },
   },
