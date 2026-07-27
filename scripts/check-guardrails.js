@@ -2122,6 +2122,29 @@ const RULES = [
     },
   },
   {
+    name: "deploy: TODA edge function tiene su step en el workflow (ninguna se olvida)",
+    bug: "El deploy de funciones se hace por lista explícita en deploy-functions.yml. " +
+         "Si se agrega una función a supabase/functions/ y no se suma su step, queda " +
+         "SIN publicar y el frontend la llama contra una función inexistente (500/404). " +
+         "Este guardrail exige que toda carpeta de supabase/functions/ tenga su step.",
+    check() {
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (!wf) return null;
+      let dirs = [];
+      try {
+        dirs = fs.readdirSync("supabase/functions", { withFileTypes: true })
+          .filter(function (e) { return e.isDirectory() && e.name[0] !== "_"; })
+          .map(function (e) { return e.name; });
+      } catch (e) { return null; }
+      const faltan = dirs.filter(function (name) {
+        return !new RegExp("functions deploy " + name + "(\\s|$)").test(wf);
+      });
+      if (faltan.length)
+        return "deploy-functions.yml: faltan steps de deploy para: " + faltan.join(", ") + ".";
+      return null;
+    },
+  },
+  {
     name: "multicoach: chat dueño↔coach (mensaje-red, no se mezcla con Pathway)",
     bug: "El dueño chatea con cada coach de su red por un canal PROPIO " +
          "(mensajes_owner_coach), separado del soporte de Pathway (mensajes_admin_" +
