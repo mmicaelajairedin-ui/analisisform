@@ -171,5 +171,14 @@
     }
   }
 
-  window.PWCall = { config: config, startCall: startCall, ingest: ingest };
+  // ── Demo: muestra el timbre tal cual lo ve el cliente (para mostrárselo a un
+  //    lead). Aceptar/Rechazar solo cierran — no hay llamada real. ────────────
+  function demoRing(coachName) {
+    CFG = CFG || {};
+    CFG.role = "client"; CFG.peerName = coachName || "Tu coach";
+    _handled = {}; RINGING = null;
+    _showRing("demo_" + Date.now(), { room: "demo", link: "" });
+  }
+
+  window.PWCall = { config: config, startCall: startCall, ingest: ingest, demoRing: demoRing };
 })();
