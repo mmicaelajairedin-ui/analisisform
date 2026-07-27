@@ -246,27 +246,45 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // ── Si no hay nada, devolvemos vacío (el reporte de testing dirá "todo ok") ──
-  if (!issues.length) {
-    return json({ ok: true, count: 0, hasAlta: false, html: "" });
+  // Posibles cuentas de COACH duplicadas: mismo nombre normalizado en 2+ filas.
+  // El detector viejo miraba CLIENTES por email; dos coaches con el mismo NOMBRE
+  // y emails distintos (los dos "Carles Coll") no se veían. Esto es técnico/datos,
+  // no gestión de clientes → va en el reporte.
+  const byName: Record<string, any[]> = {};
+  for (const c of realCoaches) {
+    const nm = (c.nombre || "").toLowerCase().replace(/\s+/g, " ").trim();
+    if (!nm) continue;
+    (byName[nm] = byName[nm] || []).push(c);
+  }
+  const dupCoaches = Object.values(byName).filter((g) => g.length > 1);
+  if (dupCoaches.length) {
+    issues.push({
+      sev: "media",
+      t: "Cuentas de coach duplicadas (mismo nombre)",
+      d: "Dos o más cuentas de coach con el mismo nombre y emails distintos. Suele ser alguien que se registró dos veces — revisá y desactivá la que sobra.",
+      items: dupCoaches.slice(0, 10).map((g) => `${g[0].nombre} · ${g.map((x: any) => x.email).join("  /  ")}`),
+    });
   }
 
-  // ── Armar el bloque HTML: DOS bloques claros ──────────────────────────────
-  //    🔴 Para arreglar (bugs)  ·  📋 Acciones con clientes.
-  //    Antes era una lista larga y plana que mezclaba bugs con tareas y era
-  //    imposible de leer. Ahora arriba lo que se rompe, abajo lo que hacer.
+  // ── Reporte SOLO TÉCNICO ───────────────────────────────────────────────────
+  // La coach pidió: en este email SOLO lo técnico (bugs, errores, cosas que no se
+  // resolvieron solas). Las listas de gestión de clientes (intake, inactivos, +35
+  // días, sin nicho…) ya las tiene en el panel → NO van al email.
   const BUG_TITLES = new Set([
     "Coaches que entraron pero no ligaron la sesión",
+    "Cuentas de coach duplicadas (mismo nombre)",
     "Guardados que la base rechazó",
     "Páginas que crashearon",
     "Funciones del servidor que fallaron",
   ]);
   const bugs = issues.filter((i) => BUG_TITLES.has(i.t));
-  const acciones = issues.filter((i) => !BUG_TITLES.has(i.t));
   const nBug = bugs.reduce((n, i) => n + i.items.length, 0);
-  const nAcc = acciones.reduce((n, i) => n + i.items.length, 0);
-  const total = nBug + nAcc;
-  const hasAlta = issues.some((i) => i.sev === "alta");
+  const hasAlta = bugs.some((i) => i.sev === "alta");
+
+  // Sin bugs técnicos → nada que avisar (el reporte de testing dirá "todo ok").
+  if (!bugs.length) {
+    return json({ ok: true, count: 0, hasAlta: false, html: "" });
+  }
 
   const card = (i: Issue): string => {
     const color = i.sev === "alta" ? "#C0756E" : "#8E7A35";
@@ -278,19 +296,15 @@ Deno.serve(async (req: Request) => {
       `<ul style="margin:0;padding-left:18px;">${lis}</ul></div>`
     );
   };
-  const section = (title: string, list: Issue[]): string =>
-    list.length ? `<h3 style="font-family:Georgia,serif;color:#1B2E26;font-size:15.5px;margin:16px 0 2px;">${title}</h3>` + list.map(card).join("") : "";
 
   const html =
     `<div style="font-family:Inter,-apple-system,sans-serif;margin:0 0 8px;color:#2D2929;">` +
-    `<h2 style="font-family:Georgia,serif;color:#1B2E26;font-size:18px;margin:0 0 4px;">🩺 Revisión diaria</h2>` +
+    `<h2 style="font-family:Georgia,serif;color:#1B2E26;font-size:18px;margin:0 0 4px;">🛠️ Revisión técnica</h2>` +
     `<p style="font-size:13px;color:#5A5A55;margin:0 0 4px;line-height:1.5;">` +
-      (nBug ? `<strong style="color:#C0756E;">${nBug} para arreglar</strong>` : `<strong style="color:#2D6A4F;">0 bugs</strong>`) +
-      ` · <strong>${nAcc}</strong> acción${nAcc === 1 ? "" : "es"} con clientes. Solo lo que necesita tu atención (sin bots ni cuentas del equipo).</p>` +
-    section("🔴 Para arreglar", bugs) +
-    section("📋 Acciones con clientes", acciones) +
+      `<strong style="color:#C0756E;">${nBug}</strong> problema${nBug === 1 ? "" : "s"} técnico${nBug === 1 ? "" : "s"} para revisar — bugs y errores que NO se resolvieron solos. (La gestión de clientes está en tu panel; acá solo lo técnico.)</p>` +
+    bugs.map(card).join("") +
     `</div>`;
 
   // Devuelve el bloque para que el Testing Agent lo incruste en su email diario.
-  return json({ ok: true, count: total, hasAlta, html });
+  return json({ ok: true, count: nBug, hasAlta, html });
 });
