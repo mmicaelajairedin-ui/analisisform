@@ -2451,6 +2451,40 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "SEO reseñas: un SOLO nodo SoftwareApplication (sin @id duplicado)",
+    why:
+      "Google mostraba 'elementos no válidos' en el Rich Results Test porque " +
+      "había DOS <script application/ld+json> con el mismo @id #software: el " +
+      "estático de index.html y otro que testimonios.js AGREGABA con el " +
+      "aggregateRating + reviews. Dos SoftwareApplication en conflicto => las " +
+      "reseñas no aparecían en Google. El arreglo: testimonios.js FUSIONA el " +
+      "rating/reviews DENTRO del nodo estático (id='ld-software'), no crea un " +
+      "segundo <script>. Regla: el nodo estático debe tener el id y " +
+      "testimonios.js debe fusionarlo por getElementById, no appendChild otro.",
+    check() {
+      var idx = read("index.html");
+      if (idx) {
+        // El único SoftwareApplication estático debe llevar id='ld-software'.
+        var m = idx.match(/<script[^>]*application\/ld\+json[^>]*>\s*\{[^<]*"@type"\s*:\s*"SoftwareApplication"/);
+        if (m && !/id\s*=\s*['"]ld-software['"]/.test(m[0])) {
+          return "index.html: el nodo SoftwareApplication perdió id='ld-software' (testimonios.js no puede fusionar el rating).";
+        }
+      }
+      var t = read("testimonios.js");
+      if (t) {
+        if (!/getElementById\(['"]ld-software['"]\)/.test(t)) {
+          return "testimonios.js: ya no fusiona el aggregateRating en el nodo estático (getElementById('ld-software')) — vuelve el @id duplicado.";
+        }
+        // No debe volver a crear un <script> SoftwareApplication como camino
+        // principal: el createElement queda SOLO como fallback (tras 'if(!merged)').
+        if (!/if\s*\(\s*!merged\s*\)/.test(t)) {
+          return "testimonios.js: el append del <script> SoftwareApplication ya no está detrás del fallback (!merged) — puede duplicar el @id.";
+        }
+      }
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
