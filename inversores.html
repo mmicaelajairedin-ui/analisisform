@@ -152,14 +152,32 @@
     </form>
   </div>
 
+  <!-- ADMIN: dar acceso a inversores -->
+  <div class="adminbar" id="accessbar">
+    <div class="ttl">Dar acceso a inversores</div>
+    <div class="note">Agrega el email de cada inversor que puede entrar. Solo los emails de esta lista (y el tuyo) ven los documentos.</div>
+    <form id="permform" class="filerow">
+      <input id="p-email" type="email" placeholder="inversor@email.com" style="flex:1;min-width:200px">
+      <button class="btn btn-sm" type="submit">＋ Dar acceso</button>
+    </form>
+    <div class="astat" id="p-stat"></div>
+    <div id="permlist" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px"></div>
+  </div>
+
   <div class="cards" id="cards"><div class="empty">Cargando…</div></div>
   <div class="rfoot" style="margin-top:34px;padding-top:16px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted)">Pathway · pathwaycareercoach.com · documentación confidencial de la ronda pre-seed 2026</div>
 </div>
 
 <!-- VIEWER -->
 <div id="viewer">
-  <div class="vbar"><span class="vt" id="vtitle"></span><button class="vclose" id="vclose">Cerrar ✕</button></div>
-  <div class="vframe"><iframe id="vframe" title="Documento"></iframe></div>
+  <div class="vbar">
+    <span class="vt" id="vtitle"></span>
+    <div style="display:flex;gap:10px;align-items:center">
+      <a id="vopen" class="vclose" href="#" target="_blank" rel="noopener" style="text-decoration:none">Abrir ↗</a>
+      <button class="vclose" id="vclose">Cerrar ✕</button>
+    </div>
+  </div>
+  <div class="vframe" id="vbox"></div>
 </div>
 
 <script>
@@ -178,9 +196,40 @@
     document.getElementById('whoEmail').textContent=em;
     document.getElementById('gate').style.display='none';
     document.getElementById('room').style.display='block';
-    if(isAdmin){ document.body.classList.add('is-admin'); document.getElementById('adminTag').style.display='inline-flex'; }
+    if(isAdmin){ document.body.classList.add('is-admin'); document.getElementById('adminTag').style.display='inline-flex'; loadPerms(); }
     loadDocs();
   }
+
+  // ---- admin: lista de acceso (dataroom_permitidos) ----
+  function loadPerms(){
+    var box=document.getElementById('permlist');
+    fetch(SB+'/rest/v1/dataroom_permitidos?select=email&order=email.asc',{headers:H})
+      .then(function(r){ return r.json(); })
+      .then(function(rows){
+        if(!Array.isArray(rows)){ box.innerHTML='<span style="font-size:12px;color:var(--text-muted)">No se pudo leer la lista.</span>'; return; }
+        if(!rows.length){ box.innerHTML='<span style="font-size:12px;color:var(--text-muted)">Todavía no agregaste inversores.</span>'; return; }
+        box.innerHTML=rows.map(function(r){
+          return '<span style="display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--border);border-radius:100px;padding:5px 10px 5px 13px;font-size:12.5px">'+esc(r.email)+
+            '<button data-em="'+esc(r.email)+'" class="perm-del" title="Quitar acceso" style="width:18px;height:18px;border-radius:50%;border:0;background:var(--niebla3);color:#C0756E;cursor:pointer;font-size:12px;line-height:1">✕</button></span>';
+        }).join('');
+      })
+      .catch(function(){ box.innerHTML='<span style="font-size:12px;color:var(--text-muted)">No se pudo leer la lista.</span>'; });
+  }
+  document.getElementById('permform').addEventListener('submit', function(e){ e.preventDefault();
+    if(!isAdmin) return;
+    var el=document.getElementById('p-email'), em=(el.value||'').trim().toLowerCase(), stat=document.getElementById('p-stat');
+    if(!EMAIL_RE.test(em)){ stat.textContent='Email inválido.'; return; }
+    stat.textContent='Agregando…';
+    fetch(SB+'/rest/v1/dataroom_permitidos',{method:'POST',headers:Object.assign({'Prefer':'resolution=merge-duplicates,return=minimal'},HJ),body:JSON.stringify({email:em})})
+      .then(function(r){ if(!r.ok) throw 0; stat.textContent='✓ Acceso dado a '+em; el.value=''; loadPerms(); setTimeout(function(){stat.textContent='';},2500); })
+      .catch(function(){ stat.textContent='No se pudo agregar (revisá los permisos de la tabla).'; });
+  });
+  document.getElementById('permlist').addEventListener('click', function(e){
+    var b=e.target.closest('.perm-del'); if(!b||!isAdmin) return;
+    var em=b.getAttribute('data-em'); if(!confirm('¿Quitar el acceso de '+em+'?')) return;
+    fetch(SB+'/rest/v1/dataroom_permitidos?email=eq.'+encodeURIComponent(em),{method:'DELETE',headers:Object.assign({'Prefer':'return=minimal'},HJ)})
+      .then(function(){ loadPerms(); });
+  });
 
   document.getElementById('gform').addEventListener('submit', function(e){ e.preventDefault();
     var em=(document.getElementById('em').value||'').trim().toLowerCase(), err=document.getElementById('err');
@@ -226,14 +275,27 @@
       return;
     }
     var doc=e.target.closest('.doc'); if(!doc) return;
-    var url=doc.getAttribute('data-url'), title=doc.getAttribute('data-title');
+    openDoc(doc.getAttribute('data-url'), doc.getAttribute('data-title'));
+  });
+  function fileExt(u){ return ((u||'').split('#')[0].split('?')[0].split('.').pop()||'').toLowerCase(); }
+  function openDoc(url,title){
+    var box=document.getElementById('vbox'), ext=fileExt(url);
     document.getElementById('vtitle').textContent=title;
-    document.getElementById('vframe').src=url;
+    document.getElementById('vopen').href=url;
+    if(/^(png|jpe?g|gif|webp|svg|avif)$/.test(ext)){
+      box.innerHTML='<div style="width:100%;height:100%;overflow:auto;background:#f4f4f2;text-align:center"><img src="'+esc(url)+'" style="max-width:100%;height:auto;display:inline-block"></div>';
+    } else if(/^(xlsx|xls|docx|doc|pptx|ppt|csv)$/.test(ext)){
+      // Office/Excel/Word/PPT: se previsualizan con el visor de Office online
+      box.innerHTML='<iframe src="https://view.officeapps.live.com/op/embed.aspx?src='+encodeURIComponent(url)+'" title="Documento"></iframe>';
+    } else {
+      // pdf, html, links externos → iframe directo
+      box.innerHTML='<iframe src="'+esc(url)+'" title="Documento"></iframe>';
+    }
     document.getElementById('viewer').style.display='block';
     document.body.style.overflow='hidden';
     logAccess(email,title);
-  });
-  function closeViewer(){ document.getElementById('viewer').style.display='none'; document.getElementById('vframe').src='about:blank'; document.body.style.overflow=''; }
+  }
+  function closeViewer(){ document.getElementById('viewer').style.display='none'; document.getElementById('vbox').innerHTML=''; document.body.style.overflow=''; }
   document.getElementById('vclose').addEventListener('click', closeViewer);
   document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeViewer(); });
 
