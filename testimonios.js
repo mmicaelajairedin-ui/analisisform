@@ -62,7 +62,8 @@
           if(rated.length){
             window.__pwRatingSchema=true;
             var rv=(rated.reduce(function(a,r){return a+r.n;},0)/rated.length).toFixed(1);
-            var node={"@context":"https://schema.org","@id":"https://pathwaycareercoach.com/#software",
+            var node={"@context":"https://schema.org","@type":"SoftwareApplication","@id":"https://pathwaycareercoach.com/#software",
+              "name":"Pathway","applicationCategory":"BusinessApplication","operatingSystem":"Web",
               "aggregateRating":{"@type":"AggregateRating","ratingValue":rv,"reviewCount":String(rated.length),"bestRating":"5","worstRating":"1"},
               "review":rated.slice(0,6).map(function(r){ return {"@type":"Review","author":{"@type":"Person","name":(r.nombre||'Cliente Pathway')},"reviewRating":{"@type":"Rating","ratingValue":String(r.n),"bestRating":"5","worstRating":"1"},"reviewBody":String(r.texto||'').slice(0,320)}; })};
             var sc=document.createElement('script'); sc.type='application/ld+json'; sc.text=JSON.stringify(node); document.head.appendChild(sc);
