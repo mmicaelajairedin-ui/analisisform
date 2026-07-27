@@ -381,6 +381,11 @@ body.embed .panel-head{background:transparent;padding:14px 18px 8px}
 body.embed .scroll{height:auto}
 body.embed .switch{display:none}
 body.embed.admin .switch{display:inline-flex;margin:0 16px 4px;flex-wrap:wrap}
+/* Botón "Sumar a mi colección" del badge: respira para invitar al clic. */
+@keyframes nv-breathe{0%,100%{transform:scale(1);box-shadow:0 8px 20px rgba(45,106,79,.28)}50%{transform:scale(1.06);box-shadow:0 12px 30px rgba(45,106,79,.42)}}
+.nv-badge-pulse{animation:nv-breathe 1.5s var(--ease,ease-in-out) infinite}
+.nv-badge-pulse:hover{animation-play-state:paused;filter:brightness(1.05)}
+@media (prefers-reduced-motion:reduce){.nv-badge-pulse{animation:none}}
 </style>
 </head>
 <body>
@@ -1197,8 +1202,10 @@ function badgeCard(f,name,sub,eyebrow){
       "<span style='"+EYE+";display:block;margin-bottom:8px'>"+eyebrow+"</span>"+
       "<img src='assets/badges/"+f+".png?v=7' alt='Badge "+name+"' style='width:184px;margin:0 auto;display:block;filter:drop-shadow(0 18px 26px rgba(27,67,50,.30)) drop-shadow(0 5px 9px rgba(27,67,50,.16))'>"+
       "<div style='font-family:var(--serif);font-weight:600;font-size:19px;color:var(--pw-bosque-dark);margin-top:12px'>"+name+"</div>"+
-      "<p style='font:400 12.5px/1.45 var(--sans);color:var(--ink-soft);margin:3px 0 4px'>"+sub+"</p>"+
-      "<span style='display:inline-flex;align-items:center;gap:6px;padding:7px 15px;border-radius:100px;background:var(--pw-mint);color:var(--pw-bosque-dark);font:700 12px var(--sans)'>✦ Sumado a tu colección</span>"+
+      "<p style='font:400 12.5px/1.45 var(--sans);color:var(--ink-soft);margin:3px 0 8px'>"+sub+"</p>"+
+      (nvHasBadge(f)
+        ? "<span style='display:inline-flex;align-items:center;gap:6px;padding:9px 17px;border-radius:100px;background:var(--pw-mint);color:var(--pw-bosque-dark);font:700 12px var(--sans)'>✦ En tu colección</span>"
+        : "<button type='button' data-badge-btn='"+f+"' class='nv-badge-pulse' onclick=\"nvClaimBadge(this,'"+f+"')\" style='display:inline-flex;align-items:center;gap:7px;padding:11px 20px;border-radius:100px;background:var(--pw-bosque);color:#fff;border:none;cursor:pointer;font:700 13px var(--sans)'>✦ Sumar a mi colección</button>")+
     "</div>", true, null, true);}
 function cLogro(){return badgeCard('early-adopter','Early Adopter','Gracias por estar desde el inicio.','Has desbloqueado un logro');}
 function cExplorador(){return badgeCard('explorador','Explorador','Probaste el calendario nuevo de Pathway.','Nuevo en tu colección');}
@@ -1233,6 +1240,23 @@ function render(){
 // Modo embebido: ?embed=1 lo mete en el drawer del panel (sin el chrome del preview).
 var EMBED=/[?&]embed=1/.test(location.search);
 if(EMBED){document.body.classList.add('embed');}
+// Badges que el coach YA tiene (los pasa el panel por ?badges=). Los que ya
+// tiene no "respiran" ni ofrecen sumar — muestran "En tu colección".
+var NV_OWNED=(function(){ try{ var s=new URLSearchParams(location.search).get('badges')||''; return s?s.split(',').map(function(x){return (''+x).trim();}).filter(Boolean):[]; }catch(e){ return []; } })();
+function nvHasBadge(id){ return NV_OWNED.indexOf(id)>=0; }
+// Clic en "Sumar a mi colección": le pide al panel que lo agregue DE VERDAD y
+// marca el botón como hecho (optimista; el panel confirma con badgeok).
+function nvClaimBadge(btn,id){
+  try{ if(EMBED){ parent.postMessage({pw:'badge',id:id},'*'); } }catch(e){}
+  if(NV_OWNED.indexOf(id)<0) NV_OWNED.push(id);
+  if(btn){ btn.classList.remove('nv-badge-pulse'); btn.disabled=true; btn.style.cursor='default'; btn.style.background='var(--pw-mint)'; btn.style.color='var(--pw-bosque-dark)'; btn.style.boxShadow='none'; btn.innerHTML='✦ Sumado a tu colección'; }
+  try{ nvToast('¡Badge sumado a tu colección!'); }catch(e){}
+}
+// Confirmación del panel → marca todos los botones de ese badge como hechos.
+window.addEventListener('message',function(ev){ var d=ev&&ev.data; if(!d||typeof d!=='object'||d.pw!=='badgeok') return;
+  if(NV_OWNED.indexOf(d.id)<0) NV_OWNED.push(d.id);
+  try{ var els=document.querySelectorAll("[data-badge-btn='"+d.id+"']"); for(var i=0;i<els.length;i++){ var b=els[i]; b.classList.remove('nv-badge-pulse'); b.disabled=true; b.style.cursor='default'; b.style.background='var(--pw-mint)'; b.style.color='var(--pw-bosque-dark)'; b.style.boxShadow='none'; b.innerHTML='✦ Sumado a tu colección'; } }catch(e){}
+});
 render();
 </script>
 </body>

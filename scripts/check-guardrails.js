@@ -260,6 +260,28 @@ const RULES = [
     },
   },
   {
+    name: "Novedades: el botón del badge lo SUMA de verdad a la colección",
+    bug: "La revista mostraba 'Sumado a tu colección' como etiqueta fija: no agregaba " +
+         "el badge a los logros reales del coach. Ahora es un botón que respira, avisa al " +
+         "panel (postMessage pw:'badge'), y el panel lo agrega con pwAwardBadge. Si se corta, " +
+         "el coach ve el badge en Novedades pero nunca en sus logros.",
+    check() {
+      const nv = read("novedades-preview.html");
+      if (nv) {
+        if (!/function nvClaimBadge/.test(nv) || !/pw:'badge'/.test(nv))
+          return "novedades-preview.html: el botón ya no reclama el badge (nvClaimBadge / postMessage pw:'badge').";
+        if (!/nv-badge-pulse/.test(nv) || !/@keyframes nv-breathe/.test(nv))
+          return "novedades-preview.html: el botón del badge ya no 'respira' (falta nv-badge-pulse / @keyframes nv-breathe).";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/d\.pw==="badge"/.test(p) || !/pwAwardBadge\(/.test(p))
+          return "panel-v2.html: el panel ya no otorga el badge que pide Novedades (handler pw:'badge' → pwAwardBadge).";
+      }
+      return null;
+    },
+  },
+  {
     name: "consentimiento del coach: se guarda UNA vez y no se vuelve a pedir",
     bug: "El coach veía 'aceptar términos' en CADA login. El gate estampaba consent_at " +
          "solo en RME.configuracion, pero saveCfg reconstruye TODA la configuración desde " +
