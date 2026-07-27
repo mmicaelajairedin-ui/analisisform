@@ -50,6 +50,25 @@
     load(coach ? ('coach_slug=eq.'+encodeURIComponent(coach)) : 'coach_slug=is.null', false);
 
     function paint(rows){
+      // ── SEO: exponer las reseñas REALES a Google como datos estructurados ──
+      // Google no ve las reseñas porque se cargan por JS. Inyectamos un
+      // aggregateRating (promedio de TODAS las reseñas, no solo las 5★ que se
+      // muestran) atado por @id al SoftwareApplication de la landing. Una sola
+      // vez, solo en la landing (sin data-coach). El promedio es honesto: se
+      // calcula sobre `rows` completo, no sobre las filtradas por min-stars.
+      try{
+        if(!coach && !window.__pwRatingSchema){
+          var rated=[]; (rows||[]).forEach(function(c){ var n=parseInt(c.rating,10); if(n>=1&&n<=5) rated.push({n:n,nombre:c.nombre,texto:c.texto}); });
+          if(rated.length){
+            window.__pwRatingSchema=true;
+            var rv=(rated.reduce(function(a,r){return a+r.n;},0)/rated.length).toFixed(1);
+            var node={"@context":"https://schema.org","@id":"https://pathwaycareercoach.com/#software",
+              "aggregateRating":{"@type":"AggregateRating","ratingValue":rv,"reviewCount":String(rated.length),"bestRating":"5","worstRating":"1"},
+              "review":rated.slice(0,6).map(function(r){ return {"@type":"Review","author":{"@type":"Person","name":(r.nombre||'Cliente Pathway')},"reviewRating":{"@type":"Rating","ratingValue":String(r.n),"bestRating":"5","worstRating":"1"},"reviewBody":String(r.texto||'').slice(0,320)}; })};
+            var sc=document.createElement('script'); sc.type='application/ld+json'; sc.text=JSON.stringify(node); document.head.appendChild(sc);
+          }
+        }
+      }catch(e){}
       var reviews=[];
       rows.forEach(function(c){
         var stars=parseInt(c.rating,10);
