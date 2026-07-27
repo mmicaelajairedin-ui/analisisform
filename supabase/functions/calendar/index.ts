@@ -153,8 +153,8 @@ function parseICal(text: string): ParsedEvent[] {
     const propName = propPart.split(";")[0].toUpperCase();
 
     if (propName === "SUMMARY") cur.title = unescapeIcal(value);
-    else if (propName === "DTSTART") cur.start = parseDate(value);
-    else if (propName === "DTEND") cur.end = parseDate(value);
+    else if (propName === "DTSTART") cur.start = parseDate(value, tzidOf(propPart));
+    else if (propName === "DTEND") cur.end = parseDate(value, tzidOf(propPart));
     else if (propName === "LOCATION") cur.location = unescapeIcal(value);
     else if (propName === "DESCRIPTION") cur.description = unescapeIcal(value);
     else if (propName === "STATUS") cur.status = value;
@@ -179,12 +179,48 @@ function parseICal(text: string): ParsedEvent[] {
   }));
 }
 
-function parseDate(value: string): number {
+// TZID de una propiedad iCal (p.ej. "DTSTART;TZID=Europe/Madrid" -> "Europe/Madrid").
+function tzidOf(propPart: string): string {
+  const m = propPart.match(/TZID=([^;:]+)/i);
+  return m ? m[1].trim() : "";
+}
+
+// Parseo de fecha iCal RESPETANDO la zona horaria del evento.
+//   - Termina en 'Z'  -> es UTC (Date.UTC directo).
+//   - Trae TZID=...    -> la hora es LOCAL de esa zona; la convertimos a UTC real.
+//   - Sin nada (flotante, raro en Google) -> best-effort UTC.
+// Antes SIEMPRE se asumía UTC, así que un evento "21:00 Europe/Madrid" (sin Z) se
+// guardaba como 21:00 UTC y salía en el panel corrido por el offset de la zona
+// (la sesión aparecía a otra hora). Este es el bug de "me salía a las 9am".
+function parseDate(value: string, tzid?: string): number {
   const v = value.trim();
+  const isUtc = /Z$/.test(v);
   const m = v.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z?)?$/);
   if (!m) return 0;
   const [, y, mo, d, hh, mm, ss] = m;
-  return Date.UTC(+y, +mo - 1, +d, +(hh || 0), +(mm || 0), +(ss || 0));
+  const Y = +y, MO = +mo, D = +d, H = +(hh || 0), MI = +(mm || 0), S = +(ss || 0);
+  if (!isUtc && tzid) {
+    try { return zonedToUtc(Y, MO, D, H, MI, S, tzid); } catch (_e) { /* si la zona no es válida, cae a UTC */ }
+  }
+  return Date.UTC(Y, MO - 1, D, H, MI, S);
+}
+
+// Convierte una hora de pared en una zona IANA al instante UTC real (epoch ms).
+// Mismo truco de offset que usa reservar.html: preguntamos qué hora muestra esa
+// zona para un instante candidato y ajustamos por la diferencia.
+function zonedToUtc(y: number, mo: number, d: number, hh: number, mm: number, ss: number, tz: string): number {
+  const asUTC = Date.UTC(y, mo - 1, d, hh, mm, ss);
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const p: Record<string, string> = {};
+  dtf.formatToParts(new Date(asUTC)).forEach((x) => { p[x.type] = x.value; });
+  let wallH = +p.hour; if (wallH === 24) wallH = 0;
+  const wall = Date.UTC(+p.year, +p.month - 1, +p.day, wallH, +p.minute, +p.second);
+  const offset = wall - asUTC;   // cuánto adelanta la zona respecto de UTC en esa fecha
+  return asUTC - offset;
 }
 
 function unescapeIcal(s: string): string {

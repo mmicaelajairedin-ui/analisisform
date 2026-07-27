@@ -264,6 +264,24 @@ const RULES = [
     },
   },
   {
+    name: "calendario: el iCal respeta la zona horaria del evento (TZID), no asume UTC",
+    bug: "parseDate en la edge function `calendar` asumía SIEMPRE UTC. Un evento de " +
+         "Google 'DTSTART;TZID=Europe/Madrid:...21:00' (hora local, sin Z) se leía como " +
+         "21:00 UTC → en el panel la sesión aparecía a otra hora (corrida por el offset " +
+         "de la zona: 'me salía a las 9am pero es a las 9pm'). Debe honrar el TZID.",
+    check() {
+      const s = read("supabase/functions/calendar/index.ts");
+      if (!s) return null; // si el archivo se movió, no bloqueamos por acá
+      if (!/function parseDate\([^)]*tzid/.test(s))
+        return "calendar/index.ts: parseDate ya no recibe el TZID → vuelve a asumir UTC y las sesiones salen a la hora equivocada.";
+      if (!/tzidOf\(propPart\)/.test(s))
+        return "calendar/index.ts: DTSTART/DTEND ya no pasan el TZID a parseDate.";
+      if (!/zonedToUtc|Intl\.DateTimeFormat/.test(s))
+        return "calendar/index.ts: se perdió la conversión de hora local (TZID) a UTC real.";
+      return null;
+    },
+  },
+  {
     name: "fotos nítidas: las miniaturas de Uploadcare piden el recorte al tamaño real",
     bug: "Las fotos se cargaban full-res y el navegador las achicaba a 26-40px → " +
          "se veían borrosas/pixeladas en miniatura (pedido varias veces). _thumb() " +
