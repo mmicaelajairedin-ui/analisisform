@@ -3196,7 +3196,7 @@ const RULES = [
       const i = p.indexOf('act==="ag-agendar"');
       if (i < 0) return "panel-v2.html: no se encontró el handler ag-agendar.";
       const body = p.slice(i, i + 3600);
-      if (!/_sbw\("citas","POST",\{coach_id:\(RME&&RME\.id\)/.test(body)) return "panel-v2.html: ag-agendar ya no guarda la cita del coach en la tabla citas (POST con coach_id=RME.id).";
+      if (!/_sbw\("citas","POST"/.test(body) || !/coach_id:\(RME&&RME\.id\)/.test(body)) return "panel-v2.html: ag-agendar ya no guarda la cita del coach en la tabla citas (POST con coach_id=RME.id).";
       if (!/_resLoad\(\)/.test(body) || !/_calLoad\(\)/.test(body)) return "panel-v2.html: ag-agendar ya no recarga la agenda tras guardar (_resLoad/_calLoad).";
       if (!/_notifResCliente\(/.test(body)) return "panel-v2.html: ag-agendar ya no manda el email de confirmación al invitado (_notifResCliente).";
       if (/window\.open\([^)]*calendar\.google\.com/.test(body) || /location\.href=_au/.test(body)) return "panel-v2.html: ag-agendar volvió a forzar Google Calendar (window.open eventedit) en vez de guardar en Pathway.";
