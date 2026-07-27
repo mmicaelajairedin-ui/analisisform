@@ -3033,6 +3033,28 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "agenda: 'Agendar cita' del coach GUARDA en Pathway (tabla citas) + avisa por email, no solo abre Google",
+    bug: "El handler ag-agendar del coach NO guardaba su propia cita en la tabla citas: " +
+         "solo armaba una URL de Google Calendar y abría una pestaña (window.open eventedit). " +
+         "Resultado: la cita no aparecía en el panel de Pathway, no se podía agendar sin Google " +
+         "y no salía ningún email → la coach terminaba usando Google. Ahora ag-agendar hace " +
+         "_sbw('citas','POST',{coach_id:RME.id,...}) para el coach, recarga la agenda (_resLoad/_calLoad) " +
+         "y manda el email de confirmación (_notifResCliente) con el link de la Sala. " +
+         "Si vuelve el window.open a calendar.google.com o desaparece el POST a citas del propio coach, regresa el bug.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      const i = p.indexOf('act==="ag-agendar"');
+      if (i < 0) return "panel-v2.html: no se encontró el handler ag-agendar.";
+      const body = p.slice(i, i + 3600);
+      if (!/_sbw\("citas","POST",\{coach_id:\(RME&&RME\.id\)/.test(body)) return "panel-v2.html: ag-agendar ya no guarda la cita del coach en la tabla citas (POST con coach_id=RME.id).";
+      if (!/_resLoad\(\)/.test(body) || !/_calLoad\(\)/.test(body)) return "panel-v2.html: ag-agendar ya no recarga la agenda tras guardar (_resLoad/_calLoad).";
+      if (!/_notifResCliente\(/.test(body)) return "panel-v2.html: ag-agendar ya no manda el email de confirmación al invitado (_notifResCliente).";
+      if (/window\.open\([^)]*calendar\.google\.com/.test(body) || /location\.href=_au/.test(body)) return "panel-v2.html: ag-agendar volvió a forzar Google Calendar (window.open eventedit) en vez de guardar en Pathway.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;

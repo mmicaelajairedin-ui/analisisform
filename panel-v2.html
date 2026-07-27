@@ -9093,20 +9093,37 @@ document.addEventListener("click", function(ev){
     var _adur=30; var _amm=_atl.match(/(\d+)\s*min/i); if(_amm) _adur=parseInt(_amm[1],10)||30;
     var _ast=new Date(_ad+"T"+_ah); if(isNaN(_ast.getTime())){ toast("Fecha u hora inválida."); return; }
     var _aen=new Date(_ast.getTime()+_adur*60000);
-    var _afmt=function(x){ return x.getFullYear()+("0"+(x.getMonth()+1)).slice(-2)+("0"+x.getDate()).slice(-2)+"T"+("0"+x.getHours()).slice(-2)+("0"+x.getMinutes()).slice(-2)+"00"; };
-    var _au="https://calendar.google.com/calendar/u/0/r/eventedit?text="+encodeURIComponent(_atl)+"&dates="+_afmt(_ast)+"/"+_afmt(_aen);
-    var _team=(state.ag&&state.ag.team)||[]; _team.forEach(function(em){ if(em) _au+="&add="+encodeURIComponent(em); });
-    if(_ag2) _au+="&add="+encodeURIComponent(_ag2);
-    // Evento compartido: además de la invitación de Google, lo guardamos en la
-    // agenda (tabla citas) de cada compañero invitado, para que le aparezca en su
-    // panel aunque no use Google. Nombre = el invitado externo si lo hay, si no
-    // "con <tu nombre>".
     var _shWith=_ag2?(_ag2.split("@")[0]):("con "+((COACH&&COACH.firstName)||(RME&&RME.nombre)||"el equipo"));
-    var _nInvited=0;
-    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ _nInvited++; _sbw("citas","POST",{coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_ast.toISOString(),estado:"confirmada"}).catch(function(){}); } });
+    var _iso=_ast.toISOString();
+    var _team=(state.ag&&state.ag.team)||[];   // capturar ANTES de limpiar state.ag
     state.ag=null;
-    var _aw=window.open(_au,"_blank","noopener"); if(!_aw) location.href=_au;
-    toast(_nInvited?("Cita agendada — le aparece a "+_nInvited+" del equipo y en Google."):"Cita cargada en Google — confirma y aparece en tu agenda.");
+    // Demo: no escribir en la base, solo mostrar el éxito.
+    if(typeof _isDemoCoach==="function" && _isDemoCoach()){ toast("Cita agendada ✓ (demo)"); render(); return; }
+    // 1) GUARDAR la cita en Pathway (tabla citas) para EL COACH → aparece en SU
+    //    agenda sin depender de Google. Antes esto NO se guardaba (solo abría
+    //    Google Calendar) → por eso "no aparecían las citas" y terminabas en Google.
+    _sbw("citas","POST",{coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel"})
+      .then(function(r){
+        if(r&&r.ok) toast("Cita agendada ✓ — ya está en tu agenda"); else toast("No se pudo guardar la cita. Reintenta.");
+        try{ _resLoad(); }catch(e){} try{ _calLoad(); }catch(e){}
+      })
+      .catch(function(){ toast("No se pudo guardar la cita. Reintenta."); });
+    // 2) Compañeros de equipo invitados: cada uno recibe la cita en SU panel.
+    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ _sbw("citas","POST",{coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_iso,estado:"confirmada",origen:"panel"}).catch(function(){}); } });
+    // 3) EMAIL de confirmación al invitado (si dejó email) con el link de la Sala + .ics
+    if(_ag2 && /@/.test(_ag2)){
+      try{
+        var _r={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2, tipo:_atl, inicio:_iso};
+        var _lnk=_salaClientLink(_r);
+        var _ics=_icsBuild("Sesión · Pathway", _ast.getTime(), _aen.getTime(), _lnk);
+        var _f=_fechaCli(_iso);
+        var _coachNm=(COACH&&COACH.name)||(RME&&RME.nombre)||"Pathway";
+        var _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"):"")+".</p>"+
+          "<p style='margin:16px 0'><a href='"+esc(_lnk)+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700'>Entrar a la sesión</a></p>"+
+          "<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";
+        _notifResCliente(_ag2, _shWith, "Tu sesión con "+_coachNm+" está agendada", _inner, _ics&&_ics.b64);
+      }catch(e){}
+    }
     render(); return;
   }
   // Portal del cliente: SIEMPRE en la misma pestaña ("pathway_portal"). Si ya
