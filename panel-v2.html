@@ -9846,11 +9846,14 @@ document.addEventListener("click", function(ev){
     if(RME&&String(ctid)===String(RME.id)){ alert("No puedes desactivar tu propia cuenta."); return; }
     var turnOn=el.getAttribute("data-on")==="1";
     if(!confirm(turnOn?"¿Reactivar el acceso de esta coach?":"¿Desactivar a esta coach? Pierde acceso al panel hasta que la reactives.")) return;
-    _sbw("usuarios?id=eq."+encodeURIComponent(ctid),"PATCH",{activo:turnOn})
-      .then(function(r){ if(!r.ok) throw 0;
-        if(RCOACHES){ RCOACHES.forEach(function(u){ if(String(u.id)===String(ctid)) u.activo=turnOn; }); }
-        toast(turnOn?"Coach reactivada ✓":"Coach desactivada ✓"); render(); })
-      .catch(function(){ alert("No se pudo cambiar el estado de la coach."); });
+    var _ctApplied=function(){ if(RCOACHES){ RCOACHES.forEach(function(u){ if(String(u.id)===String(ctid)) u.activo=turnOn; }); } toast(turnOn?"Coach reactivada ✓":"Coach desactivada ✓"); render(); };
+    // Directo como respaldo (funciona si RLS no bloquea el UPDATE de otra fila).
+    var _ctgDirect=function(){ return _sbw("usuarios?id=eq."+encodeURIComponent(ctid),"PATCH",{activo:turnOn}).then(function(r){ if(!r.ok) throw 0; _ctApplied(); }).catch(function(){ alert("No se pudo cambiar el estado de la coach. Si no cambió nada, tu sesión de admin pudo vencer: cerrá sesión y volvé a entrar, y reintentá."); }); };
+    // Principal: edge function (service role) → no lo frena RLS. Mismo patrón que
+    // extender trial / marcar pagado / eliminar cuenta.
+    _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"set_active", coach_id:ctid, activo:turnOn})}); })
+      .then(function(r){ if(!r.ok) return _ctgDirect(); return r.json().catch(function(){return {};}).then(function(j){ if(j&&j.ok===true){ _ctApplied(); } else { return _ctgDirect(); } }); })
+      .catch(function(){ return _ctgDirect(); });
     return;
   }
   if(act==="orphan-assign"){

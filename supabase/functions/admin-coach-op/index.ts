@@ -90,7 +90,7 @@ Deno.serve(async (req: Request) => {
   if ((!who.email && !who.uid) || !(await isAdmin(who.email, who.uid))) return json({ error: "not_admin" }, 403);
 
   // ── Input ─────────────────────────────────────────────────────────
-  let body: { op?: string; coach_id?: string; dias?: number | string; plan?: string; wipe?: boolean };
+  let body: { op?: string; coach_id?: string; dias?: number | string; plan?: string; wipe?: boolean; activo?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -99,7 +99,7 @@ Deno.serve(async (req: Request) => {
   const op = (body.op || "").toString();
   const coachId = (body.coach_id || "").toString().trim();
   if (!isUuid(coachId)) return json({ error: "coach_id_invalid" }, 400);
-  if (op !== "extend_trial" && op !== "mark_paid" && op !== "set_plan" && op !== "delete_coach") return json({ error: "op_invalid" }, 400);
+  if (op !== "extend_trial" && op !== "mark_paid" && op !== "set_plan" && op !== "delete_coach" && op !== "set_active") return json({ error: "op_invalid" }, 400);
 
   // ── Leer la config actual del coach objetivo ──────────────────────
   let cur: { configuracion: Record<string, unknown> | null } | null = null;
@@ -160,6 +160,25 @@ Deno.serve(async (req: Request) => {
       return json({ error: "delete_failed" }, 502);
     }
     return json({ ok: true, op, coach_id: coachId, wiped: wipe });
+  }
+
+  // ── Activar / desactivar coach (service role → no lo frena RLS) ────
+  if (op === "set_active") {
+    const activo = body.activo === true;
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}`, {
+        method: "PATCH",
+        headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ activo }),
+      });
+      if (!r.ok) {
+        const t = await r.text().catch(() => "");
+        return json({ error: "write_failed", status: r.status, detail: t.slice(0, 200) }, 502);
+      }
+    } catch {
+      return json({ error: "write_failed" }, 502);
+    }
+    return json({ ok: true, op, coach_id: coachId, activo });
   }
 
   const cfg: Record<string, unknown> = (cur.configuracion && typeof cur.configuracion === "object") ? { ...cur.configuracion } : {};
