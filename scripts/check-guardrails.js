@@ -3207,6 +3207,40 @@ const RULES = [
       return null;
     },
   },
+  // ── DASHBOARD CEO (Nivel 1) — consumidor puro de la edge function metricas ──
+  {
+    name: "dashboard CEO: sub-tab + contenedor en panel-v2",
+    bug: "El Dashboard CEO es la vista admin que consume la edge function metricas.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/coachview:ceo/.test(s)) return "panel-v2.html: falta el sub-tab 'Dashboard CEO' (coachview:ceo).";
+      if (!/['\"]ceo-dash['\"]/.test(s)) return "panel-v2.html: falta el contenedor #ceo-dash del Dashboard CEO.";
+      return null;
+    },
+  },
+  {
+    name: "dashboard CEO: consumidor puro (llama a metricas, no calcula en el front)",
+    bug: "El dashboard NO calcula negocio en el front: solo pide a la edge function metricas y renderiza.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/_ceoLoad/.test(s) || !/functions\/v1\/metricas/.test(s))
+        return "panel-v2.html: el Dashboard CEO ya no llama a la edge function metricas (_ceoLoad).";
+      return null;
+    },
+  },
+  {
+    name: "metricas: edge function read-only con gate de admin",
+    bug: "metricas es la unica fuente backend del dashboard; admin-only, nadie lee eventos con la anon key.",
+    check() {
+      const s = read("supabase/functions/metricas/index.ts");
+      if (!s) return null;
+      if (!/isAdmin/.test(s) || !/forbidden/.test(s))
+        return "metricas: se perdio el gate de admin (isAdmin / 403 forbidden).";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
