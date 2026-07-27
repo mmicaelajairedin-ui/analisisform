@@ -48,6 +48,24 @@ const RULES = [
     },
   },
   {
+    name: "agenda: 'Invitar al equipo' solo para el equipo interno (admin/empleado)",
+    bug: "En 'Agendar cita' y en el editor de tipo salía 'Invitar al equipo' con " +
+         "Micaela (admin) y Gonzalo (empleado) a TODOS los coaches. Ese equipo es el " +
+         "INTERNO de Pathway, no el del coach cliente. Ahora _agTeamLoad no carga la " +
+         "lista y la sección no se muestra salvo que el usuario sea admin o empleado.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // _agTeamLoad debe cortar (dejar _AG_TEAM=[]) para no-admin/no-empleado.
+      if (!/function\s+_agTeamLoad\s*\(\)\s*\{\s*if\(!\(typeof RADMIN[\s\S]{0,140}\)\)\{\s*_AG_TEAM=\[\];\s*return;\s*\}/.test(s))
+        return "panel-v2.html: _agTeamLoad ya no corta para no-admin/no-empleado → el equipo interno (Micaela/Gonzalo) vuelve a filtrarse a todos los coaches.";
+      // La sección "Invitar al equipo" debe estar detrás del gate RADMIN||isEmpleado.
+      if (!/_agTeamOk\s*=\s*\(typeof RADMIN[\s\S]{0,120}isEmpleado[\s\S]{0,40}\);[\s\S]{0,120}_teamHtml\s*=\s*_agTeamOk\s*\?/.test(s))
+        return "panel-v2.html: 'Invitar al equipo' ya no está gateado por admin/empleado → vuelve a salirle a los coaches cliente.";
+      return null;
+    },
+  },
+  {
     name: "panel-v2: una query rota no deja el panel en blanco (carga con red)",
     bug: "Agregar una columna inexistente (p.ej. xp) a un select hacía que UNA query " +
          "rechazara y el Promise.all entero fallara → coaches, ranking, analíticas y config " +
@@ -100,6 +118,30 @@ const RULES = [
         return "panel-v2.html: el fallback local de notis leídas ya no se aplica al cargar → si el server no guardó, reaparecen.";
       if (!/_pwMarkCoachNotifRead[\s\S]{0,80}_notifReadAdd\(id\)/.test(s))
         return "panel-v2.html: _pwMarkCoachNotifRead ya no guarda el 'leído' local → sin defensa si falla el PATCH.";
+      return null;
+    },
+  },
+  {
+    name: "portales del cliente: abrir la campana marca las notis como vistas (no vuelven)",
+    bug: "Mismo bug que en el panel, en los 3 portales del cliente: las notificaciones " +
+         "solo se marcaban leídas al TOCAR cada una (y tocar navega), así que al reentrar " +
+         "volvían a salir sin marcar. Abrir el panel debe marcar TODO como visto, con " +
+         "fallback local por si el PATCH no llega.",
+    check() {
+      const files = ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"];
+      for (const f of files) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/function _notifMarkAllSeen\(/.test(s))
+          return f + ": falta _notifMarkAllSeen → abrir la campana ya no marca las notis como vistas.";
+        // Abrir el panel invoca _notifMarkAllSeen (toggleNotifs en carrera, pnotifToggle en fit/fin).
+        if (!/_notifMarkAllSeen\(\)/.test(s.replace("function _notifMarkAllSeen(", "")))
+          return f + ": _notifMarkAllSeen está definida pero no se llama al abrir la campana.";
+        if (!/_notifApplyLocalRead\(\)/.test(s))
+          return f + ": no se aplica el 'leído' local al cargar → si el server no guardó, reaparecen.";
+        if (!/_notifReadAdd\(/.test(s))
+          return f + ": no se guarda el 'leído' local → sin defensa si falla el PATCH.";
+      }
       return null;
     },
   },
@@ -177,6 +219,298 @@ const RULES = [
     },
   },
   {
+    name: "agenda: SIEMPRE detecta la foto (cliente Y coach con cuenta Pathway)",
+    bug: "La 'Próxima sesión' salía con el avatar por defecto cuando la reunión " +
+         "era con otro coach: _cliFotoByEmail solo miraba TUS clientes (window.CLIENTS) " +
+         "y no la lista de coaches (RCOACHES), donde vive la foto de una cuenta Pathway. " +
+         "Este bug volvió VARIAS veces al refactorizar; por eso queda vacunado: la " +
+         "función debe cruzar el email contra AMBAS fuentes.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const m = s.match(/function _cliFotoByEmail\([\s\S]*?\n\}/);
+      if (!m) return "panel-v2.html: falta la función _cliFotoByEmail (resolución de foto por email).";
+      const body = m[0];
+      if (!/window\.CLIENTS/.test(body))
+        return "_cliFotoByEmail dejó de buscar la foto entre tus clientes (window.CLIENTS).";
+      if (!/RCOACHES/.test(body))
+        return "_cliFotoByEmail dejó de buscar la foto en la lista de coaches (RCOACHES): las reuniones con otra cuenta Pathway vuelven a salir sin foto.";
+      return null;
+    },
+  },
+  {
+    name: "videollamada desde el chat: módulo + botón + timbre en los portales",
+    bug: "El coach llama desde el chat (📹 → mensaje 'call' + push + Sala); el cliente " +
+         "lo escucha por el poll y suena el timbre (Aceptar/Rechazar/perdida) y queda en " +
+         "Sesiones. Si se desconecta el módulo o el cableado, la llamada deja de sonar.",
+    check() {
+      const c = read("pw-call.js");
+      if (!c) return "falta pw-call.js (videollamada desde el chat).";
+      if (!/startCall/.test(c) || !/ingest/.test(c) || !/_ringStart|_showRing/.test(c))
+        return "pw-call.js perdió el timbre/inicio/ingest de la videollamada.";
+      const p = read("panel-v2.html");
+      if (p && (!/call-cli-start/.test(p) || !/_callMissedCheck/.test(p)))
+        return "panel-v2.html: el coach ya no inicia la videollamada desde el chat (botón/handler/watchdog).";
+      for (const f of ["pathway-fit-cliente.html", "cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (s && (!/pw-call\.js/.test(s) || !/PWCall\.ingest/.test(s) || !/_pwCallSetup/.test(s)))
+          return f + ": el portal ya no escucha la videollamada entrante (falta módulo/ingest/config).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "Novedades: el botón del badge lo SUMA de verdad a la colección",
+    bug: "La revista mostraba 'Sumado a tu colección' como etiqueta fija: no agregaba " +
+         "el badge a los logros reales del coach. Ahora es un botón que respira, avisa al " +
+         "panel (postMessage pw:'badge'), y el panel lo agrega con pwAwardBadge. Si se corta, " +
+         "el coach ve el badge en Novedades pero nunca en sus logros.",
+    check() {
+      const nv = read("novedades-preview.html");
+      if (nv) {
+        if (!/function nvClaimBadge/.test(nv) || !/pw:'badge'/.test(nv))
+          return "novedades-preview.html: el botón ya no reclama el badge (nvClaimBadge / postMessage pw:'badge').";
+        if (!/nv-badge-pulse/.test(nv) || !/@keyframes nv-breathe/.test(nv))
+          return "novedades-preview.html: el botón del badge ya no 'respira' (falta nv-badge-pulse / @keyframes nv-breathe).";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/d\.pw==="badge"/.test(p) || !/pwAwardBadge\(/.test(p))
+          return "panel-v2.html: el panel ya no otorga el badge que pide Novedades (handler pw:'badge' → pwAwardBadge).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "consentimiento del coach: se guarda UNA vez y no se vuelve a pedir",
+    bug: "El coach veía 'aceptar términos' en CADA login. El gate estampaba consent_at " +
+         "solo en RME.configuracion, pero saveCfg reconstruye TODA la configuración desde " +
+         "RCFG → el siguiente guardado (servicios/calendario) borraba el consent del server " +
+         "y volvía a pedirlo. Fix: estampar también en RCFG + flag local anti-nag + no " +
+         "perderlo al recargar RCFG desde el server.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/RCFG\.consent_at\s*=/.test(p))
+        return "panel-v2.html: el gate ya no estampa el consentimiento en RCFG → un guardado posterior lo borra y se re-pide.";
+      if (!/mj_consent_/.test(p))
+        return "panel-v2.html: falta el flag local anti-nag del consentimiento (mj_consent_<id>).";
+      // La recarga de RCFG desde el server debe conservar el consent ya aceptado.
+      if (!/!RCFG\.consent_at/.test(p))
+        return "panel-v2.html: al recargar RCFG del server ya no se conserva el consent_at previo.";
+      return null;
+    },
+  },
+  {
+    name: "Sala: tu foto real viaja a la videollamada (no solo iniciales)",
+    bug: "Un coach en llamada con soporte/otro no veía la foto del otro: la Sala nunca " +
+         "pasaba el avatar a Jitsi. Ahora sala.html toma tu foto (mj_user o mj_foto_<email>) " +
+         "y la manda al JWT (avatar) y a userInfo.avatarURL. Si se corta, vuelven las iniciales.",
+    check() {
+      const s = read("sala.html");
+      if (!s) return null;
+      if (!/avatar:FOTO/.test(s))
+        return "sala.html: el token de la videollamada ya no lleva tu avatar (avatar:FOTO).";
+      if (!/avatarURL:FOTO/.test(s))
+        return "sala.html: Jitsi ya no recibe tu foto (userInfo.avatarURL).";
+      if (!/mj_foto_/.test(s) || !/foto_url/.test(s))
+        return "sala.html: se perdió la búsqueda de tu foto (mj_user.foto_url / mj_foto_<email>).";
+      const jt = read("supabase/functions/jaas-token/index.ts");
+      if (jt && !/avatar/.test(jt))
+        return "jaas-token: el JWT ya no incluye el claim de avatar.";
+      return null;
+    },
+  },
+  {
+    name: "servicios: la moneda NO está clavada en euros (coaches de todo el mundo)",
+    bug: "Los coaches son de todo el mundo → los precios no siempre son en euros. El " +
+         "coach elige su moneda en el editor de Servicios; se estampa en cada servicio " +
+         "(s.moneda) y se usa en el perfil público y en el checkout de Stripe. Si algo " +
+         "vuelve a clavar 'eur', un coach de México/Argentina/etc. cobraría mal.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/PW_MONEDAS/.test(p) || !/function _monSym/.test(p))
+          return "panel-v2.html: falta el selector de monedas (PW_MONEDAS/_monSym).";
+        if (!/id='svc-moneda'/.test(p))
+          return "panel-v2.html: falta el <select> de moneda en el editor de servicios.";
+        if (!/moneda: *_mc\b/.test(p) && !/moneda: *_mc2\b/.test(p))
+          return "panel-v2.html: al guardar servicios ya no se persiste la moneda (cfg.moneda).";
+      }
+      const cc = read("supabase/functions/connect-checkout/index.ts");
+      if (cc) {
+        if (/\[currency\]": *"eur"/.test(cc))
+          return "connect-checkout: la moneda de Stripe volvió a estar clavada en 'eur'.";
+        if (!/MONEDAS_OK/.test(cc) || !/ZERO_DECIMAL/.test(cc))
+          return "connect-checkout: falta la validación de moneda o el manejo de zero-decimal (CLP cobraría 100×).";
+      }
+      const ch = read("coach.html");
+      if (ch && !/MON_SYM/.test(ch))
+        return "coach.html: el perfil público perdió el mapa de símbolos de moneda.";
+      return null;
+    },
+  },
+  {
+    name: "videollamada admin ↔ coach/empleado: sonar por el chat de soporte",
+    bug: "Micaela (soporte) llama a un coach/empleado desde su chat (bandeja o ficha): " +
+         "📹 → mensaje 'call' en mensajes_admin_coach → al coach le SUENA en su panel " +
+         "(PWCall.ingest en el poll), Aceptar/Rechazar/perdida, y queda como mensaje en " +
+         "el hilo. Si se corta el cableado, la llamada al equipo deja de sonar.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/call-coach-start/.test(p))
+        return "panel-v2.html: falta el handler call-coach-start (📹 admin → coach/empleado).";
+      if (!/data-act='call-coach-start'/.test(p))
+        return "panel-v2.html: falta el botón 📹 en el compose del chat de soporte.";
+      if (!/function _pwCallPoll/.test(p) || !/PWCall\.ingest/.test(p))
+        return "panel-v2.html: el receptor ya no procesa la llamada entrante (_pwCallPoll/PWCall.ingest).";
+      if (!/function _pwCallSetup/.test(p) || !/role:"client"/.test(p))
+        return "panel-v2.html: el coach/empleado ya no se configura como receptor de la llamada.";
+      if (!/function startPwCallWatch/.test(p))
+        return "panel-v2.html: falta el vigía rápido del timbre (startPwCallWatch) → el poll de 45 s se pierde la llamada.";
+      if (!/function _callCoachMissed/.test(p))
+        return "panel-v2.html: falta el watchdog de llamada perdida admin↔coach (_callCoachMissed).";
+      if (!/function _msgBodyText/.test(p) || !/_pwCallDec/.test(p))
+        return "panel-v2.html: sin _msgBodyText/_pwCallDec el payload de la llamada se mostraría como JSON crudo en el chat.";
+      return null;
+    },
+  },
+  {
+    name: "portales: fichas duplicadas se MERGEAN (lo que el coach guardó no se pierde)",
+    bug: "El portal elegía la ficha 'más completa' de un email con duplicados, pero esa " +
+         "podía no tener lo que el coach acababa de guardar (p.ej. nutrición) → 'lo guardé " +
+         "y no se ve'. Ahora se rellenan los campos vacíos de la ficha elegida con los de " +
+         "cualquier duplicado. Debe estar en fitness y finanzas (mismo patrón CRAW=rows[0]).",
+    check() {
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        // Debe existir el fill de campos vacíos desde los duplicados (rows[_r]).
+        if (!/_isEmpty\(CRAW\[_k\]\)\s*&&\s*!_isEmpty\(_o\[_k\]\)/.test(s))
+          return f + ": se perdió el merge de fichas duplicadas → el coach guarda y el cliente no lo ve.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "candado global _genBusy se auto-libera (un botón no queda muerto para siempre)",
+    bug: "_genBusy es un lock GLOBAL que comparten operaciones pesadas (generar informe/" +
+         "CV, cobros, Stripe, enviar mensaje). Si una se cuelga y no lo suelta, TODO botón " +
+         "con `if(_genBusy) return` queda muerto — típico 'el botón de mensajería no anda'. " +
+         "_busyOn() debe armar un watchdog que libere el candado solo.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const m = s.match(/function _busyOn\([\s\S]*?\n\}/);
+      if (!m) return "panel-v2.html: falta _busyOn() (candado con auto-liberación).";
+      if (!/setTimeout/.test(m[0]) || !/_genBusy\s*=\s*false/.test(m[0]))
+        return "_busyOn() ya no arma el watchdog que libera _genBusy → un botón puede quedar muerto para siempre.";
+      return null;
+    },
+  },
+  {
+    name: "login no crashea en navegadores viejos: pw-polyfill.js antes del SDK",
+    bug: "En webviews in-app / navegadores viejos (sin Array.prototype.at, ES2022) el " +
+         "SDK de Supabase crasheaba con '.at is not a function' y el usuario NO podía " +
+         "entrar. pw-polyfill.js parchea .at() y debe cargarse ANTES que cualquier SDK.",
+    check() {
+      const poly = read("pw-polyfill.js");
+      if (!poly) return "falta pw-polyfill.js (parche de navegadores viejos).";
+      if (!/prototype\s*,\s*["']at["']|prototype\.at/.test(poly) && !/def\(Array\.prototype,\s*"at"/.test(poly))
+        return "pw-polyfill.js ya no parchea Array.prototype.at → login vuelve a crashear en navegadores viejos.";
+      for (const f of ["login.html", "login-en.html", "panel-v2.html", "cliente.html"]) {
+        if (!/pw-polyfill\.js/.test(read(f))) return f + " ya no carga pw-polyfill.js (login/panel crashea en webviews viejos).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "admin: eliminar cuenta de coach va por edge function (resiste RLS), no DELETE directo",
+    bug: "El panel borraba con DELETE directo a `usuarios` con la anon key → RLS lo " +
+         "bloqueaba y salía 'No se pudo eliminar... protegida por RLS'. Debe ir por la " +
+         "edge function admin-coach-op (op:delete_coach, service role), igual que extender " +
+         "trial / marcar pagado.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        // No debe volver el DELETE directo a usuarios (lo bloquea RLS).
+        if (/_sbw\("usuarios\?id"\s*\+\s*_idq\s*,\s*"DELETE"/.test(p))
+          return "panel-v2.html: coach-delete volvió al DELETE directo de usuarios (lo bloquea RLS). Debe usar admin-coach-op.";
+        // Debe existir la vía nueva: op delete_coach por admin-coach-op.
+        if (!/delete_coach/.test(p))
+          return "panel-v2.html: coach-delete ya no usa op:delete_coach (admin-coach-op).";
+      }
+      const fn = read("supabase/functions/admin-coach-op/index.ts");
+      if (fn && !/op === "delete_coach"/.test(fn))
+        return "admin-coach-op ya no soporta la op delete_coach → el borrado de cuenta vuelve a fallar por RLS.";
+      return null;
+    },
+  },
+  {
+    name: "agenda: los eventos de Google cargan aunque el Resumen no tenga #cp-agenda-body",
+    bug: "Al simplificar el calendario se dejó de renderizar #cp-agenda-body, pero " +
+         "_agendaLoad/_agLoadIcal/_agLoadGoogleDirect arrancaban con 'if(!body) return' " +
+         "sobre ese elemento → _AG_DATA (eventos de Google/iCal) NUNCA se cargaba y las " +
+         "sesiones que estaban en tu Google NO aparecían en el panel ('sale en Google " +
+         "pero no en el panel'). Los loaders deben cargar SIEMPRE y setear _AG_DATA, " +
+         "escribiendo en #cp-agenda-body solo si existe.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // Ningún loader del calendario debe cortar por falta de #cp-agenda-body.
+      for (const fn of ["_agendaLoad", "_agLoadIcal", "_agLoadGoogleDirect"]) {
+        const m = s.match(new RegExp("function " + fn + "\\([\\s\\S]*?\\n\\}"));
+        if (!m) return "panel-v2.html: falta la función " + fn + " (carga de la agenda).";
+        if (/getElementById\("cp-agenda-body"\)\s*;\s*if\s*\(!\s*body\s*\)\s*return\s*;/.test(m[0]))
+          return fn + " vuelve a cortar por !cp-agenda-body: los eventos de Google no cargan en el panel.";
+      }
+      // _agLoadIcal DEBE poblar _AG_DATA (si no, la agenda queda vacía).
+      const mi = s.match(/function _agLoadIcal\([\s\S]*?\n\}/);
+      if (mi && !/_AG_DATA\s*=/.test(mi[0]))
+        return "_agLoadIcal ya no setea _AG_DATA: la agenda del panel queda sin eventos.";
+      return null;
+    },
+  },
+  {
+    name: "calendario: el iCal respeta la zona horaria del evento (TZID), no asume UTC",
+    bug: "parseDate en la edge function `calendar` asumía SIEMPRE UTC. Un evento de " +
+         "Google 'DTSTART;TZID=Europe/Madrid:...21:00' (hora local, sin Z) se leía como " +
+         "21:00 UTC → en el panel la sesión aparecía a otra hora (corrida por el offset " +
+         "de la zona: 'me salía a las 9am pero es a las 9pm'). Debe honrar el TZID.",
+    check() {
+      const s = read("supabase/functions/calendar/index.ts");
+      if (!s) return null; // si el archivo se movió, no bloqueamos por acá
+      if (!/function parseDate\([^)]*tzid/.test(s))
+        return "calendar/index.ts: parseDate ya no recibe el TZID → vuelve a asumir UTC y las sesiones salen a la hora equivocada.";
+      if (!/tzidOf\(propPart\)/.test(s))
+        return "calendar/index.ts: DTSTART/DTEND ya no pasan el TZID a parseDate.";
+      if (!/zonedToUtc|Intl\.DateTimeFormat/.test(s))
+        return "calendar/index.ts: se perdió la conversión de hora local (TZID) a UTC real.";
+      return null;
+    },
+  },
+  {
+    name: "fotos nítidas: las miniaturas de Uploadcare piden el recorte al tamaño real",
+    bug: "Las fotos se cargaban full-res y el navegador las achicaba a 26-40px → " +
+         "se veían borrosas/pixeladas en miniatura (pedido varias veces). _thumb() " +
+         "le pide a Uploadcare el scale_crop exacto (×2 retina) y avImg lo aplica a " +
+         "TODO avatar. Si se pierde, las miniaturas vuelven a verse borrosas.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function _thumb\(/.test(s))
+        return "panel-v2.html: falta el helper _thumb() (miniaturas nítidas de Uploadcare).";
+      if (!/scale_crop/.test(s))
+        return "_thumb() ya no pide scale_crop a Uploadcare: las fotos vuelven a verse borrosas en miniatura.";
+      // avImg (el renderizador único de avatares) debe pasar por _thumb.
+      const m = s.match(/function avImg\([\s\S]*?\n\}/);
+      if (m && !/_thumb\(/.test(m[0]))
+        return "avImg() dejó de pasar la foto por _thumb(): las miniaturas de la lista/ranking vuelven a verse borrosas.";
+      return null;
+    },
+  },
+  {
     name: "drag&drop universal: pw-dropzone incluido y subidas nuevas cableadas",
     bug: "pw-dropzone.js convierte cada input[type=file] en dropzone sin tocar el " +
          "guardado (soltar = feed al input + change). La foto del cliente (fcli-foto) " +
@@ -220,6 +554,101 @@ const RULES = [
     },
   },
   {
+    name: "chat: el aviso es por FOTOS (varias personas) y sin número rojo que tape",
+    bug: "El aviso del chat mostraba la foto de quien escribió con un número rojo " +
+         "encima que le tapaba la cara, y solo una persona. Ahora muestra hasta 5 " +
+         "fotitos (varias personas), sin número rojo, POR FUERA de la pastilla " +
+         "(en móvil, arriba del botón; el padding-top de la barra les deja lugar).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // _syncChatBtn junta varios remitentes (senders) y NO pinta el punto rojo.
+      if (!/senders\.slice\(0,\s*5\)/.test(s))
+        return "panel-v2.html: el chat ya no muestra varias fotitos (senders.slice(0,5)).";
+      if (/_syncChatBtn[\s\S]{0,2600}dot\.textContent\s*=\s*[^;]*unread/.test(s))
+        return "panel-v2.html: volvió el número rojo sobre la foto del chat.";
+      // el contador rojo del chat queda apagado (avisamos por fotos).
+      if (!/_syncChatBadge[\s\S]{0,180}pw-chat-badge[\s\S]{0,60}display="none"/.test(s))
+        return "panel-v2.html: el contador rojo del chat volvió a mostrarse (tapa la foto).";
+      // en móvil las fotitos van ARRIBA del botón (por fuera de la pastilla).
+      if (!/#pw-app-actions \.pw-chat-notif\{[^}]*bottom:calc\(100% \+ 3px\)/.test(s))
+        return "panel-v2.html: en móvil las fotitos ya no se apoyan arriba del botón → vuelven a quedar dentro/cortadas.";
+      return null;
+    },
+  },
+  {
+    name: "portales del cliente: aviso de chat = foto del coach, sin número rojo",
+    bug: "Igual que en el panel: cuando el coach le escribe al cliente, el ícono " +
+         "de chat mostraba un número rojo. Ahora muestra la FOTO del coach (con " +
+         "respiración), sin número rojo que la tape, en los 3 portales.",
+    check() {
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (!s) continue;
+        if (!/function _syncCoachChatPhoto\(/.test(s))
+          return f + ": falta _syncCoachChatPhoto → el aviso de chat no muestra la foto del coach.";
+        if (!/\.pw-chat-photo\{[^}]*pwChatBreathe/.test(s))
+          return f + ": la foto del chat ya no 'respira' (falta la animación pwChatBreathe).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "chat: se refresca seguido (no vuelve a 25/30s de latencia)",
+    bug: "El chat refrescaba fijo cada 25s (panel) / 30s (portales) → escribías y " +
+         "el mensaje 'no llegaba' hasta pasado mucho tiempo. Ahora el panel es " +
+         "adaptativo (6s con el chat abierto) y los portales del cliente 12s.",
+    check() {
+      const pv = read("panel-v2.html");
+      if (pv) {
+        if (/_msgPollTimer\s*=\s*setInterval\([^)]*25000\)/.test(pv))
+          return "panel-v2.html: el chat volvió al refresco fijo de 25s.";
+        if (!/_fast\?6000/.test(pv))
+          return "panel-v2.html: se perdió el refresco rápido (6s) del chat abierto.";
+      }
+      for (const f of ["cliente.html", "pathway-fit-cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (s && /(loadMsgs|_pollMsgs)[^;]{0,60}[,]\s*30000\)/.test(s))
+          return f + ": el chat del cliente volvió a 30s de latencia.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "móvil: la burbuja de aviso del chat/notif no se recorta (overflow)",
+    bug: "En móvil los botones de la barra llevan overflow:hidden para verse " +
+         "circulares, pero eso RECORTABA la burbuja de aviso (foto de quien " +
+         "escribió / contador) que asoma por la esquina → quedaba escondida. " +
+         "Los botones de chat y notificaciones deben llevar overflow:visible.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/#pw-app-actions\s+#pw-chat-btn,\s*#pw-app-actions\s+#pw-notif-btn\{\s*overflow:visible/.test(s))
+        return "panel-v2.html: el chat/notif ya no fuerzan overflow:visible → la burbuja de aviso se vuelve a recortar en móvil.";
+      return null;
+    },
+  },
+  {
+    name: "demo: el coach de ejemplo luce badge/medalla/puntos y arranque completo",
+    bug: "El coach demo (demo.coach@pathway.com) se usa para MOSTRAR la plataforma " +
+         "a prospectos, pero tenía badge/medalla/puntos en cero y el arranque en 0/3 " +
+         "— parecía una cuenta vacía. Los getters de gamificación deben devolver " +
+         "valores de demo cuando _isDemoCoach().",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function clientMedalInfo\(\)\{[\s\S]{0,220}_isDemoCoach\(\)\)\s*return\s*\{[^}]*plata/.test(s))
+        return "panel-v2.html: clientMedalInfo ya no da medalla de demo → el demo se ve sin medalla.";
+      if (!/function pwTotalPoints\(\)\{[\s\S]{0,120}_isDemoCoach\(\)\)\s*return\s*640/.test(s))
+        return "panel-v2.html: pwTotalPoints ya no da puntos de demo → el demo muestra 0 pts.";
+      if (!/function pwBadgesGet\(\)\{[\s\S]{0,160}_isDemoCoach\(\)\)\s*return\s*\[/.test(s))
+        return "panel-v2.html: pwBadgesGet ya no da badges de demo → el demo no muestra colección.";
+      if (!/_isDemoCoach\(\)\)\s*phases\.forEach\(function\(p\)\{\s*p\.done=true/.test(s))
+        return "panel-v2.html: el arranque del demo ya no se completa → 'Empieza por aquí' vuelve a 0/3.";
+      return null;
+    },
+  },
+  {
     name: "auth-callback liga auth_id en login con Google (Etapa 2 / RLS)",
     bug: "Los que entran con Google deben quedar ligados a Supabase Auth (auth_id) " +
          "para que RLS los reconozca. Si se quita, Google queda sin identidad ligada.",
@@ -258,9 +687,9 @@ const RULES = [
     },
   },
   {
-    name: "IA Pathway / Novedades / Perfil: el mismo botón abre Y cierra (toggle)",
-    bug: "El coach tocaba el botón de IA Pathway (o Novedades/Perfil), se abría, y al " +
-         "tocarlo de nuevo NO se cerraba: el handler solo hacía open=true. Los tres " +
+    name: "IA Pathway / Novedades / Perfil / Chat: el mismo botón abre Y cierra (toggle)",
+    bug: "El coach tocaba el botón de IA Pathway (o Novedades/Perfil/Chat), se abría, y al " +
+         "tocarlo de nuevo NO se cerraba: el handler solo hacía open=true. Los cuatro " +
          "triggers deben ser toggle (si ya está abierto, el mismo botón lo cierra). " +
          "Además, el marcador de Novedades no debe ocultarse en desktop cuando la " +
          "columna está abierta, si no no queda botón para re-tocar y cerrar.",
@@ -273,6 +702,12 @@ const RULES = [
       const iaBlock = s.slice(ia, ia + 500);
       if (!/state\.iaChat\.open\b[^]*?open\s*=\s*false/.test(iaBlock))
         return "el handler iachat-open ya no togglea: al re-tocar el botón no cierra el chat de IA.";
+      // Chat de mensajes: el handler chat-open tiene que cerrar si ya está abierto en modo chat.
+      const ch = s.search(/act===?["']chat-open["']/);
+      if (ch < 0) return "panel-v2.html ya no tiene el handler chat-open.";
+      const chBlock = s.slice(ch, ch + 400);
+      if (!/state\.ai\.open\s*&&\s*state\.ai\.mode===?["']chat["'][^]*?open\s*=\s*false/.test(chBlock))
+        return "el handler chat-open ya no togglea: al re-tocar el botón del chat no lo cierra.";
       // Novedades: el handler nov-open tiene que mirar si ya está abierta para cerrar.
       const nv = s.search(/act===?["']nov-open["']/);
       if (nv < 0) return "panel-v2.html ya no tiene el handler nov-open.";
@@ -1343,7 +1778,7 @@ const RULES = [
       if (!s) return null;
       const i = s.indexOf("function pwInit(");
       if (i < 0) return "pathway-fin-cliente.html: no se encuentra pwInit.";
-      const block = s.slice(i, i + 1200);
+      const block = s.slice(i, i + 2000); // ventana amplia: entra el merge de duplicados sin falsos positivos
       if (!/_score|rows\.sort/.test(block))
         return "pathway-fin-cliente.html: pwInit ya no elige la ficha más completa (perdió el dedup por score).";
       if (!/if\(!CRAW\.coach_id\)/.test(block))
@@ -1804,6 +2239,29 @@ const RULES = [
     },
   },
   {
+    name: "deploy: TODA edge function tiene su step en el workflow (ninguna se olvida)",
+    bug: "El deploy de funciones se hace por lista explícita en deploy-functions.yml. " +
+         "Si se agrega una función a supabase/functions/ y no se suma su step, queda " +
+         "SIN publicar y el frontend la llama contra una función inexistente (500/404). " +
+         "Este guardrail exige que toda carpeta de supabase/functions/ tenga su step.",
+    check() {
+      const wf = read(".github/workflows/deploy-functions.yml");
+      if (!wf) return null;
+      let dirs = [];
+      try {
+        dirs = fs.readdirSync("supabase/functions", { withFileTypes: true })
+          .filter(function (e) { return e.isDirectory() && e.name[0] !== "_"; })
+          .map(function (e) { return e.name; });
+      } catch (e) { return null; }
+      const faltan = dirs.filter(function (name) {
+        return !new RegExp("functions deploy " + name + "(\\s|$)").test(wf);
+      });
+      if (faltan.length)
+        return "deploy-functions.yml: faltan steps de deploy para: " + faltan.join(", ") + ".";
+      return null;
+    },
+  },
+  {
     name: "multicoach: chat dueño↔coach (mensaje-red, no se mezcla con Pathway)",
     bug: "El dueño chatea con cada coach de su red por un canal PROPIO " +
          "(mensajes_owner_coach), separado del soporte de Pathway (mensajes_admin_" +
@@ -1882,9 +2340,11 @@ const RULES = [
       // Lado del dueño: sección Canal en multicoach.html.
       const mc = read("multicoach.html");
       if (mc) {
-        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (sección Canal del equipo).";
+        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (el canal/chat del equipo).";
         if (!/functions\/v1\/canal-red/.test(mc)) return "multicoach.html: el canal ya no usa la edge function canal-red.";
-        if (!/data-s="canal"/.test(mc)) return "multicoach.html: falta el item 'Canal del equipo' en el menú.";
+        // El canal es EL chat: se abre desde el ícono de chat del topbar (__go('canal')),
+        // no como una pestaña más del sidebar. Debe seguir siendo accesible.
+        if (!/onclick="__go\('canal'\)"/.test(mc)) return "multicoach.html: el ícono de chat ya no abre el canal del equipo (__go('canal')).";
       }
       // Lado del coach: hilo 'canal' en la bandeja de panel-v2.html.
       const p = read("panel-v2.html");
@@ -2481,6 +2941,662 @@ const RULES = [
         if (!/if\s*\(\s*!merged\s*\)/.test(t)) {
           return "testimonios.js: el append del <script> SoftwareApplication ya no está detrás del fallback (!merged) — puede duplicar el @id.";
         }
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: link de videollamada SIEMPRE presente (garantia)",
+    why: "Una reserva salio SIN link de videollamada: ni el coach ni el cliente " +
+         "tenian por donde entrar. GARANTIA replicable para TODOS: el link lo damos " +
+         "NOSOTROS y abre nuestra Sala (sala.html, JaaS white-label). El room es " +
+         "determinista por coach+horario (Pathway-<coach>-<hora>): el panel del coach " +
+         "(_agSalaUrl/_agResLink) y reservar.html arman EXACTAMENTE el mismo → coach y " +
+         "cliente caen en la MISMA sala. sala.html embebe JaaS con el App ID. " +
+         "No puede volver a pasar.",
+    check() {
+      var p = read("panel-v2.html");
+      if (p) {
+        if (!/function _agSalaUrl/.test(p)) return "panel-v2.html: falta _agSalaUrl() — las reservas ya no derivan su sala centralizada.";
+        if (!/sala\.html\?room=/.test(p)) return "panel-v2.html: _agSalaUrl ya no arma el link a la Sala (sala.html?room=).";
+        if (!/Pathway-/.test(p)) return "panel-v2.html: se cayo el room determinista compartido (Pathway-<coach>-<hora>).";
+      }
+      var r = read("reservar.html");
+      if (r) {
+        if (!/sala\.html\?room=/.test(r)) return "reservar.html: el cliente ya no entra por la Sala centralizada (sala.html?room=).";
+        if (!/Pathway-/.test(r)) return "reservar.html: se cayo el room determinista compartido con el coach.";
+        if (!/location=/.test(r)) return "reservar.html: el evento de Google ya no incluye el link de la videollamada (location).";
+      }
+      var s = read("sala.html");
+      if (s) {
+        if (!/vpaas-magic-cookie-/.test(s)) return "sala.html: se cayo el App ID de JaaS (8x8) — la Sala no embebe el video white-label.";
+        if (!/8x8\.vc/.test(s)) return "sala.html: la Sala ya no carga JaaS (8x8.vc).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: horarios en AM/PM (no 24h) — un cliente confundió 01:00 con 1pm",
+    why: "Un cliente en México reservó lo que en su hora eran las 01:00 (1am) pero lo " +
+         "leyó como '1pm' porque se mostraba en 24h ('01:00 H'). LatAm usa AM/PM. Los " +
+         "horarios del picker y las fechas de los emails deben ir en AM/PM para que " +
+         "nadie confunda la madrugada con la tarde.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        // Solo el DISPLAY debe ir en AM/PM (_hmInViewerTz para los slots, fechaEnTz
+        // para los emails). Los hour12:false internos (offset de zona, _hourInTz) son
+        // cálculos, no formato — no se tocan.
+        const disp = (r.match(/function _hmInViewerTz[\s\S]*?\n\}/) || [""])[0] + (r.match(/function fechaEnTz[\s\S]*?\n\}/) || [""])[0];
+        if (!/hour12:\s*true/.test(disp)) return "reservar.html: los horarios/fechas visibles ya no van en AM/PM (hour12:true) — se confunde 1am con 1pm.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: solo horarios coherentes para el cliente (no ofrecer la 1 AM)",
+    why: "No se le puede ofrecer al cliente un horario que a ÉL le cae de madrugada " +
+         "(la disponibilidad del coach en Madrid caía 1am para México). _viewerGroups " +
+         "filtra por la hora del cliente (_hourInTz) para no mostrar esos huecos.",
+    check() {
+      const r = read("reservar.html");
+      if (r) {
+        if (!/function _hourInTz/.test(r)) return "reservar.html: falta _hourInTz() — el filtro de horarios cómodos.";
+        if (!/_hourInTz\(ms/.test(r)) return "reservar.html: _viewerGroups ya no filtra por la hora del cliente (podría ofrecer la 1 AM).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: cancelar/reprogramar/confirmar le AVISAN al cliente por email",
+    why: "Antes el coach cancelaba/reprogramaba y al cliente no le llegaba nada (tenía " +
+         "que avisarle a mano). Ahora cada acción manda un email al cliente por send-email. " +
+         "Si se rompe, el cliente se queda sin saber que su cita cambió.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _notifResCancel/.test(p) || !/function _notifResReprog/.test(p) || !/function _confirmCliente/.test(p))
+          return "panel-v2.html: falta algún aviso al cliente (_notifResCancel / _notifResReprog / _confirmCliente).";
+        if (!/_notifResCancel\(/.test(p) || !/_notifResReprog\(/.test(p) || !/_confirmCliente\(/.test(p))
+          return "panel-v2.html: un aviso al cliente está definido pero no se dispara (cancelar/reprogramar/confirmar).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: cancelar/confirmar/reprogramar sincroniza AMBAS listas (Resumen + Calendario)",
+    why: "Una cita vive en _RES_DATA (Resumen) y _CAL_DATA (Calendario/Agenda). Si una acción " +
+         "toca solo una, la otra queda vieja: una cancelada sigue apareciendo, o la hora vieja, " +
+         "y el 'Unirse' del mes manda a la sala vieja. Los handlers res-confirm/res-cancel/res-hora-save " +
+         "deben usar _syncCitaLocal (toca ambas) + _repaintCitas. Es el aislamiento entre flujos.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _syncCitaLocal/.test(p) || !/function _repaintCitas/.test(p)) return "panel-v2.html: faltan _syncCitaLocal/_repaintCitas (sincronización entre vistas del calendario).";
+        // Los tres handlers de gestión deben pasar por _syncCitaLocal.
+        const m = p.match(/act==="res-confirm"[\s\S]*?act==="res-hora-save"[\s\S]*?return;\s*\}/);
+        if (m && (m[0].match(/_syncCitaLocal\(/g) || []).length < 2) return "panel-v2.html: cancelar/confirmar/reprogramar ya no sincronizan ambas listas (una vista queda vieja).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "calendario: se GESTIONA desde Calendario; el Resumen es solo para ver/entrar",
+    why: "Decisión de UX de la coach: el Resumen es para MIRAR y entrar rápido (Unirse), " +
+         "NO para acciones. Reprogramar/confirmar/cancelar viven en la pestaña Calendario. " +
+         "Si los botones de gestión vuelven al Resumen, se llena de botones (lo que no quiere).",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        const cal = p.match(/function _calRenderList\(\)\{[\s\S]*?\}\)\.join\(""\);\s*\}/);
+        if (cal && (!/data-act='res-confirm'/.test(cal[0]) || !/data-act='res-hora'/.test(cal[0]))) return "panel-v2.html: la pestaña Calendario ya no tiene la gestión (reprogramar/confirmar/cancelar).";
+        const res = p.match(/function _resRender\(list\)\{[\s\S]*?return html;\s*\}/);
+        if (res && /data-act='res-cancel'/.test(res[0])) return "panel-v2.html: el Resumen volvió a tener botones de acción (debe ser solo ver + Unirse).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "recordatorio de cita: lleva el link de la Sala y NO dice Google Meet",
+    why: "El email recordatorio (1h/24h) es el último aviso antes de la sesión. Antes decía " +
+         "'Online por Google Meet' (falso, el video es la Sala de Pathway/JaaS) y no traía botón " +
+         "para entrar → el cliente no sabía cómo unirse. Debe armar el link Pathway-<coach>-<start> " +
+         "y ofrecer 'Entrar a la videollamada'.",
+    check() {
+      const t = read("supabase/functions/recordatorios-citas/index.ts");
+      if (t) {
+        if (/Google Meet/.test(t)) return "recordatorios-citas: el recordatorio vuelve a decir 'Google Meet' (el video es la Sala de Pathway).";
+        if (!/sala\.html\?room=/.test(t) || !/Entrar a la videollamada/.test(t)) return "recordatorios-citas: el recordatorio ya no lleva el link/botón de la Sala.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: reprogramar desde el link del cliente NO le hace perder el turno",
+    why: "Antes gestionar-cita cancelaba la cita ANTES de mandar a reservar → si el cliente " +
+         "abandonaba, perdía su turno sin nada a cambio. Ahora reprogramar manda a reservar con " +
+         "&reprog=<token> y la cita vieja se cancela SOLO cuando la nueva se confirma.",
+    check() {
+      const g = read("gestionar-cita.html");
+      if (g) {
+        if (/function doReprogramar[\s\S]*?_patchCancelada\(/.test(g)) return "gestionar-cita.html: reprogramar vuelve a cancelar antes de reservar (el cliente puede perder el turno).";
+        if (!/reprog='\+encodeURIComponent\(TOKEN\)/.test(g)) return "gestionar-cita.html: reprogramar ya no pasa &reprog= (no se puede cancelar la vieja al confirmar la nueva).";
+      }
+      const r = read("reservar.html");
+      if (r && !/qp\('reprog'\)/.test(r)) return "reservar.html: ya no cancela la cita vieja al confirmar la reprogramación (&reprog).";
+      return null;
+    },
+  },
+  {
+    name: "reservas: el cliente que cancela desde su link le AVISA al coach",
+    why: "Antes el cliente cancelaba desde gestionar-cita y el coach no se enteraba (la fila pasaba " +
+         "a cancelada y desaparecía de su panel sin aviso). Ahora se le manda un email al coach.",
+    check() {
+      const g = read("gestionar-cita.html");
+      if (g) {
+        if (!/function _notifyCoachCancel/.test(g)) return "gestionar-cita.html: falta _notifyCoachCancel (avisar al coach de la cancelación).";
+        if (!/_notifyCoachCancel\(\)/.test(g)) return "gestionar-cita.html: _notifyCoachCancel está definido pero no se dispara al cancelar.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: al reprogramar, el email lleva el link NUEVO de la Sala (mismo room que el coach)",
+    why: "El room de la videollamada lleva la hora dentro (Pathway-<coach>-<ms>). Al mover la hora " +
+         "cambia el room: si el email de reprogramación no manda el link nuevo, el cliente reusa el " +
+         "viejo y coach y cliente caen en salas DISTINTAS (nunca se encuentran). _notifResReprog debe " +
+         "construir el link con la hora nueva (_salaClientLink(r, iso)).",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _salaClientLink/.test(p)) return "panel-v2.html: falta _salaClientLink (link de la Sala para el cliente).";
+        // _notifResReprog debe usar el link (con la hora nueva) dentro de su cuerpo.
+        const m = p.match(/function _notifResReprog[\s\S]*?\n\}/);
+        if (m && !/_salaClientLink\(/.test(m[0])) return "panel-v2.html: _notifResReprog ya no manda el link nuevo de la Sala — el cliente entra a la sala vieja.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: la flecha 'volver al panel' se oculta para el cliente (id='back')",
+    why: "El guard escondía la flecha con el('back') pero el ancla tenía class y no id → el() (getElementById) " +
+         "devolvía null y nunca se ocultaba: el cliente veía un '‹' que lo mandaba al panel/login del coach. " +
+         "El ancla debe tener id='back'.",
+    check() {
+      const s = read("sala.html");
+      if (s && /el\(['"]back['"]\)/.test(s)) {
+        if (!/class=["']back["'][^>]*id=["']back["']|id=["']back["'][^>]*class=["']back["']/.test(s))
+          return "sala.html: el ancla 'volver' no tiene id='back' — el guard no la oculta para el cliente.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: chat casual propio (mismo en móvil y web, sin el chat nativo distinto por equipo)",
+    why: "El chat nativo de la videollamada se ve distinto en móvil vs web. Usamos uno propio que viaja por " +
+         "el transporte de la llamada (sendChatMessage / incomingMessage) para que sea idéntico en todos lados. " +
+         "Si se rompe, el chat vuelve a ser inconsistente o desaparece.",
+    check() {
+      const s = read("sala.html");
+      if (s) {
+        if (!/id=["']chatp["']/.test(s)) return "sala.html: falta el panel de chat propio (#chatp).";
+        if (!/executeCommand\(['"]sendChatMessage['"]/.test(s)) return "sala.html: el chat propio ya no envía por sendChatMessage.";
+        if (!/addListener\(['"]incomingMessage['"]/.test(s)) return "sala.html: el chat propio ya no escucha incomingMessage — no llegan los mensajes.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: el cliente también ve el gate (su link lleva start+dur)",
+    why: "El gate (cuenta regresiva / 'ya terminó', 5 min antes) depende de STARTms, que " +
+         "viene de ?start=. Si el link del cliente no lo lleva, STARTms=0 y el cliente entra " +
+         "SIEMPRE sin gate (contradice 'se abre 5 min antes para los dos'). El link del " +
+         "cliente (reservar.html _link y _salaClientLink del panel) debe incluir &start= y &dur=.",
+    check() {
+      const r = read("reservar.html");
+      if (r && /var _link=location\.origin\+'\/sala\.html/.test(r)) {
+        const m = r.match(/var _link=location\.origin\+'\/sala\.html[^;]*/);
+        if (m && (!/&start='/.test(m[0]) || !/&dur='/.test(m[0]))) return "reservar.html: el link del cliente a la Sala ya no lleva start/dur — el cliente entra sin gate.";
+      }
+      const p = read("panel-v2.html");
+      if (p && /function _salaClientLink/.test(p)) {
+        const m = p.match(/function _salaClientLink[\s\S]*?\n\}/);
+        if (m && (!/&start="/.test(m[0]) || !/&dur="/.test(m[0]))) return "panel-v2.html: _salaClientLink ya no lleva start/dur — el cliente entra sin gate.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "sala: subir archivo en la videollamada lo guarda en Documentos del cliente",
+    why: "Un archivo subido en la Sala tiene que quedar en Documentos del cliente (tabla " +
+         "informes_guardados, con el coach_id correcto para que el coach lo vea vía cg()). " +
+         "Requiere que la Sala reciba ?coach= (lo pone _agSalaUrl) y que _infFilesLoad sepa " +
+         "mostrar un archivo (contenido.url) como link de descarga, no como overlay de informe.",
+    check() {
+      const s = read("sala.html");
+      if (s) {
+        if (!/informes_guardados/.test(s)) return "sala.html: subir archivo ya no guarda en informes_guardados (Documentos del cliente).";
+        if (!/storage\/v1\/object\/avatars\//.test(s)) return "sala.html: la subida de archivo ya no va al bucket de Storage.";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/&coach="\+encodeURIComponent\(\(RME&&RME\.id\)/.test(p)) return "panel-v2.html: _agSalaUrl ya no pasa &coach= — los archivos subidos no quedarían bajo el coach.";
+        if (!/var _fileUrl=/.test(p) || !/_c\.url/.test(p)) return "panel-v2.html: _infFilesLoad ya no distingue un archivo (contenido.url) de un informe.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "reservas: los botones de los emails del panel usan comillas dobles (a prueba de apóstrofos)",
+    why: "esc() del panel NO escapa la comilla simple. Si el href va en atributo con comillas " +
+         "simples y el link trae un nombre con apóstrofo (O'Brien), la comilla cierra el atributo " +
+         "y el botón apunta a una URL rota. encodeURIComponent SÍ escapa la comilla doble, así que " +
+         "los href de _notifResReprog/_confirmCliente deben ir con comillas dobles.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (/href='"\+join\+"'/.test(p)) return "panel-v2.html: hay un href con comillas simples alrededor de +join+ — se rompe con apóstrofos.";
+        if (/href='"\+_gc\+"'/.test(p)) return "panel-v2.html: hay un href con comillas simples alrededor de +_gc+ — se rompe con apóstrofos.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "admin: 'Pasar a Pro/Basic' va por edge function (resiste RLS), no PATCH directo",
+    why: "El botón hacía un PATCH directo a usuarios que RLS bloquea → tocabas OK y no " +
+         "pasaba nada. Debe ir por admin-coach-op con op:set_plan (como 'marcar pagado'). " +
+         "Además la función tiene que estar en el auto-deploy, si no el cambio no llega a prod.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p && /coach-plan:/.test(p)) {
+        if (!/op:\s*["']set_plan["']|"op":"set_plan"/.test(p)) return "panel-v2.html: 'Pasar a Pro/Basic' ya no usa admin-coach-op (op:set_plan) — vuelve a fallar por RLS.";
+      }
+      const w = read(".github/workflows/deploy-functions.yml");
+      if (w) {
+        if (!/functions deploy admin-coach-op/.test(w)) return "deploy-functions.yml: admin-coach-op no está en el auto-deploy — los cambios no llegarían a producción.";
+        if (!/functions deploy jaas-token/.test(w)) return "deploy-functions.yml: jaas-token no está en el auto-deploy — la Sala quedaría sin token.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "comisión: 0% a clientes propios; solo 'pathway' paga y cuenta para el tramo",
+    why: "El coach NO debe pagar comisión por SUS clientes (origen='propio' → 0%). Solo los " +
+         "traídos por el marketplace (origen='pathway') pagan y cuentan para el tramo escalonado. " +
+         "connect-checkout mira el origen del candidato (rate=0 si propio) y cuenta solo pathway; el " +
+         "alta de un cliente pago del marketplace (accept + webhook) estampa origen='pathway'. " +
+         "Es SEGURO: si la columna origen aún no existe, se comporta como antes (cobra a todos).",
+    check() {
+      const c = read("supabase/functions/connect-checkout/index.ts");
+      if (c) {
+        if (!/isPropio\s*\?\s*0\s*:\s*tierRate/.test(c)) return "connect-checkout: la comisión ya no pone 0% a los clientes propios (isPropio ? 0 : tierRate).";
+        if (!/origen=eq\.pathway/.test(c)) return "connect-checkout: el tramo ya no cuenta solo los clientes 'pathway'.";
+        if (!/origen:\s*"pathway"/.test(c)) return "connect-checkout: el cliente nuevo del marketplace ya no se marca origen='pathway'.";
+      }
+      const w = read("supabase/functions/stripe-webhook/index.ts");
+      if (w && !/origen:\s*"pathway"/.test(w)) return "stripe-webhook: el cliente nuevo del marketplace ya no se marca origen='pathway'.";
+      return null;
+    },
+  },
+  {
+    name: "comisión: entrar desde 'busco coach' (marketplace) marca al cliente 'pathway' por email",
+    why: "Si el cliente entra desde el perfil público (busco coach) tiene que quedar 'pathway' " +
+         "(paga comisión), no 'propio'. El link del perfil (coach.html) lleva &mp=1 y reservar.html " +
+         "marca el candidato origen='pathway' por email al reservar (no solo al pagar).",
+    check() {
+      const c = read("coach.html");
+      if (c && /reservar\.html\?c=/.test(c) && !/&mp=1/.test(c)) return "coach.html: los links de reservar del perfil público ya no llevan &mp=1 (no se detecta el marketplace).";
+      const r = read("reservar.html");
+      if (r && /qp\(['"]mp['"]\)===['"]1['"]/.test(r) && !/origen:['"]pathway['"]/.test(r)) return "reservar.html: la reserva del marketplace (mp=1) ya no marca origen='pathway'.";
+      return null;
+    },
+  },
+  {
+    name: "candado Pro 'probá gratis, pagá para guardar': la función Pro se ve pero al guardar/enviar abre el modal de upgrade (no alert feo)",
+    bug: "El coach Basic VE y prueba las funciones Pro (marca propia, mensajería, +clientes), " +
+         "pero al GUARDAR/ENVIAR/AGREGAR se abre un modal de upgrade de Pathway (proGate/pwUpgrade) " +
+         "con CTA al Stripe del plan Pro con el email precargado. En multi-coach, al llegar al tope " +
+         "de coaches/clientes se abre mcUpgrade con los planes (Boutique/Studio/Pro). " +
+         "Si se rompe (vuelve el alert()/confirm() seco o el gate escondido), se pierde el upsell " +
+         "que empuja Basic→Pro y la conversión.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function proGate\(/.test(p) || !/function pwUpgrade\(/.test(p)) return "panel-v2.html: falta el guard/modal de upgrade (proGate/pwUpgrade).";
+        if (!/if\(!proGate\("brand"\)\) return;/.test(p)) return "panel-v2.html: el guardado de marca propia ya no pasa por proGate('brand').";
+        if (!/if\(!proGate\("mensajeria"\)\) return;/.test(p)) return "panel-v2.html: el envío de email (mail-send) ya no pasa por proGate('mensajeria').";
+        if (/act==="cfg-save-brand"[\s\S]{0,80}alert\(/.test(p)) return "panel-v2.html: volvió el alert() feo en el guardado de marca propia.";
+        if (/act==="mail-send"[\s\S]{0,80}alert\("Enviar emails/.test(p)) return "panel-v2.html: volvió el alert() feo en mail-send.";
+        if (!/stripeSubUrl\("pro"/.test(p)) return "panel-v2.html: el modal de upgrade ya no apunta al Stripe del plan Pro con email precargado.";
+      }
+      const m = read("multicoach.html");
+      if (m) {
+        if (!/function mcUpgrade\(/.test(m)) return "multicoach.html: falta el modal de upgrade de red (mcUpgrade).";
+        if (!/mcUpgrade\('clientes'\)/.test(m) || !/mcUpgrade\('coaches'\)/.test(m)) return "multicoach.html: los topes de clientes/coaches ya no abren mcUpgrade.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "agenda: 'Agendar cita' del coach GUARDA en Pathway (tabla citas) + avisa por email, no solo abre Google",
+    bug: "El handler ag-agendar del coach NO guardaba su propia cita en la tabla citas: " +
+         "solo armaba una URL de Google Calendar y abría una pestaña (window.open eventedit). " +
+         "Resultado: la cita no aparecía en el panel de Pathway, no se podía agendar sin Google " +
+         "y no salía ningún email → la coach terminaba usando Google. Ahora ag-agendar hace " +
+         "_sbw('citas','POST',{coach_id:RME.id,...}) para el coach, recarga la agenda (_resLoad/_calLoad) " +
+         "y manda el email de confirmación (_notifResCliente) con el link de la Sala. " +
+         "Si vuelve el window.open a calendar.google.com o desaparece el POST a citas del propio coach, regresa el bug.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      const i = p.indexOf('act==="ag-agendar"');
+      if (i < 0) return "panel-v2.html: no se encontró el handler ag-agendar.";
+      const body = p.slice(i, i + 3600);
+      if (!/_sbw\("citas","POST"/.test(body) || !/coach_id:\(RME&&RME\.id\)/.test(body)) return "panel-v2.html: ag-agendar ya no guarda la cita del coach en la tabla citas (POST con coach_id=RME.id).";
+      if (!/_resLoad\(\)/.test(body) || !/_calLoad\(\)/.test(body)) return "panel-v2.html: ag-agendar ya no recarga la agenda tras guardar (_resLoad/_calLoad).";
+      if (!/_notifResCliente\(/.test(body)) return "panel-v2.html: ag-agendar ya no manda el email de confirmación al invitado (_notifResCliente).";
+      if (/window\.open\([^)]*calendar\.google\.com/.test(body) || /location\.href=_au/.test(body)) return "panel-v2.html: ag-agendar volvió a forzar Google Calendar (window.open eventedit) en vez de guardar en Pathway.";
+      return null;
+    },
+  },
+  {
+    name: "embudo de ventas: los 'Lo piensa' salen como seguimientos + historial + 'Convertir en cliente'",
+    bug: "El resultado de una llamada (citas.resultado) quedaba enterrado: marcar 'Lo piensa' (seguimiento) " +
+         "no aparecía en ningún lado para hacer seguimiento y no había historial de llamadas. Ahora el Resumen " +
+         "muestra la tarjeta Seguimientos (_seguimientosCard) con los pendientes, hay un historial filtrable " +
+         "(_segHistModal) y 'Convertir en cliente' (seg-convert) crea la ficha del candidato + marca la cita " +
+         "resultado=convirtio, para que las notas de la llamada queden en la ficha (se cruzan por email).",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _seguimientosCard\(/.test(p) || !/function _segHistModal\(/.test(p)) return "panel-v2.html: falta la tarjeta/historial de seguimientos (_seguimientosCard/_segHistModal).";
+      if (!/_seguimientosCard\(\)\+/.test(p)) return "panel-v2.html: la tarjeta de Seguimientos ya no se renderiza en el Resumen.";
+      if (!/act==="seg-convert"/.test(p)) return "panel-v2.html: falta el handler 'Convertir en cliente' (seg-convert).";
+      const seg = p.slice(p.indexOf('act==="seg-convert"'), p.indexOf('act==="seg-convert"') + 2000);
+      if (!/fetch\(SB\+"\/rest\/v1\/candidatos"/.test(seg)) return "panel-v2.html: seg-convert ya no da de alta el candidato (POST candidatos).";
+      if (!/resultado:"convirtio"/.test(seg)) return "panel-v2.html: seg-convert ya no marca la cita como convertida (resultado=convirtio).";
+      if (!/if\(_SEG_DATA===null\) _segLoad\(\)/.test(p)) return "panel-v2.html: el Resumen ya no dispara la carga de seguimientos (_segLoad).";
+      return null;
+    },
+  },
+  {
+    name: "config del coach: el guardado a usuarios resiste RLS (JWT vencido) vía coach-self-save, no se pierde en silencio",
+    bug: "Con RLS Fase 5 (usuarios_hardening.sql) el UPDATE de usuarios exige el JWT del coach. Si la " +
+         "sesión de Supabase venció o entró con el login viejo, el PATCH caía a la anon key y RLS lo " +
+         "rechazaba: la config/perfil NO se guardaba y el coach ni se enteraba (fire-and-forget). " +
+         "Ahora _selfPatchUsuarios intenta directo y, si falla, reintenta por la edge function " +
+         "coach-self-save (service role, lista blanca SIN rol/password → sin escalada). Los guardados " +
+         "de configuracion/foto_url/xp/badges del propio coach pasan por ese helper.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _selfPatchUsuarios\(/.test(p)) return "panel-v2.html: falta el helper _selfPatchUsuarios (guardado resistente a RLS).";
+        if (!/coach-self-save/.test(p)) return "panel-v2.html: el helper ya no reintenta por la edge function coach-self-save.";
+        // El guardado principal de config del coach debe ir por el helper, no por _sbw directo a usuarios.
+        if (/_sbw\("usuarios\?id=eq\."\+encodeURIComponent\(RME\.id\),"PATCH",\{configuracion/.test(p)) return "panel-v2.html: un guardado de configuracion del coach volvió a _sbw directo (se pierde con RLS si no hay JWT).";
+      }
+      const fn = read("supabase/functions/coach-self-save/index.ts");
+      if (fn !== null) {
+        if (/ALLOWED[\s\S]{0,200}password_hash/.test(fn) || /ALLOWED[\s\S]{0,200}"rol"/.test(fn)) return "coach-self-save: la lista blanca NO puede incluir rol/password_hash (riesgo de escalada).";
+        if (!/SERVICE_ROLE_KEY/.test(fn)) return "coach-self-save: la función debe usar el service role para bypassear RLS.";
+      }
+      return null;
+    },
+  },
+  // ── EVENT BUS (Pathway OS Core · Nivel 0) — blindaje de los emisores ──
+  // Cada evento cableado suma una regla: si alguien (humano o IA) borra sin
+  // querer un emit o el include, esta prueba falla y frena el merge.
+  // Contrato: docs/domain-events.md.
+  {
+    name: "event bus: pw-events.js define window.pwEmit (emisor)",
+    bug: "pw-events.js es el emisor del Event Bus. Sin el, ningun pwEmit() funciona.",
+    check() {
+      const s = read("pw-events.js");
+      if (!s) return "falta pw-events.js (el emisor del Event Bus).";
+      if (!/window\.pwEmit\s*=/.test(s)) return "pw-events.js ya no define window.pwEmit.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: pw-events.js incluido en panel-v2 y cliente",
+    bug: "Sin <script src=pw-events.js>, window.pwEmit no existe y no se emite nada.",
+    check() {
+      if (!/pw-events\.js/.test(read("panel-v2.html"))) return "panel-v2.html ya no incluye pw-events.js → no emite eventos.";
+      if (!/pw-events\.js/.test(read("cliente.html"))) return "cliente.html ya no incluye pw-events.js → no emite eventos.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ClientInvited se emite al dar de alta un cliente (panel-v2)",
+    bug: "Senal de activacion: el coach invito a un cliente (handler 'alta-invitar').",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("ClientInvited"/.test(s)) return "panel-v2.html: se borro el emit de ClientInvited.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: SessionCompleted se emite al registrar una sesion (panel-v2)",
+    bug: "Evento clave (muchos listeners): el coach registro una sesion (handler 'ses-add').",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("SessionCompleted"/.test(s)) return "panel-v2.html: se borro el emit de SessionCompleted.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ProfileCompleted se emite al guardar el perfil (panel-v2)",
+    bug: "Senal de activacion: el coach guardo su perfil con contenido real (nombre + bio/titulo).",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("ProfileCompleted"/.test(s)) return "panel-v2.html: se borro el emit de ProfileCompleted.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ClientAccepted se emite al aceptar el consentimiento (cliente.html)",
+    bug: "Senal de activacion: el cliente acepto y entro por primera vez (done() del gate de consentimiento).",
+    check() {
+      const s = read("cliente.html");
+      if (s && !/pwEmit\("ClientAccepted"/.test(s)) return "cliente.html: se borro el emit de ClientAccepted.";
+      return null;
+    },
+  },
+  // ── metricas (Nivel 1) — la edge function que enriquecerá el tab Analíticas ──
+  {
+    name: "metricas: edge function read-only con gate de admin",
+    bug: "metricas es la unica fuente backend del dashboard; admin-only, nadie lee eventos con la anon key.",
+    check() {
+      const s = read("supabase/functions/metricas/index.ts");
+      if (!s) return null;
+      if (!/isAdmin/.test(s) || !/forbidden/.test(s))
+        return "metricas: se perdio el gate de admin (isAdmin / 403 forbidden).";
+      if (!/\bid:\s*u\.id\b/.test(s))
+        return "metricas: el objeto por coach debe incluir `id` (lo usa el drill-down coach-view del tab Analiticas).";
+      // Calidad de dato: los coaches SUSPENDIDOS (activo=false) no ensucian el
+      // Health Score ni el embudo. Los eliminados ya no están en la tabla.
+      if (!/activo\s*!==\s*false/.test(s))
+        return "metricas: se dejó de excluir a los coaches suspendidos (activo=false) — ensuciarían el Health Score y el embudo.";
+      return null;
+    },
+  },
+  // ── Enriquecimiento del tab Analiticas con Health Score (consumidor de metricas) ──
+  {
+    name: "analiticas: tarjeta Health Score cableada como consumidor puro de metricas",
+    bug: "el tab Analiticas se ENRIQUECE (no se reescribe): la tarjeta de Health Score consume metricas y reusa el drill-down coach-view. No debe recalcular negocio en el front.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // El contenedor lazy existe dentro de la rama del tab Analiticas.
+      if (!/id='ceo-dash'/.test(s))
+        return "panel-v2: falta el contenedor #ceo-dash del Health Score en el tab Analiticas.";
+      // Se carga de la edge function metricas (fuente unica), no calcula en el front.
+      if (!/functions\/v1\/metricas/.test(s))
+        return "panel-v2: el Health Score dejo de consumir la edge function metricas.";
+      // Reusa el drill-down que ya existe (no duplica ficha de coach).
+      if (!/data-act='coach-view:"\+E\(c\.id\)/.test(s))
+        return "panel-v2: la tarjeta de Health Score dejo de reusar el drill-down coach-view.";
+      // El tab viejo NO se elimino: el embudo de implementacion sigue vivo.
+      if (!/Embudo de implementaci[oó]n/.test(s))
+        return "panel-v2: se perdio el Embudo de implementacion del tab Analiticas (era ENRIQUECER, no reescribir).";
+      return null;
+    },
+  },
+  {
+    name: "loop cerrado: metricas mide la efectividad de los nudges y el panel la muestra",
+    bug: "El loop se cierra midiendo nudge -> evento del paso: de los que recibieron el empujon, cuantos avanzaron despues. metricas lo calcula (lee coach_nudges) y el panel lo renderiza como consumidor.",
+    check() {
+      const m = read("supabase/functions/metricas/index.ts");
+      const p = read("panel-v2.html");
+      if (m) {
+        if (!/coach_nudges/.test(m)) return "metricas: dejo de leer coach_nudges (no puede medir la efectividad de los nudges).";
+        if (!/\bnudges\b/.test(m)) return "metricas: no devuelve `nudges` (efectividad por etapa).";
+      }
+      if (p && !/Efectividad de los nudges/.test(p))
+        return "panel-v2: se perdio la tarjeta de Efectividad de los nudges en el tab Analiticas.";
+      return null;
+    },
+  },
+  // ── Embudo event-native: los 3 eventos server-side de facturacion ──
+  {
+    name: "event bus: TrialStarted se emite al arrancar la prueba (crear-coach + registrar-coach)",
+    bug: "Fase 'Trial' del embudo: el coach arranca su prueba. Se emite en el alta (admin) y en el auto-registro.",
+    check() {
+      const cc = read("supabase/functions/crear-coach/index.ts");
+      const rc = read("supabase/functions/registrar-coach/index.ts");
+      if (cc && !/pwEmit|emitEvento/.test(cc)) return "crear-coach: no hay emisor de eventos.";
+      if (cc && !/"TrialStarted"/.test(cc)) return "crear-coach: se borro el emit de TrialStarted.";
+      if (rc && !/"TrialStarted"/.test(rc)) return "registrar-coach: se borro el emit de TrialStarted.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: StripeConnected se emite (una vez) al conectar el cobro (connect-onboard)",
+    bug: "Fase 'Stripe' del embudo: el coach conecta Connect. Dedup por cfg.stripe_connected_at para no contar cada poll de status.",
+    check() {
+      const s = read("supabase/functions/connect-onboard/index.ts");
+      if (!s) return null;
+      if (!/"StripeConnected"/.test(s)) return "connect-onboard: se borro el emit de StripeConnected.";
+      if (!/stripe_connected_at/.test(s)) return "connect-onboard: se perdio el dedup (stripe_connected_at) — StripeConnected se contaria en cada poll de status.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: PaymentSucceeded se emite (una vez) al pagar la suscripcion (stripe-webhook)",
+    bug: "Fase 'Pago' del embudo: el coach paga por primera vez. Guardado por becameActive → una vez por transicion, no en cada cobro mensual.",
+    check() {
+      const s = read("supabase/functions/stripe-webhook/index.ts");
+      if (!s) return null;
+      if (!/"PaymentSucceeded"/.test(s)) return "stripe-webhook: se borro el emit de PaymentSucceeded.";
+      // Debe estar dentro del bloque becameActive (no en cada subscription.updated).
+      const i = s.indexOf("becameActive"), j = s.indexOf('"PaymentSucceeded"');
+      if (i < 0 || j < 0 || !/if \(becameActive\)/.test(s)) return "stripe-webhook: PaymentSucceeded ya no depende de becameActive (se contaria cada cobro).";
+      return null;
+    },
+  },
+  {
+    name: "workflow intelligence: nudges por ETAPA en coach-lifecycle (estado real, no dias)",
+    bug: "El motor debe ayudar con el PROXIMO paso pendiente y NUNCA empujar un paso ya hecho. Reusa emailHtml/coach_nudges; Stripe solo si pathway_optin (igual que computeSteps del panel). No recrear la guia.",
+    check() {
+      const s = read("supabase/functions/coach-lifecycle/index.ts");
+      if (!s) return null;
+      // Las 4 reglas de etapa existen.
+      for (const k of ["stage_perfil", "stage_stripe", "stage_invitar", "stage_cliente"]) {
+        if (!s.includes(k)) return "coach-lifecycle: falta la regla de etapa " + k + ".";
+      }
+      // Regla de oro: Stripe solo se empuja si acepta clientes de Pathway (mismo
+      // criterio que computeSteps del panel), no a todos.
+      if (!/pathway_optin/.test(s))
+        return "coach-lifecycle: el nudge de Stripe dejo de respetar pathway_optin (molestaria a coaches con clientes propios).";
+      // Reusa una plantilla con el chrome de onboarding (logo+cabra+footer), no
+      // recrea una nueva por email. stageEmail arma via brandedEmail.
+      if (!/function stageEmail\(/.test(s) || !/function brandedEmail\(/.test(s) || !/brandedEmail\(/.test(s))
+        return "coach-lifecycle: stageEmail dejo de reusar la plantilla linda (brandedEmail).";
+      // El nudge de etapa tiene prioridad sobre el onboarding por tiempo.
+      if (!/trialKind \|\| stageKind \|\|/.test(s))
+        return "coach-lifecycle: el nudge por etapa perdio prioridad sobre el onboarding por dias.";
+      return null;
+    },
+  },
+  {
+    name: "referidos: la recompensa es el badge Comunidad, no 15 dias (regalar dias a quien paga sale caro)",
+    bug: "Decision de negocio: referir da el badge Comunidad (ya se otorga solo), no 15 dias gratis. El credito de dias del backend quedo apagado. Si vuelve el '15 dias' al email de referidos o se prende el credito sin querer, es una regresion.",
+    check() {
+      const cl = read("supabase/functions/coach-lifecycle/index.ts");
+      const sw = read("supabase/functions/stripe-webhook/index.ts");
+      if (cl) {
+        if (!/function referralBadgeEmail\(/.test(cl)) return "coach-lifecycle: falta referralBadgeEmail (email de referidos por badge).";
+        if (!/onb_referido"\s*\?\s*referralBadgeEmail/.test(cl)) return "coach-lifecycle: onb_referido dejo de usar referralBadgeEmail (volveria al email viejo de 15 dias).";
+      }
+      if (sw && !/REFERRAL_DAYS_CREDIT_ENABLED\s*=\s*false/.test(sw))
+        return "stripe-webhook: se reactivo el credito de 15 dias por referido (REFERRAL_DAYS_CREDIT_ENABLED). Confirmalo a proposito si es intencional.";
+      return null;
+    },
+  },
+  {
+    name: "deploy: metricas y registrar-coach estan en el workflow de deploy",
+    bug: "Si la edge function no esta en deploy-functions.yml, se mergea pero NUNCA se despliega (el dashboard cargaria contra una version vieja o inexistente).",
+    check() {
+      const y = read(".github/workflows/deploy-functions.yml");
+      if (!y) return null;
+      if (!/deploy metricas/i.test(y)) return "deploy-functions.yml: falta el step de deploy de metricas.";
+      if (!/deploy registrar-coach/i.test(y)) return "deploy-functions.yml: falta el step de deploy de registrar-coach.";
+      return null;
+    },
+  },
+  {
+    name: "white-label de red: la marca del dueño (organizaciones.marca) llega a los 3 portales del cliente",
+    bug: "El white-label es el corazón de lo que se vende en multi-coach ('tu marca, no la de Pathway'). " +
+         "Antes el portal del cliente solo aplicaba la marca del coach INDIVIDUAL si era Pro — pero en una " +
+         "red los coaches no son Pro (paga el dueño), así que el cliente veía el verde Pathway. Ahora, si el " +
+         "cliente tiene org_id, se aplica la marca del dueño (color+logo) vía applyOrgBrand. Cubre fitness, " +
+         "finanzas y carrera.",
+    check() {
+      const fit = read("pathway-fit-cliente.html"), fin = read("pathway-fin-cliente.html"), car = read("cliente.html");
+      if (fit && (!/function applyOrgBrand\(/.test(fit) || !/applyOrgBrand\((c|CRAW)\.org_id\)/.test(fit))) return "pathway-fit-cliente.html: no aplica la marca de la red (applyOrgBrand por org_id).";
+      if (fin && (!/function applyOrgBrandFin\(/.test(fin) || !/applyOrgBrandFin\(CRAW\.org_id\)/.test(fin))) return "pathway-fin-cliente.html: no aplica la marca de la red (applyOrgBrandFin por org_id).";
+      if (car && (!/function _applyOrgBrand\(/.test(car) || !/_applyOrgBrand\(C\.org_id\)/.test(car))) return "cliente.html: no aplica la marca de la red (_applyOrgBrand por org_id).";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: la Configuración GUARDA de verdad (persiste en organizaciones.marca), no toast trucho",
+    bug: "Para poder VENDER el multicoach, la sección Configuración (Perfil, Recursos, Marca, Mi cuenta) " +
+         "no puede tener guardados de mentira. Antes cada botón 'Guardar' solo hacía __toast('...✓') sin " +
+         "persistir. Ahora mcSaveConfig() hace PATCH a organizaciones.marca (JSONB, merge) y _apply() la " +
+         "reaplica al recargar (color/logo/recursos). Si vuelve un __toast('...guardad...✓') suelto en un " +
+         "botón de Guardar, es un guardado trucho de nuevo.",
+    check() {
+      const m = read("multicoach.html");
+      if (!m) return null;
+      if (!/function mcSaveConfig\(/.test(m)) return "multicoach.html: falta mcSaveConfig (persistencia real de la config).";
+      if (!/PATCH[\s\S]{0,60}organizaciones|mcPatch\('organizaciones'/.test(m)) return "multicoach.html: mcSaveConfig ya no persiste en organizaciones.";
+      if (!/onclick="_saveProfile\(\)"/.test(m) || !/onclick="_saveRecursos\(\)"/.test(m) || !/onclick="_saveAccount\(\)"/.test(m)) return "multicoach.html: un botón Guardar de la config ya no llama a su función real (_saveProfile/_saveRecursos/_saveAccount).";
+      if (/onclick="__toast\('(Perfil|Recursos|Cuenta) guardad[oa] ✓'\)"/.test(m)) return "multicoach.html: volvió un guardado TRUCHO (__toast '...guardado ✓' sin persistir) en la config.";
+      return null;
+    },
+  },
+  {
+    name: "sesión self-healing: un 401/403 refresca el JWT y reintenta (no pierde el guardado ni expulsa)",
+    bug: "Cuando el access_token de Supabase vencía, el request salía con la anon key y RLS lo " +
+         "rechazaba (401/403). Antes _sbw/_sb mandaban directo a login y el guardado se perdía. " +
+         "Ahora, ante un 401/403, _pwRefresh fuerza refreshSession y se reintenta UNA vez; solo si " +
+         "sigue fallando se avisa sesión vencida. Es la cura de raíz para que 'ande solo' sin volver " +
+         "a parchar cada guardado. Si se rompe, vuelven los guardados perdidos por sesión vencida.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _pwRefresh\(/.test(p) || !/refreshSession\(/.test(p)) return "panel-v2.html: falta _pwRefresh (refresco de sesión self-healing).";
+      // _sbw debe reintentar tras refrescar, no expulsar directo en el 401/403.
+      const w = p.slice(p.indexOf("function _sbw("), p.indexOf("function _sbw(") + 2700);
+      if (!/_pwRefresh\(\)/.test(w)) return "panel-v2.html: _sbw ya no refresca+reintenta ante 401/403 (perdería el guardado por sesión vencida).";
+      if (!/_pwRefresh\(\)/.test(p.slice(p.indexOf("function _sb(p)"), p.indexOf("function _sb(p)") + 700))) return "panel-v2.html: _sb ya no refresca+reintenta ante 401/403.";
+      // Cobertura TODO Pathway: el interceptor de pw-auth.js también refresca+reintenta
+      // (cubre los portales del cliente + cv/carta, no solo el panel).
+      const a = read("pw-auth.js");
+      if (a) {
+        if (!/function refreshOnce\(/.test(a)) return "pw-auth.js: falta refreshOnce (refresh de sesión para todo Pathway).";
+        if (!/__pwRetried/.test(a) || !/refreshOnce\(\)/.test(a)) return "pw-auth.js: el interceptor ya no reintenta el fetch tras refrescar el JWT (los portales del cliente perderían guardados por sesión vencida).";
       }
       return null;
     },

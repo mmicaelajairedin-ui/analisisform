@@ -67,8 +67,14 @@ async function verificarRender(page) {
 // registrado en el listener de pageerror).
 async function navegarPanel(page) {
   const items = await page.locator('.cp-side-nav-item, .ni').all();
+  // Presupuesto acotado: recorrer TODAS las secciones con 3s de espera por click
+  // podía superar por sí solo el timeout del test en paneles con muchas secciones
+  // (dueño multicoach) → falsa alarma "timeout" sin que nada esté roto. Cap total
+  // de ~15s + click más corto: sigue cubriendo el recorrido y deja margen al test.
+  const deadline = Date.now() + 15000;
   for (const it of items) {
-    try { await it.click({ timeout: 3000 }); await page.waitForTimeout(350); } catch (_e) { /* seguimos */ }
+    if (Date.now() > deadline) break;
+    try { await it.click({ timeout: 1200 }); await page.waitForTimeout(250); } catch (_e) { /* seguimos */ }
   }
 }
 

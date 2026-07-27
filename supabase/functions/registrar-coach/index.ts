@@ -40,6 +40,18 @@ function safeRow(r: Record<string, unknown>) {
   return { id: r.id, email: r.email, rol: r.rol, nombre: r.nombre, activo: r.activo, configuracion: r.configuracion };
 }
 
+// ── Event Store (Pathway OS) — emite un evento server-side (best-effort). ──
+// Espejo server de pw-events.js. NUNCA rompe el flujo. Ref: eventos.sql.
+async function emitEvento(ev: Record<string, unknown>): Promise<void> {
+  try {
+    await fetch(`${SB_URL}/rest/v1/eventos`, {
+      method: "POST",
+      headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ source: "server", ...ev }),
+    });
+  } catch { /* best-effort, jamás bloquea */ }
+}
+
 // Quita del configuracion que manda el cliente los campos que NO puede setear él
 // (privilegios / marcas internas). El resto (plan, estado_sub, fecha_fin_prueba,
 // coach_type, verification_token, referred_by, from_popup…) se conserva: es el
@@ -132,6 +144,11 @@ Deno.serve(async (req: Request) => {
     );
     if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
     const out = await r.json();
-    return json({ ok: true, mode: "created", ...safeRow((out && out[0]) || {}) });
+    const nuevo = (out && out[0]) || {};
+    // Embudo: arranca la prueba del coach (auto-registro desde la web). En el
+    // path 'activated' NO se emite: ese coach fue invitado y crear-coach ya
+    // registró su TrialStarted — emitir de nuevo lo contaría doble.
+    await emitEvento({ tipo: "TrialStarted", dominio: "Billing", actor_email: email, actor_rol: "coach", actor_id: nuevo.id ? String(nuevo.id) : null, entidad_tipo: "coach", entidad_id: email, page: "registrar-coach", payload: { via: "self" } });
+    return json({ ok: true, mode: "created", ...safeRow(nuevo) });
   } catch { return json({ error: "write_failed" }, 502); }
 });

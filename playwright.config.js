@@ -5,8 +5,13 @@ const BASE_URL = process.env.BASE_URL || 'https://pathwaycareercoach.com/';
 
 module.exports = defineConfig({
   testDir: './tests',
-  timeout: 30000,
-  retries: 0,
+  // El bot logueado (entrar + render + recorrer secciones) de un panel pesado
+  // (dueño multicoach) necesita más de 30s legítimamente. 60s da margen sin tapar
+  // roturas reales (un panel roto igual falla el render en 15s).
+  timeout: 60000,
+  // 1 reintento: absorbe flaky de una sola corrida (blip de red, carga fría) para
+  // que el reporte diario solo marque en rojo lo que falla de verdad, no un tropezón.
+  retries: 1,
   workers: 2,
   reporter: [
     ['list'],

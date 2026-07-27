@@ -152,6 +152,11 @@ Deno.serve(async (req: Request) => {
     let servicioIdx: number | null = null;
     let servicioTitulo: string;    // cacheado en la solicitud — sobrevive a renombres
     let recurrente = false;        // servicio de suscripción → cobro cada 4 semanas
+    // Moneda del coach (los coaches son de todo el mundo → no todo es en euros).
+    // Se toma del servicio (s.moneda) o de la config del coach (cfg.moneda), se
+    // valida contra una lista soportada por Stripe, y por defecto es 'eur'.
+    const MONEDAS_OK = new Set(["eur","usd","gbp","mxn","ars","cop","clp","pen","brl","uyu","cad","chf"]);
+    let moneda = "eur";
     if (hasIdx) {
       const idx = Math.floor(p.servicio_idx);
       const servicios = Array.isArray(cfg.servicios) ? cfg.servicios : [];
@@ -165,6 +170,8 @@ Deno.serve(async (req: Request) => {
       servicioIdx = idx;
       servicioTitulo = String(so.name ?? so.nombre ?? "Servicio");
       recurrente = so.recurrente === true || so.suscripcion === true;
+      const rawMon = String(so.moneda ?? cfg.moneda ?? "eur").toLowerCase();
+      if (MONEDAS_OK.has(rawMon)) moneda = rawMon;
     } else {
       precio = Number(
         servicioLegacy === "sesion" ? (cfg.precio_sesion || 120) : (cfg.precio_mentoria || 400),
@@ -173,21 +180,57 @@ Deno.serve(async (req: Request) => {
         " con " + (coach.nombre || "tu coach");
       servicioTag = servicioLegacy;
       servicioTitulo = servicioLegacy === "sesion" ? "Sesión única" : "Mentoría 4 semanas";
+      const rawMon = String(cfg.moneda ?? "eur").toLowerCase();
+      if (MONEDAS_OK.has(rawMon)) moneda = rawMon;
     }
-    const monto = Math.round(precio * 100);          // céntimos
+    // Stripe "zero-decimal": el importe NO se multiplica por 100 (p.ej. CLP). Si
+    // no lo tratamos, 50.000 CLP saldría 100× más caro. Solo CLP está en nuestra
+    // lista, pero dejamos el set completo por si sumamos otra.
+    const ZERO_DECIMAL = new Set(["bif","clp","djf","gnf","jpy","kmf","krw","mga","pyg","rwf","ugx","vnd","vuv","xaf","xof","xpf"]);
+    const monto = ZERO_DECIMAL.has(moneda) ? Math.round(precio) : Math.round(precio * 100);
+    // ¿Es cliente PROPIO del coach? (candidatos.origen='propio'). Si lo es, la
+    // comisión es 0% — lo trajo el coach, no el marketplace. Solo los 'pathway'
+    // (traídos por el marketplace) pagan comisión. Si el candidato no existe o la
+    // columna origen todavía no está (migración sin aplicar) → cobra como HOY.
+    const _em = String(cand.email || "").toLowerCase().trim();
+    let isPropio = false;
+    if (_em) {
+      try {
+        const orq = await fetch(
+          `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&email=eq.${encodeURIComponent(_em)}&select=origen&limit=1`,
+          { headers: sbH(SRK) },
+        );
+        if (orq.ok) { const orows = await orq.json(); isPropio = Array.isArray(orows) && orows.length > 0 && orows[0].origen === "propio"; }
+      } catch (_e) { isPropio = false; }
+    }
     // Comisión ESCALONADA: contamos los clientes pagos previos del coach vía
-    // Pathway (candidatos con pago_recibido). Este pago es el cliente #(nPrev+1),
-    // y cobra el % de SU tramo (1–5 → 5% … 31+ → 18%). Antes era 20% plano.
+    // Pathway (candidatos pago_recibido Y origen='pathway'). Este pago es el
+    // cliente #(nPrev+1) y cobra el % de SU tramo (1–5 → 5% … 31+ → 18%).
+    // Si la columna origen no existe todavía, contamos como antes (todos).
     let nPrev = 0;
     try {
       const cr = await fetch(
-        `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&pago_recibido=eq.true&select=id`,
+        `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&pago_recibido=eq.true&origen=eq.pathway&select=id`,
         { headers: { ...sbH(SRK), Prefer: "count=exact", Range: "0-0" } },
       );
-      nPrev = parseInt((cr.headers.get("content-range") || "0/0").split("/")[1] || "0", 10) || 0;
+      if (cr.ok) {
+        nPrev = parseInt((cr.headers.get("content-range") || "0/0").split("/")[1] || "0", 10) || 0;
+      } else if (cr.status === 400) {
+        // Solo si la columna origen todavía no existe (400) contamos como antes (todos).
+        const cr2 = await fetch(
+          `${SB}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(coachId)}&pago_recibido=eq.true&select=id`,
+          { headers: { ...sbH(SRK), Prefer: "count=exact", Range: "0-0" } },
+        );
+        nPrev = parseInt((cr2.headers.get("content-range") || "0/0").split("/")[1] || "0", 10) || 0;
+      } else {
+        // Error transitorio (5xx/red): NO inflamos el tramo → nPrev=0 (tramo más bajo,
+        // dirección segura para el coach, nunca cobra de más).
+        nPrev = 0;
+      }
     } catch (_e) { nPrev = 0; }
-    const rate = tierRate(nPrev + 1);
-    const fee = Math.round(monto * rate);
+    // Propio → 0%. Marketplace → tramo por nPrev.
+    const rate = isPropio ? 0 : tierRate(nPrev + 1);
+    const fee = Math.round(monto * rate);            // 0 si es propio
     if (monto <= 0) return json({ error: "Precio inválido" }, 400);
 
     // success_url devuelve al perfil del coach (slug) cuando es disponible,
@@ -204,7 +247,7 @@ Deno.serve(async (req: Request) => {
     // Parámetros comunes de la Checkout Session
     const baseParams: Record<string, string> = {
       "line_items[0][quantity]": "1",
-      "line_items[0][price_data][currency]": "eur",
+      "line_items[0][price_data][currency]": moneda,
       "line_items[0][price_data][unit_amount]": String(monto),
       "line_items[0][price_data][product_data][name]": nombreServicio,
       ...(cand.email ? { customer_email: String(cand.email) } : {}),
@@ -224,7 +267,9 @@ Deno.serve(async (req: Request) => {
         mode: "subscription",
         "line_items[0][price_data][recurring][interval]": "week",
         "line_items[0][price_data][recurring][interval_count]": "4",
-        "subscription_data[application_fee_percent]": String(feePct),
+        // Cliente propio (rate=0) → NO mandamos application_fee (0% de forma
+        // garantizada, sin depender de que Stripe acepte "0").
+        ...(fee > 0 ? { "subscription_data[application_fee_percent]": String(feePct) } : {}),
         "subscription_data[metadata][pathway]": "client_sub",
         "subscription_data[metadata][coach_id]": coachId,
         "subscription_data[metadata][candidato_email]": email,
@@ -237,7 +282,8 @@ Deno.serve(async (req: Request) => {
         ...baseParams,
         mode: "payment",
         "payment_intent_data[capture_method]": "manual",
-        "payment_intent_data[application_fee_amount]": String(fee),
+        // Propio (fee=0) → sin application_fee_amount (comisión 0 garantizada).
+        ...(fee > 0 ? { "payment_intent_data[application_fee_amount]": String(fee) } : {}),
         // Lo que ve el comprador en el resumen de su banco: "PATHWAY".
         "payment_intent_data[statement_descriptor]": "PATHWAY",
       };
@@ -343,6 +389,14 @@ Deno.serve(async (req: Request) => {
             method: "POST", headers: { ...sbH(SRK), Prefer: "return=minimal" },
             body: JSON.stringify({ ...body, email, nombre: nombre || email.split("@")[0], coach_id: sol.coach_id, activo: true }),
           });
+          // Cliente NUEVO que pagó por el marketplace → origen='pathway' (así cuenta
+          // para el tramo y paga comisión). Best-effort: si la columna origen no
+          // existe todavía, no rompe el alta (queda para cuando se aplique la migración).
+          try {
+            await fetch(`${SB}/rest/v1/candidatos?email=eq.${encodeURIComponent(email)}`, {
+              method: "PATCH", headers: { ...sbH(SRK), Prefer: "return=minimal" }, body: JSON.stringify({ origen: "pathway" }),
+            });
+          } catch (_e) { /* la columna origen quizá no existe aún */ }
         }
       }
     }

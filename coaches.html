@@ -435,13 +435,16 @@ function buildCoachCard(c){
   // Precio: del array `servicios` (donde el coach realmente carga sus precios).
   // Mostramos "Desde €X" (el más barato). Si no cargó ninguno, no se muestra nada.
   var servs = Array.isArray(cfg.servicios) ? cfg.servicios : [];
+  var _MON_SYM={eur:'€',usd:'US$',gbp:'£',mxn:'MX$',ars:'AR$',cop:'COL$',clp:'CL$',pen:'S/',brl:'R$',uyu:'$U',cad:'CA$',chf:'CHF '};
+  var _monC=String((servs.length&&servs[0]&&servs[0].moneda)||cfg.moneda||'eur').toLowerCase();
+  var _monS=_MON_SYM[_monC]||(_monC.toUpperCase()+' ');
   var precios = servs.map(function(s){ return Number(s.precio != null ? s.precio : s.price); })
                      .filter(function(n){ return isFinite(n) && n > 0; });
   if(!precios.length){ // fallback a campos viejos por si algún coach los tiene
     [cfg.precio_sesion, cfg.precio_mentoria].forEach(function(p){ var n=Number(p); if(isFinite(n)&&n>0) precios.push(n); });
   }
   var priceRow = precios.length
-    ? '<div class="coach-price-row"><div><span class="label">Desde</span><strong>€'+escH(String(Math.min.apply(null,precios)))+'</strong></div></div>'
+    ? '<div class="coach-price-row"><div><span class="label">Desde</span><strong>'+escH(_monS)+escH(String(Math.min.apply(null,precios)))+'</strong></div></div>'
     : '';
   var fotoHtml = foto
     ? '<img src="'+escH(foto)+'" alt="'+escH(nombre)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">'
@@ -553,6 +556,11 @@ function pruneFilters(){
     t.style.display = show ? '' : 'none';
   });
 }
+// Coaches ocultos manualmente del directorio público: no se muestran aunque
+// tengan el perfil público activo (p. ej. coaches que aún no están disponibles
+// para nuevos candidatos). Para volver a mostrar a alguien, sacarlo de la lista.
+// Lo ideal de fondo: apagar perfil_publico_activo en la base.
+var COACH_OCULTOS = ['maria isabel','madrigal'];
 async function loadCoachesDirectory(){
   try {
     var url = SB + '/rest/v1/usuarios?rol=in.(coach,admin)&activo=eq.true&select=id,nombre,email,foto_url,nombre_practica,bio,slug,perfil_publico_activo,configuracion&order=created_at.asc';
@@ -566,6 +574,7 @@ async function loadCoachesDirectory(){
       if(cfg0.visible_directorio === false) return false;
       var _id = ((c.nombre||'')+' '+(c.nombre_practica||'')+' '+(c.email||'')).toLowerCase();
       if(_id.indexOf('demo') >= 0 || _id.indexOf('test') >= 0 || _id.indexOf('prueba') >= 0) return false;
+      if(COACH_OCULTOS.some(function(x){ return x && _id.indexOf(x) >= 0; })) return false;
       return _coachCompleto(c);
     });
     // Curación invisible: priorizar coaches del país del candidato. Si no

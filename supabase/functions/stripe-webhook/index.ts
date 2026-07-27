@@ -158,6 +158,20 @@ function getSupabaseAuth() {
   };
 }
 
+// ── Event Store (Pathway OS) — emite un evento server-side (best-effort). ──
+// Espejo server de pw-events.js. NUNCA rompe el flujo del webhook: si el insert
+// falla, Stripe igual recibe 200 y el pago se procesa. Ref: eventos.sql.
+async function emitEvento(ev: Record<string, unknown>): Promise<void> {
+  try {
+    const { url, headers } = getSupabaseAuth();
+    await fetch(`${url}/rest/v1/eventos`, {
+      method: "POST",
+      headers: { ...headers, Prefer: "return=minimal" },
+      body: JSON.stringify({ source: "server", ...ev }),
+    });
+  } catch { /* best-effort, jamás bloquea el webhook */ }
+}
+
 // ── Lookup: ¿quién es el coach por defecto? ─────────────────
 // Usamos al admin (owner Pathway) como fallback cuando no viene
 // coach_id en metadata. Garantiza que ningún candidato quede huérfano.
@@ -358,6 +372,13 @@ async function handleClientPayment(session: StripeSession) {
         activo: true,
       }),
     });
+    // Cliente NUEVO del marketplace (pagó por Connect) → origen='pathway' (cuenta
+    // para el tramo y paga comisión). Best-effort: si la columna no existe, no rompe.
+    try {
+      await fetch(`${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(email)}`, {
+        method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ origen: "pathway" }),
+      });
+    } catch (_e) { /* la columna origen quizá no existe aún */ }
     return { result: "created", email, amount, coach_id: coachId };
   }
 }
@@ -392,6 +413,12 @@ async function upsertClientSub(email: string, fields: Record<string, unknown>) {
     method: "POST", headers: { ...headers, Prefer: "return=minimal" },
     body: JSON.stringify({ email: em, activo: true, ...fields, nombre: (fields.nombre as string) || em.split("@")[0] }),
   });
+  // Cliente NUEVO de suscripción del marketplace → origen='pathway' (best-effort).
+  try {
+    await fetch(`${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(em)}`, {
+      method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ origen: "pathway" }),
+    });
+  } catch (_e) { /* la columna origen quizá no existe aún */ }
   return { ok: r.ok };
 }
 async function handleClientSubCheckout(session: StripeSession) {
@@ -546,11 +573,21 @@ async function handleCoachSubscription(
     (estado_sub === "activa") && (existingCfg.estado_sub !== "activa") && !isVitalicio;
   if (becameActive) {
     await sendCoachActivatedEmail(email, coachPrimer, plan);
+    // Embudo: el coach pagó por primera vez (o reactivó tras prueba vencida).
+    // Guardado por becameActive → una sola vez por transición, no en cada cobro.
+    await emitEvento({ tipo: "PaymentSucceeded", dominio: "Billing", actor_email: email, actor_rol: "coach", entidad_tipo: "coach", entidad_id: email, page: "stripe-webhook", payload: { plan, monto: unitAmount, moneda: (item?.price?.currency || "usd") } });
   }
 
-  // ── REFERRAL CREDIT: si el nuevo coach paga por primera vez y
-  // tiene `referred_by` guardado, dar 1 mes gratis al coach que lo refirió
+  // ── REFERRAL CREDIT (DESACTIVADO) ──────────────────────────────
+  // Antes: al pagar un referido, se le daban 15 días gratis al que lo refirió
+  // (creditReferrer). Decisión de negocio (jul-2026): regalar días a coaches que
+  // YA pagan sale caro; la recompensa por referir pasó a ser el badge **Comunidad**
+  // (se otorga solo cuando alguien se registra con tu link — panel-v2 · pwCheckAutoBadges).
+  // El crédito en días se conserva SOLO para reactivar (reseña), no para referidos.
+  // Para reactivar el crédito de referidos, poner el flag en true.
+  const REFERRAL_DAYS_CREDIT_ENABLED = false;
   const paidTransition =
+    REFERRAL_DAYS_CREDIT_ENABLED &&
     (estado_sub === "activa") &&
     (existingCfg.estado_sub !== "activa") &&
     existingCfg.referred_by &&

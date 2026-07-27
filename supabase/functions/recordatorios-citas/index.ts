@@ -142,6 +142,16 @@ async function sendReminder(
     ? `Tu <strong>${esc(tipo)}</strong> con ${esc(coachName)} es <strong>hoy a las ${esc(hora)}</strong>. ¡Te esperamos!`
     : `Te recordamos tu <strong>${esc(tipo)}</strong> con ${esc(coachName)}: <strong>${esc(cuando)} a las ${esc(hora)}</strong>.`;
 
+  // Link a la Sala de Pathway (misma que arma reservar.html y el panel):
+  // Pathway-<coach_id>-<startMs>. El video es de Pathway (JaaS), no es de un tercero.
+  const startMs = new Date(c.inicio).getTime();
+  const durMatch = String(c.tipo || "").match(/(\d+)\s*min/i);
+  const dur = durMatch ? parseInt(durMatch[1], 10) : 60;
+  const room = `Pathway-${c.coach_id}-${startMs}`;
+  const joinLink = `https://pathwaycareercoach.com/sala.html?room=${encodeURIComponent(room)}` +
+    `&mod=0&name=${encodeURIComponent(c.nombre || "")}&email=${encodeURIComponent(c.email || "")}` +
+    `&con=${encodeURIComponent(coachName)}&start=${startMs}&dur=${dur}`;
+
   const html =
     `<div style="font-family:Inter,-apple-system,'Segoe UI',sans-serif;max-width:480px;margin:0 auto">` +
     `<p style="font-size:15px;color:#1B2E26">Hola ${esc(first)},</p>` +
@@ -149,8 +159,9 @@ async function sendReminder(
     `<div style="background:#F0F5EF;border-radius:12px;padding:14px 16px;margin:14px 0;font-size:14px;color:#1B2E26">` +
     `<div>📅 <strong>${esc(cuando)}</strong></div>` +
     `<div style="margin-top:4px">⏰ <strong>${esc(hora)}</strong> <span style="color:#5A6A60;font-size:12px">(${esc(tz)})</span></div>` +
-    `<div style="margin-top:4px">💻 Online por Google Meet</div>` +
+    `<div style="margin-top:4px">💻 Videollamada de Pathway</div>` +
     `</div>` +
+    `<a href="${joinLink}" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:2px 0 12px">Entrar a la videollamada</a>` +
     (c.token
       ? `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">¿No podés en ese horario? <a href="https://pathwaycareercoach.com/gestionar-cita.html?t=${esc(c.token)}" style="color:#2D6A4F;font-weight:700">Cancelar o reprogramar</a>.</p>`
       : `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">Si no podés en ese horario, respondé este email y lo reprogramamos.</p>`) +

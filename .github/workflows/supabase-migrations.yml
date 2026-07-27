@@ -1,0 +1,43 @@
+name: Deploy Supabase migrations
+
+# Aplica las migraciones de supabase/migrations/ a la base de PRODUCCIÓN
+# automáticamente cuando se mergea a main. Así el frontend nunca sale asumiendo
+# una tabla/columna que todavía no existe (esos eran los 404 de /rest/v1/... ).
+#
+# Requiere 2 secrets en el repo (Settings → Secrets → Actions):
+#   · SUPABASE_ACCESS_TOKEN  → token personal (supabase.com/dashboard/account/tokens)
+#   · SUPABASE_DB_PASSWORD   → password de la base (Project Settings → Database)
+# El project ref es público (ya está en el frontend) → hardcodeado.
+#
+# NOTA sobre la 1ª corrida: `supabase db push` aplica solo las migraciones que
+# NO figuran en el historial remoto (supabase_migrations.schema_migrations). Si
+# alguna se aplicó a mano sin quedar registrada, puede chocar ("ya existe"). Si
+# eso pasa, correr una vez `supabase migration repair --status applied <version>`
+# para las ya aplicadas y volver a disparar este workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/supabase-migrations.yml'
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+        env:
+          # Sube el rate limit de la API de GitHub al resolver la última release.
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Link project
+        run: supabase link --project-ref ddxnrsnjdvtqhxunxnwj
+      - name: Push migrations
+        run: supabase db push
