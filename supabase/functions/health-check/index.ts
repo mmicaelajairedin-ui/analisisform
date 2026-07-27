@@ -29,10 +29,26 @@ const CORS = {
   "Access-Control-Allow-Headers": "content-type, authorization, apikey, x-client-info, x-trigger-secret",
 };
 
-const DEMO_COACH = "demo.coach@pathway.com";
-function isDemoEmail(em: string): boolean {
-  em = (em || "").toLowerCase();
-  return em.indexOf("ejemplo@pathwaycareercoach.com") >= 0 || em.indexOf("maria.ejemplo") === 0;
+// Cuentas que NO son clientes reales: ejemplos, bots de testing y las cuentas
+// internas del equipo (la coach, el socio, correos de la marca). Se excluyen de
+// TODAS las listas para que el reporte muestre SOLO gente real que requiere
+// acción. Antes se colaban bots, cuentas de test y el propio equipo, y el email
+// quedaba ilegible ("son como parches de emails en uno").
+const TEAM = new Set([
+  "hi@pathwaycareercoach.com",
+  "notificaciones@pathwaycareercoach.com",
+  "micaela@pathwaycareercoach.com",
+  "mmicaela.jairedin@gmail.com",
+  "gonzaloalcalde97@gmail.com",
+  "demo.coach@pathway.com",
+]);
+function isNoise(em: string): boolean {
+  em = (em || "").toLowerCase().trim();
+  if (!em || em === "anon") return true;
+  if (TEAM.has(em)) return true;
+  if (em.indexOf("ejemplo") >= 0 || em.indexOf("maria.ejemplo") === 0 || em.indexOf("maria.demo") === 0) return true;
+  if (em.indexOf("bot.") === 0 || em.indexOf("bot-cli") >= 0 || em.indexOf("bottest") >= 0) return true;
+  return false;
 }
 function esc(s: string): string {
   return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -79,9 +95,9 @@ Deno.serve(async (req: Request) => {
     q("informes?select=email"),
   ]);
 
-  const realCoaches = coaches.filter((c) => (c.email || "").toLowerCase() !== DEMO_COACH);
-  const realCands = cands.filter((c) => !isDemoEmail(c.email));
-  const realErrs = errs.filter((e) => (e.email || "").toLowerCase() !== DEMO_COACH);
+  const realCoaches = coaches.filter((c) => !isNoise(c.email));
+  const realCands = cands.filter((c) => !isNoise(c.email));
+  const realErrs = errs.filter((e) => !isNoise(e.email));
   const hasReport = new Set(informes.map((r) => (r.email || "").toLowerCase()));
   const now = Date.now();
   const ageDays = (iso: string) => { const t = iso ? +new Date(iso) : 0; return t ? (now - t) / 86400000 : Infinity; };
@@ -139,39 +155,44 @@ Deno.serve(async (req: Request) => {
       items: dups.map((em) => `${em} (×${seen[em]})`),
     });
   }
-  // 5) Guardados que fallaron en las últimas 24 h
-  //    Solo escrituras a tablas reales (no logins fallidos ni ruido de push).
+  // 5) Guardados que la base RECHAZÓ (últimas 24 h). Solo rechazos reales
+  //    (HTTP 4xx/5xx) a tablas reales — NO los cortes de red ("Load failed" /
+  //    "Failed to fetch"), que son blips del navegador y no algo que la coach
+  //    pueda accionar. Solo cuentas reales (ya sin bots ni equipo).
   const WRITE = /(POST|PATCH|PUT)\s+\/rest\/v1\/(candidatos|informes|usuarios|cv_publicados)\b/i;
-  const NETFAIL = /(Failed to fetch|Load failed)/i;
-  const failErrs = errs.filter((e) => {
-    const em = (e.email || "").toLowerCase();
-    if (em === DEMO_COACH || em === "anon") return false;
-    const det = e.detail || "";
-    const kind = e.kind || "";
-    const isHttpFail = /^http_(4|5)\d\d$/.test(kind) && WRITE.test(det);
-    const isNetFail = kind === "neterror" && (WRITE.test(det) || NETFAIL.test(det));
-    return isHttpFail || isNetFail;
-  });
+  const failErrs = realErrs.filter((e) => /^http_(4|5)\d\d$/.test(e.kind || "") && WRITE.test(e.detail || ""));
   if (failErrs.length) {
     issues.push({
       sev: "alta",
-      t: "Guardados que fallaron (últimas 24 h)",
-      d: "Hubo intentos de guardar que la base rechazó o se cortaron. Puede ser una cuenta rota o un corte de red.",
-      items: failErrs.slice(0, 20).map((e) => {
+      t: "Guardados que la base rechazó",
+      d: "La base rechazó guardar datos de un cliente real (no un corte de red). Puede ser una cuenta rota o una validación — vale mirarlo.",
+      items: failErrs.slice(0, 12).map((e) => {
         const when = (e.ts || "").replace("T", " ").slice(0, 16);
-        return `${e.email || "—"} · ${e.page || ""} · ${when} · ${(e.detail || "").slice(0, 80)}`;
+        return `${e.email || "—"} · ${when} · ${(e.detail || "").slice(0, 70)}`;
       }),
     });
   }
 
-  // 6) Páginas que crashearon (errores de JS) — últimas 24 h
-  const jsErrs = realErrs.filter((e) => e.kind === "jserror" && !/_AutofillCallbackHandler|ResizeObserver loop/.test(e.detail || ""));
-  if (jsErrs.length) {
+  // 6) Páginas que crashearon (errores de JS) — últimas 24 h, DEDUPLICADAS.
+  //    Antes salían 15 líneas del MISMO error de login → ilegible. Ahora se
+  //    agrupan por página + error y se muestra cuántas veces pasó: 1 línea = 1 bug.
+  const normErr = (d: string) => (d || "").replace(/@v[0-9a-f]+.*$/i, "").replace(/\s+/g, " ").trim().slice(0, 80);
+  const jsRaw = realErrs.filter((e) => e.kind === "jserror" && !/_AutofillCallbackHandler|ResizeObserver loop/.test(e.detail || ""));
+  const jsGroups: Record<string, { page: string; msg: string; n: number }> = {};
+  for (const e of jsRaw) {
+    const page = (e.page || "").split("#")[0];
+    const msg = normErr(e.detail || "");
+    const key = page + " :: " + msg;
+    if (!jsGroups[key]) jsGroups[key] = { page, msg, n: 0 };
+    jsGroups[key].n++;
+  }
+  const jsList = Object.values(jsGroups).sort((a, b) => b.n - a.n);
+  if (jsList.length) {
     issues.push({
       sev: "alta",
-      t: "Páginas que crashearon (errores de JS)",
-      d: "Se rompió algo en pantalla para un usuario. Cada uno es un bug para mirar.",
-      items: jsErrs.slice(0, 15).map((e) => `${e.page || ""} · ${(e.detail || "").slice(0, 90)}`),
+      t: "Páginas que crashearon",
+      d: "Se rompió algo en pantalla para usuarios reales. Cada línea es UN bug (con cuántas veces pasó).",
+      items: jsList.slice(0, 10).map((g) => `${g.page} · ${g.msg}${g.n > 1 ? ` (${g.n}×)` : ""}`),
     });
   }
   // 7) Funciones del servidor que fallaron (IA, emails…) — últimas 24 h
@@ -230,29 +251,44 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, count: 0, hasAlta: false, html: "" });
   }
 
-  // ── Armar el bloque HTML (lo incrusta el email del Testing Agent) ──────────
-  const total = issues.reduce((n, i) => n + i.items.length, 0);
+  // ── Armar el bloque HTML: DOS bloques claros ──────────────────────────────
+  //    🔴 Para arreglar (bugs)  ·  📋 Acciones con clientes.
+  //    Antes era una lista larga y plana que mezclaba bugs con tareas y era
+  //    imposible de leer. Ahora arriba lo que se rompe, abajo lo que hacer.
+  const BUG_TITLES = new Set([
+    "Coaches que entraron pero no ligaron la sesión",
+    "Guardados que la base rechazó",
+    "Páginas que crashearon",
+    "Funciones del servidor que fallaron",
+  ]);
+  const bugs = issues.filter((i) => BUG_TITLES.has(i.t));
+  const acciones = issues.filter((i) => !BUG_TITLES.has(i.t));
+  const nBug = bugs.reduce((n, i) => n + i.items.length, 0);
+  const nAcc = acciones.reduce((n, i) => n + i.items.length, 0);
+  const total = nBug + nAcc;
   const hasAlta = issues.some((i) => i.sev === "alta");
-  const cards = issues
-    .map((i) => {
-      const color = i.sev === "alta" ? "#C0756E" : "#8E7A35";
-      const dot = i.sev === "alta" ? "🔴" : "🟡";
-      const lis = i.items
-        .map((x) => `<li style="padding:4px 0;font-size:13px;color:#2D2929;">${esc(x)}</li>`)
-        .join("");
-      return (
-        `<div style="border:1px solid #EDEAE8;border-radius:10px;padding:14px 16px;margin:12px 0;">` +
-        `<div style="font-weight:600;color:${color};font-size:15px;margin-bottom:4px;">${dot} ${esc(i.t)} (${i.items.length})</div>` +
-        `<div style="font-size:13px;color:#5A5A55;margin-bottom:8px;line-height:1.5;">${esc(i.d)}</div>` +
-        `<ul style="margin:0;padding-left:18px;">${lis}</ul></div>`
-      );
-    })
-    .join("");
+
+  const card = (i: Issue): string => {
+    const color = i.sev === "alta" ? "#C0756E" : "#8E7A35";
+    const lis = i.items.map((x) => `<li style="padding:3px 0;font-size:13px;color:#2D2929;">${esc(x)}</li>`).join("");
+    return (
+      `<div style="border:1px solid #EDEAE8;border-radius:10px;padding:12px 15px;margin:9px 0;">` +
+      `<div style="font-weight:600;color:${color};font-size:14.5px;margin-bottom:3px;">${esc(i.t)} (${i.items.length})</div>` +
+      `<div style="font-size:12.5px;color:#5A5A55;margin-bottom:7px;line-height:1.45;">${esc(i.d)}</div>` +
+      `<ul style="margin:0;padding-left:18px;">${lis}</ul></div>`
+    );
+  };
+  const section = (title: string, list: Issue[]): string =>
+    list.length ? `<h3 style="font-family:Georgia,serif;color:#1B2E26;font-size:15.5px;margin:16px 0 2px;">${title}</h3>` + list.map(card).join("") : "";
+
   const html =
     `<div style="font-family:Inter,-apple-system,sans-serif;margin:0 0 8px;color:#2D2929;">` +
-    `<h2 style="font-family:Georgia,serif;color:#1B2E26;font-size:18px;margin:0 0 6px;">🩺 Salud de usuarios · ${total} cosa${total === 1 ? "" : "s"} para revisar</h2>` +
-    `<p style="font-size:13px;color:#5A5A55;margin:0 0 8px;">Revisión automática de tus usuarios y datos. Solo avisa — no cambia nada. Si querés arreglar algo, avisá y lo vemos.</p>` +
-    cards +
+    `<h2 style="font-family:Georgia,serif;color:#1B2E26;font-size:18px;margin:0 0 4px;">🩺 Revisión diaria</h2>` +
+    `<p style="font-size:13px;color:#5A5A55;margin:0 0 4px;line-height:1.5;">` +
+      (nBug ? `<strong style="color:#C0756E;">${nBug} para arreglar</strong>` : `<strong style="color:#2D6A4F;">0 bugs</strong>`) +
+      ` · <strong>${nAcc}</strong> acción${nAcc === 1 ? "" : "es"} con clientes. Solo lo que necesita tu atención (sin bots ni cuentas del equipo).</p>` +
+    section("🔴 Para arreglar", bugs) +
+    section("📋 Acciones con clientes", acciones) +
     `</div>`;
 
   // Devuelve el bloque para que el Testing Agent lo incruste en su email diario.
