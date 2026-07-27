@@ -239,6 +239,27 @@ const RULES = [
     },
   },
   {
+    name: "videollamada desde el chat: módulo + botón + timbre en los portales",
+    bug: "El coach llama desde el chat (📹 → mensaje 'call' + push + Sala); el cliente " +
+         "lo escucha por el poll y suena el timbre (Aceptar/Rechazar/perdida) y queda en " +
+         "Sesiones. Si se desconecta el módulo o el cableado, la llamada deja de sonar.",
+    check() {
+      const c = read("pw-call.js");
+      if (!c) return "falta pw-call.js (videollamada desde el chat).";
+      if (!/startCall/.test(c) || !/ingest/.test(c) || !/_ringStart|_showRing/.test(c))
+        return "pw-call.js perdió el timbre/inicio/ingest de la videollamada.";
+      const p = read("panel-v2.html");
+      if (p && (!/call-cli-start/.test(p) || !/_callMissedCheck/.test(p)))
+        return "panel-v2.html: el coach ya no inicia la videollamada desde el chat (botón/handler/watchdog).";
+      for (const f of ["pathway-fit-cliente.html", "cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (s && (!/pw-call\.js/.test(s) || !/PWCall\.ingest/.test(s) || !/_pwCallSetup/.test(s)))
+          return f + ": el portal ya no escucha la videollamada entrante (falta módulo/ingest/config).";
+      }
+      return null;
+    },
+  },
+  {
     name: "portales: fichas duplicadas se MERGEAN (lo que el coach guardó no se pierde)",
     bug: "El portal elegía la ficha 'más completa' de un email con duplicados, pero esa " +
          "podía no tener lo que el coach acababa de guardar (p.ej. nutrición) → 'lo guardé " +

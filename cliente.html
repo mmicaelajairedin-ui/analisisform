@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <script src="/pw-polyfill.js"></script>
+<script src="/pw-call.js"></script>
 <script src="pw-observe.js"></script>
 <script src="pw-events.js"></script>
 <script src="/pw-native.js"></script>
@@ -5708,9 +5709,25 @@ function _loadMsgsFromDB(){
         if(_msgsOpen) setTimeout(_markCoachMsgsRead,200);
       }
     }
+    try{ if(window.PWCall) PWCall.ingest(_getMsgs()); }catch(e){}  // ¿videollamada entrante? → timbre
     _pwChimeReady=true;
   }).catch(function(){ _pwChimeReady=true; });
 }
+
+// Videollamada entrante (pw-call.js): timbre + Aceptar/Rechazar en el portal.
+function _pwCallSetup(){
+  if(!window.PWCall || !E) return;
+  PWCall.config({
+    role:'client',
+    me:{ name:(typeof C!=='undefined'&&C&&C.name)||'', email:E },
+    peerName:(COACH_FIRST&&COACH_FIRST!=='Micaela')?COACH_FULL:(COACH_FIRST||'Tu coach'),
+    openWindow:function(u){ try{ window.open(u,'_blank'); }catch(e){ location.href=u; } },
+    sendMessage:function(m){ try{ var arr=_getMsgs(); arr.push(m); _saveMsgs(arr); try{ _renderMsgs(); }catch(e){} _syncMsgsToDB(arr); }catch(e){} },
+    logSession:function(entry){ if(!E) return; return fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E)+'&select=sesiones_registro',{headers:H()}).then(function(r){return r.json();}).then(function(rows){ var ses=[]; try{ ses=JSON.parse((rows&&rows[0]&&rows[0].sesiones_registro)||'[]')||[]; }catch(e){} ses.push({fecha:new Date().toISOString(), tipo:(entry&&entry.tipo)||'Llamada rápida', estado:(entry&&entry.estado)||'realizada', nota:'Videollamada desde el chat'}); return fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{method:'PATCH',headers:Object.assign({'Content-Type':'application/json',Prefer:'return=minimal'},H()),body:JSON.stringify({sesiones_registro:JSON.stringify(ses)})}); }).catch(function(){}); },
+    setFastPoll:function(on){ try{ if(_msgPollTimer) clearInterval(_msgPollTimer); _msgPollTimer=setInterval(_pollMsgs, on?3000:12000); }catch(e){} }
+  });
+}
+try{ if(E) _pwCallSetup(); }catch(e){}
 
 // Cargar mensajes al iniciar para mostrar badge
 setTimeout(function(){if(E)_loadMsgsFromDB();},2000);

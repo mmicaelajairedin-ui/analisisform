@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<script src="/pw-call.js"></script>
 <script src="pw-observe.js"></script>
 <script src="/pw-native.js"></script>
 <meta charset="UTF-8">
@@ -1640,10 +1641,25 @@ function loadMsgs(){
     var have={}; (MSGS||[]).forEach(function(m){ have[_mkey(m)]=true; });
     var newCoach=arr.filter(function(m){ return m&&m.from==='coach'&&!have[_mkey(m)]; }).length;
     var merged=_merge(MSGS,arr); if(merged.length!==MSGS.length || _readSig(merged)!==_readSig(MSGS)){ MSGS=merged; renderMsgs(); try{ renderNotifs(); }catch(e){} var _onChat=(document.getElementById('s-chat')||{}).classList; var _open=_onChat&&_onChat.contains('on'); if(newCoach>0 && _pwChimeReady && !_open) _pwOnIncoming(); if(_open) setTimeout(_markCoachRead,200); }
+    try{ if(window.PWCall) PWCall.ingest(MSGS); }catch(e){}  // ¿videollamada entrante? → timbre
     _pwChimeReady=true;
   }).catch(function(){ _pwChimeReady=true; });
 }
 function startMsgPoll(){ if(_pollT||!CID) return; _pollT=setInterval(function(){ if(document.visibilityState==='visible') loadMsgs(); },12000); }
+// Videollamada entrante (pw-call.js): el cliente escucha el chat y, si el coach
+// llama, suena el timbre con Aceptar/Rechazar. Se configura una vez que hay ficha.
+function _pwCallSetup(){
+  if(!window.PWCall || !CID) return;
+  PWCall.config({
+    role:'client',
+    me:{ name:(CRAW&&CRAW.nombre)||'', email:EMAIL },
+    peerName:(function(){ try{ var n=document.querySelector('.ptop-coach-name'); var t=n?(''+n.textContent).replace(/\s+/g,' ').trim():''; return t||'Tu coach'; }catch(e){ return 'Tu coach'; } })(),
+    openWindow:function(u){ try{ window.open(u,'_blank'); }catch(e){ location.href=u; } },
+    sendMessage:function(m){ if(!CID) return; MSGS.push(m); try{ renderMsgs(); }catch(e){} return sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){ var db=[]; try{ db=JSON.parse((rows&&rows[0]&&rows[0].notas_coach)||'[]')||[]; }catch(e){} var merged=_merge(db,MSGS); return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(){ MSGS=merged; }); }).catch(function(){}); },
+    logSession:function(entry){ if(!CID) return; return sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=sesiones_registro').then(function(rows){ var ses=[]; try{ ses=JSON.parse((rows&&rows[0]&&rows[0].sesiones_registro)||'[]')||[]; }catch(e){} ses.push({fecha:new Date().toISOString(), tipo:(entry&&entry.tipo)||'Llamada rápida', estado:(entry&&entry.estado)||'realizada', nota:'Videollamada desde el chat'}); return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{sesiones_registro:JSON.stringify(ses)}); }).catch(function(){}); },
+    setFastPoll:function(on){ try{ if(_pollT) clearInterval(_pollT); _pollT=setInterval(function(){ if(document.visibilityState==='visible') loadMsgs(); }, on?3000:12000); }catch(e){} }
+  });
+}
 
 // ── Notificaciones del cliente (unificado con career/finanzas): mensajes sin leer
 //    del coach + próxima sesión. Chat "sin leer" = mensajes del coach con ts mayor
@@ -1899,7 +1915,7 @@ async function pwInit(){
         if(!CRAW.coach_id){ for(var _i=0;_i<rows.length;_i++){ if(rows[_i].coach_id){ CRAW.coach_id=rows[_i].coach_id; break; } } }
         // Restaurar el bonus del juego desde Supabase (game_pts) → la medalla no baja entre dispositivos.
         try{ var _gk='pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CRAW.id||'x'), _srv=parseInt(CRAW.game_pts||0,10)||0; if(_srv>0 && _srv>(parseInt(localStorage.getItem(_gk)||'0',10)||0)) localStorage.setItem(_gk,String(_srv)); }catch(e){}
-        CID=CRAW.id; _exLoad(); applyClient(CRAW); applyProceso(); pwMaybeConsent(); pwSubGate(CRAW);
+        CID=CRAW.id; _exLoad(); applyClient(CRAW); applyProceso(); pwMaybeConsent(); pwSubGate(CRAW); try{ _pwCallSetup(); }catch(e){}
         var inf=null;
         try{ var ir=await sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=data&order=created_at.desc&limit=1'); if(ir&&ir.length){ var dd=ir[0].data; inf=(typeof dd==='string')?JSON.parse(dd):dd; } }catch(e){}
         applyInforme(inf); applyLogros(inf);

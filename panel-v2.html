@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <script src="/pw-polyfill.js"></script>
+<script src="/pw-call.js"></script>
 <script src="pw-observe.js"></script>
 <script src="pw-events.js"></script>
 <script src="/pw-native.js"></script>
@@ -5139,6 +5140,7 @@ function viewClienteDetalle(c){
         "<div class='cp-card-pad'><div style='max-height:340px;overflow-y:auto;display:flex;flex-direction:column;padding:4px 2px'>"+_thread+"</div>"+
         "<div style='display:flex;gap:8px;margin-top:12px'>"+
           "<input id='chatmsg' class='cp-form-input' style='flex:1' placeholder='Escribe un mensaje para "+esc(fn)+"…' onkeydown=\"if(event.key==='Enter'){event.preventDefault();var b=document.querySelector('[data-act=chat-cli-send]');if(b)b.click();}\">"+
+          "<button class='cp-btn cp-btn-ghost' style='padding:0 14px' title='Videollamada ahora' aria-label='Videollamada ahora' data-act='call-cli-start' data-id='"+esc(c.id)+"'>📹</button>"+
           "<button class='cp-btn cp-btn-primary' style='padding:0 18px' data-act='chat-cli-send' data-id='"+esc(c.id)+"'>Enviar</button></div>"+
         "<span class='cp-form-hint'>Es un chat directo, más informal que un email. El cliente lo ve en la burbuja de mensajes de su portal.</span></div></div>";
     // El chat directo con el cliente ahora vive en la cabra (bandeja
@@ -10454,6 +10456,38 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo guardar la nota. ¿Aplicaste el SQL de notas_privadas en Supabase?"); });
     return;
   }
+  if(act==="call-cli-start"){
+    // Videollamada AHORA desde el chat: postea un mensaje 'call' (timbre en el
+    // portal del cliente), abre la Sala del coach y avisa por push. Si en 35 s
+    // no la aceptan, queda como llamada perdida (watchdog abajo).
+    var vcid=el.getAttribute("data-id"); if(!vcid) return;
+    var vcli=CLIENTS.filter(function(x){return String(x.id)===String(vcid);})[0]; if(!vcli) return;
+    if(vcli._example){ alert("Es el cliente de ejemplo — la videollamada real funciona con un cliente de verdad."); return; }
+    var vroom="Pathway-"+((RME&&RME.id)||"x")+"-call-"+Date.now();
+    var vcall="call_"+Date.now();
+    var vcoach=(COACH&&(COACH.name||COACH.firstName))||"Coach";
+    var vnow=new Date(); var vtime=vnow.getDate()+"/"+(1+vnow.getMonth())+" "+vnow.getHours()+":"+String(vnow.getMinutes()).padStart(2,"0");
+    var vcoachSala="sala.html?room="+encodeURIComponent(vroom)+"&mod=1&coach="+encodeURIComponent((RME&&RME.id)||"")+"&name="+encodeURIComponent(vcoach)+"&con="+encodeURIComponent(vcli.name||"")+"&email="+encodeURIComponent(vcli.email||"")+"&tipo="+encodeURIComponent("Llamada rápida");
+    var vcliSala="https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(vroom)+"&mod=0&name="+encodeURIComponent(vcli.name||"")+"&email="+encodeURIComponent(vcli.email||"")+"&con="+encodeURIComponent(vcoach)+"&tipo="+encodeURIComponent("Llamada rápida");
+    var vmsg={from:"coach",kind:"call",callId:vcall,room:vroom,link:vcliSala,status:"ringing",text:"📹 Videollamada",ts:Date.now(),time:vtime};
+    _sb("candidatos?id=eq."+encodeURIComponent(vcid)+"&select=notas_coach").then(function(rows){
+      var arr=_chatArr(rows&&rows[0]?rows[0].notas_coach:"[]"); arr.push(vmsg);
+      return _sbw("candidatos?id=eq."+encodeURIComponent(vcid),"PATCH",{notas_coach:JSON.stringify(arr)}).then(function(r){
+        if(!r.ok){ alert("No se pudo iniciar la videollamada. Reintenta."); return; }
+        CLIENTS.forEach(function(x){ if(String(x.id)===String(vcid)){ x.chat=arr; if(x.raw) x.raw.notas_coach=JSON.stringify(arr); } });
+        if(vcli.email){ try{
+          var vpct=(typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||"carrera";
+          var vpurl=(vpct==='fitness')?"/pathway-fit-cliente.html":((vpct==='financiero')?"/pathway-fin-cliente.html":"/cliente.html");
+          fetch(SB+"/functions/v1/send-push",{method:"POST",headers:{"Content-Type":"application/json",apikey:KEY,Authorization:"Bearer "+KEY},body:JSON.stringify({user_email:vcli.email.toLowerCase(),title:"📹 "+vcoach+" te está llamando",body:"Toca para unirte a la videollamada",url:vpurl,tag:"call-"+vcli.email.toLowerCase()})}).catch(function(){});
+        }catch(e){} }
+        toast("Llamando a "+(vcli.name||"tu cliente")+"… suena en su portal");
+        try{ window.open(vcoachSala,"_blank"); }catch(e){}
+        // Watchdog: si en 35 s no aceptaron, marcar perdida + registrar en sesiones.
+        setTimeout(function(){ _callMissedCheck(vcid, vcall, vcli); }, 35000);
+      });
+    }).catch(function(){ alert("No se pudo iniciar la videollamada. Reintenta."); });
+    return;
+  }
   if(act==="chat-cli-send"){
     var chid=el.getAttribute("data-id"); if(!chid) return;
     var inp=document.getElementById("chatmsg"); var txt=inp?(""+inp.value).trim():"";
@@ -11852,6 +11886,26 @@ function _avCollect(avc){
   return { d:newD, prog:prog };
 }
 function _chatArr(s){ try{ var a=JSON.parse(s||"[]"); return Object.prototype.toString.call(a)==="[object Array]"?a:[]; }catch(e){ return []; } }
+// Videollamada: a los 35 s de iniciar, si el cliente NO aceptó (no hay call-ans
+// 'accepted' para ese callId), la marcamos PERDIDA y la registramos en Sesiones.
+// Robusto aunque el cliente tenga el portal cerrado (ahí nunca contesta).
+function _callMissedCheck(cid, callId, cli){
+  _sb("candidatos?id=eq."+encodeURIComponent(cid)+"&select=notas_coach,sesiones_registro").then(function(rows){
+    var row=rows&&rows[0]; if(!row) return;
+    var arr=_chatArr(row.notas_coach);
+    var accepted=arr.some(function(m){ return m&&m.kind==="call-ans"&&m.callId===callId&&m.status==="accepted"; });
+    var already=arr.some(function(m){ return m&&m.kind==="call-ans"&&m.callId===callId&&(m.status==="missed"||m.status==="rejected"); });
+    if(accepted||already) return; // se atendió o ya se cerró
+    var now=new Date(), tm=now.getDate()+"/"+(1+now.getMonth())+" "+now.getHours()+":"+String(now.getMinutes()).padStart(2,"0");
+    arr.push({from:"coach",kind:"call-ans",callId:callId,status:"missed",text:"📵 Llamada perdida",ts:Date.now(),time:tm});
+    // Registrar en Sesiones (igual que una sesión: fecha + tipo + estado).
+    var ses=[]; try{ ses=JSON.parse(row.sesiones_registro||"[]")||[]; }catch(e){ ses=[]; }
+    ses.push({fecha:now.toISOString(), tipo:"Llamada rápida", estado:"perdida", nota:"Videollamada no atendida"});
+    _sbw("candidatos?id=eq."+encodeURIComponent(cid),"PATCH",{notas_coach:JSON.stringify(arr), sesiones_registro:JSON.stringify(ses)}).then(function(r){
+      if(r&&r.ok){ CLIENTS.forEach(function(x){ if(String(x.id)===String(cid)){ x.chat=arr; if(x.raw){ x.raw.notas_coach=JSON.stringify(arr); x.raw.sesiones_registro=JSON.stringify(ses); } x.ses=ses; } }); try{ toast("Sin respuesta — quedó como llamada perdida"); }catch(e){} try{ render(); }catch(e){} }
+    }).catch(function(){});
+  }).catch(function(){});
+}
 // Clave estable de un item de finanzas + fusión (unión) de un hilo de
 // comentarios coach↔cliente, para que al guardar no se pisen entre puntas.
 function _finK(o){ return (o&&(o.id||o.nombre))||JSON.stringify(o); }
