@@ -3208,6 +3208,23 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: la Configuración GUARDA de verdad (persiste en organizaciones.marca), no toast trucho",
+    bug: "Para poder VENDER el multicoach, la sección Configuración (Perfil, Recursos, Marca, Mi cuenta) " +
+         "no puede tener guardados de mentira. Antes cada botón 'Guardar' solo hacía __toast('...✓') sin " +
+         "persistir. Ahora mcSaveConfig() hace PATCH a organizaciones.marca (JSONB, merge) y _apply() la " +
+         "reaplica al recargar (color/logo/recursos). Si vuelve un __toast('...guardad...✓') suelto en un " +
+         "botón de Guardar, es un guardado trucho de nuevo.",
+    check() {
+      const m = read("multicoach.html");
+      if (!m) return null;
+      if (!/function mcSaveConfig\(/.test(m)) return "multicoach.html: falta mcSaveConfig (persistencia real de la config).";
+      if (!/PATCH[\s\S]{0,60}organizaciones|mcPatch\('organizaciones'/.test(m)) return "multicoach.html: mcSaveConfig ya no persiste en organizaciones.";
+      if (!/onclick="_saveProfile\(\)"/.test(m) || !/onclick="_saveRecursos\(\)"/.test(m) || !/onclick="_saveAccount\(\)"/.test(m)) return "multicoach.html: un botón Guardar de la config ya no llama a su función real (_saveProfile/_saveRecursos/_saveAccount).";
+      if (/onclick="__toast\('(Perfil|Recursos|Cuenta) guardad[oa] ✓'\)"/.test(m)) return "multicoach.html: volvió un guardado TRUCHO (__toast '...guardado ✓' sin persistir) en la config.";
+      return null;
+    },
+  },
+  {
     name: "sesión self-healing: un 401/403 refresca el JWT y reintenta (no pierde el guardado ni expulsa)",
     bug: "Cuando el access_token de Supabase vencía, el request salía con la anon key y RLS lo " +
          "rechazaba (401/403). Antes _sbw/_sb mandaban directo a login y el guardado se perdía. " +
