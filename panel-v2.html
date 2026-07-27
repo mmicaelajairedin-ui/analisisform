@@ -3078,6 +3078,7 @@ function _agSalaUrl(r){
       "&start="+encodeURIComponent(new Date(r.inicio).getTime())+
       "&tipo="+encodeURIComponent((typ&&typ.label)||r.tipo||"")+
       "&dur="+encodeURIComponent(_durMin(r.tipo||"")||"")+
+      "&kind="+encodeURIComponent(r.kind||"sesion")+   // modo de la Sala (citas viejas sin kind → sesion)
       "&foto="+encodeURIComponent(_persFoto(r.email,r.nombre)||"");
   }catch(e){ return ""; }
 }
@@ -4119,7 +4120,7 @@ function _salaClientLink(r, iso){
   var _ms=new Date(iso||r.inicio).getTime(); var cid=(r.coach_id||(RME&&RME.id)||"x"); var room="Pathway-"+cid+"-"+_ms;
   var coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
   // start+dur → el cliente también ve el gate (cuenta regresiva / "ya terminó"), igual que el coach.
-  return "https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&email="+encodeURIComponent(r.email||"")+"&con="+encodeURIComponent(coach)+"&start="+_ms+"&dur="+(_durMin(r.tipo||"")||60);
+  return "https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&email="+encodeURIComponent(r.email||"")+"&con="+encodeURIComponent(coach)+"&start="+_ms+"&dur="+(_durMin(r.tipo||"")||60)+"&kind="+encodeURIComponent(r.kind||"sesion");
 }
 // Invitación .ics OPCIONAL (agregar el evento al calendario si quieren) con SOLO
 // el link de la Sala — sin Meet, sin sync automático. Misma idea que reservar.html.
@@ -9314,14 +9315,19 @@ document.addEventListener("click", function(ev){
     // 1) GUARDAR la cita en Pathway (tabla citas) para EL COACH → aparece en SU
     //    agenda sin depender de Google. Antes esto NO se guardaba (solo abría
     //    Google Calendar) → por eso "no aparecían las citas" y terminabas en Google.
-    _sbw("citas","POST",{coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel"})
+    // Kind del sistema: con invitado/cliente → 'sesion'; sin nadie → 'personal' (agenda suelta).
+    var _agKind=_ag2?"sesion":"personal";
+    var _agBody={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel"};
+    var _agDone=function(r){ if(r&&r.ok) toast("Cita agendada ✓ — ya está en tu agenda"); else toast("No se pudo guardar la cita. Reintenta."); try{ _resLoad(); }catch(e){} try{ _calLoad(); }catch(e){} };
+    _sbw("citas","POST",Object.assign({},_agBody,{kind:_agKind}))
       .then(function(r){
-        if(r&&r.ok) toast("Cita agendada ✓ — ya está en tu agenda"); else toast("No se pudo guardar la cita. Reintenta.");
-        try{ _resLoad(); }catch(e){} try{ _calLoad(); }catch(e){}
+        // Reintento SIN kind si la columna citas.kind todavía no existe en la base.
+        if(r&&r.ok){ _agDone(r); return; }
+        return _sbw("citas","POST",_agBody).then(_agDone);
       })
       .catch(function(){ toast("No se pudo guardar la cita. Reintenta."); });
     // 2) Compañeros de equipo invitados: cada uno recibe la cita en SU panel.
-    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ _sbw("citas","POST",{coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_iso,estado:"confirmada",origen:"panel"}).catch(function(){}); } });
+    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ var _tb={coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_iso,estado:"confirmada",origen:"panel"}; _sbw("citas","POST",Object.assign({},_tb,{kind:_agKind})).then(function(r){ if(!(r&&r.ok)) return _sbw("citas","POST",_tb); }).catch(function(){}); } });
     // 3) EMAIL de confirmación al invitado (si dejó email) con el link de la Sala + .ics
     if(_ag2 && /@/.test(_ag2)){
       try{
