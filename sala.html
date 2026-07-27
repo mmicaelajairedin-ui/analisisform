@@ -319,7 +319,7 @@ function getToken(){
     return fetch(SB+'/functions/v1/jaas-token',{method:'POST',
       headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},
       body:JSON.stringify({room:ROOM,name:NAME,email:EMAIL,avatar:FOTO,moderator:MOD})
-    }).then(function(r){ return r.ok?r.json():null; }).catch(function(){ return null; });
+    }).then(function(r){ return r.json().then(function(j){ return j; }, function(){ return null; }); }).catch(function(){ return null; });
   }catch(e){ return Promise.resolve(null); }
 }
 var api=null, TSTART=0, tInt=null;
@@ -334,6 +334,9 @@ function boot(){
     if(typeof JitsiMeetExternalAPI==='undefined') throw new Error('no_api');
     return getToken();
   }).then(function(tok){
+    // JaaS (vpaas) EXIGE un JWT válido para conectar. Si falta (secrets de 8x8 sin
+    // configurar), no seguimos con un video roto → vamos al mensaje claro del catch.
+    if(!tok || !tok.jwt){ var _e=new Error('sin_video'); _e.jaas=(tok&&tok.error)||''; throw _e; }
     var opts={
       roomName: ((tok&&tok.appId)||APP_ID)+'/'+((tok&&tok.room)||ROOM),
       parentNode: el('jaas'),
@@ -385,12 +388,19 @@ function boot(){
     api.addListener('audioMuteStatusChanged', function(e){ el('c-mic').classList.toggle('off', !!(e&&e.muted)); });
     api.addListener('videoMuteStatusChanged', function(e){ el('c-cam').classList.toggle('off', !!(e&&e.muted)); });
   }).catch(function(e){
+    var jaas=(e&&e.jaas)||'';
     var code=(e && (e.error||e.message))||'error';
     // Si JaaS no cargó, api es null → los botones mic/cam/compartir/participantes
-    // no harían nada. Ocultamos la barra y ofrecemos abrir en pestaña nueva.
+    // no harían nada. Ocultamos la barra; el botón Salir del header sigue visible.
     try{ _hideCtrls(true); }catch(_e){}
-    waitState('No cargó el video acá','Abre la videollamada en una pestaña nueva — es la misma sala. Detalle: '+code,true);
-    try{ var se=el('wait-s'); if(se) se.insertAdjacentHTML('afterend',directBtn()); }catch(_e){}
+    if(jaas==='jaas_secrets_missing'){
+      // Falta configurar 8x8 en el servidor → mensaje accionable (no "abrir en pestaña",
+      // que tampoco andaría sin credenciales).
+      waitState('El video todavía no está configurado','Faltan las credenciales de 8x8 en el servidor (JAAS_APP_ID / JAAS_KID / JAAS_PRIVATE_KEY). Configúralas para que las videollamadas funcionen.',true);
+    } else {
+      waitState('No cargó el video acá','Abre la videollamada en una pestaña nueva — es la misma sala. Detalle: '+code,true);
+      try{ var se=el('wait-s'); if(se) se.insertAdjacentHTML('afterend',directBtn()); }catch(_e){}
+    }
     try{ console.error('[sala]',e); }catch(_e){}
   });
 }
