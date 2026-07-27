@@ -19,10 +19,22 @@ Piezas de este nivel (ya creadas):
   el script no hace nada solo; hay que llamar a `pwEmit()` desde el código.
 - **Este contrato** — `docs/domain-events.md`.
 
+**Cableado — IMPLEMENTADO y en producción (2026-07-27).** Los 4 eventos de
+activación ya se emiten desde el frontend. Validado end-to-end en producción con
+`ClientInvited` (fila real en `eventos`). Cada uno tiene una regla en
+`scripts/check-guardrails.js` que impide borrarlo por accidente.
+
+| Evento | Archivo · punto exacto |
+|--------|------------------------|
+| ✅ `ClientInvited` | `panel-v2.html` · handler `alta-invitar` (tras el alta exitosa) |
+| ✅ `ClientAccepted` | `cliente.html` · `done()` del gate de consentimiento |
+| ✅ `SessionCompleted` | `panel-v2.html` · handler `ses-add` (tras registrar la sesión) |
+| ✅ `ProfileCompleted` | `panel-v2.html` · `doSave()` (perfil con nombre + bio/título) |
+
 Pendiente (siguientes pasos, en orden):
-1. Cablear los primeros eventos (los de **activación**, ver más abajo).
-2. Helper `emit()` server-side para edge functions (service role).
-3. Nivel 1: leer estos eventos → activación, health score, embudos, dashboard CEO
+1. Helper `emit()` server-side para edge functions (service role): `TrialStarted`,
+   `PaymentSucceeded`, `MarketplaceSold`.
+2. Nivel 1: leer estos eventos → activación, health score, embudos, dashboard CEO
    (con una edge function que use service role, nunca la anon key).
 
 ## El contrato — eventos, quién emite, quién escucha
@@ -34,11 +46,11 @@ todavía no hay suscriptores; se construyen en el Nivel 1–2.
 |--------|--------------------|-------------|--------|
 | `LeadCreated` | Commercial | Analytics · Commercial | entra un lead (landing, chat, alta manual) |
 | `TrialStarted` | Commercial | Analytics · Activation · Notifications | el coach arranca su prueba de 14 días |
-| `ProfileCompleted` | Activation | Activation · Analytics | el coach completa perfil + branding |
+| ✅ `ProfileCompleted` | Activation | Activation · Analytics | el coach completa perfil + branding |
 | `StripeConnected` | Billing | Activation · Analytics | el coach conecta su cobro (Connect) |
-| `ClientInvited` | Coaching | Client · Activation · Analytics | el coach invita a su primer/otro cliente |
-| `ClientAccepted` | Client | Coaching · Activation · Analytics · Notifications | el cliente acepta la invitación |
-| `SessionCompleted` | Coaching | AI · Analytics · HealthScore · Notifications · Marketplace | se realiza/registra una sesión |
+| ✅ `ClientInvited` | Coaching | Client · Activation · Analytics | el coach invita a su primer/otro cliente |
+| ✅ `ClientAccepted` | Client | Coaching · Activation · Analytics · Notifications | el cliente acepta la invitación |
+| ✅ `SessionCompleted` | Coaching | AI · Analytics · HealthScore · Notifications · Marketplace | se realiza/registra una sesión |
 | `TaskCompleted` | Client | Coaching · Analytics · Automation | el cliente marca una tarea hecha |
 | `WowReached` | Activation | Analytics · Commercial | hubo interacción real (momento WOW) |
 | `PaymentSucceeded` | Billing | Marketplace · Ledger · Analytics · Commercial | entra un pago (coach o cliente) |

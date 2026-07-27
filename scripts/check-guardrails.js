@@ -3148,6 +3148,65 @@ const RULES = [
       return null;
     },
   },
+  // ── EVENT BUS (Pathway OS Core · Nivel 0) — blindaje de los emisores ──
+  // Cada evento cableado suma una regla: si alguien (humano o IA) borra sin
+  // querer un emit o el include, esta prueba falla y frena el merge.
+  // Contrato: docs/domain-events.md.
+  {
+    name: "event bus: pw-events.js define window.pwEmit (emisor)",
+    bug: "pw-events.js es el emisor del Event Bus. Sin el, ningun pwEmit() funciona.",
+    check() {
+      const s = read("pw-events.js");
+      if (!s) return "falta pw-events.js (el emisor del Event Bus).";
+      if (!/window\.pwEmit\s*=/.test(s)) return "pw-events.js ya no define window.pwEmit.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: pw-events.js incluido en panel-v2 y cliente",
+    bug: "Sin <script src=pw-events.js>, window.pwEmit no existe y no se emite nada.",
+    check() {
+      if (!/pw-events\.js/.test(read("panel-v2.html"))) return "panel-v2.html ya no incluye pw-events.js → no emite eventos.";
+      if (!/pw-events\.js/.test(read("cliente.html"))) return "cliente.html ya no incluye pw-events.js → no emite eventos.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ClientInvited se emite al dar de alta un cliente (panel-v2)",
+    bug: "Senal de activacion: el coach invito a un cliente (handler 'alta-invitar').",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("ClientInvited"/.test(s)) return "panel-v2.html: se borro el emit de ClientInvited.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: SessionCompleted se emite al registrar una sesion (panel-v2)",
+    bug: "Evento clave (muchos listeners): el coach registro una sesion (handler 'ses-add').",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("SessionCompleted"/.test(s)) return "panel-v2.html: se borro el emit de SessionCompleted.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ProfileCompleted se emite al guardar el perfil (panel-v2)",
+    bug: "Senal de activacion: el coach guardo su perfil con contenido real (nombre + bio/titulo).",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("ProfileCompleted"/.test(s)) return "panel-v2.html: se borro el emit de ProfileCompleted.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ClientAccepted se emite al aceptar el consentimiento (cliente.html)",
+    bug: "Senal de activacion: el cliente acepto y entro por primera vez (done() del gate de consentimiento).",
+    check() {
+      const s = read("cliente.html");
+      if (s && !/pwEmit\("ClientAccepted"/.test(s)) return "cliente.html: se borro el emit de ClientAccepted.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
