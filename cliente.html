@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <script src="/pw-polyfill.js"></script>
+<script src="/pw-call.js"></script>
 <script src="pw-observe.js"></script>
 <script src="pw-events.js"></script>
 <script src="/pw-native.js"></script>
@@ -1719,6 +1720,21 @@ function _applyCoachColor(hex){
     root.setProperty(name+'-light', hsl2hex(h,sLight,0.94));
   });
 }
+// White-label de RED (multi-coach): si el cliente pertenece a una red, la marca
+// del DUEÑO (organizaciones.marca) tiñe el portal — color + logo — aunque su
+// coach no sea Pro. El white-label que se vende, en toda la red.
+function _applyOrgBrand(orgId){
+  if(!orgId) return;
+  try{
+    fetch(SB+'/rest/v1/organizaciones?id=eq.'+encodeURIComponent(orgId)+'&select=marca',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
+      .then(function(r){ return r.ok?r.json():[]; })
+      .then(function(rows){ if(!rows||!rows.length) return; var m=(rows[0]&&rows[0].marca)||{}; if(!m||typeof m!=='object') return;
+        if(m.color) _applyCoachColor(m.color);
+        var wb=document.getElementById('sb-brandlogo');
+        if(m.logo && wb){ wb.innerHTML='<img src="'+String(m.logo)+'" alt="" style="max-width:150px;max-height:40px;object-fit:contain;margin:0 auto">'; wb.style.justifyContent='center'; }
+      }).catch(function(){});
+  }catch(e){}
+}
 // CONFIGURACIÓN DEL COACH — cambiar aquí si la plataforma escala a otros coaches
 var COACH_FULL='Micaela Jairedin';
 var COACH_FIRST='Micaela';
@@ -1887,6 +1903,8 @@ function _loadCoachColor(){
         nombre_practica:coach.nombre_practica,
         logo_url:coachIsPro?(cfg.logo_url||''):''
       });
+      // Red multi-coach: la marca del dueño manda por encima (white-label de red).
+      try{ if(C&&C.org_id) _applyOrgBrand(C.org_id); }catch(e){}
       // Guardar email del coach para poder mandarle push notifications
       // cuando el cliente le manda un mensaje desde el chat.
       try{ window.COACH_EMAIL = (coach.email||'').toLowerCase(); }catch(e){}
@@ -5708,9 +5726,25 @@ function _loadMsgsFromDB(){
         if(_msgsOpen) setTimeout(_markCoachMsgsRead,200);
       }
     }
+    try{ if(window.PWCall) PWCall.ingest(_getMsgs()); }catch(e){}  // ¿videollamada entrante? → timbre
     _pwChimeReady=true;
   }).catch(function(){ _pwChimeReady=true; });
 }
+
+// Videollamada entrante (pw-call.js): timbre + Aceptar/Rechazar en el portal.
+function _pwCallSetup(){
+  if(!window.PWCall || !E) return;
+  PWCall.config({
+    role:'client',
+    me:{ name:(typeof C!=='undefined'&&C&&C.name)||'', email:E },
+    peerName:(COACH_FIRST&&COACH_FIRST!=='Micaela')?COACH_FULL:(COACH_FIRST||'Tu coach'),
+    openWindow:function(u){ try{ window.open(u,'_blank'); }catch(e){ location.href=u; } },
+    sendMessage:function(m){ try{ var arr=_getMsgs(); arr.push(m); _saveMsgs(arr); try{ _renderMsgs(); }catch(e){} _syncMsgsToDB(arr); }catch(e){} },
+    logSession:function(entry){ if(!E) return; return fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E)+'&select=sesiones_registro',{headers:H()}).then(function(r){return r.json();}).then(function(rows){ var ses=[]; try{ ses=JSON.parse((rows&&rows[0]&&rows[0].sesiones_registro)||'[]')||[]; }catch(e){} ses.push({fecha:new Date().toISOString(), tipo:(entry&&entry.tipo)||'Llamada rápida', estado:(entry&&entry.estado)||'realizada', nota:'Videollamada desde el chat'}); return fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(E),{method:'PATCH',headers:Object.assign({'Content-Type':'application/json',Prefer:'return=minimal'},H()),body:JSON.stringify({sesiones_registro:JSON.stringify(ses)})}); }).catch(function(){}); },
+    setFastPoll:function(on){ try{ if(_msgPollTimer) clearInterval(_msgPollTimer); _msgPollTimer=setInterval(_pollMsgs, on?3000:12000); }catch(e){} }
+  });
+}
+try{ if(E) _pwCallSetup(); }catch(e){}
 
 // Cargar mensajes al iniciar para mostrar badge
 setTimeout(function(){if(E)_loadMsgsFromDB();},2000);

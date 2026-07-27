@@ -239,6 +239,27 @@ const RULES = [
     },
   },
   {
+    name: "videollamada desde el chat: módulo + botón + timbre en los portales",
+    bug: "El coach llama desde el chat (📹 → mensaje 'call' + push + Sala); el cliente " +
+         "lo escucha por el poll y suena el timbre (Aceptar/Rechazar/perdida) y queda en " +
+         "Sesiones. Si se desconecta el módulo o el cableado, la llamada deja de sonar.",
+    check() {
+      const c = read("pw-call.js");
+      if (!c) return "falta pw-call.js (videollamada desde el chat).";
+      if (!/startCall/.test(c) || !/ingest/.test(c) || !/_ringStart|_showRing/.test(c))
+        return "pw-call.js perdió el timbre/inicio/ingest de la videollamada.";
+      const p = read("panel-v2.html");
+      if (p && (!/call-cli-start/.test(p) || !/_callMissedCheck/.test(p)))
+        return "panel-v2.html: el coach ya no inicia la videollamada desde el chat (botón/handler/watchdog).";
+      for (const f of ["pathway-fit-cliente.html", "cliente.html", "pathway-fin-cliente.html"]) {
+        const s = read(f);
+        if (s && (!/pw-call\.js/.test(s) || !/PWCall\.ingest/.test(s) || !/_pwCallSetup/.test(s)))
+          return f + ": el portal ya no escucha la videollamada entrante (falta módulo/ingest/config).";
+      }
+      return null;
+    },
+  },
+  {
     name: "portales: fichas duplicadas se MERGEAN (lo que el coach guardó no se pierde)",
     bug: "El portal elegía la ficha 'más completa' de un email con duplicados, pero esa " +
          "podía no tener lo que el coach acababa de guardar (p.ej. nutrición) → 'lo guardé " +
@@ -3240,6 +3261,63 @@ const RULES = [
       // El tab viejo NO se elimino: el embudo de implementacion sigue vivo.
       if (!/Embudo de implementaci[oó]n/.test(s))
         return "panel-v2: se perdio el Embudo de implementacion del tab Analiticas (era ENRIQUECER, no reescribir).";
+      return null;
+    },
+  },
+  {
+    name: "white-label de red: la marca del dueño (organizaciones.marca) llega a los 3 portales del cliente",
+    bug: "El white-label es el corazón de lo que se vende en multi-coach ('tu marca, no la de Pathway'). " +
+         "Antes el portal del cliente solo aplicaba la marca del coach INDIVIDUAL si era Pro — pero en una " +
+         "red los coaches no son Pro (paga el dueño), así que el cliente veía el verde Pathway. Ahora, si el " +
+         "cliente tiene org_id, se aplica la marca del dueño (color+logo) vía applyOrgBrand. Cubre fitness, " +
+         "finanzas y carrera.",
+    check() {
+      const fit = read("pathway-fit-cliente.html"), fin = read("pathway-fin-cliente.html"), car = read("cliente.html");
+      if (fit && (!/function applyOrgBrand\(/.test(fit) || !/applyOrgBrand\((c|CRAW)\.org_id\)/.test(fit))) return "pathway-fit-cliente.html: no aplica la marca de la red (applyOrgBrand por org_id).";
+      if (fin && (!/function applyOrgBrandFin\(/.test(fin) || !/applyOrgBrandFin\(CRAW\.org_id\)/.test(fin))) return "pathway-fin-cliente.html: no aplica la marca de la red (applyOrgBrandFin por org_id).";
+      if (car && (!/function _applyOrgBrand\(/.test(car) || !/_applyOrgBrand\(C\.org_id\)/.test(car))) return "cliente.html: no aplica la marca de la red (_applyOrgBrand por org_id).";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: la Configuración GUARDA de verdad (persiste en organizaciones.marca), no toast trucho",
+    bug: "Para poder VENDER el multicoach, la sección Configuración (Perfil, Recursos, Marca, Mi cuenta) " +
+         "no puede tener guardados de mentira. Antes cada botón 'Guardar' solo hacía __toast('...✓') sin " +
+         "persistir. Ahora mcSaveConfig() hace PATCH a organizaciones.marca (JSONB, merge) y _apply() la " +
+         "reaplica al recargar (color/logo/recursos). Si vuelve un __toast('...guardad...✓') suelto en un " +
+         "botón de Guardar, es un guardado trucho de nuevo.",
+    check() {
+      const m = read("multicoach.html");
+      if (!m) return null;
+      if (!/function mcSaveConfig\(/.test(m)) return "multicoach.html: falta mcSaveConfig (persistencia real de la config).";
+      if (!/PATCH[\s\S]{0,60}organizaciones|mcPatch\('organizaciones'/.test(m)) return "multicoach.html: mcSaveConfig ya no persiste en organizaciones.";
+      if (!/onclick="_saveProfile\(\)"/.test(m) || !/onclick="_saveRecursos\(\)"/.test(m) || !/onclick="_saveAccount\(\)"/.test(m)) return "multicoach.html: un botón Guardar de la config ya no llama a su función real (_saveProfile/_saveRecursos/_saveAccount).";
+      if (/onclick="__toast\('(Perfil|Recursos|Cuenta) guardad[oa] ✓'\)"/.test(m)) return "multicoach.html: volvió un guardado TRUCHO (__toast '...guardado ✓' sin persistir) en la config.";
+      return null;
+    },
+  },
+  {
+    name: "sesión self-healing: un 401/403 refresca el JWT y reintenta (no pierde el guardado ni expulsa)",
+    bug: "Cuando el access_token de Supabase vencía, el request salía con la anon key y RLS lo " +
+         "rechazaba (401/403). Antes _sbw/_sb mandaban directo a login y el guardado se perdía. " +
+         "Ahora, ante un 401/403, _pwRefresh fuerza refreshSession y se reintenta UNA vez; solo si " +
+         "sigue fallando se avisa sesión vencida. Es la cura de raíz para que 'ande solo' sin volver " +
+         "a parchar cada guardado. Si se rompe, vuelven los guardados perdidos por sesión vencida.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _pwRefresh\(/.test(p) || !/refreshSession\(/.test(p)) return "panel-v2.html: falta _pwRefresh (refresco de sesión self-healing).";
+      // _sbw debe reintentar tras refrescar, no expulsar directo en el 401/403.
+      const w = p.slice(p.indexOf("function _sbw("), p.indexOf("function _sbw(") + 2700);
+      if (!/_pwRefresh\(\)/.test(w)) return "panel-v2.html: _sbw ya no refresca+reintenta ante 401/403 (perdería el guardado por sesión vencida).";
+      if (!/_pwRefresh\(\)/.test(p.slice(p.indexOf("function _sb(p)"), p.indexOf("function _sb(p)") + 700))) return "panel-v2.html: _sb ya no refresca+reintenta ante 401/403.";
+      // Cobertura TODO Pathway: el interceptor de pw-auth.js también refresca+reintenta
+      // (cubre los portales del cliente + cv/carta, no solo el panel).
+      const a = read("pw-auth.js");
+      if (a) {
+        if (!/function refreshOnce\(/.test(a)) return "pw-auth.js: falta refreshOnce (refresh de sesión para todo Pathway).";
+        if (!/__pwRetried/.test(a) || !/refreshOnce\(\)/.test(a)) return "pw-auth.js: el interceptor ya no reintenta el fetch tras refrescar el JWT (los portales del cliente perderían guardados por sesión vencida).";
+      }
       return null;
     },
   },

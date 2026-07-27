@@ -1086,6 +1086,21 @@ function mcApplyNiche(){
    cae a la demo — nunca deja el panel en blanco. Ver docs/multicoach-modelo.md. */
 var MC_REAL=false, MC_ORG=null, MC_OWNER=null;
 function mcGet(t,q){ return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:{apikey:KEY,Authorization:'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }
+function mcPatch(t,q,body){ return _hdr({'Content-Type':'application/json',Prefer:'return=minimal'}).then(function(h){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:h,body:JSON.stringify(body)}); }); }
+// Guarda config de la red (perfil, recursos, marca, preferencias) en
+// organizaciones.marca (JSONB, merge). Refleja YA en memoria + localStorage para
+// que la UI y _mcBrand lo vean sin recargar. En demo (sin org real) → solo toast.
+function mcSaveConfig(patch, okMsg){
+  var cur=(MC_REAL&&MC_ORG&&MC_ORG.marca&&typeof MC_ORG.marca==='object')?MC_ORG.marca:_mcBrand();
+  var m={}; var k; for(k in cur) if(cur.hasOwnProperty(k)) m[k]=cur[k];
+  for(k in patch) if(patch.hasOwnProperty(k)) m[k]=patch[k];
+  if(MC_ORG) MC_ORG.marca=m;
+  try{ localStorage.setItem('mc_brand',JSON.stringify(m)); }catch(_){}
+  if(!(MC_REAL&&MC_ORG&&MC_ORG.id)){ __toast(okMsg||'Guardado ✓ (demo)'); return; }
+  mcPatch('organizaciones','id=eq.'+encodeURIComponent(MC_ORG.id),{marca:m})
+    .then(function(r){ __toast((r&&r.ok)?(okMsg||'Guardado ✓'):'No se pudo guardar. Reintenta'); })
+    .catch(function(){ __toast('Error de conexión. Reintenta'); });
+}
 function _mcIni(n){ return (''+(n||'')).trim().split(/\s+/).map(function(w){return w.charAt(0);}).slice(0,2).join('').toUpperCase()||'—'; }
 function _mcAgo(ts){ if(!ts)return 'reciente'; var d=new Date(ts); if(isNaN(d.getTime()))return 'reciente'; var s=(Date.now()-d.getTime())/1000; if(s<3600)return 'hace '+Math.max(1,Math.round(s/60))+'m'; if(s<86400)return 'hace '+Math.round(s/3600)+'h'; return 'hace '+Math.round(s/86400)+'d'; }
 // Nicho real (carrera|fitness|financiero) → clave del template demo (fitness|carrera|finanzas).
@@ -1120,6 +1135,14 @@ function mcLoadReal(owner){
   // así que la lectura directa devolvería la lista vacía. mi-red la trae completa.
   function _apply(org,coaches,clientes,ownerRow){
     MC_ORG=org||null;
+    // White-label persistido: aplicar la marca guardada de la red (color, logo,
+    // nombre, recursos…) para que se vea al recargar y en cualquier dispositivo.
+    try{ if(org&&org.marca&&typeof org.marca==='object'&&Object.keys(org.marca).length){
+      localStorage.setItem('mc_brand',JSON.stringify(org.marca));
+      if(org.marca.color){ CFG.color=org.marca.color; _applyBrandColor(org.marca.color); }
+      if(org.marca.recursos&&org.marca.recursos.length){ CFG.recursos=org.marca.recursos; }
+      setTimeout(function(){ try{ renderBrandLogo(); }catch(e){} },0);
+    } }catch(e){}
     MC_PLAN=(org&&org.plan)||(owner.configuracion&&owner.configuracion.plan)||'boutique';
     MC_N=mcNichoKey(org?org.nicho:(owner.configuracion&&owner.configuracion.coach_type)); NICHOS=NM().cats;
     var cnt={}; (clientes||[]).forEach(function(c){ if(c.coach_id)cnt[c.coach_id]=(cnt[c.coach_id]||0)+1; });
@@ -1750,16 +1773,25 @@ function _cfgProfile(){
  var esc=function(s){return (''+(s||'')).replace(/"/g,'&quot;');};
  return '<div class="cp-card"><div class="cp-card-hd"><h3 class="cp-card-title">Perfil público de la empresa<span class="dot">.</span></h3><span class="cp-eyebrow">Tu página</span></div>'
   +'<div class="cp-card-pad" style="display:flex;flex-direction:column;gap:18px">'
-   +'<div class="cp-toggle" style="padding:4px 0"><div class="cp-toggle-body"><div class="cp-toggle-title">Activar página pública</div><div class="cp-toggle-desc">Tu empresa aparece en <code>'+esc(link)+'</code> con tus coaches y clases.</div></div><button class="cp-switch is-on" onclick="this.classList.toggle(\'is-on\');__toast(this.classList.contains(\'is-on\')?\'Página pública activa\':\'Página oculta\')"><span></span></button></div>'
-   +'<div class="cp-form-row"><label class="cp-form-label">Nombre de la empresa</label><input class="cp-form-input" value="'+esc(nom)+'"></div>'
-   +'<div class="cp-form-row"><label class="cp-form-label">URL (slug)</label><input class="cp-form-input" value="'+esc(slug)+'"><span class="cp-form-hint">Tu link público: <code>'+esc(link)+'</code></span></div>'
-   +'<div class="cp-form-row"><label class="cp-form-label">Título</label><input class="cp-form-input" placeholder="Ej. Estudio de entrenamiento y nutrición"'+(MC_REAL?'':' value="Estudio boutique de entrenamiento y nutrición"')+'></div>'
-   +'<div class="cp-form-row"><label class="cp-form-label">Descripción</label><textarea class="cp-form-textarea" placeholder="Cuenta qué hace tu equipo — aparece en tu página pública.">'+(MC_REAL?'':'Acompañamos a cada cliente con un coach dedicado, plan personalizado y seguimiento semanal.')+'</textarea><span class="cp-form-hint">Aparece en tu página pública.</span></div>'
-   +'<div class="cp-form-row"><label class="cp-form-label">Link para agendar (Calendly / Google / Cal.com)</label><input class="cp-form-input" placeholder="Pega tu link de reserva"><span class="cp-form-hint">Tus clientes tocan «Agendar» en su portal y se abre este link.</span></div>'
-   +'<div style="display:flex;gap:10px;justify-content:flex-end"><button class="cp-btn cp-btn-primary" onclick="__toast(\'Perfil guardado ✓\')">Guardar cambios</button></div></div></div>';
+   +'<div class="cp-toggle" style="padding:4px 0"><div class="cp-toggle-body"><div class="cp-toggle-title">Activar página pública</div><div class="cp-toggle-desc">Tu empresa aparece en <code>'+esc(link)+'</code> con tus coaches y clases.</div></div><button id="cfp-pub" class="cp-switch'+(_mcBrand().publica===false?'':' is-on')+'" onclick="this.classList.toggle(\'is-on\')"><span></span></button></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Nombre de la empresa</label><input id="cfp-nombre" class="cp-form-input" value="'+esc(nom)+'"></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">URL (slug)</label><input id="cfp-slug" class="cp-form-input" value="'+esc(slug)+'"><span class="cp-form-hint">Tu link público: <code>'+esc(link)+'</code></span></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Título</label><input id="cfp-titulo" class="cp-form-input" placeholder="Ej. Estudio de entrenamiento y nutrición" value="'+esc(_mcBrand().titulo||(MC_REAL?'':'Estudio boutique de entrenamiento y nutrición'))+'"></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Descripción</label><textarea id="cfp-desc" class="cp-form-textarea" placeholder="Cuenta qué hace tu equipo — aparece en tu página pública.">'+esc(_mcBrand().descripcion||(MC_REAL?'':'Acompañamos a cada cliente con un coach dedicado, plan personalizado y seguimiento semanal.'))+'</textarea><span class="cp-form-hint">Aparece en tu página pública.</span></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Link para agendar (Calendly / Google / Cal.com)</label><input id="cfp-agendar" class="cp-form-input" placeholder="Pega tu link de reserva" value="'+esc(_mcBrand().link_agendar||'')+'"><span class="cp-form-hint">Tus clientes tocan «Agendar» en su portal y se abre este link.</span></div>'
+   +'<div style="display:flex;gap:10px;justify-content:flex-end"><button class="cp-btn cp-btn-primary" onclick="_saveProfile()">Guardar cambios</button></div></div></div>';
 }
 // Slug URL-friendly desde el nombre de la empresa.
 function _mcSlug(s){return (''+(s||'')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'mi-empresa';}
+function _v(id){ var e=document.getElementById(id); return e?(''+e.value).trim():''; }
+function _saveProfile(){
+  var nombre=_v('cfp-nombre');
+  var pub=(document.getElementById('cfp-pub')||{classList:{contains:function(){return true;}}}).classList.contains('is-on');
+  mcSaveConfig({
+    nombre:nombre, slug:_v('cfp-slug')||_mcSlug(nombre), titulo:_v('cfp-titulo'),
+    descripcion:_v('cfp-desc'), link_agendar:_v('cfp-agendar'), publica:pub
+  }, 'Perfil guardado ✓');
+}
 function _cfgRecursos(){
  var _nlbl=MC_REC_LABEL[MC_N]||'Fitness', _ej=MC_REC_EJEMPLOS[MC_N]||MC_REC_EJEMPLOS.fitness;
  var rows=CFG.recursos.map(function(r,i){return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:9px"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px"><input class="cp-form-input" value="'+r.titulo+'" placeholder="Título del recurso"><input class="cp-form-input" value="'+r.url+'" placeholder="https://… (link)" style="font-size:12px;color:var(--pw-text-soft)"></div><button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4);height:40px;padding:0 13px" onclick="_recDel('+i+')" title="Quitar">✕</button></div>';}).join('')
@@ -1767,10 +1799,18 @@ function _cfgRecursos(){
  return '<div class="cp-card"><div class="cp-card-hd"><h3 class="cp-card-title">Recursos del portal<span class="dot">.</span></h3><span class="cp-eyebrow">'+_nlbl+'</span></div>'
   +'<div class="cp-card-pad"><p class="cp-reassurance" style="margin:0 0 16px">Son <strong>enlaces útiles</strong> que <strong>solo ve el cliente</strong> en la sección Recursos de su portal — para '+_nlbl.toLowerCase()+', por ejemplo: '+_ej+'. Edita el título/link o quita los que no uses con la <strong>✕</strong>.</p>'
   +'<div id="recrows">'+rows+'</div>'
-  +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px"><button class="cp-btn cp-btn-ghost" onclick="_recAdd()">+ Agregar recurso</button><button class="cp-btn cp-btn-ghost" onclick="CFG.recursos=_mcDefRecursos();renderConfig()">Cargar ejemplos de '+_nlbl+'</button><button class="cp-btn cp-btn-primary" style="margin-left:auto" onclick="__toast(\'Recursos guardados ✓\')">Guardar</button></div></div></div>';
+  +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px"><button class="cp-btn cp-btn-ghost" onclick="_recAdd()">+ Agregar recurso</button><button class="cp-btn cp-btn-ghost" onclick="CFG.recursos=_mcDefRecursos();renderConfig()">Cargar ejemplos de '+_nlbl+'</button><button class="cp-btn cp-btn-primary" style="margin-left:auto" onclick="_saveRecursos()">Guardar</button></div></div></div>';
 }
-function _recAdd(){CFG.recursos.push({titulo:'',url:''});renderConfig();}
-function _recDel(i){CFG.recursos.splice(i,1);renderConfig();}
+function _recAdd(){_recRead();CFG.recursos.push({titulo:'',url:''});renderConfig();}
+function _recDel(i){_recRead();CFG.recursos.splice(i,1);renderConfig();}
+// Lee los inputs actuales de recursos al modelo (para no perder lo tipeado al
+// agregar/quitar o guardar).
+function _recRead(){
+  var rows=document.querySelectorAll('#recrows > div'); if(!rows.length) return;
+  var out=[]; rows.forEach(function(row){ var ins=row.querySelectorAll('input'); var t=((ins[0]&&ins[0].value)||'').trim(), u=((ins[1]&&ins[1].value)||'').trim(); if(t||u) out.push({titulo:t,url:u}); });
+  CFG.recursos=out;
+}
+function _saveRecursos(){ _recRead(); mcSaveConfig({recursos:CFG.recursos}, 'Recursos guardados ✓'); }
 function _cfgBrand(){
  var swatches=['#2D6A4F','#15807A','#2C6E9E','#3F4DA0','#6D3FA0','#8E3B66','#A23A3A','#B5722A','#44505E'];
  var sw=swatches.map(function(c){var on=CFG.color===c;return '<button onclick="_setColor(\''+c+'\')" style="width:38px;height:38px;border-radius:50%;background:'+c+';border:'+(on?'3px solid #fff':'2px solid transparent')+';box-shadow:'+(on?'0 0 0 2px '+c:'var(--pw-shadow-xs)')+';cursor:pointer;padding:0" aria-label="'+c+'"></button>';}).join('');
@@ -1877,6 +1917,36 @@ function mcPlanes(){
   ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
   var x=document.getElementById('mc-planes-x'); if(x) x.onclick=function(){ ov.remove(); };
 }
+// Portal de facturación de Stripe: el dueño gestiona su suscripción, cambia la
+// tarjeta y descarga sus facturas/recibos reales. Mismo portal que usa el panel.
+var MC_STRIPE_PORTAL='https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00';
+function mcFacturacion(){
+  var pm=_mcPlanMeta();
+  var oem=(MC_REAL&&MC_OWNER&&MC_OWNER.email)?MC_OWNER.email:'';
+  var esc=function(s){return (''+(s||'')).replace(/"/g,'&quot;').replace(/</g,'&lt;');};
+  var portal=MC_STRIPE_PORTAL+(oem?('?prefilled_email='+encodeURIComponent(oem)):'');
+  var acts=DB.coaches.filter(function(c){return !c.esOwner&&c.est!=='pendiente';}).length;
+  var row=function(l,v){return "<div style='display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--pw-border);font-size:13px'><span style='color:var(--pw-text-soft)'>"+l+"</span><span style='font-weight:600;color:var(--pw-carbon)'>"+v+"</span></div>";};
+  var old=document.getElementById('mc-fact-ov'); if(old) old.remove();
+  var ov=document.createElement('div'); ov.id='mc-fact-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(20,46,38,.55)';
+  ov.innerHTML="<div style='width:100%;max-width:440px;background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(20,55,38,.32);overflow:hidden'>"+
+    "<div style='padding:20px 24px;border-bottom:1px solid var(--pw-border);display:flex;align-items:center;justify-content:space-between'>"+
+      "<div><div style='font-family:var(--ser);font-size:19px;font-weight:600;color:var(--pw-carbon)'>Facturación</div>"+
+      "<div style='font-size:12.5px;color:var(--pw-text-soft)'>Tu suscripción de red</div></div>"+
+      "<button id='mc-fact-x' type='button' style='background:none;border:0;font-size:22px;line-height:1;color:var(--pw-text-muted);cursor:pointer;padding:4px 8px'>✕</button></div>"+
+    "<div style='padding:18px 24px 22px'>"+
+      row('Plan', esc(pm.nombre))+
+      row('Precio', esc(pm.precio))+
+      row('Coaches', acts+(pm.maxC!=null?(' / '+pm.maxC):' · sin límite'))+
+      row('Clientes', DB.clientes.length+(pm.maxK!=null?(' / '+pm.maxK):' · sin límite'))+
+      "<a href='"+esc(portal)+"' target='_blank' rel='noopener' style='display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;background:var(--pw-bosque);color:#fff;text-decoration:none;padding:13px;border-radius:11px;font-size:14px;font-weight:700'>Gestionar pago y ver facturas →</a>"+
+      "<div style='font-size:11.5px;color:var(--pw-text-muted);text-align:center;margin-top:10px;line-height:1.5'>Cambiá la tarjeta, descargá tus facturas o cancelá desde el portal seguro de Stripe.<br>¿Dudas con un cobro? <a href='https://wa.me/34623816019' target='_blank' rel='noopener' style='color:var(--pw-bosque);font-weight:600'>Escribinos</a>.</div>"+
+    "</div></div>";
+  document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+  var fx=document.getElementById('mc-fact-x'); if(fx) fx.onclick=function(){ ov.remove(); };
+}
 function _mcPlanMeta(){
  var key=(MC_REAL&&(MC_PLAN||(MC_ORG&&MC_ORG.plan)))||'studio'; key=(''+key).toLowerCase();
  var p=MC_PLANES[key]||MC_PLANES.studio;
@@ -1884,6 +1954,16 @@ function _mcPlanMeta(){
  var maxC=(MC_REAL&&MC_ORG&&MC_ORG.max_coaches!=null)?MC_ORG.max_coaches:p.coaches;
  var maxK=(MC_REAL&&MC_ORG&&MC_ORG.max_clientes!=null)?MC_ORG.max_clientes:p.clientes;
  return {nombre:p.nombre,precio:p.precio,maxC:maxC,maxK:maxK};
+}
+function _saveAccount(){
+  var nombre=_v('cfa-nombre');
+  var notif=(document.getElementById('cfa-notif')||{classList:{contains:function(){return true;}}}).classList.contains('is-on');
+  mcSaveConfig({notif:notif}, 'Cuenta guardada ✓');
+  // El nombre del responsable va a SU fila de usuarios (self-healing cubre el JWT).
+  if(MC_REAL && MC_OWNER && MC_OWNER.id && nombre){
+    mcPatch('usuarios','id=eq.'+encodeURIComponent(MC_OWNER.id),{nombre:nombre}).catch(function(){});
+    MC_OWNER.nombre=nombre;
+  }
 }
 function _cfgAccount(){
  var lim=function(lbl,used,tot){ if(tot==null)return '<div style="margin-bottom:14px;display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--pw-text-soft)">'+lbl+'</span><span style="font-weight:600;color:var(--pw-carbon)">'+used+' · sin límite</span></div>'; var pct=Math.min(100,Math.round(used/Math.max(1,tot)*100));return '<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px"><span style="color:var(--pw-text-soft)">'+lbl+'</span><span style="font-weight:600;color:var(--pw-carbon)">'+used+' / '+tot+'</span></div><div style="height:9px;border-radius:5px;background:var(--pw-niebla-3);overflow:hidden"><i style="display:block;height:100%;width:'+pct+'%;background:var(--pw-bosque);border-radius:5px"></i></div></div>';};
@@ -1897,13 +1977,13 @@ function _cfgAccount(){
   +'<div class="cp-card-pad">'
    +'<p style="font-size:13px;color:var(--pw-text-soft);margin:0 0 16px;line-height:1.55">Plan <strong>'+esc(pm.nombre)+'</strong> — '+limTxt+'. '+esc(pm.precio)+'.</p>'
    +lim('Coaches',acts,pm.maxC)+lim('Clientes',DB.clientes.length,pm.maxK)
-   +'<div style="display:flex;gap:10px;margin-top:4px"><button class="cp-btn cp-btn-primary" onclick="mcPlanes()">Ver planes / cambiar</button><button class="cp-btn cp-btn-ghost" onclick="__toast(\'Facturación — próximamente\')">Ver facturación</button></div></div></div>'
+   +'<div style="display:flex;gap:10px;margin-top:4px"><button class="cp-btn cp-btn-primary" onclick="mcPlanes()">Ver planes / cambiar</button><button class="cp-btn cp-btn-ghost" onclick="mcFacturacion()">Ver facturación</button></div></div></div>'
   +'<div class="cp-card"><div class="cp-card-hd"><h3 class="cp-card-title">Tu cuenta<span class="dot">.</span></h3></div>'
   +'<div class="cp-card-pad" style="display:flex;flex-direction:column;gap:14px">'
-   +'<div class="cp-form-row"><label class="cp-form-label">Nombre del responsable</label><input class="cp-form-input" value="'+esc(onm)+'"></div>'
-   +'<div class="cp-form-row"><label class="cp-form-label">Email</label><input class="cp-form-input" value="'+esc(oem)+'"></div>'
-   +'<div class="cp-toggle"><div class="cp-toggle-body"><div class="cp-toggle-title">Notificaciones por email</div><div class="cp-toggle-desc">Resumen semanal y alertas de clientes en riesgo.</div></div><button class="cp-switch is-on" onclick="this.classList.toggle(\'is-on\')"><span></span></button></div>'
-   +'<div style="display:flex;justify-content:flex-end"><button class="cp-btn cp-btn-primary" onclick="__toast(\'Cuenta guardada ✓\')">Guardar</button></div></div></div>';
+   +'<div class="cp-form-row"><label class="cp-form-label">Nombre del responsable</label><input id="cfa-nombre" class="cp-form-input" value="'+esc(onm)+'"></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Email</label><input class="cp-form-input" value="'+esc(oem)+'" readonly style="opacity:.7;cursor:not-allowed"><span class="cp-form-hint">Es tu usuario de acceso. Para cambiarlo, escribinos.</span></div>'
+   +'<div class="cp-toggle"><div class="cp-toggle-body"><div class="cp-toggle-title">Notificaciones por email</div><div class="cp-toggle-desc">Resumen semanal y alertas de clientes en riesgo.</div></div><button id="cfa-notif" class="cp-switch'+(_mcBrand().notif===false?'':' is-on')+'" onclick="this.classList.toggle(\'is-on\')"><span></span></button></div>'
+   +'<div style="display:flex;justify-content:flex-end"><button class="cp-btn cp-btn-primary" onclick="_saveAccount()">Guardar</button></div></div></div>';
 }
 
 /* ===== Agenda v2 — vista semanal de todo el equipo ===== */
@@ -2145,10 +2225,11 @@ function renderBrandLogo(){
 function _saveBrand(){
   var n=(document.getElementById('cfb-name')||{}).value||'';
   var l=(document.getElementById('cfb-logo')||{}).value||'';
-  var b=_mcBrand(); b.nombre=n.trim(); b.logo=l.trim();
-  try{ localStorage.setItem('mc_brand',JSON.stringify(b)); }catch(_){}
+  // Persiste color + nombre + logo en organizaciones.marca → llega al portal del
+  // cliente y sobrevive el cambio de dispositivo (antes era solo localStorage).
+  mcSaveConfig({ nombre:n.trim(), logo:l.trim(), color:CFG.color },
+    (l.trim()?'Marca aplicada ✓':'Marca guardada ✓'));
   renderBrandLogo();
-  __toast(b.logo?'Marca aplicada ✓':'Marca guardada ✓');
 }
 _applyBrandColor(_mcBrand().color);   // restaura el color elegido por el coach al cargar
 renderBrandLogo();
