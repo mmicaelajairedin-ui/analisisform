@@ -44,6 +44,21 @@ create policy "dataroom read"  on storage.objects for select using (bucket_id = 
 drop policy if exists "dataroom write" on storage.objects;
 create policy "dataroom write" on storage.objects for insert with check (bucket_id = 'dataroom');
 
+-- ── Lista de acceso (dataroom_permitidos): gestionable desde el panel admin ──
+-- La tabla ya existía para el gate; abrimos lectura/alta/baja (mismo nivel de
+-- gate suave). Ver nota de seguridad de arriba.
+create table if not exists dataroom_permitidos (
+  email text primary key,
+  created_at timestamptz default now()
+);
+alter table dataroom_permitidos enable row level security;
+drop policy if exists dataroom_permitidos_read   on dataroom_permitidos;
+create policy dataroom_permitidos_read   on dataroom_permitidos for select using (true);
+drop policy if exists dataroom_permitidos_insert on dataroom_permitidos;
+create policy dataroom_permitidos_insert on dataroom_permitidos for insert with check (true);
+drop policy if exists dataroom_permitidos_delete on dataroom_permitidos;
+create policy dataroom_permitidos_delete on dataroom_permitidos for delete using (true);
+
 -- Seed opcional: la demo interactiva (link externo), para que no arranque vacío.
 insert into dataroom_docs (titulo, descripcion, meta, url, tipo, orden)
 select 'Demo interactiva','Recorré la plataforma real —tareas, progreso, sesiones y gamificación— sin registro.','Demo · 4 min','https://demo.arcade.software/S497IIt6F5RXuKNAqAAg?embed','demo',10
