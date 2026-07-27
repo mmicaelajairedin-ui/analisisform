@@ -3124,6 +3124,30 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "config del coach: el guardado a usuarios resiste RLS (JWT vencido) vía coach-self-save, no se pierde en silencio",
+    bug: "Con RLS Fase 5 (usuarios_hardening.sql) el UPDATE de usuarios exige el JWT del coach. Si la " +
+         "sesión de Supabase venció o entró con el login viejo, el PATCH caía a la anon key y RLS lo " +
+         "rechazaba: la config/perfil NO se guardaba y el coach ni se enteraba (fire-and-forget). " +
+         "Ahora _selfPatchUsuarios intenta directo y, si falla, reintenta por la edge function " +
+         "coach-self-save (service role, lista blanca SIN rol/password → sin escalada). Los guardados " +
+         "de configuracion/foto_url/xp/badges del propio coach pasan por ese helper.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _selfPatchUsuarios\(/.test(p)) return "panel-v2.html: falta el helper _selfPatchUsuarios (guardado resistente a RLS).";
+        if (!/coach-self-save/.test(p)) return "panel-v2.html: el helper ya no reintenta por la edge function coach-self-save.";
+        // El guardado principal de config del coach debe ir por el helper, no por _sbw directo a usuarios.
+        if (/_sbw\("usuarios\?id=eq\."\+encodeURIComponent\(RME\.id\),"PATCH",\{configuracion/.test(p)) return "panel-v2.html: un guardado de configuracion del coach volvió a _sbw directo (se pierde con RLS si no hay JWT).";
+      }
+      const fn = read("supabase/functions/coach-self-save/index.ts");
+      if (fn !== null) {
+        if (/ALLOWED[\s\S]{0,200}password_hash/.test(fn) || /ALLOWED[\s\S]{0,200}"rol"/.test(fn)) return "coach-self-save: la lista blanca NO puede incluir rol/password_hash (riesgo de escalada).";
+        if (!/SERVICE_ROLE_KEY/.test(fn)) return "coach-self-save: la función debe usar el service role para bypassear RLS.";
+      }
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
