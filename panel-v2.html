@@ -10592,8 +10592,8 @@ document.addEventListener("click", function(ev){
     var vcall="call_"+Date.now();
     var vcoach=(COACH&&(COACH.name||COACH.firstName))||"Coach";
     var vnow=new Date(); var vtime=vnow.getDate()+"/"+(1+vnow.getMonth())+" "+vnow.getHours()+":"+String(vnow.getMinutes()).padStart(2,"0");
-    var vcoachSala="sala.html?room="+encodeURIComponent(vroom)+"&mod=1&coach="+encodeURIComponent((RME&&RME.id)||"")+"&name="+encodeURIComponent(vcoach)+"&con="+encodeURIComponent(vcli.name||"")+"&email="+encodeURIComponent(vcli.email||"")+"&tipo="+encodeURIComponent("Llamada rápida");
-    var vcliSala="https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(vroom)+"&mod=0&name="+encodeURIComponent(vcli.name||"")+"&email="+encodeURIComponent(vcli.email||"")+"&con="+encodeURIComponent(vcoach)+"&tipo="+encodeURIComponent("Llamada rápida");
+    var vcoachSala="sala.html?room="+encodeURIComponent(vroom)+"&mod=1&coach="+encodeURIComponent((RME&&RME.id)||"")+"&name="+encodeURIComponent(vcoach)+"&con="+encodeURIComponent(vcli.name||"")+"&email="+encodeURIComponent(vcli.email||"")+"&tipo="+encodeURIComponent("Llamada rápida")+"&kind=personal";
+    var vcliSala="https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(vroom)+"&mod=0&name="+encodeURIComponent(vcli.name||"")+"&email="+encodeURIComponent(vcli.email||"")+"&con="+encodeURIComponent(vcoach)+"&tipo="+encodeURIComponent("Llamada rápida")+"&kind=personal";
     var vmsg={from:"coach",kind:"call",callId:vcall,room:vroom,link:vcliSala,status:"ringing",text:"📹 Videollamada",ts:Date.now(),time:vtime};
     _sb("candidatos?id=eq."+encodeURIComponent(vcid)+"&select=notas_coach").then(function(rows){
       var arr=_chatArr(rows&&rows[0]?rows[0].notas_coach:"[]"); arr.push(vmsg);
@@ -12059,11 +12059,12 @@ function _avCollect(avc){
   return { d:newD, prog:prog };
 }
 function _chatArr(s){ try{ var a=JSON.parse(s||"[]"); return Object.prototype.toString.call(a)==="[object Array]"?a:[]; }catch(e){ return []; } }
-// Videollamada: a los 35 s de iniciar, si el cliente NO aceptó (no hay call-ans
-// 'accepted' para ese callId), la marcamos PERDIDA y la registramos en Sesiones.
-// Robusto aunque el cliente tenga el portal cerrado (ahí nunca contesta).
+// Videollamada rápida: a los 35 s, si el cliente NO aceptó (no hay call-ans
+// 'accepted' para ese callId), la marcamos PERDIDA en el CHAT. La llamada rápida
+// (tipo 4) SOLO queda registrada en el chat — no se mete en Sesiones (eso es para
+// las citas/Salas con cita). Robusto aunque el cliente tenga el portal cerrado.
 function _callMissedCheck(cid, callId, cli){
-  _sb("candidatos?id=eq."+encodeURIComponent(cid)+"&select=notas_coach,sesiones_registro").then(function(rows){
+  _sb("candidatos?id=eq."+encodeURIComponent(cid)+"&select=notas_coach").then(function(rows){
     var row=rows&&rows[0]; if(!row) return;
     var arr=_chatArr(row.notas_coach);
     var accepted=arr.some(function(m){ return m&&m.kind==="call-ans"&&m.callId===callId&&m.status==="accepted"; });
@@ -12071,11 +12072,9 @@ function _callMissedCheck(cid, callId, cli){
     if(accepted||already) return; // se atendió o ya se cerró
     var now=new Date(), tm=now.getDate()+"/"+(1+now.getMonth())+" "+now.getHours()+":"+String(now.getMinutes()).padStart(2,"0");
     arr.push({from:"coach",kind:"call-ans",callId:callId,status:"missed",text:"📵 Llamada perdida",ts:Date.now(),time:tm});
-    // Registrar en Sesiones (igual que una sesión: fecha + tipo + estado).
-    var ses=[]; try{ ses=JSON.parse(row.sesiones_registro||"[]")||[]; }catch(e){ ses=[]; }
-    ses.push({fecha:now.toISOString(), tipo:"Llamada rápida", estado:"perdida", nota:"Videollamada no atendida"});
-    _sbw("candidatos?id=eq."+encodeURIComponent(cid),"PATCH",{notas_coach:JSON.stringify(arr), sesiones_registro:JSON.stringify(ses)}).then(function(r){
-      if(r&&r.ok){ CLIENTS.forEach(function(x){ if(String(x.id)===String(cid)){ x.chat=arr; if(x.raw){ x.raw.notas_coach=JSON.stringify(arr); x.raw.sesiones_registro=JSON.stringify(ses); } x.ses=ses; } }); try{ toast("Sin respuesta — quedó como llamada perdida"); }catch(e){} try{ render(); }catch(e){} }
+    // Solo el chat: la llamada rápida no genera entrada en Sesiones.
+    _sbw("candidatos?id=eq."+encodeURIComponent(cid),"PATCH",{notas_coach:JSON.stringify(arr)}).then(function(r){
+      if(r&&r.ok){ CLIENTS.forEach(function(x){ if(String(x.id)===String(cid)){ x.chat=arr; if(x.raw){ x.raw.notas_coach=JSON.stringify(arr); } } }); try{ toast("Sin respuesta — quedó como llamada perdida"); }catch(e){} try{ render(); }catch(e){} }
     }).catch(function(){});
   }).catch(function(){});
 }
