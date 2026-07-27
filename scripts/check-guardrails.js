@@ -3222,6 +3222,13 @@ const RULES = [
       const w = p.slice(p.indexOf("function _sbw("), p.indexOf("function _sbw(") + 2700);
       if (!/_pwRefresh\(\)/.test(w)) return "panel-v2.html: _sbw ya no refresca+reintenta ante 401/403 (perdería el guardado por sesión vencida).";
       if (!/_pwRefresh\(\)/.test(p.slice(p.indexOf("function _sb(p)"), p.indexOf("function _sb(p)") + 700))) return "panel-v2.html: _sb ya no refresca+reintenta ante 401/403.";
+      // Cobertura TODO Pathway: el interceptor de pw-auth.js también refresca+reintenta
+      // (cubre los portales del cliente + cv/carta, no solo el panel).
+      const a = read("pw-auth.js");
+      if (a) {
+        if (!/function refreshOnce\(/.test(a)) return "pw-auth.js: falta refreshOnce (refresh de sesión para todo Pathway).";
+        if (!/__pwRetried/.test(a) || !/refreshOnce\(\)/.test(a)) return "pw-auth.js: el interceptor ya no reintenta el fetch tras refrescar el JWT (los portales del cliente perderían guardados por sesión vencida).";
+      }
       return null;
     },
   },

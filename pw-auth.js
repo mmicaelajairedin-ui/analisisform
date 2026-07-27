@@ -108,6 +108,26 @@
       });
   }
 
+  // Fuerza un refresh del token con el refresh_token (self-healing de sesión).
+  // Devuelve true si quedó una sesión válida. Deduplicado: refrescos concurrentes
+  // comparten la MISMA promesa (no hay estampida cuando fallan varios fetch juntos).
+  var _refreshing = null;
+  function refreshOnce() {
+    if (_refreshing) return _refreshing;
+    _refreshing = ensure().then(function (c) {
+      if (!c || !c.auth || !c.auth.refreshSession) return false;
+      return c.auth.refreshSession().then(
+        function (r) { return !!(r && r.data && r.data.session && r.data.session.access_token); },
+        function () { return false; }
+      );
+    }).catch(function () { return false; });
+    _refreshing.then(
+      function () { setTimeout(function () { _refreshing = null; }, 2000); },
+      function () { _refreshing = null; }
+    );
+    return _refreshing;
+  }
+
   window.PWAUTH = {
     url: SB_URL,
     anon: ANON,
@@ -179,10 +199,11 @@
     ? window.fetch.bind(window) : null;
   if (_origFetch) {
     window.fetch = function (input, init) {
+      var _isStr = (typeof input === "string");
+      var _url = _isStr ? input : (input && input.url) ? input.url : "";
+      var _rls = (_url.indexOf(SB_URL) === 0 && RLS_TABLES.test(_url));
       try {
-        var url = (typeof input === "string") ? input
-                : (input && input.url) ? input.url : "";
-        if (url.indexOf(SB_URL) === 0 && RLS_TABLES.test(url)) {
+        if (_rls) {
           var tok = tokenSync();
           if (tok) {
             var anonBearer = "Bearer " + ANON, jwtBearer = "Bearer " + tok;
@@ -205,7 +226,30 @@
           }
         }
       } catch (e) { /* ante cualquier duda, fetch normal */ }
-      return _origFetch(input, init);
+      var _p = _origFetch(input, init);
+      // ── Self-healing de sesión (todo Pathway) ──────────────────────────────
+      // Si el server rechaza por sesión vencida (401/403) una lectura/escritura a
+      // una tabla con RLS, refrescamos el JWT y REINTENTAMOS una vez con el token
+      // fresco. Un 401/403 = 0 filas tocadas → seguro reintentar (incluso un POST).
+      // Cubre panel + portales del cliente + cv/carta de una, sin tocar cada uno.
+      // Solo para fetch con URL string (los inline del código); las llamadas del
+      // SDK (Request) traen su propio manejo de auth y no se tocan.
+      if (!_rls || !_isStr) return _p;
+      return _p.then(function (r) {
+        if ((r.status !== 401 && r.status !== 403) || (init && init.__pwRetried)) return r;
+        return refreshOnce().then(function (ok) {
+          if (!ok) return r;
+          var t2 = tokenSync(); if (!t2) return r;
+          var init2 = {}; if (init) for (var kk in init) if (init.hasOwnProperty(kk)) init2[kk] = init[kk];
+          init2.__pwRetried = true;
+          var hh = {}; var oh = init2.headers || {};
+          if (oh instanceof Headers) { oh.forEach(function (v, k) { hh[k] = v; }); }
+          else { for (var hk in oh) if (oh.hasOwnProperty(hk)) hh[hk] = oh[hk]; }
+          hh.Authorization = "Bearer " + t2; if (!hh.apikey && !hh.apiKey) hh.apikey = ANON;
+          init2.headers = hh;
+          return _origFetch(input, init2);
+        }).catch(function () { return r; });
+      });
     };
   }
 
