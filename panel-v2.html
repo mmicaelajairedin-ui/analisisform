@@ -8517,7 +8517,7 @@ document.addEventListener("click", function(ev){
 });
 // El badge se asienta cuando los datos terminan de cargar (por si el último
 // render corrió antes de que llegaran).
-window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _pwLoadCoachNotif(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} try{ if(!_gamiOn()){ var _nb=document.getElementById("pw-nov-btn"); if(_nb) _nb.style.display="none"; } }catch(e){} try{ if(_gamiOn()&&(RMONTH===null||RWEEK===null)) _loadRanks(); }catch(e){} },t); }); });
+window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _pwLoadCoachNotif(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} try{ if(!_gamiOn()){ var _nb=document.getElementById("pw-nov-btn"); if(_nb) _nb.style.display="none"; } }catch(e){} try{ if(_gamiOn()&&(RMONTH===null||RWEEK===null)) _loadRanks(); }catch(e){} try{ _novAutoOpen(); }catch(e){} },t); }); });
 
 // ═══ Drawers laterales: Novedades (revista semanal) + Perfil (puntos/medallas/badges) ═══
 // Se embeben las páginas ya aprobadas (novedades-preview.html / perfil-preview.html)
@@ -8578,9 +8578,39 @@ function _openDrawer(which){
   else { d.style.display="flex"; }
 }
 function _closeDrawer(which){
-  if(which==="nov"){ document.body.classList.remove("pw-nov-open"); return; }
+  // Al cerrar Novedades se recuerda la SEMANA en que se cerró: así queda cerrada
+  // el resto de esa semana, pero se vuelve a abrir sola cuando rota la edición
+  // (la revista se renueva cada semana). Igual siempre se puede abrir a mano.
+  if(which==="nov"){ document.body.classList.remove("pw-nov-open"); try{ localStorage.setItem("pw_nov_closed_week", String(_novWeek())); }catch(e){} return; }
   var id = which==="perfil" ? "pw-perfil-drawer" : "pw-nov-drawer";
   var d=document.getElementById(id); if(d) d.style.display="none";
+}
+// Edición/semana actual de la revista: misma fórmula que usa el drawer (edN).
+// Ancla = el más reciente entre el lanzamiento (2026-07-20) y el alta del coach;
+// avanza de a 1 cada 7 días. Cuando cambia = "se renovó" → Novedades reabre sola.
+function _novWeek(){
+  try{
+    var _L=Date.UTC(2026,6,20);
+    var _c=(typeof RME!=="undefined"&&RME&&RME.created_at)?new Date(RME.created_at).getTime():0; if(isNaN(_c)) _c=0;
+    var _anchor=Math.max(_L,_c);
+    var w=Math.floor(((new Date()).getTime()-_anchor)/604800000); if(w<0) w=0;
+    return w;
+  }catch(e){ return 0; }
+}
+// Novedades abierta por defecto CADA semana (al renovarse la edición) salvo que el
+// coach ya la haya cerrado ESA semana. Solo en desktop (>900px); en móvil la
+// columna ocupa toda la pantalla. Se corre una vez por carga.
+var _novAutoDone=false;
+function _novAutoOpen(){
+  if(_novAutoDone) return;
+  try{
+    if(!_gamiOn()) return;                 // solo si Novedades está disponible
+    if(window.innerWidth<=900) return;     // en móvil taparía todo al entrar
+    var dw=""; try{ dw=localStorage.getItem("pw_nov_closed_week")||""; }catch(e){}
+    if(dw!=="" && dw===String(_novWeek())) return;  // ya la cerró esta semana
+    _novAutoDone=true;
+    _openDrawer("nov");
+  }catch(e){}
 }
 
 // ═══ Sistema de premiación: BADGES (colección) ═══
