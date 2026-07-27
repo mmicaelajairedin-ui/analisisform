@@ -260,6 +260,26 @@ const RULES = [
     },
   },
   {
+    name: "Sala: tu foto real viaja a la videollamada (no solo iniciales)",
+    bug: "Un coach en llamada con soporte/otro no veía la foto del otro: la Sala nunca " +
+         "pasaba el avatar a Jitsi. Ahora sala.html toma tu foto (mj_user o mj_foto_<email>) " +
+         "y la manda al JWT (avatar) y a userInfo.avatarURL. Si se corta, vuelven las iniciales.",
+    check() {
+      const s = read("sala.html");
+      if (!s) return null;
+      if (!/avatar:FOTO/.test(s))
+        return "sala.html: el token de la videollamada ya no lleva tu avatar (avatar:FOTO).";
+      if (!/avatarURL:FOTO/.test(s))
+        return "sala.html: Jitsi ya no recibe tu foto (userInfo.avatarURL).";
+      if (!/mj_foto_/.test(s) || !/foto_url/.test(s))
+        return "sala.html: se perdió la búsqueda de tu foto (mj_user.foto_url / mj_foto_<email>).";
+      const jt = read("supabase/functions/jaas-token/index.ts");
+      if (jt && !/avatar/.test(jt))
+        return "jaas-token: el JWT ya no incluye el claim de avatar.";
+      return null;
+    },
+  },
+  {
     name: "servicios: la moneda NO está clavada en euros (coaches de todo el mundo)",
     bug: "Los coaches son de todo el mundo → los precios no siempre son en euros. El " +
          "coach elige su moneda en el editor de Servicios; se estampa en cada servicio " +
