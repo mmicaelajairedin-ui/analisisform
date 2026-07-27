@@ -11304,7 +11304,7 @@ document.addEventListener("click", function(ev){
       if(docFile.size>10*1024*1024){ alert("El documento no puede pesar más de 10 MB."); return; }
       toast("Subiendo documento…");
       _uploadDoc(docFile).then(function(url){ sesObj.doc=url; sesObj.doc_nombre=docFile.name; _saveSes(); })
-        .catch(function(e){ console.error("doc upload:",e); alert("No se pudo subir el documento. Reintenta."); });
+        .catch(function(e){ console.error("doc upload:",e); alert("No se pudo subir el documento.\n\n"+(e&&e.message?e.message:e)+"\n\nSi dice 'bucket not found' o 'mime', falta crear el bucket 'docs' (migration docs_bucket.sql)."); });
     } else { _saveSes(); }
     return;
   }
@@ -11530,13 +11530,15 @@ function _uploadDoc(f){
   var id=(REAL&&RME&&RME.id)?RME.id:"anon";
   var clean=(""+(f.name||"doc")).replace(/[^a-zA-Z0-9._-]/g,"_").slice(-60);
   var path="doc-"+id+"-"+Date.now()+"-"+clean;
-  return fetch(SB+"/storage/v1/object/avatars/"+encodeURIComponent(path),{
+  // Bucket 'docs' (acepta PDF/Word/imágenes). El bucket 'avatars' está restringido
+  // a imágenes → los PDF/Word rebotaban. Migration: docs_bucket.sql.
+  return fetch(SB+"/storage/v1/object/docs/"+encodeURIComponent(path),{
     method:"POST",
     headers:{ apikey:KEY, Authorization:"Bearer "+KEY, "Content-Type": (f.type||"application/octet-stream"), "x-upsert":"true" },
     body: f
   }).then(function(r){
     if(!r.ok) return r.text().then(function(t){ throw new Error("storage "+r.status+" "+t); });
-    return SB+"/storage/v1/object/public/avatars/"+path;
+    return SB+"/storage/v1/object/public/docs/"+path;
   });
 }
 
