@@ -3947,6 +3947,52 @@ function _salaParseBlob(b){
   if(!matched && !out.notas) out.notas=b;
   return out;
 }
+// ── Autocompletar sesión (tipo 'sesion') desde la Sala ──
+// Una Sala de modo 'sesion' (coach + cliente ya adentro) tiene la MISMA estructura
+// que una sesión → al cerrarla, se graba sola en sesiones_registro (no hace falta
+// recargarla a mano). Se hace del lado del PANEL (RLS del coach), no desde la Sala
+// (anon). Dedup por cita (_cita = inicio en ms) → nunca duplica; corre una vez por
+// cliente/sesión. Best-effort: si la columna citas.kind aún no existe, _sb devuelve
+// [] y NO mergea nada (para no meter demos/primeras llamadas como sesiones).
+var _SALA_MERGED={};
+function _salaMergeSessions(c, rows){
+  try{
+    if(!c||!c.raw||c.id==null) return;
+    if(_SALA_MERGED[c.id]) return;
+    var email=((c.raw&&c.raw.email)||c.email||"").toLowerCase().trim(); if(!email) return;
+    var completed=(rows||[]).filter(function(x){ return x && x.inicio && x.notas_llamada; });
+    if(!completed.length) return;
+    _sb("citas?email=eq."+encodeURIComponent(email)+cg()+"&select=inicio,kind").then(function(kr){
+      kr=Object.prototype.toString.call(kr)==="[object Array]"?kr:[];
+      if(!kr.length) return;   // sin columna kind (o sin datos) → no mergear
+      var kmap={}; kr.forEach(function(k){ if(k&&k.inicio) kmap[+new Date(k.inicio)]=(k.kind||"sesion"); });
+      var cur=(c.ses||[]).slice(), have={};
+      cur.forEach(function(s){ if(s&&s._cita!=null) have[s._cita]=1; });
+      var add=[];
+      completed.forEach(function(x){
+        var ms=+new Date(x.inicio); if(isNaN(ms)) return;
+        if((kmap[ms]||"sesion")!=="sesion") return;   // solo modo sesión
+        if(have[ms]) return;                           // ya grabada → no duplicar
+        var P; try{ P=_salaParseBlob(x.notas_llamada)||{}; }catch(e){ P={}; }
+        var d=new Date(ms);
+        var _f=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);
+        var _h=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+        var _tar=(P.tar||[]);
+        add.push({ fecha:_f, hora:_h, trabajado:(P.notas||"").trim(),
+          acordado:((P.obj||[]).map(function(o){return o.txt;}).join("\n")).trim(),
+          acciones:_tar.map(function(t){return t.txt;}).join("\n"),
+          tareas_done:_tar.map(function(t,i){return t.done?i:-1;}).filter(function(i){return i>=0;}),
+          _sala:true, _cita:ms });
+      });
+      if(!add.length) return;
+      _SALA_MERGED[c.id]=1;
+      var merged=cur.concat(add);
+      _sbw("candidatos?id=eq."+encodeURIComponent(c.id),"PATCH",{sesiones_registro:JSON.stringify(merged)}).then(function(r){
+        if(r&&r.ok){ c.ses=merged; } else { _SALA_MERGED[c.id]=0; }
+      }).catch(function(){ _SALA_MERGED[c.id]=0; });
+    }).catch(function(){});
+  }catch(e){}
+}
 // ── Registro de la Sala en la ficha (pestaña Sesiones) ──
 // Lee las citas de este cliente que la Sala completó (resultado + notas_llamada)
 // y las muestra. Así lo trabajado en la videollamada queda en la historia del
@@ -3973,6 +4019,7 @@ function _salaHistLoad(cid){
         return "<div style='padding:10px 0;border-bottom:1px solid var(--pw-border)'><div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'><span style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(when)+"</span>"+(x.tipo?"<span style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(x.tipo)+"</span>":"")+"<span style='margin-left:auto'>"+badge+"</span></div>"+nt+"</div>";
       }).join("")+
     "</div></div>";
+    _salaMergeSessions(c, rows);   // graba las Salas de modo 'sesion' en sesiones_registro (autocompletar)
   }).catch(function(){ box.innerHTML=""; });
 }
 // Renderiza el contenido de un informe guardado (objeto d) como texto legible.
