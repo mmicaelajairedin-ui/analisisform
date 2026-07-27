@@ -3229,6 +3229,21 @@ const RULES = [
     },
   },
   {
+    name: "white-label de red: la marca del dueño (organizaciones.marca) llega a los 3 portales del cliente",
+    bug: "El white-label es el corazón de lo que se vende en multi-coach ('tu marca, no la de Pathway'). " +
+         "Antes el portal del cliente solo aplicaba la marca del coach INDIVIDUAL si era Pro — pero en una " +
+         "red los coaches no son Pro (paga el dueño), así que el cliente veía el verde Pathway. Ahora, si el " +
+         "cliente tiene org_id, se aplica la marca del dueño (color+logo) vía applyOrgBrand. Cubre fitness, " +
+         "finanzas y carrera.",
+    check() {
+      const fit = read("pathway-fit-cliente.html"), fin = read("pathway-fin-cliente.html"), car = read("cliente.html");
+      if (fit && (!/function applyOrgBrand\(/.test(fit) || !/applyOrgBrand\((c|CRAW)\.org_id\)/.test(fit))) return "pathway-fit-cliente.html: no aplica la marca de la red (applyOrgBrand por org_id).";
+      if (fin && (!/function applyOrgBrandFin\(/.test(fin) || !/applyOrgBrandFin\(CRAW\.org_id\)/.test(fin))) return "pathway-fin-cliente.html: no aplica la marca de la red (applyOrgBrandFin por org_id).";
+      if (car && (!/function _applyOrgBrand\(/.test(car) || !/_applyOrgBrand\(C\.org_id\)/.test(car))) return "cliente.html: no aplica la marca de la red (_applyOrgBrand por org_id).";
+      return null;
+    },
+  },
+  {
     name: "multicoach: la Configuración GUARDA de verdad (persiste en organizaciones.marca), no toast trucho",
     bug: "Para poder VENDER el multicoach, la sección Configuración (Perfil, Recursos, Marca, Mi cuenta) " +
          "no puede tener guardados de mentira. Antes cada botón 'Guardar' solo hacía __toast('...✓') sin " +

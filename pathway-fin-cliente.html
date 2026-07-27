@@ -1331,6 +1331,17 @@ function _pwBrandVars(col){
   rs.setProperty('--shadow','0 2px 16px rgba('+r+','+g+','+b+',.08)');
   rs.setProperty('--shadow-hover','0 6px 24px rgba('+r+','+g+','+b+',.14)');
 }
+// White-label de RED (multi-coach): si el cliente pertenece a una red, la marca
+// del DUEÑO (organizaciones.marca) tiñe el portal — color + logo — aunque su
+// coach no sea Pro. El white-label que se vende, en toda la red.
+function applyOrgBrandFin(orgId){
+  if(!orgId) return;
+  sbGet('organizaciones','id=eq.'+encodeURIComponent(orgId)+'&select=marca,nombre').then(function(rows){
+    if(!rows||!rows.length) return; var m=(rows[0]&&rows[0].marca)||{}; if(!m||typeof m!=='object') return;
+    if(m.color) _pwBrandVars(m.color);
+    if(m.logo){ var _b=document.querySelector('.sb-brand'); if(_b){ _b.innerHTML='<img src="'+esc(m.logo)+'" alt="" style="max-width:140px;max-height:42px;object-fit:contain;margin:0 auto;display:block">'; _b.style.justifyContent='center'; } }
+  }).catch(function(){});
+}
 function applyBrandFin(coachId){
   sbGet('usuarios','id=eq.'+encodeURIComponent(coachId)+'&select=nombre,email,configuracion,foto_url').then(function(rows){
     if(!rows||!rows.length)return; var u=rows[0],cfg=u.configuracion||{};
@@ -1499,7 +1510,7 @@ function _ensureFicha(niche){
   try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'null'); if(mu&&mu.nombre) body.nombre=mu.nombre; }catch(e){}
   fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation,resolution=ignore-duplicates'},body:JSON.stringify(body)})
     .then(function(r){ return (r&&r.ok)?r.json():null; })
-    .then(function(rows){ if(rows&&rows.length){ CRAW=rows[0]; CID=CRAW.id; if(CRAW.coach_id) applyBrandFin(CRAW.coach_id); } })
+    .then(function(rows){ if(rows&&rows.length){ CRAW=rows[0]; CID=CRAW.id; if(CRAW.coach_id) applyBrandFin(CRAW.coach_id); if(CRAW.org_id) applyOrgBrandFin(CRAW.org_id); } })
     .catch(function(){});
 }
 
@@ -1674,7 +1685,7 @@ function pwInit(){
       if(!CRAW.coach_id){ for(var _i=0;_i<rows.length;_i++){ if(rows[_i].coach_id){ CRAW.coach_id=rows[_i].coach_id; break; } } }
       // Restaurar el bonus del juego desde Supabase (game_pts) → la medalla no baja entre dispositivos.
       try{ var _gk='pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CRAW.id||'x'), _srv=parseInt(CRAW.game_pts||0,10)||0; if(_srv>0 && _srv>(parseInt(localStorage.getItem(_gk)||'0',10)||0)) localStorage.setItem(_gk,String(_srv)); }catch(e){}
-      CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);pwMaybeConsent();pwSubGate(CRAW);_limpiarDemo();renderPrepCard();try{_pwCallSetup();}catch(e){}
+      CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);if(CRAW.org_id)applyOrgBrandFin(CRAW.org_id);pwMaybeConsent();pwSubGate(CRAW);_limpiarDemo();renderPrepCard();try{_pwCallSetup();}catch(e){}
     }
     else { _clienteSinFicha(); } // Cliente REAL cuyo alta no dejó ficha → estado limpio + cartel, nunca el demo.
   }).catch(function(){ if(!_esDemo()) _clienteSinFicha(); });
