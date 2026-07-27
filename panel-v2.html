@@ -9608,10 +9608,10 @@ document.addEventListener("click", function(ev){
     if(!REAL){ alert("Demo: en producción esto acepta/rechaza la solicitud real."); return; }
     var doAccept=(act==="sol-accept");
     if(!confirm(doAccept?"¿Aceptar esta solicitud? Se captura el pago: cobras el neto y Pathway retiene su comisión escalonada (desde 5%).":"¿Rechazar esta solicitud? Se libera la retención y al candidato no se le cobra.")) return;
-    if(_genBusy) return; _genBusy=true; toast(doAccept?"Aceptando y cobrando…":"Rechazando…");
+    if(_genBusy) return; _busyOn(); toast(doAccept?"Aceptando y cobrando…":"Rechazando…");
     fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:doAccept?"accept":"reject",solicitud_id:solId})})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; toast(doAccept?"Solicitud aceptada ✓ — pago capturado":"Solicitud rechazada ✓"); loadReal(); })
-      .catch(function(){ _genBusy=false; alert("No se pudo procesar la solicitud. Reintenta en un momento."); });
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0; toast(doAccept?"Solicitud aceptada ✓ — pago capturado":"Solicitud rechazada ✓"); loadReal(); })
+      .catch(function(){ _busyOff(); alert("No se pudo procesar la solicitud. Reintenta en un momento."); });
     return;
   }
   if(act.indexOf("plan:")===0){ state.plan=act.slice(5); render(); return; }
@@ -9726,7 +9726,7 @@ document.addEventListener("click", function(ev){
       return;
     }
     // ── Coach → cliente (chat directo, candidatos.notas_coach) ──
-    if(_genBusy){ if(ccBtn) ccBtn.disabled=false; return; } _genBusy=true;
+    if(_genBusy){ if(ccBtn) ccBtn.disabled=false; return; } _busyOn();
     var ccNow=new Date();
     var ccTime=ccNow.getDate()+"/"+(1+ccNow.getMonth())+" "+ccNow.getHours()+":"+String(ccNow.getMinutes()).padStart(2,"0");
     var ccMsg={from:"coach",text:ccTxt,time:ccTime,ts:ccNow.getTime()};
@@ -9734,13 +9734,13 @@ document.addEventListener("click", function(ev){
       var arr=_chatArr(rows&&rows[0]?rows[0].notas_coach:"[]");
       arr.push(ccMsg);
       return _sbw("candidatos?id=eq."+encodeURIComponent(ccThread),"PATCH",{notas_coach:JSON.stringify(arr)}).then(function(r){
-        _genBusy=false;
+        _busyOff();
         if(!r.ok){ alert("No se pudo enviar el mensaje. Reintenta."); if(ccBtn) ccBtn.disabled=false; return; }
         CLIENTS.forEach(function(x){ if(String(x.id)===String(ccThread)){ x.chat=arr; if(x.raw) x.raw.notas_coach=JSON.stringify(arr); } });
         state.msgDraft = "";
         render();
       });
-    }).catch(function(){ _genBusy=false; alert("No se pudo enviar el mensaje. Reintenta."); if(ccBtn) ccBtn.disabled=false; });
+    }).catch(function(){ _busyOff(); alert("No se pudo enviar el mensaje. Reintenta."); if(ccBtn) ccBtn.disabled=false; });
     return;
   }
   if(act==="chat-cabra-back"){
@@ -10446,7 +10446,7 @@ document.addEventListener("click", function(ev){
     var chid=el.getAttribute("data-id"); if(!chid) return;
     var inp=document.getElementById("chatmsg"); var txt=inp?(""+inp.value).trim():"";
     if(!txt) return;
-    if(_genBusy) return; _genBusy=true; if(inp) inp.disabled=true;
+    if(_genBusy) return; _busyOn(); if(inp) inp.disabled=true;
     var now=new Date();
     var time=now.getDate()+"/"+(1+now.getMonth())+" "+now.getHours()+":"+String(now.getMinutes()).padStart(2,"0");
     var msg={from:"coach",text:txt,time:time,ts:now.getTime()};
@@ -10457,13 +10457,13 @@ document.addEventListener("click", function(ev){
     if(_targetCli && _targetCli._example){
       var _ea=_chatArr(_targetCli.raw?_targetCli.raw.notas_coach:"[]"); _ea.push(msg);
       _targetCli.chat=_ea; if(_targetCli.raw) _targetCli.raw.notas_coach=JSON.stringify(_ea);
-      _genBusy=false; if(inp){ inp.value=""; inp.disabled=false; } render(); return;
+      _busyOff(); if(inp){ inp.value=""; inp.disabled=false; } render(); return;
     }
     _sb("candidatos?id=eq."+encodeURIComponent(chid)+"&select=notas_coach").then(function(rows){
       var arr=_chatArr(rows&&rows[0]?rows[0].notas_coach:"[]");
       arr.push(msg);
       return _sbw("candidatos?id=eq."+encodeURIComponent(chid),"PATCH",{notas_coach:JSON.stringify(arr)}).then(function(r){
-        _genBusy=false; if(!r.ok){ if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintenta."); return; }
+        _busyOff(); if(!r.ok){ if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintenta."); return; }
         CLIENTS.forEach(function(x){ if(String(x.id)===String(chid)){ x.chat=arr; if(x.raw) x.raw.notas_coach=JSON.stringify(arr); } });
         // Push notification al cliente (best effort).
         if(_targetEmail){
@@ -10486,7 +10486,7 @@ document.addEventListener("click", function(ev){
         }
         render();
       });
-    }).catch(function(){ _genBusy=false; if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintenta."); });
+    }).catch(function(){ _busyOff(); if(inp)inp.disabled=false; alert("No se pudo enviar el mensaje. Reintenta."); });
     return;
   }
   if(act==="etapa-save"){
@@ -10521,7 +10521,7 @@ document.addEventListener("click", function(ev){
     if(state.genmat){ state.genmat=null; }
     render();
     if(Object.keys(patch).length) _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",patch);
-    _genBusy=true; toast("Generando informe… puede tardar un momento");
+    _busyOn(); toast("Generando informe… puede tardar un momento");
     // Nicho para elegir el prompt de la IA. FUENTE DE VERDAD = el nicho del CLIENTE
     // (rw.nicho, que el form setea a 'fitness'/'financiero'), NO la config del coach:
     // si coach_type está mal/vacío, un cliente de fitness recibía un informe de
@@ -10531,9 +10531,9 @@ document.addEventListener("click", function(ev){
       nivel:rw.nivel,dias:rw.dias,lugar:rw.lugar,equipo:rw.equipo,peso:rw.peso,altura:rw.altura,lesiones:rw.lesiones,medicacion:rw.medicacion,restricciones:rw.restricciones,nutricion:rw.nutricion,
       ingresos:rw.ingresos,gastos:rw.gastos,deudas:rw.deudas,objetivo_ahorro:rw.objetivo_ahorro,plazo:rw.plazo,ahorro_actual:rw.ahorro_actual};
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify(_giBody)})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
       .then(function(j){ if(j&&j.carta){ _sbw("candidatos?id=eq."+encodeURIComponent(gi),"PATCH",{carta_presentacion:j.carta}); var _ic=CLIENTS.filter(function(x){return String(x.id)===String(gi);})[0]; if(_ic&&_ic.raw) _ic.raw.carta_presentacion=j.carta; } state.genInforme=null; state.cliDetTab="plan"; toast("Informe generado ✓ — abriendo el plan editable…"); try{ pwAddXP(30,"Informe generado"); pwMarkFeature("informe"); pwCheckAutoBadges(); }catch(e){} render(); setTimeout(loadReal,1300); })
-      .catch(function(){ _genBusy=false; state.genInforme=null; render(); alert("No se pudo generar el informe. Reintenta en unos minutos."); });
+      .catch(function(){ _busyOff(); state.genInforme=null; render(); alert("No se pudo generar el informe. Reintenta en unos minutos."); });
     return;
   }
   if(act==="gen-cv"){
@@ -10546,9 +10546,9 @@ document.addEventListener("click", function(ev){
     var vliUse=vliP||rv.linkedin_texto||"", vcvUse=vcvP||rv.cv_url||"";
     var vc=CLIENTS.filter(function(x){return String(x.id)===String(gv);})[0]||{};
     if(state.genmat){ state.genmat=null; render(); }
-    _genBusy=true; toast("Generando CV… puede tardar un momento");
+    _busyOn(); toast("Generando CV… puede tardar un momento");
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"generar_cv",nombre:rv.nombre,email:rv.email,ciudad:rv.ciudad||rv.geo,exp:rv.exp||rv.experiencia,sector:rv.sector,cargo:rv.cargo,rol:rv.rol,modalidad:rv.modalidad,geo:rv.geo||rv.ciudad,urgencia:rv.urgencia,habilidades:rv.habilidades,logro:rv.logro,extra:rv.extra,linkedin:rv.linkedin,cv_url:vcvUse,obstaculos:rv.obstaculos,nicho:rv.nicho,scores:rv.scores,linkedin_texto:vliUse,urgencia_inmediata:rv.urgencia_inmediata})})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
       .then(function(j){
         if(!j||(!j.cv_data&&!j.cv_texto)){ alert("La IA no devolvió un CV. Prueba de nuevo o usa tu panel actual."); return; }
         var cont=JSON.stringify(j.cv_data||{texto:j.cv_texto||""});
@@ -10560,7 +10560,7 @@ document.addEventListener("click", function(ev){
           _sbw("cv_publicados","POST",pb).then(done).catch(function(){ alert("No se pudo guardar el CV."); });
         }
       })
-      .catch(function(){ _genBusy=false; alert("No se pudo generar el CV desde aquí. Prueba en tu panel actual."); });
+      .catch(function(){ _busyOff(); alert("No se pudo generar el CV desde aquí. Prueba en tu panel actual."); });
     return;
   }
   if(act==="gen-carta"){
@@ -10570,11 +10570,11 @@ document.addEventListener("click", function(ev){
     if(gc==="ejemplo-maria"){ demoGenerateExample(); return; }
     var cliP=_val("pa-li").trim();
     if(state.genmat){ state.genmat=null; render(); }
-    _genBusy=true; toast("Generando carta…");
+    _busyOn(); toast("Generando carta…");
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"generar_informe",nombre:rc.nombre,email:rc.email,ciudad:rc.ciudad,linkedin:rc.linkedin,experiencia:rc.exp||rc.experiencia,sector:rc.sector,cargo:rc.cargo,rol:rc.rol,empresa:rc.empresa,logro:rc.logro,habilidades:rc.habilidades,obstaculos:rc.obstaculos,nicho:rc.nicho,objetivo:rc.objetivo,situacion:rc.situacion,linkedin_texto:cliP||rc.linkedin_texto||""})})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
       .then(function(j){ var ct=j&&(j.carta||j.carta_texto||j.texto); if(ct){ _sbw("candidatos?id=eq."+encodeURIComponent(gc),"PATCH",{carta_presentacion:ct}); var _cc=CLIENTS.filter(function(x){return String(x.id)===String(gc);})[0]; if(_cc&&_cc.raw) _cc.raw.carta_presentacion=ct; toast("Carta generada ✓ — el cliente ya la ve en su portal"); } else { alert("La IA no devolvió la carta. Reintenta."); } })
-      .catch(function(){ _genBusy=false; alert("No se pudo generar la carta. Reintenta en unos minutos."); });
+      .catch(function(){ _busyOff(); alert("No se pudo generar la carta. Reintenta en unos minutos."); });
     return;
   }
   if(act==="gen-linkedin"){
@@ -10585,10 +10585,10 @@ document.addEventListener("click", function(ev){
     var llP=_val("pa-li").trim(), llUse=llP||rl.linkedin_texto||"";
     if(!llUse){ alert("Pega el texto del perfil de LinkedIn del cliente para analizarlo."); return; }
     if(state.genmat){ state.genmat=null; render(); }
-    _genBusy=true; toast("Analizando LinkedIn… puede tardar un momento");
+    _busyOn(); toast("Analizando LinkedIn… puede tardar un momento");
     // Reusa la MISMA acción que el portal del cliente: accion 'analizar_linkedin'.
     fetch(EDGE,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({accion:"analizar_linkedin",nombre:rl.nombre||"",sector:rl.sector||"",rol:rl.rol||rl.cargo||"",ciudad:rl.ciudad||rl.geo||"",linkedin_texto:llUse,objetivo:rl.objetivo||"",experiencia:rl.exp||rl.experiencia||"",educacion:rl.educacion||"",habilidades:rl.habilidades||""})})
-      .then(function(r){ _genBusy=false; if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
       .then(function(a){
         if(!a||typeof a!=="object"){ alert("La IA no devolvió el análisis de LinkedIn. Reintenta."); return; }
         var patch={linkedin_texto:llUse, linkedin_analisis:JSON.stringify(a)};
@@ -10597,7 +10597,7 @@ document.addEventListener("click", function(ev){
           .then(function(rr){ if(!rr.ok) throw 0; var _lc=CLIENTS.filter(function(x){return String(x.id)===String(gl);})[0]; if(_lc&&_lc.raw){ _lc.raw.linkedin_texto=llUse; _lc.raw.linkedin_analisis=patch.linkedin_analisis; if(patch.linkedin_titular) _lc.raw.linkedin_titular=patch.linkedin_titular; } toast("LinkedIn analizado ✓ — el cliente lo ve en su portal"); render(); })
           .catch(function(){ alert("No se pudo guardar el análisis. Si falta la columna, corré: ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS linkedin_analisis TEXT;"); });
       })
-      .catch(function(){ _genBusy=false; alert("No se pudo analizar el LinkedIn. Reintenta en unos minutos."); });
+      .catch(function(){ _busyOff(); alert("No se pudo analizar el LinkedIn. Reintenta en unos minutos."); });
     return;
   }
   if(act==="mat-save"){
@@ -11732,7 +11732,14 @@ function _sbw(p,method,body){
         function(){ return {ok:true,status:r.status,rows:1,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; });
     });
 }
-var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy=false;
+var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy = false, _genBusyTimer = null;
+// _genBusy es un candado GLOBAL que comparten varias operaciones pesadas (generar
+// informe/CV/carta, cobros, Stripe, enviar mensaje…). Si UNA se cuelga o se olvida
+// de soltarlo, TODOS los botones con `if(_genBusy) return` quedan muertos (típico:
+// "el botón no anda"). Para que NO se pueda romper así, el candado se AUTO-LIBERA:
+// al prenderlo se arma un watchdog que lo suelta a los 90 s pase lo que pase.
+function _busyOn(){ _genBusy = true; try{ if(_genBusyTimer) clearTimeout(_genBusyTimer); _genBusyTimer = setTimeout(function(){ _genBusy = false; _genBusyTimer = null; }, 90000); }catch(e){} }
+function _busyOff(){ _genBusy = false; try{ if(_genBusyTimer){ clearTimeout(_genBusyTimer); _genBusyTimer = null; } }catch(e){} }
 var UPGRADE_URL="https://pathwaycareercoach.com/upgrade.html";
 var STRIPE_PORTAL="https://billing.stripe.com/p/login/fZu3cv9aE2py6b20f98AE00";
 function rawOf(id){ var c=CLIENTS.filter(function(x){return String(x.id)===String(id);})[0]; return (c&&c.raw)||null; }
@@ -11815,7 +11822,7 @@ function toast(msg){ var t=document.createElement("div"); t.textContent=msg; t.s
   try{ if(typeof msg==="string" && msg.indexOf("✓")>=0){ _cabraDidSomething=true; cabraFlash("assets/cabra/salta.gif",1300); } }catch(e){} }
 function demoConfetti(){ var c=["#1F5740","#8C7B80","#E8B04B","#C0756E","#5B8C7B"]; for(var k=0;k<60;k++){ (function(k){ var p=document.createElement("div"); p.className="cp-conf"; p.style.left=(Math.random()*100)+"vw"; p.style.background=c[k%c.length]; p.style.animationDelay=(Math.random()*0.3)+"s"; document.body.appendChild(p); setTimeout(function(){ p.remove(); },2600); })(k); } }
 function demoGenerateExample(){
-  if(_genBusy) return; _genBusy=true;
+  if(_genBusy) return; _busyOn();
   var steps=["Leyendo el material de María…","Analizando su perfil de LinkedIn…","Detectando fortalezas y brechas…","Redactando el plan de 4 semanas…","Generando su carta de presentación…"];
   var ov=document.createElement("div"); ov.className="cp-demo-overlay";
   ov.innerHTML="<div class='cp-demo-card'><div class='cp-demo-spin'></div><div class='cp-demo-title'>✨ Generando con IA</div><div class='cp-demo-step' id='cp-demo-step'>"+steps[0]+"</div><div class='cp-demo-bar'><span id='cp-demo-fill'></span></div><div class='cp-demo-note'>Demo · no consume créditos</div></div>";
@@ -11826,7 +11833,7 @@ function demoGenerateExample(){
     i++;
     if(i<n){ if(stepEl) stepEl.textContent=steps[i]; if(fillEl) fillEl.style.width=Math.round((i+1)/n*92+8)+"%"; }
     else { clearInterval(iv); if(fillEl) fillEl.style.width="100%";
-      setTimeout(function(){ ov.remove(); _genBusy=false; _exGen=true; state.cliDetTab="plan"; render(); window.scrollTo(0,0); demoConfetti(); toast("Informe de María generado ✓ — así de rápido con tus clientes"); },480);
+      setTimeout(function(){ ov.remove(); _busyOff(); _exGen=true; state.cliDetTab="plan"; render(); window.scrollTo(0,0); demoConfetti(); toast("Informe de María generado ✓ — así de rápido con tus clientes"); },480);
     }
   },620);
 }
@@ -11917,11 +11924,11 @@ function loadStripeStatus(){
 }
 function pwConnect(){
   if(!REAL||!RME||!RME.id){ alert("Inicia sesión para conectar tu cuenta de cobro."); return; }
-  if(_genBusy) return; _genBusy=true; toast("Abriendo Stripe…");
+  if(_genBusy) return; _busyOn(); toast("Abriendo Stripe…");
   fetch(SB+"/functions/v1/connect-onboard",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:"onboard",coach_id:RME.id,email:(COACH&&COACH.email)||RME.email||""})})
     .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { ok:r.ok, status:r.status, j:j }; }); })
     .then(function(res){
-      _genBusy=false;
+      _busyOff();
       if(res.ok && res.j && res.j.url){ window.location.href=res.j.url; return; }
       // Mostrar el error real de la edge function para que se pueda diagnosticar.
       var msg = "No se pudo abrir la conexión con Stripe.";
@@ -11930,7 +11937,7 @@ function pwConnect(){
       if(!res.j){ msg += "\n\nHTTP " + (res.status||"?") + " — la edge function no respondió JSON. Revisa los logs en Supabase → Edge Functions → connect-onboard → Logs."; }
       alert(msg);
     })
-    .catch(function(e){ _genBusy=false; alert("Error de red conectando con Stripe.\n\n"+(e&&e.message?e.message:"")); });
+    .catch(function(e){ _busyOff(); alert("Error de red conectando con Stripe.\n\n"+(e&&e.message?e.message:"")); });
 }
 /* Polling del chat: re-pide mensajes_admin_coach periódicamente y, si hay
  * nuevos, re-renderiza. Sin esto, los mensajes solo aparecen al refrescar

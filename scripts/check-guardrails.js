@@ -239,6 +239,22 @@ const RULES = [
     },
   },
   {
+    name: "candado global _genBusy se auto-libera (un botón no queda muerto para siempre)",
+    bug: "_genBusy es un lock GLOBAL que comparten operaciones pesadas (generar informe/" +
+         "CV, cobros, Stripe, enviar mensaje). Si una se cuelga y no lo suelta, TODO botón " +
+         "con `if(_genBusy) return` queda muerto — típico 'el botón de mensajería no anda'. " +
+         "_busyOn() debe armar un watchdog que libere el candado solo.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const m = s.match(/function _busyOn\([\s\S]*?\n\}/);
+      if (!m) return "panel-v2.html: falta _busyOn() (candado con auto-liberación).";
+      if (!/setTimeout/.test(m[0]) || !/_genBusy\s*=\s*false/.test(m[0]))
+        return "_busyOn() ya no arma el watchdog que libera _genBusy → un botón puede quedar muerto para siempre.";
+      return null;
+    },
+  },
+  {
     name: "login no crashea en navegadores viejos: pw-polyfill.js antes del SDK",
     bug: "En webviews in-app / navegadores viejos (sin Array.prototype.at, ES2022) el " +
          "SDK de Supabase crasheaba con '.at is not a function' y el usuario NO podía " +
