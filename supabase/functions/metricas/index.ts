@@ -47,6 +47,8 @@ const HEALTH = {
     recencia:   { peso: 10, senales: { dias7: 100, dias14: 50, mas: 0 } },
   },
 };
+// Precios para el MRR (configurable). USD desde jun-2026.
+const PRECIOS = { basic: 29, pro: 59, moneda: "USD" };
 
 // ── Auth admin (idéntico a admin-coach-op) ──
 async function callerIdentity(token: string): Promise<{ email: string | null; uid: string | null }> {
@@ -212,8 +214,18 @@ Deno.serve(async (req: Request) => {
   const nTrialWin = coaches.filter((c) => c._created && now - new Date(c._created).getTime() <= winMs).length;
   const nWow = coaches.filter((c) => c.clientes_entraron > 0).length;
   const nAtascados = coaches.filter((c) => c.en_prueba && !c.activado).length;
+  const nEnTrial = coaches.filter((c) => c.en_prueba).length;
   const nPerfil = coaches.filter((c) => c.perfil).length;
   const nPrimerCli = coaches.filter((c) => c.invitados > 0).length;
+
+  // MRR (base): coaches pagando × precio de su plan.
+  let mrrBasic = 0, mrrPro = 0;
+  for (const u of usuarios) {
+    const cfg = (u.configuracion || {}) as Record<string, unknown>;
+    if (String(cfg.estado_sub || "") !== "activa") continue;
+    if (String(cfg.plan || "") === "pro") mrrPro++; else mrrBasic++;
+  }
+  const mrr = mrrBasic * PRECIOS.basic + mrrPro * PRECIOS.pro;
 
   // ── Embudo (11 fases; Lead/Demo/Retained reservados = null, pragmático) ──
   const cnt = (f: (c: typeof coaches[number]) => boolean) => coaches.filter(f).length;
@@ -255,6 +267,7 @@ Deno.serve(async (req: Request) => {
     ventana_dias: dias,
     config: { activado_requiere: ACTIVADO_REQUIERE, health: HEALTH },
     kpis: {
+      coaches_en_trial:    kpi(nEnTrial, "count", "base_temporal", "TrialStarted cableado", "🔴", "Coaches en trial"),
       trials_semana:       kpi(nTrialWin, "count", "base_temporal", "TrialStarted cableado + 4 sem", "🔴", "Trials en la ventana"),
       wow_total:           kpi(nWow, "count", "mixto", "todos los eventos de fase implementados", "🟡", "Coaches que llegaron al WOW"),
       pagando:             kpi(nPaga, "count", "base_temporal", "PaymentSucceeded cableado", "🔴", "Coaches pagando"),
@@ -265,6 +278,7 @@ Deno.serve(async (req: Request) => {
       atascados_onboarding:kpi(nAtascados, "count", "mixto", "todos los eventos de fase", "🟡", "Atascados en onboarding"),
       coaches_riesgo:      kpi(nRiesgo, "count", "mixto", "Health v2", "🟡", "Coaches en riesgo"),
       mayor_fuga:          kpi(mayorFuga, "texto", "mixto", "embudo 100% eventos", "🟡", "Mayor fuga del embudo"),
+      mrr:                 kpi(mrr, "usd", "base_temporal", "PaymentSucceeded + plan por eventos", "🟡", "MRR (" + PRECIOS.moneda + ")"),
     },
     embudo,
     coaches: coaches

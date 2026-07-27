@@ -7980,6 +7980,7 @@ function viewAdmin(){
       var _tabs = "<div style='display:flex;gap:6px;margin-bottom:2px'>"+
         "<button class='cp-chip "+(_cv==="agregar"?"is-on":"")+"' data-act='coachview:agregar'>Agregar</button>"+
         "<button class='cp-chip "+(_cv==="lista"?"is-on":"")+"' data-act='coachview:lista'>Coaches</button>"+
+        "<button class='cp-chip "+(_cv==="ceo"?"is-on":"")+"' data-act='coachview:ceo'>Dashboard CEO</button>"+
         "<button class='cp-chip "+(_cv==="analiticas"?"is-on":"")+"' data-act='coachview:analiticas'>Analíticas · Legacy</button>"+
       "</div>";
       var _kpis = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
@@ -8099,6 +8100,7 @@ function viewAdmin(){
           : "<div style='font-size:13px;color:var(--pw-text-soft);text-align:center;padding:10px 0'>No hay clientes sin asignar. 🎉</div>")+
       "</div></div>";
       body = _tabs + (
+        _cv==="ceo"        ? "<div id='ceo-dash'><div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-text-soft);padding:34px'>Cargando métricas…</div></div></div>" :
         _cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli) :
         _cv==="agregar"    ? (accBox + mcBox + convBox + transferBox + _orphCard) :
         _list
@@ -9637,7 +9639,8 @@ document.addEventListener("click", function(ev){
   if(act==="psel-plan"){ _planSel().plan=(el.getAttribute("data-p")==="pro")?"pro":"basic"; render(); return; }
   if(act==="plan-refresh"){ _planRefresh(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.mctMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } if(state.adminTab==="novedades"){ RFEED=null; } render(); return; }
-  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); return; }
+  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); if(state.coachView==="ceo") setTimeout(_ceoLoad,0); return; }
+  if(act==="ceo-reload"){ _ceoLoad(); return; }
   if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
   if(act.indexOf("estsel:")===0){ var _es=parseInt(act.slice(7),10); state.estSel=(state.estSel===_es?null:_es); render(); return; }
   if(act==="coach-back"){ state.coachSel=null; state.msgAdminDraft=""; render(); return; }
@@ -11700,6 +11703,65 @@ var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 // Headers con el JWT del coach logueado (vía pw-auth.js). Fallback a la anon
 // key si PWAUTH no cargó, para no romper nada mientras RLS esté apagado.
 function _hdr(extra){ return (window.PWAUTH?PWAUTH.headers(extra):Promise.resolve(Object.assign({apikey:KEY,Authorization:"Bearer "+KEY},extra||{}))); }
+
+// ── Dashboard CEO (Nivel 1) — CONSUMIDOR PURO de la edge function `metricas`.
+// Toda la lógica de negocio vive en el backend; acá SOLO se renderiza la
+// respuesta (nada se calcula en el front). Admin-only. Ref: docs/metricas-spec.md.
+function _ceoErr(msg){ return "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-danger);padding:26px;font-size:13px'>"+msg+"</div></div>"; }
+function _ceoLoad(){
+  var box=document.getElementById('ceo-dash'); if(!box) return;
+  box.innerHTML="<div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-text-soft);padding:34px'>Cargando métricas…</div></div>";
+  _hdr({"Content-Type":"application/json"}).then(function(h){
+    return fetch(SB+"/functions/v1/metricas",{method:"POST",headers:h,body:JSON.stringify({dias:30})});
+  }).then(function(r){
+    if(r&&r.status===403){ var b=document.getElementById('ceo-dash'); if(b) b.innerHTML=_ceoErr("No pudimos verificar tu sesión de admin. Cerrá sesión y volvé a entrar para renovar tu acceso."); return null; }
+    if(!r||!r.ok) throw 0; return r.json();
+  }).then(function(d){ if(d){ var b=document.getElementById('ceo-dash'); if(b) b.innerHTML=_ceoRender(d); } })
+  .catch(function(){ var b=document.getElementById('ceo-dash'); if(b) b.innerHTML=_ceoErr("No se pudieron cargar las métricas. Reintentá con ↻."); });
+}
+function _ceoRender(d){
+  d=d||{}; var K=d.kpis||{};
+  function E(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+  function badge(k){ return "<span style='font-family:monospace;font-size:10px;color:var(--pw-text-muted)'>"+E(k&&k.estado)+" "+E(k&&k.fuente)+"</span>"; }
+  function val(k){ if(!k||k.valor==null) return "—"; if(k.unidad==="pct") return k.valor+"%"; if(k.unidad==="usd") return "US$"+k.valor; return E(k.valor); }
+  function tile(k,color){ if(!k) return ""; return "<div style='flex:1;min-width:148px;background:#fff;border:1px solid var(--pw-border);border-radius:12px;padding:13px 15px'>"+
+    "<div style='font-size:11.5px;color:var(--pw-text-soft);min-height:30px;line-height:1.3'>"+E(k.label)+"</div>"+
+    "<div style='font-family:var(--pw-serif);font-size:27px;font-weight:600;color:"+(color||"var(--pw-carbon)")+";line-height:1'>"+val(k)+"</div>"+
+    "<div style='margin-top:4px'>"+badge(k)+"</div></div>"; }
+  var kpis="<div style='display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px'>"+
+    tile(K.coaches_en_trial,"var(--pw-bosque)")+tile(K.pagando,"var(--pw-bosque)")+
+    tile(K.pct_trial_pago,"#8E7A35")+tile(K.mrr,"var(--pw-bosque)")+
+    tile(K.activacion_pct,"var(--pw-carbon)")+tile(K.coaches_riesgo,"var(--pw-danger)")+"</div>";
+  var emb=d.embudo||[]; var maxF=1; emb.forEach(function(f){ if(f.valor!=null&&f.valor>maxF) maxF=f.valor; });
+  var frows=emb.map(function(f){
+    var na=f.valor==null; var w=na?0:Math.round(f.valor/maxF*100);
+    return "<div style='display:grid;grid-template-columns:180px 1fr 34px 46px;align-items:center;gap:10px;padding:6px 6px'>"+
+      "<span style='font-size:12px;font-weight:600;color:var(--pw-carbon)'>"+E(f.label||f.fase)+" <span style='font-size:10px'>"+E(f.estado)+"</span></span>"+
+      "<span style='height:13px;background:var(--pw-niebla-3);border-radius:100px;overflow:hidden;display:block'><i style='display:block;height:100%;width:"+w+"%;background:linear-gradient(90deg,var(--pw-sendero),var(--pw-bosque));border-radius:100px'></i></span>"+
+      "<span style='font-size:13px;font-weight:700;text-align:right;color:"+(na?"var(--pw-text-muted)":"var(--pw-carbon)")+"'>"+(na?"—":f.valor)+"</span>"+
+      "<span style='font-family:monospace;font-size:11px;color:var(--pw-text-muted);text-align:right'>"+(f.pct_del_anterior!=null?f.pct_del_anterior+"%":"")+"</span></div>";
+  }).join("");
+  var fuga=(K.mayor_fuga&&K.mayor_fuga.valor)?"<div style='margin-top:10px;font-size:12.5px;color:var(--pw-danger);background:rgba(176,65,58,.06);border-radius:9px;padding:9px 12px'>🔻 <b>Mayor fuga:</b> "+E(K.mayor_fuga.valor)+"</div>":"";
+  var embudo="<div class='cp-card' style='margin-bottom:16px'><div class='cp-card-hd'><h3 class='cp-card-title'>Embudo de activación<span class='dot'>.</span></h3><span class='cp-eyebrow'>11 fases</span></div><div class='cp-card-pad'>"+frows+fuga+"</div></div>";
+  var co=d.coaches||[];
+  var hrows=co.slice(0,40).map(function(c){
+    var col=c.estado==="verde"?"var(--pw-bosque)":c.estado==="riesgo"?"var(--pw-danger)":"#8E7A35";
+    var bcol=c.estado==="verde"?"#E4F0E8":c.estado==="riesgo"?"#F7E3E0":"#F6EFD9";
+    var hd=c.health_dim||{};
+    var dims=["activacion|Activación","uso|Uso","clientes|Clientes","recencia|Recencia"].map(function(p){var k=p.split("|");return "<span style='font-family:monospace;font-size:10px;color:var(--pw-text-soft);background:#EEF2ED;border:1px solid var(--pw-border);border-radius:6px;padding:2px 6px'>"+k[1]+" <b style='color:var(--pw-carbon)'>"+Math.round(hd[k[0]]||0)+"</b></span>";}).join("");
+    return "<div style='display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 4px;border-bottom:1px dashed var(--pw-border)'>"+
+      "<span><span style='font-size:13.5px;font-weight:600;color:var(--pw-carbon)'>"+E(c.nombre||c.email)+"</span><div style='display:flex;gap:5px;margin-top:5px;flex-wrap:wrap'>"+dims+"</div></span>"+
+      "<span style='display:flex;align-items:center;gap:10px'>"+
+        "<span style='width:60px;height:8px;background:var(--pw-niebla-3);border-radius:100px;overflow:hidden;display:inline-block'><i style='display:block;height:100%;width:"+Math.max(2,c.health_score||0)+"%;background:"+col+";border-radius:100px'></i></span>"+
+        "<span style='font-family:var(--pw-serif);font-size:18px;font-weight:600;color:"+col+";min-width:54px;text-align:right'>"+(c.health_score||0)+"<span style='font-family:monospace;font-size:11px;color:var(--pw-text-muted)'>/100</span></span>"+
+        "<span style='font-family:monospace;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:"+bcol+";color:"+col+"'>"+E(c.estado)+"</span></span></div>";
+  }).join("");
+  var health="<div class='cp-card' style='margin-bottom:16px'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches por Health Score<span class='dot'>.</span></h3><span class='cp-eyebrow'>0–100 · riesgo primero</span></div><div class='cp-card-pad'>"+
+    "<div style='font-size:12px;color:var(--pw-text-soft);background:#EEF2ED;border:1px solid var(--pw-border);border-radius:9px;padding:8px 11px;margin-bottom:10px'><b>Health = índice 0–100</b> (Activación·40% + Uso·30% + Clientes·20% + Recencia·10%). No es un porcentaje.</div>"+
+    (hrows||"<div style='text-align:center;color:var(--pw-text-soft);padding:14px;font-size:13px'>Sin coaches todavía.</div>")+"</div></div>";
+  var hdr="<div style='display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px'><span style='font-size:12px;color:var(--pw-text-muted)'>Vista Admin · global · "+E((d.generado_at||"").slice(0,16).replace("T"," "))+"</span><button class='cp-btn cp-btn-ghost' style='height:28px;font-size:12px;padding:0 12px' data-act='ceo-reload'>↻ Actualizar</button></div>";
+  return hdr+kpis+embudo+health;
+}
 // Red de seguridad para cuando RLS esté prendido: 401/403 (sin sesión) → login.
 // Mientras RLS esté apagado nunca se dispara (la anon key no da 401).
 var _authGone=false,_authChecking=false;
