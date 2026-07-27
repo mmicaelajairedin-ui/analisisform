@@ -9093,7 +9093,14 @@ document.addEventListener("click", function(ev){
     _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
       return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:_snm,email:_sem,whatsapp:_scc.telefono||"",coach_id:(RME&&RME.id)||"",nicho:_snicho,semana_activa:1,activo:true,origen:"llamada"})});
     }).then(function(){
-      _sbw("usuarios","POST",{email:_sem,rol:"cliente",nombre:_snm,activo:true}).catch(function(){});      // login best-effort
+      // Login del cliente: check-first (si ya tiene cuenta, no lo recreamos → sin
+      // 409 ni ruido en client_errors). rol='cliente' lo permite el RLS anon.
+      _sb("usuarios?email=eq."+encodeURIComponent(_sem)+"&select=id&limit=1").then(function(_ur){
+        if(_ur&&_ur.length) return;
+        _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
+          return fetch(SB+"/rest/v1/usuarios",{method:"POST",headers:h,body:JSON.stringify({email:_sem,rol:"cliente",nombre:_snm,activo:true})});
+        }).catch(function(){});
+      }).catch(function(){});
       _sbw("citas?id=eq."+encodeURIComponent(_scid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"convirtio"}).catch(function(){});
       _scc.resultado="convirtio"; _segFill();
       toast("¡"+_snm+" ahora es cliente! Su ficha ya tiene las notas de la llamada.");
