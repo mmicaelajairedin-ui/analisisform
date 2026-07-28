@@ -1061,7 +1061,10 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
      a la vista al hacer scroll. Compacto y en fila para no comerse la pantalla. */
   .cp-cli-head{ position:sticky; top:56px; z-index:40; background:#FBFAF8; flex-direction:row !important; align-items:center !important; gap:11px; padding:6px 0 9px; box-shadow:0 9px 10px -10px rgba(31,42,35,.45); }
   .cp-cli-head > div:first-child{ flex:1; min-width:0; }
-  .cp-cli-head .cp-h1{ font-size:19px; }
+  /* Nombre COMPACTO en el header fijo: máx 2 líneas con "…" y tamaño chico para
+     que el header no crezca y tape los títulos del contenido al hacer scroll. */
+  .cp-cli-head .cp-h1{ font-size:17px; letter-spacing:-.3px; line-height:1.18; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word; }
+  .cp-cli-head .cp-sub{ margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .cp-cli-head img{ width:40px !important; height:40px !important; }
   .cp-cli-head-v2 .cp-topbar-actions{ display:none; } /* en v2 lo reemplaza la barra rápida (qbar); en no-v2 el botón sigue visible en móvil */
   .cp-topbar-actions{ flex-wrap:wrap; }
@@ -12612,16 +12615,34 @@ function _sbw(p,method,body){
       function(){ return {ok:true,status:r.status,rows:1,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; });
   };
   var _do=function(){ return _hdr({"Content-Type":"application/json",Prefer:"return=representation"}).then(function(h){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); }); };
+  // Guardado A PRUEBA DE COLUMNAS FALTANTES: si la tabla de Supabase todavía no
+  // tiene una columna (p.ej. 'whatsapp' o los campos fitness sin migrar), antes
+  // el PATCH entero fallaba y NADA se guardaba ("No se puede guardar"). Ahora, si
+  // el error nombra una columna inexistente, se quita ESE campo del body y se
+  // reintenta — así se guarda todo lo demás. Ningún campo es obligatorio.
+  var _stripRetry=function(r,depth){
+    if(r.ok) return _parse(r);
+    if(depth>=10 || !body || typeof body!=="object" || (method!=="PATCH"&&method!=="POST")) return _parse(r);
+    if(r.status!==400 && r.status!==404) return _parse(r);
+    return r.text().then(function(t){
+      var m=/Could not find the '([^']+)' column/.exec(t) || /'([^']+)' column/.exec(t) || /column "([^"]+)"/.exec(t) || /column ([a-z0-9_]+) /i.exec(t);
+      var col=m&&m[1];
+      if(!col || !Object.prototype.hasOwnProperty.call(body,col)) return _fail(r.status);
+      delete body[col];
+      if(!Object.keys(body).length) return _fail(r.status);
+      return _do().then(function(rr){ return _stripRetry(rr,depth+1); });
+    }, function(){ return _fail(r.status); });
+  };
   // Self-healing: un 401/403 = sesión vencida (0 filas escritas → seguro reintentar,
   // incluso un POST). Refrescamos el JWT y reintentamos UNA vez; solo si sigue
   // fallando avisamos sesión vencida. Antes un token vencido perdía el guardado.
   return _do().then(function(r){
     if(r.status===401||r.status===403){
       return _pwRefresh().then(function(ok){ if(!ok){ try{ _authExpired(); }catch(e){} return _fail(r.status); }
-        return _do().then(function(r2){ if(r2.status===401||r2.status===403){ try{ _authExpired(); }catch(e){} return _fail(r2.status); } return _parse(r2); });
+        return _do().then(function(r2){ if(r2.status===401||r2.status===403){ try{ _authExpired(); }catch(e){} return _fail(r2.status); } return _stripRetry(r2,0); });
       });
     }
-    return _parse(r);
+    return _stripRetry(r,0);
   });
 }
 var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy = false, _genBusyTimer = null;
