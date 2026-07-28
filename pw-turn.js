@@ -18,12 +18,14 @@
 // edge function (como jaas-token) — te lo armo cuando haga falta.
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Por ahora usamos el TURN PÚBLICO GRATUITO de Metered (Open Relay) para PROBAR
-// que el respaldo funciona. Es gratis pero compartido/limitado → reemplazalo por
-// el tuyo antes de usarlo en serio con clientes.
+// TURN PROPIO — coturn en VPS Hetzner (pathwayserver, CX23, Falkenstein).
+// IP 91.98.155.217 · user pathway · costo fijo ~€5.49/mes sin importar cuántos
+// coaches/clientes (chau €90 de JaaS). Config en docs/turn-cloud-init.txt.
+// STUN de Google como primer intento (directo, gratis); el TURN propio entra solo
+// cuando la red no deja conexión directa (~10-20% de los casos).
 window.PW_TURN = [
-  { urls: "stun:stun.relay.metered.ca:80" },
-  { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-  { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-  { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:91.98.155.217:3478" },
+  { urls: "turn:91.98.155.217:3478", username: "pathway", credential: "PathwayTurn2026xk9q" },
+  { urls: "turn:91.98.155.217:3478?transport=tcp", username: "pathway", credential: "PathwayTurn2026xk9q" }
 ];
