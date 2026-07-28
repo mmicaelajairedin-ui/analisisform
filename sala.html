@@ -52,6 +52,21 @@
      conecta → nunca quedás atrapada). Encima del iframe y de los overlays. */
   .stage-exit{position:absolute;top:12px;right:12px;z-index:6;display:inline-flex;align-items:center;gap:6px;background:rgba(15,29,22,.72);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:100px;padding:7px 14px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer;backdrop-filter:blur(4px);transition:background .12s,border-color .12s}
   .stage-exit:hover{background:var(--danger);border-color:transparent}
+  /* Feedback del cliente al salir (los 4 modos): "¿cómo estuvo la sesión?" */
+  .fb-ov{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:22px;background:rgba(15,29,22,.62);backdrop-filter:blur(4px)}
+  .fb-card{background:var(--panel);border-radius:20px;max-width:400px;width:100%;padding:28px 26px 24px;box-shadow:0 24px 60px rgba(0,0,0,.35);text-align:center}
+  .fb-card h3{font-family:var(--ser);font-weight:600;font-size:21px;color:var(--carbon);margin:0 0 4px}
+  .fb-card p.fb-s{font-size:13px;color:var(--soft);margin:0 0 18px}
+  .fb-emojis{display:flex;justify-content:center;gap:6px;margin-bottom:16px}
+  .fb-emo{font-size:30px;line-height:1;background:none;border:2px solid transparent;border-radius:14px;padding:6px 8px;cursor:pointer;transition:transform .12s,border-color .12s,background .12s;filter:grayscale(.4) opacity(.75)}
+  .fb-emo:hover{transform:translateY(-3px) scale(1.08);filter:none}
+  .fb-emo.on{border-color:var(--bosque);background:var(--niebla-2);filter:none;transform:scale(1.05)}
+  .fb-note{width:100%;box-sizing:border-box;border:1.5px solid var(--border);border-radius:12px;padding:10px 12px;font-family:var(--sans);font-size:14px;resize:vertical;min-height:52px;background:var(--niebla);color:var(--carbon);margin-bottom:14px}
+  .fb-note:focus{outline:none;border-color:var(--sendero)}
+  .fb-actions{display:flex;gap:10px}
+  .fb-actions .btn{flex:1;justify-content:center;padding:12px 14px;font-size:14px;border-radius:12px}
+  .fb-skip{background:none;border:none;color:var(--muted);font-size:12.5px;font-weight:600;cursor:pointer;margin-top:12px;font-family:var(--sans)}
+  .fb-thanks{font-family:var(--ser);font-size:22px;font-weight:600;color:var(--bosque);padding:22px 0}
   .wait{position:absolute;left:0;right:0;top:0;bottom:88px;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:13px;color:#DCEFE3;text-align:center;padding:24px;background:radial-gradient(52% 40% at 50% 40%,rgba(82,183,136,.16),transparent 70%),radial-gradient(120% 120% at 30% 10%,#183328,var(--stage))}
   .wait img{width:110px;height:110px;object-fit:contain;filter:drop-shadow(0 6px 12px rgba(0,0,0,.4))}
   .wait .t{font-family:var(--ser);font-weight:600;font-size:20px;letter-spacing:-.02em;line-height:1.15}
@@ -244,6 +259,24 @@
   </div>
 </main>
 
+<!-- Feedback del cliente al salir (los 4 modos) → tabla sala_feedback -->
+<div class="fb-ov" id="fb-ov" role="dialog" aria-modal="true" aria-label="¿Cómo estuvo la sesión?">
+  <div class="fb-card" id="fb-card">
+    <h3>¿Cómo estuvo la sesión?</h3>
+    <p class="fb-s">Tu respuesta ayuda a tu coach a acompañarte mejor.</p>
+    <div class="fb-emojis" id="fb-emojis">
+      <button class="fb-emo" data-r="1" title="Muy mal" aria-label="Muy mal">😞</button>
+      <button class="fb-emo" data-r="2" title="Regular" aria-label="Regular">😐</button>
+      <button class="fb-emo" data-r="3" title="Bien" aria-label="Bien">🙂</button>
+      <button class="fb-emo" data-r="4" title="Muy bien" aria-label="Muy bien">😀</button>
+      <button class="fb-emo" data-r="5" title="Excelente" aria-label="Excelente">🤩</button>
+    </div>
+    <textarea class="fb-note" id="fb-note" placeholder="¿Algo para contarnos? (opcional)"></textarea>
+    <div class="fb-actions"><button class="btn btn-p" id="fb-send">Enviar y salir</button></div>
+    <button class="fb-skip" id="fb-skip">Salir sin responder</button>
+  </div>
+</div>
+
 <script src="pw-cabra-juego.js"></script>
 <script>
 "use strict";
@@ -415,7 +448,7 @@ function wireControls(){
   document.querySelectorAll('.cbtn[data-cmd]').forEach(function(b){
     b.onclick=function(){ try{ api&&api.executeCommand(b.getAttribute('data-cmd')); }catch(e){} };
   });
-  var h=el('c-hang'); if(h) h.onclick=function(){ try{ api&&api.executeCommand('hangup'); }catch(e){} setTimeout(finalizar,400); };
+  var h=el('c-hang'); if(h) h.onclick=function(){ _leaveSala(); };
   // Pantalla completa: agranda el video al tamaño de la pantalla (cualquier tamaño).
   var fb=el('c-full'); if(fb) fb.onclick=function(){
     var st=document.querySelector('.stage'); if(!st) return;
@@ -479,9 +512,39 @@ try{ window.addEventListener('scroll', function(){ var mob=window.matchMedia&&wi
 function finalizar(){ try{ saveSesion(); }catch(e){} try{ stopTimer(); }catch(e){}
   if(MOD){ setTimeout(function(){ location.href='panel-v2.html'; },250); }
   else { el('estado').textContent='Sesión terminada'; waitState('Gracias por venir 🙌','Puedes cerrar esta pestaña.'); } }
-el('finbtn').onclick=function(){ try{ api&&api.executeCommand('hangup'); }catch(e){} setTimeout(finalizar,400); };
-// Botón de salida sobre el video → misma acción (guarda y sale), siempre disponible.
-(function(){ var _sx=el('stage-exit'); if(_sx) _sx.onclick=function(){ try{ api&&api.executeCommand('hangup'); }catch(e){} setTimeout(finalizar,400); }; })();
+// Salida (header + botón sobre el video + colgar): el COACH cierra directo; el
+// CLIENTE ve primero el "¿cómo fue?" (feedback de la sesión) y de ahí sale.
+function _leaveSala(){
+  try{ api&&api.executeCommand('hangup'); }catch(e){}
+  if(MOD){ setTimeout(finalizar,400); return; }
+  var ov=el('fb-ov'); if(ov){ ov.style.display='flex'; setTimeout(function(){ try{ stopTimer(); }catch(e){} },400); }
+  else { setTimeout(finalizar,400); }
+}
+el('finbtn').onclick=_leaveSala;
+(function(){ var _sx=el('stage-exit'); if(_sx) _sx.onclick=_leaveSala; })();
+// ── Feedback del cliente ("¿cómo estuvo la sesión?") → tabla sala_feedback ──
+var _fbRating=0, _fbDone=false;
+function _fbSubmit(){
+  if(_fbDone) return; _fbDone=true;
+  var nota=''; try{ nota=(el('fb-note')&&el('fb-note').value||'').trim(); }catch(e){}
+  if(_fbRating || nota){
+    try{ fetch(SB+'/rest/v1/sala_feedback',{method:'POST',keepalive:true,
+      headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=minimal'},
+      body:JSON.stringify({room:ROOM,email:EMAIL,rating:_fbRating||null,nota:nota||null})}); }catch(e){}
+  }
+  try{ stopTimer(); }catch(e){}
+  var card=el('fb-card'); if(card) card.innerHTML="<div class='fb-thanks'>¡Gracias! 💚</div><p class='fb-s'>Podés cerrar esta pestaña.</p>";
+}
+(function(){
+  var em=el('fb-emojis');
+  if(em) em.addEventListener('click', function(e){
+    var b=(e.target&&e.target.closest)?e.target.closest('.fb-emo'):null; if(!b) return;
+    _fbRating=parseInt(b.getAttribute('data-r'),10)||0;
+    var all=em.querySelectorAll('.fb-emo'); for(var i=0;i<all.length;i++){ all[i].classList.toggle('on', all[i]===b); }
+  });
+  var s=el('fb-send'); if(s) s.onclick=_fbSubmit;
+  var k=el('fb-skip'); if(k) k.onclick=function(){ var ov=el('fb-ov'); if(ov) ov.style.display='none'; finalizar(); };
+})();
 
 // ── Objetivos (localStorage por sala) ──
 var OKEY='pw_sala_obj_'+ROOM, objetivos=[];
