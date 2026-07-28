@@ -5148,6 +5148,42 @@ function viewClienteDetalle(c){
     } else {
       _planIntro="<div class='cp-reassurance' style='margin:0 0 16px;border-radius:12px'>Esto es <strong>exactamente lo que tu cliente ve en su portal</strong>: situación, fortalezas, áreas a mejorar, estrategia y las acciones de cada semana. Edita y <strong>guarda</strong> para que lo vea al instante.</div>";
     }
+    // MODO LECTURA vs EDICIÓN del diagnóstico. Por defecto LECTURA (tarjetas
+    // limpias, como el mockup). "Editar" abre el formulario con TODOS los campos
+    // en el DOM → el guardado plan-save sigue igual y NO se borra nada. Si todavía
+    // no hay informe, arranca en edición (igual que antes).
+    var _editing=(String(state.planEdit)===String(c.id))||!hasInf;
+    var _par=function(tx){ return tx?("<div style='font-size:13px;color:var(--pw-carbon);line-height:1.55;white-space:pre-wrap'>"+esc(tx)+"</div>"):("<div style='font-size:13px;color:var(--pw-text-soft)'>—</div>"); };
+    var _bul=function(a){ a=(Object.prototype.toString.call(a)==="[object Array]"?a:(a?[a]:[])).filter(Boolean); return a.length?("<ul style='margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px'>"+a.map(function(x){return "<li style='font-size:13px;color:var(--pw-carbon);line-height:1.45'>"+esc(x)+"</li>";}).join("")+"</ul>"):("<div style='font-size:13px;color:var(--pw-text-soft)'>—</div>"); };
+    var _rCard=function(emoji,title,contentHtml){ return "<div class='cp-card'><div class='cp-card-pad'>"+
+      "<div style='display:flex;align-items:center;gap:12px;margin-bottom:10px'><span style='width:36px;height:36px;border-radius:10px;flex:none;background:var(--pw-niebla-2,#eef3ee);display:flex;align-items:center;justify-content:center;font-size:17px'><span class='cp-emo'>"+emoji+"</span></span>"+
+      "<div style='flex:1;min-width:0;font-size:15px;font-weight:700;color:var(--pw-carbon)'>"+esc(title)+"</div>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='plan-edit' data-id='"+esc(c.id)+"'><span class='cp-emo'>✏️</span> Editar</button></div>"+
+      contentHtml+"</div></div>"; };
+    var _diag=_editing
+      ? ("<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Diagnóstico<span class='dot'>.</span></h3><span class='cp-eyebrow'>Lo que ve el cliente</span></div>"+
+          "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
+            "<div class='cp-form-row'><label class='cp-form-label'>Resumen</label>"+_ta("pl-res",resm,"Resumen del diagnóstico…",70)+"</div>"+
+            "<div class='cp-form-row'><label class='cp-form-label'>Fortalezas (una por línea)</label>"+_ta("pl-for",_al(D.fortalezas),"Una fortaleza por línea…",60)+"</div>"+
+            "<div class='cp-form-row'><label class='cp-form-label'>Áreas a mejorar (una por línea)</label>"+_ta("pl-gap",_al(D.gaps),"Un área por línea…",60)+"</div>"+
+            "<div class='cp-form-row'><label class='cp-form-label'>Estrategia</label>"+_ta("pl-est",D.estrategia||"","Estrategia recomendada…",70)+"</div>"+
+          "</div></div>"+
+          "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Avisos y nota para el cliente<span class='dot'>.</span></h3><span class='cp-eyebrow'>Lo ve en su portal</span></div>"+
+          "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
+            "<div class='cp-form-row'><label class='cp-form-label'>Avisos importantes (una por línea)</label>"+_ta("pl-alert",_al(D.alertas),"Un aviso por línea…",60)+"</div>"+
+            "<div class='cp-form-row'><label class='cp-form-label'>Nota para el cliente</label>"+_ta("pl-msg",D.mensaje_candidato||"","Nota personal…",70)+"</div>"+
+          "</div></div>")
+      : (_rCard("📋","Resumen",_par(resm))+
+         _rCard("⭐","Fortalezas",_bul(D.fortalezas))+
+         _rCard("🎯","Áreas a mejorar",_bul(D.gaps))+
+         _rCard("📈","Estrategia",_par(D.estrategia))+
+         (_al(D.alertas)?_rCard("🔔","Avisos importantes",_bul(D.alertas)):"")+
+         (D.mensaje_candidato?_rCard("💬","Nota para el cliente",_par(D.mensaje_candidato)):""));
+    var _diagBtns=_editing
+      ? ("<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end;gap:10px'>"+
+          (hasInf?"<button class='cp-btn cp-btn-ghost' data-act='plan-editcancel'>Cancelar</button>":"")+
+          "<button class='cp-btn cp-btn-primary' data-act='plan-save' data-id='"+esc(c.id)+"'>Guardar</button></div></div>")
+      : "";
     body=_planIntro+
       "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:10px;flex-wrap:wrap;align-items:center'>"+
         (String(state.genInforme)===String(c.id)
@@ -5158,26 +5194,11 @@ function viewClienteDetalle(c){
         )+
       "</div></div>"+
       _avisos+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Diagnóstico<span class='dot'>.</span></h3><span class='cp-eyebrow'>Lo que ve el cliente</span></div>"+
-        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>Resumen</label>"+_ta("pl-res",resm,"Resumen del diagnóstico…",70)+"</div>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>Fortalezas (una por línea)</label>"+_ta("pl-for",_al(D.fortalezas),"Una fortaleza por línea…",60)+"</div>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>Áreas a mejorar (una por línea)</label>"+_ta("pl-gap",_al(D.gaps),"Un área por línea…",60)+"</div>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>Estrategia</label>"+_ta("pl-est",D.estrategia||"","Estrategia recomendada…",70)+"</div>"+
-        "</div></div>"+
-      "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Avisos y nota para el cliente<span class='dot'>.</span></h3><span class='cp-eyebrow'>Lo ve en su portal</span></div>"+
-        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>Avisos importantes (una por línea)</label>"+_ta("pl-alert",_al(D.alertas),"Un aviso por línea…",60)+"</div>"+
-          "<div class='cp-form-row'><label class='cp-form-label'>Nota para el cliente</label>"+_ta("pl-msg",D.mensaje_candidato||"","Nota personal…",70)+"</div>"+
-        "</div></div>"+
+      _diag+
       // Carrera: las acciones viven en su propia pestaña "Acciones". Fitness y
-      // financiero NO muestran las acciones al cliente (quedaban desconectadas), así
-      // que no se embeben. En fitness el plan son las "Tareas de la semana" (Perfil);
-      // en financiero, las etapas/fases (SÍ conectadas, se ven como "Plan por meses")
-      // + objetivos/presupuesto/deudas.
+      // financiero NO muestran las acciones al cliente. Se conserva igual que antes.
       ((_exHide||_tipo==='carrera'||_tipo==='fitness'||_tipo==='financiero')?"":_avanceHtml(c,true))+
-      "<div class='cp-card'><div class='cp-card-pad' style='display:flex;justify-content:flex-end;gap:10px'>"+
-        "<button class='cp-btn cp-btn-primary' data-act='plan-save' data-id='"+esc(c.id)+"'>Guardar</button></div></div>";
+      _diagBtns;
   } else if(t==="avance"){
     body=_avanceHtml(c,false);
   } else if(t==="sesiones"){
@@ -11416,7 +11437,10 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo cambiar la contraseña."); });
     return;
   }
+  if(act==="plan-edit"){ state.planEdit=el.getAttribute("data-id"); render(); return; }
+  if(act==="plan-editcancel"){ state.planEdit=null; render(); return; }
   if(act==="plan-save"){
+    state.planEdit=null; // al guardar, vuelve al modo lectura (tarjetas)
     var psid=el.getAttribute("data-id"); if(!psid) return;
     var psc=CLIENTS.filter(function(x){return String(x.id)===String(psid);})[0]; if(!psc) return;
     var _lines=function(id){ return _val(id).split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean); };
