@@ -632,7 +632,33 @@ function chatAdd(who,txt,mine){ txt=(''+(txt||'')).trim(); if(!CHATBODY||!txt) r
 function chatToggle(on){ if(!CHATP) return; var show=(on==null)?!CHATP.classList.contains('on'):!!on; CHATP.classList.toggle('on',show);
   if(show){ CHATUNREAD=0; chatBadge(); try{ if(window.matchMedia&&window.matchMedia('(max-width:1000px)').matches) window.scrollTo(0,0); }catch(e){} setTimeout(function(){ if(CHATI) CHATI.focus(); if(CHATBODY) CHATBODY.scrollTop=CHATBODY.scrollHeight; },30); }
 }
-function chatSend(txt){ txt=(''+(txt||'')).trim(); if(!txt) return; try{ api&&api.executeCommand('sendChatMessage',txt); }catch(e){} chatAdd(NAME,txt,true); if(CHATI) CHATI.value=''; }
+function chatSend(txt){ txt=(''+(txt||'')).trim(); if(!txt) return; try{ api&&api.executeCommand('sendChatMessage',txt); }catch(e){} chatAdd(NAME,txt,true); if(CHATI) CHATI.value=''; _persistChat(MOD?'coach':'cliente', txt); }
+// Lo escrito en el chat de la Sala QUEDA como registro: se guarda en la ficha del
+// cliente (candidatos.notas_coach) → después se ve en el chat del panel. Cada punta
+// persiste SU propio mensaje (from correcto). Re-lee + mergea (dedup from|text|ts)
+// + PATCH: mismo patrón merge-safe que el portal, no pisa lo del otro. Si no hay
+// ficha con ese email (ej. lead sin alta), no escribe nada (inofensivo).
+function _persistChat(from, txt){
+  txt=(''+(txt||'')).trim(); if(!txt || !EMAIL) return;
+  var now=new Date();
+  var time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');
+  // Vocabulario del chat (contrato): el coach guarda from:'coach', el cliente from:'cliente'.
+  var msg=(from==='coach')?{from:'coach',text:txt,time:time,ts:now.getTime()}:{from:'cliente',text:txt,time:time,ts:now.getTime()};
+  try{
+    fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(EMAIL)+'&select=notas_coach',{
+      headers:{apikey:KEY,Authorization:'Bearer '+KEY}
+    }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
+      if(!rows || !rows.length) return;
+      var arr=[]; try{ var p=JSON.parse(rows[0].notas_coach||'[]'); if(Array.isArray(p)) arr=p; }catch(e){}
+      var k=(msg.from||'')+'|'+(msg.text||'')+'|'+(msg.ts||'');
+      for(var i=0;i<arr.length;i++){ var m=arr[i]||{}; if(((m.from||'')+'|'+(m.text||'')+'|'+(m.ts||''))===k) return; }
+      arr.push(msg);
+      fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(EMAIL),{method:'PATCH',keepalive:true,
+        headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=minimal'},
+        body:JSON.stringify({notas_coach:JSON.stringify(arr)})}).catch(function(){});
+    }).catch(function(){});
+  }catch(e){}
+}
 (function(){
   var cc=el('c-chat'); if(cc) cc.onclick=function(){ chatToggle(); };
   var cx=el('chat-x'); if(cx) cx.onclick=function(){ chatToggle(false); };
