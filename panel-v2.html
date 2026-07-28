@@ -491,6 +491,40 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .pw-tl-dot.call{background:var(--pw-success-bg);color:var(--pw-bosque);}
 .pw-tl-t{font-size:14px;font-weight:600;color:var(--pw-carbon);}
 .pw-tl-w{font-size:11.5px;color:var(--pw-text-muted);margin-top:1px;font-variant-numeric:tabular-nums;}
+/* ── Clientes: layout workflow (2 columnas) — menos scroll, más panorama ── */
+.cp-cli-cols{display:grid;grid-template-columns:1fr 320px;gap:18px;align-items:start;margin-top:4px;}
+.cp-cli-main{display:flex;flex-direction:column;gap:16px;min-width:0;}
+.cp-cli-rail{display:flex;flex-direction:column;gap:16px;position:sticky;top:8px;}
+@media(max-width:980px){.cp-cli-cols{grid-template-columns:1fr;}.cp-cli-rail{position:static;}}
+/* Recorrido (pipeline de etapas) */
+.cp-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px;}
+@media(max-width:560px){.cp-flow{grid-template-columns:repeat(2,1fr);}}
+.cp-stage{position:relative;border:1px solid var(--pw-border);border-radius:13px;padding:12px 12px 11px;background:var(--pw-niebla-2);cursor:pointer;transition:border-color .12s;}
+.cp-stage:hover{border-color:var(--pw-border-strong);}
+.cp-stage .lbl{font-size:11px;font-weight:700;color:var(--pw-text-soft);display:flex;align-items:center;gap:6px;}
+.cp-stage .lbl .d{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.cp-stage .num{font-family:var(--pw-serif);font-size:28px;font-weight:600;line-height:1;margin:7px 0 3px;letter-spacing:-1px;}
+.cp-stage .hint{font-size:10.5px;color:var(--pw-text-muted);min-height:14px;}
+.cp-stage.s-wait .d{background:var(--pw-amanecer);}.cp-stage.s-wait .num{color:#B98A1E;}
+.cp-stage.s-dec .d{background:var(--pw-sendero);}.cp-stage.s-dec .num{color:var(--pw-bosque);}
+.cp-stage.s-act .d{background:var(--pw-bosque);}.cp-stage.s-act .num{color:var(--pw-bosque);}
+.cp-stage.s-off .d{background:var(--pw-text-muted);}.cp-stage.s-off .num{color:var(--pw-text-muted);}
+.cp-stage.now{box-shadow:0 0 0 1.5px var(--pw-amanecer);}
+/* Rail: alertas */
+.cp-alert{display:flex;align-items:center;gap:11px;padding:11px 16px;border-top:1px solid var(--pw-border);cursor:pointer;transition:background .12s;}
+.cp-alert:first-of-type{border-top:none;}
+.cp-alert:hover{background:var(--pw-niebla-2);}
+.cp-alert .aic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.cp-alert .aic svg{width:17px;height:17px;}
+.cp-alert .at{font-size:13px;font-weight:600;line-height:1.25;color:var(--pw-carbon);}
+.cp-alert .as{font-size:11px;color:var(--pw-text-muted);margin-top:1px;}
+.cp-alert .acnt{margin-left:auto;font-family:var(--pw-serif);font-size:17px;font-weight:600;color:var(--pw-carbon);}
+.aic.amber{background:rgba(233,196,106,.20);color:#B98A1E;}.aic.danger{background:var(--pw-danger-bg);color:var(--pw-danger);}
+.aic.go{background:var(--pw-success-bg);color:var(--pw-bosque);}.aic.blue{background:rgba(94,126,155,.14);color:#5E7E9B;}
+/* Rail: notas */
+.cp-nota-in{width:100%;border:1px dashed var(--pw-border-strong);border-radius:11px;padding:10px 12px;font-family:inherit;font-size:12.5px;color:var(--pw-carbon);min-height:70px;resize:vertical;outline:none;background:transparent;box-sizing:border-box;}
+.cp-nota-in:focus{border-color:var(--pw-sendero);border-style:solid;}
+.cp-nota-hint{font-size:10.5px;color:var(--pw-text-muted);margin-top:6px;}
 .cp-week{display:flex;align-items:center;gap:8px;}
 .cp-week-label{font-size:11px;color:var(--pw-text-soft);font-weight:500;}
 .cp-week-dots{display:flex;gap:4px;flex:1;}
@@ -2233,7 +2267,11 @@ function viewSolicitudes(embedded){
     return "<span style='color:"+(h<6?"var(--pw-danger)":"#8E7A35")+";font-weight:600'>"+(h>0?h+" h ":"")+m+" min restantes</span>";
   }
   var pend = SOL.filter(function(s){ return s.estado==="autorizada"; });
-  var waiting = SOL.filter(function(s){ return s.estado==="pendiente"; });
+  // "Esperando pago" = SOLO los que todavía pueden pagar (dentro de las 24 h).
+  // El que abandonó (venció su ventana) NO es un pendiente: no se muestra — el
+  // sync lo pasa a "expirada" y queda en el historial. Así no te ensucia la vista.
+  var _nowW=Date.now();
+  var waiting = SOL.filter(function(s){ return s.estado==="pendiente" && (!s.expires_at || new Date(s.expires_at).getTime()>_nowW); });
   var hist = SOL.filter(function(s){ return ["aceptada","rechazada","expirada"].indexOf(s.estado)>=0; });
   // Contactos gratis desde el perfil público (estado="mensaje", monto 0).
   // No entran al flujo de pago — solo se responden por email.
@@ -2393,12 +2431,13 @@ function viewSolicitudes(embedded){
   function _stat(n,lbl,col){ return "<div style='flex:1;min-width:84px;text-align:center'><div style='font-family:var(--pw-sans);font-size:26px;font-weight:700;letter-spacing:-.8px;color:"+col+"'>"+n+"</div><div style='font-size:10.5px;color:var(--pw-text-soft);text-transform:uppercase;letter-spacing:.5px;margin-top:2px'>"+lbl+"</div></div>"; }
   var statsCard="<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:12px;flex-wrap:wrap'>"+
     _stat(nPend,"Pendientes","#8E7A35")+_stat(nAcc,"Aceptadas","var(--pw-bosque)")+_stat(nRej,"Rechazadas","var(--pw-danger)")+"</div></div>";
-  var _body = statsCard +
-    "<div class='cp-reassurance' style='margin:0 0 4px'>Pagan primero — <strong>no se cobra hasta que aceptás</strong>. Comisión desde 5% · tus clientes propios, 0%.</div>"+
-    splitHtml + waitHtml + histHtml;
-  // Modo embebido: Solicitudes vive DENTRO de la página de Clientes (mismo scroll),
-  // así que devolvemos solo el cuerpo, sin cabecera ni pestañas propias.
-  if(embedded) return _body;
+  var _reassure="<div class='cp-reassurance' style='margin:0 0 4px'>Pagan primero — <strong>no se cobra hasta que aceptás</strong>. Comisión desde 5% · tus clientes propios, 0%.</div>";
+  var _bodyCore = _reassure + splitHtml + waitHtml + histHtml;
+  var _body = statsCard + _bodyCore;
+  // Modo embebido (dentro de Clientes): sin la tarjeta de stats — el "Recorrido"
+  // ya muestra los conteos, así no se duplica. Los botones Aceptar/Rechazar/Ver
+  // detalles siguen viniendo de splitHtml.
+  if(embedded) return _bodyCore;
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Solicitudes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Compras y consultas que te llegan desde tu perfil de Pathway.</div></div></header>"+
     cliSolTabs("sol")+ _body;
@@ -5868,9 +5907,11 @@ function viewClientes(){
   var cards = list.map(function(c){
     var medal = c.medal ? "<img class='cp-client-medal' src='assets/iconos/medalla-"+c.medal+".png' alt='Medalla "+c.medal+"'>" : "";
     var isPw = c.source==="pathway";
-    var role = isPw
-      ? esc(c.role)+" · <span style='color:var(--pw-bosque);font-weight:700'>Pathway</span>"
-      : esc(c.role);
+    var role = esc(c.role);
+    // Diferenciar bien: cliente de Pathway (pagás comisión) vs propio (0%).
+    var srcPill = c._example ? "" : (isPw
+      ? "<span class='cp-client-pill' style='background:rgba(233,196,106,.22);color:#8E7A35'>Pathway · comisión</span>"
+      : "<span class='cp-client-pill' style='background:var(--pw-success-bg);color:var(--pw-bosque)'>Propio · 0%</span>");
     var dots = [1,2,3,4].map(function(w){
       var cls = w<c.week?"is-done":(w===c.week?"is-current":"");
       return "<span class='cp-week-dot "+cls+"'></span>";
@@ -5887,28 +5928,57 @@ function viewClientes(){
         "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+(c._example?" <span style='font-size:10px;font-weight:700;color:var(--pw-bosque);background:var(--pw-success-bg);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.5px'>EJEMPLO</span>":"")+(_formPendiente(c)?" <span style='font-size:9.5px;font-weight:600;color:#8E7A35;background:rgba(233,196,106,.18);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.3px'>Form pendiente</span>":"")+"</div><div class='cp-client-role'>"+role+"</div></div>"+medal+"</header>"+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
       "<div class='cp-week'><span class='cp-week-label'>Sem "+c.week+"/4</span><span class='cp-week-dots'>"+dots+"</span></div>"+
-      "<footer class='cp-client-foot'><span class='cp-client-pill "+cvCls+"'>CV "+cvTxt+"</span>"+
+      "<footer class='cp-client-foot'>"+srcPill+"<span class='cp-client-pill "+cvCls+"'>CV "+cvTxt+"</span>"+
         "<span class='cp-client-pill "+rpCls+"'>Informe "+rpTxt+"</span>"+askR+"</footer></article>";
   }).join("");
   var banner = _exOnly
     ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Cliente de ejemplo.</strong> Abrí su ficha para ver informe, CV y plan. Desaparece cuando sumás uno real.</div>"
     : "";
+  // ── Datos del "Recorrido" (workflow) + rail de Atención ──
+  var _sol=(typeof RSOL!=="undefined"&&RSOL)?RSOL:[];
+  var _nowC=Date.now();
+  var nWait=_sol.filter(function(s){return s.estado==="pendiente" && (!s.expires_at || new Date(s.expires_at).getTime()>_nowC);}).length;
+  var nDecid=_sol.filter(function(s){return s.estado==="autorizada";}).length;
+  var _actPool=pool.filter(function(c){return !isInactive(c) && !c._example;});
+  var nRiesgo=_actPool.filter(function(c){return _engLevel(c)!=="avanza";}).length;
+  var nRev=_actPool.filter(function(c){return c.reportState==="pending"||c.cvState==="pending";}).length;
+  var nPwActive=_actPool.filter(function(c){return c.source==="pathway";}).length;
+  var _nx=null;
+  _actPool.forEach(function(c){ (c.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var t=Date.parse((s.fecha||"")+"T"+(/^\d{2}:\d{2}/.test(s.hora||"")?s.hora:"00:00")); if(isNaN(t)||t<_nowC)return; if(!_nx||t<_nx.t)_nx={t:t,c:c,s:s}; }); });
+  function _stg(cls,label,num,hint,act){ return "<div class='cp-stage "+cls+((cls==="s-wait"&&num>0)?" now":"")+"'"+(act?" data-act='"+act+"' style='cursor:pointer'":"")+"><div class='lbl'><span class='d'></span>"+label+"</div><div class='num'>"+num+"</div><div class='hint'>"+hint+"</div></div>"; }
+  var recorrido="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Recorrido<span class='dot'>.</span></h3><span class='cp-eyebrow'>de solicitud a cliente</span></div><div class='cp-flow'>"+
+    _stg("s-wait","Esperando pago",nWait,"pueden pagar aún","")+
+    _stg("s-dec","Tu decisión · 24 h",nDecid,"pagaron, esperan","")+
+    _stg("s-act","Activos",activeCount,(nPwActive?nPwActive+" de Pathway":"en proceso"),"cli:all")+
+    _stg("s-off","Inactivos",inactiveCount,"sin actividad","cli:inactive")+
+    "</div></div>";
+  function _alrt(cls,ic,t,s,cnt,act){ return "<div class='cp-alert'"+(act?" data-act='"+act+"'":"")+"><span class='aic "+cls+"'>"+PWI.svg(ic,{sm:true,cc:true})+"</span><div style='min-width:0'><div class='at'>"+t+"</div><div class='as'>"+s+"</div></div>"+(cnt!=null?"<span class='acnt'>"+cnt+"</span>":"")+"</div>"; }
+  var _alerts=[];
+  if(nDecid) _alerts.push(_alrt("go","checkCircle","Pagaron · decidí","24 h para aceptar",nDecid,"nav:solicitudes"));
+  if(nWait) _alerts.push(_alrt("amber","clock","Esperando pago","todavía pueden pagar",nWait,""));
+  if(nRiesgo) _alerts.push(_alrt("danger","alert","En riesgo","sin avanzar / sin entrar",nRiesgo,"cli:stale"));
+  if(nRev) _alerts.push(_alrt("blue","fileText","A revisar","tu visto bueno",nRev,"cli:review"));
+  if(_nx){ var _nd=new Date(_nx.t),_t0=new Date();_t0.setHours(0,0,0,0);var _dd=new Date(_nd);_dd.setHours(0,0,0,0);var _df=Math.round((_dd-_t0)/86400000); var _day=_df===0?"Hoy":(_df===1?"Mañana":_nd.toLocaleDateString("es-ES",{day:"2-digit",month:"short"})); _alerts.push(_alrt("go","calendar","Próxima sesión",_day+(_nx.s.hora?" · "+esc(_nx.s.hora):"")+" · "+esc((_nx.c.name||"").split(/\s+/)[0]),null)); }
+  var atencion="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Atención<span class='dot'>.</span></h3>"+(_alerts.length?"<span class='cp-eyebrow'>"+_alerts.length+"</span>":"")+"</div><div style='padding-bottom:6px'>"+(_alerts.length?_alerts.join(""):"<div style='padding:18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Todo al día ✓</div>")+"</div></div>";
+  var notas="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Notas<span class='dot'>.</span></h3></div><div style='padding:12px 16px'><textarea class='cp-nota-in' id='cp-cli-nota' placeholder='Escribí una nota rápida…' oninput='_cliNotaSave(this.value)'>"+esc(_cliNotaGet())+"</textarea><div class='cp-nota-hint'>Se guarda en este dispositivo.</div></div></div>";
+  var solSection=(!REAL || (_sol && _sol.length))
+    ? "<section><h3 class='cp-card-title' style='margin:0 0 10px'>"+PWI.svg('inbox',{sm:true})+" Solicitudes de Pathway<span class='dot'>.</span></h3>"+viewSolicitudes(true)+"</section>"
+    : "";
+  var filtersBar="<div class='cp-filters cp-cli-filters'>"+
+    "<div class='cp-sort'>Ordenar por: <select style='background:transparent;border:none;color:var(--pw-carbon);font-weight:600;cursor:pointer;outline:none'>"+
+    "<option>Última actividad</option><option>Nombre</option><option>Semana del programa</option></select></div></div>";
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Clientes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>"+sub+"</div></div>"+
       "<div class='cp-topbar-actions'><div class='cp-search'>"+svg(IC.search,14)+
         "<input id='cp-cli-search' placeholder='Buscar por nombre o email…'></div></div></header>"+
-    // Solicitudes de Pathway EN LA MISMA página (no una vista aparte): arriba de
-    // la grilla, solo cuando hay algo (en demo siempre, para mostrar el marketplace).
-    ((!REAL || (typeof RSOL!=="undefined" && RSOL && RSOL.length))
-      ? "<section style='margin:0 0 18px'><h3 class='cp-card-title' style='margin:0 0 10px'>"+PWI.svg('inbox',{sm:true})+" Solicitudes de Pathway<span class='dot'>.</span></h3>"+viewSolicitudes(true)+"</section>"
-      : "")+
-    banner+
-    linksCard()+
-    "<div class='cp-filters cp-cli-filters'>"+
-      "<div class='cp-sort'>Ordenar por: <select style='background:transparent;border:none;color:var(--pw-carbon);font-weight:600;cursor:pointer;outline:none'>"+
-      "<option>Última actividad</option><option>Nombre</option><option>Semana del programa</option></select></div></div>"+
-    "<section class='cp-clients-grid' id='cp-clients-grid'>"+cards+"</section>"+
-    "<div id='cp-cli-empty' style='display:none;padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin resultados para tu búsqueda.</div>";
+    "<div class='cp-cli-cols'>"+
+      "<div class='cp-cli-main'>"+
+        recorrido + solSection + banner + linksCard() + filtersBar +
+        "<section class='cp-clients-grid' id='cp-clients-grid'>"+cards+"</section>"+
+        "<div id='cp-cli-empty' style='display:none;padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin resultados para tu búsqueda.</div>"+
+      "</div>"+
+      "<aside class='cp-cli-rail'>"+ atencion + notas +"</aside>"+
+    "</div>";
 }
 // Guarda el orden manual de las tarjetas de clientes (arrastre). Los ids que se
 // ven ahora van primero (en su nuevo orden); el resto que ya estaba guardado, atrás.
@@ -5922,6 +5992,10 @@ function _wireCliSort(){
   var g=document.getElementById("cp-clients-grid");
   if(g && window.pwSortable) pwSortable(g, _cliReorder, {handle:".pw-grip", item:".cp-client"});
 }
+// Notas rápidas del rail de Clientes (scratchpad por coach, en este dispositivo).
+function _cliNotaKey(){ try{ return "mj_cli_nota_"+((RME&&RME.id)||"x"); }catch(e){ return "mj_cli_nota_x"; } }
+function _cliNotaGet(){ try{ return localStorage.getItem(_cliNotaKey())||""; }catch(e){ return ""; } }
+function _cliNotaSave(v){ try{ localStorage.setItem(_cliNotaKey(), v==null?"":String(v)); }catch(e){} }
 // Reordenar SERVICIOS arrastrando. `order` son los índices (data-sort) en el
 // nuevo orden; reordenamos state.services y persistimos (saveCfg re-renderiza).
 function _svcReorder(order){
