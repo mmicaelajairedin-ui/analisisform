@@ -3932,6 +3932,30 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "solicitudes: el candidato que aún no pagó NO cuenta como pendiente del coach",
+    bug: "El candidato con estado 'pendiente' (empezó pero no pagó) se sumaba a 'Pendientes' → daba '1 pendiente' con la bandeja vacía, como si el coach tuviera algo que aceptar. Es acción del candidato; va aparte en 'Esperando pago'.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (/nPend\s*=\s*pend\.length\s*\+\s*waiting\.length/.test(s))
+        return "panel-v2: 'Pendientes' volvió a sumar los que no pagaron (waiting). Debe contar solo pend (los que esperan tu decisión).";
+      return null;
+    },
+  },
+  {
+    name: "solicitudes: anti-fugas — antes de aceptar se muestra solo el primer nombre",
+    bug: "Mostrar el nombre COMPLETO de un candidato que no pagó / no aceptaste permite identificarlo y contactarlo por fuera (fuga + salteo de comisión). El apellido aparece recién cuando entra como cliente.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function _primerNombre/.test(s))
+        return "panel-v2: se borró _primerNombre (solo el primer nombre en solicitudes antes de aceptar).";
+      if (/text-overflow:ellipsis'>"\+esc\(s\.candidato_nombre/.test(s))
+        return "panel-v2: la lista de solicitudes volvió a mostrar el nombre completo del candidato (usar _primerNombre).";
+      return null;
+    },
+  },
   // ── Enriquecimiento del tab Analiticas con Health Score (consumidor de metricas) ──
   {
     name: "analiticas: tarjeta Health Score cableada como consumidor puro de metricas",
