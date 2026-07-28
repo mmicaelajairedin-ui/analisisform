@@ -507,10 +507,29 @@ function bootP2P(){
     onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Esperando'; },
     onChat:function(from,text){ try{ chatAdd(from||WHO, text, false); }catch(e){} },
     onError:function(e){ var c=(e&&(e.name||e.message))||'error';
-      if(/NotAllowed|Permission/i.test(c)) waitState('Permití cámara y micrófono','El navegador bloqueó el acceso. Tocá el candado de la barra y permití cámara/micrófono, y recargá.',true);
+      if(/NotAllowed|Permission|Denied/i.test(c)){ waitState('Permití cámara y micrófono','Tocá el botón de abajo y aceptá el cartel del navegador para poder verte.',true); _p2pPermBtn(); }
       else waitState('No se pudo conectar el video','Reintentá o abrí en otra red. Detalle: '+c,true); }
   }).then(function(){ wireControlsP2P(); }).catch(function(){});
 }
+// Botón EN LA PANTALLA para pedir cámara/micrófono (en vez de buscar el candado).
+// Reintenta getUserMedia → el navegador vuelve a mostrar su cartel de permiso.
+// Si el permiso quedó BLOQUEADO de antes (no solo "sin decidir"), el reintento no
+// abre el cartel: ahí sí hace falta el candado, y lo explicamos.
+function _p2pPermBtn(){
+  try{
+    var se=el('wait-s'); if(!se) return;
+    if(document.getElementById('p2p-perm-btn')) return;
+    var b=document.createElement('button'); b.id='p2p-perm-btn'; b.className='btn btn-p';
+    b.style.cssText='margin-top:12px'; b.textContent='🎥 Permitir cámara y micrófono';
+    b.onclick=function(){ retryP2P(); };
+    se.parentNode.insertBefore(b, se.nextSibling);
+    // Si el navegador dice que YA está bloqueado, avisamos que hay que ir al candado.
+    try{ if(navigator.permissions&&navigator.permissions.query){ navigator.permissions.query({name:'camera'}).then(function(p){
+      if(p&&p.state==='denied'){ var h=document.createElement('div'); h.style.cssText='font-size:12px;color:var(--soft);margin-top:10px;line-height:1.5;max-width:340px'; h.innerHTML='Tu navegador ya lo tenía <b>bloqueado</b>. Tocá el ícono de <b>cámara</b> o el <b>candado 🔒</b> a la izquierda de la dirección (arriba), elegí <b>Permitir</b> y recargá.'; se.parentNode.insertBefore(h, b.nextSibling); }
+    }).catch(function(){}); } }catch(_e){}
+  }catch(e){}
+}
+function retryP2P(){ var b=document.getElementById('p2p-perm-btn'); if(b) b.remove(); try{ if(window.PWP2P) PWP2P.hangup(); }catch(e){} bootP2P(); }
 function wireControlsP2P(){
   var mic=el('c-mic'); if(mic) mic.onclick=function(){ var m=PWP2P.toggleMic(); mic.classList.toggle('off', !!m); };
   var cam=el('c-cam'); if(cam) cam.onclick=function(){ var o=PWP2P.toggleCam(); cam.classList.toggle('off', !!o); };
