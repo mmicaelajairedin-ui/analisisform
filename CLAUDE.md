@@ -62,10 +62,31 @@ interfaz van en **gris**, no a color
   del tipo de evento en la agenda** (lo elige la coach por cita: en `_agRenderDay`
   el avatar muestra la foto real del cliente si existe, si no el emoji del tipo a color).
 
+## 🎨 ICON SYSTEM — Lucide, una sola librería para TODA la plataforma (julio 2026)
+Antes cada pantalla tenía pequeñas diferencias de iconos (emojis mezclados con
+SVGs, tamaños 16/18/20, colores distintos). Ahora hay **un solo sistema**:
+- **Solo iconos [Lucide](https://lucide.dev/icons)** — NO se mezcla con otra
+  librería ni con emojis del sistema en el chrome.
+- **Outline · stroke 2px · 20px (18px en botones chicos) · color `#1F4030`**
+  (token `--pw-icon`; hereda `currentColor` dentro de botones de color).
+- **Fuente única de verdad:** `pw-icons.js` (mapa `window.PWI.IC` + API
+  `PWI.svg()`/`PWI.chip()`/`PWI.mount()`) y `pw-icons.css` (el estilo). Sumar un
+  icono nuevo = agregarlo UNA vez a `pw-icons.js` y usarlo por nombre. **Nunca**
+  pegar un `<svg>` suelto en una pantalla.
+- Uso: `<i data-ic="calendar" data-sm></i>` en HTML estático; `PWI.svg('calendar',{sm:true})`
+  en HTML que se inyecta por JS (ojo: si pasa por `esc()`, el SVG se escaparía).
+- `panel-v2.html` ya usa `var IC = window.PWI.IC` (no duplica el mapa). El chat
+  (`pw-ia-chat.js`) comparte el mismo set/estilo.
+- **La regla `.cp-emo` (emoji gris) queda como paso intermedio legacy**; lo nuevo
+  y lo que se vaya migrando va a Lucide. Emojis siguen permitidos SOLO como
+  contenido (medallas, banderas, mascota, agenda fitness) y en emails/WhatsApp.
+- Doc completo: `docs/icon-system.md`. Blindado por `scripts/check-icons.js`
+  (falla si aparece otra librería o se rompe el spec/fuente única).
+
 ## 🛡️ Blindaje del codigo — tests que no pueden mentir (junio 2026)
 Red de seguridad para que NO vuelvan bugs ya resueltos. Corren en CI en cada
 push/PR (`.github/workflows/syntax-check.yml`). **Antes de commitear, correr:**
-`node scripts/check-syntax.js && node scripts/check-smoke.js && node scripts/check-guardrails.js && node scripts/check-parity.js`
+`node scripts/check-syntax.js && node scripts/check-smoke.js && node scripts/check-guardrails.js && node scripts/check-parity.js && node scripts/check-icons.js`
 - **`scripts/check-syntax.js`** — valida el JS inline de cada .html (un error
   rompe la pagina entera).
 - **`scripts/check-smoke.js`** — verifica que cada handler (`onclick`...) llame a
@@ -79,6 +100,11 @@ push/PR (`.github/workflows/syntax-check.yml`). **Antes de commitear, correr:**
   y los INVARIANTES (chat merge-safe, anti-XSS, sesión vencida, dedup). Doc:
   `docs/base-plataforma.md`. Dos niveles: `enforce` (falla) y `report` (lista
   huecos). Al cerrar un hueco, subirlo de `report` a `enforce`.
+- **`scripts/check-icons.js`** — blinda el **Icon System** (Lucide, una sola
+  librería): falla si aparece otra librería de iconos, si se rompe el spec
+  (`#1F4030`/20/18px/2px) o la fuente única (`pw-icons.js`/`pw-icons.css`), o si
+  `panel-v2` vuelve a duplicar el mapa. Reporta (sin frenar) el chrome emoji que
+  falta convertir. Doc: `docs/icon-system.md`.
 - **`pw-observe.js`** (observabilidad) — incluido en las 10 paginas clave.
   Registra en la tabla `client_errors` los errores reales de produccion:
   guardados a Supabase que fallan (intercepta `fetch`, atrapa los `.catch`
