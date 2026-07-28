@@ -1189,16 +1189,18 @@ const RULES = [
     bug: "Por minimización RGPD, el panel del coach difumina datos sensibles para no " +
          "exponerlos al compartir pantalla. El enmascarado está SIEMPRE activo (sin " +
          "toggle): se revela al pasar el mouse o tocar el dato. Si se quita el helper " +
-         "sens(), la clase pw-private o los campos enmascarados (frS/ftAS de finanzas " +
-         "y salud), los datos vuelven a quedar a la vista.",
+         "sens(), la clase pw-private, o los campos sensibles del Perfil (ingresos/salud) " +
+         "dejan de marcarse con {sens:true} → pw-sens, los datos vuelven a quedar a la vista.",
     check() {
       const s = read("panel-v2.html");
       if (!s) return null;
       if (!/function sens\s*\(/.test(s)) return "panel-v2.html: falta el helper sens() del Modo privado.";
       if (!/pw-private/.test(s)) return "panel-v2.html: falta el enmascarado (clase pw-private).";
       if (!/classList\.add\('pw-private'\)/.test(s)) return "panel-v2.html: el enmascarado (pw-private) ya no se aplica siempre.";
-      if (!/frS\("Ingresos mensuales/.test(s) || !/ftAS\("Lesiones/.test(s))
-        return "panel-v2.html: los datos financieros/de salud ya no usan los campos enmascarados (frS/ftAS).";
+      // Perfil por categorías: los campos financieros/de salud van marcados {sens:true}
+      // (→ clase pw-sens → blur en Modo privado). Si pierden la marca, quedan a la vista.
+      if (!/cf-ingresos"[\s\S]{0,90}sens:true/.test(s) || !/cf-lesiones"[\s\S]{0,130}sens:true/.test(s))
+        return "panel-v2.html: los datos financieros/de salud (ingresos/lesiones) ya no van marcados como sensibles (sens:true → pw-sens).";
       return null;
     },
   },
