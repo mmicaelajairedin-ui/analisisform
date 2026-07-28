@@ -51,6 +51,7 @@
     search:     "<circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/>",
     eye:        "<path d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z'/><circle cx='12' cy='12' r='3'/>",
     eyeOff:     "<path d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24'/><line x1='1' y1='1' x2='23' y2='23'/>",
+    eyeClosed:  "<path d='M2 12s3-7 10-7 10 7 10 7'/><path d='m4 15 1.5-2.5M9 18l.5-3M15 18l-.5-3M20 15l-1.5-2.5'/>",
     pulse:      "<path d='M22 12h-4l-3 9L9 3l-3 9H2'/>",
     copy:       "<rect x='9' y='9' width='13' height='13' rx='2' ry='2'/><path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/>",
     check:      "<polyline points='20 6 9 17 4 12'/>",
@@ -124,6 +125,9 @@
     palette:    "<circle cx='13.5' cy='6.5' r='.5' fill='currentColor'/><circle cx='17.5' cy='10.5' r='.5' fill='currentColor'/><circle cx='8.5' cy='7.5' r='.5' fill='currentColor'/><circle cx='6.5' cy='12.5' r='.5' fill='currentColor'/><path d='M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.688-1.687h1.996c3.094 0 5.543-2.55 5.543-5.65C22 6.5 17.5 2 12 2z'/>", /* 🎨 */
     mapPin:     "<path d='M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z'/><circle cx='12' cy='10' r='3'/>",                          /* 📍 */
     thumbsUp:   "<path d='M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3'/>", /* 👍 */
+    thumbsDown: "<path d='M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17'/>", /* 👎 */
+    gamepad:    "<line x1='6' y1='11' x2='10' y2='11'/><line x1='8' y1='9' x2='8' y2='13'/><line x1='15' y1='12' x2='15.01' y2='12'/><line x1='18' y1='10' x2='18.01' y2='10'/><path d='M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.544-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z'/>", /* 🎮 */
+    instagram:  "<rect x='2' y='2' width='20' height='20' rx='5' ry='5'/><path d='M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z'/><line x1='17.5' y1='6.5' x2='17.51' y2='6.5'/>", /* 📷 IG */
     hand:       "<path d='M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8'/><path d='M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/>", /* 👋 🙌 🙏 */
     apple:      "<path d='M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06z'/><path d='M10 2c1 .5 2 2 2 5'/>", /* 🍎 */
     settings:   "<circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/>", /* ⚙ */
@@ -142,7 +146,7 @@
     opts = opts || {};
     var inner = IC[name];
     if(inner == null){ if(window.console && console.warn) console.warn("[PWI] icono desconocido:", name); inner = IC.infoCircle; }
-    var cls = "pw-ic" + (opts.sm ? " pw-ic-sm" : "") + (opts.cls ? " " + opts.cls : "");
+    var cls = "pw-ic" + (opts.sm ? " pw-ic-sm" : "") + (opts.cc ? " pw-ic-cc" : "") + (opts.cls ? " " + opts.cls : "");
     var style = opts.size ? " style='width:"+opts.size+"px;height:"+opts.size+"px'" : "";
     var a11y = opts.title ? " role='img' aria-label='"+esc(opts.title)+"'><title>"+esc(opts.title)+"</title" : " aria-hidden='true'";
     return "<svg class='"+cls+"' viewBox='0 0 24 24'"+style+a11y+">"+inner+"</svg>";
@@ -152,6 +156,17 @@
   function chip(name, opts){
     opts = opts || {};
     return "<span class='pw-icchip"+(opts.sm?" sm":"")+(opts.cls?" "+opts.cls:"")+"'>"+svg(name,{title:opts.title})+"</span>";
+  }
+
+  /* Mascota de Pathway = la CABRA DE FRENTE (no el emoji 🐐 de perfil). Es un
+     asset de marca (imagen), no un icono Lucide, así que va por su propio helper.
+     Una sola fuente: cambiar el src acá cambia la mascota en TODA la plataforma. */
+  var GOAT_SRC = "/assets/cabra/frente.gif";
+  function goat(opts){
+    opts = opts || {};
+    var px = opts.size || 20;
+    return "<img src='" + GOAT_SRC + "' alt='" + esc(opts.title || "Cabra Pathway") +
+      "' class='pw-goat' style='height:" + px + "px;width:auto;vertical-align:-.22em'>";
   }
 
   /* Auto-montado declarativo: <i data-ic="edit"></i> · data-sm -> 18px. */
@@ -164,12 +179,12 @@
       var name = el.getAttribute("data-ic");
       if(!IC[name]) continue;
       var sz = el.getAttribute("data-size");
-      el.innerHTML = svg(name, { sm: el.hasAttribute("data-sm"), size: sz?parseInt(sz,10):0, title: el.getAttribute("data-title")||"" });
+      el.innerHTML = svg(name, { sm: el.hasAttribute("data-sm"), cc: el.hasAttribute("data-cc"), size: sz?parseInt(sz,10):0, title: el.getAttribute("data-title")||"" });
       el.setAttribute("data-ic-done","1");
     }
   }
 
-  window.PWI = { IC: IC, svg: svg, chip: chip, mount: mount, has: function(n){ return !!IC[n]; } };
+  window.PWI = { IC: IC, svg: svg, chip: chip, goat: goat, mount: mount, has: function(n){ return !!IC[n]; } };
 
   if(document.readyState !== "loading") mount();
   else document.addEventListener("DOMContentLoaded", function(){ mount(); });
