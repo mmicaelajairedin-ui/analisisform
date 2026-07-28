@@ -3437,11 +3437,36 @@ const RULES = [
       if (!p) return null;
       const i = p.indexOf('act==="ag-agendar"');
       if (i < 0) return "panel-v2.html: no se encontró el handler ag-agendar.";
-      const body = p.slice(i, i + 3600);
+      const body = p.slice(i, i + 4200);
       if (!/_sbw\("citas","POST"/.test(body) || !/coach_id:\(RME&&RME\.id\)/.test(body)) return "panel-v2.html: ag-agendar ya no guarda la cita del coach en la tabla citas (POST con coach_id=RME.id).";
       if (!/_resLoad\(\)/.test(body) || !/_calLoad\(\)/.test(body)) return "panel-v2.html: ag-agendar ya no recarga la agenda tras guardar (_resLoad/_calLoad).";
       if (!/_notifResCliente\(/.test(body)) return "panel-v2.html: ag-agendar ya no manda el email de confirmación al invitado (_notifResCliente).";
       if (/window\.open\([^)]*calendar\.google\.com/.test(body) || /location\.href=_au/.test(body)) return "panel-v2.html: ag-agendar volvió a forzar Google Calendar (window.open eventedit) en vez de guardar en Pathway.";
+      return null;
+    },
+  },
+  {
+    name: "agenda: 'Agendar cita' manda la hora al invitado CON zona horaria (no la hora del coach sin etiqueta)",
+    bug: "El email de confirmación de ag-agendar formateaba _fechaCli(_iso) SIN zona horaria → mostraba la hora local del coach sin etiqueta. Un invitado en otra zona la leía como propia y entraba a la hora equivocada. Ahora se calcula la zona del coach (_ctz), se pasa a _fechaCli(_iso,_ctz), se guarda cliente_tz en la cita (para que el recordatorio use la MISMA referencia) y se etiqueta la zona en el email. Si vuelve _fechaCli(_iso) sin tz, regresa el bug.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      const i = p.indexOf('act==="ag-agendar"');
+      if (i < 0) return null;
+      const body = p.slice(i, i + 4200);
+      if (!/_fechaCli\(_iso,\s*_ctz\)/.test(body)) return "panel-v2.html: ag-agendar volvió a mostrar la fecha del invitado sin la zona del coach (_fechaCli sin _ctz).";
+      if (!/cliente_tz:_ctz/.test(body)) return "panel-v2.html: ag-agendar ya no guarda cliente_tz en la cita → confirmación y recordatorio pueden mostrar horas distintas.";
+      return null;
+    },
+  },
+  {
+    name: "fechas del panel: el día de HOY se calcula en zona LOCAL (no UTC)",
+    bug: "todayK del calendario de constancia y el prefill de fecha de medición usaban new Date().toISOString().slice(0,10) → eso es la fecha en UTC. Para un coach al oeste de UTC de tarde/noche marcaba el día equivocado (hoy sin resaltar, emojis de hábito un día antes, prefill = mañana). Se centralizó en el helper _ymdLoc (fecha local). Si vuelve toISOString().slice(0,10) para 'hoy', regresa el bug.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _ymdLoc\(/.test(p)) return "panel-v2.html: falta el helper _ymdLoc (fecha local YYYY-MM-DD).";
+      if (/todayK=now\.toISOString\(\)\.slice\(0,10\)/.test(p)) return "panel-v2.html: el calendario de constancia volvió a usar la fecha UTC para 'hoy' — usar _ymdLoc(now).";
       return null;
     },
   },

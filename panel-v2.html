@@ -2865,6 +2865,9 @@ function _agTimeInTz(ms,tz){ if(!tz) return ""; try{ return new Intl.DateTimeFor
 function _tzCity(tz){ if(!tz) return ""; var p=(""+tz).split("/"); return (p[p.length-1]||"").replace(/_/g," "); }
 // Valor para <input type=datetime-local> a partir de un instante, en TU hora local.
 function _dtLocalVal(ms){ var d=new Date(ms); function p(n){return("0"+n).slice(-2);} return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes()); }
+// Fecha YYYY-MM-DD en la zona LOCAL del navegador (NO usar toISOString().slice(0,10),
+// que devuelve el día en UTC → al oeste de UTC de noche marca el día equivocado).
+function _ymdLoc(d){ d=d||new Date(); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
 function _agDayLabel(ms){
   var d=new Date(ms); d.setHours(0,0,0,0); var t=new Date(); t.setHours(0,0,0,0);
   var diff=Math.round((d-t)/86400000);
@@ -4854,7 +4857,7 @@ function viewClienteDetalle(c){
   if(t==="fit_antro"){
     var ANTRO=[]; try{ ANTRO=JSON.parse((c.raw&&c.raw.fit_antro)||"[]")||[]; }catch(e){ ANTRO=[]; }
     if(Object.prototype.toString.call(ANTRO)!=="[object Array]") ANTRO=[];
-    var _hoyA=new Date().toISOString().slice(0,10);
+    var _hoyA=_ymdLoc();
     var histA="";
     if(ANTRO.length){
       histA="<div class='cp-card cp-card-pad' style='margin-top:14px'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3>"+
@@ -5547,7 +5550,7 @@ function _coachCalHtml(c){
   var meas={}; SES.forEach(function(s){var k=ymd(s.fecha); if(k)meas[k]=1;}); ANT.forEach(function(m){var k=ymd(m.fecha); if(k)meas[k]=1;});
   var now=new Date(), y=now.getFullYear(), m=now.getMonth();
   var MES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][m];
-  var startDow=(new Date(y,m,1).getDay()+6)%7, days=new Date(y,m+1,0).getDate(), todayK=now.toISOString().slice(0,10);
+  var startDow=(new Date(y,m,1).getDay()+6)%7, days=new Date(y,m+1,0).getDate(), todayK=_ymdLoc(now);
   var HABK=["agua","sueno","pasos"], cells="";
   for(var i=0;i<startDow;i++) cells+="<div class='pwcal-cell' style='visibility:hidden'></div>";
   for(var d=1;d<=days;d++){
@@ -9490,6 +9493,10 @@ document.addEventListener("click", function(ev){
     var _aen=new Date(_ast.getTime()+_adur*60000);
     var _shWith=_ag2?(_ag2.split("@")[0]):("con "+((COACH&&COACH.firstName)||(RME&&RME.nombre)||"el equipo"));
     var _iso=_ast.toISOString();
+    // Zona horaria de referencia = la del coach (la hora la tipeó en SU navegador).
+    // Guardamos y mostramos ESA zona: si el invitado está en otra, sabe convertir y
+    // el recordatorio usa la misma referencia (no dos horas distintas).
+    var _ctz=""; try{ _ctz=(REAL&&RCFG&&RCFG.disponibilidad&&RCFG.disponibilidad.tz)||Intl.DateTimeFormat().resolvedOptions().timeZone||""; }catch(e){}
     var _team=(state.ag&&state.ag.team)||[];   // capturar ANTES de limpiar state.ag
     state.ag=null;
     // Demo: no escribir en la base, solo mostrar el éxito.
@@ -9499,7 +9506,7 @@ document.addEventListener("click", function(ev){
     //    Google Calendar) → por eso "no aparecían las citas" y terminabas en Google.
     // Kind del sistema: con invitado/cliente → 'sesion'; sin nadie → 'personal' (agenda suelta).
     var _agKind=_ag2?"sesion":"personal";
-    var _agBody={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel"};
+    var _agBody={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel", cliente_tz:_ctz};
     var _agDone=function(r){ if(r&&r.ok) toast("Cita agendada ✓ — ya está en tu agenda"); else toast("No se pudo guardar la cita. Reintenta."); try{ _resLoad(); }catch(e){} try{ _calLoad(); }catch(e){} };
     _sbw("citas","POST",Object.assign({},_agBody,{kind:_agKind}))
       .then(function(r){
@@ -9516,9 +9523,10 @@ document.addEventListener("click", function(ev){
         var _r={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2, tipo:_atl, inicio:_iso};
         var _lnk=_salaClientLink(_r);
         var _ics=_icsBuild("Sesión · Pathway", _ast.getTime(), _aen.getTime(), _lnk);
-        var _f=_fechaCli(_iso);
+        var _f=_fechaCli(_iso,_ctz);
+        var _tzLbl=_ctz?(" <span style='color:#8A968E'>(hora de "+esc(_ctz.split('/').pop().replace(/_/g," "))+")</span>"):"";
         var _coachNm=(COACH&&COACH.name)||(RME&&RME.nombre)||"Pathway";
-        var _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"):"")+".</p>"+
+        var _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzLbl):"")+".</p>"+
           "<p style='margin:16px 0'><a href='"+esc(_lnk)+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700'>Entrar a la sesión</a></p>"+
           "<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";
         _notifResCliente(_ag2, _shWith, "Tu sesión con "+_coachNm+" está agendada", _inner, _ics&&_ics.b64);
@@ -10964,7 +10972,7 @@ document.addEventListener("click", function(ev){
     var _arr=[]; try{ _arr=JSON.parse((fac&&fac.raw&&fac.raw.fit_antro)||"[]")||[]; }catch(e){ _arr=[]; }
     if(Object.prototype.toString.call(_arr)!=="[object Array]") _arr=[];
     var _fu=(state.fitUnit)||((_arr.length&&_arr[_arr.length-1].u)||"kg");
-    var m={fecha:_val("fa-fecha")||(new Date().toISOString().slice(0,10)),peso:_val("fa-peso"),grasa:_val("fa-grasa"),musculo:_val("fa-musculo"),oseo:_val("fa-oseo"),residual:_val("fa-residual"),pliegues:_val("fa-pliegues"),imo:_val("fa-imo"),u:_fu};
+    var m={fecha:_val("fa-fecha")||_ymdLoc(),peso:_val("fa-peso"),grasa:_val("fa-grasa"),musculo:_val("fa-musculo"),oseo:_val("fa-oseo"),residual:_val("fa-residual"),pliegues:_val("fa-pliegues"),imo:_val("fa-imo"),u:_fu};
     if(!m.peso&&!m.grasa&&!m.musculo){ alert("Carga al menos peso, masa grasa o masa muscular."); return; }
     _arr.push(m); _arr.sort(function(a,b){ return (""+(a.fecha||"")).localeCompare(""+(b.fecha||"")); });
     var _aj=JSON.stringify(_arr);
