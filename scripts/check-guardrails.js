@@ -27,6 +27,30 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "agenda: el selector de icono NO mete el SVG dentro de un atributo",
+    bug: "Al pasar _AG_ICONS de emoji a iconos Lucide (SVG con comillas), el " +
+         "selector de icono del tipo de evento ponía el SVG completo dentro de un " +
+         "atributo del botón (data-ic='<svg …'> / onclick=\"agPickIcon('<svg …')\"). " +
+         "Las comillas del SVG rompían la etiqueta y el estilo del botón salía como " +
+         "TEXTO. Fix: el atributo lleva el ÍNDICE del icono, el SVG va solo en el body.",
+    check() {
+      const pv = read("panel-v2.html");
+      if (pv) {
+        // El botón del picker debe usar el índice (data-ici='"+ici+"'), NO el SVG.
+        if (/data-act='ag-pick-icon'[^>]*data-ic='"\+ic\+"'/.test(pv))
+          return "panel-v2.html: el picker de icono de agenda volvió a meter el SVG en data-ic (rompe el botón).";
+        if (!/data-act='ag-pick-icon'[^>]*data-ici='"\+ici\+"'/.test(pv))
+          return "panel-v2.html: el picker de icono de agenda perdió el patrón por índice (data-ici).";
+      }
+      const emp = read("empleado.html");
+      if (emp) {
+        if (/agPickIcon\('"\+ic\+"'\)/.test(emp))
+          return "empleado.html: agPickIcon recibe el SVG (rompe el onclick). Debe recibir el índice.";
+      }
+      return null;
+    },
+  },
+  {
     name: "panel-v2: reservas duplicadas se deduplican (lista + KPIs + agenda)",
     bug: "La misma cita podía quedar guardada dos veces en `citas` (doble submit " +
          "del link, reintento de red) y salía REPETIDA en 'Reservas y asistencia', " +
