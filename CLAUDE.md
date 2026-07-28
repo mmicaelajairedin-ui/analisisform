@@ -112,6 +112,30 @@ push/PR (`.github/workflows/syntax-check.yml`). **Antes de commitear, correr:**
   `supabase/migrations/client_errors.sql` (RLS: anon solo INSERT, nadie lee).
   Ver errores: `SELECT ts,kind,email,page,detail FROM client_errors ORDER BY ts DESC LIMIT 100;`
 
+### Ola de 403 en client_errors — telemetría best-effort sin GRANT (julio 2026)
+Un reporte del tester mostró ~195 "errores de guardado" que en realidad eran
+**falsos positivos por permisos** (RLS/GRANT), no pérdida de datos. Dos causas,
+misma familia que `usuarios_gamif_grant.sql` (guardados best-effort que daban 403
+y ensuciaban `client_errors`):
+1. **~127× `PATCH /rest/v1/usuarios` 403** (panel): `coachBeat` (heartbeat →
+   `last_seen`) y `_gameSyncServer` (`game_pts`/`game_medal`) escriben la propia
+   fila best-effort; en el boot salen con la anon key ANTES de que el JWT se
+   adjunte. `usuarios_gamif_grant.sql` daba a anon UPDATE solo de `xp`/`badges` →
+   faltaban esas 3 columnas de telemetría. **Fix:** el GRANT ahora incluye
+   `last_seen, game_pts, game_medal` (sigue SIN tocar password/config/rol/activo).
+2. **~23× `POST /rest/v1/notificaciones` 403** (cliente/fit): la policy
+   `notif_anon_all` era `to anon` solo, pero los clientes/coaches migrados a
+   Supabase Auth mandan JWT (rol `authenticated`) → sin policy que matchee → 403.
+   **Fix:** GRANT + policy ahora cubren `anon, authenticated` (igual que
+   `informes_guardados.sql`).
+
+⚠️ **Deploy:** re-aplicar en el SQL Editor de Supabase (idempotentes)
+`usuarios_gamif_grant.sql` y `notificaciones.sql`. El fix vive en el SQL: sin
+correrlo, los 403 siguen. Blindado por 2 reglas nuevas en `check-guardrails.js`.
+(El resto del reporte —`neterror`/"Failed to fetch"— son cortes de red del
+navegador del cliente, transitorios; y `informes_guardados` 404 = falta aplicar
+esa migración en esa cuenta.)
+
 ## Calendario unificado del cliente (fitness) — junio 2026
 Widget compacto en el dashboard de `pathway-fit-cliente.html` (arriba del de
 habitos). Iconos = logros del cliente (💪 gym, ⭐ habitos, 🍎 nutricion); dia
