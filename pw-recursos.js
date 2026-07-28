@@ -78,6 +78,12 @@
     var accent=opts.accent||'#2D6A4F';
     var ckey=(''+(opts.clientKey||'anon')).toLowerCase();
     var STKEY='pw_rec_'+_hash(ckey);
+    // Preview real (og:image) — OPCIONAL, se activa si el portal pasa
+    // opts.previewUrl (la Edge Function link-preview). Cache local por URL.
+    var previewMode=!!(opts&&opts.previewUrl);
+    var OGKEY='pw_og_v1', ogMap={};
+    try{ ogMap=JSON.parse(localStorage.getItem(OGKEY)||'{}')||{}; }catch(e){ ogMap={}; }
+    if(!ogMap||typeof ogMap!=='object') ogMap={};
 
     var items=(resources||[]).map(function(r,i){
       r=r||{};
@@ -96,6 +102,18 @@
         destacado:!!r.destacado, nuevo:!!r.nuevo, ord:i
       };
     }).filter(function(r){ return r.titulo || r.url; });
+
+    // Imagen real de un recurso: su portada propia / miniatura de YouTube, o la
+    // og:image que trajo la Edge Function. "Todas o nada": solo mostramos fotos
+    // reales si TODAS las tarjetas tienen una; si falta alguna, quedan las
+    // ilustraciones (consistente). Fuera de previewMode, comportamiento actual.
+    function _effCover(r){ return r.cover || (r.url && ogMap[r.url]) || ''; }
+    function _allReal(){ for(var i=0;i<items.length;i++){ if(!_effCover(items[i])) return false; } return true; }
+    // ¿Ya tenemos el dato de preview de TODOS? (cover propia, o la og:image ya
+    // resuelta/cacheada). Hasta tenerlo, NO tocamos nada (mostramos lo de hoy) →
+    // si la función no está desplegada, no hay regresión. Con el dato completo
+    // aplicamos "todas o nada".
+    function _haveAllData(){ for(var i=0;i<items.length;i++){ var r=items[i]; if(!(r.cover || !r.url || (r.url in ogMap))) return false; } return true; }
 
     _injectCss();
 
@@ -131,9 +149,10 @@
       // + una ilustración limpia por tipo (se genera sola). Si hay imagen real
       // (miniatura de YouTube o cover del coach) la superpone; si falla (onerror)
       // se quita y queda la ilustración → nunca queda rota ni vacía.
+      var _real = (previewMode && _haveAllData()) ? (_allReal()?_effCover(r):'') : r.cover;
       var cov = '<div class="pwr-cov" style="background:'+TONES[T.tone]+'">'+
           _illus(r.tipo)+
-          (r.cover?'<img class="pwr-cov-img" src="'+esc(r.cover)+'" alt="" loading="lazy" onerror="this.remove()">':'')+
+          (_real?'<img class="pwr-cov-img" src="'+esc(_real)+'" alt="" loading="lazy" onerror="this.remove()">':'')+
           (r.meta?'<span class="pwr-cov-meta">'+esc(r.meta)+'</span>':'')+
           (seen?'<span class="pwr-cov-seen" title="Completado">✓</span>':'')+
         '</div>';
@@ -211,6 +230,26 @@
       cur.outerHTML=html;
     }
     paint();
+
+    // Preview real en 2º plano: pedimos la og:image de los recursos que todavía
+    // no tienen imagen; si con eso TODAS quedan con foto, re-pintamos con las
+    // reales (todas o nada). Cacheado; si falla, quedan las ilustraciones.
+    if(previewMode){
+      var _need=[]; items.forEach(function(r){ if(r.url && !r.cover && !(r.url in ogMap) && _need.indexOf(r.url)<0) _need.push(r.url); });
+      if(_need.length){
+        try{
+          fetch(opts.previewUrl,{method:'POST',headers:{'Content-Type':'application/json',apikey:(opts.previewKey||''),Authorization:'Bearer '+(opts.previewKey||'')},body:JSON.stringify({urls:_need})})
+            .then(function(rr){ return rr.ok?rr.json():null; })
+            .then(function(res){
+              if(!res||!res.previews) return;
+              var changed=false;
+              _need.forEach(function(u){ if(!(u in ogMap)){ ogMap[u]=res.previews[u]||''; changed=true; } });
+              try{ localStorage.setItem(OGKEY, JSON.stringify(ogMap)); }catch(e){}
+              if(changed) paint();
+            }).catch(function(){});
+        }catch(e){}
+      }
+    }
   }
 
   function _injectCss(){

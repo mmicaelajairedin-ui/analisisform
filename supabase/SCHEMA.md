@@ -25,6 +25,7 @@ Si algo "no anda", suele ser porque falta correr uno de estos:
 - [ ] `docs_bucket.sql` — bucket `docs` (para que el coach suba PDF/Word a las sesiones)
 - [ ] `fit_ejercicios_real.sql` — columna `fit_ejercicios_real` en `candidatos` (el cliente registra lo que hizo distinto al plan del gym; el coach lo ve tachado + el real)
 - [ ] `fit_nutri_real.sql` — columna `fit_nutri_real` en `candidatos` (lo mismo pero para NUTRICIÓN: el cliente registra lo que comió distinto por comida; el coach lo ve tachado + lo real)
+- [ ] `link_previews.sql` — cache de portadas (og:image) de los Recursos. Además: deploy de la Edge Function `link-preview` (`supabase functions deploy link-preview --no-verify-jwt`)
 
 ---
 
