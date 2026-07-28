@@ -23,6 +23,7 @@ qué tablas y buckets existen, para qué sirven, y **cómo armar todo de cero**.
 Si algo "no anda", suele ser porque falta correr uno de estos:
 - [ ] `dataroom_docs.sql` — data room de inversores (tabla + bucket `dataroom` + accesos)
 - [ ] `docs_bucket.sql` — bucket `docs` (para que el coach suba PDF/Word a las sesiones)
+- [ ] `fit_ejercicios_real.sql` — columna `fit_ejercicios_real` en `candidatos` (el cliente registra lo que hizo distinto al plan del gym; el coach lo ve tachado + el real)
 
 ---
 
