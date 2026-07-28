@@ -507,29 +507,47 @@ function bootP2P(){
     onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Esperando'; },
     onChat:function(from,text){ try{ chatAdd(from||WHO, text, false); }catch(e){} },
     onError:function(e){ var c=(e&&(e.name||e.message))||'error';
-      if(/NotAllowed|Permission|Denied/i.test(c)){ waitState('Permití cámara y micrófono','Tocá el botón de abajo y aceptá el cartel del navegador para poder verte.',true); _p2pPermBtn(); }
+      if(/NotAllowed|Permission|Denied/i.test(c)){ waitState('Permití cámara y micrófono','Para poder verte, el navegador necesita permiso de cámara y micrófono.',true); _p2pPermUI(); }
       else waitState('No se pudo conectar el video','Reintentá o abrí en otra red. Detalle: '+c,true); }
   }).then(function(){ wireControlsP2P(); }).catch(function(){});
 }
-// Botón EN LA PANTALLA para pedir cámara/micrófono (en vez de buscar el candado).
-// Reintenta getUserMedia → el navegador vuelve a mostrar su cartel de permiso.
-// Si el permiso quedó BLOQUEADO de antes (no solo "sin decidir"), el reintento no
-// abre el cartel: ahí sí hace falta el candado, y lo explicamos.
-function _p2pPermBtn(){
-  try{
-    var se=el('wait-s'); if(!se) return;
-    if(document.getElementById('p2p-perm-btn')) return;
-    var b=document.createElement('button'); b.id='p2p-perm-btn'; b.className='btn btn-p';
-    b.style.cssText='margin-top:12px'; b.textContent='🎥 Permitir cámara y micrófono';
-    b.onclick=function(){ retryP2P(); };
-    se.parentNode.insertBefore(b, se.nextSibling);
-    // Si el navegador dice que YA está bloqueado, avisamos que hay que ir al candado.
-    try{ if(navigator.permissions&&navigator.permissions.query){ navigator.permissions.query({name:'camera'}).then(function(p){
-      if(p&&p.state==='denied'){ var h=document.createElement('div'); h.style.cssText='font-size:12px;color:var(--soft);margin-top:10px;line-height:1.5;max-width:340px'; h.innerHTML='Tu navegador ya lo tenía <b>bloqueado</b>. Tocá el ícono de <b>cámara</b> o el <b>candado 🔒</b> a la izquierda de la dirección (arriba), elegí <b>Permitir</b> y recargá.'; se.parentNode.insertBefore(h, b.nextSibling); }
-    }).catch(function(){}); } }catch(_e){}
-  }catch(e){}
+// Permiso de cámara/micrófono. La verdad incómoda de los navegadores: una vez que
+// el usuario BLOQUEÓ, JavaScript NO puede volver a abrir el cartel — solo se
+// desbloquea desde el navegador. Entonces:
+//   • si el permiso está 'prompt' (sin decidir / cerrado sin querer) → botón que
+//     reintenta y abre el cartel;
+//   • si está 'denied' (bloqueado) → NO mostramos un botón que no sirve, mostramos
+//     la GUÍA exacta para desbloquearlo.
+var _p2pRetried=false;
+function _p2pShowGuide(){
+  var se=el('wait-s'); if(!se || document.getElementById('p2p-perm-guide')) return;
+  var g=document.createElement('div'); g.id='p2p-perm-guide';
+  g.style.cssText='font-size:13px;color:#DFE9E3;margin:14px auto 0;line-height:1.65;max-width:380px;text-align:left;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:14px 16px';
+  g.innerHTML='El navegador tiene la cámara <b>bloqueada</b> y, por seguridad, un botón no puede reabrirla. Es rápido de arreglar:<br><br>'+
+    '1️⃣ Arriba, a la <b>izquierda</b> de <b>pathwaycareercoach.com</b>, tocá el ícono (📷 cámara, 🔒 candado o ⚙️ controles).<br>'+
+    '2️⃣ En <b>Cámara</b> y <b>Micrófono</b> poné <b>Permitir</b>.<br>'+
+    '3️⃣ <b>Recargá</b> la página (F5).';
+  se.parentNode.insertBefore(g, se.nextSibling);
 }
-function retryP2P(){ var b=document.getElementById('p2p-perm-btn'); if(b) b.remove(); try{ if(window.PWP2P) PWP2P.hangup(); }catch(e){} bootP2P(); }
+function _p2pShowBtn(){
+  var se=el('wait-s'); if(!se || document.getElementById('p2p-perm-btn')) return;
+  var b=document.createElement('button'); b.id='p2p-perm-btn'; b.className='btn btn-p';
+  b.style.cssText='margin-top:12px'; b.textContent='🎥 Permitir cámara y micrófono';
+  b.onclick=retryP2P;
+  se.parentNode.insertBefore(b, se.nextSibling);
+}
+function _p2pPermUI(){
+  // Si ya reintentamos y volvió a fallar → está bloqueado → solo la guía.
+  if(_p2pRetried){ _p2pShowGuide(); return; }
+  try{
+    if(navigator.permissions && navigator.permissions.query){
+      navigator.permissions.query({name:'camera'}).then(function(p){
+        if(p && p.state==='denied') _p2pShowGuide(); else _p2pShowBtn();
+      }).catch(_p2pShowBtn);
+    } else { _p2pShowBtn(); }
+  }catch(e){ _p2pShowBtn(); }
+}
+function retryP2P(){ _p2pRetried=true; var b=document.getElementById('p2p-perm-btn'); if(b) b.remove(); try{ if(window.PWP2P) PWP2P.hangup(); }catch(e){} bootP2P(); }
 function wireControlsP2P(){
   var mic=el('c-mic'); if(mic) mic.onclick=function(){ var m=PWP2P.toggleMic(); mic.classList.toggle('off', !!m); };
   var cam=el('c-cam'); if(cam) cam.onclick=function(){ var o=PWP2P.toggleCam(); cam.classList.toggle('off', !!o); };
