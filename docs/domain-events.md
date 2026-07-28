@@ -33,6 +33,9 @@ activación ya se emiten desde el frontend. Validado end-to-end en producción c
 | ✅ `ReportGenerated` | `panel-v2.html` · `_finPatch` del handler `plan-save` (informe guardado, ya lo ve el cliente) |
 | ✅ `ReportViewed` | `cliente.html` · `_renderMain('analisis')` (el cliente abre su informe · 1× por sesión) |
 | ✅ `TaskCompleted` | `cliente.html` · `tAcc()` (el cliente marca una acción de su etapa como hecha) |
+| ✅ `LeadCreated` | `index.html` · chatbot de la landing · y `soy-candidato.html` · registro "busco trabajo" |
+| ✅ `WowReached` | `cliente.html` · guardado del análisis de LinkedIn (interacción real · 1× por sesión) |
+| ✅ `ProgramFinished` | `panel-v2.html` · handler `cli-saveweek`, en la transición a la etapa 4 |
 
 Pendiente (siguientes pasos, en orden):
 1. Helper `emit()` server-side para edge functions (service role): `TrialStarted`,
@@ -47,7 +50,7 @@ todavía no hay suscriptores; se construyen en el Nivel 1–2.
 
 | Evento | Lo emite (dominio) | Lo escuchan | Cuándo |
 |--------|--------------------|-------------|--------|
-| `LeadCreated` | Commercial | Analytics · Commercial | entra un lead (landing, chat, alta manual) |
+| ✅ `LeadCreated` | Commercial | Analytics · Commercial | entra un lead (landing, chat, alta manual) |
 | ✅ `TrialStarted` | Billing | Analytics · Activation · Notifications | el coach arranca su prueba (alta admin o auto-registro) |
 | ✅ `ProfileCompleted` | Activation | Activation · Analytics | el coach completa perfil + branding |
 | ✅ `StripeConnected` | Billing | Activation · Analytics | el coach conecta su cobro (Connect) |
@@ -57,9 +60,9 @@ todavía no hay suscriptores; se construyen en el Nivel 1–2.
 | ✅ `ReportGenerated` | Coaching | Client · Activation · Analytics · HealthScore | el coach genera/guarda el informe (diagnóstico) — el cliente ya lo ve |
 | ✅ `ReportViewed` | Client | Activation · Analytics · HealthScore | el cliente abre su informe (señal de que lo leyó, no solo que se generó) |
 | ✅ `TaskCompleted` | Client | Coaching · Analytics · Automation · HealthScore | el cliente marca una acción de su etapa como hecha |
-| `WowReached` | Activation | Analytics · Commercial | hubo interacción real (momento WOW) |
+| ✅ `WowReached` | Activation | Analytics · Commercial | hubo interacción real (momento WOW) |
 | ✅ `PaymentSucceeded` | Billing | Marketplace · Ledger · Analytics · Commercial | el coach paga por primera vez (o reactiva) |
-| `ProgramFinished` | Coaching | Renovación · AI · Analytics · Notifications | termina un programa (4 semanas) |
+| ✅ `ProgramFinished` | Coaching | Renovación · AI · Analytics · Notifications | termina un programa (4 semanas) |
 | `CoachInactive` | HealthScore | CustomerSuccess · Notifications · Admin | el coach baja su actividad (riesgo) |
 | `ClientInactive` | HealthScore | Coaching · Notifications | el cliente deja de entrar |
 | `ReferralWon` | Commercial | Ledger · Analytics | un referido paga |
@@ -110,7 +113,7 @@ Para el siguiente paso, sin inventar nada nuevo — solo **agregar** una llamada
 | ✅ `PaymentSucceeded` | `stripe-webhook` (`becameActive` en `handleCoachSubscription` — 1 vez por transición a pago, no en cada cobro) | cableado |
 | ✅ `ClientInvited` / `ClientAccepted` | `panel-v2.html` (alta) · `cliente.html` (consentimiento) | cableado |
 | ✅ `SessionCompleted` | `panel-v2.html` (`ses-add`) | cableado |
-| `ProgramFinished` | cierre de semana/programa en el panel | pendiente |
+| ✅ `ProgramFinished` | `panel-v2.html` (`cli-saveweek`, transición a etapa 4) | cableado |
 | `MarketplaceSold` | `connect-checkout` (accept) · `stripe-webhook` (solicitud) | pendiente |
 
 Los tres nuevos (`TrialStarted`, `StripeConnected`, `PaymentSucceeded`) son
