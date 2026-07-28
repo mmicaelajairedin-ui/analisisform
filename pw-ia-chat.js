@@ -57,8 +57,8 @@
   function seed() {
     var g = (typeof CFG.greeting === "function" ? CFG.greeting() : CFG.greeting) ||
       (MODE === "coach"
-        ? "Hola 👋 Soy tu IA Pathway. Puedo ayudarte con tu agenda de la semana y con el uso de la plataforma. ¿Qué necesitás?"
-        : "Hola 👋 Soy tu IA Pathway. Puedo ayudarte con tu proceso, tus documentos y a moverte por la plataforma. ¿En qué te doy una mano?");
+        ? "Hola " + HAND_ICO + " Soy tu IA Pathway. Puedo ayudarte con tu agenda de la semana y con el uso de la plataforma. ¿Qué necesitás?"
+        : "Hola " + HAND_ICO + " Soy tu IA Pathway. Puedo ayudarte con tu proceso, tus documentos y a moverte por la plataforma. ¿En qué te doy una mano?");
     var txt = g.replace(/<br\s*\/?>/g, " ").replace(/<[^>]+>/g, "");
     return [{ from: "ia", html: g, txt: txt, acts: STARTERS.slice() }];
   }
@@ -120,6 +120,8 @@
   var WA_ICO = "<svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z'/></svg>";
   var CLOSE_ICO = "<svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><line x1='18' y1='6' x2='6' y2='18'/><line x1='6' y1='6' x2='18' y2='18'/></svg>";
   var SEND_ICO = "<svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><line x1='5' y1='12' x2='19' y2='12'/><polyline points='12 5 19 12 12 19'/></svg>";
+  var HAND_ICO = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' style='vertical-align:-3px'><path d='M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8'/><path d='M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/></svg>";
+  var HOW_ICO = "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' style='vertical-align:-2px'><polyline points='9 18 15 12 9 6'/></svg>";
 
   function launcher() {
     if (document.getElementById("pw-ia-btn")) return;
@@ -157,7 +159,7 @@
       if (!mine && m.acts && m.acts.length) {
         var chips = "<div class='pw-ia-acts'>" + m.acts.map(function (a) { return "<button class='pw-ia-chip' data-iago='" + esc(a.section) + "'>" + esc(a.emoji || "") + " " + esc(a.label) + "</button>"; }).join("") + "</div>";
         var howA = null; for (var hi = 0; hi < m.acts.length; hi++) { if (m.acts[hi].how) { howA = m.acts[hi]; break; } }
-        acts = chips + (howA ? "<div class='pw-ia-how'>👉 " + howA.how + "</div>" : "");
+        acts = chips + (howA ? "<div class='pw-ia-how'>" + HOW_ICO + " " + howA.how + "</div>" : "");
       }
       return "<div class='cp-iac-row cp-iac-row-" + (mine ? "me" : "them") + "'><div class='cp-iac-bubble " +
         (mine ? "cp-iac-me" : "cp-iac-them") + "'>" + m.html + "</div></div>" + acts + wa;
