@@ -3784,6 +3784,63 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "event bus: ReportGenerated se emite al guardar el informe (panel-v2)",
+    bug: "Los informes alimentan el flujo OS: el coach publico el diagnostico (handler 'plan-save', _finPatch). El cliente ya lo ve.",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("ReportGenerated"/.test(s)) return "panel-v2.html: se borro el emit de ReportGenerated.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ReportViewed se emite al abrir el informe (cliente.html)",
+    bug: "El 'visto' del informe: el cliente ABRIO su analisis (_renderMain('analisis')). Distingue leido de solo-generado.",
+    check() {
+      const s = read("cliente.html");
+      if (s && !/pwEmit\("ReportViewed"/.test(s)) return "cliente.html: se borro el emit de ReportViewed.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: TaskCompleted se emite al cumplir una accion (cliente.html)",
+    bug: "El cliente cumple una accion de su etapa (tAcc): alimenta el flujo con progreso real, no solo lo que genero el coach.",
+    check() {
+      const s = read("cliente.html");
+      if (s && !/pwEmit\("TaskCompleted"/.test(s)) return "cliente.html: se borro el emit de TaskCompleted.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: WowReached se emite al optimizar LinkedIn (cliente.html)",
+    bug: "Momento WOW / activacion: el cliente optimizo su LinkedIn con IA (interaccion real de valor).",
+    check() {
+      const s = read("cliente.html");
+      if (s && !/pwEmit\("WowReached"/.test(s)) return "cliente.html: se borro el emit de WowReached.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ProgramFinished se emite al llegar a la etapa 4 (panel-v2)",
+    bug: "Cierre de programa (ventana de renovacion): el cliente llego a la ultima etapa (handler 'cli-saveweek').",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("ProgramFinished"/.test(s)) return "panel-v2.html: se borro el emit de ProgramFinished.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: LeadCreated se emite al entrar un lead (landing)",
+    bug: "Tope del embudo: entra un lead por el chatbot (index.html) o el registro candidato (soy-candidato.html). Requiere pw-events.js cargado en esas paginas.",
+    check() {
+      const ix = read("index.html"), sc = read("soy-candidato.html");
+      if (ix && !/pwEmit\("LeadCreated"/.test(ix)) return "index.html: se borro el emit de LeadCreated.";
+      if (ix && !/pw-events\.js/.test(ix)) return "index.html: dejo de cargar pw-events.js (LeadCreated no emitiria).";
+      if (sc && !/pwEmit\("LeadCreated"/.test(sc)) return "soy-candidato.html: se borro el emit de LeadCreated.";
+      if (sc && !/pw-events\.js/.test(sc)) return "soy-candidato.html: dejo de cargar pw-events.js (LeadCreated no emitiria).";
+      return null;
+    },
+  },
   // ── metricas (Nivel 1) — la edge function que enriquecerá el tab Analíticas ──
   {
     name: "metricas: edge function read-only con gate de admin",

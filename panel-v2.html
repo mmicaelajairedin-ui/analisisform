@@ -10717,8 +10717,16 @@ document.addEventListener("click", function(ev){
   if(act==="cli-saveweek"){
     var wkid=el.getAttribute("data-id"); if(!wkid) return;
     var wkvv=state.cliWeek!=null?state.cliWeek:1;
+    // Semana previa: para emitir ProgramFinished solo en la TRANSICIÓN a la última
+    // etapa (4), no en cada guardado estando ya en la 4.
+    var _wkOld=0, _wkC=CLIENTS.filter(function(x){return String(x.id)===String(wkid);})[0];
+    try{ _wkOld=(_wkC&&parseInt(_wkC.week,10))||0; }catch(e){}
     _sbw("candidatos?id=eq."+encodeURIComponent(wkid),"PATCH",{semana_activa:wkvv})
-      .then(function(r){ if(!r.ok) throw 0; CLIENTS.forEach(function(x){ if(String(x.id)===String(wkid)) x.week=wkvv; }); state.cliWeek=null; toast("Semana actualizada ✓ — el cliente la ve"); render(); })
+      .then(function(r){ if(!r.ok) throw 0; CLIENTS.forEach(function(x){ if(String(x.id)===String(wkid)) x.week=wkvv; }); state.cliWeek=null; toast("Semana actualizada ✓ — el cliente la ve");
+        // OS Core: el cliente llegó a la última etapa (4) → cierre del programa
+        // (ventana de renovación). Best-effort, 1 vez por transición.
+        try{ if(window.pwEmit && wkvv>=4 && _wkOld<4){ var _em=(_wkC&&(_wkC.email||(_wkC.raw&&_wkC.raw.email)))||""; pwEmit("ProgramFinished",{dominio:"Coaching",entidad_tipo:"cliente",entidad_id:(""+_em).toLowerCase()||String(wkid),payload:{semana:wkvv}}); } }catch(_e){}
+        render(); })
       .catch(function(){ alert("No se pudo guardar la semana."); });
     return;
   }
@@ -11588,7 +11596,11 @@ document.addEventListener("click", function(ev){
     var _err=function(r){ return r.text().then(function(t){ var e=new Error("HTTP "+r.status+(t?(" · "+t.slice(0,160)):"")); throw e; }); };
     var _fail=function(e){ var m=(e&&e.message)||e||""; var rls=/row-level|permission|denied|policy|401|403|not_owner/i.test(""+m); alert("No se pudo guardar el diagnóstico.\n\n"+(rls?"El servidor rechazó el guardado (permisos). Si acabás de activar RLS, falta desplegar la función «guardar-informe» en Supabase.":("Detalle: "+m))+"\n\nTu texto quedó en pantalla — no se perdió. Reintenta."); };
     var _dj=JSON.stringify(d);
-    var _finPatch=function(){ toast("Diagnóstico guardado ✓ — ya lo ve el cliente"); loadReal(); };
+    var _finPatch=function(){ toast("Diagnóstico guardado ✓ — ya lo ve el cliente");
+      // OS Core: el informe quedó publicado (el cliente ya lo ve) → alimenta el
+      // flujo (activación / health score). Best-effort, nunca bloquea el guardado.
+      try{ if(window.pwEmit) pwEmit("ReportGenerated",{dominio:"Coaching",entidad_tipo:"cliente",entidad_id:(""+(psc.email||"")).toLowerCase(),payload:{via:"panel"}}); }catch(_e){}
+      loadReal(); };
     // Guardado directo a informes: sirve para admin o coach con JWT ligado. Es el
     // FALLBACK si la edge function no está disponible (no desplegada / offline).
     var _directSave=function(){
