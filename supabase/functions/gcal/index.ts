@@ -91,7 +91,16 @@ Deno.serve(async (req: Request) => {
     return json({ error: "supabase_unreachable" }, 502);
   }
 
-  const gcal = (cfg.gcal as { access_token?: string; refresh_token?: string; expiry?: number }) || {};
+  // Token desde la CAJA FUERTE (gcal_tokens). Fallback a configuracion.gcal por
+  // si quedara alguno sin migrar (transición) — así nunca deja de andar.
+  let gcal = (cfg.gcal as { access_token?: string; refresh_token?: string; expiry?: number }) || {};
+  try {
+    const tr = await fetch(
+      `${SB_URL}/rest/v1/gcal_tokens?coach_id=eq.${encodeURIComponent(coachId)}&select=token&limit=1`,
+      { headers: sbHeaders },
+    );
+    if (tr.ok) { const trows = await tr.json(); if (Array.isArray(trows) && trows[0] && trows[0].token) gcal = trows[0].token; }
+  } catch (_e) { /* usa el fallback de configuracion */ }
   if (!gcal.access_token && !gcal.refresh_token) {
     return json({ events: [], unconfigured: true });
   }
@@ -103,13 +112,14 @@ Deno.serve(async (req: Request) => {
     const refreshed = gcal.refresh_token ? await refreshAccessToken(gcal.refresh_token) : null;
     if (!refreshed) return json({ error: "token_refresh_failed", events: [] });
     accessToken = refreshed.token;
-    // Persistir el token nuevo (best-effort) para no refrescar en cada llamada.
+    // Persistir el token nuevo en la CAJA FUERTE (best-effort) para no refrescar
+    // en cada llamada. upsert por coach_id.
     try {
       const newGcal = { ...gcal, access_token: refreshed.token, expiry: refreshed.expiry };
-      await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}`, {
-        method: "PATCH",
-        headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify({ configuracion: { ...cfg, gcal: newGcal } }),
+      await fetch(`${SB_URL}/rest/v1/gcal_tokens`, {
+        method: "POST",
+        headers: { ...sbHeaders, "content-type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ coach_id: coachId, token: newGcal, updated_at: new Date().toISOString() }),
       });
     } catch (_e) { /* no romper por el guardado */ }
   }

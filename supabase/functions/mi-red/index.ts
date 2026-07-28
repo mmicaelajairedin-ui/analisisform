@@ -67,7 +67,19 @@ Deno.serve(async (req: Request) => {
   const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion`);
   const clientes = await q(`candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc`);
 
+  // Citas de TODA la red (agenda del owner + historial de sesiones por cliente).
+  // La RLS de citas es por coach → el owner no las lee directo; acá con service
+  // role las trae de todos sus coaches (+ las suyas) en una sola llamada. Ventana:
+  // últimos 120 días + todo lo futuro (mirror de _calLoad en el panel).
+  const coachIds = [owner.id, ...coaches.map((c: any) => c.id)].filter(Boolean);
+  let citas: any[] = [];
+  if (coachIds.length) {
+    const from = new Date(Date.now() - 120 * 86400000).toISOString();
+    const inList = coachIds.map((id) => encodeURIComponent(String(id))).join(",");
+    citas = await q(`citas?coach_id=in.(${inList})&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada`);
+  }
+
   // owner también es un coach asignable ("el owner es coach aunque luego no
   // quiera atender"). Se devuelve aparte para marcarlo como "Vos".
-  return json({ ok: true, org, owner, coaches, clientes });
+  return json({ ok: true, org, owner, coaches, clientes, citas });
 });

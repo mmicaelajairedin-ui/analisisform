@@ -76,8 +76,16 @@
     };
     p.onconnectionstatechange = function () {
       var s = p.connectionState;
-      if (s === "connected") _state("En llamada");
-      else if (s === "disconnected" || s === "failed") { _state("Reconectando…"); try { p.restartIce && p.restartIce(); } catch (e) {} }
+      if (s === "connected") { _state("En llamada"); if (failTimer) { clearTimeout(failTimer); failTimer = null; } failed = false; }
+      else if (s === "disconnected" || s === "failed") {
+        _state("Reconectando…"); try { p.restartIce && p.restartIce(); } catch (e) {}
+        // Si el ICE restart no reconecta en ~10s, la red bloquea el P2P (ni el TURN
+        // alcanza). Avisamos con onFail() → la Sala cae al respaldo (JaaS) sola.
+        if (!failTimer) failTimer = setTimeout(function () {
+          failTimer = null;
+          if (pc && pc.connectionState !== "connected" && !failed) { failed = true; try { opts.onFail && opts.onFail(); } catch (e) {} }
+        }, 10000);
+      }
       else if (s === "closed") { _state("Llamada terminada"); }
     };
     return p;
@@ -127,12 +135,23 @@
         localStream = stream; camTrack = stream.getVideoTracks()[0] || null;
         // Contenedor: <video> remoto a pantalla completa + <video> local chico (PiP).
         var c = (typeof opts.container === "string") ? document.getElementById(opts.container) : opts.container;
-        c.style.position = "relative"; c.style.background = "#0F1D16";
+        // NO pisar el position del contenedor si ya está posicionado (el #jaas de la
+        // Sala es position:absolute;inset:0;bottom:84px). Forzarlo a 'relative' rompía
+        // esa geometría y empujaba el PiP local fuera de vista en desktop. Solo lo
+        // hacemos posicionado si estaba 'static'.
+        try { var _cs = window.getComputedStyle(c); if (!_cs || _cs.position === "static") c.style.position = "relative"; } catch (e) { c.style.position = "relative"; }
+        c.style.background = "#14181B";
+        var _mob = false; try { _mob = !!(window.matchMedia && window.matchMedia("(max-width:1000px)").matches); } catch (e) {}
         remoteEl = document.createElement("video"); remoteEl.autoplay = true; remoteEl.playsInline = true;
-        remoteEl.style.cssText = "width:100%;height:100%;object-fit:cover;background:#0F1D16";
+        // Móvil → object-fit:cover (video A PANTALLA COMPLETA tipo WhatsApp, sin
+        // franjas). Desktop → contain (se ve el CUADRO COMPLETO del otro, sin el
+        // "mucho zoom" del recorte). El fondo #14181B hace de marco cuando hay franjas.
+        remoteEl.style.cssText = "width:100%;height:100%;object-fit:" + (_mob ? "cover" : "contain") + ";background:#14181B";
         var localEl = document.createElement("video"); localEl.autoplay = true; localEl.playsInline = true; localEl.muted = true;
         localEl.srcObject = stream; try { var lp = localEl.play(); if (lp && lp.catch) lp.catch(function () {}); } catch (e) {}
-        localEl.style.cssText = "position:absolute;right:14px;bottom:14px;width:26%;max-width:180px;border-radius:12px;object-fit:cover;box-shadow:0 4px 18px rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.5);z-index:2";
+        // PiP local: en móvil más chico, vertical (selfie) y levantado para no quedar
+        // tapado por los controles flotantes; en desktop apaisado, abajo a la derecha.
+        localEl.style.cssText = "position:absolute;right:14px;bottom:" + (_mob ? "104px" : "16px") + ";width:" + (_mob ? "32%" : "30%") + ";max-width:" + (_mob ? "148px" : "220px") + ";min-width:104px;aspect-ratio:" + (_mob ? "3/4" : "4/3") + ";border-radius:14px;object-fit:cover;box-shadow:0 6px 22px rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.7);z-index:5";
         c.appendChild(remoteEl); c.appendChild(localEl);
         try { opts.onLocalReady && opts.onLocalReady(stream); } catch (e) {}
         // 2) peer connection + tracks

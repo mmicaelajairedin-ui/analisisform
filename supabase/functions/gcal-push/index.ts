@@ -63,15 +63,24 @@ Deno.serve(async (req: Request) => {
   const ev = (body.event && typeof body.event === "object") ? body.event as Record<string, unknown> : {};
   if (!isUuid(coachId)) return json({ error: "coach_id_invalid" }, 400);
 
-  // 1) Token del coach (service role)
+  // 1) Token del coach desde la CAJA FUERTE (gcal_tokens, service role). Fallback
+  // a configuracion.gcal por si quedara alguno sin migrar.
   let refresh = "";
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=configuracion&limit=1`, { headers: svc });
-    if (r.ok) {
-      const rows = await r.json();
-      const cfg = (Array.isArray(rows) && rows[0] && rows[0].configuracion) || {};
-      const g = (cfg && cfg.gcal) || {};
-      refresh = String(g.refresh_token || "");
+    const tr = await fetch(`${SB_URL}/rest/v1/gcal_tokens?coach_id=eq.${encodeURIComponent(coachId)}&select=token&limit=1`, { headers: svc });
+    if (tr.ok) {
+      const trows = await tr.json();
+      const g = (Array.isArray(trows) && trows[0] && trows[0].token) || {};
+      refresh = String((g && g.refresh_token) || "");
+    }
+    if (!refresh) {
+      const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=configuracion&limit=1`, { headers: svc });
+      if (r.ok) {
+        const rows = await r.json();
+        const cfg = (Array.isArray(rows) && rows[0] && rows[0].configuracion) || {};
+        const g = (cfg && cfg.gcal) || {};
+        refresh = String(g.refresh_token || "");
+      }
     }
   } catch { return json({ error: "db_unreachable" }, 502); }
   // Sin conexión de escritura: NO es un error fatal — la reserva ya se guardó en
