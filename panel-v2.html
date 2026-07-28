@@ -9529,6 +9529,27 @@ function render(){
   }
 }
 
+// Da acceso al portal a un cliente que YA PAGÓ (cierra el círculo Pathway):
+// asegura su cuenta de login y le manda el email de bienvenida ("crea tu
+// contraseña y entra"). Se llama al ACEPTAR un cobro (sol-accept), NUNCA antes
+// de que haya pago. Best-effort: si algo falla, la coach reenvía desde la ficha.
+function _pwGrantAccess(email, name){
+  var em=(""+(email||"")).toLowerCase().trim(); if(!em) return;
+  var nm=name||em.split("@")[0];
+  _sb("usuarios?email=eq."+encodeURIComponent(em)+"&select=id&limit=1").then(function(_ur){
+    if(_ur&&_ur.length) return true;
+    return _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
+      return fetch(SB+"/rest/v1/usuarios",{method:"POST",headers:h,body:JSON.stringify({email:em,rol:"cliente",nombre:nm,activo:true})});
+    });
+  }).then(function(){
+    var _cn=(COACH&&COACH.name)||"tu coach";
+    var _cemail=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
+    var _cfoto=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim(); if(!/^https?:\/\//i.test(_cfoto)) _cfoto="";
+    var _cslug=((RCFG&&RCFG.slug)||(COACH&&COACH.slug)||"").toString().trim();
+    return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:em,name:nm,welcome:true,coach_name:_cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})});
+  }).catch(function(){});
+}
+
 /* ═══ Events ═══ */
 document.addEventListener("click", function(ev){
   // Modo privado: tocar un dato difuminado lo revela (en desktop también se ve
@@ -9680,33 +9701,36 @@ document.addEventListener("click", function(ev){
     _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
       return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:_snm,email:_sem,whatsapp:_scc.telefono||"",coach_id:(RME&&RME.id)||"",nicho:_snicho,semana_activa:1,activo:true,origen:"llamada"})});
     }).then(function(){
-      // Cerrar el flujo: crear la cuenta de login del cliente Y mandarle el email
-      // de bienvenida ("crea tu contraseña y entra"), IGUAL que "Agregar cliente".
-      // Antes convertir dejaba la cuenta creada pero SIN avisarle al cliente → no
-      // recibía nada y no podía entrar. check-first: si ya tiene cuenta, no la
-      // recreamos (sin 409 ni ruido en client_errors). rol='cliente' lo permite el RLS.
-      _sb("usuarios?email=eq."+encodeURIComponent(_sem)+"&select=id&limit=1").then(function(_ur){
-        if(_ur&&_ur.length) return true;
-        return _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
-          return fetch(SB+"/rest/v1/usuarios",{method:"POST",headers:h,body:JSON.stringify({email:_sem,rol:"cliente",nombre:_snm,activo:true})});
-        });
-      }).then(function(){
-        // Email de bienvenida (mismo camino que el alta y "Reenviar invitación").
-        var _cemail=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
-        var _cfoto=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim();
-        if(!/^https?:\/\//i.test(_cfoto)) _cfoto="";
-        var _cslug=((RCFG&&RCFG.slug)||(COACH&&COACH.slug)||"").toString().trim();
-        var _cn=(COACH&&COACH.name)||"tu coach";
-        return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:_sem,name:_snm,welcome:true,coach_name:_cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})})
-          .then(function(res){ return (res&&res.json)?res.json().catch(function(){return{};}):{}; });
-      }).then(function(j){
-        // Si el email NO salió, avisamos claro y guiamos al botón "Reenviar invitación".
-        if(j && j.sent===false){ toast("Ojo: el email de acceso a "+_snm+" no salió — abre su ficha y toca \"Reenviar invitación\"."); }
-      }).catch(function(){});
+      // "Fue bien" NO le da acceso todavía: el acceso al portal se crea SOLO
+      // cuando PAGA (círculo del cliente Pathway). Acá le mandamos TU lista de
+      // servicios (con detalle, para que pueda decidir/preguntar) + botón para
+      // elegir y pagar en tu perfil (checkout ya probado, comisión Pathway).
+      // Cuando pague y aceptes el cobro, ahí se le crea el acceso (ver sol-accept).
+      var _slug=((RCFG&&RCFG.slug)||(typeof RPROF!=="undefined"&&RPROF&&RPROF.slug)||(COACH&&COACH.slug)||"").toString().trim();
+      var _servs=(RCFG&&Object.prototype.toString.call(RCFG.servicios)==="[object Array]")?RCFG.servicios:[];
+      var _cn=(COACH&&COACH.name)||"tu coach";
+      var _cemail=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
+      var _cfoto=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim(); if(!/^https?:\/\//i.test(_cfoto)) _cfoto="";
+      if(!_slug){
+        toast("¡"+_snm+" quedó como lead! Para cobrarle, activá tu perfil público (Config → Perfil) y reenviale el link de tus servicios.");
+      } else {
+        var _rows=_servs.map(function(s){
+          var nm=esc((s&&(s.name||s.nombre))||"Servicio");
+          var ds=esc((s&&(s.desc||s.descripcion||s.detalle))||"");
+          return "<div style='border:1px solid #E2EAE4;border-radius:12px;padding:12px 14px;margin:8px 0'><div style='font-weight:700;color:#1B2E26;font-size:15px'>"+nm+"</div>"+(ds?"<div style='color:#4A5A50;font-size:13px;margin-top:3px;line-height:1.5'>"+ds+"</div>":"")+"</div>";
+        }).join("");
+        var _url="https://pathwaycareercoach.com/coach/"+encodeURIComponent(_slug);
+        var _html="<p style='margin:0 0 14px;color:#1B2E26;font-size:16px'>¡Hola "+esc(_snm)+"! 🎉</p>"+
+          "<p style='margin:0 0 14px;color:#3A4A40;line-height:1.6'>Gracias por la llamada. Para arrancar, elegí el servicio que mejor te venga y hacé tu pago seguro desde mi página. <strong>Apenas pagues, tenés acceso a tu portal</strong> para empezar.</p>"+
+          (_rows?"<div style='margin:6px 0 16px'>"+_rows+"</div>":"")+
+          "<p style='margin:16px 0'><a href='"+_url+"' style='display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700'>Ver precios, elegir y pagar &rarr;</a></p>"+
+          "<p style='margin:14px 0 0;color:#6b7a70;font-size:13px'>Pago seguro con tarjeta. Si tenés dudas, respondeme este mail.</p>";
+        fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:_sem,to_name:_snm,subject:"Tus servicios con "+_cn+" · elegí y empezá",html:_html,signature:"coach",coach:{nombre:_cn,email:_cemail,photo:_cfoto,slug:_slug}})}).catch(function(){});
+        toast("¡Le mandamos a "+_snm+" tus servicios para que elija y pague! Apenas pague, entra a tu portal.");
+      }
       _sbw("citas?id=eq."+encodeURIComponent(_scid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"convirtio"}).catch(function(){});
       _scc.resultado="convirtio"; _segFill();
-      toast("¡"+_snm+" ahora es cliente! Le enviamos un email para crear su contraseña y entrar.");
-      try{ pwAddXP(50,"Cliente nuevo"); }catch(e){}
+      try{ pwAddXP(50,"Venta enviada"); }catch(e){}
       try{ loadReal(); }catch(e){}
     }).catch(function(){ toast("No se pudo convertir. Revisa el email o créalo desde Clientes."); });
     return;
@@ -10253,10 +10277,16 @@ document.addEventListener("click", function(ev){
     var solId=el.getAttribute("data-id"); if(!solId) return;
     if(!REAL){ alert("Demo: en producción esto acepta/rechaza la solicitud real."); return; }
     var doAccept=(act==="sol-accept");
-    if(!confirm(doAccept?"¿Aceptar esta solicitud? Se captura el pago: cobras el neto y Pathway retiene su comisión escalonada (desde 5%).":"¿Rechazar esta solicitud? Se libera la retención y al candidato no se le cobra.")) return;
+    // Datos del comprador para darle acceso al portal apenas se captura el pago.
+    var _solRow=(RSOL||[]).filter(function(x){return String(x.id)===String(solId);})[0]||null;
+    if(!confirm(doAccept?"¿Aceptar esta solicitud? Se captura el pago: cobras el neto y Pathway retiene su comisión escalonada (desde 5%). Al cliente se le crea el acceso al portal.":"¿Rechazar esta solicitud? Se libera la retención y al candidato no se le cobra.")) return;
     if(_genBusy) return; _busyOn(); toast(doAccept?"Aceptando y cobrando…":"Rechazando…");
     fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:doAccept?"accept":"reject",solicitud_id:solId})})
-      .then(function(r){ _busyOff(); if(!r.ok) throw 0; toast(doAccept?"Solicitud aceptada ✓ — pago capturado":"Solicitud rechazada ✓"); loadReal(); })
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0;
+        // Pago capturado → el cliente ENTRA al portal: le creamos el acceso y el
+        // email de bienvenida. Aquí se cierra el círculo del cliente Pathway.
+        if(doAccept && _solRow && _solRow.candidato_email){ try{ _pwGrantAccess(_solRow.candidato_email, _solRow.candidato_nombre||""); }catch(e){} }
+        toast(doAccept?"Solicitud aceptada ✓ — pago capturado. Le mandamos al cliente su acceso al portal.":"Solicitud rechazada ✓"); loadReal(); })
       .catch(function(){ _busyOff(); alert("No se pudo procesar la solicitud. Reintenta en un momento."); });
     return;
   }
