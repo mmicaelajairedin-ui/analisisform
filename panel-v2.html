@@ -905,7 +905,9 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-ai-tab{flex:1;padding:11px 8px;font-size:12px;font-weight:600;color:var(--pw-text-soft);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;}
 .cp-ai-tab:hover{color:var(--pw-carbon);}
 .cp-ai-tab.is-on{color:var(--pw-bosque);border-bottom-color:var(--pw-bosque);}
-.cp-ai-scroll{flex:1;overflow-y:auto;}
+.cp-ai-scroll{flex:1;overflow-y:auto;overflow-x:hidden;}
+.cp-ai-msgs{max-width:100%;}
+.cp-ai-msgs a{overflow-wrap:anywhere;word-break:break-word;}
 .cp-ai-scroll::-webkit-scrollbar{width:6px;}
 .cp-ai-scroll::-webkit-scrollbar-thumb{background:rgba(31,42,35,.15);border-radius:3px;}
 .cp-ai-home{padding:13px 15px 15px;display:flex;flex-direction:column;gap:12px;}
@@ -1324,12 +1326,19 @@ function avImg(src, name, attrs){
 function _thumb(url, px){
   url=""+(url||""); if(!url || /^data:/i.test(url)) return url;
   if(!/ucarecd(n)?\.(net|com)/i.test(url)) return url;             // solo Uploadcare
-  if(/\/-\/(scale_crop|resize|preview)\b/.test(url)) return url;   // ya trae operación → no duplicar
+  var m=url.match(/^(https?:\/\/[^\/]+\/[0-9a-fA-F-]{36}\/)(.*)$/);  // …/<uuid>/<resto>
+  if(!m) return url;
+  var base=m[1], rest=m[2]||"";
+  // Conservar las operaciones que ya trae (p.ej. un recorte de cara intencional)
+  // pero SACAR el nombre de archivo final, y AGREGAR al final el recorte chico
+  // exacto. Antes: si la URL ya traía -/preview/1000x1000/ nos rendíamos y el
+  // navegador achicaba 1000px→38px (borroso). Ahora siempre pedimos el recorte
+  // al tamaño real ×dpr, encadenado después de lo que ya hubiera.
+  var ops = (rest.indexOf("-/")>=0) ? rest.replace(/[^\/]*$/,"") : "";
   var dpr=1; try{ if(window.devicePixelRatio>1) dpr=2; }catch(e){}
   var s=Math.max(1,Math.round((px||40)*dpr));
-  var ops="-/scale_crop/"+s+"x"+s+"/center/-/quality/smart/-/format/auto/";
-  var m=url.match(/^(https?:\/\/[^\/]+\/[0-9a-fA-F-]{36}\/)(.*)$/);  // …/<uuid>/<resto>
-  return m ? (m[1]+ops+m[2]) : url;
+  var q = dpr>1 ? "smart_retina" : "better";   // nítido en retina, buena calidad en 1x
+  return base + ops + "-/scale_crop/"+s+"x"+s+"/center/-/quality/"+q+"/-/format/auto/";
 }
 // Avatar chico para las burbujas de chat. Solo muestra foto si es URL real
 // (http). Si no hay foto, devuelve "" (la burbuja queda como estaba).
@@ -1343,7 +1352,7 @@ function _chatAv(url, name){
 // Avatar para "Equipo Pathway" en el chat: la foto real de Micaela (misma que
 // usa el About público /sobre.html) para que el coach sienta que habla con una
 // persona del equipo, no con un bot. Es un asset público del dominio.
-var ADMIN_PHOTO="/assets/micaela.jpg"; // Equipo Pathway = foto de Micaela
+var ADMIN_PHOTO="https://pathwaycareercoach.com/assets/micaela.jpg"; // Equipo Pathway = foto de Micaela (URL absoluta: _chatAv exige http/data)
 
 // ÚNICA fuente de verdad para los nombres por defecto de las 4 etapas editables
 // (semanas 1-4; la 5 es "Revisión" fija). Coinciden con la narrativa del portal
@@ -6638,7 +6647,7 @@ function _coachMicaBubbles(){
     var av = mine ? _chatAv(COACH&&COACH.photo,(COACH&&COACH.name)) : _chatAv(ADMIN_PHOTO,'Pathway');
     var col = "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(_msgBodyText(m))+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word'>"+_linkTxt(_msgBodyText(m))+"</div>"+
     "</div>";
     return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
   }).join("");
@@ -6738,7 +6747,7 @@ function _coachRedBubbles(){
     var av=mine?_chatAv(COACH&&COACH.photo,(COACH&&COACH.name)):_chatAv(ADMIN_PHOTO,who0);
     var col="<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(_msgBodyText(m))+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word'>"+_linkTxt(_msgBodyText(m))+"</div>"+
     "</div>";
     return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
   }).join("");
@@ -6780,7 +6789,7 @@ function _coachCanalBubbles(){
     var av=mine?_chatAv(COACH&&COACH.photo,(COACH&&COACH.name)):_chatAv(m.autor_rol==="owner"?ADMIN_PHOTO:"", m.autor_nombre||nm);
     var col="<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(_msgBodyText(m))+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word'>"+_linkTxt(_msgBodyText(m))+"</div>"+
     "</div>";
     return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
   }).join("");
@@ -6965,7 +6974,7 @@ function viewAdminThreadInCabra(coachId){
     var av = mine ? _chatAv((COACH&&COACH.photo)||ADMIN_PHOTO,(COACH&&COACH.name)||'Micaela') : _chatAv(coachPhoto, coachName);
     var col = "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(_msgBodyText(m))+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word'>"+_linkTxt(_msgBodyText(m))+"</div>"+
     "</div>";
     return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
   }).join("");
@@ -7776,7 +7785,7 @@ function _coachChatBlock(c){
     var who = mine ? "Tú (admin)" : (c.nombre||c.email||"coach");
     return "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:4px;margin-bottom:12px'>"+
       "<div style='font-size:11px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='max-width:78%;background:"+bg+";color:"+color+";padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(_msgBodyText(m))+"</div>"+
+      "<div style='max-width:78%;background:"+bg+";color:"+color+";padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word'>"+_linkTxt(_msgBodyText(m))+"</div>"+
     "</div>";
   }).join("");
   if(!bubbles){
@@ -7810,7 +7819,7 @@ function _adminRanking(){
     var nm=c.nombre||c.email||"Coach";
     return "<div data-act='coach-view:"+esc(c.id)+"' style='display:grid;grid-template-columns:32px 38px 1fr auto auto;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
       "<span style='font-family:var(--pw-serif);font-size:17px;font-weight:700;color:"+rankCol+";text-align:center'>"+(i+1)+"</span>"+
-      "<img src='"+esc(c.foto_url||makeAvatar(nm))+"' onerror=\"this.onerror=null;this.src='"+makeAvatar(nm)+"'\" alt='' style='width:34px;height:34px;border-radius:50%;object-fit:cover'>"+
+      "<img src='"+esc(c.foto_url?_thumb(c.foto_url,34):makeAvatar(nm))+"' onerror=\"this.onerror=null;this.src='"+makeAvatar(nm)+"'\" alt='' style='width:34px;height:34px;border-radius:50%;object-fit:cover'>"+
       "<span style='font-size:13.5px;font-weight:600;color:var(--pw-carbon);overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+esc(nm)+(c.rol==="admin"?" <span style='font-size:10px;color:var(--pw-text-muted)'>(admin)</span>":"")+"</span>"+
       medImg+
       "<span style='font-family:var(--pw-serif);font-size:16px;font-weight:700;color:var(--pw-bosque)'>"+pts+"</span>"+
@@ -7994,7 +8003,7 @@ function viewAdmin(){
         "</select>";
     var _h=actv[1]||""; var healthLbl=off?"Inactiva":(_h==="ok"?"Activa":_h==="warn"?"Arrancando":"Sin uso"); var _hc=off?"danger":(_h||"warn");
     var _bc=(off||_hc==="danger")?"var(--pw-danger)":(_hc==="warn"?"#B5651D":"var(--pw-sendero)");
-    var _av=c.fotoUrl?"<img src='"+esc(c.fotoUrl)+"' class='cp-coach-av' alt='' referrerpolicy='no-referrer'>":"<div class='cp-coach-av cp-coach-av-i'>"+esc((""+(c.n||"?")).charAt(0).toUpperCase())+"</div>";
+    var _av=c.fotoUrl?"<img src='"+esc(_thumb(c.fotoUrl,42))+"' class='cp-coach-av' alt='' referrerpolicy='no-referrer'>":"<div class='cp-coach-av cp-coach-av-i'>"+esc((""+(c.n||"?")).charAt(0).toUpperCase())+"</div>";
     var _stat=function(v,k){return "<div class='cp-coach-st'><div class='v'>"+v+"</div><div class='k'>"+k+"</div></div>";};
     return "<div class='cp-coach"+(off?" off":"")+"' data-nm='"+esc((""+(c.n||"")).toLowerCase())+"' style='border-left:4px solid "+_bc+"'>"+
       "<div class='cp-coach-top'>"+_av+
