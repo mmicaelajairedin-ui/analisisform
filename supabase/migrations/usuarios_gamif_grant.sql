@@ -45,6 +45,15 @@ alter table public.usuarios add column if not exists last_seen  timestamptz;
 revoke update on public.usuarios from anon;
 grant  update (xp, badges, game_pts, game_medal, last_seen) on public.usuarios to anon;
 
+-- LECTURA de estas mismas columnas: se agregaron DESPUÉS de correr
+-- usuarios_protect_password.sql, cuyo re-grant de SELECT-por-columna solo cubrió
+-- las columnas que existían en ESE momento. Sin este GRANT, leer p.ej.
+-- `select=game_pts` (el panel restaura el puntaje al cargar) devuelve 403
+-- "permission denied for column game_pts" tanto a anon como a authenticated
+-- (era el 2º patrón: GET /rest/v1/usuarios 403). Otorgamos SELECT explícito de
+-- las columnas de telemetría a AMBOS roles. (No abre password_hash ni nada más.)
+grant select (xp, badges, game_pts, game_medal, last_seen) on public.usuarios to anon, authenticated;
+
 -- Política de UPDATE para anon (la tabla ya tiene RLS activo por el login).
 -- El GRANT de columnas de arriba es el que limita QUÉ se puede escribir; esta
 -- política solo habilita la operación de UPDATE para la fila.
