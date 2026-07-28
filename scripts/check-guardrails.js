@@ -1600,6 +1600,26 @@ const RULES = [
     },
   },
   {
+    name: "convertir en cliente: manda el email de acceso (no deja al cliente sin invitación)",
+    bug: "\"Convertir en cliente\" (embudo de llamadas, act=seg-convert) creaba la " +
+         "ficha + la cuenta de login pero NO le mandaba nada al cliente → quedaba " +
+         "creado sin acceso y no podía entrar. Ahora, igual que \"Agregar cliente\", " +
+         "dispara el email de bienvenida vía la edge function password-reset " +
+         "(welcome:true). Sin esto el cliente convertido nunca recibe su acceso.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const i = s.indexOf('act==="seg-convert"');
+      if (i < 0) return "panel-v2.html: no se encuentra el handler act=seg-convert.";
+      // Ventana del handler hasta el próximo handler (act=cal-asis) o 2500 chars.
+      const j = s.indexOf('act==="cal-asis"', i);
+      const block = s.slice(i, j > i ? j : i + 2500);
+      if (!/password-reset/.test(block) || !/welcome\s*:\s*true/.test(block))
+        return "panel-v2.html: seg-convert dejó de mandar el email de bienvenida (password-reset welcome:true) → el cliente convertido queda sin acceso.";
+      return null;
+    },
+  },
+  {
     name: "aislamiento: la lista de clientes NO incluye huérfanos (ni para el admin)",
     bug: "El admin cargaba la lista de clientes con 'coach_id.eq.él O coach_id IS " +
          "NULL' → un cliente huérfano (sin coach) de OTRO nicho (ej. fitness) se " +
@@ -3670,7 +3690,7 @@ const RULES = [
       if (!/function _seguimientosCard\(/.test(p) || !/function _segHistModal\(/.test(p)) return "panel-v2.html: falta la tarjeta/historial de seguimientos (_seguimientosCard/_segHistModal).";
       if (!/_seguimientosCard\(\)\+/.test(p)) return "panel-v2.html: la tarjeta de Seguimientos ya no se renderiza en el Resumen.";
       if (!/act==="seg-convert"/.test(p)) return "panel-v2.html: falta el handler 'Convertir en cliente' (seg-convert).";
-      const seg = p.slice(p.indexOf('act==="seg-convert"'), p.indexOf('act==="seg-convert"') + 2000);
+      const seg = p.slice(p.indexOf('act==="seg-convert"'), p.indexOf('act==="seg-convert"') + 4000);
       if (!/fetch\(SB\+"\/rest\/v1\/candidatos"/.test(seg)) return "panel-v2.html: seg-convert ya no da de alta el candidato (POST candidatos).";
       if (!/resultado:"convirtio"/.test(seg)) return "panel-v2.html: seg-convert ya no marca la cita como convertida (resultado=convirtio).";
       if (!/if\(_SEG_DATA===null\) _segLoad\(\)/.test(p)) return "panel-v2.html: el Resumen ya no dispara la carga de seguimientos (_segLoad).";

@@ -9536,17 +9536,32 @@ document.addEventListener("click", function(ev){
     _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
       return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:_snm,email:_sem,whatsapp:_scc.telefono||"",coach_id:(RME&&RME.id)||"",nicho:_snicho,semana_activa:1,activo:true,origen:"llamada"})});
     }).then(function(){
-      // Login del cliente: check-first (si ya tiene cuenta, no lo recreamos → sin
-      // 409 ni ruido en client_errors). rol='cliente' lo permite el RLS anon.
+      // Cerrar el flujo: crear la cuenta de login del cliente Y mandarle el email
+      // de bienvenida ("crea tu contraseña y entra"), IGUAL que "Agregar cliente".
+      // Antes convertir dejaba la cuenta creada pero SIN avisarle al cliente → no
+      // recibía nada y no podía entrar. check-first: si ya tiene cuenta, no la
+      // recreamos (sin 409 ni ruido en client_errors). rol='cliente' lo permite el RLS.
       _sb("usuarios?email=eq."+encodeURIComponent(_sem)+"&select=id&limit=1").then(function(_ur){
-        if(_ur&&_ur.length) return;
-        _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
+        if(_ur&&_ur.length) return true;
+        return _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
           return fetch(SB+"/rest/v1/usuarios",{method:"POST",headers:h,body:JSON.stringify({email:_sem,rol:"cliente",nombre:_snm,activo:true})});
-        }).catch(function(){});
+        });
+      }).then(function(){
+        // Email de bienvenida (mismo camino que el alta y "Reenviar invitación").
+        var _cemail=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
+        var _cfoto=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim();
+        if(!/^https?:\/\//i.test(_cfoto)) _cfoto="";
+        var _cslug=((RCFG&&RCFG.slug)||(COACH&&COACH.slug)||"").toString().trim();
+        var _cn=(COACH&&COACH.name)||"tu coach";
+        return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:_sem,name:_snm,welcome:true,coach_name:_cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})})
+          .then(function(res){ return (res&&res.json)?res.json().catch(function(){return{};}):{}; });
+      }).then(function(j){
+        // Si el email NO salió, avisamos claro y guiamos al botón "Reenviar invitación".
+        if(j && j.sent===false){ toast("Ojo: el email de acceso a "+_snm+" no salió — abre su ficha y toca \"Reenviar invitación\"."); }
       }).catch(function(){});
       _sbw("citas?id=eq."+encodeURIComponent(_scid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"convirtio"}).catch(function(){});
       _scc.resultado="convirtio"; _segFill();
-      toast("¡"+_snm+" ahora es cliente! Su ficha ya tiene las notas de la llamada.");
+      toast("¡"+_snm+" ahora es cliente! Le enviamos un email para crear su contraseña y entrar.");
       try{ pwAddXP(50,"Cliente nuevo"); }catch(e){}
       try{ loadReal(); }catch(e){}
     }).catch(function(){ toast("No se pudo convertir. Revisa el email o créalo desde Clientes."); });
