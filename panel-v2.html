@@ -1378,7 +1378,7 @@ function _demoSeedSes(tipo){
 }
 // Campos de `candidatos` que la coach puede editar en el demo y que el portal
 // del cliente sabe leer. Solo estos se vuelcan al overlay (no estado interno).
-var _DEMO_RAW_FIELDS=["nombre","email","cargo","whatsapp","rol","situacion","urgencia","sector","exp","ciudad","modalidad","educacion","idiomas","linkedin","linkedin_texto","objetivo","logro","extra","obstaculos","semana_activa","etapas","carta_presentacion","cv_texto","habilidades","acciones_progreso","edad","nivel","altura","peso","dias","lugar","equipo","lesiones","medicacion","restricciones","nutricion","fit_rutina","fit_antro","fit_habitos","fit_nutricion","ingresos","gastos","deudas","ahorro_actual","objetivo_ahorro","plazo","fin_pres","fin_objetivos","fin_deudas","fin_patrimonio","fin_diagnostico"];
+var _DEMO_RAW_FIELDS=["nombre","email","cargo","whatsapp","rol","situacion","urgencia","sector","exp","ciudad","modalidad","educacion","idiomas","linkedin","linkedin_texto","objetivo","logro","extra","obstaculos","semana_activa","etapas","carta_presentacion","cv_texto","habilidades","acciones_progreso","edad","nivel","altura","peso","dias","lugar","equipo","lesiones","medicacion","restricciones","nutricion","fit_rutina","fit_antro","fit_habitos","fit_nutricion","fit_ejercicios_real","ingresos","gastos","deudas","ahorro_actual","objetivo_ahorro","plazo","fin_pres","fin_objetivos","fin_deudas","fin_patrimonio","fin_diagnostico"];
 var _demoLastSnap="";
 // Snapshot del cliente de ejemplo → overlay del nicho. Se llama desde render()
 // (catch-all: cualquier edición del demo termina en un render). Con detección
@@ -1603,6 +1603,12 @@ function exampleFor(tipo){
       {semana:3,dia:"Miércoles · Pierna",nombre:"Peso muerto rumano",meta:"4×10 · 45 kg",foto:""},
       {semana:3,dia:"Viernes · Full body",nombre:"Sentadilla goblet",meta:"3×12 · 16 kg",foto:""}
     ]);
+    // Ejemplo: lo que María registró que hizo distinto al plan (el coach lo ve
+    // tachado + el real). Uno con más peso/reps, otro con ejercicio cambiado.
+    c.raw.fit_ejercicios_real=JSON.stringify({
+      "1|Lunes · Tren superior|Press de banca":{m:"4×12 · 35 kg",n:"",ts:"2026-07-27"},
+      "1|Miércoles · Tren inferior|Sentadilla":{m:"",n:"Prensa de piernas",ts:"2026-07-25"}
+    });
     c.inf={id:"ejemplo-informe-fit",d:{
       resumen:"María parte de 82 kg con 24% de grasa y mucha motivación, pero sin una rutina estructurada ni hábitos de entrenamiento constantes. El objetivo de estas semanas es bajar grasa y ganar músculo de forma segura y progresiva.",
       fortalezas:["Muy constante con las sesiones","Sin lesiones activas — puede progresar con seguridad","Ya camina ~8.000 pasos casi a diario"],
@@ -4782,6 +4788,10 @@ function viewClienteDetalle(c){
   } else if(t==="fit_rutina"){
     var RUT=_rutToArr((c.raw&&c.raw.fit_rutina)||"");
     var RUTSEM=[]; try{ var _rs=JSON.parse((c.raw&&c.raw.etapas)||"null"); if(Object.prototype.toString.call(_rs)==="[object Array]") RUTSEM=_rs; }catch(e){ RUTSEM=[]; }
+    // Lo que el CLIENTE registró que hizo distinto al plan (fit_ejercicios_real).
+    // Se muestra inline: el valor del plan tachado + el real al lado (sin cuadros nuevos).
+    var FREAL={}; try{ FREAL=JSON.parse((c.raw&&c.raw.fit_ejercicios_real)||"{}")||{}; }catch(e){ FREAL={}; }
+    var _exKeyP=function(e){ return (parseInt(e.semana,10)||1)+"|"+((e.dia||"")+"")+"|"+((e.nombre||"")+""); };
     // Agrupado por SEMANA (header claro), y dentro por día.
     var byWk={}, wkOrder=[];
     RUT.forEach(function(e){ var w=parseInt(e.semana,10)||1; if(!byWk[w]){byWk[w]=[];wkOrder.push(w);} byWk[w].push(e); });
@@ -4829,8 +4839,20 @@ function viewClienteDetalle(c){
           // El coach ve la foto que verá el cliente: la suya si la subió, si no la automática del banco (por nombre).
           var _own=e.foto, _auto=(!_own&&window.PW_EXBANK)?PW_EXBANK.foto(e.nombre):"";
           var thumb="<div style='position:relative;width:38px;height:38px;border-radius:8px;background:var(--pw-bg);display:flex;align-items:center;justify-content:center;font-size:16px;overflow:hidden'>🏋️"+((_own||_auto)?"<img src='"+esc(_own||_auto)+"' onerror=\"this.remove()\" style='position:absolute;inset:0;width:100%;height:100%;object-fit:cover'>":"")+"</div>";
+          // ¿El cliente hizo algo distinto? plan tachado + real (nombre y/o series×reps·peso).
+          var _rl=FREAL[_exKeyP(e)]||null;
+          var _chg=_rl && ((_rl.n&&_rl.n!==(e.nombre||"")) || (_rl.m&&_rl.m!==(e.meta||"")));
+          var _sWas="text-decoration:line-through;color:var(--pw-text-soft)", _sNow="color:var(--pw-bosque);font-weight:700";
+          var _nameHtml=(_rl&&_rl.n&&_rl.n!==(e.nombre||""))
+            ? "<span style='"+_sWas+"'>"+esc(e.nombre||"")+"</span> <span style='"+_sNow+"'>→ "+esc(_rl.n)+"</span>"
+            : esc(e.nombre||"");
+          var _metaBase=esc(e.meta||"")+(e.rir?(" · "+(/rir/i.test(e.rir)?esc(e.rir):("RIR "+esc(e.rir)))):"")+(e.descanso?(" · ⏱ "+esc(e.descanso)):"")+(_own?"":(_auto?" · foto automática":" · sin foto"));
+          var _metaHtml=(_rl&&_rl.m&&_rl.m!==(e.meta||""))
+            ? "<span style='"+_sWas+"'>"+esc(e.meta||"")+"</span> <span style='"+_sNow+"'>→ "+esc(_rl.m)+"</span>"
+            : _metaBase;
+          var _chgBadge=_chg?" <span style='display:inline-block;margin-left:4px;padding:1px 7px;border-radius:6px;background:rgba(45,106,79,.12);color:var(--pw-bosque);font-size:10px;font-weight:700;vertical-align:middle'>✎ lo cambió</span>":"";
           return "<div style='display:flex;align-items:center;gap:10px;border-top:1px solid var(--pw-border);padding:8px 0'>"+thumb+
-            "<div style='flex:1'><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+esc(e.nombre||"")+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(e.meta||"")+(e.rir?(" · "+(/rir/i.test(e.rir)?esc(e.rir):("RIR "+esc(e.rir)))):"")+(e.descanso?(" · ⏱ "+esc(e.descanso)):"")+(_own?"":(_auto?" · foto automática":" · sin foto"))+"</div></div>"+
+            "<div style='flex:1'><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+_nameHtml+_chgBadge+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+_metaHtml+"</div></div>"+
             "<label class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 10px;margin-right:5px;cursor:pointer' title='Subir/cambiar foto'>📷<input type='file' accept='image/*' class='exfoto-inp' data-id='"+esc(c.id)+"' data-idx='"+ix+"' style='display:none'></label>"+
             "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px;margin-right:5px' data-act='fit-ex-edit' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Editar</button>"+
             "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px' data-act='fit-ex-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Quitar</button></div>";

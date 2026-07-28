@@ -533,12 +533,25 @@ function toggleSb(){ document.getElementById('sb').classList.toggle('open'); doc
 // nunca veía qué entrenó. Ahora se guarda por día; al completar el día se marca
 // el gym en fit_habitos (que el coach ya ve en el calendario).
 var FED={}, EXDONE={};
+// FREAL: lo que el cliente REALMENTE hizo cuando difiere del plan (hizo más
+// series/peso, o cambió el ejercicio). Se guarda por ejercicio (misma clave que
+// _exKey, sin fecha: guardamos "lo último que hizo") en candidatos.fit_ejercicios_real.
+// El coach lo ve en su panel: el valor del plan tachado + el real al lado.
+//   FREAL = { "1|Lunes|Press de banca": { m:"4×12 · 35 kg", n:"Press inclinado", ts:"2026-07-28" } }
+var FREAL={};
 function _exKey(e){ return (parseInt(e.semana,10)||1)+'|'+((e.dia||'')+'')+'|'+((e.nombre||'')+''); }
 function _exToday(){ return (typeof pwHoy==='function')?pwHoy():''; }
 function _exLoad(){
   try{ FED=JSON.parse((CRAW&&CRAW.fit_ejercicios_done)||'{}')||{}; }catch(e){ FED={}; }
   if(!FED||typeof FED!=='object') FED={};
   EXDONE=FED[_exToday()]=FED[_exToday()]||{};
+  try{ FREAL=JSON.parse((CRAW&&CRAW.fit_ejercicios_real)||'{}')||{}; }catch(e){ FREAL={}; }
+  if(!FREAL||typeof FREAL!=='object') FREAL={};
+}
+function _exRealSave(){
+  var j=JSON.stringify(FREAL); if(CRAW) CRAW.fit_ejercicios_real=j;
+  if(!CID) return; // demo (cliente de ejemplo): solo en pantalla
+  sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_ejercicios_real:j}).catch(function(){ if(typeof showToast==='function') showToast('⚠️ No se pudo guardar el cambio. Revisa tu conexión.'); });
 }
 function _exSave(){
   if(!CID) return;
@@ -1081,7 +1094,63 @@ function _exHtml(e){
   var _ts='display:inline-block;margin-left:6px;padding:1px 7px;border-radius:6px;background:rgba(31,42,35,.09);font-size:10.5px;font-weight:600;color:var(--muted,#6b7a70);vertical-align:middle;white-space:nowrap';
   var _tags=(_rir?'<span style="'+_ts+'">'+esc(_rir)+'</span>':'')+(e.descanso?'<span style="'+_ts+'">⏱ '+esc(e.descanso)+'</span>':'');
   var _ek=_exKey(e), _edone=EXDONE[_ek]?' done':'';   // restaura lo marcado hoy
-  return '<div class="ex'+_edone+'" data-exk="'+esc(_ek)+'" onclick="toggleEx(this)"><div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>'+thumb+'<div class="ex-body"><div class="ex-name">'+esc(e.nombre||'')+'</div><div class="ex-meta">'+esc(e.meta||'')+_tags+'</div></div></div>';
+  // ¿El cliente registró que hizo algo distinto al plan? → plan tachado + real.
+  var _rl=FREAL[_ek]||null;
+  var _metaHtml;
+  if(_rl && ((_rl.m && _rl.m!==(e.meta||'')) || (_rl.n && _rl.n!==(e.nombre||'')))){
+    var _parts=[];
+    if(_rl.n && _rl.n!==(e.nombre||'')) _parts.push('🔁 <s class="ex-was">'+esc(e.nombre||'')+'</s> <span class="ex-now">'+esc(_rl.n)+'</span>');
+    if(_rl.m && _rl.m!==(e.meta||'')) _parts.push((e.meta?'<s class="ex-was">'+esc(e.meta||'')+'</s> ':'')+'<span class="ex-now">'+esc(_rl.m)+'</span>');
+    _metaHtml=_parts.join(' · ')+_tags;
+  } else {
+    _metaHtml=esc(e.meta||'')+_tags;
+  }
+  var _adj='<button class="ex-adj" type="button" onclick="event.stopPropagation();exAdj(this)" data-ek="'+esc(_ek)+'" data-pn="'+esc(e.nombre||'')+'" data-pm="'+esc(e.meta||'')+'" title="Registrar lo que hiciste" aria-label="Registrar lo que hiciste">✎</button>';
+  return '<div class="ex'+_edone+'" data-exk="'+esc(_ek)+'" onclick="toggleEx(this)"><div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>'+thumb+'<div class="ex-body"><div class="ex-name">'+esc(e.nombre||'')+'</div><div class="ex-meta">'+_metaHtml+'</div></div>'+_adj+'</div>';
+}
+// Editor inline "lo que hiciste": aparece debajo del ejercicio (no agrega un
+// cuadro nuevo al layout — es una fila plegable). Dos campos: lo que hiciste
+// (series×reps · peso) y, opcional, el ejercicio por el que lo cambiaste.
+function exAdj(btn){
+  var row=btn.closest('.ex'); if(!row) return;
+  var ek=btn.getAttribute('data-ek')||'', pn=btn.getAttribute('data-pn')||'', pm=btn.getAttribute('data-pm')||'';
+  // Toggle: si ya está abierto, cerrar.
+  var nx=row.nextElementSibling;
+  if(nx && nx.classList && nx.classList.contains('ex-adjbox')){ nx.remove(); return; }
+  var rl=FREAL[ek]||{};
+  var vM=(rl.m!=null?rl.m:''), vN=(rl.n!=null?rl.n:'');
+  var box=document.createElement('div');
+  box.className='ex-adjbox';
+  box.innerHTML=
+    '<div class="ex-adj-h">¿Hiciste algo distinto al plan? Registralo — tu coach lo ve.</div>'+
+    '<input class="ex-adj-in" data-f="m" type="text" placeholder="Lo que hiciste (ej. 4×12 · 35 kg)" value="'+esc(vM)+'">'+
+    '<input class="ex-adj-in" data-f="n" type="text" placeholder="¿Otro ejercicio? (opcional, ej. Press inclinado)" value="'+esc(vN)+'">'+
+    '<div class="ex-adj-btns">'+
+      '<button type="button" class="ex-adj-save" onclick="exAdjSave(this,\''+esc(ek).replace(/'/g,"\\'")+'\',\''+esc(pn).replace(/'/g,"\\'")+'\',\''+esc(pm).replace(/'/g,"\\'")+'\')">Guardar</button>'+
+      (rl.m||rl.n?'<button type="button" class="ex-adj-clear" onclick="exAdjClear(this,\''+esc(ek).replace(/'/g,"\\'")+'\')">Volver al plan</button>':'')+
+      '<button type="button" class="ex-adj-cancel" onclick="this.closest(\'.ex-adjbox\').remove()">Cancelar</button>'+
+    '</div>';
+  row.parentNode.insertBefore(box, row.nextSibling);
+  var f=box.querySelector('.ex-adj-in'); if(f) f.focus();
+}
+function exAdjSave(btn,ek,pn,pm){
+  var box=btn.closest('.ex-adjbox'); if(!box) return;
+  var m=(box.querySelector('[data-f="m"]')||{}).value||''; m=m.trim();
+  var n=(box.querySelector('[data-f="n"]')||{}).value||''; n=n.trim();
+  // Solo guardamos lo que DIFIERE del plan. Si todo coincide (o está vacío), se borra.
+  var same=(!m || m===pm) && (!n || n===pn);
+  if(same){ delete FREAL[ek]; }
+  else { FREAL[ek]={ m:(m&&m!==pm?m:''), n:(n&&n!==pn?n:''), ts:(typeof pwHoy==='function'?pwHoy():'') }; }
+  _exRealSave();
+  box.remove();
+  var wk=window._rutCurWk||1; try{ renderRutinaWeek(wk); }catch(e){}
+  if(typeof showToast==='function') showToast(same?'Volviste al plan ✓':'Guardado ✓ — tu coach lo ve');
+}
+function exAdjClear(btn,ek){
+  delete FREAL[ek]; _exRealSave();
+  var box=btn.closest('.ex-adjbox'); if(box) box.remove();
+  var wk=window._rutCurWk||1; try{ renderRutinaWeek(wk); }catch(e){}
+  if(typeof showToast==='function') showToast('Volviste al plan ✓');
 }
 function _gymRailHtml(totalDays,totalEx){
   // Logros de la semana (columna derecha). Las chips se prenden según lo que el
@@ -1098,6 +1167,7 @@ function _gymRailHtml(totalDays,totalEx){
 }
 function renderRutinaWeek(wk){
   var sec=document.getElementById('s-rutina'); if(!sec) return;
+  window._rutCurWk=wk;   // recordamos la semana activa (para re-render tras editar "lo que hice")
   sec.querySelectorAll('.gym-2col,.day').forEach(function(d){ d.remove(); });
   var list=RUT_ALL.filter(function(e){ return (parseInt(e.semana,10)||1)===wk; });
   if(!list.length){ sec.insertAdjacentHTML('beforeend','<div class="day"><div class="day-h"><div class="d-name" style="color:var(--muted)">Sin ejercicios para esta semana</div></div></div>'); return; }

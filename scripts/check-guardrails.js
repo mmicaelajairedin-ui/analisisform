@@ -2946,6 +2946,30 @@ const RULES = [
     },
   },
   {
+    name: "gym: el cliente registra lo que hizo distinto al plan y el coach lo ve",
+    why:
+      "El cliente podía hacer más series/peso o cambiar un ejercicio, pero no " +
+      "tenía cómo avisarlo y el coach nunca se enteraba. Ahora cada ejercicio del " +
+      "portal fitness tiene un botón ✎ para registrar 'lo que hiciste' (series×reps· " +
+      "peso real y/o otro ejercicio), se guarda en candidatos.fit_ejercicios_real, y " +
+      "el coach lo ve en su panel (pestaña Gym) con el valor del plan TACHADO + el " +
+      "real al lado — sin cuadros nuevos. Regla: no romper ese cableado ida y vuelta.",
+    check() {
+      var cli = read("pathway-fit-cliente.html");
+      if (cli) {
+        if (!/function exAdj\b/.test(cli)) return "pathway-fit-cliente.html: falta exAdj() — el cliente ya no puede registrar lo que hizo distinto al plan.";
+        if (!/fit_ejercicios_real/.test(cli)) return "pathway-fit-cliente.html: ya no persiste fit_ejercicios_real (el coach no ve el cambio).";
+        if (!/FREAL/.test(cli)) return "pathway-fit-cliente.html: se cayó FREAL (el override plan→real del cliente).";
+      }
+      var pan = read("panel-v2.html");
+      if (pan) {
+        if (!/fit_ejercicios_real/.test(pan)) return "panel-v2.html: la pestaña Gym ya no lee fit_ejercicios_real — el coach no ve lo que el cliente cambió.";
+        if (!/line-through/.test(pan)) return "panel-v2.html: se cayó el tachado plan→real en la rutina (el cambio ya no se distingue).";
+      }
+      return null;
+    },
+  },
+  {
     name: "reservas: link de videollamada SIEMPRE presente (garantia)",
     why: "Una reserva salio SIN link de videollamada: ni el coach ni el cliente " +
          "tenian por donde entrar. GARANTIA replicable para TODOS: el link lo damos " +
