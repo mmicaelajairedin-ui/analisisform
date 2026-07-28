@@ -1666,8 +1666,16 @@ const RULES = [
       const accBlock = s.slice(a, a + 1700);
       if (!/_pwGrantAccess\s*\(/.test(accBlock))
         return "panel-v2.html: sol-accept ya no le da acceso al cliente al capturar el pago (_pwGrantAccess) → el que pagó no entra al portal.";
-      if (!/welcome\s*:\s*true/.test(s))
+      // welcome:true DENTRO del cuerpo de _pwGrantAccess (no en todo el archivo:
+      // 'Agregar cliente' y 'Reenviar invitación' también lo tienen y darían falso OK).
+      const gi = s.indexOf("function _pwGrantAccess");
+      const gBlock = gi >= 0 ? s.slice(gi, gi + 2200) : "";
+      if (!/welcome\s*:\s*true/.test(gBlock))
         return "panel-v2.html: _pwGrantAccess dejó de mandar el email de bienvenida (password-reset welcome:true).";
+      // Reactivar al cliente que renueva: usuarios.activo bloquea el login, así que
+      // _pwGrantAccess debe PATCHear activo:true (si no, el que renueva paga y no entra).
+      if (!/usuarios\?email=eq[^"']*rol=eq\.cliente[\s\S]{0,40}activo:true/.test(gBlock) && !/activo:true/.test(gBlock))
+        return "panel-v2.html: _pwGrantAccess dejó de reactivar la cuenta (activo:true) → un cliente que renueva paga y queda sin acceso.";
       return null;
     },
   },
