@@ -12606,6 +12606,24 @@ function refreshCliPresence(){
 // refresca solo después de cada acción (los handlers ya llaman loadReal) y con
 // el botón "Actualizar". NO reintroducir un setInterval(loadReal) sin proteger
 // el estado de edición.
+// Al volver al panel (p.ej. saliendo de la Sala tras una sesión) refrescamos
+// clientes/sesiones/calendario SIN recargar a mano. Con guardas para no pisar una
+// edición en curso (modal abierto o tipeando) ni cargar de más (1 cada 20s máx).
+var _lastSoftReload=0;
+function _softReloadOnReturn(){
+  try{
+    var now=Date.now();
+    if(now-_lastSoftReload < 20000) return;                       // throttle
+    if(state && (state.newOpen || state.ag || state.review)) return;   // modal/edición abierta
+    if(state && state.iaChat && state.iaChat.open) return;
+    if(document.querySelector('#coach-consent-ov, .cp-demo-overlay, .pw-juego')) return;
+    var ae=document.activeElement;
+    if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName||"")) return; // está tipeando
+    _lastSoftReload=now;
+    try{ _AG_DATA=null; _RES_DATA=null; _CAL_DATA=null; }catch(e){}    // que también se refresque el calendario
+    loadReal();                                                        // recarga clientes/sesiones + re-render
+  }catch(e){}
+}
 function startMsgPolling(){
   if(_msgPollTimer) return;
   coachBeat();
@@ -12627,6 +12645,7 @@ function startMsgPolling(){
   document.addEventListener("visibilitychange", function(){
     if(document.visibilityState !== "visible") return;
     pollMessages();
+    try{ _softReloadOnReturn(); }catch(e){}   // refresca clientes/sesiones/calendario al volver
     // ¿Volvió de un pago/portal de Stripe? Refrescamos su plan/estado en silencio
     // (el webhook ya lo actualizó del lado servidor). Si el webhook aún no llegó,
     // reintentamos una vez ~6s después. Sin toasts salvo que algo haya cambiado.
