@@ -2989,6 +2989,26 @@ const RULES = [
     },
   },
   {
+    name: "recursos: biblioteca unificada (pw-recursos.js) en el portal fitness",
+    why:
+      "Los recursos se unificaron en un solo componente para todo Pathway " +
+      "(pw-recursos.js): buscador, filtros por tipo, portada grande, badges, CTA, " +
+      "guardar y progreso. El portal fitness lo incluye y lo usa (PwRecursos.render). " +
+      "La fuente respeta la empresa: ORG_RECURSOS (owner) tiene prioridad sobre " +
+      "COACH_RECURSOS. Regla: no romper el include ni el uso del componente.",
+    check() {
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return null;
+      if (!/pw-recursos\.js/.test(f)) return "pathway-fit-cliente.html: falta incluir pw-recursos.js (la biblioteca unificada de recursos).";
+      if (!/PwRecursos\.render/.test(f)) return "pathway-fit-cliente.html: renderRecursos ya no usa PwRecursos.render (volvió a la lista vieja).";
+      if (!/ORG_RECURSOS/.test(f)) return "pathway-fit-cliente.html: se cayó la fuente de empresa (ORG_RECURSOS del owner) para los recursos.";
+      var c = read("pw-recursos.js");
+      if (!c) return "pw-recursos.js: el componente unificado de recursos ya no existe.";
+      if (!/window\.PwRecursos\s*=/.test(c)) return "pw-recursos.js: ya no expone window.PwRecursos.";
+      return null;
+    },
+  },
+  {
     name: "marca: el logo se sube (SVG→PNG), guarda solo y avisa el error real",
     why:
       "Un coach Pro subía su logo y 'no reflejaba': el bucket avatars rechaza " +
