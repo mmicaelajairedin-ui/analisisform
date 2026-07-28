@@ -313,9 +313,10 @@ var TIPO = qp('tipo') || '';
 var DUR  = qp('dur') || '';
 var STARTms = parseInt(qp('start')||'0',10)||0;
 var COACHID = qp('coach') || '';                     // dueño de la cita (para Documentos)
-// Motor de video: 'jaas' (8x8, por defecto) o 'p2p' (WebRTC directo, sin costo).
-// Se elige con ?engine=p2p en el link → prueba P2P sin tocar el camino JaaS.
-var ENGINE = (qp('engine')||'jaas').toLowerCase();
+// Motor de video: 'p2p' (WebRTC directo, sin costo — POR DEFECTO) o 'jaas' (8x8).
+// P2P usa nuestro TURN propio (pw-turn.js) → llamadas reales sin el costo de JaaS.
+// JaaS queda como respaldo: se fuerza con ?engine=jaas en el link si hiciera falta.
+var ENGINE = (qp('engine')||'p2p').toLowerCase();
 var KIND = qp('kind') || 'sesion';                   // modo de la Sala: sesion | primera_llamada | demo_pathway | personal (viejas sin kind → sesion)
 var FOTO = qp('foto') || '';                          // avatar en la videollamada
 
@@ -542,10 +543,22 @@ function bootP2P(){
     onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='En llamada'; },
     onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Esperando'; },
     onChat:function(from,text){ try{ chatAdd(from||WHO, text, false); }catch(e){} },
+    onFail:_p2pFallbackToJaas,   // la red bloquea el P2P (ni el TURN alcanza) → caemos a JaaS solos
     onError:function(e){ var c=(e&&(e.name||e.message))||'error';
       if(/NotAllowed|Permission|Denied/i.test(c)){ waitState('Permití cámara y micrófono','Para poder verte, el navegador necesita permiso de cámara y micrófono.',true); _p2pPermUI(); }
       else waitState('No se pudo conectar el video','Reintentá o abrí en otra red. Detalle: '+c,true); }
   }).then(function(){ wireControlsP2P(); }).catch(function(){});
+}
+// Respaldo automático: si el P2P no conecta (red muy cerrada), la Sala cae sola a
+// JaaS sin que nadie toque nada. "Anda solo": el usuario ni se entera del cambio.
+var _fellBackJaas=false;
+function _p2pFallbackToJaas(){
+  if(_fellBackJaas || ENGINE!=='p2p') return; _fellBackJaas=true;
+  try{ window.PWP2P&&PWP2P.hangup(); }catch(e){}
+  try{ var c=el('jaas'); if(c) c.innerHTML=''; }catch(e){}   // limpiar el contenedor del P2P
+  ENGINE='jaas'; _booted=false;
+  waitState('Conectando por el canal de respaldo…','Tu red bloquea la conexión directa; abrimos la sala segura. Un momento…');
+  try{ boot(); _booted=true; }catch(e){ waitState('No se pudo conectar el video','Reintentá o probá desde otra red.',true); }
 }
 // Permiso de cámara/micrófono. La verdad incómoda de los navegadores: una vez que
 // el usuario BLOQUEÓ, JavaScript NO puede volver a abrir el cartel — solo se

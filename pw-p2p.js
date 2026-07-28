@@ -76,8 +76,16 @@
     };
     p.onconnectionstatechange = function () {
       var s = p.connectionState;
-      if (s === "connected") _state("En llamada");
-      else if (s === "disconnected" || s === "failed") { _state("Reconectando…"); try { p.restartIce && p.restartIce(); } catch (e) {} }
+      if (s === "connected") { _state("En llamada"); if (failTimer) { clearTimeout(failTimer); failTimer = null; } failed = false; }
+      else if (s === "disconnected" || s === "failed") {
+        _state("Reconectando…"); try { p.restartIce && p.restartIce(); } catch (e) {}
+        // Si el ICE restart no reconecta en ~10s, la red bloquea el P2P (ni el TURN
+        // alcanza). Avisamos con onFail() → la Sala cae al respaldo (JaaS) sola.
+        if (!failTimer) failTimer = setTimeout(function () {
+          failTimer = null;
+          if (pc && pc.connectionState !== "connected" && !failed) { failed = true; try { opts.onFail && opts.onFail(); } catch (e) {} }
+        }, 10000);
+      }
       else if (s === "closed") { _state("Llamada terminada"); }
     };
     return p;

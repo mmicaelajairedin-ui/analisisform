@@ -2626,9 +2626,11 @@ const RULES = [
       // La comunidad arranca vacía para una red real (nada de posts/ranking inventados).
       if (!/DBCOM=\{posts:\[\],avisos:\[\],clases:\[\],retos:\[\],ranking:\[\]\}/.test(mc))
         return "multicoach.html: la comunidad ya no arranca en blanco en modo real (DBCOM con seed falso).";
-      // La agenda arranca vacía en real (sin eventos de ejemplo).
-      if (!/AGW=MC_REAL\?\[\]:/.test(mc))
-        return "multicoach.html: la agenda ya no arranca vacía en modo real (mcSetAgenda con seed falso).";
+      // La agenda en real sale de las citas REALES (mi-red), nunca del seed demo.
+      if (!/function _mcAgwFromCitas\(/.test(mc))
+        return "multicoach.html: falta _mcAgwFromCitas() (agenda real desde citas en modo red).";
+      if (!/AGW=MC_REAL\?_mcAgwFromCitas\(\):a\.agw/.test(mc))
+        return "multicoach.html: la agenda en modo real ya no sale de las citas reales (mcSetAgenda con seed demo).";
       // Las fichas gatean sus bloques de datos por MC_REAL.
       if (!/MC_REAL\?_mcEmptyCard\('Constancia del mes'/.test(mc))
         return "multicoach.html: la ficha del cliente ya no gatea la 'Constancia del mes' en modo real (barras inventadas).";
@@ -3763,17 +3765,21 @@ const RULES = [
     },
   },
   {
-    name: "sala: el motor P2P es OPT-IN (?engine=p2p); JaaS sigue siendo el default hasta probar P2P",
-    bug: "El motor P2P (pw-p2p.js) es nuevo y todavía se está probando. Se activa SOLO con ?engine=p2p " +
-         "en el link → el camino JaaS (producción, llamadas reales) queda intacto. Si el default de ENGINE " +
-         "pasa a 'p2p' antes de tiempo, todas las llamadas reales usarían un motor sin validar. Mantener " +
-         "el default en 'jaas' hasta que P2P esté probado con 2 dispositivos.",
+    name: "sala: P2P es el motor por DEFECTO (TURN propio); JaaS queda como respaldo (?engine=jaas)",
+    bug: "P2P (pw-p2p.js, WebRTC directo) ya está probado con 2 dispositivos y usa nuestro TURN propio " +
+         "(pw-turn.js). Es el motor por defecto → las llamadas reales no pagan JaaS. JaaS NO se borra: " +
+         "queda como respaldo forzable con ?engine=jaas por si una red bloquea P2P. Si el default vuelve a " +
+         "'jaas', se vuelve a pagar €90/mes de JaaS sin necesidad; si se cae el TURN (pw-turn.js) o el motor " +
+         "P2P, las salas quedan sin respaldo. Mantener default 'p2p' + JaaS embebido presente + TURN cargado.",
     check() {
       const s = read("sala.html");
       if (!s) return null;
-      if (!/pw-p2p\.js/.test(s)) return "sala.html: falta el include de pw-p2p.js.";
-      if (!/qp\(['"]engine['"]\)\|\|['"]jaas['"]/.test(s)) return "sala.html: el motor de video ya no tiene default 'jaas' (P2P no puede ser el default hasta validarlo).";
-      if (read("pw-p2p.js") === null) return "falta pw-p2p.js (el motor P2P).";
+      if (!/pw-p2p\.js/.test(s)) return "sala.html: falta el include de pw-p2p.js (motor por defecto).";
+      if (!/pw-turn\.js/.test(s)) return "sala.html: falta el include de pw-turn.js (TURN propio para P2P).";
+      if (!/qp\(['"]engine['"]\)\|\|['"]p2p['"]/.test(s)) return "sala.html: el motor de video ya no tiene default 'p2p' (se volvería a pagar JaaS).";
+      if (!/8x8\.vc/.test(s)) return "sala.html: se cayó el respaldo JaaS (8x8.vc) — sin fallback si una red bloquea P2P.";
+      if (read("pw-p2p.js") === null) return "falta pw-p2p.js (el motor P2P por defecto).";
+      if (read("pw-turn.js") === null) return "falta pw-turn.js (el TURN propio).";
       return null;
     },
   },
@@ -3806,6 +3812,62 @@ const RULES = [
       if (!/PATCH[\s\S]{0,60}organizaciones|mcPatch\('organizaciones'/.test(m)) return "multicoach.html: mcSaveConfig ya no persiste en organizaciones.";
       if (!/onclick="_saveProfile\(\)"/.test(m) || !/onclick="_saveRecursos\(\)"/.test(m) || !/onclick="_saveAccount\(\)"/.test(m)) return "multicoach.html: un botón Guardar de la config ya no llama a su función real (_saveProfile/_saveRecursos/_saveAccount).";
       if (/onclick="__toast\('(Perfil|Recursos|Cuenta) guardad[oa] ✓'\)"/.test(m)) return "multicoach.html: volvió un guardado TRUCHO (__toast '...guardado ✓' sin persistir) en la config.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: agenda + sesiones del cliente salen de CITAS reales (mi-red), no demo",
+    bug: "El video/agenda del multicoach tenía que ser un aliado CONECTADO a la data real, no algo " +
+         "metido de adorno. Antes, en modo red real, la agenda quedaba vacía (AGW=[]) y la pestaña " +
+         "Sesiones de la ficha mostraba un 'Sin sesiones registradas' fijo → el dueño no veía nada. " +
+         "Ahora mi-red trae las CITAS de toda la red (service role, la RLS no deja que el owner las " +
+         "lea directo), _mcAgwFromCitas arma la agenda de la semana y _mcSesReal lista las sesiones " +
+         "reales del cliente por email. Si se corta, el owner vuelve a ver la agenda/sesiones vacías.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/var MC_REAL=false, MC_ORG=null, MC_OWNER=null, MC_CITAS=/.test(mc)) return "multicoach.html: falta MC_CITAS (las citas reales de la red).";
+      if (!/function _mcSesReal\(/.test(mc)) return "multicoach.html: falta _mcSesReal (sesiones reales del cliente en la ficha).";
+      if (!/MC_REAL\s*\?\s*_mcSesReal\(k\)/.test(mc)) return "multicoach.html: la pestaña Sesiones en real ya no usa _mcSesReal (volvió el 'Sin sesiones' fijo).";
+      if (!/_apply\(d\.org,d\.coaches,d\.clientes,d\.owner,d\.citas\)/.test(mc)) return "multicoach.html: mi-red ya no pasa las citas a _apply (agenda/sesiones quedan vacías).";
+      const mr = read("supabase/functions/mi-red/index.ts");
+      if (mr && !/citas\?coach_id=in\./.test(mr)) return "mi-red: ya no trae las citas de la red (agenda/sesiones del owner quedan vacías).";
+      return null;
+    },
+  },
+  {
+    name: "portal del cliente: el chat VERIFICA el guardado y avisa si falla (no .catch vacío mudo)",
+    bug: "El guardado del chat del cliente (fit/fin) terminaba en .catch(function(){}) y daba por " +
+         "guardado (MSGS=merged) aunque la red/RLS fallara → el mensaje quedaba en pantalla pero NO " +
+         "se persistía y el cliente no se enteraba (se perdía al recargar). Ahora _fitPersistChat/" +
+         "_finPersistChat verifican r.ok del sbPatch: si guardó, confirman; si no, muestran un banner " +
+         "'No se pudo enviar. Tocá para reintentar' (tappable = reintenta). Merge/dedup/escape intactos.",
+    check() {
+      const fit = read("pathway-fit-cliente.html"), fin = read("pathway-fin-cliente.html");
+      if (fit) {
+        if (!/function _fitPersistChat\(/.test(fit)) return "pathway-fit-cliente.html: falta _fitPersistChat (guardado del chat verificado).";
+        if (!/if\(r&&r\.ok\)\{ MSGS=merged; _fitChatWarn\(false\);/.test(fit)) return "pathway-fit-cliente.html: el chat ya no verifica r.ok antes de dar por guardado (guardado fantasma).";
+      }
+      if (fin) {
+        if (!/function _finPersistChat\(/.test(fin)) return "pathway-fin-cliente.html: falta _finPersistChat (guardado del chat verificado).";
+        if (!/if\(r&&r\.ok\)\{ MSGS=merged; _finChatWarn\(false\);/.test(fin)) return "pathway-fin-cliente.html: el chat ya no verifica r.ok antes de dar por guardado (guardado fantasma).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "diagnóstico (fallback directo): el upsert VERIFICA filas, no miente con return=minimal",
+    bug: "El guardado directo del diagnóstico (fallback si la edge function guardar-informe no está) " +
+         "hacía POST con Prefer:return=minimal y solo miraba r.ok. Bajo RLS un 204 puede ser 0 filas " +
+         "escritas → toast 'Guardado ✓' con NADA guardado. Ahora usa return=representation y exige " +
+         "≥1 fila; si son 0, lanza y cae a _fail (aviso claro de permisos). Sin esto vuelve el " +
+         "guardado fantasma del diagnóstico.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/informes\?on_conflict=email/.test(p)) return null; // no está el fallback → nada que exigir
+      if (!/return=representation"[\s\S]{0,160}informes\?on_conflict=email/.test(p)) return "panel-v2.html: el upsert de informes (fallback) ya no usa return=representation (guardado fantasma bajo RLS).";
+      if (!/0 filas guardadas \(RLS\)/.test(p)) return "panel-v2.html: el upsert de informes ya no verifica que escribió ≥1 fila.";
       return null;
     },
   },
