@@ -4006,11 +4006,23 @@ function _salaHistLoad(cid){
   var c=(CLIENTS||[]).filter(function(x){return String(x.id)===String(cid);})[0]; if(!c){ box.innerHTML=""; return; }
   var email=((c.raw&&c.raw.email)||c.email||"").toLowerCase().trim();
   if(!email){ box.innerHTML=""; return; }
-  _sb("citas?email=eq."+encodeURIComponent(email)+cg()+"&select=inicio,tipo,resultado,notas_llamada&order=inicio.desc").then(function(rows){
+  _sb("citas?email=eq."+encodeURIComponent(email)+cg()+"&select=inicio,tipo,resultado,notas_llamada,coach_id&order=inicio.desc").then(function(rows){
     rows=Object.prototype.toString.call(rows)==="[object Array]"?rows:[];
     rows=rows.filter(function(x){ return x && (x.resultado||x.notas_llamada); });
-    if(!rows.length){ box.innerHTML=""; return; }
+    if(!rows.length){ box.innerHTML=""; _salaMergeSessions(c, rows); return; }
     var RL={convirtio:["Avanzó","var(--pw-bosque)"],seguimiento:["Lo piensa","#C99A2E"],perdido:["Por ahora no","var(--pw-text-soft)"],gano:["Fue bien","var(--pw-bosque)"],perdio:["No cerró","var(--pw-danger)"]};
+    // Feedback del cliente (best-effort). Si la tabla no existe, _sb devuelve [] y no se muestra nada.
+    _sb("sala_feedback?email=eq."+encodeURIComponent(email)+"&select=room,rating,nota,created_at").then(function(fbs){
+      var fbMap={};
+      (Object.prototype.toString.call(fbs)==="[object Array]"?fbs:[]).forEach(function(f){ if(f&&f.room) fbMap[f.room]=f; });
+      _salaRender(box,c,cid,rows,RL,fbMap);
+    }).catch(function(){ _salaRender(box,c,cid,rows,RL,{}); });
+  }).catch(function(){ box.innerHTML=""; });
+}
+// Emoji por rating del cliente (1..5). Índice 0 vacío.
+var _FB_EMO=["","😞","😕","🙂","😀","🤩"];
+var _FB_TXT=["","Mala","Regular","Bien","Muy bien","Excelente"];
+function _salaRender(box,c,cid,rows,RL,fbMap){
     window._SALA_ADDMAP={};   // ms → sesObj, para el botón "Agregar a Sesiones" (fallback manual)
     box.innerHTML="<div class='cp-card' style='margin-bottom:14px'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🎥</span> Registro de la Sala<span class='dot'>.</span></h3></div><div class='cp-card-pad'>"+
       rows.map(function(x){
@@ -4030,11 +4042,20 @@ function _salaHistLoad(cid){
         function _rlst(arr){ if(!arr.length) return ""; return "<div style='margin-top:8px'><div style='font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:3px'>Documentos</div>"+arr.map(function(it){ return it.url?("<a href=\""+esc(it.url)+"\" target='_blank' rel='noopener' style='display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--pw-bosque);text-decoration:none;padding:2px 0'>📎 "+esc(it.name)+"</a><br>"):("<div style='font-size:12.5px'>📎 "+esc(it.name)+"</div>"); }).join("")+"</div>"; }
         var secs=(P.notas?"<div style='font-size:12.5px;color:var(--pw-carbon);white-space:pre-wrap;line-height:1.5'>"+esc(P.notas)+"</div>":"")+_lst("Objetivos",P.obj)+_lst("Tareas",P.tar)+_rlst(P.rec);
         var nt=secs?("<div style='margin-top:6px;background:var(--pw-niebla-2);border-radius:10px;padding:10px 12px'>"+secs+"</div>"):"";
-        return "<div style='padding:10px 0;border-bottom:1px solid var(--pw-border)'><div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'><span style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(when)+"</span>"+(x.tipo?"<span style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(x.tipo)+"</span>":"")+"<span style='margin-left:auto'>"+badge+"</span></div>"+nt+_addBtn+"</div>";
+        // Feedback del cliente: la Sala guarda con room = Pathway-<coach_id>-<inicio_ms>.
+        var _room="Pathway-"+(x.coach_id||"")+"-"+_ms;
+        var _fb=fbMap[_room]; var fbHtml="";
+        if(_fb && _fb.rating){
+          var _e=_FB_EMO[_fb.rating]||"", _t=_FB_TXT[_fb.rating]||"";
+          fbHtml="<div style='margin-top:8px;display:flex;align-items:flex-start;gap:8px;background:rgba(82,183,136,.08);border-radius:10px;padding:8px 11px'>"+
+            "<span style='font-size:18px;line-height:1.2'>"+_e+"</span>"+
+            "<div><div style='font-size:11px;font-weight:700;color:var(--pw-bosque)'>El cliente lo valoró: "+esc(_t)+"</div>"+
+            (_fb.nota?("<div style='font-size:12.5px;color:var(--pw-carbon);line-height:1.5;margin-top:2px'>“"+esc(_fb.nota)+"”</div>"):"")+"</div></div>";
+        }
+        return "<div style='padding:10px 0;border-bottom:1px solid var(--pw-border)'><div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'><span style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(when)+"</span>"+(x.tipo?"<span style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(x.tipo)+"</span>":"")+"<span style='margin-left:auto'>"+badge+"</span></div>"+nt+fbHtml+_addBtn+"</div>";
       }).join("")+
     "</div></div>";
     _salaMergeSessions(c, rows);   // graba las Salas de modo 'sesion' en sesiones_registro (autocompletar)
-  }).catch(function(){ box.innerHTML=""; });
 }
 // Renderiza el contenido de un informe guardado (objeto d) como texto legible.
 // Genérico: recorre las claves con texto o listas y las muestra con su título.
