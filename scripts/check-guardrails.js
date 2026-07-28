@@ -4093,7 +4093,7 @@ const RULES = [
       if (!p) return null;
       if (!/function _pwRefresh\(/.test(p) || !/refreshSession\(/.test(p)) return "panel-v2.html: falta _pwRefresh (refresco de sesión self-healing).";
       // _sbw debe reintentar tras refrescar, no expulsar directo en el 401/403.
-      const w = p.slice(p.indexOf("function _sbw("), p.indexOf("function _sbw(") + 2700);
+      const w = p.slice(p.indexOf("function _sbw("), p.indexOf("function _sbw(") + 4200);
       if (!/_pwRefresh\(\)/.test(w)) return "panel-v2.html: _sbw ya no refresca+reintenta ante 401/403 (perdería el guardado por sesión vencida).";
       if (!/_pwRefresh\(\)/.test(p.slice(p.indexOf("function _sb(p)"), p.indexOf("function _sb(p)") + 700))) return "panel-v2.html: _sb ya no refresca+reintenta ante 401/403.";
       // Cobertura TODO Pathway: el interceptor de pw-auth.js también refresca+reintenta
@@ -4103,6 +4103,22 @@ const RULES = [
         if (!/function refreshOnce\(/.test(a)) return "pw-auth.js: falta refreshOnce (refresh de sesión para todo Pathway).";
         if (!/__pwRetried/.test(a) || !/refreshOnce\(\)/.test(a)) return "pw-auth.js: el interceptor ya no reintenta el fetch tras refrescar el JWT (los portales del cliente perderían guardados por sesión vencida).";
       }
+      return null;
+    },
+  },
+  {
+    name: "panel-v2: el guardado resiste columnas faltantes (una columna inexistente NO rompe todo el guardado)",
+    bug: "Si la tabla candidatos de Supabase todavía no tiene una columna (p.ej. 'whatsapp' " +
+         "o los campos fitness sin migrar), el PATCH entero fallaba con 400 y NADA se guardaba " +
+         "('No se puede guardar'). _sbw ahora detecta el error de columna inexistente, quita ESE " +
+         "campo del body y reintenta → se guarda todo lo demás; ningún campo es obligatorio. Si se " +
+         "pierde, vuelve el bug de guardado que se cae por una columna que no existe.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const w = s.slice(s.indexOf("function _sbw("), s.indexOf("function _sbw(") + 4200);
+      if (!/_stripRetry/.test(w)) return "panel-v2.html: _sbw ya no tiene _stripRetry (el guardado vuelve a caerse entero por una columna faltante).";
+      if (!/delete body\[/.test(w)) return "panel-v2.html: _stripRetry ya no quita la columna faltante del body para reintentar.";
       return null;
     },
   },
