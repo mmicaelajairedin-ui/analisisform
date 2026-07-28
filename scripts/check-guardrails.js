@@ -3884,6 +3884,17 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "solicitudes: el candidato que aún no pagó NO cuenta como pendiente del coach",
+    bug: "El candidato con estado 'pendiente' (empezó pero no pagó) se sumaba a 'Pendientes' → daba '1 pendiente' con la bandeja vacía, como si el coach tuviera algo que aceptar. Es acción del candidato; va aparte en 'Esperando pago'.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (/nPend\s*=\s*pend\.length\s*\+\s*waiting\.length/.test(s))
+        return "panel-v2: 'Pendientes' volvió a sumar los que no pagaron (waiting). Debe contar solo pend (los que esperan tu decisión).";
+      return null;
+    },
+  },
   // ── Enriquecimiento del tab Analiticas con Health Score (consumidor de metricas) ──
   {
     name: "analiticas: tarjeta Health Score cableada como consumidor puro de metricas",
