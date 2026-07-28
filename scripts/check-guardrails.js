@@ -2989,6 +2989,28 @@ const RULES = [
     },
   },
   {
+    name: "marca: el logo se sube (SVG→PNG), guarda solo y avisa el error real",
+    why:
+      "Un coach Pro subía su logo y 'no reflejaba': el bucket avatars rechaza " +
+      "SVG (solo raster) y el error era genérico ('Reintenta'), y además había " +
+      "que acordarse de pulsar 'Guardar marca'. Ahora: un SVG se rasteriza a PNG " +
+      "en el navegador antes de subir (_logoUpload/_logoRasterizeSvg), el logo se " +
+      "guarda en el acto (saveCfg noRender) y si falla se muestra el motivo real " +
+      "(_logoErrMsg). Regla: no volver al upload directo sin conversión ni al " +
+      "alert genérico.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _logoUpload\b/.test(p)) return "panel-v2.html: falta _logoUpload() — el logo SVG vuelve a rebotar en el bucket avatars.";
+      if (!/_logoRasterizeSvg\b/.test(p)) return "panel-v2.html: se cayó la conversión SVG→PNG del logo (el SVG no se puede subir).";
+      if (!/_logoErrMsg\b/.test(p)) return "panel-v2.html: el error de subida del logo volvió a ser genérico (no dice por qué falla).";
+      // Tras subir el logo debe guardarse solo (saveCfg con logo_url).
+      var m = p.match(/id!=="cfb-logo-file"[\s\S]{0,1600}/);
+      if (m && !/saveCfg\(\{\s*logo_url/.test(m[0])) return "panel-v2.html: el logo ya no se guarda solo tras subir (falta saveCfg({logo_url})) — vuelve el 'subí pero no reflejó'.";
+      return null;
+    },
+  },
+  {
     name: "nutrición: el cliente registra lo que comió distinto y el coach lo ve",
     why:
       "La nutrición usaba una caja de texto libre suelta ('Lo que comí'). Ahora " +

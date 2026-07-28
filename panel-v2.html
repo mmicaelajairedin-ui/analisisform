@@ -6039,11 +6039,11 @@ function cfgBrand(){
       "<span class='cp-form-hint'>El cliente lo ve en su portal y en tu página pública.</span></div>"+
     "<div class='cp-form-row'><label class='cp-form-label'>Tu logo</label>"+
       "<label class='cp-logo-drop' style='display:flex;flex-direction:column;align-items:center;gap:4px;border:1.5px dashed var(--pw-border-strong);border-radius:10px;padding:14px;cursor:pointer;font-size:12.5px;color:var(--pw-text-soft);text-align:center'>"+
-        "<span style='font-size:20px'><span class='cp-emo'>📤</span></span>Arrastra tu logo o haz clic para subir (PNG o SVG)"+
-        "<input id='cfb-logo-file' type='file' accept='image/*' style='display:none'>"+
+        "<span style='font-size:20px'><span class='cp-emo'>📤</span></span>Arrastra tu logo o haz clic para subir<br><span style='font-size:11px;opacity:.8'>PNG, JPG o SVG · hasta 5 MB</span>"+
+        "<input id='cfb-logo-file' type='file' accept='image/png,image/jpeg,image/webp,image/svg+xml,image/*' style='display:none'>"+
       "</label>"+
       "<input id='cfb-logo' class='cp-form-input' value=\""+esc(logoU)+"\" placeholder='…o pega la URL de tu logo' style='margin-top:8px'>"+
-      "<span class='cp-form-hint'>Sube el archivo o pega el enlace. Aparece arriba en el portal del cliente. Luego pulsa “Guardar marca”.</span></div>"+
+      "<span class='cp-form-hint'>Se sube y <strong>se guarda solo</strong>: apenas lo subís, ya queda aplicado en el portal de tus clientes. También podés pegar el enlace del logo.</span></div>"+
     "<div id='cfb-logo-prevwrap' style='display:"+(logoU?"flex":"none")+";align-items:center;gap:10px'><span style='font-size:12px;color:var(--pw-text-soft)'>Vista previa:</span><img id='cfb-logo-prev' src='"+esc(logoU)+"' alt='logo' onerror=\"this.style.display='none'\" style='height:34px;width:auto;max-width:160px;object-fit:contain'></div>"+
     "<div class='cp-form-row'><label class='cp-form-label'>Tu firma en los emails al cliente</label>"+sigBlock()+
       "<span class='cp-form-hint'>Así se ve al pie de cada email que envías desde Mensajes. Si no tienes foto, salen tus iniciales.</span></div>"+
@@ -11766,22 +11766,68 @@ document.addEventListener("change", function(ev){
     .catch(function(e){ console.error("cli foto:", e); alert("No se pudo subir la foto. Reintenta."); });
 });
 
-// Logo del portal (Config › Marca): clic o soltar. Sube a Storage y deja la URL
-// en #cfb-logo; persiste al pulsar "Guardar marca" (mismo flujo que la URL).
+// Logo del portal (Config › Marca): clic o soltar. Sube a Storage, deja la URL
+// en #cfb-logo Y GUARDA la marca en el acto (antes había que acordarse de
+// pulsar "Guardar marca" → el coach subía el logo y "no reflejaba").
+// El bucket 'avatars' sólo acepta imágenes rasterizadas (PNG/JPG/WEBP); un SVG
+// rebotaba con un error genérico. Ahora un SVG se convierte a PNG en el
+// navegador antes de subir, así el logo SIEMPRE se puede subir.
+function _logoRasterizeSvg(file){
+  return new Promise(function(resolve,reject){
+    var fr=new FileReader();
+    fr.onload=function(){
+      var txt=(""+(fr.result||""));
+      // Dimensiones del SVG: width/height o, si no, el viewBox.
+      var w=0,h=0, mW=txt.match(/\bwidth="([\d.]+)/), mH=txt.match(/\bheight="([\d.]+)/);
+      if(mW) w=parseFloat(mW[1]); if(mH) h=parseFloat(mH[1]);
+      if(!w||!h){ var vb=txt.match(/viewBox="\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)/); if(vb){ w=w||parseFloat(vb[1]); h=h||parseFloat(vb[2]); } }
+      w=w||480; h=h||160;
+      var scale=Math.min(4, Math.max(1, 640/w)), cw=Math.max(1,Math.round(w*scale)), ch=Math.max(1,Math.round(h*scale));
+      var img=new Image();
+      img.onload=function(){
+        try{ var cv=document.createElement("canvas"); cv.width=cw; cv.height=ch; cv.getContext("2d").drawImage(img,0,0,cw,ch);
+          cv.toBlob(function(b){ b?resolve(b):reject(new Error("No se pudo convertir el SVG a imagen.")); },"image/png");
+        }catch(e){ reject(new Error("No se pudo convertir el SVG (¿tiene imágenes externas?). Probá con un PNG.")); }
+      };
+      img.onerror=function(){ reject(new Error("El SVG no se pudo leer. Probá exportarlo como PNG.")); };
+      try{ img.src="data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(txt))); }catch(e){ reject(new Error("El SVG tiene caracteres no válidos. Probá con un PNG.")); }
+    };
+    fr.onerror=function(){ reject(new Error("No se pudo leer el archivo.")); };
+    fr.readAsText(file);
+  });
+}
+function _logoUpload(file){
+  var isSvg=/svg/i.test(file.type||"")||/\.svg$/i.test(file.name||"");
+  if(isSvg) return _logoRasterizeSvg(file).then(function(pngBlob){ return _uploadAvatar(pngBlob,"png"); });
+  var ext=((file.type||"image/png").split("/")[1]||"png").replace("jpeg","jpg");
+  return _uploadAvatar(file, ext);
+}
+function _logoErrMsg(e){
+  var m=(e&&e.message)||""+e;
+  if(/mime|not.*support|unsupported|invalid.*type|415|\b400\b/i.test(m)) return "Ese formato no se aceptó. Probá con un PNG o JPG (o un SVG, que ahora convertimos solos).";
+  if(/413|exceed|too large|payload/i.test(m)) return "El archivo es muy pesado. Probá con uno de menos de 5 MB.";
+  if(/401|403/.test(m)) return "Tu sesión venció. Recargá la página e intentá de nuevo.";
+  if(/SVG|convert/i.test(m)) return m; // ya es un mensaje claro
+  if(/Failed to fetch|network|NetworkError/i.test(m)) return "Sin conexión con el servidor. Revisá tu internet e intentá de nuevo.";
+  return "No se pudo subir el logo ("+m.slice(0,120)+").";
+}
 document.addEventListener("change", function(ev){
   if(!ev.target || ev.target.id!=="cfb-logo-file") return;
   var f=ev.target.files && ev.target.files[0]; if(!f) return;
-  if(f.size > 5*1024*1024){ alert("El logo no puede pesar más de 5 MB."); ev.target.value=""; return; }
+  if(f.size > 5*1024*1024){ alert("El logo no puede pesar más de 5 MB. Probá con uno más liviano."); ev.target.value=""; return; }
   toast("Subiendo logo…");
-  var ext=((f.type||"image/png").split("/")[1]||"png").replace("jpeg","jpg").replace("svg+xml","svg");
-  _uploadAvatar(f, ext)
+  _logoUpload(f)
     .then(function(url){
       var inp=document.getElementById("cfb-logo"); if(inp) inp.value=url;
-      var pw=document.getElementById("cfb-logo-prevwrap"); var pim=document.getElementById("cfb-logo-prev");
+      var pw=document.getElementById("cfb-logo-prevwrap"), pim=document.getElementById("cfb-logo-prev");
       if(pim){ pim.src=url; pim.style.display=""; } if(pw){ pw.style.display="flex"; }
-      toast("Logo subido — pulsa “Guardar marca” ✓");
+      // Guardado inmediato (sin re-render, para no perder la selección de color):
+      // el logo queda persistido aunque el coach no pulse "Guardar marca".
+      try{ saveCfg({ logo_url:url }, null, null, { noRender:true, toast:"Logo subido y guardado ✓" }); }
+      catch(e){ toast("Logo subido — pulsá “Guardar marca” ✓"); }
     })
-    .catch(function(e){ console.error("logo upload:", e); alert("No se pudo subir el logo. Reintenta."); });
+    .catch(function(e){ console.error("logo upload:", e); alert(_logoErrMsg(e)); })
+    .then(function(){ try{ ev.target.value=""; }catch(_e){} });   // permite re-subir el mismo archivo
 });
 
 document.addEventListener("input", function(ev){
