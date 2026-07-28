@@ -32,6 +32,17 @@
     beige: 'linear-gradient(135deg,#F6F1E7,#ECE3D2)',
     stone: 'linear-gradient(135deg,#EFF1F0,#E1E6E3)'
   };
+  // Ilustraciones LIMPIAS por tipo (estilo Pathway) — hacen de "portada" cuando
+  // no hay imagen real (para video, la miniatura de YouTube manda). Son SVG
+  // planos, on-brand, que llenan la tarjeta → se ven premium y cargan al instante.
+  var ILLUS={
+    video:'<rect x="33" y="24" width="94" height="60" rx="11" fill="#fff"/><rect x="33" y="24" width="94" height="60" rx="11" fill="#2D6A4F" opacity=".05"/><circle cx="80" cy="54" r="18" fill="#2D6A4F"/><path d="M75 45l15 9-15 9z" fill="#fff"/><rect x="46" y="92" width="68" height="6" rx="3" fill="#2D6A4F" opacity=".16"/>',
+    pdf:'<rect x="52" y="18" width="56" height="74" rx="8" fill="#fff"/><path d="M96 18h4l8 8h-12z" fill="#E4D7BC"/><rect x="62" y="34" width="34" height="7" rx="3" fill="#2D6A4F" opacity=".82"/><rect x="62" y="48" width="30" height="4" rx="2" fill="#A7B2AB"/><rect x="62" y="57" width="34" height="4" rx="2" fill="#A7B2AB"/><rect x="62" y="66" width="24" height="4" rx="2" fill="#A7B2AB"/><rect x="62" y="78" width="22" height="8" rx="4" fill="#C99A2E" opacity=".55"/>',
+    plantilla:'<rect x="38" y="24" width="84" height="62" rx="9" fill="#fff"/><rect x="47" y="33" width="66" height="11" rx="3" fill="#2D6A4F" opacity=".16"/><rect x="47" y="50" width="29" height="28" rx="5" fill="#2D6A4F" opacity=".12"/><rect x="84" y="50" width="29" height="28" rx="5" fill="#52B788" opacity=".28"/>',
+    ejercicio:'<circle cx="80" cy="55" r="31" fill="#fff"/><path d="M58 55h9l6-16 11 30 6-14h12" stroke="#2D6A4F" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+    articulo:'<rect x="46" y="22" width="68" height="66" rx="8" fill="#fff"/><rect x="55" y="31" width="40" height="9" rx="3" fill="#2D6A4F" opacity=".72"/><rect x="55" y="48" width="50" height="4" rx="2" fill="#A7B2AB"/><rect x="55" y="57" width="50" height="4" rx="2" fill="#A7B2AB"/><rect x="55" y="66" width="40" height="4" rx="2" fill="#A7B2AB"/><rect x="55" y="75" width="28" height="4" rx="2" fill="#A7B2AB"/>'
+  };
+  function _illus(tipo){ return '<svg class="pwr-illus" viewBox="0 0 160 110" preserveAspectRatio="xMidYMid meet" aria-hidden="true">'+(ILLUS[tipo]||ILLUS.articulo)+'</svg>'; }
   var TYPES = {
     video:     { label:'Video',      chip:'Videos',        action:'Ver ahora',     icon:'play',     tone:'green'  },
     pdf:       { label:'PDF',        chip:'Guías y PDFs',   action:'Descargar',     icon:'doc',      tone:'beige'  },
@@ -116,11 +127,12 @@
     function _card(r){
       var T=TYPES[r.tipo]||TYPES.articulo;
       var seen=!!store.seen[r.id], bm=!!store.bm[r.id];
-      // La portada SIEMPRE tiene el degradado suave + chip con ícono detrás; si
-      // hay imagen real (miniatura de YouTube / cover del coach) la superpone. Si
-      // la imagen falla (onerror), se quita y queda el chip → nunca rota.
+      // Previsualización AUTOMÁTICA: la portada siempre tiene el degradado suave
+      // + una ilustración limpia por tipo (se genera sola). Si hay imagen real
+      // (miniatura de YouTube o cover del coach) la superpone; si falla (onerror)
+      // se quita y queda la ilustración → nunca queda rota ni vacía.
       var cov = '<div class="pwr-cov" style="background:'+TONES[T.tone]+'">'+
-          '<span class="pwr-cov-chip">'+_icon(T.icon,'pwr-cov-ic')+'</span>'+
+          _illus(r.tipo)+
           (r.cover?'<img class="pwr-cov-img" src="'+esc(r.cover)+'" alt="" loading="lazy" onerror="this.remove()">':'')+
           (r.meta?'<span class="pwr-cov-meta">'+esc(r.meta)+'</span>':'')+
           (seen?'<span class="pwr-cov-seen" title="Completado">✓</span>':'')+
@@ -232,10 +244,9 @@
       '.pwr-card:hover{transform:translateY(-3px);box-shadow:0 16px 32px rgba(27,46,38,.09);border-color:rgba(45,106,79,.2);}',
       '.pwr-card.is-done{background:#FCFDFC;}',
       /* Portada: imagen real o degradado suave + chip con ícono lineal (chico). */
-      '.pwr-cov{position:relative;height:148px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#EEF3EF;}',
+      '.pwr-cov{position:relative;height:150px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#EEF3EF;}',
+      '.pwr-illus{position:absolute;inset:0;width:100%;height:100%;display:block;}',
       '.pwr-cov-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}',
-      '.pwr-cov-chip{width:50px;height:50px;border-radius:14px;background:rgba(255,255,255,.72);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(27,46,38,.07);}',
-      '.pwr-cov-ic{width:26px;height:26px;color:#3E6B54;}',
       '.pwr-cov-meta{position:absolute;right:9px;bottom:9px;background:rgba(20,28,24,.74);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:7px;}',
       '.pwr-cov-seen{position:absolute;left:9px;top:9px;min-width:22px;height:22px;padding:0 4px;border-radius:11px;background:var(--acc);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.2);}',
       '.pwr-cov-seen svg{display:none;}',
