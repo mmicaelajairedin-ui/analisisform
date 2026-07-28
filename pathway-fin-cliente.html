@@ -3,7 +3,7 @@
 <head>
 <script src="/pw-call.js"></script>
 <script src="pw-observe.js"></script>
-<script src="pw-recursos.js?v=20260728c"></script>
+<script src="pw-recursos.js?v=20260728f"></script>
 <script src="/pw-native.js"></script>
 <meta charset="UTF-8">
 <link rel="icon" href="/favicon-app.svg?v=5" type="image/svg+xml">
@@ -401,7 +401,7 @@ function renderRecursosFin(){
   var box=document.getElementById('fin-recursos'); if(!box||!window.PwRecursos) return;
   var list=_finRecSource().filter(function(r){ return r && ((r.titulo&&(''+r.titulo).trim())||(r.url&&(''+r.url).trim())); });
   var acc=''; try{ acc=(getComputedStyle(document.documentElement).getPropertyValue('--rose')||'').trim(); }catch(e){}
-  PwRecursos.render(box, list, { clientKey:(EMAIL||(typeof CRAW!=='undefined'&&CRAW&&CRAW.email)||'anon'), accent:acc||'#2D6A4F', coachName:(window.COACH_NOMBRE||''), title:'Recursos' });
+  PwRecursos.render(box, list, { clientKey:(EMAIL||(typeof CRAW!=='undefined'&&CRAW&&CRAW.email)||'anon'), accent:acc||'#2D6A4F', coachName:(window.COACH_NOMBRE||''), title:'Recursos', previewUrl:SB+'/functions/v1/link-preview', previewKey:KEY });
 }
 // Gauge
 (function(){var a=document.getElementById('gaugeArc'),r=36,c=2*Math.PI*r;a.style.strokeDasharray=c;a.style.strokeDashoffset=c*(1-68/100);})();
@@ -457,6 +457,7 @@ window.PW_IA_CFG={
 try{ var _SEEDV='2026-06-fin-3'; if(localStorage.getItem('pw_demo_fin_seed')!==_SEEDV){ ['pw_demo_financiero','pw_demo_fin_objetivos','pw_demo_fin_patrimonio'].forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} }); localStorage.setItem('pw_demo_fin_seed',_SEEDV); } }catch(e){}
 var SB='https://api.pathwaycareercoach.com';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+try{ if(window.PwLinkPreview) PwLinkPreview.init({previewUrl:SB+'/functions/v1/link-preview',previewKey:KEY,bubbleSel:'.pmsg'}); }catch(e){}
 function _hdr(x){ if(window.PWAUTH&&PWAUTH.headersSync) return PWAUTH.headersSync(x); var h={apikey:KEY,Authorization:'Bearer '+KEY};if(x)for(var k in x)h[k]=x[k];return h;}
 // Agendar sesión: abre el Calendly del coach (si lo configuró); si no, al chat.
 var COACH_CALENDLY='', COACH_ID='';
@@ -1695,7 +1696,29 @@ function renderNotifs(){
 function pnotifToggle(e){ if(e){try{e.stopPropagation();}catch(_e){}} var dd=document.getElementById('pwNotifDD'); if(!dd) return; var open=dd.classList.contains('open'); dd.classList.remove('open'); if(!open){ try{ _notifMarkAllSeen(); }catch(_e){} try{ renderNotifs(); }catch(_e){} dd.classList.add('open'); } }
 function pnotifGo(sec){ var dd=document.getElementById('pwNotifDD'); if(dd) dd.classList.remove('open'); if(sec==='chat'){ try{ _markChatSeen(); }catch(e){} } if(typeof go==='function') go(sec); }
 document.addEventListener('click',function(ev){ var dd=document.getElementById('pwNotifDD'); if(dd&&dd.classList.contains('open')){ var ic=document.getElementById('pwNotifIc'); if(!(ic&&ic.contains(ev.target))&&!dd.contains(ev.target)) dd.classList.remove('open'); } });
-window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!inp||!inp.value.trim())return;var txt=_mask(inp.value.trim());var now=new Date(),time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');MSGS.push({from:'cliente',text:txt,time:time,ts:now.getTime()});inp.value='';renderMsgs();if(window.COACH_EMAIL){try{fetch(SB+'/functions/v1/send-push',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({user_email:COACH_EMAIL,title:((CRAW&&CRAW.nombre)||'Tu cliente')+' te escribió',body:txt.slice(0,140),url:'/panel-v2.html',tag:'chat-'+EMAIL})}).catch(function(){});}catch(e){}}if(!CID)return;sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){var db=[];if(rows&&rows.length){try{var p=JSON.parse(rows[0].notas_coach||'[]');if(Array.isArray(p))db=p;}catch(e){}}var merged=_merge(db,MSGS);return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(){MSGS=merged;});}).catch(function(){});};
+// Banner de "no se pudo enviar" (tappable = reintenta). Antes el guardado del
+// chat terminaba en .catch(function(){}) → si la red/RLS fallaba, el mensaje
+// quedaba en pantalla pero NUNCA se guardaba y el cliente no se enteraba (se
+// perdía al recargar). Ahora avisamos y se puede reintentar.
+function _finChatWarn(show){
+  var box=document.getElementById('pmsgs'); if(!box)return;
+  var w=document.getElementById('fin-chat-warn');
+  if(!show){ if(w)w.style.display='none'; return; }
+  if(!w){ w=document.createElement('div'); w.id='fin-chat-warn'; w.style.cssText='font-size:11.5px;color:#C0554E;padding:6px 10px;cursor:pointer;text-align:center'; w.onclick=function(){ _finPersistChat(); }; if(box.parentNode) box.parentNode.insertBefore(w, box.nextSibling); }
+  w.textContent='⚠️ No se pudo enviar. Tocá para reintentar.'; w.style.display='block';
+}
+// Persiste el chat (lee → merge merge-safe → guarda) VERIFICANDO que guardó.
+function _finPersistChat(){
+  if(!CID)return;
+  sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){
+    var db=[];if(rows&&rows.length){try{var p=JSON.parse(rows[0].notas_coach||'[]');if(Array.isArray(p))db=p;}catch(e){}}
+    var merged=_merge(db,MSGS);
+    return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(r){
+      if(r&&r.ok){ MSGS=merged; _finChatWarn(false); } else { _finChatWarn(true); }
+    });
+  }).catch(function(){ _finChatWarn(true); });
+}
+window.finSendMsg=function(){var inp=document.getElementById('fin-msg-in');if(!inp||!inp.value.trim())return;var txt=_mask(inp.value.trim());var now=new Date(),time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');MSGS.push({from:'cliente',text:txt,time:time,ts:now.getTime()});inp.value='';renderMsgs();if(window.COACH_EMAIL){try{fetch(SB+'/functions/v1/send-push',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({user_email:COACH_EMAIL,title:((CRAW&&CRAW.nombre)||'Tu cliente')+' te escribió',body:txt.slice(0,140),url:'/panel-v2.html',tag:'chat-'+EMAIL})}).catch(function(){});}catch(e){}}_finPersistChat();};
 
 function pwInit(){
   if(_esDemo()){ CRAW=_demoCraw(); CID=null; applyClientFin(CRAW); _demoBrandFin(); return; }

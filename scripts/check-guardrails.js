@@ -260,6 +260,35 @@ const RULES = [
     },
   },
   {
+    name: "token de Google en caja fuerte (gcal_tokens), NO en configuracion",
+    bug: "El token de Google (con refresh_token = acceso permanente al calendario) vivía " +
+         "en usuarios.configuracion.gcal, legible por anon vía el directorio. Se movió a la " +
+         "tabla gcal_tokens (RLS: solo el coach/servicio). Si algo vuelve a escribir el token " +
+         "en configuracion, se re-expone.",
+    check() {
+      const mig = read("supabase/migrations/gcal_tokens_table.sql");
+      if (!mig) return "falta la migración gcal_tokens_table.sql (caja fuerte del token).";
+      if (!/CREATE TABLE IF NOT EXISTS public\.gcal_tokens/.test(mig) || !/ENABLE ROW LEVEL SECURITY/.test(mig))
+        return "gcal_tokens_table.sql: perdió la tabla o su RLS.";
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _gcalTokenSave/.test(p) || !/function _gcalTokenLoad/.test(p))
+          return "panel-v2.html: faltan los helpers de la caja fuerte (_gcalTokenSave/_gcalTokenLoad).";
+        if (!/delete merged\.gcal/.test(p))
+          return "panel-v2.html: saveCfg ya no saca el token de configuracion (delete merged.gcal) → se re-expondría.";
+      }
+      const gc = read("supabase/functions/gcal-connect/index.ts");
+      if (gc && /configuracion: newCfg/.test(gc))
+        return "gcal-connect: volvió a guardar el token en configuracion en vez de gcal_tokens.";
+      for (const fn of ["gcal", "gcal-push"]) {
+        const s = read(`supabase/functions/${fn}/index.ts`);
+        if (s && !/gcal_tokens/.test(s))
+          return `${fn}: ya no lee el token desde gcal_tokens (caja fuerte).`;
+      }
+      return null;
+    },
+  },
+  {
     name: "RLS: el chat admin↔coach NO está abierto al público",
     bug: "mensajes_admin_coach tenía una política {public} ALL USING(true): cualquiera con " +
          "la anon key leía/escribía/borraba todo el chat admin↔coach. Se cerró alineándolo " +
@@ -2597,9 +2626,11 @@ const RULES = [
       // La comunidad arranca vacía para una red real (nada de posts/ranking inventados).
       if (!/DBCOM=\{posts:\[\],avisos:\[\],clases:\[\],retos:\[\],ranking:\[\]\}/.test(mc))
         return "multicoach.html: la comunidad ya no arranca en blanco en modo real (DBCOM con seed falso).";
-      // La agenda arranca vacía en real (sin eventos de ejemplo).
-      if (!/AGW=MC_REAL\?\[\]:/.test(mc))
-        return "multicoach.html: la agenda ya no arranca vacía en modo real (mcSetAgenda con seed falso).";
+      // La agenda en real sale de las citas REALES (mi-red), nunca del seed demo.
+      if (!/function _mcAgwFromCitas\(/.test(mc))
+        return "multicoach.html: falta _mcAgwFromCitas() (agenda real desde citas en modo red).";
+      if (!/AGW=MC_REAL\?_mcAgwFromCitas\(\):a\.agw/.test(mc))
+        return "multicoach.html: la agenda en modo real ya no sale de las citas reales (mcSetAgenda con seed demo).";
       // Las fichas gatean sus bloques de datos por MC_REAL.
       if (!/MC_REAL\?_mcEmptyCard\('Constancia del mes'/.test(mc))
         return "multicoach.html: la ficha del cliente ya no gatea la 'Constancia del mes' en modo real (barras inventadas).";
@@ -3024,6 +3055,49 @@ const RULES = [
         if (!/pw-recursos\.js/.test(f)) return portals[i] + ": falta incluir pw-recursos.js (la biblioteca unificada).";
         if (!/PwRecursos\.render/.test(f)) return portals[i] + ": ya no usa PwRecursos.render (volvió a la vista vieja de recursos).";
         if (!/ORG_RECURSOS/.test(f)) return portals[i] + ": se cayó la fuente de empresa (ORG_RECURSOS del owner) para los recursos.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "chat: link preview (og:image) en las 4 pantallas de chat",
+    why:
+      "Cuando alguien pega un link en el chat, aparece una tarjetita compacta con " +
+      "la imagen real (og:image) + el dominio, estilo WhatsApp. El helper " +
+      "PwLinkPreview (pw-recursos.js) se auto-activa con un MutationObserver; las " +
+      "4 pantallas (fitness/finanzas/carrera clientes + panel del coach) llaman a " +
+      "PwLinkPreview.init. Regla: no romper el helper ni las llamadas.",
+    check() {
+      var c = read("pw-recursos.js");
+      if (c && !/window\.PwLinkPreview\s*=/.test(c)) return "pw-recursos.js: ya no expone window.PwLinkPreview (link preview del chat).";
+      var files = ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html", "panel-v2.html"];
+      for (var i = 0; i < files.length; i++) {
+        var f = read(files[i]);
+        if (f && !/PwLinkPreview\.init/.test(f)) return files[i] + ": ya no inicializa el link preview del chat (PwLinkPreview.init).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "recursos: el editor (coach y owner) tiene campos ricos (tipo, portada, badges)",
+    why:
+      "El editor de recursos era solo título+link. Ahora el coach (panel-v2) y el " +
+      "owner de la red (multicoach) cargan descripción, tipo, portada propia y " +
+      "badges (Nuevo/Recomendado) — para que las tarjetas de pw-recursos.js queden " +
+      "a medida. Guardan en configuracion.recursos (coach) y organizaciones.marca." +
+      "recursos (owner). Regla: no volver al editor pobre.",
+    check() {
+      var p = read("panel-v2.html");
+      if (p && /function cfgRecursos/.test(p)) {
+        if (!/rec-tp-/.test(p)) return "panel-v2.html: el editor de recursos perdió el selector de tipo (rec-tp).";
+        if (!/rec-cv-/.test(p)) return "panel-v2.html: el editor de recursos perdió la portada propia (rec-cv).";
+        if (!/rec-cover-inp/.test(p)) return "panel-v2.html: se cayó la subida de portada de recursos (rec-cover-inp).";
+      }
+      var m = read("multicoach.html");
+      if (m && /function _cfgRecursos/.test(m)) {
+        if (!/rec-tp-/.test(m)) return "multicoach.html: el editor de recursos del owner perdió el tipo (rec-tp).";
+        if (!/rec-cv-/.test(m)) return "multicoach.html: el editor de recursos del owner perdió la portada (rec-cv).";
+        if (!/organizaciones/.test(m) || !/recursos/.test(m)) return "multicoach.html: el owner ya no guarda recursos en organizaciones.marca.recursos.";
       }
       return null;
     },
@@ -3716,6 +3790,25 @@ const RULES = [
     },
   },
   {
+    name: "sala: P2P es el motor por DEFECTO (TURN propio); JaaS queda como respaldo (?engine=jaas)",
+    bug: "P2P (pw-p2p.js, WebRTC directo) ya está probado con 2 dispositivos y usa nuestro TURN propio " +
+         "(pw-turn.js). Es el motor por defecto → las llamadas reales no pagan JaaS. JaaS NO se borra: " +
+         "queda como respaldo forzable con ?engine=jaas por si una red bloquea P2P. Si el default vuelve a " +
+         "'jaas', se vuelve a pagar €90/mes de JaaS sin necesidad; si se cae el TURN (pw-turn.js) o el motor " +
+         "P2P, las salas quedan sin respaldo. Mantener default 'p2p' + JaaS embebido presente + TURN cargado.",
+    check() {
+      const s = read("sala.html");
+      if (!s) return null;
+      if (!/pw-p2p\.js/.test(s)) return "sala.html: falta el include de pw-p2p.js (motor por defecto).";
+      if (!/pw-turn\.js/.test(s)) return "sala.html: falta el include de pw-turn.js (TURN propio para P2P).";
+      if (!/qp\(['"]engine['"]\)\|\|['"]p2p['"]/.test(s)) return "sala.html: el motor de video ya no tiene default 'p2p' (se volvería a pagar JaaS).";
+      if (!/8x8\.vc/.test(s)) return "sala.html: se cayó el respaldo JaaS (8x8.vc) — sin fallback si una red bloquea P2P.";
+      if (read("pw-p2p.js") === null) return "falta pw-p2p.js (el motor P2P por defecto).";
+      if (read("pw-turn.js") === null) return "falta pw-turn.js (el TURN propio).";
+      return null;
+    },
+  },
+  {
     name: "white-label de red: la marca del dueño (organizaciones.marca) llega a los 3 portales del cliente",
     bug: "El white-label es el corazón de lo que se vende en multi-coach ('tu marca, no la de Pathway'). " +
          "Antes el portal del cliente solo aplicaba la marca del coach INDIVIDUAL si era Pro — pero en una " +
@@ -3748,6 +3841,62 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: agenda + sesiones del cliente salen de CITAS reales (mi-red), no demo",
+    bug: "El video/agenda del multicoach tenía que ser un aliado CONECTADO a la data real, no algo " +
+         "metido de adorno. Antes, en modo red real, la agenda quedaba vacía (AGW=[]) y la pestaña " +
+         "Sesiones de la ficha mostraba un 'Sin sesiones registradas' fijo → el dueño no veía nada. " +
+         "Ahora mi-red trae las CITAS de toda la red (service role, la RLS no deja que el owner las " +
+         "lea directo), _mcAgwFromCitas arma la agenda de la semana y _mcSesReal lista las sesiones " +
+         "reales del cliente por email. Si se corta, el owner vuelve a ver la agenda/sesiones vacías.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/var MC_REAL=false, MC_ORG=null, MC_OWNER=null, MC_CITAS=/.test(mc)) return "multicoach.html: falta MC_CITAS (las citas reales de la red).";
+      if (!/function _mcSesReal\(/.test(mc)) return "multicoach.html: falta _mcSesReal (sesiones reales del cliente en la ficha).";
+      if (!/MC_REAL\s*\?\s*_mcSesReal\(k\)/.test(mc)) return "multicoach.html: la pestaña Sesiones en real ya no usa _mcSesReal (volvió el 'Sin sesiones' fijo).";
+      if (!/_apply\(d\.org,d\.coaches,d\.clientes,d\.owner,d\.citas\)/.test(mc)) return "multicoach.html: mi-red ya no pasa las citas a _apply (agenda/sesiones quedan vacías).";
+      const mr = read("supabase/functions/mi-red/index.ts");
+      if (mr && !/citas\?coach_id=in\./.test(mr)) return "mi-red: ya no trae las citas de la red (agenda/sesiones del owner quedan vacías).";
+      return null;
+    },
+  },
+  {
+    name: "portal del cliente: el chat VERIFICA el guardado y avisa si falla (no .catch vacío mudo)",
+    bug: "El guardado del chat del cliente (fit/fin) terminaba en .catch(function(){}) y daba por " +
+         "guardado (MSGS=merged) aunque la red/RLS fallara → el mensaje quedaba en pantalla pero NO " +
+         "se persistía y el cliente no se enteraba (se perdía al recargar). Ahora _fitPersistChat/" +
+         "_finPersistChat verifican r.ok del sbPatch: si guardó, confirman; si no, muestran un banner " +
+         "'No se pudo enviar. Tocá para reintentar' (tappable = reintenta). Merge/dedup/escape intactos.",
+    check() {
+      const fit = read("pathway-fit-cliente.html"), fin = read("pathway-fin-cliente.html");
+      if (fit) {
+        if (!/function _fitPersistChat\(/.test(fit)) return "pathway-fit-cliente.html: falta _fitPersistChat (guardado del chat verificado).";
+        if (!/if\(r&&r\.ok\)\{ MSGS=merged; _fitChatWarn\(false\);/.test(fit)) return "pathway-fit-cliente.html: el chat ya no verifica r.ok antes de dar por guardado (guardado fantasma).";
+      }
+      if (fin) {
+        if (!/function _finPersistChat\(/.test(fin)) return "pathway-fin-cliente.html: falta _finPersistChat (guardado del chat verificado).";
+        if (!/if\(r&&r\.ok\)\{ MSGS=merged; _finChatWarn\(false\);/.test(fin)) return "pathway-fin-cliente.html: el chat ya no verifica r.ok antes de dar por guardado (guardado fantasma).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "diagnóstico (fallback directo): el upsert VERIFICA filas, no miente con return=minimal",
+    bug: "El guardado directo del diagnóstico (fallback si la edge function guardar-informe no está) " +
+         "hacía POST con Prefer:return=minimal y solo miraba r.ok. Bajo RLS un 204 puede ser 0 filas " +
+         "escritas → toast 'Guardado ✓' con NADA guardado. Ahora usa return=representation y exige " +
+         "≥1 fila; si son 0, lanza y cae a _fail (aviso claro de permisos). Sin esto vuelve el " +
+         "guardado fantasma del diagnóstico.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/informes\?on_conflict=email/.test(p)) return null; // no está el fallback → nada que exigir
+      if (!/return=representation"[\s\S]{0,160}informes\?on_conflict=email/.test(p)) return "panel-v2.html: el upsert de informes (fallback) ya no usa return=representation (guardado fantasma bajo RLS).";
+      if (!/0 filas guardadas \(RLS\)/.test(p)) return "panel-v2.html: el upsert de informes ya no verifica que escribió ≥1 fila.";
+      return null;
+    },
+  },
+  {
     name: "sesión self-healing: un 401/403 refresca el JWT y reintenta (no pierde el guardado ni expulsa)",
     bug: "Cuando el access_token de Supabase vencía, el request salía con la anon key y RLS lo " +
          "rechazaba (401/403). Antes _sbw/_sb mandaban directo a login y el guardado se perdía. " +
@@ -3769,6 +3918,28 @@ const RULES = [
         if (!/function refreshOnce\(/.test(a)) return "pw-auth.js: falta refreshOnce (refresh de sesión para todo Pathway).";
         if (!/__pwRetried/.test(a) || !/refreshOnce\(\)/.test(a)) return "pw-auth.js: el interceptor ya no reintenta el fetch tras refrescar el JWT (los portales del cliente perderían guardados por sesión vencida).";
       }
+      return null;
+    },
+  },
+  {
+    name: "panel-v2: el botón 'Mensajes' de Acciones rápidas abre el tab (mensajes es tab oculto)",
+    bug: "El botón 'Mensajes' de Acciones rápidas/qbar hace data-act='clidet:mensajes', " +
+         "pero 'mensajes' NO está en _cliTabs (es un tab OCULTO, sin chip en la barra). " +
+         "El render descarta cualquier cliDetTab que no esté en _cliTabs y lo vuelve a " +
+         "'perfil' → tocar Mensajes 'no hacía nada'. La excepción t!=='mensajes' en ese " +
+         "reset lo mantiene accesible. Si se pierde, el botón vuelve a quedar muerto.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // El botón sigue apuntando a clidet:mensajes.
+      if (!/data-act='clidet:mensajes'/.test(s))
+        return "panel-v2.html: desapareció el botón 'Mensajes' (data-act='clidet:mensajes').";
+      // El render dibuja el tab de mensajes.
+      if (!/else if\(t==="mensajes"\)/.test(s))
+        return "panel-v2.html: se perdió el render del tab de mensajes (else if t==='mensajes').";
+      // El reset a 'perfil' DEBE exceptuar 'mensajes' (si no, el botón queda muerto).
+      if (!/t!=="mensajes"\s*&&\s*!tabs\.some\(/.test(s))
+        return "panel-v2.html: el reset de cliDetTab ya no exceptúa 'mensajes' → tocar 'Mensajes' vuelve a resetear a Perfil y 'no pasa nada'.";
       return null;
     },
   },

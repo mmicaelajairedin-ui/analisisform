@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="pathway-portal.css?v=7">
 <link rel="stylesheet" href="pw-cabra-juego.css?v=1">
 <script src="pw-exbank.js"></script>
-<script src="pw-recursos.js?v=20260728c"></script>
+<script src="pw-recursos.js?v=20260728f"></script>
 <style>
 /* Ancho de lectura del portal: el .mc compartido es 1600 (lo usa finanzas para
    sus tablas anchas); acá lo acotamos y centramos para que el contenido no quede
@@ -535,7 +535,7 @@ function renderRecursos(){
   // Biblioteca unificada de Pathway (buscador, filtros, portadas, progreso).
   if(window.PwRecursos){
     var _acc=''; try{ _acc=(getComputedStyle(document.documentElement).getPropertyValue('--rose')||'').trim(); }catch(e){}
-    PwRecursos.render(box, list, { clientKey:(EMAIL||(CRAW&&CRAW.email)||CID||'anon'), accent:_acc||'#2D6A4F', coachName:(window.COACH_NOMBRE||''), title:'Recursos' });
+    PwRecursos.render(box, list, { clientKey:(EMAIL||(CRAW&&CRAW.email)||CID||'anon'), accent:_acc||'#2D6A4F', coachName:(window.COACH_NOMBRE||''), title:'Recursos', previewUrl:SB+'/functions/v1/link-preview', previewKey:KEY });
     return;
   }
   // Fallback (si el componente no cargó): lista simple.
@@ -768,6 +768,7 @@ window.PW_IA_CFG={
 // ===================================================================
 var SB='https://api.pathwaycareercoach.com';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+try{ if(window.PwLinkPreview) PwLinkPreview.init({previewUrl:SB+'/functions/v1/link-preview',previewKey:KEY,bubbleSel:'.pmsg'}); }catch(e){}
 function _hdr(extra){ if(window.PWAUTH&&PWAUTH.headersSync) return PWAUTH.headersSync(extra); var h={'apikey':KEY,'Authorization':'Bearer '+KEY}; if(extra) for(var k in extra) h[k]=extra[k]; return h; }
 // Red de seguridad para cuando RLS esté prendido: 401/403 (sin sesión) → login.
 // Mientras RLS esté apagado nunca se dispara (la anon key no da 401).
@@ -1958,18 +1959,34 @@ function renderNotifs(){
 function pnotifToggle(e){ if(e){try{e.stopPropagation();}catch(_e){}} var dd=document.getElementById('pwNotifDD'); if(!dd) return; var open=dd.classList.contains('open'); dd.classList.remove('open'); if(!open){ try{ _notifMarkAllSeen(); }catch(_e){} try{ renderNotifs(); }catch(_e){} dd.classList.add('open'); } }
 function pnotifGo(sec){ var dd=document.getElementById('pwNotifDD'); if(dd) dd.classList.remove('open'); if(sec==='chat'){ try{ _markChatSeen(); }catch(e){} } if(typeof go==='function') go(sec); }
 document.addEventListener('click',function(ev){ var dd=document.getElementById('pwNotifDD'); if(dd&&dd.classList.contains('open')){ var ic=document.getElementById('pwNotifIc'); if(!(ic&&ic.contains(ev.target))&&!dd.contains(ev.target)) dd.classList.remove('open'); } });
+// Banner de "no se pudo enviar" (tappable = reintenta). Antes el guardado del
+// chat terminaba en .catch(function(){}) → si la red/RLS fallaba, el mensaje
+// quedaba en pantalla pero NUNCA se guardaba y el cliente no se enteraba.
+function _fitChatWarn(show){
+  var box=document.getElementById('pmsgs'); if(!box) return;
+  var w=document.getElementById('fit-chat-warn');
+  if(!show){ if(w) w.style.display='none'; return; }
+  if(!w){ w=document.createElement('div'); w.id='fit-chat-warn'; w.style.cssText='font-size:11.5px;color:#C0554E;padding:6px 10px;cursor:pointer;text-align:center'; w.onclick=function(){ _fitPersistChat(); }; if(box.parentNode) box.parentNode.insertBefore(w, box.nextSibling); }
+  w.textContent='⚠️ No se pudo enviar. Tocá para reintentar.'; w.style.display='block';
+}
+// Persiste el chat (lee → merge merge-safe → guarda) VERIFICANDO que guardó.
+function _fitPersistChat(){
+  if(!CID) return;
+  sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){
+    var db=[]; if(rows&&rows.length){ try{ var p=JSON.parse(rows[0].notas_coach||'[]'); if(Array.isArray(p)) db=p; }catch(e){} }
+    var merged=_merge(db,MSGS);
+    return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(r){
+      if(r&&r.ok){ MSGS=merged; _fitChatWarn(false); } else { _fitChatWarn(true); }
+    });
+  }).catch(function(){ _fitChatWarn(true); });
+}
 function sendMsg(){
   var inp=document.getElementById('pmsg-in'); if(!inp||!inp.value.trim()) return;
   var txt=_mask(inp.value.trim());
   var now=new Date(); var time=now.getDate()+'/'+(1+now.getMonth())+' '+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0');
   MSGS.push({from:'cliente',text:txt,time:time,ts:now.getTime()}); inp.value=''; renderMsgs();
   if(window.COACH_EMAIL){ try{ fetch(SB+'/functions/v1/send-push',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({user_email:COACH_EMAIL,title:((CRAW&&CRAW.nombre)||'Tu cliente')+' te escribió',body:txt.slice(0,140),url:'/panel-v2.html',tag:'chat-'+EMAIL})}).catch(function(){}); }catch(e){} }
-  if(!CID) return;
-  sbGet('candidatos','id=eq.'+encodeURIComponent(CID)+'&select=notas_coach').then(function(rows){
-    var db=[]; if(rows&&rows.length){ try{ var p=JSON.parse(rows[0].notas_coach||'[]'); if(Array.isArray(p)) db=p; }catch(e){} }
-    var merged=_merge(db,MSGS);
-    return sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{notas_coach:JSON.stringify(merged)}).then(function(){ MSGS=merged; });
-  }).catch(function(){});
+  _fitPersistChat();
 }
 
 // Cliente de ejemplo (María demo): no existe en la base. Datos COHERENTES con
@@ -2088,7 +2105,13 @@ async function pwInit(){
   SELDAY=pwHoy();
   if(EMAIL){
     try{
-      var rows=await sbGet('candidatos','email=eq.'+encodeURIComponent(EMAIL)+'&select=*');
+      // Los dos reads dependen solo de EMAIL → en paralelo (una ida y vuelta menos
+      // en el arranque del portal). El informe se usa recién más abajo.
+      var _both=await Promise.all([
+        sbGet('candidatos','email=eq.'+encodeURIComponent(EMAIL)+'&select=*'),
+        sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=data&order=created_at.desc&limit=1')
+      ]);
+      var rows=_both[0], _ir=_both[1];
       if(rows&&rows.length){
         // El form público insertaba UNA fila por envío → puede haber duplicados.
         // Antes tomábamos rows[0] (arbitraria) → a veces una vacía o sin coach, y
@@ -2111,7 +2134,7 @@ async function pwInit(){
         try{ var _gk='pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CRAW.id||'x'), _srv=parseInt(CRAW.game_pts||0,10)||0; if(_srv>0 && _srv>(parseInt(localStorage.getItem(_gk)||'0',10)||0)) localStorage.setItem(_gk,String(_srv)); }catch(e){}
         CID=CRAW.id; _exLoad(); applyClient(CRAW); applyProceso(); pwMaybeConsent(); pwSubGate(CRAW); try{ _pwCallSetup(); }catch(e){}
         var inf=null;
-        try{ var ir=await sbGet('informes','email=eq.'+encodeURIComponent(EMAIL)+'&select=data&order=created_at.desc&limit=1'); if(ir&&ir.length){ var dd=ir[0].data; inf=(typeof dd==='string')?JSON.parse(dd):dd; } }catch(e){}
+        try{ if(_ir&&_ir.length){ var dd=_ir[0].data; inf=(typeof dd==='string')?JSON.parse(dd):dd; } }catch(e){}
         applyInforme(inf); applyLogros(inf);
         _limpiarDemo(); renderPrepCard();
         pwBeat();

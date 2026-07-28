@@ -78,6 +78,12 @@
     var accent=opts.accent||'#2D6A4F';
     var ckey=(''+(opts.clientKey||'anon')).toLowerCase();
     var STKEY='pw_rec_'+_hash(ckey);
+    // Preview real (og:image) — OPCIONAL, se activa si el portal pasa
+    // opts.previewUrl (la Edge Function link-preview). Cache local por URL.
+    var previewMode=!!(opts&&opts.previewUrl);
+    var OGKEY='pw_og_v1', ogMap={};
+    try{ ogMap=JSON.parse(localStorage.getItem(OGKEY)||'{}')||{}; }catch(e){ ogMap={}; }
+    if(!ogMap||typeof ogMap!=='object') ogMap={};
 
     var items=(resources||[]).map(function(r,i){
       r=r||{};
@@ -96,6 +102,18 @@
         destacado:!!r.destacado, nuevo:!!r.nuevo, ord:i
       };
     }).filter(function(r){ return r.titulo || r.url; });
+
+    // Imagen real de un recurso: su portada propia / miniatura de YouTube, o la
+    // og:image que trajo la Edge Function. "Todas o nada": solo mostramos fotos
+    // reales si TODAS las tarjetas tienen una; si falta alguna, quedan las
+    // ilustraciones (consistente). Fuera de previewMode, comportamiento actual.
+    function _effCover(r){ return r.cover || (r.url && ogMap[r.url]) || ''; }
+    function _allReal(){ for(var i=0;i<items.length;i++){ if(!_effCover(items[i])) return false; } return true; }
+    // ¿Ya tenemos el dato de preview de TODOS? (cover propia, o la og:image ya
+    // resuelta/cacheada). Hasta tenerlo, NO tocamos nada (mostramos lo de hoy) →
+    // si la función no está desplegada, no hay regresión. Con el dato completo
+    // aplicamos "todas o nada".
+    function _haveAllData(){ for(var i=0;i<items.length;i++){ var r=items[i]; if(!(r.cover || !r.url || (r.url in ogMap))) return false; } return true; }
 
     _injectCss();
 
@@ -131,9 +149,10 @@
       // + una ilustración limpia por tipo (se genera sola). Si hay imagen real
       // (miniatura de YouTube o cover del coach) la superpone; si falla (onerror)
       // se quita y queda la ilustración → nunca queda rota ni vacía.
+      var _real = (previewMode && _haveAllData()) ? (_allReal()?_effCover(r):'') : r.cover;
       var cov = '<div class="pwr-cov" style="background:'+TONES[T.tone]+'">'+
           _illus(r.tipo)+
-          (r.cover?'<img class="pwr-cov-img" src="'+esc(r.cover)+'" alt="" loading="lazy" onerror="this.remove()">':'')+
+          (_real?'<img class="pwr-cov-img" src="'+esc(_real)+'" alt="" loading="lazy" onerror="this.remove()">':'')+
           (r.meta?'<span class="pwr-cov-meta">'+esc(r.meta)+'</span>':'')+
           (seen?'<span class="pwr-cov-seen" title="Completado">✓</span>':'')+
         '</div>';
@@ -211,6 +230,26 @@
       cur.outerHTML=html;
     }
     paint();
+
+    // Preview real en 2º plano: pedimos la og:image de los recursos que todavía
+    // no tienen imagen; si con eso TODAS quedan con foto, re-pintamos con las
+    // reales (todas o nada). Cacheado; si falla, quedan las ilustraciones.
+    if(previewMode){
+      var _need=[]; items.forEach(function(r){ if(r.url && !r.cover && !(r.url in ogMap) && _need.indexOf(r.url)<0) _need.push(r.url); });
+      if(_need.length){
+        try{
+          fetch(opts.previewUrl,{method:'POST',headers:{'Content-Type':'application/json',apikey:(opts.previewKey||''),Authorization:'Bearer '+(opts.previewKey||'')},body:JSON.stringify({urls:_need})})
+            .then(function(rr){ return rr.ok?rr.json():null; })
+            .then(function(res){
+              if(!res||!res.previews) return;
+              var changed=false;
+              _need.forEach(function(u){ if(!(u in ogMap)){ ogMap[u]=res.previews[u]||''; changed=true; } });
+              try{ localStorage.setItem(OGKEY, JSON.stringify(ogMap)); }catch(e){}
+              if(changed) paint();
+            }).catch(function(){});
+        }catch(e){}
+      }
+    }
   }
 
   function _injectCss(){
@@ -275,5 +314,70 @@
     document.head.appendChild(st);
   }
 
-  window.PwRecursos = { render: render };
+  // Portada de UN recurso (para preview en vivo en el editor del coach/owner).
+  // Deduce tipo, usa la portada propia / miniatura de YouTube, o la ilustración.
+  function coverHtml(r, o){
+    o=o||{}; r=r||{};
+    _injectCss();
+    var tipo=_deduceTipo(r), T=TYPES[tipo]||TYPES.articulo;
+    var url=(''+(r.url||'')).trim(), safe=/^https?:\/\//i.test(url)?url:'', yt=_ytId(safe);
+    var cover=(r.cover&&(''+r.cover).trim()) || (o.image||'') || (yt?('https://i.ytimg.com/vi/'+yt+'/hqdefault.jpg'):'');
+    var meta=(r.meta&&(''+r.meta).trim())||'';
+    return '<div class="pwr-cov" style="background:'+TONES[T.tone]+';border-radius:12px'+(o.h?';height:'+o.h:'')+'">'+
+      _illus(tipo)+
+      (cover?'<img class="pwr-cov-img" src="'+esc(cover)+'" alt="" loading="lazy" onerror="this.remove()">':'')+
+      (meta&&o.meta!==false?'<span class="pwr-cov-meta">'+esc(meta)+'</span>':'')+
+    '</div>';
+  }
+  window.PwRecursos = { render: render, coverHtml: coverHtml };
+
+  // ── Link preview para el CHAT (estilo WhatsApp, compacto) ──────────────────
+  // Detecta un link en una burbuja de chat y le agrega una tarjetita chica con
+  // la imagen real (og:image, vía la Edge Function) + el dominio. Se auto-activa
+  // con un MutationObserver, así funciona en cualquier chat sin cablear cada uno.
+  var _LP=null, _lpOG=null, _lpTO=null;
+  var _LPURL=/(https?:\/\/[^\s<>"'()]+)/i;
+  function _lpOGmap(){ if(_lpOG) return _lpOG; try{ _lpOG=JSON.parse(localStorage.getItem('pw_og_v1')||'{}')||{}; }catch(e){ _lpOG={}; } if(typeof _lpOG!=='object') _lpOG={}; return _lpOG; }
+  function _lpCss(){
+    if(document.getElementById('pw-lp-css')) return;
+    var st=document.createElement('style'); st.id='pw-lp-css';
+    st.textContent=[
+      '.pwlp-card{display:flex;align-items:stretch;margin-top:6px;border:1px solid rgba(45,106,79,.16);border-radius:9px;overflow:hidden;text-decoration:none;background:rgba(255,255,255,.7);max-width:210px;}',
+      '.pwlp-thumb{width:40px;flex-shrink:0;background:#EAF0EC;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#5b7a6a;}',
+      '.pwlp-thumb img{width:100%;height:100%;object-fit:cover;}.pwlp-thumb svg{width:16px;height:16px;}',
+      '.pwlp-body{min-width:0;flex:1;padding:5px 8px;display:flex;flex-direction:column;justify-content:center;gap:1px;}',
+      '.pwlp-domain{font-size:10.5px;color:#2D6A4F;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25;}',
+      '.pwlp-u{font-size:9.5px;color:#8a8a82;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25;}'
+    ].join('\n');
+    document.head.appendChild(st);
+  }
+  function _lpFetch(url){
+    var og=_lpOGmap();
+    if(url in og) return Promise.resolve(og[url]);
+    if(!_LP||!_LP.previewUrl) return Promise.resolve('');
+    return fetch(_LP.previewUrl,{method:'POST',headers:{'Content-Type':'application/json',apikey:(_LP.previewKey||''),Authorization:'Bearer '+(_LP.previewKey||'')},body:JSON.stringify({urls:[url]})})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(res){ var img=(res&&res.previews&&res.previews[url])||''; og[url]=img; try{ localStorage.setItem('pw_og_v1',JSON.stringify(og)); }catch(e){} return img; })
+      .catch(function(){ return ''; });
+  }
+  function _lpEnrich(b){
+    if(!b || b.getAttribute('data-pwlp')==='1') return;
+    b.setAttribute('data-pwlp','1');
+    var m=(b.textContent||'').match(_LPURL); if(!m) return;
+    var url=m[1].replace(/[.,)]+$/,''); var host=_host(url); if(!host) return;
+    _lpCss();
+    var card=document.createElement('a'); card.className='pwlp-card'; card.href=url; card.target='_blank'; card.rel='noopener';
+    card.innerHTML='<span class="pwlp-thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>'+
+      '<span class="pwlp-body"><span class="pwlp-domain">'+esc(host)+'</span><span class="pwlp-u">'+esc(url.replace(/^https?:\/\//,'').slice(0,60))+'</span></span>';
+    b.appendChild(card);
+    _lpFetch(url).then(function(img){ if(!img) return; var th=card.querySelector('.pwlp-thumb'); if(th) th.innerHTML='<img src="'+esc(img)+'" alt="" onerror="this.remove()">'; });
+  }
+  function _lpScan(){ if(!_LP) return; var els=document.querySelectorAll(_LP.bubbleSel); for(var i=0;i<els.length;i++) _lpEnrich(els[i]); }
+  function _lpInit(opts){
+    if(!document.body){ document.addEventListener('DOMContentLoaded', function(){ _lpInit(opts); }); return; }
+    _LP={ previewUrl:opts&&opts.previewUrl, previewKey:opts&&opts.previewKey, bubbleSel:(opts&&opts.bubbleSel)||'.pmsg' };
+    _lpScan();
+    try{ var obs=new MutationObserver(function(){ if(_lpTO) clearTimeout(_lpTO); _lpTO=setTimeout(_lpScan,140); }); obs.observe(document.body,{childList:true,subtree:true}); }catch(e){}
+  }
+  window.PwLinkPreview = { init:_lpInit, scan:_lpScan };
 })();
