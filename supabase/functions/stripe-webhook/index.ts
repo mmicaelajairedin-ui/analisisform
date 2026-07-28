@@ -421,6 +421,57 @@ async function upsertClientSub(email: string, fields: Record<string, unknown>) {
   } catch (_e) { /* la columna origen quizá no existe aún */ }
   return { ok: r.ok };
 }
+// Da acceso al portal a un cliente que pagó (crea/reactiva su login + email de
+// bienvenida). El pago ÚNICO ya lo resuelve el panel al aceptar la solicitud
+// (_pwGrantAccess); las SUSCRIPCIONES no pasan por "aceptar" (arrancan directo),
+// así que sin esto el cliente que se suscribe paga y NO puede entrar al portal.
+// Best-effort: nunca rompe la respuesta 200 al webhook de Stripe.
+async function grantClientPortalAccess(email: string, name: string, coachId: string) {
+  try {
+    const { url: SB_URL, headers } = getSupabaseAuth();
+    const em = String(email || "").toLowerCase().trim();
+    if (!em) return;
+    const nm = String(name || "").trim() || em.split("@")[0];
+    // 1) Asegurar/reactivar la cuenta de login (usuarios.activo bloquea el login;
+    //    un cliente que renueva una suscripción vencida debe volver a activo=true).
+    const chk = await fetch(
+      `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(em)}&select=id`,
+      { headers },
+    );
+    const ex = chk.ok ? await chk.json() : [];
+    if (Array.isArray(ex) && ex.length) {
+      await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(em)}&rol=eq.cliente`, {
+        method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ activo: true }),
+      });
+    } else {
+      await fetch(`${SB_URL}/rest/v1/usuarios`, {
+        method: "POST", headers: { ...headers, Prefer: "return=minimal,resolution=ignore-duplicates" },
+        body: JSON.stringify({ email: em, rol: "cliente", nombre: nm, activo: true }),
+      });
+    }
+    // 2) Email de bienvenida ("crea tu contraseña y entra") con la firma del coach.
+    let cn = "tu coach", cemail = "", cfoto = "", cslug = "";
+    if (coachId) {
+      const cr = await fetch(
+        `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=nombre,email,configuracion,slug`,
+        { headers },
+      );
+      if (cr.ok) {
+        const u = (await cr.json())[0] || {};
+        cn = u.nombre || cn; cemail = u.email || "";
+        const cfg = u.configuracion || {};
+        const foto = String(cfg.foto_url || cfg.foto_perfil || "");
+        if (/^https?:\/\//i.test(foto)) cfoto = foto;
+        cslug = String(u.slug || cfg.slug || "");
+      }
+    }
+    await fetch(`${SB_URL}/functions/v1/password-reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: headers.apikey, Authorization: headers.Authorization },
+      body: JSON.stringify({ action: "request", email: em, name: nm, welcome: true, coach_name: cn, coach_email: cemail, coach_photo: cfoto, coach_slug: cslug }),
+    });
+  } catch (_e) { /* best-effort: nunca rompe el webhook */ }
+}
 async function handleClientSubCheckout(session: StripeSession) {
   const md = session.metadata || {};
   const email = String(md.candidato_email || session.customer_details?.email || session.customer_email || "");
@@ -436,6 +487,9 @@ async function handleClientSubCheckout(session: StripeSession) {
     sub_estado: "active",
     sub_intervalo: "4w",
   });
+  // Acceso al portal (login + bienvenida): las suscripciones no pasan por el
+  // "aceptar" del panel, así que el acceso se da acá, al confirmarse el 1er cobro.
+  await grantClientPortalAccess(email, nombre, String(md.coach_id || ""));
   return { received: true, type: "client_sub_checkout", ok: res.ok, email };
 }
 async function handleClientSubEvent(sub: StripeSubscription) {

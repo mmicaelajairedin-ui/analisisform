@@ -9623,9 +9623,15 @@ function render(){
 // contraseña y entra"). Se llama al ACEPTAR un cobro (sol-accept), NUNCA antes
 // de que haya pago. Best-effort: si algo falla, la coach reenvía desde la ficha.
 function _pwGrantAccess(email, name){
-  var em=(""+(email||"")).toLowerCase().trim(); if(!em) return;
+  var em=(""+(email||"")).toLowerCase().trim(); if(!em) return Promise.resolve({sent:null});
   var nm=name||em.split("@")[0];
-  _sb("usuarios?email=eq."+encodeURIComponent(em)+"&select=id&limit=1").then(function(_ur){
+  // RENOVACIÓN: si el cliente ya tenía cuenta pero estaba pausado (activo=false,
+  // fin de mentoría en el modelo renovable), volver a pagar debe REACTIVARLO.
+  // usuarios.activo bloquea el login → sin esto, un cliente que renueva paga y no
+  // entra. Reactivamos su login y su ficha (best-effort; RLS lo acota a lo propio).
+  try{ _sbw("usuarios?email=eq."+encodeURIComponent(em)+"&rol=eq.cliente","PATCH",{activo:true}).catch(function(){}); }catch(e){}
+  try{ _sbw("candidatos?email=eq."+encodeURIComponent(em),"PATCH",{activo:true}).catch(function(){}); }catch(e){}
+  return _sb("usuarios?email=eq."+encodeURIComponent(em)+"&select=id&limit=1").then(function(_ur){
     if(_ur&&_ur.length) return true;
     return _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
       return fetch(SB+"/rest/v1/usuarios",{method:"POST",headers:h,body:JSON.stringify({email:em,rol:"cliente",nombre:nm,activo:true})});
@@ -9635,8 +9641,9 @@ function _pwGrantAccess(email, name){
     var _cemail=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
     var _cfoto=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim(); if(!/^https?:\/\//i.test(_cfoto)) _cfoto="";
     var _cslug=((RCFG&&RCFG.slug)||(COACH&&COACH.slug)||"").toString().trim();
-    return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:em,name:nm,welcome:true,coach_name:_cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})});
-  }).catch(function(){});
+    return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:em,name:nm,welcome:true,coach_name:_cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})})
+      .then(function(res){ return (res&&res.json)?res.json().catch(function(){return{};}):{}; });
+  }).then(function(j){ return {sent:(j&&j.sent)}; }).catch(function(){ return {sent:false}; });
 }
 
 /* ═══ Events ═══ */
@@ -10372,10 +10379,16 @@ document.addEventListener("click", function(ev){
     if(_genBusy) return; _busyOn(); toast(doAccept?"Aceptando y cobrando…":"Rechazando…");
     fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:doAccept?"accept":"reject",solicitud_id:solId})})
       .then(function(r){ _busyOff(); if(!r.ok) throw 0;
-        // Pago capturado → el cliente ENTRA al portal: le creamos el acceso y el
-        // email de bienvenida. Aquí se cierra el círculo del cliente Pathway.
-        if(doAccept && _solRow && _solRow.candidato_email){ try{ _pwGrantAccess(_solRow.candidato_email, _solRow.candidato_nombre||""); }catch(e){} }
-        toast(doAccept?"Solicitud aceptada ✓ — pago capturado. Le mandamos al cliente su acceso al portal.":"Solicitud rechazada ✓"); loadReal(); })
+        // Pago capturado → el cliente ENTRA al portal: le creamos/reactivamos el
+        // acceso y le mandamos el email de bienvenida. Cierra el círculo Pathway.
+        // Si el email NO sale, avisamos para usar "Reenviar invitación" (no damos
+        // por enviado algo que falló).
+        if(doAccept && _solRow && _solRow.candidato_email){
+          try{ _pwGrantAccess(_solRow.candidato_email, _solRow.candidato_nombre||"").then(function(res){
+            if(res && res.sent===false){ toast("Ojo: el email de acceso a "+(_solRow.candidato_nombre||"el cliente")+" no salió — abrí su ficha y tocá \"Reenviar invitación\"."); }
+          }); }catch(e){}
+        }
+        toast(doAccept?"Solicitud aceptada ✓ — pago capturado. Le damos acceso al cliente.":"Solicitud rechazada ✓"); loadReal(); })
       .catch(function(){ _busyOff(); alert("No se pudo procesar la solicitud. Reintenta en un momento."); });
     return;
   }
