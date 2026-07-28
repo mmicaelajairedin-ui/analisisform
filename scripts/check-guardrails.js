@@ -27,6 +27,23 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "colores: las burbujas del chat NO usan el color de marca (van neutras)",
+    bug: "Regla de la coach: los colores son neutros (blanco/crema) y SOLO lo " +
+         "white-label cambia al color de marca. El chat es chrome, no white-label. " +
+         "Si una burbuja usa --pw-bosque/--accent/--bosque y el coach pone la marca " +
+         "en rojo, el chat queda de otro color que el panel. Deben ser crema/neutro.",
+    check() {
+      // Cualquier clase de burbuja de mensaje propia (.*me{) con fondo de marca.
+      const re = /\.[a-z-]*(?:msg|bub|bubble|iac|cmsg)[a-z-]*(?:\.me|-me)\s*\{[^}]*background:\s*var\(--(?:pw-bosque|bosque|accent|brand)\)/i;
+      const files = ["panel-v2.html", "multicoach.html", "sala.html", "equipos.html",
+                     "pathway-base.css", "pathway-panel.css", "cliente.html"];
+      const bad = files.filter((f) => re.test(read(f)));
+      if (bad.length)
+        return "burbuja(s) de chat con el color de marca (deben ir neutras/crema): " + bad.join(", ") + ".";
+      return null;
+    },
+  },
+  {
     name: "agenda: el selector de icono NO mete el SVG dentro de un atributo",
     bug: "Al pasar _AG_ICONS de emoji a iconos Lucide (SVG con comillas), el " +
          "selector de icono del tipo de evento ponía el SVG completo dentro de un " +
