@@ -4011,16 +4011,26 @@ function _salaHistLoad(cid){
     rows=rows.filter(function(x){ return x && (x.resultado||x.notas_llamada); });
     if(!rows.length){ box.innerHTML=""; return; }
     var RL={convirtio:["Avanzó","var(--pw-bosque)"],seguimiento:["Lo piensa","#C99A2E"],perdido:["Por ahora no","var(--pw-text-soft)"],gano:["Fue bien","var(--pw-bosque)"],perdio:["No cerró","var(--pw-danger)"]};
+    window._SALA_ADDMAP={};   // ms → sesObj, para el botón "Agregar a Sesiones" (fallback manual)
     box.innerHTML="<div class='cp-card' style='margin-bottom:14px'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>🎥</span> Registro de la Sala<span class='dot'>.</span></h3></div><div class='cp-card-pad'>"+
       rows.map(function(x){
         var d=new Date(x.inicio); var when=isNaN(d)?"":d.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"})+" · "+d.toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
         var rl=RL[x.resultado]; var badge=rl?("<span style='font-size:11px;font-weight:700;color:#fff;background:"+rl[1]+";padding:2px 9px;border-radius:100px;white-space:nowrap'>"+esc(rl[0])+"</span>"):"";
         var P=_salaParseBlob(x.notas_llamada);
+        // Fallback manual: si esta Sala no entró sola en Sesiones, dejamos un botón
+        // para agregarla de un clic. Guardamos el sesObj listo, indexado por la cita.
+        var _ms=+new Date(x.inicio);
+        var _saved=(c.ses||[]).some(function(s){ return s && s._cita===_ms; });
+        var _tar0=(P.tar||[]);
+        window._SALA_ADDMAP[_ms]={ fecha:(isNaN(d)?"":d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2)), hora:(isNaN(d)?"":("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2)), trabajado:(P.notas||"").trim(), acordado:((P.obj||[]).map(function(o){return o.txt;}).join("\n")).trim(), acciones:_tar0.map(function(t){return t.txt;}).join("\n"), tareas_done:_tar0.map(function(t,i){return t.done?i:-1;}).filter(function(i){return i>=0;}), _sala:true, _cita:_ms };
+        var _addBtn=_saved
+          ? "<div style='font-size:11.5px;color:var(--pw-bosque);font-weight:600;margin-top:8px'>✓ En Sesiones</div>"
+          : "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px;margin-top:8px' data-act='sala-add-ses' data-ms='"+_ms+"' data-cid='"+esc(cid)+"'>+ Agregar a Sesiones</button>";
         function _lst(t,arr){ if(!arr.length) return ""; return "<div style='margin-top:8px'><div style='font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:3px'>"+t+"</div>"+arr.map(function(it){ return "<div style='font-size:12.5px;color:"+(it.done?"var(--pw-text-muted)":"var(--pw-carbon)")+";line-height:1.5"+(it.done?";text-decoration:line-through":"")+"'>"+(it.done?"✓":"○")+" "+esc(it.txt)+"</div>"; }).join("")+"</div>"; }
         function _rlst(arr){ if(!arr.length) return ""; return "<div style='margin-top:8px'><div style='font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:3px'>Documentos</div>"+arr.map(function(it){ return it.url?("<a href=\""+esc(it.url)+"\" target='_blank' rel='noopener' style='display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--pw-bosque);text-decoration:none;padding:2px 0'>📎 "+esc(it.name)+"</a><br>"):("<div style='font-size:12.5px'>📎 "+esc(it.name)+"</div>"); }).join("")+"</div>"; }
         var secs=(P.notas?"<div style='font-size:12.5px;color:var(--pw-carbon);white-space:pre-wrap;line-height:1.5'>"+esc(P.notas)+"</div>":"")+_lst("Objetivos",P.obj)+_lst("Tareas",P.tar)+_rlst(P.rec);
         var nt=secs?("<div style='margin-top:6px;background:var(--pw-niebla-2);border-radius:10px;padding:10px 12px'>"+secs+"</div>"):"";
-        return "<div style='padding:10px 0;border-bottom:1px solid var(--pw-border)'><div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'><span style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(when)+"</span>"+(x.tipo?"<span style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(x.tipo)+"</span>":"")+"<span style='margin-left:auto'>"+badge+"</span></div>"+nt+"</div>";
+        return "<div style='padding:10px 0;border-bottom:1px solid var(--pw-border)'><div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'><span style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(when)+"</span>"+(x.tipo?"<span style='font-size:11.5px;color:var(--pw-text-soft)'>"+esc(x.tipo)+"</span>":"")+"<span style='margin-left:auto'>"+badge+"</span></div>"+nt+_addBtn+"</div>";
       }).join("")+
     "</div></div>";
     _salaMergeSessions(c, rows);   // graba las Salas de modo 'sesion' en sesiones_registro (autocompletar)
@@ -11333,6 +11343,21 @@ document.addEventListener("click", function(ev){
     _sbw("candidatos?id=eq."+encodeURIComponent(dtid),"PATCH",{sesiones_registro:JSON.stringify(dtc.ses)})
       .then(function(r){ if(!r.ok) throw 0; toast("Tarea quitada ✓"); render(); })
       .catch(function(){ alert("No se pudo quitar la tarea."); });
+    return;
+  }
+  if(act==="sala-add-ses"){
+    // Fallback manual: agrega una sesión de la Sala a Sesiones del cliente de un clic
+    // (si el automático no la tomó). El sesObj ya está listo en _SALA_ADDMAP por su cita.
+    var _sms=parseInt(el.getAttribute("data-ms"),10); var _scid=el.getAttribute("data-cid");
+    var _sobj=(window._SALA_ADDMAP||{})[_sms]; if(!_sobj||!_scid) return;
+    var _sc=(CLIENTS||[]).filter(function(x){return String(x.id)===String(_scid);})[0]; if(!_sc){ toast("No se encontró el cliente."); return; }
+    var _sarr=(_sc.ses||[]).slice();
+    if(_sarr.some(function(s){ return s && s._cita===_sms; })){ toast("Ya está en Sesiones ✓"); try{ if(typeof _salaHistLoad==="function") _salaHistLoad(_scid); }catch(e){} return; }
+    _sarr.push(_sobj);
+    _sbw("candidatos?id=eq."+encodeURIComponent(_scid),"PATCH",{sesiones_registro:JSON.stringify(_sarr)}).then(function(r){
+      if(r&&r.ok){ _sc.ses=_sarr; if(_sc.raw) _sc.raw.sesiones_registro=JSON.stringify(_sarr); toast("Agregada a Sesiones ✓"); try{ render(); }catch(e){} }
+      else { toast("No se pudo agregar. Reintenta."); }
+    }).catch(function(){ toast("No se pudo agregar. Reintenta."); });
     return;
   }
   if(act==="ses-add"){
