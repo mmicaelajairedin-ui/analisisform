@@ -3174,7 +3174,12 @@ function _renderMain(sec){
   var el=document.getElementById('mc');
   // Secciones que siempre se refrescan (datos cambian con frecuencia)
   if(sec==='semana'){el.innerHTML=_mc(_safeRender(rSemana,'semana'));return;}
-  if(sec==='analisis'){el.innerHTML=_mc(_safeRender(rAnalisis,'analisis'));return;}
+  if(sec==='analisis'){
+    // OS Core: el cliente ABRIÓ su informe → es el "visto" del informe (señal de
+    // que lo leyó, no solo que se generó). 1× por sesión, solo si hay informe.
+    try{ if(!window._pwInfViewed&&D&&window.pwEmit){ window._pwInfViewed=1; pwEmit("ReportViewed",{dominio:"Client",entidad_tipo:"informe",entidad_id:(E||'').toLowerCase(),payload:{semana:SEM}}); } }catch(e){}
+    el.innerHTML=_mc(_safeRender(rAnalisis,'analisis'));return;
+  }
   if(sec==='docs'){el.innerHTML=_mc(_safeRender(rDocs,'docs'));return;}
   if(sec==='sesion'){el.innerHTML=_mc(_safeRender(rSesionPage,'sesion'));return;}
   // Secciones cacheables — reutilizar si ya se renderizaron.
@@ -4205,6 +4210,10 @@ function tAcc(i){
 
   pt('candidatos','email=eq.'+encodeURIComponent(E),{acciones_progreso:JSON.stringify(ACTS)}).then(function(){
     showSaveToast();
+    // OS Core: el cliente cumplió una acción de su etapa → alimenta el flujo
+    // (progreso real, no solo lo que el coach generó). Solo al COMPLETAR (no al
+    // desmarcar). Best-effort: si el emit falla, el guardado ya sucedió igual.
+    try{ if(nowDone&&!wasDone&&window.pwEmit) pwEmit("TaskCompleted",{dominio:"Client",entidad_tipo:"tarea",entidad_id:E?(E.toLowerCase()+":"+i):String(i),payload:{semana:SEM,idx:i}}); }catch(e){}
   }).catch(function(){});
 
   updSB();

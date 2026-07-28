@@ -30,6 +30,9 @@ activación ya se emiten desde el frontend. Validado end-to-end en producción c
 | ✅ `ClientAccepted` | `cliente.html` · `done()` del gate de consentimiento |
 | ✅ `SessionCompleted` | `panel-v2.html` · handler `ses-add` (tras registrar la sesión) |
 | ✅ `ProfileCompleted` | `panel-v2.html` · `doSave()` (perfil con nombre + bio/título) |
+| ✅ `ReportGenerated` | `panel-v2.html` · `_finPatch` del handler `plan-save` (informe guardado, ya lo ve el cliente) |
+| ✅ `ReportViewed` | `cliente.html` · `_renderMain('analisis')` (el cliente abre su informe · 1× por sesión) |
+| ✅ `TaskCompleted` | `cliente.html` · `tAcc()` (el cliente marca una acción de su etapa como hecha) |
 
 Pendiente (siguientes pasos, en orden):
 1. Helper `emit()` server-side para edge functions (service role): `TrialStarted`,
@@ -51,7 +54,9 @@ todavía no hay suscriptores; se construyen en el Nivel 1–2.
 | ✅ `ClientInvited` | Coaching | Client · Activation · Analytics | el coach invita a su primer/otro cliente |
 | ✅ `ClientAccepted` | Client | Coaching · Activation · Analytics · Notifications | el cliente acepta la invitación |
 | ✅ `SessionCompleted` | Coaching | AI · Analytics · HealthScore · Notifications · Marketplace | se realiza/registra una sesión |
-| `TaskCompleted` | Client | Coaching · Analytics · Automation | el cliente marca una tarea hecha |
+| ✅ `ReportGenerated` | Coaching | Client · Activation · Analytics · HealthScore | el coach genera/guarda el informe (diagnóstico) — el cliente ya lo ve |
+| ✅ `ReportViewed` | Client | Activation · Analytics · HealthScore | el cliente abre su informe (señal de que lo leyó, no solo que se generó) |
+| ✅ `TaskCompleted` | Client | Coaching · Analytics · Automation · HealthScore | el cliente marca una acción de su etapa como hecha |
 | `WowReached` | Activation | Analytics · Commercial | hubo interacción real (momento WOW) |
 | ✅ `PaymentSucceeded` | Billing | Marketplace · Ledger · Analytics · Commercial | el coach paga por primera vez (o reactiva) |
 | `ProgramFinished` | Coaching | Renovación · AI · Analytics · Notifications | termina un programa (4 semanas) |

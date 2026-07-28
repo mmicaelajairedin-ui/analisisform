@@ -3784,6 +3784,33 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "event bus: ReportGenerated se emite al guardar el informe (panel-v2)",
+    bug: "Los informes alimentan el flujo OS: el coach publico el diagnostico (handler 'plan-save', _finPatch). El cliente ya lo ve.",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("ReportGenerated"/.test(s)) return "panel-v2.html: se borro el emit de ReportGenerated.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ReportViewed se emite al abrir el informe (cliente.html)",
+    bug: "El 'visto' del informe: el cliente ABRIO su analisis (_renderMain('analisis')). Distingue leido de solo-generado.",
+    check() {
+      const s = read("cliente.html");
+      if (s && !/pwEmit\("ReportViewed"/.test(s)) return "cliente.html: se borro el emit de ReportViewed.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: TaskCompleted se emite al cumplir una accion (cliente.html)",
+    bug: "El cliente cumple una accion de su etapa (tAcc): alimenta el flujo con progreso real, no solo lo que genero el coach.",
+    check() {
+      const s = read("cliente.html");
+      if (s && !/pwEmit\("TaskCompleted"/.test(s)) return "cliente.html: se borro el emit de TaskCompleted.";
+      return null;
+    },
+  },
   // ── metricas (Nivel 1) — la edge function que enriquecerá el tab Analíticas ──
   {
     name: "metricas: edge function read-only con gate de admin",
