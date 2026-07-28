@@ -278,6 +278,7 @@
 </div>
 
 <script src="pw-cabra-juego.js"></script>
+<script src="pw-p2p.js?v=1"></script>
 <script>
 "use strict";
 var SB='https://api.pathwaycareercoach.com';
@@ -297,6 +298,9 @@ var TIPO = qp('tipo') || '';
 var DUR  = qp('dur') || '';
 var STARTms = parseInt(qp('start')||'0',10)||0;
 var COACHID = qp('coach') || '';                     // dueño de la cita (para Documentos)
+// Motor de video: 'jaas' (8x8, por defecto) o 'p2p' (WebRTC directo, sin costo).
+// Se elige con ?engine=p2p en el link → prueba P2P sin tocar el camino JaaS.
+var ENGINE = (qp('engine')||'jaas').toLowerCase();
 var KIND = qp('kind') || 'sesion';                   // modo de la Sala: sesion | primera_llamada | demo_pathway | personal (viejas sin kind → sesion)
 var FOTO = qp('foto') || '';                          // avatar en la videollamada
 
@@ -481,7 +485,36 @@ function _fmtLeft(ms){
 }
 function _hideCtrls(on){ var c=el('ctrls'); if(c) c.style.display=on?'none':'flex'; }
 var _booted=false, _gateTimer=null;
-function _enter(){ if(_booted) return; _booted=true; if(_gateTimer){ clearInterval(_gateTimer); _gateTimer=null; } _hideCtrls(false); boot(); }
+function _enter(){ if(_booted) return; _booted=true; if(_gateTimer){ clearInterval(_gateTimer); _gateTimer=null; } _hideCtrls(false); if(ENGINE==='p2p'){ bootP2P(); } else { boot(); } }
+// ── Motor P2P (WebRTC directo) — se usa solo con ?engine=p2p ──────────────────
+// Reusa la MISMA interfaz de la Sala (video, controles, chat, gate). No toca el
+// camino JaaS. El signaling va por Supabase Realtime (canal = el room).
+function bootP2P(){
+  waitState('Preparando la sala…','Conectando la videollamada directa (P2P).');
+  if(!window.PWP2P){ waitState('No cargó el motor P2P','Recargá la página. Detalle: falta pw-p2p.js',true); return; }
+  // TURN opcional (respaldo para redes que bloquean el P2P). Se completa cuando
+  // haya un servidor TURN; sin él funciona en la mayoría de las redes.
+  var ICE = (window.PW_TURN && window.PW_TURN.length) ? window.PW_TURN : [];
+  PWP2P.start({
+    container:'jaas', room:ROOM, name:NAME, moderator:MOD, sbUrl:SB, sbKey:KEY, iceServers:ICE,
+    onState:function(t){ try{ el('estado').textContent=t; }catch(e){} },
+    onLocalReady:function(){ hideWait(); },
+    onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='En llamada'; },
+    onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Esperando'; },
+    onChat:function(from,text){ try{ chatAdd(from||WHO, text, false); }catch(e){} },
+    onError:function(e){ var c=(e&&(e.name||e.message))||'error';
+      if(/NotAllowed|Permission/i.test(c)) waitState('Permití cámara y micrófono','El navegador bloqueó el acceso. Tocá el candado de la barra y permití cámara/micrófono, y recargá.',true);
+      else waitState('No se pudo conectar el video','Reintentá o abrí en otra red. Detalle: '+c,true); }
+  }).then(function(){ wireControlsP2P(); }).catch(function(){});
+}
+function wireControlsP2P(){
+  var mic=el('c-mic'); if(mic) mic.onclick=function(){ var m=PWP2P.toggleMic(); mic.classList.toggle('off', !!m); };
+  var cam=el('c-cam'); if(cam) cam.onclick=function(){ var o=PWP2P.toggleCam(); cam.classList.toggle('off', !!o); };
+  var sh=el('c-share'); if(sh) sh.onclick=function(){ Promise.resolve(PWP2P.toggleScreen()).then(function(on){ sh.classList.toggle('active', !!on); }); };
+  var part=el('c-part'); if(part) part.style.display='none';   // P2P 1:1 → no hay panel de participantes
+  var h=el('c-hang'); if(h) h.onclick=function(){ try{ PWP2P.hangup(); }catch(e){} setTimeout(finalizar,300); };
+  var fb=el('c-full'); if(fb) fb.onclick=function(){ var st=document.querySelector('.stage'); if(!st) return; try{ if(!document.fullscreenElement){ (st.requestFullscreen||st.webkitRequestFullscreen||function(){}).call(st); } else { (document.exitFullscreen||function(){}).call(document); } }catch(e){} };
+}
 function startSala(){
   if(_booted) return;
   var g=_gateState();
@@ -515,7 +548,7 @@ function finalizar(){ try{ saveSesion(); }catch(e){} try{ stopTimer(); }catch(e)
 // Salida (header + botón sobre el video + colgar): el COACH cierra directo; el
 // CLIENTE ve primero el "¿cómo fue?" (feedback de la sesión) y de ahí sale.
 function _leaveSala(){
-  try{ api&&api.executeCommand('hangup'); }catch(e){}
+  try{ if(ENGINE==='p2p'){ window.PWP2P&&PWP2P.hangup(); } else { api&&api.executeCommand('hangup'); } }catch(e){}
   if(MOD){ setTimeout(finalizar,400); return; }
   var ov=el('fb-ov'); if(ov){ ov.style.display='flex'; setTimeout(function(){ try{ stopTimer(); }catch(e){} },400); }
   else { setTimeout(finalizar,400); }
@@ -632,7 +665,7 @@ function chatAdd(who,txt,mine){ txt=(''+(txt||'')).trim(); if(!CHATBODY||!txt) r
 function chatToggle(on){ if(!CHATP) return; var show=(on==null)?!CHATP.classList.contains('on'):!!on; CHATP.classList.toggle('on',show);
   if(show){ CHATUNREAD=0; chatBadge(); try{ if(window.matchMedia&&window.matchMedia('(max-width:1000px)').matches) window.scrollTo(0,0); }catch(e){} setTimeout(function(){ if(CHATI) CHATI.focus(); if(CHATBODY) CHATBODY.scrollTop=CHATBODY.scrollHeight; },30); }
 }
-function chatSend(txt){ txt=(''+(txt||'')).trim(); if(!txt) return; try{ api&&api.executeCommand('sendChatMessage',txt); }catch(e){} chatAdd(NAME,txt,true); if(CHATI) CHATI.value=''; _persistChat(MOD?'coach':'cliente', txt); }
+function chatSend(txt){ txt=(''+(txt||'')).trim(); if(!txt) return; try{ if(ENGINE==='p2p'){ window.PWP2P&&PWP2P.sendChat(txt); } else { api&&api.executeCommand('sendChatMessage',txt); } }catch(e){} chatAdd(NAME,txt,true); if(CHATI) CHATI.value=''; _persistChat(MOD?'coach':'cliente', txt); }
 // Lo escrito en el chat de la Sala QUEDA como registro: se guarda en la ficha del
 // cliente (candidatos.notas_coach) → después se ve en el chat del panel. Cada punta
 // persiste SU propio mensaje (from correcto). Re-lee + mergea (dedup from|text|ts)
