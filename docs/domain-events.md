@@ -36,6 +36,8 @@ activación ya se emiten desde el frontend. Validado end-to-end en producción c
 | ✅ `LeadCreated` | `index.html` · chatbot de la landing · y `soy-candidato.html` · registro "busco trabajo" |
 | ✅ `WowReached` | `cliente.html` · guardado del análisis de LinkedIn (interacción real · 1× por sesión) |
 | ✅ `ProgramFinished` | `panel-v2.html` · handler `cli-saveweek`, en la transición a la etapa 4 |
+| ✅ `CallRequested` | `reservar.html` · arranque (llegó a la página de reserva por el CTA de llamada/demo) |
+| ✅ `CallBooked` | `reservar.html` · `_finish(saved)` de `confirmar()` (se agendó la llamada/sesión) |
 
 Pendiente (siguientes pasos, en orden):
 1. Helper `emit()` server-side para edge functions (service role): `TrialStarted`,
@@ -56,6 +58,8 @@ todavía no hay suscriptores; se construyen en el Nivel 1–2.
 | ✅ `StripeConnected` | Billing | Activation · Analytics | el coach conecta su cobro (Connect) |
 | ✅ `ClientInvited` | Coaching | Client · Activation · Analytics | el coach invita a su primer/otro cliente |
 | ✅ `ClientAccepted` | Client | Coaching · Activation · Analytics · Notifications | el cliente acepta la invitación |
+| ✅ `CallRequested` | Commercial | Analytics · Commercial | alguien abre la página de reserva (llegó por el CTA de llamada/demo) |
+| ✅ `CallBooked` | Coaching | Analytics · Commercial · HealthScore · Notifications | se agenda una llamada/sesión (candidato: llamada gratis · coach: demo · cliente: sesión) |
 | ✅ `SessionCompleted` | Coaching | AI · Analytics · HealthScore · Notifications · Marketplace | se realiza/registra una sesión |
 | ✅ `ReportGenerated` | Coaching | Client · Activation · Analytics · HealthScore | el coach genera/guarda el informe (diagnóstico) — el cliente ya lo ve |
 | ✅ `ReportViewed` | Client | Activation · Analytics · HealthScore | el cliente abre su informe (señal de que lo leyó, no solo que se generó) |

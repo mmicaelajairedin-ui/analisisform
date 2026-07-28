@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
   // con el select base para NO romper TODOS los recordatorios por columnas opcionales.
   const baseSel = `id,nombre,email,tipo,inicio,estado,coach_id,cliente_tz,token,rem_24h_at,rem_1h_at`;
   const winQ = `&inicio=gte.${new Date(now).toISOString()}&inicio=lte.${inWin}&order=inicio.asc&limit=200`;
-  const qFull = `${SB_URL}/rest/v1/citas?select=${baseSel},modalidad,lugar,grupal${winQ}`;
+  const qFull = `${SB_URL}/rest/v1/citas?select=${baseSel},modalidad,lugar,grupal,lang${winQ}`;
   const qBase = `${SB_URL}/rest/v1/citas?select=${baseSel}${winQ}`;
   let citas: Cita[] = [];
   try {
@@ -106,6 +106,7 @@ interface Cita {
   estado?: string; coach_id?: string; cliente_tz?: string; token?: string;
   rem_24h_at?: string | null; rem_1h_at?: string | null;
   modalidad?: string | null; lugar?: string | null; grupal?: boolean | null;
+  lang?: string | null;
 }
 interface Coach { nombre?: string; email?: string; tz?: string; }
 
@@ -134,17 +135,20 @@ async function loadCoaches(url: string, key: string, ids: string[]): Promise<Rec
 async function sendReminder(
   url: string, key: string, c: Cita, coach: Coach, tz: string, kind: "1h" | "24h",
 ): Promise<boolean> {
+  // Idioma del cliente (guardado en la reserva). Si no hay, español por defecto.
+  const EN = String(c.lang || "").toLowerCase().slice(0, 2) === "en";
+  const loc = EN ? "en-US" : "es-ES";
   const first = (c.nombre || "").split(" ")[0] || "";
-  const coachName = coach.nombre || "tu coach";
-  const cuando = fmtFecha(c.inicio, tz);
-  const hora = fmtHora(c.inicio, tz);
-  const tipo = c.tipo || "sesión";
+  const coachName = coach.nombre || (EN ? "your coach" : "tu coach");
+  const cuando = fmtFecha(c.inicio, tz, loc);
+  const hora = fmtHora(c.inicio, tz, loc);
+  const tipo = c.tipo || (EN ? "session" : "sesión");
   const subject = kind === "1h"
-    ? `⏰ Tu ${tipo} con ${coachName} es en un rato (${hora})`
-    : `📅 Recordatorio: tu ${tipo} con ${coachName} es mañana (${cuando})`;
+    ? (EN ? `⏰ Your ${tipo} with ${coachName} is soon (${hora})` : `⏰ Tu ${tipo} con ${coachName} es en un rato (${hora})`)
+    : (EN ? `📅 Reminder: your ${tipo} with ${coachName} is tomorrow (${cuando})` : `📅 Recordatorio: tu ${tipo} con ${coachName} es mañana (${cuando})`);
   const intro = kind === "1h"
-    ? `Tu <strong>${esc(tipo)}</strong> con ${esc(coachName)} es <strong>hoy a las ${esc(hora)}</strong>. ¡Te esperamos!`
-    : `Te recordamos tu <strong>${esc(tipo)}</strong> con ${esc(coachName)}: <strong>${esc(cuando)} a las ${esc(hora)}</strong>.`;
+    ? (EN ? `Your <strong>${esc(tipo)}</strong> with ${esc(coachName)} is <strong>today at ${esc(hora)}</strong>. See you there!` : `Tu <strong>${esc(tipo)}</strong> con ${esc(coachName)} es <strong>hoy a las ${esc(hora)}</strong>. ¡Te esperamos!`)
+    : (EN ? `A reminder about your <strong>${esc(tipo)}</strong> with ${esc(coachName)}: <strong>${esc(cuando)} at ${esc(hora)}</strong>.` : `Te recordamos tu <strong>${esc(tipo)}</strong> con ${esc(coachName)}: <strong>${esc(cuando)} a las ${esc(hora)}</strong>.`);
 
   // Link a la Sala de Pathway (misma que arma reservar.html y el panel):
   // Pathway-<coach_id>-<startMs>. El video es de Pathway (JaaS), no es de un tercero.
@@ -163,15 +167,15 @@ async function sendReminder(
     (esGrupal ? "&grupal=1" : "");
   // Presencial → mostramos el lugar y NO el botón de videollamada. Online → botón a la Sala.
   const lineaModo = esPresencial
-    ? `<div style="margin-top:4px">📍 <strong>Presencial</strong>${c.lugar ? ` · ${esc(String(c.lugar))}` : ""}</div>`
-    : `<div style="margin-top:4px">💻 Videollamada de Pathway</div>`;
+    ? `<div style="margin-top:4px">📍 <strong>${EN ? "In person" : "Presencial"}</strong>${c.lugar ? ` · ${esc(String(c.lugar))}` : ""}</div>`
+    : `<div style="margin-top:4px">💻 ${EN ? "Pathway video call" : "Videollamada de Pathway"}</div>`;
   const botonModo = esPresencial
     ? ``
-    : `<a href="${joinLink}" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:2px 0 12px">Entrar a la videollamada</a>`;
+    : `<a href="${joinLink}" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:2px 0 12px">${EN ? "Join the video call" : "Entrar a la videollamada"}</a>`;
 
   const html =
     `<div style="font-family:Inter,-apple-system,'Segoe UI',sans-serif;max-width:480px;margin:0 auto">` +
-    `<p style="font-size:15px;color:#1B2E26">Hola ${esc(first)},</p>` +
+    `<p style="font-size:15px;color:#1B2E26">${EN ? "Hi" : "Hola"} ${esc(first)},</p>` +
     `<p style="font-size:14px;line-height:1.6;color:#42504A">${intro}</p>` +
     `<div style="background:#F0F5EF;border-radius:12px;padding:14px 16px;margin:14px 0;font-size:14px;color:#1B2E26">` +
     `<div>📅 <strong>${esc(cuando)}</strong></div>` +
@@ -180,8 +184,8 @@ async function sendReminder(
     `</div>` +
     botonModo +
     (c.token
-      ? `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">¿No podés en ese horario? <a href="https://pathwaycareercoach.com/gestionar-cita.html?t=${esc(c.token)}" style="color:#2D6A4F;font-weight:700">Cancelar o reprogramar</a>.</p>`
-      : `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">Si no podés en ese horario, respondé este email y lo reprogramamos.</p>`) +
+      ? `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">${EN ? "Can't make that time?" : "¿No podés en ese horario?"} <a href="https://pathwaycareercoach.com/gestionar-cita.html?t=${esc(c.token)}" style="color:#2D6A4F;font-weight:700">${EN ? "Cancel or reschedule" : "Cancelar o reprogramar"}</a>.</p>`
+      : `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">${EN ? "If that time doesn't work, reply to this email and we'll reschedule." : "Si no podés en ese horario, respondé este email y lo reprogramamos."}</p>`) +
     `</div>`;
 
   try {
@@ -197,16 +201,16 @@ async function sendReminder(
   } catch (_e) { return false; }
 }
 
-function fmtFecha(iso: string, tz: string): string {
+function fmtFecha(iso: string, tz: string, loc = "es-ES"): string {
   try {
-    return new Date(iso).toLocaleDateString("es-ES", {
+    return new Date(iso).toLocaleDateString(loc, {
       timeZone: tz, weekday: "long", day: "numeric", month: "long",
     });
-  } catch (_e) { return new Date(iso).toLocaleDateString("es-ES"); }
+  } catch (_e) { return new Date(iso).toLocaleDateString(loc); }
 }
-function fmtHora(iso: string, tz: string): string {
+function fmtHora(iso: string, tz: string, loc = "es-ES"): string {
   try {
-    return new Date(iso).toLocaleTimeString("es-ES", {
+    return new Date(iso).toLocaleTimeString(loc, {
       timeZone: tz, hour: "2-digit", minute: "2-digit",
     });
   } catch (_e) { return ""; }

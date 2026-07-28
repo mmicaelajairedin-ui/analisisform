@@ -469,6 +469,28 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-client-last.is-stale{color:var(--pw-danger);}
 .cp-client-last.is-mid{color:var(--pw-text-soft);}
 .cp-client-last::before{content:"●";margin-right:6px;font-size:8px;vertical-align:middle;}
+/* Riesgo enriquecido: chip de engagement + próximo paso para subir de nivel */
+.cp-eng{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:99px;padding:4px 10px;white-space:nowrap;flex-shrink:0;}
+.cp-eng svg{width:13px;height:13px;}
+.cp-eng.go{color:var(--pw-bosque);background:var(--pw-success-bg);}
+.cp-eng.mid{color:#B98A1E;background:rgba(233,196,106,.20);}
+.cp-eng.stop{color:var(--pw-danger);background:var(--pw-danger-bg);}
+.cp-nextstep{display:flex;align-items:flex-start;gap:6px;margin-top:6px;font-size:11px;font-weight:600;color:var(--pw-bosque);background:var(--pw-success-bg);border-radius:8px;padding:5px 9px;line-height:1.32;}
+.cp-nextstep svg{width:13px;height:13px;flex-shrink:0;margin-top:1px;}
+.cp-nextstep b{font-weight:800;text-transform:uppercase;font-size:9px;letter-spacing:.05em;color:var(--pw-text-muted);margin-right:3px;}
+/* Timeline de avances (drawer que se abre desde el ranking) */
+.cp-tl-btn{width:30px;height:30px;border-radius:8px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-text-soft);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;transition:border-color .12s,color .12s,background .12s;}
+.cp-tl-btn:hover{border-color:var(--pw-bosque);color:var(--pw-bosque);background:var(--pw-success-bg);}
+.pw-tl{position:relative;}
+.pw-tl-item{position:relative;display:grid;grid-template-columns:32px 1fr;gap:11px;padding:9px 0;}
+.pw-tl-item::before{content:"";position:absolute;left:15px;top:32px;bottom:-9px;width:2px;background:var(--pw-border);}
+.pw-tl-item:last-child::before{display:none;}
+.pw-tl-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--pw-niebla-2);color:var(--pw-bosque);}
+.pw-tl-dot.hi{background:var(--pw-bosque);color:#fff;}
+.pw-tl-dot.wow{background:var(--pw-amanecer);color:var(--pw-bosque-dark);}
+.pw-tl-dot.call{background:var(--pw-success-bg);color:var(--pw-bosque);}
+.pw-tl-t{font-size:14px;font-weight:600;color:var(--pw-carbon);}
+.pw-tl-w{font-size:11.5px;color:var(--pw-text-muted);margin-top:1px;font-variant-numeric:tabular-nums;}
 .cp-week{display:flex;align-items:center;gap:8px;}
 .cp-week-label{font-size:11px;color:var(--pw-text-soft);font-weight:500;}
 .cp-week-dots{display:flex;gap:4px;flex:1;}
@@ -905,7 +927,9 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-ai-tab{flex:1;padding:11px 8px;font-size:12px;font-weight:600;color:var(--pw-text-soft);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;}
 .cp-ai-tab:hover{color:var(--pw-carbon);}
 .cp-ai-tab.is-on{color:var(--pw-bosque);border-bottom-color:var(--pw-bosque);}
-.cp-ai-scroll{flex:1;overflow-y:auto;}
+.cp-ai-scroll{flex:1;overflow-y:auto;overflow-x:hidden;}
+.cp-ai-msgs{max-width:100%;}
+.cp-ai-msgs a{overflow-wrap:anywhere;word-break:break-word;}
 .cp-ai-scroll::-webkit-scrollbar{width:6px;}
 .cp-ai-scroll::-webkit-scrollbar-thumb{background:rgba(31,42,35,.15);border-radius:3px;}
 .cp-ai-home{padding:13px 15px 15px;display:flex;flex-direction:column;gap:12px;}
@@ -1324,12 +1348,19 @@ function avImg(src, name, attrs){
 function _thumb(url, px){
   url=""+(url||""); if(!url || /^data:/i.test(url)) return url;
   if(!/ucarecd(n)?\.(net|com)/i.test(url)) return url;             // solo Uploadcare
-  if(/\/-\/(scale_crop|resize|preview)\b/.test(url)) return url;   // ya trae operación → no duplicar
+  var m=url.match(/^(https?:\/\/[^\/]+\/[0-9a-fA-F-]{36}\/)(.*)$/);  // …/<uuid>/<resto>
+  if(!m) return url;
+  var base=m[1], rest=m[2]||"";
+  // Conservar las operaciones que ya trae (p.ej. un recorte de cara intencional)
+  // pero SACAR el nombre de archivo final, y AGREGAR al final el recorte chico
+  // exacto. Antes: si la URL ya traía -/preview/1000x1000/ nos rendíamos y el
+  // navegador achicaba 1000px→38px (borroso). Ahora siempre pedimos el recorte
+  // al tamaño real ×dpr, encadenado después de lo que ya hubiera.
+  var ops = (rest.indexOf("-/")>=0) ? rest.replace(/[^\/]*$/,"") : "";
   var dpr=1; try{ if(window.devicePixelRatio>1) dpr=2; }catch(e){}
   var s=Math.max(1,Math.round((px||40)*dpr));
-  var ops="-/scale_crop/"+s+"x"+s+"/center/-/quality/smart/-/format/auto/";
-  var m=url.match(/^(https?:\/\/[^\/]+\/[0-9a-fA-F-]{36}\/)(.*)$/);  // …/<uuid>/<resto>
-  return m ? (m[1]+ops+m[2]) : url;
+  var q = dpr>1 ? "smart_retina" : "better";   // nítido en retina, buena calidad en 1x
+  return base + ops + "-/scale_crop/"+s+"x"+s+"/center/-/quality/"+q+"/-/format/auto/";
 }
 // Avatar chico para las burbujas de chat. Solo muestra foto si es URL real
 // (http). Si no hay foto, devuelve "" (la burbuja queda como estaba).
@@ -1343,7 +1374,7 @@ function _chatAv(url, name){
 // Avatar para "Equipo Pathway" en el chat: la foto real de Micaela (misma que
 // usa el About público /sobre.html) para que el coach sienta que habla con una
 // persona del equipo, no con un bot. Es un asset público del dominio.
-var ADMIN_PHOTO="/assets/micaela.jpg"; // Equipo Pathway = foto de Micaela
+var ADMIN_PHOTO="https://pathwaycareercoach.com/assets/micaela.jpg"; // Equipo Pathway = foto de Micaela (URL absoluta: _chatAv exige http/data)
 
 // ÚNICA fuente de verdad para los nombres por defecto de las 4 etapas editables
 // (semanas 1-4; la 5 es "Revisión" fija). Coinciden con la narrativa del portal
@@ -2347,8 +2378,17 @@ function viewSolicitudes(embedded){
       "</div>"
     : "<div class='cp-card'><div class='cp-card-pad' style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'><span style='color:var(--pw-text-soft);font-size:13px'>No tienes solicitudes ni consultas todavía.</span><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='sol-sync'>↻ Buscar pagos nuevos</button></div></div>";
   var waitHtml = waiting.length
-    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperando pago del candidato<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+waiting.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
-        waiting.map(function(s){ return "<div style='display:flex;justify-content:space-between;font-size:13px;color:var(--pw-text-soft);border-bottom:1px solid var(--pw-border);padding:8px 0'><span>"+esc(s.candidato_nombre||"Candidato")+" · "+_svc(s)+"</span><span>"+_money(s.monto)+"</span></div>"; }).join("")+"</div></div>"
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperando pago del candidato<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+waiting.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+        "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.55;background:var(--pw-niebla-2);border-radius:10px;padding:9px 12px'>El candidato <strong>empezó a pagar pero todavía no completó</strong> — por eso no hay detalle ni botones aún. Si termina de pagar, esta solicitud <strong>sube sola a «Pagaron · esperan respuesta»</strong> y ahí tenés 24 h para aceptar. <strong>Una pagada nunca se queda en esta lista</strong>, así que no se te puede pasar.</div>"+
+        waiting.map(function(s){
+          var _fecha=_fmtDT(s.created_at);
+          return "<div style='display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid var(--pw-border);padding:9px 0'>"+
+            "<div style='min-width:0'>"+
+              "<div style='font-size:13.5px;font-weight:600;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(s.candidato_nombre||"Candidato")+"</div>"+
+              "<div style='font-size:11.5px;color:var(--pw-text-muted);margin-top:2px'>"+_svc(s)+(_fecha?" · empezó el "+_fecha:"")+"</div>"+
+            "</div>"+
+            "<span style='font-size:13px;font-weight:600;color:var(--pw-text-soft);flex:0 0 auto'>"+_money(s.monto)+"</span>"+
+          "</div>"; }).join("")+"</div></div>"
     : "";
   var histHtml = hist.length
     ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+hist.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
@@ -2632,6 +2672,68 @@ function _cpMore(rowsArr, vis){
     "<div class='cp-more-rest' hidden>"+rowsArr.slice(vis).join("")+"</div>"+
     "<button type='button' class='cp-more-btn' onclick=\"var r=this.previousElementSibling;if(r.hasAttribute('hidden')){r.removeAttribute('hidden');this.textContent='Ver menos';}else{r.setAttribute('hidden','');this.textContent='Ver más ("+n+")';}\">Ver más ("+n+")</button>";
 }
+// ── Engagement del cliente — FUENTE ÚNICA (riesgo + lista "Tus clientes") ──
+// Mira "qué hizo" (tareas cumplidas) además de "cuándo entró". Derivado de datos
+// que el panel YA carga (acciones_progreso + última actividad): sin leer eventos.
+function _engLevel(c){
+  var st=(c&&c.last&&c.last.state)||"mid";
+  var done=0; try{ var _ap=JSON.parse((c&&c.raw&&c.raw.acciones_progreso)||"[]"); if(Object.prototype.toString.call(_ap)==="[object Array]") done=_ap.filter(Boolean).length; }catch(e){}
+  if(st==="stale") return "ausente";
+  if(done===0 && ((c&&c.week)||1)>=2) return "solo_entra";
+  if(st==="mid") return "mid";
+  return "avanza";
+}
+var _ENGMETA={
+  avanza:{cls:"go",      ic:"checkCircle", txt:"Avanza"},
+  solo_entra:{cls:"mid", ic:"eye",   txt:"Solo entra", k:"Para que avance",  act:"Mandale la tarea de la semana por chat + por qué importa"},
+  mid:{cls:"mid",        ic:"eye",   txt:"Poco activo",k:"Para sumarlo",     act:"Escribile un mensaje corto para retomar"},
+  ausente:{cls:"stop",   ic:"alert", txt:"Ausente",    k:"Para reactivarlo", act:"Recordale su sesión + un mensaje personal"}
+};
+// Chip compacto (solo estado, sin próximo paso) para listas como "Tus clientes".
+function _engChip(c){ var m=_ENGMETA[_engLevel(c)]||_ENGMETA.mid; return "<span class='cp-eng "+m.cls+"'>"+PWI.svg(m.ic,{sm:true,cc:true})+esc(m.txt)+"</span>"; }
+
+// ── Timeline de avances del cliente (se abre desde el ranking) ──────────────
+// Lee los eventos REALES de ESE cliente vía la edge function cliente-timeline
+// (service role + chequeo de propiedad: el coach solo ve a SUS clientes). Solo
+// título + día/hora, como pidió la coach (sin detalle largo ni nombres técnicos).
+var _TLICO={ ClientAccepted:{ic:"user"}, ReportGenerated:{ic:"fileText"}, ReportViewed:{ic:"fileText"}, TaskCompleted:{ic:"checkCircle",dot:"hi"}, WowReached:{ic:"spark",dot:"wow"}, CallBooked:{ic:"calendar",dot:"call"}, SessionCompleted:{ic:"video"}, ProgramFinished:{ic:"trophy"} };
+function _tlWhen(ts){
+  var d=new Date(ts); if(isNaN(d)) return "";
+  var t0=new Date(); t0.setHours(0,0,0,0); var dd=new Date(d); dd.setHours(0,0,0,0);
+  var diff=Math.round((t0-dd)/86400000);
+  var hm=d.toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+  var day=diff===0?"Hoy":diff===1?"Ayer":d.toLocaleDateString("es-ES",{day:"2-digit",month:"short"});
+  return day+" · "+hm;
+}
+function _tlRender(items){
+  return "<div class='pw-tl'>"+items.map(function(it){
+    var m=_TLICO[it.tipo]||{ic:"checkCircle"};
+    return "<div class='pw-tl-item'><div class='pw-tl-dot "+(m.dot||"")+"'>"+PWI.svg(m.ic,{sm:true,cc:true})+"</div>"+
+      "<div class='pw-tl-b'><div class='pw-tl-t'>"+esc(it.titulo)+"</div><div class='pw-tl-w'>"+esc(_tlWhen(it.ts))+"</div></div></div>";
+  }).join("")+"</div>";
+}
+function openCliTimeline(c){
+  if(!c) return;
+  var ov=document.createElement("div"); ov.id="pw-tl-ov";
+  ov.style.cssText="position:fixed;inset:0;z-index:99998;background:rgba(20,32,24,.5);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:56px 16px 16px;overflow:auto;font-family:var(--pw-sans,system-ui)";
+  ov.onclick=function(e){ if(e.target===ov) ov.remove(); };
+  ov.innerHTML="<div style='background:#fff;max-width:420px;width:100%;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden'>"+
+    "<div style='display:flex;align-items:center;gap:11px;padding:16px 18px;border-bottom:1px solid var(--pw-border)'>"+
+      avImg(c.photo,c.name,"style='width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0'")+
+      "<div style='flex:1;min-width:0'><div style='font-family:var(--pw-serif);font-size:17px;font-weight:600;color:var(--pw-carbon)'>"+esc(c.name)+"</div><div style='font-size:12px;color:var(--pw-text-muted)'>Sus avances</div></div>"+
+      "<button data-tlx='1' aria-label='Cerrar' style='width:30px;height:30px;border:none;background:var(--pw-niebla-2);border-radius:8px;cursor:pointer;color:var(--pw-text-soft);font-size:18px;line-height:1'>&times;</button></div>"+
+    "<div id='pw-tl-body' style='padding:14px 18px 18px;min-height:110px'><div style='text-align:center;color:var(--pw-text-muted);font-size:13px;padding:26px'>Cargando…</div></div></div>";
+  document.body.appendChild(ov);
+  ov.querySelector("[data-tlx]").onclick=function(){ ov.remove(); };
+  var bodyEl=ov.querySelector("#pw-tl-body");
+  _hdr({"Content-Type":"application/json"}).then(function(h){
+    return fetch(SB+"/functions/v1/cliente-timeline",{method:"POST",headers:h,body:JSON.stringify({email:(c.email||"").toLowerCase().trim()})});
+  }).then(function(r){ return r.ok?r.json():{items:[]}; }).then(function(d){
+    var items=(d&&d.items)||[];
+    bodyEl.innerHTML=items.length ? _tlRender(items)
+      : "<div style='text-align:center;color:var(--pw-text-muted);font-size:13px;padding:26px'>Todavía no hay movimientos registrados.</div>";
+  }).catch(function(){ bodyEl.innerHTML="<div style='text-align:center;color:var(--pw-text-muted);font-size:13px;padding:26px'>No se pudo cargar. Reintentá.</div>"; });
+}
 function viewDashboard(){
   var now=Date.now();
   function _sdt(s){ return new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")).getTime(); }
@@ -2684,16 +2786,26 @@ function viewDashboard(){
       : "<div class='pos'>"+(i+1)+"</div>";
     return "<div class='cp-rankrow' data-act='cli-open:"+esc(c.id)+"'>"+pos+avImg(c.photo,c.name,"class='av'")+
       "<div class='bd'><div class='nm'>"+esc(c.name)+"</div><div class='sub'>Semana "+(c.week||1)+"/4 · "+doneN+"/4 objetivos</div></div>"+
-      "<span class='rt'>"+p+"%</span></div>";
+      "<span class='rt'>"+p+"%</span>"+
+      "<button class='cp-tl-btn' data-act='cli-timeline:"+esc(c.id)+"' title='Ver avances' aria-label='Ver avances'>"+PWI.svg('clock',{sm:true,cc:true})+"</button></div>";
   }),4):"<div style='padding:24px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Sin clientes activos para analizar.</div>";
   var anaCard=cliActive.length?("<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>"+PWI.svg('trophy',{sm:true})+"</span> Ranking de clientes<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver todos</button></div>"+anaRows+"</div>"):"";
-  // ── Clientes en riesgo (sin actividad) — mismo diseño que el dashboard de Multi-Coach ──
-  var _riesgo=cliActive.filter(function(c){return c.last&&(c.last.state==="stale"||c.last.state==="mid");}).sort(function(a,b){ return (a.last.state==="stale"?0:1)-(b.last.state==="stale"?0:1); });
-  var riesgoRows=_riesgo.length?_cpMore(_riesgo.map(function(c){
-    var alto=c.last.state==="stale";
+  // ── Clientes en riesgo — enriquecido con engagement real + próximo paso ──
+  // No mira solo "cuándo entró", también "qué hizo". El que entra seguido pero no
+  // avanza (0 tareas pese a ir por la semana 2+) sale como 'Solo entra' (ámbar) —
+  // un riesgo que antes era invisible (figuraba "Activa"). Y cada uno trae el
+  // próximo paso concreto para subir de nivel. Derivado de datos que YA cargamos
+  // (acciones_progreso + última actividad); no depende de leer eventos.
+  // _engLevel / _ENGMETA ahora son fuente única a nivel módulo (arriba de _cpMore).
+  var _riesgo=cliActive.map(function(c){ return {c:c, lvl:_engLevel(c)}; })
+    .filter(function(x){ return x.lvl!=="avanza"; })
+    .sort(function(a,b){ var o={ausente:0,solo_entra:1,mid:2}; return o[a.lvl]-o[b.lvl]; });
+  var riesgoRows=_riesgo.length?_cpMore(_riesgo.map(function(x){
+    var c=x.c, m=_ENGMETA[x.lvl];
     return "<div class='cp-rankrow' data-act='cli-open:"+esc(c.id)+"'>"+avImg(c.photo,c.name,"class='av'")+
-      "<div class='bd'><div class='nm'>"+esc(c.name)+"</div><div class='sub'>"+esc((c.last&&c.last.txt)||"Sin actividad")+"</div></div>"+
-      "<span class='cp-pill "+(alto?"alto":"medio")+"'>"+(alto?"Alto":"Medio")+"</span></div>";
+      "<div class='bd'><div class='nm'>"+esc(c.name)+"</div><div class='sub'>"+esc((c.last&&c.last.txt)||"Sin actividad")+" · Semana "+(c.week||1)+"</div>"+
+      "<div class='cp-nextstep'>"+PWI.svg('send',{sm:true,cc:true})+"<span><b>"+m.k+"</b>"+esc(m.act)+"</span></div></div>"+
+      "<span class='cp-eng "+m.cls+"'>"+PWI.svg(m.ic,{sm:true,cc:true})+esc(m.txt)+"</span></div>";
   }),4):"<div style='padding:22px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Ningún cliente en riesgo. ¡Todo al día! ✓</div>";
   var riesgoCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>"+PWI.svg('alert',{sm:true})+"</span> Clientes en riesgo<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver todos</button></div>"+riesgoRows+"</div>";
   // ── Tus clientes ──
@@ -2773,6 +2885,7 @@ function viewResumen(){
       return "<div class='cp-todo-row' data-act='cli-open:"+esc(c.id)+"' style='cursor:pointer'>"+
         avImg(c.photo,c.name,"style='width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0'")+
         "<div class='cp-todo-body'><div class='cp-todo-head'>"+esc(c.name)+"</div><div class='cp-todo-meta'>"+esc(stTxt)+"</div></div>"+
+        _engChip(c)+
         "<span class='cp-todo-time "+stCls+"'>Sem "+(c.week||1)+"</span>"+
         svg(IC.chevR,14,"class='cp-todo-arrow'")+"</div>";
     }),4);
@@ -6649,7 +6762,7 @@ function _coachMicaBubbles(){
     var av = mine ? _chatAv(COACH&&COACH.photo,(COACH&&COACH.name)) : _chatAv(ADMIN_PHOTO,'Pathway');
     var col = "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(_msgBodyText(m))+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word'>"+_linkTxt(_msgBodyText(m))+"</div>"+
     "</div>";
     return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
   }).join("");
@@ -6749,7 +6862,7 @@ function _coachRedBubbles(){
     var av=mine?_chatAv(COACH&&COACH.photo,(COACH&&COACH.name)):_chatAv(ADMIN_PHOTO,who0);
     var col="<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(_msgBodyText(m))+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word'>"+_linkTxt(_msgBodyText(m))+"</div>"+
     "</div>";
     return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
   }).join("");
@@ -6791,7 +6904,7 @@ function _coachCanalBubbles(){
     var av=mine?_chatAv(COACH&&COACH.photo,(COACH&&COACH.name)):_chatAv(m.autor_rol==="owner"?ADMIN_PHOTO:"", m.autor_nombre||nm);
     var col="<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(_msgBodyText(m))+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word'>"+_linkTxt(_msgBodyText(m))+"</div>"+
     "</div>";
     return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
   }).join("");
@@ -6976,7 +7089,7 @@ function viewAdminThreadInCabra(coachId){
     var av = mine ? _chatAv((COACH&&COACH.photo)||ADMIN_PHOTO,(COACH&&COACH.name)||'Micaela') : _chatAv(coachPhoto, coachName);
     var col = "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:3px;max-width:85%'>"+
       "<div style='font-size:10.5px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(_msgBodyText(m))+"</div>"+
+      "<div style='background:"+bg+";color:"+color+";padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word'>"+_linkTxt(_msgBodyText(m))+"</div>"+
     "</div>";
     return "<div style='display:flex;align-items:flex-end;gap:7px;justify-content:"+align+";margin-bottom:10px'>"+(mine?(col+av):(av+col))+"</div>";
   }).join("");
@@ -7787,7 +7900,7 @@ function _coachChatBlock(c){
     var who = mine ? "Tú (admin)" : (c.nombre||c.email||"coach");
     return "<div style='display:flex;flex-direction:column;align-items:"+align+";gap:4px;margin-bottom:12px'>"+
       "<div style='font-size:11px;color:var(--pw-text-soft)'>"+esc(who)+" · "+fmtTime(m.created_at)+"</div>"+
-      "<div style='max-width:78%;background:"+bg+";color:"+color+";padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word'>"+esc(_msgBodyText(m))+"</div>"+
+      "<div style='max-width:78%;background:"+bg+";color:"+color+";padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word'>"+_linkTxt(_msgBodyText(m))+"</div>"+
     "</div>";
   }).join("");
   if(!bubbles){
@@ -7821,7 +7934,7 @@ function _adminRanking(){
     var nm=c.nombre||c.email||"Coach";
     return "<div data-act='coach-view:"+esc(c.id)+"' style='display:grid;grid-template-columns:32px 38px 1fr auto auto;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
       "<span style='font-family:var(--pw-serif);font-size:17px;font-weight:700;color:"+rankCol+";text-align:center'>"+(i+1)+"</span>"+
-      "<img src='"+esc(c.foto_url||makeAvatar(nm))+"' onerror=\"this.onerror=null;this.src='"+makeAvatar(nm)+"'\" alt='' style='width:34px;height:34px;border-radius:50%;object-fit:cover'>"+
+      "<img src='"+esc(c.foto_url?_thumb(c.foto_url,34):makeAvatar(nm))+"' onerror=\"this.onerror=null;this.src='"+makeAvatar(nm)+"'\" alt='' style='width:34px;height:34px;border-radius:50%;object-fit:cover'>"+
       "<span style='font-size:13.5px;font-weight:600;color:var(--pw-carbon);overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+esc(nm)+(c.rol==="admin"?" <span style='font-size:10px;color:var(--pw-text-muted)'>(admin)</span>":"")+"</span>"+
       medImg+
       "<span style='font-family:var(--pw-serif);font-size:16px;font-weight:700;color:var(--pw-bosque)'>"+pts+"</span>"+
@@ -8005,7 +8118,7 @@ function viewAdmin(){
         "</select>";
     var _h=actv[1]||""; var healthLbl=off?"Inactiva":(_h==="ok"?"Activa":_h==="warn"?"Arrancando":"Sin uso"); var _hc=off?"danger":(_h||"warn");
     var _bc=(off||_hc==="danger")?"var(--pw-danger)":(_hc==="warn"?"#B5651D":"var(--pw-sendero)");
-    var _av=c.fotoUrl?"<img src='"+esc(c.fotoUrl)+"' class='cp-coach-av' alt='' referrerpolicy='no-referrer'>":"<div class='cp-coach-av cp-coach-av-i'>"+esc((""+(c.n||"?")).charAt(0).toUpperCase())+"</div>";
+    var _av=c.fotoUrl?"<img src='"+esc(_thumb(c.fotoUrl,42))+"' class='cp-coach-av' alt='' referrerpolicy='no-referrer'>":"<div class='cp-coach-av cp-coach-av-i'>"+esc((""+(c.n||"?")).charAt(0).toUpperCase())+"</div>";
     var _stat=function(v,k){return "<div class='cp-coach-st'><div class='v'>"+v+"</div><div class='k'>"+k+"</div></div>";};
     return "<div class='cp-coach"+(off?" off":"")+"' data-nm='"+esc((""+(c.n||"")).toLowerCase())+"' style='border-left:4px solid "+_bc+"'>"+
       "<div class='cp-coach-top'>"+_av+
@@ -9416,6 +9529,27 @@ function render(){
   }
 }
 
+// Da acceso al portal a un cliente que YA PAGÓ (cierra el círculo Pathway):
+// asegura su cuenta de login y le manda el email de bienvenida ("crea tu
+// contraseña y entra"). Se llama al ACEPTAR un cobro (sol-accept), NUNCA antes
+// de que haya pago. Best-effort: si algo falla, la coach reenvía desde la ficha.
+function _pwGrantAccess(email, name){
+  var em=(""+(email||"")).toLowerCase().trim(); if(!em) return;
+  var nm=name||em.split("@")[0];
+  _sb("usuarios?email=eq."+encodeURIComponent(em)+"&select=id&limit=1").then(function(_ur){
+    if(_ur&&_ur.length) return true;
+    return _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
+      return fetch(SB+"/rest/v1/usuarios",{method:"POST",headers:h,body:JSON.stringify({email:em,rol:"cliente",nombre:nm,activo:true})});
+    });
+  }).then(function(){
+    var _cn=(COACH&&COACH.name)||"tu coach";
+    var _cemail=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
+    var _cfoto=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim(); if(!/^https?:\/\//i.test(_cfoto)) _cfoto="";
+    var _cslug=((RCFG&&RCFG.slug)||(COACH&&COACH.slug)||"").toString().trim();
+    return fetch(SB+"/functions/v1/password-reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request",email:em,name:nm,welcome:true,coach_name:_cn,coach_email:_cemail,coach_photo:_cfoto,coach_slug:_cslug})});
+  }).catch(function(){});
+}
+
 /* ═══ Events ═══ */
 document.addEventListener("click", function(ev){
   // Modo privado: tocar un dato difuminado lo revela (en desktop también se ve
@@ -9567,18 +9701,36 @@ document.addEventListener("click", function(ev){
     _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
       return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:_snm,email:_sem,whatsapp:_scc.telefono||"",coach_id:(RME&&RME.id)||"",nicho:_snicho,semana_activa:1,activo:true,origen:"llamada"})});
     }).then(function(){
-      // Login del cliente: check-first (si ya tiene cuenta, no lo recreamos → sin
-      // 409 ni ruido en client_errors). rol='cliente' lo permite el RLS anon.
-      _sb("usuarios?email=eq."+encodeURIComponent(_sem)+"&select=id&limit=1").then(function(_ur){
-        if(_ur&&_ur.length) return;
-        _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
-          return fetch(SB+"/rest/v1/usuarios",{method:"POST",headers:h,body:JSON.stringify({email:_sem,rol:"cliente",nombre:_snm,activo:true})});
-        }).catch(function(){});
-      }).catch(function(){});
+      // "Fue bien" NO le da acceso todavía: el acceso al portal se crea SOLO
+      // cuando PAGA (círculo del cliente Pathway). Acá le mandamos TU lista de
+      // servicios (con detalle, para que pueda decidir/preguntar) + botón para
+      // elegir y pagar en tu perfil (checkout ya probado, comisión Pathway).
+      // Cuando pague y aceptes el cobro, ahí se le crea el acceso (ver sol-accept).
+      var _slug=((RCFG&&RCFG.slug)||(typeof RPROF!=="undefined"&&RPROF&&RPROF.slug)||(COACH&&COACH.slug)||"").toString().trim();
+      var _servs=(RCFG&&Object.prototype.toString.call(RCFG.servicios)==="[object Array]")?RCFG.servicios:[];
+      var _cn=(COACH&&COACH.name)||"tu coach";
+      var _cemail=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
+      var _cfoto=((RCFG&&(RCFG.foto_url||RCFG.foto_perfil))||(RME&&RME.foto_url)||"").toString().trim(); if(!/^https?:\/\//i.test(_cfoto)) _cfoto="";
+      if(!_slug){
+        toast("¡"+_snm+" quedó como lead! Para cobrarle, activá tu perfil público (Config → Perfil) y reenviale el link de tus servicios.");
+      } else {
+        var _rows=_servs.map(function(s){
+          var nm=esc((s&&(s.name||s.nombre))||"Servicio");
+          var ds=esc((s&&(s.desc||s.descripcion||s.detalle))||"");
+          return "<div style='border:1px solid #E2EAE4;border-radius:12px;padding:12px 14px;margin:8px 0'><div style='font-weight:700;color:#1B2E26;font-size:15px'>"+nm+"</div>"+(ds?"<div style='color:#4A5A50;font-size:13px;margin-top:3px;line-height:1.5'>"+ds+"</div>":"")+"</div>";
+        }).join("");
+        var _url="https://pathwaycareercoach.com/coach/"+encodeURIComponent(_slug);
+        var _html="<p style='margin:0 0 14px;color:#1B2E26;font-size:16px'>¡Hola "+esc(_snm)+"! 🎉</p>"+
+          "<p style='margin:0 0 14px;color:#3A4A40;line-height:1.6'>Gracias por la llamada. Para arrancar, elegí el servicio que mejor te venga y hacé tu pago seguro desde mi página. <strong>Apenas pagues, tenés acceso a tu portal</strong> para empezar.</p>"+
+          (_rows?"<div style='margin:6px 0 16px'>"+_rows+"</div>":"")+
+          "<p style='margin:16px 0'><a href='"+_url+"' style='display:inline-block;padding:13px 26px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700'>Ver precios, elegir y pagar &rarr;</a></p>"+
+          "<p style='margin:14px 0 0;color:#6b7a70;font-size:13px'>Pago seguro con tarjeta. Si tenés dudas, respondeme este mail.</p>";
+        fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:_sem,to_name:_snm,subject:"Tus servicios con "+_cn+" · elegí y empezá",html:_html,signature:"coach",coach:{nombre:_cn,email:_cemail,photo:_cfoto,slug:_slug}})}).catch(function(){});
+        toast("¡Le mandamos a "+_snm+" tus servicios para que elija y pague! Apenas pague, entra a tu portal.");
+      }
       _sbw("citas?id=eq."+encodeURIComponent(_scid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"convirtio"}).catch(function(){});
       _scc.resultado="convirtio"; _segFill();
-      toast("¡"+_snm+" ahora es cliente! Su ficha ya tiene las notas de la llamada.");
-      try{ pwAddXP(50,"Cliente nuevo"); }catch(e){}
+      try{ pwAddXP(50,"Venta enviada"); }catch(e){}
       try{ loadReal(); }catch(e){}
     }).catch(function(){ toast("No se pudo convertir. Revisa el email o créalo desde Clientes."); });
     return;
@@ -10125,10 +10277,16 @@ document.addEventListener("click", function(ev){
     var solId=el.getAttribute("data-id"); if(!solId) return;
     if(!REAL){ alert("Demo: en producción esto acepta/rechaza la solicitud real."); return; }
     var doAccept=(act==="sol-accept");
-    if(!confirm(doAccept?"¿Aceptar esta solicitud? Se captura el pago: cobras el neto y Pathway retiene su comisión escalonada (desde 5%).":"¿Rechazar esta solicitud? Se libera la retención y al candidato no se le cobra.")) return;
+    // Datos del comprador para darle acceso al portal apenas se captura el pago.
+    var _solRow=(RSOL||[]).filter(function(x){return String(x.id)===String(solId);})[0]||null;
+    if(!confirm(doAccept?"¿Aceptar esta solicitud? Se captura el pago: cobras el neto y Pathway retiene su comisión escalonada (desde 5%). Al cliente se le crea el acceso al portal.":"¿Rechazar esta solicitud? Se libera la retención y al candidato no se le cobra.")) return;
     if(_genBusy) return; _busyOn(); toast(doAccept?"Aceptando y cobrando…":"Rechazando…");
     fetch(SB+"/functions/v1/connect-checkout",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+KEY},body:JSON.stringify({action:doAccept?"accept":"reject",solicitud_id:solId})})
-      .then(function(r){ _busyOff(); if(!r.ok) throw 0; toast(doAccept?"Solicitud aceptada ✓ — pago capturado":"Solicitud rechazada ✓"); loadReal(); })
+      .then(function(r){ _busyOff(); if(!r.ok) throw 0;
+        // Pago capturado → el cliente ENTRA al portal: le creamos el acceso y el
+        // email de bienvenida. Aquí se cierra el círculo del cliente Pathway.
+        if(doAccept && _solRow && _solRow.candidato_email){ try{ _pwGrantAccess(_solRow.candidato_email, _solRow.candidato_nombre||""); }catch(e){} }
+        toast(doAccept?"Solicitud aceptada ✓ — pago capturado. Le mandamos al cliente su acceso al portal.":"Solicitud rechazada ✓"); loadReal(); })
       .catch(function(){ _busyOff(); alert("No se pudo procesar la solicitud. Reintenta en un momento."); });
     return;
   }
@@ -10715,6 +10873,7 @@ document.addEventListener("click", function(ev){
       });
     return;
   }
+  if(act.indexOf("cli-timeline:")===0){ var _tlid=act.slice(13); var _tlc=(CLIENTS||[]).filter(function(x){return String(x.id)===String(_tlid);})[0]; if(_tlc) openCliTimeline(_tlc); return; }
   if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.faseAdd=null; state.fitTareas=null; state.fitUnit=null; state.rutUnit=null; state.sesPrepOpen=false; render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; state.fitTareas=null; state.perfilEdit=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
@@ -12552,11 +12711,26 @@ function _ceoRender(d){
     var bcol=c.estado==="verde"?"#E4F0E8":c.estado==="riesgo"?"#F7E3E0":"#F6EFD9";
     var lbl=c.estado==="verde"?"sano":c.estado==="riesgo"?"en riesgo":"medio";
     var hd=c.health_dim||{};
-    var dims=["activacion|Activación","uso|Uso","clientes|Clientes","recencia|Recencia"].map(function(p){var k=p.split("|");return "<span style='font-family:monospace;font-size:10px;color:var(--pw-text-soft);background:#EEF2ED;border:1px solid var(--pw-border);border-radius:6px;padding:2px 6px'>"+k[1]+" <b style='color:var(--pw-carbon)'>"+Math.round(hd[k[0]]||0)+"</b></span>";}).join("");
+    // Criterio = las 4 dimensiones que arman el health, como barras (por qué está
+    // donde está). Color por fuerza: verde ≥66 · ámbar ≥33 · rojo <33.
+    var dims="<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:7px;max-width:360px'>"+
+      ["activacion|Activación","uso|Uso","clientes|Clientes","recencia|Recencia"].map(function(p){
+        var k=p.split("|"), val=Math.round(hd[k[0]]||0), pct=Math.max(3,Math.min(100,val));
+        var bc=val>=66?"var(--pw-sendero)":val>=33?"#E9C46A":"var(--pw-danger)";
+        return "<div><div style='display:flex;justify-content:space-between;align-items:baseline;font-size:9px;color:var(--pw-text-muted);margin-bottom:3px;gap:4px'><span>"+k[1]+"</span><b style='color:var(--pw-text-soft);font-size:10px'>"+val+"</b></div>"+
+          "<span style='display:block;height:5px;background:var(--pw-niebla-3);border-radius:100px;overflow:hidden'><i style='display:block;height:100%;width:"+pct+"%;background:"+bc+";border-radius:100px'></i></span></div>";
+      }).join("")+"</div>";
+    // Tendencia (cómo mejoró vs. la semana pasada). Se ilumina cuando metricas
+    // guarde el snapshot semanal (Pieza 3); hasta entonces c.tendencia no viene
+    // y el chip no se muestra. Acepta número (delta) directo.
+    var _td=(c.tendencia!=null&&typeof c.tendencia==="number")?c.tendencia:(c.tendencia&&typeof c.tendencia.delta==="number"?c.tendencia.delta:null);
+    var trChip="";
+    if(_td!=null && _td!==0){ var _up=_td>0; var _tc=_up?"var(--pw-bosque)":"var(--pw-danger)", _tb=_up?"#E4F0E8":"#F7E3E0";
+      trChip="<span title='vs. semana pasada' style='font-family:monospace;font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:"+_tb+";color:"+_tc+"'>"+(_up?"▲ +":"▼ ")+_td+"</span>"; }
     var open=c.id?" data-act='coach-view:"+E(c.id)+"' style='cursor:pointer'":" style=''";
     return "<div"+open+" class='cp-cpc-row' style='display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 6px;border-bottom:1px dashed var(--pw-border);border-radius:7px"+(c.id?";cursor:pointer":"")+"'>"+
-      "<span><span style='font-size:13.5px;font-weight:600;color:var(--pw-carbon)'>"+E(c.nombre||c.email)+"</span><div style='display:flex;gap:5px;margin-top:5px;flex-wrap:wrap'>"+dims+"</div></span>"+
-      "<span style='display:flex;align-items:center;gap:10px'>"+
+      "<span><span style='font-size:13.5px;font-weight:600;color:var(--pw-carbon)'>"+E(c.nombre||c.email)+"</span>"+dims+"</span>"+
+      "<span style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end'>"+trChip+
         "<span style='width:60px;height:8px;background:var(--pw-niebla-3);border-radius:100px;overflow:hidden;display:inline-block'><i style='display:block;height:100%;width:"+Math.max(2,c.health_score||0)+"%;background:"+col+";border-radius:100px'></i></span>"+
         "<span style='font-family:var(--pw-serif);font-size:18px;font-weight:600;color:"+col+";min-width:54px;text-align:right'>"+(c.health_score||0)+"<span style='font-family:monospace;font-size:11px;color:var(--pw-text-muted)'>/100</span></span>"+
         "<span style='font-family:monospace;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:"+bcol+";color:"+col+"'>"+E(lbl)+"</span></span></div>";
