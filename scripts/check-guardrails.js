@@ -2970,6 +2970,43 @@ const RULES = [
     },
   },
   {
+    name: "portal fitness: la sección Recursos existe y muestra lo del coach",
+    why:
+      "El coach cargaba recursos en su panel pero el portal FITNESS no tenía " +
+      "dónde mostrarlos (sí el de carrera) → el cliente nunca los veía. Ahora el " +
+      "portal fitness tiene sección Recursos: nav (sidebar+bottom), <section " +
+      "id='s-recursos'>, renderRecursos() y COACH_RECURSOS (lee cfg.recursos del " +
+      "coach en applyBrand). Respeta la visibilidad (applyVisFit mapea recursos).",
+    check() {
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return null;
+      if (!/id=["']s-recursos["']/.test(f)) return "pathway-fit-cliente.html: falta la <section id='s-recursos'> (el cliente no ve los recursos del coach).";
+      if (!/function renderRecursos\b/.test(f)) return "pathway-fit-cliente.html: falta renderRecursos().";
+      if (!/COACH_RECURSOS/.test(f)) return "pathway-fit-cliente.html: ya no lee los recursos del coach (COACH_RECURSOS).";
+      if (!/data-s=["']recursos["']/.test(f)) return "pathway-fit-cliente.html: falta el botón de nav a Recursos (data-s='recursos').";
+      if (!/recursos:\s*['"]recursos['"]/.test(f)) return "pathway-fit-cliente.html: applyVisFit ya no mapea 'recursos' (el toggle de visibilidad del coach no lo afecta).";
+      return null;
+    },
+  },
+  {
+    name: "panel: el botón de email abre el correo (anchor, no location.href)",
+    why:
+      "El botón 'Email manual' de Mensajes no abría el cliente de correo: usaba " +
+      "window.location.href='mailto:', que falla en la app instalada/PWA y en " +
+      "varios navegadores. Ahora usa _openMailto(), que dispara un click de <a> " +
+      "real (lo maneja el SO, funciona en la TWA) y deja el email en el " +
+      "portapapeles como red de seguridad.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _openMailto\b/.test(p)) return "panel-v2.html: falta _openMailto() — el botón de email vuelve a fallar en la app/PWA.";
+      // El handler msg-mail debe usar el helper, no volver a location.href mailto.
+      var m = p.match(/act===?["']msg-mail["'][\s\S]{0,320}/);
+      if (m && /location\.href\s*=\s*["']mailto:/.test(m[0])) return "panel-v2.html: msg-mail volvió a window.location.href='mailto:' (no abre el correo en la app/PWA).";
+      return null;
+    },
+  },
+  {
     name: "reservas: link de videollamada SIEMPRE presente (garantia)",
     why: "Una reserva salio SIN link de videollamada: ni el coach ni el cliente " +
          "tenian por donde entrar. GARANTIA replicable para TODOS: el link lo damos " +
