@@ -135,15 +135,24 @@
     function _card(r){
       var T=TYPES[r.tipo]||TYPES.articulo;
       var seen=!!store.seen[r.id], bm=!!store.bm[r.id];
-      // Portada: degradado suave + ilustración limpia por tipo (se genera sola).
-      // Encima, imagen REAL por tarjeta (mejor esfuerzo): cover propia / miniatura
-      // de YouTube, o la og:image que trajo la Edge Function. Donde el sitio la
-      // bloquea (LinkedIn) o el video está borrado, el onerror/onload la quita y
-      // queda la ilustración → nunca rota.
+      // Portada, en 3 niveles: 1) imagen REAL (cover propia / miniatura de YouTube
+      // / og:image de la Edge Function). 2) si no hay foto pero hay enlace, el LOGO
+      // del sitio (favicon) en un mosaico blanco + el dominio → se ve "con imagen"
+      // y dice a dónde va. 3) sin enlace (ejercicios), la ilustración por tipo.
       var _real = r.cover || (previewMode && r.url && ogMap[r.url]) || '';
+      var _favHost = (!_real && r.url) ? r.host : '';
+      var _inner;
+      if(_real){
+        _inner=_illus(r.tipo)+'<img class="pwr-cov-img" src="'+esc(_real)+'" alt="" loading="lazy" onerror="this.remove()" onload="if(this.naturalWidth&&this.naturalWidth<=120)this.remove()">';
+      } else if(_favHost){
+        _inner='<span class="pwr-cov-favwrap"><span class="pwr-cov-fav">'+_icon(T.icon,'pwr-fav-fb')+
+          '<img class="pwr-fav-img" src="https://www.google.com/s2/favicons?domain='+esc(_favHost)+'&sz=128" alt="" loading="lazy" onerror="this.remove()"></span>'+
+          '<span class="pwr-cov-favdom">'+esc(_favHost)+'</span></span>';
+      } else {
+        _inner=_illus(r.tipo);
+      }
       var cov = '<div class="pwr-cov" style="background:'+TONES[T.tone]+'">'+
-          _illus(r.tipo)+
-          (_real?'<img class="pwr-cov-img" src="'+esc(_real)+'" alt="" loading="lazy" onerror="this.remove()" onload="if(this.naturalWidth&&this.naturalWidth<=120)this.remove()">':'')+
+          _inner+
           (r.meta?'<span class="pwr-cov-meta">'+esc(r.meta)+'</span>':'')+
           (seen?'<span class="pwr-cov-seen" title="Completado">✓</span>':'')+
         '</div>';
@@ -278,6 +287,12 @@
       '.pwr-cov{position:relative;height:150px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#EEF3EF;}',
       '.pwr-illus{position:absolute;inset:0;width:100%;height:100%;display:block;}',
       '.pwr-cov-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}',
+      /* Fallback favicon: logo del sitio en un mosaico blanco + dominio. */
+      '.pwr-cov-favwrap{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:10px;}',
+      '.pwr-cov-fav{position:relative;width:66px;height:66px;border-radius:16px;background:#fff;box-shadow:0 6px 16px rgba(27,46,38,.12);display:flex;align-items:center;justify-content:center;}',
+      '.pwr-fav-fb{width:26px;height:26px;color:var(--acc);opacity:.5;}',
+      '.pwr-fav-img{position:absolute;width:40px;height:40px;object-fit:contain;border-radius:8px;background:#fff;}',
+      '.pwr-cov-favdom{font-size:11.5px;font-weight:700;color:#4a5a50;background:rgba(255,255,255,.72);padding:2px 10px;border-radius:7px;max-width:85%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
       '.pwr-cov-meta{position:absolute;right:9px;bottom:9px;background:rgba(20,28,24,.74);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:7px;}',
       '.pwr-cov-seen{position:absolute;left:9px;top:9px;min-width:22px;height:22px;padding:0 4px;border-radius:11px;background:var(--acc);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.2);}',
       '.pwr-cov-seen svg{display:none;}',
@@ -307,7 +322,8 @@
   }
 
   // Portada de UN recurso (para preview en vivo en el editor del coach/owner).
-  // Deduce tipo, usa la portada propia / miniatura de YouTube, o la ilustración.
+  // Misma lógica que la tarjeta: imagen propia / miniatura de YouTube, o el LOGO
+  // del sitio (favicon) si hay enlace, o la ilustración por tipo.
   function coverHtml(r, o){
     o=o||{}; r=r||{};
     _injectCss();
@@ -315,9 +331,19 @@
     var url=(''+(r.url||'')).trim(), safe=/^https?:\/\//i.test(url)?url:'', yt=_ytId(safe);
     var cover=(r.cover&&(''+r.cover).trim()) || (o.image||'') || (yt?('https://i.ytimg.com/vi/'+yt+'/hqdefault.jpg'):'');
     var meta=(r.meta&&(''+r.meta).trim())||'';
+    var favHost=(!cover && safe) ? _host(safe) : '';
+    var inner;
+    if(cover){
+      inner=_illus(tipo)+'<img class="pwr-cov-img" src="'+esc(cover)+'" alt="" loading="lazy" onerror="this.remove()" onload="if(this.naturalWidth&&this.naturalWidth<=120)this.remove()">';
+    } else if(favHost){
+      inner='<span class="pwr-cov-favwrap"><span class="pwr-cov-fav">'+_icon(T.icon,'pwr-fav-fb')+
+        '<img class="pwr-fav-img" src="https://www.google.com/s2/favicons?domain='+esc(favHost)+'&sz=128" alt="" loading="lazy" onerror="this.remove()"></span>'+
+        '<span class="pwr-cov-favdom">'+esc(favHost)+'</span></span>';
+    } else {
+      inner=_illus(tipo);
+    }
     return '<div class="pwr-cov" style="background:'+TONES[T.tone]+';border-radius:12px'+(o.h?';height:'+o.h:'')+'">'+
-      _illus(tipo)+
-      (cover?'<img class="pwr-cov-img" src="'+esc(cover)+'" alt="" loading="lazy" onerror="this.remove()" onload="if(this.naturalWidth&&this.naturalWidth<=120)this.remove()">':'')+
+      inner+
       (meta&&o.meta!==false?'<span class="pwr-cov-meta">'+esc(meta)+'</span>':'')+
     '</div>';
   }
