@@ -3079,6 +3079,22 @@ const RULES = [
     },
   },
   {
+    name: "recursos: sin foto real, la portada muestra el logo del sitio (favicon)",
+    why:
+      "Cuando un recurso no tiene foto real (LinkedIn bloquea el scraping) pero " +
+      "tiene enlace, la portada muestra el LOGO del sitio (favicon de Google s2) " +
+      "en un mosaico blanco + el dominio → se ve 'con imagen' y dice a dónde va. " +
+      "Si el favicon falla, queda el ícono del tipo (fallback). Regla: no quitar " +
+      "el fallback de favicon de las portadas de recursos.",
+    check() {
+      var c = read("pw-recursos.js");
+      if (!c) return "pw-recursos.js: no existe.";
+      if (!/pwr-cov-fav/.test(c)) return "pw-recursos.js: se cayó el fallback de favicon (pwr-cov-fav) — los recursos sin foto quedan sin logo del sitio.";
+      if (!/s2\/favicons/.test(c)) return "pw-recursos.js: ya no pide el favicon del sitio (s2/favicons).";
+      return null;
+    },
+  },
+  {
     name: "recursos: video muerto de YouTube cae a la ilustración (no muestra el gris)",
     why:
       "Un video de YouTube borrado devuelve en hqdefault.jpg una miniatura GRIS de " +
