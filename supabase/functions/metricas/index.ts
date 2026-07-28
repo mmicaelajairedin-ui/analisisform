@@ -230,6 +230,9 @@ Deno.serve(async (req: Request) => {
       health_score: health,
       health_dim: { activacion: dimAct, uso: dimUso, clientes: dimCli, recencia: dimRec },
       estado,
+      // tendencia = delta del health vs. la semana pasada (se calcula abajo con
+      // el snapshot semanal). null = sin historial todavía (primera semana).
+      tendencia: null as number | null,
       // reservado (pragmático: contrato listo, sin calcular)
       velocidad: null, ttv_horas: null, ttfc_horas: null, ttfs_horas: null, ttfp_horas: null,
       fuente: "mixto",
@@ -237,6 +240,32 @@ Deno.serve(async (req: Request) => {
       _created: u.created_at,
     };
   });
+
+  // ── Tendencia del health vs. la semana pasada (snapshot semanal) ──────────
+  // Guarda 1 fila por coach por semana (idempotente) y compara contra la más
+  // reciente anterior. Best-effort y BLINDADO: si la tabla no existe o la red
+  // falla, tendencia queda null y el reporte sale igual (nunca rompe metricas).
+  try {
+    const wk = Math.floor(now / (7 * 86400_000)); // bucket semanal desde epoch
+    const prev = (await sbGet(
+      `coach_health_snapshots?select=coach_id,semana,health_score&semana=lt.${wk}&order=semana.desc`,
+    )) as Array<{ coach_id: string; semana: number; health_score: number }>;
+    const prevMap: Record<string, number> = {};
+    for (const r of prev) { const cid = String(r.coach_id); if (!(cid in prevMap)) prevMap[cid] = r.health_score; } // desc → 1º = más reciente
+    for (const c of coaches) {
+      const p = prevMap[String(c.id)];
+      if (typeof p === "number") c.tendencia = c.health_score - p;
+    }
+    // Snapshot de ESTA semana (on_conflict coach_id,semana → 1 sola fila/semana).
+    const snap = coaches.map((c) => ({ coach_id: String(c.id), semana: wk, health_score: c.health_score }));
+    if (snap.length) {
+      await fetch(`${SB_URL}/rest/v1/coach_health_snapshots?on_conflict=coach_id,semana`, {
+        method: "POST",
+        headers: { ...svc, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(snap),
+      }).catch(() => {});
+    }
+  } catch (_e) { /* la tendencia es un extra; nunca frena el reporte */ }
 
   const total = coaches.length || 1;
   const nAct = coaches.filter((c) => c.activado).length;
