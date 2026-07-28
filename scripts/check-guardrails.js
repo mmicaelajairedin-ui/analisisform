@@ -3871,6 +3871,19 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "cliente-timeline: solo el coach dueño (o admin) ve los eventos de un cliente",
+    bug: "El timeline lee eventos con service role; sin el chequeo de propiedad, un coach podria ver los avances de clientes ajenos (fuga multi-tenant).",
+    check() {
+      const s = read("supabase/functions/cliente-timeline/index.ts");
+      if (!s) return null;
+      if (!/coachOwnsClient/.test(s) || !/forbidden/.test(s))
+        return "cliente-timeline: se perdio el chequeo de propiedad (coachOwnsClient / 403 forbidden).";
+      if (!/rol\s*!==\s*["']admin["']/.test(s))
+        return "cliente-timeline: el gate de propiedad debe aplicar a los no-admin (rol !== 'admin').";
+      return null;
+    },
+  },
   // ── Enriquecimiento del tab Analiticas con Health Score (consumidor de metricas) ──
   {
     name: "analiticas: tarjeta Health Score cableada como consumidor puro de metricas",

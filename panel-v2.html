@@ -478,6 +478,19 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-nextstep{display:flex;align-items:flex-start;gap:6px;margin-top:6px;font-size:11px;font-weight:600;color:var(--pw-bosque);background:var(--pw-success-bg);border-radius:8px;padding:5px 9px;line-height:1.32;}
 .cp-nextstep svg{width:13px;height:13px;flex-shrink:0;margin-top:1px;}
 .cp-nextstep b{font-weight:800;text-transform:uppercase;font-size:9px;letter-spacing:.05em;color:var(--pw-text-muted);margin-right:3px;}
+/* Timeline de avances (drawer que se abre desde el ranking) */
+.cp-tl-btn{width:30px;height:30px;border-radius:8px;border:1px solid var(--pw-border);background:#fff;color:var(--pw-text-soft);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;transition:border-color .12s,color .12s,background .12s;}
+.cp-tl-btn:hover{border-color:var(--pw-bosque);color:var(--pw-bosque);background:var(--pw-success-bg);}
+.pw-tl{position:relative;}
+.pw-tl-item{position:relative;display:grid;grid-template-columns:32px 1fr;gap:11px;padding:9px 0;}
+.pw-tl-item::before{content:"";position:absolute;left:15px;top:32px;bottom:-9px;width:2px;background:var(--pw-border);}
+.pw-tl-item:last-child::before{display:none;}
+.pw-tl-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--pw-niebla-2);color:var(--pw-bosque);}
+.pw-tl-dot.hi{background:var(--pw-bosque);color:#fff;}
+.pw-tl-dot.wow{background:var(--pw-amanecer);color:var(--pw-bosque-dark);}
+.pw-tl-dot.call{background:var(--pw-success-bg);color:var(--pw-bosque);}
+.pw-tl-t{font-size:14px;font-weight:600;color:var(--pw-carbon);}
+.pw-tl-w{font-size:11.5px;color:var(--pw-text-muted);margin-top:1px;font-variant-numeric:tabular-nums;}
 .cp-week{display:flex;align-items:center;gap:8px;}
 .cp-week-label{font-size:11px;color:var(--pw-text-soft);font-weight:500;}
 .cp-week-dots{display:flex;gap:4px;flex:1;}
@@ -2642,6 +2655,49 @@ var _ENGMETA={
 };
 // Chip compacto (solo estado, sin próximo paso) para listas como "Tus clientes".
 function _engChip(c){ var m=_ENGMETA[_engLevel(c)]||_ENGMETA.mid; return "<span class='cp-eng "+m.cls+"'>"+PWI.svg(m.ic,{sm:true,cc:true})+esc(m.txt)+"</span>"; }
+
+// ── Timeline de avances del cliente (se abre desde el ranking) ──────────────
+// Lee los eventos REALES de ESE cliente vía la edge function cliente-timeline
+// (service role + chequeo de propiedad: el coach solo ve a SUS clientes). Solo
+// título + día/hora, como pidió la coach (sin detalle largo ni nombres técnicos).
+var _TLICO={ ClientAccepted:{ic:"user"}, ReportGenerated:{ic:"fileText"}, ReportViewed:{ic:"fileText"}, TaskCompleted:{ic:"checkCircle",dot:"hi"}, WowReached:{ic:"spark",dot:"wow"}, CallBooked:{ic:"calendar",dot:"call"}, SessionCompleted:{ic:"video"}, ProgramFinished:{ic:"trophy"} };
+function _tlWhen(ts){
+  var d=new Date(ts); if(isNaN(d)) return "";
+  var t0=new Date(); t0.setHours(0,0,0,0); var dd=new Date(d); dd.setHours(0,0,0,0);
+  var diff=Math.round((t0-dd)/86400000);
+  var hm=d.toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+  var day=diff===0?"Hoy":diff===1?"Ayer":d.toLocaleDateString("es-ES",{day:"2-digit",month:"short"});
+  return day+" · "+hm;
+}
+function _tlRender(items){
+  return "<div class='pw-tl'>"+items.map(function(it){
+    var m=_TLICO[it.tipo]||{ic:"checkCircle"};
+    return "<div class='pw-tl-item'><div class='pw-tl-dot "+(m.dot||"")+"'>"+PWI.svg(m.ic,{sm:true,cc:true})+"</div>"+
+      "<div class='pw-tl-b'><div class='pw-tl-t'>"+esc(it.titulo)+"</div><div class='pw-tl-w'>"+esc(_tlWhen(it.ts))+"</div></div></div>";
+  }).join("")+"</div>";
+}
+function openCliTimeline(c){
+  if(!c) return;
+  var ov=document.createElement("div"); ov.id="pw-tl-ov";
+  ov.style.cssText="position:fixed;inset:0;z-index:99998;background:rgba(20,32,24,.5);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:56px 16px 16px;overflow:auto;font-family:var(--pw-sans,system-ui)";
+  ov.onclick=function(e){ if(e.target===ov) ov.remove(); };
+  ov.innerHTML="<div style='background:#fff;max-width:420px;width:100%;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden'>"+
+    "<div style='display:flex;align-items:center;gap:11px;padding:16px 18px;border-bottom:1px solid var(--pw-border)'>"+
+      avImg(c.photo,c.name,"style='width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0'")+
+      "<div style='flex:1;min-width:0'><div style='font-family:var(--pw-serif);font-size:17px;font-weight:600;color:var(--pw-carbon)'>"+esc(c.name)+"</div><div style='font-size:12px;color:var(--pw-text-muted)'>Sus avances</div></div>"+
+      "<button data-tlx='1' aria-label='Cerrar' style='width:30px;height:30px;border:none;background:var(--pw-niebla-2);border-radius:8px;cursor:pointer;color:var(--pw-text-soft);font-size:18px;line-height:1'>&times;</button></div>"+
+    "<div id='pw-tl-body' style='padding:14px 18px 18px;min-height:110px'><div style='text-align:center;color:var(--pw-text-muted);font-size:13px;padding:26px'>Cargando…</div></div></div>";
+  document.body.appendChild(ov);
+  ov.querySelector("[data-tlx]").onclick=function(){ ov.remove(); };
+  var bodyEl=ov.querySelector("#pw-tl-body");
+  _hdr({"Content-Type":"application/json"}).then(function(h){
+    return fetch(SB+"/functions/v1/cliente-timeline",{method:"POST",headers:h,body:JSON.stringify({email:(c.email||"").toLowerCase().trim()})});
+  }).then(function(r){ return r.ok?r.json():{items:[]}; }).then(function(d){
+    var items=(d&&d.items)||[];
+    bodyEl.innerHTML=items.length ? _tlRender(items)
+      : "<div style='text-align:center;color:var(--pw-text-muted);font-size:13px;padding:26px'>Todavía no hay movimientos registrados.</div>";
+  }).catch(function(){ bodyEl.innerHTML="<div style='text-align:center;color:var(--pw-text-muted);font-size:13px;padding:26px'>No se pudo cargar. Reintentá.</div>"; });
+}
 function viewDashboard(){
   var now=Date.now();
   function _sdt(s){ return new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")).getTime(); }
@@ -2694,7 +2750,8 @@ function viewDashboard(){
       : "<div class='pos'>"+(i+1)+"</div>";
     return "<div class='cp-rankrow' data-act='cli-open:"+esc(c.id)+"'>"+pos+avImg(c.photo,c.name,"class='av'")+
       "<div class='bd'><div class='nm'>"+esc(c.name)+"</div><div class='sub'>Semana "+(c.week||1)+"/4 · "+doneN+"/4 objetivos</div></div>"+
-      "<span class='rt'>"+p+"%</span></div>";
+      "<span class='rt'>"+p+"%</span>"+
+      "<button class='cp-tl-btn' data-act='cli-timeline:"+esc(c.id)+"' title='Ver avances' aria-label='Ver avances'>"+PWI.svg('clock',{sm:true,cc:true})+"</button></div>";
   }),4):"<div style='padding:24px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Sin clientes activos para analizar.</div>";
   var anaCard=cliActive.length?("<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>"+PWI.svg('trophy',{sm:true})+"</span> Ranking de clientes<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver todos</button></div>"+anaRows+"</div>"):"";
   // ── Clientes en riesgo — enriquecido con engagement real + próximo paso ──
@@ -10722,6 +10779,7 @@ document.addEventListener("click", function(ev){
       });
     return;
   }
+  if(act.indexOf("cli-timeline:")===0){ var _tlid=act.slice(13); var _tlc=(CLIENTS||[]).filter(function(x){return String(x.id)===String(_tlid);})[0]; if(_tlc) openCliTimeline(_tlc); return; }
   if(act.indexOf("cli-open:")===0){ state.section="clientes"; state.clienteSel=act.slice(9); state.cliDetTab="perfil"; state.cliWeek=null; state.faseAdd=null; state.fitTareas=null; state.fitUnit=null; state.rutUnit=null; state.sesPrepOpen=false; render(); window.scrollTo(0,0); return; }
   if(act==="cli-back"){ state.clienteSel=null; state.fitTareas=null; state.perfilEdit=null; render(); return; }
   if(act.indexOf("cliweek:")===0){ state.cliWeek=parseInt(act.slice(8),10); render(); return; }
