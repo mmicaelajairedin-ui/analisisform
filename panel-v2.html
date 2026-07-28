@@ -2623,6 +2623,25 @@ function _cpMore(rowsArr, vis){
     "<div class='cp-more-rest' hidden>"+rowsArr.slice(vis).join("")+"</div>"+
     "<button type='button' class='cp-more-btn' onclick=\"var r=this.previousElementSibling;if(r.hasAttribute('hidden')){r.removeAttribute('hidden');this.textContent='Ver menos';}else{r.setAttribute('hidden','');this.textContent='Ver más ("+n+")';}\">Ver más ("+n+")</button>";
 }
+// ── Engagement del cliente — FUENTE ÚNICA (riesgo + lista "Tus clientes") ──
+// Mira "qué hizo" (tareas cumplidas) además de "cuándo entró". Derivado de datos
+// que el panel YA carga (acciones_progreso + última actividad): sin leer eventos.
+function _engLevel(c){
+  var st=(c&&c.last&&c.last.state)||"mid";
+  var done=0; try{ var _ap=JSON.parse((c&&c.raw&&c.raw.acciones_progreso)||"[]"); if(Object.prototype.toString.call(_ap)==="[object Array]") done=_ap.filter(Boolean).length; }catch(e){}
+  if(st==="stale") return "ausente";
+  if(done===0 && ((c&&c.week)||1)>=2) return "solo_entra";
+  if(st==="mid") return "mid";
+  return "avanza";
+}
+var _ENGMETA={
+  avanza:{cls:"go",      ic:"checkCircle", txt:"Avanza"},
+  solo_entra:{cls:"mid", ic:"eye",   txt:"Solo entra", k:"Para que avance",  act:"Mandale la tarea de la semana por chat + por qué importa"},
+  mid:{cls:"mid",        ic:"eye",   txt:"Poco activo",k:"Para sumarlo",     act:"Escribile un mensaje corto para retomar"},
+  ausente:{cls:"stop",   ic:"alert", txt:"Ausente",    k:"Para reactivarlo", act:"Recordale su sesión + un mensaje personal"}
+};
+// Chip compacto (solo estado, sin próximo paso) para listas como "Tus clientes".
+function _engChip(c){ var m=_ENGMETA[_engLevel(c)]||_ENGMETA.mid; return "<span class='cp-eng "+m.cls+"'>"+PWI.svg(m.ic,{sm:true,cc:true})+esc(m.txt)+"</span>"; }
 function viewDashboard(){
   var now=Date.now();
   function _sdt(s){ return new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")).getTime(); }
@@ -2684,19 +2703,7 @@ function viewDashboard(){
   // un riesgo que antes era invisible (figuraba "Activa"). Y cada uno trae el
   // próximo paso concreto para subir de nivel. Derivado de datos que YA cargamos
   // (acciones_progreso + última actividad); no depende de leer eventos.
-  function _engLevel(c){
-    var st=(c.last&&c.last.state)||"mid";
-    var done=0; try{ var _ap=JSON.parse((c.raw&&c.raw.acciones_progreso)||"[]"); if(Object.prototype.toString.call(_ap)==="[object Array]") done=_ap.filter(Boolean).length; }catch(e){}
-    if(st==="stale") return "ausente";
-    if(done===0 && (c.week||1)>=2) return "solo_entra";
-    if(st==="mid") return "mid";
-    return "avanza";
-  }
-  var _ENGMETA={
-    ausente:{cls:"stop", ic:"alert", txt:"Ausente",    k:"Para reactivarlo", act:"Recordale su sesión + un mensaje personal"},
-    solo_entra:{cls:"mid", ic:"eye", txt:"Solo entra",  k:"Para que avance",  act:"Mandale la tarea de la semana por chat + por qué importa"},
-    mid:{cls:"mid",       ic:"eye", txt:"Poco activo",  k:"Para sumarlo",     act:"Escribile un mensaje corto para retomar"}
-  };
+  // _engLevel / _ENGMETA ahora son fuente única a nivel módulo (arriba de _cpMore).
   var _riesgo=cliActive.map(function(c){ return {c:c, lvl:_engLevel(c)}; })
     .filter(function(x){ return x.lvl!=="avanza"; })
     .sort(function(a,b){ var o={ausente:0,solo_entra:1,mid:2}; return o[a.lvl]-o[b.lvl]; });
@@ -2785,6 +2792,7 @@ function viewResumen(){
       return "<div class='cp-todo-row' data-act='cli-open:"+esc(c.id)+"' style='cursor:pointer'>"+
         avImg(c.photo,c.name,"style='width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0'")+
         "<div class='cp-todo-body'><div class='cp-todo-head'>"+esc(c.name)+"</div><div class='cp-todo-meta'>"+esc(stTxt)+"</div></div>"+
+        _engChip(c)+
         "<span class='cp-todo-time "+stCls+"'>Sem "+(c.week||1)+"</span>"+
         svg(IC.chevR,14,"class='cp-todo-arrow'")+"</div>";
     }),4);
