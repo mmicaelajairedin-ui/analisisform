@@ -145,7 +145,13 @@
     trash:      "<polyline points='3 6 5 6 21 6'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><line x1='10' y1='11' x2='10' y2='17'/><line x1='14' y1='11' x2='14' y2='17'/>", /* 🗑 */
     crown:      "<path d='m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7z'/><path d='M5 20h14'/>", /* 👑 */
     laptop:     "<rect x='3' y='4' width='18' height='12' rx='1'/><line x1='2' y1='20' x2='22' y2='20'/>", /* 💻 */
-    graduation: "<path d='M22 10 12 5 2 10l10 5 10-5z'/><path d='M6 12v5c0 1 2 2 6 2s6-1 6-2v-5'/>" /* 🎓 🧑‍🏫 */
+    graduation: "<path d='M22 10 12 5 2 10l10 5 10-5z'/><path d='M6 12v5c0 1 2 2 6 2s6-1 6-2v-5'/>", /* 🎓 🧑‍🏫 */
+    cart:       "<circle cx='9' cy='21' r='1'/><circle cx='20' cy='21' r='1'/><path d='M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6'/>", /* 🛒 */
+    repeat:     "<polyline points='17 1 21 5 17 9'/><path d='M3 11V9a4 4 0 0 1 4-4h14'/><polyline points='7 23 3 19 7 15'/><path d='M21 13v2a4 4 0 0 1-4 4H3'/>", /* 🔁 */
+    headphones: "<path d='M3 18v-6a9 9 0 0 1 18 0v6'/><path d='M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z'/>", /* 🎧 */
+    pin:        "<line x1='12' y1='17' x2='12' y2='22'/><path d='M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z'/>", /* 📌 */
+    droplet:    "<path d='M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z'/>", /* 💧 */
+    walk:       "<circle cx='13' cy='4' r='1'/><path d='m7 21 3-6 2 1.5V21m0-6.5L10 9l4 1 2 3'/>" /* 🚶 */
   };
 
   var esc = function(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); };
