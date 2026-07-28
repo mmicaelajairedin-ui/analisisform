@@ -1695,6 +1695,25 @@ const RULES = [
     },
   },
   {
+    name: "fitness: el coach puede RENOMBRAR el título de un día completo (no ejercicio por ejercicio)",
+    bug: "El título del día ('Lunes · Tren superior') se guardaba repetido en cada " +
+         "ejercicio y la cabecera era texto fijo, sin lápiz. Para renombrarlo había que " +
+         "editar ejercicio por ejercicio, y si cambiabas uno el día se partía en dos. " +
+         "fit-day-rename reescribe .dia en TODOS los ejercicios de esa semana+día a la vez.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/data-act=['"]fit-day-rename['"]/.test(p))
+        return "panel-v2.html: falta el lápiz para renombrar el día (data-act='fit-day-rename') en la cabecera del día del Gym.";
+      const i = p.indexOf('act==="fit-day-rename"');
+      if (i < 0) return "panel-v2.html: falta el handler fit-day-rename (renombrar el día completo).";
+      const block = p.slice(i, i + 1400);
+      if (!/forEach/.test(block) || !/\.dia\s*=\s*drNew/.test(block))
+        return "panel-v2.html: fit-day-rename ya no reescribe .dia en todos los ejercicios del día (volvió el bug de renombrar uno por uno).";
+      return null;
+    },
+  },
+  {
     name: "diseño: número de KPI del panel en tamaño INTERMEDIO (ni gigante ni chico)",
     bug: "El número de _tile ('Mi negocio') se fue a los extremos varias veces: 46px " +
          "(gigante) o 26px (muy chico). La coach pidió, por ahora, un TAMAÑO INTERMEDIO " +
