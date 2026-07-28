@@ -3079,6 +3079,28 @@ const RULES = [
     },
   },
   {
+    name: "sin marcadores de conflicto de merge en archivos servidos",
+    why:
+      "Un merge mal resuelto dejó marcadores (<<<<<<< / ======= / >>>>>>>) en " +
+      "panel-v2.html y otros portales, que llegaron a producción y se VEÍAN como " +
+      "texto arriba del portal (los marcadores en HTML entre <script> no rompen el " +
+      "JS → check-syntax no los agarra). Esta regla escanea todos los .html/.js/" +
+      ".css y falla si encuentra un marcador. Regla: nunca commitear un conflicto.",
+    check() {
+      var files = [];
+      try { files = fs.readdirSync("."); } catch (e) { return null; }
+      for (var i = 0; i < files.length; i++) {
+        var f = files[i];
+        if (!/\.(html|js|css)$/.test(f)) continue;
+        var c = read(f);
+        if (/^<<<<<<< /m.test(c) || /^>>>>>>> /m.test(c)) {
+          return f + ": tiene un marcador de conflicto de merge sin resolver (<<<<<<< / ======= / >>>>>>>). Resolvelo antes de commitear.";
+        }
+      }
+      return null;
+    },
+  },
+  {
     name: "recursos: sin foto real, la portada muestra el logo del sitio (favicon)",
     why:
       "Cuando un recurso no tiene foto real (LinkedIn bloquea el scraping) pero " +
