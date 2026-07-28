@@ -99,7 +99,7 @@ Deno.serve(async (req: Request) => {
   const op = (body.op || "").toString();
   const coachId = (body.coach_id || "").toString().trim();
   if (!isUuid(coachId)) return json({ error: "coach_id_invalid" }, 400);
-  if (op !== "extend_trial" && op !== "mark_paid" && op !== "set_plan" && op !== "delete_coach" && op !== "set_active") return json({ error: "op_invalid" }, 400);
+  if (op !== "extend_trial" && op !== "mark_paid" && op !== "set_plan" && op !== "delete_coach" && op !== "set_active" && op !== "set_logo") return json({ error: "op_invalid" }, 400);
 
   // ── Leer la config actual del coach objetivo ──────────────────────
   let cur: { configuracion: Record<string, unknown> | null } | null = null;
@@ -179,6 +179,32 @@ Deno.serve(async (req: Request) => {
       return json({ error: "write_failed" }, 502);
     }
     return json({ ok: true, op, coach_id: coachId, activo });
+  }
+
+  // ── Logo del coach (white-label): el admin lo sube/pega por él ────
+  // El coach a veces no puede subirlo desde su panel (formato/navegador); acá el
+  // admin le setea el logo_url en SU config. Service role → no lo frena RLS.
+  // logo_url vacío = quitar el logo. Solo se acepta http(s) (o vacío).
+  if (op === "set_logo") {
+    const raw = (body.logo_url ?? "").toString().trim();
+    if (raw && !/^https?:\/\//i.test(raw)) return json({ error: "logo_url_invalid" }, 400);
+    const cfgL: Record<string, unknown> = (cur.configuracion && typeof cur.configuracion === "object") ? { ...cur.configuracion } : {};
+    cfgL.logo_url = raw;
+    cfgL.logo_admin_at = new Date().toISOString();
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}`, {
+        method: "PATCH",
+        headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ configuracion: cfgL }),
+      });
+      if (!r.ok) {
+        const t = await r.text().catch(() => "");
+        return json({ error: "write_failed", status: r.status, detail: t.slice(0, 200) }, 502);
+      }
+    } catch {
+      return json({ error: "write_failed" }, 502);
+    }
+    return json({ ok: true, op, coach_id: coachId, logo_url: raw });
   }
 
   const cfg: Record<string, unknown> = (cur.configuracion && typeof cur.configuracion === "object") ? { ...cur.configuracion } : {};
