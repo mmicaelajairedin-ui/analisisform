@@ -3715,6 +3715,21 @@ const RULES = [
     },
   },
   {
+    name: "sala: el motor P2P es OPT-IN (?engine=p2p); JaaS sigue siendo el default hasta probar P2P",
+    bug: "El motor P2P (pw-p2p.js) es nuevo y todavía se está probando. Se activa SOLO con ?engine=p2p " +
+         "en el link → el camino JaaS (producción, llamadas reales) queda intacto. Si el default de ENGINE " +
+         "pasa a 'p2p' antes de tiempo, todas las llamadas reales usarían un motor sin validar. Mantener " +
+         "el default en 'jaas' hasta que P2P esté probado con 2 dispositivos.",
+    check() {
+      const s = read("sala.html");
+      if (!s) return null;
+      if (!/pw-p2p\.js/.test(s)) return "sala.html: falta el include de pw-p2p.js.";
+      if (!/qp\(['"]engine['"]\)\|\|['"]jaas['"]/.test(s)) return "sala.html: el motor de video ya no tiene default 'jaas' (P2P no puede ser el default hasta validarlo).";
+      if (read("pw-p2p.js") === null) return "falta pw-p2p.js (el motor P2P).";
+      return null;
+    },
+  },
+  {
     name: "white-label de red: la marca del dueño (organizaciones.marca) llega a los 3 portales del cliente",
     bug: "El white-label es el corazón de lo que se vende en multi-coach ('tu marca, no la de Pathway'). " +
          "Antes el portal del cliente solo aplicaba la marca del coach INDIVIDUAL si era Pro — pero en una " +
