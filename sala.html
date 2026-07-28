@@ -141,6 +141,11 @@
   .chatp-quick{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px 0}
   .chatp-quick button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#DCEFE3;font-size:12px;padding:6px 10px;border-radius:100px;cursor:pointer;font-family:var(--sans)}
   .chatp-quick button:hover{background:rgba(255,255,255,.16)}
+  /* Barra de reacciones: emojis que "suben" sobre la videollamada (los ven ambos) */
+  .chatp-react{display:flex;gap:4px;justify-content:center;padding:8px 14px 0}
+  .chatp-react button{background:none;border:none;cursor:pointer;font-size:22px;line-height:1;padding:4px 6px;border-radius:12px;transition:transform .12s,background .12s}
+  .chatp-react button:hover{background:rgba(255,255,255,.12);transform:scale(1.18)}
+  .chatp-react button:active{transform:scale(.9)}
   .chatp-in{display:flex;gap:8px;padding:10px 14px 12px}
   .chatp-in input{flex:1;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.18);border-radius:100px;padding:9px 14px;color:#fff;font-size:13px;outline:none;font-family:var(--sans)}
   .chatp-in input::placeholder{color:#9CC4AE}
@@ -232,6 +237,7 @@
         <div class="chatp" id="chatp" aria-hidden="true">
           <div class="chatp-h"><span>💬 Chat</span><button id="chat-x" title="Cerrar" aria-label="Cerrar chat">✕</button></div>
           <div class="chatp-body" id="chat-body"><p class="empty">Escríbanse por acá durante la sesión.</p></div>
+          <div class="chatp-react" id="chat-react"></div>
           <div class="chatp-quick" id="chat-quick"></div>
           <div class="chatp-in"><input id="chat-i" placeholder="Escribe un mensaje…" autocomplete="off"><button id="chat-send" title="Enviar" aria-label="Enviar">➤</button></div>
         </div>
@@ -465,7 +471,7 @@ function boot(){
     hideWait();
     wireControls();
     // Mensajes entrantes → nuestro panel de chat (no el nativo).
-    api.addListener('incomingMessage', function(e){ try{ chatAdd((e&&e.nick)||WHO, e&&e.message, false); }catch(_e){} });
+    api.addListener('incomingMessage', function(e){ try{ var _m=e&&e.message; if(recvIsReaction(_m)) return; chatAdd((e&&e.nick)||WHO, _m, false); }catch(_e){} });
     // Forzar vista mosaico (mitad y mitad) — más robusto que solo el config inicial.
     function _tile(){ try{ api&&api.executeCommand('setTileView', true); }catch(e){} }
     api.addListener('videoConferenceJoined', function(){
@@ -550,7 +556,7 @@ function bootP2P(){
     onLocalReady:function(){ waitAlone(); },   // pantalla BLANCA de "esperando" hasta que se una el otro
     onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='En llamada'; },
     onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Esperando'; },
-    onChat:function(from,text){ try{ chatAdd(from||WHO, text, false); }catch(e){} },
+    onChat:function(from,text){ try{ if(recvIsReaction(text)) return; chatAdd(from||WHO, text, false); }catch(e){} },
     onFail:_p2pFallbackToJaas,   // la red bloquea el P2P (ni el TURN alcanza) → caemos a JaaS solos
     onError:function(e){ var c=(e&&(e.name||e.message))||'error';
       if(/NotAllowed|Permission|Denied/i.test(c)){ waitState('Permití cámara y micrófono','Para poder verte, el navegador necesita permiso de cámara y micrófono.',true); _p2pPermUI(); }
@@ -764,6 +770,28 @@ function chatToggle(on){ if(!CHATP) return; var show=(on==null)?!CHATP.classList
   if(show){ CHATUNREAD=0; chatBadge(); try{ if(window.matchMedia&&window.matchMedia('(max-width:1000px)').matches) window.scrollTo(0,0); }catch(e){} setTimeout(function(){ if(CHATI) CHATI.focus(); if(CHATBODY) CHATBODY.scrollTop=CHATBODY.scrollHeight; },30); }
 }
 function chatSend(txt){ txt=(''+(txt||'')).trim(); if(!txt) return; try{ if(ENGINE==='p2p'){ window.PWP2P&&PWP2P.sendChat(txt); } else { api&&api.executeCommand('sendChatMessage',txt); } }catch(e){} chatAdd(NAME,txt,true); if(CHATI) CHATI.value=''; _persistChat(MOD?'coach':'cliente', txt); }
+
+// ── Reacciones de emoji que SUBEN sobre la videollamada (estilo novedades) ──
+// Se ven en AMBOS lados: se dibujan localmente y se mandan por el mismo
+// transporte del chat con un marcador, para no ensuciar el chat de texto.
+var PWR='::pwr::';
+function salaRain(emo){
+  emo=emo||'❤️';
+  var baseX=window.innerWidth*(0.5+(Math.random()*0.24-0.12));
+  var baseY=window.innerHeight-130;
+  for(var i=0;i<6;i++){(function(i){
+    var f=document.createElement('span');
+    f.textContent=emo;
+    f.style.cssText='position:fixed;left:'+baseX+'px;top:'+baseY+'px;font-size:'+(22+Math.random()*16)+'px;pointer-events:none;z-index:2147483200;transform:translate(-50%,0);will-change:transform,opacity';
+    document.body.appendChild(f);
+    var dx=Math.random()*100-50, dy=-(180+Math.random()*200);
+    try{ f.animate([{transform:'translate(-50%,0) scale(.5)',opacity:0},{opacity:1,offset:.2},{transform:'translate(calc(-50% + '+dx+'px),'+dy+'px) scale(1.12)',opacity:0}],{duration:1500+Math.random()*700,easing:'cubic-bezier(.3,.7,.4,1)',delay:i*70,fill:'forwards'}); }catch(e){}
+    setTimeout(function(){try{f.remove();}catch(e){}},2500+i*70);
+  })(i);}
+}
+function sendReaction(emo){ salaRain(emo); try{ if(ENGINE==='p2p'){ window.PWP2P&&PWP2P.sendChat(PWR+emo); } else { api&&api.executeCommand('sendChatMessage',PWR+emo); } }catch(e){} }
+// Interceptar reacciones entrantes: si es un marcador, se dibuja y NO va al chat.
+function recvIsReaction(txt){ if((''+txt).indexOf(PWR)===0){ salaRain((''+txt).slice(PWR.length)); return true; } return false; }
 // Lo escrito en el chat de la Sala QUEDA como registro: se guarda en la ficha del
 // cliente (candidatos.notas_coach) → después se ve en el chat del panel. Cada punta
 // persiste SU propio mensaje (from correcto). Re-lee + mergea (dedup from|text|ts)
@@ -796,6 +824,7 @@ function _persistChat(from, txt){
   var cs=el('chat-send'); if(cs) cs.onclick=function(){ chatSend(CHATI&&CHATI.value); };
   if(CHATI) CHATI.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); chatSend(CHATI.value); } });
   var q=el('chat-quick'); if(q){ ['👋 Hola','¿Me escuchas?','Un minuto','Listo ✅'].forEach(function(t){ var b=document.createElement('button'); b.type='button'; b.textContent=t; b.onclick=function(){ chatSend(t); }; q.appendChild(b); }); }
+  var rb=el('chat-react'); if(rb){ ['❤️','🔥','👏','🎉','👍','😂'].forEach(function(em){ var b=document.createElement('button'); b.type='button'; b.title='Enviar reacción'; b.setAttribute('aria-label','Reaccionar con '+em); b.textContent=em; b.onclick=function(){ sendReaction(em); }; rb.appendChild(b); }); }
 })();
 
 // ── ENLACE: todo lo de la sesión (notas + objetivos + tareas + resultado) se

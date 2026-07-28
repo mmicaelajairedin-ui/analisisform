@@ -121,6 +121,21 @@ if (pv) {
   else if (js) ok("gym (dumbbell) idéntico entre el coach y el nav del cliente.");
 }
 
+// ── 3c. Ningún emoji de chrome envuelto en .cp-emo (eso ES chrome por regla) ─
+// `.cp-emo` es SIEMPRE chrome (nunca contenido). Un emoji pictográfico dentro
+// de <span class='cp-emo'>…</span> es una conversión pendiente → debe ser Lucide.
+{
+  const CP_EMO = /<span class=['"]cp-emo['"]>\s*([\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}])/gu;
+  const cpHits = [];
+  for (const f of ["panel-v2.html", "multicoach.html", "cliente.html", "empleado.html"]) {
+    const t = read(f); let m;
+    const re = new RegExp(CP_EMO.source, "gu");
+    while ((m = re.exec(t))) cpHits.push(f + " → " + m[1]);
+  }
+  if (cpHits.length) fail("emoji de chrome en .cp-emo (debe ser icono Lucide):\n      " + cpHits.join("\n      "));
+  else ok("sin emojis de chrome en .cp-emo (todo el chrome envuelto es Lucide).");
+}
+
 // ── 4. REPORT: emojis pictográficos en el chrome de superficies convertidas ─
 // No falla el build (la migración es progresiva); marca lo que falta cerrar.
 // Emojis de CONTENIDO quedan permitidos (medallas, banderas, mascota, agenda
