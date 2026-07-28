@@ -11,6 +11,8 @@
      citas / send-email). Antes una reserva que no se guardaba era invisible;
      ahora queda el rastro para diagnosticar "no le llegó / no se agendó". -->
 <script src="/pw-observe.js"></script>
+<!-- Event bus del Pathway OS (define window.pwEmit; inerte hasta que se llama). -->
+<script src="/pw-events.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -767,6 +769,9 @@ function confirmar(){
       //    con el evento cargado (sin invitar a nadie → sin Meet). El .ics va adjunto
       //    solo como respaldo para Apple/Outlook.
       sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
+      // OS Core: se agendó la llamada/sesión (conversión del embudo de llamada).
+      // Solo si realmente quedó guardada. Best-effort, nunca frena la confirmación.
+      try{ if(saved && window.pwEmit) pwEmit("CallBooked",{dominio:"Coaching",entidad_tipo:"cita",entidad_id:(""+(email||"")).toLowerCase().slice(0,80),payload:{tipo:tlabel,kind:_kind,origen:origen,coach_id:_cid}}); }catch(e){}
       ok(name, start, gurl, saved);
     };
     var _p; try{ _p=_postCita(true); }catch(e){ _p=null; }
@@ -866,6 +871,9 @@ function ok(name, start, gcalUrl, saved){
   var c=qp('c'); var t=parseInt(qp('t'),10); if(isNaN(t)) t=-1;
   var team=qp('team');
   try{ loadProof(); }catch(e){}   // prueba social real (coaches que ya usan Pathway)
+  // OS Core: llegó a la página de reserva por el CTA de llamada/demo → paso del
+  // embudo (intención de agendar). Best-effort; no cuenta reprogramaciones.
+  try{ if(window.pwEmit && (c||team) && !qp('reprog')) pwEmit("CallRequested",{dominio:"Commercial",entidad_tipo:"coach",entidad_id:(""+(c||"team")).slice(0,80),payload:{via:qp('mp')==='1'?"marketplace":"link"}}); }catch(e){}
   if(c){ loadCoach(c,t); return; }
   if(team){ TEAM=true; loadTeam(); return; }
   fail('Este link no es válido. Pídele que te compartan el link de reservas de nuevo.');

@@ -3830,6 +3830,18 @@ const RULES = [
     },
   },
   {
+    name: "event bus: CallRequested/CallBooked se emiten en la reserva (reservar.html)",
+    bug: "Las llamadas alimentan el OS: llegar a la pagina de reserva (CTA) y agendar. Requiere pw-events.js cargado.",
+    check() {
+      const s = read("reservar.html");
+      if (!s) return null;
+      if (!/pw-events\.js/.test(s)) return "reservar.html: dejo de cargar pw-events.js (las llamadas no emitirian).";
+      if (!/pwEmit\("CallRequested"/.test(s)) return "reservar.html: se borro el emit de CallRequested (CTA de llamada).";
+      if (!/pwEmit\("CallBooked"/.test(s)) return "reservar.html: se borro el emit de CallBooked (llamada agendada).";
+      return null;
+    },
+  },
+  {
     name: "event bus: LeadCreated se emite al entrar un lead (landing)",
     bug: "Tope del embudo: entra un lead por el chatbot (index.html) o el registro candidato (soy-candidato.html). Requiere pw-events.js cargado en esas paginas.",
     check() {
