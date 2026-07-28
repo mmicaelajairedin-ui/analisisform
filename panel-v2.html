@@ -3640,6 +3640,8 @@ function viewAgModal(){
         "<div class='cp-form-row' id='ag-grupal-wrap'><label class='cp-form-label'>Formato</label><select id='ag-cita-grupal' class='cp-form-input'><option value='0' selected>1 a 1</option>"+(_canGrupal()?"<option value='1'>Grupal (clase/curso)</option>":"<option value='1' disabled>Grupal (clase/curso) — Pro 🔒</option>")+"</select>"+(_canGrupal()?"":"<div style='font-size:11px;color:var(--pw-text-muted);margin-top:4px'>Las clases grupales (video con varios) son función Pro.</div>")+"</div>"+
       "</div>"+
       "<div class='cp-form-row' id='ag-lugar-row' style='display:none'><label class='cp-form-label'>Lugar (dirección o referencia)</label><input id='ag-cita-lugar' class='cp-form-input' placeholder='Ej: Av. Corrientes 1234, 2º B'></div>"+
+      // Zona horaria del cliente → el email/recordatorio muestra SU hora (no la del coach).
+      "<div class='cp-form-row'><label class='cp-form-label'>Zona horaria del cliente</label><select id='ag-cita-tz' class='cp-form-input'>"+_tzOptions(_coachTz())+"</select><div style='font-size:11px;color:var(--pw-text-muted);margin-top:4px'>Ingresás la hora en TU zona; al cliente le llega convertida a la suya.</div></div>"+
       _teamHtml+
       "<div class='cp-form-row'><label class='cp-form-label'>Otro invitado (email, opcional)</label><input id='ag-cita-guest' class='cp-form-input' placeholder='cliente@email.com'></div>"+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:14px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-agendar'>Agendar cita</button></div>";
@@ -4222,6 +4224,29 @@ function _fechaCli(iso, tz){
     var s=new Intl.DateTimeFormat('es',dopt).format(d)+' · '+new Intl.DateTimeFormat('en-US',topt).format(d);
     return s.charAt(0).toUpperCase()+s.slice(1);
   }catch(e){ return ""; }
+}
+// Zonas horarias frecuentes (coaching en español + EE.UU.). La hora que le llega
+// al CLIENTE se muestra en SU zona, no en la del coach → nadie llega 4-5h corrido.
+var _TZLIST=[
+  ["Europe/Madrid","España (Madrid)"],
+  ["America/Argentina/Buenos_Aires","Argentina (Buenos Aires)"],
+  ["America/Mexico_City","México (CDMX)"],
+  ["America/Bogota","Colombia (Bogotá)"],
+  ["America/Lima","Perú (Lima)"],
+  ["America/Santiago","Chile (Santiago)"],
+  ["America/Montevideo","Uruguay (Montevideo)"],
+  ["America/Caracas","Venezuela (Caracas)"],
+  ["America/Guayaquil","Ecuador (Guayaquil)"],
+  ["America/Santo_Domingo","Rep. Dominicana"],
+  ["America/New_York","EE.UU. Este (NY)"],
+  ["America/Los_Angeles","EE.UU. Oeste (LA)"]
+];
+function _coachTz(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Madrid"; }catch(e){ return "Europe/Madrid"; } }
+function _tzNice(tz){ tz=(""+(tz||"")).trim(); for(var i=0;i<_TZLIST.length;i++){ if(_TZLIST[i][0]===tz) return _TZLIST[i][1]; } return tz.replace(/_/g," ").replace(/^.*\//,""); }
+function _tzOptions(sel){
+  sel=(""+(sel||"")).trim(); var list=_TZLIST.slice();
+  if(sel && !list.some(function(x){return x[0]===sel;})) list.unshift([sel, _tzNice(sel)+" (tu zona)"]);
+  return list.map(function(x){ return "<option value='"+x[0]+"'"+(x[0]===sel?" selected":"")+">"+esc(x[1])+"</option>"; }).join("");
 }
 function _notifResCliente(email,nombre,subject,inner,icsB64){
   email=(""+(email||"")).trim(); if(!email) return;
@@ -9614,6 +9639,7 @@ document.addEventListener("click", function(ev){
     var _shWith=_ag2?(_ag2.split("@")[0]):("con "+((COACH&&COACH.firstName)||(RME&&RME.nombre)||"el equipo"));
     var _iso=_ast.toISOString();
     var _amod=(_val("ag-cita-mod")||"online"); var _agrupal=(_val("ag-cita-grupal")==="1"); var _alugar=(""+_val("ag-cita-lugar")).trim();
+    var _atz=(_val("ag-cita-tz")||"").trim()||_coachTz();   // zona del cliente (para su hora en emails/recordatorios)
     if(_agrupal && typeof _canGrupal==="function" && !_canGrupal()){ _agrupal=false; }   // grupal = Pro (defensa: si no es Pro, cae a 1:1)
     var _team=(state.ag&&state.ag.team)||[];   // capturar ANTES de limpiar state.ag
     state.ag=null;
@@ -9624,7 +9650,7 @@ document.addEventListener("click", function(ev){
     //    Google Calendar) → por eso "no aparecían las citas" y terminabas en Google.
     // Kind del sistema: con invitado/cliente → 'sesion'; sin nadie → 'personal' (agenda suelta).
     var _agKind=_ag2?"sesion":"personal";
-    var _agBody={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel"};
+    var _agBody={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel", cliente_tz:_atz};
     // Columnas opcionales (pueden no existir aún → hay reintento sin ellas).
     var _agExtra={kind:_agKind, modalidad:_amod, grupal:_agrupal}; if(_amod==="presencial"&&_alugar) _agExtra.lugar=_alugar;
     var _agDone=function(r){ if(r&&r.ok) toast("Cita agendada ✓ — ya está en tu agenda"); else toast("No se pudo guardar la cita. Reintenta."); try{ _resLoad(); }catch(e){} try{ _calLoad(); }catch(e){} };
@@ -9641,19 +9667,20 @@ document.addEventListener("click", function(ev){
     //    (grupal = video multi-persona). Presencial → SIN link de video, con el lugar.
     if(_ag2 && /@/.test(_ag2)){
       try{
-        var _f=_fechaCli(_iso);
+        var _f=_fechaCli(_iso,_atz);
+        var _tzTag=_atz?(" <span style='color:#8A968E;font-weight:400'>(hora de "+esc(_tzNice(_atz))+")</span>"):"";
         var _coachNm=(COACH&&COACH.name)||(RME&&RME.nombre)||"Pathway";
         var _inner, _ics;
         if(_amod==="presencial"){
           _ics=_icsBuild("Sesión · Pathway", _ast.getTime(), _aen.getTime(), (_alugar||"Presencial"));
-          _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"):"")+".</p>"+
+          _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+".</p>"+
             "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:14px'>📍 <strong>Presencial</strong>"+(_alugar?(" · "+esc(_alugar)):"")+"</div>"+
             "<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";
         } else {
           var _r={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2, tipo:_atl, inicio:_iso, grupal:_agrupal};
           var _lnk=_salaClientLink(_r);
           _ics=_icsBuild("Sesión · Pathway", _ast.getTime(), _aen.getTime(), _lnk);
-          _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"):"")+(_agrupal?" (grupal)":"")+".</p>"+
+          _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+(_agrupal?" (grupal)":"")+".</p>"+
             "<p style='margin:16px 0'><a href='"+esc(_lnk)+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700'>Entrar a la sesión</a></p>"+
             "<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";
         }

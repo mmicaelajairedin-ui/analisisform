@@ -3903,6 +3903,23 @@ const RULES = [
     },
   },
   {
+    name: "agenda: 'Agendar cita' guarda la zona del cliente → su hora en el email (no la del coach)",
+    bug: "Al agendar desde el panel no se guardaba cliente_tz → el email y los recordatorios mostraban " +
+         "la hora del COACH. Un cliente en Buenos Aires con un coach en Madrid llegaba 4-5h corrido. Ahora " +
+         "el modal tiene un selector de zona (default = zona del coach), se guarda cliente_tz en la cita y " +
+         "el email formatea la hora en la zona del cliente con etiqueta '(hora de …)'. Los recordatorios " +
+         "ya leían cliente_tz, así que quedan correctos solos.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _tzOptions\(/.test(p)) return "panel-v2.html: falta el selector de zona horaria (_tzOptions).";
+      if (!/id='ag-cita-tz'/.test(p)) return "panel-v2.html: el modal de Agendar cita ya no tiene el selector de zona del cliente.";
+      if (!/cliente_tz:_atz/.test(p)) return "panel-v2.html: la cita del panel ya no guarda cliente_tz (el email volvería a la hora del coach).";
+      if (!/_fechaCli\(_iso,_atz\)/.test(p)) return "panel-v2.html: el email de confirmación ya no usa la zona del cliente (_fechaCli con _atz).";
+      return null;
+    },
+  },
+  {
     name: "sala: saveSesion CONFIRMA que guardó (return=representation), no phantom con return=minimal",
     bug: "saveSesion (notas/resultado de la sesión → citas) usaba Prefer:return=minimal y devolvía " +
          "r.ok. PostgREST responde 204 (ok) aunque el filtro matchee 0 filas (id equivocado, o RLS " +
