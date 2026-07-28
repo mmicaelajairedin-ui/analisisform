@@ -5,6 +5,7 @@
 <script src="/pw-call.js"></script>
 <script src="pw-observe.js"></script>
 <script src="pw-events.js"></script>
+<script src="pw-recursos.js?v=20260728c"></script>
 <script src="/pw-native.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -249,7 +250,7 @@ details.logros-c[open]>summary .lg-caret{transform:rotate(180deg);}
 .pwcal-cell.fut{color:#cbc4c6;}
 .pwcal-cell.today{outline:1.5px solid var(--brand);color:var(--brand);}
 .pwcal-cell.meas{background:var(--brand-light);box-shadow:inset 0 0 0 1px var(--brand);color:var(--brand);}
-.pwcal-mtag{position:absolute;top:3px;right:4px;font-size:8px;color:var(--brand);}
+.pwcal-mtag{position:absolute;top:1px;right:2px;font-size:11px;line-height:1;}
 .pwcal-legend{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;font-size:10.5px;color:var(--text2);margin-top:10px;}
 .pwcal-legend .sq{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--brand-light);box-shadow:inset 0 0 0 1px var(--brand);vertical-align:-1px;margin-right:3px;}
 
@@ -1732,6 +1733,9 @@ function _applyOrgBrand(orgId){
         if(m.color) _applyCoachColor(m.color);
         var wb=document.getElementById('sb-brandlogo');
         if(m.logo && wb){ wb.innerHTML='<img src="'+String(m.logo)+'" alt="" style="max-width:150px;max-height:40px;object-fit:contain;margin:0 auto">'; wb.style.justifyContent='center'; }
+        // Recursos de la EMPRESA: los pone el owner (organizaciones.marca.recursos)
+        // y los ven TODOS sus clientes; tienen prioridad sobre los del coach.
+        try{ if(Array.isArray(m.recursos)&&m.recursos.length){ window.ORG_RECURSOS=m.recursos; if(_secCache) delete _secCache.recursos; if(typeof SEC!=='undefined'&&SEC==='recursos'&&window.PwRecursos){ var _h=document.getElementById('pwrec-host'); if(_h) _renderRecursosLib(_h); } } }catch(e){}
       }).catch(function(){});
   }catch(e){}
 }
@@ -1918,6 +1922,7 @@ function _loadCoachColor(){
       // Recursos propios del coach (lista plana título+link). Si los cargó, el
       // portal los muestra en vez de los de ejemplo. Disponible para todos los planes.
       try{ window.COACH_RECURSOS = (Array.isArray(cfg.recursos) && cfg.recursos.length) ? cfg.recursos : null; if(_secCache) delete _secCache.recursos; }catch(e){}
+      try{ window.COACH_NOMBRE = coach.nombre || ''; }catch(e){}
     }).catch(function(){});
 }
 
@@ -2873,7 +2878,7 @@ function rCliCalCard(){
   o+='<div class="pwcal-h"><b id="cliCalTitle">—</b><div class="pwcal-nav"><button type="button" onclick="cliCalNav(-1)" aria-label="Mes anterior">‹</button><button type="button" id="cliCalNext" onclick="cliCalNav(1)" aria-label="Mes siguiente">›</button></div></div>';
   o+='<div class="pwcal-dow"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>';
   o+='<div class="pwcal-grid" id="cliCalGrid"></div>';
-  o+='<div class="pwcal-legend"><span><span class="sq"></span>Sesión con tu coach</span></div>';
+  o+='<div class="pwcal-legend"><span>💼 Sesión con tu coach</span></div>';
   o+='</div></div>';
   return o;
 }
@@ -2890,7 +2895,7 @@ function renderCliCal(){
   var t=document.getElementById('cliCalTitle'); if(t)t.textContent=MES+' '+y;
   var startDow=(new Date(y,m,1).getDay()+6)%7, nd=new Date(y,m+1,0).getDate(), todayK=_cymd(now), cells="";
   for(var i=0;i<startDow;i++) cells+="<div class='pwcal-cell empty'></div>";
-  for(var d=1;d<=nd;d++){ var key=y+'-'+('0'+(m+1)).slice(-2)+'-'+('0'+d).slice(-2); var fut=key>todayK; var cls='pwcal-cell'+(meas[key]?' meas':'')+(key===todayK?' today':'')+(fut?' fut':''); cells+="<div class='"+cls+"'>"+(meas[key]?"<span class='pwcal-mtag'>●</span>":"")+d+"</div>"; }
+  for(var d=1;d<=nd;d++){ var key=y+'-'+('0'+(m+1)).slice(-2)+'-'+('0'+d).slice(-2); var fut=key>todayK; var cls='pwcal-cell'+(meas[key]?' meas':'')+(key===todayK?' today':'')+(fut?' fut':''); cells+="<div class='"+cls+"'>"+(meas[key]?"<span class='pwcal-mtag'>💼</span>":"")+d+"</div>"; }
   grid.innerHTML=cells;
   var nx=document.getElementById('cliCalNext'); if(nx){ nx.disabled=(y===now.getFullYear()&&m===now.getMonth()); }
 }
@@ -3132,6 +3137,9 @@ function _renderMain(sec){
     el.innerHTML=_mc(_safeRender(rLinkedIn,'linkedin'));return;
   }
   if(sec==='recursos'){
+    // Biblioteca unificada (pw-recursos.js). Sin cache: el componente maneja su
+    // propio estado (buscador, filtros, progreso). Fallback a la vista vieja.
+    if(window.PwRecursos){ el.innerHTML='<div id="pwrec-host"></div>'; _renderRecursosLib(document.getElementById('pwrec-host')); return; }
     if(_isValidCache(_secCache.recursos,'recursos')){el.innerHTML=_mc(_secCache.recursos);return;}
     _secCache.recursos=null;
     el.innerHTML=_mc(_safeRender(rRecursos,'recursos'));return;
@@ -5374,6 +5382,37 @@ function liMostrar(d){
 }
 
 // ── RECURSOS ─────────────────────────────────────────────────
+// ── Biblioteca de recursos unificada (pw-recursos.js) ────────────────────────
+// Recursos de ejemplo del nicho carrera (cuando el coach/owner no cargó los suyos).
+var CAREER_REC_DEFAULT=[
+  {titulo:'Cómo armar un CV de alto impacto', descripcion:'Qué poner, qué sacar y cómo ordenarlo para que te llamen.', tipo:'articulo', url:'https://zety.es/blog/cv-de-alto-impacto'},
+  {titulo:'Video: Cómo hacer un buen CV', descripcion:'Un tutorial completo para armar tu CV paso a paso.', tipo:'video', url:'https://www.youtube.com/watch?v=Tt08KmFfIYQ'},
+  {titulo:'Tu propuesta de valor', descripcion:'Ejercicio para definir qué te hace diferente y cómo contarlo.', tipo:'ejercicio'},
+  {titulo:'Estructura y tipos de CV', descripcion:'Los 3 formatos de currículum más usados y cuándo elegir cada uno.', tipo:'articulo', url:'https://es.indeed.com/orientacion-laboral/cv-cartas-presentacion/curriculum-vitae-estructura'},
+  {titulo:'Cómo crear un buen perfil de LinkedIn', descripcion:'Lo que miran los reclutadores y cómo dejarlo bien.', tipo:'articulo', url:'https://www.linkedin.com/help/linkedin/answer/a548467/'},
+  {titulo:'Video: LinkedIn paso a paso', descripcion:'Cómo armar un buen perfil desde cero.', tipo:'video', url:'https://www.youtube.com/watch?v=BcPkz2ZNHKQ'},
+  {titulo:'Cómo escribir un buen titular', descripcion:'Tu titular es lo primero que leen. Acá van ideas que funcionan.', tipo:'articulo', url:'https://es.linkedin.com/pulse/c%C3%B3mo-optimizar-tu-perfil-profesional-para-destacar-este-aslxe'},
+  {titulo:'Técnicas de búsqueda de empleo', descripcion:'Filtros, alertas y trucos para encontrar ofertas más rápido.', tipo:'articulo', url:'https://es.indeed.com/orientacion-laboral/buscar-trabajo/tecnicas-busqueda-empleo'},
+  {titulo:'Networking profesional: guía completa', descripcion:'Tipos, estrategias y ejemplos para hacer contactos que sirvan.', tipo:'articulo', url:'https://blog.hubspot.es/sales/guia-networking-efectivo'},
+  {titulo:'Mensajes que funcionan', descripcion:'Ejemplos de mensajes para escribirle a alguien que no conocés.', tipo:'plantilla'},
+  {titulo:'Video: Networking que funciona', descripcion:'Ideas prácticas para conectar con personas de tu sector.', tipo:'video', url:'https://www.youtube.com/watch?v=8wA0yh0oFe0'},
+  {titulo:'Tu mapa de contactos', descripcion:'Ejercicio para ver a quién conocés y quién te puede ayudar.', tipo:'ejercicio'},
+  {titulo:'Cómo preparar tus respuestas', descripcion:'El método STAR para contar tu experiencia de forma clara.', tipo:'articulo', url:'https://es.indeed.com/orientacion-laboral/entrevistas/como-preparar-una-entrevista-por-competencias'},
+  {titulo:'Video: Entrevista de trabajo', descripcion:'Errores comunes y cómo evitarlos.', tipo:'video', url:'https://www.youtube.com/watch?v=HG68Ymazo18'},
+  {titulo:'Cómo negociar tu sueldo', descripcion:'Averiguar rangos, presentar tu número y negociar sin miedo.', tipo:'articulo', url:'https://www.indeed.com/orientacion-profesional/entrevistas/como-negociar-oferta-empleo'},
+  {titulo:'Preguntas frecuentes en entrevistas', descripcion:'Las 20 preguntas que más salen y cómo responderlas.', tipo:'articulo', url:'https://www.indeed.com/orientacion-profesional/entrevistas/guia-preguntas-para-entrevista'}
+];
+function _recSource(){
+  if(Array.isArray(window.ORG_RECURSOS)&&window.ORG_RECURSOS.length) return window.ORG_RECURSOS;
+  if(Array.isArray(window.COACH_RECURSOS)&&window.COACH_RECURSOS.length) return window.COACH_RECURSOS;
+  return CAREER_REC_DEFAULT;
+}
+function _renderRecursosLib(host){
+  if(!host||!window.PwRecursos) return;
+  var list=_recSource().filter(function(r){ return r && ((r.titulo&&(''+r.titulo).trim())||(r.url&&(''+r.url).trim())); });
+  var acc=''; try{ acc=(getComputedStyle(document.documentElement).getPropertyValue('--brand')||'').trim(); }catch(e){}
+  PwRecursos.render(host, list, { clientKey:((C&&C.email)||'anon'), accent:acc||'#2D6A4F', coachName:(window.COACH_NOMBRE||''), title:'Recursos' });
+}
 function rRecursos(){
   var nombre=(C&&C.nombre?C.nombre:'').split(' ')[0]||'';
   var sem=SEM||1;

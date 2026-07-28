@@ -260,6 +260,63 @@ const RULES = [
     },
   },
   {
+    name: "RLS: el chat admin↔coach NO está abierto al público",
+    bug: "mensajes_admin_coach tenía una política {public} ALL USING(true): cualquiera con " +
+         "la anon key leía/escribía/borraba todo el chat admin↔coach. Se cerró alineándolo " +
+         "con candidatos (coach ve su hilo, admin todo). Si vuelve una política abierta, fuga.",
+    check() {
+      const m = read("supabase/migrations/rls_mensajes_admin_coach.sql");
+      if (!m) return "falta la migración rls_mensajes_admin_coach.sql que cierra el chat.";
+      if (!/mensajes_admin_coach_select/.test(m) || !/pw_coach_id\(\)/.test(m))
+        return "rls_mensajes_admin_coach.sql: perdió la política scopeada por coach (pw_coach_id).";
+      if (/mensajes_admin_coach_all/.test(m) && !/DROP POLICY IF EXISTS mensajes_admin_coach_all/.test(m))
+        return "rls_mensajes_admin_coach.sql: la política abierta 'all' no está siendo eliminada.";
+      return null;
+    },
+  },
+  {
+    name: "Novedades: el botón del badge lo SUMA de verdad a la colección",
+    bug: "La revista mostraba 'Sumado a tu colección' como etiqueta fija: no agregaba " +
+         "el badge a los logros reales del coach. Ahora es un botón que respira, avisa al " +
+         "panel (postMessage pw:'badge'), y el panel lo agrega con pwAwardBadge. Si se corta, " +
+         "el coach ve el badge en Novedades pero nunca en sus logros.",
+    check() {
+      const nv = read("novedades-preview.html");
+      if (nv) {
+        if (!/function nvClaimBadge/.test(nv) || !/pw:'badge'/.test(nv))
+          return "novedades-preview.html: el botón ya no reclama el badge (nvClaimBadge / postMessage pw:'badge').";
+        if (!/nv-badge-pulse/.test(nv) || !/@keyframes nv-breathe/.test(nv))
+          return "novedades-preview.html: el botón del badge ya no 'respira' (falta nv-badge-pulse / @keyframes nv-breathe).";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/d\.pw==="badge"/.test(p) || !/pwAwardBadge\(/.test(p))
+          return "panel-v2.html: el panel ya no otorga el badge que pide Novedades (handler pw:'badge' → pwAwardBadge).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "consentimiento del coach: se guarda UNA vez y no se vuelve a pedir",
+    bug: "El coach veía 'aceptar términos' en CADA login. El gate estampaba consent_at " +
+         "solo en RME.configuracion, pero saveCfg reconstruye TODA la configuración desde " +
+         "RCFG → el siguiente guardado (servicios/calendario) borraba el consent del server " +
+         "y volvía a pedirlo. Fix: estampar también en RCFG + flag local anti-nag + no " +
+         "perderlo al recargar RCFG desde el server.",
+    check() {
+      const p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/RCFG\.consent_at\s*=/.test(p))
+        return "panel-v2.html: el gate ya no estampa el consentimiento en RCFG → un guardado posterior lo borra y se re-pide.";
+      if (!/mj_consent_/.test(p))
+        return "panel-v2.html: falta el flag local anti-nag del consentimiento (mj_consent_<id>).";
+      // La recarga de RCFG desde el server debe conservar el consent ya aceptado.
+      if (!/!RCFG\.consent_at/.test(p))
+        return "panel-v2.html: al recargar RCFG del server ya no se conserva el consent_at previo.";
+      return null;
+    },
+  },
+  {
     name: "Sala: tu foto real viaja a la videollamada (no solo iniciales)",
     bug: "Un coach en llamada con soporte/otro no veía la foto del otro: la Sala nunca " +
          "pasaba el avatar a Jitsi. Ahora sala.html toma tu foto (mj_user o mj_foto_<email>) " +
@@ -2866,6 +2923,171 @@ const RULES = [
       if (lg && !/removeItem\(['"]pw_auth_retry/.test(lg)) return "login.html: no resetea pw_auth_retry en el login fresco.";
       var ac = read("auth-callback.html");
       if (ac && !/removeItem\(['"]pw_auth_retry/.test(ac)) return "auth-callback.html: no resetea pw_auth_retry en el login fresco.";
+      return null;
+    },
+  },
+  {
+    name: "SEO reseñas: un SOLO nodo SoftwareApplication (sin @id duplicado)",
+    why:
+      "Google mostraba 'elementos no válidos' en el Rich Results Test porque " +
+      "había DOS <script application/ld+json> con el mismo @id #software: el " +
+      "estático de index.html y otro que testimonios.js AGREGABA con el " +
+      "aggregateRating + reviews. Dos SoftwareApplication en conflicto => las " +
+      "reseñas no aparecían en Google. El arreglo: testimonios.js FUSIONA el " +
+      "rating/reviews DENTRO del nodo estático (id='ld-software'), no crea un " +
+      "segundo <script>. Regla: el nodo estático debe tener el id y " +
+      "testimonios.js debe fusionarlo por getElementById, no appendChild otro.",
+    check() {
+      var idx = read("index.html");
+      if (idx) {
+        // El único SoftwareApplication estático debe llevar id='ld-software'.
+        var m = idx.match(/<script[^>]*application\/ld\+json[^>]*>\s*\{[^<]*"@type"\s*:\s*"SoftwareApplication"/);
+        if (m && !/id\s*=\s*['"]ld-software['"]/.test(m[0])) {
+          return "index.html: el nodo SoftwareApplication perdió id='ld-software' (testimonios.js no puede fusionar el rating).";
+        }
+      }
+      var t = read("testimonios.js");
+      if (t) {
+        if (!/getElementById\(['"]ld-software['"]\)/.test(t)) {
+          return "testimonios.js: ya no fusiona el aggregateRating en el nodo estático (getElementById('ld-software')) — vuelve el @id duplicado.";
+        }
+        // No debe volver a crear un <script> SoftwareApplication como camino
+        // principal: el createElement queda SOLO como fallback (tras 'if(!merged)').
+        if (!/if\s*\(\s*!merged\s*\)/.test(t)) {
+          return "testimonios.js: el append del <script> SoftwareApplication ya no está detrás del fallback (!merged) — puede duplicar el @id.";
+        }
+      }
+      return null;
+    },
+  },
+  {
+    name: "gym: el cliente registra lo que hizo distinto al plan y el coach lo ve",
+    why:
+      "El cliente podía hacer más series/peso o cambiar un ejercicio, pero no " +
+      "tenía cómo avisarlo y el coach nunca se enteraba. Ahora cada ejercicio del " +
+      "portal fitness tiene un botón ✎ para registrar 'lo que hiciste' (series×reps· " +
+      "peso real y/o otro ejercicio), se guarda en candidatos.fit_ejercicios_real, y " +
+      "el coach lo ve en su panel (pestaña Gym) con el valor del plan TACHADO + el " +
+      "real al lado — sin cuadros nuevos. Regla: no romper ese cableado ida y vuelta.",
+    check() {
+      var cli = read("pathway-fit-cliente.html");
+      if (cli) {
+        if (!/function exAdj\b/.test(cli)) return "pathway-fit-cliente.html: falta exAdj() — el cliente ya no puede registrar lo que hizo distinto al plan.";
+        if (!/fit_ejercicios_real/.test(cli)) return "pathway-fit-cliente.html: ya no persiste fit_ejercicios_real (el coach no ve el cambio).";
+        if (!/FREAL/.test(cli)) return "pathway-fit-cliente.html: se cayó FREAL (el override plan→real del cliente).";
+      }
+      var pan = read("panel-v2.html");
+      if (pan) {
+        if (!/fit_ejercicios_real/.test(pan)) return "panel-v2.html: la pestaña Gym ya no lee fit_ejercicios_real — el coach no ve lo que el cliente cambió.";
+        if (!/line-through/.test(pan)) return "panel-v2.html: se cayó el tachado plan→real en la rutina (el cambio ya no se distingue).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "portal fitness: la sección Recursos existe y muestra lo del coach",
+    why:
+      "El coach cargaba recursos en su panel pero el portal FITNESS no tenía " +
+      "dónde mostrarlos (sí el de carrera) → el cliente nunca los veía. Ahora el " +
+      "portal fitness tiene sección Recursos: nav (sidebar+bottom), <section " +
+      "id='s-recursos'>, renderRecursos() y COACH_RECURSOS (lee cfg.recursos del " +
+      "coach en applyBrand). Respeta la visibilidad (applyVisFit mapea recursos).",
+    check() {
+      var f = read("pathway-fit-cliente.html");
+      if (!f) return null;
+      if (!/id=["']s-recursos["']/.test(f)) return "pathway-fit-cliente.html: falta la <section id='s-recursos'> (el cliente no ve los recursos del coach).";
+      if (!/function renderRecursos\b/.test(f)) return "pathway-fit-cliente.html: falta renderRecursos().";
+      if (!/COACH_RECURSOS/.test(f)) return "pathway-fit-cliente.html: ya no lee los recursos del coach (COACH_RECURSOS).";
+      if (!/data-s=["']recursos["']/.test(f)) return "pathway-fit-cliente.html: falta el botón de nav a Recursos (data-s='recursos').";
+      if (!/recursos:\s*['"]recursos['"]/.test(f)) return "pathway-fit-cliente.html: applyVisFit ya no mapea 'recursos' (el toggle de visibilidad del coach no lo afecta).";
+      return null;
+    },
+  },
+  {
+    name: "recursos: biblioteca unificada (pw-recursos.js) en los 3 portales",
+    why:
+      "Los recursos se unificaron en un solo componente para TODO Pathway " +
+      "(pw-recursos.js): buscador, filtros por tipo, portada, badges, CTA, guardar " +
+      "y progreso. Los 3 portales del cliente (fitness, carrera, finanzas) lo " +
+      "incluyen y lo usan (PwRecursos.render). La fuente respeta la empresa: " +
+      "ORG_RECURSOS (owner) tiene prioridad sobre COACH_RECURSOS → en una red los " +
+      "recursos los pone el owner y los ven todos sus clientes. Regla: no romper " +
+      "el include ni el uso del componente en ninguno.",
+    check() {
+      var c = read("pw-recursos.js");
+      if (!c) return "pw-recursos.js: el componente unificado de recursos ya no existe.";
+      if (!/window\.PwRecursos\s*=/.test(c)) return "pw-recursos.js: ya no expone window.PwRecursos.";
+      var portals = ["pathway-fit-cliente.html", "cliente.html", "pathway-fin-cliente.html"];
+      for (var i = 0; i < portals.length; i++) {
+        var f = read(portals[i]);
+        if (!f) continue;
+        if (!/pw-recursos\.js/.test(f)) return portals[i] + ": falta incluir pw-recursos.js (la biblioteca unificada).";
+        if (!/PwRecursos\.render/.test(f)) return portals[i] + ": ya no usa PwRecursos.render (volvió a la vista vieja de recursos).";
+        if (!/ORG_RECURSOS/.test(f)) return portals[i] + ": se cayó la fuente de empresa (ORG_RECURSOS del owner) para los recursos.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "marca: el logo se sube (SVG→PNG), guarda solo y avisa el error real",
+    why:
+      "Un coach Pro subía su logo y 'no reflejaba': el bucket avatars rechaza " +
+      "SVG (solo raster) y el error era genérico ('Reintenta'), y además había " +
+      "que acordarse de pulsar 'Guardar marca'. Ahora: un SVG se rasteriza a PNG " +
+      "en el navegador antes de subir (_logoUpload/_logoRasterizeSvg), el logo se " +
+      "guarda en el acto (saveCfg noRender) y si falla se muestra el motivo real " +
+      "(_logoErrMsg). Regla: no volver al upload directo sin conversión ni al " +
+      "alert genérico.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _logoUpload\b/.test(p)) return "panel-v2.html: falta _logoUpload() — el logo SVG vuelve a rebotar en el bucket avatars.";
+      if (!/_logoRasterizeSvg\b/.test(p)) return "panel-v2.html: se cayó la conversión SVG→PNG del logo (el SVG no se puede subir).";
+      if (!/_logoErrMsg\b/.test(p)) return "panel-v2.html: el error de subida del logo volvió a ser genérico (no dice por qué falla).";
+      // Tras subir el logo debe guardarse solo (saveCfg con logo_url).
+      var m = p.match(/id!=="cfb-logo-file"[\s\S]{0,1600}/);
+      if (m && !/saveCfg\(\{\s*logo_url/.test(m[0])) return "panel-v2.html: el logo ya no se guarda solo tras subir (falta saveCfg({logo_url})) — vuelve el 'subí pero no reflejó'.";
+      return null;
+    },
+  },
+  {
+    name: "nutrición: el cliente registra lo que comió distinto y el coach lo ve",
+    why:
+      "La nutrición usaba una caja de texto libre suelta ('Lo que comí'). Ahora " +
+      "usa la MISMA idea que el gym: cada comida del plan es una fila con ✎ para " +
+      "registrar lo que comió de verdad → plan tachado + lo real. Se guarda en " +
+      "candidatos.fit_nutri_real (por comida: 'lun|Almuerzo') y el coach lo ve en " +
+      "su panel (pestaña Nutrición) tachado + real. Regla: no volver al textarea " +
+      "suelto ni romper el cableado ida y vuelta.",
+    check() {
+      var f = read("pathway-fit-cliente.html");
+      if (f) {
+        if (!/function nutAdj\b/.test(f)) return "pathway-fit-cliente.html: falta nutAdj() — el cliente no puede registrar lo que comió distinto.";
+        if (!/fit_nutri_real/.test(f)) return "pathway-fit-cliente.html: ya no persiste fit_nutri_real (el coach no ve el cambio de nutrición).";
+        if (!/class="nutri-meal"/.test(f)) return "pathway-fit-cliente.html: se cayeron las filas de comida (nutri-meal) — volvió el textarea suelto.";
+      }
+      var p = read("panel-v2.html");
+      if (p) {
+        if (!/fit_nutri_real/.test(p)) return "panel-v2.html: la pestaña Nutrición ya no lee fit_nutri_real — el coach no ve lo que el cliente comió distinto.";
+      }
+      return null;
+    },
+  },
+  {
+    name: "panel: el botón de email abre el correo (anchor, no location.href)",
+    why:
+      "El botón 'Email manual' de Mensajes no abría el cliente de correo: usaba " +
+      "window.location.href='mailto:', que falla en la app instalada/PWA y en " +
+      "varios navegadores. Ahora usa _openMailto(), que dispara un click de <a> " +
+      "real (lo maneja el SO, funciona en la TWA) y deja el email en el " +
+      "portapapeles como red de seguridad.",
+    check() {
+      var p = read("panel-v2.html");
+      if (!p) return null;
+      if (!/function _openMailto\b/.test(p)) return "panel-v2.html: falta _openMailto() — el botón de email vuelve a fallar en la app/PWA.";
+      // El handler msg-mail debe usar el helper, no volver a location.href mailto.
+      var m = p.match(/act===?["']msg-mail["'][\s\S]{0,320}/);
+      if (m && /location\.href\s*=\s*["']mailto:/.test(m[0])) return "panel-v2.html: msg-mail volvió a window.location.href='mailto:' (no abre el correo en la app/PWA).";
       return null;
     },
   },

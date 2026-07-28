@@ -50,6 +50,46 @@
     load(coach ? ('coach_slug=eq.'+encodeURIComponent(coach)) : 'coach_slug=is.null', false);
 
     function paint(rows){
+      // ── SEO: exponer las reseñas REALES a Google como datos estructurados ──
+      // Google no ve las reseñas porque se cargan por JS. Inyectamos un
+      // aggregateRating (promedio de TODAS las reseñas, no solo las 5★ que se
+      // muestran) atado por @id al SoftwareApplication de la landing. Una sola
+      // vez, solo en la landing (sin data-coach). El promedio es honesto: se
+      // calcula sobre `rows` completo, no sobre las filtradas por min-stars.
+      try{
+        // Solo en la landing (sin data-coach) y una sola vez. La clave: NO crear
+        // un segundo <script> SoftwareApplication con el mismo @id que el
+        // estático de index.html — eso genera dos nodos en conflicto y Google
+        // los marca como "elementos no válidos". En su lugar FUSIONAMOS el
+        // aggregateRating + review DENTRO del nodo estático existente
+        // (id="ld-software"), dejando UN solo SoftwareApplication.
+        if(!coach && !window.__pwRatingSchema){
+          var rated=[]; (rows||[]).forEach(function(c){ var n=parseInt(c.rating,10); if(n>=1&&n<=5) rated.push({n:n,nombre:c.nombre,texto:c.texto}); });
+          if(rated.length){
+            window.__pwRatingSchema=true;
+            var rv=(rated.reduce(function(a,r){return a+r.n;},0)/rated.length).toFixed(1);
+            var agg={"@type":"AggregateRating","ratingValue":rv,"reviewCount":String(rated.length),"bestRating":"5","worstRating":"1"};
+            var revs=rated.slice(0,6).map(function(r){ return {"@type":"Review","author":{"@type":"Person","name":(r.nombre||'Cliente Pathway')},"reviewRating":{"@type":"Rating","ratingValue":String(r.n),"bestRating":"5","worstRating":"1"},"reviewBody":String(r.texto||'').slice(0,320)}; });
+            var el=document.getElementById('ld-software'); var merged=false;
+            if(el){
+              try{
+                var obj=JSON.parse(el.textContent||el.text||'{}');
+                if(obj && (obj['@type']==='SoftwareApplication')){
+                  obj.aggregateRating=agg; obj.review=revs;
+                  el.textContent=JSON.stringify(obj); merged=true;
+                }
+              }catch(_){}
+            }
+            if(!merged){
+              // Fallback (páginas sin el nodo estático): crear uno completo.
+              var node={"@context":"https://schema.org","@type":"SoftwareApplication","@id":"https://pathwaycareercoach.com/#software",
+                "name":"Pathway","applicationCategory":"BusinessApplication","operatingSystem":"Web",
+                "aggregateRating":agg,"review":revs};
+              var sc=document.createElement('script'); sc.type='application/ld+json'; sc.text=JSON.stringify(node); document.head.appendChild(sc);
+            }
+          }
+        }
+      }catch(e){}
       var reviews=[];
       rows.forEach(function(c){
         var stars=parseInt(c.rating,10);
