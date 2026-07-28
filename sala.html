@@ -230,6 +230,8 @@
           <button class="cbtn" id="c-part" data-cmd="toggleParticipantsPane"><span class="ci"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></span>Participantes</button>
           <button class="cbtn" id="c-chat"><span class="cbadge" id="chat-badge" style="display:none"></span><span class="ci"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>Chat</button>
           <button class="cbtn" id="c-full"><span class="ci"><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></span>Pantalla</button>
+          <!-- Cerrar la venta EN la llamada (solo coach, solo primera_llamada). Oculto por defecto. -->
+          <button class="cbtn" id="c-sell" style="display:none;background:var(--bosque);color:#fff" title="Enviar tus servicios al cliente para que pague ahora"><span class="ci"><svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>Cobrar</button>
           <button class="cbtn hang" id="c-hang"><span class="ci"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></span>Finalizar</button>
         </div>
         <!-- Chat casual propio: mismo look en móvil y web. Sin backend — viaja por
@@ -334,6 +336,17 @@ if(GRUPAL && !qp('engine')) ENGINE='jaas';
 var KIND = qp('kind') || 'sesion';                   // modo de la Sala: sesion | primera_llamada | demo_pathway | personal (viejas sin kind → sesion)
 var FOTO = qp('foto') || '';                          // avatar en la videollamada
 
+// ── Cerrar la venta EN la llamada (solo en primera_llamada) ───────────────
+// El coach toca "Enviar servicios y cobrar" → al cliente le salta un pop-up con
+// los servicios del coach (con detalle) para elegir y pagar en el momento. La
+// señal viaja por el MISMO transporte que el chat (mismo patrón que las
+// reacciones, prefijo PWSELL). Los servicios/slug se cachean desde la config del
+// coach (misma fetch que la marca). El pago va por connect-checkout (comisión
+// Pathway, igual que el marketplace); al pagar y el coach aceptar, el cliente
+// recibe su acceso al portal (ver _pwGrantAccess en panel-v2).
+var PWSELL = '::pwsell::';
+var SALA_SERVICIOS = null, SALA_SLUG = '', SALA_MONEDA = 'eur', SALA_COACHNAME = '';
+
 // ── Rol por IDENTIDAD, no por el link ─────────────────────────────────────
 // El room es "Pathway-<coachId>-<ms>". Si tu sesión de Pathway (mj_user) es el
 // coach dueño de la cita, entrás como coach/moderador (mod=1) con TU nombre;
@@ -380,14 +393,29 @@ function _applySalaBrand(m){
 (function _salaBrand(){
   if(!COACHID) return;
   var h={apikey:KEY,Authorization:'Bearer '+KEY};
-  fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(COACHID)+'&select=org_id,configuracion',{headers:h})
+  fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(COACHID)+'&select=org_id,configuracion,slug,nombre',{headers:h})
     .then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
       var u=rows&&rows[0]; if(!u) return; var cfg=u.configuracion||{}; var orgId=u.org_id||cfg.org_id;
+      // Cache para el pop-up de venta en vivo (primera_llamada).
+      try{
+        SALA_SERVICIOS = (Object.prototype.toString.call(cfg.servicios)==='[object Array]') ? cfg.servicios : [];
+        SALA_SLUG = (''+(u.slug||cfg.slug||'')).trim();
+        SALA_MONEDA = (''+(cfg.moneda||'eur')).toLowerCase();
+        SALA_COACHNAME = (''+(u.nombre||'')).trim();
+      }catch(_e){}
       if(orgId){
         fetch(SB+'/rest/v1/organizaciones?id=eq.'+encodeURIComponent(orgId)+'&select=marca',{headers:h})
           .then(function(r){ return r.ok?r.json():[]; }).then(function(o){ _applySalaBrand((o&&o[0]&&o[0].marca)||{}); }).catch(function(){});
       } else if(cfg.es_pro_vitalicio===true||cfg.plan==='pro'){ _applySalaBrand({color:cfg.color_marca,logo:cfg.logo_url}); }
     }).catch(function(){});
+})();
+// Botón "Cobrar" (cerrar la venta en vivo): SOLO el coach y SOLO en una
+// primera_llamada (la exploratoria del lead que vino de la landing). En sesiones
+// normales, demos o chats NO aparece.
+(function _salaWireSell(){
+  var b=el('c-sell'); if(!b) return;
+  if(MOD && KIND==='primera_llamada'){ b.style.display=''; b.onclick=function(){ _salaSendServices(); }; }
+  else { b.style.display='none'; }
 })();
 // El CLIENTE (mod=0) solo ve el video: el panel de trabajo (objetivos, notas
 // privadas del coach, tareas, recursos, ¿cómo fue?) es exclusivo del coach.
@@ -471,7 +499,7 @@ function boot(){
     hideWait();
     wireControls();
     // Mensajes entrantes → nuestro panel de chat (no el nativo).
-    api.addListener('incomingMessage', function(e){ try{ var _m=e&&e.message; if(recvIsReaction(_m,(e&&e.nick)||WHO)) return; chatAdd((e&&e.nick)||WHO, _m, false); }catch(_e){} });
+    api.addListener('incomingMessage', function(e){ try{ var _m=e&&e.message; if(recvIsReaction(_m,(e&&e.nick)||WHO)) return; if(recvIsSell(_m)) return; chatAdd((e&&e.nick)||WHO, _m, false); }catch(_e){} });
     // Forzar vista mosaico (mitad y mitad) — más robusto que solo el config inicial.
     function _tile(){ try{ api&&api.executeCommand('setTileView', true); }catch(e){} }
     api.addListener('videoConferenceJoined', function(){
@@ -556,7 +584,7 @@ function bootP2P(){
     onLocalReady:function(){ waitAlone(); },   // pantalla BLANCA de "esperando" hasta que se una el otro
     onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='En llamada'; },
     onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Esperando'; },
-    onChat:function(from,text){ try{ if(recvIsReaction(text,from||WHO)) return; chatAdd(from||WHO, text, false); }catch(e){} },
+    onChat:function(from,text){ try{ if(recvIsReaction(text,from||WHO)) return; if(recvIsSell(text)) return; chatAdd(from||WHO, text, false); }catch(e){} },
     onFail:_p2pFallbackToJaas,   // la red bloquea el P2P (ni el TURN alcanza) → caemos a JaaS solos
     onError:function(e){ var c=(e&&(e.name||e.message))||'error';
       if(/NotAllowed|Permission|Denied/i.test(c)){ waitState('Permití cámara y micrófono','Para poder verte, el navegador necesita permiso de cámara y micrófono.',true); _p2pPermUI(); }
@@ -793,6 +821,103 @@ function sendReaction(emo){ salaRain(emo); chatAdd(NAME,emo,true); _persistChat(
 // Reacción entrante: se dibuja flotando Y AHORA TAMBIÉN queda en el chat (como
 // mensaje). Devuelve true para que el caller no la agregue de nuevo (evita duplicar).
 function recvIsReaction(txt,from){ if((''+txt).indexOf(PWR)===0){ var emo=(''+txt).slice(PWR.length); salaRain(emo); chatAdd(from||WHO,emo,false); return true; } return false; }
+
+// ── Venta en vivo: señal entrante "mostrá los servicios" ──────────────────
+// Igual que las reacciones: si el mensaje es la señal PWSELL, NO se muestra como
+// texto de chat; abre el pop-up de servicios. Devuelve true para que el caller
+// no lo agregue al chat.
+function recvIsSell(txt){ if((''+txt).indexOf(PWSELL)===0){ try{ _salaShowServices(); }catch(e){} return true; } return false; }
+
+// Símbolo de la moneda del coach (para el pop-up). Fallback: código en mayúsculas.
+function _salaMonSym(m){ var M={eur:'€',usd:'US$',gbp:'£',mxn:'$',ars:'$',cop:'$',clp:'$',pen:'S/',brl:'R$',uyu:'$U',cad:'C$',chf:'CHF'}; return M[(''+(m||'eur')).toLowerCase()]||((''+(m||'')).toUpperCase()+' '); }
+function _salaMoney(n){ var v=Number(n)||0; return _salaMonSym(SALA_MONEDA)+v.toLocaleString('es-ES'); }
+
+// El COACH toca "Enviar servicios y cobrar": manda la señal al otro lado.
+function _salaSendServices(){
+  if(!MOD) return; // solo el coach dispara la venta
+  try{ if(ENGINE==='p2p'){ window.PWP2P&&PWP2P.sendChat(PWSELL); } else { api&&api.executeCommand('sendChatMessage',PWSELL); } }catch(e){}
+  var b=el('c-sell'); if(b){ b.classList.add('active'); }
+  chatAdd(NAME,'Te compartí mis servicios para que elijas y pagues 👇',true);
+  _salaToast('Le enviaste tus servicios. Que elija y pague desde su pantalla.');
+}
+
+// Pop-up simple (toast) arriba del video.
+function _salaToast(msg){
+  try{
+    var t=document.createElement('div');
+    t.textContent=msg;
+    t.style.cssText='position:fixed;left:50%;top:18px;transform:translateX(-50%);background:rgba(15,29,22,.96);color:#EAF3EE;padding:11px 18px;border-radius:12px;font-size:13.5px;z-index:2147483300;max-width:88vw;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.4)';
+    document.body.appendChild(t);
+    setTimeout(function(){ try{ t.style.transition='opacity .4s'; t.style.opacity='0'; }catch(e){} },2600);
+    setTimeout(function(){ try{ t.remove(); }catch(e){} },3100);
+  }catch(e){}
+}
+
+// El CLIENTE ve el pop-up con los servicios del coach (detalle + precio) y paga.
+function _salaShowServices(){
+  // Si la config todavía no llegó, la traemos on-demand (fallback).
+  if(!Array.isArray(SALA_SERVICIOS)){
+    if(!COACHID) return;
+    fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(COACHID)+'&select=configuracion,slug',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
+      .then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
+        var u=rows&&rows[0]||{}; var cfg=u.configuracion||{};
+        SALA_SERVICIOS=(Object.prototype.toString.call(cfg.servicios)==='[object Array]')?cfg.servicios:[];
+        SALA_SLUG=(''+(u.slug||cfg.slug||'')).trim(); SALA_MONEDA=(''+(cfg.moneda||'eur')).toLowerCase();
+        _salaRenderServices();
+      }).catch(function(){ _salaRenderServices(); });
+    return;
+  }
+  _salaRenderServices();
+}
+
+function _salaRenderServices(){
+  var servs=Array.isArray(SALA_SERVICIOS)?SALA_SERVICIOS:[];
+  var old=el('sala-sell'); if(old) old.remove();
+  var ov=document.createElement('div'); ov.id='sala-sell';
+  ov.style.cssText='position:fixed;inset:0;z-index:2147483400;background:rgba(10,20,15,.66);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px';
+  var cardsHtml = servs.length ? servs.map(function(s,i){
+    var nm=_salaEsc((s&&(s.name||s.nombre))||'Servicio');
+    var ds=_salaEsc((s&&(s.desc||s.descripcion||s.detalle))||'');
+    var pr=(s&&(s.price!=null?s.price:s.precio));
+    var idx=(typeof s.__i==='number')?s.__i:i;
+    return '<div style="border:1px solid #E2EAE4;border-radius:14px;padding:14px 16px;margin:10px 0;text-align:left">'+
+      '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><div style="font-weight:700;color:#1B2E26;font-size:16px">'+nm+'</div>'+(pr!=null?'<div style="font-weight:700;color:#2D6A4F;white-space:nowrap">'+_salaMoney(pr)+'</div>':'')+'</div>'+
+      (ds?'<div style="color:#4A5A50;font-size:13.5px;margin-top:5px;line-height:1.55">'+ds+'</div>':'')+
+      '<button data-sellidx="'+idx+'" class="sala-sell-buy" style="margin-top:11px;width:100%;padding:12px;background:#2D6A4F;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Pagar y empezar &rarr;</button>'+
+    '</div>';
+  }).join('') : '<p style="color:#5A6A60;font-size:14px;padding:20px 0">Tu coach todavía no cargó sus servicios.</p>';
+  ov.innerHTML='<div role="dialog" aria-modal="true" style="background:#fff;max-width:440px;width:100%;border-radius:20px;padding:22px 20px;max-height:calc(100vh - 32px);overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.35)">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h3 style="font-family:var(--ser),Georgia,serif;font-size:20px;color:#1B2E26;margin:0">Elegí tu servicio'+(SALA_COACHNAME?' con '+_salaEsc(SALA_COACHNAME):'')+'</h3><button id="sala-sell-x" aria-label="Cerrar" style="background:none;border:none;font-size:24px;color:#7a857f;cursor:pointer;line-height:1">×</button></div>'+
+    '<p style="color:#5A6A60;font-size:13px;margin:0 0 6px;line-height:1.5">Elegí una opción y pagá seguro. Apenas se confirme, tenés acceso a tu portal.</p>'+
+    cardsHtml+
+    '<div id="sala-sell-err" style="display:none;color:#C0756E;background:rgba(192,117,110,.08);padding:9px 12px;border-radius:8px;font-size:13px;margin-top:6px"></div>'+
+  '</div>';
+  document.body.appendChild(ov);
+  el('sala-sell-x').onclick=function(){ ov.remove(); };
+  ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+  Array.prototype.forEach.call(ov.querySelectorAll('.sala-sell-buy'),function(btn){
+    btn.onclick=function(){ _salaBuyService(parseInt(btn.getAttribute('data-sellidx'),10), btn); };
+  });
+}
+
+// Cliente elige un servicio → connect-checkout (comisión Pathway) → Stripe.
+function _salaBuyService(idx, btn){
+  var errEl=el('sala-sell-err');
+  var _email=(''+(EMAIL||'')).trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(_email)){
+    _email=(prompt('¿A qué email te mandamos el acceso y el recibo?')||'').trim();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(_email)){ if(errEl){ errEl.style.display='block'; errEl.textContent='Necesitamos un email válido para el pago.'; } return; }
+    EMAIL=_email;
+  }
+  if(btn){ btn.disabled=true; btn.textContent='Conectando…'; }
+  if(errEl) errEl.style.display='none';
+  fetch(SB+'/functions/v1/connect-checkout',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},
+    body:JSON.stringify({action:'create',coach_id:COACHID,servicio_idx:idx,slug:SALA_SLUG,candidato:{nombre:NAME||_email.split('@')[0],email:_email}})})
+    .then(function(r){ return r.ok?r.json():r.json().then(function(j){ throw (j&&j.error)||'error'; }); })
+    .then(function(j){ if(j&&j.url){ location.href=j.url; } else { throw 'sin_url'; } })
+    .catch(function(e){ if(btn){ btn.disabled=false; btn.textContent='Pagar y empezar →'; } if(errEl){ errEl.style.display='block'; errEl.textContent='No se pudo iniciar el pago. '+(e==='El coach todavía no conectó su cuenta de cobro'?'El coach todavía no conectó su cobro.':'Probá de nuevo en un momento.'); } });
+}
+function _salaEsc(s){ return (''+(s==null?'':s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 // Lo escrito en el chat de la Sala QUEDA como registro: se guarda en la ficha del
 // cliente (candidatos.notas_coach) → después se ve en el chat del panel. Cada punta
 // persiste SU propio mensaje (from correcto). Re-lee + mergea (dedup from|text|ts)

@@ -1672,6 +1672,32 @@ const RULES = [
     },
   },
   {
+    name: "sala: cerrar la venta EN vivo (primera_llamada) — señal + pop-up + checkout",
+    bug: "En la Sala de primera_llamada el coach cierra la venta en la llamada: el " +
+         "botón 'Cobrar' manda una señal (PWSELL) por el MISMO transporte del chat → " +
+         "al cliente le salta un pop-up con los servicios (detalle + precio) y paga " +
+         "por connect-checkout (comisión Pathway). El botón es SOLO del coach y SOLO " +
+         "en primera_llamada; la señal se intercepta en los DOS motores (JaaS + P2P) " +
+         "antes de mostrarse como chat.",
+    check() {
+      const s = read("sala.html");
+      if (!s) return null;
+      if (!/var\s+PWSELL\s*=/.test(s)) return "sala.html: falta la señal PWSELL (venta en vivo).";
+      if (!/function\s+recvIsSell\b/.test(s)) return "sala.html: falta recvIsSell (interceptar la señal de venta).";
+      // Definición + enganche en los DOS motores (JaaS incomingMessage + P2P onChat).
+      if (((s.match(/recvIsSell\(/g) || []).length) < 3)
+        return "sala.html: recvIsSell no está enganchada en los dos motores (JaaS + P2P) antes de chatAdd.";
+      if (!/function\s+_salaSendServices\b/.test(s) || !/function\s+_salaShowServices\b/.test(s))
+        return "sala.html: faltan las funciones del pop-up de venta (_salaSendServices/_salaShowServices).";
+      if (!/connect-checkout/.test(s) || !/action:'create'/.test(s))
+        return "sala.html: el pop-up de venta ya no llama a connect-checkout (create).";
+      if (!/MOD\s*&&\s*KIND===['"]primera_llamada['"]/.test(s))
+        return "sala.html: el botón Cobrar dejó de gatearse a MOD && primera_llamada (aparecería en sesiones/demos/chats).";
+      if (!/id=['"]c-sell['"]/.test(s)) return "sala.html: falta el botón c-sell en los controles.";
+      return null;
+    },
+  },
+  {
     name: "aislamiento: la lista de clientes NO incluye huérfanos (ni para el admin)",
     bug: "El admin cargaba la lista de clientes con 'coach_id.eq.él O coach_id IS " +
          "NULL' → un cliente huérfano (sin coach) de OTRO nicho (ej. fitness) se " +
