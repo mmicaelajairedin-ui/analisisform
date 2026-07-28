@@ -27,6 +27,47 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "colores: las burbujas del chat NO usan el color de marca (van neutras)",
+    bug: "Regla de la coach: los colores son neutros (blanco/crema) y SOLO lo " +
+         "white-label cambia al color de marca. El chat es chrome, no white-label. " +
+         "Si una burbuja usa --pw-bosque/--accent/--bosque y el coach pone la marca " +
+         "en rojo, el chat queda de otro color que el panel. Deben ser crema/neutro.",
+    check() {
+      // Cualquier clase de burbuja de mensaje propia (.*me{) con fondo de marca.
+      const re = /\.[a-z-]*(?:msg|bub|bubble|iac|cmsg)[a-z-]*(?:\.me|-me)\s*\{[^}]*background:\s*var\(--(?:pw-bosque|bosque|accent|brand)\)/i;
+      const files = ["panel-v2.html", "multicoach.html", "sala.html", "equipos.html",
+                     "pathway-base.css", "pathway-panel.css", "cliente.html"];
+      const bad = files.filter((f) => re.test(read(f)));
+      if (bad.length)
+        return "burbuja(s) de chat con el color de marca (deben ir neutras/crema): " + bad.join(", ") + ".";
+      return null;
+    },
+  },
+  {
+    name: "agenda: el selector de icono NO mete el SVG dentro de un atributo",
+    bug: "Al pasar _AG_ICONS de emoji a iconos Lucide (SVG con comillas), el " +
+         "selector de icono del tipo de evento ponía el SVG completo dentro de un " +
+         "atributo del botón (data-ic='<svg …'> / onclick=\"agPickIcon('<svg …')\"). " +
+         "Las comillas del SVG rompían la etiqueta y el estilo del botón salía como " +
+         "TEXTO. Fix: el atributo lleva el ÍNDICE del icono, el SVG va solo en el body.",
+    check() {
+      const pv = read("panel-v2.html");
+      if (pv) {
+        // El botón del picker debe usar el índice (data-ici='"+ici+"'), NO el SVG.
+        if (/data-act='ag-pick-icon'[^>]*data-ic='"\+ic\+"'/.test(pv))
+          return "panel-v2.html: el picker de icono de agenda volvió a meter el SVG en data-ic (rompe el botón).";
+        if (!/data-act='ag-pick-icon'[^>]*data-ici='"\+ici\+"'/.test(pv))
+          return "panel-v2.html: el picker de icono de agenda perdió el patrón por índice (data-ici).";
+      }
+      const emp = read("empleado.html");
+      if (emp) {
+        if (/agPickIcon\('"\+ic\+"'\)/.test(emp))
+          return "empleado.html: agPickIcon recibe el SVG (rompe el onclick). Debe recibir el índice.";
+      }
+      return null;
+    },
+  },
+  {
     name: "panel-v2: reservas duplicadas se deduplican (lista + KPIs + agenda)",
     bug: "La misma cita podía quedar guardada dos veces en `citas` (doble submit " +
          "del link, reintento de red) y salía REPETIDA en 'Reservas y asistencia', " +
@@ -3780,6 +3821,75 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "event bus: ReportGenerated se emite al guardar el informe (panel-v2)",
+    bug: "Los informes alimentan el flujo OS: el coach publico el diagnostico (handler 'plan-save', _finPatch). El cliente ya lo ve.",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("ReportGenerated"/.test(s)) return "panel-v2.html: se borro el emit de ReportGenerated.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ReportViewed se emite al abrir el informe (cliente.html)",
+    bug: "El 'visto' del informe: el cliente ABRIO su analisis (_renderMain('analisis')). Distingue leido de solo-generado.",
+    check() {
+      const s = read("cliente.html");
+      if (s && !/pwEmit\("ReportViewed"/.test(s)) return "cliente.html: se borro el emit de ReportViewed.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: TaskCompleted se emite al cumplir una accion (cliente.html)",
+    bug: "El cliente cumple una accion de su etapa (tAcc): alimenta el flujo con progreso real, no solo lo que genero el coach.",
+    check() {
+      const s = read("cliente.html");
+      if (s && !/pwEmit\("TaskCompleted"/.test(s)) return "cliente.html: se borro el emit de TaskCompleted.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: WowReached se emite al optimizar LinkedIn (cliente.html)",
+    bug: "Momento WOW / activacion: el cliente optimizo su LinkedIn con IA (interaccion real de valor).",
+    check() {
+      const s = read("cliente.html");
+      if (s && !/pwEmit\("WowReached"/.test(s)) return "cliente.html: se borro el emit de WowReached.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: ProgramFinished se emite al llegar a la etapa 4 (panel-v2)",
+    bug: "Cierre de programa (ventana de renovacion): el cliente llego a la ultima etapa (handler 'cli-saveweek').",
+    check() {
+      const s = read("panel-v2.html");
+      if (s && !/pwEmit\("ProgramFinished"/.test(s)) return "panel-v2.html: se borro el emit de ProgramFinished.";
+      return null;
+    },
+  },
+  {
+    name: "event bus: CallRequested/CallBooked se emiten en la reserva (reservar.html)",
+    bug: "Las llamadas alimentan el OS: llegar a la pagina de reserva (CTA) y agendar. Requiere pw-events.js cargado.",
+    check() {
+      const s = read("reservar.html");
+      if (!s) return null;
+      if (!/pw-events\.js/.test(s)) return "reservar.html: dejo de cargar pw-events.js (las llamadas no emitirian).";
+      if (!/pwEmit\("CallRequested"/.test(s)) return "reservar.html: se borro el emit de CallRequested (CTA de llamada).";
+      if (!/pwEmit\("CallBooked"/.test(s)) return "reservar.html: se borro el emit de CallBooked (llamada agendada).";
+      return null;
+    },
+  },
+  {
+    name: "event bus: LeadCreated se emite al entrar un lead (landing)",
+    bug: "Tope del embudo: entra un lead por el chatbot (index.html) o el registro candidato (soy-candidato.html). Requiere pw-events.js cargado en esas paginas.",
+    check() {
+      const ix = read("index.html"), sc = read("soy-candidato.html");
+      if (ix && !/pwEmit\("LeadCreated"/.test(ix)) return "index.html: se borro el emit de LeadCreated.";
+      if (ix && !/pw-events\.js/.test(ix)) return "index.html: dejo de cargar pw-events.js (LeadCreated no emitiria).";
+      if (sc && !/pwEmit\("LeadCreated"/.test(sc)) return "soy-candidato.html: se borro el emit de LeadCreated.";
+      if (sc && !/pw-events\.js/.test(sc)) return "soy-candidato.html: dejo de cargar pw-events.js (LeadCreated no emitiria).";
+      return null;
+    },
+  },
   // ── metricas (Nivel 1) — la edge function que enriquecerá el tab Analíticas ──
   {
     name: "metricas: edge function read-only con gate de admin",
@@ -3795,6 +3905,19 @@ const RULES = [
       // Health Score ni el embudo. Los eliminados ya no están en la tabla.
       if (!/activo\s*!==\s*false/.test(s))
         return "metricas: se dejó de excluir a los coaches suspendidos (activo=false) — ensuciarían el Health Score y el embudo.";
+      return null;
+    },
+  },
+  {
+    name: "cliente-timeline: solo el coach dueño (o admin) ve los eventos de un cliente",
+    bug: "El timeline lee eventos con service role; sin el chequeo de propiedad, un coach podria ver los avances de clientes ajenos (fuga multi-tenant).",
+    check() {
+      const s = read("supabase/functions/cliente-timeline/index.ts");
+      if (!s) return null;
+      if (!/coachOwnsClient/.test(s) || !/forbidden/.test(s))
+        return "cliente-timeline: se perdio el chequeo de propiedad (coachOwnsClient / 403 forbidden).";
+      if (!/rol\s*!==\s*["']admin["']/.test(s))
+        return "cliente-timeline: el gate de propiedad debe aplicar a los no-admin (rol !== 'admin').";
       return null;
     },
   },
@@ -4204,6 +4327,41 @@ const RULES = [
       // El reset a 'perfil' DEBE exceptuar 'mensajes' (si no, el botón queda muerto).
       if (!/t!=="mensajes"\s*&&\s*!tabs\.some\(/.test(s))
         return "panel-v2.html: el reset de cliDetTab ya no exceptúa 'mensajes' → tocar 'Mensajes' vuelve a resetear a Perfil y 'no pasa nada'.";
+      return null;
+    },
+  },
+  {
+    name: "chat: ADMIN_PHOTO es URL absoluta (http/https), no relativa",
+    bug: "Se cambió ADMIN_PHOTO a una ruta relativa (/assets/micaela.jpg). _chatAv() " +
+         "SOLO muestra la foto si la URL matchea ^(https?:|data:); una ruta relativa cae " +
+         "al fallback de iniciales → la foto de Micaela NO le salía a la gente en el chat " +
+         "(se veía una 'P' verde). Debe ser absoluta.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const m = s.match(/var\s+ADMIN_PHOTO\s*=\s*"([^"]*)"/);
+      if (!m) return "panel-v2.html: no se encuentra ADMIN_PHOTO.";
+      if (!/^(https?:|data:)/i.test(m[1]))
+        return "panel-v2.html: ADMIN_PHOTO no es absoluta ('" + m[1] + "') → _chatAv cae a iniciales y la foto no sale en el chat.";
+      return null;
+    },
+  },
+  {
+    name: "chat: los mensajes linkifican el texto (link clickeable + no se desborda)",
+    bug: "El fix del link (helper _linkTxt + overflow-wrap:anywhere) se había aplicado SOLO " +
+         "a _coachClientBubbles; los chats de soporte/admin (Mica/red/canal/admin↔coach) " +
+         "seguían con esc(_msgBodyText(m)) y word-wrap:break-word → el link no salía como " +
+         "link y se desbordaba del ancho del chat (scroll horizontal). Todos los renderers " +
+         "de burbuja deben usar _linkTxt(_msgBodyText(m)), no esc() crudo.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function _linkTxt\(/.test(s))
+        return "panel-v2.html: desapareció el helper _linkTxt (linkifica + escapa el texto del chat).";
+      // Ninguna burbuja de chat debe renderizar el cuerpo con esc() crudo + word-wrap:break-word
+      // (patrón viejo que no linkifica ni corta URLs largas).
+      if (/white-space:pre-wrap;word-wrap:break-word'>"\+esc\(_msgBodyText\(m\)\)/.test(s))
+        return "panel-v2.html: una burbuja de chat volvió a usar esc(_msgBodyText(m)) sin _linkTxt → el link no sale como link y se desborda.";
       return null;
     },
   },

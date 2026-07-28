@@ -418,6 +418,14 @@
             <div class="pmsg me">Bien! La rodilla mejor 🙌<div class="t">ayer</div></div>
             <div class="pmsg them">Genial. Mañana subimos un poco la carga en press.<div class="t">9:02</div></div>
           </div>
+          <div style="display:flex;gap:2px;flex-wrap:wrap;margin-bottom:6px">
+            <button type="button" aria-label="Agregar 😊" onclick="msgEmoji('😊',this)" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;border-radius:8px">😊</button>
+            <button type="button" aria-label="Agregar 👍" onclick="msgEmoji('👍',this)" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;border-radius:8px">👍</button>
+            <button type="button" aria-label="Agregar 🙌" onclick="msgEmoji('🙌',this)" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;border-radius:8px">🙌</button>
+            <button type="button" aria-label="Agregar 🎉" onclick="msgEmoji('🎉',this)" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;border-radius:8px">🎉</button>
+            <button type="button" aria-label="Agregar ❤️" onclick="msgEmoji('❤️',this)" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;border-radius:8px">❤️</button>
+            <button type="button" aria-label="Agregar 💪" onclick="msgEmoji('💪',this)" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;border-radius:8px">💪</button>
+          </div>
           <div class="pchat-in"><input id="pmsg-in" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')sendMsg()"><button class="btn btn-sm" onclick="sendMsg()">Enviar</button></div>
           <p style="font-size:11px;color:var(--muted);margin-top:8px;"><i data-ic="lock" data-sm></i> Los datos de contacto se filtran automáticamente.</p>
         </div></div>
@@ -486,6 +494,8 @@ function go(s){
   document.querySelectorAll('.sec').forEach(x=>x.classList.toggle('on',x.id==='s-'+s));
   document.querySelectorAll('.ni').forEach(b=>b.classList.toggle('on',b.dataset.s===s));
   document.querySelectorAll('.bnav-item').forEach(b=>b.classList.toggle('on',b.dataset.s===s));
+  // "Volver donde quedaste": recordar la sección (menos el chat, transitorio).
+  try{ if(s!=='chat') localStorage.setItem('pw_lastsec_fit_'+(EMAIL||'x'), s); }catch(e){}
   var _mt=document.getElementById('mtopTitle'); if(_mt){ var _hero=document.querySelector('.sec.on .h-hero'); var _lab=document.querySelector('.bnav-item[data-s="'+s+'"] span'); var _t=_hero?(_hero.textContent||'').replace(/[.\s]+$/,'').trim():(_lab?(_lab.textContent||'').trim():''); if(_t) _mt.textContent=_t; }
   document.querySelector('.main').scrollTo({top:0,behavior:'smooth'});
   try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(e){}
@@ -1981,6 +1991,26 @@ function _fitPersistChat(){
     });
   }).catch(function(){ _fitChatWarn(true); });
 }
+// Emojis que FLOTAN y quedan en el chat (vacío → reacción; con texto → componer).
+function _pwFloatEmoji(anchorEl,emo){
+  try{
+    var r=anchorEl.getBoundingClientRect(); var bx=r.left+r.width/2, by=r.top;
+    for(var i=0;i<5;i++){(function(i){
+      var f=document.createElement('span'); f.textContent=emo;
+      f.style.cssText='position:fixed;left:'+bx+'px;top:'+by+'px;font-size:'+(18+Math.random()*14)+'px;pointer-events:none;z-index:2147483200;transform:translate(-50%,0);will-change:transform,opacity';
+      document.body.appendChild(f);
+      var dx=Math.random()*80-40, dy=-(120+Math.random()*160);
+      try{ f.animate([{transform:'translate(-50%,0) scale(.6)',opacity:0},{opacity:1,offset:.2},{transform:'translate(calc(-50% + '+dx+'px),'+dy+'px) scale(1.1)',opacity:0}],{duration:1300+Math.random()*500,easing:'cubic-bezier(.3,.7,.4,1)',delay:i*60,fill:'forwards'}); }catch(e){}
+      setTimeout(function(){try{f.remove();}catch(e){}},2200+i*60);
+    })(i);}
+  }catch(e){}
+}
+function msgEmoji(e,el){
+  if(el) _pwFloatEmoji(el,e);
+  var i=document.getElementById('pmsg-in'); if(!i) return;
+  if((i.value||'').trim()){ i.value+=e; i.focus(); }
+  else { i.value=e; sendMsg(); }
+}
 function sendMsg(){
   var inp=document.getElementById('pmsg-in'); if(!inp||!inp.value.trim()) return;
   var txt=_mask(inp.value.trim());
@@ -2153,6 +2183,17 @@ async function pwInit(){
   _gateComunidad();
   WEEK.forEach(colorDay);
   var td=document.querySelector('.hd[data-date="'+pwHoy()+'"]'); if(td) selectDay(td);
+  try{ _fitRestoreSec(); }catch(e){} // "volver donde quedaste"
+}
+// Restaura la última sección usada (si sigue visible); si no, queda en Inicio.
+function _fitRestoreSec(){
+  try{
+    var s=localStorage.getItem('pw_lastsec_fit_'+(EMAIL||'x'))||'';
+    if(['rutina','progreso','nutricion','sesiones','recursos','comunidad'].indexOf(s)===-1) return;
+    var nav=document.querySelector('.ni[data-s="'+s+'"]');
+    if(!nav || getComputedStyle(nav).display==='none') return; // sección oculta → no restaurar
+    if(typeof go==='function') go(s);
+  }catch(e){}
 }
 
 // ── Consentimiento (primer ingreso) — RGPD art. 7.1, ver consentimiento.sql ──

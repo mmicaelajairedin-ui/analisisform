@@ -62,6 +62,21 @@ interfaz van en **gris**, no a color
   del tipo de evento en la agenda** (lo elige la coach por cita: en `_agRenderDay`
   el avatar muestra la foto real del cliente si existe, si no el emoji del tipo a color).
 
+## 🎨 REGLA DE COLOR — neutro por defecto, marca SOLO en lo white-label (julio 2026)
+Los colores base de la plataforma son **neutros: blancos y cremas** (`--pw-niebla*`,
+`#EFE9DD`, `--pw-carbon`). El **color de marca** (`--accent`, white-label del coach;
+y el verde fijo Pathway `--pw-bosque`) se usa **SOLO en elementos white-label**
+(perfil público, acentos que el coach quiere que reflejen su marca).
+- **El chrome que NO es white-label va neutro**: burbujas del chat, fondos de
+  emojis, paneles, tarjetas. **Nunca** el color de marca.
+- **Por qué:** si un coach pone su marca en rojo, el panel se pone rojo pero el
+  chat/tarjetas deben seguir neutros. Si el chat usara el verde fijo o el accent,
+  quedaría "panel rojo + chat verde" (o rojo) — inconsistente. Neutro = siempre
+  combina, con cualquier marca.
+- **Burbujas de chat**: la propia (`.*me`) va en **crema** (`#EFE9DD` + texto
+  `--pw-carbon` + borde sutil), NO en `--pw-bosque`/`--accent`. La del otro va en
+  crema más claro (`--pw-niebla-2`). Blindado por `check-guardrails.js`.
+
 ## 🎨 ICON SYSTEM — Lucide, una sola librería para TODA la plataforma (julio 2026)
 Antes cada pantalla tenía pequeñas diferencias de iconos (emojis mezclados con
 SVGs, tamaños 16/18/20, colores distintos). Ahora hay **un solo sistema**:
@@ -80,8 +95,20 @@ SVGs, tamaños 16/18/20, colores distintos). Ahora hay **un solo sistema**:
 - **La regla `.cp-emo` (emoji gris) queda como paso intermedio legacy**; lo nuevo
   y lo que se vaya migrando va a Lucide. Emojis siguen permitidos SOLO como
   contenido (medallas, banderas, mascota, agenda fitness) y en emails/WhatsApp.
+- **REGLA DE CONSISTENCIA — un concepto = UN icono, en TODA la plataforma.** El
+  mismo concepto NO puede tener dos iconos distintos entre pantallas (cliente vs
+  coach, panel vs multicoach, etc.). La **fuente canónica** es el mapa
+  `_CLI_ICON` de `panel-v2.html` (secciones del cliente). Tabla canónica:
+  perfil=`user` · plan=`clipboard` · rutina/gym=`dumbbell` · antropometría=`ruler`
+  · nutrición=`apple` · sesiones=`calendar` · finanzas=`dollar` · gestión=`settings`
+  · avance/progreso=`trendUp` · documentos=`fileText` · **mensajes/chat=`chat`**
+  (globo, NO `mail`/sobre — el sobre es SOLO para email real) · **clientes=`users`**
+  (no `handshake`). El `dumbbell` es la barra horizontal (idéntica en el nav del
+  cliente y en el coach). Al iconizar un concepto nuevo, buscá si ya existe en la
+  tabla y reusá ese nombre; si es nuevo, agregalo a la tabla.
 - Doc completo: `docs/icon-system.md`. Blindado por `scripts/check-icons.js`
-  (falla si aparece otra librería o se rompe el spec/fuente única).
+  (falla si aparece otra librería, se rompe el spec/fuente única, o se rompe la
+  consistencia concepto→icono de la tabla canónica).
 
 ## 🛡️ Blindaje del codigo — tests que no pueden mentir (junio 2026)
 Red de seguridad para que NO vuelvan bugs ya resueltos. Corren en CI en cada

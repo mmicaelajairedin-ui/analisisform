@@ -89,6 +89,53 @@ if (pv) {
   else ok("panel-v2.html usa la fuente única (window.PWI.IC).");
 }
 
+// ── 3b. CONSISTENCIA: un concepto = UN icono (tabla canónica _CLI_ICON) ─────
+// El mismo concepto no puede tener dos iconos distintos entre pantallas.
+// Fuente canónica: el mapa _CLI_ICON de panel-v2. Si alguien cambia el icono de
+// un concepto en un solo lado, esto lo frena.
+const CANON = {
+  perfil: "user", plan: "clipboard", fit_rutina: "dumbbell", fit_antro: "ruler",
+  fit_nutri: "apple", sesiones: "calendar", fin_pres: "dollar", gestion: "settings",
+  avance: "trendUp", docs: "fileText", mensajes: "chat", // mensajes = globo, NO sobre
+};
+if (pv) {
+  const drift = [];
+  for (const key in CANON) {
+    // El patrón `key:''+PWI.svg('name'` es propio del mapa _CLI_ICON.
+    const re = new RegExp(key + ":''\\+PWI\\.svg\\('([a-zA-Z]+)'");
+    const m = pv.match(re);
+    if (m && m[1] !== CANON[key]) drift.push(key + " usa '" + m[1] + "' (canónico: '" + CANON[key] + "')");
+  }
+  if (drift.length) fail("_CLI_ICON rompió la consistencia concepto→icono:\n      " + drift.join("\n      "));
+  else ok("consistencia concepto→icono intacta (mensajes=chat, gym=dumbbell, clientes=users, …).");
+  // El internal chat ("Mensajes", clidet:mensajes) usa chat (globo), NO mail (sobre).
+  if (/clidet:mensajes'[^>]*>\s*<span[^>]*>\s*"\s*\+\s*PWI\.svg\('mail'/.test(pv))
+    fail("la pestaña 'Mensajes' (chat interno) usa el sobre (mail); debe usar el globo (chat).");
+  // Gym idéntico coach↔cliente: el dumbbell canónico debe ser la barra horizontal
+  // del nav del cliente (pathway-fit-cliente).
+  const fitNav = read("pathway-fit-cliente.html");
+  const dumb = (js.match(/dumbbell:\s*"([^"]*)"/) || [, ""])[1];
+  const barPath = "M6 7v10M18 7v10";
+  if (js && !dumb.includes(barPath)) fail("el dumbbell canónico ya no es la barra horizontal (gym coach↔cliente dejaría de coincidir).");
+  else if (fitNav && !fitNav.includes(barPath)) fail("el nav del cliente (fit) ya no usa el mismo dumbbell que el sistema.");
+  else if (js) ok("gym (dumbbell) idéntico entre el coach y el nav del cliente.");
+}
+
+// ── 3c. Ningún emoji de chrome envuelto en .cp-emo (eso ES chrome por regla) ─
+// `.cp-emo` es SIEMPRE chrome (nunca contenido). Un emoji pictográfico dentro
+// de <span class='cp-emo'>…</span> es una conversión pendiente → debe ser Lucide.
+{
+  const CP_EMO = /<span class=['"]cp-emo['"]>\s*([\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}])/gu;
+  const cpHits = [];
+  for (const f of ["panel-v2.html", "multicoach.html", "cliente.html", "empleado.html"]) {
+    const t = read(f); let m;
+    const re = new RegExp(CP_EMO.source, "gu");
+    while ((m = re.exec(t))) cpHits.push(f + " → " + m[1]);
+  }
+  if (cpHits.length) fail("emoji de chrome en .cp-emo (debe ser icono Lucide):\n      " + cpHits.join("\n      "));
+  else ok("sin emojis de chrome en .cp-emo (todo el chrome envuelto es Lucide).");
+}
+
 // ── 4. REPORT: emojis pictográficos en el chrome de superficies convertidas ─
 // No falla el build (la migración es progresiva); marca lo que falta cerrar.
 // Emojis de CONTENIDO quedan permitidos (medallas, banderas, mascota, agenda
