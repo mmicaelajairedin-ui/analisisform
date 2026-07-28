@@ -3883,6 +3883,26 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: 'Nueva sesión' en la red CREA la cita asignando coach (crear-cita-red), no un toast",
+    bug: "En una red real, 'Nueva sesión' tenía que dejar AGENDAR un evento y ASIGNARLO a un coach " +
+         "(tipo, nombre, día/hora, online/presencial, grupal) — no un toast de maqueta. La RLS de citas " +
+         "es por coach, así que el owner no puede insertar la cita de otro por POST directo: va por la " +
+         "edge function crear-cita-red (service role, verifica owner + coach de su org). Al volver, se " +
+         "suma a MC_CITAS y la agenda la muestra con el color del coach y su link solo. Si se rompe, la " +
+         "red vuelve a no poder agendar (toast trucho).",
+    check() {
+      const mc = read("multicoach.html");
+      if (mc) {
+        if (!/crear-cita-red/.test(mc)) return "multicoach.html: 'Nueva sesión' en real ya no crea la cita (crear-cita-red).";
+        if (!/MC_CITAS\.push\(cita\)/.test(mc)) return "multicoach.html: la cita nueva ya no se suma a la agenda (MC_CITAS.push).";
+      }
+      const fn = read("supabase/functions/crear-cita-red/index.ts");
+      if (fn === null) return "falta la edge function crear-cita-red (agendar asignando coach en la red).";
+      if (!/coachInOrg\(/.test(fn) || !/rest\/v1\/citas/.test(fn)) return "crear-cita-red: ya no valida el coach de la org o no inserta en citas.";
+      return null;
+    },
+  },
+  {
     name: "portal del cliente: el chat VERIFICA el guardado y avisa si falla (no .catch vacío mudo)",
     bug: "El guardado del chat del cliente (fit/fin) terminaba en .catch(function(){}) y daba por " +
          "guardado (MSGS=merged) aunque la red/RLS fallara → el mensaje quedaba en pantalla pero NO " +
