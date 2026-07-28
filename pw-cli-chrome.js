@@ -18,12 +18,21 @@
   /* ── Pasar de página de costado ── */
   function pages(){ try{ return (C.pages && C.pages()) || []; }catch(e){ return []; } }
   function cur(){ try{ return C.current && C.current(); }catch(e){ return null; } }
+  function scrollActiveIntoView(){
+    try{ var t = document.querySelector('.pwc-tab.on'); if(t && t.scrollIntoView) t.scrollIntoView({inline:'center', block:'nearest', behavior:'smooth'}); }catch(e){}
+  }
   function nav(dir){
     var p = pages(); if(!p.length) return;
     var i = p.indexOf(cur()); if(i < 0) i = 0;
     var j = i + dir; if(j < 0 || j >= p.length) return;   // sin dar la vuelta
     try{ C.go && C.go(p[j]); }catch(e){}
+    setTimeout(scrollActiveIntoView, 40);
   }
+  // Al tocar una solapa, centrarla en la tira (por si hay que hacer scroll de tabs).
+  document.addEventListener('click', function(e){
+    var t = e.target && e.target.closest && e.target.closest('.pwc-tab');
+    if(t) setTimeout(scrollActiveIntoView, 40);
+  }, true);
   var x0=0, y0=0, t0=0, track=false;
   document.addEventListener('touchstart', function(e){
     track = false;
