@@ -64,7 +64,8 @@ Deno.serve(async (req: Request) => {
   const orgs = await q(`organizaciones?id=eq.${encodeURIComponent(orgId)}&select=*&limit=1`);
   const org = orgs[0] || null;
 
-  const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion`);
+  // order estable → el color por coach en la agenda del panel no baila entre recargas.
+  const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&order=created_at.asc&select=id,nombre,email,activo,foto_url,configuracion`);
   const clientes = await q(`candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc`);
 
   // Citas de TODA la red (agenda del owner + historial de sesiones por cliente).

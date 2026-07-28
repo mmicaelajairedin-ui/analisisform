@@ -29,7 +29,7 @@
 
   var pc = null, chan = null, localStream = null, screenStream = null, remoteEl = null;
   var camTrack = null, opts = null, polite = true, makingOffer = false, ignoreOffer = false;
-  var started = false;
+  var started = false, failed = false, failTimer = null, everConnected = false, negTimer = null, sawPeer = false;
 
   function _sdk() {
     return new Promise(function (res, rej) {
@@ -76,14 +76,16 @@
     };
     p.onconnectionstatechange = function () {
       var s = p.connectionState;
-      if (s === "connected") { _state("En llamada"); if (failTimer) { clearTimeout(failTimer); failTimer = null; } failed = false; }
+      if (s === "connected") { everConnected = true; if (negTimer) { clearTimeout(negTimer); negTimer = null; } _state("En llamada"); if (failTimer) { clearTimeout(failTimer); failTimer = null; } failed = false; }
       else if (s === "disconnected" || s === "failed") {
         _state("Reconectando…"); try { p.restartIce && p.restartIce(); } catch (e) {}
-        // Si el ICE restart no reconecta en ~10s, la red bloquea el P2P (ni el TURN
-        // alcanza). Avisamos con onFail() → la Sala cae al respaldo (JaaS) sola.
-        if (!failTimer) failTimer = setTimeout(function () {
+        // Solo caemos a JaaS si la llamada NUNCA llegó a conectar (red que bloquea el
+        // P2P de entrada, ni el TURN alcanza). Si YA estábamos en llamada y se cortó,
+        // es un bache transitorio: dejamos que restartIce reconecte y NO tiramos la
+        // llamada a un respaldo (antes un microcorte de 10s mataba la sesión).
+        if (!everConnected && !failTimer) failTimer = setTimeout(function () {
           failTimer = null;
-          if (pc && pc.connectionState !== "connected" && !failed) { failed = true; try { opts.onFail && opts.onFail(); } catch (e) {} }
+          if (pc && pc.connectionState !== "connected" && !failed && !everConnected) { failed = true; try { opts.onFail && opts.onFail(); } catch (e) {} }
         }, 10000);
       }
       else if (s === "closed") { _state("Llamada terminada"); }
@@ -93,6 +95,7 @@
 
   async function _onSignal(msg) {
     if (!msg || msg.__self) return;
+    sawPeer = true;   // recibimos algo del otro → hay alguien intentando conectar
     try {
       if (msg.kind === "hello") {
         // El otro recién se suscribió. Si YO entré primero, mi oferta inicial
@@ -151,7 +154,7 @@
         localEl.srcObject = stream; try { var lp = localEl.play(); if (lp && lp.catch) lp.catch(function () {}); } catch (e) {}
         // PiP local: en móvil más chico, vertical (selfie) y levantado para no quedar
         // tapado por los controles flotantes; en desktop apaisado, abajo a la derecha.
-        localEl.style.cssText = "position:absolute;right:14px;bottom:" + (_mob ? "104px" : "16px") + ";width:" + (_mob ? "32%" : "30%") + ";max-width:" + (_mob ? "148px" : "220px") + ";min-width:104px;aspect-ratio:" + (_mob ? "3/4" : "4/3") + ";border-radius:14px;object-fit:cover;box-shadow:0 6px 22px rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.7);z-index:5";
+        localEl.style.cssText = "position:absolute;right:14px;bottom:" + (_mob ? "124px" : "16px") + ";width:" + (_mob ? "32%" : "30%") + ";max-width:" + (_mob ? "148px" : "220px") + ";min-width:104px;aspect-ratio:" + (_mob ? "3/4" : "4/3") + ";border-radius:14px;object-fit:cover;box-shadow:0 6px 22px rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.7);z-index:5";
         c.appendChild(remoteEl); c.appendChild(localEl);
         try { opts.onLocalReady && opts.onLocalReady(stream); } catch (e) {}
         // 2) peer connection + tracks
@@ -162,6 +165,13 @@
         chan = sb.channel("sala:" + opts.room, { config: { broadcast: { self: false } } });
         chan.on("broadcast", { event: "sig" }, function (e) { _onSignal(e && e.payload); });
         chan.subscribe(function (st) { if (st === "SUBSCRIBED") { _state("Esperando a la otra persona…"); _emit("hello", {}); } });
+        // Watchdog de negociación: si el OTRO ya apareció (sawPeer) pero a los 25s
+        // seguimos sin conectar (ICE atascado, ni P2P ni TURN), caemos al respaldo
+        // solos. Si estás sola esperando (nadie llegó), NO cae — es espera legítima.
+        if (!negTimer) negTimer = setTimeout(function () {
+          negTimer = null;
+          if (sawPeer && !everConnected && !failed && (!pc || pc.connectionState !== "connected")) { failed = true; try { opts.onFail && opts.onFail(); } catch (e) {} }
+        }, 25000);
       }).catch(function (e) {
         started = false;
         try { opts.onError && opts.onError(e); } catch (_e) {}
@@ -192,6 +202,9 @@
       }).catch(function () { return false; });
     },
     hangup: function () {
+      // Cortar los watchdogs: si el usuario sale, un onFail tardío NO debe disparar
+      // el respaldo (arrancaría JaaS sobre una sala ya cerrada).
+      failed = true; if (failTimer) { clearTimeout(failTimer); failTimer = null; } if (negTimer) { clearTimeout(negTimer); negTimer = null; }
       try { _emit("bye", {}); } catch (e) {}
       try { chan && chan.unsubscribe(); } catch (e) {}
       try { localStream && localStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}

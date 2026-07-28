@@ -748,7 +748,13 @@ function confirmar(){
       // 1b) Si viene de "reprogramar" (gestionar-cita manda &reprog=<token viejo>),
       //     recién AHORA que la nueva quedó guardada cancelamos la vieja → el cliente
       //     nunca se queda sin turno si abandonaba a mitad.
-      try{ var _rp=qp('reprog'); if(saved && _rp){ fetch(SB+'/rest/v1/citas?token=eq.'+encodeURIComponent(_rp),{ method:'PATCH', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json', Prefer:'return=minimal' }, body:JSON.stringify({ estado:'cancelada' }) }).catch(function(){}); } }catch(e){}
+      // return=representation + verificación + reintento: si la vieja NO se cancela,
+      // el cliente quedaba con DOS turnos activos (bloqueaba el slot + recordatorios
+      // con el link viejo). return=minimal ocultaba 0 filas escritas.
+      try{ var _rp=qp('reprog'); if(saved && _rp){
+        var _cancelOld=function(n){ return fetch(SB+'/rest/v1/citas?token=eq.'+encodeURIComponent(_rp),{ method:'PATCH', headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'content-type':'application/json', Prefer:'return=representation' }, body:JSON.stringify({ estado:'cancelada' }) }).then(function(r){ return r.ok?r.json():[]; }).then(function(a){ if((!a||!a.length)&&n>0) return _cancelOld(n-1); return a; }).catch(function(){ if(n>0) return _cancelOld(n-1); return []; }); };
+        _cancelOld(2);
+      } }catch(e){}
       // 1c) MARKETPLACE ("busco coach", mp=1): el sistema detecta el email y lo marca
       //     como cliente 'pathway' (comisión) DESDE la reserva — no solo al pagar. Crea
       //     el candidato si no existe (ignore-duplicates) y estampa origen='pathway'

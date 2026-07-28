@@ -297,7 +297,7 @@
 
 <script src="pw-cabra-juego.js"></script>
 <script src="pw-turn.js?v=2"></script>
-<script src="pw-p2p.js?v=3"></script>
+<script src="pw-p2p.js?v=4"></script>
 <script>
 "use strict";
 var SB='https://api.pathwaycareercoach.com';
@@ -610,7 +610,7 @@ function wireControlsP2P(){
   var cam=el('c-cam'); if(cam) cam.onclick=function(){ var o=PWP2P.toggleCam(); cam.classList.toggle('off', !!o); };
   var sh=el('c-share'); if(sh) sh.onclick=function(){ Promise.resolve(PWP2P.toggleScreen()).then(function(on){ sh.classList.toggle('active', !!on); }); };
   var part=el('c-part'); if(part) part.style.display='none';   // P2P 1:1 → no hay panel de participantes
-  var h=el('c-hang'); if(h) h.onclick=function(){ try{ PWP2P.hangup(); }catch(e){} setTimeout(finalizar,300); };
+  var h=el('c-hang'); if(h) h.onclick=_leaveSala;   // igual que JaaS: el cliente ve el feedback antes de salir (no se pierde)
   var fb=el('c-full'); if(fb) fb.onclick=function(){ var st=document.querySelector('.stage'); if(!st) return; try{ if(!document.fullscreenElement){ (st.requestFullscreen||st.webkitRequestFullscreen||function(){}).call(st); } else { (document.exitFullscreen||function(){}).call(document); } }catch(e){} };
 }
 function startSala(){
@@ -817,9 +817,12 @@ function saveSesion(res){
   if(!CITA || !MOD) return Promise.resolve(false);
   var body={ notas_llamada: sesionBlob() };
   if(res) body.resultado=res;
+  // return=representation (NO minimal): con minimal, un 204 puede ser 0 filas
+  // escritas (id equivocado / RLS futura) y saveSesion devolvía true → "✓ Guardado"
+  // fantasma con las notas perdidas. Confirmamos que escribió ≥1 fila.
   return fetch(SB+'/rest/v1/citas?id=eq.'+encodeURIComponent(CITA),{method:'PATCH',keepalive:true,
-    headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=minimal'},
-    body:JSON.stringify(body)}).then(function(r){ return r.ok; }).catch(function(){ return false; });
+    headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation'},
+    body:JSON.stringify(body)}).then(function(r){ if(!r.ok) return false; return r.json().then(function(a){ return !!(a&&a.length); },function(){ return true; }); }).catch(function(){ return false; });
 }
 // Red de seguridad: si cierra la pestaña sin "Finalizar", igual guarda.
 window.addEventListener('beforeunload',function(){ try{ if(CITA) saveSesion(); }catch(e){} });
@@ -837,7 +840,7 @@ document.querySelectorAll('.out .obtn').forEach(function(b){
     try{ localStorage.setItem('pw_sala_res_'+ROOM,res); }catch(e){}
     if(!CITA){ msg.textContent='Registrado ✓ (sin cita vinculada)'; return; }
     msg.textContent='Guardando…';
-    saveSesion(res).then(function(ok){ msg.textContent = ok ? '✓ Guardado — queda en la ficha del cliente' : 'Registrado (la cita necesita las columnas resultado/notas_llamada)'; });
+    saveSesion(res).then(function(ok){ msg.textContent = ok ? '✓ Guardado — queda en la ficha del cliente' : '⚠️ No se pudo guardar — reintentá en un momento'; });
   };
 });
 </script>

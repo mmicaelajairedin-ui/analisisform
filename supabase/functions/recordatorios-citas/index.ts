@@ -153,10 +153,10 @@ async function sendReminder(
   const dur = durMatch ? parseInt(durMatch[1], 10) : 60;
   const room = `Pathway-${c.coach_id}-${startMs}`;
   const esPresencial = String(c.modalidad || "online") === "presencial";
-  // grupal: columna explícita O el nombre del evento (mismo criterio que el panel),
-  // para que el link del recordatorio use el MISMO engine (JaaS) que coach y cliente.
-  const esGrupal = c.grupal === true ||
-    /clase|curso|taller|webinar|grupal|grupo|masterclass|clinica|clínica/i.test(String(c.tipo || ""));
+  // grupal: SOLO la columna explícita (autoridad única, igual que _esGrupal en el
+  // panel). Sin inferencia por nombre → coach, cliente y recordatorio coinciden en
+  // el engine y no se cuela costo de JaaS por nombrar un evento "Clase…".
+  const esGrupal = c.grupal === true;
   const joinLink = `https://pathwaycareercoach.com/sala.html?room=${encodeURIComponent(room)}` +
     `&mod=0&name=${encodeURIComponent(c.nombre || "")}&email=${encodeURIComponent(c.email || "")}` +
     `&con=${encodeURIComponent(coachName)}&start=${startMs}&dur=${dur}` +

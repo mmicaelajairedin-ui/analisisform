@@ -3895,7 +3895,42 @@ const RULES = [
         if (!/function _esGrupal\(/.test(p)) return "panel-v2.html: falta _esGrupal (detección grupal coherente coach↔cliente).";
         if (!/_esGrupal\(r\)\?"&grupal=1"/.test(p)) return "panel-v2.html: los links de sala ya no propagan &grupal=1 (coach y cliente caerían en engines distintos).";
         if (!/function _canGrupal\(/.test(p)) return "panel-v2.html: falta _canGrupal (las clases grupales son función Pro).";
+        // _calLoad DEBE traer la columna grupal (select=*), si no el coach entra en
+        // P2P mientras el cliente va a JaaS y no se encuentran. (Bug real detectado.)
+        if (!/sel="&order=inicio\.desc&select=\*"/.test(p)) return "panel-v2.html: _calLoad ya no trae la columna grupal (select=*) → coach y cliente en engines distintos.";
       }
+      return null;
+    },
+  },
+  {
+    name: "sala: saveSesion CONFIRMA que guardó (return=representation), no phantom con return=minimal",
+    bug: "saveSesion (notas/resultado de la sesión → citas) usaba Prefer:return=minimal y devolvía " +
+         "r.ok. PostgREST responde 204 (ok) aunque el filtro matchee 0 filas (id equivocado, o RLS " +
+         "futura sobre citas) → el card mostraba '✓ Guardado — queda en la ficha' con las notas " +
+         "PERDIDAS. Ahora usa return=representation y confirma ≥1 fila antes de dar éxito.",
+    check() {
+      const s = read("sala.html");
+      if (!s) return null;
+      const i = s.indexOf("function saveSesion(");
+      if (i < 0) return null;
+      const seg = s.slice(i, i + 800);
+      if (/return=minimal/.test(seg)) return "sala.html: saveSesion volvió a return=minimal (guardado fantasma de las notas de sesión).";
+      if (!/return=representation/.test(seg)) return "sala.html: saveSesion ya no confirma el guardado con return=representation.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: _mcEsc escapa también las comillas (anti-XSS en atributos)",
+    bug: "Nombres de clientes/coaches (candidatos.nombre, usuarios.nombre — datos que entran por el " +
+         "formulario público / los elige el coach) se interpolan en atributos como title=\"…\". _mcEsc " +
+         "solo escapaba < > & → una comilla cerraba el atributo e inyectaba JS en la sesión AUTENTICADA " +
+         "del dueño (stored XSS con privilegios de owner). Ahora _mcEsc también escapa \" y '.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function _mcEsc\(/.test(mc)) return "multicoach.html: falta _mcEsc.";
+      if (!/replace\(\/"\/g,'&quot;'\)/.test(mc)) return "multicoach.html: _mcEsc ya no escapa comillas dobles (XSS en atributos).";
+      if (!/replace\(\/'\/g,'&#39;'\)/.test(mc)) return "multicoach.html: _mcEsc ya no escapa comillas simples (XSS en atributos).";
       return null;
     },
   },

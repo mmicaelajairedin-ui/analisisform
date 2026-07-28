@@ -786,7 +786,7 @@ function _sesDel(i){var k=_cli(_curCli);if(!k||!k.sesDocs)return;k.sesDocs.splic
 function __closeDD(){document.querySelectorAll('.dd').forEach(function(d){d.classList.remove('open');});}
 document.addEventListener('click',__closeDD);
 function __notif(el){var d=el.querySelector('.dd');var was=d.classList.contains('open');__closeDD();if(!was){try{mcRenderNotifs();}catch(e){}d.classList.add('open');event.stopPropagation();}}
-function _mcEsc(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function _mcEsc(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 // Notificaciones del dueño: derivadas de los MISMOS datos del panel (DB), así el
 // badge y la lista coinciden con el ranking/riesgo del dashboard (no un "3" fijo).
 function mcNotifData(){
@@ -906,9 +906,13 @@ function __nuevaSesion(){
   var cs=DB.coaches.filter(function(c){return c.est==='activo';});
   if(!cs.length){ __toast('Primero suma un coach a tu red'); return; }
   var coachOpts=cs.map(function(c){return '<option value="'+c.id+'">'+_mcEsc(c.n)+(c.esOwner?' (tú)':'')+'</option>';}).join('');
+  // Selector de cliente → lleva su EMAIL, para que la sesión aparezca luego en la
+  // ficha de esa persona (_mcSesReal cruza por email). "Otro/evento" = nombre libre.
+  var cliOpts='<option value="" data-n="">— Cliente (opcional) —</option>'+(DB.clientes||[]).map(function(k){return '<option value="'+_mcEsc(k.email||'')+'" data-n="'+_mcEsc(k.n)+'">'+_mcEsc(k.n)+(k.email?'':' (sin email)')+'</option>';}).join('');
   var body=''
     +'<div><span class="lbl">Coach</span><select id="ns-co" class="inp">'+coachOpts+'</select></div>'
-    +__inp('ns-tit','Nombre / cliente (ej. María López)')
+    +'<div><span class="lbl">Cliente</span><select id="ns-cl" class="inp" onchange="var o=this.options[this.selectedIndex];var t=document.getElementById(\'ns-tit\');if(t&&o){var n=o.getAttribute(\'data-n\');if(n)t.value=n;}">'+cliOpts+'</select></div>'
+    +__inp('ns-tit','Nombre / evento (ej. María López, o Clase de yoga)')
     +__inp('ns-tipo','Tipo (ej. Sesión 1:1, Clase, Mentoría)')
     +'<div style="display:flex;gap:8px"><div style="flex:1"><span class="lbl">Día</span><input id="ns-d" type="date" class="inp"></div><div style="flex:1"><span class="lbl">Hora</span><input id="ns-h" type="time" class="inp" value="10:00"></div></div>'
     +'<div><span class="lbl">Modalidad</span><select id="ns-mod" class="inp" onchange="var _l=document.getElementById(\'ns-lugar-w\');if(_l)_l.style.display=this.value===\'presencial\'?\'block\':\'none\'"><option value="online">💻 Online (videollamada)</option><option value="presencial">📍 Presencial</option></select></div>'
@@ -916,6 +920,7 @@ function __nuevaSesion(){
     +'<div><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;cursor:pointer"><input type="checkbox" id="ns-grupal"> Grupal (clase/curso · video con varios)</label></div>';
   __openModal('Nueva sesión / evento', body, 'Agendar', function(){
     var coach_id=document.getElementById('ns-co').value;
+    var email=((document.getElementById('ns-cl')||{}).value||'').trim().toLowerCase();
     var nombre=(document.getElementById('ns-tit').value||'').trim();
     var tipo=(document.getElementById('ns-tipo').value||'').trim()||'Sesión';
     var d=document.getElementById('ns-d').value, hh=document.getElementById('ns-h').value;
@@ -926,11 +931,13 @@ function __nuevaSesion(){
     var grupalEl=document.getElementById('ns-grupal'); var grupal=!!(grupalEl&&grupalEl.checked);
     var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Agendando…';}
     _hdr({'Content-Type':'application/json'}).then(function(h2){
-      return fetch(SB+'/functions/v1/crear-cita-red',{method:'POST',headers:h2,body:JSON.stringify({coach_id:coach_id,nombre:nombre,tipo:tipo,inicio:iso,modalidad:modalidad,lugar:lugar,grupal:grupal})});
+      return fetch(SB+'/functions/v1/crear-cita-red',{method:'POST',headers:h2,body:JSON.stringify({coach_id:coach_id,nombre:nombre,email:email,tipo:tipo,inicio:iso,modalidad:modalidad,lugar:lugar,grupal:grupal})});
     }).then(function(r){ return r.json().catch(function(){return {};}).then(function(dd){ return {ok:r.ok,d:dd||{}}; }); }).then(function(res){
       if(!res.ok||!res.d.ok){ var er=res.d.error, msg=er==='coach_ajeno'?'Elige un coach de tu red.':er==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo agendar. Reintenta'; if(ok){ok.disabled=false;ok.textContent='Agendar';} __toast(msg); return; }
-      var cita=res.d.cita||{coach_id:coach_id,nombre:nombre,tipo:tipo,inicio:iso,estado:'confirmada',modalidad:modalidad,grupal:grupal};
+      var cita=res.d.cita||{coach_id:coach_id,nombre:nombre,email:email,tipo:tipo,inicio:iso,estado:'confirmada',modalidad:modalidad,grupal:grupal};
       MC_CITAS.push(cita);
+      // Saltar a la semana del evento creado (si es futuro) para que se vea sí o sí.
+      try{ var _d0=new Date(); var _m0=new Date(_d0.getFullYear(),_d0.getMonth(),_d0.getDate()-((_d0.getDay()+6)%7)); var _de=new Date(cita.inicio); var _me=new Date(_de.getFullYear(),_de.getMonth(),_de.getDate()-((_de.getDay()+6)%7)); _agWeekOff=Math.round((_me-_m0)/(7*86400000)); }catch(e){}
       __mclose(); __toast('Agendado ✓'); mcSetAgenda(); if(_sec==='agenda') renderAgenda(); else if(_sec==='dashboard') mcApplyNiche();
     }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Agendar';} __toast('Error de conexión. Reintenta'); });
   });
@@ -2187,16 +2194,24 @@ function _mcAgwFromCitas(){
 }
 function mcSetAgenda(){var a=MCAG[MC_N]||MCAG.fitness;AGT=a.agt;AGW=MC_REAL?_mcAgwFromCitas():a.agw;AGW.forEach(function(e,i){if(!e.dur)e.dur=1;e.id='e'+i;});}
 mcSetAgenda();
-var _agCoach='todos',_agView='semana',_agSelDow=null,_dragEv=null;
+var _agCoach='todos',_agView='semana',_agSelDow=null,_dragEv=null,_agWeekOff=0;
+// Navegación de semanas (‹/›). En real reconstruye AGW desde las citas de ESA
+// semana → los eventos futuros SÍ se ven (antes solo la semana actual, y las
+// flechas eran demo → parecía que agendar a futuro no funcionaba).
+function _agNavWeek(d){ _agWeekOff+=d; _agSelDow=null; mcSetAgenda(); renderAgenda(); }
 function agDragStart(ev,id){_dragEv=id;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',id);}catch(e){}}
-function agDrop(ev,dow){ev.preventDefault();var col=ev.currentTarget;col.classList.remove('dragover');if(_dragEv==null)return;var e=AGW.filter(function(x){return x.id===_dragEv;})[0];if(!e)return;var r=col.getBoundingClientRect();var h=AG_START+Math.floor((ev.clientY-r.top)/AG_ROWH);if(h<AG_START)h=AG_START;if(h>AG_END-e.dur)h=AG_END-e.dur;e.dow=dow;e.h=h;_dragEv=null;renderAgenda();__toast('Movido a '+_DOW[dow]+' '+h+':00 ✓');}
+function agDrop(ev,dow){ev.preventDefault();var col=ev.currentTarget;col.classList.remove('dragover');if(_dragEv==null)return;
+ // En modo red REAL no persistimos el arrastre todavía → no fingimos "Movido ✓"
+ // (se perdía al recargar). Para reprogramar, se re-agenda la cita.
+ if(MC_REAL){_dragEv=null;__toast('Para reprogramar, agendá de nuevo la cita (pronto: editar)');return;}
+ var e=AGW.filter(function(x){return x.id===_dragEv;})[0];if(!e)return;var r=col.getBoundingClientRect();var h=AG_START+Math.floor((ev.clientY-r.top)/AG_ROWH);if(h<AG_START)h=AG_START;if(h>AG_END-e.dur)h=AG_END-e.dur;e.dow=dow;e.h=h;_dragEv=null;renderAgenda();__toast('Movido a '+_DOW[dow]+' '+h+':00 ✓');}
 function agDragOver(ev){ev.preventDefault();ev.currentTarget.classList.add('dragover');}
 function agDragLeave(ev){ev.currentTarget.classList.remove('dragover');}
 var _DOW=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 var _DOWL=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
 var _MESL=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 function _agEvs(){return AGW.filter(function(e){return _agCoach==='todos'||e.coach===_agCoach;});}
-function _weekDates(){var t=new Date();var mon=new Date(t.getFullYear(),t.getMonth(),t.getDate()-((t.getDay()+6)%7));var a=[];for(var i=0;i<7;i++){var d=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+i);a.push(d);}return a;}
+function _weekDates(){var t=new Date();var mon=new Date(t.getFullYear(),t.getMonth(),t.getDate()-((t.getDay()+6)%7)+(_agWeekOff*7));var a=[];for(var i=0;i<7;i++){var d=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+i);a.push(d);}return a;}
 function renderAgenda(){
  var v=document.getElementById('vscroll');
  var days=_weekDates();var todayDow=(new Date().getDay()+6)%7;
@@ -2229,7 +2244,7 @@ function _agCalTop(days){
  var lbl=(_agView==='mes')?(_MESL[new Date().getMonth()].replace(/^./,function(x){return x.toUpperCase();})+' '+new Date().getFullYear())
    :(_agView==='dia')?(_DOWL[_agSelDow]+' '+days[_agSelDow].getDate()+' de '+_MESL[days[_agSelDow].getMonth()])
    :('Semana del '+a.getDate()+' al '+b.getDate()+' de '+_MESL[b.getMonth()]);
- return '<div class="agcal-top"><b>'+lbl+'</b><div class="nav"><button onclick="__toast(\'Navegación de fechas — demo\')">‹</button><button onclick="__toast(\'Navegación de fechas — demo\')">›</button></div></div>';
+ return '<div class="agcal-top"><b>'+lbl+'</b><div class="nav"><button onclick="_agNavWeek(-1)">‹</button>'+(_agWeekOff!==0?'<button onclick="_agNavWeek(-_agWeekOff)" title="Volver a esta semana" style="font-size:11px;padding:0 8px">Hoy</button>':'')+'<button onclick="_agNavWeek(1)">›</button></div></div>';
 }
 function _agLegend(){return Object.keys(AGT).map(function(k){return '<span class="lg"><i style="background:'+AGT[k].c+'"></i>'+AGT[k].l+'</span>';}).join('');}
 function _agBlk(e){var t=AGT[e.tipo]||AGT.sesion;var top=(e.h-AG_START)*AG_ROWH;var h=e.dur*AG_ROWH-3;
