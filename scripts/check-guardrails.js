@@ -3771,6 +3771,28 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "panel-v2: el botón 'Mensajes' de Acciones rápidas abre el tab (mensajes es tab oculto)",
+    bug: "El botón 'Mensajes' de Acciones rápidas/qbar hace data-act='clidet:mensajes', " +
+         "pero 'mensajes' NO está en _cliTabs (es un tab OCULTO, sin chip en la barra). " +
+         "El render descarta cualquier cliDetTab que no esté en _cliTabs y lo vuelve a " +
+         "'perfil' → tocar Mensajes 'no hacía nada'. La excepción t!=='mensajes' en ese " +
+         "reset lo mantiene accesible. Si se pierde, el botón vuelve a quedar muerto.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // El botón sigue apuntando a clidet:mensajes.
+      if (!/data-act='clidet:mensajes'/.test(s))
+        return "panel-v2.html: desapareció el botón 'Mensajes' (data-act='clidet:mensajes').";
+      // El render dibuja el tab de mensajes.
+      if (!/else if\(t==="mensajes"\)/.test(s))
+        return "panel-v2.html: se perdió el render del tab de mensajes (else if t==='mensajes').";
+      // El reset a 'perfil' DEBE exceptuar 'mensajes' (si no, el botón queda muerto).
+      if (!/t!=="mensajes"\s*&&\s*!tabs\.some\(/.test(s))
+        return "panel-v2.html: el reset de cliDetTab ya no exceptúa 'mensajes' → tocar 'Mensajes' vuelve a resetear a Perfil y 'no pasa nada'.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
