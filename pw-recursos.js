@@ -330,4 +330,54 @@
     '</div>';
   }
   window.PwRecursos = { render: render, coverHtml: coverHtml };
+
+  // ── Link preview para el CHAT (estilo WhatsApp, compacto) ──────────────────
+  // Detecta un link en una burbuja de chat y le agrega una tarjetita chica con
+  // la imagen real (og:image, vía la Edge Function) + el dominio. Se auto-activa
+  // con un MutationObserver, así funciona en cualquier chat sin cablear cada uno.
+  var _LP=null, _lpOG=null, _lpTO=null;
+  var _LPURL=/(https?:\/\/[^\s<>"'()]+)/i;
+  function _lpOGmap(){ if(_lpOG) return _lpOG; try{ _lpOG=JSON.parse(localStorage.getItem('pw_og_v1')||'{}')||{}; }catch(e){ _lpOG={}; } if(typeof _lpOG!=='object') _lpOG={}; return _lpOG; }
+  function _lpCss(){
+    if(document.getElementById('pw-lp-css')) return;
+    var st=document.createElement('style'); st.id='pw-lp-css';
+    st.textContent=[
+      '.pwlp-card{display:flex;align-items:stretch;margin-top:6px;border:1px solid rgba(45,106,79,.16);border-radius:9px;overflow:hidden;text-decoration:none;background:rgba(255,255,255,.7);max-width:210px;}',
+      '.pwlp-thumb{width:40px;flex-shrink:0;background:#EAF0EC;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#5b7a6a;}',
+      '.pwlp-thumb img{width:100%;height:100%;object-fit:cover;}.pwlp-thumb svg{width:16px;height:16px;}',
+      '.pwlp-body{min-width:0;flex:1;padding:5px 8px;display:flex;flex-direction:column;justify-content:center;gap:1px;}',
+      '.pwlp-domain{font-size:10.5px;color:#2D6A4F;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25;}',
+      '.pwlp-u{font-size:9.5px;color:#8a8a82;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25;}'
+    ].join('\n');
+    document.head.appendChild(st);
+  }
+  function _lpFetch(url){
+    var og=_lpOGmap();
+    if(url in og) return Promise.resolve(og[url]);
+    if(!_LP||!_LP.previewUrl) return Promise.resolve('');
+    return fetch(_LP.previewUrl,{method:'POST',headers:{'Content-Type':'application/json',apikey:(_LP.previewKey||''),Authorization:'Bearer '+(_LP.previewKey||'')},body:JSON.stringify({urls:[url]})})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(res){ var img=(res&&res.previews&&res.previews[url])||''; og[url]=img; try{ localStorage.setItem('pw_og_v1',JSON.stringify(og)); }catch(e){} return img; })
+      .catch(function(){ return ''; });
+  }
+  function _lpEnrich(b){
+    if(!b || b.getAttribute('data-pwlp')==='1') return;
+    b.setAttribute('data-pwlp','1');
+    var m=(b.textContent||'').match(_LPURL); if(!m) return;
+    var url=m[1].replace(/[.,)]+$/,''); var host=_host(url); if(!host) return;
+    _lpCss();
+    var card=document.createElement('a'); card.className='pwlp-card'; card.href=url; card.target='_blank'; card.rel='noopener';
+    card.innerHTML='<span class="pwlp-thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>'+
+      '<span class="pwlp-body"><span class="pwlp-domain">'+esc(host)+'</span><span class="pwlp-u">'+esc(url.replace(/^https?:\/\//,'').slice(0,60))+'</span></span>';
+    b.appendChild(card);
+    _lpFetch(url).then(function(img){ if(!img) return; var th=card.querySelector('.pwlp-thumb'); if(th) th.innerHTML='<img src="'+esc(img)+'" alt="" onerror="this.remove()">'; });
+  }
+  function _lpScan(){ if(!_LP) return; var els=document.querySelectorAll(_LP.bubbleSel); for(var i=0;i<els.length;i++) _lpEnrich(els[i]); }
+  function _lpInit(opts){
+    if(!document.body){ document.addEventListener('DOMContentLoaded', function(){ _lpInit(opts); }); return; }
+    _LP={ previewUrl:opts&&opts.previewUrl, previewKey:opts&&opts.previewKey, bubbleSel:(opts&&opts.bubbleSel)||'.pmsg' };
+    _lpScan();
+    try{ var obs=new MutationObserver(function(){ if(_lpTO) clearTimeout(_lpTO); _lpTO=setTimeout(_lpScan,140); }); obs.observe(document.body,{childList:true,subtree:true}); }catch(e){}
+  }
+  window.PwLinkPreview = { init:_lpInit, scan:_lpScan };
 })();
