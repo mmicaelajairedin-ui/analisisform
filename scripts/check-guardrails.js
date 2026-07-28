@@ -1105,7 +1105,7 @@ const RULES = [
         if (!s) return sp.f + ": no existe";
         var i = s.indexOf("function " + sp.fn + "(");
         if (i < 0) return sp.f + ": no se encontró el helper " + sp.fn;
-        var body = s.slice(i, i + 1700);
+        var body = s.slice(i, i + 2400);
         if (!/return=representation/.test(body))
           return sp.f + ": " + sp.fn + " ya no pide return=representation (volvería a 'mentir' que guardó bajo RLS)";
         if (!/rows|\.length/.test(body))
@@ -1618,6 +1618,30 @@ const RULES = [
       if (missing.length)
         return "usuarios_gamif_grant.sql: el GRANT UPDATE a anon no incluye " + missing.join(", ") +
                " → esas columnas (coachBeat/_gameSyncServer) volverán a dar 403 en el boot del panel.";
+      // LECTURA: esas columnas se agregaron después de usuarios_protect_password,
+      // así que necesitan SELECT explícito o `select=game_pts` da 403 (GET usuarios).
+      const ms = /grant\s+select\s*\(([^)]*)\)\s+on\s+public\.usuarios\s+to\s+anon\s*,\s*authenticated/i.exec(g);
+      if (!ms) return "usuarios_gamif_grant.sql: falta el GRANT SELECT de la telemetría a anon,authenticated → GET select=game_pts da 403.";
+      const scols = ms[1].toLowerCase();
+      const smiss = need.filter((c) => !new RegExp("\\b" + c + "\\b").test(scols));
+      if (smiss.length)
+        return "usuarios_gamif_grant.sql: el GRANT SELECT no incluye " + smiss.join(", ") + " → GET de esas columnas dará 403.";
+      return null;
+    },
+  },
+  {
+    name: "usuarios: PATCH via _sbw pide solo id (return=representation no lee password_hash)",
+    bug: "password_hash está revocado para anon/authenticated (RLS Fase 4). _sbw hace " +
+         "los PATCH con Prefer:return=representation; SIN un &select, PostgREST devuelve " +
+         "la fila ENTERA (incluido password_hash) → 403 aunque el UPDATE sea válido. Era " +
+         "la causa REAL de los ~127 PATCH /rest/v1/usuarios 403 (coachBeat/_gameSyncServer " +
+         "escribían bien pero la lectura de vuelta fallaba). _sbw debe forzar &select=id " +
+         "en los PATCH/DELETE a usuarios.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/\/\^usuarios\\\?\/\.test\(p\)[\s\S]{0,80}select=id/.test(s))
+        return "panel-v2.html: _sbw dejó de forzar &select=id en los PATCH a usuarios → vuelve el 403 por password_hash en return=representation.";
       return null;
     },
   },

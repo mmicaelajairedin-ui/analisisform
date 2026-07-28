@@ -146,10 +146,19 @@ misma familia que `usuarios_gamif_grant.sql` (guardados best-effort que daban 40
 y ensuciaban `client_errors`):
 1. **~127× `PATCH /rest/v1/usuarios` 403** (panel): `coachBeat` (heartbeat →
    `last_seen`) y `_gameSyncServer` (`game_pts`/`game_medal`) escriben la propia
-   fila best-effort; en el boot salen con la anon key ANTES de que el JWT se
-   adjunte. `usuarios_gamif_grant.sql` daba a anon UPDATE solo de `xp`/`badges` →
-   faltaban esas 3 columnas de telemetría. **Fix:** el GRANT ahora incluye
-   `last_seen, game_pts, game_medal` (sigue SIN tocar password/config/rol/activo).
+   fila best-effort. **Causa REAL** (descubierta al persistir tras el 1er intento):
+   `_sbw` hace los PATCH con `Prefer:return=representation` SIN `&select`, así que
+   PostgREST intenta devolver la fila ENTERA con `password_hash` (revocado para
+   anon/authenticated por RLS Fase 4) → **403 aunque el UPDATE sea válido**. **Fix
+   (código):** `_sbw` fuerza `&select=id` en los PATCH/DELETE a `usuarios`. Además
+   se sumó el GRANT UPDATE(last_seen,game_pts,game_medal) a anon por si el JWT no
+   se adjuntó en el boot. (El 1er intento —solo el GRANT— no alcanzó: la falla era
+   la lectura de vuelta, no el permiso de escritura.)
+   **~30× `GET /rest/v1/usuarios` 403**: `game_pts`/`game_medal`/`last_seen` se
+   agregaron DESPUÉS de `usuarios_protect_password`, cuyo re-grant de SELECT por
+   columna no las cubrió → `select=game_pts` daba 403. **Fix (SQL):**
+   `usuarios_gamif_grant.sql` ahora también hace `GRANT SELECT (...)` de esas
+   columnas a anon,authenticated. **⚠️ Re-correr el archivo.**
 2. **~23× `POST /rest/v1/notificaciones` 403** (cliente/fit): la policy
    `notif_anon_all` era `to anon` solo, pero los clientes/coaches migrados a
    Supabase Auth mandan JWT (rol `authenticated`) → sin policy que matchee → 403.

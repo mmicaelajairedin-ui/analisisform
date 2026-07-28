@@ -12989,6 +12989,13 @@ function _sbw(p,method,body){
   // todo). Así un coach no puede escribir sobre un candidato de OTRO coach aun
   // conociendo su UUID: la query no matchea ninguna fila y no escribe nada.
   if((method==="PATCH"||method==="DELETE") && /^candidatos\?id=eq\./.test(p) && p.indexOf("coach_id=")<0){ p += cg(); }
+  // usuarios: password_hash está REVOCADO para anon/authenticated (RLS Fase 4).
+  // return=representation SIN select intenta devolver la fila ENTERA → 403
+  // "permission denied for column password_hash" AUNQUE el UPDATE sea válido.
+  // (Era la causa real de los ~127 PATCH /rest/v1/usuarios 403 del panel:
+  // coachBeat/_gameSyncServer escribían bien pero la lectura de vuelta fallaba.)
+  // Pedimos SOLO id → cuenta filas afectadas sin leer columnas prohibidas.
+  if((method==="PATCH"||method==="DELETE") && /^usuarios\?/.test(p) && p.indexOf("select=")<0){ p += "&select=id"; }
   // Guardado VERIFICADO (antes: return=minimal → 204 r.ok=true aunque RLS bloqueara
   // 0 filas = "guardado ✓" mentiroso). Ahora pedimos return=representation y r.ok
   // refleja el ÉXITO REAL: HTTP ok Y ≥1 fila afectada. Los ~97 call-sites solo
