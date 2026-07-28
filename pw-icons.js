@@ -51,6 +51,7 @@
     search:     "<circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/>",
     eye:        "<path d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z'/><circle cx='12' cy='12' r='3'/>",
     eyeOff:     "<path d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24'/><line x1='1' y1='1' x2='23' y2='23'/>",
+    eyeClosed:  "<path d='M2 12s3-7 10-7 10 7 10 7'/><path d='m4 15 1.5-2.5M9 18l.5-3M15 18l-.5-3M20 15l-1.5-2.5'/>",
     pulse:      "<path d='M22 12h-4l-3 9L9 3l-3 9H2'/>",
     copy:       "<rect x='9' y='9' width='13' height='13' rx='2' ry='2'/><path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/>",
     check:      "<polyline points='20 6 9 17 4 12'/>",
@@ -124,13 +125,33 @@
     palette:    "<circle cx='13.5' cy='6.5' r='.5' fill='currentColor'/><circle cx='17.5' cy='10.5' r='.5' fill='currentColor'/><circle cx='8.5' cy='7.5' r='.5' fill='currentColor'/><circle cx='6.5' cy='12.5' r='.5' fill='currentColor'/><path d='M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.688-1.687h1.996c3.094 0 5.543-2.55 5.543-5.65C22 6.5 17.5 2 12 2z'/>", /* 🎨 */
     mapPin:     "<path d='M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z'/><circle cx='12' cy='10' r='3'/>",                          /* 📍 */
     thumbsUp:   "<path d='M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3'/>", /* 👍 */
+    thumbsDown: "<path d='M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17'/>", /* 👎 */
+    gamepad:    "<line x1='6' y1='11' x2='10' y2='11'/><line x1='8' y1='9' x2='8' y2='13'/><line x1='15' y1='12' x2='15.01' y2='12'/><line x1='18' y1='10' x2='18.01' y2='10'/><path d='M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.544-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z'/>", /* 🎮 */
+    instagram:  "<rect x='2' y='2' width='20' height='20' rx='5' ry='5'/><path d='M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z'/><line x1='17.5' y1='6.5' x2='17.51' y2='6.5'/>", /* 📷 IG */
     hand:       "<path d='M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8'/><path d='M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/>", /* 👋 🙌 🙏 */
     apple:      "<path d='M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06z'/><path d='M10 2c1 .5 2 2 2 5'/>", /* 🍎 */
     settings:   "<circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/>", /* ⚙ */
     play:       "<polygon points='5 3 19 12 5 21 5 3'/>",                                                                          /* ▶ */
     globe:      "<circle cx='12' cy='12' r='10'/><line x1='2' y1='12' x2='22' y2='12'/><path d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/>", /* 🌐 */
     shield:     "<path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/>",                                                          /* 🛡 */
-    infoCircle: "<circle cx='12' cy='12' r='10'/><line x1='12' y1='16' x2='12' y2='12'/><line x1='12' y1='8' x2='12.01' y2='8'/>"  /* ℹ */
+    infoCircle: "<circle cx='12' cy='12' r='10'/><line x1='12' y1='16' x2='12' y2='12'/><line x1='12' y1='8' x2='12.01' y2='8'/>", /* ℹ */
+    party:      "<path d='M5.8 11.3 2 22l10.7-3.79'/><path d='M4 3h.01'/><path d='M22 8h.01'/><path d='M15 2h.01'/><path d='M22 20h.01'/><path d='m22 2-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10'/><path d='m22 13-.82-.33c-.86-.34-1.82.2-1.98 1.11c-.11.7-.72 1.22-1.43 1.22H17'/><path d='m11 2 .33.82c.34.86-.2 1.82-1.11 1.98C9.52 4.9 9 5.52 9 6.23V7'/><path d='M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z'/>", /* 🎉 */
+    mic:        "<path d='M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z'/><path d='M19 10v2a7 7 0 0 1-14 0v-2'/><line x1='12' y1='19' x2='12' y2='23'/><line x1='8' y1='23' x2='16' y2='23'/>", /* 🎙 🎤 */
+    scale:      "<path d='m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z'/><path d='m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z'/><path d='M7 21h10'/><path d='M12 3v18'/><path d='M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2'/>", /* ⚖ */
+    bell:       "<path d='M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9'/><path d='M13.73 21a2 2 0 0 1-3.46 0'/>", /* 🔔 */
+    help:       "<circle cx='12' cy='12' r='10'/><path d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'/><line x1='12' y1='17' x2='12.01' y2='17'/>", /* ❓ */
+    package:    "<line x1='16.5' y1='9.4' x2='7.5' y2='4.21'/><path d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'/><polyline points='3.27 6.96 12 12.01 20.73 6.96'/><line x1='12' y1='22.08' x2='12' y2='12'/>", /* 📦 */
+    send:       "<line x1='22' y1='2' x2='11' y2='13'/><polygon points='22 2 15 22 11 13 2 9 22 2'/>", /* ✈ 📤 */
+    trash:      "<polyline points='3 6 5 6 21 6'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><line x1='10' y1='11' x2='10' y2='17'/><line x1='14' y1='11' x2='14' y2='17'/>", /* 🗑 */
+    crown:      "<path d='m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7z'/><path d='M5 20h14'/>", /* 👑 */
+    laptop:     "<rect x='3' y='4' width='18' height='12' rx='1'/><line x1='2' y1='20' x2='22' y2='20'/>", /* 💻 */
+    graduation: "<path d='M22 10 12 5 2 10l10 5 10-5z'/><path d='M6 12v5c0 1 2 2 6 2s6-1 6-2v-5'/>", /* 🎓 🧑‍🏫 */
+    cart:       "<circle cx='9' cy='21' r='1'/><circle cx='20' cy='21' r='1'/><path d='M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6'/>", /* 🛒 */
+    repeat:     "<polyline points='17 1 21 5 17 9'/><path d='M3 11V9a4 4 0 0 1 4-4h14'/><polyline points='7 23 3 19 7 15'/><path d='M21 13v2a4 4 0 0 1-4 4H3'/>", /* 🔁 */
+    headphones: "<path d='M3 18v-6a9 9 0 0 1 18 0v6'/><path d='M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z'/>", /* 🎧 */
+    pin:        "<line x1='12' y1='17' x2='12' y2='22'/><path d='M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z'/>", /* 📌 */
+    droplet:    "<path d='M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z'/>", /* 💧 */
+    walk:       "<circle cx='13' cy='4' r='1'/><path d='m7 21 3-6 2 1.5V21m0-6.5L10 9l4 1 2 3'/>" /* 🚶 */
   };
 
   var esc = function(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); };
@@ -142,7 +163,7 @@
     opts = opts || {};
     var inner = IC[name];
     if(inner == null){ if(window.console && console.warn) console.warn("[PWI] icono desconocido:", name); inner = IC.infoCircle; }
-    var cls = "pw-ic" + (opts.sm ? " pw-ic-sm" : "") + (opts.cls ? " " + opts.cls : "");
+    var cls = "pw-ic" + (opts.sm ? " pw-ic-sm" : "") + (opts.cc ? " pw-ic-cc" : "") + (opts.cls ? " " + opts.cls : "");
     var style = opts.size ? " style='width:"+opts.size+"px;height:"+opts.size+"px'" : "";
     var a11y = opts.title ? " role='img' aria-label='"+esc(opts.title)+"'><title>"+esc(opts.title)+"</title" : " aria-hidden='true'";
     return "<svg class='"+cls+"' viewBox='0 0 24 24'"+style+a11y+">"+inner+"</svg>";
@@ -152,6 +173,17 @@
   function chip(name, opts){
     opts = opts || {};
     return "<span class='pw-icchip"+(opts.sm?" sm":"")+(opts.cls?" "+opts.cls:"")+"'>"+svg(name,{title:opts.title})+"</span>";
+  }
+
+  /* Mascota de Pathway = la CABRA DE FRENTE (no el emoji 🐐 de perfil). Es un
+     asset de marca (imagen), no un icono Lucide, así que va por su propio helper.
+     Una sola fuente: cambiar el src acá cambia la mascota en TODA la plataforma. */
+  var GOAT_SRC = "/assets/cabra/frente.gif";
+  function goat(opts){
+    opts = opts || {};
+    var px = opts.size || 20;
+    return "<img src='" + GOAT_SRC + "' alt='" + esc(opts.title || "Cabra Pathway") +
+      "' class='pw-goat' style='height:" + px + "px;width:auto;vertical-align:-.22em'>";
   }
 
   /* Auto-montado declarativo: <i data-ic="edit"></i> · data-sm -> 18px. */
@@ -164,12 +196,12 @@
       var name = el.getAttribute("data-ic");
       if(!IC[name]) continue;
       var sz = el.getAttribute("data-size");
-      el.innerHTML = svg(name, { sm: el.hasAttribute("data-sm"), size: sz?parseInt(sz,10):0, title: el.getAttribute("data-title")||"" });
+      el.innerHTML = svg(name, { sm: el.hasAttribute("data-sm"), cc: el.hasAttribute("data-cc"), size: sz?parseInt(sz,10):0, title: el.getAttribute("data-title")||"" });
       el.setAttribute("data-ic-done","1");
     }
   }
 
-  window.PWI = { IC: IC, svg: svg, chip: chip, mount: mount, has: function(n){ return !!IC[n]; } };
+  window.PWI = { IC: IC, svg: svg, chip: chip, goat: goat, mount: mount, has: function(n){ return !!IC[n]; } };
 
   if(document.readyState !== "loading") mount();
   else document.addEventListener("DOMContentLoaded", function(){ mount(); });

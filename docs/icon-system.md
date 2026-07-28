@@ -90,6 +90,16 @@ Fortalezas / Áreas a mejorar / Estrategia): `PWI.chip('target')` o
 - ✅ `panel-v2` usa `window.PWI.IC` (ya no duplica el mapa).
 - ✅ Chat (`pw-ia-chat.js`) alineado al spec (outline, 2px).
 - ✅ Landing (`index.html`) con el chrome convertido a Lucide.
-- ⏳ Pendiente: barrer el chrome emoji restante de `panel-v2`, `multicoach`,
-  `cliente` y los portales fit/fin (usar `PWI.svg`/`data-ic`, subir cada
-  pantalla a `CONVERTED` en el check al terminarla).
+- ✅ Chrome convertido a Lucide en: `panel-v2`, `multicoach`, `cliente`,
+  `empleado`, `admin-express` (además de la landing).
+- ✅ Mascota: la CABRA DE FRENTE (`PWI.goat()` / `assets/cabra/frente.gif`)
+  reemplaza al emoji 🐐 en la UI. El ojo usa Lucide (`eye`/`eyeClosed`).
+- **Emojis que se DEJAN a propósito (no son chrome):** medallas y logros
+  (badges PNG con fallback), iconos de TIPO DE EVENTO de la agenda (los elige
+  el coach), reacciones/posts de la comunidad, `<option>` (no renderizan SVG),
+  y todo email/WhatsApp/`alert()`/`toast()` (texto plano que se envía o no
+  renderiza HTML). Los mapas emoji→SVG de fallback (`_pwKpiIcon`) tampoco se
+  tocan: ya producen Lucide.
+- ⏳ Pendiente fino: campos de datos `emoji:`/`ico:` del chat/logros de
+  `cliente` quedaron como emoji por seguridad (fluyen a atributos/celebraciones);
+  se pueden migrar uno a uno verificando su render.
