@@ -3990,6 +3990,19 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "recuperar-solicitudes: solo a quien tiene email + 2 toques idempotentes",
+    bug: "Recupera al candidato que abandonó el pago (30min: link · 12h: llamada/escribir). SOLO si tenemos su email, y con marcas rec_link_at/rec_call_at para no spamear.",
+    check() {
+      const s = read("supabase/functions/recuperar-solicitudes/index.ts");
+      if (!s) return null;
+      if (!/candidato_email=not\.is\.null/.test(s))
+        return "recuperar-solicitudes: dejó de exigir email (candidato_email not null) — mandaría a ciegas.";
+      if (!/rec_link_at/.test(s) || !/rec_call_at/.test(s))
+        return "recuperar-solicitudes: perdió las marcas idempotentes (rec_link_at/rec_call_at) — repetiría mails.";
+      return null;
+    },
+  },
   // ── Enriquecimiento del tab Analiticas con Health Score (consumidor de metricas) ──
   {
     name: "analiticas: tarjeta Health Score cableada como consumidor puro de metricas",
