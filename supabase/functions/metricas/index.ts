@@ -87,7 +87,7 @@ async function sbGet(path: string): Promise<unknown[]> {
   } catch { return []; }
 }
 
-interface Evento { tipo: string; dominio: string | null; actor_email: string | null; actor_rol: string | null; entidad_id: string | null; ts: string; }
+interface Evento { tipo: string; dominio: string | null; actor_email: string | null; actor_rol: string | null; entidad_id: string | null; ts: string; payload?: Record<string, unknown> | null; }
 interface Usuario { id: string; email: string; nombre: string | null; created_at: string; configuracion: Record<string, unknown> | null; activo: boolean | null; }
 interface Candidato { coach_id: string | null; email: string | null; consent_at: string | null; }
 interface Nudge { coach_id: string; plantilla_id: string; sent_at: string; }
@@ -114,7 +114,7 @@ Deno.serve(async (req: Request) => {
   // ── Lecturas (service role) ──
   const cutoff = new Date(now - 365 * 86400_000).toISOString();
   const [eventos, usuariosRaw, candidatos, nudgesRaw] = await Promise.all([
-    sbGet(`eventos?select=tipo,dominio,actor_email,actor_rol,entidad_id,ts&ts=gte.${cutoff}&order=ts.desc&limit=20000`) as Promise<Evento[]>,
+    sbGet(`eventos?select=tipo,dominio,actor_email,actor_rol,entidad_id,ts,payload&ts=gte.${cutoff}&order=ts.desc&limit=20000`) as Promise<Evento[]>,
     sbGet(`usuarios?rol=eq.coach&select=id,email,nombre,created_at,configuracion,activo&limit=5000`) as Promise<Usuario[]>,
     sbGet(`candidatos?select=coach_id,email,consent_at&limit=50000`) as Promise<Candidato[]>,
     // Loop cerrado: los nudges por etapa que se enviaron (coach-lifecycle).
@@ -262,9 +262,19 @@ Deno.serve(async (req: Request) => {
   const cnt = (f: (c: typeof coaches[number]) => boolean) => coaches.filter(f).length;
   const nStripe = cnt((c) => c.stripe);
   const nSesion = new Set(eventos.filter((e) => !isTest(e) && e.tipo === "SessionCompleted").map((e) => (e.actor_email || "").toLowerCase())).size;
+  // ── Fases que antes eran 🔴 (sin evento) ahora se derivan de eventos REALES ──
+  // (cableados en la landing y en reservar.html). Distinct por entidad para no
+  // inflar con reintentos. `demo` = SOLO la demo del coach (no las llamadas de
+  // candidato ni las sesiones de cliente, que también emiten CallBooked pero no
+  // son parte del embudo de alta del coach) → se filtra por el payload.
+  const distinctEnt = (pred: (e: Evento) => boolean) =>
+    new Set(eventos.filter((e) => !isTest(e) && pred(e)).map((e) => (e.entidad_id || e.actor_email || "").toLowerCase()).filter(Boolean)).size;
+  const esDemo = (e: Evento) => { const p = e.payload || {}; return /demo/i.test(String(p.tipo || "") + " " + String(p.kind || "")); };
+  const nLead = distinctEnt((e) => e.tipo === "LeadCreated");
+  const nDemo = distinctEnt((e) => e.tipo === "CallBooked" && esDemo(e));
   const fases: Array<{ fase: string; label: string; evento: string | null; valor: number | null; fuente: string; estado: string }> = [
-    { fase: "lead", label: "Lead", evento: "LeadCreated", valor: null, fuente: "base_temporal", estado: "🔴" },
-    { fase: "demo", label: "Demo", evento: null, valor: null, fuente: "base_temporal", estado: "🔴" },
+    { fase: "lead", label: "Lead", evento: "LeadCreated", valor: nLead || null, fuente: nLead ? "eventos" : "base_temporal", estado: nLead ? "🟢" : "🔴" },
+    { fase: "demo", label: "Demo", evento: "CallBooked", valor: nDemo || null, fuente: nDemo ? "eventos" : "base_temporal", estado: nDemo ? "🟢" : "🔴" },
     { fase: "trial", label: "Trial Started", evento: "TrialStarted", valor: total, fuente: "mixto", estado: "🟡" },
     { fase: "perfil", label: "Profile Completed", evento: "ProfileCompleted", valor: nPerfil, fuente: "mixto", estado: "🟡" },
     { fase: "stripe", label: "Stripe Connected", evento: "StripeConnected", valor: nStripe, fuente: "mixto", estado: "🟡" },
