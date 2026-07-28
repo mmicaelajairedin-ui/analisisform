@@ -961,10 +961,8 @@
     if(!p || !p.access_token || !sb || !(WHO&&WHO.id)) return;
     _agPendingDone=true; GCAL=p;
     try{
-      var cur=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1);
-      var cfg=(cur.data&&cur.data[0]&&cur.data[0].configuracion)||{}; cfg.gcal=p;
-      await sb.from('usuarios').update({configuracion:cfg}).eq('id',WHO.id);
-      try{ if(ME&&WHO.id===ME.id){ var mu=JSON.parse(localStorage.getItem('mj_user')||'{}'); mu.configuracion=cfg; localStorage.setItem('mj_user',JSON.stringify(mu)); } }catch(_){ }
+      // Token a la CAJA FUERTE (gcal_tokens), no a configuracion.
+      await sb.from('gcal_tokens').upsert({coach_id:WHO.id, token:p, updated_at:new Date().toISOString()});
       try{ localStorage.removeItem('pw_gcal_pending'); }catch(_){ }
       toast('Calendario conectado ✓');
     }catch(e){ _agPendingDone=false; }
@@ -979,7 +977,7 @@
       var d=await res.json().catch(function(){return null;});
       if(!res.ok || !d || !d.access_token){ renderAgBody(); return; }
       GCAL.access_token=d.access_token; GCAL.expiry=d.expiry||(Date.now()+3600000);
-      if(sb && WHO&&WHO.id){ try{ var cur=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cur.data&&cur.data[0]&&cur.data[0].configuracion)||{}; cfg.gcal=GCAL; await sb.from('usuarios').update({configuracion:cfg}).eq('id',WHO.id); try{ if(ME&&WHO.id===ME.id){ var mu=JSON.parse(localStorage.getItem('mj_user')||'{}'); mu.configuracion=cfg; localStorage.setItem('mj_user',JSON.stringify(mu)); } }catch(_){ } }catch(e){} }
+      if(sb && WHO&&WHO.id){ try{ await sb.from('gcal_tokens').upsert({coach_id:WHO.id, token:GCAL, updated_at:new Date().toISOString()}); }catch(e){} }
       await _agLoadGoogle();
     }catch(e){ renderAgBody(); }
   }
@@ -1018,7 +1016,9 @@
   async function loadResumen(){
     var li=document.getElementById('mylink'); if(li) li.value=myBookingLink();
     // Config del empleado: disponibilidad, tipos y token de Google.
-    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cr.data&&cr.data[0]&&cr.data[0].configuracion)||{}; var d=cfg.disponibilidad; if(d&&d.days){ DISP={days:d.days.map(Number),from:d.from||'09:00',to:d.to||'18:00',horarios:(d.horarios&&typeof d.horarios==='object')?d.horarios:{}}; } if(Array.isArray(cfg.event_types)) EVT=cfg.event_types; if(cfg.gcal&&cfg.gcal.access_token) GCAL=cfg.gcal; var _ic=document.getElementById('myical'); if(_ic&&cfg.gcal_ical_url) _ic.value=cfg.gcal_ical_url; }catch(e){} }
+    if(sb && WHO&&WHO.id){ try{ var cr=await sb.from('usuarios').select('configuracion').eq('id',WHO.id).limit(1); var cfg=(cr.data&&cr.data[0]&&cr.data[0].configuracion)||{}; var d=cfg.disponibilidad; if(d&&d.days){ DISP={days:d.days.map(Number),from:d.from||'09:00',to:d.to||'18:00',horarios:(d.horarios&&typeof d.horarios==='object')?d.horarios:{}}; } if(Array.isArray(cfg.event_types)) EVT=cfg.event_types; if(cfg.gcal&&cfg.gcal.access_token) GCAL=cfg.gcal; var _ic=document.getElementById('myical'); if(_ic&&cfg.gcal_ical_url) _ic.value=cfg.gcal_ical_url; }catch(e){}
+      // Token de Google desde la CAJA FUERTE (gcal_tokens). Fallback: el de arriba.
+      try{ var gt=await sb.from('gcal_tokens').select('token').eq('coach_id',WHO.id).limit(1); if(gt&&gt.data&&gt.data[0]&&gt.data[0].token&&gt.data[0].token.access_token) GCAL=gt.data[0].token; }catch(e){} }
     renderDispDays(); renderTypes();
     await _agSavePendingEmp();
     if(!sb || !(WHO&&WHO.id)){ renderCal(); renderAgBody(); return; }

@@ -2835,11 +2835,10 @@ function _agSavePending(){
   // suele venir vacío. Si es así, NO pisamos el que ya teníamos guardado (si no, se
   // rompe la renovación automática y el calendario pide reconectar cada rato).
   try{ var _oldG=(RCFG&&RCFG.gcal&&typeof RCFG.gcal==="object")?RCFG.gcal:null; if(_oldG&&_oldG.refresh_token&&!p.refresh_token){ p.refresh_token=_oldG.refresh_token; } }catch(e){}
-  var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; } merged.gcal=p;
-  _selfPatchUsuarios({configuracion:merged}).then(function(r){
+  // El token va a la CAJA FUERTE (gcal_tokens), no a configuracion.
+  if(RCFG) RCFG.gcal=p;
+  _gcalTokenSave(p).then(function(r){
     if(r&&r.ok){
-      RCFG=merged;
-      try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
       try{ localStorage.removeItem("pw_gcal_pending"); }catch(e){}
       _AG_DATA=null; toast("Calendario conectado ✓");
       if(state.section==="resumen"){ try{ render(); }catch(e){} }
@@ -3718,9 +3717,9 @@ function _agRefresh(){
       }
       _agRefreshErr="";
       var ng={}; for(var k in g){ if(g.hasOwnProperty(k)) ng[k]=g[k]; } ng.access_token=d.access_token; ng.expiry=d.expiry||(Date.now()+3600000);
-      var merged={}; for(var j in RCFG){ if(RCFG.hasOwnProperty(j)) merged[j]=RCFG[j]; } merged.gcal=ng; RCFG=merged;
-      try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=merged; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
-      if(RME&&RME.id) _selfPatchUsuarios({configuracion:merged}).catch(function(){});
+      // Token renovado → caja fuerte (gcal_tokens), no configuracion.
+      if(RCFG) RCFG.gcal=ng;
+      if(RME&&RME.id) _gcalTokenSave(ng).catch(function(){});
       _agLoadGoogleDirect(ng);
     })
     .catch(function(e){ if(done)return; done=true; clearTimeout(to); _agRefreshErr="renovar: no se pudo llamar a la función ("+((e&&e.message)||"red")+")"; _agLoadIcal(); });
@@ -12362,6 +12361,8 @@ function _sb(p){
 // coach-self-save (service role, lista blanca SIN rol/password → sin escalada).
 function _selfPatchUsuarios(fields){
   if(!(REAL&&RME&&RME.id)) return Promise.resolve({ok:false});
+  // El token de Google nunca se escribe dentro de configuracion (va a gcal_tokens).
+  try{ if(fields&&fields.configuracion&&typeof fields.configuracion==="object") delete fields.configuracion.gcal; }catch(e){}
   return _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",fields).then(function(r){
     if(r&&r.ok) return r;
     return fetch(SB+"/functions/v1/coach-self-save",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -12369,6 +12370,20 @@ function _selfPatchUsuarios(fields){
       .then(function(x){ return {ok:!!(x&&x.ok),status:(x&&x.status)||0,rows:(x&&x.ok)?1:0}; })
       .catch(function(){ return {ok:false,status:0,rows:0}; });
   });
+}
+// Token de Google → CAJA FUERTE (tabla gcal_tokens, no configuracion, que es
+// legible por anon). Se lee/escribe con el JWT del coach (RLS: su propia fila).
+function _gcalTokenSave(tok){
+  if(!(REAL&&RME&&RME.id)||!tok) return Promise.resolve({ok:false});
+  return _hdr({"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"}).then(function(h){
+    return fetch(SB+"/rest/v1/gcal_tokens",{method:"POST",headers:h,body:JSON.stringify({coach_id:RME.id,token:tok,updated_at:new Date().toISOString()})});
+  }).then(function(r){ return {ok:!!(r&&(r.ok||r.status===201||r.status===204))}; }).catch(function(){ return {ok:false}; });
+}
+function _gcalTokenLoad(){
+  if(!(REAL&&RME&&RME.id)) return;
+  _sb("gcal_tokens?coach_id=eq."+encodeURIComponent(RME.id)+"&select=token&limit=1").then(function(rows){
+    try{ if(Array.isArray(rows)&&rows[0]&&rows[0].token){ if(!RCFG) RCFG={}; RCFG.gcal=rows[0].token; } }catch(e){}
+  }).catch(function(){});
 }
 // ¿El path apunta a un cliente de ejemplo (que no existe en la base)?
 function _isExampleWrite(p){
@@ -12672,6 +12687,9 @@ function saveCfg(cfgPatch, usuariosExtra, onDone, opts){
   if(REAL && !RCFG_READY){ try{ toast("Tu configuración se está cargando. Esperá unos segundos y volvé a guardar."); }catch(e){} return; }
   var merged={}; for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) merged[k]=RCFG[k]; }
   for(var j in cfgPatch){ if(cfgPatch.hasOwnProperty(j)) merged[j]=cfgPatch[j]; }
+  // El token de Google NO va en configuracion (vive en la caja fuerte gcal_tokens).
+  // Aunque RCFG.gcal esté en memoria, lo sacamos antes de guardar la config.
+  try{ delete merged.gcal; }catch(e){}
   var body={ configuracion: merged }; if(usuariosExtra){ for(var u in usuariosExtra){ if(usuariosExtra.hasOwnProperty(u)) body[u]=usuariosExtra[u]; } }
   function _ok(){
     RCFG=merged;
@@ -13128,6 +13146,7 @@ function loadReal(){
     // función es idempotente (no arranca un segundo timer si ya hay uno).
     startMsgPolling();
     RCFG = usr.configuracion || ME.configuracion || {};
+    try{ _gcalTokenLoad(); }catch(e){} // token de Google desde la caja fuerte → RCFG.gcal
     // No perder el consentimiento ya aceptado: si el server viene sin consent_at
     // pero YA lo aceptó (en mj_user o en el flag local), lo conservamos en RCFG
     // para que el próximo guardado no lo borre y no se lo volvamos a pedir.

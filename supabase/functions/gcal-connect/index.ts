@@ -72,12 +72,12 @@ Deno.serve(async (req: Request) => {
     const rows = r.ok ? await r.json() : [];
     if (!rows.length) return json({ error: "coach_not_found", email }, 404);
     const id = rows[0].id;
-    const cfg = (rows[0].configuracion as Record<string, unknown>) || {};
-    const newCfg = { ...cfg, gcal: { access_token, refresh_token, expiry, connected_at: new Date().toISOString() } };
-    const pr = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: { ...sbHeaders, "content-type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({ configuracion: newCfg }),
+    // El token va a la CAJA FUERTE (tabla gcal_tokens), no a configuracion (que
+    // es legible por anon en el directorio). upsert por coach_id.
+    const pr = await fetch(`${SB_URL}/rest/v1/gcal_tokens`, {
+      method: "POST",
+      headers: { ...sbHeaders, "content-type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ coach_id: id, token: { access_token, refresh_token, expiry, connected_at: new Date().toISOString() }, updated_at: new Date().toISOString() }),
     });
     if (!pr.ok) return json({ error: "save_failed", status: pr.status }, 502);
     return json({ ok: true, email });

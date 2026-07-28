@@ -260,6 +260,35 @@ const RULES = [
     },
   },
   {
+    name: "token de Google en caja fuerte (gcal_tokens), NO en configuracion",
+    bug: "El token de Google (con refresh_token = acceso permanente al calendario) vivía " +
+         "en usuarios.configuracion.gcal, legible por anon vía el directorio. Se movió a la " +
+         "tabla gcal_tokens (RLS: solo el coach/servicio). Si algo vuelve a escribir el token " +
+         "en configuracion, se re-expone.",
+    check() {
+      const mig = read("supabase/migrations/gcal_tokens_table.sql");
+      if (!mig) return "falta la migración gcal_tokens_table.sql (caja fuerte del token).";
+      if (!/CREATE TABLE IF NOT EXISTS public\.gcal_tokens/.test(mig) || !/ENABLE ROW LEVEL SECURITY/.test(mig))
+        return "gcal_tokens_table.sql: perdió la tabla o su RLS.";
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/function _gcalTokenSave/.test(p) || !/function _gcalTokenLoad/.test(p))
+          return "panel-v2.html: faltan los helpers de la caja fuerte (_gcalTokenSave/_gcalTokenLoad).";
+        if (!/delete merged\.gcal/.test(p))
+          return "panel-v2.html: saveCfg ya no saca el token de configuracion (delete merged.gcal) → se re-expondría.";
+      }
+      const gc = read("supabase/functions/gcal-connect/index.ts");
+      if (gc && /configuracion: newCfg/.test(gc))
+        return "gcal-connect: volvió a guardar el token en configuracion en vez de gcal_tokens.";
+      for (const fn of ["gcal", "gcal-push"]) {
+        const s = read(`supabase/functions/${fn}/index.ts`);
+        if (s && !/gcal_tokens/.test(s))
+          return `${fn}: ya no lee el token desde gcal_tokens (caja fuerte).`;
+      }
+      return null;
+    },
+  },
+  {
     name: "RLS: el chat admin↔coach NO está abierto al público",
     bug: "mensajes_admin_coach tenía una política {public} ALL USING(true): cualquiera con " +
          "la anon key leía/escribía/borraba todo el chat admin↔coach. Se cerró alineándolo " +
