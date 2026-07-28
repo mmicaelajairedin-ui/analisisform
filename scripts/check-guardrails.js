@@ -4285,6 +4285,41 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "chat: ADMIN_PHOTO es URL absoluta (http/https), no relativa",
+    bug: "Se cambió ADMIN_PHOTO a una ruta relativa (/assets/micaela.jpg). _chatAv() " +
+         "SOLO muestra la foto si la URL matchea ^(https?:|data:); una ruta relativa cae " +
+         "al fallback de iniciales → la foto de Micaela NO le salía a la gente en el chat " +
+         "(se veía una 'P' verde). Debe ser absoluta.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const m = s.match(/var\s+ADMIN_PHOTO\s*=\s*"([^"]*)"/);
+      if (!m) return "panel-v2.html: no se encuentra ADMIN_PHOTO.";
+      if (!/^(https?:|data:)/i.test(m[1]))
+        return "panel-v2.html: ADMIN_PHOTO no es absoluta ('" + m[1] + "') → _chatAv cae a iniciales y la foto no sale en el chat.";
+      return null;
+    },
+  },
+  {
+    name: "chat: los mensajes linkifican el texto (link clickeable + no se desborda)",
+    bug: "El fix del link (helper _linkTxt + overflow-wrap:anywhere) se había aplicado SOLO " +
+         "a _coachClientBubbles; los chats de soporte/admin (Mica/red/canal/admin↔coach) " +
+         "seguían con esc(_msgBodyText(m)) y word-wrap:break-word → el link no salía como " +
+         "link y se desbordaba del ancho del chat (scroll horizontal). Todos los renderers " +
+         "de burbuja deben usar _linkTxt(_msgBodyText(m)), no esc() crudo.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function _linkTxt\(/.test(s))
+        return "panel-v2.html: desapareció el helper _linkTxt (linkifica + escapa el texto del chat).";
+      // Ninguna burbuja de chat debe renderizar el cuerpo con esc() crudo + word-wrap:break-word
+      // (patrón viejo que no linkifica ni corta URLs largas).
+      if (/white-space:pre-wrap;word-wrap:break-word'>"\+esc\(_msgBodyText\(m\)\)/.test(s))
+        return "panel-v2.html: una burbuja de chat volvió a usar esc(_msgBodyText(m)) sin _linkTxt → el link no sale como link y se desborda.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
