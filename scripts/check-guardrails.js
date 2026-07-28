@@ -3004,22 +3004,27 @@ const RULES = [
     },
   },
   {
-    name: "recursos: biblioteca unificada (pw-recursos.js) en el portal fitness",
+    name: "recursos: biblioteca unificada (pw-recursos.js) en los 3 portales",
     why:
-      "Los recursos se unificaron en un solo componente para todo Pathway " +
-      "(pw-recursos.js): buscador, filtros por tipo, portada grande, badges, CTA, " +
-      "guardar y progreso. El portal fitness lo incluye y lo usa (PwRecursos.render). " +
-      "La fuente respeta la empresa: ORG_RECURSOS (owner) tiene prioridad sobre " +
-      "COACH_RECURSOS. Regla: no romper el include ni el uso del componente.",
+      "Los recursos se unificaron en un solo componente para TODO Pathway " +
+      "(pw-recursos.js): buscador, filtros por tipo, portada, badges, CTA, guardar " +
+      "y progreso. Los 3 portales del cliente (fitness, carrera, finanzas) lo " +
+      "incluyen y lo usan (PwRecursos.render). La fuente respeta la empresa: " +
+      "ORG_RECURSOS (owner) tiene prioridad sobre COACH_RECURSOS → en una red los " +
+      "recursos los pone el owner y los ven todos sus clientes. Regla: no romper " +
+      "el include ni el uso del componente en ninguno.",
     check() {
-      var f = read("pathway-fit-cliente.html");
-      if (!f) return null;
-      if (!/pw-recursos\.js/.test(f)) return "pathway-fit-cliente.html: falta incluir pw-recursos.js (la biblioteca unificada de recursos).";
-      if (!/PwRecursos\.render/.test(f)) return "pathway-fit-cliente.html: renderRecursos ya no usa PwRecursos.render (volvió a la lista vieja).";
-      if (!/ORG_RECURSOS/.test(f)) return "pathway-fit-cliente.html: se cayó la fuente de empresa (ORG_RECURSOS del owner) para los recursos.";
       var c = read("pw-recursos.js");
       if (!c) return "pw-recursos.js: el componente unificado de recursos ya no existe.";
       if (!/window\.PwRecursos\s*=/.test(c)) return "pw-recursos.js: ya no expone window.PwRecursos.";
+      var portals = ["pathway-fit-cliente.html", "cliente.html", "pathway-fin-cliente.html"];
+      for (var i = 0; i < portals.length; i++) {
+        var f = read(portals[i]);
+        if (!f) continue;
+        if (!/pw-recursos\.js/.test(f)) return portals[i] + ": falta incluir pw-recursos.js (la biblioteca unificada).";
+        if (!/PwRecursos\.render/.test(f)) return portals[i] + ": ya no usa PwRecursos.render (volvió a la vista vieja de recursos).";
+        if (!/ORG_RECURSOS/.test(f)) return portals[i] + ": se cayó la fuente de empresa (ORG_RECURSOS del owner) para los recursos.";
+      }
       return null;
     },
   },
