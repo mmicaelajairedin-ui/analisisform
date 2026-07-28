@@ -28,20 +28,22 @@
     if(paid)document.documentElement.setAttribute('data-paid','1');
     if(portal)document.documentElement.setAttribute('data-portal','1');
     if(ok){document.documentElement.setAttribute('data-access','ok');return;}
-    // Validación async contra Supabase: ¿hay algún coach con ese access_code?
+    // Validación async EN EL SERVIDOR: ¿hay algún coach con ese access_code?
+    // Antes el navegador bajaba la `configuracion` de TODOS los coaches (exponía
+    // el token de Google, etc.). Ahora la edge function `verificar-acceso`
+    // compara del lado server y solo devuelve si es válido y de qué coach.
     if(!code)return;
     var SB='https://api.pathwaycareercoach.com';
     var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
-    fetch(SB+'/rest/v1/usuarios?rol=in.(coach,admin)&select=id,configuracion',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
-      .then(function(r){return r.ok?r.json():[];})
-      .then(function(rows){
-        var match=(rows||[]).find(function(u){return u.configuracion&&u.configuracion.access_code===code;});
-        if(match){
+    fetch(SB+'/functions/v1/verificar-acceso',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({code:code})})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(d){
+        if(d&&d.ok&&d.coach_id){
           document.documentElement.setAttribute('data-access','ok');
           // Re-emite ?coach=<id> en URL para que initCoachEmail lo capture sin recargar
           try{
             var url=new URL(location.href);
-            if(!url.searchParams.get('coach'))url.searchParams.set('coach',match.id);
+            if(!url.searchParams.get('coach'))url.searchParams.set('coach',d.coach_id);
             history.replaceState(null,'',url.toString());
           }catch(e){}
         }
