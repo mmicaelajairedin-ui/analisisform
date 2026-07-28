@@ -39,14 +39,17 @@ Deno.serve(async (req: Request) => {
 
   // Citas próximas (las 25 h que vienen). Filtramos por estado en el código
   // (abajo) para incluir también las que aún no tienen estado seteado.
-  const q = `${SB_URL}/rest/v1/citas` +
-    `?select=id,nombre,email,tipo,inicio,estado,coach_id,cliente_tz,token,rem_24h_at,rem_1h_at` +
-    `&inicio=gte.${new Date(now).toISOString()}` +
-    `&inicio=lte.${inWin}` +
-    `&order=inicio.asc&limit=200`;
+  // El select incluye las columnas nuevas (modalidad/lugar/grupal). Si todavía no
+  // existen en la base (migración sin aplicar), PostgREST devuelve 400 → reintentamos
+  // con el select base para NO romper TODOS los recordatorios por columnas opcionales.
+  const baseSel = `id,nombre,email,tipo,inicio,estado,coach_id,cliente_tz,token,rem_24h_at,rem_1h_at`;
+  const winQ = `&inicio=gte.${new Date(now).toISOString()}&inicio=lte.${inWin}&order=inicio.asc&limit=200`;
+  const qFull = `${SB_URL}/rest/v1/citas?select=${baseSel},modalidad,lugar,grupal${winQ}`;
+  const qBase = `${SB_URL}/rest/v1/citas?select=${baseSel}${winQ}`;
   let citas: Cita[] = [];
   try {
-    const r = await fetch(q, { headers: sbH(SB_KEY) });
+    let r = await fetch(qFull, { headers: sbH(SB_KEY) });
+    if (r.status === 400) r = await fetch(qBase, { headers: sbH(SB_KEY) }); // columnas nuevas aún no existen
     if (!r.ok) return json({ error: "citas_query_failed", status: r.status }, 502);
     citas = await r.json();
   } catch (_e) { return json({ error: "citas_unreachable" }, 502); }
@@ -102,6 +105,7 @@ interface Cita {
   id: string; nombre?: string; email?: string; tipo?: string; inicio: string;
   estado?: string; coach_id?: string; cliente_tz?: string; token?: string;
   rem_24h_at?: string | null; rem_1h_at?: string | null;
+  modalidad?: string | null; lugar?: string | null; grupal?: boolean | null;
 }
 interface Coach { nombre?: string; email?: string; tz?: string; }
 
@@ -148,9 +152,22 @@ async function sendReminder(
   const durMatch = String(c.tipo || "").match(/(\d+)\s*min/i);
   const dur = durMatch ? parseInt(durMatch[1], 10) : 60;
   const room = `Pathway-${c.coach_id}-${startMs}`;
+  const esPresencial = String(c.modalidad || "online") === "presencial";
+  // grupal: columna explícita O el nombre del evento (mismo criterio que el panel),
+  // para que el link del recordatorio use el MISMO engine (JaaS) que coach y cliente.
+  const esGrupal = c.grupal === true ||
+    /clase|curso|taller|webinar|grupal|grupo|masterclass|clinica|clínica/i.test(String(c.tipo || ""));
   const joinLink = `https://pathwaycareercoach.com/sala.html?room=${encodeURIComponent(room)}` +
     `&mod=0&name=${encodeURIComponent(c.nombre || "")}&email=${encodeURIComponent(c.email || "")}` +
-    `&con=${encodeURIComponent(coachName)}&start=${startMs}&dur=${dur}`;
+    `&con=${encodeURIComponent(coachName)}&start=${startMs}&dur=${dur}` +
+    (esGrupal ? "&grupal=1" : "");
+  // Presencial → mostramos el lugar y NO el botón de videollamada. Online → botón a la Sala.
+  const lineaModo = esPresencial
+    ? `<div style="margin-top:4px">📍 <strong>Presencial</strong>${c.lugar ? ` · ${esc(String(c.lugar))}` : ""}</div>`
+    : `<div style="margin-top:4px">💻 Videollamada de Pathway</div>`;
+  const botonModo = esPresencial
+    ? ``
+    : `<a href="${joinLink}" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:2px 0 12px">Entrar a la videollamada</a>`;
 
   const html =
     `<div style="font-family:Inter,-apple-system,'Segoe UI',sans-serif;max-width:480px;margin:0 auto">` +
@@ -159,9 +176,9 @@ async function sendReminder(
     `<div style="background:#F0F5EF;border-radius:12px;padding:14px 16px;margin:14px 0;font-size:14px;color:#1B2E26">` +
     `<div>📅 <strong>${esc(cuando)}</strong></div>` +
     `<div style="margin-top:4px">⏰ <strong>${esc(hora)}</strong> <span style="color:#5A6A60;font-size:12px">(${esc(tz)})</span></div>` +
-    `<div style="margin-top:4px">💻 Videollamada de Pathway</div>` +
+    lineaModo +
     `</div>` +
-    `<a href="${joinLink}" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:2px 0 12px">Entrar a la videollamada</a>` +
+    botonModo +
     (c.token
       ? `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">¿No podés en ese horario? <a href="https://pathwaycareercoach.com/gestionar-cita.html?t=${esc(c.token)}" style="color:#2D6A4F;font-weight:700">Cancelar o reprogramar</a>.</p>`
       : `<p style="font-size:12.5px;color:#8A968E;line-height:1.5">Si no podés en ese horario, respondé este email y lo reprogramamos.</p>`) +

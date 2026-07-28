@@ -3515,7 +3515,7 @@ const RULES = [
       if (!p) return null;
       const i = p.indexOf('act==="ag-agendar"');
       if (i < 0) return "panel-v2.html: no se encontró el handler ag-agendar.";
-      const body = p.slice(i, i + 3600);
+      const body = p.slice(i, i + 5200);
       if (!/_sbw\("citas","POST"/.test(body) || !/coach_id:\(RME&&RME\.id\)/.test(body)) return "panel-v2.html: ag-agendar ya no guarda la cita del coach en la tabla citas (POST con coach_id=RME.id).";
       if (!/_resLoad\(\)/.test(body) || !/_calLoad\(\)/.test(body)) return "panel-v2.html: ag-agendar ya no recarga la agenda tras guardar (_resLoad/_calLoad).";
       if (!/_notifResCliente\(/.test(body)) return "panel-v2.html: ag-agendar ya no manda el email de confirmación al invitado (_notifResCliente).";
@@ -3784,6 +3784,49 @@ const RULES = [
       if (!/8x8\.vc/.test(s)) return "sala.html: se cayó el respaldo JaaS (8x8.vc) — sin fallback si una red bloquea P2P.";
       if (read("pw-p2p.js") === null) return "falta pw-p2p.js (el motor P2P por defecto).";
       if (read("pw-turn.js") === null) return "falta pw-turn.js (el TURN propio).";
+      return null;
+    },
+  },
+  {
+    name: "sala GRUPAL (clase/curso/demo de varios) usa JaaS multi-persona (el P2P es 1:1)",
+    bug: "El P2P (pw-p2p.js) es 1 a 1. Una sala GRUPAL (clase, curso o una demo con varios) necesita " +
+         "video multi-persona → JaaS. Con ?grupal=1 la Sala fuerza engine=jaas. El coach y todos los " +
+         "participantes tienen que caer en el MISMO engine: por eso _agSalaUrl (coach) y _salaClientLink " +
+         "(cliente) agregan &grupal=1 vía _esGrupal (columna explícita O nombre del evento). Si se rompe, " +
+         "una clase grupal caería en P2P 1:1 y solo entrarían 2 personas.",
+    check() {
+      const s = read("sala.html"), p = read("panel-v2.html");
+      if (s) {
+        if (!/var GRUPAL = qp\('grupal'\)/.test(s)) return "sala.html: falta la detección de sala GRUPAL (qp('grupal')).";
+        if (!/if\(GRUPAL && !qp\('engine'\)\) ENGINE='jaas'/.test(s)) return "sala.html: una sala grupal ya no fuerza JaaS (caería en P2P 1:1).";
+      }
+      if (p) {
+        if (!/function _esGrupal\(/.test(p)) return "panel-v2.html: falta _esGrupal (detección grupal coherente coach↔cliente).";
+        if (!/_esGrupal\(r\)\?"&grupal=1"/.test(p)) return "panel-v2.html: los links de sala ya no propagan &grupal=1 (coach y cliente caerían en engines distintos).";
+        if (!/function _canGrupal\(/.test(p)) return "panel-v2.html: falta _canGrupal (las clases grupales son función Pro).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "agenda: modalidad Presencial NO manda link de video (manda el lugar)",
+    bug: "Al agendar una cita se elige Online o Presencial. Antes TODA cita mandaba el botón 'Entrar a la " +
+         "videollamada', también las presenciales (link de video sin sentido para verse en persona). Ahora, " +
+         "si es presencial, el email de confirmación y el recordatorio muestran '📍 Presencial · <lugar>' y " +
+         "NO el botón de video. Online sigue con el botón. Si se rompe, las presenciales vuelven a mandar " +
+         "un link de videollamada que confunde al cliente.",
+    check() {
+      const p = read("panel-v2.html");
+      if (p) {
+        if (!/id='ag-cita-mod'/.test(p)) return "panel-v2.html: falta el selector de modalidad (Online/Presencial) al agendar.";
+        if (!/_amod==="presencial"/.test(p)) return "panel-v2.html: el agendado ya no distingue la modalidad presencial.";
+        if (!/📍 <strong>Presencial<\/strong>/.test(p)) return "panel-v2.html: el email de cita presencial ya no muestra el lugar (📍 Presencial).";
+      }
+      const rem = read("supabase/functions/recordatorios-citas/index.ts");
+      if (rem) {
+        if (!/esPresencial/.test(rem)) return "recordatorios-citas: el recordatorio ya no distingue presencial.";
+        if (!/const botonModo = esPresencial\s*\?\s*``/.test(rem)) return "recordatorios-citas: el recordatorio presencial ya no oculta el botón de videollamada.";
+      }
       return null;
     },
   },
