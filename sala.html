@@ -471,7 +471,7 @@ function boot(){
     hideWait();
     wireControls();
     // Mensajes entrantes → nuestro panel de chat (no el nativo).
-    api.addListener('incomingMessage', function(e){ try{ var _m=e&&e.message; if(recvIsReaction(_m)) return; chatAdd((e&&e.nick)||WHO, _m, false); }catch(_e){} });
+    api.addListener('incomingMessage', function(e){ try{ var _m=e&&e.message; if(recvIsReaction(_m,(e&&e.nick)||WHO)) return; chatAdd((e&&e.nick)||WHO, _m, false); }catch(_e){} });
     // Forzar vista mosaico (mitad y mitad) — más robusto que solo el config inicial.
     function _tile(){ try{ api&&api.executeCommand('setTileView', true); }catch(e){} }
     api.addListener('videoConferenceJoined', function(){
@@ -556,7 +556,7 @@ function bootP2P(){
     onLocalReady:function(){ waitAlone(); },   // pantalla BLANCA de "esperando" hasta que se una el otro
     onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='En llamada'; },
     onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Esperando'; },
-    onChat:function(from,text){ try{ if(recvIsReaction(text)) return; chatAdd(from||WHO, text, false); }catch(e){} },
+    onChat:function(from,text){ try{ if(recvIsReaction(text,from||WHO)) return; chatAdd(from||WHO, text, false); }catch(e){} },
     onFail:_p2pFallbackToJaas,   // la red bloquea el P2P (ni el TURN alcanza) → caemos a JaaS solos
     onError:function(e){ var c=(e&&(e.name||e.message))||'error';
       if(/NotAllowed|Permission|Denied/i.test(c)){ waitState('Permití cámara y micrófono','Para poder verte, el navegador necesita permiso de cámara y micrófono.',true); _p2pPermUI(); }
@@ -789,9 +789,10 @@ function salaRain(emo){
     setTimeout(function(){try{f.remove();}catch(e){}},2500+i*70);
   })(i);}
 }
-function sendReaction(emo){ salaRain(emo); try{ if(ENGINE==='p2p'){ window.PWP2P&&PWP2P.sendChat(PWR+emo); } else { api&&api.executeCommand('sendChatMessage',PWR+emo); } }catch(e){} }
-// Interceptar reacciones entrantes: si es un marcador, se dibuja y NO va al chat.
-function recvIsReaction(txt){ if((''+txt).indexOf(PWR)===0){ salaRain((''+txt).slice(PWR.length)); return true; } return false; }
+function sendReaction(emo){ salaRain(emo); chatAdd(NAME,emo,true); _persistChat(MOD?'coach':'cliente', emo); try{ if(ENGINE==='p2p'){ window.PWP2P&&PWP2P.sendChat(PWR+emo); } else { api&&api.executeCommand('sendChatMessage',PWR+emo); } }catch(e){} }
+// Reacción entrante: se dibuja flotando Y AHORA TAMBIÉN queda en el chat (como
+// mensaje). Devuelve true para que el caller no la agregue de nuevo (evita duplicar).
+function recvIsReaction(txt,from){ if((''+txt).indexOf(PWR)===0){ var emo=(''+txt).slice(PWR.length); salaRain(emo); chatAdd(from||WHO,emo,false); return true; } return false; }
 // Lo escrito en el chat de la Sala QUEDA como registro: se guarda en la ficha del
 // cliente (candidatos.notas_coach) → después se ve en el chat del panel. Cada punta
 // persiste SU propio mensaje (from correcto). Re-lee + mergea (dedup from|text|ts)
