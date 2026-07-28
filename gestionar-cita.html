@@ -48,39 +48,73 @@ var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 function $(id){ return document.getElementById(id); }
 function esc(s){ return (''+(s==null?'':s)).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 function qp(k){ try{ return new URLSearchParams(location.search).get(k); }catch(e){ return null; } }
+// ── Idioma ES/EN (auto por navegador / ?lang / pw_lang, igual que la landing) ──
+var LANG='es';
+try{
+  var _ql=(qp('lang')||'').toLowerCase().slice(0,2);
+  var _sl=''; try{ _sl=localStorage.getItem('pw_lang')||''; }catch(e){}
+  var _nl=(navigator.language||navigator.userLanguage||'es').toLowerCase().slice(0,2);
+  LANG=(_ql==='en'||_ql==='es')?_ql:(_sl==='en'||_sl==='es'?_sl:(_nl==='es'?'es':'en'));
+  if(_ql==='en'||_ql==='es'){ try{ localStorage.setItem('pw_lang',LANG); }catch(e){} }
+}catch(e){ LANG='es'; }
+if(LANG!=='en') LANG='es';
+try{ document.documentElement.lang=LANG; }catch(e){}
+var T={
+  es:{ foot:'Reservas con Pathway · pathwaycareercoach.com', ups:'Ups', irPathway:'Ir a Pathway',
+    linkInvalido:'Link inválido. Abre el link tal cual está en tu email.', noEncontrada:'No encontramos esta reserva. Puede que el link sea viejo.', loadErr:'No pudimos cargar tu reserva. Reintenta en un momento.',
+    canceladaT:'Reserva cancelada', yaCancelada:'Esta reserva (<strong>{tipo}</strong>) ya está cancelada.', reservarDeNuevo:'Reservar de nuevo',
+    sesion:'Sesión', tuReserva:'Tu reserva', holaPaso:'Hola {name}, esta reserva ya pasó.', reservarOtro:'Reservar otro horario',
+    holaGestion:'Hola {name}, aquí puedes cancelar o reprogramar.', btnReprogramar:'Reprogramar (elegir otro horario)', btnCancelar:'Cancelar la reserva',
+    confirmCancel:'¿Seguro que quieres cancelar esta reserva?', cancelando:'Cancelando…', cancelListo:'Listo, liberamos el horario. Si quieres, puedes reservar otro momento.', cancelErr:'No se pudo cancelar. Reintenta o responde el email.' },
+  en:{ foot:'Bookings by Pathway · pathwaycareercoach.com', ups:'Oops', irPathway:'Go to Pathway',
+    linkInvalido:'Invalid link. Open the link exactly as it is in your email.', noEncontrada:'We couldn\'t find this booking. The link may be old.', loadErr:'We couldn\'t load your booking. Please try again in a moment.',
+    canceladaT:'Booking canceled', yaCancelada:'This booking (<strong>{tipo}</strong>) is already canceled.', reservarDeNuevo:'Book again',
+    sesion:'Session', tuReserva:'Your booking', holaPaso:'Hi {name}, this booking has already passed.', reservarOtro:'Book another time',
+    holaGestion:'Hi {name}, here you can cancel or reschedule.', btnReprogramar:'Reschedule (pick another time)', btnCancelar:'Cancel booking',
+    confirmCancel:'Are you sure you want to cancel this booking?', cancelando:'Canceling…', cancelListo:'Done, we\'ve freed up the slot. If you like, you can book another time.', cancelErr:'Couldn\'t cancel. Try again or reply to the email.' }
+};
+function t(k){ var v=(T[LANG]&&T[LANG][k]); return v!=null?v:(T.es[k]!=null?T.es[k]:k); }
+function tf(k,m){ var s=t(k); if(m) for(var x in m){ s=s.split('{'+x+'}').join(m[x]); } return s; }
+function _langLoc(){ return LANG==='en'?'en-US':'es-ES'; }
+function pwSetLang(l){ if(l!=='es'&&l!=='en'||l===LANG) return; LANG=l; try{ localStorage.setItem('pw_lang',l); }catch(e){} try{ document.documentElement.lang=l; }catch(e){} _langBtns(); try{ if(CITA) render(); else load(); }catch(e){} }
+function _langBtns(){ var a=$('lng-es'),b=$('lng-en'); if(a){a.style.background=LANG==='es'?'#1B4332':'#fff';a.style.color=LANG==='es'?'#fff':'#5A6A60';} if(b){b.style.background=LANG==='en'?'#1B4332':'#fff';b.style.color=LANG==='en'?'#fff':'#5A6A60';} try{ var fo=document.querySelector('.foot'); if(fo) fo.textContent=t('foot'); }catch(e){} try{ document.title=(LANG==='en'?'Your booking · Pathway':'Tu reserva · Pathway'); }catch(e){} }
+(function(){ function mk(){ if($('lng-sw'))return; var w=document.querySelector('.wrap')||document.body; var d=document.createElement('div'); d.id='lng-sw'; d.style.cssText='display:flex;justify-content:flex-end;margin:0 0 10px'; d.innerHTML="<div style='display:inline-flex;gap:2px;background:#fff;border:1px solid rgba(45,106,79,.2);border-radius:999px;padding:3px;box-shadow:0 2px 8px rgba(27,46,38,.08)'><button id='lng-es' onclick=\"pwSetLang('es')\" style='border:0;border-radius:999px;font:600 12.5px Inter,sans-serif;padding:5px 13px;cursor:pointer'>Español</button><button id='lng-en' onclick=\"pwSetLang('en')\" style='border:0;border-radius:999px;font:600 12.5px Inter,sans-serif;padding:5px 13px;cursor:pointer'>English</button></div>"; if(w.firstChild) w.insertBefore(d,w.firstChild); else w.appendChild(d); _langBtns(); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mk); else mk();
+})();
 var TOKEN=(qp('t')||'').trim();
 var CITA=null;
 
 function H(headers){ return Object.assign({ apikey:KEY, Authorization:'Bearer '+KEY }, headers||{}); }
-function fmtFecha(iso, tz){ try{ return new Date(iso).toLocaleDateString('es-ES',{ timeZone:tz||undefined, weekday:'long', day:'numeric', month:'long' }); }catch(e){ return new Date(iso).toLocaleDateString('es-ES'); } }
-function fmtHora(iso, tz){ try{ return new Date(iso).toLocaleTimeString('es-ES',{ timeZone:tz||undefined, hour:'2-digit', minute:'2-digit' }); }catch(e){ return ''; } }
+function fmtFecha(iso, tz){ try{ return new Date(iso).toLocaleDateString(_langLoc(),{ timeZone:tz||undefined, weekday:'long', day:'numeric', month:'long' }); }catch(e){ return new Date(iso).toLocaleDateString(_langLoc()); } }
+function fmtHora(iso, tz){ try{ return new Date(iso).toLocaleTimeString(_langLoc(),{ timeZone:tz||undefined, hour:'2-digit', minute:'2-digit' }); }catch(e){ return ''; } }
 
-function fail(txt){ $('card').innerHTML="<div class='ico'>🙁</div><h1>Ups</h1><p class='sub'>"+esc(txt)+"</p><a class='btn btn-ghost' href='/'>Ir a Pathway</a>"; }
+function fail(txt){ $('card').innerHTML="<div class='ico'>🙁</div><h1>"+t('ups')+"</h1><p class='sub'>"+esc(txt)+"</p><a class='btn btn-ghost' href='/'>"+t('irPathway')+"</a>"; }
 
 function load(){
-  if(!TOKEN){ fail('Link inválido. Abre el link tal cual está en tu email.'); return; }
+  if(!TOKEN){ fail(t('linkInvalido')); return; }
   fetch(SB+'/rest/v1/citas?token=eq.'+encodeURIComponent(TOKEN)+'&select=id,coach_id,nombre,email,tipo,inicio,estado,cliente_tz&limit=1',{ headers:H() })
     .then(function(r){ return r.ok?r.json():[]; })
     .then(function(rows){
       CITA=(rows&&rows[0])||null;
-      if(!CITA){ fail('No encontramos esta reserva. Puede que el link sea viejo.'); return; }
+      if(!CITA){ fail(t('noEncontrada')); return; }
       render();
     })
-    .catch(function(){ fail('No pudimos cargar tu reserva. Reintenta en un momento.'); });
+    .catch(function(){ fail(t('loadErr')); });
 }
 
 function render(){
   var tz=CITA.cliente_tz||'';
   var cuando=fmtFecha(CITA.inicio,tz), hora=fmtHora(CITA.inicio,tz);
   var pasada=(+new Date(CITA.inicio) < Date.now());
+  var _nm=esc((''+(CITA.nombre||'')).split(' ')[0]);
   if(CITA.estado==='cancelada'){
-    $('card').innerHTML="<div class='ico'>🗓️</div><h1>Reserva cancelada</h1>"+
-      "<p class='sub'>Esta reserva (<strong>"+esc(CITA.tipo||'sesión')+"</strong>) ya está cancelada.</p>"+
-      "<a class='btn btn-primary' href='/reservar.html?c="+encodeURIComponent(CITA.coach_id||'')+"'>Reservar de nuevo</a>";
+    $('card').innerHTML="<div class='ico'>🗓️</div><h1>"+t('canceladaT')+"</h1>"+
+      "<p class='sub'>"+tf('yaCancelada',{tipo:esc(CITA.tipo||t('sesion'))})+"</p>"+
+      "<a class='btn btn-primary' href='/reservar.html?c="+encodeURIComponent(CITA.coach_id||'')+"'>"+t('reservarDeNuevo')+"</a>";
     return;
   }
   var _box="<div class='box'>"+
-      "<div class='k'>"+esc(CITA.tipo||'Sesión')+"</div>"+
+      "<div class='k'>"+esc(CITA.tipo||t('sesion'))+"</div>"+
       "<div class='v'>"+esc(cuando)+"</div>"+
       "<div class='t'>⏰ "+esc(hora)+(tz?(" <span style='color:var(--muted)'>("+esc(tz)+")</span>"):"")+"</div>"+
     "</div>";
@@ -88,18 +122,18 @@ function render(){
   // ofrecemos reservar otra.
   if(pasada){
     $('card').innerHTML=
-      "<h1>Tu reserva</h1>"+
-      "<p class='sub'>Hola "+esc((''+(CITA.nombre||'')).split(' ')[0])+", esta reserva ya pasó.</p>"+
+      "<h1>"+t('tuReserva')+"</h1>"+
+      "<p class='sub'>"+tf('holaPaso',{name:_nm})+"</p>"+
       _box+
-      "<a class='btn btn-primary' href='/reservar.html?c="+encodeURIComponent(CITA.coach_id||'')+"'>Reservar otro horario</a>";
+      "<a class='btn btn-primary' href='/reservar.html?c="+encodeURIComponent(CITA.coach_id||'')+"'>"+t('reservarOtro')+"</a>";
     return;
   }
   $('card').innerHTML=
-    "<h1>Tu reserva</h1>"+
-    "<p class='sub'>Hola "+esc((''+(CITA.nombre||'')).split(' ')[0])+", acá puedes cancelar o reprogramar.</p>"+
+    "<h1>"+t('tuReserva')+"</h1>"+
+    "<p class='sub'>"+tf('holaGestion',{name:_nm})+"</p>"+
     _box+
-    "<button class='btn btn-primary' id='btn-re'>Reprogramar (elegir otro horario)</button>"+
-    "<button class='btn btn-danger' id='btn-cancel'>Cancelar la reserva</button>"+
+    "<button class='btn btn-primary' id='btn-re'>"+t('btnReprogramar')+"</button>"+
+    "<button class='btn btn-danger' id='btn-cancel'>"+t('btnCancelar')+"</button>"+
     "<div class='msg' id='msg'></div>";
   $('btn-cancel').onclick=doCancel;
   $('btn-re').onclick=doReprogramar;
@@ -124,17 +158,17 @@ function _patchCancelada(){
 }
 
 function doCancel(){
-  if(!confirm('¿Seguro que quieres cancelar esta reserva?')) return;
-  $('msg').textContent='Cancelando…';
+  if(!confirm(t('confirmCancel'))) return;
+  $('msg').textContent=t('cancelando');
   _patchCancelada()
     .then(function(r){
       if(!r.ok) throw 0;
       _notifyCoachCancel();   // avisar al coach que se liberó el horario
-      $('card').innerHTML="<div class='ico'>✅</div><h1>Reserva cancelada</h1>"+
-        "<p class='sub'>Listo, liberamos el horario. Si quieres, puedes reservar otro momento.</p>"+
-        "<a class='btn btn-primary' href='/reservar.html?c="+encodeURIComponent(CITA.coach_id||'')+"'>Reservar otro horario</a>";
+      $('card').innerHTML="<div class='ico'>✅</div><h1>"+t('canceladaT')+"</h1>"+
+        "<p class='sub'>"+t('cancelListo')+"</p>"+
+        "<a class='btn btn-primary' href='/reservar.html?c="+encodeURIComponent(CITA.coach_id||'')+"'>"+t('reservarOtro')+"</a>";
     })
-    .catch(function(){ $('msg').textContent='No se pudo cancelar. Reintenta o responde el email.'; });
+    .catch(function(){ $('msg').textContent=t('cancelErr'); });
 }
 
 function doReprogramar(){

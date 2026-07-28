@@ -27,6 +27,23 @@ function isDefined(name, js) {
 
 const RULES = [
   {
+    name: "colores: las burbujas del chat NO usan el color de marca (van neutras)",
+    bug: "Regla de la coach: los colores son neutros (blanco/crema) y SOLO lo " +
+         "white-label cambia al color de marca. El chat es chrome, no white-label. " +
+         "Si una burbuja usa --pw-bosque/--accent/--bosque y el coach pone la marca " +
+         "en rojo, el chat queda de otro color que el panel. Deben ser crema/neutro.",
+    check() {
+      // Cualquier clase de burbuja de mensaje propia (.*me{) con fondo de marca.
+      const re = /\.[a-z-]*(?:msg|bub|bubble|iac|cmsg)[a-z-]*(?:\.me|-me)\s*\{[^}]*background:\s*var\(--(?:pw-bosque|bosque|accent|brand)\)/i;
+      const files = ["panel-v2.html", "multicoach.html", "sala.html", "equipos.html",
+                     "pathway-base.css", "pathway-panel.css", "cliente.html"];
+      const bad = files.filter((f) => re.test(read(f)));
+      if (bad.length)
+        return "burbuja(s) de chat con el color de marca (deben ir neutras/crema): " + bad.join(", ") + ".";
+      return null;
+    },
+  },
+  {
     name: "agenda: el selector de icono NO mete el SVG dentro de un atributo",
     bug: "Al pasar _AG_ICONS de emoji a iconos Lucide (SVG con comillas), el " +
          "selector de icono del tipo de evento ponía el SVG completo dentro de un " +
@@ -1620,6 +1637,37 @@ const RULES = [
       if (!pol) return "notificaciones.sql: no se encuentra la policy notif_anon_all.";
       if (!/\bauthenticated\b/i.test(pol[0]))
         return "notificaciones.sql: la policy notif_anon_all no incluye 'authenticated' → los clientes/coaches con JWT reciben 403 al insertar.";
+      return null;
+    },
+  },
+  {
+    name: "cierre de venta: convertir manda servicios; el acceso llega al PAGAR",
+    bug: "Círculo del cliente Pathway: tras una llamada que fue bien, \"Convertir " +
+         "en cliente\" (act=seg-convert) le manda al lead TU lista de servicios + " +
+         "link a tu perfil para pagar (send-email → /coach/<slug>), NO el acceso al " +
+         "toque. El acceso al portal (login + email de bienvenida vía password-reset " +
+         "welcome:true) se crea SOLO cuando PAGA, al aceptar el cobro (sol-accept → " +
+         "_pwGrantAccess). Así el acceso nunca se da sin pago.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // 1) seg-convert manda el email de servicios con link al perfil de pago.
+      const i = s.indexOf('act==="seg-convert"');
+      if (i < 0) return "panel-v2.html: no se encuentra el handler act=seg-convert.";
+      const j = s.indexOf('act==="cal-asis"', i);
+      const segBlock = s.slice(i, j > i ? j : i + 3500);
+      if (!/functions\/v1\/send-email/.test(segBlock) || !/\/coach\/"\+encodeURIComponent\(_slug\)/.test(segBlock))
+        return "panel-v2.html: seg-convert dejó de mandar el email con los servicios + link de pago al perfil (send-email → /coach/<slug>).";
+      // 2) El acceso se otorga al PAGAR (sol-accept → _pwGrantAccess), no antes.
+      if (!/function\s+_pwGrantAccess\b/.test(s))
+        return "panel-v2.html: falta _pwGrantAccess (crear acceso del cliente al aceptar el cobro).";
+      const a = s.indexOf('act==="sol-accept"');
+      if (a < 0) return "panel-v2.html: no se encuentra el handler act=sol-accept.";
+      const accBlock = s.slice(a, a + 1700);
+      if (!/_pwGrantAccess\s*\(/.test(accBlock))
+        return "panel-v2.html: sol-accept ya no le da acceso al cliente al capturar el pago (_pwGrantAccess) → el que pagó no entra al portal.";
+      if (!/welcome\s*:\s*true/.test(s))
+        return "panel-v2.html: _pwGrantAccess dejó de mandar el email de bienvenida (password-reset welcome:true).";
       return null;
     },
   },
@@ -3694,7 +3742,7 @@ const RULES = [
       if (!/function _seguimientosCard\(/.test(p) || !/function _segHistModal\(/.test(p)) return "panel-v2.html: falta la tarjeta/historial de seguimientos (_seguimientosCard/_segHistModal).";
       if (!/_seguimientosCard\(\)\+/.test(p)) return "panel-v2.html: la tarjeta de Seguimientos ya no se renderiza en el Resumen.";
       if (!/act==="seg-convert"/.test(p)) return "panel-v2.html: falta el handler 'Convertir en cliente' (seg-convert).";
-      const seg = p.slice(p.indexOf('act==="seg-convert"'), p.indexOf('act==="seg-convert"') + 2000);
+      const seg = p.slice(p.indexOf('act==="seg-convert"'), p.indexOf('act==="seg-convert"') + 4800);
       if (!/fetch\(SB\+"\/rest\/v1\/candidatos"/.test(seg)) return "panel-v2.html: seg-convert ya no da de alta el candidato (POST candidatos).";
       if (!/resultado:"convirtio"/.test(seg)) return "panel-v2.html: seg-convert ya no marca la cita como convertida (resultado=convirtio).";
       if (!/if\(_SEG_DATA===null\) _segLoad\(\)/.test(p)) return "panel-v2.html: el Resumen ya no dispara la carga de seguimientos (_segLoad).";
@@ -4314,6 +4362,41 @@ const RULES = [
       // El reset a 'perfil' DEBE exceptuar 'mensajes' (si no, el botón queda muerto).
       if (!/t!=="mensajes"\s*&&\s*!tabs\.some\(/.test(s))
         return "panel-v2.html: el reset de cliDetTab ya no exceptúa 'mensajes' → tocar 'Mensajes' vuelve a resetear a Perfil y 'no pasa nada'.";
+      return null;
+    },
+  },
+  {
+    name: "chat: ADMIN_PHOTO es URL absoluta (http/https), no relativa",
+    bug: "Se cambió ADMIN_PHOTO a una ruta relativa (/assets/micaela.jpg). _chatAv() " +
+         "SOLO muestra la foto si la URL matchea ^(https?:|data:); una ruta relativa cae " +
+         "al fallback de iniciales → la foto de Micaela NO le salía a la gente en el chat " +
+         "(se veía una 'P' verde). Debe ser absoluta.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const m = s.match(/var\s+ADMIN_PHOTO\s*=\s*"([^"]*)"/);
+      if (!m) return "panel-v2.html: no se encuentra ADMIN_PHOTO.";
+      if (!/^(https?:|data:)/i.test(m[1]))
+        return "panel-v2.html: ADMIN_PHOTO no es absoluta ('" + m[1] + "') → _chatAv cae a iniciales y la foto no sale en el chat.";
+      return null;
+    },
+  },
+  {
+    name: "chat: los mensajes linkifican el texto (link clickeable + no se desborda)",
+    bug: "El fix del link (helper _linkTxt + overflow-wrap:anywhere) se había aplicado SOLO " +
+         "a _coachClientBubbles; los chats de soporte/admin (Mica/red/canal/admin↔coach) " +
+         "seguían con esc(_msgBodyText(m)) y word-wrap:break-word → el link no salía como " +
+         "link y se desbordaba del ancho del chat (scroll horizontal). Todos los renderers " +
+         "de burbuja deben usar _linkTxt(_msgBodyText(m)), no esc() crudo.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function _linkTxt\(/.test(s))
+        return "panel-v2.html: desapareció el helper _linkTxt (linkifica + escapa el texto del chat).";
+      // Ninguna burbuja de chat debe renderizar el cuerpo con esc() crudo + word-wrap:break-word
+      // (patrón viejo que no linkifica ni corta URLs largas).
+      if (/white-space:pre-wrap;word-wrap:break-word'>"\+esc\(_msgBodyText\(m\)\)/.test(s))
+        return "panel-v2.html: una burbuja de chat volvió a usar esc(_msgBodyText(m)) sin _linkTxt → el link no sale como link y se desborda.";
       return null;
     },
   },
