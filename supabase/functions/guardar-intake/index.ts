@@ -38,6 +38,10 @@ const ALLOWED = new Set([
   "lesiones", "medicacion", "restricciones", "foto_perfil", "nicho",
   "situacion", "ingresos", "gastos", "objetivo", "deudas",
   "consent_at", "consent_version",
+  // Datos que el CLIENTE edita desde su portal (son suyos, no del coach). Van
+  // acá para que el guardado resista RLS igual que la foto (el PATCH directo del
+  // cliente a candidatos puede fallar bajo RLS estricto).
+  "fit_nutri_real",
 ]);
 
 function json(body: unknown, status = 200): Response {

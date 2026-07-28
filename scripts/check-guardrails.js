@@ -3060,6 +3060,40 @@ const RULES = [
     },
   },
   {
+    name: "recursos: video muerto de YouTube cae a la ilustración (no muestra el gris)",
+    why:
+      "Un video de YouTube borrado devuelve en hqdefault.jpg una miniatura GRIS de " +
+      "'no disponible' de 120x90 con HTTP 200 → onerror no dispara y quedaba una " +
+      "portada gris rota. La tarjeta ahora chequea naturalWidth<=120 en onload y " +
+      "quita la imagen → cae a la ilustración on-brand. Regla: no quitar el guard " +
+      "de onload en las portadas de recursos.",
+    check() {
+      var c = read("pw-recursos.js");
+      if (!c) return "pw-recursos.js: no existe.";
+      if (!/naturalWidth\s*<=\s*120/.test(c)) return "pw-recursos.js: se cayó el guard onload (naturalWidth<=120) — un video borrado volvería a mostrar la miniatura gris rota.";
+      return null;
+    },
+  },
+  {
+    name: "nutrición: el guardado del cliente resiste RLS (edge function + fallback)",
+    why:
+      "Lo que el cliente anota en nutrición (fit_nutri_real) se guardaba con PATCH " +
+      "directo a candidatos, que bajo RLS estricto puede fallar (el cliente no es " +
+      "el coach) → 'no me deja guardar'. Ahora _nutRealSave va por guardar-intake " +
+      "(service role) con fallback a sbPatch, igual que la foto. Requiere que " +
+      "fit_nutri_real esté en la whitelist ALLOWED de guardar-intake. Regla: no " +
+      "volver al PATCH directo solo.",
+    check() {
+      var f = read("pathway-fit-cliente.html");
+      if (f && /function _nutRealSave/.test(f)) {
+        if (!/guardar-intake/.test(f)) return "pathway-fit-cliente.html: _nutRealSave ya no usa guardar-intake — el guardado de nutrición no resiste RLS.";
+      }
+      var g = read("supabase/functions/guardar-intake/index.ts");
+      if (g && !/["']fit_nutri_real["']/.test(g)) return "guardar-intake: fit_nutri_real no está en la whitelist ALLOWED — la edge function descartaría el campo y no guardaría.";
+      return null;
+    },
+  },
+  {
     name: "chat: link preview (og:image) en las 4 pantallas de chat",
     why:
       "Cuando alguien pega un link en el chat, aparece una tarjetita compacta con " +
