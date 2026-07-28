@@ -2240,6 +2240,11 @@ function viewSolicitudes(embedded){
   var msgs = SOL.filter(function(s){ return s.estado==="mensaje"; });
 
   function _ini(nm){ var t=String(nm||"").trim(); return (t? t.charAt(0):"?").toUpperCase(); }
+  // Privacidad anti-fugas: mientras es una SOLICITUD (no pagó / no aceptaste) se
+  // muestra SOLO el primer nombre. El apellido/nombre completo aparece recién
+  // cuando entra como cliente (después de aceptar). Así no se lo puede identificar
+  // ni contactar por fuera de Pathway antes de tiempo.
+  function _primerNombre(nm){ var t=String(nm||"").trim(); if(!t) return "Candidato"; return t.split(/\s+/)[0]; }
   function _leftShort(exp){
     if(!exp) return "";
     var ms=new Date(exp).getTime()-Date.now(); if(isNaN(ms)) return "";
@@ -2266,7 +2271,7 @@ function viewSolicitudes(embedded){
     return "<div class='cp-sol-row"+(sel?" is-sel":"")+"' data-act='sol-pick' data-id='"+esc(s.id)+"'>"+
       "<span style='flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:"+(esMsg?"linear-gradient(135deg,#9DB2A5,#6E8377)":"linear-gradient(135deg,var(--pw-sendero),var(--pw-bosque))")+";color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--pw-serif);font-size:17px;font-weight:600'>"+esc(_ini(s.candidato_nombre))+"</span>"+
       "<div style='flex:1;min-width:0'>"+
-        "<div style='font-size:14px;font-weight:600;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(s.candidato_nombre||"Candidato")+"</div>"+
+        "<div style='font-size:14px;font-weight:600;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(_primerNombre(s.candidato_nombre))+"</div>"+
         "<div style='font-size:11.5px;color:var(--pw-text-soft);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+(esMsg?"Consulta desde tu perfil":_svc(s))+"</div>"+
       "</div>"+
       "<div style='text-align:right;flex:0 0 auto'>"+right+"</div>"+
@@ -2320,7 +2325,7 @@ function viewSolicitudes(embedded){
       "<div style='display:flex;align-items:center;gap:12px'>"+
         "<span style='flex:0 0 auto;width:46px;height:46px;border-radius:50%;background:"+(esMsg?"linear-gradient(135deg,#9DB2A5,#6E8377)":"linear-gradient(135deg,var(--pw-sendero),var(--pw-bosque))")+";color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--pw-serif);font-size:20px;font-weight:600;box-shadow:0 4px 12px rgba(31,42,35,.22)'>"+esc(_ini(s.candidato_nombre))+"</span>"+
         "<div style='flex:1;min-width:0'>"+
-          "<div style='font-family:var(--pw-serif);font-size:18px;color:var(--pw-carbon);line-height:1.2'>"+esc(s.candidato_nombre||"Candidato")+"</div>"+
+          "<div style='font-family:var(--pw-serif);font-size:18px;color:var(--pw-carbon);line-height:1.2'>"+esc(_primerNombre(s.candidato_nombre))+"</div>"+
           "<div style='font-size:11.5px;color:var(--pw-text-muted);margin-top:3px'>"+(esMsg?"Consulta desde tu perfil · su mail queda oculto":"Su mail queda oculto hasta que aceptes")+"</div>"+
         "</div>"+
         (timer? "<span style='flex:0 0 auto;background:var(--pw-niebla-2);border-radius:99px;padding:6px 13px;font-size:11.5px;white-space:nowrap'>"+timer+"</span>" : "")+
@@ -2357,7 +2362,7 @@ function viewSolicitudes(embedded){
     ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperando pago del candidato<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+waiting.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
         "<div style='font-size:12px;color:var(--pw-text-muted);line-height:1.5;background:var(--pw-niebla-2);border-radius:10px;padding:9px 12px'>Empezaron la reserva pero <strong>todavía no completaron el pago</strong>, así que no hay nada para aceptar ni rechazar. Si pagan, aparecen arriba con el botón para decidir; si no, la solicitud queda sin efecto. <strong>No requiere acción tuya.</strong> El mail queda oculto hasta que pague y aceptes.</div>"+
         waiting.map(function(s){
-          var _nm=s.candidato_nombre||"Candidato (sin nombre aún)";
+          var _nm=_primerNombre(s.candidato_nombre);
           var _d=s.created_at?new Date(s.created_at):null; var _ok=_d&&!isNaN(_d.getTime());
           var _mins=_ok?Math.floor((Date.now()-_d.getTime())/60000):-1;
           var _ago=_mins<0?"":(_mins<60?("hace "+Math.max(1,_mins)+" min"):(_mins<1440?("hace "+Math.floor(_mins/60)+" h"):("hace "+Math.floor(_mins/1440)+" d")));
@@ -2375,7 +2380,10 @@ function viewSolicitudes(embedded){
   var histHtml = hist.length
     ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+hist.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
         hist.map(function(s){ var c=s.estado==="aceptada"?"var(--pw-bosque)":(s.estado==="rechazada"?"var(--pw-danger)":"var(--pw-text-muted)");
-          return "<div style='display:flex;justify-content:space-between;font-size:13px;border-bottom:1px solid var(--pw-border);padding:8px 0'><span style='color:var(--pw-carbon)'>"+esc(s.candidato_nombre||"Candidato")+" · "+_svc(s)+"</span><span style='color:"+c+";font-weight:600;text-transform:capitalize'>"+esc(s.estado)+" · "+_money(s.monto)+"</span></div>"; }).join("")+"</div></div>"
+          // Aceptada = ya es cliente → nombre completo. Rechazada/expirada = nunca
+          // entró → solo el primer nombre (anti-fugas).
+          var _hn=s.estado==="aceptada"?(s.candidato_nombre||"Candidato"):_primerNombre(s.candidato_nombre);
+          return "<div style='display:flex;justify-content:space-between;font-size:13px;border-bottom:1px solid var(--pw-border);padding:8px 0'><span style='color:var(--pw-carbon)'>"+esc(_hn)+" · "+_svc(s)+"</span><span style='color:"+c+";font-weight:600;text-transform:capitalize'>"+esc(s.estado)+" · "+_money(s.monto)+"</span></div>"; }).join("")+"</div></div>"
     : "";
 
   var nAcc=hist.filter(function(s){return s.estado==="aceptada";}).length;
