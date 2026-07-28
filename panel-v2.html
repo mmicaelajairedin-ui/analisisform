@@ -12247,19 +12247,43 @@ document.addEventListener("change", function(ev){
     .then(function(){ try{ el.value=""; }catch(_e){} });
 });
 
-// Barra de emojis del chat del coach/admin (misma idea que en el portal del
-// cliente). Inserta el emoji en el textarea y dispara "input" para que el
-// listener de abajo sincronice el draft y habilite el botón Enviar. Los emojis
-// son CONTENIDO del mensaje (permitido por el icon system). Botones neutros.
-function _pwChatEmoji(id,e){
+// Emojis del chat que FLOTAN (igual que las reacciones de la videollamada) y
+// después QUEDAN en el chat. Los spans suben desde el botón y se desvanecen.
+function _pwChatFloat(anchorEl,emo){
+  try{
+    var r=anchorEl.getBoundingClientRect();
+    var bx=r.left+r.width/2, by=r.top;
+    for(var i=0;i<5;i++){(function(i){
+      var f=document.createElement("span");
+      f.textContent=emo;
+      f.style.cssText="position:fixed;left:"+bx+"px;top:"+by+"px;font-size:"+(18+Math.random()*14)+"px;pointer-events:none;z-index:2147483200;transform:translate(-50%,0);will-change:transform,opacity";
+      document.body.appendChild(f);
+      var dx=Math.random()*80-40, dy=-(120+Math.random()*160);
+      try{ f.animate([{transform:"translate(-50%,0) scale(.6)",opacity:0},{opacity:1,offset:.2},{transform:"translate(calc(-50% + "+dx+"px),"+dy+"px) scale(1.1)",opacity:0}],{duration:1300+Math.random()*500,easing:"cubic-bezier(.3,.7,.4,1)",delay:i*60,fill:"forwards"}); }catch(e){}
+      setTimeout(function(){try{f.remove();}catch(e){}},2200+i*60);
+    })(i);}
+  }catch(e){}
+}
+// Barra de emojis del chat del coach/admin. Flota el emoji y: si hay texto
+// escrito lo AGREGA (componer); si el cuadro está vacío lo MANDA como reacción
+// (igual que en la call → queda en el chat). Dispara "input" para habilitar Enviar.
+function _pwChatEmoji(id,e,el){
   var t=document.getElementById(id); if(!t) return;
-  t.value += e; t.focus();
-  try{ t.dispatchEvent(new Event("input",{bubbles:true})); }catch(_){}
+  if(el) _pwChatFloat(el,e);
+  if((t.value||"").trim()){
+    t.value += e; t.focus();
+    try{ t.dispatchEvent(new Event("input",{bubbles:true})); }catch(_){}
+  } else {
+    t.value = e;
+    try{ t.dispatchEvent(new Event("input",{bubbles:true})); }catch(_){}
+    var map={"coach-chat-draft":"chat-coach-send","msg-cabra-draft":"chat-cabra-send","msg-admin-draft":"chat-admin-send"};
+    var b=document.querySelector("[data-act="+map[id]+"]"); if(b) b.click();
+  }
 }
 function _emojiBarHtml(id){
   var es=["😊","👍","🙌","🎉","❤️","🔥"];
   return "<div style='display:flex;gap:2px;flex-wrap:wrap'>"+es.map(function(e){
-    return "<button type='button' aria-label='Agregar "+e+"' onclick=\"_pwChatEmoji('"+id+"','"+e+"')\" style='background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;border-radius:8px'>"+e+"</button>";
+    return "<button type='button' aria-label='Reaccionar con "+e+"' onclick=\"_pwChatEmoji('"+id+"','"+e+"',this)\" style='background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;border-radius:8px'>"+e+"</button>";
   }).join("")+"</div>";
 }
 document.addEventListener("input", function(ev){
