@@ -8030,6 +8030,18 @@ function _coachDetailCard(){
         "<button class='cp-btn cp-btn-primary' data-act='coach-paid:"+esc(c.id)+"'>Marcar como pagado</button>"+
         "<button class='cp-btn cp-btn-ghost' data-act='coach-plan:"+(cg.plan==="pro"?"basic":"pro")+":"+esc(c.id)+"'>"+(cg.plan==="pro"?"Pasar a Basic":"Pasar a Pro")+"</button>"+
       "</div>")+
+      // Logo del coach (white-label): el admin se lo sube/pega por él cuando no
+      // puede desde su panel. Se guarda en SU configuracion.logo_url vía edge fn.
+      "<div style='margin-top:18px;padding-top:14px;border-top:1px solid var(--pw-border)'>"+
+        "<div class='cp-form-label' style='margin-bottom:8px'>Logo del coach <span style='font-weight:500;color:var(--pw-text-muted)'>· white-label (se ve en el portal de sus clientes, solo si es Pro)</span></div>"+
+        (cg.logo_url?"<div style='display:flex;align-items:center;gap:10px;margin-bottom:10px'><span style='font-size:12px;color:var(--pw-text-soft)'>Actual:</span><img src='"+esc(_thumb(cg.logo_url,80))+"' alt='' style='height:34px;max-width:170px;object-fit:contain' onerror=\"this.style.display='none'\"></div>":"")+
+        "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+          "<label class='cp-btn cp-btn-ghost' style='height:36px;font-size:12.5px;padding:0 14px;cursor:pointer;white-space:nowrap'>"+PWI.svg('upload',{sm:true})+" Subir archivo<input type='file' accept='image/png,image/jpeg,image/webp,image/svg+xml,image/*' class='cadm-logo-file' data-cid='"+esc(c.id)+"' style='display:none'></label>"+
+          "<input id='cadm-logo-"+esc(c.id)+"' class='cp-form-input' value=\""+esc(cg.logo_url||"")+"\" placeholder='…o pegá la URL del logo' style='flex:1;min-width:180px'>"+
+          "<button class='cp-btn cp-btn-primary' data-act='coach-logo:"+esc(c.id)+"' style='height:36px;flex-shrink:0'>Guardar logo</button>"+
+        "</div>"+
+        "<span class='cp-form-hint'>Subís el archivo (o pegás un link) y queda aplicado en su portal. Para quitarlo, vaciá el campo y guardá.</span>"+
+      "</div>"+
     "</div></div>"+
     _coachChatBlock(c);
 }
@@ -10753,6 +10765,17 @@ document.addEventListener("click", function(ev){
       .catch(function(){ return _cpDirect(); });
     return;
   }
+  if(act.indexOf("coach-logo:")===0){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var _clId=act.slice(11);
+    var _clInp=document.getElementById("cadm-logo-"+_clId);
+    var _clUrl=_clInp?(""+_clInp.value).trim():"";
+    if(_clUrl && !/^https?:\/\//i.test(_clUrl)){ alert("Pegá una URL válida (empieza con http…) o subí un archivo."); return; }
+    _adminSetCoachLogo(_clId,_clUrl)
+      .then(function(){ toast(_clUrl?"Logo del coach guardado ✓":"Logo quitado ✓"); reloadCoaches(); })
+      .catch(function(){ alert("No se pudo guardar el logo.\n\nSi no cambió nada, tu sesión de admin pudo vencer: cerrá sesión, volvé a entrar y reintentá.\n(Si recién agregaste esta función, falta desplegar la edge function admin-coach-op.)"); });
+    return;
+  }
   if(act==="coach-access"){
     if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
     // Email saneado: sacamos TODOS los espacios (un espacio pegado al copiar era
@@ -12574,6 +12597,40 @@ document.addEventListener("change", function(ev){
     })
     .catch(function(e){ console.error("logo upload:", e); alert(_logoErrMsg(e)); })
     .then(function(){ try{ ev.target.value=""; }catch(_e){} });   // permite re-subir el mismo archivo
+});
+// Admin: guarda el logo de OTRO coach en su configuracion.logo_url. Va por la
+// edge function admin-coach-op (service role → no lo frena RLS); si no está
+// desplegada, cae a un PATCH directo (que RLS puede bloquear → lo avisa el caller).
+function _adminSetCoachLogo(cid, url){
+  var _reflect=function(){ try{ var co=(RCOACHES||[]).filter(function(u){return String(u.id)===String(cid);})[0]; if(co){ co.configuracion=Object.assign({},co.configuracion||{},{logo_url:url}); } }catch(e){} };
+  var _direct=function(){
+    return _sb("usuarios?id=eq."+encodeURIComponent(cid)+"&select=configuracion").then(function(rows){
+      var u=rows&&rows[0]; if(!u) throw new Error("coach_not_found");
+      var nc=Object.assign({},u.configuracion||{},{logo_url:url});
+      return _sbw("usuarios?id=eq."+encodeURIComponent(cid),"PATCH",{configuracion:nc}).then(function(r){ if(!r.ok) throw new Error("rls"); _reflect(); });
+    });
+  };
+  return _hdr({"Content-Type":"application/json"}).then(function(h){
+    return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"set_logo",coach_id:cid,logo_url:url})});
+  }).then(function(r){
+    if(r && r.ok) return r.json().then(function(){ _reflect(); });
+    return _direct();   // 400 op_invalid (fn vieja), 403, etc. → intento PATCH directo
+  }).catch(function(){ return _direct(); });
+}
+// Admin: subir un archivo de logo para un coach desde su ficha (input .cadm-logo-file).
+document.addEventListener("change", function(ev){
+  var el=ev.target; if(!el||!el.classList||!el.classList.contains("cadm-logo-file")) return;
+  var cid=el.getAttribute("data-cid"); var f=el.files && el.files[0]; if(!cid||!f) return;
+  if(f.size > 5*1024*1024){ alert("El logo no puede pesar más de 5 MB."); el.value=""; return; }
+  toast("Subiendo logo…");
+  _logoUpload(f)
+    .then(function(url){
+      var inp=document.getElementById("cadm-logo-"+cid); if(inp) inp.value=url;
+      return _adminSetCoachLogo(cid,url);
+    })
+    .then(function(){ toast("Logo del coach subido y guardado ✓"); reloadCoaches(); })
+    .catch(function(e){ console.error("admin logo:", e); alert(typeof _logoErrMsg==="function"?_logoErrMsg(e):"No se pudo subir el logo."); })
+    .then(function(){ try{ el.value=""; }catch(_e){} });
 });
 // Portada propia de un recurso (Config › Recursos): subir imagen → URL en rec-cv-<i>.
 document.addEventListener("change", function(ev){
