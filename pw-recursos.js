@@ -314,5 +314,20 @@
     document.head.appendChild(st);
   }
 
-  window.PwRecursos = { render: render };
+  // Portada de UN recurso (para preview en vivo en el editor del coach/owner).
+  // Deduce tipo, usa la portada propia / miniatura de YouTube, o la ilustración.
+  function coverHtml(r, o){
+    o=o||{}; r=r||{};
+    _injectCss();
+    var tipo=_deduceTipo(r), T=TYPES[tipo]||TYPES.articulo;
+    var url=(''+(r.url||'')).trim(), safe=/^https?:\/\//i.test(url)?url:'', yt=_ytId(safe);
+    var cover=(r.cover&&(''+r.cover).trim()) || (o.image||'') || (yt?('https://i.ytimg.com/vi/'+yt+'/hqdefault.jpg'):'');
+    var meta=(r.meta&&(''+r.meta).trim())||'';
+    return '<div class="pwr-cov" style="background:'+TONES[T.tone]+';border-radius:12px'+(o.h?';height:'+o.h:'')+'">'+
+      _illus(tipo)+
+      (cover?'<img class="pwr-cov-img" src="'+esc(cover)+'" alt="" loading="lazy" onerror="this.remove()">':'')+
+      (meta&&o.meta!==false?'<span class="pwr-cov-meta">'+esc(meta)+'</span>':'')+
+    '</div>';
+  }
+  window.PwRecursos = { render: render, coverHtml: coverHtml };
 })();
