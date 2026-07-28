@@ -3029,6 +3029,30 @@ const RULES = [
     },
   },
   {
+    name: "recursos: el editor (coach y owner) tiene campos ricos (tipo, portada, badges)",
+    why:
+      "El editor de recursos era solo título+link. Ahora el coach (panel-v2) y el " +
+      "owner de la red (multicoach) cargan descripción, tipo, portada propia y " +
+      "badges (Nuevo/Recomendado) — para que las tarjetas de pw-recursos.js queden " +
+      "a medida. Guardan en configuracion.recursos (coach) y organizaciones.marca." +
+      "recursos (owner). Regla: no volver al editor pobre.",
+    check() {
+      var p = read("panel-v2.html");
+      if (p && /function cfgRecursos/.test(p)) {
+        if (!/rec-tp-/.test(p)) return "panel-v2.html: el editor de recursos perdió el selector de tipo (rec-tp).";
+        if (!/rec-cv-/.test(p)) return "panel-v2.html: el editor de recursos perdió la portada propia (rec-cv).";
+        if (!/rec-cover-inp/.test(p)) return "panel-v2.html: se cayó la subida de portada de recursos (rec-cover-inp).";
+      }
+      var m = read("multicoach.html");
+      if (m && /function _cfgRecursos/.test(m)) {
+        if (!/rec-tp-/.test(m)) return "multicoach.html: el editor de recursos del owner perdió el tipo (rec-tp).";
+        if (!/rec-cv-/.test(m)) return "multicoach.html: el editor de recursos del owner perdió la portada (rec-cv).";
+        if (!/organizaciones/.test(m) || !/recursos/.test(m)) return "multicoach.html: el owner ya no guarda recursos en organizaciones.marca.recursos.";
+      }
+      return null;
+    },
+  },
+  {
     name: "marca: el logo se sube (SVG→PNG), guarda solo y avisa el error real",
     why:
       "Un coach Pro subía su logo y 'no reflejaba': el bucket avatars rechaza " +
