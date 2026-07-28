@@ -98,7 +98,7 @@
     wallet:     "<path d='M21 12V7H5a2 2 0 0 1 0-4h14v4'/><path d='M3 5v14a2 2 0 0 0 2 2h16v-5'/><path d='M18 12a2 2 0 0 0 0 4h4v-4Z'/>",  /* 💰 alt */
     mail:       "<rect x='2' y='4' width='20' height='16' rx='2'/><path d='m22 6-10 7L2 6'/>",                                       /* ✉ 📧 */
     star:       "<polygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/>", /* ⭐ ★ ✦ */
-    dumbbell:   "<path d='m6.5 6.5 11 11'/><path d='m21 21-1-1'/><path d='m3 3 1 1'/><path d='m18 22 4-4'/><path d='m2 6 4-4'/><path d='m3 10 7-7'/><path d='m14 21 7-7'/>", /* 💪 🏋 */
+    dumbbell:   "<path d='M6 7v10M18 7v10M4 9h2M18 9h2M4 15h2M18 15h2M6 12h12'/>", /* 💪 🏋 — barra horizontal (misma que el nav del cliente: gym idéntico coach↔cliente) */
     camera:     "<path d='M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z'/><circle cx='12' cy='13' r='4'/>", /* 📷 */
     paperclip:  "<path d='M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48'/>", /* 📎 */
     heart:      "<path d='M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'/>", /* ❤ 💚 */
