@@ -162,3 +162,12 @@ sesión"), no rompen. Aplicar migraciones `mensajes_owner_coach.sql` y
   `panel-empresa.html` (está para retirar).
 - Toda query nueva del dueño filtra por `org_id` (patrón de `coach_id`).
 - El coach NO agrega clientes ni edita la comunidad de la empresa.
+- **Ficha del cliente = "estructura Pathway".** Cuando se cablee la ficha de
+  `multicoach.html` a los datos reales del cliente, armarla con el MISMO patrón
+  que ya tiene `panel-v2.html` (decisión de jul 2026, para no hacer el trabajo
+  visual dos veces): secciones en tarjetas con ícono de línea (Perfil), listas
+  con la info completa en columnitas + acciones en menú ⋮ (Progreso/mediciones),
+  clamp de 2 líneas + "ver más" en textos largos, y el ojo "Visto por el
+  cliente" (abre si el cliente entró a su portal) en las pestañas que el cliente
+  ve. Hoy la ficha de multicoach es más simple y en parte demo; NO tiene estos
+  cambios a propósito hasta que lea datos reales.

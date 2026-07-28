@@ -1063,7 +1063,10 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
      a la vista al hacer scroll. Compacto y en fila para no comerse la pantalla. */
   .cp-cli-head{ position:sticky; top:56px; z-index:40; background:#FBFAF8; flex-direction:row !important; align-items:center !important; gap:11px; padding:6px 0 9px; box-shadow:0 9px 10px -10px rgba(31,42,35,.45); }
   .cp-cli-head > div:first-child{ flex:1; min-width:0; }
-  .cp-cli-head .cp-h1{ font-size:19px; }
+  /* Nombre COMPACTO en el header fijo: máx 2 líneas con "…" y tamaño chico para
+     que el header no crezca y tape los títulos del contenido al hacer scroll. */
+  .cp-cli-head .cp-h1{ font-size:17px; letter-spacing:-.3px; line-height:1.18; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word; }
+  .cp-cli-head .cp-sub{ margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .cp-cli-head img{ width:40px !important; height:40px !important; }
   .cp-cli-head-v2 .cp-topbar-actions{ display:none; } /* en v2 lo reemplaza la barra rápida (qbar); en no-v2 el botón sigue visible en móvil */
   .cp-topbar-actions{ flex-wrap:wrap; }
@@ -3601,6 +3604,8 @@ function viewAgModal(){
         "<div class='cp-form-row' id='ag-grupal-wrap'><label class='cp-form-label'>Formato</label><select id='ag-cita-grupal' class='cp-form-input'><option value='0' selected>1 a 1</option>"+(_canGrupal()?"<option value='1'>Grupal (clase/curso)</option>":"<option value='1' disabled>Grupal (clase/curso) — Pro 🔒</option>")+"</select>"+(_canGrupal()?"":"<div style='font-size:11px;color:var(--pw-text-muted);margin-top:4px'>Las clases grupales (video con varios) son función Pro.</div>")+"</div>"+
       "</div>"+
       "<div class='cp-form-row' id='ag-lugar-row' style='display:none'><label class='cp-form-label'>Lugar (dirección o referencia)</label><input id='ag-cita-lugar' class='cp-form-input' placeholder='Ej: Av. Corrientes 1234, 2º B'></div>"+
+      // Zona horaria del cliente → el email/recordatorio muestra SU hora (no la del coach).
+      "<div class='cp-form-row'><label class='cp-form-label'>Zona horaria del cliente</label><select id='ag-cita-tz' class='cp-form-input'>"+_tzOptions(_coachTz())+"</select><div style='font-size:11px;color:var(--pw-text-muted);margin-top:4px'>Ingresás la hora en TU zona; al cliente le llega convertida a la suya.</div></div>"+
       _teamHtml+
       "<div class='cp-form-row'><label class='cp-form-label'>Otro invitado (email, opcional)</label><input id='ag-cita-guest' class='cp-form-input' placeholder='cliente@email.com'></div>"+
       "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:14px'><button class='cp-btn cp-btn-ghost' data-act='ag-close'>Cancelar</button><button class='cp-btn cp-btn-primary' data-act='ag-agendar'>Agendar cita</button></div>";
@@ -4183,6 +4188,29 @@ function _fechaCli(iso, tz){
     var s=new Intl.DateTimeFormat('es',dopt).format(d)+' · '+new Intl.DateTimeFormat('en-US',topt).format(d);
     return s.charAt(0).toUpperCase()+s.slice(1);
   }catch(e){ return ""; }
+}
+// Zonas horarias frecuentes (coaching en español + EE.UU.). La hora que le llega
+// al CLIENTE se muestra en SU zona, no en la del coach → nadie llega 4-5h corrido.
+var _TZLIST=[
+  ["Europe/Madrid","España (Madrid)"],
+  ["America/Argentina/Buenos_Aires","Argentina (Buenos Aires)"],
+  ["America/Mexico_City","México (CDMX)"],
+  ["America/Bogota","Colombia (Bogotá)"],
+  ["America/Lima","Perú (Lima)"],
+  ["America/Santiago","Chile (Santiago)"],
+  ["America/Montevideo","Uruguay (Montevideo)"],
+  ["America/Caracas","Venezuela (Caracas)"],
+  ["America/Guayaquil","Ecuador (Guayaquil)"],
+  ["America/Santo_Domingo","Rep. Dominicana"],
+  ["America/New_York","EE.UU. Este (NY)"],
+  ["America/Los_Angeles","EE.UU. Oeste (LA)"]
+];
+function _coachTz(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Madrid"; }catch(e){ return "Europe/Madrid"; } }
+function _tzNice(tz){ tz=(""+(tz||"")).trim(); for(var i=0;i<_TZLIST.length;i++){ if(_TZLIST[i][0]===tz) return _TZLIST[i][1]; } return tz.replace(/_/g," ").replace(/^.*\//,""); }
+function _tzOptions(sel){
+  sel=(""+(sel||"")).trim(); var list=_TZLIST.slice();
+  if(sel && !list.some(function(x){return x[0]===sel;})) list.unshift([sel, _tzNice(sel)+" (tu zona)"]);
+  return list.map(function(x){ return "<option value='"+x[0]+"'"+(x[0]===sel?" selected":"")+">"+esc(x[1])+"</option>"; }).join("");
 }
 function _notifResCliente(email,nombre,subject,inner,icsB64){
   email=(""+(email||"")).trim(); if(!email) return;
@@ -4848,13 +4876,25 @@ function viewClienteDetalle(c){
     var _hoyA=new Date().toISOString().slice(0,10);
     var histA="";
     if(ANTRO.length){
+      // Historial ORDENADO: cada medición muestra TODA la info (peso, grasa,
+      // músculo, óseo, residual, Σ pliegues, IMO) en columnitas — antes se
+      // perdían óseo, residual y pliegues. La acción "Borrar" va en el menú ⋮.
+      var _mCol=function(lab,val,unit){ if(val==null||(""+val).trim()===""||(""+val)==="?") return ""; return "<div style='min-width:56px'><div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-soft)'>"+lab+"</div><div style='font-size:13.5px;font-weight:700;color:var(--pw-carbon);margin-top:1px;white-space:nowrap'>"+esc(""+val)+(unit?"<span style='font-size:10.5px;font-weight:500;color:var(--pw-text-soft)'> "+unit+"</span>":"")+"</div></div>"; };
       histA="<div class='cp-card cp-card-pad' style='margin-top:14px'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3>"+
-        "<div class='cp-form-hint' style='margin:4px 0 12px'>El cliente ve esta evolución en su portal. Puedes borrar una medición si te equivocaste.</div>"+
+        "<div class='cp-form-hint' style='margin:4px 0 12px'>El cliente ve esta evolución en su portal. Toca <strong>⋮</strong> para borrar una medición si te equivocaste.</div>"+
         ANTRO.map(function(m,ix){
-          return "<div style='display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid var(--pw-border);padding:10px 0'>"+
-            "<div><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(""+(m.fecha||""))+"</div>"+
-            "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(""+(m.peso||"?"))+" "+(m.u||"kg")+" · "+esc(""+(m.grasa||"?"))+" "+(m.u||"kg")+" grasa · músc "+esc(""+(m.musculo||"?"))+" · IMO "+esc(""+(m.imo||"?"))+"</div></div>"+
-            "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='fit-antro-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Borrar</button></div>";
+          var _mu=m.u||"kg";
+          var cols=_mCol("Peso",m.peso,_mu)+_mCol("Grasa",m.grasa,_mu)+_mCol("Músculo",m.musculo,_mu)+_mCol("Óseo",m.oseo,_mu)+_mCol("Residual",m.residual,_mu)+_mCol("Σ Pliegues",m.pliegues,"mm")+_mCol("IMO",m.imo,"");
+          var _amk=c.id+":"+ix, _amopen=(state.antroMenu===_amk);
+          var _amkebab="<div style='position:relative;flex:none'>"+
+            "<button class='cp-btn cp-btn-ghost' style='width:32px;height:32px;padding:0' data-act='fit-antro-menu' data-id='"+esc(c.id)+"' data-idx='"+ix+"' title='Más'><svg width='16' height='16' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'><circle cx='12' cy='5' r='1.7'/><circle cx='12' cy='12' r='1.7'/><circle cx='12' cy='19' r='1.7'/></svg></button>"+
+            (_amopen?("<div style='position:absolute;right:0;top:35px;z-index:30;background:#fff;border:1px solid var(--pw-border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.12);min-width:150px;padding:5px'>"+
+              "<button class='cp-btn cp-btn-ghost' style='justify-content:flex-start;height:32px;font-size:12.5px;color:var(--pw-danger);width:100%' data-act='fit-antro-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Borrar medición</button>"+
+            "</div>"):"")+"</div>";
+          return "<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border-top:1px solid var(--pw-border);padding:11px 0'>"+
+            "<div style='flex:1;min-width:0'><div style='font-size:13px;font-weight:700;color:var(--pw-carbon);margin-bottom:8px'>"+esc(""+(m.fecha||""))+"</div>"+
+            "<div style='display:flex;flex-wrap:wrap;gap:12px 18px'>"+(cols||"<div style='font-size:12px;color:var(--pw-text-soft)'>Sin datos</div>")+"</div></div>"+
+            _amkebab+"</div>";
         }).join("")+"</div>";
     }
     var _u=(state.fitUnit)||((ANTRO.length&&ANTRO[ANTRO.length-1].u)||"kg");
@@ -4893,7 +4933,7 @@ function viewClienteDetalle(c){
         "<div id='fi-prev' style='display:none;align-items:center;gap:10px;padding:7px 8px;background:var(--pw-bg,#f0f4f0);border-radius:8px'></div>"+
         "<div style='display:flex;gap:7px;align-items:center;flex-wrap:wrap'><input id='fi-reps' class='cp-form-input' style='flex:1;min-width:80px' placeholder='Series×reps (4×10)'><input id='fi-peso' class='cp-form-input' style='flex:1;min-width:70px' placeholder='Peso ("+_ru+")' inputmode='decimal'>"+
           "<div class='cp-filters' style='gap:4px'><button class='cp-chip "+(_ru==='kg'?'is-on':'')+"' style='padding:6px 11px' data-act='fit-rut-unit:kg'>kg</button><button class='cp-chip "+(_ru==='lb'?'is-on':'')+"' style='padding:6px 11px' data-act='fit-rut-unit:lb'>lb</button></div></div>"+
-        "<div style='display:flex;gap:7px'><input id='fi-rir' class='cp-form-input' style='flex:1;min-width:80px' list='dl-rir' placeholder='RIR (opcional)'><input id='fi-desc' class='cp-form-input' style='flex:1;min-width:80px' list='dl-descanso' placeholder='Descanso (opcional)'></div>"+
+        "<div style='display:flex;gap:7px;flex-wrap:wrap'><input id='fi-rir' class='cp-form-input' style='flex:1;min-width:80px' list='dl-rir' placeholder='RIR (opcional)'><input id='fi-desc' class='cp-form-input' style='flex:1;min-width:80px' list='dl-descanso' placeholder='Descanso (opcional)'><input id='fi-super' class='cp-form-input' style='flex:1;min-width:80px' list='dl-super' placeholder='Superserie (opcional)' title='Ejercicios con la misma etiqueta (A, B…) se hacen seguidos, sin descanso'></div>"+
         "<div style='display:flex;gap:7px'><button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='fit-inline-save' data-id='"+esc(c.id)+"' data-w='"+w+"' data-dia='"+esc(dia||"")+"' data-needdia='"+(needDia?1:0)+"'>Agregar</button><button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 12px' data-act='fit-inline-cancel'>Cerrar</button></div></div>";
     };
     var rutRows=wkOrder.map(function(w){
@@ -4913,6 +4953,7 @@ function viewClienteDetalle(c){
               "<div style='display:flex;gap:7px;flex-wrap:wrap'>"+
                 "<input id='exed-rir-"+ix+"' class='cp-form-input' style='flex:1;min-width:90px' list='dl-rir' value=\""+esc(e.rir||"")+"\" placeholder='RIR (opcional)'>"+
                 "<input id='exed-desc-"+ix+"' class='cp-form-input' style='flex:1;min-width:90px' list='dl-descanso' value=\""+esc(e.descanso||"")+"\" placeholder='Descanso (opcional)'>"+
+                "<input id='exed-super-"+ix+"' class='cp-form-input' style='flex:1;min-width:90px' list='dl-super' value=\""+esc(e.super||"")+"\" placeholder='Superserie (opcional)' title='Ejercicios con la misma etiqueta (A, B…) se hacen seguidos, sin descanso'>"+
               "</div>"+
               "<div style='display:flex;gap:7px'>"+
                 "<button class='cp-btn cp-btn-primary' style='height:32px;font-size:12px;padding:0 14px' data-act='fit-ex-editsave' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Guardar</button>"+
@@ -4934,11 +4975,20 @@ function viewClienteDetalle(c){
             ? "<span style='"+_sWas+"'>"+esc(e.meta||"")+"</span> <span style='"+_sNow+"'>→ "+esc(_rl.m)+"</span>"
             : _metaBase;
           var _chgBadge=_chg?" <span style='display:inline-block;margin-left:4px;padding:1px 7px;border-radius:6px;background:rgba(45,106,79,.12);color:var(--pw-bosque);font-size:10px;font-weight:700;vertical-align:middle'>✎ lo cambió</span>":"";
-          return "<div style='display:flex;align-items:center;gap:10px;border-top:1px solid var(--pw-border);padding:8px 0'>"+thumb+
-            "<div style='flex:1'><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+_nameHtml+_chgBadge+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+_metaHtml+"</div></div>"+
-            "<label class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 10px;margin-right:5px;cursor:pointer' title='Subir/cambiar foto'>"+PWI.svg('camera',{sm:true})+"<input type='file' accept='image/*' class='exfoto-inp' data-id='"+esc(c.id)+"' data-idx='"+ix+"' style='display:none'></label>"+
-            "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px;margin-right:5px' data-act='fit-ex-edit' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Editar</button>"+
-            "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 11px' data-act='fit-ex-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Quitar</button></div>";
+          var _superBadge=(e.super&&(""+e.super).trim())?" <span style='display:inline-block;margin-left:4px;padding:1px 7px;border-radius:6px;background:rgba(140,123,128,.16);color:var(--pw-carbon);font-size:10px;font-weight:700;vertical-align:middle'>⛓ Superserie "+esc((""+e.super).trim())+"</span>":"";
+          // Se MANTIENE el texto completo de la meta (no se pierde info); solo se
+          // ORDENAN las acciones en un menú ⋮ (tres puntos) por fila.
+          var _mkey=c.id+":"+ix, _mopen=(state.exMenu===_mkey);
+          var _kebab="<div style='position:relative;flex:none'>"+
+            "<button class='cp-btn cp-btn-ghost' style='width:32px;height:32px;padding:0' data-act='fit-ex-menu' data-id='"+esc(c.id)+"' data-idx='"+ix+"' title='Más'><svg width='16' height='16' viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'><circle cx='12' cy='5' r='1.7'/><circle cx='12' cy='12' r='1.7'/><circle cx='12' cy='19' r='1.7'/></svg></button>"+
+            (_mopen?("<div style='position:absolute;right:0;top:35px;z-index:30;background:#fff;border:1px solid var(--pw-border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.12);min-width:160px;padding:5px;display:flex;flex-direction:column;gap:2px'>"+
+              "<button class='cp-btn cp-btn-ghost' style='justify-content:flex-start;height:32px;font-size:12.5px' data-act='fit-ex-edit' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Editar</button>"+
+              "<label class='cp-btn cp-btn-ghost' style='justify-content:flex-start;height:32px;font-size:12.5px;cursor:pointer'>Cambiar foto<input type='file' accept='image/*' class='exfoto-inp' data-id='"+esc(c.id)+"' data-idx='"+ix+"' style='display:none'></label>"+
+              "<button class='cp-btn cp-btn-ghost' style='justify-content:flex-start;height:32px;font-size:12.5px;color:var(--pw-danger)' data-act='fit-ex-del' data-id='"+esc(c.id)+"' data-idx='"+ix+"'>Quitar</button>"+
+            "</div>"):"")+"</div>";
+          return "<div title=\""+esc(e.meta||"")+"\" style='display:flex;align-items:center;gap:10px;border-top:1px solid var(--pw-border);padding:9px 0'>"+thumb+
+            "<div style='flex:1;min-width:0'><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+_nameHtml+_superBadge+_chgBadge+"</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+_metaHtml+"</div></div>"+
+            _kebab+"</div>";
         }).join("");
         var addEx=_isAdd(w,d)?_addForm(w,d,false):_openBtn(w,d,"＋ Agregar ejercicio");
         return "<div style='margin-top:12px'><div style='display:flex;align-items:center;gap:6px;margin-bottom:2px'><span style='font-size:11px;font-weight:700;color:var(--pw-bosque);text-transform:uppercase;letter-spacing:.6px'>"+esc(d)+"</span><button class='cp-btn cp-btn-ghost' style='height:22px;min-width:0;font-size:11px;padding:0 7px;line-height:1' data-act='fit-day-rename' data-id='"+esc(c.id)+"' data-w='"+w+"' data-dia='"+esc(d)+"' title='Renombrar el día completo'><span class='cp-emo'>✏️</span></button></div>"+exs+addEx+"</div>";
@@ -4955,7 +5005,8 @@ function viewClienteDetalle(c){
     var _DL="<datalist id='dl-dias'><option value='Lunes'></option><option value='Martes'></option><option value='Miércoles'></option><option value='Jueves'></option><option value='Viernes'></option><option value='Sábado'></option><option value='Domingo'></option><option value='Lunes · Tren superior'></option><option value='Miércoles · Tren inferior'></option><option value='Viernes · Full body'></option><option value='Empuje'></option><option value='Tracción'></option><option value='Pierna'></option></datalist>"+
       "<datalist id='dl-ejercicios'>"+((window.PW_EXBANK&&PW_EXBANK.nombres||[]).map(function(n){return "<option value=\""+esc(n)+"\"></option>";}).join(""))+"</datalist>"+
       "<datalist id='dl-rir'><option value='RIR 0'></option><option value='RIR 1'></option><option value='RIR 2'></option><option value='RIR 3'></option><option value='RIR 4'></option></datalist>"+
-      "<datalist id='dl-descanso'><option value='45 s'></option><option value='60 s'></option><option value='90 s'></option><option value='2 min'></option><option value='3 min'></option></datalist>";
+      "<datalist id='dl-descanso'><option value='45 s'></option><option value='60 s'></option><option value='90 s'></option><option value='2 min'></option><option value='3 min'></option></datalist>"+
+      "<datalist id='dl-super'><option value='A'></option><option value='B'></option><option value='C'></option><option value='D'></option></datalist>";
     body=_visBar('rutina','Gym')+"<div class='cp-form-hint' style='margin:0 0 12px'>Arma la rutina en el lugar: dentro de cada día toca <strong>＋ Agregar ejercicio</strong> (ya sabe la semana y el día). Suma días y semanas con sus botones. El cliente lo ve igual en su portal.</div>"+
       _DL+
       (rutRows||"<div class='cp-card cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Todavía no hay ejercicios. Empieza con la Semana 1 "+PWI.svg('chevDown',{sm:true})+"</div>")+
@@ -5162,7 +5213,6 @@ function viewClienteDetalle(c){
             "<span style='font-size:12px;color:var(--pw-text-soft)'>"+(hasInf?"Informe creado. Edita lo que quieras y guarda.":"Aún no hay informe. Genera con <svg width='13' height='13' viewBox='0 0 24 24' fill='#E9C46A' style='display:inline-block;vertical-align:-1px' aria-hidden='true'><path d='M12 2l1.7 5.1L18.8 8.8l-4.9 1.7L12 15.6l-1.9-5.1L5.2 8.8l4.9-1.7z'/><path d='M18.6 14l.7 2.2 2.2.7-2.2.7-.7 2.2-.7-2.2-2.2-.7 2.2-.7z'/><path d='M5.3 15.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z'/></svg> IA Pathway o escríbelo y guarda.")+"</span>"
         )+
       "</div></div>"+
-      _avisos+
       _diag+
       // Carrera: las acciones viven en su propia pestaña "Acciones". Fitness y
       // financiero NO muestran las acciones al cliente. Se conserva igual que antes.
@@ -5411,53 +5461,76 @@ function viewClienteDetalle(c){
     function ftAS(k,v,id,ph){ return "<div class='cp-form-row'><label class='cp-form-label'>"+k+"</label><textarea id='"+id+"' class='cp-form-textarea pw-sens' placeholder='"+esc(ph||"")+"'>"+v+"</textarea></div>"; }
     var obst=esc(((rw.obstaculos||"")+"").split("|").filter(Boolean).join("\n"));
     var accUrl="https://pathwaycareercoach.com/cliente.html";
-    var _hd="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Datos del cliente<span class='dot'>.</span></h3>"+
-        "<span class='cp-eyebrow'>Del formulario · editable"+(REAL?"":" · ejemplo")+"</span></div>"+
-        "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:11px'>"+
-          "<div class='cp-form-row-2'>"+fr("Nombre",esc(c.name),"cf-nombre")+frS("Email",esc(c.email||""),"cf-email")+"</div>";
+    // Perfil ORDENADO en secciones (como el mockup). MISMOS campos, MISMOS IDs
+    // (cf-*) — solo se agrupan en tarjetas con título para un vistazo limpio. El
+    // guardado (cli-save) lee por getElementById, así que agrupar no cambia nada.
+    var _pLic=function(inner){ return "<svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='var(--pw-bosque)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>"+inner+"</svg>"; };
+    var _pSec=function(icon,title,eyebrow,inner){ return "<div class='cp-card'><div class='cp-card-pad'>"+
+      "<div style='display:flex;align-items:center;gap:12px;margin-bottom:14px'><span style='width:36px;height:36px;border-radius:10px;flex:none;background:rgba(45,106,79,.10);display:flex;align-items:center;justify-content:center'>"+icon+"</span>"+
+      "<div style='flex:1;min-width:0'><div style='font-size:15px;font-weight:700;color:var(--pw-carbon)'>"+esc(title)+"</div>"+(eyebrow?"<div style='font-size:11.5px;color:var(--pw-text-soft);margin-top:2px'>"+esc(eyebrow)+"</div>":"")+"</div></div>"+
+      "<div style='display:flex;flex-direction:column;gap:11px'>"+inner+"</div></div></div>"; };
+    var _icPerson="<circle cx='12' cy='8' r='4'/><path d='M4 21c0-4 3.6-6 8-6s8 2 8 6'/>";
+    var _icCtx="<path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2 14 8 20 8'/><line x1='8' y1='13' x2='16' y2='13'/><line x1='8' y1='17' x2='13' y2='17'/>";
+    var _idRow="<div class='cp-form-row-2'>"+fr("Nombre",esc(c.name),"cf-nombre")+frS("Email",esc(c.email||""),"cf-email")+"</div>";
+    var _ebDatos="Del formulario · editable"+(REAL?"":" · ejemplo");
     var _ft;
     if(_tipo==='fitness'){
       // Intake fitness: datos estructurados que alimentan el informe IA y la
       // rutina. Columnas nuevas (ver migración fitness_intake_fields.sql).
-      _ft = "<div class='cp-form-row-2'>"+fr("Objetivo principal",esc(c.role),"cf-cargo")+frS("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+"</div>"+
-        "<div class='cp-form-row-3'>"+fr("Edad",rvf("edad"),"cf-edad")+fr("Altura (cm)",rvf("altura"),"cf-altura")+fr("Peso inicial (kg)",rvf("peso"),"cf-peso")+"</div>"+
-        "<div class='cp-form-row-2'>"+fr("Nivel de experiencia",rvf("nivel"),"cf-nivel")+fr("Días por semana",rvf("dias"),"cf-dias")+"</div>"+
-        "<div class='cp-form-row-2'>"+fr("Dónde entrena",rvf("lugar"),"cf-lugar")+fr("Equipamiento",rvf("equipo"),"cf-equipo")+"</div>"+
-        ftA("Objetivo",rvf("objetivo"),"cf-objetivo")+
-        ftAS("Lesiones o condiciones médicas",rvf("lesiones"),"cf-lesiones","Ej: molestia de rodilla, no cargar sobre la cabeza…")+
-        "<div class='cp-form-row-2'>"+frS("Medicación relevante",rvf("medicacion"),"cf-medicacion")+fr("Restricciones alimentarias",rvf("restricciones"),"cf-restricciones")+"</div>"+
-        ftA("Alimentación / hábitos actuales",rvf("nutricion"),"cf-nutricion")+
-        ftA("Algo importante a tener en cuenta",rvf("extra"),"cf-extra")+
-        ftA("Obstáculos (uno por línea)",obst,"cf-obstaculos","Cada línea es un obstáculo")+
-        "<div class='cp-form-hint' style='margin:2px 0 0'>Las mediciones por fecha (peso, % grasa, IMO…) se cargan en <strong>Antropometría</strong> y el entrenamiento en <strong>Gym</strong>.</div>";
+      _ft =
+        _pSec(_pLic(_icPerson),"Datos del cliente",_ebDatos,
+          _idRow+
+          "<div class='cp-form-row-2'>"+fr("Objetivo principal",esc(c.role),"cf-cargo")+frS("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+"</div>")+
+        _pSec(_pLic("<polyline points='22 12 18 12 15 21 9 3 6 12 2 12'/>"),"Perfil físico","Alimenta el informe y la rutina",
+          "<div class='cp-form-row-3'>"+fr("Edad",rvf("edad"),"cf-edad")+fr("Altura (cm)",rvf("altura"),"cf-altura")+fr("Peso inicial (kg)",rvf("peso"),"cf-peso")+"</div>"+
+          "<div class='cp-form-row-2'>"+fr("Nivel de experiencia",rvf("nivel"),"cf-nivel")+fr("Días por semana",rvf("dias"),"cf-dias")+"</div>"+
+          "<div class='cp-form-row-2'>"+fr("Dónde entrena",rvf("lugar"),"cf-lugar")+fr("Equipamiento",rvf("equipo"),"cf-equipo")+"</div>")+
+        _pSec(_pLic("<path d='M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z'/>"),"Salud y nutrición","",
+          ftA("Objetivo",rvf("objetivo"),"cf-objetivo")+
+          ftAS("Lesiones o condiciones médicas",rvf("lesiones"),"cf-lesiones","Ej: molestia de rodilla, no cargar sobre la cabeza…")+
+          "<div class='cp-form-row-2'>"+frS("Medicación relevante",rvf("medicacion"),"cf-medicacion")+fr("Restricciones alimentarias",rvf("restricciones"),"cf-restricciones")+"</div>"+
+          ftA("Alimentación / hábitos actuales",rvf("nutricion"),"cf-nutricion"))+
+        _pSec(_pLic(_icCtx),"Contexto","",
+          ftA("Algo importante a tener en cuenta",rvf("extra"),"cf-extra")+
+          ftA("Obstáculos (uno por línea)",obst,"cf-obstaculos","Cada línea es un obstáculo")+
+          "<div class='cp-form-hint' style='margin:2px 0 0'>Las mediciones por fecha (peso, % grasa, IMO…) se cargan en <strong>Antropometría</strong> y el entrenamiento en <strong>Gym</strong>.</div>");
     } else if(_tipo==='financiero'){
       // Intake financiero: datos del nicho que alimentan el informe IA.
-      _ft = "<div class='cp-form-row-2'>"+fr("Objetivo principal",esc(c.role),"cf-cargo")+frS("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+"</div>"+
-        "<div class='cp-form-row-3'>"+fr("Edad",rvf("edad"),"cf-edad")+frS("Ingresos mensuales (€)",rvf("ingresos"),"cf-ingresos")+frS("Gastos mensuales (€)",rvf("gastos"),"cf-gastos")+"</div>"+
-        "<div class='cp-form-row-3'>"+frS("Deuda total (€)",rvf("deudas"),"cf-deudas")+frS("Ahorro actual (€)",rvf("ahorro_actual"),"cf-ahorro_actual")+frS("Meta de ahorro (€)",rvf("objetivo_ahorro"),"cf-objetivo_ahorro")+"</div>"+
-        "<div class='cp-form-row'>"+fr("Plazo de la meta",rvf("plazo"),"cf-plazo")+"</div>"+
-        ftA("Objetivo",rvf("objetivo"),"cf-objetivo")+
-        ftA("Algo importante a tener en cuenta",rvf("extra"),"cf-extra")+
-        ftA("Obstáculos (uno por línea)",obst,"cf-obstaculos","Cada línea es un obstáculo")+
-        "<div class='cp-form-hint' style='margin:2px 0 0'>El presupuesto, objetivos y deudas se cargan en la pestaña <strong>Finanzas</strong>.</div>";
+      _ft =
+        _pSec(_pLic(_icPerson),"Datos del cliente",_ebDatos,
+          _idRow+
+          "<div class='cp-form-row-2'>"+fr("Objetivo principal",esc(c.role),"cf-cargo")+frS("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+"</div>")+
+        _pSec(_pLic("<rect x='2' y='6' width='20' height='13' rx='2'/><path d='M2 10h20'/><path d='M16 15h.01'/>"),"Situación financiera","Alimenta el informe IA",
+          "<div class='cp-form-row-3'>"+fr("Edad",rvf("edad"),"cf-edad")+frS("Ingresos mensuales (€)",rvf("ingresos"),"cf-ingresos")+frS("Gastos mensuales (€)",rvf("gastos"),"cf-gastos")+"</div>"+
+          "<div class='cp-form-row-3'>"+frS("Deuda total (€)",rvf("deudas"),"cf-deudas")+frS("Ahorro actual (€)",rvf("ahorro_actual"),"cf-ahorro_actual")+frS("Meta de ahorro (€)",rvf("objetivo_ahorro"),"cf-objetivo_ahorro")+"</div>"+
+          "<div class='cp-form-row'>"+fr("Plazo de la meta",rvf("plazo"),"cf-plazo")+"</div>")+
+        _pSec(_pLic(_icCtx),"Contexto","",
+          ftA("Objetivo",rvf("objetivo"),"cf-objetivo")+
+          ftA("Algo importante a tener en cuenta",rvf("extra"),"cf-extra")+
+          ftA("Obstáculos (uno por línea)",obst,"cf-obstaculos","Cada línea es un obstáculo")+
+          "<div class='cp-form-hint' style='margin:2px 0 0'>El presupuesto, objetivos y deudas se cargan en la pestaña <strong>Finanzas</strong>.</div>");
     } else {
-      _ft = "<div class='cp-form-row-2'>"+fr("Rol / cargo",esc(c.role),"cf-cargo")+fr("Rol que busca",rvf("rol"),"cf-rol")+"</div>"+
+      _ft =
+        _pSec(_pLic(_icPerson),"Datos del cliente",_ebDatos,
+          _idRow+
+          "<div class='cp-form-row-2'>"+fr("Rol / cargo",esc(c.role),"cf-cargo")+fr("Rol que busca",rvf("rol"),"cf-rol")+"</div>")+
+        _pSec(_pLic("<rect x='2' y='7' width='20' height='14' rx='2'/><path d='M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/>"),"Perfil profesional","",
           "<div class='cp-form-row-2'>"+fr("Situación",rvf("situacion"),"cf-situacion")+fr("Urgencia",rvf("urgencia"),"cf-urgencia")+"</div>"+
           "<div class='cp-form-row-2'>"+fr("Sector",rvf("sector"),"cf-sector")+fr("Experiencia",esc(rw.exp!=null?(""+rw.exp):(rw.experiencia||"")),"cf-exp")+"</div>"+
           "<div class='cp-form-row-2'>"+fr("Ciudad",esc(rw.ciudad||rw.geo||rw.ubicacion||""),"cf-ciudad")+fr("Modalidad",rvf("modalidad"),"cf-modalidad")+"</div>"+
           "<div class='cp-form-row-2'>"+fr("Educación",rvf("educacion"),"cf-educacion")+fr("Idiomas",esc(rw.idiomas||rw.idioma||""),"cf-idiomas")+"</div>"+
-          "<div class='cp-form-row-2'>"+frS("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+frS("LinkedIn",rvf("linkedin"),"cf-linkedin")+"</div>"+
+          "<div class='cp-form-row-2'>"+frS("WhatsApp (con código de país)",rvf("whatsapp"),"cf-whatsapp")+frS("LinkedIn",rvf("linkedin"),"cf-linkedin")+"</div>")+
+        _pSec(_pLic(_icCtx),"Contexto","",
           ftA("Objetivo",rvf("objetivo"),"cf-objetivo")+
           ftA("Logro destacado",rvf("logro"),"cf-logro")+
           ftA("Algo importante fuera del CV",rvf("extra"),"cf-extra")+
-          ftA("Obstáculos (uno por línea)",obst,"cf-obstaculos","Cada línea es un obstáculo");
+          ftA("Obstáculos (uno por línea)",obst,"cf-obstaculos","Cada línea es un obstáculo"));
     }
     // El acceso/contraseña ya no se gestiona acá: la cuenta se crea al dar de
     // alta el cliente y la contraseña la crea/recupera el cliente desde el email
     // (recuperar-password). Por eso se quitó la tarjeta "Acceso del cliente".
-    body=_hd+_ft+
-          "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'><button class='cp-btn cp-btn-ghost' data-act='clidet:perfil'>Descartar</button><button class='cp-btn cp-btn-primary' data-act='cli-save' data-id='"+esc(c.id)+"'>Guardar cambios</button></div>"+
-        "</div></div>"+
+    body=_ft+
+          "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:10px;justify-content:flex-end'><button class='cp-btn cp-btn-ghost' data-act='clidet:perfil'>Descartar</button><button class='cp-btn cp-btn-primary' data-act='cli-save' data-id='"+esc(c.id)+"'>Guardar cambios</button></div></div>"+
         "<div class='cp-card'><div class='cp-card-pad' style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'>"+
           "<div><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'><span class='cp-emo'>"+PWI.svg('mail',{sm:true})+"</span> Invitación al portal</div>"+
             "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px;max-width:360px'>Le reenvía el email para crear su contraseña y entrar. Úsalo si el cliente dice que no le llegó (revisa también su carpeta de spam).</div></div>"+
@@ -5489,7 +5562,32 @@ function viewClienteDetalle(c){
       ? "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-bosque);border-color:var(--pw-bosque)' data-act='cli-reactivate' data-id='"+esc(c.id)+"'>Activar cliente</button>"
       : "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='cli-deactivate' data-id='"+esc(c.id)+"'>Desactivar cliente</button>")+
     "</div>";
-  var _rail="<aside class='cp-ficha-rail"+(fichaV2()?" cp-ficha-rail-v2":"")+"'>"+_railProceso+_railAcc+"</aside>";
+  // "Visto por el cliente" (ojo) va en TODAS las pestañas que el cliente ve en su
+  // portal. "Último análisis" con día Y hora va solo donde se produce análisis (plan).
+  // Ambas viven en la columna derecha, bajo "Acciones rápidas".
+  var _cliTabsSet={plan:1,fit_rutina:1,fit_antro:1,fit_nutri:1,fin_pres:1,docs:1,sesiones:1};
+  var _planAvisos=_cliTabsSet[t]?(function(){
+    // Último análisis — con día y hora, solo en la pestaña que arroja análisis.
+    var _ultimo="";
+    if(t==="plan"&&c.inf&&c.inf.id){
+      var _iv=c.inf.updated_at||c.inf.created_at||c.inf.fecha||c.inf.ts;
+      var dt=""; try{ if(_iv){ var d=new Date(_iv); if(!isNaN(d)) dt=d.toLocaleString('es-ES',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); } }catch(e){}
+      var cal="<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='var(--pw-bosque)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='3' y='4' width='18' height='18' rx='2'/><line x1='16' y1='2' x2='16' y2='6'/><line x1='8' y1='2' x2='8' y2='6'/><line x1='3' y1='10' x2='21' y2='10'/></svg>";
+      _ultimo="<div class='cp-card cp-card-pad' style='display:flex;align-items:center;gap:10px'><span style='width:32px;height:32px;border-radius:9px;flex:none;background:rgba(45,106,79,.10);display:flex;align-items:center;justify-content:center'>"+cal+"</span><div style='min-width:0'><div style='font-size:12.5px;font-weight:700;color:var(--pw-carbon)'>Último análisis</div><div style='font-size:11.5px;color:var(--pw-text-soft)'>"+(dt?esc(dt):"Informe creado")+"</div></div></div>";
+    }
+    // "Visto por el cliente": ojo ABIERTO si el cliente entró a su portal. En Análisis
+    // se compara contra la fecha del informe (entró DESPUÉS de tu última edición); en el
+    // resto de pestañas, entró a su portal hace poco (≤14 d). Así el coach lo ve solo.
+    var _seen=false,_seenAgo="";
+    try{ var _ls=c.raw&&c.raw.cliente_last_seen; if(_ls){ var _lsd=new Date(_ls); if(!isNaN(_lsd)){ var _ok; if(t==="plan"&&c.inf&&c.inf.id){ var _iv2=c.inf.updated_at||c.inf.created_at||c.inf.fecha||c.inf.ts; var _ivd=_iv2?new Date(_iv2):null; _ok=(!_ivd||isNaN(_ivd)||_lsd.getTime()>=_ivd.getTime()); } else { _ok=((Date.now()-_lsd.getTime())/60000)<=20160; } if(_ok){ _seen=true; var _mn=Math.floor((Date.now()-_lsd.getTime())/60000); _seenAgo=_mn<60?("hace "+Math.max(1,_mn)+" min"):(_mn<1440?("hace "+Math.floor(_mn/60)+" h"):("hace "+Math.floor(_mn/1440)+" d")); } } } }catch(e){}
+    var _col=_seen?"var(--pw-bosque)":"var(--pw-text-soft)";
+    var _txt=_seen
+      ? (t==="plan"?("El cliente entró a su portal "+esc(_seenAgo)+", después de tu última edición."):("El cliente entró a su portal "+esc(_seenAgo)+"."))
+      : (t==="plan"?"Aún no entró desde que lo actualizaste.":"Aún no entró a su portal.");
+    var _visto="<div class='cp-card cp-card-pad'><div style='display:flex;align-items:center;gap:8px;margin-bottom:5px'><span style='color:"+_col+";display:inline-flex;align-items:center'>"+_vistoEye(_seen,"var(--pw-bosque)")+"</span><div style='font-size:12.5px;font-weight:700;color:var(--pw-carbon);flex:1;min-width:0'>Visto por el cliente</div><span style='font-size:10.5px;font-weight:700;color:"+_col+";background:"+(_seen?"rgba(45,106,79,.12)":"rgba(90,90,85,.10)")+";padding:2px 9px;border-radius:99px;white-space:nowrap'>"+(_seen?"Visto":"Sin ver")+"</span></div><div style='font-size:11.5px;color:var(--pw-text-soft);line-height:1.45'>"+_txt+"</div></div>";
+    return _ultimo+_visto;
+  })():"";
+  var _rail="<aside class='cp-ficha-rail"+(fichaV2()?" cp-ficha-rail-v2":"")+"'>"+_railProceso+_railAcc+_planAvisos+"</aside>";
   return "<header class='cp-topbar cp-cli-head"+(fichaV2()?" cp-cli-head-v2":"")+"' style='align-items:center'>"+
       "<div style='display:flex;align-items:center;gap:16px;min-width:0'>"+
         (fichaV2()
@@ -9560,6 +9658,7 @@ document.addEventListener("click", function(ev){
     var _shWith=_ag2?(_ag2.split("@")[0]):("con "+((COACH&&COACH.firstName)||(RME&&RME.nombre)||"el equipo"));
     var _iso=_ast.toISOString();
     var _amod=(_val("ag-cita-mod")||"online"); var _agrupal=(_val("ag-cita-grupal")==="1"); var _alugar=(""+_val("ag-cita-lugar")).trim();
+    var _atz=(_val("ag-cita-tz")||"").trim()||_coachTz();   // zona del cliente (para su hora en emails/recordatorios)
     if(_agrupal && typeof _canGrupal==="function" && !_canGrupal()){ _agrupal=false; }   // grupal = Pro (defensa: si no es Pro, cae a 1:1)
     var _team=(state.ag&&state.ag.team)||[];   // capturar ANTES de limpiar state.ag
     state.ag=null;
@@ -9570,7 +9669,7 @@ document.addEventListener("click", function(ev){
     //    Google Calendar) → por eso "no aparecían las citas" y terminabas en Google.
     // Kind del sistema: con invitado/cliente → 'sesion'; sin nadie → 'personal' (agenda suelta).
     var _agKind=_ag2?"sesion":"personal";
-    var _agBody={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel"};
+    var _agBody={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2||"", tipo:_atl, inicio:_iso, estado:"confirmada", origen:"panel", cliente_tz:_atz};
     // Columnas opcionales (pueden no existir aún → hay reintento sin ellas).
     var _agExtra={kind:_agKind, modalidad:_amod, grupal:_agrupal}; if(_amod==="presencial"&&_alugar) _agExtra.lugar=_alugar;
     var _agDone=function(r){ if(r&&r.ok) toast("Cita agendada ✓ — ya está en tu agenda"); else toast("No se pudo guardar la cita. Reintenta."); try{ _resLoad(); }catch(e){} try{ _calLoad(); }catch(e){} };
@@ -9587,19 +9686,20 @@ document.addEventListener("click", function(ev){
     //    (grupal = video multi-persona). Presencial → SIN link de video, con el lugar.
     if(_ag2 && /@/.test(_ag2)){
       try{
-        var _f=_fechaCli(_iso);
+        var _f=_fechaCli(_iso,_atz);
+        var _tzTag=_atz?(" <span style='color:#8A968E;font-weight:400'>(hora de "+esc(_tzNice(_atz))+")</span>"):"";
         var _coachNm=(COACH&&COACH.name)||(RME&&RME.nombre)||"Pathway";
         var _inner, _ics;
         if(_amod==="presencial"){
           _ics=_icsBuild("Sesión · Pathway", _ast.getTime(), _aen.getTime(), (_alugar||"Presencial"));
-          _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"):"")+".</p>"+
+          _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+".</p>"+
             "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:14px'>📍 <strong>Presencial</strong>"+(_alugar?(" · "+esc(_alugar)):"")+"</div>"+
             "<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";
         } else {
           var _r={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2, tipo:_atl, inicio:_iso, grupal:_agrupal};
           var _lnk=_salaClientLink(_r);
           _ics=_icsBuild("Sesión · Pathway", _ast.getTime(), _aen.getTime(), _lnk);
-          _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"):"")+(_agrupal?" (grupal)":"")+".</p>"+
+          _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+(_agrupal?" (grupal)":"")+".</p>"+
             "<p style='margin:16px 0'><a href='"+esc(_lnk)+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700'>Entrar a la sesión</a></p>"+
             "<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";
         }
@@ -11067,6 +11167,7 @@ document.addEventListener("click", function(ev){
   if(act==="fit-antro-del"){
     var fdid=el.getAttribute("data-id"); var fdix=parseInt(el.getAttribute("data-idx"),10);
     if(!fdid||isNaN(fdix)) return;
+    state.antroMenu=null;
     if(!confirm("¿Borrar esta medición?")) return;
     var fdc=CLIENTS.filter(function(x){return String(x.id)===String(fdid);})[0];
     var _a2=[]; try{ _a2=JSON.parse((fdc&&fdc.raw&&fdc.raw.fit_antro)||"[]")||[]; }catch(e){ _a2=[]; }
@@ -11096,7 +11197,9 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo guardar. Falta la columna fit_rutina en candidatos (ver migración career_nicho_fields.sql)."); });
     return;
   }
-  if(act==="fit-ex-edit"){ state.editEx=el.getAttribute("data-id")+":"+el.getAttribute("data-idx"); render(); return; }
+  if(act==="fit-ex-menu"){ var _mk=el.getAttribute("data-id")+":"+el.getAttribute("data-idx"); state.exMenu=(state.exMenu===_mk?null:_mk); render(); return; }
+  if(act==="fit-antro-menu"){ var _amk2=el.getAttribute("data-id")+":"+el.getAttribute("data-idx"); state.antroMenu=(state.antroMenu===_amk2?null:_amk2); render(); return; }
+  if(act==="fit-ex-edit"){ state.exMenu=null; state.editEx=el.getAttribute("data-id")+":"+el.getAttribute("data-idx"); render(); return; }
   if(act==="fit-ex-editcancel"){ state.editEx=null; render(); return; }
   if(act==="fit-ex-editsave"){
     var eeid=el.getAttribute("data-id"); var eeix=parseInt(el.getAttribute("data-idx"),10);
@@ -11108,6 +11211,7 @@ document.addEventListener("click", function(ev){
     arrE2[eeix].meta=_val("exed-meta-"+eeix);
     arrE2[eeix].rir=_val("exed-rir-"+eeix);
     arrE2[eeix].descanso=_val("exed-desc-"+eeix);
+    arrE2[eeix].super=_val("exed-super-"+eeix);
     arrE2[eeix].semana=parseInt(_val("exed-sem-"+eeix),10)||arrE2[eeix].semana||1;
     var _nd=(_val("exed-dia-"+eeix)||"").trim(); if(_nd) arrE2[eeix].dia=_nd;
     var jE2=JSON.stringify(arrE2); state.editEx=null;
@@ -11155,11 +11259,12 @@ document.addEventListener("click", function(ev){
     var idia=need?((_val("fi-dia")||"").trim()||"General"):(el.getAttribute("data-dia")||"General");
     var ireps=(_val("fi-reps")||"").trim(), ipeso=(_val("fi-peso")||"").trim();
     var irir=(_val("fi-rir")||"").trim(), idesc=(_val("fi-desc")||"").trim();
+    var isuper=(_val("fi-super")||"").trim();
     var _iru=state.rutUnit||"kg";
     var imeta=ireps+(ipeso?((ireps?" · ":"")+ipeso+(/kg|lb/i.test(ipeso)?"":(" "+_iru))):"");
     var ic=CLIENTS.filter(function(x){return String(x.id)===String(iid);})[0];
     var iarr=_rutToArr(ic&&ic.raw&&ic.raw.fit_rutina);
-    iarr.push({semana:iw,dia:idia,nombre:inom,meta:imeta,peso:ipeso,rir:irir,descanso:idesc,foto:""});
+    iarr.push({semana:iw,dia:idia,nombre:inom,meta:imeta,peso:ipeso,rir:irir,descanso:idesc,super:isuper,foto:""});
     var ij=JSON.stringify(iarr);
     state.frAdd=iid+"§"+iw+"§"+idia; // deja el form abierto en ese día para seguir cargando
     var _refoc=function(){ setTimeout(function(){ var f=document.getElementById("fi-nom"); if(f){ try{ f.focus(); f.scrollIntoView({behavior:"smooth",block:"center"}); }catch(e){} } },120); };
@@ -12476,16 +12581,34 @@ function _sbw(p,method,body){
       function(){ return {ok:true,status:r.status,rows:1,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; });
   };
   var _do=function(){ return _hdr({"Content-Type":"application/json",Prefer:"return=representation"}).then(function(h){ return fetch(SB+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); }); };
+  // Guardado A PRUEBA DE COLUMNAS FALTANTES: si la tabla de Supabase todavía no
+  // tiene una columna (p.ej. 'whatsapp' o los campos fitness sin migrar), antes
+  // el PATCH entero fallaba y NADA se guardaba ("No se puede guardar"). Ahora, si
+  // el error nombra una columna inexistente, se quita ESE campo del body y se
+  // reintenta — así se guarda todo lo demás. Ningún campo es obligatorio.
+  var _stripRetry=function(r,depth){
+    if(r.ok) return _parse(r);
+    if(depth>=10 || !body || typeof body!=="object" || (method!=="PATCH"&&method!=="POST")) return _parse(r);
+    if(r.status!==400 && r.status!==404) return _parse(r);
+    return r.text().then(function(t){
+      var m=/Could not find the '([^']+)' column/.exec(t) || /'([^']+)' column/.exec(t) || /column "([^"]+)"/.exec(t) || /column ([a-z0-9_]+) /i.exec(t);
+      var col=m&&m[1];
+      if(!col || !Object.prototype.hasOwnProperty.call(body,col)) return _fail(r.status);
+      delete body[col];
+      if(!Object.keys(body).length) return _fail(r.status);
+      return _do().then(function(rr){ return _stripRetry(rr,depth+1); });
+    }, function(){ return _fail(r.status); });
+  };
   // Self-healing: un 401/403 = sesión vencida (0 filas escritas → seguro reintentar,
   // incluso un POST). Refrescamos el JWT y reintentamos UNA vez; solo si sigue
   // fallando avisamos sesión vencida. Antes un token vencido perdía el guardado.
   return _do().then(function(r){
     if(r.status===401||r.status===403){
       return _pwRefresh().then(function(ok){ if(!ok){ try{ _authExpired(); }catch(e){} return _fail(r.status); }
-        return _do().then(function(r2){ if(r2.status===401||r2.status===403){ try{ _authExpired(); }catch(e){} return _fail(r2.status); } return _parse(r2); });
+        return _do().then(function(r2){ if(r2.status===401||r2.status===403){ try{ _authExpired(); }catch(e){} return _fail(r2.status); } return _stripRetry(r2,0); });
       });
     }
-    return _parse(r);
+    return _stripRetry(r,0);
   });
 }
 var EDGE=SB+"/functions/v1/generar-informe"; var _genBusy = false, _genBusyTimer = null;
