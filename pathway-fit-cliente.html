@@ -795,7 +795,11 @@ function _authExpired(){
 }
 function sbGet(t,q){ return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:_hdr()}).then(function(r){ if(r.status===401||r.status===403){_authExpired();return [];} return r.json();}); }
 function sbPatch(t,q,d){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:_hdr({'Content-Type':'application/json','Prefer':'return=representation'}),body:JSON.stringify(d)}).then(function(r){ if(r.status===401||r.status===403){_authExpired();return {ok:false,status:r.status,rows:0};} if(!r.ok)return {ok:false,status:r.status,rows:0}; return r.json().then(function(a){var n=(a&&a.length)||0;return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);}};},function(){return {ok:true,status:r.status,rows:1};}); }); }
-function pwHoy(){ return new Date().toISOString().slice(0,10); }
+// Fecha YYYY-MM-DD en la zona LOCAL del cliente (NO UTC). Con toISOString() un
+// cliente al oeste de UTC de tarde/noche marcaba sus hábitos en el día siguiente
+// → el coach (que lee por día local) lo veía corrido. Local = coinciden los dos.
+function _ymdL(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+function pwHoy(){ return _ymdL(); }
 function esc(s){ return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 var COACH_CALENDLY='', COACH_ID='';
 function pwLogout(){ try{ localStorage.removeItem('mj_user'); }catch(e){} location.href='login.html'; }
@@ -923,7 +927,7 @@ var CID=null, CRAW=null;
 var HAB=['agua','sueno','pasos'];
 var WEEK=[], SELDAY=null, WDATA={};
 
-function weekDates(){ var d=new Date(); var off=(d.getDay()+6)%7; var mon=new Date(d); mon.setDate(d.getDate()-off); var a=[]; for(var i=0;i<7;i++){ var x=new Date(mon); x.setDate(mon.getDate()+i); a.push(x.toISOString().slice(0,10)); } return a; }
+function weekDates(){ var d=new Date(); var off=(d.getDay()+6)%7; var mon=new Date(d); mon.setDate(d.getDate()-off); var a=[]; for(var i=0;i<7;i++){ var x=new Date(mon); x.setDate(mon.getDate()+i); a.push(_ymdL(x)); } return a; }
 function colorDay(date){ var b=document.querySelector('.hd[data-date="'+date+'"]'); if(!b) return; var dd=WDATA[date]||{}; b.classList.toggle('done', HAB.every(function(h){return dd[h]===true;})); }
 function renderChecks(){ var dd=WDATA[SELDAY]||{}; document.querySelectorAll('.objc[data-h]').forEach(function(el){ el.classList.toggle('done', dd[el.dataset.h]===true); }); }
 function selectDay(el){
@@ -1166,14 +1170,14 @@ function renderListaSuper(){
 //    cumplir. Funciona igual para clientes reales y para el demo (in-memory).
 function _renderNutriTrack(){
   var b=document.getElementById('nutri-track-btn'); if(!b) return;
-  var hoy=_ymd(new Date());
+  var hoy=pwHoy();
   var on=((typeof WDATA!=='undefined'&&WDATA&&WDATA[hoy])||{}).nutri===true;
   b.textContent=on?'✓ Cumplido hoy':'Marcar como cumplido';
   b.style.background=on?'var(--rose)':''; b.style.color=on?'#fff':'';
 }
 function toggleNutriHoy(){
   if(typeof WDATA==='undefined'||!WDATA) WDATA={};
-  var hoy=_ymd(new Date());
+  var hoy=pwHoy();
   var dd=(WDATA[hoy]=WDATA[hoy]||{});
   var was=dd.nutri===true; dd.nutri=!was;
   _renderNutriTrack();
@@ -1390,7 +1394,7 @@ function _progSaveNew(){
   if(!_progPendingUrl) return;
   var tit=(document.getElementById('progTit')||{}).value||'';
   var desc=(document.getElementById('progDesc')||{}).value||'';
-  var arr=_progArr(); arr.push({url:_progPendingUrl,titulo:(''+tit).trim(),descripcion:(''+desc).trim(),fecha:_ymd(new Date().toISOString())});
+  var arr=_progArr(); arr.push({url:_progPendingUrl,titulo:(''+tit).trim(),descripcion:(''+desc).trim(),fecha:pwHoy()});
   _progPendingUrl='';
   _progPersist(arr,function(ok){ renderProgFotos(); showToast(ok?'📷 Foto agregada':'Guardado local — revisa tu conexión'); });
 }
@@ -1480,7 +1484,7 @@ function applyProceso(){
 }
 function _habitStreak(){
   var n=0, base=new Date();
-  for(var i=0;i<90;i++){ var k=new Date(base); k.setDate(base.getDate()-i); var ds=k.toISOString().slice(0,10); var dd=WDATA[ds]; if(dd && HAB.every(function(h){return dd[h]===true;})) n++; else break; }
+  for(var i=0;i<90;i++){ var k=new Date(base); k.setDate(base.getDate()-i); var ds=_ymdL(k); var dd=WDATA[ds]; if(dd && HAB.every(function(h){return dd[h]===true;})) n++; else break; }
   return n;
 }
 // Abre "La cabra a la cima". Setea el email del cliente y, al cerrar, refresca
