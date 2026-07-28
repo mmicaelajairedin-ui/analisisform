@@ -36,12 +36,23 @@ create index if not exists notificaciones_email_ts_idx
 
 alter table public.notificaciones enable row level security;
 
--- Modelo de acceso ACTUAL de la plataforma: login propio (no Supabase Auth) →
--- el anon key filtra por email desde el cliente, igual que `candidatos`. El
--- cierre estricto de RLS (USING email = auth.email()) es parte del Sprint B
--- general de seguridad, no de esta migración.
+-- Privilegios de tabla: el rol de la request necesita el GRANT además de la
+-- policy (RLS decide la FILA; el GRANT decide si el rol puede tocar la tabla).
+-- Damos a AMBOS roles porque el portal se conecta con la anon key para clientes
+-- de login propio, pero los clientes/coaches ya migrados a Supabase Auth mandan
+-- su JWT → rol `authenticated`. Sin esto, esos usuarios recibían 403 al insertar
+-- (era el 2º error del panel: POST /rest/v1/notificaciones 403). Mismo patrón que
+-- informes_guardados.sql.
+grant select, insert, update, delete on public.notificaciones to anon, authenticated;
+
+-- Modelo de acceso ACTUAL de la plataforma: login propio (anon key) Y usuarios
+-- migrados a Supabase Auth (JWT → authenticated) conviven. La policy cubre a los
+-- DOS roles; sin `authenticated` en la lista, el usuario con JWT no matcheaba
+-- ninguna policy y el INSERT se rechazaba (403). El cierre estricto de RLS
+-- (USING email = auth.email()) es parte del Sprint B general de seguridad, no de
+-- esta migración.
 drop policy if exists notif_anon_all on public.notificaciones;
 create policy notif_anon_all on public.notificaciones
-  for all to anon
+  for all to anon, authenticated
   using (true)
   with check (true);

@@ -1583,6 +1583,47 @@ const RULES = [
     },
   },
   {
+    name: "usuarios: anon puede escribir la telemetría best-effort (sin 403 en client_errors)",
+    bug: "El panel guarda best-effort en usuarios: last_seen (coachBeat/heartbeat), " +
+         "game_pts/game_medal (_gameSyncServer). En el boot el PATCH sale con la anon " +
+         "key ANTES de que el JWT se adjunte; si anon NO tiene GRANT de UPDATE sobre " +
+         "esas columnas, cada sesión del panel tira 403 y ensucia client_errors (era " +
+         "el error #1: ~127 PATCH /rest/v1/usuarios 403). usuarios_gamif_grant.sql debe " +
+         "otorgar a anon el UPDATE de esas columnas de telemetría.",
+    check() {
+      const g = read("supabase/migrations/usuarios_gamif_grant.sql");
+      if (!g) return "falta la migración usuarios_gamif_grant.sql.";
+      const m = /grant\s+update\s*\(([^)]*)\)\s+on\s+public\.usuarios\s+to\s+anon/i.exec(g);
+      if (!m) return "usuarios_gamif_grant.sql: no se encuentra el GRANT UPDATE por columna a anon.";
+      const cols = m[1].toLowerCase();
+      const need = ["last_seen", "game_pts", "game_medal"];
+      const missing = need.filter((c) => !new RegExp("\\b" + c + "\\b").test(cols));
+      if (missing.length)
+        return "usuarios_gamif_grant.sql: el GRANT UPDATE a anon no incluye " + missing.join(", ") +
+               " → esas columnas (coachBeat/_gameSyncServer) volverán a dar 403 en el boot del panel.";
+      return null;
+    },
+  },
+  {
+    name: "notificaciones: la RLS cubre anon Y authenticated (sin 403 al insertar)",
+    bug: "El centro de notificaciones (cliente.html / pathway-fit-cliente.html) inserta " +
+         "en `notificaciones` con _hdr → manda el JWT si el usuario migró a Supabase Auth " +
+         "(rol authenticated). La policy 'notif_anon_all' cubría SOLO a anon → esos " +
+         "usuarios recibían 403 al insertar (2º error del panel: POST /rest/v1/notificaciones). " +
+         "notificaciones.sql debe otorgar el GRANT y la policy a anon Y authenticated.",
+    check() {
+      const n = read("supabase/migrations/notificaciones.sql");
+      if (!n) return "falta la migración notificaciones.sql.";
+      if (!/grant[^;]*\bon\s+public\.notificaciones\b[^;]*\bauthenticated\b/i.test(n))
+        return "notificaciones.sql: falta el GRANT sobre public.notificaciones al rol authenticated.";
+      const pol = /create\s+policy\s+notif_anon_all[\s\S]*?with\s+check\s*\(true\)/i.exec(n);
+      if (!pol) return "notificaciones.sql: no se encuentra la policy notif_anon_all.";
+      if (!/\bauthenticated\b/i.test(pol[0]))
+        return "notificaciones.sql: la policy notif_anon_all no incluye 'authenticated' → los clientes/coaches con JWT reciben 403 al insertar.";
+      return null;
+    },
+  },
+  {
     name: "aislamiento: la lista de clientes NO incluye huérfanos (ni para el admin)",
     bug: "El admin cargaba la lista de clientes con 'coach_id.eq.él O coach_id IS " +
          "NULL' → un cliente huérfano (sin coach) de OTRO nicho (ej. fitness) se " +
