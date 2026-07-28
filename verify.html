@@ -88,68 +88,55 @@ function showState(state, title, msg, actions){
     return;
   }
 
-  // Fetch user, validate token, set email_verificado=true
-  fetch(SB+'/rest/v1/usuarios?email=eq.'+encodeURIComponent(email)+'&select=id,configuracion,nombre', {
-    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY}
+  // Validación EN EL SERVIDOR: la edge function `verify-email` compara el token
+  // contra configuracion.verification_token y marca email_verificado — todo del
+  // lado server. Antes el navegador leía la `configuracion` con la anon key
+  // (el token de verificación quedaba legible por cualquiera). Ahora no.
+  fetch(SB+'/functions/v1/verify-email', {
+    method:'POST',
+    headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'},
+    body: JSON.stringify({email:email, token:token})
   }).then(function(r){
-    if(!r.ok) throw new Error('lookup_failed');
-    return r.json();
-  }).then(function(rows){
-    if(!rows || !rows.length){
+    return r.json().catch(function(){ return null; });
+  }).then(function(d){
+    if(!d){ throw new Error('bad_response'); }
+    if(d.ok){
+      var firstName = (d.nombre||'').split(' ')[0] || '';
+      // Reflejar el cambio en localStorage si el coach está logueado en este navegador.
+      try{
+        var ls = JSON.parse(localStorage.getItem('mj_user')||'null');
+        if(ls && ls.email===email){
+          ls.configuracion = ls.configuracion || {};
+          ls.configuracion.email_verificado = true;
+          localStorage.setItem('mj_user', JSON.stringify(ls));
+        }
+      }catch(e){}
+      if(d.status==='already'){
+        showState('success', '✓ Tu email ya estaba confirmado',
+          'Tu cuenta está activa. Puedes ir directo al panel.',
+          '<a href="/panel-v2.html" class="btn">Ir a mi panel →</a>');
+      } else {
+        showState('success', '¡Email confirmado! 🌱',
+          (firstName?'Te damos la bienvenida, '+firstName+'. Tu':'Tu')+' cuenta está activa. Ya puedes generar informes con IA y usar todas las features de Pathway.',
+          '<a href="/panel-v2.html" class="btn">Ir a mi panel →</a>');
+      }
+      return;
+    }
+    if(d.error==='not_found'){
       showState('error', 'Cuenta no encontrada',
         'No encontramos una cuenta con ese email. ¿Te registraste? <a href="/registro.html" style="color:#2D6A4F;font-weight:600;">Regístrate aquí</a>.',
         '<a href="/registro.html" class="btn">Crear cuenta</a>');
       return;
     }
-    var user = rows[0];
-    var cfg = user.configuracion || {};
-
-    // Ya verificado: mostrar success igual (idempotente, el link puede haber sido clickeado 2 veces)
-    if(cfg.email_verificado === true){
-      showState('success', '✓ Tu email ya estaba confirmado',
-        'Tu cuenta está activa. Puedes ir directo al panel.',
-        '<a href="/panel-v2.html" class="btn">Ir a mi panel →</a>');
-      return;
-    }
-
-    // Token no coincide: error
-    if(cfg.verification_token !== token){
+    if(d.error==='bad_token'){
       showState('error', 'Token inválido o expirado',
         'El link no es válido o ya fue usado. Reenvía el email de verificación desde tu panel.',
         '<a href="/login.html" class="btn">Ir a login</a>');
       return;
     }
-
-    // Token coincide: marcar verificado
-    cfg.email_verificado = true;
-    cfg.verification_verified_at = new Date().toISOString();
-    // Limpiar token para que no pueda reusarse
-    delete cfg.verification_token;
-
-    fetch(SB+'/rest/v1/usuarios?id=eq.'+user.id, {
-      method:'PATCH',
-      headers:{'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-      body: JSON.stringify({configuracion: cfg})
-    }).then(function(pr){
-      if(!pr.ok) throw new Error('update_failed');
-      // Actualizar localStorage si existe para que el panel vea el cambio sin re-login
-      try{
-        var ls = JSON.parse(localStorage.getItem('mj_user')||'null');
-        if(ls && ls.email===email){
-          ls.configuracion = cfg;
-          localStorage.setItem('mj_user', JSON.stringify(ls));
-        }
-      }catch(e){}
-
-      var firstName = (user.nombre||'').split(' ')[0] || '';
-      showState('success', '¡Email confirmado! 🌱',
-        (firstName?'Te damos la bienvenida, '+firstName+'. Tu':'Tu')+' cuenta está activa. Ya puedes generar informes con IA y usar todas las features de Pathway.',
-        '<a href="/panel-v2.html" class="btn">Ir a mi panel →</a>');
-    }).catch(function(){
-      showState('error', 'Error al confirmar',
-        'No pudimos actualizar tu cuenta. Prueba de nuevo en un minuto o escríbenos.',
-        '<a href="javascript:location.reload()" class="btn btn-sec">Reintentar</a>');
-    });
+    showState('error', 'Error al confirmar',
+      'No pudimos actualizar tu cuenta. Prueba de nuevo en un minuto o escríbenos.',
+      '<a href="javascript:location.reload()" class="btn btn-sec">Reintentar</a>');
   }).catch(function(){
     showState('error', 'Error de conexión',
       'No pudimos verificar tu cuenta ahora. Prueba de nuevo en un minuto.',
