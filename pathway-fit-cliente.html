@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="pathway-portal.css?v=7">
 <link rel="stylesheet" href="pw-cabra-juego.css?v=1">
 <script src="pw-exbank.js"></script>
-<script src="pw-recursos.js?v=20260728g"></script>
+<script src="pw-recursos.js?v=20260728h"></script>
 <style>
 /* Ancho de lectura del portal: el .mc compartido es 1600 (lo usa finanzas para
    sus tablas anchas); acá lo acotamos y centramos para que el contenido no quede
@@ -1054,7 +1054,17 @@ function applyNutricion(c){
 function _nutRealSave(){
   var j=JSON.stringify(FNREAL); if(CRAW) CRAW.fit_nutri_real=j;
   if(!CID) return; // demo (cliente de ejemplo): solo en pantalla
-  sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_nutri_real:j}).catch(function(){ if(typeof showToast==='function') showToast('⚠️ No se pudo guardar. Revisa tu conexión.'); });
+  // Guarda por la edge function (service role → resiste RLS, igual que la foto);
+  // si falla, cae al PATCH directo. Así nunca se pierde lo que anotó el cliente.
+  var em=(typeof EMAIL!=='undefined'&&EMAIL)||(CRAW&&CRAW.email)||'';
+  var cid=(CRAW&&CRAW.coach_id)||'';
+  function _fallback(){ sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_nutri_real:j}).catch(function(){ if(typeof showToast==='function') showToast('⚠️ No se pudo guardar. Revisa tu conexión.'); }); }
+  if(!em){ _fallback(); return; }
+  try{
+    fetch(SB+'/functions/v1/guardar-intake',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({email:em,data:{fit_nutri_real:j},coach_id:cid})})
+      .then(function(r){ if(!r||!r.ok) _fallback(); })
+      .catch(function(){ _fallback(); });
+  }catch(e){ _fallback(); }
 }
 // Plan de TODA la semana: un bloque por día con el texto TAL CUAL lo escribió el
 // coach (no se parte por comida). Un solo ✎ por día para que el cliente anote lo

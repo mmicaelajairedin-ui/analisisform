@@ -134,7 +134,7 @@
       var _real = r.cover;
       var cov = '<div class="pwr-cov" style="background:'+TONES[T.tone]+'">'+
           _illus(r.tipo)+
-          (_real?'<img class="pwr-cov-img" src="'+esc(_real)+'" alt="" loading="lazy" onerror="this.remove()">':'')+
+          (_real?'<img class="pwr-cov-img" src="'+esc(_real)+'" alt="" loading="lazy" onerror="this.remove()" onload="if(this.naturalWidth&&this.naturalWidth<=120)this.remove()">':'')+
           (r.meta?'<span class="pwr-cov-meta">'+esc(r.meta)+'</span>':'')+
           (seen?'<span class="pwr-cov-seen" title="Completado">✓</span>':'')+
         '</div>';
@@ -287,7 +287,7 @@
     var meta=(r.meta&&(''+r.meta).trim())||'';
     return '<div class="pwr-cov" style="background:'+TONES[T.tone]+';border-radius:12px'+(o.h?';height:'+o.h:'')+'">'+
       _illus(tipo)+
-      (cover?'<img class="pwr-cov-img" src="'+esc(cover)+'" alt="" loading="lazy" onerror="this.remove()">':'')+
+      (cover?'<img class="pwr-cov-img" src="'+esc(cover)+'" alt="" loading="lazy" onerror="this.remove()" onload="if(this.naturalWidth&&this.naturalWidth<=120)this.remove()">':'')+
       (meta&&o.meta!==false?'<span class="pwr-cov-meta">'+esc(meta)+'</span>':'')+
     '</div>';
   }
