@@ -1610,15 +1610,15 @@ function exampleFor(tipo){
       "1|Lunes · Tren superior|Press de banca":{m:"4×12 · 35 kg",n:"",ts:"2026-07-27"},
       "1|Miércoles · Tren inferior|Sentadilla":{m:"",n:"Prensa de piernas",ts:"2026-07-25"}
     });
-    // Plan de nutrición del demo + un ejemplo de "lo que comió distinto" (plan tachado → real).
+    // Plan de nutrición del demo + un ejemplo de "lo que comió distinto" (nota por día).
     c.raw.fit_nutricion=JSON.stringify({dias:{
       lun:"Desayuno: avena con frutas\nAlmuerzo: pollo con arroz y ensalada\nMerienda: yogur con nueces\nCena: pescado al horno con verduras",
       mie:"Desayuno: tostadas integrales con huevo\nAlmuerzo: carne magra con puré\nCena: ensalada completa con atún",
       vie:"Desayuno: batido de proteína\nAlmuerzo: milanesa de pollo al horno con arroz\nCena: tortilla de verduras"
     },pautas:"~1900 kcal · 130 g de proteína. Tomá 2 L de agua. Evitá bebidas azucaradas."});
     c.raw.fit_nutri_real=JSON.stringify({
-      "lun|Almuerzo":{r:"atún a la plancha con arroz (cambié el pollo)",ts:"2026-07-27"},
-      "mie|Cena":{r:"me salté la cena",ts:"2026-07-25"}
+      lun:{r:"cambié el pollo por atún a la plancha en el almuerzo",ts:"2026-07-27"},
+      mie:{r:"me salté la cena",ts:"2026-07-25"}
     });
     c.inf={id:"ejemplo-informe-fit",d:{
       resumen:"María parte de 82 kg con 24% de grasa y mucha motivación, pero sin una rutina estructurada ni hábitos de entrenamiento constantes. El objetivo de estas semanas es bajar grasa y ganar músculo de forma segura y progresiva.",
@@ -5329,28 +5329,23 @@ function viewClienteDetalle(c){
       _dayRows+
       "<div class='cp-form-row'><label class='cp-form-label'>Pautas generales</label><textarea id='cf-nut-pautas' class='cp-form-textarea' style='min-height:70px' placeholder='Macros/calorías, agua, qué evitar, horarios…'>"+esc(_nut.pautas||"")+"</textarea></div>"+
       "<div style='display:flex;justify-content:flex-end'><button class='cp-btn cp-btn-primary' data-act='fit-nutri-save' data-id='"+esc(c.id)+"'>Guardar nutrición</button></div></div></div>";
-    // Lo que comió DE VERDAD el cliente. Nuevo formato por COMIDA
-    // (fit_nutri_real = { "lun|Almuerzo": {r:"atún"} }): plan tachado + lo real,
-    // misma idea que el gym. Se conserva el diario viejo por día (fit_nutri_log)
-    // por compatibilidad si tiene datos.
+    // Lo que comió DE VERDAD el cliente: una nota por DÍA (no por comida). El
+    // cliente ve el plan tal cual y con un ✎ anota lo que comió distinto ese día.
+    // fit_nutri_real = { "lun": {r:"cambié el pollo por atún"} }. Se conserva el
+    // diario viejo por día (fit_nutri_log) por compatibilidad si tiene datos.
     var _fnr={}; try{ var _fnrp=(c.raw&&c.raw.fit_nutri_real)||""; _fnr=(_fnrp.trim().charAt(0)==="{")?(JSON.parse(_fnrp)||{}):{}; }catch(e){ _fnr={}; }
-    var _nutMealsP=function(t){ return (""+t).replace(/\r/g,"").split("\n").map(function(l){return l.trim();}).filter(Boolean).map(function(l,idx){ var ci=l.indexOf(":"),h=ci>0; return {label:(h?l.slice(0,ci).trim():("Comida "+(idx+1))),plan:(h?l.slice(ci+1).trim():l),key:(h?l.slice(0,ci).trim():("#"+idx))}; }); };
     var _realRows=_NDAYS.map(function(d){
-      var chg=_nutMealsP(_nd[d[0]]||"").filter(function(m){ var rl=_fnr[d[0]+"|"+m.key]; return rl&&rl.r&&rl.r!==m.plan; });
-      if(!chg.length) return "";
-      var items=chg.map(function(m){ var rl=_fnr[d[0]+"|"+m.key];
-        return "<div style='padding:6px 0;font-size:13px;line-height:1.5'><span style='font-weight:700;color:var(--pw-carbon)'>"+esc(m.label)+"</span> "+
-          (m.plan?"<s style='color:var(--pw-text-soft)'>"+esc(m.plan)+"</s> ":"")+"<span style='color:var(--pw-bosque);font-weight:700'>→ "+esc(rl.r)+"</span></div>";
-      }).join("");
-      return "<div class='cp-form-row'><label class='cp-form-label'>"+d[1]+"</label><div style='background:var(--pw-niebla,#FCFDFC);border:1px solid var(--pw-borde,rgba(31,42,35,.12));border-radius:10px;padding:4px 12px'>"+items+"</div></div>";
+      var rl=_fnr[d[0]]; var r=(rl&&rl.r&&(""+rl.r).trim())?(""+rl.r).trim():"";
+      if(!r) return "";
+      return "<div class='cp-form-row'><label class='cp-form-label'>"+d[1]+"</label><div style='background:var(--pw-niebla,#FCFDFC);border:1px solid var(--pw-borde,rgba(31,42,35,.12));border-radius:10px;padding:9px 12px;font-size:13px;line-height:1.5'><span style='color:var(--pw-bosque);font-weight:700'>Comió distinto: </span>"+esc(r)+"</div></div>";
     }).filter(Boolean).join("");
     // Backward-compat: diario viejo por día (texto libre) si el cliente lo usó antes.
     var _nlog={}; try{ var _nlpr=(c.raw&&c.raw.fit_nutri_log)||""; _nlog=(_nlpr.trim().charAt(0)==="{")?(JSON.parse(_nlpr)||{}):{}; }catch(e){ _nlog={}; }
     var _logRows=_NDAYS.filter(function(d){ return (""+(_nlog[d[0]]||"")).trim(); }).map(function(d){
       return "<div class='cp-form-row'><label class='cp-form-label'>"+d[1]+" <span style='font-weight:400;color:var(--pw-text-soft)'>(nota)</span></label><div style='white-space:pre-wrap;font-size:13px;line-height:1.5;color:var(--pw-texto,#1B2E26);background:var(--pw-niebla,#FCFDFC);border:1px solid var(--pw-borde,rgba(31,42,35,.12));border-radius:10px;padding:9px 12px'>"+esc(_nlog[d[0]])+"</div></div>";
     }).join("");
-    body += "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Lo que comió el cliente<span class='dot'>.</span></h3><span class='cp-eyebrow'>Plan tachado → lo real · solo lectura</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
-      ((_realRows+_logRows) || "<div class='cp-form-hint' style='margin:0'>El cliente todavía no registró cambios. Cuando marque el ✎ de una comida en su portal, aparece aquí el plan tachado + lo que comió.</div>")+
+    body += "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Lo que comió el cliente<span class='dot'>.</span></h3><span class='cp-eyebrow'>Lo que comió distinto · solo lectura</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+      ((_realRows+_logRows) || "<div class='cp-form-hint' style='margin:0'>El cliente todavía no registró cambios. Cuando toque el ✎ de un día en su portal, aparece aquí lo que comió distinto.</div>")+
       "</div></div>";
   } else if(t==="gestion"){
     var visItems = _tipo==='fitness'

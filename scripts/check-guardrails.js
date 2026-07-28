@@ -3125,24 +3125,28 @@ const RULES = [
     },
   },
   {
-    name: "nutrición: el cliente registra lo que comió distinto y el coach lo ve",
+    name: "nutrición: el cliente registra por DÍA lo que comió distinto y el coach lo ve",
     why:
-      "La nutrición usaba una caja de texto libre suelta ('Lo que comí'). Ahora " +
-      "usa la MISMA idea que el gym: cada comida del plan es una fila con ✎ para " +
-      "registrar lo que comió de verdad → plan tachado + lo real. Se guarda en " +
-      "candidatos.fit_nutri_real (por comida: 'lun|Almuerzo') y el coach lo ve en " +
-      "su panel (pestaña Nutrición) tachado + real. Regla: no volver al textarea " +
-      "suelto ni romper el cableado ida y vuelta.",
+      "El plan de nutrición es texto LIBRE por día (el coach escribe Desayuno/" +
+      "Almuerzo/Cena a su manera). Un intento de partirlo por comida lo autonumeró " +
+      "en 'Comida 1/2/3…', desarmó el orden del coach y puso un ✎ por línea. Regla: " +
+      "mostrar el texto del día TAL CUAL (bloque nutri-day-m) y UN SOLO ✎ por día " +
+      "para que el cliente anote lo que comió distinto. Se guarda en " +
+      "candidatos.fit_nutri_real por día ('lun') y el coach lo ve en su panel. No " +
+      "volver a partir por comida ni al textarea suelto.",
     check() {
       var f = read("pathway-fit-cliente.html");
       if (f) {
         if (!/function nutAdj\b/.test(f)) return "pathway-fit-cliente.html: falta nutAdj() — el cliente no puede registrar lo que comió distinto.";
         if (!/fit_nutri_real/.test(f)) return "pathway-fit-cliente.html: ya no persiste fit_nutri_real (el coach no ve el cambio de nutrición).";
-        if (!/class="nutri-meal"/.test(f)) return "pathway-fit-cliente.html: se cayeron las filas de comida (nutri-meal) — volvió el textarea suelto.";
+        if (!/class="nutri-day-m"/.test(f)) return "pathway-fit-cliente.html: falta el bloque del plan por día (nutri-day-m) — el plan debe verse tal cual lo escribe el coach.";
+        if (/class="nutri-meal"/.test(f)) return "pathway-fit-cliente.html: el plan volvió a partirse por comida (nutri-meal). Debe verse por DÍA con un solo ✎.";
+        if (/['"]Comida ['"]\s*\+/.test(f)) return "pathway-fit-cliente.html: el plan se autonumera en 'Comida N' — desarma el orden del coach. Mostrar el texto del día tal cual.";
       }
       var p = read("panel-v2.html");
       if (p) {
         if (!/fit_nutri_real/.test(p)) return "panel-v2.html: la pestaña Nutrición ya no lee fit_nutri_real — el coach no ve lo que el cliente comió distinto.";
+        if (/['"]Comida ['"]\s*\+/.test(p)) return "panel-v2.html: la lectura de nutrición volvió a autonumerar 'Comida N'. Leer la nota por día.";
       }
       return null;
     },

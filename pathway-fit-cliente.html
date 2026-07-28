@@ -34,18 +34,15 @@
 .super-cat ul{list-style:none;margin:0;padding:0;}
 .super-cat li{display:flex;align-items:center;gap:7px;font-size:13px;padding:2px 0;color:var(--text);}
 .super-cat li::before{content:'';width:13px;height:13px;border:1.5px solid var(--border);border-radius:3px;flex-shrink:0;}
-/* Plan de la semana: un bloque por día (estilo similar a los días del gym). */
-.nutri-day{margin-bottom:12px;}
-.nutri-day:last-child{margin-bottom:0;}
-.nutri-day-h{font-size:11px;font-weight:700;color:var(--rose);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;}
-.nutri-day-m{font-size:13px;color:var(--text);line-height:1.55;}
-/* Comidas como filas (misma idea que el gym: plan + ✎ para registrar lo que comiste). */
-.nutri-meal{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-top:1px solid var(--border);}
-.nutri-meal:first-of-type{border-top:0;}
-.nutri-meal-body{flex:1;min-width:0;}
-.nutri-meal-lbl{font-size:12px;font-weight:700;color:var(--text);}
-.nutri-meal-txt{font-size:13px;color:var(--muted);line-height:1.5;margin-top:1px;}
-.nutri-meal .ex-adj{margin-top:2px;}
+/* Plan de la semana: un bloque por día, tal cual lo escribe el coach. Un solo ✎
+   por día para que el cliente anote lo que comió distinto (no se parte por comida). */
+.nutri-day{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border);}
+.nutri-day:last-child{margin-bottom:0;padding-bottom:0;border-bottom:0;}
+.nutri-day-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;}
+.nutri-day-h{font-size:11px;font-weight:700;color:var(--rose);text-transform:uppercase;letter-spacing:.5px;}
+.nutri-day-m{font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;}
+.nutri-day-real{margin-top:8px;font-size:12.5px;color:var(--text);line-height:1.5;background:#EAF7EE;border-radius:8px;padding:7px 11px;}
+.nutri-real-lbl{font-weight:700;color:var(--rose);}
 /* Lista del súper desplegable */
 #nutri-super-card details>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;}
 #nutri-super-card details>summary::-webkit-details-marker{display:none;}
@@ -1045,9 +1042,9 @@ function applyNutricion(c){
       var txt=meals.map(function(m){return m[0]+': '+m[1];}).join('\n'); NUT.dias={}; ['lun','mar','mie','jue','vie','sab','dom'].forEach(function(k){NUT.dias[k]=txt;}); NUT.pautas=o.pautas||''; }
   } }catch(e){ NUT={dias:{},pautas:''}; }
   try{ NLOG=JSON.parse((c&&c.fit_nutri_log)||'{}')||{}; }catch(e){ NLOG={}; }
-  // Lo que el cliente comió DE VERDAD por comida (plan tachado → real). Misma
-  // idea que el gym (fit_ejercicios_real). Guardado en candidatos.fit_nutri_real:
-  //   FNREAL = { "lun|Almuerzo": { r:"atún a la plancha", ts:"2026-07-28" } }
+  // Lo que el cliente comió DE VERDAD, una nota por DÍA (no por comida). El plan
+  // se muestra tal cual; la nota va debajo. Guardado en candidatos.fit_nutri_real:
+  //   FNREAL = { "lun": { r:"cambié el pollo por atún", ts:"2026-07-28" } }
   try{ FNREAL=JSON.parse((c&&c.fit_nutri_real)||'{}')||{}; }catch(e){ FNREAL={}; }
   if(!FNREAL||typeof FNREAL!=='object') FNREAL={};
   _renderWeekPlan();
@@ -1059,66 +1056,56 @@ function _nutRealSave(){
   if(!CID) return; // demo (cliente de ejemplo): solo en pantalla
   sbPatch('candidatos','id=eq.'+encodeURIComponent(CID),{fit_nutri_real:j}).catch(function(){ if(typeof showToast==='function') showToast('⚠️ No se pudo guardar. Revisa tu conexión.'); });
 }
-// Parte el texto del plan de un día en comidas: "Desayuno: avena" -> {label,plan,key}.
-function _nutMeals(dayText){
-  return (''+dayText).replace(/\r/g,'').split('\n').map(function(l){return l.trim();}).filter(Boolean).map(function(l,idx){
-    var ci=l.indexOf(':'), hasL=ci>0;
-    return { label:(hasL?l.slice(0,ci).trim():('Comida '+(idx+1))), plan:(hasL?l.slice(ci+1).trim():l), key:(hasL?l.slice(0,ci).trim():('#'+idx)) };
-  });
-}
-// Plan de TODA la semana como filas de comidas (misma idea que el gym): cada
-// comida muestra el plan y, si el cliente comió algo distinto, el plan tachado
-// + lo real. El ✎ abre el editor inline.
+// Plan de TODA la semana: un bloque por día con el texto TAL CUAL lo escribió el
+// coach (no se parte por comida). Un solo ✎ por día para que el cliente anote lo
+// que comió distinto ese día; si anotó algo, se muestra debajo (sin tocar el plan).
 function _renderWeekPlan(){
   var box=document.getElementById('nutri-plan'); if(!box) return;
   var dias=(NUT&&NUT.dias)||{};
   var html=['lun','mar','mie','jue','vie','sab','dom'].map(function(dk){
     var v=(dias[dk]||'').trim(); if(!v) return '';
-    var rows=_nutMeals(v).map(function(m){
-      var nk=dk+'|'+m.key, rl=FNREAL[nk]||null, meta;
-      if(rl && rl.r && rl.r!==m.plan){
-        meta=(m.plan?'<s class="ex-was">'+esc(m.plan)+'</s> ':'')+'<span class="ex-now">'+esc(rl.r)+'</span>';
-      } else { meta=esc(m.plan); }
-      var adj='<button class="ex-adj" type="button" onclick="event.stopPropagation();nutAdj(this)" data-nk="'+esc(nk)+'" data-lb="'+esc(m.label)+'" data-pp="'+esc(m.plan)+'" title="Registrar lo que comiste" aria-label="Registrar lo que comiste">✎</button>';
-      return '<div class="nutri-meal"><div class="nutri-meal-body"><div class="nutri-meal-lbl">'+esc(m.label)+'</div><div class="nutri-meal-txt">'+meta+'</div></div>'+adj+'</div>';
-    }).join('');
-    return '<div class="nutri-day"><div class="nutri-day-h">'+esc(_NDAYFULL[dk])+'</div>'+rows+'</div>';
+    var rl=FNREAL[dk]||null, real=(rl&&rl.r&&(''+rl.r).trim())?(''+rl.r).trim():'';
+    var adj='<button class="ex-adj" type="button" onclick="event.stopPropagation();nutAdj(this)" data-dk="'+esc(dk)+'" data-lb="'+esc(_NDAYFULL[dk])+'" title="Registrar lo que comiste" aria-label="Registrar lo que comiste">✎</button>';
+    var realBlock=real?'<div class="nutri-day-real"><span class="nutri-real-lbl">Comiste distinto:</span> '+esc(real)+'</div>':'';
+    return '<div class="nutri-day" data-dk="'+esc(dk)+'">'+
+        '<div class="nutri-day-top"><span class="nutri-day-h">'+esc(_NDAYFULL[dk])+'</span>'+adj+'</div>'+
+        '<div class="nutri-day-m">'+esc(v)+'</div>'+
+        realBlock+
+      '</div>';
   }).filter(Boolean).join('');
   box.innerHTML=html||'<span style="color:var(--muted)">Tu coach todavía no cargó tu plan.</span>';
 }
-// Editor inline "lo que comiste" (mismo patrón que exAdj del gym).
+// Editor inline "lo que comiste distinto ese día" (un solo campo por día).
 function nutAdj(btn){
-  var row=btn.closest('.nutri-meal'); if(!row) return;
-  var nk=btn.getAttribute('data-nk')||'', lb=btn.getAttribute('data-lb')||'', pp=btn.getAttribute('data-pp')||'';
-  var nx=row.nextElementSibling;
-  if(nx && nx.classList && nx.classList.contains('ex-adjbox')){ nx.remove(); return; }
-  var rl=FNREAL[nk]||{}, vR=(rl.r!=null?rl.r:'');
+  var day=btn.closest('.nutri-day'); if(!day) return;
+  var dk=btn.getAttribute('data-dk')||'', lb=btn.getAttribute('data-lb')||'';
+  var ex=day.querySelector('.ex-adjbox'); if(ex){ ex.remove(); return; }
+  var rl=FNREAL[dk]||{}, vR=(rl.r!=null?rl.r:'');
   var box=document.createElement('div'); box.className='ex-adjbox';
   box.innerHTML=
-    '<div class="ex-adj-h">¿Comiste algo distinto en «'+esc(lb)+'»? Registralo — tu coach lo ve.</div>'+
-    '<input class="ex-adj-in" data-f="r" type="text" placeholder="Lo que comiste (ej. atún en vez de pollo)" value="'+esc(vR)+'">'+
+    '<div class="ex-adj-h">¿Comiste algo distinto el '+esc(lb)+'? Anotalo — tu coach lo ve.</div>'+
+    '<input class="ex-adj-in" data-f="r" type="text" placeholder="Ej. cambié el pollo por atún en el almuerzo" value="'+esc(vR)+'">'+
     '<div class="ex-adj-btns">'+
-      '<button type="button" class="ex-adj-save" onclick="nutAdjSave(this,\''+esc(nk).replace(/'/g,"\\'")+'\',\''+esc(pp).replace(/'/g,"\\'")+'\')">Guardar</button>'+
-      (rl.r?'<button type="button" class="ex-adj-clear" onclick="nutAdjClear(this,\''+esc(nk).replace(/'/g,"\\'")+'\')">Volver al plan</button>':'')+
+      '<button type="button" class="ex-adj-save" onclick="nutAdjSave(this,\''+esc(dk).replace(/'/g,"\\'")+'\')">Guardar</button>'+
+      (rl.r?'<button type="button" class="ex-adj-clear" onclick="nutAdjClear(this,\''+esc(dk).replace(/'/g,"\\'")+'\')">Borrar</button>':'')+
       '<button type="button" class="ex-adj-cancel" onclick="this.closest(\'.ex-adjbox\').remove()">Cancelar</button>'+
     '</div>';
-  row.parentNode.insertBefore(box, row.nextSibling);
+  day.appendChild(box);
   var f=box.querySelector('.ex-adj-in'); if(f) f.focus();
 }
-function nutAdjSave(btn,nk,pp){
+function nutAdjSave(btn,dk){
   var box=btn.closest('.ex-adjbox'); if(!box) return;
   var r=((box.querySelector('[data-f="r"]')||{}).value||'').trim();
-  var same=(!r || r===pp);
-  if(same){ delete FNREAL[nk]; } else { FNREAL[nk]={ r:r, ts:(typeof pwHoy==='function'?pwHoy():'') }; }
+  if(!r){ delete FNREAL[dk]; } else { FNREAL[dk]={ r:r, ts:(typeof pwHoy==='function'?pwHoy():'') }; }
   _nutRealSave(); box.remove();
   try{ _renderWeekPlan(); }catch(e){}
-  if(typeof showToast==='function') showToast(same?'Volviste al plan ✓':'Guardado ✓ — tu coach lo ve');
+  if(typeof showToast==='function') showToast(r?'Guardado ✓ — tu coach lo ve':'Listo ✓');
 }
-function nutAdjClear(btn,nk){
-  delete FNREAL[nk]; _nutRealSave();
+function nutAdjClear(btn,dk){
+  delete FNREAL[dk]; _nutRealSave();
   var box=btn.closest('.ex-adjbox'); if(box) box.remove();
   try{ _renderWeekPlan(); }catch(e){}
-  if(typeof showToast==='function') showToast('Volviste al plan ✓');
+  if(typeof showToast==='function') showToast('Listo ✓');
 }
 // ── Lista del súper (IA) — arma una lista de compras del plan de comidas de la
 //    semana, agrupada por sección. Se cachea en localStorage por hash del plan
