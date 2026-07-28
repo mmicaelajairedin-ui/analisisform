@@ -458,6 +458,17 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-clients-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:11px;}
 .cp-client{background:#fff;border:1px solid var(--pw-border);border-radius:16px;padding:13px 18px 11px;box-shadow:var(--pw-shadow-xs);display:flex;flex-direction:column;gap:9px;cursor:pointer;transition:all .2s var(--pw-ease);}
 .cp-client:hover{transform:translateY(-2px);box-shadow:var(--pw-shadow-md);border-color:var(--pw-border-strong);}
+/* Dos cajas grandes (estilo Fortalezas/Áreas): agrupan los clientes por origen.
+   El color de la caja distingue Pathway (ámbar, comisión) de propio (verde, 0%). */
+.cp-cli-grp{margin-top:16px;}
+.cp-cli-grp.is-pw{background:#FCFAF3;border-color:rgba(233,196,106,.55);}
+.cp-cli-grp.is-own{background:#F6FBF8;border-color:rgba(82,183,136,.45);}
+.cp-grp-hd{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+.cp-grp-ic{width:36px;height:36px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;}
+.cp-grp-t{font-family:var(--pw-serif);font-size:16px;font-weight:600;color:var(--pw-carbon);letter-spacing:-.2px;}
+.cp-grp-s{font-size:12px;color:var(--pw-text-muted);margin-top:1px;}
+.cp-grp-empty{padding:16px 4px 4px;color:var(--pw-text-soft);font-size:13px;}
+.cp-cli-grp .cp-client{background:#fff;}
 .cp-client-head{display:flex;align-items:center;gap:11px;}
 .cp-client-photo{width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0;}
 .cp-client-id{flex:1;min-width:0;}
@@ -5931,14 +5942,11 @@ function viewClientes(){
     ? "Cliente de ejemplo — todavía no tienes clientes propios"
     : activeCount+" activos"+(inactiveCount?" · "+inactiveCount+" inactivos":"")+
       (state.pathwayOptIn ? " · "+pwCount+" de Pathway" : "");
-  var cards = list.map(function(c){
+  // Tarjeta de un cliente (misma para el grupo Pathway y el grupo propio; la CAJA
+  // que la contiene ya dice de qué grupo es, así que la tarjeta va limpia).
+  var _cliCard = function(c){
     var medal = c.medal ? "<img class='cp-client-medal' src='assets/iconos/medalla-"+c.medal+".png' alt='Medalla "+c.medal+"'>" : "";
-    var isPw = c.source==="pathway";
     var role = esc(c.role);
-    // Diferenciar bien: cliente de Pathway (pagás comisión) vs propio (0%).
-    var srcPill = c._example ? "" : (isPw
-      ? "<span class='cp-client-pill' style='background:rgba(233,196,106,.22);color:#8E7A35'>Pathway · comisión</span>"
-      : "<span class='cp-client-pill' style='background:var(--pw-success-bg);color:var(--pw-bosque)'>Propio · 0%</span>");
     var dots = [1,2,3,4].map(function(w){
       var cls = w<c.week?"is-done":(w===c.week?"is-current":"");
       return "<span class='cp-week-dot "+cls+"'></span>";
@@ -5949,15 +5957,17 @@ function viewClientes(){
     var rpTxt = c.reportState==="published"?"publicado":"pendiente";
     var _inact = (c.last&&c.last.state==="stale") || (c.raw&&c.raw.activo===false);
     var askR = (_inact && c.email) ? "<button class='cp-btn cp-btn-ghost' style='height:26px;padding:0 10px;font-size:11px;margin-left:auto' data-act='cvx-resena' data-em='"+esc(c.email)+"' data-n='"+esc(c.name||"")+"'>Pedir reseña</button>" : "";
-    return "<article class='cp-client' data-act='cli-open:"+c.id+"' data-sort='"+esc(c.id)+"' data-s='"+esc(((c.name||"")+" "+(c.email||"")+" "+(c.role||"")).toLowerCase())+"' style='position:relative"+(isPw?";border-color:var(--pw-border-strong)":"")+"'>"+
+    return "<article class='cp-client' data-act='cli-open:"+c.id+"' data-sort='"+esc(c.id)+"' data-s='"+esc(((c.name||"")+" "+(c.email||"")+" "+(c.role||"")).toLowerCase())+"' style='position:relative'>"+
       "<span class='pw-grip' title='Arrastra para ordenar' onclick='event.stopPropagation()' style='position:absolute;top:9px;right:9px;opacity:.45;z-index:2'>"+_gripSvg()+"</span>"+
       "<header class='cp-client-head'>"+avImg(c.photo,c.name,"class='cp-client-photo'")+
         "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+(c._example?" <span style='font-size:10px;font-weight:700;color:var(--pw-bosque);background:var(--pw-success-bg);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.5px'>EJEMPLO</span>":"")+(_formPendiente(c)?" <span style='font-size:9.5px;font-weight:600;color:#8E7A35;background:rgba(233,196,106,.18);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.3px'>Form pendiente</span>":"")+"</div><div class='cp-client-role'>"+role+"</div></div>"+medal+"</header>"+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
       "<div class='cp-week'><span class='cp-week-label'>Sem "+c.week+"/4</span><span class='cp-week-dots'>"+dots+"</span></div>"+
-      "<footer class='cp-client-foot'>"+srcPill+"<span class='cp-client-pill "+cvCls+"'>CV "+cvTxt+"</span>"+
+      "<footer class='cp-client-foot'><span class='cp-client-pill "+cvCls+"'>CV "+cvTxt+"</span>"+
         "<span class='cp-client-pill "+rpCls+"'>Informe "+rpTxt+"</span>"+askR+"</footer></article>";
-  }).join("");
+  };
+  var pwList  = list.filter(function(c){return c.source==="pathway";});
+  var ownList = list.filter(function(c){return c.source!=="pathway";});
   var banner = _exOnly
     ? "<div class='cp-reassurance' style='margin:0;border-radius:12px'><strong>Cliente de ejemplo.</strong> Abrí su ficha para ver informe, CV y plan. Desaparece cuando sumás uno real.</div>"
     : "";
@@ -5987,25 +5997,66 @@ function viewClientes(){
   if(nRev) _alerts.push(_alrt("blue","fileText","A revisar","tu visto bueno",nRev,"cli:review"));
   if(_nx){ var _nd=new Date(_nx.t),_t0=new Date();_t0.setHours(0,0,0,0);var _dd=new Date(_nd);_dd.setHours(0,0,0,0);var _df=Math.round((_dd-_t0)/86400000); var _day=_df===0?"Hoy":(_df===1?"Mañana":_nd.toLocaleDateString("es-ES",{day:"2-digit",month:"short"})); _alerts.push(_alrt("go","calendar","Próxima sesión",_day+(_nx.s.hora?" · "+esc(_nx.s.hora):"")+" · "+esc((_nx.c.name||"").split(/\s+/)[0]),null)); }
   var atencion="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Atención<span class='dot'>.</span></h3>"+(_alerts.length?"<span class='cp-eyebrow'>"+_alerts.length+"</span>":"")+"</div><div style='padding-bottom:6px'>"+(_alerts.length?_alerts.join(""):"<div style='padding:18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Todo al día ✓</div>")+"</div></div>";
-  var notas="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Notas<span class='dot'>.</span></h3></div><div style='padding:12px 16px'><textarea class='cp-nota-in' id='cp-cli-nota' placeholder='Escribí una nota rápida…' oninput='_cliNotaSave(this.value)'>"+esc(_cliNotaGet())+"</textarea><div class='cp-nota-hint'>Se guarda en este dispositivo.</div></div></div>";
+  // ── Cobros de Pathway (la plata que entra de tus clientes de comisión) ──
+  var _pwAcc=_sol.filter(function(s){return s.estado==="aceptada";});
+  var _rate=(typeof _pwCoachRate==="function")?_pwCoachRate():5;
+  var _pwBruto=0,_pwCom=0; _pwAcc.forEach(function(s){ var m=Number(s.monto)||0,c=Number(s.comision); if(!(c>=0))c=m*_rate/100; _pwBruto+=m; _pwCom+=c; });
+  var _pwNeto=Math.max(0,_pwBruto-_pwCom);
+  var _mk=(function(){var d=new Date();return d.getFullYear()+"-"+d.getMonth();})();
+  var _pwMes=0; _pwAcc.forEach(function(s){ var ca=s.created_at?new Date(s.created_at):null; if(!ca||isNaN(ca.getTime()))return; if((ca.getFullYear()+"-"+ca.getMonth())!==_mk)return; var m=Number(s.monto)||0,c=Number(s.comision); if(!(c>=0))c=m*_rate/100; _pwMes+=Math.max(0,m-c); });
+  var cobros=(state.pathwayOptIn || nPwActive>0 || !REAL)
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Cobros de Pathway<span class='dot'>.</span></h3><span class='cp-eyebrow'>comisión "+_rate+"%</span></div>"+
+      (_pwAcc.length
+        ? "<div style='padding:12px 16px 15px'><div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--pw-text-muted)'>A tu favor · neto</div>"+
+            "<div style='font-family:var(--pw-serif);font-size:29px;font-weight:600;color:var(--pw-bosque);line-height:1;margin:4px 0 3px'>"+_money(_pwNeto)+"</div>"+
+            "<div style='font-size:11.5px;color:var(--pw-text-muted)'>Este mes "+_money(_pwMes)+" · comisión "+_money(_pwCom)+"</div>"+
+            "<div data-act='asist-go' data-go='config|pathway' style='margin-top:10px;font-size:12px;font-weight:700;color:var(--pw-bosque);cursor:pointer'>Ver desglose →</div></div>"
+        : "<div style='padding:14px 16px;font-size:12.5px;color:var(--pw-text-soft)'>Sin cobros todavía. Al primer pago, el desglose real.</div>")+
+      "</div>"
+    : "";
   var solSection=(!REAL || (_sol && _sol.length))
     ? "<section><h3 class='cp-card-title' style='margin:0 0 10px'>"+PWI.svg('inbox',{sm:true})+" Solicitudes de Pathway<span class='dot'>.</span></h3>"+viewSolicitudes(true)+"</section>"
     : "";
   var filtersBar="<div class='cp-filters cp-cli-filters'>"+
     "<div class='cp-sort'>Ordenar por: <select style='background:transparent;border:none;color:var(--pw-carbon);font-weight:600;cursor:pointer;outline:none'>"+
     "<option>Última actividad</option><option>Nombre</option><option>Semana del programa</option></select></div></div>";
+  // Caja grande de un grupo de clientes (copia el estilo Fortalezas/Áreas del
+  // informe: cuadrado con ícono + título + subtítulo, y adentro la grilla).
+  function _grpBox(mod,tint,title,sub,gridId,cardsHtml,emptyTxt){
+    return "<div class='cp-card cp-cli-grp "+mod+"'><div class='cp-card-pad'>"+
+      "<div class='cp-grp-hd'><span class='cp-grp-ic' style='background:"+tint+"'>"+PWI.svg('users',{sm:true})+"</span>"+
+      "<div style='flex:1;min-width:0'><div class='cp-grp-t'>"+title+"</div><div class='cp-grp-s'>"+sub+"</div></div></div>"+
+      "<section class='cp-clients-grid' id='"+gridId+"'>"+cardsHtml+"</section>"+
+      (cardsHtml?"":"<div class='cp-grp-empty'>"+emptyTxt+"</div>")+
+    "</div></div>";
+  }
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Clientes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>"+sub+"</div></div>"+
       "<div class='cp-topbar-actions'><div class='cp-search'>"+svg(IC.search,14)+
         "<input id='cp-cli-search' placeholder='Buscar por nombre o email…'></div></div></header>"+
+    // Zona Pathway: 2 columnas (Recorrido + Solicitudes | Atención + Cobros).
     "<div class='cp-cli-cols'>"+
-      "<div class='cp-cli-main'>"+
-        recorrido + solSection + banner + linksCard() + filtersBar +
-        "<section class='cp-clients-grid' id='cp-clients-grid'>"+cards+"</section>"+
-        "<div id='cp-cli-empty' style='display:none;padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin resultados para tu búsqueda.</div>"+
-      "</div>"+
-      "<aside class='cp-cli-rail'>"+ atencion + notas +"</aside>"+
-    "</div>";
+      "<div class='cp-cli-main'>"+ recorrido + solSection +"</div>"+
+      "<aside class='cp-cli-rail'>"+ atencion + cobros +"</aside>"+
+    "</div>"+
+    // Tus clientes: DOS cajas grandes (estilo Fortalezas/Áreas del informe) —
+    // "Clientes de Pathway" (comisión) y "Clientes propios" (0%). La caja ya
+    // dice el grupo, así que las tarjetas de adentro van limpias.
+    "<section class='cp-cli-roster'>"+ banner + linksCard() +
+      "<h3 class='cp-card-title' style='margin:20px 0 12px'>"+PWI.svg('users',{sm:true})+" Tus clientes<span class='dot'>.</span></h3>"+
+      filtersBar +
+      ((state.pathwayOptIn || pwList.length)
+        ? _grpBox("is-pw","rgba(233,196,106,.20)","Clientes de Pathway",
+            pwList.length+" activo"+(pwList.length===1?"":"s")+" · comisión "+_rate+"%",
+            "cp-clients-grid-pw", pwList.map(_cliCard).join(""),
+            "Todavía no cerraste ningún cliente de Pathway.")
+        : "")+
+      _grpBox("is-own","var(--pw-success-bg)","Clientes propios",
+        ownList.length+" activo"+(ownList.length===1?"":"s")+" · 0% comisión",
+        "cp-clients-grid", ownList.map(_cliCard).join(""),
+        "Todavía no sumaste clientes propios.")+
+      "<div id='cp-cli-empty' style='display:none;padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin resultados para tu búsqueda.</div>"+
+    "</section>";
 }
 // Guarda el orden manual de las tarjetas de clientes (arrastre). Los ids que se
 // ven ahora van primero (en su nuevo orden); el resto que ya estaba guardado, atrás.
@@ -6016,8 +6067,9 @@ function _cliReorder(order){
   saveCfg({cliente_orden: shown.concat(rest)});
 }
 function _wireCliSort(){
-  var g=document.getElementById("cp-clients-grid");
-  if(g && window.pwSortable) pwSortable(g, _cliReorder, {handle:".pw-grip", item:".cp-client"});
+  if(!window.pwSortable) return;
+  var grids=document.querySelectorAll(".cp-cli-roster .cp-clients-grid");
+  for(var i=0;i<grids.length;i++) pwSortable(grids[i], _cliReorder, {handle:".pw-grip", item:".cp-client"});
 }
 // Notas rápidas del rail de Clientes (scratchpad por coach, en este dispositivo).
 function _cliNotaKey(){ try{ return "mj_cli_nota_"+((RME&&RME.id)||"x"); }catch(e){ return "mj_cli_nota_x"; } }
@@ -12585,8 +12637,7 @@ document.addEventListener("input", function(ev){
   }
   if(!ev.target || ev.target.id!=="cp-cli-search") return;
   var q=(ev.target.value||"").toLowerCase().trim();
-  var grid=document.querySelector(".cp-clients-grid"); if(!grid) return;
-  var cards=grid.querySelectorAll(".cp-client"), n=0;
+  var cards=document.querySelectorAll(".cp-cli-roster .cp-client"), n=0;
   for(var i=0;i<cards.length;i++){
     var s=cards[i].getAttribute("data-s")||"";
     var show=!q||s.indexOf(q)>=0;
