@@ -59,7 +59,20 @@
     p.onicecandidate = function (e) { if (e.candidate) _emit("ice", { cand: e.candidate }); };
     p.ontrack = function (e) {
       if (!remoteEl) return;
-      if (remoteEl.srcObject !== e.streams[0]) { remoteEl.srcObject = e.streams[0]; try { opts.onRemoteJoin && opts.onRemoteJoin(); } catch (_e) {} }
+      if (remoteEl.srcObject !== e.streams[0]) {
+        remoteEl.srcObject = e.streams[0];
+        // Autoplay: en desktop el navegador BLOQUEA reproducir un video con audio
+        // sin gesto → quedaba negro aunque el media llegara. Forzamos play(); si el
+        // navegador igual lo bloquea, avisamos para tocar la pantalla.
+        var pr = remoteEl.play();
+        if (pr && pr.catch) pr.catch(function () {
+          // Bloqueado: al PRIMER toque/click en la pantalla, reproducimos (gesto del usuario).
+          var go = function () { try { remoteEl.play(); } catch (e) {} document.removeEventListener("click", go); document.removeEventListener("touchstart", go); };
+          document.addEventListener("click", go); document.addEventListener("touchstart", go);
+          try { opts.onState && opts.onState("Tocá la pantalla para ver el video"); } catch (e) {}
+        });
+        try { opts.onRemoteJoin && opts.onRemoteJoin(); } catch (_e) {}
+      }
     };
     p.onconnectionstatechange = function () {
       var s = p.connectionState;
@@ -73,7 +86,17 @@
   async function _onSignal(msg) {
     if (!msg || msg.__self) return;
     try {
-      if (msg.kind === "hello") { // el otro entró → si soy el impolite, disparo la oferta re-agregando (negotiationneeded ya corre al add track)
+      if (msg.kind === "hello") {
+        // El otro recién se suscribió. Si YO entré primero, mi oferta inicial
+        // pudo perderse (nadie la escuchaba todavía). El peer "impolite" (coach)
+        // RE-OFERTA ahora que el otro sí está escuchando → así conectan sí o sí,
+        // sin importar quién entró primero. (El polite espera la oferta.)
+        if (!polite && pc && pc.signalingState === "stable") {
+          (async function () {
+            try { makingOffer = true; await pc.setLocalDescription(); _emit("desc", { desc: pc.localDescription }); }
+            catch (e) {} finally { makingOffer = false; }
+          })();
+        }
         return;
       }
       if (msg.kind === "bye") { try { opts.onRemoteLeave && opts.onRemoteLeave(); } catch (e) {} _state("La otra persona salió"); if (remoteEl) remoteEl.srcObject = null; return; }
@@ -108,7 +131,7 @@
         remoteEl = document.createElement("video"); remoteEl.autoplay = true; remoteEl.playsInline = true;
         remoteEl.style.cssText = "width:100%;height:100%;object-fit:cover;background:#0F1D16";
         var localEl = document.createElement("video"); localEl.autoplay = true; localEl.playsInline = true; localEl.muted = true;
-        localEl.srcObject = stream;
+        localEl.srcObject = stream; try { var lp = localEl.play(); if (lp && lp.catch) lp.catch(function () {}); } catch (e) {}
         localEl.style.cssText = "position:absolute;right:14px;bottom:14px;width:26%;max-width:180px;border-radius:12px;object-fit:cover;box-shadow:0 4px 18px rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.5);z-index:2";
         c.appendChild(remoteEl); c.appendChild(localEl);
         try { opts.onLocalReady && opts.onLocalReady(stream); } catch (e) {}
