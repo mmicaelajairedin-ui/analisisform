@@ -1792,25 +1792,55 @@ function _saveProfile(){
     descripcion:_v('cfp-desc'), link_agendar:_v('cfp-agendar'), publica:pub
   }, 'Perfil guardado ✓');
 }
+function _recEA(s){ return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+var _MC_REC_TP=[["","Auto (según el link)"],["video","Video"],["pdf","Guía / PDF"],["plantilla","Plantilla"],["ejercicio","Ejercicio"],["articulo","Artículo"]];
 function _cfgRecursos(){
  var _nlbl=MC_REC_LABEL[MC_N]||'Fitness', _ej=MC_REC_EJEMPLOS[MC_N]||MC_REC_EJEMPLOS.fitness;
- var rows=CFG.recursos.map(function(r,i){return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:9px"><div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px"><input class="cp-form-input" value="'+r.titulo+'" placeholder="Título del recurso"><input class="cp-form-input" value="'+r.url+'" placeholder="https://… (link)" style="font-size:12px;color:var(--pw-text-soft)"></div><button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4);height:40px;padding:0 13px" onclick="_recDel('+i+')" title="Quitar">✕</button></div>';}).join('')
+ var rows=CFG.recursos.map(function(r,i){
+   var tipoOpts=_MC_REC_TP.map(function(o){return '<option value="'+o[0]+'"'+((r.tipo||'')===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('');
+   return '<div style="border:1px solid var(--pw-border);border-radius:12px;padding:12px;margin-bottom:10px;display:flex;flex-direction:column;gap:7px">'
+     +'<div style="display:flex;gap:8px;align-items:center"><input id="rec-t-'+i+'" class="cp-form-input" style="flex:1" value="'+_recEA(r.titulo)+'" placeholder="Título del recurso"><button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4);height:38px;padding:0 12px" onclick="_recDel('+i+')" title="Quitar">✕</button></div>'
+     +'<input id="rec-u-'+i+'" class="cp-form-input" value="'+_recEA(r.url)+'" placeholder="https://… (link al video, PDF, guía…)" style="font-size:12.5px">'
+     +'<input id="rec-d-'+i+'" class="cp-form-input" value="'+_recEA(r.descripcion)+'" placeholder="Descripción corta (opcional)" style="font-size:12.5px">'
+     +'<div style="display:flex;gap:7px;flex-wrap:wrap"><select id="rec-tp-'+i+'" class="cp-form-input" style="flex:1;min-width:150px">'+tipoOpts+'</select><input id="rec-mt-'+i+'" class="cp-form-input" style="flex:0 0 120px;min-width:100px" value="'+_recEA(r.meta)+'" placeholder="8:24 / 12 págs"></div>'
+     +'<input id="rec-cv-'+i+'" class="cp-form-input" value="'+_recEA(r.cover)+'" placeholder="Portada propia (URL de imagen, opcional)" style="font-size:12px">'
+     +'<div style="display:flex;gap:18px;align-items:center;font-size:12.5px;color:var(--pw-text-soft)"><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="rec-new-'+i+'" '+(r.nuevo?'checked':'')+'> Nuevo</label><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="rec-dest-'+i+'" '+(r.destacado?'checked':'')+'> Recomendado</label></div>'
+   +'</div>';
+ }).join('')
   ||'<div style="text-align:center;color:var(--pw-text-soft);font-size:13px;padding:18px 10px;line-height:1.6">Todavía no cargaste recursos propios — tus clientes ven los de ejemplo.<br>Toca <strong>Cargar ejemplos de '+_nlbl+'</strong>, o <strong>Agregar recurso</strong> para poner el tuyo.</div>';
  return '<div class="cp-card"><div class="cp-card-hd"><h3 class="cp-card-title">Recursos del portal<span class="dot">.</span></h3><span class="cp-eyebrow">'+_nlbl+'</span></div>'
-  +'<div class="cp-card-pad"><p class="cp-reassurance" style="margin:0 0 16px">Son <strong>enlaces útiles</strong> que <strong>solo ve el cliente</strong> en la sección Recursos de su portal — para '+_nlbl.toLowerCase()+', por ejemplo: '+_ej+'. Edita el título/link o quita los que no uses con la <strong>✕</strong>.</p>'
+  +'<div class="cp-card-pad"><p class="cp-reassurance" style="margin:0 0 16px">Son los materiales que ven <strong>todos los clientes de la empresa</strong> en la sección Recursos de su portal (para '+_nlbl.toLowerCase()+', por ejemplo: '+_ej+'). Ponés <strong>título y link</strong>; la <strong>portada, el tipo y el ícono se generan solos</strong> — o cargás portada y descripción propias.</p>'
   +'<div id="recrows">'+rows+'</div>'
   +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px"><button class="cp-btn cp-btn-ghost" onclick="_recAdd()">+ Agregar recurso</button><button class="cp-btn cp-btn-ghost" onclick="CFG.recursos=_mcDefRecursos();renderConfig()">Cargar ejemplos de '+_nlbl+'</button><button class="cp-btn cp-btn-primary" style="margin-left:auto" onclick="_saveRecursos()">Guardar</button></div></div></div>';
 }
-function _recAdd(){_recRead();CFG.recursos.push({titulo:'',url:''});renderConfig();}
+function _recAdd(){_recRead();CFG.recursos.push({titulo:'',url:'',descripcion:'',tipo:'',meta:'',cover:'',destacado:false,nuevo:false});renderConfig();}
 function _recDel(i){_recRead();CFG.recursos.splice(i,1);renderConfig();}
 // Lee los inputs actuales de recursos al modelo (para no perder lo tipeado al
-// agregar/quitar o guardar).
+// agregar/quitar o guardar). Campos ricos por id (rec-*-i), igual que el panel del coach.
 function _recRead(){
-  var rows=document.querySelectorAll('#recrows > div'); if(!rows.length) return;
-  var out=[]; rows.forEach(function(row){ var ins=row.querySelectorAll('input'); var t=((ins[0]&&ins[0].value)||'').trim(), u=((ins[1]&&ins[1].value)||'').trim(); if(t||u) out.push({titulo:t,url:u}); });
-  CFG.recursos=out;
+  if(!Array.isArray(CFG.recursos)) return;
+  for(var i=0;i<CFG.recursos.length;i++){
+    var r=CFG.recursos[i]; if(!r) continue;
+    var g=function(p){return document.getElementById(p+'-'+i);};
+    var t=g('rec-t'),u=g('rec-u'),d=g('rec-d'),tp=g('rec-tp'),mt=g('rec-mt'),cv=g('rec-cv'),de=g('rec-dest'),nv=g('rec-new');
+    if(t)r.titulo=t.value; if(u)r.url=u.value; if(d)r.descripcion=d.value; if(tp)r.tipo=tp.value; if(mt)r.meta=mt.value; if(cv)r.cover=cv.value; if(de)r.destacado=de.checked; if(nv)r.nuevo=nv.checked;
+  }
 }
-function _saveRecursos(){ _recRead(); mcSaveConfig({recursos:CFG.recursos}, 'Recursos guardados ✓'); }
+function _saveRecursos(){
+  _recRead();
+  var clean=(CFG.recursos||[]).filter(function(r){return (''+(r.titulo||'')).trim()||(''+(r.url||'')).trim();}).map(function(r){
+    var o={titulo:(''+(r.titulo||'')).trim(), url:(''+(r.url||'')).trim()};
+    if((''+(r.descripcion||'')).trim()) o.descripcion=(''+r.descripcion).trim();
+    if(r.tipo) o.tipo=r.tipo;
+    if((''+(r.meta||'')).trim()) o.meta=(''+r.meta).trim();
+    if((''+(r.cover||'')).trim()) o.cover=(''+r.cover).trim();
+    if(r.destacado) o.destacado=true;
+    if(r.nuevo) o.nuevo=true;
+    return o;
+  });
+  CFG.recursos=clean;
+  mcSaveConfig({recursos:clean}, 'Recursos guardados ✓');
+}
 function _cfgBrand(){
  var swatches=['#2D6A4F','#15807A','#2C6E9E','#3F4DA0','#6D3FA0','#8E3B66','#A23A3A','#B5722A','#44505E'];
  var sw=swatches.map(function(c){var on=CFG.color===c;return '<button onclick="_setColor(\''+c+'\')" style="width:38px;height:38px;border-radius:50%;background:'+c+';border:'+(on?'3px solid #fff':'2px solid transparent')+';box-shadow:'+(on?'0 0 0 2px '+c:'var(--pw-shadow-xs)')+';cursor:pointer;padding:0" aria-label="'+c+'"></button>';}).join('');
