@@ -440,6 +440,10 @@ details.logros-c[open]>summary .lg-caret{transform:rotate(180deg);}
   overflow:hidden;padding:0;flex-shrink:0;-webkit-appearance:none;appearance:none;}
 .cli-tb-me img{width:100%;height:100%;object-fit:cover;display:block;}
 
+/* Conmutador Documentos/LinkedIn (dos cuadrados) — solo móvil; en escritorio el
+   menú lateral ya tiene ambas secciones. */
+.dl-switch{display:none;}
+
 @media(max-width:900px){
 
   /* ── Padding del contenedor principal ── */
@@ -679,6 +683,16 @@ details.logros-c[open]>summary .lg-caret{transform:rotate(180deg);}
   /* Inicio: el calendario + "agendar sesión" no se muestran en móvil
      (esa info vive en la pestaña Sesiones). */
   .home-cal-desktop{ display:none !important; }
+
+  /* Documentos + LinkedIn fusionados en UNA pestaña: dos cuadrados chicos para
+     cambiar entre una y otra sin recargar el bottom-nav. */
+  .dl-switch{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .dl-tile{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+    padding:10px 8px; border-radius:13px; border:1.5px solid var(--border); background:#fff;
+    font-family:Inter,-apple-system,sans-serif; font-size:12px; font-weight:700; color:var(--muted);
+    cursor:pointer; -webkit-appearance:none; appearance:none; transition:border-color .15s,background .15s,color .15s; }
+  .dl-tile svg{ width:22px; height:22px; }
+  .dl-tile.is-on{ border-color:var(--brand); background:var(--brand-light); color:var(--brand); }
 
   /* Chat/Notificaciones en móvil: hoja inferior a pantalla completa que SALTA
      por encima de la barra inferior (antes se quedaba escondido abajo, como un
@@ -1431,11 +1445,7 @@ window.PW_IA_CFG={
     </button>
     <button class="bnav-item" data-sec="docs" onclick="bnavGo('docs',this)">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-      <span>Docs</span>
-    </button>
-    <button class="bnav-item" data-sec="linkedin" onclick="bnavGo('linkedin',this)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
-      <span>LinkedIn</span>
+      <span>Documentos</span>
     </button>
     <button class="bnav-item" data-sec="empleos" onclick="bnavGo('empleos',this)">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -2414,7 +2424,12 @@ function entrar(){
   // foto_perfil se guarda solo desde cv.html (cuando la columna existe en Supabase)
   var _sbNm=document.getElementById('sb-uname'); if(_sbNm) _sbNm.textContent=C.nombre||'';
   var _sbEm=document.getElementById('sb-uemail'); if(_sbEm) _sbEm.textContent=E||'';
-  updSB();render('semana');goSec('semana',document.querySelector('.ni'));
+  // "Volver donde quedaste": arranca en la última sección que el cliente estaba
+  // usando (guardada en goSec), no siempre en el inicio. render('semana') pinta
+  // algo inmediato; goSec navega a la sección recordada (con su propio loading).
+  var _startSec=_restoreSec();
+  var _startNi=document.querySelector('.sb-nav .ni[onclick*="\''+_startSec+'\'"]')||document.querySelector('.ni');
+  updSB();render('semana');goSec(_startSec,_startNi);
 
   // Si el cliente llega con #resena (link de la plantilla "Pedir reseña"
   // del coach), scrolleamos a la card de reseña y la enfocamos.
@@ -3052,6 +3067,16 @@ function showMilestoneCelebration(opts){
   ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
 }
 
+// "Volver donde quedaste": devuelve la última sección usada (guardada por goSec),
+// si sigue siendo válida y visible; si no, el inicio.
+function _restoreSec(){
+  try{
+    var s=localStorage.getItem('mj_lastsec_'+E)||'';
+    if(['semana','docs','linkedin','empleos','recursos','sesion'].indexOf(s)===-1) return 'semana';
+    if(typeof _secVisible==='function' && !_secVisible(s)) return 'semana';
+    return s;
+  }catch(e){ return 'semana'; }
+}
 function goSec(sec,el){
   // Si la sección que se intenta abrir está oculta para este cliente
   // (visibilidad apagada por el coach), redirigimos a "semana" en vez de
@@ -3076,6 +3101,7 @@ function goSec(sec,el){
     }
   }
   SEC=sec;
+  try{ localStorage.setItem('mj_lastsec_'+E, sec); }catch(e){} // recordar dónde quedó
   document.querySelectorAll('.ni').forEach(function(b){b.classList.remove('on');});
   if(el)el.classList.add('on');
   var titles={semana:'Mi semana',docs:'Documentos',linkedin:'LinkedIn',empleos:'Empleos',recursos:'Recursos',sesion:'Sesiones'};
@@ -4078,6 +4104,22 @@ function rAnalisis(){
   return o;
 }
 
+// Conmutador de DOS CUADRADOS (Documentos / LinkedIn) — solo móvil. En móvil
+// LinkedIn se fusionó dentro de la pestaña Documentos para aligerar el bottom-nav;
+// estos dos tiles cambian entre una y otra dentro de la MISMA pestaña. En
+// escritorio no se muestra (ahí el menú lateral ya tiene ambas). Si el coach no
+// usa LinkedIn (sección oculta), no se muestra el conmutador.
+function _docsLiSwitch(active){
+  if(typeof _secVisible==='function' && !_secVisible('linkedin')) return '';
+  return '<div class="dl-switch">'+
+    '<button class="dl-tile'+(active==='docs'?' is-on':'')+'" onclick="goSec(\'docs\')" aria-label="Documentos">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'+
+      '<span>Documentos</span></button>'+
+    '<button class="dl-tile'+(active==='linkedin'?' is-on':'')+'" onclick="goSec(\'linkedin\')" aria-label="LinkedIn">'+
+      '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>'+
+      '<span>LinkedIn</span></button>'+
+  '</div>';
+}
 function rDocs(){
   var hasCv=!!CV,hasCarta=!!(C.carta_presentacion);
   var hasLi=!!(C.linkedin_analisis||C.linkedin_titular);
@@ -4097,7 +4139,8 @@ function rDocs(){
   ];
   var doneCount=items.filter(function(i){return i.done;}).length;
   var pct=Math.round((doneCount/items.length)*100);
-  var o='<div style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:13px;">';
+  var o=_docsLiSwitch('docs');
+  o+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:13px;">';
   o+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">';
   o+='<div style="font-size:14px;font-weight:600;color:var(--text);font-family:Inter,-apple-system,sans-serif;">Tu perfil profesional</div>';
   o+='<span style="font-size:13px;font-weight:600;color:'+(pct>=100?'var(--green)':'var(--brand)')+';">'+pct+'%</span></div>';
@@ -5020,9 +5063,12 @@ function bnavGo(sec,btn){
   goSec(sec, sbBtn);
 }
 function syncBnav(sec){
+  // LinkedIn se fusionó dentro de la pestaña "Documentos" (móvil): al ver LinkedIn
+  // se mantiene activo el ítem Documentos del bottom-nav.
+  var navSec=(sec==='linkedin')?'docs':sec;
   document.querySelectorAll('.bnav-item').forEach(function(b){
     b.classList.remove('on','on-fill');
-    if(b.dataset.sec===sec) b.classList.add(sec==='linkedin'?'on-fill':'on');
+    if(b.dataset.sec===navSec) b.classList.add('on');
   });
 }
 
@@ -5115,6 +5161,7 @@ function rLinkedIn(){
   // que reportó Mica al comparar con el linkedin-viewer del Pack Express.
   // data-sec="linkedin" — usado por goSec para validar el cache.
   var o='<div data-sec="linkedin" style="max-width:600px;margin:0 auto;display:flex;flex-direction:column;gap:14px;">';
+  o+=_docsLiSwitch('linkedin');
 
   // Título grande arriba (idéntico estilo al Pack Express)
   o+='<div style="text-align:center;margin-bottom:8px;">';
