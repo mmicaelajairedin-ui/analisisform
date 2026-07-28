@@ -346,22 +346,18 @@ const RULES = [
     },
   },
   {
-    name: "Sala: tu foto real viaja a la videollamada (no solo iniciales)",
-    bug: "Un coach en llamada con soporte/otro no veía la foto del otro: la Sala nunca " +
-         "pasaba el avatar a Jitsi. Ahora sala.html toma tu foto (mj_user o mj_foto_<email>) " +
-         "y la manda al JWT (avatar) y a userInfo.avatarURL. Si se corta, vuelven las iniciales.",
+    name: "Sala: la identidad (nombre + rol) viaja al motor de video P2P",
+    bug: "El motor de video es WebRTC 1:1 propio (PWP2P). La Sala tiene que pasarle " +
+         "quién es cada uno (name) y quién manda (moderator=coach) para el chat/estado " +
+         "y la resolución de conflictos de oferta. Si se corta, el chat no sabe de quién " +
+         "es cada mensaje y el handshake puede trabarse.",
     check() {
       const s = read("sala.html");
       if (!s) return null;
-      if (!/avatar:FOTO/.test(s))
-        return "sala.html: el token de la videollamada ya no lleva tu avatar (avatar:FOTO).";
-      if (!/avatarURL:FOTO/.test(s))
-        return "sala.html: Jitsi ya no recibe tu foto (userInfo.avatarURL).";
-      if (!/mj_foto_/.test(s) || !/foto_url/.test(s))
-        return "sala.html: se perdió la búsqueda de tu foto (mj_user.foto_url / mj_foto_<email>).";
-      const jt = read("supabase/functions/jaas-token/index.ts");
-      if (jt && !/avatar/.test(jt))
-        return "jaas-token: el JWT ya no incluye el claim de avatar.";
+      if (!/PWP2P\.start\(/.test(s))
+        return "sala.html: ya no arranca el motor de video propio (PWP2P.start).";
+      if (!/name:NAME/.test(s) || !/moderator:MOD/.test(s))
+        return "sala.html: PWP2P.start ya no recibe la identidad (name:NAME / moderator:MOD).";
       return null;
     },
   },
@@ -3189,8 +3185,8 @@ const RULES = [
       }
       var s = read("sala.html");
       if (s) {
-        if (!/vpaas-magic-cookie-/.test(s)) return "sala.html: se cayo el App ID de JaaS (8x8) — la Sala no embebe el video white-label.";
-        if (!/8x8\.vc/.test(s)) return "sala.html: la Sala ya no carga JaaS (8x8.vc).";
+        if (!/PWP2P\.start\(/.test(s)) return "sala.html: la Sala ya no arranca el motor de video propio (PWP2P.start).";
+        if (!/pw-p2p\.js/.test(s)) return "sala.html: la Sala ya no carga el motor de video propio (pw-p2p.js).";
       }
       return null;
     },
@@ -3353,15 +3349,15 @@ const RULES = [
   },
   {
     name: "sala: chat casual propio (mismo en móvil y web, sin el chat nativo distinto por equipo)",
-    why: "El chat nativo de la videollamada se ve distinto en móvil vs web. Usamos uno propio que viaja por " +
-         "el transporte de la llamada (sendChatMessage / incomingMessage) para que sea idéntico en todos lados. " +
-         "Si se rompe, el chat vuelve a ser inconsistente o desaparece.",
+    why: "El chat de la Sala es propio (mismo en móvil y web) y viaja por el transporte del motor de " +
+         "video P2P (PWP2P.sendChat para enviar, callback onChat para recibir). Si se rompe, el chat " +
+         "vuelve a ser inconsistente o desaparece.",
     check() {
       const s = read("sala.html");
       if (s) {
         if (!/id=["']chatp["']/.test(s)) return "sala.html: falta el panel de chat propio (#chatp).";
-        if (!/executeCommand\(['"]sendChatMessage['"]/.test(s)) return "sala.html: el chat propio ya no envía por sendChatMessage.";
-        if (!/addListener\(['"]incomingMessage['"]/.test(s)) return "sala.html: el chat propio ya no escucha incomingMessage — no llegan los mensajes.";
+        if (!/PWP2P\.sendChat\(/.test(s)) return "sala.html: el chat propio ya no envía por PWP2P.sendChat.";
+        if (!/onChat:/.test(s)) return "sala.html: el chat propio ya no recibe por onChat — no llegan los mensajes.";
       }
       return null;
     },
@@ -3434,7 +3430,6 @@ const RULES = [
       const w = read(".github/workflows/deploy-functions.yml");
       if (w) {
         if (!/functions deploy admin-coach-op/.test(w)) return "deploy-functions.yml: admin-coach-op no está en el auto-deploy — los cambios no llegarían a producción.";
-        if (!/functions deploy jaas-token/.test(w)) return "deploy-functions.yml: jaas-token no está en el auto-deploy — la Sala quedaría sin token.";
       }
       return null;
     },
@@ -3790,21 +3785,22 @@ const RULES = [
     },
   },
   {
-    name: "sala: P2P es el motor por DEFECTO (TURN propio); JaaS queda como respaldo (?engine=jaas)",
-    bug: "P2P (pw-p2p.js, WebRTC directo) ya está probado con 2 dispositivos y usa nuestro TURN propio " +
-         "(pw-turn.js). Es el motor por defecto → las llamadas reales no pagan JaaS. JaaS NO se borra: " +
-         "queda como respaldo forzable con ?engine=jaas por si una red bloquea P2P. Si el default vuelve a " +
-         "'jaas', se vuelve a pagar €90/mes de JaaS sin necesidad; si se cae el TURN (pw-turn.js) o el motor " +
-         "P2P, las salas quedan sin respaldo. Mantener default 'p2p' + JaaS embebido presente + TURN cargado.",
+    name: "sala: el ÚNICO motor de video es el propio (P2P + TURN propio) — NADA de JaaS/8x8",
+    bug: "El video es 100% servidor propio: P2P (pw-p2p.js, WebRTC directo) + TURN propio " +
+         "(pw-turn.js, coturn en Hetzner). Se sacó JaaS/8x8 por completo (ya no se paga). Si vuelve " +
+         "cualquier rastro de JaaS a sala.html (8x8.vc, vpaas-magic-cookie, JitsiMeetExternalAPI, " +
+         "jaas-token) o se cae el include de pw-p2p.js/pw-turn.js, se rompe o se vuelve a atar a un " +
+         "servicio pago. Mantener SOLO el motor propio.",
     check() {
       const s = read("sala.html");
       if (!s) return null;
-      if (!/pw-p2p\.js/.test(s)) return "sala.html: falta el include de pw-p2p.js (motor por defecto).";
-      if (!/pw-turn\.js/.test(s)) return "sala.html: falta el include de pw-turn.js (TURN propio para P2P).";
-      if (!/qp\(['"]engine['"]\)\|\|['"]p2p['"]/.test(s)) return "sala.html: el motor de video ya no tiene default 'p2p' (se volvería a pagar JaaS).";
-      if (!/8x8\.vc/.test(s)) return "sala.html: se cayó el respaldo JaaS (8x8.vc) — sin fallback si una red bloquea P2P.";
-      if (read("pw-p2p.js") === null) return "falta pw-p2p.js (el motor P2P por defecto).";
+      if (read("pw-p2p.js") === null) return "falta pw-p2p.js (el motor de video propio).";
       if (read("pw-turn.js") === null) return "falta pw-turn.js (el TURN propio).";
+      if (!/pw-p2p\.js/.test(s)) return "sala.html: falta el include de pw-p2p.js (motor de video).";
+      if (!/pw-turn\.js/.test(s)) return "sala.html: falta el include de pw-turn.js (TURN propio).";
+      if (!/PWP2P\.start\(/.test(s)) return "sala.html: la Sala ya no arranca el motor propio (PWP2P.start).";
+      if (!/bootP2P\(\)/.test(s)) return "sala.html: la Sala ya no bootea por P2P (bootP2P).";
+      if (/8x8\.vc|vpaas-magic-cookie|JitsiMeetExternalAPI|jaas-token/.test(s)) return "sala.html: volvió un rastro de JaaS/8x8 — el video debe ser 100% del servidor propio.";
       return null;
     },
   },
