@@ -260,6 +260,21 @@ const RULES = [
     },
   },
   {
+    name: "RLS: el chat admin↔coach NO está abierto al público",
+    bug: "mensajes_admin_coach tenía una política {public} ALL USING(true): cualquiera con " +
+         "la anon key leía/escribía/borraba todo el chat admin↔coach. Se cerró alineándolo " +
+         "con candidatos (coach ve su hilo, admin todo). Si vuelve una política abierta, fuga.",
+    check() {
+      const m = read("supabase/migrations/rls_mensajes_admin_coach.sql");
+      if (!m) return "falta la migración rls_mensajes_admin_coach.sql que cierra el chat.";
+      if (!/mensajes_admin_coach_select/.test(m) || !/pw_coach_id\(\)/.test(m))
+        return "rls_mensajes_admin_coach.sql: perdió la política scopeada por coach (pw_coach_id).";
+      if (/mensajes_admin_coach_all/.test(m) && !/DROP POLICY IF EXISTS mensajes_admin_coach_all/.test(m))
+        return "rls_mensajes_admin_coach.sql: la política abierta 'all' no está siendo eliminada.";
+      return null;
+    },
+  },
+  {
     name: "Novedades: el botón del badge lo SUMA de verdad a la colección",
     bug: "La revista mostraba 'Sumado a tu colección' como etiqueta fija: no agregaba " +
          "el badge a los logros reales del coach. Ahora es un botón que respira, avisa al " +
