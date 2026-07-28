@@ -78,6 +78,14 @@
     var accent=opts.accent||'#2D6A4F';
     var ckey=(''+(opts.clientKey||'anon')).toLowerCase();
     var STKEY='pw_rec_'+_hash(ckey);
+    // Preview real por tarjeta (mejor esfuerzo): si el portal pasa opts.previewUrl
+    // (la Edge Function link-preview), buscamos la og:image de cada recurso y la
+    // mostramos donde el sitio la deje sacar; donde no (LinkedIn bloquea), queda la
+    // ilustración. Cacheado por URL en localStorage. Sin previewUrl, solo videos.
+    var previewMode=!!(opts&&opts.previewUrl);
+    var OGKEY='pw_og_v1', ogMap={};
+    try{ ogMap=JSON.parse(localStorage.getItem(OGKEY)||'{}')||{}; }catch(e){ ogMap={}; }
+    if(!ogMap||typeof ogMap!=='object') ogMap={};
 
     var items=(resources||[]).map(function(r,i){
       r=r||{};
@@ -128,10 +136,11 @@
       var T=TYPES[r.tipo]||TYPES.articulo;
       var seen=!!store.seen[r.id], bm=!!store.bm[r.id];
       // Portada: degradado suave + ilustración limpia por tipo (se genera sola).
-      // Solo se superpone imagen REAL cuando el recurso la tiene de forma fiable:
-      // miniatura de YouTube (videos) o cover que subió el coach. Nada de scraping
-      // (LinkedIn/Indeed lo bloquean) → consistente por tipo, sin tarjetas rotas.
-      var _real = r.cover;
+      // Encima, imagen REAL por tarjeta (mejor esfuerzo): cover propia / miniatura
+      // de YouTube, o la og:image que trajo la Edge Function. Donde el sitio la
+      // bloquea (LinkedIn) o el video está borrado, el onerror/onload la quita y
+      // queda la ilustración → nunca rota.
+      var _real = r.cover || (previewMode && r.url && ogMap[r.url]) || '';
       var cov = '<div class="pwr-cov" style="background:'+TONES[T.tone]+'">'+
           _illus(r.tipo)+
           (_real?'<img class="pwr-cov-img" src="'+esc(_real)+'" alt="" loading="lazy" onerror="this.remove()" onload="if(this.naturalWidth&&this.naturalWidth<=120)this.remove()">':'')+
@@ -212,6 +221,27 @@
       cur.outerHTML=html;
     }
     paint();
+
+    // Preview real en 2º plano: pedimos la og:image de los recursos que aún no
+    // tienen imagen (sin cover propia y con URL). Lo que vuelve se cachea y se
+    // repinta la grilla; lo que falla queda sin foto → ilustración. Por tarjeta,
+    // mejor esfuerzo (no "todas o nada").
+    if(previewMode){
+      var _need=[]; items.forEach(function(r){ if(r.url && !r.cover && !(r.url in ogMap) && _need.indexOf(r.url)<0) _need.push(r.url); });
+      if(_need.length){
+        try{
+          fetch(opts.previewUrl,{method:'POST',headers:{'Content-Type':'application/json',apikey:(opts.previewKey||''),Authorization:'Bearer '+(opts.previewKey||'')},body:JSON.stringify({urls:_need})})
+            .then(function(rr){ return rr.ok?rr.json():null; })
+            .then(function(res){
+              if(!res||!res.previews) return;
+              var changed=false;
+              _need.forEach(function(u){ if(!(u in ogMap)){ ogMap[u]=res.previews[u]||''; changed=true; } });
+              try{ localStorage.setItem(OGKEY, JSON.stringify(ogMap)); }catch(e){}
+              if(changed) paint();
+            }).catch(function(){});
+        }catch(e){}
+      }
+    }
   }
 
   function _injectCss(){
