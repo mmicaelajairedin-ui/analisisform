@@ -2989,6 +2989,29 @@ const RULES = [
     },
   },
   {
+    name: "nutrición: el cliente registra lo que comió distinto y el coach lo ve",
+    why:
+      "La nutrición usaba una caja de texto libre suelta ('Lo que comí'). Ahora " +
+      "usa la MISMA idea que el gym: cada comida del plan es una fila con ✎ para " +
+      "registrar lo que comió de verdad → plan tachado + lo real. Se guarda en " +
+      "candidatos.fit_nutri_real (por comida: 'lun|Almuerzo') y el coach lo ve en " +
+      "su panel (pestaña Nutrición) tachado + real. Regla: no volver al textarea " +
+      "suelto ni romper el cableado ida y vuelta.",
+    check() {
+      var f = read("pathway-fit-cliente.html");
+      if (f) {
+        if (!/function nutAdj\b/.test(f)) return "pathway-fit-cliente.html: falta nutAdj() — el cliente no puede registrar lo que comió distinto.";
+        if (!/fit_nutri_real/.test(f)) return "pathway-fit-cliente.html: ya no persiste fit_nutri_real (el coach no ve el cambio de nutrición).";
+        if (!/class="nutri-meal"/.test(f)) return "pathway-fit-cliente.html: se cayeron las filas de comida (nutri-meal) — volvió el textarea suelto.";
+      }
+      var p = read("panel-v2.html");
+      if (p) {
+        if (!/fit_nutri_real/.test(p)) return "panel-v2.html: la pestaña Nutrición ya no lee fit_nutri_real — el coach no ve lo que el cliente comió distinto.";
+      }
+      return null;
+    },
+  },
+  {
     name: "panel: el botón de email abre el correo (anchor, no location.href)",
     why:
       "El botón 'Email manual' de Mensajes no abría el cliente de correo: usaba " +
