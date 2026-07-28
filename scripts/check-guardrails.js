@@ -3029,6 +3029,25 @@ const RULES = [
     },
   },
   {
+    name: "chat: link preview (og:image) en las 4 pantallas de chat",
+    why:
+      "Cuando alguien pega un link en el chat, aparece una tarjetita compacta con " +
+      "la imagen real (og:image) + el dominio, estilo WhatsApp. El helper " +
+      "PwLinkPreview (pw-recursos.js) se auto-activa con un MutationObserver; las " +
+      "4 pantallas (fitness/finanzas/carrera clientes + panel del coach) llaman a " +
+      "PwLinkPreview.init. Regla: no romper el helper ni las llamadas.",
+    check() {
+      var c = read("pw-recursos.js");
+      if (c && !/window\.PwLinkPreview\s*=/.test(c)) return "pw-recursos.js: ya no expone window.PwLinkPreview (link preview del chat).";
+      var files = ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html", "panel-v2.html"];
+      for (var i = 0; i < files.length; i++) {
+        var f = read(files[i]);
+        if (f && !/PwLinkPreview\.init/.test(f)) return files[i] + ": ya no inicializa el link preview del chat (PwLinkPreview.init).";
+      }
+      return null;
+    },
+  },
+  {
     name: "recursos: el editor (coach y owner) tiene campos ricos (tipo, portada, badges)",
     why:
       "El editor de recursos era solo título+link. Ahora el coach (panel-v2) y el " +
