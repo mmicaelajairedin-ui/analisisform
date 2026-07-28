@@ -3511,7 +3511,7 @@ const RULES = [
       if (!p) return null;
       const i = p.indexOf('act==="ag-agendar"');
       if (i < 0) return "panel-v2.html: no se encontró el handler ag-agendar.";
-      const body = p.slice(i, i + 4600);
+      const body = p.slice(i, i + 5200);
       if (!/_sbw\("citas","POST"/.test(body) || !/coach_id:\(RME&&RME\.id\)/.test(body)) return "panel-v2.html: ag-agendar ya no guarda la cita del coach en la tabla citas (POST con coach_id=RME.id).";
       if (!/_resLoad\(\)/.test(body) || !/_calLoad\(\)/.test(body)) return "panel-v2.html: ag-agendar ya no recarga la agenda tras guardar (_resLoad/_calLoad).";
       if (!/_notifResCliente\(/.test(body)) return "panel-v2.html: ag-agendar ya no manda el email de confirmación al invitado (_notifResCliente).";
@@ -3799,6 +3799,7 @@ const RULES = [
       if (p) {
         if (!/function _esGrupal\(/.test(p)) return "panel-v2.html: falta _esGrupal (detección grupal coherente coach↔cliente).";
         if (!/_esGrupal\(r\)\?"&grupal=1"/.test(p)) return "panel-v2.html: los links de sala ya no propagan &grupal=1 (coach y cliente caerían en engines distintos).";
+        if (!/function _canGrupal\(/.test(p)) return "panel-v2.html: falta _canGrupal (las clases grupales son función Pro).";
       }
       return null;
     },
