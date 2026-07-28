@@ -12565,11 +12565,35 @@ function _logoRasterizeSvg(file){
     fr.readAsText(file);
   });
 }
+// Normaliza CUALQUIER imagen raster a un PNG chico en el navegador (canvas).
+// Así, sin importar qué suba el coach (webp, gif, tiff, un JPG CMYK, o uno
+// enorme de 8 MB), lo que sale es un PNG estándar y liviano que el bucket
+// 'avatars' SIEMPRE acepta. Cae acá el 99% de los "no puedo subir mi logo".
+function _imgToPngBlob(file){
+  return new Promise(function(resolve,reject){
+    var url; try{ url=URL.createObjectURL(file); }catch(e){ reject(new Error("No se pudo leer el archivo.")); return; }
+    var img=new Image();
+    img.onload=function(){
+      try{
+        var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+        if(!w||!h){ try{URL.revokeObjectURL(url);}catch(_e){} reject(new Error("La imagen no tiene un tamaño válido.")); return; }
+        var MAX=1200, scale=Math.min(1, MAX/Math.max(w,h));
+        var cw=Math.max(1,Math.round(w*scale)), ch=Math.max(1,Math.round(h*scale));
+        var cv=document.createElement("canvas"); cv.width=cw; cv.height=ch;
+        cv.getContext("2d").drawImage(img,0,0,cw,ch);
+        cv.toBlob(function(b){ try{URL.revokeObjectURL(url);}catch(_e){} b?resolve(b):reject(new Error("No se pudo procesar la imagen.")); },"image/png");
+      }catch(e){ try{URL.revokeObjectURL(url);}catch(_e){} reject(new Error("No se pudo procesar la imagen (¿formato no soportado?). Probá con un PNG o JPG.")); }
+    };
+    img.onerror=function(){ try{URL.revokeObjectURL(url);}catch(_e){} reject(new Error("No se pudo abrir la imagen (¿formato HEIC del iPhone?). Exportala como PNG o JPG.")); };
+    img.src=url;
+  });
+}
 function _logoUpload(file){
   var isSvg=/svg/i.test(file.type||"")||/\.svg$/i.test(file.name||"");
+  // SVG → rasterizar (lee el texto y lo dibuja). Cualquier otra imagen →
+  // normalizar a PNG. En ambos casos subimos SIEMPRE un PNG estándar.
   if(isSvg) return _logoRasterizeSvg(file).then(function(pngBlob){ return _uploadAvatar(pngBlob,"png"); });
-  var ext=((file.type||"image/png").split("/")[1]||"png").replace("jpeg","jpg");
-  return _uploadAvatar(file, ext);
+  return _imgToPngBlob(file).then(function(pngBlob){ return _uploadAvatar(pngBlob,"png"); });
 }
 function _logoErrMsg(e){
   var m=(e&&e.message)||""+e;
