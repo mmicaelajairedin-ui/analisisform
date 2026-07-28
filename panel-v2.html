@@ -469,6 +469,15 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-client-last.is-stale{color:var(--pw-danger);}
 .cp-client-last.is-mid{color:var(--pw-text-soft);}
 .cp-client-last::before{content:"●";margin-right:6px;font-size:8px;vertical-align:middle;}
+/* Riesgo enriquecido: chip de engagement + próximo paso para subir de nivel */
+.cp-eng{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:99px;padding:4px 10px;white-space:nowrap;flex-shrink:0;}
+.cp-eng svg{width:13px;height:13px;}
+.cp-eng.go{color:var(--pw-bosque);background:var(--pw-success-bg);}
+.cp-eng.mid{color:#B98A1E;background:rgba(233,196,106,.20);}
+.cp-eng.stop{color:var(--pw-danger);background:var(--pw-danger-bg);}
+.cp-nextstep{display:flex;align-items:flex-start;gap:6px;margin-top:6px;font-size:11px;font-weight:600;color:var(--pw-bosque);background:var(--pw-success-bg);border-radius:8px;padding:5px 9px;line-height:1.32;}
+.cp-nextstep svg{width:13px;height:13px;flex-shrink:0;margin-top:1px;}
+.cp-nextstep b{font-weight:800;text-transform:uppercase;font-size:9px;letter-spacing:.05em;color:var(--pw-text-muted);margin-right:3px;}
 .cp-week{display:flex;align-items:center;gap:8px;}
 .cp-week-label{font-size:11px;color:var(--pw-text-soft);font-weight:500;}
 .cp-week-dots{display:flex;gap:4px;flex:1;}
@@ -2669,13 +2678,34 @@ function viewDashboard(){
       "<span class='rt'>"+p+"%</span></div>";
   }),4):"<div style='padding:24px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Sin clientes activos para analizar.</div>";
   var anaCard=cliActive.length?("<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>"+PWI.svg('trophy',{sm:true})+"</span> Ranking de clientes<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver todos</button></div>"+anaRows+"</div>"):"";
-  // ── Clientes en riesgo (sin actividad) — mismo diseño que el dashboard de Multi-Coach ──
-  var _riesgo=cliActive.filter(function(c){return c.last&&(c.last.state==="stale"||c.last.state==="mid");}).sort(function(a,b){ return (a.last.state==="stale"?0:1)-(b.last.state==="stale"?0:1); });
-  var riesgoRows=_riesgo.length?_cpMore(_riesgo.map(function(c){
-    var alto=c.last.state==="stale";
+  // ── Clientes en riesgo — enriquecido con engagement real + próximo paso ──
+  // No mira solo "cuándo entró", también "qué hizo". El que entra seguido pero no
+  // avanza (0 tareas pese a ir por la semana 2+) sale como 'Solo entra' (ámbar) —
+  // un riesgo que antes era invisible (figuraba "Activa"). Y cada uno trae el
+  // próximo paso concreto para subir de nivel. Derivado de datos que YA cargamos
+  // (acciones_progreso + última actividad); no depende de leer eventos.
+  function _engLevel(c){
+    var st=(c.last&&c.last.state)||"mid";
+    var done=0; try{ var _ap=JSON.parse((c.raw&&c.raw.acciones_progreso)||"[]"); if(Object.prototype.toString.call(_ap)==="[object Array]") done=_ap.filter(Boolean).length; }catch(e){}
+    if(st==="stale") return "ausente";
+    if(done===0 && (c.week||1)>=2) return "solo_entra";
+    if(st==="mid") return "mid";
+    return "avanza";
+  }
+  var _ENGMETA={
+    ausente:{cls:"stop", ic:"alert", txt:"Ausente",    k:"Para reactivarlo", act:"Recordale su sesión + un mensaje personal"},
+    solo_entra:{cls:"mid", ic:"eye", txt:"Solo entra",  k:"Para que avance",  act:"Mandale la tarea de la semana por chat + por qué importa"},
+    mid:{cls:"mid",       ic:"eye", txt:"Poco activo",  k:"Para sumarlo",     act:"Escribile un mensaje corto para retomar"}
+  };
+  var _riesgo=cliActive.map(function(c){ return {c:c, lvl:_engLevel(c)}; })
+    .filter(function(x){ return x.lvl!=="avanza"; })
+    .sort(function(a,b){ var o={ausente:0,solo_entra:1,mid:2}; return o[a.lvl]-o[b.lvl]; });
+  var riesgoRows=_riesgo.length?_cpMore(_riesgo.map(function(x){
+    var c=x.c, m=_ENGMETA[x.lvl];
     return "<div class='cp-rankrow' data-act='cli-open:"+esc(c.id)+"'>"+avImg(c.photo,c.name,"class='av'")+
-      "<div class='bd'><div class='nm'>"+esc(c.name)+"</div><div class='sub'>"+esc((c.last&&c.last.txt)||"Sin actividad")+"</div></div>"+
-      "<span class='cp-pill "+(alto?"alto":"medio")+"'>"+(alto?"Alto":"Medio")+"</span></div>";
+      "<div class='bd'><div class='nm'>"+esc(c.name)+"</div><div class='sub'>"+esc((c.last&&c.last.txt)||"Sin actividad")+" · Semana "+(c.week||1)+"</div>"+
+      "<div class='cp-nextstep'>"+PWI.svg('send',{sm:true,cc:true})+"<span><b>"+m.k+"</b>"+esc(m.act)+"</span></div></div>"+
+      "<span class='cp-eng "+m.cls+"'>"+PWI.svg(m.ic,{sm:true,cc:true})+esc(m.txt)+"</span></div>";
   }),4):"<div style='padding:22px 18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Ningún cliente en riesgo. ¡Todo al día! ✓</div>";
   var riesgoCard="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>"+PWI.svg('alert',{sm:true})+"</span> Clientes en riesgo<span class='dot'>.</span></h3><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='nav:clientes'>Ver todos</button></div>"+riesgoRows+"</div>";
   // ── Tus clientes ──
