@@ -135,12 +135,20 @@
         localStream = stream; camTrack = stream.getVideoTracks()[0] || null;
         // Contenedor: <video> remoto a pantalla completa + <video> local chico (PiP).
         var c = (typeof opts.container === "string") ? document.getElementById(opts.container) : opts.container;
-        c.style.position = "relative"; c.style.background = "#14181B";
+        // NO pisar el position del contenedor si ya está posicionado (el #jaas de la
+        // Sala es position:absolute;inset:0;bottom:84px). Forzarlo a 'relative' rompía
+        // esa geometría y empujaba el PiP local fuera de vista en desktop. Solo lo
+        // hacemos posicionado si estaba 'static'.
+        try { var _cs = window.getComputedStyle(c); if (!_cs || _cs.position === "static") c.style.position = "relative"; } catch (e) { c.style.position = "relative"; }
+        c.style.background = "#14181B";
         remoteEl = document.createElement("video"); remoteEl.autoplay = true; remoteEl.playsInline = true;
-        remoteEl.style.cssText = "width:100%;height:100%;object-fit:cover;background:#14181B";
+        // object-fit:contain → se ve el CUADRO COMPLETO del otro (sin recorte/"mucho
+        // zoom") aunque las relaciones de aspecto no coincidan (celu vertical en un
+        // escenario horizontal). El fondo #14181B hace de marco.
+        remoteEl.style.cssText = "width:100%;height:100%;object-fit:contain;background:#14181B";
         var localEl = document.createElement("video"); localEl.autoplay = true; localEl.playsInline = true; localEl.muted = true;
         localEl.srcObject = stream; try { var lp = localEl.play(); if (lp && lp.catch) lp.catch(function () {}); } catch (e) {}
-        localEl.style.cssText = "position:absolute;right:16px;bottom:16px;width:32%;max-width:240px;min-width:120px;aspect-ratio:4/3;border-radius:14px;object-fit:cover;box-shadow:0 6px 22px rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.55);z-index:2";
+        localEl.style.cssText = "position:absolute;right:16px;bottom:16px;width:30%;max-width:220px;min-width:120px;aspect-ratio:4/3;border-radius:14px;object-fit:cover;box-shadow:0 6px 22px rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.7);z-index:5";
         c.appendChild(remoteEl); c.appendChild(localEl);
         try { opts.onLocalReady && opts.onLocalReady(stream); } catch (e) {}
         // 2) peer connection + tracks
