@@ -61,7 +61,7 @@ async function clienteOrg(email: string): Promise<string | null> {
   return (cli.find((c) => c && c.org_id) || {}).org_id || null;
 }
 
-const PUB_SELECT = "id,autor_nombre,titulo,body,foto,emo,para,reacts,created_at";
+const PUB_SELECT = "id,autor_nombre,titulo,body,foto,emo,para,reacts,tipo,data,created_at";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -71,11 +71,11 @@ Deno.serve(async (req: Request) => {
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
 
-  let body: { action?: string; org_id?: string; email?: string; titulo?: string; body?: string; foto?: string; emo?: string; para?: string; post_id?: string; emoji?: string };
+  let body: { action?: string; org_id?: string; email?: string; titulo?: string; body?: string; foto?: string; emo?: string; para?: string; post_id?: string; id?: string; emoji?: string; tipo?: string; data?: Record<string, unknown> };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const action = (body.action || "list").toString();
 
-  // ---- PUBLISH: solo el DUEÑO de la red ----
+  // ---- PUBLISH: solo el DUEÑO de la red (post, aviso, clase o reto) ----
   if (action === "publish") {
     const caller = await callerRow(token);
     if (!caller || caller.rol !== "owner" || !caller.org_id) return json({ error: "solo_owner" }, 403);
@@ -83,6 +83,8 @@ Deno.serve(async (req: Request) => {
     const titulo = (body.titulo || "").toString().trim().slice(0, 160);
     if (!txt && !titulo) return json({ error: "vacio" }, 400);
     const para = ["todos", "clientes", "coaches"].includes(String(body.para)) ? String(body.para) : "todos";
+    const tipo = ["post", "aviso", "clase", "reto"].includes(String(body.tipo)) ? String(body.tipo) : "post";
+    const data = (body.data && typeof body.data === "object") ? body.data : {};
     // La foto NO se trunca: cortar un data: URL a la mitad lo corrompe (imagen
     // rota). Si viene enorme (no comprimida), se descarta y el post queda sin
     // foto en vez de con una imagen rota. El cliente ya la comprime (~200KB).
@@ -91,17 +93,43 @@ Deno.serve(async (req: Request) => {
     const row: Record<string, unknown> = {
       org_id: caller.org_id, autor_id: caller.id, autor_nombre: caller.nombre || "",
       titulo: titulo || null, body: txt.slice(0, 4000), foto,
-      emo: (body.emo || "📸").toString().slice(0, 8), para, reacts: {},
+      emo: (body.emo || "📸").toString().slice(0, 8), para, reacts: {}, tipo, data,
     };
     try {
-      const r = await fetch(`${SB_URL}/rest/v1/posts_red`, {
+      let r = await fetch(`${SB_URL}/rest/v1/posts_red`, {
         method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
         body: JSON.stringify(row),
       });
+      // Reintento sin tipo/data si esas columnas aún no existen (migración vieja).
+      if (r.status === 400) {
+        delete row.tipo; delete row.data;
+        r = await fetch(`${SB_URL}/rest/v1/posts_red`, {
+          method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
+          body: JSON.stringify(row),
+        });
+      }
       if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
       const rows = await r.json();
       return json({ ok: true, post: (Array.isArray(rows) ? rows[0] : rows) || null });
     } catch { return json({ error: "write_failed" }, 502); }
+  }
+
+  // ---- DELETE: el DUEÑO borra un item de SU red (aviso/clase/reto/post) ----
+  if (action === "delete") {
+    const caller = await callerRow(token);
+    if (!caller || caller.rol !== "owner" || !caller.org_id) return json({ error: "solo_owner" }, 403);
+    const id = (body.post_id || body.id || "").toString().trim();
+    if (!id) return json({ error: "missing_id" }, 400);
+    const rows = await q(`posts_red?id=eq.${encodeURIComponent(id)}&select=org_id&limit=1`);
+    if (!rows.length) return json({ error: "no_existe" }, 404);
+    if (String(rows[0].org_id) !== String(caller.org_id)) return json({ error: "ajeno" }, 403);
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/posts_red?id=eq.${encodeURIComponent(id)}`, {
+        method: "DELETE", headers: { ...svc, Prefer: "return=minimal" },
+      });
+      if (!r.ok) return json({ error: "delete_failed", status: r.status }, 502);
+    } catch { return json({ error: "delete_failed" }, 502); }
+    return json({ ok: true });
   }
 
   // ---- REACT: cualquier miembro de la red incrementa un contador (best-effort) ----

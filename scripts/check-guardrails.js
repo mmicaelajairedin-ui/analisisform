@@ -4477,8 +4477,15 @@ const RULES = [
       if (!/solo_owner/.test(fn)) return "comunidad-red: perdió el gate de que solo el OWNER publica.";
       if (!/para=in\.\(todos,clientes\)/.test(fn)) return "comunidad-red: el cliente ya no está acotado a audiencia todos/clientes (fuga de avisos internos a coaches).";
       if (read("supabase/migrations/posts_red.sql") === null) return "falta la migración posts_red.sql (tabla de la revista de la red).";
+      // Avisos/clases/retos también persisten (no solo posts): tipo+data en posts_red.
+      if (!/"aviso", "clase", "reto"|'aviso', 'clase', 'reto'/.test(fn) && !/\[.?"post", ?"aviso"/.test(fn)) return "comunidad-red: ya no guarda avisos/clases/retos (tipo).";
+      if (!/action === "delete"/.test(fn)) return "comunidad-red: perdió el borrado de items (delete).";
+      if (read("supabase/migrations/comunidad_extra.sql") === null) return "falta la migración comunidad_extra.sql (tipo+data para avisos/clases/retos).";
       const mc = read("multicoach.html");
       if (mc && (!/comunidad-red/.test(mc) || !/function _mcLoadPosts\(/.test(mc))) return "multicoach.html: la Comunidad ya no publica/carga real (comunidad-red / _mcLoadPosts).";
+      if (mc && (!/function _comSave\(/.test(mc) || !/_comSave\('aviso'/.test(mc) || !/_comSave\('clase'/.test(mc) || !/_comSave\('reto'/.test(mc))) return "multicoach.html: avisos/clases/retos ya no persisten (_comSave por tipo).";
+      // Las fotos del rail se adaptan al nicho (fitness/carrera/finanzas).
+      if (mc && (!/var _RAIL_IMG=/.test(mc) || !/function _railNicheImg\(/.test(mc))) return "multicoach.html: las fotos del rail ya no se adaptan al nicho (_RAIL_IMG/_railNicheImg).";
       for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html"]) {
         const p = read(f);
         if (p && (!/function _loadNovedades\(/.test(p) || !/comunidad-red/.test(p) || !/novered-slot/.test(p))) return f + ": ya no muestra las Novedades de la red (comunidad-red).";
