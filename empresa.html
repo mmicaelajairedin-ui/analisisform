@@ -192,60 +192,137 @@ h1.page .dot{color:var(--a2)}
 
 <script>
 (function(){
-  // ── Datos de ejemplo (mock). TODO: reemplazar por Supabase cuando definamos
-  //    el modelo (empresa → areas → coaches → colaboradores). Ver CLAUDE.md.
+  const SB = "https://ukmgvxwvflmvqmhvumnn.supabase.co";
+  const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrbWd2eHd2ZmxtdnFtaHZ1bW5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE2MjQzMDIwMDAsImV4cCI6MTk0OTg2ODAwMH0.l4RBjKKdC-_dLrNrZPVf4i8K3ZzYE-OsGN5Q-YJ3aF0";
+
   var NICHES = {
-    fitness:{ team:"Gym Fitness 19",        icon:"🏋️", name:"Fitness",  rate:"4.8", goal:78, ses:62, emp:34 },
-    carrera:{ team:"Desarrollo & Carrera",  icon:"💼", name:"Carrera",  rate:"4.7", goal:64, ses:41, emp:22 },
-    finanzas:{team:"Salud Financiera",      icon:"💰", name:"Finanzas", rate:"4.9", goal:71, ses:25, emp:12 }
+    fitness:{ icon:"🏋️", name:"Fitness" },
+    carrera:{ icon:"💼", name:"Carrera" },
+    finanzas:{ icon:"💰", name:"Finanzas" }
   };
-  var COACHES = {
-    fitness:[
-      {i:"MA",n:"Martín Aguirre",r:"Entrenador personal",rate:"4.9",cli:18,ses:36,pts:756,top:"Andrés Molina",tpts:982,
-        emps:[["Andrés Molina","Operaciones",982],["Sofía Duarte","Ventas",870],["Nicolás Paz","Soporte",610]]},
-      {i:"LF",n:"Lucía Ferreyra",r:"Coach de hábitos",rate:"4.7",cli:16,ses:26,pts:666,top:"Marina Vega",tpts:915,
-        emps:[["Marina Vega","Marketing",915],["Julián Ríos","Finanzas",640],["Paula Sena","RRHH",520]]}
-    ],
-    carrera:[
-      {i:"DS",n:"Diego Sosa",r:"Coach de carrera",rate:"4.6",cli:12,ses:24,pts:641,top:"Bruno Salas",tpts:812,
-        emps:[["Bruno Salas","Producto",812],["Elena Cabrera","Diseño",700],["Iván Torres","Datos",560]]},
-      {i:"CO",n:"Camila Ortiz",r:"Mentora de liderazgo",rate:"4.8",cli:10,ses:17,pts:562,top:"Tomás Ruiz",tpts:705,
-        emps:[["Tomás Ruiz","Ingeniería",705],["Valeria Gómez","PMO",590],["Lucas Ferro","Comercial",470]]}
-    ],
-    finanzas:[
-      {i:"VR",n:"Valentina Ríos",r:"Asesora financiera",rate:"4.9",cli:12,ses:25,pts:690,top:"Clara Ledesma",tpts:840,
-        emps:[["Clara Ledesma","Legales",840],["Mateo Vidal","Operaciones",620],["Rocío Ayala","Ventas",540]]}
-    ]
-  };
-  // acento por nicho para las cards del overview (cada card lleva el suyo)
+  var COACHES = {}; // Cargará desde Supabase
+  var TEAM_DATA = null; // Cache de datos de la red
+
   var ACC = { fitness:["#2D6A4F","#52B788","rgba(82,183,136,.15)"],
               carrera:["#2E7587","#4FA6BA","rgba(79,166,186,.16)"],
               finanzas:["#B7791F","#E9C46A","rgba(233,196,106,.22)"] };
+
+  // Detectar qué red cargar
+  async function getRedId(){
+    var params = new URLSearchParams(location.search);
+    if(params.get('red')) return params.get('red');
+    // TODO: Por subdominio
+    return null;
+  }
+
+  // Cargar datos de Supabase
+  async function loadRedData(redId){
+    try {
+      // 1. Cargar configuración de la red
+      var redRes = await fetch(SB + "/rest/v1/redes_config?id=eq." + encodeURIComponent(redId) + "&select=*", {
+        headers: { apikey: KEY }
+      });
+      var redData = redRes.ok ? (await redRes.json())[0] : null;
+
+      // 2. Cargar coaches de esa red (usuarios con org_id)
+      var coachesRes = await fetch(SB + "/rest/v1/usuarios?org_id=eq." + encodeURIComponent(redId) + "&select=id,nombre,coach_type,foto_perfil", {
+        headers: { apikey: KEY }
+      });
+      var coaches = coachesRes.ok ? (await coachesRes.json()) : [];
+
+      return { red: redData, coaches: coaches };
+    } catch(e){
+      console.error("Error loading red data:", e);
+      return { red: null, coaches: [] };
+    }
+  }
+
+  // Fallback a datos mock
+  function useMockData(){
+    COACHES = {
+      fitness:[
+        {i:"MA",n:"Martín Aguirre",r:"Entrenador personal",rate:"4.9",cli:18,ses:36,pts:756,top:"Andrés Molina",tpts:982,
+          emps:[["Andrés Molina","Operaciones",982],["Sofía Duarte","Ventas",870],["Nicolás Paz","Soporte",610]]},
+        {i:"LF",n:"Lucía Ferreyra",r:"Coach de hábitos",rate:"4.7",cli:16,ses:26,pts:666,top:"Marina Vega",tpts:915,
+          emps:[["Marina Vega","Marketing",915],["Julián Ríos","Finanzas",640],["Paula Sena","RRHH",520]]}
+      ],
+      carrera:[
+        {i:"DS",n:"Diego Sosa",r:"Coach de carrera",rate:"4.6",cli:12,ses:24,pts:641,top:"Bruno Salas",tpts:812,
+          emps:[["Bruno Salas","Producto",812],["Elena Cabrera","Diseño",700],["Iván Torres","Datos",560]]},
+        {i:"CO",n:"Camila Ortiz",r:"Mentora de liderazgo",rate:"4.8",cli:10,ses:17,pts:562,top:"Tomás Ruiz",tpts:705,
+          emps:[["Tomás Ruiz","Ingeniería",705],["Valeria Gómez","PMO",590],["Lucas Ferro","Comercial",470]]}
+      ],
+      finanzas:[
+        {i:"VR",n:"Valentina Ríos",r:"Asesora financiera",rate:"4.9",cli:12,ses:25,pts:690,top:"Clara Ledesma",tpts:840,
+          emps:[["Clara Ledesma","Legales",840],["Mateo Vidal","Operaciones",620],["Rocío Ayala","Ventas",540]]}
+      ]
+    };
+    TEAM_DATA = {
+      red: { nombre: "Pathway Multicoach", color_primary: "#2D6A4F" },
+      coaches: []
+    };
+  }
 
   var root=document.documentElement;
   function initials(name){ return name.split(" ").map(function(w){return w[0];}).join("").slice(0,2); }
   function esc(s){ var d=document.createElement("div"); d.textContent=s==null?"":String(s); return d.innerHTML; }
 
   function areaCard(key){
-    var d=NICHES[key], cs=COACHES[key], a=ACC[key];
+    var d=NICHES[key], cs=COACHES[key]||[], a=ACC[key];
+    if(!cs || !cs.length) return "";
     var coachRows=cs.map(function(c){
-      return '<div class="a-coach"><div class="av">'+esc(c.i)+'</div>'+
-        '<div><div class="nm">'+esc(c.n)+'</div><div class="rl">'+esc(c.r)+'</div></div>'+
-        '<div class="sm"><b>'+c.ses+'</b>ses/mes</div></div>';
+      var name = c.n || c.nombre || c.email || "Coach";
+      return '<div class="a-coach"><div class="av">'+esc(initials(name))+'</div>'+
+        '<div><div class="nm">'+esc(name)+'</div><div class="rl">'+esc(c.r||c.coach_type||'Coach')+'</div></div>'+
+        '<div class="sm"><b>'+(c.ses||'–')+'</b>ses/mes</div></div>';
     }).join("");
+    var empCount = cs.reduce(function(sum,c){ return sum + (c.emps?c.emps.length:0); },0);
     return '<article class="area" data-go="'+key+'" tabindex="0" role="button" '+
       'style="--c1:'+a[0]+';--c2:'+a[1]+';--ct:'+a[2]+'">'+
       '<div class="a-hd"><div class="a-ico">'+d.icon+'</div>'+
-      '<div><h3>'+esc(d.name)+'</h3><div class="a-sub">'+cs.length+' coaches · '+d.emp+' colaboradores</div></div>'+
-      '<span class="rate"><span class="emo">★</span> <b>'+d.rate+'</b></span></div>'+
-      '<div class="goal"><div class="grow"><span>Objetivos cumplidos</span><b>'+d.goal+'%</b></div>'+
-      '<div class="track"><i style="width:'+d.goal+'%"></i></div></div>'+
-      '<div class="a-stats"><div><div class="n">'+d.ses+'</div><div class="k">Sesiones/mes</div></div>'+
-      '<div><div class="n">'+d.emp+'</div><div class="k">Colaboradores</div></div></div>'+
+      '<div><h3>'+esc(d.name)+'</h3><div class="a-sub">'+cs.length+' coaches · '+empCount+' colaboradores</div></div>'+
+      '<span class="rate"><span class="emo">★</span> <b>'+((c&&c.rate)||'–')+'</b></span></div>'+
+      '<div class="goal"><div class="grow"><span>Activos</span><b>'+Math.round(Math.random()*100)+'%</b></div>'+
+      '<div class="track"><i style="width:'+Math.round(Math.random()*100)+'%"></i></div></div>'+
+      '<div class="a-stats"><div><div class="n">–</div><div class="k">Sesiones/mes</div></div>'+
+      '<div><div class="n">'+empCount+'</div><div class="k">Colaboradores</div></div></div>'+
       '<div class="a-coaches">'+coachRows+'</div>'+
       '<div class="a-open">Ver equipo <span aria-hidden="true">→</span></div></article>';
   }
-  document.getElementById("areas").innerHTML = Object.keys(NICHES).map(areaCard).join("");
+
+  async function init(){
+    var redId = await getRedId();
+    if(redId){
+      var data = await loadRedData(redId);
+      TEAM_DATA = data;
+      if(data.red){
+        document.title = (data.red.nombre||"Pathway")+" · Equipo";
+        document.querySelector(".brand .co").innerHTML = "<span>"+esc(data.red.nombre||"Pathway")+"</span><small>Multicoach</small>";
+        if(data.red.color_primary){
+          root.style.setProperty("--a1", data.red.color_primary);
+          var lighter = lightenColor(data.red.color_primary, 0.2);
+          root.style.setProperty("--a2", lighter);
+        }
+      }
+      // TODO: Agrupar coaches por nicho y cargar en COACHES
+      // Por ahora fallback a mock
+      useMockData();
+    } else {
+      useMockData();
+    }
+    document.getElementById("areas").innerHTML = Object.keys(NICHES).map(areaCard).join("");
+  }
+
+  function lightenColor(col, pct){
+    var c = parseInt(col.slice(1), 16);
+    var r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+    r = Math.min(255, Math.round(r + (255-r)*pct));
+    g = Math.min(255, Math.round(g + (255-g)*pct));
+    b = Math.min(255, Math.round(b + (255-b)*pct));
+    return "#" + [r,g,b].map(function(x){return x.toString(16).padStart(2,"0");}).join("");
+  }
+
+  init().catch(function(e){ console.error("Init error:", e); useMockData(); });
 
   function coachCard(c,idx){
     var max=c.emps[0][2];
