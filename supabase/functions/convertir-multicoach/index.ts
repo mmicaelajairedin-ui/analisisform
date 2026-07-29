@@ -82,9 +82,9 @@ Deno.serve(async (req: Request) => {
   const trialDate = trialEnd.slice(0, 10);
 
   // El coach a convertir.
-  let coach: { id: string; email: string; nombre: string | null; rol: string; org_id: string | null; configuracion: Record<string, unknown> | null } | null = null;
+  let coach: { id: string; email: string; nombre: string | null; rol: string; org_id: string | null; configuracion: Record<string, unknown> | null; foto_url?: string | null } | null = null;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coach_id)}&select=id,email,nombre,rol,org_id,configuracion&limit=1`, { headers: svc });
+    const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coach_id)}&select=id,email,nombre,rol,org_id,configuracion,foto_url&limit=1`, { headers: svc });
     if (!r.ok) return json({ error: "lookup_failed", status: r.status }, 502);
     const rows = await r.json();
     coach = (Array.isArray(rows) && rows[0]) || null;
@@ -97,12 +97,31 @@ Deno.serve(async (req: Request) => {
   const nicho = (cfg.coach_type as string) || "carrera";
   const nombreRed = (body.nombre_red || "").toString().trim() || (coach.nombre ? `Red de ${coach.nombre}` : "Mi red");
 
+  // La marca de la RED arranca sembrada con lo que el coach YA tenía (perfil
+  // público / white-label): así su red se ve como él desde el minuto uno y solo
+  // ajusta lo que quiera. Solo se copian los campos que existen (no pisar con
+  // vacío). Los nombres calzan con lo que lee _mcBrand/Config en multicoach.html.
+  const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+  const marca: Record<string, unknown> = { nombre: nombreRed };
+  const _titulo = str(cfg.titulo) || str((coach as Record<string, unknown>).titulo_profesional);
+  const _desc = str(cfg.bio) || str((coach as Record<string, unknown>).bio);
+  const _agendar = str(cfg.calendly_url) || str(cfg.link_agendar);
+  const _color = str(cfg.color_marca) || str(cfg.color);
+  const _logo = str(cfg.logo);
+  const _foto = str(coach.foto_url) || str(cfg.foto_url) || str(cfg.foto_perfil);
+  if (_titulo) marca.titulo = _titulo;
+  if (_desc) marca.descripcion = _desc;
+  if (_agendar) marca.link_agendar = _agendar;
+  if (/^#[0-9a-fA-F]{6}$/.test(_color)) marca.color = _color;
+  if (_logo) marca.logo = _logo;
+  if (_foto) marca.foto = _foto;
+
   // 1) Crear la organización.
   let orgId = "";
   try {
     const r = await fetch(`${SB_URL}/rest/v1/organizaciones`, {
       method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
-      body: JSON.stringify({ nombre: nombreRed, owner_email: coach.email, plan, nicho, max_coaches: lim.max_coaches, max_clientes: lim.max_clientes, estado_sub: "prueba", fecha_fin_prueba: trialDate, activo: true }),
+      body: JSON.stringify({ nombre: nombreRed, owner_email: coach.email, plan, nicho, max_coaches: lim.max_coaches, max_clientes: lim.max_clientes, estado_sub: "prueba", fecha_fin_prueba: trialDate, activo: true, marca }),
     });
     if (!r.ok) return json({ error: "org_write_failed", status: r.status }, 502);
     const created = await r.json();

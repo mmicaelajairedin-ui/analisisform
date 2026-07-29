@@ -2723,6 +2723,10 @@ const RULES = [
       // Al convertir, se le AVISA por email al coach (ahora es multicoach) para que entre.
       if (!/notificarConversion\(/.test(fn))
         return "convertir-multicoach: ya no avisa por email al coach convertido (notificarConversion).";
+      // La marca de la RED arranca sembrada con el perfil que el coach YA tenía
+      // (título/bio/color/foto/logo) → su red se ve como él desde el minuto uno.
+      if (!/const marca:/.test(fn) || !/marca\b/.test(fn.split("organizaciones")[1] || ""))
+        return "convertir-multicoach: la red ya no hereda la marca/perfil del coach (marca sembrada en organizaciones).";
       // El owner también es coach asignable.
       const asg = read("supabase/functions/asignar-cliente/index.ts");
       if (asg && !/rol=in\.\(coach,owner\)/.test(asg))
