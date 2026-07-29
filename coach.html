@@ -93,6 +93,15 @@ img{max-width:100%;display:block;}
 .servicio .servicio-cta:hover{background:var(--pw-bosque);}
 
 .videos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;}
+.fechas-all{font-size:13px;color:var(--pw-bosque);font-weight:600;text-decoration:none;}
+.fechas-all:hover{text-decoration:underline;}
+.fechas-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;}
+.fecha-card{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:76px;padding:12px 14px;border:1.5px solid var(--pw-borde);border-radius:14px;background:#fff;text-decoration:none;transition:all .18s;}
+.fecha-card:hover{border-color:var(--pw-bosque);background:rgba(82,183,136,.06);transform:translateY(-2px);}
+.fecha-dn{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--pw-texto-suave);}
+.fecha-dd{font-family:var(--pw-serif);font-size:22px;font-weight:600;color:var(--pw-carbon);line-height:1;}
+.fecha-mn{font-size:11px;color:var(--pw-texto-suave);text-transform:uppercase;}
+.fechas-note{font-size:12px;color:var(--pw-texto-suave);margin-top:12px;display:flex;align-items:center;gap:6px;}
 .otros-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px;margin-top:16px;}
 .otros-card{display:block;background:#fff;border:1px solid var(--pw-borde);border-radius:16px;padding:16px;text-decoration:none;transition:all .2s;}
 .otros-card:hover{border-color:rgba(45,106,79,.3);box-shadow:0 10px 26px rgba(45,106,79,.10);transform:translateY(-2px);}
@@ -225,6 +234,17 @@ img{max-width:100%;display:block;}
 
   <section class="testimonios-section">
     <div class="container"><div data-testimonios data-tipo="coach" data-max="6" data-theme="green"></div></div>
+  </section>
+
+  <section class="section" id="sec-fechas" hidden>
+    <div class="container">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <h2 id="fechas-title">Próximas fechas disponibles<span class="dot">.</span></h2>
+        <a id="fechas-all" class="fechas-all" target="_blank" rel="noopener">Ver calendario completo →</a>
+      </div>
+      <div class="fechas-grid" id="fechas-grid"></div>
+      <div class="fechas-note" id="fechas-note"></div>
+    </div>
   </section>
 
   <section class="section" id="sec-otros" hidden>
@@ -476,9 +496,35 @@ img{max-width:100%;display:block;}
         }).catch(function(){});
     }catch(e){}
   }
+  // "Próximas fechas disponibles": los próximos días que el coach atiende (según
+  // su disponibilidad real configurada). La HORA exacta se elige en el reservador
+  // (que resuelve zona horaria + ocupados) → así no mostramos horas equivocadas.
+  function _loadFechas(c){
+    try{
+      if(!c.id) return;
+      var d=c.disponibilidad||{};
+      var days=(d&&Array.isArray(d.days)&&d.days.length)?d.days.map(Number):[1,2,3,4,5];
+      var url='/reservar.html?c='+encodeURIComponent(c.id)+'&mp=1';
+      var DN=pickLang(['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'],['SUN','MON','TUE','WED','THU','FRI','SAT']);
+      var MN=pickLang(['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'],['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']);
+      var HOY=pickLang('HOY','TODAY');
+      var out=[], now=new Date(); now.setHours(0,0,0,0);
+      for(var i=0;i<28 && out.length<6;i++){ var dt=new Date(now.getTime()+i*86400000); if(days.indexOf(dt.getDay())>=0) out.push({dt:dt,today:i===0}); }
+      if(!out.length) return;
+      var g=document.getElementById('fechas-grid'); if(!g) return;
+      g.innerHTML=out.map(function(o){ var dt=o.dt;
+        return "<a class='fecha-card' href='"+url+"'><span class='fecha-dn'>"+(o.today?HOY:DN[dt.getDay()])+"</span><span class='fecha-dd'>"+dt.getDate()+"</span><span class='fecha-mn'>"+MN[dt.getMonth()]+"</span></a>";
+      }).join('');
+      var all=document.getElementById('fechas-all'); if(all){ all.setAttribute('href',url); all.textContent=pickLang('Ver calendario completo →','See full calendar →'); }
+      var tt=document.getElementById('fechas-title'); if(tt) tt.firstChild.textContent=pickLang('Próximas fechas disponibles','Next available dates');
+      var note=document.getElementById('fechas-note'); if(note) note.textContent=pickLang('Elegí un día y reservá tu horario — todas las sesiones son online.','Pick a day and book your time — all sessions are online.');
+      show('sec-fechas');
+    }catch(e){}
+  }
   function render(c){
     _coachData=c;
     _loadOtrosCoaches(c.slug);
+    _loadFechas(c);
     document.title=(c.nombre||'Coach')+' · Pathway';
     var meta=document.querySelector('meta[name="description"]');
     var _tg=pickLang(c.tagline,c.tagline_en); if(meta && _tg)meta.setAttribute('content',_tg);
