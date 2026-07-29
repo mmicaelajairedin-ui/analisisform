@@ -390,23 +390,20 @@ intenta escribir con un `id` ajeno (p.ej. devtools + UUID conocido), la query
 no matchea ninguna fila y no escribe nada. Guardrail lo protege.
 (Antes cg() estaba definido pero NUNCA aplicado — fuga real, ya cerrada.)
 
-### Capa 3 — RLS estricto en Supabase (PENDIENTE)
-**GAP DE SEGURIDAD CONOCIDO**: las tablas `candidatos`, `informes`,
-`cv_publicados`, `usuarios` no tienen RLS estricto. Un atacante con la
-anon key (publica en el codigo del navegador) puede hacer
-`fetch('/rest/v1/candidatos?select=*')` sin filtro y bajar TODOS los
-candidatos de TODOS los coaches.
+### Capa 3 — RLS estricto en Supabase (✅ CERRADO — Fase 4)
+**YA NO ES UN GAP.** El login se migró a **Supabase Auth (Fase 4)** — ya NO se
+lee `password_hash` con la anon key; la contraseña se valida contra Supabase
+Auth (JWT con `auth.uid()`). El **RLS estricto está aplicado** en las tablas
+sensibles. Migraciones que lo cierran (en `supabase/migrations/`):
+`rls_strict.sql`, `informes_rls.sql`, `rls_close_informes_cv_leak.sql`,
+`usuarios_protect_password.sql`, `rls_cleanup_open_policies.sql`,
+`rls_mensajes_admin_coach.sql`, `auth_id_on_usuarios.sql`.
 
-Mitigacion temporal: las primeras 1-3 coaches paga se onboardean
-manualmente (gente conocida, riesgo bajo). Antes del lanzamiento abierto,
-cerrar este gap.
-
-### Plan de cierre (Sprint B — antes de 5+ coaches activos)
-1. Migrar login custom (SHA-256 + localStorage) → Supabase Auth (OAuth o email magic-link)
-2. Activar RLS estricto: `USING (coach_id = auth.uid())` en candidatos/informes/cv_publicados
-3. Politica para admin: bypass via `auth.jwt()->>'role' = 'admin'` o tabla aparte
-4. Migrar `panel.html` para usar `supabase.auth.getUser()` en vez de `JSON.parse(localStorage.mj_user)`
-5. Estimado: 1-2 dias de trabajo + 1 dia de QA
+Ya NO aplica el viejo ataque `fetch('/rest/v1/candidatos?select=*')` sin filtro:
+las policies filtran por `coach_id`/`auth.uid()` y `password_hash` está revocado
+para anon/authenticated. **Se puede escalar a 5+ coaches sin este pendiente.**
+(Las escrituras best-effort desde el navegador quedan acotadas por columna —
+ver `usuarios_gamif_grant.sql`.)
 
 ### Reglas para nuevas queries
 - Toda nueva query a `candidatos`/`informes`/`cv_publicados`:
@@ -441,7 +438,7 @@ Cuando a un coach se le vence la prueba (cada uno tiene SU `fecha_fin_prueba`:
    - Deploy: `supabase functions deploy coach-lifecycle --no-verify-jwt`.
 
 ## PENDIENTE — Proximas mejoras
-- 🔒 **Cerrar gap de seguridad RLS en Supabase** (Sprint B, ver seccion "SECURITY MODEL"). Lo mas importante tecnicamente antes de escalar a 5+ coaches.
+- ✅ ~~Cerrar gap de seguridad RLS en Supabase~~ — **HECHO** (Fase 4: Supabase Auth + RLS estricto; ver seccion "SECURITY MODEL · Capa 3").
 - Paginas por pais: /coaching-carrera-espana.html, /coaching-carrera-argentina.html
 - Pagina About/Acerca de
 - Chrome extension para guardar empleos desde portales
