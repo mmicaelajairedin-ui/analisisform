@@ -1456,9 +1456,19 @@ function mcSaveConfig(patch, okMsg){
   if(MC_ORG) MC_ORG.marca=m;
   try{ localStorage.setItem('mc_brand',JSON.stringify(m)); }catch(_){}
   if(!(MC_REAL&&MC_ORG&&MC_ORG.id)){ __toast(okMsg||'Guardado ✓ (demo)'); return; }
-  mcPatch('organizaciones','id=eq.'+encodeURIComponent(MC_ORG.id),{marca:m})
-    .then(function(r){ __toast((r&&r.ok)?(okMsg||'Guardado ✓'):'No se pudo guardar. Reintenta'); })
-    .catch(function(){ __toast('Error de conexión. Reintenta'); });
+  // Persiste por edge function (service role, gateada al dueño) → NO depende de
+  // RLS/GRANT sobre organizaciones (que hacía que "no se guardara" en silencio).
+  // Si la función no está desplegada, cae al PATCH directo (comportamiento viejo).
+  var _extra={}; if(patch&&typeof patch.nombre==='string')_extra.nombre=patch.nombre; if(patch&&typeof patch.slug==='string')_extra.slug=patch.slug;
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    return fetch(SB+'/functions/v1/guardar-red',{method:'POST',headers:h,body:JSON.stringify(Object.assign({marca:m},_extra))});
+  }).then(function(r){
+    if(r&&r.ok){ __toast(okMsg||'Guardado ✓'); return; }
+    if(r&&r.status===404){ // función aún no desplegada → PATCH directo
+      return mcPatch('organizaciones','id=eq.'+encodeURIComponent(MC_ORG.id),{marca:m}).then(function(r2){ __toast((r2&&r2.ok)?(okMsg||'Guardado ✓'):'No se pudo guardar. Reintenta'); });
+    }
+    __toast('No se pudo guardar. Reintenta');
+  }).catch(function(){ __toast('Error de conexión. Reintenta'); });
 }
 function _mcIni(n){ return (''+(n||'')).trim().split(/\s+/).map(function(w){return w.charAt(0);}).slice(0,2).join('').toUpperCase()||'—'; }
 function _mcAgo(ts){ if(!ts)return 'reciente'; var d=new Date(ts); if(isNaN(d.getTime()))return 'reciente'; var s=(Date.now()-d.getTime())/1000; if(s<3600)return 'hace '+Math.max(1,Math.round(s/60))+'m'; if(s<86400)return 'hace '+Math.round(s/3600)+'h'; return 'hace '+Math.round(s/86400)+'d'; }
