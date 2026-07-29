@@ -67,6 +67,7 @@ const SYSTEM = `Sos un copywriter experto en marcas personales de coaches (carre
 
 Devolvés SOLO un objeto JSON válido (sin texto extra, sin markdown) con esta forma exacta:
 {
+  "titulo": "Título profesional corto y con keywords para el hero, ej. 'Coach de Carrera · Especialista en transición' o 'Entrenador Personal Certificado'. Sin datos inventados (no pongas certificaciones que no mencionó). Máx 90 caracteres.",
   "tagline": "1-2 oraciones en primera persona que arrancan con un verbo de ayuda (Ayudo a…/Acompaño a…). Máx 180 caracteres.",
   "bio": "Un párrafo de 'Sobre mí' en primera persona, 3-5 oraciones, cálido y concreto. Máx 600 caracteres.",
   "enfoque": ["3 bullets cortos de método/enfoque, 2-4 palabras cada uno"],
@@ -109,6 +110,7 @@ Deno.serve(async (req: Request) => {
     // Normalización defensiva.
     const asArr = (v: unknown) => Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : [];
     return json({
+      titulo: String(out.titulo || "").trim().slice(0, 120),
       tagline: String(out.tagline || "").trim().slice(0, 220),
       bio: String(out.bio || "").trim().slice(0, 700),
       enfoque: asArr(out.enfoque).slice(0, 4),
