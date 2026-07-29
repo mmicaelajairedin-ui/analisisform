@@ -8520,7 +8520,7 @@ function viewAdmin(){
       var hasCal = !!(cg.calendly_url || cg.calendly);
       var hasStripe = !!(cg.stripe_account_id || cg.stripe_connect_account_id || cg.stripe_customer_id);
       var nInf = infByCoach[u.id] || 0;
-      return { id:u.id, activo:u.activo, email:u.email||"", tipo:((u.rol==="admin")?"admin":(cg.coach_type||"carrera")), n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, accMs:accMs, createdMs:(u.created_at?(+new Date(u.created_at)||0):0), alta:alta, cli:(u.rol==="admin"?"—":cb.n), actv:actv, foto:hasFoto, cal:hasCal, stripe:hasStripe, inf:nInf, pw:cg.pathway_optin?"Sí":"No", com:"—", fotoUrl:(cg.foto_url||cg.foto_perfil||u.foto_url||""), pub:!!cg.perfil_publico_activo };
+      return { id:u.id, activo:u.activo, email:u.email||"", tipo:((u.rol==="admin")?"admin":(cg.coach_type||"carrera")), n:(u.nombre||u.email||"Coach")+(u.rol==="admin"?" ·admin":""), plan:plan, est:est, acc:acc, accMs:accMs, createdMs:(u.created_at?(+new Date(u.created_at)||0):0), alta:alta, cli:(u.rol==="admin"?"—":cb.n), actv:actv, foto:hasFoto, cal:hasCal, stripe:hasStripe, inf:nInf, pw:cg.pathway_optin?"Sí":"No", com:"—", fotoUrl:(cg.foto_url||cg.foto_perfil||u.foto_url||""), pub:!!cg.perfil_publico_activo, orgId:(u.org_id||""), esRed:(cg.es_coach_red===true||!!u.org_id) };
     });
   }
   // Orden: activas primero (inactivas al final) y, dentro de cada grupo, por
@@ -8532,7 +8532,7 @@ function viewAdmin(){
     var ra=Math.max(a.accMs||0,a.createdMs||0), rb=Math.max(b.accMs||0,b.createdMs||0);
     return rb-ra;
   });
-  var engRows = coachesEng.map(function(c){
+  function _coachCardHtml(c){
     var off=(c.activo===false);
     var selfRow=(RME&&String(c.id)===String(RME.id));
     var verBtn="<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 13px;font-size:12px' data-act='coach-view:"+esc(c.id)+"'>Ver ficha</button>";
@@ -8576,7 +8576,26 @@ function viewAdmin(){
       chipsRow+
       "<div class='cp-coach-acts'>"+tipoCell+"<span style='flex:1'></span>"+verBtn+moreMenu+"</div>"+
     "</div>";
-  }).join("");
+  }
+  // Coaches DIRECTOS (tuyos) vs. coaches de una RED (org_id): los de red NO van
+  // sueltos en la lista — se agrupan bajo su red/dueño (los gestiona el multicoach).
+  var _directCoaches = coachesEng.filter(function(c){ return !c.orgId; });
+  var _redCoaches    = coachesEng.filter(function(c){ return !!c.orgId; });
+  var engRows = _directCoaches.map(_coachCardHtml).join("");
+  var _redGroupsHtml = "";
+  if(_redCoaches.length){
+    var _byOrg = {};
+    _redCoaches.forEach(function(c){ (_byOrg[c.orgId]=_byOrg[c.orgId]||[]).push(c); });
+    _redGroupsHtml = Object.keys(_byOrg).map(function(oid){
+      var o = ((typeof RORGS!=="undefined"&&RORGS)||[]).filter(function(x){ return String(x.id)===String(oid); })[0] || {};
+      var nombreRed = esc(o.nombre||"Red");
+      var dueno = esc(o.owner_email||"—");
+      var n = _byOrg[oid].length;
+      var cards = _byOrg[oid].map(_coachCardHtml).join("");
+      return "<div style='margin-top:14px'><div style='display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--pw-carbon);padding:7px 2px;margin-bottom:6px;border-bottom:1px solid var(--pw-border)'><span class='cp-emo'>"+PWI.svg('building',{sm:true})+"</span><b>"+nombreRed+"</b><span style='color:var(--pw-text-soft);font-weight:500'>· "+n+" coach"+(n===1?"":"es")+" · dueño "+dueno+"</span></div><div class='cp-coach-grid'>"+cards+"</div></div>";
+    }).join("");
+    _redGroupsHtml = "<div style='margin-top:20px'><div style='font-size:11px;font-weight:700;color:var(--pw-text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px'>Coaches en redes</div><div style='font-size:11.5px;color:var(--pw-text-soft);margin-bottom:4px'>Pertenecen al equipo de un multicoach — los gestiona su dueño, no cuentan como coaches tuyos.</div>"+_redGroupsHtml+"</div>";
+  }
   var contactos = [
     { tel:"+34 611 23 45 67",   pag:"soy-coach",     f:"Hoy 14:30" },
     { tel:"+54 9 11 5555 1234", pag:"index",         f:"Hoy 11:02" },
@@ -9047,7 +9066,7 @@ function viewAdmin(){
       var _an2 = "<div class='cp-emb-split'>"+_growth+_estCard+"</div>";
       var _list = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<input class='cp-form-input' style='max-width:230px;height:34px' placeholder='Buscar coach…' oninput='cpCoachFilter(this.value)'></div>"+
-        "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div></div>";
+        "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div>"+_redGroupsHtml+"</div>";
       // ── Sin asignar (clientes huérfanos: coach_id NULL) ──────────────
       // Entraron al form/reserva SIN el link etiquetado de un coach, así que
       // nadie los "posee" y no aparecen en la lista de ningún coach. Antes eran
