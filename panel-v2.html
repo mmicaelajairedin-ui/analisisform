@@ -459,10 +459,12 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-client{background:#fff;border:1px solid var(--pw-border);border-radius:16px;padding:13px 18px 11px;box-shadow:var(--pw-shadow-xs);display:flex;flex-direction:column;gap:9px;cursor:pointer;transition:all .2s var(--pw-ease);}
 .cp-client:hover{transform:translateY(-2px);box-shadow:var(--pw-shadow-md);border-color:var(--pw-border-strong);}
 /* Dos cajas grandes (estilo Fortalezas/Áreas): agrupan los clientes por origen.
-   El color de la caja distingue Pathway (ámbar, comisión) de propio (verde, 0%). */
+   Ambas cajas van NEUTRAS (blanco + borde neutro): el subtítulo ya dice
+   "comisión X%" / "0% comisión", así que el color era redundante. (Regla de
+   color: neutro por defecto; nada de ámbar/verde en el chrome.) */
 .cp-cli-grp{margin-top:16px;}
-.cp-cli-grp.is-pw{background:#FCFAF3;border-color:rgba(233,196,106,.55);}
-.cp-cli-grp.is-own{background:#F6FBF8;border-color:rgba(82,183,136,.45);}
+.cp-cli-grp.is-pw{background:#fff;border-color:var(--pw-border);}
+.cp-cli-grp.is-own{background:#fff;border-color:var(--pw-border);}
 .cp-grp-hd{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
 .cp-grp-ic{width:36px;height:36px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;}
 .cp-grp-t{font-family:var(--pw-serif);font-size:16px;font-weight:600;color:var(--pw-carbon);letter-spacing:-.2px;}
@@ -480,6 +482,10 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-client-last.is-stale{color:var(--pw-danger);}
 .cp-client-last.is-mid{color:var(--pw-text-soft);}
 .cp-client-last::before{content:"●";margin-right:6px;font-size:8px;vertical-align:middle;}
+/* Próxima sesión en la tarjeta (lo que viene, no solo lo que pasó) */
+.cp-client-next{font-size:12px;font-weight:500;color:var(--pw-bosque);display:flex;align-items:center;gap:5px;margin-top:-2px;}
+.cp-client-next svg{width:13px;height:13px;flex-shrink:0;}
+.cp-client-next.none{color:var(--pw-text-muted);font-weight:400;}
 /* Riesgo enriquecido: chip de engagement + próximo paso para subir de nivel */
 .cp-eng{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:99px;padding:4px 10px;white-space:nowrap;flex-shrink:0;}
 .cp-eng svg{width:13px;height:13px;}
@@ -5470,7 +5476,6 @@ function viewClienteDetalle(c){
               "<div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(s.fecha||"")+(s.hora?" · "+esc(s.hora):"")+"</div>"+
               "<div style='display:flex;gap:4px;flex-shrink:0'>"+
                 "<button class='cp-icon-btn' style='width:24px;height:24px' data-act='ses-edit' data-id='"+esc(c.id)+"' data-si='"+oi+"' title='Editar sesión (fecha, hora, tema…)'>"+svg(IC.edit,12)+"</button>"+
-                "<button class='cp-icon-btn' style='width:24px;height:24px' data-act='ses-del' data-id='"+esc(c.id)+"' data-si='"+oi+"' title='Borrar sesión'>"+svg(IC.trash,12)+"</button>"+
               "</div>"+
             "</div>"+
             (s.trabajado?"<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(s.trabajado)+"</div>":"")+
@@ -5981,11 +5986,23 @@ function viewClientes(){
     var rpTxt = c.reportState==="published"?"publicado":"pendiente";
     var _inact = (c.last&&c.last.state==="stale") || (c.raw&&c.raw.activo===false);
     var askR = (_inact && c.email) ? "<button class='cp-btn cp-btn-ghost' style='height:26px;padding:0 10px;font-size:11px;margin-left:auto' data-act='cvx-resena' data-em='"+esc(c.email)+"' data-n='"+esc(c.name||"")+"'>Pedir reseña</button>" : "";
+    // Próxima sesión: la más cercana a futuro entre las sesiones del cliente.
+    var _prox=null; (c.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var _t=Date.parse((s.fecha||"")+"T"+(/^\d{2}:\d{2}/.test(s.hora||"")?s.hora:"12:00")); if(isNaN(_t)||_t<Date.now())return; if(!_prox||_t<_prox.t)_prox={t:_t,s:s}; });
+    var _proxHtml;
+    if(_prox){
+      var _pd=new Date(_prox.t), _td=new Date(); _td.setHours(0,0,0,0); var _pdd=new Date(_prox.t); _pdd.setHours(0,0,0,0);
+      var _diff=Math.round((_pdd-_td)/86400000);
+      var _pre=_diff===0?"Hoy":(_diff===1?"Mañana":_pd.toLocaleDateString("es-ES",{day:"2-digit",month:"short"}));
+      _proxHtml="<div class='cp-client-next'>"+PWI.svg('calendar',{size:13})+"Próxima sesión · "+esc(_pre+(_prox.s.hora?" "+_prox.s.hora:""))+"</div>";
+    } else {
+      _proxHtml="<div class='cp-client-next none'>"+PWI.svg('calendar',{size:13})+"Sin próxima sesión agendada</div>";
+    }
     return "<article class='cp-client' data-act='cli-open:"+c.id+"' data-sort='"+esc(c.id)+"' data-s='"+esc(((c.name||"")+" "+(c.email||"")+" "+(c.role||"")).toLowerCase())+"' style='position:relative'>"+
       "<span class='pw-grip' title='Arrastra para ordenar' onclick='event.stopPropagation()' style='position:absolute;top:9px;right:9px;opacity:.45;z-index:2'>"+_gripSvg()+"</span>"+
       "<header class='cp-client-head'>"+avImg(c.photo,c.name,"class='cp-client-photo'")+
         "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+(c._example?" <span style='font-size:10px;font-weight:700;color:var(--pw-bosque);background:var(--pw-success-bg);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.5px'>EJEMPLO</span>":"")+(_formPendiente(c)?" <span style='font-size:9.5px;font-weight:600;color:#8E7A35;background:rgba(233,196,106,.18);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.3px'>Form pendiente</span>":"")+"</div><div class='cp-client-role'>"+role+"</div></div>"+medal+"</header>"+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
+      _proxHtml+
       "<div class='cp-week'><span class='cp-week-label'>Sem "+c.week+"/4</span><span class='cp-week-dots'>"+dots+"</span></div>"+
       "<footer class='cp-client-foot'><span class='cp-client-pill "+cvCls+"'>CV "+cvTxt+"</span>"+
         "<span class='cp-client-pill "+rpCls+"'>Informe "+rpTxt+"</span>"+askR+"</footer></article>";
@@ -6070,12 +6087,12 @@ function viewClientes(){
       "<h3 class='cp-card-title' style='margin:20px 0 12px'>"+PWI.svg('users',{sm:true})+" Tus clientes<span class='dot'>.</span></h3>"+
       filtersBar +
       ((state.pathwayOptIn || pwList.length)
-        ? _grpBox("is-pw","rgba(233,196,106,.20)","Clientes de Pathway",
+        ? _grpBox("is-pw","var(--pw-niebla-3)","Clientes de Pathway",
             pwList.length+" activo"+(pwList.length===1?"":"s")+" · comisión "+_rate+"%",
             "cp-clients-grid-pw", pwList.map(_cliCard).join(""),
             "Todavía no cerraste ningún cliente de Pathway.")
         : "")+
-      _grpBox("is-own","var(--pw-success-bg)","Clientes propios",
+      _grpBox("is-own","var(--pw-niebla-3)","Clientes propios",
         ownList.length+" activo"+(ownList.length===1?"":"s")+" · 0% comisión",
         "cp-clients-grid", ownList.map(_cliCard).join(""),
         "Todavía no sumaste clientes propios.")+
@@ -6138,6 +6155,7 @@ function cfgProfile(){
   var nm = REAL ? (COACH.name||"") : "Micaela Jairedin";
   var slug = REAL ? (RPROF.slug||(RCFG&&RCFG.slug)||"") : "micaela-jairedin";
   var tit  = REAL ? (RPROF.titulo_profesional||"") : "Career Coach · 8 años en HR & Recruiting";
+  var _prac = REAL ? ((RCFG&&RCFG.nombre_practica)||(RME&&RME.nombre_practica)||"") : "";
   var bio  = REAL ? (RPROF.bio||"") : "Ayudo a profesionales a encontrar el siguiente paso de su carrera.";
   var titEn = v('titulo_profesional_en',''); var bioEn = v('bio_en','');
   if(state.pubActive===null) state.pubActive = REAL ? !!(RPROF.perfil_publico_activo || (RCFG&&RCFG.perfil_publico_activo)) : true;
@@ -6185,6 +6203,7 @@ function cfgProfile(){
           "<label class='cp-btn cp-btn-ghost' style='cursor:pointer'>Cambiar foto<input id='cfp-foto' type='file' accept='image/*' style='display:none'></label>"+
           "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:6px'>JPG o PNG · máx 8 MB · usá la foto original (no una captura)</div></div></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Nombre completo</label><input id='cfp-nombre' class='cp-form-input' value=\""+esc(nm)+"\"></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Nombre del negocio / marca <span style='font-weight:500;color:var(--pw-text-muted)'>— opcional</span></label><input id='cfp-practica' class='cp-form-input' value=\""+esc(_prac)+"\" placeholder='Ej. Axon (si operás como empresa)'><span class='cp-form-hint'>Aparece como tu marca en el portal del cliente, debajo del nombre. Vacío = usa solo tu nombre.</span></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>URL de tu perfil (slug)</label><input id='cfp-slug' class='cp-form-input' value=\""+esc(slug)+"\" placeholder='tu-nombre'>"+
         "<span class='cp-form-hint'>Tu link público: <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code> · solo minúsculas, números y guiones</span></div>"+
       ib("bio","Completa tu título y bio")+"<div class='cp-form-row'><label class='cp-form-label'>Título profesional</label><input id='cfp-titulo' class='cp-form-input' value=\""+esc(tit)+"\"></div>"+
@@ -10153,7 +10172,7 @@ document.addEventListener("click", function(ev){
     var pubA = !!state.pubActive;
     if(pubA && !sl){ alert("Para activar tu perfil público necesitas un slug. Escríbelo en «URL de tu perfil»."); var si=document.getElementById("cfp-slug"); if(si)si.focus(); return; }
     var nom=_val("cfp-nombre").trim(), titP=_val("cfp-titulo").trim(), bioP=_val("cfp-bio").trim();
-    var cfgPatch={ gcal_ical_url:_val("cfp-cal-ical").trim(), pais:_val("cfp-pais").trim().toUpperCase() };
+    var cfgPatch={ gcal_ical_url:_val("cfp-cal-ical").trim(), pais:_val("cfp-pais").trim().toUpperCase(), nombre_practica:_val("cfp-practica").trim() };
     _AG_DATA=null; // al guardar la config, forzar recarga de la agenda con el iCal nuevo
     if(window._cfpFoto){ cfgPatch.foto_url=window._cfpFoto; COACH.photo=window._cfpFoto; }
     var doSave=function(){
@@ -12188,19 +12207,9 @@ document.addEventListener("click", function(ev){
     var _chd=document.getElementById("ses-form-hd"); if(_chd) _chd.style.display="none";
     return;
   }
-  if(act==="ses-del"){
-    var _dId=el.getAttribute("data-id"), _dIdx=parseInt(el.getAttribute("data-si"),10);
-    var _dc=CLIENTS.filter(function(x){return String(x.id)===String(_dId);})[0]; if(!_dc) return;
-    var _darr=(_dc.ses||[]).slice(); if(!(_dIdx>=0&&_dIdx<_darr.length)) return;
-    if(!confirm("¿Borrar esta sesión? No se puede deshacer.")) return;
-    _darr.splice(_dIdx,1);
-    if(state.sesEdit&&String(state.sesEdit.id)===String(_dId)) state.sesEdit=null;
-    if(_dc._example){ _dc.ses=_darr; _demoSesSave(_dc.ses); toast("Sesión borrada (demo) ✓"); render(); return; }
-    _sbw("candidatos?id=eq."+encodeURIComponent(_dId),"PATCH",{sesiones_registro:JSON.stringify(_darr)})
-      .then(function(r){ if(!r.ok) throw 0; _dc.ses=_darr; toast("Sesión borrada ✓"); render(); })
-      .catch(function(){ alert("No se pudo borrar la sesión."); });
-    return;
-  }
+  // (Borrar sesión se quitó a propósito: las sesiones de la Sala/citas se
+  // re-agregan solas por _cita en _salaMergeSessions, y hay sesiones cableadas
+  // al agendado desde el cliente. Editar es seguro; borrar no. Solo Editar.)
   if(act==="svc-add"){ state.services.push({name:"",desc:"",price:0,unit:"/sesión"}); state.svcEdit=state.services.length-1; state._svcNew=true; state.cfg="services"; render(); return; }
   if(act.indexOf("svc-edit:")===0){ state.svcEdit=parseInt(act.slice(9),10); state._svcNew=false; render(); return; }
   if(act==="svc-cancel"){ if(state._svcNew && state.svcEdit!=null) state.services.splice(state.svcEdit,1); state._svcNew=false; state.svcEdit=null; render(); return; }
