@@ -48,6 +48,9 @@ img{max-width:100%;display:block;}
 .hero h1{font-family:var(--pw-serif);font-size:clamp(28px,4.2vw,40px);font-weight:500;letter-spacing:-1.5px;line-height:1.1;color:var(--pw-carbon);margin-bottom:6px;}
 .hero h1 .dot{color:var(--pw-sendero);}
 .hero .titulo{font-size:13px;color:var(--pw-bosque);font-weight:600;letter-spacing:.3px;margin-bottom:10px;}
+/* El título profesional (credenciales) vive DENTRO del <h1> por SEO — el H1 lleva
+   las keywords, no solo el nombre. Visualmente sigue siendo el "eyebrow" chico. */
+.hero h1 .titulo{display:block;font-family:var(--pw-sans);font-size:13px;font-weight:600;line-height:1.4;color:var(--pw-bosque);letter-spacing:.3px;margin-bottom:10px;}
 .hero .tagline{font-size:16px;color:var(--pw-texto-suave);line-height:1.5;max-width:520px;margin-bottom:18px;}
 .hero .tagline.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:6px;}
 .tagline-more{background:none;border:none;color:var(--pw-bosque);font-weight:600;font-size:13px;font-family:var(--pw-sans);cursor:pointer;padding:0;margin:0 0 16px;}
@@ -168,8 +171,7 @@ img{max-width:100%;display:block;}
           <span id="pw-verified" class="hero-verified" hidden></span>
         </div>
         <div>
-          <div class="titulo" id="titulo" hidden></div>
-          <h1><span id="nombre"></span><span class="dot">.</span></h1>
+          <h1 class="hero-h1"><span class="titulo" id="titulo" hidden></span><span id="nombre"></span><span class="dot">.</span></h1>
           <div class="hero-metrics" id="hero-metrics" hidden></div>
           <div class="tags hero-chips" id="hero-chips" hidden></div>
           <p class="tagline" id="tagline"></p>
@@ -387,6 +389,41 @@ img{max-width:100%;display:block;}
     }catch(e){}
     return '';
   }
+  // SEO automático desde los datos del coach: title + description + keywords +
+  // schema Person (rich results). Sin escribir nada a mano — todo derivado.
+  function _applySEO(c){
+    try{
+      var name=c.nombre||'Coach';
+      var prof=((pickLang(c.titulo_profesional,c.titulo_profesional_en)||'').split('|')[0]||'').trim();
+      var esp=Array.isArray(c.especialidades)?c.especialidades.filter(Boolean):[];
+      var pais=(pickLang(c.atiende,c.atiende_en)||'').trim();
+      document.title=name+(prof?(' — '+prof):'')+' | Pathway';
+      var desc=name+(prof?(', '+prof):'')+'.';
+      if(esp.length) desc+=' '+pickLang('Especialista en ','Specialist in ')+esp.slice(0,4).join(', ')+'.';
+      if(pais) desc+=' '+pickLang('Atiende en ','Serves ')+pais+'.';
+      desc+=' '+pickLang('Reserva una llamada en Pathway.','Book a call on Pathway.');
+      var md=document.querySelector('meta[name="description"]'); if(md) md.setAttribute('content',desc.slice(0,300));
+      var kws=[];
+      if(prof) prof.split(/[\s/,\-]+/).forEach(function(w){ if(w.length>3) kws.push(w.toLowerCase()); });
+      esp.forEach(function(e){ kws.push((''+e).toLowerCase()); });
+      if(pais) kws.push(pais.toLowerCase());
+      kws.push('coach','coaching',name.toLowerCase(),'pathway');
+      var uniq=[]; kws.forEach(function(k){ k=(k||'').trim(); if(k&&uniq.indexOf(k)<0) uniq.push(k); });
+      var mk=document.querySelector('meta[name="keywords"]');
+      if(!mk){ mk=document.createElement('meta'); mk.setAttribute('name','keywords'); document.head.appendChild(mk); }
+      mk.setAttribute('content',uniq.slice(0,20).join(', '));
+      var ld={"@context":"https://schema.org","@type":"Person","name":name};
+      if(prof) ld.jobTitle=prof;
+      if(esp.length) ld.knowsAbout=esp;
+      if(pais) ld.areaServed=pais;
+      if(c.foto_perfil_url) ld.image=c.foto_perfil_url;
+      if(c.slug) ld.url='https://pathwaycareercoach.com/coach.html?slug='+encodeURIComponent(c.slug);
+      ld.worksFor={"@type":"Organization","name":"Pathway","url":"https://pathwaycareercoach.com"};
+      var s=document.getElementById('ld-coach');
+      if(!s){ s=document.createElement('script'); s.type='application/ld+json'; s.id='ld-coach'; document.head.appendChild(s); }
+      s.textContent=JSON.stringify(ld);
+    }catch(e){}
+  }
   function render(c){
     _coachData=c;
     document.title=(c.nombre||'Coach')+' · Pathway';
@@ -394,6 +431,7 @@ img{max-width:100%;display:block;}
     var _tg=pickLang(c.tagline,c.tagline_en); if(meta && _tg)meta.setAttribute('content',_tg);
 
     setText('nombre',c.nombre||'');
+    _applySEO(c);   // title + description + keywords + schema Person (auto, para SEO)
     // Dedupe: titulo, tagline, bio y enfoque tienen slots distintos. Si dos
     // traen el MISMO texto (ej. titulo == tagline), no lo repetimos: el primero
     // que aparece se queda, los siguientes se omiten. Orden: titulo → tagline.
