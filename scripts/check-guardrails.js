@@ -4471,6 +4471,24 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "panel-v2: un email = un solo rol (no crear login de cliente sobre un email de coach)",
+    bug: "Coaches y clientes viven en la misma tabla usuarios. Si el alta de cliente " +
+         "usaba un email que YA es coach/admin, se generaba un estado ambiguo (el " +
+         "cliente terminaba entrando al panel del coach). El alta ahora consulta el " +
+         "rol existente y corta con aviso si el email ya es coach/admin. El blindaje " +
+         "de fondo es el índice único usuarios_email_unico.sql (una fila por email).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // El alta debe pedir el rol y cortar ante coach/admin.
+      if (!/usuarios\?email=eq\."\+encodeURIComponent\(aem\)\+"&select=id,rol/.test(s))
+        return "panel-v2.html: el alta de cliente ya no consulta el rol existente (select=id,rol) → vuelve a poder crear un cliente sobre un email de coach.";
+      if (!/rol==="coach"\|\|_ex\.rol==="admin"/.test(s) || !/rol-conflict/.test(s))
+        return "panel-v2.html: el alta ya no corta cuando el email es de coach/admin (guardrail 'un email = un solo rol').";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
