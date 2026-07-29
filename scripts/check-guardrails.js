@@ -1756,6 +1756,36 @@ const RULES = [
     },
   },
   {
+    name: "Apple 4.8: donde hay login con Google hay 'Sign in with Apple' (para la app iOS)",
+    bug: "Apple (guideline 4.8) exige ofrecer 'Sign in with Apple' equivalente en CADA " +
+         "pantalla donde la app iOS ofrezca login social (Google). Toda pantalla con " +
+         "provider:'google' de LOGIN debe tener el botón #btn-apple + el módulo " +
+         "pw-apple-signin.js. Excepción: conectar-calendar.html (Google Calendar como " +
+         "SERVICIO, no login → 4.8 no aplica). login.html/login-en.html lo tienen inline.",
+    check() {
+      const fs = require("fs"), path = require("path");
+      if (!read("pw-apple-signin.js")) return "falta pw-apple-signin.js (módulo de Sign in with Apple).";
+      const EXENTO = new Set(["conectar-calendar.html"]);       // Google = Calendar (servicio), no login
+      const INLINE = new Set(["login.html", "login-en.html"]);  // tienen Apple inline (no el módulo)
+      let root;
+      try { root = path.resolve(__dirname, ".."); } catch (e) { return null; }
+      let files;
+      try { files = fs.readdirSync(root).filter((f) => f.endsWith(".html")); } catch (e) { return null; }
+      const faltan = [];
+      for (const f of files) {
+        const s = read(f);
+        if (!s || !/provider:\s*['"]google['"]/.test(s)) continue;   // solo pantallas con login Google
+        if (EXENTO.has(f)) continue;
+        const tieneApple = /id=["']btn-apple["']/.test(s);
+        const tieneModulo = INLINE.has(f) ? /signInWithApple/.test(s) : /pw-apple-signin\.js/.test(s);
+        if (!tieneApple || !tieneModulo) faltan.push(f);
+      }
+      if (faltan.length)
+        return "estas pantallas ofrecen login con Google pero les falta 'Sign in with Apple' (btn-apple + pw-apple-signin.js) → riesgo de rechazo en la App Store (4.8): " + faltan.join(", ") + ".";
+      return null;
+    },
+  },
+  {
     name: "móvil: el selector de idioma del menú NO se circulariza (no sale óvalo negro)",
     bug: "La regla móvil que vuelve círculos los botones de la barra " +
          "(#pw-app-actions button:not(...)) alcanzaba también a los botones de idioma " +
