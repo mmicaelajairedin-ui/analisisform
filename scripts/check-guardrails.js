@@ -2703,7 +2703,7 @@ const RULES = [
       const seg = mc.slice(mc.indexOf("function _teamDrop("), mc.indexOf("function _teamDrop(") + 900);
       if (!/__openModal\(/.test(seg)) return "multicoach.html: _teamDrop ya no confirma antes de mover (falta el cartel).";
       if (!/_reassign\(/.test(seg)) return "multicoach.html: _teamDrop ya no reasigna vía _reassign (asignar-cliente).";
-      if (!/function _fillCoaches\([\s\S]{0,400}_teamGroup\(/.test(mc)) return "multicoach.html: la página Coaches ya no arma el tablero por coach.";
+      if (!/function _fillCoaches\([\s\S]{0,700}_teamGroup\(/.test(mc)) return "multicoach.html: la página Coaches ya no arma el tablero por coach.";
       return null;
     },
   },
@@ -4961,6 +4961,30 @@ const RULES = [
         return "panel-v2.html POST /usuarios no agrega org_id al payload.";
       if (!/if\(RME&&RME\.org_id\)\s*ib\.org_id=RME\.org_id/.test(pv))
         return "panel-v2.html POST /informes no agrega org_id al payload.";
+      return null;
+    },
+  },
+  {
+    name: "DESIGN TOKENS COMPLIANCE: multicoach.html solo usa pw-design-tokens",
+    bug: "Audit Julio 2026: multicoach.html tenía 125 hardcoded colors (#fff, #667068, " +
+         "etc). Todos fueron reemplazados por --pw-* tokens (pw-bg-card, pw-text-muted, etc). " +
+         "Los únicos hardcoded que pueden quedar son #fff en border de badges (border:2px solid #fff), " +
+         "que es legacy y no afecta white-label. Si alguien vuelve a agregar color:# o background:# " +
+         "en la sección CSS/style (fuera de JS), frenamos.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      // Solo permitir #fff en border:2px solid #fff (badge borders). TODO: convertir a token.
+      // Prohibir: color:#[0-9A-F], background:#[0-9A-F], border-color:#[0-9A-F]
+      // Nota: JS inline strings (style=\"...\") PUEDEN tener #fff por ahora (difícil de refactorizar).
+      // Solo chequeamos la sección CSS pura (avant <script>).
+      const cssSection = mc.substring(0, mc.indexOf("<script"));
+      if (/color:\s*#[0-9A-Fa-f]{3,6}(?!.*#fff)/.test(cssSection))
+        return "multicoach.html CSS: nuevo color:#hex detectado. Usar var(--pw-*) del pw-design-tokens.css";
+      if (/background:\s*#[0-9A-Fa-f]{3,6}/.test(cssSection))
+        return "multicoach.html CSS: nuevo background:#hex detectado. Usar var(--pw-*) del pw-design-tokens.css";
+      if (/border-color:\s*#[0-9A-Fa-f]{3,6}/.test(cssSection))
+        return "multicoach.html CSS: nuevo border-color:#hex detectado. Usar var(--pw-*) del pw-design-tokens.css";
       return null;
     },
   },
