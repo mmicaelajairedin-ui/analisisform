@@ -558,7 +558,7 @@ html.mc-embed #mc-nswitch{display:none!important}
 .modalov{position:fixed;inset:0;background:rgba(20,46,38,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
 .modal{background:#fff;border-radius:16px;max-width:420px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.3);overflow:hidden}
 .modal .mh{padding:15px 20px;border-bottom:1px solid var(--border);font-family:var(--ser);font-weight:500;font-size:17px;letter-spacing:-.4px}
-.modal .mb{padding:18px 20px;display:flex;flex-direction:column;gap:13px}
+.modal .mb{padding:18px 20px;display:flex;flex-direction:column;gap:13px;max-height:68vh;overflow-y:auto}
 .modal .mf{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
 .inp{width:100%;box-sizing:border-box;border:1px solid var(--border-s);border-radius:12px;height:42px;padding:0 16px;font-size:14px;font-family:inherit;color:var(--carbon)}
 .inp:focus{outline:none;border-color:var(--bosque)}
@@ -2035,17 +2035,11 @@ var MC_POST_TPL=[
   {ic:'🗓️',lbl:'Recordatorio',t:'Recordatorio',txt:'[evento/clase] es [cuándo]. ¡No falten! Reaccioná ✅ si venís.'},
   {ic:'🙌',lbl:'Logro de la red',t:'Lo logramos como equipo',txt:'Esta semana logramos [hito de la red]. ¡Gracias por ser parte de esto! ❤️'}
 ];
-// Composer VISUAL de la revista: chips de plantilla + campos (título/texto/foto)
-// + una VISTA PREVIA en vivo que se ve igual que el post publicado. Así el owner
-// "coloca todo" y ve al toque cómo queda antes de publicar.
-function _postTpl(btn){
-  var b=document.getElementById('np-t'); if(b)b.value=(btn.getAttribute('data-tpl')||'');
-  var ti=document.getElementById('np-title'); if(ti)ti.value=(btn.getAttribute('data-title')||'');
-  var em=btn.getAttribute('data-emo'); if(em){var pe=document.getElementById('pp-emo');if(pe)pe.textContent=em;_postEmo=em;}
-  var chips=document.querySelectorAll('#np-chips button'); for(var i=0;i<chips.length;i++){var on=chips[i]===btn;chips[i].style.background=on?'var(--bosque)':'#fff';chips[i].style.color=on?'#fff':'var(--pw-carbon)';chips[i].style.borderColor=on?'var(--bosque)':'var(--pw-border)';}
-  _postPrev(); if(b)b.focus();
-}
-var _postEmo='📸';
+// Composer de la revista tipo CARRUSEL: se ve UNA plantilla a la vez (con su
+// vista previa igual al post). Con ‹ › mirás la siguiente; la que te gusta la
+// editás (los [corchetes]) y publicás. Así el modal queda corto y no se escapa
+// de la pantalla (antes eran 12 chips + todo apilado = larguísimo).
+var _postEmo='📸', _postIdx=0;
 function _postPrev(){
   var ti=((document.getElementById('np-title')||{}).value||'').trim();
   var tx=((document.getElementById('np-t')||{}).value||'').trim();
@@ -2055,24 +2049,40 @@ function _postPrev(){
   var img=document.getElementById('pp-img'); var src=_dzData||url;
   if(img){ if(src){img.src=src;img.style.display='block';} else {img.style.display='none';} }
 }
+// Carga la plantilla en foco a los campos + preview y actualiza la etiqueta.
+function _postLoad(){
+  var N=MC_POST_TPL.length, p=MC_POST_TPL[_postIdx]||MC_POST_TPL[0];
+  var b=document.getElementById('np-t'); if(b)b.value=p.txt||'';
+  var ti=document.getElementById('np-title'); if(ti)ti.value=p.t||'';
+  _postEmo=p.ic||'📸'; var pe=document.getElementById('pp-emo'); if(pe)pe.textContent=_postEmo;
+  var lab=document.getElementById('np-tpllab'); if(lab)lab.innerHTML=_mcEsc(p.ic+' '+p.lbl)+' <span style="color:var(--soft);font-weight:600">· '+(_postIdx+1)+'/'+N+'</span>';
+  _postPrev();
+}
+function _postNav(dir){ var N=MC_POST_TPL.length; _postIdx=((_postIdx+dir)%N+N)%N; _postLoad(); }
+function _postBlank(){ var b=document.getElementById('np-t'); if(b)b.value=''; var ti=document.getElementById('np-title'); if(ti)ti.value=''; _postEmo='📸'; var pe=document.getElementById('pp-emo'); if(pe)pe.textContent='📸'; var lab=document.getElementById('np-tpllab'); if(lab)lab.innerHTML='En blanco'; _postPrev(); if(ti)ti.focus(); }
 function _nuevaPost(){
-  _dzData=null;_dzName=null;_postEmo='📸';
+  _dzData=null;_dzName=null;_postEmo='📸';_postIdx=0;
   var _brandNm=(MC_REAL&&MC_ORG&&MC_ORG.nombre)?MC_ORG.nombre:(_mcBrand().nombre||'Tu red');
   var _brandIni=_mcIni(_brandNm);
-  var prev='<div style="font-size:10.5px;color:var(--soft);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;font-weight:700">Vista previa</div>'
-    +'<div class="revista" style="grid-template-columns:1fr;margin-bottom:16px"><div class="post" style="margin:0">'
+  // Carrusel: flechas + etiqueta de la plantilla en foco (i/N). Compacto arriba.
+  var nav='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+    +'<button type="button" onclick="_postNav(-1)" aria-label="Anterior" style="border:1px solid var(--pw-border);background:#fff;border-radius:10px;width:36px;height:36px;font-size:19px;line-height:1;cursor:pointer;flex-shrink:0;color:var(--pw-carbon)">‹</button>'
+    +'<div id="np-tpllab" style="flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--pw-carbon)"></div>'
+    +'<button type="button" onclick="_postNav(1)" aria-label="Siguiente" style="border:1px solid var(--pw-border);background:#fff;border-radius:10px;width:36px;height:36px;font-size:19px;line-height:1;cursor:pointer;flex-shrink:0;color:var(--pw-carbon)">›</button>'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--soft);text-align:center;margin:-4px 0 12px">Mirá las plantillas con ‹ ›. La que te gusta, cambiá lo que está entre [corchetes] y publicá — o <a onclick="_postBlank()" style="color:var(--bosque);cursor:pointer;text-decoration:underline">empezá en blanco</a>.</div>';
+  // Vista previa compacta (imagen más baja para que no crezca de más).
+  var prev='<div class="revista" style="grid-template-columns:1fr;margin-bottom:14px"><div class="post" style="margin:0">'
     +'<div class="ph"><div class="a">'+_mcEsc(_brandIni)+'</div><div><b>'+_mcEsc(_brandNm)+'</b><small>recién · vista previa</small></div></div>'
     +'<div class="msg" id="pp-msg"><span style="color:var(--muted)">Tu texto aparecerá acá…</span></div>'
-    +'<div class="feat"><div class="img"><span class="emo" id="pp-emo">📸</span><img id="pp-img" alt="" loading="lazy" style="display:none"></div>'
+    +'<div class="feat"><div class="img" style="height:120px"><span class="emo" id="pp-emo">📸</span><img id="pp-img" alt="" loading="lazy" style="display:none"></div>'
     +'<div class="react"><button class="rb" type="button" onclick="return false">❤️ <b>0</b></button></div></div></div></div>';
-  var chips='<div style="font-size:11.5px;color:var(--soft);margin-bottom:6px">Elegí una plantilla y cambiá solo lo que está entre [corchetes]:</div>'
-    +'<div id="np-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'+MC_POST_TPL.map(function(p){return '<button type="button" data-tpl="'+_mcEsc(p.txt)+'" data-title="'+_mcEsc(p.t||'')+'" data-emo="'+_mcEsc(p.ic)+'" onclick="_postTpl(this)" style="border:1px solid var(--pw-border);background:#fff;border-radius:100px;padding:5px 11px;font-size:12px;cursor:pointer;color:var(--pw-carbon)">'+p.ic+' '+_mcEsc(p.lbl)+'</button>';}).join('')+'</div>';
   var fields='<div><span class="lbl">Título (opcional)</span><input id="np-title" class="inp" placeholder="Ej. ¡Nueva clase esta semana!" oninput="_postPrev()"></div>'
-    +'<div style="margin-top:9px"><span class="lbl">Texto</span><textarea id="np-t" class="inp" style="min-height:80px;resize:vertical" placeholder="Escribe tu publicación…" oninput="_postPrev()"></textarea></div>'
+    +'<div style="margin-top:9px"><span class="lbl">Texto</span><textarea id="np-t" class="inp" style="min-height:72px;resize:vertical" placeholder="Escribe tu publicación…" oninput="_postPrev()"></textarea></div>'
     +'<div style="margin-top:9px"><span class="lbl">Foto (opcional)</span>'
-    +'<div id="np-drop" class="dropz" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_dzDrop(event)" onclick="document.getElementById(\'np-file\').click()"><input type="file" id="np-file" accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="_dzFiles(this.files)"><span id="np-dztext">'+PWI.svg('paperclip',{sm:true})+' Arrastra una foto acá, o toca para elegir</span><br><img id="np-prev" alt="" style="display:none;max-height:120px;border-radius:10px;margin-top:8px"></div>'
+    +'<div id="np-drop" class="dropz" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_dzDrop(event)" onclick="document.getElementById(\'np-file\').click()"><input type="file" id="np-file" accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="_dzFiles(this.files)"><span id="np-dztext">'+PWI.svg('paperclip',{sm:true})+' Arrastra una foto acá, o toca para elegir</span><br><img id="np-prev" alt="" style="display:none;max-height:110px;border-radius:10px;margin-top:8px"></div>'
     +'<input id="np-f" class="inp" placeholder="…o pega una URL de foto" oninput="_postPrev()" style="margin-top:8px"></div>';
-  __openModal('Nueva publicación en la revista', prev+chips+fields,
+  __openModal('Nueva publicación en la revista', nav+prev+fields,
     'Publicar',function(){
       var ti=document.getElementById('np-title').value.trim();
       var tx=document.getElementById('np-t').value.trim();
@@ -2094,6 +2104,7 @@ function _nuevaPost(){
       }
       DBCOM.posts.unshift({id:'p'+DBCOM.posts.length+'x',time:'recién',txt:body,emo:_postEmo||'📸',foto:f,r:{'❤️':0}});
       __mclose();__toast('Publicado en la revista ✓');_comTab='revista';renderComunidad();});
+  _postLoad(); // arranca mostrando la 1ª plantilla en el carrusel
 }
 // Carga las novedades REALES de la red (comunidad-red) a DBCOM.posts. En demo no
 // hace nada (se queda la maqueta). Se llama una vez por entrada a la Comunidad.
