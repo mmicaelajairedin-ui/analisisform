@@ -517,6 +517,110 @@ async function handleClientSubEvent(sub: StripeSubscription) {
 }
 
 // ── Handler: suscripción del coach a Pathway ─────────────────
+// ── PLANES DE RED (multicoach) ────────────────────────────────────────────
+// Se detectan por el monto del Payment Link (en centavos USD). Mensual:
+//   $149 → boutique · $249 → studio · $399 → pro
+// Anual (33% off = 4 meses gratis, = 8 meses pagos):
+//   $1192 → boutique · $1992 → studio · $3192 → pro
+// Sin colisión con los montos del coach individual (2900/5900/26100/53100).
+const RED_PLAN_BY_AMOUNT: Record<number, "boutique" | "studio" | "pro"> = {
+  14900: "boutique", 119200: "boutique",
+  24900: "studio",   199200: "studio",
+  39900: "pro",      319200: "pro",
+};
+const RED_LIMITS: Record<string, { max_coaches: number | null; max_clientes: number | null }> = {
+  boutique: { max_coaches: 3, max_clientes: 45 },
+  studio:   { max_coaches: 8, max_clientes: 120 },
+  pro:      { max_coaches: null, max_clientes: null },
+};
+
+// Suscripción de una RED: activa la organización del dueño (no su ficha como
+// coach individual). Match por el email del dueño; setea plan + límites + estado
+// en `organizaciones` y espeja el estado en la fila `usuarios` del dueño.
+async function handleRedSubscription(
+  sub: StripeSubscription,
+  customerEmail: string,
+  redPlan: "boutique" | "studio" | "pro",
+) {
+  const email = customerEmail.trim().toLowerCase();
+  const { url: SB_URL, headers } = getSupabaseAuth();
+
+  const statusMap: Record<string, string> = {
+    trialing: "prueba", active: "activa", past_due: "activa", canceled: "cancelada",
+    unpaid: "vencida", incomplete: "prueba", incomplete_expired: "vencida",
+  };
+  const estado_sub = statusMap[sub.status] || "prueba";
+  const item = sub.items?.data?.[0];
+  const unitAmount = item?.price?.unit_amount || 0;
+  const trialEndISO = sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null;
+  const periodEndISO = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
+  const limits = RED_LIMITS[redPlan];
+  const activeStatuses = ["trialing", "active", "past_due", "incomplete"];
+  const shouldBeActive = activeStatuses.includes(sub.status);
+
+  // Buscar al DUEÑO por email (necesitamos su org_id para activar la red).
+  const userRes = await fetch(
+    `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=id,nombre,rol,org_id,configuracion`,
+    { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+  );
+  const users = userRes.ok ? await userRes.json() : null;
+
+  // Pago sin dueño registrado con ese email → avisar a la admin (no crear red a ciegas).
+  if (userRes.ok && Array.isArray(users) && users.length === 0) {
+    await sendUnmatchedPaymentAlert(email, "red:" + redPlan, String(sub.customer || ""));
+    return { result: "red-owner-not-found-alerted", email };
+  }
+  const u = (users && users[0]) || {};
+  const existingCfg = u.configuracion || {};
+  const orgId = u.org_id || null;
+  const primer = String(u.nombre || "").split(" ")[0] || "";
+
+  // 1) Activar/actualizar la ORGANIZACIÓN (solo columnas reales de la tabla).
+  let orgOk = true;
+  if (orgId) {
+    const orgPatch: Record<string, unknown> = {
+      plan: redPlan,
+      max_coaches: limits.max_coaches,
+      max_clientes: limits.max_clientes,
+      estado_sub,
+      fecha_fin_prueba: trialEndISO ? trialEndISO.slice(0, 10) : null, // columna DATE
+      activo: shouldBeActive,
+    };
+    const orgRes = await fetch(
+      `${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(orgId)}`,
+      { method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify(orgPatch) },
+    );
+    orgOk = orgRes.ok;
+  }
+
+  // 2) Espejar el estado en la fila del DUEÑO (usuarios). configuracion es JSONB:
+  //    ahí sí guardamos fecha_fin_periodo (no existe como columna en organizaciones).
+  const newCfg = {
+    ...existingCfg,
+    plan: redPlan,
+    estado_sub,
+    es_multicoach: true,
+    stripe_customer_id: sub.customer,
+    stripe_subscription_id: sub.id,
+    fecha_fin_prueba: trialEndISO,
+    fecha_fin_periodo: periodEndISO,
+  };
+  const patchRes = await fetch(
+    `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}`,
+    { method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ configuracion: newCfg, activo: shouldBeActive }) },
+  );
+
+  // Confirmación al PASAR a activa (primer pago o reactivación), una sola vez.
+  const becameActive = (estado_sub === "activa") && (existingCfg.estado_sub !== "activa");
+  if (becameActive) {
+    await sendCoachActivatedEmail(email, primer, redPlan);
+    await emitEvento({ tipo: "PaymentSucceeded", dominio: "Billing", actor_email: email, actor_rol: "owner", entidad_tipo: "red", entidad_id: orgId || email, page: "stripe-webhook", payload: { plan: "red:" + redPlan, monto: unitAmount, moneda: (item?.price?.currency || "usd") } });
+  }
+  await markLeadConversion(email, estado_sub);
+
+  return { result: (patchRes.ok && orgOk) ? "red-subscription-updated" : "red-subscription-failed", email, plan: redPlan, estado_sub };
+}
+
 async function handleCoachSubscription(
   sub: StripeSubscription,
   customerEmail?: string,
@@ -543,6 +647,12 @@ async function handleCoachSubscription(
   // Fallback legacy (Payment Links viejos sin precios estandar): mes=basic, año=pro.
   const item = sub.items?.data?.[0];
   const unitAmount = item?.price?.unit_amount || 0;
+
+  // ¿Es una suscripción de RED (multicoach)? Se detecta por monto. Si lo es, se
+  // maneja aparte: activa la ORGANIZACIÓN del dueño, no su ficha de coach individual.
+  const redPlan = RED_PLAN_BY_AMOUNT[unitAmount];
+  if (redPlan) return await handleRedSubscription(sub, email, redPlan);
+
   let plan: "basic" | "pro";
   if (unitAmount === 5900 || unitAmount === 8900 || unitAmount === 53100) plan = "pro";
   else if (unitAmount === 2900 || unitAmount === 5800 || unitAmount === 26100) plan = "basic";

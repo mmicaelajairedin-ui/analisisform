@@ -1536,6 +1536,7 @@ function mcLoadReal(owner){
     try{ DBCOM={posts:[],avisos:[],clases:[],retos:[],ranking:[]}; }catch(e){}
     mcApplyNiche();
     try{ _mcLoadCanales(function(){ _mcUpdHeaderDot(); }); }catch(e){} // punto de no-leídos del chat del equipo
+    try{ setTimeout(_mcPaywallCheck,0); }catch(e){} // aviso/muro si la prueba de la red está por vencer o venció
   }
   return _hdr({'Content-Type':'application/json'}).then(function(h){
     return fetch(SB+'/functions/v1/mi-red',{method:'POST',headers:h});
@@ -2620,7 +2621,23 @@ var MC_FEAT_LABEL={ logo:'el logo white-label', comunidad:'la Comunidad', canal:
 // Payment links de Stripe para subir el plan de la RED. Creá uno por plan en
 // Stripe (Payment Links) y pegalo acá, igual que STRIPE_BASIC/PRO del panel coach.
 // Mientras estén vacíos, el botón cae al contacto por WhatsApp.
-var MC_STRIPE={ studio:'', studio_ano:'', pro:'', pro_ano:'' };
+// Links de pago de la red (Payment Links de Stripe, tipo suscripción). Mensual
+// ya cargado; anual queda vacío hasta tener sus Payment Links (se cae a WhatsApp
+// mientras tanto). El webhook reactiva la MISMA red por email al pagar.
+var MC_STRIPE={
+  boutique:'https://buy.stripe.com/14A14n5Ys7JS1UM4vp8AE0h', boutique_ano:'https://buy.stripe.com/9B64gzfz25BKgPG3rl8AE0l',
+  studio:'https://buy.stripe.com/3cIdR95Ysggo2YQfa38AE0i',   studio_ano:'https://buy.stripe.com/cNi3cv0E8fck7f66Dx8AE0m',
+  pro:'https://buy.stripe.com/6oUaEX72w4xGari5zt8AE0j',      pro_ano:'https://buy.stripe.com/aFadR9cmQ2py2YQ1jd8AE0n'
+};
+// Link de checkout de un plan concreto (para "pagar mi plan" tras la prueba). Si
+// se pide anual y todavía no hay link anual, devuelve '' (el caller cae a WhatsApp).
+function _mcPlanBuy(planKey, annual){
+  var k=(''+(planKey||'')).toLowerCase();
+  var link = annual ? MC_STRIPE[k+'_ano'] : MC_STRIPE[k];
+  if(!link) return '';
+  var oem=(MC_OWNER&&MC_OWNER.email)||'';
+  return link+(oem?('?prefilled_email='+encodeURIComponent(oem)):'');
+}
 function _mcPlanTier(){ if(!MC_REAL) return 2; var k=(''+((MC_PLAN||(MC_ORG&&MC_ORG.plan))||'studio')).toLowerCase(); return k==='pro'?2:(k==='studio'?1:0); }
 function _mcCanFeature(f){ return _mcPlanTier() >= (MC_FEAT_TIER[f]||0); }
 function _mcBuyLink(tierNeeded){ var link=(tierNeeded>=2?MC_STRIPE.pro:MC_STRIPE.studio)||''; if(!link) return ''; var oem=(MC_OWNER&&MC_OWNER.email)||''; return link+(oem?('?prefilled_email='+encodeURIComponent(oem)):''); }
@@ -2670,10 +2687,12 @@ function _mcPlanesCards(){
   return MC_PLAN_FULL.map(function(p,i){
     var cur=(i===curIdx), up=(i>curIdx);
     var wa='https://wa.me/34623816019?text='+encodeURIComponent('Hola, quiero subir mi red de multi-coach al plan '+p.nombre+' en Pathway'+(ano?' (plan anual)':'')+'.');
+    var buy=_mcPlanBuy(p.key, ano);           // checkout de Stripe si hay link; '' si falta (ej. anual)
+    var upHref=buy||wa;                        // fallback a WhatsApp mientras no haya link
     var cta = cur
       ? "<div style='margin-top:16px;text-align:center;font-size:12.5px;font-weight:700;color:var(--pw-bosque);background:var(--pw-success-bg);border-radius:10px;padding:11px'>Tu plan actual</div>"
       : up
-        ? "<a href='"+wa+"' target='_blank' rel='noopener' style='display:block;margin-top:16px;text-align:center;background:var(--pw-bosque);color:#fff;text-decoration:none;padding:12px;border-radius:11px;font-size:13.5px;font-weight:700'>Subir a "+p.nombre+" →</a>"
+        ? "<a href='"+upHref+"' target='_blank' rel='noopener' style='display:block;margin-top:16px;text-align:center;background:var(--pw-bosque);color:#fff;text-decoration:none;padding:12px;border-radius:11px;font-size:13.5px;font-weight:700'>"+(buy?'Suscribirme a '+p.nombre:'Subir a '+p.nombre)+" →</a>"
         : "<div style='margin-top:16px;text-align:center;font-size:12.5px;color:var(--pw-text-muted);padding:11px'>Incluido en tu plan</div>";
     var feats=p.feats.map(function(f){return "<div style='display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--pw-carbon);line-height:1.5;margin-bottom:7px'><span style='color:var(--pw-bosque);font-weight:800;flex-shrink:0'>✓</span><span>"+f+"</span></div>";}).join('');
     var precio=ano?p.precioAno:p.precio;
@@ -2715,11 +2734,57 @@ function mcPlanes(){
       "<div style='text-align:center'>"+toggle+"<div style='font-size:11.5px;color:var(--pw-text-muted);margin-top:6px'>Pagando anual ahorras 33% — 4 meses gratis</div></div>"+
     "</div>"+
     "<div id='mc-planes-cards' style='display:flex;gap:14px;flex-wrap:wrap;padding:26px 24px'>"+_mcPlanesCards()+"</div>"+
-    "<div style='padding:0 24px 20px;font-size:11.5px;color:var(--pw-text-muted);text-align:center'>Para subir de plan te contactamos por WhatsApp y activamos tu red sin perder ningún dato.</div>"+
+    "<div style='padding:0 24px 20px;font-size:11.5px;color:var(--pw-text-muted);text-align:center'>Pagás con tarjeta por Stripe y tu red queda activa al instante, sin perder ningún dato. ¿Dudas? <a href='https://wa.me/34623816019' target='_blank' rel='noopener' style='color:var(--pw-bosque);font-weight:600'>Escribinos</a>.</div>"+
   "</div>";
   document.body.appendChild(ov);
   ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
   var x=document.getElementById('mc-planes-x'); if(x) x.onclick=function(){ ov.remove(); };
+}
+// ── Paywall de la red: la prueba del dueño (14 días) por vencer / vencida ──
+// El estado real sale de MC_ORG (estado_sub + fecha_fin_prueba, traído por mi-red).
+// Pagó (estado_sub='activa') → nada. Por vencer (≤3 d) → banner. Vencida → muro.
+// El botón abre el checkout de Stripe de SU plan (email precargado); el webhook
+// reactiva la MISMA red al pagar y el dueño vuelve por pago-listo.html.
+function _mcIsPaid(){ return !!(MC_ORG && (''+(MC_ORG.estado_sub||'')).toLowerCase()==='activa'); }
+function _mcTrialDaysLeft(){
+  if(!MC_ORG||!MC_ORG.fecha_fin_prueba) return null;
+  try{ var end=new Date((''+MC_ORG.fecha_fin_prueba).slice(0,10)+'T23:59:59'); if(isNaN(end)) return null; return Math.ceil((end-Date.now())/86400000); }catch(e){ return null; }
+}
+function _mcPaywallCheck(){
+  if(!MC_REAL||!MC_ORG||_mcIsPaid()) return;
+  var d=_mcTrialDaysLeft(); if(d==null) return;
+  if(d<=0) _mcPaywallGate(d); else if(d<=3) _mcTrialBanner(d);
+}
+function _mcTrialBanner(d){
+  if(document.getElementById('mc-trialbar')) return;
+  var pm=_mcPlanMeta(); var buy=_mcPlanBuy(MC_PLAN)||MC_STRIPE.studio||'';
+  var b=document.createElement('div'); b.id='mc-trialbar';
+  b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:280;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;background:var(--pw-carbon,#1B2E26);color:#fff;padding:11px 16px;font-size:13px;box-shadow:0 -6px 20px rgba(20,46,38,.22)';
+  b.innerHTML="<span>Te quedan <b>"+d+" día"+(d===1?'':'s')+"</b> de prueba en tu red ("+_mcEsc(pm.nombre)+" · "+_mcEsc(pm.precio)+"). Activá para no perder acceso.</span>"+
+    "<a href='"+_mcEsc(buy)+"' target='_blank' rel='noopener' style='background:var(--pw-bosque,#2D6A4F);color:#fff;text-decoration:none;font-weight:700;padding:7px 15px;border-radius:9px;font-size:12.5px'>Activar mi red →</a>"+
+    "<button type='button' onclick=\"var e=document.getElementById('mc-trialbar');if(e)e.remove();\" style='background:none;border:0;color:#cbd6cf;font-size:18px;line-height:1;cursor:pointer;padding:2px 6px'>✕</button>";
+  document.body.appendChild(b);
+}
+function _mcPaywallGate(d){
+  if(document.getElementById('mc-paywall')) return;
+  var venc=(d!=null&&d<0)?(' hace '+Math.abs(d)+' día'+(Math.abs(d)===1?'':'s')):'';
+  var pm=_mcPlanMeta(); var buy=_mcPlanBuy(MC_PLAN)||MC_STRIPE.studio||'';
+  var oem=(MC_OWNER&&MC_OWNER.email)||'';
+  var wa='https://wa.me/34623816019?text='+encodeURIComponent('Hola, mi prueba de red venció y quiero activar mi plan '+pm.nombre+'.');
+  var ov=document.createElement('div'); ov.id='mc-paywall';
+  ov.style.cssText='position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(20,46,38,.72);backdrop-filter:blur(3px)';
+  ov.innerHTML="<div style='width:100%;max-width:440px;background:#fff;border-radius:20px;box-shadow:0 30px 80px rgba(20,55,38,.4);overflow:hidden'>"+
+    "<div style='padding:26px 26px 20px;text-align:center'>"+
+      "<div style='width:64px;height:64px;border-radius:50%;margin:0 auto 16px;background:linear-gradient(160deg,#FBEFE0,#F6E0C8);display:flex;align-items:center;justify-content:center'>"+PWI.svg('crown',{})+"</div>"+
+      "<div style='font-family:var(--ser);font-size:22px;font-weight:600;color:var(--pw-carbon)'>Tu prueba de red terminó"+venc+"</div>"+
+      "<p style='font-size:13.5px;color:var(--pw-text-soft);line-height:1.6;margin:10px 0 0'>Para que tu equipo y tus clientes sigan sin interrupción, activá tu plan <b>"+_mcEsc(pm.nombre)+"</b> ("+_mcEsc(pm.precio)+"). Se paga con tarjeta por Stripe y tu red queda activa al instante.</p>"+
+    "</div>"+
+    "<div style='padding:0 26px 24px'>"+
+      "<a href='"+_mcEsc(buy)+"' target='_blank' rel='noopener' style='display:flex;align-items:center;justify-content:center;gap:8px;background:var(--pw-bosque,#2D6A4F);color:#fff;text-decoration:none;padding:14px;border-radius:12px;font-size:15px;font-weight:700'>Activar mi red →</a>"+
+      "<button type='button' onclick=\"mcPlanes()\" style='display:block;width:100%;margin-top:10px;background:none;border:0;color:var(--pw-bosque,#2D6A4F);font-weight:700;font-size:13px;cursor:pointer;padding:8px'>Ver todos los planes</button>"+
+      "<div style='font-size:11.5px;color:var(--pw-text-muted);text-align:center;margin-top:8px;line-height:1.55'>Pagás con el email <b>"+_mcEsc(oem||'de tu cuenta')+"</b> y volvés acá activo. ¿Dudas? <a href='"+wa+"' target='_blank' rel='noopener' style='color:var(--pw-bosque,#2D6A4F);font-weight:600'>Escribinos</a>.</div>"+
+    "</div></div>";
+  document.body.appendChild(ov);
 }
 // Portal de facturación de Stripe: el dueño gestiona su suscripción, cambia la
 // tarjeta y descarga sus facturas/recibos reales. Mismo portal que usa el panel.
