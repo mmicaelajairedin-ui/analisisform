@@ -1030,6 +1030,9 @@ function __asignarCoach(){
       }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Asignar';} __toast('Error de conexión. Reintenta'); });
     });
 }
+// ISO con offset LOCAL (no UTC): conserva la hora de pared que escribió el dueño,
+// así el email/recordatorio muestra esa hora y no la corrida a UTC.
+function _mcLocalIso(dt){ var p=function(n){return('0'+n).slice(-2);}; var off=-dt.getTimezoneOffset(); var s=off>=0?'+':'-'; var a=Math.abs(off); return dt.getFullYear()+'-'+p(dt.getMonth()+1)+'-'+p(dt.getDate())+'T'+p(dt.getHours())+':'+p(dt.getMinutes())+':00'+s+p(Math.floor(a/60))+':'+p(a%60); }
 function __nuevaSesion(){
   // Demo (prospecto): comportamiento original de maqueta.
   if(!MC_REAL){ var kn=DB.clientes.slice(0,4).map(function(k){return k.n;});__openModal('Nueva sesión','<div><span class="lbl">Cliente</span>'+__sel('ns-cl',kn)+'</div>'+__inp('ns-f','Día y hora (ej. Vie 27 · 18:00)'),'Agendar',function(){var cl=document.getElementById('ns-cl').value;__act(PWI.svg('calendar',{sm:true}),'#4FA6BA','Sesión agendada con '+cl,'Agenda');__mclose();__toast('Sesión agendada ✓');}); return; }
@@ -1064,8 +1067,14 @@ function __nuevaSesion(){
     var lugarEl=document.getElementById('ns-lugar'); var lugar=(lugarEl&&lugarEl.value||'').trim();
     var grupalEl=document.getElementById('ns-grupal'); var grupal=!!(grupalEl&&grupalEl.checked);
     var rep=parseInt((document.getElementById('ns-rep')||{}).value,10)||0;
-    // Fechas: 1 sola, o N semanales (misma hora, +7 días cada una).
-    var reps=(rep>1)?rep:1; var fechas=[]; for(var _i=0;_i<reps;_i++){ fechas.push(new Date(iso0.getTime()+_i*7*86400000).toISOString()); }
+    // Chequeo de CHOQUES (como el panel): mismo coach, ±59 min de un evento ya
+    // agendado. No bloquea, pregunta — el dueño decide.
+    var _st=iso0.getTime();
+    var _choque=(MC_CITAS||[]).some(function(c){ if(String(c.coach_id)!==String(coach_id))return false; if((''+(c.estado||''))==='cancelada')return false; var t=new Date(c.inicio).getTime(); return !isNaN(t)&&Math.abs(t-_st)<59*60000; });
+    if(_choque && !window.confirm('Ese coach ya tiene un evento cerca de esa hora. ¿Agendar igual?')){ return; }
+    // Fechas: 1 sola, o N semanales. Se guarda con OFFSET local (no UTC) para que
+    // la hora del email/recordatorio sea la que escribiste, sin corrimiento.
+    var reps=(rep>1)?rep:1; var fechas=[]; for(var _i=0;_i<reps;_i++){ fechas.push(_mcLocalIso(new Date(iso0.getTime()+_i*7*86400000))); }
     var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent=(reps>1?'Agendando '+reps+'…':'Agendando…');}
     _hdr({'Content-Type':'application/json'}).then(function(h2){
       return Promise.all(fechas.map(function(iso){
