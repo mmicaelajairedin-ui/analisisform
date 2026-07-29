@@ -6067,6 +6067,23 @@ function viewClientes(){
       (state.pathwayOptIn ? " · "+pwCount+" de Pathway" : "");
   // Tarjeta de un cliente (misma para el grupo Pathway y el grupo propio; la CAJA
   // que la contiene ya dice de qué grupo es, así que la tarjeta va limpia).
+  // Servicio + precio SOLO para clientes de Pathway (tienen la compra asociada en
+  // una solicitud aceptada). Los clientes propios no pasan por pago, así que no se
+  // muestra un precio inventado. Se toma la solicitud aceptada más reciente por email.
+  function _cliPrice(c){
+    if(!c || c.source!=="pathway") return "";
+    var em=String(c.email||"").toLowerCase().trim(); if(!em) return "";
+    var sol=null;
+    (typeof RSOL!=="undefined"&&RSOL?RSOL:[]).forEach(function(s){
+      if(!s||s.estado!=="aceptada")return;
+      if(String(s.candidato_email||"").toLowerCase().trim()!==em)return;
+      if(!sol || new Date(s.created_at||0).getTime()>new Date(sol.created_at||0).getTime()) sol=s;
+    });
+    if(!sol) return "";
+    var svc = sol.servicio_titulo || (sol.servicio==="sesion"?"Sesión única":"Mentoría 4 semanas");
+    var monto = Number(sol.monto)||0;
+    return svc + (monto?" · €"+monto.toLocaleString("es-ES"):"");
+  }
   var _cliCard = function(c){
     // Medalla INTEGRADA en la esquina de la foto (badge), no suelta al costado.
     var medalBadge = c.medal ? "<span class='cp-cardav-m'><img src='assets/iconos/medalla-"+esc(c.medal)+"-sm.webp' alt='Medalla "+esc(c.medal)+"'></span>" : "";
@@ -6090,7 +6107,9 @@ function viewClientes(){
       "<header class='cp-client-head'><span class='cp-cardav'>"+avImg(c.photo,c.name,"class='cp-client-photo'")+medalBadge+"</span>"+
         "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+"</div>"+
           "<div class='cp-cli-tags' style='margin-top:5px'>"+source+estado+exTag+fpTag+"</div></div></header>"+
-      (role?"<div class='cp-client-role'>"+role+"</div>":"")+
+      (_cliPrice(c)
+        ? "<div style='font-size:13px;font-weight:600;color:var(--pw-carbon);margin-top:1px'>"+esc(_cliPrice(c))+"</div>"
+        : (role?"<div class='cp-client-role'>"+role+"</div>":""))+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
       "<div style='display:flex;align-items:center;gap:10px'><span style='font-size:11px;font-weight:600;color:var(--pw-text-muted);white-space:nowrap'>Sem "+c.week+"/4</span><div class='cp-cli-prog' style='flex:1'>"+bar+"</div></div>"+
       "<footer class='cp-cli-acts'>"+verBtn+msgBtn+"</footer></article>";
@@ -6131,12 +6150,21 @@ function viewClientes(){
   if(_nx){ var _nd=new Date(_nx.t),_t0=new Date();_t0.setHours(0,0,0,0);var _dd=new Date(_nd);_dd.setHours(0,0,0,0);var _df=Math.round((_dd-_t0)/86400000); var _day=_df===0?"Hoy":(_df===1?"Mañana":_nd.toLocaleDateString("es-ES",{day:"2-digit",month:"short"})); _alerts.push(_alrt("go","calendar","Próxima sesión",_day+(_nx.s.hora?" · "+esc(_nx.s.hora):"")+" · "+esc((_nx.c.name||"").split(/\s+/)[0]),null)); }
   // Atención: solo si hay algo que atender. Sin alertas = no mostramos la card
   // (antes salía "Todo al día ✓", que ocupaba lugar sin acción).
-  // Botón "Sumar cliente" debajo de Atención: aprovecha el espacio del rail (antes
-  // quedaba vacío bajo esa tarjeta) y deja el alta de cliente siempre a mano.
-  var _addCliCta="<button class='cp-btn cp-btn-primary' style='width:100%;justify-content:center;height:40px' data-act='cli-new'>"+svg(IC.plus,15)+" Sumar cliente</button>";
   var atencion=_alerts.length
-    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Atención<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+_alerts.length+"</span></div><div style='padding-bottom:6px'>"+_alerts.join("")+"</div></div>"+_addCliCta
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Atención<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+_alerts.length+"</span></div><div style='padding-bottom:6px'>"+_alerts.join("")+"</div></div>"
     : "";
+  // Formulario "Sumar un cliente" (nombre + email + invitar) compacto para el rail:
+  // aprovecha el espacio bajo Atención. Mismos IDs/handler que linksCard() — se
+  // renderiza en UN solo lugar (rail o roster) para no duplicar.
+  var _altaFormRail="<div class='cp-card cp-add-cli'><div class='cp-card-hd'>"+
+      "<h3 class='cp-card-title'>Sumar un cliente<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Sin pago</span></div>"+
+    "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+      "<input id='alta-nombre' type='text' class='cp-form-input' style='height:40px;font-size:14px' placeholder='Nombre del cliente'>"+
+      "<input id='alta-email' type='email' class='cp-form-input' style='height:40px;font-size:14px' placeholder='Email del cliente'>"+
+      "<button class='cp-btn cp-btn-primary' data-act='alta-invitar' style='height:40px;font-size:14px;justify-content:center'>"+svg(IC.extLink,14)+" Enviar invitación</button>"+
+      "<div id='alta-msg' style='font-size:12px;min-height:14px'></div>"+
+    "</div></div>";
   // ── Cobros de Pathway (la plata que entra de tus clientes de comisión) ──
   var _pwAcc=_sol.filter(function(s){return s.estado==="aceptada";});
   var _rate=(typeof _pwCoachRate==="function")?_pwCoachRate():5;
@@ -6196,7 +6224,10 @@ function viewClientes(){
       "<span style='display:inline-flex;align-items:center;gap:8px;flex:1;min-width:220px;font-size:13px;color:#8E7A35;font-weight:600'>"+PWI.svg('alert',{sm:true})+"Para que tus clientes de Pathway puedan agendar, "+_miss.join(" y ")+".</span>"+
       "<button class='cp-btn cp-btn-primary' style='height:34px;font-size:12.5px;padding:0 14px' data-act='gocal'>Completar</button></div>";
   }
-  var _pwRail=atencion+cobros;
+  // El form de alta va en el rail (bajo Atención/Cobros). Cuando el rail se muestra
+  // (zona Pathway completa), NO lo repetimos abajo en el roster.
+  var _formInRail = (!REAL || _pwActivity || (state.pathwayOptIn && _pubOk && _calOk));
+  var _pwRail=atencion+cobros+_altaFormRail;
   var _pwZoneFull=_pwWarn+(_pwRail
     ? "<div class='cp-cli-cols'><div class='cp-cli-main'>"+ recorrido + solSection +"</div><aside class='cp-cli-rail'>"+ _pwRail +"</aside></div>"
     : "<div>"+ recorrido + solSection +"</div>");
@@ -6227,7 +6258,7 @@ function viewClientes(){
     // Tus clientes: DOS cajas grandes (estilo Fortalezas/Áreas del informe) —
     // "Clientes de Pathway" (comisión) y "Clientes propios" (0%). La caja ya
     // dice el grupo, así que las tarjetas de adentro van limpias.
-    "<section class='cp-cli-roster'>"+ banner + linksCard() +
+    "<section class='cp-cli-roster'>"+ banner + (_formInRail?"":linksCard()) +
       "<h3 class='cp-card-title' style='margin:20px 0 12px'>"+PWI.svg('users',{sm:true})+" Tus clientes<span class='dot'>.</span></h3>"+
       filtersBar +
       (pwList.length
