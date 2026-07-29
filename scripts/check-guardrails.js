@@ -301,6 +301,32 @@ const RULES = [
     },
   },
   {
+    name: "App Store: Sign in with Apple + sin cobros dentro de la app (reader)",
+    bug: "Apple rechazó la app: (4.8) ofrecía login con Google sin equivalente → falta " +
+         "Sign in with Apple; (2.1b) mostraba precios/botones de suscripción dentro de la " +
+         "app. El login debe tener Apple, y en modo app (PW_IN_APP) NO se muestran precios " +
+         "ni botones de pago (la suscripción se gestiona en la web).",
+    check() {
+      for (const f of ["login.html", "login-en.html"]) {
+        const s = read(f);
+        if (s && (!/id=.btn-apple/.test(s) || !/function signInWithApple/.test(s) || !/provider: *'apple'/.test(s)))
+          return f + ": falta Sign in with Apple (btn-apple / signInWithApple / provider apple) — Apple 4.8.";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        // La sección de plan/cobro se oculta en la app (reader model).
+        if (!/data-app-hide.>.\+planSwitch/.test(p) && !/<div data-app-hide>.\+planSwitch/.test(p))
+          return "panel-v2.html: la sección de suscripción (cfgPlan) ya no se oculta en la app (data-app-hide).";
+        if (!/if\(window\.PW_IN_APP\)/.test(p))
+          return "panel-v2.html: el upsell Pro ya no respeta el modo app (PW_IN_APP) → mostraría precios en la app.";
+      }
+      const app = read("pw-app.js");
+      if (app && !/PW_IN_APP/.test(app))
+        return "pw-app.js: se perdió la detección de modo app (PW_IN_APP).";
+      return null;
+    },
+  },
+  {
     name: "token de Google en caja fuerte (gcal_tokens), NO en configuracion",
     bug: "El token de Google (con refresh_token = acceso permanente al calendario) vivía " +
          "en usuarios.configuracion.gcal, legible por anon vía el directorio. Se movió a la " +
@@ -2721,6 +2747,13 @@ const RULES = [
         return "convertir-multicoach: debe crear la org y promover a rol='owner'.";
       if (!/candidatos\?coach_id=eq\./.test(fn) || !/org_id:\s*orgId/.test(fn))
         return "convertir-multicoach: debe pasar los clientes del coach a la nueva org.";
+      // Al convertir, se le AVISA por email al coach (ahora es multicoach) para que entre.
+      if (!/notificarConversion\(/.test(fn))
+        return "convertir-multicoach: ya no avisa por email al coach convertido (notificarConversion).";
+      // La marca de la RED arranca sembrada con el perfil que el coach YA tenía
+      // (título/bio/color/foto/logo) → su red se ve como él desde el minuto uno.
+      if (!/const marca:/.test(fn) || !/marca\b/.test(fn.split("organizaciones")[1] || ""))
+        return "convertir-multicoach: la red ya no hereda la marca/perfil del coach (marca sembrada en organizaciones).";
       // El owner también es coach asignable.
       const asg = read("supabase/functions/asignar-cliente/index.ts");
       if (asg && !/rol=in\.\(coach,owner\)/.test(asg))
@@ -4343,6 +4376,125 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: features por PLAN con candado + upgrade self-serve (se ve, no deja, comprás)",
+    bug: "Para vender los planes, las features de Studio/Pro tienen que estar GATEADAS igual que el panel " +
+         "del coach: se ven, pero al usarlas/guardar, si el plan no las incluye → modal de upgrade → " +
+         "checkout. Gateadas: logo white-label (_saveBrand), Comunidad y Canal (__go). El tier sale de " +
+         "_mcPlanTier (boutique<studio<pro). Si se cae, una red Boutique usaría features que no pagó.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      if (!/function mcFeatureGate\(/.test(mc) || !/function mcUpsell\(/.test(mc)) return "multicoach.html: falta el candado de features por plan (mcFeatureGate/mcUpsell).";
+      if (!/function _mcPlanTier\(/.test(mc)) return "multicoach.html: falta _mcPlanTier (tier del plan de la red).";
+      if (!/l\.trim\(\) && !_mcCanFeature\('logo'\)/.test(mc)) return "multicoach.html: el logo white-label ya no está gateado por plan (Studio+).";
+      if (!/s==='comunidad'\|\|s==='canal'[\s\S]{0,40}&& !_mcCanFeature\(s\)/.test(mc)) return "multicoach.html: Comunidad/Canal/Analytics ya no están gateadas por plan.";
+      if (!/var MC_STRIPE=/.test(mc)) return "multicoach.html: faltan los payment links de plan (MC_STRIPE) para el checkout self-serve.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: correo automático de bienvenida al coach nuevo + mensaje editable por el owner",
+    bug: "Al sumar un coach a la red, recibe un email de activación. Ahora ese email es un ONBOARDING: " +
+         "trae el nombre de la red, los primeros pasos, y un mensaje de bienvenida que el OWNER edita en " +
+         "Config (organizaciones.marca.coach_welcome) → estructura de fábrica + personalizable. Si se cae, " +
+         "el coach nuevo se queda sin guía y el owner sin poder personalizar la bienvenida.",
+    check() {
+      const fn = read("supabase/functions/agregar-coach-red/index.ts");
+      if (fn) {
+        if (!/coach_welcome/.test(fn)) return "agregar-coach-red: el email de bienvenida ya no incluye el mensaje editable del owner (coach_welcome).";
+        if (!/primeros pasos/i.test(fn)) return "agregar-coach-red: el email de bienvenida perdió los primeros pasos (onboarding).";
+      }
+      const mc = read("multicoach.html");
+      if (mc) {
+        if (!/id="cfp-welcome"/.test(mc)) return "multicoach.html: falta el campo de bienvenida para coaches nuevos en Config.";
+        if (!/coach_welcome:_v\('cfp-welcome'\)/.test(mc)) return "multicoach.html: la bienvenida del coach ya no se guarda (coach_welcome).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "multicoach: el cliente ve las CLASES de la red en su portal (solo grupales, no 1:1 ajenos)",
+    bug: "El cliente de una red tiene que ver la agenda de CLASES/eventos de su red para anotarse. Se " +
+         "trae por agenda-red-cliente (service role, acotado a la org del propio cliente por su email) y " +
+         "SOLO eventos grupales (grupal=is.true) → NUNCA las sesiones 1:1 privadas de otros clientes " +
+         "(fuga de datos). Si el filtro grupal se cae, se expondrían sesiones privadas ajenas.",
+    check() {
+      const fn = read("supabase/functions/agenda-red-cliente/index.ts");
+      if (fn === null) return "falta la edge function agenda-red-cliente (clases de la red para el cliente).";
+      if (!/grupal=is\.true/.test(fn)) return "agenda-red-cliente: ya NO filtra a solo eventos grupales (expondría 1:1 privados ajenos).";
+      // Los 3 portales del cliente muestran las clases de la red.
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html"]) {
+        const p = read(f);
+        if (p && (!/function _loadClasesRed\(/.test(p) || !/agenda-red-cliente/.test(p))) return f + ": ya no muestra las clases de la red (agenda-red-cliente).";
+      }
+      return null;
+    },
+  },
+  {
+    name: "multicoach: la Comunidad tiene composer VISUAL (plantillas + vista previa en vivo)",
+    bug: "Publicar en la revista era una textarea pelada — el owner no sabía cómo iba a quedar. Ahora es " +
+         "un composer visual: chips de PLANTILLA (título+texto sugeridos, solo cambia [corchetes]), campos " +
+         "título/texto/foto, y una VISTA PREVIA en vivo (pp-msg/pp-img) que se ve igual que el post " +
+         "publicado. Si se cae el preview o las plantillas, vuelve a ser una caja de texto a ciegas.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      const m = mc.match(/var MC_POST_TPL=\[([\s\S]*?)\];/);
+      if (!m) return "multicoach.html: se perdió MC_POST_TPL (plantillas de novedades de la Comunidad).";
+      const n = (m[1].match(/\{ic:/g) || []).length;
+      if (n < 8) return "multicoach.html: quedan menos de 8 plantillas de novedades (había 12).";
+      if (!/function _postPrev\(/.test(mc) || !/id="pp-msg"/.test(mc) || !/id="pp-img"/.test(mc)) return "multicoach.html: se cayó la vista previa en vivo del composer de la revista (pp-msg/pp-img/_postPrev).";
+      // Foto comprimida en el navegador: sin esto una foto de celular pesa MB, se
+      // trunca al guardar y queda rota (bug 'no veo las imágenes de comunidad').
+      if (!/function _imgCompress\(/.test(mc) || !/canvas/.test(mc)) return "multicoach.html: se perdió la compresión de la foto del post (_imgCompress) → imágenes rotas.";
+      // UN SOLO publicador: los accesos rápidos (__publicar) deben abrir el MISMO
+      // composer carrusel (_nuevaPost), no un textarea viejo aparte. Si divergen,
+      // la coach ve un composer distinto según de dónde entre ("no lo veo").
+      const pub = mc.match(/function __publicar\(\)\{([\s\S]*?)\}/);
+      if (pub && !/_nuevaPost\(/.test(pub[1])) return "multicoach.html: __publicar (acceso rápido) ya no abre el composer carrusel (_nuevaPost) → dos publicadores distintos.";
+      // Carrusel: navegar plantillas con ‹ › en un solo sitio.
+      if (!/function _postNav\(/.test(mc)) return "multicoach.html: se perdió el carrusel de plantillas (_postNav ‹ ›).";
+      // Rail de Comunidad editable in situ: plantillas con ‹ › (otra info), texto
+      // editable (contenteditable) y publicar ahí mismo, SIN abrir otra hoja. Y
+      // sin "Ver todas" que navegue a la sección completa.
+      if (!/var MC_COM_RAIL=/.test(mc) || !/function _comRailPub\(/.test(mc) || !/function _comRailNav\(/.test(mc)) return "multicoach.html: se perdió el rail editable de Comunidad (MC_COM_RAIL/_comRailNav/_comRailPub).";
+      if (!/id="mc-rail-msg"[^>]*contenteditable/.test(mc)) return "multicoach.html: el texto del rail de Comunidad ya no es editable in situ (contenteditable).";
+      const aside = (mc.match(/<aside class="community">[\s\S]*?<\/aside>/) || [""])[0];
+      if (/Ver todas/.test(aside)) return "multicoach.html: el rail de Comunidad volvió a tener 'Ver todas' (abre otra hoja); debe navegar entre plantillas con ‹ ›.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: la Comunidad GUARDA de verdad (comunidad-red) y les llega a coaches y clientes",
+    bug: "Las plantillas no servían si el post quedaba solo en el navegador del owner. En una red real, " +
+         "publicar guarda en Supabase (posts_red) via la edge function comunidad-red (owner publica; " +
+         "coach/cliente de esa org leen — el cliente solo audiencia todos/clientes, nunca lo de coaches). " +
+         "Los 3 portales del cliente muestran las Novedades. Si se cae, la revista vuelve a ser local y " +
+         "muda: nadie más ve lo que publica el owner.",
+    check() {
+      const fn = read("supabase/functions/comunidad-red/index.ts");
+      if (fn === null) return "falta la edge function comunidad-red (guardar/leer la revista de la red).";
+      if (!/posts_red/.test(fn) || !/action === "publish"/.test(fn)) return "comunidad-red: ya no guarda en posts_red / no publica.";
+      if (!/solo_owner/.test(fn)) return "comunidad-red: perdió el gate de que solo el OWNER publica.";
+      if (!/para=in\.\(todos,clientes\)/.test(fn)) return "comunidad-red: el cliente ya no está acotado a audiencia todos/clientes (fuga de avisos internos a coaches).";
+      if (read("supabase/migrations/posts_red.sql") === null) return "falta la migración posts_red.sql (tabla de la revista de la red).";
+      // Avisos/clases/retos también persisten (no solo posts): tipo+data en posts_red.
+      if (!/"aviso", "clase", "reto"|'aviso', 'clase', 'reto'/.test(fn) && !/\[.?"post", ?"aviso"/.test(fn)) return "comunidad-red: ya no guarda avisos/clases/retos (tipo).";
+      if (!/action === "delete"/.test(fn)) return "comunidad-red: perdió el borrado de items (delete).";
+      if (read("supabase/migrations/comunidad_extra.sql") === null) return "falta la migración comunidad_extra.sql (tipo+data para avisos/clases/retos).";
+      const mc = read("multicoach.html");
+      if (mc && (!/comunidad-red/.test(mc) || !/function _mcLoadPosts\(/.test(mc))) return "multicoach.html: la Comunidad ya no publica/carga real (comunidad-red / _mcLoadPosts).";
+      if (mc && (!/function _comSave\(/.test(mc) || !/_comSave\('aviso'/.test(mc) || !/_comSave\('clase'/.test(mc) || !/_comSave\('reto'/.test(mc))) return "multicoach.html: avisos/clases/retos ya no persisten (_comSave por tipo).";
+      // Las fotos del rail se adaptan al nicho (fitness/carrera/finanzas).
+      if (mc && (!/var _RAIL_IMG=/.test(mc) || !/function _railNicheImg\(/.test(mc))) return "multicoach.html: las fotos del rail ya no se adaptan al nicho (_RAIL_IMG/_railNicheImg).";
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html"]) {
+        const p = read(f);
+        if (p && (!/function _loadNovedades\(/.test(p) || !/comunidad-red/.test(p) || !/novered-slot/.test(p))) return f + ": ya no muestra las Novedades de la red (comunidad-red).";
+      }
+      return null;
+    },
+  },
+  {
     name: "multicoach: 'Nueva sesión' en la red CREA la cita asignando coach (crear-cita-red), no un toast",
     bug: "En una red real, 'Nueva sesión' tenía que dejar AGENDAR un evento y ASIGNARLO a un coach " +
          "(tipo, nombre, día/hora, online/presencial, grupal) — no un toast de maqueta. La RLS de citas " +
@@ -4354,11 +4506,18 @@ const RULES = [
       const mc = read("multicoach.html");
       if (mc) {
         if (!/crear-cita-red/.test(mc)) return "multicoach.html: 'Nueva sesión' en real ya no crea la cita (crear-cita-red).";
-        if (!/MC_CITAS\.push\(cita\)/.test(mc)) return "multicoach.html: la cita nueva ya no se suma a la agenda (MC_CITAS.push).";
+        if (!/MC_CITAS\.push\(/.test(mc)) return "multicoach.html: la cita nueva ya no se suma a la agenda (MC_CITAS.push).";
+        // Repetición semanal: clases fijas (ej. todos los lunes) se agendan en serie.
+        if (!/ns-rep/.test(mc) || !/Promise\.all\(fechas/.test(mc)) return "multicoach.html: se perdió la repetición semanal de la sesión (ns-rep + Promise.all(fechas)).";
+        // Editar/cancelar un evento de la agenda (no solo crear).
+        if (!/_agEditEvent\(/.test(mc) || !/editar-cita-red/.test(mc)) return "multicoach.html: no se puede editar/cancelar un evento de la agenda (editar-cita-red).";
       }
       const fn = read("supabase/functions/crear-cita-red/index.ts");
       if (fn === null) return "falta la edge function crear-cita-red (agendar asignando coach en la red).";
       if (!/coachInOrg\(/.test(fn) || !/rest\/v1\/citas/.test(fn)) return "crear-cita-red: ya no valida el coach de la org o no inserta en citas.";
+      const ed = read("supabase/functions/editar-cita-red/index.ts");
+      if (ed === null) return "falta la edge function editar-cita-red (editar/cancelar cita de la red).";
+      if (!/coachInOrg\(/.test(ed) || !/action.*cancel|cancel.*action/.test(ed)) return "editar-cita-red: ya no verifica el coach de la org o no soporta cancelar.";
       return null;
     },
   },

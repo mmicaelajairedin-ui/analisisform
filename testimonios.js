@@ -151,6 +151,8 @@
       headingHtml+='<span style="font-family:\'Fraunces\',Georgia,serif;font-size:24px;font-weight:500;color:'+titleColor+';">'+avg+'/5</span>';
       headingHtml+='</div>';
       headingHtml+='<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:clamp(28px,4vw,40px);font-weight:500;color:'+titleColor+';letter-spacing:-1.2px;line-height:1.15;margin-bottom:10px;">'+heading+'</h2>';
+      // En perfiles de coach: "N opiniones verificadas" (confianza). En la landing no.
+      if(coach && rows && rows.length){ headingHtml+='<div style="font-size:13px;font-weight:600;color:'+titleColor+';opacity:.72;">'+rows.length+' opiniones verificadas</div>'; }
       headingHtml+='</div>';
 
       // Texto recortado a 4 lineas con toggle "Ver mas". Cada card lleva un id
