@@ -1406,6 +1406,24 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .pw-restrict-cta:hover{background:var(--pw-bosque-dark);transform:translateY(-1px)}
 .pw-section-restricted{position:relative}
 .pw-section-restricted>*:not(.pw-restrict-overlay){opacity:0.3;pointer-events:none}
+/* ═══ UPGRADE MODAL (FASE 1) ═══ */
+#pw-upgrade-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);backdrop-filter:blur(3px);z-index:1000;align-items:center;justify-content:center}
+#pw-upgrade-modal.open{display:flex}
+.pw-upgrade-card{background:#fff;border-radius:16px;padding:32px 28px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.24);animation:slideUp 0.3s var(--pw-ease-out)}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+.pw-upgrade-card-close{position:absolute;top:14px;right:14px;background:none;border:none;font-size:24px;color:var(--pw-text-muted);cursor:pointer;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:background 0.2s}
+.pw-upgrade-card-close:hover{background:var(--pw-niebla)}
+.pw-upgrade-icon{font-size:48px;margin-bottom:12px}
+.pw-upgrade-title{font-size:22px;font-weight:700;color:var(--pw-carbon);margin:0 0 12px;font-family:var(--pw-serif);letter-spacing:-0.4px}
+.pw-upgrade-desc{font-size:14px;color:var(--pw-text-soft);line-height:1.5;margin:0 0 24px}
+.pw-upgrade-features{background:var(--pw-niebla-2);border-radius:10px;padding:12px 14px;margin-bottom:20px;font-size:13px}
+.pw-upgrade-features strong{color:var(--pw-bosque);font-weight:700}
+.pw-upgrade-actions{display:flex;gap:10px;flex-direction:column}
+.pw-upgrade-btn{padding:12px 16px;border-radius:10px;border:none;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.2s}
+.pw-upgrade-btn-primary{background:var(--pw-bosque);color:#fff}
+.pw-upgrade-btn-primary:hover{background:var(--pw-bosque-dark);transform:translateY(-1px)}
+.pw-upgrade-btn-cancel{background:transparent;color:var(--pw-text-soft);border:1.5px solid var(--pw-border)}
+.pw-upgrade-btn-cancel:hover{background:var(--pw-niebla);color:var(--pw-text)}
 </style>
 <script src="/pw-push.js?v=3"></script>
 <script src="/pw-auth.js?v=1"></script>
@@ -1414,6 +1432,27 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 </head>
 <body>
 <div id="root"></div>
+
+<!-- UPGRADE MODAL (FASE 1) -->
+<div id="pw-upgrade-modal">
+  <div class="pw-upgrade-card" style="position:relative">
+    <button class="pw-upgrade-card-close" data-act="upgrade-close" aria-label="Cerrar">✕</button>
+    <div class="pw-upgrade-icon">🚀</div>
+    <h2 class="pw-upgrade-title" id="pw-upgrade-title">Upgrade a Studio</h2>
+    <p class="pw-upgrade-desc" id="pw-upgrade-desc">Desbloquea features exclusivas para tu equipo de coaches</p>
+    <div class="pw-upgrade-features" id="pw-upgrade-features">
+      <strong>Incluye:</strong> White-label, Analytics, Comunidad, Soporte prioritario
+    </div>
+    <div class="pw-upgrade-actions">
+      <button class="pw-upgrade-btn pw-upgrade-btn-primary" data-act="upgrade-confirm" id="pw-upgrade-confirm">
+        Ir a Stripe · $249/mes
+      </button>
+      <button class="pw-upgrade-btn pw-upgrade-btn-cancel" data-act="upgrade-close">
+        No ahora
+      </button>
+    </div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -10255,6 +10294,52 @@ document.addEventListener("click", function(ev){
       // Preferimos pestaña nueva (el panel queda atrás, se vuelve al terminar). Solo
       // si el navegador la bloquea, navegamos en la misma pestaña como último recurso.
       var _w=window.open(ou,"_blank","noopener"); if(!_w){ location.href=ou; } } return; }
+  // ── UPGRADE MODAL (FASE 1) ──
+  if(act&&act.startsWith("upgrade:")){
+    var plan=act.slice(8); // "upgrade:studio" → "studio"
+    var planInfo={
+      studio:{name:"Studio", price:"$249/mes", features:"White-label, Analytics, Comunidad, Soporte prioritario"},
+      pro:{name:"Pro", price:"$399+/mes", features:"Todo incluido: Dominio propio, Integraciones, Onboarding personalizado"}
+    };
+    var info=planInfo[plan];
+    if(!info) return;
+    var modal=document.getElementById("pw-upgrade-modal");
+    if(modal){
+      document.getElementById("pw-upgrade-title").textContent="Upgrade a "+info.name;
+      document.getElementById("pw-upgrade-desc").textContent="Desbloquea features exclusivas para tu equipo de coaches";
+      document.getElementById("pw-upgrade-features").innerHTML="<strong>Incluye:</strong> "+info.features;
+      document.getElementById("pw-upgrade-confirm").textContent="Ir a Stripe · "+info.price;
+      document.getElementById("pw-upgrade-confirm").setAttribute("data-plan", plan);
+      modal.classList.add("open");
+    }
+    return;
+  }
+  if(act==="upgrade-close"){
+    var modal=document.getElementById("pw-upgrade-modal");
+    if(modal) modal.classList.remove("open");
+    return;
+  }
+  if(act==="upgrade-confirm"){
+    var plan=el.getAttribute("data-plan");
+    if(!plan || !ME || !ME.email) return;
+    // Redirigir a Stripe checkout para ese plan
+    var stripeUrls={
+      studio:"https://buy.stripe.com/...",  // TODO: reemplazar con URL real de Stripe Studio
+      pro:"https://buy.stripe.com/..."       // TODO: reemplazar con URL real de Stripe Pro
+    };
+    var url=stripeUrls[plan];
+    if(!url) return;
+    // Agregar email para pre-fill
+    if(url.includes("?")){ url+="&email="+encodeURIComponent(ME.email); }
+    else { url+="?email="+encodeURIComponent(ME.email); }
+    // Usar el mismo anti-double-click que "open"
+    var _on=Date.now();
+    if(window._pwLastOpen && window._pwLastOpen.u===url && (_on-window._pwLastOpen.t)<1800){ return; }
+    window._pwLastOpen={u:url,t:_on};
+    window._pwAwaitPay=_on;
+    var _w=window.open(url,"_blank","noopener"); if(!_w){ location.href=url; }
+    return;
+  }
   if(act==="rail-toggle"){ state.railCollapsed=!state.railCollapsed; var _rap=document.querySelector(".cp-app"); var _rsd=document.querySelector(".cp-side"); if(_rap)_rap.classList.toggle("rail",state.railCollapsed); if(_rsd)_rsd.classList.toggle("rail",state.railCollapsed); return; }
   // Agenda: tipos de evento + agendar cita. TODO con modales Pathway (nada de
   // prompts del navegador). Se guarda en el perfil por REST (saveCfg).
@@ -14099,7 +14184,7 @@ function _renderUpgradeBadge(featureName, nextPlan){
   if(!nextPlan) return '';
   var planNames={studio:'Studio',pro:'Pro'};
   var planPrices={studio:'$249',pro:'$399+'};
-  return '<div class="pw-restrict-overlay"><div class="pw-restrict-badge">'+PWI.svg("lock",{sm:true})+' Disponible en <strong>'+planNames[nextPlan]+'+</strong></div><p class="pw-restrict-text">Potencia tu equipo con esta feature.</p><a href="#upgrade" class="pw-restrict-cta" data-plan="'+nextPlan+'">Upgrade a '+planNames[nextPlan]+' ('+planPrices[nextPlan]+'/mes)</a></div>';
+  return '<div class="pw-restrict-overlay"><div class="pw-restrict-badge">'+PWI.svg("lock",{sm:true})+' Disponible en <strong>'+planNames[nextPlan]+'+</strong></div><p class="pw-restrict-text">Potencia tu equipo con esta feature.</p><button data-act="upgrade:'+nextPlan+'" class="pw-restrict-cta">Upgrade a '+planNames[nextPlan]+' ('+planPrices[nextPlan]+'/mes)</button></div>';
 }
 
 // Helper: Envolver sección con restricción
@@ -14108,6 +14193,28 @@ function _sectionRestricted(featureName, content){
   if(!nextPlan) return content;
   var badge=_renderUpgradeBadge(featureName, nextPlan);
   return '<div style="position:relative;min-height:200px;opacity:0.5">'+content+badge+'</div>';
+}
+
+// Helper: Mostrar modal de upgrade programáticamente
+function showUpgradeModal(plan){
+  if(!plan || !["studio","pro"].includes(plan)) return false;
+  var planInfo={
+    studio:{name:"Studio", price:"$249/mes", features:"White-label, Analytics, Comunidad, Soporte prioritario"},
+    pro:{name:"Pro", price:"$399+/mes", features:"Todo incluido: Dominio propio, Integraciones, Onboarding personalizado"}
+  };
+  var info=planInfo[plan];
+  if(!info) return false;
+  var modal=document.getElementById("pw-upgrade-modal");
+  if(modal){
+    document.getElementById("pw-upgrade-title").textContent="Upgrade a "+info.name;
+    document.getElementById("pw-upgrade-desc").textContent="Desbloquea features exclusivas para tu equipo de coaches";
+    document.getElementById("pw-upgrade-features").innerHTML="<strong>Incluye:</strong> "+info.features;
+    document.getElementById("pw-upgrade-confirm").textContent="Ir a Stripe · "+info.price;
+    document.getElementById("pw-upgrade-confirm").setAttribute("data-plan", plan);
+    modal.classList.add("open");
+    return true;
+  }
+  return false;
 }
 
 // Si una acción del juego (alta de cliente) terminó y dejó pendiente volver al
