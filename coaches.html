@@ -89,6 +89,10 @@ a{color:inherit;text-decoration:none;}
 .filter-tab[data-nicho="fitness"].active{background:#2C6E7F;border-color:#2C6E7F;color:#fff;}
 .filter-tab[data-nicho="financiero"]{color:#8a6412;border-color:rgba(180,131,46,.4);}
 .filter-tab[data-nicho="financiero"].active{background:#B4832E;border-color:#B4832E;color:#fff;}
+.filter-tab[data-nicho="bienestar"]{color:#6a5b95;border-color:rgba(124,108,166,.4);}
+.filter-tab[data-nicho="bienestar"].active{background:#7C6CA6;border-color:#7C6CA6;color:#fff;}
+.filter-tab[data-nicho="nutricion"]{color:#a8492f;border-color:rgba(192,86,62,.4);}
+.filter-tab[data-nicho="nutricion"].active{background:#C0563E;border-color:#C0563E;color:#fff;}
 
 .coach-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px;max-width:1080px;margin:0 auto;}
 #coach-grid[data-locked="1"]{filter:blur(5px);pointer-events:none;user-select:none;}
@@ -125,6 +129,8 @@ a{color:inherit;text-decoration:none;}
 .coach-metrics{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--pw-texto-suave);margin-top:2px;}
 .coach-metrics .m{display:inline-flex;align-items:center;gap:4px;}
 .coach-metrics .m strong{color:var(--pw-carbon);font-weight:700;}
+.coach-metrics .m-fast{color:var(--pw-bosque);font-weight:600;}
+.coach-metrics .m-fast svg{width:12px;height:12px;}
 
 .coach-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center;margin-top:2px;}
 .tag{display:inline-block;background:rgba(45,106,79,.07);color:var(--pw-bosque);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -431,6 +437,8 @@ a{color:inherit;text-decoration:none;}
       <button class="filter-tab" data-nicho="carrera">💼 Carrera</button>
       <button class="filter-tab" data-nicho="fitness">🏋️ Fitness</button>
       <button class="filter-tab" data-nicho="financiero">💰 Finanzas</button>
+      <button class="filter-tab" data-nicho="bienestar">🌿 Bienestar</button>
+      <button class="filter-tab" data-nicho="nutricion">🍎 Nutrición</button>
     </div>
     <div id="dir-filtros" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:26px;">
       <button class="filter-tab active" data-pais="todos">Todos</button>
@@ -590,7 +598,7 @@ async function fetchCoachStats(){
     var map = {};
     (Array.isArray(d.coaches) ? d.coaches : []).forEach(function(co){
       var sl = String(co.slug||'').trim().toLowerCase();
-      if(sl && co.stats) map[sl] = co.stats;
+      if(sl) map[sl] = Object.assign({}, co.stats || {}, { last_seen: co.last_seen || null });
     });
     return map;
   }catch(_e){ return {}; }
@@ -614,18 +622,22 @@ function buildCoachCard(c, statsMap, idx){
   var cfg = c.configuracion || {};
   var nombre = c.nombre || c.nombre_practica || 'Coach';
   var ct = (cfg.coach_type || (Array.isArray(cfg.especialidades) && cfg.especialidades[0]) || '').toString().toLowerCase();
-  var nichoNorm = ct.indexOf('fitness')>=0 ? 'fitness' : (ct.indexOf('financ')>=0 ? 'financiero' : 'carrera');
+  var nichoNorm = ct.indexOf('fitness')>=0 ? 'fitness'
+    : (ct.indexOf('financ')>=0 ? 'financiero'
+    : (ct.indexOf('nutric')>=0 ? 'nutricion'
+    : ((ct.indexOf('bienestar')>=0||ct.indexOf('wellness')>=0||ct.indexOf('salud')>=0||ct.indexOf('mindful')>=0) ? 'bienestar'
+    : 'carrera')));
   // Color POR TIPO de coach (categorización de Pathway, no marca del coach).
   // Paleta fija por nicho → cada tarjeta se identifica de un vistazo.
-  var NICHO_COLOR = { carrera:'#2D6A4F', fitness:'#2C6E7F', financiero:'#B4832E' };
+  var NICHO_COLOR = { carrera:'#2D6A4F', fitness:'#2C6E7F', financiero:'#B4832E', bienestar:'#7C6CA6', nutricion:'#C0563E' };
   var nichoColor = NICHO_COLOR[nichoNorm] || '#2D6A4F';
   // Fondo OSCURO del banner (detrás de la foto) — mismo tono, más profundo, para
   // que la foto y los textos blancos resalten (estilo "Coaches destacados").
-  var NICHO_BG = { carrera:'#24503B', fitness:'#234E5C', financiero:'#6E5B24' };
+  var NICHO_BG = { carrera:'#24503B', fitness:'#234E5C', financiero:'#6E5B24', bienestar:'#4E4470', nutricion:'#7A3A2C' };
   var nichoBg = NICHO_BG[nichoNorm] || '#24503B';
   // Título: si el coach cargó su título profesional (lo genera la IA en el panel),
   // lo usamos; si no, uno derivado del nicho. Se clampa a 2 líneas por CSS.
-  var tituloBase = nichoNorm==='fitness' ? 'Coach de fitness' : nichoNorm==='financiero' ? 'Coach de finanzas' : 'Coach de carrera';
+  var tituloBase = nichoNorm==='fitness' ? 'Coach de fitness' : nichoNorm==='financiero' ? 'Coach de finanzas' : nichoNorm==='bienestar' ? 'Coach de bienestar' : nichoNorm==='nutricion' ? 'Coach de nutrición' : 'Coach de carrera';
   var titulo = (typeof cfg.titulo_profesional==='string' && cfg.titulo_profesional.trim()) ? cfg.titulo_profesional.trim() : tituloBase;
   var bio = c.bio || 'Coach certificado en Pathway. Acompaña a profesionales en su transición de carrera.';
   var foto = c.foto_url || cfg.foto_url || cfg.foto_perfil || '';
@@ -689,6 +701,12 @@ function buildCoachCard(c, statsMap, idx){
   var anios = Number(cfg.anios_experiencia || c.anios_experiencia || 0);
   if(isFinite(anios) && anios > 0){
     parts.push('<span class="m"><strong>'+anios+'</strong> '+(anios===1?'año':'años')+' exp.</span>');
+  }
+  // "Responde rápido" REAL: si el coach estuvo activo en las últimas 48 h
+  // (last_seen). Nada inventado; si no hay dato, no se muestra.
+  if(st && st.last_seen){
+    var _h=(Date.now()-new Date(st.last_seen).getTime())/3600000;
+    if(_h>=0 && _h<=48) parts.push('<span class="m m-fast"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L3 14h7l-1 8 11-13h-8z"/></svg>Responde rápido</span>');
   }
   var metricsHtml = parts.length ? '<div class="coach-metrics">'+parts.join('')+'</div>' : '';
   // CTA: llevar a la página pública del coach (perfil + precios + comprar/contactar).
