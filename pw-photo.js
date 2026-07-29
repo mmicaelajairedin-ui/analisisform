@@ -29,10 +29,10 @@
     }
     // Supabase Storage — objeto público → endpoint de transformación de imagen.
     var so = src.match(/^(https?:\/\/[^\/]+)\/storage\/v1\/object\/public\/([^?]+)/);
-    if(so) return so[1] + '/storage/v1/render/image/public/' + so[2] + '?width=' + s + '&height=' + s + '&resize=cover&quality=82';
+    if(so) return so[1] + '/storage/v1/render/image/public/' + so[2] + '?width=' + s + '&height=' + s + '&resize=cover&quality=90';
     // Ya es render/image → solo re-dimensiona.
     var sr = src.match(/^(.*\/storage\/v1\/render\/image\/public\/[^?]+)/);
-    if(sr) return sr[1] + '?width=' + s + '&height=' + s + '&resize=cover&quality=82';
+    if(sr) return sr[1] + '?width=' + s + '&height=' + s + '&resize=cover&quality=90';
     return null;
   }
 
@@ -49,7 +49,9 @@
         if(!img.dataset.pwqr){ img.dataset.pwqr = '1'; requestAnimationFrame(function(){ upgrade(img); }); }
         return;
       }
-      s = Math.max(48, s * DPR);
+      // Pedimos generoso (≥256px y ×dpr) para que aún los avatares chicos tengan
+      // sobrada resolución → nunca se ven borrosos.
+      s = Math.max(256, Math.round(s * DPR));
       var out = build(src, s);
       img.dataset.pwq = '1';
       if(!out || out === src) return;
