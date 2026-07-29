@@ -618,6 +618,7 @@ html.mc-embed #mc-nswitch{display:none!important}
       <a class="on" data-s="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Dashboard</a>
       <a data-s="coaches"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg><span id="mc-nav-coaches">Coaches</span></a>
       <a data-s="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Agenda</a>
+      <a data-s="analytics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Analytics</a>
       <!-- "Configuración" salió del sidebar: vive en el menú del avatar (arriba a la derecha) -->
     </nav>
     <div class="mc-foot">
@@ -741,16 +742,16 @@ function __toast(m){var t=document.getElementById('toast');t.textContent=m;t.cla
 var _sec='dashboard';
 function __hl(s){document.querySelectorAll('#nav a, #mc-bnav a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-s')===s);});}
 function __go(s){
-  var impl=(s==='dashboard'||s==='clientes'||s==='coaches'||s==='config'||s==='agenda'||s==='comunidad'||s==='canal');
+  var impl=(s==='dashboard'||s==='clientes'||s==='coaches'||s==='config'||s==='agenda'||s==='comunidad'||s==='canal'||s==='analytics');
   if(!impl){__toast('Sección «'+s+'» — Etapa próxima');__hl(_sec);return;}
-  // Comunidad y Canal son de Studio+: se ven en el menú, pero al entrar (si el
-  // plan no las incluye) se muestra el upsell y no se navega. "Muestra, no deja."
-  if((s==='comunidad'||s==='canal') && !_mcCanFeature(s)){ __hl(_sec); mcUpsell(s); return; }
+  // Comunidad, Canal y Analytics son de Studio+: se ven en el menú, pero al entrar
+  // (si el plan no las incluye) se muestra el upsell y no se navega. "Muestra, no deja."
+  if((s==='comunidad'||s==='canal'||s==='analytics') && !_mcCanFeature(s)){ __hl(_sec); mcUpsell(s); return; }
   _sec=s;__hl(s);
   var d=document.getElementById('view-dashboard'),p=document.getElementById('view-panel');
   function _anim(el){ if(!el)return; el.classList.remove('pw-sec-in'); void el.offsetWidth; el.classList.add('pw-sec-in'); }
   if(s==='dashboard'){p.style.display='none';d.style.display='';window.scrollTo(0,0);_anim(d);try{mcCountUp();}catch(e){}}
-  else{d.style.display='none';p.style.display='flex';document.getElementById('vscroll').scrollTop=0;if(s==='clientes')renderClientes();else if(s==='coaches')renderCoaches();else if(s==='agenda')renderAgenda();else if(s==='comunidad')renderComunidad();else if(s==='canal')renderCanal();else renderConfig();_anim(p);}
+  else{d.style.display='none';p.style.display='flex';document.getElementById('vscroll').scrollTop=0;if(s==='clientes')renderClientes();else if(s==='coaches')renderCoaches();else if(s==='agenda')renderAgenda();else if(s==='comunidad')renderComunidad();else if(s==='canal')renderCanal();else if(s==='analytics')renderAnalytics();else renderConfig();_anim(p);}
 }
 document.getElementById('nav').addEventListener('click',function(e){var a=e.target.closest('a');if(a)__go(a.getAttribute('data-s'));});
 document.getElementById('mc-bnav').addEventListener('click',function(e){var a=e.target.closest('a');if(a)__go(a.getAttribute('data-s'));});
@@ -1860,6 +1861,37 @@ var DBCOM={
 };
 var _comTab='revista';
 function _medalEmo(m){return {oro:'🥇',plata:'🥈',bronce:'🥉'}[m]||'•';}
+// Analytics de la RED: rendimiento de todo el equipo junto (clientes, sesiones,
+// retención) calculado de la data real ya cargada (DB.coaches/clientes + MC_CITAS).
+// Feature Studio+ (gateada en __go).
+function renderAnalytics(){
+  var v=document.getElementById('vscroll');
+  var allCo=(DB&&DB.coaches)||[], co=allCo.filter(function(c){return !c.esOwner;});
+  var cl=(DB&&DB.clientes)||[];
+  var clAct=cl.filter(function(k){return k.est==='activo';}).length;
+  var now=Date.now(), d30=now-30*86400000;
+  var ses30=(MC_CITAS||[]).filter(function(c){var t=+new Date(c.inicio);return !isNaN(t)&&t>=d30&&t<=now;}).length;
+  var sesFut=(MC_CITAS||[]).filter(function(c){var t=+new Date(c.inicio);return !isNaN(t)&&t>now;}).length;
+  var rets=allCo.map(function(c){return c.ret;}).filter(function(r){return r!=null&&r!=='';}).map(Number);
+  var retAvg=rets.length?Math.round(rets.reduce(function(a,b){return a+b;},0)/rets.length):null;
+  var sesByCoach={}; (MC_CITAS||[]).forEach(function(c){ if(!c.coach_id)return; var t=+new Date(c.inicio); if(isNaN(t)||t<d30||t>now)return; sesByCoach[c.coach_id]=(sesByCoach[c.coach_id]||0)+1; });
+  var cliByCoach={}; cl.forEach(function(k){ if(k.coach) cliByCoach[k.coach]=(cliByCoach[k.coach]||0)+1; });
+  var maxCli=Math.max(1,Math.max.apply(null,allCo.map(function(c){return cliByCoach[c.id]||0;}).concat([1])));
+  var stat=function(l,n,d){return '<div class="kpi"><div class="h">'+l+'</div><div class="n">'+_mcNumSpan(''+n)+'</div><div class="d">'+(d||'&nbsp;')+'</div></div>';};
+  var kpis='<div class="kpis">'+stat('Clientes activos',clAct,'de '+cl.length+' en total')+stat('Coaches en la red',co.length,'+ vos')+stat('Sesiones (30 días)',ses30,sesFut+' próximas')+stat('Retención promedio',(retAvg!=null?retAvg+'%':'—'),'del equipo')+'</div>';
+  var rows=allCo.map(function(c){
+    var nc=cliByCoach[c.id]||0, ns=sesByCoach[c.id]||0, r=(c.ret!=null&&c.ret!=='')?c.ret+'%':'—';
+    var w=Math.round((nc/maxCli)*100);
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--pw-border)">'
+     +'<span style="width:26px;height:26px;border-radius:50%;background:'+_coCol(c.id)+';color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700;flex-shrink:0">'+_mcEsc(c.ini)+'</span>'
+     +'<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:var(--pw-carbon)">'+_mcEsc(c.n)+(c.esOwner?' · vos':'')+'</div><div style="height:6px;border-radius:4px;background:var(--pw-niebla-3);overflow:hidden;margin-top:4px"><i style="display:block;height:100%;width:'+w+'%;background:'+_coCol(c.id)+'"></i></div></div>'
+     +'<div style="text-align:right;font-size:12px;color:var(--pw-text-soft);white-space:nowrap"><b style="color:var(--pw-carbon)">'+nc+'</b> cli · <b style="color:var(--pw-carbon)">'+ns+'</b> ses · '+r+'</div></div>';
+  }).join('');
+  var empty=(!cl.length && !co.length);
+  v.innerHTML='<header class="cp-topbar"><div><h1 class="cp-h1">Analytics<span class="dot">.</span></h1><div class="cp-sub">El rendimiento de toda tu red, en un vistazo.</div></div></header>'
+    +(empty ? _mcEmptyCard('Todavía sin datos','Cuando sumes coaches y clientes y tengas sesiones, acá ves el rendimiento del equipo.')
+      : (kpis+'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Por coach<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin-bottom:2px">Clientes, sesiones (últimos 30 días) y retención de cada uno.</div>'+rows+'</div>'));
+}
 function renderComunidad(){
  var v=document.getElementById('vscroll');
  var tabs=[['revista','Revista'],['avisos','Avisos'],['clases','Clases'],['retos','Retos']];

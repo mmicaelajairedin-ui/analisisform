@@ -4356,7 +4356,7 @@ const RULES = [
       if (!/function mcFeatureGate\(/.test(mc) || !/function mcUpsell\(/.test(mc)) return "multicoach.html: falta el candado de features por plan (mcFeatureGate/mcUpsell).";
       if (!/function _mcPlanTier\(/.test(mc)) return "multicoach.html: falta _mcPlanTier (tier del plan de la red).";
       if (!/l\.trim\(\) && !_mcCanFeature\('logo'\)/.test(mc)) return "multicoach.html: el logo white-label ya no está gateado por plan (Studio+).";
-      if (!/\(s==='comunidad'\|\|s==='canal'\) && !_mcCanFeature\(s\)/.test(mc)) return "multicoach.html: Comunidad/Canal ya no están gateadas por plan.";
+      if (!/s==='comunidad'\|\|s==='canal'[\s\S]{0,40}&& !_mcCanFeature\(s\)/.test(mc)) return "multicoach.html: Comunidad/Canal/Analytics ya no están gateadas por plan.";
       if (!/var MC_STRIPE=/.test(mc)) return "multicoach.html: faltan los payment links de plan (MC_STRIPE) para el checkout self-serve.";
       return null;
     },
