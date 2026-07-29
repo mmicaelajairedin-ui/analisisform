@@ -88,8 +88,15 @@ a{color:inherit;text-decoration:none;}
 .dir-wrap{position:relative;}
 #dir-gate{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(250,250,248,.45);}
 
-.coach-card{background:#fff;border:1.5px solid var(--pw-borde);border-radius:20px;padding:28px 26px 24px;display:flex;flex-direction:column;gap:16px;transition:all .2s;}
+.coach-card{position:relative;overflow:hidden;background:#fff;border:1.5px solid var(--pw-borde);border-radius:20px;padding:28px 26px 24px;display:flex;flex-direction:column;gap:16px;transition:all .2s;}
 .coach-card:hover{border-color:rgba(45,106,79,.3);box-shadow:0 14px 36px rgba(45,106,79,.10);transform:translateY(-2px);}
+.coach-card.is-clickable{cursor:pointer;}
+/* Color POR TIPO de coach (nicho): franja superior + aro de la foto + pista CTA */
+.coach-card::before{content:'';position:absolute;top:0;left:0;right:0;height:6px;background:var(--nicho-c,var(--pw-bosque));}
+.coach-card .coach-photo-round{border-color:var(--nicho-c,#fff);}
+.coach-cta-hint{margin-top:auto;display:inline-flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;color:var(--nicho-c,var(--pw-bosque));padding-top:4px;}
+.coach-cta-hint svg{width:15px;height:15px;}
+.coach-card.is-clickable:hover .coach-cta-hint{gap:9px;}
 .coach-top{display:flex;align-items:flex-start;gap:16px;}
 .coach-photo-round{width:96px;height:96px;border-radius:50%;overflow:hidden;flex-shrink:0;background:linear-gradient(135deg,#ececea,#f5f5f2);display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 6px 18px rgba(45,106,79,.14);}
 .coach-photo-round img{width:100%;height:100%;object-fit:cover;display:block;}
@@ -170,8 +177,11 @@ a{color:inherit;text-decoration:none;}
 .coach-grid.list-view .coach-metrics{flex:0 0 auto;margin:0;}
 .coach-grid.list-view .coach-price-row{flex:0 0 auto;padding:0;background:none;border:none;}
 .coach-grid.list-view .coach-price-row strong{font-size:18px;}
-.coach-grid.list-view .coach-card > div:last-child{margin-top:0!important;flex:0 0 auto;width:auto;}
+.coach-grid.list-view .coach-card > :last-child{margin-top:0!important;flex:0 0 auto;width:auto;}
 .coach-grid.list-view .coach-card .btn-primary{white-space:nowrap;}
+/* En lista la franja de color va a la izquierda (barra vertical) */
+.coach-grid.list-view .coach-card{padding-left:24px;}
+.coach-grid.list-view .coach-card::before{top:0;bottom:0;right:auto;width:5px;height:auto;}
 @media(max-width:640px){
   .coach-grid.list-view .coach-metrics{flex-basis:100%;}
   .coach-grid.list-view .coach-card{gap:12px;padding:14px 16px;}
@@ -529,6 +539,10 @@ function buildCoachCard(c, statsMap, idx){
   var nombre = c.nombre || c.nombre_practica || 'Coach';
   var ct = (cfg.coach_type || (Array.isArray(cfg.especialidades) && cfg.especialidades[0]) || '').toString().toLowerCase();
   var nichoNorm = ct.indexOf('fitness')>=0 ? 'fitness' : (ct.indexOf('financ')>=0 ? 'financiero' : 'carrera');
+  // Color POR TIPO de coach (categorización de Pathway, no marca del coach).
+  // Paleta fija por nicho → cada tarjeta se identifica de un vistazo.
+  var NICHO_COLOR = { carrera:'#2D6A4F', fitness:'#2C6E7F', financiero:'#B4832E' };
+  var nichoColor = NICHO_COLOR[nichoNorm] || '#2D6A4F';
   // Título: si el coach cargó su título profesional (lo genera la IA en el panel),
   // lo usamos; si no, uno derivado del nicho. Se clampa a 2 líneas por CSS.
   var tituloBase = nichoNorm==='fitness' ? 'Coach de fitness' : nichoNorm==='financiero' ? 'Coach de finanzas' : 'Coach de carrera';
@@ -625,7 +639,11 @@ function buildCoachCard(c, statsMap, idx){
   // Valores para ordenar (datos reales; precio vacío = va al final en "precio").
   var _precioMin = precios.length ? Math.min.apply(null, precios) : '';
   var _sortAttrs = ' data-rating="'+(st&&st.avg_rating?st.avg_rating:0)+'" data-reviews="'+(st?st.reviews_count:0)+'" data-clientes="'+(st?st.clientes_total:0)+'" data-precio="'+_precioMin+'" data-idx="'+(idx||0)+'"';
-  return '<article class="coach-card" data-pais="'+escH(paisesAttr)+'" data-nicho="'+escH(nichoNorm)+'" data-coach-id="'+escH(c.id)+'"'+_sortAttrs+'>'
+  // Toda la tarjeta es clickeable → al perfil del coach (si tiene slug). Sin
+  // botón "Ver perfil": queda un texto-enlace sutil como pista.
+  var cardHref = slug ? '/coach/'+escH(slug) : '';
+  var _hrefAttr = cardHref ? ' data-href="'+cardHref+'"' : '';
+  return '<article class="coach-card'+(cardHref?' is-clickable':'')+'" style="--nicho-c:'+nichoColor+'" data-pais="'+escH(paisesAttr)+'" data-nicho="'+escH(nichoNorm)+'" data-coach-id="'+escH(c.id)+'"'+_hrefAttr+_sortAttrs+'>'
     + '<div class="coach-top">'
     +   '<div class="coach-photo-round">'+fotoHtml+checkHtml+'</div>'
     +   '<div class="coach-info">'
@@ -642,7 +660,9 @@ function buildCoachCard(c, statsMap, idx){
     + '<div><p class="coach-bio clamp">'+escH(bio)+'</p><button type="button" class="coach-more" onclick="_pwCoachBioMore(this)">Ver más</button></div>'
     + '<div class="coach-tags">'+tagsHtml+'</div>'
     + priceRow
-    + '<div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">'+ctaPrincipal+ctaSecundario+'</div>'
+    + (cardHref
+        ? '<a class="coach-cta-hint" href="'+cardHref+'">Ver perfil y precios <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>'
+        : '<div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">'+ctaPrincipal+ctaSecundario+'</div>')
     + '</article>';
 }
 
@@ -741,6 +761,17 @@ function _dirSortCards(){
   cards.forEach(function(c){ grid.appendChild(c); });
   var empty = document.getElementById('dir-empty'); if(empty) grid.appendChild(empty);
 }
+// Toda la tarjeta clickeable → al perfil. Deja pasar clicks en <a>/<button>
+// (la pista "Ver perfil", el "Ver más" de la bio, o "Solicitar coach").
+function _dirWireCardNav(){
+  var grid = document.getElementById('coach-grid'); if(!grid || grid._navWired) return;
+  grid._navWired = true;
+  grid.addEventListener('click', function(ev){
+    if(ev.target.closest && ev.target.closest('a, button')) return;
+    var card = ev.target.closest ? ev.target.closest('.coach-card[data-href]') : null;
+    if(card){ var href = card.getAttribute('data-href'); if(href) window.location.href = href; }
+  });
+}
 // Alterna grilla/lista. Guarda la preferencia para que se recuerde.
 function _dirSetView(mode){
   var grid = document.getElementById('coach-grid'); if(!grid) return;
@@ -813,6 +844,7 @@ async function loadCoachesDirectory(){
     pruneFilters();
     _pwPruneBioMore();
     _dirWireToolbar();
+    _dirWireCardNav();
     _dirUpdateCount();
   } catch (e) {
     console.warn('No se pudo cargar el directorio dinámico:', e);
