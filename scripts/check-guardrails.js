@@ -4876,6 +4876,33 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "DESIGN FASE B: pw-design-tokens.css tiene las utility classes del layout system",
+    bug: "DESIGN PHASE B (Layout Standardization) agregó utility classes a " +
+         "pw-design-tokens.css (.pw-container, .pw-flex, .pw-grid, .pw-stack, etc.) " +
+         "para estandarizar layouts. Si alguien borra estas clases accidentalmente, " +
+         "las páginas pierden su estructura.",
+    check() {
+      const tokens = read("pw-design-tokens.css");
+      if (!tokens) return "pw-design-tokens.css no existe.";
+      // Verificar que existen las clases principales del layout system
+      const required = [
+        ".pw-container",
+        ".pw-flex",
+        ".pw-grid",
+        ".pw-stack",
+        ".pw-app",
+        ".pw-main",
+        ".pw-scroll",
+        ".pw-card",
+        ".pw-cards",
+      ];
+      const missing = required.filter(cls => !tokens.includes(cls));
+      if (missing.length > 0)
+        return "pw-design-tokens.css perdió estas utility classes: " + missing.join(", ") + ".";
+      return null;
+    },
+  },
 ];
 
 
