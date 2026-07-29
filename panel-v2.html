@@ -8662,30 +8662,43 @@ function viewAdmin(){
   var _directCoaches = coachesEng.filter(function(c){ return !c.orgId; });
   var _redCoaches    = coachesEng.filter(function(c){ return !!c.orgId; });
   var engRows = _directCoaches.map(_coachCardHtml).join("");
-  var _redGroupsHtml = "";
-  if(_redCoaches.length){
-    // RORGS puede no haber cargado aún: solo marcamos "sin red" (huérfano) cuando
-    // la lista de redes YA está cargada y el org_id no matchea ninguna. Así un
-    // coach de red nunca desaparece: o va bajo su red, o al bucket "a revisar".
-    var _orgsLoaded = (typeof RORGS!=="undefined" && Array.isArray(RORGS));
-    var _byOrg = {};
-    _redCoaches.forEach(function(c){ (_byOrg[c.orgId]=_byOrg[c.orgId]||[]).push(c); });
-    var _grp = Object.keys(_byOrg).map(function(oid){
-      var o = _orgsLoaded ? (RORGS.filter(function(x){ return String(x.id)===String(oid); })[0]||null) : null;
-      return { o:o, huerfano:(_orgsLoaded && !o), coaches:_byOrg[oid] };
-    }).sort(function(a,b){ return (a.huerfano?1:0)-(b.huerfano?1:0); }); // huérfanos al final
-    _redGroupsHtml = _grp.map(function(g){
-      var n = g.coaches.length;
-      var cards = g.coaches.map(_coachCardHtml).join("");
-      if(g.huerfano){
-        return "<div style='margin-top:14px'><div style='display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--pw-danger);padding:7px 2px;margin-bottom:6px;border-bottom:1px solid rgba(192,117,110,.4)'><span class='cp-emo'>"+PWI.svg('alert',{sm:true})+"</span><b>Sin red asignada</b><span style='color:var(--pw-text-soft);font-weight:500'>· "+n+" coach"+(n===1?"":"es")+" · su red ya no existe — reasignalos o eliminalos</span></div><div class='cp-coach-grid'>"+cards+"</div></div>";
-      }
-      var o=g.o||{};
-      var nombreRed = esc(o.nombre||"Red");
-      var dueno = esc(o.owner_email||"—");
-      return "<div style='margin-top:14px'><div style='display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--pw-carbon);padding:7px 2px;margin-bottom:6px;border-bottom:1px solid var(--pw-border)'><span class='cp-emo'>"+PWI.svg('building',{sm:true})+"</span><b>"+nombreRed+"</b><span style='color:var(--pw-text-soft);font-weight:500'>· "+n+" coach"+(n===1?"":"es")+" · dueño "+dueno+"</span></div><div class='cp-coach-grid'>"+cards+"</div></div>";
-    }).join("");
-    _redGroupsHtml = "<div style='margin-top:20px'><div style='font-size:11px;font-weight:700;color:var(--pw-text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px'>Coaches en redes</div><div style='font-size:11.5px;color:var(--pw-text-soft);margin-bottom:4px'>Pertenecen al equipo de un multicoach — los gestiona su dueño, no cuentan como coaches tuyos.</div>"+_redGroupsHtml+"</div>";
+  // ── Pestaña "Redes": nivel 1 = lista de redes (dueños); nivel 2 = entrás a una
+  //    red y ves SUS coaches. Los coaches de red NO se mezclan con tus directos.
+  var _redByOrg = {};
+  _redCoaches.forEach(function(c){ (_redByOrg[c.orgId]=_redByOrg[c.orgId]||[]).push(c); });
+  var _redesView = "";
+  {
+    var _rOrgsLoaded = (typeof RORGS!=="undefined" && Array.isArray(RORGS));
+    if(state.redSel){
+      // Nivel 2: coaches de la red seleccionada.
+      var _selId = String(state.redSel);
+      var _selOrg = _rOrgsLoaded ? (RORGS.filter(function(x){ return String(x.id)===_selId; })[0]||null) : null;
+      var _selCoaches = _redByOrg[_selId] || [];
+      var _selNombre = _selOrg ? esc(_selOrg.nombre||"Red") : "Sin red asignada";
+      var _selDueno = _selOrg ? esc(_selOrg.owner_email||"—") : "su red ya no existe";
+      var _selCards = _selCoaches.length ? "<div class='cp-coach-grid'>"+_selCoaches.map(_coachCardHtml).join("")+"</div>" : "<div style='font-size:13px;color:var(--pw-text-soft);padding:16px 2px'>Esta red todavía no tiene coaches.</div>";
+      _redesView = "<div class='cp-card'><div class='cp-card-hd' style='align-items:center;gap:10px'>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='redsel:'>← Redes</button>"+
+        "<h3 class='cp-card-title' style='display:flex;align-items:center;gap:7px'><span class='cp-emo'>"+PWI.svg('building',{sm:true})+"</span>"+_selNombre+"<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>dueño "+_selDueno+" · "+_selCoaches.length+" coach"+(_selCoaches.length===1?"":"es")+"</span></div>"+
+        "<div class='cp-card-pad'>"+_selCards+"</div></div>";
+    } else {
+      // Nivel 1: una fila por red (RORGS) + bucket huérfano si hay coaches con org
+      // inexistente. Entrás a una red para ver sus coaches.
+      var _redRow = function(id, nombre, dueno, plan, nCo, huerf){
+        return "<button type='button' data-act='redsel:"+esc(id)+"' style='width:100%;text-align:left;border:1px solid "+(huerf?"rgba(192,117,110,.4)":"var(--pw-border)")+";background:#fff;border-radius:12px;padding:13px 15px;margin-bottom:9px;cursor:pointer;display:flex;align-items:center;gap:12px'>"+
+          "<span style='width:38px;height:38px;border-radius:10px;background:var(--pw-niebla-2);display:flex;align-items:center;justify-content:center;color:"+(huerf?"var(--pw-danger)":"var(--pw-bosque)")+"'>"+PWI.svg(huerf?'alert':'building',{})+"</span>"+
+          "<span style='flex:1;min-width:0'><span style='display:block;font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+esc(nombre)+"</span><span style='display:block;font-size:12px;color:var(--pw-text-soft)'>"+(huerf?"su red ya no existe — entrá para reasignar":("dueño "+esc(dueno)+(plan?(" · "+esc(plan)):"")))+"</span></span>"+
+          "<span style='font-size:12.5px;font-weight:700;color:var(--pw-carbon);background:var(--pw-niebla-2);border-radius:100px;padding:4px 11px'>"+nCo+" coach"+(nCo===1?"":"es")+"</span>"+
+          "<span style='color:var(--pw-text-muted);font-size:18px'>›</span></button>";
+      };
+      var _known = _rOrgsLoaded ? RORGS.slice() : [];
+      var _knownIds = {}; _known.forEach(function(o){ _knownIds[String(o.id)]=1; });
+      var _rowsRed = _known.map(function(o){ var n=(_redByOrg[String(o.id)]||[]).length; return _redRow(o.id, o.nombre||"Red", o.owner_email||"—", o.plan||"", n, false); }).join("");
+      Object.keys(_redByOrg).forEach(function(oid){ if(!_knownIds[oid]) _rowsRed += _redRow(oid, "Sin red asignada", "", "", _redByOrg[oid].length, true); });
+      if(!_rowsRed) _rowsRed = "<div style='font-size:13px;color:var(--pw-text-soft);text-align:center;padding:20px 0;line-height:1.55'>Todavía no hay redes. Cuando conviertas o des de alta un multicoach, su equipo aparece acá.</div>";
+      _redesView = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Redes<span class='dot'>.</span></h3><span class='cp-eyebrow'>equipos de tus multicoaches — entrá para ver sus coaches</span></div><div class='cp-card-pad'>"+_rowsRed+"</div></div>";
+    }
   }
   var contactos = [
     { tel:"+34 611 23 45 67",   pag:"soy-coach",     f:"Hoy 14:30" },
@@ -9066,6 +9079,7 @@ function viewAdmin(){
       var _tabs = "<div style='display:flex;gap:6px;margin-bottom:2px'>"+
         "<button class='cp-chip "+(_cv==="agregar"?"is-on":"")+"' data-act='coachview:agregar'>Agregar</button>"+
         "<button class='cp-chip "+(_cv==="lista"?"is-on":"")+"' data-act='coachview:lista'>Coaches</button>"+
+        "<button class='cp-chip "+(_cv==="redes"?"is-on":"")+"' data-act='coachview:redes'>Redes"+(_redCoaches.length?"<span class='cp-chip-count'>"+_redCoaches.length+"</span>":"")+"</button>"+
         "<button class='cp-chip "+(_cv==="analiticas"?"is-on":"")+"' data-act='coachview:analiticas'>Analíticas</button>"+
       "</div>";
       var _kpis = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
@@ -9159,7 +9173,7 @@ function viewAdmin(){
       var _an2 = "<div class='cp-emb-split'>"+_growth+_estCard+"</div>";
       var _list = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<input class='cp-form-input' style='max-width:230px;height:34px' placeholder='Buscar coach…' oninput='cpCoachFilter(this.value)'></div>"+
-        "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div>"+_redGroupsHtml+"</div>";
+        "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div></div>";
       // ── Sin asignar (clientes huérfanos: coach_id NULL) ──────────────
       // Entraron al form/reserva SIN el link etiquetado de un coach, así que
       // nadie los "posee" y no aparecen en la lista de ningún coach. Antes eran
@@ -9187,6 +9201,7 @@ function viewAdmin(){
       body = _tabs + (
         _cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli + "<div id='sala-insights' data-loaded='0'></div>" + "<div id='ceo-dash' data-loaded='0'></div>") :
         _cv==="agregar"    ? (accBox + mcBox + convBox + transferBox + _orphCard) :
+        _cv==="redes"      ? _redesView :
         _list
       );
     }
@@ -10958,7 +10973,8 @@ document.addEventListener("click", function(ev){
   if(act==="psel-plan"){ _planSel().plan=(el.getAttribute("data-p")==="pro")?"pro":"basic"; render(); return; }
   if(act==="plan-refresh"){ _planRefresh(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.mctMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } if(state.adminTab==="novedades"){ RFEED=null; } render(); return; }
-  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); return; }
+  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; state.redSel=null; render(); return; }
+  if(act.indexOf("redsel:")===0){ state.redSel=act.slice(7)||null; render(); window.scrollTo(0,0); return; }
   if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
   if(act.indexOf("estsel:")===0){ var _es=parseInt(act.slice(7),10); state.estSel=(state.estSel===_es?null:_es); render(); return; }
   if(act==="ceo-reload"){ var _cb=document.getElementById('ceo-dash'); if(_cb){ _cb.setAttribute('data-loaded','0'); _ceoLoad(); } return; }
