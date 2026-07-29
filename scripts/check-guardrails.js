@@ -4718,20 +4718,22 @@ const RULES = [
     },
   },
   {
-    name: "panel-v2: la colaboradora de una red no ve el panel completo de coach",
-    bug: "Un colaborador (rol='coach' + configuracion.member_role='colaborador') veía " +
-         "TODO lo de un coach porque panel-v2 nunca leía member_role. Debe existir " +
-         "esColaborador() y usarse para ocultar el Negocio propio y el perfil público " +
-         "(el colaborador gestiona clientes y agenda, pero no 'da clases').",
+    name: "panel-v2: el acceso del miembro de red se gatea por permisos (los elige el dueño)",
+    bug: "Un colaborador (rol='coach' + member_role='colaborador') veía TODO lo de un " +
+         "coach porque panel-v2 nunca leía su rol/permisos. El dueño de la red debe poder " +
+         "elegir por miembro a qué darle acceso (configuracion.permisos), con default por " +
+         "rol. Las superficies de 'dar clases' (Negocio, perfil público) se gatean por " +
+         "_memberPerm(); esColaborador() da el default.",
     check() {
       const s = read("panel-v2.html");
       if (!s) return null;
-      if (!isDefined("esColaborador", inlineJs(s)))
-        return "panel-v2.html: falta el helper esColaborador() → el colaborador vuelve a ver el panel de coach completo.";
-      if (!/if\(!esColaborador\(\)\) items\.push\(\["negocio"/.test(s))
-        return "panel-v2.html: la pestaña 'Negocio' ya no está gateada por esColaborador() (el colaborador no tiene negocio propio).";
-      if (!/!esColaborador\(\)[\s\S]{0,80}perfil_publico_activo/.test(s))
-        return "panel-v2.html: el perfil público ya no está gateado para el colaborador (no debe 'figurar dando clases').";
+      const js = inlineJs(s);
+      if (!isDefined("esColaborador", js) || !isDefined("_memberPerm", js))
+        return "panel-v2.html: faltan esColaborador()/_memberPerm() → el acceso del miembro de red deja de gatearse.";
+      if (!/if\(_memberPerm\("negocio"\)\) items\.push\(\["negocio"/.test(s))
+        return "panel-v2.html: la pestaña 'Negocio' ya no se gatea por _memberPerm('negocio').";
+      if (!/_memberPerm\("perfil_publico"\)[\s\S]{0,80}perfil_publico_activo/.test(s))
+        return "panel-v2.html: el perfil público ya no se gatea por _memberPerm('perfil_publico').";
       return null;
     },
   },
