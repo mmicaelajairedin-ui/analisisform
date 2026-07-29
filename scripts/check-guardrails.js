@@ -4417,6 +4417,29 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: la Comunidad GUARDA de verdad (comunidad-red) y les llega a coaches y clientes",
+    bug: "Las plantillas no servían si el post quedaba solo en el navegador del owner. En una red real, " +
+         "publicar guarda en Supabase (posts_red) via la edge function comunidad-red (owner publica; " +
+         "coach/cliente de esa org leen — el cliente solo audiencia todos/clientes, nunca lo de coaches). " +
+         "Los 3 portales del cliente muestran las Novedades. Si se cae, la revista vuelve a ser local y " +
+         "muda: nadie más ve lo que publica el owner.",
+    check() {
+      const fn = read("supabase/functions/comunidad-red/index.ts");
+      if (fn === null) return "falta la edge function comunidad-red (guardar/leer la revista de la red).";
+      if (!/posts_red/.test(fn) || !/action === "publish"/.test(fn)) return "comunidad-red: ya no guarda en posts_red / no publica.";
+      if (!/solo_owner/.test(fn)) return "comunidad-red: perdió el gate de que solo el OWNER publica.";
+      if (!/para=in\.\(todos,clientes\)/.test(fn)) return "comunidad-red: el cliente ya no está acotado a audiencia todos/clientes (fuga de avisos internos a coaches).";
+      if (read("supabase/migrations/posts_red.sql") === null) return "falta la migración posts_red.sql (tabla de la revista de la red).";
+      const mc = read("multicoach.html");
+      if (mc && (!/comunidad-red/.test(mc) || !/function _mcLoadPosts\(/.test(mc))) return "multicoach.html: la Comunidad ya no publica/carga real (comunidad-red / _mcLoadPosts).";
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html"]) {
+        const p = read(f);
+        if (p && (!/function _loadNovedades\(/.test(p) || !/comunidad-red/.test(p) || !/novered-slot/.test(p))) return f + ": ya no muestra las Novedades de la red (comunidad-red).";
+      }
+      return null;
+    },
+  },
+  {
     name: "multicoach: 'Nueva sesión' en la red CREA la cita asignando coach (crear-cita-red), no un toast",
     bug: "En una red real, 'Nueva sesión' tenía que dejar AGENDAR un evento y ASIGNARLO a un coach " +
          "(tipo, nombre, día/hora, online/presencial, grupal) — no un toast de maqueta. La RLS de citas " +
