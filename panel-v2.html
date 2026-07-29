@@ -6110,15 +6110,53 @@ function viewClientes(){
       (cardsHtml?"":"<div class='cp-grp-empty'>"+emptyTxt+"</div>")+
     "</div></div>";
   }
+  // Zona Pathway (Recorrido + Solicitudes + Atención + Cobros): los clientes de
+  // Pathway llegan por el PERFIL PÚBLICO (te encuentran ahí) y agendan en tu
+  // CALENDARIO. Si el coach se dio de alta en Pathway pero le faltan esos
+  // requisitos y todavía no tiene actividad, mostramos un checklist de lo que
+  // falta en vez de la zona vacía que ocupa lugar sin servir. Si ya hay actividad
+  // (solicitudes o clientes) o ya está listo, se muestra la zona completa.
+  var _calOk=!!(RCFG && (RCFG.calendar_embed_url || RCFG.calendly_url || RCFG.gcal_ical_url || RCFG.gcal));
+  var _slugOk=!!(((RPROF&&RPROF.slug)||(RCFG&&RCFG.slug))||"").toString().trim();
+  var _pubOk=_slugOk && !!((RPROF&&RPROF.perfil_publico_activo)||(RCFG&&RCFG.perfil_publico_activo));
+  var _pwActivity=(pwList.length>0)||(typeof _sol!=="undefined" && _sol && _sol.length>0);
+  // Aviso si falta el setup (aunque haya actividad): sin calendario tus clientes
+  // de Pathway no pueden agendar; sin perfil público no te encuentran.
+  var _pwWarn="";
+  if(state.pathwayOptIn && REAL && (!_calOk || !_pubOk)){
+    var _miss=[]; if(!_pubOk)_miss.push("activá tu perfil público"); if(!_calOk)_miss.push("conectá tu calendario");
+    _pwWarn="<div style='margin:0 0 12px;border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:rgba(233,196,106,.14);border:1px solid rgba(233,196,106,.5)'>"+
+      "<span style='display:inline-flex;align-items:center;gap:8px;flex:1;min-width:220px;font-size:13px;color:#8E7A35;font-weight:600'>"+PWI.svg('alert',{sm:true})+"Para que tus clientes de Pathway puedan agendar, "+_miss.join(" y ")+".</span>"+
+      "<button class='cp-btn cp-btn-primary' style='height:34px;font-size:12.5px;padding:0 14px' data-act='gocal'>Completar</button></div>";
+  }
+  var _pwZoneFull=_pwWarn+"<div class='cp-cli-cols'>"+
+      "<div class='cp-cli-main'>"+ recorrido + solSection +"</div>"+
+      "<aside class='cp-cli-rail'>"+ atencion + cobros +"</aside>"+
+    "</div>";
+  var _pwZone;
+  if(!REAL || _pwActivity || (state.pathwayOptIn && _pubOk && _calOk)){
+    _pwZone=_pwZoneFull;
+  } else if(state.pathwayOptIn){
+    var _ckRow=function(ok,txt,cta){ return "<div style='display:flex;align-items:center;gap:11px;padding:9px 0'>"+
+      "<span style='width:22px;height:22px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:"+(ok?"var(--pw-success-bg)":"var(--pw-niebla-2)")+";color:"+(ok?"var(--pw-bosque)":"var(--pw-text-muted)")+"'>"+(ok?svg(IC.check,12,"stroke-width='3'"):"")+"</span>"+
+      "<span style='flex:1;font-size:13px;color:"+(ok?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(ok?"text-decoration:line-through":"")+"'>"+txt+"</span>"+
+      (ok?"<span style='font-size:11px;font-weight:700;color:var(--pw-bosque)'>Listo</span>":"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='gocal'>"+cta+"</button>")+
+    "</div>"; };
+    _pwZone="<div class='cp-card'><div class='cp-card-pad'>"+
+      "<div style='font-family:var(--pw-serif);font-size:17px;font-weight:600;color:var(--pw-carbon);letter-spacing:-.2px'>Empezá a recibir clientes de Pathway</div>"+
+      "<p style='font-size:13px;color:var(--pw-text-soft);line-height:1.55;margin:6px 0 12px'>Los clientes de Pathway te encuentran por tu <strong>perfil público</strong> y agendan en tu <strong>calendario</strong>. Completá esto para activarlo:</p>"+
+      _ckRow(_pubOk,"Activá tu perfil público","Activar")+
+      _ckRow(_calOk,"Conectá tu calendario","Conectar")+
+    "</div></div>";
+  } else {
+    _pwZone="";
+  }
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Clientes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>"+sub+"</div></div>"+
       "<div class='cp-topbar-actions'><div class='cp-search'>"+svg(IC.search,14)+
         "<input id='cp-cli-search' placeholder='Buscar por nombre o email…'></div></div></header>"+
-    // Zona Pathway: 2 columnas (Recorrido + Solicitudes | Atención + Cobros).
-    "<div class='cp-cli-cols'>"+
-      "<div class='cp-cli-main'>"+ recorrido + solSection +"</div>"+
-      "<aside class='cp-cli-rail'>"+ atencion + cobros +"</aside>"+
-    "</div>"+
+    // Zona Pathway (gateada por requisitos arriba: perfil público + calendario).
+    _pwZone+
     // Tus clientes: DOS cajas grandes (estilo Fortalezas/Áreas del informe) —
     // "Clientes de Pathway" (comisión) y "Clientes propios" (0%). La caja ya
     // dice el grupo, así que las tarjetas de adentro van limpias.
