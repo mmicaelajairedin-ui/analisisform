@@ -1389,7 +1389,7 @@ function _mcDefRecursos(){ return (MC_RECURSOS[MC_N]||MC_RECURSOS.fitness).map(f
 function mcApplyNiche(){
  var m=NM();
  // En modo REAL el DB lo cargó el dueño (mcLoadReal); no lo pisamos con la maqueta.
- if(!MC_REAL){ DB={coaches:m.coaches,clientes:m.clientes}; }
+ if(!MC_REAL){ DB={coaches:m.coaches,clientes:m.clientes}; _rebuildCoachIdx(); }
  NICHOS=m.cats;
  try{ CFG.recursos=_mcDefRecursos(); }catch(e){}
  var setTx=function(id,t){var el=document.getElementById(id);if(el)el.textContent=t;};
@@ -1561,6 +1561,9 @@ function mcLoadReal(owner){
     var ow=ownerRow||owner;
     if(ow&&ow.id){ var oc=mcMapCoach(ow,cnt[ow.id]); oc.esOwner=true; oc.esp=oc.esp||'Dueño'; lst.unshift(oc); }
     DB={ coaches:lst, clientes:(clientes||[]).map(mcMapCli) };
+    // FIX N+1: crear índice de coaches para O(1) lookup (evita 10k búsquedas lineales con 200 clientes).
+    window._coachIdx = {};
+    (DB.coaches||[]).forEach(function(c){ if(c.id) _coachIdx[c.id] = c; });
     // Un color estable por coach real para la agenda (por posición en la paleta).
     try{ MC_COCOL={}; DB.coaches.forEach(function(c,i){ MC_COCOL[c.id]=_MCPAL[i%_MCPAL.length]; }); }catch(e){}
     // La comunidad arranca en blanco para una red real (nada de posts/retos/
@@ -1660,7 +1663,8 @@ function DET(){return MCDET[MC_N];}
 function _areaLbl(nicho){var cs=NICHOS||[];for(var i=0;i<cs.length;i++)if(cs[i].id===nicho)return cs[i].lbl;return '—';}
 function _plan(nicho){var p=DET().planByCat;return p[nicho]||p[Object.keys(p)[0]];}
 var _kf='todos',_ks='',_cf='todos';
-function _coach(id){for(var i=0;i<DB.coaches.length;i++)if(DB.coaches[i].id===id)return DB.coaches[i];return null;}
+function _coach(id){ return (_coachIdx||{})[id]||null; }
+function _rebuildCoachIdx(){ window._coachIdx={}; (DB.coaches||[]).forEach(function(c){if(c.id)_coachIdx[c.id]=c;}); }
 function _cli(id){for(var i=0;i<DB.clientes.length;i++)if(DB.clientes[i].id===id)return DB.clientes[i];return null;}
 function _ini(n){return n.trim().split(/\s+/).map(function(w){return w.charAt(0);}).slice(0,2).join('').toUpperCase();}
 function _img(o){return o.foto?'<img src="'+o.foto+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">':'';}
@@ -2184,7 +2188,7 @@ function _coachAction(id,modo,cb){
  function _localApply(){
   if(modo==='suspender')c.est='inactivo';
   else if(modo==='reactivar')c.est='activo';
-  else if(modo==='quitar'){ (DB.clientes||[]).forEach(function(k){ if(String(k.coach)===String(id))k.coach=''; }); DB.coaches=(DB.coaches||[]).filter(function(x){return String(x.id)!==String(id);}); }
+  else if(modo==='quitar'){ (DB.clientes||[]).forEach(function(k){ if(String(k.coach)===String(id))k.coach=''; }); DB.coaches=(DB.coaches||[]).filter(function(x){return String(x.id)!==String(id);}); _rebuildCoachIdx(); }
  }
  if(!MC_REAL){ _localApply(); cb&&cb(true,{}); return; }
  _hdr({'Content-Type':'application/json'}).then(function(h){
@@ -2341,6 +2345,7 @@ function invitarCoach(){
       __toast(msg); return;
      }
      DB.coaches.push({id:res.d.coach_id||('c'+have+'x'),n:n,ini:_mcIni(n),nicho:(NICHOS&&NICHOS[0]&&NICHOS[0].id)||'',rat:0,ret:null,cli:0,ses:0,esp:'',est:'pendiente',foto:'',tipo:rol});
+     _rebuildCoachIdx();
      mcApplyNiche(); if(_sec==='coaches')renderCoaches();
      _mcCoachLink(n,em,res.d.email_sent);
      if(MC_OWNER) setTimeout(function(){ mcLoadReal(MC_OWNER); },400); // refresca la red desde el server (aparece con sus datos reales)
@@ -2353,6 +2358,7 @@ function invitarCoach(){
  __openModal('Invitar '+sing,'<div style="font-size:12px;color:var(--soft);background:var(--pw-niebla-3);border-radius:9px;padding:9px 11px;margin-bottom:4px">El '+sing+' hereda el nicho de tu empresa: <b>'+nlbl+'</b> (definido en el panel admin). Elige su área.</div>'+__inp('ic-n','Nombre y apellido')+__inp('ic-e','email@empresa.com')+'<div><span class="lbl">Área</span>'+__sel('ic-nz',areas)+'</div>'+__inp('ic-s','Especialidad'),'Enviar invitación',function(){
   var n=document.getElementById('ic-n').value.trim();if(!n)return;var s=document.getElementById('ic-s').value.trim()||'General';var sel=document.getElementById('ic-nz').value;var nz=(NICHOS.filter(function(c){return c.lbl===sel;})[0]||NICHOS[0]).id;
   DB.coaches.push({id:'c'+(DB.coaches.length+1)+'x',n:n,ini:_ini(n),nicho:nz,rat:0,ret:0,cli:0,ses:0,esp:s,est:'pendiente',foto:''});
+  _rebuildCoachIdx();
   __mclose();__toast('Invitación enviada a '+n+' ✓');renderCoaches();
  });
 }

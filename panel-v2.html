@@ -4148,7 +4148,23 @@ function _resLoad(){
   // select=* (no una lista fija) para que traiga 'respuestas' si esa columna ya
   // existe, sin romper la lista de reservas en las cuentas donde todavía no se
   // aplicó la migración (una lista fija con una columna inexistente da 400).
-  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+"&order=inicio.asc&select=*")
+  var sel="&order=inicio.asc&select=*";
+
+  // FIX 1: Dual query — citas personales + grupales (si el coach pertenece a una org)
+  if(RME.org_id){
+    var personal=_sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+sel);
+    var grupal=_sb("citas?org_id=eq."+encodeURIComponent(RME.org_id)+"&grupal=eq.true&inicio=gte."+encodeURIComponent(since)+sel);
+    Promise.all([personal,grupal]).then(function(results){
+      var p=(Object.prototype.toString.call(results[0])==="[object Array]")?results[0]:[];
+      var g=(Object.prototype.toString.call(results[1])==="[object Array]")?results[1]:[];
+      _RES_DATA=(Object.prototype.toString.call(p)==="[object Array]" && Object.prototype.toString.call(g)==="[object Array]")?p.concat(g):[];
+      var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); _agMonthRender(); try{ _agProxRender(); }catch(e){}
+    }).catch(function(){ var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplica la migración citas.sql en Supabase."); });
+    return;
+  }
+
+  // Regular coach (sin org): solo citas personales
+  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+sel)
     .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); _agMonthRender(); try{ _agProxRender(); }catch(e){} })
     .catch(function(){ var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplica la migración citas.sql en Supabase."); });
 }
@@ -14770,6 +14786,13 @@ function _paywallCheck(u){
   // Watchdog: nunca dejar "Cargando…" colgado. Si en 6s no se pintó el panel, pintarlo igual.
   setTimeout(function(){ if(!document.querySelector(".cp-app")){ render(); } },6000);
   setTimeout(function(){ if(!document.querySelector(".cp-app")){ render(); } },12000);
+  // FIX 2: Polling automático cada 15s para sincronizar citas en tiempo real
+  // (citas personales + grupales, seguimientos, y calendario)
+  setInterval(function(){
+    try{ _resLoad(); }catch(e){}
+    try{ _calLoad(); }catch(e){}
+    try{ _segLoad(); }catch(e){}
+  }, 15000);
 })();
 
 // ── Pull-to-refresh (móvil): al bajar la pantalla estando arriba de todo, se
