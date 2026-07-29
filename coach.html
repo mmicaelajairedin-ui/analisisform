@@ -82,6 +82,9 @@ img{max-width:100%;display:block;}
 
 .tags{display:flex;flex-wrap:wrap;gap:8px;}
 .tag{display:inline-flex;align-items:center;padding:6px 14px;background:#fff;border:1px solid var(--pw-borde);border-radius:100px;font-size:13px;color:var(--pw-bosque);font-weight:500;}
+/* Botón "Ver más" reutilizable (comprime secciones largas: bio, planes) */
+.sec-more{background:none;border:none;color:var(--pw-bosque);font-weight:600;font-size:13px;font-family:var(--pw-sans);cursor:pointer;padding:0;margin-top:10px;align-self:flex-start;}
+.sec-more:hover{text-decoration:underline;}
 
 .servicios-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;}
 .servicio{background:#fff;border:1px solid var(--pw-borde);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:8px;}
@@ -137,12 +140,13 @@ img{max-width:100%;display:block;}
 .cal-slot{display:block;text-align:center;font-size:12px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.10);border-radius:8px;padding:6px 2px;text-decoration:none;transition:all .13s;}
 .cal-slot:hover{background:var(--pw-bosque);color:#fff;}
 .cal-none{text-align:center;font-size:14px;color:var(--pw-borde);padding:6px 0;}
-/* Casos de éxito (antes/después) */
-.casos-grid{display:flex;gap:12px;margin-top:14px;overflow-x:auto;padding-bottom:6px;}
-.caso-card{flex:0 0 auto;text-align:center;}
-.caso-card img{height:130px;width:auto;border-radius:12px;object-fit:cover;display:block;}
-.caso-card .caso-lbl{font-size:13px;font-weight:700;color:var(--pw-carbon);margin-top:8px;}
-.caso-card .caso-sub{font-size:11.5px;color:var(--pw-texto-suave);}
+/* Casos de éxito — texto "Antes → Después" (resultados reales del coach, sin fotos) */
+.casos-grid{display:flex;flex-direction:column;gap:10px;margin-top:14px;}
+.caso-card{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;background:var(--pw-niebla);border:1px solid var(--pw-borde);border-radius:12px;padding:12px 14px;}
+.caso-antes{font-size:13.5px;color:var(--pw-texto-suave);}
+.caso-arrow{color:var(--pw-bosque);flex-shrink:0;display:inline-flex;}
+.caso-arrow svg{width:17px;height:17px;}
+.caso-despues{font-size:14px;font-weight:700;color:var(--pw-carbon);letter-spacing:-.2px;}
 /* Otros coaches: una sola línea (strip horizontal) */
 .otros-grid{display:flex;gap:14px;margin-top:16px;overflow-x:auto;padding-bottom:8px;}
 .otros-card{flex:0 0 210px;background:#fff;border:1px solid var(--pw-borde);border-radius:16px;padding:16px;text-decoration:none;transition:all .2s;}
@@ -624,10 +628,50 @@ img{max-width:100%;display:block;}
       show('sec-porque');
     }catch(e){}
   }
+  // Comprime un bloque de texto a N líneas y agrega "Ver más" SOLO si se corta.
+  // Reutilizable en toda la página (bio, etc.) — misma regla que el tagline.
+  function _clampMore(el, lines){
+    if(!el) return;
+    var apply=function(){ el.style.display='-webkit-box'; el.style.webkitLineClamp=String(lines); el.style.webkitBoxOrient='vertical'; el.style.overflow='hidden'; };
+    apply();
+    setTimeout(function(){
+      if(el.scrollHeight-el.clientHeight>4){
+        var b=document.createElement('button'); b.type='button'; b.className='sec-more'; b.textContent=pickLang('Ver más','See more');
+        var open=false;
+        b.onclick=function(){ open=!open; if(open){ el.style.display='block'; el.style.webkitLineClamp='unset'; el.style.overflow='visible'; b.textContent=pickLang('Ver menos','See less'); } else { apply(); b.textContent=pickLang('Ver más','See more'); } };
+        el.parentNode.insertBefore(b, el.nextSibling);
+      }
+    },30);
+  }
+  // "Casos de éxito" — resultados REALES que carga el coach, como texto
+  // "Antes → Después" (sin fotos, sin inventar). Se muestra solo si hay datos.
+  function _loadCasos(c){
+    try{
+      var casos=Array.isArray(c.casos_exito)?c.casos_exito:[];
+      var norm=casos.map(function(x){
+        if(x && typeof x==='object') return {antes:(''+(x.antes||'')).trim(), despues:(''+(x.despues||'')).trim()};
+        var p=(''+x).split(/\s*(?:→|->|—|–|\|)\s*/);
+        return {antes:(p[0]||'').trim(), despues:(p[1]||'').trim()};
+      }).filter(function(o){ return o.antes || o.despues; });
+      if(!norm.length) return;
+      var g=document.getElementById('casos-grid'); if(!g) return;
+      var ARR="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12h14M13 6l6 6-6 6'/></svg>";
+      g.innerHTML=norm.map(function(o){
+        return "<div class='caso-card'>"+
+          (o.antes?"<span class='caso-antes'>"+escH(o.antes)+"</span>":"")+
+          "<span class='caso-arrow'>"+ARR+"</span>"+
+          "<span class='caso-despues'>"+escH(o.despues||o.antes)+"</span>"+
+        "</div>";
+      }).join('');
+      var tt=document.getElementById('casos-title'); if(tt) tt.firstChild.textContent=pickLang('Resultados reales','Real results');
+      show('sec-casos');
+    }catch(e){}
+  }
   function render(c){
     _coachData=c;
     _loadOtrosCoaches(c.slug);
     _loadFechas(c);
+    _loadCasos(c);
     _loadPorque(c);
     document.title=(c.nombre||'Coach')+' · Pathway';
     var meta=document.querySelector('meta[name="description"]');
@@ -739,7 +783,7 @@ img{max-width:100%;display:block;}
       show('stats');
     }
 
-    var _bio=_uniq(pickLang(c.bio_publica,c.bio_publica_en)); if(_bio){setText('bio',_bio);}
+    var _bio=_uniq(pickLang(c.bio_publica,c.bio_publica_en)); if(_bio){setText('bio',_bio); _clampMore(document.getElementById('bio'),6);}
     // "Mi enfoque" ahora vive DENTRO de "Sobre mí" como checklist con tildes.
     var _enf=_uniq(pickLang(c.mi_enfoque,c.mi_enfoque_en));
     if(_enf){
@@ -780,6 +824,18 @@ img{max-width:100%;display:block;}
         return '<div class="servicio"><h3>'+escH(titulo)+'</h3>'+(descr?'<div class="desc">'+escH(descr)+'</div>':'')+meta+cta+'</div>';
       }).join('');
       show('sec-servicios');
+      // Comprimir: si hay más de 2 planes, mostrar 2 y ocultar el resto tras
+      // "Ver todos los planes" (evita el bloque súper largo hacia abajo).
+      var _servCards=sg.querySelectorAll('.servicio');
+      if(_servCards.length>2){
+        var _showN=2, _setServ=function(open){ for(var _j=_showN;_j<_servCards.length;_j++) _servCards[_j].style.display=open?'':'none'; };
+        _setServ(false);
+        var _sb=document.createElement('button'); _sb.type='button'; _sb.className='sec-more';
+        var _lblMore=pickLang('Ver todos los planes ('+_servCards.length+')','See all plans ('+_servCards.length+')');
+        _sb.textContent=_lblMore; var _sOpen=false;
+        _sb.onclick=function(){ _sOpen=!_sOpen; _setServ(_sOpen); _sb.textContent=_sOpen?pickLang('Ver menos','See less'):_lblMore; };
+        if(sg.parentNode) sg.parentNode.appendChild(_sb);
+      }
       // Wire-up con delegation en el grid — sobrevive a re-renders y al
       // timing del innerHTML. El handler vive en sg, no en cada botón.
       sg.onclick = function(ev){
