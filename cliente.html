@@ -2048,7 +2048,7 @@ function _loadCoachColor(){
   // Resolución del coach del cliente. SOLO por coach_id — con multi-coach,
   // adivinar "el primer coach de la tabla" muestra el coach equivocado
   // (race condition: el fetch del coach arbitrario podía pisar al correcto).
-  var q='select=nombre,foto_url,nombre_practica,configuracion,rol,email';
+  var q='select=nombre,foto_url,nombre_practica,configuracion,rol,email,slug';
   var filter;
   if(C&&C.coach_id){
     filter='id=eq.'+encodeURIComponent(C.coach_id);
@@ -2074,6 +2074,7 @@ function _loadCoachColor(){
     })
     .then(function(rows){
       var coach=rows&&rows[0];if(!coach)return;
+      try{ window.COACH_SLUG=coach.slug||''; }catch(e){}  // para el puente reseña→público
       var cfg=coach.configuracion||{};
       // GATE Plan: solo aplicar branding visual (color, nombre práctica, foto, logo)
       // si el coach es plan Pro. Para Basic se mantiene el branding Pathway por
@@ -3607,6 +3608,7 @@ async function _submitReview(){
     if(!rows||!rows.length){throw new Error('RLS blocking');}
     // Update local state
     C.review_rating=rating; C.review_texto=texto||null; C.review_fecha=new Date().toISOString();
+    _pushReviewPublic(rating, texto);   // puente reseña → perfil público del coach
     // CONFETTI 🎉
     _fireReviewConfetti();
     showSaveToast();
@@ -3632,6 +3634,28 @@ function _fireReviewConfetti(){
   setTimeout(function(){if(ov.parentNode)ov.remove();},4500);
 }
 
+// ── Puente reseña → público ──────────────────────────────────────────────────
+// Además de guardar en candidatos (privado, para el logro del cliente),
+// publicamos en la tabla `reviews` que lee el PERFIL PÚBLICO del coach.
+// Regla (Micaela): 3-5★ → públicas (publica=true, se muestran como testimonios);
+// 1-2★ → privadas (publica=false): no se muestran, pero quedan como feedback y
+// cuentan para el ranking del marketplace. Best-effort (nunca rompe el flujo).
+function _reviewAuthorName(){
+  var n=((C&&C.nombre)||'').trim(); if(!n) return 'Cliente en Pathway';
+  var p=n.split(/\s+/);
+  return p.length>1 ? (p[0]+' '+p[p.length-1].charAt(0).toUpperCase()+'.') : p[0];
+}
+function _pushReviewPublic(rating, texto){
+  try{
+    var slug=(window.COACH_SLUG||'');
+    if(!slug || !rating) return;              // sin slug del coach no se puede vincular
+    fetch(SB+'/rest/v1/reviews',{
+      method:'POST',
+      headers:H({'Content-Type':'application/json','Prefer':'return=minimal'}),
+      body:JSON.stringify({ nombre:_reviewAuthorName(), rating:rating, texto:((texto||'').trim().slice(0,500))||null, fuente:'portal', publica:(rating>=3), coach_slug:slug })
+    }).catch(function(){});
+  }catch(e){}
+}
 // ── Auto-cartel de reseña al entrar (pedido de Micaela) ──────────────────────
 // Regla: si el cliente YA reseñó → nunca aparece. Si NO → aparece en la 1ª
 // entrada y reaparece cada REVIEW_NUDGE_EVERY entradas (no en cada login).
@@ -3667,6 +3691,7 @@ async function _submitReviewNudge(){
     if(!r.ok) throw new Error('save '+r.status);
     var rows=await r.json(); if(!rows||!rows.length) throw new Error('RLS');
     C.review_rating=rating; C.review_texto=texto||null; C.review_fecha=new Date().toISOString();
+    _pushReviewPublic(rating, texto);
     _closeReviewNudge();
     try{ _fireReviewConfetti(); }catch(e){}
     try{ showSaveToast(); }catch(e){}
