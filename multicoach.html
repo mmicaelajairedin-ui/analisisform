@@ -2279,7 +2279,20 @@ function renderAnalytics(){
 // El dueño le paga a sus coaches por fuera. Reusa connect-onboard (Stripe
 // Express), igual que el coach individual, pero apuntando al usuario dueño.
 var MC_COBROS=null;      // null=sin cargar · {connected,details} · {error:true}
-var _mcCobReq=false;
+var MC_COBROS_DATA=null;  // {cobros:[...], totales:{bruto,comision,neto,n}}
+var _mcCobReq=false, _mcSyncReq=false;
+// Slug/URL pública de la red (para /red/<slug>). Sin slug configurado, usa el id.
+function _mcRedSlug(){ return (MC_ORG&&(MC_ORG.slug||MC_ORG.id))||''; }
+function _mcRedUrl(){ var s=_mcRedSlug(); return s?('https://pathwaycareercoach.com/red/'+encodeURIComponent(s)):''; }
+function mcCobrosSync(){
+  if(_mcSyncReq) return; _mcSyncReq=true;
+  if(!MC_REAL||!MC_ORG||!MC_ORG.id){ MC_COBROS_DATA={cobros:[],totales:{bruto:0,comision:0,neto:0,n:0},demo:true}; return; }
+  fetch(SB+'/functions/v1/red-checkout',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({action:'sync',org_id:MC_ORG.id})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){ MC_COBROS_DATA = (j&&j.ok)?{cobros:j.cobros||[],totales:j.totales||{bruto:0,comision:0,neto:0,n:0}}:{error:true}; if(_sec==='cobros')renderCobros(); })
+    .catch(function(){ MC_COBROS_DATA={error:true}; if(_sec==='cobros')renderCobros(); });
+}
+function mcCopyRedUrl(){ var u=_mcRedUrl(); if(!u)return; try{ navigator.clipboard.writeText(u).then(function(){__toast('Enlace copiado ✓');},function(){__toast(u);}); }catch(e){ __toast(u); } }
 function mcCobrosStatus(){
   if(_mcCobReq) return; _mcCobReq=true;
   if(!MC_REAL||!MC_OWNER||!MC_OWNER.id){ MC_COBROS={connected:false,demo:true}; return; }
@@ -2299,6 +2312,7 @@ function mcConnectCobros(){
 function renderCobros(){
   var v=document.getElementById('vscroll');
   if(MC_COBROS===null && MC_REAL) mcCobrosStatus();
+  if(MC_COBROS_DATA===null && MC_REAL) mcCobrosSync();
   var st=MC_COBROS||{}, connected=!!st.connected;
   var cuenta;
   if(!MC_REAL){
@@ -2315,10 +2329,45 @@ function renderCobros(){
       "<button class='cp-btn cp-btn-primary' onclick='mcConnectCobros()' style='height:42px;font-size:14px'>"+PWI.svg('creditCard',{sm:true})+" Conectar cobros con Stripe</button>"+
       (st.error?"<div style='font-size:12px;color:var(--pw-danger);margin-top:10px'>No pudimos verificar el estado. Prueba de nuevo en un momento.</div>":"")+"</div>";
   }
-  // Ingresos de la red (Fase 3): por ahora estado honesto — todavía no hay pagos
-  // porque la página pública de la red (por donde pagan) aún no está publicada.
-  var ingresos=_mcEmptyCard('Ingresos de la red','Cuando tus clientes paguen desde la página pública de la red, acá vas a ver los ingresos (neto del 2% de Pathway), por coach y por mes.');
-  v.innerHTML="<header class='cp-topbar'><div><h1 class='cp-h1'>Cobros<span class='dot'>.</span></h1><div class='cp-sub'>Los pagos de los clientes de tu red — a tu cuenta, con 2% de comisión.</div></div></header>"+cuenta+ingresos;
+  // Página pública de la red: el enlace para compartir (por donde pagan los
+  // clientes). Sin slug configurado usa el id; igual funciona.
+  var url=_mcRedUrl(), link="";
+  if(MC_REAL && url){
+    link="<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Tu página de la red<span class='dot'>.</span></h3>"+
+      "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.55;margin:6px 0 12px'>Compártela con tus clientes: eligen coach y servicio y pagan ahí. El dinero entra a tu cuenta (2% Pathway).</div>"+
+      "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+        "<input readonly value='"+_mcEsc(url)+"' onclick='this.select()' style='flex:1;min-width:200px;height:40px;border:1px solid var(--pw-border);border-radius:10px;padding:0 12px;font-size:13px;background:var(--pw-niebla-2);color:var(--pw-carbon)'>"+
+        "<button class='cp-btn cp-btn-ghost' onclick='mcCopyRedUrl()' style='height:40px'>Copiar</button>"+
+        "<a class='cp-btn cp-btn-primary' href='"+_mcEsc(url)+"' target='_blank' rel='noopener' style='height:40px'>Abrir "+PWI.svg('extLink',{sm:true})+"</a>"+
+      "</div></div>";
+  }
+  // Ingresos reales de la red (netos del 2%). Se concilian contra Stripe (sync).
+  var ingresos, d=MC_COBROS_DATA||{};
+  var pag=(d.cobros||[]).filter(function(c){return c.estado==='pagado';});
+  if(!MC_REAL){
+    ingresos=_mcEmptyCard('Ingresos de la red','En tu red real, acá ves los ingresos de los pagos (neto del 2% de Pathway), por cliente y coach.');
+  } else if(d.error){
+    ingresos=_mcEmptyCard('Ingresos de la red','No pudimos cargar los cobros ahora. Prueba de nuevo en un momento.');
+  } else if(!pag.length){
+    ingresos=_mcEmptyCard('Ingresos de la red','Todavía no hay pagos. Cuando un cliente pague desde tu página de la red, aparece acá (neto del 2%).');
+  } else {
+    var t=d.totales||{bruto:0,comision:0,neto:0,n:0};
+    var _m=function(n){return '€'+(Number(n)||0).toLocaleString('es-ES');};
+    var rows=pag.slice(0,20).map(function(c){
+      var neto=(Number(c.monto)||0)-(Number(c.comision)||0);
+      return "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--pw-border)'>"+
+        "<div style='min-width:0'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+_mcEsc(c.cliente_nombre||c.cliente_email||'Cliente')+"</div>"+
+        "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+_mcEsc(c.servicio_titulo||'Servicio')+(c.coach_nombre?' · '+_mcEsc(c.coach_nombre):'')+"</div></div>"+
+        "<div style='text-align:right;white-space:nowrap'><div style='font-size:14px;font-weight:700;color:var(--pw-bosque)'>"+_m(neto)+"</div><div style='font-size:10.5px;color:var(--pw-text-muted)'>de "+_m(c.monto)+"</div></div></div>";
+    }).join('');
+    ingresos="<div class='cp-card cp-card-pad'><div style='display:flex;align-items:center;justify-content:space-between;gap:10px'><h3 class='cp-card-title'>Ingresos de la red<span class='dot'>.</span></h3><span class='cp-eyebrow'>neto del 2%</span></div>"+
+      "<div style='display:flex;gap:20px;flex-wrap:wrap;margin:10px 0 4px'>"+
+        "<div><div style='font-family:var(--ser);font-size:28px;font-weight:600;color:var(--pw-bosque);line-height:1'>"+_m(t.neto)+"</div><div style='font-size:11px;color:var(--pw-text-soft)'>a tu favor · "+t.n+" pago"+(t.n===1?'':'s')+"</div></div>"+
+        "<div><div style='font-family:var(--ser);font-size:28px;font-weight:600;color:var(--pw-carbon);line-height:1'>"+_m(t.bruto)+"</div><div style='font-size:11px;color:var(--pw-text-soft)'>bruto</div></div>"+
+        "<div><div style='font-family:var(--ser);font-size:28px;font-weight:600;color:var(--pw-text-muted);line-height:1'>"+_m(t.comision)+"</div><div style='font-size:11px;color:var(--pw-text-soft)'>comisión Pathway</div></div>"+
+      "</div>"+rows+"</div>";
+  }
+  v.innerHTML="<header class='cp-topbar'><div><h1 class='cp-h1'>Cobros<span class='dot'>.</span></h1><div class='cp-sub'>Los pagos de los clientes de tu red — a tu cuenta, con 2% de comisión.</div></div></header>"+cuenta+link+ingresos;
 }
 function renderComunidad(){
  var v=document.getElementById('vscroll');
