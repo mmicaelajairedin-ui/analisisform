@@ -510,6 +510,20 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-client-next{font-size:12px;font-weight:500;color:var(--pw-bosque);display:flex;align-items:center;gap:5px;margin-top:-2px;}
 .cp-client-next svg{width:13px;height:13px;flex-shrink:0;}
 .cp-client-next.none{color:var(--pw-text-muted);font-weight:400;}
+/* Tarjeta de cliente — versión limpia (mockup): pills de origen/estado, barra de
+   progreso segmentada y dos acciones. Menos ruido: sin pills de CV/Informe. */
+.cp-cli-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.cp-cli-tag{font-size:10px;font-weight:700;padding:2px 9px;border-radius:99px;letter-spacing:.2px;white-space:nowrap;}
+.cp-cli-tag.pw{color:#8E7A35;background:rgba(233,196,106,.18);}
+.cp-cli-tag.own{color:var(--pw-text-soft);background:var(--pw-niebla-2);}
+.cp-cli-tag.on{color:var(--pw-bosque);background:var(--pw-success-bg);}
+.cp-cli-tag.off{color:var(--pw-text-muted);background:var(--pw-niebla-2);}
+.cp-cli-prog{display:flex;gap:3px;margin-top:1px;}
+.cp-cli-prog span{flex:1;height:5px;border-radius:99px;background:var(--pw-niebla-2);}
+.cp-cli-prog span.on{background:var(--pw-bosque);}
+.cp-cli-acts{display:flex;gap:8px;margin-top:2px;}
+.cp-cli-acts .cp-btn{flex:1;height:32px;font-size:12px;justify-content:center;}
+.cp-grp-badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:var(--pw-niebla-2);color:var(--pw-text-soft);font-size:11px;font-weight:700;margin-left:8px;}
 /* Riesgo enriquecido: chip de engagement + próximo paso para subir de nivel */
 .cp-eng{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:99px;padding:4px 10px;white-space:nowrap;flex-shrink:0;}
 .cp-eng svg{width:13px;height:13px;}
@@ -6057,38 +6071,29 @@ function viewClientes(){
     // Medalla INTEGRADA en la esquina de la foto (badge), no suelta al costado.
     var medalBadge = c.medal ? "<span class='cp-cardav-m'><img src='assets/iconos/medalla-"+esc(c.medal)+"-sm.webp' alt='Medalla "+esc(c.medal)+"'></span>" : "";
     var role = esc(c.role);
-    var dots = [1,2,3,4].map(function(w){
-      var cls = w<c.week?"is-done":(w===c.week?"is-current":"");
-      return "<span class='cp-week-dot "+cls+"'></span>";
-    }).join("");
-    var cvCls = c.cvState==="published"?"is-published":(c.cvState==="pending"?"is-pending":"");
-    var cvTxt = c.cvState==="published"?"publicado":(c.cvState==="pending"?"a revisar":"borrador");
-    var rpCls = c.reportState==="published"?"is-published":"is-pending";
-    var rpTxt = c.reportState==="published"?"publicado":"pendiente";
     var _inact = (c.last&&c.last.state==="stale") || (c.raw&&c.raw.activo===false);
-    var askR = (_inact && c.email) ? "<button class='cp-btn cp-btn-ghost' style='height:26px;padding:0 10px;font-size:11px' data-act='cvx-resena' data-em='"+esc(c.email)+"' data-n='"+esc(c.name||"")+"'>Pedir reseña</button>" : "";
-    var _msgBtn = "<button class='cp-btn cp-btn-ghost' style='height:26px;padding:0 10px;font-size:11px' data-act='cli-msg:"+c.id+"' title='Escribir a "+esc((c.name||"").split(" ")[0]||"cliente")+"'>"+svg(IC.chat,12)+" Mensaje</button>";
-    // Próxima sesión: la más cercana a futuro entre las sesiones del cliente.
-    var _prox=null; (c.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var _t=Date.parse((s.fecha||"")+"T"+(/^\d{2}:\d{2}/.test(s.hora||"")?s.hora:"12:00")); if(isNaN(_t)||_t<Date.now())return; if(!_prox||_t<_prox.t)_prox={t:_t,s:s}; });
-    var _proxHtml;
-    if(_prox){
-      var _pd=new Date(_prox.t), _td=new Date(); _td.setHours(0,0,0,0); var _pdd=new Date(_prox.t); _pdd.setHours(0,0,0,0);
-      var _diff=Math.round((_pdd-_td)/86400000);
-      var _pre=_diff===0?"Hoy":(_diff===1?"Mañana":_pd.toLocaleDateString("es-ES",{day:"2-digit",month:"short"}));
-      _proxHtml="<div class='cp-client-next'>"+PWI.svg('calendar',{size:13})+"Próxima sesión · "+esc(_pre+(_prox.s.hora?" "+_prox.s.hora:""))+"</div>";
-    } else {
-      _proxHtml="<div class='cp-client-next none'>"+PWI.svg('calendar',{size:13})+"Sin próxima sesión agendada</div>";
-    }
+    // Pills de origen + estado (lo que define visualmente la tarjeta en el mockup).
+    var source = c.source==="pathway"
+      ? "<span class='cp-cli-tag pw'>Cliente de Pathway</span>"
+      : "<span class='cp-cli-tag own'>Cliente propio</span>";
+    var estado = _inact
+      ? "<span class='cp-cli-tag off'>Inactivo</span>"
+      : "<span class='cp-cli-tag on'>Activo</span>";
+    var exTag = c._example ? "<span class='cp-cli-tag' style='color:var(--pw-bosque);background:var(--pw-success-bg)'>Ejemplo</span>" : "";
+    var fpTag = _formPendiente(c) ? "<span class='cp-cli-tag' style='color:#8E7A35;background:rgba(233,196,106,.18)'>Form pendiente</span>" : "";
+    // Barra de progreso segmentada (4 semanas del programa).
+    var bar=[1,2,3,4].map(function(w){ return "<span class='"+(w<=c.week?"on":"")+"'></span>"; }).join("");
+    var verBtn="<button class='cp-btn cp-btn-ghost' data-act='cli-open:"+c.id+"'>"+svg(IC.eye,13)+" Ver detalles</button>";
+    var msgBtn="<button class='cp-btn cp-btn-ghost' data-act='cli-msg:"+c.id+"' title='Escribir a "+esc((c.name||"").split(" ")[0]||"cliente")+"'>"+svg(IC.chat,13)+" Mensaje</button>";
     return "<article class='cp-client' data-act='cli-open:"+c.id+"' data-sort='"+esc(c.id)+"' data-s='"+esc(((c.name||"")+" "+(c.email||"")+" "+(c.role||"")).toLowerCase())+"' style='position:relative'>"+
-      "<span class='pw-grip' title='Arrastra para ordenar' onclick='event.stopPropagation()' style='position:absolute;top:9px;right:9px;opacity:.45;z-index:2'>"+_gripSvg()+"</span>"+
+      "<span class='pw-grip' title='Arrastra para ordenar' onclick='event.stopPropagation()' style='position:absolute;top:9px;right:9px;opacity:.4;z-index:2'>"+_gripSvg()+"</span>"+
       "<header class='cp-client-head'><span class='cp-cardav'>"+avImg(c.photo,c.name,"class='cp-client-photo'")+medalBadge+"</span>"+
-        "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+(c._example?" <span style='font-size:10px;font-weight:700;color:var(--pw-bosque);background:var(--pw-success-bg);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.5px'>EJEMPLO</span>":"")+(_formPendiente(c)?" <span style='font-size:9.5px;font-weight:600;color:#8E7A35;background:rgba(233,196,106,.18);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.3px'>Form pendiente</span>":"")+"</div><div class='cp-client-role'>"+role+"</div></div></header>"+
+        "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+"</div>"+
+          "<div class='cp-cli-tags' style='margin-top:5px'>"+source+estado+exTag+fpTag+"</div></div></header>"+
+      (role?"<div class='cp-client-role'>"+role+"</div>":"")+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
-      _proxHtml+
-      "<div class='cp-week'><span class='cp-week-label'>Sem "+c.week+"/4</span><span class='cp-week-dots'>"+dots+"</span></div>"+
-      "<footer class='cp-client-foot'><span class='cp-client-pill "+cvCls+"'>CV "+cvTxt+"</span>"+
-        "<span class='cp-client-pill "+rpCls+"'>Informe "+rpTxt+"</span>"+
-        "<span style='margin-left:auto;display:flex;gap:6px;align-items:center'>"+_msgBtn+askR+"</span></footer></article>";
+      "<div style='display:flex;align-items:center;gap:10px'><span style='font-size:11px;font-weight:600;color:var(--pw-text-muted);white-space:nowrap'>Sem "+c.week+"/4</span><div class='cp-cli-prog' style='flex:1'>"+bar+"</div></div>"+
+      "<footer class='cp-cli-acts'>"+verBtn+msgBtn+"</footer></article>";
   };
   var pwList  = list.filter(function(c){return c.source==="pathway";});
   var ownList = list.filter(function(c){return c.source!=="pathway";});
@@ -6126,8 +6131,11 @@ function viewClientes(){
   if(_nx){ var _nd=new Date(_nx.t),_t0=new Date();_t0.setHours(0,0,0,0);var _dd=new Date(_nd);_dd.setHours(0,0,0,0);var _df=Math.round((_dd-_t0)/86400000); var _day=_df===0?"Hoy":(_df===1?"Mañana":_nd.toLocaleDateString("es-ES",{day:"2-digit",month:"short"})); _alerts.push(_alrt("go","calendar","Próxima sesión",_day+(_nx.s.hora?" · "+esc(_nx.s.hora):"")+" · "+esc((_nx.c.name||"").split(/\s+/)[0]),null)); }
   // Atención: solo si hay algo que atender. Sin alertas = no mostramos la card
   // (antes salía "Todo al día ✓", que ocupaba lugar sin acción).
+  // Botón "Sumar cliente" debajo de Atención: aprovecha el espacio del rail (antes
+  // quedaba vacío bajo esa tarjeta) y deja el alta de cliente siempre a mano.
+  var _addCliCta="<button class='cp-btn cp-btn-primary' style='width:100%;justify-content:center;height:40px' data-act='cli-new'>"+svg(IC.plus,15)+" Sumar cliente</button>";
   var atencion=_alerts.length
-    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Atención<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+_alerts.length+"</span></div><div style='padding-bottom:6px'>"+_alerts.join("")+"</div></div>"
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Atención<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+_alerts.length+"</span></div><div style='padding-bottom:6px'>"+_alerts.join("")+"</div></div>"+_addCliCta
     : "";
   // ── Cobros de Pathway (la plata que entra de tus clientes de comisión) ──
   var _pwAcc=_sol.filter(function(s){return s.estado==="aceptada";});
@@ -6159,10 +6167,12 @@ function viewClientes(){
     "</select></div></div>";
   // Caja grande de un grupo de clientes (copia el estilo Fortalezas/Áreas del
   // informe: cuadrado con ícono + título + subtítulo, y adentro la grilla).
-  function _grpBox(mod,tint,title,sub,gridId,cardsHtml,emptyTxt){
+  function _grpBox(mod,tint,title,sub,gridId,cardsHtml,emptyTxt,count){
+    var _gic = mod==="is-pw" ? 'star' : 'users';
+    var _badge = (count!=null) ? "<span class='cp-grp-badge'>"+count+"</span>" : "";
     return "<div class='cp-card cp-cli-grp "+mod+"'><div class='cp-card-pad'>"+
-      "<div class='cp-grp-hd'><span class='cp-grp-ic' style='background:"+tint+"'>"+PWI.svg('users',{sm:true})+"</span>"+
-      "<div style='flex:1;min-width:0'><div class='cp-grp-t'>"+title+"</div><div class='cp-grp-s'>"+sub+"</div></div></div>"+
+      "<div class='cp-grp-hd'><span class='cp-grp-ic' style='background:"+tint+"'>"+PWI.svg(_gic,{sm:true})+"</span>"+
+      "<div style='flex:1;min-width:0'><div class='cp-grp-t'>"+title+_badge+"</div><div class='cp-grp-s'>"+sub+"</div></div></div>"+
       "<section class='cp-clients-grid' id='"+gridId+"'>"+cardsHtml+"</section>"+
       (cardsHtml?"":"<div class='cp-grp-empty'>"+emptyTxt+"</div>")+
     "</div></div>";
@@ -6222,14 +6232,14 @@ function viewClientes(){
       filtersBar +
       (pwList.length
         ? _grpBox("is-pw","var(--pw-niebla-3)","Clientes de Pathway",
-            pwList.length+" activo"+(pwList.length===1?"":"s")+" · comisión "+_rate+"%",
+            "Captados por Pathway. Se aplica la comisión según tu plan ("+_rate+"%).",
             "cp-clients-grid-pw", pwList.map(_cliCard).join(""),
-            "Todavía no cerraste ningún cliente de Pathway.")
+            "Todavía no cerraste ningún cliente de Pathway.", pwList.length)
         : "")+
       _grpBox("is-own","var(--pw-niebla-3)","Clientes propios",
-        ownList.length+" activo"+(ownList.length===1?"":"s")+" · 0% comisión",
+        "Clientes que añadiste tú. Sin comisión.",
         "cp-clients-grid", ownList.map(_cliCard).join(""),
-        "Todavía no sumaste clientes propios.")+
+        "Todavía no sumaste clientes propios.", ownList.length)+
       "<div id='cp-cli-empty' style='display:none;padding:18px;color:var(--pw-text-soft);font-size:13px'>Sin resultados para tu búsqueda.</div>"+
     "</section>";
 }
