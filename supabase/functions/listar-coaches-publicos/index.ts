@@ -148,6 +148,31 @@ Deno.serve(async (req: Request) => {
       }
     } catch (_e) { /* opcional */ }
 
+    // Reseñas de la tabla `reviews` (fuente ACTUAL: marketplace + puente
+    // reseña→público del portal). Solo publica=true (3-5★), consistente con
+    // obtener-perfil-coach y con los testimonios. Se indexa por coach_slug.
+    try {
+      const slugToId: Record<string, string> = {};
+      for (const c of coaches) { if (c.slug) slugToId[String(c.slug).toLowerCase()] = c.id; }
+      const slugs = Object.keys(slugToId);
+      if (slugs.length) {
+        const inList = slugs.map((s) => `"${s}"`).join(",");
+        const r = await fetch(
+          `${SB_URL}/rest/v1/reviews?coach_slug=in.(${inList})&publica=eq.true&select=coach_slug,rating`,
+          { headers },
+        );
+        if (r.ok) {
+          const rvs: Array<{ coach_slug: string | null; rating: unknown }> = await r.json();
+          for (const rv of rvs) {
+            const id = rv.coach_slug ? slugToId[String(rv.coach_slug).toLowerCase()] : null;
+            if (!id || !statsByCoach[id]) continue;
+            const n = parseInt(String(rv.rating), 10);
+            if (n >= 1 && n <= 5) { statsByCoach[id].reviews++; statsByCoach[id].sum += n; }
+          }
+        }
+      }
+    } catch (_e) { /* opcional */ }
+
     // Solicitudes de los últimos 14 días — para el factor de rotación
     // (coaches con muchas solicitudes recientes bajan, para dar chance
     // a los que no recibieron leads).
