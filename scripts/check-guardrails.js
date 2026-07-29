@@ -4351,10 +4351,10 @@ const RULES = [
       const fn = read("supabase/functions/agenda-red-cliente/index.ts");
       if (fn === null) return "falta la edge function agenda-red-cliente (clases de la red para el cliente).";
       if (!/grupal=is\.true/.test(fn)) return "agenda-red-cliente: ya NO filtra a solo eventos grupales (expondría 1:1 privados ajenos).";
-      const fit = read("pathway-fit-cliente.html");
-      if (fit) {
-        if (!/function _loadClasesRed\(/.test(fit)) return "pathway-fit-cliente.html: falta _loadClasesRed (clases de la red en el portal).";
-        if (!/agenda-red-cliente/.test(fit)) return "pathway-fit-cliente.html: el portal ya no pide las clases de la red.";
+      // Los 3 portales del cliente muestran las clases de la red.
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html"]) {
+        const p = read(f);
+        if (p && (!/function _loadClasesRed\(/.test(p) || !/agenda-red-cliente/.test(p))) return f + ": ya no muestra las clases de la red (agenda-red-cliente).";
       }
       return null;
     },

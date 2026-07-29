@@ -463,6 +463,7 @@ function pwSetLang(l){ if((l!=='es'&&l!=='en')||l===LANG) return; LANG=l; try{ l
         <div class="dash">
           <div class="dash-main">
             <div id="prep-slot"></div>
+            <div id="clasesred-slot"></div>
             <div class="card"><div class="card-body">
               <div class="proceso-hd"><span class="eyebrow" data-i18n="evEyebrow"><i data-ic="trendUp" data-sm></i> Tu evolución · ahorro</span><span class="proceso-badge" id="ahorro-delta">+€150 en 3 meses</span></div>
               <div id="chartAhorro" style="margin-top:8px;"></div>
@@ -1786,6 +1787,31 @@ function _coachFotoUrl(){
 }
 // El cliente todavía tiene algo por hacer (formulario o foto).
 function _prepPendiente(){ return _intakePendiente() || !(CRAW&&CRAW.foto_perfil); }
+// Clases de la RED (multicoach): el cliente ve las clases/eventos GRUPALES de su
+// red para elegir a cuáles anotarse (agenda-red-cliente, solo grupales → nunca
+// los 1:1 privados de otros).
+function _claseFecha(d){ try{ var M=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; var hh=('0'+d.getHours()).slice(-2),mm=('0'+d.getMinutes()).slice(-2); return d.getDate()+' '+M[d.getMonth()]+' · '+hh+':'+mm; }catch(e){ return ''; } }
+function _clasesRedHtml(cl){
+  var rows=cl.slice(0,6).map(function(c){
+    var d=new Date(c.inicio); if(isNaN(d.getTime())) return '';
+    var pres=(c.modalidad==='presencial');
+    var link=pres?'':(location.origin+'/sala.html?room='+encodeURIComponent('Pathway-'+c.coach_id+'-'+d.getTime())+'&mod=0&name='+encodeURIComponent((CRAW&&CRAW.nombre)||'')+'&email='+encodeURIComponent(EMAIL||'')+'&con='+encodeURIComponent(c.coach_nombre||'')+'&grupal=1&start='+d.getTime()+'&dur=60');
+    var cta=pres
+      ? '<span style="font-size:11.5px;color:var(--muted);white-space:nowrap">📍 '+esc(c.lugar||'Presencial')+'</span>'
+      : '<a href="'+link+'" target="_blank" rel="noopener" style="font-size:12px;font-weight:700;color:var(--brand,#2D6A4F);text-decoration:none;white-space:nowrap">Unirme →</a>';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line,#EEE)"><div style="min-width:0"><div style="font-size:13px;font-weight:600;color:var(--ink,#22303A)">'+esc(c.tipo||'Clase')+'</div><div style="font-size:11.5px;color:var(--muted)">'+esc(_claseFecha(d))+(c.coach_nombre?(' · '+esc(c.coach_nombre)):'')+'</div></div>'+cta+'</div>';
+  }).join('');
+  return '<div class="card"><div class="card-body"><span class="eyebrow">📅 Clases de la red</span><div style="font-size:11.5px;color:var(--muted);margin:2px 0 4px">Próximas clases y eventos de tu red. Tocá para unirte.</div>'+rows+'</div></div>';
+}
+function _loadClasesRed(){
+  var slot=document.getElementById('clasesred-slot'); if(!slot) return;
+  var em=(EMAIL||(CRAW&&CRAW.email)||'').toLowerCase(); if(!em) return;
+  fetch(SB+'/functions/v1/agenda-red-cliente',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({email:em})})
+    .then(function(r){ return r.ok?r.json():null; }).then(function(d){
+      if(!d||!d.ok||!d.clases||!d.clases.length){ slot.innerHTML=''; return; }
+      slot.innerHTML=_clasesRedHtml(d.clases);
+    }).catch(function(){ slot.innerHTML=''; });
+}
 function renderPrepCard(){
   var slot=document.getElementById('prep-slot'); if(!slot) return;
   // Se muestra IDÉNTICO para el cliente y para la coach ("Ver como cliente"), así
@@ -2110,7 +2136,7 @@ function pwInit(){
       if(!CRAW.coach_id){ for(var _i=0;_i<rows.length;_i++){ if(rows[_i].coach_id){ CRAW.coach_id=rows[_i].coach_id; break; } } }
       // Restaurar el bonus del juego desde Supabase (game_pts) → la medalla no baja entre dispositivos.
       try{ var _gk='pw_game_pts_'+(EMAIL||(CRAW&&CRAW.email)||CRAW.id||'x'), _srv=parseInt(CRAW.game_pts||0,10)||0; if(_srv>0 && _srv>(parseInt(localStorage.getItem(_gk)||'0',10)||0)) localStorage.setItem(_gk,String(_srv)); }catch(e){}
-      CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);if(CRAW.org_id)applyOrgBrandFin(CRAW.org_id);pwMaybeConsent();pwSubGate(CRAW);_limpiarDemo();renderPrepCard();try{_pwCallSetup();}catch(e){}
+      CID=CRAW.id;applyClientFin(CRAW);if(CRAW.coach_id)applyBrandFin(CRAW.coach_id);if(CRAW.org_id)applyOrgBrandFin(CRAW.org_id);pwMaybeConsent();pwSubGate(CRAW);_limpiarDemo();renderPrepCard();try{_pwCallSetup();}catch(e){}try{if(CRAW.org_id)_loadClasesRed();}catch(e){}
     }
     else { _clienteSinFicha(); } // Cliente REAL cuyo alta no dejó ficha → estado limpio + cartel, nunca el demo.
   }).catch(function(){ if(!_esDemo()) _clienteSinFicha(); });

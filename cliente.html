@@ -3339,7 +3339,7 @@ function _safeRender(fn, label){
 function _renderMain(sec){
   var el=document.getElementById('mc');
   // Secciones que siempre se refrescan (datos cambian con frecuencia)
-  if(sec==='semana'){el.innerHTML=_mc(_safeRender(rSemana,'semana'));return;}
+  if(sec==='semana'){el.innerHTML=_mc(_safeRender(rSemana,'semana'));try{if(C&&C.org_id)_loadClasesRed();}catch(e){}return;}
   if(sec==='analisis'){
     // OS Core: el cliente ABRIÓ su informe → es el "visto" del informe (señal de
     // que lo leyó, no solo que se generó). 1× por sesión, solo si hay informe.
@@ -3988,11 +3988,35 @@ function _prepCardCarrera(){
     '<div style="font-size:13px;color:#5A6A60;line-height:1.55;">'+sub+'</div>'+chips+'</div>'+
   '</div>';
 }
+// Clases de la RED (multicoach): el cliente ve las clases/eventos GRUPALES de su
+// red (agenda-red-cliente, solo grupales → nunca los 1:1 privados de otros).
+function _claseFecha(d){ try{ var M=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; var h=('0'+d.getHours()).slice(-2),m=('0'+d.getMinutes()).slice(-2); return d.getDate()+' '+M[d.getMonth()]+' · '+h+':'+m; }catch(e){ return ''; } }
+function _clasesRedHtml(cl){
+  var rows=cl.slice(0,6).map(function(c){
+    var d=new Date(c.inicio); if(isNaN(d.getTime())) return '';
+    var pres=(c.modalidad==='presencial');
+    var link=pres?'':(BASE+'/sala.html?room='+encodeURIComponent('Pathway-'+c.coach_id+'-'+d.getTime())+'&mod=0&name='+encodeURIComponent((C&&C.nombre)||'')+'&email='+encodeURIComponent(E||'')+'&con='+encodeURIComponent(c.coach_nombre||'')+'&grupal=1&start='+d.getTime()+'&dur=60');
+    var cta=pres
+      ? '<span style="font-size:11.5px;color:var(--muted);white-space:nowrap">📍 '+hh(c.lugar||'Presencial')+'</span>'
+      : '<a href="'+link+'" target="_blank" rel="noopener" style="font-size:12px;font-weight:700;color:var(--brand,#2D6A4F);text-decoration:none;white-space:nowrap">Unirme →</a>';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line,#EEE)"><div style="min-width:0"><div style="font-size:13px;font-weight:600;">'+hh(c.tipo||'Clase')+'</div><div style="font-size:11.5px;color:var(--muted)">'+hh(_claseFecha(d))+(c.coach_nombre?(' · '+hh(c.coach_nombre)):'')+'</div></div>'+cta+'</div>';
+  }).join('');
+  return '<div class="card"><div class="card-body"><span class="eyebrow">📅 Clases de la red</span><div style="font-size:11.5px;color:var(--muted);margin:2px 0 4px">Próximas clases y eventos de tu red. Tocá para unirte.</div>'+rows+'</div></div>';
+}
+function _loadClasesRed(){
+  var slot=document.getElementById('clasesred-slot'); if(!slot) return;
+  var em=(E||(C&&C.email)||'').toLowerCase(); if(!em) return;
+  fetch(SB+'/functions/v1/agenda-red-cliente',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({email:em})})
+    .then(function(r){ return r.ok?r.json():null; }).then(function(d){
+      if(!d||!d.ok||!d.clases||!d.clases.length){ slot.innerHTML=''; return; }
+      slot.innerHTML=_clasesRedHtml(d.clases);
+    }).catch(function(){ slot.innerHTML=''; });
+}
 function rSemana(){
   if(SEM>5)return '<div class="card"><div class="card-body" style="text-align:center;padding:3rem;"><div style="font-size:40px;margin-bottom:12px;">'+PWI.svg('party',{sm:true})+'</div><div style="font-size:22px;font-weight:600;letter-spacing:-0.02em;">'+t('completed')+'</div></div></div>';
   var sem=SEMS[Math.min(SEM,5)-1]||SEMS[0];
 
-  var o=_prepCardCarrera()+rRoadmap();
+  var o=_prepCardCarrera()+'<div id="clasesred-slot"></div>'+rRoadmap();
   o+='<div id="semana-view-panel"></div>';
   o+='<div id="semana-main-content" class="two-col"><div class="left-col">';
 
