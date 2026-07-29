@@ -6247,6 +6247,12 @@ function cfgProfile(){
   var _prac = REAL ? ((RCFG&&RCFG.nombre_practica)||(RME&&RME.nombre_practica)||"") : "";
   var bio  = REAL ? (RPROF.bio||"") : "Ayudo a profesionales a encontrar el siguiente paso de su carrera.";
   var titEn = v('titulo_profesional_en',''); var bioEn = v('bio_en','');
+  // Campos que llena "Generar con IA" (y el coach puede editar): frase corta,
+  // enfoque (bullets) y especialidades (chips). Se cargan de RPROF para no pisarlos.
+  var tag = REAL ? (RPROF.tagline||"") : "Ayudo a profesionales a encontrar el siguiente paso de su carrera con un método claro.";
+  var enf = REAL ? (RPROF.mi_enfoque||"") : "";
+  var espArr = REAL ? (RPROF.especialidades||[]) : ["CV & LinkedIn","Entrevistas","Cambio de sector"];
+  var espStr = (Array.isArray(espArr)?espArr:[]).join(", ");
   if(state.pubActive===null) state.pubActive = REAL ? !!(RPROF.perfil_publico_activo || (RCFG&&RCFG.perfil_publico_activo)) : true;
   var pubActive = state.pubActive;
   var cu=v("calendly_url",""), ce=v("calendar_embed_url",""), gi=v("gcal_ical_url","");
@@ -6295,10 +6301,25 @@ function cfgProfile(){
       "<div class='cp-form-row'><label class='cp-form-label'>Nombre del negocio / marca <span style='font-weight:500;color:var(--pw-text-muted)'>— opcional</span></label><input id='cfp-practica' class='cp-form-input' value=\""+esc(_prac)+"\" placeholder='Ej. Axon (si operás como empresa)'><span class='cp-form-hint'>Aparece como tu marca en el portal del cliente, debajo del nombre. Vacío = usa solo tu nombre.</span></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>URL de tu perfil (slug)</label><input id='cfp-slug' class='cp-form-input' value=\""+esc(slug)+"\" placeholder='tu-nombre'>"+
         "<span class='cp-form-hint'>Tu link público: <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code> · solo minúsculas, números y guiones</span></div>"+
+      "<div style='background:linear-gradient(135deg,#F3EEDF,#EFE9DD);border:1px solid #E6DDC4;border-radius:14px;padding:16px'>"+
+        "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'><span style='font-size:18px'>✨</span><b style='font-size:14px;color:var(--pw-carbon)'>Generá tu perfil con IA</b></div>"+
+        "<div style='font-size:12.5px;color:var(--pw-text-soft);line-height:1.5;margin-bottom:10px'>Contanos en 1-2 líneas a quién ayudás y con qué resultados. La IA te escribe la <strong>frase corta</strong>, tu <strong>«Sobre mí»</strong>, tu <strong>enfoque</strong> y sugiere tus <strong>especialidades</strong>. Después lo revisás y editás abajo antes de guardar.</div>"+
+        "<textarea id='cfp-ia-ayuda' class='cp-form-textarea' style='min-height:70px' placeholder='Ej: Ayudo a personas a bajar de peso y ganar músculo con entrenamiento personalizado y seguimiento nutricional. Resultados típicos: -8 kg en 3 meses.'></textarea>"+
+        "<div id='cfp-ia-msg' style='font-size:12px;margin-top:6px;min-height:14px;color:var(--pw-text-soft)'></div>"+
+        "<div style='display:flex;justify-content:flex-end;margin-top:6px'><button class='cp-btn cp-btn-primary' data-act='cfg-ia-gen' style='height:36px'>✨ Generar con IA</button></div>"+
+      "</div>"+
       ib("bio","Completa tu título y bio")+"<div class='cp-form-row'><label class='cp-form-label'>Título profesional</label><input id='cfp-titulo' class='cp-form-input' value=\""+esc(tit)+"\"></div>"+
-      "<div class='cp-form-row'><label class='cp-form-label'>Biografía corta</label>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Frase corta <span style='font-weight:500;color:var(--pw-text-muted)'>— abre tu perfil</span></label>"+
+        "<textarea id='cfp-tagline' class='cp-form-textarea' style='min-height:54px'>"+esc(tag)+"</textarea>"+
+        "<span class='cp-form-hint'>La frase del hero (\"Ayudo a…\").</span></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Biografía corta / Sobre mí</label>"+
         "<textarea id='cfp-bio' class='cp-form-textarea'>"+esc(bio)+"</textarea>"+
         "<span class='cp-form-hint'>Aparece en tu página pública.</span></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Especialidades <span style='font-weight:500;color:var(--pw-text-muted)'>— separadas por coma</span></label>"+
+        "<input id='cfp-especialidades' class='cp-form-input' value=\""+esc(espStr)+"\" placeholder='Ej: Pérdida de grasa, Hipertrofia, Nutrición'>"+
+        "<span class='cp-form-hint'>Aparecen como chips en tu perfil.</span></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Enfoque <span style='font-weight:500;color:var(--pw-text-muted)'>— un punto por línea</span></label>"+
+        "<textarea id='cfp-enfoque' class='cp-form-textarea' style='min-height:68px' placeholder='Basado en evidencia&#10;Seguimiento continuo&#10;Resultados reales y sostenibles'>"+esc(enf)+"</textarea></div>"+
       // (Versión en inglés eliminada: la página ya traduce sola, no hace falta
       // cargar Título + Bio dos veces.)
       "<div class='cp-form-row'><label class='cp-form-label'>País donde ejercés</label>"+
@@ -10255,22 +10276,45 @@ document.addEventListener("click", function(ev){
     saveCfg(_cfgPatch, _extra);
     return;
   }
+  if(act==="cfg-ia-gen"){
+    var _iaMsg=document.getElementById("cfp-ia-msg"), _iaBtn=el;
+    var _ayuda=_val("cfp-ia-ayuda").trim(), _profe=_val("cfp-titulo").trim(), _paisA=_val("cfp-pais").trim();
+    if(!_ayuda && !_profe){ if(_iaMsg){ _iaMsg.style.color="var(--pw-danger)"; _iaMsg.textContent="Escribí al menos tu profesión (Título) o a quién ayudás."; } return; }
+    if(_iaBtn) _iaBtn.disabled=true;
+    if(_iaMsg){ _iaMsg.style.color="var(--pw-text-soft)"; _iaMsg.textContent="✨ Generando tu perfil… (unos segundos)"; }
+    fetch(SB+"/functions/v1/generar-perfil-coach",{method:"POST",headers:{"Content-Type":"application/json",apikey:KEY,Authorization:"Bearer "+KEY},body:JSON.stringify({ nombre:_val("cfp-nombre").trim(), profesion:_profe, ayuda:_ayuda, pais:_paisA, especialidades:_val("cfp-especialidades").split(",").map(function(x){return x.trim();}).filter(Boolean) })})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+      .then(function(res){
+        if(_iaBtn) _iaBtn.disabled=false;
+        var j=res.j||{};
+        if(!res.ok){ if(_iaMsg){ _iaMsg.style.color="var(--pw-danger)"; _iaMsg.textContent=(j.detail||j.error||"No se pudo generar. Reintentá."); } return; }
+        var setV=function(id,val){ var e=document.getElementById(id); if(e && val!=null && (""+val).trim()) e.value=val; };
+        setV("cfp-tagline", j.tagline); setV("cfp-bio", j.bio);
+        if(Array.isArray(j.enfoque)&&j.enfoque.length) setV("cfp-enfoque", j.enfoque.join("\n"));
+        if(Array.isArray(j.especialidades)&&j.especialidades.length) setV("cfp-especialidades", j.especialidades.join(", "));
+        if(_iaMsg){ _iaMsg.style.color="var(--pw-bosque)"; _iaMsg.textContent="✓ Listo — revisá y editá abajo, después «Guardar cambios»."; }
+      })
+      .catch(function(){ if(_iaBtn) _iaBtn.disabled=false; if(_iaMsg){ _iaMsg.style.color="var(--pw-danger)"; _iaMsg.textContent="Sin conexión con la IA. Reintentá."; } });
+    return;
+  }
   if(act==="cfg-save-profile"){
     var sl=_val("cfp-slug").trim().toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"");
     if(sl && !/^[a-z0-9][a-z0-9-]{0,80}$/.test(sl)){ alert("El slug solo puede tener minúsculas, números y guiones (y no empezar con guion)."); return; }
     var pubA = !!state.pubActive;
     if(pubA && !sl){ alert("Para activar tu perfil público necesitas un slug. Escríbelo en «URL de tu perfil»."); var si=document.getElementById("cfp-slug"); if(si)si.focus(); return; }
     var nom=_val("cfp-nombre").trim(), titP=_val("cfp-titulo").trim(), bioP=_val("cfp-bio").trim();
+    var tagP=_val("cfp-tagline").trim(), enfP=_val("cfp-enfoque").trim();
+    var espP=_val("cfp-especialidades").split(",").map(function(x){return x.trim();}).filter(Boolean).slice(0,10);
     var cfgPatch={ gcal_ical_url:_val("cfp-cal-ical").trim(), pais:_val("cfp-pais").trim().toUpperCase(), nombre_practica:_val("cfp-practica").trim() };
     _AG_DATA=null; // al guardar la config, forzar recarga de la agenda con el iCal nuevo
     if(window._cfpFoto){ cfgPatch.foto_url=window._cfpFoto; COACH.photo=window._cfpFoto; }
     var doSave=function(){
-      RPROF={ slug:sl, titulo_profesional:titP, bio:bioP, perfil_publico_activo:pubA };
+      RPROF={ slug:sl, titulo_profesional:titP, bio:bioP, tagline:tagP, mi_enfoque:enfP, especialidades:espP, perfil_publico_activo:pubA };
       COACH.slug=sl;
       // Tras guardar el perfil, volver al "juego" (Resumen) para que el coach vea
       // a la cabra avanzar al próximo paso del sendero (y, si completó el hito,
       // el confeti + la medalla bronce que dispara _pathProgressCheck).
-      saveCfg(cfgPatch, { nombre:nom, slug:sl||null, titulo_profesional:titP||null, bio:bioP||null, perfil_publico_activo:pubA }, function(){ if(state.fromGame){ state.fromGame=false; state.section="resumen"; window.scrollTo(0,0); } });
+      saveCfg(cfgPatch, { nombre:nom, slug:sl||null, titulo_profesional:titP||null, bio:bioP||null, tagline:tagP||null, mi_enfoque:enfP||null, especialidades:espP, perfil_publico_activo:pubA }, function(){ if(state.fromGame){ state.fromGame=false; state.section="resumen"; window.scrollTo(0,0); } });
       // Event Bus (best-effort): el coach guardó su perfil con contenido real → señal de activación.
       try{ if(window.pwEmit && nom && (bioP||titP)) pwEmit("ProfileCompleted",{dominio:"Activation",entidad_tipo:"coach",entidad_id:(RME&&RME.id)||null,payload:{tiene_foto:!!(cfgPatch.foto_url||(COACH&&COACH.photo))}}); }catch(_e){}
       window._cfpFoto=null;
@@ -13578,7 +13622,7 @@ function demoGenerateExample(){
     }
   },620);
 }
-var REAL=false, RCFG={}, RCFG_READY=false, RPROF={slug:"",titulo_profesional:"",bio:"",perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[], RORGS=null;
+var REAL=false, RCFG={}, RCFG_READY=false, RPROF={slug:"",titulo_profesional:"",bio:"",tagline:"",mi_enfoque:"",especialidades:[],perfil_publico_activo:false}, RME=null, RCOACHES=null, RCONTACTS=null, RADMIN=false, RADM=null, RSOL=[], RMSG=[], RCITAS=[], RORGS=null;
 // RED (multicoach): si el coach pertenece a una org, RRED guarda el nombre de la
 // red / dueño y RREDMSG el hilo de chat con el dueño (via edge function mensaje-red).
 // RCANALMSG es el CANAL DE EQUIPO (grupo dueño+coaches, via canal-red).
@@ -14034,7 +14078,7 @@ function loadReal(){
     // completo de toda la plataforma -> arranque lento.
     _sb("cv_publicados?select=email,contenido,coach_id"+(RADMIN?"&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)":"&coach_id=eq."+encodeURIComponent(ME.id))),
     _sb("informes?select=email,id,data,coach_id"+(RADMIN?"&or=(coach_id.eq."+encodeURIComponent(ME.id)+",coach_id.is.null)":"&coach_id=eq."+encodeURIComponent(ME.id))+"&order=created_at.desc"),
-    _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion,slug,titulo_profesional,bio,perfil_publico_activo,org_id"),
+    _sb("usuarios?email=eq."+encodeURIComponent((""+(ME.email||"")).toLowerCase())+"&select=foto_url,nombre,configuracion,slug,titulo_profesional,bio,tagline,mi_enfoque,especialidades,perfil_publico_activo,org_id"),
     extra[0], extra[1], extra[2], extra[3], extra[4],
     _sb("solicitudes?coach_id=eq."+encodeURIComponent(ME.id)+"&order=created_at.desc"),
     (ME.rol==="admin" ? _sb("reviews?select=nombre,rating,texto,created_at&order=created_at.desc&limit=200") : Promise.resolve([])),
@@ -14099,7 +14143,7 @@ function loadReal(){
     // (no depende de estar en Resumen).
     try{ _agSavePending(); }catch(e){}
     if(RCFG && RCFG.color_marca) state.brandAccent = RCFG.color_marca;
-    RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), perfil_publico_activo:!!(usr.perfil_publico_activo || (RCFG&&RCFG.perfil_publico_activo)) };
+    RPROF = { slug:(""+(usr.slug||(RCFG&&RCFG.slug)||"")).trim(), titulo_profesional:(""+(usr.titulo_profesional||(RCFG&&RCFG.titulo)||"")).trim(), bio:(""+(usr.bio||(RCFG&&RCFG.bio)||"")).trim(), tagline:(""+(usr.tagline||"")).trim(), mi_enfoque:(""+(usr.mi_enfoque||"")).trim(), especialidades:(Array.isArray(usr.especialidades)?usr.especialidades:[]), perfil_publico_activo:!!(usr.perfil_publico_activo || (RCFG&&RCFG.perfil_publico_activo)) };
     if(RCFG && Object.prototype.toString.call(RCFG.servicios)==="[object Array]" && RCFG.servicios.length) state.services=RCFG.servicios;
     if(RCFG && RCFG.color_marca) state.brandAccent=RCFG.color_marca;
     if(RCFG) state.pathwayOptIn = !!RCFG.pathway_optin;
