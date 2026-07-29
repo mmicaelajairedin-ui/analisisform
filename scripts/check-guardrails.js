@@ -4400,6 +4400,23 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: la Comunidad tiene composer VISUAL (plantillas + vista previa en vivo)",
+    bug: "Publicar en la revista era una textarea pelada — el owner no sabía cómo iba a quedar. Ahora es " +
+         "un composer visual: chips de PLANTILLA (título+texto sugeridos, solo cambia [corchetes]), campos " +
+         "título/texto/foto, y una VISTA PREVIA en vivo (pp-msg/pp-img) que se ve igual que el post " +
+         "publicado. Si se cae el preview o las plantillas, vuelve a ser una caja de texto a ciegas.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      const m = mc.match(/var MC_POST_TPL=\[([\s\S]*?)\];/);
+      if (!m) return "multicoach.html: se perdió MC_POST_TPL (plantillas de novedades de la Comunidad).";
+      const n = (m[1].match(/\{ic:/g) || []).length;
+      if (n < 8) return "multicoach.html: quedan menos de 8 plantillas de novedades (había 12).";
+      if (!/function _postPrev\(/.test(mc) || !/id="pp-msg"/.test(mc) || !/id="pp-img"/.test(mc)) return "multicoach.html: se cayó la vista previa en vivo del composer de la revista (pp-msg/pp-img/_postPrev).";
+      return null;
+    },
+  },
+  {
     name: "multicoach: 'Nueva sesión' en la red CREA la cita asignando coach (crear-cita-red), no un toast",
     bug: "En una red real, 'Nueva sesión' tenía que dejar AGENDAR un evento y ASIGNARLO a un coach " +
          "(tipo, nombre, día/hora, online/presencial, grupal) — no un toast de maqueta. La RLS de citas " +
