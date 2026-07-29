@@ -8130,7 +8130,7 @@ function _iaChatScrollDown(){ try{ requestAnimationFrame(function(){ var s=docum
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
 function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
 // Redes (multicoaches) para la gestión desde el admin (transferir dueño).
-function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
+function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo,marca&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
 // Admin: subir el LOGO de una empresa (org) por el cliente. SVG/imagen chica tal
 // cual (conserva transparencia); grande → PNG 512. Guarda por guardar-red (merge).
 function _orgLogoPick(orgId){
@@ -8669,6 +8669,16 @@ function viewAdmin(){
   var _redesView = "";
   {
     var _rOrgsLoaded = (typeof RORGS!=="undefined" && Array.isArray(RORGS));
+    // Avatar de la red: el LOGO de la empresa (marca.logo/foto) si lo tiene; si no,
+    // el icono genérico. object-fit:contain para no recortar logos.
+    var _redAvatar = function(o, size, huerf){
+      size = size||38;
+      var logo = (o && o.marca && typeof o.marca==="object" && (o.marca.logo||o.marca.foto)) || "";
+      if(logo && !huerf){
+        return "<span style='width:"+size+"px;height:"+size+"px;border-radius:10px;background:#fff;border:1px solid var(--pw-border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0'><img src='"+esc(logo)+"' alt='' referrerpolicy='no-referrer' style='max-width:100%;max-height:100%;object-fit:contain'></span>";
+      }
+      return "<span style='width:"+size+"px;height:"+size+"px;border-radius:10px;background:var(--pw-niebla-2);display:flex;align-items:center;justify-content:center;color:"+(huerf?"var(--pw-danger)":"var(--pw-bosque)")+";flex-shrink:0'>"+PWI.svg(huerf?"alert":"building",{})+"</span>";
+    };
     if(state.redSel){
       // Nivel 2: coaches de la red seleccionada.
       var _selId = String(state.redSel);
@@ -8679,23 +8689,24 @@ function viewAdmin(){
       var _selCards = _selCoaches.length ? "<div class='cp-coach-grid'>"+_selCoaches.map(_coachCardHtml).join("")+"</div>" : "<div style='font-size:13px;color:var(--pw-text-soft);padding:16px 2px'>Esta red todavía no tiene coaches.</div>";
       _redesView = "<div class='cp-card'><div class='cp-card-hd' style='align-items:center;gap:10px'>"+
         "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='redsel:'>← Redes</button>"+
-        "<h3 class='cp-card-title' style='display:flex;align-items:center;gap:7px'><span class='cp-emo'>"+PWI.svg('building',{sm:true})+"</span>"+_selNombre+"<span class='dot'>.</span></h3>"+
+        _redAvatar(_selOrg, 34, !_selOrg)+
+        "<h3 class='cp-card-title' style='margin:0'>"+_selNombre+"<span class='dot'>.</span></h3>"+
         "<span class='cp-eyebrow'>dueño "+_selDueno+" · "+_selCoaches.length+" coach"+(_selCoaches.length===1?"":"es")+"</span></div>"+
         "<div class='cp-card-pad'>"+_selCards+"</div></div>";
     } else {
       // Nivel 1: una fila por red (RORGS) + bucket huérfano si hay coaches con org
       // inexistente. Entrás a una red para ver sus coaches.
-      var _redRow = function(id, nombre, dueno, plan, nCo, huerf){
+      var _redRow = function(o, id, nombre, dueno, plan, nCo, huerf){
         return "<button type='button' data-act='redsel:"+esc(id)+"' style='width:100%;text-align:left;border:1px solid "+(huerf?"rgba(192,117,110,.4)":"var(--pw-border)")+";background:#fff;border-radius:12px;padding:13px 15px;margin-bottom:9px;cursor:pointer;display:flex;align-items:center;gap:12px'>"+
-          "<span style='width:38px;height:38px;border-radius:10px;background:var(--pw-niebla-2);display:flex;align-items:center;justify-content:center;color:"+(huerf?"var(--pw-danger)":"var(--pw-bosque)")+"'>"+PWI.svg(huerf?'alert':'building',{})+"</span>"+
+          _redAvatar(o, 38, huerf)+
           "<span style='flex:1;min-width:0'><span style='display:block;font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+esc(nombre)+"</span><span style='display:block;font-size:12px;color:var(--pw-text-soft)'>"+(huerf?"su red ya no existe — entrá para reasignar":("dueño "+esc(dueno)+(plan?(" · "+esc(plan)):"")))+"</span></span>"+
           "<span style='font-size:12.5px;font-weight:700;color:var(--pw-carbon);background:var(--pw-niebla-2);border-radius:100px;padding:4px 11px'>"+nCo+" coach"+(nCo===1?"":"es")+"</span>"+
           "<span style='color:var(--pw-text-muted);font-size:18px'>›</span></button>";
       };
       var _known = _rOrgsLoaded ? RORGS.slice() : [];
       var _knownIds = {}; _known.forEach(function(o){ _knownIds[String(o.id)]=1; });
-      var _rowsRed = _known.map(function(o){ var n=(_redByOrg[String(o.id)]||[]).length; return _redRow(o.id, o.nombre||"Red", o.owner_email||"—", o.plan||"", n, false); }).join("");
-      Object.keys(_redByOrg).forEach(function(oid){ if(!_knownIds[oid]) _rowsRed += _redRow(oid, "Sin red asignada", "", "", _redByOrg[oid].length, true); });
+      var _rowsRed = _known.map(function(o){ var n=(_redByOrg[String(o.id)]||[]).length; return _redRow(o, o.id, o.nombre||"Red", o.owner_email||"—", o.plan||"", n, false); }).join("");
+      Object.keys(_redByOrg).forEach(function(oid){ if(!_knownIds[oid]) _rowsRed += _redRow(null, oid, "Sin red asignada", "", "", _redByOrg[oid].length, true); });
       if(!_rowsRed) _rowsRed = "<div style='font-size:13px;color:var(--pw-text-soft);text-align:center;padding:20px 0;line-height:1.55'>Todavía no hay redes. Cuando conviertas o des de alta un multicoach, su equipo aparece acá.</div>";
       _redesView = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Redes<span class='dot'>.</span></h3><span class='cp-eyebrow'>equipos de tus multicoaches — entrá para ver sus coaches</span></div><div class='cp-card-pad'>"+_rowsRed+"</div></div>";
     }
