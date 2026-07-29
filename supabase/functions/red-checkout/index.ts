@@ -154,7 +154,12 @@ Deno.serve(async (req: Request) => {
     const coachId = String(p.coach_id || "").trim();
     const idx = (typeof p.servicio_idx === "number" && p.servicio_idx >= 0) ? Math.floor(p.servicio_idx) : -1;
     const cli = p.cliente || {};
-    if (!slug || !coachId || idx < 0) return json({ error: "Faltan datos (slug, coach, servicio)" }, 400);
+    // Modo A (página pública): servicio del coach por idx.
+    // Modo B (cobro desde el panel): monto puntual + concepto, coach opcional.
+    const customMonto = Number(p.monto);
+    const hasCustom = Number.isFinite(customMonto) && customMonto > 0;
+    if (!slug) return json({ error: "Falta la red" }, 400);
+    if (idx < 0 && !hasCustom) return json({ error: "Falta el servicio o el monto" }, 400);
 
     let org = await getOrg(SB, SRK, slug);
     if (!org) org = await getOrg(SB, SRK, "", slug);
@@ -170,23 +175,41 @@ Deno.serve(async (req: Request) => {
     const acct = orows[0]?.configuracion?.stripe_account_id;
     if (!acct) return json({ error: "La red todavía no conectó su cuenta de cobro" }, 409);
 
-    // Servicio del coach elegido.
-    const cr = await fetch(
-      `${SB}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=id,nombre,org_id,configuracion`,
-      { headers: sbH(SRK) },
-    );
-    const crows = cr.ok ? await cr.json() : [];
-    const coach = crows[0];
-    if (!coach) return json({ error: "Coach no encontrado" }, 404);
-    const servicios = pubServicios(coach.configuracion || {});
-    const svc = servicios.find((s) => s.idx === idx);
-    if (!svc) return json({ error: "Servicio no encontrado" }, 404);
+    // Coach (opcional en modo B, obligatorio en modo A).
+    let coach: any = null, coachNombre = "";
+    if (coachId) {
+      const cr = await fetch(
+        `${SB}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=id,nombre,org_id,configuracion`,
+        { headers: sbH(SRK) },
+      );
+      const crows = cr.ok ? await cr.json() : [];
+      coach = crows[0] || null;
+      coachNombre = (coach && coach.nombre) || "";
+    }
+
+    let svc: { idx: number | null; name: string; price: number; moneda: string; recurrente: boolean };
+    if (idx >= 0) {
+      if (!coach) return json({ error: "Coach no encontrado" }, 404);
+      const servicios = pubServicios(coach.configuracion || {});
+      const found = servicios.find((s) => s.idx === idx);
+      if (!found) return json({ error: "Servicio no encontrado" }, 404);
+      svc = found;
+    } else {
+      const rawMon = String(p.moneda || "eur").toLowerCase();
+      svc = {
+        idx: null,
+        name: String(p.concepto || "Servicio").trim().slice(0, 120) || "Servicio",
+        price: customMonto,
+        moneda: MONEDAS_OK.has(rawMon) ? rawMon : "eur",
+        recurrente: false,
+      };
+    }
 
     const moneda = svc.moneda;
     const monto = ZERO_DECIMAL.has(moneda) ? Math.round(svc.price) : Math.round(svc.price * 100);
     if (monto <= 0) return json({ error: "Precio inválido" }, 400);
     const fee = Math.round(monto * FEE_PCT);
-    const nombreServicio = svc.name + " · " + (coach.nombre || "coach") + " (" + (org.nombre || "red") + ")";
+    const nombreServicio = svc.name + (coachNombre ? " · " + coachNombre : "") + " (" + (org.nombre || "red") + ")";
 
     const successUrl = `${SITE}/red/${encodeURIComponent(slug)}?pago=ok`;
     const cancelUrl = `${SITE}/red/${encodeURIComponent(slug)}?pago=cancel`;
@@ -232,10 +255,10 @@ Deno.serve(async (req: Request) => {
       headers: { ...sbH(SRK), Prefer: "return=minimal" },
       body: JSON.stringify({
         org_id: org.id,
-        coach_id: coachId,
-        coach_nombre: coach.nombre || null,
+        coach_id: coachId || null,
+        coach_nombre: coachNombre || null,
         servicio_titulo: svc.name,
-        servicio_idx: idx,
+        servicio_idx: svc.idx,
         monto: svc.price,
         moneda,
         comision: Math.round(svc.price * FEE_PCT * 100) / 100,
