@@ -4420,6 +4420,13 @@ const RULES = [
       // Foto comprimida en el navegador: sin esto una foto de celular pesa MB, se
       // trunca al guardar y queda rota (bug 'no veo las imágenes de comunidad').
       if (!/function _imgCompress\(/.test(mc) || !/canvas/.test(mc)) return "multicoach.html: se perdió la compresión de la foto del post (_imgCompress) → imágenes rotas.";
+      // UN SOLO publicador: los accesos rápidos (__publicar) deben abrir el MISMO
+      // composer carrusel (_nuevaPost), no un textarea viejo aparte. Si divergen,
+      // la coach ve un composer distinto según de dónde entre ("no lo veo").
+      const pub = mc.match(/function __publicar\(\)\{([\s\S]*?)\}/);
+      if (pub && !/_nuevaPost\(/.test(pub[1])) return "multicoach.html: __publicar (acceso rápido) ya no abre el composer carrusel (_nuevaPost) → dos publicadores distintos.";
+      // Carrusel: navegar plantillas con ‹ › en un solo sitio.
+      if (!/function _postNav\(/.test(mc)) return "multicoach.html: se perdió el carrusel de plantillas (_postNav ‹ ›).";
       return null;
     },
   },
