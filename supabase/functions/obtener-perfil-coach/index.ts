@@ -31,6 +31,7 @@ const SELECT_FIELDS = [
   "atiende",
   "anios_experiencia",
   "badges",
+  "last_seen",
   "foto_url",
   "configuracion",
   "activo",
@@ -136,19 +137,33 @@ Deno.serve(async (req: Request) => {
       const total = parseInt(range.split("/")[1] || "0", 10);
       if (!isNaN(total)) clientes_total = total;
     }
+    let sum = 0;
+    // (a) Tabla `reviews` — fuente ACTUAL: reseñas del marketplace + las que sube
+    //     el portal del cliente (puente reseña→público). Solo publica=true (3-5★),
+    //     que son las que se muestran; consistente con los testimonios.
+    if (row.slug) {
+      const rvRes = await fetch(
+        `${SB_URL}/rest/v1/reviews?coach_slug=eq.${encodeURIComponent(row.slug)}&publica=eq.true&select=rating`,
+        { headers },
+      );
+      if (rvRes.ok) {
+        const rows = await rvRes.json();
+        for (const rr of rows) { const n = parseInt(rr.rating, 10); if (n >= 1 && n <= 5) { reviews_count++; sum += n; } }
+      }
+    }
+    // (b) Legacy: candidatos.resena (reseñas viejas guardadas en el candidato).
     const rRes = await fetch(
       `${SB_URL}/rest/v1/candidatos?coach_id=eq.${row.id}&resena=not.is.null&select=resena`,
       { headers },
     );
     if (rRes.ok) {
       const arr: CandReview[] = await rRes.json();
-      let sum = 0;
       for (const c of arr) {
         const r = parseResena(c.resena);
         if (r) { reviews_count++; sum += r; }
       }
-      if (reviews_count > 0) avg_rating = Math.round((sum / reviews_count) * 10) / 10;
     }
+    if (reviews_count > 0) avg_rating = Math.round((sum / reviews_count) * 10) / 10;
   } catch (_e) { /* opcional */ }
 
   const cfg = row.configuracion || {};
@@ -180,6 +195,7 @@ Deno.serve(async (req: Request) => {
       // plataforma). De acá salen "Insignias Pathway" (cantidad) y la "Medalla
       // Pathway" (derivada: 6+ oro · 4+ plata · 2+ bronce) — datos REALES, sin inventar.
       badges: Array.isArray(row.badges) ? row.badges : [],
+      last_seen: row.last_seen || null, // para "Responde rápido" (derivado en el front)
       calendly_url: str("calendly_url"),
       // Canales de contacto de respaldo: si el coach no tiene Calendly, el
       // perfil público igual muestra un CTA (WhatsApp si lo configuró, si no
