@@ -1030,6 +1030,9 @@ function __asignarCoach(){
       }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Asignar';} __toast('Error de conexión. Reintenta'); });
     });
 }
+// ISO con offset LOCAL (no UTC): conserva la hora de pared que escribió el dueño,
+// así el email/recordatorio muestra esa hora y no la corrida a UTC.
+function _mcLocalIso(dt){ var p=function(n){return('0'+n).slice(-2);}; var off=-dt.getTimezoneOffset(); var s=off>=0?'+':'-'; var a=Math.abs(off); return dt.getFullYear()+'-'+p(dt.getMonth()+1)+'-'+p(dt.getDate())+'T'+p(dt.getHours())+':'+p(dt.getMinutes())+':00'+s+p(Math.floor(a/60))+':'+p(a%60); }
 function __nuevaSesion(){
   // Demo (prospecto): comportamiento original de maqueta.
   if(!MC_REAL){ var kn=DB.clientes.slice(0,4).map(function(k){return k.n;});__openModal('Nueva sesión','<div><span class="lbl">Cliente</span>'+__sel('ns-cl',kn)+'</div>'+__inp('ns-f','Día y hora (ej. Vie 27 · 18:00)'),'Agendar',function(){var cl=document.getElementById('ns-cl').value;__act(PWI.svg('calendar',{sm:true}),'#4FA6BA','Sesión agendada con '+cl,'Agenda');__mclose();__toast('Sesión agendada ✓');}); return; }
@@ -1064,8 +1067,14 @@ function __nuevaSesion(){
     var lugarEl=document.getElementById('ns-lugar'); var lugar=(lugarEl&&lugarEl.value||'').trim();
     var grupalEl=document.getElementById('ns-grupal'); var grupal=!!(grupalEl&&grupalEl.checked);
     var rep=parseInt((document.getElementById('ns-rep')||{}).value,10)||0;
-    // Fechas: 1 sola, o N semanales (misma hora, +7 días cada una).
-    var reps=(rep>1)?rep:1; var fechas=[]; for(var _i=0;_i<reps;_i++){ fechas.push(new Date(iso0.getTime()+_i*7*86400000).toISOString()); }
+    // Chequeo de CHOQUES (como el panel): mismo coach, ±59 min de un evento ya
+    // agendado. No bloquea, pregunta — el dueño decide.
+    var _st=iso0.getTime();
+    var _choque=(MC_CITAS||[]).some(function(c){ if(String(c.coach_id)!==String(coach_id))return false; if((''+(c.estado||''))==='cancelada')return false; var t=new Date(c.inicio).getTime(); return !isNaN(t)&&Math.abs(t-_st)<59*60000; });
+    if(_choque && !window.confirm('Ese coach ya tiene un evento cerca de esa hora. ¿Agendar igual?')){ return; }
+    // Fechas: 1 sola, o N semanales. Se guarda con OFFSET local (no UTC) para que
+    // la hora del email/recordatorio sea la que escribiste, sin corrimiento.
+    var reps=(rep>1)?rep:1; var fechas=[]; for(var _i=0;_i<reps;_i++){ fechas.push(_mcLocalIso(new Date(iso0.getTime()+_i*7*86400000))); }
     var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent=(reps>1?'Agendando '+reps+'…':'Agendando…');}
     _hdr({'Content-Type':'application/json'}).then(function(h2){
       return Promise.all(fechas.map(function(iso){
@@ -2270,7 +2279,20 @@ function renderAnalytics(){
 // El dueño le paga a sus coaches por fuera. Reusa connect-onboard (Stripe
 // Express), igual que el coach individual, pero apuntando al usuario dueño.
 var MC_COBROS=null;      // null=sin cargar · {connected,details} · {error:true}
-var _mcCobReq=false;
+var MC_COBROS_DATA=null;  // {cobros:[...], totales:{bruto,comision,neto,n}}
+var _mcCobReq=false, _mcSyncReq=false;
+// Slug/URL pública de la red (para /red/<slug>). Sin slug configurado, usa el id.
+function _mcRedSlug(){ return (MC_ORG&&(MC_ORG.slug||MC_ORG.id))||''; }
+function _mcRedUrl(){ var s=_mcRedSlug(); return s?('https://pathwaycareercoach.com/red/'+encodeURIComponent(s)):''; }
+function mcCobrosSync(){
+  if(_mcSyncReq) return; _mcSyncReq=true;
+  if(!MC_REAL||!MC_ORG||!MC_ORG.id){ MC_COBROS_DATA={cobros:[],totales:{bruto:0,comision:0,neto:0,n:0},demo:true}; return; }
+  fetch(SB+'/functions/v1/red-checkout',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({action:'sync',org_id:MC_ORG.id})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){ MC_COBROS_DATA = (j&&j.ok)?{cobros:j.cobros||[],totales:j.totales||{bruto:0,comision:0,neto:0,n:0}}:{error:true}; if(_sec==='cobros')renderCobros(); })
+    .catch(function(){ MC_COBROS_DATA={error:true}; if(_sec==='cobros')renderCobros(); });
+}
+function mcCopyRedUrl(){ var u=_mcRedUrl(); if(!u)return; try{ navigator.clipboard.writeText(u).then(function(){__toast('Enlace copiado ✓');},function(){__toast(u);}); }catch(e){ __toast(u); } }
 function mcCobrosStatus(){
   if(_mcCobReq) return; _mcCobReq=true;
   if(!MC_REAL||!MC_OWNER||!MC_OWNER.id){ MC_COBROS={connected:false,demo:true}; return; }
@@ -2290,6 +2312,7 @@ function mcConnectCobros(){
 function renderCobros(){
   var v=document.getElementById('vscroll');
   if(MC_COBROS===null && MC_REAL) mcCobrosStatus();
+  if(MC_COBROS_DATA===null && MC_REAL) mcCobrosSync();
   var st=MC_COBROS||{}, connected=!!st.connected;
   var cuenta;
   if(!MC_REAL){
@@ -2306,10 +2329,133 @@ function renderCobros(){
       "<button class='cp-btn cp-btn-primary' onclick='mcConnectCobros()' style='height:42px;font-size:14px'>"+PWI.svg('creditCard',{sm:true})+" Conectar cobros con Stripe</button>"+
       (st.error?"<div style='font-size:12px;color:var(--pw-danger);margin-top:10px'>No pudimos verificar el estado. Prueba de nuevo en un momento.</div>":"")+"</div>";
   }
-  // Ingresos de la red (Fase 3): por ahora estado honesto — todavía no hay pagos
-  // porque la página pública de la red (por donde pagan) aún no está publicada.
-  var ingresos=_mcEmptyCard('Ingresos de la red','Cuando tus clientes paguen desde la página pública de la red, acá vas a ver los ingresos (neto del 2% de Pathway), por coach y por mes.');
-  v.innerHTML="<header class='cp-topbar'><div><h1 class='cp-h1'>Cobros<span class='dot'>.</span></h1><div class='cp-sub'>Los pagos de los clientes de tu red — a tu cuenta, con 2% de comisión.</div></div></header>"+cuenta+ingresos;
+  // Página pública de la red: el enlace para compartir (por donde pagan los
+  // clientes). Sin slug configurado usa el id; igual funciona.
+  var url=_mcRedUrl(), link="";
+  if(MC_REAL && url){
+    link="<div class='cp-card cp-card-pad'><h3 class='cp-card-title'>Tu página de la red<span class='dot'>.</span></h3>"+
+      "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.55;margin:6px 0 12px'>Compártela con tus clientes: eligen coach y servicio y pagan ahí. El dinero entra a tu cuenta (2% Pathway).</div>"+
+      "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+        "<input readonly value='"+_mcEsc(url)+"' onclick='this.select()' style='flex:1;min-width:200px;height:40px;border:1px solid var(--pw-border);border-radius:10px;padding:0 12px;font-size:13px;background:var(--pw-niebla-2);color:var(--pw-carbon)'>"+
+        "<button class='cp-btn cp-btn-ghost' onclick='mcCopyRedUrl()' style='height:40px'>Copiar</button>"+
+        "<a class='cp-btn cp-btn-primary' href='"+_mcEsc(url)+"' target='_blank' rel='noopener' style='height:40px'>Abrir "+PWI.svg('extLink',{sm:true})+"</a>"+
+      "</div></div>";
+  }
+  // Ingresos reales de la red (netos del 2%). Se concilian contra Stripe (sync).
+  var ingresos, d=MC_COBROS_DATA||{};
+  var pag=(d.cobros||[]).filter(function(c){return c.estado==='pagado';});
+  if(!MC_REAL){
+    ingresos=_mcEmptyCard('Ingresos de la red','En tu red real, acá ves los ingresos de los pagos (neto del 2% de Pathway), por cliente y coach.');
+  } else if(d.error){
+    ingresos=_mcEmptyCard('Ingresos de la red','No pudimos cargar los cobros ahora. Prueba de nuevo en un momento.');
+  } else if(!pag.length){
+    ingresos=_mcEmptyCard('Ingresos de la red','Todavía no hay pagos. Cuando un cliente pague desde tu página de la red, aparece acá (neto del 2%).');
+  } else {
+    var t=d.totales||{bruto:0,comision:0,neto:0,n:0};
+    var _m=function(n){return '€'+(Number(n)||0).toLocaleString('es-ES');};
+    var rows=pag.slice(0,20).map(function(c){
+      var neto=(Number(c.monto)||0)-(Number(c.comision)||0);
+      return "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--pw-border)'>"+
+        "<div style='min-width:0'><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+_mcEsc(c.cliente_nombre||c.cliente_email||'Cliente')+"</div>"+
+        "<div style='font-size:11.5px;color:var(--pw-text-soft)'>"+_mcEsc(c.servicio_titulo||'Servicio')+(c.coach_nombre?' · '+_mcEsc(c.coach_nombre):'')+"</div></div>"+
+        "<div style='text-align:right;white-space:nowrap'><div style='font-size:14px;font-weight:700;color:var(--pw-bosque)'>"+_m(neto)+"</div><div style='font-size:10.5px;color:var(--pw-text-muted)'>de "+_m(c.monto)+"</div></div></div>";
+    }).join('');
+    ingresos="<div class='cp-card cp-card-pad'><div style='display:flex;align-items:center;justify-content:space-between;gap:10px'><h3 class='cp-card-title'>Ingresos de la red<span class='dot'>.</span></h3><span class='cp-eyebrow'>neto del 2%</span></div>"+
+      "<div style='display:flex;gap:20px;flex-wrap:wrap;margin:10px 0 4px'>"+
+        "<div><div style='font-family:var(--ser);font-size:28px;font-weight:600;color:var(--pw-bosque);line-height:1'>"+_m(t.neto)+"</div><div style='font-size:11px;color:var(--pw-text-soft)'>a tu favor · "+t.n+" pago"+(t.n===1?'':'s')+"</div></div>"+
+        "<div><div style='font-family:var(--ser);font-size:28px;font-weight:600;color:var(--pw-carbon);line-height:1'>"+_m(t.bruto)+"</div><div style='font-size:11px;color:var(--pw-text-soft)'>bruto</div></div>"+
+        "<div><div style='font-family:var(--ser);font-size:28px;font-weight:600;color:var(--pw-text-muted);line-height:1'>"+_m(t.comision)+"</div><div style='font-size:11px;color:var(--pw-text-soft)'>comisión Pathway</div></div>"+
+      "</div>"+rows+"</div>";
+  }
+  // Cobrar a un cliente puntual desde el panel (genera un link de pago para mandar).
+  var cobrar=(MC_REAL && connected)
+    ? "<div class='cp-card cp-card-pad'><div style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'>"+
+        "<div><h3 class='cp-card-title' style='margin:0'>Cobrar a un cliente<span class='dot'>.</span></h3><div style='font-size:12.5px;color:var(--pw-text-soft);margin-top:3px'>Genera un link de pago para un cliente puntual y se lo mandas por WhatsApp o email.</div></div>"+
+        "<button class='cp-btn cp-btn-primary' onclick='mcCobrarModal()' style='height:40px'>"+PWI.svg('creditCard',{sm:true})+" Nuevo cobro</button>"+
+      "</div></div>"
+    : "";
+  // Dominio propio (plan Pro): la activación es manual (DNS + Cloudflare), así que
+  // el panel explica los pasos y ofrece pedir la activación al equipo.
+  var _isPro=(typeof _mcPlanTier==='function' && _mcPlanTier()>=2);
+  var domWa='https://wa.me/34623816019?text='+encodeURIComponent(_isPro?'Hola, quiero activar el dominio propio de mi red (plan Pro).':'Hola, quiero subir al plan Pro para tener dominio propio en mi red.');
+  var dominioCard = MC_REAL
+    ? "<div class='cp-card cp-card-pad'><div style='display:flex;align-items:center;gap:8px'><h3 class='cp-card-title' style='margin:0'>Dominio propio<span class='dot'>.</span></h3><span style='font-size:10px;font-weight:800;letter-spacing:.5px;color:#8A6D1E;background:rgba(233,196,106,.2);padding:2px 8px;border-radius:99px'>PRO</span></div>"+
+        ((MC_ORG&&MC_ORG.dominio)
+          ? "<div style='font-size:13px;color:var(--pw-text-soft);margin-top:8px'>Tu página de la red vive en <strong style='color:var(--pw-carbon)'>"+_mcEsc(MC_ORG.dominio)+"</strong>. ¡Listo!</div>"
+          : "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.6;margin:8px 0 12px'>Con el plan Pro tu página puede vivir en <strong>tu propio dominio</strong> (ej. tuempresa.com) en vez del enlace de Pathway. Apuntas tu dominio a Cloudflare (te pasamos el dato) y lo activamos.</div>"+
+            "<a class='cp-btn "+(_isPro?'cp-btn-primary':'cp-btn-ghost')+"' href='"+domWa+"' target='_blank' rel='noopener' style='height:40px'>"+(_isPro?'Pedir activación de mi dominio':'Es del plan Pro · Consultar')+"</a>")+
+      "</div>"
+    : "";
+  v.innerHTML="<header class='cp-topbar'><div><h1 class='cp-h1'>Cobros<span class='dot'>.</span></h1><div class='cp-sub'>Los pagos de los clientes de tu red — a tu cuenta, con 2% de comisión.</div></div></header>"+cuenta+cobrar+link+dominioCard+ingresos;
+}
+// ── Cobrar a un cliente puntual (link de pago desde el panel) ──
+var _mcLastCobUrl='';
+function mcCopyCob(){ if(_mcLastCobUrl){ try{ navigator.clipboard.writeText(_mcLastCobUrl); }catch(e){} __toast('Link copiado ✓'); } }
+function _cobF(l,inp){ return "<label style='display:block;font-size:12px;font-weight:700;color:var(--pw-text-soft);margin:10px 0 5px'>"+l+"</label>"+inp; }
+function mcCobrarModal(){
+  if(!MC_REAL||!MC_ORG){ __toast('Disponible en tu red real.'); return; }
+  var slug=_mcRedSlug();
+  var coaches=(DB.coaches||[]).filter(function(c){return c.est!=='pendiente';});
+  var copts='<option value="">— Sin coach / general —</option>'+coaches.map(function(c){return '<option value="'+_mcEsc(c.id)+'">'+_mcEsc(c.n)+(c.esOwner?' (tú)':'')+'</option>';}).join('');
+  var mopts=['eur','usd','gbp','mxn','ars','cop','clp','pen','brl','uyu'].map(function(m){return '<option value="'+m+'">'+m.toUpperCase()+'</option>';}).join('');
+  var inp="width:100%;height:42px;font-size:14px";
+  var old=document.getElementById('mc-cob-ov'); if(old) old.remove();
+  var ov=document.createElement('div'); ov.id='mc-cob-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:320;display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;background:rgba(20,46,38,.55)';
+  ov.innerHTML="<div style='width:100%;max-width:440px;background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(20,55,38,.32);overflow:hidden'>"+
+    "<div style='padding:18px 22px;border-bottom:1px solid var(--pw-border);display:flex;align-items:center;justify-content:space-between'>"+
+      "<div style='font-family:var(--ser);font-size:18px;font-weight:600;color:var(--pw-carbon)'>Cobrar a un cliente</div>"+
+      "<button id='mc-cob-x' type='button' style='background:none;border:0;font-size:22px;line-height:1;color:var(--pw-text-muted);cursor:pointer'>✕</button></div>"+
+    "<div id='mc-cob-body' style='padding:16px 22px 22px'>"+
+      _cobF('Nombre del cliente','<input id="cob-n" class="cp-form-input" style="'+inp+'" placeholder="Nombre y apellido">')+
+      _cobF('Email del cliente','<input id="cob-e" type="email" class="cp-form-input" style="'+inp+'" placeholder="cliente@email.com">')+
+      _cobF('Concepto','<input id="cob-c" class="cp-form-input" style="'+inp+'" placeholder="Sesión, pack, mentoría…">')+
+      "<div style='display:flex;gap:10px'><div style='flex:1'>"+_cobF('Monto','<input id="cob-m" type="number" min="1" class="cp-form-input" style="'+inp+'" placeholder="0">')+"</div>"+
+        "<div style='width:130px'>"+_cobF('Moneda','<select id="cob-cur" class="cp-form-input" style="'+inp+'">'+mopts+'</select>')+"</div></div>"+
+      _cobF('Coach (opcional)','<select id="cob-co" class="cp-form-input" style="'+inp+'">'+copts+'</select>')+
+      "<div id='cob-err' style='color:var(--pw-danger);font-size:12.5px;min-height:14px;margin-top:8px'></div>"+
+      "<button class='cp-btn cp-btn-primary' id='cob-go' style='width:100%;height:44px;justify-content:center;margin-top:6px'>Generar link de pago</button>"+
+    "</div></div>";
+  document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+  document.getElementById('mc-cob-x').onclick=function(){ ov.remove(); };
+  document.getElementById('cob-go').onclick=function(){ _mcCobrarGo(slug); };
+}
+function _mcCobrarGo(slug){
+  var n=(document.getElementById('cob-n').value||'').trim();
+  var e=(document.getElementById('cob-e').value||'').trim();
+  var c=(document.getElementById('cob-c').value||'').trim();
+  var m=parseFloat(document.getElementById('cob-m').value||'0');
+  var cur=document.getElementById('cob-cur').value||'eur';
+  var co=document.getElementById('cob-co').value||'';
+  var err=document.getElementById('cob-err');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){ err.textContent='Escribe un email válido.'; return; }
+  if(!(m>0)){ err.textContent='Escribe un monto mayor a 0.'; return; }
+  var btn=document.getElementById('cob-go'); btn.disabled=true; btn.textContent='Generando…'; err.textContent='';
+  fetch(SB+'/functions/v1/red-checkout',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},
+    body:JSON.stringify({action:'create',slug:slug,coach_id:co,monto:m,concepto:c||'Servicio',moneda:cur,cliente:{nombre:n,email:e}})})
+    .then(function(r){return r.json().catch(function(){return null;});})
+    .then(function(j){
+      if(j&&j.url){ _mcCobrarDone(j.url,n,e); return; }
+      btn.disabled=false; btn.textContent='Generar link de pago'; err.textContent=(j&&j.error)?j.error:'No se pudo generar el link.';
+    })
+    .catch(function(){ btn.disabled=false; btn.textContent='Generar link de pago'; err.textContent='Error de red.'; });
+}
+function _mcCobrarDone(url,nombre,email){
+  _mcLastCobUrl=url;
+  var b=document.getElementById('mc-cob-body'); if(!b)return;
+  var primer=nombre?(' '+nombre.split(' ')[0]):'';
+  var wtext=encodeURIComponent('¡Hola'+primer+'! Acá tienes el link para tu pago seguro: '+url);
+  var mbody=encodeURIComponent('Hola'+primer+',\n\nAcá tienes el link para completar tu pago de forma segura:\n'+url+'\n\n¡Gracias!');
+  b.innerHTML="<div style='text-align:center;color:var(--pw-bosque);margin:4px 0 2px'>"+PWI.svg('checkCircle',{cc:true})+"</div>"+
+    "<div style='font-family:var(--ser);font-size:17px;font-weight:600;color:var(--pw-carbon);text-align:center'>Link de pago listo</div>"+
+    "<div style='font-size:12.5px;color:var(--pw-text-soft);text-align:center;margin:4px 0 14px;line-height:1.5'>Mándaselo al cliente. Cuando pague entra a tu cuenta (2% Pathway) y lo ves en Cobros.</div>"+
+    "<input readonly value='"+_mcEsc(url)+"' onclick='this.select()' style='width:100%;height:40px;border:1px solid var(--pw-border);border-radius:10px;padding:0 12px;font-size:12.5px;background:var(--pw-niebla-2);color:var(--pw-carbon)'>"+
+    "<div style='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap'>"+
+      "<button class='cp-btn cp-btn-ghost' style='flex:1;justify-content:center' onclick='mcCopyCob()'>Copiar</button>"+
+      "<a class='cp-btn cp-btn-ghost' style='flex:1;justify-content:center' href='https://wa.me/?text="+wtext+"' target='_blank' rel='noopener'>WhatsApp</a>"+
+      "<a class='cp-btn cp-btn-primary' style='flex:1;justify-content:center' href='mailto:"+_mcEsc(email)+"?subject=Tu%20link%20de%20pago&body="+mbody+"'>Email</a>"+
+    "</div>";
 }
 function renderComunidad(){
  var v=document.getElementById('vscroll');
@@ -2344,7 +2490,7 @@ function _fillCom(){
  if(t==='avisos'){
   var mk=function(para,lbl,emo){var list=DBCOM.avisos.filter(function(a){return a.para===para;});
    return '<h3 class="cp-card-title" style="margin:6px 0 10px">'+emo+' Para '+lbl+'<span class="dot">.</span></h3><div class="avcol" style="margin-bottom:18px">'
-    +(list.length?list.map(function(a){return '<div class="aviso"><div class="ae"><span class="emo">'+emo+'</span></div><div class="at">'+a.txt+'</div><div class="ax"><button title="Editar" onclick="_editAviso(\''+a.id+'\')">✏️</button><button title="Borrar" onclick="_delAviso(\''+a.id+'\')">'+PWI.svg('trash',{sm:true})+'</button></div></div>';}).join(''):'<p class="csub">Sin avisos.</p>')+'</div>';};
+    +(list.length?list.map(function(a){return '<div class="aviso"><div class="ae"><span class="emo">'+emo+'</span></div><div class="at">'+_mcEsc(a.txt)+'</div><div class="ax"><button title="Editar" onclick="_editAviso(\''+a.id+'\')">✏️</button><button title="Borrar" onclick="_delAviso(\''+a.id+'\')">'+PWI.svg('trash',{sm:true})+'</button></div></div>';}).join(''):'<p class="csub">Sin avisos.</p>')+'</div>';};
   box.innerHTML=mk('clientes','clientes',''+PWI.svg('megaphone',{sm:true})+'')+mk('coaches','coaches',''+PWI.svg('user',{sm:true})+'');
   return;
  }
@@ -2599,12 +2745,15 @@ function _cfgBrand(){
   +'<div class="cp-card-pad" style="display:flex;flex-direction:column;gap:18px">'
    +'<p style="font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.55">Tu color y tu logo reemplazan los de Pathway en el <strong>portal que ven tus clientes</strong>, en tu página pública y en el <strong>logo de arriba a la izquierda</strong>. Sin logo cargado, se muestra Pathway.</p>'
    +'<div class="cp-form-row"><label class="cp-form-label">Color de marca</label><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+sw+'</div><span class="cp-form-hint">El cliente lo ve en su portal.</span></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Color de fondo (página pública)</label><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+(['#F7F4EC','#FFFFFF','#F3F1FA','#EAF3F0','#FBF0EE','#EEF2F6','#1C1F1D'].map(function(c){var on=(_mcBrand().bg||'#F7F4EC')===c;return '<button onclick="_setBg(\''+c+'\')" style="width:34px;height:34px;border-radius:9px;background:'+c+';border:'+(on?'3px solid var(--pw-bosque)':'1px solid var(--pw-border)')+';cursor:pointer;padding:0" aria-label="'+c+'"></button>';}).join(''))+'</div><span class="cp-form-hint">El fondo de tu página pública de la red.</span></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Tipografía</label><select id="cfb-font" class="cp-form-input">'+(['Inter','Poppins','Montserrat','Lora','Playfair Display'].map(function(f){return '<option value="'+f+'"'+((_mcBrand().font||'Inter')===f?' selected':'')+'>'+f+'</option>';}).join(''))+'</select><span class="cp-form-hint">La fuente de tu página pública.</span></div>'
    +'<div class="cp-form-row"><label class="cp-form-label">Nombre de la empresa</label><input id="cfb-name" class="cp-form-input" placeholder="Ej. Gym Boutique" value="'+((_mcBrand().nombre||'').replace(/"/g,'&quot;'))+'"><span class="cp-form-hint">Acompaña al logo en el menú.</span></div>'
    +'<div class="cp-form-row"><label class="cp-form-label">URL de tu logo</label><input id="cfb-logo" class="cp-form-input" placeholder="https://tu-sitio.com/logo.png" value="'+((_mcBrand().logo||'').replace(/"/g,'&quot;'))+'" oninput="var p=document.getElementById(\'logoprev\');if(p){p.src=this.value;p.style.display=this.value?\'\':\'none\'}"><span class="cp-form-hint">PNG o SVG. Reemplaza a Pathway arriba y en el portal del cliente.</span></div>'
    +'<div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--pw-text-soft)">Vista previa:</span><img id="logoprev" alt="logo" src="'+((_mcBrand().logo||'').replace(/"/g,'&quot;'))+'" style="'+(_mcBrand().logo?'':'display:none;')+'height:34px;width:auto;max-width:160px;object-fit:contain" onerror="this.style.display=\'none\'"></div>'
    +'<div style="display:flex;justify-content:flex-start"><button class="cp-btn cp-btn-primary" onclick="_saveBrand()">Guardar marca</button></div></div></div>';
 }
 function _applyBrandColor(c){ if(c) document.documentElement.style.setProperty('--brand',c); }
+function _setBg(c){ var b=_mcBrand(); b.bg=c; try{ localStorage.setItem('mc_brand',JSON.stringify(b)); }catch(_){} if(MC_ORG)MC_ORG.marca=Object.assign({},MC_ORG.marca||{},{bg:c}); if(_sec==='config')renderConfig(); }
 function _setColor(c){
   CFG.color=c;
   _applyBrandColor(c);                 // en vivo: toda la UI (botones, menú activo, switches, progreso, links…) se repinta sola
@@ -2960,7 +3109,62 @@ function _mcAgwFromCitas(){
   });
   return out;
 }
-function mcSetAgenda(){var a=MCAG[MC_N]||MCAG.fitness;AGT=a.agt;AGW=MC_REAL?_mcAgwFromCitas():a.agw;AGW.forEach(function(e,i){if(!e.dur)e.dur=1;e.id='e'+i;});}
+// ── Google Calendar del dueño (copiado del panel: usa la edge function calendar,
+// que lee su gcal_ical_url ya configurado — sin OAuth nuevo). Solo lectura. ──
+var MC_GCAL=[], _mcGcalDone=false, MC_GCAL_UNCONF=false;
+function _mcGcalLoad(cb){
+  if(!(MC_REAL&&MC_OWNER&&MC_OWNER.email)){ if(cb)cb(); return; }
+  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(MC_OWNER.email),{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
+    .then(function(r){return r.ok?r.json():null;}).then(function(d){
+      MC_GCAL=(d&&Object.prototype.toString.call(d.events)==='[object Array]')?d.events:[];
+      MC_GCAL_UNCONF=!!(d&&d.unconfigured);
+      if(cb)cb();
+    }).catch(function(){ if(cb)cb(); });
+}
+// Conectar Google Calendar del dueño: guarda su URL iCal en su configuracion
+// (via coach-self-save, merge). Reusa la misma edge function 'calendar' que el panel.
+function _mcGcalConnect(){
+  var cur=((MC_OWNER&&MC_OWNER.configuracion&&MC_OWNER.configuracion.gcal_ical_url)||'');
+  __openModal('Conectar Google Calendar',
+    '<div style="font-size:12.5px;color:var(--soft);line-height:1.55;margin-bottom:10px">Pegá tu <b>URL secreta en formato iCal</b> de Google Calendar: en Google Calendar → Configuración → «Integrar calendario» → <b>«Dirección secreta en formato iCal»</b>. Tus eventos aparecen en tu agenda (solo lectura).</div>'
+    +'<input id="gc-url" class="inp" placeholder="https://calendar.google.com/calendar/ical/..." value="'+_mcEsc(cur)+'">',
+    'Guardar', function(){
+      var u=((document.getElementById('gc-url')||{}).value||'').trim();
+      if(u && !/^https:\/\/calendar\.google\.com\/calendar\/ical\//.test(u)){ __toast('Pegá el link iCal (empieza con calendar.google.com/calendar/ical/)'); return; }
+      if(!(MC_REAL&&MC_OWNER&&MC_OWNER.id)){ __toast('Entrá con tu cuenta para conectar'); return; }
+      var cfg={}; try{ var c=(MC_OWNER.configuracion)||{}; for(var k in c)if(Object.prototype.hasOwnProperty.call(c,k))cfg[k]=c[k]; }catch(_){}
+      cfg.gcal_ical_url=u;
+      __mclose(); __toast('Guardando…');
+      _hdr({'Content-Type':'application/json'}).then(function(h){
+        return fetch(SB+'/functions/v1/coach-self-save',{method:'POST',headers:h,body:JSON.stringify({id:MC_OWNER.id,email:MC_OWNER.email,fields:{configuracion:cfg}})});
+      }).then(function(r){return r.ok?r.json():null;}).then(function(d){
+        if(d&&d.ok){ MC_OWNER.configuracion=cfg; _mcGcalDone=false; MC_GCAL=[]; __toast(u?'Google conectado ✓':'Desconectado ✓'); renderAgenda(); }
+        else __toast('No se pudo guardar. Reintenta');
+      }).catch(function(){ __toast('Error de conexión'); });
+    });
+}
+// Mapea los eventos de Google de la SEMANA visible al shape de la agenda (dow/h/dur).
+function _mcGcalToAgw(){
+  if(!MC_GCAL||!MC_GCAL.length) return [];
+  var wk=_weekDates(); if(!wk||!wk.length) return [];
+  var lo=new Date(wk[0].getFullYear(),wk[0].getMonth(),wk[0].getDate());
+  var hi=new Date(wk[6].getFullYear(),wk[6].getMonth(),wk[6].getDate()+1);
+  var out=[];
+  MC_GCAL.forEach(function(ev){
+    var d=new Date(ev.start||ev.dtstart); if(isNaN(d.getTime())) return;
+    if(d<lo||d>=hi) return;
+    var dow=(d.getDay()+6)%7; var h=d.getHours(); if(h<AG_START)h=AG_START; if(h>AG_END-1)h=AG_END-1;
+    var dur=1; try{ if(ev.end){ var e2=new Date(ev.end); var hrs=Math.round((e2.getTime()-d.getTime())/3600000); if(hrs>=1&&hrs<=6)dur=hrs; } }catch(_){}
+    out.push({dow:dow,h:h,dur:dur,coach:(MC_OWNER&&MC_OWNER.id)||'',tipo:'google',tit:_mcEsc((''+(ev.title||ev.summary||'Evento')).slice(0,60)),sub:'Google Calendar',gcal:true});
+  });
+  return out;
+}
+function mcSetAgenda(){
+  var a=MCAG[MC_N]||MCAG.fitness;AGT=a.agt;AGW=MC_REAL?_mcAgwFromCitas():a.agw;
+  // Sumar los eventos de Google (solo lectura) + su color en la leyenda.
+  if(MC_REAL&&MC_GCAL&&MC_GCAL.length){ if(AGT&&!AGT.google)AGT.google={c:'#9AA0A6',l:'Google'}; AGW=AGW.concat(_mcGcalToAgw()); }
+  AGW.forEach(function(e,i){if(!e.dur)e.dur=1;e.id='e'+i;});
+}
 mcSetAgenda();
 var _agCoach='todos',_agView='semana',_agSelDow=null,_dragEv=null,_agWeekOff=0;
 // Navegación de semanas (‹/›). En real reconstruye AGW desde las citas de ESA
@@ -2981,6 +3185,8 @@ var _MESL=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','se
 function _agEvs(){return AGW.filter(function(e){return _agCoach==='todos'||e.coach===_agCoach;});}
 function _weekDates(){var t=new Date();var mon=new Date(t.getFullYear(),t.getMonth(),t.getDate()-((t.getDay()+6)%7)+(_agWeekOff*7));var a=[];for(var i=0;i<7;i++){var d=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+i);a.push(d);}return a;}
 function renderAgenda(){
+ // Traer el Google Calendar del dueño la 1ª vez (después ya está en MC_GCAL).
+ if(MC_REAL&&!_mcGcalDone){ _mcGcalDone=true; _mcGcalLoad(function(){ if(MC_GCAL&&MC_GCAL.length){ mcSetAgenda(); if(_sec==='agenda') renderAgenda(); } }); }
  var v=document.getElementById('vscroll');
  var days=_weekDates();var todayDow=(new Date().getDay()+6)%7;
  if(_agSelDow===null)_agSelDow=todayDow;
@@ -2991,7 +3197,7 @@ function renderAgenda(){
  var clasesSem=evs.filter(function(e){return e.tipo==='clase';}).length;
  var vt=function(k,l){return '<button class="'+(_agView===k?'on':'')+'" onclick="_setAgView(\''+k+'\')">'+l+'</button>';};
  v.innerHTML='<header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">Agenda<span class="dot">.</span></h1><div class="cp-sub">Sesiones, eventos y disponibilidad de todo tu equipo.</div></div>'
-   +'<div class="cp-topbar-actions"><div class="agtoggle">'+vt('dia','Día')+vt('semana','Semana')+vt('mes','Mes')+'</div><button class="cp-btn cp-btn-ghost" onclick="_mcDispModal()" style="height:38px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Mi disponibilidad</button><button class="crear" onclick="__nuevaSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nueva sesión</button></div></header>'
+   +'<div class="cp-topbar-actions"><div class="agtoggle">'+vt('dia','Día')+vt('semana','Semana')+vt('mes','Mes')+'</div><button class="cp-btn cp-btn-ghost" onclick="_mcGcalConnect()" style="height:38px" title="Conectar Google Calendar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Google'+((MC_GCAL&&MC_GCAL.length)?' ✓':'')+'</button><button class="cp-btn cp-btn-ghost" onclick="_mcDispModal()" style="height:38px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Mi disponibilidad</button><button class="crear" onclick="__nuevaSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nueva sesión</button></div></header>'
    +'<div class="agkpis"><div class="agkpi"><div class="l">Sesiones hoy</div><div class="n">'+sesHoy+'</div></div><div class="agkpi"><div class="l">Atenciones esta semana</div><div class="n">'+clientesSem+'</div></div><div class="agkpi"><div class="l">Clases esta semana</div><div class="n">'+clasesSem+'</div></div><div class="agkpi"><div class="l">Eventos totales</div><div class="n">'+evs.length+'</div></div></div>'
    +'<div class="aglayout"><aside class="agcoaches">'+_agCoachList()+'</aside>'
    +'<div class="agcal">'+_agCalTop(days)+'<div class="agwrap">'+(_agView==='mes'?_agMonth():_agView==='dia'?_agDayGrid(days):_agWeek(days))+'</div><div class="aglegend" style="padding:12px 16px">'+_agLegend()+'</div></div>'
@@ -3183,7 +3389,9 @@ function _saveBrand(){
   }
   // Persiste color + nombre + logo en organizaciones.marca → llega al portal del
   // cliente y sobrevive el cambio de dispositivo (antes era solo localStorage).
-  mcSaveConfig({ nombre:n.trim(), logo:l.trim(), color:CFG.color },
+  var _font=(document.getElementById('cfb-font')||{}).value||'Inter';
+  var _bg=_mcBrand().bg||'#F7F4EC';
+  mcSaveConfig({ nombre:n.trim(), logo:l.trim(), color:CFG.color, bg:_bg, font:_font },
     (l.trim()?'Marca aplicada ✓':'Marca guardada ✓'));
   renderBrandLogo();
 }

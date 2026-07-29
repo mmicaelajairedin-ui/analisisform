@@ -107,7 +107,7 @@ Deno.serve(async (req: Request) => {
   const _desc = str(cfg.bio) || str((coach as Record<string, unknown>).bio);
   const _agendar = str(cfg.calendly_url) || str(cfg.link_agendar);
   const _color = str(cfg.color_marca) || str(cfg.color);
-  const _logo = str(cfg.logo);
+  const _logo = str(cfg.logo_url) || str(cfg.logo);
   const _foto = str(coach.foto_url) || str(cfg.foto_url) || str(cfg.foto_perfil);
   if (_titulo) marca.titulo = _titulo;
   if (_desc) marca.descripcion = _desc;
@@ -135,7 +135,10 @@ Deno.serve(async (req: Request) => {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coach_id)}`, {
       method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({ rol: "owner", org_id: orgId, configuracion: nc }),
+      // activo:true → reactiva la cuenta: si el coach venía con la prueba/suscripción
+      // vencida (activo=false), sin esto quedaba trabado en el muro de pago del login
+      // y no entraba a su red aunque ya sea owner.
+      body: JSON.stringify({ rol: "owner", org_id: orgId, configuracion: nc, activo: true }),
     });
     if (!r.ok) return json({ error: "promote_failed", status: r.status }, 502);
   } catch { return json({ error: "promote_failed" }, 502); }

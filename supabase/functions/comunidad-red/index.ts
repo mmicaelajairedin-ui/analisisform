@@ -135,7 +135,9 @@ Deno.serve(async (req: Request) => {
   // ---- REACT: cualquier miembro de la red incrementa un contador (best-effort) ----
   if (action === "react") {
     const postId = (body.post_id || "").toString().trim();
-    const emoji = (body.emoji || "").toString().trim().slice(0, 8);
+    // Sacamos comillas/ángulos: la clave se re-emite en onclick/HTML del cliente,
+    // así ningún emoji "raro" puede romper el atributo ni inyectar markup.
+    const emoji = (body.emoji || "").toString().trim().replace(/["'<>&]/g, "").slice(0, 8);
     if (!postId || !emoji) return json({ error: "faltan_datos" }, 400);
     // Verificamos que el post exista y que el que llama pertenezca a esa org.
     const rows = await q(`posts_red?id=eq.${encodeURIComponent(postId)}&select=org_id,reacts&limit=1`);
