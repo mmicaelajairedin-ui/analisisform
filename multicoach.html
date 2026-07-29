@@ -673,7 +673,7 @@ html.mc-embed #mc-nswitch{display:none!important}
   <!-- MAIN -->
   <main class="main">
     <div class="top">
-      <div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input placeholder="Buscar clientes, coaches, sesiones…"><kbd>⌘K</kbd></div>
+      <div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="mc-topsearch" placeholder="Buscar clientes por nombre o coach…" oninput="_mcTopSearch(this.value)"><kbd>⌘K</kbd></div>
       <div class="sp"></div>
       <div class="ico" onclick="__notif(this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="dot" id="mc-notif-dot" style="display:none">0</span>
         <div class="dd" id="dd-notif" onclick="event.stopPropagation()">
@@ -774,6 +774,18 @@ function _hdr(extra){ return (window.PWAUTH?PWAUTH.headers(extra):Promise.resolv
 function __toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('on');},1900);}
 var _sec='dashboard';
 function __hl(s){document.querySelectorAll('#nav a, #mc-bnav a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-s')===s);});}
+// Búsqueda global del top: filtra la lista de clientes (por nombre o coach).
+// Setea el filtro y navega a Clientes si no estás ahí; si ya estás, refresca.
+function _mcTopSearch(v){
+  _ks=v||'';
+  if(_sec!=='clientes'){ __go('clientes'); }
+  else { try{ _fillClientes(); }catch(e){} }
+  var kq=document.getElementById('kq'); if(kq&&kq.value!==_ks) kq.value=_ks;
+}
+// ⌘K / Ctrl+K enfoca la búsqueda global (el hint del teclado ahora es real).
+document.addEventListener('keydown',function(e){
+  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); var s=document.getElementById('mc-topsearch'); if(s){ s.focus(); s.select(); } }
+});
 function __go(s){
   var impl=(s==='dashboard'||s==='clientes'||s==='coaches'||s==='config'||s==='agenda'||s==='comunidad'||s==='canal'||s==='analytics');
   if(!impl){__toast('Sección «'+s+'» — Etapa próxima');__hl(_sec);return;}
@@ -1256,11 +1268,11 @@ function mcRiesgo(){var rk={stale:0,mid:1,fresh:2},pill={stale:['alto','Alto'],m
 // foto y cada bloque). Se pasan con ‹ › y se publica ahí mismo — sin abrir hoja.
 var MC_COM_RAIL=[
   {emo:'🎉',img:'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=640&q=60',msg:'¡Le damos la bienvenida a [nombre] a la red! Estamos felices de acompañarte en este camino 💪',
-   minis:[['PRÓXIMO EVENTO','Encuentro de la red','Viernes 27 · 20:00'],['NOVEDAD DE LA SEMANA','','6 clientes completaron su programa este mes.']]},
-  {emo:'🏆',img:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=640&q=60',msg:'¡Arrancó el reto del mes: [nombre del reto]! Completalo y sumá puntos. ¿Quién se prende? Reaccioná 🔥',
-   minis:[['CÓMO PARTICIPAR','','Sumá 1 punto por día activo durante 30 días.'],['PREMIO','Sesión 1:1 de regalo','Para los 3 primeros del ranking.']]},
-  {emo:'💡',img:'https://images.unsplash.com/photo-1499750310107-5fef28a66643?auto=format&fit=crop&w=640&q=60',msg:'Tip de la semana: [escribí tu consejo corto y accionable para tu red].',
-   minis:[['CONSEJO DEL DÍA','','Un cliente con un mensaje del coach cada 3 días retiene 40% más.'],['PARA APLICAR HOY','Escribile a 3 clientes','Un mensaje corto y personal alcanza.']]}
+   minis:[['PRÓXIMO EVENTO','[nombre del evento]','[día · hora]'],['NOVEDAD DE LA SEMANA','','[tu novedad para la red].']]},
+  {emo:'🏆',img:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=640&q=60',msg:'¡Arrancó el reto del mes: [nombre del reto]! Complétalo y suma puntos. ¿Quién se prende? Reacciona 🔥',
+   minis:[['CÓMO PARTICIPAR','','[explica cómo se suman los puntos].'],['PREMIO','[el premio]','[para quién].']]},
+  {emo:'💡',img:'https://images.unsplash.com/photo-1499750310107-5fef28a66643?auto=format&fit=crop&w=640&q=60',msg:'Tip de la semana: [escribe tu consejo corto y accionable para tu red].',
+   minis:[['CONSEJO DEL DÍA','','[tu consejo o dato del día].'],['PARA APLICAR HOY','Escríbele a 3 clientes','Un mensaje corto y personal alcanza.']]}
 ];
 var _comRailIdx=0, _railImgData=null;
 // Fotos de banco POR NICHO (welcome / reto / tip). Se adaptan al rubro de la red.
@@ -1423,11 +1435,19 @@ function _mcSesReal(k){
 function mcNichoKey(n){ n=(''+(n||'')).toLowerCase(); if(n.indexOf('fit')>=0)return 'fitness'; if(n.indexOf('financ')>=0||n.indexOf('finanz')>=0)return 'finanzas'; return 'carrera'; }
 function mcEmptyRow(t,s){ return '<div class="row" style="opacity:.85"><div><div class="nm">'+_mcEsc(t)+'</div><div class="sub">'+_mcEsc(s||'')+'</div></div></div>'; }
 // Mapea una fila real de usuarios(coach) al shape que usan las tarjetas.
-function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:u.id, n:u.nombre||u.email||'Coach', ini:_mcIni(u.nombre||u.email), nicho:cat, rat:+cfg.rating||0, ret:(cfg.retencion!=null?+cfg.retencion:null), cli:cliCount||0, ses:+cfg.sesiones||0, esp:cfg.especialidad||'', est:(u.activo===false?'inactivo':'activo'), foto:u.foto_url||cfg.foto||'', tipo:(cfg.member_role==='colaborador'?'colaborador':'coach')}; }
+function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:u.id, n:u.nombre||u.email||'Coach', email:(u.email||'').toLowerCase(), tel:(cfg.telefono||cfg.tel||u.telefono||''), ini:_mcIni(u.nombre||u.email), nicho:cat, rat:+cfg.rating||0, ret:(cfg.retencion!=null?+cfg.retencion:null), cli:cliCount||0, ses:+cfg.sesiones||0, esp:cfg.especialidad||'', est:(u.activo===false?'inactivo':'activo'), foto:u.foto_url||cfg.foto||'', tipo:(cfg.member_role==='colaborador'?'colaborador':'coach')}; }
 // Etiqueta del tipo de miembro (Coach / Colaborador) para las tarjetas y la ficha.
 function _mcTipoBadge(c){ if(!c||c.tipo!=='colaborador') return ''; return '<span style="display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#7A5CA8;background:rgba(122,92,168,.14);padding:2px 7px;border-radius:100px;margin-left:6px">Colaborador</span>'; }
 // Mapea una fila real de candidatos al shape que usan las tarjetas.
-function mcMapCli(c){ var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:c.id, n:c.nombre||c.email||'Cliente', email:(c.email||'').toLowerCase(), ini:_mcIni(c.nombre||c.email), nicho:cat, coach:c.coach_id||'', est:(c.activo===false?'inactivo':'activo'), prog:'', week:+c.semana_activa||1, plan:'pending', med:'pending', lastState:'fresh', _ts:(Date.parse(c.updated_at||c.created_at||'')||0), ult:_mcAgo(c.updated_at||c.created_at), foto:c.foto_perfil||''}; }
+function mcMapCli(c){ var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:c.id, n:c.nombre||c.email||'Cliente', email:(c.email||'').toLowerCase(), tel:(c.telefono||c.tel||c.phone||''), ini:_mcIni(c.nombre||c.email), nicho:cat, coach:c.coach_id||'', est:(c.activo===false?'inactivo':'activo'), prog:'', week:+c.semana_activa||1, plan:'pending', med:'pending', lastState:'fresh', _ts:(Date.parse(c.updated_at||c.created_at||'')||0), ult:_mcAgo(c.updated_at||c.created_at), foto:c.foto_perfil||''}; }
+// Botón de contacto REAL: WhatsApp si hay teléfono; si no, email; si no hay
+// ninguno, queda deshabilitado (sin fingir que abre WhatsApp).
+function _mcContactBtn(tel, email){
+  var t=(''+(tel||'')).replace(/[^\d]/g,'');
+  if(t) return '<a class="cp-btn cp-btn-ghost" href="https://wa.me/'+t+'" target="_blank" rel="noopener">'+PWI.svg('wa',{sm:true})+' WhatsApp</a>';
+  if(email) return '<a class="cp-btn cp-btn-ghost" href="mailto:'+_mcEsc(email)+'">'+PWI.svg('mail',{sm:true})+' Escribir email</a>';
+  return '<button class="cp-btn cp-btn-ghost" disabled style="opacity:.55;cursor:default">Sin contacto cargado</button>';
+}
 // KPIs REALES del dueño (honestos: lo que hay). Incluye el uso del cupo del plan.
 function mcKpisReal(){
   var co=(DB&&DB.coaches)||[], cl=(DB&&DB.clientes)||[];
@@ -1635,7 +1655,10 @@ function _bars(rows){return rows.map(function(r){return '<div style="display:fle
 // datos inventados. Igual criterio que el dashboard: mejor "sin datos aún" que
 // una maqueta que parece real.
 function _mcEmptyCard(t,s){return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">'+_mcEsc(t)+'<span class="dot">.</span></h3><div style="font-size:12.5px;color:var(--pw-text-soft);margin:8px 0 0;line-height:1.55">'+_mcEsc(s||'')+'</div></div>';}
-function _visBar(lbl){return '<div class="cp-card cp-card-pad" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="font-size:12.5px;color:var(--pw-text-soft)">'+lbl+' en el portal del cliente</div><span style="display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--pw-text-soft)">El cliente lo ve<button class="cp-switch is-on" onclick="this.classList.toggle(\'is-on\');__toast(this.classList.contains(\'is-on\')?\'Visible para el cliente\':\'Oculto para el cliente\')"><span></span></button></span></div>';}
+// Indicador honesto: estas secciones (plan/progreso) las ve el cliente en su
+// portal por diseño. Antes había un toggle que solo mostraba un toast y no
+// persistía nada (parecía que podías ocultarlo, pero no) — se saca.
+function _visBar(lbl){return '<div class="cp-card cp-card-pad" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="font-size:12.5px;color:var(--pw-text-soft)">'+lbl+' en el portal del cliente</div><span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--pw-bosque)">'+PWI.svg('eye',{sm:true})+'El cliente lo ve</span></div>';}
 function _cliBody(k,c,t){
  if(t==='perfil'){
   return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Datos del cliente<span class="dot">.</span></h3>'
@@ -1695,7 +1718,7 @@ function _renderFicha(){
    +'<div class="cp-week" style="margin-top:12px"><span class="cp-week-label">Sem '+k.week+'/4</span><span class="cp-week-dots">'+dots+'</span></div>'
    +'<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px"><span class="cp-client-pill '+(k.plan==='published'?'is-published':'is-pending')+'">Plan '+(k.plan==='published'?'activo':'a definir')+'</span><span class="cp-client-pill '+(k.med==='published'?'is-published':'is-pending')+'">'+DET().medLabel+' '+(k.med==='published'?'al día':'pendiente')+'</span></div></div>'
   +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
-   +'<button class="cp-btn cp-btn-ghost" onclick="__toast(\'Abriendo WhatsApp…\')">'+PWI.svg('wa',{sm:true})+' WhatsApp</button>'
+   +_mcContactBtn(k.tel,k.email)
    +'<button class="cp-btn cp-btn-ghost" onclick="reasignar(\''+k.id+'\')"><span class="cp-emo">'+PWI.svg('link',{sm:true})+'</span> Reasignar '+DET().coachSing.toLowerCase()+'</button>'
    +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" onclick="toggleCli(\''+k.id+'\')">'+(k.est==='activo'?'Suspender cliente':'Reactivar cliente')+'</button></div>'
   +'</aside>';
@@ -1833,7 +1856,7 @@ function _renderCoachFicha(){
    +'<div class="cp-coach-stats"><div class="cp-coach-st"><div class="v">'+suyos.length+'</div><div class="k">Clientes</div></div><div class="cp-coach-st"><div class="v">'+(c.ret!=null?c.ret+'%':'—')+'</div><div class="k">Retención</div></div><div class="cp-coach-st"><div class="v">'+(c.rat?'★'+c.rat:'—')+'</div><div class="k">Rating</div></div></div></div>'
   +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
    +(c.esOwner?'':'<button class="cp-btn cp-btn-ghost" onclick="_goCoachTab(\'mensajes\')"><span class="cp-emo">'+PWI.svg('chat',{sm:true})+'</span> Enviar mensaje</button>')
-   +'<button class="cp-btn cp-btn-ghost" onclick="__toast(\'Abriendo WhatsApp…\')">'+PWI.svg('wa',{sm:true})+' WhatsApp</button>'
+   +(c.esOwner?'':_mcContactBtn(c.tel,c.email))
    +(c.esOwner?'<div style="font-size:11.5px;color:var(--soft);line-height:1.4">Eres el dueño de la red. Puedes atender clientes como un coach más; para cambiar quién es el dueño, se hace desde el panel admin.</div>':(''
    +'<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:2px"><span style="color:var(--soft)">Tipo</span><select class="inp" style="height:30px;flex:1;font-size:12.5px" onchange="_setCoachRol(\''+c.id+'\',this.value)"><option value="coach"'+(c.tipo!=='colaborador'?' selected':'')+'>Coach (da clases)</option><option value="colaborador"'+(c.tipo==='colaborador'?' selected':'')+'>Colaborador</option></select></div>'
    +'<button class="cp-btn cp-btn-ghost" onclick="toggleCoach(\''+c.id+'\')">'+(c.est==='activo'?'Suspender '+DET().coachSing.toLowerCase():'Reactivar '+DET().coachSing.toLowerCase())+'</button>'
@@ -2726,12 +2749,12 @@ function renderAgenda(){
  var evs=_agEvs();
  var sesHoy=evs.filter(function(e){return e.dow===todayDow&&e.tipo==='sesion';}).length;
  var clientesSem=evs.filter(function(e){return e.tipo==='sesion'||e.tipo==='eval'||e.tipo==='nutricion';}).length;
- var ingresos=(sesHoy+evs.filter(function(e){return e.dow===todayDow&&(e.tipo==='eval'||e.tipo==='nutricion');}).length)*45+ (evs.filter(function(e){return e.dow===todayDow&&e.tipo==='clase';}).length)*90;
- var ocup=Math.min(100,Math.round(evs.length/((AG_END-AG_START)*6/3)*100));
+ // KPIs reales de agenda (sin inventar precios ni una capacidad arbitraria).
+ var clasesSem=evs.filter(function(e){return e.tipo==='clase';}).length;
  var vt=function(k,l){return '<button class="'+(_agView===k?'on':'')+'" onclick="_setAgView(\''+k+'\')">'+l+'</button>';};
  v.innerHTML='<header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">Agenda<span class="dot">.</span></h1><div class="cp-sub">Sesiones, eventos y disponibilidad de todo tu equipo.</div></div>'
    +'<div class="cp-topbar-actions"><div class="agtoggle">'+vt('dia','Día')+vt('semana','Semana')+vt('mes','Mes')+'</div><button class="crear" onclick="__nuevaSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nueva sesión</button></div></header>'
-   +'<div class="agkpis"><div class="agkpi"><div class="l">Sesiones hoy</div><div class="n">'+sesHoy+'</div></div><div class="agkpi"><div class="l">Clientes atendidos</div><div class="n">'+clientesSem+'</div></div><div class="agkpi"><div class="l">Ingresos previstos</div><div class="n">€'+ingresos.toLocaleString('es')+'</div></div><div class="agkpi"><div class="l">Ocupación semanal</div><div class="n">'+ocup+'%</div></div></div>'
+   +'<div class="agkpis"><div class="agkpi"><div class="l">Sesiones hoy</div><div class="n">'+sesHoy+'</div></div><div class="agkpi"><div class="l">Atenciones esta semana</div><div class="n">'+clientesSem+'</div></div><div class="agkpi"><div class="l">Clases esta semana</div><div class="n">'+clasesSem+'</div></div><div class="agkpi"><div class="l">Eventos totales</div><div class="n">'+evs.length+'</div></div></div>'
    +'<div class="aglayout"><aside class="agcoaches">'+_agCoachList()+'</aside>'
    +'<div class="agcal">'+_agCalTop(days)+'<div class="agwrap">'+(_agView==='mes'?_agMonth():_agView==='dia'?_agDayGrid(days):_agWeek(days))+'</div><div class="aglegend" style="padding:12px 16px">'+_agLegend()+'</div></div>'
    +'<aside class="agrail">'+_agRail(days)+'</aside></div>';
@@ -2766,8 +2789,11 @@ function _agBlk(e){var t=AGT[e.tipo]||AGT.sesion;var top=(e.h-AG_START)*AG_ROWH;
  var col=MC_REAL?_coCol(e.coach):t.c; var bg=MC_REAL?_coBg(col):t.bg;
  // En red real, tocar el evento lo EDITA (cambiar hora/tipo o cancelar). En demo, toast.
  var click=(MC_REAL&&e.citaId)?('_agEditEvent(\''+e.citaId+'\')'):('__toast(\''+e.tit.replace(/'/g,'')+' · '+t.l+'\')');
- var ttl=(MC_REAL&&e.citaId)?'Tocá para editar o cancelar':'Arrastra para reprogramar';
- return '<div class="agblk" draggable="true" ondragstart="agDragStart(event,\''+e.id+'\')" style="top:'+top+'px;height:'+h+'px;background:'+bg+';border-left-color:'+col+';color:'+col+'" onclick="'+click+'" title="'+ttl+'"><span class="t">'+e.h+':00</span><b>'+e.tit+'</b><small>'+e.sub+'</small></div>';}
+ // En red real se edita tocando (no hay drag → sin afordancia muerta). En demo,
+ // el drag reprograma. Así no queda un "arrastra" que después dice "pronto".
+ var _drg=(MC_REAL&&e.citaId)?'':' draggable="true" ondragstart="agDragStart(event,\''+e.id+'\')"';
+ var ttl=(MC_REAL&&e.citaId)?'Toca para editar o cancelar':'Arrastra para reprogramar';
+ return '<div class="agblk"'+_drg+' style="top:'+top+'px;height:'+h+'px;background:'+bg+';border-left-color:'+col+';color:'+col+'" onclick="'+click+'" title="'+ttl+'"><span class="t">'+e.h+':00</span><b>'+e.tit+'</b><small>'+e.sub+'</small></div>';}
 function _agWeek(days){
  var todayDow=(new Date().getDay()+6)%7;var evs=_agEvs();
  var head='<div class="agwh"></div>'+_DOW.map(function(d,i){return '<div class="agwh'+(i===todayDow?' today':'')+'">'+d+'<b>'+days[i].getDate()+'</b></div>';}).join('');
