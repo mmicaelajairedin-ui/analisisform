@@ -72,12 +72,17 @@ Deno.serve(async (req: Request) => {
   // La RLS de citas es por coach → el owner no las lee directo; acá con service
   // role las trae de todos sus coaches (+ las suyas) en una sola llamada. Ventana:
   // últimos 120 días + todo lo futuro (mirror de _calLoad en el panel).
+  // INCLUSIÓN: también trae los eventos de GRUPO (grupal=true) de la red.
   const coachIds = [owner.id, ...coaches.map((c: any) => c.id)].filter(Boolean);
   let citas: any[] = [];
   if (coachIds.length) {
     const from = new Date(Date.now() - 120 * 86400000).toISOString();
     const inList = coachIds.map((id) => encodeURIComponent(String(id))).join(",");
-    citas = await q(`citas?coach_id=in.(${inList})&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada`);
+    // Personal citas: coach_id en el team
+    const personal = await q(`citas?coach_id=in.(${inList})&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal`);
+    // Group events: org_id match y grupal=true
+    const grupal = await q(`citas?org_id=eq.${encodeURIComponent(orgId)}&grupal=eq.true&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal`);
+    citas = [...personal, ...grupal];
   }
 
   // owner también es un coach asignable ("el owner es coach aunque luego no
