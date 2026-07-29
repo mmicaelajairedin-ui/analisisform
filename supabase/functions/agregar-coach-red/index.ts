@@ -71,12 +71,17 @@ Deno.serve(async (req: Request) => {
   if (!org) return json({ error: "not_owner" }, 403);
 
   // ── Input ────────────────────────────────────────────────────────
-  let body: { email?: string; nombre?: string };
+  let body: { email?: string; nombre?: string; member_role?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const cEmail = (body.email || "").toString().replace(/\s+/g, "").toLowerCase();
   if (!EMAIL_RE.test(cEmail)) return json({ error: "email_invalid" }, 400);
   const cNombre = (body.nombre || "").toString().trim();
   if (!cNombre) return json({ error: "nombre_required" }, 400);
+  // Tipo de miembro: 'coach' (da clases) o 'colaborador' (no da clases, pero
+  // gestiona clientes y ve la agenda — "casi como coach"). A nivel usuarios los
+  // dos son rol='coach' (así heredan la RLS y el flujo de la red); la distinción
+  // vive en configuracion.member_role → el panel la muestra/edita.
+  const memberRole = (body.member_role || "coach").toString().toLowerCase() === "colaborador" ? "colaborador" : "coach";
 
   // ── ¿Ya existe ese email? ────────────────────────────────────────
   let rows: Array<{ id: string; rol: string; org_id: string | null }> = [];
@@ -112,7 +117,7 @@ Deno.serve(async (req: Request) => {
       headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify({
         email: cEmail, nombre: cNombre, rol: "coach", org_id: org.id, activo: true,
-        configuracion: { plan: "red", estado_sub: "activa", fecha_fin_prueba: farEnd, coach_type: org.nicho || "carrera", es_coach_red: true, creado_por_owner: email, pendiente_activacion: true },
+        configuracion: { plan: "red", estado_sub: "activa", fecha_fin_prueba: farEnd, coach_type: org.nicho || "carrera", es_coach_red: true, creado_por_owner: email, pendiente_activacion: true, member_role: memberRole, no_da_clases: memberRole === "colaborador" },
       }),
     });
     if (!r.ok && r.status !== 409) return json({ error: "insert_failed", status: r.status }, 502);

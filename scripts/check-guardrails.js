@@ -4318,6 +4318,26 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: se suma Coach O Colaborador (member_role) y la etiqueta se ve",
+    bug: "Las redes tienen coaches (dan clases) y colaboradores (no dan clases, pero gestionan " +
+         "clientes y ven la agenda — 'casi como coach'). Al sumar a alguien se elige el tipo; ambos son " +
+         "rol='coach' a nivel usuarios (heredan RLS/flujo de la red) y la distinción vive en " +
+         "configuracion.member_role. El panel muestra la etiqueta 'Colaborador'. Si se cae, se pierde la " +
+         "distinción y todos vuelven a figurar igual.",
+    check() {
+      const mc = read("multicoach.html");
+      if (mc) {
+        if (!/id="ic-rol"/.test(mc)) return "multicoach.html: falta el selector Coach/Colaborador al sumar a la red.";
+        if (!/member_role:rol/.test(mc)) return "multicoach.html: 'Sumar' ya no manda el tipo (member_role) a la red.";
+        if (!/function _mcTipoBadge\(/.test(mc)) return "multicoach.html: falta la etiqueta de Colaborador (_mcTipoBadge).";
+        if (!/cfg\.member_role==='colaborador'/.test(mc)) return "multicoach.html: mcMapCoach ya no lee el tipo de miembro (member_role).";
+      }
+      const fn = read("supabase/functions/agregar-coach-red/index.ts");
+      if (fn && !/member_role/.test(fn)) return "agregar-coach-red: ya no guarda el tipo de miembro (member_role).";
+      return null;
+    },
+  },
+  {
     name: "multicoach: 'Nueva sesión' en la red CREA la cita asignando coach (crear-cita-red), no un toast",
     bug: "En una red real, 'Nueva sesión' tenía que dejar AGENDAR un evento y ASIGNARLO a un coach " +
          "(tipo, nombre, día/hora, online/presencial, grupal) — no un toast de maqueta. La RLS de citas " +
