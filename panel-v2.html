@@ -6071,7 +6071,11 @@ function viewClientes(){
   if(nRiesgo) _alerts.push(_alrt("danger","alert","En riesgo","sin avanzar / sin entrar",nRiesgo,"cli:stale"));
   if(nRev) _alerts.push(_alrt("blue","fileText","A revisar","tu visto bueno",nRev,"cli:review"));
   if(_nx){ var _nd=new Date(_nx.t),_t0=new Date();_t0.setHours(0,0,0,0);var _dd=new Date(_nd);_dd.setHours(0,0,0,0);var _df=Math.round((_dd-_t0)/86400000); var _day=_df===0?"Hoy":(_df===1?"Mañana":_nd.toLocaleDateString("es-ES",{day:"2-digit",month:"short"})); _alerts.push(_alrt("go","calendar","Próxima sesión",_day+(_nx.s.hora?" · "+esc(_nx.s.hora):"")+" · "+esc((_nx.c.name||"").split(/\s+/)[0]),null)); }
-  var atencion="<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Atención<span class='dot'>.</span></h3>"+(_alerts.length?"<span class='cp-eyebrow'>"+_alerts.length+"</span>":"")+"</div><div style='padding-bottom:6px'>"+(_alerts.length?_alerts.join(""):"<div style='padding:18px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Todo al día ✓</div>")+"</div></div>";
+  // Atención: solo si hay algo que atender. Sin alertas = no mostramos la card
+  // (antes salía "Todo al día ✓", que ocupaba lugar sin acción).
+  var atencion=_alerts.length
+    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Atención<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+_alerts.length+"</span></div><div style='padding-bottom:6px'>"+_alerts.join("")+"</div></div>"
+    : "";
   // ── Cobros de Pathway (la plata que entra de tus clientes de comisión) ──
   var _pwAcc=_sol.filter(function(s){return s.estado==="aceptada";});
   var _rate=(typeof _pwCoachRate==="function")?_pwCoachRate():5;
@@ -6079,14 +6083,14 @@ function viewClientes(){
   var _pwNeto=Math.max(0,_pwBruto-_pwCom);
   var _mk=(function(){var d=new Date();return d.getFullYear()+"-"+d.getMonth();})();
   var _pwMes=0; _pwAcc.forEach(function(s){ var ca=s.created_at?new Date(s.created_at):null; if(!ca||isNaN(ca.getTime()))return; if((ca.getFullYear()+"-"+ca.getMonth())!==_mk)return; var m=Number(s.monto)||0,c=Number(s.comision); if(!(c>=0))c=m*_rate/100; _pwMes+=Math.max(0,m-c); });
-  var cobros=(state.pathwayOptIn || nPwActive>0 || !REAL)
+  // Cobros: solo se muestra si hay cobros REALES (o en demo). Sin cobros = no
+  // mostramos el placeholder "Sin cobros todavía" (ocupaba lugar sin dato).
+  var cobros=(_pwAcc.length || !REAL)
     ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Cobros de Pathway<span class='dot'>.</span></h3><span class='cp-eyebrow'>comisión "+_rate+"%</span></div>"+
-      (_pwAcc.length
-        ? "<div style='padding:12px 16px 15px'><div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--pw-text-muted)'>A tu favor · neto</div>"+
-            "<div style='font-family:var(--pw-serif);font-size:29px;font-weight:600;color:var(--pw-bosque);line-height:1;margin:4px 0 3px'>"+_money(_pwNeto)+"</div>"+
-            "<div style='font-size:11.5px;color:var(--pw-text-muted)'>Este mes "+_money(_pwMes)+" · comisión "+_money(_pwCom)+"</div>"+
-            "<div data-act='asist-go' data-go='config|pathway' style='margin-top:10px;font-size:12px;font-weight:700;color:var(--pw-bosque);cursor:pointer'>Ver desglose →</div></div>"
-        : "<div style='padding:14px 16px;font-size:12.5px;color:var(--pw-text-soft)'>Sin cobros todavía. Al primer pago, el desglose real.</div>")+
+      "<div style='padding:12px 16px 15px'><div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--pw-text-muted)'>A tu favor · neto</div>"+
+        "<div style='font-family:var(--pw-serif);font-size:29px;font-weight:600;color:var(--pw-bosque);line-height:1;margin:4px 0 3px'>"+_money(_pwNeto)+"</div>"+
+        "<div style='font-size:11.5px;color:var(--pw-text-muted)'>Este mes "+_money(_pwMes)+" · comisión "+_money(_pwCom)+"</div>"+
+        "<div data-act='asist-go' data-go='config|pathway' style='margin-top:10px;font-size:12px;font-weight:700;color:var(--pw-bosque);cursor:pointer'>Ver desglose →</div></div>"+
       "</div>"
     : "";
   var solSection=(!REAL || (_sol && _sol.length))
@@ -6129,10 +6133,10 @@ function viewClientes(){
       "<span style='display:inline-flex;align-items:center;gap:8px;flex:1;min-width:220px;font-size:13px;color:#8E7A35;font-weight:600'>"+PWI.svg('alert',{sm:true})+"Para que tus clientes de Pathway puedan agendar, "+_miss.join(" y ")+".</span>"+
       "<button class='cp-btn cp-btn-primary' style='height:34px;font-size:12.5px;padding:0 14px' data-act='gocal'>Completar</button></div>";
   }
-  var _pwZoneFull=_pwWarn+"<div class='cp-cli-cols'>"+
-      "<div class='cp-cli-main'>"+ recorrido + solSection +"</div>"+
-      "<aside class='cp-cli-rail'>"+ atencion + cobros +"</aside>"+
-    "</div>";
+  var _pwRail=atencion+cobros;
+  var _pwZoneFull=_pwWarn+(_pwRail
+    ? "<div class='cp-cli-cols'><div class='cp-cli-main'>"+ recorrido + solSection +"</div><aside class='cp-cli-rail'>"+ _pwRail +"</aside></div>"
+    : "<div>"+ recorrido + solSection +"</div>");
   var _pwZone;
   if(!REAL || _pwActivity || (state.pathwayOptIn && _pubOk && _calOk)){
     _pwZone=_pwZoneFull;
