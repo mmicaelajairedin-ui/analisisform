@@ -2265,10 +2265,15 @@ function viewSidebar(){
   }
   return "<aside class='cp-side"+(state.clienteSel?" cli-open":"")+(state.railCollapsed?" rail":"")+"'>"+
     "<a href='#' class='cp-side-brand' data-act='nav:resumen'>"+
-      ((REAL && isProV() && RCFG && RCFG.logo_url)
-        ? "<img src='"+esc(RCFG.logo_url)+"' alt='' style='height:52px;width:auto;max-width:180px;object-fit:contain;display:inline-block'>"
+      (function(){
+        // Logo del sidebar: 1º el de la RED (todos los miembros de una org lo
+        // ven, lo paga el plan del dueño), 2º el propio del coach (Pro), 3º Pathway.
+        var _lg=(REAL&&typeof RRED!=="undefined"&&RRED&&RRED.logo)?RRED.logo:((REAL&&isProV()&&RCFG&&RCFG.logo_url)?RCFG.logo_url:"");
+        return _lg
+        ? "<img src='"+esc(_lg)+"' alt='' style='height:52px;width:auto;max-width:180px;object-fit:contain;display:inline-block'>"
         : "<svg width='24' height='24' viewBox='0 0 100 100' aria-hidden='true'><polygon points='36.2,35.2 52.8,54.3 52.8,81.8 7.4,81.8' fill='#215C44'/><polygon points='67.9,45.8 92.6,81.8 43.1,81.8' fill='#267A54'/><circle cx='75.4' cy='27.8' r='10.3' fill='#F8CA45'/></svg>"+
-          "<span class='cp-side-brand-word'>pathway<span style='color:var(--pw-sendero)'>.</span></span>")+"</a>"+
+          "<span class='cp-side-brand-word'>pathway<span style='color:var(--pw-sendero)'>.</span></span>";
+      })()+"</a>"+
     "<button class='cp-rail-toggle' data-act='rail-toggle' title='Colapsar / expandir menú' aria-label='Colapsar o expandir menú'><svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M15 18l-6-6 6-6'/></svg><span class='rl-txt'>Colapsar</span></button>"+
     "<div class='cp-side-coach'>"+
       "<div class='cp-side-coach-photo'>"+avImg(COACH.photo,COACH.name,"")+
@@ -2293,6 +2298,9 @@ function viewSidebar(){
       )+
       "</div>"+
     (function(){
+      // Dueño de una red: acceso directo a su panel de red (multicoach) — él
+      // atiende a SUS clientes acá como un coach más, y gestiona el equipo allá.
+      if(REAL && RME && RME.rol==="owner") return "<a href='multicoach.html' style='display:block;margin:0 10px 6px;text-align:center;font-size:11px;font-weight:700;color:#1B4332;background:var(--pw-amanecer);border-radius:8px;padding:7px 8px;text-decoration:none'>"+PWI.svg('building',{sm:true})+" Mi red</a>";
       if(!_isDemoCoach()) return "";
       if(state.demoHideSwitch){ return "<div style='padding:4px 4px 6px'><button data-act='demo-switch-show' title='Mostrar selector de demo' style='background:none;border:none;color:var(--pw-text-muted);font-size:9px;letter-spacing:.5px;cursor:pointer;padding:2px 4px'>· · ·</button></div>"; }
       var dt=state.demoTipo||'carrera';
@@ -7288,14 +7296,19 @@ function _loadRedInfo(){
   if(!RME||!RME.org_id) return;
   _sb("organizaciones?id=eq."+encodeURIComponent(RME.org_id)+"&select=nombre,marca").then(function(rows){
     var o=(rows||[])[0]; if(!o) return;
-    if(o.nombre){ RRED=RRED||{}; RRED.nombre=o.nombre; if(state.ai&&state.ai.open) render(); }
-    // White-label de la RED: la marca del dueño (color + secundario + tipografía)
-    // tiñe el panel del coach, para que TODA la red se vea igual.
+    RRED=RRED||{};
+    if(o.nombre){ RRED.nombre=o.nombre; if(state.ai&&state.ai.open) render(); }
+    // White-label de la RED: la marca del dueño (logo + color + secundario +
+    // tipografía) tiñe el panel del coach, para que TODA la red se vea igual.
     try{
       var m=(o.marca&&typeof o.marca==='object')?o.marca:null;
       if(m){
         if(m.color && /^#[0-9a-f]{6}$/i.test(m.color)){ state.brandAccent=m.color; try{ _applyPanelBrand(); }catch(e){} }
         if(window.PWBrand){ if(m.color2)PWBrand.secondary(m.color2); if(m.font)PWBrand.font(m.font); }
+        // El LOGO de la red (organizaciones.marca.logo, lo sube el dueño o el
+        // admin por él) reemplaza al de Pathway en el sidebar. Antes solo se
+        // aplicaban color/tipografía y el logo guardado no se veía nunca.
+        if(m.logo){ RRED.logo=m.logo; try{ render(); }catch(e){} }
       }
     }catch(e){}
   }).catch(function(){});
@@ -8135,7 +8148,28 @@ function _iaChatScrollDown(){ try{ requestAnimationFrame(function(){ var s=docum
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
 function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
 // Redes (multicoaches) para la gestión desde el admin (transferir dueño).
-function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
+function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo,marca&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
+// Admin: subir el LOGO de una empresa (org) por el cliente. SVG/imagen chica tal
+// cual (conserva transparencia); grande → PNG 512. Guarda por guardar-red (merge).
+function _orgLogoPick(orgId){
+  var inp=document.getElementById('_orglogo');
+  if(!inp){ inp=document.createElement('input'); inp.type='file'; inp.accept='image/*,.svg'; inp.id='_orglogo'; inp.style.display='none'; document.body.appendChild(inp); }
+  inp.onchange=function(){ var f=inp.files&&inp.files[0]; inp.value=''; if(!f)return;
+    var r=new FileReader();
+    r.onload=function(ev){ var src=ev.target.result;
+      if((f.type&&f.type.indexOf('svg')>=0)||(''+src).length<400000){ _orgLogoSave(orgId,src); return; }
+      try{ var im=new Image(); im.onload=function(){ try{ var max=512,w=im.naturalWidth||im.width,h=im.naturalHeight||im.height; if(w>max||h>max){ if(w>=h){h=Math.round(h*max/w);w=max;} else {w=Math.round(w*max/h);h=max;} } var cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(im,0,0,w,h);var out=cv.toDataURL('image/png');_orgLogoSave(orgId,(out&&out.length<src.length)?out:src);}catch(_){_orgLogoSave(orgId,src);} }; im.onerror=function(){_orgLogoSave(orgId,src);}; im.src=src; }catch(_){_orgLogoSave(orgId,src);}
+    };
+    r.readAsDataURL(f);
+  };
+  inp.click();
+}
+function _orgLogoSave(orgId,dataUrl){
+  _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/functions/v1/guardar-red",{method:"POST",headers:h,body:JSON.stringify({org_id:orgId,marca:{logo:dataUrl}})}); })
+    .then(function(r){ return r.ok?r.json():r.json().catch(function(){return null;}); })
+    .then(function(d){ alert((d&&d.ok)?"Logo de la empresa guardado ✓":("No se pudo guardar el logo"+(d&&d.error?(" ("+d.error+")"):"")+".")); })
+    .catch(function(){ alert("Error de conexión."); });
+}
 // Email de acceso al coach. isNew=true → coach recién creado por el admin:
 // le mandamos a activar su cuenta y ELEGIR su contraseña (link a registro,
 // nunca le mandamos una contraseña). isNew=false → renovación: ya tiene
@@ -8646,30 +8680,54 @@ function viewAdmin(){
   var _directCoaches = coachesEng.filter(function(c){ return !c.orgId; });
   var _redCoaches    = coachesEng.filter(function(c){ return !!c.orgId; });
   var engRows = _directCoaches.map(_coachCardHtml).join("");
-  var _redGroupsHtml = "";
-  if(_redCoaches.length){
-    // RORGS puede no haber cargado aún: solo marcamos "sin red" (huérfano) cuando
-    // la lista de redes YA está cargada y el org_id no matchea ninguna. Así un
-    // coach de red nunca desaparece: o va bajo su red, o al bucket "a revisar".
-    var _orgsLoaded = (typeof RORGS!=="undefined" && Array.isArray(RORGS));
-    var _byOrg = {};
-    _redCoaches.forEach(function(c){ (_byOrg[c.orgId]=_byOrg[c.orgId]||[]).push(c); });
-    var _grp = Object.keys(_byOrg).map(function(oid){
-      var o = _orgsLoaded ? (RORGS.filter(function(x){ return String(x.id)===String(oid); })[0]||null) : null;
-      return { o:o, huerfano:(_orgsLoaded && !o), coaches:_byOrg[oid] };
-    }).sort(function(a,b){ return (a.huerfano?1:0)-(b.huerfano?1:0); }); // huérfanos al final
-    _redGroupsHtml = _grp.map(function(g){
-      var n = g.coaches.length;
-      var cards = g.coaches.map(_coachCardHtml).join("");
-      if(g.huerfano){
-        return "<div style='margin-top:14px'><div style='display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--pw-danger);padding:7px 2px;margin-bottom:6px;border-bottom:1px solid rgba(192,117,110,.4)'><span class='cp-emo'>"+PWI.svg('alert',{sm:true})+"</span><b>Sin red asignada</b><span style='color:var(--pw-text-soft);font-weight:500'>· "+n+" coach"+(n===1?"":"es")+" · su red ya no existe — reasignalos o eliminalos</span></div><div class='cp-coach-grid'>"+cards+"</div></div>";
+  // ── Pestaña "Redes": nivel 1 = lista de redes (dueños); nivel 2 = entrás a una
+  //    red y ves SUS coaches. Los coaches de red NO se mezclan con tus directos.
+  var _redByOrg = {};
+  _redCoaches.forEach(function(c){ (_redByOrg[c.orgId]=_redByOrg[c.orgId]||[]).push(c); });
+  var _redesView = "";
+  {
+    var _rOrgsLoaded = (typeof RORGS!=="undefined" && Array.isArray(RORGS));
+    // Avatar de la red: el LOGO de la empresa (marca.logo/foto) si lo tiene; si no,
+    // el icono genérico. object-fit:contain para no recortar logos.
+    var _redAvatar = function(o, size, huerf){
+      size = size||38;
+      var logo = (o && o.marca && typeof o.marca==="object" && (o.marca.logo||o.marca.foto)) || "";
+      if(logo && !huerf){
+        return "<span style='width:"+size+"px;height:"+size+"px;border-radius:10px;background:#fff;border:1px solid var(--pw-border);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0'><img src='"+esc(logo)+"' alt='' referrerpolicy='no-referrer' style='max-width:100%;max-height:100%;object-fit:contain'></span>";
       }
-      var o=g.o||{};
-      var nombreRed = esc(o.nombre||"Red");
-      var dueno = esc(o.owner_email||"—");
-      return "<div style='margin-top:14px'><div style='display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--pw-carbon);padding:7px 2px;margin-bottom:6px;border-bottom:1px solid var(--pw-border)'><span class='cp-emo'>"+PWI.svg('building',{sm:true})+"</span><b>"+nombreRed+"</b><span style='color:var(--pw-text-soft);font-weight:500'>· "+n+" coach"+(n===1?"":"es")+" · dueño "+dueno+"</span></div><div class='cp-coach-grid'>"+cards+"</div></div>";
-    }).join("");
-    _redGroupsHtml = "<div style='margin-top:20px'><div style='font-size:11px;font-weight:700;color:var(--pw-text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px'>Coaches en redes</div><div style='font-size:11.5px;color:var(--pw-text-soft);margin-bottom:4px'>Pertenecen al equipo de un multicoach — los gestiona su dueño, no cuentan como coaches tuyos.</div>"+_redGroupsHtml+"</div>";
+      return "<span style='width:"+size+"px;height:"+size+"px;border-radius:10px;background:var(--pw-niebla-2);display:flex;align-items:center;justify-content:center;color:"+(huerf?"var(--pw-danger)":"var(--pw-bosque)")+";flex-shrink:0'>"+PWI.svg(huerf?"alert":"building",{})+"</span>";
+    };
+    if(state.redSel){
+      // Nivel 2: coaches de la red seleccionada.
+      var _selId = String(state.redSel);
+      var _selOrg = _rOrgsLoaded ? (RORGS.filter(function(x){ return String(x.id)===_selId; })[0]||null) : null;
+      var _selCoaches = _redByOrg[_selId] || [];
+      var _selNombre = _selOrg ? esc(_selOrg.nombre||"Red") : "Sin red asignada";
+      var _selDueno = _selOrg ? esc(_selOrg.owner_email||"—") : "su red ya no existe";
+      var _selCards = _selCoaches.length ? "<div class='cp-coach-grid'>"+_selCoaches.map(_coachCardHtml).join("")+"</div>" : "<div style='font-size:13px;color:var(--pw-text-soft);padding:16px 2px'>Esta red todavía no tiene coaches.</div>";
+      _redesView = "<div class='cp-card'><div class='cp-card-hd' style='align-items:center;gap:10px'>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:30px;padding:0 12px;font-size:12px' data-act='redsel:'>← Redes</button>"+
+        _redAvatar(_selOrg, 34, !_selOrg)+
+        "<h3 class='cp-card-title' style='margin:0'>"+_selNombre+"<span class='dot'>.</span></h3>"+
+        "<span class='cp-eyebrow'>dueño "+_selDueno+" · "+_selCoaches.length+" coach"+(_selCoaches.length===1?"":"es")+"</span></div>"+
+        "<div class='cp-card-pad'>"+_selCards+"</div></div>";
+    } else {
+      // Nivel 1: una fila por red (RORGS) + bucket huérfano si hay coaches con org
+      // inexistente. Entrás a una red para ver sus coaches.
+      var _redRow = function(o, id, nombre, dueno, plan, nCo, huerf){
+        return "<button type='button' data-act='redsel:"+esc(id)+"' style='width:100%;text-align:left;border:1px solid "+(huerf?"rgba(192,117,110,.4)":"var(--pw-border)")+";background:#fff;border-radius:12px;padding:13px 15px;margin-bottom:9px;cursor:pointer;display:flex;align-items:center;gap:12px'>"+
+          _redAvatar(o, 38, huerf)+
+          "<span style='flex:1;min-width:0'><span style='display:block;font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+esc(nombre)+"</span><span style='display:block;font-size:12px;color:var(--pw-text-soft)'>"+(huerf?"su red ya no existe — entrá para reasignar":("dueño "+esc(dueno)+(plan?(" · "+esc(plan)):"")))+"</span></span>"+
+          "<span style='font-size:12.5px;font-weight:700;color:var(--pw-carbon);background:var(--pw-niebla-2);border-radius:100px;padding:4px 11px'>"+nCo+" coach"+(nCo===1?"":"es")+"</span>"+
+          "<span style='color:var(--pw-text-muted);font-size:18px'>›</span></button>";
+      };
+      var _known = _rOrgsLoaded ? RORGS.slice() : [];
+      var _knownIds = {}; _known.forEach(function(o){ _knownIds[String(o.id)]=1; });
+      var _rowsRed = _known.map(function(o){ var n=(_redByOrg[String(o.id)]||[]).length; return _redRow(o, o.id, o.nombre||"Red", o.owner_email||"—", o.plan||"", n, false); }).join("");
+      Object.keys(_redByOrg).forEach(function(oid){ if(!_knownIds[oid]) _rowsRed += _redRow(null, oid, "Sin red asignada", "", "", _redByOrg[oid].length, true); });
+      if(!_rowsRed) _rowsRed = "<div style='font-size:13px;color:var(--pw-text-soft);text-align:center;padding:20px 0;line-height:1.55'>Todavía no hay redes. Cuando conviertas o des de alta un multicoach, su equipo aparece acá.</div>";
+      _redesView = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Redes<span class='dot'>.</span></h3><span class='cp-eyebrow'>equipos de tus multicoaches — entrá para ver sus coaches</span></div><div class='cp-card-pad'>"+_rowsRed+"</div></div>";
+    }
   }
   var contactos = [
     { tel:"+34 611 23 45 67",   pag:"soy-coach",     f:"Hoy 14:30" },
@@ -9033,6 +9091,8 @@ function viewAdmin(){
             } else {
               row+="<span style='font-size:12px;color:var(--pw-text-soft)'>Suma un coach a esta red para poder transferirla.</span>";
             }
+            // Logo de la EMPRESA (org): el admin lo sube por el cliente (white-glove).
+            row+="<button class='cp-btn cp-btn-ghost' onclick=\"_orgLogoPick('"+esc(o.id)+"')\" title='Subir el logo de esta empresa'>"+svg(IC.image||IC.plus,13)+" Logo</button>";
             return row+"</div>";
           }).join("")+
           (mcT ? "<div style='font-size:12px;font-weight:600;color:"+mcTCol+"'>"+esc(mcT.replace(/^(ok|err|…):/,""))+"</div>" : "")+
@@ -9048,6 +9108,7 @@ function viewAdmin(){
       var _tabs = "<div style='display:flex;gap:6px;margin-bottom:2px'>"+
         "<button class='cp-chip "+(_cv==="agregar"?"is-on":"")+"' data-act='coachview:agregar'>Agregar</button>"+
         "<button class='cp-chip "+(_cv==="lista"?"is-on":"")+"' data-act='coachview:lista'>Coaches</button>"+
+        "<button class='cp-chip "+(_cv==="redes"?"is-on":"")+"' data-act='coachview:redes'>Redes"+(_redCoaches.length?"<span class='cp-chip-count'>"+_redCoaches.length+"</span>":"")+"</button>"+
         "<button class='cp-chip "+(_cv==="analiticas"?"is-on":"")+"' data-act='coachview:analiticas'>Analíticas</button>"+
       "</div>";
       var _kpis = "<div class='cp-card'><div class='cp-card-pad' style='display:flex;gap:20px;flex-wrap:wrap'>"+
@@ -9141,7 +9202,7 @@ function viewAdmin(){
       var _an2 = "<div class='cp-emb-split'>"+_growth+_estCard+"</div>";
       var _list = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches<span class='dot'>.</span></h3>"+
         "<input class='cp-form-input' style='max-width:230px;height:34px' placeholder='Buscar coach…' oninput='cpCoachFilter(this.value)'></div>"+
-        "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div>"+_redGroupsHtml+"</div>";
+        "<div class='cp-coach-grid' id='cp-coach-grid'>"+engRows+"</div></div>";
       // ── Sin asignar (clientes huérfanos: coach_id NULL) ──────────────
       // Entraron al form/reserva SIN el link etiquetado de un coach, así que
       // nadie los "posee" y no aparecen en la lista de ningún coach. Antes eran
@@ -9169,6 +9230,7 @@ function viewAdmin(){
       body = _tabs + (
         _cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli + "<div id='sala-insights' data-loaded='0'></div>" + "<div id='ceo-dash' data-loaded='0'></div>") :
         _cv==="agregar"    ? (accBox + mcBox + convBox + transferBox + _orphCard) :
+        _cv==="redes"      ? _redesView :
         _list
       );
     }
@@ -10940,7 +11002,8 @@ document.addEventListener("click", function(ev){
   if(act==="psel-plan"){ _planSel().plan=(el.getAttribute("data-p")==="pro")?"pro":"basic"; render(); return; }
   if(act==="plan-refresh"){ _planRefresh(); return; }
   if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.mctMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } if(state.adminTab==="novedades"){ RFEED=null; } render(); return; }
-  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; render(); return; }
+  if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; state.redSel=null; render(); return; }
+  if(act.indexOf("redsel:")===0){ state.redSel=act.slice(7)||null; render(); window.scrollTo(0,0); return; }
   if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
   if(act.indexOf("estsel:")===0){ var _es=parseInt(act.slice(7),10); state.estSel=(state.estSel===_es?null:_es); render(); return; }
   if(act==="ceo-reload"){ var _cb=document.getElementById('ceo-dash'); if(_cb){ _cb.setAttribute('data-loaded','0'); _ceoLoad(); } return; }
@@ -14492,7 +14555,11 @@ function loadReal(){
     // ¿Este coach pertenece a una RED (multicoach)? El org_id manda; si lo hay,
     // se habilita el chat con el dueño de la red (mismo patrón que Soporte Pathway).
     RME.org_id = usr.org_id || (RME.configuracion&&RME.configuracion.org_id) || null;
-    if(RME.org_id && !RADMIN && RME.rol!=="owner"){ try{ _loadRedInfo(); }catch(e){} }
+    // El branding de la red (logo/color) aplica a TODOS sus miembros, dueño
+    // incluido — él gestiona la red en multicoach.html pero atiende a SUS
+    // clientes acá, con la misma marca. (Los hilos de chat de red del coach
+    // sí siguen excluyendo al dueño: él es el otro lado de ese chat.)
+    if(RME.org_id && !RADMIN){ try{ _loadRedInfo(); }catch(e){} }
     var cfg = RCFG;
     var _vit = (cfg&&cfg.es_pro_vitalicio===true) || RADMIN;
     var planEff = _vit ? "pro" : (cfg&&cfg.plan==="pro" ? "pro" : "basic");

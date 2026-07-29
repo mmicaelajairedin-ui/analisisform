@@ -58,6 +58,17 @@ async function ownerOrg(token: string, email: string): Promise<string | null> {
   } catch { return null; }
 }
 
+// ¿El que llama es admin de Pathway? (por email de la ficha usuarios).
+async function isAdmin(email: string): Promise<boolean> {
+  if (!email) return false;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/usuarios?email=ilike.${encodeURIComponent(email)}&rol=eq.admin&select=id&limit=1`, { headers: svc });
+    if (!r.ok) return false;
+    const rows = await r.json();
+    return Array.isArray(rows) && rows.length > 0;
+  } catch { return false; }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
@@ -67,14 +78,29 @@ Deno.serve(async (req: Request) => {
   const token = auth.replace(/^Bearer\s+/i, "").trim();
   const email = await callerEmail(token);
   if (!email) return json({ error: "not_owner" }, 403);
-  const orgId = await ownerOrg(token, email);
-  if (!orgId) return json({ error: "not_owner" }, 403);
 
-  let body: { marca?: Record<string, unknown>; nombre?: string; slug?: string };
+  let body: { marca?: Record<string, unknown>; nombre?: string; slug?: string; org_id?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
 
+  // El DUEÑO guarda SU red. El ADMIN (Pathway) puede guardar CUALQUIER red
+  // (onboarding white-glove: dejarle el logo/marca listo al cliente sin su clave).
+  let orgId = await ownerOrg(token, email);
+  if (!orgId) {
+    if (await isAdmin(email) && body.org_id) orgId = String(body.org_id).trim();
+  }
+  if (!orgId) return json({ error: "not_owner" }, 403);
+
   const patch: Record<string, unknown> = {};
-  if (body.marca && typeof body.marca === "object") patch.marca = body.marca;
+  if (body.marca && typeof body.marca === "object") {
+    // Merge sobre la marca actual → un guardado parcial (ej. solo el logo) NO pisa
+    // el resto (colores, fuente, nombre público…).
+    let cur: Record<string, unknown> = {};
+    try {
+      const rc = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(orgId)}&select=marca&limit=1`, { headers: svc });
+      if (rc.ok) { const rows = await rc.json(); if (Array.isArray(rows) && rows[0] && rows[0].marca && typeof rows[0].marca === "object") cur = rows[0].marca; }
+    } catch { /* si falla la lectura, guardamos lo que vino */ }
+    patch.marca = { ...cur, ...body.marca };
+  }
   if (typeof body.nombre === "string" && body.nombre.trim()) patch.nombre = body.nombre.trim().slice(0, 120);
   if (typeof body.slug === "string" && body.slug.trim()) patch.slug = body.slug.trim().toLowerCase().slice(0, 80);
   if (!Object.keys(patch).length) return json({ error: "nada_que_guardar" }, 400);

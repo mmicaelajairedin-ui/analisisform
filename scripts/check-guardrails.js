@@ -2840,8 +2840,8 @@ const RULES = [
     bug: "multicoach.html arrancaba SIEMPRE con datos demo (Alex Gómez inventado). " +
          "Ahora, si entra un usuario rol='owner', carga su organización + coaches + " +
          "clientes por org_id desde Supabase (mcBoot→mcLoadReal), y el login rutea al " +
-         "owner a multicoach.html. Si algo falla cae a demo (nunca en blanco). Ver " +
-         "docs/multicoach-modelo.md.",
+         "owner a multicoach.html. Si algo falla queda en modo real VACÍO con aviso " +
+         "(nunca vuelve a la maqueta). Ver docs/multicoach-modelo.md.",
     check() {
       const mc = read("multicoach.html");
       if (!mc) return null;
@@ -2862,9 +2862,9 @@ const RULES = [
       // Debe leer la org y filtrar coaches/clientes por org_id (fallback directo).
       if (!/organizaciones/.test(mc) || !/org_id=eq\./.test(mc))
         return "multicoach.html: mcLoadReal ya no lee organizaciones / filtra por org_id.";
-      // Fallback a demo ante error (no dejar el panel en blanco).
-      if (!/MC_REAL=false;\s*mcApplyNiche\(\)/.test(mc))
-        return "multicoach.html: mcLoadReal perdió el fallback a demo (podría quedar en blanco).";
+      // Fallback a modo real vacío con aviso (no maqueta, no blanco).
+      if (!/catch\(function\(\)\{[\s\S]{0,200}_apply\(null,\[\],\[\],null,\[\]\)/.test(mc))
+        return "multicoach.html: mcLoadReal no queda en modo real vacío ante error (vuelve a caer a demo o blanco).";
       // El login debe rutear al owner a su panel de red.
       const lg = read("login.html");
       if (lg && !/rol===['"]owner['"][\s\S]{0,120}multicoach\.html/.test(lg))
@@ -4791,6 +4791,52 @@ const RULES = [
       if (!s) return null;
       if (!/if\(u\.org_id \|\| cfg\.org_id\) return false/.test(s))
         return "panel-v2.html: _paywallCheck ya no exime a los miembros de una red (org_id) → vuelven a quedar bloqueados por su trial individual.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: nunca la maqueta ('Alex') para un usuario real — rol fresco del servidor",
+    bug: "Un coach convertido a dueño que NO volvía a loguearse (mj_user viejo con " +
+         "rol='coach') abría multicoach.html y caía a la MAQUETA: veía 'Bienvenido " +
+         "Alex' + datos ficticios en vez de su red, sin su logo ni sus clientes. " +
+         "mcBoot ahora verifica el rol FRESCO contra usuarios: dueño → red real; " +
+         "coach de una red → redirect a panel-v2 (su panel). Además mcLoadReal " +
+         "pinta el nombre real al instante (_mcPaintOwner) y si la carga falla " +
+         "queda en modo real VACÍO con aviso, no vuelve a la demo.",
+    check() {
+      const s = read("multicoach.html");
+      if (!s) return null;
+      if (!/function mcBoot\(\)[\s\S]{0,3000}rest\/v1\/usuarios\?id=eq\./.test(s))
+        return "multicoach.html: mcBoot ya no verifica el rol fresco contra el servidor (usuarios?id=eq.) → un dueño con mj_user viejo vuelve a ver la maqueta 'Alex'.";
+      if (!/rol==='coach'&&f\.org_id[\s\S]{0,200}panel-v2\.html/.test(s))
+        return "multicoach.html: mcBoot ya no manda al coach de una red a SU panel (panel-v2.html).";
+      if (!/function _mcPaintOwner\(/.test(s) || !/_mcPaintOwner\(owner\)/.test(s))
+        return "multicoach.html: mcLoadReal ya no pinta la identidad real del dueño al instante (_mcPaintOwner) → vuelve el flash de 'Alex Gómez'.";
+      if (/MC_REAL=false;\s*mcApplyNiche\(\)/.test(s))
+        return "multicoach.html: la carga de la red real vuelve a caer a la MAQUETA al fallar (MC_REAL=false) — debe quedar en modo real vacío con aviso.";
+      if (!/MC_OWNER\.nombre\|\|\(\(MC_OWNER\.email/.test(s))
+        return "multicoach.html: el nombre del dueño real vuelve a caer al de la maqueta ('Alex') en vez de a su email.";
+      return null;
+    },
+  },
+  {
+    name: "red multicoach: el LOGO de la red se aplica en el panel de sus coaches",
+    bug: "El dueño (o el admin por él) guardaba el logo de la red en " +
+         "organizaciones.marca.logo pero panel-v2 solo aplicaba color/tipografía: " +
+         "el logo no se veía en NINGÚN lado del panel de los coaches del equipo " +
+         "('no ve el logo del equipo que yo misma guardé'). _loadRedInfo ahora " +
+         "guarda RRED.logo y el brand del sidebar lo prefiere sobre el logo " +
+         "individual del coach. El dueño también recibe el branding (sin excluir " +
+         "rol='owner' en el boot).",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/function _loadRedInfo\(\)[\s\S]{0,1600}m\.logo\)\{\s*RRED\.logo=m\.logo/.test(s))
+        return "panel-v2.html: _loadRedInfo ya no aplica el logo de la red (RRED.logo) → el logo guardado no se ve.";
+      if (!/RRED&&RRED\.logo\)\?RRED\.logo/.test(s))
+        return "panel-v2.html: el brand del sidebar ya no prefiere el logo de la red (RRED.logo).";
+      if (/RME\.org_id && !RADMIN && RME\.rol!=="owner"\)\{ try\{ _loadRedInfo/.test(s))
+        return "panel-v2.html: _loadRedInfo volvió a excluir al dueño → él no ve la marca de su propia red en su panel de coach.";
       return null;
     },
   },
