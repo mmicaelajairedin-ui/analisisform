@@ -1481,7 +1481,7 @@ function _mcSesReal(k){
 function mcNichoKey(n){ n=(''+(n||'')).toLowerCase(); if(n.indexOf('fit')>=0)return 'fitness'; if(n.indexOf('financ')>=0||n.indexOf('finanz')>=0)return 'finanzas'; return 'carrera'; }
 function mcEmptyRow(t,s){ return '<div class="row" style="opacity:.85"><div><div class="nm">'+_mcEsc(t)+'</div><div class="sub">'+_mcEsc(s||'')+'</div></div></div>'; }
 // Mapea una fila real de usuarios(coach) al shape que usan las tarjetas.
-function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:u.id, n:u.nombre||u.email||'Coach', email:(u.email||'').toLowerCase(), tel:(cfg.telefono||cfg.tel||u.telefono||''), ini:_mcIni(u.nombre||u.email), nicho:cat, rat:+cfg.rating||0, ret:(cfg.retencion!=null?+cfg.retencion:null), cli:cliCount||0, ses:+cfg.sesiones||0, esp:cfg.especialidad||'', est:(u.activo===false?'inactivo':'activo'), foto:u.foto_url||cfg.foto||'', tipo:(cfg.member_role==='colaborador'?'colaborador':'coach')}; }
+function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:u.id, n:u.nombre||u.email||'Coach', email:(u.email||'').toLowerCase(), tel:(cfg.telefono||cfg.tel||u.telefono||''), ini:_mcIni(u.nombre||u.email), nicho:cat, rat:+cfg.rating||0, ret:(cfg.retencion!=null?+cfg.retencion:null), cli:cliCount||0, ses:+cfg.sesiones||0, esp:cfg.especialidad||'', est:(u.activo===false?'inactivo':'activo'), foto:u.foto_url||cfg.foto||'', tipo:(cfg.member_role==='colaborador'?'colaborador':'coach'), servicios:(Object.prototype.toString.call(cfg.servicios)==='[object Array]'?cfg.servicios:[])}; }
 // Etiqueta del tipo de miembro (Coach / Colaborador) para las tarjetas y la ficha.
 function _mcTipoBadge(c){ if(!c||c.tipo!=='colaborador') return ''; return '<span style="display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#7A5CA8;background:rgba(122,92,168,.14);padding:2px 7px;border-radius:100px;margin-left:6px">Colaborador</span>'; }
 // Mapea una fila real de candidatos al shape que usan las tarjetas.
@@ -1903,6 +1903,7 @@ function _renderCoachFicha(){
   +'<div class="cp-card cp-card-pad" style="text-align:center"><div class="cp-eyebrow" style="margin-bottom:8px">Estado</div><span class="cp-coach-health '+h[0]+'" style="display:inline-block;margin-bottom:10px">'+h[1]+'</span>'
    +'<div class="cp-coach-stats"><div class="cp-coach-st"><div class="v">'+suyos.length+'</div><div class="k">Clientes</div></div><div class="cp-coach-st"><div class="v">'+(c.ret!=null?c.ret+'%':'—')+'</div><div class="k">Retención</div></div><div class="cp-coach-st"><div class="v">'+(c.rat?'★'+c.rat:'—')+'</div><div class="k">Rating</div></div></div></div>'
   +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
+   +'<button class="cp-btn cp-btn-ghost" onclick="mcServiciosModal(\''+c.id+'\')">'+PWI.svg('creditCard',{sm:true})+' Servicios y precios ('+(c.servicios?c.servicios.length:0)+')</button>'
    +(c.esOwner?'':'<button class="cp-btn cp-btn-ghost" onclick="_goCoachTab(\'mensajes\')"><span class="cp-emo">'+PWI.svg('chat',{sm:true})+'</span> Enviar mensaje</button>')
    +(c.esOwner?'':_mcContactBtn(c.tel,c.email))
    +(c.esOwner?'<div style="font-size:11.5px;color:var(--soft);line-height:1.4">Eres el dueño de la red. Puedes atender clientes como un coach más; para cambiar quién es el dueño, se hace desde el panel admin.</div>':(''
@@ -2120,6 +2121,65 @@ function _setCoachRol(id, rol){
   if(!res.ok||!res.d.ok){ c.tipo=prev; _renderCoachFicha(); __toast(res.d.error==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo cambiar. Reintenta'); return; }
   _renderCoachFicha(); if(_sec==='coaches')renderCoaches(); __toast(rol==='colaborador'?'Ahora es colaborador ✓':'Ahora es coach ✓');
  }).catch(function(){ c.tipo=prev; _renderCoachFicha(); __toast('Error de conexión. Reintenta'); });
+}
+// ── Aranceles: servicios + precios de un coach (alimentan la landing y el checkout) ──
+var _mcSvcCoach='', _mcSvcRows=[];
+function mcServiciosModal(coachId){
+  if(!MC_REAL){ __toast('Disponible en tu red real.'); return; }
+  var c=_coach(coachId); if(!c) return;
+  _mcSvcCoach=coachId;
+  _mcSvcRows=(c.servicios||[]).map(function(s){ return {name:s.name||s.nombre||'', price:(s.price!=null?s.price:(s.precio!=null?s.precio:'')), moneda:(s.moneda||'eur'), recurrente:!!(s.recurrente||s.suscripcion), desc:s.desc||s.descripcion||''}; });
+  if(!_mcSvcRows.length) _mcSvcRows.push({name:'',price:'',moneda:'eur',recurrente:false,desc:''});
+  var old=document.getElementById('mc-svc-ov'); if(old) old.remove();
+  var ov=document.createElement('div'); ov.id='mc-svc-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:320;display:flex;align-items:flex-start;justify-content:center;padding:30px 18px;overflow:auto;background:rgba(20,46,38,.55)';
+  ov.innerHTML="<div style='width:100%;max-width:520px;background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(20,55,38,.32);overflow:hidden'>"+
+    "<div style='padding:18px 22px;border-bottom:1px solid var(--pw-border);display:flex;align-items:center;justify-content:space-between'>"+
+      "<div><div style='font-family:var(--ser);font-size:18px;font-weight:600;color:var(--pw-carbon)'>Servicios y precios</div><div style='font-size:12px;color:var(--pw-text-soft)'>"+_mcEsc(c.n)+" · se muestran en tu landing de la red</div></div>"+
+      "<button id='mc-svc-x' type='button' style='background:none;border:0;font-size:22px;line-height:1;color:var(--pw-text-muted);cursor:pointer'>✕</button></div>"+
+    "<div id='mc-svc-body' style='padding:14px 22px 20px'></div></div>";
+  document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+  document.getElementById('mc-svc-x').onclick=function(){ ov.remove(); };
+  _mcSvcRender();
+}
+function _mcSvcRender(){
+  var b=document.getElementById('mc-svc-body'); if(!b)return;
+  var monedas=['eur','usd','gbp','mxn','ars','cop','clp','pen','brl','uyu'];
+  var rows=_mcSvcRows.map(function(s,i){
+    var mo=monedas.map(function(m){return '<option value="'+m+'"'+(s.moneda===m?' selected':'')+'>'+m.toUpperCase()+'</option>';}).join('');
+    return "<div style='border:1px solid var(--pw-border);border-radius:12px;padding:12px;margin-bottom:10px'>"+
+      "<div style='display:flex;gap:8px'>"+
+        "<input class='cp-form-input' style='flex:1;height:38px' placeholder='Nombre (ej. Sesión individual)' value='"+_mcEsc(s.name)+"' oninput='_mcSvcSet("+i+",\"name\",this.value)'>"+
+        "<input class='cp-form-input' type='number' min='0' style='width:92px;height:38px' placeholder='Precio' value='"+_mcEsc(''+s.price)+"' oninput='_mcSvcSet("+i+",\"price\",this.value)'>"+
+        "<select class='cp-form-input' style='width:82px;height:38px' onchange='_mcSvcSet("+i+",\"moneda\",this.value)'>"+mo+"</select>"+
+      "</div>"+
+      "<input class='cp-form-input' style='width:100%;height:36px;margin-top:8px;font-size:12.5px' placeholder='Descripción corta (opcional)' value='"+_mcEsc(s.desc)+"' oninput='_mcSvcSet("+i+",\"desc\",this.value)'>"+
+      "<div style='display:flex;align-items:center;justify-content:space-between;margin-top:8px'>"+
+        "<label style='font-size:12.5px;color:var(--pw-text-soft);display:inline-flex;align-items:center;gap:6px;cursor:pointer'><input type='checkbox' "+(s.recurrente?'checked':'')+" onchange='_mcSvcSet("+i+",\"recurrente\",this.checked)'> Cobro recurrente (cada 4 semanas)</label>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;color:var(--pw-danger)' onclick='_mcSvcDel("+i+")'>Quitar</button>"+
+      "</div></div>";
+  }).join('');
+  b.innerHTML=rows+
+    "<button class='cp-btn cp-btn-ghost' style='width:100%;height:38px;justify-content:center' onclick='_mcSvcAdd()'>+ Agregar servicio</button>"+
+    "<div id='mc-svc-err' style='color:var(--pw-danger);font-size:12.5px;min-height:14px;margin-top:8px'></div>"+
+    "<button class='cp-btn cp-btn-primary' id='mc-svc-save' style='width:100%;height:44px;justify-content:center;margin-top:4px' onclick='_mcSvcSave()'>Guardar servicios</button>";
+}
+function _mcSvcSet(i,k,v){ if(_mcSvcRows[i]) _mcSvcRows[i][k]=v; }
+function _mcSvcAdd(){ _mcSvcRows.push({name:'',price:'',moneda:'eur',recurrente:false,desc:''}); _mcSvcRender(); }
+function _mcSvcDel(i){ _mcSvcRows.splice(i,1); if(!_mcSvcRows.length)_mcSvcRows.push({name:'',price:'',moneda:'eur',recurrente:false,desc:''}); _mcSvcRender(); }
+function _mcSvcSave(){
+  var clean=_mcSvcRows.map(function(s){ return {name:(s.name||'').trim(),price:parseFloat(s.price)||0,moneda:s.moneda||'eur',recurrente:!!s.recurrente,desc:(s.desc||'').trim()}; }).filter(function(s){ return s.name&&s.price>0; });
+  var err=document.getElementById('mc-svc-err'), btn=document.getElementById('mc-svc-save');
+  if(btn){ btn.disabled=true; btn.textContent='Guardando…'; } if(err) err.textContent='';
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    return fetch(SB+'/functions/v1/editar-coach-red',{method:'POST',headers:h,body:JSON.stringify({coach_id:_mcSvcCoach,servicios:clean})});
+  }).then(function(r){ return r.json().catch(function(){return null;}); })
+    .then(function(j){
+      if(j&&j.ok){ var c=_coach(_mcSvcCoach); if(c)c.servicios=clean; var ov=document.getElementById('mc-svc-ov'); if(ov)ov.remove(); __toast('Servicios guardados ✓'); try{ if(_curCoach)_renderCoachFicha(); }catch(e){} return; }
+      if(btn){ btn.disabled=false; btn.textContent='Guardar servicios'; } if(err) err.textContent=(j&&j.error)?('No se pudo guardar ('+j.error+')'):'No se pudo guardar. Prueba de nuevo.';
+    })
+    .catch(function(){ if(btn){ btn.disabled=false; btn.textContent='Guardar servicios'; } if(err) err.textContent='Error de red.'; });
 }
 function toggleCoach(id){
  var c=_coach(id);if(!c)return;
