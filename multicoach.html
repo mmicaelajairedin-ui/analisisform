@@ -1906,6 +1906,7 @@ function _renderCoachFicha(){
   +'<div class="cp-card cp-card-pad" style="text-align:center"><div class="cp-eyebrow" style="margin-bottom:8px">Estado</div><span class="cp-coach-health '+h[0]+'" style="display:inline-block;margin-bottom:10px">'+h[1]+'</span>'
    +'<div class="cp-coach-stats"><div class="cp-coach-st"><div class="v">'+suyos.length+'</div><div class="k">Clientes</div></div><div class="cp-coach-st"><div class="v">'+(c.ret!=null?c.ret+'%':'—')+'</div><div class="k">Retención</div></div><div class="cp-coach-st"><div class="v">'+(c.rat?'★'+c.rat:'—')+'</div><div class="k">Rating</div></div></div></div>'
   +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
+   +'<button class="cp-btn cp-btn-ghost" onclick="_mcCopiarReserva(\''+c.id+'\')" title="El cliente abre este link y se agenda solo">'+PWI.svg('link',{sm:true})+' Copiar link de reserva</button>'
    +'<button class="cp-btn cp-btn-ghost" onclick="mcServiciosModal(\''+c.id+'\')">'+PWI.svg('creditCard',{sm:true})+' Servicios y precios ('+(c.servicios?c.servicios.length:0)+')</button>'
    +(c.esOwner?'':'<button class="cp-btn cp-btn-ghost" onclick="_goCoachTab(\'mensajes\')"><span class="cp-emo">'+PWI.svg('chat',{sm:true})+'</span> Enviar mensaje</button>')
    +(c.esOwner?'':_mcContactBtn(c.tel,c.email))
@@ -3356,7 +3357,32 @@ function _mcDispRerender(){ var mb=document.querySelector('#__modal .mb'); if(mb
 function _mcDispDay(n){ _mcDispCapture(); var i=_mcDispState.days.indexOf(n); if(i>=0)_mcDispState.days.splice(i,1); else _mcDispState.days.push(n); _mcDispRerender(); }
 function _mcDispBloqAdd(){ _mcDispCapture(); var el=document.getElementById('mcd-bloq'); var v=el&&el.value; if(v&&_mcDispState.bloq.indexOf(v)<0)_mcDispState.bloq.push(v); _mcDispRerender(); }
 function _mcDispBloqDel(v){ _mcDispCapture(); _mcDispState.bloq=_mcDispState.bloq.filter(function(x){return x!==v;}); _mcDispRerender(); }
-function _mcDispSave(){ _mcDispCapture(); var s=_mcDispState; mcSaveConfig({disponibilidad:{days:s.days.slice().sort(),from:s.from,to:s.to,min_notice_h:s.notice,buffer_min:s.buffer,bloqueados:s.bloq}}, 'Disponibilidad guardada ✓'); __mclose(); }
+function _mcDispSave(){
+  _mcDispCapture(); var s=_mcDispState;
+  var disp={days:s.days.slice().sort(),from:s.from,to:s.to,min_notice_h:s.notice,buffer_min:s.buffer,bloqueados:s.bloq};
+  __mclose();
+  // Se guarda en la configuracion del DUEÑO (usuarios), que es de donde la lee la
+  // página de reserva (reservar.html?c=<coach>). Antes iba solo a la marca de la
+  // org y la reserva no la veía.
+  if(MC_REAL&&MC_OWNER&&MC_OWNER.id){
+    var cfg={}; try{ var c=(MC_OWNER.configuracion)||{}; for(var k in c)if(Object.prototype.hasOwnProperty.call(c,k))cfg[k]=c[k]; }catch(_){}
+    cfg.disponibilidad=disp; __toast('Guardando…');
+    _hdr({'Content-Type':'application/json'}).then(function(h){
+      return fetch(SB+'/functions/v1/coach-self-save',{method:'POST',headers:h,body:JSON.stringify({id:MC_OWNER.id,email:MC_OWNER.email,fields:{configuracion:cfg}})});
+    }).then(function(r){return r.ok?r.json():null;}).then(function(d){ if(d&&d.ok){ MC_OWNER.configuracion=cfg; __toast('Disponibilidad guardada ✓'); } else __toast('No se pudo guardar. Reintenta'); }).catch(function(){ __toast('Error de conexión'); });
+    return;
+  }
+  __toast('Disponibilidad guardada ✓ (demo)');
+}
+// Link público de reserva de un coach (auto-agendado, como Calendly). El cliente
+// abre el link, ve los huecos libres (según la disponibilidad del coach + lo
+// ocupado) y reserva; la cita cae en la agenda de la red.
+function _mcResLink(coachId){ return (location.origin||'https://pathwaycareercoach.com')+'/reservar.html?c='+encodeURIComponent(coachId); }
+function _mcCopiarReserva(coachId){
+  var u=_mcResLink(coachId);
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(u).then(function(){__toast('Link de reserva copiado ✓');},function(){ try{window.prompt('Copiá el link de reserva:',u);}catch(_){__toast(u);} }); return; } }catch(_){}
+  try{ window.prompt('Copiá el link de reserva:',u); }catch(_){ __toast(u); }
+}
 function _setAgView(v){_agView=v;renderAgenda();}
 function _setAgCoach(c){_agCoach=c;renderAgenda();}
 function _agSelDay(d){_agSelDow=d;renderAgenda();}
