@@ -2573,14 +2573,15 @@ const RULES = [
       const wf = read(".github/workflows/deploy-functions.yml");
       if (wf && !/functions deploy canal-red/.test(wf))
         return "deploy-functions.yml: falta desplegar canal-red.";
-      // Lado del dueño: sección Canal en multicoach.html.
+      // Lado del dueño: el chat del equipo es un DRAWER (como el panel), no una
+      // pestaña, con canal General + GRUPOS (canal-red action 'groups'/'group_create').
       const mc = read("multicoach.html");
       if (mc) {
-        if (!/function renderCanal\(/.test(mc)) return "multicoach.html: falta renderCanal() (el canal/chat del equipo).";
-        if (!/functions\/v1\/canal-red/.test(mc)) return "multicoach.html: el canal ya no usa la edge function canal-red.";
-        // El canal es EL chat: se abre desde el ícono de chat del topbar (__go('canal')),
-        // no como una pestaña más del sidebar. Debe seguir siendo accesible.
-        if (!/onclick="__go\('canal'\)"/.test(mc)) return "multicoach.html: el ícono de chat ya no abre el canal del equipo (__go('canal')).";
+        if (!/function mcChatOpen\(/.test(mc)) return "multicoach.html: falta mcChatOpen() (el chat del equipo, drawer).";
+        if (!/functions\/v1\/canal-red/.test(mc)) return "multicoach.html: el chat ya no usa la edge function canal-red.";
+        if (!/action:'group_create'|action:"group_create"/.test(mc)) return "multicoach.html: el chat perdió la creación de grupos (group_create).";
+        // El chat se abre desde el ícono del topbar como drawer (mcChatOpen), no como pestaña.
+        if (!/onclick="mcChatOpen\(\)"/.test(mc)) return "multicoach.html: el ícono de chat ya no abre el chat del equipo (mcChatOpen()).";
       }
       // Lado del coach: hilo 'canal' en la bandeja de panel-v2.html.
       const p = read("panel-v2.html");
