@@ -441,7 +441,8 @@ html.mc-embed #mc-nswitch{display:none!important}
 .agcoach{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;cursor:pointer;font-size:13px;color:var(--pw-carbon)}
 .agcoach:hover{background:var(--pw-niebla-2)}
 .agcoach.on{background:var(--pw-success-bg);font-weight:600}
-.agcoach .cav{width:26px;height:26px;border-radius:50%;flex-shrink:0;overflow:hidden;position:relative;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff}
+.agcoach .cav{width:38px;height:38px;border-radius:50%;flex-shrink:0;overflow:hidden;position:relative;display:grid;place-items:center;font-size:14px;font-weight:700;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.agcoach{gap:11px;padding:9px 10px;font-size:13.5px}
 .agcoach .cav img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .agcal{background:#fff;border:1px solid var(--pw-border);border-radius:14px;box-shadow:var(--pw-shadow-xs);overflow:hidden}
 .agcal-top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--pw-border)}
@@ -931,7 +932,8 @@ function __nuevaSesion(){
     +'<div style="display:flex;gap:8px"><div style="flex:1"><span class="lbl">Día</span><input id="ns-d" type="date" class="inp"></div><div style="flex:1"><span class="lbl">Hora</span><input id="ns-h" type="time" class="inp" value="10:00"></div></div>'
     +'<div><span class="lbl">Modalidad</span><select id="ns-mod" class="inp" onchange="var _l=document.getElementById(\'ns-lugar-w\');if(_l)_l.style.display=this.value===\'presencial\'?\'block\':\'none\'"><option value="online">💻 Online (videollamada)</option><option value="presencial">📍 Presencial</option></select></div>'
     +'<div id="ns-lugar-w" style="display:none">'+__inp('ns-lugar','Lugar / dirección')+'</div>'
-    +'<div><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;cursor:pointer"><input type="checkbox" id="ns-grupal"> Grupal (clase/curso · video con varios)</label></div>';
+    +'<div><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;cursor:pointer"><input type="checkbox" id="ns-grupal"> Grupal (clase/curso · video con varios)</label></div>'
+    +'<div><span class="lbl">Repetir</span><select id="ns-rep" class="inp"><option value="0">No se repite</option><option value="4">Cada semana · 4 semanas</option><option value="8">Cada semana · 8 semanas</option><option value="12">Cada semana · 12 semanas</option></select><div style="font-size:11px;color:var(--soft);margin-top:3px">Ideal para clases fijas (ej. todos los lunes).</div></div>';
   __openModal('Nueva sesión / evento', body, 'Agendar', function(){
     var coach_id=document.getElementById('ns-co').value;
     var email=((document.getElementById('ns-cl')||{}).value||'').trim().toLowerCase();
@@ -939,21 +941,65 @@ function __nuevaSesion(){
     var tipo=(document.getElementById('ns-tipo').value||'').trim()||'Sesión';
     var d=document.getElementById('ns-d').value, hh=document.getElementById('ns-h').value;
     if(!d||!hh){ __toast('Elige día y hora'); return; }
-    var iso=new Date(d+'T'+hh); if(isNaN(iso.getTime())){ __toast('Fecha u hora inválida'); return; } iso=iso.toISOString();
+    var iso0=new Date(d+'T'+hh); if(isNaN(iso0.getTime())){ __toast('Fecha u hora inválida'); return; }
     var modalidad=document.getElementById('ns-mod').value;
     var lugarEl=document.getElementById('ns-lugar'); var lugar=(lugarEl&&lugarEl.value||'').trim();
     var grupalEl=document.getElementById('ns-grupal'); var grupal=!!(grupalEl&&grupalEl.checked);
-    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Agendando…';}
+    var rep=parseInt((document.getElementById('ns-rep')||{}).value,10)||0;
+    // Fechas: 1 sola, o N semanales (misma hora, +7 días cada una).
+    var reps=(rep>1)?rep:1; var fechas=[]; for(var _i=0;_i<reps;_i++){ fechas.push(new Date(iso0.getTime()+_i*7*86400000).toISOString()); }
+    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent=(reps>1?'Agendando '+reps+'…':'Agendando…');}
     _hdr({'Content-Type':'application/json'}).then(function(h2){
-      return fetch(SB+'/functions/v1/crear-cita-red',{method:'POST',headers:h2,body:JSON.stringify({coach_id:coach_id,nombre:nombre,email:email,tipo:tipo,inicio:iso,modalidad:modalidad,lugar:lugar,grupal:grupal})});
-    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(dd){ return {ok:r.ok,d:dd||{}}; }); }).then(function(res){
-      if(!res.ok||!res.d.ok){ var er=res.d.error, msg=er==='coach_ajeno'?'Elige un coach de tu red.':er==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo agendar. Reintenta'; if(ok){ok.disabled=false;ok.textContent='Agendar';} __toast(msg); return; }
-      var cita=res.d.cita||{coach_id:coach_id,nombre:nombre,email:email,tipo:tipo,inicio:iso,estado:'confirmada',modalidad:modalidad,grupal:grupal};
-      MC_CITAS.push(cita);
-      // Saltar a la semana del evento creado (si es futuro) para que se vea sí o sí.
-      try{ var _d0=new Date(); var _m0=new Date(_d0.getFullYear(),_d0.getMonth(),_d0.getDate()-((_d0.getDay()+6)%7)); var _de=new Date(cita.inicio); var _me=new Date(_de.getFullYear(),_de.getMonth(),_de.getDate()-((_de.getDay()+6)%7)); _agWeekOff=Math.round((_me-_m0)/(7*86400000)); }catch(e){}
-      __mclose(); __toast('Agendado ✓'); mcSetAgenda(); if(_sec==='agenda') renderAgenda(); else if(_sec==='dashboard') mcApplyNiche();
+      return Promise.all(fechas.map(function(iso){
+        return fetch(SB+'/functions/v1/crear-cita-red',{method:'POST',headers:h2,body:JSON.stringify({coach_id:coach_id,nombre:nombre,email:email,tipo:tipo,inicio:iso,modalidad:modalidad,lugar:lugar,grupal:grupal})})
+          .then(function(r){ return r.json().catch(function(){return {};}).then(function(dd){ return {ok:r.ok,d:dd||{},iso:iso}; }); });
+      }));
+    }).then(function(all){
+      var oks=all.filter(function(x){return x.ok&&x.d&&x.d.ok;});
+      if(!oks.length){ var er=(all[0]&&all[0].d&&all[0].d.error)||''; var msg=er==='coach_ajeno'?'Elige un coach de tu red.':er==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo agendar. Reintenta'; if(ok){ok.disabled=false;ok.textContent='Agendar';} __toast(msg); return; }
+      oks.forEach(function(x){ MC_CITAS.push(x.d.cita||{coach_id:coach_id,nombre:nombre,email:email,tipo:tipo,inicio:x.iso,estado:'confirmada',modalidad:modalidad,grupal:grupal}); });
+      // Saltar a la semana del PRIMER evento para que se vea.
+      try{ var _d0=new Date(); var _m0=new Date(_d0.getFullYear(),_d0.getMonth(),_d0.getDate()-((_d0.getDay()+6)%7)); var _de=new Date(fechas[0]); var _me=new Date(_de.getFullYear(),_de.getMonth(),_de.getDate()-((_de.getDay()+6)%7)); _agWeekOff=Math.round((_me-_m0)/(7*86400000)); }catch(e){}
+      __mclose(); __toast(oks.length>1?(oks.length+' clases agendadas ✓'):'Agendado ✓'); mcSetAgenda(); if(_sec==='agenda') renderAgenda(); else if(_sec==='dashboard') mcApplyNiche();
     }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Agendar';} __toast('Error de conexión. Reintenta'); });
+  });
+}
+// Editar o cancelar un evento de la agenda (red real) → editar-cita-red.
+function _agEditEvent(citaId){
+  var c=(MC_CITAS||[]).filter(function(x){return String(x.id)===String(citaId);})[0];
+  if(!c){ __toast('No se encontró el evento'); return; }
+  var d=new Date(c.inicio); var _p=function(n){return('0'+n).slice(-2);};
+  var dval=(!isNaN(d.getTime()))?(d.getFullYear()+'-'+_p(d.getMonth()+1)+'-'+_p(d.getDate())):'';
+  var hval=(!isNaN(d.getTime()))?(_p(d.getHours())+':'+_p(d.getMinutes())):'10:00';
+  var co=_coach(c.coach_id);
+  var body='<div style="font-size:12px;color:var(--soft);margin-bottom:8px">'+(co?_mcEsc(co.n):'')+(c.nombre?' · '+_mcEsc(c.nombre):'')+'</div>'
+    +'<div><span class="lbl">Tipo</span><input id="ed-tipo" class="inp" value="'+_mcEsc(c.tipo||'')+'"></div>'
+    +'<div style="display:flex;gap:8px"><div style="flex:1"><span class="lbl">Día</span><input id="ed-d" type="date" class="inp" value="'+dval+'"></div><div style="flex:1"><span class="lbl">Hora</span><input id="ed-h" type="time" class="inp" value="'+hval+'"></div></div>'
+    +'<div style="margin-top:12px"><button type="button" onclick="_agCancelEvent(\''+citaId+'\')" style="background:none;border:1px solid rgba(192,117,110,.5);color:var(--pw-danger);border-radius:10px;padding:9px 12px;font-size:12.5px;cursor:pointer;width:100%">Cancelar este evento</button></div>';
+  __openModal('Editar evento', body, 'Guardar cambios', function(){
+    var tipo=(document.getElementById('ed-tipo').value||'').trim()||'Sesión';
+    var dd=document.getElementById('ed-d').value, hh=document.getElementById('ed-h').value;
+    if(!dd||!hh){ __toast('Elegí día y hora'); return; }
+    var iso=new Date(dd+'T'+hh); if(isNaN(iso.getTime())){ __toast('Fecha u hora inválida'); return; } iso=iso.toISOString();
+    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Guardando…';}
+    _hdr({'Content-Type':'application/json'}).then(function(h){
+      return fetch(SB+'/functions/v1/editar-cita-red',{method:'POST',headers:h,body:JSON.stringify({cita_id:citaId,action:'update',inicio:iso,tipo:tipo})});
+    }).then(function(r){return r.json().catch(function(){return {};}).then(function(d2){return {ok:r.ok,d:d2||{}};});}).then(function(res){
+      if(!res.ok||!res.d.ok){ if(ok){ok.disabled=false;ok.textContent='Guardar cambios';} __toast(res.d.error==='not_owner'?'Reingresá — sesión vencida':'No se pudo editar. Reintentá'); return; }
+      c.inicio=iso; c.tipo=tipo;
+      __mclose(); __toast('Evento actualizado ✓'); mcSetAgenda(); if(_sec==='agenda')renderAgenda();
+    }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Guardar cambios';} __toast('Error de conexión'); });
+  });
+}
+function _agCancelEvent(citaId){
+  __openModal('Cancelar evento','<p style="font-size:13.5px;color:var(--soft);line-height:1.5;margin:0">¿Cancelás este evento? El cliente ya no lo verá en su agenda.</p>','Sí, cancelar',function(){
+    _hdr({'Content-Type':'application/json'}).then(function(h){
+      return fetch(SB+'/functions/v1/editar-cita-red',{method:'POST',headers:h,body:JSON.stringify({cita_id:citaId,action:'cancel'})});
+    }).then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d||{}};});}).then(function(res){
+      if(!res.ok||!res.d.ok){ __toast('No se pudo cancelar. Reintentá'); return; }
+      MC_CITAS=(MC_CITAS||[]).filter(function(x){return String(x.id)!==String(citaId);});
+      __mclose(); __toast('Evento cancelado ✓'); mcSetAgenda(); if(_sec==='agenda')renderAgenda();
+    }).catch(function(){ __toast('Error de conexión'); });
   });
 }
 function __crearPrograma(){__openModal('Crear programa',__inp('cp-n','Nombre (ej. Programa 8 semanas)')+__inp('cp-d','Duración (semanas)'),'Crear',function(){var n=document.getElementById('cp-n').value.trim();if(!n)return;__act(PWI.svg('clipboard',{sm:true}),'var(--amanecer);color:#5a4410','Programa creado: '+n,'Programas');__mclose();__toast('Programa «'+n+'» creado ✓');});}
@@ -1939,10 +1985,16 @@ function _fillCom(){
 var MC_POST_TPL=[
   {ic:'🎉',lbl:'Bienvenida',txt:'¡Le damos la bienvenida a [nombre] a nuestra red! Estamos felices de acompañarte en este camino 💪'},
   {ic:'📅',lbl:'Nueva clase',txt:'📅 Nueva clase esta semana: [nombre] — [día] a las [hora]. ¡Anotate, cupos limitados!'},
-  {ic:'🏆',lbl:'Reto del mes',txt:'🏆 ¡Arrancó el reto del mes: [nombre del reto]! Completalo y sumá puntos. ¿Quién se prende?'},
+  {ic:'🏆',lbl:'Reto del mes',txt:'🏆 ¡Arrancó el reto del mes: [nombre del reto]! Completalo y sumá puntos. ¿Quién se prende? Reaccioná 🔥 si te sumás.'},
   {ic:'💡',lbl:'Tip de la semana',txt:'💡 Tip de la semana: [escribí tu consejo corto y accionable].'},
-  {ic:'⭐',lbl:'Logro de un cliente',txt:'⭐ ¡Felicitaciones a [cliente] por [su logro]! Así se hace 👏'},
-  {ic:'📢',lbl:'Aviso importante',txt:'📢 Aviso para la red: [tu mensaje]. Cualquier duda, escribinos.'}
+  {ic:'⭐',lbl:'Logro de un cliente',txt:'⭐ ¡Felicitaciones a [cliente] por [su logro]! Así se hace 👏 Dejale un ❤️ para felicitarlo.'},
+  {ic:'📢',lbl:'Aviso importante',txt:'📢 Aviso para la red: [tu mensaje]. Cualquier duda, escribinos.'},
+  {ic:'🔥',lbl:'Motivación (lunes)',txt:'🔥 Arranca la semana: [tu mensaje motivador]. ¡Vamos con todo, equipo! ¿Con qué energía arrancás? Reaccioná 💪'},
+  {ic:'💬',lbl:'Pregunta a la red',txt:'💬 ¿[tu pregunta]? Contanos en los comentarios 👇 Queremos leerte.'},
+  {ic:'📊',lbl:'Encuesta rápida',txt:'📊 Encuesta: ¿[opción A] o [opción B]? Reaccioná ❤️ por la primera o 👍 por la segunda.'},
+  {ic:'📸',lbl:'Antes / después',txt:'📸 ¡Miren esta transformación! [contá la historia y el esfuerzo de tu cliente]. Sumale un 👏'},
+  {ic:'🗓️',lbl:'Recordatorio',txt:'🗓️ Recordatorio: [evento/clase] es [cuándo]. ¡No falten! Reaccioná ✅ si venís.'},
+  {ic:'🙌',lbl:'Logro de la red',txt:'🙌 Esta semana como equipo logramos [hito de la red]. ¡Gracias por ser parte de esto! ❤️'}
 ];
 function _postTpl(btn){ var t=document.getElementById('np-t'); if(t){ t.value=(btn.getAttribute('data-tpl')||''); t.focus(); } }
 function _nuevaPost(){
@@ -2356,7 +2408,7 @@ function _mcAgwFromCitas(){
     // tit/sub van a HTML de texto Y a un onclick — limpiamos comillas y escapamos
     // (nombres reales de clientes = entrada de usuario, anti-XSS).
     var _cl=function(s){return _mcEsc((''+(s==null?'':s)).replace(/["']/g,''));};
-    out.push({dow:dow,h:h,dur:1,coach:c.coach_id||'',tipo:_mcCitaTipo(c.tipo),tit:_cl(c.nombre||'Cliente'),sub:_cl(c.tipo||'Sesión')});
+    out.push({dow:dow,h:h,dur:1,coach:c.coach_id||'',tipo:_mcCitaTipo(c.tipo),tit:_cl(c.nombre||'Cliente'),sub:_cl(c.tipo||'Sesión'),citaId:c.id});
   });
   return out;
 }
@@ -2425,7 +2477,10 @@ function _agLegend(){
 function _agBlk(e){var t=AGT[e.tipo]||AGT.sesion;var top=(e.h-AG_START)*AG_ROWH;var h=e.dur*AG_ROWH-3;
  // Color POR COACH en la red real (cada coach su color); por tipo en demo.
  var col=MC_REAL?_coCol(e.coach):t.c; var bg=MC_REAL?_coBg(col):t.bg;
- return '<div class="agblk" draggable="true" ondragstart="agDragStart(event,\''+e.id+'\')" style="top:'+top+'px;height:'+h+'px;background:'+bg+';border-left-color:'+col+';color:'+col+'" onclick="__toast(\''+e.tit.replace(/'/g,'')+' · '+t.l+'\')" title="Arrastra para reprogramar"><span class="t">'+e.h+':00</span><b>'+e.tit+'</b><small>'+e.sub+'</small></div>';}
+ // En red real, tocar el evento lo EDITA (cambiar hora/tipo o cancelar). En demo, toast.
+ var click=(MC_REAL&&e.citaId)?('_agEditEvent(\''+e.citaId+'\')'):('__toast(\''+e.tit.replace(/'/g,'')+' · '+t.l+'\')');
+ var ttl=(MC_REAL&&e.citaId)?'Tocá para editar o cancelar':'Arrastra para reprogramar';
+ return '<div class="agblk" draggable="true" ondragstart="agDragStart(event,\''+e.id+'\')" style="top:'+top+'px;height:'+h+'px;background:'+bg+';border-left-color:'+col+';color:'+col+'" onclick="'+click+'" title="'+ttl+'"><span class="t">'+e.h+':00</span><b>'+e.tit+'</b><small>'+e.sub+'</small></div>';}
 function _agWeek(days){
  var todayDow=(new Date().getDay()+6)%7;var evs=_agEvs();
  var head='<div class="agwh"></div>'+_DOW.map(function(d,i){return '<div class="agwh'+(i===todayDow?' today':'')+'">'+d+'<b>'+days[i].getDate()+'</b></div>';}).join('');

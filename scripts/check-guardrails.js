@@ -4411,11 +4411,18 @@ const RULES = [
       const mc = read("multicoach.html");
       if (mc) {
         if (!/crear-cita-red/.test(mc)) return "multicoach.html: 'Nueva sesión' en real ya no crea la cita (crear-cita-red).";
-        if (!/MC_CITAS\.push\(cita\)/.test(mc)) return "multicoach.html: la cita nueva ya no se suma a la agenda (MC_CITAS.push).";
+        if (!/MC_CITAS\.push\(/.test(mc)) return "multicoach.html: la cita nueva ya no se suma a la agenda (MC_CITAS.push).";
+        // Repetición semanal: clases fijas (ej. todos los lunes) se agendan en serie.
+        if (!/ns-rep/.test(mc) || !/Promise\.all\(fechas/.test(mc)) return "multicoach.html: se perdió la repetición semanal de la sesión (ns-rep + Promise.all(fechas)).";
+        // Editar/cancelar un evento de la agenda (no solo crear).
+        if (!/_agEditEvent\(/.test(mc) || !/editar-cita-red/.test(mc)) return "multicoach.html: no se puede editar/cancelar un evento de la agenda (editar-cita-red).";
       }
       const fn = read("supabase/functions/crear-cita-red/index.ts");
       if (fn === null) return "falta la edge function crear-cita-red (agendar asignando coach en la red).";
       if (!/coachInOrg\(/.test(fn) || !/rest\/v1\/citas/.test(fn)) return "crear-cita-red: ya no valida el coach de la org o no inserta en citas.";
+      const ed = read("supabase/functions/editar-cita-red/index.ts");
+      if (ed === null) return "falta la edge function editar-cita-red (editar/cancelar cita de la red).";
+      if (!/coachInOrg\(/.test(ed) || !/action.*cancel|cancel.*action/.test(ed)) return "editar-cita-red: ya no verifica el coach de la org o no soporta cancelar.";
       return null;
     },
   },
