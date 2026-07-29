@@ -4427,6 +4427,13 @@ const RULES = [
       if (pub && !/_nuevaPost\(/.test(pub[1])) return "multicoach.html: __publicar (acceso rápido) ya no abre el composer carrusel (_nuevaPost) → dos publicadores distintos.";
       // Carrusel: navegar plantillas con ‹ › en un solo sitio.
       if (!/function _postNav\(/.test(mc)) return "multicoach.html: se perdió el carrusel de plantillas (_postNav ‹ ›).";
+      // Rail de Comunidad editable in situ: plantillas con ‹ › (otra info), texto
+      // editable (contenteditable) y publicar ahí mismo, SIN abrir otra hoja. Y
+      // sin "Ver todas" que navegue a la sección completa.
+      if (!/var MC_COM_RAIL=/.test(mc) || !/function _comRailPub\(/.test(mc) || !/function _comRailNav\(/.test(mc)) return "multicoach.html: se perdió el rail editable de Comunidad (MC_COM_RAIL/_comRailNav/_comRailPub).";
+      if (!/id="mc-rail-msg"[^>]*contenteditable/.test(mc)) return "multicoach.html: el texto del rail de Comunidad ya no es editable in situ (contenteditable).";
+      const aside = (mc.match(/<aside class="community">[\s\S]*?<\/aside>/) || [""])[0];
+      if (/Ver todas/.test(aside)) return "multicoach.html: el rail de Comunidad volvió a tener 'Ver todas' (abre otra hoja); debe navegar entre plantillas con ‹ ›.";
       return null;
     },
   },
