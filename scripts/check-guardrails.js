@@ -1756,6 +1756,24 @@ const RULES = [
     },
   },
   {
+    name: "móvil: el selector de idioma del menú NO se circulariza (no sale óvalo negro)",
+    bug: "La regla móvil que vuelve círculos los botones de la barra " +
+         "(#pw-app-actions button:not(...)) alcanzaba también a los botones de idioma " +
+         "(#pw-lang-es/#pw-lang-en) del menú de cuenta: les ponía width/height 38px, " +
+         "border-radius:50% y font-size:0 (texto oculto) → el selector 'Idioma · " +
+         "Language' salía como un óvalo negro sin texto en móvil. La regla debe " +
+         "EXCLUIR #pw-lang-es y #pw-lang-en.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const m = /#pw-app-actions button:not\([^{]*\)\{[^}]*border-radius:50%/m.exec(s);
+      if (!m) return null; // si cambió la regla, no bloquear por esto
+      if (!/#pw-lang-es/.test(m[0]) || !/#pw-lang-en/.test(m[0]))
+        return "panel-v2.html: la regla móvil de botones circulares no excluye #pw-lang-es/#pw-lang-en → el selector de idioma vuelve a salir como óvalo negro.";
+      return null;
+    },
+  },
+  {
     name: "multicoach: el chat del equipo tiene avatar, links, sonido y preview (features del panel)",
     bug: "El chat del equipo de multicoach (canal-red, drawer con lista + conversación) " +
          "renderizaba burbujas de solo texto. Se portaron features del panel REUSANDO " +
