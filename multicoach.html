@@ -667,6 +667,9 @@ html.mc-embed #mc-nswitch{display:none!important}
         <button class="per mc-demo-only" onclick="__toast('Período — demo')"><i data-ic="calendar" data-sm></i> Este mes ▾</button>
       </div>
 
+      <!-- Guía de onboarding del owner (solo red real, se llena en mcApplyNiche) -->
+      <div id="mc-owner-guide"></div>
+
       <!-- KPIs (se arman por nicho en mcApplyNiche) -->
       <div class="kpis" id="mc-kpis"></div>
 
@@ -1047,6 +1050,35 @@ function _mcSetPlanBadge(){
   if(lbl){ b.textContent=lbl; b.style.display=''; } else { b.style.display='none'; }
 }
 function NM(){return MCN[MC_N];}
+// Guía de arranque del owner: pasos reales (sumá coach → asigná cliente → activá
+// tu página) con progreso. Solo en red real; se autooculta al completar o si el
+// owner la cierra. Es lo que hace sentir el panel "vivo" para uno nuevo.
+function _mcOwnerGuide(){
+  if(!MC_REAL) return '';
+  try{ if(localStorage.getItem('mc_guide_off')==='1') return ''; }catch(e){}
+  var co=((DB&&DB.coaches)||[]).filter(function(c){return !c.esOwner;}).length;
+  var cl=((DB&&DB.clientes)||[]).length;
+  var pub=!(_mcBrand().publica===false);
+  var steps=[
+    {ok:co>0, t:'Sumá tu primer coach o colaborador', act:'invitarCoach()'},
+    {ok:cl>0, t:'Agregá o asigná tu primer cliente', act:'__nuevoCliente()'},
+    {ok:pub, t:'Activá tu página pública', act:"pwCfgGo('profile')"}
+  ];
+  var done=steps.filter(function(s){return s.ok;}).length;
+  if(done>=steps.length) return '';
+  var pct=Math.round(done/steps.length*100);
+  var rows=steps.map(function(s){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0">'
+     +'<span style="width:20px;height:20px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;background:'+(s.ok?'var(--pw-bosque)':'var(--pw-niebla-3)')+';color:'+(s.ok?'#fff':'var(--pw-text-soft)')+';font-size:12px">'+(s.ok?'✓':'')+'</span>'
+     +'<span style="flex:1;font-size:13px;'+(s.ok?'color:var(--pw-text-soft);text-decoration:line-through':'color:var(--pw-carbon);font-weight:600')+'">'+_mcEsc(s.t)+'</span>'
+     +(s.ok?'':'<button class="cp-btn cp-btn-ghost" style="height:30px;font-size:12px" onclick="'+s.act+'">Hacerlo</button>')+'</div>';
+  }).join('');
+  return '<div class="cp-card cp-card-pad" style="margin-bottom:16px;border:1px solid var(--pw-bosque);background:var(--pw-success-bg)">'
+   +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><div><div class="cp-eyebrow" style="color:var(--pw-bosque)">Empezá tu red</div><div style="font-size:15px;font-weight:700;color:var(--pw-carbon)">'+done+' de '+steps.length+' listos</div></div>'
+   +'<button onclick="try{localStorage.setItem(\'mc_guide_off\',\'1\')}catch(e){};var g=document.getElementById(\'mc-owner-guide\');if(g)g.innerHTML=\'\';" style="background:none;border:none;color:var(--pw-text-soft);cursor:pointer;font-size:12px">Ocultar</button></div>'
+   +'<div style="height:6px;border-radius:4px;background:var(--pw-niebla-3);overflow:hidden;margin-bottom:8px"><i style="display:block;height:100%;width:'+pct+'%;background:var(--pw-bosque)"></i></div>'
+   +rows+'</div>';
+}
 function mcActRow(a){return '<div class="row"><div class="av" style="background:'+a[1]+(a[1]==='var(--amanecer)'?';color:#5a4410':'')+'"><span class="emo">'+a[0]+'</span></div><div><div class="nm">'+a[2]+'</div><div class="sub">'+a[3]+'</div></div></div>';}
 // Contadores que suben de 0 al valor. Parte el string en prefijo+número+sufijo
 // (ej. "$14.2K" → $ / 14.2 / K, "78%" → 78 / %) y anima sólo el número.
@@ -1119,6 +1151,7 @@ function mcApplyNiche(){
  try{ [].forEach.call(document.querySelectorAll('.mc-demo-only'),function(e){ e.style.display=MC_REAL?'none':''; }); }catch(e){}
  _mcSetPlanBadge();
  setHT('mc-kpis',MC_REAL?mcKpisReal():mcKpis());
+ try{ setHT('mc-owner-guide', _mcOwnerGuide()); }catch(e){}
  setHT('actividad',MC_REAL?mcEmptyRow('Sin actividad reciente todavía','Cuando tus coaches y clientes se muevan, lo ves acá.'):m.act.map(mcActRow).join(''));
  setHT('mc-ranking',(MC_REAL&&(!DB.coaches||!DB.coaches.length))?mcEmptyRow('Sin coaches aún','Suma coaches a tu red para verlos acá.'):mcRanking());
  setHT('mc-riesgo',(MC_REAL&&(!DB.clientes||!DB.clientes.length))?mcEmptyRow('Sin clientes aún','Cuando te asignen clientes, aparecen acá.'):mcRiesgo());
