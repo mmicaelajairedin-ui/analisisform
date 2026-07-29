@@ -196,6 +196,8 @@ Deno.serve(async (req: Request) => {
       // Pathway" (derivada: 6+ oro · 4+ plata · 2+ bronce) — datos REALES, sin inventar.
       badges: Array.isArray(row.badges) ? row.badges : [],
       last_seen: row.last_seen || null, // para "Responde rápido" (derivado en el front)
+      seo_keywords: arr("seo_keywords"), // keywords SEO que generó la IA (configuracion) → meta keywords + schema
+
       calendly_url: str("calendly_url"),
       // Canales de contacto de respaldo: si el coach no tiene Calendly, el
       // perfil público igual muestra un CTA (WhatsApp si lo configuró, si no

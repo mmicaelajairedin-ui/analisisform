@@ -67,12 +67,12 @@ const SYSTEM = `Sos un copywriter experto en marcas personales de coaches (carre
 
 Devolvés SOLO un objeto JSON válido (sin texto extra, sin markdown) con esta forma exacta:
 {
-  "titulo": "Título profesional corto y con keywords para el hero, ej. 'Coach de Carrera · Especialista en transición' o 'Entrenador Personal Certificado'. Sin datos inventados (no pongas certificaciones que no mencionó). Máx 90 caracteres.",
+  "titulo": "Título profesional para el hero (es el H1 de la página, clave para SEO). Optimizado para búsquedas pero NATURAL y legible: incluí el rol + la especialidad/nicho + a quién ayuda si entra bien, ej. 'Coach de Carrera para Ejecutivos · Transición y LinkedIn' o 'Entrenador Personal · Pérdida de grasa e Hipertrofia'. Sin inventar certificaciones ni cifras. Máx 95 caracteres.",
   "tagline": "1-2 oraciones en primera persona que arrancan con un verbo de ayuda (Ayudo a…/Acompaño a…). Máx 180 caracteres.",
   "bio": "Un párrafo de 'Sobre mí' en primera persona, 3-5 oraciones, cálido y concreto. Máx 600 caracteres.",
   "enfoque": ["3 bullets cortos de método/enfoque, 2-4 palabras cada uno"],
   "especialidades": ["4-6 etiquetas cortas de especialidad, 1-3 palabras"],
-  "keywords": ["6-10 términos SEO en minúscula que un candidato buscaría en Google"]
+  "keywords": ["8-14 términos SEO en minúscula que la gente busca en Google para encontrar un coach así: mezclá términos cortos (rol, especialidad) y long-tail reales (ej. 'coach de carrera para ejecutivos', 'cómo mejorar mi linkedin', 'entrenador personal pérdida de grasa'). Nada inventado."]
 }`;
 
 Deno.serve(async (req: Request) => {
