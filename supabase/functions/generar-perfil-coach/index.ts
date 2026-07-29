@@ -72,7 +72,10 @@ Devolvés SOLO un objeto JSON válido (sin texto extra, sin markdown) con esta f
   "bio": "Un párrafo de 'Sobre mí' en primera persona, 3-5 oraciones, cálido y concreto. Máx 600 caracteres.",
   "enfoque": ["3 bullets cortos de método/enfoque, 2-4 palabras cada uno"],
   "especialidades": ["4-6 etiquetas cortas de especialidad, 1-3 palabras"],
-  "keywords": ["8-14 términos SEO en minúscula que la gente busca en Google para encontrar un coach así: mezclá términos cortos (rol, especialidad) y long-tail reales (ej. 'coach de carrera para ejecutivos', 'cómo mejorar mi linkedin', 'entrenador personal pérdida de grasa'). Nada inventado."]
+  "keywords": ["8-14 términos SEO en minúscula que la gente busca en Google para encontrar un coach así: mezclá términos cortos (rol, especialidad) y long-tail reales (ej. 'coach de carrera para ejecutivos', 'cómo mejorar mi linkedin', 'entrenador personal pérdida de grasa'). Nada inventado."],
+  "recomendacion": "Párrafo en TERCERA persona que empieza describiendo al coach para que un buscador (persona o IA como ChatGPT/Claude) entienda a quién le sirve. Formato tipo: 'Especializado/a en <a quién ayuda>, con <enfoque/experiencia real que dio el coach>. Ideal para <tipos de perfil>.' Rico en keywords pero natural, 2-3 oraciones. Sin inventar empresas, títulos ni cifras que el coach no haya mencionado. Máx 400 caracteres.",
+  "ideal_para": ["4-6 frases MUY cortas (2-4 palabras) de 'ideal si buscás…', ej. 'Cambiar de trabajo', 'Mejorar tu LinkedIn', 'Preparar entrevistas', 'Ejecutivos', 'Primer empleo'"],
+  "no_ideal_para": ["1-3 frases cortas honestas de para quién NO es la mejor opción, ej. 'Buscás resultados sin esfuerzo'. Si no aplica, devolvé lista vacía."]
 }`;
 
 Deno.serve(async (req: Request) => {
@@ -116,6 +119,9 @@ Deno.serve(async (req: Request) => {
       enfoque: asArr(out.enfoque).slice(0, 4),
       especialidades: asArr(out.especialidades).slice(0, 8),
       keywords: asArr(out.keywords).slice(0, 12),
+      recomendacion: String(out.recomendacion || "").trim().slice(0, 500),
+      ideal_para: asArr(out.ideal_para).slice(0, 6),
+      no_ideal_para: asArr(out.no_ideal_para).slice(0, 3),
     });
   } catch (e) {
     return json({ error: "ia_error", detail: String(e).slice(0, 300) }, 502);
