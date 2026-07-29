@@ -1088,18 +1088,22 @@ function _agEditEvent(citaId){
   var body='<div style="font-size:12px;color:var(--soft);margin-bottom:8px">'+(co?_mcEsc(co.n):'')+(c.nombre?' · '+_mcEsc(c.nombre):'')+'</div>'
     +'<div><span class="lbl">Tipo</span><input id="ed-tipo" class="inp" value="'+_mcEsc(c.tipo||'')+'"></div>'
     +'<div style="display:flex;gap:8px"><div style="flex:1"><span class="lbl">Día</span><input id="ed-d" type="date" class="inp" value="'+dval+'"></div><div style="flex:1"><span class="lbl">Hora</span><input id="ed-h" type="time" class="inp" value="'+hval+'"></div></div>'
+    +'<div><span class="lbl">Modalidad</span><select id="ed-mod" class="inp" onchange="var l=document.getElementById(\'ed-lugar-row\');if(l)l.style.display=this.value===\'presencial\'?\'block\':\'none\'"><option value="online" '+(c.modalidad!=='presencial'?'selected':'')+'>💻 Online</option><option value="presencial" '+(c.modalidad==='presencial'?'selected':'')+'>📍 Presencial</option></select></div>'
+    +'<div id="ed-lugar-row" style="display:'+(c.modalidad==='presencial'?'block':'none')+'"><span class="lbl">Lugar</span><input id="ed-lugar" class="inp" value="'+_mcEsc(c.lugar||'')+'" placeholder="Dirección o descripción"></div>'
     +'<div style="margin-top:12px"><button type="button" onclick="_agCancelEvent('+JSON.stringify(citaId)+')" style="background:none;border:1px solid rgba(192,117,110,.5);color:var(--pw-danger);border-radius:10px;padding:9px 12px;font-size:12.5px;cursor:pointer;width:100%">Cancelar este evento</button></div>';
   __openModal('Editar evento', body, 'Guardar cambios', function(){
     var tipo=(document.getElementById('ed-tipo').value||'').trim()||'Sesión';
     var dd=document.getElementById('ed-d').value, hh=document.getElementById('ed-h').value;
     if(!dd||!hh){ __toast('Elige día y hora'); return; }
     var iso=new Date(dd+'T'+hh); if(isNaN(iso.getTime())){ __toast('Fecha u hora inválida'); return; } iso=iso.toISOString();
+    var modalidad=(document.getElementById('ed-mod').value||'online').trim();
+    var lugar=(document.getElementById('ed-lugar').value||'').trim();
     var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Guardando…';}
     _hdr({'Content-Type':'application/json'}).then(function(h){
-      return fetch(SB+'/functions/v1/editar-cita-red',{method:'POST',headers:h,body:JSON.stringify({cita_id:citaId,action:'update',inicio:iso,tipo:tipo})});
+      return fetch(SB+'/functions/v1/editar-cita-red',{method:'POST',headers:h,body:JSON.stringify({cita_id:citaId,action:'update',inicio:iso,tipo:tipo,modalidad:modalidad,lugar:(modalidad==='presencial'?lugar:'')}));
     }).then(function(r){return r.json().catch(function(){return {};}).then(function(d2){return {ok:r.ok,d:d2||{}};});}).then(function(res){
       if(!res.ok||!res.d.ok){ if(ok){ok.disabled=false;ok.textContent='Guardar cambios';} __toast(res.d.error==='not_owner'?'Reingresá — sesión vencida':'No se pudo editar. Reintenta'); return; }
-      c.inicio=iso; c.tipo=tipo;
+      c.inicio=iso; c.tipo=tipo; c.modalidad=modalidad; c.lugar=(modalidad==='presencial'?lugar:'');
       __mclose(); __toast('Evento actualizado ✓'); mcSetAgenda(); if(_sec==='agenda')renderAgenda();
     }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Guardar cambios';} __toast('Error de conexión'); });
   });
