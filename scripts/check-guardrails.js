@@ -4342,6 +4342,26 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: correo automático de bienvenida al coach nuevo + mensaje editable por el owner",
+    bug: "Al sumar un coach a la red, recibe un email de activación. Ahora ese email es un ONBOARDING: " +
+         "trae el nombre de la red, los primeros pasos, y un mensaje de bienvenida que el OWNER edita en " +
+         "Config (organizaciones.marca.coach_welcome) → estructura de fábrica + personalizable. Si se cae, " +
+         "el coach nuevo se queda sin guía y el owner sin poder personalizar la bienvenida.",
+    check() {
+      const fn = read("supabase/functions/agregar-coach-red/index.ts");
+      if (fn) {
+        if (!/coach_welcome/.test(fn)) return "agregar-coach-red: el email de bienvenida ya no incluye el mensaje editable del owner (coach_welcome).";
+        if (!/primeros pasos/i.test(fn)) return "agregar-coach-red: el email de bienvenida perdió los primeros pasos (onboarding).";
+      }
+      const mc = read("multicoach.html");
+      if (mc) {
+        if (!/id="cfp-welcome"/.test(mc)) return "multicoach.html: falta el campo de bienvenida para coaches nuevos en Config.";
+        if (!/coach_welcome:_v\('cfp-welcome'\)/.test(mc)) return "multicoach.html: la bienvenida del coach ya no se guarda (coach_welcome).";
+      }
+      return null;
+    },
+  },
+  {
     name: "multicoach: el cliente ve las CLASES de la red en su portal (solo grupales, no 1:1 ajenos)",
     bug: "El cliente de una red tiene que ver la agenda de CLASES/eventos de su red para anotarse. Se " +
          "trae por agenda-red-cliente (service role, acotado a la org del propio cliente por su email) y " +

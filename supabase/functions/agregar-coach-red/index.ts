@@ -42,18 +42,19 @@ async function callerEmail(token: string): Promise<string | null> {
   } catch { return null; }
 }
 // El owner y SU organización (con el tope y el nicho).
-async function ownerOrg(email: string): Promise<{ id: string; max_coaches: number | null; nicho: string | null } | null> {
+async function ownerOrg(email: string): Promise<{ id: string; max_coaches: number | null; nicho: string | null; nombre: string; welcome: string } | null> {
   try {
     const ur = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=org_id&limit=1`, { headers: svc });
     if (!ur.ok) return null;
     const urows = await ur.json();
     const orgId = Array.isArray(urows) && urows[0] ? urows[0].org_id : null;
     if (!orgId) return null;
-    const or = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(orgId)}&select=id,max_coaches,nicho&limit=1`, { headers: svc });
+    const or = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(orgId)}&select=id,max_coaches,nicho,nombre,marca&limit=1`, { headers: svc });
     if (!or.ok) return null;
     const orows = await or.json();
     const org = Array.isArray(orows) && orows[0] ? orows[0] : null;
-    return org ? { id: org.id, max_coaches: (org.max_coaches ?? null), nicho: (org.nicho ?? null) } : null;
+    const welcome = (org && org.marca && typeof org.marca === "object" && typeof org.marca.coach_welcome === "string") ? org.marca.coach_welcome : "";
+    return org ? { id: org.id, max_coaches: (org.max_coaches ?? null), nicho: (org.nicho ?? null), nombre: (org.nombre || ""), welcome } : null;
   } catch { return null; }
 }
 
@@ -125,24 +126,36 @@ Deno.serve(async (req: Request) => {
     try { const created = await r.json(); const row = Array.isArray(created) ? created[0] : created; coachId = (row && row.id) || ""; } catch { /* return=minimal en 409 */ }
     // Email de activación AUTOMÁTICO (como el alta de coach del admin). No
     // bloquea: si el mail falla, el owner igual tiene el link en el panel.
-    const emailSent = await enviarActivacion(cEmail, cNombre);
+    const emailSent = await enviarActivacion(cEmail, cNombre, org.nombre, org.welcome);
     return json({ ok: true, mode: "created", coach_id: coachId, email_sent: emailSent });
   } catch { return json({ error: "write_failed" }, 502); }
 });
 
-// Manda el email de activación por la edge function send-email (Brevo).
-async function enviarActivacion(to: string, nombre: string): Promise<boolean> {
+function esc(s: string): string {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+// Email de bienvenida/activación del coach de red (Brevo). Trae el NOMBRE de la red,
+// los primeros pasos, y el mensaje de bienvenida que el OWNER puede editar
+// (organizaciones.marca.coach_welcome). Así el onboarding sale de fábrica y el dueño
+// lo personaliza a su estilo.
+async function enviarActivacion(to: string, nombre: string, red: string, welcome: string): Promise<boolean> {
   const link = "https://pathwaycareercoach.com/registro.html?email=" + encodeURIComponent(to);
-  const fn = (nombre || "").split(" ")[0] || "";
+  const fn = esc((nombre || "").split(" ")[0] || "");
+  const redTxt = red ? esc(red) : "una red";
+  const custom = (welcome || "").trim()
+    ? "<div style='background:#F0F5EF;border-radius:12px;padding:14px 16px;margin:16px 0;font-size:14px;line-height:1.6;color:#1B2E26'>" + esc(welcome.trim()) + "</div>"
+    : "";
   const html =
     "<p style='font-size:15px'>Hola " + fn + ",</p>" +
-    "<p style='font-size:15px;line-height:1.6'>Te sumaron a una red en <b>Pathway</b>. Para entrar, activa tu cuenta y elige tu contraseña — toma 1 minuto.</p>" +
+    "<p style='font-size:15px;line-height:1.6'>Te sumaron a <b>" + redTxt + "</b> en Pathway. Para empezar, activá tu cuenta y elegí tu contraseña — toma 1 minuto.</p>" +
+    custom +
     "<p style='margin:22px 0'><a href='" + link + "' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Activar mi cuenta →</a></p>" +
-    "<p style='font-size:13px;color:#777'>Usa este mismo email (" + to + ") al activar.</p>";
+    "<p style='font-size:14px;line-height:1.7;color:#42504A'><b>Tus primeros pasos:</b><br>1️⃣ Activá tu cuenta con el botón de arriba.<br>2️⃣ Completá tu perfil (foto y datos).<br>3️⃣ Empezá a atender a tus clientes de la red.</p>" +
+    "<p style='font-size:13px;color:#777'>Usá este mismo email (" + esc(to) + ") al activar. Cualquier duda, respondé este correo.</p>";
   try {
     const r = await fetch(`${SB_URL}/functions/v1/send-email`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to, to_name: nombre || "", subject: "Activa tu cuenta de Pathway", html, reply_to: "hi@pathwaycareercoach.com", signature: "pathway" }),
+      body: JSON.stringify({ to, to_name: nombre || "", subject: "Te sumaron a " + (red || "una red") + " · Activá tu cuenta", html, reply_to: "hi@pathwaycareercoach.com", signature: "pathway" }),
     });
     return r.ok;
   } catch { return false; }
