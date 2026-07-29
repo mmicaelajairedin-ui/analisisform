@@ -2187,11 +2187,20 @@ function _clienteSinFicha(){
 // sin coach_id (huérfana) hasta que el coach la re-agregue (el alta la reclama).
 function _ensureFicha(niche){
   if(!EMAIL || CID) return;
-  var body={ email:EMAIL, activo:true }; if(niche) body.nicho=niche;
-  try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'null'); if(mu&&mu.nombre) body.nombre=mu.nombre; }catch(e){}
-  fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation,resolution=ignore-duplicates'},body:JSON.stringify(body)})
-    .then(function(r){ return (r&&r.ok)?r.json():null; })
-    .then(function(rows){ if(rows&&rows.length){ CRAW=rows[0]; CID=CRAW.id; if(CRAW.coach_id) applyBrand(CRAW.coach_id); if(CRAW.org_id) applyOrgBrand(CRAW.org_id); } })
+  var _use=function(row){ if(!row) return; CRAW=row; CID=CRAW.id; if(CRAW.coach_id) applyBrand(CRAW.coach_id); if(CRAW.org_id) applyOrgBrand(CRAW.org_id); };
+  // Chequear PRIMERO si la ficha ya existe (GET) y crearla (POST) SOLO si no existe.
+  // Antes se hacía POST directo con ignore-duplicates; cuando la ficha ya estaba,
+  // devolvía 409 y ensuciaba client_errors como falso positivo. El GET previo lo evita.
+  fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(EMAIL)+'&select=*&limit=1',{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(rows){
+      if(rows&&rows.length){ _use(rows[0]); return; }
+      var body={ email:EMAIL, activo:true }; if(niche) body.nicho=niche;
+      try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'null'); if(mu&&mu.nombre) body.nombre=mu.nombre; }catch(e){}
+      return fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY,Prefer:'return=representation,resolution=ignore-duplicates'},body:JSON.stringify(body)})
+        .then(function(r){ return (r&&r.ok)?r.json():null; })
+        .then(function(rows2){ if(rows2&&rows2.length) _use(rows2[0]); });
+    })
     .catch(function(){});
 }
 
