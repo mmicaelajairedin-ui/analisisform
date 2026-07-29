@@ -200,6 +200,10 @@ Deno.serve(async (req: Request) => {
       // Disponibilidad (días/horas que el coach configuró) → el perfil muestra las
       // "Próximas fechas disponibles" reales. La hora exacta se elige en el reservador.
       disponibilidad: (cfg && typeof cfg.disponibilidad === "object" && cfg.disponibilidad) ? cfg.disponibilidad : null,
+      // Bloque IA (diferenciador): "¿Por qué elegir a X?" (SEO/GEO) + "Ideal para ti si…"
+      recomendacion_ia: str("recomendacion_ia"),
+      ideal_para: arr("ideal_para"),
+      no_ideal_para: arr("no_ideal_para"),
 
       calendly_url: str("calendly_url"),
       // Canales de contacto de respaldo: si el coach no tiene Calendly, el
