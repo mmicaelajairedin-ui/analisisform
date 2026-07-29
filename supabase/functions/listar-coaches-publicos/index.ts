@@ -29,7 +29,7 @@ const CORS_HEADERS = {
 // pathway_optin, pais. Y `bio` para evaluar completitud del perfil.
 const COACH_FIELDS = [
   "id","nombre","slug","perfil_publico_activo","titulo_profesional","tagline","bio",
-  "especialidades","atiende","anios_experiencia","foto_url","configuracion","activo",
+  "especialidades","atiende","anios_experiencia","foto_url","configuracion","activo","last_seen",
 ].join(",");
 
 // ¿La suscripción del coach está VIGENTE? Un coach con la prueba vencida y sin
@@ -61,6 +61,7 @@ interface CoachRow {
   anios_experiencia: number | null;
   foto_url: string | null;
   configuracion: Record<string, unknown> | null;
+  last_seen?: string | null;
 }
 interface CandRow { coach_id: string | null; resena: string | null }
 interface SolRow { coach_id: string | null }
@@ -251,6 +252,7 @@ Deno.serve(async (req: Request) => {
       anios_experiencia: c.anios_experiencia,
       foto_perfil_url: foto,
       country_match: countryMatch, // bandera para que el listado pueda mostrar badge
+      last_seen: c.last_seen || null, // para "Responde rápido" (derivado en el front)
       stats: { clientes_total: s.clientes, reviews_count: s.reviews, avg_rating: avg },
     };
   });
