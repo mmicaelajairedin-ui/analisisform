@@ -54,6 +54,21 @@ grant  update (xp, badges, game_pts, game_medal, last_seen) on public.usuarios t
 -- las columnas de telemetría a AMBOS roles. (No abre password_hash ni nada más.)
 grant select (xp, badges, game_pts, game_medal, last_seen) on public.usuarios to anon, authenticated;
 
+-- FIX DEFINITIVO de lectura: re-otorgar SELECT de TODA columna (menos
+-- password_hash) para cubrir CUALQUIER columna agregada después de correr
+-- usuarios_protect_password (game_pts, last_seen, created_at, y las que vengan).
+-- Es aditivo (solo GRANT, sin REVOKE) e idempotente: no reabre password_hash.
+-- Así ningún GET /rest/v1/usuarios?select=<col> vuelve a dar 403 por permiso de
+-- columna, sin tener que enumerar cuál faltaba.
+do $$ declare col text; begin
+  for col in
+    select column_name from information_schema.columns
+    where table_schema='public' and table_name='usuarios' and column_name <> 'password_hash'
+  loop
+    execute format('grant select (%I) on public.usuarios to anon, authenticated', col);
+  end loop;
+end $$;
+
 -- Política de UPDATE para anon (la tabla ya tiene RLS activo por el login).
 -- El GRANT de columnas de arriba es el que limita QUÉ se puede escribir; esta
 -- política solo habilita la operación de UPDATE para la fila.
