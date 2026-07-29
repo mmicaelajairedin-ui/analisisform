@@ -30,6 +30,7 @@ const SELECT_FIELDS = [
   "especialidades",
   "atiende",
   "anios_experiencia",
+  "badges",
   "foto_url",
   "configuracion",
   "activo",
@@ -175,6 +176,10 @@ Deno.serve(async (req: Request) => {
       mi_enfoque_en: str("mi_enfoque_en"),
       atiende_en: str("atiende_en"),
       anios_experiencia: row.anios_experiencia,
+      // Insignias de Pathway del coach (badges reales que fue ganando en la
+      // plataforma). De acá salen "Insignias Pathway" (cantidad) y la "Medalla
+      // Pathway" (derivada: 6+ oro · 4+ plata · 2+ bronce) — datos REALES, sin inventar.
+      badges: Array.isArray(row.badges) ? row.badges : [],
       calendly_url: str("calendly_url"),
       // Canales de contacto de respaldo: si el coach no tiene Calendly, el
       // perfil público igual muestra un CTA (WhatsApp si lo configuró, si no
