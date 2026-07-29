@@ -63,13 +63,14 @@ Deno.serve(async (req: Request) => {
   const orgId = await ownerOrg(email);
   if (!orgId) return json({ error: "not_owner" }, 403);
 
-  let body: { coach_id?: string; member_role?: string; servicios?: unknown };
+  let body: { coach_id?: string; member_role?: string; servicios?: unknown; permisos?: unknown };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const coachId = (body.coach_id || "").toString().trim();
   if (!coachId) return json({ error: "missing_coach" }, 400);
   const hasRole = typeof body.member_role === "string" && body.member_role.length > 0;
   const hasSvcs = Array.isArray(body.servicios);
-  if (!hasRole && !hasSvcs) return json({ error: "nothing_to_update" }, 400);
+  const hasPerms = !!body.permisos && typeof body.permisos === "object" && !Array.isArray(body.permisos);
+  if (!hasRole && !hasSvcs && !hasPerms) return json({ error: "nothing_to_update" }, 400);
 
   // El target tiene que ser de ESTA org, o el propio dueño (que también ofrece
   // servicios). Leemos su configuracion para mergear.
@@ -112,6 +113,20 @@ Deno.serve(async (req: Request) => {
       };
     }).filter((s) => s.price > 0);
     cfg.servicios = clean;
+  }
+
+  // Permisos por miembro que decide el DUEÑO de la red: a qué superficies del
+  // panel accede cada persona (negocio, perfil_publico, marketplace). Merge
+  // sobre lo que ya tenía, solo claves conocidas y booleanas.
+  if (hasPerms) {
+    const inp = body.permisos as Record<string, unknown>;
+    const cur = (cfg.permisos && typeof cfg.permisos === "object") ? cfg.permisos as Record<string, unknown> : {};
+    const out: Record<string, boolean> = {};
+    for (const k of ["negocio", "perfil_publico", "marketplace"]) {
+      if (typeof inp[k] === "boolean") out[k] = inp[k] as boolean;
+      else if (typeof cur[k] === "boolean") out[k] = cur[k] as boolean;
+    }
+    cfg.permisos = out;
   }
 
   try {

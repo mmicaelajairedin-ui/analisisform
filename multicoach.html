@@ -1482,7 +1482,7 @@ function _mcSesReal(k){
 function mcNichoKey(n){ n=(''+(n||'')).toLowerCase(); if(n.indexOf('fit')>=0)return 'fitness'; if(n.indexOf('financ')>=0||n.indexOf('finanz')>=0)return 'finanzas'; return 'carrera'; }
 function mcEmptyRow(t,s){ return '<div class="row" style="opacity:.85"><div><div class="nm">'+_mcEsc(t)+'</div><div class="sub">'+_mcEsc(s||'')+'</div></div></div>'; }
 // Mapea una fila real de usuarios(coach) al shape que usan las tarjetas.
-function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:u.id, n:u.nombre||u.email||'Coach', email:(u.email||'').toLowerCase(), tel:(cfg.telefono||cfg.tel||u.telefono||''), ini:_mcIni(u.nombre||u.email), nicho:cat, rat:+cfg.rating||0, ret:(cfg.retencion!=null?+cfg.retencion:null), cli:cliCount||0, ses:+cfg.sesiones||0, esp:cfg.especialidad||'', est:(u.activo===false?'inactivo':'activo'), foto:u.foto_url||cfg.foto||'', tipo:(cfg.member_role==='colaborador'?'colaborador':'coach'), servicios:(Object.prototype.toString.call(cfg.servicios)==='[object Array]'?cfg.servicios:[])}; }
+function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:u.id, n:u.nombre||u.email||'Coach', email:(u.email||'').toLowerCase(), tel:(cfg.telefono||cfg.tel||u.telefono||''), ini:_mcIni(u.nombre||u.email), nicho:cat, rat:+cfg.rating||0, ret:(cfg.retencion!=null?+cfg.retencion:null), cli:cliCount||0, ses:+cfg.sesiones||0, esp:cfg.especialidad||'', est:(u.activo===false?'inactivo':'activo'), foto:u.foto_url||cfg.foto||'', tipo:(cfg.member_role==='colaborador'?'colaborador':'coach'), permisos:(cfg.permisos&&typeof cfg.permisos==='object'?cfg.permisos:null), servicios:(Object.prototype.toString.call(cfg.servicios)==='[object Array]'?cfg.servicios:[])}; }
 // Etiqueta del tipo de miembro (Coach / Colaborador) para las tarjetas y la ficha.
 function _mcTipoBadge(c){ if(!c||c.tipo!=='colaborador') return ''; return '<span style="display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#7A5CA8;background:rgba(122,92,168,.14);padding:2px 7px;border-radius:100px;margin-left:6px">Colaborador</span>'; }
 // Mapea una fila real de candidatos al shape que usan las tarjetas.
@@ -1911,6 +1911,11 @@ function _renderCoachFicha(){
    +(c.esOwner?'':_mcContactBtn(c.tel,c.email))
    +(c.esOwner?'<div style="font-size:11.5px;color:var(--soft);line-height:1.4">Eres el dueño de la red. Puedes atender clientes como un coach más; para cambiar quién es el dueño, se hace desde el panel admin.</div>':(''
    +'<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:2px"><span style="color:var(--soft)">Tipo</span><select class="inp" style="height:30px;flex:1;font-size:12.5px" onchange="_setCoachRol(\''+c.id+'\',this.value)"><option value="coach"'+(c.tipo!=='colaborador'?' selected':'')+'>Coach (da clases)</option><option value="colaborador"'+(c.tipo==='colaborador'?' selected':'')+'>Colaborador</option></select></div>'
+   +'<div style="margin-top:2px;padding-top:8px;border-top:1px solid rgba(45,106,79,.12)"><div style="font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--soft);margin-bottom:5px">A qué le das acceso</div>'
+    +_mcPermRow(c,'negocio','Negocio y cobros')
+    +_mcPermRow(c,'perfil_publico','Perfil público (aparece dando clases)')
+    +_mcPermRow(c,'marketplace','Marketplace de Pathway')
+    +'<div style="font-size:11px;color:var(--soft);margin-top:4px;line-height:1.4">Clientes y agenda van siempre incluidos.</div></div>'
    +'<button class="cp-btn cp-btn-ghost" onclick="toggleCoach(\''+c.id+'\')">'+(c.est==='activo'?'Suspender '+DET().coachSing.toLowerCase():'Reactivar '+DET().coachSing.toLowerCase())+'</button>'
    +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" onclick="quitarCoach(\''+c.id+'\')">'+PWI.svg('trash',{sm:true})+' Quitar de la red</button>'))+'</div>'
   +'</aside>';
@@ -2110,6 +2115,29 @@ function _coachAction(id,modo,cb){
   if(!res.ok||!res.d.ok){ __toast(res.d.error==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo. Reintenta'); cb&&cb(false); return; }
   _localApply(); cb&&cb(true,res.d);
  }).catch(function(){ __toast('Error de conexión. Reintenta'); cb&&cb(false); });
+}
+// Permisos por miembro que decide el DUEÑO: a qué superficies del panel accede.
+// Si el dueño no fijó el permiso, el default sale del rol (colaborador=cerrado,
+// coach=abierto). Clientes y agenda van SIEMPRE (base de ser miembro).
+function _mcPermDefault(c,key){ return (c&&c.permisos&&typeof c.permisos[key]==='boolean')?c.permisos[key]:(c&&c.tipo!=='colaborador'); }
+function _mcPermRow(c,key,label){
+  var on=_mcPermDefault(c,key);
+  return '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;padding:2px 0"><input type="checkbox" '+(on?'checked':'')+' onchange="_setCoachPerm(\''+c.id+'\',\''+key+'\',this.checked)" style="width:16px;height:16px;accent-color:var(--pw-bosque);cursor:pointer">'+_mcEsc(label)+'</label>';
+}
+// Guardar un permiso (owner-gated, persiste en configuracion.permisos vía
+// editar-coach-red). Optimista; revierte si falla.
+function _setCoachPerm(id,key,val){
+  var c=_coach(id); if(!c) return;
+  if(!c.permisos||typeof c.permisos!=='object') c.permisos={};
+  var prev=c.permisos[key]; c.permisos[key]=!!val;
+  if(!MC_REAL){ __toast('Acceso actualizado ✓'); return; }
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    var pb={}; pb[key]=!!val;
+    return fetch(SB+'/functions/v1/editar-coach-red',{method:'POST',headers:h,body:JSON.stringify({coach_id:id,permisos:pb})});
+  }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
+    if(!res.ok||!res.d.ok){ c.permisos[key]=prev; _renderCoachFicha(); __toast('No se pudo guardar. Reintentá.'); return; }
+    __toast('Acceso actualizado ✓');
+  }).catch(function(){ c.permisos[key]=prev; _renderCoachFicha(); __toast('Error de conexión. Reintentá.'); });
 }
 // Cambiar el tipo de un miembro (Coach ↔ Colaborador). En real persiste vía
 // editar-coach-red (owner-gated); en demo actualiza local.

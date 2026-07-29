@@ -4717,6 +4717,39 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "panel-v2: el acceso del miembro de red se gatea por permisos (los elige el dueño)",
+    bug: "Un colaborador (rol='coach' + member_role='colaborador') veía TODO lo de un " +
+         "coach porque panel-v2 nunca leía su rol/permisos. El dueño de la red debe poder " +
+         "elegir por miembro a qué darle acceso (configuracion.permisos), con default por " +
+         "rol. Las superficies de 'dar clases' (Negocio, perfil público) se gatean por " +
+         "_memberPerm(); esColaborador() da el default.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const js = inlineJs(s);
+      if (!isDefined("esColaborador", js) || !isDefined("_memberPerm", js))
+        return "panel-v2.html: faltan esColaborador()/_memberPerm() → el acceso del miembro de red deja de gatearse.";
+      if (!/if\(_memberPerm\("negocio"\)\) items\.push\(\["negocio"/.test(s))
+        return "panel-v2.html: la pestaña 'Negocio' ya no se gatea por _memberPerm('negocio').";
+      if (!/_memberPerm\("perfil_publico"\)[\s\S]{0,80}perfil_publico_activo/.test(s))
+        return "panel-v2.html: el perfil público ya no se gatea por _memberPerm('perfil_publico').";
+      return null;
+    },
+  },
+  {
+    name: "panel-v2: los coaches de una red no quedan bloqueados por el paywall individual",
+    bug: "Un coach miembro de una red (usuarios.org_id) perdía acceso a SUS clientes " +
+         "cuando vencía su trial individual, aunque el DUEÑO paga el plan de la red. " +
+         "_paywallCheck debe eximir a quien tiene org_id.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/if\(u\.org_id \|\| cfg\.org_id\) return false/.test(s))
+        return "panel-v2.html: _paywallCheck ya no exime a los miembros de una red (org_id) → vuelven a quedar bloqueados por su trial individual.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
