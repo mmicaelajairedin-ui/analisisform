@@ -75,12 +75,16 @@ Deno.serve(async (req: Request) => {
 
   // La cita tiene que ser de un coach de ESTA org.
   let coachId = "";
+  let citaEmail = "";
+  let citaTipo = "Sesión";
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${encodeURIComponent(citaId)}&select=coach_id&limit=1`, { headers: svc });
+    const r = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${encodeURIComponent(citaId)}&select=coach_id,email,tipo&limit=1`, { headers: svc });
     if (!r.ok) return json({ error: "lookup_failed", status: r.status }, 502);
     const rows = await r.json();
     if (!Array.isArray(rows) || !rows.length) return json({ error: "cita_no_existe" }, 404);
     coachId = String(rows[0].coach_id || "");
+    citaEmail = String(rows[0].email || "").trim().toLowerCase();
+    citaTipo = String(rows[0].tipo || "Sesión");
   } catch { return json({ error: "db_unreachable" }, 502); }
   if (!coachId || !(await coachInOrg(coachId, orgId))) return json({ error: "cita_ajena" }, 403);
 
@@ -111,5 +115,30 @@ Deno.serve(async (req: Request) => {
     }
     if (!r.ok) return json({ error: "update_failed", status: r.status }, 502);
   } catch { return json({ error: "write_failed" }, 502); }
+  // Email al cliente avisando el cambio (best-effort, no bloquea).
+  const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(citaEmail);
+  if (EMAIL_OK) {
+    try {
+      if (action === "cancel") {
+        await notificarCambio(citaEmail, "Tu sesión fue cancelada", "<p style='font-size:15px'>Tu sesión <b>" + citaTipo + "</b> fue cancelada. Si necesitás reprogramar, respondé este correo.</p>");
+      } else if (typeof patch.inicio === "string" && patch.inicio) {
+        await notificarCambio(citaEmail, "Tu sesión se reprogramó 🗓️", "<p style='font-size:15px'>Tu sesión <b>" + citaTipo + "</b> se reprogramó para el <b>" + fmtFecha(String(patch.inicio)) + "</b>. ¡Te esperamos!</p>");
+      }
+    } catch { /* ignore */ }
+  }
   return json({ ok: true });
 });
+
+function fmtFecha(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]} · ${m[4]}:${m[5]}` : iso;
+}
+async function notificarCambio(to: string, subject: string, inner: string): Promise<void> {
+  const html = "<p style='font-size:15px'>¡Hola!</p>" + inner + "<p style='font-size:13px;color:#777'>Cualquier duda, respondé este correo.</p>";
+  try {
+    await fetch(`${SB_URL}/functions/v1/send-email`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, subject, html, reply_to: "hi@pathwaycareercoach.com", signature: "pathway" }),
+    });
+  } catch { /* best-effort */ }
+}

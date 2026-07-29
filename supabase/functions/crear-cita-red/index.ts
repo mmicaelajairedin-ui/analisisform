@@ -116,6 +116,37 @@ Deno.serve(async (req: Request) => {
     if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
     const rows = await r.json().catch(() => []);
     const cita = Array.isArray(rows) && rows[0] ? rows[0] : { coach_id, nombre, tipo, inicio, estado: "confirmada" };
+    // Email de confirmación al cliente (best-effort, no bloquea la creación).
+    if (EMAIL_RE.test(cliEmail)) {
+      const ms = new Date(inicio).getTime();
+      const salaUrl = `https://pathwaycareercoach.com/sala.html?room=${encodeURIComponent("Pathway-" + coach_id + "-" + ms)}&mod=0&email=${encodeURIComponent(cliEmail)}&start=${ms}&dur=60${grupal ? "&grupal=1" : ""}`;
+      try { await notificarCita(cliEmail, tipo, inicio, modalidad, lugar, salaUrl); } catch { /* ignore */ }
+    }
     return json({ ok: true, cita });
   } catch { return json({ error: "write_failed" }, 502); }
 });
+
+// Fecha legible desde el ISO, sin depender de la zona del server (parseo directo).
+function fmtFecha(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]} · ${m[4]}:${m[5]}` : iso;
+}
+// Email de confirmación de la cita al cliente (misma idea que el panel del coach).
+async function notificarCita(to: string, tipo: string, inicio: string, modalidad: string, lugar: string, salaUrl: string): Promise<void> {
+  const cuando = fmtFecha(inicio);
+  const donde = modalidad === "presencial"
+    ? `<p style='font-size:15px'>📍 <b>Presencial:</b> ${lugar || "te confirmamos el lugar"}</p>`
+    : `<p style='margin:20px 0'><a href='${salaUrl}' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a la videollamada →</a></p>`;
+  const html =
+    "<p style='font-size:15px'>¡Hola!</p>" +
+    "<p style='font-size:15px;line-height:1.6'>Tu sesión quedó agendada:</p>" +
+    "<p style='font-size:15px'><b>" + tipo + "</b><br>🗓️ " + cuando + "</p>" +
+    donde +
+    "<p style='font-size:13px;color:#777'>Si necesitás reprogramar, respondé este correo.</p>";
+  try {
+    await fetch(`${SB_URL}/functions/v1/send-email`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, subject: "Tu sesión quedó agendada 🗓️", html, reply_to: "hi@pathwaycareercoach.com", signature: "pathway" }),
+    });
+  } catch { /* best-effort */ }
+}
