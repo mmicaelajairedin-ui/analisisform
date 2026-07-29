@@ -77,12 +77,19 @@ Deno.serve(async (req: Request) => {
   let citas: any[] = [];
   if (coachIds.length) {
     const from = new Date(Date.now() - 120 * 86400000).toISOString();
-    const inList = coachIds.map((id) => encodeURIComponent(String(id))).join(",");
+    const inList = coachIds.map((id) => String(id)).join(",");
     // Personal citas: coach_id en el team
-    const personal = await q(`citas?coach_id=in.(${inList})&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal`);
+    const personal = await q(`citas?coach_id=in.(${inList})&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal,modalidad,lugar`);
     // Group events: org_id match y grupal=true
-    const grupal = await q(`citas?org_id=eq.${encodeURIComponent(orgId)}&grupal=eq.true&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal`);
-    citas = [...personal, ...grupal];
+    const grupal = await q(`citas?org_id=eq.${encodeURIComponent(orgId)}&grupal=eq.true&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal,modalidad,lugar`);
+    // Deduplication: avoid showing the same cita twice (personal + grupal filters can overlap)
+    const seen = new Set<string>();
+    citas = [...personal, ...grupal].filter((c) => {
+      const key = `${c.id}-${c.inicio}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   // owner también es un coach asignable ("el owner es coach aunque luego no
