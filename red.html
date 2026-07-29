@@ -146,14 +146,26 @@ function doPay(){
     .then(function(j){ if(j&&j.url){ location.href=j.url; return; } btn.disabled=false; btn.textContent='Ir a pagar →'; err.textContent=(j&&j.error)?j.error:'No se pudo abrir el pago. Prueba de nuevo.'; })
     .catch(function(){ btn.disabled=false; btn.textContent='Ir a pagar →'; err.textContent='Error de red. Revisa tu conexión.'; });
 }
+// ¿Estamos en el dominio propio de una red (Pro)? Si el host no es de Pathway,
+// la red se identifica por su dominio (no hace falta /red/<slug> en la URL).
+function customHost(){
+  var h=(location.hostname||'').toLowerCase();
+  if(!h||h==='localhost'||/^\d+\.\d+\.\d+\.\d+$/.test(h)) return '';
+  if(/(^|\.)pathwaycareercoach\.com$/.test(h)||/\.pages\.dev$/.test(h)) return '';
+  return h;
+}
 function load(){
-  STATE.slug=slugFromPath(); banner();
-  if(!STATE.slug){ document.getElementById('grid').innerHTML='<div class="empty">Enlace de red inválido.</div>'; return; }
-  fetch(SB+'/functions/v1/red-checkout',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({action:'info',slug:STATE.slug})})
+  banner();
+  var dom=customHost();
+  STATE.slug=slugFromPath();
+  if(!dom && !STATE.slug){ document.getElementById('grid').innerHTML='<div class="empty">Enlace de red inválido.</div>'; return; }
+  var body = dom ? {action:'info',dominio:dom} : {action:'info',slug:STATE.slug};
+  fetch(SB+'/functions/v1/red-checkout',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify(body)})
     .then(function(r){return r.ok?r.json():null;})
     .then(function(j){
       if(!j||!j.ok){ document.getElementById('grid').innerHTML='<div class="empty">No encontramos esta red. Verifica el enlace.</div>'; return; }
       STATE.org=j.org; STATE.coaches=j.coaches||[]; STATE.cobrosOn=!!j.cobros_on;
+      STATE.slug=(j.org&&(j.org.slug||j.org.id))||STATE.slug; // para el checkout (dominio propio no trae slug en la URL)
       applyBrand(); render();
     })
     .catch(function(){ document.getElementById('grid').innerHTML='<div class="empty">No se pudo cargar la red. Revisa tu conexión.</div>'; });

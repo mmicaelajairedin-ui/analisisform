@@ -42,6 +42,12 @@ ALTER TABLE organizaciones ADD COLUMN IF NOT EXISTS slug TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS organizaciones_slug_key
   ON organizaciones(slug) WHERE slug IS NOT NULL;
 
+-- Dominio propio (plan Pro): el hostname que apunta a Cloudflare Pages. red.html
+-- lo detecta y muestra la página de ESA red en su propio dominio.
+ALTER TABLE organizaciones ADD COLUMN IF NOT EXISTS dominio TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS organizaciones_dominio_key
+  ON organizaciones(dominio) WHERE dominio IS NOT NULL;
+
 COMMENT ON TABLE cobros_red IS
   'Pagos de clientes a la cuenta del dueño de la red (2% Pathway). Solo service role (red-checkout).';
 COMMENT ON COLUMN organizaciones.slug IS

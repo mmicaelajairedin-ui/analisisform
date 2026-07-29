@@ -116,13 +116,20 @@ Deno.serve(async (req: Request) => {
   try { p = await req.json(); } catch { return json({ error: "JSON inválido" }, 400); }
   const action = p.action;
 
-  // ── INFO: datos públicos de la red para /red/<slug> ──
+  // ── INFO: datos públicos de la red para /red/<slug> o dominio propio ──
   if (action === "info") {
     const slug = String(p.slug || "").trim();
-    if (!slug) return json({ error: "slug requerido" }, 400);
+    const dominio = String(p.dominio || "").trim().toLowerCase().replace(/^www\./, "");
+    if (!slug && !dominio) return json({ error: "slug o dominio requerido" }, 400);
+    let org: Record<string, any> | null = null;
+    // Dominio propio (Pro): la red se identifica por su hostname.
+    if (dominio) {
+      const dr = await fetch(`${SB}/rest/v1/organizaciones?dominio=eq.${encodeURIComponent(dominio)}&select=*&limit=1`, { headers: sbH(SRK) });
+      const drows = dr.ok ? await dr.json() : [];
+      org = Array.isArray(drows) && drows.length ? drows[0] : null;
+    }
     // Por slug; si no existe, se trata el parámetro como org_id (URL /red/<id>).
-    let org = await getOrg(SB, SRK, slug);
-    if (!org) org = await getOrg(SB, SRK, "", slug);
+    if (!org && slug) { org = await getOrg(SB, SRK, slug); if (!org) org = await getOrg(SB, SRK, "", slug); }
     if (!org || org.activo === false) return json({ error: "Red no encontrada" }, 404);
     const members = await getMembers(SB, SRK, org);
     const coaches = members
