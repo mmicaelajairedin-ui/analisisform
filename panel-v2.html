@@ -8584,14 +8584,25 @@ function viewAdmin(){
   var engRows = _directCoaches.map(_coachCardHtml).join("");
   var _redGroupsHtml = "";
   if(_redCoaches.length){
+    // RORGS puede no haber cargado aún: solo marcamos "sin red" (huérfano) cuando
+    // la lista de redes YA está cargada y el org_id no matchea ninguna. Así un
+    // coach de red nunca desaparece: o va bajo su red, o al bucket "a revisar".
+    var _orgsLoaded = (typeof RORGS!=="undefined" && Array.isArray(RORGS));
     var _byOrg = {};
     _redCoaches.forEach(function(c){ (_byOrg[c.orgId]=_byOrg[c.orgId]||[]).push(c); });
-    _redGroupsHtml = Object.keys(_byOrg).map(function(oid){
-      var o = ((typeof RORGS!=="undefined"&&RORGS)||[]).filter(function(x){ return String(x.id)===String(oid); })[0] || {};
+    var _grp = Object.keys(_byOrg).map(function(oid){
+      var o = _orgsLoaded ? (RORGS.filter(function(x){ return String(x.id)===String(oid); })[0]||null) : null;
+      return { o:o, huerfano:(_orgsLoaded && !o), coaches:_byOrg[oid] };
+    }).sort(function(a,b){ return (a.huerfano?1:0)-(b.huerfano?1:0); }); // huérfanos al final
+    _redGroupsHtml = _grp.map(function(g){
+      var n = g.coaches.length;
+      var cards = g.coaches.map(_coachCardHtml).join("");
+      if(g.huerfano){
+        return "<div style='margin-top:14px'><div style='display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--pw-danger);padding:7px 2px;margin-bottom:6px;border-bottom:1px solid rgba(192,117,110,.4)'><span class='cp-emo'>"+PWI.svg('alert',{sm:true})+"</span><b>Sin red asignada</b><span style='color:var(--pw-text-soft);font-weight:500'>· "+n+" coach"+(n===1?"":"es")+" · su red ya no existe — reasignalos o eliminalos</span></div><div class='cp-coach-grid'>"+cards+"</div></div>";
+      }
+      var o=g.o||{};
       var nombreRed = esc(o.nombre||"Red");
       var dueno = esc(o.owner_email||"—");
-      var n = _byOrg[oid].length;
-      var cards = _byOrg[oid].map(_coachCardHtml).join("");
       return "<div style='margin-top:14px'><div style='display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--pw-carbon);padding:7px 2px;margin-bottom:6px;border-bottom:1px solid var(--pw-border)'><span class='cp-emo'>"+PWI.svg('building',{sm:true})+"</span><b>"+nombreRed+"</b><span style='color:var(--pw-text-soft);font-weight:500'>· "+n+" coach"+(n===1?"":"es")+" · dueño "+dueno+"</span></div><div class='cp-coach-grid'>"+cards+"</div></div>";
     }).join("");
     _redGroupsHtml = "<div style='margin-top:20px'><div style='font-size:11px;font-weight:700;color:var(--pw-text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px'>Coaches en redes</div><div style='font-size:11.5px;color:var(--pw-text-soft);margin-bottom:4px'>Pertenecen al equipo de un multicoach — los gestiona su dueño, no cuentan como coaches tuyos.</div>"+_redGroupsHtml+"</div>";
