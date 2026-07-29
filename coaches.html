@@ -358,6 +358,17 @@ a{color:inherit;text-decoration:none;}
       <button class="filter-tab" data-pais="uruguay">Uruguay</button>
       <button class="filter-tab" data-pais="peru">Perú</button>
     </div>
+    <div id="dir-toolbar" style="display:none;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;max-width:800px;margin:0 auto 18px;">
+      <span id="dir-count" style="font-size:13px;color:var(--pw-texto-suave);font-weight:500;"></span>
+      <label style="display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--pw-texto-suave);">Ordenar
+        <select id="dir-sort" style="font-family:var(--pw-sans);font-size:13px;font-weight:500;color:var(--pw-carbon);background:#fff;border:1.5px solid var(--pw-borde);border-radius:100px;padding:7px 14px;cursor:pointer;">
+          <option value="reco">Recomendados</option>
+          <option value="rating">Mejor valorados</option>
+          <option value="clientes">Más clientes</option>
+          <option value="precio">Precio: menor a mayor</option>
+        </select>
+      </label>
+    </div>
     <div id="coach-grid" class="coach-grid"></div>
   </div>
 </section>
@@ -478,7 +489,7 @@ function _coachCompleto(c){
   // Ya no exigimos Stripe ni foto: el modelo es suscripción, no comisión.
   return !!(c.perfil_publico_activo === true || cfg.perfil_publico_activo === true);
 }
-function buildCoachCard(c, statsMap){
+function buildCoachCard(c, statsMap, idx){
   var cfg = c.configuracion || {};
   var nombre = c.nombre || c.nombre_practica || 'Coach';
   var ct = (cfg.coach_type || (Array.isArray(cfg.especialidades) && cfg.especialidades[0]) || '').toString().toLowerCase();
@@ -576,7 +587,10 @@ function buildCoachCard(c, statsMap){
   // por Pathway: perfil público activo + suscripción vigente).
   var checkHtml = '<span class="coach-photo-check" title="Coach verificado por Pathway"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></span>';
   var verifiedChip = '<span class="coach-verified"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Verificado</span>';
-  return '<article class="coach-card" data-pais="'+escH(paisesAttr)+'" data-nicho="'+escH(nichoNorm)+'" data-coach-id="'+escH(c.id)+'">'
+  // Valores para ordenar (datos reales; precio vacío = va al final en "precio").
+  var _precioMin = precios.length ? Math.min.apply(null, precios) : '';
+  var _sortAttrs = ' data-rating="'+(st&&st.avg_rating?st.avg_rating:0)+'" data-reviews="'+(st?st.reviews_count:0)+'" data-clientes="'+(st?st.clientes_total:0)+'" data-precio="'+_precioMin+'" data-idx="'+(idx||0)+'"';
+  return '<article class="coach-card" data-pais="'+escH(paisesAttr)+'" data-nicho="'+escH(nichoNorm)+'" data-coach-id="'+escH(c.id)+'"'+_sortAttrs+'>'
     + '<div class="coach-top">'
     +   '<div class="coach-photo-round">'+fotoHtml+checkHtml+'</div>'
     +   '<div class="coach-info">'
@@ -630,6 +644,7 @@ function attachFilterTabs(){
       if(show) visibles++;
     });
     if(empty) empty.style.display = visibles === 0 ? 'block' : 'none';
+    _dirUpdateCount();
   }
   document.querySelectorAll('.filter-tab[data-pais]').forEach(function(tab){
     tab.onclick = function(){
@@ -665,6 +680,38 @@ function pruneFilters(){
     var show = t.dataset.pais==='latam' ? anyLatam : !!paises[t.dataset.pais];
     t.style.display = show ? '' : 'none';
   });
+}
+// ── Toolbar del directorio: contador + ordenar ────────────────────────────
+// Cuenta las tarjetas visibles (respeta los filtros de país/nicho).
+function _dirUpdateCount(){
+  var el = document.getElementById('dir-count'); if(!el) return;
+  var vis = Array.prototype.slice.call(document.querySelectorAll('.coach-card'))
+    .filter(function(c){ return c.style.display !== 'none'; }).length;
+  el.textContent = vis === 1 ? '1 coach disponible' : (vis + ' coaches disponibles');
+}
+// Reordena las tarjetas por el criterio elegido. "Recomendados" = orden original
+// (data-idx). El resto usa datos reales (rating, clientes, precio). La tarjeta
+// dir-empty siempre queda al final.
+function _dirSortCards(){
+  var grid = document.getElementById('coach-grid'); if(!grid) return;
+  var sel = document.getElementById('dir-sort'); var mode = sel ? sel.value : 'reco';
+  var num = function(el,a){ return parseFloat(el.getAttribute(a)) || 0; };
+  var cards = Array.prototype.slice.call(grid.querySelectorAll('.coach-card'));
+  cards.sort(function(a,b){
+    if(mode==='rating'){ var r=num(b,'data-rating')-num(a,'data-rating'); return r || (num(b,'data-reviews')-num(a,'data-reviews')); }
+    if(mode==='clientes'){ return num(b,'data-clientes')-num(a,'data-clientes'); }
+    if(mode==='precio'){ var pa=parseFloat(a.getAttribute('data-precio')); var pb=parseFloat(b.getAttribute('data-precio')); if(isNaN(pa))pa=Infinity; if(isNaN(pb))pb=Infinity; return pa-pb; }
+    return num(a,'data-idx')-num(b,'data-idx');
+  });
+  cards.forEach(function(c){ grid.appendChild(c); });
+  var empty = document.getElementById('dir-empty'); if(empty) grid.appendChild(empty);
+}
+function _dirWireToolbar(){
+  var bar = document.getElementById('dir-toolbar');
+  var hasCards = document.querySelectorAll('.coach-card').length > 0;
+  if(bar) bar.style.display = hasCards ? 'flex' : 'none';
+  var sel = document.getElementById('dir-sort');
+  if(sel && !sel._wired){ sel._wired = true; sel.onchange = _dirSortCards; }
 }
 // Coaches ocultos manualmente del directorio público: no se muestran aunque
 // tengan el perfil público activo (p. ej. coaches que aún no están disponibles
@@ -703,12 +750,14 @@ async function loadCoachesDirectory(){
     if(!grid) return;
     // Stats reales (rating/clientes) en paralelo — enriquecen las tarjetas.
     var statsMap = await fetchCoachStats();
-    var html = coaches.map(function(c){ return buildCoachCard(c, statsMap); }).join('')
+    var html = coaches.map(function(c, i){ return buildCoachCard(c, statsMap, i); }).join('')
       + '<div class="dir-empty" id="dir-empty">Todavía no hay coaches en este país. <a href="#directorio" style="color:var(--pw-bosque);text-decoration:underline;">Ver todos</a></div>';
     grid.innerHTML = html;
     attachFilterTabs();
     pruneFilters();
     _pwPruneBioMore();
+    _dirWireToolbar();
+    _dirUpdateCount();
   } catch (e) {
     console.warn('No se pudo cargar el directorio dinámico:', e);
     // Antes quedaba el grid en blanco sin avisar. Mostramos un mensaje + reintentar.
