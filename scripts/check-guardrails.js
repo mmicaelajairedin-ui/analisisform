@@ -4342,6 +4342,24 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: el cliente ve las CLASES de la red en su portal (solo grupales, no 1:1 ajenos)",
+    bug: "El cliente de una red tiene que ver la agenda de CLASES/eventos de su red para anotarse. Se " +
+         "trae por agenda-red-cliente (service role, acotado a la org del propio cliente por su email) y " +
+         "SOLO eventos grupales (grupal=is.true) → NUNCA las sesiones 1:1 privadas de otros clientes " +
+         "(fuga de datos). Si el filtro grupal se cae, se expondrían sesiones privadas ajenas.",
+    check() {
+      const fn = read("supabase/functions/agenda-red-cliente/index.ts");
+      if (fn === null) return "falta la edge function agenda-red-cliente (clases de la red para el cliente).";
+      if (!/grupal=is\.true/.test(fn)) return "agenda-red-cliente: ya NO filtra a solo eventos grupales (expondría 1:1 privados ajenos).";
+      const fit = read("pathway-fit-cliente.html");
+      if (fit) {
+        if (!/function _loadClasesRed\(/.test(fit)) return "pathway-fit-cliente.html: falta _loadClasesRed (clases de la red en el portal).";
+        if (!/agenda-red-cliente/.test(fit)) return "pathway-fit-cliente.html: el portal ya no pide las clases de la red.";
+      }
+      return null;
+    },
+  },
+  {
     name: "multicoach: 'Nueva sesión' en la red CREA la cita asignando coach (crear-cita-red), no un toast",
     bug: "En una red real, 'Nueva sesión' tenía que dejar AGENDAR un evento y ASIGNARLO a un coach " +
          "(tipo, nombre, día/hora, online/presencial, grupal) — no un toast de maqueta. La RLS de citas " +
