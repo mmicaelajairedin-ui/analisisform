@@ -301,6 +301,32 @@ const RULES = [
     },
   },
   {
+    name: "App Store: Sign in with Apple + sin cobros dentro de la app (reader)",
+    bug: "Apple rechazó la app: (4.8) ofrecía login con Google sin equivalente → falta " +
+         "Sign in with Apple; (2.1b) mostraba precios/botones de suscripción dentro de la " +
+         "app. El login debe tener Apple, y en modo app (PW_IN_APP) NO se muestran precios " +
+         "ni botones de pago (la suscripción se gestiona en la web).",
+    check() {
+      for (const f of ["login.html", "login-en.html"]) {
+        const s = read(f);
+        if (s && (!/id=.btn-apple/.test(s) || !/function signInWithApple/.test(s) || !/provider: *'apple'/.test(s)))
+          return f + ": falta Sign in with Apple (btn-apple / signInWithApple / provider apple) — Apple 4.8.";
+      }
+      const p = read("panel-v2.html");
+      if (p) {
+        // La sección de plan/cobro se oculta en la app (reader model).
+        if (!/data-app-hide.>.\+planSwitch/.test(p) && !/<div data-app-hide>.\+planSwitch/.test(p))
+          return "panel-v2.html: la sección de suscripción (cfgPlan) ya no se oculta en la app (data-app-hide).";
+        if (!/if\(window\.PW_IN_APP\)/.test(p))
+          return "panel-v2.html: el upsell Pro ya no respeta el modo app (PW_IN_APP) → mostraría precios en la app.";
+      }
+      const app = read("pw-app.js");
+      if (app && !/PW_IN_APP/.test(app))
+        return "pw-app.js: se perdió la detección de modo app (PW_IN_APP).";
+      return null;
+    },
+  },
+  {
     name: "token de Google en caja fuerte (gcal_tokens), NO en configuracion",
     bug: "El token de Google (con refresh_token = acceso permanente al calendario) vivía " +
          "en usuarios.configuracion.gcal, legible por anon vía el directorio. Se movió a la " +
