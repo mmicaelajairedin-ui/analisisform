@@ -2878,12 +2878,39 @@ function renderAgenda(){
  var clasesSem=evs.filter(function(e){return e.tipo==='clase';}).length;
  var vt=function(k,l){return '<button class="'+(_agView===k?'on':'')+'" onclick="_setAgView(\''+k+'\')">'+l+'</button>';};
  v.innerHTML='<header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">Agenda<span class="dot">.</span></h1><div class="cp-sub">Sesiones, eventos y disponibilidad de todo tu equipo.</div></div>'
-   +'<div class="cp-topbar-actions"><div class="agtoggle">'+vt('dia','Día')+vt('semana','Semana')+vt('mes','Mes')+'</div><button class="crear" onclick="__nuevaSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nueva sesión</button></div></header>'
+   +'<div class="cp-topbar-actions"><div class="agtoggle">'+vt('dia','Día')+vt('semana','Semana')+vt('mes','Mes')+'</div><button class="cp-btn cp-btn-ghost" onclick="_mcDispModal()" style="height:38px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Mi disponibilidad</button><button class="crear" onclick="__nuevaSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nueva sesión</button></div></header>'
    +'<div class="agkpis"><div class="agkpi"><div class="l">Sesiones hoy</div><div class="n">'+sesHoy+'</div></div><div class="agkpi"><div class="l">Atenciones esta semana</div><div class="n">'+clientesSem+'</div></div><div class="agkpi"><div class="l">Clases esta semana</div><div class="n">'+clasesSem+'</div></div><div class="agkpi"><div class="l">Eventos totales</div><div class="n">'+evs.length+'</div></div></div>'
    +'<div class="aglayout"><aside class="agcoaches">'+_agCoachList()+'</aside>'
    +'<div class="agcal">'+_agCalTop(days)+'<div class="agwrap">'+(_agView==='mes'?_agMonth():_agView==='dia'?_agDayGrid(days):_agWeek(days))+'</div><div class="aglegend" style="padding:12px 16px">'+_agLegend()+'</div></div>'
    +'<aside class="agrail">'+_agRail(days)+'</aside></div>';
 }
+// "Mi disponibilidad" — copiado del panel del coach (mismo modelo de datos:
+// disponibilidad={days,from,to,min_notice_h,buffer_min,bloqueados}). Define qué
+// días y en qué franja se puede reservar en la red. Se guarda en la config de la
+// org (mcSaveConfig → marca.disponibilidad), compatible con el panel.
+var _mcDispState=null;
+function _mcDispGet(){ var d=(MC_REAL&&MC_ORG&&MC_ORG.marca&&MC_ORG.marca.disponibilidad)||_mcBrand().disponibilidad||{}; return (d&&typeof d==='object')?d:{}; }
+function _mcDispModal(){
+  var d=_mcDispGet();
+  _mcDispState={ days:(Object.prototype.toString.call(d.days)==='[object Array]'?d.days.map(Number):[1,2,3,4,5]), from:d.from||'09:00', to:d.to||'18:00', notice:(d.min_notice_h!=null?d.min_notice_h:2), buffer:(d.buffer_min!=null?d.buffer_min:0), bloq:(Object.prototype.toString.call(d.bloqueados)==='[object Array]'?d.bloqueados.slice():[]) };
+  __openModal('Mi disponibilidad', _mcDispBody(), 'Guardar', _mcDispSave);
+}
+function _mcDispBody(){
+  var s=_mcDispState; var DN=[['L',1],['M',2],['X',3],['J',4],['V',5],['S',6],['D',0]];
+  var chips=DN.map(function(p){ var on=s.days.indexOf(p[1])>=0; return "<button type='button' onclick=\"_mcDispDay("+p[1]+")\" style='width:34px;height:34px;border-radius:50%;border:1.5px solid "+(on?'var(--pw-bosque)':'var(--pw-border)')+";background:"+(on?'var(--pw-success-bg)':'#fff')+";color:"+(on?'var(--pw-bosque)':'var(--pw-text-muted)')+";font-weight:700;font-family:inherit;cursor:pointer'>"+p[0]+"</button>"; }).join('');
+  var bch=s.bloq.length?("<div style='display:flex;flex-wrap:wrap;gap:6px;margin-top:8px'>"+s.bloq.map(function(x){var lbl=(''+x).split('-').reverse().join('/');return "<span style='display:inline-flex;align-items:center;gap:5px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);border-radius:100px;padding:3px 5px 3px 11px;font-size:12px'>"+_mcEsc(lbl)+"<button type='button' onclick=\"_mcDispBloqDel('"+_mcEsc(x)+"')\" title='Quitar' style='border:none;background:none;cursor:pointer;color:var(--pw-text-muted);font-size:16px;line-height:1;padding:0 2px'>×</button></span>";}).join('')+"</div>"):"<div style='font-size:11.5px;color:var(--pw-text-muted);margin-top:6px'>Sin días bloqueados.</div>";
+  return "<div style='font-size:12.5px;color:var(--pw-text-soft);margin-bottom:12px;line-height:1.5'>Qué días y en qué franja te pueden reservar. Se aplica a toda la red.</div>"
+    +"<div class='cp-form-row'><label class='cp-form-label'>Días</label><div style='display:flex;gap:6px'>"+chips+"</div></div>"
+    +"<div class='cp-form-row'><label class='cp-form-label'>Horario general</label><div style='display:flex;gap:10px'><input type='time' id='mcd-from' class='cp-form-input' value='"+_mcEsc(s.from)+"' style='flex:1'><input type='time' id='mcd-to' class='cp-form-input' value='"+_mcEsc(s.to)+"' style='flex:1'></div></div>"
+    +"<div style='display:flex;gap:10px'><div class='cp-form-row' style='flex:1'><label class='cp-form-label'>Aviso mínimo (horas)</label><input type='number' min='0' step='1' id='mcd-notice' class='cp-form-input' value='"+_mcEsc(''+s.notice)+"'></div><div class='cp-form-row' style='flex:1'><label class='cp-form-label'>Margen entre citas (min)</label><input type='number' min='0' step='5' id='mcd-buffer' class='cp-form-input' value='"+_mcEsc(''+s.buffer)+"'></div></div>"
+    +"<div class='cp-form-row'><label class='cp-form-label'>Bloquear días (vacaciones, feriados)</label><div style='display:flex;gap:6px'><input type='date' id='mcd-bloq' class='cp-form-input' style='flex:1'><button type='button' class='cp-btn cp-btn-ghost' onclick='_mcDispBloqAdd()'>Agregar</button></div>"+bch+"</div>";
+}
+function _mcDispCapture(){ var f=document.getElementById('mcd-from'),t=document.getElementById('mcd-to'),n=document.getElementById('mcd-notice'),b=document.getElementById('mcd-buffer'); if(f)_mcDispState.from=f.value||'09:00'; if(t)_mcDispState.to=t.value||'18:00'; if(n)_mcDispState.notice=parseInt(n.value,10)||0; if(b)_mcDispState.buffer=parseInt(b.value,10)||0; }
+function _mcDispRerender(){ var mb=document.querySelector('#__modal .mb'); if(mb)mb.innerHTML=_mcDispBody(); }
+function _mcDispDay(n){ _mcDispCapture(); var i=_mcDispState.days.indexOf(n); if(i>=0)_mcDispState.days.splice(i,1); else _mcDispState.days.push(n); _mcDispRerender(); }
+function _mcDispBloqAdd(){ _mcDispCapture(); var el=document.getElementById('mcd-bloq'); var v=el&&el.value; if(v&&_mcDispState.bloq.indexOf(v)<0)_mcDispState.bloq.push(v); _mcDispRerender(); }
+function _mcDispBloqDel(v){ _mcDispCapture(); _mcDispState.bloq=_mcDispState.bloq.filter(function(x){return x!==v;}); _mcDispRerender(); }
+function _mcDispSave(){ _mcDispCapture(); var s=_mcDispState; mcSaveConfig({disponibilidad:{days:s.days.slice().sort(),from:s.from,to:s.to,min_notice_h:s.notice,buffer_min:s.buffer,bloqueados:s.bloq}}, 'Disponibilidad guardada ✓'); __mclose(); }
 function _setAgView(v){_agView=v;renderAgenda();}
 function _setAgCoach(c){_agCoach=c;renderAgenda();}
 function _agSelDay(d){_agSelDow=d;renderAgenda();}
