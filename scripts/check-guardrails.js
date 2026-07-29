@@ -4903,6 +4903,28 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "DESIGN FASE C: pw-white-label.js existe y tiene las funciones de branding",
+    bug: "DESIGN PHASE C (Branding System) agregó pw-white-label.js para aplicar " +
+         "colores de marca del coach en las superficies white-label (portal cliente, " +
+         "perfil público). Si alguien borra el script o las funciones, la marca " +
+         "del coach no se aplica y los coaches no pueden customizar sus colores.",
+    check() {
+      const wl = read("pw-white-label.js");
+      if (!wl) return "pw-white-label.js no existe.";
+      // Verificar que existen las funciones principales
+      const required = [
+        "applyWhiteLabel",
+        "_pwGetBrand",
+        "_pwApplyBrandFromCache",
+        "_pwCacheBrandColor",
+      ];
+      const missing = required.filter(fn => !wl.includes(`window.${fn}`));
+      if (missing.length > 0)
+        return "pw-white-label.js perdió estas funciones: " + missing.join(", ") + ".";
+      return null;
+    },
+  },
 ];
 
 
