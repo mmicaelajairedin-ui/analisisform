@@ -4925,6 +4925,45 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "SEGURIDAD FASE 4: RLS policies protegen org_id en candidatos/informes/cv_publicados",
+    bug: "Multi-tenant isolation: coaches solo deben ver datos de su org, no de otras. " +
+         "Las RLS policies en candidatos/informes/cv_publicados deben incluir " +
+         "org_id = public.pw_org_id() en el USING clause. Sin esto, un coach de Org A " +
+         "puede leer candidatos de Org B buscando por email (fuga de datos). " +
+         "Ver: supabase/migrations/0101_org_id_rls_strict.sql",
+    check() {
+      const m101 = read("supabase/migrations/0101_org_id_rls_strict.sql");
+      if (!m101)
+        return "Falta migración 0101_org_id_rls_strict.sql (org_id RLS protection).";
+      // Verificar que la migración define pw_org_id()
+      if (!/CREATE OR REPLACE FUNCTION public\.pw_org_id\(\)/.test(m101))
+        return "0101_org_id_rls_strict.sql no define pw_org_id() helper.";
+      // Verificar que las policies usan org_id check
+      if (!/org_id\s*=\s*public\.pw_org_id\(\)/.test(m101))
+        return "0101_org_id_rls_strict.sql no tiene org_id checks en RLS policies.";
+      return null;
+    },
+  },
+  {
+    name: "SEGURIDAD FASE 4: panel-v2.html agrega org_id en payloads POST/PATCH",
+    bug: "Defense-in-depth: cuando panel-v2 crea candidatos/usuarios/informes en " +
+         "multicoach, debe pasar org_id al backend. Sin esto, los datos quedan " +
+         "huérfanos de org (NULL) o se asignan a la org equivocada. " +
+         "Búsqueda: POST /candidatos, POST /usuarios, POST /informes.",
+    check() {
+      const pv = read("panel-v2.html");
+      if (!pv) return null;
+      // Buscar que las queries POST de candidatos incluyen org_id
+      if (!/if\(RME&&RME\.org_id\)_cp\.org_id=RME\.org_id/.test(pv))
+        return "panel-v2.html POST /candidatos no agrega org_id al payload.";
+      if (!/if\(RME&&RME\.org_id\)_uj\.org_id=RME\.org_id/.test(pv))
+        return "panel-v2.html POST /usuarios no agrega org_id al payload.";
+      if (!/if\(RME&&RME\.org_id\)\s*ib\.org_id=RME\.org_id/.test(pv))
+        return "panel-v2.html POST /informes no agrega org_id al payload.";
+      return null;
+    },
+  },
 ];
 
 
