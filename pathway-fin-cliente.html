@@ -1640,10 +1640,12 @@ function applyClientFin(c){
     var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.style.display='none'; document.body.appendChild(inp);
     w.addEventListener('click',function(){ inp.click(); });
     inp.addEventListener('change',function(){ var f=inp.files&&inp.files[0]; if(!f) return;
-      if(f.size>5*1024*1024){ alert(t('fotoTooLarge')); inp.value=''; return; }
-      var ext=((f.type||'image/png').split('/')[1]||'png').replace('jpeg','jpg');
+      if(f.size>15*1024*1024){ alert(t('fotoTooLarge')); inp.value=''; return; }
+      (window.pwResizeImage?pwResizeImage(f,720):Promise.resolve(f)).then(function(up){ up=up||f;
+      var ct=up.type||f.type||'image/jpeg';
+      var ext=(ct.split('/')[1]||'jpg').replace('jpeg','jpg');
       var path='client-'+(''+EMAIL).replace(/[^a-z0-9]/gi,'_')+'-'+Date.now()+'.'+ext;
-      fetch(SB+'/storage/v1/object/avatars/'+encodeURIComponent(path),{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':(f.type||'image/png'),'x-upsert':'true'},body:f})
+      fetch(SB+'/storage/v1/object/avatars/'+encodeURIComponent(path),{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':ct,'x-upsert':'true'},body:up})
         .then(function(r){ if(!r.ok) throw 0; var url=SB+'/storage/v1/object/public/avatars/'+path;
           // Guardar la foto vía edge function (service role → ignora RLS, SIEMPRE
           // persiste). Fallback al PATCH directo si no está deployada.
@@ -1651,6 +1653,7 @@ function applyClientFin(c){
           var b=document.querySelector('.sb-brand-foto'); if(b){ b.style.background='transparent'; b.innerHTML='<img src="'+url+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">'; _h(b); }
           var m=document.getElementById('meAv'); if(m){ m.style.background='transparent'; m.innerHTML='<img src="'+url+'" alt="" style="max-width:40px;max-height:40px;width:100%;height:100%;object-fit:cover;border-radius:50%">'; }
         }).catch(function(){ alert(t('fotoUploadErr')); });
+      }); // cierra pwResizeImage().then
       inp.value=''; });
   })();
   var mes=parseInt(c.semana_activa,10); if(!(mes>=1))mes=1;
@@ -2330,6 +2333,7 @@ window.pwRerender=function(){
 })();
 </script>
 <script src="pw-dropzone.js?v=1"></script>
+<script src="pw-photo.js?v=1"></script>
 <script src="pw-sortable.js?v=1"></script>
 <script>/* Móvil: si el campo enfocado quedaría tapado por el teclado, lo subimos a la vista. Solo agrega, no cambia nada. */
 document.addEventListener('focusin',function(e){var t=e.target;if(!t||!t.matches||!t.matches('input,textarea,[contenteditable="true"]'))return;setTimeout(function(){try{var r=t.getBoundingClientRect();var vh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;if(r.bottom>vh*0.5)t.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){}} ,300);});</script>

@@ -482,6 +482,10 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-client-name{font-family:var(--pw-serif);font-weight:500;font-size:15px;color:var(--pw-carbon);letter-spacing:-.3px;line-height:1.15;}
 .cp-client-role{font-size:11px;color:var(--pw-text-soft);margin-top:2px;}
 .cp-client-medal{width:36px;height:36px;object-fit:contain;flex-shrink:0;}
+/* Tarjeta de cliente: medalla integrada en la esquina de la foto (badge). */
+.cp-cardav{position:relative;flex-shrink:0;display:inline-flex;}
+.cp-cardav-m{position:absolute;bottom:-2px;right:-3px;width:22px;height:22px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 5px rgba(0,0,0,.28);}
+.cp-cardav-m img{width:18px;height:18px;object-fit:contain;}
 .cp-client-last{font-size:12px;font-weight:500;}
 .cp-client-last.is-fresh{color:var(--pw-bosque);}
 .cp-client-last.is-stale{color:var(--pw-danger);}
@@ -1426,10 +1430,11 @@ function _thumb(url, px){
   // navegador achicaba 1000px→38px (borroso). Ahora siempre pedimos el recorte
   // al tamaño real ×dpr, encadenado después de lo que ya hubiera.
   var ops = (rest.indexOf("-/")>=0) ? rest.replace(/[^\/]*$/,"") : "";
-  var dpr=1; try{ if(window.devicePixelRatio>1) dpr=2; }catch(e){}
+  var dpr=1; try{ dpr=Math.min(3,Math.max(1,Math.round(window.devicePixelRatio||1))); }catch(e){}
   var s=Math.max(1,Math.round((px||40)*dpr));
-  var q = dpr>1 ? "smart_retina" : "better";   // nítido en retina, buena calidad en 1x
-  return base + ops + "-/scale_crop/"+s+"x"+s+"/center/-/quality/"+q+"/-/format/auto/";
+  // Recorte inteligente (encuadra la cara) + máxima calidad + webp. Antes usaba
+  // 'center' + calidad media → fotos apagadas/borrosas en miniatura.
+  return base + ops + "-/scale_crop/"+s+"x"+s+"/smart/-/quality/best/-/format/auto/";
 }
 // Avatar chico para las burbujas de chat. Solo muestra foto si es URL real
 // (http). Si no hay foto, devuelve "" (la burbuja queda como estaba).
@@ -6004,7 +6009,8 @@ function viewClientes(){
   // Tarjeta de un cliente (misma para el grupo Pathway y el grupo propio; la CAJA
   // que la contiene ya dice de qué grupo es, así que la tarjeta va limpia).
   var _cliCard = function(c){
-    var medal = c.medal ? "<img class='cp-client-medal' src='assets/iconos/medalla-"+c.medal+".png' alt='Medalla "+c.medal+"'>" : "";
+    // Medalla INTEGRADA en la esquina de la foto (badge), no suelta al costado.
+    var medalBadge = c.medal ? "<span class='cp-cardav-m'><img src='assets/iconos/medalla-"+esc(c.medal)+"-sm.webp' alt='Medalla "+esc(c.medal)+"'></span>" : "";
     var role = esc(c.role);
     var dots = [1,2,3,4].map(function(w){
       var cls = w<c.week?"is-done":(w===c.week?"is-current":"");
@@ -6030,8 +6036,8 @@ function viewClientes(){
     }
     return "<article class='cp-client' data-act='cli-open:"+c.id+"' data-sort='"+esc(c.id)+"' data-s='"+esc(((c.name||"")+" "+(c.email||"")+" "+(c.role||"")).toLowerCase())+"' style='position:relative'>"+
       "<span class='pw-grip' title='Arrastra para ordenar' onclick='event.stopPropagation()' style='position:absolute;top:9px;right:9px;opacity:.45;z-index:2'>"+_gripSvg()+"</span>"+
-      "<header class='cp-client-head'>"+avImg(c.photo,c.name,"class='cp-client-photo'")+
-        "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+(c._example?" <span style='font-size:10px;font-weight:700;color:var(--pw-bosque);background:var(--pw-success-bg);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.5px'>EJEMPLO</span>":"")+(_formPendiente(c)?" <span style='font-size:9.5px;font-weight:600;color:#8E7A35;background:rgba(233,196,106,.18);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.3px'>Form pendiente</span>":"")+"</div><div class='cp-client-role'>"+role+"</div></div>"+medal+"</header>"+
+      "<header class='cp-client-head'><span class='cp-cardav'>"+avImg(c.photo,c.name,"class='cp-client-photo'")+medalBadge+"</span>"+
+        "<div class='cp-client-id'><div class='cp-client-name'>"+esc(c.name)+(c._example?" <span style='font-size:10px;font-weight:700;color:var(--pw-bosque);background:var(--pw-success-bg);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.5px'>EJEMPLO</span>":"")+(_formPendiente(c)?" <span style='font-size:9.5px;font-weight:600;color:#8E7A35;background:rgba(233,196,106,.18);padding:2px 7px;border-radius:100px;vertical-align:middle;letter-spacing:.3px'>Form pendiente</span>":"")+"</div><div class='cp-client-role'>"+role+"</div></div></header>"+
       "<div class='cp-client-last is-"+c.last.state+"'>Última actividad · "+esc(c.last.txt)+"</div>"+
       _proxHtml+
       "<div class='cp-week'><span class='cp-week-label'>Sem "+c.week+"/4</span><span class='cp-week-dots'>"+dots+"</span></div>"+
@@ -8208,17 +8214,17 @@ function _adminRanking(){
   var _tot=function(c){ return (c.game_pts||0)+(c.xp||0); };   // total (juego + acciones si existe xp)
   var rows=(RCOACHES||[]).slice().sort(function(a,b){ return _tot(b)-_tot(a); });
   if(!rows.length) return "<div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-text-soft);font-size:13px;padding:30px'>Todavía no hay puntajes. Cuando los coaches jueguen, aparecen aquí.</div></div>";
-  var head="<div style='display:grid;grid-template-columns:32px 38px 1fr auto auto;gap:12px;padding:8px 14px;border-bottom:1px solid var(--pw-border);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-muted)'><span style='text-align:center'>#</span><span></span><span>Coach</span><span>Medalla</span><span>Puntos</span></div>";
+  var head="<div style='display:grid;grid-template-columns:32px 38px 1fr auto;gap:12px;padding:8px 14px;border-bottom:1px solid var(--pw-border);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--pw-text-muted)'><span style='text-align:center'>#</span><span></span><span>Coach</span><span>Puntos</span></div>";
   var list=rows.map(function(c,i){
     var pts=_tot(c), med=meds[c.game_medal||0]||"";
-    var medImg=med?"<img src='assets/iconos/medalla-"+med+"-sm.webp' alt='"+med+"' style='width:26px;height:26px;object-fit:contain' title='Medalla "+med+"'>":"<span style='display:inline-block;width:26px'></span>";
+    // Medalla integrada en la esquina de la foto (badge), no en columna aparte.
+    var medBadge=med?"<span class='cp-cardav-m'><img src='assets/iconos/medalla-"+med+"-sm.webp' alt='Medalla "+med+"'></span>":"";
     var rankCol=i===0?"#D9A441":i===1?"#9AA0A6":i===2?"#C0865A":"var(--pw-text-soft)";
     var nm=c.nombre||c.email||"Coach";
-    return "<div data-act='coach-view:"+esc(c.id)+"' style='display:grid;grid-template-columns:32px 38px 1fr auto auto;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
+    return "<div data-act='coach-view:"+esc(c.id)+"' style='display:grid;grid-template-columns:32px 38px 1fr auto;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer'>"+
       "<span style='font-family:var(--pw-serif);font-size:17px;font-weight:700;color:"+rankCol+";text-align:center'>"+(i+1)+"</span>"+
-      "<img src='"+esc(c.foto_url?_thumb(c.foto_url,34):makeAvatar(nm))+"' onerror=\"this.onerror=null;this.src='"+makeAvatar(nm)+"'\" alt='' style='width:34px;height:34px;border-radius:50%;object-fit:cover'>"+
+      "<span class='cp-cardav'><img src='"+esc(c.foto_url?_thumb(c.foto_url,34):makeAvatar(nm))+"' onerror=\"this.onerror=null;this.src='"+makeAvatar(nm)+"'\" alt='' style='width:34px;height:34px;border-radius:50%;object-fit:cover;display:block'>"+medBadge+"</span>"+
       "<span style='font-size:13.5px;font-weight:600;color:var(--pw-carbon);overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+esc(nm)+(c.rol==="admin"?" <span style='font-size:10px;color:var(--pw-text-muted)'>(admin)</span>":"")+"</span>"+
-      medImg+
       "<span style='font-family:var(--pw-serif);font-size:16px;font-weight:700;color:var(--pw-bosque)'>"+pts+"</span>"+
     "</div>";
   }).join("");
@@ -14550,6 +14556,7 @@ if('serviceWorker' in navigator){
 
 </script>
 <script src="pw-dropzone.js?v=1"></script>
+<script src="pw-photo.js?v=1"></script>
 <script src="pw-sortable.js?v=1"></script>
 <script>/* Móvil: si el campo enfocado quedaría tapado por el teclado, lo subimos a la vista. Solo agrega, no cambia nada. */
 document.addEventListener('focusin',function(e){var t=e.target;if(!t||!t.matches||!t.matches('input,textarea,[contenteditable="true"]'))return;setTimeout(function(){try{var r=t.getBoundingClientRect();var vh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;if(r.bottom>vh*0.5)t.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){}} ,300);});</script>
