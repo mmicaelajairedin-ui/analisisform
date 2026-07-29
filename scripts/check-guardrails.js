@@ -4694,6 +4694,29 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "panel-v2: se puede ocultar/mostrar una solicitud de la bandeja (no queda trabada)",
+    bug: "Una solicitud en 'Pago iniciado' se quedaba en la bandeja hasta que vencía " +
+         "(24 h), sin forma de sacarla de la vista → el coach quedaba 'frenado' con una " +
+         "solicitud sobre la que no puede hacer nada. Ahora hay 'Ocultar' (no destructivo: " +
+         "no cancela el pago ni corta la recuperación de Pathway) + 'Ver ocultas' para " +
+         "revertir. Blindamos handler + helper + toggle para que no se caiga el flujo.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const js = inlineJs(s);
+      if (!isDefined("_solHide", js) || !isDefined("_solUnhide", js) || !isDefined("_solHidHas", js))
+        return "panel-v2.html: faltan los helpers de ocultar solicitudes (_solHide/_solUnhide/_solHidHas).";
+      if (!/act==="sol-hide"/.test(s) || !/act==="sol-unhide"/.test(s) || !/act==="sol-hidden-toggle"/.test(s))
+        return "panel-v2.html: faltan los handlers sol-hide/sol-unhide/sol-hidden-toggle → no se puede ocultar/mostrar ni revertir.";
+      if (!/data-act='sol-hide'/.test(s) || !/data-act='sol-hidden-toggle'/.test(s))
+        return "panel-v2.html: la bandeja perdió el botón 'Ocultar' o el toggle 'Ver ocultas'.";
+      // No destructivo: ocultar NO debe salir en las autorizadas (hay neto para cobrar).
+      if (!/s\.estado!=="autorizada"\s*\|\|\s*expired/.test(s))
+        return "panel-v2.html: el botón 'Ocultar' ya no está gateado (no debe aparecer en solicitudes 'autorizada' con pago listo para cobrar).";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
