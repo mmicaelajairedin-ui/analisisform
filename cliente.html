@@ -2506,6 +2506,10 @@ function entrar(){
       var r=document.getElementById('resena');
       if(r){r.scrollIntoView({behavior:'smooth',block:'center'});r.style.boxShadow='0 0 0 3px rgba(233,196,106,.5)';setTimeout(function(){r.style.boxShadow='';},2400);}
     }, 600);
+  } else {
+    // Auto-cartel de reseña al entrar: si NO reseñó, se lo pedimos; si ya reseñó,
+    // no aparece más; si no, reaparece cada REVIEW_NUDGE_EVERY entradas.
+    try{ _maybeReviewNudge(); }catch(e){}
   }
 
   // Notificaciones inteligentes
@@ -3626,6 +3630,68 @@ function _fireReviewConfetti(){
   }
   document.body.appendChild(ov);
   setTimeout(function(){if(ov.parentNode)ov.remove();},4500);
+}
+
+// ── Auto-cartel de reseña al entrar (pedido de Micaela) ──────────────────────
+// Regla: si el cliente YA reseñó → nunca aparece. Si NO → aparece en la 1ª
+// entrada y reaparece cada REVIEW_NUDGE_EVERY entradas (no en cada login).
+var REVIEW_NUDGE_EVERY=3;  // 1ª entrada y luego cada 3 (entradas 1,4,7…). Cambiar acá (p.ej. 2).
+function _yaReseño(){
+  try{
+    if(C && C.review_rating) return true;
+    if(C && C.resena){ var r=JSON.parse(C.resena); if(r && ((r.stars&&r.text)||(r.coach&&r.coach.stars)||(r.plataforma&&r.plataforma.stars))) return true; }
+  }catch(e){}
+  return false;
+}
+function _maybeReviewNudge(){
+  if(!C || _yaReseño()) return;
+  var key='pw_rev_entries_'+((C.email||C.id||'x'));
+  var n=(parseInt(localStorage.getItem(key)||'0',10)||0)+1;
+  try{ localStorage.setItem(key,String(n)); }catch(e){}
+  if(n % REVIEW_NUDGE_EVERY === 1) setTimeout(_reviewNudge, 1400);
+}
+window._revNudgeRating=0;
+function _revNudgeSet(n){
+  window._revNudgeRating=n;
+  var btns=document.querySelectorAll('#rev-nudge-stars button');
+  btns.forEach(function(b,i){ b.style.color=(i<n)?'#E9C46A':'rgba(255,255,255,.3)'; b.style.transform=(i<n)?'scale(1.12)':'scale(1)'; });
+  var sb=document.getElementById('rev-nudge-send'); if(sb){ sb.disabled=false; sb.style.opacity='1'; sb.textContent=n>=4?('Enviar reseña '+'★'.repeat(n)):'Enviar reseña'; }
+}
+function _closeReviewNudge(){ var o=document.getElementById('rev-nudge-ov'); if(o) o.remove(); }
+async function _submitReviewNudge(){
+  var rating=window._revNudgeRating; if(!rating) return;
+  var texto=(((document.getElementById('rev-nudge-text')||{}).value)||'').trim().slice(0,500);
+  var sb=document.getElementById('rev-nudge-send'); if(sb){ sb.disabled=true; sb.textContent='Enviando…'; }
+  try{
+    var r=await fetch(SB+'/rest/v1/candidatos?id=eq.'+C.id,{ method:'PATCH', headers:H({'Content-Type':'application/json','Prefer':'return=representation'}), body:JSON.stringify({review_rating:rating, review_texto:texto||null, review_fecha:new Date().toISOString()}) });
+    if(!r.ok) throw new Error('save '+r.status);
+    var rows=await r.json(); if(!rows||!rows.length) throw new Error('RLS');
+    C.review_rating=rating; C.review_texto=texto||null; C.review_fecha=new Date().toISOString();
+    _closeReviewNudge();
+    try{ _fireReviewConfetti(); }catch(e){}
+    try{ showSaveToast(); }catch(e){}
+    setTimeout(function(){ if(typeof render==='function') render(); },400);
+  }catch(err){ if(sb){ sb.disabled=false; sb.textContent='Reintentar'; sb.style.opacity='1'; } }
+}
+function _reviewNudge(){
+  if(document.getElementById('rev-nudge-ov')) return;
+  window._revNudgeRating=0;
+  var coachNm=(typeof COACH_FIRST!=='undefined'&&COACH_FIRST)?COACH_FIRST:'tu coach';
+  var stars=''; for(var i=1;i<=5;i++){ stars+='<button type="button" onclick="_revNudgeSet('+i+')" aria-label="'+i+' estrellas" style="background:none;border:none;font-size:34px;color:rgba(255,255,255,.3);cursor:pointer;padding:0 2px;line-height:1;transition:transform .15s,color .15s;">★</button>'; }
+  var ov=document.createElement('div');
+  ov.id='rev-nudge-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9200;background:rgba(20,30,26,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML='<div style="background:var(--brown,#7A5C4A);color:#fff;border-radius:18px;max-width:360px;width:100%;padding:24px 22px;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center;">'
+    +'<div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#E9C46A;margin-bottom:6px;">⭐ TU OPINIÓN SUMA UN LOGRO</div>'
+    +'<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;margin-bottom:6px;">¿Cómo te va con '+hh(coachNm)+'?</div>'
+    +'<div style="font-size:12.5px;opacity:.9;line-height:1.5;margin-bottom:14px;">Tu reseña ayuda a otros candidatos a confiar. Toma 10 segundos.</div>'
+    +'<div id="rev-nudge-stars" style="display:flex;gap:3px;justify-content:center;margin-bottom:12px;">'+stars+'</div>'
+    +'<textarea id="rev-nudge-text" rows="2" maxlength="500" placeholder="¿Qué te pareció? (opcional)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:rgba(255,255,255,.12);color:#fff;font-family:Inter,sans-serif;font-size:12px;resize:none;line-height:1.5;"></textarea>'
+    +'<button id="rev-nudge-send" onclick="_submitReviewNudge()" disabled style="margin-top:12px;width:100%;padding:11px;background:#E9C46A;color:#3A2A1A;border:none;border-radius:9px;font-size:13px;font-weight:700;font-family:Inter,sans-serif;cursor:pointer;opacity:.55;">Elige estrellas para enviar</button>'
+    +'<button onclick="_closeReviewNudge()" style="margin-top:8px;width:100%;padding:8px;background:none;border:none;color:rgba(255,255,255,.75);font-size:12px;font-family:Inter,sans-serif;cursor:pointer;">Ahora no</button>'
+    +'</div>';
+  ov.addEventListener('click',function(e){ if(e.target===ov) _closeReviewNudge(); });
+  document.body.appendChild(ov);
 }
 
 function _semProceso(pasos,secId,btnLabel,btnIcon,semColor){
