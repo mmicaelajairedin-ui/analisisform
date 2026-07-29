@@ -6340,6 +6340,13 @@ function cfgProfile(){
   var espArr = REAL ? (RPROF.especialidades||[]) : ["CV & LinkedIn","Entrevistas","Cambio de sector"];
   var espStr = (Array.isArray(espArr)?espArr:[]).join(", ");
   var vid = REAL ? ((RCFG&&Array.isArray(RCFG.videos)&&RCFG.videos[0])||"") : "";
+  // Casos de éxito: array en configuracion.casos_exito ({antes,despues} o string).
+  // En el editor se muestran como texto, un caso por línea: "Antes → Después".
+  var casosArr = REAL ? ((RCFG&&Array.isArray(RCFG.casos_exito))?RCFG.casos_exito:[]) : [{antes:"Analista con 5 años",despues:"Senior Manager en multinacional"}];
+  var casosStr = (Array.isArray(casosArr)?casosArr:[]).map(function(x){
+    if(x&&typeof x==="object") return ((x.antes||"")+" → "+(x.despues||"")).trim();
+    return (""+x).trim();
+  }).filter(Boolean).join("\n");
   if(state.pubActive===null) state.pubActive = REAL ? !!(RPROF.perfil_publico_activo || (RCFG&&RCFG.perfil_publico_activo)) : true;
   var pubActive = state.pubActive;
   var cu=v("calendly_url",""), ce=v("calendar_embed_url",""), gi=v("gcal_ical_url","");
@@ -6410,6 +6417,9 @@ function cfgProfile(){
       "<div class='cp-form-row'><label class='cp-form-label'>Video de presentación <span style='font-weight:500;color:var(--pw-text-muted)'>— YouTube o Vimeo, opcional</span></label>"+
         "<input id='cfp-video' class='cp-form-input' value=\""+esc(vid)+"\" placeholder='https://youtube.com/watch?v=…'>"+
         "<span class='cp-form-hint'>Se muestra en tu perfil (sección «Conoce a …»). Pegá el link del video.</span></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Casos de éxito <span style='font-weight:500;color:var(--pw-text-muted)'>— un caso por línea, opcional</span></label>"+
+        "<textarea id='cfp-casos' class='cp-form-textarea' style='min-height:68px' placeholder='Analista con 5 años → Senior Manager en multinacional&#10;Sin dirección de carrera → Ascenso y +40% de salario'>"+esc(casosStr)+"</textarea>"+
+        "<span class='cp-form-hint'>Resultados REALES de tus clientes, formato «Antes → Después». Aparecen como «Resultados reales» en tu perfil. Sin fotos ni datos personales.</span></div>"+
       // (Versión en inglés eliminada: la página ya traduce sola, no hace falta
       // cargar Título + Bio dos veces.)
       "<div class='cp-form-row'><label class='cp-form-label'>País donde ejercés</label>"+
@@ -9375,8 +9385,14 @@ function pwNotif(e){
     } else {
       list.innerHTML=data.map(function(it){
         if(it.persist){
-          // Evento del cliente: texto viene de datos del cliente → SIEMPRE esc().
-          var goCli=it.cliid?(" data-act='cli-open:"+esc(it.cliid)+"'"):"";
+          // Destino del click (viene de notificaciones.sec):
+          //   · "go:<seccion>[|<subtab>]" → navega en el panel (ej. go:config|profile).
+          //   · cualquier otro valor → id de cliente → abre su ficha (cli-open).
+          //   · vacío → sin navegación (solo se marca leída).
+          var _sc=it.cliid||"";
+          var goCli = _sc ? (_sc.indexOf("go:")===0
+              ? (" data-act='asist-go' data-go='"+esc(_sc.slice(3))+"'")
+              : (" data-act='cli-open:"+esc(_sc)+"'")) : "";
           return "<button class='pw-um-item'"+goCli+" data-npersist='"+esc(it.id)+"'><span style='filter:grayscale(1)'>"+it.ico+"</span><span>"+esc(it.text)+"</span></button>";
         }
         var a=it.act?("data-act='"+it.act+"'"):("data-act='asist-go' data-go='"+(it.go||"clientes")+"'");
@@ -10402,6 +10418,13 @@ document.addEventListener("click", function(ev){
     var espP=_val("cfp-especialidades").split(",").map(function(x){return x.trim();}).filter(Boolean).slice(0,10);
     var cfgPatch={ gcal_ical_url:_val("cfp-cal-ical").trim(), pais:_val("cfp-pais").trim().toUpperCase(), nombre_practica:_val("cfp-practica").trim() };
     var vidP=_val("cfp-video").trim(); cfgPatch.videos = vidP ? [vidP] : [];  // video de presentación → configuracion.videos (lo lee el perfil)
+    // Casos de éxito → configuracion.casos_exito [{antes,despues}]. Un caso por
+    // línea, separado por flecha/guion. Los guarda como resultados REALES del coach.
+    cfgPatch.casos_exito = _val("cfp-casos").split(/\n+/).map(function(ln){
+      var p=ln.split(/\s*(?:→|->|—|–|\|)\s*/);
+      var a=(p[0]||"").trim(), b=(p[1]||"").trim();
+      return (a||b) ? { antes:a, despues:b } : null;
+    }).filter(Boolean).slice(0,8);
     _AG_DATA=null; // al guardar la config, forzar recarga de la agenda con el iCal nuevo
     if(window._cfpFoto){ cfgPatch.foto_url=window._cfpFoto; COACH.photo=window._cfpFoto; }
     var doSave=function(){

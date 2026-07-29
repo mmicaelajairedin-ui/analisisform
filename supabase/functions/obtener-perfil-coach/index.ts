@@ -204,6 +204,9 @@ Deno.serve(async (req: Request) => {
       recomendacion_ia: str("recomendacion_ia"),
       ideal_para: arr("ideal_para"),
       no_ideal_para: arr("no_ideal_para"),
+      // Casos de éxito REALES que carga el coach (texto "Antes → Después"). Cada
+      // item puede ser {antes, despues} o el string "Antes → Después".
+      casos_exito: arr("casos_exito"),
 
       calendly_url: str("calendly_url"),
       // Canales de contacto de respaldo: si el coach no tiene Calendly, el
