@@ -611,6 +611,7 @@ html.mc-embed #mc-nswitch{display:none!important}
       <div class="nm" id="mc-owner-nm">Alex Gómez</div>
       <div class="rl"><span id="mc-owner-rl">Gym Boutique</span><span class="pro" id="mc-plan-badge" style="display:none">Pro</span></div>
       <div class="pts mc-demo-only"><div class="l"><img src="https://szf7yzy2hz.ucarecd.net/088834f5-6934-4e64-97b2-52ebd8647c1d/-/preview/1000x1000/" alt="" style="height:1.3em;width:auto;vertical-align:-.35em" onerror="this.style.display='none'"> 210 puntos</div></div>
+      <div class="pts" id="mc-owner-pts" style="display:none"></div>
     </div>
     <div class="side-div"></div>
     <nav class="nav" id="nav">
@@ -1054,6 +1055,16 @@ function _mcSetPlanBadge(){
   if(lbl){ b.textContent=lbl; b.style.display=''; } else { b.style.display='none'; }
 }
 function NM(){return MCN[MC_N];}
+// Puntos + medalla REALES del owner: por el tamaño y actividad de su red
+// (coaches + clientes + sesiones registradas). Reemplaza el "210" de demo.
+function _mcOwnerPts(){
+  var co=((DB&&DB.coaches)||[]).filter(function(c){return !c.esOwner;}).length;
+  var cl=((DB&&DB.clientes)||[]).length;
+  var ses=((MC_CITAS)||[]).length;
+  var pts=co*15+cl*3+ses*2;
+  var med=(pts>=300)?['🥇','Oro']:(pts>=100)?['🥈','Plata']:['🥉','Bronce'];
+  return '<div class="l" title="'+med[1]+' · '+co+' coaches · '+cl+' clientes"><span style="font-size:1.15em;vertical-align:-.1em">'+med[0]+'</span> '+pts+' puntos</div>';
+}
 // Skeleton de las KPIs (shimmer) mientras carga la red real.
 function _mcSkelKpis(){ var one='<div class="mc-skel-kpi"><span class="mc-skel" style="height:12px;width:60%;margin-bottom:12px"></span><span class="mc-skel" style="height:26px;width:42%;margin-bottom:10px"></span><span class="mc-skel" style="height:10px;width:72%"></span></div>'; return one+one+one; }
 // Guía de arranque del owner: pasos reales (sumá coach → asigná cliente → activá
@@ -1158,6 +1169,8 @@ function mcApplyNiche(){
  _mcSetPlanBadge();
  setHT('mc-kpis',MC_REAL?mcKpisReal():mcKpis());
  try{ setHT('mc-owner-guide', _mcOwnerGuide()); }catch(e){}
+ // Medalla/puntos REALES del owner (por el tamaño y actividad de su red).
+ try{ var _op=document.getElementById('mc-owner-pts'); if(_op){ if(MC_REAL){ _op.innerHTML=_mcOwnerPts(); _op.style.display=''; } else { _op.style.display='none'; } } }catch(e){}
  setHT('actividad',MC_REAL?mcEmptyRow('Sin actividad reciente todavía','Cuando tus coaches y clientes se muevan, lo ves acá.'):m.act.map(mcActRow).join(''));
  setHT('mc-ranking',(MC_REAL&&(!DB.coaches||!DB.coaches.length))?mcEmptyRow('Sin coaches aún','Suma coaches a tu red para verlos acá.'):mcRanking());
  setHT('mc-riesgo',(MC_REAL&&(!DB.clientes||!DB.clientes.length))?mcEmptyRow('Sin clientes aún','Cuando te asignen clientes, aparecen acá.'):mcRiesgo());
@@ -1490,10 +1503,24 @@ function _renderFicha(){
  v.innerHTML='<header class="cp-topbar" style="align-items:center">'
    +'<div style="display:flex;align-items:center;gap:16px;min-width:0"><div class="cp-cli-av" title="Arrastra una foto" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_avatarDrop(event,\'cli\')">'+_img(k)+k.ini+'</div>'
     +'<div style="min-width:0"><button class="fback" onclick="renderClientes()" style="text-transform:uppercase;letter-spacing:1.2px;font-size:11px;font-weight:700;margin-bottom:4px">‹ Volver a Clientes</button>'
-     +'<h1 class="cp-h1">'+k.n+'<span class="dot">.</span></h1>'
-     +'<div class="cp-sub">'+(c?c.n:'Sin '+DET().coachSing.toLowerCase())+' · '+k.prog+' · '+_areaLbl(k.nicho)+'</div></div></div>'
-   +'<div class="cp-topbar-actions"><button class="cp-btn cp-btn-primary" onclick="__toast(\'Abriendo el portal de '+k.n.split(" ")[0]+'…\')">↗ Ver su portal</button></div></header>'
+     +'<h1 class="cp-h1">'+_mcEsc(k.n)+'<span class="dot">.</span></h1>'
+     +'<div class="cp-sub">'+(c?_mcEsc(c.n):'Sin '+DET().coachSing.toLowerCase())+' · '+_mcEsc(k.prog||'')+' · '+_areaLbl(k.nicho)+'</div></div></div>'
+   +'<div class="cp-topbar-actions"><button class="cp-btn cp-btn-primary" onclick="_mcVerPortal(\''+k.id+'\')">↗ Ver su portal</button></div></header>'
    +'<div class="cp-ficha-layout3">'+menuV+'<div class="cp-cfg-panel">'+_cliBody(k,c,t)+'</div>'+rail+'</div>';
+}
+// Abre el PORTAL REAL del cliente (vista del coach, read-only) — igual que el panel
+// del coach (?coach_view=<email>), según el nicho de la red. Antes era un toast falso.
+function _mcPortalUrl(k){
+  if(!k||!k.email) return '';
+  var base=(location.origin||'https://pathwaycareercoach.com');
+  var f=(MC_N==='fitness')?'/pathway-fit-cliente.html':((MC_N==='finanzas')?'/pathway-fin-cliente.html':'/cliente.html');
+  return base+f+'?coach_view='+encodeURIComponent(k.email);
+}
+function _mcVerPortal(id){
+  var k=_cli(id); if(!k) return;
+  if(!MC_REAL){ __toast('En la demo no hay portal real'); return; }
+  var u=_mcPortalUrl(k); if(!u){ __toast('Este cliente todavía no tiene email cargado'); return; }
+  window.open(u,'_blank','noopener');
 }
 function reasignar(id){
  var k=_cli(id);if(!k)return;var cs=DB.coaches.filter(function(c){return c.est==='activo';});
