@@ -197,6 +197,9 @@ Deno.serve(async (req: Request) => {
       badges: Array.isArray(row.badges) ? row.badges : [],
       last_seen: row.last_seen || null, // para "Responde rápido" (derivado en el front)
       seo_keywords: arr("seo_keywords"), // keywords SEO que generó la IA (configuracion) → meta keywords + schema
+      // Disponibilidad (días/horas que el coach configuró) → el perfil muestra las
+      // "Próximas fechas disponibles" reales. La hora exacta se elige en el reservador.
+      disponibilidad: (cfg && typeof cfg.disponibilidad === "object" && cfg.disponibilidad) ? cfg.disponibilidad : null,
 
       calendly_url: str("calendly_url"),
       // Canales de contacto de respaldo: si el coach no tiene Calendly, el
