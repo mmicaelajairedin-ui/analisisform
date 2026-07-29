@@ -116,13 +116,20 @@ Deno.serve(async (req: Request) => {
   try { p = await req.json(); } catch { return json({ error: "JSON inválido" }, 400); }
   const action = p.action;
 
-  // ── INFO: datos públicos de la red para /red/<slug> ──
+  // ── INFO: datos públicos de la red para /red/<slug> o dominio propio ──
   if (action === "info") {
     const slug = String(p.slug || "").trim();
-    if (!slug) return json({ error: "slug requerido" }, 400);
+    const dominio = String(p.dominio || "").trim().toLowerCase().replace(/^www\./, "");
+    if (!slug && !dominio) return json({ error: "slug o dominio requerido" }, 400);
+    let org: Record<string, any> | null = null;
+    // Dominio propio (Pro): la red se identifica por su hostname.
+    if (dominio) {
+      const dr = await fetch(`${SB}/rest/v1/organizaciones?dominio=eq.${encodeURIComponent(dominio)}&select=*&limit=1`, { headers: sbH(SRK) });
+      const drows = dr.ok ? await dr.json() : [];
+      org = Array.isArray(drows) && drows.length ? drows[0] : null;
+    }
     // Por slug; si no existe, se trata el parámetro como org_id (URL /red/<id>).
-    let org = await getOrg(SB, SRK, slug);
-    if (!org) org = await getOrg(SB, SRK, "", slug);
+    if (!org && slug) { org = await getOrg(SB, SRK, slug); if (!org) org = await getOrg(SB, SRK, "", slug); }
     if (!org || org.activo === false) return json({ error: "Red no encontrada" }, 404);
     const members = await getMembers(SB, SRK, org);
     const coaches = members
@@ -154,7 +161,12 @@ Deno.serve(async (req: Request) => {
     const coachId = String(p.coach_id || "").trim();
     const idx = (typeof p.servicio_idx === "number" && p.servicio_idx >= 0) ? Math.floor(p.servicio_idx) : -1;
     const cli = p.cliente || {};
-    if (!slug || !coachId || idx < 0) return json({ error: "Faltan datos (slug, coach, servicio)" }, 400);
+    // Modo A (página pública): servicio del coach por idx.
+    // Modo B (cobro desde el panel): monto puntual + concepto, coach opcional.
+    const customMonto = Number(p.monto);
+    const hasCustom = Number.isFinite(customMonto) && customMonto > 0;
+    if (!slug) return json({ error: "Falta la red" }, 400);
+    if (idx < 0 && !hasCustom) return json({ error: "Falta el servicio o el monto" }, 400);
 
     let org = await getOrg(SB, SRK, slug);
     if (!org) org = await getOrg(SB, SRK, "", slug);
@@ -170,23 +182,41 @@ Deno.serve(async (req: Request) => {
     const acct = orows[0]?.configuracion?.stripe_account_id;
     if (!acct) return json({ error: "La red todavía no conectó su cuenta de cobro" }, 409);
 
-    // Servicio del coach elegido.
-    const cr = await fetch(
-      `${SB}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=id,nombre,org_id,configuracion`,
-      { headers: sbH(SRK) },
-    );
-    const crows = cr.ok ? await cr.json() : [];
-    const coach = crows[0];
-    if (!coach) return json({ error: "Coach no encontrado" }, 404);
-    const servicios = pubServicios(coach.configuracion || {});
-    const svc = servicios.find((s) => s.idx === idx);
-    if (!svc) return json({ error: "Servicio no encontrado" }, 404);
+    // Coach (opcional en modo B, obligatorio en modo A).
+    let coach: any = null, coachNombre = "";
+    if (coachId) {
+      const cr = await fetch(
+        `${SB}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=id,nombre,org_id,configuracion`,
+        { headers: sbH(SRK) },
+      );
+      const crows = cr.ok ? await cr.json() : [];
+      coach = crows[0] || null;
+      coachNombre = (coach && coach.nombre) || "";
+    }
+
+    let svc: { idx: number | null; name: string; price: number; moneda: string; recurrente: boolean };
+    if (idx >= 0) {
+      if (!coach) return json({ error: "Coach no encontrado" }, 404);
+      const servicios = pubServicios(coach.configuracion || {});
+      const found = servicios.find((s) => s.idx === idx);
+      if (!found) return json({ error: "Servicio no encontrado" }, 404);
+      svc = found;
+    } else {
+      const rawMon = String(p.moneda || "eur").toLowerCase();
+      svc = {
+        idx: null,
+        name: String(p.concepto || "Servicio").trim().slice(0, 120) || "Servicio",
+        price: customMonto,
+        moneda: MONEDAS_OK.has(rawMon) ? rawMon : "eur",
+        recurrente: false,
+      };
+    }
 
     const moneda = svc.moneda;
     const monto = ZERO_DECIMAL.has(moneda) ? Math.round(svc.price) : Math.round(svc.price * 100);
     if (monto <= 0) return json({ error: "Precio inválido" }, 400);
     const fee = Math.round(monto * FEE_PCT);
-    const nombreServicio = svc.name + " · " + (coach.nombre || "coach") + " (" + (org.nombre || "red") + ")";
+    const nombreServicio = svc.name + (coachNombre ? " · " + coachNombre : "") + " (" + (org.nombre || "red") + ")";
 
     const successUrl = `${SITE}/red/${encodeURIComponent(slug)}?pago=ok`;
     const cancelUrl = `${SITE}/red/${encodeURIComponent(slug)}?pago=cancel`;
@@ -232,10 +262,10 @@ Deno.serve(async (req: Request) => {
       headers: { ...sbH(SRK), Prefer: "return=minimal" },
       body: JSON.stringify({
         org_id: org.id,
-        coach_id: coachId,
-        coach_nombre: coach.nombre || null,
+        coach_id: coachId || null,
+        coach_nombre: coachNombre || null,
         servicio_titulo: svc.name,
-        servicio_idx: idx,
+        servicio_idx: svc.idx,
         monto: svc.price,
         moneda,
         comision: Math.round(svc.price * FEE_PCT * 100) / 100,

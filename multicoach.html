@@ -2367,7 +2367,95 @@ function renderCobros(){
         "<div><div style='font-family:var(--ser);font-size:28px;font-weight:600;color:var(--pw-text-muted);line-height:1'>"+_m(t.comision)+"</div><div style='font-size:11px;color:var(--pw-text-soft)'>comisión Pathway</div></div>"+
       "</div>"+rows+"</div>";
   }
-  v.innerHTML="<header class='cp-topbar'><div><h1 class='cp-h1'>Cobros<span class='dot'>.</span></h1><div class='cp-sub'>Los pagos de los clientes de tu red — a tu cuenta, con 2% de comisión.</div></div></header>"+cuenta+link+ingresos;
+  // Cobrar a un cliente puntual desde el panel (genera un link de pago para mandar).
+  var cobrar=(MC_REAL && connected)
+    ? "<div class='cp-card cp-card-pad'><div style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'>"+
+        "<div><h3 class='cp-card-title' style='margin:0'>Cobrar a un cliente<span class='dot'>.</span></h3><div style='font-size:12.5px;color:var(--pw-text-soft);margin-top:3px'>Genera un link de pago para un cliente puntual y se lo mandas por WhatsApp o email.</div></div>"+
+        "<button class='cp-btn cp-btn-primary' onclick='mcCobrarModal()' style='height:40px'>"+PWI.svg('creditCard',{sm:true})+" Nuevo cobro</button>"+
+      "</div></div>"
+    : "";
+  // Dominio propio (plan Pro): la activación es manual (DNS + Cloudflare), así que
+  // el panel explica los pasos y ofrece pedir la activación al equipo.
+  var _isPro=(typeof _mcPlanTier==='function' && _mcPlanTier()>=2);
+  var domWa='https://wa.me/34623816019?text='+encodeURIComponent(_isPro?'Hola, quiero activar el dominio propio de mi red (plan Pro).':'Hola, quiero subir al plan Pro para tener dominio propio en mi red.');
+  var dominioCard = MC_REAL
+    ? "<div class='cp-card cp-card-pad'><div style='display:flex;align-items:center;gap:8px'><h3 class='cp-card-title' style='margin:0'>Dominio propio<span class='dot'>.</span></h3><span style='font-size:10px;font-weight:800;letter-spacing:.5px;color:#8A6D1E;background:rgba(233,196,106,.2);padding:2px 8px;border-radius:99px'>PRO</span></div>"+
+        ((MC_ORG&&MC_ORG.dominio)
+          ? "<div style='font-size:13px;color:var(--pw-text-soft);margin-top:8px'>Tu página de la red vive en <strong style='color:var(--pw-carbon)'>"+_mcEsc(MC_ORG.dominio)+"</strong>. ¡Listo!</div>"
+          : "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.6;margin:8px 0 12px'>Con el plan Pro tu página puede vivir en <strong>tu propio dominio</strong> (ej. tuempresa.com) en vez del enlace de Pathway. Apuntas tu dominio a Cloudflare (te pasamos el dato) y lo activamos.</div>"+
+            "<a class='cp-btn "+(_isPro?'cp-btn-primary':'cp-btn-ghost')+"' href='"+domWa+"' target='_blank' rel='noopener' style='height:40px'>"+(_isPro?'Pedir activación de mi dominio':'Es del plan Pro · Consultar')+"</a>")+
+      "</div>"
+    : "";
+  v.innerHTML="<header class='cp-topbar'><div><h1 class='cp-h1'>Cobros<span class='dot'>.</span></h1><div class='cp-sub'>Los pagos de los clientes de tu red — a tu cuenta, con 2% de comisión.</div></div></header>"+cuenta+cobrar+link+dominioCard+ingresos;
+}
+// ── Cobrar a un cliente puntual (link de pago desde el panel) ──
+var _mcLastCobUrl='';
+function mcCopyCob(){ if(_mcLastCobUrl){ try{ navigator.clipboard.writeText(_mcLastCobUrl); }catch(e){} __toast('Link copiado ✓'); } }
+function _cobF(l,inp){ return "<label style='display:block;font-size:12px;font-weight:700;color:var(--pw-text-soft);margin:10px 0 5px'>"+l+"</label>"+inp; }
+function mcCobrarModal(){
+  if(!MC_REAL||!MC_ORG){ __toast('Disponible en tu red real.'); return; }
+  var slug=_mcRedSlug();
+  var coaches=(DB.coaches||[]).filter(function(c){return c.est!=='pendiente';});
+  var copts='<option value="">— Sin coach / general —</option>'+coaches.map(function(c){return '<option value="'+_mcEsc(c.id)+'">'+_mcEsc(c.n)+(c.esOwner?' (tú)':'')+'</option>';}).join('');
+  var mopts=['eur','usd','gbp','mxn','ars','cop','clp','pen','brl','uyu'].map(function(m){return '<option value="'+m+'">'+m.toUpperCase()+'</option>';}).join('');
+  var inp="width:100%;height:42px;font-size:14px";
+  var old=document.getElementById('mc-cob-ov'); if(old) old.remove();
+  var ov=document.createElement('div'); ov.id='mc-cob-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:320;display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;background:rgba(20,46,38,.55)';
+  ov.innerHTML="<div style='width:100%;max-width:440px;background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(20,55,38,.32);overflow:hidden'>"+
+    "<div style='padding:18px 22px;border-bottom:1px solid var(--pw-border);display:flex;align-items:center;justify-content:space-between'>"+
+      "<div style='font-family:var(--ser);font-size:18px;font-weight:600;color:var(--pw-carbon)'>Cobrar a un cliente</div>"+
+      "<button id='mc-cob-x' type='button' style='background:none;border:0;font-size:22px;line-height:1;color:var(--pw-text-muted);cursor:pointer'>✕</button></div>"+
+    "<div id='mc-cob-body' style='padding:16px 22px 22px'>"+
+      _cobF('Nombre del cliente','<input id="cob-n" class="cp-form-input" style="'+inp+'" placeholder="Nombre y apellido">')+
+      _cobF('Email del cliente','<input id="cob-e" type="email" class="cp-form-input" style="'+inp+'" placeholder="cliente@email.com">')+
+      _cobF('Concepto','<input id="cob-c" class="cp-form-input" style="'+inp+'" placeholder="Sesión, pack, mentoría…">')+
+      "<div style='display:flex;gap:10px'><div style='flex:1'>"+_cobF('Monto','<input id="cob-m" type="number" min="1" class="cp-form-input" style="'+inp+'" placeholder="0">')+"</div>"+
+        "<div style='width:130px'>"+_cobF('Moneda','<select id="cob-cur" class="cp-form-input" style="'+inp+'">'+mopts+'</select>')+"</div></div>"+
+      _cobF('Coach (opcional)','<select id="cob-co" class="cp-form-input" style="'+inp+'">'+copts+'</select>')+
+      "<div id='cob-err' style='color:var(--pw-danger);font-size:12.5px;min-height:14px;margin-top:8px'></div>"+
+      "<button class='cp-btn cp-btn-primary' id='cob-go' style='width:100%;height:44px;justify-content:center;margin-top:6px'>Generar link de pago</button>"+
+    "</div></div>";
+  document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+  document.getElementById('mc-cob-x').onclick=function(){ ov.remove(); };
+  document.getElementById('cob-go').onclick=function(){ _mcCobrarGo(slug); };
+}
+function _mcCobrarGo(slug){
+  var n=(document.getElementById('cob-n').value||'').trim();
+  var e=(document.getElementById('cob-e').value||'').trim();
+  var c=(document.getElementById('cob-c').value||'').trim();
+  var m=parseFloat(document.getElementById('cob-m').value||'0');
+  var cur=document.getElementById('cob-cur').value||'eur';
+  var co=document.getElementById('cob-co').value||'';
+  var err=document.getElementById('cob-err');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){ err.textContent='Escribe un email válido.'; return; }
+  if(!(m>0)){ err.textContent='Escribe un monto mayor a 0.'; return; }
+  var btn=document.getElementById('cob-go'); btn.disabled=true; btn.textContent='Generando…'; err.textContent='';
+  fetch(SB+'/functions/v1/red-checkout',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},
+    body:JSON.stringify({action:'create',slug:slug,coach_id:co,monto:m,concepto:c||'Servicio',moneda:cur,cliente:{nombre:n,email:e}})})
+    .then(function(r){return r.json().catch(function(){return null;});})
+    .then(function(j){
+      if(j&&j.url){ _mcCobrarDone(j.url,n,e); return; }
+      btn.disabled=false; btn.textContent='Generar link de pago'; err.textContent=(j&&j.error)?j.error:'No se pudo generar el link.';
+    })
+    .catch(function(){ btn.disabled=false; btn.textContent='Generar link de pago'; err.textContent='Error de red.'; });
+}
+function _mcCobrarDone(url,nombre,email){
+  _mcLastCobUrl=url;
+  var b=document.getElementById('mc-cob-body'); if(!b)return;
+  var primer=nombre?(' '+nombre.split(' ')[0]):'';
+  var wtext=encodeURIComponent('¡Hola'+primer+'! Acá tienes el link para tu pago seguro: '+url);
+  var mbody=encodeURIComponent('Hola'+primer+',\n\nAcá tienes el link para completar tu pago de forma segura:\n'+url+'\n\n¡Gracias!');
+  b.innerHTML="<div style='text-align:center;color:var(--pw-bosque);margin:4px 0 2px'>"+PWI.svg('checkCircle',{cc:true})+"</div>"+
+    "<div style='font-family:var(--ser);font-size:17px;font-weight:600;color:var(--pw-carbon);text-align:center'>Link de pago listo</div>"+
+    "<div style='font-size:12.5px;color:var(--pw-text-soft);text-align:center;margin:4px 0 14px;line-height:1.5'>Mándaselo al cliente. Cuando pague entra a tu cuenta (2% Pathway) y lo ves en Cobros.</div>"+
+    "<input readonly value='"+_mcEsc(url)+"' onclick='this.select()' style='width:100%;height:40px;border:1px solid var(--pw-border);border-radius:10px;padding:0 12px;font-size:12.5px;background:var(--pw-niebla-2);color:var(--pw-carbon)'>"+
+    "<div style='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap'>"+
+      "<button class='cp-btn cp-btn-ghost' style='flex:1;justify-content:center' onclick='mcCopyCob()'>Copiar</button>"+
+      "<a class='cp-btn cp-btn-ghost' style='flex:1;justify-content:center' href='https://wa.me/?text="+wtext+"' target='_blank' rel='noopener'>WhatsApp</a>"+
+      "<a class='cp-btn cp-btn-primary' style='flex:1;justify-content:center' href='mailto:"+_mcEsc(email)+"?subject=Tu%20link%20de%20pago&body="+mbody+"'>Email</a>"+
+    "</div>";
 }
 function renderComunidad(){
  var v=document.getElementById('vscroll');
