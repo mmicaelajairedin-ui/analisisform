@@ -1419,7 +1419,7 @@ function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NIC
 // Etiqueta del tipo de miembro (Coach / Colaborador) para las tarjetas y la ficha.
 function _mcTipoBadge(c){ if(!c||c.tipo!=='colaborador') return ''; return '<span style="display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#7A5CA8;background:rgba(122,92,168,.14);padding:2px 7px;border-radius:100px;margin-left:6px">Colaborador</span>'; }
 // Mapea una fila real de candidatos al shape que usan las tarjetas.
-function mcMapCli(c){ var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:c.id, n:c.nombre||c.email||'Cliente', email:(c.email||'').toLowerCase(), ini:_mcIni(c.nombre||c.email), nicho:cat, coach:c.coach_id||'', est:(c.activo===false?'inactivo':'activo'), prog:'', week:+c.semana_activa||1, plan:'pending', med:'pending', lastState:'fresh', ult:_mcAgo(c.updated_at||c.created_at), foto:c.foto_perfil||''}; }
+function mcMapCli(c){ var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:c.id, n:c.nombre||c.email||'Cliente', email:(c.email||'').toLowerCase(), ini:_mcIni(c.nombre||c.email), nicho:cat, coach:c.coach_id||'', est:(c.activo===false?'inactivo':'activo'), prog:'', week:+c.semana_activa||1, plan:'pending', med:'pending', lastState:'fresh', _ts:(Date.parse(c.updated_at||c.created_at||'')||0), ult:_mcAgo(c.updated_at||c.created_at), foto:c.foto_perfil||''}; }
 // KPIs REALES del dueño (honestos: lo que hay). Incluye el uso del cupo del plan.
 function mcKpisReal(){
   var co=(DB&&DB.coaches)||[], cl=(DB&&DB.clientes)||[];
@@ -2075,7 +2075,10 @@ function renderAnalytics(){
   cl.forEach(function(k){
     if(k.est!=='activo'){ nOff++; return; }
     if((Number(k.week)||0)<=1){ nNew++; return; }
-    if(k.lastState==='mid'||k.lastState==='stale'){ nRisk++; return; }
+    // "En riesgo" = sin actividad reciente. Señal real: el estado de frescura
+    // (demo) o los días desde la última actualización de su ficha (red real).
+    var riesgo=(k.lastState==='mid'||k.lastState==='stale')||(k._ts&&(now-k._ts)>21*86400000);
+    if(riesgo){ nRisk++; return; }
     nAct++;
   });
   var _stg=function(cls,label,num,hint){ return '<div class="cp-stage '+cls+'"><div class="lbl"><span class="d"></span>'+label+'</div><div class="num">'+num+'</div><div class="hint">'+hint+'</div></div>'; };
