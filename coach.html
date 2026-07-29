@@ -93,6 +93,14 @@ img{max-width:100%;display:block;}
 .servicio .servicio-cta:hover{background:var(--pw-bosque);}
 
 .videos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;}
+.otros-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px;margin-top:16px;}
+.otros-card{display:block;background:#fff;border:1px solid var(--pw-borde);border-radius:16px;padding:16px;text-decoration:none;transition:all .2s;}
+.otros-card:hover{border-color:rgba(45,106,79,.3);box-shadow:0 10px 26px rgba(45,106,79,.10);transform:translateY(-2px);}
+.otros-foto{width:56px;height:56px;border-radius:50%;object-fit:cover;background:var(--pw-niebla-2);margin-bottom:10px;display:block;}
+.otros-nm{font-family:var(--pw-serif);font-size:16px;font-weight:500;color:var(--pw-carbon);line-height:1.2;}
+.otros-tit{font-size:12px;color:var(--pw-texto-suave);margin-top:3px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;}
+.otros-meta{font-size:12.5px;color:var(--pw-bosque);font-weight:600;margin-top:9px;}
+.otros-meta .star{color:var(--pw-amanecer);}
 .video{position:relative;padding-bottom:56.25%;height:0;background:#000;border-radius:12px;overflow:hidden;border:1px solid var(--pw-borde);}
 .video iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0;}
 
@@ -217,6 +225,13 @@ img{max-width:100%;display:block;}
 
   <section class="testimonios-section">
     <div class="container"><div data-testimonios data-tipo="coach" data-max="6" data-theme="green"></div></div>
+  </section>
+
+  <section class="section" id="sec-otros" hidden>
+    <div class="container">
+      <h2 id="otros-title">Otros coaches que te pueden interesar<span class="dot">.</span></h2>
+      <div class="otros-grid" id="otros-grid"></div>
+    </div>
   </section>
 
   <footer class="footer">
@@ -433,8 +448,37 @@ img{max-width:100%;display:block;}
       s.textContent=JSON.stringify(ld);
     }catch(e){}
   }
+  // "Otros coaches que te pueden interesar": trae el directorio público ya
+  // rankeado (listar-coaches-publicos), saca al coach actual y muestra 4.
+  function _loadOtrosCoaches(curSlug){
+    try{
+      fetch(SB_URL+'/functions/v1/listar-coaches-publicos',{headers:{Authorization:'Bearer '+SB_ANON,apikey:SB_ANON}})
+        .then(function(r){ return r.ok?r.json():null; })
+        .then(function(d){
+          var list=((d&&d.coaches)||[]).filter(function(x){ return x && x.slug && x.slug!==curSlug; }).slice(0,4);
+          var g=document.getElementById('otros-grid'); if(!g || !list.length) return;
+          g.innerHTML=list.map(function(x){
+            var foto=x.foto_perfil_url
+              ? "<img class='otros-foto' src='"+escH(x.foto_perfil_url)+"' alt='' loading='lazy'>"
+              : "<div class='otros-foto' style='display:flex;align-items:center;justify-content:center;font-family:var(--pw-serif);font-size:22px;color:var(--pw-bosque)'>"+escH((x.nombre||'?').charAt(0).toUpperCase())+"</div>";
+            var s=x.stats||{}, meta=[];
+            if(s.reviews_count>0&&s.avg_rating) meta.push("<span class='star'>★</span> "+s.avg_rating.toFixed(1)+" ("+s.reviews_count+")");
+            if(s.clientes_total>0) meta.push("+"+s.clientes_total+" "+escH(pickLang('clientes','clients')));
+            var tit=((x.titulo_profesional||'').split('|')[0]||'').trim();
+            return "<a class='otros-card' href='/coach.html?slug="+encodeURIComponent(x.slug)+"'>"+foto+
+              "<div class='otros-nm'>"+escH(x.nombre||'')+"</div>"+
+              (tit?"<div class='otros-tit'>"+escH(tit)+"</div>":"")+
+              (meta.length?"<div class='otros-meta'>"+meta.join(' · ')+"</div>":"")+
+            "</a>";
+          }).join('');
+          var ot=document.getElementById('otros-title'); if(ot) ot.firstChild.textContent=pickLang('Otros coaches que te pueden interesar','Other coaches you may like');
+          show('sec-otros');
+        }).catch(function(){});
+    }catch(e){}
+  }
   function render(c){
     _coachData=c;
+    _loadOtrosCoaches(c.slug);
     document.title=(c.nombre||'Coach')+' · Pathway';
     var meta=document.querySelector('meta[name="description"]');
     var _tg=pickLang(c.tagline,c.tagline_en); if(meta && _tg)meta.setAttribute('content',_tg);
