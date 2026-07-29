@@ -4717,6 +4717,37 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "panel-v2: la colaboradora de una red no ve el panel completo de coach",
+    bug: "Un colaborador (rol='coach' + configuracion.member_role='colaborador') veía " +
+         "TODO lo de un coach porque panel-v2 nunca leía member_role. Debe existir " +
+         "esColaborador() y usarse para ocultar el Negocio propio y el perfil público " +
+         "(el colaborador gestiona clientes y agenda, pero no 'da clases').",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!isDefined("esColaborador", inlineJs(s)))
+        return "panel-v2.html: falta el helper esColaborador() → el colaborador vuelve a ver el panel de coach completo.";
+      if (!/if\(!esColaborador\(\)\) items\.push\(\["negocio"/.test(s))
+        return "panel-v2.html: la pestaña 'Negocio' ya no está gateada por esColaborador() (el colaborador no tiene negocio propio).";
+      if (!/!esColaborador\(\)[\s\S]{0,80}perfil_publico_activo/.test(s))
+        return "panel-v2.html: el perfil público ya no está gateado para el colaborador (no debe 'figurar dando clases').";
+      return null;
+    },
+  },
+  {
+    name: "panel-v2: los coaches de una red no quedan bloqueados por el paywall individual",
+    bug: "Un coach miembro de una red (usuarios.org_id) perdía acceso a SUS clientes " +
+         "cuando vencía su trial individual, aunque el DUEÑO paga el plan de la red. " +
+         "_paywallCheck debe eximir a quien tiene org_id.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/if\(u\.org_id \|\| cfg\.org_id\) return false/.test(s))
+        return "panel-v2.html: _paywallCheck ya no exime a los miembros de una red (org_id) → vuelven a quedar bloqueados por su trial individual.";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
