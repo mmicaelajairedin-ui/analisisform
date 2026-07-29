@@ -7150,16 +7150,46 @@ function _coachRedBubbles(){
 /* ═══ CANAL DE EQUIPO (grupo dueño+coaches, via canal-red) ═══
  * Un solo hilo compartido de toda la red. Cada burbuja muestra quién la escribió
  * (denormalizado en autor_nombre/autor_rol). "Mío" = autor_id === RME.id. */
-function _canalLabel(){ return (RRED&&RRED.nombre)?("Canal · "+RRED.nombre):"Canal del equipo"; }
+// El canal activo del coach: null = General (toda la red); o el id de un grupo.
+function _canalCur(){ return (RCANALES||[]).filter(function(c){ return String(c.id||"")===String(RCANAL_ID||""); })[0]||null; }
+function _canalLabel(){ var c=_canalCur(); if(c&&!c.general) return "Equipo · "+c.nombre; return (RRED&&RRED.nombre)?("Canal · "+RRED.nombre):"Canal del equipo"; }
+// Canales que el coach puede ver (General + grupos donde es miembro).
+function _loadCanalGroups(cb){
+  if(!REAL||!RME||!RME.org_id){ RCANALES=[{id:null,nombre:"General",general:true}]; cb&&cb(); return; }
+  _hdr({"Content-Type":"application/json"}).then(function(h){
+    return fetch(SB+"/functions/v1/canal-red",{method:"POST",headers:h,body:JSON.stringify({action:"groups",org_id:RME.org_id})});
+  }).then(function(r){ return r.ok?r.json():null; }).then(function(d){ RCANALES=(d&&d.ok&&d.canales)?d.canales:[{id:null,nombre:"General",general:true}]; cb&&cb(); })
+   .catch(function(){ RCANALES=[{id:null,nombre:"General",general:true}]; cb&&cb(); });
+}
 function _loadCanalThread(cb){
   if(!REAL||!RME||!RME.org_id){ RCANALMSG=[]; cb&&cb(); return; }
   _hdr({"Content-Type":"application/json"}).then(function(h){
-    return fetch(SB+"/functions/v1/canal-red",{method:"POST",headers:h,body:JSON.stringify({action:"thread",org_id:RME.org_id})});
+    return fetch(SB+"/functions/v1/canal-red",{method:"POST",headers:h,body:JSON.stringify({action:"thread",org_id:RME.org_id,canal_id:RCANAL_ID||undefined})});
   }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {status:r.status,d:d||{}}; }); }).then(function(res){
     if(res.d&&res.d.ok){ RCANALMSG=res.d.mensajes||[]; RRED=RRED||{}; RRED.canalErr=null; }
     else { RCANALMSG=[]; RRED=RRED||{}; RRED.canalErr=(res.status===403?"no_session":"error"); }
     cb&&cb();
   }).catch(function(){ RCANALMSG=[]; RRED=RRED||{}; RRED.canalErr="error"; cb&&cb(); });
+}
+// Cambiar de canal (General / grupo) dentro de la vista del canal.
+function _canalSwitch(cid){ RCANAL_ID=cid||null; RCANALMSG=null; try{ render(); }catch(e){} _loadCanalThread(function(){ if(state.aiCoachThread==="canal"){ try{ render(); _animCoachMsgs(); }catch(e){} } }); }
+// Barra de canales (General + grupos) arriba del hilo. Chip activo resaltado.
+// "+ Grupo" abre un prompt simple para crear uno con miembros de la red.
+function _canalChips(){
+  var cs=RCANALES||[{id:null,nombre:"General",general:true}];
+  var chips=cs.map(function(c){
+    var active=String(c.id||"")===String(RCANAL_ID||"");
+    var bg=active?"var(--pw-bosque)":"var(--pw-niebla-2)";
+    var fg=active?"#fff":"var(--pw-carbon)";
+    return "<button data-act='canal-switch' data-cid='"+esc(String(c.id||""))+"' "+
+      "style='flex:0 0 auto;border:1px solid var(--pw-border);background:"+bg+";color:"+fg+";"+
+      "border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap'>"+
+      esc(c.nombre||"Canal")+"</button>";
+  }).join("");
+  var addBtn = "<button data-act='canal-newgrp' title='Crear grupo' "+
+    "style='flex:0 0 auto;border:1px dashed var(--pw-border);background:transparent;color:var(--pw-text-soft);"+
+    "border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap'>+ Grupo</button>";
+  return "<div style='display:flex;gap:6px;overflow-x:auto;padding:8px 14px;border-bottom:1px solid var(--pw-border);background:var(--pw-niebla)'>"+chips+addBtn+"</div>";
 }
 function _coachCanalBubbles(){
   if(RRED&&RRED.canalErr==="no_session"){
@@ -7317,7 +7347,7 @@ function viewMensajesBody(){
     }
     if(state.aiCoachThread==="canal"){
       var headCn = backBtn+"<span style='font-size:13px;font-weight:600;color:var(--pw-carbon);margin-left:2px'>"+esc(_canalLabel())+"</span></div>";
-      return headCn+"<div class='cp-ai-msgs' style='display:flex;flex-direction:column;gap:0;padding:14px 16px'>"+_coachCanalBubbles()+"</div>";
+      return headCn+_canalChips()+"<div class='cp-ai-msgs' style='display:flex;flex-direction:column;gap:0;padding:14px 16px'>"+_coachCanalBubbles()+"</div>";
     }
     var cli = (CLIENTS||[]).filter(function(x){ return String(x.id)===String(state.aiCoachThread); })[0];
     if(!cli){
@@ -10635,13 +10665,35 @@ document.addEventListener("click", function(ev){
     state.chatPicker = false;
     // Hilo con el dueño de la red → cargar por la edge function y re-render.
     if(ckey==="red"){ RREDMSG=null; render(); _loadRedThread(function(){ if(state.aiCoachThread==="red"){ render(); _animCoachMsgs(); } }); return; }
-    if(ckey==="canal"){ RCANALMSG=null; render(); _loadCanalThread(function(){ if(state.aiCoachThread==="canal"){ render(); _animCoachMsgs(); } }); return; }
+    if(ckey==="canal"){ RCANALMSG=null; render(); _loadCanalGroups(function(){ if(state.aiCoachThread==="canal"){ render(); } }); _loadCanalThread(function(){ if(state.aiCoachThread==="canal"){ render(); _animCoachMsgs(); } }); return; }
     render();
     // "Visto": al abrir la conversación de un cliente, marcar sus mensajes como
     // leídos (el cliente verá el ojito abierto en los suyos). "mica" es el hilo
     // de soporte admin↔coach (mensajes_admin_coach), no aplica acá.
     if(ckey!=="mica"){ _coachMarkClientRead(ckey); try{ _pwClearCliUnread(ckey); }catch(e){} }
     _animCoachMsgs();
+    return;
+  }
+  if(act==="canal-switch"){
+    // Cambiar de canal (General / grupo) dentro de la vista del canal de equipo.
+    var _cid=el.getAttribute("data-cid")||"";
+    _canalSwitch(_cid);
+    return;
+  }
+  if(act==="canal-newgrp"){
+    // Crear un grupo dentro de la red (nombre; miembros = toda la red por ahora).
+    if(!REAL || !RME || !RME.org_id){ alert("Inicia sesión primero."); return; }
+    var gNom=(prompt("Nombre del grupo (ej. Nutricionistas, Zona Norte):")||"").trim();
+    if(!gNom) return;
+    _hdr({"Content-Type":"application/json"}).then(function(h){
+      return fetch(SB+"/functions/v1/canal-red",{method:"POST",headers:h,body:JSON.stringify({action:"group_create",org_id:RME.org_id,nombre:gNom})});
+    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {status:r.status,d:d||{}}; }); }).then(function(res){
+      if(!res.d||!res.d.ok){ alert(res.status===403?"Tu sesión no está activa — vuelve a iniciar sesión.":"No se pudo crear el grupo. Reintenta."); return; }
+      _loadCanalGroups(function(){
+        if(res.d.canal&&res.d.canal.id){ _canalSwitch(res.d.canal.id); }
+        else if(state.aiCoachThread==="canal"){ render(); }
+      });
+    }).catch(function(){ alert("Error de conexión. Reintenta."); });
     return;
   }
   if(act==="chat-newcli"){ state.chatPicker=true; render(); return; }
@@ -10688,7 +10740,7 @@ document.addEventListener("click", function(ev){
       if(_canalBusy){ if(ccBtn) ccBtn.disabled=false; return; } _canalBusy=true;
       state.msgDraft = ccTxt;
       _hdr({"Content-Type":"application/json"}).then(function(h){
-        return fetch(SB+"/functions/v1/canal-red",{method:"POST",headers:h,body:JSON.stringify({action:"send",org_id:RME.org_id,texto:ccTxt})});
+        return fetch(SB+"/functions/v1/canal-red",{method:"POST",headers:h,body:JSON.stringify({action:"send",org_id:RME.org_id,canal_id:RCANAL_ID||undefined,texto:ccTxt})});
       }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {status:r.status,d:d||{}}; }); }).then(function(res){
         _canalBusy=false;
         if(!res.d||!res.d.ok){
@@ -13583,6 +13635,7 @@ var REAL=false, RCFG={}, RCFG_READY=false, RPROF={slug:"",titulo_profesional:"",
 // red / dueño y RREDMSG el hilo de chat con el dueño (via edge function mensaje-red).
 // RCANALMSG es el CANAL DE EQUIPO (grupo dueño+coaches, via canal-red).
 var RRED=null, RREDMSG=null, RCANALMSG=null, _redBusy=false, _canalBusy=false;
+var RCANAL_ID=null, RCANALES=null; // canal activo (null=General) y lista de canales/grupos del coach
 
 // Perfil "empleado" (equipo comercial): rol genérico, sin lista de emails.
 // La sección "Emails" (plantillas de venta) la ven admin y empleados.
