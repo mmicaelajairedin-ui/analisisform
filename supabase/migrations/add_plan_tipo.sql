@@ -16,10 +16,14 @@ ADD COLUMN plan_changed_at TIMESTAMPTZ DEFAULT now();
 -- Indice para queries rápidas por plan
 CREATE INDEX idx_usuarios_plan ON usuarios(plan_tipo);
 
--- Coaches con rol 'admin' siempre Pro
-UPDATE usuarios SET plan_tipo = 'pro' WHERE rol = 'admin';
+-- plan_tipo SOLO aplica a coaches multicoach (con org_id)
+-- Admin siempre Pro (si tiene org_id)
+UPDATE usuarios SET plan_tipo = 'pro' WHERE rol = 'admin' AND org_id IS NOT NULL;
 
--- Fallback: cualquier coach restante → Boutique (default plan)
-UPDATE usuarios SET plan_tipo = 'boutique' WHERE plan_tipo IS NULL;
+-- Coaches multicoach (org_id NOT NULL) → default Boutique
+UPDATE usuarios SET plan_tipo = 'boutique' WHERE org_id IS NOT NULL AND plan_tipo IS NULL;
+
+-- Coaches Pathway simple (org_id IS NULL) → plan_tipo NULL (sin restricciones)
+UPDATE usuarios SET plan_tipo = NULL WHERE org_id IS NULL;
 
 COMMIT;
