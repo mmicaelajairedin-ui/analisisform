@@ -4417,6 +4417,9 @@ const RULES = [
       const n = (m[1].match(/\{ic:/g) || []).length;
       if (n < 8) return "multicoach.html: quedan menos de 8 plantillas de novedades (había 12).";
       if (!/function _postPrev\(/.test(mc) || !/id="pp-msg"/.test(mc) || !/id="pp-img"/.test(mc)) return "multicoach.html: se cayó la vista previa en vivo del composer de la revista (pp-msg/pp-img/_postPrev).";
+      // Foto comprimida en el navegador: sin esto una foto de celular pesa MB, se
+      // trunca al guardar y queda rota (bug 'no veo las imágenes de comunidad').
+      if (!/function _imgCompress\(/.test(mc) || !/canvas/.test(mc)) return "multicoach.html: se perdió la compresión de la foto del post (_imgCompress) → imágenes rotas.";
       return null;
     },
   },

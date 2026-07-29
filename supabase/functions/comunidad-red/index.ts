@@ -83,9 +83,14 @@ Deno.serve(async (req: Request) => {
     const titulo = (body.titulo || "").toString().trim().slice(0, 160);
     if (!txt && !titulo) return json({ error: "vacio" }, 400);
     const para = ["todos", "clientes", "coaches"].includes(String(body.para)) ? String(body.para) : "todos";
+    // La foto NO se trunca: cortar un data: URL a la mitad lo corrompe (imagen
+    // rota). Si viene enorme (no comprimida), se descarta y el post queda sin
+    // foto en vez de con una imagen rota. El cliente ya la comprime (~200KB).
+    const fotoRaw = (body.foto || "").toString();
+    const foto = (fotoRaw && fotoRaw.length <= 1_800_000) ? fotoRaw : null;
     const row: Record<string, unknown> = {
       org_id: caller.org_id, autor_id: caller.id, autor_nombre: caller.nombre || "",
-      titulo: titulo || null, body: txt.slice(0, 4000), foto: (body.foto || "").toString().slice(0, 700000) || null,
+      titulo: titulo || null, body: txt.slice(0, 4000), foto,
       emo: (body.emo || "📸").toString().slice(0, 8), para, reacts: {},
     };
     try {

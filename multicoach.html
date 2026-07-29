@@ -782,8 +782,37 @@ function _dzOver(e){e.preventDefault();e.currentTarget.classList.add('over');}
 function _dzLeave(e){e.currentTarget.classList.remove('over');}
 function _dzDrop(e){e.preventDefault();e.currentTarget.classList.remove('over');_dzFiles(e.dataTransfer.files);}
 function _dzFiles(files){if(!files||!files.length)return;var f=files[0];_dzName=f.name;var img=document.getElementById('np-prev'),txt=document.getElementById('np-dztext');
-  if(f.type&&f.type.indexOf('image')===0){var r=new FileReader();r.onload=function(ev){_dzData=ev.target.result;if(img){img.src=_dzData;img.style.display='block';}if(txt)txt.textContent='📷 '+f.name;if(typeof _postPrev==='function')_postPrev();};r.readAsDataURL(f);}
+  if(f.type&&f.type.indexOf('image')===0){
+    // Comprimimos la foto en el navegador (máx 1280px, JPEG) ANTES de guardarla:
+    // una foto de celular pesa varios MB y así se rompía/no se veía. Comprimida
+    // pesa ~200KB → se guarda entera y carga rápido.
+    _imgCompress(f,function(data){_dzData=data;if(img){img.src=data;img.style.display='block';}if(txt)txt.textContent='📷 '+f.name;if(typeof _postPrev==='function')_postPrev();});
+  }
   else{_dzData=null;if(txt)txt.textContent='📄 '+f.name+' — adjunto';if(img)img.style.display='none';if(typeof _postPrev==='function')_postPrev();}}
+// Reduce una imagen a máx 1280px de lado y la exporta como JPEG (data URL liviano).
+// Si algo falla, cae al original sin romper.
+function _imgCompress(file,cb){
+  var r=new FileReader();
+  r.onload=function(ev){
+    var src=ev.target.result;
+    try{
+      var im=new Image();
+      im.onload=function(){
+        try{
+          var max=1280,w=im.naturalWidth||im.width,h=im.naturalHeight||im.height;
+          if(w>max||h>max){ if(w>=h){h=Math.round(h*max/w);w=max;} else {w=Math.round(w*max/h);h=max;} }
+          var cv=document.createElement('canvas');cv.width=w;cv.height=h;
+          cv.getContext('2d').drawImage(im,0,0,w,h);
+          var out=cv.toDataURL('image/jpeg',0.82);
+          cb(out&&out.length>40&&out.length<src.length?out:src);
+        }catch(_){ cb(src); }
+      };
+      im.onerror=function(){ cb(src); };
+      im.src=src;
+    }catch(_){ cb(src); }
+  };
+  r.readAsDataURL(file);
+}
 // Soltar foto en el avatar de la ficha (cliente o coach).
 function _avatarDrop(ev,kind){ev.preventDefault();ev.currentTarget.classList.remove('over');var f=ev.dataTransfer.files&&ev.dataTransfer.files[0];if(!f||(f.type||'').indexOf('image')!==0){__toast('Suelta una imagen');return;}var o=(kind==='coach')?_coach(_curCoach):_cli(_curCli);if(!o)return;var r=new FileReader();r.onload=function(e){o.foto=e.target.result;if(kind==='coach')_renderCoachFicha();else _renderFicha();__toast('Foto de '+o.n.split(' ')[0]+' actualizada ✓');};r.readAsDataURL(f);}
 // Soltar/subir el documento del plan en la ficha del cliente.
