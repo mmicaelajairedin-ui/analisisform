@@ -4673,6 +4673,27 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "panel-v2: 'Aceptar y cobrar' solo se muestra con el pago autorizado",
+    bug: "El botón 'Aceptar y cobrar' se mostraba para CUALQUIER solicitud de compra " +
+         "(no consulta, no vencida), incluidas las 'pendiente' = 'Pago iniciado' (el " +
+         "candidato empezó el pago pero NO lo completó). Al tocarlo, connect-checkout " +
+         "intentaba capturar un PaymentIntent inexistente → Stripe 502 → 'No se pudo " +
+         "procesar la solicitud'. El botón sol-accept debe gatearse a estado 'autorizada'; " +
+         "para 'pendiente' se muestra un aviso, no el botón.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      // El botón de aceptar tiene que existir gateado por estado 'autorizada'.
+      if (!/data-act='sol-accept'/.test(s)) return null; // si se renombró, otra regla
+      if (!/s\.estado==="autorizada"[\s\S]{0,400}data-act='sol-accept'/.test(s))
+        return "panel-v2.html: el botón 'Aceptar y cobrar' (sol-accept) ya no está gateado por estado 'autorizada' → vuelve a mostrarse en 'Pago iniciado' y da error al capturar en Stripe.";
+      // La rama 'pendiente' debe explicar en vez de ofrecer el botón.
+      if (!/s\.estado==="pendiente"/.test(s) || !/Pago iniciado — todav[ií]a no completado/.test(s))
+        return "panel-v2.html: se perdió el aviso de 'Pago iniciado' en el detalle de solicitud (rama estado 'pendiente').";
+      return null;
+    },
+  },
 ];
 
 let failures = 0;
