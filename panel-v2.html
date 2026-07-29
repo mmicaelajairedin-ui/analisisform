@@ -1397,6 +1397,15 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   .cp-btn-primary{ background:var(--pw-bosque) !important; color:#fff !important; }
   .cp-btn-ghost{ background:#fff !important; color:var(--pw-bosque) !important; }
 }
+/* ═══ PLAN RESTRICTIONS (FASE 1) ═══ */
+.pw-restrict-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.97);backdrop-filter:blur(2px);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;border-radius:10px;border:1px solid var(--pw-border)}
+.pw-restrict-badge{display:inline-flex;align-items:center;gap:6px;background:var(--pw-niebla-2);color:var(--pw-text);padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:12px;border:1px solid var(--pw-border)}
+.pw-restrict-badge strong{color:var(--pw-bosque);font-weight:700}
+.pw-restrict-text{font-size:14px;color:var(--pw-text-soft);margin:0 0 16px;text-align:center;max-width:280px}
+.pw-restrict-cta{display:inline-block;background:var(--pw-bosque);color:#fff;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none;cursor:pointer;transition:background 0.2s, transform 0.15s}
+.pw-restrict-cta:hover{background:var(--pw-bosque-dark);transform:translateY(-1px)}
+.pw-section-restricted{position:relative}
+.pw-section-restricted>*:not(.pw-restrict-overlay){opacity:0.3;pointer-events:none}
 </style>
 <script src="/pw-push.js?v=3"></script>
 <script src="/pw-auth.js?v=1"></script>
@@ -6859,15 +6868,19 @@ function cfgRecursos(){
       "</div></div></div>";
 }
 function cfgBrand(){
-  if(!isProV()){
+  // FASE 1: Usar nuevo sistema de planes
+  if(!_hasFeature('white_label')){
+    var nextPlan=_nextPlanFor('white_label');
+    var badge=_renderUpgradeBadge('white_label', nextPlan);
     return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Marca propia<span class='dot'>.</span>"+proBadge()+"</h3>"+
-      "<span class='cp-eyebrow' style='color:var(--pw-text-muted)'>Disponible en Pro</span></div>"+
+      "<span class='cp-eyebrow' style='color:var(--pw-text-muted)'>Disponible en Studio+</span></div>"+
       "<div class='cp-card-pad' style='text-align:center;padding:44px 24px;display:flex;flex-direction:column;align-items:center;gap:12px'>"+
         "<span style='width:46px;height:46px;border-radius:50%;background:var(--pw-niebla-2);display:inline-flex;align-items:center;justify-content:center;color:var(--pw-bosque)'>"+
           svg("<rect x='3' y='11' width='18' height='11' rx='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/>",20)+"</span>"+
-        "<div style='font-family:var(--pw-serif);font-size:19px;font-weight:500;color:var(--pw-carbon);letter-spacing:-.4px'>Una función del plan Pro</div>"+
-        "<p style='font-size:13px;color:var(--pw-text-soft);max-width:420px;line-height:1.55'>Personaliza el color de acento y el logo del portal de tus clientes y de tu página pública. Se activa al mejorar al plan Pro.</p>"+
-        "<button class='cp-btn cp-btn-primary' style='margin-top:6px' data-act='open' data-url='"+esc(UPGRADE_URL)+"'>Mejorar a Pro · USD $59/mes</button></div></div>";
+        "<div style='font-family:var(--pw-serif);font-size:19px;font-weight:500;color:var(--pw-carbon);letter-spacing:-.4px'>Personalización de marca</div>"+
+        "<p style='font-size:13px;color:var(--pw-text-soft);max-width:420px;line-height:1.55'>Personaliza el color de acento y el logo del portal de tus clientes y de tu página pública. Se activa al mejorar a "+_nextPlanFor('white_label').toUpperCase()+".</p>"+
+        badge+
+      "</div></div>";
   }
   // Paleta de PRIMARIOS variada para que cada coach se diferencie (antes eran
   // 3 verdes casi iguales). Un verde + espectro: teal, azul, índigo, violeta,
@@ -14015,6 +14028,51 @@ var RCANAL_ID=null, RCANALES=null; // canal activo (null=General) y lista de can
 function isEmpleado(){ return !!(RME && RME.rol==="empleado"); }
 function puedeEmails(){ return RADMIN || isEmpleado(); }
 function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURIComponent(RME.id) : ""; }
+
+// ═══ PLAN SYSTEM (FASE 1 — Restricciones) ═══
+// Helper: ¿Puede el coach usar esta feature?
+function _hasFeature(featureName){
+  if(!ME) return false;
+  if(ME.rol==="admin") return true;
+  if(!ME.plan_tipo) return false;
+
+  var planFeatures={
+    boutique:{white_label:false, analytics_equipo:false, comunidad:false, dominio_custom:false, integraciones:false, onboarding_personalizado:false, soporte_prioritario:false},
+    studio:{white_label:true, analytics_equipo:true, comunidad:true, dominio_custom:false, integraciones:false, onboarding_personalizado:false, soporte_prioritario:true},
+    pro:{white_label:true, analytics_equipo:true, comunidad:true, dominio_custom:true, integraciones:true, onboarding_personalizado:true, soporte_prioritario:true}
+  };
+
+  var features=planFeatures[ME.plan_tipo]||{};
+  return features[featureName]===true;
+}
+
+// Helper: ¿Cuál es el siguiente plan si quiere esta feature?
+function _nextPlanFor(featureName){
+  if(!ME||_hasFeature(featureName)) return null;
+  if(ME.plan_tipo==="boutique"){
+    if(['dominio_custom','integraciones','onboarding_personalizado'].indexOf(featureName)>=0) return "pro";
+    return "studio";
+  }
+  if(ME.plan_tipo==="studio") return "pro";
+  return null;
+}
+
+// Helper: Renderizar cartelito de upgrade
+function _renderUpgradeBadge(featureName, nextPlan){
+  if(!nextPlan) return '';
+  var planNames={studio:'Studio',pro:'Pro'};
+  var planPrices={studio:'$249',pro:'$399+'};
+  return '<div class="pw-restrict-overlay"><div class="pw-restrict-badge">'+PWI.svg("lock",{sm:true})+' Disponible en <strong>'+planNames[nextPlan]+'+</strong></div><p class="pw-restrict-text">Potencia tu equipo con esta feature.</p><a href="#upgrade" class="pw-restrict-cta" data-plan="'+nextPlan+'">Upgrade a '+planNames[nextPlan]+' ('+planPrices[nextPlan]+'/mes)</a></div>';
+}
+
+// Helper: Envolver sección con restricción
+function _sectionRestricted(featureName, content){
+  var nextPlan=_nextPlanFor(featureName);
+  if(!nextPlan) return content;
+  var badge=_renderUpgradeBadge(featureName, nextPlan);
+  return '<div style="position:relative;min-height:200px;opacity:0.5">'+content+badge+'</div>';
+}
+
 // Si una acción del juego (alta de cliente) terminó y dejó pendiente volver al
 // Resumen, lo hacemos al cerrar el modal de email → la cabra camina al próximo paso.
 function _gameReturnMaybe(){ if(state._gameReturn){ state._gameReturn=false; state.section="resumen"; window.scrollTo(0,0); } }
