@@ -735,6 +735,9 @@ function __hl(s){document.querySelectorAll('#nav a, #mc-bnav a').forEach(functio
 function __go(s){
   var impl=(s==='dashboard'||s==='clientes'||s==='coaches'||s==='config'||s==='agenda'||s==='comunidad'||s==='canal');
   if(!impl){__toast('Sección «'+s+'» — Etapa próxima');__hl(_sec);return;}
+  // Comunidad y Canal son de Studio+: se ven en el menú, pero al entrar (si el
+  // plan no las incluye) se muestra el upsell y no se navega. "Muestra, no deja."
+  if((s==='comunidad'||s==='canal') && !_mcCanFeature(s)){ __hl(_sec); mcUpsell(s); return; }
   _sec=s;__hl(s);
   var d=document.getElementById('view-dashboard'),p=document.getElementById('view-panel');
   function _anim(el){ if(!el)return; el.classList.remove('pw-sec-in'); void el.offsetWidth; el.classList.add('pw-sec-in'); }
@@ -1955,6 +1958,29 @@ function _setColor(c){
   renderConfig();
   __toast('Color de marca aplicado ✓');
 }
+// ── Features por PLAN (candado, igual que el panel del coach) ──────────────
+// Se VE la función, pero al usarla/guardar, si el plan no la incluye → modal de
+// upgrade → checkout self-serve. Tiers: boutique(0) < studio(1) < pro(2).
+var MC_FEAT_TIER={ logo:1, comunidad:1, canal:1, analytics:1, dominio:2 };
+var MC_FEAT_LABEL={ logo:'el logo white-label', comunidad:'la Comunidad', canal:'el Canal de equipo', analytics:'las analíticas del equipo', dominio:'tu dominio propio' };
+// Payment links de Stripe para subir el plan de la RED. Creá uno por plan en
+// Stripe (Payment Links) y pegalo acá, igual que STRIPE_BASIC/PRO del panel coach.
+// Mientras estén vacíos, el botón cae al contacto por WhatsApp.
+var MC_STRIPE={ studio:'', studio_ano:'', pro:'', pro_ano:'' };
+function _mcPlanTier(){ if(!MC_REAL) return 2; var k=(''+((MC_PLAN||(MC_ORG&&MC_ORG.plan))||'studio')).toLowerCase(); return k==='pro'?2:(k==='studio'?1:0); }
+function _mcCanFeature(f){ return _mcPlanTier() >= (MC_FEAT_TIER[f]||0); }
+function _mcBuyLink(tierNeeded){ var link=(tierNeeded>=2?MC_STRIPE.pro:MC_STRIPE.studio)||''; if(!link) return ''; var oem=(MC_OWNER&&MC_OWNER.email)||''; return link+(oem?('?prefilled_email='+encodeURIComponent(oem)):''); }
+// Candado: true si la función está permitida (seguí); si no, abre el upsell y
+// devuelve false (el caller frena).
+function mcFeatureGate(f){ if(_mcCanFeature(f)) return true; mcUpsell(f); return false; }
+function mcUpsell(f){
+  var need=MC_FEAT_TIER[f]||1; var planNm=(need>=2)?'Pro':'Studio';
+  var label=MC_FEAT_LABEL[f]||'esta función';
+  var buy=_mcBuyLink(need);
+  var wa='https://wa.me/34623816019?text='+encodeURIComponent('Hola, quiero subir mi red al plan '+planNm+' para desbloquear '+label+'.');
+  var body="<div style='text-align:left'><p style='font-size:13.5px;color:var(--pw-text-soft);line-height:1.6;margin:0 0 6px'><strong>"+_mcEsc(label.charAt(0).toUpperCase()+label.slice(1))+"</strong> es parte del plan <strong>"+planNm+"</strong>. Subí y desbloqueás esta y otras funciones para tu red al instante.</p></div>";
+  __openModal(''+PWI.svg('crown',{sm:true})+' Función '+planNm, body, (buy?'Subir a '+planNm+' →':'Consultar upgrade'), function(){ window.open(buy||wa,'_blank','noopener'); __mclose(); });
+}
 // Metadatos de los planes de red (mismos números que crear-multicoach).
 var MC_PLANES={boutique:{nombre:'Boutique',precio:'$149/mes',coaches:3,clientes:45},studio:{nombre:'Studio',precio:'$249/mes',coaches:8,clientes:120},pro:{nombre:'Pro',precio:'desde $399/mes',coaches:null,clientes:null}};
 // Candado de plan: al llegar al tope de coaches/clientes, en vez de un toast seco
@@ -1968,7 +1994,8 @@ function mcUpgrade(kind){
   var body="<div style='text-align:left'>"+
     "<p style='font-size:13.5px;color:var(--pw-text-soft);line-height:1.6;margin:0 0 14px'>Llegaste al tope de "+cap+" de tu plan <strong>"+cur.nombre+"</strong>. Subí de plan y seguí sumando "+cap+" a tu red.</p>"+
     "<div style='display:flex;flex-direction:column;gap:8px'>"+row(MC_PLANES.boutique,cur.nombre==='Boutique')+row(MC_PLANES.studio,cur.nombre==='Studio')+row(MC_PLANES.pro,cur.nombre==='Pro')+"</div></div>";
-  __openModal(''+PWI.svg('crown',{sm:true})+' Sumá más '+cap, body, 'Subir de plan', function(){ window.open(wa,'_blank','noopener'); __mclose(); });
+  var _upNeed=(_mcPlanTier()>=1)?2:1; var _upBuy=_mcBuyLink(_upNeed);
+  __openModal(''+PWI.svg('crown',{sm:true})+' Sumá más '+cap, body, (_upBuy?'Subir de plan →':'Subir de plan'), function(){ window.open(_upBuy||wa,'_blank','noopener'); __mclose(); });
 }
 // Comparación completa de los 3 planes de red (Boutique/Studio/Pro). El plan
 // actual queda resaltado; los de arriba muestran "Subir a X" → contacto (la red
@@ -2396,6 +2423,12 @@ function renderBrandLogo(){
 function _saveBrand(){
   var n=(document.getElementById('cfb-name')||{}).value||'';
   var l=(document.getElementById('cfb-logo')||{}).value||'';
+  // El LOGO white-label es Studio+; el color/nombre son de Boutique. Si hay logo y
+  // el plan no lo incluye → guardamos color+nombre y abrimos el upsell (sin el logo).
+  if(l.trim() && !_mcCanFeature('logo')){
+    mcSaveConfig({ nombre:n.trim(), color:CFG.color }, 'Marca guardada ✓');
+    renderBrandLogo(); mcUpsell('logo'); return;
+  }
   // Persiste color + nombre + logo en organizaciones.marca → llega al portal del
   // cliente y sobrevive el cambio de dispositivo (antes era solo localStorage).
   mcSaveConfig({ nombre:n.trim(), logo:l.trim(), color:CFG.color },
