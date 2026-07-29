@@ -63,34 +63,78 @@ Deno.serve(async (req: Request) => {
   const orgId = await ownerOrg(email);
   if (!orgId) return json({ error: "not_owner" }, 403);
 
-  let body: { coach_id?: string; member_role?: string };
+  let body: { coach_id?: string; member_role?: string; servicios?: unknown; permisos?: unknown };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const coachId = (body.coach_id || "").toString().trim();
-  const memberRole = (body.member_role || "").toString().toLowerCase() === "colaborador" ? "colaborador" : "coach";
   if (!coachId) return json({ error: "missing_coach" }, 400);
+  const hasRole = typeof body.member_role === "string" && body.member_role.length > 0;
+  const hasSvcs = Array.isArray(body.servicios);
+  const hasPerms = !!body.permisos && typeof body.permisos === "object" && !Array.isArray(body.permisos);
+  if (!hasRole && !hasSvcs && !hasPerms) return json({ error: "nothing_to_update" }, 400);
 
-  // El miembro tiene que ser de ESTA org (y rol coach). Leemos su configuracion.
+  // El target tiene que ser de ESTA org, o el propio dueño (que también ofrece
+  // servicios). Leemos su configuracion para mergear.
   let cfg: Record<string, unknown> = {};
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&select=configuracion&limit=1`,
+      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&select=configuracion,org_id,email&limit=1`,
       { headers: svc },
     );
     if (!r.ok) return json({ error: "lookup_failed", status: r.status }, 502);
     const rows = await r.json();
     if (!Array.isArray(rows) || !rows.length) return json({ error: "coach_ajeno" }, 403);
-    cfg = (rows[0] && rows[0].configuracion && typeof rows[0].configuracion === "object") ? rows[0].configuracion : {};
+    const t = rows[0] || {};
+    const belongs = (String(t.org_id || "") === String(orgId)) || (String(t.email || "").toLowerCase() === email);
+    if (!belongs) return json({ error: "coach_ajeno" }, 403);
+    cfg = (t.configuracion && typeof t.configuracion === "object") ? t.configuracion : {};
   } catch { return json({ error: "db_unreachable" }, 502); }
 
-  cfg.member_role = memberRole;
-  cfg.no_da_clases = memberRole === "colaborador";
+  let memberRole = "";
+  if (hasRole) {
+    memberRole = String(body.member_role).toLowerCase() === "colaborador" ? "colaborador" : "coach";
+    cfg.member_role = memberRole;
+    cfg.no_da_clases = memberRole === "colaborador";
+  }
+
+  // Aranceles del coach: lista de servicios {name, desc, price, moneda, recurrente}.
+  // Es lo que alimenta la landing de la red y el checkout (red-checkout).
+  if (hasSvcs) {
+    const MONEDAS_OK = new Set(["eur","usd","gbp","mxn","ars","cop","clp","pen","brl","uyu","cad","chf"]);
+    const clean = (body.servicios as unknown[]).slice(0, 30).map((s) => {
+      const o = (s && typeof s === "object") ? s as Record<string, unknown> : {};
+      const price = Number(o.price ?? o.precio ?? 0);
+      const rawMon = String(o.moneda ?? "eur").toLowerCase();
+      return {
+        name: String(o.name ?? o.nombre ?? "Servicio").trim().slice(0, 120) || "Servicio",
+        desc: String(o.desc ?? o.descripcion ?? "").trim().slice(0, 240),
+        price: (Number.isFinite(price) && price > 0) ? price : 0,
+        moneda: MONEDAS_OK.has(rawMon) ? rawMon : "eur",
+        recurrente: o.recurrente === true || o.suscripcion === true,
+      };
+    }).filter((s) => s.price > 0);
+    cfg.servicios = clean;
+  }
+
+  // Permisos por miembro que decide el DUEÑO de la red: a qué superficies del
+  // panel accede cada persona (negocio, perfil_publico, marketplace). Merge
+  // sobre lo que ya tenía, solo claves conocidas y booleanas.
+  if (hasPerms) {
+    const inp = body.permisos as Record<string, unknown>;
+    const cur = (cfg.permisos && typeof cfg.permisos === "object") ? cfg.permisos as Record<string, unknown> : {};
+    const out: Record<string, boolean> = {};
+    for (const k of ["negocio", "perfil_publico", "marketplace"]) {
+      if (typeof inp[k] === "boolean") out[k] = inp[k] as boolean;
+      else if (typeof cur[k] === "boolean") out[k] = cur[k] as boolean;
+    }
+    cfg.permisos = out;
+  }
 
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&org_id=eq.${encodeURIComponent(orgId)}`,
+      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}`,
       { method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ configuracion: cfg }) },
     );
     if (!r.ok) return json({ error: "update_failed", status: r.status }, 502);
   } catch { return json({ error: "write_failed" }, 502); }
-  return json({ ok: true, member_role: memberRole });
+  return json({ ok: true, member_role: memberRole || undefined, servicios: hasSvcs ? (cfg.servicios as unknown[]).length : undefined });
 });

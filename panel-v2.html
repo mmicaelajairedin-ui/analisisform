@@ -8,6 +8,7 @@
 <script src="/pw-native.js"></script>
 <link rel="stylesheet" href="/pw-icons.css?v=1">
 <script src="/pw-icons.js?v=1"></script>
+<script src="pw-brand.js?v=2"></script>
 <script src="pw-i18n-panel.js?v=1"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
@@ -2221,7 +2222,7 @@ function viewSidebar(){
   items.push(["calendario","Calendario","navCal"]); // agenda + asistencia + métricas (todos los coaches)
   // "Negocio" (KPIs + pagos + emails + analytics/reseñas) — SOLO móvil (4ª pestaña
   // del rediseño). El 4º campo = mobonly: se oculta en el sidebar de escritorio.
-  items.push(["negocio","Negocio","navNegocio",true]);
+  if(_memberPerm("negocio")) items.push(["negocio","Negocio","navNegocio",true]); // acceso al negocio propio: lo decide el dueño de la red
   // "Configuración" salió del sidebar: ahora vive en el menú del avatar (arriba a
   // la derecha) → Perfil, Recursos, Marca propia, Clientes de Pathway, Mi cuenta.
   if(RADMIN) items.push(["admin","Admin","navAdmin"]);
@@ -2330,6 +2331,17 @@ function cliSolTabs(active){
 // El % depende de cuántos clientes pagos (de Pathway) ya tiene el coach.
 function _pwTierRate(n){ if(n<=5)return 5; if(n<=15)return 10; if(n<=30)return 15; return 18; }
 function _pwCoachRate(){ var n=0; try{ n=(CLIENTS||[]).filter(function(c){return c&&c.source==="pathway";}).length; }catch(e){} return _pwTierRate(n+1); }
+// Solicitudes que el coach sacó de la vista (localStorage, por coach). NO es
+// destructivo: no cancela el pago ni corta la recuperación de Pathway (la edge
+// function recuperar-solicitudes le sigue escribiendo al candidato) — solo saca
+// la tarjeta de la bandeja para no quedar trabado en una que no requiere acción.
+// Reversible desde "Ver ocultas".
+function _solHidKey(){ var em=(REAL&&RME&&RME.email)||(typeof COACH!=="undefined"&&COACH&&COACH.email)||"x"; return "pw_sol_hidden_"+em; }
+function _solHidGet(){ try{ return JSON.parse(localStorage.getItem(_solHidKey())||"[]")||[]; }catch(e){ return []; } }
+function _solHidSave(a){ try{ localStorage.setItem(_solHidKey(), JSON.stringify(a)); }catch(e){} }
+function _solHidHas(id){ return _solHidGet().indexOf(String(id))>=0; }
+function _solHide(id){ var a=_solHidGet(); id=String(id); if(a.indexOf(id)<0){ a.push(id); _solHidSave(a); } }
+function _solUnhide(id){ id=String(id); _solHidSave(_solHidGet().filter(function(x){return x!==id;})); }
 function viewSolicitudes(embedded){
   var SOL = (REAL ? (RSOL||[]) : [
     { id:"demo1", candidato_nombre:"Lucía Fernández", candidato_email:"lucia.f@email.com", servicio:"mentoria", monto:400, comision:80, estado:"autorizada", created_at:new Date(Date.now()-3*3600000).toISOString(), expires_at:new Date(Date.now()+21*3600000).toISOString() },
@@ -2512,6 +2524,14 @@ function viewSolicitudes(embedded){
       meaning="No se realizó ningún cargo. La solicitud se cerró automáticamente.";
       actions="<button class='cp-btn cp-btn-ghost' data-act='sol-pick' data-id='"+esc(s.id)+"'>"+PWI.svg('eye',{sm:true})+" Ver estado</button>";
     }
+    // Sacar de la vista: disponible en todo lo que NO requiere acción (Pago
+    // iniciado / canceladas). Las autorizadas nunca se ocultan (hay neto para
+    // cobrar). No cancela el pago — solo limpia la bandeja. Reversible.
+    if(s.estado!=="autorizada" || expired){
+      actions += _solHidHas(s.id)
+        ? "<button class='cp-btn cp-btn-ghost' data-act='sol-unhide' data-id='"+esc(s.id)+"'>"+PWI.svg('eye',{sm:true})+" Mostrar</button>"
+        : "<button class='cp-btn cp-btn-ghost' data-act='sol-hide' data-id='"+esc(s.id)+"' title='Sacar de la vista — no cancela el pago'>"+PWI.svg('eyeOff',{sm:true})+" Ocultar</button>";
+    }
     return "<div class='cp-solcard'>"+
       "<div class='cp-solcard-l' style='background:"+tint+"'>"+
         "<span class='cp-solcard-ic' style='color:"+iconCol+"'>"+PWI.svg(ic,{cc:true})+"</span>"+
@@ -2529,13 +2549,25 @@ function viewSolicitudes(embedded){
   var _cancel = hist.filter(function(s){ return s.estado==="rechazada"||s.estado==="expirada"; })
     .sort(function(a,b){ return new Date(b.created_at||0).getTime()-new Date(a.created_at||0).getTime(); })
     .slice(0,6);
-  var _payItems = pend.concat(waiting).concat(_cancel);
-  var cardsHtml = _payItems.length
+  var _allPay = pend.concat(waiting).concat(_cancel);
+  // El coach puede ocultar las que no requieren acción (Pago iniciado / canceladas).
+  // Reversible con "Ver ocultas". No destructivo (no cancela el pago).
+  var _showHid=!!state.solShowHidden;
+  var _hidPay=_allPay.filter(function(s){ return _solHidHas(s.id); });
+  var _payItems = _showHid ? _allPay : _allPay.filter(function(s){ return !_solHidHas(s.id); });
+  var _hidToggle = _hidPay.length
+    ? "<button class='cp-btn cp-btn-ghost' style='height:28px;font-size:11.5px;padding:0 11px' data-act='sol-hidden-toggle'>"+(_showHid?"Ocultar archivadas":(PWI.svg('eye',{sm:true})+" Ver ocultas ("+_hidPay.length+")"))+"</button>"
+    : "";
+  var cardsHtml = (_payItems.length || _hidPay.length)
     ? "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px'>"+
         "<span class='cp-eyebrow'>Solicitudes de pago · "+_payItems.length+"</span>"+
-        "<button class='cp-btn cp-btn-ghost' style='height:28px;font-size:11.5px;padding:0 11px' data-act='sol-sync'>↻ Buscar pagos</button>"+
+        "<div style='display:flex;gap:8px;flex-wrap:wrap'>"+_hidToggle+
+          "<button class='cp-btn cp-btn-ghost' style='height:28px;font-size:11.5px;padding:0 11px' data-act='sol-sync'>↻ Buscar pagos</button>"+
+        "</div>"+
       "</div>"+
-      "<div style='display:flex;flex-direction:column;gap:12px'>"+ _payItems.map(_solCard).join("") +"</div>"
+      (_payItems.length
+        ? "<div style='display:flex;flex-direction:column;gap:12px'>"+ _payItems.map(_solCard).join("") +"</div>"
+        : "<div class='cp-card'><div class='cp-card-pad' style='color:var(--pw-text-soft);font-size:13px'>Bandeja limpia. Tenés "+_hidPay.length+" solicitud"+(_hidPay.length===1?"":"es")+" oculta"+(_hidPay.length===1?"":"s")+" — tocá \"Ver ocultas\" para revisarlas.</div></div>")
     : "";
   // Detalle de una solicitud de pago seleccionada ("Ver estado"): conversación
   // con el candidato + acciones. Solo aparece cuando se seleccionó una de pago.
@@ -2556,7 +2588,7 @@ function viewSolicitudes(embedded){
           "<div class='cp-sol-detail'>"+solDetail(_consSel)+"</div>"+
         "</div></div>"
     : "";
-  var emptyHtml = (!_payItems.length && !msgs.length)
+  var emptyHtml = (!_payItems.length && !_hidPay.length && !msgs.length)
     ? "<div class='cp-card'><div class='cp-card-pad' style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'><span style='color:var(--pw-text-soft);font-size:13px'>No tienes solicitudes ni consultas todavía.</span><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='sol-sync'>↻ Buscar pagos nuevos</button></div></div>"
     : "";
 
@@ -3175,7 +3207,7 @@ function _agEmpty(msg){ return "<div style='display:flex;flex-direction:column;a
     "<span style='max-width:300px;line-height:1.55'>"+esc(msg)+"</span></div>"; }
 // Guarda lo que hay escrito en el modal de disponibilidad ANTES de re-renderizar
 // (al togglear un día o tocar los bloqueados), para no perder lo tipeado.
-function _agDispCapture(){ if(!state.ag) return; var f=document.getElementById("ag-disp-from"),t=document.getElementById("ag-disp-to"),n=document.getElementById("ag-disp-notice"),b=document.getElementById("ag-disp-buffer"); if(f) state.ag.from=f.value; if(t) state.ag.to=t.value; if(n) state.ag.notice=n.value; if(b) state.ag.buffer=b.value; }
+function _agDispCapture(){ if(!state.ag) return; var f=document.getElementById("ag-disp-from"),t=document.getElementById("ag-disp-to"),n=document.getElementById("ag-disp-notice"),b=document.getElementById("ag-disp-buffer"),z=document.getElementById("ag-disp-tz"); if(f) state.ag.from=f.value; if(t) state.ag.to=t.value; if(n) state.ag.notice=n.value; if(b) state.ag.buffer=b.value; if(z) state.ag.tz=z.value; }
 function _agGcalDiag(){
   // Estado del token (para diagnosticar por qué pide reconectar). Solo admin.
   try{
@@ -3963,6 +3995,7 @@ function viewAgModal(){
     var _daySel=_dpd.slice().sort(function(a,b){ return _ord(a)-_ord(b); }).map(function(dn){ return "<option value='"+dn+"'>"+_DNAME[dn]+"</option>"; }).join("");
     var _mfInit=_hmMin(_from), _mtInit=_hmMin(_to); if(_mtInit===0 && _mfInit>0) _mtInit=1440; var _aInit=Math.min(_mfInit,_mtInit), _bInit=Math.max(_mfInit,_mtInit);
     body="<div style='font-size:12.5px;color:var(--pw-text-soft);margin-bottom:12px;line-height:1.5'>Qué días y en qué franja te pueden reservar desde tu link. Se aplica al instante.</div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Zona horaria de tu agenda</label><select id='ag-disp-tz' class='cp-form-input'>"+_tzOptions((g.tz||_dp.tz||_coachTz()))+"</select><span class='cp-form-hint'>Definís tu disponibilidad en esta zona; a cada cliente se le convierte a la suya. Se guarda al tocar «Guardar».</span></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Días</label><div style='display:flex;gap:6px'>"+_dchips+"</div></div>"+
       "<div class='cp-form-row'>"+
         "<div style='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px'><label class='cp-form-label' style='margin:0'>Horario general</label>"+
@@ -4539,7 +4572,7 @@ var _TZLIST=[
   ["America/New_York","EE.UU. Este (NY)"],
   ["America/Los_Angeles","EE.UU. Oeste (LA)"]
 ];
-function _coachTz(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Madrid"; }catch(e){ return "Europe/Madrid"; } }
+function _coachTz(){ try{ if(REAL&&RCFG&&RCFG.disponibilidad&&RCFG.disponibilidad.tz) return RCFG.disponibilidad.tz; }catch(e){} try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Madrid"; }catch(e){ return "Europe/Madrid"; } }
 function _tzNice(tz){ tz=(""+(tz||"")).trim(); for(var i=0;i<_TZLIST.length;i++){ if(_TZLIST[i][0]===tz) return _TZLIST[i][1]; } return tz.replace(/_/g," ").replace(/^.*\//,""); }
 function _tzOptions(sel){
   sel=(""+(sel||"")).trim(); var list=_TZLIST.slice();
@@ -6229,7 +6262,7 @@ function viewClientes(){
   // (solicitudes o clientes) o ya está listo, se muestra la zona completa.
   var _calOk=!!(RCFG && (RCFG.calendar_embed_url || RCFG.calendly_url || RCFG.gcal_ical_url || RCFG.gcal));
   var _slugOk=!!(((RPROF&&RPROF.slug)||(RCFG&&RCFG.slug))||"").toString().trim();
-  var _pubOk=_slugOk && !!((RPROF&&RPROF.perfil_publico_activo)||(RCFG&&RCFG.perfil_publico_activo));
+  var _pubOk=_slugOk && _memberPerm("perfil_publico") && !!((RPROF&&RPROF.perfil_publico_activo)||(RCFG&&RCFG.perfil_publico_activo));
   var _pwActivity=(pwList.length>0)||(typeof _sol!=="undefined" && _sol && _sol.length>0);
   // Aviso si falta el setup (aunque haya actividad): sin calendario tus clientes
   // de Pathway no pueden agendar; sin perfil público no te encuentran.
@@ -7248,8 +7281,18 @@ function _redLabel(){ return (RRED&&RRED.nombre)?RRED.nombre:"Dueño de tu red";
 // organizaciones no deja leer, queda el genérico "Dueño de tu red".
 function _loadRedInfo(){
   if(!RME||!RME.org_id) return;
-  _sb("organizaciones?id=eq."+encodeURIComponent(RME.org_id)+"&select=nombre").then(function(rows){
-    var o=(rows||[])[0]; if(o&&o.nombre){ RRED=RRED||{}; RRED.nombre=o.nombre; if(state.ai&&state.ai.open) render(); }
+  _sb("organizaciones?id=eq."+encodeURIComponent(RME.org_id)+"&select=nombre,marca").then(function(rows){
+    var o=(rows||[])[0]; if(!o) return;
+    if(o.nombre){ RRED=RRED||{}; RRED.nombre=o.nombre; if(state.ai&&state.ai.open) render(); }
+    // White-label de la RED: la marca del dueño (color + secundario + tipografía)
+    // tiñe el panel del coach, para que TODA la red se vea igual.
+    try{
+      var m=(o.marca&&typeof o.marca==='object')?o.marca:null;
+      if(m){
+        if(m.color && /^#[0-9a-f]{6}$/i.test(m.color)){ state.brandAccent=m.color; try{ _applyPanelBrand(); }catch(e){} }
+        if(window.PWBrand){ if(m.color2)PWBrand.secondary(m.color2); if(m.font)PWBrand.font(m.font); }
+      }
+    }catch(e){}
   }).catch(function(){});
 }
 // Carga el hilo dueño↔coach por la edge function (el coach usa su PROPIO id como
@@ -8088,6 +8131,27 @@ function _iaChatScrollDown(){ try{ requestAnimationFrame(function(){ var s=docum
 function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
 // Redes (multicoaches) para la gestión desde el admin (transferir dueño).
 function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
+// Admin: subir el LOGO de una empresa (org) por el cliente. SVG/imagen chica tal
+// cual (conserva transparencia); grande → PNG 512. Guarda por guardar-red (merge).
+function _orgLogoPick(orgId){
+  var inp=document.getElementById('_orglogo');
+  if(!inp){ inp=document.createElement('input'); inp.type='file'; inp.accept='image/*,.svg'; inp.id='_orglogo'; inp.style.display='none'; document.body.appendChild(inp); }
+  inp.onchange=function(){ var f=inp.files&&inp.files[0]; inp.value=''; if(!f)return;
+    var r=new FileReader();
+    r.onload=function(ev){ var src=ev.target.result;
+      if((f.type&&f.type.indexOf('svg')>=0)||(''+src).length<400000){ _orgLogoSave(orgId,src); return; }
+      try{ var im=new Image(); im.onload=function(){ try{ var max=512,w=im.naturalWidth||im.width,h=im.naturalHeight||im.height; if(w>max||h>max){ if(w>=h){h=Math.round(h*max/w);w=max;} else {w=Math.round(w*max/h);h=max;} } var cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(im,0,0,w,h);var out=cv.toDataURL('image/png');_orgLogoSave(orgId,(out&&out.length<src.length)?out:src);}catch(_){_orgLogoSave(orgId,src);} }; im.onerror=function(){_orgLogoSave(orgId,src);}; im.src=src; }catch(_){_orgLogoSave(orgId,src);}
+    };
+    r.readAsDataURL(f);
+  };
+  inp.click();
+}
+function _orgLogoSave(orgId,dataUrl){
+  _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/functions/v1/guardar-red",{method:"POST",headers:h,body:JSON.stringify({org_id:orgId,marca:{logo:dataUrl}})}); })
+    .then(function(r){ return r.ok?r.json():r.json().catch(function(){return null;}); })
+    .then(function(d){ alert((d&&d.ok)?"Logo de la empresa guardado ✓":("No se pudo guardar el logo"+(d&&d.error?(" ("+d.error+")"):"")+".")); })
+    .catch(function(){ alert("Error de conexión."); });
+}
 // Email de acceso al coach. isNew=true → coach recién creado por el admin:
 // le mandamos a activar su cuenta y ELEGIR su contraseña (link a registro,
 // nunca le mandamos una contraseña). isNew=false → renovación: ya tiene
@@ -8998,6 +9062,8 @@ function viewAdmin(){
             } else {
               row+="<span style='font-size:12px;color:var(--pw-text-soft)'>Suma un coach a esta red para poder transferirla.</span>";
             }
+            // Logo de la EMPRESA (org): el admin lo sube por el cliente (white-glove).
+            row+="<button class='cp-btn cp-btn-ghost' onclick=\"_orgLogoPick('"+esc(o.id)+"')\" title='Subir el logo de esta empresa'>"+svg(IC.image||IC.plus,13)+" Logo</button>";
             return row+"</div>";
           }).join("")+
           (mcT ? "<div style='font-size:12px;font-weight:600;color:"+mcTCol+"'>"+esc(mcT.replace(/^(ok|err|…):/,""))+"</div>" : "")+
@@ -10287,7 +10353,7 @@ document.addEventListener("click", function(ev){
   if(act==="ag-mo-day"){ var _mk=el.getAttribute("data-k")||""; _AG_SEL_DAY=(_AG_SEL_DAY===_mk)?null:_mk; var _mb=document.getElementById("cp-agenda-body"); if(_mb) _mb.innerHTML=_agBodyRender(); _agMonthRender(); return; }
   if(act==="ag-hoy"){ _AG_SEL_DAY=_agMoKey(new Date()); var _mbh=document.getElementById("cp-agenda-body"); if(_mbh) _mbh.innerHTML=_agBodyRender(); _agMonthRender(); return; }
   if(act==="ag-mo-clear"){ _AG_SEL_DAY=null; var _mb2=document.getElementById("cp-agenda-body"); if(_mb2) _mb2.innerHTML=_agBodyRender(); _agMonthRender(); return; }
-  if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; var _h0={}; if(_d0.horarios&&typeof _d0.horarios==="object"){ try{ _h0=JSON.parse(JSON.stringify(_d0.horarios)); }catch(e){ _h0={}; } } state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00"), notice:(_d0.min_notice_h!=null?_d0.min_notice_h:2), buffer:(_d0.buffer_min!=null?_d0.buffer_min:0), bloq:((Object.prototype.toString.call(_d0.bloqueados)==="[object Array]")?_d0.bloqueados.slice():[]), horarios:_h0}; render(); return; }
+  if(act==="ag-disp"){ var _d0=(REAL&&RCFG&&RCFG.disponibilidad&&typeof RCFG.disponibilidad==="object")?RCFG.disponibilidad:{}; var _dd0=(Object.prototype.toString.call(_d0.days)==="[object Array]")?_d0.days.map(Number):[1,2,3,4,5]; var _h0={}; if(_d0.horarios&&typeof _d0.horarios==="object"){ try{ _h0=JSON.parse(JSON.stringify(_d0.horarios)); }catch(e){ _h0={}; } } state.ag={mode:"disp", days:_dd0.slice(), from:(_d0.from||"09:00"), to:(_d0.to||"18:00"), tz:(_d0.tz||_coachTz()), notice:(_d0.min_notice_h!=null?_d0.min_notice_h:2), buffer:(_d0.buffer_min!=null?_d0.buffer_min:0), bloq:((Object.prototype.toString.call(_d0.bloqueados)==="[object Array]")?_d0.bloqueados.slice():[]), horarios:_h0}; render(); return; }
   if(act==="ag-hor-add"){
     _agDispCapture();
     if(state.ag){
@@ -10335,7 +10401,10 @@ document.addEventListener("click", function(ev){
     if(state.ag&&state.ag.horarios){ for(var _hk in state.ag.horarios){ if(!Object.prototype.hasOwnProperty.call(state.ag.horarios,_hk)) continue; var _hn=Number(_hk); if(_sd.indexOf(_hn)<0) continue; var _hv=state.ag.horarios[_hk]; if(_hv&&/^\d{1,2}:\d{2}$/.test(_hv.from||"")&&/^\d{1,2}:\d{2}$/.test(_hv.to||"")) _shor[_hn]={from:_hv.from, to:_hv.to}; } }
     // Guardamos TU zona horaria: la disponibilidad se define en tu hora y la
     // página de reserva la convierte a la hora local de cada visitante.
-    var _tz=""; try{ _tz=Intl.DateTimeFormat().resolvedOptions().timeZone||""; }catch(e){}
+    // Guardar la zona horaria ELEGIDA en el selector (no auto-detectar el
+    // navegador, que ponía Madrid y no dejaba fijar México). Fallback: lo que
+    // ya estaba guardado, y recién en último caso el navegador.
+    var _tzEl=document.getElementById("ag-disp-tz"); var _tz=(_tzEl&&_tzEl.value)||(state.ag&&state.ag.tz)||(REAL&&RCFG&&RCFG.disponibilidad&&RCFG.disponibilidad.tz)||""; try{ if(!_tz) _tz=Intl.DateTimeFormat().resolvedOptions().timeZone||""; }catch(e){}
     state.ag=null; saveCfg({disponibilidad:{days:_sd, from:_sf, to:_st, tz:_tz, min_notice_h:_sn, buffer_min:_sbuf, bloqueados:_sbloq, horarios:_shor}}); return;
   }
   if(act==="ag-evtype"){ state.ag={mode:"evtype", key:(el.getAttribute("data-key")||""), evTitle:(el.getAttribute("data-title")||"")}; render(); return; }
@@ -10834,6 +10903,10 @@ document.addEventListener("click", function(ev){
   if(act==="pw-connect"){ pwConnect(); return; }
   if(act==="pw-connect-check"){ state.stripe=null; _stripeReq=false; render(); return; }
   if(act==="sol-pick"){ var pkid=el.getAttribute("data-id"); state.solSel = pkid || null; render(); return; }
+  // Ocultar / mostrar una solicitud de la bandeja (no destructivo, por coach).
+  if(act==="sol-hide"){ var _shid=el.getAttribute("data-id"); if(_shid){ _solHide(_shid); if(String(state.solSel)===String(_shid)) state.solSel=null; toast("Solicitud oculta — la encontrás en «Ver ocultas»."); render(); } return; }
+  if(act==="sol-unhide"){ var _suid=el.getAttribute("data-id"); if(_suid){ _solUnhide(_suid); render(); } return; }
+  if(act==="sol-hidden-toggle"){ state.solShowHidden=!state.solShowHidden; render(); return; }
   // ── Prompt de reseña de Pathway ──
   if(act==="review-star"){ if(state.review){ state.review.rating=parseInt(el.getAttribute("data-n"),10)||0; render(); } return; }
   if(act==="review-later"){ if(state.review){ var _rk=_reviewKeys(); var _rn=parseInt(localStorage.getItem(_rk.v)||"0",10)||0; try{ localStorage.setItem(_rk.r,"snooze:"+(_rn+6)); }catch(e){} state.review.open=false; render(); } return; }
@@ -13863,6 +13936,15 @@ function coachRoleLabel(){
   var tp=_isDemoCoach()?(state.demoTipo||"carrera"):((RCFG&&RCFG.coach_type)||"carrera");
   return tp==="fitness"?"Coach de Fitness":(tp==="financiero"?"Coach de Finanzas":"Coach de Carrera");
 }
+// Colaborador/a de una red: es rol='coach' con configuracion.member_role='colaborador'.
+// Gestiona clientes y ve la agenda, pero NO "da clases": sin negocio propio, sin
+// perfil público, sin marketplace de Pathway (eso es del dueño de la red).
+function esColaborador(){ return !!(REAL && RCFG && RCFG.member_role==="colaborador"); }
+// Permisos por miembro que configura el DUEÑO de la red (configuracion.permisos:
+// {negocio, perfil_publico, marketplace}). Si el dueño NO fijó un permiso, el
+// default sale del rol: colaborador = cerrado, coach = abierto. Así el dueño
+// elige exactamente a qué le da acceso a cada persona.
+function _memberPerm(key){ var p=(RCFG&&RCFG.permisos&&typeof RCFG.permisos==="object")?RCFG.permisos:null; if(p&&typeof p[key]==="boolean") return p[key]; return !esColaborador(); }
 // Rutina fitness → array de ejercicios [{dia,nombre,meta,foto}]. Acepta el JSON
 // nuevo o texto plano viejo (back-compat) separado por línea en blanco.
 function _rutToArr(raw){
@@ -14346,7 +14428,7 @@ function loadReal(){
   // sin asignar se manejan por adopción al invitar (por email), no mezclados acá.
   var cf = "select=*&coach_id=eq."+encodeURIComponent(ME.id);
   var extra = ME.rol==="admin"
-    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id&order=created_at.desc"),
+    ? [ _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id,org_id&order=created_at.desc"),
         _sb("contactos_chat?select=contacto,pagina,fecha,origen&pagina=neq.resena-cvexpress&order=fecha.desc&limit=30"),
         _sb("candidatos?select=id,created_at,coach_id,email,resena,nombre,nicho,activo,semana_activa"),
         _sb("cv_express?select=email,nombre,created_at,paid_at,pago_monto&order=created_at.desc"),
@@ -14403,6 +14485,10 @@ function loadReal(){
     RCITAS = res[12]||[];
     // Empleados: para separar sus hilos de chat de los de coaches en la bandeja.
     if(ME.rol==="admin" && REMPLE===null) reloadEmpleados();
+    // ADMIN: cargar las redes (organizaciones) en el boot. Antes RORGS solo se
+    // llenaba tras una acción de admin (extender trial/marcar pagado), así que
+    // los multicoach no se veían al entrar. reloadOrgs() re-renderiza al volver.
+    if(ME.rol==="admin" && RORGS===null) reloadOrgs();
     // Una vez cargados los mensajes iniciales, arrancar el polling. La
     // función es idempotente (no arranca un segundo timer si ya hay uno).
     startMsgPolling();
@@ -14561,6 +14647,10 @@ function _migrateFotoToUploadcare(){
 function _paywallCheck(u){
   if(!u || u.rol==="admin") return false;
   var cfg=u.configuracion||{};
+  // Miembro de una red multicoach: el DUEÑO paga el plan de la organización
+  // (red-checkout), así que el trial individual del coach NO aplica — no se lo
+  // paywallea (perdía acceso a SUS clientes aunque la red estuviera paga).
+  if(u.org_id || cfg.org_id) return false;
   if(cfg.es_pro_vitalicio===true) return false;
   if(cfg.estado_sub==="activa") return false;
   var fin=cfg.fecha_fin_prueba ? new Date(cfg.fecha_fin_prueba) : null;
@@ -14568,9 +14658,13 @@ function _paywallCheck(u){
   if(fin.getTime() > Date.now()) return false;
   var root=document.getElementById("root");
   if(root) root.innerHTML="<div style='display:flex;align-items:center;justify-content:center;height:100vh;font-family:var(--pw-sans);color:var(--pw-text-soft);font-size:14px'>Verificando tu suscripción…</div>";
-  fetch(SB+"/rest/v1/usuarios?id=eq."+encodeURIComponent(u.id)+"&select=activo,configuracion",{headers:(window.PWAUTH&&PWAUTH.headersSync?PWAUTH.headersSync():{apikey:KEY,Authorization:"Bearer "+KEY})})
+  fetch(SB+"/rest/v1/usuarios?id=eq."+encodeURIComponent(u.id)+"&select=activo,configuracion,org_id",{headers:(window.PWAUTH&&PWAUTH.headersSync?PWAUTH.headersSync():{apikey:KEY,Authorization:"Bearer "+KEY})})
     .then(function(r){return r.ok?r.json():[];}).then(function(rows){
       var fresh=rows&&rows[0]; var fc=(fresh&&fresh.configuracion)||cfg;
+      // Defensa server-side: si la fila dice que es miembro de una red (org_id),
+      // guardamos el dato en mj_user y recargamos → el check sync ya lo exime.
+      // (Cubre sesiones viejas cuyo mj_user se guardó sin org_id.)
+      if(fresh && fresh.org_id){ try{ var mo=JSON.parse(localStorage.getItem("mj_user")||"{}"); mo.org_id=fresh.org_id; localStorage.setItem("mj_user",JSON.stringify(mo)); }catch(e){} window.location.reload(); return; }
       if(fc.estado_sub==="activa" || fc.es_pro_vitalicio===true){
         try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=fc; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
         window.location.reload(); return;

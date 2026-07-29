@@ -1756,6 +1756,32 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: el chat del equipo tiene avatar, links, sonido y preview (features del panel)",
+    bug: "El chat del equipo de multicoach (canal-red, drawer con lista + conversación) " +
+         "renderizaba burbujas de solo texto. Se portaron features del panel REUSANDO " +
+         "helpers: avatar en burbuja (_mcAv), links clickeables (_mcLink), sonido al " +
+         "llegar un mensaje del otro lado (_mcDing en _mcStartPoll) y preview de links " +
+         "og:image (PwLinkPreview, ya cargado por pw-recursos.js, clase .mc-pmsg). " +
+         "No recrear: adaptar sobre _canalBubble/_mcRenderConv.",
+    check() {
+      const s = read("multicoach.html");
+      if (!s) return null;
+      const need = ["_mcAv", "_mcLink", "_mcDing", "_mcLPInit"];
+      const miss = need.filter((f) => !new RegExp("function\\s+" + f + "\\b").test(s));
+      if (miss.length) return "multicoach.html: faltan helpers de chat portados: " + miss.join(", ") + ".";
+      // La burbuja del canal usa avatar + links + la clase para el preview.
+      const i = s.indexOf("function _canalBubble");
+      const bub = i >= 0 ? s.slice(i, i + 1300) : "";
+      if (!/_mcAv\(/.test(bub) || !/_mcLink\(/.test(bub) || !/class="mc-pmsg/.test(bub))
+        return "multicoach.html: _canalBubble perdió el avatar (_mcAv), los links (_mcLink) o la clase mc-pmsg (preview).";
+      // El polling suena al llegar algo nuevo del otro lado.
+      const p = s.indexOf("function _mcStartPoll");
+      const poll = p >= 0 ? s.slice(p, p + 700) : "";
+      if (!/_mcDing\(\)/.test(poll)) return "multicoach.html: _mcStartPoll ya no suena (_mcDing) al llegar un mensaje nuevo.";
+      return null;
+    },
+  },
+  {
     name: "aislamiento: la lista de clientes NO incluye huérfanos (ni para el admin)",
     bug: "El admin cargaba la lista de clientes con 'coach_id.eq.él O coach_id IS " +
          "NULL' → un cliente huérfano (sin coach) de OTRO nicho (ej. fitness) se " +
@@ -4691,6 +4717,62 @@ const RULES = [
       // La rama 'pendiente' debe explicar en vez de ofrecer el botón.
       if (!/s\.estado==="pendiente"/.test(s) || !/Pago iniciado — todav[ií]a no completado/.test(s))
         return "panel-v2.html: se perdió el aviso de 'Pago iniciado' en el detalle de solicitud (rama estado 'pendiente').";
+      return null;
+    },
+  },
+  {
+    name: "panel-v2: se puede ocultar/mostrar una solicitud de la bandeja (no queda trabada)",
+    bug: "Una solicitud en 'Pago iniciado' se quedaba en la bandeja hasta que vencía " +
+         "(24 h), sin forma de sacarla de la vista → el coach quedaba 'frenado' con una " +
+         "solicitud sobre la que no puede hacer nada. Ahora hay 'Ocultar' (no destructivo: " +
+         "no cancela el pago ni corta la recuperación de Pathway) + 'Ver ocultas' para " +
+         "revertir. Blindamos handler + helper + toggle para que no se caiga el flujo.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const js = inlineJs(s);
+      if (!isDefined("_solHide", js) || !isDefined("_solUnhide", js) || !isDefined("_solHidHas", js))
+        return "panel-v2.html: faltan los helpers de ocultar solicitudes (_solHide/_solUnhide/_solHidHas).";
+      if (!/act==="sol-hide"/.test(s) || !/act==="sol-unhide"/.test(s) || !/act==="sol-hidden-toggle"/.test(s))
+        return "panel-v2.html: faltan los handlers sol-hide/sol-unhide/sol-hidden-toggle → no se puede ocultar/mostrar ni revertir.";
+      if (!/data-act='sol-hide'/.test(s) || !/data-act='sol-hidden-toggle'/.test(s))
+        return "panel-v2.html: la bandeja perdió el botón 'Ocultar' o el toggle 'Ver ocultas'.";
+      // No destructivo: ocultar NO debe salir en las autorizadas (hay neto para cobrar).
+      if (!/s\.estado!=="autorizada"\s*\|\|\s*expired/.test(s))
+        return "panel-v2.html: el botón 'Ocultar' ya no está gateado (no debe aparecer en solicitudes 'autorizada' con pago listo para cobrar).";
+      return null;
+    },
+  },
+  {
+    name: "panel-v2: el acceso del miembro de red se gatea por permisos (los elige el dueño)",
+    bug: "Un colaborador (rol='coach' + member_role='colaborador') veía TODO lo de un " +
+         "coach porque panel-v2 nunca leía su rol/permisos. El dueño de la red debe poder " +
+         "elegir por miembro a qué darle acceso (configuracion.permisos), con default por " +
+         "rol. Las superficies de 'dar clases' (Negocio, perfil público) se gatean por " +
+         "_memberPerm(); esColaborador() da el default.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      const js = inlineJs(s);
+      if (!isDefined("esColaborador", js) || !isDefined("_memberPerm", js))
+        return "panel-v2.html: faltan esColaborador()/_memberPerm() → el acceso del miembro de red deja de gatearse.";
+      if (!/if\(_memberPerm\("negocio"\)\) items\.push\(\["negocio"/.test(s))
+        return "panel-v2.html: la pestaña 'Negocio' ya no se gatea por _memberPerm('negocio').";
+      if (!/_memberPerm\("perfil_publico"\)[\s\S]{0,80}perfil_publico_activo/.test(s))
+        return "panel-v2.html: el perfil público ya no se gatea por _memberPerm('perfil_publico').";
+      return null;
+    },
+  },
+  {
+    name: "panel-v2: los coaches de una red no quedan bloqueados por el paywall individual",
+    bug: "Un coach miembro de una red (usuarios.org_id) perdía acceso a SUS clientes " +
+         "cuando vencía su trial individual, aunque el DUEÑO paga el plan de la red. " +
+         "_paywallCheck debe eximir a quien tiene org_id.",
+    check() {
+      const s = read("panel-v2.html");
+      if (!s) return null;
+      if (!/if\(u\.org_id \|\| cfg\.org_id\) return false/.test(s))
+        return "panel-v2.html: _paywallCheck ya no exime a los miembros de una red (org_id) → vuelven a quedar bloqueados por su trial individual.";
       return null;
     },
   },
