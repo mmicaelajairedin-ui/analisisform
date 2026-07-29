@@ -19,13 +19,7 @@ CREATE INDEX idx_usuarios_plan ON usuarios(plan_tipo);
 -- Coaches con rol 'admin' siempre Pro
 UPDATE usuarios SET plan_tipo = 'pro' WHERE rol = 'admin';
 
--- Coaches que ya pagaron (estado_sub='activa') → Pro
-UPDATE usuarios SET plan_tipo = 'pro' WHERE estado_sub = 'activa' AND plan_tipo IS NULL;
-
--- Coaches en prueba (estado_sub='prueba') → Boutique
-UPDATE usuarios SET plan_tipo = 'boutique' WHERE estado_sub = 'prueba' AND plan_tipo IS NULL;
-
--- Fallback: cualquier coach restante → Boutique
+-- Fallback: cualquier coach restante → Boutique (default plan)
 UPDATE usuarios SET plan_tipo = 'boutique' WHERE plan_tipo IS NULL;
 
 COMMIT;
