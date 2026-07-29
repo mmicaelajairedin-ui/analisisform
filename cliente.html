@@ -2468,13 +2468,16 @@ function entrar(){
     wrap.addEventListener('click',function(){ inp.click(); });
     inp.addEventListener('change',function(){
       var f=inp.files&&inp.files[0]; if(!f) return;
-      if(f.size>5*1024*1024){ alert('La foto no puede pesar más de 5 MB.'); inp.value=''; return; }
-      var ext=((f.type||'image/png').split('/')[1]||'png').replace('jpeg','jpg');
+      if(f.size>15*1024*1024){ alert('La foto no puede pesar más de 15 MB.'); inp.value=''; return; }
+      // Redimensionar en el navegador ANTES de subir → foto nítida y liviana.
+      (window.pwResizeImage?pwResizeImage(f,720):Promise.resolve(f)).then(function(up){ up=up||f;
+      var ct=up.type||f.type||'image/jpeg';
+      var ext=(ct.split('/')[1]||'jpg').replace('jpeg','jpg');
       var path='client-'+(''+E).replace(/[^a-z0-9]/gi,'_')+'-'+Date.now()+'.'+ext;
       fetch(SB+'/storage/v1/object/avatars/'+encodeURIComponent(path),{
         method:'POST',
-        headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'Content-Type':(f.type||'image/png'), 'x-upsert':'true' },
-        body:f
+        headers:{ apikey:KEY, Authorization:'Bearer '+KEY, 'Content-Type':ct, 'x-upsert':'true' },
+        body:up
       }).then(function(r){ if(!r.ok) throw 0;
         var url=SB+'/storage/v1/object/public/avatars/'+path;
         // Persistir vía edge function (service role) con fallback a PATCH: así la
@@ -2487,6 +2490,7 @@ function entrar(){
         var _tbme=document.getElementById('cli-me-av'); if(_tbme) _tbme.innerHTML='<img src="'+url+'" alt="">';
         _hint(document.getElementById('sb-avatar-wrap'));
       }).catch(function(){ alert('No se pudo subir la foto. Reintenta.'); });
+      }); // cierra pwResizeImage().then
       inp.value='';
     });
   })();

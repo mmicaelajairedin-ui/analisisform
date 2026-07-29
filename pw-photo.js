@@ -62,6 +62,32 @@
     }catch(e){}
   }
 
+  // ── Redimensionar una foto ANTES de subirla (garantiza nitidez + peso liviano
+  //    aunque el CDN no transforme). Devuelve un Blob JPEG; si algo falla, el
+  //    archivo original. Ignora gif/svg. ────────────────────────────────────────
+  window.pwResizeImage = function(file, max){
+    max = max || 720;
+    return new Promise(function(resolve){
+      try{
+        if(!file || !/^image\//i.test(file.type||'') || /gif|svg/i.test(file.type||'')){ resolve(file); return; }
+        var url = URL.createObjectURL(file), im = new Image();
+        im.onload = function(){
+          try{
+            var w = im.naturalWidth, h = im.naturalHeight;
+            if(!w || !h || Math.max(w,h) <= max){ URL.revokeObjectURL(url); resolve(file); return; }
+            var sc = max / Math.max(w,h), cw = Math.round(w*sc), ch = Math.round(h*sc);
+            var c = document.createElement('canvas'); c.width = cw; c.height = ch;
+            var ctx = c.getContext('2d'); try{ ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }catch(e){}
+            ctx.drawImage(im, 0, 0, cw, ch);
+            c.toBlob(function(b){ URL.revokeObjectURL(url); resolve((b && b.size) ? b : file); }, 'image/jpeg', 0.9);
+          }catch(e){ URL.revokeObjectURL(url); resolve(file); }
+        };
+        im.onerror = function(){ URL.revokeObjectURL(url); resolve(file); };
+        im.src = url;
+      }catch(e){ resolve(file); }
+    });
+  };
+
   function scan(root){ try{ (root || document).querySelectorAll('img').forEach(upgrade); }catch(e){} }
   function boot(){
     scan();
