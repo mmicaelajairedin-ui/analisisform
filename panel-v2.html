@@ -10377,12 +10377,21 @@ document.addEventListener("click", function(ev){
       // 2) En paralelo y best-effort: asegurar la cuenta de login del cliente y
       //    mandarle el email de bienvenida ("crea tu contraseña y entra"). Si esto
       //    falla NO bloquea: el cliente ya está en tu lista y puedes re-invitarlo.
-      _sb("usuarios?email=eq."+encodeURIComponent(aem)+"&select=id").then(function(rows){
-        if(rows&&rows.length) return true;
+      _sb("usuarios?email=eq."+encodeURIComponent(aem)+"&select=id,rol").then(function(rows){
+        var _ex=rows&&rows[0];
+        // GUARDRAIL "un email = un solo rol": si el email YA es una cuenta de
+        // coach/admin, NO se crea un login de cliente (quedaría ambiguo y el
+        // cliente terminaría entrando al panel del coach). Se avisa y se corta.
+        if(_ex && (_ex.rol==="coach"||_ex.rol==="admin")){
+          if(aMsg){ aMsg.style.color="var(--pw-danger)"; aMsg.textContent="⚠️ Ese email ya es una cuenta de coach. Un email = un solo rol: usá otro email para el cliente."; }
+          return "rol-conflict";
+        }
+        if(_ex) return true;
         return _sha256(""+Math.random()+Date.now()+aem).then(function(ph){
           return _sbw("usuarios","POST",{email:aem,password_hash:ph,rol:"cliente",nombre:anom,activo:true,configuracion:{coach_type:_ct}});
         });
-      }).then(function(){
+      }).then(function(_r){
+        if(_r==="rol-conflict") return;  // email de coach → no se manda acceso de cliente
         var _cemail=((RME&&RME.email)||(COACH&&COACH.email)||"").toLowerCase().trim();
         // Foto del coach para la FIRMA del email de bienvenida. Solo URL http(s)
         // (una data: URI no se ve en Gmail → coachSig cae a la inicial). Sin foto
