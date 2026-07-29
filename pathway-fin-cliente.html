@@ -464,6 +464,7 @@ function pwSetLang(l){ if((l!=='es'&&l!=='en')||l===LANG) return; LANG=l; try{ l
           <div class="dash-main">
             <div id="prep-slot"></div>
             <div id="clasesred-slot"></div>
+            <div id="novered-slot"></div>
             <div class="card"><div class="card-body">
               <div class="proceso-hd"><span class="eyebrow" data-i18n="evEyebrow"><i data-ic="trendUp" data-sm></i> Tu evolución · ahorro</span><span class="proceso-badge" id="ahorro-delta">+€150 en 3 meses</span></div>
               <div id="chartAhorro" style="margin-top:8px;"></div>
@@ -1811,6 +1812,32 @@ function _loadClasesRed(){
       if(!d||!d.ok||!d.clases||!d.clases.length){ slot.innerHTML=''; return; }
       slot.innerHTML=_clasesRedHtml(d.clases);
     }).catch(function(){ slot.innerHTML=''; });
+  _loadNovedades();
+}
+// Novedades / revista de la red (comunidad-red, audiencia todos/clientes).
+function _novedadesHtml(posts){
+  var rows=posts.slice(0,8).map(function(p){
+    var img=p.foto?'<img src="'+esc(p.foto)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;margin:8px 0 2px">':'';
+    var rc=(p.reacts&&Object.keys(p.reacts).length)?p.reacts:{'❤️':0};
+    var rb=Object.keys(rc).map(function(e){return '<button onclick="_novReact(this,\''+p.id+'\',\''+e+'\')" style="border:1px solid var(--line,#EEE);background:#fff;border-radius:99px;padding:4px 10px;font-size:13px;cursor:pointer;font-weight:600;color:var(--muted)">'+e+' <b style="font-size:11px;color:var(--ink,#22303A)">'+rc[e]+'</b></button>';}).join(' ');
+    var when=''; try{ var d=new Date(p.created_at); if(!isNaN(d.getTime())) when=_claseFecha(d); }catch(e){}
+    return '<div style="padding:11px 0;border-top:1px solid var(--line,#EEE)"><div style="font-size:13px;line-height:1.55;color:var(--ink,#22303A)">'+(p.titulo?('<b>'+esc(p.titulo)+'</b><br>'):'')+(p.body||'')+'</div>'+img+(when?'<div style="font-size:10.5px;color:var(--muted);margin:5px 0 7px">'+esc(when)+'</div>':'<div style="height:6px"></div>')+'<div style="display:flex;gap:6px;flex-wrap:wrap">'+rb+'</div></div>';
+  }).join('');
+  return '<div class="card"><div class="card-body"><span class="eyebrow">📣 Novedades de la red</span><div style="font-size:11.5px;color:var(--muted);margin:2px 0 2px">Lo último que compartió tu red.</div>'+rows+'</div></div>';
+}
+function _loadNovedades(){
+  var slot=document.getElementById('novered-slot'); if(!slot) return;
+  var em=(EMAIL||(CRAW&&CRAW.email)||'').toLowerCase(); if(!em) return;
+  fetch(SB+'/functions/v1/comunidad-red',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({action:'list',email:em})})
+    .then(function(r){ return r.ok?r.json():null; }).then(function(d){
+      if(!d||!d.ok||!d.posts||!d.posts.length){ slot.innerHTML=''; return; }
+      slot.innerHTML=_novedadesHtml(d.posts);
+    }).catch(function(){ slot.innerHTML=''; });
+}
+function _novReact(btn,pid,emoji){
+  var b=btn.querySelector('b'); if(b)b.textContent=(parseInt(b.textContent,10)||0)+1;
+  var em=(EMAIL||(CRAW&&CRAW.email)||'').toLowerCase();
+  try{ fetch(SB+'/functions/v1/comunidad-red',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({action:'react',post_id:pid,emoji:emoji,email:em})}); }catch(_){}
 }
 function renderPrepCard(){
   var slot=document.getElementById('prep-slot'); if(!slot) return;

@@ -441,7 +441,8 @@ html.mc-embed #mc-nswitch{display:none!important}
 .agcoach{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;cursor:pointer;font-size:13px;color:var(--pw-carbon)}
 .agcoach:hover{background:var(--pw-niebla-2)}
 .agcoach.on{background:var(--pw-success-bg);font-weight:600}
-.agcoach .cav{width:26px;height:26px;border-radius:50%;flex-shrink:0;overflow:hidden;position:relative;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff}
+.agcoach .cav{width:38px;height:38px;border-radius:50%;flex-shrink:0;overflow:hidden;position:relative;display:grid;place-items:center;font-size:14px;font-weight:700;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.agcoach{gap:11px;padding:9px 10px;font-size:13.5px}
 .agcoach .cav img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .agcal{background:#fff;border:1px solid var(--pw-border);border-radius:14px;box-shadow:var(--pw-shadow-xs);overflow:hidden}
 .agcal-top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--pw-border)}
@@ -781,8 +782,37 @@ function _dzOver(e){e.preventDefault();e.currentTarget.classList.add('over');}
 function _dzLeave(e){e.currentTarget.classList.remove('over');}
 function _dzDrop(e){e.preventDefault();e.currentTarget.classList.remove('over');_dzFiles(e.dataTransfer.files);}
 function _dzFiles(files){if(!files||!files.length)return;var f=files[0];_dzName=f.name;var img=document.getElementById('np-prev'),txt=document.getElementById('np-dztext');
-  if(f.type&&f.type.indexOf('image')===0){var r=new FileReader();r.onload=function(ev){_dzData=ev.target.result;if(img){img.src=_dzData;img.style.display='block';}if(txt)txt.textContent='📷 '+f.name;};r.readAsDataURL(f);}
-  else{_dzData=null;if(txt)txt.textContent='📄 '+f.name+' — adjunto';if(img)img.style.display='none';}}
+  if(f.type&&f.type.indexOf('image')===0){
+    // Comprimimos la foto en el navegador (máx 1280px, JPEG) ANTES de guardarla:
+    // una foto de celular pesa varios MB y así se rompía/no se veía. Comprimida
+    // pesa ~200KB → se guarda entera y carga rápido.
+    _imgCompress(f,function(data){_dzData=data;if(img){img.src=data;img.style.display='block';}if(txt)txt.textContent='📷 '+f.name;if(typeof _postPrev==='function')_postPrev();});
+  }
+  else{_dzData=null;if(txt)txt.textContent='📄 '+f.name+' — adjunto';if(img)img.style.display='none';if(typeof _postPrev==='function')_postPrev();}}
+// Reduce una imagen a máx 1280px de lado y la exporta como JPEG (data URL liviano).
+// Si algo falla, cae al original sin romper.
+function _imgCompress(file,cb){
+  var r=new FileReader();
+  r.onload=function(ev){
+    var src=ev.target.result;
+    try{
+      var im=new Image();
+      im.onload=function(){
+        try{
+          var max=1280,w=im.naturalWidth||im.width,h=im.naturalHeight||im.height;
+          if(w>max||h>max){ if(w>=h){h=Math.round(h*max/w);w=max;} else {w=Math.round(w*max/h);h=max;} }
+          var cv=document.createElement('canvas');cv.width=w;cv.height=h;
+          cv.getContext('2d').drawImage(im,0,0,w,h);
+          var out=cv.toDataURL('image/jpeg',0.82);
+          cb(out&&out.length>40&&out.length<src.length?out:src);
+        }catch(_){ cb(src); }
+      };
+      im.onerror=function(){ cb(src); };
+      im.src=src;
+    }catch(_){ cb(src); }
+  };
+  r.readAsDataURL(file);
+}
 // Soltar foto en el avatar de la ficha (cliente o coach).
 function _avatarDrop(ev,kind){ev.preventDefault();ev.currentTarget.classList.remove('over');var f=ev.dataTransfer.files&&ev.dataTransfer.files[0];if(!f||(f.type||'').indexOf('image')!==0){__toast('Suelta una imagen');return;}var o=(kind==='coach')?_coach(_curCoach):_cli(_curCli);if(!o)return;var r=new FileReader();r.onload=function(e){o.foto=e.target.result;if(kind==='coach')_renderCoachFicha();else _renderFicha();__toast('Foto de '+o.n.split(' ')[0]+' actualizada ✓');};r.readAsDataURL(f);}
 // Soltar/subir el documento del plan en la ficha del cliente.
@@ -832,7 +862,11 @@ function mcRenderNotifs(){
 }
 function __crearMenu(btn){__openModal('¿Qué quieres crear?','<div style="display:flex;flex-direction:column;gap:8px">'+['Nuevo cliente','Asignar coach','Nueva sesión','Crear programa','Publicar en Comunidad'].map(function(x){return '<button class="mbtn g" style="text-align:left" onclick="__mclose();(\''+x+'\'==\'Nuevo cliente\'?__nuevoCliente:\''+x+'\'==\'Asignar coach\'?__asignarCoach:\''+x+'\'==\'Nueva sesión\'?__nuevaSesion:\''+x+'\'==\'Crear programa\'?__crearPrograma:__publicar)()">'+x+'</button>';}).join('')+'</div>','Cerrar',function(){__mclose();});document.getElementById('__mo').style.display='none';}
 // reacciones flotantes
-function react(btn,emoji){var f=btn.closest('.feat');var b=btn.querySelector('b');if(b)b.textContent=(parseInt(b.textContent,10)||0)+1;var e=document.createElement('span');e.className='floatemo';e.textContent=emoji;e.style.left=(15+Math.random()*65)+'%';f.appendChild(e);setTimeout(function(){e.remove();},1500);}
+function react(btn,emoji){var f=btn.closest('.feat');var b=btn.querySelector('b');if(b)b.textContent=(parseInt(b.textContent,10)||0)+1;var e=document.createElement('span');e.className='floatemo';e.textContent=emoji;e.style.left=(15+Math.random()*65)+'%';f.appendChild(e);setTimeout(function(){e.remove();},1500);
+  // Post real de la red → persistir la reacción (best-effort, no bloquea la animación).
+  var pid=f&&f.getAttribute&&f.getAttribute('data-pid');
+  if(pid&&MC_REAL){ try{ _hdr({'Content-Type':'application/json'}).then(function(h){ fetch(SB+'/functions/v1/comunidad-red',{method:'POST',headers:h,body:JSON.stringify({action:'react',post_id:pid,emoji:emoji})}); }); }catch(_){} }
+}
 function __riesgo(n,d){__toast(n+' — sin actividad hace '+d+'. Envía un mensaje de reactivación.');}
 // modal
 function __mclose(){var m=document.getElementById('__modal');if(m)m.remove();}
@@ -931,7 +965,8 @@ function __nuevaSesion(){
     +'<div style="display:flex;gap:8px"><div style="flex:1"><span class="lbl">Día</span><input id="ns-d" type="date" class="inp"></div><div style="flex:1"><span class="lbl">Hora</span><input id="ns-h" type="time" class="inp" value="10:00"></div></div>'
     +'<div><span class="lbl">Modalidad</span><select id="ns-mod" class="inp" onchange="var _l=document.getElementById(\'ns-lugar-w\');if(_l)_l.style.display=this.value===\'presencial\'?\'block\':\'none\'"><option value="online">💻 Online (videollamada)</option><option value="presencial">📍 Presencial</option></select></div>'
     +'<div id="ns-lugar-w" style="display:none">'+__inp('ns-lugar','Lugar / dirección')+'</div>'
-    +'<div><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;cursor:pointer"><input type="checkbox" id="ns-grupal"> Grupal (clase/curso · video con varios)</label></div>';
+    +'<div><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;cursor:pointer"><input type="checkbox" id="ns-grupal"> Grupal (clase/curso · video con varios)</label></div>'
+    +'<div><span class="lbl">Repetir</span><select id="ns-rep" class="inp"><option value="0">No se repite</option><option value="4">Cada semana · 4 semanas</option><option value="8">Cada semana · 8 semanas</option><option value="12">Cada semana · 12 semanas</option></select><div style="font-size:11px;color:var(--soft);margin-top:3px">Ideal para clases fijas (ej. todos los lunes).</div></div>';
   __openModal('Nueva sesión / evento', body, 'Agendar', function(){
     var coach_id=document.getElementById('ns-co').value;
     var email=((document.getElementById('ns-cl')||{}).value||'').trim().toLowerCase();
@@ -939,21 +974,65 @@ function __nuevaSesion(){
     var tipo=(document.getElementById('ns-tipo').value||'').trim()||'Sesión';
     var d=document.getElementById('ns-d').value, hh=document.getElementById('ns-h').value;
     if(!d||!hh){ __toast('Elige día y hora'); return; }
-    var iso=new Date(d+'T'+hh); if(isNaN(iso.getTime())){ __toast('Fecha u hora inválida'); return; } iso=iso.toISOString();
+    var iso0=new Date(d+'T'+hh); if(isNaN(iso0.getTime())){ __toast('Fecha u hora inválida'); return; }
     var modalidad=document.getElementById('ns-mod').value;
     var lugarEl=document.getElementById('ns-lugar'); var lugar=(lugarEl&&lugarEl.value||'').trim();
     var grupalEl=document.getElementById('ns-grupal'); var grupal=!!(grupalEl&&grupalEl.checked);
-    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Agendando…';}
+    var rep=parseInt((document.getElementById('ns-rep')||{}).value,10)||0;
+    // Fechas: 1 sola, o N semanales (misma hora, +7 días cada una).
+    var reps=(rep>1)?rep:1; var fechas=[]; for(var _i=0;_i<reps;_i++){ fechas.push(new Date(iso0.getTime()+_i*7*86400000).toISOString()); }
+    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent=(reps>1?'Agendando '+reps+'…':'Agendando…');}
     _hdr({'Content-Type':'application/json'}).then(function(h2){
-      return fetch(SB+'/functions/v1/crear-cita-red',{method:'POST',headers:h2,body:JSON.stringify({coach_id:coach_id,nombre:nombre,email:email,tipo:tipo,inicio:iso,modalidad:modalidad,lugar:lugar,grupal:grupal})});
-    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(dd){ return {ok:r.ok,d:dd||{}}; }); }).then(function(res){
-      if(!res.ok||!res.d.ok){ var er=res.d.error, msg=er==='coach_ajeno'?'Elige un coach de tu red.':er==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo agendar. Reintenta'; if(ok){ok.disabled=false;ok.textContent='Agendar';} __toast(msg); return; }
-      var cita=res.d.cita||{coach_id:coach_id,nombre:nombre,email:email,tipo:tipo,inicio:iso,estado:'confirmada',modalidad:modalidad,grupal:grupal};
-      MC_CITAS.push(cita);
-      // Saltar a la semana del evento creado (si es futuro) para que se vea sí o sí.
-      try{ var _d0=new Date(); var _m0=new Date(_d0.getFullYear(),_d0.getMonth(),_d0.getDate()-((_d0.getDay()+6)%7)); var _de=new Date(cita.inicio); var _me=new Date(_de.getFullYear(),_de.getMonth(),_de.getDate()-((_de.getDay()+6)%7)); _agWeekOff=Math.round((_me-_m0)/(7*86400000)); }catch(e){}
-      __mclose(); __toast('Agendado ✓'); mcSetAgenda(); if(_sec==='agenda') renderAgenda(); else if(_sec==='dashboard') mcApplyNiche();
+      return Promise.all(fechas.map(function(iso){
+        return fetch(SB+'/functions/v1/crear-cita-red',{method:'POST',headers:h2,body:JSON.stringify({coach_id:coach_id,nombre:nombre,email:email,tipo:tipo,inicio:iso,modalidad:modalidad,lugar:lugar,grupal:grupal})})
+          .then(function(r){ return r.json().catch(function(){return {};}).then(function(dd){ return {ok:r.ok,d:dd||{},iso:iso}; }); });
+      }));
+    }).then(function(all){
+      var oks=all.filter(function(x){return x.ok&&x.d&&x.d.ok;});
+      if(!oks.length){ var er=(all[0]&&all[0].d&&all[0].d.error)||''; var msg=er==='coach_ajeno'?'Elige un coach de tu red.':er==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo agendar. Reintenta'; if(ok){ok.disabled=false;ok.textContent='Agendar';} __toast(msg); return; }
+      oks.forEach(function(x){ MC_CITAS.push(x.d.cita||{coach_id:coach_id,nombre:nombre,email:email,tipo:tipo,inicio:x.iso,estado:'confirmada',modalidad:modalidad,grupal:grupal}); });
+      // Saltar a la semana del PRIMER evento para que se vea.
+      try{ var _d0=new Date(); var _m0=new Date(_d0.getFullYear(),_d0.getMonth(),_d0.getDate()-((_d0.getDay()+6)%7)); var _de=new Date(fechas[0]); var _me=new Date(_de.getFullYear(),_de.getMonth(),_de.getDate()-((_de.getDay()+6)%7)); _agWeekOff=Math.round((_me-_m0)/(7*86400000)); }catch(e){}
+      __mclose(); __toast(oks.length>1?(oks.length+' clases agendadas ✓'):'Agendado ✓'); mcSetAgenda(); if(_sec==='agenda') renderAgenda(); else if(_sec==='dashboard') mcApplyNiche();
     }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Agendar';} __toast('Error de conexión. Reintenta'); });
+  });
+}
+// Editar o cancelar un evento de la agenda (red real) → editar-cita-red.
+function _agEditEvent(citaId){
+  var c=(MC_CITAS||[]).filter(function(x){return String(x.id)===String(citaId);})[0];
+  if(!c){ __toast('No se encontró el evento'); return; }
+  var d=new Date(c.inicio); var _p=function(n){return('0'+n).slice(-2);};
+  var dval=(!isNaN(d.getTime()))?(d.getFullYear()+'-'+_p(d.getMonth()+1)+'-'+_p(d.getDate())):'';
+  var hval=(!isNaN(d.getTime()))?(_p(d.getHours())+':'+_p(d.getMinutes())):'10:00';
+  var co=_coach(c.coach_id);
+  var body='<div style="font-size:12px;color:var(--soft);margin-bottom:8px">'+(co?_mcEsc(co.n):'')+(c.nombre?' · '+_mcEsc(c.nombre):'')+'</div>'
+    +'<div><span class="lbl">Tipo</span><input id="ed-tipo" class="inp" value="'+_mcEsc(c.tipo||'')+'"></div>'
+    +'<div style="display:flex;gap:8px"><div style="flex:1"><span class="lbl">Día</span><input id="ed-d" type="date" class="inp" value="'+dval+'"></div><div style="flex:1"><span class="lbl">Hora</span><input id="ed-h" type="time" class="inp" value="'+hval+'"></div></div>'
+    +'<div style="margin-top:12px"><button type="button" onclick="_agCancelEvent(\''+citaId+'\')" style="background:none;border:1px solid rgba(192,117,110,.5);color:var(--pw-danger);border-radius:10px;padding:9px 12px;font-size:12.5px;cursor:pointer;width:100%">Cancelar este evento</button></div>';
+  __openModal('Editar evento', body, 'Guardar cambios', function(){
+    var tipo=(document.getElementById('ed-tipo').value||'').trim()||'Sesión';
+    var dd=document.getElementById('ed-d').value, hh=document.getElementById('ed-h').value;
+    if(!dd||!hh){ __toast('Elegí día y hora'); return; }
+    var iso=new Date(dd+'T'+hh); if(isNaN(iso.getTime())){ __toast('Fecha u hora inválida'); return; } iso=iso.toISOString();
+    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Guardando…';}
+    _hdr({'Content-Type':'application/json'}).then(function(h){
+      return fetch(SB+'/functions/v1/editar-cita-red',{method:'POST',headers:h,body:JSON.stringify({cita_id:citaId,action:'update',inicio:iso,tipo:tipo})});
+    }).then(function(r){return r.json().catch(function(){return {};}).then(function(d2){return {ok:r.ok,d:d2||{}};});}).then(function(res){
+      if(!res.ok||!res.d.ok){ if(ok){ok.disabled=false;ok.textContent='Guardar cambios';} __toast(res.d.error==='not_owner'?'Reingresá — sesión vencida':'No se pudo editar. Reintentá'); return; }
+      c.inicio=iso; c.tipo=tipo;
+      __mclose(); __toast('Evento actualizado ✓'); mcSetAgenda(); if(_sec==='agenda')renderAgenda();
+    }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Guardar cambios';} __toast('Error de conexión'); });
+  });
+}
+function _agCancelEvent(citaId){
+  __openModal('Cancelar evento','<p style="font-size:13.5px;color:var(--soft);line-height:1.5;margin:0">¿Cancelás este evento? El cliente ya no lo verá en su agenda.</p>','Sí, cancelar',function(){
+    _hdr({'Content-Type':'application/json'}).then(function(h){
+      return fetch(SB+'/functions/v1/editar-cita-red',{method:'POST',headers:h,body:JSON.stringify({cita_id:citaId,action:'cancel'})});
+    }).then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d||{}};});}).then(function(res){
+      if(!res.ok||!res.d.ok){ __toast('No se pudo cancelar. Reintentá'); return; }
+      MC_CITAS=(MC_CITAS||[]).filter(function(x){return String(x.id)!==String(citaId);});
+      __mclose(); __toast('Evento cancelado ✓'); mcSetAgenda(); if(_sec==='agenda')renderAgenda();
+    }).catch(function(){ __toast('Error de conexión'); });
   });
 }
 function __crearPrograma(){__openModal('Crear programa',__inp('cp-n','Nombre (ej. Programa 8 semanas)')+__inp('cp-d','Duración (semanas)'),'Crear',function(){var n=document.getElementById('cp-n').value.trim();if(!n)return;__act(PWI.svg('clipboard',{sm:true}),'var(--amanecer);color:#5a4410','Programa creado: '+n,'Programas');__mclose();__toast('Programa «'+n+'» creado ✓');});}
@@ -1899,6 +1978,12 @@ function renderComunidad(){
   +'<div class="cp-topbar-actions"><button class="crear" onclick="_comAdd()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Publicar</button></div></header>'
   +'<div class="cp-filters" id="comchips">'+tabs.map(function(t){return '<button class="cp-chip'+(_comTab===t[0]?' is-on':'')+'" onclick="_setComTab(\''+t[0]+'\')">'+t[1]+'</button>';}).join('')+'</div>'
   +'<div id="comview"></div>';
+ // Red real → traer las novedades guardadas la primera vez (después ya están en DBCOM).
+ if(MC_REAL&&MC_ORG&&MC_ORG.id&&_comTab==='revista'&&!_mcPostsLoaded){
+   var cv=document.getElementById('comview'); if(cv)cv.innerHTML='<div class="revista" style="grid-template-columns:1fr"><div class="post" style="margin:0"><div class="msg" style="color:var(--muted)">Cargando novedades…</div></div></div>';
+   _mcLoadPosts(function(){ _mcPostsLoaded=true; _fillCom(); });
+   return;
+ }
  _fillCom();
 }
 function _setComTab(t){_comTab=t;renderComunidad();}
@@ -1911,7 +1996,7 @@ function _fillCom(){
   if(!DBCOM.posts.length){ box.innerHTML=_mcEmptyCard('Tu revista está en blanco','Publica el primer aviso, foto o novedad para tu red — lo ven todos tus coaches y clientes.'); return; }
   box.innerHTML='<div class="revista">'+DBCOM.posts.map(function(p){return '<div class="post"><div class="ph"><div class="a">'+_mcEsc(_brandIni)+'</div><div><b>'+_mcEsc(_brandNm)+'</b><small>'+p.time+'</small></div></div>'
    +'<div class="msg">'+p.txt+'</div>'
-   +'<div class="feat"><div class="img"><span class="emo">'+p.emo+'</span>'+(p.foto?'<img src="'+p.foto+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">':'')+'</div>'
+   +'<div class="feat"'+(p.real?(' data-pid="'+_mcEsc(p.id)+'"'):'')+'><div class="img"><span class="emo">'+p.emo+'</span>'+(p.foto?'<img src="'+p.foto+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">':'')+'</div>'
    +'<div class="react">'+Object.keys(p.r).map(function(e){return '<button class="rb" onclick="react(this,\''+e+'\')">'+e+' <b>'+p.r[e]+'</b></button>';}).join('')+'</div></div></div>';}).join('')+'</div>';
   return;
  }
@@ -1934,7 +2019,100 @@ function _fillCom(){
   +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Ranking del mes<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 6px">Clientes con más puntos por constancia y retos.</div>'
   +(DBCOM.ranking.length?DBCOM.ranking.map(function(r,i){return '<div class="rank"><div class="pos">'+(i<3?_medalEmo(r.medal):(i+1))+'</div><div class="av" style="background:#EEF2ED;color:#667068;font-size:12px">'+r.ini+'</div><div class="nm" style="font-size:13.5px;font-weight:600">'+r.n+'</div><div class="rpts">'+r.pts+' pts</div></div>';}).join(''):'<p class="csub" style="margin:6px 0 0">El ranking se arma solo cuando tus clientes sumen puntos.</p>')+'</div>';
 }
-function _nuevaPost(){_dzData=null;_dzName=null;__openModal('Nueva publicación en la revista','<textarea id="np-t" class="inp" style="min-height:80px;resize:vertical" placeholder="Escribe tu publicación…"></textarea>'+'<div id="np-drop" class="dropz" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_dzDrop(event)" onclick="document.getElementById(\'np-file\').click()"><input type="file" id="np-file" accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="_dzFiles(this.files)"><span id="np-dztext">'+PWI.svg('paperclip',{sm:true})+' Arrastra una foto o documento acá, o toca para elegir</span><br><img id="np-prev" alt="" style="display:none;max-height:120px;border-radius:10px;margin-top:8px"></div>'+__inp('np-f','…o pega una URL de foto'),'Publicar',function(){var t=document.getElementById('np-t').value.trim();if(!t)return;var f=_dzData||document.getElementById('np-f').value.trim();DBCOM.posts.unshift({id:'p'+DBCOM.posts.length+'x',time:'recién',txt:t+(_dzName&&!_dzData?(' 📎 '+_dzName):''),emo:'📸',foto:f,r:{'❤️':0}});__mclose();__toast('Publicado en la revista ✓');_comTab='revista';renderComunidad();});}
+// Plantillas de NOVEDADES para la revista de la red: el owner elige una y solo
+// cambia el texto (los [corchetes]) y la foto. Cubre lo típico de una red.
+var MC_POST_TPL=[
+  {ic:'🎉',lbl:'Bienvenida',t:'¡Bienvenido/a a la red!',txt:'Le damos la bienvenida a [nombre] a nuestra red. Estamos felices de acompañarte en este camino 💪'},
+  {ic:'📅',lbl:'Nueva clase',t:'Nueva clase esta semana',txt:'Sumamos [nombre] — [día] a las [hora]. ¡Anotate, cupos limitados!'},
+  {ic:'🏆',lbl:'Reto del mes',t:'¡Arrancó el reto del mes!',txt:'[nombre del reto]: completalo y sumá puntos. ¿Quién se prende? Reaccioná 🔥 si te sumás.'},
+  {ic:'💡',lbl:'Tip de la semana',t:'Tip de la semana',txt:'[escribí tu consejo corto y accionable].'},
+  {ic:'⭐',lbl:'Logro de un cliente',t:'¡Un logro para celebrar!',txt:'Felicitaciones a [cliente] por [su logro]. Así se hace 👏 Dejale un ❤️ para felicitarlo.'},
+  {ic:'📢',lbl:'Aviso importante',t:'Aviso para la red',txt:'[tu mensaje]. Cualquier duda, escribinos.'},
+  {ic:'🔥',lbl:'Motivación (lunes)',t:'Arranca la semana',txt:'[tu mensaje motivador]. ¡Vamos con todo, equipo! ¿Con qué energía arrancás? Reaccioná 💪'},
+  {ic:'💬',lbl:'Pregunta a la red',t:'Queremos leerte',txt:'¿[tu pregunta]? Contanos en los comentarios 👇'},
+  {ic:'📊',lbl:'Encuesta rápida',t:'Encuesta rápida',txt:'¿[opción A] o [opción B]? Reaccioná ❤️ por la primera o 👍 por la segunda.'},
+  {ic:'📸',lbl:'Antes / después',t:'¡Miren esta transformación!',txt:'[contá la historia y el esfuerzo de tu cliente]. Sumale un 👏'},
+  {ic:'🗓️',lbl:'Recordatorio',t:'Recordatorio',txt:'[evento/clase] es [cuándo]. ¡No falten! Reaccioná ✅ si venís.'},
+  {ic:'🙌',lbl:'Logro de la red',t:'Lo logramos como equipo',txt:'Esta semana logramos [hito de la red]. ¡Gracias por ser parte de esto! ❤️'}
+];
+// Composer VISUAL de la revista: chips de plantilla + campos (título/texto/foto)
+// + una VISTA PREVIA en vivo que se ve igual que el post publicado. Así el owner
+// "coloca todo" y ve al toque cómo queda antes de publicar.
+function _postTpl(btn){
+  var b=document.getElementById('np-t'); if(b)b.value=(btn.getAttribute('data-tpl')||'');
+  var ti=document.getElementById('np-title'); if(ti)ti.value=(btn.getAttribute('data-title')||'');
+  var em=btn.getAttribute('data-emo'); if(em){var pe=document.getElementById('pp-emo');if(pe)pe.textContent=em;_postEmo=em;}
+  var chips=document.querySelectorAll('#np-chips button'); for(var i=0;i<chips.length;i++){var on=chips[i]===btn;chips[i].style.background=on?'var(--bosque)':'#fff';chips[i].style.color=on?'#fff':'var(--pw-carbon)';chips[i].style.borderColor=on?'var(--bosque)':'var(--pw-border)';}
+  _postPrev(); if(b)b.focus();
+}
+var _postEmo='📸';
+function _postPrev(){
+  var ti=((document.getElementById('np-title')||{}).value||'').trim();
+  var tx=((document.getElementById('np-t')||{}).value||'').trim();
+  var url=((document.getElementById('np-f')||{}).value||'').trim();
+  var msg=document.getElementById('pp-msg');
+  if(msg){ var h=''; if(ti)h+='<b>'+_mcEsc(ti)+'</b><br>'; h+=(tx?_mcEsc(tx).replace(/\n/g,'<br>'):(ti?'':'<span style="color:var(--muted)">Tu texto aparecerá acá…</span>')); msg.innerHTML=h; }
+  var img=document.getElementById('pp-img'); var src=_dzData||url;
+  if(img){ if(src){img.src=src;img.style.display='block';} else {img.style.display='none';} }
+}
+function _nuevaPost(){
+  _dzData=null;_dzName=null;_postEmo='📸';
+  var _brandNm=(MC_REAL&&MC_ORG&&MC_ORG.nombre)?MC_ORG.nombre:(_mcBrand().nombre||'Tu red');
+  var _brandIni=_mcIni(_brandNm);
+  var prev='<div style="font-size:10.5px;color:var(--soft);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;font-weight:700">Vista previa</div>'
+    +'<div class="revista" style="grid-template-columns:1fr;margin-bottom:16px"><div class="post" style="margin:0">'
+    +'<div class="ph"><div class="a">'+_mcEsc(_brandIni)+'</div><div><b>'+_mcEsc(_brandNm)+'</b><small>recién · vista previa</small></div></div>'
+    +'<div class="msg" id="pp-msg"><span style="color:var(--muted)">Tu texto aparecerá acá…</span></div>'
+    +'<div class="feat"><div class="img"><span class="emo" id="pp-emo">📸</span><img id="pp-img" alt="" loading="lazy" style="display:none"></div>'
+    +'<div class="react"><button class="rb" type="button" onclick="return false">❤️ <b>0</b></button></div></div></div></div>';
+  var chips='<div style="font-size:11.5px;color:var(--soft);margin-bottom:6px">Elegí una plantilla y cambiá solo lo que está entre [corchetes]:</div>'
+    +'<div id="np-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'+MC_POST_TPL.map(function(p){return '<button type="button" data-tpl="'+_mcEsc(p.txt)+'" data-title="'+_mcEsc(p.t||'')+'" data-emo="'+_mcEsc(p.ic)+'" onclick="_postTpl(this)" style="border:1px solid var(--pw-border);background:#fff;border-radius:100px;padding:5px 11px;font-size:12px;cursor:pointer;color:var(--pw-carbon)">'+p.ic+' '+_mcEsc(p.lbl)+'</button>';}).join('')+'</div>';
+  var fields='<div><span class="lbl">Título (opcional)</span><input id="np-title" class="inp" placeholder="Ej. ¡Nueva clase esta semana!" oninput="_postPrev()"></div>'
+    +'<div style="margin-top:9px"><span class="lbl">Texto</span><textarea id="np-t" class="inp" style="min-height:80px;resize:vertical" placeholder="Escribe tu publicación…" oninput="_postPrev()"></textarea></div>'
+    +'<div style="margin-top:9px"><span class="lbl">Foto (opcional)</span>'
+    +'<div id="np-drop" class="dropz" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_dzDrop(event)" onclick="document.getElementById(\'np-file\').click()"><input type="file" id="np-file" accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="_dzFiles(this.files)"><span id="np-dztext">'+PWI.svg('paperclip',{sm:true})+' Arrastra una foto acá, o toca para elegir</span><br><img id="np-prev" alt="" style="display:none;max-height:120px;border-radius:10px;margin-top:8px"></div>'
+    +'<input id="np-f" class="inp" placeholder="…o pega una URL de foto" oninput="_postPrev()" style="margin-top:8px"></div>';
+  __openModal('Nueva publicación en la revista', prev+chips+fields,
+    'Publicar',function(){
+      var ti=document.getElementById('np-title').value.trim();
+      var tx=document.getElementById('np-t').value.trim();
+      if(!tx&&!ti){__toast('Escribe un título o texto');return;}
+      var f=_dzData||document.getElementById('np-f').value.trim();
+      var body=''; if(ti)body+='<b>'+_mcEsc(ti)+'</b><br>'; body+=_mcEsc(tx).replace(/\n/g,'<br>');
+      if(_dzName&&!_dzData)body+=' 📎 '+_mcEsc(_dzName);
+      // Red real → se guarda en Supabase (comunidad-red) y les llega a coaches y
+      // clientes en su portal. Demo (prospecto) → queda local, nunca en blanco.
+      if(MC_REAL&&MC_ORG&&MC_ORG.id){
+        __mclose();__toast('Publicando…');
+        _hdr({'Content-Type':'application/json'}).then(function(h){
+          return fetch(SB+'/functions/v1/comunidad-red',{method:'POST',headers:h,body:JSON.stringify({action:'publish',body:body,foto:f,emo:_postEmo||'📸',para:'todos'})});
+        }).then(function(r){return r.ok?r.json():null;}).then(function(d){
+          if(d&&d.ok){ __toast('Publicado en la revista ✓'); _mcPostsLoaded=false; _comTab='revista'; renderComunidad(); }
+          else { __toast('No se pudo publicar. Reintenta'); }
+        }).catch(function(){ __toast('Error de conexión. Reintenta'); });
+        return;
+      }
+      DBCOM.posts.unshift({id:'p'+DBCOM.posts.length+'x',time:'recién',txt:body,emo:_postEmo||'📸',foto:f,r:{'❤️':0}});
+      __mclose();__toast('Publicado en la revista ✓');_comTab='revista';renderComunidad();});
+}
+// Carga las novedades REALES de la red (comunidad-red) a DBCOM.posts. En demo no
+// hace nada (se queda la maqueta). Se llama una vez por entrada a la Comunidad.
+var _mcPostsLoaded=false;
+function _mcLoadPosts(cb){
+  if(!(MC_REAL&&MC_ORG&&MC_ORG.id)){ if(cb)cb(); return; }
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    return fetch(SB+'/functions/v1/comunidad-red',{method:'POST',headers:h,body:JSON.stringify({action:'list',org_id:MC_ORG.id})});
+  }).then(function(r){return r.ok?r.json():null;}).then(function(d){
+    if(d&&d.ok&&Array.isArray(d.posts)){
+      DBCOM.posts=d.posts.map(function(p){
+        var txt=(p.titulo?('<b>'+_mcEsc(p.titulo)+'</b><br>'):'')+(p.body||'');
+        var rc=(p.reacts&&typeof p.reacts==='object'&&Object.keys(p.reacts).length)?p.reacts:{'❤️':0};
+        return {id:p.id,time:_mcAgo(p.created_at),txt:txt,emo:p.emo||'📸',foto:p.foto||'',r:rc,real:true};
+      });
+    }
+    if(cb)cb();
+  }).catch(function(){ if(cb)cb(); });
+}
 function _nuevoAviso(){__openModal('Nuevo aviso','<textarea id="na-t" class="inp" style="min-height:70px;resize:vertical" placeholder="Texto del aviso…"></textarea><div><span class="lbl">Para quién</span>'+__sel('na-p',['Clientes','Coaches'])+'</div>','Publicar aviso',function(){var t=document.getElementById('na-t').value.trim();if(!t)return;var para=document.getElementById('na-p').value==='Coaches'?'coaches':'clientes';DBCOM.avisos.push({id:'a'+DBCOM.avisos.length+'x',para:para,txt:t});__mclose();__toast('Aviso publicado para '+para+' ✓');_comTab='avisos';renderComunidad();});}
 function _editAviso(id){var a=null;DBCOM.avisos.forEach(function(x){if(x.id===id)a=x;});if(!a)return;__openModal('Editar aviso','<textarea id="ea-t" class="inp" style="min-height:70px;resize:vertical">'+a.txt+'</textarea>','Guardar',function(){var t=document.getElementById('ea-t').value.trim();if(!t)return;a.txt=t;__mclose();__toast('Aviso actualizado ✓');_fillCom();});}
 function _delAviso(id){DBCOM.avisos=DBCOM.avisos.filter(function(a){return a.id!==id;});__toast('Aviso borrado');_fillCom();}
@@ -2337,7 +2515,7 @@ function _mcAgwFromCitas(){
     // tit/sub van a HTML de texto Y a un onclick — limpiamos comillas y escapamos
     // (nombres reales de clientes = entrada de usuario, anti-XSS).
     var _cl=function(s){return _mcEsc((''+(s==null?'':s)).replace(/["']/g,''));};
-    out.push({dow:dow,h:h,dur:1,coach:c.coach_id||'',tipo:_mcCitaTipo(c.tipo),tit:_cl(c.nombre||'Cliente'),sub:_cl(c.tipo||'Sesión')});
+    out.push({dow:dow,h:h,dur:1,coach:c.coach_id||'',tipo:_mcCitaTipo(c.tipo),tit:_cl(c.nombre||'Cliente'),sub:_cl(c.tipo||'Sesión'),citaId:c.id});
   });
   return out;
 }
@@ -2406,7 +2584,10 @@ function _agLegend(){
 function _agBlk(e){var t=AGT[e.tipo]||AGT.sesion;var top=(e.h-AG_START)*AG_ROWH;var h=e.dur*AG_ROWH-3;
  // Color POR COACH en la red real (cada coach su color); por tipo en demo.
  var col=MC_REAL?_coCol(e.coach):t.c; var bg=MC_REAL?_coBg(col):t.bg;
- return '<div class="agblk" draggable="true" ondragstart="agDragStart(event,\''+e.id+'\')" style="top:'+top+'px;height:'+h+'px;background:'+bg+';border-left-color:'+col+';color:'+col+'" onclick="__toast(\''+e.tit.replace(/'/g,'')+' · '+t.l+'\')" title="Arrastra para reprogramar"><span class="t">'+e.h+':00</span><b>'+e.tit+'</b><small>'+e.sub+'</small></div>';}
+ // En red real, tocar el evento lo EDITA (cambiar hora/tipo o cancelar). En demo, toast.
+ var click=(MC_REAL&&e.citaId)?('_agEditEvent(\''+e.citaId+'\')'):('__toast(\''+e.tit.replace(/'/g,'')+' · '+t.l+'\')');
+ var ttl=(MC_REAL&&e.citaId)?'Tocá para editar o cancelar':'Arrastra para reprogramar';
+ return '<div class="agblk" draggable="true" ondragstart="agDragStart(event,\''+e.id+'\')" style="top:'+top+'px;height:'+h+'px;background:'+bg+';border-left-color:'+col+';color:'+col+'" onclick="'+click+'" title="'+ttl+'"><span class="t">'+e.h+':00</span><b>'+e.tit+'</b><small>'+e.sub+'</small></div>';}
 function _agWeek(days){
  var todayDow=(new Date().getDay()+6)%7;var evs=_agEvs();
  var head='<div class="agwh"></div>'+_DOW.map(function(d,i){return '<div class="agwh'+(i===todayDow?' today':'')+'">'+d+'<b>'+days[i].getDate()+'</b></div>';}).join('');

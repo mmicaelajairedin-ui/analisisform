@@ -2723,6 +2723,10 @@ const RULES = [
       // Al convertir, se le AVISA por email al coach (ahora es multicoach) para que entre.
       if (!/notificarConversion\(/.test(fn))
         return "convertir-multicoach: ya no avisa por email al coach convertido (notificarConversion).";
+      // La marca de la RED arranca sembrada con el perfil que el coach YA tenía
+      // (título/bio/color/foto/logo) → su red se ve como él desde el minuto uno.
+      if (!/const marca:/.test(fn) || !/marca\b/.test(fn.split("organizaciones")[1] || ""))
+        return "convertir-multicoach: la red ya no hereda la marca/perfil del coach (marca sembrada en organizaciones).";
       // El owner también es coach asignable.
       const asg = read("supabase/functions/asignar-cliente/index.ts");
       if (asg && !/rol=in\.\(coach,owner\)/.test(asg))
@@ -4400,6 +4404,49 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: la Comunidad tiene composer VISUAL (plantillas + vista previa en vivo)",
+    bug: "Publicar en la revista era una textarea pelada — el owner no sabía cómo iba a quedar. Ahora es " +
+         "un composer visual: chips de PLANTILLA (título+texto sugeridos, solo cambia [corchetes]), campos " +
+         "título/texto/foto, y una VISTA PREVIA en vivo (pp-msg/pp-img) que se ve igual que el post " +
+         "publicado. Si se cae el preview o las plantillas, vuelve a ser una caja de texto a ciegas.",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+      const m = mc.match(/var MC_POST_TPL=\[([\s\S]*?)\];/);
+      if (!m) return "multicoach.html: se perdió MC_POST_TPL (plantillas de novedades de la Comunidad).";
+      const n = (m[1].match(/\{ic:/g) || []).length;
+      if (n < 8) return "multicoach.html: quedan menos de 8 plantillas de novedades (había 12).";
+      if (!/function _postPrev\(/.test(mc) || !/id="pp-msg"/.test(mc) || !/id="pp-img"/.test(mc)) return "multicoach.html: se cayó la vista previa en vivo del composer de la revista (pp-msg/pp-img/_postPrev).";
+      // Foto comprimida en el navegador: sin esto una foto de celular pesa MB, se
+      // trunca al guardar y queda rota (bug 'no veo las imágenes de comunidad').
+      if (!/function _imgCompress\(/.test(mc) || !/canvas/.test(mc)) return "multicoach.html: se perdió la compresión de la foto del post (_imgCompress) → imágenes rotas.";
+      return null;
+    },
+  },
+  {
+    name: "multicoach: la Comunidad GUARDA de verdad (comunidad-red) y les llega a coaches y clientes",
+    bug: "Las plantillas no servían si el post quedaba solo en el navegador del owner. En una red real, " +
+         "publicar guarda en Supabase (posts_red) via la edge function comunidad-red (owner publica; " +
+         "coach/cliente de esa org leen — el cliente solo audiencia todos/clientes, nunca lo de coaches). " +
+         "Los 3 portales del cliente muestran las Novedades. Si se cae, la revista vuelve a ser local y " +
+         "muda: nadie más ve lo que publica el owner.",
+    check() {
+      const fn = read("supabase/functions/comunidad-red/index.ts");
+      if (fn === null) return "falta la edge function comunidad-red (guardar/leer la revista de la red).";
+      if (!/posts_red/.test(fn) || !/action === "publish"/.test(fn)) return "comunidad-red: ya no guarda en posts_red / no publica.";
+      if (!/solo_owner/.test(fn)) return "comunidad-red: perdió el gate de que solo el OWNER publica.";
+      if (!/para=in\.\(todos,clientes\)/.test(fn)) return "comunidad-red: el cliente ya no está acotado a audiencia todos/clientes (fuga de avisos internos a coaches).";
+      if (read("supabase/migrations/posts_red.sql") === null) return "falta la migración posts_red.sql (tabla de la revista de la red).";
+      const mc = read("multicoach.html");
+      if (mc && (!/comunidad-red/.test(mc) || !/function _mcLoadPosts\(/.test(mc))) return "multicoach.html: la Comunidad ya no publica/carga real (comunidad-red / _mcLoadPosts).";
+      for (const f of ["pathway-fit-cliente.html", "pathway-fin-cliente.html", "cliente.html"]) {
+        const p = read(f);
+        if (p && (!/function _loadNovedades\(/.test(p) || !/comunidad-red/.test(p) || !/novered-slot/.test(p))) return f + ": ya no muestra las Novedades de la red (comunidad-red).";
+      }
+      return null;
+    },
+  },
+  {
     name: "multicoach: 'Nueva sesión' en la red CREA la cita asignando coach (crear-cita-red), no un toast",
     bug: "En una red real, 'Nueva sesión' tenía que dejar AGENDAR un evento y ASIGNARLO a un coach " +
          "(tipo, nombre, día/hora, online/presencial, grupal) — no un toast de maqueta. La RLS de citas " +
@@ -4411,11 +4458,18 @@ const RULES = [
       const mc = read("multicoach.html");
       if (mc) {
         if (!/crear-cita-red/.test(mc)) return "multicoach.html: 'Nueva sesión' en real ya no crea la cita (crear-cita-red).";
-        if (!/MC_CITAS\.push\(cita\)/.test(mc)) return "multicoach.html: la cita nueva ya no se suma a la agenda (MC_CITAS.push).";
+        if (!/MC_CITAS\.push\(/.test(mc)) return "multicoach.html: la cita nueva ya no se suma a la agenda (MC_CITAS.push).";
+        // Repetición semanal: clases fijas (ej. todos los lunes) se agendan en serie.
+        if (!/ns-rep/.test(mc) || !/Promise\.all\(fechas/.test(mc)) return "multicoach.html: se perdió la repetición semanal de la sesión (ns-rep + Promise.all(fechas)).";
+        // Editar/cancelar un evento de la agenda (no solo crear).
+        if (!/_agEditEvent\(/.test(mc) || !/editar-cita-red/.test(mc)) return "multicoach.html: no se puede editar/cancelar un evento de la agenda (editar-cita-red).";
       }
       const fn = read("supabase/functions/crear-cita-red/index.ts");
       if (fn === null) return "falta la edge function crear-cita-red (agendar asignando coach en la red).";
       if (!/coachInOrg\(/.test(fn) || !/rest\/v1\/citas/.test(fn)) return "crear-cita-red: ya no valida el coach de la org o no inserta en citas.";
+      const ed = read("supabase/functions/editar-cita-red/index.ts");
+      if (ed === null) return "falta la edge function editar-cita-red (editar/cancelar cita de la red).";
+      if (!/coachInOrg\(/.test(ed) || !/action.*cancel|cancel.*action/.test(ed)) return "editar-cita-red: ya no verifica el coach de la org o no soporta cancelar.";
       return null;
     },
   },
