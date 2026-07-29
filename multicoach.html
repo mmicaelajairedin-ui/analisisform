@@ -3106,7 +3106,40 @@ function _mcAgwFromCitas(){
   });
   return out;
 }
-function mcSetAgenda(){var a=MCAG[MC_N]||MCAG.fitness;AGT=a.agt;AGW=MC_REAL?_mcAgwFromCitas():a.agw;AGW.forEach(function(e,i){if(!e.dur)e.dur=1;e.id='e'+i;});}
+// ── Google Calendar del dueño (copiado del panel: usa la edge function calendar,
+// que lee su gcal_ical_url ya configurado — sin OAuth nuevo). Solo lectura. ──
+var MC_GCAL=[], _mcGcalDone=false, MC_GCAL_UNCONF=false;
+function _mcGcalLoad(cb){
+  if(!(MC_REAL&&MC_OWNER&&MC_OWNER.email)){ if(cb)cb(); return; }
+  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(MC_OWNER.email),{headers:{apikey:KEY,Authorization:'Bearer '+KEY}})
+    .then(function(r){return r.ok?r.json():null;}).then(function(d){
+      MC_GCAL=(d&&Object.prototype.toString.call(d.events)==='[object Array]')?d.events:[];
+      MC_GCAL_UNCONF=!!(d&&d.unconfigured);
+      if(cb)cb();
+    }).catch(function(){ if(cb)cb(); });
+}
+// Mapea los eventos de Google de la SEMANA visible al shape de la agenda (dow/h/dur).
+function _mcGcalToAgw(){
+  if(!MC_GCAL||!MC_GCAL.length) return [];
+  var wk=_weekDates(); if(!wk||!wk.length) return [];
+  var lo=new Date(wk[0].getFullYear(),wk[0].getMonth(),wk[0].getDate());
+  var hi=new Date(wk[6].getFullYear(),wk[6].getMonth(),wk[6].getDate()+1);
+  var out=[];
+  MC_GCAL.forEach(function(ev){
+    var d=new Date(ev.start||ev.dtstart); if(isNaN(d.getTime())) return;
+    if(d<lo||d>=hi) return;
+    var dow=(d.getDay()+6)%7; var h=d.getHours(); if(h<AG_START)h=AG_START; if(h>AG_END-1)h=AG_END-1;
+    var dur=1; try{ if(ev.end){ var e2=new Date(ev.end); var hrs=Math.round((e2.getTime()-d.getTime())/3600000); if(hrs>=1&&hrs<=6)dur=hrs; } }catch(_){}
+    out.push({dow:dow,h:h,dur:dur,coach:(MC_OWNER&&MC_OWNER.id)||'',tipo:'google',tit:_mcEsc((''+(ev.title||ev.summary||'Evento')).slice(0,60)),sub:'Google Calendar',gcal:true});
+  });
+  return out;
+}
+function mcSetAgenda(){
+  var a=MCAG[MC_N]||MCAG.fitness;AGT=a.agt;AGW=MC_REAL?_mcAgwFromCitas():a.agw;
+  // Sumar los eventos de Google (solo lectura) + su color en la leyenda.
+  if(MC_REAL&&MC_GCAL&&MC_GCAL.length){ if(AGT&&!AGT.google)AGT.google={c:'#9AA0A6',l:'Google'}; AGW=AGW.concat(_mcGcalToAgw()); }
+  AGW.forEach(function(e,i){if(!e.dur)e.dur=1;e.id='e'+i;});
+}
 mcSetAgenda();
 var _agCoach='todos',_agView='semana',_agSelDow=null,_dragEv=null,_agWeekOff=0;
 // Navegación de semanas (‹/›). En real reconstruye AGW desde las citas de ESA
@@ -3127,6 +3160,8 @@ var _MESL=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','se
 function _agEvs(){return AGW.filter(function(e){return _agCoach==='todos'||e.coach===_agCoach;});}
 function _weekDates(){var t=new Date();var mon=new Date(t.getFullYear(),t.getMonth(),t.getDate()-((t.getDay()+6)%7)+(_agWeekOff*7));var a=[];for(var i=0;i<7;i++){var d=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+i);a.push(d);}return a;}
 function renderAgenda(){
+ // Traer el Google Calendar del dueño la 1ª vez (después ya está en MC_GCAL).
+ if(MC_REAL&&!_mcGcalDone){ _mcGcalDone=true; _mcGcalLoad(function(){ if(MC_GCAL&&MC_GCAL.length){ mcSetAgenda(); if(_sec==='agenda') renderAgenda(); } }); }
  var v=document.getElementById('vscroll');
  var days=_weekDates();var todayDow=(new Date().getDay()+6)%7;
  if(_agSelDow===null)_agSelDow=todayDow;
