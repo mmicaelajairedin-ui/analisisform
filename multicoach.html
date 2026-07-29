@@ -1565,6 +1565,7 @@ function _renderCoachFicha(){
    +(c.esOwner?'':'<button class="cp-btn cp-btn-ghost" onclick="_goCoachTab(\'mensajes\')"><span class="cp-emo">'+PWI.svg('chat',{sm:true})+'</span> Enviar mensaje</button>')
    +'<button class="cp-btn cp-btn-ghost" onclick="__toast(\'Abriendo WhatsApp…\')">'+PWI.svg('wa',{sm:true})+' WhatsApp</button>'
    +(c.esOwner?'<div style="font-size:11.5px;color:var(--soft);line-height:1.4">Eres el dueño de la red. Puedes atender clientes como un coach más; para cambiar quién es el dueño, se hace desde el panel admin.</div>':(''
+   +'<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:2px"><span style="color:var(--soft)">Tipo</span><select class="inp" style="height:30px;flex:1;font-size:12.5px" onchange="_setCoachRol(\''+c.id+'\',this.value)"><option value="coach"'+(c.tipo!=='colaborador'?' selected':'')+'>Coach (da clases)</option><option value="colaborador"'+(c.tipo==='colaborador'?' selected':'')+'>Colaborador</option></select></div>'
    +'<button class="cp-btn cp-btn-ghost" onclick="toggleCoach(\''+c.id+'\')">'+(c.est==='activo'?'Suspender '+DET().coachSing.toLowerCase():'Reactivar '+DET().coachSing.toLowerCase())+'</button>'
    +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" onclick="quitarCoach(\''+c.id+'\')">'+PWI.svg('trash',{sm:true})+' Quitar de la red</button>'))+'</div>'
   +'</aside>';
@@ -1676,6 +1677,20 @@ function _coachAction(id,modo,cb){
   if(!res.ok||!res.d.ok){ __toast(res.d.error==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo. Reintenta'); cb&&cb(false); return; }
   _localApply(); cb&&cb(true,res.d);
  }).catch(function(){ __toast('Error de conexión. Reintenta'); cb&&cb(false); });
+}
+// Cambiar el tipo de un miembro (Coach ↔ Colaborador). En real persiste vía
+// editar-coach-red (owner-gated); en demo actualiza local.
+function _setCoachRol(id, rol){
+ var c=_coach(id); if(!c) return; rol=(rol==='colaborador')?'colaborador':'coach';
+ if(c.tipo===rol) return;
+ if(!MC_REAL){ c.tipo=rol; _renderCoachFicha(); __toast(rol==='colaborador'?'Ahora es colaborador ✓':'Ahora es coach ✓'); return; }
+ var prev=c.tipo; c.tipo=rol; // optimista
+ _hdr({'Content-Type':'application/json'}).then(function(h){
+  return fetch(SB+'/functions/v1/editar-coach-red',{method:'POST',headers:h,body:JSON.stringify({coach_id:id,member_role:rol})});
+ }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
+  if(!res.ok||!res.d.ok){ c.tipo=prev; _renderCoachFicha(); __toast(res.d.error==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo cambiar. Reintenta'); return; }
+  _renderCoachFicha(); if(_sec==='coaches')renderCoaches(); __toast(rol==='colaborador'?'Ahora es colaborador ✓':'Ahora es coach ✓');
+ }).catch(function(){ c.tipo=prev; _renderCoachFicha(); __toast('Error de conexión. Reintenta'); });
 }
 function toggleCoach(id){
  var c=_coach(id);if(!c)return;

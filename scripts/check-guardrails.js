@@ -4332,8 +4332,12 @@ const RULES = [
         if (!/function _mcTipoBadge\(/.test(mc)) return "multicoach.html: falta la etiqueta de Colaborador (_mcTipoBadge).";
         if (!/cfg\.member_role==='colaborador'/.test(mc)) return "multicoach.html: mcMapCoach ya no lee el tipo de miembro (member_role).";
       }
+      if (mc && !/function _setCoachRol\(/.test(mc)) return "multicoach.html: falta _setCoachRol (cambiar Coach↔Colaborador de un miembro existente).";
       const fn = read("supabase/functions/agregar-coach-red/index.ts");
       if (fn && !/member_role/.test(fn)) return "agregar-coach-red: ya no guarda el tipo de miembro (member_role).";
+      const ed = read("supabase/functions/editar-coach-red/index.ts");
+      if (ed === null) return "falta la edge function editar-coach-red (cambiar el rol de un miembro).";
+      if (!/member_role/.test(ed) || !/rol=eq\.owner/.test(ed)) return "editar-coach-red: ya no gatea al owner o no persiste member_role.";
       return null;
     },
   },
