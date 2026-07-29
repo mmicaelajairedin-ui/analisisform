@@ -1979,14 +1979,31 @@ var _MC_GRUPOS_DEMO=[{id:'g-nutri',nombre:'Nutricionistas',general:false,miembro
 var _MC_MSGS_DEMO={ 'g-nutri':[{autor_nombre:'Ana',autor_rol:'coach',body:'¿Alguien tiene plan de volumen limpio para compartir?',created_at:'2026-07-21T11:50:00Z'}] };
 
 // Burbuja (mismo estilo del panel: cp-bub me/them).
+// ── Helpers de chat PORTADOS del panel (reusados, no recreados): avatar, links
+//    clickeables, sonido, hora, preview de links. Usan el escape _mcEsc. ──
+function _mcThumb(url,px){ url=""+(url||""); if(!url||/^data:/i.test(url)) return url; if(!/ucarecd(n)?\.(net|com)/i.test(url)) return url; var m=url.match(/^(https?:\/\/[^\/]+\/[0-9a-fA-F-]{36}\/)(.*)$/); if(!m) return url; var base=m[1],rest=m[2]||""; var ops=(rest.indexOf("-/")>=0)?rest.replace(/[^\/]*$/,""):""; var dpr=1; try{ if(window.devicePixelRatio>1) dpr=2; }catch(e){} var s=Math.max(1,Math.round((px||40)*dpr)); var q=dpr>1?"smart_retina":"better"; return base+ops+"-/scale_crop/"+s+"x"+s+"/center/-/quality/"+q+"/-/format/auto/"; }
+function _mcAv(url,name){ if(/^(https?:|data:)/i.test(""+(url||""))) return "<img src=\""+_mcEsc(_mcThumb(url,28))+"\" style=\"width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0\" alt=\"\">"; var ini=(""+(name||"")).trim().split(/\s+/).map(function(w){return w.charAt(0)||"";}).slice(0,2).join("").toUpperCase()||"?"; return "<div style=\"width:28px;height:28px;border-radius:50%;background:var(--pw-bosque,#2D6A4F);color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700\">"+_mcEsc(ini)+"</div>"; }
+function _mcLink(s){ return _mcEsc(s==null?"":s).replace(/(https?:\/\/[^\s<]+)/g,function(u){ return "<a href='"+u+"' target='_blank' rel='noopener' style='color:inherit;text-decoration:underline;word-break:break-all'>"+u+"</a>"; }); }
+var _mcAC=null;
+function _mcDing(){ try{ var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return; _mcAC=_mcAC||new AC(); var ctx=_mcAC; if(ctx.state==="suspended"){ try{ctx.resume();}catch(e){} } var t=ctx.currentTime; [784,1047].forEach(function(f,i){ var o=ctx.createOscillator(),g=ctx.createGain(); o.type="sine"; o.frequency.value=f; var st=t+i*0.11; g.gain.setValueAtTime(0.0001,st); g.gain.exponentialRampToValueAtTime(0.06,st+0.02); g.gain.exponentialRampToValueAtTime(0.0001,st+0.22); o.connect(g); g.connect(ctx.destination); o.start(st); o.stop(st+0.24); }); }catch(e){} }
+function _mcFmtT(iso){ try{ return new Date(iso).toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
+function _mcOwnerFoto(){ try{ return (MC_OWNER&&(MC_OWNER.foto_url||(MC_OWNER.configuracion&&MC_OWNER.configuracion.foto)))||''; }catch(e){ return ''; } }
+var _mcLPReady=false;
+function _mcLPInit(){ if(_mcLPReady) return; try{ if(window.PwLinkPreview){ PwLinkPreview.init({previewUrl:SB+'/functions/v1/link-preview',previewKey:KEY,bubbleSel:'.mc-pmsg'}); _mcLPReady=true; } }catch(e){} }
+function _mcLPScan(){ try{ if(window.PwLinkPreview) PwLinkPreview.scan(); }catch(e){} }
 function _canalBubble(m){
  var mine=MC_REAL?(MC_OWNER&&String(m.autor_id)===String(MC_OWNER.id)):(m.autor_rol==='owner');
  var nm=(m.autor_nombre||'').split(' ')[0]||'Alguien';
  var who=mine?'Tú':(nm+(m.autor_rol==='owner'?' · Dueño':''));
- var t=''; try{ t=new Date(m.created_at).toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }catch(e){}
- return '<div style="display:flex;flex-direction:column;align-items:'+(mine?'flex-end':'flex-start')+';gap:3px;margin-bottom:10px">'
+ var t=_mcFmtT(m.created_at);
+ // Avatar: dueño → su foto; coach → su foto real si está en DB, si no iniciales.
+ var av;
+ if(m.autor_rol==='owner'){ av=_mcAv(_mcOwnerFoto(), m.autor_nombre||'Dueño'); }
+ else { var co=(typeof _coach==='function')?_coach(m.autor_id):null; av=_mcAv(co&&co.foto, m.autor_nombre); }
+ var col='<div style="display:flex;flex-direction:column;align-items:'+(mine?'flex-end':'flex-start')+';gap:3px;max-width:80%">'
   +'<div style="font-size:10.5px;color:var(--pw-text-soft)">'+_mcEsc(who)+' · '+_mcEsc(t)+'</div>'
-  +'<div class="cp-bub '+(mine?'me':'them')+'" style="max-width:82%">'+_mcEsc(m.body)+'</div></div>';
+  +'<div class="mc-pmsg cp-bub '+(mine?'me':'them')+'" style="max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere">'+_mcLink(m.body)+'</div></div>';
+ return '<div style="display:flex;align-items:flex-end;gap:7px;justify-content:'+(mine?'flex-end':'flex-start')+';margin-bottom:10px">'+(mine?(col+av):(av+col))+'</div>';
 }
 // ── No-leídos: última vez que vi cada canal (localStorage) vs. último mensaje ──
 function _mcSeenKey(c){ var k=(c&&c.id)?c.id:'general'; var o=(MC_ORG&&MC_ORG.id)||'demo'; return 'mc_canal_seen_'+o+'_'+k; }
@@ -2064,6 +2081,7 @@ function _mcRenderConv(){
   +'<button class="cp-btn cp-btn-primary" onclick="_mcSend()" aria-label="Enviar"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></svg></button></div></div>';
  var m=document.getElementById('mc-conv-msgs'); if(m) m.scrollTop=m.scrollHeight;
  var inp=document.getElementById('mc-conv-input'); if(inp) inp.focus();
+ _mcLPInit(); _mcLPScan();   // preview de links (og:image) en las burbujas
 }
 function _mcSend(){
  var i=document.getElementById('mc-conv-input'); if(!i)return; var t=(i.value||'').trim(); if(!t)return; var c=_mcChat.cur; if(!c)return;
@@ -2079,7 +2097,17 @@ function _mcSend(){
 function _mcStartPoll(){ _mcStopPoll(); if(!MC_REAL)return; _mcChat.poll=setInterval(function(){
   if(!_mcChat.open||_mcChat.view!=='conv'||!_mcChat.cur){ _mcStopPoll(); return; }
   var before=(_mcChat.msgs||[]).length;
-  _mcLoadThread(function(){ if(_mcChat.view==='conv'){ if((_mcChat.msgs||[]).length!==before) _mcRenderConv(); _mcMarkSeen(_mcChat.cur); } });
+  _mcLoadThread(function(){ if(_mcChat.view==='conv'){
+    var now=(_mcChat.msgs||[]);
+    if(now.length!==before){
+      // Sonó llegó algo nuevo: suena solo si el último NO es mío (no me auto-aviso).
+      var last=now[now.length-1];
+      var lastMine=last&&MC_OWNER&&String(last.autor_id)===String(MC_OWNER.id);
+      if(now.length>before && last && !lastMine){ try{ _mcDing(); }catch(e){} }
+      _mcRenderConv();
+    }
+    _mcMarkSeen(_mcChat.cur);
+  } });
  },5000); }
 function _mcStopPoll(){ if(_mcChat.poll){ clearInterval(_mcChat.poll); _mcChat.poll=null; } }
 

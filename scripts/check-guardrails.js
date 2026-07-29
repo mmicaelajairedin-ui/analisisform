@@ -1756,6 +1756,32 @@ const RULES = [
     },
   },
   {
+    name: "multicoach: el chat del equipo tiene avatar, links, sonido y preview (features del panel)",
+    bug: "El chat del equipo de multicoach (canal-red, drawer con lista + conversación) " +
+         "renderizaba burbujas de solo texto. Se portaron features del panel REUSANDO " +
+         "helpers: avatar en burbuja (_mcAv), links clickeables (_mcLink), sonido al " +
+         "llegar un mensaje del otro lado (_mcDing en _mcStartPoll) y preview de links " +
+         "og:image (PwLinkPreview, ya cargado por pw-recursos.js, clase .mc-pmsg). " +
+         "No recrear: adaptar sobre _canalBubble/_mcRenderConv.",
+    check() {
+      const s = read("multicoach.html");
+      if (!s) return null;
+      const need = ["_mcAv", "_mcLink", "_mcDing", "_mcLPInit"];
+      const miss = need.filter((f) => !new RegExp("function\\s+" + f + "\\b").test(s));
+      if (miss.length) return "multicoach.html: faltan helpers de chat portados: " + miss.join(", ") + ".";
+      // La burbuja del canal usa avatar + links + la clase para el preview.
+      const i = s.indexOf("function _canalBubble");
+      const bub = i >= 0 ? s.slice(i, i + 1300) : "";
+      if (!/_mcAv\(/.test(bub) || !/_mcLink\(/.test(bub) || !/class="mc-pmsg/.test(bub))
+        return "multicoach.html: _canalBubble perdió el avatar (_mcAv), los links (_mcLink) o la clase mc-pmsg (preview).";
+      // El polling suena al llegar algo nuevo del otro lado.
+      const p = s.indexOf("function _mcStartPoll");
+      const poll = p >= 0 ? s.slice(p, p + 700) : "";
+      if (!/_mcDing\(\)/.test(poll)) return "multicoach.html: _mcStartPoll ya no suena (_mcDing) al llegar un mensaje nuevo.";
+      return null;
+    },
+  },
+  {
     name: "aislamiento: la lista de clientes NO incluye huérfanos (ni para el admin)",
     bug: "El admin cargaba la lista de clientes con 'coach_id.eq.él O coach_id IS " +
          "NULL' → un cliente huérfano (sin coach) de OTRO nicho (ej. fitness) se " +
