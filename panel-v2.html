@@ -3645,7 +3645,7 @@ function _agRenderDay(key,compact){
   // Unificar eventos del día (Google + citas del link).
   var items=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); var o=_agEventOther(e); items.push({ms:+e.start, evid:e.id||"", title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||""+PWI.svg('calendar',{sm:true})+"", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:"", email:o.email||"", who2:o.name||"", foto:_persFoto(o.email,o.name)}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||""+PWI.svg('calendar',{sm:true})+"", tipo:(typ&&typ.label)||r.tipo||"", link:_agSalaUrl(r), durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_persFoto(r.email,r.nombre)}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||""+PWI.svg('calendar',{sm:true})+"", tipo:(typ&&typ.label)||r.tipo||"", link:_agSalaUrl(r), durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_persFoto(r.email,r.nombre), grupal:r.grupal||false}); } });
   items=_agMergeDup(items);
   var now=Date.now();
   // Fila limpia estilo "Tu agenda de hoy": hora · ícono · nombre + badge de tipo · duración/Meet.
@@ -3663,6 +3663,7 @@ function _agRenderDay(key,compact){
     else if(it.link) right="<a href='"+esc(it.link)+"' target='_blank' rel='noopener' aria-label='Unirse a la sesión' title='Unirse' style='width:28px;height:28px;border-radius:8px;background:var(--pw-bosque);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none'>"+_cIco('video',14)+"</a>";
     else if(it.ms>now && it.ms-now<=60*60000) right="<span style='font-size:11px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:4px 10px;border-radius:100px;flex-shrink:0;white-space:nowrap'>En "+Math.max(1,Math.round((it.ms-now)/60000))+" min</span>";
     var badge=it.tipo?("<span style='font-size:10.5px;font-weight:600;color:"+it.col+";background:"+it.col+"22;padding:2px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(it.tipo)+"</span>"):"";
+    var grupalBadge=it.grupal?("<span style='font-size:10.5px;font-weight:600;color:#2E7587;background:#E1EDF1;padding:2px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0;margin-left:4px'>👥 Grupal</span>"):"";
     var meta=[]; if(it.durMin) meta.push(it.durMin+" min"); if(it.link) meta.push("Videollamada"); if(it.who) meta.push(it.who);
     // El bloque central (foto + nombre) abre el DETALLE de la reunión. Los botones
     // de la derecha (unirse / asistencia) siguen con su propia acción. Sirve tanto
@@ -3674,7 +3675,7 @@ function _agRenderDay(key,compact){
       "<div"+_clk+" title='"+(_detId?"Ver detalle de la reunión":"")+"'>"+
         "<span style='width:34px;height:34px;border-radius:50%;background:"+it.col+"1f;display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0'>"+(it.foto?"<img src='"+esc(it.foto)+"' alt='' style='width:100%;height:100%;border-radius:50%;object-fit:cover'>":it.ico)+"</span>"+
         "<div style='flex:1;min-width:0'>"+
-          "<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(it.title)+"</span>"+badge+(it.origen?_origenChip(it.origen):"")+"</div>"+
+          "<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap'><span style='font-weight:600;font-size:13.5px;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'>"+esc(it.title)+"</span>"+badge+grupalBadge+(it.origen?_origenChip(it.origen):"")+"</div>"+
           (meta.length?"<div style='font-size:11.5px;color:var(--pw-text-soft);margin-top:1px'>"+esc(meta.join(" · "))+"</div>":"")+
         "</div>"+
       "</div>"+
@@ -4831,6 +4832,21 @@ function _calLoad(){
     }).catch(function(){ _CAL_TEAM=[]; _calFail(); });
     return;
   }
+
+  // Network coach: carga PERSONAL citas + GROUP events de la red
+  if(RME.org_id){
+    var personal=_sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+sel);
+    var grupal=_sb("citas?org_id=eq."+encodeURIComponent(RME.org_id)+"&grupal=eq.true&inicio=gte."+encodeURIComponent(from)+sel);
+    Promise.all([personal,grupal]).then(function(results){
+      var p=(Object.prototype.toString.call(results[0])==="[object Array]")?results[0]:[];
+      var g=(Object.prototype.toString.call(results[1])==="[object Array]")?results[1]:[];
+      _CAL_DATA=(Object.prototype.toString.call(p)==="[object Array]" && Object.prototype.toString.call(g)==="[object Array]")?p.concat(g):[];
+      _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCal();
+    }).catch(_calFail);
+    return;
+  }
+
+  // Regular coach (no network): solo sus propias citas
   _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+sel)
     .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCal(); })
     .catch(_calFail);
