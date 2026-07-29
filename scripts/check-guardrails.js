@@ -2720,6 +2720,9 @@ const RULES = [
         return "convertir-multicoach: debe crear la org y promover a rol='owner'.";
       if (!/candidatos\?coach_id=eq\./.test(fn) || !/org_id:\s*orgId/.test(fn))
         return "convertir-multicoach: debe pasar los clientes del coach a la nueva org.";
+      // Al convertir, se le AVISA por email al coach (ahora es multicoach) para que entre.
+      if (!/notificarConversion\(/.test(fn))
+        return "convertir-multicoach: ya no avisa por email al coach convertido (notificarConversion).";
       // El owner también es coach asignable.
       const asg = read("supabase/functions/asignar-cliente/index.ts");
       if (asg && !/rol=in\.\(coach,owner\)/.test(asg))

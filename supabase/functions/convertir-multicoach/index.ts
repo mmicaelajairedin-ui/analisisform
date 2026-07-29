@@ -131,5 +131,29 @@ Deno.serve(async (req: Request) => {
     if (r.ok) { const rows = await r.json(); movidos = Array.isArray(rows) ? rows.length : 0; }
   } catch { /* la red ya quedó creada; los clientes se pueden reasignar luego */ }
 
+  // 4) Avisar al coach que ahora es MULTICOACH (email best-effort, no bloquea).
+  try { await notificarConversion(coach.email, coach.nombre || "", nombreRed); } catch { /* ignore */ }
+
   return json({ ok: true, org_id: orgId, plan, movidos });
 });
+
+// Email de bienvenida a multicoach: le avisa al coach que ahora es dueño de su red
+// y lo manda a entrar (el login lo rutea solo a multicoach.html por su rol='owner').
+async function notificarConversion(to: string, nombre: string, red: string): Promise<boolean> {
+  if (!to) return false;
+  const fn = (nombre || "").split(" ")[0] || "";
+  const redTxt = red || "tu red";
+  const html =
+    "<p style='font-size:15px'>Hola " + fn + ",</p>" +
+    "<p style='font-size:15px;line-height:1.6'>¡Novedad grande! Ahora sos <b>multicoach</b> en Pathway: <b>" + redTxt + "</b> es tu red y vos sos el dueño. Podés sumar coaches y colaboradores, repartir tus clientes y gestionar todo desde un solo panel.</p>" +
+    "<p style='margin:22px 0'><a href='https://pathwaycareercoach.com/login.html' style='background:#1F5740;color:#fff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a mi red →</a></p>" +
+    "<p style='font-size:14px;line-height:1.7;color:#42504A'><b>Tus primeros pasos:</b><br>1️⃣ Entrá con tu mismo email y contraseña.<br>2️⃣ Sumá a tu primer coach o colaborador.<br>3️⃣ Repartí tus clientes entre tu equipo.</p>" +
+    "<p style='font-size:13px;color:#777'>Tus clientes actuales ya están en tu red, asignados a vos. Cualquier duda, respondé este correo.</p>";
+  try {
+    const r = await fetch(`${SB_URL}/functions/v1/send-email`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, to_name: nombre || "", subject: "Ahora sos multicoach en Pathway 🎉", html, reply_to: "hi@pathwaycareercoach.com", signature: "pathway" }),
+    });
+    return r.ok;
+  } catch { return false; }
+}
