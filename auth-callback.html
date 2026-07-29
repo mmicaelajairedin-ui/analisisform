@@ -178,12 +178,16 @@ async function handleCallback(){
   var SJWT = session.access_token || KEY; // JWT del usuario: lecturas/updates a candidatos pasan RLS
   var email = (user.email || '').toLowerCase();
   if(!email){
-    return showError('Google no compartió tu email. Verifica los permisos otorgados.');
+    return showError('No se compartió tu email al iniciar sesión. Verifica los permisos otorgados e intenta de nuevo.');
   }
 
   var meta = user.user_metadata || {};
   var name = meta.full_name || meta.name || meta.given_name || email.split('@')[0];
   var photoUrl = meta.avatar_url || meta.picture || null;
+  // Método real con el que entró (google / apple / email). Sirve para etiquetar
+  // bien la cuenta; la IDENTIDAD igual es el email (se busca por email siempre).
+  var provider = (user.app_metadata && user.app_metadata.provider) ||
+    (user.identities && user.identities[0] && user.identities[0].provider) || 'google';
 
   // Candidato ("Busco trabajo"): NO crear cuenta en usuarios. Solo registrar
   // el lead y mandarlo al directorio curado. Rama aislada: solo corre si
@@ -255,7 +259,7 @@ async function handleCallback(){
           method: 'POST',
           headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
           body: JSON.stringify({ email: email, password_hash: null, rol: 'cliente', nombre: name, activo: true, auth_id: user.id,
-            configuracion: { auth_provider: 'google', coach_type: (candArr[0].nicho || 'carrera'), from_google: true, last_login: new Date().toISOString() } })
+            configuracion: { auth_provider: provider, coach_type: (candArr[0].nicho || 'carrera'), from_google: (provider==='google'), last_login: new Date().toISOString() } })
         });
         if(cliRes.ok){ var _cc = await cliRes.json(); existingUser = Array.isArray(_cc) ? _cc[0] : _cc; }
       }
@@ -269,7 +273,7 @@ async function handleCallback(){
     // Usuario existente — actualizar nombre/foto si cambió
     usuario = existingUser;
     var cfg = usuario.configuracion || {};
-    if(cfg.auth_provider !== 'google'){ cfg.auth_provider = 'google'; }
+    if(cfg.auth_provider !== provider){ cfg.auth_provider = provider; }
     // El panel lee la foto del coach desde configuracion.foto_url (no foto_perfil).
     // Ponemos/REFRESCAMOS la de Google si el coach no tiene foto, O si la que
     // tiene es una URL de Google (esas vencen/rotan, hay que refrescarlas en cada
@@ -297,10 +301,10 @@ async function handleCallback(){
       var _ct='carrera'; try{ _ct=localStorage.getItem('pw_signup_coach_type')||'carrera'; localStorage.removeItem('pw_signup_coach_type'); }catch(e){}
       var newCfg = {
         coach_type: _ct,
-        auth_provider: 'google',
+        auth_provider: provider,
         foto_url: photoUrl,
         last_login: new Date().toISOString(),
-        from_google: true,
+        from_google: (provider==='google'),
         from_popup: refIsPopup,
         plan: 'basic',
         estado_sub: 'prueba',
