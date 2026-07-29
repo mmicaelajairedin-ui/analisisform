@@ -6389,7 +6389,7 @@ function cfgProfile(){
         "<span class='cp-form-hint'>Tu link público: <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code> · solo minúsculas, números y guiones</span></div>"+
       "<div style='background:linear-gradient(135deg,#F3EEDF,#EFE9DD);border:1px solid #E6DDC4;border-radius:14px;padding:16px'>"+
         "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'><span style='font-size:18px'>✨</span><b style='font-size:14px;color:var(--pw-carbon)'>Generá tu perfil con IA</b></div>"+
-        "<div style='font-size:12.5px;color:var(--pw-text-soft);line-height:1.5;margin-bottom:10px'>Contanos en 1-2 líneas a quién ayudás y con qué resultados. La IA te escribe la <strong>frase corta</strong>, tu <strong>«Sobre mí»</strong>, tu <strong>enfoque</strong> y sugiere tus <strong>especialidades</strong>. Después lo revisás y editás abajo antes de guardar.</div>"+
+        "<div style='font-size:12.5px;color:var(--pw-text-soft);line-height:1.5;margin-bottom:10px'>Contanos en 1-2 líneas a quién ayudás y con qué resultados. Al apretar <strong>«Guardar cambios»</strong> la IA <strong>autocompleta todo solo</strong>: título, frase corta, «Sobre mí», enfoque y especialidades. <em>(O apretá «Generar con IA» acá abajo para verlo antes de guardar.)</em></div>"+
         "<textarea id='cfp-ia-ayuda' class='cp-form-textarea' style='min-height:70px' placeholder='Ej: Ayudo a personas a bajar de peso y ganar músculo con entrenamiento personalizado y seguimiento nutricional. Resultados típicos: -8 kg en 3 meses.'></textarea>"+
         "<div id='cfp-ia-msg' style='font-size:12px;margin-top:6px;min-height:14px;color:var(--pw-text-soft)'></div>"+
         "<div style='display:flex;justify-content:flex-end;margin-top:6px'><button class='cp-btn cp-btn-primary' data-act='cfg-ia-gen' style='height:36px'>✨ Generar con IA</button></div>"+
@@ -10375,6 +10375,7 @@ document.addEventListener("click", function(ev){
         var j=res.j||{};
         if(!res.ok){ if(_iaMsg){ _iaMsg.style.color="var(--pw-danger)"; _iaMsg.textContent=(j.detail||j.error||"No se pudo generar. Reintentá."); } return; }
         var setV=function(id,val){ var e=document.getElementById(id); if(e && val!=null && (""+val).trim()) e.value=val; };
+        var _tEl=document.getElementById("cfp-titulo"); if(_tEl && !(""+_tEl.value).trim() && j.titulo) _tEl.value=j.titulo;  // título solo si está vacío
         setV("cfp-tagline", j.tagline); setV("cfp-bio", j.bio);
         if(Array.isArray(j.enfoque)&&j.enfoque.length) setV("cfp-enfoque", j.enfoque.join("\n"));
         if(Array.isArray(j.especialidades)&&j.especialidades.length) setV("cfp-especialidades", j.especialidades.join(", "));
@@ -10405,12 +10406,37 @@ document.addEventListener("click", function(ev){
       try{ if(window.pwEmit && nom && (bioP||titP)) pwEmit("ProfileCompleted",{dominio:"Activation",entidad_tipo:"coach",entidad_id:(RME&&RME.id)||null,payload:{tiene_foto:!!(cfgPatch.foto_url||(COACH&&COACH.photo))}}); }catch(_e){}
       window._cfpFoto=null;
     };
-    if(REAL && sl && RME && RME.id){
-      _sb("usuarios?slug=eq."+encodeURIComponent(sl)+"&id=neq."+encodeURIComponent(RME.id)+"&select=id&limit=1").then(function(rows){
-        if(rows&&rows.length){ alert("El slug «"+sl+"» ya está tomado por otro coach. Elige otro."); var si2=document.getElementById("cfp-slug"); if(si2)si2.focus(); return; }
-        doSave();
-      });
-    } else { doSave(); }
+    var _proceed=function(){
+      if(REAL && sl && RME && RME.id){
+        _sb("usuarios?slug=eq."+encodeURIComponent(sl)+"&id=neq."+encodeURIComponent(RME.id)+"&select=id&limit=1").then(function(rows){
+          if(rows&&rows.length){ alert("El slug «"+sl+"» ya está tomado por otro coach. Elige otro."); var si2=document.getElementById("cfp-slug"); if(si2)si2.focus(); return; }
+          doSave();
+        });
+      } else { doSave(); }
+    };
+    // AUTO-IA al guardar: si el coach escribió el cuadro "Generá con IA" y todavía
+    // NO tiene frase corta ni bio, la generamos y AUTOCOMPLETAMOS antes de guardar
+    // (un solo paso). Si ya tiene copy cargado, no se toca. Si la IA falla, guarda
+    // lo que haya (nunca bloquea el guardado).
+    var _ayudaIA=_val("cfp-ia-ayuda").trim();
+    if(REAL && _ayudaIA && !tagP && !bioP){
+      toast("✨ Generando tu perfil con IA…");
+      fetch(SB+"/functions/v1/generar-perfil-coach",{method:"POST",headers:{"Content-Type":"application/json",apikey:KEY,Authorization:"Bearer "+KEY},body:JSON.stringify({ nombre:nom, profesion:titP, ayuda:_ayudaIA, pais:cfgPatch.pais, especialidades:espP })})
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          if(j){
+            if(j.titulo && !titP) titP=(""+j.titulo).trim();   // solo si el coach no puso título propio
+            if(j.tagline) tagP=(""+j.tagline).trim();
+            if(j.bio) bioP=(""+j.bio).trim();
+            if(Array.isArray(j.enfoque)&&j.enfoque.length) enfP=j.enfoque.join("\n");
+            if(Array.isArray(j.especialidades)&&j.especialidades.length && !espP.length) espP=j.especialidades.map(function(x){return (""+x).trim();}).filter(Boolean).slice(0,10);
+          }
+          _proceed();
+        })
+        .catch(function(){ _proceed(); });
+      return;
+    }
+    _proceed();
     return;
   }
   if(act==="cfg-save-services"){ var _mc=_monRead(); _stampMoneda(state.services,_mc); if(RCFG) RCFG.moneda=_mc; saveCfg({ servicios: state.services, moneda: _mc }); return; }
