@@ -4822,7 +4822,62 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "DESIGN FASE A: pw-design-tokens.css importado en panel-v2 y multicoach",
+    bug: "Se creó un sistema de tokens de diseño unificado (pw-design-tokens.css) " +
+         "para eliminar duplicación y crear una fuente única de verdad. Sin él, " +
+         "los estilos se desincronizar y el diseño diverge entre componentes.",
+    check() {
+      const pv = read("panel-v2.html");
+      const mc = read("multicoach.html");
+      if (pv && !/pw-design-tokens\.css/.test(pv))
+        return "panel-v2.html no importa pw-design-tokens.css.";
+      if (mc && !/pw-design-tokens\.css/.test(mc))
+        return "multicoach.html no importa pw-design-tokens.css.";
+      return null;
+    },
+  },
+  {
+    name: "DESIGN FASE B: sidebar width usa token --pw-sidebar-width (no hardcoded 212px/248px)",
+    bug: "Fue inconsistente: multicoach.html tenía 212px, panel-v2.html 248px. " +
+         "Ahora ambas usan var(--pw-sidebar-width) de pw-design-tokens.css. " +
+         "Si vuelve a haber pixel values hardcodeados, el ancho será " +
+         "impredecible y se corregirá en un lugar pero no en el otro.",
+    check() {
+      const pv = read("panel-v2.html");
+      const mc = read("multicoach.html");
+      // panel-v2.html debe tener var(--pw-sidebar-width) no 248px hardcoded
+      if (pv && /grid-template-columns:248px/.test(pv))
+        return "panel-v2.html volvió a usar 248px hardcodeado (debe usar var(--pw-sidebar-width)).";
+      if (pv && /\.cp-app\{[^}]*grid-template-columns:248px/.test(pv))
+        return "panel-v2.html: .cp-app usa 248px en lugar del token.";
+      // multicoach.html debe tener var(--pw-sidebar-width) no 212px hardcoded
+      if (mc && /grid-template-columns:212px/.test(mc))
+        return "multicoach.html volvió a usar 212px hardcodeado (debe usar var(--pw-sidebar-width)).";
+      if (mc && /\.app\{[^}]*grid-template-columns:212px/.test(mc))
+        return "multicoach.html: .app usa 212px en lugar del token.";
+      return null;
+    },
+  },
+  {
+    name: "DESIGN FASE A: no hay :root duplicados en los HTML (tokens en pw-design-tokens.css)",
+    bug: "Fue un patrón anti: cada HTML tenía su propio :root{...} con los mismos " +
+         "tokens. Ahora viven solo en pw-design-tokens.css y se importan. Si vuelve " +
+         "a haber :root con --pw-* tokens en HTML, es duplicación y divergencia.",
+    check() {
+      const pv = read("panel-v2.html");
+      const mc = read("multicoach.html");
+      // panel-v2: debe NO tener :root con definiciones de --pw- (ya que los importa)
+      // Permitir un comentario pero no definiciones reales
+      if (pv && /:root\s*\{[^}]*--pw-(?:bosque|carbon|niebla|border|icon|fs-|lh-|ls-|radius-|shadow-|ease|dur-|brand)[^}]*\}/.test(pv))
+        return "panel-v2.html: todavía tiene :root con definiciones de --pw-* tokens (duplicado de pw-design-tokens.css).";
+      if (mc && /:root\s*\{[^}]*--(?:bosque|carbon|brand|border|niebla|side)[^}]*\}/.test(mc))
+        return "multicoach.html: todavía tiene :root con definiciones de tokens (duplicado de pw-design-tokens.css).";
+      return null;
+    },
+  },
 ];
+
 
 let failures = 0;
 for (const r of RULES) {
