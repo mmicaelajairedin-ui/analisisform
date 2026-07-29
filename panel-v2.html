@@ -5969,6 +5969,11 @@ function viewClientes(){
   // configuracion.cliente_orden; los que no están en el orden van al final.
   var _cord=(REAL&&RCFG&&Object.prototype.toString.call(RCFG.cliente_orden)==="[object Array]")?RCFG.cliente_orden.map(String):[];
   if(_cord.length) list.sort(function(a,b){ var ia=_cord.indexOf(String(a.id)); var ib=_cord.indexOf(String(b.id)); if(ia<0)ia=1e9; if(ib<0)ib=1e9; return ia-ib; });
+  // Orden elegido por el coach (sobreescribe el manual mientras esté activo).
+  var _cs=state.cliSort||"";
+  if(_cs==="nombre") list.sort(function(a,b){ return (""+(a.name||"")).localeCompare(""+(b.name||""),"es"); });
+  else if(_cs==="semana") list.sort(function(a,b){ return (b.week||0)-(a.week||0); });
+  else if(_cs==="actividad"){ var _ord={fresh:0,mid:1,stale:2}; var _o=function(c){ var s=c&&c.last&&c.last.state; return _ord[s]==null?1:_ord[s]; }; list.sort(function(a,b){ return _o(a)-_o(b); }); }
   var chips = filters.map(function(f){
     var count = (f.id==="inactive")
       ? pool.filter(isInactive).length
@@ -6072,9 +6077,14 @@ function viewClientes(){
   var solSection=(!REAL || (_sol && _sol.length))
     ? "<section><h3 class='cp-card-title' style='margin:0 0 10px'>"+PWI.svg('inbox',{sm:true})+" Solicitudes de Pathway<span class='dot'>.</span></h3>"+viewSolicitudes(true)+"</section>"
     : "";
-  var filtersBar="<div class='cp-filters cp-cli-filters'>"+
-    "<div class='cp-sort'>Ordenar por: <select style='background:transparent;border:none;color:var(--pw-carbon);font-weight:600;cursor:pointer;outline:none'>"+
-    "<option>Última actividad</option><option>Nombre</option><option>Semana del programa</option></select></div></div>";
+  var filtersBar="<div class='cp-filters cp-cli-filters' style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between'>"+
+    "<div style='display:flex;flex-wrap:wrap;gap:6px'>"+chips+"</div>"+
+    "<div class='cp-sort'>Ordenar por: <select onchange='state.cliSort=this.value;render();' style='background:transparent;border:none;color:var(--pw-carbon);font-weight:600;cursor:pointer;outline:none'>"+
+      "<option value=''"+(!_cs?" selected":"")+">Manual</option>"+
+      "<option value='actividad'"+(_cs==="actividad"?" selected":"")+">Última actividad</option>"+
+      "<option value='nombre'"+(_cs==="nombre"?" selected":"")+">Nombre</option>"+
+      "<option value='semana'"+(_cs==="semana"?" selected":"")+">Semana del programa</option>"+
+    "</select></div></div>";
   // Caja grande de un grupo de clientes (copia el estilo Fortalezas/Áreas del
   // informe: cuadrado con ícono + título + subtítulo, y adentro la grilla).
   function _grpBox(mod,tint,title,sub,gridId,cardsHtml,emptyTxt){
