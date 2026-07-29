@@ -388,6 +388,21 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
 .cp-sol-row.is-sel{border-color:var(--pw-bosque);background:var(--pw-niebla-2);box-shadow:0 2px 10px rgba(31,42,35,.10);}
 .cp-sol-detail{position:sticky;top:8px;}
 @media(max-width:880px){.cp-sol-split{grid-template-columns:1fr;}.cp-sol-detail{position:static;}}
+/* Solicitud como card de ESTADO (modelo pedido por la coach): estado a la izq,
+   qué significa en el medio, acciones a la derecha. Full-width, responsive. */
+.cp-solcard{display:flex;align-items:stretch;gap:0;border:1px solid var(--pw-border);border-radius:14px;overflow:hidden;background:#fff;margin-bottom:12px;}
+.cp-solcard-l{flex:0 0 34%;min-width:210px;padding:15px 18px;display:flex;gap:12px;align-items:flex-start;}
+.cp-solcard-ic{width:34px;height:34px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fff;}
+.cp-solcard-ic svg{width:18px;height:18px;}
+.cp-solcard-t{font-family:var(--pw-serif);font-size:15px;font-weight:600;color:var(--pw-carbon);letter-spacing:-.2px;}
+.cp-solcard-d{font-size:12px;color:var(--pw-text-soft);line-height:1.4;margin-top:3px;}
+.cp-solcard-ago{font-size:11px;color:var(--pw-text-muted);margin-top:5px;}
+.cp-solcard-m{flex:1;min-width:0;padding:15px 18px;border-left:1px solid var(--pw-border);font-size:12.5px;color:var(--pw-text-soft);line-height:1.5;display:flex;flex-direction:column;justify-content:center;gap:7px;}
+.cp-solcard-exp{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#8E7A35;}
+.cp-solcard-exp svg{width:13px;height:13px;}
+.cp-solcard-a{flex:0 0 auto;padding:15px 18px;border-left:1px solid var(--pw-border);display:flex;flex-direction:column;gap:8px;justify-content:center;min-width:130px;}
+.cp-solcard-a .cp-btn{white-space:nowrap;justify-content:center;}
+@media(max-width:820px){.cp-solcard{flex-direction:column;}.cp-solcard-l,.cp-solcard-m,.cp-solcard-a{flex:1 1 auto;min-width:0;border-left:none;}.cp-solcard-m,.cp-solcard-a{border-top:1px solid var(--pw-border);}.cp-solcard-a{flex-direction:row;}}
 /* Desplegable "versión en inglés" en Configuración (evita campos repetidos) */
 .cp-en-toggle{border-top:1px dashed var(--pw-border);margin-top:6px;padding-top:4px;}
 .cp-en-toggle>summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--pw-bosque);list-style:none;padding:7px 0;}
@@ -2354,14 +2369,12 @@ function viewSolicitudes(embedded){
     var h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000);
     return "<span style='color:"+(h<6?"var(--pw-danger)":"var(--pw-text-muted)")+";font-weight:600'>"+(h>0?h+"h ":"")+m+"m</span>";
   }
-  // Bandeja combinada: primero las que pagaron (pend), después las consultas (msgs).
-  var inbox = pend.concat(msgs);
-  // Item seleccionado (su detalle se ve a la derecha). Por defecto el 1ro; si
-  // llegás desde el link "Mensajes" de un mail, arranca en la 1ra consulta.
-  var selSol = inbox.length
-    ? (inbox.filter(function(s){return String(s.id)===String(state.solSel);})[0]
-        || (state.section==="mensajes" && msgs[0]) || pend[0] || msgs[0])
-    : null;
+  // Selección para "Ver estado" / consulta abierta: busca en TODAS las
+  // solicitudes (pago o consulta). Sin selección explícita, el detalle queda
+  // cerrado (salvo que llegues desde el link "Mensajes" de un mail → 1ra consulta).
+  var selSol = state.solSel
+    ? (SOL.filter(function(s){return String(s.id)===String(state.solSel);})[0] || null)
+    : ((state.section==="mensajes" && msgs[0]) || null);
   // ── Fila compacta (columna izquierda): avatar + nombre + neto/consulta ──
   function solRow(s){
     var esMsg = s.estado==="mensaje";
@@ -2443,46 +2456,78 @@ function viewSolicitudes(embedded){
       "</div>"+
       actionsRow+"</div></div>";
   }
-  // Split de dos columnas: bandeja a la izquierda (compras + consultas) +
-  // detalle a la derecha. Grupos: primero las que pagaron, después las consultas.
-  var grpPagaron = pend.length
-    ? "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:2px'>"+
-        "<span class='cp-eyebrow'>Pagaron · esperan respuesta · "+pend.length+"</span>"+
+  // ── Card de ESTADO por solicitud (modelo pedido): estado a la izq, qué
+  // significa en el medio, acciones a la derecha. Reusa sol-accept/sol-reject. ──
+  function _agoTxt(d){ var t=new Date(d).getTime(); if(isNaN(t)) return ""; var m=Math.floor((Date.now()-t)/60000); if(m<1) return "Recién"; if(m<60) return "Hace "+m+" min"; var h=Math.floor(m/60); if(h<24) return "Hace "+h+" h"; return "Hace "+Math.floor(h/24)+" d"; }
+  function _solCard(s){
+    var monto=Number(s.monto)||0, com=Number(s.comision)|| monto*_pwCoachRate()/100, neto=monto-com;
+    var expired = s.expires_at && (new Date(s.expires_at).getTime()-Date.now()<=0);
+    var ic,iconCol,tint,title,desc,meaning,expHtml="",actions;
+    if(s.estado==="autorizada" && !expired){
+      ic="checkCircle"; iconCol="var(--pw-bosque)"; tint="rgba(82,183,136,.10)";
+      title="Lista para aceptar"; desc="El pago fue completado correctamente.";
+      meaning="Tenés <strong>24 h</strong> para aceptar. Si aceptás, se confirma la reserva y el neto (<strong>"+_money(neto)+"</strong>) se libera a tu cuenta.";
+      expHtml="<div class='cp-solcard-exp'>"+PWI.svg('clock',{sm:true})+_left(s.expires_at)+"</div>";
+      actions="<button class='cp-btn cp-btn-primary' data-act='sol-accept' data-id='"+esc(s.id)+"'>Aceptar</button>"+
+              "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='sol-reject' data-id='"+esc(s.id)+"'>Rechazar</button>";
+    } else if(s.estado==="pendiente" && !expired){
+      ic="clock"; iconCol="#B98A1E"; tint="rgba(233,196,106,.12)";
+      title="Pago iniciado"; desc="El candidato empezó el pago pero todavía no lo completó.";
+      meaning="No se realizó ningún cargo aún. Te avisamos cuando el pago se complete — ahí vas a poder aceptarlo.";
+      actions="<button class='cp-btn cp-btn-ghost' data-act='sol-pick' data-id='"+esc(s.id)+"'>"+PWI.svg('eye',{sm:true})+" Ver estado</button>";
+    } else {
+      ic="alert"; iconCol="var(--pw-danger)"; tint="rgba(192,117,110,.10)";
+      title=(s.estado==="rechazada"?"Solicitud rechazada":"Pago cancelado");
+      desc=(s.estado==="rechazada"?"Rechazaste esta solicitud.":"El candidato abandonó el pago o venció la ventana.");
+      meaning="No se realizó ningún cargo. La solicitud se cerró automáticamente.";
+      actions="<button class='cp-btn cp-btn-ghost' data-act='sol-pick' data-id='"+esc(s.id)+"'>"+PWI.svg('eye',{sm:true})+" Ver estado</button>";
+    }
+    return "<div class='cp-solcard'>"+
+      "<div class='cp-solcard-l' style='background:"+tint+"'>"+
+        "<span class='cp-solcard-ic' style='color:"+iconCol+"'>"+PWI.svg(ic,{cc:true})+"</span>"+
+        "<div style='min-width:0'><div class='cp-solcard-t'>"+title+"</div><div class='cp-solcard-d'>"+desc+"</div><div class='cp-solcard-ago'>"+_agoTxt(s.created_at)+"</div></div>"+
+      "</div>"+
+      "<div class='cp-solcard-m'>"+meaning+expHtml+"</div>"+
+      "<div class='cp-solcard-a'>"+actions+"</div>"+
+    "</div>";
+  }
+  // ── Solicitudes de pago como TARJETAS DE ESTADO (modelo pedido por Micaela) ──
+  // Cada solicitud se muestra como una card: estado a la izquierda, qué significa
+  // en el medio, y la acción a la derecha (Aceptar/Rechazar o Ver estado). Orden:
+  // primero las que piden acción (Lista para aceptar), después Pago iniciado, y
+  // al final las canceladas/rechazadas recientes.
+  var _cancel = hist.filter(function(s){ return s.estado==="rechazada"||s.estado==="expirada"; })
+    .sort(function(a,b){ return new Date(b.created_at||0).getTime()-new Date(a.created_at||0).getTime(); })
+    .slice(0,6);
+  var _payItems = pend.concat(waiting).concat(_cancel);
+  var cardsHtml = _payItems.length
+    ? "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px'>"+
+        "<span class='cp-eyebrow'>Solicitudes de pago · "+_payItems.length+"</span>"+
         "<button class='cp-btn cp-btn-ghost' style='height:28px;font-size:11.5px;padding:0 11px' data-act='sol-sync'>↻ Buscar pagos</button>"+
-      "</div>"+ pend.map(solRow).join("")
+      "</div>"+
+      "<div style='display:flex;flex-direction:column;gap:12px'>"+ _payItems.map(_solCard).join("") +"</div>"
     : "";
-  var grpConsultas = msgs.length
-    ? "<div class='cp-eyebrow' style='margin:"+(pend.length?"12px 0 2px":"0 0 2px")+"'>Consultas · sin compra · "+msgs.length+"</div>"+ msgs.map(solRow).join("")
+  // Detalle de una solicitud de pago seleccionada ("Ver estado"): conversación
+  // con el candidato + acciones. Solo aparece cuando se seleccionó una de pago.
+  var _paySel = (selSol && selSol.estado!=="mensaje") ? selSol : null;
+  var payDetailHtml = _paySel
+    ? "<div style='margin-top:16px'><div style='display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px'>"+
+        "<span class='cp-eyebrow'>Detalle de la solicitud</span>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:28px;font-size:11.5px;padding:0 11px' data-act='sol-pick' data-id=''>Cerrar</button>"+
+      "</div>"+ solDetail(_paySel) +"</div>"
     : "";
-  var splitHtml = inbox.length
-    ? "<div class='cp-sol-split'>"+
-        "<div class='cp-sol-list'>"+ grpPagaron + grpConsultas +"</div>"+
-        "<div class='cp-sol-detail'>"+solDetail(selSol)+"</div>"+
-      "</div>"
-    : "<div class='cp-card'><div class='cp-card-pad' style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'><span style='color:var(--pw-text-soft);font-size:13px'>No tienes solicitudes ni consultas todavía.</span><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='sol-sync'>↻ Buscar pagos nuevos</button></div></div>";
-  var waitHtml = waiting.length
-    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Esperando pago del candidato<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+waiting.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
-        "<div style='font-size:12px;color:var(--pw-text-muted);line-height:1.5;background:var(--pw-niebla-2);border-radius:10px;padding:8px 12px'><strong>No requiere acción tuya.</strong> Si completan el pago, suben solos para que decidas.</div>"+
-        waiting.map(function(s){
-          var _nm=_primerNombre(s.candidato_nombre);
-          var _d=s.created_at?new Date(s.created_at):null; var _ok=_d&&!isNaN(_d.getTime());
-          var _fecha=_ok?_d.toLocaleDateString("es-ES",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"";
-          return "<div style='display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--pw-border);padding:10px 0'>"+
-            "<span style='flex:0 0 auto;width:42px;height:42px;border-radius:50%;background:var(--pw-niebla-3);color:var(--pw-text-soft);display:flex;align-items:center;justify-content:center;font-family:var(--pw-serif);font-size:17px;font-weight:600'>"+esc(_ini(s.candidato_nombre))+"</span>"+
-            "<div style='flex:1;min-width:0'>"+
-              "<div style='font-size:14px;font-weight:600;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(_nm)+"</div>"+
-              "<div style='font-size:11.5px;color:var(--pw-text-muted);margin-top:2px'>"+esc(_svc(s))+" · "+_money(s.monto)+(_fecha?" · "+_fecha:"")+"</div>"+
-            "</div>"+
-            "<span style='flex:0 0 auto;font-size:10.5px;font-weight:700;color:#8E7A35;background:rgba(233,196,106,.20);border-radius:99px;padding:4px 10px;white-space:nowrap'>Sin pagar</span>"+
-          "</div>"; }).join("")+"</div></div>"
+  // Consultas gratis desde el perfil (estado="mensaje"): lista + conversación.
+  // Necesitan ida y vuelta, así que mantienen el split con detalle a la derecha.
+  var _consSel = (selSol && selSol.estado==="mensaje") ? selSol : msgs[0];
+  var consultasHtml = msgs.length
+    ? "<div style='margin-top:20px'><div class='cp-eyebrow' style='margin-bottom:10px'>Consultas · sin compra · "+msgs.length+"</div>"+
+        "<div class='cp-sol-split'>"+
+          "<div class='cp-sol-list'>"+ msgs.map(solRow).join("") +"</div>"+
+          "<div class='cp-sol-detail'>"+solDetail(_consSel)+"</div>"+
+        "</div></div>"
     : "";
-  var histHtml = hist.length
-    ? "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+hist.length+"</span></div><div class='cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
-        hist.map(function(s){ var c=s.estado==="aceptada"?"var(--pw-bosque)":(s.estado==="rechazada"?"var(--pw-danger)":"var(--pw-text-muted)");
-          // Aceptada = ya es cliente → nombre completo. Rechazada/expirada = nunca
-          // entró → solo el primer nombre (anti-fugas).
-          var _hn=s.estado==="aceptada"?(s.candidato_nombre||"Candidato"):_primerNombre(s.candidato_nombre);
-          return "<div style='display:flex;justify-content:space-between;font-size:13px;border-bottom:1px solid var(--pw-border);padding:8px 0'><span style='color:var(--pw-carbon)'>"+esc(_hn)+" · "+_svc(s)+"</span><span style='color:"+c+";font-weight:600;text-transform:capitalize'>"+esc(s.estado)+" · "+_money(s.monto)+"</span></div>"; }).join("")+"</div></div>"
+  var emptyHtml = (!_payItems.length && !msgs.length)
+    ? "<div class='cp-card'><div class='cp-card-pad' style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'><span style='color:var(--pw-text-soft);font-size:13px'>No tienes solicitudes ni consultas todavía.</span><button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='sol-sync'>↻ Buscar pagos nuevos</button></div></div>"
     : "";
 
   var nAcc=hist.filter(function(s){return s.estado==="aceptada";}).length;
@@ -2508,11 +2553,11 @@ function viewSolicitudes(embedded){
         "<button class='cp-btn cp-btn-primary' style='height:34px;font-size:12.5px;padding:0 14px' data-act='pw-connect'>Conectar mi cuenta de cobro "+svg(IC.extLink,12)+"</button></div>";
     }
   }
-  var _bodyCore = _payWarn + _reassure + splitHtml + waitHtml + histHtml;
+  var _bodyCore = _payWarn + _reassure + cardsHtml + payDetailHtml + consultasHtml + emptyHtml;
   var _body = statsCard + _bodyCore;
   // Modo embebido (dentro de Clientes): sin la tarjeta de stats — el "Recorrido"
   // ya muestra los conteos, así no se duplica. Los botones Aceptar/Rechazar/Ver
-  // detalles siguen viniendo de splitHtml.
+  // estado siguen viniendo de las tarjetas de estado (_solCard).
   if(embedded) return _bodyCore;
   return "<header class='cp-topbar'><div><h1 class='cp-h1'>Solicitudes<span class='dot'>.</span></h1>"+
       "<div class='cp-sub'>Compras y consultas que te llegan desde tu perfil de Pathway.</div></div></header>"+
@@ -10583,7 +10628,7 @@ document.addEventListener("click", function(ev){
   if(act==="pw-optin"){ state.pathwayOptIn=!state.pathwayOptIn; if(REAL){ saveCfg({ pathway_optin: state.pathwayOptIn }); } else { render(); } return; }
   if(act==="pw-connect"){ pwConnect(); return; }
   if(act==="pw-connect-check"){ state.stripe=null; _stripeReq=false; render(); return; }
-  if(act==="sol-pick"){ var pkid=el.getAttribute("data-id"); if(pkid){ state.solSel=pkid; render(); } return; }
+  if(act==="sol-pick"){ var pkid=el.getAttribute("data-id"); state.solSel = pkid || null; render(); return; }
   // ── Prompt de reseña de Pathway ──
   if(act==="review-star"){ if(state.review){ state.review.rating=parseInt(el.getAttribute("data-n"),10)||0; render(); } return; }
   if(act==="review-later"){ if(state.review){ var _rk=_reviewKeys(); var _rn=parseInt(localStorage.getItem(_rk.v)||"0",10)||0; try{ localStorage.setItem(_rk.r,"snooze:"+(_rn+6)); }catch(e){} state.review.open=false; render(); } return; }
