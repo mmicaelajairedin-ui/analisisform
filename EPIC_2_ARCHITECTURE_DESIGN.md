@@ -1,449 +1,335 @@
-# EPIC 2: Arquitectura de Integración MultiCoach × Pathway
+# EPIC 2: Arquitectura Funcional y Lógica — MultiCoach × Pathway
 
-**Fase:** Diseño (pre-implementación)  
-**Objetivo:** Validar arquitectura sin escribir código  
-**Audiencia:** Revisión de Micaela antes de proceder
-
----
-
-## 1. Arquitectura de Integración
-
-### Modelo de Dos Mundos Separados
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     SUPABASE PROJECT                        │
-├─────────────────────────┬───────────────────────────────────┤
-│   SCHEMA: public        │   SCHEMA: multicoach              │
-│   (Pathway Legacy)      │   (MultiCoach New)                │
-│                         │                                   │
-│  • usuarios             │  • organizaciones                 │
-│  • candidatos           │  • usuarios (con org_id)          │
-│  • coach_client_...     │  • candidatos (con org_id)        │
-│  • [otros]              │  • coach_client_assignments       │
-│  (69 users, 37 clients) │  (test data + productivo)         │
-│                         │                                   │
-│  REGLA: READ-ONLY       │  REGLA: WRITE ALLOWED             │
-│  (congelado)            │  (desarrollo libre)               │
-└─────────────────────────┴───────────────────────────────────┘
-```
-
-### Capas de Aplicación
-
-```
-NIVEL 1: PRESENTACIÓN (Frontend)
-├── index.html (Landing pública — ambos productos)
-├── soy-coach.html (Marketing MultiCoach)
-├── panel-v2.html (Coach individual — Pathway Legacy)
-│   └─ Lee: public.usuarios, public.candidatos
-│   └─ Escribe: public.* (best-effort chat, game points)
-│
-├── multicoach.html (Owner de red — MultiCoach New)
-│   └─ Lee: multicoach.* (org, usuarios, candidatos, assignments)
-│   └─ Escribe: multicoach.* (asignaciones, comunidad, etc)
-│
-└── cliente.html (Client portal — ambos)
-    └─ Lee: (su perfil de public.* O multicoach.*, según org)
-    └─ Escribe: multicoach.* (si es de empresa) O public.* (si legacy)
-
-NIVEL 2: AUTENTICACIÓN
-├── Supabase Auth (JWT sobre public.usuarios.auth_id)
-│   └─ Legacy coaches: auth_id mapea a public.usuarios
-│   └─ MultiCoach: auth_id mapea a multicoach.usuarios
-│
-└─ Policy: Cada app se loguea con su auth_id scope
-
-NIVEL 3: DATOS
-├── public.* (Read-only, congelado)
-│   └─ Pathway en producción con clientes reales
-│   └─ Cualquier escritura = riesgo de corrupción
-│
-└── multicoach.* (Write-allowed)
-    └─ Datos de la red (org, coaches, clients asignados)
-    └─ Datos compartidos (comunidad, recursos, chat)
-```
+**Fase:** Diseño Funcional y Lógico (pre-técnico)  
+**Objetivo:** Definir qué hace el sistema sin fijar cómo se implementa  
+**Audiencia:** Revisión de Micaela antes de proceder a Arquitectura Técnica
 
 ---
 
-## 2. Componentes y Acceso a Datos
+## 0. Principios Rectores
 
-### 2.1 ¿Qué Componentes Leen `public.*`?
+Estos principios NUNCA cambian. Toda decisión posterior debe respetarlos:
 
-**Código que SOLO lee (SELECT):**
+1. **Independencia de Pathway**  
+   Pathway (69 coaches, 37 clientes, proceso de mentoria de 4 semanas) sigue funcionando exactamente como hoy. MultiCoach no interfiere con su operación.
 
-| Componente | Lectura | Escritura | Razón |
-|-----------|---------|-----------|-------|
-| **panel-v2.html** | public.usuarios, public.candidatos | public.mensajes, public.usuarios (cols: game_pts, last_seen) | Coach legacy — sus clientes están en public |
-| **cliente.html** | Ambos (según org_id) | multicoach.* (si empresa) | Portal unificado para legacy + new |
-| **login.html** | public.usuarios (auth) | Ninguno | Autenticación legacy |
-| **index.html** | public.candidatos (feed dummy) | Ninguno | Marketing, datos públicos |
-| **Edge Function: generar-informe** | public.candidatos (read test data) | Ninguno | IA análisis, solo lectura |
+2. **No Sustitución, Reutilización**  
+   MultiCoach no reemplaza el Panel del Coach ni el Portal del Cliente. Administra permisos y contexto organizacional. Las pantallas de coaching existentes se reutilizan (con soporte para clientes enterprise).
 
-**Acceso crítico:**
-- `panel-v2.html`: Depende de `public.usuarios` + `public.candidatos` para que los 69 coaches legacy vean sus clientes
-- `cliente.html`: Debe leer AMBOS schemas según contexto (legacy vs. enterprise)
+3. **Dominios Separados**  
+   - **MultiCoach:** Administra organizaciones, asignaciones, permisos, supervisión, facturación.
+   - **Pathway:** Ejecuta el proceso de coaching: análisis, CV, cartas, sesiones, documentos.
 
-**RIESGO CRÍTICO:** Si `public.candidatos` se corrompe → todos los 37 clientes legacy pierden acceso.
+4. **Integridad de Datos**  
+   Nunca se corrompen datos existentes. Los cambios son aditivos o scoped a su contexto (empresa, coach, cliente).
 
 ---
 
-### 2.2 ¿Qué Componentes Escriben SOLO en `multicoach.*`?
+## 1. Arquitectura Funcional
 
-**Código que escribe:**
+### 1.1 Dominios de Negocio
 
-| Componente | Escribe en | Nunca Toca | Razón |
-|-----------|-----------|-----------|-------|
-| **multicoach.html** | multicoach.usuarios, multicoach.candidatos, multicoach.coach_client_assignments, multicoach.* | public.* | Owner de red — su universo es multicoach |
-| **Edge Fn: crear-coach** (legacy path) | public.usuarios | multicoach.* | Legacy flow, 69 coaches ya en public |
-| **Edge Fn: crear-coach** (multicoach path) | multicoach.usuarios + multicoach.organizaciones | public.* | New flow, crea dentro de la org |
-| **Edge Fn: mensaje-red** | multicoach.mensajes_owner_coach | public.* | Chat de red, solo multicoach |
-| **Edge Fn: canal-red** | multicoach.mensajes_red_canal | public.* | Comunidad, solo multicoach |
-| **cliente.html** (si enterprise) | multicoach.candidatos (su perfil) | public.* | Client de empresa, datos en multicoach |
-| **panel-v2.html** (nuevo: heartbeat) | public.usuarios (cols: last_seen, game_pts) | multicoach.* | Legacy coach, best-effort tracking |
+El sistema se organiza alrededor de 8 dominios funcionales independientes:
 
-**Nota:** `panel-v2.html` writes ONLY 2 columnas a `public.usuarios` (last_seen, game_pts) via best-effort. Si fallan (403 RLS), no rompe nada.
+#### **Dominio 1: Organización**
+Define qué es una empresa en MultiCoach.
+
+| Aspecto | Descripción |
+|---------|------------|
+| **Responsabilidad** | Agrupar coaches y clientes en contextos de trabajo |
+| **Actores** | Propietario de organización (Owner) |
+| **Operaciones** | Crear org, ver miembros, editar datos org, ver métricas agregadas |
+| **Datos** | Nombre, sector, país, contacto, configuración, plan de suscripción |
+| **Integración con Pathway** | Las orgs de MultiCoach pueden opcionalmente usar Pathway; los coaches legacy de Pathway siguen siendo individuales (sin org) |
+
+#### **Dominio 2: Usuarios y Roles**
+Define identidades y permisos.
+
+| Aspecto | Descripción |
+|---------|------------|
+| **Responsabilidad** | Autenticar y autorizar en contexto de organización |
+| **Actores** | Owner, Coach Enterprise, Client Enterprise, Admin |
+| **Operaciones** | Login, cambiar permisos, invitar a org, revocar acceso, auditoría de sesiones |
+| **Datos** | Email, nombre, rol dentro de la org, foto, preferencias (idioma, zona horaria, etc.) |
+| **Integración con Pathway** | Los coaches legacy de Pathway tienen identidad en Pathway. Los coaches enterprise tienen identidad TANTO en Pathway como en MultiCoach (mismo email, dos contextos) |
+
+#### **Dominio 3: Coaches y Asignaciones**
+Gestiona quién trabaja con quién.
+
+| Aspecto | Descripción |
+|---------|------------|
+| **Responsabilidad** | Crear equipos de coaches y asignar clientes |
+| **Actores** | Owner, Coach |
+| **Operaciones** | Agregar coach a org, crear equipo, asignar cliente a coach, cambiar asignaciones, desactivar coach |
+| **Datos** | Coach ID, especialidad, clientes asignados, estado (activo/inactivo), fecha inicio en org |
+| **Integración con Pathway** | El coach ve en su panel solo los clientes asignados por MultiCoach. Pathway sigue mostrando datos del formulario de intake |
+
+#### **Dominio 4: Clientes**
+Define el registro de clientes enterprise.
+
+| Aspecto | Descripción |
+|---------|------------|
+| **Responsabilidad** | Registro único de clientes en una organización |
+| **Actores** | Owner, Coach, Client |
+| **Operaciones** | Importar cliente, ver perfil, ver progreso, marcar hito, desactivar cliente |
+| **Datos** | Email, nombre, foto, cargo, sector, fecha inicio, coach asignado, progreso (%), notas |
+| **Integración con Pathway** | El cliente accede a su portal y ve su nombre/foto/coach en contexto organizacional. El análisis y documentos vienen de Pathway |
+
+#### **Dominio 5: Operación (Sesiones, Documentos, Progreso)**
+Sincroniza el proceso de coaching.
+
+| Aspecto | Descripción |
+|---------|------------|
+| **Responsabilidad** | Mostrar dónde está cada cliente en el viaje de 4 semanas |
+| **Actores** | Owner (agregado), Coach, Client |
+| **Operaciones** | Ver sesiones agenda, subir documentos, marcar tareas hechas, generar reportes de progreso |
+| **Datos** | Sesiones (fecha, tema, notas), docs (CV, carta), tareas, medallas, logros |
+| **Integración con Pathway** | Lee el estado actual del cliente desde Pathway (formulario completado, análisis listo, CV guardado, sesión agendada). No replica ni copia |
+
+#### **Dominio 6: Analytics y Reportes**
+Proporciona visibilidad empresarial.
+
+| Aspecto | Descripción |
+|---------|------------|
+| **Responsabilidad** | Mostrar salud del negocio (retención, progreso, conversión) |
+| **Actores** | Owner, Admin |
+| **Operaciones** | Ver dashboard (clientes activos, coaches, progreso agregado), filtrar por período/coach/sector |
+| **Datos** | Métricas: clientes en semana 1/2/3/4, completitud documentos, sesiones agendadas, tasa de finalización |
+| **Integración con Pathway** | Lee datos de progreso de Pathway sin modificar |
+
+#### **Dominio 7: Facturación y Suscripción**
+Gestiona el pago y ciclo de vida.
+
+| Aspecto | Descripción |
+|---------|------------|
+| **Responsabilidad** | Administrar suscripciones organizacionales |
+| **Actores** | Owner, Admin |
+| **Operaciones** | Ver plan actual, cambiar plan, ver facturación, descargar recibos, renovar suscripción |
+| **Datos** | Plan (básico/pro/custom), precio, fecha inicio/renovación, estado (activa/vencida), histórico de pagos |
+| **Integración con Pathway** | El acceso de coaches/clientes se activa/desactiva según estado de suscripción de la org |
+
+#### **Dominio 8: Configuración y Marca**
+Personalización y preferencias.
+
+| Aspecto | Descripción |
+|---------|------------|
+| **Responsabilidad** | Adaptar el sistema a la identidad de la organización |
+| **Actores** | Owner, Admin |
+| **Operaciones** | Editar nombre org, subir logo, elegir colores, configurar dominios custom, activar/desactivar features |
+| **Datos** | Logo, colores, fuente, dominio custom, idioma, zona horaria, features activas |
+| **Integración con Pathway** | Los coaches de Pathway siguen viendo el logo/colores de Pathway. Las orgs enterprise ven su propia marca en el contexto MultiCoach |
 
 ---
 
-## 3. Separación: Cómo Evitar Afectar Pathway
+### 1.2 Flujos de Usuario (Funcionales, no técnicos)
 
-### Principio de No-Mezcla
+#### **Flujo 1: Owner Crea y Administra una Organización**
 
 ```
-REGLA 1: `public.*` es WRITE-PROTECTED
-├─ Solo lectura de panel-v2, login, cliente (legacy)
-├─ Escrituras MÍNIMAS: game_pts, last_seen (best-effort)
-└─ NUNCA: ALTER, DROP, TRUNCATE, batch INSERT en public
-
-REGLA 2: `multicoach.*` es LIBRE para escritura
-├─ Owner del panel multicoach.html puede crear/editar coaches, clientes
-├─ Edge functions escriben en multicoach.*
-└─ NUNCA: tocar public.* desde multicoach
-
-REGLA 3: Login determina schema
-├─ auth_id en public.usuarios → acceso a public.* (legacy coach)
-├─ auth_id en multicoach.usuarios → acceso a multicoach.* (owner/coach enterprise)
-└─ client.html: ¿dónde está el auth_id? → lee ese schema
+Owner (primera vez)
+  ↓
+Llena datos de org (nombre, sector, país)
+  ↓
+Sistema genera org_id único y la asigna a su usuario
+  ↓
+Owner ve dashboard con 0 coaches, 0 clientes
+  ↓
+Owner invita coaches (envía link o email)
+  ↓
+Coaches aceptan invitación y quedan dentro de la org
+  ↓
+Owner importa/agrega clientes (CSV o manual)
+  ↓
+Owner asigna clientes a coaches
+  ↓
+Owner ve dashboard: N clientes, N coaches, X% en semana 1, Y% en semana 2, etc.
 ```
 
-### Guardrails Anti-Corrupción
+#### **Flujo 2: Coach Enterprise Trabaja con sus Clientes**
 
-**Nivel 1: RLS (Base de datos)**
 ```
-- public.*: policies permiten lectura anon/authenticated
-  (escritura solo a 2 columnas específicas via GRANT)
-- multicoach.*: policies filtran por org_id + auth_id
-  (coach solo ve su org, owner solo su org)
-```
-
-**Nivel 2: Código (Frontend + Edge)**
-```
-- multicoach.html: SIEMPRE filtra por MY.org_id
-  Ejemplo: SELECT * FROM multicoach.candidatos WHERE org_id = MY.org_id
-  
-- panel-v2.html: SIEMPRE usa coachGuard() para legacy
-  Ejemplo: PATCH candidatos?id=eq.UUID&coach_id=eq.ME.id
-  
-- Edge functions: Valida auth_id antes de escribir
-  Ejemplo: if (auth.uid() !== user.auth_id) throw "Unauthorized"
+Coach (ya en Pathway, ahora parte de una org enterprise)
+  ↓
+Loguea en el panel del coach (URL: mismo panel-v2.html)
+  ↓
+Panel detecta que es parte de una org
+  ↓
+Ve SOLO sus clientes asignados por el Owner
+  ↓
+Agenda sesiones, sube documentos, marca tareas (mismo flujo que hoy)
+  ↓
+Datos se guardan en contexto de su org
+  ↓
+Owner ve el progreso agregado en su dashboard
 ```
 
-**Nivel 3: Migraciones (Estructura)**
+#### **Flujo 3: Cliente Enterprise Accede a su Portal**
+
 ```
-- Migrations que tocan public.* → SOLO lectores/índices
-  (jamás schema changes que rompan existing apps)
-  
-- Migrations que crean multicoach.* → aditivas, nunca rompen existentes
-  (greenfield development, cero retrocompatibilidad)
-  
-- Política: 2-approvers antes de ANY migration a public.*
+Cliente (invitado por Owner o Coach)
+  ↓
+Recibe email con link a portal
+  ↓
+Se loguea (o crea cuenta si es primera vez)
+  ↓
+Ve su nombre, foto, coach asignado en contexto de su org
+  ↓
+Accede a sesiones, documentos, recursos (mismo portal que hoy, pero con contexto)
+  ↓
+Marca tareas, descarga materiales, ve progreso
+```
+
+#### **Flujo 4: Admin ve Web Analytics y Leads Captados**
+
+```
+Admin (solo en Pathway, no MultiCoach)
+  ↓
+Accede a sección de Web Analytics
+  ↓
+Ve KPIs de pathwaycareercoach.com y micaelajairedin.com
+  ↓
+Ve leads captados por el chatbot
+  ↓
+Puede exportar o enviar a coaches manualmente
 ```
 
 ---
 
-## 4. Flujos de Usuario y Datos
+## 2. Arquitectura Lógica
 
-### Diagrama Completo: Owner → MultiCoach
-
-```
-┌─ MICAELA (Admin) da de alta OWNER
-│
-├─→ Crea org en multicoach.organizaciones
-│   (id, nombre, plan, estado_sub, fecha_fin_prueba)
-│
-├─→ Crea owner en multicoach.usuarios
-│   (id, auth_id, email, rol='owner', org_id)
-│
-└─→ Owner se loguea → panel multicoach.html
-    │
-    ├─ JWT: auth_id matching multicoach.usuarios.auth_id
-    │
-    ├─ Dashboard: VE su org (1 org)
-    │  └─ multicoach.html queries:
-    │     SELECT * FROM multicoach.organizaciones
-    │     WHERE id = JWT.org_id (de multicoach.usuarios)
-    │
-    ├─ VE sus coaches (solo de su org)
-    │  └─ SELECT * FROM multicoach.usuarios
-    │     WHERE org_id = JWT.org_id AND rol = 'coach'
-    │
-    ├─ VE sus clientes (solo de su org, asignados)
-    │  └─ SELECT * FROM multicoach.candidatos
-    │     WHERE org_id = JWT.org_id
-    │
-    ├─ Puede ASIGNAR cliente a coach
-    │  └─ INSERT INTO multicoach.coach_client_assignments
-    │     (coach_id, client_id, org_id, estado)
-    │
-    └─ Puede CREAR comunidad (avisos, revista)
-       └─ INSERT INTO multicoach.empresa_revista
-          (org_id, titulo, contenido, ...)
-```
-
-### Diagrama: Coach Legacy → panel-v2.html
+### 2.1 Relaciones Entre Dominios
 
 ```
-┌─ Coach LEGACY (69 en producción) se loguea
+PATHWAY (Existente)
+├─ Coaches individuales (legacy)
+│  ├─ Lee: formularios, análisis, CVs
+│  └─ Escribe: sesiones, notas, documentos
 │
-├─ JWT: auth_id matching public.usuarios.auth_id
-│
-├─ Dashboard: VE sus clientes
-│  └─ panel-v2.html queries:
-│     SELECT * FROM public.candidatos
-│     WHERE coach_id = public.usuarios.id (suyo)
-│
-├─ Puede editar cliente
-│  └─ PATCH public.candidatos?id=eq.{uuid}&coach_id=eq.{su_id}
-│
-├─ Heartbeat: Actualiza last_seen (best-effort)
-│  └─ PATCH public.usuarios
-│     SET last_seen = now()
-│     WHERE id = (su id) — falla silenciosamente si 403
-│
-└─ Chat: Escribe en public.mensajes_admin_coach
-   └─ INSERT (edge function valida auth_id)
-```
+└─ Clientes individuales (legacy)
+   ├─ Lee: su perfil, sesiones, recursos
+   └─ Escribe: tareas, foto, preferencias
 
-### Diagrama: Coach Enterprise → multicoach + panel-v2
-
-```
-┌─ Coach ENTERPRISE (dentro de una red) se loguea
-│
-├─ JWT: auth_id matching multicoach.usuarios.auth_id
-│
-├─ Dashboard: VE solo sus clientes asignados
-│  └─ multicoach.html queries:
-│     SELECT * FROM multicoach.candidatos c
-│     WHERE c.id IN (
-│       SELECT client_id FROM multicoach.coach_client_assignments
-│       WHERE coach_id = multicoach.usuarios.id (suyo)
-│     )
-│
-├─ Puede editar su cliente (en multicoach.candidatos)
-│  └─ PATCH multicoach.candidatos?...
-│
-├─ Ve comunidad de su empresa (read-only)
-│  └─ SELECT * FROM multicoach.empresa_revista
-│     WHERE org_id = (su org_id)
-│
-└─ Chat con owner: 1-a-1 en multicoach.mensajes_owner_coach
-   └─ VE en su bandeja de panel-v2 como hilo "Dueño de tu red"
-```
-
-### Diagrama: Cliente → cliente.html (Legacy vs Enterprise)
-
-```
-┌─ Cliente LEGACY
-│  └─ JWT: public.candidatos.auth_id
+MULTICOACH (Nuevo)
+├─ Organizaciones
+│  └─ Owner (administra la org)
+│     ├─ Coaches enterprise (parte de la org)
+│     │  └─ Reutilizan panel-v2.html (con scope de org)
 │     │
-│     ├─ Ve su perfil (public.candidatos)
-│     ├─ Ve su coach (public.usuarios, coach_id join)
-│     ├─ Ve sesiones de panel-v2 (shared)
-│     └─ Ve recursos legacy (public tables)
+│     └─ Clientes enterprise (parte de la org)
+│        └─ Reutilizan cliente.html (con scope de org)
 │
-└─ Cliente ENTERPRISE
-   └─ JWT: multicoach.candidatos.auth_id
-      │
-      ├─ Ve su perfil (multicoach.candidatos)
-      ├─ Ve su coach (multicoach.usuarios, coach_id join)
-      ├─ Ve comunidad de la empresa (multicoach.empresa_revista)
-      ├─ Ve sesiones (edge function, compartidas)
-      └─ Ve recursos de su coach + de la empresa
+└─ Integraciones
+   ├─ Lee sesiones, documentos, progreso de Pathway
+   └─ NO modifica datos de Pathway (lectura only para Pathway legacy)
+```
+
+### 2.2 Mapeo de Actores a Funcionalidades
+
+| Actor | Puede Hacer | Acceso a Datos |
+|-------|-------------|-----------------|
+| **Coach Legacy (Pathway)** | Ver sus clientes legacy, agendar sesiones, subir docs | Sus clientes en Pathway |
+| **Coach Enterprise (MultiCoach)** | Idem + ver su org, ver asignaciones | Sus clientes dentro de su org |
+| **Owner Enterprise** | Crear org, invitar coaches, asignar clientes, ver dashboard, cambiar plan | Toda la org (coaches, clientes, progreso) |
+| **Client Legacy (Pathway)** | Ver su perfil, sesiones, documentos, recursos | Su perfil en Pathway |
+| **Client Enterprise (MultiCoach)** | Idem + ver su org, su coach, progreso en contexto | Su perfil dentro de su org |
+| **Admin (Pathway)** | Ver Web Analytics, leads captados, gestionar coaches legacy | Datos de Pathway (read-only), leads del chatbot |
+
+### 2.3 Datos Compartidos vs. Silos
+
+```
+COMPARTIDOS (mismo email → misma identidad):
+├─ Usuario email/nombre/foto
+├─ Sesiones con el coach (agenda)
+├─ Documentos (CV, carta)
+└─ Formulario de intake (análisis)
+
+SILOS (separados por contexto):
+├─ Coach legacy → solo sus clientes legacy
+├─ Coach enterprise → solo sus clientes dentro de su org
+├─ Client legacy → solo Pathway
+├─ Client enterprise → su org en MultiCoach + su sesiones/docs en Pathway
+└─ Org enterprise → sus coaches y clientes (no ve otros)
 ```
 
 ---
 
-## 5. Matriz de Acceso a Datos
+## 3. Garantías Funcionales (No Técnicas)
 
-| Actor | Lee public.* | Escribe public.* | Lee multicoach.* | Escribe multicoach.* | Notas |
-|-------|--------------|------------------|------------------|----------------------|-------|
-| Owner Legacy | NO | NO | NO | NO | No existe en Pathway |
-| Coach Legacy | ✅ (candidatos, usuarios) | ⚠️ (game_pts, last_seen only) | NO | NO | 69 en producción |
-| Coach Enterprise | NO | NO | ✅ (filtered by org) | ✅ (assigned clients only) | Nueva red |
-| Client Legacy | ✅ (su perfil) | NO | NO | NO | Lee public.candidatos |
-| Client Enterprise | NO | NO | ✅ (su perfil) | NO | Lee multicoach.candidatos |
-| Admin Micaela | ✅ | NO (manual scripts) | ✅ | ✅ (provisioning) | Acceso directo para admin |
+### 3.1 Garantías de Aislamiento
 
----
+1. **Un coach enterprise NO ve clientes de otra org**
+2. **Un owner enterprise NO ve datos de otras orgs**
+3. **Un cliente legacy sigue viendo SOLO Pathway**
+4. **Un cliente enterprise ve su org + su contexto de coaching**
+5. **Cambios en MultiCoach NO corrompen Pathway**
 
-## 6. Riesgos y Mitigaciones
+### 3.2 Garantías de Disponibilidad
 
-### RIESGO 1: Corrupción de `public.candidatos` (CRÍTICO)
+1. **Si MultiCoach cae, Pathway sigue funcionando**
+2. **Si MultiCoach es lento, Pathway es rápido**
+3. **Coaches legacy NO se ven afectados por MultiCoach**
 
-**Escenario:** Bug en multicoach.html escribe accidentalmente a public.candidatos
+### 3.3 Garantías de Auditoría
 
-**Impacto:** 
-- 37 clientes legacy pierden acceso
-- panel-v2.html rompe para 69 coaches
-- Pathway down
-
-**Mitigación:**
-- ✅ RLS policies: multicoach roles NO TIENEN permiso en public.*
-- ✅ Código: multicoach.html NUNCA importa public.* en queries
-- ✅ Audit: Trigger en public.* que alerta si se escribe desde multicoach.* (anómalo)
-- ✅ Backup: Snapshots automáticas cada 6 horas
-
-**Verificación:** 
-- Test: Intentar INSERT a public.* desde multicoach auth_id → debe fallar con 403
-- Monitoring: Alert si COUNT(*) de public.candidatos/usuarios cambia
+1. **Se registra quién accedió a qué y cuándo**
+2. **Se registran cambios de asignaciones (quién movió qué cliente)**
+3. **Se registran intentos de acceso no autorizado**
 
 ---
 
-### RIESGO 2: RLS Bypass vía SQL Editor
+## 4. Decisiones Abiertas (Para Arquitectura Técnica)
 
-**Escenario:** Usuario con SQL Editor access intenta SELECT * sin filtro en multicoach.candidatos
+Las siguientes decisiones se tomarán en EPIC 3 (Arquitectura Técnica):
 
-**Impacto:**
-- Ver clientes de otra org (fuga de privacidad)
-- Modificar datos de otra org (no posible si RLS está bien)
+1. **Estructura de almacenamiento**  
+   ¿Uno o varios schemas? ¿Una sola BD o múltiples? ¿Replicación?
 
-**Mitigación:**
-- ✅ RLS policies: USING filters por (auth.uid() IN (...) AND org_id = MY.org_id)
-- ✅ SQL Editor: Restricted role (read-only, específicas tablas)
-- ✅ Audit logs: Cada query en SQL Editor se registra + requiere approval para datos de prod
+2. **Autenticación**  
+   ¿Cómo se mapean usuarios legacy a enterprise? ¿Token refresh? ¿Duración?
 
----
+3. **Autorización**  
+   ¿RLS, middleware de API, checks en frontend, o combinación?
 
-### RIESGO 3: Coach Legacy intenta escribir en `multicoach.*`
+4. **APIs y Endpoints**  
+   ¿REST, GraphQL, Edge Functions? ¿Caching?
 
-**Escenario:** Bug en panel-v2 intenta PATCH a multicoach.candidatos con legacy JWT
+5. **Sincronización de Datos**  
+   ¿Cómo se sincroniza Pathway ↔ MultiCoach? ¿En tiempo real o eventual?
 
-**Impacto:**
-- 403 Forbidden (esperado) — sin impacto
-- O: data corruption si RLS está roto
+6. **Escalabilidad**  
+   ¿Cómo manejar 100 orgs, 1000 coaches, 10k clientes?
 
-**Mitigación:**
-- ✅ RLS: INSERT/UPDATE/DELETE denegado sin matching org_id
-- ✅ Code review: panel-v2 NUNCA abierto a multicoach.* queries
-- ✅ Test: RLS validation script (EPIC 1.5) prueba esto cada release
+7. **Migración de Coaches Legacy a Enterprise**  
+   ¿Cómo se convierte un coach individual en coach de una org sin perder datos?
 
 ---
 
-### RIESGO 4: JWT Leak / Impersonation
+## 5. Resultado Esperado Posterior a EPIC 2 (Este Documento)
 
-**Escenario:** Auth_id de coach1 se filtra; alguien lo usa para loguear
+Una vez aprobada esta Arquitectura Funcional y Lógica:
 
-**Impacto:**
-- Acceso como coach1 a multicoach.candidatos (si ese coach está en org)
-- O: Acceso como legacy coach a public.candidatos
+### EPIC 3: Arquitectura Técnica
+- Decidir estructura de BD (schemas, replicación, etc.)
+- Definir APIs y autenticación (JWT, roles, permisos)
+- Definir RLS y guardrails técnicas
 
-**Mitigación:**
-- ✅ JWT expiration: 1 hora (Supabase default)
-- ✅ Refresh tokens: Rotado cada 7 días
-- ✅ HTTPS-only: Cookies no accesibles via JS (HttpOnly)
-- ✅ CSP headers: Prevenir XSS que robe token
-- ✅ Monitoring: Alert si un auth_id loguea desde 2 IPs en < 1 min
+### EPIC 4: Implementación
+- Crear tablas/migraciones
+- Implementar Edge Functions
+- Conectar frontend a APIs
 
----
-
-### RIESGO 5: Migración Accidental Rompe `public.*`
-
-**Escenario:** Developer ejecuta migration que ALTER TABLE public.usuarios DROP COLUMN...
-
-**Impacto:**
-- panel-v2.html falla (no encuentra la columna)
-- 69 coaches offline
-- Pathway down
-
-**Mitigación:**
-- ✅ Policy: NO migrations a public.* sin 2-approver review
-- ✅ Code: Migrations nuevas SIEMPRE crean multicoach.*, NUNCA tocan public
-- ✅ Pre-deploy: Script valida que public.* schema matches expected (smoke test)
-- ✅ Approval gate: Merge bloqueado hasta migration aprobada
+### EPIC 5: Integración UX/UI
+- Decidir navegación con Product Design
+- Implementar multicoach.html
+- Adaptar panel-v2.html y cliente.html para enterprise
 
 ---
 
-### RIESGO 6: MultiCoach Owner accede otro Owner's Data
+## 6. Checklist de Aprobación
 
-**Escenario:** Owner de org A intenta ver org B's clientes
-
-**Impacto:**
-- Multi-tenant fuga de datos
-
-**Mitigación:**
-- ✅ RLS: Candidatos filtrados por (org_id = auth.user's org_id)
-- ✅ Code: multicoach.html SIEMPRE filtra WHERE org_id = MY.org_id
-- ✅ Test: EPIC 1.5 valida esto; parte del RLS test suite
-- ✅ Audit: Cada query a multicoach.candidatos se registra
-
----
-
-### RIESGO 7: Edge Functions Write Sin Validación
-
-**Escenario:** Edge function `mensaje-red` no valida auth_id, cualquiera escribe
-
-**Impacto:**
-- Spam/flood en mensajes de la red
-- O: Inyección de datos falsos
-
-**Mitigación:**
-- ✅ Code: Todas las edge functions validan `auth.uid()`
-- ✅ RLS: INSERT policies requieren org_id = auth.user's org
-- ✅ Testing: Unit tests de edge functions validan validación
-- ✅ Audit: Logs de cada INSERT/UPDATE/DELETE vía función
-
----
-
-## 7. Checklist Antes de EPIC 2 Implementación
-
-- [ ] Arquitectura revisada por Micaela
-- [ ] Riesgos entendidos y mitigaciones aceptadas
-- [ ] RLS policies validadas en QA (✅ EPIC 1.5)
-- [ ] Pathway en producción considerado "congelado" (✅ BD_FREEZE_POLICY)
-- [ ] Test data en multicoach.* está limpio (✅ consolidado en 1 org)
-- [ ] Decisión: ¿Mantener separadas las UI o fusionarlas?
-  - [ ] Opción A: 3 UIs separadas (multicoach.html, panel-v2.html, cliente.html)
-  - [ ] Opción B: UI unificada que detecta org_id y cambia flujo
-- [ ] Backups automáticos de public.* en lugar (✅ Supabase Cloud)
-- [ ] Monitoring/alerts para public.* escrituras activos
-
----
-
-## 8. Decisión Pendiente: Arquitectura UI
-
-### Opción A: UIs Separadas (Hoy)
-```
-multicoach.html  ← Owner de red
-panel-v2.html    ← Coach individual (legacy)
-cliente.html     ← Client (universal, pero queries distintas)
-```
-**Ventajas:** Foco, control, fácil mantener separados  
-**Desventajas:** Code duplication, confuso para user
-
-### Opción B: UI Unificada (Futuro)
-```
-panel-unificado.html
-  if (org_id) {
-    // MultiCoach owner view
-  } else {
-    // Legacy coach view (public.*)
-  }
-```
-**Ventajas:** Single entry point, consistent UX  
-**Desventajas:** Complejidad, riesgo de crosstalk
-
-**Recomendación:** Empezar con A (separadas), migrar a B si necesario.
-
----
-
-**Próximo paso:** Revisión de Micaela. Una vez aprobada esta arquitectura, proceder a EPIC 2.1 (Implementación del panel MultiCoach).
+- [ ] Principios rectores están claros
+- [ ] Los 8 dominios cubren el negocio
+- [ ] Flujos de usuario son coherentes
+- [ ] Garantías de aislamiento son suficientes
+- [ ] Pathway no se ve comprometido
+- [ ] Decisiones técnicas quedan para EPIC 3
