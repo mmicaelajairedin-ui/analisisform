@@ -444,24 +444,67 @@
   </div>
 
   <!-- Scripts -->
-  <script src="../js/mock-data.js"></script>
   <script src="../js/utils.js"></script>
   <script src="../js/components.js"></script>
 
   <script>
     let currentCoach = null;
+    let currentMetrics = null;
+    let currentClients = null;
+    let currentActivity = null;
+    let orgId = null; // Will be fetched from API or extracted from URL
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       const coachId = getQueryParam('coachId');
+      orgId = getQueryParam('orgId') || '550e8400-e29b-41d4-a716-446655440000'; // Default test org
+
       if (coachId) {
-        currentCoach = findCoach(coachId);
-        if (currentCoach) {
-          renderCoachDetail();
-        } else {
-          document.querySelector('.page-content').innerHTML = '<p>Coach no encontrado</p>';
+        // Show loading state
+        document.querySelector('.page-content').innerHTML = '<p>Cargando...</p>';
+
+        try {
+          await fetchCoachDetail(coachId);
+          if (currentCoach) {
+            renderCoachDetail();
+          } else {
+            document.querySelector('.page-content').innerHTML = '<p>Coach no encontrado</p>';
+          }
+        } catch (error) {
+          console.error('Error loading coach:', error);
+          document.querySelector('.page-content').innerHTML = `<p>Error: ${error.message}</p>`;
         }
       }
     });
+
+    async function fetchCoachDetail(coachId) {
+      // Get JWT token from localStorage (set during login)
+      const token = localStorage.getItem('sb-token');
+
+      if (!token) {
+        throw new Error('No authentication token found. Please log in.');
+      }
+
+      const url = `/api/organization/${orgId}/coaches/${coachId}`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || `Failed to fetch coach (${response.status})`);
+      }
+
+      const data = await response.json();
+      currentCoach = data.coach;
+      currentMetrics = data.metrics;
+      currentClients = data.clients || [];
+      currentActivity = data.activity || [];
+    }
 
     function renderCoachDetail() {
       // Update page title
@@ -484,15 +527,15 @@
 
       // Render sidebar stats
       document.getElementById('statusValue').textContent = getStatusLabel(currentCoach.status);
-      document.getElementById('utilizationValue').textContent = `${getCoachUtilization(currentCoach)}%`;
+      document.getElementById('utilizationValue').textContent = `${currentMetrics.utilizationPercent}%`;
       document.getElementById('lastActiveValue').textContent = daysAgo(currentCoach.lastActive);
       document.getElementById('joinedValue').textContent = formatDateShort(currentCoach.joinedAt);
-      document.getElementById('npsValue').textContent = currentCoach.nps.toFixed(1);
-      document.getElementById('retentionValue').textContent = `${currentCoach.retentionRate}%`;
-      document.getElementById('completionValue').textContent = `${currentCoach.completionRate}%`;
-      document.getElementById('durationValue').textContent = `${currentCoach.metrics.avgDuration} min`;
-      document.getElementById('sessionCountValue').textContent = formatNumber(currentCoach.sessionCount);
-      document.getElementById('programsValue').textContent = formatNumber(currentCoach.totalProgramsCompleted);
+      document.getElementById('npsValue').textContent = currentMetrics.nps.toFixed(1);
+      document.getElementById('retentionValue').textContent = `${currentMetrics.retentionRate}%`;
+      document.getElementById('completionValue').textContent = `${currentMetrics.completionRate}%`;
+      document.getElementById('durationValue').textContent = `${currentMetrics.avgDuration} min`;
+      document.getElementById('sessionCountValue').textContent = formatNumber(currentMetrics.sessionCount);
+      document.getElementById('programsValue').textContent = formatNumber(currentMetrics.totalProgramsCompleted);
 
       // Render clients
       renderClients();
@@ -505,13 +548,12 @@
     }
 
     function renderClients() {
-      const coachClients = CLIENTS.filter(c => c.coachId === currentCoach.id);
-      if (coachClients.length === 0) {
+      if (!currentClients || currentClients.length === 0) {
         document.getElementById('clientList').innerHTML = '<p class="text-muted">No hay clientes asignados</p>';
         return;
       }
 
-      const html = coachClients.map(client => `
+      const html = currentClients.map(client => `
         <div class="client-item" onclick="navigateTo('owner-client-detail', { clientId: '${client.id}' })" style="cursor: pointer;">
           <p class="client-name">${client.avatar} ${escapeHtml(client.name)}</p>
           <p class="client-meta">
@@ -536,31 +578,31 @@
         <div class="metric-row">
           <div class="metric-box">
             <div class="metric-box-label">NPS Score</div>
-            <div class="metric-box-value">⭐ ${currentCoach.nps}</div>
+            <div class="metric-box-value">⭐ ${currentMetrics.nps}</div>
           </div>
           <div class="metric-box">
             <div class="metric-box-label">Tasa Retención</div>
-            <div class="metric-box-value">${currentCoach.retentionRate}%</div>
+            <div class="metric-box-value">${currentMetrics.retentionRate}%</div>
           </div>
         </div>
         <div class="metric-row">
           <div class="metric-box">
             <div class="metric-box-label">Tasa Completitud</div>
-            <div class="metric-box-value">${currentCoach.completionRate}%</div>
+            <div class="metric-box-value">${currentMetrics.completionRate}%</div>
           </div>
           <div class="metric-box">
             <div class="metric-box-label">Duración Promedio</div>
-            <div class="metric-box-value">${currentCoach.metrics.avgDuration} min</div>
+            <div class="metric-box-value">${currentMetrics.avgDuration} min</div>
           </div>
         </div>
         <div class="metric-row">
           <div class="metric-box">
             <div class="metric-box-label">Sesiones Totales</div>
-            <div class="metric-box-value">${formatNumber(currentCoach.sessionCount)}</div>
+            <div class="metric-box-value">${formatNumber(currentMetrics.sessionCount)}</div>
           </div>
           <div class="metric-box">
             <div class="metric-box-label">Programas Completados</div>
-            <div class="metric-box-value">${formatNumber(currentCoach.totalProgramsCompleted)}</div>
+            <div class="metric-box-value">${formatNumber(currentMetrics.totalProgramsCompleted)}</div>
           </div>
         </div>
         <div class="metric-row">
@@ -570,7 +612,7 @@
           </div>
           <div class="metric-box">
             <div class="metric-box-label">Utilización</div>
-            <div class="metric-box-value">${getCoachUtilization(currentCoach)}%</div>
+            <div class="metric-box-value">${currentMetrics.utilizationPercent}%</div>
           </div>
         </div>
       `;
@@ -578,19 +620,17 @@
     }
 
     function renderActivity() {
-      const activities = [
-        { time: 'Hace 2 horas', text: `Completó sesión con ${CLIENTS.filter(c => c.coachId === currentCoach.id)[0]?.name || 'cliente'}` },
-        { time: 'Hace 1 día', text: 'Nuevo cliente asignado' },
-        { time: 'Hace 3 días', text: 'Programa completado' },
-        { time: 'Hace 1 semana', text: 'Sesión de onboarding completada' }
-      ];
+      if (!currentActivity || currentActivity.length === 0) {
+        document.getElementById('activityTimeline').innerHTML = '<p class="text-muted">Sin actividad reciente</p>';
+        return;
+      }
 
-      const html = activities.map(act => `
+      const html = currentActivity.map(act => `
         <div class="activity-item">
           <div class="activity-dot"></div>
           <div class="activity-content">
-            <div class="activity-time">${act.time}</div>
-            <p class="activity-text">${act.text}</p>
+            <div class="activity-time">${daysAgo(act.created_at)}</div>
+            <p class="activity-text">${act.description}</p>
           </div>
         </div>
       `).join('');
