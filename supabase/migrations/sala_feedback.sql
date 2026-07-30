@@ -18,12 +18,21 @@ CREATE INDEX IF NOT EXISTS sala_feedback_email_idx ON sala_feedback (lower(email
 
 ALTER TABLE sala_feedback ENABLE ROW LEVEL SECURITY;
 
--- El cliente (anon, sin login) deja su feedback.
+-- ⚠️ anon Y authenticated en AMBAS policies + GRANT. Misma familia que
+-- `notificaciones.sql`/`reviews_insert_portal.sql`: los coaches migrados a
+-- Supabase Auth mandan JWT (rol `authenticated`); si la policy es `to anon`
+-- sola, ninguna matchea → el panel del coach NO PODÍA LEER el feedback (la
+-- tarjeta "Llamadas de la Sala" salía vacía aunque el cliente sí lo hubiera
+-- dejado). El INSERT del cliente ya funcionaba (anon key), pero se cubre igual
+-- por si un cliente logueado (portal, authenticated) deja su valoración.
+grant select, insert on public.sala_feedback to anon, authenticated;
+
+-- El cliente deja su feedback (anon sin login, o authenticated desde el portal).
 DROP POLICY IF EXISTS sala_feedback_insert ON sala_feedback;
 CREATE POLICY sala_feedback_insert ON sala_feedback
-  FOR INSERT TO anon WITH CHECK (true);
+  FOR INSERT TO anon, authenticated WITH CHECK (true);
 
 -- El panel del coach lo lee (mismo modelo que el resto del panel).
 DROP POLICY IF EXISTS sala_feedback_select ON sala_feedback;
 CREATE POLICY sala_feedback_select ON sala_feedback
-  FOR SELECT TO anon USING (true);
+  FOR SELECT TO anon, authenticated USING (true);

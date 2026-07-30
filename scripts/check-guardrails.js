@@ -1691,6 +1691,27 @@ const RULES = [
     },
   },
   {
+    name: "sala_feedback: la RLS de SELECT cubre anon Y authenticated (el coach lo LEE)",
+    bug: "El cliente valora la sesión de la Sala (sala_feedback: rating 1..5). El " +
+         "panel del coach lo lee en \"Llamadas de la Sala\" (_salaInsightsLoad → _sb, " +
+         "manda el JWT). La policy sala_feedback_select era `to anon` sola → los " +
+         "coaches migrados a Supabase Auth (rol authenticated) NO veían NINGÚN " +
+         "feedback (la tarjeta salía vacía aunque el cliente sí lo dejó). Misma " +
+         "familia que notificaciones/reviews: GRANT + policy de SELECT deben cubrir " +
+         "anon Y authenticated.",
+    check() {
+      const n = read("supabase/migrations/sala_feedback.sql");
+      if (!n) return "falta la migración sala_feedback.sql.";
+      if (!/grant[^;]*\bon\s+public\.sala_feedback\b[^;]*\bauthenticated\b/i.test(n))
+        return "sala_feedback.sql: falta el GRANT sobre public.sala_feedback al rol authenticated.";
+      const pol = /create\s+policy\s+sala_feedback_select[\s\S]*?using\s*\(true\)/i.exec(n);
+      if (!pol) return "sala_feedback.sql: no se encuentra la policy sala_feedback_select.";
+      if (!/\bauthenticated\b/i.test(pol[0]))
+        return "sala_feedback.sql: la policy sala_feedback_select no incluye 'authenticated' → el coach con JWT no puede LEER el feedback del cliente.";
+      return null;
+    },
+  },
+  {
     name: "cierre de venta: convertir manda servicios; el acceso llega al PAGAR",
     bug: "Círculo del cliente Pathway: tras una llamada que fue bien, \"Convertir " +
          "en cliente\" (act=seg-convert) le manda al lead TU lista de servicios + " +
