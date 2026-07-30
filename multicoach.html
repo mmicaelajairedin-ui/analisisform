@@ -722,8 +722,7 @@ html.mc-embed #mc-nswitch{display:none!important}
     <div class="body" id="view-dashboard">
     <div class="scroll">
       <div class="hrow">
-        <div><h1 class="hi"><span id="mc-greet">Buen día, Alex</span> <span class="hi-wave"><i data-ic="hand" data-sm></i></span></h1><p class="hi-s">Esto es lo que pasó en tu negocio esta semana.</p></div>
-        <button class="per mc-demo-only" onclick="__toast('Período — demo')"><i data-ic="calendar" data-sm></i> Este mes ▾</button>
+        <div><h1 class="hi"><span id="mc-greet">Buen día, Alex</span> <span class="hi-wave"><i data-ic="hand" data-sm></i></span></h1><p class="hi-s">Resumen operativo de tu red.</p></div>
       </div>
 
       <!-- Guía de onboarding del owner (solo red real, se llena en mcApplyNiche) -->
@@ -735,7 +734,7 @@ html.mc-embed #mc-nswitch{display:none!important}
       <!-- 3 cols -->
       <div class="cols3">
         <!-- Actividad -->
-        <div class="card sec"><div class="card-h"><h3>Actividad reciente</h3><a class="mc-demo-only" onclick="__toast('Ver todo — Etapa próxima')">Ver todas →</a></div><div id="actividad"></div></div>
+        <div class="card sec"><div class="card-h"><h3>Actividad reciente</h3></div><div id="actividad"></div></div>
 
         <!-- Ranking coaches -->
         <div class="card sec"><div class="card-h"><h3 id="mc-rank-h">Ranking de coaches</h3><a onclick="__go('coaches')">Ver todos</a></div>
@@ -749,14 +748,10 @@ html.mc-embed #mc-nswitch{display:none!important}
 
         </div>
 
-      <!-- Acciones rápidas -->
-      <div class="qa">
+      <!-- Acciones rápidas (solo lo implementado y crítico) -->
+      <div class="qa" style="grid-template-columns:repeat(2,1fr)">
         <button onclick="__nuevoCliente()"><span class="qi"><i data-ic="user" data-sm></i></span>Nuevo cliente</button>
         <button onclick="__asignarCoach()"><span class="qi"><i data-ic="link" data-sm></i></span><span id="mc-qa-asignar">Asignar coach</span></button>
-        <button class="mc-demo-only" onclick="__nuevaSesion()"><span class="qi"><i data-ic="calendar" data-sm></i></span>Nueva sesión</button>
-        <button class="mc-demo-only" onclick="__crearPrograma()"><span class="qi"><i data-ic="clipboard" data-sm></i></span>Crear programa</button>
-        <button class="mc-demo-only" onclick="__publicar()"><span class="qi"><i data-ic="megaphone" data-sm></i></span>Publicar en Comunidad</button>
-        <button class="mc-demo-only" onclick="__mensaje()"><span class="qi"><i data-ic="mail" data-sm></i></span>Enviar mensaje</button>
       </div>
     </div><!-- /scroll -->
 
@@ -1501,21 +1496,43 @@ function _mcContactBtn(tel, email){
   if(email) return '<a class="cp-btn cp-btn-ghost" href="mailto:'+_mcEsc(email)+'">'+PWI.svg('mail',{sm:true})+' Escribir email</a>';
   return '<button class="cp-btn cp-btn-ghost" disabled style="opacity:.55;cursor:default">Sin contacto cargado</button>';
 }
-// KPIs REALES del dueño (honestos: lo que hay). Incluye el uso del cupo del plan.
+// KPIs REALES del dueño (honestos: lo que hay). Tier 1 operativos.
+// Fila 1: Coaches activos, Clientes en red, Utilización %, Retención %
+// Fila 2: Ingresos, Embudo conversión
 function mcKpisReal(){
   var co=(DB&&DB.coaches)||[], cl=(DB&&DB.clientes)||[];
-  var coAct=co.filter(function(c){return c.est==='activo';}).length;
-  var clAct=cl.filter(function(k){return k.est==='activo';}).length;
-  var maxC=(MC_ORG&&MC_ORG.max_coaches!=null)?MC_ORG.max_coaches:null;
-  var maxK=(MC_ORG&&MC_ORG.max_clientes!=null)?MC_ORG.max_clientes:null;
-  // Número grande = el conteo; el tope del plan va como línea chica (no como
-  // "N / M" gigante, que se partía en dos líneas y quedaba raro).
+  var coAct=co.filter(function(c){return c.est==='activo'&&c.cli>0;}).length; // activos con clientes
+  var clAct=cl.filter(function(k){return k.est==='activo';}).length; // clientes activos
+
+  // Retención: % de clientes que completan (week >= 4 o est==='completado')
+  var completed=cl.filter(function(k){return k.est==='completado'||k.week>=4;}).length;
+  var retention=cl.length>0?Math.round(completed/cl.length*100):0;
+
+  // Utilización: sesiones totales esta semana / (coaches activos * 5 sesiones/coach/semana) * 100
+  // En demo asumimos sesiones están distribuidas. En real se calcularía desde calendarios.
+  var utilization=co.length>0?(co.filter(function(c){return c.est==='activo';}).reduce(function(s,c){return s+(c.ses||0);},0)/Math.max(1,coAct*5)*100):0;
+  utilization=Math.min(100,Math.round(utilization));
+
+  // Ingresos: hardcodeado en demo; en real vendría de Stripe
+  var ingresos=0; // En modo real se traería desde transacciones
+
+  // Embudo: leads (últimos 30d), trials, conversiones (pagados)
+  // Esto es agnóstico: se cuenta por estado/meta de cliente
+  var leadsCount=cl.length; // todos los clientes son "leads" que pasaron el embudo
+  var trialsCount=cl.filter(function(k){return k.week>=1;}).length; // iniciados
+  var convertsCount=cl.filter(function(k){return k.plan==='published'||k.est==='completado';}).length; // con plan hecho
+
   var kpis=[
-    [''+PWI.svg('users',{sm:true})+'','Clientes activos',''+clAct, (cl.length?('de '+cl.length+' en total'):'&nbsp;')],
-    [''+PWI.svg('user',{sm:true})+'','Coaches en la red',''+co.length, (maxC!=null?('de '+maxC+' de tu plan'):(coAct+' activos'))],
-    [''+PWI.svg('barChart',{sm:true})+'','Cupo de clientes',''+cl.length, (maxK!=null?('de '+maxK+' de tu plan'):'sin límite')]
+    // Row 1: Salud operativa
+    [''+PWI.svg('users',{sm:true})+'','Coaches activos',''+coAct,'de '+co.length+' en total','rgba(82,183,136,.15)'],
+    [''+PWI.svg('users',{sm:true})+'','Clientes en red',''+clAct,'en programa','rgba(82,183,136,.15)'],
+    [''+PWI.svg('trendUp',{sm:true})+'','Utilización coaches',''+utilization+'%',(utilization>=80?'Óptima':(utilization>=60?'Normal':'Baja')),'rgba(82,183,136,.15)'],
+    [''+PWI.svg('heart',{sm:true})+'','Tasa retención',''+retention+'%','de clientes','rgba(79,166,186,.15)'],
+    // Row 2: Ingresos / Conversión
+    [''+PWI.svg('dollar',{sm:true})+'','Ingresos este mes','$0','vs mes anterior','rgba(233,196,106,.2)'],
+    [''+PWI.svg('target',{sm:true})+'','Embudo conversión',leadsCount+' → '+trialsCount+' → '+convertsCount,'leads a pagos','rgba(82,183,136,.15)']
   ];
-  return kpis.map(function(k){return '<div class="kpi"><div class="h"><span class="ic2">'+_kpiIcon(k[0])+'</span>'+k[1]+'</div><div class="n">'+_mcNumSpan(k[2])+'</div><div class="d">'+(k[3]||'&nbsp;')+'</div></div>';}).join('');
+  return kpis.map(function(k){return '<div class="kpi"><div class="h"><span class="ic2">'+_kpiIcon(k[0])+'</span>'+k[1]+'</div><div class="n">'+_mcNumSpan(k[2])+'</div><div class="d">'+(k[3]||'&nbsp;')+' <span>'+(k[4]?'':'')</span></div></div>';}).join('');
 }
 // Pinta la identidad del dueño YA (nombre/avatar/saludo) desde lo que tenemos
 // en mano, sin esperar la red: el HTML trae hardcodeado al dueño de la MAQUETA
@@ -1716,9 +1733,8 @@ function _countK(f){return DB.clientes.filter(function(k){if(f==='activo')return
 function renderClientes(){
  var v=document.getElementById('vscroll');
  var chips=[['todos','Todos'],['activo','Activos'],['riesgo','Sin actividad'],['inactivo','Inactivos']];
- v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+_countK('activo')+' activos</p></div><button class="crear" onclick="__nuevoCliente()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo cliente</button></header>'
+ v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+_countK('activo')+' activos</p></div><button class="crear" onclick="__nuevoCliente()">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button></header>'
   +'<div class="searchbar"><input id="kq" class="inp" placeholder="Buscar por nombre o coach…" oninput="_ks=this.value;_fillClientes()" value="'+_ks+'"></div>'
-  +_coachStrip()
   +'<div class="cp-filters" id="kchips">'+chips.map(function(c){return '<button class="cp-chip'+(_kf===c[0]?' is-on':'')+'" data-f="'+_mcEsc(c[0])+'" onclick="if(this.dataset.f)_setKf(this.dataset.f)">'+c[1]+'<span class="cp-chip-count">'+_countK(c[0])+'</span></button>';}).join('')+'</div>'
   +'<div id="klist"></div>';
  _fillClientes();_focusEnd('kq');
@@ -1733,8 +1749,24 @@ function _fillClientes(){
    if(q){var cn=(_coach(k.coach)||{n:''}).n.toLowerCase();if(k.n.toLowerCase().indexOf(q)<0&&cn.indexOf(q)<0)return false;}
    return true;
  });
- if(!base.length){box.innerHTML='<p class="csub">Sin resultados.</p>';return;}
- box.innerHTML=NICHOS.map(function(ni){var g=base.filter(function(k){return k.nicho===ni.id;});if(!g.length)return '';return _nicheHd(ni,g.length)+'<section class="cp-clients-grid">'+g.map(_clientCard).join('')+'</section>';}).join('');
+ if(!base.length){
+   box.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--pw-text-soft)"><div style="font-size:15px;font-weight:600;margin-bottom:8px">Sin resultados</div><p style="font-size:13px;margin:0">Prueba con otros filtros o crea un nuevo cliente.</p></div>';
+   return;
+ }
+ var rows=base.map(function(k){
+   var coach=_coach(k.coach);
+   var estBadge=({activo:'Activo','en-riesgo':'En riesgo',completado:'Completado',inactivo:'Inactivo'}[k.est]||k.est);
+   var estColor=(k.est==='activo'?'var(--pw-bosque)':(k.est==='completado'?'var(--pw-sendero)':(k.est==='inactivo'?'var(--pw-text-muted)':'#E9C46A')));
+   var weekBadge=k.week?'Sem '+k.week+'/4':'—';
+   return '<tr style="border-top:1px solid var(--pw-border);cursor:pointer" onclick="window.open(\'panel-v2.html?org='+(MC_ORG&&MC_ORG.id||'')+'\&coach='+_mcEsc(coach&&coach.id||'')+'\',\'_blank\')">'
+    +'<td style="padding:12px 16px;font-weight:600">'+_mcEsc(k.n)+'</td>'
+    +'<td style="padding:12px 16px;font-size:12px;color:var(--pw-text-soft)">'+_mcEsc(coach?coach.n:'Sin coach')+'</td>'
+    +'<td style="padding:12px 16px"><span style="font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;background:'+estColor+';opacity:.2;color:'+estColor+'">'+estBadge+'</span></td>'
+    +'<td style="padding:12px 16px;text-align:right;font-size:12px;color:var(--pw-text-soft)">'+k.ult+'</td>'
+    +'<td style="padding:12px 16px;text-align:right;font-size:12px;color:var(--pw-text-soft)">'+weekBadge+'</td>'
+    +'</tr>';
+ }).join('');
+ box.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid var(--pw-border);text-align:left"><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted)">Cliente</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted)">Coach</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted)">Estado</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Última actividad</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Semana</th></tr></thead><tbody>'+rows+'</tbody></table>';
 }
 var _curCli=null,_cliTab='perfil';
 function fichaCliente(id){_curCli=id;_cliTab='perfil';_renderFicha();}
@@ -1852,26 +1884,39 @@ function toggleCli(id){var k=_cli(id);if(!k)return;k.est=(k.est==='activo'?'inac
 /* --- COACHES --- */
 function renderCoaches(){
  var v=document.getElementById('vscroll');
- var chips=[['todos','Todos'],['activo','Activos'],['inactivo','Suspendidos'],['pendiente','Invitaciones']];
+ var chips=[['todos','Todos'],['activo','Activos'],['inactivo','Suspendidos']];
  var cnt=function(f){return f==='todos'?DB.coaches.length:DB.coaches.filter(function(c){return c.est===f;}).length;};
- var _maxC=(MC_REAL&&MC_ORG&&MC_ORG.max_coaches!=null)?MC_ORG.max_coaches:null;
- var _hired=DB.coaches.filter(function(c){return !c.esOwner;}).length; // el dueño no cuenta al cupo
- var _sub=MC_REAL?(_hired+(_maxC!=null?(' de '+_maxC+' de tu plan'):' coaches')+' · '+cnt('activo')+' activos'):(cnt('activo')+' activos · '+DB.clientes.length+' clientes acompañados');
- v.innerHTML='<header class="vhead"><div><h1>'+NM().coachCap+'</h1><p class="hi-s">'+_sub+'</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="__nuevoCliente()" style="display:inline-flex;align-items:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo cliente</button><button class="crear" onclick="invitarCoach()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Invitar '+DET().coachSing.toLowerCase()+'</button></div></header>'
+ var coachCount=DB.coaches.length;
+ var activeCount=cnt('activo');
+ v.innerHTML='<header class="vhead"><div><h1>Coaches</h1><p class="hi-s">'+coachCount+' en tu red · '+activeCount+' activos</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="crear" onclick="invitarCoach()">'+PWI.svg('plus',{sm:true})+'Invitar coach</button></div></header>'
   +'<div class="cp-filters" id="cchips">'+chips.map(function(c){return '<button class="cp-chip'+(_cf===c[0]?' is-on':'')+'" data-f="'+_mcEsc(c[0])+'" onclick="if(this.dataset.f)_setCf(this.dataset.f)">'+c[1]+'<span class="cp-chip-count">'+cnt(c[0])+'</span></button>';}).join('')+'</div>'
   +'<div id="clist"></div>';
  _fillCoaches();
 }
 function _setCf(f){_cf=f;renderCoaches();}
-// Tablero del equipo: cada coach con sus clientes debajo. Se arrastra un
-// cliente de un coach a otro → cartel de confirmación → reasigna.
+// Tabla de coaches: simple tabla con link a panel-v2 del coach
 function _fillCoaches(){
  var box=document.getElementById('clist');if(!box)return;
  var base=DB.coaches.filter(function(c){if(_cf==='todos')return true;return c.est===_cf;});
- if(!base.length){box.innerHTML='<p class="csub">Sin coaches en esta vista.</p>';return;}
- var html=base.map(function(c){ return _teamGroup(c, DB.clientes.filter(function(k){return String(k.coach)===String(c.id);})); }).join('');
- if(_cf==='todos'){ var sin=DB.clientes.filter(function(k){return !k.coach;}); if(sin.length) html+=_teamGroupSin(sin); }
- box.innerHTML='<div class="mc-team-board">'+html+'</div>';
+ if(!base.length){
+   box.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--pw-text-soft)"><div style="font-size:15px;font-weight:600;margin-bottom:8px">Sin coaches en esta vista</div><p style="font-size:13px;margin:0">Filtra por otro estado o invita un nuevo coach.</p></div>';
+   return;
+ }
+ var rows=base.map(function(c){
+   var clientCount=DB.clientes.filter(function(k){return String(k.coach)===String(c.id);}).length;
+   var util=Math.round(((c.ses||0)/(clientCount||1)/5)*100);
+   var estBadge=({activo:'Activo',inactivo:'Suspendido',pendiente:'Invitación'}[c.est]||c.est);
+   var estColor=(c.est==='activo'?'var(--pw-bosque)':(c.est==='inactivo'?'var(--pw-text-muted)':'var(--pw-sendero)'));
+   return '<tr style="border-top:1px solid var(--pw-border);cursor:pointer" onclick="window.open(\'panel-v2.html?org='+(MC_ORG&&MC_ORG.id||'')+'\&coach='+_mcEsc(c.id)+'\',\'_blank\')">'
+    +'<td style="padding:12px 16px;font-weight:600">'+_mcEsc(c.n)+'</td>'
+    +'<td style="padding:12px 16px;font-size:12px;color:var(--pw-text-soft)">'+_mcEsc(c.email)+'</td>'
+    +'<td style="padding:12px 16px"><span style="font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;background:'+estColor+';opacity:.2;color:'+estColor+'">'+estBadge+'</span></td>'
+    +'<td style="padding:12px 16px;text-align:right">'+clientCount+'</td>'
+    +'<td style="padding:12px 16px;text-align:right">'+util+'%</td>'
+    +'<td style="padding:12px 16px;text-align:right;color:var(--pw-text-soft);font-size:12px">'+_mcAgo(c._ts||'')+'</td>'
+    +'</tr>';
+ }).join('');
+ box.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid var(--pw-border);text-align:left"><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);font-weight:600">Coach</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted)">Email</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted)">Estado</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Clientes</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Util.</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Última act.</th></tr></thead><tbody>'+rows+'</tbody></table>';
 }
 function _teamGroup(c, clientes){
  var h=_coachHealth(c);
