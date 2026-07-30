@@ -2,34 +2,252 @@
 
 **Fase:** Diseño Funcional y Lógico (pre-técnico)  
 **Objetivo:** Definir qué hace el sistema sin fijar cómo se implementa  
-**Audiencia:** Revisión de Micaela antes de proceder a Arquitectura Técnica
+**Audiencia:** Documento Rector de Producto  
+**Aprobación Requerida:** Micaela Jairedin
 
 ---
 
-## 0. Principios Rectores
+## 0. ¿Qué es MultiCoach?
 
-Estos principios NUNCA cambian. Toda decisión posterior debe respetarlos:
+### Definición del Producto
 
-1. **Independencia de Pathway**  
-   Pathway (69 coaches, 37 clientes, proceso de mentoria de 4 semanas) sigue funcionando exactamente como hoy. MultiCoach no interfiere con su operación.
+**MultiCoach es la plataforma de administración empresarial para organizaciones que utilizan Pathway.**
 
-2. **No Sustitución, Reutilización**  
-   MultiCoach no reemplaza el Panel del Coach ni el Portal del Cliente. Administra permisos y contexto organizacional. Las pantallas de coaching existentes se reutilizan (con soporte para clientes enterprise).
+Pathway ejecuta el proceso de coaching de 4 semanas: análisis, CV, cartas, sesiones, documentos. Es un sistema individual, de coach a cliente.
 
-3. **Dominios Separados**  
-   - **MultiCoach:** Administra organizaciones, asignaciones, permisos, supervisión, facturación.
-   - **Pathway:** Ejecuta el proceso de coaching: análisis, CV, cartas, sesiones, documentos.
+MultiCoach es la capa de administración que se coloca **sobre** Pathway cuando una organización (empresa, consultora, agencia) quiere escalar el servicio de coaching a múltiples coaches y clientes bajo un modelo empresarial.
 
-4. **Integridad de Datos**  
-   Nunca se corrompen datos existentes. Los cambios son aditivos o scoped a su contexto (empresa, coach, cliente).
+### Lo Que Hace MultiCoach
+
+MultiCoach **administra el contexto organizacional** — quién trabaja en qué organización, quién tiene permiso para ver qué cliente, cómo se factura, qué reportes necesita el propietario — **sin ejecutar el coaching**.
+
+La ejecución del coaching (sesiones, documentos, análisis) sigue siendo **100% responsabilidad de Pathway**. MultiCoach simplemente proporciona el perímetro empresarial alrededor.
+
+### Analogía
+
+```
+Pathway = el motor de coaching (análisis, CV, sesiones, documentos)
+MultiCoach = la cabina de administración (permisos, org, facturación, reportes)
+
+Un coach individual usa Pathway sin MultiCoach.
+Una empresa usa MultiCoach + Pathway juntos.
+```
 
 ---
 
-## 1. Arquitectura Funcional
+## 1. Límites del Sistema
 
-### 1.1 Dominios de Negocio
+### Qué Hace MultiCoach
 
-El sistema se organiza alrededor de 8 dominios funcionales independientes:
+✅ **Administración de Organizaciones**
+- Crear y gestionar empresas/consultoras como unidades administrativas
+- Mantener datos de la organización (nombre, sector, país, contacto)
+
+✅ **Gestión de Coaches**
+- Invitar coaches a una organización
+- Asignar clientes a coaches
+- Ver historial de actividad por coach
+- Desactivar coaches cuando sea necesario
+
+✅ **Gestión de Clientes**
+- Importar/registrar clientes en una organización
+- Asignar clientes a coaches específicos
+- Ver estado de progreso agregado
+- Crear reportes de progreso por cliente/coach
+
+✅ **Permisos y Acceso**
+- Garantizar que cada actor (owner, coach, cliente) vea SOLO lo que le corresponde
+- Auditar intentos de acceso no autorizado
+- Gestionar ciclo de vida de credenciales
+
+✅ **Analytics y Reportes Empresariales**
+- Dashboard de salud de la organización (clientes activos, tasa de progreso, etc.)
+- Reportes de retención y conversión
+- Métricas por coach y por período
+
+✅ **Facturación y Suscripción**
+- Gestionar planes y pagos de la organización
+- Controlar acceso según estado de suscripción
+- Historial de facturación
+
+✅ **Configuración y Marca**
+- Personalización de la experiencia por organización (logo, colores, idioma)
+- Activación/desactivación de features
+- Configuración de preferencias organizacionales
+
+✅ **Supervisión**
+- Owner puede ver agregados de su equipo
+- Auditoría de quién accedió a qué y cuándo
+
+### Qué NO Hace MultiCoach
+
+❌ **NO ejecuta sesiones de coaching**
+- Las sesiones las gestiona el coach en Pathway
+- MultiCoach solo MUESTRA el estado de las sesiones
+
+❌ **NO sustituye el Panel del Coach**
+- El coach sigue usando panel-v2.html para su trabajo diario
+- MultiCoach proporciona solo el contexto organizacional (scope de clientes, asignaciones)
+
+❌ **NO sustituye el Portal del Cliente**
+- El cliente sigue usando cliente.html para acceder a su perfil, documentos, recursos
+- MultiCoach proporciona solo el contexto de su organización (nombre, logo, coach asignado)
+
+❌ **NO reemplaza funcionalidades existentes de Pathway**
+- Análisis de CV: lo hace Pathway, no MultiCoach
+- Generación de informes: lo hace Pathway, no MultiCoach
+- Sesiones y agendar: lo hace Pathway, no MultiCoach
+- Recursos y documentos: los gestiona Pathway, no MultiCoach
+
+❌ **NO inventa nuevas pantallas si Pathway ya las tiene**
+- Principio de reutilización: MultiCoach suma contexto a pantallas existentes, no crea duplicadas
+
+---
+
+## 2. Principios Rectores → Criterios de Aceptación
+
+Cada principio es verificable y debe constar en test/audit.
+
+### Criterio 1: Independencia de Pathway
+
+**Principio:** Pathway funciona igual con o sin MultiCoach.
+
+| Prueba | Esperado | Verificable |
+|--------|----------|------------|
+| ¿Puede un coach legacy acceder si MultiCoach está down? | Sí, sin limitación | CI test: POST /login legacy coach sin MultiCoach → debe funcionar |
+| ¿Se rompen datos de Pathway si MultiCoach falla? | No, jamás | Test de integridad: COUNT(*) public.* antes/después de falla de MultiCoach = igual |
+| ¿Puede un cliente legacy ver su perfil si MultiCoach no existe? | Sí, sin cambio | CI test: cliente legacy accede a cliente.html → ve todo igual |
+| ¿Se ejecutan sesiones si MultiCoach está apagado? | Sí, normalmente | Procedimiento: validar en producción que sesiones de Pathway continúan |
+
+**Resultado:** Si MultiCoach cae, Pathway sigue 100% operativo. Si MultiCoach nunca existiera, Pathway funcionaría idéntico.
+
+---
+
+### Criterio 2: No Sustitución, Reutilización
+
+**Principio:** MultiCoach se coloca como **capa de administración**, no como sustituto de nada.
+
+| Prueba | Esperado | Verificable |
+|--------|----------|------------|
+| ¿Existe panel-multicoach.html NUEVO y duplicado de panel-v2.html? | No | Code review: MultiCoach REUTILIZA panel-v2.html con scope de org, no crea uno nuevo |
+| ¿Existe cliente-multicoach.html NUEVO y duplicado de cliente.html? | No | Code review: MultiCoach REUTILIZA cliente.html con scope de org |
+| ¿Existe una pantalla de "Sesiones" en MultiCoach? | No, se reutiliza de Pathway | Code review: Sesiones las gestiona Pathway, MultiCoach solo muestra estado |
+| ¿Existiría duplicación funcional sin justificación explícita? | No, nunca | PR Policy: toda duplicación requiere aprobación de Micaela + documento de justificación |
+
+**Resultado:** Toda funcionalidad consolidada en Pathway se reutiliza. La duplicación es excepcional y requiere documento justificativo.
+
+---
+
+### Criterio 3: Dominios Separados y Claros
+
+**Principio:** MultiCoach administra. Pathway ejecuta. Límites definidos.
+
+| Prueba | Esperado | Verificable |
+|--------|----------|------------|
+| ¿Sabe un developer dónde va cada feature? | Sí, hay documento | Este documento define qué hace y qué no hace MultiCoach |
+| ¿Podría un feature terminar en el lugar incorrecto? | Sí, si no se valida | Code review checklist: ¿Este cambio respeta los límites de MultiCoach? |
+| ¿Está claro para un nuevo developer qué es administración y qué es coaching? | Sí, explícito | Glosario de términos (sección 3) define los conceptos unívocamente |
+
+**Resultado:** No hay ambigüedad. Si alguien no sabe dónde va una feature, consulta este documento y queda claro.
+
+---
+
+### Criterio 4: Integridad de Datos — Nunca Corrupción
+
+**Principio:** Cambios en MultiCoach son aditivos o scoped. Nunca corrompen Pathway.
+
+| Prueba | Esperado | Verificable |
+|--------|----------|------------|
+| ¿Puede MultiCoach escribir en public.* (tablas de Pathway)? | No, jamás | RLS test (EPIC 1.5): intento INSERT a public.* desde multicoach auth → 403 |
+| ¿Puede existir dato inconsistente entre coach_id y asignaciones? | No | Audit trigger: si coach_id en candidatos ≠ assignments, alerta |
+| ¿Se pierden datos legales si alguien desactiva una organización? | No | Soft-delete policy: orgs desactivadas mantienen datos en BD, no se borran |
+| ¿Hay backup automático de public.* antes de cambios? | Sí, Supabase | Verificable: snapshots cada 6h en Supabase production |
+
+**Resultado:** Garantía absoluta de integridad de datos. Pathway legacy es inmutable desde MultiCoach.
+
+---
+
+### Criterio 5: Única Fuente de Verdad para el Coaching
+
+**Principio:** Pathway es la única fuente de verdad para datos de coaching. MultiCoach es observador/administrador.
+
+| Prueba | Esperado | Verificable |
+|--------|----------|------------|
+| ¿Está el análisis del cliente en Pathway o en MultiCoach? | En Pathway | MultiCoach solo LEE ese análisis, no lo guarda localmente |
+| ¿Está el CV en Pathway o en MultiCoach? | En Pathway | MultiCoach solo ve referencia, Pathway es dueño |
+| ¿Está el estado de sesión en Pathway o en MultiCoach? | En Pathway | MultiCoach únicamente reporta: "sesión agendada sí/no", punto |
+| ¿Si un dato cambia en Pathway, MultiCoach se entere automáticamente? | Sí, o en tiempo real | Test: coach actualiza CV en Pathway → MultiCoach ve cambio sin delay |
+
+**Resultado:** No hay duplicación de datos. MultiCoach es observador del sistema, no almacén.
+
+---
+
+### Criterio 6: Ningún Owner Puede Ver Datos de Otra Organización
+
+**Principio:** Aislamiento multi-tenant garantizado.
+
+| Prueba | Esperado | Verificable |
+|--------|----------|------------|
+| ¿Puede owner A ver coaching_state de org B? | No, jamás | RLS + audit: intento de owner A a datos org B → bloqueado + logged |
+| ¿Puede un coach de org A ver clientes de org B? | No, jamás | RLS: coach query con filtro org_id, no ve otro org |
+| ¿Puede existir fuga entre organizaciones? | No | Test: 2 orgs paralelas, verificar isolamiento total |
+
+**Resultado:** Cada organización vive en su propia burbuja. Aislamiento total.
+
+---
+
+## 3. Glosario de Términos
+
+Cada término tiene una única definición. Se usa consistentemente en todo el proyecto.
+
+| Término | Definición | Ejemplos |
+|---------|-----------|----------|
+| **Pathway** | Sistema de coaching de 4 semanas ejecutado por un coach a un cliente. Incluye análisis, CV, cartas, sesiones, documentos, recursos. |  Coach individual ve 37 clientes, cada uno hace su proceso. |
+| **MultiCoach** | Plataforma de administración empresarial que se coloca sobre Pathway para gestionar múltiples coaches y clientes bajo un modelo organizacional. | Un consultora invita 5 coaches, les asigna 50 clientes en total; MultiCoach administra esa estructura. |
+| **Organización** | Unidad administrativa en MultiCoach: empresa, consultora, agencia o cualquier entidad que agrupa coaches y clientes. | "Acme Consulting", "Growth Partners", "HR Recruitment Inc." |
+| **Owner** | Propietario/administrador de una organización. Puede crear equipos, asignar clientes, ver reportes, cambiar plan de suscripción. | CEO o gerente de la consultora. |
+| **Coach** | Profesional que ejecuta sesiones de coaching sobre un cliente en Pathway. Puede ser individual (legacy) o parte de una organización (enterprise). | Coach individual: 69 coaches legacy de Pathway. Coach enterprise: coaches dentro de una org. |
+| **Cliente** | Persona que recibe coaching. Accede a su portal, ve documentos, agenda sesiones, completa tareas. Puede ser individual (legacy) o parte de una org (enterprise). | 37 clientes legacy + N clientes enterprise en diversas orgs. |
+| **Programa** | Ciclo de coaching: típicamente 4 semanas de actividad estructurada (análisis → CV → carta → sesiones → entrega). | Programa estándar = 4 semanas. |
+| **Administración** | Funciones de gestión no-coaching: crear orgs, asignar coaches, generar reportes, facturación. Responsabilidad de MultiCoach. | "Admin de la org" ≠ "Admin del coaching" |
+| **Operación / Ejecución** | Funciones de coaching: sesiones, análisis, documentos, recursos. Responsabilidad de Pathway. | "El coach ejecuta la sesión" = operación. "El owner ve reportes" = administración. |
+| **Supervisión** | Capacidad del owner para ver estado agregado de clientes, coaches, progreso. Lectura solamente. | Dashboard con "X clientes en semana 2, Y en semana 3". |
+| **Permisos / Acceso** | Reglas de quién puede ver y hacer qué. Administradas por MultiCoach (org scope) + Pathway (datos de coaching). | Coach solo ve sus clientes, owner ve toda la org, cliente ve solo su perfil. |
+| **Legacy** | Recursos pre-MultiCoach: coaches individuales, clientes individuales, datos en Pathway que NO están en una organización. | Los 69 coaches legacy seguirán funcionando igual con o sin MultiCoach. |
+| **Enterprise** | Recursos post-MultiCoach: coaches parte de una organización, clientes asignados a una org. | Coaches + clientes dentro de una organización MultiCoach. |
+
+---
+
+## 4. Principios Rectores (Originales)
+
+Estos principios NUNCA cambian. Toda decisión posterior debe respetarlos.  
+**(Ver Sección 2 para Criterios de Aceptación verificables por cada uno.)**
+
+1. **Independencia de Pathway** (Criterio 1)
+   Pathway funciona idénticamente con o sin MultiCoach.
+
+2. **No Sustitución, Reutilización** (Criterio 2)
+   MultiCoach reutiliza pantallas existentes; nunca las reemplaza.
+
+3. **Dominios Separados** (Criterio 3)
+   MultiCoach administra. Pathway ejecuta. Límites claros.
+
+4. **Integridad de Datos** (Criterio 4)
+   Pathway es inmutable desde MultiCoach. Cambios solo en contexto propio.
+
+5. **Única Fuente de Verdad** (Criterio 5)
+   Pathway es la única fuente de verdad para coaching. MultiCoach observa.
+
+6. **Aislamiento Multi-Tenant** (Criterio 6)
+   Cada organización ve SOLO sus datos. Jamás fuga entre orgs.
+
+---
+
+## 5. Arquitectura Funcional
+
+### 5.1 Dominios de Administración
+
+MultiCoach organiza su funcionalidad en 8 dominios. Cada uno respeta los límites definidos en la Sección 1.
 
 #### **Dominio 1: Organización**
 Define qué es una empresa en MultiCoach.
@@ -121,7 +339,7 @@ Personalización y preferencias.
 
 ---
 
-### 1.2 Flujos de Usuario (Funcionales, no técnicos)
+### 5.2 Flujos de Usuario (Funcionales, no técnicos)
 
 #### **Flujo 1: Owner Crea y Administra una Organización**
 
@@ -195,9 +413,9 @@ Puede exportar o enviar a coaches manualmente
 
 ---
 
-## 2. Arquitectura Lógica
+## 6. Arquitectura Lógica
 
-### 2.1 Relaciones Entre Dominios
+### 6.1 Relaciones Entre Dominios
 
 ```
 PATHWAY (Existente)
@@ -223,18 +441,18 @@ MULTICOACH (Nuevo)
    └─ NO modifica datos de Pathway (lectura only para Pathway legacy)
 ```
 
-### 2.2 Mapeo de Actores a Funcionalidades
+### 6.2 Mapeo de Actores a Funcionalidades
 
 | Actor | Puede Hacer | Acceso a Datos |
 |-------|-------------|-----------------|
-| **Coach Legacy (Pathway)** | Ver sus clientes legacy, agendar sesiones, subir docs | Sus clientes en Pathway |
-| **Coach Enterprise (MultiCoach)** | Idem + ver su org, ver asignaciones | Sus clientes dentro de su org |
-| **Owner Enterprise** | Crear org, invitar coaches, asignar clientes, ver dashboard, cambiar plan | Toda la org (coaches, clientes, progreso) |
-| **Client Legacy (Pathway)** | Ver su perfil, sesiones, documentos, recursos | Su perfil en Pathway |
-| **Client Enterprise (MultiCoach)** | Idem + ver su org, su coach, progreso en contexto | Su perfil dentro de su org |
-| **Admin (Pathway)** | Ver Web Analytics, leads captados, gestionar coaches legacy | Datos de Pathway (read-only), leads del chatbot |
+| **Coach Legacy** | Ver sus clientes, agendar sesiones, subir docs | Sus clientes en Pathway |
+| **Coach Enterprise** | Idem + ver su org, ver asignaciones | Sus clientes dentro de su org |
+| **Owner (Org Enterprise)** | Crear org, invitar coaches, asignar clientes, ver reportes, cambiar plan | Toda su org (coaches, clientes, progreso) |
+| **Client Legacy** | Ver su perfil, sesiones, documentos, recursos | Su perfil en Pathway |
+| **Client Enterprise** | Idem + ver su org, su coach, progreso en contexto | Su perfil dentro de su org |
+| **Admin (Pathway)** | Ver Web Analytics, leads, gestionar coaches legacy | Datos de Pathway (read-only) |
 
-### 2.3 Datos Compartidos vs. Silos
+### 6.3 Datos Compartidos vs. Silos
 
 ```
 COMPARTIDOS (mismo email → misma identidad):
@@ -253,31 +471,32 @@ SILOS (separados por contexto):
 
 ---
 
-## 3. Garantías Funcionales (No Técnicas)
+## 7. Garantías Funcionales (Verificables)
 
-### 3.1 Garantías de Aislamiento
+### 7.1 Aislamiento Multi-Tenant (Criterio 6)
 
-1. **Un coach enterprise NO ve clientes de otra org**
-2. **Un owner enterprise NO ve datos de otras orgs**
-3. **Un cliente legacy sigue viendo SOLO Pathway**
-4. **Un cliente enterprise ve su org + su contexto de coaching**
-5. **Cambios en MultiCoach NO corrompen Pathway**
+1. Un coach enterprise NO ve clientes de otra org
+2. Un owner NO ve datos de otras orgs
+3. Un cliente legacy sigue viendo SOLO Pathway
+4. Un cliente enterprise ve su org + su coaching
+5. Cambios en MultiCoach NO corrompen Pathway
 
-### 3.2 Garantías de Disponibilidad
+### 7.2 Disponibilidad (Criterio 1)
 
-1. **Si MultiCoach cae, Pathway sigue funcionando**
-2. **Si MultiCoach es lento, Pathway es rápido**
-3. **Coaches legacy NO se ven afectados por MultiCoach**
+1. Si MultiCoach cae, Pathway sigue 100% operativo
+2. Si MultiCoach es lento, Pathway no se afecta
+3. Coaches legacy funcionan con o sin MultiCoach
 
-### 3.3 Garantías de Auditoría
+### 7.3 Auditoría y Trazabilidad (Administración)
 
-1. **Se registra quién accedió a qué y cuándo**
-2. **Se registran cambios de asignaciones (quién movió qué cliente)**
-3. **Se registran intentos de acceso no autorizado**
+1. Se registra quién accedió a qué y cuándo
+2. Se registran cambios de asignaciones (quién movió qué cliente)
+3. Se registran intentos de acceso no autorizado
+4. Todos los registros quedan en Pathway (única fuente de verdad)
 
 ---
 
-## 4. Decisiones Abiertas (Para Arquitectura Técnica)
+## 8. Decisiones Abiertas (Para Arquitectura Técnica — EPIC 3)
 
 Las siguientes decisiones se tomarán en EPIC 3 (Arquitectura Técnica):
 
@@ -304,32 +523,75 @@ Las siguientes decisiones se tomarán en EPIC 3 (Arquitectura Técnica):
 
 ---
 
-## 5. Resultado Esperado Posterior a EPIC 2 (Este Documento)
+## 9. Roadmap Post-Aprobación
 
-Una vez aprobada esta Arquitectura Funcional y Lógica:
+Una vez aprobado este documento como **Arquitectura Funcional y Lógica Rector de MultiCoach**:
 
 ### EPIC 3: Arquitectura Técnica
-- Decidir estructura de BD (schemas, replicación, etc.)
-- Definir APIs y autenticación (JWT, roles, permisos)
-- Definir RLS y guardrails técnicas
+Decidir la implementación física respetando todos los límites de esta arquitectura:
+- Estructura de almacenamiento (BD, schemas, replicación)
+- APIs y endpoints (REST, GraphQL, Edge Functions)
+- Autenticación y autorización (JWT, roles, permisos)
+- RLS y guardrails técnicas
+- Sincronización Pathway ↔ MultiCoach
 
-### EPIC 4: Implementación
-- Crear tablas/migraciones
+### EPIC 4: Implementación de Backend
+- Crear migraciones y tablas
 - Implementar Edge Functions
-- Conectar frontend a APIs
+- Conectar APIs a frontend
 
-### EPIC 5: Integración UX/UI
-- Decidir navegación con Product Design
-- Implementar multicoach.html
-- Adaptar panel-v2.html y cliente.html para enterprise
+### EPIC 5: UX/UI y Producto
+- Decidir navegación y flujos UI con Product Design
+- Implementar multicoach.html (panel de Owner)
+- Adaptar panel-v2.html para coaches enterprise
+- Adaptar cliente.html para clientes enterprise
+
+### EPIC 6+: Escalabilidad, Integraciones, Go-Live
+- Migración de coaches legacy a enterprise (si aplica)
+- Integración con sistemas externos (Stripe, Calendly, etc.)
+- Preparación para producción
+- Go-live y monitoreo
 
 ---
 
-## 6. Checklist de Aprobación
+## 10. Checklist de Aprobación Oficial
 
-- [ ] Principios rectores están claros
-- [ ] Los 8 dominios cubren el negocio
-- [ ] Flujos de usuario son coherentes
-- [ ] Garantías de aislamiento son suficientes
-- [ ] Pathway no se ve comprometido
-- [ ] Decisiones técnicas quedan para EPIC 3
+**Este documento será considerado APROBADO cuando se completen todos estos checks:**
+
+✅ **Definición de Producto**
+- [ ] Queda claro QUÉ es MultiCoach (administración, no coaching)
+- [ ] Queda claro que MultiCoach se pone SOBRE Pathway, no lo reemplaza
+
+✅ **Límites del Sistema**
+- [ ] Está explícito qué MultiCoach SÍ hace (8 funciones)
+- [ ] Está explícito qué MultiCoach NO hace (4 exclusiones)
+- [ ] Está claro que los límites son INVARIABLES
+
+✅ **Criterios de Aceptación**
+- [ ] Los 6 principios rectores tienen pruebas verificables
+- [ ] Cada criterio podría implementarse como test o audit
+
+✅ **Glosario**
+- [ ] Cada término tiene definición única
+- [ ] El glosario es referencia para todo el proyecto
+- [ ] No hay ambigüedad entre conceptos
+
+✅ **Arquitectura Funcional**
+- [ ] Los 8 dominios cubren todas las necesidades administrativas
+- [ ] Flujos de usuario son coherentes y completos
+- [ ] Arquitectura lógica refleja relaciones reales
+
+✅ **Garantías**
+- [ ] Garantías de aislamiento son verificables
+- [ ] Garantías de disponibilidad son realistas
+- [ ] Auditoría y trazabilidad definidas
+
+✅ **Decisiones Abiertas**
+- [ ] Todas las decisiones técnicas están explícitamente abiertas para EPIC 3
+- [ ] No hay detalles técnicos cerrados
+
+---
+
+**Aprobado por:** _________________________ (Micaela Jairedin)  
+**Fecha:** ________________________  
+**Próximo EPIC:** EPIC 3 — Arquitectura Técnica
