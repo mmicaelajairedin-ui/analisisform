@@ -676,6 +676,10 @@ html.mc-embed #mc-nswitch{display:none!important}
 .mc-onboard-close:hover{opacity:1}
 .mc-onboard-close svg{width:20px;height:20px}
 @media(max-width:560px){.mc-onboard-modal{max-width:95vw;max-height:95vh}.mc-onboard-modal .mob-header{padding:24px 20px 16px}.mc-onboard-modal .mob-title{font-size:22px}.mc-onboard-modal .mob-body{padding:20px}.mc-onboard-modal .mob-cta-group{padding:0 20px 20px}.mc-onboard-cards{grid-template-columns:1fr}}
+/* Banner MODO DEMOSTRACIÓN */
+.mc-demo-banner{background:linear-gradient(135deg,#FFE5E5 0%,#FFF0F0 100%);border-bottom:2px solid #E74C3C;padding:12px 16px;text-align:center;font-weight:600;font-size:13px;color:#C24545;display:none;gap:8px;align-items:center;justify-content:center}
+.mc-demo-banner.show{display:flex}
+.mc-demo-banner svg{width:16px;height:16px;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -747,6 +751,11 @@ html.mc-embed #mc-nswitch{display:none!important}
           <div class="me-dd-foot"><button class="me-item me-out" onclick="cerrarSesion()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Cerrar sesión</button></div>
         </div>
       </div>
+    </div>
+
+    <div class="mc-demo-banner" id="mc-demo-banner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      🔒 MODO DEMOSTRACIÓN — Los datos no se guardan. Para usar la plataforma real, inicia sesión con tu cuenta de Empresa.
     </div>
 
     <div class="body" id="view-dashboard">
@@ -1447,6 +1456,8 @@ function mcApplyNiche(){
  try{ [].forEach.call(document.querySelectorAll('.mc-demo-only'),function(e){ e.style.display=MC_REAL?'none':''; }); }catch(e){}
  // Y al revés: lo que SOLO tiene sentido con red real (ir a mi panel de coach).
  try{ [].forEach.call(document.querySelectorAll('.mc-real-only'),function(e){ e.style.display=MC_REAL?'':'none'; }); }catch(e){}
+ // Banner MODO DEMOSTRACIÓN si no hay datos reales
+ try{ var _demoB=document.getElementById('mc-demo-banner'); if(_demoB) _demoB.classList.toggle('show',!MC_REAL); }catch(e){}
  _mcSetPlanBadge();
  setHT('mc-kpis',MC_REAL?mcKpisReal():mcKpis());
  try{ setHT('mc-owner-guide', _mcOwnerGuide()); }catch(e){}
@@ -1616,10 +1627,24 @@ function mcLoadReal(owner){
   }
   return _hdr({'Content-Type':'application/json'}).then(function(h){
     return fetch(SB+'/functions/v1/mi-red',{method:'POST',headers:h});
-  }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+  }).then(function(r){
+    if(!r.ok) throw new Error('http_'+r.status);
+    return r.json();
+  }).then(function(d){
     if(d&&d.ok){ _apply(d.org,d.coaches,d.clientes,d.owner,d.citas); return; }
-    throw new Error('mi-red');
-  }).catch(function(){
+    if(d&&d.error==='not_owner') throw new Error('auth_not_owner');
+    if(d&&d.error==='env_missing') throw new Error('config_env_missing');
+    throw new Error('mi_red_unknown');
+  }).catch(function(err){
+    var msg='No pudimos cargar tu red. Recarga la página o vuelve a iniciar sesión.';
+    var errStr=(err&&err.message)||'';
+    if(errStr.indexOf('http_403')>=0||errStr.indexOf('auth_not_owner')>=0) msg='No tienes permisos para acceder a esta red. Verifica que tu cuenta es administrador.';
+    else if(errStr.indexOf('http_401')>=0) msg='Tu sesión expiró. Vuelve a iniciar sesión.';
+    else if(errStr.indexOf('http_500')>=0||errStr.indexOf('config_env_missing')>=0) msg='Error de configuración en el servidor. Por favor contacta a soporte.';
+    else if(errStr.indexOf('http_')>=0) msg='Error de conexión ('+errStr+').';
+    var oldMsg=msg; msg='[LOG: '+errStr+'] '+msg;
+    console.error('mcLoadReal error:',errStr);
+    __toast(msg);
     // Fallback: lectura directa (por si mi-red aún no está desplegada). Los
     // coaches sí se leen (policy de directorio); los clientes pueden venir
     // vacíos si la RLS estricta está activa — mi-red lo resuelve.
