@@ -1483,7 +1483,7 @@ function mcApplyNiche(){
    queda en modo real con la red VACÍA + aviso — NUNCA muestra los datos
    ficticios de la maqueta ("Alex Gómez") a un dueño real: eso hacía creer
    que la cuenta estaba rota o era de otro. Ver docs/multicoach-modelo.md. */
-var MC_REAL=false, MC_ORG=null, MC_OWNER=null, MC_CITAS=[];
+var MC_REAL=false, MC_ORG=null, MC_OWNER=null, MC_CITAS=[], MC_LOAD_RETRY=0;
 function mcGet(t,q){ return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:{apikey:KEY,Authorization:'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }
 function mcPatch(t,q,body){ return _hdr({'Content-Type':'application/json',Prefer:'return=minimal'}).then(function(h){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:h,body:JSON.stringify(body)}); }); }
 // Guarda config de la red (perfil, recursos, marca, preferencias) en
@@ -1584,7 +1584,7 @@ function _mcPaintOwner(o){
 }
 // Bootstrap del dueño: carga org + coaches + clientes y arma DB real.
 function mcLoadReal(owner){
-  MC_REAL=true; MC_OWNER=owner;
+  MC_REAL=true; MC_OWNER=owner; MC_LOAD_RETRY=0;
   _mcPaintOwner(owner);
   // Skeletons mientras mi-red trae la red → carga percibida instantánea.
   try{ var _sk=document.getElementById('mc-kpis'); if(_sk) _sk.innerHTML=_mcSkelKpis(); }catch(e){}
@@ -1641,14 +1641,16 @@ function mcLoadReal(owner){
   }).catch(function(err){
     var msg='No pudimos cargar tu red. Recarga la página o vuelve a iniciar sesión.';
     var errStr=(err&&err.message)||'';
+    var isRetryable=false;
     if(errStr.indexOf('auth_invalid')>=0) msg='Tu sesión no es válida. Vuelve a iniciar sesión.';
     else if(errStr.indexOf('auth_not_owner')>=0) msg='Tu cuenta no tiene permisos de Administrador. Contacta a tu supervisor.';
     else if(errStr.indexOf('org_missing')>=0) msg='Tu cuenta no tiene una organización asignada aún. Contacta a soporte.';
     else if(errStr.indexOf('http_401')>=0) msg='Tu sesión expiró. Vuelve a iniciar sesión.';
     else if(errStr.indexOf('http_403')>=0) msg='No tienes permisos para acceder a esta red.';
-    else if(errStr.indexOf('http_500')>=0||errStr.indexOf('config_env_missing')>=0) msg='Error de configuración en el servidor. Por favor contacta a soporte.';
-    else if(errStr.indexOf('http_')>=0) msg='Error de conexión ('+errStr+').';
-    var oldMsg=msg; msg='[LOG: '+errStr+'] '+msg;
+    else if(errStr.indexOf('http_500')>=0||errStr.indexOf('config_env_missing')>=0){ msg='Error de configuración en el servidor. Por favor contacta a soporte.'; isRetryable=MC_LOAD_RETRY<2; }
+    else if(errStr.indexOf('http_')>=0){ msg='Error de conexión ('+errStr+'). '; isRetryable=MC_LOAD_RETRY<2; }
+    else { isRetryable=MC_LOAD_RETRY<2; }
+    if(isRetryable) msg+=' <a href="javascript:void(0)" onclick="_mcRetryLoad()" style="color:var(--pw-bosque);text-decoration:underline;font-weight:600">Reintentar</a>';
     console.error('mcLoadReal error:',errStr);
     __toast(msg);
     // Fallback: lectura directa (por si mi-red aún no está desplegada). Los
@@ -3647,6 +3649,7 @@ function _agSug(){
 function jugarCabra(){ try{ window.PW_GAME_EMAIL='demo@multicoach'; }catch(e){} if(typeof openJuego==='function'){ openJuego(); } else { __toast('Cargando el juego…'); } }
 function cerrarSesion(){ window.location.href='/login.html'; }
 function _mcDemoBannerClick(){ window.location.href='/login.html'; }
+function _mcRetryLoad(){ if(MC_OWNER && !MC_REAL){ MC_LOAD_RETRY++; mcLoadReal(MC_OWNER); } }
 /* Menú de cuenta (avatar arriba a la derecha) */
 function pwCfgGo(s){ _cfgSec=s; __go('config'); mcCloseMenu(); }
 function mcUserMenu(e){ if(e){ e.stopPropagation(); } var m=document.getElementById('me-menu'); if(m) m.classList.toggle('open'); }
