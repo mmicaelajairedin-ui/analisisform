@@ -1955,23 +1955,68 @@ function _teamDrop(e,coachId){
   '<p style="font-size:13.5px;color:var(--soft);margin:0;line-height:1.55">¿Mover a <b>'+_mcEsc(cli.n)+'</b>'+(prev?(' de <b>'+_mcEsc(prev.n)+'</b>'):'')+' a <b>'+_mcEsc(co.n)+'</b>?<br><span style="color:var(--muted)">El cliente va a ver a '+_mcEsc(co.n.split(" ")[0])+' como su coach.</span></p>',
   'Sí, mover', function(){ _reassign(cliId, coachId, function(ok){ __mclose(); if(ok && _sec==='coaches') _fillCoaches(); }); });
 }
-var _curCoach=null,_coachTab='perfil';
-function fichaCoach(id){_curCoach=id;_coachTab='perfil';_renderCoachFicha();}
+var _curCoach=null,_coachTab='perfil',_MC_COACH_DATA={};
+
+// FASE 1: Integración con coach-api-gateway
+// Llama los 5 endpoints en paralelo: metrics, alerts, benchmarks, trends, clients
+function _mcLoadCoachDataGateway(coachId){
+  if(!MC_REAL){ console.log('[MC] Demo mode → sin API'); return Promise.resolve(null); }
+  console.log('[MC] Loading coach data from API for coach_id='+coachId);
+  return _hdr({'Content-Type':'application/json'}).then(function(h){
+    var url=SB.replace(/\/$/, '')+'/functions/v1/coach-api-gateway';
+    var endpoints=['/api/coach/'+coachId+'/metrics/latest','/api/coach/'+coachId+'/alerts','/api/coach/'+coachId+'/benchmarks/today','/api/coach/'+coachId+'/trends/latest','/api/coach/'+coachId+'/clients?limit=10'];
+    var reqs=endpoints.map(function(ep){
+      return fetch(url+ep,{headers:h}).then(function(r){
+        if(!r.ok){ console.warn('[MC] API error '+r.status+' for '+ep); return null; }
+        return r.json().catch(function(){console.warn('[MC] JSON error for '+ep); return null;});
+      }).catch(function(e){console.warn('[MC] Fetch error for '+ep+': '+e.message); return null;});
+    });
+    return Promise.all(reqs).then(function(res){
+      var data={metrics:res[0],alerts:res[1],benchmarks:res[2],trends:res[3],clients:res[4]};
+      _MC_COACH_DATA[coachId]=data;
+      console.log('[MC] Coach data loaded',data);
+      return data;
+    });
+  }).catch(function(e){
+    console.warn('[MC] Auth or gateway error: '+e.message);
+    return null;
+  });
+}
+
+function fichaCoach(id){_curCoach=id;_coachTab='perfil';
+  if(MC_REAL&&!_MC_COACH_DATA[id]){
+    _mcLoadCoachDataGateway(id).then(function(){_renderCoachFicha();});
+  } else {
+    _renderCoachFicha();
+  }
+}
 function _goCoachTab(t){_coachTab=t;_renderCoachFicha();}
 function _coachBody(c,t){
  var suyos=DB.clientes.filter(function(k){return k.coach===c.id;});
+ var apiData=_MC_COACH_DATA[c.id]||null; // datos reales del gateway si existen
  if(t==='perfil'){
   return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Datos del '+DET().coachSing.toLowerCase()+'<span class="dot">.</span></h3>'
-   +'<div class="cp-infogrid">'+_info('Área',_areaLbl(c.nicho))+_info('Especialidad',c.esp||(c.esOwner?'Dueño':'—'))+_info('Estado',({activo:'Activo',inactivo:'Suspendido',pendiente:'Invitación pendiente'}[c.est]||'—'))+_info('Clientes',suyos.length)+_info('Retención',(c.ret!=null?c.ret+'%':'—'))+_info('Valoración',c.rat?'★ '+c.rat:'—')+'</div></div>'
+   +'<div class="cp-infogrid">'+_info('Área',_areaLbl(c.nicho))+_info('Especialidad',c.esp||(c.esOwner?'Dueño':'—'))+_info('Estado',({activo:'Activo',inactivo:'Suspendido',pendiente:'Invitación pendiente'}[c.est]||'—'))+_info('Clientes',(apiData&&apiData.metrics?apiData.metrics.client_count_current:suyos.length))+_info('Retención',(apiData&&apiData.metrics?apiData.metrics.retention_pct+'%':(c.ret!=null?c.ret+'%':'—')))+_info('Satisfacción',(apiData&&apiData.metrics?apiData.metrics.satisfaction_pct+'%':'—'))+'</div></div>'
    +(MC_REAL&&!c.esp
      ? _mcEmptyCard('Sobre '+c.n.split(" ")[0],'Cuando '+c.n.split(" ")[0]+' complete su perfil, ves acá su especialidad y bio.')
-     : '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Sobre '+c.n.split(" ")[0]+'<span class="dot">.</span></h3><p style="font-size:13px;color:var(--pw-text-soft);line-height:1.55;margin:8px 0 0">'+DET().coachSing+' especializado en '+(c.esp||'su área').toLowerCase()+'. Acompaña a '+suyos.length+' cliente'+(suyos.length===1?'':'s')+' con seguimiento semanal.</p></div>');
+     : '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Sobre '+c.n.split(" ")[0]+'<span class="dot">.</span></h3><p style="font-size:13px;color:var(--pw-text-soft);line-height:1.55;margin:8px 0 0">'+DET().coachSing+' especializado en '+(c.esp||'su área').toLowerCase()+'. Acompaña a '+(apiData&&apiData.metrics?apiData.metrics.client_count_current:suyos.length)+' cliente'+(((apiData&&apiData.metrics?apiData.metrics.client_count_current:suyos.length)===1)?'':'s')+' con seguimiento semanal.</p></div>');
  }
  if(t==='clientes'){
-  return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Clientes de '+c.n.split(" ")[0]+' ('+suyos.length+')<span class="dot">.</span></h3>'+(suyos.length?'<section class="cp-clients-grid" style="margin-top:10px">'+suyos.map(_clientCard).join('')+'</section>':'<p class="csub" style="margin:8px 0 0">Sin clientes asignados.</p>')+'</div>';
+  var clis=(apiData&&apiData.clients&&apiData.clients.clients)?apiData.clients.clients.map(function(apicli){
+    return {id:apicli.id,n:apicli.name,coach:c.id,est:apicli.estado};
+  }):suyos;
+  var cliHTML=clis.map(function(cli){
+    return '<div class="cp-client-card" style="padding:10px;border-radius:8px;background:rgba(0,0,0,.02);border:1px solid var(--border)"><div style="font-weight:600;font-size:13px;margin-bottom:2px">'+_mcEsc(cli.n)+'</div><div style="font-size:11px;color:var(--soft)">Estado: '+(cli.est||'activo')+'</div></div>';
+  }).join('');
+  return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Clientes de '+c.n.split(" ")[0]+' ('+(apiData&&apiData.clients&&apiData.clients.total_active?apiData.clients.total_active:clis.length)+')<span class="dot">.</span></h3>'+(clis.length?'<section style="margin-top:10px;display:grid;gap:8px">'+cliHTML+'</section>':'<p class="csub" style="margin:8px 0 0">Sin clientes asignados.</p>')+'</div>';
  }
  if(t==='sesiones'){
-  if(MC_REAL) return _mcEmptyCard('Agenda de '+c.n.split(" ")[0],'Cuando '+c.n.split(" ")[0]+' agende sesiones con sus clientes, las ves acá.');
+  var sesCount=apiData&&apiData.metrics?apiData.metrics.sesiones_ultima_semana:0;
+  if(MC_REAL&&!sesCount) return _mcEmptyCard('Agenda de '+c.n.split(" ")[0],'Cuando '+c.n.split(" ")[0]+' agende sesiones con sus clientes, las ves acá.');
+  if(MC_REAL&&sesCount&&apiData){
+    return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Agenda de '+c.n.split(" ")[0]+'<span class="dot">.</span></h3>'
+     +'<div class="cp-infogrid">'+_info('Sesiones última semana',sesCount)+_info('Informes última semana',apiData.metrics.informes_ultima_semana||0)+'</div></div>';
+  }
   var nm0=suyos[0]?suyos[0].n:'Cliente',nm1=suyos[1]?suyos[1].n:nm0;
   var ses=DET().coachSes.map(function(s,i){return [s[0],s[1]+' · '+(i===1?nm1:nm0),s[2]];});
   return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Agenda de '+c.n.split(" ")[0]+'<span class="dot">.</span></h3>'
@@ -1983,7 +2028,18 @@ function _coachBody(c,t){
    +'<div id="ocmsgbox" style="display:flex;flex-direction:column;gap:8px;margin:8px 0;max-height:360px;overflow-y:auto"></div>'
    +'<div style="display:flex;gap:8px"><input id="ocmsgin" class="inp" placeholder="Escribe un mensaje…" data-coach-id="'+_mcEsc(c.id)+'" onkeydown="if(event.key===\'Enter\'&&this.dataset.coachId)_sendCoachChat(this.dataset.coachId)"><button class="cp-btn cp-btn-primary" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)_sendCoachChat(this.dataset.coachId)">Enviar</button></div></div>';
  }
- // rendimiento
+ // rendimiento — con datos del API si están disponibles
+ if(apiData&&apiData.metrics){
+  var m=apiData.metrics, b=apiData.benchmarks||{};
+  var alertsH='';
+  if(apiData.alerts&&apiData.alerts.alerts&&apiData.alerts.alerts.length){
+    alertsH='<div class="cp-card cp-card-pad" style="background:rgba(255,200,0,.08);border-left:3px solid #FFC800"><h4 style="font-size:12px;font-weight:700;margin:0 0 8px;color:#B38000">Alertas ('+(apiData.alerts.critical_count||0)+' críticas)</h4>'
+      +apiData.alerts.alerts.slice(0,3).map(function(a){return '<div style="font-size:11px;margin:4px 0;color:var(--carbon)">• '+_mcEsc(a.title||'Alerta')+'</div>';}).join('')+'</div>';
+  }
+  return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">KPIs principales<span class="dot">.</span></h3><div class="cp-infogrid">'+_info('Retención',m.retention_pct+'%')+_info('Utilización',m.utilization_pct+'%')+_info('Satisfacción',m.satisfaction_pct+'%')+_info('Engagement',m.engagement_pct+'%')+'</div></div>'
+   +(b.percentiles?'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Posición en el equipo<span class="dot">.</span></h3><div class="cp-infogrid">'+_info('Ranking general',b.rank&&b.rank.overall?'#'+(b.rank.overall||'—'):'')+_info('Percentil retención',b.percentiles.retention_pct?b.percentiles.retention_pct+'th percentile':'—')+_info('Percentil satisfacción',b.percentiles.satisfaction_pct?b.percentiles.satisfaction_pct+'th percentile':'—')+'</div></div>':'')
+   +alertsH;
+ }
  if(MC_REAL) return _mcEmptyCard('Rendimiento','Cuando '+c.n.split(" ")[0]+' acumule sesiones y clientes, ves acá su retención y actividad mes a mes.')
    +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Actividad<span class="dot">.</span></h3><div class="cp-infogrid">'+_info('Clientes',suyos.length)+_info('Clientes activos',suyos.filter(function(k){return k.est==='activo';}).length)+'</div></div>';
  return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Retención por mes<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 12px">% de clientes que renovaron.</div>'+_bars([['Abr',88],['May',90],['Jun',93],['Jul',c.ret]])+'</div>'
@@ -1992,13 +2048,19 @@ function _coachBody(c,t){
 function _renderCoachFicha(){
  var c=_coach(_curCoach);if(!c)return;var v=document.getElementById('vscroll');v.scrollTop=0;var t=_coachTab;
  var suyos=DB.clientes.filter(function(k){return k.coach===c.id;});
- var h=_coachHealth(c);
+ var apiData=_MC_COACH_DATA[c.id]||null;
+ // Health score: del API si está disponible, sino cálculo local
+ var h=(apiData&&apiData.metrics)?[
+   apiData.metrics.health_status==='green'?'good':(apiData.metrics.health_status==='yellow'?'warning':(apiData.metrics.health_status==='red'?'critical':'gray')),
+   apiData.metrics.health_score+' / 100'
+ ]:_coachHealth(c);
+ console.log('[MC] Rendering coach ficha with health='+(h[1]+' ('+h[0]+')'));
  var tabs=[['perfil','Perfil',''+PWI.svg('user',{sm:true})+''],['clientes','Clientes',''+PWI.svg('users',{sm:true})+''],['sesiones','Sesiones',''+PWI.svg('calendar',{sm:true})+''],['rendimiento','Rendimiento',''+PWI.svg('barChart',{sm:true})+'']];
  if(!c.esOwner) tabs.push(['mensajes','Mensajes',''+PWI.svg('chat',{sm:true})+'']); // chat dueño↔coach (el dueño no se chatea a sí mismo)
  var menuV='<nav class="cp-cfg-nav">'+tabs.map(function(x){return '<button class="cp-cfg-nav-item'+(t===x[0]?' is-on':'')+'" data-tab="'+_mcEsc(x[0])+'" onclick="if(this.dataset.tab)_goCoachTab(this.dataset.tab)"><span class="cp-emo">'+x[2]+'</span><span>'+x[1]+'</span></button>';}).join('')+'</nav>';
  var rail='<aside class="cp-ficha-rail">'
-  +'<div class="cp-card cp-card-pad" style="text-align:center"><div class="cp-eyebrow" style="margin-bottom:8px">Estado</div><span class="cp-coach-health '+h[0]+'" style="display:inline-block;margin-bottom:10px">'+h[1]+'</span>'
-   +'<div class="cp-coach-stats"><div class="cp-coach-st"><div class="v">'+suyos.length+'</div><div class="k">Clientes</div></div><div class="cp-coach-st"><div class="v">'+(c.ret!=null?c.ret+'%':'—')+'</div><div class="k">Retención</div></div><div class="cp-coach-st"><div class="v">'+(c.rat?'★'+c.rat:'—')+'</div><div class="k">Rating</div></div></div></div>'
+  +'<div class="cp-card cp-card-pad" style="text-align:center"><div class="cp-eyebrow" style="margin-bottom:8px">Estado'+(apiData&&apiData.metrics?' (datos reales)':' (local)')+'</div><span class="cp-coach-health '+h[0]+'" style="display:inline-block;margin-bottom:10px">'+h[1]+'</span>'
+   +'<div class="cp-coach-stats"><div class="cp-coach-st"><div class="v">'+(apiData&&apiData.metrics?apiData.metrics.client_count_current:suyos.length)+'</div><div class="k">Clientes</div></div><div class="cp-coach-st"><div class="v">'+(apiData&&apiData.metrics?apiData.metrics.retention_pct+'%':(c.ret!=null?c.ret+'%':'—'))+'</div><div class="k">Retención</div></div><div class="cp-coach-st"><div class="v">'+(c.rat?'★'+c.rat:'—')+'</div><div class="k">Rating</div></div></div></div>'
   +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
    +'<button class="cp-btn cp-btn-ghost" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)_mcCopiarReserva(this.dataset.coachId)" title="El cliente abre este link y se agenda solo">'+PWI.svg('link',{sm:true})+' Copiar link de reserva</button>'
    +'<button class="cp-btn cp-btn-ghost" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)mcServiciosModal(this.dataset.coachId)">'+PWI.svg('creditCard',{sm:true})+' Servicios y precios ('+(c.servicios?c.servicios.length:0)+')</button>'
