@@ -171,3 +171,117 @@ sesión"), no rompen. Aplicar migraciones `mensajes_owner_coach.sql` y
   cliente" (abre si el cliente entró a su portal) en las pestañas que el cliente
   ve. Hoy la ficha de multicoach es más simple y en parte demo; NO tiene estos
   cambios a propósito hasta que lea datos reales.
+
+## Aprendizajes de Priority 2 (Programas) — Julio 2026
+
+**Cuándo agregar una sección a multicoach.html**:
+
+1. Identificar qué archivo `owner-*.html` existe (ej: `owner-programs.html`)
+2. Auditar Supabase: ¿la tabla existe o hay que crearla?
+3. Extraer literal: CSS 100%, HTML 85%, JS 98% (reusar sin reinterpretar)
+4. Adaptar para SPA:
+   - Router: `else if(s==='programas')renderPrograms();`
+   - Sidebar: `<a data-s="programas">Icon Label</a>`
+   - Data: reemplazar MOCK por `loadPrograms(cb)`
+
+### Errores Comunes (y cómo evitarlos)
+
+#### ❌ Error 1: Múltiples `v.innerHTML+=` → botones no responden
+
+**Síntoma**: Usuario hace clic en filtro/búsqueda → nada pasa.
+
+**Causa**: Cada `v.innerHTML+=` recrea el DOM, destruyendo los event listeners anteriores.
+
+```javascript
+// ESTO ROMPE:
+v.innerHTML='<header>...'          // DOM creado
+v.innerHTML+='<button>...'         // ← Se recrea TODO, listener anterior se pierde
+v.innerHTML+='<table>...'          // ← Otra reconstrucción
+// Luego attachar listeners no funciona porque el DOM se recreó
+```
+
+**Fix**: Construir HTML completo en variable, asignar UNA sola vez, LUEGO attach listeners.
+
+```javascript
+var html='<header>...' + '<button>...' + '<table>...</table></div>';
+v.innerHTML=html;  // Una sola asignación
+document.querySelector('button').addEventListener('click', handler); // Ahora funciona
+```
+
+**Status Priority 2**: ✅ Arreglado en commit 66e64b1
+
+#### ❌ Error 2: KPIs Hardcodeados → todos los owners ven "6, 187, 87%"
+
+**Síntoma**: Owner A tiene 3 programas, Owner B tiene 10 → ambos ven "6 Programas Activos".
+
+**Causa**: HTML fijo con valores literales.
+
+```javascript
+v.innerHTML+='<div class="kpi-value">6</div>';  // Siempre 6
+v.innerHTML+='<div class="kpi-value">187</div>'; // Siempre 187
+```
+
+**Fix**: Calcular desde datos ANTES de construir HTML.
+
+```javascript
+var activeCount=data.filter(p => p.status==='active').length;
+var totalClients=data.reduce((s,p) => s+(p.clients||0), 0);
+var avgCompletion=data.length ? Math.round(...) : 0;
+
+html='...<div class="kpi-value">'+activeCount+'</div>...';
+```
+
+**Status Priority 2**: ✅ Arreglado en commit a42138b
+
+#### ❌ Error 3: Filtro opera en datos equivocados
+
+**Síntoma**: Se cargan 10 programas reales, pero filtro muestra 6 de template.
+
+**Causa**: Filtro hardcodeado a fuente incorrecta.
+
+```javascript
+function loadPrograms(cb){
+  fetch(...).then(data => cb(data)); // Carga real data
+}
+
+function filterData(){
+  filtered = MOCK_PROGRAMS.filter(...); // ← Siempre template!
+  render(filtered);
+}
+```
+
+**Fix**: Guardar datos cargados en variable modular y usar para filtro.
+
+```javascript
+var _mcProgCurrentData = MOCK_PROGRAMS; // Almacén
+
+function loadPrograms(cb){
+  fetch(...).then(data => {
+    _mcProgCurrentData = data;  // Guardar aquí
+    cb(data);
+  });
+}
+
+function filterData(){
+  filtered = (_mcProgCurrentData||MOCK_PROGRAMS).filter(...); // Usar variable
+  render(filtered);
+}
+```
+
+**Status Priority 2**: ✅ Arreglado en commit a42138b
+
+### Checklist para Próximas Prioridades
+
+Antes de mergear código a `multicoach.html`:
+
+- [ ] HTML completo construido en variable (no múltiples `+=`)
+- [ ] `v.innerHTML=html` asignación única
+- [ ] Event listeners attachados DESPUÉS de `v.innerHTML=`
+- [ ] Valores/KPIs calculados desde datos, NO hardcodeados
+- [ ] Filtros usan variable de datos cargados (`_mcProgCurrentData`), NO MOCK directo
+- [ ] MC_REAL fallback: funciona sin backend, degrada gracefully
+- [ ] Multi-user testing: Owner A → Owner B → datos distintos (sin mezcla)
+- [ ] Botones responden (test: hace clic, tab actualiza)
+- [ ] Logout funciona (redirige a `/login.html`)
+- [ ] No hay `console.log` ni `console.error` en prod
+- [ ] Testado en demo (`MC_REAL=false`) y real (`MC_REAL=true`)
