@@ -832,6 +832,8 @@ Cierra tab, logo persiste
 - [ ] Está claro qué viene de Pathway (referencias solamente)
 - [ ] Está claro qué es administración pura
 
-**Aprobado por:** _________________________ (Micaela Jairedin)  
-**Fecha:** ________________________  
-**Siguiente:** Diseño visual de pantallas (mockups/wireframes)
+**Aprobado por:** Micaela Jairedin  
+**Fecha:** 2026-07-30  
+**Estado:** ✅ OFICIAL - Referencia de navegación vinculante  
+**Política:** Ninguna pantalla nueva ni cambio funcional sin revisión previa de este documento  
+**Próximo:** Diseño visual (wireframes/mockups) respetando esta especificación
