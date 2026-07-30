@@ -53,13 +53,14 @@ Deno.serve(async (req: Request) => {
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
   const email = await callerEmail(token);
-  if (!email) return json({ error: "not_owner" }, 403);
+  if (!email) return json({ error: "auth_invalid", detail: "Token inválido o no autenticado" }, 401);
 
   // Owner + su org.
   const owners = await q(`usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=id,nombre,email,activo,foto_url,configuracion,org_id&limit=1`);
   const owner = owners[0];
+  if (!owner) return json({ error: "auth_not_owner", detail: "Tu cuenta no tiene el rol de Administrador" }, 403);
   const orgId = owner && owner.org_id;
-  if (!orgId) return json({ error: "not_owner" }, 403);
+  if (!orgId) return json({ error: "org_missing", detail: "Tu cuenta no tiene una organización asignada" }, 403);
 
   const orgs = await q(`organizaciones?id=eq.${encodeURIComponent(orgId)}&select=*&limit=1`);
   const org = orgs[0] || null;
