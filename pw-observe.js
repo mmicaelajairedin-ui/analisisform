@@ -71,7 +71,26 @@
         return p.then(function (res) {
           try {
             if (res && !res.ok && res.status >= 400) {
-              report("http_" + res.status, method + " " + shortUrl(url));
+              var detail = method + " " + shortUrl(url);
+              // Para errores 500, intentar leer un poco del body (primeros 200 chars)
+              // sin consumirlo completamente. Esto es best-effort.
+              if (res.status >= 500 && res.text) {
+                try {
+                  res.clone().text().then(function(txt) {
+                    var msg = (txt || "").slice(0, 200);
+                    if (msg) detail += " | " + msg;
+                    report("http_" + res.status, detail);
+                  }).catch(function() {
+                    report("http_" + res.status, detail);
+                  });
+                  return res; // devolver el original sin esperar el clone
+                } catch (e) {
+                  report("http_" + res.status, detail);
+                  return res;
+                }
+              } else {
+                report("http_" + res.status, detail);
+              }
             }
           } catch (e) {}
           return res;
