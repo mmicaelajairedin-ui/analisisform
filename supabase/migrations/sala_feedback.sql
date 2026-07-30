@@ -26,6 +26,9 @@ ALTER TABLE sala_feedback ENABLE ROW LEVEL SECURITY;
 -- dejado). El INSERT del cliente ya funcionaba (anon key), pero se cubre igual
 -- por si un cliente logueado (portal, authenticated) deja su valoración.
 grant select, insert on public.sala_feedback to anon, authenticated;
+-- `id` es BIGSERIAL (secuencia clásica): sin USAGE sobre la secuencia el INSERT
+-- de anon/authenticated falla con "permission denied for sequence".
+grant usage, select on sequence public.sala_feedback_id_seq to anon, authenticated;
 
 -- El cliente deja su feedback (anon sin login, o authenticated desde el portal).
 DROP POLICY IF EXISTS sala_feedback_insert ON sala_feedback;
