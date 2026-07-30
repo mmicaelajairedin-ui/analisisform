@@ -40,10 +40,16 @@ async function callerEmail(token: string): Promise<string | null> {
 async function q(path: string): Promise<any[]> {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: svc });
-    if (!r.ok) return [];
+    if (!r.ok) {
+      console.error(`Query failed: ${path} (${r.status})`);
+      return [];
+    }
     const rows = await r.json();
     return Array.isArray(rows) ? rows : [];
-  } catch { return []; }
+  } catch (e) {
+    console.error(`Query error: ${path}`, e);
+    return [];
+  }
 }
 
 Deno.serve(async (req: Request) => {
