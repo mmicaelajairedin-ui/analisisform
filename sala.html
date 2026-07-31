@@ -576,8 +576,29 @@ function _fmtLeft(ms){
   return sec+' s';
 }
 function _hideCtrls(on){ var c=el('ctrls'); if(c) c.style.display=on?'none':'flex'; }
-var _booted=false, _gateTimer=null;
-function _enter(){ if(_booted) return; _booted=true; if(_gateTimer){ clearInterval(_gateTimer); _gateTimer=null; } _hideCtrls(false); if(ENGINE==='p2p'){ bootP2P(); } else { boot(); } }
+var _booted=false, _gateTimer=null, _accessOk=true;
+// ── Validar acceso del cliente (best-effort, no bloquea si falla) ──
+function _checkAccess(){
+  if(MOD) return;  // Coach siempre puede entrar
+  if(!EMAIL) { _accessOk=true; return; }  // Sin email = link de demostración
+  try{
+    fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(EMAIL)+'&select=activo,id',{
+      headers:{apikey:KEY}
+    }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
+      if(rows && rows.length && rows[0]){
+        _accessOk = rows[0].activo !== false;  // activo puede ser true, null, o false
+        if(!_accessOk){
+          var se=el('wait-s'); if(se){ se.className='s err'; se.textContent='Tu acceso a la plataforma ha expirado o no está activado. Contactá a tu coach para reactivarlo.'; }
+          _hideCtrls(true);
+        }
+      }
+    }).catch(function(){
+      // Si falla la validación por red, permitir entrada (best-effort)
+      _accessOk=true;
+    });
+  }catch(e){ _accessOk=true; }
+}
+function _enter(){ if(_booted || !_accessOk) return; _booted=true; if(_gateTimer){ clearInterval(_gateTimer); _gateTimer=null; } _hideCtrls(false); if(ENGINE==='p2p'){ bootP2P(); } else { boot(); } }
 // ── Motor P2P (WebRTC directo) — se usa solo con ?engine=p2p ──────────────────
 // Reusa la MISMA interfaz de la Sala (video, controles, chat, gate). No toca el
 // camino JaaS. El signaling va por Supabase Realtime (canal = el room).
@@ -679,7 +700,8 @@ function startSala(){
   }
   _enter();
 }
-startSala();
+_checkAccess();  // Validación de acceso (best-effort)
+setTimeout(startSala, 100);  // Esperar un poco a que la validación termine
 
 // Móvil: al deslizar para ver las funciones, la cámara (sticky arriba) se achica.
 // Se ata SIEMPRE (aunque se cargue en desktop y luego se rote/achique a móvil);
