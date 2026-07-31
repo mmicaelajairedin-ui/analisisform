@@ -3719,10 +3719,30 @@ var _agCoach='todos',_agView='semana',_agSelDow=null,_dragEv=null,_agWeekOff=0;
 function _agNavWeek(d){ _agWeekOff+=d; _agSelDow=null; mcSetAgenda(); renderAgenda(); }
 function agDragStart(ev,id){_dragEv=id;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',id);}catch(e){}}
 function agDrop(ev,dow){ev.preventDefault();var col=ev.currentTarget;col.classList.remove('dragover');if(_dragEv==null)return;
- // En modo red REAL no persistimos el arrastre todavía → no fingimos "Movido ✓"
- // (se perdía al recargar). Para reprogramar, se re-agenda la cita.
- if(MC_REAL){_dragEv=null;__toast('Para reprogramar, agendá de nuevo la cita (pronto: editar)');return;}
- var e=AGW.filter(function(x){return x.id===_dragEv;})[0];if(!e)return;var r=col.getBoundingClientRect();var h=AG_START+Math.floor((ev.clientY-r.top)/AG_ROWH);if(h<AG_START)h=AG_START;if(h>AG_END-e.dur)h=AG_END-e.dur;e.dow=dow;e.h=h;_dragEv=null;renderAgenda();__toast('Movido a '+_DOW[dow]+' '+h+':00 ✓');}
+ var e=AGW.filter(function(x){return x.id===_dragEv;})[0];if(!e)return;
+ var r=col.getBoundingClientRect();var h=AG_START+Math.floor((ev.clientY-r.top)/AG_ROWH);if(h<AG_START)h=AG_START;if(h>AG_END-e.dur)h=AG_END-e.dur;
+ if(MC_REAL){
+  // Reprogramar sesión real: toma la cita original, calcula la nueva fecha/hora
+  // según el dow/h nuevos, y la persiste via editar-cita-red.
+  if(!e.citaId){_dragEv=null;return;}
+  var wk=_weekDates(); if(!wk||wk.length<dow+1){_dragEv=null;return;}
+  var newDate=new Date(wk[dow]); newDate.setHours(h,0,0,0);
+  var iso=newDate.toISOString();
+  var newTitle=(MC_CITAS||[]).filter(function(x){return x.id===e.citaId;})[0];
+  if(!newTitle||!newTitle.tipo){_dragEv=null;return;}
+  __toast('Reprogramando…');
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+   return fetch(SB+'/functions/v1/editar-cita-red',{method:'POST',headers:h,body:JSON.stringify({cita_id:e.citaId,action:'update',inicio:iso,tipo:newTitle.tipo||'Sesión',modalidad:newTitle.modalidad||'online',lugar:newTitle.lugar||''})});
+  }).then(function(r){return r.json().catch(function(){return {};}).then(function(d2){return {ok:r.ok,d:d2||{}};});}).then(function(res){
+   if(!res.ok||!res.d.ok){__toast(res.d.error==='not_owner'?'Reingresá — sesión vencida':'No se pudo reprogramar. Reintenta');_dragEv=null;return;}
+   mcSetAgenda(); if(_sec==='agenda')renderAgenda(); __toast('Reprogramado a '+_DOW[dow]+' '+h+':00 ✓');
+  }).catch(function(){__toast('Error de conexión');});
+  _dragEv=null;
+ }else{
+  // Demo: reprograma localmente
+  e.dow=dow;e.h=h;_dragEv=null;renderAgenda();__toast('Movido a '+_DOW[dow]+' '+h+':00 ✓');
+ }
+}
 function agDragOver(ev){ev.preventDefault();ev.currentTarget.classList.add('dragover');}
 function agDragLeave(ev){ev.currentTarget.classList.remove('dragover');}
 var _DOW=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
