@@ -413,7 +413,80 @@ async function entrar(){
       btn.disabled=false;loading.style.display='none';
       return;
     }
-    localStorage.setItem('mj_user',JSON.stringify({id:usuario.id,email:usuario.email,rol:usuario.rol,nombre:usuario.nombre,activo:usuario.activo,configuracion:usuario.configuracion||{},foto_url:usuario.foto_url||'',bio:usuario.bio||'',nombre_practica:usuario.nombre_practica||'',org_id:usuario.org_id||null}));
+    // ── Determinar contexto y validar acceso según rol ────────────────────────
+    var contextType = usuario.org_id ? 'enterprise' : 'individual';
+    var multicoachAccess = false;
+    var colaboradorPermisos = null;
+
+    // Si es OWNER: validar acceso y detectar multi-org
+    if(usuario.rol === 'owner'){
+      multicoachAccess = true;
+      // Detectar si pertenece a múltiples orgs
+      try{
+        var _orgsRes = await fetch(SB+'/rest/v1/usuarios?auth_id=eq.'+encodeURIComponent(_authUid)+'&select=org_id&distinct=true', {
+          headers: {'apikey': KEY, 'Authorization': 'Bearer ' + _jwt}
+        });
+        var _orgsRows = await _orgsRes.json();
+        if(_orgsRows && Array.isArray(_orgsRows)){
+          var _orgIds = {};
+          _orgsRows.forEach(function(r){ if(r.org_id) _orgIds[r.org_id] = true; });
+          var _orgIdsList = Object.keys(_orgIds);
+          if(_orgIdsList.length > 1){
+            // Multi-org: guardar en localStorage para que multicoach.html muestre selector
+            localStorage.setItem('mj_multiorg_ids', JSON.stringify(_orgIdsList));
+            localStorage.setItem('mj_multiorg_current', usuario.org_id || _orgIdsList[0]);
+          }
+        }
+      }catch(_e){}
+    }
+    // Si es COLABORADOR: validar permisos antes de permitir acceso
+    else if(usuario.rol === 'colaborador' && usuario.org_id){
+      try{
+        var _permRes = await fetch(SB+'/rest/v1/colaborador_permisos?usuario_id=eq.'+encodeURIComponent(usuario.id)+'&org_id=eq.'+encodeURIComponent(usuario.org_id)+'&select=permisos', {
+          headers: {'apikey': KEY, 'Authorization': 'Bearer ' + _jwt}
+        });
+        var _permRows = await _permRes.json();
+        if(_permRows && Array.isArray(_permRows) && _permRows.length > 0){
+          // Tiene permisos → permitir acceso a MultiCoach
+          multicoachAccess = true;
+          colaboradorPermisos = _permRows[0].permisos || [];
+        } else {
+          // Sin permisos → denegar acceso
+          error.innerHTML = _lng === 'en'
+            ? 'You do not have access to enterprise management. Contact your administrator.'
+            : 'No tienes permisos para acceder a la gestión empresarial. Contacta al administrador.';
+          btn.disabled = false;
+          loading.style.display = 'none';
+          return;
+        }
+      }catch(_e){
+        // Si falla la query, denegar acceso (safer)
+        error.textContent = TXT[_lng].err_net;
+        btn.disabled = false;
+        loading.style.display = 'none';
+        return;
+      }
+    }
+
+    // Guardar usuario con contexto + flags de acceso
+    var _mj_user = {
+      id: usuario.id,
+      email: usuario.email,
+      rol: usuario.rol,
+      nombre: usuario.nombre,
+      activo: usuario.activo,
+      configuracion: usuario.configuracion || {},
+      foto_url: usuario.foto_url || '',
+      bio: usuario.bio || '',
+      nombre_practica: usuario.nombre_practica || '',
+      org_id: usuario.org_id || null,
+      coach_context: contextType,
+      multicoach_access: multicoachAccess
+    };
+    localStorage.setItem('mj_user', JSON.stringify(_mj_user));
+    if(colaboradorPermisos){
+      localStorage.setItem('mj_colaborador_permisos', JSON.stringify(colaboradorPermisos));
+    }
 
     // Guardar auth_id si todavía no estaba (lo tenemos de la sesión recién creada).
     if(!usuario.auth_id && _authUid){
@@ -450,8 +523,9 @@ async function entrar(){
     // recargando en vez de desloguear; esto resetea ese "una vez" por login.)
     try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
     var _v='v='+Date.now();
-    if(usuario.rol==='owner'){
+    if(usuario.rol==='owner' || (usuario.rol==='colaborador' && multicoachAccess)){
       // Dueño de una red (multicoach) → su panel de red.
+      // También colaborador con permisos → acceso a MultiCoach.
       window.location.href=BASE+'/multicoach.html?'+_v;
     } else if(usuario.rol==='coach'||usuario.rol==='admin'){
       window.location.href=BASE+'/panel-v2.html?'+_v;

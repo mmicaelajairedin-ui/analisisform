@@ -14556,8 +14556,10 @@ function loadReal(){
     if(RME.org_id && !RADMIN){ try{ _loadRedInfo(); }catch(e){} }
 
     // CONTEXTO DE SESIÓN: Determinar tipo de contexto e inicializar RORG + USER_PERMISOS
-    CONTEXT_TYPE = RME.org_id ? "enterprise" : "individual";
-    MULTICOACH_MODE = (RME.rol==="owner" || RME.rol==="colaborador");
+    // Prioriza valores del login (si existen en RME) sobre los derivados
+    CONTEXT_TYPE = (RME.coach_context) ? RME.coach_context : (RME.org_id ? "enterprise" : "individual");
+    MULTICOACH_MODE = (RME.multicoach_access !== undefined) ? RME.multicoach_access : (RME.rol==="owner" || RME.rol==="colaborador");
+
     // Cargar datos de organización si pertenece a una (enterprise context)
     if(RME.org_id){
       _sb("organizaciones?id=eq."+encodeURIComponent(RME.org_id)+"&select=id,nombre,plan,max_coaches,max_clientes,owner_id,logo,estado_sub,marca,fecha_fin_prueba")
@@ -14565,8 +14567,16 @@ function loadReal(){
           if(rows&&rows.length) RORG=rows[0];
         }).catch(function(){});
     }
-    // Cargar permisos granulares si es colaborador
-    if(RME.rol==="colaborador" && RME.org_id){
+
+    // Cargar permisos granulares: primero desde localStorage (establecidos por login.html),
+    // luego desde BD si es colaborador (para sincronización en segunda carga)
+    try{
+      var _permsStored=localStorage.getItem("mj_colaborador_permisos");
+      if(_permsStored){
+        USER_PERMISOS=JSON.parse(_permsStored);
+      }
+    }catch(e){}
+    if(!USER_PERMISOS && RME.rol==="colaborador" && RME.org_id){
       _sb("colaborador_permisos?usuario_id=eq."+encodeURIComponent(RME.id)+"&org_id=eq."+encodeURIComponent(RME.org_id)+"&select=permisos")
         .then(function(rows){
           if(rows&&rows.length&&rows[0].permisos) USER_PERMISOS=(Array.isArray(rows[0].permisos)?rows[0].permisos:[]);
