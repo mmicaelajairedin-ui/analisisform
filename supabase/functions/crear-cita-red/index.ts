@@ -116,6 +116,17 @@ Deno.serve(async (req: Request) => {
     if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
     const rows = await r.json().catch(() => []);
     const cita = Array.isArray(rows) && rows[0] ? rows[0] : { coach_id, nombre, tipo, inicio, estado: "confirmada" };
+    // Sincronizar a Google Calendar (best-effort — no bloquea la creación).
+    // Extrae el hangoutLink y lo guarda en citas.meet_link.
+    if (cita.id) {
+      try {
+        await fetch(`${SB_URL}/functions/v1/sync-cita-to-gcal`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cita_id: cita.id }),
+        });
+      } catch { /* ignore */ }
+    }
     // Email de confirmación al cliente (best-effort, no bloquea la creación).
     // JULIO 2026: Google Meet links come from Google Calendar sync, not sala.html
     if (EMAIL_RE.test(cliEmail)) {
