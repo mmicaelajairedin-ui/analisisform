@@ -88,6 +88,18 @@ DURANTE LA SESIÓN:
 
 ## Qué Falta Hacer
 
+### 0. **✅ HECHO — Remover sala.html de código (31 de Julio)**
+
+Se removieron TODOS los links a sala.html del flujo de videosesiones:
+- ✅ panel-v2.html: _confirmCliente(), _calRenderList(), ag-agendar handler
+- ✅ reservar.html: generación de sala.html link
+- ✅ cliente.html, pathway-fin-cliente.html, pathway-fit-cliente.html: clases de la red
+- ✅ Supabase edge functions (crear-cita-red, recordatorios-citas)
+
+Sala.html se mantiene SOLO para el chat. Ahora muestra:
+- Si no hay meet_link: "el link aparecerá en tu Google Calendar"
+- Si hay meet_link: botón "Unirse a Google Meet"
+
 ### 1. **CRÍTICO — Aplicar Migration en Supabase**
 
 Ejecutar en SQL Editor:
