@@ -2256,9 +2256,9 @@ function viewSidebar(){
       )+
       "</div>"+
     (function(){
-      // Dueño de una red: acceso directo a su panel de red (multicoach) — él
-      // atiende a SUS clientes acá como un coach más, y gestiona el equipo allá.
-      if(REAL && RME && RME.rol==="owner") return "<a href='multicoach.html' style='display:block;margin:0 10px 6px;text-align:center;font-size:11px;font-weight:700;color:#1B4332;background:var(--pw-amanecer);border-radius:8px;padding:7px 8px;text-decoration:none'>"+PWI.svg('building',{sm:true})+" Mi red</a>";
+      // CONTEXTO DE SESIÓN: Owner o Colaborador acceden a MultiCoach
+      // El owner gestiona la red, colaborador con permisos también accede
+      if(REAL && MULTICOACH_MODE && RME && RME.org_id) return "<a href='multicoach.html' style='display:block;margin:0 10px 6px;text-align:center;font-size:11px;font-weight:700;color:#1B4332;background:var(--pw-amanecer);border-radius:8px;padding:7px 8px;text-decoration:none'>"+PWI.svg('building',{sm:true})+" "+(RME.rol==="owner"?"Mi red":"Panel equipo")+"</a>";
       if(!_isDemoCoach()) return "";
       if(state.demoHideSwitch){ return "<div style='padding:4px 4px 6px'><button data-act='demo-switch-show' title='Mostrar selector de demo' style='background:none;border:none;color:var(--pw-text-muted);font-size:9px;letter-spacing:.5px;cursor:pointer;padding:2px 4px'>· · ·</button></div>"; }
       var dt=state.demoTipo||'carrera';
@@ -14007,11 +14007,26 @@ var REAL=false, RCFG={}, RCFG_READY=false, RPROF={slug:"",titulo_profesional:"",
 var RRED=null, RREDMSG=null, RCANALMSG=null, _redBusy=false, _canalBusy=false;
 var RCANAL_ID=null, RCANALES=null; // canal activo (null=General) y lista de canales/grupos del coach
 
+// CONTEXTO DE SESIÓN: variables para multi-tenant y permisos granulares
+var CONTEXT_TYPE="individual"; // "individual" o "enterprise" — determina si el coach es independiente o pertenece a org
+var RORG=null; // {id, nombre, plan, max_coaches, max_clientes, owner_id, logo, estado_sub, marca} — datos de organización si pertenece a una
+var USER_PERMISOS=null; // null si acceso completo (admin/coach), array de módulos permitidos si colaborador ["clientes", "agenda", ...]
+var MULTICOACH_MODE=false; // true si puede acceder a MultiCoach (owner o colaborador con permisos)
+
 // Perfil "empleado" (equipo comercial): rol genérico, sin lista de emails.
 // La sección "Emails" (plantillas de venta) la ven admin y empleados.
 function isEmpleado(){ return !!(RME && RME.rol==="empleado"); }
 function puedeEmails(){ return RADMIN || isEmpleado(); }
 function cg(){ return (REAL&&RME&&RME.rol!=="admin") ? "&coach_id=eq."+encodeURIComponent(RME.id) : ""; }
+// CONTEXTO DE SESIÓN: Validar si usuario puede acceder a un módulo específico
+function canAccess(modulo){
+  if(!REAL || !RME) return false;
+  if(RME.rol==="admin") return true; // admin acceso total
+  if(USER_PERMISOS!==null){ // es colaborador con permisos granulares
+    return USER_PERMISOS.indexOf(modulo)>=0;
+  }
+  return true; // coach/independiente acceso completo a su contexto
+}
 // Si una acción del juego (alta de cliente) terminó y dejó pendiente volver al
 // Resumen, lo hacemos al cerrar el modal de email → la cabra camina al próximo paso.
 function _gameReturnMaybe(){ if(state._gameReturn){ state._gameReturn=false; state.section="resumen"; window.scrollTo(0,0); } }
@@ -14539,6 +14554,24 @@ function loadReal(){
     // clientes acá, con la misma marca. (Los hilos de chat de red del coach
     // sí siguen excluyendo al dueño: él es el otro lado de ese chat.)
     if(RME.org_id && !RADMIN){ try{ _loadRedInfo(); }catch(e){} }
+
+    // CONTEXTO DE SESIÓN: Determinar tipo de contexto e inicializar RORG + USER_PERMISOS
+    CONTEXT_TYPE = RME.org_id ? "enterprise" : "individual";
+    MULTICOACH_MODE = (RME.rol==="owner" || RME.rol==="colaborador");
+    // Cargar datos de organización si pertenece a una (enterprise context)
+    if(RME.org_id){
+      _sb("organizaciones?id=eq."+encodeURIComponent(RME.org_id)+"&select=id,nombre,plan,max_coaches,max_clientes,owner_id,logo,estado_sub,marca,fecha_fin_prueba")
+        .then(function(rows){
+          if(rows&&rows.length) RORG=rows[0];
+        }).catch(function(){});
+    }
+    // Cargar permisos granulares si es colaborador
+    if(RME.rol==="colaborador" && RME.org_id){
+      _sb("colaborador_permisos?usuario_id=eq."+encodeURIComponent(RME.id)+"&org_id=eq."+encodeURIComponent(RME.org_id)+"&select=permisos")
+        .then(function(rows){
+          if(rows&&rows.length&&rows[0].permisos) USER_PERMISOS=(Array.isArray(rows[0].permisos)?rows[0].permisos:[]);
+        }).catch(function(){});
+    }
     var cfg = RCFG;
     var _vit = (cfg&&cfg.es_pro_vitalicio===true) || RADMIN;
     var planEff = _vit ? "pro" : (cfg&&cfg.plan==="pro" ? "pro" : "basic");
