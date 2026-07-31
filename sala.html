@@ -457,7 +457,7 @@ function getToken(){
     }).then(function(r){ return r.json().then(function(j){ return j; }, function(){ return null; }); }).catch(function(){ return null; });
   }catch(e){ return Promise.resolve(null); }
 }
-var api=null, TSTART=0, tInt=null;
+var api=null, TSTART=0, tInt=null, CLIENTE_CONECTADO=false;
 function startTimer(){ if(tInt) return; TSTART=Date.now(); var t=el('timer'); tInt=setInterval(function(){ var s=Math.floor((Date.now()-TSTART)/1000); t.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); },1000); }
 function stopTimer(){ if(tInt){ clearInterval(tInt); tInt=null; } }
 function directBtn(){ return '<a class="btn btn-p" href="'+DIRECT+'" target="_blank" rel="noopener" style="margin-top:6px">Abrir la videollamada ↗</a>'; }
@@ -516,7 +516,7 @@ function boot(){
       var n = api.getNumberOfParticipants ? api.getNumberOfParticipants() : 1;
       if(n>1){ hideWait(); el('estado').textContent='✓ En llamada'; } else { waitAlone(); el('estado').textContent='Esperando al cliente…'; }
     });
-    api.addListener('participantJoined', function(){ hideWait(); _tile(); el('estado').textContent='✓ Cliente conectado'; });
+    api.addListener('participantJoined', function(){ hideWait(); _tile(); el('estado').textContent='✓ Cliente conectado'; CLIENTE_CONECTADO=true; });
     api.addListener('tileViewChanged', function(e){ if(e && e.enabled===false) setTimeout(_tile, 300); });
     api.addListener('participantLeft', function(){ el('estado').textContent='Cliente salió'; });
     api.addListener('readyToClose', function(){ el('estado').textContent='Llamada terminada'; stopTimer(); hideWait(); });
@@ -612,7 +612,7 @@ function bootP2P(){
     container:'jaas', room:ROOM, name:NAME, moderator:MOD, sbUrl:SB, sbKey:KEY, iceServers:ICE,
     onState:function(t){ try{ el('estado').textContent=(/conectado/i.test(t)?'✓ ':'')+(t||''); }catch(e){} },
     onLocalReady:function(){ waitAlone(); el('estado').textContent='Esperando al cliente…'; },   // pantalla BLANCA de "esperando" hasta que se una el otro
-    onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='✓ Cliente conectado'; },
+    onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='✓ Cliente conectado'; CLIENTE_CONECTADO=true; },
     onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Cliente salió'; },
     onChat:function(from,text){ try{ if(recvIsReaction(text,from||WHO)) return; if(recvIsSell(text)) return; chatAdd(from||WHO, text, false); }catch(e){} },
     onFail:_p2pFallbackToJaas,   // la red bloquea el P2P (ni el TURN alcanza) → caemos a JaaS solos
@@ -1039,7 +1039,7 @@ function saveSesion(res){
   // Solo el coach (mod=1) guarda. Blindaje: si un cliente abriera un link con
   // cita (no debería), su blob vacío NO pisa las notas del coach.
   if(!CITA || !MOD) return Promise.resolve(false);
-  var body={ notas_llamada: sesionBlob() };
+  var body={ notas_llamada: sesionBlob(), cliente_conectado: CLIENTE_CONECTADO };
   if(res) body.resultado=res;
   // return=representation (NO minimal): con minimal, un 204 puede ser 0 filas
   // escritas (id equivocado / RLS futura) y saveSesion devolvía true → "✓ Guardado"
