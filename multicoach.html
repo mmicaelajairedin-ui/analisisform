@@ -1690,9 +1690,9 @@ function mcApplyNiche(){
  try{ [].forEach.call(document.querySelectorAll('.mc-real-only'),function(e){ e.style.display=MC_REAL?'':'none'; }); }catch(e){}
  _mcSetPlanBadge();
  setHT('mc-kpis',MC_REAL?mcKpisReal():mcKpis());
- setHT('mc-hero-metrics',mcHeroMetrics());
- setHT('mc-org-health',mcOrgHealth());
- mcRenderAlerts();
+ setHT('mc-hero-metrics',MC_REAL?mcKpisSummary():mcHeroMetrics()); // Consolida hero metrics (evita duplicidad con mc-kpis)
+ setHT('mc-org-health',MC_REAL?mcOrgStatus():mcOrgHealth()); // Consolida alertas + salud (fuente única: mcNotifData)
+ // mcRenderAlerts() ya no es necesario (ahora integrado en mcOrgStatus)
  try{ setHT('mc-owner-guide', _mcOwnerGuide()); }catch(e){}
  // Medalla/puntos REALES del owner (por el tamaño y actividad de su red).
  try{ var _op=document.getElementById('mc-owner-pts'); if(_op){ if(MC_REAL){ _op.innerHTML=_mcOwnerPts(); _op.style.display=''; } else { _op.style.display='none'; } } }catch(e){}
@@ -1783,6 +1783,83 @@ function _mcContactBtn(tel, email){
   if(email) return '<a class="cp-btn cp-btn-ghost" href="mailto:'+_mcEsc(email)+'">'+PWI.svg('mail',{sm:true})+' Escribir email</a>';
   return '<button class="cp-btn cp-btn-ghost" disabled style="opacity:.55;cursor:default">Sin contacto cargado</button>';
 }
+
+// CONSOLIDACIÓN ARQUITECTÓNICA (Julio 2026):
+// Elimina redundancias: un único punto de acceso para cada dato.
+// - mcKpisSummary(): 3-4 KPIs clave en formato hero (reemplaza mcHeroMetrics)
+// - mcOrgStatus(): alertas + salud unificados (reemplaza mcOrgHealth como widget separado)
+// - mcKpisReal(): grid detallado con Ingresos + Embudo (SOLO aquí)
+// - mcNotifData(): source único de alertas críticas (usado por mcOrgStatus)
+
+function mcKpisSummary(){
+  var co=(DB&&DB.coaches)||[], cl=(DB&&DB.clientes)||[];
+  var coAct=co.filter(function(c){return c.est==='activo'&&c.cli>0;}).length;
+  var clAct=cl.filter(function(k){return k.est==='activo';}).length;
+  var completed=cl.filter(function(k){return k.est==='completado'||k.week>=4;}).length;
+  var retention=cl.length>0?Math.round(completed/cl.length*100):0;
+  var utilization=co.length>0?(co.filter(function(c){return c.est==='activo';}).reduce(function(s,c){return s+(c.ses||0);},0)/Math.max(1,coAct*5)*100):0;
+  utilization=Math.min(100,Math.round(utilization));
+
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">'
+    +'<div style="background:rgba(82,183,136,.1);padding:12px;border-radius:8px;text-align:center">'
+    +'<div style="font-size:28px;font-weight:700;color:var(--pw-carbon)">'+coAct+'</div>'
+    +'<div style="font-size:12px;color:var(--pw-text-soft);margin-top:4px">Coaches activos</div>'
+    +'</div>'
+    +'<div style="background:rgba(82,183,136,.1);padding:12px;border-radius:8px;text-align:center">'
+    +'<div style="font-size:28px;font-weight:700;color:var(--pw-carbon)">'+clAct+'</div>'
+    +'<div style="font-size:12px;color:var(--pw-text-soft);margin-top:4px">Clientes en programa</div>'
+    +'</div>'
+    +'<div style="background:rgba(79,166,186,.1);padding:12px;border-radius:8px;text-align:center">'
+    +'<div style="font-size:28px;font-weight:700;color:var(--pw-carbon)">'+retention+'%</div>'
+    +'<div style="font-size:12px;color:var(--pw-text-soft);margin-top:4px">Retención</div>'
+    +'</div>'
+    +'<div style="background:rgba(233,196,106,.15);padding:12px;border-radius:8px;text-align:center">'
+    +'<div style="font-size:28px;font-weight:700;color:var(--pw-carbon)">'+utilization+'%</div>'
+    +'<div style="font-size:12px;color:var(--pw-text-soft);margin-top:4px">Utilización</div>'
+    +'</div>'
+    +'</div>';
+}
+
+function mcOrgStatus(){
+  var co=(DB&&DB.coaches)||[], cl=(DB&&DB.clientes)||[];
+  var coAct=co.filter(function(c){return c.est==='activo';}).length;
+  var clAct=cl.filter(function(k){return k.est==='activo';}).length;
+  var alertas=mcNotifData()||[];
+
+  var statusBadge='✓ Saludable', statusColor='#2D6A4F';
+  if(alertas.length>0){ statusBadge='⚠️ Atención requerida'; statusColor='#D97706'; }
+  else if(coAct===0||clAct===0){ statusBadge='🔴 Incompleto'; statusColor='#DC2626'; }
+
+  var html='<div style="margin-bottom:12px;font-size:13px;color:'+statusColor+';font-weight:600">'+statusBadge+'</div>';
+
+  if(alertas.length){
+    html+='<div style="font-size:12px;line-height:1.8">';
+    for(var i=0;i<alertas.length;i++){
+      var a=alertas[i];
+      var btnOnClick='';
+      if(a.go){
+        window['_mcAlertGo_'+i]=a.go;
+        btnOnClick=' onclick="(window._mcAlertGo_'+i+'||function(){})();" style="cursor:pointer;text-decoration:underline;color:var(--pw-bosque);font-weight:600"';
+      }
+      html+='<div style="margin-bottom:8px;padding:8px;background:rgba(217,119,6,.08);border-radius:6px;border-left:2px solid '+statusColor+'">'
+        +'<span style="margin-right:6px;font-size:14px">'+a.emo+'</span>'
+        +'<span style="font-weight:600">'+_mcEsc(a.t)+'</span>'
+        +(a.s?'<div style="font-size:11px;color:var(--pw-text-soft);margin-top:3px'+btnOnClick+'">'+_mcEsc(a.s)+'</div>':'')
+        +'</div>';
+    }
+    html+='</div>';
+  } else {
+    html+='<div style="font-size:13px;color:var(--pw-text-soft);line-height:1.6">';
+    if(coAct===0&&clAct===0) html+='• Sin coaches ni clientes aún<br>• Comienza creando tu primer coach';
+    else if(coAct===0) html+='• Sin coaches asignados<br>• Suma coaches a tu red';
+    else if(clAct===0) html+='• Sin clientes en programa<br>• Cuando te asignen, aparecen acá';
+    else html+='✓ Organización en buen estado. Mantén el ritmo de sesiones y comunicación con tu equipo.';
+    html+='</div>';
+  }
+
+  return html;
+}
+
 // KPIs REALES del dueño (honestos: lo que hay). Tier 1 operativos.
 // Fila 1: Coaches activos, Clientes en red, Utilización %, Retención %
 // Fila 2: Ingresos, Embudo conversión
