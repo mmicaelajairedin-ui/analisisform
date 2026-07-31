@@ -1957,18 +1957,19 @@ function mcLoadReal(owner){
 }
 // Selector modal para elegir organización (cuando un Owner es parte de múltiples orgs).
 function __showOrgSelector(orgIds){
-  if(!orgIds||!orgIds.length)return;
+  if(!orgIds||!Array.isArray(orgIds)||!orgIds.length)return;
   var _modal='<div class="mc-org-modal" id="mcOrgSelector" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:1000;"><div style="background:#fff;border-radius:12px;padding:32px;text-align:center;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.12);"><h2 style="margin:0 0 12px;font-family:var(--ser);font-size:20px;font-weight:600;color:var(--carbon);">Selecciona tu Red</h2><p style="margin:0 0 24px;font-size:14px;color:var(--soft);">Eres dueño de varias redes. ¿Cuál quieres usar?</p><div style="display:flex;flex-direction:column;gap:10px;">';
-  orgIds.forEach(function(oid){
-    _modal+='<button onclick="__selectOrg(\''+oid+'\')" style="padding:12px 16px;border:1px solid var(--border);background:transparent;border-radius:8px;font-size:14px;font-weight:500;color:var(--carbon);cursor:pointer;transition:all 0.15s;text-align:left;">Red #'+(oid.substring(0,8)+'…')+'</button>';
+  (orgIds||[]).forEach(function(oid){
+    if(oid) _modal+='<button onclick="__selectOrg(\''+_mcEsc(oid)+'\')" style="padding:12px 16px;border:1px solid var(--border);background:transparent;border-radius:8px;font-size:14px;font-weight:500;color:var(--carbon);cursor:pointer;transition:all 0.15s;text-align:left;min-height:44px;">Red #'+(oid.substring(0,8)+'…')+'</button>';
   });
   _modal+='</div></div></div>';
-  var _mc=document.getElementById('mcOrgSelector');if(_mc)_mc.remove();
+  var _existing=document.getElementById('mcOrgSelector');if(_existing)_existing.remove();
   var _el=document.createElement('div');_el.innerHTML=_modal;document.body.appendChild(_el.firstElementChild);
 }
 // Guardar org seleccionada y recargar.
 function __selectOrg(orgId){
-  try{ localStorage.setItem('mj_org_selected',orgId); }catch(e){}
+  if(!orgId){__toast('Error: organización no válida');return;}
+  try{ localStorage.setItem('mj_org_selected',orgId); }catch(e){__toast('Error al guardar selección');}
   var _m=document.getElementById('mcOrgSelector');if(_m)_m.remove();
   window.location.href=location.pathname+'?v='+Date.now();
 }
@@ -1995,7 +1996,13 @@ function mcBoot(){
       var _mids=localStorage.getItem('mj_multiorg_ids');
       if(_mids){
         var _orgIds=JSON.parse(_mids);
-        if(_orgIds&&_orgIds.length>1){
+        if(Array.isArray(_orgIds)&&_orgIds.length>1){
+          // Verificar si ya hay una org seleccionada (no mostrar selector nuevamente)
+          var _selected=localStorage.getItem('mj_org_selected');
+          if(_selected&&_orgIds.indexOf(_selected)>=0){
+            mcLoadReal(u);
+            return;
+          }
           __showOrgSelector(_orgIds);
           return;
         }
@@ -2021,12 +2028,20 @@ function mcBoot(){
         // Cargar permisos desde BD y luego cargar la red real
         _hdr().then(function(h){
           return fetch(SB+'/rest/v1/colaborador_permisos?usuario_id=eq.'+encodeURIComponent(f.id)+'&org_id=eq.'+encodeURIComponent(f.org_id)+'&select=permisos',{headers:h});
-        }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
-          if(rows&&rows.length&&rows[0].permisos) MC_USER_PERMISOS=(Array.isArray(rows[0].permisos)?rows[0].permisos:[]);
+        }).then(function(r){
+          if(!r.ok) throw new Error('Failed to load permissions');
+          return r.json();
+        }).then(function(rows){
+          if(rows&&Array.isArray(rows)&&rows.length&&rows[0]&&rows[0].permisos){
+            MC_USER_PERMISOS=(Array.isArray(rows[0].permisos)?rows[0].permisos:[]);
+          }
           try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'{}'); mu.org_id=f.org_id; if(f.nombre)mu.nombre=f.nombre; if(f.foto_url)mu.foto_url=f.foto_url; localStorage.setItem('mj_user',JSON.stringify(mu)); u=mu; }catch(e){ u=f; }
           mcLoadReal(u);
           setTimeout(_applyNavRestrictions,100);
-        }).catch(function(){ mcApplyNiche(); });
+        }).catch(function(err){
+          mcApplyNiche();
+          __toast('No pudimos verificar tus permisos. Contacta a tu administrador.');
+        });
         return;
       }
       // Coach individual o admin mirando la maqueta → se queda en la demo.
