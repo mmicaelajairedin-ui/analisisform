@@ -8381,8 +8381,11 @@ function _coachDetailCard(){
       rowD("Activo", c.activo===false?"No":"Sí")+
       (cg.creado_por_admin?rowD("Creado por admin", cg.creado_por||"—"):"")+
       (selfRow?"<p style='font-size:12px;color:var(--pw-text-muted);margin:14px 0 0'>Es tu propia cuenta.</p>":
-      "<div style='display:flex;gap:10px;flex-wrap:wrap;margin-top:16px'>"+
-        "<button class='cp-btn cp-btn-ghost' data-act='coach-trial:"+esc(c.id)+"'>+30 días de prueba</button>"+
+      "<div style='display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;align-items:center'>"+
+        "<div style='display:flex;gap:6px;align-items:center'>"+
+          "<input id='coach-trial-dias-"+esc(c.id)+"' class='cp-form-input' type='number' value='30' min='1' max='365' style='width:70px;height:36px' title='Días de prueba'>"+
+          "<button class='cp-btn cp-btn-ghost' data-act='coach-trial:"+esc(c.id)+"' style='height:36px;padding:0 14px;font-size:12px'>Dar días</button>"+
+        "</div>"+
         "<button class='cp-btn cp-btn-primary' data-act='coach-paid:"+esc(c.id)+"'>Marcar como pagado</button>"+
         "<button class='cp-btn cp-btn-ghost' data-act='coach-plan:"+(cg.plan==="pro"?"basic":"pro")+":"+esc(c.id)+"'>"+(cg.plan==="pro"?"Pasar a Basic":"Pasar a Pro")+"</button>"+
       "</div>")+
@@ -11244,7 +11247,10 @@ document.addEventListener("click", function(ev){
   if(act.indexOf("coach-trial:")===0){
     if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
     var ctId=act.slice(12);
-    if(!confirm("¿Extender el trial de este coach +30 días?")) return;
+    var diasEl=document.getElementById("coach-trial-dias-"+ctId);
+    var diasInput=diasEl?parseInt(diasEl.value||"30",10):30;
+    var dias=Math.max(1,Math.min(365,isNaN(diasInput)?30:diasInput));
+    if(!confirm("¿Extender el trial de este coach +"+dias+" día"+(dias!==1?"s":"")+"?")) return;
     var _ctReLogin=function(){ alert("No pudimos verificar tu sesión de admin.\n\nCierra sesión y vuelve a entrar (así se renueva tu acceso), y reintenta."); };
     // Fallback: PATCH directo (sirve si el admin tiene el auth_id ligado y la
     // policy usuarios_admin_all aplicada). Se usa solo si la edge function no está.
@@ -11253,15 +11259,15 @@ document.addEventListener("click", function(ev){
         var u=rows&&rows[0]; if(!u){ alert("Coach no encontrado."); return; }
         var cf=u.configuracion||{}; var base=cf.fecha_fin_prueba?new Date(cf.fecha_fin_prueba):new Date();
         if(isNaN(base.getTime())||base.getTime()<Date.now()) base=new Date();
-        base.setDate(base.getDate()+30);
+        base.setDate(base.getDate()+dias);
         var nc=Object.assign({},cf,{fecha_fin_prueba:base.toISOString(),estado_sub:"prueba",ultima_extension_admin:new Date().toISOString()});
-        return _sbw("usuarios?id=eq."+encodeURIComponent(ctId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Trial extendido +30 días ✓"); reloadCoaches(); });
+        return _sbw("usuarios?id=eq."+encodeURIComponent(ctId),"PATCH",{configuracion:nc,activo:true}).then(function(r){ if(!r.ok) throw 0; toast("Trial extendido +"+dias+" día"+(dias!==1?"s":"")+" ✓"); reloadCoaches(); });
       }).catch(function(){ alert("No se pudo extender el trial.\n\nSi no cambió nada, tu sesión de admin pudo vencer (RLS): cierra sesión y vuelve a entrar para renovar tu acceso, y reintenta."); });
     };
     // Camino principal: edge function admin-coach-op (verifica admin por email del
     // JWT y escribe con service role → no depende del auth_id ni de la policy).
-    _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"extend_trial",coach_id:ctId,dias:30})}); })
-      .then(function(r){ if(r.status===403){ _ctReLogin(); return null; } if(!r.ok) return _ctDirect(); return r.json().then(function(){ toast("Trial extendido +30 días ✓"); reloadCoaches(); }); })
+    _hdr({"Content-Type":"application/json"}).then(function(h){ return fetch(SB+"/functions/v1/admin-coach-op",{method:"POST",headers:h,body:JSON.stringify({op:"extend_trial",coach_id:ctId,dias:dias})}); })
+      .then(function(r){ if(r.status===403){ _ctReLogin(); return null; } if(!r.ok) return _ctDirect(); return r.json().then(function(){ toast("Trial extendido +"+dias+" día"+(dias!==1?"s":"")+" ✓"); reloadCoaches(); }); })
       .catch(function(){ return _ctDirect(); });
     return;
   }
