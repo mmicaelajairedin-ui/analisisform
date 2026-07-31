@@ -805,23 +805,23 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
       <div class="actions-grid section-spacing" id="mc-actions">
         <button class="action-btn" onclick="__nuevoCliente()">
           <span class="action-btn-icon"><i data-ic="user"></i></span>
-          <div class="action-btn-title">Nuevo cliente</div>
+          <div class="action-btn-title">Crear cliente</div>
           <div class="action-btn-desc">Registrar un nuevo cliente en la red</div>
-        </button>
-        <button class="action-btn" onclick="__asignarCoach()">
-          <span class="action-btn-icon"><i data-ic="link"></i></span>
-          <div class="action-btn-title" id="mc-qa-asignar">Asignar coach</div>
-          <div class="action-btn-desc">Conectar cliente con su coach</div>
         </button>
         <button class="action-btn" onclick="__nuevaSesion()">
           <span class="action-btn-icon"><i data-ic="calendar"></i></span>
-          <div class="action-btn-title">Nueva sesión</div>
+          <div class="action-btn-title">Agendar sesión</div>
           <div class="action-btn-desc">Crear una cita o clase</div>
         </button>
-        <button class="action-btn" onclick="__go('comunidad')">
-          <span class="action-btn-icon"><i data-ic="megaphone"></i></span>
-          <div class="action-btn-title">Publicar</div>
-          <div class="action-btn-desc">Compartir un aviso o novedad</div>
+        <button class="action-btn" onclick="__go('agenda')">
+          <span class="action-btn-icon"><i data-ic="calendarDays"></i></span>
+          <div class="action-btn-title">Ver agenda</div>
+          <div class="action-btn-desc">Revisar calendario de sesiones</div>
+        </button>
+        <button class="action-btn" onclick="__go('directorio')">
+          <span class="action-btn-icon"><i data-ic="mail"></i></span>
+          <div class="action-btn-title">Contactar coach</div>
+          <div class="action-btn-desc">Enviar mensaje a tu equipo</div>
         </button>
       </div>
 
@@ -839,6 +839,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
           <div class="org-summary" id="mc-org-health">
             <!-- Populated by mcKpisReal() -->
           </div>
+        </div>
+      </div>
+
+      <!-- GAP 5: Próximas Sesiones (Next 5 sessions) -->
+      <div class="card sec section-spacing" id="mc-proximas-sesiones" style="display:none">
+        <div class="card-h"><h3><i data-ic="calendar" data-sm></i> Próximas sesiones</h3></div>
+        <div id="mc-proximas-content">
+          <!-- Populated by mcProximasSesiones() -->
         </div>
       </div>
 
@@ -1018,14 +1026,47 @@ function __notif(el){var d=el.querySelector('.dd');var was=d.classList.contains(
 function _mcEsc(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 // Notificaciones del dueño: derivadas de los MISMOS datos del panel (DB), así el
 // badge y la lista coinciden con el ranking/riesgo del dashboard (no un "3" fijo).
+// GAP 1: Alertas Críticas — Coaches with trial ≤3 days, Inactive clients ≥7 days, Capacity ≥90%
 function mcNotifData(){
   var out=[];
   try{
     if(DB&&DB.coaches){
       var inact=DB.coaches.filter(function(c){return c&&c.est==='inactivo';});
       if(inact.length) out.push({emo:'🔴',t:inact.length+(inact.length===1?' coach sin actividad':' coaches sin actividad'),s:inact.map(function(c){return c.n;}).slice(0,3).join(', '),go:function(){__go('coaches');}});
+
+      // Alert: Coaches with trial ≤3 days
+      if(MC_REAL&&MC_ORG&&MC_ORG.fecha_fin_prueba){
+        var hoy=new Date();
+        var vence=new Date(MC_ORG.fecha_fin_prueba);
+        var dias=Math.floor((vence-hoy)/(1000*60*60*24));
+        if(dias>=0&&dias<=3){
+          out.push({emo:'⏰',t:'Prueba vence en '+dias+' día'+(dias===1?'':'s'),s:'Activa suscripción para mantener la red',go:function(){__go('config');}});
+        }
+      }
+
+      // Alert: Capacity ≥90%
+      var coAct=DB.coaches.filter(function(c){return c.est==='activo'&&c.cli>0;}).length;
+      var clAct=DB.clientes.filter(function(k){return k.est==='activo';}).length;
+      if(MC_ORG&&MC_ORG.plan){
+        var max_cli=MC_PLANES[MC_ORG.plan]&&MC_PLANES[MC_ORG.plan].max_clientes?(MC_PLANES[MC_ORG.plan].max_clientes):(MC_PLANES.studio?MC_PLANES.studio.max_clientes:100);
+        var capacity=max_cli>0?Math.round(clAct/max_cli*100):0;
+        if(capacity>=90){
+          out.push({emo:'⚠️',t:'Capacidad al '+capacity+'%',s:'Estás cerca del límite de tu plan',go:function(){__go('config');}});
+        }
+      }
     }
     if(DB&&DB.clientes){
+      // Alert: Inactive clients ≥7 days
+      var inactClients=DB.clientes.filter(function(k){
+        if(k.est!=='activo') return false;
+        var ts=k._ts||k._created||0;
+        var days=Math.floor((Date.now()-ts)/(1000*60*60*24));
+        return days>=7;
+      });
+      if(inactClients.length){
+        out.push({emo:'🔌',t:inactClients.length+' cliente'+(inactClients.length===1?'':'s')+' sin actividad hace ≥7 días',s:'Considera reactivarlos',go:function(){__go('clientes');}});
+      }
+
       var riesgo=DB.clientes.filter(function(k){return k&&k.est==='activo'&&(k.lastState==='stale'||k.lastState==='mid');});
       if(riesgo.length) out.push({emo:'🟡',t:riesgo.length+(riesgo.length===1?' cliente en riesgo':' clientes en riesgo'),s:'Sin sesión reciente',go:function(){__go('clientes');}});
       var pend=DB.clientes.filter(function(k){return k&&(k.plan==='pending'||k.med==='pending');});
@@ -1539,6 +1580,14 @@ function mcApplyNiche(){
  try{ setHT('mc-owner-guide', _mcOwnerGuide()); }catch(e){}
  // Medalla/puntos REALES del owner (por el tamaño y actividad de su red).
  try{ var _op=document.getElementById('mc-owner-pts'); if(_op){ if(MC_REAL){ _op.innerHTML=_mcOwnerPts(); _op.style.display=''; } else { _op.style.display='none'; } } }catch(e){}
+ // GAP 5: Próximas Sesiones — mostrar solo si hay sesiones
+ try{
+   var prox=document.getElementById('mc-proximas-sesiones');
+   if(prox){
+     setHT('mc-proximas-content',mcProximasSesiones());
+     prox.style.display=(MC_CITAS&&MC_CITAS.length)?'':'none';
+   }
+ }catch(e){}
  setHT('actividad',MC_REAL?mcEmptyRow('Sin actividad reciente todavía','Cuando tus coaches y clientes se muevan, lo ves acá.'):m.act.map(mcActRow).join(''));
  setHT('mc-ranking',(MC_REAL&&(!DB.coaches||!DB.coaches.length))?mcEmptyRow('Sin coaches aún','Suma coaches a tu red para verlos acá.'):mcRanking());
  setHT('mc-riesgo',(MC_REAL&&(!DB.clientes||!DB.clientes.length))?mcEmptyRow('Sin clientes aún','Cuando te asignen clientes, aparecen acá.'):mcRiesgo());
@@ -1738,6 +1787,33 @@ function mcOrgHealth(){
   if(issues.length===0) return '<div style="font-size:13px;color:var(--pw-text-soft);line-height:1.6">✓ Organización en buen estado. Mantén el ritmo de sesiones y comunicación con tu equipo.</div>';
   return '<div style="font-size:13px;color:var(--pw-text-soft);line-height:1.6"><b>Ítems a revisar:</b><div style="margin-top:6px">'+issues.map(function(i){return '• '+i;}).join('<br>')+'</div></div>';
 }
+
+// GAP 5: Próximas Sesiones — Tabla compacta con próximas 5 sesiones desde MC_CITAS
+function mcProximasSesiones(){
+  var sessions=(MC_CITAS||[]).filter(function(c){ return c&&c.inicio; }).sort(function(a,b){
+    var tA=new Date(a.inicio).getTime(), tB=new Date(b.inicio).getTime();
+    return tA-tB;
+  }).slice(0,5);
+
+  if(!sessions.length){
+    return '<div style="font-size:12.5px;color:var(--pw-text-soft);padding:12px;text-align:center;line-height:1.6">Sin sesiones agendadas en los próximos días. '+PWI.svg('calendar',{sm:true})+' Agendar una sesión</div>';
+  }
+
+  var rows=sessions.map(function(c){
+    var cli=DB&&DB.clientes?DB.clientes.find(function(k){return (''+(k.email||'')).toLowerCase()===(''+(c.email||'')).toLowerCase();}):null;
+    var co=c.coach_id?_coach(c.coach_id):null;
+    var fecha=_mcFecha(c.inicio);
+    var tipo=c.tipo||'Sesión';
+    var ico=_mcSesIco(tipo,c.estado);
+    return '<div class="cp-drow" style="padding:8px 0;border-bottom:1px solid rgba(0,0,0,.06)">'
+      +'<div class="dd"><span style="font-size:14px">'+ico+'</span></div>'
+      +'<div class="dg" style="flex:1"><div class="dn" style="font-weight:500">'+_mcEsc(tipo)+'</div>'
+      +'<div class="ds" style="font-size:11px;color:var(--pw-text-soft)">'+fecha+(cli?' · '+_mcEsc(cli.n.split(' ')[0]):'')+(co?' · '+_mcEsc(co.n.split(' ')[0]):'')+'</div></div>'
+      +'</div>';
+  }).join('');
+
+  return '<div style="font-size:12px">'+rows+'</div>';
+}
 // Renderiza la tarjeta de alertas con problemas de la organización
 function mcRenderAlerts(){
   var notifs=mcNotifData();
@@ -1839,6 +1915,7 @@ function mcLoadReal(owner){
 // vez de su red. Ahora, si hay CUALQUIER sesión, verificamos el rol FRESCO
 // contra el servidor: dueño → su red real; coach DE una red → a SU panel
 // (panel-v2, multicoach es solo del dueño); coach individual/admin → demo.
+// GAP 6: Validación de Roles — solo Owner/Colaborador pueden acceder a Dashboard
 function mcBoot(){
   var u=null;
   // ?demo=1 (o ?embed=1) fuerza SIEMPRE la maqueta — se usa al incrustar el panel
@@ -1862,6 +1939,9 @@ function mcBoot(){
       } else if(f.rol==='coach'&&f.org_id){
         // Un coach DE la red no gestiona acá: su mundo es su panel de siempre.
         window.location.href='panel-v2.html?v='+Date.now();
+      } else if(f.rol==='colaborador'&&f.org_id){
+        // Colaborador: puede acceder a MultiCoach si tiene permisos. Por ahora se queda en demo.
+        mcApplyNiche();
       }
       // Coach individual o admin mirando la maqueta → se queda en la demo.
     }).catch(function(){});
