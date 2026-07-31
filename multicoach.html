@@ -39,7 +39,7 @@ button,a,label,input,select,textarea,[role="button"],[data-act],[onclick]{touch-
 /* Sidebar: oscuro neutro FIJO (no toma el color de marca — Pathway premium, no plantilla) */
 .side{background:var(--side);color:var(--carbon);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 12px;position:sticky;top:0;height:100vh}
 .logo{display:flex;align-items:center;justify-content:center;gap:10px;padding:24px 8px 16px}
-.logo .m{width:40px;height:40px;border-radius:9px;background:var(--brand);display:grid;place-items:center;color:#fff;font-family:var(--ser);font-weight:600;font-size:19px;overflow:hidden}
+.logo .m{width:80px;height:80px;border-radius:12px;background:var(--brand);display:grid;place-items:center;color:#fff;font-family:var(--ser);font-weight:600;font-size:36px;overflow:hidden}
 .logo.logo--custom{flex-direction:column;gap:7px}
 /* Logo con color propio (oscuro/no blanco): sin fondo, se muestra tal cual sobre el sidebar blanco */
 .logo .m.m--bare{background:transparent;color:var(--carbon)}
@@ -778,7 +778,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
   <!-- SIDEBAR -->
   <aside class="side">
     <button class="railtoggle" onclick="toggleRail()" title="Colapsar / expandir menú" aria-label="Colapsar o expandir menú"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg><span class="rl-txt">Colapsar</span></button>
-    <div class="logo" id="brandLogo" onclick="pwCfgGo('brand')" title="Cambiar tu logo (Marca propia)"><svg width="32" height="32" viewBox="0 0 100 100" aria-hidden="true"><polygon points="36.2,35.2 52.8,54.3 52.8,81.8 7.4,81.8" fill="var(--sendero)"/><polygon points="67.9,45.8 92.6,81.8 43.1,81.8" fill="#267A54"/><circle cx="75.4" cy="27.8" r="10.3" fill="#F8CA45"/></svg><span class="mc-brand-word">pathway<span style="color:var(--sendero)">.</span></span></div>
+    <div class="logo" id="brandLogo" onclick="pwCfgGo('brand')" title="Cambiar tu logo (Marca propia)"><svg width="64" height="64" viewBox="0 0 100 100" aria-hidden="true"><polygon points="36.2,35.2 52.8,54.3 52.8,81.8 7.4,81.8" fill="var(--sendero)"/><polygon points="67.9,45.8 92.6,81.8 43.1,81.8" fill="#267A54"/><circle cx="75.4" cy="27.8" r="10.3" fill="#F8CA45"/></svg><span class="mc-brand-word">pathway<span style="color:var(--sendero)">.</span></span></div>
     <nav class="nav" id="nav">
       <a class="on" data-s="dashboard"><i data-ic="layoutGrid"></i><span class="nav-txt">Dashboard</span></a>
       <a data-s="clientes"><i data-ic="users"></i><span class="nav-txt">Clientes</span></a>
@@ -4596,6 +4596,48 @@ function _logoIsLight(img){
     return (lum/op>205) || (light/op>0.28);    // promedio claro, o ≥28% de píxeles casi blancos
   }catch(e){ return null; }                    // canvas "tainted" por CORS → no analizable
 }
+// Detecta si imagen es pequeña y adapta el tamaño del contenedor
+function _adaptLogoSize(img){
+  try{
+    var w=img.naturalWidth||img.width||0;
+    var h=img.naturalHeight||img.height||0;
+    if(!w||!h) return;
+    var minSize=48;
+    if(w<minSize||h<minSize){
+      img.style.transform='scale(1.4)';
+      img.style.transformOrigin='center';
+    }
+  }catch(e){}
+}
+// Extrae colores dominantes del logo para adaptar branding
+function _extractLogoBrandColors(img){
+  try{
+    var w=Math.min(img.naturalWidth||48,96),h=Math.min(img.naturalHeight||48,96);
+    if(!w||!h||!img.complete) return null;
+    var c=document.createElement('canvas'); c.width=w; c.height=h;
+    var x=c.getContext('2d'); x.drawImage(img,0,0,w,h);
+    var d=x.getImageData(0,0,w,h).data;
+    var colors={}, maxCount=0, domColor='#1B4332';
+    for(var i=0;i<d.length;i+=4){
+      if(d[i+3]<128) continue;
+      var hex='#'+[d[i],d[i+1],d[i+2]].map(function(x){return('0'+x.toString(16)).slice(-2)}).join('').toUpperCase();
+      colors[hex]=(colors[hex]||0)+1;
+      if(colors[hex]>maxCount){ maxCount=colors[hex]; domColor=hex; }
+    }
+    return domColor;
+  }catch(e){ return null; }
+}
+// Aplica color dominante del logo al branding
+function _applyLogoBrandColor(domColor){
+  if(!domColor||domColor==='#000000'||domColor==='#FFFFFF') return;
+  try{
+    CFG.color=domColor;
+    _applyBrandColor(domColor);
+    // Guardar en la config
+    var b=_mcBrand();
+    mcSaveConfig({ nombre:b.nombre, logo:b.logo, color:domColor, color2:b.color2, bg:b.bg, font:b.font, text:b.text }, '');
+  }catch(e){}
+}
 // Aplica el fondo del contenedor del logo según el análisis.
 function _frameLogo(m,light){
   m.classList.remove('m--bare','m--framed');
@@ -4613,10 +4655,10 @@ function renderBrandLogo(){
     var img=document.createElement('img'); img.src=b.logo; img.alt='';
     img.style.cssText='width:100%;height:100%;object-fit:contain;border-radius:6px';
     img.onerror=function(){ m.textContent=((b.nombre||'M').charAt(0)||'M').toUpperCase(); m.classList.remove('m--bare'); m.classList.add('m--framed'); };
-    img.onload=function(){ _frameLogo(m,_logoIsLight(img)); };
+    img.onload=function(){ _frameLogo(m,_logoIsLight(img)); _adaptLogoSize(img); };
     // Sonda aparte con CORS para poder leer los píxeles cuando el host lo permite (el <img> visible carga igual sin CORS)
     var probe=new Image(); probe.crossOrigin='anonymous';
-    probe.onload=function(){ _frameLogo(m,_logoIsLight(probe)); };
+    probe.onload=function(){ _frameLogo(m,_logoIsLight(probe)); _adaptLogoSize(probe); var domColor=_extractLogoBrandColors(probe); if(domColor) _applyLogoBrandColor(domColor); };
     probe.src=b.logo;
     m.appendChild(img);
     var tx=document.createElement('div');
