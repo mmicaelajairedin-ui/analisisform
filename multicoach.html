@@ -905,7 +905,7 @@ var DB={
     {id:'demo-cli-3',n:'Roberto Díaz',email:'roberto@example.com',tel:'+34666777888',ini:'RD',nicho:'carrera',coach:'demo-coach-2',est:'activo',prog:'',week:3,plan:'pending',med:'pending',lastState:'fresh',_ts:Date.now(),_created:Date.now(),ult:'hace 3 horas',foto:''}
   ]
 };
-var MC_REAL=false,MC_OWNER=null,MC_ORG=null,MC_N='fitness',MC_PLAN='basic',MC_CITAS=[],MC_GCAL=[],MC_RESOURCES=[];
+var MC_REAL=false,MC_OWNER=null,MC_ORG=null,MC_N='fitness',MC_PLAN='basic',MC_CITAS=[],MC_GCAL=[],MC_RESOURCES=[],MC_USER_PERMISOS=null;
 // Supabase (mismos datos que el resto de la plataforma). El dueño de la red
 // lee su org/coaches/clientes por org_id. La anon key es pública (va en el
 // navegador en todas las páginas); el aislamiento real es por RLS/filtro.
@@ -942,6 +942,22 @@ function __go(s){
   function _anim(el){ if(!el)return; el.classList.remove('pw-sec-in'); void el.offsetWidth; el.classList.add('pw-sec-in'); }
   if(s==='dashboard'){p.style.display='none';d.style.display='';window.scrollTo(0,0);_anim(d);try{mcCountUp();}catch(e){}}
   else{d.style.display='none';p.style.display='flex';document.getElementById('vscroll').scrollTop=0;if(s==='clientes')renderClientes();else if(s==='coaches')renderCoaches();else if(s==='programas')renderPrograms();else if(s==='agenda')renderAgenda();else if(s==='comunidad')renderComunidad();else if(s==='analytics')renderAnalytics();else if(s==='cobros')renderCobros();else renderConfig();_anim(p);}
+}
+// CONTEXTO DE SESIÓN: Ocultar nav items según permisos del Colaborador
+function _mcUpdateNavPermisos(){
+  if(!MC_USER_PERMISOS) return; // access completo, mostrar todo
+  var mods=['coaches','programas','agenda','comunidad','analytics','cobros']; // todos excepto dashboard que siempre visible
+  mods.forEach(function(m){
+    var el=document.querySelector('nav#nav a[data-s="'+m+'"]');
+    if(el) el.style.display=(MC_USER_PERMISOS.indexOf(m)>=0)?'':'none';
+  });
+  var bnav=document.getElementById('mc-bnav');
+  if(bnav){
+    bnav.querySelectorAll('a').forEach(function(a){
+      var m=a.getAttribute('data-s');
+      if(m) a.style.display=(m==='dashboard'||MC_USER_PERMISOS.indexOf(m)>=0)?'':'none';
+    });
+  }
 }
 document.getElementById('nav').addEventListener('click',function(e){var a=e.target.closest('a');if(a)__go(a.getAttribute('data-s'));});
 document.getElementById('mc-bnav').addEventListener('click',function(e){var a=e.target.closest('a');if(a)__go(a.getAttribute('data-s'));});
@@ -1595,6 +1611,8 @@ function mcApplyNiche(){
  try{mcRenderNotifs();}catch(e){}
  try{mcCountUp();}catch(e){}
  mcSetAgenda();
+ // CONTEXTO DE SESIÓN: Ocultar nav items si Colaborador sin permisos
+ try{_mcUpdateNavPermisos();}catch(e){}
  if(_sec==='clientes')renderClientes();else if(_sec==='coaches')renderCoaches();else if(_sec==='agenda')renderAgenda();
 }
 
@@ -1940,8 +1958,15 @@ function mcBoot(){
         // Un coach DE la red no gestiona acá: su mundo es su panel de siempre.
         window.location.href='panel-v2.html?v='+Date.now();
       } else if(f.rol==='colaborador'&&f.org_id){
-        // Colaborador: puede acceder a MultiCoach si tiene permisos. Por ahora se queda en demo.
-        mcApplyNiche();
+        // Colaborador: puede acceder a MultiCoach si tiene permisos.
+        // Cargar permisos granulares desde BD
+        _hdr().then(function(h){
+          return fetch(SB+'/rest/v1/colaborador_permisos?usuario_id=eq.'+encodeURIComponent(f.id)+'&org_id=eq.'+encodeURIComponent(f.org_id)+'&select=permisos',{headers:h});
+        }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
+          if(rows&&rows.length&&rows[0].permisos) MC_USER_PERMISOS=(Array.isArray(rows[0].permisos)?rows[0].permisos:[]);
+          mcApplyNiche();
+        }).catch(function(){ mcApplyNiche(); });
+        return;
       }
       // Coach individual o admin mirando la maqueta → se queda en la demo.
     }).catch(function(){});
