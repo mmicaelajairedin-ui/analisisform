@@ -3860,22 +3860,34 @@ function _suggestBrandColors(){
   var logoUrl=(document.getElementById('cfb-logo')||{}).value||''; if(!logoUrl){__toast('Cargá un logo primero');return;}
   var btn=document.getElementById('btn-suggest-colors'); if(btn)btn.disabled=true;
   __toast('Analizando logo...');
-  var url=(SB||'https://api.pathwaycareercoach.com').replace(/\/$/,'')+'/functions/v1/analizar-logo';
-  _hdr({'Content-Type':'application/json'}).then(function(h){
-    return fetch(url,{method:'POST',headers:h,body:JSON.stringify({logoUrl:logoUrl})});
-  }).then(function(r){
-    if(!r.ok)throw new Error('Error '+r.status);
-    return r.json();
-  }).then(function(data){
-    _brandSuggestion=data;
-    _showBrandSuggestion(data);
-    __toast('Paleta sugerida ✓');
-  }).catch(function(e){
-    console.error('[BRAND] Error:',e);
-    __toast('No pudimos analizar el logo. Revisá la URL o probá otro.');
-  }).finally(function(){
-    var btn=document.getElementById('btn-suggest-colors'); if(btn)btn.disabled=false;
-  });
+  // Analizar el logo localmente con canvas
+  var img=new Image(); img.crossOrigin='anonymous';
+  img.onload=function(){
+    try{
+      var colors=_extractLogoBrandColors(img);
+      if(!colors||!colors.color){ __toast('No se detectaron colores. Probá con otra imagen.'); btn.disabled=false; return; }
+      // Sugerir un esquema de colores basado en el análisis
+      var colorPrincipal=colors.color;
+      var colorSecundario=colors.color2||'#8C7B80';
+      var colorAccento=colors.color2||'#F8CA45';
+      var colorFondo='#FFFFFF';
+      var colorTexto='#1F4030';
+      _brandSuggestion={colorPrincipal:colorPrincipal,colorSecundario:colorSecundario,colorAccento:colorAccento,colorFondo:colorFondo,colorTexto:colorTexto,razon:'Detectados '+colors.color+' (primario) y '+colors.color2+' (secundario) del logo.'};
+      _showBrandSuggestion(_brandSuggestion);
+      __toast('Paleta sugerida ✓');
+    }catch(e){
+      console.error('[BRAND] Error:',e);
+      __toast('No pudimos analizar el logo. Revisá la URL o probá otro.');
+    }finally{
+      btn.disabled=false;
+    }
+  };
+  img.onerror=function(){
+    console.error('[BRAND] Logo load error');
+    __toast('No pudimos cargar el logo. Revisá la URL.');
+    btn.disabled=false;
+  };
+  img.src=logoUrl;
 }
 function _showBrandSuggestion(data){
   if(!data)return;
