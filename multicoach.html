@@ -4633,7 +4633,7 @@ function _adaptLogoSize(img){
     }
   }catch(e){}
 }
-// Extrae colores dominantes del logo para adaptar branding
+// Extrae colores dominantes del logo para adaptar branding (primario + secundario)
 function _extractLogoBrandColors(img){
   try{
     var w=Math.min(img.naturalWidth||48,96),h=Math.min(img.naturalHeight||48,96);
@@ -4641,25 +4641,34 @@ function _extractLogoBrandColors(img){
     var c=document.createElement('canvas'); c.width=w; c.height=h;
     var x=c.getContext('2d'); x.drawImage(img,0,0,w,h);
     var d=x.getImageData(0,0,w,h).data;
-    var colors={}, maxCount=0, domColor='#1B4332';
+    var colors={};
+    // Analizar píxeles y agrupar colores
     for(var i=0;i<d.length;i+=4){
       if(d[i+3]<128) continue;
       var hex='#'+[d[i],d[i+1],d[i+2]].map(function(x){return('0'+x.toString(16)).slice(-2)}).join('').toUpperCase();
+      // Ignorar blanco, negro y grises
+      if(hex==='#FFFFFF'||hex==='#000000') continue;
+      var lum=.299*d[i]+.587*d[i+1]+.114*d[i+2];
+      if(lum>240||lum<15) continue; // muy claro o muy oscuro
       colors[hex]=(colors[hex]||0)+1;
-      if(colors[hex]>maxCount){ maxCount=colors[hex]; domColor=hex; }
     }
-    return domColor;
+    // Ordenar por frecuencia
+    var sorted=Object.keys(colors).sort(function(a,b){ return colors[b]-colors[a]; });
+    // Devolver top 2 colores (primario + secundario)
+    return { color: sorted[0]||'#1B4332', color2: sorted[1]||null };
   }catch(e){ return null; }
 }
-// Aplica color dominante del logo al branding
-function _applyLogoBrandColor(domColor){
-  if(!domColor||domColor==='#000000'||domColor==='#FFFFFF') return;
+// Aplica colores del logo al branding
+function _applyLogoBrandColor(result){
+  if(!result||!result.color) return;
+  if(result.color==='#000000'||result.color==='#FFFFFF') return;
   try{
-    CFG.color=domColor;
-    _applyBrandColor(domColor);
+    CFG.color=result.color;
+    _applyBrandColor(result.color);
+    if(result.color2){ CFG.color2=result.color2; _applyBrand2(result.color2); }
     // Guardar en la config
     var b=_mcBrand();
-    mcSaveConfig({ nombre:b.nombre, logo:b.logo, color:domColor, color2:b.color2, bg:b.bg, font:b.font, text:b.text }, '');
+    mcSaveConfig({ nombre:b.nombre, logo:b.logo, color:result.color, color2:result.color2||b.color2, bg:b.bg, font:b.font, text:b.text }, '');
   }catch(e){}
 }
 // Aplica el fondo del contenedor del logo según el análisis.
