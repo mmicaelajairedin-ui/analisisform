@@ -3620,7 +3620,8 @@ function _cfgBrand(){
      +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" class="cp-btn cp-btn-ghost" onclick="document.getElementById(\'cfb-logofile\').click()">'+PWI.svg('paperclip',{sm:true})+' Subir archivo</button><input type="file" id="cfb-logofile" accept="image/*,.svg" style="display:none" onchange="_mcLogoFile(this)"><span style="font-size:12px;color:var(--soft)">o pegá una URL:</span></div>'
      +'<input id="cfb-logo" class="cp-form-input" style="margin-top:6px" placeholder="https://tu-sitio.com/logo.png" value="'+((_mcBrand().logo||'').replace(/"/g,'&quot;'))+'" oninput="var p=document.getElementById(\'logoprev\');if(p){p.src=this.value;p.style.display=this.value?\'\':\'none\'}"><span class="cp-form-hint">PNG, SVG o JPG. Reemplaza a Pathway arriba y en el portal del cliente.</span></div>'
    +'<div style="display:flex;flex-direction:column;align-items:flex-start;gap:12px;margin:16px 0"><span style="font-size:12px;font-weight:600;color:var(--pw-carbon)">Vista previa:</span><div style="display:flex;align-items:center;justify-content:center;width:100%;min-height:160px;background:var(--pw-niebla);border-radius:8px;padding:16px"><img id="logoprev" alt="logo" src="'+((_mcBrand().logo||'').replace(/"/g,'&quot;'))+'" style="'+(_mcBrand().logo?'':'display:none;')+'max-height:180px;max-width:100%;width:auto;object-fit:contain" onerror="this.style.display=\'none\'"></div></div>'
-   +'<div style="display:flex;justify-content:flex-start"><button class="cp-btn cp-btn-primary" onclick="_saveBrand()">Guardar marca</button></div></div></div>';
+   +'<div id="brand-suggestions-container" style="display:none;margin:20px 0;padding:16px;background:var(--pw-niebla);border-radius:8px;border-left:4px solid var(--pw-bosque)"><div style="font-size:12px;font-weight:600;margin-bottom:12px">Asistente de Branding — Paleta sugerida:</div><div id="brand-color-suggestions" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:10px;margin-bottom:12px"></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="cp-btn cp-btn-primary cp-btn-sm" onclick="_acceptBrandSuggestion()" style="font-size:11px;padding:6px 12px">Aceptar</button><button class="cp-btn cp-btn-ghost cp-btn-sm" onclick="_regenerateBrandSuggestion()" style="font-size:11px;padding:6px 12px">Regenerar</button><button class="cp-btn cp-btn-ghost cp-btn-sm" onclick="_dismissBrandSuggestion()" style="font-size:11px;padding:6px 12px">Descartar</button></div></div>'
+   +'<div style="display:flex;justify-content:flex-start;gap:8px"><button class="cp-btn cp-btn-primary" onclick="_saveBrand()">Guardar marca</button><button class="cp-btn cp-btn-ghost" id="btn-suggest-colors" onclick="_suggestBrandColors()" style="display:none">'+PWI.svg('sparkles',{sm:true})+' Generar paleta</button></div></div></div>';
 }
 function _applyBrandColor(c){ if(c) document.documentElement.style.setProperty('--brand',c); }
 // Subir el logo como ARCHIVO (además de pegar URL). SVG e imágenes chicas se
@@ -3639,7 +3640,62 @@ function _mcLogoFile(inp){
   };
   r.readAsDataURL(f);
 }
-function _mcSetLogo(dataUrl){ var i=document.getElementById('cfb-logo'); if(i)i.value=dataUrl; var p=document.getElementById('logoprev'); if(p){p.src=dataUrl;p.style.display='';} __toast('Logo cargado — tocá «Guardar marca» para aplicarlo'); }
+function _mcSetLogo(dataUrl){ var i=document.getElementById('cfb-logo'); if(i)i.value=dataUrl; var p=document.getElementById('logoprev'); if(p){p.src=dataUrl;p.style.display='';} var btn=document.getElementById('btn-suggest-colors'); if(btn)btn.style.display=''; __toast('Logo cargado — tocá «Generar paleta» para sugerencias automáticas'); }
+var _brandSuggestion=null;
+function _suggestBrandColors(){
+  var logoUrl=(document.getElementById('cfb-logo')||{}).value||''; if(!logoUrl){__toast('Cargá un logo primero');return;}
+  var btn=document.getElementById('btn-suggest-colors'); if(btn)btn.disabled=true;
+  __toast('Analizando logo...');
+  var url=(SB||'https://api.pathwaycareercoach.com').replace(/\/$/,'')+'/functions/v1/analizar-logo';
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    return fetch(url,{method:'POST',headers:h,body:JSON.stringify({logoUrl:logoUrl})});
+  }).then(function(r){
+    if(!r.ok)throw new Error('Error '+r.status);
+    return r.json();
+  }).then(function(data){
+    _brandSuggestion=data;
+    _showBrandSuggestion(data);
+    __toast('Paleta sugerida ✓');
+  }).catch(function(e){
+    console.error('[BRAND] Error:',e);
+    __toast('No pudimos analizar el logo. Revisá la URL o probá otro.');
+  }).finally(function(){
+    var btn=document.getElementById('btn-suggest-colors'); if(btn)btn.disabled=false;
+  });
+}
+function _showBrandSuggestion(data){
+  if(!data)return;
+  var cont=document.getElementById('brand-suggestions-container'); if(!cont)return;
+  var grid=document.getElementById('brand-color-suggestions'); if(!grid)return;
+  grid.innerHTML='<div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:60px;height:60px;background:'+data.colorPrincipal+';border-radius:6px;border:2px solid var(--pw-border)"></div><span style="font-size:10px;font-weight:600;text-align:center">Principal</span></div>'
+    +'<div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:60px;height:60px;background:'+data.colorSecundario+';border-radius:6px;border:2px solid var(--pw-border)"></div><span style="font-size:10px;font-weight:600;text-align:center">Secundario</span></div>'
+    +'<div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:60px;height:60px;background:'+data.colorAccento+';border-radius:6px;border:2px solid var(--pw-border)"></div><span style="font-size:10px;font-weight:600;text-align:center">Acento</span></div>'
+    +'<div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:60px;height:60px;background:'+data.colorFondo+';border-radius:6px;border:2px solid var(--pw-border)"></div><span style="font-size:10px;font-weight:600;text-align:center">Fondo</span></div>'
+    +'<div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:60px;height:60px;background:'+data.colorTexto+';border-radius:6px;border:2px solid var(--pw-border)"></div><span style="font-size:10px;font-weight:600;text-align:center">Texto</span></div>';
+  if(data.razon){ var hint=document.createElement('div'); hint.style.cssText='font-size:11px;color:var(--pw-text-soft);margin-top:8px;line-height:1.4'; hint.textContent=data.razon; cont.appendChild(hint); }
+  cont.style.display='';
+}
+function _acceptBrandSuggestion(){
+  if(!_brandSuggestion)return;
+  var s=_brandSuggestion;
+  var cfb_color=document.getElementById('cfb-color'); if(cfb_color)cfb_color.value=s.colorPrincipal;
+  var cfb_color2=document.getElementById('cfb-color2'); if(cfb_color2)cfb_color2.value=s.colorSecundario;
+  var cfb_bg=document.getElementById('cfb-bg'); if(cfb_bg)cfb_bg.value=s.colorFondo;
+  var cfb_text=document.getElementById('cfb-text'); if(cfb_text)cfb_text.value=s.colorTexto;
+  CFG.color=s.colorPrincipal;
+  CFG.color2=s.colorSecundario;
+  _applyBrandColor(s.colorPrincipal);
+  _dismissBrandSuggestion();
+  __toast('Paleta aplicada ✓');
+}
+function _regenerateBrandSuggestion(){
+  _dismissBrandSuggestion();
+  setTimeout(_suggestBrandColors,200);
+}
+function _dismissBrandSuggestion(){
+  var cont=document.getElementById('brand-suggestions-container'); if(cont)cont.style.display='none';
+  _brandSuggestion=null;
+}
 function _setBg(c){ var b=_mcBrand(); b.bg=c; try{ localStorage.setItem('mc_brand',JSON.stringify(b)); }catch(_){} if(MC_ORG)MC_ORG.marca=Object.assign({},MC_ORG.marca||{},{bg:c}); }
 function _setText(c){ var b=_mcBrand(); b.text=c; try{ localStorage.setItem('mc_brand',JSON.stringify(b)); }catch(_){} if(MC_ORG)MC_ORG.marca=Object.assign({},MC_ORG.marca||{},{text:c}); }
 function _setColor(c){
