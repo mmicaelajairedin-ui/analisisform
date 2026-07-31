@@ -1532,6 +1532,39 @@ function _mcFecha(iso){ try{ var d=new Date(iso); if(isNaN(d.getTime()))return '
 function _mcSesIco(tipo,estado){ if(estado==='cancelada')return ''+PWI.svg('ban',{sm:true})+''; var t=(''+(tipo||'')).toLowerCase(); if(t.indexOf('primera')>=0||t.indexOf('llamada')>=0)return ''+PWI.svg('phone',{sm:true})+''; if(t.indexOf('demo')>=0)return ''+PWI.svg('video',{sm:true})+''; return ''+PWI.svg('calendar',{sm:true})+''; }
 // Sesiones REALES del cliente en la ficha (modo red): citas de MC_CITAS que
 // matchean su email (traídas por mi-red con service role). Escapado (anti-XSS).
+function _mcProgReal(k){
+  if(!MC_REAL||!k.email) return null;
+  var email=k.email.toLowerCase();
+  var medList=(MC_CITAS||[]).filter(function(c){return (''+(c.email||'')).toLowerCase()===email && c.estado!=='cancelada';}).slice(0,4);
+  if(!medList.length) return null;
+  return medList.map(function(m){
+    var fecha=_mcFecha(m.inicio);
+    var nota=(m.resultado||m.notas_llamada||'').substring(0,50);
+    return [_mcSesIco(m.tipo,m.estado),fecha,nota];
+  });
+}
+function _mcConsReal(k){
+  if(!MC_REAL||!k.email) return null;
+  var email=k.email.toLowerCase();
+  var sessions=(MC_CITAS||[]).filter(function(c){return (''+(c.email||'')).toLowerCase()===email && c.estado!=='cancelada';});
+  if(!sessions.length) return null;
+  var days=new Map(); sessions.forEach(function(s){
+    var d=new Date(s.inicio); var key=d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+    days.set(key,1);
+  });
+  var totalDays=new Date().getDate();
+  var activeDays=days.size;
+  return Math.round(activeDays/totalDays*100);
+}
+function _mcMetricasReal(k){
+  if(!MC_REAL||!k.email) return null;
+  var email=k.email.toLowerCase();
+  var sessions=(MC_CITAS||[]).filter(function(c){return (''+(c.email||'')).toLowerCase()===email;});
+  var completadas=sessions.filter(function(s){return s.estado==='completada';}).length;
+  var pendientes=sessions.filter(function(s){return s.estado==='pendiente'||s.estado==='confirmada';}).length;
+  var canceladas=sessions.filter(function(s){return s.estado==='cancelada';}).length;
+  return {total:sessions.length, completadas:completadas, pendientes:pendientes, canceladas:canceladas};
+}
 function _mcSesReal(k){
   var email=(k.email||'').toLowerCase();
   var rows=email?(MC_CITAS||[]).filter(function(c){return (''+(c.email||'')).toLowerCase()===email;}):[];
@@ -1901,14 +1934,18 @@ function _cliBody(k,c,t){
  if(t==='perfil'){
   var riskColor={stale:'#E9C46A',mid:'#E07856',fresh:'var(--pw-bosque)'}[k.lastState]||'var(--pw-text-muted)';
   var riskLabel={stale:'Alto riesgo',mid:'Medio riesgo',fresh:'Bajo riesgo'}[k.lastState]||'—';
+  var consReal=_mcConsReal(k);
+  var consCard=MC_REAL
+    ? (consReal!=null?'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Constancia del mes<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 12px">% de días con actividad registrada.</div>'+_bars([['Mes',consReal]])+'</div>'
+      :_mcEmptyCard('Constancia del mes','Cuando el cliente registre actividad, ves acá su constancia mes a mes.'))
+    : '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Constancia del mes<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 12px">% de días con actividad registrada.</div>'+_bars([['Abr',62],['May',74],['Jun',80],['Jul',68]])+'</div>';
   return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Datos del cliente<span class="dot">.</span></h3>'
    +'<div class="cp-infogrid">'+_coachCell(k)+_info('Programa',k.prog)+_info('Semana','Sem '+k.week+'/4')+_info('Última actividad',k.ult)+_info('Estado',k.est==='activo'?'Activo':'Inactivo')+_info('Área',_areaLbl(k.nicho))+_info('Teléfono',k.tel||'—')+_info('Email',k.email||'—')+_info('Empresa',k.empresa||'—')+'</div>'
    +'<div style="display:flex;gap:8px;margin-top:12px"><button class="cp-btn cp-btn-ghost" onclick="_goCliTab(\'editar\')">✏️ Editar datos</button></div></div>'
    +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Evaluación de riesgo<span class="dot">.</span></h3>'
    +'<div style="display:flex;align-items:center;gap:12px;margin-top:8px"><div style="width:40px;height:40px;border-radius:50%;background:'+riskColor+';opacity:.2;display:grid;place-items:center;color:'+riskColor+';font-weight:700;font-size:18px">⚠️</div>'
    +'<div><div style="font-weight:600;color:'+riskColor+'">'+riskLabel+'</div><div style="font-size:12px;color:var(--pw-text-soft);margin-top:3px">'+(k.lastState==='fresh'?'Actividad reciente — cliente comprometido':(k.lastState==='mid'?'Actividad moderada — revisar compromiso':'Sin actividad reciente — requiere atención'))+'</div></div></div></div>'
-   +(MC_REAL?_mcEmptyCard('Constancia del mes','Cuando el cliente registre actividad en su portal, ves acá su constancia mes a mes.')
-     :'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Constancia del mes<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 12px">% de días con actividad registrada.</div>'+_bars([['Abr',62],['May',74],['Jun',80],['Jul',68]])+'</div>');
+   +consCard;
  }
  if(t==='editar'){
   return _cliEditForm(k);
@@ -1925,8 +1962,11 @@ function _cliBody(k,c,t){
  }
  if(t==='progreso'){
   var med=DET().prog,pIco=DET().progIcon;
+  var progReal=_mcProgReal(k);
   var progRows=MC_REAL
-    ? '<div style="font-size:12.5px;color:var(--pw-text-soft);margin:3px 0 4px;line-height:1.55">Sin mediciones registradas todavía. A medida que cargues su evolución, aparece acá y en el portal del cliente.</div>'
+    ? (progReal?'<div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 8px">Evolución registrada en sesiones.</div>'
+      +progReal.map(function(m){return '<div class="cp-drow"><div class="dd"><span class="emo">'+m[0]+'</span></div><div class="dg"><div class="dn">'+m[1]+'</div><div class="ds">'+m[2]+'</div></div></div>';}).join('')
+      :'<div style="font-size:12.5px;color:var(--pw-text-soft);margin:3px 0 4px;line-height:1.55">Sin mediciones registradas todavía. A medida que cargues su evolución, aparece acá y en el portal del cliente.</div>')
     : '<div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 8px">Evolución que el cliente ve en su portal.</div>'
       +med.map(function(m){return '<div class="cp-drow"><div class="dd"><span class="emo">'+pIco+'</span></div><div class="dg"><div class="dn">'+m[0]+'</div><div class="ds">'+m[1]+' · '+m[2]+'</div></div></div>';}).join('')
       +'<button class="cp-btn cp-btn-ghost" style="margin-top:12px" onclick="__toast(\''+DET().progCta.replace(/^\+ /,'Cargar ')+' — demo\')">'+DET().progCta+'</button>';
@@ -2011,11 +2051,16 @@ function _renderFicha(){
  var dots=[1,2,3,4].map(function(w){var cls=w<k.week?'is-done':(w===k.week?'is-current':'');return '<span class="cp-week-dot '+cls+'"></span>';}).join('');
  var riskColor={stale:'#E9C46A',mid:'#E07856',fresh:'var(--pw-bosque)'}[k.lastState]||'var(--pw-text-muted)';
  var riskLabel={stale:'Alto',mid:'Medio',fresh:'Bajo'}[k.lastState]||'—';
+ var metReal=_mcMetricasReal(k);
+ var metCard=MC_REAL&&metReal?'<div class="cp-card cp-card-pad"><div class="cp-eyebrow" style="margin-bottom:8px">Sesiones</div>'
+   +'<div style="font-size:13px;font-weight:600;color:var(--pw-carbon)">'+metReal.completadas+'<span style="font-size:11px;color:var(--pw-text-soft);font-weight:400;margin-left:4px">completadas</span></div>'
+   +'<div style="font-size:11px;color:var(--pw-text-soft);margin-top:4px">'+metReal.pendientes+' pendientes · '+metReal.canceladas+' canceladas</div></div>':'';
  var rail='<aside class="cp-ficha-rail">'
   +'<div class="cp-card cp-card-pad" style="text-align:center"><div class="cp-eyebrow" style="margin-bottom:8px">Proceso de '+k.n.split(" ")[0]+'</div><div style="font-size:46px;line-height:1">'+(k.week>=4?PWI.svg('trophy',{size:40}):''+PWI.svg('target',{sm:true})+'')+'</div>'
    +'<div class="cp-week" style="margin-top:12px"><span class="cp-week-label">Sem '+k.week+'/4</span><span class="cp-week-dots">'+dots+'</span></div>'
    +'<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px"><span class="cp-client-pill '+(k.plan==='published'?'is-published':'is-pending')+'">Plan '+(k.plan==='published'?'activo':'a definir')+'</span><span class="cp-client-pill '+(k.med==='published'?'is-published':'is-pending')+'">'+DET().medLabel+' '+(k.med==='published'?'al día':'pendiente')+'</span></div></div>'
   +'<div class="cp-card cp-card-pad" style="border-left:4px solid '+riskColor+'"><div class="cp-eyebrow" style="margin-bottom:8px;color:'+riskColor+'">Riesgo</div><div style="font-size:18px;font-weight:700;color:'+riskColor+'">'+riskLabel+'</div><div style="font-size:11px;color:var(--pw-text-soft);margin-top:6px">'+(k.lastState==='fresh'?'Actividad reciente':(k.lastState==='mid'?'Moderada actividad':'Sin actividad reciente'))+'</div></div>'
+  +metCard
   +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
    +_mcContactBtn(k.tel,k.email)
    +'<button class="cp-btn cp-btn-ghost" data-client-id="'+_mcEsc(k.id)+'" onclick="if(this.dataset.clientId)reasignar(this.dataset.clientId)"><span class="cp-emo">'+PWI.svg('link',{sm:true})+'</span> Reasignar '+DET().coachSing.toLowerCase()+'</button>'
