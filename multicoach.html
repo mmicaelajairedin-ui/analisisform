@@ -1922,6 +1922,8 @@ function mcLoadReal(owner){
     mcApplyNiche();
     try{ _mcLoadCanales(function(){ _mcUpdHeaderDot(); }); }catch(e){} // punto de no-leídos del chat del equipo
     try{ setTimeout(_mcPaywallCheck,0); }catch(e){} // aviso/muro si la prueba de la red está por vencer o venció
+    // T-5: Activar sync LocalStorage ↔ Supabase después de cargar datos reales
+    try{ setTimeout(_mcEnableSync,100); }catch(e){}
   }
   return _hdr({'Content-Type':'application/json'}).then(function(h){
     // Si hay org seleccionada en localStorage (multi-org), enviarla al edge function
@@ -2049,6 +2051,119 @@ function mcBoot(){
   } else { mcApplyNiche(); }
   _comApplyPref(); // recuerda si la coach cerró la columna Comunidad
 }
+
+/* ═════════════════════════════════════════════════════════════════
+   T-5: SYNC LocalStorage ↔ Supabase (polling automático cada 30s)
+   Evita que el dueño pierda datos al cerrar/recargar la página.
+   ═════════════════════════════════════════════════════════════════ */
+
+var MC_SYNC={
+  enabled:false,
+  lastSyncTime:0,
+  syncInterval:30000, // 30 segundos
+  retryCount:0,
+  maxRetries:3,
+  isSyncing:false,
+  lastHash:'' // para detectar cambios locales
+};
+
+function _mcComputeHash(data){
+  // Hash simple de JSON stringificado para detectar cambios
+  try{ return String(JSON.stringify(data)).length+'_'+JSON.stringify(data).charCodeAt(0); }catch(e){ return ''; }
+}
+
+function _mcSyncStart(){
+  if(!MC_REAL||!MC_OWNER||MC_SYNC.enabled) return;
+  MC_SYNC.enabled=true;
+  MC_SYNC.lastHash=_mcComputeHash({coaches:DB.coaches,clientes:DB.clientes});
+  _mcSyncPoll(); // Inicia el ciclo
+}
+
+function _mcShowSyncStatus(status){
+  // status: 'syncing' | 'success' | 'error' | 'offline'
+  try{
+    var ind=document.getElementById('mc-sync-ind');
+    if(!ind){
+      ind=document.createElement('div');
+      ind.id='mc-sync-ind';
+      ind.style.cssText='position:fixed;bottom:16px;right:16px;padding:8px 12px;border-radius:6px;font-size:11px;font-weight:600;z-index:100;opacity:0;transition:opacity 0.2s;pointer-events:none;';
+      document.body.appendChild(ind);
+    }
+    var colors={syncing:'#8E7676',success:'#2D5A3D',error:'#C0756E',offline:'#8B6F47'};
+    var labels={syncing:'Sincronizando…',success:'Sincronizado',error:'Error en sync',offline:'Sin conexión'};
+    ind.textContent=labels[status]||labels.syncing;
+    ind.style.background=colors[status]||colors.syncing;
+    ind.style.color='#fff';
+    if(status==='syncing'){ ind.style.opacity='1'; }
+    else { setTimeout(function(){ if(ind)ind.style.opacity='0'; },2000); }
+  }catch(e){}
+}
+
+function _mcSyncPoll(){
+  if(!MC_SYNC.enabled||!MC_REAL) return;
+  setTimeout(function(){
+    if(!MC_SYNC.enabled) return;
+    _mcSyncNow(function(ok){
+      if(ok){ MC_SYNC.retryCount=0; MC_SYNC.lastSyncTime=Date.now(); }
+      else { MC_SYNC.retryCount++; }
+      _mcSyncPoll(); // Siguiente ciclo
+    });
+  }, MC_SYNC.syncInterval);
+}
+
+function _mcSyncNow(cb){
+  if(MC_SYNC.isSyncing) return; // Evita overlaps
+  MC_SYNC.isSyncing=true;
+  _mcShowSyncStatus('syncing');
+
+  var currentHash=_mcComputeHash({coaches:DB.coaches,clientes:DB.clientes});
+  if(currentHash===MC_SYNC.lastHash){
+    // Sin cambios locales, solo refresca desde el server
+    MC_SYNC.isSyncing=false;
+    _mcShowSyncStatus('success');
+    cb&&cb(true);
+    return;
+  }
+
+  // Cambios locales detectados → sincroniza con Supabase
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    return fetch(SB+'/functions/v1/guardar-red',{
+      method:'POST',
+      headers:h,
+      body:JSON.stringify({
+        coaches: DB.coaches.filter(function(c){ return !c.esOwner; }).map(function(c){
+          return {id:c.id,n:c.n,email:c.email,est:c.est,configuracion:{especialidad:c.esp}};
+        }),
+        clientes: DB.clientes.map(function(k){
+          return {id:k.id,n:k.n,email:k.email,coach_id:k.coach,est:k.est,semana_activa:k.week};
+        })
+      })
+    });
+  }).then(function(r){
+    return r.ok?r.json():Promise.reject('sync_failed');
+  }).then(function(d){
+    if(d&&d.ok){
+      MC_SYNC.lastHash=_mcComputeHash({coaches:DB.coaches,clientes:DB.clientes});
+      MC_SYNC.isSyncing=false;
+      _mcShowSyncStatus('success');
+      cb&&cb(true);
+    } else {
+      MC_SYNC.isSyncing=false;
+      _mcShowSyncStatus('error');
+      cb&&cb(false);
+    }
+  }).catch(function(err){
+    MC_SYNC.isSyncing=false;
+    _mcShowSyncStatus('offline');
+    cb&&cb(false);
+  });
+}
+
+// Activar sync cuando la red real está cargada
+function _mcEnableSync(){
+  if(MC_REAL&&MC_OWNER) _mcSyncStart();
+}
+
 /* Contenido de las FICHAS por nicho (plan, avances, sesiones, mensajes). */
 var MCDET={
  fitness:{coachSing:'Coach',medLabel:'Medición',progLabel:'Mediciones',progIcon:''+PWI.svg('ruler',{sm:true})+'',progCta:'+ Cargar medición',
