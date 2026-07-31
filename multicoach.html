@@ -959,6 +959,8 @@ function __go(s){
   // Comunidad, Canal y Analytics son de Studio+: se ven en el menú, pero al entrar
   // (si el plan no las incluye) se muestra el upsell y no se navega. "Muestra, no deja."
   if((s==='comunidad'||s==='canal'||s==='analytics') && !_mcCanFeature(s)){ __hl(_sec); mcUpsell(s); return; }
+  // Colaborador: verificar permiso de acceso al módulo
+  if(!MC_OWNER && !canAccess(s)){ __hl(_sec); __toast('No tienes permiso para acceder a esta sección'); return; }
   // El canal de equipo es un chat que abre como DRAWER (no una pestaña). Ya pasó
   // el gate de plan de arriba, así que acá solo lo abrimos sin cambiar _sec.
   if(s==='canal'){ __hl(_sec); mcChatOpen(); return; }
@@ -970,6 +972,19 @@ function __go(s){
 }
 document.getElementById('nav').addEventListener('click',function(e){var a=e.target.closest('a');if(a)__go(a.getAttribute('data-s'));});
 document.getElementById('mc-bnav').addEventListener('click',function(e){var a=e.target.closest('a');if(a)__go(a.getAttribute('data-s'));});
+// Aplicar restricciones de permisos a los items de navegación (colaborador)
+function _applyNavRestrictions(){
+  if(!MC_OWNER&&Array.isArray(MC_USER_PERMISOS)){
+    var nav=document.getElementById('nav');
+    if(nav){
+      var items=nav.querySelectorAll('a[data-s]');
+      items.forEach(function(item){
+        var mod=item.getAttribute('data-s');
+        if(!canAccess(mod)&&mod!=='canal'){ item.style.opacity='0.5'; item.style.pointerEvents='none'; item.title='No tienes permiso para acceder a esta sección'; }
+      });
+    }
+  }
+}
 // Comunidad en el dashboard: cerrar/expandir (no está en el menú). "Ver todas" abre la página.
 // Novedades/Comunidad: SIEMPRE visible por defecto. Solo se oculta si la coach
 // la cierra con la ✕, y esa elección se RECUERDA (localStorage) — vuelve a
@@ -1630,7 +1645,7 @@ function mcApplyNiche(){
    queda en modo real con la red VACÍA + aviso — NUNCA muestra los datos
    ficticios de la maqueta ("Alex Gómez") a un dueño real: eso hacía creer
    que la cuenta estaba rota o era de otro. Ver docs/multicoach-modelo.md. */
-var MC_REAL=false, MC_ORG=null, MC_OWNER=null, MC_CITAS=[];
+var MC_REAL=false, MC_ORG=null, MC_OWNER=null, MC_CITAS=[], MC_USER_PERMISOS=[];
 function mcGet(t,q){ return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:{apikey:KEY,Authorization:'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }
 function mcPatch(t,q,body){ return _hdr({'Content-Type':'application/json',Prefer:'return=minimal'}).then(function(h){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:h,body:JSON.stringify(body)}); }); }
 // Guarda config de la red (perfil, recursos, marca, preferencias) en
@@ -1976,6 +1991,7 @@ function mcBoot(){
           if(rows&&rows.length&&rows[0].permisos) MC_USER_PERMISOS=(Array.isArray(rows[0].permisos)?rows[0].permisos:[]);
           try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'{}'); mu.org_id=f.org_id; if(f.nombre)mu.nombre=f.nombre; if(f.foto_url)mu.foto_url=f.foto_url; localStorage.setItem('mj_user',JSON.stringify(mu)); u=mu; }catch(e){ u=f; }
           mcLoadReal(u);
+          setTimeout(_applyNavRestrictions,100);
         }).catch(function(){ mcApplyNiche(); });
         return;
       }
@@ -2645,6 +2661,16 @@ function _coachAction(id,modo,cb){
 // Permisos por miembro que decide el DUEÑO: a qué superficies del panel accede.
 // Si el dueño no fijó el permiso, el default sale del rol (colaborador=cerrado,
 // coach=abierto). Clientes y agenda van SIEMPRE (base de ser miembro).
+// Verificar si el usuario actual (Owner o Colaborador) tiene acceso a un módulo
+function canAccess(module){
+  // Owner tiene acceso a todo
+  if(MC_OWNER) return true;
+  // Colaborador: verificar permisos específicos del módulo
+  // MC_USER_PERMISOS es un array de módulos permitidos
+  if(Array.isArray(MC_USER_PERMISOS)) return MC_USER_PERMISOS.indexOf(module)>=0;
+  // Sin permisos definidos: sin acceso (default deny)
+  return false;
+}
 function _mcPermDefault(c,key){ return (c&&c.permisos&&typeof c.permisos[key]==='boolean')?c.permisos[key]:(c&&c.tipo!=='colaborador'); }
 function _mcPermRow(c,key,label){
   var on=_mcPermDefault(c,key);
