@@ -440,7 +440,9 @@ function showPlay(on){ var b=el('wait-play'); if(b) b.style.display=on?'inline-b
 function waitAlone(){
   var msg='Esperando a que se una '+(WHO||'el cliente')+'…';
   if(!MOD) msg='Esperando a que se una '+(WHO||'el coach')+'…';
-  waitState(msg,'No es tiempo muerto: juega un rato mientras tanto.');
+  var hint='Si pasaron 5 min y no llega, verificá:<br>1. Revisá el link que le mandaste<br>2. Preguntale si le pedía permiso de cámara (decir SÍ)';
+  if(!MOD) hint='Si pasaron 5 min y no llegó el coach:<br>1. Refrescá la página (F5)<br>2. Verificá que tu cámara/micrófono se conectaron (arriba a la izquierda del navegador)';
+  waitState(msg,hint);
   showPlay(MOD);  // Solo el coach (mod=1) ve el botón de jugar
 }
 (function(){ var wp=el('wait-play'); if(wp) wp.onclick=function(){ try{ if(typeof openJuego==='function') openJuego(); }catch(e){} }; })();
@@ -497,9 +499,9 @@ function boot(){
         SHOW_WATERMARK_FOR_GUESTS:false,
         HIDE_INVITE_MORE_HEADER:true,
         DISABLE_JOIN_LEAVE_NOTIFICATIONS:true,
-        DEFAULT_BACKGROUND:'#0F1D16',
+        DEFAULT_BACKGROUND:'#F5F3EF',    // Fondo claro (antes negro → no se veía nada)
         DISABLE_VIDEO_BACKGROUND:false,
-        FILM_STRIP_MAX_HEIGHT:0
+        FILM_STRIP_MAX_HEIGHT:120        // Mostrar participantes abajo (antes 0 = invisible)
       },
       userInfo:{ displayName:NAME, email:EMAIL, avatarURL:FOTO }
     };
@@ -514,29 +516,31 @@ function boot(){
     api.addListener('videoConferenceJoined', function(){
       startTimer(); _tile();
       var n = api.getNumberOfParticipants ? api.getNumberOfParticipants() : 1;
-      if(n>1){ hideWait(); el('estado').textContent='✓ En llamada'; } else { waitAlone(); el('estado').textContent='Esperando al cliente…'; }
+      try{ console.log('[Sala] Conectado. Participantes:', n); }catch(e){}
+      if(n>1){ hideWait(); el('estado').textContent='✓ En llamada'; } else { waitAlone(); el('estado').textContent='Esperando al cliente… ('+n+' participantes)'; }
     });
-    api.addListener('participantJoined', function(){ hideWait(); _tile(); el('estado').textContent='✓ Cliente conectado'; CLIENTE_CONECTADO=true; });
+    api.addListener('participantJoined', function(){ hideWait(); _tile(); el('estado').textContent='✓ Cliente conectado'; CLIENTE_CONECTADO=true; try{ console.log('[Sala] Participante se unió'); }catch(e){} });
     api.addListener('tileViewChanged', function(e){ if(e && e.enabled===false) setTimeout(_tile, 300); });
-    api.addListener('participantLeft', function(){ el('estado').textContent='Cliente salió'; });
+    api.addListener('participantLeft', function(){ el('estado').textContent='Cliente salió'; try{ console.log('[Sala] Participante salió'); }catch(e){} });
     api.addListener('readyToClose', function(){ el('estado').textContent='Llamada terminada'; stopTimer(); hideWait(); });
     api.addListener('audioMuteStatusChanged', function(e){ el('c-mic').classList.toggle('off', !!(e&&e.muted)); });
     api.addListener('videoMuteStatusChanged', function(e){ el('c-cam').classList.toggle('off', !!(e&&e.muted)); });
   }).catch(function(e){
     var jaas=(e&&e.jaas)||'';
     var code=(e && (e.error||e.message))||'error';
+    try{ console.error('[JaaS Error]', code, e); }catch(_e){}
     // Si JaaS no cargó, api es null → los botones mic/cam/compartir/participantes
     // no harían nada. Ocultamos la barra; el botón Salir del header sigue visible.
     try{ _hideCtrls(true); }catch(_e){}
     if(jaas==='jaas_secrets_missing'){
-      // Falta configurar 8x8 en el servidor → mensaje accionable (no "abrir en pestaña",
-      // que tampoco andaría sin credenciales).
       waitState('El video todavía no está configurado','Faltan las credenciales de 8x8 en el servidor (JAAS_APP_ID / JAAS_KID / JAAS_PRIVATE_KEY). Configúralas para que las videollamadas funcionen.',true);
+    } else if(code==='sin_video'){
+      waitState('No se pudo conectar','El servidor no respondió. Probá de nuevo en un momento o abre en otra red.',true);
+      try{ var se=el('wait-s'); if(se) se.insertAdjacentHTML('afterend',directBtn()); }catch(_e){}
     } else {
-      waitState('No cargó el video acá','Abre la videollamada en una pestaña nueva — es la misma sala. Detalle: '+code,true);
+      waitState('Video en modo fallback','Si ves video acá, está funcionando. Si ves negro, abre la sala en otra pestaña (arriba) — es la misma conexión.',true);
       try{ var se=el('wait-s'); if(se) se.insertAdjacentHTML('afterend',directBtn()); }catch(_e){}
     }
-    try{ console.error('[sala]',e); }catch(_e){}
   });
 }
 // Controles propios → comandos de JaaS (su toolbar va oculta).
@@ -610,10 +614,10 @@ function bootP2P(){
   var ICE = (window.PW_TURN && window.PW_TURN.length) ? window.PW_TURN : [];
   PWP2P.start({
     container:'jaas', room:ROOM, name:NAME, moderator:MOD, sbUrl:SB, sbKey:KEY, iceServers:ICE,
-    onState:function(t){ try{ el('estado').textContent=(/conectado/i.test(t)?'✓ ':'')+(t||''); }catch(e){} },
-    onLocalReady:function(){ waitAlone(); el('estado').textContent='Esperando al cliente…'; },   // pantalla BLANCA de "esperando" hasta que se una el otro
-    onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='✓ Cliente conectado'; CLIENTE_CONECTADO=true; },
-    onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Cliente salió'; },
+    onState:function(t){ try{ el('estado').textContent=(/conectado/i.test(t)?'✓ ':'')+(t||''); try{console.log('[P2P]',t);}catch(_){} }catch(e){} },
+    onLocalReady:function(){ waitAlone(); el('estado').textContent='Esperando al cliente…'; try{console.log('[P2P] Local ready, esperando remoto');}catch(e){} },
+    onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='✓ Cliente conectado'; CLIENTE_CONECTADO=true; try{console.log('[P2P] Remoto conectado');}catch(e){} },
+    onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Cliente salió'; try{console.log('[P2P] Remoto desconectado');}catch(e){} },
     onChat:function(from,text){ try{ if(recvIsReaction(text,from||WHO)) return; if(recvIsSell(text)) return; chatAdd(from||WHO, text, false); }catch(e){} },
     onFail:_p2pFallbackToJaas,   // la red bloquea el P2P (ni el TURN alcanza) → caemos a JaaS solos
     onError:function(e){ var c=(e&&(e.name||e.message))||'error';
