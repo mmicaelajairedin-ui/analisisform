@@ -3382,9 +3382,9 @@ function _agReservas(){
 // determinística por coach+horario → IDÉNTICA a la que arma reservar.html para el
 // cliente. No depende del Meet/Zoom del coach (se removió a propósito).
 function _agResLink(r){
-  // Centralizado: el coach entra por NUESTRA Sala (sala.html, JaaS white-label),
-  // el MISMO room que recibe el cliente (Pathway-<coach>-<hora>) → caen juntos.
-  try{ return _agSalaUrl(r); }catch(e){ return ""; }
+  // JULIO 2026: DEPRECATED — Ya no usamos sala.html para videosesiones
+  // El video ahora viene de Google Meet (via Google Calendar del coach)
+  return "";
 }
 // ¿La cita es GRUPAL (varios en el mismo video)? Usa la columna explícita si está
 // (viene en las queries con select=*), y SIEMPRE cae al nombre del evento como
@@ -3403,29 +3403,12 @@ function _esGrupal(r){
 // Sala de sesión DENTRO de Pathway (sala.html): mismo room que el link del cliente
 // (Pathway-<coach>-<hora>), pero con panel de notas/tareas/objetivos/timer. El coach
 // entra como moderador (mod=1); lleva la cita para poder guardar el resultado.
-function _agSalaUrl(r){
-  try{
-    if(!r||!r.inicio) return "";
-    var cid=(r.coach_id||(REAL&&RME&&RME.id)||"x");
-    var room="Pathway-"+cid+"-"+(new Date(r.inicio).getTime());
-    var coach=(RME&&(RME.nombre||RME.name))||"Coach";
-    var typ=_agEventTypeFor(r.tipo);
-    var link="sala.html?room="+encodeURIComponent(room)+"&mod=1"+
-      "&coach="+encodeURIComponent((RME&&RME.id)||"")+   // dueño → los archivos subidos van a SUS Documentos
-      "&cita="+encodeURIComponent(r.id!=null?r.id:"")+
-      "&con="+encodeURIComponent(r.nombre||"")+
-      "&email="+encodeURIComponent(r.email||"")+
-      "&name="+encodeURIComponent(coach)+
-      "&start="+encodeURIComponent(new Date(r.inicio).getTime())+
-      "&tipo="+encodeURIComponent((typ&&typ.label)||r.tipo||"")+
-      "&dur="+encodeURIComponent(_durMin(r.tipo||"")||"")+
-      "&kind="+encodeURIComponent(r.kind||"sesion")+   // modo de la Sala (citas viejas sin kind → sesion)
-      (_esGrupal(r)?"&grupal=1":"")+   // grupal → el coach TAMBIÉN entra por JaaS (mismo engine que sus participantes)
-      "&foto="+encodeURIComponent(_persFoto(r.email,r.nombre)||"");
-    // Token de seguridad (autogenerado en Supabase): validar antes de permitir acceso
-    if(r.token) link+="&token="+encodeURIComponent(r.token);
-    return link;
-  }catch(e){ return ""; }
+// JULIO 2026: _agSalaUrl() DEPRECATED — Ya no usamos sala.html para videosesiones
+// Se reemplazó por Google Meet (via Google Calendar)
+// Se mantiene el código por si hay fallback legacy, pero NO se llama desde panel-v2.html
+function _agSalaUrl_deprecated(r){
+  // Función removida del flujo de uso. Ver CAMBIOS_AGENDAMIENTO_JULIO_2026.md
+  return "";
 }
 // Botones de asistencia (asistió / no vino) — MISMA lógica que la agenda del día,
 // reusable en Reservas. Tocar el estado activo lo desmarca (lo maneja cal-asis).
@@ -3660,7 +3643,7 @@ function _agRenderDay(key,compact){
   // Unificar eventos del día (Google + citas del link).
   var items=[];
   ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&_agMoKey(new Date(e.start))===key){ var typ=_agTypeForEvent(e); var o=_agEventOther(e); items.push({ms:+e.start, evid:e.id||"", title:e.title||"Sesión", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||""+PWI.svg('calendar',{sm:true})+"", tipo:(typ&&typ.label)||"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", durMin:_durMin((typ&&typ.label)||""), estado:"", who:"", email:o.email||"", who2:o.name||"", foto:_persFoto(o.email,o.name)}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||""+PWI.svg('calendar',{sm:true})+"", tipo:(typ&&typ.label)||r.tipo||"", link:_agSalaUrl(r), durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_persFoto(r.email,r.nombre), grupal:r.grupal||false}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio&&_agMoKey(new Date(r.inicio))===key){ var typ=_agEventTypeFor(r.tipo); var who=(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?_calOwnerName(r.coach_id):""; items.push({id:r.id, ms:+new Date(r.inicio), title:r.nombre||"Alguien", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||""+PWI.svg('calendar',{sm:true})+"", tipo:(typ&&typ.label)||r.tipo||"", link:r.meet_link||"", durMin:_durMin(r.tipo||""), estado:r.estado||"", origen:r.origen, who:who, foto:_persFoto(r.email,r.nombre), grupal:r.grupal||false}); } });
   items=_agMergeDup(items);
   var now=Date.now();
   // Fila limpia estilo "Tu agenda de hoy": hora · ícono · nombre + badge de tipo · duración/Meet.
@@ -4574,19 +4557,13 @@ function _notifResCancel(r){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(r.inicio, r.cliente_tz);
   _notifResCliente(r.email, r.nombre, "Tu sesión fue cancelada", "<p>Hola "+esc(fn)+", te aviso que <strong>cancelé la sesión</strong>"+(f?(" del "+esc(f)):"")+".</p><p>Si quieres, responde este email y reprogramamos.</p>");
 }
-// Link de la Sala PARA EL CLIENTE (mod=0). El room es determinístico por
-// coach+hora → el mismo que arma el panel del coach en _agSalaUrl. Si se pasa
-// un `iso` (reprogramación), usa la hora NUEVA → los dos caen en la misma sala.
-// SEGURIDAD (julio 2026): incluye token criptográfico (r.token) para validar
-// acceso sin permitir que alguien adivine el link por conocer coach_id+hora.
-function _salaClientLink(r, iso){
-  var _ms=new Date(iso||r.inicio).getTime(); var cid=(r.coach_id||(RME&&RME.id)||"x"); var room="Pathway-"+cid+"-"+_ms;
-  var coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
-  // start+dur → el cliente también ve el gate (cuenta regresiva / "ya terminó"), igual que el coach.
-  var link="https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&email="+encodeURIComponent(r.email||"")+"&con="+encodeURIComponent(coach)+"&start="+_ms+"&dur="+(_durMin(r.tipo||"")||60)+"&kind="+encodeURIComponent(r.kind||"sesion")+(_esGrupal(r)?"&grupal=1":"");
-  // Token de seguridad (autogenerado en Supabase): previene acceso no autorizado
-  if(r.token) link+="&token="+encodeURIComponent(r.token);
-  return link;
+// JULIO 2026: _salaClientLink() DEPRECATED — Ya no usamos sala.html para videosesiones
+// Se reemplazó por Google Meet (via Google Calendar)
+// Se mantiene por referencia histórica pero NO se llama
+function _salaClientLink_deprecated(r, iso){
+  // Función removida del flujo de uso. Ver CAMBIOS_AGENDAMIENTO_JULIO_2026.md
+  // El cliente ahora recibe videosesión via Google Calendar/Meet (si el coach tiene Google Calendar conectado)
+  return "";
 }
 // Invitación .ics OPCIONAL (agregar el evento al calendario si quieren) con SOLO
 // el link de la Sala — sin Meet, sin sync automático. Misma idea que reservar.html.
@@ -4604,7 +4581,8 @@ function _icsBuild(title, startMs, endMs, link, uid){
 function _resIcs(r, iso){
   var _s=+new Date(iso||r.inicio); var _dm=(_durMin(r.tipo||"")||60);
   var _coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
-  return _icsBuild((r.tipo||"Sesión")+(_coach?(" con "+_coach):""), _s, _s+_dm*60000, _salaClientLink(r, iso), (r.token||r.id));
+  // JULIO 2026: Ya no incluimos link de sala.html. El video viene de Google Calendar/Meet
+  return _icsBuild((r.tipo||"Sesión")+(_coach?(" con "+_coach):""), _s, _s+_dm*60000, "", (r.token||r.id));
 }
 // URL de Google Calendar (abre el evento cargado → guardar y listo, sin descargar
 // archivo). Sin invitados (no manda invitación con Meet). Cada uno lo agrega a SU
@@ -4614,29 +4592,30 @@ function _gcalUrl(r, iso){
   function utc(d){ d=new Date(d); return d.getUTCFullYear()+z(d.getUTCMonth()+1)+z(d.getUTCDate())+"T"+z(d.getUTCHours())+z(d.getUTCMinutes())+z(d.getUTCSeconds())+"Z"; }
   var _s=+new Date(iso||r.inicio); var _dm=(_durMin(r.tipo||"")||60); var _e=_s+_dm*60000;
   var _coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
-  var _title=(r.tipo||"Sesión")+(_coach?(" con "+_coach):""); var _link=_salaClientLink(r, iso);
-  return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(_title)+"&dates="+utc(_s)+"/"+utc(_e)+"&location="+encodeURIComponent(_link)+"&details="+encodeURIComponent("Tu sesión en Pathway. Entra por este link: "+_link);
+  var _title=(r.tipo||"Sesión")+(_coach?(" con "+_coach):"");
+  // JULIO 2026: Ya no incluimos link de sala.html. Usá Google Calendar con tu Google Meet
+  return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(_title)+"&dates="+utc(_s)+"/"+utc(_e)+"&details="+encodeURIComponent("Tu sesión en Pathway. Mirá tu Google Calendar para acceder a Google Meet.");
 }
 function _notifResReprog(r, iso){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(iso, r.cliente_tz);
-  // Al mover la hora cambia el room de la Sala → hay que mandarle el link NUEVO,
-  // si no el cliente reusa el viejo y quedan en salas distintas.
-  var join=_salaClientLink(r, iso); var _ics=_resIcs(r, iso); var _gc=_gcalUrl(r, iso);
+  // JULIO 2026: El video ahora viene de Google Calendar/Meet del coach (no sala.html)
+  var _ics=_resIcs(r, iso); var _gc=_gcalUrl(r, iso);
   _notifResCliente(r.email, r.nombre, "Tu sesión cambió de horario",
     "<p>Hola "+esc(fn)+", <strong>moví tu sesión</strong>"+(f?(" al <strong>"+esc(f)+"</strong>"):"")+".</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Nuevo horario · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
-    "<a href=\""+join+"\" style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"+
-    "<div style='margin-top:12px'><a href=\""+_gc+"\" style='display:inline-block;background:#fff;color:#1B4332;border:1.5px solid #CFE3D4;text-decoration:none;padding:10px 18px;border-radius:10px;font-weight:700;font-size:13px'>"+PWI.svg('calendar',{sm:true})+" Actualizar en Google Calendar</a></div>"+
-    "<p style='font-size:12px;color:#9AA69E;margin-top:8px'>Se abre Google, guardas el nuevo horario y listo. Si ese horario no te sirve, responde y coordinamos.</p>", _ics.b64);
+    "<div style='margin-top:12px'><a href=\""+_gc+"\" style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Actualizar en Google Calendar</a></div>"+
+    "<p style='font-size:12px;color:#9AA69E;margin-top:8px'>Se abre Google, guardas el nuevo horario y ahí está el link de Google Meet para la sesión.</p>", _ics.b64);
 }
 // Confirmación al cliente con la hora CORRECTA (AM/PM, su zona) + link para entrar.
 // Se dispara al "Confirmar" la reserva — sirve para reenviarle la buena si hubo lío.
 function _confirmCliente(r){
   if(!r||!r.email) return; var fn=(""+(r.nombre||"")).split(" ")[0]||""; var f=_fechaCli(r.inicio, r.cliente_tz);
-  var join=_salaClientLink(r, null); var _ics=_resIcs(r, null); var _gc=_gcalUrl(r, null);
+  var _ics=_resIcs(r, null); var _gc=_gcalUrl(r, null);
+  // JULIO 2026: Google Meet links come from Google Calendar sync, not sala.html
+  var _joinBtn=(r.meet_link)?("<a href=\""+esc(r.meet_link)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a Google Meet</a>"):("<p style='font-size:13px;color:#8A968E'><strong>Google Meet:</strong> el link aparecerá en tu Google Calendar.</p>");
   var inner="<p>Hola "+esc(fn)+", tu sesión está <strong>confirmada</strong>. "+PWI.svg('party',{sm:true})+"</p>"+
     "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:12px 0'><div style='font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#7A8A80;font-weight:700'>Cuándo · tu hora</div><div style='font-size:16px;font-weight:700;color:#1B4332'>"+esc(f||"")+"</div></div>"+
-    "<a href=\""+join+"\" style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a la videollamada</a>"+
+    _joinBtn+
     "<div style='margin-top:12px'><a href=\""+_gc+"\" style='display:inline-block;background:#fff;color:#1B4332;border:1.5px solid #CFE3D4;text-decoration:none;padding:10px 18px;border-radius:10px;font-weight:700;font-size:13px'>"+PWI.svg('calendar',{sm:true})+" Agregar a Google Calendar</a></div>"+
     "<p style='font-size:12px;color:#9AA69E;margin-top:8px'>Se abre Google, guardas y listo.</p>";
   _notifResCliente(r.email, r.nombre, "Reserva confirmada · tu sesión", inner, _ics.b64);
@@ -5013,7 +4992,8 @@ function _calRenderList(){
     var _ended=(+dd + (_durMin(r.tipo||"")||60)*60000) < now;
     var _marked=_attended(r.estado)||r.estado==="no_asistio"||r.estado==="reprogramada";
     var _showAsis=_ended||_marked;
-    var _salaU=_agSalaUrl(r);
+    // JULIO 2026: Use Google Meet link from database (r.meet_link) instead of sala.html
+    var _canJoin=(!_ended && !_attended(r.estado) && r.estado!=="no_asistio" && r.meet_link);
     var mk=function(val,lbl){ var on=(val==="asistio"?_attended(r.estado):r.estado===val); var c=val==="asistio"?"var(--pw-bosque)":val==="no_asistio"?"var(--pw-danger)":"#C99A2E"; return "<button data-act='cal-asis' data-id='"+esc(r.id)+"' data-val='"+val+"' style='padding:5px 10px;border-radius:8px;font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?c:"var(--pw-border)")+";background:"+(on?c:"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; };
     // Resultado de la demo (solo si asistió).
     var ob=function(val,lbl){ var on=(r.estado===val); var c=val==="gano"?"var(--pw-bosque)":"var(--pw-danger)"; return "<button data-act='cal-res' data-id='"+esc(r.id)+"' data-val='"+val+"' style='padding:4px 10px;border-radius:8px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;border:1.5px solid "+(on?c:"var(--pw-border)")+";background:"+(on?c:"#fff")+";color:"+(on?"#fff":"var(--pw-text-soft)")+"'>"+lbl+"</button>"; };
@@ -5057,7 +5037,7 @@ function _calRenderList(){
       "<div style='display:flex;flex-direction:column;gap:2px;align-items:flex-end'><div style='display:flex;gap:6px;flex-wrap:wrap'>"+
         (_showAsis
           ? (mk("asistio","Asistió")+mk("no_asistio","No asistió")+mk("reprogramada","Reprogramó"))
-          : (_salaU?("<a href='"+esc(_salaU)+"' target='_blank' rel='noopener' style='display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;background:var(--pw-bosque);color:#fff'>"+_cIco('video',13)+" Unirse</a>"):"<span style='font-size:11.5px;color:var(--pw-text-soft)'>Aún no empezó</span>"))+
+          : (_canJoin?("<a href='"+esc(r.meet_link)+"' target='_blank' rel='noopener' style='display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;background:var(--pw-bosque);color:#fff'>"+_cIco('video',13)+" Unirse a Meet</a>"):"<span style='font-size:11.5px;color:var(--pw-text-soft)'>Aún no empezó</span>"))+
       "</div>"+(_showAsis?outc:"")+_mgmt+"</div>"+
       _editHtml+
     "</div>";
@@ -10508,11 +10488,11 @@ document.addEventListener("click", function(ev){
             "<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:14px'>📍 <strong>Presencial</strong>"+(_alugar?(" · "+esc(_alugar)):"")+"</div>"+
             "<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";
         } else {
-          var _r={coach_id:(RME&&RME.id)||"", nombre:_shWith, email:_ag2, tipo:_atl, inicio:_iso, grupal:_agrupal};
-          var _lnk=_salaClientLink(_r);
-          _ics=_icsBuild("Sesión · Pathway", _ast.getTime(), _aen.getTime(), _lnk);
+          // JULIO 2026: Google Meet links come from Google Calendar sync, not sala.html
+          // The meet_link will be populated when the coach syncs to Google Calendar
+          _ics=_icsBuild("Sesión · Pathway", _ast.getTime(), _aen.getTime(), "");
           _inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+(_agrupal?" (grupal)":"")+".</p>"+
-            "<p style='margin:16px 0'><a href='"+esc(_lnk)+"' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700'>Entrar a la sesión</a></p>"+
+            "<p style='margin:16px 0;color:#8A968E'><strong>Google Meet:</strong> el link aparecerá en tu Google Calendar.</p>"+
             "<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";
         }
         _notifResCliente(_ag2, _shWith, "Tu sesión con "+_coachNm+" está agendada", _inner, _ics&&_ics.b64);
