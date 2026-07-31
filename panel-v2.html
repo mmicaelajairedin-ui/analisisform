@@ -10478,12 +10478,22 @@ document.addEventListener("click", function(ev){
     _sbw("citas","POST",Object.assign({},_agBody,_agExtra))
       .then(function(r){
         // Reintento SIN columnas opcionales (kind/modalidad/grupal/lugar) si aún no existen en la base.
-        if(r&&r.ok){ _agDone(r); return; }
-        return _sbw("citas","POST",_agBody).then(_agDone);
+        if(r&&r.ok){
+          _agDone(r);
+          // Sincronizar a Google Calendar (best-effort)
+          try{ r.json().then(function(rows){ if(Array.isArray(rows) && rows[0] && rows[0].id){ fetch(SB+'/functions/v1/sync-cita-to-gcal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cita_id:rows[0].id})}).catch(function(){}); } }).catch(function(){}); }catch(e){} }
+          return;
+        }
+        return _sbw("citas","POST",_agBody).then(function(r2){
+          _agDone(r2);
+          // Sincronizar a Google Calendar (best-effort, reintento sin columnas opcionales)
+          if(r2&&r2.ok){ try{ r2.json().then(function(rows){ if(Array.isArray(rows) && rows[0] && rows[0].id){ fetch(SB+'/functions/v1/sync-cita-to-gcal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cita_id:rows[0].id})}).catch(function(){}); } }).catch(function(){}); }catch(e){} }
+          return r2;
+        });
       })
       .catch(function(){ toast("No se pudo guardar la cita. Reintenta."); });
     // 2) Compañeros de equipo invitados: cada uno recibe la cita en SU panel.
-    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ var _tb={coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_iso,estado:"confirmada",origen:"panel"}; _sbw("citas","POST",Object.assign({},_tb,_agExtra)).then(function(r){ if(!(r&&r.ok)) return _sbw("citas","POST",_tb); }).catch(function(){}); } });
+    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ var _tb={coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_iso,estado:"confirmada",origen:"panel"}; _sbw("citas","POST",Object.assign({},_tb,_agExtra)).then(function(r){ if(!(r&&r.ok)) return _sbw("citas","POST",_tb); if(r&&r.ok){ try{ r.json().then(function(rows){ if(Array.isArray(rows) && rows[0] && rows[0].id){ fetch(SB+'/functions/v1/sync-cita-to-gcal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cita_id:rows[0].id})}).catch(function(){}); } }).catch(function(){}); }catch(e){} } }).catch(function(){}); } });
     // 3) EMAIL de confirmación al invitado (si dejó email). Online → botón a la Sala
     //    (grupal = video multi-persona). Presencial → SIN link de video, con el lugar.
     if(_ag2 && /@/.test(_ag2)){
