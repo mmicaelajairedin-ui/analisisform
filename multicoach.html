@@ -1850,7 +1850,11 @@ function mcLoadReal(owner){
     try{ setTimeout(_mcPaywallCheck,0); }catch(e){} // aviso/muro si la prueba de la red está por vencer o venció
   }
   return _hdr({'Content-Type':'application/json'}).then(function(h){
-    return fetch(SB+'/functions/v1/mi-red',{method:'POST',headers:h});
+    // Si hay org seleccionada en localStorage (multi-org), enviarla al edge function
+    var _selectedOrg=null;
+    try{ _selectedOrg=localStorage.getItem('mj_org_selected'); }catch(e){}
+    var _body=_selectedOrg?{org_id:_selectedOrg}:{};
+    return fetch(SB+'/functions/v1/mi-red',{method:'POST',headers:h,body:JSON.stringify(_body)});
   }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
     if(d&&d.ok){ _apply(d.org,d.coaches,d.clientes,d.owner,d.citas); return; }
     throw new Error('mi-red');
@@ -1858,7 +1862,9 @@ function mcLoadReal(owner){
     // Fallback: lectura directa (por si mi-red aún no está desplegada). Los
     // coaches sí se leen (policy de directorio); los clientes pueden venir
     // vacíos si la RLS estricta está activa — mi-red lo resuelve.
-    var orgId=owner.org_id||(owner.configuracion&&owner.configuracion.org_id)||'';
+    var _selectedOrg=null;
+    try{ _selectedOrg=localStorage.getItem('mj_org_selected'); }catch(e){}
+    var orgId=_selectedOrg||owner.org_id||(owner.configuracion&&owner.configuracion.org_id)||'';
     var email=(owner.email||'').toLowerCase();
     var orgQ = orgId ? ('id=eq.'+encodeURIComponent(orgId)) : ('owner_email=eq.'+encodeURIComponent(email));
     return mcGet('organizaciones', orgQ+'&select=*&limit=1').then(function(orgs){
@@ -1874,6 +1880,23 @@ function mcLoadReal(owner){
       __toast('No pudimos cargar tu red. Recarga la página o vuelve a iniciar sesión.');
     });
   });
+}
+// Selector modal para elegir organización (cuando un Owner es parte de múltiples orgs).
+function __showOrgSelector(orgIds){
+  if(!orgIds||!orgIds.length)return;
+  var _modal='<div class="mc-org-modal" id="mcOrgSelector" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:1000;"><div style="background:#fff;border-radius:12px;padding:32px;text-align:center;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.12);"><h2 style="margin:0 0 12px;font-family:var(--ser);font-size:20px;font-weight:600;color:var(--carbon);">Selecciona tu Red</h2><p style="margin:0 0 24px;font-size:14px;color:var(--soft);">Eres dueño de varias redes. ¿Cuál quieres usar?</p><div style="display:flex;flex-direction:column;gap:10px;">';
+  orgIds.forEach(function(oid){
+    _modal+='<button onclick="__selectOrg(\''+oid+'\')" style="padding:12px 16px;border:1px solid var(--border);background:transparent;border-radius:8px;font-size:14px;font-weight:500;color:var(--carbon);cursor:pointer;transition:all 0.15s;text-align:left;">Red #'+(oid.substring(0,8)+'…')+'</button>';
+  });
+  _modal+='</div></div></div>';
+  var _mc=document.getElementById('mcOrgSelector');if(_mc)_mc.remove();
+  var _el=document.createElement('div');_el.innerHTML=_modal;document.body.appendChild(_el.firstElementChild);
+}
+// Guardar org seleccionada y recargar.
+function __selectOrg(orgId){
+  try{ localStorage.setItem('mj_org_selected',orgId); }catch(e){}
+  var _m=document.getElementById('mcOrgSelector');if(_m)_m.remove();
+  window.location.href=location.pathname+'?v='+Date.now();
 }
 // Arranque: si hay un dueño logueado → red real; si no → demo (prospecto).
 // FIX "Bienvenido Alex": el mj_user del navegador puede estar VIEJO — p.ej. un
@@ -1892,7 +1915,20 @@ function mcBoot(){
   if(/[?&]embed=1/.test(_q)){ document.documentElement.classList.add('mc-embed'); }
   var _nm=/[?&]nicho=(fitness|carrera|finanzas)/.exec(_q); if(_nm){ MC_N=_nm[1]; }
   try{ if(!_forceDemo){ u=JSON.parse(localStorage.getItem('mj_user')||'null'); } }catch(e){}
-  if(u&&u.id&&u.rol==='owner'){ mcLoadReal(u); }
+  if(u&&u.id&&u.rol==='owner'){
+    // Owner: detectar si pertenece a múltiples orgs
+    try{
+      var _mids=localStorage.getItem('mj_multiorg_ids');
+      if(_mids){
+        var _orgIds=JSON.parse(_mids);
+        if(_orgIds&&_orgIds.length>1){
+          __showOrgSelector(_orgIds);
+          return;
+        }
+      }
+    }catch(e){}
+    mcLoadReal(u);
+  }
   else if(u&&u.id){
     mcApplyNiche(); // mientras se verifica, la maqueta (nunca en blanco)
     _hdr().then(function(h){
@@ -1907,8 +1943,16 @@ function mcBoot(){
         // Un coach DE la red no gestiona acá: su mundo es su panel de siempre.
         window.location.href='panel-v2.html?v='+Date.now();
       } else if(f.rol==='colaborador'&&f.org_id){
-        // Colaborador: puede acceder a MultiCoach si tiene permisos. Por ahora se queda en demo.
-        mcApplyNiche();
+        // Colaborador: puede acceder a MultiCoach si tiene permisos
+        // Cargar permisos desde BD y luego cargar la red real
+        _hdr().then(function(h){
+          return fetch(SB+'/rest/v1/colaborador_permisos?usuario_id=eq.'+encodeURIComponent(f.id)+'&org_id=eq.'+encodeURIComponent(f.org_id)+'&select=permisos',{headers:h});
+        }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
+          if(rows&&rows.length&&rows[0].permisos) MC_USER_PERMISOS=(Array.isArray(rows[0].permisos)?rows[0].permisos:[]);
+          try{ var mu=JSON.parse(localStorage.getItem('mj_user')||'{}'); mu.org_id=f.org_id; if(f.nombre)mu.nombre=f.nombre; if(f.foto_url)mu.foto_url=f.foto_url; localStorage.setItem('mj_user',JSON.stringify(mu)); u=mu; }catch(e){ u=f; }
+          mcLoadReal(u);
+        }).catch(function(){ mcApplyNiche(); });
+        return;
       }
       // Coach individual o admin mirando la maqueta → se queda en la demo.
     }).catch(function(){});
