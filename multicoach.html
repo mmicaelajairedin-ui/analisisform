@@ -1577,8 +1577,16 @@ function mcKpisReal(){
   var utilization=co.length>0?(co.filter(function(c){return c.est==='activo';}).reduce(function(s,c){return s+(c.ses||0);},0)/Math.max(1,coAct*5)*100):0;
   utilization=Math.min(100,Math.round(utilization));
 
-  // Ingresos: hardcodeado en demo; en real vendría de Stripe
-  var ingresos=0; // En modo real se traería desde transacciones
+  // Ingresos: calcula basado en plan + estado de pago
+  var ingresos='$0';
+  if(MC_ORG&&MC_ORG.plan){
+    var plnMeta=(function(){var p=MC_PLANES[MC_ORG.plan]||MC_PLANES.studio;var m=p.precio||'';return m.replace(/\D/g,'');}).call();
+    if(MC_ORG.fecha_fin_prueba){
+      var hoy=new Date(), vence=new Date(MC_ORG.fecha_fin_prueba);
+      if(hoy<vence){ ingresos='En prueba'; }
+      else { ingresos='$'+plnMeta; }
+    } else { ingresos='$'+plnMeta; }
+  }
 
   // Embudo: leads (últimos 30d), trials, conversiones (pagados)
   // Esto es agnóstico: se cuenta por estado/meta de cliente
@@ -1593,7 +1601,7 @@ function mcKpisReal(){
     [''+PWI.svg('trendUp',{sm:true})+'','Utilización coaches',''+utilization+'%',(utilization>=80?'Óptima':(utilization>=60?'Normal':'Baja')),'rgba(82,183,136,.15)'],
     [''+PWI.svg('heart',{sm:true})+'','Tasa retención',''+retention+'%','de clientes','rgba(79,166,186,.15)'],
     // Row 2: Ingresos / Conversión
-    [''+PWI.svg('dollar',{sm:true})+'','Ingresos este mes','$0','vs mes anterior','rgba(233,196,106,.2)'],
+    [''+PWI.svg('dollar',{sm:true})+'','Ingresos este mes',''+ingresos,'vs mes anterior','rgba(233,196,106,.2)'],
     [''+PWI.svg('target',{sm:true})+'','Embudo conversión',leadsCount+' → '+trialsCount+' → '+convertsCount,'leads a pagos','rgba(82,183,136,.15)']
   ];
   return kpis.map(function(k){return '<div class="kpi"><div class="h"><span class="ic2">'+_kpiIcon(k[0])+'</span>'+k[1]+'</div><div class="n">'+_mcNumSpan(k[2])+'</div><div class="d">'+(k[3]||'&nbsp;')+'</div></div>';}).join('');
@@ -1646,7 +1654,7 @@ function mcLoadReal(owner){
     try{ MC_COCOL={}; DB.coaches.forEach(function(c,i){ MC_COCOL[c.id]=_MCPAL[i%_MCPAL.length]; }); }catch(e){}
     // La comunidad arranca en blanco para una red real (nada de posts/retos/
     // ranking inventados) — el dueño la va llenando. La demo sí trae ejemplos.
-    try{ DBCOM={posts:[],avisos:[],clases:[]}; }catch(e){}
+    try{ DBCOM={posts:[],avisos:[],clases:[],retos:[],ranking:[]}; }catch(e){}
     mcApplyNiche();
     try{ _mcLoadCanales(function(){ _mcUpdHeaderDot(); }); }catch(e){} // punto de no-leídos del chat del equipo
     try{ setTimeout(_mcPaywallCheck,0); }catch(e){} // aviso/muro si la prueba de la red está por vencer o venció
@@ -1962,9 +1970,13 @@ function _setCf(f){_cf=f;renderCoaches();}
 // Tabla de coaches: simple tabla con link a panel-v2 del coach
 function _fillCoaches(){
  var box=document.getElementById('clist');if(!box)return;
+ if(MC_REAL&&MC_ORG&&_cf==='todos'){
+   var b=DB.coaches.filter(function(c){return !c.esOwner;}),u=DB.clientes.filter(function(k){return !k.coach;});
+   box.innerHTML='<div class="mc-team-board">'+b.map(function(c){var s=DB.clientes.filter(function(k){return k.coach===c.id;});return _teamGroup(c,s);}).join('')+_teamGroupSin(u)+'</div>';
+ }
  var base=DB.coaches.filter(function(c){if(_cf==='todos')return true;return c.est===_cf;});
  if(!base.length){
-   box.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--pw-text-soft)"><div style="font-size:15px;font-weight:600;margin-bottom:8px">Sin coaches en esta vista</div><p style="font-size:13px;margin:0">Filtra por otro estado o invita un nuevo coach.</p></div>';
+   box.innerHTML=(MC_REAL&&MC_ORG?'':'')+'<div style="text-align:center;padding:40px 20px;color:var(--pw-text-soft)"><div style="font-size:15px;font-weight:600;margin-bottom:8px">Sin coaches en esta vista</div><p style="font-size:13px;margin:0">Filtra por otro estado o invita un nuevo coach.</p></div>';
    return;
  }
  var rows=base.map(function(c){
@@ -1981,7 +1993,8 @@ function _fillCoaches(){
     +'<td style="padding:12px 16px;text-align:right;color:var(--pw-text-soft);font-size:12px">'+_mcAgo(c._ts||'')+'</td>'
     +'</tr>';
  }).join('');
- box.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid var(--pw-border);text-align:left"><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);font-weight:600">Coach</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted)">Email</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted)">Estado</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Clientes</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Util.</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Última act.</th></tr></thead><tbody>'+rows+'</tbody></table>';
+ var tbl='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid var(--pw-border);text-align:left"><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);font-weight:600">Coach</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted)">Email</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted)">Estado</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Clientes</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Util.</th><th style="padding:12px 16px;font-weight:700;font-size:11.5px;text-transform:uppercase;color:var(--pw-text-muted);text-align:right">Última act.</th></tr></thead><tbody>'+rows+'</tbody></table>';
+ if(MC_REAL&&MC_ORG){var tblDiv=document.createElement('div'); tblDiv.innerHTML=tbl; box.appendChild(tblDiv);} else {box.innerHTML=tbl;}
 }
 function _teamGroup(c, clientes){
  var h=_coachHealth(c);
@@ -2815,7 +2828,7 @@ function _mcCobrarDone(url,nombre,email){
 }
 function renderComunidad(){
  var v=document.getElementById('vscroll');
- var tabs=[['revista','Revista'],['avisos','Avisos'],['clases','Clases']];
+ var tabs=[['revista','Revista'],['avisos','Avisos'],['clases','Clases'],['retos','Retos']];
  v.innerHTML='<header class="cp-topbar" style="align-items:flex-end"><div><h1 class="cp-h1">Comunidad<span class="dot">.</span></h1><div class="cp-sub">Tu revista, avisos y clases — <b>solo tú los editas</b>; coaches y clientes los ven.</div></div>'
   +'<div class="cp-topbar-actions"><button class="crear" onclick="_comAdd()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Publicar</button></div></header>'
   +'<div class="cp-filters" id="comchips">'+tabs.map(function(t){return '<button class="cp-chip'+(_comTab===t[0]?' is-on':'')+'" data-tab="'+_mcEsc(t[0])+'" onclick="if(this.dataset.tab)_setComTab(this.dataset.tab)">'+t[1]+'</button>';}).join('')+'</div>'
@@ -2830,7 +2843,7 @@ function renderComunidad(){
  _fillCom();
 }
 function _setComTab(t){_comTab=t;renderComunidad();}
-function _comAdd(){var m={revista:_nuevaPost,avisos:_nuevoAviso,clases:_nuevaClase};(m[_comTab]||_nuevaPost)();}
+function _comAdd(){var m={revista:_nuevaPost,avisos:_nuevoAviso,clases:_nuevaClase,retos:_nuevoReto};(m[_comTab]||_nuevaPost)();}
 function _fillCom(){
  var box=document.getElementById('comview');if(!box)return;var t=_comTab;
  var _brandNm=(MC_REAL&&MC_ORG&&MC_ORG.nombre)?MC_ORG.nombre:(_mcBrand().nombre||'Gym Boutique');
@@ -2854,6 +2867,12 @@ function _fillCom(){
   box.innerHTML='<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Horarios de clases<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 6px">Cada clase muestra a cargo de qué coach está.</div>'
    +(DBCOM.clases.length?DBCOM.clases.map(function(cl){var c=_coach(cl.coach);return '<div class="cp-drow"><div class="dd"><span class="emo">'+PWI.svg('dumbbell',{sm:true})+'</span></div><div class="dg"><div class="dn">'+cl.nombre+' · '+cl.hora+'</div><div class="ds">'+cl.dia+' · a cargo de '+(c?c.n:'—')+' · cupo '+cl.cupo+'</div></div></div>';}).join(''):'<p class="csub" style="margin:6px 0">Todavía no cargaste clases.</p>')
    +'<button class="cp-btn cp-btn-primary" style="margin-top:12px" onclick="_nuevaClase()">+ Nueva clase</button></div>';
+  return;
+ }
+ if(t==='retos'){
+  box.innerHTML='<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Retos de la red<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 6px">Desafíos con puntos para motivar a tu equipo.</div>'
+   +(DBCOM.retos.length?DBCOM.retos.map(function(r){return '<div class="cp-drow"><div class="dd"><span class="emo">'+r.emo+'</span></div><div class="dg"><div class="dn">'+r.nombre+' · '+r.pts+' pts</div><div class="ds">'+r.parti+' participantes · '+r.prog+'% progreso</div></div></div>';}).join(''):'<p class="csub" style="margin:6px 0">Todavía no cargaste retos.</p>')
+   +'<button class="cp-btn cp-btn-primary" style="margin-top:12px" onclick="_nuevoReto()">+ Nuevo reto</button></div>';
   return;
  }
 }
@@ -2991,7 +3010,7 @@ function _editAviso(id){var a=null;DBCOM.avisos.forEach(function(x){if(x.id===id
   a.txt=t;__mclose();__toast('Aviso actualizado ✓');_fillCom();});}
 function _delAviso(id){ if(_comDelete(id,function(){__toast('Aviso borrado');renderComunidad();})){ DBCOM.avisos=DBCOM.avisos.filter(function(a){return a.id!==id;}); _fillCom(); return; } DBCOM.avisos=DBCOM.avisos.filter(function(a){return a.id!==id;});__toast('Aviso borrado');_fillCom();}
 function _nuevaClase(){var cs=DB.coaches.filter(function(c){return c.est==='activo';});__openModal('Nueva clase',__inp('nc2-n','Nombre (ej. Funcional)')+__inp('nc2-d','Días (ej. Lun · Mié)')+__inp('nc2-h','Hora (ej. 18:00)')+'<div><span class="lbl">A cargo de</span><select id="nc2-c" class="inp">'+cs.map(function(c){return '<option value="'+c.id+'">'+c.n+'</option>';}).join('')+'</select></div>','Crear clase',function(){var n=document.getElementById('nc2-n').value.trim();if(!n)return;var dia=document.getElementById('nc2-d').value.trim()||'—',hora=document.getElementById('nc2-h').value.trim()||'—',coach=document.getElementById('nc2-c').value;if(_comSave('clase',{body:n,data:{dia:dia,hora:hora,coach:coach,cupo:'0/12'}},function(ok){if(ok){__toast('Clase «'+n+'» creada ✓');_comTab='clases';renderComunidad();}})){__mclose();return;}DBCOM.clases.push({id:'cl'+DBCOM.clases.length+'x',nombre:n,dia:dia,hora:hora,coach:coach,cupo:'0/12'});__mclose();__toast('Clase «'+n+'» creada ✓');_comTab='clases';renderComunidad();});}
-// _nuevoReto() → Tier 2+ (gamificación con puntos y ranking)
+function _nuevoReto(){__openModal('Nuevo reto','<textarea id="nr-n" class="inp" style="min-height:70px;resize:vertical" placeholder="Nombre del reto…"></textarea><div><span class="lbl">Emoji</span><input id="nr-e" class="inp" value="🎯" maxlength="2"></div><div><span class="lbl">Puntos</span><input id="nr-p" class="inp" type="number" value="50" min="1"></div>','Crear reto',function(){var n=document.getElementById('nr-n').value.trim();if(!n)return;var emo=document.getElementById('nr-e').value.trim()||'🎯',pts=+document.getElementById('nr-p').value||50;if(_comSave('reto',{body:n,emo:emo,data:{pts:pts,parti:0,prog:0}},function(ok){if(ok){__toast('Reto «'+n+'» creado ✓');_comTab='retos';renderComunidad();}})){__mclose();return;}DBCOM.retos.push({id:'r'+DBCOM.retos.length+'x',nombre:n,emo:emo,pts:pts,parti:0,prog:0});__mclose();__toast('Reto «'+n+'» creado ✓');_comTab='retos';renderComunidad();});}
 
 /* ===== Configuración — misma estructura del panel (Perfil · Recursos · Marca propia · Mi cuenta), SIN "Clientes de Pathway" ===== */
 var _cfgSec='profile';
@@ -3090,20 +3109,16 @@ function _saveRecursos(){
   mcSaveConfig({recursos:clean}, 'Recursos guardados ✓');
 }
 function _cfgBrand(){
- var swatches=['#2D6A4F','#15807A','#2C6E9E','#3F4DA0','#6D3FA0','#8E3B66','#A23A3A','#B5722A','#44505E'];
- var sw=swatches.map(function(c){var on=CFG.color===c;return '<button data-color="'+_mcEsc(c)+'" onclick="_setColor(this.dataset.color)" style="width:38px;height:38px;border-radius:50%;background:'+c+';border:'+(on?'3px solid #fff':'2px solid transparent')+';box-shadow:'+(on?'0 0 0 2px '+c:'var(--pw-shadow-xs)')+';cursor:pointer;padding:0" aria-label="'+c+'"></button>';}).join('');
- var secpal=['#52B788','#E9C46A','#5AA9E6','#7B6CF6','#C77DBB','#E07A5F','#3FA796','#F2A65A','#8A94A6'];
  var cur1=CFG.color||_mcBrand().color||'#2D6A4F';
- var cur2=CFG.color2||_mcBrand().color2||'';
- var sw2=secpal.map(function(c){var on=cur2===c;return '<button data-color="'+_mcEsc(c)+'" onclick="_setColor2(this.dataset.color)" style="width:38px;height:38px;border-radius:50%;background:'+c+';border:'+(on?'3px solid #fff':'2px solid transparent')+';box-shadow:'+(on?'0 0 0 2px '+c:'var(--pw-shadow-xs)')+';cursor:pointer;padding:0" aria-label="'+c+'"></button>';}).join('');
- var _cpick=function(id,val,fn){return '<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--pw-text-soft)"><input id="'+id+'" type="color" value="'+val+'" data-fn="'+_mcEsc(fn)+'" oninput="window[this.dataset.fn]&&window[this.dataset.fn](this.value)" style="width:38px;height:38px;border:none;background:none;padding:0;cursor:pointer"> Otro</label>';};
+ var cur2=CFG.color2||_mcBrand().color2||'#52B788';
+ var _cpick=function(id,val,fn){return '<input id="'+id+'" type="color" value="'+val+'" data-fn="'+_mcEsc(fn)+'" oninput="window[this.dataset.fn]&&window[this.dataset.fn](this.value)" style="width:50px;height:50px;border:2px solid var(--pw-border);border-radius:10px;padding:0;cursor:pointer">';};
  return '<div class="cp-card"><div class="cp-card-hd"><h3 class="cp-card-title">Marca propia<span class="dot">.</span></h3><span class="cp-eyebrow">White-label</span></div>'
   +'<div class="cp-card-pad" style="display:flex;flex-direction:column;gap:18px">'
    +'<p style="font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.55">Tu color y tu logo reemplazan los de Pathway en el <strong>portal que ven tus clientes</strong>, en tu página pública y en el <strong>logo de arriba a la izquierda</strong>. Sin logo cargado, se muestra Pathway.</p>'
-   +'<div class="cp-form-row"><label class="cp-form-label">Color primario</label><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+sw+_cpick('cfb-color',cur1,'_setColor')+'</div><span class="cp-form-hint">Botones, menú y acentos principales. El cliente lo ve en su portal y en tu landing.</span></div>'
-   +'<div class="cp-form-row"><label class="cp-form-label">Color secundario</label><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+sw2+_cpick('cfb-color2',cur2||'#52B788','_setColor2')+'</div><span class="cp-form-hint">Detalles y acentos de apoyo (puntos, resaltados) en tu landing.</span></div>'
-   +'<div class="cp-form-row"><label class="cp-form-label">Color de fondo</label><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+_cpick('cfb-bg',(_mcBrand().bg||'#F7F4EC'),'_setBg')+'</div><span class="cp-form-hint">El fondo de tu página pública de la red. Elegí el que quieras.</span></div>'
-   +'<div class="cp-form-row"><label class="cp-form-label">Color de letra</label><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+_cpick('cfb-text',(_mcBrand().text||'#1F2A23'),'_setText')+'</div><span class="cp-form-hint">El texto de tu página pública.</span></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Color primario</label><div style="display:flex;gap:10px;align-items:center">'+_cpick('cfb-color',cur1,'_setColor')+'</div><span class="cp-form-hint">Botones, menú y acentos principales. El cliente lo ve en su portal y en tu landing.</span></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Color secundario</label><div style="display:flex;gap:10px;align-items:center">'+_cpick('cfb-color2',cur2,'_setColor2')+'</div><span class="cp-form-hint">Detalles y acentos de apoyo (puntos, resaltados) en tu landing.</span></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Color de fondo</label><div style="display:flex;gap:10px;align-items:center">'+_cpick('cfb-bg',(_mcBrand().bg||'#F7F4EC'),'_setBg')+'</div><span class="cp-form-hint">El fondo de tu página pública de la red.</span></div>'
+   +'<div class="cp-form-row"><label class="cp-form-label">Color de letra</label><div style="display:flex;gap:10px;align-items:center">'+_cpick('cfb-text',(_mcBrand().text||'#1F2A23'),'_setText')+'</div><span class="cp-form-hint">El texto de tu página pública.</span></div>'
    +'<div class="cp-form-row"><label class="cp-form-label">Tipografía</label><select id="cfb-font" class="cp-form-input" onchange="_setFont(this.value)">'+(['Inter','Poppins','Montserrat','Lora','Playfair Display','Nunito','Work Sans'].map(function(f){return '<option value="'+f+'"'+((_mcBrand().font||'Inter')===f?' selected':'')+'>'+f+'</option>';}).join(''))+'</select><span class="cp-form-hint">La fuente de todo tu panel, el de tus coaches y el portal de tus clientes.</span></div>'
    +'<div class="cp-form-row"><label class="cp-form-label">Nombre de la empresa</label><input id="cfb-name" class="cp-form-input" placeholder="Ej. Gym Boutique" value="'+((_mcBrand().nombre||'').replace(/"/g,'&quot;'))+'"><span class="cp-form-hint">Acompaña al logo en el menú.</span></div>'
    +'<div class="cp-form-row"><label class="cp-form-label">Tu logo</label>'

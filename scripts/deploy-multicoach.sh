@@ -50,6 +50,8 @@ FUNCTIONS=(
     "mi-red"
     "coach-api-gateway"
     "agregar-coach-red"
+    "agregar-cliente-red"
+    "asignar-cliente"
     "eliminar-coach-red"
     "editar-coach-red"
     "canal-red"
@@ -57,6 +59,11 @@ FUNCTIONS=(
     "crear-cita-red"
     "editar-cita-red"
     "fetch-coach-detail"
+    "comunidad-red"
+    "coach-self-save"
+    "guardar-red"
+    "link-preview"
+    "red-checkout"
 )
 
 for fn in "${FUNCTIONS[@]}"; do
