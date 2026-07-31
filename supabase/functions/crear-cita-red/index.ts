@@ -116,11 +116,21 @@ Deno.serve(async (req: Request) => {
     if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
     const rows = await r.json().catch(() => []);
     const cita = Array.isArray(rows) && rows[0] ? rows[0] : { coach_id, nombre, tipo, inicio, estado: "confirmada" };
+    // Sincronizar a Google Calendar (best-effort — no bloquea la creación).
+    // Extrae el hangoutLink y lo guarda en citas.meet_link.
+    if (cita.id) {
+      try {
+        await fetch(`${SB_URL}/functions/v1/sync-cita-to-gcal`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cita_id: cita.id }),
+        });
+      } catch { /* ignore */ }
+    }
     // Email de confirmación al cliente (best-effort, no bloquea la creación).
+    // JULIO 2026: Google Meet links come from Google Calendar sync, not sala.html
     if (EMAIL_RE.test(cliEmail)) {
-      const ms = new Date(inicio).getTime();
-      const salaUrl = `https://pathwaycareercoach.com/sala.html?room=${encodeURIComponent("Pathway-" + coach_id + "-" + ms)}&mod=0&email=${encodeURIComponent(cliEmail)}&start=${ms}&dur=60${grupal ? "&grupal=1" : ""}`;
-      try { await notificarCita(cliEmail, tipo, inicio, modalidad, lugar, salaUrl); } catch { /* ignore */ }
+      try { await notificarCita(cliEmail, tipo, inicio, modalidad, lugar, cita.meet_link || ""); } catch { /* ignore */ }
     }
     return json({ ok: true, cita });
   } catch { return json({ error: "write_failed" }, 502); }
@@ -132,11 +142,13 @@ function fmtFecha(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]} · ${m[4]}:${m[5]}` : iso;
 }
 // Email de confirmación de la cita al cliente (misma idea que el panel del coach).
-async function notificarCita(to: string, tipo: string, inicio: string, modalidad: string, lugar: string, salaUrl: string): Promise<void> {
+async function notificarCita(to: string, tipo: string, inicio: string, modalidad: string, lugar: string, meetLink: string): Promise<void> {
   const cuando = fmtFecha(inicio);
   const donde = modalidad === "presencial"
     ? `<p style='font-size:15px'>📍 <b>Presencial:</b> ${lugar || "te confirmamos el lugar"}</p>`
-    : `<p style='margin:20px 0'><a href='${salaUrl}' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a la videollamada →</a></p>`;
+    : meetLink
+      ? `<p style='margin:20px 0'><a href='${meetLink}' target='_blank' rel='noopener' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a Google Meet →</a></p>`
+      : `<p style='margin:20px 0;color:#8A968E'><b>Google Meet:</b> el link aparecerá en tu Google Calendar.</p>`;
   const html =
     "<p style='font-size:15px'>¡Hola!</p>" +
     "<p style='font-size:15px;line-height:1.6'>Tu sesión quedó agendada:</p>" +

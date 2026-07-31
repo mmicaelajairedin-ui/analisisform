@@ -111,6 +111,12 @@ Deno.serve(async (req: Request) => {
     location: String(ev.location || ""),
     start: { dateTime: startISO },
     end: { dateTime: endISO },
+    conferenceData: {
+      createRequest: {
+        requestId: `pathway-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        conferenceSolutionKey: { type: "hangoutsMeet" },
+      },
+    },
   };
   const att = String(ev.attendeeEmail || "").trim();
   if (att) gev.attendees = [{ email: att }];
@@ -118,9 +124,23 @@ Deno.serve(async (req: Request) => {
   try {
     const url = (op === "update" && eventId) ? `${base}/${encodeURIComponent(eventId)}` : base;
     const method = (op === "update" && eventId) ? "PATCH" : "POST";
-    const r = await fetch(url, { method, headers: auth, body: JSON.stringify(gev) });
+    const r = await fetch(url, {
+      method,
+      headers: auth,
+      body: JSON.stringify(gev),
+    });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return json({ ok: false, reason: "write_failed", status: r.status, detail: (d && d.error && d.error.message) || "" });
-    return json({ ok: true, event_id: d.id || eventId });
+    // Extraer Google Meet link de conferenceData (puede tardar un momento en generarse)
+    let hangoutLink = "";
+    if (d.conferenceData && d.conferenceData.entryPoints) {
+      for (const ep of d.conferenceData.entryPoints) {
+        if (ep.entryPointType === "video" && ep.uri) {
+          hangoutLink = ep.uri;
+          break;
+        }
+      }
+    }
+    return json({ ok: true, event_id: d.id || eventId, hangoutLink });
   } catch { return json({ ok: false, reason: "google_unreachable" }); }
 });

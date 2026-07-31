@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>Sala de sesión · Pathway</title>
-<link rel="icon" href="/favicon-app.svg?v=5" type="image/svg+xml">
+<link rel="icon" href="/favicon-app.svg?v=6" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Inter:wght@400..700&display=swap" rel="stylesheet">
@@ -150,6 +150,10 @@
   .chatp-in input{flex:1;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.18);border-radius:100px;padding:9px 14px;color:#fff;font-size:13px;outline:none;font-family:var(--sans)}
   .chatp-in input::placeholder{color:#9CC4AE}
   .chatp-in button{width:40px;flex-shrink:0;border-radius:50%;background:var(--bosque);color:#fff;border:none;cursor:pointer;font-size:15px}
+  /* Animación del botón de chat cuando hay mensajes sin leer */
+  @keyframes cpChatPulse{0%{transform:scale(1);box-shadow:0 0 0 0 rgba(45,106,79,.4)}50%{transform:scale(1.06);box-shadow:0 0 0 8px rgba(45,106,79,.0)}}
+  /* Para las notificaciones que aparecen arriba a la derecha */
+  @keyframes cpNotifIn{from{opacity:0;transform:translateY(-12px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
   /* ── Móvil ── (va al FINAL para pisar las reglas base del app-shell) */
   .pull{display:none}
   @media(max-width:1000px){
@@ -318,13 +322,14 @@ function esc(s){ return (''+(s==null?'':s)).replace(/[&<>"']/g,function(c){ retu
 var ROOM = qp('room') || ('Pathway-demo-'+Math.floor(Date.now()/60000));
 var NAME = qp('name') || 'Invitado';
 var EMAIL= qp('email') || '';
-var MOD  = qp('mod')==='1' || qp('mod')==='true';   // 1 = coach (moderador)
+var MOD  = false;   // IMPORTANTE: se valida contra Supabase Auth, NO por URL/localStorage
 var CITA = qp('cita') || '';
 var WHO  = qp('con') || '';                          // nombre del otro
 var TIPO = qp('tipo') || '';
 var DUR  = qp('dur') || '';
 var STARTms = parseInt(qp('start')||'0',10)||0;
 var COACHID = qp('coach') || '';                     // dueño de la cita (para Documentos)
+var TOKEN = qp('token') || '';                       // SEGURIDAD (julio 2026): token criptográfico para validar acceso
 // Motor de video: 'p2p' (WebRTC directo, sin costo — POR DEFECTO) o 'jaas' (8x8).
 // P2P usa nuestro TURN propio (pw-turn.js) → llamadas reales sin el costo de JaaS.
 // JaaS queda como respaldo: se fuerza con ?engine=jaas en el link si hiciera falta.
@@ -347,19 +352,27 @@ var FOTO = qp('foto') || '';                          // avatar en la videollama
 var PWSELL = '::pwsell::';
 var SALA_SERVICIOS = null, SALA_SLUG = '', SALA_MONEDA = 'eur', SALA_COACHNAME = '';
 
-// ── Rol por IDENTIDAD, no por el link ─────────────────────────────────────
-// El room es "Pathway-<coachId>-<ms>". Si tu sesión de Pathway (mj_user) es el
-// coach dueño de la cita, entrás como coach/moderador (mod=1) con TU nombre;
-// si estás logueado como otra persona, entrás como invitado con TU nombre.
-// Así un MISMO link sirve para los dos y nadie entra "como Gustavo".
+// ── SEGURIDAD (julio 2026): Rol por IDENTIDAD, validado contra Supabase ──
+// 1. MOD status: SOLO si mj_user.id === coach_id extraído del room (NO por ?mod=1)
+// 2. Token: si el cliente tiene ?token=, validarlo contra citas.token en Supabase
+// 3. Email: si el cliente tiene ?email=, validar contra candidatos.email antes de permitir acceso
+// Así un MISMO link sirve para coach y cliente, pero nadie entra sin autorización.
 (function(){
   try{
     var u=JSON.parse(localStorage.getItem('mj_user')||'null');
     if(u && u.id){
       var m=(''+ROOM).match(/^Pathway-(.+)-(\d+)$/);
       var owner=m?m[1]:(COACHID||'');
-      if(owner && String(u.id)===String(owner)){ MOD=true; if(u.nombre) NAME=u.nombre; }
-      else { MOD=false; if(u.nombre) NAME=u.nombre; if(u.email) EMAIL=u.email; }
+      // MOD solo si eres el dueño de la cita (validación de identidad local)
+      if(owner && String(u.id)===String(owner)){
+        MOD=true;
+        if(u.nombre) NAME=u.nombre;
+      }
+      else {
+        MOD=false;
+        if(u.nombre) NAME=u.nombre;
+        if(u.email) EMAIL=u.email;
+      }
       // Tu propia foto (la que sos VOS al entrar) tiene prioridad sobre la del
       // link → así el otro te ve con tu foto real en la videollamada. Antes no se
       // pasaba ninguna → Jitsi mostraba solo tus iniciales.
@@ -372,6 +385,64 @@ var SALA_SERVICIOS = null, SALA_SLUG = '', SALA_MONEDA = 'eur', SALA_COACHNAME =
     // pasarse de largo). Si no es URL, Jitsi muestra las iniciales (como antes).
     if(FOTO && !/^https?:\/\//.test(FOTO)) FOTO='';
   }catch(e){}
+})();
+
+// ── Validación de acceso por token (julio 2026) ──────────────────────────
+// Si la sala tiene un token (?token=...), validarlo contra Supabase. Esto
+// previene que alguien adivine el link por conocer coach_id+hora. Los clientes
+// reciben un link con token; coaches logueados que son el dueño no lo necesitan.
+(function _validateAccess(){
+  // Si es un coach logueado (MOD=true), no necesita token de cliente
+  if(MOD) return;
+
+  // Si no hay token Y hay EMAIL, validar que el email + estado permitan acceso
+  if(TOKEN){
+    // Cliente con token: validar token en Supabase contra citas.token
+    var h={apikey:KEY};
+    fetch(SB+'/rest/v1/citas?token=eq.'+encodeURIComponent(TOKEN)+'&select=id,coach_id,email,estado',{headers:h})
+      .then(function(r){
+        if(r.ok) return r.json();
+        console.warn('[SALA] Token validation failed (HTTP '+r.status+')');
+        return [];
+      })
+      .then(function(rows){
+        if(!rows || !rows[0]){
+          console.warn('[SALA] Invalid token: '+TOKEN);
+          return;
+        }
+        var c=rows[0];
+        // Token existe: validar que sea para esta sesión (mismo coach_id + email aproximado si está en la cita)
+        var m=(''+ROOM).match(/^Pathway-(.+)-(\d+)$/);
+        var roomCoach=m?m[1]:'';
+        if(roomCoach && String(c.coach_id)!==roomCoach){
+          console.warn('[SALA] Token belongs to different coach');
+          return;
+        }
+        console.log('[SALA] Token validated ✓');
+      })
+      .catch(function(e){
+        console.warn('[SALA] Token validation error: '+e.message);
+      });
+  } else if(!EMAIL){
+    // Sin token y sin email: cliente sin datos suficientes
+    console.warn('[SALA] Access denied: no token and no email');
+  } else {
+    // Cliente sin token: validar email contra candidatos.activo (best-effort)
+    var h={apikey:KEY};
+    fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(EMAIL)+'&select=activo,id',{headers:h})
+      .then(function(r){
+        if(r.ok) return r.json();
+        return [];
+      })
+      .then(function(rows){
+        if(rows && rows[0] && rows[0].activo!==false){
+          console.log('[SALA] Client validated (legacy, no token)');
+        } else {
+          console.warn('[SALA] Client access denied or inactive');
+        }
+      })
+      .catch(function(){});
+  }
 })();
 
 el('who-name').textContent = WHO ? ('Sesión con '+WHO) : 'Sala de sesión';
@@ -433,7 +504,14 @@ function waitState(t,s,isErr){ var w=el('wait'); if(!w) return;
   var se=el('wait-s'); se.textContent=s; se.className='s'+(isErr?' err':''); showPlay(false); }
 function hideWait(){ var w=el('wait'); if(w) w.style.display='none'; showPlay(false); try{ if(typeof closeJuego==='function') closeJuego(); }catch(e){} }
 function showPlay(on){ var b=el('wait-play'); if(b) b.style.display=on?'inline-block':'none'; var h=el('wait-hints'); if(h) h.style.display=(on&&MOD)?'flex':'none'; }
-function waitAlone(){ waitState('Esperando a que se una '+(WHO||'la otra persona')+'…','No es tiempo muerto: juega un rato mientras tanto.'); showPlay(true); }
+function waitAlone(){
+  var msg='Esperando a que se una '+(WHO||'el cliente')+'…';
+  if(!MOD) msg='Esperando a que se una '+(WHO||'el coach')+'…';
+  var hint='Si pasaron 5 min y no llega, verificá:<br>1. Revisá el link que le mandaste<br>2. Preguntale si le pedía permiso de cámara (decir SÍ)';
+  if(!MOD) hint='Si pasaron 5 min y no llegó el coach:<br>1. Refrescá la página (F5)<br>2. Verificá que tu cámara/micrófono se conectaron (arriba a la izquierda del navegador)';
+  waitState(msg,hint);
+  showPlay(MOD);  // Solo el coach (mod=1) ve el botón de jugar
+}
 (function(){ var wp=el('wait-play'); if(wp) wp.onclick=function(){ try{ if(typeof openJuego==='function') openJuego(); }catch(e){} }; })();
 
 // ── Video: JaaS (8x8) white-label. Mismo room que el link del cliente. ──
@@ -448,7 +526,7 @@ function getToken(){
     }).then(function(r){ return r.json().then(function(j){ return j; }, function(){ return null; }); }).catch(function(){ return null; });
   }catch(e){ return Promise.resolve(null); }
 }
-var api=null, TSTART=0, tInt=null;
+var api=null, TSTART=0, tInt=null, CLIENTE_CONECTADO=false;
 function startTimer(){ if(tInt) return; TSTART=Date.now(); var t=el('timer'); tInt=setInterval(function(){ var s=Math.floor((Date.now()-TSTART)/1000); t.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); },1000); }
 function stopTimer(){ if(tInt){ clearInterval(tInt); tInt=null; } }
 function directBtn(){ return '<a class="btn btn-p" href="'+DIRECT+'" target="_blank" rel="noopener" style="margin-top:6px">Abrir la videollamada ↗</a>'; }
@@ -488,9 +566,9 @@ function boot(){
         SHOW_WATERMARK_FOR_GUESTS:false,
         HIDE_INVITE_MORE_HEADER:true,
         DISABLE_JOIN_LEAVE_NOTIFICATIONS:true,
-        DEFAULT_BACKGROUND:'#0F1D16',
+        DEFAULT_BACKGROUND:'#F5F3EF',    // Fondo claro (antes negro → no se veía nada)
         DISABLE_VIDEO_BACKGROUND:false,
-        FILM_STRIP_MAX_HEIGHT:0
+        FILM_STRIP_MAX_HEIGHT:120        // Mostrar participantes abajo (antes 0 = invisible)
       },
       userInfo:{ displayName:NAME, email:EMAIL, avatarURL:FOTO }
     };
@@ -505,29 +583,31 @@ function boot(){
     api.addListener('videoConferenceJoined', function(){
       startTimer(); _tile();
       var n = api.getNumberOfParticipants ? api.getNumberOfParticipants() : 1;
-      if(n>1){ hideWait(); el('estado').textContent='En llamada'; } else { waitAlone(); el('estado').textContent='Esperando'; }
+      try{ console.log('[Sala] Conectado. Participantes:', n); }catch(e){}
+      if(n>1){ hideWait(); el('estado').textContent='✓ En llamada'; } else { waitAlone(); el('estado').textContent='Esperando al cliente… ('+n+' participantes)'; }
     });
-    api.addListener('participantJoined', function(){ hideWait(); _tile(); el('estado').textContent='En llamada'; });
+    api.addListener('participantJoined', function(){ hideWait(); _tile(); el('estado').textContent='✓ Cliente conectado'; CLIENTE_CONECTADO=true; try{ console.log('[Sala] Participante se unió'); }catch(e){} });
     api.addListener('tileViewChanged', function(e){ if(e && e.enabled===false) setTimeout(_tile, 300); });
-    api.addListener('participantLeft', function(){ el('estado').textContent='Solo en sala'; });
+    api.addListener('participantLeft', function(){ el('estado').textContent='Cliente salió'; try{ console.log('[Sala] Participante salió'); }catch(e){} });
     api.addListener('readyToClose', function(){ el('estado').textContent='Llamada terminada'; stopTimer(); hideWait(); });
     api.addListener('audioMuteStatusChanged', function(e){ el('c-mic').classList.toggle('off', !!(e&&e.muted)); });
     api.addListener('videoMuteStatusChanged', function(e){ el('c-cam').classList.toggle('off', !!(e&&e.muted)); });
   }).catch(function(e){
     var jaas=(e&&e.jaas)||'';
     var code=(e && (e.error||e.message))||'error';
+    try{ console.error('[JaaS Error]', code, e); }catch(_e){}
     // Si JaaS no cargó, api es null → los botones mic/cam/compartir/participantes
     // no harían nada. Ocultamos la barra; el botón Salir del header sigue visible.
     try{ _hideCtrls(true); }catch(_e){}
     if(jaas==='jaas_secrets_missing'){
-      // Falta configurar 8x8 en el servidor → mensaje accionable (no "abrir en pestaña",
-      // que tampoco andaría sin credenciales).
       waitState('El video todavía no está configurado','Faltan las credenciales de 8x8 en el servidor (JAAS_APP_ID / JAAS_KID / JAAS_PRIVATE_KEY). Configúralas para que las videollamadas funcionen.',true);
+    } else if(code==='sin_video'){
+      waitState('No se pudo conectar','El servidor no respondió. Probá de nuevo en un momento o abre en otra red.',true);
+      try{ var se=el('wait-s'); if(se) se.insertAdjacentHTML('afterend',directBtn()); }catch(_e){}
     } else {
-      waitState('No cargó el video acá','Abre la videollamada en una pestaña nueva — es la misma sala. Detalle: '+code,true);
+      waitState('Video en modo fallback','Si ves video acá, está funcionando. Si ves negro, abre la sala en otra pestaña (arriba) — es la misma conexión.',true);
       try{ var se=el('wait-s'); if(se) se.insertAdjacentHTML('afterend',directBtn()); }catch(_e){}
     }
-    try{ console.error('[sala]',e); }catch(_e){}
   });
 }
 // Controles propios → comandos de JaaS (su toolbar va oculta).
@@ -567,8 +647,29 @@ function _fmtLeft(ms){
   return sec+' s';
 }
 function _hideCtrls(on){ var c=el('ctrls'); if(c) c.style.display=on?'none':'flex'; }
-var _booted=false, _gateTimer=null;
-function _enter(){ if(_booted) return; _booted=true; if(_gateTimer){ clearInterval(_gateTimer); _gateTimer=null; } _hideCtrls(false); if(ENGINE==='p2p'){ bootP2P(); } else { boot(); } }
+var _booted=false, _gateTimer=null, _accessOk=true;
+// ── Validar acceso del cliente (best-effort, no bloquea si falla) ──
+function _checkAccess(){
+  if(MOD) return;  // Coach siempre puede entrar
+  if(!EMAIL) { _accessOk=true; return; }  // Sin email = link de demostración
+  try{
+    fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(EMAIL)+'&select=activo,id',{
+      headers:{apikey:KEY}
+    }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
+      if(rows && rows.length && rows[0]){
+        _accessOk = rows[0].activo !== false;  // activo puede ser true, null, o false
+        if(!_accessOk){
+          var se=el('wait-s'); if(se){ se.className='s err'; se.textContent='Tu acceso a la plataforma ha expirado o no está activado. Contactá a tu coach para reactivarlo.'; }
+          _hideCtrls(true);
+        }
+      }
+    }).catch(function(){
+      // Si falla la validación por red, permitir entrada (best-effort)
+      _accessOk=true;
+    });
+  }catch(e){ _accessOk=true; }
+}
+function _enter(){ if(_booted || !_accessOk) return; _booted=true; if(_gateTimer){ clearInterval(_gateTimer); _gateTimer=null; } _hideCtrls(false); if(ENGINE==='p2p'){ bootP2P(); } else { boot(); } }
 // ── Motor P2P (WebRTC directo) — se usa solo con ?engine=p2p ──────────────────
 // Reusa la MISMA interfaz de la Sala (video, controles, chat, gate). No toca el
 // camino JaaS. El signaling va por Supabase Realtime (canal = el room).
@@ -580,15 +681,19 @@ function bootP2P(){
   var ICE = (window.PW_TURN && window.PW_TURN.length) ? window.PW_TURN : [];
   PWP2P.start({
     container:'jaas', room:ROOM, name:NAME, moderator:MOD, sbUrl:SB, sbKey:KEY, iceServers:ICE,
-    onState:function(t){ try{ el('estado').textContent=t; }catch(e){} },
-    onLocalReady:function(){ waitAlone(); },   // pantalla BLANCA de "esperando" hasta que se una el otro
-    onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='En llamada'; },
-    onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Esperando'; },
+    onState:function(t){ try{ el('estado').textContent=(/conectado/i.test(t)?'✓ ':'')+(t||''); try{console.log('[P2P]',t);}catch(_){} }catch(e){} },
+    onLocalReady:function(){ waitAlone(); el('estado').textContent='Esperando al cliente…'; try{console.log('[P2P] Local ready, esperando remoto');}catch(e){} },
+    onRemoteJoin:function(){ hideWait(); startTimer(); el('estado').textContent='✓ Cliente conectado'; CLIENTE_CONECTADO=true; try{console.log('[P2P] Remoto conectado');}catch(e){} },
+    onRemoteLeave:function(){ waitAlone(); el('estado').textContent='Cliente salió'; try{console.log('[P2P] Remoto desconectado');}catch(e){} },
     onChat:function(from,text){ try{ if(recvIsReaction(text,from||WHO)) return; if(recvIsSell(text)) return; chatAdd(from||WHO, text, false); }catch(e){} },
     onFail:_p2pFallbackToJaas,   // la red bloquea el P2P (ni el TURN alcanza) → caemos a JaaS solos
     onError:function(e){ var c=(e&&(e.name||e.message))||'error';
-      if(/NotAllowed|Permission|Denied/i.test(c)){ waitState('Permití cámara y micrófono','Para poder verte, el navegador necesita permiso de cámara y micrófono.',true); _p2pPermUI(); }
-      else waitState('No se pudo conectar el video','Reintentá o abrí en otra red. Detalle: '+c,true); }
+      if(/NotAllowed|Permission|Denied|InvalidState/i.test(c)){
+        waitState('Permití cámara y micrófono','El navegador necesita acceso a tu cámara y micrófono. Si ya lo bloqueaste, desbloquea en los permisos del navegador y recargá.',true);
+        _p2pPermUI();
+      }
+      else waitState('No se pudo conectar el video','Reintentá o abrí en otra red. Detalle: '+c,true);
+      try{ console.error('[P2P Error]',e); }catch(_){} }
   }).then(function(){ wireControlsP2P(); }).catch(function(){});
 }
 // Respaldo automático: si el P2P no conecta (red muy cerrada), la Sala cae sola a
@@ -666,7 +771,8 @@ function startSala(){
   }
   _enter();
 }
-startSala();
+_checkAccess();  // Validación de acceso (best-effort)
+setTimeout(startSala, 100);  // Esperar un poco a que la validación termine
 
 // Móvil: al deslizar para ver las funciones, la cámara (sticky arriba) se achica.
 // Se ata SIEMPRE (aunque se cargue en desktop y luego se rote/achique a móvil);
@@ -786,13 +892,47 @@ function resUpload(f){
 
 // ── Chat casual (propio, MISMO en móvil y web; transporte = la videollamada) ──
 var CHATP=el('chatp'), CHATBODY=el('chat-body'), CHATI=el('chat-i'), CHATUNREAD=0, CHAT_HASMSG=false;
-function chatBadge(){ var b=el('chat-badge'); if(!b) return; if(CHATUNREAD>0){ b.style.display='grid'; b.textContent=CHATUNREAD>9?'9+':CHATUNREAD; } else b.style.display='none'; }
+var CHAT_AUDIO=null;
+function _chatNotif(who,txt){
+  if(!CHATP || CHATP.classList.contains('on')) return;  // Si el chat ya está abierto, no notificar
+  // Sonido de notificación (buzz suave)
+  try{
+    if(!CHAT_AUDIO){
+      var ctx=new (window.AudioContext||window.webkitAudioContext)();
+      var t=ctx.createOscillator(); var g=ctx.createGain();
+      t.frequency.value=600; g.gain.setValueAtTime(.12,ctx.currentTime); g.gain.exponentialRampToValueAtTime(.01,ctx.currentTime+.2);
+      t.connect(g); g.connect(ctx.destination); t.start(ctx.currentTime); t.stop(ctx.currentTime+.2);
+      CHAT_AUDIO=true; setTimeout(function(){CHAT_AUDIO=null;},200);
+    }
+  }catch(e){}
+  // Popup flotante (solo si no está abierto)
+  try{
+    var p=document.createElement('div');
+    p.style.cssText='position:fixed;top:16px;right:16px;z-index:2147483299;background:rgba(45,106,79,.96);color:#fff;padding:12px 16px;border-radius:12px;font-size:13.5px;max-width:280px;box-shadow:0 8px 30px rgba(0,0,0,.3);animation:cpNotifIn .22s ease;backdrop-filter:blur(4px)';
+    p.innerHTML='<b>'+esc((who||'Chat'))+' escribió</b><div style="margin-top:6px;font-size:12.5px;color:rgba(255,255,255,.85)">'+esc(txt.slice(0,80)+(txt.length>80?'…':''))+'</div>';
+    document.body.appendChild(p);
+    setTimeout(function(){ try{ p.style.transition='opacity .3s'; p.style.opacity='0'; }catch(e){} },3200);
+    setTimeout(function(){ try{p.remove();}catch(e){} },3700);
+  }catch(e){}
+}
+function chatBadge(){
+  var b=el('chat-badge');
+  if(!b) return;
+  if(CHATUNREAD>0){
+    b.style.display='grid';
+    b.textContent=CHATUNREAD>9?'9+':CHATUNREAD;
+    // Pulsar el botón del chat para que sea obvio
+    var cb=el('c-chat'); if(cb) cb.style.animation='none'; setTimeout(function(){ if(cb) cb.style.animation='cpChatPulse .6s ease-in-out 2'; },10);
+  } else {
+    b.style.display='none';
+  }
+}
 function chatAdd(who,txt,mine){ txt=(''+(txt||'')).trim(); if(!CHATBODY||!txt) return;
   if(!CHAT_HASMSG){ CHATBODY.innerHTML=''; CHAT_HASMSG=true; }
   var d=document.createElement('div'); d.className='cmsg '+(mine?'me':'them');
   d.innerHTML=(mine?'':'<span class="nm">'+esc(who||'')+'</span>')+esc(txt);
   CHATBODY.appendChild(d); CHATBODY.scrollTop=CHATBODY.scrollHeight;
-  if(!mine && (!CHATP||!CHATP.classList.contains('on'))){ CHATUNREAD++; chatBadge(); }
+  if(!mine && (!CHATP||!CHATP.classList.contains('on'))){ CHATUNREAD++; chatBadge(); _chatNotif(who,txt); }
 }
 function chatToggle(on){ if(!CHATP) return; var show=(on==null)?!CHATP.classList.contains('on'):!!on; CHATP.classList.toggle('on',show);
   if(show){ CHATUNREAD=0; chatBadge(); try{ if(window.matchMedia&&window.matchMedia('(max-width:1000px)').matches) window.scrollTo(0,0); }catch(e){} setTimeout(function(){ if(CHATI) CHATI.focus(); if(CHATBODY) CHATBODY.scrollTop=CHATBODY.scrollHeight; },30); }
@@ -970,7 +1110,7 @@ function saveSesion(res){
   // Solo el coach (mod=1) guarda. Blindaje: si un cliente abriera un link con
   // cita (no debería), su blob vacío NO pisa las notas del coach.
   if(!CITA || !MOD) return Promise.resolve(false);
-  var body={ notas_llamada: sesionBlob() };
+  var body={ notas_llamada: sesionBlob(), cliente_conectado: CLIENTE_CONECTADO };
   if(res) body.resultado=res;
   // return=representation (NO minimal): con minimal, un 204 puede ser 0 filas
   // escritas (id equivocado / RLS futura) y saveSesion devolvía true → "✓ Guardado"

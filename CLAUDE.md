@@ -97,15 +97,22 @@ SVGs, tamaños 16/18/20, colores distintos). Ahora hay **un solo sistema**:
   contenido (medallas, banderas, mascota, agenda fitness) y en emails/WhatsApp.
 - **REGLA DE CONSISTENCIA — un concepto = UN icono, en TODA la plataforma.** El
   mismo concepto NO puede tener dos iconos distintos entre pantallas (cliente vs
-  coach, panel vs multicoach, etc.). La **fuente canónica** es el mapa
-  `_CLI_ICON` de `panel-v2.html` (secciones del cliente). Tabla canónica:
+  coach, panel vs multicoach, etc.). **Tabla canónica:**
+  
+  **Sidebar (multicoach):**
+  dashboard=`layoutGrid` · clientes=`users` · personas=`users` · coaches=`briefcase`
+  · colaboradores=`user` · programas=`graduation` · agenda=`calendar` · comunidad=`chat`
+  · analytics=`barChart` · cobros=`creditCard` · configuración=`settings`
+  
+  **Portal del cliente (panel-v2):**
   perfil=`user` · plan=`clipboard` · rutina/gym=`dumbbell` · antropometría=`ruler`
   · nutrición=`apple` · sesiones=`calendar` · finanzas=`dollar` · gestión=`settings`
   · avance/progreso=`trendUp` · documentos=`fileText` · **mensajes/chat=`chat`**
-  (globo, NO `mail`/sobre — el sobre es SOLO para email real) · **clientes=`users`**
-  (no `handshake`). El `dumbbell` es la barra horizontal (idéntica en el nav del
-  cliente y en el coach). Al iconizar un concepto nuevo, buscá si ya existe en la
-  tabla y reusá ese nombre; si es nuevo, agregalo a la tabla.
+  (globo, NO `mail`/sobre — el sobre es SOLO para email real).
+  
+  El `dumbbell` es la barra horizontal (idéntica en el nav del cliente y en el coach).
+  Al iconizar un concepto nuevo, buscá si ya existe en la tabla y reusá ese nombre;
+  si es nuevo, agregalo a la tabla. **Nunca** el mismo concepto con dos iconos.
 - Doc completo: `docs/icon-system.md`. Blindado por `scripts/check-icons.js`
   (falla si aparece otra librería, se rompe el spec/fuente única, o se rompe la
   consistencia concepto→icono de la tabla canónica).
