@@ -81,10 +81,47 @@ Deno.serve(async (req: Request) => {
     }
 
     const pushData = await pushResp.json();
-    const hangoutLink = pushData.hangoutLink || "";
+    let hangoutLink = pushData.hangoutLink || "";
+    const eventId = pushData.event_id || "";
 
-    // 4) Si hay hangoutLink, guardar en citas.meet_link
-    if (hangoutLink) {
+    // 4) Si Google aún no generó el Meet link, reintentar después de 2 segundos
+    if (!hangoutLink && eventId) {
+      // Programar reintento asincrónico (no bloquea)
+      try {
+        // Esperar 2s y llamar a gcal-push nuevamente para obtener el link
+        setTimeout(async () => {
+          try {
+            const retryResp = await fetch(`${SB_URL}/functions/v1/gcal-push`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                coach_id,
+                op: "update",
+                event_id: eventId,
+                event: { summary: "" }, // dummy para trigger update
+              }),
+            });
+            if (retryResp.ok) {
+              const retryData = await retryResp.json();
+              const retryLink = retryData.hangoutLink || "";
+              if (retryLink) {
+                // Guardar el link que finalmente llegó
+                await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}`, {
+                  method: "PATCH",
+                  headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+                  body: JSON.stringify({ meet_link: retryLink }),
+                });
+              }
+            }
+          } catch (e) {
+            console.error(`Retry sync for cita ${citaId} failed:`, e);
+          }
+        }, 2000);
+      } catch (e) {
+        console.warn(`Could not schedule retry for cita ${citaId}`, e);
+      }
+    } else if (hangoutLink) {
+      // Guardar link inmediatamente si ya lo tenemos
       const ur = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}`, {
         method: "PATCH",
         headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
@@ -92,11 +129,10 @@ Deno.serve(async (req: Request) => {
       });
       if (!ur.ok) {
         console.error(`Failed to save meet_link for cita ${citaId}`, ur.status);
-        // No es error fatal — el link se generó pero no se guardó en BD
       }
     }
 
-    return json({ ok: true, hangoutLink, event_id: pushData.event_id || "" });
+    return json({ ok: true, hangoutLink, event_id: eventId, cita_id: citaId });
   } catch (e) {
     console.error("sync-cita-to-gcal error:", e);
     return json({ error: "internal_error", detail: String(e) }, 500);

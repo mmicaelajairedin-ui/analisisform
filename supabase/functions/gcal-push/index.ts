@@ -131,7 +131,16 @@ Deno.serve(async (req: Request) => {
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return json({ ok: false, reason: "write_failed", status: r.status, detail: (d && d.error && d.error.message) || "" });
-    const hangoutLink = (d.conferenceData && d.conferenceData.entryPoints && d.conferenceData.entryPoints[0] && d.conferenceData.entryPoints[0].uri) || (d.hangoutLink || "");
+    // Extraer Google Meet link de conferenceData (puede tardar un momento en generarse)
+    let hangoutLink = "";
+    if (d.conferenceData && d.conferenceData.entryPoints) {
+      for (const ep of d.conferenceData.entryPoints) {
+        if (ep.entryPointType === "video" && ep.uri) {
+          hangoutLink = ep.uri;
+          break;
+        }
+      }
+    }
     return json({ ok: true, event_id: d.id || eventId, hangoutLink });
   } catch { return json({ ok: false, reason: "google_unreachable" }); }
 });
