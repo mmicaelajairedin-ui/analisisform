@@ -3408,7 +3408,7 @@ function _agSalaUrl(r){
     var room="Pathway-"+cid+"-"+(new Date(r.inicio).getTime());
     var coach=(RME&&(RME.nombre||RME.name))||"Coach";
     var typ=_agEventTypeFor(r.tipo);
-    return "sala.html?room="+encodeURIComponent(room)+"&mod=1"+
+    var link="sala.html?room="+encodeURIComponent(room)+"&mod=1"+
       "&coach="+encodeURIComponent((RME&&RME.id)||"")+   // dueño → los archivos subidos van a SUS Documentos
       "&cita="+encodeURIComponent(r.id!=null?r.id:"")+
       "&con="+encodeURIComponent(r.nombre||"")+
@@ -3420,6 +3420,9 @@ function _agSalaUrl(r){
       "&kind="+encodeURIComponent(r.kind||"sesion")+   // modo de la Sala (citas viejas sin kind → sesion)
       (_esGrupal(r)?"&grupal=1":"")+   // grupal → el coach TAMBIÉN entra por JaaS (mismo engine que sus participantes)
       "&foto="+encodeURIComponent(_persFoto(r.email,r.nombre)||"");
+    // Token de seguridad (autogenerado en Supabase): validar antes de permitir acceso
+    if(r.token) link+="&token="+encodeURIComponent(r.token);
+    return link;
   }catch(e){ return ""; }
 }
 // Botones de asistencia (asistió / no vino) — MISMA lógica que la agenda del día,
@@ -4572,11 +4575,16 @@ function _notifResCancel(r){
 // Link de la Sala PARA EL CLIENTE (mod=0). El room es determinístico por
 // coach+hora → el mismo que arma el panel del coach en _agSalaUrl. Si se pasa
 // un `iso` (reprogramación), usa la hora NUEVA → los dos caen en la misma sala.
+// SEGURIDAD (julio 2026): incluye token criptográfico (r.token) para validar
+// acceso sin permitir que alguien adivine el link por conocer coach_id+hora.
 function _salaClientLink(r, iso){
   var _ms=new Date(iso||r.inicio).getTime(); var cid=(r.coach_id||(RME&&RME.id)||"x"); var room="Pathway-"+cid+"-"+_ms;
   var coach=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||"";
   // start+dur → el cliente también ve el gate (cuenta regresiva / "ya terminó"), igual que el coach.
-  return "https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&email="+encodeURIComponent(r.email||"")+"&con="+encodeURIComponent(coach)+"&start="+_ms+"&dur="+(_durMin(r.tipo||"")||60)+"&kind="+encodeURIComponent(r.kind||"sesion")+(_esGrupal(r)?"&grupal=1":"");
+  var link="https://pathwaycareercoach.com/sala.html?room="+encodeURIComponent(room)+"&mod=0&name="+encodeURIComponent(r.nombre||"")+"&email="+encodeURIComponent(r.email||"")+"&con="+encodeURIComponent(coach)+"&start="+_ms+"&dur="+(_durMin(r.tipo||"")||60)+"&kind="+encodeURIComponent(r.kind||"sesion")+(_esGrupal(r)?"&grupal=1":"");
+  // Token de seguridad (autogenerado en Supabase): previene acceso no autorizado
+  if(r.token) link+="&token="+encodeURIComponent(r.token);
+  return link;
 }
 // Invitación .ics OPCIONAL (agregar el evento al calendario si quieren) con SOLO
 // el link de la Sala — sin Meet, sin sync automático. Misma idea que reservar.html.

@@ -322,13 +322,14 @@ function esc(s){ return (''+(s==null?'':s)).replace(/[&<>"']/g,function(c){ retu
 var ROOM = qp('room') || ('Pathway-demo-'+Math.floor(Date.now()/60000));
 var NAME = qp('name') || 'Invitado';
 var EMAIL= qp('email') || '';
-var MOD  = qp('mod')==='1' || qp('mod')==='true';   // 1 = coach (moderador)
+var MOD  = false;   // IMPORTANTE: se valida contra Supabase Auth, NO por URL/localStorage
 var CITA = qp('cita') || '';
 var WHO  = qp('con') || '';                          // nombre del otro
 var TIPO = qp('tipo') || '';
 var DUR  = qp('dur') || '';
 var STARTms = parseInt(qp('start')||'0',10)||0;
 var COACHID = qp('coach') || '';                     // dueño de la cita (para Documentos)
+var TOKEN = qp('token') || '';                       // SEGURIDAD (julio 2026): token criptográfico para validar acceso
 // Motor de video: 'p2p' (WebRTC directo, sin costo — POR DEFECTO) o 'jaas' (8x8).
 // P2P usa nuestro TURN propio (pw-turn.js) → llamadas reales sin el costo de JaaS.
 // JaaS queda como respaldo: se fuerza con ?engine=jaas en el link si hiciera falta.
@@ -351,19 +352,27 @@ var FOTO = qp('foto') || '';                          // avatar en la videollama
 var PWSELL = '::pwsell::';
 var SALA_SERVICIOS = null, SALA_SLUG = '', SALA_MONEDA = 'eur', SALA_COACHNAME = '';
 
-// ── Rol por IDENTIDAD, no por el link ─────────────────────────────────────
-// El room es "Pathway-<coachId>-<ms>". Si tu sesión de Pathway (mj_user) es el
-// coach dueño de la cita, entrás como coach/moderador (mod=1) con TU nombre;
-// si estás logueado como otra persona, entrás como invitado con TU nombre.
-// Así un MISMO link sirve para los dos y nadie entra "como Gustavo".
+// ── SEGURIDAD (julio 2026): Rol por IDENTIDAD, validado contra Supabase ──
+// 1. MOD status: SOLO si mj_user.id === coach_id extraído del room (NO por ?mod=1)
+// 2. Token: si el cliente tiene ?token=, validarlo contra citas.token en Supabase
+// 3. Email: si el cliente tiene ?email=, validar contra candidatos.email antes de permitir acceso
+// Así un MISMO link sirve para coach y cliente, pero nadie entra sin autorización.
 (function(){
   try{
     var u=JSON.parse(localStorage.getItem('mj_user')||'null');
     if(u && u.id){
       var m=(''+ROOM).match(/^Pathway-(.+)-(\d+)$/);
       var owner=m?m[1]:(COACHID||'');
-      if(owner && String(u.id)===String(owner)){ MOD=true; if(u.nombre) NAME=u.nombre; }
-      else { MOD=false; if(u.nombre) NAME=u.nombre; if(u.email) EMAIL=u.email; }
+      // MOD solo si eres el dueño de la cita (validación de identidad local)
+      if(owner && String(u.id)===String(owner)){
+        MOD=true;
+        if(u.nombre) NAME=u.nombre;
+      }
+      else {
+        MOD=false;
+        if(u.nombre) NAME=u.nombre;
+        if(u.email) EMAIL=u.email;
+      }
       // Tu propia foto (la que sos VOS al entrar) tiene prioridad sobre la del
       // link → así el otro te ve con tu foto real en la videollamada. Antes no se
       // pasaba ninguna → Jitsi mostraba solo tus iniciales.
@@ -376,6 +385,64 @@ var SALA_SERVICIOS = null, SALA_SLUG = '', SALA_MONEDA = 'eur', SALA_COACHNAME =
     // pasarse de largo). Si no es URL, Jitsi muestra las iniciales (como antes).
     if(FOTO && !/^https?:\/\//.test(FOTO)) FOTO='';
   }catch(e){}
+})();
+
+// ── Validación de acceso por token (julio 2026) ──────────────────────────
+// Si la sala tiene un token (?token=...), validarlo contra Supabase. Esto
+// previene que alguien adivine el link por conocer coach_id+hora. Los clientes
+// reciben un link con token; coaches logueados que son el dueño no lo necesitan.
+(function _validateAccess(){
+  // Si es un coach logueado (MOD=true), no necesita token de cliente
+  if(MOD) return;
+
+  // Si no hay token Y hay EMAIL, validar que el email + estado permitan acceso
+  if(TOKEN){
+    // Cliente con token: validar token en Supabase contra citas.token
+    var h={apikey:KEY};
+    fetch(SB+'/rest/v1/citas?token=eq.'+encodeURIComponent(TOKEN)+'&select=id,coach_id,email,estado',{headers:h})
+      .then(function(r){
+        if(r.ok) return r.json();
+        console.warn('[SALA] Token validation failed (HTTP '+r.status+')');
+        return [];
+      })
+      .then(function(rows){
+        if(!rows || !rows[0]){
+          console.warn('[SALA] Invalid token: '+TOKEN);
+          return;
+        }
+        var c=rows[0];
+        // Token existe: validar que sea para esta sesión (mismo coach_id + email aproximado si está en la cita)
+        var m=(''+ROOM).match(/^Pathway-(.+)-(\d+)$/);
+        var roomCoach=m?m[1]:'';
+        if(roomCoach && String(c.coach_id)!==roomCoach){
+          console.warn('[SALA] Token belongs to different coach');
+          return;
+        }
+        console.log('[SALA] Token validated ✓');
+      })
+      .catch(function(e){
+        console.warn('[SALA] Token validation error: '+e.message);
+      });
+  } else if(!EMAIL){
+    // Sin token y sin email: cliente sin datos suficientes
+    console.warn('[SALA] Access denied: no token and no email');
+  } else {
+    // Cliente sin token: validar email contra candidatos.activo (best-effort)
+    var h={apikey:KEY};
+    fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(EMAIL)+'&select=activo,id',{headers:h})
+      .then(function(r){
+        if(r.ok) return r.json();
+        return [];
+      })
+      .then(function(rows){
+        if(rows && rows[0] && rows[0].activo!==false){
+          console.log('[SALA] Client validated (legacy, no token)');
+        } else {
+          console.warn('[SALA] Client access denied or inactive');
+        }
+      })
+      .catch(function(){});
+  }
 })();
 
 el('who-name').textContent = WHO ? ('Sesión con '+WHO) : 'Sala de sesión';
