@@ -433,6 +433,31 @@ No es una maqueta. Es el producto.
 
 ---
 
+## 🔒 LOCKED DECISIONS
+
+Componentes congelados que nunca se modifican salvo orden explícita de Mica.
+
+### Sprint 1 ✅ LOCKED
+- **Sidebar Design System v2.0** — Logo Container (80px), Spacing Rhythm, Section Titles, Active State, Collapsed (72px), Mobile hierarchy
+  - Status: **CONGELADO en main**
+  - Commit: 9fb478ac
+  - Ubicación: `multicoach.html` (líneas 50-320)
+  - Regla: 0 cambios sin aprobación explícita
+
+### Sprint 2 🚧 EN CONSTRUCCIÓN
+- **Epic 1: Header** — Status: En desarrollo
+- **Epic 2: Dashboard Foundation** — Status: En desarrollo
+- **Epic 3: MetricCard Component** — Status: En desarrollo
+- **Epic 4: EmptyState System** — Status: En desarrollo
+- **Epic 5: Smart Branding Architecture** — Status: Preparación
+- **Epic 6: Role Architecture** — Status: Preparación
+- **Epic 7: Visual Quality** — Status: Validación continua
+
+### Sprint 3+ 🔮 FUTURO
+(Se agregarán conforme se completen)
+
+---
+
 **Última actualización:** 2026-08-01  
 **Próxima revisión:** Fin de Sprint 2
 
