@@ -1,7 +1,7 @@
 # PRODUCT BIBLE — MultiCoach by Pathway
 **Última actualización:** 2026-08-01  
-**Versión:** 2.0  
-**Estado:** En construcción — Sprint 2
+**Versión:** 2.1  
+**Estado:** Sprint 1 ✅ COMPLETE & LOCKED — Sprint 2 READY
 
 ---
 
@@ -314,8 +314,8 @@ CLIENTE (de la red):
 
 ## 📋 ROADMAP POR SPRINTS
 
-### Sprint 1 ✅ COMPLETO (Sidebar v3.0 — Premium SaaS Quality)
-- ✅ Logo Container System (120px, 80px máximo)
+### Sprint 1 ✅ APROBADO & MERGED (Sidebar v3.0 — Premium SaaS Quality)
+- ✅ Logo Container System (120px min-height, 110px max-width × 90px height)
 - ✅ Spacing Rhythm (28/32/28/12/8px exactos)
 - ✅ Section Titles como etiquetas (11px, 600, #A39A8F)
 - ✅ Items 44px altura, 15px font, 20px icons, 10px radius
@@ -323,12 +323,15 @@ CLIENTE (de la red):
 - ✅ Hover sutil (rgba 0,0,0,.03)
 - ✅ Collapsed State (72px, centrado perfecto)
 - ✅ Mobile bottom nav (72px height)
-- ✅ Sin líneas innecesarias (solo 1 divider)
+- ✅ Sin líneas innecesarias (NO dividers, clean aesthetic)
 - ✅ Configuración en nav (no en footer)
+- ✅ Help button: 10px font, 400 weight, 32px height, minimal styling
+- ✅ Footer border removed (whitespace only)
 
-**Estado:** CONGELADO en main (Commit d1276306)
+**Estado:** CONGELADO & MERGED a main (Commit a6ff81fb)
 **Aprobación:** Micaela ✅
 **Fecha:** 2026-08-01
+**Visual Validation:** ✅ Screenshots captured (expanded/collapsed/mobile)
 
 ### Sprint 2 🚧 LISTO PARA COMENZAR
 **Prerequisito:** Sprint 1 (Sidebar) APROBADO ✅
@@ -472,25 +475,26 @@ No es una maqueta. Es el producto.
 
 Componentes congelados que nunca se modifican salvo orden explícita de Mica.
 
-### Sprint 1 ✅ LOCKED & APPROVED
+### Sprint 1 ✅ LOCKED & MERGED
 - **Sidebar Design System v3.0** — Premium SaaS Quality
-  - Status: **CONGELADO en main**
-  - Commit: d1276306 (refactor: design specification exactly)
+  - Status: **MERGED a main & CONGELADO**
+  - Commit: a6ff81fb (Merge branch 'claude/multicoach-product-spec-m269gc')
   - Ubicación: `multicoach.html` (líneas 50-450)
   - Especificación: Premium (Apple/Notion/Linear/Stripe)
   - **Regla:** CERO cambios sin aprobación explícita de Mica
   - **Cambios permitidos:** Solo bugs reales (no mejoras)
   
-**Especificación Bloqueada:**
-- Logo: 120px container, 80px máximo, object-fit: contain
+**Especificación Bloqueada (FINAL):**
+- Logo: 120px container, 110px max-width × 90px height, object-fit: contain
 - Ancho: 240px expandido, 72px colapsado
 - Items: 44px altura, 12px padding horizontal, 10px radius, 15px font, 20px icons
 - Espaciado: 28px logo→Dashboard, 32px Dashboard→PERSONAS, 28px categorías, 12px título→item, 8px items
 - Categorías: 11px, 600, uppercase, #A39A8F
 - Active state: 3px left border verde, rgba(232,223,212,.55) bg, 600 weight
 - Hover: rgba(0,0,0,.03) only
-- Dividers: Solo uno antes del footer
-- Footer: Margin-top auto, solo "¿Necesitas ayuda?"
+- Dividers: NONE (whitespace only, no border lines)
+- Footer: Margin-top auto, border-top: none, solo "¿Necesitas ayuda?"
+- Help button: 10px font, 400 weight, 32px height, 16px icon
 - Configuración: En nav (después de Cobros), NO en footer
 - Niche switcher: Hidden
 - Game button: Hidden
