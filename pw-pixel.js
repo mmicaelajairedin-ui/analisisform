@@ -21,6 +21,15 @@
 (function () {
   'use strict';
 
+  // Deshabilitar tracking en app nativa (iOS/Android) — Apple requiere App
+  // Tracking Transparency. En app, no hacemos tracking; en web, sí.
+  if (typeof window !== 'undefined') {
+    if (window.pw_native) return;
+    if (typeof window.Capacitor !== 'undefined' && window.Capacitor.isNativePlatform) {
+      try { if (window.Capacitor.isNativePlatform()) return; } catch (e) {}
+    }
+  }
+
   // ===========================================================================
   // ⚙️  CONFIG — Pixel ID de Meta (Events Manager). Pathway Career Coach.
   var PW_META_PIXEL_ID = '1037557745446059';
