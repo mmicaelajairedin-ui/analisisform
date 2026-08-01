@@ -609,6 +609,24 @@ async function fetchCoachStats(){
     return map;
   }catch(_e){ return {}; }
 }
+// Trae reseñas reales de Supabase y las indexa por coach_slug
+async function fetchCoachReviews(){
+  try{
+    var r = await fetch(SB + '/rest/v1/reviews?select=coach_slug,nombre,rating,texto&order=created_at.desc&limit=1000',
+      { headers:{ apikey:KEY, Authorization:'Bearer '+KEY } });
+    if(!r.ok) return {};
+    var reviews = await r.json() || [];
+    var map = {};
+    reviews.forEach(function(rev){
+      var slug = String(rev.coach_slug||'').trim().toLowerCase();
+      if(slug){
+        if(!map[slug]) map[slug] = [];
+        if(map[slug].length < 2) map[slug].push(rev); // máx 2 reseñas por coach
+      }
+    });
+    return map;
+  }catch(_e){ return {}; }
+}
 function ini(n){return String(n||'?').split(' ').map(function(w){return (w[0]||'').toUpperCase();}).join('').slice(0,2);}
 function appendRef(url,coachId){
   if(!url)return '';
@@ -624,7 +642,7 @@ function _coachCompleto(c){
   // Ya no exigimos Stripe ni foto: el modelo es suscripción, no comisión.
   return !!(c.perfil_publico_activo === true || cfg.perfil_publico_activo === true);
 }
-function buildCoachCard(c, statsMap, idx){
+function buildCoachCard(c, statsMap, idx, reviewsMap){
   var cfg = c.configuracion || {};
   var nombre = c.nombre || c.nombre_practica || 'Coach';
   var ct = (cfg.coach_type || (Array.isArray(cfg.especialidades) && cfg.especialidades[0]) || '').toString().toLowerCase();
@@ -737,6 +755,24 @@ function buildCoachCard(c, statsMap, idx){
   // Valores para ordenar (datos reales; precio vacío = va al final en "precio").
   var _precioMin = precios.length ? Math.min.apply(null, precios) : '';
   var _sortAttrs = ' data-rating="'+(st&&st.avg_rating?st.avg_rating:0)+'" data-reviews="'+(st?st.reviews_count:0)+'" data-clientes="'+(st?st.clientes_total:0)+'" data-precio="'+_precioMin+'" data-idx="'+(idx||0)+'"';
+  // Reseñas reales: máx 1 por tarjeta (más limpio)
+  var reviewsHtml = '';
+  if(reviewsMap && slug0 && reviewsMap[slug0] && reviewsMap[slug0].length > 0){
+    var rev = reviewsMap[slug0][0];
+    var stars = '★'.repeat(Math.max(1, Math.min(5, rev.rating || 5)));
+    reviewsHtml = '<div class="coach-reviews">'
+      + '<div class="review-item">'
+      +   '<div class="review-head">'
+      +     '<div class="review-av">'+escH((rev.nombre||'?')[0]).toUpperCase()+'</div>'
+      +     '<div>'
+      +       '<div class="review-name">'+escH(rev.nombre||'Cliente')+'</div>'
+      +       '<div class="review-stars">'+stars+'</div>'
+      +     '</div>'
+      +   '</div>'
+      +   '<p class="review-text">"'+escH((rev.texto||'').substring(0,80))+(rev.texto&&rev.texto.length>80?'...':'')+ '"</p>'
+      + '</div>'
+      + '</div>';
+  }
   // Toda la tarjeta es clickeable → al perfil del coach (si tiene slug). Sin
   // botón "Ver perfil": queda un texto-enlace sutil como pista.
   var cardHref = slug ? '/coach/'+escH(slug) : '';
@@ -754,6 +790,7 @@ function buildCoachCard(c, statsMap, idx){
     +   metricsHtml
     +   '<div class="coach-tags">'+tagsHtml+'</div>'
     +   priceRow
+    +   reviewsHtml
     +   (cardHref
         ? '<a class="coach-cta-hint" href="'+cardHref+'">Ver perfil <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></a>'
         : '<div style="margin-top:auto;display:flex;flex-direction:column;gap:10px;width:100%">'+ctaPrincipal+ctaSecundario+'</div>')
@@ -991,7 +1028,8 @@ async function loadCoachesDirectory(){
     if(!grid) return;
     // Stats reales (rating/clientes) en paralelo — enriquecen las tarjetas.
     var statsMap = await fetchCoachStats();
-    var html = coaches.map(function(c, i){ return buildCoachCard(c, statsMap, i); }).join('')
+    var reviewsMap = await fetchCoachReviews();
+    var html = coaches.map(function(c, i){ return buildCoachCard(c, statsMap, i, reviewsMap); }).join('')
       + '<div class="dir-empty" id="dir-empty">Todavía no hay coaches en este país. <a href="#directorio" style="color:var(--pw-bosque);text-decoration:underline;">Ver todos</a></div>';
     grid.innerHTML = html;
     attachFilterTabs();
