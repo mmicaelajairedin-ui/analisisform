@@ -1,7 +1,7 @@
 # PRODUCT BIBLE — MultiCoach by Pathway
 **Última actualización:** 2026-08-01  
-**Versión:** 2.1  
-**Estado:** Sprint 1 ✅ COMPLETE & LOCKED — Sprint 2 READY
+**Versión:** 2.2  
+**Estado:** Sprint 1 ✅ COMPLETE & LOCKED — Sprint 2 🚧 IN PROGRESS (EPIC 1 ✅)
 
 ---
 
@@ -264,7 +264,7 @@ CLIENTE (de la red):
 - ✅ Collapsed: 72px con tooltips
 - ✅ Mobile: bottom nav respetando jerarquía
 
-### Header (Sprint 2 — Pendiente de aprobación)
+### Header (Sprint 2 — ✅ COMPLETE)
 - ⏳ Search global (clientes, coaches, colaboradores, programas)
 - ⏳ Quick Action (+) — arquitectura lista, sin implementar
 - ⏳ Notificaciones
@@ -501,7 +501,7 @@ Componentes congelados que nunca se modifican salvo orden explícita de Mica.
 - Mobile: Bottom nav 100% width, 72px height
 
 ### Sprint 2 🚧 EN CONSTRUCCIÓN
-- **Epic 1: Header** — Status: En desarrollo
+- **Epic 1: Header** — Status: ✅ COMPLETE (User menu restructured with role-based visibility)
 - **Epic 2: Dashboard Foundation** — Status: En desarrollo
 - **Epic 3: MetricCard Component** — Status: En desarrollo
 - **Epic 4: EmptyState System** — Status: En desarrollo
