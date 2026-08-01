@@ -314,34 +314,69 @@ CLIENTE (de la red):
 
 ## 📋 ROADMAP POR SPRINTS
 
-### Sprint 1 ✅ COMPLETO (Sidebar v2.0)
-- ✅ Logo Container System (80px, adaptativo)
-- ✅ Spacing Rhythm (28/12/8px)
-- ✅ Section Titles como etiquetas
-- ✅ Active State elegante (borde + fondo)
-- ✅ Collapsed State (72px, tooltips)
-- ✅ Mobile hierarchy
+### Sprint 1 ✅ COMPLETO (Sidebar v3.0 — Premium SaaS Quality)
+- ✅ Logo Container System (120px, 80px máximo)
+- ✅ Spacing Rhythm (28/32/28/12/8px exactos)
+- ✅ Section Titles como etiquetas (11px, 600, #A39A8F)
+- ✅ Items 44px altura, 15px font, 20px icons, 10px radius
+- ✅ Active State elegante (3px border, rgba bg .55, weight 600)
+- ✅ Hover sutil (rgba 0,0,0,.03)
+- ✅ Collapsed State (72px, centrado perfecto)
+- ✅ Mobile bottom nav (72px height)
+- ✅ Sin líneas innecesarias (solo 1 divider)
+- ✅ Configuración en nav (no en footer)
 
-**Estado:** CONGELADO en main
+**Estado:** CONGELADO en main (Commit d1276306)
+**Aprobación:** Micaela ✅
+**Fecha:** 2026-08-01
 
-### Sprint 2 🚧 EN DESARROLLO
+### Sprint 2 🚧 LISTO PARA COMENZAR
+**Prerequisito:** Sprint 1 (Sidebar) APROBADO ✅
+
 **Epic 1: Header**
-- SearchBar global
-- QuickAction architecture
-- Notifications
-- Chat
+- SearchBar global (búsqueda clientes, coaches, programas)
+- QuickAction (+) — arquitectura lista
+- Notifications (con indicador)
+- Chat del equipo
 - UserSwitcher
 
 **Epic 2: Dashboard Foundation**
-- Estructura base
-- MetricCard component
-- EmptyState component
-- Responsive layouts
+- Estructura base (3-col grid)
+- MetricCard component (KPIs)
+- EmptyState component (cero datos)
+- Responsive (desktop/tablet/mobile)
+
+**Epic 3: MetricCard Component**
+- Tarjetas reutilizables
+- Shadow + border
+- Responsive grid
+- Loading states
+
+**Epic 4: EmptyState System**
+- Ícono centrado
+- Título + descripción
+- CTA button
+- Aplicable a todo módulo
+
+**Epic 5: Smart Branding Preparation**
+- Arquitectura lista (no implementación)
+- Logo analysis (proporción, contraste)
+- Color detection
+
+**Epic 6: Role Architecture**
+- Owner vs Coach vs Colaborador vs Cliente
+- RLS en Supabase
+- Data filtering por rol
+
+**Epic 7: Visual Quality**
+- Checklist de calidad
+- Validación contra referencias
+- Iteración visual
 
 **NO hacer en Sprint 2:**
 - Analytics (Sprint 4)
-- Branding Engine (Sprint 3)
-- Cobros (Sprint 5)
+- Branding Engine automático (Sprint 3)
+- Cobros/Pagos (Sprint 5)
 
 ### Sprint 3 🔮 FUTURO
 - Smart Branding Engine
@@ -437,12 +472,29 @@ No es una maqueta. Es el producto.
 
 Componentes congelados que nunca se modifican salvo orden explícita de Mica.
 
-### Sprint 1 ✅ LOCKED
-- **Sidebar Design System v2.0** — Logo Container (80px), Spacing Rhythm, Section Titles, Active State, Collapsed (72px), Mobile hierarchy
+### Sprint 1 ✅ LOCKED & APPROVED
+- **Sidebar Design System v3.0** — Premium SaaS Quality
   - Status: **CONGELADO en main**
-  - Commit: 9fb478ac
-  - Ubicación: `multicoach.html` (líneas 50-320)
-  - Regla: 0 cambios sin aprobación explícita
+  - Commit: d1276306 (refactor: design specification exactly)
+  - Ubicación: `multicoach.html` (líneas 50-450)
+  - Especificación: Premium (Apple/Notion/Linear/Stripe)
+  - **Regla:** CERO cambios sin aprobación explícita de Mica
+  - **Cambios permitidos:** Solo bugs reales (no mejoras)
+  
+**Especificación Bloqueada:**
+- Logo: 120px container, 80px máximo, object-fit: contain
+- Ancho: 240px expandido, 72px colapsado
+- Items: 44px altura, 12px padding horizontal, 10px radius, 15px font, 20px icons
+- Espaciado: 28px logo→Dashboard, 32px Dashboard→PERSONAS, 28px categorías, 12px título→item, 8px items
+- Categorías: 11px, 600, uppercase, #A39A8F
+- Active state: 3px left border verde, rgba(232,223,212,.55) bg, 600 weight
+- Hover: rgba(0,0,0,.03) only
+- Dividers: Solo uno antes del footer
+- Footer: Margin-top auto, solo "¿Necesitas ayuda?"
+- Configuración: En nav (después de Cobros), NO en footer
+- Niche switcher: Hidden
+- Game button: Hidden
+- Mobile: Bottom nav 100% width, 72px height
 
 ### Sprint 2 🚧 EN CONSTRUCCIÓN
 - **Epic 1: Header** — Status: En desarrollo
