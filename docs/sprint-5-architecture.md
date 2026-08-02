@@ -735,6 +735,175 @@ RESULTADO
 
 ---
 
+## 13.5 REGLA ARQUITECTÓNICA CRÍTICA — "MultiCoach No Reemplaza, Orquesta"
+
+**MultiCoach no duplica funcionalidades de paneles individuales. Agrega información organizacional.**
+
+### Principio
+
+```
+Panel del Coach (panel-v2.html)
+├─ Responsabilidad: Dashboard individual del coach
+├─ Datos: Sus clientes, sesiones, progreso, ingresos, objetivos, métricas personales
+├─ Scope: Work diario del coach
+└─ Ejemplo: "Este coach tiene 8 clientes, 3 sesiones esta semana, retención 95%"
+
+MultiCoach (multicoach.html)
+├─ Responsabilidad: Dashboard organizacional (Owner/Admin)
+├─ Datos: Agregados de la empresa
+├─ Scope: Gestión de la organización
+├─ Ejemplo: "12 coaches activos, 94 clientes, distribución desbalanceada, 1 alerta"
+
+REGLA: Nunca duplicar KPIs
+└─ Si un dato ya existe en panel-v2.html como métrica individual,
+   aparece en MultiCoach SOLO como agregado (total, promedio, gráfico)
+```
+
+### Casos de Uso
+
+**Caso 1: Retención de Clientes**
+
+```
+PANEL DEL COACH (panel-v2.html)
+├─ "Mis clientes": 8
+├─ "Clientes completados": 6
+├─ "Mi retención": 75%
+└─ [Gráfico de retención personal]
+
+MULTICOACH (multicoach.html)
+├─ "Retención global de org": 82%
+├─ [Gráfico de retención por coach]
+│  ├─ Coach Ana: 85%
+│  ├─ Coach Carlos: 78%
+│  └─ Coach María: 81%
+├─ [Alerta]: "Coach Carlos con retención por debajo del promedio"
+└─ "¿Abrir panel de Coach Carlos?" (reutiliza panel-v2.html con contexto de Carlos)
+
+NO duplicar:
+└─ El cálculo de retención por coach en MultiCoach
+    (ya existe en panel individual de cada coach)
+```
+
+**Caso 2: Sesiones Completadas**
+
+```
+PANEL DEL COACH (panel-v2.html)
+├─ "Mis sesiones esta semana": 5
+├─ "Mis sesiones este mes": 18
+└─ [Timeline personal de sesiones]
+
+MULTICOACH (multicoach.html)
+├─ "Sesiones de la org esta semana": 42
+├─ [Gráfico de carga por coach]
+│  ├─ Coach Ana: 6 sesiones
+│  ├─ Coach Carlos: 4 sesiones
+│  └─ Coach María: 5 sesiones
+├─ [Alerta]: "Carga desbalanceada: Ana tiene 50% de sesiones"
+└─ "Resumen Coach Ana: 6 sesiones esta semana" (data agregada)
+
+NO reimplementar:
+└─ El timeline personal (ya existe en panel individual)
+```
+
+**Caso 3: Clientes Asignados**
+
+```
+PANEL DEL COACH (panel-v2.html)
+├─ "Mis clientes": 8
+├─ [Lista completa con detalles]
+│  ├─ Cliente 1: En programa, semana 2 de 4
+│  ├─ Cliente 2: Completado hace 3 días
+│  └─ etc.
+├─ [Filtros: activos, completados, pausados]
+└─ [Editar cliente, crear notas, etc.]
+
+MULTICOACH (multicoach.html)
+├─ "Clientes asignados a Coach Ana": 8
+├─ [Estados simples]
+│  ├─ Activos: 6
+│  ├─ Completados: 1
+│  └─ Pausados: 1
+├─ [Último cliente asignado]: "Cliente X, hace 2 días"
+└─ "Abrir panel de Ana" (para ver lista completa)
+
+NO duplicar:
+└─ La lista detallada (ya existe en panel individual)
+```
+
+### Cuándo Abrir el Panel Individual desde MultiCoach
+
+```
+DESDE MULTICOACH, OWNER PUEDE:
+
+1. Ver Drawer Rápido (Equipo Module)
+   ├─ Datos de la persona (nombre, email, foto)
+   ├─ Rol y especialidades
+   ├─ Clientes asignados (count)
+   ├─ Sesiones esta semana (count)
+   ├─ Retención (%)
+   ├─ Disponibilidad (%)
+   ├─ Última actividad
+   └─ Botón: "Abrir panel completo de [Coach]"
+
+2. Abrir Panel Completo (panel-v2.html)
+   ├─ URL: /panel-v2.html?coach_id=[coach_id]
+   ├─ Mismo interface que el coach ve (o view-only si Owner no es coach)
+   ├─ Acceso a: clientes detallados, sesiones, progreso, ingresos, etc.
+   └─ Owner puede editar (si tiene permisos) o solo ver
+
+NUNCA crear un segundo dashboard de coach en MultiCoach
+└─ Reutilizar panel-v2.html con contexto diferente
+```
+
+### Test Mental: "¿Dónde va esta funcionalidad?"
+
+```
+Pregunta: "Quiero ver el progreso de Cliente X"
+├─ ¿Es trabajo diario del coach? SÍ
+├─ Panel del Coach → Clientes → Cliente X → Progreso detallado
+└─ MultiCoach → NO aparece (solo en agregado: "6 clientes en progreso")
+
+Pregunta: "Quiero distribuir carga entre coaches"
+├─ ¿Es trabajo diario del coach? NO (es gestión)
+├─ Panel del Coach → NO aparece
+└─ MultiCoach → Distribución de carga, alertas de desbalance
+
+Pregunta: "Quiero ver sesiones esta semana"
+├─ Coach individual → Panel del Coach → "Mis 5 sesiones" (detalladas)
+├─ Owner mirando un coach → MultiCoach → "Sesiones: 5" (resumen)
+├─ Owner mirando toda la org → MultiCoach → "42 sesiones" (agregado)
+└─ NUNCA repetir el timeline personal
+
+Pregunta: "Quiero editar nombre de cliente"
+├─ ¿Es trabajo diario del coach? SÍ
+├─ Panel del Coach → Clientes → Editar
+└─ MultiCoach → NO aparece (solo información de lectura)
+```
+
+### Beneficios de Esta Regla
+
+```
+✓ Mantenibilidad
+  └─ Un solo lugar donde vive cada funcionalidad
+
+✓ Consistencia
+  └─ Los datos no se duplican, no hay divergencia
+
+✓ Performance
+  └─ No calcular dos veces lo mismo
+
+✓ UX Claro
+  └─ Owner sabe dónde va cada acción (detail → panel individual, aggregate → MultiCoach)
+
+✓ Velocidad de Desarrollo
+  └─ No reimplementar lógica que ya existe
+
+✓ Testing Simplificado
+  └─ Cada sistema se prueba de forma independiente
+```
+
+---
+
 ## 14. PLAN DE VALIDACIÓN
 
 ```
