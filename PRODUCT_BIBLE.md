@@ -208,19 +208,18 @@ MULTICOACH
 ├── Sidebar (CONGELADO v2.0)
 ├── Header (Sprint 2)
 ├── Main Content
-│   ├── Dashboard (Sprint 2)
+│   ├── Dashboard (Sprint 2 ✅)
 │   ├── Personas
-│   │   ├── Coaches
-│   │   ├── Colaboradores
-│   ├── Clientes
+│   │   ├── Equipo (Sprint 4)
+│   │   └── Clientes
 │   ├── Operación
 │   │   ├── Agenda
 │   │   ├── Programas
-│   │   ├── Comunidad
+│   │   └── Comunidad
 │   ├── Negocio
 │   │   ├── Analytics
-│   │   ├── Cobros
-│   ├── Configuración
+│   │   └── Cobros
+│   └── Configuración
 └── Community Sidebar (futura)
 ```
 
@@ -557,11 +556,13 @@ Abre una Ficha Administrativa dentro de MultiCoach (no navega, no cambia de app)
 - **Epic 6: Role Architecture** — Status: Preparación
 - **Epic 7: Visual Quality** — Status: Validación continua
 
-### Sprint 4+ 🚧 EN CONSTRUCCIÓN
-- **Epic 1: Coaches & Colaboradores** — Status: Descubrimiento ✅
-  - Especificación: Panel único para gestión (no crear panel paralelo)
+### Sprint 4 🚧 EN CONSTRUCCIÓN
+- **Epic 1: Gestión de Equipo** — Status: Especificación ✅
+  - Módulo: Personas → Equipo (Coaches + Colaboradores)
+  - Especificación: Panel único para gestión de equipo
   - Arquitectura: Reutilización total de componentes panel-v2
   - Regla bloqueada: Single Coach Experience (ver arriba)
+  - Regla Sprint 4.2: Continuidad visual con Dashboard
 
 ### Sprint 3+ 🔮 FUTURO
 (Se agregarán conforme se completen)
