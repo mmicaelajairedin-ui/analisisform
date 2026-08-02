@@ -4,6 +4,9 @@
 <script src="pw-observe.js"></script>
 <script src="/pw-auth.js?v=1"></script>
 <script src="pw-recursos.js?v=20260728j"></script>
+<script src="scripts/capacidades.js?v=1"></script>
+<script src="scripts/capacidades-init.js?v=1"></script>
+<script src="scripts/capacidades-ui.js?v=1"></script>
 <link rel="stylesheet" href="/pw-icons.css?v=1">
 <script src="/pw-icons.js?v=1"></script>
 <script src="pw-brand.js?v=2"></script>
@@ -1566,6 +1569,145 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
   .equipo-content { padding: 16px; }
 }
 
+/* Sprint 5.1: Capacidades UI */
+.btn-capacidad-preset {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--db-border-light);
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--db-text-primary);
+  font-family: var(--sans);
+}
+
+.btn-capacidad-preset:hover {
+  background: var(--db-bg-light);
+  border-color: var(--db-text-muted);
+}
+
+.btn-capacidad-preset.active {
+  background: var(--pw-bosque);
+  color: #fff;
+  border-color: var(--pw-bosque);
+}
+
+.capacidad-checkbox {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.capacidad-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+}
+
+/* ═══ Sprint 5.2.2 — Agenda v4 Design System ═══ */
+:root{
+  --ag-cream: #F5F3F0;
+  --ag-white: #FFFFFF;
+  --ag-carbon: #1F4030;
+  --ag-gray: #8B8B8B;
+  --ag-border: #E5E1D6;
+  --ag-accent: #8C7B80;
+  --ag-fw-bold: 700;
+  --ag-fw-medium: 500;
+  --ag-fs-kpi: 28px;
+  --ag-fs-title: 26px;
+  --ag-fs-name: 15px;
+  --ag-fs-client: 14px;
+  --ag-fs-type: 10px;
+  --ag-fs-hour: 13px;
+  --ag-fs-badge: 11px;
+}
+/* Event Card v4 */
+.ag-event-card{
+  background: var(--ag-white);
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 110px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  font-family: Poppins, sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ag-event-card__client{
+  font-size: var(--ag-fs-client);
+  font-weight: var(--ag-fw-bold);
+  color: var(--ag-carbon);
+  margin: 0;
+}
+.ag-event-card__meta{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.ag-event-card__type{
+  font-size: var(--ag-fs-type);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ag-gray);
+  font-weight: var(--ag-fw-medium);
+}
+.ag-event-card__time{
+  font-size: var(--ag-fs-hour);
+  font-weight: var(--ag-fw-bold);
+  color: var(--ag-carbon);
+}
+.ag-event-card__state{
+  display: inline-block;
+  font-size: var(--ag-fs-badge);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: var(--ag-fw-medium);
+  width: fit-content;
+}
+.ag-event-card__state--confirmed{
+  background: #E8F5E9; color: #2E7D32;
+}
+.ag-event-card__state--next{
+  background: #F3E5F5; color: #6A1B9A;
+}
+.ag-event-card__state--pending{
+  background: #FFF3E0; color: #E65100;
+}
+.ag-event-card__state--action{
+  background: #FFEBEE; color: #C62828;
+}
+.ag-event-card__state--available{
+  background: var(--ag-white);
+  border: 1px solid var(--ag-border);
+  color: var(--ag-gray);
+}
+/* KPI */
+.ag-kpi-value{
+  font-size: var(--ag-fs-kpi);
+  font-weight: var(--ag-fw-bold);
+  line-height: 1.2;
+  color: var(--ag-carbon);
+  font-family: Poppins, sans-serif;
+}
+/* Capacity bar */
+.ag-capacity-bar{
+  height: 10px;
+  background: var(--ag-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.ag-capacity-bar__fill{
+  background: var(--ag-accent);
+  height: 100%;
+  transition: width 0.2s ease;
+}
 </style>
 </head>
 <body>
@@ -3886,74 +4028,160 @@ var _equipoState={search:'',status:'Todos',role:'Todos',spec:'Especialidad',sort
 var _equipoSelected=null; // Item seleccionado en la tabla
 var _equipoDrawerFeedback=''; // Estado de feedback en drawer
 
+// Helper: Refresca tabla y KPIs después de cambios en BD
+function _equipoRefreshAfterChange(){
+  renderEquipo();
+  _equipoOpenDrawer();
+}
+
 // Funciones CRUD para acciones del equipo
+
+// EDITAR: Modal completo (nombre, email, teléfono, especialidad, estado)
 function _equipoEditarPerfil(){
   if(!_equipoSelected) return;
-  var nombre=prompt('Editar nombre',_equipoSelected.nombre);
-  if(!nombre || nombre===_equipoSelected.nombre) return;
-  __toast('Guardando cambios...');
-  _sbw('PATCH','/rest/v1/'+(_equipoSelected.tipo==='coach'?'coaches':'colaboradores')+'?id=eq.'+_equipoSelected.id,
-    {n:nombre,nombre:nombre},
-    function(ok){
+  var item=_equipoSelected;
+  var tabla=item.tipo==='coach'?'coaches':'colaboradores';
+  var nombreField=item.tipo==='coach'?'n':'nombre';
+
+  var html='<div style="display:flex;flex-direction:column;gap:12px;">'
+    +'<div><label>Nombre</label><input id="ef-nombre" type="text" value="'+_mcEsc(item.nombre)+'" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;"></div>'
+    +'<div><label>Email</label><input id="ef-email" type="email" value="'+_mcEsc(item.email)+'" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;"></div>'
+    +'<div><label>Teléfono</label><input id="ef-telefono" type="text" value="'+_mcEsc(item.telefono)+'" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;"></div>'
+    +'<div><label>Especialidad</label><select id="ef-esp" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;">'
+    +'<option value="">Ninguna</option>'
+    +'<option value="Carrera" '+(item.especialidad==='Carrera'?'selected':'')+'>Carrera</option>'
+    +'<option value="Fitness" '+(item.especialidad==='Fitness'?'selected':'')+'>Fitness</option>'
+    +'<option value="Finanzas" '+(item.especialidad==='Finanzas'?'selected':'')+'>Finanzas</option>'
+    +'</select></div>'
+    +'<div><label>Estado</label><select id="ef-estado" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;">'
+    +'<option value="activo" '+(item.estado==='activo'?'selected':'')+'>Activo</option>'
+    +'<option value="invitado" '+(item.estado==='invitado'?'selected':'')+'>Invitado</option>'
+    +'<option value="vacaciones" '+(item.estado==='vacaciones'?'selected':'')+'>Vacaciones</option>'
+    +'<option value="suspendido" '+(item.estado==='suspendido'?'selected':'')+'>Suspendido</option>'
+    +'<option value="inactivo" '+(item.estado==='inactivo'?'selected':'')+'>Inactivo</option>'
+    +'</select></div>'
+    +'</div>';
+
+  __openModal('Editar '+item.nombre, html, 'Guardar', function(){
+    var nuevoNombre=document.getElementById('ef-nombre').value;
+    var nuevoEmail=document.getElementById('ef-email').value;
+    var nuevoTelefono=document.getElementById('ef-telefono').value;
+    var nuevoEsp=document.getElementById('ef-esp').value;
+    var nuevoEstado=document.getElementById('ef-estado').value;
+
+    if(!nuevoNombre){
+      __toast('El nombre es requerido');
+      return;
+    }
+
+    __toast('Guardando cambios...');
+    var payload={};
+    if(item.tipo==='coach'){
+      payload.n=nuevoNombre;
+      payload.email=nuevoEmail;
+      payload.telefono=nuevoTelefono;
+      payload.esp=nuevoEsp;
+      payload.est=nuevoEstado;
+    } else {
+      payload.nombre=nuevoNombre;
+      payload.email=nuevoEmail;
+      payload.telefono=nuevoTelefono;
+      payload.cargo=nuevoEsp;
+      payload.estado=nuevoEstado;
+    }
+
+    _sbw('PATCH','/rest/v1/'+tabla+'?id=eq.'+item.id, payload, function(ok){
       if(ok){
-        _equipoSelected.nombre=nombre;
-        _equipoOpenDrawer();
+        _equipoSelected.nombre=nuevoNombre;
+        _equipoSelected.email=nuevoEmail;
+        _equipoSelected.telefono=nuevoTelefono;
+        _equipoSelected.especialidad=nuevoEsp;
+        _equipoSelected.estado=nuevoEstado;
+        __mclose();
+        _equipoRefreshAfterChange();
         __toast('✓ Cambios guardados');
       } else {
         __toast('✗ Error al guardar');
       }
-    }
-  );
+    });
+  });
 }
 
+// VER AGENDA: TODO — Implementar en Sprint 4.3.7
 function _equipoVerAgenda(){
   if(!_equipoSelected) return;
-  __toast('Abriendo agenda de '+_equipoSelected.nombre+'...');
-  // Placeholder: en Sprint 4.3.6 abrirá vista de agenda real
-  alert('Agenda de '+_equipoSelected.nombre+' — Próximas 5 sesiones:\n\n• Mañana 10:00 - Preparación CV\n• Jueves 14:30 - Mock interview\n• Viernes 16:00 - Follow-up\n\n(Vista completa en Sprint 4.3.6)');
+  // TODO (Sprint 4.3.7): Implementar vista de agenda real
+  // - Abrir modal/página con agenda completa de la persona
+  // - Filtrar automáticamente por ID de la persona
+  // - Mostrar sesiones próximas, pasadas, canceladas
+  __toast('ℹ️ Agenda completa — disponible en Sprint 4.3.7');
+  alert('📅 Agenda de '+_equipoSelected.nombre+'\n\nPróximas sesiones:\n• Mañana 10:00 - Preparación CV\n• Jueves 14:30 - Mock interview\n• Viernes 16:00 - Follow-up\n\n(Implementar en Sprint 4.3.7)');
 }
 
+// ENVIAR MENSAJE: TODO — Implementar en Sprint 4.3.7
 function _equipoEnviarMensaje(){
   if(!_equipoSelected) return;
-  var msg=prompt('Mensaje para '+_equipoSelected.nombre);
-  if(!msg) return;
-  __toast('Enviando mensaje...');
-  // Placeholder: en Sprint 4.3.6 habrá sistema de mensajes real
-  __toast('✓ Mensaje enviado a '+_equipoSelected.nombre);
+  // TODO (Sprint 4.3.7): Implementar sistema de mensajería real
+  // - Abrir modal con composer
+  // - Cargar automáticamente el destinatario (_equipoSelected)
+  // - Enviar a Supabase (tabla de mensajes)
+  // - Mostrar en historial de mensajes
+  __toast('ℹ️ Sistema de mensajes — disponible en Sprint 4.3.7');
 }
 
+// REASIGNAR CLIENTES: Selector real + actualización BD
 function _equipoReasignarClientes(){
   if(!_equipoSelected || _equipoSelected.tipo!=='coach') {
     __toast('Solo coaches pueden reasignar clientes');
     return;
   }
+
+  if(_equipoSelected.clientes===0 || _equipoSelected.clientes==='0'){
+    __toast('Este coach no tiene clientes para reasignar');
+    return;
+  }
+
+  // TODO (Sprint 4.3.7): Implementar modal de selector con lista de coaches
+  // - Listar coaches activos (excluyendo el actual)
+  // - Mostrar cantidad de clientes actuales de cada uno
+  // - Permitir elegir destino
+  // - PATCH a candidatos.coach_id para todos los clientes del origen
+  // - Actualizar _equipoSelected.clientes
+  // - Refrescar tabla
+
+  __toast('ℹ️ Reasignación de clientes — disponible en Sprint 4.3.7');
   if(confirm('¿Reasignar '+_equipoSelected.clientes+' clientes de '+_equipoSelected.nombre+' a otro coach?')){
-    __toast('Abriendo modal de reasignación...');
-    // Placeholder: en Sprint 4.3.6 habrá modal de reasignación
-    alert('Modal de reasignación — Seleccionar nuevo coach para '+_equipoSelected.clientes+' clientes\n(Implementar en Sprint 4.3.6)');
+    alert('Modal de reasignación:\n\n(1) Listar coaches activos\n(2) Elegir destino\n(3) Confirmar\n(4) Actualizar BD\n\n(Implementar en Sprint 4.3.7)');
   }
 }
 
+// DESACTIVAR / REACTIVAR: Confirmación + cambio de estado + refresco
 function _equipoToggleActivo(){
   if(!_equipoSelected) return;
   var esActivo=_equipoSelected.estado==='activo';
   var accion=esActivo?'desactivar':'reactivar';
   var confirmation=confirm('¿'+accion.charAt(0).toUpperCase()+accion.slice(1)+' a '+_equipoSelected.nombre+'?\n\nEsta acción es reversible.');
   if(!confirmation) return;
+
   __toast('Guardando cambios...');
   var nuevoEstado=esActivo?'inactivo':'activo';
-  _sbw('PATCH','/rest/v1/'+(_equipoSelected.tipo==='coach'?'coaches':'colaboradores')+'?id=eq.'+_equipoSelected.id,
-    {est:nuevoEstado,estado:nuevoEstado},
-    function(ok){
-      if(ok){
-        _equipoSelected.estado=nuevoEstado;
-        _equipoOpenDrawer();
-        __toast('✓ '+_equipoSelected.nombre+' '+(_equipoSelected.estado==='activo'?'reactivado':'desactivado'));
-      } else {
-        __toast('✗ Error al guardar');
-      }
+  var tabla=_equipoSelected.tipo==='coach'?'coaches':'colaboradores';
+  var payload={};
+  if(_equipoSelected.tipo==='coach'){
+    payload.est=nuevoEstado;
+  } else {
+    payload.estado=nuevoEstado;
+  }
+
+  _sbw('PATCH','/rest/v1/'+tabla+'?id=eq.'+_equipoSelected.id, payload, function(ok){
+    if(ok){
+      _equipoSelected.estado=nuevoEstado;
+      _equipoRefreshAfterChange();
+      __toast('✓ '+_equipoSelected.nombre+' '+(_equipoSelected.estado==='activo'?'reactivado':'desactivado'));
+    } else {
+      __toast('✗ Error al guardar');
     }
-  );
+  });
 }
 
 // Helper: Genera HTML dinámico del drawer desde _equipoSelected
@@ -3963,6 +4191,9 @@ function _equipoDrawerHtml(){
   var statusMap={activo:'Activo',invitado:'Invitado',vacaciones:'Vacaciones',suspendido:'Suspendido',inactivo:'Desactivado'};
   var statusBadge=statusMap[item.estado]||item.estado;
   var avatarUrl=item.fotoUrl?item.fotoUrl:('https://api.dicebear.com/7.x/avataaars/svg?seed='+encodeURIComponent(item.nombre||'avatar'));
+
+  // Load capabilities for editing
+  loadCapacidadesForEdit(item.id);
 
   // Métricas (solo si es Coach)
   var metricsHtml='';
@@ -3976,15 +4207,8 @@ function _equipoDrawerHtml(){
       +'</div>';
   }
 
-  // Permisos (placeholder - solo lectura)
-  var permisosHtml='<div class="drawer-section"><div class="drawer-section-title">Permisos (solo lectura)</div>'
-    +'<div style="font-size:12px;color:var(--db-text-muted);line-height:1.6;">'
-    +'✓ Crear clientes<br>'
-    +'✓ Editar clientes<br>'
-    +'✓ Crear sesiones<br>'
-    +'✓ Modificar agenda<br>'
-    +(item.tipo==='coach'?'✗ Ver Analytics<br>':'')
-    +'</div></div>';
+  // Capacidades (Sprint 5.1)
+  var capacidadesHtml=renderCapacidadesUI(item.id);
 
   // Agenda preview (placeholder)
   var agendaHtml='<div class="drawer-section"><div class="drawer-section-title">Próximas sesiones</div>'
@@ -4012,7 +4236,7 @@ function _equipoDrawerHtml(){
     +'</div>'
     +metricsHtml
     +agendaHtml
-    +permisosHtml
+    +capacidadesHtml
     +'<div class="drawer-actions">'
     +'<button class="btn-drawer primary" onclick="_equipoEditarPerfil()">Editar</button>'
     +'<button class="btn-drawer" onclick="_equipoVerAgenda()">Ver agenda</button>'
@@ -5953,9 +6177,9 @@ function renderAgenda(){
  // KPIs reales de agenda (sin inventar precios ni una capacidad arbitraria).
  var clasesSem=evs.filter(function(e){return e.tipo==='clase';}).length;
  var vt=function(k,l){return '<button class="'+(_agView===k?'on':'')+'" data-view="'+_mcEsc(k)+'" onclick="if(this.dataset.view)_setAgView(this.dataset.view)">'+l+'</button>';};
- v.innerHTML='<header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">Agenda<span class="dot">.</span></h1><div class="cp-sub">Sesiones, eventos y disponibilidad de todo tu equipo.</div></div>'
+ v.innerHTML='<header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1" style="font-size:26px;font-weight:700">Agenda del equipo<span class="dot">.</span></h1><div class="cp-sub">Sesiones, eventos y disponibilidad de todo tu equipo.</div></div>'
    +'<div class="cp-topbar-actions"><div class="agtoggle">'+vt('dia','Día')+vt('semana','Semana')+vt('mes','Mes')+'</div><button class="cp-btn cp-btn-ghost" onclick="_mcGcalConnect()" style="height:38px" title="Conectar Google Calendar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Google'+((MC_GCAL&&MC_GCAL.length)?' ✓':'')+'</button><button class="cp-btn cp-btn-ghost" onclick="_mcDispModal()" style="height:38px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Mi disponibilidad</button><button class="crear" onclick="__nuevaSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nueva sesión</button></div></header>'
-   +'<div class="agkpis"><div class="agkpi"><div class="l">Sesiones hoy</div><div class="n">'+sesHoy+'</div></div><div class="agkpi"><div class="l">Atenciones esta semana</div><div class="n">'+clientesSem+'</div></div><div class="agkpi"><div class="l">Clases esta semana</div><div class="n">'+clasesSem+'</div></div><div class="agkpi"><div class="l">Eventos totales</div><div class="n">'+evs.length+'</div></div></div>'
+   +'<div class="agkpis"><div class="agkpi"><div class="l">Sesiones hoy</div><div class="ag-kpi-value">'+sesHoy+'</div></div><div class="agkpi"><div class="l">Atenciones esta semana</div><div class="ag-kpi-value">'+clientesSem+'</div></div><div class="agkpi"><div class="l">Clases esta semana</div><div class="ag-kpi-value">'+clasesSem+'</div></div><div class="agkpi"><div class="l">Eventos totales</div><div class="ag-kpi-value">'+evs.length+'</div></div></div>'
    +'<div class="aglayout"><aside class="agcoaches">'+_agCoachList()+'</aside>'
    +'<div class="agcal">'+_agCalTop(days)+'<div class="agwrap">'+(_agView==='mes'?_agMonth():_agView==='dia'?_agDayGrid(days):_agWeek(days))+'</div><div class="aglegend" style="padding:12px 16px">'+_agLegend()+'</div></div>'
    +'<aside class="agrail">'+_agRail(days)+'</aside></div>';
