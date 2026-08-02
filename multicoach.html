@@ -3733,9 +3733,122 @@ function _equipoKpis(){
   };
 }
 
+// Helper: Unifica coaches y colaboradores en una lista única
+function _equipoList(){
+  if(!DB) return [];
+  var list=[];
+  // Agregar coaches
+  (DB.coaches||[]).forEach(function(c){
+    list.push({
+      id:c.id,
+      nombre:c.n||'',
+      email:c.email||'',
+      rol:'Coach',
+      especialidad:c.esp||'—',
+      clientes:c.cli||0,
+      sesiones:c.ses||0,
+      retencion:(c.ret||0)+'%',
+      estado:c.est||'activo',
+      ultActividad:_mcAgo(c._ts||''),
+      tipo:'coach',
+      fotoUrl:c.foto||'',
+      iniciales:c.ini||''
+    });
+  });
+  // Agregar colaboradores
+  (DB.colaboradores||[]).forEach(function(c){
+    list.push({
+      id:c.id,
+      nombre:c.nombre||'',
+      email:c.email||'',
+      rol:'Colaborador',
+      especialidad:c.cargo||c.departamento||'—',
+      clientes:'—',
+      sesiones:'—',
+      retencion:'—',
+      estado:c.estado||'activo',
+      ultActividad:_mcAgo(c._ts||''),
+      tipo:'colaborador',
+      fotoUrl:c.foto_url||'',
+      iniciales:_mcIni(c.nombre||c.email||'')
+    });
+  });
+  return list;
+}
+
+// Helper: Filtra y busca en la lista de equipo
+function _equipoApplyFilters(list, searchTerm, statusFilter, roleFilter, specFilter){
+  return list.filter(function(item){
+    // Búsqueda por nombre o email
+    if(searchTerm){
+      var term=searchTerm.toLowerCase();
+      if((item.nombre.toLowerCase().indexOf(term)===-1)&&(item.email.toLowerCase().indexOf(term)===-1)){
+        return false;
+      }
+    }
+    // Filtro estado
+    if(statusFilter && statusFilter!=='Todos'){
+      var mapStatus={Activos:'activo',Invitados:'invitado',Vacaciones:'vacaciones',Suspendidos:'suspendido',Desactivados:'inactivo'};
+      if(item.estado !== (mapStatus[statusFilter]||statusFilter)) return false;
+    }
+    // Filtro rol
+    if(roleFilter && roleFilter!=='Todos'){
+      if(item.rol !== roleFilter) return false;
+    }
+    // Filtro especialidad
+    if(specFilter && specFilter!=='Especialidad'){
+      if(item.especialidad.toLowerCase().indexOf(specFilter.toLowerCase())===-1) return false;
+    }
+    return true;
+  });
+}
+
+// Helper: Renderiza una fila de la tabla
+function _equipoRowHtml(item, index){
+  var roleClass=item.rol==='Colaborador'?'colaborador':'';
+  var statusClass=item.estado==='invitado'?'invitado':'';
+  var avatarUrl='https://api.dicebear.com/7.x/avataaars/svg?seed='+encodeURIComponent(item.nombre||'avatar');
+  return '<div class="table-row" onclick="_equipoOpenDrawer()" data-equipo-id="'+item.id+'" data-equipo-type="'+item.tipo+'">'
+    +'<img src="'+avatarUrl+'" alt="'+item.nombre+'" class="avatar-equipo">'
+    +'<div class="name-cell">'+_mcEsc(item.nombre)+'<br><span class="role-badge '+roleClass+'">'+item.rol+'</span></div>'
+    +'<div style="font-size:13px;color:var(--db-text-'+((item.ultActividad==='—'||item.ultActividad==='Nunca')?'muted':'primary'))+'">'+item.ultActividad+'</div>'
+    +'<div>'+item.rol+'</div>'
+    +'<div>'+_mcEsc(item.especialidad)+'</div>'
+    +'<div class="metric">'+item.clientes+'</div>'
+    +'<div class="metric">'+item.sesiones+'</div>'
+    +'<div class="metric">'+item.retencion+'</div>'
+    +'<div><span class="status-badge '+statusClass+'">'+(_mcAgoCapital(item.estado))+'</span></div>'
+    +'<button class="actions-btn" onclick="event.stopPropagation()">⋮</button>'
+    +'</div>';
+}
+
+// Helper: Capitaliza estado (Activo, Invitado, etc.)
+function _mcAgoCapital(s){
+  var map={activo:'Activo',invitado:'Invitado',vacaciones:'Vacaciones',suspendido:'Suspendido',inactivo:'Desactivado'};
+  return map[s]||s;
+}
+
+// Estado global para filtros de equipo
+var _equipoState={search:'',status:'Todos',role:'Todos',spec:'Especialidad'};
+
 function renderEquipo(){
  var v=document.getElementById('vscroll');
  var kpis=_equipoKpis();
+ var fullList=_equipoList();
+ var filtered=_equipoApplyFilters(fullList,_equipoState.search,_equipoState.status,_equipoState.role,_equipoState.spec);
+
+ // Empty state
+ var tableHtml='';
+ if(!filtered||filtered.length===0){
+   tableHtml='<div class="empty-state"><div class="empty-state-icon">👥</div><div class="empty-state-title">Sin resultados</div><div class="empty-state-text">No hay coaches ni colaboradores que coincidan con los filtros aplicados.</div></div>';
+ } else {
+   var rows=filtered.map(function(item,i){return _equipoRowHtml(item,i);}).join('');
+   tableHtml='<div class="table-card">'
+    +'<div class="table-header"><div></div><div>Nombre</div><div>Última actividad</div><div>Rol</div><div>Especialidad</div><div>Clientes</div><div>Sesiones</div><div>Retención</div><div>Estado</div><div></div></div>'
+    +rows
+    +'</div>';
+ }
+
  var equipoHtml='<div class="equipo-container">'
   +'<div class="equipo-backdrop" onclick="_equipoCloseDrawer()"></div>'
   +'<div class="equipo-content">'
@@ -3747,25 +3860,13 @@ function renderEquipo(){
   +'<div class="kpi-card"><div class="kpi-value">'+kpis.carga+'</div><div class="kpi-label">Carga media</div></div>'
   +'</div>'
   +'<div class="filters-bar">'
-  +'<input type="text" class="search-input" placeholder="🔍 Buscar por nombre, email...">'
-  +'<select class="filter-dropdown"><option>Todos</option><option>Activos</option><option>Invitados</option><option>Vacaciones</option><option>Suspendidos</option><option>Desactivados</option></select>'
-  +'<select class="filter-dropdown"><option>Todos</option><option>Coaches</option><option>Colaboradores</option></select>'
-  +'<select class="filter-dropdown"><option>Especialidad</option><option>Carrera</option><option>Fitness</option><option>Finanzas</option></select>'
+  +'<input type="text" class="search-input" placeholder="🔍 Buscar por nombre, email..." oninput="_equipoOnSearch(this.value)">'
+  +'<select class="filter-dropdown" onchange="_equipoOnFilterStatus(this.value)"><option>Todos</option><option>Activos</option><option>Invitados</option><option>Vacaciones</option><option>Suspendidos</option><option>Desactivados</option></select>'
+  +'<select class="filter-dropdown" onchange="_equipoOnFilterRole(this.value)"><option>Todos</option><option>Coaches</option><option>Colaboradores</option></select>'
+  +'<select class="filter-dropdown" onchange="_equipoOnFilterSpec(this.value)"><option>Especialidad</option><option>Carrera</option><option>Fitness</option><option>Finanzas</option></select>'
   +'<select class="filter-dropdown"><option>Ordenar por</option><option>Nombre (A-Z)</option><option>Clientes (más primero)</option><option>Retención (mejor)</option><option>Sesiones (más)</option></select>'
   +'</div>'
-  +'<div class="table-card">'
-  +'<div class="table-header"><div></div><div>Nombre</div><div>Última actividad</div><div>Rol</div><div>Especialidad</div><div>Clientes</div><div>Sesiones</div><div>Retención</div><div>Estado</div><div></div></div>'
-  +'<div class="table-row" onclick="_equipoOpenDrawer()">'
-  +'<img src="https://api.dicebear.com/7.x/avataaars/svg?seed=carlos" alt="Carlos" class="avatar-equipo">'
-  +'<div class="name-cell">Carlos Pérez<br><span class="role-badge">Coach</span></div>'
-  +'<div style="font-size:13px;color:var(--db-text-primary)">Hace 2 h</div>'
-  +'<div>Coach</div><div>Carrera</div><div class="metric">8</div><div class="metric">24</div><div class="metric">92%</div><div><span class="status-badge">Activo</span></div>'
-  +'<button class="actions-btn" onclick="event.stopPropagation()">⋮</button></div>'
-  +'<div class="table-row" onclick="_equipoOpenDrawer()"><img src="https://api.dicebear.com/7.x/avataaars/svg?seed=maria" alt="María" class="avatar-equipo"><div class="name-cell">María García<br><span class="role-badge">Coach</span></div><div style="font-size:13px;color:var(--db-text-primary)">Hoy 09:30</div><div>Coach</div><div>Fitness</div><div class="metric">6</div><div class="metric">18</div><div class="metric">88%</div><div><span class="status-badge">Activo</span></div><button class="actions-btn" onclick="event.stopPropagation()">⋮</button></div>'
-  +'<div class="table-row" onclick="_equipoOpenDrawer()"><img src="https://api.dicebear.com/7.x/avataaars/svg?seed=juan" alt="Juan" class="avatar-equipo"><div class="name-cell">Juan López<br><span class="role-badge colaborador">Colaborador</span></div><div style="font-size:13px;color:var(--db-text-muted)">Nunca</div><div>Colaborador</div><div>Recruiter</div><div class="metric">—</div><div class="metric">—</div><div class="metric">—</div><div><span class="status-badge invitado">Invitado</span></div><button class="actions-btn" onclick="event.stopPropagation()">⋮</button></div>'
-  +'<div class="table-row" onclick="_equipoOpenDrawer()"><img src="https://api.dicebear.com/7.x/avataaars/svg?seed=ana" alt="Ana" class="avatar-equipo"><div class="name-cell">Ana Rodríguez<br><span class="role-badge">Coach</span></div><div style="font-size:13px;color:var(--db-text-primary)">Ayer</div><div>Coach</div><div>Carrera</div><div class="metric">5</div><div class="metric">15</div><div class="metric">95%</div><div><span class="status-badge">Activo</span></div><button class="actions-btn" onclick="event.stopPropagation()">⋮</button></div>'
-  +'<div class="table-row" onclick="_equipoOpenDrawer()"><img src="https://api.dicebear.com/7.x/avataaars/svg?seed=alex" alt="Alex" class="avatar-equipo"><div class="name-cell">Alex Martínez<br><span class="role-badge colaborador">Colaborador</span></div><div style="font-size:13px;color:var(--db-text-primary)">Hace 3 d</div><div>Colaborador</div><div>RRHH</div><div class="metric">—</div><div class="metric">—</div><div class="metric">—</div><div><span class="status-badge">Activo</span></div><button class="actions-btn" onclick="event.stopPropagation()">⋮</button></div>'
-  +'</div>'
+  +tableHtml
   +'</div>'
   +'<div class="equipo-drawer" onkeydown="if(event.key===\'Escape\')_equipoCloseDrawer()">'
   +'<button class="equipo-drawer-close" onclick="_equipoCloseDrawer()">✕</button>'
@@ -3785,6 +3886,24 @@ function renderEquipo(){
   +'</div>'
   +'</div>';
  v.innerHTML=equipoHtml;
+}
+
+// Funciones de filtro
+function _equipoOnSearch(val){
+ _equipoState.search=val;
+ renderEquipo();
+}
+function _equipoOnFilterStatus(val){
+ _equipoState.status=val;
+ renderEquipo();
+}
+function _equipoOnFilterRole(val){
+ _equipoState.role=val;
+ renderEquipo();
+}
+function _equipoOnFilterSpec(val){
+ _equipoState.spec=val;
+ renderEquipo();
 }
 
 // Legacy: placeholder functions (removed in Sprint 4.3.1)
