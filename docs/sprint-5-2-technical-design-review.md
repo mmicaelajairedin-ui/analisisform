@@ -1,826 +1,936 @@
-# Sprint 5.2 — Technical Design Review: Arquitectura de Agenda
+# Sprint 5.2 — Technical Design Review v2: Arquitectura de Agenda
 
 **Fecha**: 2026-08-02  
+**Versión**: 2.0 (Incorpora feedback del Product Owner)  
 **Estado**: 🔍 EN REVISIÓN (PRE-IMPLEMENTACIÓN)  
-**Entrega Requerida**: Aprobación del Product Owner antes de Sprint 5.2 Código
+**Cambios respecto a v1**: Énfasis en single source of truth, asistencia, agenda grupal, ciclo de vida completo
 
 ---
 
-## 1. DIAGRAMA DE FLUJO
+## 0. PRINCIPIO ARQUITECTÓNICO — SINGLE SOURCE OF TRUTH
 
-### 1.1 Crear Sesión
-
-```
-┌─ Coach ejecuta "Crear sesión"
-│
-├─→ [Modal de creación]
-│   ├─ Tipo: sesión_cliente | reunión_interna | bloqueo
-│   ├─ Fecha/Hora (validar disponibilidad)
-│   ├─ Duración
-│   ├─ Cliente (si sesión_cliente)
-│   ├─ Participantes (si reunión_interna)
-│   └─ [Guardar]
-│
-├─→ [VALIDACIÓN BACKEND]
-│   ├─ ✓ Capacidad: agenda.create?
-│   ├─ ✓ Scope: own | team | organization?
-│   ├─ ✓ Conflictos horarios (misma sesión, mismo coach)?
-│   ├─ ✓ Cliente existe y está asignado?
-│   ├─ ✓ Horario dentro de disponibilidad del coach?
-│   └─ Si falla → ERROR 403/400 + motivo
-│
-├─→ [INSERTAR EN DB]
-│   ├─ Tabla: agendas
-│   ├─ Campos: id, organization_id, coach_id, cliente_id?, tipo, 
-│   │          start_at, end_at, titulo, descripcion, estado, 
-│   │          created_by, created_at, updated_at, recurrence_rule?
-│   └─ RLS: owner (organización) PUEDE, coach PUEDE SOLO si es suya
-│
-├─→ [AUDITORÍA]
-│   ├─ Tabla: auditoria_capacidades
-│   ├─ evento: "agenda.created"
-│   ├─ capacidad: "agenda.create"
-│   ├─ user_id_actor: Coach que creó
-│   ├─ organization_id: Org del evento
-│   └─ Timestamps + IP + session_id
-│
-└─→ [RESPUESTA]
-    ├─ ✓ Evento creado + ID
-    ├─ ✓ UI recarga calendario
-    ├─ ✓ Toast "Sesión agendada"
-    └─ ✓ Notificación al cliente (opcional)
-```
-
-### 1.2 Editar Sesión
+### ❌ NO HACER
 
 ```
-┌─ Coach clickea evento en calendario
-│
-├─→ [Modal de edición]
-│   ├─ Campos editables: Hora, Duración, Descripción, Participantes
-│   ├─ Campos READ-ONLY: Fecha (si ya pasó), Tipo
-│   └─ [Guardar cambios]
-│
-├─→ [VALIDACIÓN BACKEND]
-│   ├─ ✓ Evento existe?
-│   ├─ ✓ Capacidad: agenda.edit?
-│   ├─ ✓ Scope: es el coach propietario (own)?
-│   │        O tiene scope team/organization?
-│   ├─ ✓ Evento ya ocurrió? → No se puede editar (403)
-│   ├─ ✓ Conflictos NEW (misma hora con otro evento)?
-│   ├─ ✓ Si mover cliente: coach_id cambia?
-│   │        → Auditoría especial: "agenda.reassigned"
-│   └─ Si falla → ERROR 403/422 + motivo
-│
-├─→ [ACTUALIZAR EN DB]
-│   ├─ Tabla: agendas
-│   ├─ WHERE id=? AND organization_id=?
-│   ├─ SET start_at, end_at, descripcion, updated_at, updated_by
-│   ├─ Si coach_id cambió: crear REGISTER en agendas_historial
-│   └─ RLS: solo owner O coach propietario (si scope=own)
-│
-├─→ [AUDITORÍA]
-│   ├─ evento: "agenda.edited"
-│   ├─ cambios registrados: before/after (JSON)
-│   ├─ user_id_actor: Coach que editó
-│   └─ Si coach_id cambió: evento adicional "agenda.reassigned"
-│
-└─→ [RESPUESTA]
-    ├─ ✓ Evento actualizado
-    ├─ ✓ UI recarga calendario
-    ├─ ✓ Toast "Cambios guardados"
-    └─ ✓ Notificación al cliente (si horario cambió)
+panel-v2.html              MultiCoach.html
+    ↓                           ↓
+  c.ses                     agendas
+    ↓                           ↓
+  [coach ve]            [owner ve]
+    
+⚠️ Riesgo: desincronización, datos contradictorios
 ```
 
-### 1.3 Cancelar Sesión
+### ✅ HACER
 
 ```
-┌─ Coach clickea evento + "Cancelar"
-│
-├─→ [Modal de confirmación]
-│   ├─ "¿Cancelar sesión con [Cliente]?"
-│   ├─ Motivo (opcional): Disponibilidad, Cliente no confirmó, Otra
-│   └─ [Confirmar cancelación]
-│
-├─→ [VALIDACIÓN BACKEND]
-│   ├─ ✓ Evento existe?
-│   ├─ ✓ Capacidad: agenda.cancel? (o agenda.edit?)
-│   ├─ ✓ Scope: coach propietario (own)?
-│   │        O tiene scope team/organization?
-│   ├─ ✓ Evento ya ocurrió?
-│   │        → No se cancela, se marca como "completado" (404 lógico)
-│   ├─ ✓ Sesión tiene cliente? → Notificar al cliente
-│   └─ Si falla → ERROR 403/422 + motivo
-│
-├─→ [ACTUALIZAR EN DB]
-│   ├─ Tabla: agendas
-│   ├─ SET estado='cancelado', canceled_at=NOW(), canceled_by=?, motivo=?
-│   ├─ WHERE id=? AND organization_id=?
-│   ├─ INSERT INTO agendas_historial (evento='cancelado', data)
-│   └─ RLS: solo owner O coach propietario
-│
-├─→ [AUDITORÍA]
-│   ├─ evento: "agenda.canceled"
-│   ├─ capacidad: "agenda.cancel" (o "agenda.edit")
-│   ├─ user_id_actor: Coach que canceló
-│   ├─ motivo: texto del motivo
-│   └─ cliente afectado: cliente_id del evento
-│
-└─→ [RESPUESTA]
-    ├─ ✓ Evento marcado como cancelado
-    ├─ ✓ UI remueve de calendario
-    ├─ ✓ Toast "Sesión cancelada"
-    └─ ✓ Notificación al cliente vía email/WhatsApp
+                 UNA TABLA: agendas
+                   (SOURCE OF TRUTH)
+                         ↓
+        ┌────────────────┼────────────────┐
+        ↓                ↓                ↓
+    Coach ve       Owner ve         Equipo ve
+  (scope=own)   (scope=org)      (scope=team)
+  
+  Sus sesiones | Toda la org  | Equipo inmediato
+  Sus bloques  | Todos coaches| Calendario grupal
+  Su disponibl | Métricas    | Carga semanal
 ```
 
-### 1.4 Reasignación de Coach
+**Regla**: La tabla `agendas` es la fuente única. Las vistas se filtran por capacidad + scope, NO duplican datos.
 
-```
-┌─ Owner o Coach Senior en "Equipo" → clickea coach → "Reasignar clientes"
-│
-├─→ [Modal: Drag-drop de clientes]
-│   ├─ Columna izq: Clientes de Coach A
-│   ├─ Columna der: Coaches disponibles
-│   ├─ Drag cliente de A → B
-│   └─ [Confirmar reasignación]
-│
-├─→ [VALIDACIÓN BACKEND]
-│   ├─ ✓ Capacidad: equipo.assign_clients? O agenda.edit (scope=organization)?
-│   ├─ ✓ Cliente existe y pertenece a Coach A?
-│   ├─ ✓ Coach B existe y está activo?
-│   ├─ ✓ Coach B tiene capacidad para recibir cliente?
-│   ├─ ✓ Sesiones futuras del cliente con Coach A:
-│   │        → Transferir a Coach B (reasignar sesiones)
-│   │        → O bloquearlas (no reasignar automático)
-│   └─ Si falla → ERROR 403/422 + motivo
-│
-├─→ [ACTUALIZAR EN DB — TRANSACCIÓN]
-│   ├─ Tabla: candidatos
-│   │   SET coach_id = B, coach_assign_date = NOW()
-│   ├─ Tabla: agendas (futuras)
-│   │   SET coach_id = B (solo si estado != 'completado'/'cancelado')
-│   ├─ Tabla: agendas_historial
-│   │   INSERT nuevas filas para cada sesión reasignada
-│   └─ RLS: solo owner (global access)
-│
-├─→ [AUDITORÍA]
-│   ├─ evento: "agenda.reassigned" (x N sesiones)
-│   ├─ capacidad: "equipo.assign_clients" (o similar)
-│   ├─ user_id_actor: Owner que reasignó
-│   ├─ cliente_id: Cliente movido
-│   ├─ coach_from: Coach A
-│   ├─ coach_to: Coach B
-│   ├─ sesiones_afectadas: count de sesiones transferidas
-│   └─ timestamp de cada cambio
-│
-└─→ [RESPUESTA]
-    ├─ ✓ Cliente reasignado
-    ├─ ✓ N sesiones transferidas
-    ├─ ✓ UI refresca tanto clientes como calendario
-    ├─ ✓ Toast "Cliente reasignado a [Coach B]"
-    └─ ✓ Email a ambos coaches + cliente
+---
+
+## 1. CONCEPTOS FUNDAMENTALES
+
+### 1.1 Tres Tipos de Eventos (Distintos)
+
+#### A) SESIÓN INDIVIDUAL (Coach + 1 Cliente)
+
+```javascript
+agendas {
+  id: "evt-123",
+  type: "sesion_individual",
+  coach_id: "coach-001",
+  client_id: "cli-789",
+  start_at: "2026-08-10T14:00:00Z",
+  end_at: "2026-08-10T15:00:00Z",
+  status: "scheduled"  // → confirmed → completed
+}
 ```
 
-### 1.5 Cambio de Permisos Durante Sesión Existente
+**Acciones permitidas**:
+- Crear: Coach + Owner (capacidad `agenda.create`)
+- Editar: Coach propietario + Owner (capacidad `agenda.edit`)
+- Cancelar: Coach propietario + Owner (capacidad `agenda.cancel`)
+- Reasignar: Owner (mover a otro coach)
+
+**Datos derivados**:
+- Asistencia del coach: `asistencias.where(coach_id).status`
+- Asistencia del cliente: `asistencias.where(client_id).status`
+
+---
+
+#### B) SESIÓN GRUPAL (Coach + N Clientes)
+
+```javascript
+agendas {
+  id: "evt-456",
+  type: "sesion_grupal",
+  coach_id: "coach-001",
+  client_id: null,  // ❌ NO: nunca un solo cliente
+  titulo: "Taller: Presentaciones efectivas",
+  start_at: "2026-08-10T18:00:00Z",
+  end_at: "2026-08-10T19:30:00Z",
+  status: "scheduled"
+}
+
+agenda_participantes {
+  id: "part-001",
+  agenda_id: "evt-456",
+  participant_id: "cli-789",    // Cliente
+  role: "participant",
+  status: "confirmed"  // confirmed | declined | no_show
+}
+
+agenda_participantes {
+  id: "part-002",
+  agenda_id: "evt-456",
+  participant_id: "cli-901",    // Otro cliente
+  role: "participant",
+  status: "confirmed"
+}
+```
+
+**Por qué tabla separada**:
+- N participantes por sesión
+- Cada uno tiene su propio estado de asistencia
+- Owner necesita saber quién vino a qué taller
+
+**Acciones permitidas**:
+- Crear: Coach + Owner
+- Editar: Coach propietario + Owner
+- Agregar participante: Coach + Owner
+- Quitar participante: Coach + Owner + participante (decline)
+
+---
+
+#### C) REUNIÓN INTERNA (Coaches/Staff)
+
+```javascript
+agendas {
+  id: "evt-789",
+  type: "reunion_interna",
+  coach_id: null,  // ❌ NO: no es de un coach específico
+  client_id: null,
+  titulo: "Planificación semanal",
+  start_at: "2026-08-10T10:00:00Z",
+  end_at: "2026-08-10T11:00:00Z",
+  status: "scheduled"
+}
+
+agenda_participantes {
+  id: "part-003",
+  agenda_id: "evt-789",
+  participant_id: "coach-001",
+  role: "organizer",
+  status: "confirmed"
+}
+
+agenda_participantes {
+  id: "part-004",
+  agenda_id: "evt-789",
+  participant_id: "coach-002",
+  role: "attendee",
+  status: "confirmed"
+}
+
+agenda_participantes {
+  id: "part-005",
+  agenda_id: "evt-789",
+  participant_id: "coach-003",
+  role: "attendee",
+  status: "no_show"
+}
+```
+
+**Diferencia clave**: No hay `client_id`, los participantes son `users` (coaches, admins, staff).
+
+---
+
+### 1.2 Disponibilidad vs Bloqueos vs Eventos (Tres Cosas Distintas)
+
+#### DISPONIBILIDAD (Horarios de Trabajo)
+
+```javascript
+agendas_disponibilidad {
+  id: "disp-001",
+  coach_id: "coach-001",
+  organization_id: "org-123",
+  day_of_week: 1,      // 0=lunes, 1=martes, ..., 6=domingo
+  hour_start: "09:00",
+  hour_end: "17:00",
+  timezone: "America/Argentina/Buenos_Aires"
+}
+```
+
+**Qué es**: Horario normal de trabajo del coach.  
+**Usar para**: Prevenir crear sesiones fuera del horario (validación).
+
+---
+
+#### BLOQUEOS (Vacaciones, No Disponible)
+
+```javascript
+agendas_bloqueos {
+  id: "blk-001",
+  coach_id: "coach-001",
+  organization_id: "org-123",
+  type: "vacaciones",        // vacaciones | no_disponible | otra_razon
+  start_at: "2026-08-15T00:00:00Z",
+  end_at: "2026-08-22T23:59:59Z",
+  titulo: "Vacaciones",
+  descripcion: "Vuelta a Argentina",
+  created_by: "coach-001",
+  created_at: "2026-08-02T10:00:00Z"
+}
+```
+
+**Qué es**: Período en el que el coach NO está disponible.  
+**Usar para**: Prevenir crear sesiones durante bloqueo.  
+**Diferencia con disponibilidad**: Es una excepción temporal, no la regla.
+
+---
+
+#### EVENTO (Sesión, Reunión, etc.)
+
+```javascript
+agendas {
+  id: "evt-123",
+  type: "sesion_individual",
+  coach_id: "coach-001",
+  client_id: "cli-789",
+  start_at: "2026-08-10T14:00:00Z",
+  end_at: "2026-08-10T15:00:00Z"
+}
+```
+
+**Qué es**: Una sesión real con clientes o una reunión con staff.  
+**Usar para**: Mostrar en calendario, calcular métricas, registrar asistencia.
+
+---
+
+### 1.3 CICLO DE VIDA: Estados y Transiciones
 
 ```
-┌─ Owner desactiva capacidad "agenda.edit" a Coach A
-│  (Coach A está en el medio de una sesión agendada)
+                        created
+                           ↓
+┌─────────────────────────────────────────────┐
+│                                             │
+│  scheduled ← rescheduled                    │
+│     ↓           ↓                           │
+│  confirmed      (cambio de fecha/hora)     │
+│     ↓                                       │
+│  completed                                  │
+│     ↓                                       │
+│  (asistencia registrada)                   │
+│                                             │
+│  ALTERNATIVAS:                             │
+│  scheduled → cancelled                     │
+│  confirmed → cancelled                     │
+│  scheduled → no_show (no asistió)         │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+**Estados posibles**:
+
+| Estado | Significado | Quién lo puede cambiar | Próximos estados |
+|--------|-------------|----------------------|------------------|
+| `scheduled` | Programado | Coach/Owner | confirmed, cancelled, rescheduled |
+| `confirmed` | Confirmado por cliente/coach | Coach/Owner | completed, cancelled, no_show |
+| `completed` | Ocurrió (con asistencia) | Coach (post-sesión) | — (histórico) |
+| `cancelled` | Cancelado | Coach/Owner | — (histórico) |
+| `no_show` | No se presentaron | Coach (post-sesión) | — (histórico) |
+| `rescheduled` | Movido a otra fecha | Coach/Owner | scheduled |
+
+---
+
+## 2. ASISTENCIA (Critical — afecta Métricas, Retención, Cobros)
+
+### 2.1 Estructura
+
+```javascript
+asistencias {
+  id: "att-001",
+  agenda_id: "evt-123",           // La sesión
+  participant_id: "coach-001",    // O "cli-789"
+  role: "coach" | "client",       // Quién es
+  status: "confirmed" | "no_show" | "completed",
+  notas: "Coach llegó tarde",
+  created_at: "2026-08-10T15:05:00Z",
+  updated_at: "2026-08-10T15:15:00Z"
+}
+```
+
+### 2.2 Estados de Asistencia
+
+| Estado | Cuando | Quién lo marca | Impacto |
+|--------|--------|---------------|---------|
+| `confirmed` | Coach confirmó con cliente antes | Coach | Sesión "va a ocurrir" |
+| `completed` | Coach marca como realizada POST-sesión | Coach | Cuenta como sesión completada |
+| `no_show` | Nadie se presentó | Coach | Brecha en retención |
+| `canceled_by_coach` | Coach canceló última hora | Coach | Sesión no ocurrió |
+| `canceled_by_client` | Cliente canceló | Coach (registra) | Brecha en retención |
+
+### 2.3 Impactos Downstream (MUY IMPORTANTE)
+
+```
+┌─ Asistencia (completada)
 │
-├─→ [TRANSACCIÓN EN SUPABASE]
-│   ├─ Tabla: user_capacidades
-│   │   SET enabled = FALSE para (coach_A, 'agenda.edit')
-│   └─ Timestamp + auditoría
+├─→ Métricas
+│   ├─ "Sesiones completadas": +1
+│   ├─ "Tasa de asistencia": X%
+│   └─ "Consistencia del cliente": tracking
 │
-├─→ [EFECTO INMEDIATO EN COACH A]
-│   ├─ Pantalla: Sesiones que EDITÓ pueden cambiar (Coach A → LECTURA SOLO)
-│   ├─ UI: Botones "Editar" desaparecen de sesiones
-│   ├─ API: Si Coach A intenta PATCH → 403 "No tienes capacidad"
-│   ├─ Sesiones ya creadas: SE MANTIENEN (son histórico)
-│   └─ Nuevas sesiones: Coach A NO puede crear
+├─→ Retención
+│   ├─ Cliente no_show 2+ veces → "En riesgo"
+│   └─ Impacta scoring en dashboard
 │
-├─→ [FLUJO DE RECUPERACIÓN]
-│   ├─ Owner reactiva capacidad → Coach A puede editar de nuevo
-│   ├─ No hay "sincronización" automática de cambios previos
-│   ├─ Sesiones que Coach A intentó editar sin permiso: BLOQUEADAS
-│   └─ Auditoría registra cada intento bloqueado
+├─→ Cobros
+│   ├─ Si coach cobra por sesión realizada: solo si "completed"
+│   ├─ Si cobra por sesión agendada: aunque sea "no_show"
+│   └─ Prepara campos: billing_status (billed/pending/refund)
 │
-├─→ [AUDITORÍA]
-│   ├─ evento: "capacidad.changed"
-│   ├─ user_id_target: Coach A
-│   ├─ capacidad: "agenda.edit"
-│   ├─ valor_anterior: TRUE
-│   ├─ valor_nuevo: FALSE
-│   ├─ user_id_actor: Owner que cambió el permiso
-│   ├─ razon: "Desactivación por política" (opcional)
-│   ├─ sesiones_afectadas: lista de IDs de sesiones
-│   └─ timestamp del cambio
-│
-└─→ [RESPUESTA]
-    ├─ ✓ Capacidad desactivada
-    ├─ ✓ Coach A recibe notificación
-    ├─ ✓ UI refleja cambio en tiempo real (WebSocket/polling)
-    └─ ✓ Historial de cambios visible en auditoría
+└─→ Reportes
+    └─ "Sesiones completas vs sesiones programadas"
 ```
 
 ---
 
-## 2. MATRIZ DE CONFLICTOS
+## 3. MODELO DE DATOS (PROPUESTA FINAL)
 
-### 2.1 Tabla: Qué está permitido / bloqueado
-
-| Escenario | Actor | Acción | Permitido | Condición/Restricción | Status Code |
-|-----------|-------|--------|-----------|----------------------|-------------|
-| **Crear Sesión** | Coach Estándar | POST agenda (sesión_cliente) | ✅ | Capacidad `agenda.create`, scope=own, horario disponible | 201 |
-| | Coach Estándar | POST agenda (reunión_interna) | ✅ | Capacidad `agenda.internal`, solo invite coaches | 201 |
-| | Coach Estándar | POST agenda (bloqueo) | ✅ | Capacidad `agenda.create`, marcar como "bloqueo" | 201 |
-| | Colaborador | POST agenda (sesión_cliente) | ❌ | No tiene capacidad `agenda.create` | 403 |
-| | Coach vencido | POST agenda (cualquiera) | ❌ | Cuenta inactiva/vencida | 403 |
-| **Editar Sesión** | Coach (propietario) | PATCH agenda/sesión suya | ✅ | Capacidad `agenda.edit`, scope=own, evento futuro | 200 |
-| | Coach (ajeno) | PATCH agenda/sesión de otro coach | ❌ | No tiene scope=team u organization | 403 |
-| | Coach Senior | PATCH agenda/sesión team | ✅ | Capacidad `agenda.edit`, scope=team | 200 |
-| | Owner | PATCH agenda/cualquiera | ✅ | Capacidad `agenda.edit`, scope=organization | 200 |
-| | Cualquiera | PATCH agenda/evento pasado | ❌ | Evento ya ocurrió; solo lectura histórica | 422 |
-| | Coach | PATCH mover cliente a otro coach | ✅ | Capacidad `equipo.assign_clients` (o `agenda.edit` scope=organization) | 200 |
-| **Cancelar Sesión** | Coach (propietario) | DELETE agenda/sesión suya | ✅ | Capacidad `agenda.cancel` (o `agenda.edit`), evento futuro | 204 |
-| | Coach (ajeno) | DELETE agenda/sesión de otro coach | ❌ | No tiene scope; solo propietario puede | 403 |
-| | Owner | DELETE agenda/cualquiera | ✅ | Capacidad `agenda.cancel`, scope=organization | 204 |
-| | Cualquiera | DELETE agenda/evento pasado | ⚠️ | Marca como "cancelado" (soft delete), no elimina | 204 |
-| **Reunión Interna** | Coach A | Crear reunión con Coach B | ✅ | Ambos con capacidad `agenda.internal` | 201 |
-| | Coach A | Editar reunión que creó | ✅ | Capacidad `agenda.edit` + es propietario | 200 |
-| | Coach B (invitado) | Editar reunión que no creó | ❌ | No es propietario; puede declinar o marcar asistencia | 403 |
-| | Coach B (invitado) | Declinar/Confirmar asistencia | ✅ | Capacidad `agenda.read`, actualizar su estado | 200 |
-| **Bloqueos/Vacaciones** | Coach | Crear bloqueo "vacaciones" | ✅ | Tipo=bloqueo, capacidad `agenda.create` | 201 |
-| | Coach | Crear bloqueo "no disponible 14-16h" | ✅ | Tipo=bloqueo, horario parcial | 201 |
-| | Owner | Ver bloqueos de todo el equipo | ✅ | Capacidad `agenda.read`, scope=organization | 200 |
-| | Coach Estándar | Ver bloqueos de otros coaches | ❌ | No tiene scope=team; solo ve los suyos | 403 |
-| | Sistema | Prevenir sesión dentro de bloqueo | ✅ | Validación automática: fecha en bloqueo → ERROR | 422 |
-| **Sesiones Recurrentes** | Coach | Crear serie recurrente (ej: semanal) | ✅ | Capacidad `agenda.create`, recurrence_rule válido | 201 |
-| | Coach | Editar ESTA sesión de la serie | ✅ | Edita solo esa instancia, no la serie | 200 |
-| | Coach | Editar TODA la serie | ✅ | Edita recurrence_rule, afecta futuras | 200 |
-| | Coach | Cancelar ESTA sesión | ✅ | Marca como cancelado, serie continúa | 204 |
-| | Coach | Cancelar TODA la serie | ✅ | Cancela recurrence_rule, genera auditoría por cada afectada | 204 |
-| **Permisos en Tiempo Real** | Owner | Desactiva `agenda.edit` a Coach A | ✅ | Capacidad `config.usuarios`, cambio inmediato | 200 |
-| | Coach A (con permiso desactivado) | Intenta PATCH sesión | ❌ | Capacidad revocada; 403 "No tienes agenda.edit" | 403 |
-| | Coach A | UI oculta botones "Editar" | ✅ | Data-cap=agenda.edit no cumple → display:none | — |
-| | Coach A | Sesiones ya creadas: legibles | ✅ | Histórico intacto; solo nuevas ediciones bloqueadas | 200 |
-
----
-
-## 3. API CONTRACT
-
-### 3.1 POST /agendas — Crear evento
-
-**Descripción**: Crear una sesión, reunión interna o bloqueo.
-
-**Request**
-```json
-{
-  "tipo": "sesion_cliente | reunión_interna | bloqueo",
-  "titulo": "Sesión con Juan",
-  "descripcion": "Preparación para entrevista",
-  "start_at": "2026-08-10T14:00:00Z",
-  "end_at": "2026-08-10T15:00:00Z",
-  "cliente_id": "cli-123",  // Obligatorio si tipo=sesion_cliente
-  "participantes": ["coach-456", "coach-789"],  // Si tipo=reunión_interna
-  "tipo_bloqueo": "vacaciones | no_disponible",  // Si tipo=bloqueo
-  "recurrence_rule": "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=2026-12-31",  // Opcional
-  "zoom_url": "https://zoom.us/...",  // Opcional
-  "notas_preparacion": "Revisar CV..."  // Opcional
-}
-```
-
-**Response (201 Created)**
-```json
-{
-  "id": "evt-12345",
-  "organization_id": "org-123",
-  "coach_id": "coach-001",
-  "cliente_id": "cli-123",
-  "tipo": "sesion_cliente",
-  "titulo": "Sesión con Juan",
-  "start_at": "2026-08-10T14:00:00Z",
-  "end_at": "2026-08-10T15:00:00Z",
-  "estado": "scheduled",
-  "created_by": "coach-001",
-  "created_at": "2026-08-02T17:30:00Z",
-  "recurrence_rule": null,
-  "instances_count": 1,
-  "zoom_url": null
-}
-```
-
-**Validaciones Backend**
-- ✓ `start_at < end_at`
-- ✓ Duración >= 15 min, <= 4 horas
-- ✓ `coach_id` existe y está activo
-- ✓ Si cliente_id: existe y está asignado a ese coach (scope check)
-- ✓ Si recurrence: RRULE válida
-- ✓ Sin conflictos horarios (mismo coach, misma hora)
-- ✓ Capacidad `agenda.create` OR `agenda.internal` (según tipo)
-
-**Error Responses**
-| Caso | Status | Body |
-|------|--------|------|
-| Sin capacidad | 403 | `{"error": "Necesitas capacidad agenda.create"}` |
-| Conflicto horario | 422 | `{"error": "Conflicto: ya tienes sesión 14:00-15:00"}` |
-| Cliente no existe | 404 | `{"error": "Cliente cli-123 no encontrado"}` |
-| Cliente asignado a otro coach | 422 | `{"error": "Cliente no está en tu cartera"}` |
-| start_at en el pasado | 422 | `{"error": "Fecha/hora debe ser en el futuro"}` |
-| Fuera de horario disponible | 422 | `{"error": "No disponible: tienes bloqueo 14-16h"}` |
-
----
-
-### 3.2 PATCH /agendas/{id} — Editar evento
-
-**Descripción**: Modificar fecha, hora, descripción o reasignar a otro coach.
-
-**Request**
-```json
-{
-  "start_at": "2026-08-10T15:00:00Z",  // Opcional
-  "end_at": "2026-08-10T16:00:00Z",    // Opcional
-  "descripcion": "Nueva descripción",    // Opcional
-  "coach_id": "coach-002",               // Opcional: reasignar
-  "zoom_url": "https://zoom.us/...",    // Opcional
-  "recurrence_rule": "FREQ=WEEKLY;..."  // Opcional: editarla
-  "modo_edicion": "this | all"           // Si es recurrente
-}
-```
-
-**Response (200 OK)**
-```json
-{
-  "id": "evt-12345",
-  "start_at": "2026-08-10T15:00:00Z",
-  "end_at": "2026-08-10T16:00:00Z",
-  "coach_id": "coach-002",  // Si fue reasignado
-  "estado": "scheduled",
-  "updated_at": "2026-08-02T17:35:00Z",
-  "cambios_realizados": {
-    "hora": { "de": "14:00", "a": "15:00" },
-    "coach": { "de": "coach-001", "a": "coach-002" }
-  }
-}
-```
-
-**Validaciones Backend**
-- ✓ Evento existe y pertenece a organization
-- ✓ Evento NO ha ocurrido (start_at > NOW)
-- ✓ Capacidad `agenda.edit`
-- ✓ Si scope=own: solo puede editar sus propios eventos
-- ✓ Si scope=team: puede editar eventos de su equipo
-- ✓ Si scope=organization: puede editar cualquiera
-- ✓ Nueva hora sin conflictos
-- ✓ Si reasigna a otro coach: validar que el coach existe y está activo
-
-**Error Responses**
-| Caso | Status | Body |
-|------|--------|------|
-| Sin capacidad | 403 | `{"error": "Necesitas capacidad agenda.edit"}` |
-| No es propietario (scope=own) | 403 | `{"error": "No puedes editar sesiones ajenas"}` |
-| Evento ya pasó | 422 | `{"error": "No se pueden editar eventos completados"}` |
-| Conflicto NEW | 422 | `{"error": "Nueva hora genera conflicto con otra sesión"}` |
-| Coach destino no existe | 404 | `{"error": "Coach coach-002 no encontrado"}` |
-
----
-
-### 3.3 DELETE /agendas/{id} — Cancelar/Eliminar evento
-
-**Descripción**: Cancelar una sesión (soft delete). Sesiones pasadas NO se eliminan.
-
-**Request**
-```json
-{
-  "motivo": "Disponibilidad",  // Opcional
-  "modo_eliminacion": "this | all"  // Si es recurrente
-}
-```
-
-**Response (204 No Content)**
-```
-[Sin body, solo status 204]
-```
-
-**Respuesta alternativa con info (200 OK)**
-```json
-{
-  "id": "evt-12345",
-  "estado": "cancelado",
-  "canceled_at": "2026-08-02T17:40:00Z",
-  "motivo": "Disponibilidad",
-  "cliente_notificado": true
-}
-```
-
-**Validaciones Backend**
-- ✓ Evento existe
-- ✓ Evento NO ha ocurrido (start_at > NOW)
-- ✓ Capacidad `agenda.cancel` OR `agenda.edit`
-- ✓ Si scope=own: solo propietario
-- ✓ Si scope=team/organization: permitido
-
-**Error Responses**
-| Caso | Status | Body |
-|------|--------|------|
-| Sin capacidad | 403 | `{"error": "Necesitas capacidad agenda.cancel o agenda.edit"}` |
-| No es propietario | 403 | `{"error": "No puedes cancelar sesiones ajenas"}` |
-| Evento ya pasó | 422 | `{"error": "Evento ya ocurrió; no se puede cancelar"}` |
-| Evento no existe | 404 | `{"error": "Evento evt-12345 no encontrado"}` |
-
----
-
-### 3.4 GET /agendas — Listar/Buscar eventos
-
-**Descripción**: Obtener calendario del usuario o equipo según permisos.
-
-**Request (Query Parameters)**
-```
-GET /agendas?from=2026-08-01T00:00:00Z&to=2026-08-31T23:59:59Z&scope=own|team|org&tipo=sesion_cliente|reunión_interna|bloqueo&coach_id=coach-001&cliente_id=cli-123&estado=scheduled|canceled|completed
-```
-
-**Response (200 OK)**
-```json
-{
-  "total": 15,
-  "eventos": [
-    {
-      "id": "evt-12345",
-      "coach_id": "coach-001",
-      "cliente_id": "cli-123",
-      "cliente_nombre": "Juan",
-      "tipo": "sesion_cliente",
-      "titulo": "Sesión con Juan",
-      "start_at": "2026-08-10T14:00:00Z",
-      "end_at": "2026-08-10T15:00:00Z",
-      "estado": "scheduled",
-      "recurrence_rule": null,
-      "zoom_url": null
-    },
-    {
-      "id": "evt-67890",
-      "coach_id": "coach-001",
-      "tipo": "bloqueo",
-      "titulo": "Vacaciones",
-      "start_at": "2026-08-15T00:00:00Z",
-      "end_at": "2026-08-22T23:59:59Z",
-      "estado": "scheduled",
-      "tipo_bloqueo": "vacaciones"
-    }
-  ]
-}
-```
-
-**Validaciones RLS**
-- ✓ Si `scope=own`: devuelve solo eventos del usuario (coach_id = auth.uid)
-- ✓ Si `scope=team`: devuelve eventos del usuario + su equipo (validar org)
-- ✓ Si `scope=organization`: devuelve TODOS los eventos (solo Owner/Admin)
-- ✓ Si usuario NO tiene capacidad `agenda.read`: 403
-
-**Error Responses**
-| Caso | Status | Body |
-|------|--------|------|
-| Sin capacidad `agenda.read` | 403 | `{"error": "No tienes acceso a agenda"}` |
-| Rango de fechas inválido | 422 | `{"error": "from debe ser menor que to"}` |
-
----
-
-### 3.5 GET /agendas/{id} — Obtener un evento
-
-**Descripción**: Detalles completos de un evento.
-
-**Response (200 OK)**
-```json
-{
-  "id": "evt-12345",
-  "organization_id": "org-123",
-  "coach_id": "coach-001",
-  "coach_nombre": "Carlos",
-  "cliente_id": "cli-123",
-  "cliente_nombre": "Juan",
-  "tipo": "sesion_cliente",
-  "titulo": "Sesión con Juan",
-  "descripcion": "Preparación para entrevista",
-  "start_at": "2026-08-10T14:00:00Z",
-  "end_at": "2026-08-10T15:00:00Z",
-  "duracion_minutos": 60,
-  "estado": "scheduled",
-  "recurrence_rule": null,
-  "zoom_url": "https://zoom.us/...",
-  "notas_preparacion": "Revisar CV...",
-  "created_by": "coach-001",
-  "created_at": "2026-08-02T10:00:00Z",
-  "updated_by": null,
-  "updated_at": null,
-  "canceled_at": null,
-  "motivo_cancelacion": null,
-  "permisos_usuario": {
-    "puede_editar": true,
-    "puede_cancelar": true,
-    "puede_reasignar": false
-  }
-}
-```
-
-**Validaciones RLS**
-- ✓ Capacidad `agenda.read`
-- ✓ Si scope=own: solo si es propietario o participante
-- ✓ Si scope=team/organization: permitido
-
----
-
-## 4. RLS ESPERADO (Row-Level Security)
-
-### 4.1 Tabla: agendas
+### 3.1 Tabla: `agendas` (SOURCE OF TRUTH)
 
 ```sql
--- Policy 1: Owner (admin) ve y edita TODO
-CREATE POLICY "owner_full_access" ON agendas
-  AS (auth.uid() IN (SELECT user_id FROM usuarios WHERE role='owner' AND organization_id = agendas.organization_id))
-  USING (true)
-  WITH CHECK (true);
+CREATE TABLE agendas (
+  -- Identidad
+  id UUID PRIMARY KEY,
+  organization_id UUID NOT NULL REFERENCES organizaciones(id),
+  
+  -- Tipo de evento
+  type TEXT CHECK (type IN ('sesion_individual', 'sesion_grupal', 'reunion_interna', 'bloqueo')) NOT NULL,
+  
+  -- Participantes
+  coach_id UUID REFERENCES usuarios(id),  -- Null para reunion_interna
+  client_id UUID REFERENCES candidatos(id),  -- Null para reunion_interna y sesion_grupal
+  
+  -- Datos temporales
+  start_at TIMESTAMPTZ NOT NULL,
+  end_at TIMESTAMPTZ NOT NULL,
+  timezone TEXT DEFAULT 'UTC',  -- Importante para SaaS global
+  
+  -- Información
+  titulo TEXT,
+  descripcion TEXT,
+  
+  -- Integraciones (preparadas para futuro)
+  zoom_url TEXT,
+  google_meet_url TEXT,
+  external_calendar_id TEXT,  -- Para Google Calendar, Outlook sync
+  external_event_id TEXT,
+  
+  -- Estado del evento
+  status TEXT CHECK (status IN ('scheduled', 'confirmed', 'completed', 'cancelled', 'no_show', 'rescheduled')) DEFAULT 'scheduled',
+  
+  -- Auditoría
+  created_by UUID REFERENCES usuarios(id),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_by UUID REFERENCES usuarios(id),
+  updated_at TIMESTAMPTZ,
+  cancelled_by UUID REFERENCES usuarios(id),
+  cancelled_at TIMESTAMPTZ,
+  cancel_reason TEXT,
+  
+  -- Recurrencia
+  recurrence_rule TEXT,  -- RRULE string (FREQ=WEEKLY;BYDAY=MO,WE...)
+  recurrence_parent_id UUID REFERENCES agendas(id),  -- Si es instancia de recurrente
+  
+  -- Validaciones
+  CONSTRAINT coach_or_internal CHECK (
+    (type = 'reunion_interna' AND coach_id IS NULL AND client_id IS NULL) OR
+    (type != 'reunion_interna' AND coach_id IS NOT NULL)
+  ),
+  CONSTRAINT individual_vs_grupal CHECK (
+    (type = 'sesion_individual' AND client_id IS NOT NULL) OR
+    (type = 'sesion_grupal' AND client_id IS NULL) OR
+    (type = 'reunion_interna' AND client_id IS NULL) OR
+    (type = 'bloqueo' AND client_id IS NULL)
+  ),
+  CONSTRAINT start_before_end CHECK (start_at < end_at)
+);
 
--- Policy 2: Coach ve/edita solo sus eventos (scope=own)
-CREATE POLICY "coach_own_access" ON agendas
-  AS (auth.uid() = coach_id)
-  USING (true)
-  WITH CHECK (true);
-
--- Policy 3: Coach Senior ve team (scope=team)
-CREATE POLICY "coach_senior_team_access" ON agendas
-  AS (
-    auth.uid() IN (
-      SELECT user_id FROM user_capacidades 
-      WHERE capacidad='agenda.read' AND enabled=true
-        AND organization_id = agendas.organization_id
-    )
-    AND (
-      -- Coach propietario del evento
-      auth.uid() = agendas.coach_id
-      OR
-      -- O Coach Senior que pertenece al mismo team
-      EXISTS (
-        SELECT 1 FROM usuarios u1
-        JOIN usuarios u2 ON u1.organization_id = u2.organization_id
-        WHERE u1.user_id = auth.uid() 
-          AND u2.user_id = agendas.coach_id
-          AND u1.team_id = u2.team_id
-      )
-    )
-  )
-  USING (true)
-  WITH CHECK (true);
-
--- Policy 4: Cliente ve SOLO sesiones que lo incluyan (futuro)
-CREATE POLICY "cliente_own_sessions" ON agendas
-  AS (
-    auth.uid() IN (SELECT user_id FROM candidatos WHERE id = agendas.cliente_id)
-  )
-  USING (tipo='sesion_cliente' AND cliente_id IN (SELECT id FROM candidatos WHERE user_id = auth.uid()))
-  WITH CHECK (false);  -- Clientes NO pueden crear/editar
-```
-
-### 4.2 Tabla: agendas_historial
-
-```sql
--- Solo audit trail: INSERT-only
-CREATE POLICY "audit_trail_insert" ON agendas_historial
-  AS (false)  -- Nunca UPDATE/DELETE
-  USING (false)
-  WITH CHECK (
-    -- Solo sistema puede INSERT (Edge Function o trigger)
-    auth.uid() IN (SELECT user_id FROM usuarios WHERE role IN ('owner', 'admin'))
-    OR
-    current_user = 'postgres'  -- Trigger del sistema
-  );
-
--- Lectura: Owner/Admin
-CREATE POLICY "audit_trail_read" ON agendas_historial
-  AS (
-    auth.uid() IN (SELECT user_id FROM usuarios WHERE role IN ('owner', 'admin'))
-  )
-  USING (true)
-  WITH CHECK (false);  -- Solo lectura
-```
-
-### 4.3 Tabla: agendas_disponibilidad
-
-```sql
--- Coach edita su propia disponibilidad
-CREATE POLICY "coach_own_availability" ON agendas_disponibilidad
-  AS (auth.uid() = coach_id)
-  USING (true)
-  WITH CHECK (true);
-
--- Owner ve la de todos
-CREATE POLICY "owner_see_all_availability" ON agendas_disponibilidad
-  AS (
-    auth.uid() IN (SELECT user_id FROM usuarios WHERE role='owner' AND organization_id = agendas_disponibilidad.organization_id)
-  )
-  USING (true)
-  WITH CHECK (false);  -- Solo lectura
-```
-
-### 4.4 Tabla: agendas_bloqueos (vacaciones, no disponible)
-
-```sql
--- Coach crea sus propios bloqueos
-CREATE POLICY "coach_own_blocks" ON agendas_bloqueos
-  AS (auth.uid() = coach_id)
-  USING (true)
-  WITH CHECK (true);
-
--- Owner ve/edita todos
-CREATE POLICY "owner_manage_blocks" ON agendas_bloqueos
-  AS (
-    auth.uid() IN (SELECT user_id FROM usuarios WHERE role='owner' AND organization_id = agendas_bloqueos.organization_id)
-  )
-  USING (true)
-  WITH CHECK (true);
-
--- Coach Senior ve del equipo (lectura)
-CREATE POLICY "coach_senior_view_team_blocks" ON agendas_bloqueos
-  AS (
-    auth.uid() IN (
-      SELECT user_id FROM user_capacidades 
-      WHERE capacidad='agenda.read' AND enabled=true
-    )
-    AND EXISTS (
-      SELECT 1 FROM usuarios u1 JOIN usuarios u2 ON u1.team_id = u2.team_id
-      WHERE u1.user_id = auth.uid() AND u2.user_id = agendas_bloqueos.coach_id
-    )
-  )
-  USING (true)
-  WITH CHECK (false);  -- Solo lectura
+-- Índices críticos
+CREATE INDEX idx_agendas_org_coach ON agendas(organization_id, coach_id);
+CREATE INDEX idx_agendas_org_client ON agendas(organization_id, client_id);
+CREATE INDEX idx_agendas_start ON agendas(start_at);
+CREATE INDEX idx_agendas_status ON agendas(status);
 ```
 
 ---
 
-## 5. MAPPING SPRINT 5.1
+### 3.2 Tabla: `agenda_participantes` (Para Sesiones Grupales y Reuniones)
 
-### 5.1 Tabla: Acciones de Agenda ↔ Capacidades Sprint 5.1
+```sql
+CREATE TABLE agenda_participantes (
+  id UUID PRIMARY KEY,
+  agenda_id UUID NOT NULL REFERENCES agendas(id) ON DELETE CASCADE,
+  participant_id UUID NOT NULL REFERENCES usuarios(id),  -- Usuario (coach o staff)
+  role TEXT CHECK (role IN ('organizer', 'facilitator', 'attendee', 'participant')) DEFAULT 'attendee',
+  
+  -- Estado del participante
+  rsvp_status TEXT CHECK (rsvp_status IN ('pending', 'confirmed', 'declined')) DEFAULT 'pending',
+  rsvp_at TIMESTAMPTZ,
+  
+  -- Asistencia (post-sesión)
+  attendance_status TEXT CHECK (attendance_status IN ('confirmed', 'no_show', 'completed')) DEFAULT 'confirmed',
+  attendance_at TIMESTAMPTZ,
+  
+  created_at TIMESTAMPTZ DEFAULT now(),
+  
+  CONSTRAINT organizer_single CHECK (
+    -- Solo un organizador por sesión
+    NOT (role = 'organizer' AND EXISTS (
+      SELECT 1 FROM agenda_participantes ap2
+      WHERE ap2.agenda_id = agenda_participantes.agenda_id
+        AND ap2.role = 'organizer'
+        AND ap2.id != agenda_participantes.id
+    ))
+  )
+);
 
-| Acción | Capacidad Requerida | Scope | Justificación | Status |
-|--------|-------------------|-------|---------------|--------|
-| Ver calendario personal | `agenda.read` | own | Coach necesita ver sus propias sesiones | ✅ Existe |
-| Ver calendario del equipo | `agenda.read` | team | Coach Senior coordina su equipo | ✅ Existe |
-| Ver calendario completo | `agenda.read` | organization | Owner gestiona toda la operación | ✅ Existe |
-| Crear sesión con cliente | `agenda.create` | own | Coach crea sesiones en su cartera | ✅ Existe |
-| Crear reunión interna | `agenda.internal` | team | Coordinar entre coaches del equipo | 🔶 NUEVA |
-| Crear bloqueo/vacaciones | `agenda.create` | own | Coach se bloquea a sí mismo | ✅ Reutiliza |
-| Editar sesión propia | `agenda.edit` | own | Coach modifica sus sesiones | ✅ Existe |
-| Editar sesión de team | `agenda.edit` | team | Coach Senior ajusta agenda del equipo | ✅ Existe |
-| Editar sesión de org | `agenda.edit` | organization | Owner tiene control total | ✅ Existe |
-| Cancelar sesión | `agenda.cancel` | own/team/organization | Según quién pueda editar, puede cancelar | ✅ Existe |
-| Reasignar cliente (sesiones) | `equipo.assign_clients` | organization | Capacidad de Equipo, no Agenda | ✅ Existe (Sprint 5.1) |
-| Ver historial de cambios | `analytics.view_organization` | organization | Auditoría de sesiones | ✅ Existe |
-
-### 5.2 Tabla: Nuevas Capacidades Necesarias (si aplica)
-
-| Capacidad | Categoría | Descripción | Necesaria? | Sprint |
-|-----------|-----------|-------------|-----------|--------|
-| `agenda.internal` | Agenda | Crear/ver reuniones internas | ✅ SÍ | 5.2 |
-| `agenda.reschedule` | Agenda | Mover sesión (reasignar coach) | ❓ ACLARAR | 5.2 |
-| `zoom.integrate` | Integraciones | Integrar Zoom/Google Meet | ❌ NO | 5.3+ |
-| `agenda.recurring` | Agenda | Crear sesiones recurrentes | ❓ Incluido en `agenda.create`? | 5.2 |
-
-**DECISIÓN**: `agenda.internal` es NUEVA y debe agregarse a Sprint 5.1 como "reserved" → "activa" en 5.2.
-
-Todas las demás están cubiertas por `agenda.create`, `agenda.edit`, `agenda.cancel`.
-
-### 5.3 Relación Usuario → Capacidad → Acción
-
-**Ejemplo: Coach Estándar (23 capacidades actuales + agenda.internal)**
-
+CREATE INDEX idx_agenda_participants_agenda ON agenda_participantes(agenda_id);
+CREATE INDEX idx_agenda_participants_user ON agenda_participantes(participant_id);
 ```
-Coach Estándar
-├─ Capacidad: agenda.read (scope=own)
-│   └─ Puede: Ver su calendario
-├─ Capacidad: agenda.create
-│   └─ Puede: Crear sesiones con clientes
-├─ Capacidad: agenda.edit (scope=own)
-│   └─ Puede: Modificar sus sesiones
-├─ Capacidad: agenda.cancel (scope=own)
-│   └─ Puede: Cancelar sus sesiones
-├─ Capacidad: agenda.internal (NUEVA)
-│   └─ Puede: Crear reuniones con otros coaches
-└─ NO tiene: agenda.read.team
-    └─ No puede: Ver calendario del equipo (botón escondido)
-
-═══════════════════════════════════════════════════════════════
-
-Coach Senior (30 capacidades actuales + agenda.internal)
-
-├─ Capacidad: agenda.read (scope=team)
-│   └─ Puede: Ver calendario de su equipo
-├─ Capacidad: agenda.create (scope=own)
-│   └─ Puede: Crear sesiones
-├─ Capacidad: agenda.edit (scope=team)
-│   └─ Puede: Editar sesiones de su equipo
-├─ Capacidad: agenda.cancel (scope=team)
-│   └─ Puede: Cancelar sesiones del equipo
-├─ Capacidad: agenda.internal (NUEVA)
-│   └─ Puede: Crear reuniones con coaches
-└─ Capacidad: equipo.assign_clients (scope=team)
-    └─ Puede: Reasignar clientes dentro del equipo
-
-═══════════════════════════════════════════════════════════════
-
-Owner (40 capacidades actuales + agenda.internal)
-
-├─ Capacidad: agenda.read (scope=organization)
-│   └─ Puede: Ver TODA la agenda
-├─ Capacidad: agenda.create (scope=organization)
-│   └─ Puede: Crear cualquier evento
-├─ Capacidad: agenda.edit (scope=organization)
-│   └─ Puede: Editar cualquier evento
-├─ Capacidad: agenda.cancel (scope=organization)
-│   └─ Puede: Cancelar cualquier evento
-├─ Capacidad: agenda.internal (NUEVA)
-│   └─ Puede: Crear reuniones entre cualquiera
-├─ Capacidad: equipo.assign_clients (scope=organization)
-│   └─ Puede: Reasignar clientes entre coaches
-└─ Capacidad: analytics.view_organization
-    └─ Puede: Ver auditoría completa de cambios
-```
-
-### 5.4 Cambios Mínimos a Sprint 5.1
-
-**ADICIÓN NECESARIA:**
-
-Agregar a `sprint-5-1-matriz-permisos-oficial.md`:
-
-```
-AGENDA (RESERVADA PARA 5.2):
-├─ agenda.read (active) — Ver sesiones según scope
-├─ agenda.create (active) — Crear sesiones/bloqueos
-├─ agenda.edit (active) — Editar sesiones según scope
-├─ agenda.cancel (active) — Cancelar sesiones según scope
-└─ agenda.internal (reserved → active en 5.2) — Reuniones internas
-```
-
-**CAMBIOS A PRESETS:**
-
-Agregar `agenda.internal` a:
-- ✅ Coach Estándar (total: 24)
-- ✅ Coach Senior (total: 31)
-- ✅ Recruiter (total: 13)
-- ✅ Owner (total: 41)
-
-**Estado**: Cambios pre-aprobados (extensión lógica de Sprint 5.1, no rediseño).
 
 ---
 
-## 6. RESUMEN: LISTO PARA APROBACIÓN
+### 3.3 Tabla: `asistencias` (Registro de Asistencia — SEPARADA)
 
-### ✅ Entregables Completados
+```sql
+CREATE TABLE asistencias (
+  id UUID PRIMARY KEY,
+  agenda_id UUID NOT NULL REFERENCES agendas(id) ON DELETE CASCADE,
+  participant_id UUID NOT NULL REFERENCES usuarios(id),  -- Coach o cliente
+  participant_type TEXT CHECK (participant_type IN ('coach', 'client')),
+  
+  -- Estado de asistencia
+  status TEXT CHECK (status IN ('confirmed', 'no_show', 'completed', 'canceled_by_coach', 'canceled_by_client')) NOT NULL,
+  notas TEXT,
+  
+  -- Timestamp
+  marked_by UUID REFERENCES usuarios(id),  -- Quién registró la asistencia
+  marked_at TIMESTAMPTZ DEFAULT now(),
+  
+  -- Para cobros (futuro Sprint 5.3)
+  billing_status TEXT CHECK (billing_status IN ('pending', 'billed', 'refund')) DEFAULT 'pending',
+  billing_amount DECIMAL(10,2),
+  billing_at TIMESTAMPTZ,
+  
+  CONSTRAINT unique_attendance CHECK (
+    -- No hay dos registros de asistencia para el mismo (agenda, participant)
+    NOT EXISTS (
+      SELECT 1 FROM asistencias a2
+      WHERE a2.agenda_id = asistencias.agenda_id
+        AND a2.participant_id = asistencias.participant_id
+        AND a2.id != asistencias.id
+    )
+  )
+);
 
-1. **Diagrama de Flujo** (§1)
-   - ✓ Crear sesión
-   - ✓ Editar sesión
-   - ✓ Cancelar sesión
-   - ✓ Reasignar coach
-   - ✓ Cambios de permisos en tiempo real
-
-2. **Matriz de Conflictos** (§2)
-   - ✓ 25 escenarios documentados
-   - ✓ Permitido / Bloqueado con condiciones
-   - ✓ Status codes esperados
-
-3. **API Contract** (§3)
-   - ✓ POST/PATCH/DELETE/GET con Request/Response
-   - ✓ Validaciones backend
-   - ✓ Error responses detallados
-
-4. **RLS Esperado** (§4)
-   - ✓ Policies por rol: Owner, Coach, Coach Senior, Cliente (futuro)
-   - ✓ Audit trail (insert-only)
-   - ✓ Tablas: agendas, agendas_historial, agendas_disponibilidad, agendas_bloqueos
-
-5. **Mapping Sprint 5.1** (§5)
-   - ✓ Todas las acciones → capacidades existentes
-   - ✓ 1 capacidad NUEVA: `agenda.internal` (agregar a presets)
-   - ✓ Relación usuario → capacidad → acción claramente documentada
-
-### 🔒 Arquitectura Bloqueada
-
-- **Capacidades base**: `agenda.read`, `agenda.create`, `agenda.edit`, `agenda.cancel`
-- **Nueva capacidad**: `agenda.internal` (reservada → activa en 5.2)
-- **Scopes**: own, team, organization (implícitos en cada capacidad según rol)
-- **Tabla principal**: `agendas` (single source of truth, views por role)
-- **Auditoría**: `agendas_historial` + `auditoria_capacidades` (Sprint 5.1)
-
-### ⏭️ Próximas Fases (POST-APROBACIÓN)
-
-1. **Sprint 5.2.0** — Auditoría `panel-v2.html` (qué existe, qué reutilizar)
-2. **Sprint 5.2.1** — Especificación Funcional (PRD: qué hace la pantalla de agenda)
-3. **Sprint 5.2.2** — Mockup UX (diseño, sin lógica)
-4. **Sprint 5.2.3** — Implementación (backend sólido, luego UI calendar)
-5. **Sprint 5.2.4** — QA (desktop/tablet/mobile, empty states, errores)
+CREATE INDEX idx_asistencias_agenda ON asistencias(agenda_id);
+CREATE INDEX idx_asistencias_participant ON asistencias(participant_id);
+CREATE INDEX idx_asistencias_status ON asistencias(status);
+```
 
 ---
 
-**ESPERANDO APROBACIÓN DEL PRODUCT OWNER**
+### 3.4 Tabla: `agendas_disponibilidad` (Horarios de Trabajo)
 
-Firma y aprobación requeridas antes de proceder a Sprint 5.2.0.
+```sql
+CREATE TABLE agendas_disponibilidad (
+  id UUID PRIMARY KEY,
+  organization_id UUID NOT NULL REFERENCES organizaciones(id),
+  coach_id UUID NOT NULL REFERENCES usuarios(id),
+  
+  -- Día de la semana
+  day_of_week INT CHECK (day_of_week BETWEEN 0 AND 6),  -- 0=lunes, 6=domingo
+  
+  -- Horario
+  hour_start TIME NOT NULL,
+  hour_end TIME NOT NULL,
+  timezone TEXT DEFAULT 'UTC',
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  
+  CONSTRAINT start_before_end CHECK (hour_start < hour_end),
+  CONSTRAINT unique_availability CHECK (
+    -- No hay dos reglas para (coach, day_of_week)
+    NOT EXISTS (
+      SELECT 1 FROM agendas_disponibilidad ad2
+      WHERE ad2.coach_id = agendas_disponibilidad.coach_id
+        AND ad2.day_of_week = agendas_disponibilidad.day_of_week
+        AND ad2.id != agendas_disponibilidad.id
+    )
+  )
+);
+
+CREATE INDEX idx_disp_coach ON agendas_disponibilidad(coach_id);
+```
+
+---
+
+### 3.5 Tabla: `agendas_bloqueos` (Vacaciones, No Disponible)
+
+```sql
+CREATE TABLE agendas_bloqueos (
+  id UUID PRIMARY KEY,
+  organization_id UUID NOT NULL REFERENCES organizaciones(id),
+  coach_id UUID NOT NULL REFERENCES usuarios(id),
+  
+  -- Tipo de bloqueo
+  type TEXT CHECK (type IN ('vacaciones', 'no_disponible', 'otro')) NOT NULL,
+  
+  -- Período
+  start_at TIMESTAMPTZ NOT NULL,
+  end_at TIMESTAMPTZ NOT NULL,
+  timezone TEXT DEFAULT 'UTC',
+  
+  -- Información
+  titulo TEXT,
+  descripcion TEXT,
+  
+  -- Auditoría
+  created_by UUID REFERENCES usuarios(id),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  
+  CONSTRAINT start_before_end CHECK (start_at < end_at)
+);
+
+CREATE INDEX idx_bloqueos_coach ON agendas_bloqueos(coach_id);
+CREATE INDEX idx_bloqueos_dates ON agendas_bloqueos(start_at, end_at);
+```
+
+---
+
+### 3.6 Tabla: `agendas_historial` (Audit Trail)
+
+```sql
+CREATE TABLE agendas_historial (
+  id UUID PRIMARY KEY,
+  agenda_id UUID NOT NULL REFERENCES agendas(id) ON DELETE CASCADE,
+  
+  -- Qué cambió
+  action TEXT CHECK (action IN ('created', 'edited', 'cancelled', 'reassigned', 'rescheduled')) NOT NULL,
+  
+  -- Antes/Después
+  data_before JSONB,  -- Estado previo (o null si created)
+  data_after JSONB,   -- Estado nuevo
+  
+  -- Quién y cuándo
+  changed_by UUID NOT NULL REFERENCES usuarios(id),
+  changed_at TIMESTAMPTZ DEFAULT now(),
+  
+  -- Contexto (para auditoría B2B)
+  ip_address INET,
+  user_agent TEXT,
+  reason TEXT  -- Opcional: por qué se hizo el cambio
+);
+
+CREATE INDEX idx_historial_agenda ON agendas_historial(agenda_id);
+CREATE INDEX idx_historial_user ON agendas_historial(changed_by);
+```
+
+---
+
+## 4. VISTAS Y PERMISOS POR ROL
+
+### 4.1 Coach Estándar (scope=own)
+
+**Puede ver**:
+```sql
+SELECT * FROM agendas
+WHERE coach_id = auth.uid()  -- Sus propias sesiones
+  AND status IN ('scheduled', 'confirmed', 'completed', 'cancelled')
+```
+
+**Tableau**:
+```
+Lunes
+
+09:00 Juan Pérez (Cliente) — sesion_individual
+11:00 Reunión planificación (Coaches: Ana, Carlos)
+14:00 Taller grupal (5 clientes)
+```
+
+**Qué puede hacer**:
+- ✅ Crear sesión con sus clientes (capacidad `agenda.create`)
+- ✅ Editar sus sesiones (capacidad `agenda.edit`)
+- ✅ Cancelar (capacidad `agenda.cancel`)
+- ✅ Marcar asistencia POST-sesión (capacidad `attendance.register`)
+- ❌ Reasignar a otro coach
+- ❌ Ver sesiones de otros coaches
+- ❌ Editar disponibilidad de otros
+
+---
+
+### 4.2 Coach Senior (scope=team)
+
+**Puede ver**:
+```sql
+SELECT * FROM agendas
+WHERE organization_id = org_id
+  AND (
+    coach_id = auth.uid()  -- Sus propias sesiones
+    OR coach_id IN (SELECT user_id FROM usuarios WHERE team_id = senior.team_id)  -- De su equipo
+  )
+```
+
+**Tableau**:
+```
+Lunes
+
+Ana
+  09:00 Juan Pérez (sesion_individual)
+  14:00 Taller grupal (5 clientes)
+
+Carlos
+  11:00 Ana García (sesion_individual)
+  15:00 Reunión con Laura
+
+Laura
+  10:00 Pedro López (sesion_individual)
+```
+
+**Qué puede hacer**:
+- ✅ Ver calendario de su equipo
+- ✅ Editar sesiones de su equipo (si capacidad `agenda.edit` scope=team)
+- ✅ Reasignar clientes dentro del equipo
+- ❌ Reasignar a coaches fuera de su equipo
+- ❌ Ver sesiones de otros equipos
+
+---
+
+### 4.3 Owner (scope=organization)
+
+**Puede ver**:
+```sql
+SELECT * FROM agendas
+WHERE organization_id = org_id
+-- SIN filtro: ve TODO
+```
+
+**Tableau**:
+```
+Calendario organizacional (todas las áreas)
+
+Equipo Career
+Ana
+  09:00 Juan Pérez
+
+Equipo Fitness
+Carlos
+  10:00 Gimnasio intenso (8 clientes)
+
+Laura
+  15:00 Pilates (4 clientes)
+```
+
+**Qué puede hacer**:
+- ✅ Ver TODO
+- ✅ Crear/editar/cancelar cualquier sesión
+- ✅ Reasignar clientes entre coaches
+- ✅ Ver asistencia completa
+- ✅ Acceder a auditoría (`agendas_historial`)
+- ✅ Configurar disponibilidad de coaches
+- ✅ Ver bloqueos de coaches
+
+---
+
+### 4.4 Cliente (scope=own, futuro Sprint 5.3)
+
+**Puede ver** (preparado pero NO implementado en Sprint 5.2):
+```sql
+SELECT * FROM agendas
+WHERE client_id = (SELECT id FROM candidatos WHERE user_id = auth.uid())
+  AND status IN ('scheduled', 'confirmed', 'completed')
+```
+
+**Solo lectura**: Ver sus sesiones, pero no crear ni editar.
+
+---
+
+## 5. REGLAS DE NEGOCIO Y EDGE CASES
+
+### 5.1 Reasignación de Coach
+
+**Caso**: Owner mueve cliente de Coach A → Coach B
+
+```
+ANTES:
+  Sesión 1: 2026-08-10 14:00, Coach A, Cliente X
+  Sesión 2: 2026-08-12 10:00, Coach A, Cliente X
+
+ACCIÓN: Owner reasigna Cliente X a Coach B
+
+DESPUÉS:
+  Sesión 1: 2026-08-10 14:00, Coach B, Cliente X ← cambió
+  Sesión 2: 2026-08-12 10:00, Coach B, Cliente X ← cambió
+
+AUDITORÍA:
+  - evento: "agenda.reassigned"
+  - coach_from: "Coach A"
+  - coach_to: "Coach B"
+  - client_id: "Cliente X"
+  - sesiones_afectadas: 2
+  - timestamp: 2026-08-02 15:30
+  - user_id_actor: "Owner"
+```
+
+---
+
+### 5.2 Coach Abandona la Organización
+
+**Opción A** (Recomendado): Sesiones bloqueadas → Owner reasigna o cancela
+
+```
+Coach abandona
+  ↓
+Sus sesiones FUTURAS cambian a status='pending_reassignment'
+  ↓
+Owner recibe notificación: "2 sesiones de Coach A sin asignar"
+  ↓
+Owner: reasigna a Coach B O cancela
+```
+
+**Opción B** (No recomendado): Auto-reasignar a Owner
+
+```
+Coach abandona
+  ↓
+Sus sesiones se reasignan automáticamente a Owner
+  
+⚠️ Riesgo: Owner puede quedar sobrecargado
+```
+
+**Decisión**: Ir con **Opción A** (más segura).
+
+---
+
+### 5.3 Cliente Se Elimina (Soft Delete)
+
+**Regla**: No se borran sesiones históricas.
+
+```
+Cliente X tiene:
+  - Sesión completada: 2026-07-10
+  - Sesión completada: 2026-07-20
+  - Sesión cancelada: 2026-08-01
+
+Cliente X se elimina (soft delete)
+  ↓
+Sus sesiones PERMANECEN en agendas
+  ↓
+client_id sigue apuntando a candidatos.id (null en cascada = MAL)
+  ↓
+⚠️ MEJOR: agendas.client_id REFERENCES candidatos(id) ON DELETE RESTRICT
+          O guardar client_name snapshot en agendas
+
+SOLUCIÓN:
+  Agregar a agendas:
+  - client_snapshot_name TEXT  -- "Juan Pérez"
+  - client_snapshot_email TEXT -- "juan@email.com"
+  
+  Así el histórico queda legible aunque se borre el cliente
+```
+
+---
+
+### 5.4 Cambio de Zona Horaria (SaaS Global)
+
+**Problema**: Coach en Argentina (UTC-3) crea sesión "09:00". ¿09:00 en qué zona?
+
+**Solución**: Guardar `timezone` en cada evento
+
+```javascript
+agendas {
+  id: "evt-123",
+  start_at: "2026-08-10T12:00:00Z",  // UTC siempre en DB
+  timezone: "America/Argentina/Buenos_Aires",  // Local del coach
+  // Cuando se muestra:
+  // 12:00 UTC → 09:00 Argentina (UTC-3)
+}
+```
+
+**Validación**:
+- Si Coach A (Argentina) y Coach B (España) en reunión interna
+- Mostrar en ambas zonas:
+  - 10:00 CET (Hora Central Europea)
+  - 06:00 ART (Hora Argentina)
+
+---
+
+### 5.5 Recordatorios (Preparar para Futuro)
+
+**Sprint 5.2**: Preparar campos.  
+**Sprint 5.3+**: Implementar envío.
+
+```javascript
+agendas {
+  // ... campos existentes
+  
+  // Preparado para recordatorios
+  reminder_at_1h BOOLEAN DEFAULT true,      // 1 hora antes
+  reminder_at_24h BOOLEAN DEFAULT true,     // 1 día antes
+  reminder_sent_1h_at TIMESTAMPTZ,
+  reminder_sent_24h_at TIMESTAMPTZ,
+  reminder_last_error TEXT  // Si falló envío
+}
+```
+
+---
+
+## 6. VALIDACIONES BACKEND (CRITICAL PATH)
+
+### 6.1 Crear Sesión
+
+```javascript
+// Validaciones ANTES de insertar
+1. ✓ start_at > NOW() (evento en el futuro)
+2. ✓ start_at < end_at
+3. ✓ duration 15min-4h
+4. ✓ coach_id existe y está activo
+5. ✓ client_id existe (si sesion_individual)
+6. ✓ client_id está asignado a coach (scope check)
+7. ✓ NO hay conflicto horario (mismo coach, misma hora)
+8. ✓ Coach disponible (dentro de agendas_disponibilidad)
+9. ✓ Coach NO tiene bloqueo en esa hora (agendas_bloqueos)
+10. ✓ Capacidad: agenda.create (Sprint 5.1)
+```
+
+---
+
+### 6.2 Editar Sesión
+
+```javascript
+1. ✓ Evento existe
+2. ✓ status != 'completed' Y != 'cancelled' (no editar histórico)
+3. ✓ start_at > NOW() (solo futuro)
+4. ✓ Capacidad: agenda.edit (Sprint 5.1)
+5. ✓ Si scope=own: solo si coach_id == auth.uid()
+6. ✓ Si scope=team: coach_id en mismo equipo
+7. ✓ Nueva hora SIN conflictos
+8. ✓ Si cambiar coach: validar el nuevo coach está activo
+```
+
+---
+
+## 7. INTEGRACIÓN CON PANEL-V2 ACTUAL
+
+### 7.1 Auditoría: Dónde Está Hoy (Líneas de Referencia)
+
+| Función | Línea | Actualmente Usa | Cambio Sprint 5.2 |
+|---------|-------|-----------------|------------------|
+| Dashboard "Tu agenda" | 2923-2946 | c.ses | Leer de agendas WHERE coach_id=uid |
+| Próxima sesión (fila cliente) | 3008-3009 | c.ses | Leer de agendas WHERE client_id |
+| Tab "Calendario" | 1796, 2185 | _AG_DATA (externo) | Combinar con agendas (tabla local) |
+| Contador "Sesiones este mes" | 2804-2805 | c.ses + RCITAS | Leer de agendas + histórico |
+| Asistencia | ❌ NO EXISTE | — | NUEVA: tabla asistencias |
+
+---
+
+### 7.2 Migración de Datos
+
+**Fase 1** (Sprint 5.2): Lectura dual
+```javascript
+// Leer de ambas fuentes (compatibilidad)
+agendas.read() 
+  .then(nuevas => {
+    // + datos viejos de c.ses para transición
+    return [...nuevas, ...convertirLegacySes()];
+  })
+```
+
+**Fase 2** (Sprint 5.3+): Migración de histórico
+```sql
+-- Script de migración (post-Sprint 5.2)
+INSERT INTO agendas 
+  SELECT * FROM LEGACY_SES_CONVERTED
+  WHERE migraded_at IS NULL
+```
+
+---
+
+## 8. PREPARACIÓN PARA INTEGRACIONES FUTURAS
+
+### Google Calendar, Outlook, Calendly (Sprint 5.3+)
+
+```javascript
+agendas {
+  // Campos preparados
+  external_calendar_id TEXT,        // "google-calendar", "outlook", "calendly"
+  external_event_id TEXT,           // ID del evento en sistema externo
+  external_sync_status TEXT,        // 'pending', 'synced', 'conflict'
+  external_sync_at TIMESTAMPTZ,
+  external_sync_error TEXT
+}
+```
+
+---
+
+## 9. ESTADO FINAL — ENTREGABLES SPRINT 5.2 PRE-CÓDIGO
+
+### ✅ Completados
+
+1. **Diagrama de Flujo** — Crear, editar, cancelar, reasignar, cambios de permisos
+2. **Matriz de Conflictos** — 25+ escenarios con permitido/bloqueado
+3. **API Contract** — POST/PATCH/DELETE/GET con validaciones
+4. **RLS Esperado** — Policies por capacidad + scope
+5. **Modelo de Datos** — 6 tablas (agendas, participantes, asistencias, disponibilidad, bloqueos, historial)
+6. **Vistas por Rol** — Coach, Coach Senior, Owner, Cliente
+7. **Reglas de Negocio** — Reasignación, abandonos, eliminaciones, timezones, recordatorios
+8. **Integración con panel-v2** — Auditoría de líneas, plan de migración
+9. **Preparación Futuro** — Campos para Google/Outlook, recordatorios, etc.
+
+### 🔒 Single Source of Truth
+
+**Una tabla `agendas`**, múltiples vistas filtradas por capacidad + scope.
+
+---
+
+## 10. CHECKLIST FINAL ANTES DE SPRINT 5.2.1
+
+**Product Owner valida**:
+
+- [ ] ¿Tres tipos de eventos están bien definidos? (individual, grupal, interna)
+- [ ] ¿Modelo de asistencia es completo? (estados, impacto en métricas/retención/cobros)
+- [ ] ¿Reglas de reasignación son claras?
+- [ ] ¿Diferenciación entre disponibilidad/bloqueos/eventos es correcta?
+- [ ] ¿Single source of truth (una tabla agendas) es el enfoque correcto?
+- [ ] ¿RLS por capacidad + scope es suficiente?
+- [ ] ¿Preparación para Google/Outlook/Calendly es adecuada?
+
+**Agente entrega**:
+
+- [ ] Sprint 5.2.1 — Especificación Funcional (basada en este modelo)
+- [ ] Sprint 5.2.2 — Mockup UX (diseño sin código)
+- [ ] Sprint 5.2.3 — Implementación (backend + API)
+- [ ] Sprint 5.2.4 — QA (desktop/tablet/mobile)
+
+---
+
+**ESTADO**: Listos para aprobación del Product Owner.  
+**Próximo**: Sprint 5.2.1 — PRD funcional (qué hace la pantalla de Agenda).
 
