@@ -904,36 +904,564 @@ Pregunta: "Quiero editar nombre de cliente"
 
 ---
 
-## 14. PLAN DE VALIDACIÓN
+---
+
+## 14. SINGLE SOURCE OF TRUTH (SSOT)
+
+**Cada funcionalidad tiene UN único propietario. Nunca se implementa en dos módulos distintos.**
+
+### Mapa de Propietarios
 
 ```
-ANTES DE IMPLEMENTAR (Sprint 5.1):
+PANEL DEL COACH (panel-v2.html)
+├─ Propietario: Coach individual
+├─ Responsabilidades:
+│  ├─ Mis clientes (detalles completos)
+│  ├─ Mis sesiones (timeline personal)
+│  ├─ Mi progreso (de mis programas)
+│  ├─ Mis ingresos (si aplica)
+│  ├─ Mi disponibilidad
+│  ├─ Mis métricas personales
+│  └─ Mis mensajes privados
+└─ Regla: Esta funcionalidad NUNCA aparece en MultiCoach
 
-□ Walkthrough con Micaela
-  - ¿El modelo soporta tus clientes reales?
-  - ¿Hay escenarios faltantes?
-  - ¿La separación Equipo/Clientes tiene sentido?
+CLIENTE (portal cliente)
+├─ Propietario: Cliente/participante
+├─ Responsabilidades:
+│  ├─ Mi programa (progreso, sesiones, recursos)
+│  ├─ Mi agenda (mis sesiones confirmadas)
+│  ├─ Mi perfil (mis datos)
+│  ├─ Mis mensajes con coach
+│  ├─ Mi comunidad (si habilitada)
+│  └─ Mis recursos y tareas
+└─ Regla: Esta funcionalidad NUNCA aparece en Panel Coach
 
-□ Validar Modelos de Cobros
-  - ¿Modelo A es lo que usa AcmeCorp hoy?
-  - ¿Qué pasa si quiere cambiar a B o C?
+MULTICOACH (multicoach.html)
+├─ Propietario: Owner/Empresa
+├─ Responsabilidades:
+│  ├─ Visión organizacional (coaches, clientes, especialidades)
+│  ├─ Gestión de equipo (invitar, capacidades, estados)
+│  ├─ Distribución de carga (quién tiene cuántos clientes)
+│  ├─ Retención global (agregada, no detalle individual)
+│  ├─ Alertas organizacionales
+│  ├─ Tendencias generales
+│  ├─ Configuración de organización
+│  └─ Visión de cobros (agregada)
+└─ Regla: Esta funcionalidad NUNCA aparece en Panel Coach
 
-□ Validar Specialidades Habilitadas
-  - ¿Funciona así para múltiples nichos?
-  - ¿Es sencillo habilitar/deshabilitar?
+MARKETPLACE (futuro)
+├─ Propietario: Owner/Captación
+├─ Responsabilidades:
+│  ├─ Promoción de especialidades
+│  ├─ Perfil público de la organización
+│  ├─ Captación de clientes nuevos
+│  └─ Landing de cada especialidad
+└─ Regla: Conecta con Panel Coach/Cliente, no duplica
 
-□ Validar Biblioteca
-  - ¿Cubre los casos: CV + LinkedIn vs Running + Hipertrofia?
-  - ¿El nombre "Biblioteca" tiene sentido?
+COMUNIDAD (futuro)
+├─ Propietario: Clientes + Coaches
+├─ Responsabilidades:
+│  ├─ Contenido compartido
+│  ├─ Networking entre clientes
+│  ├─ Debates temáticos
+│  └─ Recursos colaborativos
+└─ Regla: Complementa Panel Coach/Cliente, no reemplaza
 
-□ Validar Brand Engine
-  - ¿Es sencillo customizar por org?
-  - ¿No rompe mobile?
+CONFIGURACIÓN (organizacional)
+├─ Propietario: Owner
+├─ Responsabilidades:
+│  ├─ Branding (logo, paleta, tokens)
+│  ├─ Especialidades habilitadas
+│  ├─ Modelos de cobros
+│  ├─ Integraciones (Google, Zoom, Stripe)
+│  ├─ Capacidades y permisos
+│  ├─ Ciclo de vida de la organización
+│  └─ Datos legales y compliance
+└─ Regla: Centralizado, una sola fuente de verdad
+```
 
-Outcome esperado:
-└─ Arquitectura validada, pronta para Sprint 5.1 (BD + APIs)
+### Test SSOT: "¿Dónde vive esta funcionalidad?"
+
+```
+"Quiero ver mis clientes" (Coach)
+└─ ÚNICA ubicación: Panel Coach
+   (MultiCoach: solo counts, no lista)
+
+"Quiero cambiar mi password" (Coach)
+└─ ÚNICA ubicación: Panel Coach (Settings)
+   (Cliente: su propio Settings)
+   (MultiCoach: NO aparece)
+
+"Quiero ver la distribución de carga" (Owner)
+└─ ÚNICA ubicación: MultiCoach
+   (Panel Coach: NO aparece, ver solo mis clientes)
+
+"Quiero editar el branding" (Owner)
+└─ ÚNICA ubicación: Configuración
+   (Panel Coach: hereda, no edita)
+   (MultiCoach: acceso, no almacena)
+
+"Quiero definir las especialidades" (Owner)
+└─ ÚNICA ubicación: Configuración
+   (Panel Coach: solo ve las que le asignaron)
+   (MultiCoach: solo consume)
+```
+
+**Protección**: Si en 3 meses alguien dice "vamos a agregar esto a MultiCoach también", la respuesta es "NO, vive en [módulo único], reutiliza datos de ahí".
+
+---
+
+## 15. ORGANIZACIÓN = CONTENEDOR
+
+**Nada existe "en el sistema". Todo pertenece a una organización.**
+
+### Estructura de Contenencia
+
+```
+ORGANIZACIÓN (Contenedor de todo)
+│
+├─── BRANDING
+│    ├─ Logo, paleta, tipografía
+│    ├─ Componentes, espaciado, sombras
+│    ├─ Temas (light/dark)
+│    └─ Tokens CSS generados automáticamente
+│
+├─── ESPECIALIDADES HABILITADAS
+│    ├─ [Career, Executive, Fitness] (elige la org)
+│    ├─ Cada especialidad mapea a Bibliotecas
+│    └─ Coach puede tener subset, Cliente tiene 1
+│
+├─── PERSONAS DEL EQUIPO
+│    ├─ Owner (1 por org)
+│    ├─ Coaches (N, cada uno con especialidades)
+│    ├─ Colaboradores (Admin, Recruiter, HR, etc.)
+│    └─ Cada persona hereda permisos base del rol + capacidades configuradas
+│
+├─── CLIENTES
+│    ├─ Cliente 1 (especialidad Career, coach Ana)
+│    ├─ Cliente 2 (especialidad Fitness, coach Carlos)
+│    └─ Cada cliente = persona que recibe coaching
+│
+├─── BIBLIOTECA + PROGRAMAS + RECURSOS
+│    ├─ Especialidad Career
+│    │  ├─ Biblioteca "Búsqueda"
+│    │  │  ├─ Programa "CV Express"
+│    │  │  ├─ Programa "LinkedIn Pro"
+│    │  │  └─ (Recursos compartidos: CVTemplate.pdf, MockInterview.mp4)
+│    │  └─ Biblioteca "Desarrollo"
+│    │     └─ (Programas propios)
+│    └─ (Otras especialidades)
+│
+├─── CONFIGURACIÓN
+│    ├─ Datos legales (nombre, RFC, dirección)
+│    ├─ Modelos de cobros (Modelo A, B, C o D)
+│    ├─ Integraciones (Google, Zoom, Stripe, Slack)
+│    ├─ Capacidades disponibles en la org
+│    ├─ Alertas y notificaciones
+│    └─ Ciclo de vida (activa, suspendida, cancelada)
+│
+└─── COBROS
+     ├─ Modelo elegido (centralizado)
+     ├─ Transacciones (facturas, pagos, comisiones)
+     ├─ Reportes (ingresos, gastos, movimientos)
+     └─ Integraciones de pago (Stripe, PayPal)
+```
+
+### Implicaciones Técnicas
+
+```sql
+-- TODO en la BD está namespaceado por org_id
+personas
+├─ org_id (FK, PK compuesta)
+├─ id
+└─ ...
+
+clientes
+├─ org_id (FK, PK compuesta)
+├─ id
+└─ ...
+
+bibliotecas
+├─ org_id (FK, PK compuesta)
+├─ id
+└─ ...
+
+recursos
+├─ org_id (FK, PK compuesta)
+├─ id
+└─ ...
+
+-- RLS: SELECT * FROM personas WHERE org_id = auth.org_id()
+-- (usuario solo ve datos de SU organización)
+
+-- Multi-tenancy a nivel de BD
+-- Nunca queries globales sin org_id
+```
+
+### Consecuencia: Aislamiento de Datos
+
+```
+Organización A ("AcmeCorp")
+├─ 12 coaches, 94 clientes
+├─ Especialidades: [Career, Executive, Fitness]
+├─ Modelo de cobros: A
+└─ Branding: Logo Acme, colores corporativos
+
+Organización B ("FitnessPro")
+├─ 3 coaches, 28 clientes
+├─ Especialidades: [Fitness, Nutrition, Wellness]
+├─ Modelo de cobros: D
+└─ Branding: Logo Fitness, colores vibrantes
+
+(Datos NUNCA se cruzan)
+├─ Coach de AcmeCorp NO ve clientes de FitnessPro
+├─ Reportes de AcmeCorp NO incluyen datos de FitnessPro
+├─ Integraciones de AcmeCorp NO afectan a FitnessPro
+└─ Branding de AcmeCorp NO se aplica a FitnessPro
 ```
 
 ---
 
-**Documento completo. Agnóstico del nicho, estructura clara, listo para implementación.**
+## 16. MÓDULOS INDEPENDIENTES (Por Roles/Funcionalidades)
+
+**Cada módulo es independiente. Puede evolucionar sin romper otros.**
+
+### Módulos Principales
+
+```
+DASHBOARD (multicoach.html)
+├─ Responsabilidad: Visión organizacional
+├─ Datos: Agregados (nº coaches, clientes, especialidades)
+├─ Acceso: Owner, Admin
+├─ Evolución: Puede agregar nuevos KPIs sin afectar otros módulos
+└─ Independencia: No toca datos de Panel Coach
+
+EQUIPO (dentro de MultiCoach)
+├─ Responsabilidad: Gestión de personas del equipo
+├─ Datos: Roles, especialidades, capacidades, disponibilidad
+├─ Acceso: Owner, Admin
+├─ Evolución: Puede cambiar matriz de capacidades sin afectar Agenda
+└─ Independencia: No toca sesiones, solo gestión de personas
+
+CLIENTES (dentro de MultiCoach)
+├─ Responsabilidad: Visión de clientes (admin)
+├─ Datos: Lista, especialidades, coaches asignados, estado
+├─ Acceso: Owner, Admin, Coach (solo propios)
+├─ Evolución: Puede agregar filtros sin afectar Panel Coach
+└─ Independencia: No toca datos detallados del cliente (viven en Panel Coach)
+
+AGENDA
+├─ Responsabilidad: Coordinación de sesiones
+├─ Datos: Sesiones, bloques de tiempo, disponibilidad, conflictos
+├─ Acceso: Coach (propia), Admin (equipo)
+├─ Evolución: Puede agregar sincronización Google sin afectar otros módulos
+└─ Independencia: Agnóstica del nicho (Career, Fitness, etc.)
+
+PROGRAMAS
+├─ Responsabilidad: Definición de programas por especialidad
+├─ Datos: Bibliotecas, programas, contenido, módulos
+├─ Acceso: Coach (crear/editar propios), Owner (crear/editar todos)
+├─ Evolución: Puede cambiar estructura sin afectar Panel Coach
+└─ Independencia: Vive en Configuración, consumido por Agenda y Cliente
+
+RECURSOS
+├─ Responsabilidad: Activos (PDFs, videos, plantillas, ejercicios)
+├─ Datos: Archivos, tags, especialidades, permisos
+├─ Acceso: Compartible por especialidad
+├─ Evolución: Puede agregar nuevo tipo de recurso sin romper programas
+└─ Independencia: Referenciales, no afectan flujo principal
+
+PANEL COACH (panel-v2.html)
+├─ Responsabilidad: Dashboard individual del coach
+├─ Datos: Mis clientes, sesiones, progreso, ingresos, métricas
+├─ Acceso: Coach (propio), Admin (si permitido)
+├─ Evolución: Puede agregar nuevas métricas sin afectar MultiCoach
+└─ Independencia: Totalmente separado de gestión organizacional
+
+CLIENTE (portal cliente)
+├─ Responsabilidad: Experiencia del cliente
+├─ Datos: Mi programa, progreso, sesiones, recursos, coach
+├─ Acceso: Cliente (propio)
+├─ Evolución: Puede agregar comunidad sin afectar Panel Coach
+└─ Independencia: Agnóstico de cómo se gestiona en MultiCoach
+
+CONFIGURACIÓN
+├─ Responsabilidad: Datos y políticas de org
+├─ Datos: Branding, especialidades, capacidades, integraciones, cobros
+├─ Acceso: Owner
+├─ Evolución: Central, cambios se propagan automáticamente
+└─ Independencia: Alimenta a otros módulos, no consume de ellos
+
+MARKETPLACE (futuro)
+├─ Responsabilidad: Captación pública
+├─ Datos: Landing, perfiles, testimonios
+├─ Acceso: Público (no autenticado)
+├─ Evolución: Puede evolucionar sin afectar módulos internos
+└─ Independencia: Consume datos de Configuración (branding)
+
+COMUNIDAD (futuro)
+├─ Responsabilidad: Networking y contenido compartido
+├─ Datos: Posts, comentarios, miembros, temáticas
+├─ Acceso: Clientes + Coaches
+├─ Evolución: Puede crecer sin cambiar Panel Coach o Cliente
+└─ Independencia: Complementa, no reemplaza otros módulos
+```
+
+### Beneficios
+
+```
+✓ Escalabilidad
+  └─ Agregar nuevos módulos sin tocar los existentes
+
+✓ Testing
+  └─ Cada módulo se prueba de forma aislada
+
+✓ Deployment
+  └─ Actualizar Agenda sin afectar Panel Coach
+
+✓ Ownership
+  └─ Equipo A dueño de Agenda, Equipo B dueño de Cobros
+
+✓ Evolución
+  └─ Cambiar Panel Coach sin tocar MultiCoach
+
+✓ Reusabilidad
+  └─ Lógica de Programas reutilizable en Panel Coach y Cliente
+```
+
+---
+
+## 17. PERMISOS POR CAPACIDAD, NUNCA POR PANTALLA
+
+**La autorización es granular: `capacidad.acción`, no "puede acceder a Agenda".**
+
+### Modelo Incorrecto (Anti-patrón)
+
+```
+Coach
+  ↓
+  Puede abrir: Panel Coach
+              Agenda
+              Mensajes
+  NO puede: Configuración
+            MultiCoach
+            Billing
+
+❌ PROBLEMA:
+   - Difícil ser específico ("¿puede EDITAR agenda o solo VER?")
+   - Acoplado a pantallas (si renombras URL, rompes permisos)
+   - No reutilizable (lógica de permisos mezclada con UI)
+```
+
+### Modelo Correcto (Capacidades Granulares)
+
+```
+CAPACIDADES (Atómicas, reutilizables)
+
+agenda.view       (puede ver su agenda)
+agenda.edit       (puede editar sus sesiones)
+agenda.create     (puede crear sesiones)
+agenda.reasign    (puede reasignar a otro coach)
+
+clientes.view     (puede ver asignados)
+clientes.create   (puede crear nuevo cliente)
+clientes.edit     (puede editar propio)
+clientes.assign   (puede asignar a coach)
+
+programas.view    (puede ver disponibles)
+programas.create  (puede crear nuevo)
+programas.edit    (puede editar propio)
+
+analytics.view    (puede ver propios datos)
+analytics.admin   (puede ver datos de equipo)
+
+billing.view      (puede ver propios pagos)
+billing.admin     (puede procesar pagos)
+
+configuracion.view   (puede ver settings org)
+configuracion.edit   (puede editar settings)
+
+mensajes.send     (puede enviar mensajes)
+mensajes.chat     (puede participar en chat)
+```
+
+### Mapeo Rol → Capacidades
+
+```
+OWNER
+└─ 200 capacidades (todas)
+   ├─ agenda.*
+   ├─ clientes.*
+   ├─ programas.*
+   ├─ analytics.*
+   ├─ billing.*
+   ├─ configuracion.*
+   ├─ integraciones.*
+   ├─ auditoria.*
+   └─ equipo.*
+
+COACH
+└─ 48 capacidades
+   ├─ agenda.view
+   ├─ agenda.edit (propio)
+   ├─ agenda.create
+   ├─ clientes.view (asignados)
+   ├─ clientes.edit (propios)
+   ├─ programas.view
+   ├─ programas.create
+   ├─ programas.edit (propio)
+   ├─ analytics.view (propios)
+   ├─ billing.view (propios)
+   ├─ mensajes.send
+   ├─ mensajes.chat
+   ├─ recuros.view
+   └─ (más...)
+
+COLABORADOR (Admin)
+└─ 80 capacidades
+   ├─ agenda.view (todos)
+   ├─ agenda.reasign
+   ├─ clientes.view (todos)
+   ├─ clientes.create
+   ├─ clientes.assign
+   ├─ analytics.admin
+   ├─ billing.admin
+   ├─ equipo.view
+   ├─ equipo.invite
+   ├─ programas.view (todos)
+   ├─ recursos.create
+   ├─ integraciones.view
+   └─ (más...)
+
+COLABORADOR (Recruiter)
+└─ 15 capacidades
+   ├─ clientes.create
+   ├─ clientes.view (todos)
+   ├─ clientes.assign
+   ├─ agenda.view (equipo, solo carga)
+   ├─ analytics.view (global simple)
+   ├─ mensajes.send
+   └─ (solo lo necesario)
+```
+
+### Implementación (Backend)
+
+```typescript
+// Middleware: Verificar capacidad antes de acción
+async function checkCapacity(req, res, next) {
+  const { usuario } = req.auth;
+  const { capacidad_requerida } = req.route.meta;
+  
+  const tiene_capacidad = await db.personas_capacidades
+    .findOne({
+      persona_id: usuario.id,
+      capacidad: capacidad_requerida,
+      activa: true
+    });
+  
+  if (!tiene_capacidad) {
+    return res.status(403).json({ error: "Capacidad requerida: " + capacidad_requerida });
+  }
+  next();
+}
+
+// Uso en rutas
+app.get('/api/agenda', checkCapacity({ capacidad: 'agenda.view' }), (req, res) => {
+  // Lógica
+});
+
+app.patch('/api/agenda/:id', checkCapacity({ capacidad: 'agenda.edit' }), (req, res) => {
+  // Lógica
+});
+```
+
+### Beneficios
+
+```
+✓ Granularidad
+  └─ Capacidad específica para cada acción (no "acceso a pantalla")
+
+✓ Reutilización
+  └─ Misma capacidad `agenda.view` se usa en Panel Coach, MultiCoach, API
+
+✓ Auditabilidad
+  └─ Log: "Coach Ana intentó `clientes.assign` sin capacidad"
+
+✓ Flexibilidad
+  └─ Cambiar permisos sin código (solo BD)
+
+✓ Escalabilidad
+  └─ Agregar nuevas capacidades sin rediseñar el sistema
+
+✓ Independencia de UI
+  └─ Si cambias URLs o nombres de pantallas, permisos no se rompen
+```
+
+---
+
+## 🎯 FIN DE ARQUITECTURA
+
+**Hasta aquí llega el diseño. A partir de aquí, implementación.**
+
+### Cierre: Lo que está CONGELADO
+
+✅ Separación Equipo vs Clientes  
+✅ Especialidades Habilitadas por Organización  
+✅ Biblioteca → Programas → Recursos  
+✅ Brand Engine a nivel de Organización  
+✅ MultiCoach no reemplaza, orquesta  
+✅ Single Source of Truth (SSOT)  
+✅ Organización = Contenedor  
+✅ Módulos Independientes  
+✅ Permisos por Capacidad  
+
+**Esta arquitectura es la base. No se cambia sin consenso explícito.**
+
+### Orden de Implementación (Sprints 5.1 → 5.4)
+
+```
+✅ Sprint 5.1 (Sem 1-2): Capacidades y Permisos
+   ├─ Tabla: personas_capacidades
+   ├─ Matriz de asignación: Owner, Coach, Colaborador
+   ├─ Middleware de autenticación
+   └─ Tests: "Coach sin capacidad X no puede acceder a Y"
+
+✅ Sprint 5.2 (Sem 3-4): Agenda Compartida
+   ├─ Tabla: sesiones, availability_blocks
+   ├─ Vistas: Coach personal, Admin equipo
+   ├─ Conflictos y sugerencias automáticas
+   └─ Integraciones base: Google Calendar
+
+✅ Sprint 5.3 (Sem 5-6): Modelo de Cobros
+   ├─ Tablas: pagos, comisiones (según modelo elegido)
+   ├─ Cálculo automático de ingresos/comisiones
+   ├─ Reportes: Facturación, movimientos
+   └─ Integraciones: Stripe
+
+✅ Sprint 5.4 (Sem 7-8): Colaboración y Flujos
+   ├─ 7 Patrones de Colaboración
+   ├─ Reasignaciones automáticas
+   ├─ Chat y notificaciones
+   └─ Auditoría inmutable
+```
+
+### Qué NO Hacer Ahora
+
+❌ Refinar más la arquitectura  
+❌ Agregar "posibles integraciones futuras" que no se implementan en Sprint 5  
+❌ Diseñar UI detallada (eso es Sprint X.5+)  
+❌ Optimizaciones prematuras de BD  
+❌ "¿Y si en el futuro...?" (si aplica, es Sprint 6+)  
+
+### Próximo Paso
+
+**Sprint 5.1: Validación rápida con Micaela (1 hora).**
+- ¿Esto cubre tus casos reales?
+- ¿Falta algo crítico?
+
+**Si Sí → Empezar 5.1 (Capacidades + Permisos)**  
+**Si No → Ajustar puntos específicos, no rediseñar**
+
+---
+
+**Arquitectura cerrada. Implementación comienza en Sprint 5.1.**
