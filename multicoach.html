@@ -3712,6 +3712,10 @@ function _equipoCloseDrawer(){
 }
 function _equipoOpenDrawer(){
   var d=document.querySelector('.equipo-drawer'), b=document.querySelector('.equipo-backdrop');
+  var content=document.getElementById('equipoDrawerContent');
+  if(content){
+    content.innerHTML=_equipoDrawerHtml();
+  }
   if(d) d.classList.add('open');
   if(b) b.classList.add('open');
 }
@@ -3743,16 +3747,24 @@ function _equipoList(){
       id:c.id,
       nombre:c.n||'',
       email:c.email||'',
+      telefono:c.telefono||'—',
       rol:'Coach',
       especialidad:c.esp||'—',
+      empresa:c.empresa||'—',
+      timezone:c.timezone||'UTC',
+      idioma:c.idioma||'es',
       clientes:c.cli||0,
       sesiones:c.ses||0,
       retencion:(c.ret||0)+'%',
+      programas:c.programas||0,
+      horas:c.horas||0,
       estado:c.est||'activo',
       ultActividad:_mcAgo(c._ts||''),
+      fechaIncorporacion:c.created_at||'—',
       tipo:'coach',
       fotoUrl:c.foto||'',
-      iniciales:c.ini||''
+      iniciales:c.ini||'',
+      permisos:c.permisos||{}
     });
   });
   // Agregar colaboradores
@@ -3761,16 +3773,24 @@ function _equipoList(){
       id:c.id,
       nombre:c.nombre||'',
       email:c.email||'',
+      telefono:c.telefono||'—',
       rol:'Colaborador',
       especialidad:c.cargo||c.departamento||'—',
+      empresa:c.empresa||'—',
+      timezone:c.timezone||'UTC',
+      idioma:c.idioma||'es',
       clientes:'—',
       sesiones:'—',
       retencion:'—',
+      programas:'—',
+      horas:'—',
       estado:c.estado||'activo',
       ultActividad:_mcAgo(c._ts||''),
+      fechaIncorporacion:c.created_at||'—',
       tipo:'colaborador',
       fotoUrl:c.foto_url||'',
-      iniciales:_mcIni(c.nombre||c.email||'')
+      iniciales:_mcIni(c.nombre||c.email||''),
+      permisos:c.permisos||{}
     });
   });
   return list;
@@ -3865,6 +3885,72 @@ function _mcAgoCapital(s){
 var _equipoState={search:'',status:'Todos',role:'Todos',spec:'Especialidad',sort:'Ordenar por'};
 var _equipoSelected=null; // Item seleccionado en la tabla
 
+// Helper: Genera HTML dinámico del drawer desde _equipoSelected
+function _equipoDrawerHtml(){
+  if(!_equipoSelected) return '';
+  var item=_equipoSelected;
+  var statusMap={activo:'Activo',invitado:'Invitado',vacaciones:'Vacaciones',suspendido:'Suspendido',inactivo:'Desactivado'};
+  var statusBadge=statusMap[item.estado]||item.estado;
+  var avatarUrl=item.fotoUrl?item.fotoUrl:('https://api.dicebear.com/7.x/avataaars/svg?seed='+encodeURIComponent(item.nombre||'avatar'));
+
+  // Métricas (solo si es Coach)
+  var metricsHtml='';
+  if(item.tipo==='coach'){
+    metricsHtml='<div class="drawer-section"><div class="drawer-section-title">Métricas</div>'
+      +'<div class="drawer-field"><span class="drawer-field-label">Clientes activos</span><span class="drawer-field-value">'+item.clientes+'</span></div>'
+      +'<div class="drawer-field"><span class="drawer-field-label">Sesiones este mes</span><span class="drawer-field-value">'+item.sesiones+'</span></div>'
+      +'<div class="drawer-field"><span class="drawer-field-label">Retención</span><span class="drawer-field-value">'+item.retencion+'</span></div>'
+      +'<div class="drawer-field"><span class="drawer-field-label">Programas activos</span><span class="drawer-field-value">'+item.programas+'</span></div>'
+      +'<div class="drawer-field"><span class="drawer-field-label">Horas de coaching</span><span class="drawer-field-value">'+item.horas+'h</span></div>'
+      +'</div>';
+  }
+
+  // Permisos (placeholder - solo lectura)
+  var permisosHtml='<div class="drawer-section"><div class="drawer-section-title">Permisos (solo lectura)</div>'
+    +'<div style="font-size:12px;color:var(--db-text-muted);line-height:1.6;">'
+    +'✓ Crear clientes<br>'
+    +'✓ Editar clientes<br>'
+    +'✓ Crear sesiones<br>'
+    +'✓ Modificar agenda<br>'
+    +(item.tipo==='coach'?'✗ Ver Analytics<br>':'')
+    +'</div></div>';
+
+  // Agenda preview (placeholder)
+  var agendaHtml='<div class="drawer-section"><div class="drawer-section-title">Próximas sesiones</div>'
+    +'<div style="font-size:12px;color:var(--db-text-muted);">'
+    +'<div style="padding:8px 0;border-bottom:1px solid rgba(21,32,24,.05);"><strong>Mañana 10:00</strong> — Preparación CV</div>'
+    +'<div style="padding:8px 0;border-bottom:1px solid rgba(21,32,24,.05);"><strong>Jueves 14:30</strong> — Mock interview</div>'
+    +'<div style="padding:8px 0;"><strong>Viernes 16:00</strong> — Follow-up</div>'
+    +'</div><div style="padding-top:8px;"><a href="#" style="font-size:12px;color:var(--pw-bosque);text-decoration:none;font-weight:500;">Ver agenda completa →</a></div>'
+    +'</div>';
+
+  return '<div class="drawer-header">'
+    +'<img src="'+avatarUrl+'" alt="'+_mcEsc(item.nombre)+'" class="drawer-avatar">'
+    +'<h3 class="drawer-name">'+_mcEsc(item.nombre)+'</h3>'
+    +'<p class="drawer-role"><span class="role-badge '+(item.rol==='Colaborador'?'colaborador':'')+'">'+item.rol+'</span></p>'
+    +'<p class="drawer-email">'+_mcEsc(item.email)+'</p>'
+    +'<p style="font-size:11px;color:var(--db-text-muted);margin-top:8px;"><span class="status-badge '+(item.estado==='invitado'?'invitado':'')+'">'+statusBadge+'</span></p>'
+    +'</div>'
+    +'<div class="drawer-section"><div class="drawer-section-title">Información</div>'
+    +'<div class="drawer-field"><span class="drawer-field-label">Especialidad</span><span class="drawer-field-value">'+_mcEsc(item.especialidad)+'</span></div>'
+    +'<div class="drawer-field"><span class="drawer-field-label">Teléfono</span><span class="drawer-field-value">'+_mcEsc(item.telefono)+'</span></div>'
+    +'<div class="drawer-field"><span class="drawer-field-label">Zona horaria</span><span class="drawer-field-value">'+item.timezone+'</span></div>'
+    +'<div class="drawer-field"><span class="drawer-field-label">Idioma</span><span class="drawer-field-value">'+item.idioma.toUpperCase()+'</span></div>'
+    +'<div class="drawer-field"><span class="drawer-field-label">Incorporado</span><span class="drawer-field-value">'+_mcEsc(item.fechaIncorporacion)+'</span></div>'
+    +'<div class="drawer-field"><span class="drawer-field-label">Última actividad</span><span class="drawer-field-value">'+item.ultActividad+'</span></div>'
+    +'</div>'
+    +metricsHtml
+    +agendaHtml
+    +permisosHtml
+    +'<div class="drawer-actions">'
+    +'<button class="btn-drawer primary" onclick="alert(\'Editar persona - Sprint 4.3.5\')">Editar</button>'
+    +'<button class="btn-drawer" onclick="alert(\'Ver agenda completa - Sprint 4.3.5\')">Ver agenda</button>'
+    +'<button class="btn-drawer" onclick="alert(\'Enviar mensaje - Sprint 4.3.5\')">Enviar mensaje</button>'
+    +'<button class="btn-drawer" onclick="alert(\'Reasignar clientes - Sprint 4.3.5\')">Reasignar clientes</button>'
+    +'<button class="btn-drawer danger" onclick="alert(\'Desactivar/Reactivar - Sprint 4.3.5\')">Desactivar</button>'
+    +'</div>';
+}
+
 function renderEquipo(){
  var v=document.getElementById('vscroll');
  var kpis=_equipoKpis();
@@ -3903,21 +3989,9 @@ function renderEquipo(){
   +'</div>'
   +tableHtml
   +'</div>'
-  +'<div class="equipo-drawer" onkeydown="if(event.key===\'Escape\')_equipoCloseDrawer()">'
+  +'<div class="equipo-drawer" id="equipoDrawer" onkeydown="if(event.key===\'Escape\')_equipoCloseDrawer()">'
   +'<button class="equipo-drawer-close" onclick="_equipoCloseDrawer()">✕</button>'
-  +'<div class="drawer-header"><img src="https://api.dicebear.com/7.x/avataaars/svg?seed=carlos" alt="Carlos" class="drawer-avatar"><h3 class="drawer-name">Carlos Pérez</h3><p class="drawer-role"><span class="role-badge">Coach</span></p><p class="drawer-email">carlos.perez@example.com</p></div>'
-  +'<div class="drawer-section"><div class="drawer-section-title">Información</div><div class="drawer-field"><span class="drawer-field-label">Especialidad</span><span class="drawer-field-value">Carrera</span></div><div class="drawer-field"><span class="drawer-field-label">Teléfono</span><span class="drawer-field-value">+34 666 123 456</span></div><div class="drawer-field"><span class="drawer-field-label">Agregado</span><span class="drawer-field-value">2 de ago, 2026</span></div><div class="drawer-field"><span class="drawer-field-label">Estado</span><span class="drawer-field-value"><span class="status-badge">Activo</span></span></div></div>'
-  +'<div class="drawer-section"><div class="drawer-section-title">Métricas</div><div class="drawer-field"><span class="drawer-field-label">Clientes</span><span class="drawer-field-value">8</span></div><div class="drawer-field"><span class="drawer-field-label">Sesiones</span><span class="drawer-field-value">24</span></div><div class="drawer-field"><span class="drawer-field-label">Retención</span><span class="drawer-field-value">92%</span></div><div class="drawer-field"><span class="drawer-field-label">Rating</span><span class="drawer-field-value">4.8 ⭐</span></div></div>'
-  +'<div class="drawer-section"><div class="drawer-section-title">Próximas sesiones</div><div style="font-size:12px;color:var(--db-text-muted);"><div style="padding:8px 0;border-bottom:1px solid rgba(21,32,24,.05);"><strong>Mañana 10:00</strong> — Preparación CV</div><div style="padding:8px 0;border-bottom:1px solid rgba(21,32,24,.05);"><strong>Jueves 14:30</strong> — Mock interview</div><div style="padding:8px 0;"><strong>Viernes 16:00</strong> — Follow-up</div></div><div style="padding-top:8px;"><a href="#" style="font-size:12px;color:var(--pw-bosque);text-decoration:none;font-weight:500;">Ver agenda →</a></div></div>'
-  +'<div class="drawer-section"><div class="drawer-section-title">Permisos</div><div style="font-size:12px;color:var(--db-text-muted);line-height:1.6;">✓ Crear clientes<br>✓ Editar clientes<br>✓ Crear sesiones<br>✓ Modificar agenda<br>✗ Ver Analytics</div></div>'
-  +'<div class="drawer-actions">'
-  +'<button class="btn-drawer primary" onclick="alert(\'Editar modal - Sprint 4.3.6\')">Editar</button>'
-  +'<button class="btn-drawer" onclick="alert(\'Reasignar clientes - Sprint 4.3.6\')">Reasignar clientes</button>'
-  +'<button class="btn-drawer" onclick="alert(\'Enviar mensaje - Sprint 4.3.6\')">Enviar mensaje</button>'
-  +'<button class="btn-drawer" onclick="alert(\'Ver agenda - Sprint 4.3.6\')">Ver agenda</button>'
-  +'<button class="btn-drawer danger" onclick="alert(\'Desactivar - Sprint 4.3.6\')">Desactivar</button>'
-  +'<button class="btn-drawer danger" onclick="alert(\'Eliminar - Sprint 4.3.6\')">Eliminar</button>'
-  +'</div>'
+  +'<div id="equipoDrawerContent"></div>'
   +'</div>'
   +'</div>';
  v.innerHTML=equipoHtml;
