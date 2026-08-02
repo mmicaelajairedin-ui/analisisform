@@ -500,6 +500,54 @@ Componentes congelados que nunca se modifican salvo orden explícita de Mica.
 - Game button: Hidden
 - Mobile: Bottom nav 100% width, 72px height
 
+### 🚀 SINGLE COACH EXPERIENCE (Sprint 4+ — ⏳ BLOQUEADO)
+**Regla Arquitectónica Fundamental — NO SE PUEDE MODIFICAR**
+
+Existe un único panel de coach: `panel-v2.html`
+
+**ESTÁ PROHIBIDO:**
+- ❌ Crear `panel-v3.html`, `coach-panel.html`, `panel-empresa.html`, `coach-enterprise.html`
+- ❌ Crear variantes del panel para empresas
+- ❌ Crear otro panel para ningún modelo de negocio
+- ❌ Modificar la experiencia base del coach
+
+**MultiCoach es SOLO:**
+- Asignar clientes a coaches
+- Mostrar métricas agregadas
+- Gestionar permisos
+- Administrar coaches y colaboradores
+- Invitar personas
+
+**El trabajo diario del coach SIEMPRE ocurre en el mismo panel**, independientemente de:
+- Si trabaja solo o en empresa
+- Si es empresa pequeña o multinacional
+- Qué permisos tiene
+
+**Lo único que cambia es el CONTEXTO:**
+- Branding (Pathway vs marca empresa)
+- Datos (clientes propios vs asignados)
+- Permisos (qué puede hacer)
+- Funcionalidades habilitadas (qué ve)
+
+**Flujo de Autenticación (INMUTABLE):**
+```
+Login → panel-v2.html
+```
+
+Da igual si es coach independiente, coach en empresa, o admin.
+
+**Si el Owner quiere ver información de un coach:**
+No entra al panel.
+Abre una Ficha Administrativa dentro de MultiCoach (no navega, no cambia de app).
+
+**Responsabilidad de cada módulo:**
+- **MultiCoach:** UI administrativa (gestión, asignaciones, permisos)
+- **panel-v2.html:** UI operativa (trabajo diario del coach)
+
+**Esta decisión está BLOQUEADA y no podrá modificarse salvo orden expresa de Product Owner.**
+
+---
+
 ### Sprint 2 🚧 EN CONSTRUCCIÓN
 - **Epic 1: Header** — Status: ✅ COMPLETE (User menu restructured with role-based visibility)
 - **Epic 2: Dashboard Foundation** — Status: En desarrollo
@@ -508,6 +556,12 @@ Componentes congelados que nunca se modifican salvo orden explícita de Mica.
 - **Epic 5: Smart Branding Architecture** — Status: Preparación
 - **Epic 6: Role Architecture** — Status: Preparación
 - **Epic 7: Visual Quality** — Status: Validación continua
+
+### Sprint 4+ 🚧 EN CONSTRUCCIÓN
+- **Epic 1: Coaches & Colaboradores** — Status: Descubrimiento ✅
+  - Especificación: Panel único para gestión (no crear panel paralelo)
+  - Arquitectura: Reutilización total de componentes panel-v2
+  - Regla bloqueada: Single Coach Experience (ver arriba)
 
 ### Sprint 3+ 🔮 FUTURO
 (Se agregarán conforme se completen)
