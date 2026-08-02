@@ -527,3 +527,44 @@ Si se quiere que funcione directo, crear la columna:
 ```sql
 ALTER TABLE candidatos ADD COLUMN foto_perfil TEXT;
 ```
+
+---
+
+## 🔒 LOCKED — Equipo Module (v1.0)
+
+**Estado: CONGELADO**
+
+El módulo "Gestión de Equipo" en `multicoach.html` está completo y bloqueado de cambios hasta expreso consentimiento del Product Owner.
+
+### Componentes bloqueados:
+- ✅ Layout y estructura visual
+- ✅ Drawer (dinámico desde `_equipoSelected`)
+- ✅ Tabla unificada (coaches + colaboradores)
+- ✅ KPIs en tiempo real
+- ✅ Sistema de búsqueda
+- ✅ Filtros (estado, rol, especialidad)
+- ✅ Ordenación (4 criterios)
+- ✅ Acciones CRUD (editar, agenda, mensaje, reasignar, desactivar/reactivar)
+
+### Arquitectura inmutable:
+- `_equipoState` — estado de filtros/búsqueda/ordenación
+- `_equipoSelected` — única fuente de verdad para persona seleccionada
+- `_equipoList()` — pipeline: fullList → filter → sort → render
+- XSS protection en todos los campos (`_mcEsc()`)
+- Responsive: 440px desktop → 360px tablet → 100% mobile
+
+### Por qué está locked:
+1. **Foundation crítica**: Permiso, agenda y cobros dependen de esta arquitectura
+2. **Costos de cambio altos**: Rediseños posteriores tocarían SQL, RLS, edge functions
+3. **Preparada para crecer**: Capacidades (no roles), branding, operaciones multiequipo
+
+### Si necesita cambios:
+1. Crear issue con justificación
+2. Evaluación del Product Owner
+3. Reestimarán dependencias (Sprint 5, 6)
+4. Desbloqueo explícito del módulo
+
+### Sprints posteriores:
+- **Sprint 5**: Capacidades, permisos y colaboración (no roles rígidos)
+- **Sprint 6**: Agenda real, operaciones, modelo de cobros
+- **Resto**: Integraciones, marketplace, automaciones
