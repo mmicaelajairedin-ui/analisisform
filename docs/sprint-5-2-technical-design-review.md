@@ -1,9 +1,11 @@
 # Sprint 5.2 — Technical Design Review v2: Arquitectura de Agenda
 
 **Fecha**: 2026-08-02  
-**Versión**: 2.0 (Incorpora feedback del Product Owner)  
-**Estado**: 🔍 EN REVISIÓN (PRE-IMPLEMENTACIÓN)  
+**Versión**: 2.1 (Final — Aprobado)  
+**Estado**: 🟢 **APROBADO Y CONGELADO**  
+**Aprobador**: Product Owner (Micaela Jairedin)  
 **Cambios respecto a v1**: Énfasis en single source of truth, asistencia, agenda grupal, ciclo de vida completo
+**Cambios respecto a v2.0**: Incorpora 5 decisiones finales (ver §11)
 
 ---
 
@@ -931,6 +933,192 @@ agendas {
 
 ---
 
-**ESTADO**: Listos para aprobación del Product Owner.  
-**Próximo**: Sprint 5.2.1 — PRD funcional (qué hace la pantalla de Agenda).
+## 11. CINCO DECISIONES FINALES (APROBADAS Y CONGELADAS)
+
+### 11.1 Permisos de Cancelación
+
+**Regla definida**:
+
+| Actor | Puede cancelar | Ámbito |
+|-------|----------------|--------|
+| **Owner** | Cualquier sesión | scope=organization |
+| **Coach** | Solo sus sesiones | scope=own |
+| **Coach Senior** | Sesiones de su equipo | scope=team |
+| **Colaborador** | Según capacidad `agenda.cancel` | — |
+| **Cliente** (futuro) | Request cancelación | solo su sesión, no bloquea |
+
+**Capacidad requerida**:
+- Owner: `agenda.cancel` (scope=organization)
+- Coach: `agenda.cancel` (scope=own)
+- Coach Senior: `agenda.cancel` (scope=team) [si tiene capacidad]
+
+**En Sprint 5.2**: Implementar solo Owner + Coach.
+
+---
+
+### 11.2 Edición Después de Completada
+
+**Regla**: Una sesión con status=`completed` NO puede editarse libremente.
+
+**Permitido**:
+```
+✅ Correcciones administrativas
+   - Cambiar descripción (typo)
+   - Cambiar zoom_url
+   - Agregar notas
+   
+   REQUISITO: Auditoría detallada (qué cambió exactamente)
+```
+
+**Prohibido**:
+```
+❌ Editar fecha
+❌ Editar coach
+❌ Editar participantes
+❌ Cambiar tipo de sesión
+```
+
+**Implementación**:
+```javascript
+// En backend, al PATCH /agendas/{id}
+if (status === 'completed') {
+  const editableFields = ['descripcion', 'zoom_url', 'notas'];
+  const attemptedChanges = Object.keys(update);
+  const invalidChanges = attemptedChanges.filter(f => !editableFields.includes(f));
+  
+  if (invalidChanges.length > 0) {
+    return 403 "No puedes editar una sesión completada";
+  }
+}
+```
+
+---
+
+### 11.3 Sesión Grupal: Coach Principal Obligatorio
+
+**Regla**: Una sesión grupal SIEMPRE tiene un coach principal.
+
+```javascript
+agendas {
+  type: "sesion_grupal",
+  coach_id: "coach-001",  // ✅ OBLIGATORIO (never null)
+  client_id: null,        // Null para sesión grupal
+  titulo: "Taller: Presentaciones"
+}
+
+agenda_participantes [
+  { participant_id: "cli-001", role: "participant" },
+  { participant_id: "cli-002", role: "participant" },
+  { participant_id: "cli-003", role: "participant" }
+]
+```
+
+**Por qué**:
+- Necesarias preguntas operacionales:
+  - ¿Quién reporta si hay conflicto horario?
+  - ¿Quién marca asistencia?
+  - ¿Quién reasigna si el coach se va?
+- Respuesta: siempre el `coach_id` (coach principal)
+
+**Constraint SQL**:
+```sql
+ALTER TABLE agendas
+ADD CONSTRAINT coach_required_for_sesion_grupal
+CHECK (
+  (type = 'sesion_grupal' AND coach_id IS NOT NULL) OR
+  (type != 'sesion_grupal')
+);
+```
+
+---
+
+### 11.4 Recordatorios: Estados Preparados
+
+**Campos preparados** (Sprint 5.2):
+```javascript
+agendas {
+  reminder_at_1h: BOOLEAN DEFAULT true,
+  reminder_at_24h: BOOLEAN DEFAULT true,
+  reminder_sent_1h_at: TIMESTAMPTZ,
+  reminder_sent_24h_at: TIMESTAMPTZ,
+  reminder_sent_1h_status: TEXT,  // 'pending' | 'sent' | 'failed' | 'cancelled'
+  reminder_sent_24h_status: TEXT,
+  reminder_last_error: TEXT
+}
+```
+
+**Estados para Sprint 5.3+ (cuando se implemente)**:
+```
+pending   → Recordatorio pendiente de envío
+sent      → Recordatorio enviado exitosamente
+failed    → Intento de envío falló (retry)
+cancelled → Usuario desactivó recordatorio
+```
+
+**Implementación**: Campo se deja en place pero sin lógica de envío (Sprint 5.3+).
+
+---
+
+### 11.5 Migración de c.ses (Fase Multi-Step)
+
+**Fase 1** (Sprint 5.2): Dual Read + Legacy Compatibility
+```javascript
+// Durante Sprint 5.2, leer de AMBAS fuentes
+async function getUpcomingSessionsForCoach(coachId) {
+  const new_agendas = await sb.from('agendas')
+    .select('*')
+    .eq('coach_id', coachId);
+  
+  // Legacy: convertir c.ses a formato agendas
+  const legacy = convertLegacySes(CLIENTS[].ses);
+  
+  // Devolver merged (agendas toman precedencia)
+  return [...new_agendas, ...legacy.filter(l => !new_agendas.find(a => a.id === l.id))];
+}
+```
+
+**Fase 2** (Post-Sprint 5.2): Migración Histórica
+```sql
+-- Script ejecutado DESPUÉS que agendas esté estable
+INSERT INTO agendas (...)
+SELECT ... FROM candidatos c, json_to_recordset(c.sesiones_registro) AS ses(fecha, hora, tipo)
+WHERE sesiones_registro IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM agendas WHERE client_id = c.id AND date(start_at) = date(ses.fecha));
+```
+
+**Fase 3** (Sprint 5.3+): Deprecación de c.ses
+```javascript
+// Marcar c.ses como deprecated
+// No eliminar hasta que histórico sea 100% migrado
+// Auditoría: si alguien escribe en c.ses post-Sprint 5.2, alertar
+```
+
+**Regla de oro**: Nunca eliminar c.ses sin confirmación de que TODO el histórico fue migrado.
+
+---
+
+## 12. ESTADO FINAL — CONGELADO
+
+### ✅ Decisiones Congeladas
+
+1. **Single Source of Truth**: UNA tabla `agendas`, múltiples vistas
+2. **Tres conceptos separados**: Sesión, participantes, asistencia, disponibilidad, bloqueos, auditoría
+3. **Permisos de cancelación**: Owner (org), Coach (own), Senior (team)
+4. **Edición post-completada**: Solo correcciones administrativas con auditoría
+5. **Sesión grupal**: Coach principal SIEMPRE obligatorio
+6. **Recordatorios**: Campos preparados, lógica en Sprint 5.3+
+7. **Migración c.ses**: Dual read → Histórico → Deprecated (3 fases)
+
+### 🔒 CONGELADO HASTA
+
+- Sprint 5.2.1 aprobado (PRD funcional)
+- Sprint 5.2.2 aprobado (Mockup UX)
+- Sprint 5.2.3 iniciado (implementación)
+
+**NO vuelven a tocarse estas decisiones sin rediseño arquitectónico expreso del Product Owner.**
+
+---
+
+**ESTADO**: 🟢 Aprobado y Congelado.  
+**Próximo**: Sprint 5.2.1 — Especificación Funcional (PRD mini).
 
