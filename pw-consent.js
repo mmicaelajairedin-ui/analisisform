@@ -20,6 +20,16 @@
    --------------------------------------------------------------------------- */
 (function () {
   'use strict';
+
+  // No mostrar banner de cookies en app nativa (iOS/Android) — no hay tracking,
+  // así que no se necesita consentimiento de cookies.
+  if (typeof window !== 'undefined') {
+    if (window.pw_native) return;
+    if (typeof window.Capacitor !== 'undefined' && window.Capacitor.isNativePlatform) {
+      try { if (window.Capacitor.isNativePlatform()) return; } catch (e) {}
+    }
+  }
+
   var KEY = 'pw_consent';               // 'granted' | 'denied'
 
   function get()   { try { return localStorage.getItem(KEY); } catch (e) { return null; } }

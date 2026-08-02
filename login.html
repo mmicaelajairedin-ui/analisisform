@@ -13,9 +13,7 @@
 <script src="pw-app.js"></script>
 <meta name="color-scheme" content="light">
 <style>html{color-scheme:light;}</style>
-<link rel="icon" href="/favicon-512.png" sizes="any">
-    <link rel="icon" href="/favicon-192.png" sizes="192x192">
-    <link rel="apple-touch-icon" href="/favicon-192.png">
+<link rel="icon" href="/favicon-app.svg?v=6" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=4">
 <link rel="manifest" href="/manifest.json?v=5">
 <meta name="theme-color" content="#2D6A4F">
@@ -195,10 +193,10 @@ var SB='https://api.pathwaycareercoach.com';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 var BASE='https://pathwaycareercoach.com';
 
-// ── Google Sign-in ─────────────────────────────────────────
-// Redirige al usuario a Google OAuth → Supabase → /auth-callback.html?source=login
-// auth-callback.html sincroniza con la tabla usuarios y redirige al panel
-// (o a Stripe si es la primera vez via Google y no tienen cuenta).
+// ── Sign in with Apple (CAPACITOR + SUPABASE IDTOKEN) ─────────────────────
+// SOLO en iOS: usa el plugin nativo AppleSignIn para obtener identityToken en
+// una modal nativa (no Safari). Luego intercambia el token con Supabase Auth
+// via signInWithIdToken(). En web/Android, fallback a OAuth (que abre Safari).
 function signInWithApple(){
   if(!window.supabase){
     alert('Supabase SDK no cargo todavia. Recarga la página.');
@@ -206,16 +204,74 @@ function signInWithApple(){
   }
   var btn = document.getElementById('btn-apple');
   if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Apple...';}
-  var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login';
-  var sb = window.supabase.createClient(SB, KEY);
-  sb.auth.signInWithOAuth({
-    provider: 'apple',
-    options: { redirectTo: redirectTo }
-  }).catch(function(err){
-    console.error('[apple signin]', err);
-    if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Apple';}
-    alert('Error iniciando sesión con Apple: ' + (err && err.message || 'desconocido'));
-  });
+
+  // ── Detectar si estamos en iOS app nativa ────────────────────────────────
+  var isNativeIos = false;
+  try {
+    if(typeof window.Capacitor !== 'undefined' && window.Capacitor.getPlatform){
+      isNativeIos = window.Capacitor.getPlatform() === 'ios';
+    }
+  } catch(e) {}
+
+  var AppleSignIn = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AppleSignIn;
+  console.log('[apple-signin] Capacitor.Plugins.AppleSignIn disponible:', !!AppleSignIn, '| isNativeIos:', isNativeIos);
+  if(isNativeIos && AppleSignIn){
+    // ── Ruta NATIVA: usar el plugin AppleSignIn de Capacitor ───────────────
+    AppleSignIn.signIn()
+      .then(function(result){
+        // result.identityToken = JWT firmado por Apple
+        // result.user.email = email del usuario (puede estar oculto en "privaterelay@...")
+        // result.user.firstName / result.user.lastName
+        if(!result || !result.identityToken){
+          throw new Error('No identityToken en respuesta de Apple');
+        }
+
+        // ── Intercambiar identityToken por sesión en Supabase ──────────────
+        var sb = window.supabase.createClient(SB, KEY);
+        return sb.auth.signInWithIdToken({
+          provider: 'apple',
+          token: result.identityToken
+        }).then(function(authResult){
+          if(authResult.error){
+            throw authResult.error;
+          }
+          // ── Sesión creada: guardar usuario y redirigir ──────────────────
+          var user = authResult.data && authResult.data.user;
+          var session = authResult.data && authResult.data.session;
+          if(!user || !session){
+            throw new Error('Sin usuario/sesión en respuesta Supabase');
+          }
+          // El resto del flujo (sincronizar con tabla usuarios, redirect) se
+          // hace en la proxima carga — auth-callback.html o el panel lo detecta.
+          // Por ahora, redirigir al panel con el JWT fresco:
+          setTimeout(function(){
+            window.location.href = BASE + '/panel-v2.html?v=' + Date.now();
+          }, 100);
+        });
+      })
+      .catch(function(err){
+        if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Apple';}
+        var msg = (err && err.message) ? ('' + err.message) : 'desconocido';
+        // Si el usuario cancela el dialog nativo, Apple devuelve un código específico;
+        // mostrar un mensaje amigable en eso, más detallado en otros errores.
+        if(msg.indexOf('cancel') !== -1 || msg.indexOf('user_cancelled') !== -1){
+          // Cancelación normal del usuario — no mostrar alerta ruidosa.
+          return;
+        }
+        alert('Error iniciando sesión con Apple: ' + msg);
+      });
+  } else {
+    // ── Ruta FALLBACK (web/Android): usar OAuth via Safari/navegador ──────
+    var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login';
+    var sb = window.supabase.createClient(SB, KEY);
+    sb.auth.signInWithOAuth({
+      provider: 'apple',
+      options: { redirectTo: redirectTo }
+    }).catch(function(err){
+      if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Apple';}
+      alert('Error iniciando sesión con Apple: ' + (err && err.message || 'desconocido'));
+    });
+  }
 }
 function signInWithGoogle(){
   if(!window.supabase){
@@ -446,6 +502,13 @@ async function entrar(){
         });
       }catch(e){}
     }
+
+    // Contar logins para mostrar pop-up de completar perfil/reseña cada 8 logins
+    try{
+      var _lc=parseInt(localStorage.getItem('pw_login_count')||'0', 10)+1;
+      localStorage.setItem('pw_login_count', String(_lc));
+      localStorage.setItem('pw_login_count_'+usuario.id, String(_lc));
+    }catch(e){}
 
     // Login fresco → damos un presupuesto nuevo de reintento al panel/portal.
     // (El panel, ante un 401 por carrera de token al entrar, reintenta UNA vez
