@@ -153,13 +153,15 @@ async function handleCallback(){
   // corriendo 200ms después puede ganarle la carrera y devolver null → el
   // usuario veía "No se encontró sesión activa". Reintentamos ~5s: apenas la
   // sesión aparece, seguimos.
+  // Apple en iOS puede tomar más tiempo — intentamos hasta 20 veces (6 segundos).
   async function _getSessionRetry(){
-    for(var i=0;i<16;i++){
+    var maxRetries = 20; // Apple puede ser más lento en iOS
+    for(var i=0;i<maxRetries;i++){
       try{
         var r = await sb.auth.getSession();
         if(r && r.data && r.data.session) return r.data.session;
       }catch(e){}
-      await new Promise(function(res){ setTimeout(res, 300); });
+      if(i < maxRetries - 1) await new Promise(function(res){ setTimeout(res, 300); });
     }
     return null;
   }
@@ -475,14 +477,24 @@ async function handleCallback(){
   } catch(e) {}
 
   // Guardar sesion en localStorage (mismo formato que login.html)
-  localStorage.setItem('mj_user', JSON.stringify({
+  var _userObj = {
     id: usuario.id,
     email: usuario.email,
     rol: usuario.rol,
     nombre: usuario.nombre,
     activo: true,
     configuracion: usuario.configuracion || {}
-  }));
+  };
+  localStorage.setItem('mj_user', JSON.stringify(_userObj));
+
+  // En iOS/Safari con Apple signin, la sesión de Supabase Auth puede no
+  // persistirse bien entre página y página. Guardar el JWT explícitamente
+  // para que el panel-v2 pueda recuperarlo como fallback.
+  try {
+    if(SJWT && SJWT !== KEY) {
+      localStorage.setItem('pw_apple_jwt', SJWT);
+    }
+  } catch(e) {}
 
   // Destino:
   //   - Coach/admin nuevo o existente → /panel-v2.html
@@ -527,12 +539,17 @@ async function handleCallback(){
     setLoadingMsg(isNew ? '¡Te damos la bienvenida! Te llevamos al panel...' : '¡Hola de nuevo! Te llevamos al panel...');
     dest = '/panel-v2.html?' + _v;
   }
-  // Login fresco (Google) → presupuesto nuevo de reintento para el panel/portal
+  // Login fresco → presupuesto nuevo de reintento para el panel/portal
   // (mismo motivo que en login.html: el 401 por carrera de token reintenta 1 vez).
   try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
+
+  // En iOS/Safari con Apple signin, el localStorage puede no sincronizarse bien
+  // entre páginas si el redirect es muy rápido. Dar un poco más de tiempo para
+  // que la sesión se persista antes de redirigir (especialmente para Apple).
+  var delayMs = (provider === 'apple' || /iphone|ipad|ipod/i.test(navigator.userAgent)) ? 1200 : 800;
   setTimeout(function(){
     window.location.href = dest;
-  }, 800);
+  }, delayMs);
 }
 
 // Esperar a que el SDK de Supabase cargue
