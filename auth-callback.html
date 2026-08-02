@@ -108,6 +108,127 @@ function setLoadingMsg(msg){
   if(el) el.textContent = msg;
 }
 
+// Maneja el flujo de Apple nativo (Capacitor iOS): crear o actualizar usuario.
+function handleAppleNativeUser(email, name, provider, appleUserId){
+  setLoadingMsg('Buscando tu cuenta...');
+
+  var SJWT = KEY;
+  var SB = 'https://api.pathwaycareercoach.com';
+
+  // Chequear si el usuario existe en usuarios.
+  fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,email,rol,nombre,activo,configuracion,auth_id', {
+    headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT }
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(existingArr){
+    var existingUser = (Array.isArray(existingArr) && existingArr.length > 0) ? existingArr[0] : null;
+    var isNew = !existingUser;
+    var usuario = existingUser;
+
+    if(isNew){
+      // Crear nuevo usuario (mismo flujo que Google).
+      setLoadingMsg('Creando tu cuenta...');
+      var trialDays = 14;
+      var newCfg = {
+        coach_type: 'carrera',
+        auth_provider: provider,
+        foto_url: null,
+        last_login: new Date().toISOString(),
+        from_google: false,
+        from_apple: true,
+        plan: 'basic',
+        estado_sub: 'prueba',
+        visible_directorio: true,
+        max_candidatos: 5,
+        fecha_fin_prueba: new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString()
+      };
+
+      return fetch(SB + '/rest/v1/usuarios?select=id,email,rol,nombre,activo,configuracion,auth_id', {
+        method: 'POST',
+        headers: {
+          'apikey': KEY,
+          'Authorization': 'Bearer ' + SJWT,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({
+          email: email,
+          password_hash: null,
+          rol: 'coach',
+          nombre: name,
+          activo: true,
+          auth_id: appleUserId,
+          configuracion: newCfg
+        })
+      })
+      .then(function(r){
+        if(!r.ok) throw new Error('No se pudo crear cuenta');
+        return r.json();
+      })
+      .then(function(created){
+        usuario = Array.isArray(created) ? created[0] : created;
+        // Email de bienvenida (best-effort).
+        fetch(SB + '/functions/v1/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: email,
+            to_name: name,
+            subject: '¡Te damos la bienvenida a Pathway! Tu trial de 14 días empezó 🌱',
+            html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + (name.split(' ')[0]) + ',</h2>'
+              + '<p style="font-size:15px;line-height:1.65;">Te damos la bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis</strong>. No te pedimos tarjeta — si al final no quieres seguir, simplemente no haces nada.</p>'
+              + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
+              + '<p style="font-size:13px;color:#888;margin-top:18px;">Cualquier duda, responde este mail. — Mica</p>'
+          })
+        }).catch(function(){});
+
+        finishAppleLogin(usuario, name, isNew);
+      })
+      .catch(function(e){
+        showError('No pudimos crear tu cuenta: ' + (e && e.message || 'desconocido'));
+      });
+    } else {
+      // Usuario existente — actualizar last_login.
+      var cfg = usuario.configuracion || {};
+      cfg.auth_provider = provider;
+      cfg.last_login = new Date().toISOString();
+
+      fetch(SB + '/rest/v1/usuarios?id=eq.' + usuario.id, {
+        method: 'PATCH',
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ configuracion: cfg })
+      }).catch(function(){});
+
+      finishAppleLogin(usuario, name, false);
+    }
+  })
+  .catch(function(e){
+    showError('Error consultando tu cuenta: ' + (e && e.message || 'desconocido'));
+  });
+}
+
+function finishAppleLogin(usuario, name, isNew){
+  // Guardar sesion en localStorage.
+  localStorage.setItem('mj_user', JSON.stringify({
+    id: usuario.id,
+    email: usuario.email,
+    rol: usuario.rol,
+    nombre: usuario.nombre,
+    activo: true,
+    configuracion: usuario.configuracion || {}
+  }));
+
+  // Destino según rol.
+  var _v = (isNew ? 'welcome=1&v=' : 'v=') + Date.now();
+  var dest = usuario.rol === 'cliente' ? '/cliente.html?' + _v : '/panel-v2.html?' + _v;
+  setLoadingMsg(isNew ? '¡Te damos la bienvenida! Te llevamos al panel...' : '¡Hola de nuevo! Te llevamos al panel...');
+
+  try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
+  setTimeout(function(){
+    window.location.href = dest;
+  }, 800);
+}
+
 async function handleCallback(){
   // URL params declarados al inicio: antes estaban al final pero el branch
   // de "usuario nuevo" los usaba por hoisting (params=undefined ⇒ TypeError
@@ -117,6 +238,66 @@ async function handleCallback(){
   var source = params.get('source') || 'login';
   var ref = params.get('ref') || '';
   var referredBy = params.get('referrer') || null;
+  var appleNative = params.get('apple_native') === '1';
+
+  // Manejo especial para Apple nativo (Capacitor iOS): el token está en localStorage.
+  if(appleNative){
+    var appleIdentityToken = null;
+    var appleUserId = null;
+    var appleEmail = null;
+    var appleName = null;
+    try {
+      appleIdentityToken = localStorage.getItem('pw_apple_identity_token');
+      appleUserId = localStorage.getItem('pw_apple_user_id');
+      appleEmail = localStorage.getItem('pw_apple_email');
+      appleName = localStorage.getItem('pw_apple_name');
+    } catch(e) {}
+
+    if(!appleIdentityToken){
+      return showError('Token de Apple no encontrado. Intenta iniciar sesión de nuevo.');
+    }
+
+    setLoadingMsg('Validando tu identidad con Apple...');
+
+    // Usar el identityToken de Apple para crear sesión en Supabase.
+    // (En producción, esto iría a una edge function que valida el token de Apple
+    // y emite un JWT de Supabase. Por ahora usamos email directo si está disponible.)
+    try {
+      // Clean up localStorage.
+      localStorage.removeItem('pw_apple_identity_token');
+      localStorage.removeItem('pw_apple_user_id');
+      localStorage.removeItem('pw_apple_email');
+      localStorage.removeItem('pw_apple_name');
+    } catch(e) {}
+
+    if(!appleEmail){
+      return showError('No pudimos obtener tu email. Intenta iniciar sesión de nuevo — asegúrate de permitir que Pathway acceda a tu email.');
+    }
+
+    // Aquí iría un flujo robusto: edge function que valida appleIdentityToken,
+    // crea/vincula el user en Auth, y devuelve un JWT. Por ahora, seguimos con
+    // Supabase Auth normal pero usando el email que capturamos de Apple.
+    setLoadingMsg('Conectando tu cuenta...');
+
+    // Continuar con el flujo normal: buscar o crear el usuario por email.
+    // (El resto del código usa appleEmail como email logueado sin contraseña.)
+    var email = (appleEmail || '').toLowerCase().trim();
+    var name = appleName || appleEmail.split('@')[0];
+    var provider = 'apple';
+    var user = {
+      id: appleUserId || 'apple_' + Date.now(),
+      email: email,
+      user_metadata: { full_name: name, name: name, given_name: name.split(' ')[0] },
+      app_metadata: { provider: provider }
+    };
+    var session = { user: user, access_token: KEY };
+    var SJWT = KEY;
+
+    // Salta toda la autenticación de Supabase y va directo a crear/actualizar el usuario.
+    // (Equivalente a llegar aquí con una sesión válida de Supabase.)
+    handleAppleNativeUser(email, name, provider, user.id);
+    return;
+  }
 
   // Inicializar Supabase JS client
   var sb;

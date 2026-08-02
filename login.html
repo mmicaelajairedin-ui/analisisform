@@ -198,19 +198,86 @@ var BASE='https://pathwaycareercoach.com';
 // auth-callback.html sincroniza con la tabla usuarios y redirige al panel
 // (o a Stripe si es la primera vez via Google y no tienen cuenta).
 function signInWithApple(){
+  var btn = document.getElementById('btn-apple');
+  if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Apple...';}
+
+  // Detectar si estamos en la app iOS nativa (Capacitor).
+  var isNativeIOS = false;
+  try {
+    var C = window.Capacitor;
+    if(C && (typeof C.isNativePlatform === "function" ? C.isNativePlatform() : C.isNative)){
+      var plat = (typeof C.getPlatform === "function" ? C.getPlatform() : "");
+      isNativeIOS = (plat === "ios");
+    }
+  } catch(e) {}
+
+  // ── Flujo nativo (iOS app con Capacitor) ──
+  if(isNativeIOS){
+    var SignInWithApple = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SignInWithApple;
+    if(!SignInWithApple){
+      if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Apple';}
+      alert('Plugin de Apple no disponible en esta versión de la app.');
+      return;
+    }
+
+    SignInWithApple.authorize({ scopes: 'name email' })
+      .then(function(result){
+        if(!result || !result.response){
+          throw new Error('No se recibió respuesta del plugin');
+        }
+        var resp = result.response;
+        var identityToken = resp.identityToken;
+        var user = resp.user; // ID único de Apple
+        var email = resp.email;
+        var givenName = resp.givenName;
+        var familyName = resp.familyName;
+
+        // Validar identityToken (obligatorio).
+        if(!identityToken){
+          throw new Error('No identityToken en respuesta de Apple');
+        }
+
+        // Fallback: si email/nombre vienen null (usuario ya autorizó antes),
+        // usar el user (ID de Apple) como identificador.
+        var finalEmail = email || (user ? (user + '@privaterelay.appleid.com') : null);
+        var finalName = '';
+        if(givenName || familyName){
+          finalName = ((givenName || '') + ' ' + (familyName || '')).trim();
+        }
+
+        // Guardar token y datos en localStorage para auth-callback.
+        try {
+          localStorage.setItem('pw_apple_identity_token', identityToken);
+          localStorage.setItem('pw_apple_user_id', user || '');
+          if(finalEmail) localStorage.setItem('pw_apple_email', finalEmail);
+          if(finalName) localStorage.setItem('pw_apple_name', finalName);
+        } catch(e) {}
+
+        // Redirigir a auth-callback para procesar con Supabase.
+        window.location.href = 'https://pathwaycareercoach.com/auth-callback.html?source=login&apple_native=1';
+      })
+      .catch(function(err){
+        console.error('[apple native signin]', err);
+        if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Apple';}
+        alert('Error iniciando sesión con Apple: ' + (err && err.message || 'desconocido'));
+      });
+    return;
+  }
+
+  // ── Flujo web (navegador normal o PWA) ──
   if(!window.supabase){
+    if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Apple';}
     alert('Supabase SDK no cargo todavia. Recarga la página.');
     return;
   }
-  var btn = document.getElementById('btn-apple');
-  if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Apple...';}
+
   var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login';
   var sb = window.supabase.createClient(SB, KEY);
   sb.auth.signInWithOAuth({
     provider: 'apple',
     options: { redirectTo: redirectTo }
   }).catch(function(err){
-    console.error('[apple signin]', err);
+    console.error('[apple signin web]', err);
     if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Apple';}
     alert('Error iniciando sesión con Apple: ' + (err && err.message || 'desconocido'));
   });
