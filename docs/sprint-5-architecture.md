@@ -1,41 +1,70 @@
-# Sprint 5.0 — Arquitectura Organizacional de Pathway
+# Sprint 5.0 — Arquitectura Organizacional de Pathway (Multinícho)
 
 **Estado**: Diseño de arquitectura funcional (sin código)  
-**Objetivo**: Definir el modelo base para permisos, agendas, cobros y colaboración  
-**Válido para**: Sprint 5.1 a 5.4 y future-proof para 10+ años
+**Objetivo**: Definir modelo base agnóstico del nicho para permisos, agendas, cobros y colaboración  
+**Válido para**: Sprint 5.1 a 5.4, cualquier especialidad de coaching, extensible a 10+ años
 
 ---
 
-## 1. MODELO DE PERSONAS
+## 0. PRINCIPIO FUNDAMENTAL
+
+**Pathway es agnóstico del nicho. El sistema no sabe de qué área eres; solo sabe qué puedes hacer.**
+
+Tres ejes completamente ortogonales:
+
+| Eje | Ejemplos | Impacto en sistema |
+|-----|----------|-------------------|
+| **Persona** | Owner, Coach, Colaborador | Define tipo de usuario (estructura básica) |
+| **Especialidad** | Career, Fitness, Nutrition, Executive, Wellness, etc. | Define qué programas/formularios/recursos se usan |
+| **Capacidades** | Crear personas, ver sesiones, editar programas, etc. | Define qué puede hacer esa persona |
+
+**Resultado**: Un Coach de Carrera y un Coach de Fitness tienen **idéntica estructura de datos y flujos**. Lo único que cambia:
+- La especialidad en su perfil
+- Los programas que pueden crear/asignar
+- Los formularios que las personas ven
+- Las métricas que se calculan
+- Los recursos que se proporcionan
+
+**La arquitectura base NO cambia.**
+
+---
+
+## 1. MODELO DE PERSONAS (Agnóstico de Especialidad)
 
 **NO son roles, son TIPOS DE USUARIO CON CAPACIDADES ASIGNABLES.**
 
-### 1.1 Tipos de Persona
+Tipo de persona = estructura básica. Especialidad = parametrización. Capacidades = permisos granulares.
+
+### 1.1 Tipos de Persona (Invariantes)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Personas en Pathway (sin asumir permisos aún)                   │
+│ Personas en Pathway (sin asumir nada sobre el nicho)             │
 ├─────────────────────────────────────────────────────────────────┤
 │ 1. OWNER                                                         │
-│    - Dueño de la organización (empresa, agencia, coach solo)     │
-│    - Puede ser una persona o entidad legal                       │
+│    - Dueño de la organización                                    │
+│    - (empresa coaching, agencia, coach individual, empresa HR)   │
 │    - 1 por organización                                          │
 │    - Facturación va a nombre del OWNER                           │
+│    - Capacidades: todas (heredadas por defecto)                  │
 │                                                                  │
 │ 2. COACH                                                         │
-│    - Quien brinda sesiones de coaching                           │
+│    - Quien brinda sesiones/coaching (cualquier especialidad)     │
 │    - Puede ser empleado, contratista o independiente             │
-│    - Tiene clientes asignados                                    │
+│    - Tiene personas asignadas                           │
+│    - Puede tener 1+ especialidades                               │
 │    - Visibilidad según modelo de cobros y capacidades            │
+│    - Capacidades: típicamente sesiones, programas, personas      │
 │                                                                  │
 │ 3. COLABORADOR                                                   │
-│    - Apoya el trabajo de coaches (admin, recruiter, RRHH, etc.) │
-│    - No brinda sesiones directas                                 │
-│    - Capacidades específicas según rol funcional                 │
-│    - Puede tener acceso a clientes, programas, agendas, etc.     │
+│    - Apoya el trabajo sin brindarse sesiones directo             │
+│    - Ejemplos: Recruiter, HR, Admin, Asistente, Coordinador     │
+│    - Puede tener 1+ especialidades o ser multiárea               │
+│    - Capacidades específicas según función                       │
+│    - Puede tener acceso a personas, programas, agendas, etc.     │
 │                                                                  │
-│ NOTA: Un mismo email puede tener múltiples personas en           │
-│ múltiples organizaciones, pero solo 1 tipo por organización.     │
+│ INVARIANTE: Un mismo email puede tener múltiples personas en     │
+│ múltiples organizaciones, pero solo 1 tipo POR ORGANIZACIÓN.     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -59,49 +88,186 @@ fecha_incorporación   (cuándo entró a la org)
 última_actividad      (timestamp)
 metadata
   - capacidades_activas   (lista de capability IDs)
-  - permisos_heredados    (de grupo)
+  - permisos_heredados    (de grupo, si aplica)
   - estado_cobro          (activo, suspendido, deuda)
-  - especialidades        (carrera, fitness, finanzas, etc.)
 ```
 
 ---
 
-## 2. MODELO DE CAPACIDADES
+## 1.3 ESPECIALIDADES (Eje Ortogonal)
 
-**Sistema flexible: cada persona tiene un set de capacidades que se puede activar/desactivar sin cambiar "rol".**
+**Cualquier persona puede tener 0+ especialidades. La especialidad es un atributo, no define el tipo de usuario.**
+
+### Especialidades Soportadas (Extensible)
+
+```
+┌────────────────────────────────────────────────┐
+│ Especialidades Pathway (v1.0)                  │
+├────────────────────────────────────────────────┤
+│ Career              (coaching de carrera)      │
+│ Executive           (coaching ejecutivo)       │
+│ Leadership          (liderazgo)                │
+│ Fitness             (entrenamiento físico)     │
+│ Nutrition           (nutrición)                │
+│ Wellness            (bienestar integral)       │
+│ Financial           (finanzas personales)      │
+│ Business            (negocio/emprendimiento)   │
+│ Psychology          (psicología clínica)       │
+│ Recruiter           (reclutamiento)            │
+│ HR                  (RRHH corporativo)         │
+│ (extensible a +20)                             │
+└────────────────────────────────────────────────┘
+```
+
+### Cómo se usa la Especialidad
+
+```sql
+personas
+  - id, tipo (owner|coach|colaborador), email, nombre
+  - especialidades JSONB: ["Career", "Executive"]  ← múltiples permitidas
+  - (el sistema no asume nada sobre career vs fitness)
+
+programas
+  - id, org_id, especialidad (Career|Fitness|...), nombre, contenido
+  - (un programa de Career funciona igual que uno de Fitness)
+
+formularios
+  - id, org_id, especialidad, pasos JSON
+  - (el formulario de Career ≠ formulario de Fitness, pero ambos son "formularios")
+
+recursos
+  - id, org_id, especialidad, tipo (pdf|video|articulo), url
+  - (recursos de Career ≠ recursos de Fitness, pero ambos son "recursos")
+
+métricas
+  - id, org_id, especialidad, nombre (retención|sesiones|completitud), cálculo
+  - (retención de Career ≠ retención de Fitness, pero ambas se calculan igual)
+```
+
+**Resultado**: El backend es agnóstico. Solo filtra por `especialidad` y sirve lo que corresponde. Sin cambios en lógica, rutas o permisos.
+
+---
+
+## 0.5 MODELO EXTENSIBLE POR NICHO — Cómo se Agrega una Nueva Especialidad
+
+**Cuando se crea una nueva especialidad (ej: Wellness), Pathway NO cambia de arquitectura. Solo se parametrizan:**
+
+### Datos Contenedores (Específicos por Nicho)
+
+```
+ESPECIALIDAD "Career" (ya existe):
+  ├─ Programas: "4 Semanas de Búsqueda", "LinkedIn Ejecutivo", etc.
+  ├─ Formulario intake: 7 pasos (situación, cargo, CV, etc.)
+  ├─ Recursos: guías de CV, entrevistas, networking
+  ├─ Métricas: retención, entrevistas conseguidas, empleo
+  └─ Dashboard cliente: progreso CV, sesiones, empleos
+
+ESPECIALIDAD "Fitness" (se agrega igual):
+  ├─ Programas: "Transformación 8 Semanas", "Fuerza Base", etc.
+  ├─ Formulario intake: 5 pasos (historial, objetivos, equipamiento, etc.)
+  ├─ Recursos: videos de ejercicios, planes de nutrición, artículos
+  ├─ Métricas: adherencia, peso, fuerza, medidas
+  └─ Dashboard cliente: progreso semana, sesiones, mediciones
+
+ESPECIALIDAD "Executive" (se agrega igual):
+  ├─ Programas: "360 Feedback", "Liderazgo Estratégico", etc.
+  ├─ Formulario intake: 6 pasos (rol, organización, desafíos, etc.)
+  ├─ Recursos: casos de estudio, artículos de liderazgo
+  ├─ Métricas: feedback 360, retención de talento, performance
+  └─ Dashboard cliente: feedback, próximas sesiones, acuerdos
+
+LA ARQUITECTURA BASE: personas, programas, sesiones, agenda, cobros
+└─ No cambia. Solo se rellena con datos de cada nicho.
+```
+
+### Cómo se Implementa (Ejemplo: Agregar Wellness)
+
+```
+1. BD: INSERT INTO especialidades (id, nombre, descripcion, activa)
+       VALUES ('wellness', 'Wellness', '...', TRUE);
+
+2. Programas_wellness: Crear 3-5 programas base
+   INSERT INTO programas (org_id, especialidad, nombre, ...)
+   VALUES (..., 'wellness', 'Transformación Integral', ...);
+
+3. Formulario: Crear JSON de 5-6 pasos
+   INSERT INTO formularios (org_id, especialidad, pasos_json)
+   VALUES (..., 'wellness', '{"pasos": [...]}');
+
+4. Recursos: Subir 10-15 PDFs/videos
+   INSERT INTO recursos (org_id, especialidad, tipo, url)
+   VALUES (..., 'wellness', 'video', 'https://...');
+
+5. Métricas: Definir KPIs (bienestar score, energía, sueño, etc.)
+   INSERT INTO metricas (org_id, especialidad, nombre, cálculo)
+   VALUES (..., 'wellness', 'Bienestar Score', '...');
+
+6. Vistas: Crear dashboard_persona_wellness.html reutilizando
+   estilos y estructura de dashboard_persona_career.html
+   (solo cambiar qué se muestra en cada sección)
+
+7. Deploy: Un nuevo coach con especialidad 'wellness' ya ve todo
+   automáticamente. Ningún cambio en lógica de sesiones, agenda, cobros.
+```
+
+**Ejemplo de Query Agnóstica:**
+
+```sql
+-- Traer programas de la especialidad del coach
+SELECT * FROM programas 
+WHERE org_id = $org_id 
+  AND especialidad = (SELECT especialidades[0] FROM personas WHERE id = $coach_id)
+LIMIT 10;
+
+-- Funciona para Career, Fitness, Wellness, Executive, etc.
+-- El código no especifica "career" ni "fitness" en ningún lugar.
+```
+
+**Resultado**: 
+- Agregar "Nutrition Coach" = 1 INSERT + 10 APIs de datos + 1 HTML template
+- No cambiar código backend
+- No tocar tablas de personas, sesiones, agenda, cobros
+- Escalable a 50+ especializades sin cambios arquitectónicos
+
+---
+
+## 2. MODELO DE CAPACIDADES (Agnóstico de Especialidad)
+
+**Sistema flexible: cada persona tiene un set de capacidades granulares e independientes.**
+**Las capacidades funcionan idénticamente para Career, Fitness, Nutrition, etc.**
 
 ### 2.1 Matriz Completa de Capacidades
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ CAPACIDADES PATHWAY (Base de Datos Extensible)                           │
+│ CAPACIDADES PATHWAY (Base de Datos Extensible, Agnóstica del Nicho)      │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ ID      | Capacidad                        | Nivel | Descripción        │
 ├─────────┼────────────────────────────────────┼───────┼────────────────────┤
-│ CLI-001 | Crear clientes                    | Base  | Agregar candidatos │
-│ CLI-002 | Editar clientes propios           | Base  | Datos básicos       │
-│ CLI-003 | Editar clientes de otros          | Admin | Ver/cambiar todos   │
-│ CLI-004 | Eliminar clientes                 | Admin | Borrar registro     │
-│ CLI-005 | Ver clientes propios              | Base  | Solo los asignados  │
-│ CLI-006 | Ver todos los clientes            | Admin | Visibilidad total   │
-│ CLI-007 | Filtrar por estado                | Base  | Vivos, completados  │
-│ CLI-008 | Exportar lista de clientes        | Admin | CSV/Excel           │
+│ CLI-001 | Crear personas                    | Base  | Agregar a plataforma│
+│ CLI-002 | Editar personas propias           | Base  | Datos básicos       │
+│ CLI-003 | Editar personas de otros          | Admin | Ver/cambiar todos   │
+│ CLI-004 | Eliminar personas                 | Admin | Borrar registro     │
+│ CLI-005 | Ver personas propias              | Base  | Solo los asignados  │
+│ CLI-006 | Ver todas las personas            | Admin | Visibilidad total   │
+│ CLI-007 | Filtrar por estado/especialidad   | Base  | Búsqueda           │
+│ CLI-008 | Exportar lista de personas        | Admin | CSV/Excel           │
 │         |                                    |       |                    │
-│ ASG-001 | Asignar clientes a coaches        | Admin | Redistribución      │
-│ ASG-002 | Asignar clientes a sí mismo       | Base  | Auto-asignación     │
+│ ASG-001 | Asignar personas a coaches        | Admin | Redistribución      │
+│ ASG-002 | Asignar personas a sí mismo       | Base  | Auto-asignación     │
 │ ASG-003 | Reasignar por urgencia            | Coach | Cambios rápidos     │
 │ ASG-004 | Ver quién está asignado a quién   | Coach | Visibilidad equipo  │
 │         |                                    |       |                    │
-│ PRG-001 | Crear programas                   | Base  | Plantillas de plan  │
+│ PRG-001 | Crear programas (cualquier nicho) | Base  | Plantillas de plan  │
 │ PRG-002 | Editar programas propios          | Base  | Solo los creados    │
 │ PRG-003 | Editar programas de otros         | Admin | Todos               │
 │ PRG-004 | Ver programas disponibles         | Base  | Catálogo            │
-│ PRG-005 | Asignar programas a clientes      | Coach | Sesiones 4 semanas  │
-│ PRG-006 | Ver progreso de cliente           | Coach | Dentro del programa │
+│ PRG-005 | Asignar programas a personas      | Coach | Sesiones 4 semanas  │
+│ PRG-006 | Ver progreso de persona           | Coach | Dentro del programa │
 │         |                                    |       |                    │
 │ AGD-001 | Ver propia agenda                 | Base  | Mis sesiones        │
 │ AGD-002 | Ver agenda del equipo             | Admin | Todas las sesiones  │
-│ AGD-003 | Crear sesión (propia)             | Base  | Con mis clientes    │
+│ AGD-003 | Crear sesión (propia)             | Base  | Con mis personas    │
 │ AGD-004 | Crear sesión (para otros)         | Admin | Cross-coach         │
 │ AGD-005 | Editar sesión propia              | Base  | Cambiar hora/datos   │
 │ AGD-006 | Editar sesión de otros            | Admin | Override            │
@@ -110,7 +276,7 @@ metadata
 │ AGD-009 | Bloquear tiempo (vacaciones, etc) | Base  | No disponible        │
 │ AGD-010 | Coordinar con otros coaches       | Coach | Comunicación        │
 │         |                                    |       |                    │
-│ MSG-001 | Enviar mensaje a cliente          | Base  | Chat 1:1            │
+│ MSG-001 | Enviar mensaje a persona         | Base  | Chat 1:1            │
 │ MSG-002 | Enviar mensaje a coach            | Base  | Colaboración        │
 │ MSG-003 | Enviar mensaje a equipo           | Admin | Broadcast           │
 │ MSG-004 | Ver historial de mensajes         | Base  | Propios + asignados  │
@@ -118,7 +284,7 @@ metadata
 │         |                                    |       |                    │
 │ ANA-001 | Ver analytics propios             | Base  | Mis KPIs            │
 │ ANA-002 | Ver analytics del equipo          | Admin | Agregado            │
-│ ANA-003 | Ver metrics de clientes           | Coach | Progreso, retención │
+│ ANA-003 | Ver metrics de personas          | Coach | Progreso, retención │
 │ ANA-004 | Ver datos de cobros               | Admin | Ingresos, comisiones │
 │ ANA-005 | Descargar reportes                | Admin | PDF/CSV             │
 │         |                                    |       |                    │
@@ -163,19 +329,19 @@ PRESET "Coach Senior" (ejemplo):
   + AGD-010 Coordinar con otros coaches
 
 PRESET "Recruiter":
-  - CLI-001 Crear clientes
-  - ASG-002 Asignar clientes a sí mismo
-  + CLI-006 Ver todos los clientes
-  + MSG-001 Enviar mensaje a cliente
+  - CLI-001 Crear personas
+  - ASG-002 Asignar personas a sí mismo
+  + CLI-006 Ver todas las personas
+  + MSG-001 Enviar mensaje a persona
   + AGD-002 Ver agenda del equipo
-  + ANA-003 Ver metrics de clientes
+  + ANA-003 Ver metrics de personas
 
 PRESET "RRHH/Administrativo":
   - ORG-002 Editar configuración de org
   + ORG-003 Invitar personas
   + PRG-005 Asignar programas
   + ANA-001 Ver analytics propios
-  + MSG-001 Enviar mensaje a cliente
+  + MSG-001 Enviar mensaje a persona
 
 PRESET "Owner/Admin Completo":
   - Todas las capacidades habilitadas
@@ -188,7 +354,7 @@ PRESET "Owner/Admin Completo":
 ```
                         | OWNER | COACH | COLABORADOR
 ────────────────────────┼───────┼───────┼─────────────
-CLI-001 Crear clientes  |  ✓    |  ✓    |  Configurable
+CLI-001 Crear personas  |  ✓    |  ✓    |  Configurable
 CLI-006 Ver todos       |  ✓    |  ✗    |  Configurable
 ASG-001 Asignar         |  ✓    |  ✗    |  Configurable
 PRG-003 Editar programas|  ✓    |  ✗    |  Configurable
@@ -215,7 +381,7 @@ IMPORTANTE: Estos son DEFAULTS. La organización puede cambiar.
 ├─────────────────────────────────────────────────────────────────┤
 │ 1. SESIÓN CON CLIENTE                                           │
 │    - Coaching (1:1)                                              │
-│    - Grupo (múltiples clientes)                                  │
+│    - Grupo (múltiples personas)                                  │
 │    - Duración: típicamente 1h                                    │
 │    - Coach + Cliente(s) confirmados                              │
 │    - Puede tener:                                                │
@@ -231,17 +397,17 @@ IMPORTANTE: Estos son DEFAULTS. La organización puede cambiar.
 │    - Duración variable (30 min - 2h)                             │
 │    - Solo coaches + admin                                        │
 │                                                                  │
-│ 3. DISPONIBILIDAD (Bloque sin cliente asignado aún)            │
+│ 3. DISPONIBILIDAD (Bloque sin persona asignada aún)            │
 │    - Coach dice "estoy disponible 14:00-16:00"                  │
 │    - Sirve para que admin vea dónde encajar sesiones            │
-│    - Se convierte en Sesión cuando se asigna cliente            │
+│    - Se convierte en Sesión cuando se asigna persona            │
 │                                                                  │
 │ 4. BLOQUEO DE TIEMPO (Vacaciones, enfermedad, etc.)            │
 │    - "No disponible 24-31 agosto"                                │
 │    - Bloquea la agenda completamente para ese rango              │
 │    - Visible a admin para reasignaciones                         │
 │                                                                  │
-│ 5. REUNIÓN CON TERCEROS (Zoom con cliente, Teams con directivo)│
+│ 5. REUNIÓN CON TERCEROS (Zoom con persona, Teams con directivo) │
 │    - Evento externo que impacta disponibilidad                   │
 │    - Coach importa de Google Calendar / Outlook                  │
 │    - Pathway ve "ocupado" en esos slots                          │
@@ -258,29 +424,29 @@ IMPORTANTE: Estos son DEFAULTS. La organización puede cambiar.
 ```
 A. COACH - VISTA PERSONAL
    Muestra: Mis sesiones + mis bloqueos + disponibilidades
-   Filtros: Por semana, por cliente, por tipo
+   Filtros: Por semana, por persona, por tipo
    Acciones: Crear sesión, bloquear tiempo, marcar como completada
    Integraciones: Google Calendar (sync bidireccional)
 
 B. ADMIN - VISTA DE EQUIPO
    Muestra: Todas las sesiones + todos los bloqueos + disponibilidades
    Estructura: Calendario matricial (coaches vs horarios)
-   Acciones: Crear sesión para coach X, asignar cliente, detectar conflictos
+   Acciones: Crear sesión para coach X, asignar persona, detectar conflictos
    Alertas: Coaches sin sesiones esa semana, overbooking, vacíos
 
-C. ADMIN - VISTA DE CLIENTE
-   Muestra: Todas las sesiones de un cliente (con diferentes coaches)
+C. ADMIN - VISTA DE PERSONA
+   Muestra: Todas las sesiones de una persona (con diferentes coaches)
    Filtros: Por coach, por programa, por mes
    Acciones: Cambiar hora, cambiar coach, añadir notas
 
-D. CLIENTE - VISTA SU AGENDA
-   Muestra: Mis 4 sesiones + próxima fecha
+D. PERSONA - VISTA SU AGENDA
+   Muestra: Sus sesiones + próxima fecha
    Acciones: Confirmar asistencia, cancelar, añadir pregunta
-   Integraciones: Recibir link Zoom, recordatorio 24h antes
+   Integraciones: Recibir link video, recordatorio 24h antes
 
 E. ANALÍTICA - OCUPACIÓN
    Muestra: % de ocupación por coach, sesiones completadas, tasa de no-show
-   Alertas: Coaches con pocas sesiones, clientes sin asignar
+   Alertas: Coaches con pocas sesiones, personas sin asignar
 ```
 
 ### 3.3 Escenarios Complejos de Coordinación
@@ -288,28 +454,28 @@ E. ANALÍTICA - OCUPACIÓN
 ```
 ESCENARIO 1: Coach A está de vacaciones
 ├─ Admin ve el bloqueo en agenda
-├─ Admin debe reasignar sus 12 clientes a otros coaches
+├─ Admin debe reasignar sus 12 personas a otros coaches
 ├─ Sistema sugiere distribución balanceada
 ├─ Cada reasignación genera notificación + entrada en auditoría
 └─ Coach B puede rechazar si está sobrecargado
 
-ESCENARIO 2: Dos coaches comparten cliente
-├─ Cliente tiene sesiones con Coach A (lunes) y Coach B (jueves)
+ESCENARIO 2: Dos coaches comparten persona
+├─ Persona tiene sesiones con Coach A (lunes) y Coach B (jueves)
 ├─ Coach B ve progreso de Coach A (con permiso)
 ├─ En reunión interna pueden coordinarse
 ├─ Auditoría registra quién vio qué
-└─ Cliente ve ambos coaches en su historial
+└─ Persona ve ambos coaches en su historial
 
 ESCENARIO 3: Reasignación por urgencia
 ├─ Coach A debe cancelar última hora
 ├─ Sistema busca coaches disponibles en ese slot
 ├─ Admin elige Coach B
-├─ Cliente recibe notificación de cambio
+├─ Persona recibe notificación de cambio
 ├─ Se genera entrada en auditoría
 └─ Conversación en chat entre coaches para handover
 
-ESCENARIO 4: Cliente pide cambio de coach
-├─ Cliente puede solicitar vía plataforma o email
+ESCENARIO 4: Persona pide cambio de coach
+├─ Persona puede solicitar vía plataforma o email
 ├─ Admin aprueba/rechaza
 ├─ Si aprueba, busca disponibilidad con otro coach
 ├─ Se reasignan todas las sesiones pendientes
@@ -326,12 +492,12 @@ ESCENARIO 5: Conflicto de doble booking
 └─ Si fuerza, auditoría lo registra
 
 ESCENARIO 6: Coordinación async (Chat + Agenda)
-├─ Coach A comenta en sesión de cliente: "Cliente necesita nutrición"
+├─ Coach A comenta en sesión de persona: "Necesita sesión de nutrición"
 ├─ Notificación a Coach B (especialista en nutrición)
-├─ Coach B abre lista de clientes compartidos
+├─ Coach B abre lista de personas compartidas
 ├─ Coach B propone sesión adicional
 ├─ Admin aprueba y lo agrega a calendario
-└─ Cliente ve nueva sesión y la confirma
+└─ Persona ve nueva sesión y la confirma
 
 ESCENARIO 7: Integración Google Calendar
 ├─ Coach conecta su Google Calendar
@@ -348,7 +514,7 @@ ESCENARIO 7: Integración Google Calendar
 id                    (UUID)
 org_id                (FK)
 coach_id              (FK -> personas)
-cliente_id            (FK -> candidatos)
+persona_ids           (JSONB array -> personas) — puede ser 1:1 o grupo
 programa_id           (FK -> programas) [opcional]
 fecha_hora_inicio     (datetime)
 fecha_hora_fin        (datetime)
@@ -357,7 +523,7 @@ estado                (programada | completada | cancelada | no-show | reprogram
 tipo                  (1:1 | grupo | supervisión | coordinación)
 notas_pre_sesion      (qué se va a discutir)
 notas_post_sesion     (qué pasó, acuerdos)
-enlace_zoom_id        (FK -> zoom_meetings)
+enlace_video_id       (FK -> video_meetings) — agnóstico (Zoom/Teams/Meet)
 chat_id               (FK -> chat_session)
 created_at
 created_by            (quién creó)
@@ -367,8 +533,8 @@ cancelada_por
 motivo_cancelacion
 reasignada_desde_coach_id  (si fue reasignada)
 confirmacion_coach    (true/false, timestamp)
-confirmacion_cliente  (true/false, timestamp)
-asistencia_cliente    (presente | ausente | canceló)
+confirmaciones_personas  (JSONB: {persona_id: timestamp}) — flexible para grupo
+asistencia_personas   (JSONB: {persona_id: presente|ausente|canceló})
 tags                  (["urgente", "follow-up", "problema"])
 ```
 
@@ -397,7 +563,7 @@ tags                  (["urgente", "follow-up", "problema"])
 │   • Escalable: agregar coaches sin cambiar modelo                      │
 │                                                                        │
 ║ Desventajas:                                                           │
-│   • Empresa tiene riesgo de impago del cliente                         │
+│   • Empresa tiene riesgo de impago de personas                         │
 │   • Coaches dependen de empresa para pago                              │
 │   • Posibles conflictos por comisión                                   │
 │                                                                        │
@@ -440,14 +606,14 @@ tags                  (["urgente", "follow-up", "problema"])
 │                                                                        │
 ║ Impacto técnico:                                                       │
 │   • Cada coach conecta su Stripe (o Pathway es intermediaria)          │
-│   • Pathway cobra fee al chef, no al cliente                           │
+│   • Pathway cobra fee al coach, no a la persona                           │
 │   • Dashboard de coach muestra ingresos netos                          │
 │   • Pagos automáticos vía Stripe Payout                                │
 │                                                                        │
 ║ Casos de uso:                                                          │
 │   • Coaches independientes que usan Pathway como plataforma            │
 │   • Marketplace de coaching                                            │
-│   • Coaches que ya tienen clientes propios                             │
+│   • Coaches que ya tienen personas propias                             │
 ║                                                                        ║
 ║ TABLA EN BD:                                                           │
 │   - pagos (coach_id, monto_bruto, fee_pathway%, monto_neto, estado)   │
@@ -461,14 +627,14 @@ tags                  (["urgente", "follow-up", "problema"])
 ║ Flujo de dinero:                                                       ║
 ║   Empresa compra bolsa de 10/20/50 sesiones                            │
 ║   └→ Precio fijo por sesión ($50-200 según coach)                      ║
-║       └→ Empresa distribuye sesiones entre candidatos/clientes         ║
+║       └→ Empresa distribuye sesiones entre personas/participantes         ║
 ║           └→ Coaches reciben comisión por sesión completada            ║
 ║                                                                        ║
 ║ Ventajas:                                                              ║
 │   • Dinero entra antes de que se usen sesiones (flujo efectivo)        │
 │   • Previsibilidad: empresa sabe cuánto invierte                       │
 │   • Descuentos por volumen posibles                                    │
-│   • Menos fricción: no cobrar por cliente                              │
+│   • Menos fricción: no cobrar por persona                              │
 │                                                                        │
 ║ Desventajas:                                                           │
 │   • Sesiones no usadas = pérdida para empresa (o expiración)           │
@@ -497,8 +663,8 @@ tags                  (["urgente", "follow-up", "problema"])
 ╠════════════════════════════════════════════════════════════════════════╣
 ║ Flujo de dinero:                                                       ║
 ║   Coach paga cuota fija mensual a Pathway ($29-199)                    ║
-║   └→ Coach cobra a sus clientes directamente (100%)                    ║
-║       └→ Pathway no toca dinero del cliente                            │
+║   └→ Coach cobra a sus personas directamente (100%)                    ║
+║       └→ Pathway no toca dinero de la persona                            │
 ║                                                                        ║
 ║ Ventajas:                                                              ║
 │   • Modelo más simple (SaaS puro)                                      │
@@ -515,7 +681,7 @@ tags                  (["urgente", "follow-up", "problema"])
 ║ Impacto técnico:                                                       │
 │   • Subscriptions en Stripe (coach_id, plan, estado)                   │
 │   • Webhook de pago mensual automático                                 │
-│   • NO hay integración con pagos de clientes                           │
+│   • NO hay integración con pagos de personas                           │
 │   • Dashboard simple: cuota pagada / vencida                           │
 │                                                                        ║
 ║ Casos de uso:                                                          ║
@@ -576,19 +742,19 @@ Flujo de onboarding de Owner:
 PATRÓN 1: COACH + COACH SENIOR (Supervisión)
 ├─ Coach Senior: capacidad "Ver analytics de equipo"
 ├─ Coach Senior: capacidad "Coordinar con otros coaches"
-├─ Coach Junior: ve solo sus clientes y sesiones
+├─ Coach Junior: ve solo sus personas y sesiones
 ├─ Reunión interna semanal (supervisión 1:1)
 ├─ Chat: Coach Junior pregunta, Coach Senior aconseja
-├─ Auditoría: "Coach Senior vio cliente de Coach Junior"
+├─ Auditoría: "Coach Senior vio persona de Coach Junior"
 └─ Escalacion: si Coach Junior no resuelve, Coach Senior toma caso
 
 PATRÓN 2: RECRUITER + COACH (Asignación)
-├─ Recruiter: capacidad "Crear clientes", "Ver todos los clientes"
-├─ Recruiter: NO puede "Editar clientes de otros"
-├─ Coach: capacidad "Ver clientes propios", "Editar propios"
-├─ Recruiter crea cliente → automáticamente se asigna a un coach
+├─ Recruiter: capacidad "Crear personas", "Ver todas las personas"
+├─ Recruiter: NO puede "Editar personas de otros"
+├─ Coach: capacidad "Ver personas propias", "Editar propias"
+├─ Recruiter crea persona → automáticamente se asigna a un coach
 ├─ Chat: Recruiter notifica al coach
-├─ Auditoría: "Recruiter X creó cliente para Coach Y"
+├─ Auditoría: "Recruiter X creó persona para Coach Y"
 └─ Coach puede cambiar disponibilidad si está sobrecargado
 
 PATRÓN 3: RRHH + ORGANIZACIÓN (Gestión de Personas)
@@ -599,24 +765,24 @@ PATRÓN 3: RRHH + ORGANIZACIÓN (Gestión de Personas)
 ├─ Cada nueva persona recibe email de bienvenida
 ├─ RRHH puede remover personas (offboarding)
 ├─ Auditoría: "RRHH agregó Coach Maria", "RRHH removió Coach Carlos"
-└─ Cuando se remueve, todos sus clientes se reasignan
+└─ Cuando se remueve, todas sus personas se reasignan
 
 PATRÓN 4: ASISTENTE + COACH (Soporte)
 ├─ Asistente: capacidad "Crear sesiones", "Ver agenda equipo"
-├─ Asistente: NO puede "Editar clientes"
-├─ Coach asigna asistente al cliente ("puede coordinar sesiones")
-├─ Asistente coordina horarios cliente ↔ coach
+├─ Asistente: NO puede "Editar personas"
+├─ Coach asigna asistente a la persona ("puede coordinar sesiones")
+├─ Asistente coordina horarios persona ↔ coach
 ├─ Chat: Asistente y coach se comunican
-├─ Auditoría: "Asistente confirmó sesión con cliente"
-└─ Cliente ve solo coach, no ve asistente (backend)
+├─ Auditoría: "Asistente confirmó sesión con persona"
+└─ Persona ve solo coach, no ve asistente (backend)
 
 PATRÓN 5: OBSERVADOR (Auditor interno)
-├─ Observador: capacidad "Ver todos los clientes", "Ver auditoría"
+├─ Observador: capacidad "Ver todas las personas", "Ver auditoría"
 ├─ Observador: NO puede "Crear", "Editar", "Eliminar"
 ├─ Usualmente es Owner o Compliance officer
 ├─ Puede descargar reportes
-├─ Auditoría: "Observador revisó cliente X"
-└─ No aparece en conversaciones de coaches/clientes
+├─ Auditoría: "Observador revisó persona X"
+└─ No aparece en conversaciones de coaches/personas
 
 PATRÓN 6: RESPONSABLE SECUNDARIO
 ├─ Cada cliente puede tener "coach principal" + "coach secundario"
@@ -716,14 +882,14 @@ CATEGORÍA: PERSONAS
 ├─ Persona cambió estado (activo → vacaciones, etc.)
 └─ Contraseña reseteada (user_id, timestamp, IP)
 
-CATEGORÍA: CLIENTES
-├─ Cliente creado (quién, cuándo, qué datos)
-├─ Cliente editado (campo, valor_anterior, valor_nuevo)
-├─ Cliente asignado a coach (quién asignó, a quién, desde quién)
-├─ Cliente reasignado (motivo, de coach_A a coach_B)
-├─ Cliente marcado como completado (cuándo, por quién)
+CATEGORÍA: PERSONAS (Clientes/Participantes)
+├─ Persona creada (quién, cuándo, qué datos)
+├─ Persona editada (campo, valor_anterior, valor_nuevo)
+├─ Persona asignada a coach (quién asignó, a quién, desde quién)
+├─ Persona reasignada (motivo, de coach_A a coach_B)
+├─ Persona marcado como completado (cuándo, por quién)
 ├─ Datos sensibles accedidos (acceso a salud, finanzas, etc.)
-└─ Cliente eliminado (quién, cuándo, razón)
+└─ Persona eliminada (quién, cuándo, razón)
 
 CATEGORÍA: SESIONES
 ├─ Sesión creada (quién, cliente, coach, fecha, hora)
@@ -799,13 +965,13 @@ Políticas de retención:
 ### 6.3 Reportes de Auditoría
 
 ```
-REPORTE 1: "Quién modificó a Cliente X"
+REPORTE 1: "Quién modificó a Persona X"
 ├─ Mostrar timeline de todos los cambios
 ├─ Quién, cuándo, qué cambió
 └─ Filtrar por tipo de cambio
 
 REPORTE 2: "Acceso a datos sensibles"
-├─ Quién vio salud/finanzas de cliente X
+├─ Quién vio salud/finanzas de persona X
 ├─ Cuándo y por cuánto tiempo
 ├─ IP y dispositivo
 
@@ -819,7 +985,7 @@ REPORTE 4: "Historial de pagos"
 ├─ Montos, fechas, métodos
 ├─ Comisiones calculadas
 
-REPORTE 5: "Reasignaciones de clientes"
+REPORTE 5: "Reasignaciones de personas"
 ├─ De coach A a coach B, motivo, cuándo
 ├─ Cuántas sesiones se movieron
 ├─ Impacto en comisiones
@@ -881,7 +1047,7 @@ REPORTE 6: "Actividad de usuario"
 ### 7.3 Mensajería (Slack, WhatsApp, Teams Chat)
 
 **Integración**: Notificaciones y bidireccional
-- Coach recibe notificación en Slack: "Nueva sesión de cliente X a las 14:00"
+- Coach recibe notificación en Slack: "Nueva sesión con persona X a las 14:00"
 - Coach recibe en WhatsApp: recordatorio 24h antes de sesión
 - Coach puede responder en Slack "confirmado" y se marca en Pathway
 - Admin recibe alertas: "Coach X no confirmó sesión"
@@ -908,7 +1074,7 @@ REPORTE 6: "Actividad de usuario"
 
 **Impacto arquitectónico**:
 - Tabla `stripe_accounts` (org_id, stripe_id, tipo_cuenta, estado)
-- Tabla `stripe_customers` (cliente_id, stripe_customer_id)
+- Tabla `stripe_customers` (persona_id, stripe_customer_id)
 - Tabla `payments_stripe` (payment_id, stripe_charge_id, webhook_status)
 - Webhook receiver: escuchar charge.completed, payment_failed, etc.
 - Cron: sincronizar payouts pendientes
@@ -1012,7 +1178,7 @@ REPORTE 6: "Actividad de usuario"
 A. TABLAS A CREAR (Sprint 5.1)
    ├─ personas (coaches, colaboradores, owners)
    ├─ capacidades_matriz (mapping persona → capacidades)
-   ├─ sesiones (todas las sesiones, estados, coaches, clientes)
+   ├─ sesiones (todas las sesiones, estados, coaches, personas)
    ├─ integraciones (calendar, zoom, stripe, etc.)
    ├─ audit_log (auditoría inmutable)
    ├─ pagos_modelo_A/B/C/D (según modelo elegido)
@@ -1092,18 +1258,18 @@ ARQUITECTURA DE PATHWAY - VISTA GENERAL
 │                     │               │                                   │
 │                     ▼               ▼                                   │
 │        ┌──────────────────────────────────────┐                        │
-│        │   CLIENTES (Candidatos)              │                        │
-│        │   ├─ Cliente A (Coach A + B)         │                        │
-│        │   ├─ Cliente B (Coach A solo)        │                        │
-│        │   └─ Cliente C (Coach B + Collab)    │                        │
+│        │   PERSONAS (Participantes)           │                        │
+│        │   ├─ Persona A (Coach A + B)         │                        │
+│        │   ├─ Persona B (Coach A solo)        │                        │
+│        │   └─ Persona C (Coach B + Collab)    │                        │
 │        └──────────────────────────────────────┘                        │
 │                     │                                                   │
 │                     ▼                                                   │
 │        ┌──────────────────────────────────────┐                        │
 │        │   SESIONES (Agenda Compartida)       │                        │
-│        │   ├─ Sesión 1 (Coach A + Cliente A)  │                        │
-│        │   ├─ Sesión 2 (Coach B + Cliente A)  │                        │
-│        │   └─ Sesión 3 (Coach A + Cliente B)  │                        │
+│        │   ├─ Sesión 1 (Coach A + Persona A)  │                        │
+│        │   ├─ Sesión 2 (Coach B + Persona A)  │                        │
+│        │   └─ Sesión 3 (Coach A + Persona B)  │                        │
 │        └──────────────────────────────────────┘                        │
 │                     │                                                   │
 │                     ▼                                                   │
