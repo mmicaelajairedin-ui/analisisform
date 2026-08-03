@@ -5688,6 +5688,7 @@ function viewClienteDetalle(c){
         )+
       "</div></div>"+
       _diag+
+      (typeof window._renderRecursosInPlan==="function" ? window._renderRecursosInPlan(c.id,D) : "")+
       // Carrera: las acciones viven en su propia pestaña "Acciones". Fitness y
       // financiero NO muestran las acciones al cliente. Se conserva igual que antes.
       ((_exHide||_tipo==='carrera'||_tipo==='fitness'||_tipo==='financiero')?"":_avanceHtml(c,true))+
@@ -5753,6 +5754,7 @@ function viewClienteDetalle(c){
         "<button class='cp-btn "+(state.sesPrepOpen?"cp-btn-ghost":"cp-btn-primary")+"' style='width:100%' data-act='prep-sesion' data-id='"+esc(c.id)+"'>"+(state.sesPrepOpen?"Ocultar preparación":"<svg width='13' height='13' viewBox='0 0 24 24' fill='#E9C46A' style='display:inline-block;vertical-align:-1px' aria-hidden='true'><path d='M12 2l1.7 5.1L18.8 8.8l-4.9 1.7L12 15.6l-1.9-5.1L5.2 8.8l4.9-1.7z'/><path d='M18.6 14l.7 2.2 2.2.7-2.2.7-.7 2.2-.7-2.2-2.2-.7 2.2-.7z'/><path d='M5.3 15.2l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z'/></svg> Preparar próxima sesión con IA Pathway")+"</button>"+
         (state.sesPrepOpen?_prepSesionHtml(c):"")+
       "</div></div>"+
+      (typeof window._renderRecursosInSesion==="function" ? window._renderRecursosInSesion(c.id, (prox&&prox.s)?prox.s.trabajado:"") : "")+
       "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Sesiones<span class='dot'>.</span></h3>"+
         "<div style='display:flex;align-items:center;gap:12px;margin-left:auto'>"+
           "<span style='display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:600;color:var(--pw-text-soft)'>"+(_svOn?"El cliente la ve":"Oculta")+"<button class='cp-switch "+(_svOn?"is-on":"")+"' data-act='clivis:sesiones' data-id='"+esc(c.id)+"'><span></span></button></span>"+
@@ -15320,6 +15322,79 @@ if('serviceWorker' in navigator){
     "</div>";
   };
 
+  // NUEVO (Sprint C.3): Recursos en el contexto del Plan/Análisis
+  window._renderRecursosInPlan = function(clienteId, diagnostico){
+    var c = (CLIENTS||[]).filter(function(x){return String(x.id)===String(clienteId);})[0];
+    if(!c || !RCFG) return "";
+
+    var nicho = (c.raw&&c.raw.nicho) || (RCFG&&RCFG.coach_type) || 'carrera';
+    var recursos = (RCFG.recursos||[]).filter(function(r){
+      return !r.nicho || r.nicho === nicho || r.nicho === 'general';
+    });
+
+    if(!recursos.length) return "";
+
+    var html = "<div class='cp-card cp-card-pad' style='margin-top:14px;background:rgba(45,106,79,.02);border:1px solid rgba(45,106,79,.08)'>"+
+      "<div class='cp-card-title' style='margin:0 0 12px;display:flex;align-items:center;gap:8px'>"+
+        PWI.svg('bookOpen',{sm:true})+" <span>Recursos por etapa</span>"+
+      "</div>"+
+      "<div style='font-size:12px;color:var(--pw-text-soft);margin-bottom:12px;line-height:1.5'>"+
+        "Recomendaciones de material por cada etapa del plan. Sugiere estas guías y ejercicios durante las sesiones."+
+      "</div>"+
+      "<div style='display:flex;flex-direction:column;gap:8px'>";
+
+    recursos.slice(0,4).forEach(function(r){
+      var tipo = (r.tipo||'artículo').charAt(0).toUpperCase()+(r.tipo||'artículo').slice(1);
+      html += "<a href='"+esc(r.url||'#')+"' target='_blank' rel='noopener' style='display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:#fff;text-decoration:none;color:var(--pw-carbon);transition:background .15s;border:1px solid transparent' onmouseover=\"this.style.background='var(--pw-niebla-2)'\" onmouseout=\"this.style.background='#fff'\">"+
+        "<span style='flex:1;min-width:0'>"+
+          "<div style='font-size:12.5px;font-weight:600;color:var(--pw-carbon)'>"+esc(r.titulo||'Recurso')+"</div>"+
+          "<div style='font-size:11px;color:var(--pw-text-soft)'>"+tipo+(r.meta?" · "+esc(r.meta):"")+"</div>"+
+        "</span>"+
+        PWI.svg('arrowRight',{sm:true})+
+      "</a>";
+    });
+
+    html += "</div>"+
+      "<div style='margin-top:8px;text-align:center'>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 12px;font-size:11px' onclick=\"state.section='configuracion';state.configTab='recursos';render()\">Ver todos los recursos</button>"+
+      "</div>"+
+    "</div>";
+
+    return html;
+  };
+
+  // NUEVO (Sprint C.3): Recursos en el contexto de Sesiones
+  window._renderRecursosInSesion = function(clienteId, sesiónTema){
+    var c = (CLIENTS||[]).filter(function(x){return String(x.id)===String(clienteId);})[0];
+    if(!c || !RCFG) return "";
+
+    var nicho = (c.raw&&c.raw.nicho) || (RCFG&&RCFG.coach_type) || 'carrera';
+    var recursos = (RCFG.recursos||[]).filter(function(r){
+      return (!r.nicho || r.nicho === nicho || r.nicho === 'general');
+    });
+
+    if(!recursos.length) return "";
+
+    var html = "<div class='cp-card cp-card-pad' style='margin-top:12px;background:rgba(45,106,79,.02);border:1px solid rgba(45,106,79,.08)'>"+
+      "<div style='display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;font-weight:700;color:var(--pw-carbon)'>"+
+        PWI.svg('bookOpen',{sm:true})+" Recursos para esta sesión"+
+      "</div>"+
+      "<div style='display:flex;flex-direction:column;gap:6px'>";
+
+    recursos.slice(0,3).forEach(function(r){
+      var tipo = (r.tipo||'artículo').charAt(0).toUpperCase()+(r.tipo||'artículo').slice(1);
+      html += "<a href='"+esc(r.url||'#')+"' target='_blank' rel='noopener' style='display:flex;align-items:center;gap:6px;padding:6px;border-radius:6px;background:#fff;text-decoration:none;color:var(--pw-carbon);transition:background .15s;border:1px solid transparent;font-size:12px' onmouseover=\"this.style.background='var(--pw-niebla-2)'\" onmouseout=\"this.style.background='#fff'\">"+
+        "<span style='flex:1;min-width:0;font-weight:500'>"+esc(r.titulo||'Recurso')+"</span>"+
+        "<span style='font-size:10px;color:var(--pw-text-soft)'>"+tipo+"</span>"+
+        PWI.svg('arrowRight',{sm:true})+
+      "</a>";
+    });
+
+    html += "</div></div>";
+
+    return html;
+  };
+
   window._getBreadcrumb = function(){
     var parts = [];
     if(state.section==="dashboard"){
@@ -15387,30 +15462,68 @@ if('serviceWorker' in navigator){
           var nicho = (c.raw&&c.raw.nicho) || (RCFG&&RCFG.coach_type) || 'carrera';
           ctx.especialidad = nicho;
           ctx.nicho = nicho;
+
+          // NUEVO (Sprint C.3): Programa y etapas del cliente
+          if(c.raw && c.raw.etapas){
+            var etapas = c.raw.etapas;
+            var etapaNames = etapas.map(function(e){return e.nombre||"Sin nombre";}).join(" → ");
+            ctx.programa = etapaNames;
+            ctx.etapaActual = etapas[0]?etapas[0].nombre:"Sin etapa";
+            ctx.etapasTotales = etapas.length;
+          }
+
+          // NUEVO (Sprint C.3): Próxima sesión si existe
+          if(sesiones.length > 0){
+            var proximaSesion = sesiones[0];
+            ctx.proximaSesion = {
+              tema: proximaSesion.tema || "Sin tema",
+              fecha: proximaSesion.fecha || "Sin fecha",
+              tareas: proximaSesion.tareas || []
+            };
+          }
         }
       }
 
-      // NUEVO: Recursos disponibles del coach (contexto global)
+      // NUEVO (Sprint C.3): Recursos disponibles filtrados por nicho
       if(RCFG && Array.isArray(RCFG.recursos)){
         ctx.recursosCargados = RCFG.recursos.length;
-        ctx.recursosDisponibles = RCFG.recursos.slice(0,5).map(function(r){
+        var nicho = (ctx.nicho || RCFG.coach_type || 'carrera');
+        var recursosFiltered = RCFG.recursos.filter(function(r){
+          return !r.nicho || r.nicho === nicho || r.nicho === 'general';
+        });
+        ctx.recursosDisponibles = recursosFiltered.slice(0,5).map(function(r){
           return (r.titulo||"Sin título")+" ("+((r.tipo||"artículo").charAt(0).toUpperCase()+(r.tipo||"artículo").slice(1))+")";
         }).join(", ");
+        ctx.recursosRelacionados = recursosFiltered.slice(0,10);
       }
 
-      // NUEVO: Plantillas de email disponibles
-      if(state.plantillasEmail && Array.isArray(state.plantillasEmail)){
-        ctx.plantillasEmail = state.plantillasEmail.length+" plantillas disponibles";
+      // NUEVO (Sprint C.3): Plantillas de email disponibles para el nicho
+      var plantillasDisponibles = [];
+      if(RCFG && RCFG.plantillas_email){
+        var nicho = (ctx.nicho || RCFG.coach_type || 'carrera');
+        plantillasDisponibles = (RCFG.plantillas_email || []).filter(function(p){
+          return !p.nicho || p.nicho === nicho || p.nicho === 'general';
+        });
+      }
+      if(plantillasDisponibles.length > 0){
+        ctx.plantillasEmail = plantillasDisponibles.length+" plantillas para "+ctx.nicho;
+        ctx.plantillasRelacionadas = plantillasDisponibles.slice(0,5);
       }
 
       // Si la sección es programas/plan
       if(sec==="clientes" && state.cliDetTab==="plan"){
         ctx.viendo = "Plan y programa del cliente abierto";
+        if(ctx.etapaActual){
+          ctx.viendo += " — Etapa actual: "+ctx.etapaActual;
+        }
       }
 
       // Si la sección es sesiones
       if(sec==="clientes" && state.cliDetTab==="sesiones"){
-        ctx.viendo = "Historial de sesiones y registro de la Sala";
+        ctx.viendo = "Historial de sesiones y registro";
+        if(ctx.proximaSesion){
+          ctx.viendo += " — Próxima sesión: "+ctx.proximaSesion.tema;
+        }
       }
 
       // Información del coach
@@ -15440,12 +15553,12 @@ if('serviceWorker' in navigator){
       if(!window.PW_IA_CFG.shortcuts){
         window.PW_IA_CFG.shortcuts = [
           {re:/cliente|perfil|datos/i, emoji:"👤", label:"Perfil del cliente", section:"clientes"},
-          {re:/programa|plan|semana/i, emoji:"📋", label:"Plan del cliente", section:"clientes"},
-          {re:/sesi[oó]n|llamada|reuni[oó]n/i, emoji:"📞", label:"Sesiones", section:"clientes"},
+          {re:/programa|plan|semana|etapa/i, emoji:"📋", label:"Plan del cliente", section:"clientes"},
+          {re:/sesi[oó]n|llamada|reuni[oó]n|proximosesi/i, emoji:"📞", label:"Sesiones", section:"clientes"},
           {re:/documento|cv|carta|linkedin/i, emoji:"📄", label:"Documentos", section:"clientes"},
-          {re:/recurso|gu[ií]a/i, emoji:"📚", label:"Recursos", section:"clientes"},
+          {re:/recurso|gu[ií]a|material/i, emoji:"📚", label:"Recursos", section:"clientes"},
           {re:/preparar|agendar|calendario/i, emoji:"📅", label:"Agenda", section:"agenda"},
-          {re:/comunidad|feedback|plantilla/i, emoji:"💬", label:"Comunidad", section:"comunidad"}
+          {re:/comunidad|feedback|plantilla|email/i, emoji:"💬", label:"Comunidad", section:"comunidad"}
         ];
       }
 
