@@ -64,7 +64,7 @@ class BrandEngine {
         `/rest/v1/organization_branding?organization_id=eq.${this.orgId}&select=id`,
         {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', ...PWAUTH.headers() },
+          headers: { 'Content-Type': 'application/json', ...PWAUTH.headersSync() },
           body: JSON.stringify(merged),
         }
       );
@@ -170,7 +170,7 @@ async function _sbGet(table, filter = {}) {
       url += `${key}=${encodeURIComponent(value)}&`;
     }
 
-    const res = await fetch(url, { headers: PWAUTH.headers() });
+    const res = await fetch(url, { headers: PWAUTH.headersSync() });
     if (!res.ok) {
       console.warn(`[_sbGet] Failed ${table}:`, res.status);
       return null;
