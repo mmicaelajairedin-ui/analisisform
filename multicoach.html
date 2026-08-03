@@ -4030,30 +4030,50 @@ function _equipoEnviarMensaje(){
   __toast('ℹ️ Sistema de mensajes — disponible en Sprint 4.3.7');
 }
 
-// REASIGNAR CLIENTES: Selector real + actualización BD
+// REASIGNAR CLIENTES: Implementado en Sprint 6
 function _equipoReasignarClientes(){
   if(!_equipoSelected || _equipoSelected.tipo!=='coach') {
     __toast('Solo coaches pueden reasignar clientes');
     return;
   }
 
-  if(_equipoSelected.clientes===0 || _equipoSelected.clientes==='0'){
+  var n=parseInt(_equipoSelected.clientes||0);
+  if(n===0){
     __toast('Este coach no tiene clientes para reasignar');
     return;
   }
 
-  // TODO (Sprint 4.3.7): Implementar modal de selector con lista de coaches
-  // - Listar coaches activos (excluyendo el actual)
-  // - Mostrar cantidad de clientes actuales de cada uno
-  // - Permitir elegir destino
-  // - PATCH a candidatos.coach_id para todos los clientes del origen
-  // - Actualizar _equipoSelected.clientes
-  // - Refrescar tabla
-
-  __toast('ℹ️ Reasignación de clientes — disponible en Sprint 4.3.7');
-  if(confirm('¿Reasignar '+_equipoSelected.clientes+' clientes de '+_equipoSelected.nombre+' a otro coach?')){
-    alert('Modal de reasignación:\n\n(1) Listar coaches activos\n(2) Elegir destino\n(3) Confirmar\n(4) Actualizar BD\n\n(Implementar en Sprint 4.3.7)');
+  var coaches=(DB&&DB.coaches?DB.coaches.filter(function(c){return !c.esOwner&&c.id!==_equipoSelected.id;}):[])||[];
+  if(coaches.length===0){
+    __toast('No hay otros coaches disponibles');
+    return;
   }
+
+  var html='<div style="padding:16px"><p>Reasignar <strong>'+n+' cliente'+(n!==1?'s':'')+' de '+_mcEsc(_equipoSelected.nombre)+'</strong> a:</p>'
+    +'<div style="display:flex;flex-direction:column;gap:8px;">';
+  coaches.forEach(function(c){
+    html+='<button style="padding:12px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;text-align:left;transition:all .15s;" onmouseover="this.style.background=\'#f9f7f4\'" onmouseout="this.style.background=\'#fff\'" onclick="_equipoReasignarConfirm('+_mcEsc(JSON.stringify(_equipoSelected.id))+','+_mcEsc(JSON.stringify(c.id))+',this.closest(\'[data-modal]\').parentElement)">'
+      +'<strong>'+_mcEsc(c.nombre||c.n)+'</strong> ('+parseInt(c.clientes||0)+' cliente'+(parseInt(c.clientes||0)!==1?'s':'')+')'
+      +'</button>';
+  });
+  html+='</div></div>';
+  _showModal(html,'Reasignar Clientes','Cancelar');
+}
+
+function _equipoReasignarConfirm(fromCoachId, toCoachId, modal){
+  if(!fromCoachId || !toCoachId) return;
+  __toast('🔄 Reasignando...');
+  var payload={from:fromCoachId, to:toCoachId};
+  var _fn=function(r){
+    if(r && r.ok){
+      __toast('✅ Clientes reasignados');
+      if(modal) modal.remove();
+      _equipoList();
+    }else{
+      __toast('❌ Error en reasignación');
+    }
+  };
+  if(MC_REAL){ _sbw('POST','/rest/v1/rpc/reassign_clients',payload,_fn); }
 }
 
 // DESACTIVAR / REACTIVAR: Confirmación + cambio de estado + refresco
