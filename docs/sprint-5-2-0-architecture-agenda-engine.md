@@ -303,6 +303,165 @@ Ana — 40 horas/semana disponibles
 
 ---
 
+## 2.8. Relaciones entre Eventos (Future-proof)
+
+**Algunos eventos pertenecen a otros.** La arquitectura lo prevé sin implementar aún.
+
+```javascript
+{
+  id: "evt_...",
+  // ... campos anteriores ...
+  
+  parent_event_id: "evt_programa_executive",  // si es parte de una serie
+  recurrence_id: "evt_kickoff_2026_08_10"     // si se reprograma
+}
+```
+
+**Ejemplos:**
+
+```
+Programa Executive Coaching
+├── evt_1: Kickoff (parent: programa_executive)
+├── evt_2: Sesión 1 (parent: programa_executive)
+├── evt_3: Sesión 2 (parent: programa_executive)
+├── evt_4: Sesión 3 (parent: programa_executive)
+└── evt_5: Cierre (parent: programa_executive)
+```
+
+```
+evt_reunion_semanal (estado: rescheduled)
+↓
+parent_event_id: evt_reunion_semanal
+recurrence_id: evt_reunion_semanal_2026_08_17
+```
+
+**Caso de uso:** Permite agrupar eventos, detectar cancelaciones en cascada, manejar series/recurrencias.
+
+---
+
+## 2.9. Timezone (Future-proof)
+
+**No asumir Europe/Madrid.** El sistema escalará a múltiples zonas horarias.
+
+```javascript
+{
+  id: "evt_...",
+  // ... campos anteriores ...
+  
+  timezone: "Europe/Madrid" | "America/Buenos_Aires" | "America/Santiago" | "America/Mexico_City" | "America/New_York" | ...
+}
+```
+
+**Por qué es crítico:**
+- Un coach en Argentina no quiere ver horas de España
+- Una reunión con participantes en 3 países necesita sincronización correcta
+- Calendly/Google Calendar exponen timezone como estándar
+- Sin timezone, reportes de capacidad son incorrectos (diferencias horarias)
+
+**Nota:** Cada evento debe tener su timezone. No es un atributo global.
+
+---
+
+## 2.10. Integraciones Externas (Future-proof)
+
+**Agenda se sincroniza con sistemas externos.** Reservar arquitectura ahora.
+
+```javascript
+{
+  id: "evt_...",
+  // ... campos anteriores ...
+  
+  external_integrations: [
+    {
+      provider: "google_calendar" | "outlook" | "apple_calendar" | "calendly" | "zoom" | "meet" | "teams",
+      external_id: "abc123@calendar.google.com/evt456",
+      sync_status: "synced" | "pending" | "failed" | "out_of_sync",
+      last_sync_at: "2026-08-03T14:30:00Z",
+      metadata: { ... }  // campos específicos por provider
+    }
+  ]
+}
+```
+
+**Providers a soportar mañana:**
+- `google_calendar` — sincronización bidireccional
+- `outlook` — Microsoft 365
+- `apple_calendar` — iCloud
+- `calendly` — reservas públicas
+- `zoom` — reunión automática
+- `meet` — reunión automática
+- `teams` — reunión automática
+
+**Uso:** mantener sincronización, detectar cambios externos, evitar dobles bookings.
+
+---
+
+## 2.11. Auditoría (Future-proof)
+
+**Agenda mueve mucho negocio.** La arquitectura debe permitir auditar cambios.
+
+```javascript
+{
+  id: "evt_...",
+  // ... campos anteriores ...
+  
+  audit_trail: [
+    { accion: "created", usuario_id: "...", timestamp: "2026-08-02T10:00:00Z", cambios: {...} },
+    { accion: "confirmed", usuario_id: "...", timestamp: "2026-08-02T10:30:00Z", cambios: {...} },
+    { accion: "rescheduled", usuario_id: "...", timestamp: "2026-08-02T11:00:00Z", cambios: { old_time: "14:00", new_time: "15:00" } },
+    { accion: "cancelled", usuario_id: "...", timestamp: "2026-08-02T12:00:00Z", cambios: {...} }
+  ]
+}
+```
+
+**Acciones auditadas:**
+- `created` — quién creó el evento
+- `confirmed` — quién confirmó
+- `rescheduled` — quién movió la fecha
+- `cancelled` — quién canceló
+- `reassigned` — quién reasignó a otro coach
+- `participant_added` — quién agregó un participante
+- `participant_removed` — quién removió un participante
+
+**Nota:** La auditoría se construye en Sprint 5.2.2/5.2.3. Ahora solo reservar el campo.
+
+---
+
+## 2.12. Principio de No-Acoplamiento (CRÍTICO)
+
+### Agenda nunca modifica otras entidades directamente.
+
+**Agenda es un motor transversal de planificación.** No contiene lógica de negocio específica de Career, Fitness o cualquier otro nicho, ni modifica directamente otros módulos.
+
+**Agenda PUEDE:**
+- ✅ Crear evento
+- ✅ Cancelar evento
+- ✅ Mover evento (reschedule)
+- ✅ Agregar/remover participantes
+- ✅ Cambiar estado del evento
+- ✅ Registrar origen, timezone, integración externa
+
+**Agenda NO PUEDE:**
+- ❌ Cambiar clientes (tabla `candidatos`, `usuarios`)
+- ❌ Cambiar cobros (tabla `cobros`) — solo referencia
+- ❌ Cambiar permisos (tabla `usuarios_roles`, `capacidades`)
+- ❌ Cambiar programas (tabla `programas`)
+- ❌ Cambiar recursos (tablas de recursos)
+
+**Flujo de causa-efecto:**
+```
+Agenda: evento_cancelado
+  ↓
+  → Cobros: reacción → reembolsar si aplica
+  → Clientes: reacción → notificar
+  → Programas: reacción → marcar sesión como no hecha
+  → Analytics: reacción → registrar cancelación
+```
+
+**Ventaja:** Agenda es reutilizable, mantenible y escalable. Los módulos downstream reaccionan a cambios de Agenda, pero Agenda no se acopla a ellos.
+
+---
+
 ## 3. Scope: Quién ve Qué
 
 **Tres scopes y SOLO tres.** No se inventan más.
@@ -617,6 +776,21 @@ Los eventos pueden tener recursos: zoom, meet, sala, documento, programa, pdf, e
 ### ✅ Congelado: Capacidad como concepto del motor
 La agenda calcula capacidad real (horas libres / horas disponibles), no solo horas ocupadas. Alimenta dashboard y detecta overload.
 
+### ✅ Congelado: Relaciones entre eventos (parent_event_id, recurrence_id)
+Los eventos pueden pertenecer a otros (programas, series, recurrencias). Reservar arquitectura sin implementar lógica de cascada.
+
+### ✅ Congelado: Timezone por evento
+Cada evento tiene su zona horaria. No asumir Europe/Madrid. Crítico para multi-país (Argentina, Chile, México, USA, etc.).
+
+### ✅ Congelado: Integraciones externas (provider, external_id, sync_status)
+Reservar arquitectura para sincronización con Google Calendar, Outlook, Apple Calendar, Calendly, Zoom, Meet, Teams.
+
+### ✅ Congelado: Auditoría (audit_trail)
+Cada evento registra cambios: quién creó, confirmó, rescheduló, canceló, reasignó. Arquitectura lista para auditar.
+
+### ✅ Congelado: Principio de No-Acoplamiento
+**Agenda NUNCA modifica otras entidades.** Solo genera eventos. Los módulos de Cobros, Programas, Recursos, Clientes y Analytics consumen eventos y reaccionan. Esto mantiene Agenda como motor transversal, no como módulo de negocio.
+
 ---
 
 ## 10. Cambios esperados en Sprints Posteriores
@@ -679,9 +853,42 @@ La agenda calcula capacidad real (horas libres / horas disponibles), no solo hor
 
 ---
 
-**ESTADO: CONGELADO**
+## 11. Propósito del Agenda Engine
 
-Para cambiar esta arquitectura se requiere revisión del PO + rediseño de Sprint 5.3+ posteriores.
+**El Agenda Engine es un motor transversal de planificación.** No contiene lógica de negocio específica de Career, Fitness o cualquier otro nicho, ni modifica directamente otros módulos.
 
-Próximo: Sprint 5.2.1 — Implementación del Scheduler.
+**Su responsabilidad es:**
+- Gestionar eventos (crear, editar, cancelar, reschedule)
+- Gestionar participantes y sus roles
+- Calcular disponibilidad y capacidad real
+- Registrar cambios (auditoría)
+- Sincronizar con calendarios externos
+- Integrar zonas horarias y contextos multi-país
+
+**Qué hacen los otros módulos:**
+- **Cobros** consumen eventos y deciden qué facturar
+- **Programas** consumen eventos y marcan sesiones como completadas/faltadas
+- **Recursos** consumen eventos y proporcionan salas/documentos
+- **Clientes** consumen eventos y se notifican de cambios
+- **Analytics** consumen eventos y generan reportes
+- **Capacidades** consumen eventos y calculan carga de trabajo
+
+**Por qué esto importa:**
+- Agenda es reutilizable en cualquier contexto (Coach, Fitness, Programas, Marketplace)
+- Los módulos de negocio son independientes y mantenibles
+- Cambios en Agenda no riesguen otros módulos
+- El sistema escala sin acoplamiento
+
+---
+
+## Estado: CONGELADO ✅
+
+La arquitectura del Agenda Engine está **completa, aprobada y congelada**.
+
+Cambios posteriores requieren:
+1. Revisión explícita del Product Owner
+2. Rediseño de sprints posteriores (5.3+) si es necesario
+3. Documentación de justificación
+
+**Próximo paso:** Sprint 5.2.1 — Implementación del componente `<Scheduler>` reutilizable.
 
