@@ -15160,6 +15160,119 @@ if('serviceWorker' in navigator){
 <script src="pw-dropzone.js?v=1"></script>
 <script src="pw-photo.js?v=1"></script>
 <script src="pw-sortable.js?v=1"></script>
+
+<!-- IA Pathway: Contexto dinámico del coach (Sprint C.1) -->
+<script>
+(function(){
+  "use strict";
+
+  // Función que captura el contexto actual (cliente, programa, sesión abiertos)
+  // y actualiza window.PW_IA_CFG para que la IA siempre sepa qué está viendo el coach
+  function updateIAContext(){
+    try{
+      var ctx = {};
+      var cid = state.clienteSel;
+      var sec = state.section;
+
+      // Si hay un cliente abierto
+      if(cid && CLIENTS){
+        var c = CLIENTS.filter(function(x){return String(x.id)===String(cid);})[0];
+        if(c){
+          var parts = [];
+          if(c.nombre) parts.push("Cliente: "+c.nombre);
+          if(c.email) parts.push("Email: "+c.email);
+          if(c.cargo) parts.push("Cargo deseado: "+c.cargo);
+          if(c.sector) parts.push("Sector: "+c.sector);
+          if(c.situacion) parts.push("Situación: "+c.situacion);
+          if(c.semana_activa) parts.push("Semana del programa: "+c.semana_activa+"/4");
+
+          // Estado de documentos
+          var cvState = (c.reportState==="published"||c.cv_estado==="listo")?"✓ Listo":"○ Pendiente";
+          var cartaState = (c.carta_presentacion)?"✓ Lista":"○ Pendiente";
+          var linkedinState = (c.linkedin_texto)?"✓ Analizado":"○ Pendiente";
+          parts.push("Documentos: CV "+cvState+", Carta "+cartaState+", LinkedIn "+linkedinState);
+
+          // Sesiones
+          var sesiones = c.ses || [];
+          if(sesiones.length) parts.push("Sesiones completadas: "+sesiones.length);
+
+          // Última actividad
+          if(c.last) parts.push("Última actividad: "+(c.last.state||"")+" hace "+(c.last.days||"0")+" días");
+
+          ctx.clienteActual = parts.join("\n");
+          ctx.clienteNombre = c.nombre || "Cliente";
+          ctx.clienteId = cid;
+        }
+      }
+
+      // Si la sección es programas/plan
+      if(sec==="clientes" && state.cliDetTab==="plan"){
+        ctx.viendo = "Plan y programa del cliente abierto";
+      }
+
+      // Si la sección es sesiones
+      if(sec==="clientes" && state.cliDetTab==="sesiones"){
+        ctx.viendo = "Historial de sesiones y registro de la Sala";
+      }
+
+      // Información del coach
+      if(typeof COACH!=="undefined" && COACH){
+        ctx.coach = COACH.nombre || COACH.email || "Coach";
+      }
+
+      // Actualizar la configuración global de IA
+      window.PW_IA_CFG = window.PW_IA_CFG || {};
+      window.PW_IA_CFG.mode = "coach";
+      window.PW_IA_CFG.context = function(){
+        return ctx;
+      };
+
+      // Shortcuts contextuales por sección
+      if(!window.PW_IA_CFG.shortcuts){
+        window.PW_IA_CFG.shortcuts = [
+          {re:/cliente|perfil|datos/i, emoji:"👤", label:"Perfil del cliente", section:"clientes"},
+          {re:/programa|plan|semana/i, emoji:"📋", label:"Plan del cliente", section:"clientes"},
+          {re:/sesi[oó]n|llamada|reuni[oó]n/i, emoji:"📞", label:"Sesiones", section:"clientes"},
+          {re:/documento|cv|carta|linkedin/i, emoji:"📄", label:"Documentos", section:"clientes"},
+          {re:/recurso|gu[ií]a/i, emoji:"📚", label:"Recursos", section:"clientes"},
+          {re:/preparar|agendar|calendario/i, emoji:"📅", label:"Agenda", section:"agenda"},
+          {re:/comunidad|feedback|plantilla/i, emoji:"💬", label:"Comunidad", section:"comunidad"}
+        ];
+      }
+
+      // Actualizar saludo según contexto
+      if(cid && CLIENTS){
+        var c = CLIENTS.filter(function(x){return String(x.id)===String(cid);})[0];
+        if(c && !window.PW_IA_CFG.greeting){
+          var nombre = c.nombre || "tu cliente";
+          window.PW_IA_CFG.greeting = "Hola "+PWI.svg('hand',{sm:true})+" Estamos con "+nombre+". Puedo ayudarte a preparar la sesión, generar emails, revisar documentos o lo que necesites. ¿Qué hacemos?";
+        }
+      }
+
+    }catch(e){
+      console.error("Error updating IA context:", e);
+    }
+  }
+
+  // Actualizar contexto cada vez que cambia el state (después de render)
+  var originalRender = window.render;
+  if(typeof originalRender === "function"){
+    window.render = function(){
+      var r = originalRender.apply(this, arguments);
+      updateIAContext();
+      return r;
+    };
+  }
+
+  // Initial setup
+  updateIAContext();
+
+})();
+</script>
+
+<!-- IA Pathway: Chat widget unificado para el coach (Sprint C.1) -->
+<script src="/pw-ia-chat.js?v=1"></script>
+
 <script>/* Móvil: si el campo enfocado quedaría tapado por el teclado, lo subimos a la vista. Solo agrega, no cambia nada. */
 document.addEventListener('focusin',function(e){var t=e.target;if(!t||!t.matches||!t.matches('input,textarea,[contenteditable="true"]'))return;setTimeout(function(){try{var r=t.getBoundingClientRect();var vh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;if(r.bottom>vh*0.5)t.scrollIntoView({block:'center',behavior:'smooth'});}catch(_){}} ,300);});</script>
 
