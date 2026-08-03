@@ -6056,7 +6056,8 @@ function viewClienteDetalle(c){
     ((c.raw&&c.raw.activo===false)
       ? "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-bosque);border-color:var(--pw-bosque)' data-act='cli-reactivate' data-id='"+esc(c.id)+"'>Activar cliente</button>"
       : "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='cli-deactivate' data-id='"+esc(c.id)+"'>Desactivar cliente</button>")+
-    "</div>";
+    "</div>"+
+    (typeof window._renderIAButtons==="function" ? window._renderIAButtons(c) : "");
   // "Visto por el cliente" (ojo) va en TODAS las pestañas que el cliente ve en su
   // portal. "Último análisis" con día Y hora va solo donde se produce análisis (plan).
   // Ambas viven en la columna derecha, bajo "Acciones rápidas".
@@ -15216,6 +15217,43 @@ if('serviceWorker' in navigator){
     return "<ul class='cp-quick-actions'>"+actions.map(function(a){
       return "<li><button class='cp-quick-action' "+a.action+" title='"+a.label+"'>"+PWI.svg(a.icon,{sm:true})+" "+a.label+"</button></li>";
     }).join("")+"</ul>";
+  };
+
+  // Funciones para botones IA inline
+  window._iaInlinePrompt = function(clienteId, action){
+    try{
+      if(!window.PW_IA_CFG) return;
+      var c = (CLIENTS||[]).filter(function(x){return String(x.id)===String(clienteId);})[0];
+      if(!c) return;
+
+      var prompts = {
+        "preparar-sesion": "Prepara la próxima sesión con "+c.nombre+". Resume su situación, documentos completados, y sugiere 3 puntos clave para cubrir en la llamada.",
+        "escribir-feedback": "Escribe un feedback constructivo y motivador para "+c.nombre+" tras su última sesión. Basado en su progreso: "+c.semana_activa+" de 4 semanas.",
+        "email-seguimiento": "Redacta un email de seguimiento personalizado para "+c.nombre+" ("+c.cargo+" en "+c.sector+"). Mencioná el próximo paso en su plan.",
+        "sugerencia-recurso": "¿Qué recurso o ejercicio sería útil para "+c.nombre+" en su situación ("+c.situacion+") y objetivo ("+c.objetivo+")?"
+      };
+
+      var prompt = prompts[action];
+      if(!prompt) return;
+
+      // Abrir el chat de IA con el prompt pre-llenado
+      if(typeof iaOpenWithPrompt==="function"){
+        iaOpenWithPrompt(prompt);
+      } else {
+        console.log("IA prompt:", prompt);
+      }
+    }catch(e){}
+  };
+
+  // Helper para renderizar botones IA inline
+  window._renderIAButtons = function(c){
+    if(!c||!c.id) return "";
+    return "<div class='cp-card cp-card-pad' style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:rgba(45,106,79,.04);border:1px solid rgba(45,106,79,.12)'>"+
+      "<span style='font-size:11px;font-weight:700;text-transform:uppercase;color:var(--pw-text-soft);letter-spacing:.5px'>IA Pathway</span>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 11px;gap:5px' onclick=\"window._iaInlinePrompt('"+esc(c.id)+"','preparar-sesion')\">"+PWI.svg('sparkles',{sm:true})+" Preparar sesión</button>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 11px;gap:5px' onclick=\"window._iaInlinePrompt('"+esc(c.id)+"','email-seguimiento')\">"+PWI.svg('sparkles',{sm:true})+" Email</button>"+
+      "<button class='cp-btn cp-btn-ghost' style='height:32px;font-size:12px;padding:0 11px;gap:5px' onclick=\"window._iaInlinePrompt('"+esc(c.id)+"','sugerencia-recurso')\">"+PWI.svg('sparkles',{sm:true})+" Recurso</button>"+
+    "</div>";
   };
 
   window._getBreadcrumb = function(){
