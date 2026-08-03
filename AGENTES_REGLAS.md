@@ -106,18 +106,50 @@ Estos archivos son el **corazón del sistema**. NO tocar sin permiso explícito:
 ## 🎯 Filosofía
 
 ```
-Funcional y visible > Arquitectura perfecta
+1 Pantalla → 1 Flujo Completo → Screenshot → Aprobado → Siguiente
+
+Nada de capas invisibles durante semanas.
+Nada de "arquitectura perfecta" sin producto visual.
 
 No es mejor:
 - 20 abstracciones sin cambio visual
 - Refactor global que "prepara" para el futuro
 - Cambios en archivos sensibles "por si acaso"
+- Engines, funciones y helpers sin screenshot
 
 Es mejor:
 - 1 cambio que el usuario ve y aprueba
 - Pequeños pasos donde cada uno suma valor
-- Archivos sensibles tocados solo si es inevitable
+- Cada sprint termina con: screenshot → "esto está listo"
+- Arquitectura crece DEBAJO de lo visual, no al revés
 ```
+
+## 📸 Regla del Screenshot
+
+**Antes de terminar un sprint:**
+1. Tomar screenshot de la pantalla
+2. Mostrarla a PO
+3. Recibir aprobación visual
+4. Documentar qué cambió
+
+**Si no hay screenshot, el sprint no está "hecho".**
+
+---
+
+## 🏗️ Arquitectura ≠ Producto
+
+La arquitectura es invisible. El producto es visible.
+
+- ✅ Brand Engine funciona → pero...
+- ❌ Branding se ve como "formulario técnico" → NO está listo
+
+**Prioridad:** UX/UI visual primero. Arquitectura después.
+
+El usuario no ve el Engine. El usuario ve:
+- El título
+- Los botones
+- El preview
+- Cómo queda al cambiar
 
 ---
 
