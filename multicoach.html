@@ -3240,6 +3240,12 @@ function mcLoadReal(owner){
     try{ setTimeout(_mcEnableSync,100); }catch(e){}
     // Pre-cargar Google Calendar en background (200ms delay para no bloquear UI)
     try{ setTimeout(function(){ if(!_mcGcalDone){ _mcGcalDone=true; _mcGcalLoad(function(){}); } },200); }catch(e){}
+    // Pre-cargar cobros (estado y datos) — evita re-renders en renderCobros()
+    try{ setTimeout(function(){ if(MC_REAL){ if(!_mcCobReq) mcCobrosStatus(); if(!_mcSyncReq) mcCobrosSync(); } },300); }catch(e){}
+    // Pre-cargar comunidad (posts, avisos, clases, retos) — evita blocking en renderComunidad()
+    try{ setTimeout(function(){ if(MC_REAL && MC_ORG && MC_ORG.id && !_mcPostsLoaded) _mcLoadPosts(function(){ _mcPostsLoaded=true; }); },400); }catch(e){}
+    // Pre-cargar programas — evita delay en renderPrograms()
+    try{ setTimeout(function(){ if(!_mcProgLoaded) loadPrograms(function(){ _mcProgLoaded=true; }); },500); }catch(e){}
   }
   return _hdr({'Content-Type':'application/json'}).then(function(h){
     // Si hay org seleccionada en localStorage (multi-org), enviarla al edge function
@@ -4814,10 +4820,11 @@ function renderAnalytics(){
     +'</div></div>';
   // Ranking de coaches: ordenados por clientes (desempate por sesiones). Top 3
   // resaltados con su posición. Reusa la barra de progreso por coach.
+  // Cache retención para cada coach antes del ranking loop (evita recálculos)
+  var retByCoach={}; allCo.forEach(function(c){ retByCoach[c.id]=_retPct(cliListByCoach[c.id]||[]); });
   var ranked=allCo.slice().sort(function(a,b){ return (cliByCoach[b.id]||0)-(cliByCoach[a.id]||0) || (sesByCoach[b.id]||0)-(sesByCoach[a.id]||0); });
   var rows=ranked.map(function(c,i){
-    var _rp=_retPct(cliListByCoach[c.id]||[]);
-    var nc=cliByCoach[c.id]||0, ns=sesByCoach[c.id]||0, r=(_rp!=null?_rp+'%':'—');
+    var nc=cliByCoach[c.id]||0, ns=sesByCoach[c.id]||0, r=(retByCoach[c.id]!=null?retByCoach[c.id]+'%':'—');
     var w=Math.round((nc/maxCli)*100);
     var pos='<span class="mc-rank-pos'+(i<3?' top':'')+'">'+(i+1)+'</span>';
     return '<div style="display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid var(--pw-border)">'
@@ -5872,7 +5879,7 @@ var MOCK_PROGRAMS=[
   {id:'prog-005',name:'Programa Emprendimiento',coach:'Laura Sánchez',coachInitials:'LS',clients:18,completion:95,duration:'6 semanas',status:'completed'},
   {id:'prog-006',name:'Programa Carrera Profesional',coach:'Carlos Martínez',coachInitials:'CM',clients:40,completion:75,duration:'4 semanas',status:'active'}
 ];
-var _mcProgCurrentFilter='all',_mcProgCurrentData=(typeof MOCK_PROGRAMS==='object'&&MOCK_PROGRAMS?[...MOCK_PROGRAMS]:[]),_mcProgFilteredData=(typeof MOCK_PROGRAMS==='object'&&MOCK_PROGRAMS?[...MOCK_PROGRAMS]:[]);
+var _mcProgCurrentFilter='all',_mcProgCurrentData=(typeof MOCK_PROGRAMS==='object'&&MOCK_PROGRAMS?[...MOCK_PROGRAMS]:[]),_mcProgFilteredData=(typeof MOCK_PROGRAMS==='object'&&MOCK_PROGRAMS?[...MOCK_PROGRAMS]:[]),_mcProgLoaded=false;
 
 function loadPrograms(cb){
   if(!MC_REAL){ cb(MOCK_PROGRAMS); return; }
