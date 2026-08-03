@@ -301,6 +301,227 @@ RESTRICCIONES:
 
 ---
 
+## 📝 Ejemplos Reales por Nicho
+
+### EJEMPLO 1: Coach de Fitness (Laura)
+
+**Entrada (Formulario):**
+```
+Nombre: TrainLaura
+Especialidad: Fitness
+Qué haces: Diseño planes de entrenamiento personalizados con nutrición
+A quién ayudas: Mujeres ocupadas que quieren estar en forma sin obsesionarse
+Problema: No tienen tiempo, fracasan con dietas genéricas, necesitan soporte real
+Cómo trabajas: Apps + seguimiento semanal + grupo privado en Telegram
+Servicios: 
+  - Plan de entrenamiento 12 semanas
+  - Asesoramiento nutricional
+  - Seguimiento de progreso
+  - Acceso grupo privado
+Resultados:
+  - 5-8 kg en 8 semanas
+  - Energía consistente
+  - Hábitos que duran
+Tono: Directo, sin filtros, motivador
+País: España
+Idiomas: Español, Inglés
+CTA: Mira mi plan gratis 7 días
+```
+
+**Output generado automáticamente:**
+```
+LANDING:
+  hero: "Entrena como mereces. Sin dietas, sin culpa."
+  subhero: "12 semanas de transformación real. Soporte real. Comunidad real."
+  benefits: [
+    { title: "Planes 100% personalizados", desc: "Para tu cuerpo, tu agenda, tu vida" },
+    { title: "Nutrición que funciona", desc: "Sin contar calorías, sin renunciar" },
+    { title: "Grupo privado de apoyo", desc: "Mujeres como tú en el mismo viaje" },
+    { title: "Seguimiento semanal", desc: "Tu entrenadora viendo tu progreso" }
+  ]
+  cta: "Mira mi plan gratis 7 días"
+
+SEO:
+  title: "Entrenador Personal Online | Fitness Personalizado Mujeres"
+  description: "Planes de entrenamiento + nutrición para mujeres ocupadas. Resultados reales, sin dietas."
+  keywords: ["entrenador personal online", "fitness mujeres", "nutrición personalizada"]
+
+EMAIL WELCOME:
+  subject: "¡Bienvenida! Tu primer entrenamiento llega mañana 💪"
+  body: "Hola! En 24h recibiras tu primer workout. Mientras, te mando 3 cosas importantes..."
+
+MARKETPLACE BIO:
+  "Entrenadora online. 200+ mujeres transformadas. 5-8kg en 8 semanas garantizado o devuelvo tu dinero."
+
+AI SYSTEM PROMPT:
+  "Eres Laura, entrenadora de fitness. Trabajas con mujeres ocupadas. Tu tono es directo, motivador, sin excusas. Responde en español. Si alguien pregunta por peso/medidas, pregunta por su objetivo real (fuerza, energía, confianza). Siempre propone 'plan gratis 7 días'."
+
+PORTAL WELCOME:
+  "¡Hola! Soy Laura. Estos 7 días van a ser diferentes. No es solo un plan. Es un sistema que te enseña a entrenar para VIVIR mejor. ¿Vamos?"
+```
+
+---
+
+### EJEMPLO 2: Coach de Carrera Profesional (Carlos)
+
+**Entrada:**
+```
+Nombre: NextCareer Coaching
+Especialidad: Carrera
+Qué haces: Ayudo ingenieros y tech a conseguir su siguiente rol en 90 días
+A quién ayudas: Ingenieros de software mid-level + seniors
+Problema: Letargo en empresa, inseguridad en entrevista, CV muerto, networking cero
+Cómo trabajas: 1:1 bi-weekly + grupo de accountability + entrevista simulada
+Servicios:
+  - CV rebuilding (14 días)
+  - Estrategia de búsqueda (30 días)
+  - 3 mock interviews
+  - Coaching presalario
+  - Contactos directos a 50+ empresas tech
+Resultados:
+  - Ofertas en 60-90 días
+  - Sueldos 20-40% más altos
+  - Nuevas skills
+Tono: Confiado, pragmático, sin BS
+País: Remote (worldwide)
+Idiomas: Español, Inglés
+CTA: Agenda llamada estratégica gratis
+```
+
+**Output generado:**
+```
+LANDING:
+  hero: "Tu siguiente rol en 90 días. Garantizado."
+  subhero: "Estrategia + CV + Mock Interviews + Acceso 50+ empresas tech"
+  benefits: [
+    { title: "CV que abre puertas", desc: "De ignorado a top 5% candidatos" },
+    { title: "Estrategia de búsqueda", desc: "No esperes ofertas, atráelas" },
+    { title: "3 mock interviews", desc: "Practica con alguien que hiringea" },
+    { title: "Contactos directos", desc: "Acceso a 50+ empresas tech" }
+  ]
+
+SEO:
+  title: "Career Coaching para Ingenieros | Get Your Next Role"
+  description: "Ayuda a ingenieros a conseguir ofertas 40% más altas en 90 días. CV + Estrategia + Coaching."
+
+MARKETPLACE BIO:
+  "Career coach para ingenieros. 120+ en nuevos roles. Promedio +35% salary. Garantía 90 días."
+
+AI SYSTEM PROMPT:
+  "Eres Carlos, career coach especializado en ingenieros. Trabajas en remoto. Tu tono es pragmático, sin motivación barata. Enfócate en estrategia, CV, y habilidades de entrevista. Siempre sugiere 'llamada estratégica gratis' para conocer su situación. Responde en inglés o español según el usuario."
+
+EMAIL PROPOSAL:
+  subject: "Tu estrategia de búsqueda (personalized para ti)"
+  body: "Basado en nuestra llamada, creé tu plan 90 días. Aquí está..."
+```
+
+---
+
+### EJEMPLO 3: Coach de Nutrición Deportiva (Marta)
+
+**Entrada:**
+```
+Nombre: FuelAthletics
+Especialidad: Nutrición
+Qué haces: Nutrición deportiva para runners y ciclistas serios
+A quién ayudas: Atletas amateurs que quieren competir sin sacrificar salud
+Problema: Comen por instinto, lesiones recurrentes, bajo rendimiento en carreras
+Cómo trabajas: Plan nutricional seasonal + coaching en competiciones + grupo WhatsApp
+Servicios:
+  - Plan nutricional seasonal
+  - Coaching en competencias
+  - Análisis bioquímico
+  - Suplementos personalizados
+Resultados:
+  - PBs en maratón/ultra
+  - 0 lesiones por nutrición
+  - Mejor recuperación
+Tono: Científico pero cercano, empoderante
+País: Argentina
+Idiomas: Español
+CTA: Reserva evaluación nutricional
+```
+
+**Output generado:**
+```
+LANDING:
+  hero: "Come para vencer. No por vencer, come mejor."
+  subhero: "Nutrición científica + coaching en competencias. Para athletes que entienden que la nutrición es entrenamiento."
+  benefits: [
+    { title: "Plan nutricional seasonal", desc: "Adaptado a tu calendario de carreras" },
+    { title: "Coaching en competencias", desc: "Estrategia de fueling antes y durante" },
+    { title: "Análisis bioquímico", desc: "Sabe exactamente qué te falta" },
+    { title: "Grupo de atletas", desc: "Compartes experiencias con runners como tú" }
+  ]
+
+SEO:
+  title: "Nutrición Deportiva para Corredores | Rendimiento + Salud"
+  description: "Planes nutricionales para runners y ciclistas. Optimiza rendimiento sin lesiones. Coaching científico."
+
+MARKETPLACE BIO:
+  "Nutricionista deportiva. Especializada en atletas. 80+ clientes con PBs. Cientifica, cercana, resultados."
+
+AI SYSTEM PROMPT:
+  "Eres Marta, nutricionista deportiva. Trabajas con runners y ciclistas serios. Tu tono es científico pero empoderador. Entiende que la nutrición es parte del entrenamiento. Pregunta siempre: ¿cuál es tu objetivo de carrera? ¿ya tienes análisis? Ofrece 'evaluación nutricional' como siguiente paso. Responde en español."
+```
+
+---
+
+### EJEMPLO 4: Bot IA de Productividad (AutoFlow)
+
+**Entrada:**
+```
+Nombre: AutoFlow
+Especialidad: Productividad
+Qué haces: Automatizo flujos de trabajo en equipos remotos
+A quién ayudas: Startups tech y agencias que pierden 20+ horas/semana en tareas manuales
+Problema: Tareas repetitivas, desorden, handoffs lentos, equipos agotados
+Cómo trabajas: Auditoría de procesos + automatización con Zapier/Make + entrenamiento
+Servicios:
+  - Auditoría de procesos
+  - Automatización (50+ integraciones)
+  - Templates lista para usar
+  - Soporte 30 días post-implementación
+Resultados:
+  - 30-40 horas ahorradas/mes
+  - 0 tareas manuales repetitivas
+  - Equipos más felices
+Tono: Técnico pero accesible, optimista
+País: Global
+Idiomas: Inglés, Español, Portugués
+CTA: Reserva auditoría gratis
+```
+
+**Output generado:**
+```
+LANDING:
+  hero: "Recupera 40 horas al mes. Automatización que funciona."
+  subhero: "Sin code. Sin complicaciones. Soporte incluido. Tu equipo respira."
+  benefits: [
+    { title: "Auditoría personalizada", desc: "Identifica 20+ horas desperdiciadas" },
+    { title: "Automatización end-to-end", desc: "Zapier, Make, Integromat: todo conectado" },
+    { title: "Templates listos", desc: "Implementa en 48h, no en 48 días" },
+    { title: "Soporte post-launch", desc: "30 días. Ajustes ilimitados." }
+  ]
+
+SEO:
+  title: "Automatización de Procesos | No-Code Workflow Automation"
+  description: "Ahorra 40+ horas/mes. Automatización sin código para startups y agencias. Zapier + Make experto."
+  keywords: ["workflow automation", "zapier expert", "no-code automation"]
+
+MARKETPLACE BIO:
+  "Automatización specialist. 50+ startups con 30-40h ahorradas/mes. Implementación 48h. ROI garantizado."
+
+AI SYSTEM PROMPT:
+  "Eres AutoFlow, especialista en automatización no-code. Trabajas con startups y agencias. Tu tono es técnico pero optimista, no intimidante. Siempre pregunta: ¿cuántas horas pierden por tareas manuales? ¿qué herramientas usan? Luego sugiere 'auditoría gratis' para mapear oportunidades. Responde en inglés, español o portugués según el usuario."
+
+EMAIL WELCOME:
+  subject: "Tu auditoría de automatización llega mañana"
+  body: "Hola! Mañana te envío un formulario de 5 minutos. Con eso, sabré exactamente dónde recuperas 40 horas..."
+```
+
+---
+
 ## 🎨 UI: Formulario en MultiCoach
 
 Ubicación: **Configuración → Mi Identidad** (reemplaza "Branding")
