@@ -1459,6 +1459,20 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   height: 100%;
   transition: width 0.2s ease;
 }
+
+/* ═══ Quick Actions — Acciones rápidas contextuales (Sprint C.1) ═══ */
+.cp-quick-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding:0;border:none;list-style:none;}
+.cp-quick-action{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;background:var(--pw-niebla-2);border:1px solid var(--pw-border);color:var(--pw-text-soft);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s var(--pw-ease);text-decoration:none;}
+.cp-quick-action:hover{background:var(--pw-niebla-3);color:var(--pw-carbon);border-color:var(--pw-border-strong);}
+.cp-quick-action svg{width:14px;height:14px;flex-shrink:0;}
+
+/* Breadcrumb — Ruta de navegación (Sprint C.1) */
+.cp-breadcrumb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--pw-text-soft);margin-bottom:14px;flex-wrap:wrap;}
+.cp-breadcrumb a,.cp-breadcrumb button{background:none;border:none;color:var(--pw-bosque);cursor:pointer;text-decoration:none;font-weight:500;padding:0;font-size:12px;}
+.cp-breadcrumb a:hover,.cp-breadcrumb button:hover{text-decoration:underline;}
+.cp-breadcrumb-sep{color:var(--pw-text-muted);margin:0 4px;}
+.cp-breadcrumb-current{color:var(--pw-carbon);font-weight:600;}
+
 </style>
 <script src="/pw-push.js?v=3"></script>
 <script src="/pw-auth.js?v=1"></script>
@@ -6069,7 +6083,9 @@ function viewClienteDetalle(c){
     return _ultimo+_visto;
   })():"";
   var _rail="<aside class='cp-ficha-rail"+(fichaV2()?" cp-ficha-rail-v2":"")+"'>"+_railProceso+_railAcc+_planAvisos+"</aside>";
-  return "<header class='cp-topbar cp-cli-head"+(fichaV2()?" cp-cli-head-v2":"")+"' style='align-items:center'>"+
+  var _breadcrumb = (typeof window._getBreadcrumb==="function") ? window._getBreadcrumb() : "";
+  var _quickActions = (typeof window._getQuickActions==="function") ? window._getQuickActions(c, t) : "";
+  return _breadcrumb+"<header class='cp-topbar cp-cli-head"+(fichaV2()?" cp-cli-head-v2":"")+"' style='align-items:center'>"+
       "<div style='display:flex;align-items:center;gap:16px;min-width:0'>"+
         (fichaV2()
           ? "<label class='cp-cli-av cp-cli-photoedit' title='Cambiar foto del cliente (clic o soltar)' style='cursor:pointer'>"+avImg(c.photo,c.name,"style='width:60px;height:60px;border-radius:50%;object-fit:cover;display:block;box-shadow:var(--pw-shadow-sm)'")+(c.medal?"<span class='cp-cli-medalbadge'><img src='assets/iconos/medalla-"+esc(c.medal)+"-sm.webp' alt='Medalla "+esc(c.medal)+"'></span>":"")+"<input type='file' accept='image/*' class='fcli-foto' data-cid='"+esc(c.id)+"' style='display:none'></label>"
@@ -6091,6 +6107,7 @@ function viewClienteDetalle(c){
           "</div>"
         : "")+
     "</header>"+
+    _quickActions+
     "<div class='cp-ficha-layout3'>"+menuV+"<div class='cp-cfg-panel'>"+
     // Calendario de fitness: SOLO en Perfil. El progreso (medalla + estado CV/
     // Informe) ya vive en la columna derecha (_railProceso); no se repite acá.
@@ -15161,10 +15178,71 @@ if('serviceWorker' in navigator){
 <script src="pw-photo.js?v=1"></script>
 <script src="pw-sortable.js?v=1"></script>
 
-<!-- IA Pathway: Contexto dinámico del coach (Sprint C.1) -->
+<!-- IA Pathway: Contexto dinámico + Quick Actions + Breadcrumb (Sprint C.1) -->
 <script>
 (function(){
   "use strict";
+
+  // Funciones helper para Quick Actions y Breadcrumb
+  window._getQuickActions = function(c, tab){
+    if(!c||!c.id) return "";
+    var actions = [];
+    var PB="https://pathwaycareercoach.com";
+    var cem=encodeURIComponent(c.email||"");
+
+    // Acción: Abrir IA
+    actions.push({icon:"sparkles", label:"IA", action:"data-act='clidet:ia'"});
+
+    // Acción: Ver programa/plan
+    if(tab!=="plan"){
+      actions.push({icon:"clipboard", label:"Plan", action:"data-act='clidet:plan'"});
+    }
+
+    // Acción: Ver sesiones
+    if(tab!=="sesiones"){
+      actions.push({icon:"calendar", label:"Sesiones", action:"data-act='clidet:sesiones'"});
+    }
+
+    // Acción: Ver documentos
+    if(tab!=="docs"){
+      actions.push({icon:"fileText", label:"Docs", action:"data-act='clidet:docs'"});
+    }
+
+    // Acción: Mensajes
+    if(tab!=="mensajes"){
+      actions.push({icon:"chat", label:"Mensajes", action:"data-act='clidet:mensajes'"});
+    }
+
+    return "<ul class='cp-quick-actions'>"+actions.map(function(a){
+      return "<li><button class='cp-quick-action' "+a.action+" title='"+a.label+"'>"+PWI.svg(a.icon,{sm:true})+" "+a.label+"</button></li>";
+    }).join("")+"</ul>";
+  };
+
+  window._getBreadcrumb = function(){
+    var parts = [];
+    if(state.section==="dashboard"){
+      parts.push("<button class='cp-breadcrumb-current' onclick='return false'>Dashboard</button>");
+    } else if(state.section==="clientes"){
+      parts.push("<button class='cp-breadcrumb-current' onclick='state.clienteSel=null;render()'>Clientes</button>");
+      if(state.clienteSel && CLIENTS){
+        var c = CLIENTS.filter(function(x){return String(x.id)===String(state.clienteSel);})[0];
+        if(c){
+          parts.push("<span class='cp-breadcrumb-sep'>›</span>");
+          parts.push("<span class='cp-breadcrumb-current'>"+esc(c.name||"")+"</span>");
+          if(state.cliDetTab){
+            var tabName = {perfil:"Perfil",plan:"Plan",docs:"Documentos",sesiones:"Sesiones",mensajes:"Mensajes",gestion:"Gestión"}[state.cliDetTab]||state.cliDetTab;
+            parts.push("<span class='cp-breadcrumb-sep'>›</span>");
+            parts.push("<span class='cp-breadcrumb-current'>"+tabName+"</span>");
+          }
+        }
+      }
+    } else if(state.section==="agenda"){
+      parts.push("<button class='cp-breadcrumb-current' onclick='return false'>Agenda</button>");
+    }
+
+    if(!parts.length) return "";
+    return "<nav class='cp-breadcrumb'>"+parts.join("")+"</nav>";
+  };
 
   // Función que captura el contexto actual (cliente, programa, sesión abiertos)
   // y actualiza window.PW_IA_CFG para que la IA siempre sepa qué está viendo el coach
