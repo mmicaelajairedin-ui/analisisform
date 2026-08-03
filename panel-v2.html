@@ -2896,6 +2896,228 @@ function _tlRender(items){
       "<div class='pw-tl-b'><div class='pw-tl-t'>"+esc(it.titulo)+"</div><div class='pw-tl-w'>"+esc(_tlWhen(it.ts))+"</div></div></div>";
   }).join("")+"</div>";
 }
+// ── SCHEDULER REUTILIZABLE (Sprint 5.2.1) ────────────────────────────────────
+// Motor transversal de planificación. Una única Agenda org, múltiples vistas.
+// Usado por: panel-v2 (coach), multicoach (owner), cliente.html (cliente)
+function initScheduler(config){
+  // Props del contrato
+  var usuario_id=config.usuario_id;
+  var usuario_rol=config.usuario_rol;  // "coach"|"owner"|"cliente"|"colaborador"
+  var org_id=config.org_id;
+  var team_id=config.team_id;  // opcional
+  var filtro_activo=config.filtro||"self";  // "self"|"team"|"global"|"participant"
+  var permisos=config.permisos||[];  // array de capacidades
+  var callbacks=config.callbacks||{};  // onCreate, onEdit, onCancel, onReschedule, onConfirmAssistance
+
+  // Estado interno
+  var state={
+    eventos: [],
+    eventos_filtrados: [],
+    vista_actual: config.view||"mes",
+    fecha_seleccionada: new Date().toISOString().split('T')[0],
+    acciones_disponibles: _calcularAcciones(permisos)
+  };
+
+  // ─ RESOLVER FILTROS ─────────────────────────────────────────────────────
+  function _aplicarFiltro(){
+    state.eventos_filtrados=[];
+    var ahora=Date.now();
+
+    switch(filtro_activo){
+      case "self":
+        // Mi agenda: eventos propios o donde participo
+        state.eventos.forEach(function(evt){
+          if(evt.organizer_id===usuario_id) state.eventos_filtrados.push(evt);
+          else if(_participoEnEvento(evt, usuario_id)) state.eventos_filtrados.push(evt);
+        });
+        break;
+
+      case "team":
+        // Agenda del equipo (solo si tengo permiso)
+        if(!permisos.includes("agenda.read.team")) return;
+        state.eventos.forEach(function(evt){
+          // Busca coaches del mismo team_id
+          if(_coachEsDelTeam(evt.organizer_id, team_id)) state.eventos_filtrados.push(evt);
+        });
+        break;
+
+      case "global":
+        // Toda la org (solo owner)
+        if(!permisos.includes("agenda.read.global")) return;
+        state.eventos=state.eventos;  // todos
+        state.eventos_filtrados=state.eventos.slice();
+        break;
+
+      case "participant":
+        // SOLO eventos donde participo (cliente/recursos)
+        state.eventos.forEach(function(evt){
+          if(_participoEnEvento(evt, usuario_id)) state.eventos_filtrados.push(evt);
+        });
+        break;
+    }
+  }
+
+  function _participoEnEvento(evt, uid){
+    return evt.participants.some(function(p){ return p.user_id===uid; });
+  }
+
+  function _coachEsDelTeam(coach_id, tid){
+    // Busca en COACHES array si el coach pertenece al team
+    // (temporary: cuando se conecte a Supabase, lo hará vía RLS)
+    if(!tid || !COACHES) return false;
+    return COACHES.some(function(c){ return c.id===coach_id && c.team_id===tid; });
+  }
+
+  function _calcularAcciones(perms){
+    return {
+      crear: perms.includes("agenda.create"),
+      editar: perms.includes("agenda.edit"),
+      editar_otros: perms.includes("agenda.edit.others"),
+      cancelar: perms.includes("agenda.cancel"),
+      cancelar_otros: perms.includes("agenda.cancel.others"),
+      reasignar: perms.includes("agenda.reassign"),
+      confirmar_asistencia: true  // todos pueden confirmar si son participantes
+    };
+  }
+
+  // ─ CARGAR EVENTOS INICIALES ─────────────────────────────────────────────
+  function _cargarEventos(){
+    state.eventos=[];
+
+    // Phase 1 (temporal): Leer de sesiones_registro del coach + clientes
+    // Phase 2 (5.2.3): Leer de tabla `agendas` en Supabase con RLS
+
+    if(usuario_rol==="coach"){
+      // Coach ve sus propias sesiones + sesiones donde participa
+      CLIENTS.forEach(function(c){
+        if(c.raw && c.raw.activo===false) return;
+        (c.ses||[]).forEach(function(s){
+          if(!s || !s.fecha) return;
+          var evt={
+            id: "evt_temp_"+(Math.random()*1e9|0),
+            type: s.tipo||"sesion_individual",
+            title: "Sesión con "+c.name,
+            start: s.fecha+(s.hora?"T"+s.hora:"T12:00")+":00Z",
+            end: new Date(new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")).getTime()+3600000).toISOString(),
+            timezone: "Europe/Madrid",
+            organizer_id: ME.id,
+            participants: [{user_id: c.id, role: "client", status: "confirmed"}],
+            estado: "confirmed",
+            origen: "agenda_manual",
+            created_by: ME.id,
+            created_at: new Date().toISOString(),
+            confirmaciones: {}
+          };
+          state.eventos.push(evt);
+        });
+      });
+    }
+    else if(usuario_rol==="cliente"){
+      // Cliente ve solo sesiones donde está en participants
+      // Por ahora: lee sesiones_registro del cliente actual
+      if(C && C.ses){
+        C.ses.forEach(function(s){
+          if(!s || !s.fecha) return;
+          var evt={
+            id: "evt_temp_"+(Math.random()*1e9|0),
+            type: s.tipo||"sesion_individual",
+            title: s.titulo || "Sesión con tu coach",
+            start: s.fecha+(s.hora?"T"+s.hora:"T12:00")+":00Z",
+            end: new Date(new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")).getTime()+3600000).toISOString(),
+            timezone: "Europe/Madrid",
+            organizer_id: ME.id,  // el coach dueño
+            participants: [{user_id: C.id, role: "client", status: "confirmed"}],
+            estado: "confirmed",
+            origen: "agenda_manual",
+            created_by: ME.id,
+            created_at: new Date().toISOString(),
+            confirmaciones: {}
+          };
+          state.eventos.push(evt);
+        });
+      }
+    }
+    else if(usuario_rol==="owner"){
+      // Owner ve TODO (equipo completo)
+      // Iteraría sobre COACHES y sus CLIENTS
+      // Por ahora: agrupa todos los events
+      COACHES.forEach(function(coach){
+        if(!coach.id) return;
+        CLIENTS.forEach(function(c){
+          if(c.raw && c.raw.activo===false) return;
+          (c.ses||[]).forEach(function(s){
+            if(!s || !s.fecha) return;
+            var evt={
+              id: "evt_temp_"+(Math.random()*1e9|0),
+              type: s.tipo||"sesion_individual",
+              title: "Sesión "+c.name+" con "+coach.nombre,
+              start: s.fecha+(s.hora?"T"+s.hora:"T12:00")+":00Z",
+              end: new Date(new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")).getTime()+3600000).toISOString(),
+              timezone: "Europe/Madrid",
+              organizer_id: coach.id,
+              participants: [{user_id: c.id, role: "client", status: "confirmed"}],
+              estado: "confirmed",
+              origen: "agenda_manual",
+              created_by: coach.id,
+              created_at: new Date().toISOString(),
+              confirmaciones: {}
+            };
+            state.eventos.push(evt);
+          });
+        });
+      });
+    }
+
+    _aplicarFiltro();
+  }
+
+  // ─ API PÚBLICA ──────────────────────────────────────────────────────────
+  return {
+    // Estado
+    getEventos: function(){ return state.eventos_filtrados; },
+    getAcciones: function(){ return state.acciones_disponibles; },
+    getEstado: function(){ return state; },
+
+    // Lifecycle
+    init: function(){
+      _cargarEventos();
+      if(callbacks.onInit) callbacks.onInit(state);
+    },
+
+    // Acciones
+    crearEvento: function(data){
+      if(!state.acciones_disponibles.crear) return;
+      if(callbacks.onCreate) callbacks.onCreate(data);
+    },
+    editarEvento: function(evento_id, data){
+      if(!state.acciones_disponibles.editar) return;
+      if(callbacks.onEdit) callbacks.onEdit(evento_id, data);
+    },
+    cancelarEvento: function(evento_id){
+      if(!state.acciones_disponibles.cancelar) return;
+      if(callbacks.onCancel) callbacks.onCancel(evento_id);
+    },
+    reprogramarEvento: function(evento_id, nueva_fecha){
+      if(callbacks.onReschedule) callbacks.onReschedule(evento_id, nueva_fecha);
+    },
+    confirmarAsistencia: function(evento_id, status){
+      // status: "will_attend"|"declined_attend"|"requested_reschedule"
+      if(callbacks.onConfirmAssistance) callbacks.onConfirmAssistance(evento_id, status);
+    },
+
+    // Filtro dinámico
+    cambiarFiltro: function(nuevo_filtro){
+      if(["self","team","global","participant"].includes(nuevo_filtro)){
+        filtro_activo=nuevo_filtro;
+        _aplicarFiltro();
+      }
+    },
+
+    // Debug
+    debug: function(){ return {estado: state, filtro_activo: filtro_activo}; }
+  };
+}
+
 function openCliTimeline(c){
   if(!c) return;
   var ov=document.createElement("div"); ov.id="pw-tl-ov";
