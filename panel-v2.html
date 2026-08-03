@@ -6057,7 +6057,9 @@ function viewClienteDetalle(c){
       ? "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-bosque);border-color:var(--pw-bosque)' data-act='cli-reactivate' data-id='"+esc(c.id)+"'>Activar cliente</button>"
       : "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='cli-deactivate' data-id='"+esc(c.id)+"'>Desactivar cliente</button>")+
     "</div>"+
-    (typeof window._renderIAButtons==="function" ? window._renderIAButtons(c) : "");
+    (typeof window._renderIAButtons==="function" ? window._renderIAButtons(c) : "")+
+    (typeof window._renderRecursosInline==="function" ? window._renderRecursosInline(c.id) : "")+
+    (typeof window._renderComunidadInline==="function" ? window._renderComunidadInline(c.id) : "");
   // "Visto por el cliente" (ojo) va en TODAS las pestañas que el cliente ve en su
   // portal. "Último análisis" con día Y hora va solo donde se produce análisis (plan).
   // Ambas viven en la columna derecha, bajo "Acciones rápidas".
@@ -15219,6 +15221,68 @@ if('serviceWorker' in navigator){
     }).join("")+"</ul>";
   };
 
+  // NUEVO: Recursos relacionados al nicho del cliente (sin navegar)
+  window._getRecursosRelacionados = function(clienteId, limit){
+    if(!RCFG || !Array.isArray(RCFG.recursos)) return [];
+    var c = (CLIENTS||[]).filter(function(x){return String(x.id)===String(clienteId);})[0];
+    var nicho = (c && c.raw && c.raw.nicho) || (RCFG&&RCFG.coach_type) || 'carrera';
+    // Para ahora, mostrar los primeros N recursos del nicho
+    // En futuro, filtrar por tags de nicho
+    return (RCFG.recursos||[]).slice(0, limit||3);
+  };
+
+  // NUEVO: Renderizar bloque de recursos inline en la ficha
+  window._renderRecursosInline = function(clienteId){
+    var recursos = window._getRecursosRelacionados(clienteId, 3);
+    if(!recursos || recursos.length===0) return "";
+
+    var html = "<div class='cp-card cp-card-pad' style='margin-top:14px;background:rgba(45,106,79,.02);border:1px solid rgba(45,106,79,.08)'>"+
+      "<div class='cp-card-title' style='margin:0 0 12px;display:flex;align-items:center;gap:8px'>"+
+        PWI.svg('bookOpen',{sm:true})+" <span>Recursos relacionados</span>"+
+      "</div>"+
+      "<div style='display:flex;flex-direction:column;gap:8px'>";
+
+    recursos.forEach(function(r){
+      var tipo = (r.tipo||'artículo').charAt(0).toUpperCase()+(r.tipo||'artículo').slice(1);
+      html += "<a href='"+esc(r.url||'#')+"' target='_blank' rel='noopener' style='display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:#fff;text-decoration:none;color:var(--pw-carbon);transition:background .15s;border:1px solid transparent' onmouseover=\"this.style.background='var(--pw-niebla-2)'\" onmouseout=\"this.style.background='#fff'\">"+
+        "<span style='flex:1;min-width:0'>"+
+          "<div style='font-size:12.5px;font-weight:600;color:var(--pw-carbon)'>"+esc(r.titulo||'Recurso')+"</div>"+
+          "<div style='font-size:11px;color:var(--pw-text-soft)'>"+tipo+(r.meta?" · "+esc(r.meta):"")+"</div>"+
+        "</span>"+
+        PWI.svg('arrowRight',{sm:true})+
+      "</a>";
+    });
+
+    html += "</div>"+
+      "<div style='margin-top:8px;font-size:11px;color:var(--pw-text-soft);text-align:center'>"+
+        "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 12px;font-size:11px' onclick=\"state.section='configuracion';state.configTab='recursos';render()\">Ver más recursos</button>"+
+      "</div>"+
+    "</div>";
+
+    return html;
+  };
+
+  // NUEVO: Comunidad integrada y filtrada automáticamente por especialidad
+  window._renderComunidadInline = function(clienteId){
+    var c = (CLIENTS||[]).filter(function(x){return String(x.id)===String(clienteId);})[0];
+    if(!c) return "";
+
+    var nicho = (c.raw&&c.raw.nicho) || (RCFG&&RCFG.coach_type) || 'carrera';
+    var nichoLabel = {carrera:'Carrera',fitness:'Fitness',financiero:'Finanzas',nutrition:'Nutrición',wellness:'Bienestar',executive:'Executive',business:'Business'}[nicho]||'Comunidad';
+
+    return "<div class='cp-card cp-card-pad' style='margin-top:14px;background:rgba(45,106,79,.02);border:1px solid rgba(45,106,79,.08)'>"+
+      "<div class='cp-card-title' style='margin:0 0 12px;display:flex;align-items:center;gap:8px;justify-content:space-between'>"+
+        "<div style='display:flex;align-items:center;gap:8px'>"+PWI.svg('messageCircle',{sm:true})+" <span>Comunidad "+nichoLabel+"</span></div>"+
+      "</div>"+
+      "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5;margin-bottom:12px'>"+
+        "Conecta con otros coaches en la comunidad de "+nichoLabel+". Comparte casos, recibe feedback y aprende de pares."+
+      "</div>"+
+      "<a href='/comunidad.html?nicho="+encodeURIComponent(nicho)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='display:inline-block;height:32px;padding:0 14px;font-size:12px;text-decoration:none;text-align:center;line-height:32px'>"+
+        "Abrir comunidad "+nichoLabel+" "+PWI.svg('arrowRight',{sm:true})+
+      "</a>"+
+    "</div>";
+  };
+
   // Funciones para botones IA inline
   window._iaInlinePrompt = function(clienteId, action){
     try{
@@ -15290,7 +15354,7 @@ if('serviceWorker' in navigator){
       var cid = state.clienteSel;
       var sec = state.section;
 
-      // Si hay un cliente abierto
+      // Si hay un cliente abierto — contexto completo del cliente
       if(cid && CLIENTS){
         var c = CLIENTS.filter(function(x){return String(x.id)===String(cid);})[0];
         if(c){
@@ -15318,7 +15382,25 @@ if('serviceWorker' in navigator){
           ctx.clienteActual = parts.join("\n");
           ctx.clienteNombre = c.nombre || "Cliente";
           ctx.clienteId = cid;
+
+          // NUEVO: Especialidad/nicho del cliente
+          var nicho = (c.raw&&c.raw.nicho) || (RCFG&&RCFG.coach_type) || 'carrera';
+          ctx.especialidad = nicho;
+          ctx.nicho = nicho;
         }
+      }
+
+      // NUEVO: Recursos disponibles del coach (contexto global)
+      if(RCFG && Array.isArray(RCFG.recursos)){
+        ctx.recursosCargados = RCFG.recursos.length;
+        ctx.recursosDisponibles = RCFG.recursos.slice(0,5).map(function(r){
+          return (r.titulo||"Sin título")+" ("+((r.tipo||"artículo").charAt(0).toUpperCase()+(r.tipo||"artículo").slice(1))+")";
+        }).join(", ");
+      }
+
+      // NUEVO: Plantillas de email disponibles
+      if(state.plantillasEmail && Array.isArray(state.plantillasEmail)){
+        ctx.plantillasEmail = state.plantillasEmail.length+" plantillas disponibles";
       }
 
       // Si la sección es programas/plan
@@ -15334,7 +15416,18 @@ if('serviceWorker' in navigator){
       // Información del coach
       if(typeof COACH!=="undefined" && COACH){
         ctx.coach = COACH.nombre || COACH.email || "Coach";
+        ctx.coachPlan = COACH.plan || "Basic";
       }
+
+      // NUEVO: Contexto de organización (si existe)
+      if(RME && RME.org_id && RORG){
+        ctx.organizacion = RORG.nombre || "Organización";
+        ctx.tieneEquipo = true;
+      }
+
+      // NUEVO: Información de Supabase (endpoint, mode)
+      ctx._sb = window.SB || "";
+      ctx._mode = "coach";
 
       // Actualizar la configuración global de IA
       window.PW_IA_CFG = window.PW_IA_CFG || {};
