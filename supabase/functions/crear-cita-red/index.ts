@@ -65,6 +65,24 @@ async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
     return Array.isArray(rows) && rows.length > 0;
   } catch { return false; }
 }
+async function hasConflict(coachId: string, inicio: string): Promise<boolean> {
+  try {
+    const inicioMs = new Date(inicio).getTime();
+    if (isNaN(inicioMs)) return false;
+    const r = await fetch(
+      `${SB_URL}/rest/v1/citas?coach_id=eq.${encodeURIComponent(coachId)}&estado=neq.cancelada&select=inicio`,
+      { headers: svc },
+    );
+    if (!r.ok) return false;
+    const citas = await r.json();
+    if (!Array.isArray(citas)) return false;
+    return citas.some((c: { inicio: string }) => {
+      const ms = new Date(c.inicio).getTime();
+      const diff = Math.abs(ms - inicioMs) / (1000 * 60);
+      return diff < 59;
+    });
+  } catch { return false; }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -98,6 +116,11 @@ Deno.serve(async (req: Request) => {
 
   // ── El coach destino debe ser de ESTA empresa ───────────────────
   if (!(await coachInOrg(coach_id, orgId))) return json({ error: "coach_ajeno" }, 403);
+
+  // ── Verificar conflictos (mismo coach, ±59 min) ──────────────────
+  if (await hasConflict(coach_id, inicio)) {
+    return json({ error: "coach_conflict", message: "El coach ya tiene una cita en ese horario." }, 409);
+  }
 
   // ── Crear la cita ────────────────────────────────────────────────
   const base: Record<string, unknown> = { coach_id, nombre, email: cliEmail, tipo, inicio, estado: "confirmada", origen: "red" };

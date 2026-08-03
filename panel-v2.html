@@ -10,6 +10,7 @@
 <script src="/pw-icons.js?v=1"></script>
 <script src="pw-brand.js?v=2"></script>
 <script src="pw-i18n-panel.js?v=1"></script>
+<script src="pw-scheduler.js"></script>
 <link rel="stylesheet" href="pw-design-tokens.css?v=1">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
@@ -1360,105 +1361,6 @@ html.pw-private input.pw-sens:focus,html.pw-private textarea.pw-sens:focus{filte
   .cp-btn-primary{ background:var(--pw-bosque) !important; color:#fff !important; }
   .cp-btn-ghost{ background:#fff !important; color:var(--pw-bosque) !important; }
 }
-/* ═══ Sprint 5.2.2 — Agenda v4 Design System ═══ */
-:root{
-  --ag-cream: #F5F3F0;
-  --ag-white: #FFFFFF;
-  --ag-carbon: #1F4030;
-  --ag-gray: #8B8B8B;
-  --ag-border: #E5E1D6;
-  --ag-accent: #8C7B80;
-  --ag-fw-bold: 700;
-  --ag-fw-medium: 500;
-  --ag-fs-kpi: 28px;
-  --ag-fs-title: 26px;
-  --ag-fs-name: 15px;
-  --ag-fs-client: 14px;
-  --ag-fs-type: 10px;
-  --ag-fs-hour: 13px;
-  --ag-fs-badge: 11px;
-}
-/* Event Card v4 */
-.ag-event-card{
-  background: var(--ag-white);
-  border-radius: 8px;
-  padding: 12px;
-  min-height: 110px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  font-family: var(--pw-sans), sans-serif;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.ag-event-card__client{
-  font-size: var(--ag-fs-client);
-  font-weight: var(--ag-fw-bold);
-  color: var(--ag-carbon);
-  margin: 0;
-}
-.ag-event-card__meta{
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-}
-.ag-event-card__type{
-  font-size: var(--ag-fs-type);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--ag-gray);
-  font-weight: var(--ag-fw-medium);
-}
-.ag-event-card__time{
-  font-size: var(--ag-fs-hour);
-  font-weight: var(--ag-fw-bold);
-  color: var(--ag-carbon);
-}
-.ag-event-card__state{
-  display: inline-block;
-  font-size: var(--ag-fs-badge);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: var(--ag-fw-medium);
-  width: fit-content;
-}
-.ag-event-card__state--confirmed{
-  background: #E8F5E9; color: #2E7D32;
-}
-.ag-event-card__state--next{
-  background: #F3E5F5; color: #6A1B9A;
-}
-.ag-event-card__state--pending{
-  background: #FFF3E0; color: #E65100;
-}
-.ag-event-card__state--action{
-  background: #FFEBEE; color: #C62828;
-}
-.ag-event-card__state--available{
-  background: var(--ag-white);
-  border: 1px solid var(--ag-border);
-  color: var(--ag-gray);
-}
-/* KPI */
-.ag-kpi-value{
-  font-size: var(--ag-fs-kpi);
-  font-weight: var(--ag-fw-bold);
-  line-height: 1.2;
-  color: var(--ag-carbon);
-  font-family: var(--pw-sans), sans-serif;
-}
-/* Capacity bar */
-.ag-capacity-bar{
-  height: 10px;
-  background: var(--ag-border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.ag-capacity-bar__fill{
-  background: var(--ag-accent);
-  height: 100%;
-  transition: width 0.2s ease;
-}
 </style>
 <script src="/pw-push.js?v=3"></script>
 <script src="/pw-auth.js?v=1"></script>
@@ -1540,6 +1442,12 @@ function _chatAv(url, name){
 // Avatar para "Equipo Pathway" en el chat: la foto real de Micaela (misma que
 // usa el About público /sobre.html) para que el coach sienta que habla con una
 // persona del equipo, no con un bot. Es un asset público del dominio.
+// ── FEATURE FLAG: SCHEDULER (Sprint 5.2.1) ──────────────────────────────────
+// Toggle para integración gradual del nuevo Scheduler
+// false: agenda legacy (viejo código)
+// true: Scheduler reutilizable (nuevo motor)
+var USE_NEW_SCHEDULER=false;
+
 var ADMIN_PHOTO="https://pathwaycareercoach.com/assets/micaela.jpg"; // Equipo Pathway = foto de Micaela (URL absoluta: _chatAv exige http/data)
 
 // ÚNICA fuente de verdad para los nombres por defecto de las 4 etapas editables
@@ -2995,6 +2903,9 @@ function _tlRender(items){
       "<div class='pw-tl-b'><div class='pw-tl-t'>"+esc(it.titulo)+"</div><div class='pw-tl-w'>"+esc(_tlWhen(it.ts))+"</div></div></div>";
   }).join("")+"</div>";
 }
+// Scheduler code is now in pw-scheduler.js (shared module)
+// No duplicate code here.
+
 function openCliTimeline(c){
   if(!c) return;
   var ov=document.createElement("div"); ov.id="pw-tl-ov";
@@ -3020,29 +2931,136 @@ function openCliTimeline(c){
 function viewDashboard(cliBlock){
   var now=Date.now();
   function _sdt(s){ return new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")).getTime(); }
-  var sess=[];
-  CLIENTS.forEach(function(c){ if(c.raw&&c.raw.activo===false) return; (c.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var t=_sdt(s); if(isNaN(t))return; sess.push({c:c,s:s,t:t}); }); });
-  // ── Tu agenda ──
-  var upcoming=sess.filter(function(x){return x.t>=now-3600000;}).sort(function(a,b){return a.t-b.t;}).slice(0,6);
-  function _dayHead(t){ var d=new Date(t);d.setHours(0,0,0,0);var td=new Date();td.setHours(0,0,0,0);var diff=Math.round((d-td)/86400000);var fecha=new Date(t).toLocaleDateString("es-ES",{day:"numeric",month:"long"});var lbl=diff===0?"Hoy":diff===1?"Mañana":new Date(t).toLocaleDateString("es-ES",{weekday:"long"});return lbl.charAt(0).toUpperCase()+lbl.slice(1)+" · "+fecha; }
-  var agendaRows="",lastDay="";
-  upcoming.forEach(function(x){ var dh=_dayHead(x.t); if(dh!==lastDay){agendaRows+="<div style='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--pw-text-muted);padding:10px 18px 4px'>"+esc(dh)+"</div>";lastDay=dh;} var hora=x.s.hora||new Date(x.t).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"}); var sub=x.s.tipo||"Sesión"; agendaRows+="<div class='cp-todo-row' data-act='cli-open:"+esc(x.c.id)+"' style='cursor:pointer'><span style='font-family:var(--pw-serif);font-size:15px;font-weight:600;color:var(--pw-bosque);width:48px;flex-shrink:0'>"+esc(hora)+"</span><img src='"+esc(x.c.photo)+"' alt='' style='width:36px;height:36px;border-radius:50%;object-fit:cover'><div class='cp-todo-body'><div class='cp-todo-head'>"+esc(x.c.name)+"</div><div class='cp-todo-meta'>"+esc(sub)+"</div></div><span class='cp-eyebrow' style='background:var(--pw-success-bg);color:var(--pw-bosque);padding:3px 10px;border-radius:99px'>Sem "+x.c.week+"</span>"+svg(IC.chevR,14,"class='cp-todo-arrow'")+"</div>"; });
-  // Las reuniones reales viven en el calendario (Calendly): si no hay sesiones
-  // registradas, mostramos el embed para que la agenda SIEMPRE tenga contenido.
-  var _emb=(REAL&&RCFG&&RCFG.calendar_embed_url)?RCFG.calendar_embed_url:"";
-  var _calU=(REAL&&RCFG&&RCFG.calendly_url)?RCFG.calendly_url:"";
-  var calEmbed=_emb
-    ? "<iframe src='"+esc(_emb)+"' style='border:0;width:100%;height:300px;display:block;border-radius:12px' loading='lazy'></iframe>"
-    : (_calU
-        ? "<a href='"+esc(_calU)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='text-decoration:none;width:100%;justify-content:center'>Abrir mi agenda</a>"
-        : "<div style='background:var(--pw-niebla-2);border-radius:12px;padding:24px 16px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Conecta tu calendario (Calendly, Google…) en <strong>Configuración</strong> para verlo aquí.</div>");
-  var agHd="<div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>"+PWI.svg('calendar',{sm:true})+"</span> Tu agenda<span class='dot'>.</span></h3>"+(_calU?"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='open' data-url='"+esc(_calU)+"'>Abrir agenda</button>":"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='gocal'>Configurar</button>")+"</div>";
-  // Si no hay NADA que mostrar (ni sesiones próximas ni calendario conectado),
-  // ocultamos la card entera en vez de dejar un placeholder que ocupa lugar sin
-  // hacer nada. El coach configura su agenda desde Config/Sesiones igual.
-  var agendaCard=(!upcoming.length && !_emb && !_calU)
-    ? ""
-    : "<div class='cp-card'>"+agHd+(upcoming.length?agendaRows:"")+"<div class='cp-card-pad'"+(upcoming.length?" style='padding-top:8px'":"")+">"+calEmbed+"</div></div>";
+
+  // ── NUEVA AGENDA (Scheduler reutilizable) ──────────────────────────────────
+  var agendaCard="";
+  if(USE_NEW_SCHEDULER){
+    // Use AgendaProvider for data abstraction (agnóstic of origin)
+    var evt_data = AgendaProvider.fromSesionesRegistro(
+      (typeof CLIENTS !== "undefined" ? CLIENTS : []),
+      ME.id
+    );
+
+    var scheduler=initScheduler({
+      eventos: evt_data,
+      currentUser: {id:ME.id, name:ME.nombre, email:ME.email},
+      organization: {id:ME.org_id, name:"Mi Coaching"},
+      team: ME.team_id?{id:ME.team_id, name:ME.team_nombre}:null,
+      permissions: ME.permisos||[],
+      scope: "self",
+      locale: "es",
+      labels: {
+        hoy: "Hoy",
+        manana: "Mañana",
+        sin_eventos: "Sin eventos programados",
+        crear_evento: "Crear evento",
+        participantes: "participante(s)",
+        grupal: "Grupal",
+        sesiones_hoy: "Sesiones hoy",
+        atenciones_semana: "Atenciones semana",
+        clases_semana: "Clases semana",
+        total_eventos: "Total eventos",
+        sin_eventos_hoy: "Sin eventos hoy"
+      },
+      theme: {
+        borderRadius: "8px",
+        accentColor: "var(--pw-bosque)",
+        kpiBg: "var(--pw-niebla-2)",
+        kpiText: "var(--pw-bosque)"
+      },
+      callbacks: {
+        onCreate: function(data){
+          if(typeof SupabaseProvider === "undefined") return;
+          SupabaseProvider.createEvent(data, ME.id, function(result){
+            if(result.error) console.error("[AGENDA] Create failed:", result.error);
+            else console.log("[AGENDA] Event created:", result.id);
+          });
+        },
+        onEdit: function(evento_id, data){
+          if(typeof SupabaseProvider === "undefined") return;
+          SupabaseProvider.updateEvent(evento_id, data, ME.id, function(result){
+            if(result.error) console.error("[AGENDA] Edit failed:", result.error);
+            else console.log("[AGENDA] Event updated");
+          });
+        },
+        onCancel: function(evento_id){
+          if(typeof SupabaseProvider === "undefined") return;
+          SupabaseProvider.cancelEvent(evento_id, ME.id, function(result){
+            if(result.error) console.error("[AGENDA] Cancel failed:", result.error);
+            else console.log("[AGENDA] Event cancelled");
+          });
+        },
+        onReschedule: function(evento_id, nueva_fecha){
+          if(typeof SupabaseProvider === "undefined") return;
+          SupabaseProvider.rescheduleEvent(evento_id, nueva_fecha.date, nueva_fecha.time, ME.id, function(result){
+            if(result.error) console.error("[AGENDA] Reschedule failed:", result.error);
+            else console.log("[AGENDA] Event rescheduled");
+          });
+        },
+        onConfirmAssistance: function(evento_id, status){
+          if(typeof SupabaseProvider === "undefined") return;
+          SupabaseProvider.updateEvent(evento_id, {status: status}, ME.id, function(result){
+            if(result.error) console.error("[AGENDA] Confirm failed:", result.error);
+            else console.log("[AGENDA] Attendance confirmed");
+          });
+        },
+        onBlockAvailability: function(data){
+          if(typeof SupabaseProvider === "undefined") return;
+          SupabaseProvider.blockDate(ME.id, data.fecha, data.duracion_horas, data.motivo, function(result){
+            if(result.error) console.error("[AGENDA] Block failed:", result.error);
+            else console.log("[AGENDA] Date blocked:", result.id);
+          });
+        },
+        onUnblockAvailability: function(data){
+          if(typeof SupabaseProvider === "undefined") return;
+          SupabaseProvider.unblockDate(data.fecha, function(result){
+            if(result.error) console.error("[AGENDA] Unblock failed:", result.error);
+            else console.log("[AGENDA] Date unblocked");
+          });
+        },
+        onAddVacation: function(data){
+          console.log("[AGENDA] Add vacation (deferred to Sprint 5.5):", data);
+        },
+        onRemoveVacation: function(data){
+          console.log("[AGENDA] Remove vacation (deferred to Sprint 5.5):", data);
+        }
+      }
+    });
+    scheduler.init();
+    var schedulerHtml=renderScheduler(scheduler,{view:"mes"});
+
+    // ── REALTIME SUBSCRIPTION (Sprint 5.5) ──────────────────────────────
+    if(typeof supabase !== "undefined"){
+      supabase.channel('sesiones_registro').on('*', function(payload){
+        console.log('[AGENDA-REALTIME] Change detected:', payload.eventType);
+        render(); // Re-render entire dashboard
+      }).subscribe();
+    }
+
+    var _calU=(REAL&&RCFG&&RCFG.calendly_url)?RCFG.calendly_url:"";
+    var agHd="<div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>"+PWI.svg('calendar',{sm:true})+"</span> Tu agenda<span class='dot'>.</span></h3>"+(_calU?"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='open' data-url='"+esc(_calU)+"'>Abrir agenda</button>":"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='gocal'>Configurar</button>")+"</div>";
+    agendaCard=scheduler.getEventos().length>0?"<div class='cp-card'>"+agHd+"<div class='cp-card-pad'>"+schedulerHtml+"</div></div>":"";
+  }
+  else{
+    // ── AGENDA LEGACY (código antiguo) ────────────────────────────────────────
+    var sess=[];
+    CLIENTS.forEach(function(c){ if(c.raw&&c.raw.activo===false) return; (c.ses||[]).forEach(function(s){ if(!s||!s.fecha)return; var t=_sdt(s); if(isNaN(t))return; sess.push({c:c,s:s,t:t}); }); });
+    var upcoming=sess.filter(function(x){return x.t>=now-3600000;}).sort(function(a,b){return a.t-b.t;}).slice(0,6);
+    function _dayHead(t){ var d=new Date(t);d.setHours(0,0,0,0);var td=new Date();td.setHours(0,0,0,0);var diff=Math.round((d-td)/86400000);var fecha=new Date(t).toLocaleDateString("es-ES",{day:"numeric",month:"long"});var lbl=diff===0?"Hoy":diff===1?"Mañana":new Date(t).toLocaleDateString("es-ES",{weekday:"long"});return lbl.charAt(0).toUpperCase()+lbl.slice(1)+" · "+fecha; }
+    var agendaRows="",lastDay="";
+    upcoming.forEach(function(x){ var dh=_dayHead(x.t); if(dh!==lastDay){agendaRows+="<div style='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--pw-text-muted);padding:10px 18px 4px'>"+esc(dh)+"</div>";lastDay=dh;} var hora=x.s.hora||new Date(x.t).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"}); var sub=x.s.tipo||"Sesión"; agendaRows+="<div class='cp-todo-row' data-act='cli-open:"+esc(x.c.id)+"' style='cursor:pointer'><span style='font-family:var(--pw-serif);font-size:15px;font-weight:600;color:var(--pw-bosque);width:48px;flex-shrink:0'>"+esc(hora)+"</span><img src='"+esc(x.c.photo)+"' alt='' style='width:36px;height:36px;border-radius:50%;object-fit:cover'><div class='cp-todo-body'><div class='cp-todo-head'>"+esc(x.c.name)+"</div><div class='cp-todo-meta'>"+esc(sub)+"</div></div><span class='cp-eyebrow' style='background:var(--pw-success-bg);color:var(--pw-bosque);padding:3px 10px;border-radius:99px'>Sem "+x.c.week+"</span>"+svg(IC.chevR,14,"class='cp-todo-arrow'")+"</div>"; });
+    var _emb=(REAL&&RCFG&&RCFG.calendar_embed_url)?RCFG.calendar_embed_url:"";
+    var _calU=(REAL&&RCFG&&RCFG.calendly_url)?RCFG.calendly_url:"";
+    var calEmbed=_emb
+      ? "<iframe src='"+esc(_emb)+"' style='border:0;width:100%;height:300px;display:block;border-radius:12px' loading='lazy'></iframe>"
+      : (_calU
+          ? "<a href='"+esc(_calU)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='text-decoration:none;width:100%;justify-content:center'>Abrir mi agenda</a>"
+          : "<div style='background:var(--pw-niebla-2);border-radius:12px;padding:24px 16px;text-align:center;color:var(--pw-text-soft);font-size:13px'>Conecta tu calendario (Calendly, Google…) en <strong>Configuración</strong> para verlo aquí.</div>");
+    var agHd="<div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>"+PWI.svg('calendar',{sm:true})+"</span> Tu agenda<span class='dot'>.</span></h3>"+(_calU?"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='open' data-url='"+esc(_calU)+"'>Abrir agenda</button>":"<button class='cp-btn cp-btn-ghost' style='height:30px;font-size:12px;padding:0 12px' data-act='gocal'>Configurar</button>")+"</div>";
+    agendaCard=(!upcoming.length && !_emb && !_calU)
+      ? ""
+      : "<div class='cp-card'>"+agHd+(upcoming.length?agendaRows:"")+"<div class='cp-card-pad'"+(upcoming.length?" style='padding-top:8px'":"")+">"+calEmbed+"</div></div>";
+  }
   // ── Objetivos de la semana (los escribe el coach; checklist editable) ──
   var wg=_wgoals();
   var wgDone=wg.filter(function(g){return g.done;}).length;
@@ -3875,8 +3893,8 @@ function _agendaCalCard(){
 // cercano, con hora, "En X min" y accesos. Google + reservas del link.
 function _agProxList(){
   var now=Date.now(), out=[];
-  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); var o=_agEventOther(e); out.push({ms:+e.start, evid:e.id||"", title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||""+PWI.svg('calendar',{sm:true})+"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:o.email||"", who2:o.name||"", durMin:_durMin((typ&&typ.label)||""), foto:_persFoto(o.email,o.name)}); } });
-  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, id:r.id, who:(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":"", title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||""+PWI.svg('calendar',{sm:true})+"", link:_agResLink(r), email:r.email||"", durMin:_durMin(r.tipo||""), foto:_persFoto(r.email,r.nombre)}); } } });
+  ((_AG_DATA&&_AG_DATA.events)||[]).forEach(function(e){ if(e&&e.start&&e.start>now){ var typ=_agTypeForEvent(e); var o=_agEventOther(e); out.push({ms:+e.start, evid:e.id||"", title:e.title||"Sesión", sub:(typ&&typ.label)||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||""+PWI.svg('calendar',{sm:true})+"", link:(e.location&&/^https?:\/\//.test(e.location))?e.location:"", email:o.email||"", who2:o.name||"", durMin:_durMin((typ&&typ.label)||""), foto:_persFoto(o.email,o.name), estado:"confirmed"}); } });
+  _agReservas().forEach(function(r){ if(r&&r.estado!=="cancelada"&&r.inicio){ var ms=+new Date(r.inicio); if(ms>now){ var typ=_agEventTypeFor(r.tipo); out.push({ms:ms, id:r.id, who:(RADMIN&&r.coach_id&&String(r.coach_id)!==String(RME&&RME.id))?"x":"", title:r.nombre||"Alguien", sub:r.tipo||"", col:(typ&&typ.color)||"#8C7B80", ico:(typ&&typ.icon)||""+PWI.svg('calendar',{sm:true})+"", link:_agResLink(r), email:r.email||"", durMin:_durMin(r.tipo||""), foto:_persFoto(r.email,r.nombre), estado:r.estado||"scheduled"}); } } });
   // Dedup robusto (mismo helper que la agenda): fusiona la MISMA sesión que viene
   // de Google + de la reserva aunque el título no sea idéntico. Sin esto, la misma
   // cita salía como "Próxima sesión" y OTRA VEZ abajo en "En tu lista".
@@ -3909,14 +3927,19 @@ function _agProxRender(){
   if(mins<=60) when="En "+Math.max(1,mins)+" min"; else if(mins<=60*24) when="En "+Math.round(mins/60)+" h"; else { var _dd=new Date(it.ms); when=("0"+_dd.getDate()).slice(-2)+"/"+("0"+(_dd.getMonth()+1)).slice(-2); }
   var acc=it.col||"#8C7B80", timeRange=_agTime(it.ms)+(it.durMin?(" - "+_agTime(it.ms+it.durMin*60000)):"");
   var _dia=esc(_agDayFull(_agMoKey(new Date(it.ms))));
-  // Hero COMPACTO: dos fotos + nombre + tipo·hora en una línea + badge "En X" + Entrar.
+  var _estadoMap={confirmed:{label:"Confirmada",bg:"#E8F5E9",color:"#2E7D32"},scheduled:{label:"Programada",bg:"#F3E5F5",color:"#6A1B9A"},pending:{label:"Pendiente",bg:"#FFF3E0",color:"#E65100"},cancelled:{label:"Cancelada",bg:"#FFEBEE",color:"#C62828"},blocked:{label:"Bloqueada",bg:"#F5F5F5",color:"#757575"}};
+  var _est=_estadoMap[it.estado]||{label:"Sesión",bg:"#F0F0F0",color:"#666"};
+  // Hero COMPACTO: dos fotos + nombre + tipo·hora en una línea + badge "En X" + badge status + Entrar.
   var hero="<div style='background:"+acc+"12;border:1px solid "+acc+"30;border-radius:14px;padding:13px 14px'>"+
-    "<div style='display:flex;align-items:center;gap:11px'>"+_proxDualAv(it)+
+    "<div style='display:flex;align-items:flex-start;gap:11px;margin-bottom:8px'>"+_proxDualAv(it)+
       "<div style='min-width:0;flex:1'><div style='font-weight:600;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+esc(it.title)+"</div>"+
         "<div style='font-size:11.5px;color:var(--pw-text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"+(it.sub?esc(it.sub)+" · ":"")+"<span style='text-transform:capitalize'>"+_dia+"</span> · "+esc(timeRange)+"</div></div>"+
       "<span style='font-size:10px;font-weight:600;color:var(--pw-bosque);background:rgba(82,183,136,.16);padding:3px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0'>"+esc(when)+"</span>"+
     "</div>"+
-    (it.link?"<a href='"+esc(it.link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='width:100%;height:38px;font-size:13.5px;text-decoration:none;margin-top:12px;gap:7px;justify-content:center'>"+_cIco('video',14)+" Entrar a la sesión</a>":(it.email?"<a href='mailto:"+esc(it.email)+"' class='cp-btn cp-btn-primary' style='width:100%;height:38px;font-size:13.5px;text-decoration:none;margin-top:12px;justify-content:center'>Escribirle</a>":""))+
+    "<div style='display:flex;gap:6px;margin-bottom:8px'>"+
+      "<span style='font-size:9.5px;font-weight:600;color:"+_est.color+";background:"+_est.bg+";padding:4px 10px;border-radius:100px'>"+esc(_est.label)+"</span>"+
+    "</div>"+
+    (it.link?"<a href='"+esc(it.link)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-primary' style='width:100%;height:38px;font-size:13.5px;text-decoration:none;gap:7px;justify-content:center'>"+_cIco('video',14)+" Entrar a la sesión</a>":(it.email?"<a href='mailto:"+esc(it.email)+"' class='cp-btn cp-btn-primary' style='width:100%;height:38px;font-size:13.5px;text-decoration:none;justify-content:center'>Escribirle</a>":""))+
   "</div>";
   // Segunda columna "Próximas reuniones" (resumen chico) — SOLO en el Resumen (en
   // Calendario la lista completa ya está abajo, no la repetimos).
@@ -5001,7 +5024,7 @@ function _calRenderKpis(){
     // Ocultar la card superior de stats si no hay panel (ej. layout viejo). No-op.
     top.parentNode && (top.parentNode.style.display="flex");
   }
-  // Resumen de esta semana (card con 4 stat-cards + deltas).
+  // Resumen de esta semana (card con 5 stat-cards + deltas).
   var box=document.getElementById("cp-cal-kpis"); if(!box) return;
   var rate=(s.asis+s.no)>0?Math.round(s.asis/(s.asis+s.no)*100):null;
   box.innerHTML="<div class='cp-card'>"+
@@ -5011,6 +5034,7 @@ function _calRenderKpis(){
       _statBig("checkc","rgba(82,183,136,.14)","var(--pw-bosque)",""+s.asis,"Asistieron",(rate!=null?rate+"% del total":""),"var(--pw-text-muted)")+
       _statBig("xc","rgba(192,117,110,.14)","var(--pw-danger)",""+s.no,"No asistieron",((s.asis+s.no)>0?Math.round(s.no/(s.asis+s.no)*100)+"% del total":""),"var(--pw-text-muted)")+
       _statBig("trend","rgba(82,183,136,.14)","var(--pw-bosque)",""+s.gano,"Fueron bien","")+
+      _statBig("trend","rgba(82,183,136,.14)","var(--pw-bosque)",(s.rate==null?"—":s.rate+"%"),"Asistencia","")+
     "</div>"+
   "</div>";
 }
