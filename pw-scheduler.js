@@ -1,6 +1,7 @@
-// pw-scheduler.js — Calendar Engine v1.0+ (SHARED MODULE - SPRINT A.3)
-// Complete reusable scheduler component: panel-v2, multicoach, cliente, reservar, programas
-// Feature complete with views (month/week/day), navigation, drag-drop, KPIs, filtering
+// pw-scheduler.js — Agenda Engine v1.0 (SHARED MODULE - LOCKED POST SPRINT 5.3)
+// Motor agnóstico: renderiza eventos, gestiona filtros, permisos, CRUD
+// NO conoce UI framework, origen de datos, ni persistencia
+// Componentes pueden usar: AgendaProvider, SupabaseProvider, GoogleProvider, etc.
 
 // ── FEATURE FLAG ────────────────────────────────────────────────────────────
 // var USE_NEW_SCHEDULER = false (legacy) or true (new engine)
@@ -583,6 +584,135 @@ var AgendaProvider = {
   fromCalendly: function(calendlyEvents, usuario_id){
     // TODO: implement when Calendly provider ready
     return [];
+  }
+};
+
+// ── SupabaseProvider (Persistencia — Sprint 5.4) ──────────────────────────────
+// Adapter para Supabase sin romper el contrato de Scheduler
+// El Scheduler llama a callbacks; SupabaseProvider ejecuta POST/PATCH/DELETE
+var SupabaseProvider = {
+  // Estados oficiales (CONGELADOS)
+  STATES: {
+    scheduled: "scheduled",
+    confirmed: "confirmed",
+    completed: "completed",
+    cancelled: "cancelled",
+    blocked: "blocked"
+  },
+
+  // POST /rest/v1/sesiones_registro
+  createEvent: function(data, userId, callback){
+    if(typeof _sbw === "undefined"){
+      console.error("[SupabaseProvider] _sbw not available");
+      if(callback) callback({error: "Database not available"});
+      return;
+    }
+
+    var payload = {
+      titulo: data.title,
+      descripcion: data.description || "",
+      fecha: data.fecha,
+      hora: data.hora,
+      duracion_minutos: data.duracion_minutos || 60,
+      tipo: data.tipo || "sesion_individual",
+      coach_id: userId,
+      cliente_id: data.client_id,
+      estado: "scheduled",
+      participantes: JSON.stringify(data.participants || []),
+      metadata: JSON.stringify(data.metadata || {})
+    };
+
+    _sbw("POST", "/rest/v1/sesiones_registro", payload, function(err, res){
+      if(err){
+        console.error("[SupabaseProvider] Create failed:", err);
+        if(callback) callback({error: err.message || "Create failed"});
+      } else {
+        if(callback) callback({success: true, id: res.id});
+      }
+    });
+  },
+
+  // PATCH /rest/v1/sesiones_registro?id=eq.{id}
+  updateEvent: function(eventId, data, userId, callback){
+    if(typeof _sbw === "undefined"){
+      if(callback) callback({error: "Database not available"});
+      return;
+    }
+
+    var payload = {};
+    if(data.title) payload.titulo = data.title;
+    if(data.description) payload.descripcion = data.description;
+    if(data.fecha) payload.fecha = data.fecha;
+    if(data.hora) payload.hora = data.hora;
+    if(data.estado) payload.estado = data.estado;
+    if(data.participants) payload.participantes = JSON.stringify(data.participants);
+    if(data.metadata) payload.metadata = JSON.stringify(data.metadata);
+
+    _sbw("PATCH", "/rest/v1/sesiones_registro?id=eq." + eventId, payload, function(err, res){
+      if(err){
+        console.error("[SupabaseProvider] Update failed:", err);
+        if(callback) callback({error: err.message || "Update failed"});
+      } else {
+        if(callback) callback({success: true});
+      }
+    });
+  },
+
+  // PATCH estado=cancelled
+  cancelEvent: function(eventId, userId, callback){
+    SupabaseProvider.updateEvent(eventId, {estado: "cancelled"}, userId, callback);
+  },
+
+  // PATCH estado=confirmed
+  confirmEvent: function(eventId, userId, callback){
+    SupabaseProvider.updateEvent(eventId, {estado: "confirmed"}, userId, callback);
+  },
+
+  // Reschedule = update fecha + hora
+  rescheduleEvent: function(eventId, newDate, newTime, userId, callback){
+    SupabaseProvider.updateEvent(eventId, {fecha: newDate, hora: newTime}, userId, callback);
+  },
+
+  // POST /rest/v1/agenda_bloques (bloqueos)
+  blockDate: function(userId, fecha, duracionHoras, motivo, callback){
+    if(typeof _sbw === "undefined"){
+      if(callback) callback({error: "Database not available"});
+      return;
+    }
+
+    var payload = {
+      usuario_id: userId,
+      fecha_inicio: fecha,
+      duracion_horas: duracionHoras,
+      motivo: motivo,
+      estado: "active"
+    };
+
+    _sbw("POST", "/rest/v1/agenda_bloques", payload, function(err, res){
+      if(err){
+        console.error("[SupabaseProvider] Block failed:", err);
+        if(callback) callback({error: err.message || "Block failed"});
+      } else {
+        if(callback) callback({success: true, id: res.id});
+      }
+    });
+  },
+
+  // DELETE /rest/v1/agenda_bloques?id=eq.{id}
+  unblockDate: function(blockId, callback){
+    if(typeof _sbw === "undefined"){
+      if(callback) callback({error: "Database not available"});
+      return;
+    }
+
+    _sbw("DELETE", "/rest/v1/agenda_bloques?id=eq." + blockId, {}, function(err){
+      if(err){
+        console.error("[SupabaseProvider] Unblock failed:", err);
+        if(callback) callback({error: err.message || "Unblock failed"});
+      } else {
+        if(callback) callback({success: true});
+      }
+    });
   }
 };
 
