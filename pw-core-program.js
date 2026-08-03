@@ -5,10 +5,23 @@
  * Reusable components for program/client/session integration.
  * Used by: panel-v2, multicoach, cliente
  *
- * No pantalla-específico. Solo lógica de composición reutilizable.
+ * ⚠️ PURO: Sin dependencias de panel-v2, multicoach o cliente.
+ * Las dependencias externas se inyectan vía opciones.
  */
 
 window.PWCoreProgram = window.PWCoreProgram || {};
+
+// Helper: escapar HTML (inyectado si no existe)
+PWCoreProgram._esc = function(str){
+  if(typeof esc === 'function') return esc(str);
+  if(!str) return "";
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#x27;');
+};
 
 // Helper: obtener próxima sesión válida de un array
 PWCoreProgram.getNextSession = function(sessions){
@@ -34,11 +47,12 @@ PWCoreProgram.renderResourceCard = function(resource, opts){
   var size = opts.size || 'normal'; // 'compact' o 'normal'
   var tipo = (resource.tipo||'artículo').charAt(0).toUpperCase()+(resource.tipo||'artículo').slice(1);
   var compact = size === 'compact';
+  var _esc = PWCoreProgram._esc;
 
-  return "<a href='"+esc(resource.url||'#')+"' target='_blank' rel='noopener' style='display:flex;align-items:center;gap:"+(compact?'6':'8')+"px;padding:"+(compact?'6':'8')+"px;border-radius:"+(compact?'6':'8')+"px;background:#fff;text-decoration:none;color:var(--pw-carbon);transition:background .15s;border:1px solid transparent' onmouseover=\"this.style.background='var(--pw-niebla-2)'\" onmouseout=\"this.style.background='#fff'\">"+
+  return "<a href='"+_esc(resource.url||'#')+"' target='_blank' rel='noopener' style='display:flex;align-items:center;gap:"+(compact?'6':'8')+"px;padding:"+(compact?'6':'8')+"px;border-radius:"+(compact?'6':'8')+"px;background:#fff;text-decoration:none;color:var(--pw-carbon);transition:background .15s;border:1px solid transparent' onmouseover=\"this.style.background='var(--pw-niebla-2)'\" onmouseout=\"this.style.background='#fff'\">"+
     "<span style='flex:1;min-width:0'>"+
-      "<div style='font-size:"+(compact?'12':'12.5')+"px;font-weight:600;color:var(--pw-carbon)'>"+esc(resource.titulo||'Recurso')+"</div>"+
-      (compact ? "" : "<div style='font-size:11px;color:var(--pw-text-soft)'>"+tipo+(resource.meta?" · "+esc(resource.meta):"")+"</div>")+
+      "<div style='font-size:"+(compact?'12':'12.5')+"px;font-weight:600;color:var(--pw-carbon)'>"+_esc(resource.titulo||'Recurso')+"</div>"+
+      (compact ? "" : "<div style='font-size:11px;color:var(--pw-text-soft)'>"+tipo+(resource.meta?" · "+_esc(resource.meta):"")+"</div>")+
     "</span>"+
     (typeof PWI !== 'undefined' ? PWI.svg('arrowRight',{sm:true}) : "→")+
   "</a>";
@@ -52,6 +66,7 @@ PWCoreProgram.renderResourceList = function(resources, opts){
   var limit = opts.limit || 3;
   var size = opts.size || 'normal';
   var showViewMore = opts.showViewMore !== false;
+  var onViewMore = opts.onViewMore; // callback fn, no string
 
   var html = "<div style='display:flex;flex-direction:column;gap:"+(size==='compact'?'6':'8')+"px'>";
   resources.slice(0, limit).forEach(function(r){
@@ -60,12 +75,18 @@ PWCoreProgram.renderResourceList = function(resources, opts){
   html += "</div>";
 
   if(showViewMore && resources.length > limit){
-    html += "<div style='margin-top:"+(size==='compact'?'6':'8')+"px;text-align:center'>"+
-      "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 12px;font-size:11px' onclick=\"state.section='configuracion';state.configTab='recursos';render()\">Ver todos ("+(resources.length)+")</button>"+
-    "</div>";
+    var btnHtml = (typeof onViewMore === 'function')
+      ? "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 12px;font-size:11px' onclick='PWCoreProgram._onViewMoreResources()'>Ver todos ("+(resources.length)+")</button>"
+      : "<button class='cp-btn cp-btn-ghost' style='height:28px;padding:0 12px;font-size:11px'>Ver todos ("+(resources.length)+")</button>";
+    html += "<div style='margin-top:"+(size==='compact'?'6':'8')+"px;text-align:center'>"+btnHtml+"</div>";
   }
 
   return html;
+};
+
+// Callback: inyectado por la pantalla (panel-v2, multicoach, etc)
+PWCoreProgram.setViewMoreCallback = function(fn){
+  PWCoreProgram._onViewMoreResources = fn;
 };
 
 // Helper: renderizar card de próxima sesión (reutilizable)
@@ -74,14 +95,15 @@ PWCoreProgram.renderNextSessionCard = function(session, opts){
   if(!session) return "";
 
   var heroStyle = opts.heroStyle || false;
+  var _esc = PWCoreProgram._esc;
 
   if(heroStyle){
     // Hero style (grande, como en sesiones tab)
     return "<div class='cp-ses-hero'>"+
       "<div>"+
         "<div class='cp-ses-hero-lbl'>● Próxima sesión</div>"+
-        "<div class='cp-ses-hero-date'>"+esc(session.fecha||"")+(session.hora?" · "+esc(session.hora):"")+"</div>"+
-        (session.trabajado ? "<div class='cp-ses-hero-sub'>"+esc(session.trabajado)+"</div>" : "")+
+        "<div class='cp-ses-hero-date'>"+_esc(session.fecha||"")+(session.hora?" · "+_esc(session.hora):"")+"</div>"+
+        (session.trabajado ? "<div class='cp-ses-hero-sub'>"+_esc(session.trabajado)+"</div>" : "")+
       "</div>"+
     "</div>";
   } else {
@@ -91,8 +113,8 @@ PWCoreProgram.renderNextSessionCard = function(session, opts){
         "<span style='width:36px;height:36px;border-radius:10px;flex:none;background:rgba(45,106,79,.10);display:flex;align-items:center;justify-content:center'>"+(typeof PWI !== 'undefined' ? PWI.svg('calendar',{sm:true}) : "📅")+"</span>"+
         "<div style='flex:1;min-width:0'>"+
           "<div style='font-size:13px;font-weight:700;color:var(--pw-carbon)'>Próxima sesión</div>"+
-          "<div style='font-size:12px;color:var(--pw-text-soft)'>"+esc(session.fecha||"")+(session.hora?" · "+esc(session.hora):"")+"</div>"+
-          (session.trabajado ? "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:2px'>"+esc(session.trabajado)+"</div>" : "")+
+          "<div style='font-size:12px;color:var(--pw-text-soft)'>"+_esc(session.fecha||"")+(session.hora?" · "+_esc(session.hora):"")+"</div>"+
+          (session.trabajado ? "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:2px'>"+_esc(session.trabajado)+"</div>" : "")+
         "</div>"+
       "</div>"+
     "</div>";
@@ -106,6 +128,7 @@ PWCoreProgram.renderEtapasRoadmap = function(etapas, opts){
 
   var compact = opts.compact || false;
   var showProgress = opts.showProgress !== false;
+  var _esc = PWCoreProgram._esc;
 
   var html = "<div class='cp-card' style='background:rgba(45,106,79,.02);border:1px solid rgba(45,106,79,.08)'>"+
     "<div class='cp-card-pad'>"+
@@ -123,7 +146,7 @@ PWCoreProgram.renderEtapasRoadmap = function(etapas, opts){
       "text-align:center;cursor:pointer;transition:all .15s"+
       "' onmouseover=\"this.style.background='"+(isDone?"rgba(45,106,79,.12)":"var(--pw-niebla-2)")+"'\" "+
       "onmouseout=\"this.style.background='"+(isDone?"rgba(45,106,79,.08)":"#fff")+"'\">"+
-        "<div style='font-size:"+(compact?'11':'12')+"px;font-weight:700;color:var(--pw-carbon)'>"+esc(e.nombre||"Etapa")+"</div>"+
+        "<div style='font-size:"+(compact?'11':'12')+"px;font-weight:700;color:var(--pw-carbon)'>"+_esc(e.nombre||"Etapa")+"</div>"+
         (showProgress && e.progress ? "<div style='font-size:10px;color:var(--pw-text-soft);margin-top:3px'>"+Math.round(e.progress)+"%</div>" : "")+
       "</div>";
   });
@@ -140,6 +163,7 @@ PWCoreProgram.renderSessionTasks = function(tasks, doneIndexes, opts){
   var doneIndexes = doneIndexes || [];
   var compact = opts.compact || false;
   var doneCnt = doneIndexes.length;
+  var _esc = PWCoreProgram._esc;
 
   var html = "<div style='background:"+(compact?"transparent":"var(--pw-niebla-2)")+";"+(compact?"":" border-radius:10px;padding:10px 12px")+"'>"+
     "<div class='cp-eyebrow' style='margin-bottom:"+(compact?'4':'6')+"px'>"+(compact?"":(doneCnt+"/"+tasks.length+" hechas"))</div>"+
@@ -152,7 +176,7 @@ PWCoreProgram.renderSessionTasks = function(tasks, doneIndexes, opts){
         "background:"+(isDone?"var(--pw-bosque)":"transparent")+";"+
         "border:1.2px solid "+(isDone?"var(--pw-bosque)":"var(--pw-border-strong)")+";"+
         "color:#fff;font-size:8px'>"+(isDone?"✓":"")+"</span>"+
-      "<span>"+esc(task)+"</span>"+
+      "<span>"+_esc(task)+"</span>"+
     "</div>";
   });
 
@@ -160,16 +184,12 @@ PWCoreProgram.renderSessionTasks = function(tasks, doneIndexes, opts){
   return html;
 };
 
-// Helper: renderizar comunidad filtrada automáticamente (reutilizable)
-PWCoreProgram.renderCommunityAuto = function(clienteId, opts){
+// Helper: renderizar comunidad filtrada (sin globals de panel-v2)
+PWCoreProgram.renderCommunityCard = function(nicho, etapa, opts){
   opts = opts || {};
-  var c = (typeof CLIENTS !== 'undefined' && CLIENTS) ? CLIENTS.filter(function(x){return String(x.id)===String(clienteId);})[0] : null;
-  if(!c) return "";
+  if(!nicho) nicho = 'carrera';
 
-  var nicho = (c.raw && c.raw.nicho) || (typeof RCFG !== 'undefined' && RCFG && RCFG.coach_type) || 'carrera';
-  var etapa = (c.raw && c.raw.etapas && c.raw.etapas[0]) ? c.raw.etapas[0].nombre : '';
   var nichoLabel = {carrera:'Carrera',fitness:'Fitness',financiero:'Finanzas',nutrition:'Nutrición',wellness:'Bienestar',executive:'Executive',business:'Business'}[nicho]||'Comunidad';
-
   var url = '/comunidad.html?nicho='+encodeURIComponent(nicho);
   if(etapa && opts.filterByEtapa) url += '&etapa='+encodeURIComponent(etapa);
 
@@ -181,7 +201,7 @@ PWCoreProgram.renderCommunityAuto = function(clienteId, opts){
       "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5;margin-bottom:12px'>"+
         "Conecta con otros coaches en "+nichoLabel+". Comparte casos, feedback y mejores prácticas."+
       "</div>"+
-      "<a href='"+esc(url)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='display:inline-block;height:32px;padding:0 14px;font-size:12px;text-decoration:none;text-align:center;line-height:32px;width:100%'>"+
+      "<a href='"+PWCoreProgram._esc(url)+"' target='_blank' rel='noopener' class='cp-btn cp-btn-ghost' style='display:inline-block;height:32px;padding:0 14px;font-size:12px;text-decoration:none;text-align:center;line-height:32px;width:100%'>"+
         "Abrir comunidad "+nichoLabel+" "+(typeof PWI !== 'undefined' ? PWI.svg('arrowRight',{sm:true}) : "→")+
       "</a>"+
     "</div>"+
@@ -189,6 +209,7 @@ PWCoreProgram.renderCommunityAuto = function(clienteId, opts){
 };
 
 // MASTER: renderizar Program Work Center (orquestador principal)
+// Inyecta resources y nicho via opciones (no usa RCFG global)
 PWCoreProgram.renderWorkCenter = function(client, opts){
   opts = opts || {};
   if(!client) return "";
@@ -206,27 +227,23 @@ PWCoreProgram.renderWorkCenter = function(client, opts){
     html += PWCoreProgram.renderEtapasRoadmap(client.raw.etapas, {compact: opts.compact});
   }
 
-  // 3. Resources (if exists in global RCFG)
-  if(typeof RCFG !== 'undefined' && RCFG && RCFG.recursos){
-    var nicho = (client.raw && client.raw.nicho) || (RCFG.coach_type) || 'carrera';
-    var recursos = RCFG.recursos.filter(function(r){
-      return !r.nicho || r.nicho === nicho || r.nicho === 'general';
-    });
-    if(recursos.length > 0){
-      html += "<div class='cp-card' style='background:rgba(45,106,79,.02);border:1px solid rgba(45,106,79,.08)'>"+
-        "<div class='cp-card-pad'>"+
-          "<div style='display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px;font-weight:700;color:var(--pw-carbon)'>"+
-            (typeof PWI !== 'undefined' ? PWI.svg('bookOpen',{sm:true}) : "📚")+" Recursos relacionados"+
-          "</div>"+
-          PWCoreProgram.renderResourceList(recursos, {limit: 3, size: 'normal'})+
+  // 3. Resources (inyectados vía opciones, no globales)
+  if(Array.isArray(opts.resources) && opts.resources.length > 0){
+    html += "<div class='cp-card' style='background:rgba(45,106,79,.02);border:1px solid rgba(45,106,79,.08)'>"+
+      "<div class='cp-card-pad'>"+
+        "<div style='display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px;font-weight:700;color:var(--pw-carbon)'>"+
+          (typeof PWI !== 'undefined' ? PWI.svg('bookOpen',{sm:true}) : "📚")+" Recursos relacionados"+
         "</div>"+
-      "</div>";
-    }
+        PWCoreProgram.renderResourceList(opts.resources, {limit: 3, size: 'normal'})+
+      "</div>"+
+    "</div>";
   }
 
-  // 4. Community Auto-filtered
+  // 4. Community Auto-filtered (inyectado nicho vía opciones)
   if(opts.showCommunity){
-    html += PWCoreProgram.renderCommunityAuto(client.id, {filterByEtapa: opts.filterByEtapa});
+    var nicho = opts.nicho || (client.raw && client.raw.nicho) || 'carrera';
+    var etapa = (client.raw && client.raw.etapas && client.raw.etapas[0]) ? client.raw.etapas[0].nombre : '';
+    html += PWCoreProgram.renderCommunityCard(nicho, etapa, {filterByEtapa: opts.filterByEtapa});
   }
 
   return html;
