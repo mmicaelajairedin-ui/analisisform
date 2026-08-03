@@ -1502,6 +1502,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .equipo-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 27px; }
 .equipo-header h1 { font-size: 17px; font-weight: 600; color: var(--db-text-primary); margin: 0; }
 
+.equipo-tabs { display: flex; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--db-border-light); margin-bottom: 16px; }
+.equipo-tab { background: transparent; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--db-text-muted); cursor: pointer; transition: all 0.2s; position: relative; }
+.equipo-tab:hover { color: var(--db-text-primary); background: var(--db-bg-light); }
+.equipo-tab.is-on { color: var(--pw-bosque); font-weight: 600; }
+.equipo-tab.is-on::after { content: ''; position: absolute; bottom: -13px; left: 0; right: 0; height: 2px; background: var(--pw-bosque); border-radius: 1px; }
+
 .btn-invite { background: var(--pw-bosque); color: #fff; border: none; padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: var(--sans); }
 .btn-invite:hover { opacity: 0.9; box-shadow: 0 4px 12px rgba(45, 106, 79, 0.2); }
 
@@ -4170,9 +4176,16 @@ function _mcAgoCapital(s){
 }
 
 // Estado global para filtros de equipo
-var _equipoState={search:'',status:'Todos',role:'Todos',spec:'Especialidad',sort:'Ordenar por'};
+var _equipoState={search:'',status:'Todos',role:'Todos',spec:'Especialidad',sort:'Ordenar por',tab:'todos'};
 var _equipoSelected=null; // Item seleccionado en la tabla
 var _equipoDrawerFeedback=''; // Estado de feedback en drawer
+
+// Cambiar tab en equipo: todos, coaches, colaboradores
+function _equipoSetTab(tab){
+  _equipoState.tab=tab;
+  _equipoState.role='Todos'; // Reset role filter when changing tab
+  renderEquipo();
+}
 
 // Helper: Refresca tabla y KPIs después de cambios en BD
 function _equipoRefreshAfterChange(){
@@ -4396,13 +4409,22 @@ function renderEquipo(){
  var v=document.getElementById('vscroll');
  var kpis=_equipoKpis();
  var fullList=_equipoList();
- var filtered=_equipoApplyFilters(fullList,_equipoState.search,_equipoState.status,_equipoState.role,_equipoState.spec);
+
+ // Apply tab filter first
+ var tabFiltered=fullList;
+ if(_equipoState.tab==='coaches'){
+   tabFiltered=fullList.filter(function(item){return item.tipo==='coach';});
+ } else if(_equipoState.tab==='colaboradores'){
+   tabFiltered=fullList.filter(function(item){return item.tipo==='colaborador';});
+ }
+
+ var filtered=_equipoApplyFilters(tabFiltered,_equipoState.search,_equipoState.status,_equipoState.role,_equipoState.spec);
  var sorted=_equipoSort(filtered,_equipoState.sort);
 
  // Empty state
  var tableHtml='';
  if(!sorted||sorted.length===0){
-   tableHtml='<div class="empty-state"><div class="empty-state-icon">👥</div><div class="empty-state-title">Sin resultados</div><div class="empty-state-text">No hay coaches ni colaboradores que coincidan con los filtros aplicados.</div></div>';
+   tableHtml='<div class="empty-state"><div class="empty-state-icon">👥</div><div class="empty-state-title">Sin resultados</div><div class="empty-state-text">No hay '+(_equipoState.tab==='coaches'?'coaches':_equipoState.tab==='colaboradores'?'colaboradores':'coaches ni colaboradores')+' que coincidan con los filtros aplicados.</div></div>';
  } else {
    var rows=sorted.map(function(item,i){return _equipoRowHtml(item,i);}).join('');
    tableHtml='<div class="table-card">'
@@ -4410,6 +4432,12 @@ function renderEquipo(){
     +rows
     +'</div>';
  }
+
+ var tabs='<div class="equipo-tabs" style="display:flex;gap:8px;padding:12px 0;border-bottom:1px solid var(--db-border-light);margin-bottom:16px">'
+  +'<button class="equipo-tab'+(_equipoState.tab==='todos'?' is-on':'')+'" onclick="_equipoSetTab(\'todos\')">Todos</button>'
+  +'<button class="equipo-tab'+(_equipoState.tab==='coaches'?' is-on':'')+'" onclick="_equipoSetTab(\'coaches\')">Coaches</button>'
+  +'<button class="equipo-tab'+(_equipoState.tab==='colaboradores'?' is-on':'')+'" onclick="_equipoSetTab(\'colaboradores\')">Colaboradores</button>'
+  +'</div>';
 
  var equipoHtml='<div class="equipo-container">'
   +'<div class="equipo-backdrop" onclick="_equipoCloseDrawer()"></div>'
@@ -4421,10 +4449,10 @@ function renderEquipo(){
   +'<div class="kpi-card"><div class="kpi-value">'+kpis.clientes+'</div><div class="kpi-label">Clientes asignados</div></div>'
   +'<div class="kpi-card"><div class="kpi-value">'+kpis.carga+'</div><div class="kpi-label">Carga media</div></div>'
   +'</div>'
+  +tabs
   +'<div class="filters-bar">'
   +'<input type="text" class="search-input" placeholder="🔍 Buscar por nombre, email..." oninput="_equipoOnSearch(this.value)">'
   +'<select class="filter-dropdown" onchange="_equipoOnFilterStatus(this.value)"><option>Todos</option><option>Activos</option><option>Invitados</option><option>Vacaciones</option><option>Suspendidos</option><option>Desactivados</option></select>'
-  +'<select class="filter-dropdown" onchange="_equipoOnFilterRole(this.value)"><option>Todos</option><option>Coach</option><option>Colaborador</option></select>'
   +'<select class="filter-dropdown" onchange="_equipoOnFilterSpec(this.value)"><option>Especialidad</option><option>Carrera</option><option>Fitness</option><option>Finanzas</option></select>'
   +'<select class="filter-dropdown" onchange="_equipoOnSort(this.value)"><option>Ordenar por</option><option>Nombre (A-Z)</option><option>Clientes (más primero)</option><option>Retención (mejor)</option><option>Sesiones (más)</option></select>'
   +'</div>'
