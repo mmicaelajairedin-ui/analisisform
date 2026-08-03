@@ -10,6 +10,8 @@
 <link rel="stylesheet" href="/pw-icons.css?v=1">
 <script src="/pw-icons.js?v=1"></script>
 <script src="pw-brand.js?v=2"></script>
+<script src="pw-theme-engine.js"></script>
+<script src="pw-brand-engine.js"></script>
 <link rel="stylesheet" href="pw-design-tokens.css?v=1">
 <link rel="stylesheet" href="dashboard-foundation.css?v=1">
 <meta charset="utf-8">
@@ -5438,7 +5440,7 @@ function renderIdentidad(){
   html+='<div class="org-palette-color org-palette-primary" onclick="_oidEditPrimaryColor()" id="orgColorPrimary">Primario<br>#2D5016</div>';
   html+='<div class="org-palette-color org-palette-secondary" onclick="_oidEditSecondaryColor()" id="orgColorSecondary">Secundario<br>#8C7B80</div>';
   html+='</div></div>';
-  html+='<div><div class="org-section-label">Tipografía</div><div style="background:#f9fafb;border-radius:12px;padding:16px;text-align:center"><div style="font-size:13px;color:#6b7280;margin-bottom:8px">Poppins</div><div style="font-size:18px;font-weight:700;color:#1f2937">La identidad de tu marca</div></div></div>';
+  html+='<div><div class="org-section-label">Tipografía</div><div style="background:#f9fafb;border-radius:12px;padding:16px;text-align:center;cursor:pointer" onclick="_oidEditTypography()" id="orgTypographyBox"><div style="font-size:13px;color:#6b7280;margin-bottom:8px">Poppins</div><div style="font-size:18px;font-weight:700;color:#1f2937">La identidad de tu marca</div></div></div>';
   html+='</div>';
 
   // CARD 3: LANDING
@@ -5511,18 +5513,105 @@ function renderIdentidad(){
   _oidInit();
 }
 function _oidInit(){
-  // Centro de Organización event handlers
-  // Real backend integration will connect Theme Engine + Brand Engine here
+  if(!MC_REAL||!MC_ORG||!MC_ORG.id)return;
+  var preview=document.getElementById('orgPreviewViewport');
+  if(!preview)return;
+
+  // 1. Cargar Brand Engine desde Supabase
+  if(window.BrandEngine){
+    window.BrandEngine.loadOrganization(MC_ORG.id).then(function(data){
+      if(!data||!data.branding)return;
+      var brand=data.branding;
+
+      // 2. Construir Theme desde Brand Engine
+      if(window.ThemeEngine){
+        var theme=window.ThemeEngine.buildTheme(brand);
+        window.ThemeEngine.applyTheme(theme,preview);
+      }
+
+      // 3. Conectar color pickers con Theme Engine
+      var p=document.getElementById('orgColorPrimary');
+      var s=document.getElementById('orgColorSecondary');
+      if(p)p.style.background='linear-gradient(135deg, '+brand.primary_color+' 0%, '+brand.secondary_color+' 100%)';
+      if(s)s.textContent='Secundario<br>'+brand.secondary_color;
+
+      // 4. Suscribirse a cambios de BrandEngine (futuro: Realtime de Supabase)
+      window.BrandEngine.onBrandingUpdated(function(event,data){
+        if(event==='branding-updated'){
+          var theme=window.ThemeEngine.buildTheme(data);
+          window.ThemeEngine.applyTheme(theme,preview);
+        }
+      });
+
+      console.log('[OID] ✓ Initialized with Brand Engine',{org:MC_ORG.name,preview_colors:brand.primary_color});
+    });
+  }
 }
 
 // Centro de Organización action handlers
+
 function _oidEditInfo(){console.log('[OID] Edit info - TODO: modal')}
 function _oidChangePlan(){console.log('[OID] Change plan - TODO: Stripe')}
 function _oidEditIdentity(){console.log('[OID] Edit identity - TODO: identity modal')}
 function _oidUploadLogo(){console.log('[OID] Upload logo - TODO: file upload')}
 function _oidUploadFavicon(){console.log('[OID] Upload favicon - TODO: file upload')}
-function _oidEditPrimaryColor(){console.log('[OID] Edit primary color - TODO: color picker')}
-function _oidEditSecondaryColor(){console.log('[OID] Edit secondary color - TODO: color picker')}
+
+// Color pickers con Theme Engine
+function _oidEditPrimaryColor(){
+  var color=prompt('Ingresa color primario (hex)','#2D5016');
+  if(!color)return;
+  if(!/^#[0-9a-fA-F]{6}$/.test(color)){alert('Color inválido');return;}
+
+  if(window.BrandEngine){
+    window.BrandEngine.updateColor('primary_color',color).then(function(){
+      if(window.ThemeEngine){
+        var preview=document.getElementById('orgPreviewViewport');
+        if(preview)window.ThemeEngine.updateColor('primary_color',color,preview);
+      }
+      _showOidStatus('✓ Color primario actualizado','success');
+    });
+  }
+}
+
+function _oidEditSecondaryColor(){
+  var color=prompt('Ingresa color secundario (hex)','#8C7B80');
+  if(!color)return;
+  if(!/^#[0-9a-fA-F]{6}$/.test(color)){alert('Color inválido');return;}
+
+  if(window.BrandEngine){
+    window.BrandEngine.updateColor('secondary_color',color).then(function(){
+      if(window.ThemeEngine){
+        var preview=document.getElementById('orgPreviewViewport');
+        if(preview)window.ThemeEngine.updateColor('secondary_color',color,preview);
+      }
+      _showOidStatus('✓ Color secundario actualizado','success');
+    });
+  }
+}
+
+// Typography selector con Theme Engine
+function _oidEditTypography(){
+  var fonts=['poppins','inter','manrope'];
+  var curr=window.BrandEngine?.getBranding()?.brand_font||'poppins';
+  var opts='Selecciona tipografía:\n\n';
+  fonts.forEach(function(f,i){opts+=((i+1)+'. '+f+' '+((f===curr)?'(actual)':''))+'\n';});
+  var choice=prompt(opts.trim(),'1');
+  if(!choice||isNaN(choice))return;
+  var idx=parseInt(choice)-1;
+  if(idx<0||idx>=fonts.length){alert('Opción inválida');return;}
+
+  var font=fonts[idx];
+  if(window.BrandEngine){
+    window.BrandEngine.updateTypography(font).then(function(){
+      if(window.ThemeEngine){
+        var preview=document.getElementById('orgPreviewViewport');
+        if(preview)window.ThemeEngine.updateTypography(font,preview);
+      }
+      _showOidStatus('✓ Tipografía actualizada','success');
+    });
+  }
+}
+
 function _oidReorderBlocks(){console.log('[OID] Reorder landing blocks - TODO: drag-drop')}
 function _oidEditLanding(){console.log('[OID] Edit landing - TODO: landing editor')}
 function _oidToggleBlock(blk){
@@ -5535,6 +5624,14 @@ function _oidToggleBlock(blk){
 function _oidEditBlock(blk){console.log('[OID] Edit block:',blk,'- TODO: block editor')}
 function _oidConfigDNS(){console.log('[OID] Configure DNS - TODO: DNS instructions modal')}
 function _oidUploadAsset(type){console.log('[OID] Upload asset:',type,'- TODO: asset upload')}
+
+function _showOidStatus(msg,type){
+  var el=document.createElement('div');
+  el.textContent=msg;
+  el.style.cssText='position:fixed;bottom:20px;right:20px;background:'+(type==='success'?'#d1fae5':'#fee2e2')+';color:'+(type==='success'?'#065f46':'#991b1b')+';padding:12px 16px;border-radius:8px;border:1px solid '+(type==='success'?'#6ee7b7':'#fca5a5')+';font-size:13px;z-index:9999;';
+  document.body.appendChild(el);
+  setTimeout(function(){el.remove();},3000);
+}
 
 function renderComunidad(){
  var v=document.getElementById('vscroll');
