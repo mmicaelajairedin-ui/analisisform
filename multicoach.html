@@ -3277,6 +3277,8 @@ function mcLoadReal(owner){
     try{ setTimeout(_mcPaywallCheck,0); }catch(e){} // aviso/muro si la prueba de la red está por vencer o venció
     // T-5: Activar sync LocalStorage ↔ Supabase después de cargar datos reales
     try{ setTimeout(_mcEnableSync,100); }catch(e){}
+    // B.6.3: Realtime sync de branding entre tabs (sin reload)
+    try{ setTimeout(_mcStartBrandRealtimeSync,150); }catch(e){}
   }
   return _hdr({'Content-Type':'application/json'}).then(function(h){
     // Si hay org seleccionada en localStorage (multi-org), enviarla al edge function
@@ -6749,6 +6751,40 @@ function _saveBrand(){
   try{ if(window.PWBrand){ PWBrand.font(_font); if(_color2)PWBrand.secondary(_color2); } }catch(e){}
   renderBrandLogo();
   _updateBrandSaveStatus('saved');
+}
+// B.6.3: Real-time sync de branding entre tabs
+// Escucha cambios en organization_branding y actualiza la UI sin reload
+function _mcStartBrandRealtimeSync(){
+  if(!MC_REAL||!MC_ORG||!MC_ORG.id) return;
+  if(typeof fetch==='undefined') return; // sin conexión
+  // Supabase real-time: crear un canal privado para esta org
+  // En cada cambio, actualizar localStorage y UI localmente
+  var _checkInterval=setInterval(function(){
+    if(!MC_ORG||!MC_ORG.id){ clearInterval(_checkInterval); return; }
+    _hdr().then(function(h){
+      return fetch(SB+'/rest/v1/organizations?id=eq.'+encodeURIComponent(MC_ORG.id)+'&select=marca',{headers:h});
+    }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
+      if(!rows||!rows[0]) return;
+      var remoteBrand=rows[0].marca;
+      if(!remoteBrand||typeof remoteBrand!=='object') return;
+      var localBrand=_mcBrand();
+      var changed=false;
+      ['color','color2','font','logo','nombre'].forEach(function(k){
+        if(remoteBrand[k]!==localBrand[k]){ changed=true; }
+      });
+      if(!changed) return;
+      // Cambios detectados en otra sesión → aplicar localmente
+      try{ localStorage.setItem('mc_brand',JSON.stringify(remoteBrand)); }catch(_){}
+      // Aplicar cambios visuales
+      if(remoteBrand.color){ CFG.color=remoteBrand.color; _applyBrandColor(remoteBrand.color); }
+      if(remoteBrand.color2){ CFG.color2=remoteBrand.color2; _applyBrand2(remoteBrand.color2); }
+      if(remoteBrand.font){ try{ window.PWBrand&&PWBrand.font(remoteBrand.font); }catch(e){} }
+      // Renderizar branding en UI si está visible
+      if(typeof renderBrandLogo==='function'){ try{ renderBrandLogo(); }catch(e){} }
+      // Actualizar preview si está abierto
+      if(typeof _updateBrandPreview==='function'){ try{ _updateBrandPreview(); }catch(e){} }
+    }).catch(function(){});
+  }, 2000); // polling cada 2 segundos (rápido para cambios inmediatos)
 }
 // Aplicar brand color y renderizar logo
 _applyBrandColor(_mcBrand().color);   // restaura el color elegido por el coach al cargar
