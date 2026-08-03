@@ -4765,7 +4765,8 @@ function _renderCoachFicha(){
   +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
    +'<button class="cp-btn cp-btn-ghost" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)_mcCopiarReserva(this.dataset.coachId)" title="El cliente abre este link y se agenda solo">'+PWI.svg('link',{sm:true})+' Copiar link de reserva</button>'
    +'<button class="cp-btn cp-btn-ghost" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)mcServiciosModal(this.dataset.coachId)">'+PWI.svg('creditCard',{sm:true})+' Servicios y precios ('+(c.servicios?c.servicios.length:0)+')</button>'
-   +(c.esOwner?'':'<button class="cp-btn cp-btn-ghost" onclick="_goCoachTab(\'mensajes\')"><span class="cp-emo">'+PWI.svg('chat',{sm:true})+'</span> Enviar mensaje</button>')
+   +(c.esOwner?'':'<button class="cp-btn cp-btn-ghost" onclick="mcChatOpen()">'+PWI.svg('chat',{sm:true})+' Chat del equipo</button>')
+   +(c.esOwner?'':'<button class="cp-btn cp-btn-ghost" onclick="_goCoachTab(\'mensajes\')"><span class="cp-emo">'+PWI.svg('chatDots',{sm:true})+'</span> Mensaje privado</button>')
    +(c.esOwner?'':_mcContactBtn(c.tel,c.email))
    +(c.esOwner?('<a class="cp-btn cp-btn-primary" href="panel-v2.html" style="text-decoration:none">'+PWI.svg('user',{sm:true})+' Entrar a mi panel de coach</a>'
    +'<div style="font-size:11.5px;color:var(--soft);line-height:1.4">Tu agenda, tu link de reserva y tus clientes como coach viven en tu panel de siempre. Eres el dueño de la red y puedes atender clientes como un coach más; para cambiar quién es el dueño, se hace desde el panel admin.</div>'):(''
@@ -4783,7 +4784,7 @@ function _renderCoachFicha(){
     +'<div style="min-width:0"><button class="fback" onclick="renderCoaches()" style="text-transform:uppercase;letter-spacing:1.2px;font-size:11px;font-weight:700;margin-bottom:4px">‹ Volver a Coaches</button>'
      +'<h1 class="cp-h1">'+c.n+'<span class="dot">.</span></h1>'
      +'<div class="cp-sub">'+(c.esp?c.esp+' · ':'')+_areaLbl(c.nicho)+'</div></div></div>'
-   +(c.esOwner?'':'<div class="cp-topbar-actions"><button class="cp-btn cp-btn-primary" onclick="_goCoachTab(\'mensajes\')">'+PWI.svg('chat',{sm:true})+' Enviar mensaje</button></div>')+'</header>'
+   +(c.esOwner?'':'<div class="cp-topbar-actions"><button class="cp-btn cp-btn-primary" onclick="mcChatOpen()">'+PWI.svg('chat',{sm:true})+' Chat del equipo</button></div>')+'</header>'
    +'<div class="cp-ficha-layout3">'+menuV+'<div class="cp-cfg-panel">'+_coachBody(c,t)+'</div>'+rail+'</div>';
  if(t==='mensajes'){ try{ _loadCoachChat(c.id); }catch(e){} }
 }
@@ -4823,8 +4824,18 @@ var _MC_CANAL_DEMO=[
  {autor_nombre:'Alex Gómez', autor_rol:'owner', body:'Genial. Recuerden cargar las mediciones de la semana antes del viernes.', created_at:'2026-07-20T09:25:00Z'},
  {autor_nombre:'Juan Pérez', autor_rol:'coach', body:'Listo. ¿Sumamos una clase extra el sábado? Hay demanda.', created_at:'2026-07-20T10:02:00Z'}
 ];
-var _MC_GRUPOS_DEMO=[{id:'g-nutri',nombre:'Nutricionistas',general:false,miembros:[],ultimo_at:'2026-07-21T12:00:00Z'}];
-var _MC_MSGS_DEMO={ 'g-nutri':[{autor_nombre:'Ana',autor_rol:'coach',body:'¿Alguien tiene plan de volumen limpio para compartir?',created_at:'2026-07-21T11:50:00Z'}] };
+var _MC_GRUPOS_DEMO=[
+ {id:'sys-owners',nombre:'Owners',general:false,is_system:true,miembros:[],ultimo_at:'2026-07-21T14:30:00Z'},
+ {id:'sys-coaches',nombre:'Coaches',general:false,is_system:true,miembros:[],ultimo_at:'2026-07-21T13:15:00Z'},
+ {id:'sys-rrhh',nombre:'RRHH',general:false,is_system:true,miembros:[],ultimo_at:'2026-07-20T16:00:00Z'},
+ {id:'g-nutri',nombre:'Nutricionistas',general:false,is_system:false,miembros:[],ultimo_at:'2026-07-21T12:00:00Z'}
+];
+var _MC_MSGS_DEMO={
+ 'sys-owners':[{autor_nombre:'Alex',autor_rol:'owner',body:'Nueva estrategia Q3: enfoque en retención de clientes premium.',created_at:'2026-07-21T14:25:00Z'}],
+ 'sys-coaches':[{autor_nombre:'María',autor_rol:'coach',body:'¿Alguien puede compartir su template de sesiones?',created_at:'2026-07-21T13:10:00Z'}],
+ 'sys-rrhh':[{autor_nombre:'Recursos',autor_rol:'owner',body:'Recordatorio: evaluaciones el próximo viernes.',created_at:'2026-07-20T15:55:00Z'}],
+ 'g-nutri':[{autor_nombre:'Ana',autor_rol:'coach',body:'¿Alguien tiene plan de volumen limpio para compartir?',created_at:'2026-07-21T11:50:00Z'}]
+};
 
 // Burbuja (mismo estilo del panel: cp-bub me/them).
 // ── Helpers de chat PORTADOS del panel (reusados, no recreados): avatar, links
@@ -4903,22 +4914,38 @@ function _mcRenderList(){
    return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'short'});
   }catch(e){return'';}
  }
- var rows=_mcChat.canales.map(function(c,i){ var un=_mcUnread(c);
+ function renderCanalRow(c,i){
+  var un=_mcUnread(c);
   var ic=c.general
    ? '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>'
    : '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>';
   var sub=c.general?'Toda la red':((c.miembros&&c.miembros.length)?(c.miembros.length+' miembros'):'Toda la red');
-  var isSelected=_mcChat.cur&&String(_mcChat.cur.id)===String(c.id)&&!c.general;
   var bgRow=un?'rgba(192,117,110,.06)':'transparent';
   var fontW=un?'700':'600';
   var t=c.ultimo_at?fmtTime(c.ultimo_at):'';
+  var systemBadge=(c.is_system&&!c.general)?'<span style="font-size:9px;background:var(--pw-bosque);color:#fff;border-radius:3px;padding:2px 5px;margin-left:4px;text-transform:uppercase;font-weight:700">Org</span>':'';
   return '<button class="mc-canal-row" style="background:'+bgRow+'" onclick="_mcOpenCanal('+i+')" title="'+_mcEsc(c.nombre)+'">'
    +'<span class="mc-canal-ic">'+ic+'</span>'
-   +'<span class="mc-canal-tx" style="flex:1;min-width:0"><b style="font-weight:'+fontW+';display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_mcEsc(c.nombre)+'</b>'
+   +'<span class="mc-canal-tx" style="flex:1;min-width:0"><b style="font-weight:'+fontW+';display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_mcEsc(c.nombre)+systemBadge+'</b>'
    +'<small style="display:block;color:var(--pw-text-soft);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_mcEsc(sub)+'</small></span>'
    +(t?'<span style="font-size:11px;color:var(--pw-text-soft);flex-shrink:0;white-space:nowrap">'+_mcEsc(t)+'</span>':'')
-   +(un?'<span class="mc-canal-dot"></span>':'')+'</button>'; }).join('');
- box.innerHTML='<div class="mc-canal-list"><div class="mc-canal-hint" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px 8px"><span>Canales</span></div>'+rows
+   +(un?'<span class="mc-canal-dot"></span>':'')+'</button>';
+ }
+ var canales=_mcChat.canales||[];
+ var general=canales.filter(function(c){return c.general;})[0];
+ var system=canales.filter(function(c){return c.is_system&&!c.general;});
+ var custom=canales.filter(function(c){return !c.is_system&&!c.general;});
+ var rows='';
+ if(general){ var gi=canales.indexOf(general); rows+=renderCanalRow(general,gi); }
+ if(system.length){
+  rows+='<div style="padding:8px 8px 4px;font-size:11px;font-weight:700;color:var(--pw-text-soft);text-transform:uppercase;letter-spacing:0.5px">Canales</div>';
+  system.forEach(function(c){var idx=canales.indexOf(c); rows+=renderCanalRow(c,idx);});
+ }
+ if(custom.length){
+  rows+='<div style="padding:8px 8px 4px;font-size:11px;font-weight:700;color:var(--pw-text-soft);text-transform:uppercase;letter-spacing:0.5px">Grupos</div>';
+  custom.forEach(function(c){var idx=canales.indexOf(c); rows+=renderCanalRow(c,idx);});
+ }
+ box.innerHTML='<div class="mc-canal-list">'+rows
   +'<button class="mc-canal-new" onclick="_mcNuevoGrupo()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Grupo</button></div>';
 }
 

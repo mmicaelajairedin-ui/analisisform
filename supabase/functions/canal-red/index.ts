@@ -88,9 +88,9 @@ Deno.serve(async (req: Request) => {
 
   const canalId = (body.canal_id || "").toString().trim();
 
-  // ── Lista de canales visibles para el caller (General + grupos suyos) ──
+  // ── Lista de canales visibles para el caller (General + sistema + grupos propios) ──
   if (action === "groups") {
-    const all = await q(`red_canales?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,miembros,created_at&order=created_at.asc`);
+    const all = await q(`red_canales?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,miembros,created_at,is_system&order=is_system.desc,nombre.asc`);
     const visibles = all.filter((g: any) => {
       const m = Array.isArray(g.miembros) ? g.miembros.map((x: any) => String(x)) : [];
       return caller.rol === "owner" || m.length === 0 || m.indexOf(String(caller.id)) >= 0;
@@ -100,9 +100,9 @@ Deno.serve(async (req: Request) => {
       const r = await q(`mensajes_red_canal?org_id=eq.${encodeURIComponent(orgId)}&${f}&select=created_at&order=created_at.desc&limit=1`);
       return r[0] ? r[0].created_at : null;
     }
-    const canales: any[] = [{ id: null, nombre: "General", general: true, miembros: [], ultimo_at: await ultimo(null) }];
+    const canales: any[] = [{ id: null, nombre: "General", general: true, is_system: true, miembros: [], ultimo_at: await ultimo(null) }];
     for (const g of visibles) {
-      canales.push({ id: g.id, nombre: g.nombre, general: false, miembros: Array.isArray(g.miembros) ? g.miembros : [], ultimo_at: await ultimo(g.id) });
+      canales.push({ id: g.id, nombre: g.nombre, general: false, is_system: g.is_system || false, miembros: Array.isArray(g.miembros) ? g.miembros : [], ultimo_at: await ultimo(g.id) });
     }
     return json({ ok: true, canales });
   }
