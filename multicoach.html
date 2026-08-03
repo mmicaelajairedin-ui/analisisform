@@ -5608,60 +5608,183 @@ function _oidEditIdentity(){console.log('[OID] Edit identity - TODO: identity mo
 function _oidUploadLogo(){console.log('[OID] Upload logo - TODO: file upload')}
 function _oidUploadFavicon(){console.log('[OID] Upload favicon - TODO: file upload')}
 
-// Color pickers con Theme Engine
-function _oidEditPrimaryColor(){
-  var color=prompt('Ingresa color primario (hex)','#2D5016');
-  if(!color)return;
-  if(!/^#[0-9a-fA-F]{6}$/.test(color)){alert('Color inválido');return;}
+// Color picker modal
+function _oidShowColorPicker(colorKey,title,currentColor){
+  var modal=document.createElement('div');
+  modal.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:10000;';
 
-  if(window.BrandEngine){
-    window.BrandEngine.updateColor('primary_color',color).then(function(){
-      if(window.ThemeEngine){
-        var preview=document.getElementById('orgPreviewViewport');
-        if(preview)window.ThemeEngine.updateColor('primary_color',color,preview);
-      }
-      _showOidStatus('✓ Color primario actualizado','success');
-    });
-  }
+  var content='<div style="background:white;border-radius:12px;padding:24px;max-width:400px;width:90%;">';
+  content+='<h3 style="margin:0 0 16px;font-size:18px;font-weight:700">'+title+'</h3>';
+  content+='<input type="color" id="oidColorInput" value="'+currentColor+'" style="width:100%;height:60px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer">';
+  content+='<div id="oidColorPreview" style="margin:16px 0;padding:16px;background:'+currentColor+';border-radius:8px;text-align:center;color:white;font-weight:600;min-height:40px;line-height:40px">'+currentColor+'</div>';
+  content+='<div style="display:flex;gap:8px;margin-top:24px">';
+  content+='<input type="text" id="oidColorHex" value="'+currentColor+'" placeholder="#000000" style="flex:1;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;font-family:monospace;font-size:13px">';
+  content+='<button onclick="document.getElementById(\'oidColorInput\').click()" style="padding:8px 16px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;font-weight:500">Seleccionar</button>';
+  content+='</div>';
+  content+='<div style="display:flex;gap:8px;margin-top:24px;justify-content:flex-end">';
+  content+='<button id="oidColorCancel" style="padding:10px 20px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;font-weight:500">Cancelar</button>';
+  content+='<button id="oidColorSave" style="padding:10px 20px;background:#2D5016;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:500">Guardar</button>';
+  content+='</div></div>';
+  modal.innerHTML=content;
+
+  var inp=modal.querySelector('#oidColorInput');
+  var hex=modal.querySelector('#oidColorHex');
+  var prev=modal.querySelector('#oidColorPreview');
+
+  inp.addEventListener('input',function(){
+    hex.value=this.value;
+    prev.style.background=this.value;
+    prev.textContent=this.value;
+  });
+  hex.addEventListener('input',function(){
+    if(/^#[0-9a-fA-F]{6}$/i.test(this.value)){
+      inp.value=this.value;
+      prev.style.background=this.value;
+      prev.textContent=this.value;
+    }
+  });
+
+  modal.querySelector('#oidColorCancel').onclick=function(){modal.remove();};
+  modal.querySelector('#oidColorSave').onclick=function(){
+    var color=inp.value;
+    if(!/^#[0-9a-fA-F]{6}$/i.test(color)){
+      _showOidStatus('Color inválido','error');
+      return;
+    }
+    if(window.BrandEngine){
+      window.BrandEngine.updateColor(colorKey,color).then(function(){
+        if(window.ThemeEngine){
+          var preview=document.getElementById('orgPreviewViewport');
+          if(preview)window.ThemeEngine.updateColor(colorKey,color,preview);
+        }
+        var el=document.getElementById(colorKey==='primary_color'?'orgColorPrimary':'orgColorSecondary');
+        if(el){
+          el.style.background='linear-gradient(135deg, '+(colorKey==='primary_color'?color:window.BrandEngine.getBranding().primary_color)+' 0%, '+(colorKey==='secondary_color'?color:window.BrandEngine.getBranding().secondary_color)+' 100%)';
+          el.innerHTML=(colorKey==='primary_color'?'Primario':'Secundario')+'<br>'+color;
+        }
+        _showOidStatus('✓ Color actualizado','success');
+        modal.remove();
+      });
+    }
+  };
+
+  document.body.appendChild(modal);
+}
+
+function _oidEditPrimaryColor(){
+  var branding=window.BrandEngine?.getBranding();
+  _oidShowColorPicker('primary_color','Color Primario',branding?.primary_color||'#2D5016');
 }
 
 function _oidEditSecondaryColor(){
-  var color=prompt('Ingresa color secundario (hex)','#8C7B80');
-  if(!color)return;
-  if(!/^#[0-9a-fA-F]{6}$/.test(color)){alert('Color inválido');return;}
-
-  if(window.BrandEngine){
-    window.BrandEngine.updateColor('secondary_color',color).then(function(){
-      if(window.ThemeEngine){
-        var preview=document.getElementById('orgPreviewViewport');
-        if(preview)window.ThemeEngine.updateColor('secondary_color',color,preview);
-      }
-      _showOidStatus('✓ Color secundario actualizado','success');
-    });
-  }
+  var branding=window.BrandEngine?.getBranding();
+  _oidShowColorPicker('secondary_color','Color Secundario',branding?.secondary_color||'#8C7B80');
 }
 
-// Typography selector con Theme Engine
+// Typography selector modal
 function _oidEditTypography(){
   var fonts=['poppins','inter','manrope'];
-  var curr=window.BrandEngine?.getBranding()?.brand_font||'poppins';
-  var opts='Selecciona tipografía:\n\n';
-  fonts.forEach(function(f,i){opts+=((i+1)+'. '+f+' '+((f===curr)?'(actual)':''))+'\n';});
-  var choice=prompt(opts.trim(),'1');
-  if(!choice||isNaN(choice))return;
-  var idx=parseInt(choice)-1;
-  if(idx<0||idx>=fonts.length){alert('Opción inválida');return;}
+  var branding=window.BrandEngine?.getBranding();
+  var curr=branding?.brand_font||'poppins';
 
-  var font=fonts[idx];
-  if(window.BrandEngine){
-    window.BrandEngine.updateTypography(font).then(function(){
-      if(window.ThemeEngine){
-        var preview=document.getElementById('orgPreviewViewport');
-        if(preview)window.ThemeEngine.updateTypography(font,preview);
+  var modal=document.createElement('div');
+  modal.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:10000;';
+
+  var content='<div style="background:white;border-radius:12px;padding:24px;max-width:450px;width:90%;">';
+  content+='<h3 style="margin:0 0 16px;font-size:18px;font-weight:700">Selecciona Tipografía</h3>';
+  content+='<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px">';
+
+  fonts.forEach(function(f){
+    var isSelected=f===curr;
+    var fontFamily=f==='poppins'?'Poppins':(f==='inter'?'Inter':'Manrope');
+    content+='<button class="oid-font-btn" data-font="'+f+'" style="padding:16px;border:2px solid '+(isSelected?'#2D5016':'#e5e7eb')+';background:'+(isSelected?'#f0fdf4':'#fafafa')+';border-radius:8px;cursor:pointer;text-align:left;transition:all .2s">';
+    content+='<div style="font-family:\''+fontFamily+'\',sans-serif;font-size:16px;font-weight:600;color:'+(isSelected?'#2D5016':'#1f2937')+'">'+fontFamily+'</div>';
+    content+='<div style="font-family:\''+fontFamily+'\',sans-serif;font-size:13px;color:#6b7280;margin-top:4px">La identidad de tu marca</div>';
+    content+=(isSelected?'<div style="margin-top:8px;color:#2D5016;font-size:12px;font-weight:600">✓ Actual</div>':'');
+    content+='</button>';
+  });
+
+  content+='</div>';
+  content+='<div style="display:flex;gap:8px;justify-content:flex-end">';
+  content+='<button id="oidFontCancel" style="padding:10px 20px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;font-weight:500">Cancelar</button>';
+  content+='</div></div>';
+  modal.innerHTML=content;
+
+  var buttons=modal.querySelectorAll('.oid-font-btn');
+  buttons.forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var font=this.dataset.font;
+      if(window.BrandEngine){
+        window.BrandEngine.updateTypography(font).then(function(){
+          if(window.ThemeEngine){
+            var preview=document.getElementById('orgPreviewViewport');
+            if(preview)window.ThemeEngine.updateTypography(font,preview);
+          }
+          var box=document.getElementById('orgTypographyBox');
+          if(box){
+            var fontDisplay=font==='poppins'?'Poppins':(font==='inter'?'Inter':'Manrope');
+            box.style.fontFamily=fontDisplay+',sans-serif';
+          }
+          _showOidStatus('✓ Tipografía actualizada','success');
+          modal.remove();
+        });
       }
-      _showOidStatus('✓ Tipografía actualizada','success');
     });
-  }
+  });
+
+  modal.querySelector('#oidFontCancel').onclick=function(){modal.remove();};
+  document.body.appendChild(modal);
+}
+
+// Logo upload handler
+function _oidUploadLogo(){
+  var input=document.createElement('input');
+  input.type='file';
+  input.accept='image/png,image/svg+xml,image/jpeg';
+  input.style.display='none';
+
+  input.onchange=function(){
+    var file=this.files[0];
+    if(!file)return;
+
+    // Validar tipo
+    if(!['image/png','image/svg+xml','image/jpeg'].includes(file.type)){
+      _showOidStatus('Formato no permitido (PNG, SVG, JPEG)','error');
+      return;
+    }
+
+    // Validar tamaño (máx 5MB)
+    if(file.size>5*1024*1024){
+      _showOidStatus('El archivo es muy grande (máximo 5MB)','error');
+      return;
+    }
+
+    // Leer y guardar como data URL (versión básica)
+    var reader=new FileReader();
+    reader.onload=function(e){
+      var dataUrl=e.target.result;
+
+      // Guardar en Brand Engine como logo
+      if(window.BrandEngine){
+        window.BrandEngine.saveBranding({logo_data:dataUrl}).then(function(){
+          _showOidStatus('✓ Logo actualizado','success');
+
+          // Actualizar preview
+          var preview=document.querySelector('.org-identity-item-icon');
+          if(preview)preview.style.backgroundImage='url('+dataUrl+')';
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  document.body.appendChild(input);
+  input.click();
+  input.remove();
+}
+
+function _oidUploadFavicon(){
+  alert('Favicon: Próximamente');
 }
 
 // Landing blocks — Persistencia
