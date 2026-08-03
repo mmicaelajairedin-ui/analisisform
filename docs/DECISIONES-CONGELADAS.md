@@ -50,6 +50,8 @@
 | **Coach principal obligatorio** | Sesión grupal siempre tiene coach_id | 🟢 Congelado |
 | **Recordatorios** | Campos preparados, lógica en Sprint 5.3+ | 🟢 Congelado |
 | **Migración c.ses** | Fase 1 (dual read) → Fase 2 (histórico) → Fase 3 (deprecated) | 🟢 Congelado |
+| **Acceso a agenda personal del coach** | Navegación jerárquica desde MultiCoach (no filtro) | 🟢 Congelado |
+| **Reutilización de componente** | Agenda Coach (panel-v2) reutilizada en MultiCoach read-only | 🟢 Congelado |
 
 ### Cambios permitidos
 
@@ -86,6 +88,73 @@
 
 - Sprint 5.3 o posterior
 - Bajo demanda expresa del Product Owner
+
+---
+
+## Sprint 5.2.A — Navegación a Agenda Personal del Coach (CONGELADO)
+
+### Qué está congelado
+
+**Decisión: Navegación jerárquica vs filtro**
+
+| Elemento | Decisión | Status |
+|----------|----------|--------|
+| **Estructura de acceso** | Navegación jerárquica, NO filtro | 🟢 Congelado |
+| **Dos niveles de agenda** | Operativa (Owner, org) + Personal (Coach, read-only) | 🟢 Congelado |
+| **Reutilización de componentes** | Agenda del Coach (panel-v2) reutilizada en MultiCoach | 🟢 Congelado |
+| **Cambio de contexto** | Solo contexto, permisos y navegación; sin duplicar componentes | 🟢 Congelado |
+
+### Flujo de navegación
+
+```
+MultiCoach (Owner)
+   ↓ Equipo
+   ├─ Tabla de coaches
+   ├─ Clickear coach → "Ver agenda" (link)
+   │   ↓
+   └─ Agenda Personal del Coach (READ-ONLY)
+       ├─ Misma experiencia que el coach ve en panel-v2
+       ├─ Owner puede ver detalles
+       ├─ Owner NO puede editar (read-only)
+       └─ Navegación clara: "Agenda de María" (no "agenda filtrada")
+```
+
+### Detalles técnicos
+
+- **No es filtro:** Agenda Operativa (org-wide) ≠ Agenda Personal (coach-specific)
+- **Reutiliza componente:** Misma lógica de `panel-v2.html` (Agenda del Coach)
+- **Solo cambia:** Contexto (`coach_id=<elegido>`), permisos (read-only), navegación (`MultiCoach → Equipo → Coach → Agenda`)
+- **No crea duplicado:** Un solo componente de agenda, usado en dos contextos
+
+### Por qué está congelado
+
+- **MultiCoach (Sprint 5.2)** depende de esta estructura para gestión de equipo
+- **Panel del Coach (5.2)** ya tiene la agenda personal implementada
+- **Colaboración (Sprint 5.4)** podría crear vistas compartidas basadas en esta jerarquía
+- Cambiar ahora = rediseñar acceso a datos + permisos + componentes
+
+### Cambios permitidos
+
+```
+✅ Agregar breadcrumbs/migas de pan para claridad
+✅ Mejorar estados visuales (read-only badge)
+✅ Optimizar carga de datos para coach específico
+✅ Extender RLS para read-only del coach
+```
+
+### Cambios PROHIBIDOS
+
+```
+❌ Hacer filtro de la agenda operativa (cambiar a búsqueda por coach)
+❌ Crear componente duplicado de agenda
+❌ Permitir edición del Owner en agenda personal del coach
+❌ Mezclar vistas operativa y personal en un mismo componente
+```
+
+### Próxima revisión
+
+- Sprint 5.2.3 — Implementación
+- Sprint 5.3+ si se requieren mejoras en permisos
 
 ---
 
