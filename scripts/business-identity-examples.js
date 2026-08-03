@@ -226,6 +226,17 @@ function generateBusinessIdentityOutputs(formData) {
 }
 
 function generateHero(data, specialty) {
+  if (data.qué_haces) {
+    // Si tienen datos, generar un hero dinámico
+    var heroTemplates = {
+      fitness: `${data.qué_haces}`,
+      carrera: `${data.qué_haces}`,
+      nutricion: `${data.qué_haces}`,
+      productividad: `${data.qué_haces}`,
+      executive: `${data.qué_haces}`
+    };
+    return heroTemplates[specialty] || data.qué_haces;
+  }
   const heroes = {
     fitness: `Consigue resultados sostenibles con un plan que se adapta a tu estilo de vida`,
     carrera: `Encuentra un trabajo alineado con tu potencial en menos tiempo`,
@@ -233,10 +244,13 @@ function generateHero(data, specialty) {
     productividad: `Recupera 15-20 horas semanales sin contratar a nadie`,
     executive: `Un líder fuerte mantiene equipos juntos. Eso es rentable.`
   };
-  return data.qué_haces || heroes[specialty] || heroes.fitness;
+  return heroes[specialty] || heroes.fitness;
 }
 
 function generateSubhero(data, specialty) {
+  if (data.problema_resuelve) {
+    return data.problema_resuelve;
+  }
   const subs = {
     fitness: `No es otra dieta restrictiva. Es un sistema que funciona porque se adapta a TI.`,
     carrera: `No es suerte. Es estrategia. La mayoría falla porque nadie les enseña el juego real.`,
@@ -244,14 +258,54 @@ function generateSubhero(data, specialty) {
     productividad: `Tus procesos manuales son dinero tirado a la basura. Veamos cuánto.`,
     executive: `La mayoría de directores no fueron preparados para liderar. Te preparamos nosotros.`
   };
-  return data.problema_resuelve || subs[specialty] || subs.fitness;
+  return subs[specialty] || subs.fitness;
 }
 
 function generateBenefits(data, specialty, example) {
   if (data.servicios && data.servicios.length) {
+    // Map servicios a descripciones inteligentes por especialidad
+    var descByService = {
+      fitness: {
+        'Valoración gratuita': 'Entiende tu punto de partida sin compromiso',
+        'Entrenamiento personalizado': 'Adaptado a tu nivel, cuerpo y objetivos reales',
+        'Seguimiento semanal': 'Ajustes en vivo según tu progreso',
+        'Nutrición adaptada': 'Come lo que te gusta, pero inteligentemente',
+        'Comunidad privada': 'Soporte real de gente en tu mismo camino'
+      },
+      carrera: {
+        'Análisis de posicionamiento': 'Descubre qué hace que VALES el dinero que pides',
+        'Estrategia de búsqueda': 'Dónde buscar, cómo aplicar, a quién conocer',
+        'Preparación de entrevistas': 'Simulaciones hasta que domines cada pregunta',
+        'Negociación de salario': 'Hablamos de dinero sin miedo',
+        'LinkedIn mastery': 'Tu perfil en la mente de reclutadores'
+      },
+      nutricion: {
+        'Análisis de glucosa': 'Entiende cómo reacciona tu cuerpo a cada alimento',
+        'Plan nutricional personalizado': 'Específico para tu diagnóstico y estilo de vida',
+        'Reeducación alimentaria': 'Aprende el sistema, no solo listas de prohibidos',
+        'Recetas adaptadas': 'Comida deliciosa que respeta tu salud',
+        'Seguimiento semanal': 'Soporte constante en tu transformación'
+      },
+      productividad: {
+        'Audit de procesos': 'Mapeamos cada tarea manual que gastas tiempo',
+        'Automatización Zapier/Make': 'Las máquinas hacen lo repetitivo, tú lo importante',
+        'Integración IA': 'Máquinas pensantes en tu flujo de trabajo',
+        'Training del equipo': 'Tu gente entiende y puede mantener todo',
+        'Monitoreo 30 días': 'Estabilidad garantizada post-implementación'
+      },
+      executive: {
+        'Sesiones coaching personalizado': 'Espacio seguro para decisiones difíciles',
+        'Feedback 360 de equipo': 'La verdad de cómo te ven',
+        'Simulaciones de crisis': 'Practicas presión antes de que sea real',
+        'Plan de liderazgo': 'Tu roadmap personal de desarrollo',
+        'Evaluación de impacto': 'Medimos qué cambió realmente'
+      }
+    };
+
+    var serviceDescs = descByService[specialty] || {};
     return data.servicios.map(s => ({
       title: s,
-      desc: `Beneficio de ${s}`
+      desc: serviceDescs[s] || `${s}`
     }));
   }
   return example.landing_benefits || [];
