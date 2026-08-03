@@ -50,6 +50,8 @@
 | **Coach principal obligatorio** | Sesión grupal siempre tiene coach_id | 🟢 Congelado |
 | **Recordatorios** | Campos preparados, lógica en Sprint 5.3+ | 🟢 Congelado |
 | **Migración c.ses** | Fase 1 (dual read) → Fase 2 (histórico) → Fase 3 (deprecated) | 🟢 Congelado |
+| **Arquitectura: dos niveles de agenda** | Operativa (Owner org-wide) + Personal (Coach specific) | 🟢 Congelado (5.2.A) |
+| **Navegación a Agenda Personal** | Jerárquica (MultiCoach → Equipo → Coach → Agenda), no filtro | 🟢 Congelado (5.2.A) |
 
 ### Cambios permitidos
 
@@ -86,6 +88,84 @@
 
 - Sprint 5.3 o posterior
 - Bajo demanda expresa del Product Owner
+
+---
+
+## Sprint 5.2.A — Arquitectura de Dos Niveles de Agenda (CONGELADO)
+
+### Qué está congelado
+
+**Decisión: MultiCoach tiene dos niveles de Agenda, navegación jerárquica**
+
+| Elemento | Decisión | Status |
+|----------|----------|--------|
+| **Dos niveles de agenda** | Operativa (Owner, org-wide) + Personal (Coach, coach-specific) | 🟢 Congelado |
+| **Navegación** | Jerárquica (MultiCoach → Equipo → Coach → Agenda Personal), NO filtro | 🟢 Congelado |
+| **Reutilización** | Agenda del Coach (panel-v2.html) se reutiliza en MultiCoach sin duplicar | 🟢 Congelado |
+| **Motor único** | Un solo motor de agenda, dos contextos de uso (Owner operativo + Owner gestión coach) | 🟢 Congelado |
+
+### Flujo de navegación (congelado)
+
+```
+MultiCoach (Owner)
+   ↓ Equipo
+   ├─ Lista de coaches
+   ├─ Clickear coach / "Ver agenda"
+   │   ↓
+   └─ Agenda Personal del Coach
+       ├─ Reutiliza componente de panel-v2.html
+       ├─ Contexto: coach_id = <elegido>
+       ├─ Navegación clara: "Agenda de María" (no "agenda filtrada")
+       └─ Operaciones: a definir en Sprint 5.2.3 según permisos funcionales
+```
+
+### Detalles técnicos (congelados)
+
+- **NO es filtro:** Agenda Operativa (org-wide) ≠ Agenda Personal (coach-specific). Acceso jerárquico, no búsqueda.
+- **Un componente:** Misma lógica de `panel-v2.html` (Agenda del Coach), reutilizada en MultiCoach.
+- **Solo cambia:** Contexto (`coach_id`), navegación (ruta jerárquica), datos que se cargan.
+- **No duplica:** Ni motor, ni UI, ni lógica. Un solo lugar de verdad.
+
+### Lo que NO está congelado
+
+**Permisos y operaciones del Owner en Agenda Personal:**
+- ❓ ¿Puede editar sesiones del coach? → A definir en Sprint 5.2.3
+- ❓ ¿Puede crear eventos en la agenda del coach? → A definir en Sprint 5.2.3
+- ❓ ¿Puede cancelar sesiones? → A definir en Sprint 5.2.3
+- ❓ ¿Puede crear bloqueos de disponibilidad? → A definir en Sprint 5.2.3
+- ❓ ¿Puede reasignar clientes? → A definir en Sprint 5.2.3
+
+**Nota:** Es probable que el Owner necesite **operaciones completas** en la Agenda Personal (mover sesión, cancelar, bloquear, reasignar). Eso dependerá de los permisos funcionales del rol Owner (Sprint 5.1) y se diseñará durante la implementación.
+
+### Por qué se congela solo la navegación
+
+- **MultiCoach (Sprint 5.2)** NECESITA estructura clara: dos niveles de agenda, acceso jerárquico.
+- **Cambiar la navegación ahora = rediseñar toda la gestión de equipo en multicoach.**
+- **Permisos y operaciones = dependen de Sprint 5.1 (capacidades) y se definen en 5.2.3 (diseño detallado).**
+- Congelar todo ahora sería artificial; lo natural es que el Owner pueda hacer cambios en la red.
+
+### Cambios permitidos
+
+```
+✅ Definir operaciones específicas en Sprint 5.2.3
+✅ Extender permisos basados en capacidades (Sprint 5.1)
+✅ Ajustar RLS según operaciones decididas
+✅ Mejorar claridad visual de contexto (breadcrumbs, encabezados)
+```
+
+### Cambios PROHIBIDOS
+
+```
+❌ Convertir acceso a filtro (buscar/filtrar coach en agenda operativa)
+❌ Crear componente duplicado de agenda
+❌ Mezclar vistas operativa y personal en un solo lugar
+```
+
+### Próxima revisión
+
+- **Sprint 5.2.3:** Definir operaciones permitidas (editar, cancelar, bloquear, etc.)
+- **Sprint 5.2.3:** Mapear a capacidades (Sprint 5.1)
+- **Sprint 5.3+:** Operaciones avanzadas si se requieren
 
 ---
 
