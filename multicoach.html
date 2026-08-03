@@ -12,6 +12,9 @@
 <script src="pw-brand.js?v=2"></script>
 <script src="pw-theme-engine.js"></script>
 <script src="pw-brand-engine.js"></script>
+<script src="pw-landing-engine.js"></script>
+<script src="pw-domain-engine.js"></script>
+<script src="pw-asset-engine.js"></script>
 <link rel="stylesheet" href="pw-design-tokens.css?v=1">
 <link rel="stylesheet" href="dashboard-foundation.css?v=1">
 <meta charset="utf-8">
@@ -5517,33 +5520,82 @@ function _oidInit(){
   var preview=document.getElementById('orgPreviewViewport');
   if(!preview)return;
 
-  // 1. Cargar Brand Engine desde Supabase
+  var orgId=MC_ORG.id;
+  var orgSlug=MC_ORG.slug||'org';
+
+  // 1. Brand Engine
   if(window.BrandEngine){
-    window.BrandEngine.loadOrganization(MC_ORG.id).then(function(data){
+    window.BrandEngine.loadOrganization(orgId).then(function(data){
       if(!data||!data.branding)return;
       var brand=data.branding;
 
-      // 2. Construir Theme desde Brand Engine
+      // Build Theme
       if(window.ThemeEngine){
         var theme=window.ThemeEngine.buildTheme(brand);
         window.ThemeEngine.applyTheme(theme,preview);
       }
 
-      // 3. Conectar color pickers con Theme Engine
+      // Update color pickers
       var p=document.getElementById('orgColorPrimary');
-      var s=document.getElementById('orgColorSecondary');
       if(p)p.style.background='linear-gradient(135deg, '+brand.primary_color+' 0%, '+brand.secondary_color+' 100%)';
-      if(s)s.textContent='Secundario<br>'+brand.secondary_color;
 
-      // 4. Suscribirse a cambios de BrandEngine (futuro: Realtime de Supabase)
+      // Subscribe to updates
       window.BrandEngine.onBrandingUpdated(function(event,data){
-        if(event==='branding-updated'){
+        if(event==='branding-updated'&&window.ThemeEngine){
           var theme=window.ThemeEngine.buildTheme(data);
           window.ThemeEngine.applyTheme(theme,preview);
         }
       });
 
-      console.log('[OID] ✓ Initialized with Brand Engine',{org:MC_ORG.name,preview_colors:brand.primary_color});
+      console.log('[OID] ✓ Brand Engine initialized');
+    });
+  }
+
+  // 2. Landing Engine
+  if(window.LandingEngine){
+    window.LandingEngine.loadLandingConfig(orgId).then(function(config){
+      if(!config)return;
+      var order=config.blocks_order||['hero','cta','footer'];
+      order.forEach(function(block){
+        var el=document.getElementById('block-'+block);
+        if(el){
+          var toggle=el.querySelector('.org-block-toggle');
+          var blockConfig=config[block+'_config'];
+          if(toggle&&blockConfig&&blockConfig.enabled===false){
+            toggle.classList.remove('on');
+          }
+        }
+      });
+      console.log('[OID] ✓ Landing Engine initialized');
+    });
+  }
+
+  // 3. Domain Engine
+  if(window.DomainEngine){
+    window.DomainEngine.loadDomainConfig(orgId,orgSlug).then(function(config){
+      if(!config)return;
+      var customDomainEl=document.querySelector('.org-domain-step:nth-child(5)');
+      if(customDomainEl&&config.custom_domain){
+        var url=customDomainEl.querySelector('.org-domain-url');
+        var status=customDomainEl.querySelector('.org-domain-status');
+        if(url)url.textContent=config.custom_domain;
+        if(status){
+          if(config.custom_domain_verified){
+            status.innerHTML='<span class="org-domain-dot"></span>Verificado';
+          }else{
+            status.innerHTML='<span style="opacity:.5">⚠ Pendiente DNS</span>';
+          }
+        }
+      }
+      console.log('[OID] ✓ Domain Engine initialized');
+    });
+  }
+
+  // 4. Asset Engine
+  if(window.AssetEngine){
+    window.AssetEngine.loadAssets(orgId).then(function(assets){
+      if(!assets)return;
+      console.log('[OID] ✓ Asset Engine initialized');
     });
   }
 }
@@ -5612,18 +5664,56 @@ function _oidEditTypography(){
   }
 }
 
-function _oidReorderBlocks(){console.log('[OID] Reorder landing blocks - TODO: drag-drop')}
-function _oidEditLanding(){console.log('[OID] Edit landing - TODO: landing editor')}
+// Landing blocks — Persistencia
+function _oidReorderBlocks(){
+  alert('Reordenar bloques: Drag & Drop próximamente');
+}
+
+function _oidEditLanding(){
+  alert('Editor de landing: Próximamente');
+}
+
 function _oidToggleBlock(blk){
   var el=document.getElementById('block-'+blk);
   if(!el)return;
   var toggle=el.querySelector('.org-block-toggle');
-  if(toggle)toggle.classList.toggle('on');
-  console.log('[OID] Toggle block:',blk);
+  if(!toggle)return;
+  toggle.classList.toggle('on');
+  var enabled=toggle.classList.contains('on');
+
+  // Guardar en Landing Engine
+  if(window.LandingEngine&&MC_ORG?.id){
+    window.LandingEngine.toggleBlock(blk,enabled).then(function(){
+      _showOidStatus('✓ Bloque '+blk+' actualizado','success');
+    });
+  }
 }
-function _oidEditBlock(blk){console.log('[OID] Edit block:',blk,'- TODO: block editor')}
-function _oidConfigDNS(){console.log('[OID] Configure DNS - TODO: DNS instructions modal')}
-function _oidUploadAsset(type){console.log('[OID] Upload asset:',type,'- TODO: asset upload')}
+
+function _oidEditBlock(blk){
+  alert('Editor del bloque '+blk+': Próximamente');
+}
+
+// Domain — Persistencia
+function _oidConfigDNS(){
+  var custom=prompt('Ingresa tu dominio personalizado','coach.example.com');
+  if(!custom)return;
+
+  if(window.DomainEngine&&MC_ORG?.id){
+    window.DomainEngine.setCustomDomain(custom).then(function(){
+      _showOidStatus('✓ Dominio '+custom+' configurado','success');
+      // Después: mostrar instructions CNAME y botón de verificar
+    });
+  }
+}
+
+// Assets — Estructura lista para uploads
+function _oidUploadAsset(type){
+  var config=null;
+  if(window.AssetEngine){
+    config=window.AssetEngine.prepareUpload(type);
+  }
+  alert('Upload de '+type+': Próximamente con Uploadcare\nFormatos: '+((config?.mimeTypes||[]).join(', ')||'varios'));
+}
 
 function _showOidStatus(msg,type){
   var el=document.createElement('div');
