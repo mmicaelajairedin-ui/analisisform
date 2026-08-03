@@ -270,36 +270,47 @@ origen: "reserva_publica" | "agenda_manual" | "calendly" | "google_calendar" | "
 
 ## 2.7. Capacidad y Disponibilidad
 
-**Más que solo horas libres.** Agenda calcula capacidad real.
+**IMPORTANTE: Disponibilidad es DERIVADA, nunca guardada.**
 
-**Concepto:**
+### Regla Crítica
+```
+Disponibilidad (calculada dinámicamente)
+=
+Horario laboral
+− Vacaciones
+− Bloqueos
+− Eventos confirmados
+```
+
+**La disponibilidad NO se guarda en base de datos.** Se calcula en tiempo real a partir de:
+1. Horario laboral del usuario (ej: lunes-viernes, 9-18h)
+2. Días de vacaciones (tabla `vacaciones` o campo en `usuarios`)
+3. Bloqueos (dentro de `agendas` con tipo "bloqueo")
+4. Eventos confirmados (dentro de `agendas`)
+5. Reglas de agenda (buffer, duración mínima/máxima, etc.)
+
+**Ventaja:** Una única fuente de verdad. Cambios en eventos se reflejan instantáneamente en disponibilidad.
+
+### Capacidad (métrica derivada)
+```
+Capacidad (%) = Horas libres / Horas disponibles
+```
+
+**Ejemplo:**
 ```
 Ana — 40 horas/semana disponibles
-├── 8 horas sesiones confirmadas (20%)
-├── 4 horas supervisions (10%)
-├── 2 horas reuniones internas (5%)
-├── 20 horas libres (50%) ← capacidad real
-├── 4 horas vacaciones (10%)
-└── 2 horas bloqueada/formación (5%)
-```
-
-**Campos a agregar en `usuarios` o tabla `capacidades`:**
-```javascript
-{
-  usuario_id: "coach_...",
-  semana: "2026-08-03",           // semana ISO
-  horas_disponibles: 40,           // horas contratadas
-  horas_sesiones: 8,               // confirmadas
-  horas_supervisiones: 4,          // confirmadas
-  horas_reuniones_internas: 2,     // confirmadas
-  horas_vacaciones: 4,             // días que no trabaja
-  horas_formacion: 2,              // cursos, training
-  horas_libres: 20,                // el resto
-  % capacidad: 50                  // horas_libres / horas_disponibles
-}
+├── Horario laboral: lunes-viernes 9-18h
+├── Eventos: 8 horas (20%)
+├── Supervisions: 4 horas (10%)
+├── Reuniones internas: 2 horas (5%)
+├── Vacaciones: 4 horas (10%)
+├── Bloqueos (médico): 2 horas (5%)
+└── Horas libres: 20 horas (50%) ← Capacidad real = 50%
 ```
 
 **Uso:** alimenta el dashboard, detecta overload, muestra disponibilidad real en scope=team.
+
+**Nota:** No hay tabla `capacidades`. Se calcula bajo demanda. Si necesitas histórico, guardas snapshots en tabla separada (pero no es la fuente de verdad).
 
 ---
 
@@ -791,6 +802,31 @@ Cada evento registra cambios: quién creó, confirmó, rescheduló, canceló, re
 ### ✅ Congelado: Principio de No-Acoplamiento
 **Agenda NUNCA modifica otras entidades.** Solo genera eventos. Los módulos de Cobros, Programas, Recursos, Clientes y Analytics consumen eventos y reaccionan. Esto mantiene Agenda como motor transversal, no como módulo de negocio.
 
+### ✅ Congelado: Disponibilidad como entidad derivada (NO guardada)
+La disponibilidad se calcula dinámicamente a partir de: horario laboral − vacaciones − bloqueos − eventos. NUNCA se guarda en base de datos. Evita tener dos fuentes de verdad.
+
+### ✅ Congelado: Reglas de Agenda (Future-proof, NO implementar aún)
+Reservar arquitectura para reglas que controlen disponibilidad:
+- Buffer antes/después de evento
+- Duración mínima/máxima de sesión
+- Horario laboral (ej: 9-18h)
+- Días laborables (ej: lunes-viernes)
+- Antelación mínima de reserva (ej: 24h)
+- Antelación máxima de reserva (ej: 3 meses)
+Estas reglas alimentarán `reservar.html` y el motor de disponibilidad.
+
+### ✅ Congelado: Diferenciar Evento vs Reserva
+Una **Reserva** pública NO es un Evento todavía. Workflow:
+```
+Reserva (estado: pending)
+  ↓ (cliente reserva)
+  → Pending (esperando confirmación coach)
+  ↓ (coach acepta/rechaza)
+  → Aceptada → Evento (entra en agenda)
+  → Rechazada → Cancelada (no genera evento)
+```
+Nunca mezclar el proceso de reserva con la agenda real. Reserva es un estado transicional.
+
 ---
 
 ## 10. Cambios esperados en Sprints Posteriores
@@ -853,42 +889,75 @@ Cada evento registra cambios: quién creó, confirmó, rescheduló, canceló, re
 
 ---
 
-## 11. Propósito del Agenda Engine
+## 11. Propósito y Responsabilidad del Agenda Engine
 
-**El Agenda Engine es un motor transversal de planificación.** No contiene lógica de negocio específica de Career, Fitness o cualquier otro nicho, ni modifica directamente otros módulos.
+### Definición Final (Regla Arquitectónica)
 
-**Su responsabilidad es:**
-- Gestionar eventos (crear, editar, cancelar, reschedule)
-- Gestionar participantes y sus roles
-- Calcular disponibilidad y capacidad real
-- Registrar cambios (auditoría)
-- Sincronizar con calendarios externos
-- Integrar zonas horarias y contextos multi-país
+**El Agenda Engine es la fuente de verdad de todos los eventos de la organización.** Las reservas, cobros, programas, recursos y notificaciones no forman parte de Agenda; simplemente generan eventos o reaccionan a ellos. **La disponibilidad se calcula dinámicamente a partir de los eventos y reglas del usuario, evitando duplicar información.**
 
-**Qué hacen los otros módulos:**
+### Su responsabilidad es:
+- ✅ Gestionar eventos (crear, editar, cancelar, reschedule)
+- ✅ Gestionar participantes y sus roles
+- ✅ Calcular disponibilidad dinámicamente (NO guardar)
+- ✅ Calcular capacidad real en tiempo real
+- ✅ Registrar cambios (auditoría)
+- ✅ Sincronizar con calendarios externos
+- ✅ Integrar zonas horarias y contextos multi-país
+- ✅ Aplicar reglas de agenda (buffer, duración, antelación)
+- ✅ Gestionar transición Reserva → Evento
+
+### Qué hacen los otros módulos (downstream):
+- **Reservar** genera Reservas (estado pending) que el coach acepta → Evento
 - **Cobros** consumen eventos y deciden qué facturar
 - **Programas** consumen eventos y marcan sesiones como completadas/faltadas
 - **Recursos** consumen eventos y proporcionan salas/documentos
 - **Clientes** consumen eventos y se notifican de cambios
 - **Analytics** consumen eventos y generan reportes
-- **Capacidades** consumen eventos y calculan carga de trabajo
+- **Notificaciones** reaccionan a cambios de eventos
 
-**Por qué esto importa:**
-- Agenda es reutilizable en cualquier contexto (Coach, Fitness, Programas, Marketplace)
-- Los módulos de negocio son independientes y mantenibles
+### Por qué esto importa:
+- Agenda es reutilizable en cualquier contexto (Coach, Fitness, Programas, Marketplace, Recursos)
+- Los módulos de negocio son independientes, mantenibles y escalables
 - Cambios en Agenda no riesguen otros módulos
-- El sistema escala sin acoplamiento
+- No hay duplicación de datos (ej: disponibilidad se calcula, no se guarda)
+- Una única fuente de verdad = datos confiables
 
 ---
 
-## Estado: CONGELADO ✅
+## Estado: CONGELADO Y LISTO PARA IMPLEMENTACIÓN ✅
 
-La arquitectura del Agenda Engine está **completa, aprobada y congelada**.
+La arquitectura del Agenda Engine está **completa, aprobada, congelada y lista para implementación inmediata.**
 
-Cambios posteriores requieren:
+### Principio de Corte
+**No hay más documentación de Agenda.** A partir de este punto, toda mejora debe surgir de:
+1. Implementación real (Sprint 5.2.1)
+2. Pruebas en producción (Sprint 5.2.2)
+3. Aprendizajes de la realidad (Sprint 5.2.3+)
+
+El diseño es suficientemente sólido. La escritura de más documentos solo añade sobrecarga.
+
+### Cambios posteriores a la congelación
+Requieren:
 1. Revisión explícita del Product Owner
 2. Rediseño de sprints posteriores (5.3+) si es necesario
-3. Documentación de justificación
+3. Actualización de este documento (una vez por cambio, no más iteraciones)
 
-**Próximo paso:** Sprint 5.2.1 — Implementación del componente `<Scheduler>` reutilizable.
+### Roadmap de Implementación
+
+| Sprint | Objetivo | Duración |
+|--------|----------|----------|
+| **5.2.1** | Componente `<Scheduler>` reutilizable | ~40h |
+| **5.2.2** | Integrar Scheduler en panel-v2 + multicoach | ~30h |
+| **5.2.3** | Conectar Supabase, RLS, sincronización | ~40h |
+| **5.3** | Cobros: relación eventos-facturas | ~35h |
+| **5.4** | Colaboración: participantes múltiples | ~30h |
+| **5.5+** | Programas, Recursos, Marketplace | TBD |
+
+**Próximo paso INMEDIATO:** Sprint 5.2.1 — Implementación del componente `<Scheduler>` reutilizable.
+
+---
+
+*Documento finalizado: 2026-08-03*  
+*Aprobado por: PO Micaela*  
+*Estado: CONGELADO DEFINITIVAMENTE*
 
