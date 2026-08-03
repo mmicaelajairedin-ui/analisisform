@@ -3118,6 +3118,109 @@ function initScheduler(config){
   };
 }
 
+// ── RENDERIZAR SCHEDULER (Fase 2) ──────────────────────────────────────────
+// Convierte el estado del Scheduler en HTML (calendario, eventos, acciones)
+function renderScheduler(scheduler, options){
+  options=options||{};
+  var eventos=scheduler.getEventos();
+  var acciones=scheduler.getAcciones();
+  var view=options.view||"mes";
+  var now=Date.now();
+  var hoy=new Date();
+  hoy.setHours(0,0,0,0);
+
+  // Agrupa eventos por fecha
+  function _agruparPorFecha(){
+    var grupos={};
+    eventos.forEach(function(evt){
+      var d=new Date(evt.start).toISOString().split('T')[0];
+      if(!grupos[d]) grupos[d]=[];
+      grupos[d].push(evt);
+    });
+    return grupos;
+  }
+
+  // Formatea encabezado de día (ej: "Hoy · 2 de agosto")
+  function _formatoDia(fecha_str){
+    var d=new Date(fecha_str+"T00:00:00");
+    var diff=Math.round((d.getTime()-hoy.getTime())/86400000);
+    var nombreDia;
+    if(diff===0) nombreDia="Hoy";
+    else if(diff===1) nombreDia="Mañana";
+    else nombreDia=d.toLocaleDateString("es-ES",{weekday:"long"});
+    var fecha=d.toLocaleDateString("es-ES",{day:"numeric",month:"long"});
+    return (nombreDia.charAt(0).toUpperCase()+nombreDia.slice(1))+" · "+fecha;
+  }
+
+  // Renderiza una tarjeta de evento
+  function _renderEvento(evt){
+    var hora=new Date(evt.start).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+    var titulo=esc(evt.title);
+    var tipo=esc(evt.type.replace(/_/g," "));
+    var estado_badge="";
+
+    // Badge de estado (confirmed, pending, etc.)
+    var colores_estado={
+      confirmed: "background:var(--pw-success-bg);color:var(--pw-bosque)",
+      pending: "background:#FFF3E0;color:#E65100",
+      cancelled: "background:#FFEBEE;color:#C62828"
+    };
+    if(evt.estado && colores_estado[evt.estado]){
+      estado_badge="<span style='font-size:9px;padding:2px 6px;border-radius:4px;"+colores_estado[evt.estado]+"'>"+esc(evt.estado.toUpperCase())+"</span>";
+    }
+
+    // Búsqueda de participante con foto (temporal: de CLIENTS)
+    var foto="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect fill='%23ccc' width='36' height='36'/%3E%3C/svg%3E";
+    if(evt.participants && evt.participants.length>0){
+      var p=evt.participants[0];
+      CLIENTS.forEach(function(c){ if(c.id===p.user_id) foto=esc(c.photo||""); });
+    }
+
+    return "<div class='ag-event-card' style='cursor:pointer;padding:8px;border-radius:8px;background:#f9f8f6;border:1px solid var(--pw-border);margin-bottom:6px'>"+
+      "<div style='display:flex;gap:8px;align-items:start'>"+
+      "<div style='font-weight:600;color:var(--pw-bosque);min-width:50px'>"+esc(hora)+"</div>"+
+      "<div style='flex:1;min-width:0'>"+
+      "<div class='ag-event-card__client' style='font-size:13px;font-weight:600;margin-bottom:2px'>"+titulo+"</div>"+
+      "<div class='ag-event-card__type' style='font-size:10px;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:4px'>"+tipo+"</div>"+
+      "<div style='font-size:11px;color:var(--pw-text-soft)'>"+evt.participants.length+" participante(s)"+estado_badge+"</div>"+
+      "</div>"+
+      "<img src='"+foto+"' alt='' style='width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0'>"+
+      "</div></div>";
+  }
+
+  // Renderiza grupos de eventos por día
+  var grupos=_agruparPorFecha();
+  var fechas=Object.keys(grupos).sort();
+  var html="<div style='padding:8px 0'>";
+
+  if(fechas.length===0){
+    html+="<div style='padding:24px 16px;text-align:center;color:var(--pw-text-soft);font-size:13px'>"+
+      "Sin eventos programados. "+
+      (acciones.crear?"<button class='cp-btn cp-btn-primary' style='margin-top:8px' data-act='sch-create'>Crear evento</button>":"")+
+      "</div>";
+  }
+  else{
+    fechas.forEach(function(fecha){
+      html+="<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--pw-text-muted);padding:10px 8px 4px;margin-top:8px'>"+_formatoDia(fecha)+"</div>";
+      grupos[fecha].sort(function(a,b){ return new Date(a.start).getTime()-new Date(b.start).getTime(); });
+      grupos[fecha].forEach(function(evt){
+        html+=_renderEvento(evt);
+      });
+    });
+  }
+
+  html+="</div>";
+
+  // Agregar botón crear evento si tiene permiso
+  if(acciones.crear){
+    html+="<div style='padding:12px 8px;border-top:1px solid var(--pw-border);margin-top:8px'>"+
+      "<button class='cp-btn cp-btn-primary' style='width:100%' data-act='sch-create'>Crear evento</button>"+
+      "</div>";
+  }
+
+  return html;
+}
+
 function openCliTimeline(c){
   if(!c) return;
   var ov=document.createElement("div"); ov.id="pw-tl-ov";
