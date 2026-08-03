@@ -4659,12 +4659,96 @@ function _mcOwnerFoto(){ try{ return (MC_OWNER&&(MC_OWNER.foto_url||(MC_OWNER.co
 var _mcLPReady=false;
 function _mcLPInit(){ if(_mcLPReady) return; try{ if(window.PwLinkPreview){ PwLinkPreview.init({previewUrl:SB+'/functions/v1/link-preview',previewKey:KEY,bubbleSel:'.mc-pmsg'}); _mcLPReady=true; } }catch(e){} }
 function _mcLPScan(){ try{ if(window.PwLinkPreview) PwLinkPreview.scan(); }catch(e){} }
+
+// ── localStorage con clave org_id + canal_id ──
+function _mcGetMsgs(c){ var k='mc_msgs_'+(MC_ORG&&MC_ORG.id||'demo')+'_'+(c&&c.id||'general'); try{ return JSON.parse(localStorage.getItem(k)||'[]'); }catch(e){ return []; } }
+function _mcSaveMsgs(c,msgs){ var k='mc_msgs_'+(MC_ORG&&MC_ORG.id||'demo')+'_'+(c&&c.id||'general'); localStorage.setItem(k,JSON.stringify(msgs)); }
+
+// ── Emojis que flotan: igual que en panel ──
+function _mcFloatEmoji(anchorEl,emo){
+ try{
+  var r=anchorEl.getBoundingClientRect(); var bx=r.left+r.width/2, by=r.top;
+  for(var i=0;i<5;i++){(function(i){
+   var f=document.createElement('span'); f.textContent=emo;
+   f.style.cssText='position:fixed;left:'+bx+'px;top:'+by+'px;font-size:'+(18+Math.random()*14)+'px;pointer-events:none;z-index:2147483200;transform:translate(-50%,0);will-change:transform,opacity';
+   document.body.appendChild(f);
+   var dx=Math.random()*80-40, dy=-(120+Math.random()*160);
+   try{ f.animate([{transform:'translate(-50%,0) scale(.6)',opacity:0},{opacity:1,offset:.2},{transform:'translate(calc(-50% + '+dx+'px),'+dy+'px) scale(1.1)',opacity:0}],{duration:1300+Math.random()*500,easing:'cubic-bezier(.3,.7,.4,1)',delay:i*60,fill:'forwards'}); }catch(e){}
+   setTimeout(function(){try{f.remove();}catch(e){}},2200+i*60);
+  })(i);}
+ }catch(e){}
+}
+function mcMsgEmoji(e,el){
+ if(el) _mcFloatEmoji(el,e);
+ var i=document.getElementById('mc-conv-input'); if(!i) return;
+ if((i.value||'').trim()){ i.value+=e; i.focus(); }
+ else { i.value=e; _mcSend(); }
+}
+
+// ── Clave estable para merge-safe (evita duplicados) ──
+function _mcMsgKey(m){ return (m&&m.autor_id||'')+'|'+(m&&m.body||'')+'|'+(m&&m.created_at||''); }
+function _mcMergeMsgs(a,b){
+ var out=[],seen={};
+ function add(arr){ (arr||[]).forEach(function(m){ if(!m)return; var k=_mcMsgKey(m); if(seen[k]!=null) return; seen[k]=out.length; out.push(m); }); }
+ add(a); add(b);
+ out.sort(function(x,y){ try{ return new Date(x.created_at||0)-new Date(y.created_at||0); }catch(e){ return 0; } });
+ return out;
+}
+
+// ── Sincronizar con Supabase (merge-safe via canal-red API) ──
+function _mcSyncMsgsToDB(c,msgs){
+ if(!MC_REAL||!MC_ORG||!MC_ORG.id)return;
+ _mcSaveMsgs(c,msgs);
+}
+
+// ── Pulsito rojo que late ──
+function _mcPulse(el){ if(!el) return; try{ el.classList.add('pw-attn'); setTimeout(function(){ el.classList.remove('pw-attn'); },4500); }catch(e){} }
+
+// ── Sonido + pulsito cuando llega algo nuevo ──
+function _mcOnIncoming(){ _mcDing(); var dot=document.getElementById('mc-chat-dot'); if(dot) _mcPulse(dot); }
+
+// ── Polling de mensajes: mientras hay conversación abierta, refresca cada 5s ──
+var _mcLastPollTime={};
+function _mcStartPoll(){
+ _mcStopPoll();
+ if(!MC_REAL)return;
+ _mcChat.poll=setInterval(function(){
+  if(!_mcChat.open||!_mcChat.cur){ _mcStopPoll(); return; }
+  var c=_mcChat.cur;
+  var before=(_mcChat.msgs||[]).length;
+  _mcLoadThread(function(){
+   var now=(_mcChat.msgs||[]);
+   if(now.length!==before){
+    var last=now[now.length-1];
+    var lastMine=last&&MC_OWNER&&String(last.autor_id)===String(MC_OWNER.id);
+    if(now.length>before && last && !lastMine){ try{ _mcOnIncoming(); }catch(e){} }
+    _mcRenderConv();
+   }
+   _mcMarkSeen(c);
+  });
+ },5000);
+}
+
+// ── Configuración de videollamada (PWCall) ──
+function _mcPWCallSetup(){
+ if(!window.PWCall || !MC_OWNER) return;
+ PWCall.config({
+  role:'owner',
+  me:{ name:(MC_OWNER&&MC_OWNER.nombre)||'Dueño', email:(MC_OWNER&&MC_OWNER.email)||'' },
+  peerName:'Equipo',
+  openWindow:function(u){ try{ window.open(u,'_blank'); }catch(e){ location.href=u; } },
+  sendMessage:function(m){ try{ var c=_mcChat.cur; if(!c)return; var arr=_mcGetMsgs(c); arr.push(m); _mcSaveMsgs(c,arr); _mcRenderConv(); _mcSyncMsgsToDB(c,arr); }catch(e){} },
+  logSession:function(entry){ /* logs to channel via sendMessage callback */ },
+  setFastPoll:function(on){ try{ if(_mcChat.poll) clearInterval(_mcChat.poll); if(on) _mcChat.poll=setInterval(function(){ if(_mcChat.cur) _mcLoadThread(function(){ _mcRenderConv(); }); },3000); }catch(e){} }
+ });
+}
+try{ if(MC_OWNER) _mcPWCallSetup(); }catch(e){}
+
 function _canalBubble(m){
  var mine=MC_REAL?(MC_OWNER&&String(m.autor_id)===String(MC_OWNER.id)):(m.autor_rol==='owner');
  var nm=(m.autor_nombre||'').split(' ')[0]||'Alguien';
  var who=mine?'Tú':(nm+(m.autor_rol==='owner'?' · Dueño':''));
  var t=_mcFmtT(m.created_at);
- // Avatar: dueño → su foto; coach → su foto real si está en DB, si no iniciales.
  var av;
  if(m.autor_rol==='owner'){ av=_mcAv(_mcOwnerFoto(), m.autor_nombre||'Dueño'); }
  else { var co=(typeof _coach==='function')?_coach(m.autor_id):null; av=_mcAv(co&&co.foto, m.autor_nombre); }
@@ -4735,8 +4819,14 @@ function _mcLoadThread(cb){
  if(!MC_REAL){ _mcChat.msgs=c.general?_MC_CANAL_DEMO.slice():((_MC_MSGS_DEMO[c.id]||[]).slice()); cb&&cb(); return; }
  if(!MC_ORG||!MC_ORG.id){ _mcChat.msgs=[]; cb&&cb(); return; }
  _hdr({'Content-Type':'application/json'}).then(function(h){ return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'thread',org_id:MC_ORG.id,canal_id:c.id||undefined})}); })
-  .then(function(r){ return r.ok?r.json():null; }).then(function(d){ _mcChat.msgs=(d&&d.ok&&d.mensajes)?d.mensajes:[]; cb&&cb(); })
-  .catch(function(){ _mcChat.msgs=_mcChat.msgs||[]; cb&&cb(); });
+  .then(function(r){ return r.ok?r.json():null; }).then(function(d){
+   var dbMsgs=(d&&d.ok&&d.mensajes)?d.mensajes:[];
+   var localMsgs=_mcGetMsgs(c);
+   _mcChat.msgs=_mcMergeMsgs(localMsgs,dbMsgs);
+   _mcSaveMsgs(c,_mcChat.msgs);
+   cb&&cb();
+  })
+  .catch(function(){ _mcChat.msgs=_mcGetMsgs(c)||[]; cb&&cb(); });
 }
 function _mcRenderConv(){
  var box=document.getElementById('mc-chat-body'); if(!box)return; var c=_mcChat.cur; if(!c)return;
@@ -4744,21 +4834,40 @@ function _mcRenderConv(){
   ? '<div class="csub" style="padding:20px;text-align:center">Cargando…</div>'
   : (_mcChat.msgs.length ? _mcChat.msgs.slice().sort(function(a,b){return new Date(a.created_at)-new Date(b.created_at);}).map(_canalBubble).join('')
      : '<div class="csub" style="padding:22px;text-align:center;line-height:1.55">'+(c.general?'El canal está en blanco. Escribe el primer mensaje — lo ven todos tus coaches.':'Grupo nuevo. Escribe el primer mensaje.')+'</div>');
+ var emojiRow='<div style="display:flex;gap:4px;flex-wrap:wrap;padding:8px;border-top:1px solid var(--pw-border)">'+
+  ['💪','❤️','🙌','😍','🔥'].map(function(e){ return '<button onclick="mcMsgEmoji(\''+e+'\',this)" style="background:none;border:none;font-size:20px;cursor:pointer;padding:4px;border-radius:4px;hover:opacity:0.7">'+e+'</button>'; }).join('')+
+  '</div>';
  box.innerHTML='<div class="mc-conv"><div class="mc-conv-msgs" id="mc-conv-msgs">'+body+'</div>'
+  +emojiRow
   +'<div class="mc-conv-in"><input id="mc-conv-input" class="inp" placeholder="Escribe un mensaje…" onkeydown="if(event.key===\'Enter\')_mcSend()">'
   +'<button class="cp-btn cp-btn-primary" onclick="_mcSend()" aria-label="Enviar"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></svg></button></div></div>';
  var m=document.getElementById('mc-conv-msgs'); if(m) m.scrollTop=m.scrollHeight;
  var inp=document.getElementById('mc-conv-input'); if(inp) inp.focus();
- _mcLPInit(); _mcLPScan();   // preview de links (og:image) en las burbujas
+ _mcLPInit(); _mcLPScan();
 }
 function _mcSend(){
  var i=document.getElementById('mc-conv-input'); if(!i)return; var t=(i.value||'').trim(); if(!t)return; var c=_mcChat.cur; if(!c)return;
- if(!MC_REAL){ (_mcChat.msgs=_mcChat.msgs||[]).push({autor_nombre:(MC_OWNER&&MC_OWNER.nombre)||'Tú',autor_rol:'owner',body:t,created_at:new Date().toISOString()}); i.value=''; _mcRenderConv(); return; }
- if(_mcChat.busy)return; _mcChat.busy=true; i.disabled=true;
+ var now=new Date();
+ var msg={autor_id:(MC_OWNER&&MC_OWNER.id)||'me',autor_nombre:(MC_OWNER&&MC_OWNER.nombre)||'Tú',autor_rol:'owner',body:t,created_at:now.toISOString()};
+
+ // Guardar local primero (optimista)
+ _mcChat.msgs=_mcChat.msgs||[];
+ _mcChat.msgs.push(msg);
+ _mcSaveMsgs(c,_mcChat.msgs);
+ i.value='';
+ _mcRenderConv();
+
+ if(!MC_REAL){ _mcMarkSeen(c); return; }
+ if(_mcChat.busy)return;
+ _mcChat.busy=true;
+ i.disabled=true;
+
+ // Enviar a la API
  _hdr({'Content-Type':'application/json'}).then(function(h){ return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'send',org_id:MC_ORG.id,canal_id:c.id||undefined,texto:t})}); })
   .then(function(r){ return r.ok?r.json():null; }).then(function(d){ _mcChat.busy=false; i.disabled=false;
    if(!d||!d.ok){ __toast('No se pudo enviar'); return; }
-   i.value=''; _mcLoadThread(function(){ _mcRenderConv(); _mcMarkSeen(c); });
+   // Refrescar desde servidor para obtener el ID real
+   _mcLoadThread(function(){ _mcRenderConv(); _mcMarkSeen(c); });
   }).catch(function(){ _mcChat.busy=false; i.disabled=false; __toast('Error de conexión'); });
 }
 // ── Polling: mientras hay una conversación abierta, refresca cada 5s ──
@@ -4796,13 +4905,14 @@ function _mcNuevoGrupo(){
 }
 function _mcCrearGrupo(){
  var n=document.getElementById('mc-grp-nombre'); var nombre=(n&&n.value||'').trim(); if(!nombre){ __toast('Ponele un nombre al grupo'); return; }
- var miembros=[]; document.querySelectorAll('#mc-chat-body .mc-mem input:checked').forEach(function(c){ miembros.push(c.value); });
- if(!MC_REAL){ _MC_GRUPOS_DEMO.push({id:'g-'+Date.now(),nombre:nombre,general:false,miembros:miembros}); __toast('Grupo creado ✓ (demo)'); _mcLoadCanales(function(){ _mcRenderList(); }); return; }
+ var miembros=[]; document.querySelectorAll('.mc-mem input:checked').forEach(function(c){ miembros.push(c.value); });
+ if(!MC_REAL){ _MC_GRUPOS_DEMO.push({id:'g-'+Date.now(),nombre:nombre,general:false,is_system:false,miembros:miembros}); __toast('Grupo creado ✓ (demo)'); _mcLoadCanales(function(){ _mcRenderList(); }); return; }
  var btn=document.getElementById('mc-grp-crear'); if(btn){ btn.disabled=true; btn.textContent='Creando…'; }
  _hdr({'Content-Type':'application/json'}).then(function(h){ return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'group_create',org_id:MC_ORG.id,nombre:nombre,miembros:miembros})}); })
   .then(function(r){ return r.ok?r.json():null; }).then(function(d){
    if(!d||!d.ok){ __toast('No se pudo crear'); if(btn){ btn.disabled=false; btn.textContent='Crear grupo'; } return; }
-   __toast('Grupo creado ✓'); _mcLoadCanales(function(){ _mcRenderList(); });
+   __toast('Grupo creado ✓');
+   _mcLoadCanales(function(){ _mcRenderList(); });
   }).catch(function(){ __toast('Error de conexión'); if(btn){ btn.disabled=false; btn.textContent='Crear grupo'; } });
 }
 function esNutriCoach(c){return c.nicho==='nutricion';}
