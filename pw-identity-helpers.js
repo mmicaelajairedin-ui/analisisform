@@ -16,17 +16,61 @@
  */
 
 // ─────────────────────────────────────────────────────────────
-// 1. resolveTenant(hostname, org_id_override)
+// 1. resolveContext(options)
 // ─────────────────────────────────────────────────────────────
-// Resuelve la organización desde el dominio actual
-// Devuelve: {id, slug, name, status, ...}
+// Resuelve contexto completo (tenant + usuario + ambiente)
+// Scalable para: localhost, preview, staging, demo, QA, share links, impersonation
+//
+// Opción: {hostname, organizationId, previewToken, user, environment}
+// Devuelve: {organization, user, environment, preview}
 
-async function resolveTenant(hostname = window.location.hostname, org_id_override = null) {
-  // Override para testing/explicit
-  if (org_id_override) {
-    return await _sbGet('organizations', {id: org_id_override})?.[0];
+async function resolveContext(options = {}) {
+  const {
+    hostname = window.location.hostname,
+    organizationId = null,
+    previewToken = null,
+    user = null,
+    environment = _detectEnvironment(),
+  } = options;
+
+  let org = null;
+
+  // Priority 1: Explicit organizationId
+  if (organizationId) {
+    org = await _sbGet('organizations', {id: organizationId})?.[0];
   }
 
+  // Priority 2: Preview Token (share links, demos)
+  if (!org && previewToken) {
+    const preview = await _sbGet('preview_tokens', {
+      token: `eq.${previewToken}`,
+      is_active: 'eq.true',
+    })?.[0];
+    if (preview?.organization_id) {
+      org = await _sbGet('organizations', {id: preview.organization_id})?.[0];
+    }
+  }
+
+  // Priority 3: Hostname resolution (production routing)
+  if (!org) {
+    org = await _resolveTenantFromHostname(hostname);
+  }
+
+  // Build context
+  return {
+    organization: org,
+    user: user || null,
+    environment,
+    preview: {
+      token: previewToken,
+      isActive: !!previewToken,
+    },
+    isValid: !!org,
+  };
+}
+
+// Helper privado: resolver tenant desde hostname
+async function _resolveTenantFromHostname(hostname) {
   // Case 1: Subdominio pathwaycareercoach.com
   if (hostname.includes('pathwaycareercoach.com')) {
     const parts = hostname.split('.');
@@ -34,13 +78,12 @@ async function resolveTenant(hostname = window.location.hostname, org_id_overrid
       const slug = parts[0];
       return await _sbGet('organizations', {slug: `eq.${slug}`})?.[0];
     }
-    // www.pathwaycareercoach.com o pathwaycareercoach.com → landing pública (sin tenant)
     return null;
   }
 
   // Case 2: Dominio custom
   const domain = await _sbGet('organization_domains', {
-    custom_domain: `eq.${hostname}`
+    custom_domain: `eq.${hostname}`,
   })?.[0];
 
   if (domain?.organization_id) {
@@ -48,6 +91,17 @@ async function resolveTenant(hostname = window.location.hostname, org_id_overrid
   }
 
   return null;
+}
+
+// Helper privado: detectar ambiente
+function _detectEnvironment() {
+  const hostname = window.location.hostname;
+  if (hostname.includes('localhost') || hostname.includes('127.0.0.1')) return 'local';
+  if (hostname.includes('staging')) return 'staging';
+  if (hostname.includes('preview')) return 'preview';
+  if (hostname.includes('demo')) return 'demo';
+  if (hostname.includes('qa')) return 'qa';
+  return 'production';
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -120,64 +174,102 @@ async function getBrand(org_id, version = 'current') {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 4. applyBrand(brand, target = document.documentElement)
+// 4. buildTheme(brand, isDarkMode)
 // ─────────────────────────────────────────────────────────────
-// Aplica Brand Engine a la página (CSS variables, logos, etc.)
+// Transforma Brand Engine en Theme (mediante Theme Engine)
+// Input: Brand Engine
+// Output: Theme {colors, typography, spacing, radius, icons, components, density, darkMode}
 
-function applyBrand(brand, target = document.documentElement) {
-  if (!brand || !brand.branding) return;
-
-  const {branding, assets, white_label_level} = brand;
-
-  // 1. CSS Variables
-  target.style.setProperty('--pw-primary', branding.primary_color);
-  target.style.setProperty('--pw-secondary', branding.secondary_color);
-  target.style.setProperty('--pw-dark', branding.neutral_dark);
-  target.style.setProperty('--pw-light', branding.neutral_light);
-
-  // 2. Tipografía
-  if (branding.brand_font) {
-    const fontFamily = `'${branding.brand_font}', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
-    target.style.setProperty('--pw-font', fontFamily);
-    document.body.style.fontFamily = fontFamily;
+function buildTheme(brand, isDarkMode = false) {
+  if (!brand) {
+    return window.ThemeEngine._getDefaultTheme();
   }
 
-  // 3. Logos (elementos con data-brand-logo)
-  if (assets) {
+  return window.ThemeEngine.buildTheme(brand, isDarkMode);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 5. applyTheme(theme, target = document.documentElement)
+// ─────────────────────────────────────────────────────────────
+// Aplica Theme a la página (CSS variables, logos, white-label, etc.)
+// NO es directo brand → theme es escalable y extensible
+
+function applyTheme(theme, target = document.documentElement) {
+  if (!theme) return;
+
+  // 1. Aplicar CSS Variables de colores
+  if (theme.colors.cssVars) {
+    Object.entries(theme.colors.cssVars).forEach(([key, value]) => {
+      target.style.setProperty(key, value);
+    });
+  }
+
+  // 2. Aplicar CSS Variables de tipografía
+  if (theme.typography.cssVars) {
+    Object.entries(theme.typography.cssVars).forEach(([key, value]) => {
+      target.style.setProperty(key, value);
+    });
+    document.body.style.fontFamily = theme.typography.fontFamily;
+  }
+
+  // 3. Aplicar CSS Variables de spacing
+  if (theme.spacing.cssVars) {
+    Object.entries(theme.spacing.cssVars).forEach(([key, value]) => {
+      target.style.setProperty(key, value);
+    });
+  }
+
+  // 4. Aplicar CSS Variables de radius
+  if (theme.radius.cssVars) {
+    Object.entries(theme.radius.cssVars).forEach(([key, value]) => {
+      target.style.setProperty(key, value);
+    });
+  }
+
+  // 5. Aplicar CSS Variables de iconografía
+  if (theme.icons.cssVars) {
+    Object.entries(theme.icons.cssVars).forEach(([key, value]) => {
+      target.style.setProperty(key, value);
+    });
+  }
+
+  // 6. Inyectar logos/assets en elementos
+  if (theme.assets) {
     document.querySelectorAll('[data-brand-logo]').forEach(el => {
       const logoType = el.dataset.brandLogo || 'logo_dark';
-      if (assets[logoType]) {
-        el.src = assets[logoType];
+      if (theme.assets[logoType]) {
+        el.src = theme.assets[logoType];
         el.alt = 'Logo';
       }
     });
 
     // Favicon
     const favicon = document.querySelector('link[rel="icon"]');
-    if (favicon && assets.favicon) {
-      favicon.href = assets.favicon;
+    if (favicon && theme.assets.favicon) {
+      favicon.href = theme.assets.favicon;
     }
 
     // OG Image
     const ogImage = document.querySelector('meta[property="og:image"]');
-    if (ogImage && assets.og_image) {
-      ogImage.content = assets.og_image;
+    if (ogImage && theme.assets.og_image) {
+      ogImage.content = theme.assets.og_image;
     }
   }
 
-  // 4. White Label Level (mostrar/ocultar elementos)
+  // 7. Aplicar white-label level (mostrar/ocultar elementos)
+  const wlLevel = theme.whiteLabel.level;
   document.querySelectorAll('[data-wl-min]').forEach(el => {
     const minLevel = parseInt(el.dataset.wlMin, 10);
-    el.style.display = white_label_level >= minLevel ? '' : 'none';
+    el.style.display = wlLevel >= minLevel ? '' : 'none';
   });
 
   document.querySelectorAll('[data-wl-only]').forEach(el => {
     const level = parseInt(el.dataset.wlOnly, 10);
-    el.style.display = white_label_level === level ? '' : 'none';
+    el.style.display = wlLevel === level ? '' : 'none';
   });
 
-  // 5. Guardar en window para acceso global
-  window.BRAND_ENGINE = brand;
+  // 8. Guardar en window para acceso global
+  window.THEME_ENGINE_CURRENT = theme;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -369,11 +461,16 @@ async function _sbGet(table, filter = {}) {
 
 // Exportar para uso global
 window.IDENTITY_HELPERS = {
-  resolveTenant,
+  resolveContext,
   getTenant,
   getBrand,
-  applyBrand,
+  buildTheme,
+  applyTheme,
   listenBrandUpdates,
   getTenantRegionalConfig,
   applyTenantRegionalConfig,
+
+  // Internals (para testing)
+  _resolveTenantFromHostname,
+  _detectEnvironment,
 };
