@@ -4054,6 +4054,31 @@ function _equipoVerAgenda(){
   console.log('[AGENDA] Abierto para: '+_equipoSelected.nombre+' ('+_equipoSelected.tipo+')');
 }
 
+// GESTIONAR DISPONIBILIDAD: Acceso rápido desde drawer
+function _equipoManageAvailability(){
+  if(!_equipoSelected||_equipoSelected.tipo!=='coach') return;
+  if(!hasCapability('equipo.manage_availability')&&ME.rol!=='owner'){
+    __toast('No tienes permiso para gestionar disponibilidad');
+    return;
+  }
+  // Ir a Agenda Personal y abrir modal de disponibilidad
+  MC_AGENDA_COACH_ID=_equipoSelected.id;
+  MC_AGENDA_COACH_NAME=_equipoSelected.nombre;
+  MC_AGENDA_COACH_DATA={
+    id:_equipoSelected.id,
+    nombre:_equipoSelected.nombre||_equipoSelected.n||'Coach',
+    especialidad:_equipoSelected.especialidad||_equipoSelected.esp||'Sin especialidad',
+    estado:_equipoSelected.estado||_equipoSelected.est||'activo',
+    foto:_equipoSelected.foto||'',
+    email:_equipoSelected.email||'',
+    clientes:_equipoSelected.clientes||0
+  };
+  _equipoCloseDrawer();
+  __go('agenda');
+  setTimeout(function(){ if(typeof _mcDispModal==='function') _mcDispModal(); },300);
+  console.log('[DISPONIBILIDAD] Abierto para: '+_equipoSelected.nombre);
+}
+
 // ENVIAR MENSAJE: TODO — Implementar en Sprint 4.3.7
 function _equipoEnviarMensaje(){
   if(!_equipoSelected) return;
@@ -4175,30 +4200,20 @@ function _equipoDrawerHtml(){
     +'</div><div style="padding-top:8px;"><a href="#" style="font-size:12px;color:var(--pw-bosque);text-decoration:none;font-weight:500;">Ver agenda completa →</a></div>'
     +'</div>';
 
+  // Drawer: solo info rápida (como tarjeta)
   return '<div class="drawer-header">'
     +'<img src="'+avatarUrl+'" alt="'+_mcEsc(item.nombre)+'" class="drawer-avatar">'
     +'<h3 class="drawer-name">'+_mcEsc(item.nombre)+'</h3>'
     +'<p class="drawer-role"><span class="role-badge '+(item.rol==='Colaborador'?'colaborador':'')+'">'+_mcEsc(item.rol)+'</span></p>'
-    +'<p class="drawer-email">'+_mcEsc(item.email)+'</p>'
-    +'<p style="font-size:11px;color:var(--db-text-muted);margin-top:8px;"><span class="status-badge '+(item.estado==='invitado'?'invitado':'')+'">'+statusBadge+'</span></p>'
+    +'<p style="font-size:12px;color:var(--db-text-soft);margin:8px 0 0 0;">'+_mcEsc(item.email)+'</p>'
+    +'<p style="font-size:11px;color:var(--db-text-muted);margin-top:6px;"><span class="status-badge '+(item.estado==='invitado'?'invitado':'')+'">'+statusBadge+'</span></p>'
     +'</div>'
-    +'<div class="drawer-section"><div class="drawer-section-title">Información</div>'
-    +'<div class="drawer-field"><span class="drawer-field-label">Especialidad</span><span class="drawer-field-value">'+_mcEsc(item.especialidad)+'</span></div>'
-    +'<div class="drawer-field"><span class="drawer-field-label">Teléfono</span><span class="drawer-field-value">'+_mcEsc(item.telefono)+'</span></div>'
-    +'<div class="drawer-field"><span class="drawer-field-label">Zona horaria</span><span class="drawer-field-value">'+_mcEsc(item.timezone)+'</span></div>'
-    +'<div class="drawer-field"><span class="drawer-field-label">Idioma</span><span class="drawer-field-value">'+_mcEsc(item.idioma).toUpperCase()+'</span></div>'
-    +'<div class="drawer-field"><span class="drawer-field-label">Incorporado</span><span class="drawer-field-value">'+_mcEsc(item.fechaIncorporacion)+'</span></div>'
-    +'<div class="drawer-field"><span class="drawer-field-label">Última actividad</span><span class="drawer-field-value">'+_mcEsc(item.ultActividad)+'</span></div>'
-    +'</div>'
-    +metricsHtml
-    +agendaHtml
-    +capacidadesHtml
-    +'<div class="drawer-actions">'
-    +'<button class="btn-drawer primary" onclick="_equipoEditarPerfil()">Editar</button>'
-    +'<button class="btn-drawer" onclick="_equipoVerAgenda()">Ver agenda</button>'
-    +'<button class="btn-drawer" onclick="_equipoEnviarMensaje()">Enviar mensaje</button>'
-    +(item.tipo==='coach'?'<button class="btn-drawer" onclick="_equipoReasignarClientes()">Reasignar clientes</button>':'')
-    +'<button class="btn-drawer danger" onclick="_equipoToggleActivo()">'+((item.estado==='activo')?'Desactivar':'Reactivar')+'</button>'
+    // ── INFO RÁPIDA (Compacta) ──
+    +'<div class="drawer-section" style="font-size:12px;line-height:1.6;color:var(--db-text-soft);">'
+    +'<div style="display:flex;justify-content:space-between;margin-bottom:8px;"><strong>Especialidad:</strong> <span>'+_mcEsc(item.especialidad)+'</span></div>'
+    +(item.tipo==='coach'?'<div style="display:flex;justify-content:space-between;margin-bottom:8px;"><strong>Clientes:</strong> <span>'+_mcEsc(item.clientes)+'</span></div>':'')
+    +(item.tipo==='coach'?'<div style="display:flex;justify-content:space-between;margin-bottom:8px;"><strong>Sesiones:</strong> <span>'+_mcEsc(item.sesiones)+'</span></div>':'')
+    +'<div style="display:flex;justify-content:space-between;"><strong>Última actividad:</strong> <span>'+_mcEsc(item.ultActividad)+'</span></div>'
     +'</div>';
 }
 
@@ -6643,11 +6658,30 @@ function _mcCopiarReserva(coachId){
 function _setAgView(v){_agView=v;renderAgenda();}
 function _setAgCoach(c){_agCoach=c;renderAgenda();}
 function _agSelDay(d){_agSelDow=d;renderAgenda();}
+// Abrir Agenda Personal de un coach (desde la sidebar de Agenda del Equipo)
+function _agOpenPersonalAgenda(coachId){
+  if(!coachId||coachId==='todos'){ _setAgCoach('todos'); return; }
+  var coach=DB.coaches.find(function(c){return c.id===coachId;});
+  if(!coach) return;
+  MC_AGENDA_COACH_ID=coach.id;
+  MC_AGENDA_COACH_NAME=coach.n||coach.nombre||'Coach';
+  MC_AGENDA_COACH_DATA={
+    id:coach.id,
+    nombre:coach.n||coach.nombre||'Coach',
+    especialidad:coach.especialidad||coach.esp||'Sin especialidad',
+    estado:coach.est||coach.estado||'activo',
+    foto:coach.foto||'',
+    email:coach.email||'',
+    clientes:(coach.clientes||0)
+  };
+  renderAgenda();
+  console.log('[AGENDA-PERSONAL] Abierto desde navbar: '+MC_AGENDA_COACH_NAME);
+}
 function _agCoachList(){
  var rows=[['todos','Todos',null]].concat(DB.coaches.filter(function(c){return c.est==='activo';}).map(function(c){return [c.id,c.n.split(' ')[0],c];}));
  return '<div class="cp-eyebrow" style="margin-bottom:8px">Coaches</div>'+rows.map(function(r){
    var av=r[2]?'<span class="cav" style="background:'+_coCol(r[0])+'">'+(r[2].foto?'<img src="'+r[2].foto+'" alt="" onerror="this.style.display=\'none\'">':'')+r[2].ini+'</span>':'<span class="cav" style="background:var(--pw-text-muted);font-size:13px">◍</span>';
-   return '<div class="agcoach'+(_agCoach===r[0]?' on':'')+'" data-coach-id="'+_mcEsc(r[0])+'" onclick="if(this.dataset.coachId)_setAgCoach(this.dataset.coachId)">'+av+'<span>'+r[1]+'</span></div>';
+   return '<div class="agcoach'+(_agCoach===r[0]?' on':'')+'" data-coach-id="'+_mcEsc(r[0])+'" onclick="if(this.dataset.coachId)_agOpenPersonalAgenda(this.dataset.coachId)" title="Click para ver agenda personal">'+av+'<span>'+r[1]+'</span></div>';
  }).join('');
 }
 function _agCalTop(days){
