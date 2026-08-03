@@ -3062,11 +3062,11 @@ function renderScheduler(scheduler, options){
     return (nombreDia.charAt(0).toUpperCase()+nombreDia.slice(1))+" · "+fecha;
   }
 
-  // Renderiza una tarjeta de evento
+  // Renderiza una tarjeta de evento (SchedulerEvent)
   function _renderEvento(evt){
     var hora=new Date(evt.start).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
     var titulo=esc(evt.title);
-    var tipo=esc(evt.type.replace(/_/g," "));
+    var tipo=(evt.metadata && evt.metadata.event_type)?esc(evt.metadata.event_type.replace(/_/g," ")):"Evento";
     var estado_badge="";
 
     // Badge de estado (confirmed, pending, etc.)
@@ -3075,12 +3075,12 @@ function renderScheduler(scheduler, options){
       pending: "background:#FFF3E0;color:#E65100",
       cancelled: "background:#FFEBEE;color:#C62828"
     };
-    if(evt.estado && colores_estado[evt.estado]){
-      estado_badge="<span style='font-size:9px;padding:2px 6px;border-radius:4px;"+colores_estado[evt.estado]+"'>"+esc(evt.estado.toUpperCase())+"</span>";
+    if(evt.state && colores_estado[evt.state]){
+      estado_badge="<span style='font-size:9px;padding:2px 6px;border-radius:4px;"+colores_estado[evt.state]+"'>"+esc(evt.state.toUpperCase())+"</span>";
     }
 
-    // Foto: desde evt.photo o placeholder
-    var foto=evt.photo||"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect fill='%23ccc' width='36' height='36'/%3E%3C/svg%3E";
+    // Foto: desde metadata.client_photo o placeholder
+    var foto=(evt.metadata && evt.metadata.client_photo)||"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect fill='%23ccc' width='36' height='36'/%3E%3C/svg%3E";
 
     return "<div class='ag-event-card' style='cursor:pointer;padding:8px;border-radius:8px;background:#f9f8f6;border:1px solid var(--pw-border);margin-bottom:6px'>"+
       "<div style='display:flex;gap:8px;align-items:start'>"+
@@ -3128,7 +3128,7 @@ function renderScheduler(scheduler, options){
 }
 
 // ── PROVIDER: SesionesRegistroProvider (Phase 1 — lee CLIENTS + sesiones_registro) ──
-// Implementa la interfaz SchedulerDataProvider para Phase 1 (datos de CLIENTS en localStorage)
+// Implementa SchedulerEvent contract: transforma sesiones_registro → SchedulerEvent
 var SesionesRegistroProvider={
   getEventos: function(scope, usuario_id, team_id, org_id, permisos){
     var eventos=[];
@@ -3138,21 +3138,34 @@ var SesionesRegistroProvider={
       if(c.raw && c.raw.activo===false) return;
       (c.ses||[]).forEach(function(s){
         if(!s || !s.fecha) return;
+        var startDt=new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")+":00Z");
+        var endDt=new Date(startDt.getTime()+3600000);
         var evt={
+          // SchedulerEvent contract
           id: "evt_temp_"+(Math.random()*1e9|0),
-          type: s.tipo||"sesion_individual",
           title: "Sesión con "+c.name,
-          start: s.fecha+(s.hora?"T"+s.hora:"T12:00")+":00Z",
-          end: new Date(new Date(s.fecha+(s.hora?"T"+s.hora:"T12:00")).getTime()+3600000).toISOString(),
+          description: "",
+          start: startDt.toISOString(),
+          end: endDt.toISOString(),
           timezone: "Europe/Madrid",
+          recurring: null,
           organizer_id: ME.id,
-          participants: [{user_id: c.id, role: "client", status: "confirmed"}],
-          estado: "confirmed",
-          origen: "agenda_manual",
-          created_by: ME.id,
+          participants: [{user_id:c.id, role:"client", status:"confirmed", attendance:"not_responded"}],
+          state: "confirmed",
+          visibility: "participants",
+          source: "sesiones_registro",
+          source_id: "evt_temp_"+(Math.random()*1e9|0),
           created_at: new Date().toISOString(),
-          confirmaciones: {},
-          photo: c.photo  // para renderizador
+          created_by: ME.id,
+          updated_at: new Date().toISOString(),
+          updated_by: ME.id,
+          resources: [],
+          capacity: {min:1, max:2, current:2},
+          metadata: {
+            event_type: s.tipo||"sesion_individual",
+            client_photo: c.photo||"",
+            week: c.week||1
+          }
         };
         eventos.push(evt);
       });
