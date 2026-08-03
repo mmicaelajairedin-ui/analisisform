@@ -1919,7 +1919,8 @@ var DB={
 };
 var MC_REAL=false,MC_OWNER=null,MC_ORG=null,MC_N='fitness',MC_PLAN='basic',MC_CITAS=[],MC_GCAL=[],MC_RESOURCES=[];
 // Sprint 5.2.3: Personal Agenda (Owner viewing coach's calendar)
-var MC_AGENDA_COACH_ID=null,MC_AGENDA_COACH_NAME=null;
+// Almacenar datos del coach para header y contexto visual
+var MC_AGENDA_COACH_ID=null,MC_AGENDA_COACH_NAME=null,MC_AGENDA_COACH_DATA=null;
 // Supabase (mismos datos que el resto de la plataforma). El dueño de la red
 // lee su org/coaches/clientes por org_id. La anon key es pública (va en el
 // navegador en todas las páginas); el aislamiento real es por RLS/filtro.
@@ -1958,6 +1959,7 @@ function __go(s){
   if(_sec==='agenda' && s!=='agenda'){
     MC_AGENDA_COACH_ID=null;
     MC_AGENDA_COACH_NAME=null;
+    MC_AGENDA_COACH_DATA=null;
   }
   _sec=s;__hl(s);
   var d=document.getElementById('view-dashboard'),p=document.getElementById('view-panel');
@@ -4044,8 +4046,18 @@ function _equipoVerAgenda(){
     return;
   }
   // Establecer contexto de Agenda Personal (Coach específico)
+  // Guardar datos completos para header enriquecido
   MC_AGENDA_COACH_ID=_equipoSelected.id;
   MC_AGENDA_COACH_NAME=_equipoSelected.nombre;
+  MC_AGENDA_COACH_DATA={
+    id:_equipoSelected.id,
+    nombre:_equipoSelected.nombre||_equipoSelected.n||'Coach',
+    especialidad:_equipoSelected.especialidad||_equipoSelected.esp||'Sin especialidad',
+    estado:_equipoSelected.estado||_equipoSelected.est||'activo',
+    foto:_equipoSelected.foto||'',
+    email:_equipoSelected.email||'',
+    clientes:_equipoSelected.clientes||0
+  };
   _equipoCloseDrawer();
   __go('agenda');
   console.log('[AGENDA-PERSONAL] Abierto para: '+_equipoSelected.nombre+' (ID: '+MC_AGENDA_COACH_ID+')');
@@ -6296,6 +6308,27 @@ function renderPrograms(){
   });
 }
 
+// Helper: Renderizar header enriquecido para Personal Agenda
+function _renderPersonalAgendaHeader(){
+  if(!MC_AGENDA_COACH_DATA) return '';
+  var c=MC_AGENDA_COACH_DATA;
+  var estadoBadgeColor=c.estado==='activo'?'#22c55e':'#ef4444';
+  var estadoLabel=c.estado==='activo'?'Activo':'Inactivo';
+  var fotoBg=c.foto?'background-image:url(\''+_mcEsc(c.foto)+'\')':'background:#d0ccc3';
+
+  return '<div style="background:linear-gradient(135deg, var(--pw-niebla-1) 0%, var(--pw-niebla-2) 100%);padding:24px;margin-bottom:24px;border-radius:12px;display:flex;gap:16px;align-items:flex-start">'
+    +'<div style="width:80px;height:80px;border-radius:8px;'+fotoBg+';background-size:cover;background-position:center;flex-shrink:0;border:2px solid var(--pw-border);"></div>'
+    +'<div style="flex:1">'
+      +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">'
+        +'<h2 style="margin:0;font-size:18px;font-weight:600;color:var(--pw-carbon)">'+_mcEsc(c.nombre)+'</h2>'
+        +'<span style="display:inline-block;background:'+estadoBadgeColor+';color:white;font-size:11px;font-weight:600;padding:4px 10px;border-radius:100px">'+estadoLabel+'</span>'
+      +'</div>'
+      +'<p style="margin:0 0 8px 0;font-size:13px;color:var(--pw-text-muted)">'+_mcEsc(c.especialidad)+'</p>'
+      +'<p style="margin:0;font-size:12px;color:var(--pw-text-soft)">'+parseInt(c.clientes||0)+' cliente'+(parseInt(c.clientes)!==1?'s':'')+' · '+_mcEsc(c.email)+'</p>'
+    +'</div>'
+  +'</div>';
+}
+
 function renderAgenda(){
  console.log('[DEBUG] renderAgenda() START');
  var v=document.getElementById('vscroll');
@@ -6451,7 +6484,9 @@ function renderAgenda(){
    }
 
    var agHd="<div class='db-section-header'><div><h3>"+(inPersonalAgendaMode?'Agenda de '+_mcEsc(MC_AGENDA_COACH_NAME):'Agenda del Equipo')+"</h3><p style='font-size:13px;color:var(--db-text-muted);margin:4px 0 0 0;'>"+(inPersonalAgendaMode?'Sesiones y disponibilidad':'Sesiones y eventos de todos los coaches')+"</p></div></div>";
-   v.innerHTML="<div style='padding:var(--db-space-32);'>"+breadcrumbHtml+"<div style='margin-bottom:var(--db-space-32);'>"+agHd+kpiHtml+"</div><div>"+schedulerHtml+"</div></div>";
+   // NEW_SCHEDULER: Header enriquecido para Personal Agenda
+   var personalHeaderHtml=inPersonalAgendaMode?_renderPersonalAgendaHeader():'';
+   v.innerHTML="<div style='padding:var(--db-space-32);'>"+breadcrumbHtml+personalHeaderHtml+"<div style='margin-bottom:var(--db-space-32);'>"+agHd+kpiHtml+"</div><div>"+schedulerHtml+"</div></div>";
 
    // ── REALTIME SUBSCRIPTION (Sprint 5.5) ──────────────────────────────
    if(typeof supabase !== "undefined"){
@@ -6486,7 +6521,7 @@ function renderAgenda(){
  var bcHtml='';
  if(inPersonalAgendaMode){
    bcHtml='<div style="padding:16px;border-bottom:1px solid var(--pw-border);display:flex;align-items:center;gap:8px;font-size:13px;color:var(--pw-text-soft)">'
-     +'<button class="cp-btn cp-btn-ghost" onclick="MC_AGENDA_COACH_ID=null;MC_AGENDA_COACH_NAME=null;__go(\'equipo\')" style="height:28px;padding:0 8px;font-size:12px">← Volver al Equipo</button>'
+     +'<button class="cp-btn cp-btn-ghost" onclick="MC_AGENDA_COACH_ID=null;MC_AGENDA_COACH_NAME=null;MC_AGENDA_COACH_DATA=null;__go(\'equipo\')" style="height:28px;padding:0 8px;font-size:12px">← Volver al Equipo</button>'
      +'<span style="color:var(--pw-text-muted)">·</span>'
      +'<span>Agenda de <strong>'+_mcEsc(MC_AGENDA_COACH_NAME)+'</strong></span>'
      +'</div>';
@@ -6495,12 +6530,15 @@ function renderAgenda(){
  var vt=function(k,l){return '<button class="'+(_agView===k?'on':'')+'" data-view="'+_mcEsc(k)+'" onclick="if(this.dataset.view)_setAgView(this.dataset.view)">'+l+'</button>';};
  var title=inPersonalAgendaMode?'Agenda de '+_mcEsc(MC_AGENDA_COACH_NAME):'Agenda';
  var subtitle=inPersonalAgendaMode?'Sesiones y disponibilidad':'Sesiones, eventos y disponibilidad de todo tu equipo.';
- v.innerHTML=bcHtml+'<header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">'+title+'<span class="dot">.</span></h1><div class="cp-sub">'+subtitle+'</div></div>'
+ // LEGACY: Header enriquecido para Personal Agenda
+ var personalHeaderHtml=inPersonalAgendaMode?_renderPersonalAgendaHeader():'';
+ var containerStyle=inPersonalAgendaMode?'padding:20px;padding-top:0;':'';
+ v.innerHTML=bcHtml+personalHeaderHtml+'<div style="'+containerStyle+'"><header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">'+title+'<span class="dot">.</span></h1><div class="cp-sub">'+subtitle+'</div></div>'
    +'<div class="cp-topbar-actions"><div class="agtoggle">'+vt('dia','Día')+vt('semana','Semana')+vt('mes','Mes')+'</div><button class="cp-btn cp-btn-ghost" onclick="_mcGcalConnect()" style="height:38px" title="Conectar Google Calendar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Google'+((MC_GCAL&&MC_GCAL.length)?' ✓':'')+'</button><button class="cp-btn cp-btn-ghost" onclick="_mcDispModal()" style="height:38px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Mi disponibilidad</button><button class="crear" onclick="__nuevaSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nueva sesión</button></div></header>'
    +'<div class="agkpis"><div class="agkpi"><div class="l">Sesiones hoy</div><div class="n">'+sesHoy+'</div></div><div class="agkpi"><div class="l">Atenciones esta semana</div><div class="n">'+clientesSem+'</div></div><div class="agkpi"><div class="l">Clases esta semana</div><div class="n">'+clasesSem+'</div></div><div class="agkpi"><div class="l">Eventos totales</div><div class="n">'+evs.length+'</div></div></div>'
    +'<div class="aglayout" style="'+(inPersonalAgendaMode?'grid-template-columns:1fr 288px':'')+'">'+(!inPersonalAgendaMode?'<aside class="agcoaches">'+_agCoachList()+'</aside>':'')
    +'<div class="agcal">'+_agCalTop(days)+'<div class="agwrap">'+(_agView==='mes'?_agMonth():_agView==='dia'?_agDayGrid(days):_agWeek(days))+'</div><div class="aglegend" style="padding:12px 16px">'+_agLegend()+'</div></div>'
-   +'<aside class="agrail">'+_agRail(days)+'</aside></div>';
+   +'<aside class="agrail">'+_agRail(days)+'</aside></div>'+( inPersonalAgendaMode?'</div>':'');
 
   // ── REALTIME SUBSCRIPTION (legacy path) ──────────────────────────────
   if(MC_REAL && typeof supabase !== "undefined"){
