@@ -320,7 +320,91 @@ function renderScheduler(scheduler, options){
     return html;
   }
 
-  return "<div style='padding:16px;text-align:center;color:var(--pw-text-soft)'>Vista no soportada aún</div>";
+  if(view === "semana"){
+    // Week view: hora × día grid
+    var hoy = new Date();
+    var inicioSemana = new Date(hoy);
+    inicioSemana.setDate(hoy.getDate() - hoy.getDay() + (state ? state.fecha_navegacion.semana_offset * 7 : 0));
+
+    var diasSemana = [];
+    for(var d = 0; d < 7; d++){
+      var fecha = new Date(inicioSemana);
+      fecha.setDate(fecha.getDate() + d);
+      diasSemana.push(fecha);
+    }
+
+    var AG_START = 8;
+    var AG_END = 18;
+    var AG_ROWH = 30;
+    var DOW = ["L", "M", "X", "J", "V", "S", "D"];
+
+    var grupos = _agruparPorFecha();
+    var headRow = "<div style='display:grid;grid-template-columns:50px repeat(7,1fr);gap:1px;border:1px solid var(--pw-border);border-radius:8px;overflow:hidden;margin-bottom:12px'>";
+    headRow += "<div style='background:var(--pw-niebla-2);padding:8px;font-weight:700;font-size:11px'></div>";
+
+    diasSemana.forEach(function(fecha, idx){
+      var isToday = fecha.toDateString() === hoy.toDateString();
+      headRow += "<div style='background:" + (isToday ? "var(--pw-success-bg)" : "var(--pw-niebla-2)") + ";padding:8px;font-weight:700;font-size:11px;text-align:center'>" +
+        DOW[idx] + "<br>" + fecha.getDate() + "</div>";
+    });
+    headRow += "</div>";
+
+    var colGrid = "<div style='display:grid;grid-template-columns:50px repeat(7,1fr);gap:1px;background:var(--pw-border);border:1px solid var(--pw-border);border-radius:8px;overflow:hidden'>";
+
+    for(var h = AG_START; h < AG_END; h++){
+      colGrid += "<div style='background:var(--pw-niebla-2);padding:4px;font-size:10px;font-weight:700;text-align:right;color:var(--pw-text-muted)'>" + h + ":00</div>";
+
+      diasSemana.forEach(function(fecha){
+        var fechaStr = fecha.getFullYear() + "-" + ("0" + (fecha.getMonth() + 1)).slice(-2) + "-" + ("0" + fecha.getDate()).slice(-2);
+        var evtsHora = (grupos[fechaStr] || []).filter(function(evt){
+          var startHour = new Date(evt.start).getHours();
+          return startHour === h;
+        });
+
+        colGrid += "<div style='background:#fff;min-height:30px;padding:2px;border:1px solid var(--pw-border)'>";
+        evtsHora.forEach(function(evt){
+          colGrid += "<div style='font-size:9px;padding:2px;background:var(--pw-success-bg);border-radius:4px;margin-bottom:1px;cursor:pointer' data-event-id='" + esc(evt.id) + "' data-act='sch-edit'>" +
+            esc(evt.title.substring(0, 15)) + "</div>";
+        });
+        colGrid += "</div>";
+      });
+    }
+    colGrid += "</div>";
+
+    return headRow + colGrid;
+  }
+
+  if(view === "dia"){
+    // Day view: detailed day schedule
+    var hoy = new Date();
+    var grupos = _agruparPorFecha();
+
+    var fechaStr = hoy.getFullYear() + "-" + ("0" + (hoy.getMonth() + 1)).slice(-2) + "-" + ("0" + hoy.getDate()).slice(-2);
+    var evtosDia = (grupos[fechaStr] || []).sort(function(a, b){
+      return new Date(a.start).getTime() - new Date(b.start).getTime();
+    });
+
+    var AG_START = 8;
+    var AG_END = 18;
+
+    var html = "<div style='padding:8px 0'>";
+    html += "<div style='font-size:13px;font-weight:600;margin-bottom:12px'>Hoy, " + hoy.toLocaleDateString("es-ES", {day: "numeric", month: "long"}) + "</div>";
+
+    if(evtosDia.length === 0){
+      html += "<div style='padding:24px;text-align:center;color:var(--pw-text-soft)'>Sin eventos hoy.</div>";
+    } else {
+      html += "<div style='display:flex;flex-direction:column;gap:8px'>";
+      evtosDia.forEach(function(evt){
+        html += _renderEvento(evt);
+      });
+      html += "</div>";
+    }
+
+    html += "</div>";
+    return html;
+  }
+
+  return "<div style='padding:16px;text-align:center;color:var(--pw-text-soft)'>Vista no soportada: " + esc(view) + "</div>";
 }
 
 // ── KPI Rendering Helper ────────────────────────────────────────────────────
@@ -392,3 +476,90 @@ var SesionesRegistroProvider = {
     return eventos;
   }
 };
+
+// ── Drag & Drop Helpers (Sprint A.3) ────────────────────────────────────────
+var _schedulerDragData = null;
+
+function schedulerDragStart(event, eventId, scheduler) {
+  if(!scheduler.getAcciones().mover) return;
+  _schedulerDragData = {eventId: eventId, event: event};
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", eventId);
+}
+
+function schedulerDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+}
+
+function schedulerDrop(event, newDate, scheduler) {
+  event.preventDefault();
+  if(!_schedulerDragData) return;
+
+  var eventId = _schedulerDragData.eventId;
+  if(scheduler.getAcciones().mover) {
+    scheduler.reprogramarEvento(eventId, newDate);
+  }
+  _schedulerDragData = null;
+}
+
+// ── Availability Helpers (Sprint A.3) ───────────────────────────────────────
+var _availabilityState = null;
+
+function schedulerAvailabilityInit(currentState) {
+  _availabilityState = {
+    days: currentState.days || [1, 2, 3, 4, 5],
+    from: currentState.from || "09:00",
+    to: currentState.to || "18:00",
+    min_notice_h: currentState.min_notice_h || 2,
+    buffer_min: currentState.buffer_min || 0,
+    bloqueados: currentState.bloqueados || []
+  };
+  return _availabilityState;
+}
+
+function schedulerAvailabilityAddBlock(date) {
+  if(!_availabilityState) return;
+  var dateStr = date.getFullYear() + "-" +
+    ("0" + (date.getMonth() + 1)).slice(-2) + "-" +
+    ("0" + date.getDate()).slice(-2);
+  if(_availabilityState.bloqueados.indexOf(dateStr) < 0) {
+    _availabilityState.bloqueados.push(dateStr);
+  }
+}
+
+function schedulerAvailabilityRemoveBlock(dateStr) {
+  if(!_availabilityState) return;
+  _availabilityState.bloqueados = _availabilityState.bloqueados.filter(function(d){
+    return d !== dateStr;
+  });
+}
+
+function schedulerAvailabilityToggleDay(dayOfWeek) {
+  if(!_availabilityState) return;
+  var idx = _availabilityState.days.indexOf(dayOfWeek);
+  if(idx >= 0) {
+    _availabilityState.days.splice(idx, 1);
+  } else {
+    _availabilityState.days.push(dayOfWeek);
+  }
+}
+
+function schedulerGetAvailability() {
+  return _availabilityState;
+}
+
+// ── Multiple Participant Support (Sprint A.3 motor-only) ───────────────────
+var PARTICIPANT_ROLES = [
+  "organizer",      // creador del evento
+  "collaborator",   // colaborador que edita
+  "coach",          // coach de la sesión
+  "client",         // cliente participante
+  "recruiter",      // reclutador (procesos)
+  "observer",       // observador (sin modificar)
+  "guest"           // invitado opcional
+];
+
+function validateParticipantRole(role) {
+  return PARTICIPANT_ROLES.indexOf(role) >= 0;
+}
