@@ -3761,7 +3761,54 @@ function _mcSyncNow(cb){
 
 // Activar sync cuando la red real está cargada
 function _mcEnableSync(){
-  if(MC_REAL&&MC_OWNER) _mcSyncStart();
+  if(MC_REAL&&MC_OWNER) { _mcSyncStart(); _mcStartCitasSync(); }
+}
+
+/* ─ SYNC DE CITAS (refresh periódico sin tocar arquitectura existente) ─
+   Sincroniza MC_CITAS cada 10s para que Coach→Owner vea cambios sin reload.
+   Solo actualiza el array; si _sec==='agenda', refuerza renderAgenda(). */
+var _mcCitasSync={
+  enabled:false,
+  intervalId:null,
+  syncInterval:10000, // 10 segundos (más frecuente que general 30s)
+  lastCitasHash:''
+};
+
+function _mcStartCitasSync(){
+  if(_mcCitasSync.enabled||!MC_REAL) return;
+  _mcCitasSync.enabled=true;
+  _mcCitasSync.lastCitasHash=_mcComputeHash({citas:MC_CITAS});
+  _mcCitasSync.intervalId=setInterval(_mcRefreshCitas,_mcCitasSync.syncInterval);
+}
+
+function _mcStopCitasSync(){
+  if(!_mcCitasSync.enabled) return;
+  _mcCitasSync.enabled=false;
+  if(_mcCitasSync.intervalId){ clearInterval(_mcCitasSync.intervalId); _mcCitasSync.intervalId=null; }
+}
+
+function _mcRefreshCitas(){
+  if(!_mcCitasSync.enabled||!MC_REAL||!MC_OWNER) return;
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    var _selectedOrg=null;
+    try{ _selectedOrg=localStorage.getItem('mj_org_selected'); }catch(e){}
+    var _body=_selectedOrg?{org_id:_selectedOrg}:{};
+    return fetch(SB+'/functions/v1/mi-red',{method:'POST',headers:h,body:JSON.stringify(_body)});
+  }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+    if(!d||!d.ok) return;
+    var newCitas=(d.citas||[]).filter(function(c){return c&&c.inicio;});
+    var newHash=_mcComputeHash({citas:newCitas});
+    if(newHash===_mcCitasSync.lastCitasHash) return; // Sin cambios
+    MC_CITAS=newCitas;
+    _mcCitasSync.lastCitasHash=newHash;
+    // Si estamos en Agenda, refrescar visual
+    if(_sec==='agenda'){ mcSetAgenda(); renderAgenda(); }
+  }).catch(function(){ /* silent fail — es un refresh en bg */ });
+}
+
+// Detener sync de citas cuando corresponda (salir de sesión, etc)
+function _mcStopCitasOnLogout(){
+  _mcStopCitasSync();
 }
 
 /* Contenido de las FICHAS por nicho (plan, avances, sesiones, mensajes). */
@@ -7019,7 +7066,7 @@ function _agSug(){
 }
 // Cabra (mismo juego que el panel del coach) + cerrar sesión del demo.
 function jugarCabra(){ try{ window.PW_GAME_EMAIL='demo@multicoach'; }catch(e){} if(typeof openJuego==='function'){ openJuego(); } else { __toast('Cargando el juego…'); } }
-function cerrarSesion(){ window.location.href='/login.html'; }
+function cerrarSesion(){ _mcStopCitasSync(); window.location.href='/login.html'; }
 /* Menú de cuenta (avatar arriba a la derecha) */
 function pwCfgGo(s){ _cfgSec=s; __go('config'); mcCloseMenu(); }
 function mcUserMenu(e){
