@@ -162,23 +162,65 @@ function initScheduler(context){
     },
 
     crearEvento: function(data){
-      if(!state.acciones_disponibles.crear) return;
+      if(!state.acciones_disponibles.crear) return false;
       if(callbacks.onCreate) callbacks.onCreate(data);
+      return true;
     },
     editarEvento: function(evento_id, data){
-      if(!state.acciones_disponibles.editar) return;
+      if(!state.acciones_disponibles.editar) return false;
       if(callbacks.onEdit) callbacks.onEdit(evento_id, data);
+      return true;
     },
     cancelarEvento: function(evento_id){
-      if(!state.acciones_disponibles.cancelar) return;
+      if(!state.acciones_disponibles.cancelar) return false;
       if(callbacks.onCancel) callbacks.onCancel(evento_id);
+      return true;
     },
     reprogramarEvento: function(evento_id, nueva_fecha){
-      if(!state.acciones_disponibles.mover) return;
+      if(!state.acciones_disponibles.mover) return false;
       if(callbacks.onReschedule) callbacks.onReschedule(evento_id, nueva_fecha);
+      return true;
     },
     confirmarAsistencia: function(evento_id, status){
       if(callbacks.onConfirmAssistance) callbacks.onConfirmAssistance(evento_id, status);
+      return true;
+    },
+
+    // Bloquear/desbloquear agenda
+    bloquearFecha: function(fecha_iso, duracion_horas, motivo){
+      if(!permisos.includes("agenda.manage.availability")) return false;
+      if(callbacks.onBlockAvailability)
+        callbacks.onBlockAvailability({fecha: fecha_iso, duracion_horas: duracion_horas, motivo: motivo});
+      return true;
+    },
+
+    desbloquearFecha: function(fecha_iso){
+      if(!permisos.includes("agenda.manage.availability")) return false;
+      if(callbacks.onUnblockAvailability)
+        callbacks.onUnblockAvailability({fecha: fecha_iso});
+      return true;
+    },
+
+    // Vacaciones
+    agregarVacaciones: function(fecha_inicio, fecha_fin, mensaje){
+      if(!permisos.includes("agenda.manage.availability")) return false;
+      if(callbacks.onAddVacation)
+        callbacks.onAddVacation({fecha_inicio: fecha_inicio, fecha_fin: fecha_fin, mensaje: mensaje});
+      return true;
+    },
+
+    eliminarVacaciones: function(vacation_id){
+      if(!permisos.includes("agenda.manage.availability")) return false;
+      if(callbacks.onRemoveVacation)
+        callbacks.onRemoveVacation({vacation_id: vacation_id});
+      return true;
+    },
+
+    // Sincronización con múltiples fuentes
+    actualizarEventos: function(nuevos_eventos){
+      state.eventos = (nuevos_eventos || []).slice();
+      _aplicarFiltro();
+      return true;
     },
 
     cambiarFiltro: function(nuevo_scope){
@@ -477,20 +519,22 @@ function renderSchedulerKPIs(scheduler){
     "</div>";
 }
 
-// ── SesionesRegistroProvider (Phase 1) ──────────────────────────────────────
-var SesionesRegistroProvider = {
-  getEventos: function(scope, usuario_id, team_id, org_id, permisos){
+// ── AgendaProvider (abstraction layer for event sources) ─────────────────────
+// Agnóstico del origen (sesiones_registro, Google Calendar, Outlook, Calendly, etc.)
+var AgendaProvider = {
+  // Transforma datos CLIENTS (sesiones_registro) a AgendaEvent contract
+  fromSesionesRegistro: function(clientsArray, usuario_id){
     var eventos = [];
-    if(typeof CLIENTS === "undefined" || !CLIENTS) return eventos;
+    if(!clientsArray || !Array.isArray(clientsArray)) return eventos;
 
-    CLIENTS.forEach(function(c){
+    clientsArray.forEach(function(c){
       if(c.raw && c.raw.activo === false) return;
       (c.ses || []).forEach(function(s){
         if(!s || !s.fecha) return;
         var startDt = new Date(s.fecha + (s.hora ? "T" + s.hora : "T12:00") + ":00Z");
         var endDt = new Date(startDt.getTime() + 3600000);
         var evt = {
-          id: "evt_temp_" + (Math.random() * 1e9 | 0),
+          id: "evt_" + (Math.random() * 1e9 | 0),
           title: "Sesión con " + c.name,
           description: "",
           start: startDt.toISOString(),
@@ -502,7 +546,7 @@ var SesionesRegistroProvider = {
           state: "confirmed",
           visibility: "participants",
           source: "sesiones_registro",
-          source_id: "evt_temp_" + (Math.random() * 1e9 | 0),
+          source_id: s.id || "",
           created_at: new Date().toISOString(),
           created_by: usuario_id,
           updated_at: new Date().toISOString(),
@@ -521,6 +565,34 @@ var SesionesRegistroProvider = {
     });
 
     return eventos;
+  },
+
+  // Placeholder for Google Calendar integration
+  fromGoogleCalendar: function(gcalEvents, usuario_id){
+    // TODO: implement when Google Calendar provider ready
+    return [];
+  },
+
+  // Placeholder for Outlook integration
+  fromOutlook: function(outlookEvents, usuario_id){
+    // TODO: implement when Outlook provider ready
+    return [];
+  },
+
+  // Placeholder for Calendly integration
+  fromCalendly: function(calendlyEvents, usuario_id){
+    // TODO: implement when Calendly provider ready
+    return [];
+  }
+};
+
+// Legacy alias for backwards compatibility (will be removed post-Sprint 5.3)
+var SesionesRegistroProvider = {
+  getEventos: function(scope, usuario_id, team_id, org_id, permisos){
+    return AgendaProvider.fromSesionesRegistro(
+      (typeof CLIENTS !== "undefined" ? CLIENTS : []),
+      usuario_id
+    );
   }
 };
 
