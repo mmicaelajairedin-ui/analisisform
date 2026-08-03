@@ -35,7 +35,10 @@ function initScheduler(context){
       mes: new Date().getMonth(),
       anio: new Date().getFullYear(),
       semana_offset: 0
-    }
+    },
+    labels: labels_param,
+    theme: theme,
+    locale: locale
   };
 
   function _calcularAcciones(perms){
@@ -223,8 +226,30 @@ function renderScheduler(scheduler, options){
   var eventos = scheduler.getEventos();
   var acciones = scheduler.getAcciones();
   var kpis = scheduler.getKPIs();
+  var state = scheduler.getEstado();
+  var labels = state.labels || {};
+  var theme = state.theme || {};
+  var locale = state.locale || "es";
   var view = options.view || "mes";
   var compact = options.compact || false;
+
+  // Default labels (i18n fallback)
+  var defaultLabels = {
+    hoy: "Hoy",
+    manana: "Mañana",
+    sin_eventos: "Sin eventos programados",
+    crear_evento: "Crear evento",
+    participantes: "participante(s)",
+    grupal: "Grupal",
+    sesiones_hoy: "Sesiones hoy",
+    atenciones_semana: "Atenciones semana",
+    clases_semana: "Clases semana",
+    total_eventos: "Total eventos",
+    sin_eventos_hoy: "Sin eventos hoy"
+  };
+  Object.keys(defaultLabels).forEach(function(key){
+    if(!labels[key]) labels[key] = defaultLabels[key];
+  });
 
   function esc(s){
     var e = document.createElement('div');
@@ -248,39 +273,42 @@ function renderScheduler(scheduler, options){
     hoy.setHours(0, 0, 0, 0);
     var diff = Math.round((d.getTime() - hoy.getTime()) / 86400000);
     var nombreDia;
-    if(diff === 0) nombreDia = "Hoy";
-    else if(diff === 1) nombreDia = "Mañana";
-    else nombreDia = d.toLocaleDateString("es-ES", {weekday: "long"});
-    var fecha = d.toLocaleDateString("es-ES", {day: "numeric", month: "long"});
+    if(diff === 0) nombreDia = labels.hoy;
+    else if(diff === 1) nombreDia = labels.manana;
+    else nombreDia = d.toLocaleDateString(locale, {weekday: "long"});
+    var fecha = d.toLocaleDateString(locale, {day: "numeric", month: "long"});
     return (nombreDia.charAt(0).toUpperCase() + nombreDia.slice(1)) + " · " + fecha;
   }
 
   function _renderEvento(evt){
-    var hora = new Date(evt.start).toLocaleTimeString("es-ES", {hour: "2-digit", minute: "2-digit"});
+    var hora = new Date(evt.start).toLocaleTimeString(locale, {hour: "2-digit", minute: "2-digit"});
     var titulo = esc(evt.title);
     var tipo = (evt.metadata && evt.metadata.event_type) ? esc(evt.metadata.event_type.replace(/_/g, " ")) : "Evento";
     var estado_badge = "";
 
+    // Theme-aware colors: use theme colors if provided, fallback to defaults
     var colores_estado = {
-      confirmed: "background:var(--pw-success-bg);color:var(--pw-bosque)",
-      pending: "background:#FFF3E0;color:#E65100",
-      cancelled: "background:#FFEBEE;color:#C62828"
+      confirmed: "background:" + (theme.successBg || "var(--pw-success-bg)") + ";color:" + (theme.successText || "var(--pw-bosque)"),
+      pending: "background:" + (theme.warningBg || "#FFF3E0") + ";color:" + (theme.warningText || "#E65100"),
+      cancelled: "background:" + (theme.dangerBg || "#FFEBEE") + ";color:" + (theme.dangerText || "#C62828")
     };
     if(evt.state && colores_estado[evt.state]){
       estado_badge = "<span style='font-size:9px;padding:2px 6px;border-radius:4px;" + colores_estado[evt.state] + "'>" + esc(evt.state.toUpperCase()) + "</span>";
     }
 
-    var foto = (evt.metadata && evt.metadata.client_photo) || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect fill='%23ccc' width='36' height='36'/%3E%3C/svg%3E";
-    var grupal = (evt.participants && evt.participants.length > 2) ? "<span style='font-size:9px;padding:2px 6px;border-radius:4px;background:#E1EDF1;color:#2E7587'>Grupal</span>" : "";
+    // Support branding colors if available (prioritize branding over default)
+    var brandColor = (evt.branding && evt.branding.org_color) || (theme.accentColor || "var(--pw-bosque)");
+    var foto = (evt.metadata && evt.metadata.client_photo) || (evt.branding && evt.branding.coach_avatar) || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect fill='%23ccc' width='36' height='36'/%3E%3C/svg%3E";
+    var grupal = (evt.participants && evt.participants.length > 2) ? "<span style='font-size:9px;padding:2px 6px;border-radius:4px;background:#E1EDF1;color:#2E7587'>" + labels.grupal + "</span>" : "";
 
-    return "<div class='ag-event-card' style='cursor:pointer;padding:8px;border-radius:8px;background:#f9f8f6;border:1px solid var(--pw-border);margin-bottom:6px' data-event-id='" + esc(evt.id) + "'>" +
+    return "<div class='ag-event-card' style='cursor:pointer;padding:8px;border-radius:" + (theme.borderRadius || "8px") + ";background:#f9f8f6;border:1px solid var(--pw-border);margin-bottom:6px' data-event-id='" + esc(evt.id) + "'>" +
       "<div style='display:flex;gap:8px;align-items:start'>" +
-      "<div style='font-weight:600;color:var(--pw-bosque);min-width:50px'>" + esc(hora) + "</div>" +
+      "<div style='font-weight:600;color:" + brandColor + ";min-width:50px'>" + esc(hora) + "</div>" +
       "<div style='flex:1;min-width:0'>" +
       "<div class='ag-event-card__client' style='font-size:13px;font-weight:600;margin-bottom:2px'>" + titulo + "</div>" +
       "<div class='ag-event-card__type' style='font-size:10px;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:4px'>" + tipo + "</div>" +
       "<div style='font-size:11px;color:var(--pw-text-soft); display:flex;gap:6px;align-items:center'>" +
-      "<span>" + (evt.participants ? evt.participants.length : 0) + " participante(s)" + estado_badge + "</span>" +
+      "<span>" + (evt.participants ? evt.participants.length : 0) + " " + labels.participantes + estado_badge + "</span>" +
       grupal +
       "</div>" +
       "</div>" +
@@ -296,8 +324,8 @@ function renderScheduler(scheduler, options){
 
     if(fechas.length === 0){
       html += "<div style='padding:24px 16px;text-align:center;color:var(--pw-text-soft);font-size:13px'>" +
-        "Sin eventos programados. " +
-        (acciones.crear ? "<button class='cp-btn cp-btn-primary' style='margin-top:8px' data-act='sch-create'>Crear evento</button>" : "") +
+        labels.sin_eventos + ". " +
+        (acciones.crear ? "<button class='cp-btn cp-btn-primary' style='margin-top:8px' data-act='sch-create'>" + labels.crear_evento + "</button>" : "") +
         "</div>";
     } else {
       fechas.forEach(function(fecha){
@@ -313,7 +341,7 @@ function renderScheduler(scheduler, options){
 
     if(acciones.crear){
       html += "<div style='padding:12px 8px;border-top:1px solid var(--pw-border);margin-top:8px'>" +
-        "<button class='cp-btn cp-btn-primary' style='width:100%' data-act='sch-create'>Crear evento</button>" +
+        "<button class='cp-btn cp-btn-primary' style='width:100%' data-act='sch-create'>" + labels.crear_evento + "</button>" +
         "</div>";
     }
 
@@ -388,10 +416,10 @@ function renderScheduler(scheduler, options){
     var AG_END = 18;
 
     var html = "<div style='padding:8px 0'>";
-    html += "<div style='font-size:13px;font-weight:600;margin-bottom:12px'>Hoy, " + hoy.toLocaleDateString("es-ES", {day: "numeric", month: "long"}) + "</div>";
+    html += "<div style='font-size:13px;font-weight:600;margin-bottom:12px'>" + labels.hoy + ", " + hoy.toLocaleDateString(locale, {day: "numeric", month: "long"}) + "</div>";
 
     if(evtosDia.length === 0){
-      html += "<div style='padding:24px;text-align:center;color:var(--pw-text-soft)'>Sin eventos hoy.</div>";
+      html += "<div style='padding:24px;text-align:center;color:var(--pw-text-soft)'>" + labels.sin_eventos_hoy + "</div>";
     } else {
       html += "<div style='display:flex;flex-direction:column;gap:8px'>";
       evtosDia.forEach(function(evt){
@@ -410,22 +438,41 @@ function renderScheduler(scheduler, options){
 // ── KPI Rendering Helper ────────────────────────────────────────────────────
 function renderSchedulerKPIs(scheduler){
   var kpis = scheduler.getKPIs();
+  var state = scheduler.getEstado();
+  var labels = state.labels || {};
+  var theme = state.theme || {};
+
+  // Default KPI labels (i18n fallback)
+  var defaultLabels = {
+    sesiones_hoy: "Sesiones hoy",
+    atenciones_semana: "Atenciones semana",
+    clases_semana: "Clases semana",
+    total_eventos: "Total eventos"
+  };
+  Object.keys(defaultLabels).forEach(function(key){
+    if(!labels[key]) labels[key] = defaultLabels[key];
+  });
+
+  var bgColor = theme.kpiBg || "var(--pw-niebla-2)";
+  var textColor = theme.kpiText || "var(--pw-bosque)";
+  var borderRadius = theme.borderRadius || "9px";
+
   return "<div class='agkpis' style='display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px'>" +
-    "<div class='agkpi' style='padding:12px;background:var(--pw-niebla-2);border-radius:9px'>" +
-      "<div style='font-size:11px;color:var(--pw-text-muted);text-transform:uppercase'>Sesiones hoy</div>" +
-      "<div style='font-size:20px;font-weight:700;color:var(--pw-bosque)'>" + kpis.sesiones_hoy + "</div>" +
+    "<div class='agkpi' style='padding:12px;background:" + bgColor + ";border-radius:" + borderRadius + "'>" +
+      "<div style='font-size:11px;color:var(--pw-text-muted);text-transform:uppercase'>" + labels.sesiones_hoy + "</div>" +
+      "<div style='font-size:20px;font-weight:700;color:" + textColor + "'>" + kpis.sesiones_hoy + "</div>" +
     "</div>" +
-    "<div class='agkpi' style='padding:12px;background:var(--pw-niebla-2);border-radius:9px'>" +
-      "<div style='font-size:11px;color:var(--pw-text-muted);text-transform:uppercase'>Atenciones semana</div>" +
-      "<div style='font-size:20px;font-weight:700;color:var(--pw-bosque)'>" + kpis.atenciones_semana + "</div>" +
+    "<div class='agkpi' style='padding:12px;background:" + bgColor + ";border-radius:" + borderRadius + "'>" +
+      "<div style='font-size:11px;color:var(--pw-text-muted);text-transform:uppercase'>" + labels.atenciones_semana + "</div>" +
+      "<div style='font-size:20px;font-weight:700;color:" + textColor + "'>" + kpis.atenciones_semana + "</div>" +
     "</div>" +
-    "<div class='agkpi' style='padding:12px;background:var(--pw-niebla-2);border-radius:9px'>" +
-      "<div style='font-size:11px;color:var(--pw-text-muted);text-transform:uppercase'>Clases semana</div>" +
-      "<div style='font-size:20px;font-weight:700;color:var(--pw-bosque)'>" + kpis.clases_semana + "</div>" +
+    "<div class='agkpi' style='padding:12px;background:" + bgColor + ";border-radius:" + borderRadius + "'>" +
+      "<div style='font-size:11px;color:var(--pw-text-muted);text-transform:uppercase'>" + labels.clases_semana + "</div>" +
+      "<div style='font-size:20px;font-weight:700;color:" + textColor + "'>" + kpis.clases_semana + "</div>" +
     "</div>" +
-    "<div class='agkpi' style='padding:12px;background:var(--pw-niebla-2);border-radius:9px'>" +
-      "<div style='font-size:11px;color:var(--pw-text-muted);text-transform:uppercase'>Total eventos</div>" +
-      "<div style='font-size:20px;font-weight:700;color:var(--pw-bosque)'>" + kpis.total_eventos + "</div>" +
+    "<div class='agkpi' style='padding:12px;background:" + bgColor + ";border-radius:" + borderRadius + "'>" +
+      "<div style='font-size:11px;color:var(--pw-text-muted);text-transform:uppercase'>" + labels.total_eventos + "</div>" +
+      "<div style='font-size:20px;font-weight:700;color:" + textColor + "'>" + kpis.total_eventos + "</div>" +
     "</div>" +
     "</div>";
 }
