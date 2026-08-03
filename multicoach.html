@@ -2272,7 +2272,11 @@ function __nuevaSesion(){
   // coach y el link de la Sala sale solo (Pathway-<coach>-<hora>).
   var cs=DB.coaches.filter(function(c){return c.est==='activo';});
   if(!cs.length){ __toast('Primero suma un coach a tu red'); return; }
-  var coachOpts=cs.map(function(c){return '<option value="'+c.id+'">'+_mcEsc(c.n)+(c.esOwner?' (tú)':'')+'</option>';}).join('');
+
+  // Sprint 5.2.3: En Personal Agenda, pre-seleccionar el coach
+  var preSelectedCoachId=MC_AGENDA_COACH_ID||null;
+
+  var coachOpts=cs.map(function(c){return '<option value="'+c.id+'" '+(preSelectedCoachId===c.id?'selected':'')+'>'+_mcEsc(c.n)+(c.esOwner?' (tú)':'')+'</option>';}).join('');
   // Selector de cliente → lleva su EMAIL, para que la sesión aparezca luego en la
   // ficha de esa persona (_mcSesReal cruza por email). "Otro/evento" = nombre libre.
   var cliOpts='<option value="" data-n="">— Cliente (opcional) —</option>'+(DB.clientes||[]).map(function(k){return '<option value="'+_mcEsc(k.email||'')+'" data-n="'+_mcEsc(k.n)+'">'+_mcEsc(k.n)+(k.email?'':' (sin email)')+'</option>';}).join('');
@@ -6313,6 +6317,13 @@ function renderAgenda(){
      ME.id
    );
 
+   // Sprint 5.2.3: Filtrar por coach en Personal Agenda mode
+   if(inPersonalAgendaMode && MC_AGENDA_COACH_ID){
+     evt_data = evt_data.filter(function(e){
+       return e.coach_id === MC_AGENDA_COACH_ID;
+     });
+   }
+
    var scheduler=initScheduler({
      eventos: evt_data,
      currentUser: {id:ME.id, name:ME.nombre, email:ME.email},
@@ -6408,12 +6419,26 @@ function renderAgenda(){
    var sesSemana=evt_data.filter(function(e){var d=new Date(e.fecha);var now=new Date();var diffDays=(d-now)/(1000*60*60*24);return diffDays>=0&&diffDays<=7;}).length;
    var sesConfirmadas=evt_data.filter(function(e){return e.estado==='confirmed';}).length;
 
-   var kpiHtml='<div class="db-kpis">'
-     +'<div class="db-kpi-item"><div class="db-kpi-value">'+sesSemana+'</div><div class="db-kpi-label">Sesiones Semana</div></div>'
-     +'<div class="db-kpi-item"><div class="db-kpi-value">'+sesConfirmadas+'</div><div class="db-kpi-label">Confirmadas</div></div>'
-     +'<div class="db-kpi-item"><div class="db-kpi-value">'+coaches.length+'</div><div class="db-kpi-label">Coaches</div></div>'
-     +'<div class="db-kpi-item"><div class="db-kpi-value">'+(typeof DB!=='undefined'&&DB.clientes?DB.clientes.length:0)+'</div><div class="db-kpi-label">Clientes</div></div>'
-     +'</div>';
+   // En Personal Agenda, mostrar KPIs del coach específico, no de toda la org
+   var kpiHtml='';
+   if(inPersonalAgendaMode){
+     // Coach específico: solo mostrar KPIs de ese coach
+     var coachClientes=(typeof DB!=='undefined'&&DB.clientes)?DB.clientes.filter(function(c){return c.coach===MC_AGENDA_COACH_ID;}).length:0;
+     kpiHtml='<div class="db-kpis">'
+       +'<div class="db-kpi-item"><div class="db-kpi-value">'+sesSemana+'</div><div class="db-kpi-label">Sesiones Semana</div></div>'
+       +'<div class="db-kpi-item"><div class="db-kpi-value">'+sesConfirmadas+'</div><div class="db-kpi-label">Confirmadas</div></div>'
+       +'<div class="db-kpi-item"><div class="db-kpi-value">'+coachClientes+'</div><div class="db-kpi-label">Clientes</div></div>'
+       +'<div class="db-kpi-item"><div class="db-kpi-value">'+totalSes+'</div><div class="db-kpi-label">Total eventos</div></div>'
+       +'</div>';
+   } else {
+     // Agenda Operativa: KPIs de toda la org
+     kpiHtml='<div class="db-kpis">'
+       +'<div class="db-kpi-item"><div class="db-kpi-value">'+sesSemana+'</div><div class="db-kpi-label">Sesiones Semana</div></div>'
+       +'<div class="db-kpi-item"><div class="db-kpi-value">'+sesConfirmadas+'</div><div class="db-kpi-label">Confirmadas</div></div>'
+       +'<div class="db-kpi-item"><div class="db-kpi-value">'+coaches.length+'</div><div class="db-kpi-label">Coaches</div></div>'
+       +'<div class="db-kpi-item"><div class="db-kpi-value">'+(typeof DB!=='undefined'&&DB.clientes?DB.clientes.length:0)+'</div><div class="db-kpi-label">Clientes</div></div>'
+       +'</div>';
+   }
 
    // Breadcrumb para Personal Agenda
    var breadcrumbHtml='';
@@ -6441,6 +6466,12 @@ function renderAgenda(){
 
  // ── LEGACY AGENDA ────────────────────────────────────────────────────────
  console.log('[DEBUG] renderAgenda() using LEGACY AGENDA');
+ // Sprint 5.2.3: En Personal Agenda, establecer el filtro al coach específico
+ if(inPersonalAgendaMode && MC_AGENDA_COACH_ID){
+   _agCoach = MC_AGENDA_COACH_ID;
+ } else if(!inPersonalAgendaMode){
+   _agCoach = 'todos'; // Volver a mostrar todos los coaches en Agenda Operativa
+ }
  // Traer el Google Calendar del dueño la 1ª vez (después ya está en MC_GCAL).
  if(MC_REAL&&!_mcGcalDone){ _mcGcalDone=true; _mcGcalLoad(function(){ if(MC_GCAL&&MC_GCAL.length){ mcSetAgenda(); if(_sec==='agenda') renderAgenda(); } }); }
  var days=_weekDates();var todayDow=(new Date().getDay()+6)%7;
@@ -6467,8 +6498,8 @@ function renderAgenda(){
  v.innerHTML=bcHtml+'<header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">'+title+'<span class="dot">.</span></h1><div class="cp-sub">'+subtitle+'</div></div>'
    +'<div class="cp-topbar-actions"><div class="agtoggle">'+vt('dia','Día')+vt('semana','Semana')+vt('mes','Mes')+'</div><button class="cp-btn cp-btn-ghost" onclick="_mcGcalConnect()" style="height:38px" title="Conectar Google Calendar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Google'+((MC_GCAL&&MC_GCAL.length)?' ✓':'')+'</button><button class="cp-btn cp-btn-ghost" onclick="_mcDispModal()" style="height:38px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Mi disponibilidad</button><button class="crear" onclick="__nuevaSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nueva sesión</button></div></header>'
    +'<div class="agkpis"><div class="agkpi"><div class="l">Sesiones hoy</div><div class="n">'+sesHoy+'</div></div><div class="agkpi"><div class="l">Atenciones esta semana</div><div class="n">'+clientesSem+'</div></div><div class="agkpi"><div class="l">Clases esta semana</div><div class="n">'+clasesSem+'</div></div><div class="agkpi"><div class="l">Eventos totales</div><div class="n">'+evs.length+'</div></div></div>'
-   +'<div class="aglayout"><aside class="agcoaches">'+_agCoachList()+'</aside>'
-   +'<div class="agcal">'+_agCalTop(days)+'<div class="agwrap">'+(_agView==='mes'?_agMonth():_agView==='dia'?_agDayGrid(days):_agWeek(days))+'</div><div class="aglegend" style="padding:12px 16px">'+_agLegend()+'</div></div>'
+   +'<div class="aglayout">'+(inPersonalAgendaMode?'':'<aside class="agcoaches">'+_agCoachList()+'</aside>')
+   +'<div class="agcal" style="'+(inPersonalAgendaMode?'width:100%':'')+'">'+_agCalTop(days)+'<div class="agwrap">'+(_agView==='mes'?_agMonth():_agView==='dia'?_agDayGrid(days):_agWeek(days))+'</div><div class="aglegend" style="padding:12px 16px">'+_agLegend()+'</div></div>'
    +'<aside class="agrail">'+_agRail(days)+'</aside></div>';
 
   // ── REALTIME SUBSCRIPTION (legacy path) ──────────────────────────────
