@@ -3497,6 +3497,19 @@ function _mcSyncNow(cb){
   }).then(function(d){
     if(d&&d.ok){
       MC_SYNC.lastHash=_mcComputeHash({coaches:DB.coaches,clientes:DB.clientes});
+
+      // Re-load MC_CITAS from Supabase (sync sessions from team)
+      if(MC_REAL && MC_OWNER){
+        _hdr({'Content-Type':'application/json'}).then(function(h){
+          return fetch(SB+'/functions/v1/mi-red',{method:'GET',headers:h});
+        }).then(function(r){return r.json();}).then(function(d2){
+          if(d2 && d2.citas){
+            MC_CITAS = (d2.citas||[]).filter(function(c){return c&&c.inicio;});
+            if(_sec==='agenda') { mcSetAgenda(); renderAgenda(); }
+          }
+        }).catch(function(){});
+      }
+
       MC_SYNC.isSyncing=false;
       _mcShowSyncStatus('success');
       cb&&cb(true);
@@ -6415,6 +6428,15 @@ function renderAgenda(){
    +'<div class="aglayout"><aside class="agcoaches">'+_agCoachList()+'</aside>'
    +'<div class="agcal">'+_agCalTop(days)+'<div class="agwrap">'+(_agView==='mes'?_agMonth():_agView==='dia'?_agDayGrid(days):_agWeek(days))+'</div><div class="aglegend" style="padding:12px 16px">'+_agLegend()+'</div></div>'
    +'<aside class="agrail">'+_agRail(days)+'</aside></div>';
+
+  // ── REALTIME SUBSCRIPTION (legacy path) ──────────────────────────────
+  if(MC_REAL && typeof supabase !== "undefined"){
+    supabase.channel('sesiones_registro:agenda').on('*', function(payload){
+      console.log('[AGENDA-LEGACY-RT] Change detected');
+      mcSetAgenda();
+      renderAgenda();
+    }).subscribe();
+  }
 }
 // "Mi disponibilidad" — copiado del panel del coach (mismo modelo de datos:
 // disponibilidad={days,from,to,min_notice_h,buffer_min,bloqueados}). Define qué
