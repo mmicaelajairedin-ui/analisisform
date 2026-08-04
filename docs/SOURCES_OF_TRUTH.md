@@ -13,6 +13,8 @@
 | **Organización (empresa)** | `organizaciones` | `id, nombre, plan, dominio, max_coaches, max_clientes, estado_sub, fecha_fin_prueba` | MultiCoach escribe | Solo datos de la empresa, NO info específica de coach |
 | **Coach (identidad)** | `usuarios` | `id, email, nombre, rol, activo, auth_id` | Panel-v2 escribe | Centro de identidad del coach |
 | **Organización (FK del coach)** | `usuarios` | `org_id` (columna UUID) | Panel-v2 escribe | **ÚNICA fuente.** Fallback `configuracion.org_id` deprecated (legacy only). Nunca escribir al JSONB. |
+| **Rol en la red** | `usuarios.configuracion` | `.member_role` ("coach" \| "colaborador") | Panel-v2 + MultiCoach escriben | Coach da clases; Colaborador gestiona sin dar clases. |
+| **Especialidad/Nicho** | `usuarios.configuracion` | `.coach_type` ("carrera" \| "fitness" \| "financiero") | Panel-v2 escribe | Especialidad del coach (distinto de member_role). |
 | **Config Coach** | `usuarios` | `configuracion` (JSONB) | Panel-v2 + MultiCoach escriben | Estructura interna definida abajo |
 | **Negocio** | `usuarios.configuracion` | `.negocio {}` | Panel-v2 escribe | Horarios, especialidades, servicios |
 | **Marca** | `usuarios.configuracion` | `.marca {}` | Panel-v2 + MultiCoach escriben | Logo, colores, fonts (uno solo) |
@@ -29,6 +31,8 @@
 
 ```json
 {
+  "member_role": "coach|colaborador",
+  "coach_type": "carrera|fitness|financiero",
   "negocio": {
     "especialidad": "string",
     "servicios": ["service1", "service2"],
@@ -57,7 +61,11 @@
 }
 ```
 
-**IMPORTANTE:** `org_id` NO va aquí. Vive en la columna `usuarios.org_id`.
+**IMPORTANTE:** 
+- `org_id` NO va aquí. Vive en la columna `usuarios.org_id`
+- `member_role` y `coach_type` son campos distintos:
+  - `member_role`: Rol en la red (coach da clases / colaborador gestiona)
+  - `coach_type`: Especialidad (carrera / fitness / finanzas)
 
 ---
 
@@ -69,6 +77,14 @@
 - ✅ **Implementación:** Documentado. Código no cambia.
 - ✅ **Riesgo:** BAJO (fallback aún existe si falta columna)
 - 📋 **Pendiente:** Limpiar `configuracion.org_id` en datos reales (siguiente ciclo)
+
+### Ciclo 2: Aclarar `member_role` vs `coach_type` (NO duplicado)
+- ✅ **Investigado:** Audit reportó `tipo` duplicado con `coach_type`
+- ✅ **Hallazgo:** NO hay duplicado. Son campos distintos:
+  - `member_role`: Rol del coach en la red (coach vs colaborador)
+  - `coach_type`: Especialidad/nicho (carrera vs fitness vs finanzas)
+- ✅ **Implementación:** Documentado en estructura JSONB. Código no cambia.
+- ✅ **Riesgo:** NINGUNO (campos legítimos y usados correctamente)
 
 ---
 
