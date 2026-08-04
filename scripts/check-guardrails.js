@@ -4924,6 +4924,33 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "multicoach: onclick handlers NO concatenan strings con backslash-quotes (quote escaping bug)",
+    bug: "En multicoach.html línea 3690 había un onclick con comillas escapadas dentro de " +
+         "string concatenation: onclick=\"...\\'Chat con '+k.n.split(...)+' —...\\')\". " +
+         "Los backslashes son caracteres literales en el atributo → JS inválido. " +
+         "La solución: usar _toastChat(nom) helper y pasar valores con _mcEsc().",
+    check() {
+      const mc = read("multicoach.html");
+      if (!mc) return null;
+
+      // Debe existir la función _toastChat (helper creado para evitar el bug)
+      if (!/function\s+_toastChat\s*\(\s*name\s*\)/.test(mc))
+        return "multicoach.html: falta _toastChat(name) helper function.";
+
+      // Detectar: onclick con \' (escaped quote literal) + variable + \' nuevamente
+      // Esto indica que alguien intentó volver a usar el patrón problemático
+      // Búsqueda en dos formas:
+      // 1. onclick="...\\' + var + \\'" (con comillas invertidas en regex)
+      // 2. Patrón más genérico: onclick con backslash-quote seguido de +
+      const pattern1 = /onclick\s*=\s*"[^"]*\\'\s*\+\s*[^"]*\+\s*[^"]*\\'/;
+      const pattern2 = /\+\s*'<button[^>]*onclick="[^"]*\+'[^"]*\+\s*'[^"]*\+/;
+      if (pattern1.test(mc) || pattern2.test(mc))
+        return "multicoach.html: onclick con escaped quotes + concatenation = patrón roto restaurado.";
+
+      return null;
+    },
+  },
 ];
 
 

@@ -109,10 +109,12 @@ function setLoadingMsg(msg){
 }
 
 // Maneja el flujo de Apple nativo (Capacitor iOS): crear o actualizar usuario.
-function handleAppleNativeUser(email, name, provider, appleUserId){
+// Ahora recibe el JWT real de la sesión autenticada de Supabase.
+function handleAppleNativeUser(email, name, provider, appleUserId, authJWT){
   setLoadingMsg('Buscando tu cuenta...');
 
-  var SJWT = KEY;
+  // Usar el JWT real de Supabase Auth (no la anon key).
+  var SJWT = authJWT || KEY;
   var SB = 'https://api.pathwaycareercoach.com';
 
   // Chequear si el usuario existe en usuarios.
@@ -274,29 +276,42 @@ async function handleCallback(){
       return showError('No pudimos obtener tu email. Intenta iniciar sesión de nuevo — asegúrate de permitir que Pathway acceda a tu email.');
     }
 
-    // Aquí iría un flujo robusto: edge function que valida appleIdentityToken,
-    // crea/vincula el user en Auth, y devuelve un JWT. Por ahora, seguimos con
-    // Supabase Auth normal pero usando el email que capturamos de Apple.
     setLoadingMsg('Conectando tu cuenta...');
 
-    // Continuar con el flujo normal: buscar o crear el usuario por email.
-    // (El resto del código usa appleEmail como email logueado sin contraseña.)
-    var email = (appleEmail || '').toLowerCase().trim();
-    var name = appleName || appleEmail.split('@')[0];
-    var provider = 'apple';
-    var user = {
-      id: appleUserId || 'apple_' + Date.now(),
-      email: email,
-      user_metadata: { full_name: name, name: name, given_name: name.split(' ')[0] },
-      app_metadata: { provider: provider }
-    };
-    var session = { user: user, access_token: KEY };
-    var SJWT = KEY;
+    // ── Intercambiar identityToken de Apple por sesión real en Supabase ────
+    // Esto valida el token con Apple del lado del servidor y crea una sesión
+    // real con JWT autenticado (no anon key). Necesario para que las políticas
+    // RLS permitan crear/leer en la tabla usuarios.
+    try {
+      var sb = window.supabase.createClient(SB, KEY, {
+        auth: { persistSession: true, autoRefreshToken: true }
+      });
 
-    // Salta toda la autenticación de Supabase y va directo a crear/actualizar el usuario.
-    // (Equivalente a llegar aquí con una sesión válida de Supabase.)
-    handleAppleNativeUser(email, name, provider, user.id);
-    return;
+      var { data: authData, error: authError } = await sb.auth.signInWithIdToken({
+        provider: 'apple',
+        token: appleIdentityToken
+      });
+
+      if(authError){
+        return showError('Error validando con Apple: ' + (authError.message || 'desconocido'));
+      }
+
+      if(!authData || !authData.user || !authData.session){
+        return showError('No se recibió sesión de Apple. Intenta de nuevo.');
+      }
+
+      var email = (authData.user.email || appleEmail || '').toLowerCase().trim();
+      var name = appleName || (authData.user.user_metadata && authData.user.user_metadata.full_name) || email.split('@')[0];
+      var provider = 'apple';
+      var userId = authData.user.id;
+      var authJWT = authData.session.access_token; // JWT real de usuario autenticado
+
+      // Pasar el JWT real a handleAppleNativeUser para que lo use en lugar de la anon key.
+      handleAppleNativeUser(email, name, provider, userId, authJWT);
+      return;
+    } catch(e) {
+      return showError('Error en validación de Apple: ' + (e && e.message || 'desconocido'));
+    }
   }
 
   // Inicializar Supabase JS client
