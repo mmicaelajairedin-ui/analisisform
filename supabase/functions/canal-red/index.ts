@@ -88,9 +88,9 @@ Deno.serve(async (req: Request) => {
 
   const canalId = (body.canal_id || "").toString().trim();
 
-  // ── Lista de canales visibles para el caller (General + grupos suyos) ──
+  // ── Lista de canales visibles para el caller (General + sistema + grupos propios) ──
   if (action === "groups") {
-    const all = await q(`red_canales?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,miembros,created_at&order=created_at.asc`);
+    const all = await q(`red_canales?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,miembros,created_at,is_system&order=is_system.desc,nombre.asc`);
     const visibles = all.filter((g: any) => {
       const m = Array.isArray(g.miembros) ? g.miembros.map((x: any) => String(x)) : [];
       return caller.rol === "owner" || m.length === 0 || m.indexOf(String(caller.id)) >= 0;
@@ -100,9 +100,9 @@ Deno.serve(async (req: Request) => {
       const r = await q(`mensajes_red_canal?org_id=eq.${encodeURIComponent(orgId)}&${f}&select=created_at&order=created_at.desc&limit=1`);
       return r[0] ? r[0].created_at : null;
     }
-    const canales: any[] = [{ id: null, nombre: "General", general: true, miembros: [], ultimo_at: await ultimo(null) }];
+    const canales: any[] = [{ id: null, nombre: "General", general: true, is_system: true, miembros: [], ultimo_at: await ultimo(null) }];
     for (const g of visibles) {
-      canales.push({ id: g.id, nombre: g.nombre, general: false, miembros: Array.isArray(g.miembros) ? g.miembros : [], ultimo_at: await ultimo(g.id) });
+      canales.push({ id: g.id, nombre: g.nombre, general: false, is_system: g.is_system || false, miembros: Array.isArray(g.miembros) ? g.miembros : [], ultimo_at: await ultimo(g.id) });
     }
     return json({ ok: true, canales });
   }
@@ -142,6 +142,22 @@ Deno.serve(async (req: Request) => {
         method: "PATCH", headers: { ...svc, "Content-Type": "application/json" }, body: JSON.stringify(patch),
       });
       if (!r.ok) return json({ error: "update_failed", status: r.status }, 502);
+      return json({ ok: true });
+    } catch { return json({ error: "write_failed" }, 502); }
+  }
+
+  // ── Eliminar un grupo (dueño o quien lo creó) ──
+  if (action === "group_delete") {
+    if (!canalId) return json({ error: "missing_canal" }, 400);
+    const rows = await q(`red_canales?id=eq.${encodeURIComponent(canalId)}&select=id,org_id,creado_por&limit=1`);
+    const row = rows[0];
+    if (!row || String(row.org_id) !== String(orgId)) return json({ error: "no_existe" }, 404);
+    if (!(caller.rol === "owner" || String(row.creado_por) === String(caller.id))) return json({ error: "sin_permiso" }, 403);
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/red_canales?id=eq.${encodeURIComponent(canalId)}`, {
+        method: "DELETE", headers: svc,
+      });
+      if (!r.ok) return json({ error: "delete_failed", status: r.status }, 502);
       return json({ ok: true });
     } catch { return json({ error: "write_failed" }, 502); }
   }

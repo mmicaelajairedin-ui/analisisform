@@ -108,6 +108,129 @@ function setLoadingMsg(msg){
   if(el) el.textContent = msg;
 }
 
+// Maneja el flujo de Apple nativo (Capacitor iOS): crear o actualizar usuario.
+// Ahora recibe el JWT real de la sesión autenticada de Supabase.
+function handleAppleNativeUser(email, name, provider, appleUserId, authJWT){
+  setLoadingMsg('Buscando tu cuenta...');
+
+  // Usar el JWT real de Supabase Auth (no la anon key).
+  var SJWT = authJWT || KEY;
+  var SB = 'https://api.pathwaycareercoach.com';
+
+  // Chequear si el usuario existe en usuarios.
+  fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,email,rol,nombre,activo,configuracion,auth_id', {
+    headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT }
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(existingArr){
+    var existingUser = (Array.isArray(existingArr) && existingArr.length > 0) ? existingArr[0] : null;
+    var isNew = !existingUser;
+    var usuario = existingUser;
+
+    if(isNew){
+      // Crear nuevo usuario (mismo flujo que Google).
+      setLoadingMsg('Creando tu cuenta...');
+      var trialDays = 14;
+      var newCfg = {
+        coach_type: 'carrera',
+        auth_provider: provider,
+        foto_url: null,
+        last_login: new Date().toISOString(),
+        from_google: false,
+        from_apple: true,
+        plan: 'basic',
+        estado_sub: 'prueba',
+        visible_directorio: true,
+        max_candidatos: 5,
+        fecha_fin_prueba: new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString()
+      };
+
+      return fetch(SB + '/rest/v1/usuarios?select=id,email,rol,nombre,activo,configuracion,auth_id', {
+        method: 'POST',
+        headers: {
+          'apikey': KEY,
+          'Authorization': 'Bearer ' + SJWT,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({
+          email: email,
+          password_hash: null,
+          rol: 'coach',
+          nombre: name,
+          activo: true,
+          auth_id: appleUserId,
+          configuracion: newCfg
+        })
+      })
+      .then(function(r){
+        if(!r.ok) throw new Error('No se pudo crear cuenta');
+        return r.json();
+      })
+      .then(function(created){
+        usuario = Array.isArray(created) ? created[0] : created;
+        // Email de bienvenida (best-effort).
+        fetch(SB + '/functions/v1/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: email,
+            to_name: name,
+            subject: '¡Te damos la bienvenida a Pathway! Tu trial de 14 días empezó 🌱',
+            html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + (name.split(' ')[0]) + ',</h2>'
+              + '<p style="font-size:15px;line-height:1.65;">Te damos la bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis</strong>. No te pedimos tarjeta — si al final no quieres seguir, simplemente no haces nada.</p>'
+              + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
+              + '<p style="font-size:13px;color:#888;margin-top:18px;">Cualquier duda, responde este mail. — Mica</p>'
+          })
+        }).catch(function(){});
+
+        finishAppleLogin(usuario, name, isNew);
+      })
+      .catch(function(e){
+        showError('No pudimos crear tu cuenta: ' + (e && e.message || 'desconocido'));
+      });
+    } else {
+      // Usuario existente — actualizar last_login.
+      var cfg = usuario.configuracion || {};
+      cfg.auth_provider = provider;
+      cfg.last_login = new Date().toISOString();
+
+      fetch(SB + '/rest/v1/usuarios?id=eq.' + usuario.id, {
+        method: 'PATCH',
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ configuracion: cfg })
+      }).catch(function(){});
+
+      finishAppleLogin(usuario, name, false);
+    }
+  })
+  .catch(function(e){
+    showError('Error consultando tu cuenta: ' + (e && e.message || 'desconocido'));
+  });
+}
+
+function finishAppleLogin(usuario, name, isNew){
+  // Guardar sesion en localStorage.
+  localStorage.setItem('mj_user', JSON.stringify({
+    id: usuario.id,
+    email: usuario.email,
+    rol: usuario.rol,
+    nombre: usuario.nombre,
+    activo: true,
+    configuracion: usuario.configuracion || {}
+  }));
+
+  // Destino según rol.
+  var _v = (isNew ? 'welcome=1&v=' : 'v=') + Date.now();
+  var dest = usuario.rol === 'cliente' ? '/cliente.html?' + _v : '/panel-v2.html?' + _v;
+  setLoadingMsg(isNew ? '¡Te damos la bienvenida! Te llevamos al panel...' : '¡Hola de nuevo! Te llevamos al panel...');
+
+  try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
+  setTimeout(function(){
+    window.location.href = dest;
+  }, 800);
+}
+
 async function handleCallback(){
   // URL params declarados al inicio: antes estaban al final pero el branch
   // de "usuario nuevo" los usaba por hoisting (params=undefined ⇒ TypeError
@@ -117,6 +240,79 @@ async function handleCallback(){
   var source = params.get('source') || 'login';
   var ref = params.get('ref') || '';
   var referredBy = params.get('referrer') || null;
+  var appleNative = params.get('apple_native') === '1';
+
+  // Manejo especial para Apple nativo (Capacitor iOS): el token está en localStorage.
+  if(appleNative){
+    var appleIdentityToken = null;
+    var appleUserId = null;
+    var appleEmail = null;
+    var appleName = null;
+    try {
+      appleIdentityToken = localStorage.getItem('pw_apple_identity_token');
+      appleUserId = localStorage.getItem('pw_apple_user_id');
+      appleEmail = localStorage.getItem('pw_apple_email');
+      appleName = localStorage.getItem('pw_apple_name');
+    } catch(e) {}
+
+    if(!appleIdentityToken){
+      return showError('Token de Apple no encontrado. Intenta iniciar sesión de nuevo.');
+    }
+
+    setLoadingMsg('Validando tu identidad con Apple...');
+
+    // Usar el identityToken de Apple para crear sesión en Supabase.
+    // (En producción, esto iría a una edge function que valida el token de Apple
+    // y emite un JWT de Supabase. Por ahora usamos email directo si está disponible.)
+    try {
+      // Clean up localStorage.
+      localStorage.removeItem('pw_apple_identity_token');
+      localStorage.removeItem('pw_apple_user_id');
+      localStorage.removeItem('pw_apple_email');
+      localStorage.removeItem('pw_apple_name');
+    } catch(e) {}
+
+    if(!appleEmail){
+      return showError('No pudimos obtener tu email. Intenta iniciar sesión de nuevo — asegúrate de permitir que Pathway acceda a tu email.');
+    }
+
+    setLoadingMsg('Conectando tu cuenta...');
+
+    // ── Intercambiar identityToken de Apple por sesión real en Supabase ────
+    // Esto valida el token con Apple del lado del servidor y crea una sesión
+    // real con JWT autenticado (no anon key). Necesario para que las políticas
+    // RLS permitan crear/leer en la tabla usuarios.
+    try {
+      var sb = window.supabase.createClient(SB, KEY, {
+        auth: { persistSession: true, autoRefreshToken: true }
+      });
+
+      var { data: authData, error: authError } = await sb.auth.signInWithIdToken({
+        provider: 'apple',
+        token: appleIdentityToken
+      });
+
+      if(authError){
+        return showError('Error validando con Apple: ' + (authError.message || 'desconocido'));
+      }
+
+      if(!authData || !authData.user || !authData.session){
+        return showError('No se recibió sesión de Apple. Intenta de nuevo.');
+      }
+
+      var email = (authData.user.email || appleEmail || '').toLowerCase().trim();
+      var name = appleName || (authData.user.user_metadata && authData.user.user_metadata.full_name) || email.split('@')[0];
+      var provider = 'apple';
+      var userId = authData.user.id;
+      var authJWT = authData.session.access_token; // JWT real de usuario autenticado
+
+      // Pasar el JWT real a handleAppleNativeUser para que lo use en lugar de la anon key.
+      handleAppleNativeUser(email, name, provider, userId, authJWT);
+      return;
+    } catch(e) {
+      return showError('Error en validación de Apple: ' + (e && e.message || 'desconocido'));
+    }
+  }
 
   // Inicializar Supabase JS client
   var sb;
@@ -153,13 +349,15 @@ async function handleCallback(){
   // corriendo 200ms después puede ganarle la carrera y devolver null → el
   // usuario veía "No se encontró sesión activa". Reintentamos ~5s: apenas la
   // sesión aparece, seguimos.
+  // Apple en iOS puede tomar más tiempo — intentamos hasta 20 veces (6 segundos).
   async function _getSessionRetry(){
-    for(var i=0;i<16;i++){
+    var maxRetries = 20; // Apple puede ser más lento en iOS
+    for(var i=0;i<maxRetries;i++){
       try{
         var r = await sb.auth.getSession();
         if(r && r.data && r.data.session) return r.data.session;
       }catch(e){}
-      await new Promise(function(res){ setTimeout(res, 300); });
+      if(i < maxRetries - 1) await new Promise(function(res){ setTimeout(res, 300); });
     }
     return null;
   }
@@ -475,14 +673,24 @@ async function handleCallback(){
   } catch(e) {}
 
   // Guardar sesion en localStorage (mismo formato que login.html)
-  localStorage.setItem('mj_user', JSON.stringify({
+  var _userObj = {
     id: usuario.id,
     email: usuario.email,
     rol: usuario.rol,
     nombre: usuario.nombre,
     activo: true,
     configuracion: usuario.configuracion || {}
-  }));
+  };
+  localStorage.setItem('mj_user', JSON.stringify(_userObj));
+
+  // En iOS/Safari con Apple signin, la sesión de Supabase Auth puede no
+  // persistirse bien entre página y página. Guardar el JWT explícitamente
+  // para que el panel-v2 pueda recuperarlo como fallback.
+  try {
+    if(SJWT && SJWT !== KEY) {
+      localStorage.setItem('pw_apple_jwt', SJWT);
+    }
+  } catch(e) {}
 
   // Destino:
   //   - Coach/admin nuevo o existente → /panel-v2.html
@@ -527,12 +735,17 @@ async function handleCallback(){
     setLoadingMsg(isNew ? '¡Te damos la bienvenida! Te llevamos al panel...' : '¡Hola de nuevo! Te llevamos al panel...');
     dest = '/panel-v2.html?' + _v;
   }
-  // Login fresco (Google) → presupuesto nuevo de reintento para el panel/portal
+  // Login fresco → presupuesto nuevo de reintento para el panel/portal
   // (mismo motivo que en login.html: el 401 por carrera de token reintenta 1 vez).
   try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
+
+  // En iOS/Safari con Apple signin, el localStorage puede no sincronizarse bien
+  // entre páginas si el redirect es muy rápido. Dar un poco más de tiempo para
+  // que la sesión se persista antes de redirigir (especialmente para Apple).
+  var delayMs = (provider === 'apple' || /iphone|ipad|ipod/i.test(navigator.userAgent)) ? 1200 : 800;
   setTimeout(function(){
     window.location.href = dest;
-  }, 800);
+  }, delayMs);
 }
 
 // Esperar a que el SDK de Supabase cargue
