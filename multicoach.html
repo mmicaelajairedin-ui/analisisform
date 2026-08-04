@@ -5959,50 +5959,53 @@ function _idUpdatePreview(){
 }
 
 function _idGuardar(){
- // Leer todos los campos del formulario y actualizar estado
- _identidadState.datos={
-  nombre:_v('id-nombre'),
+ // Leer todos los campos del formulario
+ var datos={
   especialidad:_v('id-esp'),
-  pais:_v('id-pais'),
-  idiomas:(_v('id-idiomas')||'').split(',').map(function(s){return s.trim();}).filter(Boolean),
-  qué_haces:_v('id-qhe'),
-  a_quién_ayudas:_v('id-aqh'),
-  problema_resuelve:_v('id-prob'),
-  cómo_trabajas:_v('id-como'),
+  que_haces:_v('id-qhe'),
+  a_quien_ayudas:_v('id-aqh'),
+  problema:_v('id-prob'),
+  como_trabajas:_v('id-como'),
   servicios:(_v('id-serv')||'').split(';').map(function(s){return s.trim();}).filter(Boolean),
+  resultados:[],
   tono:_v('id-tono'),
-  cta_texto:_v('id-cta-text'),
-  cta_url:_v('id-cta-url')
+  cta:{
+    texto:_v('id-cta-text'),
+    url:_v('id-cta-url')
+  }
  };
 
- var datos=_identidadState.datos||{};
- if(!datos.nombre || !datos.especialidad || !datos.qué_haces){
-  __toast('Completa al menos: nombre, especialidad, qué haces');
+ if(!datos.especialidad || !datos.que_haces){
+  __toast('Completa al menos: especialidad, qué haces');
   return;
  }
 
  var btn=document.getElementById('id-generar-btn');
  if(btn){btn.disabled=true;btn.innerHTML=PWI.svg('loader',{sm:true})+' Guardando…';}
 
- if(!(MC_REAL&&MC_ORG&&MC_ORG.id)){
+ if(!(MC_REAL&&MC_OWNER&&MC_OWNER.id)){
   __toast('Negocio guardado ✓ (demo)');
   if(btn){btn.disabled=false;btn.innerHTML=PWI.svg('save',{sm:true})+' Guardar Negocio';}
   return;
  }
 
- // Guardar en organizaciones.identidad (JSONB) usando edge function
+ // Guardar en usuarios.configuracion.negocio (estructura única para toda la plataforma)
  _hdr({'Content-Type':'application/json'}).then(function(h){
-  return fetch(SB+'/functions/v1/guardar-red',{
+  return fetch(SB+'/functions/v1/coach-self-save',{
    method:'POST',
    headers:h,
-   body:JSON.stringify({identidad:datos})
+   body:JSON.stringify({
+    id:MC_OWNER.id,
+    email:MC_OWNER.email,
+    fields:{configuracion:{negocio:datos}}
+   })
   }).then(function(r){
    if(!r.ok) throw new Error('HTTP '+r.status);
    return r.json();
   });
  }).then(function(result){
-  if(MC_ORG) MC_ORG.identidad=datos;
-  try{localStorage.setItem('mc_identidad',JSON.stringify(datos));}catch(_){}
+  if(MC_OWNER&&MC_OWNER.configuracion) MC_OWNER.configuracion.negocio=datos;
+  try{localStorage.setItem('mc_negocio',JSON.stringify(datos));}catch(_){}
   __toast('Negocio guardado ✓');
   if(btn){btn.disabled=false;btn.innerHTML=PWI.svg('save',{sm:true})+' Guardar Negocio';}
  }).catch(function(e){
@@ -7493,28 +7496,61 @@ function renderBrandLogo(){
 }
 function _saveBrand(){
   _updateBrandSaveStatus('saving');
-  var n=(document.getElementById('cfb-name')||{}).value||'';
   var inp=document.getElementById('cfb-logo')||{};
   var l=inp.dataset.logoData||inp.value||'';
   var _dominio=(document.getElementById('cfm-dominio')||{}).value||'';
   var _favicon=(document.getElementById('cfm-favicon')||{}).value||'';
-  // El LOGO white-label es Studio+; el color/nombre son de Boutique. Si hay logo y
-  // el plan no lo incluye → guardamos color+nombre y abrimos el upsell (sin el logo).
   var _color2=CFG.color2||_mcBrand().color2||'';
+
   if(l.trim() && !_mcCanFeature('logo')){
-    mcSaveConfig({ nombre:n.trim(), color:CFG.color, color2:_color2, dominio:_dominio.trim(), favicon:_favicon.trim() }, 'Marca guardada ✓');
-    renderBrandLogo(); mcUpsell('logo'); _updateBrandSaveStatus('saved'); return;
+    __toast('Logo es feature del plan Pro');
+    _updateBrandSaveStatus('saved');
+    mcUpsell('logo');
+    return;
   }
-  // Persiste color primario + secundario + nombre + logo + dominio + favicon en organizaciones.marca →
-  // llega al portal del cliente y a la landing, y sobrevive el cambio de dispositivo.
-  var _font=(document.getElementById('cfb-font')||{}).value||'Inter';
-  var _bg=_mcBrand().bg||'#f5f1e9';
-  var _text=_mcBrand().text||'#1F2A23';
-  mcSaveConfig({ nombre:n.trim(), logo:l.trim(), color:CFG.color, color2:_color2, bg:_bg, font:_font, text:_text, dominio:_dominio.trim(), favicon:_favicon.trim() },
-    (l.trim()?'Marca aplicada ✓':'Marca guardada ✓'));
-  try{ if(window.PWBrand){ PWBrand.font(_font); if(_color2)PWBrand.secondary(_color2); } }catch(e){}
-  renderBrandLogo();
-  _updateBrandSaveStatus('saved');
+
+  if(!(MC_REAL&&MC_OWNER&&MC_OWNER.id)){
+    __toast('Marca guardada ✓ (demo)');
+    _updateBrandSaveStatus('saved');
+    return;
+  }
+
+  // Guardar en usuarios.configuracion.marca (estructura única)
+  var marca={
+    logo:l.trim(),
+    favicon:_favicon.trim(),
+    colores:{
+      primario:CFG.color||'#2D6A4F',
+      secundario:_color2||'#52B788'
+    },
+    tipografia:(document.getElementById('cfb-font')||{}).value||'inter',
+    dominio:_dominio.trim()
+  };
+
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    return fetch(SB+'/functions/v1/coach-self-save',{
+      method:'POST',
+      headers:h,
+      body:JSON.stringify({
+        id:MC_OWNER.id,
+        email:MC_OWNER.email,
+        fields:{configuracion:{marca:marca}}
+      })
+    }).then(function(r){
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return r.json();
+    });
+  }).then(function(result){
+    if(MC_OWNER&&MC_OWNER.configuracion) MC_OWNER.configuracion.marca=marca;
+    try{localStorage.setItem('mc_marca',JSON.stringify(marca));}catch(_){}
+    __toast(l.trim()?'Marca aplicada ✓':'Marca guardada ✓');
+    renderBrandLogo();
+    _updateBrandSaveStatus('saved');
+  }).catch(function(e){
+    __toast('Error guardando: '+(e.message||'desconocido'));
+    _updateBrandSaveStatus('saved');
+    console.error('_saveBrand:',e);
+  });
 }
 // B.6.3: Real-time sync de branding entre tabs
 // Escucha cambios en organization_branding y actualiza la UI sin reload
