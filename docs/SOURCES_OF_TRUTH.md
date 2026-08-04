@@ -98,6 +98,28 @@
 - ✅ **Implementación:** Código ya normaliza correctamente. Sin cambios necesarios.
 - ✅ **Riesgo:** NINGUNO (implementación correcta y verificada)
 
+### Ciclo 4: organizaciones.owner_id — Nueva FK (Transición incremental)
+- ✅ **Investigado:** owner_email es TEXT; debe ser UUID FK a usuarios.id
+- ✅ **Problema:** Integridad referencial, data consistency (pueden quedar orgs huérfanas)
+- ✅ **Solución (Opción A incremental):**
+  - Agregar columna `owner_id UUID REFERENCES usuarios(id)` (nullable)
+  - Migrar datos existentes: `UPDATE organizaciones SET owner_id = (SELECT id FROM usuarios WHERE email = organizaciones.owner_email)`
+  - Edge functions escriben AMBOS campos (owner_id + owner_email)
+  - Lectura puede seguir con owner_email mientras se verifica
+  - owner_email se elimina en ciclo posterior (cuando todo use owner_id)
+- ✅ **Implementación:**
+  - Migration: `0107_organizaciones_owner_id.sql` creada
+    - Agrega columna owner_id (nullable, con FK)
+    - Migra datos existentes
+    - Crea índice idx_organizaciones_owner_id
+  - Edge functions actualizadas (escritura de AMBOS campos):
+    - `crear-multicoach/index.ts`: upsertOrg ahora acepta ownerId opcional
+    - `cambiar-owner/index.ts`: PATCH a org incluye owner_id
+    - `convertir-multicoach/index.ts`: POST a org incluye owner_id
+  - panel-v2.html, login.html, multicoach.html: No requieren cambios (lectura sigue con owner_email)
+- ✅ **Riesgo:** BAJO (owner_email se mantiene para compatibilidad, migration es additive)
+- 📋 **Próximo:** Después de verificar producción, eliminar owner_email (Ciclo 5)
+
 ---
 
 ## Reglas para nuevas funcionalidades
