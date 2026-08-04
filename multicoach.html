@@ -3008,7 +3008,7 @@ function mcApplyNiche(){
    que la cuenta estaba rota o era de otro. Ver docs/multicoach-modelo.md. */
 // Inicialización modo demo (no redeclarar var — asignar solo)
 MC_REAL=false; MC_ORG=null; MC_OWNER=null; MC_CITAS=[]; MC_USER_PERMISOS=[];
-function mcGet(t,q){ return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:{apikey:KEY,Authorization:'Bearer '+KEY}}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }
+function mcGet(t,q){ return _hdr().then(function(h){ return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:h}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }); }
 function mcPatch(t,q,body){ return _hdr({'Content-Type':'application/json',Prefer:'return=minimal'}).then(function(h){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:h,body:JSON.stringify(body)}); }); }
 // Guarda config de la red (perfil, recursos, marca, preferencias) en
 // organizaciones.marca (JSONB, merge). Refleja YA en memoria + localStorage para
@@ -3061,14 +3061,15 @@ function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NIC
 function _mcTipoBadge(c){ if(!c||c.tipo!=='colaborador') return ''; return '<span style="display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#7A5CA8;background:rgba(122,92,168,.14);padding:2px 7px;border-radius:100px;margin-left:6px">Colaborador</span>'; }
 // Mapea una fila real de candidatos al shape que usan las tarjetas.
 function mcMapCli(c){
-  if(!c||typeof c!=='object') return null;
+  if(!c||typeof c!=='object'){ console.log('[mcMapCli] SKIP - not an object:', c); return null; }
+  if(!c.id){ console.log('[mcMapCli] SKIP - no id field:', c); return null; }
   var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||'';
   var name=c.nombre||c.email||'Cliente (sin nombre)';
   var email=(c.email||'').toLowerCase();
   var weekNum=+(c.semana_activa||1);
   var isActive=c.activo!==false;
   var timestamp=Date.parse(c.updated_at||c.created_at||'')||0;
-  return {
+  var mapped={
     id:c.id||'',
     n:name,
     email:email,
@@ -3087,6 +3088,8 @@ function mcMapCli(c){
     ult:_mcAgo(c.updated_at||c.created_at),
     foto:c.foto_perfil||''
   };
+  console.log('[mcMapCli] OK - mapped:', mapped.id, mapped.n);
+  return mapped;
 }
 // Botón de contacto REAL: WhatsApp si hay teléfono; si no, email; si no hay
 // ninguno, queda deshabilitado (sin fingir que abre WhatsApp).
@@ -3555,9 +3558,12 @@ function mcLoadReal(owner){
     // El dueño también es coach asignable → primero en la lista, marcado "Tú".
     var ow=ownerRow||owner;
     if(ow&&ow.id){ var oc=mcMapCoach(ow,cnt[ow.id]); if(oc&&oc.id){ oc.esOwner=true; oc.esp=oc.esp||'Dueño'; lst.unshift(oc); } }
-    var mappedClientes=(clientes||[]).map(mcMapCli).filter(function(c){return c&&c.id;});
+    console.log('[_apply] PRE-MAP - raw clientes:', (clientes||[]).length, 'NICHOS:', NICHOS, 'clientes data:', clientes);
+    var mapped=(clientes||[]).map(mcMapCli);
+    console.log('[_apply] AFTER MAP - mapped array:', mapped.length, 'first 3:', mapped.slice(0,3));
+    var mappedClientes=mapped.filter(function(c){console.log('[_apply filter] testing:', c, 'has id?', c&&c.id); return c&&c.id;});
     DB={ coaches:lst, clientes:mappedClientes };
-    console.log('[_apply result] coaches:', DB.coaches.length, 'clientes:', DB.clientes.length);
+    console.log('[_apply result] coaches:', DB.coaches.length, 'clientes:', DB.clientes.length, 'mapped after filter:', mappedClientes.length);
     // Un color estable por coach real para la agenda (por posición en la paleta).
     try{ MC_COCOL={}; DB.coaches.forEach(function(c,i){ MC_COCOL[c.id]=_MCPAL[i%_MCPAL.length]; }); }catch(e){}
     // La comunidad arranca en blanco para una red real (nada de posts/retos/
@@ -3905,21 +3911,17 @@ function _coachStrip(){
 }
 function _countK(f){return DB.clientes.filter(function(k){if(f==='activo')return k.est==='activo';if(f==='inactivo')return k.est!=='activo';if(f==='riesgo')return k.est==='activo'&&k.lastState!=='fresh';return true;}).length;}
 function renderClientes(){
- console.log('[renderClientes] START - DB.clientes.length:', DB&&DB.clientes?DB.clientes.length:'undef', 'MC_REAL:', MC_REAL, '_sec:', _sec, 'vscroll:', !!document.getElementById('vscroll'));
  var v=document.getElementById('vscroll');
- if(!v){console.error('[renderClientes] FATAL: vscroll element not found'); return;}
- var chips=[['todos','Todos'],['activo','Activos'],['riesgo','Sin actividad'],['inactivo','Inactivos']];
- v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+_countK('activo')+' activos</p></div><button class="crear" onclick="__nuevoCliente()">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button></header>'
-  +'<div class="searchbar"><input id="kq" class="inp" placeholder="Buscar por nombre o coach…" oninput="_ks=this.value;_fillClientes()" value="'+_ks+'"></div>'
-  +'<div class="cp-filters" id="kchips">'
-    +'<button class="cp-chip'+(_kf==='todos'?' is-on':'')+'" onclick="_setKf(\'todos\')">Todos<span class="cp-chip-count">'+DB.clientes.length+'</span></button>'
-    +'<button class="cp-chip'+(_kf==='activo'?' is-on':'')+'" onclick="_setKf(\'activo\')">Activos<span class="cp-chip-count">'+actCount+'</span></button>'
-    +'<button class="cp-chip'+(_kf==='riesgo'?' is-on':'')+'" onclick="_setKf(\'riesgo\')">Sin actividad<span class="cp-chip-count">'+DB.clientes.filter(function(c){return c.est==='activo'&&c.lastState!=='fresh';}).length+'</span></button>'
-    +'<button class="cp-chip'+(_kf==='inactivo'?' is-on':'')+'" onclick="_setKf(\'inactivo\')">Inactivos<span class="cp-chip-count">'+DB.clientes.filter(function(c){return c.est==='inactivo';}).length+'</span></button>'
-  +'</div>'
-  +'<div id="klist"></div>'
-  +'</div>';
- _fillClientes();_focusEnd('kq');
+ if(!v) return;
+ var total=DB.clientes.length;
+ var activos=DB.clientes.filter(function(c){return c.est==='activo';}).length;
+ var html='<div style="padding:20px"><h2>Clientes ('+total+')</h2><p>Activos: '+activos+'</p><table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f5f5f5"><th style="padding:8px;text-align:left;border-bottom:1px solid #ddd">Nombre</th><th style="padding:8px;text-align:left;border-bottom:1px solid #ddd">Coach</th><th style="padding:8px;text-align:left;border-bottom:1px solid #ddd">Estado</th><th style="padding:8px;text-align:left;border-bottom:1px solid #ddd">Última actividad</th></tr></thead><tbody>';
+ DB.clientes.forEach(function(cli){
+   var coach=_coach(cli.coach);
+   html+='<tr style="border-bottom:1px solid #eee"><td style="padding:8px">'+_mcEsc(cli.n)+'</td><td style="padding:8px">'+(coach?_mcEsc(coach.n):'—')+'</td><td style="padding:8px"><span style="padding:2px 6px;border-radius:3px;background:'+(cli.est==='activo'?'#e8f5e9':'#f5f5f5')+';font-size:12px">'+cli.est+'</span></td><td style="padding:8px;font-size:12px;color:#666">'+_mcEsc(cli.ult||'—')+'</td></tr>';
+ });
+ html+='</tbody></table></div>';
+ v.innerHTML=html;
 }
 function _setKf(f){_kf=f;var ch=document.querySelectorAll('#kchips .cp-chip');for(var i=0;i<ch.length;i++){var txt=ch[i].textContent.toLowerCase();var isOn=(txt.includes('todos')&&f==='todos')||(txt.includes('activos')&&f==='activo')||(txt.includes('sin')&&f==='riesgo')||(txt.includes('inactivos')&&f==='inactivo');ch[i].classList.toggle('is-on',isOn);}; _fillClientes();}
 function _fillClientes(){
