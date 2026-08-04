@@ -160,24 +160,35 @@ PWCoreProgram.renderSessionTasks = function(tasks, doneIndexes, opts){
   opts = opts || {};
   if(!Array.isArray(tasks) || tasks.length === 0) return "";
 
-  var doneIndexes = doneIndexes || [];
+  doneIndexes = doneIndexes || [];
   var compact = opts.compact || false;
   var doneCnt = doneIndexes.length;
   var _esc = PWCoreProgram._esc;
 
-  var html = "<div style='background:"+(compact?"transparent":"var(--pw-niebla-2)")+";"+(compact?"":" border-radius:10px;padding:10px 12px")+"'>"+
-    "<div class='cp-eyebrow' style='margin-bottom:"+(compact?'4':'6')+"px'>"+(compact?"":(doneCnt+"/"+tasks.length+" hechas"))</div>"+
-    "<div style='display:flex;flex-direction:column;gap:"+(compact?'3':'4')+"px'>";
+  var bgStyle = compact ? "transparent" : "var(--pw-niebla-2)";
+  var borderStyle = compact ? "" : " border-radius:10px;padding:10px 12px";
+  var marginPx = compact ? "4" : "6";
+  var gapPx = compact ? "3" : "4";
+  var fontPx = compact ? "11" : "12";
+  var eyebrowText = compact ? "" : (doneCnt + " de " + tasks.length + " hechas");
+
+  var html = "<div style='background:" + bgStyle + ";" + borderStyle + "'>";
+  html += "<div class='cp-eyebrow' style='margin-bottom:" + marginPx + "px'>" + eyebrowText + "</div>";
+  html += "<div style='display:flex;flex-direction:column;gap:" + gapPx + "px'>";
 
   tasks.forEach(function(task, idx){
     var isDone = doneIndexes.indexOf(idx) !== -1;
-    html += "<div style='display:flex;align-items:center;gap:6px;font-size:"+(compact?'11':'12')+"px;color:"+(isDone?"var(--pw-text-muted)":"var(--pw-carbon)")+";"+(isDone?"text-decoration:line-through":"")+"'>"+
-      "<span style='width:14px;height:14px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;"+
-        "background:"+(isDone?"var(--pw-bosque)":"transparent")+";"+
-        "border:1.2px solid "+(isDone?"var(--pw-bosque)":"var(--pw-border-strong)")+";"+
-        "color:#fff;font-size:8px'>"+(isDone?"✓":"")+"</span>"+
-      "<span>"+_esc(task)+"</span>"+
-    "</div>";
+    var textColor = isDone ? "var(--pw-text-muted)" : "var(--pw-carbon)";
+    var decoration = isDone ? "text-decoration:line-through" : "";
+    var bgColor = isDone ? "var(--pw-bosque)" : "transparent";
+    var borderColor = isDone ? "var(--pw-bosque)" : "var(--pw-border-strong)";
+    var checkmark = isDone ? "✓" : "";
+
+    html += "<div style='display:flex;align-items:center;gap:6px;font-size:" + fontPx + "px;color:" + textColor + ";" + decoration + "'>";
+    html += "<span style='width:14px;height:14px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;";
+    html += "background:" + bgColor + ";border:1.2px solid " + borderColor + ";color:#fff;font-size:8px'>" + checkmark + "</span>";
+    html += "<span>" + _esc(task) + "</span>";
+    html += "</div>";
   });
 
   html += "</div></div>";
