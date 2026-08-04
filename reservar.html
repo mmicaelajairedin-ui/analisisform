@@ -297,10 +297,21 @@ var SAFE_SELECT='id,nombre,email,foto_url,rol,configuracion';
 function _pubFetch(qs, extra){
   var h={ apikey:KEY, Authorization:'Bearer '+KEY };
   if(extra) for(var _k in extra) if(extra.hasOwnProperty(_k)) h[_k]=extra[_k];
-  return fetch(SB+'/rest/v1/usuarios_publicos?'+qs,{headers:h}).then(function(r){
-    if(r.status===404 || r.status===406){ return fetch(SB+'/rest/v1/usuarios?'+qs,{headers:h}); }
-    return r;
-  }).catch(function(){ return fetch(SB+'/rest/v1/usuarios?'+qs,{headers:h}); });
+  var _abort=new AbortController();
+  var _timeout=setTimeout(function(){ _abort.abort(); }, 8000);
+  var _opts={headers:h, signal:_abort.signal};
+  return fetch(SB+'/rest/v1/usuarios_publicos?'+qs,_opts)
+    .then(function(r){
+      if(r.status===404 || r.status===406){ return fetch(SB+'/rest/v1/usuarios?'+qs,_opts).finally(function(){ clearTimeout(_timeout); }); }
+      clearTimeout(_timeout);
+      return r;
+    })
+    .catch(function(){
+      clearTimeout(_timeout);
+      var _abort2=new AbortController();
+      var _timeout2=setTimeout(function(){ _abort2.abort(); }, 8000);
+      return fetch(SB+'/rest/v1/usuarios?'+qs,{headers:h, signal:_abort2.signal}).finally(function(){ clearTimeout(_timeout2); });
+    });
 }
 var DISP=null;
 var TAKEN={}; // { instanteMs: true } de las citas ya tomadas del coach (anti doble-booking)
@@ -316,8 +327,12 @@ function _viewerTz(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZo
 // PERO el visitante puede cambiarla (el selector de abajo) — clave porque muchos
 // dispositivos tienen mal la zona y si no, "reserva a las 17 y al coach le sale a
 // las 9". La reserva se guarda con ESTA zona (cliente_tz).
-var VIEWER_TZ = _viewerTz() || DEFAULT_TZ;
-function _setTz(tz){ if(!tz) return; VIEWER_TZ=tz; try{ sel.day=null; sel.ms=null; }catch(e){} renderPicker(); }
+// ALTO FIX: Persistir timezone a localStorage para que se mantenga entre reloads
+var VIEWER_TZ = (function(){
+  try{ var saved=localStorage.getItem('pw_viewer_tz'); if(saved) return saved; }catch(e){}
+  return _viewerTz() || DEFAULT_TZ;
+})();
+function _setTz(tz){ if(!tz) return; VIEWER_TZ=tz; try{ localStorage.setItem('pw_viewer_tz',tz); }catch(e){} try{ sel.day=null; sel.ms=null; }catch(e){} renderPicker(); }
 // Hora HH:MM de un instante EN la zona elegida por el visitante.
 function _hmInViewerTz(ms){
   // AM/PM (12h) a propósito: "01:00" en 24h se confunde con la 1pm (LatAm usa AM/PM).
@@ -403,19 +418,20 @@ function _viewerGroups(){
   return groups.slice(0,10);
 }
 function _tzLabel(){ try{ var z=Intl.DateTimeFormat().resolvedOptions().timeZone; return z?(' ('+z+')'):''; }catch(e){ return ''; } }
-function loadCitas(){ TAKEN={}; if(!CID) return; fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(CID)+'&estado=neq.cancelada&select=inicio').then(function(r){ return r.ok?r.json():[]; }).then(function(rows){ var T={}; (rows||[]).forEach(function(c){ if(!c||!c.inicio) return; var t=new Date(c.inicio).getTime(); if(!isNaN(t)) T[t]=true; }); TAKEN=T; renderPicker(); }).catch(function(){}); }
+function loadCitas(){ TAKEN={}; if(!CID) return; var _abort=new AbortController(); var _tm=setTimeout(function(){ _abort.abort(); }, 6000); fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(CID)+'&estado=neq.cancelada&select=inicio',{signal:_abort.signal}).then(function(r){ clearTimeout(_tm); return r.ok?r.json():[]; }).then(function(rows){ var T={}; (rows||[]).forEach(function(c){ if(!c||!c.inicio) return; var t=new Date(c.inicio).getTime(); if(!isNaN(t)) T[t]=true; }); TAKEN=T; renderPicker(); }).catch(function(){ clearTimeout(_tm); }); }
 // Eventos REALES del calendario del coach (su iCal público, vía edge function
 // `calendar`). Con esto NO te reservan un hueco donde ya tienes algo — además de
 // las reservas de Pathway. Solo eventos con hora (los de "todo el día" tipo
 // cumpleaños no bloquean; las vacaciones se manejan aparte).
 var BUSY=[];
 function loadBusy(){ BUSY=[]; var em=(''+(EMAIL||'')).trim().toLowerCase(); if(!em||em.indexOf('@')<0) return;
-  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(em),{ headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
-    .then(function(r){ return r.ok?r.json():null; })
+  var _abort=new AbortController(); var _tm=setTimeout(function(){ _abort.abort(); }, 5000);
+  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(em),{ headers:{ apikey:KEY, Authorization:'Bearer '+KEY }, signal:_abort.signal })
+    .then(function(r){ clearTimeout(_tm); return r.ok?r.json():null; })
     .then(function(d){ var evs=(d&&Object.prototype.toString.call(d.events)==='[object Array]')?d.events:[];
       BUSY=evs.map(function(e){ if(!e||e.start==null) return null; var s=+e.start; var en=e.end!=null?+e.end:(s+30*60000); if(isNaN(s)) return null; if(isNaN(en)||en<=s) en=s+30*60000; if((en-s)>=23*3600000) return null; return {s:s,e:en}; }).filter(Boolean);
       renderPicker();
-    }).catch(function(){});
+    }).catch(function(){ clearTimeout(_tm); });
 }
 // ¿El hueco [ms, ms+DUR) pisa (o queda a menos del margen de) un evento del
 // calendario del coach O una reserva de Pathway? El margen (buffer) es el
@@ -676,9 +692,9 @@ function renderPicker(){
       "<div class='lbl'>"+t('elegirHorario')+"</div><div class='slots' id='slots'>"+slotsHtml+"</div>"+
       "<div class='lbl'>"+t('tusDatos')+"</div>"+
       "<div class='bk-form2'>"+
-        "<div class='field'><input id='f-name' placeholder='"+esc(t('phName'))+"'></div>"+
-        "<div class='field'><input id='f-email' type='email' placeholder='"+esc(t('phEmail'))+"'></div>"+
-        "<div class='field full'><input id='f-tel' type='tel' placeholder='"+esc(t('phTel'))+"'></div>"+
+        "<div class='field'><input id='f-name' placeholder='"+esc(t('phName'))+"' aria-label='"+esc(t('phName'))+"' required></div>"+
+        "<div class='field'><input id='f-email' type='email' placeholder='"+esc(t('phEmail'))+"' aria-label='"+esc(t('phEmail'))+"' required></div>"+
+        "<div class='field full'><input id='f-tel' type='tel' placeholder='"+esc(t('phTel'))+"' aria-label='"+esc(t('phTel'))+"'></div>"+
         qFields()+
       "</div>"+
       "<button class='btn btn-primary' id='confirm'"+(can?'':' disabled')+">"+tf('reservarMi',{tipo:(isDemo?t('demo'):t('sesion'))})+"</button>"+
@@ -774,20 +790,27 @@ function collectAnswers(){
   return {answers:out, missing:missing};
 }
 function confirmar(){
-  var name=($('f-name').value||'').trim(), email=($('f-email').value||'').trim();
+  var name=($('f-name').value||'').trim(), email=($('f-email').value||'').trim().toLowerCase();
   var tel=($('f-tel')&&$('f-tel').value||'').trim();
   var origen='';
+  var confirmBtn=$('confirm');
   // La reserva se guarda con la zona ELEGIDA en el selector (VIEWER_TZ), no la del
   // dispositivo — así si el visitante corrigió su zona, queda la correcta.
   var vtz=VIEWER_TZ||''; try{ if(!vtz) vtz=Intl.DateTimeFormat().resolvedOptions().timeZone||''; }catch(e){}
   if(!name){ $('msg').textContent=t('valNombre'); return; }
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ $('msg').textContent=t('valEmail'); return; }
   if(sel.ms==null){ $('msg').textContent=t('valDiaHora'); return; }
+  // MEDIO FIX: Deshabilitar botón ANTES de enviar para prevenir doble-submit
+  if(confirmBtn) confirmBtn.disabled=true;
   var start=new Date(sel.ms);
   var end=new Date(start.getTime()+DUR*60000);
   // Preguntas del coach: validamos obligatorias y armamos las respuestas.
   var _qa=collectAnswers();
-  if(_qa.missing){ $('msg').textContent=tf('valFalta',{q:_qa.missing}); return; }
+  if(_qa.missing){
+    $('msg').textContent=tf('valFalta',{q:_qa.missing});
+    if(confirmBtn) confirmBtn.disabled=false;
+    return;
+  }
   var answers=_qa.answers;
   var answersJson=answers.length?JSON.stringify(answers):'';
   var answersTxt=answers.map(function(x){ return x.q+': '+x.a; }).join('\n');
@@ -805,11 +828,14 @@ function confirmar(){
   var _F={ cli:fechaCli, coach:fechaCoach, cliTz:_tzShort(vtz), coTz:_tzShort(_coTz), diff:(!!_coTz && !!vtz && _coTz!==vtz) };
   var fechaTxt=fechaCli;
   var title=tlabel+' · '+name+' con '+FIRST;
-  // JULIO 2026: Google Meet links come from Google Calendar sync, not sala.html
-  // When the coach adds this appointment to their Google Calendar, Google generates
-  // a Meet link automatically. The link is saved in citas.meet_link.
-  // At reservation time, there is no video link yet; the client will see it on Google Calendar.
-  var _link=''; // Empty for now; meet_link will be populated by Google Calendar sync
+  // Link determinista a la Sala de Pathway (sala.html): mismo room que en el panel del coach.
+  // Patrón: Pathway-<coach_id>-<start_ms>. Coach y cliente entran a la MISMA sala.
+  // Cliente también recibe start/dur para el gate (cuenta regresiva, ya terminó, abre 5 min antes).
+  var _coachId=(CID||qp('c')||'');
+  var _startMs=start.getTime();
+  var _dur=(DUR||60); // minutos (default 60 si no está configurado)
+  var _room=(_coachId?'Pathway-'+_coachId+'-'+_startMs:'');
+  var _link=(_room?'https://pathwaycareercoach.com/sala.html?room='+encodeURIComponent(_room)+'&start='+_startMs+'&dur='+_dur:'');
   var _kind=((CUR&&/^(admin|empleado)$/.test(String(CUR.rol||"")))||TEAM)?'demo_pathway':'primera_llamada';
   // render?action=TEMPLATE (no /r/eventedit): así Google SÍ pre-carga el link en el
   // detalle ANTES de guardar (location + description). El link va PRIMERO en el
@@ -847,9 +873,26 @@ function confirmar(){
     //    en la base → no aparecía en el panel, sin recordatorios. Ahora se verifica
     //    (_postCita ya reintenta una vez) y se avisa suave si no quedó guardada.
     var _finish=function(saved, citaId){
+      // CAMBIO CRÍTICO: marcar slot como tomado INMEDIATAMENTE (no esperar confirmación)
+      // para prevenir que otro cliente lo reserve en la ventana de latencia
       TAKEN[start.getTime()]=true;
       // Sincronizar a Google Calendar (best-effort — no bloquea).
-      if(saved && citaId){ try{ fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ cita_id:citaId }) }).catch(function(){}); }catch(e){} }
+      // MEJORA: agregar reintento si falla, y logar el error para debugging
+      if(saved && citaId){
+        try{
+          var _retryGcalSync=function(n){
+            fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
+              .then(function(r){ if(!r.ok) throw new Error('sync-cita-to-gcal status '+r.status); return r.json(); })
+              .catch(function(err){
+                var attempt=3-n+1;
+                console.warn('Google Calendar sync falló (intento '+attempt+'/3):', err);
+                try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, attempt:attempt, error:String(err) }) }).catch(function(){}); }catch(e){}
+                if(n>0) setTimeout(function(){ _retryGcalSync(n-1); }, 2000);
+              });
+          };
+          _retryGcalSync(2); // reintenta hasta 3 veces con delay de 2s
+        }catch(e){ console.warn('Error iniciando Google Calendar sync:', e); }
+      }
       // 1b) Si viene de "reprogramar" (gestionar-cita manda &reprog=<token viejo>),
       //     recién AHORA que la nueva quedó guardada cancelamos la vieja → el cliente
       //     nunca se queda sin turno si abandonaba a mitad.
@@ -892,10 +935,20 @@ function confirmar(){
   fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(_cid)+'&inicio=eq.'+encodeURIComponent(_iso)+'&estado=neq.cancelada&select=id')
     .then(function(r){ return r.ok?r.json():null; })
     .then(function(ex){
-      if(ex && ex.length){ $('msg').textContent=t('ocupadoJusto'); TAKEN[start.getTime()]=true; sel.ms=null; renderPicker(); return; }
+      if(ex && ex.length){
+        $('msg').textContent=t('ocupadoJusto');
+        TAKEN[start.getTime()]=true;
+        sel.ms=null;
+        renderPicker();
+        if(confirmBtn) confirmBtn.disabled=false;
+        return;
+      }
       _commit();
     })
-    .catch(function(){ _commit(); }); // si no pudimos verificar, seguimos best-effort
+    .catch(function(){
+      if(confirmBtn) confirmBtn.disabled=false;
+      _commit();
+    }); // si no pudimos verificar, seguimos best-effort
 }
 
 // Token aleatorio para el link de gestionar la cita (cancelar/reprogramar).
@@ -956,8 +1009,17 @@ function sendEmails(name, email, tlabel, F, gurl, manageUrl, origen, answers, jo
 }
 function postEmail(payload){
   try{
-    fetch(SB+'/functions/v1/send-email',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }).catch(function(){});
-  }catch(e){}
+    // MEJORA: agregar reintento si falla, y logar el error
+    var _retryEmail=function(n){
+      fetch(SB+'/functions/v1/send-email',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) })
+        .then(function(r){ if(!r.ok) throw new Error('send-email status '+r.status); })
+        .catch(function(err){
+          console.warn('Email falló (intento '+(3-n+1)+'/3):', payload.to, err);
+          if(n>0) setTimeout(function(){ _retryEmail(n-1); }, 1000);
+        });
+    };
+    _retryEmail(2); // reintenta hasta 3 veces con delay de 1s
+  }catch(e){ console.warn('Error iniciando email:', e); }
 }
 
 function ok(name, start, gcalUrl, saved){
@@ -978,13 +1040,13 @@ function ok(name, start, gcalUrl, saved){
 // Arranque (al FINAL, cuando SAFE_SELECT y todas las funciones ya están definidas).
 // ?c=<id> → reservar directo con esa persona. ?team=1 → elegir con quién y reservar.
 (function(){
-  var c=qp('c'); var t=parseInt(qp('t'),10); if(isNaN(t)) t=-1;
+  var c=qp('c'); var typeIdx=parseInt(qp('t'),10); if(isNaN(typeIdx)) typeIdx=-1;
   var team=qp('team');
   try{ loadProof(); }catch(e){}   // prueba social real (coaches que ya usan Pathway)
   // OS Core: llegó a la página de reserva por el CTA de llamada/demo → paso del
   // embudo (intención de agendar). Best-effort; no cuenta reprogramaciones.
   try{ if(window.pwEmit && (c||team) && !qp('reprog')) pwEmit("CallRequested",{dominio:"Commercial",entidad_tipo:"coach",entidad_id:(""+(c||"team")).slice(0,80),payload:{via:qp('mp')==='1'?"marketplace":"link"}}); }catch(e){}
-  if(c){ loadCoach(c,t); return; }
+  if(c){ loadCoach(c,typeIdx); return; }
   if(team){ TEAM=true; loadTeam(); return; }
   fail(t('linkInvalido'));
 })();

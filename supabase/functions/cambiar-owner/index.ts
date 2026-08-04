@@ -96,8 +96,8 @@ Deno.serve(async (req: Request) => {
   const okPromote = await patch(`usuarios?id=eq.${encodeURIComponent(nuevoId)}`, { rol: "owner" });
   if (!okPromote) return json({ error: "promote_failed" }, 502);
 
-  // La org apunta al nuevo email de dueño.
-  await patch(`organizaciones?id=eq.${encodeURIComponent(orgId)}`, { owner_email: nuevo.email });
+  // La org apunta al nuevo dueño (email + CYCLE 4: owner_id).
+  await patch(`organizaciones?id=eq.${encodeURIComponent(orgId)}`, { owner_email: nuevo.email, owner_id: nuevoId });
 
   return json({ ok: true, org_id: orgId, nuevo_owner_id: nuevoId });
 });

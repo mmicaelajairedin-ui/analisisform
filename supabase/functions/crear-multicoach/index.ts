@@ -151,7 +151,8 @@ Deno.serve(async (req: Request) => {
 
   // ── Helper: extiende (o crea) la organización del dueño ──────────
   // Busca la org por owner_email; si existe la extiende, si no la crea.
-  async function upsertOrg(existingOrgId: string | null): Promise<{ id: string } | null> {
+  // Si ownerId está disponible (usuario ya existe), lo incluye en payload.
+  async function upsertOrg(existingOrgId: string | null, ownerId?: string): Promise<{ id: string } | null> {
     // 1) ¿Ya tiene org? (por org_id del owner o por owner_email)
     let orgId = existingOrgId;
     if (!orgId) {
@@ -163,7 +164,7 @@ Deno.serve(async (req: Request) => {
         if (r.ok) { const os = await r.json(); if (Array.isArray(os) && os[0]) orgId = os[0].id; }
       } catch { /* sigue a crear */ }
     }
-    const orgFields = {
+    const orgFields: any = {
       nombre: nombreRed || nombre || "Mi red",
       owner_email: email,
       plan,
@@ -174,6 +175,8 @@ Deno.serve(async (req: Request) => {
       fecha_fin_prueba: trialDate,
       activo: true,
     };
+    // CYCLE 4: Incluir owner_id (new FK) cuando esté disponible
+    if (ownerId) orgFields.owner_id = ownerId;
     if (orgId) {
       try {
         const r = await fetch(
@@ -199,7 +202,7 @@ Deno.serve(async (req: Request) => {
 
   // ── Owner existente → extender la red + reactivar ────────────────
   if (ownerRow) {
-    const org = await upsertOrg(ownerRow.org_id);
+    const org = await upsertOrg(ownerRow.org_id, ownerRow.id);
     if (!org) return json({ error: "org_write_failed" }, 502);
     const cf: Record<string, unknown> = (ownerRow.configuracion && typeof ownerRow.configuracion === "object") ? ownerRow.configuracion as Record<string, unknown> : {};
     const nc = {
@@ -229,12 +232,13 @@ Deno.serve(async (req: Request) => {
   if (!nombre) return json({ error: "nombre_required" }, 400);
   const org = await upsertOrg(null);
   if (!org) return json({ error: "org_write_failed" }, 502);
+  let newOwnerId: string | null = null;
   try {
     const r = await fetch(
       `${SB_URL}/rest/v1/usuarios`,
       {
         method: "POST",
-        headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+        headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
         body: JSON.stringify({
           email,
           nombre,
@@ -255,8 +259,23 @@ Deno.serve(async (req: Request) => {
       },
     );
     if (!r.ok && r.status !== 409) return json({ error: "insert_failed", status: r.status }, 502);
+    // CYCLE 4: Obtener el ID del nuevo usuario para actualizar org con owner_id
+    if (r.ok) {
+      const created = await r.json();
+      const userData = Array.isArray(created) ? created[0] : created;
+      newOwnerId = userData?.id || null;
+    }
   } catch {
     return json({ error: "write_failed" }, 502);
+  }
+  // CYCLE 4: Actualizar org con owner_id si se creó el usuario
+  if (newOwnerId && org.id) {
+    try {
+      await fetch(
+        `${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org.id)}`,
+        { method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ owner_id: newOwnerId }) },
+      );
+    } catch { /* best-effort */ }
   }
   return json({ ok: true, mode: "created", org_id: org.id, plan, fecha_fin_prueba: trialEnd });
 });
