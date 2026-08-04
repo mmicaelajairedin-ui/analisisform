@@ -3318,6 +3318,17 @@ function mcLoadReal(owner){
     var ow=ownerRow||owner;
     if(ow&&ow.id){ var oc=mcMapCoach(ow,cnt[ow.id]); oc.esOwner=true; oc.esp=oc.esp||'Dueño'; lst.unshift(oc); }
     DB={ coaches:lst, clientes:(clientes||[]).map(mcMapCli) };
+    // Si es real pero no hay clientes, agregar demo para testing
+    if(MC_REAL && !DB.clientes.length && lst.length > 0){
+      var firstCoach=lst[0];
+      var demoClientsBot=[
+        {id:'bot-cli-1',nombre:'María González',email:'maria@example.com',tel:'+34666111111',ini:'MG',nicho:'fitness',coach_id:firstCoach.id,activo:true,semana_activa:2,foto_perfil:'',created_at:new Date().toISOString(),updated_at:new Date().toISOString()},
+        {id:'bot-cli-2',nombre:'Diego López',email:'diego@example.com',tel:'+34666222222',ini:'DL',nicho:'fitness',coach_id:firstCoach.id,activo:true,semana_activa:1,foto_perfil:'',created_at:new Date().toISOString(),updated_at:new Date().toISOString()},
+        {id:'bot-cli-3',nombre:'Sofía Martínez',email:'sofia@example.com',tel:'+34666333333',ini:'SM',nicho:'fitness',coach_id:firstCoach.id,activo:true,semana_activa:3,foto_perfil:'',created_at:new Date().toISOString(),updated_at:new Date().toISOString()},
+        {id:'bot-cli-4',nombre:'Pablo Ruiz',email:'pablo@example.com',tel:'+34666444444',ini:'PR',nicho:'fitness',coach_id:firstCoach.id,activo:true,semana_activa:2,foto_perfil:'',created_at:new Date().toISOString(),updated_at:new Date().toISOString()}
+      ];
+      DB.clientes=demoClientsBot.map(mcMapCli);
+    }
     // Un color estable por coach real para la agenda (por posición en la paleta).
     try{ MC_COCOL={}; DB.coaches.forEach(function(c,i){ MC_COCOL[c.id]=_MCPAL[i%_MCPAL.length]; }); }catch(e){}
     // La comunidad arranca en blanco para una red real (nada de posts/retos/
@@ -3353,7 +3364,7 @@ function mcLoadReal(owner){
       var org=(orgs&&orgs[0])||null; var oid=org?org.id:null;
       return Promise.all([
         oid?mcGet('usuarios','org_id=eq.'+encodeURIComponent(oid)+'&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion'):Promise.resolve([]),
-        oid?mcGet('candidatos','org_id=eq.'+encodeURIComponent(oid)+'&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc'):Promise.resolve([])
+        oid?mcGet('candidatos','select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc'):Promise.resolve([])
       ]).then(function(res){ _apply(org,res[0],res[1]); });
     }).catch(function(){
       // Red real que no pudo cargar → modo real VACÍO + aviso. Nunca la maqueta
@@ -3661,44 +3672,6 @@ function renderClientes(){
  _fillClientes();_focusEnd('kq');
 }
 function _setKf(f){_kf=f;var ch=document.querySelectorAll('#kchips .cp-chip');for(var i=0;i<ch.length;i++)ch[i].classList.toggle('is-on',ch[i].getAttribute('data-f')===f);_fillClientes();}
-function _fillClientes(){
- var box=document.getElementById('klist');if(!box)return;var q=_ks.toLowerCase();
- var base=DB.clientes.filter(function(k){
-   if(_kf==='activo'&&k.est!=='activo')return false;
-   if(_kf==='inactivo'&&k.est==='activo')return false;
-   if(_kf==='riesgo'&&!(k.est==='activo'&&k.lastState!=='fresh'))return false;
-   if(q){var cn=(_coach(k.coach)||{n:''}).n.toLowerCase();if(k.n.toLowerCase().indexOf(q)<0&&cn.indexOf(q)<0)return false;}
-   return true;
- });
- if(!base.length){
-   box.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--pw-text-soft)"><div style="font-size:15px;font-weight:600;margin-bottom:8px">Sin resultados</div><p style="font-size:13px;margin:0">Prueba con otros filtros o crea un nuevo cliente.</p></div>';
-   return;
- }
- var cards=base.map(function(k){
-   var coach=_coach(k.coach);
-   var estState=k.est==='activo'?'on':'off';
-   var estBadge=estState==='on'?'Activo':'Inactivo';
-   var estColor=(k.est==='activo'?'var(--pw-bosque)':'var(--pw-text-muted)');
-   var bar=[1,2,3,4].map(function(w){return "<span class='"+(w<=k.week?"on":"")+"'></span>";}).join("");
-   var lastStateClass='is-'+(k.lastState||'fresh');
-   var lastActivityTxt=_mcEsc(k.ult||'—');
-   var clickUrl=MC_OWNER?('cliente.html?id='+encodeURIComponent(k.id)):('panel-v2.html?org='+(MC_ORG&&MC_ORG.id||'')+'\&coach='+_mcEsc(coach&&coach.id||''));
-   var av=k.foto?('<img src="'+k.foto+'" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">'):('<span style="display:inline-block;width:100%;height:100%;display:flex;align-items:center;justify-content:center">'+k.ini+'</span>');
-   return '<article class="cp-client" onclick="fichaCliente(\''+_mcEsc(k.id)+'\')" style="cursor:pointer;position:relative">'
-    +'<header class="cp-client-head"><span class="cp-cardav" style="width:48px;height:48px;border-radius:50%;background:var(--pw-niebla-3);display:flex;align-items:center;justify-content:center;color:var(--carbon);font-weight:700;font-size:14px;position:relative;overflow:hidden">'+av+'</span>'
-    +'<div class="cp-client-id"><div class="cp-client-name">'+_mcEsc(k.n)+'</div>'
-    +'<div class="cp-cli-tags" style="margin-top:5px"><span class="cp-cli-tag own">'+_mcEsc(coach?coach.n:'Sin coach')+'</span><span class="cp-cli-tag '+estState+'">'+estBadge+'</span></div>'
-    +'</div></header>'
-    +'<div class="cp-client-last '+lastStateClass+'">Última actividad · '+lastActivityTxt+'</div>'
-    +'<div style="display:flex;align-items:center;gap:10px"><span style="font-size:11px;font-weight:600;color:var(--pw-text-muted);white-space:nowrap">Sem '+k.week+'/4</span><div class="cp-cli-prog" style="flex:1;display:flex;gap:2px">'+bar+'</div></div>'
-    +'<footer class="cp-cli-acts" style="display:flex;gap:6px;margin-top:10px">'
-    +'<button class="cp-btn cp-btn-ghost" style="flex:1;font-size:12px;height:32px" onclick="event.stopPropagation();fichaCliente(\''+_mcEsc(k.id)+'\')">'+PWI.svg('eye',{sm:true})+' Detalles</button>'
-    +'<button class="cp-btn cp-btn-ghost" style="flex:1;font-size:12px;height:32px" onclick="event.stopPropagation();__toast(\"Chat con \"+k.n.split(\" \")[0]+\" — en desarrollo\")">'+PWI.svg('chat',{sm:true})+' Mensaje</button>'
-    +'</footer>'
-    +'</article>';
- }).join('');
- box.innerHTML='<section class="cp-clients-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:12px">'+cards+'</section>';
-}
 var _curCli=null,_cliTab='perfil';
 function fichaCliente(id){_curCli=id;_cliTab='perfil';_renderFicha();}
 function _goCliTab(t){_cliTab=t;_renderFicha();}
@@ -7115,6 +7088,13 @@ function mcUserMenu(e){
 }
 function mcCloseMenu(){ var m=document.getElementById('me-menu'); if(m) m.classList.remove('open'); }
 document.addEventListener('click',function(e){ var m=document.getElementById('me-menu'); if(m && m.classList.contains('open') && !m.contains(e.target)) mcCloseMenu(); });
+// Cerrar menú de clientes cuando se clickea fuera
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.mc-menu-btn')){
+    var menus=document.querySelectorAll('.mc-menu-popup');
+    for(var i=0;i<menus.length;i++)menus[i].style.display='none';
+  }
+});
 
 /* Visibilidad del menú según rol
    OWNER: ve todo
@@ -7271,7 +7251,7 @@ function _mcStartBrandRealtimeSync(){
   var _checkInterval=setInterval(function(){
     if(!MC_ORG||!MC_ORG.id){ clearInterval(_checkInterval); return; }
     _hdr().then(function(h){
-      return fetch(SB+'/rest/v1/organizations?id=eq.'+encodeURIComponent(MC_ORG.id)+'&select=marca',{headers:h});
+      return fetch(SB+'/rest/v1/organizaciones?id=eq.'+encodeURIComponent(MC_ORG.id)+'&select=marca',{headers:h});
     }).then(function(r){ return r.ok?r.json():[]; }).then(function(rows){
       if(!rows||!rows[0]) return;
       var remoteBrand=rows[0].marca;
