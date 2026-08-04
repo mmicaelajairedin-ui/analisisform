@@ -7188,7 +7188,48 @@ function renderAgenda(){
  // Detectar si estamos en modo Agenda Personal
  var inPersonalAgendaMode=(MC_AGENDA_COACH_ID && MC_AGENDA_COACH_DATA)?true:false;
 
- // ── AGENDA OPERATIVA (Organización) ──────────────────────────────────────────
+ // ── AGENDA PERSONAL (modo individual de coach) ───────────────────────────────
+ if(inPersonalAgendaMode){
+   console.error('[DEBUG] renderAgenda() - PERSONAL MODE for coach:', MC_AGENDA_COACH_ID);
+   if(typeof USE_NEW_SCHEDULER!=="undefined" && USE_NEW_SCHEDULER){
+     var evt_data = AgendaProvider.fromSesionesRegistro(
+       (typeof CLIENTS !== "undefined" ? CLIENTS : []),
+       ME.id
+     );
+     // Filtrar SOLO eventos de este coach
+     evt_data = evt_data.filter(function(e){
+       return e.coach_id === MC_AGENDA_COACH_ID || e.coach === MC_AGENDA_COACH_ID;
+     });
+     var scheduler=initScheduler({
+       eventos: evt_data,
+       currentUser: {id:ME.id, name:MC_AGENDA_COACH_NAME, email:MC_AGENDA_COACH_DATA.email||''},
+       organization: {id:ME.org_id, name:ME.org_nombre||"Mi Organización"},
+       team: ME.team_id?{id:ME.team_id, name:ME.team_nombre||"Mi Equipo"}:null,
+       permissions: ME.permisos||[],
+       scope: "self",
+       locale: "es",
+       labels: {hoy: "Hoy", manana: "Mañana", sin_eventos: "Sin eventos programados", crear_evento: "Crear evento", participantes: "participante(s)", grupal: "Grupal", sesiones_hoy: "Sesiones hoy", atenciones_semana: "Atenciones semana", clases_semana: "Clases semana", total_eventos: "Total eventos", sin_eventos_hoy: "Sin eventos hoy"},
+       theme: {borderRadius: "8px", accentColor: "var(--pw-bosque)", kpiBg: "var(--pw-niebla-2)", kpiText: "var(--pw-bosque)"},
+       callbacks: {
+         onCreate: function(data){ if(typeof SupabaseProvider === "undefined") return; SupabaseProvider.createEvent(data, ME.id, function(result){ if(result.error) console.error("[AGENDA] Create failed:", result.error); }); },
+         onEdit: function(evento_id, data){ if(typeof SupabaseProvider === "undefined") return; SupabaseProvider.updateEvent(evento_id, data, ME.id, function(result){ if(result.error) console.error("[AGENDA] Edit failed:", result.error); }); },
+         onCancel: function(evento_id){ if(typeof SupabaseProvider === "undefined") return; SupabaseProvider.cancelEvent(evento_id, ME.id, function(result){ if(result.error) console.error("[AGENDA] Cancel failed:", result.error); }); },
+         onReschedule: function(evento_id, nueva_fecha){ if(typeof SupabaseProvider === "undefined") return; SupabaseProvider.rescheduleEvent(evento_id, nueva_fecha.date, nueva_fecha.time, ME.id, function(result){ if(result.error) console.error("[AGENDA] Reschedule failed:", result.error); }); },
+         onConfirmAssistance: function(evento_id, status){ if(typeof SupabaseProvider === "undefined") return; SupabaseProvider.updateEvent(evento_id, {status: status}, ME.id, function(result){ if(result.error) console.error("[AGENDA] Confirm failed:", result.error); }); },
+         onBlockAvailability: function(data){ if(typeof SupabaseProvider === "undefined") return; SupabaseProvider.blockDate(ME.id, data.fecha, data.duracion_horas, data.motivo, function(result){ if(result.error) console.error("[AGENDA] Block failed:", result.error); }); }
+       }
+     });
+     scheduler.init();
+     var schedulerHtml=renderScheduler(scheduler,{view:"mes"});
+     var personalHeader=_renderPersonalAgendaHeader();
+     var agHd="<div class='db-section-header'><div><h3>Agenda de "+_mcEsc(MC_AGENDA_COACH_DATA.nombre)+"</h3><p style='font-size:13px;color:var(--db-text-muted);margin:4px 0 0 0;'>Sesiones y disponibilidad</p></div><button class='cp-btn cp-btn-ghost' onclick='MC_AGENDA_COACH_ID=null;MC_AGENDA_COACH_DATA=null;renderAgenda();' style='height:32px;margin-left:auto'>← Volver al Equipo</button></div>";
+     v.innerHTML="<div style='padding:var(--db-space-32);'><div style='margin-bottom:var(--db-space-32);'>"+personalHeader+agHd+"</div><div>"+schedulerHtml+"</div></div>";
+     if(typeof supabase !== "undefined"){ supabase.channel('sesiones_registro').on('*', function(payload){ renderAgenda(); }).subscribe(); }
+   }
+   return; // SALIR - no mostrar agenda de equipo
+ }
+
+ // ── AGENDA DE EQUIPO (solo si NO estamos en modo personal) ──────────────────────
  // NEW SCHEDULER (feature flag)
  if(typeof USE_NEW_SCHEDULER!=="undefined" && USE_NEW_SCHEDULER){
 
@@ -7198,20 +7239,13 @@ function renderAgenda(){
      ME.id
    );
 
-   // Si estamos viendo una agenda personal, filtrar por coach_id
-   if(MC_AGENDA_COACH_ID){
-     evt_data = evt_data.filter(function(e){
-       return e.coach_id === MC_AGENDA_COACH_ID || e.coach === MC_AGENDA_COACH_ID;
-     });
-   }
-
    var scheduler=initScheduler({
      eventos: evt_data,
      currentUser: {id:ME.id, name:ME.nombre, email:ME.email},
      organization: {id:ME.org_id, name:ME.org_nombre||"Mi Organización"},
      team: ME.team_id?{id:ME.team_id, name:ME.team_nombre||"Mi Equipo"}:null,
      permissions: ME.permisos||[],
-     scope: MC_AGENDA_COACH_ID ? "self" : "team",
+     scope: "team",
      locale: "es",
      labels: {
        hoy: "Hoy",
