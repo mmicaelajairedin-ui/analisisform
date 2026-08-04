@@ -6559,10 +6559,10 @@ function cfgProfile(){
         "<div class='cp-photo-actions'>"+
           "<label class='cp-btn cp-btn-ghost' style='cursor:pointer'>Cambiar foto<input id='cfp-foto' type='file' accept='image/*' style='display:none'></label>"+
           "<div style='font-size:11px;color:var(--pw-text-muted);margin-top:6px'>JPG o PNG · máx 8 MB · usa la foto original (no una captura)</div></div></div>"+
-      "<div class='cp-form-row'><label class='cp-form-label'>Nombre completo</label><input id='cfp-nombre' class='cp-form-input' value=\""+esc(nm)+"\"></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Nombre completo</label><input id='cfp-nombre' class='cp-form-input' value=\""+esc(nm)+"\" oninput='_updateProfileSlug()'></div>"+
       "<div class='cp-form-row'><label class='cp-form-label'>Nombre del negocio / marca <span style='font-weight:500;color:var(--pw-text-muted)'>— opcional</span></label><input id='cfp-practica' class='cp-form-input' value=\""+esc(_prac)+"\" placeholder='Ej. Axon (si operás como empresa)'><span class='cp-form-hint'>Aparece como tu marca en el portal del cliente, debajo del nombre. Vacío = usa solo tu nombre.</span></div>"+
-      "<div class='cp-form-row'><label class='cp-form-label'>URL de tu perfil (slug)</label><input id='cfp-slug' class='cp-form-input' value=\""+esc(slug)+"\" placeholder='tu-nombre'>"+
-        "<span class='cp-form-hint'>Tu link público: <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code> · solo minúsculas, números y guiones</span></div>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>URL de tu perfil</label><input id='cfp-slug' class='cp-form-input' value=\""+esc(slug)+"\" readonly style='background:var(--pw-niebla-2);cursor:not-allowed'>"+
+        "<span class='cp-form-hint'>Tu link público: <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code> (auto-generado con tu nombre)</span></div>"+
       "<div style='background:linear-gradient(135deg,#F3EEDF,#EFE9DD);border:1px solid #E6DDC4;border-radius:14px;padding:16px'>"+
         "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'><span style='font-size:18px'>✨</span><b style='font-size:14px;color:var(--pw-carbon)'>Generá tu perfil con IA</b></div>"+
         "<div style='font-size:12.5px;color:var(--pw-text-soft);line-height:1.5;margin-bottom:10px'>Cuéntanos en 1-2 líneas a quién ayudas y con qué resultados. Al apretar <strong>«Guardar cambios»</strong> la IA <strong>autocompleta todo solo</strong>: título, frase corta, «Sobre mí», enfoque y especialidades. <em>(O aprieta «Generar con IA» acá abajo para verlo antes de guardar.)</em></div>"+
@@ -10744,11 +10744,12 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="cfg-save-profile"){
-    var sl=_val("cfp-slug").trim().toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"");
-    if(sl && !/^[a-z0-9][a-z0-9-]{0,80}$/.test(sl)){ alert("El slug solo puede tener minúsculas, números y guiones (y no empezar con guion)."); return; }
-    var pubA = !!state.pubActive;
-    if(pubA && !sl){ alert("Para activar tu perfil público necesitas un slug. Escríbelo en «URL de tu perfil»."); var si=document.getElementById("cfp-slug"); if(si)si.focus(); return; }
     var nom=_val("cfp-nombre").trim(), titP=_val("cfp-titulo").trim(), bioP=_val("cfp-bio").trim();
+    // Auto-generar slug basado en nombre (nombre-apellido, sin edición manual)
+    var sl=(nom).toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"").substring(0,60);
+    if(!sl){ sl="coach-"+(RME&&RME.id||"").substring(0,8); }
+    var pubA = !!state.pubActive;
+    if(pubA && !sl){ alert("Para activar tu perfil público necesitas completar tu nombre."); var si=document.getElementById("cfp-nombre"); if(si)si.focus(); return; }
     var tagP=_val("cfp-tagline").trim(), enfP=_val("cfp-enfoque").trim();
     var espP=_val("cfp-especialidades").split(",").map(function(x){return x.trim();}).filter(Boolean).slice(0,10);
     var cfgPatch={ gcal_ical_url:_val("cfp-cal-ical").trim(), pais:_val("cfp-pais").trim().toUpperCase(), nombre_practica:_val("cfp-practica").trim() };
@@ -10778,12 +10779,7 @@ document.addEventListener("click", function(ev){
       window._cfpFoto=null;
     };
     var _proceed=function(){
-      if(REAL && sl && RME && RME.id){
-        _sb("usuarios?slug=eq."+encodeURIComponent(sl)+"&id=neq."+encodeURIComponent(RME.id)+"&select=id&limit=1").then(function(rows){
-          if(rows&&rows.length){ alert("El slug «"+sl+"» ya está tomado por otro coach. Elige otro."); var si2=document.getElementById("cfp-slug"); if(si2)si2.focus(); return; }
-          doSave();
-        });
-      } else { doSave(); }
+      doSave();
     };
     // AUTO-IA al guardar: si el coach escribió el cuadro "Generá con IA" y todavía
     // NO tiene frase corta ni bio, la generamos y AUTOCOMPLETAMOS antes de guardar
@@ -14737,6 +14733,13 @@ function _coachConsentGate(){
     function done(){ var o=document.getElementById('coach-consent-ov'); if(o)o.remove(); }
     _selfPatchUsuarios({configuracion:merged}).then(done).catch(done);
   });
+}
+function _updateProfileSlug(){
+  var nomInput=document.getElementById("cfp-nombre");
+  var slugInput=document.getElementById("cfp-slug");
+  if(!nomInput || !slugInput) return;
+  var nom=(nomInput.value||"").trim().toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"").substring(0,60);
+  slugInput.value=nom || "coach";
 }
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
