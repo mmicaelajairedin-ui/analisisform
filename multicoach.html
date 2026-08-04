@@ -3589,12 +3589,40 @@ function mcLoadReal(owner){
     var mapped=(clientes||[]).map(mcMapCli);
     var mappedClientes=mapped.filter(function(c){ return c&&c.id; });
     DB={ coaches:lst, clientes:mappedClientes };
+
+    // ── P1-04: Filtrar clientes si el usuario es colaborador ──
+    // Un colaborador solo ve los clientes que le fueron asignados específicamente.
+    // Después de cargar DB, verificamos si necesitamos filtrar por asignaciones.
+    function _maybeFilterColaboratorClients(){
+      try{
+        var u=JSON.parse(localStorage.getItem('mj_user')||'null');
+        var isCollab=(u&&u.rol==='colaborador'&&u.id);
+        if(!isCollab||!org||!org.id) return Promise.resolve(); // no es colaborador
+        // Cargar asignaciones del colaborador
+        return mcGet('coach_client_assignments','coach_id=eq.'+encodeURIComponent(u.id)+'&org_id=eq.'+encodeURIComponent(org.id)+'&estado=eq.activa&select=client_id').then(function(assignments){
+          if(!assignments||!Array.isArray(assignments)) return;
+          var assignedIds={}; assignments.forEach(function(a){ if(a&&a.client_id) assignedIds[a.client_id]=true; });
+          // Filtrar DB.clientes para que solo incluya los asignados
+          if(DB&&DB.clientes&&Object.keys(assignedIds).length){
+            DB.clientes=DB.clientes.filter(function(c){ return c&&c.id&&assignedIds[c.id]; });
+          }
+        }).catch(function(e){
+          console.warn('[P1-04] Error loading collaborator assignments:', e.message);
+          // Si falla la carga de asignaciones, no filtramos (RLS debería hacerlo de todos modos)
+        });
+      }catch(e){ return Promise.resolve(); }
+    }
+
     // Un color estable por coach real para la agenda (por posición en la paleta).
     try{ MC_COCOL={}; DB.coaches.forEach(function(c,i){ MC_COCOL[c.id]=_MCPAL[i%_MCPAL.length]; }); }catch(e){}
     // La comunidad arranca en blanco para una red real (nada de posts/retos/
     // ranking inventados) — el dueño la va llenando. La demo sí trae ejemplos.
     try{ DBCOM={posts:[],avisos:[],clases:[],retos:[],ranking:[]}; }catch(e){}
-    mcApplyNiche();
+    // P1-04: Filtrar clientes si es colaborador (defense-in-depth junto a RLS)
+    try{ _maybeFilterColaboratorClients().then(function(){ mcApplyNiche(); _mcPostApply(); }).catch(function(){ mcApplyNiche(); _mcPostApply(); }); }catch(e){ mcApplyNiche(); _mcPostApply(); }
+  }
+  // Resto de inicialización que antes estaba inline en _apply()
+  function _mcPostApply(){
     try{ _mcLoadCanales(function(){ _mcUpdHeaderDot(); }); }catch(e){} // punto de no-leídos del chat del equipo
     try{ setTimeout(_mcPaywallCheck,0); }catch(e){} // aviso/muro si la prueba de la red está por vencer o venció
     // T-5: Activar sync LocalStorage ↔ Supabase después de cargar datos reales
