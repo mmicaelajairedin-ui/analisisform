@@ -9182,6 +9182,24 @@ function viewAdmin(){
             (mcCm ? "<div style='font-size:12px;font-weight:600;color:"+mcCmCol+"'>"+esc(mcCm.replace(/^(ok|err|…):/,""))+"</div>" : "")+
           "</div></div>"
       ) : "";
+      // ── Revertir un multicoach a coach independiente ───────────────────
+      // Un owner vuelve a ser coach (pierde acceso a multicoach, pero sus clientes se preservan)
+      var _ownerOpts = (RCOACHES||[]).filter(function(u){ return u && u.rol==="owner"; })
+        .map(function(u){ return "<option value='"+esc(u.id)+"'>"+esc(u.nombre||u.email||"Owner")+" ("+esc(u.email||"")+")</option>"; }).join("");
+      var mcRevMsg=state.mcRevMsg||"";
+      var mcRevCol=mcRevMsg.indexOf("ok:")===0?"var(--pw-bosque)":mcRevMsg.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
+      var revBox = (REAL && _ownerOpts) ? (
+        "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Revertir multicoach a coach<span class='dot'>.</span></h3>"+
+          "<span class='cp-eyebrow'>Un dueño vuelve a ser coach independiente</span></div>"+
+          "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+            "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5'>Elige un multicoach: vuelve a ser <strong>coach independiente</strong> y pierde acceso a la gestión de su red. Sus clientes se preservan en su organización actual.</div>"+
+            "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+              "<select id='mcrev-owner' class='cp-form-input' style='flex:2;min-width:240px'>"+_ownerOpts+"</select>"+
+              "<button class='cp-btn cp-btn-danger' data-act='mc-revert'>"+svg(IC.undo,12)+" Revertir</button>"+
+            "</div>"+
+            (mcRevMsg ? "<div style='font-size:12px;font-weight:600;color:"+mcRevCol+"'>"+esc(mcRevMsg.replace(/^(ok|err|…):/,""))+"</div>" : "")+
+          "</div></div>"
+      ) : "";
       // ── Cambiar el dueño de una red (transferir) ───────────────────────
       // El nuevo dueño es un coach de esa red; el anterior queda como coach.
       var mcT=state.mctMsg||"";
@@ -9339,7 +9357,7 @@ function viewAdmin(){
       "</div></div>";
       body = _tabs + (
         _cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli + "<div id='sala-insights' data-loaded='0'></div>" + "<div id='ceo-dash' data-loaded='0'></div>") :
-        _cv==="agregar"    ? (accBox + mcBox + convBox + transferBox + _orphCard) :
+        _cv==="agregar"    ? (accBox + mcBox + convBox + revBox + transferBox + _orphCard) :
         _cv==="redes"      ? _redesView :
         _list
       );
@@ -11594,6 +11612,35 @@ document.addEventListener("click", function(ev){
       _mccEnd("✓ "+_ccName+" ahora es multicoach ("+planTxt+")"+(d.movidos?" · "+d.movidos+" clientes pasaron a su red":"")+". Al entrar verá su panel de red.","ok");
     }).catch(function(e){
       _mccEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintenta.","err");
+    });
+    return;
+  }
+  if(act==="mc-revert"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    // Revertir un owner (multicoach) a coach independiente
+    var mcrevOwner=_val("mcrev-owner")||"";
+    var setMcrev=function(t,kind){ state.mcRevMsg=(kind||"…")+":"+t; render(); };
+    if(!mcrevOwner){ setMcrev("Elige un multicoach.","err"); return; }
+    var _ro=(RCOACHES||[]).filter(function(u){return String(u.id)===String(mcrevOwner);})[0];
+    var _roName=(_ro&&(_ro.nombre||_ro.email))||"ese multicoach";
+    if(!confirm("¿Revertir a "+_roName+" a coach independiente? Pierde acceso a la gestión de su red pero sus clientes se preservan.")) return;
+    setMcrev("Procesando…","…");
+    var _mcrevLock=false;
+    var _mcrevTimer=setTimeout(function(){ if(_mcrevLock)return; _mcrevLock=true; setMcrev("Tardó demasiado (revisa tu conexión). Reintenta.","err"); },25000);
+    var _mcrevEnd=function(t,kind){ if(_mcrevLock)return; _mcrevLock=true; clearTimeout(_mcrevTimer); setMcrev(t,kind); };
+    _hdr({"Content-Type":"application/json"}).then(function(h){
+      return fetch(SB+"/functions/v1/revertir-multicoach",{method:"POST",headers:h,body:JSON.stringify({owner_id:mcrevOwner})});
+    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
+      var d=res.d;
+      if(!res.ok||!d.ok){
+        if(res.status===403||d.error==="not_admin"){ _mcrevEnd("Tu sesión de admin no está activa. Reingresa y reintenta.","err"); return; }
+        if(d.error==="no_es_owner"){ _mcrevEnd("Ese usuario no es un multicoach.","err"); return; }
+        _mcrevEnd("No se pudo revertir (código "+(res.status||"?")+"). Reintenta.","err"); return;
+      }
+      reloadCoaches();
+      _mcrevEnd("✓ "+_roName+" ahora es coach independiente"+(d.clientes_preservados?" · "+d.clientes_preservados+" clientes preservados":"")+".","ok");
+    }).catch(function(e){
+      _mcrevEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintenta.","err");
     });
     return;
   }
