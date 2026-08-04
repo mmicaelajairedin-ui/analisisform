@@ -2044,7 +2044,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
             <div class="db-action-title">Ver agenda</div>
             <div class="db-action-desc">Calendario completo</div>
           </div>
-          <div class="db-action-card" onclick="__go('directorio')">
+          <div class="db-action-card" onclick="__go('canal')">
             <div class="db-action-icon"><i data-ic="chat"></i></div>
             <div class="db-action-title">Contactar coach</div>
             <div class="db-action-desc">Mensaje directo</div>
@@ -2341,16 +2341,18 @@ function _imgCompress(file,cb){
 // Soltar foto en el avatar de la ficha (cliente o coach).
 function _avatarDrop(ev,kind){ev.preventDefault();ev.currentTarget.classList.remove('over');var f=ev.dataTransfer.files&&ev.dataTransfer.files[0];if(!f||(f.type||'').indexOf('image')!==0){__toast('Suelta una imagen');return;}var o=(kind==='coach')?_coach(_curCoach):_cli(_curCli);if(!o)return;var r=new FileReader();r.onload=function(e){o.foto=e.target.result;if(kind==='coach')_renderCoachFicha();else _renderFicha();__toast('Foto de '+o.n.split(' ')[0]+' actualizada ✓');};r.readAsDataURL(f);}
 // Soltar/subir el documento del plan en la ficha del cliente.
-function _cliDocFiles(files){if(!files||!files.length)return;var k=_cli(_curCli);if(!k)return;k.planDoc=files[0].name;_renderFicha();__toast('Plan «'+files[0].name+'» adjuntado ✓');}
+function _cliSaveLocally(cliId,fields){if(!MC_REAL&&cliId){try{var stored=JSON.parse(localStorage.getItem('_mcCli_'+cliId)||'{}');Object.assign(stored,fields);localStorage.setItem('_mcCli_'+cliId,JSON.stringify(stored));}catch(e){}}}
+function _cliLoadLocally(cliId){if(!MC_REAL&&cliId){try{return JSON.parse(localStorage.getItem('_mcCli_'+cliId)||'{}');}catch(e){return {};}}}
+function _cliDocFiles(files){if(!files||!files.length)return;var k=_cli(_curCli);if(!k)return;k.planDoc=files[0].name;_cliSaveLocally(_curCli,{planDoc:k.planDoc});_renderFicha();__toast('Plan «'+files[0].name+'» adjuntado ✓');}
 function _cliDocDrop(ev){ev.preventDefault();ev.currentTarget.classList.remove('over');_cliDocFiles(ev.dataTransfer.files);}
 // Fotos de progreso (pestaña Progreso).
-function _progFiles(files){var k=_cli(_curCli);if(!k||!files||!files.length)return;k.progFotos=k.progFotos||[];var imgs=[].slice.call(files).filter(function(f){return (f.type||'').indexOf('image')===0;});var pend=imgs.length;if(!pend){__toast('Suelta imágenes');return;}imgs.forEach(function(f){var r=new FileReader();r.onload=function(e){k.progFotos.push(e.target.result);pend--;if(pend===0){_renderFicha();__toast(imgs.length+' foto'+(imgs.length===1?'':'s')+' de progreso agregada'+(imgs.length===1?'':'s')+' ✓');}};r.readAsDataURL(f);});}
+function _progFiles(files){var k=_cli(_curCli);if(!k||!files||!files.length)return;k.progFotos=k.progFotos||[];var imgs=[].slice.call(files).filter(function(f){return (f.type||'').indexOf('image')===0;});var pend=imgs.length;if(!pend){__toast('Suelta imágenes');return;}imgs.forEach(function(f){var r=new FileReader();r.onload=function(e){k.progFotos.push(e.target.result);pend--;if(pend===0){_cliSaveLocally(_curCli,{progFotos:k.progFotos});_renderFicha();__toast(imgs.length+' foto'+(imgs.length===1?'':'s')+' de progreso agregada'+(imgs.length===1?'':'s')+' ✓');}};r.readAsDataURL(f);});}
 function _progDrop(ev){ev.preventDefault();ev.currentTarget.classList.remove('over');_progFiles(ev.dataTransfer.files);}
-function _progDel(i){var k=_cli(_curCli);if(!k||!k.progFotos)return;k.progFotos.splice(i,1);_renderFicha();}
+function _progDel(i){var k=_cli(_curCli);if(!k||!k.progFotos)return;k.progFotos.splice(i,1);_cliSaveLocally(_curCli,{progFotos:k.progFotos});_renderFicha();}
 // Documentos de sesiones (pestaña Sesiones).
-function _sesFiles(files){var k=_cli(_curCli);if(!k||!files||!files.length)return;k.sesDocs=k.sesDocs||[];[].slice.call(files).forEach(function(f){k.sesDocs.push(f.name);});_renderFicha();__toast('Documento'+(files.length===1?'':'s')+' adjuntado'+(files.length===1?'':'s')+' ✓');}
+function _sesFiles(files){var k=_cli(_curCli);if(!k||!files||!files.length)return;k.sesDocs=k.sesDocs||[];[].slice.call(files).forEach(function(f){k.sesDocs.push(f.name);});_cliSaveLocally(_curCli,{sesDocs:k.sesDocs});_renderFicha();__toast('Documento'+(files.length===1?'':'s')+' adjuntado'+(files.length===1?'':'s')+' ✓');}
 function _sesDrop(ev){ev.preventDefault();ev.currentTarget.classList.remove('over');_sesFiles(ev.dataTransfer.files);}
-function _sesDel(i){var k=_cli(_curCli);if(!k||!k.sesDocs)return;k.sesDocs.splice(i,1);_renderFicha();}
+function _sesDel(i){var k=_cli(_curCli);if(!k||!k.sesDocs)return;k.sesDocs.splice(i,1);_cliSaveLocally(_curCli,{sesDocs:k.sesDocs});_renderFicha();}
 // dropdowns
 function __closeDD(){document.querySelectorAll('.dd').forEach(function(d){d.classList.remove('open');});}
 document.addEventListener('click',__closeDD);
@@ -3548,7 +3550,6 @@ function mcLoadReal(owner){
   // la RLS de candidatos NO deja que el dueño lea a los clientes de sus coaches,
   // así que la lectura directa devolvería la lista vacía. mi-red la trae completa.
   function _apply(org,coaches,clientes,ownerRow,citas){
-    console.log('[_apply] org:', (org&&org.id)||'null', 'coaches:', (coaches||[]).length, 'clientes:', (clientes||[]).length);
     MC_ORG=org||null;
     MC_CITAS=(citas||[]).filter(function(c){return c&&c.inicio;});
     // White-label persistido: aplicar la marca guardada de la red (color, logo,
@@ -3583,10 +3584,8 @@ function mcLoadReal(owner){
     // El dueño también es coach asignable → primero en la lista, marcado "Tú".
     var ow=ownerRow||owner;
     if(ow&&ow.id){ var oc=mcMapCoach(ow,cnt[ow.id]); if(oc&&oc.id){ oc.esOwner=true; oc.esp=oc.esp||'Dueño'; lst.unshift(oc); } }
-    console.log('[_apply] PRE-MAP - raw clientes:', (clientes||[]).length, 'NICHOS:', NICHOS, 'clientes data:', clientes);
     var mapped=(clientes||[]).map(mcMapCli);
-    console.log('[_apply] AFTER MAP - mapped array:', mapped.length, 'first 3:', mapped.slice(0,3));
-    var mappedClientes=mapped.filter(function(c){console.log('[_apply filter] testing:', c, 'has id?', c&&c.id); return c&&c.id;});
+    var mappedClientes=mapped.filter(function(c){ return c&&c.id; });
     DB={ coaches:lst, clientes:mappedClientes };
     // Un color estable por coach real para la agenda (por posición en la paleta).
     try{ MC_COCOL={}; DB.coaches.forEach(function(c,i){ MC_COCOL[c.id]=_MCPAL[i%_MCPAL.length]; }); }catch(e){}
@@ -3608,26 +3607,20 @@ function mcLoadReal(owner){
     var orgId=_selectedOrg||owner.org_id||(owner.configuracion&&owner.configuracion.org_id)||'';
     var email=(owner.email||'').toLowerCase();
     var orgQ = orgId ? ('id=eq.'+encodeURIComponent(orgId)) : ('owner_email=eq.'+encodeURIComponent(email));
-    console.log('[_loadOrgData] orgId:', orgId, 'email:', email, 'orgQ:', orgQ);
     return mcGet('organizaciones', orgQ+'&select=*&limit=1').then(function(orgs){
       var org=(orgs&&orgs[0])||null; var oid=org?org.id:null;
-      console.log('[_loadOrgData] org found:', oid, org);
       if(!oid) { _apply(org||null,[],[],owner,[]); return; }
-      console.log('[_loadOrgData] fetching coaches and clientes for org:', oid);
       return Promise.all([
         mcGet('usuarios','org_id=eq.'+encodeURIComponent(oid)+'&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion,org_id'),
         mcGet('candidatos','org_id=eq.'+encodeURIComponent(oid)+'&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc')
       ]).then(function(res){
         var coaches=res[0]||[]; var clientes=res[1]||[];
-        console.log('[_loadOrgData] loaded coaches:', coaches.length, 'clientes:', clientes.length);
         _apply(org, coaches, clientes, owner, []);
       }).catch(function(err){
-        console.error('[mcLoadReal] fallback error:', err);
         _apply(org,[],[],owner,[]);
         __toast('Error cargando coaches/clientes. Recarga la página.');
       });
     }).catch(function(err){
-      console.error('[mcLoadReal] org lookup error:', err);
       _apply(null,[],[],null,[]);
       __toast('No pudimos cargar tu red. Recarga la página o vuelve a iniciar sesión.');
     });
@@ -3882,7 +3875,7 @@ function _areaLbl(nicho){var cs=NICHOS||[];for(var i=0;i<cs.length;i++)if(cs[i].
 function _plan(nicho){var p=DET().planByCat;return p[nicho]||p[Object.keys(p)[0]];}
 var _kf='todos',_ks='',_cf='todos';
 function _coach(id){for(var i=0;i<DB.coaches.length;i++)if(DB.coaches[i].id===id)return DB.coaches[i];return null;}
-function _cli(id){for(var i=0;i<DB.clientes.length;i++)if(DB.clientes[i].id===id)return DB.clientes[i];return null;}
+function _cli(id){for(var i=0;i<DB.clientes.length;i++)if(DB.clientes[i].id===id){var k=DB.clientes[i];if(!MC_REAL){var local=_cliLoadLocally(id);if(local){Object.assign(k,local);}}return k;}return null;}
 function _ini(n){return n.trim().split(/\s+/).map(function(w){return w.charAt(0);}).slice(0,2).join('').toUpperCase();}
 function _img(o){return o.foto?'<img src="'+o.foto+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">':'';}
 function _estPill(e){var m={activo:['act','Activo'],inactivo:['sus','Inactivo'],suspendido:['sus','Suspendido'],pendiente:['pend','Invitación enviada']};var x=m[e]||m.act;return '<span class="pill '+x[0]+'">'+x[1]+'</span>';}
@@ -3938,15 +3931,18 @@ function renderClientes(){
  var v=document.getElementById('vscroll');
  if(!v){ return; }
  if(!DB||!DB.clientes){ if(v)v.innerHTML='<div style="padding:20px;text-align:center;color:var(--pw-text-soft)">Cargando clientes…</div>'; return; }
- var actCount=DB.clientes.filter(function(c){return c.est==='activo';}).length;
+ var filteredBase=_MC_COACH_FILTER?DB.clientes.filter(function(c){return c.coach===_MC_COACH_FILTER;}):DB.clientes;
+ var actCount=filteredBase.filter(function(c){return c.est==='activo';}).length;
  var chips=[['todos','Todos'],['activo','Activos'],['riesgo','Sin actividad'],['inactivo','Inactivos']];
- v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+actCount+' activos</p></div><button class="crear" onclick="__nuevoCliente()">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button></header>'
+ var coachName=_MC_COACH_FILTER?(_coach(_MC_COACH_FILTER)||{n:'Coach'}).n:'';
+ var titleHtml=_MC_COACH_FILTER?('<p class="hi-s">Clientes de '+_mcEsc(coachName)+'</p><button class="crear" onclick="_MC_COACH_FILTER=null;renderClientes()">'+PWI.svg('x',{sm:true})+' Ver todos</button>'):('<p class="hi-s">'+filteredBase.length+' en total · '+actCount+' activos</p><button class="crear" onclick="__nuevoCliente()">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button>');
+ v.innerHTML='<header class="vhead"><div><h1>Clientes</h1>'+titleHtml+'</div></header>'
   +'<div class="searchbar"><input id="kq" class="inp" placeholder="Buscar por nombre o coach…" oninput="_ks=this.value;_fillClientes()" value="'+_ks+'"></div>'
   +'<div class="cp-filters" id="kchips">'
-    +'<button class="cp-chip'+(_kf==='todos'?' is-on':'')+'" onclick="_setKf(\'todos\')">Todos<span class="cp-chip-count">'+DB.clientes.length+'</span></button>'
+    +'<button class="cp-chip'+(_kf==='todos'?' is-on':'')+'" onclick="_setKf(\'todos\')">Todos<span class="cp-chip-count">'+filteredBase.length+'</span></button>'
     +'<button class="cp-chip'+(_kf==='activo'?' is-on':'')+'" onclick="_setKf(\'activo\')">Activos<span class="cp-chip-count">'+actCount+'</span></button>'
-    +'<button class="cp-chip'+(_kf==='riesgo'?' is-on':'')+'" onclick="_setKf(\'riesgo\')">Sin actividad<span class="cp-chip-count">'+DB.clientes.filter(function(c){return c.est==='activo'&&c.lastState!=='fresh';}).length+'</span></button>'
-    +'<button class="cp-chip'+(_kf==='inactivo'?' is-on':'')+'" onclick="_setKf(\'inactivo\')">Inactivos<span class="cp-chip-count">'+DB.clientes.filter(function(c){return c.est==='inactivo';}).length+'</span></button>'
+    +'<button class="cp-chip'+(_kf==='riesgo'?' is-on':'')+'" onclick="_setKf(\'riesgo\')">Sin actividad<span class="cp-chip-count">'+filteredBase.filter(function(c){return c.est==='activo'&&c.lastState!=='fresh';}).length+'</span></button>'
+    +'<button class="cp-chip'+(_kf==='inactivo'?' is-on':'')+'" onclick="_setKf(\'inactivo\')">Inactivos<span class="cp-chip-count">'+filteredBase.filter(function(c){return c.est==='inactivo';}).length+'</span></button>'
   +'</div>'
   +'<div id="klist"></div>'
   +'</div>';
@@ -3957,7 +3953,6 @@ function _fillClientes(){
  var box=document.getElementById('klist');
  if(!box) return;
 
- // Panic: si DB.clientes no existe, inicializar
  if(!DB||!DB.clientes){
   if(!DB) DB={};
   DB.clientes=[];
@@ -3965,6 +3960,7 @@ function _fillClientes(){
 
  var q=_ks.toLowerCase();
  var base=DB.clientes.filter(function(k){
+   if(_MC_COACH_FILTER&&k.coach!==_MC_COACH_FILTER)return false;
    if(_kf==='todos')return true;
    if(_kf==='activo'&&k.est!=='activo')return false;
    if(_kf==='inactivo'&&k.est!=='activo')return false;
@@ -4037,9 +4033,12 @@ function _cliBody(k,c,t){
     ? '<div style="font-size:12.5px;color:var(--pw-text-soft);margin:3px 0 4px;line-height:1.55">Todavía no hay un plan cargado. Sube el plan del cliente (PDF o imagen) y aparece en su portal.</div>'
     : '<div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 8px">Lo que el cliente ve en su portal.</div>'
       +dias.map(function(d){return '<div class="cp-drow"><div class="dd"><span class="emo">'+d[0]+'</span></div><div class="dg"><div class="dn">'+d[1]+'</div><div class="ds">'+d[2]+'</div></div></div>';}).join('');
+  var uploadUI=MC_REAL
+    ? _mcEmptyCard('Subir plan','Cargar planes y documentos — próximamente. Por ahora comparte los PDF directamente con el cliente.')
+    : '<div class="dropz" style="margin-top:12px" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_cliDocDrop(event)" onclick="document.getElementById(\'plandoc\').click()"><input type="file" id="plandoc" accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="_cliDocFiles(this.files)">'+PWI.svg('paperclip',{sm:true})+' Arrastra el plan (PDF/imagen) o toca para subir'+(k.planDoc?' — <b>'+k.planDoc+'</b>':'')+'</div>';
   return _visBar('El plan')+'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">'+pl.title+'<span class="dot">.</span></h3>'
    +planRows
-   +'<div class="dropz" style="margin-top:12px" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_cliDocDrop(event)" onclick="document.getElementById(\'plandoc\').click()"><input type="file" id="plandoc" accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="_cliDocFiles(this.files)">'+PWI.svg('paperclip',{sm:true})+' Arrastra el plan (PDF/imagen) o toca para subir'+(k.planDoc?' — <b>'+k.planDoc+'</b>':'')+'</div></div>';
+   +uploadUI+'</div>';
  }
  if(t==='progreso'){
   var med=DET().prog,pIco=DET().progIcon;
@@ -4048,11 +4047,14 @@ function _cliBody(k,c,t){
     : '<div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 8px">Evolución que el cliente ve en su portal.</div>'
       +med.map(function(m){return '<div class="cp-drow"><div class="dd"><span class="emo">'+pIco+'</span></div><div class="dg"><div class="dn">'+m[0]+'</div><div class="ds">'+m[1]+' · '+m[2]+'</div></div></div>';}).join('')
       +'<button class="cp-btn cp-btn-ghost" style="margin-top:12px" onclick="__toast(\''+DET().progCta.replace(/^\+ /,'Cargar ')+' — demo\')">'+DET().progCta+'</button>';
+  var photosUI=MC_REAL
+    ? _mcEmptyCard('Fotos de progreso','Galería de fotos — próximamente. Usa tu portal de coach para ver las fotos que el cliente comparte.')
+    : '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Fotos de progreso<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 4px">Arrastra las fotos del cliente para ver su evolución.</div>'
+    +'<div class="dropz" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_progDrop(event)" onclick="document.getElementById(\'progfile\').click()"><input type="file" id="progfile" accept="image/*" multiple style="display:none" onchange="_progFiles(this.files)">'+PWI.svg('camera',{sm:true})+' Arrastra fotos acá o toca para subir</div>'
+    +((k.progFotos&&k.progFotos.length)?'<div class="progthumbs">'+k.progFotos.map(function(u,i){return '<div class="pth"><img src="'+u+'" alt=""><button onclick="_progDel('+i+')" title="Quitar">✕</button></div>';}).join('')+'</div>':'')+'</div>';
   return _visBar('El progreso')+'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">'+DET().progLabel+'<span class="dot">.</span></h3>'
    +progRows+'</div>'
-   +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Fotos de progreso<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 4px">Arrastra las fotos del cliente para ver su evolución.</div>'
-   +'<div class="dropz" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_progDrop(event)" onclick="document.getElementById(\'progfile\').click()"><input type="file" id="progfile" accept="image/*" multiple style="display:none" onchange="_progFiles(this.files)">'+PWI.svg('camera',{sm:true})+' Arrastra fotos acá o toca para subir</div>'
-   +((k.progFotos&&k.progFotos.length)?'<div class="progthumbs">'+k.progFotos.map(function(u,i){return '<div class="pth"><img src="'+u+'" alt=""><button onclick="_progDel('+i+')" title="Quitar">✕</button></div>';}).join('')+'</div>':'')+'</div>';
+   +photosUI;
  }
  if(t==='sesiones'){
   var ses=DET().ses;
@@ -4060,11 +4062,14 @@ function _cliBody(k,c,t){
     ? _mcSesReal(k)
     : ses.map(function(s){return '<div class="cp-drow"><div class="dd"><span class="emo">'+s[0]+'</span></div><div class="dg"><div class="dn">'+s[1]+'</div><div class="ds">'+s[2]+'</div></div></div>';}).join('')
       +'<button class="cp-btn cp-btn-primary" style="margin-top:12px" onclick="__nuevaSesion()">Agendar sesión</button>';
+  var docsUI=MC_REAL
+    ? _mcEmptyCard('Documentos de sesiones','Archivo compartido — próximamente. Por ahora comparte material en el portal de tu cliente.')
+    : '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Documentos<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 4px">Planes, informes o material de las sesiones.</div>'
+    +'<div class="dropz" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_sesDrop(event)" onclick="document.getElementById(\'sesfile\').click()"><input type="file" id="sesfile" accept="image/*,.pdf,.doc,.docx" multiple style="display:none" onchange="_sesFiles(this.files)">'+PWI.svg('paperclip',{sm:true})+' Arrastra documentos acá o toca para subir</div>'
+    +((k.sesDocs&&k.sesDocs.length)?k.sesDocs.map(function(n,i){return '<div class="cp-drow"><div class="dd"><span class="emo">'+PWI.svg('fileText',{sm:true})+'</span></div><div class="dg"><div class="dn">'+n+'</div></div><button class="ccollapse" onclick="_sesDel('+i+')" title="Quitar">✕</button></div>';}).join(''):'')+'</div>';
   return '<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Sesiones<span class="dot">.</span></h3>'
    +sesRows+'</div>'
-   +'<div class="cp-card cp-card-pad"><h3 class="cp-card-title">Documentos<span class="dot">.</span></h3><div style="font-size:12px;color:var(--pw-text-soft);margin:3px 0 4px">Planes, informes o material de las sesiones.</div>'
-   +'<div class="dropz" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_sesDrop(event)" onclick="document.getElementById(\'sesfile\').click()"><input type="file" id="sesfile" accept="image/*,.pdf,.doc,.docx" multiple style="display:none" onchange="_sesFiles(this.files)">'+PWI.svg('paperclip',{sm:true})+' Arrastra documentos acá o toca para subir</div>'
-   +((k.sesDocs&&k.sesDocs.length)?k.sesDocs.map(function(n,i){return '<div class="cp-drow"><div class="dd"><span class="emo">'+PWI.svg('fileText',{sm:true})+'</span></div><div class="dg"><div class="dn">'+n+'</div></div><button class="ccollapse" onclick="_sesDel('+i+')" title="Quitar">✕</button></div>';}).join(''):'')+'</div>';
+   +docsUI;
  }
  // mensajes
  if(MC_REAL) return _mcEmptyCard('Mensajes','El chat con el cliente vive en su portal, con su coach asignado. Desde acá gestionas la red; para hablar con un coach usa la pestaña Mensajes de su ficha.');
@@ -4275,13 +4280,21 @@ function _mcAgoCapital(s){
 
 // Invitar nueva persona al equipo
 function _equipoInvitar(){
-  __openModal('Invitar al equipo','<div><label class="cp-form-label">Email</label><input id="ei-email" class="cp-form-input" type="email" placeholder="persona@ejemplo.com"></div><div style="margin-top:12px"><label class="cp-form-label">Rol</label><select id="ei-rol" class="cp-form-input"><option value="coach">Coach</option><option value="colaborador">Colaborador</option></select></div>','Enviar invitación',function(){
+  __openModal('Invitar al equipo','<div><label class="cp-form-label">Nombre</label><input id="ei-nombre" class="cp-form-input" type="text" placeholder="Nombre completo"></div><div style="margin-top:12px"><label class="cp-form-label">Email</label><input id="ei-email" class="cp-form-input" type="email" placeholder="persona@ejemplo.com"></div><div style="margin-top:12px"><label class="cp-form-label">Rol</label><select id="ei-rol" class="cp-form-input"><option value="coach">Coach</option><option value="colaborador">Colaborador (próximamente)</option></select></div>','Invitar',function(){
+    var nombre=(document.getElementById('ei-nombre').value||'').trim();
     var email=(document.getElementById('ei-email').value||'').trim().toLowerCase();
-    var rol=document.getElementById('ei-rol').value;
+    if(!nombre){__toast('Escribe el nombre');return;}
     if(!email||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){__toast('Email inválido');return;}
     __mclose();
-    __toast('Invitación enviada a '+email+' ✓');
-    // TODO: integrar con edge function enviar-invitacion-equipo cuando esté lista
+    __toast('Enviando invitación…');
+    _hdr({'Content-Type':'application/json'}).then(function(h){
+      return fetch(SB+'/functions/v1/agregar-coach-red',{method:'POST',headers:h,body:JSON.stringify({email:email,nombre:nombre})});
+    }).then(function(r){return r.json().catch(function(){return null;});}).then(function(d){
+      if(d&&d.ok){__toast('Invitación enviada ✓ '+nombre+' recibirá un email para activar su cuenta');_equipoRefreshAfterChange();}
+      else if(d&&d.error&&d.error.indexOf('existe')>=0){__toast('Este email ya está registrado');}
+      else if(d&&d.error&&d.error.indexOf('max')>=0){__toast('Llegaste al límite de coaches en tu plan');}
+      else{__toast('No se pudo enviar la invitación. Reintenta.');}
+    }).catch(function(){__toast('Error de conexión');});
   });
 }
 
@@ -4398,6 +4411,12 @@ function _equipoVerAgenda(){
   _equipoCloseDrawer();
   __go('agenda');
 }
+function _equipoVerClientes(){
+  if(!_equipoSelected) return;
+  _equipoCloseDrawer();
+  _MC_COACH_FILTER=_equipoSelected.id;
+  __go('clientes');
+}
 
 // GESTIONAR DISPONIBILIDAD: Acceso rápido desde drawer
 function _equipoManageAvailability(){
@@ -4455,15 +4474,15 @@ function _equipoChangeRol(nuevoRol){
   });
 }
 
-// ENVIAR MENSAJE: TODO — Implementar en Sprint 4.3.7
 function _equipoEnviarMensaje(){
   if(!_equipoSelected) return;
-  // TODO (Sprint 4.3.7): Implementar sistema de mensajería real
-  // - Abrir modal con composer
-  // - Cargar automáticamente el destinatario (_equipoSelected)
-  // - Enviar a Supabase (tabla de mensajes)
-  // - Mostrar en historial de mensajes
-  __toast('ℹ️ Sistema de mensajes — disponible en Sprint 4.3.7');
+  fichaCoach(_equipoSelected.id);
+  _coachTab='mensajes';
+  _renderCoachFicha();
+  setTimeout(function(){
+    var inp=document.getElementById('ocmsgin');
+    if(inp) inp.focus();
+  }, 80);
 }
 
 // REASIGNAR CLIENTES: Implementado en Sprint 6
@@ -4567,14 +4586,6 @@ function _equipoDrawerHtml(){
   // Capacidades (Sprint 5.1)
   var capacidadesHtml=renderCapacidadesUI(item.id);
 
-  // Agenda preview (placeholder)
-  var agendaHtml='<div class="drawer-section"><div class="drawer-section-title">Próximas sesiones</div>'
-    +'<div style="font-size:12px;color:var(--db-text-muted);">'
-    +'<div style="padding:8px 0;border-bottom:1px solid rgba(21,32,24,.05);"><strong>Mañana 10:00</strong> — Preparación CV</div>'
-    +'<div style="padding:8px 0;border-bottom:1px solid rgba(21,32,24,.05);"><strong>Jueves 14:30</strong> — Mock interview</div>'
-    +'<div style="padding:8px 0;"><strong>Viernes 16:00</strong> — Follow-up</div>'
-    +'</div><div style="padding-top:8px;"><a href="#" style="font-size:12px;color:var(--pw-bosque);text-decoration:none;font-weight:500;">Ver agenda completa →</a></div>'
-    +'</div>';
 
   // ━━ HEADER: Foto + Info ━━
   var headerHtml='<div style="padding:20px 16px;background:linear-gradient(135deg,rgba(31,64,48,.04) 0%,rgba(31,64,48,.02) 100%);border-bottom:1px solid var(--pw-border);">'
@@ -4595,7 +4606,7 @@ function _equipoDrawerHtml(){
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
     +((item.tipo==='coach'||item.tipo==='owner')?'<button class="cp-btn cp-btn-outline" onclick="_equipoVerAgenda()" style="padding:14px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;height:auto;">'+PWI.svg('calendar',{sm:true})+'<span style="font-size:11px;">Agenda</span></button>':'')
     +'<button class="cp-btn cp-btn-outline" onclick="_equipoEnviarMensaje()" style="padding:14px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;height:auto;">'+PWI.svg('chat',{sm:true})+'<span style="font-size:11px;">Chat</span></button>'
-    +'<button class="cp-btn cp-btn-outline" onclick="alert(\'Clientes - Sprint 4.3.7\')" style="padding:14px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;height:auto;">'+PWI.svg('users',{sm:true})+'<span style="font-size:11px;">Clientes</span></button>'
+    +'<button class="cp-btn cp-btn-outline" onclick="_equipoVerClientes()" style="padding:14px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;height:auto;">'+PWI.svg('users',{sm:true})+'<span style="font-size:11px;">Clientes</span></button>'
     +'<button class="cp-btn cp-btn-outline" onclick="_equipoEditarPerfil()" style="padding:14px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;height:auto;">'+PWI.svg('edit',{sm:true})+'<span style="font-size:11px;">Editar</span></button>'
     +'</div></div>';
 
@@ -4605,8 +4616,8 @@ function _equipoDrawerHtml(){
     +'<div style="display:flex;flex-direction:column;gap:8px;">'
     +(item.tipo==='coach'?'<button class="cp-btn cp-btn-ghost" onclick="_equipoManageAvailability()" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('clock',{sm:true})+'<span>Disponibilidad</span></button>':'')
     +(item.tipo==='coach'?'<button class="cp-btn cp-btn-ghost" onclick="_equipoReasignarClientes()" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('shuffle',{sm:true})+'<span>Reasignar clientes</span></button>':'')
-    +'<button class="cp-btn cp-btn-ghost" onclick="alert(\'Analytics - Sprint 5.4\')" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('barChart',{sm:true})+'<span>Analytics</span></button>'
-    +'<button class="cp-btn cp-btn-ghost" onclick="alert(\'Configuración - Sprint 5.5\')" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('settings',{sm:true})+'<span>Configuración</span></button>'
+    +'<button class="cp-btn cp-btn-ghost" onclick="_equipoCloseDrawer();__go(\'analytics\')" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('barChart',{sm:true})+'<span>Analytics</span></button>'
+    +'<button class="cp-btn cp-btn-ghost" onclick="_equipoCloseDrawer();__go(\'config\')" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('settings',{sm:true})+'<span>Configuración</span></button>'
     +'</div></div>';
 
   // ━━ ROL: Selector ━━
@@ -4780,7 +4791,7 @@ function _teamDrop(e,coachId){
   '<p style="font-size:13.5px;color:var(--soft);margin:0;line-height:1.55">¿Mover a <b>'+_mcEsc(cli.n)+'</b>'+(prev?(' de <b>'+_mcEsc(prev.n)+'</b>'):'')+' a <b>'+_mcEsc(co.n)+'</b>?<br><span style="color:var(--muted)">El cliente va a ver a '+_mcEsc(co.n.split(" ")[0])+' como su coach.</span></p>',
   'Sí, mover', function(){ _reassign(cliId, coachId, function(ok){ __mclose(); if(ok && _sec==='coaches') renderEquipo(); }); });
 }
-var _curCoach=null,_coachTab='perfil',_MC_COACH_DATA={};
+var _curCoach=null,_coachTab='perfil',_MC_COACH_DATA={},_MC_COACH_FILTER=null;
 
 // FASE 1: Integración con coach-api-gateway
 // Llama los 5 endpoints en paralelo: metrics, alerts, benchmarks, trends, clients
@@ -6558,7 +6569,7 @@ function _cfgMarca(){
   +'</div>'
   +'</div>'
   +'<div id="brand-suggestions-container" style="display:none;margin-top:20px;padding:12px;background:var(--pw-niebla);border-radius:8px;border-left:4px solid var(--pw-bosque)"><div style="font-size:11px;font-weight:600;margin-bottom:10px;color:var(--pw-carbon)">Sugerencias detectadas del logo:</div><div id="brand-color-suggestions" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:8px;margin-bottom:10px"></div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="cp-btn cp-btn-primary" style="height:34px;font-size:12px" onclick="_acceptBrandSuggestion()">Aceptar</button><button class="cp-btn cp-btn-ghost" style="height:34px;font-size:12px" onclick="_regenerateBrandSuggestion()">Regenerar</button><button class="cp-btn cp-btn-ghost" style="height:34px;font-size:12px" onclick="_dismissBrandSuggestion()">Descartar</button></div></div>'
-  +'<div style="margin-top:20px;display:flex;gap:12px"><button class="cp-btn cp-btn-ghost" id="btn-suggest-colors" onclick="_suggestBrandColors()" style="display:none">'+PWI.svg('sparkles',{sm:true})+' Generar paleta</button><div style="position:relative"><button class="cp-btn cp-btn-ghost" style="padding:10px 14px" onclick="var m=document.getElementById(\'brand-more-menu\');m.style.display=m.style.display===\'none\'?\'block\':\'none\'">'+PWI.svg('moreVertical',{sm:true})+'</button><div id="brand-more-menu" style="display:none;position:absolute;top:100%;right:0;background:#fff;border:1px solid var(--pw-border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:1000;min-width:200px;margin-top:4px"><a href="javascript:;" onclick="window.open(\'https://pathwaycareercoach.com/branding-guide.pdf\',\'_blank\');document.getElementById(\'brand-more-menu\').style.display=\'none\'" style="display:block;padding:12px 16px;border-bottom:1px solid var(--pw-border);color:var(--pw-carbon);text-decoration:none;font-size:13px;transition:background .15s" onmouseover="this.style.background=\'var(--pw-niebla)\'" onmouseout="this.style.background=\'#fff\'">'+PWI.svg('download',{sm:true})+' Descargar guía</a><a href="javascript:;" onclick="alert(\'Preview mobile — Próximamente\');document.getElementById(\'brand-more-menu\').style.display=\'none\'" style="display:block;padding:12px 16px;border-bottom:1px solid var(--pw-border);color:var(--pw-carbon);text-decoration:none;font-size:13px;transition:background .15s" onmouseover="this.style.background=\'var(--pw-niebla)\'" onmouseout="this.style.background=\'#fff\'">'+PWI.svg('smartphone',{sm:true})+' Preview mobile</a><a href="javascript:;" onclick="alert(\'Exportar CSS — Próximamente\');document.getElementById(\'brand-more-menu\').style.display=\'none\'" style="display:block;padding:12px 16px;color:var(--pw-carbon);text-decoration:none;font-size:13px;transition:background .15s" onmouseover="this.style.background=\'var(--pw-niebla)\'" onmouseout="this.style.background=\'#fff\'">'+PWI.svg('code',{sm:true})+' Exportar CSS</a></div></div></div>';
+  +'<div style="margin-top:20px;display:flex;gap:12px"><button class="cp-btn cp-btn-ghost" id="btn-suggest-colors" onclick="_suggestBrandColors()" style="display:none">'+PWI.svg('sparkles',{sm:true})+' Generar paleta</button><div style="position:relative"><button class="cp-btn cp-btn-ghost" style="padding:10px 14px" onclick="var m=document.getElementById(\'brand-more-menu\');m.style.display=m.style.display===\'none\'?\'block\':\'none\'">'+PWI.svg('moreVertical',{sm:true})+'</button><div id="brand-more-menu" style="display:none;position:absolute;top:100%;right:0;background:#fff;border:1px solid var(--pw-border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:1000;min-width:200px;margin-top:4px"><a href="javascript:;" onclick="window.open(\'https://pathwaycareercoach.com/branding-guide.pdf\',\'_blank\');document.getElementById(\'brand-more-menu\').style.display=\'none\'" style="display:block;padding:12px 16px;border-bottom:1px solid var(--pw-border);color:var(--pw-carbon);text-decoration:none;font-size:13px;transition:background .15s" onmouseover="this.style.background=\'var(--pw-niebla)\'" onmouseout="this.style.background=\'#fff\'">'+PWI.svg('download',{sm:true})+' Descargar guía</a><a href="javascript:;" onclick="__toast(\'Preview mobile — Próximamente\');document.getElementById(\'brand-more-menu\').style.display=\'none\'" style="display:block;padding:12px 16px;border-bottom:1px solid var(--pw-border);color:var(--pw-carbon);text-decoration:none;font-size:13px;transition:background .15s" onmouseover="this.style.background=\'var(--pw-niebla)\'" onmouseout="this.style.background=\'#fff\'">'+PWI.svg('smartphone',{sm:true})+' Preview mobile</a><a href="javascript:;" onclick="__toast(\'Exportar CSS — Próximamente\');document.getElementById(\'brand-more-menu\').style.display=\'none\'" style="display:block;padding:12px 16px;color:var(--pw-carbon);text-decoration:none;font-size:13px;transition:background .15s" onmouseover="this.style.background=\'var(--pw-niebla)\'" onmouseout="this.style.background=\'#fff\'">'+PWI.svg('code',{sm:true})+' Exportar CSS</a></div></div></div>';
 }
 function _applyBrandColor(c){ if(c) document.documentElement.style.setProperty('--brand',c); }
 // Subir el logo como ARCHIVO (además de pegar URL). SVG e imágenes chicas se
@@ -6995,7 +7006,7 @@ function _cfgLanding(){
       +'<div style="font-size:12px;color:var(--pw-text-soft);margin-top:10px">Generada automáticamente · Origen: Mi Negocio + Marca</div>'
     +'</div>'
     +'<div style="display:flex;gap:8px">'
-      +'<button class="cp-btn cp-btn-ghost" style="height:38px;padding:0 14px;font-size:13px" onclick="alert(\'Regenerar landing — Próximamente\')">'+PWI.svg('refresh',{sm:true})+' Regenerar</button>'
+      +'<button class="cp-btn cp-btn-ghost" style="height:38px;padding:0 14px;font-size:13px" onclick="(function(){var f=document.getElementById(\'mc-landing-iframe\');if(f){var src=f.src;f.src=\'\';setTimeout(function(){f.src=src;},100);}})()">'+PWI.svg('refresh',{sm:true})+' Regenerar</button>'
       +'<button class="cp-btn cp-btn-primary" style="height:38px;padding:0 14px;font-size:13px" onclick="window.open(\''+_mcEsc(landingURL)+'\',\'_blank\')">'+PWI.svg('externalLink',{sm:true})+' Abrir Landing</button>'
     +'</div>'
   +'</div>'
@@ -7465,8 +7476,9 @@ function renderAgenda(){
      var agHd="<div class='db-section-header'><div><h3>Agenda de "+_mcEsc(MC_AGENDA_COACH_DATA.nombre)+"</h3><p style='font-size:13px;color:var(--db-text-muted);margin:4px 0 0 0;'>Sesiones y disponibilidad</p></div><button class='cp-btn cp-btn-ghost' onclick='MC_AGENDA_COACH_ID=null;MC_AGENDA_COACH_DATA=null;renderAgenda();' style='height:32px;margin-left:auto'>← Volver al Equipo</button></div>";
      v.innerHTML="<div style='padding:var(--db-space-32);'><div style='margin-bottom:var(--db-space-32);'>"+personalHeader+agHd+"</div><div>"+schedulerHtml+"</div></div>";
      if(typeof supabase !== "undefined"){ supabase.channel('sesiones_registro').on('*', function(payload){ renderAgenda(); }).subscribe(); }
+     return; // SALIR - no mostrar agenda de equipo (solo cuando nueva agenda está activa)
    }
-   return; // SALIR - no mostrar agenda de equipo
+   // Si USE_NEW_SCHEDULER no está disponible en modo personal, fall through a legacy
  }
 
  // ── AGENDA DE EQUIPO (solo si NO estamos en modo personal) ──────────────────────
@@ -7581,8 +7593,12 @@ function renderAgenda(){
  }
 
  // ── LEGACY AGENDA ────────────────────────────────────────────────────────
+ // Inicializar eventos (mock en DEMO, reales en REAL)
+ mcSetAgenda();
  // Traer el Google Calendar del dueño la 1ª vez (después ya está en MC_GCAL).
  if(MC_REAL&&!_mcGcalDone){ _mcGcalDone=true; _mcGcalLoad(function(){ if(MC_GCAL&&MC_GCAL.length){ mcSetAgenda(); if(_sec==='agenda') renderAgenda(); } }); }
+ // Si estamos en modo personal (viewing specific coach's agenda), usa ese coach para filtrar
+ if(MC_AGENDA_COACH_ID) _agCoach=MC_AGENDA_COACH_ID;
  var days=_weekDates();var todayDow=(new Date().getDay()+6)%7;
  if(_agSelDow===null||typeof _agSelDow==='undefined')_agSelDow=todayDow;
  var evs=_agEvs();
@@ -7591,7 +7607,10 @@ function renderAgenda(){
  // KPIs reales de agenda (sin inventar precios ni una capacidad arbitraria).
  var clasesSem=evs.filter(function(e){return e.tipo==='clase';}).length;
  var vt=function(k,l){return '<button class="'+(_agView===k?'on':'')+'" data-view="'+_mcEsc(k)+'" onclick="if(this.dataset.view)_setAgView(this.dataset.view)">'+l+'</button>';};
- v.innerHTML='<header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">Agenda<span class="dot">.</span></h1><div class="cp-sub">Sesiones, eventos y disponibilidad de todo tu equipo.</div></div>'
+ var agTitle=MC_AGENDA_COACH_ID?('Agenda de '+_mcEsc(MC_AGENDA_COACH_DATA.nombre)):'Agenda';
+ var agSubtitle=MC_AGENDA_COACH_ID?'Sesiones y disponibilidad':'Sesiones, eventos y disponibilidad de todo tu equipo.';
+ var backBtn=MC_AGENDA_COACH_ID?'<button class="cp-btn cp-btn-ghost" onclick="MC_AGENDA_COACH_ID=null;MC_AGENDA_COACH_DATA=null;renderAgenda();" style="height:32px;margin-right:12px">← Volver al Equipo</button>':'';
+ v.innerHTML='<header class="cp-topbar" style="align-items:center"><div><h1 class="cp-h1">'+agTitle+'<span class="dot">.</span></h1><div class="cp-sub">'+agSubtitle+'</div></div><div>'+backBtn+'</div>'
    +'<div class="cp-topbar-actions"><div class="agtoggle">'+vt('dia','Día')+vt('semana','Semana')+vt('mes','Mes')+'</div><button class="cp-btn cp-btn-ghost" onclick="_mcGcalConnect()" style="height:38px" title="Conectar Google Calendar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Google'+((MC_GCAL&&MC_GCAL.length)?' ✓':'')+'</button><button class="cp-btn cp-btn-ghost" onclick="_mcDispModal()" style="height:38px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Mi disponibilidad</button><button class="crear" onclick="__nuevaSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nueva sesión</button></div></header>'
    +'<div class="agkpis"><div class="agkpi"><div class="l">Sesiones hoy</div><div class="n">'+sesHoy+'</div></div><div class="agkpi"><div class="l">Atenciones esta semana</div><div class="n">'+clientesSem+'</div></div><div class="agkpi"><div class="l">Clases esta semana</div><div class="n">'+clasesSem+'</div></div><div class="agkpi"><div class="l">Eventos totales</div><div class="n">'+evs.length+'</div></div></div>'
    +'<div class="aglayout"><aside class="agcoaches">'+_agCoachList()+'</aside>'
