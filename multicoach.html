@@ -2438,26 +2438,16 @@ function __nuevoCliente(){
   if(maxK!=null&&haveK>=maxK){ mcUpgrade('clientes'); return; }
   if(!cs.length){ __toast('Primero suma un coach a tu red'); return; }
  }
- var coachOpts=cs.map(function(c){return '<option value="'+c.id+'">'+_mcEsc(c.n)+(c.esOwner?' (tú)':'')+'</option>';}).join('');
- __openModal('Nuevo cliente',__inp('nc-n','Nombre y apellido')+__inp('nc-e','email@cliente.com')+'<div><span class="lbl">Coach</span><select id="nc-c" class="inp">'+coachOpts+'</select></div>','Agregar',function(){
-  var n=(document.getElementById('nc-n').value||'').trim(), em=(document.getElementById('nc-e').value||'').trim().toLowerCase();
-  var cid=document.getElementById('nc-c').value; var c=_coach(cid);
+ var co=cs.map(function(c){return '<option value="'+c.id+'">'+_mcEsc(c.n)+(c.esOwner?' (tú)':'')+'</option>';}).join('');
+ __openModal('Nuevo cliente',__inp('nc-n','Nombre y apellido')+__inp('nc-e','email@cliente.com')+'<div><span class="lbl">Coach</span><select id="nc-c" class="inp">'+co+'</select></div>','Agregar',function(){
+  var n=(document.getElementById('nc-n').value||'').trim(), em=(document.getElementById('nc-e').value||'').trim().toLowerCase(), cid=document.getElementById('nc-c').value, c=_coach(cid);
   if(!n){__toast('Pon el nombre');return;}
   if(!MC_REAL){ DB.clientes.push({id:'k'+(DB.clientes.length+1)+'x',n:n,ini:_ini(n),nicho:(c?c.nicho:(NICHOS[0]&&NICHOS[0].id)||''),coach:cid,est:'activo',prog:'Onboarding',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién'}); if(c)c.cli++; __act('➕','var(--bosque)','Nuevo cliente: '+n,'Asignado a '+(c?c.n:'')); __mclose(); __toast('Cliente '+n+' agregado ✓'); if(_sec==='clientes')_fillClientes();else if(_sec==='coaches')renderCoaches(); return; }
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){__toast('Email inválido');return;}
-  var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Agregando…';}
+  var ok=document.getElementById('__mo'); if(ok)ok.disabled=true, ok.textContent='Agregando…';
   var cliId='cli_'+Date.now()+'_'+Math.random().toString(36).substr(2,9);
   var newCli={id:cliId,n:n,ini:_mcIni(n),nicho:(c?c.nicho:(NICHOS[0]&&NICHOS[0].id)||''),coach:cid,est:'activo',prog:'',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién',email:em};
-
-  // Optimistic: agregar localmente de inmediato
-  DB.clientes.push(newCli);
-  if(c)c.cli=(c.cli||0)+1;
-  console.log('[agregar-cliente] optimistic add. DB.clientes.length:', DB.clientes.length);
-  __mclose(); __toast('Cliente '+n+' agregado a tu red ✓'); mcApplyNiche();
-  if(_sec==='clientes'){ _fillClientes(); }
-  else { _sec='clientes'; renderClientes(); }
-
-  // Sincronizar con Supabase en background
+  DB.clientes.push(newCli); if(c)c.cli=(c.cli||0)+1; __mclose(); __toast('Cliente '+n+' agregado a tu red ✓'); mcApplyNiche(); if(_sec==='clientes')_fillClientes(); else _sec='clientes', renderClientes();
   _hdr({'Content-Type':'application/json'}).then(function(h){
    return fetch(SB+'/functions/v1/agregar-cliente-red',{method:'POST',headers:h,body:JSON.stringify({nombre:n,email:em,coach_id:cid})});
   }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
@@ -3604,7 +3594,7 @@ function mcLoadReal(owner){
       });
     }).catch(function(err){
       console.error('[mcLoadReal] org lookup error:', err);
-      _apply(null,[],[],owner,[]);
+      _apply(null,[],[],null,[]);
       __toast('No pudimos cargar tu red. Recarga la página o vuelve a iniciar sesión.');
     });
   }
@@ -3615,11 +3605,11 @@ function mcLoadReal(owner){
     var _body=_selectedOrg?{org_id:_selectedOrg}:{};
     return fetch(SB+'/functions/v1/mi-red',{method:'POST',headers:h,body:JSON.stringify(_body),timeout:5000});
   }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
-    if(d&&d.ok&&d.clientes){ _apply(d.org,d.coaches||[],d.clientes,d.owner||owner,d.citas||[]); return; }
+    if(d&&d.ok&&d.clientes){ _apply(d.org,d.coaches,d.clientes,d.owner,d.citas); return; }
     throw new Error('mi-red returned invalid data');
   }).catch(function(err){
     console.warn('[mcLoadReal] edge function failed, using direct query:', err.message);
-    return _loadOrgData();
+    return _loadOrgData().catch(function(){ _apply(null,[],[],null,[]); __toast('No pudimos cargar tu red. Recarga la página.'); });
   });
 }
 // Selector modal para elegir organización (cuando un Owner es parte de múltiples orgs).
