@@ -124,6 +124,28 @@ function handleAppleNativeUser(email, name, provider, appleUserId, authJWT){
   .then(function(r){ return r.json(); })
   .then(function(existingArr){
     var existingUser = (Array.isArray(existingArr) && existingArr.length > 0) ? existingArr[0] : null;
+
+    // Merge por persona: buscar por alias ANTES de crear usuario nuevo
+    if(!existingUser){
+      try {
+        var aliasQ = encodeURIComponent(JSON.stringify({ emails_alias: [email] }));
+        return fetch(SB + '/rest/v1/usuarios?configuracion=cs.' + aliasQ + '&select=id,email,rol,nombre,activo,configuracion,auth_id&limit=1', {
+          headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + SJWT }
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(aliasArr){
+          if(Array.isArray(aliasArr) && aliasArr.length > 0) return aliasArr[0];
+          return null;
+        })
+        .catch(function(){ return null; });
+      } catch(e) {
+        return Promise.resolve(null);
+      }
+    } else {
+      return Promise.resolve(existingUser);
+    }
+  })
+  .then(function(existingUser){
     var isNew = !existingUser;
     var usuario = existingUser;
 
