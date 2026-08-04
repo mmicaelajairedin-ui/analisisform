@@ -4506,6 +4506,20 @@ function _equipoSelectItem(itemId, itemType){
 }
 
 // Legacy: placeholder functions (removed in Sprint 4.3.1)
+// Renderizar la sección de Coaches (equipo)
+function renderCoaches(){
+ if(!_cf) _cf='todos';
+ var v=document.getElementById('vscroll');
+ var chips=[['todos','Todos'],['activo','Activos'],['inactivo','Inactivos']];
+ var coachCount=DB.coaches.filter(function(c){return !c.esOwner;}).length;
+ var activeCount=DB.coaches.filter(function(c){return !c.esOwner&&c.est==='activo';}).length;
+ v.innerHTML='<header class="vhead"><div><h1>Equipo</h1><p class="hi-s">'+coachCount+' coaches · '+activeCount+' activos</p></div></header>'
+  +'<div class="cp-filters" id="cchips">'+chips.map(function(c){return '<button class="cp-chip'+(_cf===c[0]?' is-on':'')+'" data-f="'+_mcEsc(c[0])+'" onclick="if(this.dataset.f)_setCf(this.dataset.f)">'+c[1]+'</button>';}).join('')+'</div>'
+  +'<div id="clist"></div>';
+ _fillCoaches();
+}
+function _setCf(f){_cf=f;var ch=document.querySelectorAll('#cchips .cp-chip');for(var i=0;i<ch.length;i++)ch[i].classList.toggle('is-on',ch[i].getAttribute('data-f')===f);_fillCoaches();}
+
 function _fillCoaches(){
  var box=document.getElementById('clist');if(!box)return;
  if(MC_REAL&&MC_ORG&&_cf==='todos'){
@@ -7322,11 +7336,20 @@ function renderAgenda(){
      +'<div class="db-kpi-item"><div class="db-kpi-value">'+(typeof DB!=='undefined'&&DB.clientes?DB.clientes.length:0)+'</div><div class="db-kpi-label">Clientes</div></div>'
      +'</div>';
 
-   var personalHeader=_renderPersonalAgendaHeader();
-   var agHd=MC_AGENDA_COACH_ID
-     ?"<div class='db-section-header'><div><h3>Agenda de "+_mcEsc(MC_AGENDA_COACH_DATA.nombre)+"</h3><p style='font-size:13px;color:var(--db-text-muted);margin:4px 0 0 0;'>Sesiones y disponibilidad</p></div></div>"
-     :"<div class='db-section-header'><div><h3>Agenda del Equipo</h3><p style='font-size:13px;color:var(--db-text-muted);margin:4px 0 0 0;'>Sesiones y eventos de todos los coaches</p></div></div>";
-   v.innerHTML="<div style='padding:var(--db-space-32);'><div style='margin-bottom:var(--db-space-32);'>"+personalHeader+agHd+kpiHtml+"</div><div>"+schedulerHtml+"</div></div>";
+   // Breadcrumb para Personal Agenda
+   var breadcrumbHtml='';
+   if(inPersonalAgendaMode){
+     breadcrumbHtml='<div style="display:flex;align-items:center;gap:8px;padding:12px 0;margin-bottom:16px;font-size:13px;color:var(--pw-text-soft)">'
+       +'<button class="cp-btn cp-btn-ghost" onclick="MC_AGENDA_COACH_ID=null;MC_AGENDA_COACH_NAME=null;MC_AGENDA_COACH_DATA=null;__go(\'equipo\')" style="height:28px;padding:0 8px;font-size:12px">← Volver al Equipo</button>'
+       +'<span style="color:var(--pw-text-muted)">·</span>'
+       +'<span>Agenda de <strong>'+_mcEsc(MC_AGENDA_COACH_NAME)+'</strong></span>'
+       +'</div>';
+   }
+
+   var agHd="<div class='db-section-header'><div><h3>"+(inPersonalAgendaMode?'Agenda de '+_mcEsc(MC_AGENDA_COACH_NAME):'Agenda del Equipo')+"</h3><p style='font-size:13px;color:var(--db-text-muted);margin:4px 0 0 0;'>"+(inPersonalAgendaMode?'Sesiones y disponibilidad':'Sesiones y eventos de todos los coaches')+"</p></div></div>";
+   // NEW_SCHEDULER: Header enriquecido para Personal Agenda
+   var personalHeaderHtml=inPersonalAgendaMode?_renderPersonalAgendaHeader():'';
+   v.innerHTML="<div style='padding:var(--db-space-32);'>"+breadcrumbHtml+personalHeaderHtml+"<div style='margin-bottom:var(--db-space-32);'>"+agHd+kpiHtml+"</div><div>"+schedulerHtml+"</div></div>";
 
    // ── REALTIME SUBSCRIPTION (Sprint 5.5) ──────────────────────────────
    if(typeof supabase !== "undefined"){
