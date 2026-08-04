@@ -241,6 +241,7 @@ async function handleCallback(){
   var ref = params.get('ref') || '';
   var referredBy = params.get('referrer') || null;
   var appleNative = params.get('apple_native') === '1';
+  var googleNative = params.get('google_native') === '1';
 
   // Manejo especial para Apple nativo (Capacitor iOS): el token está en localStorage.
   if(appleNative){
@@ -311,6 +312,159 @@ async function handleCallback(){
       return;
     } catch(e) {
       return showError('Error en validación de Apple: ' + (e && e.message || 'desconocido'));
+    }
+  }
+
+  // ── Manejo especial para Google nativo (Capacitor iOS) ──
+  if(googleNative){
+    var googleIdToken = null;
+    var googleEmail = null;
+    var googleName = null;
+    try {
+      googleIdToken = localStorage.getItem('pw_google_id_token');
+      googleEmail = localStorage.getItem('pw_google_email');
+      googleName = localStorage.getItem('pw_google_name');
+    } catch(e) {}
+
+    if(!googleIdToken){
+      return showError('Token de Google no encontrado. Intenta iniciar sesión de nuevo.');
+    }
+
+    setLoadingMsg('Validando tu identidad con Google...');
+
+    // Limpiar localStorage.
+    try {
+      localStorage.removeItem('pw_google_id_token');
+      localStorage.removeItem('pw_google_email');
+      localStorage.removeItem('pw_google_name');
+    } catch(e) {}
+
+    if(!googleEmail){
+      return showError('No pudimos obtener tu email. Intenta iniciar sesión de nuevo.');
+    }
+
+    setLoadingMsg('Conectando tu cuenta...');
+
+    // ── Intercambiar idToken de Google por sesión real en Supabase ──
+    try {
+      var sb = window.supabase.createClient(SB, KEY, {
+        auth: { persistSession: true, autoRefreshToken: true }
+      });
+
+      var { data: authData, error: authError } = await sb.auth.signInWithIdToken({
+        provider: 'google',
+        token: googleIdToken
+      });
+
+      if(authError){
+        return showError('Error validando con Google: ' + (authError.message || 'desconocido'));
+      }
+
+      if(!authData || !authData.user || !authData.session){
+        return showError('No se recibió sesión de Google. Intenta de nuevo.');
+      }
+
+      var email = (authData.user.email || googleEmail || '').toLowerCase().trim();
+      var name = googleName || (authData.user.user_metadata && authData.user.user_metadata.full_name) || email.split('@')[0];
+      var provider = 'google';
+      var userId = authData.user.id;
+      var authJWT = authData.session.access_token;
+
+      // Crear/actualizar usuario con el JWT real.
+      setLoadingMsg('Buscando tu cuenta...');
+      var usr = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,email,rol,nombre,activo,configuracion', {
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + authJWT }
+      }).then(r => r.json()).then(rows => rows && rows.length > 0 ? rows[0] : null);
+
+      if(!usr){
+        // Crear nuevo usuario.
+        setLoadingMsg('Creando tu cuenta...');
+        var trialDays = 14;
+        var newCfg = {
+          coach_type: 'carrera',
+          auth_provider: provider,
+          from_google: true,
+          from_apple: false,
+          plan: 'basic',
+          estado_sub: 'prueba',
+          visible_directorio: true,
+          max_candidatos: 5,
+          fecha_fin_prueba: new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString(),
+          last_login: new Date().toISOString()
+        };
+        usr = await fetch(SB + '/rest/v1/usuarios', {
+          method: 'POST',
+          headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + authJWT, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+          body: JSON.stringify({
+            email: email,
+            password_hash: null,
+            rol: 'coach',
+            nombre: name,
+            activo: true,
+            auth_id: userId,
+            configuracion: newCfg
+          })
+        }).then(r => {
+          if(!r.ok) throw new Error('No se pudo crear cuenta');
+          return r.json();
+        }).then(created => Array.isArray(created) ? created[0] : created);
+
+        // Email de bienvenida.
+        fetch(SB + '/functions/v1/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: email,
+            to_name: name,
+            subject: '¡Te damos la bienvenida a Pathway! Tu trial de 14 días empezó 🌱',
+            html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + (name.split(' ')[0]) + ',</h2>'
+              + '<p style="font-size:15px;line-height:1.65;">Te damos la bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis</strong>.</p>'
+              + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
+          })
+        }).catch(function(){});
+
+        // Guardar sesión y redirigir.
+        localStorage.setItem('mj_user', JSON.stringify({
+          id: usr.id,
+          email: usr.email,
+          rol: usr.rol,
+          nombre: usr.nombre,
+          activo: true,
+          configuracion: usr.configuracion || {}
+        }));
+        setLoadingMsg('¡Te damos la bienvenida! Te llevamos al panel...');
+        try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
+        setTimeout(function(){
+          window.location.href = '/panel-v2.html?welcome=1&v=' + Date.now();
+        }, 800);
+      } else {
+        // Usuario existente.
+        var cfg = usr.configuracion || {};
+        cfg.last_login = new Date().toISOString();
+        await fetch(SB + '/rest/v1/usuarios?id=eq.' + usr.id, {
+          method: 'PATCH',
+          headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + authJWT, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ configuracion: cfg })
+        }).catch(function(){});
+
+        localStorage.setItem('mj_user', JSON.stringify({
+          id: usr.id,
+          email: usr.email,
+          rol: usr.rol,
+          nombre: usr.nombre,
+          activo: true,
+          configuracion: cfg
+        }));
+        setLoadingMsg('¡Hola de nuevo! Te llevamos al panel...');
+        try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
+        setTimeout(function(){
+          var dest = usr.rol === 'cliente' ? '/cliente.html?v=' : '/panel-v2.html?v=';
+          window.location.href = dest + Date.now();
+        }, 800);
+      }
+      return;
+    } catch(e) {
+      return showError('Error en validación de Google: ' + (e && e.message || 'desconocido'));
     }
   }
 
