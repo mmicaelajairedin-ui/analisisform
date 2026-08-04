@@ -2001,12 +2001,7 @@ var DB={
     {id:'demo-colab-3',nombre:'María Ruiz',email:'maria.ruiz@empresa.com',telefono:'+34666456789',foto_url:'',departamento:'Administración',cargo:'Assistant',estado:'vacaciones',_ts:Date.now()}
   ]
 };
-var MC_REAL=false,MC_OWNER=null,MC_ORG=null,MC_N='fitness',MC_PLAN='basic',MC_CITAS=[
-  {id:'c1',coach_id:'demo-coach-1',nombre:'Juan Martínez',tipo:'Sesión fitness',inicio:new Date(new Date().getFullYear(),new Date().getMonth(),new Date().getDate()+1,10,0).toISOString(),estado:'confirmada',grupal:false},
-  {id:'c2',coach_id:'demo-coach-1',nombre:'Ana López',tipo:'Evaluación',inicio:new Date(new Date().getFullYear(),new Date().getMonth(),new Date().getDate()+2,15,0).toISOString(),estado:'confirmada',grupal:false},
-  {id:'c3',coach_id:'demo-coach-2',nombre:'Roberto Díaz',tipo:'Sesión carrera',inicio:new Date(new Date().getFullYear(),new Date().getMonth(),new Date().getDate()+1,14,0).toISOString(),estado:'confirmada',grupal:false},
-  {id:'c4',coach_id:'demo-coach-3',nombre:'Clase grupal',tipo:'Taller financiero',inicio:new Date(new Date().getFullYear(),new Date().getMonth(),new Date().getDate()+3,18,0).toISOString(),estado:'confirmada',grupal:true}
-],MC_GCAL=[],MC_RESOURCES=[],MC_AGENDA_COACH_ID=null,MC_AGENDA_COACH_NAME=null,MC_AGENDA_COACH_DATA=null;
+var MC_REAL=false,MC_OWNER=null,MC_ORG=null,MC_N='fitness',MC_PLAN='basic',MC_CITAS=[],MC_GCAL=[],MC_RESOURCES=[],MC_AGENDA_COACH_ID=null,MC_AGENDA_COACH_NAME=null,MC_AGENDA_COACH_DATA=null;
 // ME: Usuario logueado (inicializado desde localStorage o pw-auth.js)
 var ME=null;
 try{ ME=JSON.parse(localStorage.getItem('mj_user')||'null'); }catch(e){ ME=null; }
@@ -7060,12 +7055,64 @@ function _renderPersonalAgendaHeader(){
     +'</div></div>';
 }
 
-function renderAgenda(){
- console.error('[DEBUG] renderAgenda() START - MC_AGENDA_COACH_ID:', MC_AGENDA_COACH_ID, 'MC_AGENDA_COACH_DATA:', MC_AGENDA_COACH_DATA);
- var v=document.getElementById('vscroll');
- if(!v) { console.error('[DEBUG] renderAgenda() ERROR: vscroll element not found'); return; }
+// Agenda Personal: mostrar sesiones reales, disponibilidad y bloqueos del coach
+function _renderPersonalAgendaSimple(){
+  var v=document.getElementById('vscroll');
+  if(!v || !MC_AGENDA_COACH_DATA) return;
 
- // ── NEW SCHEDULER (feature flag) ──────────────────────────────────────────
+  var c=MC_AGENDA_COACH_DATA;
+  var personalHeader=_renderPersonalAgendaHeader();
+
+  // Próximas sesiones del coach (de MC_CITAS filtradas por coach_id)
+  var sesiones=(MC_CITAS||[]).filter(function(cita){
+    if(!cita || cita.estado==='cancelada') return false;
+    return (cita.coach_id===c.id || cita.coach===c.id);
+  }).sort(function(a,b){
+    return (new Date(a.inicio).getTime() - new Date(b.inicio).getTime());
+  }).slice(0,5); // Próximas 5
+
+  var sesionesHtml=sesiones.length ? sesiones.map(function(s){
+    var d=new Date(s.inicio);
+    var fmt=d.toLocaleDateString('es')+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+    return '<div style="padding:12px;border-bottom:1px solid var(--pw-border);display:flex;justify-content:space-between;align-items:center">'
+      +'<div><div style="font-weight:600">'+_mcEsc(s.nombre||'Cliente')+'</div><small style="color:var(--pw-text-soft)">'+_mcEsc(s.tipo||'Sesión')+'</small></div>'
+      +'<div style="font-size:12px;color:var(--pw-text-muted)">'+fmt+'</div>'
+      +'</div>';
+  }).join('')
+  :'<div style="padding:24px;text-align:center;color:var(--pw-text-soft)">Sin sesiones próximas</div>';
+
+  // Disponibilidad (se configura en MC_ORG.marca.disponibilidad o en el coach)
+  var disp=(MC_ORG&&MC_ORG.marca&&MC_ORG.marca.disponibilidad)||{};
+  var dispHtml=disp.days && disp.days.length ?
+    '<div style="padding:12px;border-top:1px solid var(--pw-border)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:8px">Disponibilidad</div>'
+    +'<div style="font-size:13px">Lunes a Viernes de '+disp.from+' a '+disp.to+'</div></div>'
+    :'';
+
+  v.innerHTML=personalHeader
+    +'<div style="background:white;border-radius:8px;margin:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)">'
+    +'<div style="padding:12px;border-bottom:1px solid var(--pw-border);display:flex;align-items:center;justify-content:space-between">'
+      +'<div style="font-weight:600;font-size:14px">Próximas sesiones</div>'
+      +'<button class="cp-btn cp-btn-outline" onclick="_agendaBackToTeam()" style="padding:6px 12px;font-size:11px;height:auto">'
+        +PWI.svg('arrowLeft',{sm:true})+' Equipo'
+      +'</button>'
+    +'</div>'
+    +sesionesHtml
+    +dispHtml
+    +'</div>';
+}
+
+function renderAgenda(){
+ var v=document.getElementById('vscroll');
+ if(!v) return;
+
+ // Si estamos en contexto de Agenda Personal de un coach, mostrar su agenda simple
+ if(MC_AGENDA_COACH_ID && MC_AGENDA_COACH_DATA){
+   _renderPersonalAgendaSimple();
+   return;
+ }
+
+ // ── AGENDA OPERATIVA (Organización) ──────────────────────────────────────────
+ // NEW SCHEDULER (feature flag)
  if(typeof USE_NEW_SCHEDULER!=="undefined" && USE_NEW_SCHEDULER){
 
    // Usar AgendaProvider para obtener eventos (agnóstico del origen)
