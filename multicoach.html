@@ -2901,7 +2901,34 @@ function mcMapCoach(u, cliCount){ var cfg=(u&&u.configuracion)||{}; var cat=(NIC
 // Etiqueta del tipo de miembro (Coach / Colaborador) para las tarjetas y la ficha.
 function _mcTipoBadge(c){ if(!c||c.tipo!=='colaborador') return ''; return '<span style="display:inline-flex;align-items:center;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#7A5CA8;background:rgba(122,92,168,.14);padding:2px 7px;border-radius:100px;margin-left:6px">Colaborador</span>'; }
 // Mapea una fila real de candidatos al shape que usan las tarjetas.
-function mcMapCli(c){ var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||''; return {id:c.id, n:c.nombre||c.email||'Cliente', email:(c.email||'').toLowerCase(), tel:(c.telefono||c.tel||c.phone||''), ini:_mcIni(c.nombre||c.email), nicho:cat, coach:c.coach_id||'', est:(c.activo===false?'inactivo':'activo'), prog:'', week:+c.semana_activa||1, plan:'pending', med:'pending', lastState:'fresh', _ts:(Date.parse(c.updated_at||c.created_at||'')||0), _created:(Date.parse(c.created_at||c.updated_at||'')||0), ult:_mcAgo(c.updated_at||c.created_at), foto:c.foto_perfil||''}; }
+function mcMapCli(c){
+  if(!c||typeof c!=='object') return null;
+  var cat=(NICHOS&&NICHOS[0]&&NICHOS[0].id)||'';
+  var name=c.nombre||c.email||'Cliente (sin nombre)';
+  var email=(c.email||'').toLowerCase();
+  var weekNum=+(c.semana_activa||1);
+  var isActive=c.activo!==false;
+  var timestamp=Date.parse(c.updated_at||c.created_at||'')||0;
+  return {
+    id:c.id||'',
+    n:name,
+    email:email,
+    tel:(c.telefono||c.tel||c.phone||''),
+    ini:_mcIni(name),
+    nicho:cat,
+    coach:c.coach_id||'',
+    est:isActive?'activo':'inactivo',
+    prog:'',
+    week:weekNum,
+    plan:'pending',
+    med:'pending',
+    lastState:'fresh',
+    _ts:timestamp,
+    _created:timestamp,
+    ult:_mcAgo(c.updated_at||c.created_at),
+    foto:c.foto_perfil||''
+  };
+}
 // Botón de contacto REAL: WhatsApp si hay teléfono; si no, email; si no hay
 // ninguno, queda deshabilitado (sin fingir que abre WhatsApp).
 function _mcContactBtn(tel, email){
@@ -3334,6 +3361,7 @@ function mcLoadReal(owner){
   // la RLS de candidatos NO deja que el dueño lea a los clientes de sus coaches,
   // así que la lectura directa devolvería la lista vacía. mi-red la trae completa.
   function _apply(org,coaches,clientes,ownerRow,citas){
+    console.log('[_apply] org:', org?.id, 'coaches:', (coaches||[]).length, 'clientes:', (clientes||[]).length);
     MC_ORG=org||null;
     MC_CITAS=(citas||[]).filter(function(c){return c&&c.inicio;});
     // White-label persistido: aplicar la marca guardada de la red (color, logo,
@@ -3363,12 +3391,14 @@ function mcLoadReal(owner){
     } }catch(e){}
     MC_PLAN=(org&&org.plan)||(owner.configuracion&&owner.configuracion.plan)||'boutique';
     MC_N=mcNichoKey(org?org.nicho:(owner.configuracion&&owner.configuracion.coach_type)); NICHOS=NM().cats;
-    var cnt={}; (clientes||[]).forEach(function(c){ if(c.coach_id)cnt[c.coach_id]=(cnt[c.coach_id]||0)+1; });
-    var lst=(coaches||[]).map(function(u){return mcMapCoach(u,cnt[u.id]);});
+    var cnt={}; (clientes||[]).forEach(function(c){ if(c&&c.coach_id)cnt[c.coach_id]=(cnt[c.coach_id]||0)+1; });
+    var lst=(coaches||[]).map(function(u){return mcMapCoach(u,cnt[u.id]);}).filter(function(c){return c&&c.id;});
     // El dueño también es coach asignable → primero en la lista, marcado "Tú".
     var ow=ownerRow||owner;
-    if(ow&&ow.id){ var oc=mcMapCoach(ow,cnt[ow.id]); oc.esOwner=true; oc.esp=oc.esp||'Dueño'; lst.unshift(oc); }
-    DB={ coaches:lst, clientes:(clientes||[]).map(mcMapCli) };
+    if(ow&&ow.id){ var oc=mcMapCoach(ow,cnt[ow.id]); if(oc&&oc.id){ oc.esOwner=true; oc.esp=oc.esp||'Dueño'; lst.unshift(oc); } }
+    var mappedClientes=(clientes||[]).map(mcMapCli).filter(function(c){return c&&c.id;});
+    DB={ coaches:lst, clientes:mappedClientes };
+    console.log('[_apply result] coaches:', DB.coaches.length, 'clientes:', DB.clientes.length);
     // Un color estable por coach real para la agenda (por posición en la paleta).
     try{ MC_COCOL={}; DB.coaches.forEach(function(c,i){ MC_COCOL[c.id]=_MCPAL[i%_MCPAL.length]; }); }catch(e){}
     // La comunidad arranca en blanco para una red real (nada de posts/retos/
@@ -3382,19 +3412,8 @@ function mcLoadReal(owner){
     // B.6.3: Realtime sync de branding entre tabs (sin reload)
     try{ setTimeout(_mcStartBrandRealtimeSync,150); }catch(e){}
   }
-  return _hdr({'Content-Type':'application/json'}).then(function(h){
-    // Si hay org seleccionada en localStorage (multi-org), enviarla al edge function
-    var _selectedOrg=null;
-    try{ _selectedOrg=localStorage.getItem('mj_org_selected'); }catch(e){}
-    var _body=_selectedOrg?{org_id:_selectedOrg}:{};
-    return fetch(SB+'/functions/v1/mi-red',{method:'POST',headers:h,body:JSON.stringify(_body)});
-  }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
-    if(d&&d.ok){ _apply(d.org,d.coaches,d.clientes,d.owner,d.citas); return; }
-    throw new Error('mi-red');
-  }).catch(function(){
-    // Fallback: lectura directa (por si mi-red aún no está desplegada). Los
-    // coaches sí se leen (policy de directorio); los clientes pueden venir
-    // vacíos si la RLS estricta está activa — mi-red lo resuelve.
+  // Ruta unificada: intenta edge function, fallback a lectura directa, con validación.
+  function _loadOrgData(){
     var _selectedOrg=null;
     try{ _selectedOrg=localStorage.getItem('mj_org_selected'); }catch(e){}
     var orgId=_selectedOrg||owner.org_id||(owner.configuracion&&owner.configuracion.org_id)||'';
@@ -3402,16 +3421,36 @@ function mcLoadReal(owner){
     var orgQ = orgId ? ('id=eq.'+encodeURIComponent(orgId)) : ('owner_email=eq.'+encodeURIComponent(email));
     return mcGet('organizaciones', orgQ+'&select=*&limit=1').then(function(orgs){
       var org=(orgs&&orgs[0])||null; var oid=org?org.id:null;
+      if(!oid) { _apply(org||null,[],[],owner,[]); return; }
       return Promise.all([
-        oid?mcGet('usuarios','org_id=eq.'+encodeURIComponent(oid)+'&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion'):Promise.resolve([]),
-        oid?mcGet('candidatos','org_id=eq.'+encodeURIComponent(oid)+'&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc'):Promise.resolve([])
-      ]).then(function(res){ _apply(org,res[0],res[1]); });
-    }).catch(function(){
-      // Red real que no pudo cargar → modo real VACÍO + aviso. Nunca la maqueta
-      // ("Alex Gómez") para un dueño logueado: parecía la cuenta de otro.
-      _apply(null,[],[],null,[]);
+        mcGet('usuarios','org_id=eq.'+encodeURIComponent(oid)+'&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion,org_id'),
+        mcGet('candidatos','org_id=eq.'+encodeURIComponent(oid)+'&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc')
+      ]).then(function(res){
+        var coaches=res[0]||[]; var clientes=res[1]||[];
+        _apply(org, coaches, clientes, owner, []);
+      }).catch(function(err){
+        console.error('[mcLoadReal] fallback error:', err);
+        _apply(org,[],[],owner,[]);
+        __toast('Error cargando coaches/clientes. Recarga la página.');
+      });
+    }).catch(function(err){
+      console.error('[mcLoadReal] org lookup error:', err);
+      _apply(null,[],[],owner,[]);
       __toast('No pudimos cargar tu red. Recarga la página o vuelve a iniciar sesión.');
     });
+  }
+  // Intenta edge function primero, sino fallback directo
+  return _hdr({'Content-Type':'application/json'}).then(function(h){
+    var _selectedOrg=null;
+    try{ _selectedOrg=localStorage.getItem('mj_org_selected'); }catch(e){}
+    var _body=_selectedOrg?{org_id:_selectedOrg}:{};
+    return fetch(SB+'/functions/v1/mi-red',{method:'POST',headers:h,body:JSON.stringify(_body),timeout:5000});
+  }).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+    if(d&&d.ok&&d.clientes){ _apply(d.org,d.coaches||[],d.clientes,d.owner||owner,d.citas||[]); return; }
+    throw new Error('mi-red returned invalid data');
+  }).catch(function(err){
+    console.warn('[mcLoadReal] edge function failed, using direct query:', err.message);
+    return _loadOrgData();
   });
 }
 // Selector modal para elegir organización (cuando un Owner es parte de múltiples orgs).
@@ -3714,7 +3753,9 @@ function renderClientes(){
 }
 function _setKf(f){_kf=f;var ch=document.querySelectorAll('#kchips .cp-chip');for(var i=0;i<ch.length;i++)ch[i].classList.toggle('is-on',ch[i].getAttribute('data-f')===f);_fillClientes();}
 function _fillClientes(){
- var box=document.getElementById('klist');if(!box)return;var q=_ks.toLowerCase();
+ var box=document.getElementById('klist');if(!box){console.warn('[_fillClientes] element #klist not found'); return;}
+ if(!DB.clientes||DB.clientes.length===0){console.warn('[_fillClientes] DB.clientes is empty'); box.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--pw-text-soft)"><div style="font-size:15px;font-weight:600;margin-bottom:8px">Sin clientes aún</div><p style="font-size:13px;margin:0">Los clientes aparecerán cuando se agrega uno nuevo a la red.</p></div>'; return;}
+ var q=_ks.toLowerCase();
  var base=DB.clientes.filter(function(k){
    if(_kf==='activo'&&k.est!=='activo')return false;
    if(_kf==='inactivo'&&k.est==='activo')return false;
