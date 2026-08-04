@@ -1692,6 +1692,130 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
   }
 }
 
+/* ========== TABLA DE CLIENTES (Fase 1) ========== */
+.mc-cli-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: white;
+}
+
+.mc-cli-table tbody tr:nth-child(even) {
+  background: var(--pw-niebla-1);
+}
+
+.mc-cli-table tbody tr:hover {
+  background: rgba(31, 80, 48, 0.05);
+}
+
+.mc-cli-row {
+  border-bottom: 1px solid var(--pw-niebla-2);
+  transition: background 0.15s ease;
+}
+
+.mc-cli-cell {
+  padding: 12px 10px;
+  vertical-align: middle;
+  color: var(--pw-carbon);
+}
+
+.mc-cli-cliente {
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mc-cli-cliente:hover {
+  color: var(--pw-bosque);
+}
+
+.mc-cli-coach {
+  position: relative;
+}
+
+.mc-cli-coach select {
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.mc-cli-coach select:focus {
+  outline: 2px solid var(--pw-bosque);
+  outline-offset: 2px;
+}
+
+.mc-cli-actions {
+  text-align: center;
+  position: relative;
+  width: 50px;
+}
+
+.mc-menu-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--pw-text-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.mc-menu-btn:hover {
+  background: var(--pw-niebla-2);
+  color: var(--pw-carbon);
+}
+
+.mc-menu-popup {
+  position: absolute;
+  background: white;
+  border: 1px solid var(--pw-niebla-3);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  min-width: 160px;
+  z-index: 1000;
+}
+
+.mc-menu-popup button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--pw-carbon);
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+
+.mc-menu-popup button:first-child {
+  border-radius: 6px 6px 0 0;
+}
+
+.mc-menu-popup button:hover {
+  background: var(--pw-niebla-2);
+}
+
+.mc-menu-popup hr {
+  margin: 4px 0;
+  border: none;
+  border-top: 1px solid var(--pw-niebla-3);
+}
+
+@media (max-width: 1024px) {
+  .mc-cli-table {
+    font-size: 12px;
+  }
+
+  .mc-cli-cell {
+    padding: 10px 8px;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -3711,8 +3835,14 @@ function renderClientes(){
  v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+_countK('activo')+' activos</p></div><button class="crear" onclick="__nuevoCliente()">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button></header>'
   +'<div class="searchbar"><input id="kq" class="inp" placeholder="Buscar por nombre o coach…" oninput="_ks=this.value;_fillClientes()" value="'+_ks+'"></div>'
   +'<div class="cp-filters" id="kchips">'+chips.map(function(c){return '<button class="cp-chip'+(_kf===c[0]?' is-on':'')+'" data-f="'+_mcEsc(c[0])+'" onclick="if(this.dataset.f)_setKf(this.dataset.f)">'+c[1]+'<span class="cp-chip-count">'+_countK(c[0])+'</span></button>';}).join('')+'</div>'
-  +'<div id="klist"></div>';
+  +'<div id="klist" style="position:relative"></div>';
  _fillClientes();_focusEnd('kq');
+ document.addEventListener('click',function(e){
+   if(!e.target.closest('.mc-menu-btn')){
+     var menus=document.querySelectorAll('.mc-menu-popup');
+     for(var i=0;i<menus.length;i++)menus[i].style.display='none';
+   }
+ });
 }
 function _setKf(f){_kf=f;var ch=document.querySelectorAll('#kchips .cp-chip');for(var i=0;i<ch.length;i++)ch[i].classList.toggle('is-on',ch[i].getAttribute('data-f')===f);_fillClientes();}
 function _fillClientes(){
@@ -3728,30 +3858,104 @@ function _fillClientes(){
    box.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--pw-text-soft)"><div style="font-size:15px;font-weight:600;margin-bottom:8px">Sin resultados</div><p style="font-size:13px;margin:0">Prueba con otros filtros o crea un nuevo cliente.</p></div>';
    return;
  }
- var cards=base.map(function(k){
+ var act=(DB.coaches||[]).filter(function(c){return c.est==='activo';});
+ var rows=base.map(function(k){
    var coach=_coach(k.coach);
-   var estState=k.est==='activo'?'on':'off';
-   var estBadge=estState==='on'?'Activo':'Inactivo';
-   var estColor=(k.est==='activo'?'var(--pw-bosque)':'var(--pw-text-muted)');
-   var bar=[1,2,3,4].map(function(w){return "<span class='"+(w<=k.week?"on":"")+"'></span>";}).join("");
-   var lastStateClass='is-'+(k.lastState||'fresh');
-   var lastActivityTxt=_mcEsc(k.ult||'—');
-   var clickUrl=MC_OWNER?('cliente.html?id='+encodeURIComponent(k.id)):('panel-v2.html?org='+(MC_ORG&&MC_ORG.id||'')+'\&coach='+_mcEsc(coach&&coach.id||''));
-   var av=k.foto?('<img src="'+k.foto+'" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">'):('<span style="display:inline-block;width:100%;height:100%;display:flex;align-items:center;justify-content:center">'+k.ini+'</span>');
-   return '<article class="cp-client" onclick="fichaCliente(\''+_mcEsc(k.id)+'\')" style="cursor:pointer;position:relative">'
-    +'<header class="cp-client-head"><span class="cp-cardav" style="width:48px;height:48px;border-radius:50%;background:var(--pw-niebla-3);display:flex;align-items:center;justify-content:center;color:var(--carbon);font-weight:700;font-size:14px;position:relative;overflow:hidden">'+av+'</span>'
-    +'<div class="cp-client-id"><div class="cp-client-name">'+_mcEsc(k.n)+'</div>'
-    +'<div class="cp-cli-tags" style="margin-top:5px"><span class="cp-cli-tag own">'+_mcEsc(coach?coach.n:'Sin coach')+'</span><span class="cp-cli-tag '+estState+'">'+estBadge+'</span></div>'
-    +'</div></header>'
-    +'<div class="cp-client-last '+lastStateClass+'">Última actividad · '+lastActivityTxt+'</div>'
-    +'<div style="display:flex;align-items:center;gap:10px"><span style="font-size:11px;font-weight:600;color:var(--pw-text-muted);white-space:nowrap">Sem '+k.week+'/4</span><div class="cp-cli-prog" style="flex:1;display:flex;gap:2px">'+bar+'</div></div>'
-    +'<footer class="cp-cli-acts" style="display:flex;gap:6px;margin-top:10px">'
-    +'<button class="cp-btn cp-btn-ghost" style="flex:1;font-size:12px;height:32px" onclick="event.stopPropagation();fichaCliente(\''+_mcEsc(k.id)+'\')">'+PWI.svg('eye',{sm:true})+' Detalles</button>'
-    +'<button class="cp-btn cp-btn-ghost" style="flex:1;font-size:12px;height:32px" onclick="event.stopPropagation();_toastChat(\''+_mcEsc(k.n)+'\')">'+PWI.svg('chat',{sm:true})+' Mensaje</button>'
-    +'</footer>'
-    +'</article>';
+   var coachOpts='<option value="">Sin asignar</option>'+act.map(function(c){return '<option value="'+c.id+'"'+(String(c.id)===String(k.coach)?' selected':'')+'>'+_mcEsc(c.n)+'</option>';}).join('');
+   var av=k.foto?('<img src="'+k.foto+'" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;display:block">'):('<span style="display:inline-flex;width:32px;height:32px;border-radius:50%;background:var(--pw-niebla-3);align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--pw-carbon)">'+k.ini+'</span>');
+   var estBadge=k.est==='activo'?'🟢 Activo':'⭕ Inactivo';
+   var proxSesion=k.proxSesion||'—';
+   var menuid='km-'+k.id;
+   return '<tr class="mc-cli-row">'
+    +'<td class="mc-cli-cell mc-cli-cliente"><div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="fichaCliente(\''+_mcEsc(k.id)+'\')" style="cursor:pointer">'+av+'<span>'+_mcEsc(k.n)+'</span></div></td>'
+    +'<td class="mc-cli-cell mc-cli-coach"><select class="inp" style="height:28px;padding:4px 6px;font-size:12px;font-weight:600;border:1px solid var(--pw-niebla-3);border-radius:4px;background:white;color:var(--pw-carbon)" onchange="if(this.value!==\''+String(k.coach)+'\')_reassignCli(\''+k.id+'\',this.value)" data-orig="'+String(k.coach)+'">'+coachOpts+'</select></td>'
+    +'<td class="mc-cli-cell">'+_mcEsc(k.prog||'—')+'</td>'
+    +'<td class="mc-cli-cell">'+estBadge+'</td>'
+    +'<td class="mc-cli-cell">'+_mcEsc(k.ult||'—')+'</td>'
+    +'<td class="mc-cli-cell">'+proxSesion+'</td>'
+    +'<td class="mc-cli-cell mc-cli-actions"><button class="mc-menu-btn" onclick="event.stopPropagation();_showCliMenu(\''+menuid+'\',\''+k.id+'\')">'+PWI.svg('moreVertical',{sm:true})+'</button>'
+    +'<div id="'+menuid+'" class="mc-menu-popup" style="display:none;position:absolute;background:white;border:1px solid var(--pw-niebla-3);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.1);min-width:140px;z-index:1000;top:24px;right:0">'
+    +'<button onclick="_showCliProfile(\''+k.id+'\');_hideCliMenu(\''+menuid+'\')" style="display:block;width:100%;text-align:left;padding:8px 12px;border:none;background:none;font-size:12px;cursor:pointer;color:var(--pw-carbon)" onmouseover="this.style.background=\'var(--pw-niebla-2)\'" onmouseout="this.style.background=\'none\'">'+PWI.svg('user',{sm:true})+'Ver perfil</button>'
+    +'<button onclick="_showCliPortal(\''+k.id+'\');_hideCliMenu(\''+menuid+'\')" style="display:block;width:100%;text-align:left;padding:8px 12px;border:none;background:none;font-size:12px;cursor:pointer;color:var(--pw-carbon)" onmouseover="this.style.background=\'var(--pw-niebla-2)\'" onmouseout="this.style.background=\'none\'">'+PWI.svg('externalLink',{sm:true})+'Abrir portal</button>'
+    +'<button onclick="_showCliMessage(\''+k.id+'\');_hideCliMenu(\''+menuid+'\')" style="display:block;width:100%;text-align:left;padding:8px 12px;border:none;background:none;font-size:12px;cursor:pointer;color:var(--pw-carbon)" onmouseover="this.style.background=\'var(--pw-niebla-2)\'" onmouseout="this.style.background=\'none\'">'+PWI.svg('chat',{sm:true})+'Enviar mensaje</button>'
+    +'<hr style="margin:4px 0;border:none;border-top:1px solid var(--pw-niebla-3)">'
+    +'<button onclick="_toggleCliActivo(\''+k.id+'\',\''+k.est+'\');_hideCliMenu(\''+menuid+'\')" style="display:block;width:100%;text-align:left;padding:8px 12px;border:none;background:none;font-size:12px;cursor:pointer;color:'+(k.est==='activo'?'var(--pw-text-soft)':'var(--pw-bosque)') +'" onmouseover="this.style.background=\'var(--pw-niebla-2)\'" onmouseout="this.style.background=\'none\'">'+PWI.svg(k.est==='activo'?'pause':'play',{sm:true})+(k.est==='activo'?'Suspender':'Reactivar')+'</button>'
+    +'</div>'
+    +'</td>'
+    +'</tr>';
  }).join('');
- box.innerHTML='<section class="cp-clients-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:12px">'+cards+'</section>';
+ box.innerHTML='<div style="overflow-x:auto;margin-top:12px"><table class="mc-cli-table" style="width:100%;border-collapse:collapse;font-size:13px">'
+   +'<thead><tr style="border-bottom:2px solid var(--pw-niebla-3);background:var(--pw-niebla-2)">'
+   +'<th style="text-align:left;padding:10px;font-weight:600;color:var(--pw-carbon);white-space:nowrap">Cliente</th>'
+   +'<th style="text-align:left;padding:10px;font-weight:600;color:var(--pw-carbon);white-space:nowrap">Coach</th>'
+   +'<th style="text-align:left;padding:10px;font-weight:600;color:var(--pw-carbon);white-space:nowrap">Programa</th>'
+   +'<th style="text-align:left;padding:10px;font-weight:600;color:var(--pw-carbon);white-space:nowrap">Estado</th>'
+   +'<th style="text-align:left;padding:10px;font-weight:600;color:var(--pw-carbon);white-space:nowrap">Última actividad</th>'
+   +'<th style="text-align:left;padding:10px;font-weight:600;color:var(--pw-carbon);white-space:nowrap">Próxima sesión</th>'
+   +'<th style="text-align:center;padding:10px;font-weight:600;color:var(--pw-carbon);width:40px">Acciones</th>'
+   +'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
+function _reassignCli(cliId,newCoachId){
+ var cli=DB.clientes.find(function(c){return c.id===cliId;});
+ if(!cli)return;
+ var newCoach=_coach(newCoachId)||{n:'Sin coach'};
+ mcPatch('candidatos','id=eq.'+encodeURIComponent(cliId),{coach_id:newCoachId||null}).then(function(r){
+   if(r.ok||r.status<300){
+     cli.coach=newCoachId||'';
+     __toast('Cliente reasignado: '+_mcEsc(cli.n)+' → '+_mcEsc(newCoach.n));
+     _fillClientes();
+   }else{
+     __toast('Error reasignando cliente','error');
+     _fillClientes();
+   }
+ }).catch(function(){
+   __toast('Error reasignando cliente','error');
+   _fillClientes();
+ });
+}
+
+function _showCliMenu(menuid,cliId){
+ var menu=document.getElementById(menuid);
+ if(!menu)return;
+ var allMenus=document.querySelectorAll('.mc-menu-popup');
+ for(var i=0;i<allMenus.length;i++)allMenus[i].style.display='none';
+ menu.style.display='block';
+}
+function _hideCliMenu(menuid){
+ var menu=document.getElementById(menuid);
+ if(menu)menu.style.display='none';
+}
+function _showCliProfile(cliId){
+ fichaCliente(cliId);
+}
+function _showCliPortal(cliId){
+ var cli=DB.clientes.find(function(c){return c.id===cliId;});
+ if(!cli)return;
+ window.open('cliente.html?id='+encodeURIComponent(cli.id),'_blank');
+}
+function _showCliMessage(cliId){
+ var cli=DB.clientes.find(function(c){return c.id===cliId;});
+ if(!cli)return;
+ _toastChat(cli.n);
+}
+function _toggleCliActivo(cliId,currentEst){
+ var cli=DB.clientes.find(function(c){return c.id===cliId;});
+ if(!cli)return;
+ var newActivo=currentEst!=='activo';
+ mcPatch('candidatos','id=eq.'+encodeURIComponent(cliId),{activo:newActivo}).then(function(r){
+   if(r.ok||r.status<300){
+     cli.est=newActivo?'activo':'inactivo';
+     __toast((newActivo?'Reactivado':'Suspendido')+': '+_mcEsc(cli.n));
+     _fillClientes();
+   }else{
+     __toast('Error actualizando estado','error');
+     _fillClientes();
+   }
+ }).catch(function(){
+   __toast('Error actualizando estado','error');
+   _fillClientes();
+ });
 }
 var _curCli=null,_cliTab='perfil';
 function fichaCliente(id){_curCli=id;_cliTab='perfil';_renderFicha();}
