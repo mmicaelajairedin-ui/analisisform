@@ -121,7 +121,7 @@ Deno.serve(async (req: Request) => {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/organizaciones`, {
       method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
-      body: JSON.stringify({ nombre: nombreRed, owner_email: coach.email, plan, nicho, max_coaches: lim.max_coaches, max_clientes: lim.max_clientes, estado_sub: "prueba", fecha_fin_prueba: trialDate, activo: true, marca }),
+      body: JSON.stringify({ nombre: nombreRed, owner_email: coach.email, owner_id: coach_id, plan, nicho, max_coaches: lim.max_coaches, max_clientes: lim.max_clientes, estado_sub: "prueba", fecha_fin_prueba: trialDate, activo: true, marca }),
     });
     if (!r.ok) return json({ error: "org_write_failed", status: r.status }, 502);
     const created = await r.json();
