@@ -2332,6 +2332,14 @@ function init(){
     }
     // Re-cargar marca del coach asignado (multi-coach) ahora que C.coach_id está disponible
     if(typeof _loadCoachColor==='function')_loadCoachColor();
+    // Cargar marca de la organización (network/red multi-coach) del coach
+    if(C.coach_id){
+      try{
+        get('usuarios','id=eq.'+encodeURIComponent(C.coach_id)+'&select=org_id&limit=1')
+          .then(function(rows){ if(rows&&Array.isArray(rows)&&rows[0]&&rows[0].org_id){ _applyOrgBrand(rows[0].org_id); } })
+          .catch(function(){});
+      }catch(e){}
+    }
     if(res[1]&&res[1].length){var raw=res[1][0].data;if(typeof raw==='string')try{raw=JSON.parse(raw);}catch(e){raw=null;}D=raw;}
     CV=res[2]&&res[2].length?res[2][0]:null;
     document.getElementById('loading').style.display='none';
@@ -5976,16 +5984,17 @@ function _renderRecursosLib(host){
 function rRecursos(){
   var nombre=(C&&C.nombre?C.nombre:'').split(' ')[0]||'';
   var sem=SEM||1;
-  // Recursos propios del coach (lista plana título+link, editable en su panel).
-  // Si los cargó, se muestran en vez de los de ejemplo de abajo.
-  var _CR=(typeof window!=='undefined' && window.COACH_RECURSOS) ? window.COACH_RECURSOS : null;
-  if(_CR && _CR.length){
+  // Recursos personalizados: primero owner (org), luego coach, luego defaults
+  // Si hay recursos personalizados, usarlos en vez de los ejemplos.
+  var _REC=_recSource();
+  var _hasCustom=_REC && _REC!==CAREER_REC_DEFAULT;
+  if(_hasCustom && _REC.length){
     var oc='<div data-sec="recursos" style="display:flex;flex-direction:column;gap:18px;">';
     oc+='<div style="background:linear-gradient(135deg,var(--brand-light) 0%,#EDE8E8 100%);border-radius:16px;padding:24px;border:1.5px solid var(--border);">';
     oc+='<div style="font-size:20px;font-weight:600;color:var(--text);font-family:Inter,-apple-system,sans-serif;margin-bottom:6px;">Recursos para tu proceso</div>';
     oc+='<div style="font-size:13px;color:var(--muted);line-height:1.6;">Guías, videos, plantillas y ejercicios que tu coach eligió para ayudarte <strong>entre sesiones</strong> — por ejemplo: cómo armar tu CV, optimizar tu LinkedIn, preparar entrevistas o hacer networking. Abre cada uno cuando lo necesites.</div></div>';
     oc+='<div style="display:flex;flex-direction:column;gap:10px;">';
-    _CR.forEach(function(r){
+    _REC.forEach(function(r){
       var t=hh(r.titulo||'Recurso');
       var u=(''+(r.url||'')).trim(); if(u && !/^https?:\/\//i.test(u)) u='https://'+u;
       var safe=/^https?:\/\//i.test(u) ? u.replace(/"/g,'%22') : '';
