@@ -1782,6 +1782,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
           <!-- MI EMPRESA -->
           <div class="me-dd-section" id="mc-empresa-section">
             <div class="me-dd-label">Mi Empresa</div>
+            <button class="me-item" id="mc-identidad-btn" onclick="__go('config');_goCfg('identidad')"><i data-ic="briefcase" data-sm></i>Identidad</button>
             <button class="me-item" id="mc-branding-btn" onclick="__go('config');_goCfg('brand')"><i data-ic="palette" data-sm></i>Branding</button>
             <button class="me-item" id="mc-landing-btn" onclick="__go('config');_goCfg('landing')"><i data-ic="globe" data-sm></i>Landing</button>
           </div>
@@ -1999,6 +2000,9 @@ var DB={
   ]
 };
 var MC_REAL=false,MC_OWNER=null,MC_ORG=null,MC_N='fitness',MC_PLAN='basic',MC_CITAS=[],MC_GCAL=[],MC_RESOURCES=[];
+// ME: Usuario logueado (inicializado desde localStorage o pw-auth.js)
+var ME=null;
+try{ ME=JSON.parse(localStorage.getItem('mj_user')||'null'); }catch(e){ ME=null; }
 // Supabase (mismos datos que el resto de la plataforma). El dueño de la red
 // lee su org/coaches/clientes por org_id. La anon key es pública (va en el
 // navegador en todas las páginas); el aislamiento real es por RLS/filtro.
@@ -2038,7 +2042,7 @@ function __go(s){
   var d=document.getElementById('view-dashboard'),p=document.getElementById('view-panel');
   function _anim(el){ if(!el)return; el.classList.remove('pw-sec-in'); void el.offsetWidth; el.classList.add('pw-sec-in'); }
   if(s==='dashboard'){p.style.display='none';d.style.display='';window.scrollTo(0,0);_anim(d);try{mcCountUp();}catch(e){}}
-  else{d.style.display='none';p.style.display='flex';var vsc=document.getElementById('vscroll');if(vsc)vsc.scrollTop=0;try{if(s==='clientes')renderClientes();else if(s==='equipo')renderEquipo();else if(s==='programas')renderPrograms();else if(s==='agenda')renderAgenda();else if(s==='comunidad')renderComunidad();else if(s==='analytics')renderAnalytics();else if(s==='cobros')renderCobros();else renderConfig();}catch(e){console.error('[NAV] Render error:',s,e);}__hl(_sec);_anim(p);}
+  else{d.style.display='none';p.style.display='flex';var vsc=document.getElementById('vscroll');if(vsc)vsc.scrollTop=0;try{if(s==='clientes')renderClientes();else if(s==='equipo')renderEquipo();else if(s==='programas')renderPrograms();else if(s==='agenda'){console.error('[GO-AGENDA] Calling renderAgenda() - MC_AGENDA_COACH_ID:',MC_AGENDA_COACH_ID);renderAgenda();}else if(s==='comunidad')renderComunidad();else if(s==='analytics')renderAnalytics();else if(s==='cobros')renderCobros();else renderConfig();}catch(e){console.error('[NAV] Render error:',s,e);}__hl(_sec);_anim(p);}
 }
 // Attach navigation click handlers with proper error handling
 (function(){
@@ -2759,9 +2763,10 @@ function _mcProcessAvatar(e){
 }
 function mcApplyNiche(){
  var m=NM();
+ console.log('[mcApplyNiche] MC_REAL:', MC_REAL, 'm.clientes.length:', m.clientes.length);
  // En modo REAL el DB lo cargó el dueño (mcLoadReal); no lo pisamos con la maqueta.
- // En modo demo, preservar los datos demo ya inicializados (no sobrescribir con NM vacío)
- if(!MC_REAL){ DB={coaches:m.coaches,clientes:DB.clientes||m.clientes}; }
+ // En modo demo, usar los datos completos del nicho (m.coaches + m.clientes)
+ if(!MC_REAL){ DB={coaches:m.coaches,clientes:m.clientes}; console.log('[mcApplyNiche] DB.clientes after assign:', DB.clientes.length); }
  NICHOS=m.cats;
  try{ CFG.recursos=_mcDefRecursos(); }catch(e){}
  var setTx=function(id,t){var el=document.getElementById(id);if(!el)return;if(el.tagName==='IMG'){el.src=t||'';}else{el.textContent=t;}};
@@ -3681,6 +3686,7 @@ function _coachStrip(){
 }
 function _countK(f){return DB.clientes.filter(function(k){if(f==='activo')return k.est==='activo';if(f==='inactivo')return k.est!=='activo';if(f==='riesgo')return k.est==='activo'&&k.lastState!=='fresh';return true;}).length;}
 function renderClientes(){
+ console.log('[renderClientes] DB.clientes.length:', DB.clientes.length, 'MC_REAL:', MC_REAL);
  var v=document.getElementById('vscroll');
  var chips=[['todos','Todos'],['activo','Activos'],['riesgo','Sin actividad'],['inactivo','Inactivos']];
  v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+_countK('activo')+' activos</p></div><button class="crear" onclick="__nuevoCliente()">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button></header>'
@@ -6167,11 +6173,13 @@ function _cfgBrand(){
     +'</div>';
  };
 
+ var _fontDescriptions={'Inter':'Moderna · Tecnología · Profesional','Poppins':'Cercana · Creativa · Actual','Manrope':'Premium · Consultoría · Executive'};
  var _fontCard=function(name){
    var isSelected=(curFont===name);
-   return '<button type="button" style="flex:1;padding:14px 12px;border:2px solid '+(isSelected?'var(--pw-bosque)':'var(--pw-border)')+';border-radius:12px;background:'+(isSelected?'var(--pw-success-bg)':'#fff')+';text-align:center;cursor:pointer;transition:all .15s;font-family:inherit" onclick="_setFont(\''+name+'\')" onmouseover="if(!'+isSelected+')this.style.borderColor=\'var(--pw-border-strong)\'" onmouseout="if(!'+isSelected+')this.style.borderColor=\'var(--pw-border)\'">'
-    +'<div style="font-family:\''+name+'\',sans-serif;font-size:18px;font-weight:600;color:var(--pw-carbon);margin-bottom:6px">Aa Bb</div>'
-    +'<div style="font-size:11px;font-weight:700;color:'+(isSelected?'var(--pw-bosque)':'var(--pw-text-soft)')+';font-family:\''+name+'\',sans-serif;text-transform:uppercase;letter-spacing:.8px">'+name+'</div>'
+   return '<button type="button" style="padding:12px;border:'+(isSelected?'2px solid var(--pw-bosque)':'1px solid var(--pw-border)')+';border-radius:8px;background:'+(isSelected?'var(--pw-success-bg)':'#fff')+';text-align:left;cursor:pointer;transition:all .15s;font-family:inherit" onclick="_setFont(\''+name+'\')">'
+    +'<div style="font-family:\''+name+'\',sans-serif;font-size:16px;font-weight:600;color:var(--pw-carbon);margin-bottom:2px">'+name+'</div>'
+    +'<div style="font-family:\''+name+'\',sans-serif;font-size:11px;color:var(--pw-text-soft);margin-bottom:6px">'+_fontDescriptions[name]+'</div>'
+    +(isSelected?'<div style="font-size:10px;color:var(--pw-bosque);font-weight:600">✓ Activa</div>':'')
     +'</button>';
  };
 
@@ -6181,8 +6189,8 @@ function _cfgBrand(){
   // HEADER
   +'<div style="display:flex;justify-content:space-between;align-items:center;padding:0 0 20px 0;border-bottom:1px solid var(--pw-border);margin-bottom:20px">'
     +'<div>'
-      +'<h2 style="font-size:18px;font-weight:700;color:var(--pw-carbon);margin:0 0 4px">Personaliza tu marca</h2>'
-      +'<p style="font-size:13px;color:var(--pw-text-soft);margin:0">Cómo ves tu organización en Pathway</p>'
+      +'<h2 style="font-size:18px;font-weight:700;color:var(--pw-carbon);margin:0 0 4px">Branding</h2>'
+      +'<p style="font-size:13px;color:var(--pw-text-soft);margin:0">Construye tu identidad visual. Se aplica automáticamente en landing, portal, emails e IA.</p>'
     +'</div>'
     +'<button class="cp-btn cp-btn-primary" style="height:40px;padding:0 20px;font-size:14px" onclick="_saveBrand()">Guardar cambios</button>'
   +'</div>'
@@ -6191,68 +6199,104 @@ function _cfgBrand(){
     // LEFT COLUMN
     +'<div style="display:flex;flex-direction:column;gap:16px">'
       // LOGO SECTION
-      +'<div><div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--pw-text-soft);margin-bottom:12px;letter-spacing:.5px">Logo de organización</div>'
-        +'<div style="background:#fff;border:2px solid var(--pw-border);border-radius:12px;padding:16px;text-align:center">'
-          +'<div style="width:100%;height:100px;background:url(\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22><rect width=%228%22 height=%228%22 fill=%22%23ddd%22/><rect x=%228%22 y=%228%22 width=%228%22 height=%228%22 fill=%22%23ddd%22/></svg>\');border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;position:relative">'
-            +'<img id="logoprev" alt="logo" src="'+logoUrl+'" style="'+(logoUrl?'':'display:none;')+'max-height:90%;max-width:90%;object-fit:contain" onerror="this.style.display=\'none\'">'
-            +(logoUrl?'':'<div style="font-size:32px;font-weight:700;color:#999">'+initials+'</div>')
+      +'<div><div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--pw-text-soft);margin-bottom:12px;letter-spacing:.5px">Logo principal</div>'
+        +'<div style="background:linear-gradient(135deg,#fafaf9,#f5f3f0);border:1px solid var(--pw-border);border-radius:12px;padding:20px;text-align:center">'
+          +'<div style="width:100%;height:90px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;border-radius:8px;background:#fff;border:1px dashed #ddd">'
+            +'<img id="logoprev" alt="logo" src="'+logoUrl+'" style="'+(logoUrl?'':'display:none;')+'max-height:80%;max-width:90%;object-fit:contain" onerror="this.style.display=\'none\'">'
+            +(logoUrl?'':'<div style="text-align:center"><div style="font-size:14px;font-weight:700;color:#ccc;margin-bottom:4px">Sin logo</div><div style="font-size:11px;color:#bbb">Usa SVG con fondo transparente</div></div>')
           +'</div>'
-          +'<button type="button" class="cp-btn cp-btn-ghost" style="width:100%;margin-bottom:8px" onclick="document.getElementById(\'cfb-logofile\').click()">'+PWI.svg('upload',{sm:true})+' Cambiar logo</button>'
+          +'<button type="button" class="cp-btn cp-btn-ghost" style="width:100%;margin-bottom:8px;font-size:12px" onclick="document.getElementById(\'cfb-logofile\').click()">'+PWI.svg('upload',{sm:true})+' Cambiar</button>'
           +'<input type="file" id="cfb-logofile" accept="image/*,.svg" style="display:none" onchange="_mcLogoFile(this)">'
-          +'<div style="font-size:11px;color:var(--pw-text-soft)">PNG, SVG o JPG · máximo 5MB</div>'
+          +'<div style="font-size:10px;color:var(--pw-text-soft)">SVG recomendado · PNG hasta 2MB · Fondo transparente</div>'
         +'</div>'
       +'</div>'
       // COLORS SECTION
-      +'<div><div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--pw-text-soft);margin-bottom:12px;letter-spacing:.5px">Colores de marca</div>'
-        +'<div style="display:flex;flex-direction:column;gap:10px">'
-          +'<div style="background:#fff;border:1px solid var(--pw-border);border-radius:12px;padding:12px;cursor:pointer;transition:all .15s" onclick="_openColorModal(\'cfb-color\',\''+cur1.replace(/'/g,'\\\'')+'\')" onmouseover="this.style.background=\'var(--pw-niebla)\'" onmouseout="this.style.background=\'#fff\'">'
-            +'<div style="display:flex;gap:12px;align-items:center">'
-              +'<div style="width:50px;height:50px;background:'+cur1+';border-radius:8px;flex-shrink:0"></div>'
-              +'<div>'
-                +'<div style="font-weight:600;font-size:13px;color:var(--pw-carbon);margin-bottom:2px">Primario</div>'
-                +'<div style="font-size:11px;color:var(--pw-text-soft);font-family:monospace">'+cur1+'</div>'
-              +'</div>'
+      +'<div><div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--pw-text-soft);margin-bottom:12px;letter-spacing:.5px">Paleta de marca</div>'
+        +'<div style="background:linear-gradient(135deg,#fafaf9,#f5f3f0);border:1px solid var(--pw-border);border-radius:12px;padding:16px">'
+          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'
+            +'<div style="cursor:pointer;transition:transform .15s" onclick="_openColorModal(\'cfb-color\',\''+cur1.replace(/'/g,'\\\'')+'\')" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">'
+              +'<div style="width:100%;height:60px;background:'+cur1+';border-radius:8px;margin-bottom:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)"></div>'
+              +'<div style="font-weight:600;font-size:12px;color:var(--pw-carbon)">Primario</div>'
+              +'<div style="font-size:10px;color:var(--pw-text-soft);font-family:monospace;margin-top:2px">'+cur1+'</div>'
+            +'</div>'
+            +'<div style="cursor:pointer;transition:transform .15s" onclick="_openColorModal(\'cfb-color2\',\''+cur2.replace(/'/g,'\\\'')+'\')" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">'
+              +'<div style="width:100%;height:60px;background:'+cur2+';border-radius:8px;margin-bottom:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)"></div>'
+              +'<div style="font-weight:600;font-size:12px;color:var(--pw-carbon)">Secundario</div>'
+              +'<div style="font-size:10px;color:var(--pw-text-soft);font-family:monospace;margin-top:2px">'+cur2+'</div>'
             +'</div>'
           +'</div>'
-          +'<div style="background:#fff;border:1px solid var(--pw-border);border-radius:12px;padding:12px;cursor:pointer;transition:all .15s" onclick="_openColorModal(\'cfb-color2\',\''+cur2.replace(/'/g,'\\\'')+'\')" onmouseover="this.style.background=\'var(--pw-niebla)\'" onmouseout="this.style.background=\'#fff\'">'
-            +'<div style="display:flex;gap:12px;align-items:center">'
-              +'<div style="width:50px;height:50px;background:'+cur2+';border-radius:8px;flex-shrink:0"></div>'
-              +'<div>'
-                +'<div style="font-weight:600;font-size:13px;color:var(--pw-carbon);margin-bottom:2px">Secundario</div>'
-                +'<div style="font-size:11px;color:var(--pw-text-soft);font-family:monospace">'+cur2+'</div>'
-              +'</div>'
-            +'</div>'
-          +'</div>'
+          +'<div style="font-size:10px;color:var(--pw-text-soft);margin-top:12px;padding-top:12px;border-top:1px solid #e5e1d6">Toca cualquier color para editar</div>'
         +'</div>'
       +'</div>'
       // FONT SECTION
       +'<div><div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--pw-text-soft);margin-bottom:12px;letter-spacing:.5px">Tipografía</div>'
         +'<div style="display:flex;flex-direction:column;gap:8px">'
-          +_fontCard('Inter')+_fontCard('Poppins')+_fontCard('Manrope')
+          +_fontCard("Inter")+_fontCard("Poppins")+_fontCard("Manrope")
         +'</div>'
       +'</div>'
     +'</div>'
-    // RIGHT COLUMN - PREVIEW
-    +'<div style="display:flex;flex-direction:column">'
-      +'<div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.12);font-family:\''+curFont+'\',sans-serif;flex:1">'
-        +'<div id="cfb-prev-header" style="background:'+cur1+';padding:20px;display:flex;align-items:center;gap:12px;min-height:70px">'
-          +'<div style="width:50px;height:50px;background:rgba(255,255,255,0.2);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:24px">'
-            +'<img id="cfb-prev-logo" alt="logo" src="'+logoUrl+'" style="'+(logoUrl?'':'display:none;')+'height:40px;width:auto;object-fit:contain" onerror="this.style.display=\'none\'">'
-            +(logoUrl?'':'<span style="color:#fff;font-weight:700">'+initials+'</span>')
+    // RIGHT COLUMN - PREVIEW + APLICACIONES
+    +'<div style="display:flex;flex-direction:column;gap:16px">'
+      // MINI LANDING PREVIEW
+      +'<div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);font-family:\''+curFont+'\',sans-serif">'
+        +'<div id="cfb-prev-header" style="background:'+cur1+';padding:24px 20px;display:flex;align-items:center;gap:12px;min-height:60px">'
+          +'<div style="width:45px;height:45px;background:rgba(255,255,255,0.15);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px">'
+            +'<img id="cfb-prev-logo" alt="logo" src="'+logoUrl+'" style="'+(logoUrl?'':'display:none;')+'height:35px;width:auto;object-fit:contain" onerror="this.style.display=\'none\'">'
+            +(logoUrl?'':'<span style="color:#fff;font-weight:700;font-size:18px">'+initials+'</span>')
           +'</div>'
-          +'<div style="color:#fff;font-weight:600;font-size:15px">'+brandName+'</div>'
+          +'<div style="color:#fff;font-weight:600;font-size:14px;flex:1">'+brandName+'</div>'
+          +'<button id="cfb-prev-btn" type="button" style="background:'+cur2+';color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Reservar</button>'
         +'</div>'
-        +'<div style="padding:20px;display:flex;flex-direction:column;gap:14px">'
-          +'<div><div style="font-size:11px;font-weight:700;color:var(--pw-text-soft);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Ejemplo</div>'
-            +'<div style="font-size:15px;font-weight:600;color:var(--pw-carbon)">Hola María 👋</div>'
+        +'<div style="padding:24px;display:flex;flex-direction:column;gap:16px;background:#fff">'
+          +'<div style="max-width:400px">'
+            +'<div style="font-size:24px;font-weight:700;color:var(--pw-carbon);line-height:1.3;margin-bottom:8px">Transforma tu carrera con estrategia</div>'
+            +'<div style="font-size:13px;color:var(--pw-text-soft);line-height:1.5">Acompañamos profesionales en transición para conseguir un empleo alineado con su potencial.</div>'
           +'</div>'
-          +'<div><div style="font-size:12px;color:var(--pw-text-soft)">Tu próxima sesión</div>'
-            +'<div style="background:'+cur2+';color:#fff;padding:12px;border-radius:8px;font-size:13px;font-weight:600;margin-top:8px">Miércoles 14:00</div>'
+          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:var(--pw-niebla);border-radius:8px">'
+            +'<div><div style="font-size:18px;font-weight:700;color:'+cur1+'">+350</div><div style="font-size:11px;color:var(--pw-text-soft)">Clientes</div></div>'
+            +'<div><div style="font-size:18px;font-weight:700;color:'+cur1+'">92%</div><div style="font-size:11px;color:var(--pw-text-soft)">Éxito</div></div>'
           +'</div>'
-          +'<button id="cfb-prev-btn" type="button" style="background:'+cur1+';color:#fff;border:none;padding:12px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;width:100%;transition:opacity .15s">Confirmar sesión</button>'
         +'</div>'
       +'</div>'
-      +'<div style="display:flex;gap:12px;margin-top:16px;font-size:12px;color:var(--pw-text-soft)">'
+
+      // CÓMO SE APLICA LA MARCA
+      +'<div style="background:linear-gradient(135deg,#fafaf9,#f5f3f0);border:1px solid var(--pw-border);border-radius:12px;padding:16px">'
+        +'<div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--pw-text-soft);margin-bottom:12px;letter-spacing:.5px">Dónde se aplica tu marca</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">'
+          +'<div style="background:#fff;border:1px solid #e5e1d6;border-radius:8px;padding:12px">'
+            +'<div style="font-weight:600;color:var(--pw-carbon);margin-bottom:4px">Landing</div>'
+            +'<div style="font-size:11px;color:var(--pw-text-soft)">Hero, beneficios, CTA personalizados</div>'
+          +'</div>'
+          +'<div style="background:#fff;border:1px solid #e5e1d6;border-radius:8px;padding:12px">'
+            +'<div style="font-weight:600;color:var(--pw-carbon);margin-bottom:4px">Portal cliente</div>'
+            +'<div style="font-size:11px;color:var(--pw-text-soft)">Bienvenida y experiencia</div>'
+          +'</div>'
+          +'<div style="background:#fff;border:1px solid #e5e1d6;border-radius:8px;padding:12px">'
+            +'<div style="font-weight:600;color:var(--pw-carbon);margin-bottom:4px">Emails</div>'
+            +'<div style="font-size:11px;color:var(--pw-text-soft)">Plantillas con tu tono</div>'
+          +'</div>'
+          +'<div style="background:#fff;border:1px solid #e5e1d6;border-radius:8px;padding:12px">'
+            +'<div style="font-weight:600;color:var(--pw-carbon);margin-bottom:4px">IA Assistant</div>'
+            +'<div style="font-size:11px;color:var(--pw-text-soft)">Prompts alineados</div>'
+          +'</div>'
+        +'</div>'
+      +'</div>'
+
+      // ESTADO DE GENERACIÓN
+      +'<div style="background:linear-gradient(135deg,#fafaf9,#f5f3f0);border:1px solid var(--pw-border);border-radius:12px;padding:16px">'
+        +'<div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--pw-text-soft);margin-bottom:12px;letter-spacing:.5px">Estado de generación automática</div>'
+        +'<div style="display:flex;flex-direction:column;gap:8px;font-size:12px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#fff;border-radius:6px;border:1px solid #e5e1d6"><div>Landing</div><div style="font-weight:600;color:var(--pw-bosque)">Sincronizado</div></div>'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#fff;border-radius:6px;border:1px solid #e5e1d6"><div>SEO</div><div style="font-weight:600;color:var(--pw-bosque)">Generado</div></div>'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#fff;border-radius:6px;border:1px solid #e5e1d6"><div>Emails</div><div style="font-weight:600;color:#999">3 plantillas</div></div>'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#fff;border-radius:6px;border:1px solid #e5e1d6"><div>Portal cliente</div><div style="font-weight:600;color:var(--pw-bosque)">Sincronizado</div></div>'
+        +'</div>'
+        +'<div style="font-size:11px;color:var(--pw-text-soft);margin-top:10px;padding-top:10px;border-top:1px solid #e5e1d6">'
+          +'<strong>miempresa.pathwaycareercoach.com</strong> — Próxima regeneración automática'
+        +'</div>'
+      +'</div>'
+
+      +'<div style="display:flex;gap:12px;font-size:12px;color:var(--pw-text-soft)">'
         +'<span id="brand-save-status">✓ Guardado</span>'
       +'</div>'
     +'</div>'
@@ -7117,10 +7161,16 @@ function renderAgenda(){
    );
 
    // Si estamos viendo una agenda personal, filtrar por coach_id
-   if(MC_AGENDA_COACH_ID){
-     evt_data = evt_data.filter(function(e){
-       return e.coach_id === MC_AGENDA_COACH_ID || e.coach === MC_AGENDA_COACH_ID;
-     });
+   if(MC_AGENDA_COACH_ID && evt_data && evt_data.length){
+     try {
+       evt_data = evt_data.filter(function(e){
+         if(!e) return false;
+         return (e.coach_id === MC_AGENDA_COACH_ID) || (e.coach === MC_AGENDA_COACH_ID);
+       });
+       console.error('[AGENDA-FILTER] Filtered to', evt_data.length, 'events for coach:', MC_AGENDA_COACH_ID);
+     } catch(er) {
+       console.error('[AGENDA-FILTER] Error filtering:', er.message);
+     }
    }
 
    var scheduler=initScheduler({

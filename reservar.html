@@ -866,10 +866,12 @@ function confirmar(){
       if(saved && citaId){
         try{
           var _retryGcalSync=function(n){
-            fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ cita_id:citaId }) })
-              .then(function(r){ if(!r.ok) throw new Error('sync-cita-to-gcal status '+r.status); })
+            fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
+              .then(function(r){ if(!r.ok) throw new Error('sync-cita-to-gcal status '+r.status); return r.json(); })
               .catch(function(err){
-                console.warn('Google Calendar sync falló (intento '+(3-n+1)+'/3):', err);
+                var attempt=3-n+1;
+                console.warn('Google Calendar sync falló (intento '+attempt+'/3):', err);
+                try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, attempt:attempt, error:String(err) }) }).catch(function(){}); }catch(e){}
                 if(n>0) setTimeout(function(){ _retryGcalSync(n-1); }, 2000);
               });
           };
