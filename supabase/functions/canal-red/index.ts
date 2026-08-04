@@ -184,6 +184,68 @@ Deno.serve(async (req: Request) => {
     } catch { return json({ error: "write_failed" }, 502); }
   }
 
+  // ── DMs: listar conversaciones 1-a-1 ──
+  if (action === "dm_list") {
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/rpc/get_coach_dms`, {
+        method: "POST", headers: { ...svc, "Content-Type": "application/json" },
+        body: JSON.stringify({ p_coach_id: caller.id, p_org_id: orgId }),
+      });
+      if (!r.ok) {
+        const dms: any[] = [];
+        return json({ ok: true, dms });
+      }
+      const dms = await r.json();
+      return json({ ok: true, dms: Array.isArray(dms) ? dms : [] });
+    } catch {
+      return json({ ok: true, dms: [] });
+    }
+  }
+
+  // ── DMs: cargar conversación con otro coach ──
+  if (action === "dm_thread") {
+    const withId = (body.with_id || "").toString().trim();
+    if (!withId || withId === caller.id) return json({ error: "invalid_with_id" }, 400);
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/mensajes_dm?org_id=eq.${encodeURIComponent(orgId)}&or=(and(de_id.eq.${encodeURIComponent(caller.id)},para_id.eq.${encodeURIComponent(withId)}),and(de_id.eq.${encodeURIComponent(withId)},para_id.eq.${encodeURIComponent(caller.id)}))&select=id,de_id,para_id,cuerpo,creado_at&order=creado_at.asc&limit=500`, {
+        headers: svc,
+      });
+      if (!r.ok) return json({ error: "query_failed", status: r.status }, 502);
+      const rows = await r.json();
+      const mensajes = Array.isArray(rows)
+        ? rows.map((m: any) => ({
+            id: m.id,
+            autor_id: m.de_id,
+            autor_nombre: "",
+            body: m.cuerpo,
+            created_at: m.creado_at,
+          }))
+        : [];
+      return json({ ok: true, mensajes });
+    } catch {
+      return json({ error: "query_failed" }, 502);
+    }
+  }
+
+  // ── DMs: enviar mensaje 1-a-1 ──
+  if (action === "dm_send") {
+    const withId = (body.with_id || "").toString().trim();
+    const mensaje = (body.mensaje || "").toString().trim();
+    if (!withId || withId === caller.id) return json({ error: "invalid_with_id" }, 400);
+    if (!mensaje) return json({ error: "mensaje_vacio" }, 400);
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/mensajes_dm`, {
+        method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
+        body: JSON.stringify({ org_id: orgId, de_id: caller.id, para_id: withId, cuerpo: mensaje }),
+      });
+      if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
+      const rows = await r.json();
+      return json({ ok: true, id: (Array.isArray(rows) && rows[0] && rows[0].id) || null });
+    } catch {
+      return json({ error: "write_failed" }, 502);
+    }
+  }
+
   // thread: todo el canal (general o grupo), del más viejo al más nuevo.
   const mensajes = await q(`mensajes_red_canal?org_id=eq.${encodeURIComponent(orgId)}&${canalFilter}&select=id,autor_id,autor_nombre,autor_rol,body,created_at&order=created_at.asc&limit=500`);
   return json({ ok: true, mensajes });
