@@ -146,6 +146,22 @@ Deno.serve(async (req: Request) => {
     } catch { return json({ error: "write_failed" }, 502); }
   }
 
+  // ── Eliminar un grupo (dueño o quien lo creó) ──
+  if (action === "group_delete") {
+    if (!canalId) return json({ error: "missing_canal" }, 400);
+    const rows = await q(`red_canales?id=eq.${encodeURIComponent(canalId)}&select=id,org_id,creado_por&limit=1`);
+    const row = rows[0];
+    if (!row || String(row.org_id) !== String(orgId)) return json({ error: "no_existe" }, 404);
+    if (!(caller.rol === "owner" || String(row.creado_por) === String(caller.id))) return json({ error: "sin_permiso" }, 403);
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/red_canales?id=eq.${encodeURIComponent(canalId)}`, {
+        method: "DELETE", headers: svc,
+      });
+      if (!r.ok) return json({ error: "delete_failed", status: r.status }, 502);
+      return json({ ok: true });
+    } catch { return json({ error: "write_failed" }, 502); }
+  }
+
   // Para thread/send con canal_id, validar pertenencia al grupo.
   if (canalId) {
     const perm = await canalPermitido(orgId, canalId, caller);
