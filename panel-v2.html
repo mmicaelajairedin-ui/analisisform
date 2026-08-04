@@ -8621,6 +8621,97 @@ function _adminNovedades(){
   return "<div class='cp-card' style='margin-bottom:16px'><div class='cp-card-hd'><h3 class='cp-card-title'>"+PWI.svg('gift',{sm:true})+" Inscriptos al sorteo<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+sorteo.length+" este período</span></div>"+sorteoRows+"</div>"+
     "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'><span class='cp-emo'>"+PWI.svg('lightbulb',{sm:true})+"</span> Sugerencias e ideas<span class='dot'>.</span></h3><span class='cp-eyebrow'>"+sug.length+" de la revista</span></div>"+sugRows+"</div>";
 }
+
+/* Admin: Gestión de Personas */
+function _adminPersonas(){
+  var search = (state.personaSearch||"").toLowerCase();
+  var allCoaches = (RCOACHES||[]).filter(function(u){ return u && u.rol==="coach"; });
+  var filtered = allCoaches.filter(function(u){
+    var name = (""+(u.nombre||u.email||"")).toLowerCase();
+    return name.indexOf(search)>=0;
+  });
+
+  var searchBox = "<div style='display:flex;gap:8px;margin-bottom:16px'>"+
+    "<input id='persona-search' class='cp-form-input' style='flex:1;min-width:280px' placeholder='🔍 Buscar coach por nombre o email…' value='"+esc(search)+"'>"+
+    "<button class='cp-btn cp-btn-primary' data-act='persona-new'>"+svg(IC.plus,12)+" Nuevo coach</button>"+
+  "</div>";
+
+  var rows = filtered.map(function(u){
+    var org = (RORGS||[]).filter(function(o){ return String(o.id)===String(u.org_id); })[0];
+    var orgName = org ? esc(org.nombre||"Red") : "<span style='color:var(--pw-text-soft)'>Sin empresa</span>";
+    var status = u.activo===false ? "Inactiva" : "Activa";
+    var statusCol = u.activo===false ? "var(--pw-danger)" : "var(--pw-bosque)";
+    return "<div style='display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--pw-border);cursor:pointer' data-act='persona-view' data-id='"+esc(u.id)+"'>"+
+      "<div style='flex:1;min-width:0'>"+
+        "<div style='font-weight:600;color:var(--pw-carbon)'>"+esc(u.nombre||u.email||"Coach")+"</div>"+
+        "<div style='font-size:12px;color:var(--pw-text-soft);margin-top:2px'>"+esc(u.email||"")+" · "+orgName+"</div>"+
+      "</div>"+
+      "<span style='font-size:12px;color:"+statusCol+";font-weight:600;white-space:nowrap'>"+status+"</span>"+
+      "<span style='font-size:18px;color:var(--pw-text-muted)'>›</span>"+
+    "</div>";
+  }).join("");
+
+  var empty = !filtered.length ? "<div style='text-align:center;padding:32px 16px;color:var(--pw-text-soft);font-size:13px'>Sin coaches. "+
+    "<button class='cp-btn cp-btn-primary' style='margin-top:12px' data-act='persona-new'>Crear uno nuevo</button></div>" : "";
+
+  return "<div>"+searchBox+"</div>"+
+    "<div class='cp-card'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>Coaches ("+filtered.length+")<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Lista · búsqueda · mover entre empresas</span></div>"+
+      "<div>"+(rows||empty)+"</div>"+
+    "</div>";
+}
+
+/* Admin: Transferencias y movimiento de coaches */
+function _adminTransferencias(){
+  var search = (state.transferSearch||"").toLowerCase();
+  var allCoaches = (RCOACHES||[]).filter(function(u){ return u && u.rol==="coach"; });
+  var filtered = allCoaches.filter(function(u){
+    var name = (""+(u.nombre||u.email||"")).toLowerCase();
+    return name.indexOf(search)>=0;
+  });
+
+  var moveBox = "<div class='cp-card' style='margin-bottom:16px'>"+
+    "<div class='cp-card-hd'><h3 class='cp-card-title'>Mover coach entre empresas<span class='dot'>.</span></h3>"+
+    "<span class='cp-eyebrow'>Cambia la empresa o lo deja independiente</span></div>"+
+    "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+      "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5'>Selecciona un coach, elige la empresa destino y confirma. Opcionalmente, mueve sus clientes con él o déjalos en la empresa anterior.</div>"+
+      "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+        "<select id='transfer-coach' class='cp-form-input' style='flex:1;min-width:240px' placeholder='Coach a mover'>"+
+          (filtered.length ? filtered.map(function(u){ return "<option value='"+esc(u.id)+"'>"+esc(u.nombre||u.email)+"</option>"; }).join("") : "<option disabled>Sin coaches</option>")+
+        "</select>"+
+        "<select id='transfer-org' class='cp-form-input' style='flex:1;min-width:240px'>"+
+          "<option value=''>Sin empresa (independiente)</option>"+
+          ((RORGS||[]).map(function(o){ return "<option value='"+esc(o.id)+"'>"+esc(o.nombre||"Red")+"</option>"; }).join(""))+
+        "</select>"+
+        "<label style='display:flex;align-items:center;gap:6px;font-size:12px'>"+
+          "<input type='checkbox' id='transfer-clients' checked> Mover clientes"+
+        "</label>"+
+        "<button class='cp-btn cp-btn-primary' data-act='coach-move'>"+svg(IC.arrowR,12)+" Mover</button>"+
+      "</div>"+
+      (state.transferMsg ? "<div style='font-size:12px;font-weight:600;color:"+(state.transferMsg.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-bosque)")+"'>"+esc(state.transferMsg.replace(/^(ok|err|…):/,""))+"</div>" : "")+
+    "</div>"+
+  "</div>";
+
+  var revertBox = (RCOACHES||[]).filter(function(u){ return u && u.rol==="owner"; }).length ? (
+    "<div class='cp-card' style='margin-bottom:16px'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>Revertir multicoach a coach<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>Un dueño vuelve a ser coach independiente</span></div>"+
+      "<div class='cp-card-pad' style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+        "<select id='revert-owner' class='cp-form-input' style='flex:1;min-width:240px'>"+
+          ((RCOACHES||[]).filter(function(u){ return u && u.rol==="owner"; }).map(function(u){ return "<option value='"+esc(u.id)+"'>"+esc(u.nombre||u.email)+"</option>"; }).join(""))+
+        "</select>"+
+        "<button class='cp-btn cp-btn-danger' data-act='owner-revert'>"+svg(IC.undo,12)+" Revertir</button>"+
+      "</div>"+
+    "</div>"
+  ) : "";
+
+  return moveBox + revertBox +
+    "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Historial de transferencias<span class='dot'>.</span></h3>"+
+    "<span class='cp-eyebrow'>Últimos movimientos de coaches</span></div>"+
+    "<div class='cp-card-pad' style='color:var(--pw-text-soft);font-size:13px;text-align:center;padding:28px'>El historial de movimientos aparecerá aquí</div></div>";
+}
+
 function viewAdmin(){
   function kpi(eyebrow, big, sub){
     return "<div class='cp-card cp-card-pad' style='display:flex;flex-direction:column;gap:6px'>"+
@@ -9078,7 +9169,7 @@ function viewAdmin(){
     return "<button class='cp-chip "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'>"+t[1]+"</button>";
   }).join("")+"</div>";
   // Menu lateral del admin (mismo formato que Configuracion). Mismos data-act.
-  var _admIcon={resumen:''+PWI.svg('barChart',{sm:true})+'',coaches:''+PWI.svg('graduation',{sm:true})+'',empleados:''+PWI.svg('users',{sm:true})+'',ranking:''+PWI.svg('trophy',{sm:true})+'',novedades:''+PWI.svg('newspaper',{sm:true})+'',contactos:''+PWI.svg('inbox',{sm:true})+'',cvx:''+PWI.svg('fileText',{sm:true})+'',resenas:''+PWI.svg('star',{sm:true})+'',pagos:''+PWI.svg('creditCard',{sm:true})+'',emails:''+PWI.svg('inbox',{sm:true})+''};
+  var _admIcon={resumen:''+PWI.svg('barChart',{sm:true})+'',coaches:''+PWI.svg('graduation',{sm:true})+'',empleados:''+PWI.svg('users',{sm:true})+'',personas:''+PWI.svg('users',{sm:true})+'',transferencias:''+PWI.svg('arrowR',{sm:true})+'',ranking:''+PWI.svg('trophy',{sm:true})+'',novedades:''+PWI.svg('newspaper',{sm:true})+'',contactos:''+PWI.svg('inbox',{sm:true})+'',cvx:''+PWI.svg('fileText',{sm:true})+'',resenas:''+PWI.svg('star',{sm:true})+'',pagos:''+PWI.svg('creditCard',{sm:true})+'',emails:''+PWI.svg('inbox',{sm:true})+''};
   var adminMenu = "<nav class='cp-cfg-nav'>"+tabs.map(function(t){
     return "<button class='cp-cfg-nav-item "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'><span class='cp-emo'>"+(_admIcon[t[0]]||'•')+"</span><span>"+t[1]+"</span></button>";
   }).join("")+"</nav>";
@@ -9182,6 +9273,24 @@ function viewAdmin(){
             (mcCm ? "<div style='font-size:12px;font-weight:600;color:"+mcCmCol+"'>"+esc(mcCm.replace(/^(ok|err|…):/,""))+"</div>" : "")+
           "</div></div>"
       ) : "";
+      // ── Revertir un multicoach a coach independiente ───────────────────
+      // Un owner vuelve a ser coach (pierde acceso a multicoach, pero sus clientes se preservan)
+      var _ownerOpts = (RCOACHES||[]).filter(function(u){ return u && u.rol==="owner"; })
+        .map(function(u){ return "<option value='"+esc(u.id)+"'>"+esc(u.nombre||u.email||"Owner")+" ("+esc(u.email||"")+")</option>"; }).join("");
+      var mcRevMsg=state.mcRevMsg||"";
+      var mcRevCol=mcRevMsg.indexOf("ok:")===0?"var(--pw-bosque)":mcRevMsg.indexOf("err:")===0?"var(--pw-danger)":"var(--pw-text-soft)";
+      var revBox = (REAL && _ownerOpts) ? (
+        "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Revertir multicoach a coach<span class='dot'>.</span></h3>"+
+          "<span class='cp-eyebrow'>Un dueño vuelve a ser coach independiente</span></div>"+
+          "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:10px'>"+
+            "<div style='font-size:12px;color:var(--pw-text-soft);line-height:1.5'>Elige un multicoach: vuelve a ser <strong>coach independiente</strong> y pierde acceso a la gestión de su red. Sus clientes se preservan en su organización actual.</div>"+
+            "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center'>"+
+              "<select id='mcrev-owner' class='cp-form-input' style='flex:2;min-width:240px'>"+_ownerOpts+"</select>"+
+              "<button class='cp-btn cp-btn-danger' data-act='mc-revert'>"+svg(IC.undo,12)+" Revertir</button>"+
+            "</div>"+
+            (mcRevMsg ? "<div style='font-size:12px;font-weight:600;color:"+mcRevCol+"'>"+esc(mcRevMsg.replace(/^(ok|err|…):/,""))+"</div>" : "")+
+          "</div></div>"
+      ) : "";
       // ── Cambiar el dueño de una red (transferir) ───────────────────────
       // El nuevo dueño es un coach de esa red; el anterior queda como coach.
       var mcT=state.mctMsg||"";
@@ -9218,6 +9327,8 @@ function viewAdmin(){
       var _tabs = "<div style='display:flex;gap:6px;margin-bottom:2px'>"+
         "<button class='cp-chip "+(_cv==="agregar"?"is-on":"")+"' data-act='coachview:agregar'>Agregar</button>"+
         "<button class='cp-chip "+(_cv==="lista"?"is-on":"")+"' data-act='coachview:lista'>Coaches</button>"+
+        "<button class='cp-chip "+(_cv==="personas"?"is-on":"")+"' data-act='coachview:personas'>Personas</button>"+
+        "<button class='cp-chip "+(_cv==="transferencias"?"is-on":"")+"' data-act='coachview:transferencias'>Transferencias</button>"+
         "<button class='cp-chip "+(_cv==="redes"?"is-on":"")+"' data-act='coachview:redes'>Redes"+(_redCoaches.length?"<span class='cp-chip-count'>"+_redCoaches.length+"</span>":"")+"</button>"+
         "<button class='cp-chip "+(_cv==="analiticas"?"is-on":"")+"' data-act='coachview:analiticas'>Analíticas</button>"+
       "</div>";
@@ -9339,7 +9450,9 @@ function viewAdmin(){
       "</div></div>";
       body = _tabs + (
         _cv==="analiticas" ? (_kpis + _embudo + _an2 + _anCli + "<div id='sala-insights' data-loaded='0'></div>" + "<div id='ceo-dash' data-loaded='0'></div>") :
-        _cv==="agregar"    ? (accBox + mcBox + convBox + transferBox + _orphCard) :
+        _cv==="agregar"    ? (accBox + mcBox + convBox + revBox + transferBox + _orphCard) :
+        _cv==="personas"   ? _adminPersonas() :
+        _cv==="transferencias" ? _adminTransferencias() :
         _cv==="redes"      ? _redesView :
         _list
       );
@@ -11121,7 +11234,55 @@ document.addEventListener("click", function(ev){
   if(act==="psel-bill"){ _planSel().billing=(el.getAttribute("data-b")==="anual")?"anual":"mensual"; render(); return; }
   if(act==="psel-plan"){ _planSel().plan=(el.getAttribute("data-p")==="pro")?"pro":"basic"; render(); return; }
   if(act==="plan-refresh"){ _planRefresh(); return; }
-  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.mctMsg=""; state.empleSel=null; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } if(state.adminTab==="novedades"){ RFEED=null; } render(); return; }
+  if(act.indexOf("adtab:")===0){ state.adminTab=act.slice(6); state.coachSel=null; state.coachMsg=""; state.coachLink=""; state.mcMsg=""; state.mcLink=""; state.mccMsg=""; state.mctMsg=""; state.empleSel=null; state.personaSearch=""; state.transferSearch=""; state.transferMsg=""; if(state.adminTab==="empleados" && REAL && REMPLE===null){ reloadEmpleados(); } if(state.adminTab==="novedades"){ RFEED=null; } render(); return; }
+  if(act==="persona-new"){ alert("Crear nuevo coach: esta funcionalidad se linkea a la sección 'Coaches' (tab Agregar). Por ahora usá esa."); return; }
+  if(act==="persona-view"){ var pid=el.getAttribute("data-id"); if(pid){ state.coachSel=pid; state.coachView="lista"; render(); window.scrollTo(0,0); } return; }
+  if(act==="coach-move"){
+    var coachId=_val("transfer-coach"), orgId=_val("transfer-org"), moveClients=document.getElementById("transfer-clients")?document.getElementById("transfer-clients").checked:false;
+    if(!coachId){ alert("Selecciona un coach."); return; }
+    var coach=(RCOACHES||[]).filter(function(u){ return String(u.id)===String(coachId); })[0];
+    if(!coach){ alert("Coach no encontrado."); return; }
+    if(!confirm("¿Mover "+esc(coach.nombre||coach.email)+" a "+(orgId?"esta empresa":"ser independiente")+"?"+(moveClients?" (llevarán sus clientes)":"")+"\n\nEsta acción es irreversible desde acá.")){return;}
+    state.transferMsg="…: procesando…";
+    render();
+    var patchBody={org_id:orgId||null};
+    _sbw("usuarios?id=eq."+encodeURIComponent(coachId),"PATCH",patchBody)
+      .then(function(r){
+        if(r&&r.ok){
+          state.transferMsg="ok: Coach movido correctamente ✓";
+          document.getElementById("transfer-coach").value="";
+          RCOACHES=null;
+          setTimeout(function(){ loadReal(); },200);
+        } else {
+          state.transferMsg="err: No se pudo mover. Reintenta.";
+        }
+        render();
+      })
+      .catch(function(){ state.transferMsg="err: Error de conexión."; render(); });
+    return;
+  }
+  if(act==="owner-revert"){
+    var ownerId=_val("revert-owner");
+    if(!ownerId){ alert("Selecciona un multicoach."); return; }
+    var owner=(RCOACHES||[]).filter(function(u){ return String(u.id)===String(ownerId); })[0];
+    if(!owner){ alert("Multicoach no encontrado."); return; }
+    if(!confirm("¿Revertir "+esc(owner.nombre||owner.email)+" a coach independiente? Perderá acceso al panel de multicoach.")){ return; }
+    state.transferMsg="…: revertiendo…";
+    render();
+    _sbw("usuarios?id=eq."+encodeURIComponent(ownerId),"PATCH",{rol:"coach"})
+      .then(function(r){
+        if(r&&r.ok){
+          state.transferMsg="ok: Revertido a coach ✓";
+          RCOACHES=null;
+          setTimeout(function(){ loadReal(); },200);
+        } else {
+          state.transferMsg="err: No se pudo revertir.";
+        }
+        render();
+      })
+      .catch(function(){ state.transferMsg="err: Error de conexión."; render(); });
+    return;
+  }
   if(act.indexOf("coachview:")===0){ state.coachView=act.slice(10); state.funPhase=null; state.redSel=null; render(); return; }
   if(act.indexOf("redsel:")===0){ state.redSel=act.slice(7)||null; render(); window.scrollTo(0,0); return; }
   if(act.indexOf("funphase:")===0){ var _fp=parseInt(act.slice(9),10); state.funPhase=(state.funPhase===_fp?null:_fp); render(); return; }
@@ -11594,6 +11755,35 @@ document.addEventListener("click", function(ev){
       _mccEnd("✓ "+_ccName+" ahora es multicoach ("+planTxt+")"+(d.movidos?" · "+d.movidos+" clientes pasaron a su red":"")+". Al entrar verá su panel de red.","ok");
     }).catch(function(e){
       _mccEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintenta.","err");
+    });
+    return;
+  }
+  if(act==="mc-revert"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    // Revertir un owner (multicoach) a coach independiente
+    var mcrevOwner=_val("mcrev-owner")||"";
+    var setMcrev=function(t,kind){ state.mcRevMsg=(kind||"…")+":"+t; render(); };
+    if(!mcrevOwner){ setMcrev("Elige un multicoach.","err"); return; }
+    var _ro=(RCOACHES||[]).filter(function(u){return String(u.id)===String(mcrevOwner);})[0];
+    var _roName=(_ro&&(_ro.nombre||_ro.email))||"ese multicoach";
+    if(!confirm("¿Revertir a "+_roName+" a coach independiente? Pierde acceso a la gestión de su red pero sus clientes se preservan.")) return;
+    setMcrev("Procesando…","…");
+    var _mcrevLock=false;
+    var _mcrevTimer=setTimeout(function(){ if(_mcrevLock)return; _mcrevLock=true; setMcrev("Tardó demasiado (revisa tu conexión). Reintenta.","err"); },25000);
+    var _mcrevEnd=function(t,kind){ if(_mcrevLock)return; _mcrevLock=true; clearTimeout(_mcrevTimer); setMcrev(t,kind); };
+    _hdr({"Content-Type":"application/json"}).then(function(h){
+      return fetch(SB+"/functions/v1/revertir-multicoach",{method:"POST",headers:h,body:JSON.stringify({owner_id:mcrevOwner})});
+    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
+      var d=res.d;
+      if(!res.ok||!d.ok){
+        if(res.status===403||d.error==="not_admin"){ _mcrevEnd("Tu sesión de admin no está activa. Reingresa y reintenta.","err"); return; }
+        if(d.error==="no_es_owner"){ _mcrevEnd("Ese usuario no es un multicoach.","err"); return; }
+        _mcrevEnd("No se pudo revertir (código "+(res.status||"?")+"). Reintenta.","err"); return;
+      }
+      reloadCoaches();
+      _mcrevEnd("✓ "+_roName+" ahora es coach independiente"+(d.clientes_preservados?" · "+d.clientes_preservados+" clientes preservados":"")+".","ok");
+    }).catch(function(e){
+      _mcrevEnd("No se pudo completar: "+((e&&e.message)||"error de conexión")+". Reintenta.","err");
     });
     return;
   }
@@ -13453,6 +13643,18 @@ document.addEventListener("input", function(ev){
     state.msgAdminDraft = ev.target.value || "";
     var sendBtn3 = document.querySelector("[data-act=chat-cabra-send]");
     if(sendBtn3) sendBtn3.disabled = !state.msgAdminDraft.trim();
+    return;
+  }
+  // Admin: búsqueda en Personas
+  if(ev.target && ev.target.id==="persona-search"){
+    state.personaSearch=ev.target.value||"";
+    render();
+    return;
+  }
+  // Admin: búsqueda en Transferencias
+  if(ev.target && ev.target.id==="transfer-search"){
+    state.transferSearch=ev.target.value||"";
+    render();
     return;
   }
   if(!ev.target || ev.target.id!=="cp-cli-search") return;
