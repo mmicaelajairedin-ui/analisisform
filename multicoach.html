@@ -1189,27 +1189,6 @@ html.mc-embed #mc-nswitch{display:none!important}
 .mc-typing-ind{font-size:11px;color:var(--pw-text-soft);display:flex;align-items:center;gap:4px;padding:8px 0;font-style:italic}
 .mc-typing-dots::after{content:'';animation:typing-dots 1.5s infinite}
 @keyframes typing-dots{0%{content:'.'}33%{content:'..'}66%{content:'...'}100%{content:''}}
-/* ── Chat coach-a-coach (estilo panel-v2) ── */
-.mc-dm-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px;border:none;background:none;border-radius:8px;cursor:pointer;font-family:inherit;transition:background .13s;position:relative;margin-bottom:2px}
-.mc-dm-row:hover{background:rgba(45,106,79,.05)}
-.mc-dm-row.active{background:rgba(45,106,79,.08)}
-.mc-dm-av{width:34px;height:34px;border-radius:50%;flex-shrink:0;background:var(--pw-niebla-2);color:var(--pw-carbon);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600}
-.mc-dm-tx{flex:1;min-width:0;line-height:1.2}
-.mc-dm-tx b{display:block;font-size:13px;font-weight:600;color:var(--pw-carbon);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mc-dm-tx small{display:block;font-size:10.5px;color:var(--pw-text-soft);margin-top:1px}
-.mc-dm-badge{width:8px;height:8px;border-radius:50%;background:#C24545;flex-shrink:0}
-/* Burbujas de chat (igual panel-v2) */
-.mc-iac-row{display:flex;margin-bottom:8px}
-.mc-iac-row-me{justify-content:flex-end}
-.mc-iac-row-them{justify-content:flex-start}
-.mc-iac-bubble{max-width:84%;padding:10px 13px;border-radius:15px;font-size:13px;line-height:1.5}
-.mc-iac-them{background:var(--pw-niebla-2);color:var(--pw-carbon);border-bottom-left-radius:5px}
-.mc-iac-me{background:#EFE9DD;color:#1B2E26;border:1px solid rgba(21,32,24,.07);border-bottom-right-radius:5px}
-.mc-iac-typing{display:inline-flex;gap:4px;align-items:center}
-.mc-iac-typing span{width:6px;height:6px;border-radius:50%;background:var(--pw-text-muted);opacity:.5;animation:mcIacDot 1s infinite}
-.mc-iac-typing span:nth-child(2){animation-delay:.15s}
-.mc-iac-typing span:nth-child(3){animation-delay:.3s}
-@keyframes mcIacDot{0%,100%{opacity:.5;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
 @media(max-width:520px){.mc-chatpanel{width:100vw}}
 @media(max-width:1024px){.cp-ficha-layout3{grid-template-columns:1fr}.cp-cfg-nav{position:static;flex-direction:row;overflow-x:auto}.cp-cfg-nav-item{white-space:nowrap;flex-shrink:0;width:auto}.cp-ficha-rail{position:static}}
 /* Configuración (igual al panel) */
@@ -4690,7 +4669,7 @@ function _sendCoachChat(coachId){
    Canal GENERAL (toda la red) + GRUPOS con miembros propios. El dueño y los
    coaches hablan; polling para que lleguen solos + no-leídos. Backend: canal-red.
    El ícono de chat del header llama mcChatOpen(). */
-var _mcChat={open:false,view:'list',canales:null,cur:null,msgs:null,poll:null,busy:false,dms:null,dm_target:null,is_dm:false};
+var _mcChat={open:false,view:'list',canales:null,cur:null,msgs:null,poll:null,busy:false};
 var _MC_CANAL_DEMO=[
  {autor_nombre:'María López', autor_rol:'coach', body:'¡Buen lunes equipo! Arranco con 3 sesiones hoy 💪', created_at:'2026-07-20T09:10:00Z'},
  {autor_nombre:'Alex Gómez', autor_rol:'owner', body:'Genial. Recuerden cargar las mediciones de la semana antes del viernes.', created_at:'2026-07-20T09:25:00Z'},
@@ -4841,38 +4820,30 @@ function mcChatOpen(){
 }
 function mcChatClose(){ var ov=document.getElementById('mc-chatov'); if(ov) ov.classList.remove('on'); _mcChat.open=false; _mcStopPoll(); _mcLoadCanales(function(){ _mcUpdHeaderDot(); }); }
 function _mcIsMobile(){ return window.innerWidth<900; }
-function _mcChatBack(){ _mcStopPoll(); _mcChat.view='list'; _mcChat.cur=null; _mcChat.is_dm=false; _mcChat.dm_target=null; _mcSyncHd(); if(_mcIsMobile()){ _mcRenderList(); } else { _mcRenderConv(); } }
+function _mcChatBack(){ _mcStopPoll(); _mcChat.view='list'; _mcChat.cur=null; _mcSyncHd(); if(_mcIsMobile()){ _mcRenderList(); } else { _mcRenderConv(); } }
 function _mcSyncHd(){
   var b=document.getElementById('mc-chat-back'), t=document.getElementById('mc-chat-ttl'), isMob=_mcIsMobile();
   if(b) b.style.display=(isMob && _mcChat.view==='conv')?'':'none';
   if(t) {
-    if(isMob) {
-      if(_mcChat.view==='conv'&&_mcChat.cur) t.textContent=_mcChat.cur.nombre;
-      else if(_mcChat.view==='conv'&&_mcChat.is_dm) { var co=_coach(_mcChat.dm_target); t.textContent=co?co.n:'Chat'; }
-      else t.textContent='Chat del equipo';
-    } else t.textContent='Chat del equipo';
+    if(isMob) t.textContent=(_mcChat.view==='conv'&&_mcChat.cur)?_mcChat.cur.nombre:'Chat del equipo';
+    else t.textContent='Chat del equipo';
   }
 }
 
-// ── Lista de canales y DMs ──
+// ── Lista de canales ──
 function _mcLoadCanales(cb){
- if(!MC_REAL){ var g=(_MC_CANAL_DEMO[_MC_CANAL_DEMO.length-1]||{}).created_at; _mcChat.canales=[{id:null,nombre:'General',general:true,ultimo_at:g}].concat(_MC_GRUPOS_DEMO); _mcChat.dms=[]; cb&&cb(); return; }
- if(!MC_ORG||!MC_ORG.id){ _mcChat.canales=[{id:null,nombre:'General',general:true}]; _mcChat.dms=[]; cb&&cb(); return; }
+ if(!MC_REAL){ var g=(_MC_CANAL_DEMO[_MC_CANAL_DEMO.length-1]||{}).created_at; _mcChat.canales=[{id:null,nombre:'General',general:true,ultimo_at:g}].concat(_MC_GRUPOS_DEMO); cb&&cb(); return; }
+ if(!MC_ORG||!MC_ORG.id){ _mcChat.canales=[{id:null,nombre:'General',general:true}]; cb&&cb(); return; }
  _hdr({'Content-Type':'application/json'}).then(function(h){ return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'groups',org_id:MC_ORG.id})}); })
-  .then(function(r){ return r.ok?r.json():null; }).then(function(d){
-   _mcChat.canales=(d&&d.ok&&d.canales)?d.canales:[{id:null,nombre:'General',general:true}];
-   _mcChat.dms=(d&&d.ok&&d.dms)?d.dms:[];
-   _mcUpdHeaderDot();
-   cb&&cb();
-  })
-  .catch(function(){ _mcChat.canales=[{id:null,nombre:'General',general:true}]; _mcChat.dms=[]; cb&&cb(); });
+  .then(function(r){ return r.ok?r.json():null; }).then(function(d){ _mcChat.canales=(d&&d.ok&&d.canales)?d.canales:[{id:null,nombre:'General',general:true}]; _mcUpdHeaderDot(); cb&&cb(); })
+  .catch(function(){ _mcChat.canales=[{id:null,nombre:'General',general:true}]; cb&&cb(); });
 }
 function _mcRenderList(){
  var listBox=document.getElementById('mc-chat-list'); if(!listBox)return;
  if(_mcChat.canales==null){ listBox.innerHTML='<div class="csub" style="padding:22px;text-align:center;flex:1;display:flex;align-items:center;justify-content:center">Cargando…</div>'; return; }
  var q=(document.getElementById('mc-search-q')&&document.getElementById('mc-search-q').value||'').toLowerCase();
  var filtered=(_mcChat.canales||[]).filter(function(c){ return !q || (c&&c.nombre&&c.nombre.toLowerCase().indexOf(q)>=0); });
- var rows=filtered.map(function(c,i){ var un=_mcUnread(c); var sel=_mcChat.cur&&_mcChat.cur.id===c.id&&!_mcChat.is_dm;
+ var rows=filtered.map(function(c,i){ var un=_mcUnread(c); var sel=_mcChat.cur&&_mcChat.cur.id===c.id;
   var ic=c.general
    ? '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>'
    : '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>';
@@ -4883,22 +4854,13 @@ function _mcRenderList(){
    +'<div class="mc-canal-tx"><b>'+(c.general?'📢 ':'👥 ')+_mcEsc(c.nombre)+'</b><small>'+_mcEsc(sub)+'</small></div>'
    +(un?'<span class="mc-canal-dot"></span>':'')
    +'<div style="display:flex;gap:2px;opacity:0;transition:opacity.2s" class="mc-canal-acts">'+actions+'</div></div>'; }).join('');
- var dmsHtml=''; if(_mcChat.dms&&_mcChat.dms.length){
-  dmsHtml='<div class="mc-canal-hint">💬 DIRECTOS</div>';
-  dmsHtml+=(_mcChat.dms||[]).map(function(dm){ var sel=_mcChat.is_dm&&_mcChat.dm_target===dm.with_id; var co=_coach(dm.with_id); var cn=co?co.n:_mcEsc(dm.nombre||dm.with_id); var ini=co?_mcIni(co.n):(dm.with_id||'').substring(0,2).toUpperCase();
-   return '<div class="mc-dm-row'+(sel?' active':'')+'" onclick="_mcOpenDM(\''+_mcEsc(dm.with_id)+'\')">'
-    +'<div class="mc-dm-av">'+ini+'</div>'
-    +'<div class="mc-dm-tx"><b>'+_mcEsc(cn)+'</b><small>últimos mensajes…</small></div>'
-    +'</div>';
-  }).join('');
- }
  var hasUnread=(_mcChat.canales||[]).some(_mcUnread);
  listBox.innerHTML='<div style="display:flex;flex-direction:column;height:100%">'
   +'<div style="display:flex;align-items:center;gap:6px;padding:10px 8px;border-bottom:1px solid var(--pw-border);flex-shrink:0">'
   +'<input id="mc-search-q" class="inp" placeholder="Buscar…" value="'+_mcEsc(q)+'" onkeyup="_mcRenderList()" style="flex:1;height:28px;font-size:12px">'
   +(hasUnread?'<button class="cp-btn cp-btn-sm" onclick="_mcMarkAllSeen()" title="Marcar todo como leído" style="padding:3px 6px;font-size:10px;white-space:nowrap;flex-shrink:0">✓</button>':'')
   +'</div>'
-  +'<div style="flex:1;overflow-y:auto;padding:8px;min-width:0">'+rows+dmsHtml
+  +'<div style="flex:1;overflow-y:auto;padding:8px;min-width:0">'+rows
   +'</div>'
   +'<button class="mc-canal-new" onclick="_mcNuevoGrupo()" style="margin:8px;flex-shrink:0"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo</button></div>';
 }
@@ -4926,39 +4888,29 @@ function _mcLoadThread(cb){
   .catch(function(){ _mcChat.msgs=_mcGetMsgs(c)||[]; cb&&cb(); });
 }
 function _mcRenderConv(){
- var wrapper=document.getElementById('mc-chat-conv-wrapper'); if(!wrapper)return;
- if(!_mcChat.cur&&!_mcChat.is_dm){ wrapper.innerHTML='<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--pw-text-soft)">Selecciona un canal</div>'; return; }
-
- var isDM=_mcChat.is_dm, c=isDM?null:_mcChat.cur, targetId=isDM?_mcChat.dm_target:null;
- var co=isDM?_coach(targetId):null; var coachName=isDM?(co?co.n:'Coach'):c.nombre;
-
- var body;
- if(_mcChat.msgs==null){
-  body='<div style="flex:1;display:flex;align-items:center;justify-content:center">Cargando…</div>';
- } else if(!_mcChat.msgs.length){
-  body='<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--pw-text-soft);text-align:center;padding:20px">'+(isDM?'Empecemos la conversación.':'Escribe el primer mensaje.')+'</div>';
- } else {
-  var bubbles=_mcChat.msgs.slice().sort(function(a,b){return new Date(a.created_at)-new Date(b.created_at);}).map(function(m){
-   var mine=isDM?(String(m.autor_id)===String((MC_OWNER&&MC_OWNER.id)||'me')):(m.autor_rol==='owner');
-   return '<div class="mc-iac-row '+(mine?'mc-iac-row-me':'mc-iac-row-them')+'">'
-    +'<div class="mc-iac-bubble mc-iac-'+(mine?'me':'them')+'">'+_mcLink(_mcEsc(m.body))+'</div>'
-    +'</div>';
-  }).join('');
-  body=bubbles;
- }
-
- var sendFn=isDM?'_mcSendDM()':'_mcSend()';
+ var wrapper=document.getElementById('mc-chat-conv-wrapper'); if(!wrapper)return; var c=_mcChat.cur; if(!c)return;
+ if(!_mcChat.cur){ wrapper.innerHTML='<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--pw-text-soft)">Selecciona un canal</div>'; return; }
+ var body = (_mcChat.msgs==null)
+  ? '<div style="flex:1;display:flex;align-items:center;justify-content:center">Cargando…</div>'
+  : (_mcChat.msgs.length ? _mcChat.msgs.slice().sort(function(a,b){return new Date(a.created_at)-new Date(b.created_at);}).map(_canalBubble).join('')
+     : '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--pw-text-soft);text-align:center;padding:20px">'+(c.general?'El canal está en blanco. Escribe el primer mensaje — lo ven todos tus coaches.':'Grupo nuevo. Escribe el primer mensaje.')+'</div>');
+ var emojiRow='<div style="display:flex;gap:2px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--pw-border);background:var(--pw-bg);flex-shrink:0" id="mc-emoji-row">'+
+  ['😀','📎','😍','💪','🔥'].map(function(e){ return '<button class="mc-emoji-btn" data-emoji="'+_mcEsc(e)+'" title="'+_mcEsc(e)+'" style="background:none;border:none;font-size:20px;cursor:pointer;padding:4px;border-radius:4px;opacity:0.7;hover:opacity:1;transition:opacity.2s">'+e+'</button>'; }).join('')+
+  '</div>';
  wrapper.innerHTML='<div style="display:flex;flex-direction:column;height:100%">'
   +'<div style="padding:12px 16px;border-bottom:1px solid var(--pw-border);flex-shrink:0">'
-  +'<div style="font-weight:600;font-size:15px">'+_mcEsc(coachName)+'</div>'
-  +'<div style="font-size:12px;color:var(--pw-text-soft);margin-top:2px">'+(isDM?'Conversación privada':(c.general?'42 miembros':'Canal privado'))+'</div>'
+  +'<div style="font-weight:600;font-size:15px">'+_mcEsc(c.nombre)+'</div>'
+  +'<div style="font-size:12px;color:var(--pw-text-soft);margin-top:2px">'+(c.general?'42 miembros':'Canal privado')+'</div>'
   +'</div>'
-  +'<div class="mc-conv-msgs" id="mc-conv-msgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:0">'+body+'</div>'
+  +'<div class="mc-conv-msgs" id="mc-conv-msgs" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:6px;min-height:0">'+body+'</div>'
+  +emojiRow
   +'<div style="display:flex;gap:8px;padding:14px 16px;border-top:1px solid var(--pw-border);flex-shrink:0;background:#fff;align-items:center">'
-  +'<input id="mc-conv-input" class="inp" placeholder="Escribe un mensaje…" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey)'+sendFn+'" style="flex:1;border-radius:20px;padding:0 16px;height:38px;border:1px solid var(--pw-border);background:#f9f8f6;font-size:13px;color:var(--pw-carbon);transition:all .15s" onkeyup="this.style.borderColor=this.value?\'var(--pw-text-muted)\':\'\'">'
-  +'<button class="cp-btn cp-btn-primary" onclick="'+sendFn+'" aria-label="Enviar" style="padding:6px 16px;font-size:12px;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></svg></button></div></div>';
+  +'<input id="mc-conv-input" class="inp" placeholder="Escribe un mensaje…" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey)_mcSend()" style="flex:1;border-radius:20px;padding:0 16px;height:38px;border:1px solid var(--pw-border);background:#f9f8f6;font-size:13px;color:var(--pw-carbon);transition:all .15s" onkeyup="this.style.borderColor=this.value?\'var(--pw-text-muted)\':\'\'">'
+  +'<button class="cp-btn cp-btn-primary" onclick="_mcSend()" aria-label="Enviar" style="padding:6px 16px;font-size:12px;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z"/></svg></button></div></div>';
+ setTimeout(function(){ var row=document.getElementById('mc-emoji-row'); if(row) row.addEventListener('click',function(e){ if(e.target.classList.contains('mc-emoji-btn')) mcMsgEmoji(e.target.getAttribute('data-emoji'),e.target); }); },10);
  var m=document.getElementById('mc-conv-msgs'); if(m) setTimeout(function(){ m.scrollTop=m.scrollHeight; },50);
  var inp=document.getElementById('mc-conv-input'); if(inp) inp.focus();
+ _mcLPInit(); _mcLPScan();
 }
 function _mcSend(){
  var i=document.getElementById('mc-conv-input'); if(!i)return; var t=(i.value||'').trim(); if(!t)return; var c=_mcChat.cur; if(!c)return;
@@ -4987,10 +4939,9 @@ function _mcSend(){
 }
 // ── Polling: mientras hay una conversación abierta, refresca cada 5s ──
 function _mcStartPoll(){ _mcStopPoll(); if(!MC_REAL)return; _mcChat.poll=setInterval(function(){
-  if(!_mcChat.open||_mcChat.view!=='conv'||(!_mcChat.cur&&!_mcChat.is_dm)){ _mcStopPoll(); return; }
+  if(!_mcChat.open||_mcChat.view!=='conv'||!_mcChat.cur){ _mcStopPoll(); return; }
   var before=(_mcChat.msgs||[]).length;
-  var loadFn=_mcChat.is_dm?function(cb){ _mcLoadDM(_mcChat.dm_target,cb); }:_mcLoadThread;
-  loadFn(function(){ if(_mcChat.view==='conv'){
+  _mcLoadThread(function(){ if(_mcChat.view==='conv'){
     var now=(_mcChat.msgs||[]);
     if(now.length!==before){
       // Sonó llegó algo nuevo: suena solo si el último NO es mío (no me auto-aviso).
@@ -4999,6 +4950,7 @@ function _mcStartPoll(){ _mcStopPoll(); if(!MC_REAL)return; _mcChat.poll=setInte
       if(now.length>before && last && !lastMine){ try{ _mcDing(); }catch(e){} }
       _mcRenderConv();
     }
+    _mcMarkSeen(_mcChat.cur);
   } });
  },5000); }
 function _mcStopPoll(){ if(_mcChat.poll){ clearInterval(_mcChat.poll); _mcChat.poll=null; } }
@@ -5074,34 +5026,6 @@ function _mcEliminarGrupo(i){
   __toast('Grupo eliminado ✓');
   _mcLoadCanales(function(){ _mcChat.cur=null; _mcRenderList(); _mcRenderConv(); });
  }).catch(function(){ __toast('Error de conexión'); });
-}
-
-// ── DMs: abrir conversación 1-a-1 ──
-function _mcOpenDM(withId){
- _mcChat.is_dm=true; _mcChat.dm_target=withId; _mcChat.msgs=null; _mcChat.cur=null; _mcSyncHd();
- if(_mcIsMobile()){ _mcChat.view='conv'; _mcRenderConv(); }
- else { _mcRenderList(); _mcRenderConv(); }
- _mcLoadDM(withId, function(){ _mcRenderConv(); _mcStartPoll(); });
-}
-function _mcLoadDM(withId, cb){
- if(!MC_REAL){ _mcChat.msgs=[]; cb&&cb(); return; }
- if(!MC_ORG||!MC_ORG.id){ _mcChat.msgs=[]; cb&&cb(); return; }
- _hdr({'Content-Type':'application/json'}).then(function(h){ return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'dm_thread',org_id:MC_ORG.id,with_id:withId})}); })
-  .then(function(r){ return r.ok?r.json():null; }).then(function(d){
-   _mcChat.msgs=(d&&d.ok&&d.mensajes)?d.mensajes:[];
-   cb&&cb();
-  })
-  .catch(function(){ _mcChat.msgs=[]; cb&&cb(); });
-}
-function _mcSendDM(){
- var i=document.getElementById('mc-conv-input'); if(!i)return; var t=(i.value||'').trim(); if(!t)return; if(!_mcChat.is_dm||!_mcChat.dm_target)return;
- var now=new Date();
- var msg={autor_id:(MC_OWNER&&MC_OWNER.id)||'me',autor_nombre:(MC_OWNER&&MC_OWNER.nombre)||'Tú',autor_rol:'owner',body:t,created_at:now.toISOString()};
- _mcChat.msgs=_mcChat.msgs||[]; _mcChat.msgs.push(msg); i.value=''; _mcRenderConv();
- if(!MC_REAL){ __toast('Mensaje enviado ✓ (demo)'); return; }
- _hdr({'Content-Type':'application/json'}).then(function(h){ return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'dm_send',org_id:MC_ORG.id,with_id:_mcChat.dm_target,mensaje:t})}); })
-  .then(function(r){ return r.ok?r.json():null; }).then(function(d){ if(!d||!d.ok){ __toast('No se pudo enviar'); _mcChat.msgs.pop(); _mcRenderConv(); } })
-  .catch(function(){ __toast('Error de conexión'); _mcChat.msgs.pop(); _mcRenderConv(); });
 }
 
 // ── Marcar todos los canales como leídos ──
