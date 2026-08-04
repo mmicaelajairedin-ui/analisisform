@@ -261,8 +261,8 @@ function checkAccessCode(){
       </div>
 
       <div class="cols2">
-        <div class="field"><label id="l-nom" for="f-nom">Nombre completo</label><input id="f-nom" type="text" placeholder="Tu nombre y apellido"></div>
-        <div class="field"><label id="l-mai" for="f-mai">Tu email</label><input id="f-mai" type="email" placeholder="tu@email.com"></div>
+        <div class="field"><label id="l-nom" for="f-nom">Nombre completo</label><input id="f-nom" type="text" placeholder="Tu nombre y apellido" required></div>
+        <div class="field"><label id="l-mai" for="f-mai">Tu email</label><input id="f-mai" type="email" placeholder="tu@email.com" required></div>
       </div>
       <div class="cols2">
         <div class="field"><label id="l-ciu" for="f-ciu">Ciudad y país</label><input id="f-ciu" type="text" placeholder="Ej: Barcelona, España"></div>
@@ -287,7 +287,7 @@ function checkAccessCode(){
           <div class="opt" onclick="selR('r-sit',this)"><div class="rc"></div><span id="sit6">Soy recién graduado/a, empezando de cero</span></div>
         </div>
       </div>
-      <div class="field"><label id="l-obj" for="f-obj">¿Cuál es tu objetivo con este proceso?</label><textarea id="f-obj" placeholder="Cuéntame qué quieres conseguir y qué te ha traído hasta aquí..."></textarea></div>
+      <div class="field"><label id="l-obj" for="f-obj">¿Cuál es tu objetivo con este proceso?</label><textarea id="f-obj" placeholder="Cuéntame qué quieres conseguir y qué te ha traído hasta aquí..." required></textarea></div>
       <div class="nav"><button class="btn-back" onclick="go(1)">←</button><button class="btn-next" onclick="go(3)">Seguimos →</button></div>
     </div>
 
@@ -332,7 +332,7 @@ function checkAccessCode(){
     <div class="step" id="s5">
       <div class="stag" id="s5t">Paso 5 de 7</div><div class="stitle" id="s5h">¿Qué estás buscando?</div>
       <div class="sdesc" id="s5d">Cuanto más claro tengas esto, más concreta y útil será la estrategia que construyamos juntos.</div>
-      <div class="field"><label id="l-rol" for="f-rol">Rol o cargo que buscas</label><input id="f-rol" type="text" placeholder="Ej: Head of Marketing, Senior Developer, CFO..."></div>
+      <div class="field"><label id="l-rol" for="f-rol">Rol o cargo que buscas</label><input id="f-rol" type="text" placeholder="Ej: Head of Marketing, Senior Developer, CFO..." required></div>
       <div class="cols2">
         <div class="field"><label id="l-emp" for="f-emp">Tipo de empresa</label>
           <select id="f-emp"><option value="">Selecciona...</option><option>Startup</option><option>Scale-up en crecimiento</option><option>Empresa mediana</option><option>Gran corporación</option><option>Sector público</option><option>Sin preferencia</option></select>
@@ -613,8 +613,13 @@ function validateStep(n){
     // situación pasó a opcional para bajar la fricción.
     if(!document.getElementById('f-obj').value.trim()) missing.push('f-obj');
   }
-  // Pasos 4 y 5 (cargo / rol buscado): ahora OPCIONALES — menos campos
-  // obligatorios = más gente que termina el formulario.
+  // MEDIO FIX: validar rol en step 4 (no solo en submit)
+  // El rol es obligatorio para generar informe IA útil, así que validarlo ahora
+  // evita que el usuario llegue al submit y reciba un error.
+  if(n===4){
+    if(!document.getElementById('f-rol').value.trim()) missing.push('f-rol');
+  }
+  // Paso 5 (salario): opcional
   if(missing.length){
     missing.forEach(function(id){
       var el=document.getElementById(id);
@@ -686,13 +691,11 @@ function restoreDraft(){
 document.addEventListener('input',function(ev){ if(ev.target&&ev.target.id&&FIELD_IDS.indexOf(ev.target.id)>=0) saveDraft(); });
 document.addEventListener('DOMContentLoaded',function(){
   var restored=restoreDraft();
-  // En modo portal el cliente ya aceptó los términos en su portal → no le volvemos
-  // a pedir consentimiento: ocultamos la casilla del último paso y la damos por dada.
-  if(PORTAL_MODE){
-    consentGiven=true;
-    var _sc=document.getElementById('s7-consent'); if(_sc) _sc.style.display='none';
-    if(!restored) go(1);
-  }
+  // ALTO FIX: RGPD — consent obligatorio incluso en modo portal
+  // Aunque el usuario ya consintió al entrar al portal, GDPR requiere
+  // consentimiento explícito en el punto de recolección (este formulario).
+  // Nunca ocultamos ni asumimos el consent automáticamente.
+  if(PORTAL_MODE && !restored) go(1);
 });
 
 function initUploadcare(){
@@ -765,24 +768,49 @@ async function enviar(){
   const btn=document.getElementById('btn-send');
   const st=document.getElementById('send-st');
   // Consentimiento obligatorio antes de guardar (RGPD): el dato se procesa solo
-  // después de aceptar. En modo portal ya viene aceptado desde el portal.
+  // después de aceptar. Incluso en modo portal, debe ser explícito en este formulario.
   if(!consentGiven){
     st.textContent=lang==='en'?'Please accept the terms to continue.':'Aceptá los términos para continuar.';
     st.style.color='#C25B5B';
     var _cb=document.getElementById('consent-cb'); if(_cb) _cb.focus();
     return;
   }
+  // CAMBIO ALTO: validar que el rol NO esté vacío (requerido para generar informe IA útil)
+  var _rol=(document.getElementById('f-rol').value||'').trim();
+  if(!_rol){
+    btn.disabled=false;
+    st.textContent=lang==='en'?'Please specify your desired role for the AI report.':'Especificá el rol que buscas para generar un informe útil.';
+    st.style.color='#C25B5B';
+    var _rolEl=document.getElementById('f-rol'); if(_rolEl) _rolEl.focus();
+    return;
+  }
   btn.disabled=true;btn.textContent=t.sending;st.textContent=t.sending;st.style.color='#666';
 
   if(ucWidget&&cvFile==='No subido'&&ucWidget.value()!==null){
     st.textContent=lang==='en'?'Waiting for CV upload...':'Esperando que termine de subir el CV...';
+    var _cvUploadSuccess=false;
     await new Promise((res)=>{
       const f=ucWidget.value();if(!f){res();return;}
       var done=false;
-      f.done(info=>{if(!done){done=true;cvUrl=(info.cdnUrl||'').replace('ucarecd.net','ucarecdn.com');cvFile=info.name;res();}})
+      f.done(info=>{
+        if(!done){
+          done=true;
+          cvUrl=(info.cdnUrl||'').replace('ucarecd.net','ucarecdn.com');
+          cvFile=info.name;
+          _cvUploadSuccess=true; // CAMBIO: marcar que se subió OK
+          res();
+        }
+      })
        .fail(()=>{if(!done){done=true;res();}});
       setTimeout(()=>{if(!done){done=true;res();}},15000);
     });
+    // CAMBIO CRÍTICO: validar que el CV se subió OK antes de continuar
+    if(!_cvUploadSuccess){
+      btn.disabled=false;
+      st.textContent=lang==='en'?'CV upload failed or timed out. Please try again.':'Fallo la subida del CV. Reintentá.';
+      st.style.color='#C25B5B';
+      return;
+    }
   }
 
   const d={
@@ -884,21 +912,34 @@ async function enviar(){
         body:JSON.stringify({...d})
       });
       if(saveRes.status===401||saveRes.status===403){ if(window.PWAUTH&&PWAUTH.showLoginGate)PWAUTH.showLoginGate(); throw new Error('Tu sesión venció. Volvé a iniciar sesión y reintentá.'); }
-      if(saveRes.ok){ var _prows=await saveRes.json().catch(function(){return null;}); if(Array.isArray(_prows)&&_prows.length===0){ throw new Error('No se pudo guardar tu perfil: tu sesión no está activa. Cerrá sesión, volvé a entrar y reintentá.'); } }
+      if(saveRes.ok){
+        var _prows=await saveRes.json().catch(function(){return null;});
+        // MEJORA: validar que se escribieron datos, si no es un RLS silent failure
+        if(!Array.isArray(_prows)||_prows.length===0){
+          throw new Error('No se pudo guardar tu perfil: tu sesión no está activa o no tienes permisos. Cerrá sesión, volvé a entrar y reintentá.');
+        }
+      }
     } else {
       // Intake anónimo (pre-cuenta): INSERT con ignore-duplicates (no merge), así
       // la política RLS de INSERT anónimo alcanza sin dar UPDATE a anon. Re-envíos
       // no pisan datos; el coach corrige desde el panel si hace falta.
+      // CAMBIO: usar return=representation para validar que se escribió ≥1 fila
       saveRes=await fetch(SB_URL+'/rest/v1/candidatos',{
         method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal,resolution=ignore-duplicates'},
+        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation,resolution=ignore-duplicates'},
         // activo:true explícito → el cliente NUNCA nace inactivo aunque el default
         // de la columna sea false. (Causa del patrón de clientes que no aparecían.)
         body:JSON.stringify({...d,activo:true})
       });
     }
     if(!saveRes.ok){var errText=await saveRes.text();throw new Error('Error guardando datos: '+saveRes.status+' '+errText);}
-    clearDraft(); // guardado OK → ya no hace falta el borrador local
+    // CAMBIO CRÍTICO: validar que se escribió ≥1 fila ANTES de borrar el draft
+    // (si saveRes.ok=true pero no se escribió nada, el cliente pierde datos)
+    var _savedRows=await saveRes.json().catch(function(){return null;});
+    if(!Array.isArray(_savedRows)||_savedRows.length===0){
+      throw new Error('Error guardando datos: la fila no se escribió. Reintentá o contactá soporte.');
+    }
+    clearDraft(); // Confirmado: se escribieron datos → ya no hace falta el borrador local
 
     // 2. Llamar a la Edge Function para generar el informe automáticamente
     fetch(EDGE_URL,{

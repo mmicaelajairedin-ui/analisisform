@@ -1445,7 +1445,15 @@ html.mc-embed #mc-nswitch{display:none!important}
 .mc-bnav a.on{background:var(--brand-50);color:var(--brand)}
 .mc-bnav a.on svg{opacity:1;color:var(--brand)}
 .mc-bnav a.on span{font-weight:700}
-@media(max-width:820px){.app{grid-template-columns:1fr}.side{display:none}.mc-bnav{display:flex}.scroll{padding-bottom:98px}#vscroll{padding-bottom:98px}.card{box-shadow:none !important;border-color:#E8DFD4}.com-reopen{bottom:106px}}
+@media(max-width:820px){
+  .app{grid-template-columns:1fr;min-height:100vh}
+  .side{display:none}
+  .mc-bnav{display:flex}
+  .scroll{padding-bottom:98px;min-height:100vh}
+  #vscroll{padding-bottom:98px}
+  .card{box-shadow:none !important;border-color:#E8DFD4}
+  .com-reopen{bottom:106px}
+}
 @media(max-width:560px){.me div{display:none}.search kbd{display:none}.top{padding:12px 16px;gap:10px}.scroll{padding:18px 16px 98px}.community{padding:16px}}
 /* ===== PROGRAMAS (extracted literal from owner-programs.html) ===== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -3325,6 +3333,14 @@ function mcLoadReal(owner){
     try{ setTimeout(_mcEnableSync,100); }catch(e){}
     // B.6.3: Realtime sync de branding entre tabs (sin reload)
     try{ setTimeout(_mcStartBrandRealtimeSync,150); }catch(e){}
+    // Pre-cargar Google Calendar en background (200ms delay para no bloquear UI)
+    try{ setTimeout(function(){ if(!_mcGcalDone){ _mcGcalDone=true; _mcGcalLoad(function(){}); } },200); }catch(e){}
+    // Pre-cargar cobros (estado y datos) — evita re-renders en renderCobros()
+    try{ setTimeout(function(){ if(MC_REAL){ if(!_mcCobReq) mcCobrosStatus(); if(!_mcSyncReq) mcCobrosSync(); } },300); }catch(e){}
+    // Pre-cargar comunidad (posts, avisos, clases, retos) — evita blocking en renderComunidad()
+    try{ setTimeout(function(){ if(MC_REAL && MC_ORG && MC_ORG.id && !_mcPostsLoaded) _mcLoadPosts(function(){ _mcPostsLoaded=true; }); },400); }catch(e){}
+    // Pre-cargar programas — evita delay en renderPrograms()
+    try{ setTimeout(function(){ if(!_mcProgLoaded) loadPrograms(function(){ _mcProgLoaded=true; }); },500); }catch(e){}
   }
   return _hdr({'Content-Type':'application/json'}).then(function(h){
     // Si hay org seleccionada en localStorage (multi-org), enviarla al edge function
@@ -3649,9 +3665,11 @@ function _countK(f){return DB.clientes.filter(function(k){if(f==='activo')return
 function renderClientes(){
  var v=document.getElementById('vscroll');
  var chips=[['todos','Todos'],['activo','Activos'],['riesgo','Sin actividad'],['inactivo','Inactivos']];
- v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+_countK('activo')+' activos</p></div><button class="crear" onclick="__nuevoCliente()">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button></header>'
+ // Optimización: cachear _countK para no iterar 4 veces
+ var counts={todos:DB.clientes.length,activo:_countK('activo'),riesgo:_countK('riesgo'),inactivo:_countK('inactivo')};
+ v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+counts.activo+' activos</p></div><button class="crear" onclick="__nuevoCliente()">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button></header>'
   +'<div class="searchbar"><input id="kq" class="inp" placeholder="Buscar por nombre o coach…" oninput="_ks=this.value;_fillClientes()" value="'+_ks+'"></div>'
-  +'<div class="cp-filters" id="kchips">'+chips.map(function(c){return '<button class="cp-chip'+(_kf===c[0]?' is-on':'')+'" data-f="'+_mcEsc(c[0])+'" onclick="if(this.dataset.f)_setKf(this.dataset.f)">'+c[1]+'<span class="cp-chip-count">'+_countK(c[0])+'</span></button>';}).join('')+'</div>'
+  +'<div class="cp-filters" id="kchips">'+chips.map(function(c){return '<button class="cp-chip'+(_kf===c[0]?' is-on':'')+'" data-f="'+_mcEsc(c[0])+'" onclick="if(this.dataset.f)_setKf(this.dataset.f)">'+c[1]+'<span class="cp-chip-count">'+(counts[c[0]]||0)+'</span></button>';}).join('')+'</div>'
   +'<div id="klist"></div>';
  _fillClientes();_focusEnd('kq');
 }
@@ -5213,10 +5231,11 @@ function renderAnalytics(){
     +'</div></div>';
   // Ranking de coaches: ordenados por clientes (desempate por sesiones). Top 3
   // resaltados con su posición. Reusa la barra de progreso por coach.
+  // Cache retención para cada coach antes del ranking loop (evita recálculos)
+  var retByCoach={}; allCo.forEach(function(c){ retByCoach[c.id]=_retPct(cliListByCoach[c.id]||[]); });
   var ranked=allCo.slice().sort(function(a,b){ return (cliByCoach[b.id]||0)-(cliByCoach[a.id]||0) || (sesByCoach[b.id]||0)-(sesByCoach[a.id]||0); });
   var rows=ranked.map(function(c,i){
-    var _rp=_retPct(cliListByCoach[c.id]||[]);
-    var nc=cliByCoach[c.id]||0, ns=sesByCoach[c.id]||0, r=(_rp!=null?_rp+'%':'—');
+    var nc=cliByCoach[c.id]||0, ns=sesByCoach[c.id]||0, r=(retByCoach[c.id]!=null?retByCoach[c.id]+'%':'—');
     var w=Math.round((nc/maxCli)*100);
     var pos='<span class="mc-rank-pos'+(i<3?' top':'')+'">'+(i+1)+'</span>';
     return '<div style="display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid var(--pw-border)">'
@@ -6597,7 +6616,7 @@ var MOCK_PROGRAMS=[
   {id:'prog-005',name:'Programa Emprendimiento',coach:'Laura Sánchez',coachInitials:'LS',clients:18,completion:95,duration:'6 semanas',status:'completed'},
   {id:'prog-006',name:'Programa Carrera Profesional',coach:'Carlos Martínez',coachInitials:'CM',clients:40,completion:75,duration:'4 semanas',status:'active'}
 ];
-var _mcProgCurrentFilter='all',_mcProgCurrentData=(typeof MOCK_PROGRAMS==='object'&&MOCK_PROGRAMS?[...MOCK_PROGRAMS]:[]),_mcProgFilteredData=(typeof MOCK_PROGRAMS==='object'&&MOCK_PROGRAMS?[...MOCK_PROGRAMS]:[]);
+var _mcProgCurrentFilter='all',_mcProgCurrentData=(typeof MOCK_PROGRAMS==='object'&&MOCK_PROGRAMS?[...MOCK_PROGRAMS]:[]),_mcProgFilteredData=(typeof MOCK_PROGRAMS==='object'&&MOCK_PROGRAMS?[...MOCK_PROGRAMS]:[]),_mcProgLoaded=false;
 
 function loadPrograms(cb){
   if(!MC_REAL){ cb(MOCK_PROGRAMS); return; }
@@ -6827,6 +6846,7 @@ function renderAgenda(){
  console.log('[DEBUG] renderAgenda() using LEGACY AGENDA');
  // Traer el Google Calendar del dueño la 1ª vez (después ya está en MC_GCAL).
  if(MC_REAL&&!_mcGcalDone){ _mcGcalDone=true; _mcGcalLoad(function(){ if(MC_GCAL&&MC_GCAL.length){ mcSetAgenda(); if(_sec==='agenda') renderAgenda(); } }); }
+ var v=document.getElementById('vscroll');
  var days=_weekDates();var todayDow=(new Date().getDay()+6)%7;
  if(_agSelDow===null)_agSelDow=todayDow;
  var evs=_agEvs();
@@ -6839,7 +6859,7 @@ function renderAgenda(){
    +'<div class="cp-topbar-actions"><div class="agtoggle">'+vt('dia','Día')+vt('semana','Semana')+vt('mes','Mes')+'</div><button class="cp-btn cp-btn-ghost" onclick="_mcGcalConnect()" style="height:38px" title="Conectar Google Calendar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Google'+((MC_GCAL&&MC_GCAL.length)?' ✓':'')+'</button><button class="cp-btn cp-btn-ghost" onclick="_mcDispModal()" style="height:38px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Mi disponibilidad</button><button class="crear" onclick="__nuevaSesion()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nueva sesión</button></div></header>'
    +'<div class="agkpis"><div class="agkpi"><div class="l">Sesiones hoy</div><div class="n">'+sesHoy+'</div></div><div class="agkpi"><div class="l">Atenciones esta semana</div><div class="n">'+clientesSem+'</div></div><div class="agkpi"><div class="l">Clases esta semana</div><div class="n">'+clasesSem+'</div></div><div class="agkpi"><div class="l">Eventos totales</div><div class="n">'+evs.length+'</div></div></div>'
    +'<div class="aglayout"><aside class="agcoaches">'+_agCoachList()+'</aside>'
-   +'<div class="agcal">'+_agCalTop(days)+'<div class="agwrap">'+(_agView==='mes'?_agMonth():_agView==='dia'?_agDayGrid(days):_agWeek(days))+'</div><div class="aglegend" style="padding:12px 16px">'+_agLegend()+'</div></div>'
+   +'<div class="agcal">'+_agCalTop(days)+'<div class="agwrap">'+(_agView==='mes'?_agMonth():_agView==='dia'?_agDayGrid(days):_agWeek(days))+'</div><div id="aglegend" class="aglegend" style="padding:12px 16px">'+_agLegend()+'</div></div>'
    +'<aside class="agrail">'+_agRail(days)+'</aside></div>';
 }
 // "Mi disponibilidad" — copiado del panel del coach (mismo modelo de datos:
