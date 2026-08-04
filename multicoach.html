@@ -2176,6 +2176,7 @@ var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im
 function _hdr(extra){ return (window.PWAUTH?PWAUTH.headers(extra):Promise.resolve(Object.assign({apikey:KEY,Authorization:'Bearer '+KEY},extra||{}))); }
 function __toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('on');},1900);}
 function _toastChat(name){__toast('Chat con '+_mcEsc(name));}
+function _toastChatCliente(cliName){var first=(cliName||'').split(' ')[0]||'Cliente'; __toast('Chat con '+_mcEsc(first)+' — en desarrollo');}
 var _sec='dashboard';
 function __hl(s){document.querySelectorAll('#nav a, #mc-bnav a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-s')===s);});}
 // Búsqueda global del top: filtra la lista de clientes (por nombre o coach).
@@ -3995,7 +3996,7 @@ function _fillClientes(){
     +'<div style="display:flex;align-items:center;gap:10px"><span style="font-size:11px;font-weight:600;color:var(--pw-text-muted);white-space:nowrap">Sem '+(k.week||1)+'/4</span><div class="cp-cli-prog" style="flex:1;display:flex;gap:2px">'+bar+'</div></div>'
     +'<footer class="cp-cli-acts" style="display:flex;gap:6px;margin-top:10px">'
     +'<button class="cp-btn cp-btn-ghost" style="flex:1;font-size:12px;height:32px" onclick="event.stopPropagation();fichaCliente(\''+_mcEsc(k.id)+'\')">'+PWI.svg('eye',{sm:true})+' Detalles</button>'
-    +'<button class="cp-btn cp-btn-ghost" style="flex:1;font-size:12px;height:32px" data-cli-name="'+_mcEsc(k.n)+'" onclick="event.stopPropagation();__toast(\'Chat con \'+this.dataset.cliName.split(\' \')[0]+\' — en desarrollo\')">'+PWI.svg('chat',{sm:true})+' Mensaje</button>'
+    +'<button class="cp-btn cp-btn-ghost" style="flex:1;font-size:12px;height:32px" data-cli-name="'+_mcEsc(k.n)+'" onclick="event.stopPropagation();_toastChatCliente(this.dataset.cliName)">'+PWI.svg('chat',{sm:true})+' Mensaje</button>'
     +'</footer>'
     +'</article>';
  }).join('');
@@ -5173,13 +5174,15 @@ function _mcRenderList(){
   var ic=c.general?'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>':'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>';
   var cMsgs=_mcGetMsgs(c);
   var lastMsg=cMsgs.length?cMsgs.slice().reverse()[0]||{}:{};
-  var lastTime=lastMsg.created_at?new Date(lastMsg.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'';
+  var lastTime='';
+  if(lastMsg.created_at){try{lastTime=new Date(lastMsg.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});}catch(e){}}
   var authorName=(lastMsg.autor_nombre||'').split(' ')[0]||'';
   var preview=(authorName?authorName+': ':'')+(lastMsg.body?lastMsg.body.substring(0,25)+(lastMsg.body.length>25?'…':''):'');
   var unreadBadge=(un?'●'+(_mcChat.canales||[]).filter(function(x){return _mcUnread(x)&&(!c||x.id!==c.id);}).length:'');
   var sub=c.general?'Toda la red':((c.miembros&&c.miembros.length)?(c.miembros.length+' miembros'):'');
-  var actions=!c.general?'<div style="display:flex;gap:4px;opacity:0;transition:opacity.2s"><button class="cp-btn cp-btn-sm" onclick="event.stopPropagation();_mcEditarGrupo('+_mcChat.canales.indexOf(c)+');return false" title="Editar" style="padding:4px 6px;font-size:11px">✏️</button><button class="cp-btn cp-btn-sm" onclick="event.stopPropagation();_mcEliminarGrupo('+_mcChat.canales.indexOf(c)+');return false" title="Eliminar" style="padding:4px 6px;font-size:11px">🗑️</button></div>':'';
-  return '<div class="mc-canal-row'+(sel?' mc-sel':'')+'" onmouseover="this.querySelector(\".mc-canal-acts\")&&(this.querySelector(\".mc-canal-acts\").style.opacity=\'1\')" onmouseout="this.querySelector(\".mc-canal-acts\")&&(this.querySelector(\".mc-canal-acts\").style.opacity=\'0\')" onclick="_mcOpenCanal('+_mcChat.canales.indexOf(c)+')">'
+  var canalId=_mcEsc(c.id||'');
+  var actions=!c.general?'<div style="display:flex;gap:4px;opacity:0;transition:opacity.2s"><button class="cp-btn cp-btn-sm" data-canal-id="'+canalId+'" onclick="event.stopPropagation();_mcEditarGrupoPorId(this.dataset.canalId);return false" title="Editar" style="padding:4px 6px;font-size:11px">✏️</button><button class="cp-btn cp-btn-sm" data-canal-id="'+canalId+'" onclick="event.stopPropagation();_mcEliminarGrupoPorId(this.dataset.canalId);return false" title="Eliminar" style="padding:4px 6px;font-size:11px">🗑️</button></div>':'';
+  return '<div class="mc-canal-row'+(sel?' mc-sel':'')+'" onmouseover="this.querySelector(\".mc-canal-acts\")&&(this.querySelector(\".mc-canal-acts\").style.opacity=\'1\')" onmouseout="this.querySelector(\".mc-canal-acts\")&&(this.querySelector(\".mc-canal-acts\").style.opacity=\'0\')" data-canal-id="'+canalId+'" onclick="var cid=this.dataset.canalId;if(cid)_mcOpenCanalById(cid);else _mcOpenCanal(0)">'
    +'<div class="mc-canal-ic">'+ic+'</div>'
    +'<div class="mc-canal-tx"><b>'+_mcEsc(c.nombre)+'</b><small>'+_mcEsc(sub)+'</small>'+(preview?'<em>'+_mcEsc(preview)+'</em>':'')+
    (lastTime?'<span style="font-size:10px;color:var(--pw-text-muted)"> · '+lastTime+'</span>':'')+'</div>'
@@ -5199,12 +5202,21 @@ function _mcRenderList(){
 }
 
 // ── Conversación de un canal ──
+function _mcOpenCanalById(canalId){
+ var c=(_mcChat.canales||[]).find(function(x){return (x.id===null&&canalId===null)||(x.id!==null&&String(x.id)===String(canalId));});
+ if(!c)return;
+ _mcOpenCanalInternal(c);
+}
 function _mcOpenCanal(i){
  var c=(_mcChat.canales||[])[i]; if(!c)return;
+ _mcOpenCanalInternal(c);
+}
+function _mcOpenCanalInternal(c){
  _mcChat.cur=c; _mcChat.msgs=null; _mcSyncHd();
  if(_mcIsMobile()){ _mcChat.view='conv'; _mcRenderConv(); }
  else { _mcRenderList(); _mcRenderConv(); }
  _mcLoadThread(function(){ _mcRenderConv(); _mcMarkSeen(c); _mcStartPoll(); });
+ return true;
 }
 function _mcLoadThread(cb){
  var c=_mcChat.cur; if(!c){ cb&&cb(); return; }
@@ -5225,7 +5237,7 @@ function _mcRenderConv(){
  if(!_mcChat.cur){ wrapper.innerHTML='<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--pw-text-soft)">Selecciona un canal</div>'; return; }
  var body = (_mcChat.msgs==null)
   ? '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--pw-text-soft)">Cargando…</div>'
-  : (_mcChat.msgs.length ? _mcChat.msgs.slice().sort(function(a,b){return new Date(a.created_at)-new Date(b.created_at);}).map(_canalBubble).join('')
+  : (_mcChat.msgs.length ? _mcChat.msgs.slice().sort(function(a,b){var ta=a.created_at?new Date(a.created_at).getTime():0;var tb=b.created_at?new Date(b.created_at).getTime():0;return ta-tb;}).map(_canalBubble).join('')
      : '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--pw-text-soft);text-align:center;padding:30px;gap:12px"><div style="font-size:13px;font-weight:600;color:var(--pw-carbon)">'+(c.general?'Canal principal':'Grupo nuevo')+'</div><div style="font-size:12px;color:var(--pw-text-soft);line-height:1.5">'+(c.general?'Comparte novedades con tu equipo':'Espacio para comunicación grupal')+'</div><div style="font-size:11px;color:var(--pw-text-muted);margin-top:6px">Empieza la conversación escribiendo tu primer mensaje</div></div>');
  var emojiBar='<div style="display:flex;gap:6px;padding:12px 16px;border-top:.5px solid #E5DFD8;background:#fff;flex-shrink:0;align-items:center;justify-content:flex-start;flex-wrap:wrap" id="mc-emoji-row">'+
   '<span style="font-size:11px;font-weight:600;color:var(--pw-text-soft);margin-right:4px">Reacciones:</span>'+
@@ -5309,7 +5321,7 @@ function _mcNuevoGrupo(){
 function _mcCrearGrupo(){
  var n=document.getElementById('mc-grp-nombre'); var nombre=(n&&n.value||'').trim(); if(!nombre){ __toast('Ponele un nombre al grupo'); return; }
  var miembros=[]; document.querySelectorAll('.mc-mem input:checked').forEach(function(c){ miembros.push(c.value); });
- if(!MC_REAL){ _MC_GRUPOS_DEMO.push({id:'g-'+Date.now(),nombre:nombre,general:false,is_system:false,miembros:miembros}); __toast('Grupo creado ✓ (demo)'); _mcLoadCanales(function(){ _mcRenderList(); _mcRenderConv(); }); return; }
+ if(!MC_REAL){ _MC_GRUPOS_DEMO.push({id:'g-'+new Date().getTime(),nombre:nombre,general:false,is_system:false,miembros:miembros}); __toast('Grupo creado ✓ (demo)'); _mcLoadCanales(function(){ _mcRenderList(); _mcRenderConv(); }); return; }
  var btn=document.getElementById('mc-grp-crear'); if(btn){ btn.disabled=true; btn.textContent='Creando…'; }
  _hdr({'Content-Type':'application/json'}).then(function(h){ return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'group_create',org_id:MC_ORG.id,nombre:nombre,miembros:miembros})}); })
   .then(function(r){ return r.ok?r.json():null; }).then(function(d){
@@ -5319,24 +5331,42 @@ function _mcCrearGrupo(){
   }).catch(function(){ __toast('Error de conexión'); if(btn){ btn.disabled=false; btn.textContent='Crear grupo'; } });
 }
 
+// ── Editar grupo por ID ──
+function _mcEditarGrupoPorId(canalId){
+ var c=(_mcChat.canales||[]).find(function(x){return String(x.id)===String(canalId);});
+ if(!c||c.general||!c.id)return;
+ _mcEditarGrupoInternal(c);
+}
 // ── Editar grupo (nombre y miembros) ──
 function _mcEditarGrupo(i){
  var c=(_mcChat.canales||[])[i]; if(!c||c.general||!c.id)return;
- var coaches=((typeof DB!=='undefined'&&DB&&DB.coaches)||[]).filter(function(c){ return c && c.est==='activo' && !c.esOwner; });
+ _mcEditarGrupoInternal(c);
+}
+function _mcEditarGrupoInternal(c){
+ var coaches=((typeof DB!=='undefined'&&DB&&DB.coaches)||[]).filter(function(co){ return co && co.est==='activo' && !co.esOwner; });
  var opts=coaches.length?coaches.map(function(co){ var checked=(c.miembros&&c.miembros.indexOf(co.id)>=0)?'checked':''; return '<label class="mc-mem"><input type="checkbox" value="'+_mcEsc(co.id)+'" '+checked+'><span>'+_mcEsc(co.n||co.nombre||'Coach')+'</span></label>'; }).join('')
    :'<div class="csub" style="padding:6px 2px">Todavía no tienes coaches en la red.</div>';
  var wrapper=document.getElementById('mc-chat-conv-wrapper'); if(!wrapper)return;
+ var canalId=_mcEsc(c.id||'');
  wrapper.innerHTML='<div style="display:flex;flex-direction:column;height:100%;padding:20px;overflow-y:auto">'
   +'<div style="font-weight:600;font-size:16px;margin-bottom:16px">Editar grupo</div>'
   +'<input id="mc-grp-nombre" class="inp" placeholder="Nombre del grupo" value="'+_mcEsc(c.nombre)+'" maxlength="60" style="margin-bottom:16px">'
   +'<div style="font-size:12px;font-weight:600;color:var(--pw-text-soft);margin-bottom:8px">Quiénes lo ven (tú siempre estás):</div>'
   +'<div class="mc-mems" style="margin-bottom:20px">'+opts+'</div>'
-  +'<div style="display:flex;gap:8px;margin-top:auto"><button class="cp-btn cp-btn-ghost" onclick="_mcRenderConv()">Cancelar</button><button class="cp-btn cp-btn-primary" id="mc-grp-edit-btn" onclick="_mcGuardarEditGrupo('+i+')">Guardar cambios</button></div>'
+  +'<div style="display:flex;gap:8px;margin-top:auto"><button class="cp-btn cp-btn-ghost" onclick="_mcRenderConv()">Cancelar</button><button class="cp-btn cp-btn-primary" id="mc-grp-edit-btn" data-canal-id="'+canalId+'" onclick="_mcGuardarEditGrupoPorId(this.dataset.canalId)">Guardar cambios</button></div>'
   +'</div>';
  var n=document.getElementById('mc-grp-nombre'); if(n) n.focus();
 }
+function _mcGuardarEditGrupoPorId(canalId){
+ var c=(_mcChat.canales||[]).find(function(x){return String(x.id)===String(canalId);});
+ if(!c||!c.id)return;
+ _mcGuardarEditGrupoInternal(c);
+}
 function _mcGuardarEditGrupo(i){
  var c=(_mcChat.canales||[])[i]; if(!c||!c.id)return;
+ _mcGuardarEditGrupoInternal(c);
+}
+function _mcGuardarEditGrupoInternal(c){
  var n=document.getElementById('mc-grp-nombre'); var nombre=(n&&n.value||'').trim(); if(!nombre){ __toast('Ponele un nombre al grupo'); return; }
  var miembros=[]; document.querySelectorAll('.mc-mem input:checked').forEach(function(cb){ miembros.push(cb.value); });
  if(!MC_REAL){ c.nombre=nombre; c.miembros=miembros; __toast('Grupo actualizado ✓ (demo)'); _mcLoadCanales(function(){ if(_mcIsMobile()){ _mcRenderList(); } else { _mcRenderList(); _mcRenderConv(); } }); return; }
@@ -5349,10 +5379,20 @@ function _mcGuardarEditGrupo(i){
   }).catch(function(){ __toast('Error de conexión'); if(btn){ btn.disabled=false; btn.textContent='Guardar cambios'; } });
 }
 
+// ── Eliminar grupo por ID ──
+function _mcEliminarGrupoPorId(canalId){
+ var c=(_mcChat.canales||[]).find(function(x){return String(x.id)===String(canalId);});
+ if(!c||c.general||!c.id)return;
+ if(!confirm('¿Eliminar grupo "'+_mcEsc(c.nombre)+'"? No se borra el historial de mensajes.')) return;
+ _mcEliminarGrupoInternal(c);
+}
 // ── Eliminar grupo ──
 function _mcEliminarGrupo(i){
  var c=(_mcChat.canales||[])[i]; if(!c||c.general||!c.id)return;
- if(!confirm('¿Eliminar grupo "'+c.nombre+'"? No se borra el historial de mensajes.')) return;
+ if(!confirm('¿Eliminar grupo "'+_mcEsc(c.nombre)+'"? No se borra el historial de mensajes.')) return;
+ _mcEliminarGrupoInternal(c);
+}
+function _mcEliminarGrupoInternal(c){
  if(!MC_REAL){ _MC_GRUPOS_DEMO=_MC_GRUPOS_DEMO.filter(function(g){ return g.id!==c.id; }); __toast('Grupo eliminado ✓ (demo)'); _mcLoadCanales(function(){ _mcChat.cur=null; _mcRenderList(); _mcRenderConv(); }); return; }
  _hdr({'Content-Type':'application/json'}).then(function(h){
   var payload={action:'group_delete',org_id:MC_ORG.id,canal_id:c.id};
@@ -5405,7 +5445,13 @@ function canAccess(module){
 function _mcPermDefault(c,key){ return (c&&c.permisos&&typeof c.permisos[key]==='boolean')?c.permisos[key]:(c&&c.tipo!=='colaborador'); }
 function _mcPermRow(c,key,label){
   var on=_mcPermDefault(c,key);
-  return '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;padding:2px 0"><input type="checkbox" '+(on?'checked':'')+' onchange="_setCoachPerm(\''+c.id+'\',\''+key+'\',this.checked)" style="width:16px;height:16px;accent-color:var(--pw-bosque);cursor:pointer">'+_mcEsc(label)+'</label>';
+  var coachId=_mcEsc(c.id||'');
+  var keyEsc=_mcEsc(key||'');
+  return '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;padding:2px 0"><input type="checkbox" '+(on?'checked':'')+' data-coach-id="'+coachId+'" data-perm-key="'+keyEsc+'" onchange="_setCoachPermData(this.dataset.coachId,this.dataset.permKey,this.checked)" style="width:16px;height:16px;accent-color:var(--pw-bosque);cursor:pointer">'+_mcEsc(label)+'</label>';
+}
+// Guardar un permiso via data attributes (XSS-safe)
+function _setCoachPermData(id,key,val){
+  _setCoachPerm(id,key,val);
 }
 // Guardar un permiso (owner-gated, persiste en configuracion.permisos vía
 // editar-coach-red). Optimista; revierte si falla.
@@ -6366,7 +6412,7 @@ function _cfgMarca(){
    var contrast=_contrastLevel('#fff',val);
    var contrastIcon=contrast==='✓'?'🟢':'🟡';
    var contrastText=contrast==='✓'?'Buen contraste':'Contraste bajo';
-   return '<div class="cp-form-row" style="text-align:center;cursor:pointer" onclick="_openColorModal(\''+id+'\',\''+val.replace(/'/g,'\\\'')+'\')">'
+   return '<div class="cp-form-row" style="text-align:center;cursor:pointer" data-id="'+_mcEsc(id)+'" data-val="'+_mcEsc(val)+'" onclick="_openColorModalData(this.dataset.id,this.dataset.val)">'
     +'<div style="position:relative;width:70px;height:70px;margin:0 auto">'
       +'<div style="width:100%;height:100%;background:'+val+';border:2px solid var(--pw-border);border-radius:12px;transition:transform .15s" onmouseover="this.style.transform=\'scale(1.05)\'" onmouseout="this.style.transform=\'scale(1)\'"></div>'
       +'<div style="position:absolute;top:-8px;right:-8px;font-size:16px;title=\''+contrastText+'\'" title="'+contrastText+'">'+contrastIcon+'</div>'
@@ -6417,12 +6463,12 @@ function _cfgMarca(){
       +'<div><div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--pw-text-soft);margin-bottom:12px;letter-spacing:.5px">Paleta de marca</div>'
         +'<div style="background:linear-gradient(135deg,#fafaf9,#f5f3f0);border:1px solid var(--pw-border);border-radius:12px;padding:16px">'
           +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'
-            +'<div style="cursor:pointer;transition:transform .15s" onclick="_openColorModal(\'cfb-color\',\''+cur1.replace(/'/g,'\\\'')+'\')" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">'
+            +'<div style="cursor:pointer;transition:transform .15s" data-id="cfb-color" data-val="'+_mcEsc(cur1)+'" onclick="_openColorModalData(this.dataset.id,this.dataset.val)" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">'
               +'<div style="width:100%;height:60px;background:'+cur1+';border-radius:8px;margin-bottom:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)"></div>'
               +'<div style="font-weight:600;font-size:12px;color:var(--pw-carbon)">Primario</div>'
               +'<div style="font-size:10px;color:var(--pw-text-soft);font-family:monospace;margin-top:2px">'+cur1+'</div>'
             +'</div>'
-            +'<div style="cursor:pointer;transition:transform .15s" onclick="_openColorModal(\'cfb-color2\',\''+cur2.replace(/'/g,'\\\'')+'\')" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">'
+            +'<div style="cursor:pointer;transition:transform .15s" data-id="cfb-color2" data-val="'+_mcEsc(cur2)+'" onclick="_openColorModalData(this.dataset.id,this.dataset.val)" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">'
               +'<div style="width:100%;height:60px;background:'+cur2+';border-radius:8px;margin-bottom:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)"></div>'
               +'<div style="font-weight:600;font-size:12px;color:var(--pw-carbon)">Secundario</div>'
               +'<div style="font-size:10px;color:var(--pw-text-soft);font-family:monospace;margin-top:2px">'+cur2+'</div>'
@@ -6688,6 +6734,9 @@ function _updateBrandSaveStatus(state){
     status.textContent='⟳ Sin guardar';
     status.style.color='#FF9800';
   }
+}
+function _openColorModalData(id,val){
+  _openColorModal(id,val);
 }
 function _openColorModal(id,currentValue){
   if(!id)return;
