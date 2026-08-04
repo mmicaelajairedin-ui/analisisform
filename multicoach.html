@@ -4762,26 +4762,6 @@ function _mcOnIncoming(){ _mcDing(); var dot=document.getElementById('mc-chat-do
 
 // ── Polling de mensajes: mientras hay conversación abierta, refresca cada 5s ──
 var _mcLastPollTime={};
-function _mcStartPoll(){
- _mcStopPoll();
- if(!MC_REAL)return;
- _mcChat.poll=setInterval(function(){
-  if(!_mcChat.open||!_mcChat.cur){ _mcStopPoll(); return; }
-  var c=_mcChat.cur;
-  var before=(_mcChat.msgs||[]).length;
-  _mcLoadThread(function(){
-   var now=(_mcChat.msgs||[]);
-   if(now.length!==before){
-    var last=now[now.length-1];
-    var lastMine=last&&MC_OWNER&&String(last.autor_id)===String(MC_OWNER.id);
-    if(now.length>before && last && !lastMine){ try{ _mcDing(); var dot=document.getElementById('mc-chat-dot'); if(dot)_mcPulse(dot); }catch(e){} }
-    _mcRenderConv();
-   }
-   _mcMarkSeen(c);
-  });
- },5000);
-}
-
 // ── Configuración de videollamada (PWCall) ──
 function _mcPWCallSetup(){
  if(!window.PWCall || !MC_OWNER) return;
@@ -4858,10 +4838,16 @@ function _mcSyncHd(){
 function _mcLoadCanales(cb){
  if(!MC_REAL){ var g=(_MC_CANAL_DEMO[_MC_CANAL_DEMO.length-1]||{}).created_at; _mcChat.canales=[{id:null,nombre:'General',general:true,ultimo_at:g}].concat(_MC_GRUPOS_DEMO); _mcChat.dms=[]; cb&&cb(); return; }
  if(!MC_ORG||!MC_ORG.id){ _mcChat.canales=[{id:null,nombre:'General',general:true}]; _mcChat.dms=[]; cb&&cb(); return; }
- _hdr({'Content-Type':'application/json'}).then(function(h){ return fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'groups',org_id:MC_ORG.id})}); })
-  .then(function(r){ return r.ok?r.json():null; }).then(function(d){
+ _hdr({'Content-Type':'application/json'}).then(function(h){
+  return Promise.all([
+    fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'groups',org_id:MC_ORG.id})}).then(function(r){ return r.ok?r.json():null; }),
+    fetch(SB+'/functions/v1/canal-red',{method:'POST',headers:h,body:JSON.stringify({action:'dm_list',org_id:MC_ORG.id})}).then(function(r){ return r.ok?r.json():null; })
+  ]);
+ })
+  .then(function(results){
+   var d=results[0], dm=results[1];
    _mcChat.canales=(d&&d.ok&&d.canales)?d.canales:[{id:null,nombre:'General',general:true}];
-   _mcChat.dms=(d&&d.ok&&d.dms)?d.dms:[];
+   _mcChat.dms=(dm&&dm.ok&&dm.dms)?dm.dms:[];
    _mcUpdHeaderDot();
    cb&&cb();
   })
@@ -4989,11 +4975,10 @@ function _mcSend(){
 function _mcStartPoll(){ _mcStopPoll(); if(!MC_REAL)return; _mcChat.poll=setInterval(function(){
   if(!_mcChat.open||_mcChat.view!=='conv'||(!_mcChat.cur&&!_mcChat.is_dm)){ _mcStopPoll(); return; }
   var before=(_mcChat.msgs||[]).length;
-  var loadFn=_mcChat.is_dm?function(cb){ _mcLoadDM(_mcChat.dm_target,cb); }:_mcLoadThread;
+  var loadFn=_mcChat.is_dm?function(cb){ _mcLoadDM(_mcChat.dm_target.with_id,cb); }:_mcLoadThread;
   loadFn(function(){ if(_mcChat.view==='conv'){
     var now=(_mcChat.msgs||[]);
     if(now.length!==before){
-      // Sonó llegó algo nuevo: suena solo si el último NO es mío (no me auto-aviso).
       var last=now[now.length-1];
       var lastMine=last&&MC_OWNER&&String(last.autor_id)===String(MC_OWNER.id);
       if(now.length>before && last && !lastMine){ try{ _mcDing(); }catch(e){} }
