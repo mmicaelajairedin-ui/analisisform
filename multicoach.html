@@ -7083,7 +7083,7 @@ function _renderPersonalAgendaHeader(){
     +'</div></div>';
 }
 
-// Agenda Personal: mostrar sesiones reales, disponibilidad y bloqueos del coach
+// Agenda Personal: reutiliza la misma lógica y datos de panel-v2
 function _renderPersonalAgendaSimple(){
   var v=document.getElementById('vscroll');
   if(!v || !MC_AGENDA_COACH_DATA) return;
@@ -7091,42 +7091,61 @@ function _renderPersonalAgendaSimple(){
   var c=MC_AGENDA_COACH_DATA;
   var personalHeader=_renderPersonalAgendaHeader();
 
-  // Próximas sesiones del coach (de MC_CITAS filtradas por coach_id)
-  var sesiones=(MC_CITAS||[]).filter(function(cita){
-    if(!cita || cita.estado==='cancelada') return false;
-    return (cita.coach_id===c.id || cita.coach===c.id);
-  }).sort(function(a,b){
-    return (new Date(a.inicio).getTime() - new Date(b.inicio).getTime());
-  }).slice(0,5); // Próximas 5
+  // Cargar sesiones del coach desde Supabase (misma fuente que panel-v2)
+  if(MC_REAL && c.id){
+    _hdr({'Content-Type':'application/json'}).then(function(h){
+      // Obtener clientes del coach + sus sesiones_registro
+      return fetch(SB+'/rest/v1/candidatos?coach_id=eq.'+encodeURIComponent(c.id)+'&select=id,nombre,sesiones_registro',
+        {headers:h}).then(function(r){return r.ok?r.json():null;});
+    }).then(function(clientes){
+      if(!clientes) return;
+      var allSes=[];
+      clientes.forEach(function(cli){
+        try{
+          var ses=JSON.parse(cli.sesiones_registro||'[]')||[];
+          ses.forEach(function(s){
+            s.cliente=cli.nombre;
+            allSes.push(s);
+          });
+        }catch(e){}
+      });
+      // Filtrar próximas, ordenar por fecha
+      var proximas=allSes.filter(function(s){
+        return s.fecha&&new Date(s.fecha)>new Date();
+      }).sort(function(a,b){
+        return new Date(a.fecha).getTime()-new Date(b.fecha).getTime();
+      }).slice(0,5);
+      _renderPersonalAgendaContent(proximas);
+    }).catch(function(){
+      _renderPersonalAgendaContent([]);
+    });
+  } else {
+    _renderPersonalAgendaContent([]);
+  }
 
-  var sesionesHtml=sesiones.length ? sesiones.map(function(s){
-    var d=new Date(s.inicio);
-    var fmt=d.toLocaleDateString('es')+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
-    return '<div style="padding:12px;border-bottom:1px solid var(--pw-border);display:flex;justify-content:space-between;align-items:center">'
-      +'<div><div style="font-weight:600">'+_mcEsc(s.nombre||'Cliente')+'</div><small style="color:var(--pw-text-soft)">'+_mcEsc(s.tipo||'Sesión')+'</small></div>'
-      +'<div style="font-size:12px;color:var(--pw-text-muted)">'+fmt+'</div>'
+  // Renderizar contenido (sesiones + disponibilidad)
+  function _renderPersonalAgendaContent(sesiones){
+    var sesionesHtml=sesiones.length ? sesiones.map(function(s){
+      var d=new Date(s.fecha||s.inicio);
+      var fmt=d.toLocaleDateString('es')+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+      return '<div style="padding:12px;border-bottom:1px solid var(--pw-border);display:flex;justify-content:space-between;align-items:center">'
+        +'<div><div style="font-weight:600">'+_mcEsc(s.cliente||'Cliente')+'</div><small style="color:var(--pw-text-soft)">'+_mcEsc(s.tipo||'Sesión')+'</small></div>'
+        +'<div style="font-size:12px;color:var(--pw-text-muted)">'+fmt+'</div>'
+        +'</div>';
+    }).join('')
+    :'<div style="padding:24px;text-align:center;color:var(--pw-text-soft)">Sin sesiones próximas</div>';
+
+    v.innerHTML=personalHeader
+      +'<div style="background:white;border-radius:8px;margin:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)">'
+      +'<div style="padding:12px;border-bottom:1px solid var(--pw-border);display:flex;align-items:center;justify-content:space-between">'
+        +'<div style="font-weight:600;font-size:14px">Próximas sesiones</div>'
+        +'<button class="cp-btn cp-btn-outline" onclick="_agendaBackToTeam()" style="padding:6px 12px;font-size:11px;height:auto">'
+          +PWI.svg('arrowLeft',{sm:true})+' Equipo'
+        +'</button>'
+      +'</div>'
+      +sesionesHtml
       +'</div>';
-  }).join('')
-  :'<div style="padding:24px;text-align:center;color:var(--pw-text-soft)">Sin sesiones próximas</div>';
-
-  // Disponibilidad (se configura en MC_ORG.marca.disponibilidad o en el coach)
-  var disp=(MC_ORG&&MC_ORG.marca&&MC_ORG.marca.disponibilidad)||{};
-  var dispHtml=disp.days && disp.days.length ?
-    '<div style="padding:12px;border-top:1px solid var(--pw-border)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--pw-text-muted);margin-bottom:8px">Disponibilidad</div>'
-    +'<div style="font-size:13px">Lunes a Viernes de '+disp.from+' a '+disp.to+'</div></div>'
-    :'';
-
-  v.innerHTML=personalHeader
-    +'<div style="background:white;border-radius:8px;margin:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)">'
-    +'<div style="padding:12px;border-bottom:1px solid var(--pw-border);display:flex;align-items:center;justify-content:space-between">'
-      +'<div style="font-weight:600;font-size:14px">Próximas sesiones</div>'
-      +'<button class="cp-btn cp-btn-outline" onclick="_agendaBackToTeam()" style="padding:6px 12px;font-size:11px;height:auto">'
-        +PWI.svg('arrowLeft',{sm:true})+' Equipo'
-      +'</button>'
-    +'</div>'
-    +sesionesHtml
-    +dispHtml
-    +'</div>';
+  }
 }
 
 function renderAgenda(){
