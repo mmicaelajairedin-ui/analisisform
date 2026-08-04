@@ -86,6 +86,18 @@
 - ✅ **Implementación:** Documentado en estructura JSONB. Código no cambia.
 - ✅ **Riesgo:** NINGUNO (campos legítimos y usados correctamente)
 
+### Ciclo 3: Normalización de emails (funciona correctamente)
+- ✅ **Investigado:** Verificar si emails se normalizan consistentemente
+- ✅ **Hallazgo:** Email normalization IS implemented correctly. Todos los save points normalizan a lowercase + trim:
+  - `panel-v2.html` línea 12095: Crear cliente → `em=_val("nc-email").trim().toLowerCase()`
+  - `panel-v2.html` línea 12068: Deactivar/reactivar → `cliEmail=(cliRow && cliRow.email) ? cliRow.email.toLowerCase().trim() : ""`
+  - `panel-v2.html` línea 12205: Reset password → `pem=(""+ppc.email).toLowerCase().trim()`
+  - `panel-v2.html` línea 10368: Grant access → `em=(""+(email||"")).toLowerCase().trim()`
+  - `formulario.html` línea 818: Form save → `.toLowerCase().trim()`
+  - Todos los comparisons usan `.toLowerCase().trim()` pattern
+- ✅ **Implementación:** Código ya normaliza correctamente. Sin cambios necesarios.
+- ✅ **Riesgo:** NINGUNO (implementación correcta y verificada)
+
 ---
 
 ## Reglas para nuevas funcionalidades
