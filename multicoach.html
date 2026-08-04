@@ -3929,15 +3929,18 @@ function renderClientes(){
  var v=document.getElementById('vscroll');
  if(!v){ return; }
  if(!DB||!DB.clientes){ if(v)v.innerHTML='<div style="padding:20px;text-align:center;color:var(--pw-text-soft)">Cargando clientes…</div>'; return; }
- var actCount=DB.clientes.filter(function(c){return c.est==='activo';}).length;
+ var filteredBase=_MC_COACH_FILTER?DB.clientes.filter(function(c){return c.coach===_MC_COACH_FILTER;}):DB.clientes;
+ var actCount=filteredBase.filter(function(c){return c.est==='activo';}).length;
  var chips=[['todos','Todos'],['activo','Activos'],['riesgo','Sin actividad'],['inactivo','Inactivos']];
- v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+actCount+' activos</p></div><button class="crear" onclick="__nuevoCliente()">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button></header>'
+ var coachName=_MC_COACH_FILTER?(_coach(_MC_COACH_FILTER)||{n:'Coach'}).n:'';
+ var titleHtml=_MC_COACH_FILTER?('<p class="hi-s">Clientes de '+_mcEsc(coachName)+'</p><button class="crear" onclick="_MC_COACH_FILTER=null;renderClientes()">'+PWI.svg('x',{sm:true})+' Ver todos</button>'):('<p class="hi-s">'+filteredBase.length+' en total · '+actCount+' activos</p><button class="crear" onclick="__nuevoCliente()">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button>');
+ v.innerHTML='<header class="vhead"><div><h1>Clientes</h1>'+titleHtml+'</div></header>'
   +'<div class="searchbar"><input id="kq" class="inp" placeholder="Buscar por nombre o coach…" oninput="_ks=this.value;_fillClientes()" value="'+_ks+'"></div>'
   +'<div class="cp-filters" id="kchips">'
-    +'<button class="cp-chip'+(_kf==='todos'?' is-on':'')+'" onclick="_setKf(\'todos\')">Todos<span class="cp-chip-count">'+DB.clientes.length+'</span></button>'
+    +'<button class="cp-chip'+(_kf==='todos'?' is-on':'')+'" onclick="_setKf(\'todos\')">Todos<span class="cp-chip-count">'+filteredBase.length+'</span></button>'
     +'<button class="cp-chip'+(_kf==='activo'?' is-on':'')+'" onclick="_setKf(\'activo\')">Activos<span class="cp-chip-count">'+actCount+'</span></button>'
-    +'<button class="cp-chip'+(_kf==='riesgo'?' is-on':'')+'" onclick="_setKf(\'riesgo\')">Sin actividad<span class="cp-chip-count">'+DB.clientes.filter(function(c){return c.est==='activo'&&c.lastState!=='fresh';}).length+'</span></button>'
-    +'<button class="cp-chip'+(_kf==='inactivo'?' is-on':'')+'" onclick="_setKf(\'inactivo\')">Inactivos<span class="cp-chip-count">'+DB.clientes.filter(function(c){return c.est==='inactivo';}).length+'</span></button>'
+    +'<button class="cp-chip'+(_kf==='riesgo'?' is-on':'')+'" onclick="_setKf(\'riesgo\')">Sin actividad<span class="cp-chip-count">'+filteredBase.filter(function(c){return c.est==='activo'&&c.lastState!=='fresh';}).length+'</span></button>'
+    +'<button class="cp-chip'+(_kf==='inactivo'?' is-on':'')+'" onclick="_setKf(\'inactivo\')">Inactivos<span class="cp-chip-count">'+filteredBase.filter(function(c){return c.est==='inactivo';}).length+'</span></button>'
   +'</div>'
   +'<div id="klist"></div>'
   +'</div>';
@@ -3948,7 +3951,6 @@ function _fillClientes(){
  var box=document.getElementById('klist');
  if(!box) return;
 
- // Panic: si DB.clientes no existe, inicializar
  if(!DB||!DB.clientes){
   if(!DB) DB={};
   DB.clientes=[];
@@ -3956,6 +3958,7 @@ function _fillClientes(){
 
  var q=_ks.toLowerCase();
  var base=DB.clientes.filter(function(k){
+   if(_MC_COACH_FILTER&&k.coach!==_MC_COACH_FILTER)return false;
    if(_kf==='todos')return true;
    if(_kf==='activo'&&k.est!=='activo')return false;
    if(_kf==='inactivo'&&k.est!=='activo')return false;
@@ -4389,6 +4392,12 @@ function _equipoVerAgenda(){
   _equipoCloseDrawer();
   __go('agenda');
 }
+function _equipoVerClientes(){
+  if(!_equipoSelected) return;
+  _equipoCloseDrawer();
+  _MC_COACH_FILTER=_equipoSelected.id;
+  __go('clientes');
+}
 
 // GESTIONAR DISPONIBILIDAD: Acceso rápido desde drawer
 function _equipoManageAvailability(){
@@ -4558,14 +4567,6 @@ function _equipoDrawerHtml(){
   // Capacidades (Sprint 5.1)
   var capacidadesHtml=renderCapacidadesUI(item.id);
 
-  // Agenda preview (placeholder)
-  var agendaHtml='<div class="drawer-section"><div class="drawer-section-title">Próximas sesiones</div>'
-    +'<div style="font-size:12px;color:var(--db-text-muted);">'
-    +'<div style="padding:8px 0;border-bottom:1px solid rgba(21,32,24,.05);"><strong>Mañana 10:00</strong> — Preparación CV</div>'
-    +'<div style="padding:8px 0;border-bottom:1px solid rgba(21,32,24,.05);"><strong>Jueves 14:30</strong> — Mock interview</div>'
-    +'<div style="padding:8px 0;"><strong>Viernes 16:00</strong> — Follow-up</div>'
-    +'</div><div style="padding-top:8px;"><a href="#" style="font-size:12px;color:var(--pw-bosque);text-decoration:none;font-weight:500;">Ver agenda completa →</a></div>'
-    +'</div>';
 
   // ━━ HEADER: Foto + Info ━━
   var headerHtml='<div style="padding:20px 16px;background:linear-gradient(135deg,rgba(31,64,48,.04) 0%,rgba(31,64,48,.02) 100%);border-bottom:1px solid var(--pw-border);">'
@@ -4586,7 +4587,7 @@ function _equipoDrawerHtml(){
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
     +((item.tipo==='coach'||item.tipo==='owner')?'<button class="cp-btn cp-btn-outline" onclick="_equipoVerAgenda()" style="padding:14px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;height:auto;">'+PWI.svg('calendar',{sm:true})+'<span style="font-size:11px;">Agenda</span></button>':'')
     +'<button class="cp-btn cp-btn-outline" onclick="_equipoEnviarMensaje()" style="padding:14px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;height:auto;">'+PWI.svg('chat',{sm:true})+'<span style="font-size:11px;">Chat</span></button>'
-    +'<button class="cp-btn cp-btn-outline" onclick="alert(\'Clientes - Sprint 4.3.7\')" style="padding:14px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;height:auto;">'+PWI.svg('users',{sm:true})+'<span style="font-size:11px;">Clientes</span></button>'
+    +'<button class="cp-btn cp-btn-outline" onclick="_equipoVerClientes()" style="padding:14px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;height:auto;">'+PWI.svg('users',{sm:true})+'<span style="font-size:11px;">Clientes</span></button>'
     +'<button class="cp-btn cp-btn-outline" onclick="_equipoEditarPerfil()" style="padding:14px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px;height:auto;">'+PWI.svg('edit',{sm:true})+'<span style="font-size:11px;">Editar</span></button>'
     +'</div></div>';
 
@@ -4771,7 +4772,7 @@ function _teamDrop(e,coachId){
   '<p style="font-size:13.5px;color:var(--soft);margin:0;line-height:1.55">¿Mover a <b>'+_mcEsc(cli.n)+'</b>'+(prev?(' de <b>'+_mcEsc(prev.n)+'</b>'):'')+' a <b>'+_mcEsc(co.n)+'</b>?<br><span style="color:var(--muted)">El cliente va a ver a '+_mcEsc(co.n.split(" ")[0])+' como su coach.</span></p>',
   'Sí, mover', function(){ _reassign(cliId, coachId, function(ok){ __mclose(); if(ok && _sec==='coaches') renderEquipo(); }); });
 }
-var _curCoach=null,_coachTab='perfil',_MC_COACH_DATA={};
+var _curCoach=null,_coachTab='perfil',_MC_COACH_DATA={},_MC_COACH_FILTER=null;
 
 // FASE 1: Integración con coach-api-gateway
 // Llama los 5 endpoints en paralelo: metrics, alerts, benchmarks, trends, clients
