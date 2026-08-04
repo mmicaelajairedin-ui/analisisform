@@ -3548,7 +3548,6 @@ function mcLoadReal(owner){
   // la RLS de candidatos NO deja que el dueño lea a los clientes de sus coaches,
   // así que la lectura directa devolvería la lista vacía. mi-red la trae completa.
   function _apply(org,coaches,clientes,ownerRow,citas){
-    console.log('[_apply] org:', (org&&org.id)||'null', 'coaches:', (coaches||[]).length, 'clientes:', (clientes||[]).length);
     MC_ORG=org||null;
     MC_CITAS=(citas||[]).filter(function(c){return c&&c.inicio;});
     // White-label persistido: aplicar la marca guardada de la red (color, logo,
@@ -3583,10 +3582,8 @@ function mcLoadReal(owner){
     // El dueño también es coach asignable → primero en la lista, marcado "Tú".
     var ow=ownerRow||owner;
     if(ow&&ow.id){ var oc=mcMapCoach(ow,cnt[ow.id]); if(oc&&oc.id){ oc.esOwner=true; oc.esp=oc.esp||'Dueño'; lst.unshift(oc); } }
-    console.log('[_apply] PRE-MAP - raw clientes:', (clientes||[]).length, 'NICHOS:', NICHOS, 'clientes data:', clientes);
     var mapped=(clientes||[]).map(mcMapCli);
-    console.log('[_apply] AFTER MAP - mapped array:', mapped.length, 'first 3:', mapped.slice(0,3));
-    var mappedClientes=mapped.filter(function(c){console.log('[_apply filter] testing:', c, 'has id?', c&&c.id); return c&&c.id;});
+    var mappedClientes=mapped.filter(function(c){ return c&&c.id; });
     DB={ coaches:lst, clientes:mappedClientes };
     // Un color estable por coach real para la agenda (por posición en la paleta).
     try{ MC_COCOL={}; DB.coaches.forEach(function(c,i){ MC_COCOL[c.id]=_MCPAL[i%_MCPAL.length]; }); }catch(e){}
@@ -3608,26 +3605,20 @@ function mcLoadReal(owner){
     var orgId=_selectedOrg||owner.org_id||(owner.configuracion&&owner.configuracion.org_id)||'';
     var email=(owner.email||'').toLowerCase();
     var orgQ = orgId ? ('id=eq.'+encodeURIComponent(orgId)) : ('owner_email=eq.'+encodeURIComponent(email));
-    console.log('[_loadOrgData] orgId:', orgId, 'email:', email, 'orgQ:', orgQ);
     return mcGet('organizaciones', orgQ+'&select=*&limit=1').then(function(orgs){
       var org=(orgs&&orgs[0])||null; var oid=org?org.id:null;
-      console.log('[_loadOrgData] org found:', oid, org);
       if(!oid) { _apply(org||null,[],[],owner,[]); return; }
-      console.log('[_loadOrgData] fetching coaches and clientes for org:', oid);
       return Promise.all([
         mcGet('usuarios','org_id=eq.'+encodeURIComponent(oid)+'&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion,org_id'),
         mcGet('candidatos','org_id=eq.'+encodeURIComponent(oid)+'&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc')
       ]).then(function(res){
         var coaches=res[0]||[]; var clientes=res[1]||[];
-        console.log('[_loadOrgData] loaded coaches:', coaches.length, 'clientes:', clientes.length);
         _apply(org, coaches, clientes, owner, []);
       }).catch(function(err){
-        console.error('[mcLoadReal] fallback error:', err);
         _apply(org,[],[],owner,[]);
         __toast('Error cargando coaches/clientes. Recarga la página.');
       });
     }).catch(function(err){
-      console.error('[mcLoadReal] org lookup error:', err);
       _apply(null,[],[],null,[]);
       __toast('No pudimos cargar tu red. Recarga la página o vuelve a iniciar sesión.');
     });
