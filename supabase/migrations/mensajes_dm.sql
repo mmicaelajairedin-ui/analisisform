@@ -30,14 +30,15 @@ CREATE POLICY "DM: escribir propios" ON public.mensajes_dm
 
 -- Vista de DMs abiertos: últimos mensajes + contador
 CREATE OR REPLACE VIEW public.v_coach_dms AS
-SELECT DISTINCT ON (CASE WHEN m.de_id > m.para_id THEN concat(m.para_id, '-', m.de_id) ELSE concat(m.de_id, '-', m.para_id) END)
+SELECT
   m.org_id,
   CASE WHEN m.de_id = auth.uid() THEN m.para_id ELSE m.de_id END as with_id,
   MAX(m.creado_at) as ultimo_at,
   COUNT(*) FILTER (WHERE m.leido_at IS NULL AND m.para_id = auth.uid()) as sin_leer
 FROM public.mensajes_dm m
+WHERE m.de_id = auth.uid() OR m.para_id = auth.uid()
 GROUP BY m.org_id, with_id
-ORDER BY with_id, MAX(m.creado_at) DESC;
+ORDER BY MAX(m.creado_at) DESC;
 
 -- Function para listar DMs de un coach (llamada por el edge function)
 CREATE OR REPLACE FUNCTION public.get_coach_dms(p_coach_id UUID, p_org_id UUID)
