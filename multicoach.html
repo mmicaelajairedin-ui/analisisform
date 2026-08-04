@@ -2001,7 +2001,7 @@ var DB={
     {id:'demo-colab-3',nombre:'María Ruiz',email:'maria.ruiz@empresa.com',telefono:'+34666456789',foto_url:'',departamento:'Administración',cargo:'Assistant',estado:'vacaciones',_ts:Date.now()}
   ]
 };
-var MC_REAL=false,MC_OWNER=null,MC_ORG=null,MC_N='fitness',MC_PLAN='basic',MC_CITAS=[],MC_GCAL=[],MC_RESOURCES=[],MC_AGENDA_COACH_ID=null,MC_AGENDA_COACH_NAME=null,MC_AGENDA_COACH_DATA=null;
+var MC_REAL=false,MC_OWNER=null,MC_ORG=null,MC_N='fitness',MC_PLAN='basic',MC_CITAS=[],MC_GCAL=[],MC_RESOURCES=[],MC_AGENDA_COACH_ID=null,MC_AGENDA_COACH_NAME=null,MC_AGENDA_COACH_DATA=null,MC_ALL_ORGS=[];
 // ME: Usuario logueado (inicializado desde localStorage o pw-auth.js)
 var ME=null;
 try{ ME=JSON.parse(localStorage.getItem('mj_user')||'null'); }catch(e){ ME=null; }
@@ -3385,10 +3385,15 @@ function mcLoadReal(owner){
     var orgId=_selectedOrg||owner.org_id||(owner.configuracion&&owner.configuracion.org_id)||'';
     var email=(owner.email||'').toLowerCase();
     var orgQ = orgId ? ('id=eq.'+encodeURIComponent(orgId)) : ('owner_email=eq.'+encodeURIComponent(email));
+    // Cargar TODAS las organizaciones del dueño (para poder mover coaches entre redes)
+    mcGet('organizaciones','owner_email=eq.'+encodeURIComponent(email)+'&select=id,nombre,plan,nicho').then(function(allOrgs){
+      MC_ALL_ORGS=allOrgs||[];
+    }).catch(function(){});
+
     return mcGet('organizaciones', orgQ+'&select=*&limit=1').then(function(orgs){
       var org=(orgs&&orgs[0])||null; var oid=org?org.id:null;
       return Promise.all([
-        oid?mcGet('usuarios','org_id=eq.'+encodeURIComponent(oid)+'&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion'):Promise.resolve([]),
+        oid?mcGet('usuarios','org_id=eq.'+encodeURIComponent(oid)+'&rol=eq.coach&select=id,nombre,email,activo,foto_url,configuracion,org_id'):Promise.resolve([]),
         oid?mcGet('candidatos','org_id=eq.'+encodeURIComponent(oid)+'&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc'):Promise.resolve([])
       ]).then(function(res){ _apply(org,res[0],res[1]); });
     }).catch(function(){
@@ -4207,6 +4212,49 @@ function _equipoEnviarMensaje(){
   __toast('ℹ️ Sistema de mensajes — disponible en Sprint 4.3.7');
 }
 
+// MOVER COACH ENTRE REDES
+function _equipoMoverAOtraRed(){
+  if(!_equipoSelected || _equipoSelected.tipo!=='coach') {
+    __toast('Solo coaches pueden ser movidos');
+    return;
+  }
+  if(!MC_ALL_ORGS || MC_ALL_ORGS.length <= 1) {
+    __toast('No hay otras redes disponibles');
+    return;
+  }
+
+  var otherOrgs=MC_ALL_ORGS.filter(function(o){ return o.id !== MC_ORG.id; });
+  if(!otherOrgs.length) {
+    __toast('No hay otras redes disponibles');
+    return;
+  }
+
+  var html='<select id="target-org" style="width:100%;padding:10px;border:1px solid var(--pw-border);border-radius:6px;margin-bottom:12px;font-family:Poppins,sans-serif;">'
+    +'<option value="">— Selecciona una red —</option>';
+  otherOrgs.forEach(function(o){
+    html+='<option value="'+_mcEsc(o.id)+'">'+_mcEsc(o.nombre)+'</option>';
+  });
+  html+='</select>';
+
+  __openModal('Mover Coach a Otra Red',
+    '<p style="margin:0 0 12px;font-size:13px;color:var(--carbon);">¿A cuál red quieres mover a <b>'+_mcEsc(_equipoSelected.nombre)+'</b>?</p>'+html,
+    'Mover', function(){
+      var targetOrgId=document.getElementById('target-org').value;
+      if(!targetOrgId) { __toast('Selecciona una red'); return; }
+      __toast('Moviendo coach...');
+      _sbw('PATCH','/rest/v1/usuarios?id=eq.'+_equipoSelected.id,{org_id:targetOrgId},function(ok){
+        if(ok){
+          _equipoSelected.org_id=targetOrgId;
+          __mclose();
+          __toast('✓ '+_equipoSelected.nombre+' movido a otra red');
+          _equipoRefreshAfterChange();
+        } else {
+          __toast('✗ Error al mover. Reintenta');
+        }
+      });
+    });
+}
+
 // REASIGNAR CLIENTES: Implementado en Sprint 6
 function _equipoReasignarClientes(){
   if(!_equipoSelected || _equipoSelected.tipo!=='coach') {
@@ -4346,6 +4394,7 @@ function _equipoDrawerHtml(){
     +'<div style="display:flex;flex-direction:column;gap:8px;">'
     +(item.tipo==='coach'?'<button class="cp-btn cp-btn-ghost" onclick="_equipoManageAvailability()" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('clock',{sm:true})+'<span>Disponibilidad</span></button>':'')
     +(item.tipo==='coach'?'<button class="cp-btn cp-btn-ghost" onclick="_equipoReasignarClientes()" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('shuffle',{sm:true})+'<span>Reasignar clientes</span></button>':'')
+    +(item.tipo==='coach'?'<button class="cp-btn cp-btn-ghost" onclick="_equipoMoverAOtraRed()" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('share2',{sm:true})+'<span>Mover a otra red</span></button>':'')
     +'<button class="cp-btn cp-btn-ghost" onclick="alert(\'Analytics - Sprint 5.4\')" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('barChart',{sm:true})+'<span>Analytics</span></button>'
     +'<button class="cp-btn cp-btn-ghost" onclick="alert(\'Configuración - Sprint 5.5\')" style="justify-content:flex-start;padding:10px 12px;border-radius:6px;font-size:12px;gap:10px;">'+PWI.svg('settings',{sm:true})+'<span>Configuración</span></button>'
     +'</div></div>';
