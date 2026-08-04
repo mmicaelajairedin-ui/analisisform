@@ -6540,74 +6540,99 @@ function cfgProfile(){
   }).join("");
   var liveOk = !!(slug && pubActive);
   // Burbujas guía DENTRO de Perfil: cada una sale sobre el campo que falta
-  // (foto → bio/título → calendario). Solo la primera pendiente.
-  var _ihas=function(x){ return !!((""+(x||"")).trim()); };
-  var _iFoto=_ihas(RCFG&&RCFG.foto_url)||_ihas(RPROF&&RPROF.foto_url);
-  var _iBio=_ihas(bio)||_ihas(tit);
-  var _iCall=_ihas(cu)||_ihas(ce);
-  var _iOff=false; try{ _iOff=localStorage.getItem("pw_guide_off")==="1"; }catch(e){}
-  var _iNext=_iOff?null:(!_iFoto?"foto":(!_iBio?"bio":(!_iCall?"cal":null)));
-  var ib=function(w,t){ return _iNext===w?"<div class='cp-iguide'>"+t+" "+PWI.svg('chevDown',{sm:true})+"</div>":""; };
-  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tu perfil<span class='dot'>.</span></h3>"+
-    (liveOk?"<a href='https://pathwaycareercoach.com/coach/"+esc(slug)+"' target='_blank' rel='noopener' style='font-size:12px;color:var(--pw-bosque);font-weight:600;display:inline-flex;align-items:center;gap:6px'>Ver mi página "+svg(IC.extLink,12)+"</a>":"")+"</div>"+
-    "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:18px'>"+
-      "<div class='cp-toggle' style='padding:4px 0'>"+
-        "<div class='cp-toggle-body'><div class='cp-toggle-title'>Activar mi perfil público</div>"+
-        "<div class='cp-toggle-desc'>"+(pubActive?"Tu página <strong>está visible</strong> en <code>pathwaycareercoach.com/coach/"+esc(slug||"tu-slug")+"</code>":"Desactiva para ocultarte del directorio")+"</div></div>"+
-        "<button class='cp-switch "+(pubActive?"is-on":"")+"' data-act='pub-toggle' aria-label='Activar perfil público'><span></span></button></div>"+
-      "<div style='display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px'>"+
-        "<div>"+ib("foto","Foto")+"<div class='cp-photo-pick' style='gap:10px'>"+avImg(COACH.photo,nm,"id='cfp-foto-prev' style='width:80px;height:80px'")+"<label class='cp-btn cp-btn-ghost' style='cursor:pointer;height:32px;font-size:12px'>Cambiar<input id='cfp-foto' type='file' accept='image/*' style='display:none'></label></div></div>"+
-        "<div>"+
-          "<div class='cp-form-row' style='margin-bottom:8px'><label class='cp-form-label' style='font-size:12px'>Tu nombre</label><input id='cfp-nombre' class='cp-form-input' value=\""+esc(nm)+"\" oninput='_updateProfileSlug()' style='font-size:13px'></div>"+
-          "<div class='cp-form-row'><label class='cp-form-label' style='font-size:12px'>Marca (opcional)</label><input id='cfp-practica' class='cp-form-input' value=\""+esc(_prac)+"\" placeholder='Ej. Axon' style='font-size:13px'></div>"+
+  // Cards con lectura + botón "Editar"
+  var _cfgCard=function(title,icon,content,key){
+    var lines=(content||"").split("\n"), displayLines=lines.slice(0,3).join("\n");
+    var hasMore=lines.length>3;
+    var expanded=state.profileExpanded===key;
+    return "<div style='border:1.5px solid var(--pw-border);border-radius:12px;padding:14px;margin-bottom:12px'>"+
+      "<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px'>"+
+        "<div style='display:flex;align-items:center;gap:8px'>"+
+          "<span style='font-size:16px'>"+icon+"</span>"+
+          "<div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+title+"</div>"+
         "</div>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='cfp-edit' data-key='"+key+"' style='height:28px;font-size:11px;padding:0 10px'>✏️ Editar</button>"+
       "</div>"+
-      "<div style='background:#f5f3f0;border:1px solid #e6ddd4;border-radius:10px;padding:12px;margin-bottom:16px'>"+
-        "<div style='font-size:12px;font-weight:600;color:var(--pw-carbon);margin-bottom:4px'>Tu perfil público:</div>"+
-        "<div style='font-size:12px;color:var(--pw-text-soft);word-break:break-all'>pathwaycareercoach.com/coach/<strong>"+esc(slug||"tu-slug")+"</strong></div>"+
-      "</div>"+
-      "<div style='background:linear-gradient(135deg,#F3EEDF,#EFE9DD);border:1px solid #E6DDC4;border-radius:10px;padding:10px 12px;margin-bottom:16px'>"+
-        "<div style='display:flex;gap:8px;align-items:flex-start'>"+
-          "<span style='font-size:16px;flex-shrink:0'>✨</span>"+
-          "<div style='flex:1;min-width:0'>"+
-            "<div style='font-size:12px;font-weight:600;color:var(--pw-carbon);margin-bottom:4px'>Autorrellenar con IA</div>"+
-            "<textarea id='cfp-ia-ayuda' class='cp-form-textarea' style='min-height:40px;font-size:12px' placeholder='Describe brevemente: a quién ayudas y con qué resultados. Ej: Ayudo a analistas a ser Senior Manager en 6 meses'></textarea>"+
-            "<div id='cfp-ia-msg' style='font-size:11px;margin-top:4px;color:var(--pw-text-soft)'></div>"+
-            "<button class='cp-btn cp-btn-primary' data-act='cfg-ia-gen' style='height:28px;padding:0 10px;font-size:11px;margin-top:6px'>Generar</button>"+
+      "<div style='font-size:13px;color:var(--pw-text);line-height:1.6;max-height:"+(expanded?"none":"62px")+";overflow:hidden;transition:max-height .3s cubic-bezier(.16,1,.3,1)'>"+esc(expanded?content:displayLines)+"</div>"+
+      (hasMore?"<button class='cli-expand-btn' data-act='cfp-expand' data-key='"+key+"' style='width:100%;padding:6px 0;border:none;background:none;color:var(--pw-bosque);font-size:12px;font-weight:700;cursor:pointer;margin-top:6px'>"+
+        (expanded?"Ver menos":"Ver más")+"</button>":"")+"</div>";
+  };
+  var _cfgRender=function(){
+    // Modo lectura (cards) vs modo edición
+    if(state.profileEdit){
+      var key=state.profileEdit, val;
+      if(key==="titulo") val=tit;
+      else if(key==="tagline") val=tag;
+      else if(key==="bio") val=bio;
+      else if(key==="especialidades") val=espStr;
+      else if(key==="enfoque") val=enf;
+      else if(key==="casos") val=casosStr;
+      else if(key==="video") val=vid;
+      else if(key==="nombre"){
+        return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Editar perfil<span class='dot'>.</span></h3></div>"+
+          "<div class='cp-card-pad'>"+
+            "<div style='display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px'>"+
+              "<div><div class='cp-photo-pick' style='gap:10px'>"+avImg(COACH.photo,nm,"id='cfp-foto-prev' style='width:80px;height:80px'")+"<label class='cp-btn cp-btn-ghost' style='cursor:pointer;height:32px;font-size:12px'>Cambiar<input id='cfp-foto' type='file' accept='image/*' style='display:none'></label></div></div>"+
+              "<div>"+
+                "<div class='cp-form-row' style='margin-bottom:8px'><label class='cp-form-label' style='font-size:12px'>Tu nombre</label><input id='cfp-nombre' class='cp-form-input' value=\""+esc(nm)+"\" oninput='_updateProfileSlug()' style='font-size:13px'></div>"+
+                "<div class='cp-form-row'><label class='cp-form-label' style='font-size:12px'>Marca (opcional)</label><input id='cfp-practica' class='cp-form-input' value=\""+esc(_prac)+"\" placeholder='Ej. Axon' style='font-size:13px'></div>"+
+              "</div>"+
+            "</div>"+
+            "<div style='background:#f5f3f0;border:1px solid #e6ddd4;border-radius:10px;padding:12px;margin-bottom:16px'>"+
+              "<div style='font-size:12px;font-weight:600;color:var(--pw-carbon);margin-bottom:4px'>Tu perfil público:</div>"+
+              "<div style='font-size:12px;color:var(--pw-text-soft);word-break:break-all'>pathwaycareercoach.com/coach/<strong>"+esc(slug||"tu-slug")+"</strong></div>"+
+            "</div>"+
+            "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
+              "<button class='cp-btn cp-btn-ghost' data-act='cfp-cancel'>Cancelar</button>"+
+              "<button class='cp-btn cp-btn-primary' data-act='cfp-save-nombre'>Guardar</button>"+
+            "</div>"+
+          "</div></div>";
+      }
+      var labels={titulo:"Título profesional",tagline:"Frase de presentación",bio:"Biografía",especialidades:"Especialidades",enfoque:"Tu enfoque",casos:"Casos de éxito",video:"Video de presentación"};
+      var hints={especialidades:"separadas por coma",enfoque:"un punto por línea",casos:"formato: Antes → Después",video:"opcional"};
+      return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>"+labels[key]+"<span class='dot'>.</span></h3></div>"+
+        "<div class='cp-card-pad'>"+
+          "<div class='cp-form-row'><label class='cp-form-label'>"+labels[key]+"</label>"+
+            (key==="video"?"<input id='cfp-"+key+"' class='cp-form-input' value=\""+esc(val)+"\" placeholder='https://youtube.com/watch?v=…'>":
+            "<textarea id='cfp-"+key+"' class='cp-form-textarea' style='min-height:100px'>"+esc(val)+"</textarea>")+
+            (hints[key]?"<span class='cp-form-hint'>"+hints[key]+"</span>":"")+
           "</div>"+
+          "<div style='display:flex;gap:10px;justify-content:flex-end'>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='cfp-cancel'>Cancelar</button>"+
+            "<button class='cp-btn cp-btn-primary' data-act='cfp-save' data-key='"+key+"'>Guardar</button>"+
+          "</div>"+
+        "</div></div>";
+    }
+    // Modo lectura
+    return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tu perfil<span class='dot'>.</span></h3>"+
+      (liveOk?"<a href='https://pathwaycareercoach.com/coach/"+esc(slug)+"' target='_blank' rel='noopener' style='font-size:12px;color:var(--pw-bosque);font-weight:600;display:inline-flex;align-items:center;gap:6px'>Ver página "+svg(IC.extLink,12)+"</a>":"")+"</div>"+
+      "<div class='cp-card-pad'>"+
+        "<div class='cp-toggle' style='padding:4px 0;margin-bottom:12px'>"+
+          "<div class='cp-toggle-body'><div class='cp-toggle-title'>Activar mi perfil público</div>"+
+          "<div class='cp-toggle-desc'>"+(pubActive?"Tu página está visible en pathwaycareercoach.com/coach/"+esc(slug):"Oculto del directorio")+"</div></div>"+
+          "<button class='cp-switch "+(pubActive?"is-on":"")+"' data-act='pub-toggle' aria-label='Activar perfil público'><span></span></button>"+
         "</div>"+
-      "</div>"+
-      "<div style='border-bottom:1px solid var(--pw-border);padding-bottom:12px;margin-bottom:12px'>"+
-        "<div class='cp-form-row' style='margin-bottom:8px'><label class='cp-form-label'>Título profesional</label><input id='cfp-titulo' class='cp-form-input' value=\""+esc(tit)+"\"></div>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Frase de presentación</label><textarea id='cfp-tagline' class='cp-form-textarea' style='min-height:40px'>"+esc(tag)+"</textarea></div>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Biografía</label><textarea id='cfp-bio' class='cp-form-textarea' style='min-height:50px'>"+esc(bio)+"</textarea></div>"+
-      "</div>"+
-      "<div style='border-bottom:1px solid var(--pw-border);padding-bottom:12px;margin-bottom:12px'>"+
-        "<div class='cp-form-row' style='margin-bottom:8px'><label class='cp-form-label'>Especialidades <span style='color:var(--pw-text-muted);font-weight:400'>separadas por coma</span></label><input id='cfp-especialidades' class='cp-form-input' value=\""+esc(espStr)+"\" placeholder='Ej: Pérdida de grasa, Hipertrofia, Nutrición'></div>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Tu enfoque <span style='color:var(--pw-text-muted);font-weight:400'>un punto por línea</span></label><textarea id='cfp-enfoque' class='cp-form-textarea' style='min-height:50px' placeholder='Basado en evidencia&#10;Seguimiento continuo&#10;Resultados reales'>"+esc(enf)+"</textarea></div>"+
-      "</div>"+
-      "<div style='border-bottom:1px solid var(--pw-border);padding-bottom:12px;margin-bottom:12px'>"+
-        "<div class='cp-form-row' style='margin-bottom:8px'><label class='cp-form-label'>Casos de éxito <span style='color:var(--pw-text-muted);font-weight:400'>opcional, formato: Antes → Después</span></label><textarea id='cfp-casos' class='cp-form-textarea' style='min-height:50px' placeholder='Analista con 5 años → Senior Manager&#10;Sin dirección de carrera → +40% de salario'>"+esc(casosStr)+"</textarea></div>"+
-        "<div class='cp-form-row'><label class='cp-form-label'>Video de presentación <span style='color:var(--pw-text-muted);font-weight:400'>opcional</span></label><input id='cfp-video' class='cp-form-input' value=\""+esc(vid)+"\" placeholder='https://youtube.com/watch?v=…'></div>"+
-      "</div>"+
-      // (Versión en inglés eliminada: la página ya traduce sola, no hace falta
-      // cargar Título + Bio dos veces.)
-      "<div class='cp-form-row'><label class='cp-form-label'>País donde ejercés</label>"+
-        "<select id='cfp-pais' class='cp-form-input'>"+paisOptHtml+"</select>"+
-        "<span class='cp-form-hint'>Lo usamos para mostrarte primero a los candidatos de tu mismo país. No lo mostramos públicamente.</span></div>"+
-      "<div class='cp-form-row'><label class='cp-form-label'>Tu Google Calendar (para ver tus eventos en la agenda)</label>"+
-        "<input id='cfp-cal-ical' class='cp-form-input' value=\""+esc(gi)+"\" placeholder='https://calendar.google.com/calendar/ical/…/public/basic.ics' onchange='_autoSaveCal(this)'>"+
-        (gi
-          ? "<span style='display:inline-flex;align-items:center;gap:6px;margin-top:7px;font-size:12px;font-weight:600;color:var(--pw-bosque)'><span style='width:8px;height:8px;border-radius:50%;background:var(--pw-bosque);display:inline-block'></span>Calendario vinculado ✓ — se guarda solo al pegar el link.</span>"
-          : "<span style='display:inline-flex;align-items:center;gap:6px;margin-top:7px;font-size:12px;font-weight:600;color:var(--pw-text-muted)'><span style='width:8px;height:8px;border-radius:50%;background:#C9C7C4;display:inline-block'></span>Sin vincular — pega el link de abajo y se guarda solo.</span>")+
-        "<span class='cp-form-hint'>Para ver tus eventos aquí, pega el <strong>enlace público</strong> de tu Google Calendar:<br>"+
-          "1) En Google Calendar entra a <strong>Configuración</strong> ("+PWI.svg('settings',{sm:true})+") y elige <strong>tu calendario</strong>.<br>"+
-          "2) En <strong>«Permisos de acceso a los eventos»</strong> tildá <strong>«Ponerlo a disposición del público»</strong>.<br>"+
-          "3) Más abajo, en <strong>«Integrar calendario»</strong>, copia la <strong>«Dirección pública en formato iCal»</strong> (termina en <strong>/public/basic.ics</strong>) y pégala aquí.</span></div>"+
-      "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:6px'>"+
-        "<button class='cp-btn cp-btn-ghost' data-act='cfg:profile'>Descartar</button>"+
-        "<button class='cp-btn cp-btn-primary' data-act='cfg-save-profile'>Guardar cambios</button></div>"+
-    "</div></div>";
+        _cfgCard("Nombre y marca","👤",nm+((_prac?" — "+_prac:"")),"nombre")+
+        _cfgCard("Título profesional","💼",tit,"titulo")+
+        _cfgCard("Frase de presentación","✨",tag,"tagline")+
+        _cfgCard("Biografía","📝",bio,"bio")+
+        _cfgCard("Especialidades","🎯",espStr,"especialidades")+
+        _cfgCard("Tu enfoque","🔍",enf,"enfoque")+
+        _cfgCard("Casos de éxito","⭐",casosStr,"casos")+
+        _cfgCard("Video de presentación","🎥",vid,"video")+
+        "<div style='border:1.5px solid var(--pw-border);border-radius:12px;padding:14px;margin-bottom:12px'>"+
+          "<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px'>"+
+            "<div style='display:flex;align-items:center;gap:8px'>"+
+              "<span style='font-size:16px'>🌍</span>"+
+              "<div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>País y Calendario</div>"+
+            "</div>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='cfp-edit' data-key='settings' style='height:28px;font-size:11px;padding:0 10px'>✏️ Editar</button>"+
+          "</div>"+
+          "<div style='font-size:12px;color:var(--pw-text-soft)'>Configura tu ubicación y calendario de Google</div>"+
+        "</div>"+
+      "</div></div>";
+  };
+  return _cfgRender();
 }
 // Monedas soportadas (Stripe las cobra todas). Los coaches son de todo el mundo
 // → no todo es en euros. Símbolos prefijados para los distintos "$" (US$, MX$,
@@ -10744,6 +10769,63 @@ document.addEventListener("click", function(ev){
       })
       .catch(function(){ if(_iaBtn) _iaBtn.disabled=false; if(_iaMsg){ _iaMsg.style.color="var(--pw-danger)"; _iaMsg.textContent="Sin conexión con la IA. Reintenta."; } });
     return;
+  }
+  // ── Card-based profile handlers ──
+  if(act==="cfp-edit"){
+    var key=el.getAttribute("data-key");
+    state.profileEdit=key; render(); return;
+  }
+  if(act==="cfp-cancel"){
+    state.profileEdit=null; render(); return;
+  }
+  if(act==="cfp-save-nombre"){
+    // Guardar nombre + marca + foto
+    var nom=_val("cfp-nombre").trim(), prac=_val("cfp-practica").trim();
+    if(!nom){ toast("Escribe tu nombre."); return; }
+    var sl=(nom).toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"").substring(0,60);
+    if(!sl){ sl="coach-"+(RME&&RME.id||"").substring(0,8); }
+    COACH.slug=sl;
+    var _cfgP={nombre_practica:prac, slug:sl};
+    var _extraP={nombre:nom, slug:sl};
+    var _fo=document.getElementById("cfp-foto");
+    if(_fo&&_fo.files[0]){
+      var _reader=new FileReader();
+      _reader.onload=function(e){
+        window._cfpFoto=e.target.result; COACH.photo=e.target.result; _cfgP.foto_url=e.target.result;
+        saveCfg(_cfgP, _extraP, function(){ state.profileEdit=null; toast("Nombre y foto guardados ✓"); render(); });
+      };
+      _reader.readAsDataURL(_fo.files[0]);
+    } else {
+      saveCfg(_cfgP, _extraP, function(){ state.profileEdit=null; toast("Nombre y marca guardados ✓"); render(); });
+    }
+    return;
+  }
+  if(act==="cfp-save"){
+    var key=el.getAttribute("data-key");
+    var _fieldMap={titulo:{cfg:"nombre_practica",prof:"titulo_profesional"},tagline:{cfg:"tagline",prof:"tagline"},bio:{cfg:"bio",prof:"bio"},especialidades:{cfg:"especialidades",prof:"especialidades"},enfoque:{cfg:"mi_enfoque",prof:"mi_enfoque"},casos:{cfg:"casos_exito",prof:""},video:{cfg:"video",prof:""}};
+    var _fm=_fieldMap[key]; if(!_fm) { state.profileEdit=null; render(); return; }
+    var _cfgPatch={};
+    if(key==="titulo"){ _cfgPatch.titulo_profesional=_val("cfp-"+key).trim(); }
+    else if(key==="tagline"){ _cfgPatch.tagline=_val("cfp-"+key).trim(); }
+    else if(key==="bio"){ _cfgPatch.bio=_val("cfp-"+key).trim(); }
+    else if(key==="especialidades"){ _cfgPatch.especialidades=_val("cfp-"+key).split(",").map(function(x){return x.trim();}).filter(Boolean).slice(0,10); }
+    else if(key==="enfoque"){ _cfgPatch.mi_enfoque=_val("cfp-"+key).trim(); }
+    else if(key==="casos"){
+      _cfgPatch.casos_exito=_val("cfp-"+key).split(/\n+/).map(function(ln){
+        var p=ln.split(/\s*(?:→|->|—|–|\|)\s*/);
+        var a=(p[0]||"").trim(), b=(p[1]||"").trim();
+        return (a||b)?{antes:a,despues:b}:null;
+      }).filter(Boolean).slice(0,8);
+    }
+    else if(key==="video"){ _cfgPatch.videos=[_val("cfp-"+key).trim()]; }
+    saveCfg(_cfgPatch, _cfgPatch, function(){ state.profileEdit=null; toast("Campo guardado ✓"); render(); });
+    return;
+  }
+  if(act==="cfp-expand"){
+    var key=el.getAttribute("data-key");
+    if(state.profileExpanded===key) state.profileExpanded=null;
+    else state.profileExpanded=key;
+    render(); return;
   }
   if(act==="cfg-save-profile"){
     var nom=_val("cfp-nombre").trim(), titP=_val("cfp-titulo").trim(), bioP=_val("cfp-bio").trim();
