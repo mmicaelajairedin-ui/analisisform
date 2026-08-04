@@ -297,10 +297,21 @@ var SAFE_SELECT='id,nombre,email,foto_url,rol,configuracion';
 function _pubFetch(qs, extra){
   var h={ apikey:KEY, Authorization:'Bearer '+KEY };
   if(extra) for(var _k in extra) if(extra.hasOwnProperty(_k)) h[_k]=extra[_k];
-  return fetch(SB+'/rest/v1/usuarios_publicos?'+qs,{headers:h}).then(function(r){
-    if(r.status===404 || r.status===406){ return fetch(SB+'/rest/v1/usuarios?'+qs,{headers:h}); }
-    return r;
-  }).catch(function(){ return fetch(SB+'/rest/v1/usuarios?'+qs,{headers:h}); });
+  var _abort=new AbortController();
+  var _timeout=setTimeout(function(){ _abort.abort(); }, 8000);
+  var _opts={headers:h, signal:_abort.signal};
+  return fetch(SB+'/rest/v1/usuarios_publicos?'+qs,_opts)
+    .then(function(r){
+      if(r.status===404 || r.status===406){ return fetch(SB+'/rest/v1/usuarios?'+qs,_opts).finally(function(){ clearTimeout(_timeout); }); }
+      clearTimeout(_timeout);
+      return r;
+    })
+    .catch(function(){
+      clearTimeout(_timeout);
+      var _abort2=new AbortController();
+      var _timeout2=setTimeout(function(){ _abort2.abort(); }, 8000);
+      return fetch(SB+'/rest/v1/usuarios?'+qs,{headers:h, signal:_abort2.signal}).finally(function(){ clearTimeout(_timeout2); });
+    });
 }
 var DISP=null;
 var TAKEN={}; // { instanteMs: true } de las citas ya tomadas del coach (anti doble-booking)
@@ -407,19 +418,20 @@ function _viewerGroups(){
   return groups.slice(0,10);
 }
 function _tzLabel(){ try{ var z=Intl.DateTimeFormat().resolvedOptions().timeZone; return z?(' ('+z+')'):''; }catch(e){ return ''; } }
-function loadCitas(){ TAKEN={}; if(!CID) return; fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(CID)+'&estado=neq.cancelada&select=inicio').then(function(r){ return r.ok?r.json():[]; }).then(function(rows){ var T={}; (rows||[]).forEach(function(c){ if(!c||!c.inicio) return; var t=new Date(c.inicio).getTime(); if(!isNaN(t)) T[t]=true; }); TAKEN=T; renderPicker(); }).catch(function(){}); }
+function loadCitas(){ TAKEN={}; if(!CID) return; var _abort=new AbortController(); var _tm=setTimeout(function(){ _abort.abort(); }, 6000); fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(CID)+'&estado=neq.cancelada&select=inicio',{signal:_abort.signal}).then(function(r){ clearTimeout(_tm); return r.ok?r.json():[]; }).then(function(rows){ var T={}; (rows||[]).forEach(function(c){ if(!c||!c.inicio) return; var t=new Date(c.inicio).getTime(); if(!isNaN(t)) T[t]=true; }); TAKEN=T; renderPicker(); }).catch(function(){ clearTimeout(_tm); }); }
 // Eventos REALES del calendario del coach (su iCal público, vía edge function
 // `calendar`). Con esto NO te reservan un hueco donde ya tienes algo — además de
 // las reservas de Pathway. Solo eventos con hora (los de "todo el día" tipo
 // cumpleaños no bloquean; las vacaciones se manejan aparte).
 var BUSY=[];
 function loadBusy(){ BUSY=[]; var em=(''+(EMAIL||'')).trim().toLowerCase(); if(!em||em.indexOf('@')<0) return;
-  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(em),{ headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
-    .then(function(r){ return r.ok?r.json():null; })
+  var _abort=new AbortController(); var _tm=setTimeout(function(){ _abort.abort(); }, 5000);
+  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(em),{ headers:{ apikey:KEY, Authorization:'Bearer '+KEY }, signal:_abort.signal })
+    .then(function(r){ clearTimeout(_tm); return r.ok?r.json():null; })
     .then(function(d){ var evs=(d&&Object.prototype.toString.call(d.events)==='[object Array]')?d.events:[];
       BUSY=evs.map(function(e){ if(!e||e.start==null) return null; var s=+e.start; var en=e.end!=null?+e.end:(s+30*60000); if(isNaN(s)) return null; if(isNaN(en)||en<=s) en=s+30*60000; if((en-s)>=23*3600000) return null; return {s:s,e:en}; }).filter(Boolean);
       renderPicker();
-    }).catch(function(){});
+    }).catch(function(){ clearTimeout(_tm); });
 }
 // ¿El hueco [ms, ms+DUR) pisa (o queda a menos del margen de) un evento del
 // calendario del coach O una reserva de Pathway? El margen (buffer) es el
@@ -866,10 +878,12 @@ function confirmar(){
       if(saved && citaId){
         try{
           var _retryGcalSync=function(n){
-            fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ cita_id:citaId }) })
-              .then(function(r){ if(!r.ok) throw new Error('sync-cita-to-gcal status '+r.status); })
+            fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
+              .then(function(r){ if(!r.ok) throw new Error('sync-cita-to-gcal status '+r.status); return r.json(); })
               .catch(function(err){
-                console.warn('Google Calendar sync falló (intento '+(3-n+1)+'/3):', err);
+                var attempt=3-n+1;
+                console.warn('Google Calendar sync falló (intento '+attempt+'/3):', err);
+                try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, attempt:attempt, error:String(err) }) }).catch(function(){}); }catch(e){}
                 if(n>0) setTimeout(function(){ _retryGcalSync(n-1); }, 2000);
               });
           };
@@ -1023,13 +1037,13 @@ function ok(name, start, gcalUrl, saved){
 // Arranque (al FINAL, cuando SAFE_SELECT y todas las funciones ya están definidas).
 // ?c=<id> → reservar directo con esa persona. ?team=1 → elegir con quién y reservar.
 (function(){
-  var c=qp('c'); var t=parseInt(qp('t'),10); if(isNaN(t)) t=-1;
+  var c=qp('c'); var typeIdx=parseInt(qp('t'),10); if(isNaN(typeIdx)) typeIdx=-1;
   var team=qp('team');
   try{ loadProof(); }catch(e){}   // prueba social real (coaches que ya usan Pathway)
   // OS Core: llegó a la página de reserva por el CTA de llamada/demo → paso del
   // embudo (intención de agendar). Best-effort; no cuenta reprogramaciones.
   try{ if(window.pwEmit && (c||team) && !qp('reprog')) pwEmit("CallRequested",{dominio:"Commercial",entidad_tipo:"coach",entidad_id:(""+(c||"team")).slice(0,80),payload:{via:qp('mp')==='1'?"marketplace":"link"}}); }catch(e){}
-  if(c){ loadCoach(c,t); return; }
+  if(c){ loadCoach(c,typeIdx); return; }
   if(team){ TEAM=true; loadTeam(); return; }
   fail(t('linkInvalido'));
 })();
