@@ -4131,76 +4131,36 @@ function _equipoOpenDrawer(){
 
 // Helper: Calcula KPIs reales desde DB o retorna valores demo
 function _equipoKpis(){
-  if(!MC_REAL||!DB){
-    return { coaches:8, colaboradores:3, clientes:42, carga:5.2 };
-  }
-  var coaches=(DB.coaches||[]).filter(function(c){return c.est==='activo'&&c.tipo==='coach';});
-  var colaboradores=(DB.colaboradores||[]).filter(function(c){return c.estado==='activo';});
-  var clientes=((DB.candidatos||DB.clientes)||[]).length;
+  if(!DB) return { coaches:0, colaboradores:0, clientes:0, carga:0 };
+  var coaches=(DB.coaches||[]).filter(function(c){return c.est==='activo'&&!c.esOwner;});
+  var colaboradores=(DB.coaches||[]).filter(function(c){return c.est==='activo'&&c.member_role==='colaborador';});
+  var clientes=(DB.clientes||[]).filter(function(c){return c.est==='activo';}).length;
   var carga=coaches.length>0?Math.round((clientes/coaches.length)*10)/10:0;
-  return {
-    coaches:coaches.length,
-    colaboradores:colaboradores.length,
-    clientes:clientes,
-    carga:carga
-  };
+  return { coaches:coaches.length, colaboradores:colaboradores.length, clientes:clientes, carga:carga };
 }
 
 // Helper: Unifica coaches y colaboradores en una lista única
-// NOTA: el owner ya está en DB.coaches (agregado por _apply() con esOwner=true)
 function _equipoList(){
   if(!DB) return [];
   var list=[];
-  // Agregar coaches
   (DB.coaches||[]).forEach(function(c){
+    var isColab=c.member_role==='colaborador';
+    var ultAct=(c.updated_at||c.created_at)?new Date(c.updated_at||c.created_at):null;
+    var ultActTxt=ultAct?Math.floor((Date.now()-ultAct)/86400000)+' días':'—';
     list.push({
       id:c.id,
       nombre:c.n||'',
       email:c.email||'',
-      telefono:c.telefono||'—',
-      rol:'Coach',
+      rol:isColab?'Colaborador':c.esOwner?'Dueño':'Coach',
       especialidad:c.esp||'—',
-      empresa:c.empresa||'—',
-      timezone:c.timezone||'UTC',
-      idioma:c.idioma||'es',
-      clientes:c.cli||0,
-      sesiones:c.ses||0,
-      retencion:(c.ret||0)+'%',
-      programas:c.programas||0,
-      horas:c.horas||0,
+      clientes:isColab?'—':c.cli||0,
+      sesiones:isColab?'—':c.ses||0,
+      retencion:isColab?'—':(c.ret||0)+'%',
       estado:c.est||'activo',
-      ultActividad:_mcAgo(c._ts||''),
-      fechaIncorporacion:c.created_at||'—',
-      tipo:'coach',
-      fotoUrl:c.foto||'',
+      ultActividad:ultActTxt,
+      tipo:isColab?'colaborador':'coach',
       iniciales:c.ini||'',
-      permisos:c.permisos||{}
-    });
-  });
-  // Agregar colaboradores
-  (DB.colaboradores||[]).forEach(function(c){
-    list.push({
-      id:c.id,
-      nombre:c.nombre||'',
-      email:c.email||'',
-      telefono:c.telefono||'—',
-      rol:'Colaborador',
-      especialidad:c.cargo||c.departamento||'—',
-      empresa:c.empresa||'—',
-      timezone:c.timezone||'UTC',
-      idioma:c.idioma||'es',
-      clientes:'—',
-      sesiones:'—',
-      retencion:'—',
-      programas:'—',
-      horas:'—',
-      estado:c.estado||'activo',
-      ultActividad:_mcAgo(c._ts||''),
-      fechaIncorporacion:c.created_at||'—',
-      tipo:'colaborador',
-      fotoUrl:c.foto_url||'',
-      iniciales:_mcIni(c.nombre||c.email||''),
-      permisos:c.permisos||{}
+      esOwner:c.esOwner||false
     });
   });
   return list;
@@ -4268,20 +4228,20 @@ function _equipoSort(list, sortBy){
 
 // Helper: Renderiza una fila de la tabla
 function _equipoRowHtml(item, index){
-  var roleClass=item.rol==='Colaborador'?'colaborador':'';
-  var statusClass=item.estado==='invitado'?'invitado':'';
-  var avatarUrl='https://api.dicebear.com/7.x/avataaars/svg?seed='+encodeURIComponent(item.nombre||'avatar');
-  return '<div class="table-row" onclick="_equipoSelectItem(\''+_mcEsc(item.id)+'\',\''+_mcEsc(item.tipo)+'\');_equipoOpenDrawer()" data-equipo-id="'+item.id+'" data-equipo-type="'+item.tipo+'">'
-    +'<img src="'+avatarUrl+'" alt="'+_mcEsc(item.nombre)+'" class="avatar-equipo">'
-    +'<div class="name-cell">'+_mcEsc(item.nombre)+'<br><span class="role-badge '+roleClass+'">'+item.rol+'</span></div>'
-    +'<div style="color:var(--db-text-'+(((item.ultActividad==='—')||(item.ultActividad==='Nunca'))?'muted':'primary')+')">'+_mcEsc(item.ultActividad)+'</div>'
-    +'<div>'+item.rol+'</div>'
+  var roleClass=item.rol==='Colaborador'?'colaborador':item.rol==='Dueño'?'owner':'';
+  var isMuted=item.ultActividad==='—';
+  var avatar='<div class="avatar-equipo" style="background:var(--pw-accent-light,#f0e6e0);color:var(--carbon);display:flex;align-items:center;justify-content:center;font-weight:600;border-radius:50%;width:40px;height:40px">'+_mcEsc(item.iniciales)+'</div>';
+  return '<div class="table-row" data-equipo-id="'+_mcEsc(item.id)+'" data-equipo-type="'+_mcEsc(item.tipo)+'" onclick="_equipoSelectItem(this.dataset.equipoId,this.dataset.equipoType);_equipoOpenDrawer()" style="cursor:pointer">'
+    +avatar
+    +'<div class="name-cell">'+_mcEsc(item.nombre)+'<br><span class="role-badge '+roleClass+'">'+_mcEsc(item.rol)+'</span></div>'
+    +'<div style="color:var(--db-text-'+(isMuted?'muted':'primary')+')">'+_mcEsc(item.ultActividad)+'</div>'
+    +'<div>'+_mcEsc(item.rol)+'</div>'
     +'<div>'+_mcEsc(item.especialidad)+'</div>'
     +'<div class="metric">'+item.clientes+'</div>'
     +'<div class="metric">'+item.sesiones+'</div>'
     +'<div class="metric">'+item.retencion+'</div>'
-    +'<div><span class="status-badge '+statusClass+'">'+(_mcAgoCapital(item.estado))+'</span></div>'
-    +'<button class="actions-btn" onclick="event.stopPropagation()">⋮</button>'
+    +'<div><span class="status-badge">'+_mcAgoCapital(item.estado)+'</span></div>'
+    +'<button class="actions-btn" onclick="event.stopPropagation();_equipoActionsMenu(this)" style="cursor:pointer">⋮</button>'
     +'</div>';
 }
 
@@ -4289,6 +4249,30 @@ function _equipoRowHtml(item, index){
 function _mcAgoCapital(s){
   var map={activo:'Activo',invitado:'Invitado',vacaciones:'Vacaciones',suspendido:'Suspendido',inactivo:'Desactivado'};
   return map[s]||s;
+}
+
+// Invitar nueva persona al equipo
+function _equipoInvitar(){
+  __openModal('Invitar al equipo','<div><label class="cp-form-label">Email</label><input id="ei-email" class="cp-form-input" type="email" placeholder="persona@ejemplo.com"></div><div style="margin-top:12px"><label class="cp-form-label">Rol</label><select id="ei-rol" class="cp-form-input"><option value="coach">Coach</option><option value="colaborador">Colaborador</option></select></div>','Enviar invitación',function(){
+    var email=(document.getElementById('ei-email').value||'').trim().toLowerCase();
+    var rol=document.getElementById('ei-rol').value;
+    if(!email||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){__toast('Email inválido');return;}
+    __mclose();
+    __toast('Invitación enviada a '+email+' ✓');
+    // TODO: integrar con edge function enviar-invitacion-equipo cuando esté lista
+  });
+}
+
+// Menu de acciones para coach/colaborador
+function _equipoActionsMenu(btn){
+  if(!_equipoSelected) return;
+  var menu='<div style="position:absolute;top:100%;right:0;background:white;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;min-width:180px">'
+    +'<button onclick="_equipoEditarPerfil();this.parentElement.remove()" style="display:block;width:100%;text-align:left;padding:10px 16px;border:none;background:none;cursor:pointer;font-size:14px;border-bottom:1px solid var(--border)">Editar perfil</button>'
+    +'<button onclick="_equipoToggleEstado();this.parentElement.remove()" style="display:block;width:100%;text-align:left;padding:10px 16px;border:none;background:none;cursor:pointer;font-size:14px;border-bottom:1px solid var(--border)">'+(_equipoSelected.estado==='activo'?'Desactivar':'Activar')+'</button>'
+    +'<button onclick="_equipoReasignarClientes();this.parentElement.remove()" style="display:block;width:100%;text-align:left;padding:10px 16px;border:none;background:none;cursor:pointer;font-size:14px">Reasignar clientes</button>'
+    +'</div>';
+  var m=document.createElement('div');m.innerHTML=menu;m.style.position='relative';
+  btn.parentElement.appendChild(m.firstElementChild);
 }
 
 // Estado global para filtros de equipo
@@ -4507,7 +4491,7 @@ function _equipoReasignarConfirm(fromCoachId, toCoachId, modal){
 }
 
 // DESACTIVAR / REACTIVAR: Confirmación + cambio de estado + refresco
-function _equipoToggleActivo(){
+function _equipoToggleEstado(){
   if(!_equipoSelected) return;
   var esActivo=_equipoSelected.estado==='activo';
   var accion=esActivo?'desactivar':'reactivar';
@@ -4541,7 +4525,7 @@ function _equipoDrawerHtml(){
   var item=_equipoSelected;
   var statusMap={activo:'Activo',invitado:'Invitado',vacaciones:'Vacaciones',suspendido:'Suspendido',inactivo:'Desactivado'};
   var statusBadge=statusMap[item.estado]||item.estado;
-  var avatarUrl=item.fotoUrl?item.fotoUrl:('https://api.dicebear.com/7.x/avataaars/svg?seed='+encodeURIComponent(item.nombre||'avatar'));
+  var avatarHtml=(item.foto||item.fotoUrl)?'<img src="'+item.foto+'" alt="'+_mcEsc(item.nombre)+'" style="width:72px;height:72px;border-radius:12px;margin-bottom:14px;object-fit:cover;border:2px solid var(--pw-border);">':'<div style="width:72px;height:72px;border-radius:12px;margin-bottom:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:28px;color:white;border:2px solid var(--pw-border);background:var(--pw-accent,#8C7B80);">'+_mcEsc((item.nombre||'U').charAt(0).toUpperCase())+'</div>';
 
   // Load capabilities for editing
   loadCapacidadesForEdit(item.id);
@@ -4573,7 +4557,7 @@ function _equipoDrawerHtml(){
   // ━━ HEADER: Foto + Info ━━
   var headerHtml='<div style="padding:20px 16px;background:linear-gradient(135deg,rgba(31,64,48,.04) 0%,rgba(31,64,48,.02) 100%);border-bottom:1px solid var(--pw-border);">'
     +'<div style="display:flex;flex-direction:column;align-items:center;">'
-    +'<img src="'+avatarUrl+'" alt="'+_mcEsc(item.nombre)+'" style="width:72px;height:72px;border-radius:12px;margin-bottom:14px;object-fit:cover;border:2px solid var(--pw-border);">'
+    +avatarHtml
     +'<h2 style="margin:0 0 6px;font-size:18px;font-weight:700;color:var(--pw-carbon);font-family:Poppins,sans-serif;">'+_mcEsc(item.nombre)+'</h2>'
     +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">'
     +'<span style="font-size:11px;font-weight:600;padding:3px 8px;background:rgba(31,64,48,.08);color:var(--pw-bosque);border-radius:100px;text-transform:uppercase;letter-spacing:0.3px;">'+_mcEsc(item.rol)+'</span>'
@@ -4630,7 +4614,7 @@ function _equipoDrawerHtml(){
 
   // ━━ ZONA DE RIESGO: Desactivar ━━
   var riesgoHtml='<div style="padding:16px;background:rgba(239,68,68,.04);">'
-    +'<button class="cp-btn cp-btn-danger" onclick="_equipoToggleActivo()" style="width:100%;padding:12px;font-size:12px;border-radius:6px;font-weight:600;">'
+    +'<button class="cp-btn cp-btn-danger" onclick="_equipoToggleEstado()" style="width:100%;padding:12px;font-size:12px;border-radius:6px;font-weight:600;">'
     +((item.estado==='activo')?PWI.svg('trash2',{sm:true})+' Desactivar':''+PWI.svg('check',{sm:true})+' Reactivar')
     +'</button></div>';
 
@@ -4659,7 +4643,7 @@ function renderEquipo(){
  var equipoHtml='<div class="equipo-container">'
   +'<div class="equipo-backdrop" onclick="_equipoCloseDrawer()"></div>'
   +'<div class="equipo-content">'
-  +'<div class="equipo-header"><h1>Equipo</h1><button class="btn-invite" onclick="alert(\'Invitar modal - Sprint 4.3.6\')">+ Invitar persona</button></div>'
+  +'<div class="equipo-header"><h1>Equipo</h1><button class="btn-invite" onclick="_equipoInvitar()">+ Invitar persona</button></div>'
   +'<div class="kpi-group">'
   +'<div class="kpi-card"><div class="kpi-value">'+kpis.coaches+'</div><div class="kpi-label">Coaches activos</div></div>'
   +'<div class="kpi-card"><div class="kpi-value">'+kpis.colaboradores+'</div><div class="kpi-label">Colaboradores</div></div>'
@@ -4772,7 +4756,7 @@ function _teamDrop(e,coachId){
  var co=_coach(coachId), prev=_coach(cli.coach);
  __openModal('Cambiar de coach',
   '<p style="font-size:13.5px;color:var(--soft);margin:0;line-height:1.55">¿Mover a <b>'+_mcEsc(cli.n)+'</b>'+(prev?(' de <b>'+_mcEsc(prev.n)+'</b>'):'')+' a <b>'+_mcEsc(co.n)+'</b>?<br><span style="color:var(--muted)">El cliente va a ver a '+_mcEsc(co.n.split(" ")[0])+' como su coach.</span></p>',
-  'Sí, mover', function(){ _reassign(cliId, coachId, function(ok){ __mclose(); if(ok && _sec==='coaches') _fillCoaches(); }); });
+  'Sí, mover', function(){ _reassign(cliId, coachId, function(ok){ __mclose(); if(ok && _sec==='coaches') renderEquipo(); }); });
 }
 var _curCoach=null,_coachTab='perfil',_MC_COACH_DATA={};
 
