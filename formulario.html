@@ -884,21 +884,34 @@ async function enviar(){
         body:JSON.stringify({...d})
       });
       if(saveRes.status===401||saveRes.status===403){ if(window.PWAUTH&&PWAUTH.showLoginGate)PWAUTH.showLoginGate(); throw new Error('Tu sesión venció. Volvé a iniciar sesión y reintentá.'); }
-      if(saveRes.ok){ var _prows=await saveRes.json().catch(function(){return null;}); if(Array.isArray(_prows)&&_prows.length===0){ throw new Error('No se pudo guardar tu perfil: tu sesión no está activa. Cerrá sesión, volvé a entrar y reintentá.'); } }
+      if(saveRes.ok){
+        var _prows=await saveRes.json().catch(function(){return null;});
+        // MEJORA: validar que se escribieron datos, si no es un RLS silent failure
+        if(!Array.isArray(_prows)||_prows.length===0){
+          throw new Error('No se pudo guardar tu perfil: tu sesión no está activa o no tienes permisos. Cerrá sesión, volvé a entrar y reintentá.');
+        }
+      }
     } else {
       // Intake anónimo (pre-cuenta): INSERT con ignore-duplicates (no merge), así
       // la política RLS de INSERT anónimo alcanza sin dar UPDATE a anon. Re-envíos
       // no pisan datos; el coach corrige desde el panel si hace falta.
+      // CAMBIO: usar return=representation para validar que se escribió ≥1 fila
       saveRes=await fetch(SB_URL+'/rest/v1/candidatos',{
         method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal,resolution=ignore-duplicates'},
+        headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=representation,resolution=ignore-duplicates'},
         // activo:true explícito → el cliente NUNCA nace inactivo aunque el default
         // de la columna sea false. (Causa del patrón de clientes que no aparecían.)
         body:JSON.stringify({...d,activo:true})
       });
     }
     if(!saveRes.ok){var errText=await saveRes.text();throw new Error('Error guardando datos: '+saveRes.status+' '+errText);}
-    clearDraft(); // guardado OK → ya no hace falta el borrador local
+    // CAMBIO CRÍTICO: validar que se escribió ≥1 fila ANTES de borrar el draft
+    // (si saveRes.ok=true pero no se escribió nada, el cliente pierde datos)
+    var _savedRows=await saveRes.json().catch(function(){return null;});
+    if(!Array.isArray(_savedRows)||_savedRows.length===0){
+      throw new Error('Error guardando datos: la fila no se escribió. Reintentá o contactá soporte.');
+    }
+    clearDraft(); // Confirmado: se escribieron datos → ya no hace falta el borrador local
 
     // 2. Llamar a la Edge Function para generar el informe automáticamente
     fetch(EDGE_URL,{
