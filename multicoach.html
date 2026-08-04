@@ -4,7 +4,7 @@
 <script src="pw-observe.js"></script>
 <script src="/pw-auth.js?v=1"></script>
 <script src="pw-recursos.js?v=20260728j"></script>
-<script src="scripts/business-identity-examples.js?v=1"></script>
+<script src="scripts/business-identity-examples-fase2.js?v=1"></script>
 <script src="scripts/capacidades.js?v=1"></script>
 <script src="scripts/capacidades-init.js?v=1"></script>
 <script src="scripts/capacidades-ui.js?v=1"></script>
@@ -2043,7 +2043,6 @@ function __go(s){
         if(a){
           var s=a.getAttribute('data-s');
           if(s){
-            console.log('[NAV] Click:',s);
             window.__lastNav=s;
             __go(s);
           }
@@ -2062,7 +2061,6 @@ function __go(s){
         if(a){
           var s=a.getAttribute('data-s');
           if(s){
-            console.log('[NAV] Mobile-click:',s);
             window.__lastNav=s;
             __go(s);
           }
@@ -2072,7 +2070,6 @@ function __go(s){
     }
   }catch(e){debugMsg+=' err-mobile:'+e.message;}
 
-  console.log(debugMsg);
   window.__navDebug=debugMsg;
 })();
 // Aplicar restricciones de permisos a los items de navegación (colaborador)
@@ -2754,7 +2751,8 @@ function _mcProcessAvatar(e){
 function mcApplyNiche(){
  var m=NM();
  // En modo REAL el DB lo cargó el dueño (mcLoadReal); no lo pisamos con la maqueta.
- if(!MC_REAL){ DB={coaches:m.coaches,clientes:m.clientes}; }
+ // En modo demo, preservar los datos demo ya inicializados (no sobrescribir con NM vacío)
+ if(!MC_REAL){ DB={coaches:m.coaches,clientes:DB.clientes||m.clientes}; }
  NICHOS=m.cats;
  try{ CFG.recursos=_mcDefRecursos(); }catch(e){}
  var setTx=function(id,t){var el=document.getElementById(id);if(!el)return;if(el.tagName==='IMG'){el.src=t||'';}else{el.textContent=t;}};
@@ -4112,7 +4110,6 @@ function _equipoVerAgenda(){
   };
   _equipoCloseDrawer();
   __go('agenda');
-  console.log('[AGENDA-PERSONAL] Abierto desde drawer: '+MC_AGENDA_COACH_NAME);
 }
 
 // GESTIONAR DISPONIBILIDAD: Acceso rápido desde drawer
@@ -4137,7 +4134,6 @@ function _equipoManageAvailability(){
   _equipoCloseDrawer();
   __go('agenda');
   setTimeout(function(){ if(typeof _mcDispModal==='function') _mcDispModal(); },300);
-  console.log('[DISPONIBILIDAD] Abierto para: '+_equipoSelected.nombre);
 }
 
 // CAMBIAR ROL: Actualizar rol de coach/colaborador
@@ -4502,8 +4498,7 @@ var _curCoach=null,_coachTab='perfil',_MC_COACH_DATA={};
 // FASE 1: Integración con coach-api-gateway
 // Llama los 5 endpoints en paralelo: metrics, alerts, benchmarks, trends, clients
 function _mcLoadCoachDataGateway(coachId){
-  if(!MC_REAL){ console.log('[MC] Demo mode → sin API'); return Promise.resolve(null); }
-  console.log('[MC] Loading coach data from API for coach_id='+coachId);
+  if(!MC_REAL){ return Promise.resolve(null); }
   return _hdr({'Content-Type':'application/json'}).then(function(h){
     var url=SB.replace(/\/$/, '')+'/functions/v1/coach-api-gateway';
     var endpoints=['/api/coach/'+coachId+'/metrics/latest','/api/coach/'+coachId+'/alerts','/api/coach/'+coachId+'/benchmarks/today','/api/coach/'+coachId+'/trends/latest','/api/coach/'+coachId+'/clients?limit=10'];
@@ -4516,7 +4511,6 @@ function _mcLoadCoachDataGateway(coachId){
     return Promise.all(reqs).then(function(res){
       var data={metrics:res[0],alerts:res[1],benchmarks:res[2],trends:res[3],clients:res[4]};
       _MC_COACH_DATA[coachId]=data;
-      console.log('[MC] Coach data loaded',data);
       return data;
     });
   }).catch(function(e){
@@ -4639,7 +4633,6 @@ function _renderCoachFicha(){
    apiData.metrics.health_status==='green'?'good':(apiData.metrics.health_status==='yellow'?'warning':(apiData.metrics.health_status==='red'?'critical':'gray')),
    apiData.metrics.health_score+' / 100'
  ]:_coachHealth(c);
- console.log('[MC] Rendering coach ficha with health='+(h[1]+' ('+h[0]+')'));
  var tabs=[['perfil','Perfil',''+PWI.svg('user',{sm:true})+''],['clientes','Clientes',''+PWI.svg('users',{sm:true})+''],['sesiones','Sesiones',''+PWI.svg('calendar',{sm:true})+''],['rendimiento','Rendimiento',''+PWI.svg('barChart',{sm:true})+'']];
  if(!c.esOwner) tabs.push(['mensajes','Mensajes',''+PWI.svg('chat',{sm:true})+'']); // chat dueño↔coach (el dueño no se chatea a sí mismo)
  var menuV='<nav class="cp-cfg-nav">'+tabs.map(function(x){return '<button class="cp-cfg-nav-item'+(t===x[0]?' is-on':'')+'" data-tab="'+_mcEsc(x[0])+'" onclick="if(this.dataset.tab)_goCoachTab(this.dataset.tab)"><span class="cp-emo">'+x[2]+'</span><span>'+x[1]+'</span></button>';}).join('')+'</nav>';
@@ -5139,9 +5132,9 @@ function _setCoachPerm(id,key,val){
     var pb={}; pb[key]=!!val;
     return fetch(SB+'/functions/v1/editar-coach-red',{method:'POST',headers:h,body:JSON.stringify({coach_id:id,permisos:pb})});
   }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
-    if(!res.ok||!res.d.ok){ c.permisos[key]=prev; _renderCoachFicha(); __toast('No se pudo guardar. Reintentá.'); return; }
+    if(!res.ok||!res.d.ok){ c.permisos[key]=prev; _renderCoachFicha(); __toast('No se pudo guardar. Reintenta.'); return; }
     __toast('Acceso actualizado ✓');
-  }).catch(function(){ c.permisos[key]=prev; _renderCoachFicha(); __toast('Error de conexión. Reintentá.'); });
+  }).catch(function(){ c.permisos[key]=prev; _renderCoachFicha(); __toast('Error de conexión. Reintenta.'); });
 }
 // Cambiar el tipo de un miembro (Coach ↔ Colaborador). En real persiste vía
 // editar-coach-red (owner-gated); en demo actualiza local.
@@ -5830,7 +5823,7 @@ function _cfgIdentidad(){
  var tones=['directo','inspirador','profesional','amigable','técnico','motivador'];
 
  // Generar outputs en vivo
- var outputs=(window.generateBusinessIdentityOutputs)?generateBusinessIdentityOutputs(datos):{};
+ var outputs=(window.generateBusinessIdentityOutputs_Fase2)?generateBusinessIdentityOutputs_Fase2(datos):(window.generateBusinessIdentityOutputs)?generateBusinessIdentityOutputs(datos):{};
 
  var html='<div style="display:grid;grid-template-columns:1fr 1.2fr;gap:24px;height:100%;min-height:600px">';
 
@@ -5973,8 +5966,8 @@ function _idUpdatePreview(){
   cta_url:_v('id-cta-url')
  };
 
- // Generar outputs
- var outputs=(window.generateBusinessIdentityOutputs)?generateBusinessIdentityOutputs(_identidadState.datos):{};
+ // Generar outputs (Fase 2: generadores especializados por especialidad)
+ var outputs=(window.generateBusinessIdentityOutputs_Fase2)?generateBusinessIdentityOutputs_Fase2(_identidadState.datos):(window.generateBusinessIdentityOutputs)?generateBusinessIdentityOutputs(_identidadState.datos):{};
 
  // Generar dominio ficticio basado en nombre del coach
  var domainName=((_identidadState.datos.nombre||'ejemplo').toLowerCase().replace(/\s+/g,'')).substring(0,20)||'ejemplo';
@@ -7085,13 +7078,12 @@ function _renderPersonalAgendaHeader(){
 }
 
 function renderAgenda(){
- console.log('[DEBUG] renderAgenda() START - MC_AGENDA_COACH_ID:', MC_AGENDA_COACH_ID, 'MC_AGENDA_COACH_DATA:', MC_AGENDA_COACH_DATA);
+ console.error('[DEBUG] renderAgenda() START - MC_AGENDA_COACH_ID:', MC_AGENDA_COACH_ID, 'MC_AGENDA_COACH_DATA:', MC_AGENDA_COACH_DATA);
  var v=document.getElementById('vscroll');
  if(!v) { console.error('[DEBUG] renderAgenda() ERROR: vscroll element not found'); return; }
 
  // ── NEW SCHEDULER (feature flag) ──────────────────────────────────────────
  if(typeof USE_NEW_SCHEDULER!=="undefined" && USE_NEW_SCHEDULER){
-   console.log('[DEBUG] renderAgenda() using NEW SCHEDULER with AgendaProvider');
 
    // Usar AgendaProvider para obtener eventos (agnóstico del origen)
    var evt_data = AgendaProvider.fromSesionesRegistro(
@@ -7138,57 +7130,47 @@ function renderAgenda(){
          if(typeof SupabaseProvider === "undefined") return;
          SupabaseProvider.createEvent(data, ME.id, function(result){
            if(result.error) console.error("[AGENDA] Create failed:", result.error);
-           else console.log("[AGENDA] Event created:", result.id);
          });
        },
        onEdit: function(evento_id, data){
          if(typeof SupabaseProvider === "undefined") return;
          SupabaseProvider.updateEvent(evento_id, data, ME.id, function(result){
            if(result.error) console.error("[AGENDA] Edit failed:", result.error);
-           else console.log("[AGENDA] Event updated");
          });
        },
        onCancel: function(evento_id){
          if(typeof SupabaseProvider === "undefined") return;
          SupabaseProvider.cancelEvent(evento_id, ME.id, function(result){
            if(result.error) console.error("[AGENDA] Cancel failed:", result.error);
-           else console.log("[AGENDA] Event cancelled");
          });
        },
        onReschedule: function(evento_id, nueva_fecha){
          if(typeof SupabaseProvider === "undefined") return;
-         // nueva_fecha should be {date: "2026-08-04", time: "15:00"}
          SupabaseProvider.rescheduleEvent(evento_id, nueva_fecha.date, nueva_fecha.time, ME.id, function(result){
            if(result.error) console.error("[AGENDA] Reschedule failed:", result.error);
-           else console.log("[AGENDA] Event rescheduled");
          });
        },
        onConfirmAssistance: function(evento_id, status){
          if(typeof SupabaseProvider === "undefined") return;
          SupabaseProvider.updateEvent(evento_id, {status: status}, ME.id, function(result){
            if(result.error) console.error("[AGENDA] Confirm failed:", result.error);
-           else console.log("[AGENDA] Attendance confirmed");
          });
        },
        onBlockAvailability: function(data){
          if(typeof SupabaseProvider === "undefined") return;
          SupabaseProvider.blockDate(ME.id, data.fecha, data.duracion_horas, data.motivo, function(result){
            if(result.error) console.error("[AGENDA] Block failed:", result.error);
-           else console.log("[AGENDA] Date blocked:", result.id);
          });
        },
        onUnblockAvailability: function(data){
          if(typeof SupabaseProvider === "undefined") return;
          SupabaseProvider.unblockDate(data.fecha, function(result){
            if(result.error) console.error("[AGENDA] Unblock failed:", result.error);
-           else console.log("[AGENDA] Date unblocked");
          });
        },
        onAddVacation: function(data){
-         console.log("[AGENDA] Add vacation (deferred to Sprint 5.5):", data);
        },
        onRemoveVacation: function(data){
-         console.log("[AGENDA] Remove vacation (deferred to Sprint 5.5):", data);
        }
      }
    });
@@ -7217,7 +7199,6 @@ function renderAgenda(){
    // ── REALTIME SUBSCRIPTION (Sprint 5.5) ──────────────────────────────
    if(typeof supabase !== "undefined"){
      supabase.channel('sesiones_registro').on('*', function(payload){
-       console.log('[AGENDA-REALTIME] Change detected:', payload.eventType);
        renderAgenda();
      }).subscribe();
    }
@@ -7226,7 +7207,6 @@ function renderAgenda(){
  }
 
  // ── LEGACY AGENDA ────────────────────────────────────────────────────────
- console.log('[DEBUG] renderAgenda() using LEGACY AGENDA');
  // Traer el Google Calendar del dueño la 1ª vez (después ya está en MC_GCAL).
  if(MC_REAL&&!_mcGcalDone){ _mcGcalDone=true; _mcGcalLoad(function(){ if(MC_GCAL&&MC_GCAL.length){ mcSetAgenda(); if(_sec==='agenda') renderAgenda(); } }); }
  var days=_weekDates();var todayDow=(new Date().getDay()+6)%7;
@@ -7316,7 +7296,6 @@ function _agOpenPersonalAgenda(coachId){
     clientes:(coach.clientes||0)
   };
   renderAgenda();
-  console.log('[AGENDA-PERSONAL] Abierto desde navbar: '+MC_AGENDA_COACH_NAME);
 }
 function _agCoachList(){
  var rows=[['todos','Todos',null]].concat(DB.coaches.filter(function(c){return c.est==='activo';}).map(function(c){return [c.id,c.n.split(' ')[0],c];}));
