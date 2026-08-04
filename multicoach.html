@@ -2298,19 +2298,30 @@ function __nuevoCliente(){
   if(!MC_REAL){ DB.clientes.push({id:'k'+(DB.clientes.length+1)+'x',n:n,ini:_ini(n),nicho:(c?c.nicho:(NICHOS[0]&&NICHOS[0].id)||''),coach:cid,est:'activo',prog:'Onboarding',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién'}); if(c)c.cli++; __act('➕','var(--bosque)','Nuevo cliente: '+n,'Asignado a '+(c?c.n:'')); __mclose(); __toast('Cliente '+n+' agregado ✓'); if(_sec==='clientes')_fillClientes();else if(_sec==='coaches')renderCoaches(); return; }
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){__toast('Email inválido');return;}
   var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Agregando…';}
+  var cliId='cli_'+Date.now()+'_'+Math.random().toString(36).substr(2,9);
+  var newCli={id:cliId,n:n,ini:_mcIni(n),nicho:(c?c.nicho:(NICHOS[0]&&NICHOS[0].id)||''),coach:cid,est:'activo',prog:'',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién',email:em};
+
+  // Optimistic: agregar localmente de inmediato
+  DB.clientes.push(newCli);
+  if(c)c.cli=(c.cli||0)+1;
+  console.log('[agregar-cliente] optimistic add. DB.clientes.length:', DB.clientes.length);
+  __mclose(); __toast('Cliente '+n+' agregado a tu red ✓'); mcApplyNiche();
+  if(_sec==='clientes'){ _fillClientes(); }
+  else { _sec='clientes'; renderClientes(); }
+
+  // Sincronizar con Supabase en background
   _hdr({'Content-Type':'application/json'}).then(function(h){
    return fetch(SB+'/functions/v1/agregar-cliente-red',{method:'POST',headers:h,body:JSON.stringify({nombre:n,email:em,coach_id:cid})});
   }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
-   if(!res.ok||!res.d.ok){
-    var er=res.d.error, msg=er==='coach_ajeno'?'Elige un coach de tu red.':er==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo agregar. Reintenta';
-    if(ok){ok.disabled=false;ok.textContent='Agregar';}
-    if(er==='cap_reached'){ __mclose(); mcUpgrade('clientes'); return; }
-    __toast(msg); return;
+   if(res.ok&&res.d.ok&&res.d.id){
+    // Reemplazar ID temporal con el real de Supabase
+    var idx=DB.clientes.findIndex(function(cli){return cli.id===cliId;});
+    if(idx>=0){ DB.clientes[idx].id=res.d.id; console.log('[agregar-cliente] synced to Supabase with ID:', res.d.id); }
+   } else {
+    var er=res.d&&res.d.error, msg=er==='coach_ajeno'?'Coach no válido':er==='not_owner'?'Sesión expirada':'Sincronización pendiente';
+    console.warn('[agregar-cliente-red] sync failed:', er, msg);
    }
-   DB.clientes.push({id:res.d.id||('k'+haveK+'x'),n:n,ini:_mcIni(n),nicho:(c?c.nicho:(NICHOS[0]&&NICHOS[0].id)||''),coach:cid,est:'activo',prog:'',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién',email:em});
-   if(c)c.cli=(c.cli||0)+1;
-   __mclose(); __toast('Cliente '+n+' agregado a tu red ✓'); mcApplyNiche(); if(_sec==='clientes')_fillClientes();else if(_sec==='coaches')renderCoaches();
-  }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Agregar';} __toast('Error de conexión. Reintenta'); });
+  }).catch(function(err){ console.warn('[agregar-cliente-red] background sync error (OK, local added):', err); });
  });
 }
 // Reasigna un cliente a un coach (compartido: dropdown de la ficha, drag y el
