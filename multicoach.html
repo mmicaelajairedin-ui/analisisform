@@ -1942,6 +1942,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
             <div style="display:flex;gap:0;border-bottom:1px solid var(--pw-border);margin:12px -8px 0">
               <button onclick="__go('config');_goCfg('negocio')" id="step-negocio" class="mc-step-tab" style="flex:1;padding:10px 8px;font-size:12px;font-weight:500;color:var(--pw-text-soft);background:none;border:none;cursor:pointer;position:relative;text-align:center;transition:color .15s">Negocio</button>
               <button onclick="__go('config');_goCfg('marca')" id="step-marca" class="mc-step-tab" style="flex:1;padding:10px 8px;font-size:12px;font-weight:500;color:var(--pw-text-soft);background:none;border:none;cursor:pointer;position:relative;text-align:center;transition:color .15s">Marca</button>
+              <button onclick="__go('config');_goCfg('recursos')" id="step-recursos" class="mc-step-tab" style="flex:1;padding:10px 8px;font-size:12px;font-weight:500;color:var(--pw-text-soft);background:none;border:none;cursor:pointer;position:relative;text-align:center;transition:color .15s">Recursos</button>
               <button onclick="__go('config');_goCfg('landing')" id="step-landing" class="mc-step-tab" style="flex:1;padding:10px 8px;font-size:12px;font-weight:500;color:var(--pw-text-soft);background:none;border:none;cursor:pointer;position:relative;text-align:center;transition:color .15s">Landing</button>
               <button onclick="__go('config');_goCfg('portal')" id="step-portal" class="mc-step-tab" style="flex:1;padding:10px 8px;font-size:12px;font-weight:500;color:var(--pw-text-soft);background:none;border:none;cursor:pointer;position:relative;text-align:center;transition:color .15s">Portal</button>
               <button onclick="__go('config');_goCfg('empresa-ia')" id="step-ia" class="mc-step-tab" style="flex:1;padding:10px 8px;font-size:12px;font-weight:500;color:var(--pw-text-soft);background:none;border:none;cursor:pointer;position:relative;text-align:center;transition:color .15s">IA</button>
@@ -2342,17 +2343,18 @@ function _imgCompress(file,cb){
 function _avatarDrop(ev,kind){ev.preventDefault();ev.currentTarget.classList.remove('over');var f=ev.dataTransfer.files&&ev.dataTransfer.files[0];if(!f||(f.type||'').indexOf('image')!==0){__toast('Suelta una imagen');return;}var o=(kind==='coach')?_coach(_curCoach):_cli(_curCli);if(!o)return;var r=new FileReader();r.onload=function(e){o.foto=e.target.result;if(kind==='coach')_renderCoachFicha();else _renderFicha();__toast('Foto de '+o.n.split(' ')[0]+' actualizada ✓');};r.readAsDataURL(f);}
 // Soltar/subir el documento del plan en la ficha del cliente.
 function _cliSaveLocally(cliId,fields){if(!MC_REAL&&cliId){try{var stored=JSON.parse(localStorage.getItem('_mcCli_'+cliId)||'{}');Object.assign(stored,fields);localStorage.setItem('_mcCli_'+cliId,JSON.stringify(stored));}catch(e){}}}
+function _cliSaveToDb(cliId,fields){if(MC_REAL&&cliId&&fields){_hdr({'Content-Type':'application/json'}).then(function(h){var updates={};if(fields.planDoc)updates.archivo_plan={name:fields.planDoc,uploaded_at:new Date().toISOString()};if(fields.progFotos&&Array.isArray(fields.progFotos))updates.archivos_progreso=fields.progFotos.map(function(f){return {data_uri:(typeof f==='string'&&f.startsWith('data:')?f:''),name:'photo.jpg',uploaded_at:new Date().toISOString()};});if(fields.sesDocs&&Array.isArray(fields.sesDocs))updates.archivos_sesion=fields.sesDocs.map(function(f){return {name:f,uploaded_at:new Date().toISOString()};});if(Object.keys(updates).length){return _sbw('PATCH','/rest/v1/candidatos?id=eq.'+cliId,updates);}}).catch(function(){});}}
 function _cliLoadLocally(cliId){if(!MC_REAL&&cliId){try{return JSON.parse(localStorage.getItem('_mcCli_'+cliId)||'{}');}catch(e){return {};}}}
-function _cliDocFiles(files){if(!files||!files.length)return;var k=_cli(_curCli);if(!k)return;k.planDoc=files[0].name;_cliSaveLocally(_curCli,{planDoc:k.planDoc});_renderFicha();__toast('Plan «'+files[0].name+'» adjuntado ✓');}
+function _cliDocFiles(files){if(!files||!files.length)return;var k=_cli(_curCli);if(!k)return;k.planDoc=files[0].name;_cliSaveLocally(_curCli,{planDoc:k.planDoc});_cliSaveToDb(_curCli,{planDoc:k.planDoc});_renderFicha();__toast('Plan «'+files[0].name+'» adjuntado ✓');}
 function _cliDocDrop(ev){ev.preventDefault();ev.currentTarget.classList.remove('over');_cliDocFiles(ev.dataTransfer.files);}
 // Fotos de progreso (pestaña Progreso).
-function _progFiles(files){var k=_cli(_curCli);if(!k||!files||!files.length)return;k.progFotos=k.progFotos||[];var imgs=[].slice.call(files).filter(function(f){return (f.type||'').indexOf('image')===0;});var pend=imgs.length;if(!pend){__toast('Suelta imágenes');return;}imgs.forEach(function(f){var r=new FileReader();r.onload=function(e){k.progFotos.push(e.target.result);pend--;if(pend===0){_cliSaveLocally(_curCli,{progFotos:k.progFotos});_renderFicha();__toast(imgs.length+' foto'+(imgs.length===1?'':'s')+' de progreso agregada'+(imgs.length===1?'':'s')+' ✓');}};r.readAsDataURL(f);});}
+function _progFiles(files){var k=_cli(_curCli);if(!k||!files||!files.length)return;k.progFotos=k.progFotos||[];var imgs=[].slice.call(files).filter(function(f){return (f.type||'').indexOf('image')===0;});var pend=imgs.length;if(!pend){__toast('Suelta imágenes');return;}imgs.forEach(function(f){var r=new FileReader();r.onload=function(e){k.progFotos.push(e.target.result);pend--;if(pend===0){_cliSaveLocally(_curCli,{progFotos:k.progFotos});_cliSaveToDb(_curCli,{progFotos:k.progFotos});_renderFicha();__toast(imgs.length+' foto'+(imgs.length===1?'':'s')+' de progreso agregada'+(imgs.length===1?'':'s')+' ✓');}};r.readAsDataURL(f);});}
 function _progDrop(ev){ev.preventDefault();ev.currentTarget.classList.remove('over');_progFiles(ev.dataTransfer.files);}
-function _progDel(i){var k=_cli(_curCli);if(!k||!k.progFotos)return;k.progFotos.splice(i,1);_cliSaveLocally(_curCli,{progFotos:k.progFotos});_renderFicha();}
+function _progDel(i){var k=_cli(_curCli);if(!k||!k.progFotos)return;k.progFotos.splice(i,1);_cliSaveLocally(_curCli,{progFotos:k.progFotos});_cliSaveToDb(_curCli,{progFotos:k.progFotos});_renderFicha();}
 // Documentos de sesiones (pestaña Sesiones).
-function _sesFiles(files){var k=_cli(_curCli);if(!k||!files||!files.length)return;k.sesDocs=k.sesDocs||[];[].slice.call(files).forEach(function(f){k.sesDocs.push(f.name);});_cliSaveLocally(_curCli,{sesDocs:k.sesDocs});_renderFicha();__toast('Documento'+(files.length===1?'':'s')+' adjuntado'+(files.length===1?'':'s')+' ✓');}
+function _sesFiles(files){var k=_cli(_curCli);if(!k||!files||!files.length)return;k.sesDocs=k.sesDocs||[];[].slice.call(files).forEach(function(f){k.sesDocs.push(f.name);});_cliSaveLocally(_curCli,{sesDocs:k.sesDocs});_cliSaveToDb(_curCli,{sesDocs:k.sesDocs});_renderFicha();__toast('Documento'+(files.length===1?'':'s')+' adjuntado'+(files.length===1?'':'s')+' ✓');}
 function _sesDrop(ev){ev.preventDefault();ev.currentTarget.classList.remove('over');_sesFiles(ev.dataTransfer.files);}
-function _sesDel(i){var k=_cli(_curCli);if(!k||!k.sesDocs)return;k.sesDocs.splice(i,1);_cliSaveLocally(_curCli,{sesDocs:k.sesDocs});_renderFicha();}
+function _sesDel(i){var k=_cli(_curCli);if(!k||!k.sesDocs)return;k.sesDocs.splice(i,1);_cliSaveLocally(_curCli,{sesDocs:k.sesDocs});_cliSaveToDb(_curCli,{sesDocs:k.sesDocs});_renderFicha();}
 // dropdowns
 function __closeDD(){document.querySelectorAll('.dd').forEach(function(d){d.classList.remove('open');});}
 document.addEventListener('click',__closeDD);
@@ -6095,11 +6097,11 @@ var _cfgSec='profile';
 var CFG={color:'#2D6A4F',recursos:[]};
 function renderConfig(){
  var v=document.getElementById('vscroll');
- var titles={empresa:'Datos de tu empresa',negocio:'Mi Negocio',marca:'Marca',landing:'Landing',portal:'Portal del cliente',usuarios:'Usuarios',integraciones:'Integraciones'};
- var subs={empresa:'Información pública y configuración',negocio:'Tu negocio, tu voz, tu propuesta. La IA genera todo lo demás.',marca:'Logo, colores, tipografía y dominio de tu marca',landing:'Vista previa y configuración de tu landing',portal:'Cómo verá el cliente su portal',usuarios:'Gestión de coaches y colaboradores',integraciones:'Conexiones externas'};
- var panels={empresa:_cfgProfile,negocio:_cfgNegocio,marca:_cfgMarca,landing:_cfgLanding,portal:_cfgPortal,'empresa-ia':_cfgEmpresaIA,usuarios:_cfgComingSoon,integraciones:_cfgComingSoon};
+ var titles={empresa:'Datos de tu empresa',negocio:'Mi Negocio',marca:'Marca',recursos:'Recursos del portal',landing:'Landing',portal:'Portal del cliente',usuarios:'Usuarios',integraciones:'Integraciones'};
+ var subs={empresa:'Información pública y configuración',negocio:'Tu negocio, tu voz, tu propuesta. La IA genera todo lo demás.',marca:'Logo, colores, tipografía y dominio de tu marca',recursos:'Materiales que verán todos tus clientes en su portal',landing:'Vista previa y configuración de tu landing',portal:'Cómo verá el cliente su portal',usuarios:'Gestión de coaches y colaboradores',integraciones:'Conexiones externas'};
+ var panels={empresa:_cfgProfile,negocio:_cfgNegocio,marca:_cfgMarca,recursos:_cfgRecursos,landing:_cfgLanding,portal:_cfgPortal,'empresa-ia':_cfgEmpresaIA,usuarios:_cfgComingSoon,integraciones:_cfgComingSoon};
  var sec=_cfgSec||'empresa';
- var isEmpresaFlow=['negocio','marca','landing','portal','empresa-ia'].indexOf(sec)>=0;
+ var isEmpresaFlow=['negocio','marca','recursos','landing','portal','empresa-ia'].indexOf(sec)>=0;
  var title=titles[sec]||'Configuración';
  var sub=subs[sec]||'';
  v.innerHTML='<header class="cp-topbar" style="'+(isEmpresaFlow?'display:none;':'')+'"><div><h1 class="cp-h1">'+_mcEsc(title)+'<span class="dot">.</span></h1>'+(sub?'<div class="cp-sub">'+_mcEsc(sub)+'</div>':'')+' </div></header>'
@@ -6127,7 +6129,7 @@ function _updateTimelineUI(){
   });
 }
 function _updateStepperUI(){
- ['negocio','marca','landing','portal','ia'].forEach(function(step){
+ ['negocio','marca','recursos','landing','portal','ia'].forEach(function(step){
   var btn=document.getElementById('step-'+step);
   if(btn){
    if(_cfgSec===step || (_cfgSec==='empresa-ia' && step==='ia')){
@@ -6426,6 +6428,9 @@ function _cfgMarca(){
     +'</div>';
  };
 
+ // Hidden inputs for brand colors to support _saveBrand() expectations
+ window._cfgMarcaInputs={'cfb-logo':'','cfb-color':cur1,'cfb-color2':cur2,'cfb-font':curFont};
+
  var _fontDescriptions={'Inter':'Moderna · Tecnología · Profesional','Poppins':'Cercana · Creativa · Actual','Manrope':'Premium · Consultoría · Executive'};
  var _fontCard=function(name){
    var isSelected=(curFont===name);
@@ -6589,19 +6594,14 @@ function _mcLogoFile(inp){
   r.readAsDataURL(f);
 }
 function _mcSetLogo(dataUrl){
-  var i=document.getElementById('cfb-logo');
-  if(i){
-    i.dataset.logoData=dataUrl;
-    i.value='';
-    i.placeholder='Logo cargado ('+Math.round(dataUrl.length/1024)+'kb)';
-  }
+  if(window._cfgMarcaInputs) window._cfgMarcaInputs['cfb-logo']=dataUrl;
   var p=document.getElementById('logoprev');
   if(p){p.src=dataUrl;p.style.display='';}
   var pp=document.getElementById('cfb-prev-logo');
   if(pp){pp.src=dataUrl;pp.style.display='';}
   var btn=document.getElementById('btn-suggest-colors');
   if(btn)btn.style.display='';
-  __toast('Logo cargado — tocá «Guardar identidad»');
+  __toast('Logo cargado — tocá «Guardar cambios»');
 }
 function _mcInitLogo(){
   var logoUrl=(_mcBrand().logo||'').replace(/"/g,'&quot;');
@@ -6742,6 +6742,9 @@ function _updateBrandSaveStatus(state){
 function _openColorModalData(id,val){
   _openColorModal(id,val);
 }
+function _setColor(hex){ CFG.color=hex; if(window._cfgMarcaInputs) window._cfgMarcaInputs['cfb-color']=hex; }
+function _setColor2(hex){ CFG.color2=hex; if(window._cfgMarcaInputs) window._cfgMarcaInputs['cfb-color2']=hex; }
+function _setFont(f){ if(window._cfgMarcaInputs) window._cfgMarcaInputs['cfb-font']=f; renderConfig(); }
 function _openColorModal(id,currentValue){
   if(!id)return;
   var label=(id==='cfb-color'?'Color primario':(id==='cfb-color2'?'Color secundario':'Color'));
@@ -7921,11 +7924,11 @@ function renderBrandLogo(){
 }
 function _saveBrand(){
   _updateBrandSaveStatus('saving');
-  var inp=document.getElementById('cfb-logo')||{};
-  var l=inp.dataset.logoData||inp.value||'';
+  var inputs=window._cfgMarcaInputs||{};
+  var l=inputs['cfb-logo']||'';
   var _dominio=(document.getElementById('cfm-dominio')||{}).value||'';
   var _favicon=(document.getElementById('cfm-favicon')||{}).value||'';
-  var _color2=CFG.color2||_mcBrand().color2||'';
+  var _color2=CFG.color2||inputs['cfb-color2']||_mcBrand().color2||'';
 
   if(l.trim() && !_mcCanFeature('logo')){
     __toast('Logo es feature del plan Pro');
@@ -7944,11 +7947,9 @@ function _saveBrand(){
   var marca={
     logo:l.trim(),
     favicon:_favicon.trim(),
-    colores:{
-      primario:CFG.color||'#2D6A4F',
-      secundario:_color2||'#52B788'
-    },
-    tipografia:(document.getElementById('cfb-font')||{}).value||'inter',
+    color:CFG.color||inputs['cfb-color']||'#2D6A4F',
+    color2:_color2||'#52B788',
+    font:inputs['cfb-font']||'Inter',
     dominio:_dominio.trim()
   };
 

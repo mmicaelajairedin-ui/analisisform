@@ -319,6 +319,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:transparent;}
 // 5. Sin reload automático (cambios en tiempo real sin refresh)
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Global Supabase config (used by brand engine, landing engine, etc.)
+window.SB = window.SB || 'https://api.pathwaycareercoach.com';
+window.KEY = window.KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+
 (function() {
   var orgSlug = null;
   var orgData = null;
@@ -330,7 +334,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:transparent;}
     return url.searchParams.get('org');
   }
 
-  // 2. Resolver organización desde slug (vía Brand Engine)
+  // 2. Resolver organización desde slug (consulta directa a Supabase)
   async function resolveOrganization(slug) {
     if (!slug) {
       console.log('[Landing] No org slug provided, using Pathway defaults');
@@ -338,41 +342,48 @@ button{font-family:inherit;cursor:pointer;border:none;background:transparent;}
     }
 
     try {
-      // FUTURE: En V2, aquí podríamos soportar múltiples templates:
-      // const template = url.searchParams.get('template') || 'premium';
-      // Por ahora, solo template 'premium' (frozen en Sprint B.6.4)
-
-      if (typeof window.BrandEngine === 'undefined') {
-        console.warn('[Landing] BrandEngine not loaded yet');
+      // Use global SB/KEY if available, otherwise fallback to defaults
+      var SB = (typeof window.SB !== 'undefined') ? window.SB : 'https://api.pathwaycareercoach.com';
+      var KEY = (typeof window.KEY !== 'undefined') ? window.KEY : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+      var r = await fetch(SB + '/rest/v1/organizaciones?slug=eq.' + encodeURIComponent(slug) + '&select=*&limit=1', {
+        headers: { apikey: KEY }
+      });
+      if (!r.ok) {
+        console.log('[Landing] Failed to fetch org by slug:', slug, r.status);
         return null;
       }
-
-      // BrandEngine.loadOrganization(orgId) por defecto, pero necesitamos slug → orgId
-      // Por ahora, el Brand Engine necesita orgId. Para v1, fallback a defaults.
-      console.log('[Landing] Resolver org from slug:', slug);
-      return { slug: slug };
+      var rows = await r.json();
+      var org = (Array.isArray(rows) && rows[0]) ? rows[0] : null;
+      if (!org) {
+        console.log('[Landing] Org not found for slug:', slug);
+        return null;
+      }
+      console.log('[Landing] ✓ Resolved org from slug:', { id: org.id, nombre: org.nombre, slug: org.slug });
+      return org;
     } catch (err) {
       console.error('[Landing] Error resolving org:', err);
       return null;
     }
   }
 
-  // 3. Cargar branding desde Supabase (via BrandEngine)
+  // 3. Cargar branding desde organizaciones.marca (campo JSONB)
   async function loadBranding(org) {
-    if (!org || !window.BrandEngine) return null;
+    if (!org) return null;
 
     try {
-      // FUTURE: En V2, BrandEngine tendrá método loadOrganizationBySlug(slug)
-      // Por ahora, asumimos que loadOrganization(orgId) está listo
-      // Para v1, aplicamos defaults y esperamos que la org. tenga datos en Supabase
-
-      var branding = window.BrandEngine.getBranding();
-      if (branding && branding.primary_color) {
-        console.log('[Landing] Branding loaded:', {
-          primary: branding.primary_color,
-          secondary: branding.secondary_color
+      var marca = (org && org.marca && typeof org.marca === 'object') ? org.marca : {};
+      if (marca.color || marca.color2 || marca.logo) {
+        console.log('[Landing] ✓ Branding loaded from org.marca:', {
+          primary: marca.color,
+          secondary: marca.color2,
+          logo: marca.logo
         });
-        return branding;
+        return {
+          primary_color: marca.color,
+          secondary_color: marca.color2,
+          logo: marca.logo,
+          name: org.nombre
+        };
       }
     } catch (err) {
       console.error('[Landing] Error loading branding:', err);
@@ -446,8 +457,10 @@ button{font-family:inherit;cursor:pointer;border:none;background:transparent;}
       orgData = await resolveOrganization(orgSlug);
       if (orgData) {
         brandData = await loadBranding(orgData);
-        applyBrandingVars(brandData);
-        injectLogo(brandData, orgData);
+        if (brandData) {
+          applyBrandingVars(brandData);
+          injectLogo(brandData, orgData);
+        }
         injectOrgName(orgData);
       }
     }
