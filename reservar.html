@@ -297,10 +297,21 @@ var SAFE_SELECT='id,nombre,email,foto_url,rol,configuracion';
 function _pubFetch(qs, extra){
   var h={ apikey:KEY, Authorization:'Bearer '+KEY };
   if(extra) for(var _k in extra) if(extra.hasOwnProperty(_k)) h[_k]=extra[_k];
-  return fetch(SB+'/rest/v1/usuarios_publicos?'+qs,{headers:h}).then(function(r){
-    if(r.status===404 || r.status===406){ return fetch(SB+'/rest/v1/usuarios?'+qs,{headers:h}); }
-    return r;
-  }).catch(function(){ return fetch(SB+'/rest/v1/usuarios?'+qs,{headers:h}); });
+  var _abort=new AbortController();
+  var _timeout=setTimeout(function(){ _abort.abort(); }, 8000);
+  var _opts={headers:h, signal:_abort.signal};
+  return fetch(SB+'/rest/v1/usuarios_publicos?'+qs,_opts)
+    .then(function(r){
+      if(r.status===404 || r.status===406){ return fetch(SB+'/rest/v1/usuarios?'+qs,_opts).finally(function(){ clearTimeout(_timeout); }); }
+      clearTimeout(_timeout);
+      return r;
+    })
+    .catch(function(){
+      clearTimeout(_timeout);
+      var _abort2=new AbortController();
+      var _timeout2=setTimeout(function(){ _abort2.abort(); }, 8000);
+      return fetch(SB+'/rest/v1/usuarios?'+qs,{headers:h, signal:_abort2.signal}).finally(function(){ clearTimeout(_timeout2); });
+    });
 }
 var DISP=null;
 var TAKEN={}; // { instanteMs: true } de las citas ya tomadas del coach (anti doble-booking)
@@ -407,19 +418,20 @@ function _viewerGroups(){
   return groups.slice(0,10);
 }
 function _tzLabel(){ try{ var z=Intl.DateTimeFormat().resolvedOptions().timeZone; return z?(' ('+z+')'):''; }catch(e){ return ''; } }
-function loadCitas(){ TAKEN={}; if(!CID) return; fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(CID)+'&estado=neq.cancelada&select=inicio').then(function(r){ return r.ok?r.json():[]; }).then(function(rows){ var T={}; (rows||[]).forEach(function(c){ if(!c||!c.inicio) return; var t=new Date(c.inicio).getTime(); if(!isNaN(t)) T[t]=true; }); TAKEN=T; renderPicker(); }).catch(function(){}); }
+function loadCitas(){ TAKEN={}; if(!CID) return; var _abort=new AbortController(); var _tm=setTimeout(function(){ _abort.abort(); }, 6000); fetch(SB+'/rest/v1/citas?coach_id=eq.'+encodeURIComponent(CID)+'&estado=neq.cancelada&select=inicio',{signal:_abort.signal}).then(function(r){ clearTimeout(_tm); return r.ok?r.json():[]; }).then(function(rows){ var T={}; (rows||[]).forEach(function(c){ if(!c||!c.inicio) return; var t=new Date(c.inicio).getTime(); if(!isNaN(t)) T[t]=true; }); TAKEN=T; renderPicker(); }).catch(function(){ clearTimeout(_tm); }); }
 // Eventos REALES del calendario del coach (su iCal público, vía edge function
 // `calendar`). Con esto NO te reservan un hueco donde ya tienes algo — además de
 // las reservas de Pathway. Solo eventos con hora (los de "todo el día" tipo
 // cumpleaños no bloquean; las vacaciones se manejan aparte).
 var BUSY=[];
 function loadBusy(){ BUSY=[]; var em=(''+(EMAIL||'')).trim().toLowerCase(); if(!em||em.indexOf('@')<0) return;
-  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(em),{ headers:{ apikey:KEY, Authorization:'Bearer '+KEY } })
-    .then(function(r){ return r.ok?r.json():null; })
+  var _abort=new AbortController(); var _tm=setTimeout(function(){ _abort.abort(); }, 5000);
+  fetch(SB+'/functions/v1/calendar?email='+encodeURIComponent(em),{ headers:{ apikey:KEY, Authorization:'Bearer '+KEY }, signal:_abort.signal })
+    .then(function(r){ clearTimeout(_tm); return r.ok?r.json():null; })
     .then(function(d){ var evs=(d&&Object.prototype.toString.call(d.events)==='[object Array]')?d.events:[];
       BUSY=evs.map(function(e){ if(!e||e.start==null) return null; var s=+e.start; var en=e.end!=null?+e.end:(s+30*60000); if(isNaN(s)) return null; if(isNaN(en)||en<=s) en=s+30*60000; if((en-s)>=23*3600000) return null; return {s:s,e:en}; }).filter(Boolean);
       renderPicker();
-    }).catch(function(){});
+    }).catch(function(){ clearTimeout(_tm); });
 }
 // ¿El hueco [ms, ms+DUR) pisa (o queda a menos del margen de) un evento del
 // calendario del coach O una reserva de Pathway? El margen (buffer) es el
