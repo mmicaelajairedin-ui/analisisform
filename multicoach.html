@@ -3327,18 +3327,29 @@ function mcDashboardV3Hero(){
   var firstName=(greeting.split(' ')[0]||greeting);
   document.getElementById('mc-db-greeting').innerHTML='Buenos días '+_mcEsc(firstName)+' <span class="db-wave">👋</span>';
 
-  var coaches=(DB.coaches||[]).filter(function(c){return c.est==='activo';}).length;
-  var clients=(DB.clientes||[]).filter(function(c){return c.est==='activo';}).length;
-  var retentionRate=Math.round(((DB.clientes||[]).filter(function(c){return c.est==='activo';}).length/(DB.clientes||[]).length||0)*100);
-  var upcomingSessions=(MC_CITAS||[]).filter(function(c){return new Date(c.inicio)>new Date();}).length;
+  var activeCoaches=(DB.coaches||[]).filter(function(c){return c.est==='activo';});
+  var activeClients=(DB.clientes||[]).filter(function(c){return c.est==='activo';});
+  var totalClients=(DB.clientes||[]).length||1;
+  var coaches=activeCoaches.length, clients=activeClients.length;
+  var retentionRate=Math.round((clients/totalClients)*100);
+  var upcomingSessions=(MC_CITAS||[]).filter(function(c){return c.inicio&&new Date(c.inicio)>new Date();}).length;
+  var alertCount=mcNotifData().length;
 
-  // Update health status
+  // Health status based on real data
   var healthText='Organización Saludable';var healthClass='success';
   if(coaches===0||clients===0){healthText='Organización incompleta';healthClass='warning';}
-  else if(retentionRate<75){healthText='Retención baja';healthClass='warning';}
+  else if(alertCount>0){healthText='Atención requerida';healthClass='warning';}
+  else if(retentionRate<75){healthText='Retención por mejorar';healthClass='warning';}
 
   var healthEl=document.getElementById('mc-db-health-text');if(healthEl)healthEl.textContent=healthText;
   var healthDot=document.getElementById('mc-db-health-dot');if(healthDot){healthDot.className='db-health-dot '+healthClass;}
+
+  // Dynamic status detail
+  var statusDetail='';
+  if(coaches===0) statusDetail='Suma coaches para empezar';
+  else if(clients===0) statusDetail='Sin clientes aún';
+  else if(alertCount>0) statusDetail=alertCount+' alerta'+(alertCount!==1?'s':'');
+  else statusDetail='Operando normalmente';
 
   // Update detail line with icons
   var detailsEl=document.getElementById('mc-db-hero-details');
@@ -3347,7 +3358,7 @@ function mcDashboardV3Hero(){
     detailsHtml+='<div class="db-org-detail"><i data-ic="briefcase" data-sm></i> '+coaches+' coach'+(coaches!==1?'es':'')+'</div>';
     detailsHtml+='<div class="db-org-detail"><i data-ic="users" data-sm></i> '+clients+' cliente'+(clients!==1?'s':'')+'</div>';
     detailsHtml+='<div class="db-org-detail"><i data-ic="trendUp" data-sm></i> '+retentionRate+'% retención</div>';
-    detailsHtml+='<div class="db-org-detail"><i data-ic="check" data-sm></i> Todo funciona</div>';
+    detailsHtml+='<div class="db-org-detail"><i data-ic="info" data-sm></i> '+_mcEsc(statusDetail)+'</div>';
     detailsEl.innerHTML=detailsHtml;
   }
 
@@ -3360,13 +3371,25 @@ function mcDashboardV3Hero(){
   mcCountUp();
 }
 
+// Genera notificaciones del dashboard (coaches inactivos, clientes en riesgo)
+function mcNotifData(){
+  var notifs=[];
+  var inactiveCoaches=(DB.coaches||[]).filter(function(c){return c.est==='inactivo';});
+  var atRiskClients=(DB.clientes||[]).filter(function(c){return c.lastState==='stale'||c.lastState==='mid';});
+  if(inactiveCoaches.length>0) notifs.push({emo:'🔴',t:inactiveCoaches.length+' coach'+(inactiveCoaches.length!==1?'es':'')+' inactivo'+(inactiveCoaches.length!==1?'s':''),s:'Sin actividad en los últimos 7 días'});
+  if(atRiskClients.length>0) notifs.push({emo:'🟡',t:atRiskClients.length+' cliente'+(atRiskClients.length!==1?'s':'')+' en riesgo',s:'Semana '+Math.min.apply(null,atRiskClients.map(function(c){return c.week||1;}))});
+  return notifs;
+}
 // Populate activity section
 function mcDashboardV3Activity(){
   var activities=[];
-  var recentClients=(DB.clientes||[]).filter(function(c){return c._ts;}).sort(function(a,b){return(b._ts||0)-(a._ts||0);}).slice(0,5);
+  var recentClients=(DB.clientes||[]).filter(function(c){return c.created_at;}).sort(function(a,b){return new Date(b.created_at||0)-new Date(a.created_at||0);}).slice(0,5);
+  var now=new Date();
   recentClients.forEach(function(c){
-    if(c._ts){
-      var timeAgo='hace '+Math.floor((Date.now()-c._ts)/(1000*60))+'m';
+    if(c.created_at){
+      var ts=new Date(c.created_at).getTime();
+      var mins=Math.floor((now-ts)/(1000*60));
+      var timeAgo=mins<60?'hace '+mins+'m':mins<1440?'hace '+Math.floor(mins/60)+'h':'hace '+Math.floor(mins/1440)+'d';
       activities.push({icon:'➕',title:'Nuevo cliente: '+c.n,time:timeAgo});
     }
   });
@@ -3409,23 +3432,30 @@ function mcDashboardV3Alerts(){
 
 // Populate next sessions
 function mcDashboardV3Proximas(){
-  var sessions=(MC_CITAS||[]).filter(function(c){return c&&c.inicio&&new Date(c.inicio)>new Date();}).sort(function(a,b){
+  var now=new Date();
+  var sessions=(MC_CITAS||[]).filter(function(c){return c&&c.inicio;}).filter(function(c){try{return new Date(c.inicio)>now;}catch(e){return false;}}).sort(function(a,b){
     return new Date(a.inicio).getTime()-new Date(b.inicio).getTime();
   }).slice(0,3);
 
   var proximasContainer=document.getElementById('mc-db-proximas');
   if(proximasContainer){
     if(sessions.length){
+      var clientMap={}, coachMap={};
+      (DB.clientes||[]).forEach(function(c){clientMap[(c.email||'').toLowerCase()]=c;});
+      (DB.coaches||[]).forEach(function(c){coachMap[c.id]=c;});
+
       proximasContainer.innerHTML=sessions.map(function(s){
-        var dateObj=new Date(s.inicio);
-        var time=dateObj.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}).slice(0,-3);
-        var client=DB&&DB.clientes?DB.clientes.find(function(c){return(''+(c.email||'')).toLowerCase()===(''+(s.email||'')).toLowerCase();}):null;
-        var coach=s.coach_id?DB.coaches.find(function(c){return c.id===s.coach_id;}):null;
-        var estado=(s.estado||'programada').toLowerCase();
-        var estadoLabel={confirmada:'Confirmada',programada:'Programada',pendiente:'Pendiente',cancelada:'Cancelada',bloqueada:'Bloqueada',confirmed:'Confirmada',scheduled:'Programada',pending:'Pendiente',cancelled:'Cancelada',blocked:'Bloqueada'}[estado]||'Sesión';
-        var estadoColor={confirmada:'#10A366',programada:'#6A1B9A',pendiente:'#D97706',cancelada:'#DC2626',bloqueada:'#757575',confirmed:'#10A366',scheduled:'#6A1B9A',pending:'#D97706',cancelled:'#DC2626',blocked:'#757575'}[estado]||'#8B8B8B';
-        var estadoBg={confirmada:'#E8F5E9',programada:'#F3E5F5',pendiente:'#FFF3E0',cancelada:'#FFEBEE',bloqueada:'#F5F5F5',confirmed:'#E8F5E9',scheduled:'#F3E5F5',pending:'#FFF3E0',cancelled:'#FFEBEE',block:'#F5F5F5'}[estado]||'#F0F0F0';
-        return '<div class="db-timeline-item"><div class="db-timeline-time">'+time+'</div><div class="db-timeline-content"><p class="db-timeline-title">Sesión'+(s.tipo?' de '+s.tipo:'')+' <span style="font-size:10px;font-weight:600;color:'+estadoColor+';background:'+estadoBg+';padding:3px 8px;border-radius:100px;margin-left:8px">'+_mcEsc(estadoLabel)+'</span></p><p class="db-timeline-detail">'+(client?_mcEsc(client.n)+' · ':'')+(coach?_mcEsc(coach.n):'')+'</p></div></div>';
+        try{
+          var dateObj=new Date(s.inicio);
+          var time=dateObj.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}).slice(0,-3);
+          var client=clientMap[(s.email||'').toLowerCase()];
+          var coach=coachMap[s.coach_id];
+          var estado=(s.estado||'programada').toLowerCase().replace('confirmed','confirmada').replace('scheduled','programada').replace('pending','pendiente').replace('cancelled','cancelada').replace('blocked','bloqueada');
+          var estilo={confirmada:'#10A366,#E8F5E9',programada:'#6A1B9A,#F3E5F5',pendiente:'#D97706,#FFF3E0',cancelada:'#DC2626,#FFEBEE',bloqueada:'#757575,#F5F5F5'}[estado]||'#8B8B8B,#F0F0F0';
+          var sc=estilo.split(',');
+          var label={confirmada:'Confirmada',programada:'Programada',pendiente:'Pendiente',cancelada:'Cancelada',bloqueada:'Bloqueada'}[estado]||'Sesión';
+          return '<div class="db-timeline-item"><div class="db-timeline-time">'+time+'</div><div class="db-timeline-content"><p class="db-timeline-title">Sesión'+(s.tipo?' '+s.tipo:'')+' <span style="font-size:10px;font-weight:600;color:'+sc[0]+';background:'+sc[1]+';padding:3px 8px;border-radius:100px;margin-left:8px">'+label+'</span></p><p class="db-timeline-detail">'+(client?_mcEsc(client.n):'')+' · '+(coach?_mcEsc(coach.n):_mcEsc(s.coach_id||''))+'</p></div></div>';
+        }catch(e){return '';}
       }).join('');
     }else{
       proximasContainer.innerHTML='<div class="db-timeline"><div class="db-timeline-item"><div class="db-timeline-content"><p class="db-timeline-title">Sin sesiones agendadas</p><p class="db-timeline-detail">Agendar una sesión</p></div></div></div>';
@@ -3462,17 +3492,21 @@ function mcDashboardV3Intervention(){
 
 // Populate progress section
 function mcDashboardV3Progress(){
-  var coachStats={activos:(DB.coaches||[]).filter(function(c){return c.est==='activo';}).length,total:(DB.coaches||[]).length};
-  var clientStats={activos:(DB.clientes||[]).filter(function(c){return c.est==='activo';}).length,total:(DB.clientes||[]).length};
-  var retention=Math.round((clientStats.activos/(clientStats.total||1))*100);
-  var sessionsThisMonth=(MC_CITAS||[]).filter(function(c){return c.inicio&&new Date(c.inicio).getMonth()===new Date().getMonth();}).length;
+  var coachStats={activos:(DB.coaches||[]).filter(function(c){return c.est==='activo';}).length,total:(DB.coaches||[]).length||1};
+  var clientStats={activos:(DB.clientes||[]).filter(function(c){return c.est==='activo';}).length,total:(DB.clientes||[]).length||1};
+  var retention=Math.round((clientStats.activos/clientStats.total)*100);
+  var now=new Date();
+  var sessionsThisMonth=(MC_CITAS||[]).filter(function(c){
+    if(!c.inicio) return false;
+    try{var d=new Date(c.inicio); return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();}catch(e){return false;}
+  }).length;
 
   var progressContainer=document.getElementById('mc-db-progress');
   if(progressContainer){
     var html='<div class="db-progress-card"><div class="db-progress-label">Coaches Activos</div><div class="db-kpi-value">'+coachStats.activos+'</div><div class="db-progress-trend">de '+coachStats.total+'</div></div>'+
              '<div class="db-progress-card"><div class="db-progress-label">Clientes Activos</div><div class="db-kpi-value">'+clientStats.activos+'</div><div class="db-progress-trend">de '+clientStats.total+'</div></div>'+
-             '<div class="db-progress-card"><div class="db-progress-label">Retención</div><div class="db-kpi-value">'+retention+'%</div><div class="db-progress-trend" style="color:var(--db-success)">↑ Este mes</div></div>'+
-             '<div class="db-progress-card"><div class="db-progress-label">Sesiones Mes</div><div class="db-kpi-value">'+sessionsThisMonth+'</div><div class="db-progress-trend">en progreso</div></div>';
+             '<div class="db-progress-card"><div class="db-progress-label">Retención</div><div class="db-kpi-value">'+retention+'%</div><div class="db-progress-trend">'+((clientStats.activos<clientStats.total)?'↓':'↑')+' Esta semana</div></div>'+
+             '<div class="db-progress-card"><div class="db-progress-label">Sesiones Mes</div><div class="db-kpi-value">'+sessionsThisMonth+'</div><div class="db-progress-trend">'+now.toLocaleDateString('es-ES',{month:'short'})+'</div></div>';
     progressContainer.innerHTML=html;
   }
 }
