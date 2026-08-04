@@ -772,17 +772,42 @@ async function enviar(){
     var _cb=document.getElementById('consent-cb'); if(_cb) _cb.focus();
     return;
   }
+  // CAMBIO ALTO: validar que el rol NO esté vacío (requerido para generar informe IA útil)
+  var _rol=(document.getElementById('f-rol').value||'').trim();
+  if(!_rol){
+    btn.disabled=false;
+    st.textContent=lang==='en'?'Please specify your desired role for the AI report.':'Especificá el rol que buscas para generar un informe útil.';
+    st.style.color='#C25B5B';
+    var _rolEl=document.getElementById('f-rol'); if(_rolEl) _rolEl.focus();
+    return;
+  }
   btn.disabled=true;btn.textContent=t.sending;st.textContent=t.sending;st.style.color='#666';
 
   if(ucWidget&&cvFile==='No subido'&&ucWidget.value()!==null){
     st.textContent=lang==='en'?'Waiting for CV upload...':'Esperando que termine de subir el CV...';
+    var _cvUploadSuccess=false;
     await new Promise((res)=>{
       const f=ucWidget.value();if(!f){res();return;}
       var done=false;
-      f.done(info=>{if(!done){done=true;cvUrl=(info.cdnUrl||'').replace('ucarecd.net','ucarecdn.com');cvFile=info.name;res();}})
+      f.done(info=>{
+        if(!done){
+          done=true;
+          cvUrl=(info.cdnUrl||'').replace('ucarecd.net','ucarecdn.com');
+          cvFile=info.name;
+          _cvUploadSuccess=true; // CAMBIO: marcar que se subió OK
+          res();
+        }
+      })
        .fail(()=>{if(!done){done=true;res();}});
       setTimeout(()=>{if(!done){done=true;res();}},15000);
     });
+    // CAMBIO CRÍTICO: validar que el CV se subió OK antes de continuar
+    if(!_cvUploadSuccess){
+      btn.disabled=false;
+      st.textContent=lang==='en'?'CV upload failed or timed out. Please try again.':'Fallo la subida del CV. Reintentá.';
+      st.style.color='#C25B5B';
+      return;
+    }
   }
 
   const d={
