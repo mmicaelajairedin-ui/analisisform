@@ -876,20 +876,24 @@ function confirmar(){
       // CAMBIO CRÍTICO: marcar slot como tomado INMEDIATAMENTE (no esperar confirmación)
       // para prevenir que otro cliente lo reserve en la ventana de latencia
       TAKEN[start.getTime()]=true;
-      // Sincronizar a Google Calendar ANTES de enviar emails (espera el link).
-      var _meetLink='';
+      // Sincronizar a Google Calendar y LUEGO enviar emails con el link
+      var _sendEmail=function(meetLink){
+        sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, meetLink||'', _ics.b64);
+      };
       if(saved && citaId){
-        try{
-          fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
-            .then(function(r){ return r.ok?r.json():{ok:false}; })
-            .then(function(d){
-              if(d && d.ok && d.hangoutLink) _meetLink=d.hangoutLink;
-            })
-            .catch(function(err){
-              console.warn('Google Calendar sync falló:', err);
-              try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, error:String(err) }) }).catch(function(){}); }catch(e){}
-            });
-        }catch(e){ console.warn('Error Google Calendar sync:', e); }
+        fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
+          .then(function(r){ return r.ok?r.json():{ok:false}; })
+          .then(function(d){
+            var meetLink=(d && d.ok && d.hangoutLink)?d.hangoutLink:'';
+            _sendEmail(meetLink);
+          })
+          .catch(function(err){
+            console.warn('Google Calendar sync falló:', err);
+            _sendEmail(''); // timeout o error: enviar sin link
+            try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, error:String(err) }) }).catch(function(){}); }catch(e){}
+          });
+      } else {
+        sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
       }
       // 1b) Si viene de "reprogramar" (gestionar-cita manda &reprog=<token viejo>),
       //     recién AHORA que la nueva quedó guardada cancelamos la vieja → el cliente
@@ -909,21 +913,6 @@ function confirmar(){
         fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'content-type':'application/json',Prefer:'return=minimal,resolution=ignore-duplicates'},body:JSON.stringify({email:_mpe,nombre:name,coach_id:_cid,origen:'pathway',activo:false})}).catch(function(){});
         fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_mpe)+'&coach_id=eq.'+encodeURIComponent(_cid),{method:'PATCH',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'content-type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({origen:'pathway'})}).catch(function(){});
       } }catch(e){}
-      // 2) Emails de confirmación (Brevo). Si sync-cita-to-gcal trajo el link, usar directo.
-      // Si no, esperar un poco (200ms) en caso de que esté en progreso.
-      if(saved && citaId){
-        var _sendWithLink=function(){
-          var meetLink=_meetLink||'';
-          sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, meetLink, _ics.b64);
-        };
-        if(_meetLink){
-          _sendWithLink(); // ya tenemos link, enviar ya
-        } else {
-          setTimeout(_sendWithLink, 200); // esperar 200ms en caso de que sync-cita-to-gcal esté terminando
-        }
-      } else {
-        sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
-      }
       // OS Core: se agendó la llamada/sesión (conversión del embudo de llamada).
       // Solo si realmente quedó guardada. Best-effort, nunca frena la confirmación.
       try{ if(saved && window.pwEmit) pwEmit("CallBooked",{dominio:"Coaching",entidad_tipo:"cita",entidad_id:(""+(email||"")).toLowerCase().slice(0,80),payload:{tipo:tlabel,kind:_kind,origen:origen,coach_id:_cid}}); }catch(e){}
