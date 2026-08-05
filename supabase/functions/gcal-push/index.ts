@@ -117,6 +117,7 @@ Deno.serve(async (req: Request) => {
         conferenceSolutionKey: { type: "hangoutsMeet" },
       },
     },
+    conferenceDataVersion: 1,
   };
   const att = String(ev.attendeeEmail || "").trim();
   if (att) gev.attendees = [{ email: att }];
