@@ -9660,34 +9660,63 @@ function viewAdmin(){
       if(!_coachsByEmail[em]) _coachsByEmail[em] = [];
       _coachsByEmail[em].push(u);
     });
-    // Una fila por email único, mostrando si hay múltiples cuentas
-    var _coachIndepRows = Object.keys(_coachsByEmail).sort().map(function(email){
+
+    // Filtrar y buscar coaches
+    var _mcCoachSearch = (state.mcCoachSearch||"").trim().toLowerCase();
+    var _mcCoachFilter = state.mcCoachFilter || "todos";
+    var _coachEntries = Object.keys(_coachsByEmail).sort().map(function(email){
       var coaches = _coachsByEmail[email]||[];
-      if(!coaches.length) return "";
-      var primaryCoach = coaches[0]; // Principal: la más nueva (primera en la lista cargada)
+      var primaryCoach = coaches[0];
       var totalClients = 0;
       coaches.forEach(function(c){
         var cnt = (RADM&&RADM.cands) ? (RADM.cands.filter(function(x){return x && x.coach_id === c.id;}).length) : 0;
         totalClients += cnt;
       });
-      var duplicateHint = coaches.length>1 ? " <span style='font-size:11px;color:var(--pw-danger);font-weight:600'>("+coaches.length+" cuentas)</span>" : "";
-      var name = primaryCoach.nombre || email || "Coach";
+      var estado = totalClients>0 ? "activo" : "sin_actividad";
+      return {email:email, coaches:coaches, primaryCoach:primaryCoach, totalClients:totalClients, estado:estado};
+    });
+
+    var _coachFiltered = _coachEntries.filter(function(e){
+      var matchSearch = !_mcCoachSearch || e.email.indexOf(_mcCoachSearch)>=0 || (e.primaryCoach.nombre||"").toLowerCase().indexOf(_mcCoachSearch)>=0;
+      var matchFilter = true;
+      if(_mcCoachFilter==="con_clientes") matchFilter = e.totalClients > 0;
+      else if(_mcCoachFilter==="sin_clientes") matchFilter = e.totalClients === 0;
+      else if(_mcCoachFilter==="activos") matchFilter = e.estado === "activo";
+      else if(_mcCoachFilter==="sin_actividad") matchFilter = e.estado === "sin_actividad";
+      return matchSearch && matchFilter;
+    });
+
+    var _coachIndepRows = _coachFiltered.map(function(e){
+      var duplicateHint = e.coaches.length>1 ? " <span style='font-size:11px;color:var(--pw-danger);font-weight:600'>("+e.coaches.length+" cuentas)</span>" : "";
+      var name = e.primaryCoach.nombre || e.email || "Coach";
+      var estLabel = e.estado==="activo" ? "🟢 Activo" : "⚪ Sin actividad";
       return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(name)+duplicateHint+"</td>"+
-        "<td style='text-align:center'>"+totalClients+"</td>"+
-        "<td><span style='padding:4px 10px;background:rgba(0,0,0,0.05);border-radius:6px;font-size:12px;color:var(--pw-carbon);font-weight:600'>Coach independiente</span></td>"+
-        "<td style='text-align:right;font-size:12px'><button class='cp-btn cp-btn-primary' style='padding:6px 12px;font-size:11px' data-act='mc-convert-start' data-coach='"+esc(primaryCoach.id||"")+"' data-dups='"+coaches.length+"'>Convertir</button></td>"+
+        "<td style='text-align:center'>"+e.totalClients+"</td>"+
+        "<td><span style='padding:4px 10px;background:rgba(0,0,0,0.05);border-radius:6px;font-size:12px;color:var(--pw-carbon);font-weight:600'>"+estLabel+"</span></td>"+
+        "<td style='text-align:right;font-size:12px'><button class='cp-btn cp-btn-primary' style='padding:6px 12px;font-size:11px' data-act='mc-convert-start' data-coach='"+esc(e.primaryCoach.id||"")+"' data-dups='"+e.coaches.length+"'>Convertir</button></td>"+
       "</tr>";
     }).join("");
-    var _coachUniqueCount = Object.keys(_coachsByEmail).length;
+
+    var _coachUniqueCount = _coachEntries.length;
     var _coachTotalCount = (RCOACHES||[]).filter(function(u){ return u && u.rol==="coach" && !u.org_id; }).length;
     var _countHint = _coachUniqueCount < _coachTotalCount ? " ("+_coachTotalCount+" cuentas, "+_coachUniqueCount+" personas)" : "";
+    var _coachFilterBar = "<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center'>"+
+      "<input class='cp-form-input' style='flex:1;min-width:200px;height:34px;font-size:13px' placeholder='Buscar por nombre o email...' value='"+esc(_mcCoachSearch)+"' oninput='state.mcCoachSearch=this.value;render()'>"+
+      "<select class='cp-form-input' style='height:34px;width:140px;font-size:13px' onchange='state.mcCoachFilter=this.value;render()'>"+
+        "<option value='todos' "+((_mcCoachFilter==="todos")?"selected":"")+"}>Todos</option>"+
+        "<option value='con_clientes' "+((_mcCoachFilter==="con_clientes")?"selected":"")+"}>Con clientes</option>"+
+        "<option value='sin_clientes' "+((_mcCoachFilter==="sin_clientes")?"selected":"")+"}>Sin clientes</option>"+
+        "<option value='activos' "+((_mcCoachFilter==="activos")?"selected":"")+"}>Activos</option>"+
+        "<option value='sin_actividad' "+((_mcCoachFilter==="sin_actividad")?"selected":"")+"'>Sin actividad</option>"+
+      "</select>"+
+    "</div>";
     var _coachIndepTable = _coachUniqueCount > 0
-      ? "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:700px'><thead><tr>"+
+      ? _coachFilterBar+"<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:700px'><thead><tr>"+
           "<th>Nombre</th><th>Clientes</th><th>Estado</th><th style='text-align:right'>Acciones</th>"+
-        "</tr></thead><tbody>"+_coachIndepRows+"</tbody></table></div>"
+        "</tr></thead><tbody>"+(_coachFiltered.length ? _coachIndepRows : "<tr><td colspan='4' style='text-align:center;padding:20px;color:var(--pw-text-soft);font-size:13px'>No hay coaches que coincidan con los filtros.</td></tr>")+"</tbody></table></div>"
       : "<div style='font-size:13px;color:var(--pw-text-soft);padding:20px;text-align:center'>No hay coaches independientes.</div>";
     var _coachIndepCard = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches independientes<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>"+ _coachUniqueCount +" personas"+_countHint+"</span></div>"+
+      "<span class='cp-eyebrow'>"+ _coachUniqueCount +" personas"+_countHint+(_coachFiltered.length<_coachUniqueCount?" · "+_coachFiltered.length+" mostrados":"")+  "</span></div>"+
       "<div class='cp-card-pad'>"+_coachIndepTable+"</div></div>";
 
     // Modal de confirmación para convertir coach
