@@ -29,7 +29,7 @@ class BrandEngine {
 
       // Fetch organization + branding en paralelo
       const [orgRes, brandRes] = await Promise.all([
-        _sbGet('organizations', { id: `eq.${orgId}` }),
+        _sbGet('organizaciones', { id: `eq.${orgId}` }),
         _sbGet('organization_branding', { organization_id: `eq.${orgId}` }),
       ]);
 
