@@ -7,12 +7,6 @@
 <meta charset="UTF-8">
 <link rel="stylesheet" href="/pw-icons.css?v=1">
 <script src="/pw-icons.js?v=1"></script>
-<script src="pw-theme-engine.js"></script>
-<script src="pw-brand-engine.js"></script>
-<script src="pw-landing-engine.js"></script>
-<script src="pw-domain-engine.js"></script>
-<script src="pw-asset-engine.js"></script>
-<script src="pw-app-bootstrap.js"></script>
 
 <script src="/pw-lang.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -199,10 +193,10 @@ var SB='https://api.pathwaycareercoach.com';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 var BASE='https://pathwaycareercoach.com';
 
-// ── Sign in with Apple (CAPACITOR + SUPABASE IDTOKEN) ─────────────────────
-// SOLO en iOS: usa el plugin nativo AppleSignIn para obtener identityToken en
-// una modal nativa (no Safari). Luego intercambia el token con Supabase Auth
-// via signInWithIdToken(). En web/Android, fallback a OAuth (que abre Safari).
+// ── Google Sign-in ─────────────────────────────────────────
+// Redirige al usuario a Google OAuth → Supabase → /auth-callback.html?source=login
+// auth-callback.html sincroniza con la tabla usuarios y redirige al panel
+// (o a Stripe si es la primera vez via Google y no tienen cuenta).
 function signInWithApple(){
   var btn = document.getElementById('btn-apple');
   if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Apple...';}
@@ -295,81 +289,32 @@ function signInWithGoogle(){
   }
   var btn = document.getElementById('btn-google');
   if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Google...';}
-
-  // ── Detectar si estamos en iOS app nativa ──
-  var isNativeIOS = false;
-  try {
-    var C = window.Capacitor;
-    if(C && (typeof C.isNativePlatform === "function" ? C.isNativePlatform() : C.isNative)){
-      var plat = (typeof C.getPlatform === "function" ? C.getPlatform() : "");
-      isNativeIOS = (plat === "ios");
-    }
-  } catch(e) {}
-
-  // ── En iOS: intent usar GoogleSignIn nativo (si está disponible) ──
-  if(isNativeIOS){
-    var GoogleAuth = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.GoogleAuth;
-    if(GoogleAuth && GoogleAuth.signIn){
-      GoogleAuth.signIn()
-        .then(function(result){
-          if(result && result.authentication && result.authentication.idToken){
-            var idToken = result.authentication.idToken;
-            // Guardar token y redirigir a auth-callback para intercambiar con Supabase.
-            try {
-              localStorage.setItem('pw_google_id_token', idToken);
-              if(result.email) localStorage.setItem('pw_google_email', result.email);
-              if(result.givenName || result.familyName){
-                var name = ((result.givenName || '') + ' ' + (result.familyName || '')).trim();
-                if(name) localStorage.setItem('pw_google_name', name);
-              }
-            } catch(e) {}
-            window.location.href = 'https://pathwaycareercoach.com/auth-callback.html?source=login&google_native=1';
-            return;
-          }
-          throw new Error('No idToken en respuesta de Google');
-        })
-        .catch(function(err){
-          console.error('[google native signin]', err);
-          if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
-          alert('Error iniciando sesión con Google: ' + (err && err.message || 'desconocido'));
-        });
-      return;
-    }
-  }
-
-  // ── Fallback web: OAuth via Safari/navegador ──
   var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login';
   var sb = window.supabase.createClient(SB, KEY);
   sb.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: redirectTo }
   }).catch(function(err){
-    console.error('[google signin web]', err);
+    console.error('[google signin]', err);
     if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
     alert('Error iniciando sesión con Google: ' + (err && err.message || 'desconocido'));
   });
 }
 
 // ── Idioma (auto-detect navegador) ─────────────────────────
-// Frases universales sobre el camino, acompañamiento y transformación.
-// No específicas de nicho — sirven para carrera, fitness, finanzas.
 var QUOTES_ES=[
-  '"El cambio empieza con un paso. Ya lo diste."',
-  '"No vengas solo. Un coach te acompaña en el camino."',
-  '"La transformación ocurre juntos."',
-  '"Cada día es una oportunidad para ser mejor."',
-  '"El esfuerzo hoy es el resultado mañana."',
-  '"Tu meta está más cerca de lo que crees."',
-  '"Con el acompañamiento correcto, todo es posible."'
+  '"Cada paso que das te acerca a donde quieres estar."',
+  '"Tu próximo trabajo ya te está esperando."',
+  '"El cambio empieza con una decisión. Ya la tomaste."',
+  '"No buscas cualquier trabajo, buscas el correcto."',
+  '"Tu experiencia tiene más valor del que crees."'
 ];
 var QUOTES_EN=[
-  '"Change begins with a step. You\'ve already taken it."',
-  '"You don\'t walk alone. A coach walks alongside you."',
-  '"Transformation happens together."',
-  '"Every day is an opportunity to be better."',
-  '"Today\'s effort becomes tomorrow\'s success."',
-  '"Your goal is closer than you think."',
-  '"With the right support, anything is possible."'
+  '"Every step you take brings you closer to where you want to be."',
+  '"Your next job is already waiting for you."',
+  '"Change begins with a decision. You already made it."',
+  '"You\'re not looking for any job — you\'re looking for the right one."',
+  '"Your experience holds more value than you think."'
 ];
 var TXT={
   es:{title:'Te damos la bienvenida a Pathway',sub:'Accede a tu portal',email:'Email',pass:'Contraseña',btn:'Entrar →',ver:'Verificando...',err_empty:'Introduce tu email y contraseña.',err_wrong:'Email o contraseña incorrectos.',err_net:'Error de conexión. Inténtalo de nuevo.',or:'o',or_email:'o con email',google:'Continuar con Google',noaccount:'¿Aún no tienes cuenta?',signup:'Regístrate aquí →',forgot:'¿Olvidaste tu contraseña?',nocoach:'¿Todavía no tienes coach?',findcoach:'Encuentra el tuyo en el directorio →'},
@@ -518,7 +463,7 @@ async function entrar(){
     if(usuario.activo===false && usuario.rol!=='admin'){
       if(usuario.rol==='cliente'||usuario.rol==='empleado'){
         error.innerHTML = usuario.rol==='empleado'
-          ? 'Tu acceso está pausado. Contacta al administrador.'
+          ? 'Tu acceso está pausado. Contactá al administrador.'
           : 'Tu acceso está pausado. Para retomarlo, escribe a tu coach.';
         btn.disabled=false;loading.style.display='none';
         return;
@@ -535,7 +480,80 @@ async function entrar(){
       btn.disabled=false;loading.style.display='none';
       return;
     }
-    localStorage.setItem('mj_user',JSON.stringify({id:usuario.id,email:usuario.email,rol:usuario.rol,nombre:usuario.nombre,activo:usuario.activo,configuracion:usuario.configuracion||{},foto_url:usuario.foto_url||'',bio:usuario.bio||'',nombre_practica:usuario.nombre_practica||'',org_id:usuario.org_id||null}));
+    // ── Determinar contexto y validar acceso según rol ────────────────────────
+    var contextType = usuario.org_id ? 'enterprise' : 'individual';
+    var multicoachAccess = false;
+    var colaboradorPermisos = null;
+
+    // Si es OWNER: validar acceso y detectar multi-org
+    if(usuario.rol === 'owner'){
+      multicoachAccess = true;
+      // Detectar si pertenece a múltiples orgs
+      try{
+        var _orgsRes = await fetch(SB+'/rest/v1/usuarios?auth_id=eq.'+encodeURIComponent(_authUid)+'&select=org_id&distinct=true', {
+          headers: {'apikey': KEY, 'Authorization': 'Bearer ' + _jwt}
+        });
+        var _orgsRows = await _orgsRes.json();
+        if(_orgsRows && Array.isArray(_orgsRows)){
+          var _orgIds = {};
+          _orgsRows.forEach(function(r){ if(r.org_id) _orgIds[r.org_id] = true; });
+          var _orgIdsList = Object.keys(_orgIds);
+          if(_orgIdsList.length > 1){
+            // Multi-org: guardar en localStorage para que multicoach.html muestre selector
+            localStorage.setItem('mj_multiorg_ids', JSON.stringify(_orgIdsList));
+            localStorage.setItem('mj_multiorg_current', usuario.org_id || _orgIdsList[0]);
+          }
+        }
+      }catch(_e){}
+    }
+    // Si es COLABORADOR: validar permisos antes de permitir acceso
+    else if(usuario.rol === 'colaborador' && usuario.org_id){
+      try{
+        var _permRes = await fetch(SB+'/rest/v1/colaborador_permisos?usuario_id=eq.'+encodeURIComponent(usuario.id)+'&org_id=eq.'+encodeURIComponent(usuario.org_id)+'&select=permisos', {
+          headers: {'apikey': KEY, 'Authorization': 'Bearer ' + _jwt}
+        });
+        var _permRows = await _permRes.json();
+        if(_permRows && Array.isArray(_permRows) && _permRows.length > 0){
+          // Tiene permisos → permitir acceso a MultiCoach
+          multicoachAccess = true;
+          colaboradorPermisos = _permRows[0].permisos || [];
+        } else {
+          // Sin permisos → denegar acceso
+          error.innerHTML = _lng === 'en'
+            ? 'You do not have access to enterprise management. Contact your administrator.'
+            : 'No tienes permisos para acceder a la gestión empresarial. Contacta al administrador.';
+          btn.disabled = false;
+          loading.style.display = 'none';
+          return;
+        }
+      }catch(_e){
+        // Si falla la query, denegar acceso (safer)
+        error.textContent = TXT[_lng].err_net;
+        btn.disabled = false;
+        loading.style.display = 'none';
+        return;
+      }
+    }
+
+    // Guardar usuario con contexto + flags de acceso
+    var _mj_user = {
+      id: usuario.id,
+      email: usuario.email,
+      rol: usuario.rol,
+      nombre: usuario.nombre,
+      activo: usuario.activo,
+      configuracion: usuario.configuracion || {},
+      foto_url: usuario.foto_url || '',
+      bio: usuario.bio || '',
+      nombre_practica: usuario.nombre_practica || '',
+      org_id: usuario.org_id || null,
+      coach_context: contextType,
+      multicoach_access: multicoachAccess
+    };
+    localStorage.setItem('mj_user', JSON.stringify(_mj_user));
+    if(colaboradorPermisos){
+      localStorage.setItem('mj_colaborador_permisos', JSON.stringify(colaboradorPermisos));
+    }
 
     // Guardar auth_id si todavía no estaba (lo tenemos de la sesión recién creada).
     if(!usuario.auth_id && _authUid){
@@ -567,21 +585,13 @@ async function entrar(){
       }catch(e){}
     }
 
-    // Contar logins para mostrar pop-up de completar perfil/reseña cada 8 logins
-    try{
-      var _lc=parseInt(localStorage.getItem('pw_login_count')||'0', 10)+1;
-      localStorage.setItem('pw_login_count', String(_lc));
-      localStorage.setItem('pw_login_count_'+usuario.id, String(_lc));
-    }catch(e){}
-
     // Login fresco → damos un presupuesto nuevo de reintento al panel/portal.
     // (El panel, ante un 401 por carrera de token al entrar, reintenta UNA vez
     // recargando en vez de desloguear; esto resetea ese "una vez" por login.)
     try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
     var _v='v='+Date.now();
-    if(usuario.rol==='owner'){ window.location.href=BASE+'/multicoach.html?'+_v;
-      try{ var _sc=window.supabase.createClient(SB,KEY), _oq=await _sc.from('organizaciones').select('id').eq('owner_email',(usuario.email||'').toLowerCase()).limit(100); if(_oq&&_oq.data&&_oq.data.length>1){ localStorage.setItem('mj_multiorg_ids',JSON.stringify(_oq.data.map(function(o){return o.id;}))); } }catch(_e){}
-    } else if(usuario.rol==='coach'||usuario.rol==='admin'){
+    if(usuario.rol==='owner' || (usuario.rol==='colaborador' && multicoachAccess)) window.location.href=BASE+'/multicoach.html?'+_v;
+    else if(usuario.rol==='coach'||usuario.rol==='admin'){
       window.location.href=BASE+'/panel-v2.html?'+_v;
     } else if(usuario.rol==='empleado'){
       // Empleado (equipo comercial): panel propio mínimo con las plantillas.
