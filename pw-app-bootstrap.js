@@ -149,7 +149,7 @@ class AppBootstrap {
    */
   async _fetchOrg(orgId) {
     try {
-      const res = await fetch(`/rest/v1/organizations?id=eq.${orgId}&select=*`, {
+      const res = await fetch(`/rest/v1/organizaciones?id=eq.${orgId}&select=*`, {
         headers: typeof PWAUTH !== 'undefined' ? PWAUTH.headers() : {},
       });
       if (!res.ok) return null;

@@ -37,7 +37,7 @@ async function resolveContext(options = {}) {
 
   // Priority 1: Explicit organizationId
   if (organizationId) {
-    org = await _sbGet('organizations', {id: organizationId})?.[0];
+    org = await _sbGet('organizaciones', {id: organizationId})?.[0];
   }
 
   // Priority 2: Preview Token (share links, demos)
@@ -47,7 +47,7 @@ async function resolveContext(options = {}) {
       is_active: 'eq.true',
     })?.[0];
     if (preview?.organization_id) {
-      org = await _sbGet('organizations', {id: preview.organization_id})?.[0];
+      org = await _sbGet('organizaciones', {id: preview.organization_id})?.[0];
     }
   }
 
@@ -76,7 +76,7 @@ async function _resolveTenantFromHostname(hostname) {
     const parts = hostname.split('.');
     if (parts[0] && parts[0] !== 'www') {
       const slug = parts[0];
-      return await _sbGet('organizations', {slug: `eq.${slug}`})?.[0];
+      return await _sbGet('organizaciones', {slug: `eq.${slug}`})?.[0];
     }
     return null;
   }
@@ -87,7 +87,7 @@ async function _resolveTenantFromHostname(hostname) {
   })?.[0];
 
   if (domain?.organization_id) {
-    return await _sbGet('organizations', {id: domain.organization_id})?.[0];
+    return await _sbGet('organizaciones', {id: domain.organization_id})?.[0];
   }
 
   return null;
@@ -112,7 +112,7 @@ function _detectEnvironment() {
 async function getTenant(org_id) {
   if (!org_id) return null;
 
-  const org = await _sbGet('organizations', {id: `eq.${org_id}`})?.[0];
+  const org = await _sbGet('organizaciones', {id: `eq.${org_id}`})?.[0];
   if (!org) return null;
 
   const branding = await _sbGet('organization_branding', {
@@ -306,7 +306,7 @@ function listenBrandUpdates(org_id, callback) {
 // Devuelve: {language, timezone, dateFormat, currency, country}
 
 async function getTenantRegionalConfig(org_id) {
-  const org = await _sbGet('organizations', {id: `eq.${org_id}`})?.[0];
+  const org = await _sbGet('organizaciones', {id: `eq.${org_id}`})?.[0];
   if (!org) {
     return _getDefaultRegionalConfig();
   }

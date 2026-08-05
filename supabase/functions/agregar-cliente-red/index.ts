@@ -67,9 +67,12 @@ Deno.serve(async (req: Request) => {
 
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
+  console.log("[agregar-cliente-red] token present:", !!token, "url:", SB_URL);
   const email = await callerEmail(token);
+  console.log("[agregar-cliente-red] caller email:", email);
   if (!email) return json({ error: "not_owner" }, 403);
   const org = await ownerOrg(email);
+  console.log("[agregar-cliente-red] org found:", !!org, org?.id);
   if (!org) return json({ error: "not_owner" }, 403);
 
   let body: { nombre?: string; email?: string; coach_id?: string };
@@ -77,9 +80,12 @@ Deno.serve(async (req: Request) => {
   const nombre = (body.nombre || "").toString().trim();
   const cliEmail = (body.email || "").toString().replace(/\s+/g, "").toLowerCase();
   const coach_id = (body.coach_id || "").toString().trim();
+  console.log("[agregar-cliente-red] body:", {nombre, cliEmail, coach_id});
   if (!nombre) return json({ error: "nombre_required" }, 400);
   if (!EMAIL_RE.test(cliEmail)) return json({ error: "email_invalid" }, 400);
-  if (!coach_id || !(await coachInOrg(coach_id, org.id))) return json({ error: "coach_ajeno" }, 403);
+  const coachValid = await coachInOrg(coach_id, org.id);
+  console.log("[agregar-cliente-red] coach valid:", coachValid, "coach_id:", coach_id, "org_id:", org.id);
+  if (!coach_id || !coachValid) return json({ error: "coach_ajeno" }, 403);
 
   // Tope de clientes del plan.
   if (org.max_clientes != null) {
@@ -96,29 +102,48 @@ Deno.serve(async (req: Request) => {
   // ¿Ya existe un candidato con ese email? → lo adoptamos a esta red.
   try {
     const r = await fetch(`${SB_URL}/rest/v1/candidatos?email=eq.${encodeURIComponent(cliEmail)}&select=id&limit=1`, { headers: svc });
+    console.log("[agregar-cliente-red] existing client check:", r.status);
     if (r.ok) {
       const rows = await r.json();
       if (Array.isArray(rows) && rows[0]) {
         const id = rows[0].id;
+        console.log("[agregar-cliente-red] adopting existing client:", id);
         const up = await fetch(`${SB_URL}/rest/v1/candidatos?id=eq.${encodeURIComponent(id)}`, {
           method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
           body: JSON.stringify({ org_id: org.id, coach_id, activo: true }),
         });
+        console.log("[agregar-cliente-red] adopt update status:", up.status);
         if (!up.ok) return json({ error: "update_failed", status: up.status }, 502);
         return json({ ok: true, id, mode: "adopted" });
       }
     }
-  } catch { /* seguimos a crear */ }
+  } catch (e) {
+    console.log("[agregar-cliente-red] adopt check error:", e);
+    /* seguimos a crear */
+  }
 
   // Crear el candidato en la red.
   try {
+    console.log("[agregar-cliente-red] creating new client");
+    const payload = { nombre, email: cliEmail, org_id: org.id, coach_id, activo: true, semana_activa: 1 };
+    console.log("[agregar-cliente-red] payload:", payload);
     const r = await fetch(`${SB_URL}/rest/v1/candidatos`, {
       method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
-      body: JSON.stringify({ nombre, email: cliEmail, org_id: org.id, coach_id, activo: true, semana_activa: 1 }),
+      body: JSON.stringify(payload),
     });
-    if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
+    console.log("[agregar-cliente-red] create response status:", r.status);
+    if (!r.ok) {
+      const errText = await r.text();
+      console.log("[agregar-cliente-red] create error response:", errText);
+      return json({ error: "insert_failed", status: r.status }, 502);
+    }
     const rows = await r.json();
+    console.log("[agregar-cliente-red] create response rows:", rows);
     const id = Array.isArray(rows) && rows[0] ? rows[0].id : null;
+    console.log("[agregar-cliente-red] ✓ client created:", id);
     return json({ ok: true, id, mode: "created" });
-  } catch { return json({ error: "write_failed" }, 502); }
+  } catch (e) {
+    console.log("[agregar-cliente-red] write error:", e);
+    return json({ error: "write_failed" }, 502);
+  }
 });
