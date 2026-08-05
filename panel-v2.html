@@ -1857,7 +1857,15 @@ var state = {
   iaChat: { open:false, msgs:null, draft:"", busy:false },
   profileEdit: null,
   profileExpanded: null,
-  profileGenPreview: null
+  profileGenPreview: null,
+  // Sprint 2 Fase 2 — MultiCoach handlers
+  mcOrgView: null,           // org_id seleccionada para ver detalles
+  mcAddCoachForm: null,      // {orgId, search, selected}
+  mcAddCollabForm: null,     // {orgId, nombre, email, rol}
+  mcChangeOwnerForm: null,   // {orgId, selectedCoachId}
+  mcChangePlanForm: null,    // {orgId, selectedPlan}
+  mcSuspendForm: null,       // {orgId, confirming}
+  mcActionMsg: ""            // mensaje de estado (OK/error) en modales
 };
 
 /* ═══ Onboarding steps + insights (port of v2-Asistente.jsx) ═══ */
@@ -9740,8 +9748,9 @@ function viewAdmin(){
                 "<div style='border-top:1px solid var(--pw-border);padding-top:12px'>"+
                   "<div style='font-size:12px;color:var(--pw-text-soft);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px'>Se creará</div>"+
                   "<div style='display:flex;flex-direction:column;gap:8px'>"+
-                    "<div><span style='font-size:11px;color:var(--pw-text-soft)'>Organización:</span><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+esc(_convertCoach.nombre||"Mi red")+" Coaching</div></div>"+
-                    "<div><span style='font-size:11px;color:var(--pw-text-soft)'>Roles:</span><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>✓ Owner</div><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>✓ Coach</div></div>"+
+                    "<div><span style='font-size:11px;color:var(--pw-text-soft)'>Nombre de la red:</span><input id='mc-convert-name' class='cp-form-input' type='text' value='"+esc((_convertCoach.nombre||"Mi red")+" Coaching")+"' style='width:100%;padding:6px 10px;border:1px solid var(--pw-border);border-radius:6px;font-size:13px'></div>"+
+                    "<div><span style='font-size:11px;color:var(--pw-text-soft)'>Plan:</span><select id='mc-convert-plan' class='cp-form-input' style='width:100%;padding:6px 10px;border:1px solid var(--pw-border);border-radius:6px;font-size:13px'><option value='boutique'>Boutique</option><option value='studio'>Studio</option><option value='pro'>Pro</option></select></div>"+
+                    "<div><span style='font-size:11px;color:var(--pw-text-soft)'>Duración prueba (días):</span><input id='mc-convert-dias' class='cp-form-input' type='number' value='14' min='1' max='365' style='width:100%;padding:6px 10px;border:1px solid var(--pw-border);border-radius:6px;font-size:13px'></div>"+
                     "<div><span style='font-size:11px;color:var(--pw-text-soft)'>Resultado:</span><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+_coachClientsCount+" clientes pasarán a su red</div></div>"+
                   "</div>"+
                 "</div>"+
@@ -9753,7 +9762,86 @@ function viewAdmin(){
       }
     }
 
-    body = _orgsCard + _coachIndepCard + _convertModal;
+    // ┌─ Modal: Ver Organización (detalles)
+    var _mcOrgViewModal = "";
+    if(state.mcOrgView && RORGS){
+      var _org = (RORGS||[]).filter(function(o){ return o.id === state.mcOrgView; })[0];
+      if(_org){
+        var _orgOwner = (RCOACHES||[]).filter(function(u){ return u.id === _org.owner_id; })[0];
+        var _orgCoaches = (RCOACHES||[]).filter(function(u){ return u.org_id === _org.id && u.rol==="coach"; }).length;
+        var _orgCollab = (RCOACHES||[]).filter(function(u){ return u.org_id === _org.id && (u.rol==="colaborador"||u.rol==="assistant"); }).length;
+        var _orgClientes = (RADM&&RADM.cands) ? (RADM.cands.filter(function(c){ return c && c.org_id === _org.id; }).length) : 0;
+        var _statePlan = (_org.estado_sub==="pagado")?"💳 Pagado":(new Date(_org.fecha_fin_prueba) > new Date())?"🟡 Prueba":"🔴 Vencido";
+        _mcOrgViewModal = "<div style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
+          "<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:520px;max-width:100%;overflow:hidden'>"+
+            "<div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(_org.nombre||"Organización")+"</h3>"+
+              "<button class='cp-icon-btn' data-act='mc-org-view-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
+            "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
+              "<div style='background:var(--pw-niebla-2);border-radius:12px;padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px'>"+
+                "<div><span style='font-size:11px;color:var(--pw-text-soft);font-weight:600'>Plan</span><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+(_org.plan==="pro"?"Pro":_org.plan==="studio"?"Studio":"Boutique")+"</div></div>"+
+                "<div><span style='font-size:11px;color:var(--pw-text-soft);font-weight:600'>Estado</span><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+_statePlan+"</div></div>"+
+                "<div><span style='font-size:11px;color:var(--pw-text-soft);font-weight:600'>Coaches</span><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+_orgCoaches+"</div></div>"+
+                "<div><span style='font-size:11px;color:var(--pw-text-soft);font-weight:600'>Colaboradores</span><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+_orgCollab+"</div></div>"+
+              "</div>"+
+              "<div style='border-top:1px solid var(--pw-border);padding-top:12px'>"+
+                "<span style='font-size:12px;color:var(--pw-text-soft);font-weight:600'>Dueño</span>"+
+                "<div style='font-size:14px;color:var(--pw-carbon);margin-top:4px'>"+esc((_orgOwner&&(_orgOwner.nombre||_orgOwner.email))||"N/A")+"</div>"+
+              "</div>"+
+              "<div style='border-top:1px solid var(--pw-border);padding-top:12px'>"+
+                "<span style='font-size:12px;color:var(--pw-text-soft);font-weight:600'>Clientes</span>"+
+                "<div style='font-size:14px;color:var(--pw-carbon);margin-top:4px'>"+_orgClientes+"</div>"+
+              "</div>"+
+              "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:8px'>"+
+                "<button class='cp-btn cp-btn-ghost' data-act='mc-org-view-close'>Cerrar</button>"+
+              "</div>"+
+            "</div></div></div>";
+      }
+    }
+    // ┌─ Modal: Cambiar Plan
+    var _mcChangePlanModal = "";
+    if(state.mcChangePlanForm && RORGS){
+      var _org = (RORGS||[]).filter(function(o){ return o.id === state.mcChangePlanForm.orgId; })[0];
+      if(_org){
+        _mcChangePlanModal = "<div style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
+          "<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:420px;max-width:100%;overflow:hidden'>"+
+            "<div class='cp-card-hd'><h3 class='cp-card-title'>Cambiar plan</h3>"+
+              "<button class='cp-icon-btn' data-act='mc-change-plan-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
+            "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+              "<div style='font-size:13px;color:var(--pw-text-soft)'>Org actual: <strong>"+esc(_org.nombre)+"</strong></div>"+
+              "<div style='border-top:1px solid var(--pw-border);padding-top:12px'>"+
+                "<label style='display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px'><input type='radio' name='mc-plan-select' value='boutique' "+((_org.plan==="boutique")?"checked":"")+" style='cursor:pointer'> <span>Boutique ($9/mes)</span></label>"+
+                "<label style='display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px'><input type='radio' name='mc-plan-select' value='studio' "+(_org.plan==="studio"?"checked":"")+" style='cursor:pointer'> <span>Studio ($29/mes)</span></label>"+
+                "<label style='display:flex;align-items:center;gap:8px;cursor:pointer'><input type='radio' name='mc-plan-select' value='pro' "+(_org.plan==="pro"?"checked":"")+" style='cursor:pointer'> <span>Pro ($59/mes)</span></label>"+
+              "</div>"+
+              "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:8px'>"+
+                "<button class='cp-btn cp-btn-ghost' data-act='mc-change-plan-close'>Cancelar</button>"+
+                "<button class='cp-btn cp-btn-primary' data-act='mc-change-plan-confirm' data-org='"+esc(_org.id)+"'>Cambiar</button>"+
+              "</div>"+
+            "</div></div></div>";
+      }
+    }
+    // ┌─ Modal: Suspender/Reactivar Org
+    var _mcSuspendModal = "";
+    if(state.mcSuspendForm && RORGS){
+      var _org = (RORGS||[]).filter(function(o){ return o.id === state.mcSuspendForm.orgId; })[0];
+      if(_org){
+        var _isSuspended = _org.activo === false;
+        var _suspMsg = _isSuspended ? "¿Reactivar "+esc(_org.nombre)+"? Los coaches podrán entrar nuevamente." : "¿Suspender "+esc(_org.nombre)+"? Los coaches perderán acceso.";
+        _mcSuspendModal = "<div style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
+          "<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:420px;max-width:100%;overflow:hidden'>"+
+            "<div class='cp-card-hd'><h3 class='cp-card-title'>"+(_isSuspended?"Reactivar":"Suspender")+" organización</h3>"+
+              "<button class='cp-icon-btn' data-act='mc-suspend-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
+            "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
+              "<div style='font-size:13px;color:var(--pw-carbon)'>"+_suspMsg+"</div>"+
+              "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:8px'>"+
+                "<button class='cp-btn cp-btn-ghost' data-act='mc-suspend-close'>Cancelar</button>"+
+                "<button class='cp-btn cp-btn-danger' data-act='mc-suspend-confirm' data-org='"+esc(_org.id)+"'>"+(_isSuspended?"Reactivar":"Suspender")+"</button>"+
+              "</div>"+
+            "</div></div></div>";
+      }
+    }
+
+    body = _orgsCard + _coachIndepCard + _convertModal + _mcOrgViewModal + _mcChangePlanModal + _mcSuspendModal;
   } else if(state.adminTab==="empleados"){
     body = (REAL && state.empleSel) ? _empleadoDetailCard() : _empleadosView();
   } else if(state.adminTab==="contactos"){
@@ -12256,10 +12344,135 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="mc-convert-confirm"){
-    // TODO: Implementar conversión real (llamar a edge function)
-    console.log("TODO: Confirmar conversión de coach", state.mcConvertSel);
-    state.mcConvertSel = null;
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var _coachId = state.mcConvertSel;
+    var _nombreRed = (_val("mc-convert-name") || "").trim();
+    var _plan = (_val("mc-convert-plan") || "boutique");
+    var _dias = parseInt(_val("mc-convert-dias") || "14", 10);
+    if(!_coachId || !_nombreRed){ state.mcConvertMsg = "err: Falta nombre de red."; render(); return; }
+    var _setMsg = function(t, k){ state.mcConvertMsg = (k||"…")+": "+t; render(); };
+    _setMsg("Procesando…","…");
+    var _lock = false;
+    var _timer = setTimeout(function(){ if(_lock)return; _lock=true; _setMsg("Tardó demasiado. Reintenta.","err"); }, 25000);
+    var _end = function(t, k){ if(_lock)return; _lock=true; clearTimeout(_timer); _setMsg(t, k); };
+    _hdr({"Content-Type":"application/json"}).then(function(h){
+      return fetch(SB+"/functions/v1/convertir-multicoach", {
+        method:"POST", headers:h, body:JSON.stringify({coach_id:_coachId, plan:_plan, nombre_red:_nombreRed, dias:_dias})
+      });
+    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, d:d||{}}; }); }).then(function(res){
+      var d = res.d;
+      if(!res.ok || !d.ok){
+        if(d.error==="ya_es_owner"){ _end("Ya es un multicoach.","err"); return; }
+        if(d.error==="no_es_coach"){ _end("No es un coach.","err"); return; }
+        _end("Error ("+(res.status||"?")+"). Reintenta.","err"); return;
+      }
+      reloadOrgs();
+      state.mcConvertSel = null;
+      state.mcConvertMsg = "✓ Multicoach creado. Org: "+d.org_id+" · Plan: "+d.plan+" · "+d.movidos+" clientes.";
+      render();
+    }).catch(function(e){ _end("Conexión: "+((e&&e.message)||"error").slice(0,30),"err"); });
+    return;
+  }
+  if(act==="mc-org-view"){
+    var _orgId = el.getAttribute("data-org");
+    state.mcOrgView = _orgId;
+    state.orgMenuSel = null;
     render();
+    return;
+  }
+  if(act==="mc-manage-members"){
+    var _orgId = el.getAttribute("data-org");
+    state.mcAddCoachForm = {orgId: _orgId, search:"", selected:null};
+    state.orgMenuSel = null;
+    render();
+    return;
+  }
+  if(act==="mc-add-coach"){
+    var _orgId = el.getAttribute("data-org");
+    state.mcAddCoachForm = {orgId: _orgId, search:"", selected:null};
+    state.orgMenuSel = null;
+    render();
+    return;
+  }
+  if(act==="mc-add-collab"){
+    var _orgId = el.getAttribute("data-org");
+    state.mcAddCollabForm = {orgId: _orgId, nombre:"", email:"", rol:"coach"};
+    state.orgMenuSel = null;
+    render();
+    return;
+  }
+  if(act==="mc-change-owner"){
+    var _orgId = el.getAttribute("data-org");
+    state.mcChangeOwnerForm = {orgId: _orgId, selectedCoachId: null};
+    state.orgMenuSel = null;
+    render();
+    return;
+  }
+  if(act==="mc-change-plan"){
+    var _orgId = el.getAttribute("data-org");
+    state.mcChangePlanForm = {orgId: _orgId, selectedPlan: null};
+    state.orgMenuSel = null;
+    render();
+    return;
+  }
+  if(act==="mc-suspend"){
+    var _orgId = el.getAttribute("data-org");
+    state.mcSuspendForm = {orgId: _orgId, confirming: false};
+    state.orgMenuSel = null;
+    render();
+    return;
+  }
+  // Cerrar modales
+  if(act==="mc-org-view-close"){ state.mcOrgView = null; render(); return; }
+  if(act==="mc-change-plan-close"){ state.mcChangePlanForm = null; render(); return; }
+  if(act==="mc-suspend-close"){ state.mcSuspendForm = null; render(); return; }
+  // Cambiar plan
+  if(act==="mc-change-plan-confirm"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var _orgId = el.getAttribute("data-org");
+    var _selectedPlan = _val("mc-plan-select")||"boutique";
+    if(!_orgId || !_selectedPlan) return;
+    var _setMsg = function(t){ state.mcActionMsg = t; render(); };
+    _setMsg("Cambiando plan…");
+    var _lock = false;
+    var _timer = setTimeout(function(){ if(_lock)return; _lock=true; _setMsg("Tardó demasiado. Reintenta."); }, 15000);
+    var _end = function(){ if(_lock)return; _lock=true; clearTimeout(_timer); };
+    _hdr({"Content-Type":"application/json"}).then(function(h){
+      return fetch(SB+"/functions/v1/cambiar-plan-org", {
+        method:"POST", headers:h, body:JSON.stringify({org_id:_orgId, plan:_selectedPlan})
+      });
+    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, d:d||{}}; }); }).then(function(res){
+      var d = res.d;
+      if(!res.ok || !d.ok){ _end(); _setMsg("Error ("+(res.status||"?")+"). Reintenta."); return; }
+      reloadOrgs();
+      state.mcChangePlanForm = null;
+      _end();
+      _setMsg("✓ Plan actualizado a "+_selectedPlan);
+    }).catch(function(e){ _end(); _setMsg("Error de conexión."); });
+    return;
+  }
+  // Suspender/Reactivar org
+  if(act==="mc-suspend-confirm"){
+    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
+    var _orgId = el.getAttribute("data-org");
+    if(!_orgId) return;
+    var _setMsg = function(t){ state.mcActionMsg = t; render(); };
+    _setMsg("Procesando…");
+    var _lock = false;
+    var _timer = setTimeout(function(){ if(_lock)return; _lock=true; _setMsg("Tardó demasiado. Reintenta."); }, 15000);
+    var _end = function(){ if(_lock)return; _lock=true; clearTimeout(_timer); };
+    _hdr({"Content-Type":"application/json"}).then(function(h){
+      return fetch(SB+"/functions/v1/suspender-org", {
+        method:"POST", headers:h, body:JSON.stringify({org_id:_orgId})
+      });
+    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, d:d||{}}; }); }).then(function(res){
+      var d = res.d;
+      if(!res.ok || !d.ok){ _end(); _setMsg("Error ("+(res.status||"?")+"). Reintenta."); return; }
+      reloadOrgs();
+      state.mcSuspendForm = null;
+      _end();
+      _setMsg("✓ Estado actualizado");
+    }).catch(function(e){ _end(); _setMsg("Error de conexión."); });
     return;
   }
   if(act==="empleado-crear"){
