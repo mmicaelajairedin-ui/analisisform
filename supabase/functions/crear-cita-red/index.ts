@@ -145,7 +145,7 @@ Deno.serve(async (req: Request) => {
       try {
         await fetch(`${SB_URL}/functions/v1/sync-cita-to-gcal`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", apikey: SERVICE, Authorization: `Bearer ${SERVICE}` },
           body: JSON.stringify({ cita_id: cita.id }),
         });
       } catch { /* ignore */ }
