@@ -759,6 +759,7 @@
   // STATE
   // ════════════════════════════════════════════════════════════════════════════════
 
+  let currentOrgId = null;
   let allEquipo = [];
   let filteredEquipo = [];
   let allCoaches = [];
@@ -774,6 +775,13 @@
 
   async function init() {
     try {
+      // Get org_id from localStorage
+      const userJson = localStorage.getItem('mj_user');
+      if (userJson) {
+        const user = JSON.parse(userJson);
+        currentOrgId = user.org_id || null;
+      }
+
       // Load data
       await loadEquipo();
       await loadCoaches();
@@ -796,21 +804,23 @@
 
   async function loadEquipo() {
     try {
-      // Load all team members (coaches + collaborators + owners)
+      // Load all team members (coaches + collaborators + owners) for this organization
       const { data, error } = await sb
         .from('usuarios')
-        .select('id, nombre, email, activo, rol')
+        .select('id, nombre, email, activo, rol, created_at, configuracion')
         .or(`rol.eq.coach,rol.eq.owner,rol.eq.colaborador`)
+        .eq('org_id', currentOrgId)
         .order('nombre');
 
       if (error) throw error;
 
-      // For each team member, count assigned clients
+      // For each team member, count assigned clients from this organization
       allEquipo = await Promise.all((data || []).map(async (member) => {
         const { count } = await sb
           .from('candidatos')
           .select('id', { count: 'exact', head: true })
-          .eq('coach_id', member.id);
+          .eq('coach_id', member.id)
+          .eq('org_id', currentOrgId);
 
         return {
           ...member,
@@ -836,16 +846,18 @@
         .from('usuarios')
         .select('id, nombre, email, activo, configuracion')
         .or(`rol.eq.coach,rol.eq.owner`)
+        .eq('org_id', currentOrgId)
         .order('nombre');
 
       if (error) throw error;
 
-      // For each coach, count clients
+      // For each coach, count clients from this organization
       allCoaches = await Promise.all((data || []).map(async (coach) => {
         const { count } = await sb
           .from('candidatos')
           .select('id', { count: 'exact', head: true })
-          .eq('coach_id', coach.id);
+          .eq('coach_id', coach.id)
+          .eq('org_id', currentOrgId);
 
         return {
           ...coach,
@@ -862,10 +874,11 @@
 
   async function loadClientes() {
     try {
-      // Get all candidates from the organization
+      // Get all candidates from this organization
       const { data, error } = await sb
         .from('candidatos')
         .select('id, nombre, email, coach_id, activo')
+        .eq('org_id', currentOrgId)
         .order('nombre');
 
       if (error) throw error;
@@ -1742,7 +1755,8 @@
       const { count } = await sb
         .from('candidatos')
         .select('id', { count: 'exact', head: true })
-        .eq('coach_id', coach.id);
+        .eq('coach_id', coach.id)
+        .eq('org_id', currentOrgId);
       coach.client_count = count || 0;
     }
   }
