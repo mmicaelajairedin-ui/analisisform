@@ -9921,24 +9921,9 @@ function viewAdmin(){
       }
     }
 
-    // Dropdown portal para menú de org
-    var _orgMenuPortal = "";
-    if(state.orgMenuSel && RORGS){
-      var _selOrg = (RORGS||[]).filter(function(o){ return o && o.id === state.orgMenuSel; })[0];
-      if(_selOrg){
-        _orgMenuPortal = "<div id='org-menu-portal' style='position:fixed;z-index:9999;background:#fff;border:1px solid var(--pw-border);border-radius:8px;box-shadow:var(--pw-shadow-md);min-width:200px'>"+
-          "<button class='cp-menu-item' data-act='mc-org-view' data-org='"+esc(_selOrg.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--pw-carbon);border-bottom:1px solid var(--pw-niebla-2)'>Ver organización</button>"+
-          "<button class='cp-menu-item' data-act='mc-manage-members' data-org='"+esc(_selOrg.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--pw-carbon);border-bottom:1px solid var(--pw-niebla-2)'>Gestionar miembros</button>"+
-          "<button class='cp-menu-item' data-act='mc-add-coach' data-org='"+esc(_selOrg.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--pw-carbon);border-bottom:1px solid var(--pw-niebla-2)'>Agregar coach</button>"+
-          "<button class='cp-menu-item' data-act='mc-add-collab' data-org='"+esc(_selOrg.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--pw-carbon);border-bottom:1px solid var(--pw-niebla-2)'>Agregar colaborador</button>"+
-          "<button class='cp-menu-item' data-act='mc-change-owner' data-org='"+esc(_selOrg.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--pw-carbon);border-bottom:1px solid var(--pw-niebla-2)'>Cambiar owner</button>"+
-          "<button class='cp-menu-item' data-act='mc-change-plan' data-org='"+esc(_selOrg.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--pw-carbon);border-bottom:1px solid var(--pw-niebla-2)'>Cambiar plan</button>"+
-          "<button class='cp-menu-item' data-act='mc-suspend' data-org='"+esc(_selOrg.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:var(--pw-danger)'>Suspender</button>"+
-        "</div>";
-      }
-    }
-
-    body = _orgsCard + _coachIndepCard + _convertModal + _mcOrgViewModal + _mcChangePlanModal + _mcSuspendModal + _mcMembersModal + _mcAddCoachModal + _mcAddCollabModal + _mcChangeOwnerModal + _orgMenuPortal;
+    // El portal del dropdown se renderiza FUERA del contenedor (evita overflow)
+    // Lo manejamos en el handler mc-org-menu en lugar de renderizarlo aquí
+    body = _orgsCard + _coachIndepCard + _convertModal + _mcOrgViewModal + _mcChangePlanModal + _mcSuspendModal + _mcMembersModal + _mcAddCoachModal + _mcAddCollabModal + _mcChangeOwnerModal;
   } else if(state.adminTab==="empleados"){
     body = (REAL && state.empleSel) ? _empleadoDetailCard() : _empleadosView();
   } else if(state.adminTab==="contactos"){
@@ -12412,16 +12397,56 @@ document.addEventListener("click", function(ev){
   if(act==="mc-org-menu"){
     // Toggle menú de acciones para una organización
     var orgId = el.getAttribute("data-org");
-    state.orgMenuSel = (state.orgMenuSel === orgId) ? null : orgId;
-    render();
-    setTimeout(function(){
-      var portal = document.querySelector("#org-menu-portal");
-      if(portal && el){
+    var isClosing = (state.orgMenuSel === orgId);
+    state.orgMenuSel = isClosing ? null : orgId;
+
+    if(isClosing){
+      // Cerrar: remover portal del DOM
+      var oldPortal = document.querySelector("#org-menu-portal");
+      if(oldPortal) oldPortal.remove();
+    } else {
+      // Abrir: crear portal dinámicamente en document.body
+      render();
+      setTimeout(function(){
+        var org = (RORGS||[]).filter(function(o){ return o && o.id === orgId; })[0];
+        if(!org) return;
+
+        // Remover portal anterior si existe
+        var oldPortal = document.querySelector("#org-menu-portal");
+        if(oldPortal) oldPortal.remove();
+
+        // Crear nuevo portal
+        var portal = document.createElement("div");
+        portal.id = "org-menu-portal";
+        portal.style.cssText = "position:fixed;z-index:9999;background:#fff;border:1px solid var(--pw-border);border-radius:8px;box-shadow:var(--pw-shadow-md);min-width:200px;top:0;left:0;display:block";
+
+        var menuItems = [
+          {act:"mc-org-view", text:"Ver organización"},
+          {act:"mc-manage-members", text:"Gestionar miembros"},
+          {act:"mc-add-coach", text:"Agregar coach"},
+          {act:"mc-add-collab", text:"Agregar colaborador"},
+          {act:"mc-change-owner", text:"Cambiar owner"},
+          {act:"mc-change-plan", text:"Cambiar plan"},
+          {act:"mc-suspend", text:"Suspender", danger:true}
+        ];
+
+        var html = menuItems.map(function(item, idx){
+          var isSeparated = idx < menuItems.length - 1;
+          return "<button class='cp-menu-item' data-act='"+item.act+"' data-org='"+esc(org.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:"+(item.danger?"var(--pw-danger)":"var(--pw-carbon)")+";border-bottom:"+(isSeparated?"1px solid var(--pw-niebla-2)":"none")+"'>"+item.text+"</button>";
+        }).join("");
+
+        portal.innerHTML = html;
+        document.body.appendChild(portal);
+
+        // Posicionar debajo del botón
         var rect = el.getBoundingClientRect();
         portal.style.top = (rect.bottom + 4) + "px";
         portal.style.left = (rect.right - 200) + "px";
-      }
-    }, 10);
+      }, 10);
+      return;
+    }
+
+    render();
     return;
   }
   if(act==="mc-convert-start"){
