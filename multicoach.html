@@ -1604,6 +1604,102 @@ var ACTION_BUS=Object.freeze({
     after:function(ctx){ if(_sec==='coaches')renderCoaches(); },
     audit:true,
     analytics:{track:true,category:'team',event:'member_edited'}
+  },
+
+  [Actions.TEAM_REMOVE]:{
+    feature:Features.CORE,
+    plan:'Pro+',
+    niche:'All',
+    module:Modules.TEAM,
+    scope:Scopes.ORGANIZATION,
+    label:'Quitar miembro de la red',
+    permission:Permissions.TEAM_REMOVE,
+    confirmation:true,
+    before:null,
+    handler:handleTeamRemove,
+    after:function(ctx){ mcApplyNiche(); if(_sec==='coaches')renderCoaches(); },
+    audit:true,
+    analytics:{track:true,category:'team',event:'member_removed'}
+  },
+
+  [Actions.TEAM_CHANGE_ROLE]:{
+    feature:Features.CORE,
+    plan:'Pro+',
+    niche:'All',
+    module:Modules.TEAM,
+    scope:Scopes.ORGANIZATION,
+    label:'Cambiar rol del miembro',
+    permission:Permissions.TEAM_EDIT,
+    confirmation:false,
+    before:null,
+    handler:handleTeamChangeRole,
+    after:function(ctx){ if(_sec==='coaches')renderCoaches(); },
+    audit:true,
+    analytics:{track:true,category:'team',event:'member_role_changed'}
+  },
+
+  [Actions.TEAM_TOGGLE_STATUS]:{
+    feature:Features.CORE,
+    plan:'Pro+',
+    niche:'All',
+    module:Modules.TEAM,
+    scope:Scopes.ORGANIZATION,
+    label:'Activar/Suspender miembro',
+    permission:Permissions.TEAM_STATUS,
+    confirmation:true,
+    before:null,
+    handler:handleTeamToggleStatus,
+    after:function(ctx){ if(_sec==='coaches')renderCoaches(); },
+    audit:true,
+    analytics:{track:true,category:'team',event:'member_status_toggled'}
+  },
+
+  [Actions.TEAM_ASSIGN_CLIENTS]:{
+    feature:Features.CORE,
+    plan:'Pro+',
+    niche:'All',
+    module:Modules.TEAM,
+    scope:Scopes.ORGANIZATION,
+    label:'Asignar clientes a coach',
+    permission:Permissions.TEAM_ASSIGN,
+    confirmation:true,
+    before:null,
+    handler:handleTeamAssignClients,
+    after:function(ctx){ if(_sec==='clientes'||_sec==='coaches')renderCoaches(); },
+    audit:true,
+    analytics:{track:true,category:'team',event:'clients_assigned'}
+  },
+
+  [Actions.COLLABORATOR_INVITE]:{
+    feature:Features.CORE,
+    plan:'Enterprise',
+    niche:'All',
+    module:Modules.TEAM,
+    scope:Scopes.ORGANIZATION,
+    label:'Invitar colaborador',
+    permission:Permissions.TEAM_INVITE,
+    confirmation:false,
+    before:null,
+    handler:handleCollaboratorInvite,
+    after:function(ctx){ mcApplyNiche(); if(_sec==='coaches')renderCoaches(); },
+    audit:true,
+    analytics:{track:true,category:'team',event:'collaborator_invited'}
+  },
+
+  [Actions.COLLABORATOR_REMOVE]:{
+    feature:Features.CORE,
+    plan:'Enterprise',
+    niche:'All',
+    module:Modules.TEAM,
+    scope:Scopes.ORGANIZATION,
+    label:'Quitar colaborador',
+    permission:Permissions.TEAM_REMOVE,
+    confirmation:true,
+    before:null,
+    handler:handleCollaboratorRemove,
+    after:function(ctx){ mcApplyNiche(); if(_sec==='coaches')renderCoaches(); },
+    audit:true,
+    analytics:{track:true,category:'team',event:'collaborator_removed'}
   }
 });
 
@@ -1623,6 +1719,45 @@ function handleTeamEdit(ctx){
     fichaCoach(ctx.params.coachId);
   }
   return {action:'team.edit',status:'ficha_opened'};
+}
+
+// ──── Day 2 Handlers: Team Module (6 actions)
+function handleTeamRemove(ctx){
+  if(ctx.params.coachId){
+    quitarCoach(ctx.params.coachId);
+  }
+  return {action:'team.remove',status:'modal_opened'};
+}
+
+function handleTeamChangeRole(ctx){
+  if(ctx.params.coachId && ctx.params.newRole){
+    _setCoachRol(ctx.params.coachId, ctx.params.newRole);
+  }
+  return {action:'team.change_role',status:'applied'};
+}
+
+function handleTeamToggleStatus(ctx){
+  if(ctx.params.coachId){
+    toggleCoach(ctx.params.coachId);
+  }
+  return {action:'team.toggle_status',status:'modal_opened'};
+}
+
+function handleTeamAssignClients(ctx){
+  __asignarCoach();
+  return {action:'team.assign_clients',status:'modal_opened'};
+}
+
+function handleCollaboratorInvite(ctx){
+  invitarCoach();
+  return {action:'collaborator.invite',status:'modal_opened'};
+}
+
+function handleCollaboratorRemove(ctx){
+  if(ctx.params.coachId){
+    quitarCoach(ctx.params.coachId);
+  }
+  return {action:'collaborator.remove',status:'modal_opened'};
 }
 
 var MC_N='fitness',DB,NICHOS;
@@ -2744,14 +2879,14 @@ function _renderCoachFicha(){
    +(c.esOwner?'':_mcContactBtn(c.tel,c.email))
    +(c.esOwner?('<a class="cp-btn cp-btn-primary" href="panel-v2.html" style="text-decoration:none">'+PWI.svg('user',{sm:true})+' Entrar a mi panel de coach</a>'
    +'<div style="font-size:11.5px;color:var(--soft);line-height:1.4">Tu agenda, tu link de reserva y tus clientes como coach viven en tu panel de siempre. Eres el dueño de la red y puedes atender clientes como un coach más; para cambiar quién es el dueño, se hace desde el panel admin.</div>'):(''
-   +'<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:2px"><span style="color:var(--soft)">Tipo</span><select class="inp" style="height:30px;flex:1;font-size:12.5px" data-coach-id="'+_mcEsc(c.id)+'" onchange="_setCoachRol(this.dataset.coachId,this.value)"><option value="coach"'+(c.tipo!=='colaborador'?' selected':'')+'>Coach (da clases)</option><option value="colaborador"'+(c.tipo==='colaborador'?' selected':'')+'>Colaborador</option></select></div>'
+   +'<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:2px"><span style="color:var(--soft)">Tipo</span><select class="inp" style="height:30px;flex:1;font-size:12.5px" data-coach-id="'+_mcEsc(c.id)+'" onchange="if(this.dataset.coachId)ActionBus.dispatch(Actions.TEAM_CHANGE_ROLE,{coachId:this.dataset.coachId,newRole:this.value});"><option value="coach"'+(c.tipo!=='colaborador'?' selected':'')+'>Coach (da clases)</option><option value="colaborador"'+(c.tipo==='colaborador'?' selected':'')+'>Colaborador</option></select></div>'
    +'<div style="margin-top:2px;padding-top:8px;border-top:1px solid rgba(45,106,79,.12)"><div style="font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--soft);margin-bottom:5px">A qué le das acceso</div>'
     +_mcPermRow(c,'negocio','Negocio y cobros')
     +_mcPermRow(c,'perfil_publico','Perfil público (aparece dando clases)')
     +_mcPermRow(c,'marketplace','Marketplace de Pathway')
     +'<div style="font-size:11px;color:var(--soft);margin-top:4px;line-height:1.4">Clientes y agenda van siempre incluidos.</div></div>'
-   +'<button class="cp-btn cp-btn-ghost" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)toggleCoach(this.dataset.coachId)">'+(c.est==='activo'?'Suspender '+DET().coachSing.toLowerCase():'Reactivar '+DET().coachSing.toLowerCase())+'</button>'
-   +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)quitarCoach(this.dataset.coachId)">'+PWI.svg('trash',{sm:true})+' Quitar de la red</button>'))+'</div>'
+   +'<button class="cp-btn cp-btn-ghost" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)ActionBus.dispatch(Actions.TEAM_TOGGLE_STATUS,{coachId:this.dataset.coachId});">'+(c.est==='activo'?'Suspender '+DET().coachSing.toLowerCase():'Reactivar '+DET().coachSing.toLowerCase())+'</button>'
+   +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" data-coach-id="'+_mcEsc(c.id)+'" onclick="if(this.dataset.coachId)ActionBus.dispatch(Actions.TEAM_REMOVE,{coachId:this.dataset.coachId});">'+PWI.svg('trash',{sm:true})+' Quitar de la red</button>'))+'</div>'
   +'</aside>';
  v.innerHTML='<header class="cp-topbar" style="align-items:center">'
    +'<div style="display:flex;align-items:center;gap:16px;min-width:0"><div class="cp-cli-av" title="Arrastra una foto" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_avatarDrop(event,\'coach\')">'+_img(c)+c.ini+'</div>'
