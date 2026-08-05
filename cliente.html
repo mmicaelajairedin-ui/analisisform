@@ -3755,6 +3755,7 @@ function _fireReviewConfetti(){
 // ── Puente reseña → público ──────────────────────────────────────────────────
 // Además de guardar en candidatos (privado, para el logro del cliente),
 // publicamos en la tabla `reviews` que lee el PERFIL PÚBLICO del coach.
+// JULIO 2026: ahora loguea si la publicación falla → visible en client_errors (antes era silencioso).
 // Regla (Micaela): 3-5★ → públicas (publica=true, se muestran como testimonios);
 // 1-2★ → privadas (publica=false): no se muestran, pero quedan como feedback y
 // cuentan para el ranking del marketplace. Best-effort (nunca rompe el flujo).
@@ -3771,7 +3772,18 @@ function _pushReviewPublic(rating, texto){
       method:'POST',
       headers:H({'Content-Type':'application/json','Prefer':'return=minimal'}),
       body:JSON.stringify({ nombre:_reviewAuthorName(), rating:rating, texto:((texto||'').trim().slice(0,500))||null, fuente:'portal', publica:(rating>=3), coach_slug:slug })
-    }).catch(function(){});
+    }).then(function(r){
+      if(!r.ok) throw new Error('review_post_'+r.status);
+    }).catch(function(e){
+      // Log to client_errors for visibility (porqué falló la review)
+      try{
+        fetch(SB+'/rest/v1/client_errors',{
+          method:'POST',
+          headers:H({'Content-Type':'application/json','Prefer':'return=minimal'}),
+          body:JSON.stringify({kind:'review_post_failed',email:(C&&C.email)||'anon',page:'cliente.html',detail:String(e)})
+        }).catch(function(){});
+      }catch(_){}
+    });
   }catch(e){}
 }
 // ── Auto-cartel de reseña al entrar (pedido de Micaela) ──────────────────────
