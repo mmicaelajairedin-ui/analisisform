@@ -1856,7 +1856,8 @@ var state = {
   // primera apertura (se siembra con el saludo + inteligencia de tu semana).
   iaChat: { open:false, msgs:null, draft:"", busy:false },
   profileEdit: null,
-  profileExpanded: null
+  profileExpanded: null,
+  profileGenPreview: null
 };
 
 /* ═══ Onboarding steps + insights (port of v2-Asistente.jsx) ═══ */
@@ -6503,6 +6504,15 @@ function cfgProfile(){
   var _prac = REAL ? ((RCFG&&RCFG.nombre_practica)||(RME&&RME.nombre_practica)||"") : "";
   var bio  = REAL ? (RPROF.bio||"") : "Ayudo a profesionales a encontrar el siguiente paso de su carrera.";
   var titEn = v('titulo_profesional_en',''); var bioEn = v('bio_en','');
+
+  // Chequear si hay datos generados con IA en localStorage
+  var profileGenData = null;
+  try{
+    var genKey = 'pw_profile_gen_'+(ME&&ME.id||'');
+    var stored = localStorage.getItem(genKey);
+    if(stored) profileGenData = JSON.parse(stored);
+  }catch(e){}
+  if(profileGenData) state.profileGenPreview = profileGenData;
   // Campos que llena "Generar con IA" (y el coach puede editar): frase corta,
   // enfoque (bullets) y especialidades (chips). Se cargan de RPROF para no pisarlos.
   var tag = REAL ? (RPROF.tagline||"") : "Ayudo a profesionales a encontrar el siguiente paso de su carrera con un método claro.";
@@ -6606,9 +6616,32 @@ function cfgProfile(){
         "</div></div>";
     }
     // Modo lectura
+    var genBanner = "";
+    if(profileGenData && state.profileGenPreview){
+      var pd = profileGenData;
+      genBanner = "<div style='background:linear-gradient(135deg,#f0fdf4 0%,#f5f8f7 100%);border:1.5px solid #22c55e;border-radius:12px;padding:16px;margin-bottom:16px'>"+
+        "<div style='display:flex;align-items:flex-start;gap:12px;margin-bottom:12px'>"+
+          "<span style='font-size:20px;flex-shrink:0'>✨</span>"+
+          "<div style='flex:1'>"+
+            "<div style='font-weight:600;color:#1b5e20;margin-bottom:4px'>Tu perfil ha sido generado con IA</div>"+
+            "<p style='font-size:13px;color:#2d5f2e;line-height:1.5;margin:0'>Revisa los campos abajo. Puedes ajustar cada uno o guardar todo tal cual.</p>"+
+          "</div>"+
+        "</div>"+
+        "<div style='display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;font-size:12px'>"+
+          (pd.titulo?"<div style='background:rgba(34,197,94,.1);padding:8px;border-radius:6px;border-left:3px solid #22c55e'><strong style='color:#1b5e20'>Título:</strong><br><span style='color:#2d5f2e'>"+esc(pd.titulo)+"</span></div>":"")+
+          (pd.especialidades?"<div style='background:rgba(34,197,94,.1);padding:8px;border-radius:6px;border-left:3px solid #22c55e'><strong style='color:#1b5e20'>Especialidades:</strong><br><span style='color:#2d5f2e'>"+esc(Array.isArray(pd.especialidades)?pd.especialidades.slice(0,2).join(", ")+(pd.especialidades.length>2?" +"+Math.max(0,pd.especialidades.length-2):""):pd.especialidades)+"</span></div>":"")+
+        "</div>"+
+        "<div style='display:flex;gap:8px;justify-content:flex-end'>"+
+          "<button class='cp-btn cp-btn-ghost' data-act='profile-gen-dismiss' style='font-size:12px;height:32px'>Ajustar primero</button>"+
+          "<button class='cp-btn' onclick=\"_applyProfileGen()\" style='font-size:12px;height:32px;background:#22c55e;color:#fff;border:none;font-weight:600'>Guardar todo →</button>"+
+        "</div>"+
+      "</div>";
+    }
+
     return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Tu perfil<span class='dot'>.</span></h3>"+
       (liveOk?"<a href='https://pathwaycareercoach.com/coach/"+esc(slug)+"' target='_blank' rel='noopener' style='font-size:12px;color:var(--pw-bosque);font-weight:600;display:inline-flex;align-items:center;gap:6px'>Ver página "+svg(IC.extLink,12)+"</a>":"")+"</div>"+
       "<div class='cp-card-pad'>"+
+        genBanner+
         "<div class='cp-toggle' style='padding:4px 0;margin-bottom:12px'>"+
           "<div class='cp-toggle-body'><div class='cp-toggle-title'>Activar mi perfil público</div>"+
           "<div class='cp-toggle-desc'>"+(pubActive?"Tu página está visible en pathwaycareercoach.com/coach/"+esc(slug):"Oculto del directorio")+"</div></div>"+
@@ -10827,6 +10860,11 @@ document.addEventListener("click", function(ev){
     var key=el.getAttribute("data-key");
     if(state.profileExpanded===key) state.profileExpanded=null;
     else state.profileExpanded=key;
+    render(); return;
+  }
+  if(act==="profile-gen-dismiss"){
+    try{ localStorage.removeItem('pw_profile_gen_'+(ME&&ME.id||'')); }catch(e){}
+    state.profileGenPreview = null;
     render(); return;
   }
   if(act==="cfg-save-profile"){
@@ -15441,21 +15479,134 @@ document.addEventListener('focusin',function(e){var t=e.target;if(!t||!t.matches
 <!-- Pop-up para completar perfil (coaches) cada 8 logins -->
 <div id="pw-profile-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:16px;padding:32px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.2);animation:fadeInScale .3s ease;">
-    <h2 style="font-family:'Fraunces',serif;font-size:24px;font-weight:500;color:#1B2E26;margin:0 0 8px;letter-spacing:-0.6px;">Completa tu perfil</h2>
-    <p style="color:#5A5A55;font-size:14px;line-height:1.6;margin:0 0 24px;">Agrega tu foto, especialidades y biografía para que los candidatos confíen en ti. ✨</p>
+    <h2 style="font-family:'Fraunces',serif;font-size:24px;font-weight:500;color:#1B2E26;margin:0 0 8px;letter-spacing:-0.6px;">Completa tu perfil público</h2>
+    <p style="color:#5A5A55;font-size:14px;line-height:1.6;margin:0 0 24px;">Genera tu descripción, especialidades y biografía con IA en menos de 2 min. ✨</p>
     <div style="display:flex;gap:10px;">
       <button onclick="document.getElementById('pw-profile-modal').style.display='none';try{localStorage.setItem('pw_profile_dismissed_'+ME.id,String(Date.now()));}catch(e){}" style="flex:1;padding:12px 16px;border:1.5px solid #E0DDD8;border-radius:10px;background:#fff;color:#5A5A55;font-weight:600;cursor:pointer;font-size:14px;transition:all .15s;">Ahora no</button>
-      <button onclick="document.getElementById('pw-profile-modal').style.display='none';try{localStorage.setItem('pw_profile_dismissed_'+ME.id,String(Date.now()));}catch(e){}window.location.hash='#configuracion';" style="flex:1;padding:12px 16px;border:none;border-radius:10px;background:#2D6A4F;color:#fff;font-weight:600;cursor:pointer;font-size:14px;transition:all .15s;">Completar perfil →</button>
+      <button onclick="_profileGenWithAI()" style="flex:1;padding:12px 16px;border:none;border-radius:10px;background:#2D6A4F;color:#fff;font-weight:600;cursor:pointer;font-size:14px;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px;">
+        <span id="pw-profile-btn-text">Generar con IA →</span>
+        <span id="pw-profile-spinner" style="display:none;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;"></span>
+      </button>
     </div>
   </div>
 </div>
 
 <style>
 @keyframes fadeInScale{from{opacity:0;transform:scale(.95);}to{opacity:1;transform:scale(1);}}
+@keyframes spin{to{transform:rotate(360deg);}}
 #pw-profile-modal[style*="display:flex"]{display:flex!important;}
 </style>
 
 <script>
+// Generar perfil con IA
+function _profileGenWithAI(){
+  try{
+    var me = ME||{};
+    var cfg = me.configuracion||{};
+    var titulo = me.titulo_profesional||"";
+    var pais = cfg.pais||"";
+
+    // Si faltan datos mínimos, va a configuración
+    if(!titulo.trim() || !pais.trim()){
+      alert("Primero necesito que completes tu título profesional y país. Te llevamos a configuración.");
+      document.getElementById('pw-profile-modal').style.display='none';
+      window.location.hash='#configuracion';
+      return;
+    }
+
+    // Mostrar loading
+    var btnText = document.getElementById('pw-profile-btn-text');
+    var spinner = document.getElementById('pw-profile-spinner');
+    if(btnText && spinner){
+      btnText.style.display='none';
+      spinner.style.display='inline-block';
+    }
+
+    // Preparar datos para IA
+    var nombre = me.nombre||"";
+    var ayuda = cfg.ayuda_resumen||cfg.ayuda||"";
+    var esp = Array.isArray(cfg.especialidades)?cfg.especialidades:[];
+
+    // Llamar a generar-perfil-coach
+    fetch(SB+"/functions/v1/generar-perfil-coach",{
+      method:"POST",
+      headers:{"Content-Type":"application/json",apikey:KEY,Authorization:"Bearer "+KEY},
+      body:JSON.stringify({nombre:nombre.trim(),profesion:titulo.trim(),ayuda:ayuda.trim(),pais:pais.trim(),especialidades:esp})
+    }).then(function(r){
+      if(!r.ok) throw new Error("API "+r.status);
+      return r.json();
+    }).then(function(data){
+      if(!data || data.error) throw new Error(data.error||"respuesta vacía");
+
+      // Guardar resultado en localStorage temporalmente (para pasar a configuración)
+      try{
+        localStorage.setItem('pw_profile_gen_'+me.id, JSON.stringify(data));
+      }catch(e){}
+
+      // Cerrar modal e ir a configuración
+      document.getElementById('pw-profile-modal').style.display='none';
+      try{localStorage.setItem('pw_profile_dismissed_'+me.id,String(Date.now()));}catch(e){}
+
+      // Pequeño delay para que se vea el cierre
+      setTimeout(function(){
+        window.location.hash='#configuracion';
+      }, 300);
+    }).catch(function(e){
+      console.error("Error generando perfil:", e);
+      if(btnText && spinner){
+        btnText.style.display='inline';
+        spinner.style.display='none';
+      }
+      alert("No pudimos generar tu perfil. Probá nuevamente o llená la información manualmente en Configuración.");
+    });
+  }catch(e){
+    console.error("_profileGenWithAI error:", e);
+  }
+}
+
+// Aplicar datos generados con IA al perfil
+function _applyProfileGen(){
+  try{
+    var me = ME||{};
+    var genData = state.profileGenPreview;
+    if(!genData) return;
+
+    // Preparar PATCH para usuarios (campos de perfil público)
+    var patch = {};
+    if(genData.titulo) patch.titulo_profesional = genData.titulo;
+    if(genData.tagline) patch.tagline = genData.tagline;
+    if(genData.bio) patch.bio = genData.bio;
+    if(genData.enfoque) patch.mi_enfoque = Array.isArray(genData.enfoque)?genData.enfoque:[];
+    if(genData.especialidades) patch.especialidades = Array.isArray(genData.especialidades)?genData.especialidades:[];
+
+    if(Object.keys(patch).length===0){
+      alert("No hay campos para guardar.");
+      return;
+    }
+
+    // Guardar en Supabase usando _sbw
+    _sbw("usuarios?id=eq."+encodeURIComponent(me.id)+"&select=id","PATCH",patch).then(function(){
+      // Actualizar RPROF localmente
+      Object.keys(patch).forEach(function(k){ RPROF[k] = patch[k]; });
+
+      // Limpiar localStorage y estado
+      try{ localStorage.removeItem('pw_profile_gen_'+me.id); }catch(e){}
+      state.profileGenPreview = null;
+
+      // Render
+      render();
+
+      // Toast success
+      alert("✨ Tu perfil ha sido guardado. ¡Ahora está visible en tu página pública!");
+    }).catch(function(e){
+      console.error("Error aplicando perfil:", e);
+      alert("No pudimos guardar los datos. Intenta nuevamente.");
+    });
+  }catch(e){
+    console.error("_applyProfileGen error:", e);
+  }
+}
+
 // Pop-up de completar perfil cada 8 logins
 (function(){
   setTimeout(function(){
