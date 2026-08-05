@@ -1700,6 +1700,86 @@ var ACTION_BUS=Object.freeze({
     after:function(ctx){ mcApplyNiche(); if(_sec==='coaches')renderCoaches(); },
     audit:true,
     analytics:{track:true,category:'team',event:'collaborator_removed'}
+  },
+
+  [Actions.CLIENT_EDIT]:{
+    feature:Features.CORE,
+    plan:'All',
+    niche:'All',
+    module:Modules.CLIENTS,
+    scope:Scopes.ORGANIZATION,
+    label:'Editar cliente',
+    permission:Permissions.CLIENT_EDIT,
+    confirmation:false,
+    before:null,
+    handler:handleClientEdit,
+    after:function(ctx){ if(_sec==='clientes')_fillClientes(); },
+    audit:true,
+    analytics:{track:true,category:'clients',event:'client_edited'}
+  },
+
+  [Actions.CLIENT_REMOVE]:{
+    feature:Features.CORE,
+    plan:'All',
+    niche:'All',
+    module:Modules.CLIENTS,
+    scope:Scopes.ORGANIZATION,
+    label:'Quitar cliente',
+    permission:Permissions.CLIENT_REMOVE,
+    confirmation:true,
+    before:null,
+    handler:handleClientRemove,
+    after:function(ctx){ if(_sec==='clientes')_fillClientes(); },
+    audit:true,
+    analytics:{track:true,category:'clients',event:'client_removed'}
+  },
+
+  [Actions.CLIENT_ASSIGN_COACH]:{
+    feature:Features.CORE,
+    plan:'Pro+',
+    niche:'All',
+    module:Modules.CLIENTS,
+    scope:Scopes.ORGANIZATION,
+    label:'Asignar coach a cliente',
+    permission:Permissions.CLIENT_ASSIGN,
+    confirmation:true,
+    before:null,
+    handler:handleClientAssignCoach,
+    after:null,
+    audit:true,
+    analytics:{track:true,category:'clients',event:'coach_assigned'}
+  },
+
+  [Actions.CLIENT_TOGGLE_STATUS]:{
+    feature:Features.CORE,
+    plan:'All',
+    niche:'All',
+    module:Modules.CLIENTS,
+    scope:Scopes.ORGANIZATION,
+    label:'Activar/Suspender cliente',
+    permission:Permissions.CLIENT_STATUS,
+    confirmation:false,
+    before:null,
+    handler:handleClientToggleStatus,
+    after:function(ctx){ if(_curCli)_renderFicha(); },
+    audit:true,
+    analytics:{track:true,category:'clients',event:'client_status_toggled'}
+  },
+
+  [Actions.CLIENT_BULK_UPDATE]:{
+    feature:Features.CORE,
+    plan:'Pro+',
+    niche:'All',
+    module:Modules.CLIENTS,
+    scope:Scopes.ORGANIZATION,
+    label:'Actualizar clientes en lote',
+    permission:Permissions.CLIENT_EDIT,
+    confirmation:false,
+    before:null,
+    handler:handleClientBulkUpdate,
+    after:function(ctx){ if(_sec==='clientes')_fillClientes(); },
+    audit:true,
+    analytics:{track:true,category:'clients',event:'clients_bulk_updated'}
   }
 });
 
@@ -1758,6 +1838,41 @@ function handleCollaboratorRemove(ctx){
     quitarCoach(ctx.params.coachId);
   }
   return {action:'collaborator.remove',status:'modal_opened'};
+}
+
+// ──── Day 3 Handlers: Clientes Module (6 actions)
+function handleClientEdit(ctx){
+  if(ctx.params.clientId){
+    _cliSaveEdit(ctx.params.clientId);
+  }
+  return {action:'client.edit',status:'saved'};
+}
+
+function handleClientRemove(ctx){
+  if(ctx.params.clientId){
+    toggleCli(ctx.params.clientId);
+  }
+  return {action:'client.remove',status:'soft_deleted'};
+}
+
+function handleClientAssignCoach(ctx){
+  if(ctx.params.clientId && ctx.params.coachId){
+    _reassign(ctx.params.clientId, ctx.params.coachId, function(ok){
+      if(ok && _curCli) _renderFicha();
+    });
+  }
+  return {action:'client.assign_coach',status:'assigned'};
+}
+
+function handleClientToggleStatus(ctx){
+  if(ctx.params.clientId){
+    toggleCli(ctx.params.clientId);
+  }
+  return {action:'client.toggle_status',status:'toggled'};
+}
+
+function handleClientBulkUpdate(ctx){
+  return {action:'client.bulk_update',status:'pending'};
 }
 
 var MC_N='fitness',DB,NICHOS;
@@ -2482,7 +2597,7 @@ function _coachCell(k){
  var act=(DB.coaches||[]).filter(function(x){return x.est==='activo';});
  if(!MC_REAL||!act.length) return _info(sing,c?c.n:'Sin coach');
  var opts=(k.coach?'':'<option value="" selected>Sin coach</option>')+act.map(function(x){return '<option value="'+x.id+'"'+(String(x.id)===String(k.coach)?' selected':'')+'>'+_mcEsc(x.n)+'</option>';}).join('');
- return '<div class="cp-info"><div class="k">'+sing+'</div><div class="v"><select class="inp" style="height:30px;padding:0 6px;font-size:12.5px;font-weight:600" onchange="if(this.value)_reassign(\''+k.id+'\',this.value,function(ok){if(ok)_renderFicha();})">'+opts+'</select></div></div>';
+ return '<div class="cp-info"><div class="k">'+sing+'</div><div class="v"><select class="inp" style="height:30px;padding:0 6px;font-size:12.5px;font-weight:600" onchange="if(this.value)ActionBus.dispatch(Actions.CLIENT_ASSIGN_COACH,{clientId:\''+k.id+'\',coachId:this.value})">'+opts+'</select></div></div>';
 }
 function _bars(rows){return rows.map(function(r){return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:28px;font-size:11px;color:var(--pw-text-soft)">'+r[0]+'</span><div style="flex:1;height:8px;border-radius:5px;background:var(--pw-niebla-3);overflow:hidden"><i style="display:block;height:100%;width:'+r[1]+'%;background:var(--pw-bosque);border-radius:5px"></i></div><span style="width:34px;text-align:right;font-size:11px;font-weight:600;color:var(--pw-carbon)">'+r[1]+'%</span></div>';}).join('');}
 // Empty-state honesto para las fichas (modo REAL): mismo look de tarjeta, sin
@@ -2502,7 +2617,7 @@ function _cliEditForm(k){
   +'<div><label class="lbl">Teléfono</label><input id="cli-t" class="inp" type="tel" value="'+_mcEsc(k.tel||'')+'"></div>'
   +'<div><label class="lbl">Empresa/Institución</label><input id="cli-emp" class="inp" type="text" value="'+_mcEsc(k.empresa||'')+'"></div>'
   +'<div><label class="lbl">Área</label><select id="cli-ni" class="inp">'+areas+'</select></div>'
-  +'<div style="display:flex;gap:8px;margin-top:8px"><button class="cp-btn cp-btn-primary" onclick="_cliSaveEdit(\''+k.id+'\')">Guardar cambios</button><button class="cp-btn cp-btn-ghost" onclick="_goCliTab(\'perfil\')">Cancelar</button></div>'
+  +'<div style="display:flex;gap:8px;margin-top:8px"><button class="cp-btn cp-btn-primary" onclick="ActionBus.dispatch(Actions.CLIENT_EDIT,{clientId:\''+k.id+'\'})">Guardar cambios</button><button class="cp-btn cp-btn-ghost" onclick="_goCliTab(\'perfil\')">Cancelar</button></div>'
   +'</div></div>';
 }
 function _cliSaveEdit(id){
@@ -2658,7 +2773,7 @@ function _renderFicha(){
   +'<div class="cp-card cp-card-pad" style="display:flex;flex-direction:column;gap:8px"><div class="cp-eyebrow" style="margin-bottom:2px">Acciones rápidas</div>'
    +_mcContactBtn(k.tel,k.email)
    +'<button class="cp-btn cp-btn-ghost" data-client-id="'+_mcEsc(k.id)+'" onclick="if(this.dataset.clientId)reasignar(this.dataset.clientId)"><span class="cp-emo">'+PWI.svg('link',{sm:true})+'</span> Reasignar '+DET().coachSing.toLowerCase()+'</button>'
-   +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" data-client-id="'+_mcEsc(k.id)+'" onclick="if(this.dataset.clientId)toggleCli(this.dataset.clientId)">'+(k.est==='activo'?'Suspender cliente':'Reactivar cliente')+'</button></div>'
+   +'<button class="cp-btn cp-btn-ghost" style="color:var(--pw-danger);border-color:rgba(192,117,110,.4)" data-client-id="'+_mcEsc(k.id)+'" onclick="if(this.dataset.clientId)ActionBus.dispatch(Actions.CLIENT_TOGGLE_STATUS,{clientId:this.dataset.clientId})">'+(k.est==='activo'?'Suspender cliente':'Reactivar cliente')+'</button></div>'
   +'</aside>';
  v.innerHTML='<header class="cp-topbar" style="align-items:center">'
    +'<div style="display:flex;align-items:center;gap:16px;min-width:0"><div class="cp-cli-av" title="Arrastra una foto" ondragover="_dzOver(event)" ondragleave="_dzLeave(event)" ondrop="_avatarDrop(event,\'cli\')">'+_img(k)+k.ini+'</div>'
