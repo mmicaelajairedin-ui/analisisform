@@ -911,10 +911,22 @@ function confirmar(){
         fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'content-type':'application/json',Prefer:'return=minimal,resolution=ignore-duplicates'},body:JSON.stringify({email:_mpe,nombre:name,coach_id:_cid,origen:'pathway',activo:false})}).catch(function(){});
         fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_mpe)+'&coach_id=eq.'+encodeURIComponent(_cid),{method:'PATCH',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'content-type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({origen:'pathway'})}).catch(function(){});
       } }catch(e){}
-      // 2) Emails de confirmación (Brevo). "Agregar a Google Calendar" abre Google
-      //    con el evento cargado (sin invitar a nadie → sin Meet). El .ics va adjunto
-      //    solo como respaldo para Apple/Outlook.
-      sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
+      // 2) Emails de confirmación (Brevo). Esperar a que sync-cita-to-gcal obtenga
+      //    el Google Meet link antes de enviar. Si tarda >3s, enviar sin link.
+      var _sendEmailAfterMeet=function(){
+        if(saved && citaId){
+          fetch(SB+'/rest/v1/citas?id=eq.'+encodeURIComponent(citaId)+'&select=meet_link',{headers:{apikey:KEY}})
+            .then(function(r){ return r.ok?r.json():null; })
+            .catch(function(){ return null; })
+            .then(function(rows){
+              var meetLink=(Array.isArray(rows) && rows[0] && rows[0].meet_link)?rows[0].meet_link:'';
+              sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, meetLink, _ics.b64);
+            });
+        } else {
+          sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
+        }
+      };
+      setTimeout(_sendEmailAfterMeet, 2500); // espera 2.5s a que sync-cita-to-gcal complete
       // OS Core: se agendó la llamada/sesión (conversión del embudo de llamada).
       // Solo si realmente quedó guardada. Best-effort, nunca frena la confirmación.
       try{ if(saved && window.pwEmit) pwEmit("CallBooked",{dominio:"Coaching",entidad_tipo:"cita",entidad_id:(""+(email||"")).toLowerCase().slice(0,80),payload:{tipo:tlabel,kind:_kind,origen:origen,coach_id:_cid}}); }catch(e){}
