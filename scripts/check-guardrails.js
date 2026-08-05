@@ -2932,7 +2932,7 @@ const RULES = [
       if (!/AGW=MC_REAL\?_mcAgwFromCitas\(\):a\.agw/.test(mc))
         return "multicoach.html: la agenda en modo real ya no sale de las citas reales (mcSetAgenda con seed demo).";
       // Las fichas gatean sus bloques de datos por MC_REAL.
-      if (!/MC_REAL\?_mcEmptyCard\('Constancia del mes'/.test(mc))
+      if (!/MC_REAL[\s\S]*?_mcEmptyCard\('Constancia del mes'/.test(mc))
         return "multicoach.html: la ficha del cliente ya no gatea la 'Constancia del mes' en modo real (barras inventadas).";
       // El plan de la cuenta sale de la org real, no del 'Studio $199' hardcodeado.
       if (/hasta 10 coaches y 300 clientes\. \$199\/mes/.test(mc))
