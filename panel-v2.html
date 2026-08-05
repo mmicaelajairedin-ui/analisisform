@@ -8468,7 +8468,7 @@ function _iaChatScrollDown(){ try{ requestAnimationFrame(function(){ var s=docum
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
 function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
 // Redes (multicoaches) para la gestión desde el admin (transferir dueño).
-function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo,marca&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
+function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,owner_id,plan,estado_sub,activo,max_coaches,max_clientes,marca&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
 // Admin: subir el LOGO de una empresa (org) por el cliente. SVG/imagen chica tal
 // cual (conserva transparencia); grande → PNG 512. Guarda por guardar-red (merge).
 function _orgLogoPick(orgId){
@@ -9314,12 +9314,12 @@ function viewAdmin(){
         leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
   }
 
-  var tabs = [["coaches","Coaches"],["empleados","Empleados"],["ranking","Ranking"],["novedades","Novedades"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"],["emails","Emails"]];
+  var tabs = [["coaches","Coaches"],["multicoach","MultiCoach"],["empleados","Empleados"],["ranking","Ranking"],["novedades","Novedades"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"],["emails","Emails"]];
   var tabBar = "<div class='cp-filters'>"+tabs.map(function(t){
     return "<button class='cp-chip "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'>"+t[1]+"</button>";
   }).join("")+"</div>";
   // Menu lateral del admin (mismo formato que Configuracion). Mismos data-act.
-  var _admIcon={resumen:''+PWI.svg('barChart',{sm:true})+'',coaches:''+PWI.svg('graduation',{sm:true})+'',empleados:''+PWI.svg('users',{sm:true})+'',personas:''+PWI.svg('users',{sm:true})+'',transferencias:''+PWI.svg('arrowR',{sm:true})+'',ranking:''+PWI.svg('trophy',{sm:true})+'',novedades:''+PWI.svg('newspaper',{sm:true})+'',contactos:''+PWI.svg('inbox',{sm:true})+'',cvx:''+PWI.svg('fileText',{sm:true})+'',resenas:''+PWI.svg('star',{sm:true})+'',pagos:''+PWI.svg('creditCard',{sm:true})+'',emails:''+PWI.svg('inbox',{sm:true})+''};
+  var _admIcon={resumen:''+PWI.svg('barChart',{sm:true})+'',coaches:''+PWI.svg('graduation',{sm:true})+'',multicoach:''+PWI.svg('briefcase',{sm:true})+'',empleados:''+PWI.svg('users',{sm:true})+'',personas:''+PWI.svg('users',{sm:true})+'',transferencias:''+PWI.svg('arrowR',{sm:true})+'',ranking:''+PWI.svg('trophy',{sm:true})+'',novedades:''+PWI.svg('newspaper',{sm:true})+'',contactos:''+PWI.svg('inbox',{sm:true})+'',cvx:''+PWI.svg('fileText',{sm:true})+'',resenas:''+PWI.svg('star',{sm:true})+'',pagos:''+PWI.svg('creditCard',{sm:true})+'',emails:''+PWI.svg('inbox',{sm:true})+''};
   var adminMenu = "<nav class='cp-cfg-nav'>"+tabs.map(function(t){
     return "<button class='cp-cfg-nav-item "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'><span class='cp-emo'>"+(_admIcon[t[0]]||'•')+"</span><span>"+t[1]+"</span></button>";
   }).join("")+"</nav>";
@@ -9603,6 +9603,56 @@ function viewAdmin(){
         _list
       );
     }
+  } else if(state.adminTab==="multicoach"){
+    // ── MultiCoach Management ──────────────────────────────────────────
+    // Sección 1: Organizaciones activas
+    var _orgsRows = (RORGS||[]).map(function(org){
+      if(!org) return "";
+      var ownerName = org.owner_email ? (org.owner_email.split("@")[0]) : "—";
+      var coachCount = org.max_coaches ? org.max_coaches : "ilimitado";
+      var clientCount = org.max_clientes ? org.max_clientes : "ilimitado";
+      var planLabel = (org.plan==="pro")?"Pro":(org.plan==="studio")?"Studio":"Boutique";
+      var estLabel = org.estado_sub==="activo"?"Activo":(org.estado_sub==="prueba"?"Prueba":"Suspendido");
+      var estColor = org.estado_sub==="activo"?"var(--pw-bosque)":(org.estado_sub==="prueba"?"#B5651D":"var(--pw-danger)");
+      return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(org.nombre||"—")+"</td>"+
+        "<td>"+esc(ownerName)+"</td>"+
+        "<td style='text-align:center'>"+esc(coachCount)+"</td>"+
+        "<td style='text-align:center'>"+esc(clientCount)+"</td>"+
+        "<td>"+esc(planLabel)+"</td>"+
+        "<td><span style='padding:4px 10px;background:rgba(0,0,0,0.05);border-radius:6px;font-size:12px;color:"+estColor+";font-weight:600'>"+esc(estLabel)+"</span></td>"+
+        "<td style='text-align:right;font-size:12px'><button class='cp-btn cp-btn-ghost' style='padding:4px 8px;font-size:11px' data-act='mc-org-view' data-org='"+esc(org.id||"")+"'>Ver</button></td>"+
+      "</tr>";
+    }).join("");
+    var _orgsTable = RORGS && RORGS.length
+      ? "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:900px'><thead><tr>"+
+          "<th>Organización</th><th>Owner</th><th>Coaches</th><th>Clientes</th><th>Plan</th><th>Estado</th><th style='text-align:right'>Acciones</th>"+
+        "</tr></thead><tbody>"+_orgsRows+"</tbody></table></div>"
+      : "<div style='font-size:13px;color:var(--pw-text-soft);padding:20px;text-align:center'>No hay organizaciones activas.</div>";
+    var _orgsCard = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Organizaciones activas<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>"+(RORGS?RORGS.length:0)+" redes MultiCoach</span></div>"+
+      "<div class='cp-card-pad'>"+_orgsTable+"</div></div>";
+
+    // Sección 2: Coaches independientes
+    var _indepCoaches = (RCOACHES||[]).filter(function(u){ return u && u.rol==="coach" && !u.org_id; });
+    var _coachIndepRows = _indepCoaches.map(function(coach){
+      if(!coach) return "";
+      var clientCount = (RADM&&RADM.cands) ? (RADM.cands.filter(function(c){return c && c.coach_id === coach.id;}).length) : "—";
+      return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(coach.nombre||coach.email||"Coach")+"</td>"+
+        "<td style='text-align:center'>"+clientCount+"</td>"+
+        "<td><span style='padding:4px 10px;background:rgba(0,0,0,0.05);border-radius:6px;font-size:12px;color:var(--pw-carbon);font-weight:600'>Coach independiente</span></td>"+
+        "<td style='text-align:right;font-size:12px'><button class='cp-btn cp-btn-primary' style='padding:6px 12px;font-size:11px' data-act='mc-convert-start' data-coach='"+esc(coach.id||"")+"'>Convertir</button></td>"+
+      "</tr>";
+    }).join("");
+    var _coachIndepTable = _indepCoaches && _indepCoaches.length
+      ? "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:700px'><thead><tr>"+
+          "<th>Nombre</th><th>Clientes</th><th>Estado</th><th style='text-align:right'>Acciones</th>"+
+        "</tr></thead><tbody>"+_coachIndepRows+"</tbody></table></div>"
+      : "<div style='font-size:13px;color:var(--pw-text-soft);padding:20px;text-align:center'>No hay coaches independientes.</div>";
+    var _coachIndepCard = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches independientes<span class='dot'>.</span></h3>"+
+      "<span class='cp-eyebrow'>"+ _indepCoaches.length +" coaches sin organización</span></div>"+
+      "<div class='cp-card-pad'>"+_coachIndepTable+"</div></div>";
+
+    body = _orgsCard + _coachIndepCard;
   } else if(state.adminTab==="empleados"){
     body = (REAL && state.empleSel) ? _empleadoDetailCard() : _empleadosView();
   } else if(state.adminTab==="contactos"){
