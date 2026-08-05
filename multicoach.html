@@ -803,7 +803,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 
       <!-- ACTION BUTTONS (4 buttons with description) -->
       <div class="actions-grid section-spacing" id="mc-actions">
-        <button class="action-btn" onclick="ActionBus.dispatch(Actions.CLIENT_CREATE,{});">
+        <button class="action-btn" data-permission="client.create" onclick="ActionBus.dispatch(Actions.CLIENT_CREATE,{});">
           <span class="action-btn-icon"><i data-ic="user"></i></span>
           <div class="action-btn-title">Crear cliente</div>
           <div class="action-btn-desc">Registrar un nuevo cliente en la red</div>
@@ -1518,6 +1518,36 @@ var ActionBus={
     if(!config.handler) return ActionResult.failure({code:'NO_HANDLER'},'Sin implementación');
 
     try{
+      if(config.permission && !_hasPermission(config.permission)){
+        if(config.audit){
+          Audit.record({
+            userId:'',orgId:ctx.orgId,action:actionKey,module:config.module,
+            scope:config.scope,result:'denied',reason:'permission_denied'
+          });
+        }
+        return ActionResult.permission('No tienes permiso para '+config.label.toLowerCase());
+      }
+
+      if(config.plan && !_checkPlanAllowed(config.plan)){
+        if(config.audit){
+          Audit.record({
+            userId:'',orgId:ctx.orgId,action:actionKey,module:config.module,
+            scope:config.scope,result:'denied',reason:'plan_required'
+          });
+        }
+        return ActionResult.failure({code:'PLAN_REQUIRED'},'Tu plan no permite esta acción');
+      }
+
+      if(config.niche && !_checkNicheAllowed(config.niche)){
+        if(config.audit){
+          Audit.record({
+            userId:'',orgId:ctx.orgId,action:actionKey,module:config.module,
+            scope:config.scope,result:'denied',reason:'niche_restricted'
+          });
+        }
+        return ActionResult.failure({code:'NICHE_RESTRICTED'},'Esta acción no está disponible en tu nicho');
+      }
+
       if(config.before){
         var beforeResult=config.before(ctx);
         if(beforeResult instanceof ActionResult && !beforeResult.ok) return beforeResult;
@@ -1897,6 +1927,101 @@ function handleCollaboratorPermissions(ctx){
     fichaCoach(ctx.params.collaboratorId);
   }
   return {action:'collaborator.permissions',status:'ficha_opened'};
+}
+
+// ──── Permission Validation Helpers (Priority 1: Permisos REALES)
+
+function _getUserRole(){
+  if(!MC_REAL || !MC_OWNER) return MC_OWNER?'owner':'unknown';
+  if(MC_OWNER.esOwner) return 'owner';
+  var cfg=(MC_OWNER.configuracion||{});
+  return cfg.member_role==='colaborador'?'collaborator':'coach';
+}
+
+function _getUserPermissions(){
+  if(!MC_REAL || !MC_OWNER) return {};
+  var role=_getUserRole();
+  if(role==='owner') return Object.freeze({});
+  var cfg=(MC_OWNER.configuracion||{});
+  if(role==='collaborator' && cfg.permisos && typeof cfg.permisos==='object'){
+    return cfg.permisos;
+  }
+  return {};
+}
+
+function _hasPermission(permission){
+  var role=_getUserRole();
+  if(role==='owner') return true;
+
+  if(!MC_REAL){
+    if(role==='owner') return true;
+    var cfg=_mcBrand();
+    return cfg.demo!==false;
+  }
+
+  if(role==='collaborator'){
+    var perms=_getUserPermissions();
+    return perms[permission]===true;
+  }
+
+  if(role==='coach'){
+    var allowedForCoach=[
+      Permissions.CLIENT_CREATE,
+      Permissions.CLIENT_EDIT,
+      Permissions.CLIENT_REMOVE,
+      Permissions.CLIENT_STATUS
+    ];
+    return allowedForCoach.indexOf(permission)>=0;
+  }
+
+  return false;
+}
+
+function _checkPlanAllowed(planRequired){
+  if(!planRequired || planRequired==='All') return true;
+
+  var planMap={
+    'boutique':0,
+    'basic':0,
+    'studio':1,
+    'pro':2,
+    'enterprise':3
+  };
+  var current=(MC_PLAN||(MC_ORG&&MC_ORG.plan)||'basic').toString().toLowerCase();
+  var currentLevel=planMap[current]||0;
+
+  if(planRequired==='Pro+') return currentLevel>=2;
+  if(planRequired==='Enterprise') return currentLevel>=3;
+  if(planRequired==='Studio+') return currentLevel>=1;
+
+  return false;
+}
+
+function _checkNicheAllowed(niche){
+  if(!niche || niche==='All') return true;
+  var current=MC_N||'fitness';
+  return (niche===current) || niche.split('/').indexOf(current)>=0;
+}
+
+function _showAction(permission,plan,niche){
+  if(!permission) return true;
+  if(!_hasPermission(permission)) return false;
+  if(plan && !_checkPlanAllowed(plan)) return false;
+  if(niche && !_checkNicheAllowed(niche)) return false;
+  return true;
+}
+
+function _actionButtonClass(permission,plan,niche){
+  return _showAction(permission,plan,niche)?'':'display:none';
+}
+
+function _updateActionButtonsVisibility(){
+  var actions=document.getElementById('mc-actions');
+  if(!actions) return;
+  var btnsCli=actions.querySelectorAll('[data-permission="client.create"]');
+  for(var i=0;i<btnsCli.length;i++){
+    btnsCli[i].style.display=_showAction(Permissions.CLIENT_CREATE)?'':'none';
+  }
 }
 
 var MC_N='fitness',DB,NICHOS;
@@ -2574,7 +2699,8 @@ function _countK(f){return DB.clientes.filter(function(k){if(f==='activo')return
 function renderClientes(){
  var v=document.getElementById('vscroll');
  var chips=[['todos','Todos'],['activo','Activos'],['riesgo','Sin actividad'],['inactivo','Inactivos']];
- v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+_countK('activo')+' activos</p></div><button class="crear" onclick="ActionBus.dispatch(Actions.CLIENT_CREATE,{});">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button></header>'
+ var btnNewCli=_showAction(Permissions.CLIENT_CREATE)?'<button class="crear" onclick="ActionBus.dispatch(Actions.CLIENT_CREATE,{});">'+PWI.svg('plus',{sm:true})+'Nuevo cliente</button>':'';
+ v.innerHTML='<header class="vhead"><div><h1>Clientes</h1><p class="hi-s">'+DB.clientes.length+' en total · '+_countK('activo')+' activos</p></div>'+btnNewCli+'</header>'
   +'<div class="searchbar"><input id="kq" class="inp" placeholder="Buscar por nombre o coach…" oninput="_ks=this.value;_fillClientes()" value="'+_ks+'"></div>'
   +'<div class="cp-filters" id="kchips">'+chips.map(function(c){return '<button class="cp-chip'+(_kf===c[0]?' is-on':'')+'" data-f="'+_mcEsc(c[0])+'" onclick="if(this.dataset.f)_setKf(this.dataset.f)">'+c[1]+'<span class="cp-chip-count">'+_countK(c[0])+'</span></button>';}).join('')+'</div>'
   +'<div id="klist"></div>';
@@ -2834,7 +2960,8 @@ function renderCoaches(){
  var cnt=function(f){return f==='todos'?DB.coaches.length:DB.coaches.filter(function(c){return c.est===f;}).length;};
  var coachCount=DB.coaches.length;
  var activeCount=cnt('activo');
- v.innerHTML='<header class="vhead"><div><h1>Coaches</h1><p class="hi-s">'+coachCount+' en tu red · '+activeCount+' activos</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="crear" onclick="ActionBus.dispatch(Actions.TEAM_INVITE,{});">'+PWI.svg('plus',{sm:true})+'Invitar coach</button></div></header>'
+ var btnInvite=_showAction(Permissions.TEAM_INVITE)?'<button class="crear" onclick="ActionBus.dispatch(Actions.TEAM_INVITE,{});">'+PWI.svg('plus',{sm:true})+'Invitar coach</button>':'';
+ v.innerHTML='<header class="vhead"><div><h1>Coaches</h1><p class="hi-s">'+coachCount+' en tu red · '+activeCount+' activos</p></div><div style="display:flex;gap:8px;flex-wrap:wrap">'+btnInvite+'</div></header>'
   +'<div class="cp-filters" id="cchips">'+chips.map(function(c){return '<button class="cp-chip'+(_cf===c[0]?' is-on':'')+'" data-f="'+_mcEsc(c[0])+'" onclick="if(this.dataset.f)_setCf(this.dataset.f)">'+c[1]+'<span class="cp-chip-count">'+cnt(c[0])+'</span></button>';}).join('')+'</div>'
   +'<div id="clist"></div>';
  _fillCoaches();
