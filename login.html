@@ -295,13 +295,56 @@ function signInWithGoogle(){
   }
   var btn = document.getElementById('btn-google');
   if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Google...';}
+
+  // ── Detectar si estamos en iOS app nativa ──
+  var isNativeIOS = false;
+  try {
+    var C = window.Capacitor;
+    if(C && (typeof C.isNativePlatform === "function" ? C.isNativePlatform() : C.isNative)){
+      var plat = (typeof C.getPlatform === "function" ? C.getPlatform() : "");
+      isNativeIOS = (plat === "ios");
+    }
+  } catch(e) {}
+
+  // ── En iOS: intent usar GoogleSignIn nativo (si está disponible) ──
+  if(isNativeIOS){
+    var GoogleAuth = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.GoogleAuth;
+    if(GoogleAuth && GoogleAuth.signIn){
+      GoogleAuth.signIn()
+        .then(function(result){
+          if(result && result.authentication && result.authentication.idToken){
+            var idToken = result.authentication.idToken;
+            // Guardar token y redirigir a auth-callback para intercambiar con Supabase.
+            try {
+              localStorage.setItem('pw_google_id_token', idToken);
+              if(result.email) localStorage.setItem('pw_google_email', result.email);
+              if(result.givenName || result.familyName){
+                var name = ((result.givenName || '') + ' ' + (result.familyName || '')).trim();
+                if(name) localStorage.setItem('pw_google_name', name);
+              }
+            } catch(e) {}
+            window.location.href = 'https://pathwaycareercoach.com/auth-callback.html?source=login&google_native=1';
+            return;
+          }
+          throw new Error('No idToken en respuesta de Google');
+        })
+        .catch(function(err){
+          console.error('[google native signin]', err);
+          if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
+          alert('Error iniciando sesión con Google: ' + (err && err.message || 'desconocido'));
+        });
+      return;
+    }
+  }
+
+  // ── Fallback web: OAuth via Safari/navegador ──
   var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login';
   var sb = window.supabase.createClient(SB, KEY);
   sb.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: redirectTo }
   }).catch(function(err){
-    console.error('[google signin]', err);
+    console.error('[google signin web]', err);
     if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
     alert('Error iniciando sesión con Google: ' + (err && err.message || 'desconocido'));
   });
