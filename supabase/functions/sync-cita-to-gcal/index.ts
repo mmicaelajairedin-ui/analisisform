@@ -63,7 +63,7 @@ Deno.serve(async (req: Request) => {
         op: "create",
         event: {
           summary: nombre || "Sesión · Pathway",
-          description: `Cita agendada en Pathway`,
+          description: "", // JULIO 2026: Empty description; Google Meet is auto-generated in conferenceData
           location: modalidad === "presencial" ? (lugar || "") : "",
           startISO: inicio,
           endISO,
