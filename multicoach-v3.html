@@ -198,12 +198,114 @@
       color: #333;
     }
 
+    /* Coach select in table */
+    select {
+      padding: 6px 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      background: #fff;
+      cursor: pointer;
+    }
+    select:focus {
+      outline: none;
+      border-color: #333;
+      box-shadow: 0 0 0 3px rgba(0,0,0,0.05);
+    }
+
+    /* Clickable rows */
+    tbody tr { cursor: pointer; }
+
+    /* Drawer */
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 400px;
+      height: 100vh;
+      background: #fff;
+      box-shadow: -2px 0 8px rgba(0,0,0,0.12);
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+      overflow-y: auto;
+      animation: slideIn 0.3s ease;
+    }
+    .drawer.open { display: flex; }
+    @keyframes slideIn {
+      from { transform: translateX(400px); }
+      to { transform: translateX(0); }
+    }
+    .drawer-header {
+      padding: 20px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .drawer-header h2 { margin: 0; font-size: 18px; }
+    .drawer-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #999;
+    }
+    .drawer-close:hover { color: #333; }
+    .drawer-content {
+      padding: 20px;
+      flex: 1;
+    }
+    .drawer-field {
+      margin-bottom: 20px;
+    }
+    .drawer-label {
+      font-size: 12px;
+      color: #999;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .drawer-value {
+      font-size: 14px;
+      color: #333;
+    }
+    .drawer-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.2);
+      z-index: 999;
+      display: none;
+    }
+    .drawer-overlay.open { display: block; }
+
+    /* Filter badge */
+    .filter-badge {
+      display: inline-block;
+      background: #f0f0f0;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .filter-badge .close-btn {
+      margin-left: 8px;
+      cursor: pointer;
+      color: #999;
+    }
+    .filter-badge .close-btn:hover { color: #333; }
+
     @media (max-width: 768px) {
       .controls { flex-direction: column; }
       input[type="search"] { width: 100%; }
       table { font-size: 12px; }
       th, td { padding: 8px 12px; }
       .stat-card { flex: 1 1 48%; }
+      .drawer { width: 100%; }
     }
   </style>
 </head>
@@ -235,6 +337,7 @@
   <!-- CLIENTES -->
   <section id="clientes">
     <div class="stats" id="clientes-stats"></div>
+    <div id="coach-filter" style="padding: 0 20px; margin-bottom: 12px;"></div>
     <div class="card">
       <div class="controls">
         <input type="search" id="search-clientes" placeholder="Buscar por nombre, email, coach..." onkeyup="filterClientes()">
@@ -244,6 +347,33 @@
   </section>
 
 </main>
+
+<!-- Cliente Detail Drawer -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeClienteDrawer()"></div>
+<div class="drawer" id="cliente-drawer">
+  <div class="drawer-header">
+    <h2 id="drawer-title">Cliente</h2>
+    <button class="drawer-close" onclick="closeClienteDrawer()">✕</button>
+  </div>
+  <div class="drawer-content">
+    <div class="drawer-field">
+      <div class="drawer-label">Nombre</div>
+      <div class="drawer-value" id="drawer-nombre">—</div>
+    </div>
+    <div class="drawer-field">
+      <div class="drawer-label">Email</div>
+      <div class="drawer-value" id="drawer-email">—</div>
+    </div>
+    <div class="drawer-field">
+      <div class="drawer-label">Coach</div>
+      <div class="drawer-value" id="drawer-coach">—</div>
+    </div>
+    <div class="drawer-field">
+      <div class="drawer-label">Estado</div>
+      <div class="drawer-value" id="drawer-estado">—</div>
+    </div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
@@ -265,6 +395,7 @@
   let filteredCoaches = [];
   let allClientes = [];
   let filteredClientes = [];
+  let currentCoachFilter = null;
 
   // ════════════════════════════════════════════════════════════════════════════════
   // INIT
@@ -398,7 +529,7 @@
           </thead>
           <tbody>
             ${filteredCoaches.map(c => `
-              <tr>
+              <tr onclick="openCoachDetail('${c.id}')">
                 <td>${esc(c.nombre)}</td>
                 <td>${esc(c.email)}</td>
                 <td>${c.client_count}</td>
@@ -429,6 +560,11 @@
     `;
     document.getElementById('clientes-stats').innerHTML = statsHtml;
 
+    const filterBadgeHtml = currentCoachFilter
+      ? `<div class="filter-badge">Filtrando por coach <span class="close-btn" onclick="clearCoachFilter()">✕</span></div>`
+      : '';
+    document.getElementById('coach-filter').innerHTML = filterBadgeHtml;
+
     const html = filteredClientes.length === 0
       ? '<div class="empty">No hay clientes</div>'
       : `
@@ -437,16 +573,23 @@
             <tr>
               <th onclick="sortClientes('nombre')">Cliente</th>
               <th>Email</th>
-              <th onclick="sortClientes('coach_nombre')">Coach</th>
+              <th>Coach</th>
               <th>Estado</th>
             </tr>
           </thead>
           <tbody>
             ${filteredClientes.map(c => `
-              <tr>
+              <tr onclick="openClienteDrawer('${c.id}')">
                 <td>${esc(c.nombre)}</td>
                 <td>${esc(c.email)}</td>
-                <td>${esc(c.coach_nombre)}</td>
+                <td onclick="event.stopPropagation()">
+                  <select onchange="updateClienteCoach('${c.id}', this.value)" onclick="event.stopPropagation()">
+                    <option value="">Sin coach</option>
+                    ${allCoaches.map(coach => `
+                      <option value="${coach.id}" ${c.coach_id === coach.id ? 'selected' : ''}>${esc(coach.nombre)}</option>
+                    `).join('')}
+                  </select>
+                </td>
                 <td><span class="badge ${c.activo ? 'active' : 'inactive'}">${c.activo ? 'Activo' : 'Inactivo'}</span></td>
               </tr>
             `).join('')}
@@ -502,6 +645,99 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════
+  // COACH ASSIGNMENT & DETAIL
+  // ════════════════════════════════════════════════════════════════════════════════
+
+  function openCoachDetail(coachId) {
+    const coach = allCoaches.find(c => c.id === coachId);
+    if (!coach) return;
+
+    currentCoachFilter = coachId;
+    filteredClientes = allClientes.filter(c => c.coach_id === coachId);
+
+    // Switch to clientes tab
+    document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('clientes').classList.add('active');
+    document.querySelectorAll('.tab-btn')[1].classList.add('active');
+
+    renderClientes();
+  }
+
+  function clearCoachFilter() {
+    currentCoachFilter = null;
+    filteredClientes = [...allClientes];
+    renderClientes();
+  }
+
+  function openClienteDrawer(clienteId) {
+    const cliente = allClientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+
+    const coach = allCoaches.find(c => c.id === cliente.coach_id);
+
+    document.getElementById('drawer-nombre').textContent = esc(cliente.nombre);
+    document.getElementById('drawer-email').textContent = esc(cliente.email);
+    document.getElementById('drawer-coach').textContent = coach ? esc(coach.nombre) : '—';
+    document.getElementById('drawer-estado').innerHTML = `<span class="badge ${cliente.activo ? 'active' : 'inactive'}">${cliente.activo ? 'Activo' : 'Inactivo'}</span>`;
+
+    document.getElementById('drawer-overlay').classList.add('open');
+    document.getElementById('cliente-drawer').classList.add('open');
+  }
+
+  function closeClienteDrawer() {
+    document.getElementById('drawer-overlay').classList.remove('open');
+    document.getElementById('cliente-drawer').classList.remove('open');
+  }
+
+  async function updateClienteCoach(clienteId, newCoachId) {
+    const cliente = allClientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+
+    const oldCoachId = cliente.coach_id;
+    const newCoach = newCoachId ? allCoaches.find(c => c.id === newCoachId) : null;
+
+    try {
+      // Update UI optimistically
+      cliente.coach_id = newCoachId || null;
+      cliente.coach_nombre = newCoach?.nombre || '—';
+      renderClientes();
+
+      // Update Supabase
+      const { error } = await sb
+        .from('candidatos')
+        .update({ coach_id: newCoachId || null })
+        .eq('id', clienteId);
+
+      if (error) throw error;
+
+      // Recount coaches
+      await recountCoaches();
+      renderCoaches();
+
+    } catch (e) {
+      console.error('Update coach error:', e);
+
+      // Revert
+      cliente.coach_id = oldCoachId;
+      cliente.coach_nombre = allCoaches.find(c => c.id === oldCoachId)?.nombre || '—';
+      renderClientes();
+
+      alert('Error al actualizar coach. Por favor intenta de nuevo.');
+    }
+  }
+
+  async function recountCoaches() {
+    for (let coach of allCoaches) {
+      const { count } = await sb
+        .from('candidatos')
+        .select('id', { count: 'exact', head: true })
+        .eq('coach_id', coach.id);
+      coach.client_count = count || 0;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════════
   // TAB SWITCHING
   // ════════════════════════════════════════════════════════════════════════════════
 
@@ -513,6 +749,11 @@
     // Show selected
     document.getElementById(tabName).classList.add('active');
     event.target.classList.add('active');
+
+    // Clear coach filter when switching tabs
+    if (tabName === 'coaches') {
+      clearCoachFilter();
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════════════
