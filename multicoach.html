@@ -3365,6 +3365,58 @@ function __nuevoCliente(){
   })();
  });
 }
+// Función de diagnóstico para probar la conexión a la edge function
+// Uso: window._testAgregarCliente() desde la consola del navegador
+window._testAgregarCliente = function(){
+  console.log('=== TEST: Agregar Cliente Edge Function ===');
+  console.log('MC_REAL:', MC_REAL);
+  console.log('MC_ORG:', MC_ORG);
+  console.log('MC_OWNER:', MC_OWNER);
+  console.log('DB.coaches.length:', (DB && DB.coaches ? DB.coaches.length : 'N/A'));
+  if(!MC_REAL || !MC_ORG || !MC_ORG.id){
+    console.error('❌ No está en modo real o MC_ORG no está configurado');
+    return;
+  }
+  var coach = DB && DB.coaches && DB.coaches[0];
+  if(!coach){
+    console.error('❌ No hay coaches disponibles');
+    return;
+  }
+  console.log('Coach seleccionado:', coach);
+  var testData = {
+    nombre: 'Test Cliente ' + Math.random().toString(36).substr(2, 5),
+    email: 'test-' + Date.now() + '@example.com',
+    coach_id: coach.id,
+    org_id: MC_ORG.id
+  };
+  console.log('Datos de prueba:', testData);
+  _hdr({'Content-Type':'application/json'}).then(function(h){
+    console.log('Headers:', Object.keys(h));
+    return fetch(SB+'/functions/v1/agregar-cliente-red',{
+      method:'POST',
+      headers:h,
+      body:JSON.stringify({nombre:testData.nombre, email:testData.email, coach_id:testData.coach_id}),
+      timeout:8000
+    });
+  }).then(function(r){
+    console.log('Response status:', r.status);
+    return r.json().catch(function(e){
+      console.error('JSON parse error:', e);
+      return {error:'parse_failed'};
+    }).then(function(d){
+      return {ok:r.ok, status:r.status, d:d};
+    });
+  }).then(function(res){
+    console.log('Response body:', res);
+    if(res.ok && res.d.ok && res.d.id){
+      console.log('✅ SUCCESS! Client ID:', res.d.id, 'Mode:', res.d.mode);
+    } else {
+      console.error('❌ FAILED:', res.d.error || 'Unknown error');
+    }
+  }).catch(function(err){
+    console.error('❌ Network error:', err.message);
+  });
+};
 // Reasigna un cliente a un coach (compartido: dropdown de la ficha, drag y el
 // modal). En real va por la edge function asignar-cliente; en demo es local.
 function _reassign(cliId,coachId,cb){
