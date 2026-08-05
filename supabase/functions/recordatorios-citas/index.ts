@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
   // con el select base para NO romper TODOS los recordatorios por columnas opcionales.
   const baseSel = `id,nombre,email,tipo,inicio,estado,coach_id,cliente_tz,token,rem_24h_at,rem_1h_at`;
   const winQ = `&inicio=gte.${new Date(now).toISOString()}&inicio=lte.${inWin}&order=inicio.asc&limit=200`;
-  const qFull = `${SB_URL}/rest/v1/citas?select=${baseSel},modalidad,lugar,grupal,lang${winQ}`;
+  const qFull = `${SB_URL}/rest/v1/citas?select=${baseSel},modalidad,lugar,grupal,lang,meet_link${winQ}`;
   const qBase = `${SB_URL}/rest/v1/citas?select=${baseSel}${winQ}`;
   let citas: Cita[] = [];
   try {
@@ -79,7 +79,16 @@ Deno.serve(async (req: Request) => {
     else if (!c.rem_24h_at && hUntil <= 24 && hUntil > 1.5) kind = "24h";
     if (!kind) continue;
 
-    const ok = await sendReminder(SB_URL, SB_KEY, c, coach, tz, kind);
+    // Obtener zoom_url del coach si está configurado
+    let zoomUrl = "";
+    try {
+      const coachCfg = (coaches[c.coach_id || ""] || {}) as any;
+      if (coachCfg.configuracion && coachCfg.configuracion.zoom_url) {
+        zoomUrl = String(coachCfg.configuracion.zoom_url);
+      }
+    } catch (_e) { /* best-effort */ }
+
+    const ok = await sendReminder(SB_URL, SB_KEY, c, coach, tz, kind, zoomUrl);
     if (!ok) continue;
 
     const patch: Record<string, string> = {};
@@ -106,14 +115,14 @@ interface Cita {
   estado?: string; coach_id?: string; cliente_tz?: string; token?: string;
   rem_24h_at?: string | null; rem_1h_at?: string | null;
   modalidad?: string | null; lugar?: string | null; grupal?: boolean | null;
-  lang?: string | null;
+  lang?: string | null; meet_link?: string | null;
 }
 interface Coach { nombre?: string; email?: string; tz?: string; }
 
 function sbH(key: string) { return { apikey: key, Authorization: `Bearer ${key}` }; }
 
-async function loadCoaches(url: string, key: string, ids: string[]): Promise<Record<string, Coach>> {
-  const out: Record<string, Coach> = {};
+async function loadCoaches(url: string, key: string, ids: string[]): Promise<Record<string, Coach & { configuracion?: Record<string, unknown> }>> {
+  const out: Record<string, Coach & { configuracion?: Record<string, unknown> }> = {};
   if (!ids.length) return out;
   try {
     const list = ids.map((i) => `"${i}"`).join(",");
@@ -126,14 +135,14 @@ async function loadCoaches(url: string, key: string, ids: string[]): Promise<Rec
     for (const u of rows) {
       const cfg = u.configuracion || {};
       const tz = (cfg.disponibilidad && cfg.disponibilidad.tz) || "";
-      out[u.id] = { nombre: u.nombre, email: u.email, tz };
+      out[u.id] = { nombre: u.nombre, email: u.email, tz, configuracion: cfg };
     }
   } catch (_e) { /* best-effort */ }
   return out;
 }
 
 async function sendReminder(
-  url: string, key: string, c: Cita, coach: Coach, tz: string, kind: "1h" | "24h",
+  url: string, key: string, c: Cita, coach: Coach, tz: string, kind: "1h" | "24h", zoomUrl: string = "",
 ): Promise<boolean> {
   // Idioma del cliente (guardado en la reserva). Si no hay, español por defecto.
   const EN = String(c.lang || "").toLowerCase().slice(0, 2) === "en";
@@ -150,19 +159,34 @@ async function sendReminder(
     ? (EN ? `Your <strong>${esc(tipo)}</strong> with ${esc(coachName)} is <strong>today at ${esc(hora)}</strong>. See you there!` : `Tu <strong>${esc(tipo)}</strong> con ${esc(coachName)} es <strong>hoy a las ${esc(hora)}</strong>. ¡Te esperamos!`)
     : (EN ? `A reminder about your <strong>${esc(tipo)}</strong> with ${esc(coachName)}: <strong>${esc(cuando)} at ${esc(hora)}</strong>.` : `Te recordamos tu <strong>${esc(tipo)}</strong> con ${esc(coachName)}: <strong>${esc(cuando)} a las ${esc(hora)}</strong>.`);
 
-  // Link a la Sala de Pathway (misma que arma reservar.html y el panel):
-  // Pathway-<coach_id>-<startMs>. El video es de Pathway (JaaS), no es de un tercero.
+  // Determinar qué link usar: Zoom → Google Meet → Pathway Sala
   const esPresencial = String(c.modalidad || "online") === "presencial";
   const startMs = new Date(c.inicio).getTime();
   const salaRoom = "Pathway-" + (c.coach_id || "x") + "-" + startMs;
   const salaLink = "https://pathwaycareercoach.com/sala.html?room=" + encodeURIComponent(salaRoom);
-  // Presencial → mostramos el lugar y NO el botón de videollamada. Online → botón a la Sala de Pathway.
+
+  // Priority: Zoom → Google Meet → Pathway Sala
+  let videoLink = "";
+  let videoLabel = "";
+  if (!esPresencial) {
+    if (zoomUrl) {
+      videoLink = zoomUrl;
+      videoLabel = EN ? "Video call" : "Videollamada";
+    } else if (c.meet_link) {
+      videoLink = c.meet_link;
+      videoLabel = EN ? "Google Meet" : "Google Meet";
+    } else {
+      videoLink = salaLink;
+      videoLabel = EN ? "Pathway video call" : "Videollamada de Pathway";
+    }
+  }
+
   const lineaModo = esPresencial
     ? `<div style="margin-top:4px">📍 <strong>${EN ? "In person" : "Presencial"}</strong>${c.lugar ? ` · ${esc(String(c.lugar))}` : ""}</div>`
-    : `<div style="margin-top:4px">💻 ${EN ? "Pathway video call" : "Videollamada de Pathway"}</div>`;
-  const botonModo = esPresencial
+    : `<div style="margin-top:4px">💻 ${esc(videoLabel)}</div>`;
+  const botonModo = esPresencial || !videoLink
     ? ``
-    : `<a href="${salaLink}" target="_blank" rel="noopener" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:2px 0 12px">${EN ? "Join video call" : "Entrar a la videollamada"}</a>`;
+    : `<a href="${esc(videoLink)}" target="_blank" rel="noopener" style="display:inline-block;background:#1B4332;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;font-size:14px;margin:2px 0 12px">📹 ${EN ? "Join video call" : "Entrar a la videollamada"}</a>`;
 
   const html =
     `<div style="font-family:Inter,-apple-system,'Segoe UI',sans-serif;max-width:480px;margin:0 auto">` +
