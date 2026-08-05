@@ -62,24 +62,58 @@ Deno.serve(async (req: Request) => {
   if (!org_id) return json({ error: "missing_org_id" }, 400);
   const plan = (body.plan === "pro" || body.plan === "studio") ? body.plan : "boutique";
 
+  // Plan limits
+  const planLimits: Record<string, { max_coaches: number | null; max_clientes: number | null }> = {
+    pro: { max_coaches: null, max_clientes: null },
+    studio: { max_coaches: 8, max_clientes: 120 },
+    boutique: { max_coaches: 3, max_clientes: 45 },
+  };
+  const newLimits = planLimits[plan];
+
   // Buscar org
-  let org: { id: string; plan: string; nombre: string } | null = null;
+  let org: { id: string; plan: string; nombre: string; owner_id: string } | null = null;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}&select=id,plan,nombre&limit=1`, { headers: svc });
+    const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}&select=id,plan,nombre,owner_id&limit=1`, { headers: svc });
     if (!r.ok) return json({ error: "lookup_failed", status: r.status }, 502);
     const rows = await r.json();
     org = (Array.isArray(rows) && rows[0]) || null;
   } catch { return json({ error: "db_unreachable" }, 502); }
   if (!org) return json({ error: "org_not_found" }, 404);
+  if (org.plan === plan) return json({ error: "plan_unchanged", current: plan }, 400);
 
-  // Actualizar plan
+  // Validar que no hay más coaches/clientes que lo permitido por nuevo plan
+  let coachCount = 0;
+  let clienteCount = 0;
+  try {
+    const rCoaches = await fetch(`${SB_URL}/rest/v1/usuarios?org_id=eq.${encodeURIComponent(org_id)}&rol=in.(coach,colaborador,assistant)&select=count`, { headers: { ...svc, Prefer: "count=exact" } });
+    if (rCoaches.ok) coachCount = parseInt(rCoaches.headers.get("content-range")?.split("/")[1] || "0", 10);
+    const rClientes = await fetch(`${SB_URL}/rest/v1/candidatos?org_id=eq.${encodeURIComponent(org_id)}&select=count`, { headers: { ...svc, Prefer: "count=exact" } });
+    if (rClientes.ok) clienteCount = parseInt(rClientes.headers.get("content-range")?.split("/")[1] || "0", 10);
+  } catch { /* best-effort; no frenar si no se puede contar */ }
+
+  if (newLimits.max_coaches && coachCount > newLimits.max_coaches) {
+    return json({ error: "exceeds_plan_coaches", current: coachCount, max: newLimits.max_coaches }, 409);
+  }
+  if (newLimits.max_clientes && clienteCount > newLimits.max_clientes) {
+    return json({ error: "exceeds_plan_clientes", current: clienteCount, max: newLimits.max_clientes }, 409);
+  }
+
+  // Actualizar plan + límites
   try {
     const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}`, {
       method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({ plan }),
+      body: JSON.stringify({ plan, max_coaches: newLimits.max_coaches, max_clientes: newLimits.max_clientes }),
     });
     if (!r.ok) return json({ error: "update_failed", status: r.status }, 502);
   } catch { return json({ error: "update_failed" }, 502); }
 
-  return json({ ok: true, org_id, plan });
+  // Log auditoría
+  try {
+    await fetch(`${SB_URL}/rest/v1/audit_logs`, {
+      method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ org_id, action: "plan_changed", details: { old_plan: org.plan, new_plan: plan, by: who.email } }),
+    });
+  } catch { /* best-effort */ }
+
+  return json({ ok: true, org_id, plan, coaches: coachCount, clientes: clienteCount });
 });

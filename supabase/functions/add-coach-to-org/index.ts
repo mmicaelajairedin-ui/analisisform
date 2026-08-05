@@ -64,9 +64,9 @@ Deno.serve(async (req: Request) => {
   if (!coach_id || !org_id) return json({ error: "missing_ids" }, 400);
 
   // Verificar que el coach existe y es independiente
-  let coach: { id: string; rol: string; org_id: string | null } | null = null;
+  let coach: { id: string; rol: string; org_id: string | null; email: string; nombre: string } | null = null;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coach_id)}&select=id,rol,org_id&limit=1`, { headers: svc });
+    const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coach_id)}&select=id,rol,org_id,email,nombre&limit=1`, { headers: svc });
     if (!r.ok) return json({ error: "lookup_failed", status: r.status }, 502);
     const rows = await r.json();
     coach = (Array.isArray(rows) && rows[0]) || null;
@@ -75,15 +75,25 @@ Deno.serve(async (req: Request) => {
   if (coach.rol !== "coach") return json({ error: "not_a_coach", rol: coach.rol }, 409);
   if (coach.org_id) return json({ error: "already_in_org", org_id: coach.org_id }, 409);
 
-  // Verificar que la org existe
-  let org: { id: string } | null = null;
+  // Verificar que la org existe y obtener límites
+  let org: { id: string; nombre: string; plan: string; max_coaches: number | null; owner_id: string } | null = null;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}&select=id&limit=1`, { headers: svc });
+    const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}&select=id,nombre,plan,max_coaches,owner_id&limit=1`, { headers: svc });
     if (!r.ok) return json({ error: "org_lookup_failed", status: r.status }, 502);
     const rows = await r.json();
     org = (Array.isArray(rows) && rows[0]) || null;
   } catch { return json({ error: "db_unreachable" }, 502); }
   if (!org) return json({ error: "org_not_found" }, 404);
+
+  // Verificar límite de coaches en el plan
+  let coachCount = 0;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/usuarios?org_id=eq.${encodeURIComponent(org_id)}&rol=eq.coach&select=count`, { headers: { ...svc, Prefer: "count=exact" } });
+    if (r.ok) coachCount = parseInt(r.headers.get("content-range")?.split("/")[1] || "0", 10);
+  } catch { /* best-effort */ }
+  if (org.max_coaches && coachCount >= org.max_coaches) {
+    return json({ error: "max_coaches_reached", current: coachCount, max: org.max_coaches }, 409);
+  }
 
   // Asignar coach a org
   try {
@@ -94,5 +104,13 @@ Deno.serve(async (req: Request) => {
     if (!r.ok) return json({ error: "assign_failed", status: r.status }, 502);
   } catch { return json({ error: "assign_failed" }, 502); }
 
-  return json({ ok: true, coach_id, org_id });
+  // Log auditoría
+  try {
+    await fetch(`${SB_URL}/rest/v1/audit_logs`, {
+      method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ org_id, action: "coach_added", details: { coach_email: coach.email, coach_name: coach.nombre, by: who.email } }),
+    });
+  } catch { /* best-effort */ }
+
+  return json({ ok: true, coach_id, org_id, coach_email: coach.email, coaches_now: coachCount + 1 });
 });

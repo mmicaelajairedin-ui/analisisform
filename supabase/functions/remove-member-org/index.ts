@@ -74,9 +74,9 @@ Deno.serve(async (req: Request) => {
   if (!org) return json({ error: "org_not_found" }, 404);
 
   // Verificar que el miembro existe y está en la org
-  let member: { id: string; org_id: string | null; rol: string } | null = null;
+  let member: { id: string; org_id: string | null; rol: string; email: string; nombre: string } | null = null;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(member_id)}&select=id,org_id,rol&limit=1`, { headers: svc });
+    const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(member_id)}&select=id,org_id,rol,email,nombre&limit=1`, { headers: svc });
     if (!r.ok) return json({ error: "lookup_failed", status: r.status }, 502);
     const rows = await r.json();
     member = (Array.isArray(rows) && rows[0]) || null;
@@ -89,7 +89,14 @@ Deno.serve(async (req: Request) => {
     return json({ error: "cannot_remove_owner" }, 409);
   }
 
-  // Remover miembro (setear org_id=null)
+  // Contar candidatos del miembro para auditoría
+  let candidateCount = 0;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/candidatos?coach_id=eq.${encodeURIComponent(member_id)}&select=count`, { headers: { ...svc, Prefer: "count=exact" } });
+    if (r.ok) candidateCount = parseInt(r.headers.get("content-range")?.split("/")[1] || "0", 10);
+  } catch { /* best-effort */ }
+
+  // Remover miembro (setear org_id=null) — si tiene clientes, solo setea org_id a null
   try {
     const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(member_id)}`, {
       method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
@@ -98,5 +105,13 @@ Deno.serve(async (req: Request) => {
     if (!r.ok) return json({ error: "remove_failed", status: r.status }, 502);
   } catch { return json({ error: "remove_failed" }, 502); }
 
-  return json({ ok: true, org_id, member_id });
+  // Log auditoría
+  try {
+    await fetch(`${SB_URL}/rest/v1/audit_logs`, {
+      method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ org_id, action: "member_removed", details: { member_email: member.email, member_name: member.nombre, member_role: member.rol, candidate_count: candidateCount, by: who.email } }),
+    });
+  } catch { /* best-effort */ }
+
+  return json({ ok: true, org_id, member_id, member_email: member.email, candidates_preserved: candidateCount });
 });

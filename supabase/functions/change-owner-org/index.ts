@@ -89,6 +89,16 @@ Deno.serve(async (req: Request) => {
     return json({ error: "new_owner_not_in_org" }, 409);
   }
 
+  // Obtener el owner anterior para auditoría
+  let oldOwner: { id: string; email: string; nombre: string } | null = null;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(org.owner_id)}&select=id,email,nombre&limit=1`, { headers: svc });
+    if (r.ok) {
+      const rows = await r.json();
+      oldOwner = (Array.isArray(rows) && rows[0]) || null;
+    }
+  } catch { /* best-effort */ }
+
   // Cambiar owner de org
   try {
     const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}`, {
@@ -112,8 +122,8 @@ Deno.serve(async (req: Request) => {
   // Cambiar rol del owner anterior a coach (si no es admin)
   if (org.owner_id && org.owner_id !== new_owner_id) {
     try {
-      const oldOwner = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(org.owner_id)}&select=rol&limit=1`, { headers: svc }).then(r => r.json()).then(rows => Array.isArray(rows) ? rows[0] : null);
-      if (oldOwner && oldOwner.rol === "owner") {
+      const oldOwnerData = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(org.owner_id)}&select=rol&limit=1`, { headers: svc }).then(r => r.json()).then(rows => Array.isArray(rows) ? rows[0] : null);
+      if (oldOwnerData && oldOwnerData.rol === "owner") {
         const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(org.owner_id)}`, {
           method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
           body: JSON.stringify({ rol: "coach" }),
@@ -123,5 +133,13 @@ Deno.serve(async (req: Request) => {
     } catch { /* best-effort */ }
   }
 
-  return json({ ok: true, org_id, new_owner_id });
+  // Log auditoría
+  try {
+    await fetch(`${SB_URL}/rest/v1/audit_logs`, {
+      method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ org_id, action: "owner_changed", details: { old_owner_email: oldOwner?.email, new_owner_email: newOwner.email, by: who.email } }),
+    });
+  } catch { /* best-effort */ }
+
+  return json({ ok: true, org_id, new_owner_id, new_owner_email: newOwner.email });
 });

@@ -63,9 +63,9 @@ Deno.serve(async (req: Request) => {
   if (!org_id) return json({ error: "missing_org_id" }, 400);
 
   // Buscar org para obtener estado actual
-  let org: { id: string; activo: boolean } | null = null;
+  let org: { id: string; activo: boolean; nombre: string; owner_id: string } | null = null;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}&select=id,activo&limit=1`, { headers: svc });
+    const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}&select=id,activo,nombre,owner_id&limit=1`, { headers: svc });
     if (!r.ok) return json({ error: "lookup_failed", status: r.status }, 502);
     const rows = await r.json();
     org = (Array.isArray(rows) && rows[0]) || null;
@@ -74,6 +74,9 @@ Deno.serve(async (req: Request) => {
 
   // Toggle activo
   const newActivo = !org.activo;
+  const action = newActivo ? "reactivated" : "suspended";
+
+  // Actualizar org
   try {
     const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}`, {
       method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
@@ -82,5 +85,13 @@ Deno.serve(async (req: Request) => {
     if (!r.ok) return json({ error: "update_failed", status: r.status }, 502);
   } catch { return json({ error: "update_failed" }, 502); }
 
-  return json({ ok: true, org_id, activo: newActivo });
+  // Log auditoría
+  try {
+    await fetch(`${SB_URL}/rest/v1/audit_logs`, {
+      method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ org_id, action, details: { org_name: org.nombre, by: who.email } }),
+    });
+  } catch { /* best-effort */ }
+
+  return json({ ok: true, org_id, activo: newActivo, action });
 });

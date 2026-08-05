@@ -69,9 +69,9 @@ Deno.serve(async (req: Request) => {
   }
 
   // Verificar que la org existe
-  let org: { id: string } | null = null;
+  let org: { id: string; nombre: string; plan: string; max_coaches: number | null } | null = null;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}&select=id&limit=1`, { headers: svc });
+    const r = await fetch(`${SB_URL}/rest/v1/organizaciones?id=eq.${encodeURIComponent(org_id)}&select=id,nombre,plan,max_coaches&limit=1`, { headers: svc });
     if (!r.ok) return json({ error: "org_lookup_failed", status: r.status }, 502);
     const rows = await r.json();
     org = (Array.isArray(rows) && rows[0]) || null;
@@ -88,7 +88,19 @@ Deno.serve(async (req: Request) => {
     }
   } catch { return json({ error: "db_unreachable" }, 502); }
 
-  // Crear nuevo usuario con rol de colaborador
+  // Verificar límite de colaboradores si rol=coach
+  if (rol === "coach") {
+    let coachCount = 0;
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/usuarios?org_id=eq.${encodeURIComponent(org_id)}&rol=eq.coach&select=count`, { headers: { ...svc, Prefer: "count=exact" } });
+      if (r.ok) coachCount = parseInt(r.headers.get("content-range")?.split("/")[1] || "0", 10);
+    } catch { /* best-effort */ }
+    if (org.max_coaches && coachCount >= org.max_coaches) {
+      return json({ error: "max_coaches_reached", current: coachCount, max: org.max_coaches }, 409);
+    }
+  }
+
+  // Crear nuevo usuario
   let userId = "";
   try {
     const r = await fetch(`${SB_URL}/rest/v1/usuarios`, {
@@ -102,5 +114,13 @@ Deno.serve(async (req: Request) => {
   } catch { return json({ error: "create_failed" }, 502); }
   if (!userId) return json({ error: "create_failed" }, 502);
 
-  return json({ ok: true, user_id: userId, org_id, email });
+  // Log auditoría
+  try {
+    await fetch(`${SB_URL}/rest/v1/audit_logs`, {
+      method: "POST", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ org_id, action: "collab_created", details: { collab_email: email, collab_name: nombre, rol, by: who.email } }),
+    });
+  } catch { /* best-effort */ }
+
+  return json({ ok: true, user_id: userId, org_id, email, nombre, rol });
 });
