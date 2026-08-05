@@ -2375,7 +2375,7 @@ function _imgCompress(file,cb){
 function _avatarDrop(ev,kind){ev.preventDefault();ev.currentTarget.classList.remove('over');var f=ev.dataTransfer.files&&ev.dataTransfer.files[0];if(!f||(f.type||'').indexOf('image')!==0){__toast('Suelta una imagen');return;}var o=(kind==='coach')?_coach(_curCoach):_cli(_curCli);if(!o)return;var r=new FileReader();r.onload=function(e){o.foto=e.target.result;if(kind==='coach')_renderCoachFicha();else _renderFicha();__toast('Foto de '+o.n.split(' ')[0]+' actualizada ✓');};r.readAsDataURL(f);}
 // Soltar/subir el documento del plan en la ficha del cliente.
 function _cliSaveLocally(cliId,fields){if(!MC_REAL&&cliId){try{var stored=JSON.parse(localStorage.getItem('_mcCli_'+cliId)||'{}');Object.assign(stored,fields);localStorage.setItem('_mcCli_'+cliId,JSON.stringify(stored));}catch(e){}}}
-function _cliSaveToDb(cliId,fields){if(MC_REAL&&cliId&&fields){_hdr({'Content-Type':'application/json'}).then(function(h){var updates={};if(fields.planDoc)updates.archivo_plan={name:fields.planDoc,uploaded_at:new Date().toISOString()};if(fields.progFotos&&Array.isArray(fields.progFotos))updates.archivos_progreso=fields.progFotos.map(function(f){return {data_uri:(typeof f==='string'&&f.startsWith('data:')?f:''),name:'photo.jpg',uploaded_at:new Date().toISOString()};});if(fields.sesDocs&&Array.isArray(fields.sesDocs))updates.archivos_sesion=fields.sesDocs.map(function(f){return {name:f,uploaded_at:new Date().toISOString()};});if(Object.keys(updates).length){return _sbw('PATCH','/rest/v1/candidatos?id=eq.'+cliId,updates);}}).catch(function(){});}}
+function _cliSaveToDb(cliId,fields){if(MC_REAL&&cliId&&fields){_hdr({'Content-Type':'application/json'}).then(function(h){var updates={};if(fields.planDoc)updates.archivo_plan={name:fields.planDoc,uploaded_at:new Date().toISOString()};if(fields.progFotos&&Array.isArray(fields.progFotos))updates.archivos_progreso=fields.progFotos.map(function(f){return {data_uri:(typeof f==='string'&&f.startsWith('data:')?f:''),name:'photo.jpg',uploaded_at:new Date().toISOString()};});if(fields.sesDocs&&Array.isArray(fields.sesDocs))updates.archivos_sesion=fields.sesDocs.map(function(f){return {name:f,uploaded_at:new Date().toISOString()};});if(Object.keys(updates).length){mcPatch('candidatos','id=eq.'+encodeURIComponent(cliId),updates).catch(function(){});}}).catch(function(){});}}
 function _cliLoadLocally(cliId){if(!MC_REAL&&cliId){try{return JSON.parse(localStorage.getItem('_mcCli_'+cliId)||'{}');}catch(e){return {};}}}
 function _cliDocFiles(files){if(!files||!files.length)return;var k=_cli(_curCli);if(!k)return;k.planDoc=files[0].name;_cliSaveLocally(_curCli,{planDoc:k.planDoc});_cliSaveToDb(_curCli,{planDoc:k.planDoc});_renderFicha();__toast('Plan «'+files[0].name+'» adjuntado ✓');}
 function _cliDocDrop(ev){ev.preventDefault();ev.currentTarget.classList.remove('over');_cliDocFiles(ev.dataTransfer.files);}
@@ -3037,6 +3037,8 @@ function mcApplyNiche(){
 MC_REAL=false; MC_ORG=null; MC_OWNER=null; MC_CITAS=[]; MC_USER_PERMISOS=[];
 function mcGet(t,q){ return _hdr().then(function(h){ return fetch(SB+'/rest/v1/'+t+'?'+q,{headers:h}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];}); }); }
 function mcPatch(t,q,body){ return _hdr({'Content-Type':'application/json',Prefer:'return=minimal'}).then(function(h){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'PATCH',headers:h,body:JSON.stringify(body)}); }); }
+function mcPost(t,q,body){ return _hdr({'Content-Type':'application/json',Prefer:'return=minimal'}).then(function(h){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'POST',headers:h,body:JSON.stringify(body)}); }); }
+function mcDelete(t,q){ return _hdr({'Content-Type':'application/json',Prefer:'return=minimal'}).then(function(h){ return fetch(SB+'/rest/v1/'+t+'?'+q,{method:'DELETE',headers:h}); }); }
 // Guarda config de la red (perfil, recursos, marca, preferencias) en
 // organizaciones.marca (JSONB, merge). Refleja YA en memoria + localStorage para
 // que la UI y _mcBrand lo vean sin recargar. En demo (sin org real) → solo toast.
@@ -4185,14 +4187,16 @@ function toggleCli(id){
   var k=_cli(id);if(!k)return;
   var nuevoEst=(k.est==='activo'?'inactivo':'activo');
   __toast('Guardando cambio de estado...');
-  _sbw('PATCH','/rest/v1/candidatos?id=eq.'+id,{est:nuevoEst},function(ok){
-    if(ok){
+  mcPatch('candidatos','id=eq.'+encodeURIComponent(id),{est:nuevoEst}).then(function(r){
+    if(r&&r.ok){
       k.est=nuevoEst;
       __toast(k.n+(nuevoEst==='activo'?' reactivado ✓':' suspendido'));
       fichaCliente(id);
     } else {
       __toast('Error al actualizar estado');
     }
+  }).catch(function(){
+    __toast('Error al actualizar estado');
   });
 }
 
@@ -4470,8 +4474,8 @@ function _equipoEditarPerfil(){
       payload.estado=nuevoEstado;
     }
 
-    _sbw('PATCH','/rest/v1/'+tabla+'?id=eq.'+item.id, payload, function(ok){
-      if(ok){
+    mcPatch(tabla,'id=eq.'+encodeURIComponent(item.id),payload).then(function(r){
+      if(r&&r.ok){
         _equipoSelected.nombre=nuevoNombre;
         _equipoSelected.email=nuevoEmail;
         _equipoSelected.telefono=nuevoTelefono;
@@ -4483,7 +4487,7 @@ function _equipoEditarPerfil(){
       } else {
         __toast('✗ Error al guardar');
       }
-    });
+    }).catch(function(){__toast('✗ Error al guardar');});
   });
 }
 
@@ -4621,7 +4625,7 @@ function _equipoReasignarConfirm(fromCoachId, toCoachId, modal){
       __toast('❌ Error en reasignación');
     }
   };
-  if(MC_REAL){ _sbw('POST','/rest/v1/rpc/reassign_clients',payload,_fn); }
+  if(MC_REAL){ mcPost('rpc/reassign_clients','',payload).then(function(r){ _fn(r&&r.ok?{ok:true}:{ok:false}); }).catch(function(){ _fn({ok:false}); }); }
 }
 
 // DESACTIVAR / REACTIVAR: Confirmación + cambio de estado + refresco
@@ -4642,15 +4646,15 @@ function _equipoToggleEstado(){
     payload.estado=nuevoEstado;
   }
 
-  _sbw('PATCH','/rest/v1/'+tabla+'?id=eq.'+_equipoSelected.id, payload, function(ok){
-    if(ok){
+  mcPatch(tabla,'id=eq.'+encodeURIComponent(_equipoSelected.id),payload).then(function(r){
+    if(r&&r.ok){
       _equipoSelected.estado=nuevoEstado;
       _equipoRefreshAfterChange();
       __toast('✓ '+_equipoSelected.nombre+' '+(_equipoSelected.estado==='activo'?'reactivado':'desactivado'));
     } else {
       __toast('✗ Error al guardar');
     }
-  });
+  }).catch(function(){__toast('✗ Error al guardar');});
 }
 
 // Helper: Genera HTML dinámico del drawer desde _equipoSelected
