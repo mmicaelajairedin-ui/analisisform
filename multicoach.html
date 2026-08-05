@@ -3312,18 +3312,57 @@ function __nuevoCliente(){
   var cliId='cli_'+Date.now()+'_'+Math.random().toString(36).substr(2,9);
   var newCli={id:cliId,n:n,ini:_mcIni(n),nicho:(c?c.nicho:(NICHOS[0]&&NICHOS[0].id)||''),coach:cid,est:'activo',prog:'',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién',email:em};
   DB.clientes.push(newCli); if(c)c.cli=(c.cli||0)+1; __mclose(); __toast('Cliente '+n+' agregado a tu red ✓'); mcApplyNiche(); if(_sec==='clientes')_fillClientes(); else _sec='clientes', renderClientes();
-  _hdr({'Content-Type':'application/json'}).then(function(h){
-   return fetch(SB+'/functions/v1/agregar-cliente-red',{method:'POST',headers:h,body:JSON.stringify({nombre:n,email:em,coach_id:cid})});
-  }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
-   if(res.ok&&res.d.ok&&res.d.id){
-    // Reemplazar ID temporal con el real de Supabase
-    var idx=DB.clientes.findIndex(function(cli){return cli.id===cliId;});
-    if(idx>=0){ DB.clientes[idx].id=res.d.id; }
-   } else {
-    var er=res.d&&res.d.error, msg=er==='coach_ajeno'?'Coach no válido':er==='not_owner'?'Sesión expirada':'Sincronización pendiente';
-    console.warn('[agregar-cliente-red] sync failed:', er, msg);
-   }
-  }).catch(function(err){ console.warn('[agregar-cliente-red] background sync error (OK, local added):', err); });
+  // Sync to Supabase: try to persist the client to the real database
+  (function(){
+    var syncAttempts = 0;
+    var maxAttempts = 3;
+    function _sync(){
+      syncAttempts++;
+      _hdr({'Content-Type':'application/json'}).then(function(h){
+        return fetch(SB+'/functions/v1/agregar-cliente-red',{method:'POST',headers:h,body:JSON.stringify({nombre:n,email:em,coach_id:cid,org_id:MC_ORG&&MC_ORG.id}),timeout:8000});
+      }).then(function(r){
+        return r.json().catch(function(e){
+          console.error('[agregar-cliente-red] JSON parse failed:', e);
+          return {error:'parse_failed'};
+        }).then(function(d){
+          return {ok:r.ok,status:r.status,d:d||{}};
+        });
+      }).then(function(res){
+        if(res.ok&&res.d.ok&&res.d.id){
+          // Reemplazar ID temporal con el real de Supabase
+          var idx=DB.clientes.findIndex(function(cli){return cli.id===cliId;});
+          if(idx>=0){ DB.clientes[idx].id=res.d.id; DB.clientes[idx].synced=true; }
+          console.log('[agregar-cliente-red] ✓ cliente sincronizado:', res.d.id);
+        } else {
+          var er=res.d&&res.d.error;
+          var msg = er==='coach_ajeno'?'Coach no válido para esta red':
+                    er==='not_owner'?'Sesión expirada, recarga la página':
+                    er==='cap_reached'?'Límite de clientes alcanzado para tu plan':
+                    er==='nombre_required'?'Nombre es obligatorio':
+                    er==='email_invalid'?'Email inválido':
+                    (res.status===403?'Permiso denegado':
+                     res.status===500?'Error del servidor, reintentando':
+                     'Sincronización pendiente');
+          console.warn('[agregar-cliente-red] sync failed:', {error:er, status:res.status, msg:msg});
+          if(syncAttempts < maxAttempts && (res.status===408||res.status===500||res.status===503)){
+            console.log('[agregar-cliente-red] reintentando... intento', syncAttempts);
+            setTimeout(_sync, 2000 * syncAttempts);
+          } else if(res.status>=400){
+            __toast('⚠️ '+msg+'. El cliente está en tu red local.');
+          }
+        }
+      }).catch(function(err){
+        console.warn('[agregar-cliente-red] sync error:', err.message);
+        if(syncAttempts < maxAttempts){
+          console.log('[agregar-cliente-red] reintentando... intento', syncAttempts);
+          setTimeout(_sync, 2000 * syncAttempts);
+        } else {
+          __toast('⚠️ No se pudo sincronizar a Supabase. El cliente está guardado localmente.');
+        }
+      });
+    }
+    setTimeout(_sync, 200); // pequeño delay para permitir que la UI se actualice primero
+  })();
  });
 }
 // Reasigna un cliente a un coach (compartido: dropdown de la ficha, drag y el
