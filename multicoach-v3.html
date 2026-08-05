@@ -317,14 +317,32 @@
 </header>
 
 <div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('coaches')">Coaches</button>
+  <button class="tab-btn active" onclick="switchTab('equipo')">Equipo</button>
+  <button class="tab-btn" onclick="switchTab('coaches')">Coaches</button>
   <button class="tab-btn" onclick="switchTab('clientes')">Clientes</button>
 </div>
 
 <main>
 
+  <!-- EQUIPO -->
+  <section id="equipo" class="active">
+    <div class="stats" id="equipo-stats"></div>
+    <div class="card">
+      <div class="controls">
+        <input type="search" id="search-equipo" placeholder="Buscar por nombre, email..." onkeyup="filterEquipo()">
+        <select id="filter-equipo-rol" onchange="filterEquipo()" style="flex-shrink: 0;">
+          <option value="">Todos los roles</option>
+          <option value="owner">Owner</option>
+          <option value="coach">Coach</option>
+          <option value="colaborador">Colaborador</option>
+        </select>
+      </div>
+      <div id="equipo-container" class="loading">Cargando equipo...</div>
+    </div>
+  </section>
+
   <!-- COACHES -->
-  <section id="coaches" class="active">
+  <section id="coaches">
     <div class="stats" id="coaches-stats"></div>
     <div class="card">
       <div class="controls">
@@ -347,6 +365,41 @@
   </section>
 
 </main>
+
+<!-- Equipo Detail Drawer -->
+<div class="drawer-overlay" id="equipo-drawer-overlay" onclick="closeEquipoDrawer()"></div>
+<div class="drawer" id="equipo-drawer">
+  <div class="drawer-header">
+    <h2 id="equipo-drawer-title">Miembro del Equipo</h2>
+    <button class="drawer-close" onclick="closeEquipoDrawer()">✕</button>
+  </div>
+  <div class="drawer-content">
+    <div class="drawer-field">
+      <div class="drawer-label">Nombre</div>
+      <div class="drawer-value" id="equipo-drawer-nombre">—</div>
+    </div>
+    <div class="drawer-field">
+      <div class="drawer-label">Email</div>
+      <div class="drawer-value" id="equipo-drawer-email">—</div>
+    </div>
+    <div class="drawer-field">
+      <div class="drawer-label">Rol</div>
+      <div class="drawer-value" id="equipo-drawer-rol">—</div>
+    </div>
+    <div class="drawer-field">
+      <div class="drawer-label">Clientes asignados</div>
+      <div class="drawer-value" id="equipo-drawer-clientes">—</div>
+    </div>
+    <div class="drawer-field">
+      <div class="drawer-label">Estado</div>
+      <div class="drawer-value" id="equipo-drawer-estado">—</div>
+    </div>
+    <div class="drawer-field" style="border-top: 1px solid #e0e0e0; padding-top: 16px; margin-top: 16px;">
+      <button onclick="toggleEquipoActivo()" id="btn-equipo-activo" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; margin-bottom: 8px;">Desactivar</button>
+      <button onclick="deleteEquipoMember()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; color: #d32f2f;">Eliminar del equipo</button>
+    </div>
+  </div>
+</div>
 
 <!-- Cliente Detail Drawer -->
 <div class="drawer-overlay" id="drawer-overlay" onclick="closeClienteDrawer()"></div>
@@ -391,11 +444,14 @@
   // ════════════════════════════════════════════════════════════════════════════════
 
   let ME = null;
+  let allEquipo = [];
+  let filteredEquipo = [];
   let allCoaches = [];
   let filteredCoaches = [];
   let allClientes = [];
   let filteredClientes = [];
   let currentCoachFilter = null;
+  let currentEquipoSelected = null;
 
   // ════════════════════════════════════════════════════════════════════════════════
   // INIT
@@ -418,10 +474,12 @@
       }
 
       // Load data
+      await loadEquipo();
       await loadCoaches();
       await loadClientes();
 
       // Render
+      renderEquipo();
       renderCoaches();
       renderClientes();
 
@@ -434,6 +492,38 @@
   // ════════════════════════════════════════════════════════════════════════════════
   // LOAD DATA
   // ════════════════════════════════════════════════════════════════════════════════
+
+  async function loadEquipo() {
+    try {
+      // Load all team members (coaches + collaborators + owners)
+      const { data, error } = await sb
+        .from('usuarios')
+        .select('id, nombre, email, activo, rol')
+        .or(`rol.eq.coach,rol.eq.owner,rol.eq.colaborador`)
+        .eq('org_id', ME.org_id || null)
+        .order('nombre');
+
+      if (error) throw error;
+
+      // For each team member, count assigned clients
+      allEquipo = await Promise.all((data || []).map(async (member) => {
+        const { count } = await sb
+          .from('candidatos')
+          .select('id', { count: 'exact', head: true })
+          .eq('coach_id', member.id);
+
+        return {
+          ...member,
+          client_count: count || 0
+        };
+      }));
+
+      filteredEquipo = [...allEquipo];
+    } catch (e) {
+      console.error('Load equipo error:', e);
+      showError('equipo', 'Error al cargar equipo');
+    }
+  }
 
   async function loadCoaches() {
     try {
@@ -501,6 +591,63 @@
   // ════════════════════════════════════════════════════════════════════════════════
   // RENDER
   // ════════════════════════════════════════════════════════════════════════════════
+
+  function renderEquipo() {
+    const owners = allEquipo.filter(m => m.rol === 'owner');
+    const coaches = allEquipo.filter(m => m.rol === 'coach');
+    const colaboradores = allEquipo.filter(m => m.rol === 'colaborador');
+    const totalClientes = allEquipo.reduce((sum, m) => sum + m.client_count, 0);
+    const avgLoad = allEquipo.length > 0 ? Math.round(totalClientes / allEquipo.length * 10) / 10 : 0;
+
+    const statsHtml = `
+      <div class="stat-card">
+        <div class="stat-label">Miembros del equipo</div>
+        <div class="stat-value">${allEquipo.length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Coaches</div>
+        <div class="stat-value">${coaches.length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Clientes asignados</div>
+        <div class="stat-value">${totalClientes}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Carga promedio</div>
+        <div class="stat-value">${avgLoad}</div>
+      </div>
+    `;
+    document.getElementById('equipo-stats').innerHTML = statsHtml;
+
+    const html = filteredEquipo.length === 0
+      ? '<div class="empty">No hay miembros del equipo</div>'
+      : `
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortEquipo('nombre')">Nombre</th>
+              <th>Email</th>
+              <th>Rol</th>
+              <th onclick="sortEquipo('client_count')">Clientes</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredEquipo.map(m => `
+              <tr onclick="openEquipoDrawer('${m.id}')">
+                <td>${esc(m.nombre)}</td>
+                <td>${esc(m.email)}</td>
+                <td><span class="badge" style="background: #f0f0f0; color: #333;">${esc(m.rol)}</span></td>
+                <td>${m.client_count}</td>
+                <td><span class="badge ${m.activo ? 'active' : 'inactive'}">${m.activo ? 'Activo' : 'Inactivo'}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+
+    document.getElementById('equipo-container').innerHTML = html;
+  }
 
   function renderCoaches() {
     const statsHtml = `
@@ -608,6 +755,31 @@
   // SEARCH & SORT
   // ════════════════════════════════════════════════════════════════════════════════
 
+  function filterEquipo() {
+    const query = document.getElementById('search-equipo').value.toLowerCase();
+    const rolFilter = document.getElementById('filter-equipo-rol').value;
+
+    filteredEquipo = allEquipo.filter(m => {
+      const matchesSearch = m.nombre.toLowerCase().includes(query) || m.email.toLowerCase().includes(query);
+      const matchesRole = !rolFilter || m.rol === rolFilter;
+      return matchesSearch && matchesRole;
+    });
+
+    renderEquipo();
+  }
+
+  function sortEquipo(field) {
+    filteredEquipo.sort((a, b) => {
+      const aVal = a[field];
+      const bVal = b[field];
+      if (typeof aVal === 'number') {
+        return bVal - aVal;
+      }
+      return (aVal || '').toString().localeCompare((bVal || '').toString());
+    });
+    renderEquipo();
+  }
+
   function filterCoaches() {
     const query = document.getElementById('search-coaches').value.toLowerCase();
     filteredCoaches = allCoaches.filter(c =>
@@ -646,6 +818,90 @@
       return (aVal || '').toString().localeCompare((bVal || '').toString());
     });
     renderClientes();
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════════
+  // EQUIPO DETAIL & CRUD
+  // ════════════════════════════════════════════════════════════════════════════════
+
+  function openEquipoDrawer(memberId) {
+    const member = allEquipo.find(m => m.id === memberId);
+    if (!member) return;
+
+    currentEquipoSelected = member;
+
+    document.getElementById('equipo-drawer-nombre').textContent = esc(member.nombre);
+    document.getElementById('equipo-drawer-email').textContent = esc(member.email);
+    document.getElementById('equipo-drawer-rol').textContent = esc(member.rol);
+    document.getElementById('equipo-drawer-clientes').textContent = member.client_count;
+    document.getElementById('equipo-drawer-estado').innerHTML = `<span class="badge ${member.activo ? 'active' : 'inactive'}">${member.activo ? 'Activo' : 'Inactivo'}</span>`;
+
+    const btnActivo = document.getElementById('btn-equipo-activo');
+    btnActivo.textContent = member.activo ? 'Desactivar' : 'Reactivar';
+    btnActivo.style.color = member.activo ? '#d32f2f' : '#2e7d32';
+
+    document.getElementById('equipo-drawer-overlay').classList.add('open');
+    document.getElementById('equipo-drawer').classList.add('open');
+  }
+
+  function closeEquipoDrawer() {
+    document.getElementById('equipo-drawer-overlay').classList.remove('open');
+    document.getElementById('equipo-drawer').classList.remove('open');
+    currentEquipoSelected = null;
+  }
+
+  async function toggleEquipoActivo() {
+    if (!currentEquipoSelected) return;
+
+    const newState = !currentEquipoSelected.activo;
+    const oldState = currentEquipoSelected.activo;
+
+    try {
+      currentEquipoSelected.activo = newState;
+      renderEquipo();
+
+      const { error } = await sb
+        .from('usuarios')
+        .update({ activo: newState })
+        .eq('id', currentEquipoSelected.id);
+
+      if (error) throw error;
+
+      openEquipoDrawer(currentEquipoSelected.id);
+    } catch (e) {
+      console.error('Toggle equipo activo error:', e);
+      currentEquipoSelected.activo = oldState;
+      renderEquipo();
+      alert('Error al actualizar estado. Por favor intenta de nuevo.');
+    }
+  }
+
+  async function deleteEquipoMember() {
+    if (!currentEquipoSelected) return;
+
+    if (!confirm(`¿Estás seguro de que quieres eliminar a ${esc(currentEquipoSelected.nombre)} del equipo?`)) {
+      return;
+    }
+
+    try {
+      const { error } = await sb
+        .from('usuarios')
+        .delete()
+        .eq('id', currentEquipoSelected.id);
+
+      if (error) throw error;
+
+      allEquipo = allEquipo.filter(m => m.id !== currentEquipoSelected.id);
+      filteredEquipo = filteredEquipo.filter(m => m.id !== currentEquipoSelected.id);
+
+      closeEquipoDrawer();
+      renderEquipo();
+
+      alert('Miembro eliminado del equipo.');
+    } catch (e) {
+      console.error('Delete equipo member error:', e);
+      alert('Error al eliminar miembro. Por favor intenta de nuevo.');
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════════════
@@ -758,6 +1014,10 @@
     if (tabName === 'coaches') {
       clearCoachFilter();
     }
+
+    // Close drawers when switching tabs
+    closeEquipoDrawer();
+    closeClienteDrawer();
   }
 
   // ════════════════════════════════════════════════════════════════════════════════
