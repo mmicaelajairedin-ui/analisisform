@@ -9633,23 +9633,43 @@ function viewAdmin(){
       "<div class='cp-card-pad'>"+_orgsTable+"</div></div>";
 
     // Sección 2: Coaches independientes
-    var _indepCoaches = (RCOACHES||[]).filter(function(u){ return u && u.rol==="coach" && !u.org_id; });
-    var _coachIndepRows = _indepCoaches.map(function(coach){
-      if(!coach) return "";
-      var clientCount = (RADM&&RADM.cands) ? (RADM.cands.filter(function(c){return c && c.coach_id === coach.id;}).length) : "—";
-      return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(coach.nombre||coach.email||"Coach")+"</td>"+
-        "<td style='text-align:center'>"+clientCount+"</td>"+
+    // Agrupar por email para evitar duplicados (misma persona con múltiples cuentas)
+    var _coachsByEmail = {};
+    (RCOACHES||[]).forEach(function(u){
+      if(!u || u.rol!=="coach" || u.org_id) return;
+      var em = (u.email||"").trim().toLowerCase();
+      if(!em) return;
+      if(!_coachsByEmail[em]) _coachsByEmail[em] = [];
+      _coachsByEmail[em].push(u);
+    });
+    // Una fila por email único, mostrando si hay múltiples cuentas
+    var _coachIndepRows = Object.keys(_coachsByEmail).sort().map(function(email){
+      var coaches = _coachsByEmail[email]||[];
+      if(!coaches.length) return "";
+      var primaryCoach = coaches[0]; // Principal: la más nueva (primera en la lista cargada)
+      var totalClients = 0;
+      coaches.forEach(function(c){
+        var cnt = (RADM&&RADM.cands) ? (RADM.cands.filter(function(x){return x && x.coach_id === c.id;}).length) : 0;
+        totalClients += cnt;
+      });
+      var duplicateHint = coaches.length>1 ? " <span style='font-size:11px;color:var(--pw-danger);font-weight:600'>("+coaches.length+" cuentas)</span>" : "";
+      var name = primaryCoach.nombre || email || "Coach";
+      return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(name)+duplicateHint+"</td>"+
+        "<td style='text-align:center'>"+totalClients+"</td>"+
         "<td><span style='padding:4px 10px;background:rgba(0,0,0,0.05);border-radius:6px;font-size:12px;color:var(--pw-carbon);font-weight:600'>Coach independiente</span></td>"+
-        "<td style='text-align:right;font-size:12px'><button class='cp-btn cp-btn-primary' style='padding:6px 12px;font-size:11px' data-act='mc-convert-start' data-coach='"+esc(coach.id||"")+"'>Convertir</button></td>"+
+        "<td style='text-align:right;font-size:12px'><button class='cp-btn cp-btn-primary' style='padding:6px 12px;font-size:11px' data-act='mc-convert-start' data-coach='"+esc(primaryCoach.id||"")+"' data-dups='"+coaches.length+"'>Convertir</button></td>"+
       "</tr>";
     }).join("");
-    var _coachIndepTable = _indepCoaches && _indepCoaches.length
+    var _coachUniqueCount = Object.keys(_coachsByEmail).length;
+    var _coachTotalCount = (RCOACHES||[]).filter(function(u){ return u && u.rol==="coach" && !u.org_id; }).length;
+    var _countHint = _coachUniqueCount < _coachTotalCount ? " ("+_coachTotalCount+" cuentas, "+_coachUniqueCount+" personas)" : "";
+    var _coachIndepTable = _coachUniqueCount > 0
       ? "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:700px'><thead><tr>"+
           "<th>Nombre</th><th>Clientes</th><th>Estado</th><th style='text-align:right'>Acciones</th>"+
         "</tr></thead><tbody>"+_coachIndepRows+"</tbody></table></div>"
       : "<div style='font-size:13px;color:var(--pw-text-soft);padding:20px;text-align:center'>No hay coaches independientes.</div>";
     var _coachIndepCard = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches independientes<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>"+ _indepCoaches.length +" coaches sin organización</span></div>"+
+      "<span class='cp-eyebrow'>"+ _coachUniqueCount +" personas"+_countHint+"</span></div>"+
       "<div class='cp-card-pad'>"+_coachIndepTable+"</div></div>";
 
     body = _orgsCard + _coachIndepCard;
