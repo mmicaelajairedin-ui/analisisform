@@ -40,10 +40,17 @@ async function callerEmail(token: string): Promise<string | null> {
 async function q(path: string): Promise<any[]> {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: svc });
-    if (!r.ok) return [];
+    if (!r.ok) {
+      const errText = await r.text().catch(() => "");
+      console.log("[mi-red.q] query failed:", path, "status:", r.status, "error:", errText.substring(0, 100));
+      return [];
+    }
     const rows = await r.json();
     return Array.isArray(rows) ? rows : [];
-  } catch { return []; }
+  } catch (e) {
+    console.log("[mi-red.q] query exception:", path, "error:", String(e).substring(0, 100));
+    return [];
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -52,21 +59,27 @@ Deno.serve(async (req: Request) => {
 
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
+  console.log("[mi-red] token present:", !!token);
   const email = await callerEmail(token);
+  console.log("[mi-red] caller email:", email);
   if (!email) return json({ error: "not_owner" }, 403);
 
   // Owner + su org.
   const owners = await q(`usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=id,nombre,email,activo,foto_url,configuracion,org_id&limit=1`);
   const owner = owners[0];
   const orgId = owner && owner.org_id;
+  console.log("[mi-red] owner found:", !!owner, "org_id:", orgId);
   if (!orgId) return json({ error: "not_owner" }, 403);
 
   const orgs = await q(`organizaciones?id=eq.${encodeURIComponent(orgId)}&select=*&limit=1`);
   const org = orgs[0] || null;
+  console.log("[mi-red] org found:", !!org);
 
   // order estable → el color por coach en la agenda del panel no baila entre recargas.
   const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&order=created_at.asc&select=id,nombre,email,activo,foto_url,configuracion`);
+  console.log("[mi-red] coaches found:", coaches.length);
   const clientes = await q(`candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc`);
+  console.log("[mi-red] clientes found:", clientes.length);
 
   // Citas de TODA la red (agenda del owner + historial de sesiones por cliente).
   // La RLS de citas es por coach → el owner no las lee directo; acá con service
