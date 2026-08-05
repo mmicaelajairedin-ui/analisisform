@@ -85,33 +85,64 @@ Deno.serve(async (req: Request) => {
     const eventId = pushData.event_id || "";
 
     // 4) Si Google aún no generó el Meet link, reintentar después de 2 segundos
+    // Google tarda un momento en generar el conferenceData (hangoutLink).
+    // En vez de hacer UPDATE (que podría cambiar el evento), hacemos un GET directo
+    // a la API de Google para obtener el evento actualizado con el link.
     if (!hangoutLink && eventId) {
-      // Programar reintento asincrónico (no bloquea)
       try {
-        // Esperar 2s y llamar a gcal-push nuevamente para obtener el link
+        // Programar reintento asincrónico (no bloquea la respuesta)
         setTimeout(async () => {
           try {
-            const retryResp = await fetch(`${SB_URL}/functions/v1/gcal-push`, {
+            // Obtener el refresh token del coach (igual que al principio)
+            const ur = await fetch(`${SB_URL}/rest/v1/gcal_tokens?coach_id=eq.${encodeURIComponent(coach_id)}&select=token&limit=1`, {
+              headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` },
+            });
+            if (!ur.ok) return;
+            const utrows = await ur.json();
+            const utoken = (Array.isArray(utrows) && utrows[0] && utrows[0].token) ? utrows[0].token : {};
+            const urefresh = String((utoken && utoken.refresh_token) || "");
+            if (!urefresh) return;
+
+            // Obtener access token de Google
+            const atr = await fetch("https://oauth2.googleapis.com/token", {
               method: "POST",
-              headers: { Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json" },
-              body: JSON.stringify({
-                coach_id,
-                op: "update",
-                event_id: eventId,
-                event: { summary: "" }, // dummy para trigger update
+              headers: { "content-type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({
+                client_id: Deno.env.get("GOOGLE_CLIENT_ID") || "",
+                client_secret: Deno.env.get("GOOGLE_CLIENT_SECRET") || "",
+                refresh_token: urefresh,
+                grant_type: "refresh_token",
               }),
             });
-            if (retryResp.ok) {
-              const retryData = await retryResp.json();
-              const retryLink = retryData.hangoutLink || "";
-              if (retryLink) {
-                // Guardar el link que finalmente llegó
-                await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}`, {
-                  method: "PATCH",
-                  headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-                  body: JSON.stringify({ meet_link: retryLink }),
-                });
+            const atd = await atr.json();
+            if (!atd.access_token) return;
+
+            // GET el evento de Google Calendar para obtener conferenceData
+            const getr = await fetch(
+              `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+              { headers: { Authorization: `Bearer ${atd.access_token}`, "Content-Type": "application/json" } },
+            );
+            if (!getr.ok) return;
+            const gevdata = await getr.json();
+
+            // Extraer hangoutLink si ya fue generado
+            let uHangoutLink = "";
+            if (gevdata.conferenceData && gevdata.conferenceData.entryPoints) {
+              for (const ep of gevdata.conferenceData.entryPoints) {
+                if (ep.entryPointType === "video" && ep.uri) {
+                  uHangoutLink = ep.uri;
+                  break;
+                }
               }
+            }
+
+            // Si ahora SÍ hay link, guardarlo en citas
+            if (uHangoutLink) {
+              await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}`, {
+                method: "PATCH",
+                headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+                body: JSON.stringify({ meet_link: uHangoutLink }),
+              });
             }
           } catch (e) {
             console.error(`Retry sync for cita ${citaId} failed:`, e);
