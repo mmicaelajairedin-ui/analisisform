@@ -1623,24 +1623,32 @@
     }
 
     try {
-      // Check if user exists (unaffiliated or in system)
-      const { data: existingUser, error: checkError } = await sb
+      // Check if user exists (search across all orgs)
+      const { data: foundUser, error: checkError } = await sb
         .from('usuarios')
-        .select('id, nombre')
+        .select('id, nombre, org_id')
         .eq('email', email)
-        .eq('org_id', null)
         .single();
 
       if (checkError && checkError.code !== 'PGRST116') {
         throw checkError;
       }
 
-      if (existingUser) {
-        // User exists (unaffiliated) - add to organization
+      if (foundUser) {
+        // User exists - validate org status
+        if (foundUser.org_id === currentOrgId) {
+          // Already in current org
+          throw new Error('Este usuario ya pertenece a esta organización');
+        } else if (foundUser.org_id !== null) {
+          // Belongs to another org
+          throw new Error('Este usuario ya pertenece a otra organización. Debe abandonarla o ser transferido por un administrador de la otra organización.');
+        }
+
+        // org_id is null - add to current org
         const { error: updateError } = await sb
           .from('usuarios')
           .update({ org_id: currentOrgId, rol })
-          .eq('id', existingUser.id)
+          .eq('id', foundUser.id)
           .eq('org_id', null);
 
         if (updateError) throw updateError;
@@ -1648,7 +1656,7 @@
         statusEl.style.display = 'block';
         statusEl.style.background = '#e8f5e9';
         statusEl.style.color = '#2e7d32';
-        statusEl.textContent = `✓ ${existingUser.nombre} agregado a la organización`;
+        statusEl.textContent = `✓ ${foundUser.nombre} agregado a la organización`;
 
         setTimeout(() => {
           closeAddPersonModal();
@@ -1671,7 +1679,7 @@
       statusEl.style.display = 'block';
       statusEl.style.background = '#ffebee';
       statusEl.style.color = '#d32f2f';
-      statusEl.textContent = 'Error al agregar persona. Por favor intenta de nuevo.';
+      statusEl.textContent = e.message || 'Error al agregar persona. Por favor intenta de nuevo.';
     }
   }
 
