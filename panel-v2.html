@@ -10817,6 +10817,52 @@ function render(){
     // Insights de la Sala: qué pasó en cada videollamada (tipos, conversión,
     // valoración del cliente). Lazy, se auto-protege de recargas.
     if(document.getElementById('sala-insights')){ requestAnimationFrame(function(){ try{ _salaInsightsLoad(); }catch(e){} }); }
+    // Manejo del dropdown de orgs: crear/posicionar portal si state.orgMenuSel está establecido
+    try{
+      requestAnimationFrame(function(){
+        if(state.orgMenuSel && state.section==="admin" && state.adminTab==="orgs"){
+          var org = (RORGS||[]).filter(function(o){ return o && o.id === state.orgMenuSel; })[0];
+          var btn = document.querySelector("[data-act='mc-org-menu'][data-org='"+state.orgMenuSel+"']");
+          if(org && btn){
+            // Remover portal anterior si existe
+            var oldPortal = document.querySelector("#org-menu-portal");
+            if(oldPortal) oldPortal.remove();
+
+            // Crear nuevo portal
+            var portal = document.createElement("div");
+            portal.id = "org-menu-portal";
+            portal.style.cssText = "position:fixed;z-index:9999;background:#fff;border:1px solid var(--pw-border);border-radius:8px;box-shadow:var(--pw-shadow-md);min-width:200px";
+
+            var menuItems = [
+              {act:"mc-org-view", text:"Ver organización"},
+              {act:"mc-manage-members", text:"Gestionar miembros"},
+              {act:"mc-add-coach", text:"Agregar coach"},
+              {act:"mc-add-collab", text:"Agregar colaborador"},
+              {act:"mc-change-owner", text:"Cambiar owner"},
+              {act:"mc-change-plan", text:"Cambiar plan"},
+              {act:"mc-suspend", text:"Suspender", danger:true}
+            ];
+
+            var html = menuItems.map(function(item, idx){
+              var isSeparated = idx < menuItems.length - 1;
+              return "<button class='cp-menu-item' data-act='"+item.act+"' data-org='"+esc(org.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:"+(item.danger?"var(--pw-danger)":"var(--pw-carbon)")+";border-bottom:"+(isSeparated?"1px solid var(--pw-niebla-2)":"none")+"'>"+item.text+"</button>";
+            }).join("");
+
+            portal.innerHTML = html;
+            document.body.appendChild(portal);
+
+            // Posicionar debajo del botón
+            var rect = btn.getBoundingClientRect();
+            portal.style.top = (rect.bottom + 4) + "px";
+            portal.style.left = (rect.right - 200) + "px";
+          }
+        } else {
+          // Si no hay dropdown activo, remover portal
+          var p = document.querySelector("#org-menu-portal");
+          if(p) p.remove();
+        }
+      });
+    }catch(e){}
   }catch(err){
     document.getElementById("root").innerHTML=
       "<div style='max-width:560px;margin:60px auto;font-family:var(--pw-sans);color:var(--pw-text)'>"+
@@ -12397,55 +12443,7 @@ document.addEventListener("click", function(ev){
   if(act==="mc-org-menu"){
     // Toggle menú de acciones para una organización
     var orgId = el.getAttribute("data-org");
-    var isClosing = (state.orgMenuSel === orgId);
-    state.orgMenuSel = isClosing ? null : orgId;
-
-    if(isClosing){
-      // Cerrar: remover portal del DOM
-      var oldPortal = document.querySelector("#org-menu-portal");
-      if(oldPortal) oldPortal.remove();
-    } else {
-      // Abrir: crear portal dinámicamente en document.body
-      render();
-      setTimeout(function(){
-        var org = (RORGS||[]).filter(function(o){ return o && o.id === orgId; })[0];
-        if(!org) return;
-
-        // Remover portal anterior si existe
-        var oldPortal = document.querySelector("#org-menu-portal");
-        if(oldPortal) oldPortal.remove();
-
-        // Crear nuevo portal
-        var portal = document.createElement("div");
-        portal.id = "org-menu-portal";
-        portal.style.cssText = "position:fixed;z-index:9999;background:#fff;border:1px solid var(--pw-border);border-radius:8px;box-shadow:var(--pw-shadow-md);min-width:200px;top:0;left:0;display:block";
-
-        var menuItems = [
-          {act:"mc-org-view", text:"Ver organización"},
-          {act:"mc-manage-members", text:"Gestionar miembros"},
-          {act:"mc-add-coach", text:"Agregar coach"},
-          {act:"mc-add-collab", text:"Agregar colaborador"},
-          {act:"mc-change-owner", text:"Cambiar owner"},
-          {act:"mc-change-plan", text:"Cambiar plan"},
-          {act:"mc-suspend", text:"Suspender", danger:true}
-        ];
-
-        var html = menuItems.map(function(item, idx){
-          var isSeparated = idx < menuItems.length - 1;
-          return "<button class='cp-menu-item' data-act='"+item.act+"' data-org='"+esc(org.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:"+(item.danger?"var(--pw-danger)":"var(--pw-carbon)")+";border-bottom:"+(isSeparated?"1px solid var(--pw-niebla-2)":"none")+"'>"+item.text+"</button>";
-        }).join("");
-
-        portal.innerHTML = html;
-        document.body.appendChild(portal);
-
-        // Posicionar debajo del botón
-        var rect = el.getBoundingClientRect();
-        portal.style.top = (rect.bottom + 4) + "px";
-        portal.style.left = (rect.right - 200) + "px";
-      }, 10);
-      return;
-    }
-
+    state.orgMenuSel = (state.orgMenuSel === orgId) ? null : orgId;
     render();
     return;
   }
