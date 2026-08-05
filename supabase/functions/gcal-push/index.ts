@@ -142,6 +142,8 @@ Deno.serve(async (req: Request) => {
         }
       }
     }
+    // DEBUG: log qué retornó Google
+    console.log(`gcal-push: event_id=${d.id}, conferenceData=${d.conferenceData ? "YES" : "NO"}, entryPoints=${d.conferenceData?.entryPoints?.length || 0}, hangoutLink=${hangoutLink ? "YES" : "NO"}`);
     return json({ ok: true, event_id: d.id || eventId, hangoutLink });
   } catch { return json({ ok: false, reason: "google_unreachable" }); }
 });
