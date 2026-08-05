@@ -1154,17 +1154,146 @@
     search: ''
   };
 
+  let ME = null;  // Current user (parsed from localStorage)
+
+  // ════════════════════════════════════════════════════════════════════════════════
+  // PERMISSIONS SYSTEM — Centralized access control (Design System v1)
+  // ════════════════════════════════════════════════════════════════════════════════
+
+  // All actions in MultiCoach v3
+  const PERMISSION_ACTIONS = {
+    // Equipo (Team Management)
+    'equipo:view': 'Ver equipo',
+    'equipo:invite': 'Invitar miembro',
+    'equipo:edit': 'Editar miembro',
+    'equipo:change_role': 'Cambiar rol',
+    'equipo:configure_perms': 'Configurar permisos',
+    'equipo:deactivate': 'Desactivar miembro',
+    'equipo:remove': 'Quitar de la organización',
+    // Clientes (Client Management)
+    'clientes:view': 'Ver clientes',
+    'clientes:create': 'Crear cliente',
+    'clientes:edit': 'Editar cliente',
+    'clientes:change_coach': 'Cambiar coach del cliente',
+    'clientes:reassign_bulk': 'Reasignar clientes en masa',
+    'clientes:deactivate': 'Desactivar cliente',
+    'clientes:view_cartera': 'Ver cartera del coach',
+    // Personas (Coaches View)
+    'personas:view': 'Ver coaches',
+    'personas:detail': 'Ver detalles del coach',
+    'personas:filter_by_coach': 'Filtrar por coach'
+  };
+
+  function canAction(action, context = {}) {
+    if (!ME) {
+      console.warn('[PERM] No ME context');
+      return false;
+    }
+
+    // Org isolation check
+    if (context.org_id && context.org_id !== currentOrgId) {
+      console.warn('[PERM] Cross-org access denied:', action);
+      return false;
+    }
+
+    // Role-based dispatch
+    if (ME.rol === 'owner') {
+      return canOwnerAction(action, context);
+    } else if (ME.rol === 'coach') {
+      return canCoachAction(action, context);
+    } else if (ME.rol === 'colaborador') {
+      return canColaboradorAction(action, context);
+    }
+
+    return false;
+  }
+
+  function canOwnerAction(action, context = {}) {
+    const ownerActions = [
+      'equipo:view', 'equipo:invite', 'equipo:edit', 'equipo:change_role',
+      'equipo:configure_perms', 'equipo:deactivate', 'equipo:remove',
+      'clientes:view', 'clientes:create', 'clientes:edit', 'clientes:change_coach',
+      'clientes:reassign_bulk', 'clientes:deactivate', 'clientes:view_cartera',
+      'personas:view', 'personas:detail', 'personas:filter_by_coach'
+    ];
+
+    if (!ownerActions.includes(action)) {
+      return false;
+    }
+
+    // Enforce business rules
+    if (action === 'equipo:change_role') {
+      const targetMember = allEquipo.find(m => m.id === context.memberId);
+      if (!targetMember) return false;
+      if (context.targetRole !== 'owner') {
+        const ownerCount = allEquipo.filter(m => m.rol === 'owner').length;
+        if (ownerCount <= 1) {
+          return false;  // Cannot remove last owner
+        }
+      }
+    }
+
+    if (action === 'equipo:remove' || action === 'equipo:deactivate') {
+      const member = allEquipo.find(m => m.id === context.memberId);
+      if (member && member.client_count > 0) {
+        return false;  // Cannot remove/deactivate with clients
+      }
+    }
+
+    return true;
+  }
+
+  function canCoachAction(action, context = {}) {
+    const coachActions = [
+      'equipo:view',  // Can see team (filtered)
+      'clientes:view', 'clientes:create', 'clientes:edit', 'clientes:change_coach',
+      'clientes:deactivate', 'clientes:view_cartera',
+      'personas:view', 'personas:detail', 'personas:filter_by_coach'
+    ];
+
+    if (!coachActions.includes(action)) {
+      return false;
+    }
+
+    // Verify coach only accesses own clients
+    if (action === 'clientes:view' || action === 'clientes:view_cartera' ||
+        action === 'clientes:edit' || action === 'clientes:change_coach' ||
+        action === 'clientes:deactivate') {
+      if (context.clientId) {
+        const client = allClientes.find(c => c.id === context.clientId);
+        if (!client || client.coach_id !== ME.id) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  function canColaboradorAction(action, context = {}) {
+    const perms = ME.configuracion?.permisos || { ver_clientes: false, editar_clientes: false, ver_reportes: false };
+
+    if (action === 'clientes:view' || action === 'personas:view' || action === 'personas:detail') {
+      return perms.ver_clientes === true;
+    }
+    if (action === 'clientes:create' || action === 'clientes:edit') {
+      return perms.editar_clientes === true;
+    }
+
+    return false;
+  }
+
   // ════════════════════════════════════════════════════════════════════════════════
   // INIT
   // ════════════════════════════════════════════════════════════════════════════════
 
   async function init() {
     try {
-      // Get org_id from localStorage
+      // Get user and org_id from localStorage
       const userJson = localStorage.getItem('mj_user');
       if (userJson) {
-        const user = JSON.parse(userJson);
-        currentOrgId = user.org_id || null;
+        ME = JSON.parse(userJson);
+        currentOrgId = ME.org_id || null;
       }
 
       // Load data
