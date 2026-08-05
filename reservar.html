@@ -909,33 +909,45 @@ function confirmar(){
           var room = "Pathway-" + _cid + "-" + ms;
           return "https://pathwaycareercoach.com/sala.html?room=" + encodeURIComponent(room);
         })();
-        // 1) Obtener Zoom link del coach
-        fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(_cid)+'&select=configuracion&limit=1',{ headers:{apikey:KEY} })
-          .then(function(r){ return r.ok?r.json():[]; })
-          .then(function(rows){
-            var zoomLink = (Array.isArray(rows) && rows[0] && rows[0].configuracion && rows[0].configuracion.zoom_url) ? rows[0].configuracion.zoom_url : '';
-            if(zoomLink){
-              _sendEmail(zoomLink); // Usar Zoom link
-            } else {
-              // 2) Si no hay Zoom, intentar Google Meet
-              fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
-                .then(function(r){ return r.ok?r.json():{ok:false}; })
-                .then(function(d){
-                  var meetLink=(d && d.ok && d.hangoutLink)?d.hangoutLink:'';
-                  // 3) Si no hay Google Meet, usar Pathway Sala como fallback garantizado
-                  _sendEmail(meetLink || _fallbackSalaUrl);
-                })
-                .catch(function(err){
-                  console.warn('Google Calendar sync falló:', err);
-                  _sendEmail(_fallbackSalaUrl); // Fallback a la Sala de Pathway
-                  try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, error:String(err) }) }).catch(function(){}); }catch(e){}
-                });
-            }
-          })
-          .catch(function(err){
-            console.warn('Error obtaining Zoom link:', err);
-            _sendEmail(_fallbackSalaUrl); // Fallback a la Sala de Pathway
-          });
+        // 1) Obtener Zoom link del coach (Supabase o localStorage)
+        var _getZoomLink = function(cb){
+          // Intenta Supabase primero
+          fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(_cid)+'&select=configuracion&limit=1',{ headers:{apikey:KEY} })
+            .then(function(r){ return r.ok?r.json():[]; })
+            .then(function(rows){
+              var zoomLink = (Array.isArray(rows) && rows[0] && rows[0].configuracion && rows[0].configuracion.zoom_url) ? rows[0].configuracion.zoom_url : '';
+              if(!zoomLink){
+                // Fallback a localStorage
+                try{ zoomLink = localStorage.getItem('pw_zoom_'+_cid) || ''; }catch(e){}
+              }
+              cb(zoomLink);
+            })
+            .catch(function(){
+              // Si falla Supabase, leer de localStorage
+              var zoomLink = '';
+              try{ zoomLink = localStorage.getItem('pw_zoom_'+_cid) || ''; }catch(e){}
+              cb(zoomLink);
+            });
+        };
+        _getZoomLink(function(zoomLink){
+          if(zoomLink){
+            _sendEmail(zoomLink); // Usar Zoom link
+          } else {
+            // 2) Si no hay Zoom, intentar Google Meet
+            fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
+              .then(function(r){ return r.ok?r.json():{ok:false}; })
+              .then(function(d){
+                var meetLink=(d && d.ok && d.hangoutLink)?d.hangoutLink:'';
+                // 3) Si no hay Google Meet, usar Pathway Sala como fallback garantizado
+                _sendEmail(meetLink || _fallbackSalaUrl);
+              })
+              .catch(function(err){
+                console.warn('Google Calendar sync falló:', err);
+                _sendEmail(_fallbackSalaUrl); // Fallback a la Sala de Pathway
+                try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, error:String(err) }) }).catch(function(){}); }catch(e){}
+              });
+          }
+        });
       } else {
         sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
       }
