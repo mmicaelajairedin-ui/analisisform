@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
-const BASE_URL = 'http://127.0.0.1:8000/multicoach-v3.html';
+const BASE_URL = 'http://127.0.0.1:8000/multicoach.html';
 const EVIDENCE_DIR = './test-evidence';
 
 if (!fs.existsSync(EVIDENCE_DIR)) {
