@@ -876,22 +876,20 @@ function confirmar(){
       // CAMBIO CRÍTICO: marcar slot como tomado INMEDIATAMENTE (no esperar confirmación)
       // para prevenir que otro cliente lo reserve en la ventana de latencia
       TAKEN[start.getTime()]=true;
-      // Sincronizar a Google Calendar (best-effort — no bloquea).
-      // MEJORA: agregar reintento si falla, y logar el error para debugging
+      // Sincronizar a Google Calendar ANTES de enviar emails (espera el link).
+      var _meetLink='';
       if(saved && citaId){
         try{
-          var _retryGcalSync=function(n){
-            fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
-              .then(function(r){ if(!r.ok) throw new Error('sync-cita-to-gcal status '+r.status); return r.json(); })
-              .catch(function(err){
-                var attempt=3-n+1;
-                console.warn('Google Calendar sync falló (intento '+attempt+'/3):', err);
-                try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, attempt:attempt, error:String(err) }) }).catch(function(){}); }catch(e){}
-                if(n>0) setTimeout(function(){ _retryGcalSync(n-1); }, 2000);
-              });
-          };
-          _retryGcalSync(2); // reintenta hasta 3 veces con delay de 2s
-        }catch(e){ console.warn('Error iniciando Google Calendar sync:', e); }
+          fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
+            .then(function(r){ return r.ok?r.json():{ok:false}; })
+            .then(function(d){
+              if(d && d.ok && d.hangoutLink) _meetLink=d.hangoutLink;
+            })
+            .catch(function(err){
+              console.warn('Google Calendar sync falló:', err);
+              try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, error:String(err) }) }).catch(function(){}); }catch(e){}
+            });
+        }catch(e){ console.warn('Error Google Calendar sync:', e); }
       }
       // 1b) Si viene de "reprogramar" (gestionar-cita manda &reprog=<token viejo>),
       //     recién AHORA que la nueva quedó guardada cancelamos la vieja → el cliente
@@ -911,25 +909,18 @@ function confirmar(){
         fetch(SB+'/rest/v1/candidatos',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'content-type':'application/json',Prefer:'return=minimal,resolution=ignore-duplicates'},body:JSON.stringify({email:_mpe,nombre:name,coach_id:_cid,origen:'pathway',activo:false})}).catch(function(){});
         fetch(SB+'/rest/v1/candidatos?email=eq.'+encodeURIComponent(_mpe)+'&coach_id=eq.'+encodeURIComponent(_cid),{method:'PATCH',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'content-type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({origen:'pathway'})}).catch(function(){});
       } }catch(e){}
-      // 2) Emails de confirmación (Brevo). Polling hasta que el link de Google Meet esté disponible.
-      // Verifica cada 200ms durante max 4s; si no llega, envía sin link.
+      // 2) Emails de confirmación (Brevo). Si sync-cita-to-gcal trajo el link, usar directo.
+      // Si no, esperar un poco (200ms) en caso de que esté en progreso.
       if(saved && citaId){
-        var _pollStart=Date.now(), _pollLink=function(){
-          fetch(SB+'/rest/v1/citas?id=eq.'+encodeURIComponent(citaId)+'&select=meet_link',{headers:{apikey:KEY}})
-            .then(function(r){ return r.ok?r.json():null; })
-            .catch(function(){ return null; })
-            .then(function(rows){
-              var meetLink=(Array.isArray(rows) && rows[0] && rows[0].meet_link)?rows[0].meet_link:'';
-              if(meetLink){
-                sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, meetLink, _ics.b64);
-              } else if(Date.now()-_pollStart<4000){
-                setTimeout(_pollLink, 200); // retry en 200ms
-              } else {
-                sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, '', _ics.b64); // timeout: enviar sin link
-              }
-            });
+        var _sendWithLink=function(){
+          var meetLink=_meetLink||'';
+          sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, meetLink, _ics.b64);
         };
-        _pollLink();
+        if(_meetLink){
+          _sendWithLink(); // ya tenemos link, enviar ya
+        } else {
+          setTimeout(_sendWithLink, 200); // esperar 200ms en caso de que sync-cita-to-gcal esté terminando
+        }
       } else {
         sendEmails(name, email, tlabel, _F, gurl, _manage, origen, answers, _link, _ics.b64);
       }
