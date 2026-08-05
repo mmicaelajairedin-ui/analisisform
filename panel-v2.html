@@ -9650,7 +9650,7 @@ function viewAdmin(){
       "</tr>";
     }).join("");
     var _orgsTable = RORGS && RORGS.length
-      ? "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:900px'><thead><tr>"+
+      ? "<div style='overflow-x:auto;overflow-y:visible;position:relative'><table class='cp-bill-table' style='min-width:900px'><thead><tr>"+
           "<th>Organización</th><th>Owner</th><th>Coaches</th><th>Clientes</th><th>Plan</th><th>Estado</th><th style='text-align:right'>Acciones</th>"+
         "</tr></thead><tbody>"+_orgsRows+"</tbody></table></div>"
       : "<div style='font-size:13px;color:var(--pw-text-soft);padding:20px;text-align:center'>No hay organizaciones activas.</div>";
@@ -12562,14 +12562,29 @@ document.addEventListener("click", function(ev){
       return fetch(SB+"/functions/v1/suspender-org", {
         method:"POST", headers:h, body:JSON.stringify({org_id:_orgId})
       });
-    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, d:d||{}}; }); }).then(function(res){
+    }).then(function(r){
+      console.log("suspender-org response status:", r.status);
+      return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, status:r.status, d:d||{}}; });
+    }).then(function(res){
       var d = res.d;
-      if(!res.ok || !d.ok){ _end(); _setMsg("Error ("+(res.status||"?")+"). Reintenta."); return; }
-      reloadOrgs();
-      state.mcSuspendForm = null;
+      console.log("suspender-org result:", res);
+      if(!res.ok || !d.ok){
+        _end();
+        var errMsg = d.error || "Error desconocido";
+        _setMsg("Error: "+errMsg+" ("+res.status+"). Reintenta.");
+        return;
+      }
+      console.log("Suspensión exitosa. Recargando orgs...");
       _end();
-      _setMsg("✓ Estado actualizado");
-    }).catch(function(e){ _end(); _setMsg("Error de conexión."); });
+      state.mcSuspendForm = null;
+      render();
+      setTimeout(function(){ reloadOrgs(); }, 200);
+      _setMsg("✓ Estado actualizado ("+(d.action||"cambio")+")")
+    }).catch(function(e){
+      console.error("suspender-org error:", e);
+      _end();
+      _setMsg("Error de conexión: "+(e.message||"timeout"));
+    });
     return;
   }
   // Agregar coach a org
