@@ -439,8 +439,17 @@ function loadBusy(){ BUSY=[]; var em=(''+(EMAIL||'')).trim().toLowerCase(); if(!
 function _slotBusy(ms){
   var buf=((DISP&&DISP.buffer_min)||0)*60000;
   var a=ms, b=ms+DUR*60000, dm=DUR*60000;
+  // Citas ya tomadas en Supabase
   for(var i=0;i<BUSY.length;i++){ if(a < BUSY[i].e+buf && b > BUSY[i].s-buf) return true; }
+  // Citas tomadas localmente
   for(var k in TAKEN){ if(!TAKEN.hasOwnProperty(k)) continue; var t=+k; if(isNaN(t)) continue; if(a < t+dm+buf && b > t-buf) return true; }
+  // Eventos en Google Calendar del coach
+  for(var j=0;j<BUSY_SLOTS.length;j++){
+    var slot=BUSY_SLOTS[j]; var slotDate=slot.fecha; var slotStart=slot.horario_inicio; var slotEnd=slot.horario_fin;
+    var slotDateMs=new Date(slotDate+'T'+slotStart+':00Z').getTime();
+    var slotEndMs=new Date(slotDate+' '+slotEnd+':00Z').getTime();
+    if(a<slotEndMs+buf && b>slotDateMs-buf) return true;
+  }
   return false;
 }
 function normDisp(d){
@@ -495,6 +504,7 @@ function roleLabelCtx(u){
   return roleLabel(u);
 }
 
+var BUSY_SLOTS=[]; // eventos del coach en Google Calendar
 function applyCoachRow(u, t){
   CUR=u; ROLE=roleLabelCtx(u);
   COACH=u.nombre||'Pathway'; FIRST=(''+COACH).split(' ')[0]; EMAIL=(u.email||'').trim();
@@ -504,15 +514,27 @@ function applyCoachRow(u, t){
   DISP=normDisp(cfg.disponibilidad);
   var types=(Object.prototype.toString.call(cfg.event_types)==='[object Array]'&&cfg.event_types.length)?cfg.event_types
     :(TEAM?[{label:'Demo Pathway 15 min',color:'#2D6A4F',icon:'📅'}]:[{label:'Sesión 45 min',color:'#8C7B80'}]);
-  // Si el link es de un tipo COMPARTIDO (varias personas atienden), usamos ese
-  // tipo para todos (mismo nombre/color/duración), y cada persona con SU horario.
   if(FORCE_TYPE){ TYPE=FORCE_TYPE; TIDX=0; }
   else { TIDX=(t>=0&&t<types.length)?t:0; TYPE=types[TIDX]; }
   DUR=durFrom(TYPE.label); COLOR=TYPE.color||'#2D6A4F';
   sel={day:null,ms:null}; showAll=false;
   renderPicker();
-  loadCitas(); // trae los horarios ya tomados de este coach → se marcan ocupados
-  loadBusy();  // trae los eventos reales de su calendario → también se bloquean
+  loadCitas(); // trae los horarios ya tomados
+  loadBusy();  // trae los eventos de Google Calendar del coach
+}
+function loadBusy(){
+  var today=new Date(); today.setHours(0,0,0,0);
+  var endDate=new Date(today); endDate.setDate(endDate.getDate()+28);
+  var startStr=today.toISOString().split('T')[0];
+  var endStr=endDate.toISOString().split('T')[0];
+  fetch(SB+'/functions/v1/get-coach-busy-slots',{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY},body:JSON.stringify({coach_id:CID,start_date:startStr,end_date:endStr})})
+    .then(function(r){return r.ok?r.json():null;})
+    .catch(function(){return null;})
+    .then(function(d){
+      if(d&&d.ok&&Array.isArray(d.busy_slots)){
+        BUSY_SLOTS=d.busy_slots; renderPicker();
+      }
+    });
 }
 function _rowsOrErr(r){ if(r.ok) return r.json(); return r.text().then(function(t){ return {_err:true,status:r.status,msg:t}; }); }
 function loadCoach(c,t){
