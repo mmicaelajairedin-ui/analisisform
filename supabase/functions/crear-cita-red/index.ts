@@ -20,8 +20,6 @@
 // Deploy: supabase functions deploy crear-cita-red --no-verify-jwt
 // ===================================================================
 
-import { validatePermission, getEmailFromToken, getOrgIdByEmail } from "../_shared/permissions.ts";
-
 const SB_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON = Deno.env.get("SUPABASE_ANON_KEY") || "";
@@ -35,6 +33,103 @@ const CORS: Record<string, string> = {
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
+
+// ============================================================================
+// INLINED: Permission validation helper (Phase 2)
+// ============================================================================
+async function validatePermission(
+  orgId: string,
+  userId: string,
+  action: string,
+  sbUrl: string,
+  serviceKey: string,
+): Promise<{ allowed: boolean; reason?: string; role?: string }> {
+  if (!orgId || !userId || !sbUrl || !serviceKey) {
+    return { allowed: false, reason: "missing_params" };
+  }
+
+  try {
+    const userResp = await fetch(
+      `${sbUrl}/rest/v1/usuarios?id=eq.${encodeURIComponent(userId)}&org_id=eq.${encodeURIComponent(
+        orgId,
+      )}&select=id,rol,configuracion`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      },
+    );
+
+    if (!userResp.ok) {
+      return { allowed: false, reason: "user_lookup_failed" };
+    }
+
+    const users = await userResp.json();
+    if (!Array.isArray(users) || users.length === 0) {
+      return { allowed: false, reason: "user_not_in_org" };
+    }
+
+    const user = users[0];
+    const role = user.rol || "unknown";
+
+    if (action === "LIST_ORG_DATA") {
+      if (role === "owner") return { allowed: true, role };
+      if (role === "coach") return { allowed: true, role };
+      return { allowed: false, reason: "insufficient_role", role };
+    }
+
+    if (action === "CREATE_CITA") {
+      if (role === "owner") return { allowed: true, role };
+      if (role === "coach") return { allowed: true, role };
+      return { allowed: false, reason: "insufficient_role", role };
+    }
+
+    return { allowed: false, reason: "unknown_action", role };
+  } catch (err) {
+    console.error("[validatePermission] Error:", err);
+    return { allowed: false, reason: "validation_error" };
+  }
+}
+
+async function getEmailFromToken(token: string, sbUrl: string, anonKey: string): Promise<string | null> {
+  if (!token || !sbUrl || !anonKey) return null;
+  try {
+    const r = await fetch(`${sbUrl}/auth/v1/user`, {
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!r.ok) return null;
+    const u = await r.json();
+    const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
+    const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+    return EMAIL_RE.test(em) ? em : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getOrgIdByEmail(email: string, sbUrl: string, serviceKey: string): Promise<string | null> {
+  if (!email || !sbUrl || !serviceKey) return null;
+  try {
+    const r = await fetch(
+      `${sbUrl}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=org_id&limit=1`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      },
+    );
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return (Array.isArray(rows) && rows[0] ? rows[0].org_id : null) || null;
+  } catch {
+    return null;
+  }
+}
 async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
   try {
     const r = await fetch(
@@ -46,6 +141,8 @@ async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
     return Array.isArray(rows) && rows.length > 0;
   } catch { return false; }
 }
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 async function hasConflict(coachId: string, inicio: string): Promise<boolean> {
   try {
     const inicioMs = new Date(inicio).getTime();
