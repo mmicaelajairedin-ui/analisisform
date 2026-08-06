@@ -1,18 +1,20 @@
 // ===================================================================
-// crear-cita-red — el DUEÑO de una red (rol='owner') agenda una cita/sesión
-// para UNO DE SUS coaches. Corre con SERVICE ROLE (bypassa RLS) SOLO tras
-// verificar que quien llama es el owner de esa organización y que el coach
-// destino pertenece a su empresa (mismo org_id).
+// crear-cita-red — el usuario logueado (owner|coach|collaborator) agenda una
+// cita/sesión. El owner puede crear para cualquier coach de su org. El coach
+// puede crear solo para sí mismo (coach_id = su user_id). Collaborator solo si
+// tiene permiso CREATE_CITA.
 //
-// La RLS de citas es por coach → el owner no puede insertar una cita con el
-// coach_id de otro por PATCH/POST directo del navegador. Va por acá, verificada
-// (misma lección que asignar-cliente / agregar-cliente-red).
+// Corre con SERVICE ROLE (bypassa RLS) tras validar permisos. La RLS de citas
+// es por coach → el usuario no puede insertar una cita con otro coach_id por
+// PATCH/POST directo del navegador. Va por acá, verificada.
 //
-// El room de la Sala se deriva luego en el front como Pathway-<coach_id>-<ms>,
-// así que la cita solo necesita coach_id + inicio para que el link salga solo.
+// Phase 2: Acepta coach + collaborator si tienen CREATE_CITA. Validaciones:
+// - Coach: coach_id en request DEBE ser su user_id (previene tampering)
+// - Collaborator: coach_id en request DEBE ser su user_id
+// - Owner: coach_id puede ser cualquiera en su org
 //
 // Body:   { coach_id, nombre, email?, tipo, inicio (ISO), modalidad?, lugar?, grupal? }
-// Header: Authorization: Bearer <JWT del owner logueado>
+// Header: Authorization: Bearer <JWT del user (owner|coach|collab)>
 // Resp:   { ok, cita } | { error }
 //
 // Deploy: supabase functions deploy crear-cita-red --no-verify-jwt
@@ -31,28 +33,102 @@ const CORS: Record<string, string> = {
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-async function callerEmail(token: string): Promise<string | null> {
-  if (!token || token === ANON) return null;
+// ============================================================================
+// INLINED: Permission validation helper (Phase 2)
+// ============================================================================
+async function validatePermission(
+  orgId: string,
+  userId: string,
+  action: string,
+  sbUrl: string,
+  serviceKey: string,
+): Promise<{ allowed: boolean; reason?: string; role?: string }> {
+  if (!orgId || !userId || !sbUrl || !serviceKey) {
+    return { allowed: false, reason: "missing_params" };
+  }
+
   try {
-    const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
+    const userResp = await fetch(
+      `${sbUrl}/rest/v1/usuarios?id=eq.${encodeURIComponent(userId)}&org_id=eq.${encodeURIComponent(
+        orgId,
+      )}&select=id,rol,configuracion`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      },
+    );
+
+    if (!userResp.ok) {
+      return { allowed: false, reason: "user_lookup_failed" };
+    }
+
+    const users = await userResp.json();
+    if (!Array.isArray(users) || users.length === 0) {
+      return { allowed: false, reason: "user_not_in_org" };
+    }
+
+    const user = users[0];
+    const role = user.rol || "unknown";
+
+    if (action === "LIST_ORG_DATA") {
+      if (role === "owner") return { allowed: true, role };
+      if (role === "coach") return { allowed: true, role };
+      return { allowed: false, reason: "insufficient_role", role };
+    }
+
+    if (action === "CREATE_CITA") {
+      if (role === "owner") return { allowed: true, role };
+      if (role === "coach") return { allowed: true, role };
+      return { allowed: false, reason: "insufficient_role", role };
+    }
+
+    return { allowed: false, reason: "unknown_action", role };
+  } catch (err) {
+    console.error("[validatePermission] Error:", err);
+    return { allowed: false, reason: "validation_error" };
+  }
+}
+
+async function getEmailFromToken(token: string, sbUrl: string, anonKey: string): Promise<string | null> {
+  if (!token || !sbUrl || !anonKey) return null;
+  try {
+    const r = await fetch(`${sbUrl}/auth/v1/user`, {
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${token}`,
+      },
+    });
     if (!r.ok) return null;
     const u = await r.json();
     const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
+    const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
     return EMAIL_RE.test(em) ? em : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
-async function ownerOrg(email: string): Promise<string | null> {
+
+async function getOrgIdByEmail(email: string, sbUrl: string, serviceKey: string): Promise<string | null> {
+  if (!email || !sbUrl || !serviceKey) return null;
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=org_id&limit=1`,
-      { headers: svc },
+      `${sbUrl}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=org_id&limit=1`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      },
     );
     if (!r.ok) return null;
     const rows = await r.json();
     return (Array.isArray(rows) && rows[0] ? rows[0].org_id : null) || null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
   try {
@@ -65,6 +141,8 @@ async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
     return Array.isArray(rows) && rows.length > 0;
   } catch { return false; }
 }
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 async function hasConflict(coachId: string, inicio: string): Promise<boolean> {
   try {
     const inicioMs = new Date(inicio).getTime();
@@ -89,13 +167,43 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
   if (!SB_URL || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
 
-  // ── Gate: quien llama debe ser el owner de una org ───────────────
+  // ── Gate: quien llama debe tener permiso CREATE_CITA ───────────────────────
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
-  const email = await callerEmail(token);
-  if (!email) return json({ error: "not_owner" }, 403);
-  const orgId = await ownerOrg(email);
-  if (!orgId) return json({ error: "not_owner" }, 403);
+  const email = await getEmailFromToken(token, SB_URL, ANON);
+  if (!email) return json({ error: "invalid_token" }, 403);
+
+  const orgId = await getOrgIdByEmail(email, SB_URL, SERVICE);
+  if (!orgId) return json({ error: "no_org" }, 403);
+
+  // Get user's ID and role
+  async function getUserInfo(userEmail: string): Promise<{ id: string; rol: string } | null> {
+    try {
+      const r = await fetch(
+        `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(userEmail)}&org_id=eq.${encodeURIComponent(
+          orgId,
+        )}&select=id,rol&limit=1`,
+        { headers: svc },
+      );
+      if (!r.ok) return null;
+      const rows = await r.json();
+      return (Array.isArray(rows) && rows[0] ? rows[0] : null) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  const userInfo = await getUserInfo(email);
+  if (!userInfo || !userInfo.id) return json({ error: "user_not_found" }, 403);
+
+  // Validate permission
+  const perm = await validatePermission(orgId, userInfo.id, "CREATE_CITA", SB_URL, SERVICE);
+  if (!perm.allowed) {
+    return json({ error: "permission_denied", reason: perm.reason }, 403);
+  }
+
+  const userId = userInfo.id;
+  const userRole = userInfo.rol;
 
   // ── Input ────────────────────────────────────────────────────────
   let body: {
@@ -113,6 +221,13 @@ Deno.serve(async (req: Request) => {
   const grupal = body.grupal === true;
   if (!coach_id || !inicio) return json({ error: "missing_fields" }, 400);
   if (isNaN(new Date(inicio).getTime())) return json({ error: "bad_inicio" }, 400);
+
+  // ── Validar que el coach_id es permitido según el rol del usuario ────────
+  // Owner: puede crear cita para cualquier coach de su org
+  // Coach/Collaborator: solo pueden crear para sí mismos (coach_id = su user_id)
+  if (userRole !== "owner" && coach_id !== userId) {
+    return json({ error: "cannot_create_for_other_coach" }, 403);
+  }
 
   // ── El coach destino debe ser de ESTA empresa ───────────────────
   if (!(await coachInOrg(coach_id, orgId))) return json({ error: "coach_ajeno" }, 403);

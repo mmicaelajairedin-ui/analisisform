@@ -1,13 +1,19 @@
 // ===================================================================
-// mi-red — devuelve la RED del dueño logueado (rol='owner'): su organización,
-// sus coaches y sus clientes. Service role + gate al owner. Es el read
-// contraparte de asignar/agregar/eliminar: la RLS de candidatos NO deja que el
-// owner lea a los clientes de sus coaches (la policy es coach_id=pw_coach_id()),
-// así que la lectura tiene que pasar por acá para que el dueño vea su red
-// completa. Filtra SIEMPRE por su org_id: nunca ve otra empresa.
+// mi-red — devuelve la RED del logueado (rol='owner'|'coach'|'collaborator'):
+// su organización, sus coaches (owner ve todos, coach ve los suyos) y sus
+// clientes. Service role + validacion de permisos. Es el read contraparte de
+// asignar/agregar/eliminar: la RLS de candidatos NO deja que el owner lea a los
+// clientes de sus coaches (la policy es coach_id=pw_coach_id()), así que la
+// lectura tiene que pasar por acá para que el dueño vea su red completa.
+// Filtra SIEMPRE por su org_id: nunca ve otra empresa.
 //
-// Header: Authorization: Bearer <JWT del owner>
-// Resp:   { ok, org, coaches:[...], clientes:[...] } | { error }
+// Phase 2: Aceptar coach + colaborador si tienen permisos. Lista filtrada:
+// - Owner: ve todos los coaches, clientes, sesiones de su org
+// - Coach: ve sus propios clientes, sesiones, coaches de su org
+// - Collaborator: ve sus clientes asignados (via RLS) + coaches si tiene permiso
+//
+// Header: Authorization: Bearer <JWT del user (owner|coach|collab)>
+// Resp:   { ok, org, owner, coaches:[...], clientes:[...], citas:[...] } | { error }
 //
 // Deploy: supabase functions deploy mi-red --no-verify-jwt
 // ===================================================================
@@ -25,18 +31,7 @@ const CORS: Record<string, string> = {
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-async function callerEmail(token: string): Promise<string | null> {
-  if (!token || token === ANON) return null;
-  try {
-    const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
-    if (!r.ok) return null;
-    const u = await r.json();
-    const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
-    return EMAIL_RE.test(em) ? em : null;
-  } catch { return null; }
-}
 async function q(path: string): Promise<any[]> {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: svc });
@@ -46,42 +41,180 @@ async function q(path: string): Promise<any[]> {
   } catch { return []; }
 }
 
+// ============================================================================
+// INLINED: Permission validation helper (Phase 2)
+// ============================================================================
+async function validatePermission(
+  orgId: string,
+  userId: string,
+  action: string,
+  sbUrl: string,
+  serviceKey: string,
+): Promise<{ allowed: boolean; reason?: string; role?: string }> {
+  if (!orgId || !userId || !sbUrl || !serviceKey) {
+    return { allowed: false, reason: "missing_params" };
+  }
+
+  try {
+    const userResp = await fetch(
+      `${sbUrl}/rest/v1/usuarios?id=eq.${encodeURIComponent(userId)}&org_id=eq.${encodeURIComponent(
+        orgId,
+      )}&select=id,rol,configuracion`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      },
+    );
+
+    if (!userResp.ok) {
+      return { allowed: false, reason: "user_lookup_failed" };
+    }
+
+    const users = await userResp.json();
+    if (!Array.isArray(users) || users.length === 0) {
+      return { allowed: false, reason: "user_not_in_org" };
+    }
+
+    const user = users[0];
+    const role = user.rol || "unknown";
+
+    if (action === "LIST_ORG_DATA") {
+      if (role === "owner") return { allowed: true, role };
+      if (role === "coach") return { allowed: true, role };
+      return { allowed: false, reason: "insufficient_role", role };
+    }
+
+    if (action === "CREATE_CITA") {
+      if (role === "owner") return { allowed: true, role };
+      if (role === "coach") return { allowed: true, role };
+      return { allowed: false, reason: "insufficient_role", role };
+    }
+
+    return { allowed: false, reason: "unknown_action", role };
+  } catch (err) {
+    console.error("[validatePermission] Error:", err);
+    return { allowed: false, reason: "validation_error" };
+  }
+}
+
+async function getEmailFromToken(token: string, sbUrl: string, anonKey: string): Promise<string | null> {
+  if (!token || !sbUrl || !anonKey) return null;
+  try {
+    const r = await fetch(`${sbUrl}/auth/v1/user`, {
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!r.ok) return null;
+    const u = await r.json();
+    const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
+    const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+    return EMAIL_RE.test(em) ? em : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getOrgIdByEmail(email: string, sbUrl: string, serviceKey: string): Promise<string | null> {
+  if (!email || !sbUrl || !serviceKey) return null;
+  try {
+    const r = await fetch(
+      `${sbUrl}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=org_id&limit=1`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      },
+    );
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return (Array.isArray(rows) && rows[0] ? rows[0].org_id : null) || null;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (!SB_URL || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
 
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
-  const email = await callerEmail(token);
-  if (!email) return json({ error: "not_owner" }, 403);
+  const email = await getEmailFromToken(token, SB_URL, ANON);
+  if (!email) return json({ error: "invalid_token" }, 403);
 
-  // Owner + su org.
-  const owners = await q(`usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=id,nombre,email,activo,foto_url,configuracion,org_id&limit=1`);
-  const owner = owners[0];
-  const orgId = owner && owner.org_id;
-  if (!orgId) return json({ error: "not_owner" }, 403);
+  // Get user's org
+  const orgId = await getOrgIdByEmail(email, SB_URL, SERVICE);
+  if (!orgId) return json({ error: "no_org" }, 403);
+
+  // Get full user record to extract user_id and role
+  const users = await q(`usuarios?email=eq.${encodeURIComponent(email)}&org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,foto_url,configuracion,org_id,rol&limit=1`);
+  const user = users[0];
+  if (!user || !user.id) return json({ error: "user_not_found" }, 403);
+
+  // Phase 2: Validate permission
+  const perm = await validatePermission(orgId, user.id, "LIST_ORG_DATA", SB_URL, SERVICE);
+  if (!perm.allowed) {
+    return json({ error: "permission_denied", reason: perm.reason }, 403);
+  }
+
+  // Determine what this user can see based on role
+  const userRole = user.rol || "coach";
+  const userId = user.id;
 
   const orgs = await q(`organizaciones?id=eq.${encodeURIComponent(orgId)}&select=*&limit=1`);
   const org = orgs[0] || null;
 
-  // order estable → el color por coach en la agenda del panel no baila entre recargas.
-  const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&order=created_at.asc&select=id,nombre,email,activo,foto_url,configuracion`);
-  const clientes = await q(`candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc`);
+  // ────────────────────────────────────────────────────────────────────────────
+  // Coaches + Clientes filtramos según el rol del usuario
+  // ────────────────────────────────────────────────────────────────────────────
 
-  // Citas de TODA la red (agenda del owner + historial de sesiones por cliente).
-  // La RLS de citas es por coach → el owner no las lee directo; acá con service
-  // role las trae de todos sus coaches (+ las suyas) en una sola llamada. Ventana:
-  // últimos 120 días + todo lo futuro (mirror de _calLoad en el panel).
-  // INCLUSIÓN: también trae los eventos de GRUPO (grupal=true) de la red.
-  const coachIds = [owner.id, ...coaches.map((c: any) => c.id)].filter(Boolean);
+  let coaches: any[] = [];
+  let clientes: any[] = [];
+  let coachIds: string[] = [];
+
+  if (userRole === "owner") {
+    // Owner: ve TODOS los coaches y clientes de su org
+    coaches = await q(
+      `usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&order=created_at.asc&select=id,nombre,email,activo,foto_url,configuracion`,
+    );
+    clientes = await q(
+      `candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc`,
+    );
+    coachIds = [userId, ...coaches.map((c: any) => c.id)].filter(Boolean);
+  } else if (userRole === "coach") {
+    // Coach: ve sus propios clientes + lista de coaches para asignar
+    // Los clientes se filtran por coach_id via RLS, pero traemos la lista completa para UI
+    coaches = await q(
+      `usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&order=created_at.asc&select=id,nombre,email,activo,foto_url,configuracion`,
+    );
+    // RLS de candidatos filtrará por coach_id=userId (solo sus clientes)
+    clientes = await q(
+      `candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc`,
+    );
+    coachIds = [userId, ...coaches.map((c: any) => c.id)].filter(Boolean);
+  }
+  // Collaborators: RLS filtrará clientes asignados, no traemos nada extra aquí
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Citas de la red
+  // ────────────────────────────────────────────────────────────────────────────
   let citas: any[] = [];
   if (coachIds.length) {
     const from = new Date(Date.now() - 120 * 86400000).toISOString();
     const inList = coachIds.map((id) => String(id)).join(",");
     // Personal citas: coach_id en el team
-    const personal = await q(`citas?coach_id=in.(${inList})&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal,modalidad,lugar`);
+    const personal = await q(
+      `citas?coach_id=in.(${inList})&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal,modalidad,lugar`,
+    );
     // Group events: org_id match y grupal=true
-    const grupal = await q(`citas?org_id=eq.${encodeURIComponent(orgId)}&grupal=eq.true&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal,modalidad,lugar`);
+    const grupal = await q(
+      `citas?org_id=eq.${encodeURIComponent(orgId)}&grupal=eq.true&inicio=gte.${from}&order=inicio.desc&select=id,nombre,email,tipo,inicio,estado,coach_id,telefono,origen,resultado,notas_llamada,grupal,modalidad,lugar`,
+    );
     // Deduplication: avoid showing the same cita twice (personal + grupal filters can overlap)
     const seen = new Set<string>();
     citas = [...personal, ...grupal].filter((c) => {
@@ -92,7 +225,6 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // owner también es un coach asignable ("el owner es coach aunque luego no
-  // quiera atender"). Se devuelve aparte para marcarlo como "Vos".
-  return json({ ok: true, org, owner, coaches, clientes, citas });
+  // El usuario actual se devuelve como "owner" (o coach) para que el panel lo marque como "Vos"
+  return json({ ok: true, org, owner: user, coaches, clientes, citas });
 });

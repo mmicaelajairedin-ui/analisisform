@@ -1,12 +1,11 @@
 // ===================================================================
-// asignar-cliente — el DUEÑO de una red (rol='owner') asigna/reasigna un
-// cliente de su empresa a uno de SUS coaches. Corre con SERVICE ROLE (bypassa
-// RLS) SOLO tras verificar que quien llama es el owner de esa organización y
-// que TANTO el cliente COMO el coach pertenecen a su empresa (mismo org_id).
+// asignar-cliente — el usuario logueado (owner) asigna/reasigna un cliente de
+// su empresa a uno de SUS coaches. Corre con SERVICE ROLE (bypassa RLS) tras
+// validar permisos. TANTO el cliente COMO el coach deben pertenecer a la misma
+// organización (mismo org_id).
 //
-// Es la misma lección que crear-coach/crear-multicoach: una escritura
-// privilegiada NO puede ir por un PATCH directo del navegador (RLS lo bloquea
-// → "no anda"). Va por acá, verificada.
+// Phase 2: Validado con validatePermission(ASSIGN_CLIENT). Por ahora owner-only,
+// pero la arquitectura permite extenderlo a coaches con permiso específico.
 //
 // Body:   { cliente_id, coach_id }
 // Header: Authorization: Bearer <JWT del owner logueado>
@@ -30,31 +29,106 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+// ============================================================================
+// INLINED: Permission validation helper (Phase 2)
+// ============================================================================
+async function validatePermission(
+  orgId: string,
+  userId: string,
+  action: string,
+  sbUrl: string,
+  serviceKey: string,
+): Promise<{ allowed: boolean; reason?: string; role?: string }> {
+  if (!orgId || !userId || !sbUrl || !serviceKey) {
+    return { allowed: false, reason: "missing_params" };
+  }
 
-async function callerEmail(token: string): Promise<string | null> {
-  if (!token || token === ANON) return null;
   try {
-    const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
+    const userResp = await fetch(
+      `${sbUrl}/rest/v1/usuarios?id=eq.${encodeURIComponent(userId)}&org_id=eq.${encodeURIComponent(
+        orgId,
+      )}&select=id,rol,configuracion`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      },
+    );
+
+    if (!userResp.ok) {
+      return { allowed: false, reason: "user_lookup_failed" };
+    }
+
+    const users = await userResp.json();
+    if (!Array.isArray(users) || users.length === 0) {
+      return { allowed: false, reason: "user_not_in_org" };
+    }
+
+    const user = users[0];
+    const role = user.rol || "unknown";
+
+    if (action === "LIST_ORG_DATA") {
+      if (role === "owner") return { allowed: true, role };
+      if (role === "coach") return { allowed: true, role };
+      return { allowed: false, reason: "insufficient_role", role };
+    }
+
+    if (action === "CREATE_CITA") {
+      if (role === "owner") return { allowed: true, role };
+      if (role === "coach") return { allowed: true, role };
+      return { allowed: false, reason: "insufficient_role", role };
+    }
+
+    if (action === "ASSIGN_CLIENT") {
+      if (role === "owner") return { allowed: true, role };
+      return { allowed: false, reason: "owner_only", role };
+    }
+
+    return { allowed: false, reason: "unknown_action", role };
+  } catch (err) {
+    console.error("[validatePermission] Error:", err);
+    return { allowed: false, reason: "validation_error" };
+  }
+}
+
+async function getEmailFromToken(token: string, sbUrl: string, anonKey: string): Promise<string | null> {
+  if (!token || !sbUrl || !anonKey) return null;
+  try {
+    const r = await fetch(`${sbUrl}/auth/v1/user`, {
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${token}`,
+      },
+    });
     if (!r.ok) return null;
     const u = await r.json();
     const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
+    const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
     return EMAIL_RE.test(em) ? em : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
-// El owner y su org (rol='owner' con org_id). Devuelve org_id o null.
-async function ownerOrg(email: string): Promise<string | null> {
+async function getOrgIdByEmail(email: string, sbUrl: string, serviceKey: string): Promise<string | null> {
+  if (!email || !sbUrl || !serviceKey) return null;
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=org_id&limit=1`,
-      { headers: svc },
+      `${sbUrl}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=org_id&limit=1`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      },
     );
     if (!r.ok) return null;
     const rows = await r.json();
-    const org = Array.isArray(rows) && rows[0] ? rows[0].org_id : null;
-    return org || null;
-  } catch { return null; }
+    return (Array.isArray(rows) && rows[0] ? rows[0].org_id : null) || null;
+  } catch {
+    return null;
+  }
 }
 
 // ¿La fila (candidatos|usuarios) con ese id pertenece a esta org?
@@ -75,13 +149,40 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
   if (!SB_URL || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
 
-  // ── Gate: quien llama debe ser el owner de una org ───────────────
+  // ── Gate: quien llama debe tener permiso ASSIGN_CLIENT ──────────────────────
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
-  const email = await callerEmail(token);
-  if (!email) return json({ error: "not_owner" }, 403);
-  const orgId = await ownerOrg(email);
-  if (!orgId) return json({ error: "not_owner" }, 403);
+  const email = await getEmailFromToken(token, SB_URL, ANON);
+  if (!email) return json({ error: "invalid_token" }, 403);
+
+  const orgId = await getOrgIdByEmail(email, SB_URL, SERVICE);
+  if (!orgId) return json({ error: "no_org" }, 403);
+
+  // Get user's ID
+  async function getUserId(userEmail: string): Promise<string | null> {
+    try {
+      const r = await fetch(
+        `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(userEmail)}&org_id=eq.${encodeURIComponent(
+          orgId,
+        )}&select=id&limit=1`,
+        { headers: svc },
+      );
+      if (!r.ok) return null;
+      const rows = await r.json();
+      return (Array.isArray(rows) && rows[0] ? rows[0].id : null) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  const userId = await getUserId(email);
+  if (!userId) return json({ error: "user_not_found" }, 403);
+
+  // Validate permission
+  const perm = await validatePermission(orgId, userId, "ASSIGN_CLIENT", SB_URL, SERVICE);
+  if (!perm.allowed) {
+    return json({ error: "permission_denied", reason: perm.reason }, 403);
+  }
 
   // ── Input ────────────────────────────────────────────────────────
   let body: { cliente_id?: string; coach_id?: string };
