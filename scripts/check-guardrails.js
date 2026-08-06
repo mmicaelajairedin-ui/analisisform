@@ -4951,6 +4951,33 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "perfil_publico_activo: el toggle NO se resetea al guardar (protección contra pérdida del perfil público)",
+    bug: "Agosto 2026: usuario reportó que su perfil público activado se perdió. " +
+         "El toggle 'Activar mi perfil público' debe persistir cuando se guarda la " +
+         "configuración. Si algo resetea perfil_publico_activo a false sin intención, " +
+         "el coach no puede ser reservado (coach.html devuelve 404). Regla: " +
+         "(1) State.pubActive se carga de RPROF.perfil_publico_activo. " +
+         "(2) Al guardar, perfil_publico_activo:pubA va en usuariosExtra. " +
+         "(3) saveCfg() mergea usuariosExtra en el body → debe llegar a la BD.",
+    check() {
+      const pv = read("panel-v2.html");
+      if (!pv) return null;
+      // 1. Verificar que state.pubActive se inicializa desde RPROF/RCFG
+      if (!/state\.pubActive.*RPROF\.perfil_publico_activo/.test(pv))
+        return "panel-v2.html: state.pubActive ya no se carga de RPROF.perfil_publico_activo.";
+      // 2. Verificar que el guardado incluye perfil_publico_activo:pubA
+      if (!/perfil_publico_activo:pubA/.test(pv))
+        return "panel-v2.html: al guardar el perfil ya no se persiste perfil_publico_activo.";
+      // 3. Verificar que saveCfg() mergea usuariosExtra en el body
+      if (!/body\[u\]=usuariosExtra\[u\]/.test(pv))
+        return "panel-v2.html: saveCfg ya no copia usuariosExtra al body (perfil_publico_activo se perdería).";
+      // 4. Verificar que la inicialización de RPROF tiene perfil_publico_activo
+      if (!/RPROF=\{[^}]*perfil_publico_activo:/.test(pv))
+        return "panel-v2.html: RPROF ya no incluye perfil_publico_activo en su inicialización.";
+      return null;
+    },
+  },
 ];
 
 
