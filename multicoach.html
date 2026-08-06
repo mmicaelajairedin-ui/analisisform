@@ -1280,6 +1280,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="pw-action-bus.js"></script>
 <script>
   // ════════════════════════════════════════════════════════════════════════════════
   // CONFIG
@@ -1522,6 +1523,65 @@
       renderEquipo();
       renderCoaches();
       renderClientes();
+
+      // ════════════════════════════════════════════════════════════════════════════════
+      // ACTION BUS LISTENERS
+      // ════════════════════════════════════════════════════════════════════════════════
+
+      // Coach events
+      window.bus.subscribe('coach.created', async (payload) => {
+        await loadEquipo();
+        renderEquipo();
+      });
+
+      window.bus.subscribe('coach.updated', () => {
+        renderEquipo();
+      });
+
+      window.bus.subscribe('coach.deleted', async (payload) => {
+        await loadEquipo();
+        renderEquipo();
+      });
+
+      window.bus.subscribe('coach.toggled', () => {
+        renderEquipo();
+      });
+
+      // Client events
+      window.bus.subscribe('client.created', async (payload) => {
+        await loadCoaches();
+        await loadClientes();
+        renderCoaches();
+        renderClientes();
+      });
+
+      window.bus.subscribe('client.updated', () => {
+        renderClientes();
+      });
+
+      window.bus.subscribe('client.deleted', async (payload) => {
+        await loadCoaches();
+        await loadClientes();
+        renderCoaches();
+        renderClientes();
+      });
+
+      window.bus.subscribe('client.reassigned', async (payload) => {
+        await loadCoaches();
+        await loadClientes();
+        renderCoaches();
+        renderClientes();
+      });
+
+      // Organization events (future)
+      window.bus.subscribe('org.updated', async (payload) => {
+        await loadEquipo();
+        await loadCoaches();
+        await loadClientes();
+        renderEquipo();
+        renderCoaches();
+        renderClientes();
+      });
 
     } catch (e) {
       console.error('Init error:', e);
@@ -1774,7 +1834,17 @@
 
       if (error) throw error;
 
+      const oldCoachId = cliente.coach_id;
       cliente.coach_id = newCoachId;
+
+      // Dispatch action bus event
+      window.bus.dispatch('client.reassigned', {
+        id: clienteId,
+        nombre: cliente.nombre,
+        oldCoachId,
+        newCoachId
+      });
+
       await loadCoaches();
       renderCoaches();
       renderClientes();
@@ -1928,6 +1998,13 @@
 
       if (error) throw error;
 
+      // Dispatch action bus event
+      window.bus.dispatch('coach.toggled', {
+        id: currentEquipoSelected.id,
+        nombre: currentEquipoSelected.nombre,
+        activo: newState
+      });
+
       openEquipoDrawer(currentEquipoSelected.id);
     } catch (e) {
       console.error('Toggle equipo activo error:', e);
@@ -1951,6 +2028,8 @@
     }
 
     try {
+      const removedMemberId = currentEquipoSelected.id;
+
       // Remove from organization by clearing org_id or marking as removed
       const { error } = await sb
         .from('usuarios')
@@ -1962,6 +2041,12 @@
 
       allEquipo = allEquipo.filter(m => m.id !== currentEquipoSelected.id);
       filteredEquipo = filteredEquipo.filter(m => m.id !== currentEquipoSelected.id);
+
+      // Dispatch action bus event
+      window.bus.dispatch('coach.deleted', {
+        id: removedMemberId,
+        nombre: currentEquipoSelected.nombre
+      });
 
       closeEquipoDrawer();
       renderEquipo();
@@ -2031,7 +2116,14 @@
       currentEquipoSelected.nombre = nombre;
       currentEquipoSelected.activo = activo;
       currentEquipoSelected.configuracion = newConfig;
-      renderEquipo();
+
+      // Dispatch action bus event
+      window.bus.dispatch('coach.updated', {
+        id: currentEquipoSelected.id,
+        nombre,
+        activo,
+        especialidad
+      });
 
       statusEl.style.display = 'block';
       statusEl.style.background = '#e8f5e9';
@@ -2352,6 +2444,14 @@
         statusEl.style.background = '#e8f5e9';
         statusEl.style.color = '#2e7d32';
         statusEl.textContent = `✓ ${foundUser.nombre} agregado a la organización`;
+
+        // Dispatch action bus event
+        window.bus.dispatch('coach.created', {
+          id: foundUser.id,
+          nombre: foundUser.nombre,
+          email: foundUser.email,
+          rol
+        });
 
         setTimeout(() => {
           closeAddPersonModal();
@@ -2955,6 +3055,7 @@
     try {
       if (wizardState.existingClient) {
         // Update existing client with new coach
+        const oldCoachId = wizardState.existingClient.coach_id;
         const { error } = await sb
           .from('candidatos')
           .update({ coach_id: coachId })
@@ -2968,6 +3069,14 @@
           cliente.coach_id = coachId;
           cliente.coach_nombre = allCoaches.find(c => c.id === coachId)?.nombre || '—';
         }
+
+        // Dispatch action bus event
+        window.bus.dispatch('client.reassigned', {
+          id: wizardState.existingClient.id,
+          nombre: wizardState.existingClient.nombre,
+          oldCoachId,
+          newCoachId: coachId
+        });
       } else {
         // Create new client
         const { data, error } = await sb
@@ -2985,6 +3094,14 @@
 
         allClientes.push(data[0]);
         filteredClientes = [...allClientes];
+
+        // Dispatch action bus event
+        window.bus.dispatch('client.created', {
+          id: data[0].id,
+          nombre,
+          email: wizardState.email,
+          coachId
+        });
       }
 
       // Reload and refresh UI
@@ -3046,6 +3163,13 @@
 
       currentClienteSelected.nombre = nombre;
       currentClienteSelected.email = email;
+
+      // Dispatch action bus event
+      window.bus.dispatch('client.updated', {
+        id: currentClienteSelected.id,
+        nombre,
+        email
+      });
 
       closeEditClienteModal();
       await loadClientes();
@@ -3127,6 +3251,14 @@
       if (error) throw error;
 
       currentClienteSelected.activo = newState;
+
+      // Dispatch action bus event
+      window.bus.dispatch('client.updated', {
+        id: currentClienteSelected.id,
+        nombre: currentClienteSelected.nombre,
+        activo: newState
+      });
+
       openClienteDrawer(currentClienteSelected.id);
       await loadClientes();
       renderClientes();
