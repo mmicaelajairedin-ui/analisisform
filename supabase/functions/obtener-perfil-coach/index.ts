@@ -100,6 +100,11 @@ Deno.serve(async (req: Request) => {
       `&limit=1`;
     console.log(`[obtener-perfil] Q1 start: slug=${slug}`);
     let sbRes = await fetch(q1, { headers });
+    console.log("SB_URL =", SB_URL);
+    console.log("Q1 =", q1);
+    console.log("STATUS =", sbRes.status);
+    console.log("STATUS TEXT =", sbRes.statusText);
+    console.log("BODY =", await sbRes.text());
     if (!sbRes.ok) {
       console.log(`[obtener-perfil] Q1 error: status=${sbRes.status}`);
       return json({ error: "supabase_error", status: sbRes.status }, 502);
