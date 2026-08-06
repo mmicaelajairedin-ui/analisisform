@@ -27,7 +27,7 @@
   var P = (C && C.Plugins) || {};
 
   // Backend de Pathway (mismas credenciales publicas que pw-push.js).
-  var SB_URL = "https://api.pathwaycareercoach.com";
+  var SB_URL = "https://mxkljqhlwiqavbjfjfov.supabase.co";
   var SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
 
   // El flag hace que pw-app.js oculte los botones de pago en TODAS las pantallas.
@@ -77,7 +77,6 @@
       var internal =
         host === "pathwaycareercoach.com" ||
         host === "www.pathwaycareercoach.com" ||
-        host === "api.pathwaycareercoach.com" ||
         host === location.hostname.toLowerCase();
       return !internal;
     } catch (e) { return false; }
