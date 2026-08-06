@@ -92,15 +92,27 @@ Deno.serve(async (req: Request) => {
 
   let row: UsuarioRow;
   try {
-    // Buscar por slug (top-level O en configuracion) con perfil público activo
-    // (top-level O en configuracion). Patrón OR como en listar-coaches-publicos.
-    const q = `${SB_URL}/rest/v1/usuarios` +
-      `?and=(or=(slug.eq.${encodeURIComponent(slug)},configuracion->>slug.eq.${encodeURIComponent(slug)}),or=(perfil_publico_activo.eq.true,configuracion->>perfil_publico_activo.eq.true))` +
+    // 1) Busca en top-level: slug + perfil_publico_activo
+    const q1 = `${SB_URL}/rest/v1/usuarios` +
+      `?slug=eq.${encodeURIComponent(slug)}` +
+      `&or=(perfil_publico_activo.eq.true,configuracion->>perfil_publico_activo.eq.true)` +
       `&select=${SELECT_FIELDS}` +
       `&limit=1`;
-    const sbRes = await fetch(q, { headers });
+    let sbRes = await fetch(q1, { headers });
     if (!sbRes.ok) return json({ error: "supabase_error", status: sbRes.status }, 502);
-    const rows: UsuarioRow[] = await sbRes.json();
+    let rows: UsuarioRow[] = await sbRes.json();
+
+    // 2) Fallback: slug en configuracion + perfil público en top-level O config
+    if (!rows.length) {
+      const q2 = `${SB_URL}/rest/v1/usuarios` +
+        `?configuracion->>slug=eq.${encodeURIComponent(slug)}` +
+        `&or=(perfil_publico_activo.eq.true,configuracion->>perfil_publico_activo.eq.true)` +
+        `&select=${SELECT_FIELDS}` +
+        `&limit=1`;
+      sbRes = await fetch(q2, { headers });
+      if (sbRes.ok) rows = await sbRes.json();
+    }
+
     if (!rows.length) return json({ error: "not_found" }, 404);
     row = rows[0];
     // Gate de suscripción: si la prueba venció y no pagó (o está de baja), el
