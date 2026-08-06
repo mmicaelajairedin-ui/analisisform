@@ -92,26 +92,15 @@ Deno.serve(async (req: Request) => {
 
   let row: UsuarioRow;
   try {
-    // 1) Por columnas top-level (slug + activo).
-    const q1 = `${SB_URL}/rest/v1/usuarios` +
-      `?slug=eq.${encodeURIComponent(slug)}` +
-      `&perfil_publico_activo=eq.true` +
+    // Buscar por slug (top-level O en configuracion) con perfil público activo
+    // (top-level O en configuracion). Patrón OR como en listar-coaches-publicos.
+    const q = `${SB_URL}/rest/v1/usuarios` +
+      `?and=(or=(slug.eq.${encodeURIComponent(slug)},configuracion->>slug.eq.${encodeURIComponent(slug)}),or=(perfil_publico_activo.eq.true,configuracion->>perfil_publico_activo.eq.true))` +
       `&select=${SELECT_FIELDS}` +
       `&limit=1`;
-    let sbRes = await fetch(q1, { headers });
+    const sbRes = await fetch(q, { headers });
     if (!sbRes.ok) return json({ error: "supabase_error", status: sbRes.status }, 502);
-    let rows: UsuarioRow[] = await sbRes.json();
-    // 2) Fallback: slug + activo guardados en configuracion (algunos coaches no
-    //    pueden escribir las columnas top-level y el panel guarda ahí).
-    if (!rows.length) {
-      const q2 = `${SB_URL}/rest/v1/usuarios` +
-        `?configuracion->>slug=eq.${encodeURIComponent(slug)}` +
-        `&configuracion->>perfil_publico_activo=eq.true` +
-        `&select=${SELECT_FIELDS}` +
-        `&limit=1`;
-      sbRes = await fetch(q2, { headers });
-      if (sbRes.ok) rows = await sbRes.json();
-    }
+    const rows: UsuarioRow[] = await sbRes.json();
     if (!rows.length) return json({ error: "not_found" }, 404);
     row = rows[0];
     // Gate de suscripción: si la prueba venció y no pagó (o está de baja), el
@@ -119,7 +108,10 @@ Deno.serve(async (req: Request) => {
     if (row.activo === false || !subVigente((row.configuracion || {}) as Record<string, unknown>)) {
       return json({ error: "not_found" }, 404);
     }
-    if (!row.slug) row.slug = slug; // el slug efectivo (vino de configuracion)
+    // Asegurar que row.slug tiene el valor correcto (top-level O de configuracion)
+    const cfg = (row.configuracion || {}) as Record<string, unknown>;
+    if (!row.slug && typeof cfg.slug === "string") row.slug = cfg.slug;
+    if (!row.slug) row.slug = slug; // fallback final
   } catch (_e) {
     return json({ error: "supabase_unreachable" }, 502);
   }
