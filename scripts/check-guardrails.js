@@ -4952,6 +4952,23 @@ const RULES = [
     },
   },
   {
+    name: "obtener-perfil-coach: busca en top-level O configuracion (OR pattern como listar-coaches)",
+    bug: "Agosto 2026: coaches con perfil_publico_activo guardado en configuracion JSONB " +
+         "no aparecían en su perfil individual (/coach/{slug}) pero SÍ en el listado. " +
+         "Causa: obtener-perfil-coach solo buscaba top-level; listar-coaches-publicos usa OR. " +
+         "Ambas deben usar el mismo patrón para consistencia.",
+    check() {
+      const ts = read("supabase/functions/obtener-perfil-coach/index.ts");
+      if (!ts) return null;
+      // Debe tener la query con OR pattern (and de dos or conditions)
+      if (!ts.includes("or=(perfil_publico_activo.eq.true,configuracion->>perfil_publico_activo.eq.true)"))
+        return "obtener-perfil-coach: ya no usa OR para perfil_publico_activo (debe buscar en top-level y config como listar-coaches).";
+      if (!ts.includes("or=(slug.eq.") && !ts.includes("configuracion->>slug.eq."))
+        return "obtener-perfil-coach: ya no busca slug en top-level O config (debe hacerlo como perfil_publico_activo).";
+      return null;
+    },
+  },
+  {
     name: "perfil_publico_activo: el toggle NO se resetea al guardar (protección contra pérdida del perfil público)",
     bug: "Agosto 2026: usuario reportó que su perfil público activado se perdió. " +
          "El toggle 'Activar mi perfil público' debe persistir cuando se guarda la " +
