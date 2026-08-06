@@ -1189,18 +1189,35 @@
 
   async function loadEquipo() {
     try {
-      // Load all team members (coaches + collaborators + owners) for this organization
-      const { data, error } = await sb
-        .from('usuarios')
-        .select('id, nombre, email, activo, rol, created_at, configuracion')
-        .or(`rol.eq.coach,rol.eq.owner,rol.eq.colaborador`)
-        .eq('org_id', currentOrgId)
-        .order('nombre');
+      // Load all team members via edge function (uses service role to bypass RLS)
+      const authToken = localStorage.getItem('mj_auth') || '';
 
-      if (error) throw error;
+      const response = await fetch(`${SB_URL}/functions/v1/load-team-members`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        },
+        body: JSON.stringify({ org_id: currentOrgId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load team members: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      console.log('loadEquipo() — Diagnóstico:');
+      console.log('currentOrgId:', currentOrgId);
+      console.log('result:', result);
+      console.log('cantidad de usuarios:', result.data?.length);
+
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
+
+      const data = result.data || [];
 
       // For each team member, count assigned clients from this organization
-      allEquipo = await Promise.all((data || []).map(async (member) => {
+      allEquipo = await Promise.all(data.map(async (member) => {
         const { count } = await sb
           .from('candidatos')
           .select('id', { count: 'exact', head: true })
