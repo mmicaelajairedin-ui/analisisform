@@ -18,7 +18,7 @@
   // Endpoint del backend de Pathway (Supabase REST) para guardar/borrar suscripciones.
   // Reutiliza la anon key del proyecto — RLS permite INSERT/DELETE público sobre
   // la tabla push_subscriptions (cada uno gestiona sus propios endpoints).
-  var SB_URL = "https://api.pathwaycareercoach.com";
+  var SB_URL = "https://mxkljqhlwiqavbjfjfov.supabase.co";
   var SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
 
   function urlBase64ToUint8Array(b64) {

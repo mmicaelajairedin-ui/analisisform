@@ -10,7 +10,7 @@
  *     greeting: "…"  |  function(){return "…"}, // 1er mensaje (HTML permitido)
  *     context:  function(){ return {…}; },   // datos reales para la IA
  *     wa:       "34623816019",               // número de WhatsApp de escape
- *     endpoint: "https://api.pathwaycareercoach.com", // base Supabase
+ *     endpoint: "https://mxkljqhlwiqavbjfjfov.supabase.co", // base Supabase
  *     key:      "<anon key>",                // apikey pública
  *     accent:   "#2D6A4F"                    // color de marca
  *   };
@@ -24,7 +24,7 @@
   var CFG = window.PW_IA_CFG || {};
   var MODE = CFG.mode === "coach" ? "coach" : "cliente";
   var WA = CFG.wa || "34623816019";
-  var SB = (CFG.endpoint || window.PW_SB || "https://api.pathwaycareercoach.com").replace(/\/+$/, "");
+  var SB = (CFG.endpoint || window.PW_SB || "https://mxkljqhlwiqavbjfjfov.supabase.co").replace(/\/+$/, "");
   var KEY = CFG.key || window.PW_KEY ||
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
   var ACCENT = CFG.accent || "#2D6A4F";
