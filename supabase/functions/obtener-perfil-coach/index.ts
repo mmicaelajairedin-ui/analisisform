@@ -98,23 +98,38 @@ Deno.serve(async (req: Request) => {
       `&or=(perfil_publico_activo.eq.true,configuracion->>perfil_publico_activo.eq.true)` +
       `&select=${SELECT_FIELDS}` +
       `&limit=1`;
+    console.log(`[obtener-perfil] Q1 start: slug=${slug}`);
     let sbRes = await fetch(q1, { headers });
-    if (!sbRes.ok) return json({ error: "supabase_error", status: sbRes.status }, 502);
+    if (!sbRes.ok) {
+      console.log(`[obtener-perfil] Q1 error: status=${sbRes.status}`);
+      return json({ error: "supabase_error", status: sbRes.status }, 502);
+    }
     let rows: UsuarioRow[] = await sbRes.json();
+    console.log(`[obtener-perfil] Q1 result: ${rows.length} rows`);
 
     // 2) Fallback: slug en configuracion + perfil público en top-level O config
     if (!rows.length) {
+      console.log(`[obtener-perfil] Q1 empty, trying Q2 (config slug)`);
       const q2 = `${SB_URL}/rest/v1/usuarios` +
         `?configuracion->>slug=eq.${encodeURIComponent(slug)}` +
         `&or=(perfil_publico_activo.eq.true,configuracion->>perfil_publico_activo.eq.true)` +
         `&select=${SELECT_FIELDS}` +
         `&limit=1`;
       sbRes = await fetch(q2, { headers });
-      if (sbRes.ok) rows = await sbRes.json();
+      if (sbRes.ok) {
+        rows = await sbRes.json();
+        console.log(`[obtener-perfil] Q2 result: ${rows.length} rows`);
+      } else {
+        console.log(`[obtener-perfil] Q2 error: status=${sbRes.status}`);
+      }
     }
 
-    if (!rows.length) return json({ error: "not_found" }, 404);
+    if (!rows.length) {
+      console.log(`[obtener-perfil] No rows found for slug=${slug}`);
+      return json({ error: "not_found" }, 404);
+    }
     row = rows[0];
+    console.log(`[obtener-perfil] Found user: id=${row.id}, perfil_activo=${row.perfil_publico_activo}`);
     // Gate de suscripción: si la prueba venció y no pagó (o está de baja), el
     // perfil público no existe públicamente (mismo criterio que el directorio).
     if (row.activo === false || !subVigente((row.configuracion || {}) as Record<string, unknown>)) {

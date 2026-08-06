@@ -913,40 +913,55 @@ function confirmar(){
         // 1) Obtener Zoom link del coach (Supabase o localStorage)
         var _getZoomLink = function(cb){
           // Intenta Supabase primero
+          console.log('[reserva:H2] Buscando zoom_url para coach_id:', _cid);
           fetch(SB+'/rest/v1/usuarios?id=eq.'+encodeURIComponent(_cid)+'&select=configuracion&limit=1',{ headers:{apikey:KEY} })
-            .then(function(r){ return r.ok?r.json():[]; })
+            .then(function(r){
+              console.log('[reserva:H2] Fetch status:', r.status);
+              return r.ok?r.json():[];
+            })
             .then(function(rows){
+              console.log('[reserva:H2] BD retornó', rows.length, 'filas');
               var zoomLink = (Array.isArray(rows) && rows[0] && rows[0].configuracion && rows[0].configuracion.zoom_url) ? rows[0].configuracion.zoom_url : '';
+              console.log('[reserva:H2] configuracion.zoom_url en BD:', zoomLink || '(vacío)');
               if(!zoomLink){
                 // Fallback a localStorage
                 try{ zoomLink = localStorage.getItem('pw_zoom_'+_cid) || ''; }catch(e){}
+                console.log('[reserva:H2] Fallback localStorage:', zoomLink || '(vacío)');
               }
               cb(zoomLink);
             })
-            .catch(function(){
+            .catch(function(err){
+              console.error('[reserva:H2] Fetch error:', err);
               // Si falla Supabase, leer de localStorage
               var zoomLink = '';
               try{ zoomLink = localStorage.getItem('pw_zoom_'+_cid) || ''; }catch(e){}
+              console.log('[reserva:H2] Fallback localStorage after error:', zoomLink || '(vacío)');
               cb(zoomLink);
             });
         };
         _getZoomLink(function(zoomLink){
+          console.log('[reserva:H2] zoomLink recibido:', zoomLink);
           if(zoomLink && /^https?:\/\//i.test(zoomLink)){
             _link=zoomLink;
+            console.log('[reserva:H2] Usando Zoom link:', _link);
             _sendEmail(zoomLink); // Usar Zoom link
           } else {
+            console.log('[reserva:H2] No hay Zoom válido, intentando Google Meet...');
             // 2) Si no hay Zoom, intentar Google Meet
             fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
               .then(function(r){ return r.ok?r.json():{ok:false}; })
               .then(function(d){
                 var meetLink=(d && d.ok && d.hangoutLink)?d.hangoutLink:'';
+                console.log('[reserva:H2] meetLink recibido:', meetLink);
                 // 3) Si no hay Google Meet, usar Pathway Sala como fallback garantizado
                 _link=meetLink || _fallbackSalaUrl;
+                console.log('[reserva:H2] _link final enviado a sendEmails:', _link);
                 _sendEmail(_link);
               })
               .catch(function(err){
-                console.warn('Google Calendar sync falló:', err);
+                console.warn('[reserva:H2] Google Calendar sync falló:', err);
                 _link=_fallbackSalaUrl;
+                console.log('[reserva:H2] Fallback a Sala:', _link);
                 _sendEmail(_link); // Fallback a la Sala de Pathway
                 try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, error:String(err) }) }).catch(function(){}); }catch(e){}
               });
@@ -1025,6 +1040,7 @@ function _icsBuild(title, startMs, endMs, link, tk){
   return { raw:raw, b64:b64, url:'data:text/calendar;charset=utf-8,'+encodeURIComponent(raw) };
 }
 function sendEmails(name, email, tlabel, F, gurl, manageUrl, origen, answers, joinLink, icsB64){
+  console.log('[reserva:H2] sendEmails llamado con joinLink:', joinLink || '(vacío)');
   var brand=(PRO?COACH:'Pathway');
   // Nota de zona horaria: solo si coach y cliente están en zonas distintas.
   var _cliOtherTz=F.diff?('<div style="font-size:12.5px;color:#7A8A80;margin-top:5px">'+tf('emParaCoach',{name:esc(FIRST),hora:esc(((F.coach||'').split(' · ')[1]||F.coach)),tz:esc(F.coTz)})+'</div>'):'';
