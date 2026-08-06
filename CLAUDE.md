@@ -1,5 +1,49 @@
 # Contexto del Proyecto — Career Pathway (Micaela Jairedin)
 
+## 🛡️ PROTOCOLO DE DESARROLLO — LEE ESTO PRIMERO (Agosto 2026)
+
+**Adoptado después de 4 regresiones críticas. MANDATORIO.**
+
+### Reglas de oro
+
+1. **`main` es la única verdad.** Ninguna rama puede empezar desde otra rama antigua. Antes de comenzar un sprint, sincronizar con `main` y confirmar el commit base.
+2. **Un sprint = una responsabilidad.** Si el sprint es White Label, solo toca White Label. No cambia tipografías, layouts, componentes, permisos ni CSS que no estén relacionados.
+3. **Checklist de regresión obligatorio antes del commit.** Antes de hacer push debe verificar visualmente, como mínimo:
+   - Dashboard se ve igual
+   - Equipo se ve igual
+   - Clientes se ve igual
+   - No aparecen componentes antiguos
+   - No desaparecen funcionalidades existentes
+4. **Capturas comparativas.** Al terminar un sprint enseñar "antes/después" de las pantallas afectadas. Si el sprint era White Label, solo deberían verse diferencias en Configuración/Marca e identidad de la organización.
+5. **No fusionar ramas antiguas.** Si una rama lleva varios días sin sincronizarse con `main`, rebasarse o recrearse desde `main` antes de seguir desarrollando.
+6. **Regla de oro: módulos congelados.** Ningún sprint puede modificar módulos congelados salvo autorización explícita. Si el sprint no es "Equipo", no puede cambiar Equipo.
+
+### Template al inicio de cada sprint
+
+```
+Base de trabajo
+* Rama: `claude/...`
+* Basada en commit: `abc123` (main actual)
+* Diferencia: 0 commits
+* Módulos que voy a tocar: Configuración > Marca
+* Módulos que NO voy a tocar: Dashboard, Equipo, Clientes, Agenda
+```
+
+### Template al finalizar cada sprint
+
+```
+Regresión — ✅ VERIFICADO EN NAVEGADOR
+
+* Dashboard: ✅ Sin cambios
+* Equipo: ✅ Sin cambios
+* Clientes: ✅ Sin cambios
+* Configuración: ✅ Modificada (esperado)
+```
+
+**NUNCA hacer push sin este checklist completado y verificado visualmente.**
+
+---
+
 ## ⚡ MODO ASISTENTE DE VENTAS — LEER PRIMERO
 
 Si Micaela escribe un **nombre + lo que le preguntó/dijo un lead**, actuá como
