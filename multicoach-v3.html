@@ -1241,20 +1241,30 @@
     try {
       // TEMPORARY: Load coaches + owners from organization
       // TODO: Replace with organization_members table (Fase 2)
-      // Until then, we load both 'coach' and 'owner' roles because:
-      // - Some users might be owners AND coaches
-      // - The model will support multiple roles per user later
-      const { data, error } = await sb
-        .from('usuarios')
-        .select('id, nombre, email, activo, configuracion')
-        .or(`rol.eq.coach,rol.eq.owner`)
-        .eq('org_id', currentOrgId)
-        .order('nombre');
+      // Use edge function to bypass RLS and get all team members for this org
+      const authToken = localStorage.getItem('mj_auth') || '';
 
-      if (error) throw error;
+      const response = await fetch(`${SB_URL}/functions/v1/load-team-members`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        },
+        body: JSON.stringify({ org_id: currentOrgId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load team members: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
+
+      // Filter to coaches and owners only
+      const data = (result.data || []).filter((u) => u.rol === 'coach' || u.rol === 'owner');
 
       // For each coach, count clients from this organization
-      allCoaches = await Promise.all((data || []).map(async (coach) => {
+      allCoaches = await Promise.all(data.map(async (coach) => {
         const { count } = await sb
           .from('candidatos')
           .select('id', { count: 'exact', head: true })
