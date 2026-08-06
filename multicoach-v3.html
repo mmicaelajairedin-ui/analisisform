@@ -1189,24 +1189,35 @@
 
   async function loadEquipo() {
     try {
-      // Load all team members (coaches + collaborators + owners) for this organization
-      const { data, error } = await sb
-        .from('usuarios')
-        .select('id, nombre, email, activo, rol, created_at, configuracion')
-        .or(`rol.eq.coach,rol.eq.owner,rol.eq.colaborador`)
-        .eq('org_id', currentOrgId)
-        .order('nombre');
+      // Load all team members via edge function (uses service role to bypass RLS)
+      const authToken = localStorage.getItem('mj_auth') || '';
+
+      const response = await fetch(`${SB_URL}/functions/v1/load-team-members`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        },
+        body: JSON.stringify({ org_id: currentOrgId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load team members: ${response.status}`);
+      }
+
+      const result = await response.json();
 
       console.log('loadEquipo() — Diagnóstico:');
       console.log('currentOrgId:', currentOrgId);
-      console.log('error:', error);
-      console.log('data:', data);
-      console.log('cantidad de usuarios:', data?.length);
+      console.log('result:', result);
+      console.log('cantidad de usuarios:', result.data?.length);
 
-      if (error) throw error;
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
+
+      const data = result.data || [];
 
       // For each team member, count assigned clients from this organization
-      allEquipo = await Promise.all((data || []).map(async (member) => {
+      allEquipo = await Promise.all(data.map(async (member) => {
         const { count } = await sb
           .from('candidatos')
           .select('id', { count: 'exact', head: true })
@@ -1230,20 +1241,30 @@
     try {
       // TEMPORARY: Load coaches + owners from organization
       // TODO: Replace with organization_members table (Fase 2)
-      // Until then, we load both 'coach' and 'owner' roles because:
-      // - Some users might be owners AND coaches
-      // - The model will support multiple roles per user later
-      const { data, error } = await sb
-        .from('usuarios')
-        .select('id, nombre, email, activo, configuracion')
-        .or(`rol.eq.coach,rol.eq.owner`)
-        .eq('org_id', currentOrgId)
-        .order('nombre');
+      // Use edge function to bypass RLS and get all team members for this org
+      const authToken = localStorage.getItem('mj_auth') || '';
 
-      if (error) throw error;
+      const response = await fetch(`${SB_URL}/functions/v1/load-team-members`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        },
+        body: JSON.stringify({ org_id: currentOrgId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load team members: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
+
+      // Filter to coaches and owners only
+      const data = (result.data || []).filter((u) => u.rol === 'coach' || u.rol === 'owner');
 
       // For each coach, count clients from this organization
-      allCoaches = await Promise.all((data || []).map(async (coach) => {
+      allCoaches = await Promise.all(data.map(async (coach) => {
         const { count } = await sb
           .from('candidatos')
           .select('id', { count: 'exact', head: true })
@@ -1426,13 +1447,23 @@
     }
 
     try {
-      const { error } = await sb
-        .from('candidatos')
-        .update({ coach_id: newCoachId })
-        .eq('id', clienteId)
-        .eq('org_id', currentOrgId);
+      const authToken = localStorage.getItem('mj_auth') || '';
+      const response = await fetch(`${SB_URL}/functions/v1/reassign-client`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        },
+        body: JSON.stringify({
+          org_id: currentOrgId,
+          client_id: clienteId,
+          new_coach_id: newCoachId
+        })
+      });
 
-      if (error) throw error;
+      if (!response.ok) throw new Error(`Failed to reassign client: ${response.status}`);
+      const result = await response.json();
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
 
       cliente.coach_id = newCoachId;
       await loadCoaches();
@@ -1580,13 +1611,23 @@
       currentEquipoSelected.activo = newState;
       renderEquipo();
 
-      const { error } = await sb
-        .from('usuarios')
-        .update({ activo: newState })
-        .eq('id', currentEquipoSelected.id)
-        .eq('org_id', currentOrgId);
+      const authToken = localStorage.getItem('mj_auth') || '';
+      const response = await fetch(`${SB_URL}/functions/v1/update-team-member`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        },
+        body: JSON.stringify({
+          org_id: currentOrgId,
+          member_id: currentEquipoSelected.id,
+          updates: { activo: newState }
+        })
+      });
 
-      if (error) throw error;
+      if (!response.ok) throw new Error(`Failed to update member: ${response.status}`);
+      const result = await response.json();
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
 
       openEquipoDrawer(currentEquipoSelected.id);
     } catch (e) {
@@ -1611,14 +1652,24 @@
     }
 
     try {
-      // Remove from organization by clearing org_id or marking as removed
-      const { error } = await sb
-        .from('usuarios')
-        .update({ org_id: null })
-        .eq('id', currentEquipoSelected.id)
-        .eq('org_id', currentOrgId);
+      // Remove from organization by clearing org_id
+      const authToken = localStorage.getItem('mj_auth') || '';
+      const response = await fetch(`${SB_URL}/functions/v1/update-team-member`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        },
+        body: JSON.stringify({
+          org_id: currentOrgId,
+          member_id: currentEquipoSelected.id,
+          updates: { org_id: null }
+        })
+      });
 
-      if (error) throw error;
+      if (!response.ok) throw new Error(`Failed to remove member: ${response.status}`);
+      const result = await response.json();
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
 
       allEquipo = allEquipo.filter(m => m.id !== currentEquipoSelected.id);
       filteredEquipo = filteredEquipo.filter(m => m.id !== currentEquipoSelected.id);
@@ -1675,17 +1726,23 @@
         especialidad
       };
 
-      const { error } = await sb
-        .from('usuarios')
-        .update({
-          nombre,
-          activo,
-          configuracion: newConfig
+      const authToken = localStorage.getItem('mj_auth') || '';
+      const response = await fetch(`${SB_URL}/functions/v1/update-team-member`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        },
+        body: JSON.stringify({
+          org_id: currentOrgId,
+          member_id: currentEquipoSelected.id,
+          updates: { nombre, activo, configuracion: newConfig }
         })
-        .eq('id', currentEquipoSelected.id)
-        .eq('org_id', currentOrgId);
+      });
 
-      if (error) throw error;
+      if (!response.ok) throw new Error(`Failed to update member: ${response.status}`);
+      const resultUpdate = await response.json();
+      if (!resultUpdate.ok) throw new Error(resultUpdate.error || 'Unknown error');
 
       // Update local state
       currentEquipoSelected.nombre = nombre;
@@ -1760,13 +1817,23 @@
       currentEquipoSelected.rol = newRole;
       renderEquipo();
 
-      const { error } = await sb
-        .from('usuarios')
-        .update({ rol: newRole })
-        .eq('id', currentEquipoSelected.id)
-        .eq('org_id', currentOrgId);
+      const authToken = localStorage.getItem('mj_auth') || '';
+      const response = await fetch(`${SB_URL}/functions/v1/update-team-member`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        },
+        body: JSON.stringify({
+          org_id: currentOrgId,
+          member_id: currentEquipoSelected.id,
+          updates: { rol: newRole }
+        })
+      });
 
-      if (error) throw error;
+      if (!response.ok) throw new Error(`Failed to update member: ${response.status}`);
+      const resultRole = await response.json();
+      if (!resultRole.ok) throw new Error(resultRole.error || 'Unknown error');
 
       statusEl.style.display = 'block';
       statusEl.style.background = '#e8f5e9';
@@ -1835,13 +1902,23 @@
         permisos: perms
       };
 
-      const { error } = await sb
-        .from('usuarios')
-        .update({ configuracion: newConfig })
-        .eq('id', currentEquipoSelected.id)
-        .eq('org_id', currentOrgId);
+      const authToken = localStorage.getItem('mj_auth') || '';
+      const response = await fetch(`${SB_URL}/functions/v1/update-team-member`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        },
+        body: JSON.stringify({
+          org_id: currentOrgId,
+          member_id: currentEquipoSelected.id,
+          updates: { configuracion: newConfig }
+        })
+      });
 
-      if (error) throw error;
+      if (!response.ok) throw new Error(`Failed to update member: ${response.status}`);
+      const resultPerms = await response.json();
+      if (!resultPerms.ok) throw new Error(resultPerms.error || 'Unknown error');
 
       currentEquipoSelected.configuracion = newConfig;
 
@@ -2000,11 +2077,26 @@
         }
 
         // org_id is null - add to current org
-        const { error: updateError } = await sb
-          .from('usuarios')
-          .update({ org_id: currentOrgId, rol })
-          .eq('id', foundUser.id)
-          .eq('org_id', null);
+        const authToken = localStorage.getItem('mj_auth') || '';
+        const response = await fetch(`${SB_URL}/functions/v1/update-team-member`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': authToken ? `Bearer ${authToken}` : ''
+          },
+          body: JSON.stringify({
+            org_id: currentOrgId,
+            member_id: foundUser.id,
+            updates: { org_id: currentOrgId, rol }
+          })
+        });
+
+        if (!response.ok) throw new Error(`Failed to add user to org: ${response.status}`);
+        const updateResult = await response.json();
+        if (!updateResult.ok) {
+          const updateError = updateResult.error;
+          throw updateError;
+        }
 
         if (updateError) throw updateError;
 
@@ -2856,14 +2948,27 @@
     }
 
     try {
-      // Batch update - validate org_id isolation
-      const { error } = await sb
-        .from('candidatos')
-        .update({ coach_id: toCoachId })
-        .in('id', clientIds)
-        .eq('org_id', currentOrgId);
+      const authToken = localStorage.getItem('mj_auth') || '';
 
-      if (error) throw error;
+      // Batch reassign via edge function
+      for (const clientId of clientIds) {
+        const response = await fetch(`${SB_URL}/functions/v1/reassign-client`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': authToken ? `Bearer ${authToken}` : ''
+          },
+          body: JSON.stringify({
+            org_id: currentOrgId,
+            client_id: clientId,
+            new_coach_id: toCoachId
+          })
+        });
+
+        if (!response.ok) throw new Error(`Failed to reassign client ${clientId}: ${response.status}`);
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error || 'Unknown error');
+      }
 
       // Update local state
       clientIds.forEach(clientId => {
