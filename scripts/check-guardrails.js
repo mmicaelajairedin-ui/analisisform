@@ -4960,11 +4960,15 @@ const RULES = [
     check() {
       const ts = read("supabase/functions/obtener-perfil-coach/index.ts");
       if (!ts) return null;
-      // Debe tener la query con OR pattern (and de dos or conditions)
+      // Debe buscar perfil_publico_activo en top-level O config (con OR pattern)
       if (!ts.includes("or=(perfil_publico_activo.eq.true,configuracion->>perfil_publico_activo.eq.true)"))
-        return "obtener-perfil-coach: ya no usa OR para perfil_publico_activo (debe buscar en top-level y config como listar-coaches).";
-      if (!ts.includes("or=(slug.eq.") && !ts.includes("configuracion->>slug.eq."))
-        return "obtener-perfil-coach: ya no busca slug en top-level O config (debe hacerlo como perfil_publico_activo).";
+        return "obtener-perfil-coach: ya no busca perfil_publico_activo en top-level Y config.";
+      // Debe buscar slug en AMBOS lugares: top-level (q1) Y config (q2 fallback)
+      // Implementación válida: Q1 busca ?slug=eq. + Q2 busca ?configuracion->>slug=eq.
+      const hasQ1 = ts.includes("?slug=eq.");
+      const hasQ2 = ts.includes("configuracion->>slug=eq.");
+      if (!hasQ1 || !hasQ2)
+        return "obtener-perfil-coach: no busca slug en ambos lugares (top-level Q1 + config Q2).";
       return null;
     },
   },
