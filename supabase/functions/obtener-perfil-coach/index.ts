@@ -88,23 +88,10 @@ Deno.serve(async (req: Request) => {
     Deno.env.get("SUPABASE_ANON_KEY") || "";
   if (!SB_URL || !SB_KEY) return json({ error: "supabase_env_missing" }, 500);
 
-  // Diagnostic logs
-  console.log("SERVICE_ROLE exists:", !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
-  console.log("ANON exists:", !!Deno.env.get("SUPABASE_ANON_KEY"));
-  console.log("Using service role:", !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
-  console.log("SB_URL:", SB_URL);
-  console.log("KEY PREFIX:", SB_KEY.substring(0, 12));
-
-  // Decode JWT payload to see which project
-  try {
-    const parts = SB_KEY.split(".");
-    if (parts.length === 3) {
-      const payload = JSON.parse(atob(parts[1]));
-      console.log("JWT ref (project):", payload.ref);
-    }
-  } catch (_e) {
-    console.log("Could not decode JWT");
-  }
+  console.log("SB_URL =", SB_URL);
+  console.log("SERVICE_ROLE exists =", !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  console.log("ANON exists =", !!Deno.env.get("SUPABASE_ANON_KEY"));
+  console.log("KEY USED =", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ? "SERVICE_ROLE" : "ANON");
 
   const headers = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` };
 
@@ -122,12 +109,13 @@ Deno.serve(async (req: Request) => {
     console.log("Q1 =", q1);
     console.log("STATUS =", sbRes.status);
     console.log("STATUS TEXT =", sbRes.statusText);
-    console.log("BODY =", await sbRes.text());
+    const bodyText = await sbRes.text();
+    console.log("BODY =", bodyText);
     if (!sbRes.ok) {
       console.log(`[obtener-perfil] Q1 error: status=${sbRes.status}`);
       return json({ error: "supabase_error", status: sbRes.status }, 502);
     }
-    let rows: UsuarioRow[] = await sbRes.json();
+    let rows: UsuarioRow[] = JSON.parse(bodyText);
     console.log(`[obtener-perfil] Q1 result: ${rows.length} rows`);
 
     // 2) Fallback: slug en configuracion + perfil público en top-level O config
