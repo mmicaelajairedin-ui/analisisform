@@ -3445,6 +3445,150 @@
   // ════════════════════════════════════════════════════════════════════════════════
 
   init();
+
+  // ════════════════════════════════════════════════════════════════════════════════
+  // ACTION BUS VALIDATOR (Validación automática de arquitectura)
+  // ════════════════════════════════════════════════════════════════════════════════
+
+  class ActionBusValidator {
+    constructor() {
+      this.results = [];
+      this.dispatch_calls = [];
+    }
+
+    log(test, status, message) {
+      const result = { test, status, message, timestamp: Date.now() };
+      this.results.push(result);
+      console.log(`[${status === 'PASS' ? '✓' : '✗'}] ${test}: ${message}`);
+    }
+
+    testBusExists() {
+      if (typeof window.bus !== 'undefined') {
+        this.log('BUS_EXISTS', 'PASS', 'window.bus es instancia global');
+        return true;
+      }
+      this.log('BUS_EXISTS', 'FAIL', 'window.bus no existe');
+      return false;
+    }
+
+    testBusAPI() {
+      const methods = ['subscribe', 'dispatch', 'unsubscribe', 'getHistory', 'getSubscriptions'];
+      const hasAll = methods.every(m => typeof window.bus[m] === 'function');
+      if (hasAll) {
+        this.log('BUS_API', 'PASS', `Métodos: ${methods.join(', ')}`);
+        return true;
+      }
+      this.log('BUS_API', 'FAIL', 'Métodos faltantes');
+      return false;
+    }
+
+    testActionsDoc() {
+      const required = ['coach.created', 'coach.updated', 'coach.deleted', 'coach.toggled',
+                       'client.created', 'client.updated', 'client.deleted', 'client.reassigned', 'org.updated'];
+      const hasAll = required.every(a => a in window.bus.ACTIONS);
+      if (hasAll) {
+        this.log('ACTIONS_DOC', 'PASS', '9 acciones documentadas');
+        return true;
+      }
+      this.log('ACTIONS_DOC', 'FAIL', 'Faltan acciones en window.bus.ACTIONS');
+      return false;
+    }
+
+    testNoDuplicateListeners() {
+      const subs = window.bus.getSubscriptions();
+      let hasDuplicates = false;
+      for (const [action, count] of Object.entries(subs)) {
+        if (count > 1) {
+          this.log('DUPLICATE_LISTENERS', 'FAIL', `${action} tiene ${count} listeners`);
+          hasDuplicates = true;
+        }
+      }
+      if (!hasDuplicates) {
+        this.log('DUPLICATE_LISTENERS', 'PASS', 'Cada acción tiene 1 listener');
+        return true;
+      }
+      return false;
+    }
+
+    testDispatchWorks() {
+      try {
+        window.bus.dispatch('__test', { test: true });
+        this.log('DISPATCH_WORKS', 'PASS', 'dispatch() ejecuta sin errores');
+        return true;
+      } catch (e) {
+        this.log('DISPATCH_WORKS', 'FAIL', `Error: ${e.message}`);
+        return false;
+      }
+    }
+
+    testErrorHandling() {
+      window.bus.subscribe('__error_test', () => {
+        throw new Error('Test');
+      });
+      try {
+        window.bus.dispatch('__error_test', {});
+        this.log('ERROR_HANDLING', 'PASS', 'dispatch() captura errores sin crash');
+        return true;
+      } catch (e) {
+        this.log('ERROR_HANDLING', 'FAIL', `No capturó error: ${e.message}`);
+        return false;
+      }
+    }
+
+    testScriptImport() {
+      const hasBusScript = Array.from(document.scripts).some(s =>
+        s.src && s.src.includes('pw-action-bus.js')
+      );
+      if (hasBusScript) {
+        this.log('SCRIPT_IMPORT', 'PASS', 'pw-action-bus.js importado');
+        return true;
+      }
+      this.log('SCRIPT_IMPORT', 'FAIL', 'pw-action-bus.js no importado');
+      return false;
+    }
+
+    summary() {
+      const passed = this.results.filter(r => r.status === 'PASS').length;
+      const total = this.results.length;
+      const pct = ((passed / total) * 100).toFixed(0);
+
+      console.log('\n════════════════════════════════════════════════════════');
+      console.log(`ACTION BUS VALIDATOR: ${passed}/${total} PASS (${pct}%)`);
+      console.log('════════════════════════════════════════════════════════\n');
+
+      window.ACTION_BUS_VALIDATION = {
+        total,
+        passed,
+        failed: total - passed,
+        pct: parseInt(pct),
+        status: total === passed ? 'ARCHITECTURE_OK' : 'ARCHITECTURE_ISSUES',
+        results: this.results
+      };
+
+      return window.ACTION_BUS_VALIDATION;
+    }
+
+    runAll() {
+      this.testBusExists();
+      this.testBusAPI();
+      this.testActionsDoc();
+      this.testNoDuplicateListeners();
+      this.testDispatchWorks();
+      this.testErrorHandling();
+      this.testScriptImport();
+      return this.summary();
+    }
+  }
+
+  // Auto-run validator
+  setTimeout(() => {
+    const validator = new ActionBusValidator();
+    const result = validator.runAll();
+    window.validateActionBus = () => {
+      const v = new ActionBusValidator();
+      return v.runAll();
+    };
+  }, 100);
 </script>
 
 </body>
