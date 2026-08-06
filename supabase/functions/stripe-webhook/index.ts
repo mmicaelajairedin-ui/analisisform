@@ -670,11 +670,21 @@ async function handleCoachSubscription(
     : null;
 
   // Fetch usuario para mergear con configuracion existente
-  const userRes = await fetch(
+  // PRIMERO: búsqueda exacta con email normalizado (case-sensitive, más rápido con índice)
+  let userRes = await fetch(
     `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=configuracion,nombre`,
     { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
   );
-  const users = userRes.ok ? await userRes.json() : null;
+  let users = userRes.ok ? await userRes.json() : null;
+
+  // FALLBACK: si no encuentra, intenta case-insensitive con ILIKE (para emails viejos sin normalizar)
+  if ((userRes.ok && Array.isArray(users) && users.length === 0) || !userRes.ok) {
+    userRes = await fetch(
+      `${SB_URL}/rest/v1/usuarios?email=ilike.${encodeURIComponent(email)}&select=configuracion,nombre`,
+      { headers: { apikey: headers.apikey, Authorization: headers.Authorization } },
+    );
+    users = userRes.ok ? await userRes.json() : null;
+  }
 
   // RED DE SEGURIDAD: si el pago NO coincide con ningún coach registrado (pagó
   // con un email distinto al del registro, o pagó sin registrarse antes), el

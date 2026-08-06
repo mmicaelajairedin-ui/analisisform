@@ -17,7 +17,7 @@
 <meta name="robots" content="noindex, nofollow">
 <script src="pw-app.js"></script>
 <meta name="color-scheme" content="light">
-<style>html{color-scheme:light;}[data-app-hide]{display:none !important;}</style>
+<style>html{color-scheme:light;}</style>
 <!-- Cache con revalidación (no "no-store"): el navegador guarda el HTML y solo
      revalida (304 si no cambió → carga instantánea; baja de nuevo solo si cambió).
      La frescura la garantiza `_headers` con must-revalidate. -->
@@ -38,7 +38,7 @@
 *,*::before,*::after{box-sizing:border-box;}
 html{scroll-behavior:smooth;}
 /* Sin scroll ni rebote horizontal (evita el blanco al correr de costado). */
-html,body{overflow-x:hidden;overscroll-behavior-x:none;}
+html,body{overflow-x:hidden;overscroll-behavior-x:none;scrollbar-gutter:stable;max-width:100%;}
 /* Toques instantáneos en el celu (sin delay ni doble-tap-zoom). */
 button,a,label,input,select,textarea,[role="button"],[data-act],[onclick]{touch-action:manipulation;}
 body{margin:0;font-family:var(--pw-sans);font-size:var(--pw-fs-body-lg);line-height:var(--pw-lh-body);color:var(--pw-text);background:var(--pw-bg);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow:hidden;}
@@ -69,7 +69,7 @@ body.pw-nov-open .cp-inbox-panel{ z-index:90; }
   body.pw-nov-open .cp-ai-fab{ right:22px; z-index:90; }
   body.pw-nov-open .cp-ai-panel{ right:20px; z-index:90; }
   body.pw-nov-open .cp-inbox-fab{ right:22px; z-index:90; }
-  #pw-nov-drawer{ width:100vw; }
+  #pw-nov-drawer{ width:100%; max-width:360px; }
   body.pw-nov-open #pw-app-actions{ right:14px; }
   body.pw-nov-open #pw-nov-btn{ display:none !important; }
 }
@@ -1857,15 +1857,7 @@ var state = {
   iaChat: { open:false, msgs:null, draft:"", busy:false },
   profileEdit: null,
   profileExpanded: null,
-  profileGenPreview: null,
-  // Sprint 2 Fase 2 — MultiCoach handlers
-  mcOrgView: null,           // org_id seleccionada para ver detalles
-  mcAddCoachForm: null,      // {orgId, search, selected}
-  mcAddCollabForm: null,     // {orgId, nombre, email, rol}
-  mcChangeOwnerForm: null,   // {orgId, selectedCoachId}
-  mcChangePlanForm: null,    // {orgId, selectedPlan}
-  mcSuspendForm: null,       // {orgId, confirming}
-  mcActionMsg: ""            // mensaje de estado (OK/error) en modales
+  profileGenPreview: null
 };
 
 /* ═══ Onboarding steps + insights (port of v2-Asistente.jsx) ═══ */
@@ -6503,6 +6495,26 @@ function linksCard(){
     "</div></div>";
 }
 
+/* ═══ Pending Items System — puntos rojos que respiran ═══ */
+function getPendingItems(){
+  var pending = {};
+  if(!RCFG || !RCFG.zoom_url) pending.videolink = true;
+  if(!RCFG || !RCFG.foto_url) pending.photo = true;
+  if(!RCFG || !RCFG.gcal_ical_url) pending.gcal = true;
+  if(!RCFG || !RCFG.bio) pending.bio = true;
+  return pending;
+}
+function renderPendingBadge(itemKey, label){
+  var pending = getPendingItems();
+  if(!pending[itemKey]) return "";
+  return "<span class='pw-pending-badge' title='"+esc(label)+"' style='"+
+    "display:inline-flex;align-items:center;justify-content:center;"+
+    "width:12px;height:12px;border-radius:50%;background:#E85C5C;"+
+    "position:absolute;top:-2px;right:-2px;animation:pwChatBreathe 2s ease-in-out infinite;"+
+    "box-shadow:0 0 0 2px #fff;z-index:10;flex-shrink:0"+
+    "'></span>";
+}
+
 /* ═══ Configuración panels ═══ */
 function cfgProfile(){
   var v=function(k,d){ return (RCFG&&RCFG[k]!=null&&RCFG[k]!=="")?(""+RCFG[k]):(d||""); };
@@ -6717,10 +6729,10 @@ function cfgProfile(){
           "<button class='cp-switch "+(pubActive?"is-on":"")+"' data-act='pub-toggle' aria-label='Activar perfil público'><span></span></button>"+
         "</div>"+
         "<div class='cp-card'>"+
-          "<div class='cp-card-hd' style='justify-content:space-between;align-items:flex-start'>"+
+          "<div class='cp-card-hd' style='justify-content:space-between;align-items:flex-start;position:relative'>"+
             "<div style='flex:1'>"+
-              "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>"+
-                "<div style='width:32px;height:32px;background:var(--pw-niebla-2);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0'>"+svg(IC.user,14)+"</div>"+
+              "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px;position:relative'>"+
+                "<div style='width:32px;height:32px;background:var(--pw-niebla-2);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative'>"+svg(IC.user,14)+renderPendingBadge("photo","Foto de perfil incompleta")+"</div>"+
                 "<h3 style='font-size:15px;font-weight:600;color:var(--pw-carbon);margin:0'>Datos</h3>"+
               "</div>"+
               "<div style='font-size:12px;color:var(--pw-text-soft)'>Tu identidad profesional</div>"+
@@ -6733,10 +6745,10 @@ function cfgProfile(){
           "</div>"+
         "</div>"+
         "<div class='cp-card' style='margin-top:16px'>"+
-          "<div class='cp-card-hd' style='justify-content:space-between;align-items:flex-start'>"+
+          "<div class='cp-card-hd' style='justify-content:space-between;align-items:flex-start;position:relative'>"+
             "<div style='flex:1'>"+
-              "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>"+
-                "<div style='width:32px;height:32px;background:var(--pw-niebla-2);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0'>"+svg(IC.briefcase,14)+"</div>"+
+              "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px;position:relative'>"+
+                "<div style='width:32px;height:32px;background:var(--pw-niebla-2);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative'>"+svg(IC.briefcase,14)+renderPendingBadge("bio","Biografía incompleta")+"</div>"+
                 "<h3 style='font-size:15px;font-weight:600;color:var(--pw-carbon);margin:0'>Perfil</h3>"+
               "</div>"+
               "<div style='font-size:12px;color:var(--pw-text-soft)'>Tu especialidad y enfoque</div>"+
@@ -6751,10 +6763,10 @@ function cfgProfile(){
           "</div>"+
         "</div>"+
         "<div class='cp-card' style='margin-top:16px'>"+
-          "<div class='cp-card-hd' style='justify-content:space-between;align-items:flex-start'>"+
+          "<div class='cp-card-hd' style='justify-content:space-between;align-items:flex-start;position:relative'>"+
             "<div style='flex:1'>"+
-              "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>"+
-                "<div style='width:32px;height:32px;background:var(--pw-niebla-2);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0'>"+svg(IC.star,14)+"</div>"+
+              "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px;position:relative'>"+
+                "<div style='width:32px;height:32px;background:var(--pw-niebla-2);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative'>"+svg(IC.star,14)+renderPendingBadge("gcal","Google Calendar incompleto")+"</div>"+
                 "<h3 style='font-size:15px;font-weight:600;color:var(--pw-carbon);margin:0'>Otros</h3>"+
               "</div>"+
               "<div style='font-size:12px;color:var(--pw-text-soft)'>Casos de éxito y configuración</div>"+
@@ -7329,7 +7341,7 @@ function cfgPlan(){
         "<p class='cp-psel-reassure'>"+ctaNote+"</p>"+
         footer+
       "</div></div>";
-    return "<div data-app-hide>"+headCard + selectorCard+"</div>";
+    return headCard + selectorCard;
   }
   var isPro = state.plan === "pro";
   var planName  = isPro ? "Pro" : "Basic";
@@ -7391,42 +7403,57 @@ function cfgIntegraciones(){
   var zoomUrl = RCFG&&RCFG.zoom_url ? (""+RCFG.zoom_url).trim() : "";
   var editingZoom = state.integEditZoom;
 
-  return "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Integraciones<span class='dot'>.</span></h3>"+
-    "<span class='cp-eyebrow'>Google Calendar y Zoom</span></div>"+
-    "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:20px'>"+
-      "<p style='font-size:13px;color:var(--pw-text-soft);margin:0;line-height:1.55'>Configura tu Google Calendar y Zoom para que los eventos y links se usen automáticamente en las confirmaciones de reserva.</p>"+
+  return "<div class='cp-card-section'>"+
+    "<h3 style='font-size:14px;font-weight:700;color:var(--pw-carbon);margin:0 0 16px;text-transform:uppercase;letter-spacing:.5px'>Integraciones</h3>"+
+    "<p style='font-size:13px;color:var(--pw-text);margin:0 0 20px;line-height:1.6'>Configura tu Google Calendar y Zoom para que los eventos y links se usen automáticamente en las confirmaciones.</p>"+
 
+    "<div style='display:grid;gap:16px'>"+
       // Google Calendar
-      "<div class='cp-form-row'>"+
-        "<label class='cp-form-label'>"+PWI.svg('calendar',{sm:true})+" Google Calendar</label>"+
-        "<span class='cp-form-hint'>Enlace iCal para tu disponibilidad</span>"+
+      "<div class='cp-card'>"+
+        "<div class='cp-card-hd' style='align-items:flex-start'>"+
+          "<div style='display:flex;align-items:center;gap:8px;flex:1'>"+
+            "<div style='width:32px;height:32px;background:var(--pw-niebla-2);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px'>📅</div>"+
+            "<div style='flex:1'>"+
+              "<h4 style='font-size:13px;font-weight:600;color:var(--pw-carbon);margin:0'>Google Calendar</h4>"+
+              "<p style='font-size:12px;color:var(--pw-text-dim);margin:2px 0 0'>Enlace iCal para tu disponibilidad</p>"+
+            "</div>"+
+          "</div>"+
+        "</div>"+
         (gcalUrl?
-          "<div style='background:var(--pw-niebla-1);border-radius:8px;padding:10px 12px;margin-top:8px;word-break:break-all;font-size:11px;font-family:monospace;color:var(--pw-text-dim);max-height:60px;overflow-y:auto'>"+esc(gcalUrl)+"</div>"+
-          "<button class='cp-btn cp-btn-ghost' data-act='integ:gcal-copy' style='height:28px;font-size:12px;margin-top:8px;width:100%'>"+PWI.svg('copy',{sm:true})+" Copiar enlace</button>"
+          "<div style='background:var(--pw-niebla-1);border-radius:8px;padding:10px 12px;margin-top:12px;word-break:break-all;font-size:11px;font-family:monospace;color:var(--pw-text-dim)'>"+esc(gcalUrl.substring(0,80))+"...</div>"+
+          "<button class='cp-btn cp-btn-ghost' data-act='integ:gcal-copy' style='height:28px;font-size:11px;margin-top:8px;width:100%'>📋 Copiar enlace</button>"
           :
-          "<p style='font-size:12px;color:var(--pw-text-soft);margin:8px 0 0;font-style:italic'>Tu Google Calendar se agregará automáticamente cuando conectes en tu perfil público.</p>"
+          "<p style='font-size:12px;color:var(--pw-text-dim);margin:12px 0 0;font-style:italic'>Tu Google Calendar se agregará automáticamente cuando conectes en tu perfil público.</p>"
         )+
       "</div>"+
 
-      // Zoom / Video
-      "<div class='cp-form-row'>"+
-        "<label class='cp-form-label'>"+PWI.svg('video',{sm:true})+" Videollamada</label>"+
-        "<span class='cp-form-hint'>Zoom, Google Meet, Calendly o cualquier sala</span>"+
+      // Zoom
+      "<div class='cp-card'>"+
+        "<div class='cp-card-hd' style='align-items:flex-start;position:relative'>"+
+          "<div style='display:flex;align-items:center;gap:8px;flex:1;position:relative'>"+
+            "<div style='width:32px;height:32px;background:var(--pw-niebla-2);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;position:relative'>🎥"+renderPendingBadge("videolink","Video link incompleto")+"</div>"+
+            "<div style='flex:1'>"+
+              "<h4 style='font-size:13px;font-weight:600;color:var(--pw-carbon);margin:0'>Zoom</h4>"+
+              "<p style='font-size:12px;color:var(--pw-text-dim);margin:2px 0 0'>Link de tu sala personal</p>"+
+            "</div>"+
+          "</div>"+
+        "</div>"+
         (editingZoom?
-          "<input type='url' id='integ-zoom-input' placeholder='https://zoom.us/my/tunombre' value='"+esc(zoomUrl)+"' class='cp-form-input' style='margin-top:8px'>"+
-          "<div style='display:flex;gap:8px;margin-top:8px'>"+
-            "<button class='cp-btn cp-btn-primary' data-act='integ:zoom-save' style='flex:1'>Guardar</button>"+
-            "<button class='cp-btn cp-btn-ghost' data-act='integ:zoom-cancel' style='flex:1'>Cancelar</button>"+
+          "<div style='margin-top:12px'>"+
+            "<input type='url' id='integ-zoom-input' placeholder='https://zoom.us/my/tunombre' value='"+esc(zoomUrl)+"' style='width:100%;padding:8px 10px;border:1px solid var(--pw-border);border-radius:6px;font-size:12px;box-sizing:border-box'>"+
+            "<div style='display:flex;gap:8px;margin-top:8px'>"+
+              "<button class='cp-btn cp-btn-primary' data-act='integ:zoom-save' style='height:28px;font-size:11px;flex:1'>✓ Guardar</button>"+
+              "<button class='cp-btn cp-btn-ghost' data-act='integ:zoom-cancel' style='height:28px;font-size:11px;flex:1'>Cancelar</button>"+
+            "</div>"+
           "</div>"
           :
           (zoomUrl?
-            "<div style='background:var(--pw-niebla-1);border-radius:8px;padding:10px 12px;margin-top:8px;word-break:break-all;font-size:11px;font-family:monospace;color:var(--pw-text-dim);max-height:60px;overflow-y:auto'>"+esc(zoomUrl)+"</div>"+
-            "<button class='cp-btn cp-btn-ghost' data-act='integ:zoom-edit' style='height:28px;font-size:12px;margin-top:8px;width:100%'>"+PWI.svg('edit',{sm:true})+" Editar</button>"
+            "<div style='background:var(--pw-niebla-1);border-radius:8px;padding:10px 12px;margin-top:12px;word-break:break-all;font-size:11px;font-family:monospace;color:var(--pw-text-dim)'>"+esc(zoomUrl)+"</div>"+
+            "<button class='cp-btn cp-btn-ghost' data-act='integ:zoom-edit' style='height:28px;font-size:11px;margin-top:8px;width:100%'>✏️ Editar</button>"
             :
-            "<div style='background:#FEF3E2;border:1px solid #F5D9A8;border-radius:10px;padding:14px 12px;margin-top:8px'>"+
-            "<div style='font-size:12px;font-weight:700;color:#B45309;margin-bottom:8px'>⚠️ URGENTE: Agrega tu link de videollamada</div>"+
-            "<p style='font-size:12px;color:#7A5B10;margin:0 0 10px 0;line-height:1.4'>Tus clientes necesitan el link para entrar a la sesión. Agrega tu sala de Zoom, Google Meet, Calendly o la que uses.</p>"+
-            "<button class='cp-btn cp-btn-primary' data-act='integ:zoom-edit' style='width:100%;animation:pwChatBreathe 2s ease-in-out infinite;font-weight:700'>"+PWI.svg('plus',{sm:true})+" Agregar link de videollamada</button>"+
+            "<div style='margin-top:12px'>"+
+              "<p style='font-size:12px;color:var(--pw-text-dim);margin:0 0 10px'>Pega tu link de sala personal de Zoom.</p>"+
+              "<button class='cp-btn cp-btn-primary' data-act='integ:zoom-edit' style='height:28px;font-size:11px;width:100%'>➕ Agregar Zoom</button>"+
             "</div>"
           )
         )+
@@ -8476,7 +8503,7 @@ function _iaChatScrollDown(){ try{ requestAnimationFrame(function(){ var s=docum
 /* ═══ Admin (vista de plataforma — no estaba en el handoff, diseñada en V2) ═══ */
 function reloadCoaches(){ return _sb("usuarios?rol=in.(coach,admin)&select=id,nombre,email,rol,activo,configuracion,foto_url,created_at,game_pts,game_medal,auth_id,org_id&order=created_at.desc").then(function(rows){ RCOACHES=rows||[]; reloadOrgs(); render(); }); }
 // Redes (multicoaches) para la gestión desde el admin (transferir dueño).
-function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,owner_id,plan,estado_sub,activo,max_coaches,max_clientes,marca&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
+function reloadOrgs(){ return _sb("organizaciones?select=id,nombre,owner_email,plan,activo,marca&order=created_at.desc").then(function(rows){ RORGS=rows||[]; render(); }).catch(function(){ RORGS=[]; }); }
 // Admin: subir el LOGO de una empresa (org) por el cliente. SVG/imagen chica tal
 // cual (conserva transparencia); grande → PNG 512. Guarda por guardar-red (merge).
 function _orgLogoPick(orgId){
@@ -9322,12 +9349,12 @@ function viewAdmin(){
         leadsTot:_lds.length, leadsTrial:_lt, leadsPago:_lp };
   }
 
-  var tabs = [["coaches","Coaches"],["multicoach","MultiCoach"],["empleados","Empleados"],["ranking","Ranking"],["novedades","Novedades"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"],["emails","Emails"]];
+  var tabs = [["coaches","Coaches"],["empleados","Empleados"],["ranking","Ranking"],["novedades","Novedades"],["contactos","Contactos"],["cvx","CV Express"],["resenas","Reseñas"],["pagos","Pagos"],["emails","Emails"]];
   var tabBar = "<div class='cp-filters'>"+tabs.map(function(t){
     return "<button class='cp-chip "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'>"+t[1]+"</button>";
   }).join("")+"</div>";
   // Menu lateral del admin (mismo formato que Configuracion). Mismos data-act.
-  var _admIcon={resumen:''+PWI.svg('barChart',{sm:true})+'',coaches:''+PWI.svg('graduation',{sm:true})+'',multicoach:''+PWI.svg('briefcase',{sm:true})+'',empleados:''+PWI.svg('users',{sm:true})+'',personas:''+PWI.svg('users',{sm:true})+'',transferencias:''+PWI.svg('arrowR',{sm:true})+'',ranking:''+PWI.svg('trophy',{sm:true})+'',novedades:''+PWI.svg('newspaper',{sm:true})+'',contactos:''+PWI.svg('inbox',{sm:true})+'',cvx:''+PWI.svg('fileText',{sm:true})+'',resenas:''+PWI.svg('star',{sm:true})+'',pagos:''+PWI.svg('creditCard',{sm:true})+'',emails:''+PWI.svg('inbox',{sm:true})+''};
+  var _admIcon={resumen:''+PWI.svg('barChart',{sm:true})+'',coaches:''+PWI.svg('graduation',{sm:true})+'',empleados:''+PWI.svg('users',{sm:true})+'',personas:''+PWI.svg('users',{sm:true})+'',transferencias:''+PWI.svg('arrowR',{sm:true})+'',ranking:''+PWI.svg('trophy',{sm:true})+'',novedades:''+PWI.svg('newspaper',{sm:true})+'',contactos:''+PWI.svg('inbox',{sm:true})+'',cvx:''+PWI.svg('fileText',{sm:true})+'',resenas:''+PWI.svg('star',{sm:true})+'',pagos:''+PWI.svg('creditCard',{sm:true})+'',emails:''+PWI.svg('inbox',{sm:true})+''};
   var adminMenu = "<nav class='cp-cfg-nav'>"+tabs.map(function(t){
     return "<button class='cp-cfg-nav-item "+(state.adminTab===t[0]?"is-on":"")+"' data-act='adtab:"+t[0]+"'><span class='cp-emo'>"+(_admIcon[t[0]]||'•')+"</span><span>"+t[1]+"</span></button>";
   }).join("")+"</nav>";
@@ -9611,319 +9638,6 @@ function viewAdmin(){
         _list
       );
     }
-  } else if(state.adminTab==="multicoach"){
-    // ── MultiCoach Management ──────────────────────────────────────────
-    // Sección 1: Organizaciones activas
-    var _orgsRows = (RORGS||[]).filter(function(org){ return org && org.activo!==false; }).map(function(org){
-      if(!org) return "";
-      var ownerName = org.owner_email ? (org.owner_email.split("@")[0]) : "—";
-      // Contar coaches actuales (role=coach o role=owner en esta org)
-      var actualCoaches = (RCOACHES||[]).filter(function(u){ return u && String(u.org_id)===String(org.id) && (u.rol==="coach" || u.rol==="owner"); }).length;
-      var maxCoaches = org.max_coaches || "∞";
-      var coachesLabel = (typeof maxCoaches==="number") ? (actualCoaches+" / "+maxCoaches) : (actualCoaches+" / "+maxCoaches);
-      // Contar clientes actuales en esta org
-      var actualClients = (RADM&&RADM.cands) ? (RADM.cands.filter(function(c){ return c && String(c.org_id)===String(org.id); }).length) : 0;
-      var maxClients = org.max_clientes || "∞";
-      var clientsLabel = (typeof maxClients==="number") ? (actualClients+" / "+maxClients) : (actualClients+" / "+maxClients);
-      var planLabel = (org.plan==="pro")?"Pro":(org.plan==="studio")?"Studio":"Boutique";
-      var estLabel = org.estado_sub==="activo"?"Activo":(org.estado_sub==="prueba"?"Prueba":"Suspendido");
-      var estColor = org.estado_sub==="activo"?"var(--pw-bosque)":(org.estado_sub==="prueba"?"#B5651D":"var(--pw-danger)");
-      var menuHTML = "";
-      return "<tr style='position:relative'><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(org.nombre||"—")+"</td>"+
-        "<td>"+esc(ownerName)+"</td>"+
-        "<td style='text-align:center;font-size:12px'><span style='font-weight:600'>"+coachesLabel+"</span></td>"+
-        "<td style='text-align:center;font-size:12px'><span style='font-weight:600'>"+clientsLabel+"</span></td>"+
-        "<td>"+esc(planLabel)+"</td>"+
-        "<td><span style='padding:4px 10px;background:rgba(0,0,0,0.05);border-radius:6px;font-size:12px;color:"+estColor+";font-weight:600'>"+esc(estLabel)+"</span></td>"+
-        "<td style='text-align:right;position:relative'><button class='cp-btn cp-btn-ghost' style='padding:4px 8px;font-size:14px' data-act='mc-org-menu' data-org='"+esc(org.id||"")+"' title='Menú de acciones'>⋮</button>"+menuHTML+"</td>"+
-      "</tr>";
-    }).join("");
-    var _orgsTable = RORGS && RORGS.length
-      ? "<div style='overflow-x:auto;overflow-y:visible;position:relative'><table class='cp-bill-table' style='min-width:900px'><thead><tr>"+
-          "<th>Organización</th><th>Owner</th><th>Coaches</th><th>Clientes</th><th>Plan</th><th>Estado</th><th style='text-align:right'>Acciones</th>"+
-        "</tr></thead><tbody>"+_orgsRows+"</tbody></table></div>"
-      : "<div style='font-size:13px;color:var(--pw-text-soft);padding:20px;text-align:center'>No hay organizaciones activas.</div>";
-    var _orgsCard = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Organizaciones activas<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>"+(RORGS?RORGS.length:0)+" redes MultiCoach</span></div>"+
-      "<div class='cp-card-pad'>"+_orgsTable+"</div></div>";
-
-    // Sección 2: Coaches independientes
-    // Agrupar por email para evitar duplicados (misma persona con múltiples cuentas)
-    var _coachsByEmail = {};
-    (RCOACHES||[]).forEach(function(u){
-      if(!u || u.rol!=="coach" || u.org_id) return;
-      var em = (u.email||"").trim().toLowerCase();
-      if(!em) return;
-      if(!_coachsByEmail[em]) _coachsByEmail[em] = [];
-      _coachsByEmail[em].push(u);
-    });
-
-    // Filtrar y buscar coaches
-    var _mcCoachSearch = (state.mcCoachSearch||"").trim().toLowerCase();
-    var _mcCoachFilter = state.mcCoachFilter || "todos";
-    var _coachEntries = Object.keys(_coachsByEmail).sort().map(function(email){
-      var coaches = _coachsByEmail[email]||[];
-      var primaryCoach = coaches[0];
-      var totalClients = 0;
-      coaches.forEach(function(c){
-        var cnt = (RADM&&RADM.cands) ? (RADM.cands.filter(function(x){return x && x.coach_id === c.id;}).length) : 0;
-        totalClients += cnt;
-      });
-      var estado = totalClients>0 ? "activo" : "sin_actividad";
-      return {email:email, coaches:coaches, primaryCoach:primaryCoach, totalClients:totalClients, estado:estado};
-    });
-
-    var _coachFiltered = _coachEntries.filter(function(e){
-      var matchSearch = !_mcCoachSearch || e.email.indexOf(_mcCoachSearch)>=0 || (e.primaryCoach.nombre||"").toLowerCase().indexOf(_mcCoachSearch)>=0;
-      var matchFilter = true;
-      if(_mcCoachFilter==="con_clientes") matchFilter = e.totalClients > 0;
-      else if(_mcCoachFilter==="sin_clientes") matchFilter = e.totalClients === 0;
-      else if(_mcCoachFilter==="activos") matchFilter = e.estado === "activo";
-      else if(_mcCoachFilter==="sin_actividad") matchFilter = e.estado === "sin_actividad";
-      return matchSearch && matchFilter;
-    });
-
-    var _coachIndepRows = _coachFiltered.map(function(e){
-      var duplicateHint = e.coaches.length>1 ? " <span style='font-size:11px;color:var(--pw-danger);font-weight:600'>("+e.coaches.length+" cuentas)</span>" : "";
-      var name = e.primaryCoach.nombre || e.email || "Coach";
-      var estLabel = e.estado==="activo" ? "🟢 Activo" : "⚪ Sin actividad";
-      return "<tr><td style='font-weight:600;color:var(--pw-carbon)'>"+esc(name)+duplicateHint+"</td>"+
-        "<td style='text-align:center'>"+e.totalClients+"</td>"+
-        "<td><span style='padding:4px 10px;background:rgba(0,0,0,0.05);border-radius:6px;font-size:12px;color:var(--pw-carbon);font-weight:600'>"+estLabel+"</span></td>"+
-        "<td style='text-align:right;font-size:12px'><button class='cp-btn cp-btn-primary' style='padding:6px 12px;font-size:11px' data-act='mc-convert-start' data-coach='"+esc(e.primaryCoach.id||"")+"' data-dups='"+e.coaches.length+"'>Convertir</button></td>"+
-      "</tr>";
-    }).join("");
-
-    var _coachUniqueCount = _coachEntries.length;
-    var _coachTotalCount = (RCOACHES||[]).filter(function(u){ return u && u.rol==="coach" && !u.org_id; }).length;
-    var _countHint = _coachUniqueCount < _coachTotalCount ? " ("+_coachTotalCount+" cuentas, "+_coachUniqueCount+" personas)" : "";
-    var _coachFilterBar = "<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center'>"+
-      "<input class='cp-form-input' style='flex:1;min-width:200px;height:34px;font-size:13px' placeholder='Buscar por nombre o email...' value='"+esc(_mcCoachSearch)+"' oninput='state.mcCoachSearch=this.value;render()'>"+
-      "<select class='cp-form-input' style='height:34px;width:140px;font-size:13px' onchange='state.mcCoachFilter=this.value;render()'>"+
-        "<option value='todos' "+((_mcCoachFilter==="todos")?"selected":"")+"}>Todos</option>"+
-        "<option value='con_clientes' "+((_mcCoachFilter==="con_clientes")?"selected":"")+"}>Con clientes</option>"+
-        "<option value='sin_clientes' "+((_mcCoachFilter==="sin_clientes")?"selected":"")+"}>Sin clientes</option>"+
-        "<option value='activos' "+((_mcCoachFilter==="activos")?"selected":"")+"}>Activos</option>"+
-        "<option value='sin_actividad' "+((_mcCoachFilter==="sin_actividad")?"selected":"")+"'>Sin actividad</option>"+
-      "</select>"+
-    "</div>";
-    var _coachIndepTable = _coachUniqueCount > 0
-      ? _coachFilterBar+"<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:700px'><thead><tr>"+
-          "<th>Nombre</th><th>Clientes</th><th>Estado</th><th style='text-align:right'>Acciones</th>"+
-        "</tr></thead><tbody>"+(_coachFiltered.length ? _coachIndepRows : "<tr><td colspan='4' style='text-align:center;padding:20px;color:var(--pw-text-soft);font-size:13px'>No hay coaches que coincidan con los filtros.</td></tr>")+"</tbody></table></div>"
-      : "<div style='font-size:13px;color:var(--pw-text-soft);padding:20px;text-align:center'>No hay coaches independientes.</div>";
-    var _coachIndepCard = "<div class='cp-card'><div class='cp-card-hd'><h3 class='cp-card-title'>Coaches independientes<span class='dot'>.</span></h3>"+
-      "<span class='cp-eyebrow'>"+ _coachUniqueCount +" personas"+_countHint+(_coachFiltered.length<_coachUniqueCount?" · "+_coachFiltered.length+" mostrados":"")+  "</span></div>"+
-      "<div class='cp-card-pad'>"+_coachIndepTable+"</div></div>";
-
-    // Modal de confirmación para convertir coach
-    var _convertModal = "";
-    if(state.mcConvertSel && RCOACHES){
-      var _convertCoach = (RCOACHES||[]).filter(function(u){ return String(u.id)===String(state.mcConvertSel); })[0];
-      if(_convertCoach){
-        var _coachClientsCount = (RADM&&RADM.cands) ? (RADM.cands.filter(function(c){ return c && c.coach_id === _convertCoach.id; }).length) : 0;
-        var _hasMultiplAccounts = (state.mcConvertDups||1) > 1;
-        var _dupWarning = _hasMultiplAccounts ? "<div style='background:rgba(233,196,106,.15);border:1px solid #B5651D;border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px;color:#8E7A35'><strong>⚠️ Múltiples cuentas detectadas:</strong> Esta persona tiene "+state.mcConvertDups+" cuentas. Se convertirá solo la principal.</div>" : "";
-        _convertModal = "<div data-act='mc-convert-bg' style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
-          "<div data-act='mc-convert-stop' style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:480px;max-width:100%;overflow:hidden'>"+
-            "<div class='cp-card-hd'><h3 class='cp-card-title'>Convertir en MultiCoach<span class='dot'>.</span></h3>"+
-              "<button class='cp-icon-btn' data-act='mc-convert-modal-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
-              "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-                _dupWarning+
-                "<div style='background:var(--pw-niebla-2);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px'>"+
-                  "<div><span style='font-size:12px;color:var(--pw-text-soft);font-weight:600;text-transform:uppercase;letter-spacing:.05em'>Coach</span><div style='font-size:15px;font-weight:600;color:var(--pw-carbon)'>"+esc(_convertCoach.nombre||_convertCoach.email||"Coach")+"</div></div>"+
-                  "<div><span style='font-size:12px;color:var(--pw-text-soft);font-weight:600;text-transform:uppercase;letter-spacing:.05em'>Clientes actuales</span><div style='font-size:15px;font-weight:600;color:var(--pw-carbon)'>"+_coachClientsCount+"</div></div>"+
-                "</div>"+
-                "<div style='border-top:1px solid var(--pw-border);padding-top:12px'>"+
-                  "<div style='font-size:12px;color:var(--pw-text-soft);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px'>Se creará</div>"+
-                  "<div style='display:flex;flex-direction:column;gap:8px'>"+
-                    "<div><span style='font-size:11px;color:var(--pw-text-soft)'>Nombre de la red:</span><input id='mc-convert-name' class='cp-form-input' type='text' value='"+esc((_convertCoach.nombre||"Mi red")+" Coaching")+"' style='width:100%;padding:6px 10px;border:1px solid var(--pw-border);border-radius:6px;font-size:13px'></div>"+
-                    "<div><span style='font-size:11px;color:var(--pw-text-soft)'>Plan:</span><select id='mc-convert-plan' class='cp-form-input' style='width:100%;padding:6px 10px;border:1px solid var(--pw-border);border-radius:6px;font-size:13px'><option value='boutique'>Boutique</option><option value='studio'>Studio</option><option value='pro'>Pro</option></select></div>"+
-                    "<div><span style='font-size:11px;color:var(--pw-text-soft)'>Duración prueba (días):</span><input id='mc-convert-dias' class='cp-form-input' type='number' value='14' min='1' max='365' style='width:100%;padding:6px 10px;border:1px solid var(--pw-border);border-radius:6px;font-size:13px'></div>"+
-                    "<div><span style='font-size:11px;color:var(--pw-text-soft)'>Resultado:</span><div style='font-size:13px;font-weight:600;color:var(--pw-carbon)'>"+_coachClientsCount+" clientes pasarán a su red</div></div>"+
-                  "</div>"+
-                "</div>"+
-                "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:8px'>"+
-                  "<button class='cp-btn cp-btn-ghost' data-act='mc-convert-modal-close'>Cancelar</button>"+
-                  "<button class='cp-btn cp-btn-primary' data-act='mc-convert-confirm'>Crear MultiCoach</button>"+
-                "</div>"+
-              "</div></div></div>";
-      }
-    }
-
-    // ┌─ Modal: Ver Organización (detalles)
-    var _mcOrgViewModal = "";
-    if(state.mcOrgView && RORGS){
-      var _org = (RORGS||[]).filter(function(o){ return o.id === state.mcOrgView; })[0];
-      if(_org){
-        var _orgOwner = (RCOACHES||[]).filter(function(u){ return u.id === _org.owner_id; })[0];
-        var _orgCoaches = (RCOACHES||[]).filter(function(u){ return u.org_id === _org.id && u.rol==="coach"; }).length;
-        var _orgCollab = (RCOACHES||[]).filter(function(u){ return u.org_id === _org.id && (u.rol==="colaborador"||u.rol==="assistant"); }).length;
-        var _orgClientes = (RADM&&RADM.cands) ? (RADM.cands.filter(function(c){ return c && c.org_id === _org.id; }).length) : 0;
-        var _statePlan = (_org.estado_sub==="pagado")?"💳 Pagado":(new Date(_org.fecha_fin_prueba) > new Date())?"🟡 Prueba":"🔴 Vencido";
-        _mcOrgViewModal = "<div style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
-          "<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:520px;max-width:100%;overflow:hidden'>"+
-            "<div class='cp-card-hd'><h3 class='cp-card-title'>"+esc(_org.nombre||"Organización")+"</h3>"+
-              "<button class='cp-icon-btn' data-act='mc-org-view-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
-            "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
-              "<div style='background:var(--pw-niebla-2);border-radius:12px;padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px'>"+
-                "<div><span style='font-size:11px;color:var(--pw-text-soft);font-weight:600'>Plan</span><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+(_org.plan==="pro"?"Pro":_org.plan==="studio"?"Studio":"Boutique")+"</div></div>"+
-                "<div><span style='font-size:11px;color:var(--pw-text-soft);font-weight:600'>Estado</span><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+_statePlan+"</div></div>"+
-                "<div><span style='font-size:11px;color:var(--pw-text-soft);font-weight:600'>Coaches</span><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+_orgCoaches+"</div></div>"+
-                "<div><span style='font-size:11px;color:var(--pw-text-soft);font-weight:600'>Colaboradores</span><div style='font-size:14px;font-weight:600;color:var(--pw-carbon)'>"+_orgCollab+"</div></div>"+
-              "</div>"+
-              "<div style='border-top:1px solid var(--pw-border);padding-top:12px'>"+
-                "<span style='font-size:12px;color:var(--pw-text-soft);font-weight:600'>Dueño</span>"+
-                "<div style='font-size:14px;color:var(--pw-carbon);margin-top:4px'>"+esc((_orgOwner&&(_orgOwner.nombre||_orgOwner.email))||"N/A")+"</div>"+
-              "</div>"+
-              "<div style='border-top:1px solid var(--pw-border);padding-top:12px'>"+
-                "<span style='font-size:12px;color:var(--pw-text-soft);font-weight:600'>Clientes</span>"+
-                "<div style='font-size:14px;color:var(--pw-carbon);margin-top:4px'>"+_orgClientes+"</div>"+
-              "</div>"+
-              "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:8px'>"+
-                "<button class='cp-btn cp-btn-ghost' data-act='mc-org-view-close'>Cerrar</button>"+
-              "</div>"+
-            "</div></div></div>";
-      }
-    }
-    // ┌─ Modal: Cambiar Plan
-    var _mcChangePlanModal = "";
-    if(state.mcChangePlanForm && RORGS){
-      var _org = (RORGS||[]).filter(function(o){ return o.id === state.mcChangePlanForm.orgId; })[0];
-      if(_org){
-        _mcChangePlanModal = "<div style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
-          "<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:420px;max-width:100%;overflow:hidden'>"+
-            "<div class='cp-card-hd'><h3 class='cp-card-title'>Cambiar plan</h3>"+
-              "<button class='cp-icon-btn' data-act='mc-change-plan-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
-            "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-              "<div style='font-size:13px;color:var(--pw-text-soft)'>Org actual: <strong>"+esc(_org.nombre)+"</strong></div>"+
-              "<div style='border-top:1px solid var(--pw-border);padding-top:12px'>"+
-                "<label style='display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px'><input type='radio' name='mc-plan-select' value='boutique' "+((_org.plan==="boutique")?"checked":"")+" style='cursor:pointer'> <span>Boutique ($149/mes)</span></label>"+
-                "<label style='display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px'><input type='radio' name='mc-plan-select' value='studio' "+(_org.plan==="studio"?"checked":"")+" style='cursor:pointer'> <span>Studio ($249/mes)</span></label>"+
-                "<label style='display:flex;align-items:center;gap:8px;cursor:pointer'><input type='radio' name='mc-plan-select' value='pro' "+(_org.plan==="pro"?"checked":"")+" style='cursor:pointer'> <span>Pro (desde $399/mes)</span></label>"+
-              "</div>"+
-              "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:8px'>"+
-                "<button class='cp-btn cp-btn-ghost' data-act='mc-change-plan-close'>Cancelar</button>"+
-                "<button class='cp-btn cp-btn-primary' data-act='mc-change-plan-confirm' data-org='"+esc(_org.id)+"'>Cambiar</button>"+
-              "</div>"+
-            "</div></div></div>";
-      }
-    }
-    // ┌─ Modal: Suspender/Reactivar Org
-    var _mcSuspendModal = "";
-    if(state.mcSuspendForm && RORGS){
-      var _org = (RORGS||[]).filter(function(o){ return o.id === state.mcSuspendForm.orgId; })[0];
-      if(_org){
-        var _isSuspended = _org.activo === false;
-        var _suspMsg = _isSuspended ? "¿Reactivar "+esc(_org.nombre)+"? Los coaches podrán entrar nuevamente." : "¿Suspender "+esc(_org.nombre)+"? Los coaches perderán acceso.";
-        var _actionMsg = state.mcActionMsg || "";
-        var _showMsg = _actionMsg ? "<div style='padding:10px 14px;border-radius:8px;margin-bottom:10px;font-size:13px;color:#1B2E26;background:"+(_actionMsg.indexOf("Error")===0?"rgba(211,51,51,.1);color:var(--pw-danger)":"rgba(44,125,71,.1);color:var(--pw-bosque)")+"'>"+esc(_actionMsg)+"</div>" : "";
-        _mcSuspendModal = "<div style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
-          "<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:420px;max-width:100%;overflow:hidden'>"+
-            "<div class='cp-card-hd'><h3 class='cp-card-title'>"+(_isSuspended?"Reactivar":"Suspender")+" organización</h3>"+
-              (_actionMsg ? "" : "<button class='cp-icon-btn' data-act='mc-suspend-close' title='Cerrar'>"+svg(IC.close,15)+"</button>")+"</div>"+
-            "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-              _showMsg+
-              "<div style='font-size:13px;color:var(--pw-carbon);"+(_actionMsg?"display:none":"")+"'>"+_suspMsg+"</div>"+
-              "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:8px;"+(_actionMsg?"display:none":"")+"'>"+
-                "<button class='cp-btn cp-btn-ghost' data-act='mc-suspend-close'>Cancelar</button>"+
-                "<button class='cp-btn cp-btn-danger' data-act='mc-suspend-confirm' data-org='"+esc(_org.id)+"' "+(_actionMsg?"disabled":"")+" style='"+(_actionMsg?"opacity:.5;cursor:not-allowed":"")+"'>"+(_isSuspended?"Reactivar":"Suspender")+"</button>"+
-              "</div>"+
-            "</div></div></div>";
-      }
-    }
-    // ┌─ Modal: Gestionar miembros (coaches y colaboradores)
-    var _mcMembersModal = "";
-    if(state.mcAddCoachForm && state.mcAddCoachForm.orgId === "manage" && RORGS){
-      var _org = (RORGS||[]).filter(function(o){ return o.id === state.mcAddCoachForm.orgId; })[0];
-      if(_org){
-        var _members = (RCOACHES||[]).filter(function(u){ return u.org_id === _org.id && (u.rol==="coach" || u.rol==="colaborador" || u.rol==="assistant"); });
-        var _memberRows = _members.map(function(m){
-          return "<tr><td>"+esc(m.nombre||m.email||"—")+"</td><td>"+esc(m.email)+"</td><td>"+esc(m.rol||"coach")+"</td><td style='text-align:right'><button class='cp-btn cp-btn-small cp-btn-ghost' data-act='mc-member-remove' data-member='"+esc(m.id)+"' data-org='"+esc(_org.id)+"'>Remover</button></td></tr>";
-        }).join("");
-        _mcMembersModal = "<div style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
-          "<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:600px;max-width:100%;overflow:hidden;display:flex;flex-direction:column;max-height:80vh'>"+
-            "<div class='cp-card-hd'><h3 class='cp-card-title'>Miembros de "+esc(_org.nombre)+"</h3>"+
-              "<button class='cp-icon-btn' data-act='mc-members-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
-            "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px;overflow-y:auto'>"+
-              (_memberRows ? "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:500px'><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th style='text-align:right'>Acciones</th></tr></thead><tbody>"+_memberRows+"</tbody></table></div>" : "<div style='text-align:center;color:var(--pw-text-soft);padding:20px'>No hay miembros en esta organización.</div>")+
-              "<div style='border-top:1px solid var(--pw-border);padding-top:12px'>"+
-                "<button class='cp-btn cp-btn-primary' data-act='mc-add-coach' data-org='"+esc(_org.id)+"'>+ Agregar coach</button>"+
-              "</div>"+
-            "</div></div></div>";
-      }
-    }
-    // ┌─ Modal: Agregar coach
-    var _mcAddCoachModal = "";
-    if(state.mcAddCoachForm && state.mcAddCoachForm.orgId !== "manage" && RORGS){
-      var _org = (RORGS||[]).filter(function(o){ return o.id === state.mcAddCoachForm.orgId; })[0];
-      if(_org){
-        var _indepCoaches = (RCOACHES||[]).filter(function(u){ return u.rol==="coach" && !u.org_id; });
-        var _filtered = _indepCoaches.filter(function(u){ return (u.nombre||u.email||"").toLowerCase().includes((state.mcAddCoachForm.search||"").toLowerCase()); });
-        var _coachRows = _filtered.map(function(u){
-          return "<tr><td>"+esc(u.nombre||u.email||"—")+"</td><td>"+esc(u.email)+"</td><td style='text-align:right'><button class='cp-btn cp-btn-small cp-btn-primary' data-act='mc-add-coach-confirm' data-coach='"+esc(u.id)+"' data-org='"+esc(_org.id)+"'>Asignar</button></td></tr>";
-        }).join("");
-        _mcAddCoachModal = "<div style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
-          "<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:600px;max-width:100%;overflow:hidden;display:flex;flex-direction:column;max-height:80vh'>"+
-            "<div class='cp-card-hd'><h3 class='cp-card-title'>Agregar coach a "+esc(_org.nombre)+"</h3>"+
-              "<button class='cp-icon-btn' data-act='mc-add-coach-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
-            "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px;overflow-y:auto'>"+
-              "<input type='text' id='mc-coach-search' class='cp-form-input' placeholder='Buscar por nombre o email...' value='"+esc(state.mcAddCoachForm.search||"")+"' style='width:100%' onkeyup='if(this.dataset.debounce)clearTimeout(this.dataset.debounce);this.dataset.debounce=setTimeout(function(){var el=document.getElementById(\"mc-coach-search\");if(el){var ev=new Event(\"change\");el.dispatchEvent(ev);}},300)' onchange='handleClick({getAttribute:function(k){return k===\"data-act\"?\"mc-coach-search-update\":null;}})'>"+
-              (_coachRows ? "<div style='overflow-x:auto'><table class='cp-bill-table' style='min-width:500px'><thead><tr><th>Nombre</th><th>Email</th><th style='text-align:right'>Acción</th></tr></thead><tbody>"+_coachRows+"</tbody></table></div>" : "<div style='text-align:center;color:var(--pw-text-soft);padding:20px'>No hay coaches independientes disponibles."+(_indepCoaches.length===0?"":" (Búsqueda: "+esc(state.mcAddCoachForm.search)+")")+"</div>")+
-            "</div></div></div>";
-      }
-    }
-    // ┌─ Modal: Agregar colaborador
-    var _mcAddCollabModal = "";
-    if(state.mcAddCollabForm && RORGS){
-      var _org = (RORGS||[]).filter(function(o){ return o.id === state.mcAddCollabForm.orgId; })[0];
-      if(_org){
-        _mcAddCollabModal = "<div style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
-          "<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:420px;max-width:100%;overflow:hidden'>"+
-            "<div class='cp-card-hd'><h3 class='cp-card-title'>Agregar colaborador</h3>"+
-              "<button class='cp-icon-btn' data-act='mc-add-collab-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
-            "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-              "<div><label style='font-size:12px;color:var(--pw-text-soft);font-weight:600'>Nombre</label><input id='mc-collab-nombre' class='cp-form-input' type='text' value='"+esc(state.mcAddCollabForm.nombre||"")+"' placeholder='Nombre del colaborador' style='width:100%'></div>"+
-              "<div><label style='font-size:12px;color:var(--pw-text-soft);font-weight:600'>Email</label><input id='mc-collab-email' class='cp-form-input' type='email' value='"+esc(state.mcAddCollabForm.email||"")+"' placeholder='email@example.com' style='width:100%'></div>"+
-              "<div><label style='font-size:12px;color:var(--pw-text-soft);font-weight:600'>Rol</label><select id='mc-collab-rol' class='cp-form-input' style='width:100%'><option value='coach' "+(state.mcAddCollabForm.rol==="coach"?"selected":"")+" >Coach</option><option value='colaborador' "+(state.mcAddCollabForm.rol==="colaborador"?"selected":"")+" >Colaborador</option><option value='assistant' "+(state.mcAddCollabForm.rol==="assistant"?"selected":"")+" >Asistente</option></select></div>"+
-              "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:8px'>"+
-                "<button class='cp-btn cp-btn-ghost' data-act='mc-add-collab-close'>Cancelar</button>"+
-                "<button class='cp-btn cp-btn-primary' data-act='mc-add-collab-confirm' data-org='"+esc(_org.id)+"'>Crear</button>"+
-              "</div>"+
-            "</div></div></div>";
-      }
-    }
-    // ┌─ Modal: Cambiar owner
-    var _mcChangeOwnerModal = "";
-    if(state.mcChangeOwnerForm && RORGS){
-      var _org = (RORGS||[]).filter(function(o){ return o.id === state.mcChangeOwnerForm.orgId; })[0];
-      if(_org){
-        var _orgCoaches = (RCOACHES||[]).filter(function(u){ return u.org_id === _org.id && u.rol==="coach"; });
-        var _ownerOptions = _orgCoaches.map(function(u){
-          return "<option value='"+esc(u.id)+"'>"+esc(u.nombre||u.email||"Coach")+"</option>";
-        }).join("");
-        _mcChangeOwnerModal = "<div style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
-          "<div style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:420px;max-width:100%;overflow:hidden'>"+
-            "<div class='cp-card-hd'><h3 class='cp-card-title'>Cambiar dueño de la red</h3>"+
-              "<button class='cp-icon-btn' data-act='mc-change-owner-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
-            "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:12px'>"+
-              "<div style='font-size:13px;color:var(--pw-text-soft)'>Selecciona un coach de la red para que sea el nuevo dueño:</div>"+
-              "<select id='mc-owner-select' class='cp-form-input' style='width:100%'>"+
-                "<option value=''>— Seleccionar —</option>"+
-                _ownerOptions+
-              "</select>"+
-              "<div style='background:var(--pw-niebla-2);border-radius:8px;padding:10px;font-size:12px;color:var(--pw-text-soft)'>⚠️ El dueño actual quedará como coach en la red.</div>"+
-              "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:8px'>"+
-                "<button class='cp-btn cp-btn-ghost' data-act='mc-change-owner-close'>Cancelar</button>"+
-                "<button class='cp-btn cp-btn-primary' data-act='mc-change-owner-confirm' data-org='"+esc(_org.id)+"'>Cambiar</button>"+
-              "</div>"+
-            "</div></div></div>";
-      }
-    }
-
-    // El portal del dropdown se renderiza FUERA del contenedor (evita overflow)
-    // Lo manejamos en el handler mc-org-menu en lugar de renderizarlo aquí
-    body = _orgsCard + _coachIndepCard + _convertModal + _mcOrgViewModal + _mcChangePlanModal + _mcSuspendModal + _mcMembersModal + _mcAddCoachModal + _mcAddCollabModal + _mcChangeOwnerModal;
   } else if(state.adminTab==="empleados"){
     body = (REAL && state.empleSel) ? _empleadoDetailCard() : _empleadosView();
   } else if(state.adminTab==="contactos"){
@@ -10817,50 +10531,6 @@ function render(){
     // Insights de la Sala: qué pasó en cada videollamada (tipos, conversión,
     // valoración del cliente). Lazy, se auto-protege de recargas.
     if(document.getElementById('sala-insights')){ requestAnimationFrame(function(){ try{ _salaInsightsLoad(); }catch(e){} }); }
-    // Manejo del dropdown de orgs: crear/posicionar portal si state.orgMenuSel está establecido
-    try{
-      if(state.orgMenuSel && state.section==="admin" && state.adminTab==="orgs"){
-        var org = (RORGS||[]).filter(function(o){ return o && o.id === state.orgMenuSel; })[0];
-        var btn = document.querySelector("[data-act='mc-org-menu'][data-org='"+state.orgMenuSel+"']");
-        if(org && btn){
-          // Calcular posición del botón ANTES de crear el portal
-          var rect = btn.getBoundingClientRect();
-          var posTop = rect.bottom + 4;
-          var posLeft = Math.max(0, rect.right - 200);
-
-          // Remover portal anterior si existe
-          var oldPortal = document.querySelector("#org-menu-portal");
-          if(oldPortal) oldPortal.remove();
-
-          // Crear nuevo portal con posición correcta desde el inicio
-          var portal = document.createElement("div");
-          portal.id = "org-menu-portal";
-          portal.style.cssText = "position:fixed;z-index:9999;background:#fff;border:1px solid var(--pw-border);border-radius:8px;box-shadow:var(--pw-shadow-md);min-width:200px;top:"+posTop+"px;left:"+posLeft+"px";
-
-          var menuItems = [
-            {act:"mc-org-view", text:"Ver organización"},
-            {act:"mc-manage-members", text:"Gestionar miembros"},
-            {act:"mc-add-coach", text:"Agregar coach"},
-            {act:"mc-add-collab", text:"Agregar colaborador"},
-            {act:"mc-change-owner", text:"Cambiar owner"},
-            {act:"mc-change-plan", text:"Cambiar plan"},
-            {act:"mc-suspend", text:"Suspender", danger:true}
-          ];
-
-          var html = menuItems.map(function(item, idx){
-            var isSeparated = idx < menuItems.length - 1;
-            return "<button class='cp-menu-item' data-act='"+item.act+"' data-org='"+esc(org.id||"")+"' style='display:block;width:100%;text-align:left;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-size:13px;color:"+(item.danger?"var(--pw-danger)":"var(--pw-carbon)")+";border-bottom:"+(isSeparated?"1px solid var(--pw-niebla-2)":"none")+"'>"+item.text+"</button>";
-          }).join("");
-
-          portal.innerHTML = html;
-          document.body.appendChild(portal);
-        }
-      } else {
-        // Si no hay dropdown activo, remover portal
-        var p = document.querySelector("#org-menu-portal");
-        if(p) p.remove();
-      }
-    }catch(e){}
   }catch(err){
     document.getElementById("root").innerHTML=
       "<div style='max-width:560px;margin:60px auto;font-family:var(--pw-sans);color:var(--pw-text)'>"+
@@ -12438,293 +12108,6 @@ document.addEventListener("click", function(ev){
     }).catch(function(){ setMct("Error de conexión. Reintenta.","err"); });
     return;
   }
-  if(act==="mc-org-menu"){
-    // Toggle menú de acciones para una organización
-    var orgId = el.getAttribute("data-org");
-    state.orgMenuSel = (state.orgMenuSel === orgId) ? null : orgId;
-    render();
-    return;
-  }
-  if(act==="mc-convert-start"){
-    // Abrir modal de confirmación para convertir coach a multicoach
-    var coachId = el.getAttribute("data-coach");
-    var dupCount = parseInt(el.getAttribute("data-dups")||"1", 10);
-    state.mcConvertSel = coachId;
-    state.mcConvertDups = dupCount;
-    render();
-    return;
-  }
-  if(act==="mc-convert-modal-close"){
-    // Cerrar modal de conversión
-    state.mcConvertSel = null;
-    state.mcConvertDups = 0;
-    render();
-    return;
-  }
-  if(act==="mc-convert-confirm"){
-    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
-    var _coachId = state.mcConvertSel;
-    var _nombreRed = (_val("mc-convert-name") || "").trim();
-    var _plan = (_val("mc-convert-plan") || "boutique");
-    var _dias = parseInt(_val("mc-convert-dias") || "14", 10);
-    if(!_coachId || !_nombreRed){ state.mcConvertMsg = "err: Falta nombre de red."; render(); return; }
-    var _setMsg = function(t, k){ state.mcConvertMsg = (k||"…")+": "+t; render(); };
-    _setMsg("Procesando…","…");
-    var _lock = false;
-    var _timer = setTimeout(function(){ if(_lock)return; _lock=true; _setMsg("Tardó demasiado. Reintenta.","err"); }, 25000);
-    var _end = function(t, k){ if(_lock)return; _lock=true; clearTimeout(_timer); _setMsg(t, k); };
-    _hdr({"Content-Type":"application/json"}).then(function(h){
-      return fetch(SB+"/functions/v1/convertir-multicoach", {
-        method:"POST", headers:h, body:JSON.stringify({coach_id:_coachId, plan:_plan, nombre_red:_nombreRed, dias:_dias})
-      });
-    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, d:d||{}}; }); }).then(function(res){
-      var d = res.d;
-      if(!res.ok || !d.ok){
-        if(d.error==="ya_es_owner"){ _end("Ya es un multicoach.","err"); return; }
-        if(d.error==="no_es_coach"){ _end("No es un coach.","err"); return; }
-        _end("Error ("+(res.status||"?")+"). Reintenta.","err"); return;
-      }
-      reloadOrgs();
-      state.mcConvertSel = null;
-      state.mcConvertMsg = "✓ Multicoach creado. Org: "+d.org_id+" · Plan: "+d.plan+" · "+d.movidos+" clientes.";
-      render();
-    }).catch(function(e){ _end("Conexión: "+((e&&e.message)||"error").slice(0,30),"err"); });
-    return;
-  }
-  if(act==="mc-org-view"){
-    var _orgId = el.getAttribute("data-org");
-    state.mcOrgView = _orgId;
-    state.orgMenuSel = null;
-    render();
-    return;
-  }
-  if(act==="mc-manage-members"){
-    var _orgId = el.getAttribute("data-org");
-    state.mcAddCoachForm = {orgId: "manage", search:"", selected:null};
-    state.orgMenuSel = null;
-    render();
-    return;
-  }
-  if(act==="mc-add-coach"){
-    var _orgId = el.getAttribute("data-org");
-    state.mcAddCoachForm = {orgId: _orgId, search:"", selected:null};
-    state.orgMenuSel = null;
-    render();
-    return;
-  }
-  if(act==="mc-add-collab"){
-    var _orgId = el.getAttribute("data-org");
-    state.mcAddCollabForm = {orgId: _orgId, nombre:"", email:"", rol:"coach"};
-    state.orgMenuSel = null;
-    render();
-    return;
-  }
-  if(act==="mc-change-owner"){
-    var _orgId = el.getAttribute("data-org");
-    state.mcChangeOwnerForm = {orgId: _orgId, selectedCoachId: null};
-    state.orgMenuSel = null;
-    render();
-    return;
-  }
-  if(act==="mc-change-plan"){
-    var _orgId = el.getAttribute("data-org");
-    state.mcChangePlanForm = {orgId: _orgId, selectedPlan: null};
-    state.orgMenuSel = null;
-    render();
-    return;
-  }
-  if(act==="mc-suspend"){
-    var _orgId = el.getAttribute("data-org");
-    state.mcSuspendForm = {orgId: _orgId, confirming: false};
-    state.orgMenuSel = null;
-    render();
-    return;
-  }
-  // Cerrar modales
-  if(act==="mc-org-view-close"){ state.mcOrgView = null; render(); return; }
-  if(act==="mc-change-plan-close"){ state.mcChangePlanForm = null; render(); return; }
-  if(act==="mc-suspend-close"){ state.mcSuspendForm = null; render(); return; }
-  if(act==="mc-members-close"){ state.mcAddCoachForm = null; render(); return; }
-  if(act==="mc-add-coach-close"){ state.mcAddCoachForm = null; render(); return; }
-  if(act==="mc-add-collab-close"){ state.mcAddCollabForm = null; render(); return; }
-  if(act==="mc-change-owner-close"){ state.mcChangeOwnerForm = null; render(); return; }
-  // Búsqueda en modal Agregar coach
-  if(act==="mc-coach-search-update"){
-    if(state.mcAddCoachForm){ state.mcAddCoachForm.search = _val("mc-coach-search") || ""; render(); }
-    return;
-  }
-  // Cambiar plan
-  if(act==="mc-change-plan-confirm"){
-    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
-    var _orgId = el.getAttribute("data-org");
-    var _selectedPlan = _val("mc-plan-select")||"boutique";
-    if(!_orgId || !_selectedPlan) return;
-    var _setMsg = function(t){ state.mcActionMsg = t; render(); };
-    _setMsg("Cambiando plan…");
-    var _lock = false;
-    var _timer = setTimeout(function(){ if(_lock)return; _lock=true; _setMsg("Tardó demasiado. Reintenta."); }, 15000);
-    var _end = function(){ if(_lock)return; _lock=true; clearTimeout(_timer); };
-    _hdr({"Content-Type":"application/json"}).then(function(h){
-      return fetch(SB+"/functions/v1/cambiar-plan-org", {
-        method:"POST", headers:h, body:JSON.stringify({org_id:_orgId, plan:_selectedPlan})
-      });
-    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, d:d||{}}; }); }).then(function(res){
-      var d = res.d;
-      if(!res.ok || !d.ok){ _end(); _setMsg("Error ("+(res.status||"?")+"). Reintenta."); return; }
-      reloadOrgs();
-      state.mcChangePlanForm = null;
-      _end();
-      _setMsg("✓ Plan actualizado a "+_selectedPlan);
-    }).catch(function(e){ _end(); _setMsg("Error de conexión."); });
-    return;
-  }
-  // Suspender/Reactivar org
-  if(act==="mc-suspend-confirm"){
-    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
-    var _orgId = el.getAttribute("data-org");
-    if(!_orgId) return;
-    var _setMsg = function(t){ state.mcActionMsg = t; render(); };
-    _setMsg("Procesando…");
-    var _lock = false;
-    var _timer = setTimeout(function(){ if(_lock)return; _lock=true; _setMsg("Tardó demasiado. Reintenta."); }, 15000);
-    var _end = function(){ if(_lock)return; _lock=true; clearTimeout(_timer); };
-    _hdr({"Content-Type":"application/json"}).then(function(h){
-      return fetch(SB+"/functions/v1/suspender-org", {
-        method:"POST", headers:h, body:JSON.stringify({org_id:_orgId})
-      });
-    }).then(function(r){
-      console.log("suspender-org response status:", r.status);
-      return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, status:r.status, d:d||{}}; });
-    }).then(function(res){
-      var d = res.d;
-      console.log("suspender-org result:", res);
-      if(!res.ok || !d.ok){
-        _end();
-        var errMsg = d.error || "Error desconocido";
-        _setMsg("Error: "+errMsg+" ("+res.status+"). Reintenta.");
-        return;
-      }
-      console.log("Suspensión exitosa. Recargando orgs...");
-      _end();
-      _setMsg("✓ Estado actualizado ("+(d.action||"cambio")+")");
-      setTimeout(function(){
-        state.mcSuspendForm = null;
-        reloadOrgs();
-        render();
-      }, 2000);
-    }).catch(function(e){
-      console.error("suspender-org error:", e);
-      _end();
-      _setMsg("Error de conexión: "+(e.message||"timeout"));
-    });
-    return;
-  }
-  // Agregar coach a org
-  if(act==="mc-add-coach-confirm"){
-    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
-    var _coachId = el.getAttribute("data-coach");
-    var _orgId = el.getAttribute("data-org");
-    if(!_coachId || !_orgId) return;
-    var _setMsg = function(t){ state.mcActionMsg = t; render(); };
-    _setMsg("Asignando coach…");
-    var _lock = false;
-    var _timer = setTimeout(function(){ if(_lock)return; _lock=true; _setMsg("Tardó demasiado. Reintenta."); }, 15000);
-    var _end = function(){ if(_lock)return; _lock=true; clearTimeout(_timer); };
-    _hdr({"Content-Type":"application/json"}).then(function(h){
-      return fetch(SB+"/functions/v1/add-coach-to-org", {
-        method:"POST", headers:h, body:JSON.stringify({coach_id:_coachId, org_id:_orgId})
-      });
-    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, d:d||{}}; }); }).then(function(res){
-      var d = res.d;
-      if(!res.ok || !d.ok){ _end(); _setMsg("Error ("+(res.status||"?")+"). Reintenta."); return; }
-      reloadCoaches();
-      reloadOrgs();
-      state.mcAddCoachForm = null;
-      _end();
-      _setMsg("✓ Coach agregado a la red");
-    }).catch(function(e){ _end(); _setMsg("Error de conexión."); });
-    return;
-  }
-  // Agregar colaborador a org
-  if(act==="mc-add-collab-confirm"){
-    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
-    var _orgId = el.getAttribute("data-org");
-    var _nombre = (_val("mc-collab-nombre")||"").trim();
-    var _email = (_val("mc-collab-email")||"").trim().toLowerCase();
-    var _rol = (_val("mc-collab-rol")||"colaborador");
-    if(!_orgId || !_nombre || !_email) { state.mcActionMsg = "err: Falta nombre o email."; render(); return; }
-    var _setMsg = function(t){ state.mcActionMsg = t; render(); };
-    _setMsg("Creando colaborador…");
-    var _lock = false;
-    var _timer = setTimeout(function(){ if(_lock)return; _lock=true; _setMsg("Tardó demasiado. Reintenta."); }, 15000);
-    var _end = function(){ if(_lock)return; _lock=true; clearTimeout(_timer); };
-    _hdr({"Content-Type":"application/json"}).then(function(h){
-      return fetch(SB+"/functions/v1/add-collab-to-org", {
-        method:"POST", headers:h, body:JSON.stringify({org_id:_orgId, nombre:_nombre, email:_email, rol:_rol})
-      });
-    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, d:d||{}}; }); }).then(function(res){
-      var d = res.d;
-      if(!res.ok || !d.ok){ _end(); _setMsg("Error ("+(res.status||"?")+"). Reintenta."); return; }
-      reloadCoaches();
-      reloadOrgs();
-      state.mcAddCollabForm = null;
-      _end();
-      _setMsg("✓ Colaborador creado");
-    }).catch(function(e){ _end(); _setMsg("Error de conexión."); });
-    return;
-  }
-  // Cambiar owner de org
-  if(act==="mc-change-owner-confirm"){
-    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
-    var _orgId = el.getAttribute("data-org");
-    var _newOwnerId = _val("mc-owner-select") || "";
-    if(!_orgId || !_newOwnerId) { state.mcActionMsg = "err: Selecciona un coach."; render(); return; }
-    var _setMsg = function(t){ state.mcActionMsg = t; render(); };
-    _setMsg("Cambiando dueño…");
-    var _lock = false;
-    var _timer = setTimeout(function(){ if(_lock)return; _lock=true; _setMsg("Tardó demasiado. Reintenta."); }, 15000);
-    var _end = function(){ if(_lock)return; _lock=true; clearTimeout(_timer); };
-    _hdr({"Content-Type":"application/json"}).then(function(h){
-      return fetch(SB+"/functions/v1/change-owner-org", {
-        method:"POST", headers:h, body:JSON.stringify({org_id:_orgId, new_owner_id:_newOwnerId})
-      });
-    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, d:d||{}}; }); }).then(function(res){
-      var d = res.d;
-      if(!res.ok || !d.ok){ _end(); _setMsg("Error ("+(res.status||"?")+"). Reintenta."); return; }
-      reloadCoaches();
-      reloadOrgs();
-      state.mcChangeOwnerForm = null;
-      _end();
-      _setMsg("✓ Dueño actualizado");
-    }).catch(function(e){ _end(); _setMsg("Error de conexión."); });
-    return;
-  }
-  // Remover miembro de org
-  if(act==="mc-member-remove"){
-    if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
-    if(!confirm("¿Remover este miembro de la organización?")) return;
-    var _memberId = el.getAttribute("data-member");
-    var _orgId = el.getAttribute("data-org");
-    if(!_memberId || !_orgId) return;
-    var _setMsg = function(t){ state.mcActionMsg = t; render(); };
-    _setMsg("Removiendo miembro…");
-    var _lock = false;
-    var _timer = setTimeout(function(){ if(_lock)return; _lock=true; _setMsg("Tardó demasiado. Reintenta."); }, 15000);
-    var _end = function(){ if(_lock)return; _lock=true; clearTimeout(_timer); };
-    _hdr({"Content-Type":"application/json"}).then(function(h){
-      return fetch(SB+"/functions/v1/remove-member-org", {
-        method:"POST", headers:h, body:JSON.stringify({member_id:_memberId, org_id:_orgId})
-      });
-    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok, d:d||{}}; }); }).then(function(res){
-      var d = res.d;
-      if(!res.ok || !d.ok){ _end(); _setMsg("Error ("+(res.status||"?")+"). Reintenta."); return; }
-      reloadCoaches();
-      reloadOrgs();
-      _end();
-      _setMsg("✓ Miembro removido");
-    }).catch(function(e){ _end(); _setMsg("Error de conexión."); });
-    return;
-  }
   if(act==="empleado-crear"){
     if(!RADMIN){ alert("Solo un admin puede hacer esto."); return; }
     var eEmail=(_val("emp-email")||"").trim().toLowerCase();
@@ -14116,30 +13499,17 @@ document.addEventListener("click", function(ev){
     return;
   }
   if(act==="integ:zoom-save"){
-    var coach_id = (RME && RME.id) || (ME && ME.id);
-    if(!coach_id){ alert("Error: usuario no identificado."); return; }
     var inp = document.getElementById("integ-zoom-input");
     var url = inp ? inp.value.trim() : "";
     if(!url){ alert("Pega un enlace de Zoom válido."); return; }
     if(url.indexOf("zoom.us")<0 && url.indexOf("http")<0){ alert("Eso no parece ser un enlace de Zoom."); return; }
-    var cfg = {};
-    for(var k in RCFG){ if(RCFG.hasOwnProperty(k)) cfg[k]=RCFG[k]; }
+    var cfg = RCFG||{};
     cfg.zoom_url = url;
-    // Guardar en Supabase
-    _sbw("usuarios?id=eq."+encodeURIComponent(coach_id), "PATCH", {configuracion:cfg})
-      .then(function(){
-        state.integEditZoom = false;
-        RCFG.zoom_url = url;
-        try{ localStorage.setItem("pw_zoom_"+coach_id, url); }catch(e){}
-        render();
-      })
-      .catch(function(){
-        // Si falla Supabase, guardar en localStorage como fallback
-        try{ localStorage.setItem("pw_zoom_"+coach_id, url); }catch(e){}
-        state.integEditZoom = false;
-        RCFG.zoom_url = url;
-        render();
-      });
+    _sbw("usuarios", ME.id, {configuracion:cfg}, function(){
+      state.integEditZoom = false;
+      RCFG = cfg;
+      render();
+    });
     return;
   }
 });
@@ -16280,7 +15650,7 @@ if('serviceWorker' in navigator){
 <!-- Drawer Novedades (revista semanal) — nodo estático, iframe carga una sola vez -->
 <!-- Novedades: COLUMNA fija a la derecha que achica el contenido (como Multinicho),
      no un overlay. Se colapsa con ›; se reabre desde el ítem del sidebar. -->
-<div id="pw-nov-drawer" style="display:none;position:fixed;top:0;right:0;bottom:0;width:360px;max-width:100vw;z-index:80;background:#FBFAF6;border-left:1px solid var(--pw-border);box-shadow:-8px 0 28px rgba(20,40,30,.07);flex-direction:column;padding-top:60px;">
+<div id="pw-nov-drawer" style="display:none;position:fixed;top:0;right:0;bottom:0;width:360px;max-width:100%;z-index:80;background:#FBFAF6;border-left:1px solid var(--pw-border);box-shadow:-8px 0 28px rgba(20,40,30,.07);flex-direction:column;padding-top:60px;">
   <!-- Cerrar la columna: lo hace el ✕ del propio header de Novedades (dentro del
        iframe), que avisa por postMessage {pw:'novclose'}. Así queda al lado del
        título y nada de la barra superior lo tapa. El padding-top baja el header
