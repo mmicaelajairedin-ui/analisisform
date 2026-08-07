@@ -16,12 +16,18 @@
 //   → cancel:        { ok:true }
 //   → sin conexión de escritura: { ok:false, reason:"coach_no_gcal_write" }  (no rompe la reserva)
 //
-// Env (Secrets): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-// Deploy: se auto-deploya al pushear a main (está en deploy-functions.yml).
+// Env (Secrets): AUTH_URL, USERS_URL, DATA_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+// Deploy: supabase functions deploy gcal-push --no-verify-jwt
 // ===================================================================
 
-// Import hybrid architecture configuration
-import { SB } from "../supabase-config.ts";
+// Hybrid architecture configuration (inlined)
+const AUTH_URL = Deno.env.get("AUTH_URL");
+const USERS_URL = Deno.env.get("USERS_URL");
+const DATA_URL = Deno.env.get("DATA_URL");
+if (!AUTH_URL) throw new Error("Missing required environment variable: AUTH_URL");
+if (!USERS_URL) throw new Error("Missing required environment variable: USERS_URL");
+if (!DATA_URL) throw new Error("Missing required environment variable: DATA_URL");
+const SB = { AUTH: AUTH_URL, USERS: USERS_URL, DATA: DATA_URL };
 
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const G_ID = Deno.env.get("GOOGLE_CLIENT_ID") || "";

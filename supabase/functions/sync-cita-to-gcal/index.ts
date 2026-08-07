@@ -11,10 +11,17 @@
 //   { cita_id (BIGINT) }
 //   → { ok:true, hangoutLink } | { ok:false, reason }
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+// Env: AUTH_URL, USERS_URL, DATA_URL, SUPABASE_SERVICE_ROLE_KEY
 // Deploy: supabase functions deploy sync-cita-to-gcal --no-verify-jwt
 
-import { SB } from "../supabase-config.ts";
+// Hybrid architecture configuration (inlined)
+const AUTH_URL = Deno.env.get("AUTH_URL");
+const USERS_URL = Deno.env.get("USERS_URL");
+const DATA_URL = Deno.env.get("DATA_URL");
+if (!AUTH_URL) throw new Error("Missing required environment variable: AUTH_URL");
+if (!USERS_URL) throw new Error("Missing required environment variable: USERS_URL");
+if (!DATA_URL) throw new Error("Missing required environment variable: DATA_URL");
+const SB = { AUTH: AUTH_URL, USERS: USERS_URL, DATA: DATA_URL };
 
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const svc = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };

@@ -18,7 +18,14 @@
 // Deploy: supabase functions deploy crear-cita-red --no-verify-jwt
 // ===================================================================
 
-import { SB } from "../supabase-config.ts";
+// Hybrid architecture configuration (inlined)
+const AUTH_URL = Deno.env.get("AUTH_URL");
+const USERS_URL = Deno.env.get("USERS_URL");
+const DATA_URL = Deno.env.get("DATA_URL");
+if (!AUTH_URL) throw new Error("Missing required environment variable: AUTH_URL");
+if (!USERS_URL) throw new Error("Missing required environment variable: USERS_URL");
+if (!DATA_URL) throw new Error("Missing required environment variable: DATA_URL");
+const SB = { AUTH: AUTH_URL, USERS: USERS_URL, DATA: DATA_URL };
 
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON = Deno.env.get("SUPABASE_ANON_KEY") || "";
