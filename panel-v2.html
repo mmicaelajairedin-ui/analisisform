@@ -4962,7 +4962,7 @@ function _calLoad(){
     _sb("usuarios?rol=in.(admin,empleado)&activo=eq.true&select=id,nombre,email,rol").then(function(team){
       _CAL_TEAM=(Object.prototype.toString.call(team)==="[object Array]")?team:[];
       var ids=_CAL_TEAM.map(function(u){return u.id;}); if(ids.indexOf(RME.id)<0) ids.push(RME.id);
-      _sb("citas?coach_id=in.("+ids.map(encodeURIComponent).join(",")+")&inicio=gte."+encodeURIComponent(from)+sel)
+      _sbCitas("citas?coach_id=in.("+ids.map(encodeURIComponent).join(",")+")&inicio=gte."+encodeURIComponent(from)+sel)
         .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; try{ render(); }catch(e){ _calRenderKpis(); _calRenderList(); } _agAfterCal(); })
         .catch(_calFail);
     }).catch(function(){ _CAL_TEAM=[]; _calFail(); });
@@ -4971,8 +4971,8 @@ function _calLoad(){
 
   // Network coach: carga PERSONAL citas + GROUP events de la red
   if(RME.org_id){
-    var personal=_sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+sel);
-    var grupal=_sb("citas?org_id=eq."+encodeURIComponent(RME.org_id)+"&grupal=eq.true&inicio=gte."+encodeURIComponent(from)+sel);
+    var personal=_sbCitas("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+sel);
+    var grupal=_sbCitas("citas?org_id=eq."+encodeURIComponent(RME.org_id)+"&grupal=eq.true&inicio=gte."+encodeURIComponent(from)+sel);
     Promise.all([personal,grupal]).then(function(results){
       var p=(Object.prototype.toString.call(results[0])==="[object Array]")?results[0]:[];
       var g=(Object.prototype.toString.call(results[1])==="[object Array]")?results[1]:[];
@@ -4983,7 +4983,7 @@ function _calLoad(){
   }
 
   // Regular coach (no network): solo sus propias citas
-  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+sel)
+  _sbCitas("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(from)+sel)
     .then(function(rows){ _CAL_DATA=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _calRenderKpis(); _calRenderList(); _calRenderMetricsExtra(); _agAfterCal(); })
     .catch(_calFail);
 }
@@ -14321,6 +14321,18 @@ function _pwRefresh(){
 // mandar a login. Un token vencido ya no vacía el panel: se renueva solo.
 function _sb(p){
   var _do=function(){ return _hdr().then(function(h){ return fetch(SB+"/rest/v1/"+p,{headers:h}); }); };
+  return _do().then(function(r){
+    if(r.status===401||r.status===403){
+      return _pwRefresh().then(function(ok){ if(!ok){ _authExpired(); return []; }
+        return _do().then(function(r2){ if(r2.status===401||r2.status===403){ _authExpired(); return []; } return r2.ok?r2.json():[]; }, function(){ return []; });
+      });
+    }
+    return r.ok?r.json():[];
+  }).catch(function(){return [];});
+}
+// _sbCitas — igual a _sb() pero apunta a SB_CITAS (proyecto nuevo para citas)
+function _sbCitas(p){
+  var _do=function(){ return _hdr().then(function(h){ return fetch(SB_CITAS+"/rest/v1/"+p,{headers:h}); }); };
   return _do().then(function(r){
     if(r.status===401||r.status===403){
       return _pwRefresh().then(function(ok){ if(!ok){ _authExpired(); return []; }
