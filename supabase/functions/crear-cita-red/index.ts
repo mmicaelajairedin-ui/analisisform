@@ -141,7 +141,7 @@ Deno.serve(async (req: Request) => {
     const rows = await r.json().catch(() => []);
     const cita = Array.isArray(rows) && rows[0] ? rows[0] : { coach_id, nombre, tipo, inicio, estado: "confirmada" };
     // Sincronizar a Google Calendar (best-effort — no bloquea la creación).
-    // Extrae el hangoutLink y lo guarda en citas.meet_link.
+    // Extrae el hangoutLink, guarda en citas.meet_link, y envía email con el link.
     if (cita.id) {
       try {
         await fetch(`${SB.DATA}/functions/v1/sync-cita-to-gcal`, {
@@ -150,12 +150,6 @@ Deno.serve(async (req: Request) => {
           body: JSON.stringify({ cita_id: cita.id }),
         });
       } catch { /* ignore */ }
-    }
-    // Email de confirmación al cliente (best-effort, no bloquea la creación).
-    // meet_link llegará vacío si sync-cita-to-gcal aún no termina (asincrónico).
-    // El email mostrará "el link aparecerá pronto" hasta que Google Calendar genere el Meet link.
-    if (EMAIL_RE.test(cliEmail)) {
-      try { await notificarCita(cliEmail, tipo, inicio, modalidad, lugar, cita.meet_link || ""); } catch { /* ignore */ }
     }
     return json({ ok: true, cita });
   } catch { return json({ error: "write_failed" }, 502); }

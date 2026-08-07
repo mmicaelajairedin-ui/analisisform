@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
     const citas = await cr.json();
     if (!Array.isArray(citas) || !citas.length) return json({ error: "cita_not_found" }, 404);
     const cita = citas[0];
-    const { coach_id, nombre, inicio, modalidad, lugar } = cita;
+    const { coach_id, nombre, inicio, modalidad, lugar, email, tipo } = cita;
     if (!coach_id || !inicio) return json({ error: "cita_incomplete" }, 400);
 
     // 2) Calcular hora fin (asumimos 1h de duración)
@@ -87,11 +87,14 @@ Deno.serve(async (req: Request) => {
     const hangoutLink = pushData.hangoutLink || "";
     const eventId = pushData.event_id || "";
 
-    // 4) Si hay hangoutLink, guardar en citas.meet_link
-    if (hangoutLink) {
-      const patchPayload = { meet_link: hangoutLink };
-      console.log(`[PATCH-MEET_LINK] Payload: ${JSON.stringify(patchPayload)}`);
-      console.log(`[PATCH-MEET_LINK] URL: ${SB.DATA}/rest/v1/citas?id=eq.${citaId}`);
+    // 4) Guardar ambos campos en UN SOLO PATCH (meet_link + google_event_id)
+    const patchPayload: Record<string, string> = {};
+    if (hangoutLink) patchPayload.meet_link = hangoutLink;
+    if (eventId) patchPayload.google_event_id = eventId;
+
+    if (Object.keys(patchPayload).length > 0) {
+      console.log(`[PATCH] Payload: ${JSON.stringify(patchPayload)}`);
+      console.log(`[PATCH] URL: ${SB.DATA}/rest/v1/citas?id=eq.${citaId}`);
 
       const ur = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}`, {
         method: "PATCH",
@@ -100,36 +103,25 @@ Deno.serve(async (req: Request) => {
       });
 
       const patchResponseText = await ur.text();
-      console.log(`[PATCH-MEET_LINK] HTTP Status: ${ur.status}`);
-      console.log(`[PATCH-MEET_LINK] Response body: ${patchResponseText}`);
+      console.log(`[PATCH] HTTP Status: ${ur.status}`);
+      console.log(`[PATCH] Response body: ${patchResponseText}`);
 
       if (!ur.ok) {
-        console.error(`[PATCH-ERROR] Failed to save meet_link for cita ${citaId}, status ${ur.status}, body: ${patchResponseText}`);
+        console.error(`[PATCH-ERROR] Failed to save for cita ${citaId}, status ${ur.status}, body: ${patchResponseText}`);
       } else {
-        console.log(`[PATCH-SUCCESS] meet_link saved for cita ${citaId}`);
+        console.log(`[PATCH-SUCCESS] meet_link=${hangoutLink ? "SAVED" : "EMPTY"}, google_event_id=${eventId ? "SAVED" : "EMPTY"}`);
       }
+    } else {
+      console.log(`[PATCH-SKIP] No data to save (no hangoutLink, no eventId)`);
     }
 
-    // También guardar event_id si existe
-    if (eventId && !hangoutLink) {
-      const patchPayload = { google_event_id: eventId };
-      console.log(`[PATCH-GOOGLE_EVENT_ID] Payload: ${JSON.stringify(patchPayload)}`);
-      console.log(`[PATCH-GOOGLE_EVENT_ID] URL: ${SB.DATA}/rest/v1/citas?id=eq.${citaId}`);
-
-      const ur = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}`, {
-        method: "PATCH",
-        headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify(patchPayload),
-      });
-
-      const patchResponseText = await ur.text();
-      console.log(`[PATCH-GOOGLE_EVENT_ID] HTTP Status: ${ur.status}`);
-      console.log(`[PATCH-GOOGLE_EVENT_ID] Response body: ${patchResponseText}`);
-
-      if (!ur.ok) {
-        console.error(`[PATCH-ERROR] Failed to save google_event_id for cita ${citaId}, status ${ur.status}, body: ${patchResponseText}`);
-      } else {
-        console.log(`[PATCH-SUCCESS] google_event_id saved for cita ${citaId}`);
+    // 5) Enviar email de confirmación CON el meet_link después de actualizar la BD
+    if (email && hangoutLink) {
+      try {
+        await enviarEmailConMeetLink(email, tipo || "Sesión", inicio, modalidad, lugar, hangoutLink);
+        console.log(`[EMAIL-SENT] Confirmation email sent to ${email} with Meet link`);
+      } catch (e) {
+        console.error(`[EMAIL-ERROR] Failed to send email: ${String(e)}`);
       }
     }
 
@@ -140,3 +132,33 @@ Deno.serve(async (req: Request) => {
     return json({ error: "internal_error", detail: String(e) }, 500);
   }
 });
+
+// Formato de fecha legible
+function fmtFecha(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]} · ${m[4]}:${m[5]}` : iso;
+}
+
+// Enviar email de confirmación con Meet link
+async function enviarEmailConMeetLink(to: string, tipo: string, inicio: string, modalidad: string, lugar: string, meetLink: string): Promise<void> {
+  const cuando = fmtFecha(inicio);
+  const donde = modalidad === "presencial"
+    ? `<p style='font-size:15px'>📍 <b>Presencial:</b> ${lugar || "te confirmamos el lugar"}</p>`
+    : meetLink
+      ? `<p style='margin:20px 0'><a href='${meetLink}' target='_blank' rel='noopener' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a Google Meet →</a></p>`
+      : `<p style='margin:20px 0;color:#8A968E'><b>Google Meet:</b> el link aparecerá en tu Google Calendar.</p>`;
+  const html =
+    "<p style='font-size:15px'>¡Hola!</p>" +
+    "<p style='font-size:15px;line-height:1.6'>Tu sesión quedó agendada:</p>" +
+    "<p style='font-size:15px'><b>" + tipo + "</b><br>🗓️ " + cuando + "</p>" +
+    donde +
+    "<p style='font-size:13px;color:#777'>Si necesitás reprogramar, respondé este correo.</p>";
+  try {
+    await fetch(`${SB.DATA}/functions/v1/send-email`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, subject: "Tu sesión quedó agendada 🗓️", html, reply_to: "hi@pathwaycareercoach.com", signature: "pathway" }),
+    });
+  } catch (e) {
+    console.error(`[EMAIL-FETCH-ERROR] ${String(e)}`);
+  }
+}
