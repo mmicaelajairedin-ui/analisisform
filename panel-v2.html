@@ -6074,10 +6074,12 @@ function viewClienteDetalle(c){
     (_bigMedal||"<div style='font-size:11px;color:var(--pw-text-soft)'>Sin medalla aún</div>")+
     _railStatus+
     "</div>";
+  var _reasignarBtn=(RME&&RME.org_id&&RME.org_id===c.raw.org_id)?"<button class='cp-btn cp-btn-ghost' data-act='cli-reasignar' data-id='"+esc(c.id)+"'>"+PWI.svg('arrowRightLeft',{sm:true})+" Reasignar coach</button>":"";
   var _railAcc="<div class='cp-card cp-card-pad' style='display:flex;flex-direction:column;gap:8px'>"+
     "<div class='cp-eyebrow' style='margin-bottom:2px'>Acciones rápidas</div>"+
     waBtn("cp-btn cp-btn-ghost")+
     "<button class='cp-btn cp-btn-ghost' "+(t==='mensajes'?"style='background:var(--pw-success-bg);color:var(--pw-bosque);border-color:var(--pw-bosque);font-weight:600' ":"")+"data-act='clidet:mensajes'><span class='cp-emo'>"+PWI.svg('chat',{sm:true})+"</span> Mensajes</button>"+
+    _reasignarBtn+
     ((c.raw&&c.raw.activo===false)
       ? "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-bosque);border-color:var(--pw-bosque)' data-act='cli-reactivate' data-id='"+esc(c.id)+"'>Activar cliente</button>"
       : "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='cli-deactivate' data-id='"+esc(c.id)+"'>Desactivar cliente</button>")+
@@ -10101,6 +10103,24 @@ function viewNewModal(){
           "<button class='cp-btn cp-btn-primary beacon' data-act='cli-create'>Crear cliente</button></div>"+
       "</div></div></div>";
 }
+function viewReasignModal(){
+  var r=state.reasignOpen||{};
+  var cli=CLIENTS.filter(function(x){return String(x.id)===String(r.cliId);})[0]||{};
+  var coachOpts=(r.coaches||[]).map(function(c){
+    return "<option value='"+esc(c.id)+"'"+(String(c.id)===String(cli.coach_id)?" selected":"")+">"+esc(c.nombre||c.email)+"</option>";
+  }).join("");
+  return "<div data-act='ras-bg' style='position:fixed;inset:0;background:rgba(27,46,38,.45);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px'>"+
+    "<div data-act='ras-stop' style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:420px;max-width:100%;overflow:hidden'>"+
+      "<div class='cp-card-hd'><h3 class='cp-card-title'>Reasignar coach<span class='dot'>.</span></h3>"+
+        "<button class='cp-icon-btn' data-act='ras-close' title='Cerrar'>"+svg(IC.close,15)+"</button></div>"+
+      "<div class='cp-card-pad' style='display:flex;flex-direction:column;gap:14px'>"+
+        "<div style='font-size:13px;color:var(--pw-text-soft);line-height:1.5'>Mover a <strong>"+esc(cli.name)+"</strong> a otro coach de tu red.</div>"+
+        "<div class='cp-form-row'><label class='cp-form-label'>Nuevo coach</label><select id='ras-coach' class='cp-form-input'>"+coachOpts+"</select></div>"+
+        "<div style='display:flex;gap:10px;justify-content:flex-end;padding-top:4px'>"+
+          "<button class='cp-btn cp-btn-ghost' data-act='ras-close'>Cancelar</button>"+
+          "<button class='cp-btn cp-btn-primary' data-act='ras-confirm'>Reasignar</button></div>"+
+      "</div></div></div>";
+}
 function _inboxSeenKey(id){ return "pw_inbox_seen_"+id; }
 function _inboxSeen(id){ try{ return parseInt(localStorage.getItem(_inboxSeenKey(id))||"0",10)||0; }catch(e){ return 0; } }
 function _inboxMarkSeen(id){ try{ localStorage.setItem(_inboxSeenKey(id), String(Date.now())); }catch(e){} }
@@ -10812,6 +10832,7 @@ function render(){
       (state.mail&&state.mail.open?viewMailModal():"")+
       (state.genmat&&state.genmat.open?viewGenMatModal():"")+
       (state.review&&state.review.open?viewReviewModal():"")+
+      (state.reasignOpen?viewReasignModal():"")+
       (state.ag?viewAgModal():"");
     var _same=(_vk===_lastViewKey);
     try{ var _scEl2=document.querySelector(".cp-scroll"); if(_scEl2) _scEl2.scrollTop=(_same?_prevScroll:0); }catch(e){}
@@ -12845,6 +12866,21 @@ document.addEventListener("click", function(ev){
       .catch(function(){ alert("No se pudo actualizar el acceso. Reintenta."); });
     return;
   }
+  if(act==="cli-reasignar"){
+    var cid=el.getAttribute("data-id");
+    if(!cid||!RME||!RME.org_id) return;
+    var cli=CLIENTS.filter(function(x){return String(x.id)===String(cid);})[0];
+    if(!cli) return;
+    var availableCoaches=(RCOACHES||[]).filter(function(u){
+      return u&&String(u.org_id)===String(RME.org_id)&&(u.rol==="coach"||u.rol==="owner")&&u.activo!==false;
+    }).sort(function(a,b){return ((a.nombre||a.email)||"").localeCompare(((b.nombre||b.email)||""));});
+    if(!availableCoaches.length){
+      alert("No hay coaches disponibles en tu red para reasignar."); return;
+    }
+    state.reasignOpen={cliId:cid,coaches:availableCoaches};
+    render();
+    return;
+  }
   if(act==="cli-new"){
     if(!REAL||!RME){ alert("Inicia sesión para crear clientes reales."); return; }
     if(state.plan!=="pro"){
@@ -12856,6 +12892,41 @@ document.addEventListener("click", function(ev){
   if(act==="cli-stop"){ return; }
   if(act==="cli-bg"){ if(ev.target===el){ state.newOpen=false; render(); } return; }
   if(act==="cli-modal-close"){ state.newOpen=false; render(); return; }
+  if(act==="ras-stop"){ return; }
+  if(act==="ras-bg"){ if(ev.target===el){ state.reasignOpen=null; render(); } return; }
+  if(act==="ras-close"){ state.reasignOpen=null; render(); return; }
+  if(act==="ras-confirm"){
+    if(!state.reasignOpen) return;
+    var coachSel=document.getElementById("ras-coach");
+    if(!coachSel) return;
+    var newCoachId=coachSel.value;
+    if(!newCoachId) return;
+    var cliId=state.reasignOpen.cliId;
+    var cli=CLIENTS.filter(function(x){return String(x.id)===String(cliId);})[0];
+    if(!cli||String(cli.coach_id)===String(newCoachId)){
+      state.reasignOpen=null; render(); return;
+    }
+    el.disabled=true; el.textContent="Reasignando...";
+    _hdr({"Content-Type":"application/json"}).then(function(h){
+      return fetch(SB+"/functions/v1/asignar-cliente",{method:"POST",headers:h,body:JSON.stringify({cliente_id:cliId,coach_id:newCoachId})});
+    }).then(function(r){
+      return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d||{}};});
+    }).then(function(res){
+      if(!res.ok||!res.d.ok){
+        alert(res.d.error==="not_owner"?"Tu sesión no está activa — reingresa":"No se pudo reasignar. Reintenta");
+      } else {
+        cli.coach_id=newCoachId;
+        toast("Cliente reasignado ✓");
+        state.reasignOpen=null;
+      }
+      render();
+    }).catch(function(){
+      alert("Error de conexión. Reintenta.");
+      el.disabled=false;
+      el.textContent="Reasignar";
+    });
+    return;
+  }
   if(act==="cli-create"){
     var nm=_val("nc-nombre").trim(), em=_val("nc-email").trim().toLowerCase(), cg=_val("nc-cargo").trim(), pw=_val("nc-pass").trim();
     if(!nm||!em){ alert("Nombre y email son obligatorios."); return; }
