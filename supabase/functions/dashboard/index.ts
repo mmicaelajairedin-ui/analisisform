@@ -403,8 +403,8 @@ Deno.serve(async (req) => {
       supabase
     );
 
-    // Set cache headers
-    const cacheControl = `public, max-age=${dashboard.cache_ttl_seconds}`;
+    // Set cache headers (private = browser cache only, not CDN/proxy)
+    const cacheControl = `private, max-age=${dashboard.cache_ttl_seconds}`;
 
     return new Response(JSON.stringify(dashboard), {
       status: 200,
