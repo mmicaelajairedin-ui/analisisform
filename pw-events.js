@@ -22,7 +22,7 @@
 (function () {
   "use strict";
   try {
-    var SB = "https://mxkljqhlwiqavbjfjfov.supabase.co";
+    var SB = "https://api.pathwaycareercoach.com";
     var KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
     var ENDPOINT = SB + "/rest/v1/eventos";
 

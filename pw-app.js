@@ -40,6 +40,7 @@
       // y muestra los avisos .app-only ("gestioná tu plan en la web").
       s.textContent=
         ".pw-in-app [data-app-hide]{display:none !important;}"+
+        ".pw-in-app [data-ios-hide]{display:none !important;}"+
         ".pw-in-app [data-url*='buy.stripe.com'],.pw-in-app [data-url*='billing.stripe.com'],.pw-in-app [data-url*='upgrade.html'],"+
         ".pw-in-app a[href*='buy.stripe.com'],.pw-in-app a[href*='billing.stripe.com'],.pw-in-app a[href*='upgrade.html']{display:none !important;}"+
         ".app-only{display:none !important;}.pw-in-app .app-only{display:block !important;}";

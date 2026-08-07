@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<!-- Cache-bust: 2026-08-06 redirect-v3 | Force-reload v2 -->
+<script>
+// Fuerza una carga sin cache cada vez (por problema de cache de Cloudflare)
+if (!localStorage.getItem('mj_login_reloaded')) {
+  localStorage.setItem('mj_login_reloaded', '1');
+  location.href = location.href.split('?')[0] + '?v=' + Date.now();
+}
+</script>
 <script src="/pw-polyfill.js"></script>
 <script src="pw-observe.js"></script>
 <script src="/pw-native.js"></script>
@@ -194,7 +202,7 @@ body::after{content:'';position:absolute;bottom:-120px;left:-120px;width:340px;h
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
 <script>
-var SB='https://mxkljqhlwiqavbjfjfov.supabase.co';
+var SB='https://api.pathwaycareercoach.com';
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
 var BASE='https://pathwaycareercoach.com';
 
@@ -288,13 +296,65 @@ function signInWithApple(){
   });
 }
 function signInWithGoogle(){
+  console.log('[google-debug] Capacitor existe:', !!window.Capacitor, '| Browser plugin:', !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser), '| GoogleAuth plugin:', !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.GoogleAuth));
   if(!window.supabase){
     alert('Supabase SDK no cargo todavia. Recarga la página.');
     return;
   }
   var btn = document.getElementById('btn-google');
   if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Google...';}
-  var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login';
+
+  // Detectar si está corriendo en iOS app nativa
+  var isNativeIOS = window.Capacitor && (typeof window.Capacitor.isNativePlatform === 'function' ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative);
+  console.log('[google-debug] Capacitor existe:', !!window.Capacitor, '| isNativeIOS:', isNativeIOS, '| Browser plugin:', !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser));
+  var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login' + (isNativeIOS ? '&google_native=1' : '');
+
+  if(isNativeIOS){
+    // En iOS nativo, usar Browser.open() para abrir OAuth en ventana nativa integrada
+    var Browser = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
+    if(Browser){
+      var sb = window.supabase.createClient(SB, KEY);
+      sb.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: redirectTo, skipBrowserRedirect: true }
+      }).then(function(result){
+        if(result.error){ throw result.error; }
+        var authUrl = result.data.url;
+
+        // Escuchar cuando el usuario cierra el browser nativo
+        var listenerHandle = Browser.addListener('browserFinished', function(){
+          if(listenerHandle && listenerHandle.remove) listenerHandle.remove();
+
+          // Verificar si la sesión se guardó en localStorage (auth-callback.html lo hizo)
+          try {
+            var usrStr = localStorage.getItem('mj_user');
+            if(usrStr){
+              var usr = JSON.parse(usrStr);
+              var _v = 'v=' + Date.now();
+              var dest = usr.rol === 'owner' ? '/multicoach.html?' :
+                         (usr.rol === 'coach' || usr.rol === 'admin') ? '/panel-v2.html?' :
+                         (usr.rol === 'empleado') ? '/empleado.html?' :
+                         '/cliente.html?';
+              window.location.href = dest + _v;
+              return;
+            }
+          } catch(e) {}
+
+          // Sin sesión guardada → re-habilitar el botón para reintentar
+          if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
+        });
+
+        Browser.open({ url: authUrl });
+      }).catch(function(err){
+        console.error('[google native signin]', err);
+        if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
+        alert('Error iniciando sesión con Google: ' + (err && err.message || 'desconocido'));
+      });
+      return;
+    }
+  }
+
+  // En web, usar flujo OAuth estándar
   var sb = window.supabase.createClient(SB, KEY);
   sb.auth.signInWithOAuth({
     provider: 'google',
@@ -556,6 +616,7 @@ async function entrar(){
       multicoach_access: multicoachAccess
     };
     localStorage.setItem('mj_user', JSON.stringify(_mj_user));
+    localStorage.setItem('mj_auth', _jwt);
     if(colaboradorPermisos){
       localStorage.setItem('mj_colaborador_permisos', JSON.stringify(colaboradorPermisos));
     }
@@ -595,7 +656,7 @@ async function entrar(){
     // recargando en vez de desloguear; esto resetea ese "una vez" por login.)
     try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
     var _v='v='+Date.now();
-    if(usuario.rol==='owner' || (usuario.rol==='colaborador' && multicoachAccess)) window.location.href=BASE+'/multicoach.html?'+_v;
+    if(usuario.rol==='owner' || (usuario.rol==='colaborador' && multicoachAccess)) window.location.href=BASE+'/multicoach-v3.html?'+_v;
     else if(usuario.rol==='coach'||usuario.rol==='admin'){
       window.location.href=BASE+'/panel-v2.html?'+_v;
     } else if(usuario.rol==='empleado'){
