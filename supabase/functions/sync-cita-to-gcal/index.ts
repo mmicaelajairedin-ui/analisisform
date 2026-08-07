@@ -1,15 +1,19 @@
 // ===================================================================
-// sync-cita-to-gcal — Sincroniza una cita a Google Calendar y guarda el Meet link
+// sync-cita-to-gcal — Calcula y guarda el video_url único de una cita
 //
 // Después de que se crea una cita en Supabase, esta función:
-// 1. Obtiene los detalles de la cita (nombre, inicio, fin, modalidad, lugar)
-// 2. Llama a gcal-push para crear el evento en Google Calendar
-// 3. Extrae el hangoutLink (Google Meet)
-// 4. Guarda el link en citas.meet_link
+// 1. Obtiene los detalles de la cita
+// 2. Lee la configuración del coach (zoom_url si existe)
+// 3. Llama a gcal-push para crear evento en Google Calendar
+// 4. Calcula video_url con prioridad:
+//    - Google Meet (si gcal-push devolvió hangoutLink)
+//    - Zoom del coach (si configuró zoom_url)
+//    - Sala de Pathway (fallback)
+// 5. Guarda video_url en citas.meet_link (única fuente de verdad)
 //
 // POST body:
 //   { cita_id (BIGINT) }
-//   → { ok:true, hangoutLink } | { ok:false, reason }
+//   → { ok:true, sync: { video_url, video_url_source, ... } } | { ok:false, sync: { reason, ... } }
 //
 // Env: AUTH_URL, USERS_URL, DATA_URL, SUPABASE_SERVICE_ROLE_KEY
 // Deploy: supabase functions deploy sync-cita-to-gcal --no-verify-jwt
@@ -196,16 +200,8 @@ Deno.serve(async (req: Request) => {
       console.log(`[PATCH-SKIP] No data to save (no video_url, no eventId)`);
     }
 
-    // 5) Enviar email de confirmación (SIEMPRE, con o sin video_url)
-    // video_url es la única fuente de verdad (Google Meet, Zoom, o Sala Pathway)
-    if (email) {
-      try {
-        await enviarEmailConVideoLink(email, tipo || "Sesión", inicio, modalidad, lugar, video_url, video_url_source);
-        console.log(`[EMAIL-SENT] Confirmation email sent to ${email}, video_url_source=${video_url_source}`);
-      } catch (e) {
-        console.error(`[EMAIL-ERROR] Failed to send email: ${String(e)}`);
-      }
-    }
+    // 5) El email se envía desde panel-v2 usando video_url guardado en meet_link
+    // Así el panel mantiene control de UX, plantillas y timing del email
 
     console.log(`[SYNC-CITA] Final: ok=${trace.ok}, event_id=${trace.event_id}, video_url_source=${trace.video_url_source}, video_url=${trace.video_url}, patched=${trace.patched}, patch_status=${trace.patch_status}`);
     return json({ ok: trace.ok && trace.patched, sync: trace });
@@ -221,26 +217,3 @@ function fmtFecha(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]} · ${m[4]}:${m[5]}` : iso;
 }
 
-// Enviar email de confirmación con video link (Google Meet, Zoom, o Sala de Pathway)
-async function enviarEmailConVideoLink(to: string, tipo: string, inicio: string, modalidad: string, lugar: string, videoUrl: string, videoSource: string): Promise<void> {
-  const cuando = fmtFecha(inicio);
-  const donde = modalidad === "presencial"
-    ? `<p style='font-size:15px'>📍 <b>Presencial:</b> ${lugar || "te confirmamos el lugar"}</p>`
-    : videoUrl
-      ? `<p style='margin:20px 0'><a href='${videoUrl}' target='_blank' rel='noopener' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a la sesión →</a></p>`
-      : `<p style='margin:20px 0;color:#8A968E'><b>Link:</b> te compartiremos el acceso pronto.</p>`;
-  const html =
-    "<p style='font-size:15px'>¡Hola!</p>" +
-    "<p style='font-size:15px;line-height:1.6'>Tu sesión quedó agendada:</p>" +
-    "<p style='font-size:15px'><b>" + tipo + "</b><br>🗓️ " + cuando + "</p>" +
-    donde +
-    "<p style='font-size:13px;color:#777'>Si necesitás reprogramar, respondé este correo.</p>";
-  try {
-    await fetch(`${SB.DATA}/functions/v1/send-email`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to, subject: "Tu sesión quedó agendada 🗓️", html, reply_to: "hi@pathwaycareercoach.com", signature: "pathway" }),
-    });
-  } catch (e) {
-    console.error(`[EMAIL-FETCH-ERROR] ${String(e)}`);
-  }
-}

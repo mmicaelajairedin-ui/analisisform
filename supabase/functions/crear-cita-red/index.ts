@@ -148,6 +148,8 @@ Deno.serve(async (req: Request) => {
     const rows = await r.json().catch(() => []);
     const cita = Array.isArray(rows) && rows[0] ? rows[0] : { coach_id, nombre, tipo, inicio, estado: "confirmada" };
     // Sincronizar a Google Calendar — ESPERA a que complete.
+    // sync-cita-to-gcal calcula video_url (Google Meet → Zoom → Sala Pathway)
+    // y lo devuelve aquí con video_url_source para diagnóstico.
     let syncTrace = {
       called: false,
       ok: false,
@@ -155,6 +157,8 @@ Deno.serve(async (req: Request) => {
       reason: null as string | null,
       event_id: null as string | null,
       hangoutLink: null as string | null,
+      video_url: null as string | null,
+      video_url_source: null as string | null,
       patched: false,
       patch_status: null as number | null,
     };
