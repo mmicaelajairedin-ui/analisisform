@@ -89,27 +89,47 @@ Deno.serve(async (req: Request) => {
 
     // 4) Si hay hangoutLink, guardar en citas.meet_link
     if (hangoutLink) {
+      const patchPayload = { meet_link: hangoutLink };
+      console.log(`[PATCH-MEET_LINK] Payload: ${JSON.stringify(patchPayload)}`);
+      console.log(`[PATCH-MEET_LINK] URL: ${SB.DATA}/rest/v1/citas?id=eq.${citaId}`);
+
       const ur = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}`, {
         method: "PATCH",
         headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify({ meet_link: hangoutLink }),
+        body: JSON.stringify(patchPayload),
       });
+
+      const patchResponseText = await ur.text();
+      console.log(`[PATCH-MEET_LINK] HTTP Status: ${ur.status}`);
+      console.log(`[PATCH-MEET_LINK] Response body: ${patchResponseText}`);
+
       if (!ur.ok) {
-        console.error(`Failed to save meet_link for cita ${citaId}`, ur.status);
-        // No es error fatal — el link se generó pero no se guardó en BD
+        console.error(`[PATCH-ERROR] Failed to save meet_link for cita ${citaId}, status ${ur.status}, body: ${patchResponseText}`);
+      } else {
+        console.log(`[PATCH-SUCCESS] meet_link saved for cita ${citaId}`);
       }
     }
 
     // También guardar event_id si existe
     if (eventId && !hangoutLink) {
-      console.log(`[SYNC-CITA] Saving google_event_id=${eventId} to cita ${citaId}`);
+      const patchPayload = { google_event_id: eventId };
+      console.log(`[PATCH-GOOGLE_EVENT_ID] Payload: ${JSON.stringify(patchPayload)}`);
+      console.log(`[PATCH-GOOGLE_EVENT_ID] URL: ${SB.DATA}/rest/v1/citas?id=eq.${citaId}`);
+
       const ur = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}`, {
         method: "PATCH",
         headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify({ google_event_id: eventId }),
+        body: JSON.stringify(patchPayload),
       });
+
+      const patchResponseText = await ur.text();
+      console.log(`[PATCH-GOOGLE_EVENT_ID] HTTP Status: ${ur.status}`);
+      console.log(`[PATCH-GOOGLE_EVENT_ID] Response body: ${patchResponseText}`);
+
       if (!ur.ok) {
-        console.error(`Failed to save google_event_id for cita ${citaId}`, ur.status);
+        console.error(`[PATCH-ERROR] Failed to save google_event_id for cita ${citaId}, status ${ur.status}, body: ${patchResponseText}`);
+      } else {
+        console.log(`[PATCH-SUCCESS] google_event_id saved for cita ${citaId}`);
       }
     }
 
