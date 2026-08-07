@@ -20,7 +20,9 @@
 // Deploy: se auto-deploya al pushear a main (está en deploy-functions.yml).
 // ===================================================================
 
-const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+// Import hybrid architecture configuration
+import { SB } from "../supabase-config.ts";
+
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const G_ID = Deno.env.get("GOOGLE_CLIENT_ID") || "";
 const G_SEC = Deno.env.get("GOOGLE_CLIENT_SECRET") || "";
@@ -65,7 +67,7 @@ Deno.serve(async (req: Request) => {
   console.log(`[GCAL-PUSH START]`);
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
-  if (!SB_URL || !SERVICE || !G_ID || !G_SEC) return json({ error: "env_missing" }, 500);
+  if (!SB.USERS || !SERVICE || !G_ID || !G_SEC) return json({ error: "env_missing" }, 500);
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
@@ -78,9 +80,10 @@ Deno.serve(async (req: Request) => {
 
   // 1) Token del coach desde la CAJA FUERTE (gcal_tokens, service role).
   // El token es un objeto JSONB con { refresh_token, access_token?, ... }
+  // gcal_tokens vive en el proyecto de USUARIOS (SB.USERS)
   let refresh = "";
   try {
-    const tr = await fetch(`${SB_URL}/rest/v1/gcal_tokens?coach_id=eq.${encodeURIComponent(coachId)}&select=token&limit=1`, { headers: svc });
+    const tr = await fetch(`${SB.USERS}/rest/v1/gcal_tokens?coach_id=eq.${encodeURIComponent(coachId)}&select=token&limit=1`, { headers: svc });
     if (tr.ok) {
       const trows = await tr.json();
       if (Array.isArray(trows) && trows[0] && trows[0].token) {
