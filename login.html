@@ -303,7 +303,58 @@ function signInWithGoogle(){
   }
   var btn = document.getElementById('btn-google');
   if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Google...';}
-  var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login';
+
+  // Detectar si está corriendo en iOS app nativa
+  var isNativeIOS = window.Capacitor && (typeof window.Capacitor.isNativePlatform === 'function' ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative);
+  console.log('[google-debug] Capacitor existe:', !!window.Capacitor, '| isNativeIOS:', isNativeIOS, '| Browser plugin:', !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser));
+  var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login' + (isNativeIOS ? '&google_native=1' : '');
+
+  if(isNativeIOS){
+    // En iOS nativo, usar Browser.open() para abrir OAuth en ventana nativa integrada
+    var Browser = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
+    if(Browser){
+      var sb = window.supabase.createClient(SB, KEY);
+      sb.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: redirectTo, skipBrowserRedirect: true }
+      }).then(function(result){
+        if(result.error){ throw result.error; }
+        var authUrl = result.data.url;
+
+        // Escuchar cuando el usuario cierra el browser nativo
+        var listenerHandle = Browser.addListener('browserFinished', function(){
+          if(listenerHandle && listenerHandle.remove) listenerHandle.remove();
+
+          // Verificar si la sesión se guardó en localStorage (auth-callback.html lo hizo)
+          try {
+            var usrStr = localStorage.getItem('mj_user');
+            if(usrStr){
+              var usr = JSON.parse(usrStr);
+              var _v = 'v=' + Date.now();
+              var dest = usr.rol === 'owner' ? '/multicoach.html?' :
+                         (usr.rol === 'coach' || usr.rol === 'admin') ? '/panel-v2.html?' :
+                         (usr.rol === 'empleado') ? '/empleado.html?' :
+                         '/cliente.html?';
+              window.location.href = dest + _v;
+              return;
+            }
+          } catch(e) {}
+
+          // Sin sesión guardada → re-habilitar el botón para reintentar
+          if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
+        });
+
+        Browser.open({ url: authUrl });
+      }).catch(function(err){
+        console.error('[google native signin]', err);
+        if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
+        alert('Error iniciando sesión con Google: ' + (err && err.message || 'desconocido'));
+      });
+      return;
+    }
+  }
+
+  // En web, usar flujo OAuth estándar
   var sb = window.supabase.createClient(SB, KEY);
   sb.auth.signInWithOAuth({
     provider: 'google',
