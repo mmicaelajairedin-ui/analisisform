@@ -477,6 +477,8 @@
           desc: "Lleva 22 días sin sesión (contrata 1x/semana). Coach María está inactiva.",
           coach: "María",
           cliente: "Carlos",
+          isVIP: true,
+          daysSinceIssue: 22,
           acciones: [
             { label: "Reasignar a Pedro", onclick: "reasignarAlerta('Carlos', 'Pedro')" },
             { label: "Contactar a Carlos", onclick: "contactarAlerta('Carlos')" },
@@ -488,10 +490,24 @@
           titulo: "Coach María sin actividad",
           desc: "No se ha conectado desde ayer (36h). Tiene 3 clientes a cargo.",
           coach: "María",
+          isVIP: false,
+          daysSinceIssue: 1.5,
           acciones: [
             { label: "Llamar a María", onclick: "llamarAlerta('María')" },
             { label: "Ver sus clientes", onclick: "verClientesCoach('María')" },
             { label: "Marcar ausencia", onclick: "marcarAusencia('María')" }
+          ]
+        },
+        {
+          tipo: "naranja",
+          titulo: "Cliente estándar Ana sin progreso",
+          desc: "No completó sesión hace 5 días. Cliente nuevo (semana 1).",
+          cliente: "Ana",
+          isVIP: false,
+          daysSinceIssue: 5,
+          acciones: [
+            { label: "Enviar recordatorio", onclick: "contactarAlerta('Ana')" },
+            { label: "Reasignar coach", onclick: "reasignarAlerta('Ana', 'Nuevo')" }
           ]
         }
       ],
@@ -608,13 +624,43 @@
     }
 
     // ════════════════════════════════════════════════════════════════
+    // INTELLIGENT PRIORITIZATION (Sprint 3)
+    // ════════════════════════════════════════════════════════════════
+
+    function calculateAlertScore(alerta) {
+      // Impact score (1-10): VIP = +5, severity level
+      const impactScore = (alerta.isVIP ? 5 : 0) + (alerta.tipo === 'rojo' ? 5 : 3);
+
+      // Urgency score (1-10): based on days since issue
+      const urgencyScore = Math.min(10, Math.ceil(alerta.daysSinceIssue * 0.4));
+
+      // Combined score (weighted: impact 60%, urgency 40%)
+      return (impactScore * 0.6) + (urgencyScore * 0.4);
+    }
+
+    function getPrioritizedAlerts() {
+      // Rank alerts by calculated priority score
+      const scored = mockData.alertas.map(alerta => ({
+        ...alerta,
+        score: calculateAlertScore(alerta)
+      }));
+
+      // Sort descending by score
+      scored.sort((a, b) => b.score - a.score);
+
+      // Return only top alert (most critical)
+      return scored.slice(0, 1);
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // RENDER
     // ════════════════════════════════════════════════════════════════
 
     function renderDiagnostico() {
       const container = document.getElementById('diagnostico-alerts');
+      const alertas = getPrioritizedAlerts(); // Show only most critical alert
 
-      if (mockData.alertas.length === 0) {
+      if (alertas.length === 0) {
         container.innerHTML = `
           <div class="alerta-vacia">
             <div class="alerta-vacia-icon">✓</div>
@@ -624,7 +670,7 @@
         return;
       }
 
-      container.innerHTML = mockData.alertas.map(alerta => `
+      container.innerHTML = alertas.map(alerta => `
         <div class="alerta ${alerta.tipo}">
           <div class="alerta-contenido">
             <h3 class="alerta-titulo">${alerta.titulo}</h3>
