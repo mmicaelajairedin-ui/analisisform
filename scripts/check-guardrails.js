@@ -4999,6 +4999,27 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "REST queries: NO pedir columnas inexistentes (ciudad, sector en candidatos; logo en organizaciones)",
+    bug: "Agosto 2026: hub.html pedía ciudad,sector de candidatos (no existen). " +
+         "Marzo 2026: multicoach.html pedía logo de organizaciones (no existe). " +
+         "Patrón: queries rotas con columnas fantasma que rompen el frontend silenciosamente.",
+    check() {
+      const content = read("hub.html");
+      if (!content) return null;
+
+      // hub.html line 288: debe NO pedir ciudad,sector de candidatos
+      // Fixed version: select=id,email,nombre,created_at,semana_activa
+      if (/select=id,email,nombre,(?:ciudad|sector)/.test(content))
+        return "hub.html: candidatos query todavía pide ciudad/sector (no existen en schema).";
+
+      // Comprobación adicional: si aún pide esas columnas en alguna forma
+      if (/\/rest\/v1\/candidatos[^&]*select=[^&]*(?:ciudad|sector)/.test(content))
+        return "hub.html: candidatos no tiene ciudad/sector.";
+
+      return null;
+    },
+  },
 ];
 
 
