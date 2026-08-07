@@ -18,30 +18,30 @@
 //   SUPABASE_DATA_URL = https://ddxnrsnjdvtqhxunxnwj.supabase.co (proyecto nuevo)
 // ===================================================================
 
-const AUTH = Deno.env.get("SUPABASE_AUTH_URL");
-const USERS = Deno.env.get("SUPABASE_USERS_URL");
-const DATA = Deno.env.get("SUPABASE_DATA_URL");
+const AUTH = Deno.env.get("AUTH_URL");
+const USERS = Deno.env.get("USERS_URL");
+const DATA = Deno.env.get("DATA_URL");
 
 // Validación obligatoria — sin fallback silencioso.
 if (!AUTH) {
   throw new Error(
-    "Missing required environment variable: SUPABASE_AUTH_URL\n" +
+    "Missing required environment variable: AUTH_URL\n" +
     "This is the old Supabase project URL for authentication and users.\n" +
-    "Configure it in Supabase → Edge Functions → Secrets"
+    "Configure it in Supabase → Edge Functions → Secrets as 'AUTH_URL'"
   );
 }
 if (!USERS) {
   throw new Error(
-    "Missing required environment variable: SUPABASE_USERS_URL\n" +
+    "Missing required environment variable: USERS_URL\n" +
     "This is the old Supabase project URL for usuarios and candidatos tables.\n" +
-    "Configure it in Supabase → Edge Functions → Secrets"
+    "Configure it in Supabase → Edge Functions → Secrets as 'USERS_URL'"
   );
 }
 if (!DATA) {
   throw new Error(
-    "Missing required environment variable: SUPABASE_DATA_URL\n" +
+    "Missing required environment variable: DATA_URL\n" +
     "This is the new Supabase project URL for citas and other data.\n" +
-    "Configure it in Supabase → Edge Functions → Secrets"
+    "Configure it in Supabase → Edge Functions → Secrets as 'DATA_URL'"
   );
 }
 
