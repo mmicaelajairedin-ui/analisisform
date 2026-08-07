@@ -459,69 +459,105 @@
 
   <script>
     // ════════════════════════════════════════════════════════════════
-    // DATOS MOCK (para Sprint 1)
-    // Después conectaremos a Supabase
+    // FASE 2: INTEGRACIÓN CON SUPABASE
+    // Una única llamada al cargar → consume contrato aprobado
     // ════════════════════════════════════════════════════════════════
 
-    const mockData = {
-      org: {
-        nombre: "Pathway Coaching",
-        coaches: 9,
-        maxCoaches: 10,
-        clientes: 28
-      },
-      alertas: [
-        {
-          tipo: "rojo",
-          titulo: "Cliente VIP Carlos sin sesión",
-          desc: "Lleva 22 días sin sesión (contrata 1x/semana). Coach María está inactiva.",
-          coach: "María",
-          cliente: "Carlos",
-          isVIP: true,
-          daysSinceIssue: 22,
-          acciones: [
-            { label: "Reasignar a Pedro", onclick: "reasignarAlerta('Carlos', 'Pedro')" },
-            { label: "Contactar a Carlos", onclick: "contactarAlerta('Carlos')" },
-            { label: "Ver historial", onclick: "verHistorialAlerta('Carlos')" }
-          ]
-        },
-        {
-          tipo: "naranja",
-          titulo: "Coach María sin actividad",
-          desc: "No se ha conectado desde ayer (36h). Tiene 3 clientes a cargo.",
-          coach: "María",
-          isVIP: false,
-          daysSinceIssue: 1.5,
-          acciones: [
-            { label: "Llamar a María", onclick: "llamarAlerta('María')" },
-            { label: "Ver sus clientes", onclick: "verClientesCoach('María')" },
-            { label: "Marcar ausencia", onclick: "marcarAusencia('María')" }
-          ]
-        },
-        {
-          tipo: "naranja",
-          titulo: "Cliente estándar Ana sin progreso",
-          desc: "No completó sesión hace 5 días. Cliente nuevo (semana 1).",
-          cliente: "Ana",
-          isVIP: false,
-          daysSinceIssue: 5,
-          acciones: [
-            { label: "Enviar recordatorio", onclick: "contactarAlerta('Ana')" },
-            { label: "Reasignar coach", onclick: "reasignarAlerta('Ana', 'Nuevo')" }
-          ]
-        }
-      ],
-      estado: {
-        nivel: "rojo", // rojo, naranja, verde
-        titulo: "Riesgo Operativo",
-        descripcion: "Tu organización tiene múltiples puntos de fricción:\n• Cliente VIP sin sesión (22 días)\n• Coach inactiva (36h)\n• Carga desbalanceada\n\nAcciones recomendadas: reasigna clientes de María, contacta a Carlos."
-      },
-      hoy: {
-        sesiones: 12,
-        proximas: "3 en 2h",
-        canceladas: 1
-      }
+    // Estado del dashboard
+    const dashboardState = {
+      data: null,
+      loading: true,
+      error: null,
+      lastFetch: null,
+      cacheTtl: 300,
     };
+
+    // Obtener token y URL de Supabase
+    const SUPABASE_URL = "https://mzxgxkkgxvunpsiqbzxd.supabase.co";
+    const SUPABASE_TOKEN = localStorage.getItem("sb-token");
+
+    // ════════════════════════════════════════════════════════════════
+    // FETCH DASHBOARD DATA (Una única llamada)
+    // ════════════════════════════════════════════════════════════════
+
+    async function fetchDashboardData() {
+      dashboardState.loading = true;
+      dashboardState.error = null;
+
+      try {
+        const response = await fetch(
+          `${SUPABASE_URL}/functions/v1/dashboard`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${SUPABASE_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!validateDashboardContract(data)) {
+          throw new Error("Response does not match dashboard contract");
+        }
+
+        dashboardState.data = data;
+        dashboardState.lastFetch = new Date();
+        dashboardState.cacheTtl = data.cache_ttl_seconds;
+
+        console.log(
+          `[Dashboard] Loaded in ${data.meta.execution_time_ms}ms (cache: ${data.meta.cache_hit})`
+        );
+
+        scheduleDashboardRefresh();
+      } catch (err) {
+        console.error("[Dashboard] Fetch error:", err);
+        dashboardState.error = err.message;
+      } finally {
+        dashboardState.loading = false;
+      }
+    }
+
+    function validateDashboardContract(data) {
+      const required = [
+        "version",
+        "timestamp",
+        "organization",
+        "diagnosis",
+        "today",
+        "health",
+        "quick_actions",
+        "meta",
+      ];
+
+      for (const key of required) {
+        if (!(key in data)) {
+          console.error(`[Dashboard] Missing required field: ${key}`);
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    let dashboardRefreshTimer = null;
+
+    function scheduleDashboardRefresh() {
+      if (dashboardRefreshTimer) {
+        clearTimeout(dashboardRefreshTimer);
+      }
+
+      const ttl = dashboardState.cacheTtl || 300;
+      dashboardRefreshTimer = setTimeout(() => {
+        console.log("[Dashboard] Cache expired, refreshing...");
+        fetchDashboardData();
+      }, ttl * 1000);
+    }
 
     // ════════════════════════════════════════════════════════════════
     // UI FUNCTIONS
@@ -627,40 +663,42 @@
     // INTELLIGENT PRIORITIZATION (Sprint 3)
     // ════════════════════════════════════════════════════════════════
 
-    function calculateAlertScore(alerta) {
-      // Impact score (1-10): VIP = +5, severity level
-      const impactScore = (alerta.isVIP ? 5 : 0) + (alerta.tipo === 'rojo' ? 5 : 3);
-
-      // Urgency score (1-10): based on days since issue
-      const urgencyScore = Math.min(10, Math.ceil(alerta.daysSinceIssue * 0.4));
-
-      // Combined score (weighted: impact 60%, urgency 40%)
-      return (impactScore * 0.6) + (urgencyScore * 0.4);
-    }
-
-    function getPrioritizedAlerts() {
-      // Rank alerts by calculated priority score
-      const scored = mockData.alertas.map(alerta => ({
-        ...alerta,
-        score: calculateAlertScore(alerta)
-      }));
-
-      // Sort descending by score
-      scored.sort((a, b) => b.score - a.score);
-
-      // Return only top alert (most critical)
-      return scored.slice(0, 1);
-    }
+    // Cálculo de alertas ahora ocurre en Edge Function (backend)
 
     // ════════════════════════════════════════════════════════════════
     // RENDER
     // ════════════════════════════════════════════════════════════════
 
-    function renderDiagnostico() {
-      const container = document.getElementById('diagnostico-alerts');
-      const alertas = getPrioritizedAlerts(); // Show only most critical alert
+    // ════════════════════════════════════════════════════════════════
+    // RENDER DASHBOARD (Consume directamente el contrato)
+    // ════════════════════════════════════════════════════════════════
 
-      if (alertas.length === 0) {
+    function renderDashboard() {
+      if (dashboardState.loading && !dashboardState.data) {
+        renderDashboardSkeleton();
+        return;
+      }
+
+      if (dashboardState.error && !dashboardState.data) {
+        renderDashboardError();
+        return;
+      }
+
+      if (!dashboardState.data) {
+        renderDashboardEmpty();
+        return;
+      }
+
+      const d = dashboardState.data;
+      renderDiagnostico(d.diagnosis);
+      renderHoy(d.today);
+      renderEstado(d.health);
+    }
+
+    function renderDiagnostico(diagnosis) {
+      const container = document.getElementById('diagnostico-alerts');
+
+      if (diagnosis.alert_count === 0) {
         container.innerHTML = `
           <div class="alerta-vacia">
             <div class="alerta-vacia-icon">✓</div>
@@ -670,67 +708,153 @@
         return;
       }
 
-      container.innerHTML = alertas.map(alerta => `
-        <div class="alerta ${alerta.tipo}">
+      const alert = diagnosis.critical_alert;
+      const severityClass = alert.severity === "red" ? "rojo" : "naranja";
+
+      container.innerHTML = `
+        <div class="alerta ${severityClass}">
           <div class="alerta-contenido">
-            <h3 class="alerta-titulo">${alerta.titulo}</h3>
-            <p class="alerta-desc">${alerta.desc}</p>
+            <h3 class="alerta-titulo">${alert.title}</h3>
+            <p class="alerta-desc">${alert.description}</p>
             <div class="alerta-acciones">
-              ${alerta.acciones.map(acc => `
-                <button class="alerta-btn alerta-btn-primary" onclick="${acc.onclick}">
-                  ${acc.label}
-                </button>
-              `).join('')}
+              <small style="color: #999;">Urgencia: ${alert.urgency_score}/10 | Impacto: ${alert.impact_score}/10 | Total alertas: ${diagnosis.alert_count}</small>
             </div>
           </div>
         </div>
-      `).join('');
+      `;
     }
 
-    function renderHoy() {
+    function renderHoy(today) {
       const container = document.getElementById('hoy-container');
-      const hoy = mockData.hoy;
+
+      const completionPercent = today.completion_rate;
+      const completionStyle = completionPercent === 100
+        ? "color: #22c55e;"
+        : completionPercent >= 80
+          ? "color: #eab308;"
+          : "color: #ef4444;";
 
       container.innerHTML = `
         <div class="hoy-card">
-          <div class="hoy-card-number">${hoy.sesiones}</div>
+          <div class="hoy-card-number">${today.total_sessions}</div>
           <div class="hoy-card-label">Sesiones hoy</div>
         </div>
         <div class="hoy-card">
-          <div class="hoy-card-number">${hoy.proximas}</div>
-          <div class="hoy-card-label">Próximas</div>
+          <div class="hoy-card-number">${today.upcoming_2h}</div>
+          <div class="hoy-card-label">Próximas 2h</div>
         </div>
         <div class="hoy-card">
-          <div class="hoy-card-number">${hoy.canceladas}</div>
+          <div class="hoy-card-number" style="${completionStyle}">${today.completion_rate}%</div>
+          <div class="hoy-card-label">Completitud</div>
+        </div>
+        <div class="hoy-card">
+          <div class="hoy-card-number" style="color: #ef4444;">${today.cancelled}</div>
           <div class="hoy-card-label">Canceladas</div>
         </div>
       `;
     }
 
-    function renderEstado() {
+    function renderEstado(health) {
       const container = document.getElementById('estado-container');
-      const estado = mockData.estado;
-      const emoji = estado.nivel === 'rojo' ? '🔴' : estado.nivel === 'naranja' ? '🟠' : '🟢';
+      const emoji = health.level === 'red' ? '🔴' : health.level === 'orange' ? '🟠' : '🟢';
 
       container.innerHTML = `
         <div class="estado-indicator">
           <div class="estado-emoji">${emoji}</div>
-          <div class="estado-label">${estado.titulo.toUpperCase()}</div>
+          <div class="estado-label">${health.title.toUpperCase()}</div>
         </div>
         <div class="estado-texto">
-          ${estado.descripcion.split('\n').join('<br>')}
+          ${health.explanation}
         </div>
       `;
     }
 
     // ════════════════════════════════════════════════════════════════
-    // INIT
+    // LOADING STATES
     // ════════════════════════════════════════════════════════════════
 
+    function renderDashboardSkeleton() {
+      const containers = [
+        "diagnostico-alerts",
+        "hoy-container",
+        "estado-container",
+      ];
+
+      containers.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.innerHTML = `
+            <div style="animation: shimmer 2s infinite; background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%); background-size: 200% 100%; height: 60px; border-radius: 6px;"></div>
+          `;
+        }
+      });
+    }
+
+    function renderDashboardError() {
+      const containers = [
+        "diagnostico-alerts",
+        "hoy-container",
+        "estado-container",
+      ];
+
+      containers.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.innerHTML = `
+            <div class="alerta-vacia" style="background: #fef2f2; border: 1px solid #fecaca;">
+              <div style="color: #dc2626; font-weight: 600;">⚠️ Error cargando datos</div>
+              <small style="color: #dc2626; margin-top: 4px; display: block;">${dashboardState.error}</small>
+              <button class="alerta-btn alerta-btn-primary" onclick="fetchDashboardData()" style="margin-top: 8px;">Reintentar</button>
+            </div>
+          `;
+        }
+      });
+    }
+
+    function renderDashboardEmpty() {
+      const containers = [
+        "diagnostico-alerts",
+        "hoy-container",
+        "estado-container",
+      ];
+
+      containers.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.innerHTML = `
+            <div class="alerta-vacia">
+              <div>Sin datos disponibles</div>
+            </div>
+          `;
+        }
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // INITIALIZATION
+    // ════════════════════════════════════════════════════════════════
+
+    async function initializeDashboard() {
+      console.log("[Dashboard] Initializing...");
+      await fetchDashboardData();
+      renderDashboard();
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
-      renderDiagnostico();
-      renderHoy();
-      renderEstado();
+      initializeDashboard();
+
+      // Agregar animación shimmer si no existe
+      if (!document.getElementById('shimmer-animation')) {
+        const style = document.createElement('style');
+        style.id = 'shimmer-animation';
+        style.textContent = `
+          @keyframes shimmer {
+            0% { background-position: -1000px 0; }
+            100% { background-position: 1000px 0; }
+          }
+        `;
+        document.head.appendChild(style);
+      }
     });
   </script>
 </body>
