@@ -62,6 +62,7 @@ async function accessToken(refresh_token: string): Promise<string | null> {
 }
 
 Deno.serve(async (req: Request) => {
+  console.log(`[GCAL-PUSH START]`);
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
   if (!SB_URL || !SERVICE || !G_ID || !G_SEC) return json({ error: "env_missing" }, 500);
@@ -199,9 +200,11 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log(`[FINAL] status=success, event_id_short=${d.id ? d.id.substring(d.id.length - 8) : "new"}, hangoutLink=${hangoutLink ? "FOUND" : "NOT_FOUND"}`);
+    console.log(`[GCAL-PUSH END] returning ok=true`);
     return json({ ok: true, event_id: d.id || eventId, hangoutLink });
   } catch (e) {
     console.error(`[EXCEPTION] ${String(e)}`);
+    console.log(`[GCAL-PUSH END] returning error: google_unreachable`);
     return json({ ok: false, reason: "google_unreachable" });
   }
 });

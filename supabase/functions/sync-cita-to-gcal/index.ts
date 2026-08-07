@@ -82,7 +82,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const pushData = await pushResp.json();
+    console.log(`[SYNC-CITA] gcal-push response: ok=${pushData.ok}, event_id=${pushData.event_id || "MISSING"}, hangoutLink=${pushData.hangoutLink ? "FOUND" : "MISSING"}`);
+
     const hangoutLink = pushData.hangoutLink || "";
+    const eventId = pushData.event_id || "";
 
     // 4) Si hay hangoutLink, guardar en citas.meet_link
     if (hangoutLink) {
@@ -97,7 +100,21 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    return json({ ok: true, hangoutLink, event_id: pushData.event_id || "" });
+    // También guardar event_id si existe
+    if (eventId && !hangoutLink) {
+      console.log(`[SYNC-CITA] Saving google_event_id=${eventId} to cita ${citaId}`);
+      const ur = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}`, {
+        method: "PATCH",
+        headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ google_event_id: eventId }),
+      });
+      if (!ur.ok) {
+        console.error(`Failed to save google_event_id for cita ${citaId}`, ur.status);
+      }
+    }
+
+    console.log(`[SYNC-CITA] Returning: ok=true, event_id=${eventId}, hangoutLink=${hangoutLink ? "FOUND" : "MISSING"}`);
+    return json({ ok: true, hangoutLink, event_id: eventId });
   } catch (e) {
     console.error("sync-cita-to-gcal error:", e);
     return json({ error: "internal_error", detail: String(e) }, 500);
