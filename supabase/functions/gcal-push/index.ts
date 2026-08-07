@@ -45,8 +45,20 @@ async function accessToken(refresh_token: string): Promise<string | null> {
       body: new URLSearchParams({ client_id: G_ID, client_secret: G_SEC, refresh_token, grant_type: "refresh_token" }),
     });
     const d = await r.json();
-    return (r.ok && d.access_token) ? String(d.access_token) : null;
-  } catch { return null; }
+    if (!r.ok) {
+      console.error(`accessToken: OAuth refresh failed status=${r.status}, error=${d.error}, error_description=${d.error_description}`);
+      return null;
+    }
+    if (!d.access_token) {
+      console.error(`accessToken: OAuth response ok but no access_token, response keys=${Object.keys(d).join(",")}`);
+      return null;
+    }
+    console.log(`accessToken: successfully got token (expires_in=${d.expires_in}s)`);
+    return String(d.access_token);
+  } catch (e) {
+    console.error(`accessToken: exception: ${String(e)}`);
+    return null;
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -87,7 +99,11 @@ Deno.serve(async (req: Request) => {
   }
 
   const at = await accessToken(refresh);
-  if (!at) return json({ ok: false, reason: "token_failed" });
+  if (!at) {
+    console.error(`gcal-push: accessToken() returned null for coach ${coachId}`);
+    return json({ ok: false, reason: "token_failed" });
+  }
+  console.log(`gcal-push: got access token for coach ${coachId}, op=${op}`);
   const auth = { Authorization: `Bearer ${at}`, "Content-Type": "application/json" };
   const base = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 
@@ -124,13 +140,26 @@ Deno.serve(async (req: Request) => {
   try {
     const url = (op === "update" && eventId) ? `${base}/${encodeURIComponent(eventId)}` : base;
     const method = (op === "update" && eventId) ? "PATCH" : "POST";
+    console.log(`gcal-push: calling Google Calendar API, method=${method}, url=${url}`);
     const r = await fetch(url, {
       method,
       headers: auth,
       body: JSON.stringify(gev),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) return json({ ok: false, reason: "write_failed", status: r.status, detail: (d && d.error && d.error.message) || "" });
+    console.log(`gcal-push: Google API response status=${r.status}, ok=${r.ok}, has_id=${!!d.id}, has_conferenceData=${!!d.conferenceData}`);
+    if (d.conferenceData) {
+      console.log(`gcal-push: conferenceData.entryPoints count=${d.conferenceData.entryPoints?.length || 0}`);
+      if (d.conferenceData.entryPoints) {
+        for (const ep of d.conferenceData.entryPoints) {
+          console.log(`gcal-push: entryPoint type=${ep.entryPointType}, uri=${ep.uri}`);
+        }
+      }
+    }
+    if (!r.ok) {
+      console.error(`gcal-push: Google API error response: ${JSON.stringify(d)}`);
+      return json({ ok: false, reason: "write_failed", status: r.status, detail: (d && d.error && d.error.message) || "" });
+    }
     // Extraer Google Meet link de conferenceData (puede tardar un momento en generarse)
     let hangoutLink = "";
     if (d.conferenceData && d.conferenceData.entryPoints) {
@@ -141,8 +170,10 @@ Deno.serve(async (req: Request) => {
         }
       }
     }
-    // DEBUG: log qué retornó Google
-    console.log(`gcal-push: event_id=${d.id}, conferenceData=${d.conferenceData ? "YES" : "NO"}, entryPoints=${d.conferenceData?.entryPoints?.length || 0}, hangoutLink=${hangoutLink ? "YES" : "NO"}`);
+    console.log(`gcal-push: FINAL result event_id=${d.id}, hangoutLink=${hangoutLink ? "YES (" + hangoutLink.substring(0, 30) + "...)" : "NO"}`);
     return json({ ok: true, event_id: d.id || eventId, hangoutLink });
-  } catch { return json({ ok: false, reason: "google_unreachable" }); }
+  } catch (e) {
+    console.error(`gcal-push: exception during Google API call: ${String(e)}`);
+    return json({ ok: false, reason: "google_unreachable" });
+  }
 });
