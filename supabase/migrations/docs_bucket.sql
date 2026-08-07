@@ -12,7 +12,7 @@ values (
     'application/vnd.ms-excel',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'text/plain',
-    'image/png','image/jpeg','image/webp'
+    'image/png','image/jpeg','image/webp','image/gif'
   ]
 )
 on conflict (id) do update
