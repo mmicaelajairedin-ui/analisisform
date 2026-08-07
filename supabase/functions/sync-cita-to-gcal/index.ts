@@ -115,11 +115,12 @@ Deno.serve(async (req: Request) => {
       console.log(`[PATCH-SKIP] No data to save (no hangoutLink, no eventId)`);
     }
 
-    // 5) Enviar email de confirmación CON el meet_link después de actualizar la BD
-    if (email && hangoutLink) {
+    // 5) Enviar email de confirmación (SIEMPRE, con o sin meet_link)
+    // Si hay hangoutLink, lo incluye. Si no, dice "el link aparecerá pronto"
+    if (email) {
       try {
         await enviarEmailConMeetLink(email, tipo || "Sesión", inicio, modalidad, lugar, hangoutLink);
-        console.log(`[EMAIL-SENT] Confirmation email sent to ${email} with Meet link`);
+        console.log(`[EMAIL-SENT] Confirmation email sent to ${email}, hangoutLink=${hangoutLink ? "INCLUDED" : "MISSING"}`);
       } catch (e) {
         console.error(`[EMAIL-ERROR] Failed to send email: ${String(e)}`);
       }
