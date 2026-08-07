@@ -77,7 +77,7 @@
       background: #fff;
       border-radius: 8px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      overflow: hidden;
+      overflow: visible;
     }
 
     /* Controls */
@@ -369,6 +369,54 @@
       display: none;
     }
     .drawer-overlay.open { display: block; }
+
+    /* Menu dropdown */
+    .menu-btn {
+      background: none;
+      border: none;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 18px;
+      color: #999;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+    .menu-btn:hover {
+      background: #f0f0f0;
+      color: #333;
+    }
+    .menu-dropdown {
+      position: absolute;
+      bottom: 100%;
+      right: 0;
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 1001;
+      min-width: 180px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .menu-item {
+      display: block;
+      width: 100%;
+      padding: 12px 16px;
+      border: none;
+      background: none;
+      text-align: left;
+      cursor: pointer;
+      font-size: 14px;
+      color: #333;
+      transition: all 0.15s;
+    }
+    .menu-item:hover {
+      background: #f9f9f9;
+      color: #1565c0;
+    }
+    .menu-item:active {
+      background: #f0f0f0;
+    }
 
     /* Filter badge */
     .filter-badge {
@@ -1176,6 +1224,11 @@
       renderEquipo();
       renderCoaches();
       renderClientes();
+
+      // Close menus when clicking outside
+      document.addEventListener('click', () => {
+        document.querySelectorAll('.menu-dropdown').forEach(m => m.style.display = 'none');
+      });
 
     } catch (e) {
       console.error('Init error:', e);
@@ -2269,6 +2322,7 @@
               <th onclick="sortClientes('email')" style="cursor: pointer;">📧 Email</th>
               <th onclick="sortClientes('coach_nombre')" style="cursor: pointer;">👤 Coach</th>
               <th onclick="sortClientes('activo')" style="cursor: pointer;">📊 Estado</th>
+              <th style="width: 40px;">Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -2287,6 +2341,14 @@
                   </select>
                 </td>
                 <td><span class="badge ${c.activo ? 'active' : 'inactive'}">${c.activo ? 'Activo' : 'Inactivo'}</span></td>
+                <td onclick="event.stopPropagation()" style="position: relative;">
+                  <button class="menu-btn" onclick="toggleClienteMenu('${c.id}', event)">⋮</button>
+                  <div class="menu-dropdown" id="menu-${c.id}" style="display: none;">
+                    <button class="menu-item" onclick="openClienteEditFromMenu('${c.id}'); closeClienteMenu('${c.id}')">✏️ Editar</button>
+                    <button class="menu-item" onclick="openChangeCoachFromMenu('${c.id}'); closeClienteMenu('${c.id}')">👤 Cambiar coach</button>
+                    <button class="menu-item" onclick="toggleClienteEstado('${c.id}'); closeClienteMenu('${c.id}')">${c.activo ? '◯ Desactivar' : '✓ Activar'}</button>
+                  </div>
+                </td>
               </tr>
             `).join('')}
           </tbody>
@@ -2363,6 +2425,28 @@
       return isAsc ? bVal - aVal : aVal - bVal;
     });
 
+    renderClientes();
+  }
+
+  // Menu dropdown para clientes
+  function toggleClienteMenu(clienteId, event) {
+    event.stopPropagation();
+    const menu = document.getElementById(`menu-${clienteId}`);
+    const allMenus = document.querySelectorAll('.menu-dropdown');
+    allMenus.forEach(m => {
+      if (m.id !== `menu-${clienteId}`) m.style.display = 'none';
+    });
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  }
+
+  function closeClienteMenu(clienteId) {
+    document.getElementById(`menu-${clienteId}`).style.display = 'none';
+  }
+
+  function toggleClienteEstado(clienteId) {
+    const cliente = allClientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+    cliente.activo = !cliente.activo;
     renderClientes();
   }
 
@@ -2761,6 +2845,19 @@
       statusEl.style.color = '#d32f2f';
       statusEl.textContent = 'Error. Intenta de nuevo.';
     }
+  }
+
+  // Wrapper para abrir el drawer desde el menú (acepta clienteId)
+  function openClienteEditFromMenu(clienteId) {
+    openClienteDrawer(clienteId);
+  }
+
+  // Wrapper para abrir el modal de cambiar coach desde el menú (acepta clienteId)
+  function openChangeCoachFromMenu(clienteId) {
+    const cliente = allClientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+    currentClienteSelected = cliente;
+    openChangeCoachModal();
   }
 
   function openEditClienteModal() {

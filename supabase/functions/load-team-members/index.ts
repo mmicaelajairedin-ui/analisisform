@@ -80,7 +80,9 @@ Deno.serve(async (req: Request) => {
 
   // Load all team members (coaches, owners, colaborators) for this org
   try {
-    const query = `${SB_URL}/rest/v1/usuarios?org_id=eq.${encodeURIComponent(org_id)}&select=id,nombre,email,activo,rol,created_at,configuracion&or=(rol.eq.coach,rol.eq.owner,rol.eq.colaborador)&order=nombre`;
+    // PostgREST: combine org_id filter with role filter using proper syntax
+    // Query: all usuarios where org_id=X AND (rol IN [coach, owner, colaborador])
+    const query = `${SB_URL}/rest/v1/usuarios?org_id=eq.${encodeURIComponent(org_id)}&rol=in.(coach,owner,colaborador)&select=id,nombre,email,activo,rol,created_at,configuracion&order=nombre`;
     const r = await fetch(query, { headers: svc });
     if (!r.ok) return json({ error: "query_failed", status: r.status }, 502);
 
