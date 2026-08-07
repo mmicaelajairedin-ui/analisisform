@@ -147,8 +147,18 @@ Deno.serve(async (req: Request) => {
     if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
     const rows = await r.json().catch(() => []);
     const cita = Array.isArray(rows) && rows[0] ? rows[0] : { coach_id, nombre, tipo, inicio, estado: "confirmada" };
-    // Sincronizar a Google Calendar — ESPERA a que complete para devolver meet_link/google_event_id.
-    let syncResult = { ok: false, event_id: null, hangoutLink: "", patched: false };
+    // Sincronizar a Google Calendar — ESPERA a que complete.
+    let syncTrace = {
+      called: false,
+      ok: false,
+      status: null as number | null,
+      reason: null as string | null,
+      event_id: null as string | null,
+      hangoutLink: null as string | null,
+      patched: false,
+      patch_status: null as number | null,
+    };
+
     if (cita.id) {
       try {
         const syncResp = await fetch(`${SB.DATA}/functions/v1/sync-cita-to-gcal`, {
@@ -156,15 +166,21 @@ Deno.serve(async (req: Request) => {
           headers: { "Content-Type": "application/json", apikey: SERVICE, Authorization: `Bearer ${SERVICE}` },
           body: JSON.stringify({ cita_id: cita.id }),
         });
-        syncResult = await syncResp.json().catch(() => ({ ok: false, event_id: null, hangoutLink: "", patched: false }));
+        const syncData = await syncResp.json().catch(() => ({ sync: null }));
+        syncTrace = syncData.sync || syncTrace;
+        syncTrace.called = true;
+
         // Actualizar cita con valores devueltos por sync (para que panel envíe email correcto)
-        if (syncResult.event_id) cita.google_event_id = syncResult.event_id;
-        if (syncResult.hangoutLink) cita.meet_link = syncResult.hangoutLink;
+        if (syncTrace.event_id) cita.google_event_id = syncTrace.event_id;
+        if (syncTrace.hangoutLink) cita.meet_link = syncTrace.hangoutLink;
       } catch (e) {
-        console.error(`crear-cita-red: sync failed: ${String(e)}`);
+        console.error(`crear-cita-red: sync exception: ${String(e)}`);
+        syncTrace.called = true;
+        syncTrace.ok = false;
+        syncTrace.reason = `exception: ${String(e)}`;
       }
     }
-    return json({ ok: true, cita, sync: syncResult });
+    return json({ ok: true, cita_id: cita.id, sync: syncTrace });
   } catch { return json({ error: "write_failed" }, 502); }
 });
 

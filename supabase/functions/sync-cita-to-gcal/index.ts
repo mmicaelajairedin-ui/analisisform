@@ -47,6 +47,18 @@ Deno.serve(async (req: Request) => {
   const citaId = Number(body.cita_id || 0);
   if (!citaId) return json({ error: "no_cita_id" }, 400);
 
+  // Objeto para rastrear cada paso del flujo
+  const trace = {
+    called: true,
+    ok: false,
+    status: null as number | null,
+    reason: null as string | null,
+    event_id: null as string | null,
+    hangoutLink: null as string | null,
+    patched: false,
+    patch_status: null as number | null,
+  };
+
   try {
     // 1) Obtener detalles de la cita
     const cr = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}&select=*`, { headers: svc });
@@ -79,24 +91,35 @@ Deno.serve(async (req: Request) => {
       }),
     });
 
+    trace.status = pushResp.status;
+
     if (!pushResp.ok) {
       const err = await pushResp.json().catch(() => ({}));
-      console.error(`[SYNC-CITA] gcal-push HTTP ${pushResp.status}: ${JSON.stringify(err)}`);
+      trace.reason = err.reason || `gcal_push_http_${pushResp.status}`;
+      console.error(`[SYNC-CITA] gcal-push failed: ${trace.reason}`);
+
       // Si gcal-push falla por falta de conexión Google, no es error fatal
       if ((err && err.reason === "coach_no_gcal_write") || !coach_id) {
-        console.log(`[SYNC-CITA] Google not configured, continuing without Meet link`);
-        return json({ ok: true, hangoutLink: "", reason: "coach_no_gcal_write", event_id: null, patched: false });
+        trace.ok = true;
+        trace.reason = "coach_no_gcal_write";
+        console.log(`[SYNC-CITA] Google not configured, continuing`);
+        return json({ ok: true, sync: trace });
       }
-      console.error(`[SYNC-CITA] gcal-push failed, propagating error`);
-      return json({ ok: false, reason: "gcal_push_failed", detail: err, status: pushResp.status }, 502);
+
+      // Propagar error real
+      trace.ok = false;
+      return json({ ok: false, sync: trace });
     }
 
     const pushData = await pushResp.json();
-    console.log(`[SYNC-CITA] gcal-push HTTP 200: ok=${pushData.ok}, event_id=${pushData.event_id || "NULL"}, hangoutLink=${pushData.hangoutLink || "EMPTY"}`);
-    console.log(`[SYNC-CITA] Full gcal-push response: ${JSON.stringify(pushData)}`);
+    trace.event_id = pushData.event_id || null;
+    trace.hangoutLink = pushData.hangoutLink || null;
+    trace.ok = pushData.ok === true;
 
-    const hangoutLink = pushData.hangoutLink || "";
-    const eventId = pushData.event_id || "";
+    console.log(`[SYNC-CITA] gcal-push: event_id=${trace.event_id}, hangoutLink=${trace.hangoutLink}, ok=${trace.ok}`);
+
+    const hangoutLink = trace.hangoutLink || "";
+    const eventId = trace.event_id || "";
 
     // 4) Guardar ambos campos en UN SOLO PATCH (meet_link + google_event_id)
     const patchPayload: Record<string, string> = {};
@@ -113,17 +136,15 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify(patchPayload),
       });
 
+      trace.patch_status = ur.status;
       const patchResponseText = await ur.text();
-      console.log(`[PATCH] HTTP Status: ${ur.status}`);
-      console.log(`[PATCH] Response body: ${patchResponseText}`);
 
       if (!ur.ok) {
-        console.error(`[PATCH-FAILED] HTTP ${ur.status} on citas?id=eq.${citaId}`);
-        console.error(`[PATCH-FAILED] Payload was: ${JSON.stringify(patchPayload)}`);
-        console.error(`[PATCH-FAILED] Response: ${patchResponseText}`);
+        trace.patched = false;
+        console.error(`[PATCH] HTTP ${ur.status}: ${patchResponseText}`);
       } else {
-        console.log(`[PATCH-SUCCESS] HTTP ${ur.status}`);
-        console.log(`[PATCH-SUCCESS] Saved: meet_link=${hangoutLink ? "YES" : "EMPTY"}, google_event_id=${eventId ? "YES" : "EMPTY"}`);
+        trace.patched = true;
+        console.log(`[PATCH] HTTP ${ur.status}: success`);
       }
     } else {
       console.log(`[PATCH-SKIP] No data to save (no hangoutLink, no eventId)`);
@@ -140,9 +161,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const patchedSuccess = Object.keys(patchPayload).length > 0;
-    console.log(`[SYNC-CITA] Final result: ok=true, event_id=${eventId || "NULL"}, hangoutLink=${hangoutLink || "EMPTY"}, patched=${patchedSuccess}`);
-    return json({ ok: true, event_id: eventId || null, hangoutLink: hangoutLink || "", patched: patchedSuccess });
+    console.log(`[SYNC-CITA] Final: ok=${trace.ok}, event_id=${trace.event_id}, hangoutLink=${trace.hangoutLink}, patched=${trace.patched}, patch_status=${trace.patch_status}`);
+    return json({ ok: trace.ok && trace.patched, sync: trace });
   } catch (e) {
     console.error("sync-cita-to-gcal error:", e);
     return json({ error: "internal_error", detail: String(e) }, 500);
