@@ -14130,11 +14130,16 @@ function _uploadDoc(f){
   var id=(REAL&&RME&&RME.id)?RME.id:"anon";
   var clean=(""+(f.name||"doc")).replace(/[^a-zA-Z0-9._-]/g,"_").slice(-60);
   var path="doc-"+id+"-"+Date.now()+"-"+clean;
-  // Bucket 'docs' (acepta PDF/Word/imágenes). El bucket 'avatars' está restringido
-  // a imágenes → los PDF/Word rebotaban. Migration: docs_bucket.sql.
+  // Detectar MIME type: primero desde file.type, si no disponible inferir de extensión
+  var mimeType=f.type;
+  if(!mimeType || mimeType==="application/octet-stream"){
+    var ext=(f.name||"").split(".").pop().toLowerCase();
+    var mimeMap={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp","pdf":"application/pdf","doc":"application/msword","docx":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","xls":"application/vnd.ms-excel","xlsx":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","txt":"text/plain"};
+    mimeType=mimeMap[ext]||"application/octet-stream";
+  }
   return fetch(SB+"/storage/v1/object/docs/"+encodeURIComponent(path),{
     method:"POST",
-    headers:{ apikey:KEY, "Content-Type": (f.type||"application/octet-stream"), "x-upsert":"true" },
+    headers:{ apikey:KEY, "Content-Type": mimeType, "x-upsert":"true" },
     body: f
   }).then(function(r){
     if(!r.ok) return r.text().then(function(t){ throw new Error("storage "+r.status+" "+t); });
