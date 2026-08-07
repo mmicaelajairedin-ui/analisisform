@@ -13,7 +13,8 @@
 // Deploy: supabase functions deploy editar-cita-red --no-verify-jwt
 // ===================================================================
 
-const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+import { SB } from "../supabase-config.ts";
+
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const svc = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
@@ -31,7 +32,7 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 async function callerEmail(token: string): Promise<string | null> {
   if (!token || token === ANON) return null;
   try {
-    const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
+    const r = await fetch(`${SB.AUTH}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
     if (!r.ok) return null;
     const u = await r.json();
     const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
@@ -40,7 +41,7 @@ async function callerEmail(token: string): Promise<string | null> {
 }
 async function ownerOrg(email: string): Promise<string | null> {
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=org_id&limit=1`, { headers: svc });
+    const r = await fetch(`${SB.USERS}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=org_id&limit=1`, { headers: svc });
     if (!r.ok) return null;
     const rows = await r.json();
     return (Array.isArray(rows) && rows[0] ? rows[0].org_id : null) || null;
@@ -48,7 +49,7 @@ async function ownerOrg(email: string): Promise<string | null> {
 }
 async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&org_id=eq.${encodeURIComponent(orgId)}&rol=in.(coach,owner)&select=id&limit=1`, { headers: svc });
+    const r = await fetch(`${SB.USERS}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&org_id=eq.${encodeURIComponent(orgId)}&rol=in.(coach,owner)&select=id&limit=1`, { headers: svc });
     if (!r.ok) return false;
     const rows = await r.json();
     return Array.isArray(rows) && rows.length > 0;
@@ -58,7 +59,7 @@ async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
-  if (!SB_URL || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
+  if (!SB.DATA || !SB.USERS || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
 
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
@@ -78,7 +79,7 @@ Deno.serve(async (req: Request) => {
   let citaEmail = "";
   let citaTipo = "Sesión";
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${encodeURIComponent(citaId)}&select=coach_id,email,tipo&limit=1`, { headers: svc });
+    const r = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${encodeURIComponent(citaId)}&select=coach_id,email,tipo&limit=1`, { headers: svc });
     if (!r.ok) return json({ error: "lookup_failed", status: r.status }, 502);
     const rows = await r.json();
     if (!Array.isArray(rows) || !rows.length) return json({ error: "cita_no_existe" }, 404);
@@ -102,7 +103,7 @@ Deno.serve(async (req: Request) => {
   }
 
   async function doPatch(p: Record<string, unknown>) {
-    return await fetch(`${SB_URL}/rest/v1/citas?id=eq.${encodeURIComponent(citaId)}`, {
+    return await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${encodeURIComponent(citaId)}`, {
       method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify(p),
     });
   }
@@ -136,7 +137,7 @@ function fmtFecha(iso: string): string {
 async function notificarCambio(to: string, subject: string, inner: string): Promise<void> {
   const html = "<p style='font-size:15px'>¡Hola!</p>" + inner + "<p style='font-size:13px;color:#777'>Cualquier duda, respondé este correo.</p>";
   try {
-    await fetch(`${SB_URL}/functions/v1/send-email`, {
+    await fetch(`${SB.DATA}/functions/v1/send-email`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to, subject, html, reply_to: "hi@pathwaycareercoach.com", signature: "pathway" }),
     });

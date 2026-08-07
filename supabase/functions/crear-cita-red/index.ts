@@ -18,7 +18,8 @@
 // Deploy: supabase functions deploy crear-cita-red --no-verify-jwt
 // ===================================================================
 
-const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+import { SB } from "../supabase-config.ts";
+
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const svc = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
@@ -36,7 +37,7 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 async function callerEmail(token: string): Promise<string | null> {
   if (!token || token === ANON) return null;
   try {
-    const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
+    const r = await fetch(`${SB.AUTH}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
     if (!r.ok) return null;
     const u = await r.json();
     const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
@@ -46,7 +47,7 @@ async function callerEmail(token: string): Promise<string | null> {
 async function ownerOrg(email: string): Promise<string | null> {
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=org_id&limit=1`,
+      `${SB.USERS}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=org_id&limit=1`,
       { headers: svc },
     );
     if (!r.ok) return null;
@@ -57,7 +58,7 @@ async function ownerOrg(email: string): Promise<string | null> {
 async function coachInOrg(coachId: string, orgId: string): Promise<boolean> {
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&org_id=eq.${encodeURIComponent(orgId)}&rol=in.(coach,owner)&select=id&limit=1`,
+      `${SB.USERS}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}&org_id=eq.${encodeURIComponent(orgId)}&rol=in.(coach,owner)&select=id&limit=1`,
       { headers: svc },
     );
     if (!r.ok) return false;
@@ -70,7 +71,7 @@ async function hasConflict(coachId: string, inicio: string): Promise<boolean> {
     const inicioMs = new Date(inicio).getTime();
     if (isNaN(inicioMs)) return false;
     const r = await fetch(
-      `${SB_URL}/rest/v1/citas?coach_id=eq.${encodeURIComponent(coachId)}&estado=neq.cancelada&select=inicio`,
+      `${SB.DATA}/rest/v1/citas?coach_id=eq.${encodeURIComponent(coachId)}&estado=neq.cancelada&select=inicio`,
       { headers: svc },
     );
     if (!r.ok) return false;
@@ -126,7 +127,7 @@ Deno.serve(async (req: Request) => {
   const base: Record<string, unknown> = { coach_id, nombre, email: cliEmail, tipo, inicio, estado: "confirmada", origen: "red" };
   const full = { ...base, modalidad, grupal, ...(modalidad === "presencial" && lugar ? { lugar } : {}) };
   async function insert(payload: Record<string, unknown>) {
-    return await fetch(`${SB_URL}/rest/v1/citas`, {
+    return await fetch(`${SB.DATA}/rest/v1/citas`, {
       method: "POST",
       headers: { ...svc, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(payload),
@@ -143,7 +144,7 @@ Deno.serve(async (req: Request) => {
     // Extrae el hangoutLink y lo guarda en citas.meet_link.
     if (cita.id) {
       try {
-        await fetch(`${SB_URL}/functions/v1/sync-cita-to-gcal`, {
+        await fetch(`${SB.DATA}/functions/v1/sync-cita-to-gcal`, {
           method: "POST",
           headers: { "Content-Type": "application/json", apikey: SERVICE, Authorization: `Bearer ${SERVICE}` },
           body: JSON.stringify({ cita_id: cita.id }),
@@ -179,7 +180,7 @@ async function notificarCita(to: string, tipo: string, inicio: string, modalidad
     donde +
     "<p style='font-size:13px;color:#777'>Si necesitás reprogramar, respondé este correo.</p>";
   try {
-    await fetch(`${SB_URL}/functions/v1/send-email`, {
+    await fetch(`${SB.DATA}/functions/v1/send-email`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to, subject: "Tu sesión quedó agendada 🗓️", html, reply_to: "hi@pathwaycareercoach.com", signature: "pathway" }),
     });
