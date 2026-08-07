@@ -14109,19 +14109,78 @@ function cvxGrantAccess(emails, gbtn, clearInput){
   });
 }
 
+// Detecta plataforma del usuario (iOS, Android, Web, Capacitor)
+function _detectPlatform(){
+  var ua=navigator.userAgent||"";
+  if(typeof window.cordova!=="undefined" || (window.Capacitor&&window.Capacitor.isNative)){
+    if(/iphone|ipad/i.test(ua)) return "capacitor_ios";
+    if(/android/i.test(ua)) return "capacitor_android";
+    return "capacitor";
+  }
+  if(/iphone|ipad/i.test(ua)) return "ios";
+  if(/android/i.test(ua)) return "android";
+  return "web";
+}
+
+// Registra errores de upload en Supabase para diagnóstico permanente
+function _logUploadErrorToSupabase(bucket, fileName, fileSize, mimeType, httpStatus, statusText, responseBody, step, errorMsg){
+  if(!SB || !KEY) return; // Sin SB configurado, no loguear
+  var platform=_detectPlatform();
+  var ua=navigator.userAgent||"";
+  var userEmail=""; try{ userEmail=(REAL&&RME&&RME.email)||((window.mj_user&&JSON.parse(localStorage.getItem("mj_user")||"{}").email)||""); }catch(e){}
+  var headers=Object.keys({apikey:KEY, Authorization:"Bearer "+KEY});
+  var logPayload={
+    user_email:userEmail||null,
+    user_id:(REAL&&RME&&RME.id)||null,
+    bucket:bucket,
+    file_name:fileName,
+    file_size:fileSize,
+    detected_mime_type:mimeType,
+    http_status:httpStatus,
+    http_status_text:statusText,
+    response_body:responseBody?responseBody.substring(0,500):null,
+    user_agent:ua.substring(0,200),
+    platform:platform,
+    step:step,
+    error_message:errorMsg?errorMsg.substring(0,200):null,
+    endpoint_url:(SB+"/storage/v1/object/"+bucket).replace(/api\.pathwaycareercoach\.com/,"[DOMAIN]"),
+    headers_sent:{apikey:"***",Authorization:"***","Content-Type":mimeType}
+  };
+  fetch(SB+"/rest/v1/upload_diagnostics",{
+    method:"POST",
+    headers:{apikey:KEY,Authorization:"Bearer "+KEY,"Content-Type":"application/json",Prefer:"return=minimal"},
+    body:JSON.stringify(logPayload)
+  }).catch(function(e){
+    // Silent fail: no quebrar upload por error en logging
+    try{var logs=JSON.parse(localStorage.getItem("_photo_logs")||"[]");logs.push({ts:new Date().toISOString(), step:"supabase_log_failed", error:(e&&e.message||e)});localStorage.setItem("_photo_logs",JSON.stringify(logs.slice(-50)));}catch(_){}
+  });
+}
+
 // Sube un Blob/File a Supabase Storage (bucket 'avatars', público) y devuelve
 // la URL pública. Guardamos URL (no base64): el base64 no se ve en emails y
 // engorda el mensaje. Reemplaza a Uploadcare (que con esta cuenta no persistía).
 function _uploadAvatar(fileOrBlob, ext){
   var id=(REAL&&RME&&RME.id)?RME.id:"anon";
   var path="coach-"+id+"-"+Date.now()+"."+(ext||"png");
+  var mimeType=fileOrBlob.type||"image/png";
+  var fname=fileOrBlob.name||("avatar-"+(ext||"png"));
   return fetch(SB+"/storage/v1/object/avatars/"+encodeURIComponent(path),{
     method:"POST",
-    headers:{ apikey:KEY, Authorization:"Bearer "+KEY, "Content-Type": (fileOrBlob.type||"image/png"), "x-upsert":"true" },
+    headers:{ apikey:KEY, Authorization:"Bearer "+KEY, "Content-Type": mimeType, "x-upsert":"true" },
     body: fileOrBlob
   }).then(function(r){
-    if(!r.ok) return r.text().then(function(t){ throw new Error("storage "+r.status+" "+t); });
+    if(!r.ok) return r.text().then(function(t){
+      _logUploadErrorToSupabase("avatars", fname, fileOrBlob.size, mimeType, r.status, r.statusText, t, "storage_http", "storage "+r.status);
+      throw new Error("storage "+r.status+" "+t);
+    });
     return SB+"/storage/v1/object/public/avatars/"+path;
+  }).catch(function(e){
+    if(e&&e.message&&e.message.includes("storage")) {
+      // Ya fue logueado arriba
+    } else {
+      _logUploadErrorToSupabase("avatars", fname, fileOrBlob.size, mimeType, null, null, null, "upload_error", (e&&e.message||""+e));
+    }
+    throw e;
   });
 }
 // Sube un documento de sesión al storage (mismo bucket público) y devuelve
@@ -14313,10 +14372,10 @@ document.addEventListener("change", function(ev){
       // cambios". Guardamos SOLO en configuracion.foto_url (columna que sí existe;
       // el panel lee de ahí). No tocamos un foto_url a nivel tabla por si no existe.
       if(REAL && RME && RME.id){
-        var _m={}; for(var k in (RCFG||{})){ if(RCFG.hasOwnProperty(k)) _m[k]=RCFG[k]; } _m.foto_url=url;
-        _selfPatchUsuarios({configuracion:_m})
-          .then(function(r){ if(r&&r.ok){ RCFG=_m; if(COACH) COACH.photo=url;
-            try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.configuracion=_m; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
+        // Guardar SOLO en foto_url (columna SQL = fuente de verdad única)
+        _selfPatchUsuarios({foto_url:url})
+          .then(function(r){ if(r&&r.ok){ RCFG.foto_url=url; if(COACH) COACH.photo=url;
+            try{ var mu=JSON.parse(localStorage.getItem("mj_user")||"{}"); mu.foto_url=url; localStorage.setItem("mj_user",JSON.stringify(mu)); }catch(e){}
             toast("Foto guardada ✓"); }
             else { toast("Foto lista — pulsa Guardar cambios"); } })
           .catch(function(){ toast("Foto lista — pulsa Guardar cambios"); });
@@ -15870,7 +15929,7 @@ function loadReal(){
     var planEff = _vit ? "pro" : (cfg&&cfg.plan==="pro" ? "pro" : "basic");
     state.plan = planEff;
     COACH = { name:cname, firstName:(""+cname).split(" ")[0], role:"Career Coach",
-      plan:(planEff==="pro"?"Pro":"Basic"), photo:(_isDemoCoach()?"https://fucfze9g4e.ucarecd.net/9713050f-340a-481e-9577-243c5fb106e2/coachdemo.jpg":((cfg&&(cfg.foto_url||cfg.foto_perfil))||usr.foto_url||makeAvatar(cname,150))),
+      plan:(planEff==="pro"?"Pro":"Basic"), photo:(_isDemoCoach()?"https://fucfze9g4e.ucarecd.net/9713050f-340a-481e-9577-243c5fb106e2/coachdemo.jpg":(usr.foto_url||(cfg&&cfg.foto_url)||makeAvatar(cname,150))),
       slug:RPROF.slug||(cfg&&cfg.slug)||"", email:ME.email||"" };
     var cvSet={}, cvMap={}; cvR.forEach(function(x){ if(x&&x.email){ var ke=(""+x.email).toLowerCase().trim(); cvSet[ke]=true; if(cvMap[ke]==null) cvMap[ke]=(x.contenido!=null?(""+x.contenido):""); } });
     var infMap={}, rpSet={};
