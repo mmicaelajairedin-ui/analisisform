@@ -11,7 +11,8 @@
 // Deploy: supabase functions deploy agenda-red-cliente --no-verify-jwt
 // ===================================================================
 
-const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+import { SB } from "../supabase-config.ts";
+
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const svc = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
 
@@ -24,15 +25,16 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-async function q(path: string): Promise<any[]> {
-  try { const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: svc }); if (!r.ok) return []; const rows = await r.json(); return Array.isArray(rows) ? rows : []; }
+async function q(table: string, isData: boolean = false): Promise<any[]> {
+  const url = isData ? SB.DATA : SB.USERS;
+  try { const r = await fetch(`${url}/rest/v1/${table}`, { headers: svc }); if (!r.ok) return []; const rows = await r.json(); return Array.isArray(rows) ? rows : []; }
   catch { return []; }
 }
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
-  if (!SB_URL || !SERVICE) return json({ error: "env_missing" }, 500);
+  if (!SB.DATA || !SB.USERS || !SERVICE) return json({ error: "env_missing" }, 500);
 
   let body: { email?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
@@ -40,12 +42,12 @@ Deno.serve(async (req: Request) => {
   if (!EMAIL_RE.test(email)) return json({ error: "email_invalid" }, 400);
 
   // El cliente + su org (por email). Si no tiene org, no hay red → nada que mostrar.
-  const cli = await q(`candidatos?email=eq.${encodeURIComponent(email)}&select=org_id&limit=5`);
+  const cli = await q(`candidatos?email=eq.${encodeURIComponent(email)}&select=org_id&limit=5`, false);
   const orgId = (cli.find((c) => c && c.org_id) || {}).org_id || null;
   if (!orgId) return json({ ok: true, org_id: null, clases: [] });
 
   // Coaches de esa org (incluye al dueño). Las clases pueden ser de cualquiera.
-  const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=in.(coach,owner)&select=id,nombre`);
+  const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=in.(coach,owner)&select=id,nombre`, false);
   const nameById: Record<string, string> = {};
   const ids: string[] = [];
   for (const c of coaches) { if (c && c.id) { ids.push(String(c.id)); nameById[String(c.id)] = c.nombre || ""; } }
@@ -57,7 +59,7 @@ Deno.serve(async (req: Request) => {
   let rows: any[] = [];
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/citas?coach_id=in.(${inList})&grupal=is.true&inicio=gte.${from}&estado=neq.cancelada&order=inicio.asc&limit=60&select=id,inicio,tipo,nombre,coach_id,modalidad,lugar`,
+      `${SB.DATA}/rest/v1/citas?coach_id=in.(${inList})&grupal=is.true&inicio=gte.${from}&estado=neq.cancelada&order=inicio.asc&limit=60&select=id,inicio,tipo,nombre,coach_id,modalidad,lugar`,
       { headers: svc },
     );
     if (r.status === 400) return json({ ok: true, org_id: orgId, clases: [] }); // columna grupal aún no existe

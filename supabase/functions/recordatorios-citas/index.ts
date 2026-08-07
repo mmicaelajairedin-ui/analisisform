@@ -13,6 +13,8 @@
 // Secrets (Supabase → Edge Functions → Secrets): ya existen para otros agentes
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AGENT_TRIGGER_SECRET, BREVO_API_KEY
 
+import { SB } from "../supabase-config.ts";
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -25,10 +27,9 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  const SB_URL = Deno.env.get("SUPABASE_URL") || "";
   const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const TRIGGER = Deno.env.get("AGENT_TRIGGER_SECRET") || "";
-  if (!SB_URL || !SB_KEY) return json({ error: "supabase_env_missing" }, 500);
+  if (!SB.DATA || !SB_KEY) return json({ error: "supabase_env_missing" }, 500);
 
   // Auth: solo el cron con el secreto puede disparar.
   const got = req.headers.get("x-trigger-secret") || "";
@@ -44,8 +45,8 @@ Deno.serve(async (req: Request) => {
   // con el select base para NO romper TODOS los recordatorios por columnas opcionales.
   const baseSel = `id,nombre,email,tipo,inicio,estado,coach_id,cliente_tz,token,rem_24h_at,rem_1h_at`;
   const winQ = `&inicio=gte.${new Date(now).toISOString()}&inicio=lte.${inWin}&order=inicio.asc&limit=200`;
-  const qFull = `${SB_URL}/rest/v1/citas?select=${baseSel},modalidad,lugar,grupal,lang,meet_link${winQ}`;
-  const qBase = `${SB_URL}/rest/v1/citas?select=${baseSel}${winQ}`;
+  const qFull = `${SB.DATA}/rest/v1/citas?select=${baseSel},modalidad,lugar,grupal,lang,meet_link${winQ}`;
+  const qBase = `${SB.DATA}/rest/v1/citas?select=${baseSel}${winQ}`;
   let citas: Cita[] = [];
   try {
     let r = await fetch(qFull, { headers: sbH(SB_KEY) });
@@ -58,7 +59,7 @@ Deno.serve(async (req: Request) => {
 
   // Nombre + zona de los coaches involucrados (para personalizar y formatear hora).
   const coachIds = [...new Set(citas.map((c) => c.coach_id).filter(Boolean))];
-  const coaches = await loadCoaches(SB_URL, SB_KEY, coachIds as string[]);
+  const coaches = await loadCoaches(SB.USERS, SB_KEY, coachIds as string[]);
 
   // Estados "terminales" que NO reciben recordatorio (ya pasó o se cerró).
   const TERMINAL = ["cancelada", "asistio", "no_asistio", "gano", "perdio", "reprogramada"];
@@ -88,7 +89,7 @@ Deno.serve(async (req: Request) => {
       }
     } catch (_e) { /* best-effort */ }
 
-    const ok = await sendReminder(SB_URL, SB_KEY, c, coach, tz, kind, zoomUrl);
+    const ok = await sendReminder(SB.DATA, SB_KEY, c, coach, tz, kind, zoomUrl);
     if (!ok) continue;
 
     const patch: Record<string, string> = {};
@@ -98,7 +99,7 @@ Deno.serve(async (req: Request) => {
     // Limpiar claves vacías (no pisar con "").
     for (const k of Object.keys(patch)) if (!patch[k]) delete patch[k];
     try {
-      await fetch(`${SB_URL}/rest/v1/citas?id=eq.${encodeURIComponent(c.id)}`, {
+      await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${encodeURIComponent(c.id)}`, {
         method: "PATCH",
         headers: { ...sbH(SB_KEY), "Content-Type": "application/json", Prefer: "return=minimal" },
         body: JSON.stringify(patch),

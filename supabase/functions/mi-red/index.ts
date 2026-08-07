@@ -12,7 +12,8 @@
 // Deploy: supabase functions deploy mi-red --no-verify-jwt
 // ===================================================================
 
-const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+import { SB } from "../supabase-config.ts";
+
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ANON = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const svc = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
@@ -30,16 +31,17 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 async function callerEmail(token: string): Promise<string | null> {
   if (!token || token === ANON) return null;
   try {
-    const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
+    const r = await fetch(`${SB.AUTH}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${token}` } });
     if (!r.ok) return null;
     const u = await r.json();
     const em = (u && u.email ? String(u.email) : "").trim().toLowerCase();
     return EMAIL_RE.test(em) ? em : null;
   } catch { return null; }
 }
-async function q(path: string): Promise<any[]> {
+async function q(table: string, isData: boolean = false): Promise<any[]> {
+  const url = isData ? SB.DATA : SB.USERS;
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: svc });
+    const r = await fetch(`${url}/rest/v1/${table}`, { headers: svc });
     if (!r.ok) return [];
     const rows = await r.json();
     return Array.isArray(rows) ? rows : [];
@@ -48,7 +50,7 @@ async function q(path: string): Promise<any[]> {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
-  if (!SB_URL || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
+  if (!SB.DATA || !SB.USERS || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
 
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
@@ -56,17 +58,17 @@ Deno.serve(async (req: Request) => {
   if (!email) return json({ error: "not_owner" }, 403);
 
   // Owner + su org.
-  const owners = await q(`usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=id,nombre,email,activo,foto_url,configuracion,org_id&limit=1`);
+  const owners = await q(`usuarios?email=eq.${encodeURIComponent(email)}&rol=eq.owner&select=id,nombre,email,activo,foto_url,configuracion,org_id&limit=1`, false);
   const owner = owners[0];
   const orgId = owner && owner.org_id;
   if (!orgId) return json({ error: "not_owner" }, 403);
 
-  const orgs = await q(`organizaciones?id=eq.${encodeURIComponent(orgId)}&select=*&limit=1`);
+  const orgs = await q(`organizaciones?id=eq.${encodeURIComponent(orgId)}&select=*&limit=1`, false);
   const org = orgs[0] || null;
 
   // order estable → el color por coach en la agenda del panel no baila entre recargas.
-  const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&order=created_at.asc&select=id,nombre,email,activo,foto_url,configuracion`);
-  const clientes = await q(`candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc`);
+  const coaches = await q(`usuarios?org_id=eq.${encodeURIComponent(orgId)}&rol=eq.coach&order=created_at.asc&select=id,nombre,email,activo,foto_url,configuracion`, false);
+  const clientes = await q(`candidatos?org_id=eq.${encodeURIComponent(orgId)}&select=id,nombre,email,activo,coach_id,semana_activa,foto_perfil,created_at,updated_at&order=created_at.desc`, false);
 
   // Citas de TODA la red (agenda del owner + historial de sesiones por cliente).
   // La RLS de citas es por coach → el owner no las lee directo; acá con service

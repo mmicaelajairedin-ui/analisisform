@@ -14,7 +14,8 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Deploy: supabase functions deploy sync-cita-to-gcal --no-verify-jwt
 
-const SB_URL = Deno.env.get("SUPABASE_URL") || "";
+import { SB } from "../supabase-config.ts";
+
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const svc = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` };
 
@@ -31,7 +32,7 @@ function json(body: unknown, status = 200): Response {
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
-  if (!SB_URL || !SERVICE) return json({ error: "env_missing" }, 500);
+  if (!SB.DATA || !SERVICE) return json({ error: "env_missing" }, 500);
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
@@ -41,7 +42,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     // 1) Obtener detalles de la cita
-    const cr = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}&select=*`, { headers: svc });
+    const cr = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}&select=*`, { headers: svc });
     if (!cr.ok) return json({ error: "cita_query_failed" }, 502);
     const citas = await cr.json();
     if (!Array.isArray(citas) || !citas.length) return json({ error: "cita_not_found" }, 404);
@@ -55,7 +56,7 @@ Deno.serve(async (req: Request) => {
     const endISO = new Date(endMs).toISOString();
 
     // 3) Llamar a gcal-push para crear evento en Google Calendar
-    const pushResp = await fetch(`${SB_URL}/functions/v1/gcal-push`, {
+    const pushResp = await fetch(`${SB.DATA}/functions/v1/gcal-push`, {
       method: "POST",
       headers: { ...svc, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -85,7 +86,7 @@ Deno.serve(async (req: Request) => {
 
     // 4) Si hay hangoutLink, guardar en citas.meet_link
     if (hangoutLink) {
-      const ur = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}`, {
+      const ur = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}`, {
         method: "PATCH",
         headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" },
         body: JSON.stringify({ meet_link: hangoutLink }),
