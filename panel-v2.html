@@ -14109,19 +14109,78 @@ function cvxGrantAccess(emails, gbtn, clearInput){
   });
 }
 
+// Detecta plataforma del usuario (iOS, Android, Web, Capacitor)
+function _detectPlatform(){
+  var ua=navigator.userAgent||"";
+  if(typeof window.cordova!=="undefined" || (window.Capacitor&&window.Capacitor.isNative)){
+    if(/iphone|ipad/i.test(ua)) return "capacitor_ios";
+    if(/android/i.test(ua)) return "capacitor_android";
+    return "capacitor";
+  }
+  if(/iphone|ipad/i.test(ua)) return "ios";
+  if(/android/i.test(ua)) return "android";
+  return "web";
+}
+
+// Registra errores de upload en Supabase para diagnóstico permanente
+function _logUploadErrorToSupabase(bucket, fileName, fileSize, mimeType, httpStatus, statusText, responseBody, step, errorMsg){
+  if(!SB || !KEY) return; // Sin SB configurado, no loguear
+  var platform=_detectPlatform();
+  var ua=navigator.userAgent||"";
+  var userEmail=""; try{ userEmail=(REAL&&RME&&RME.email)||((window.mj_user&&JSON.parse(localStorage.getItem("mj_user")||"{}").email)||""); }catch(e){}
+  var headers=Object.keys({apikey:KEY, Authorization:"Bearer "+KEY});
+  var logPayload={
+    user_email:userEmail||null,
+    user_id:(REAL&&RME&&RME.id)||null,
+    bucket:bucket,
+    file_name:fileName,
+    file_size:fileSize,
+    detected_mime_type:mimeType,
+    http_status:httpStatus,
+    http_status_text:statusText,
+    response_body:responseBody?responseBody.substring(0,500):null,
+    user_agent:ua.substring(0,200),
+    platform:platform,
+    step:step,
+    error_message:errorMsg?errorMsg.substring(0,200):null,
+    endpoint_url:(SB+"/storage/v1/object/"+bucket).replace(/api\.pathwaycareercoach\.com/,"[DOMAIN]"),
+    headers_sent:{apikey:"***",Authorization:"***","Content-Type":mimeType}
+  };
+  fetch(SB+"/rest/v1/upload_diagnostics",{
+    method:"POST",
+    headers:{apikey:KEY,Authorization:"Bearer "+KEY,"Content-Type":"application/json",Prefer:"return=minimal"},
+    body:JSON.stringify(logPayload)
+  }).catch(function(e){
+    // Silent fail: no quebrar upload por error en logging
+    try{var logs=JSON.parse(localStorage.getItem("_photo_logs")||"[]");logs.push({ts:new Date().toISOString(), step:"supabase_log_failed", error:(e&&e.message||e)});localStorage.setItem("_photo_logs",JSON.stringify(logs.slice(-50)));}catch(_){}
+  });
+}
+
 // Sube un Blob/File a Supabase Storage (bucket 'avatars', público) y devuelve
 // la URL pública. Guardamos URL (no base64): el base64 no se ve en emails y
 // engorda el mensaje. Reemplaza a Uploadcare (que con esta cuenta no persistía).
 function _uploadAvatar(fileOrBlob, ext){
   var id=(REAL&&RME&&RME.id)?RME.id:"anon";
   var path="coach-"+id+"-"+Date.now()+"."+(ext||"png");
+  var mimeType=fileOrBlob.type||"image/png";
+  var fname=fileOrBlob.name||("avatar-"+(ext||"png"));
   return fetch(SB+"/storage/v1/object/avatars/"+encodeURIComponent(path),{
     method:"POST",
-    headers:{ apikey:KEY, Authorization:"Bearer "+KEY, "Content-Type": (fileOrBlob.type||"image/png"), "x-upsert":"true" },
+    headers:{ apikey:KEY, Authorization:"Bearer "+KEY, "Content-Type": mimeType, "x-upsert":"true" },
     body: fileOrBlob
   }).then(function(r){
-    if(!r.ok) return r.text().then(function(t){ throw new Error("storage "+r.status+" "+t); });
+    if(!r.ok) return r.text().then(function(t){
+      _logUploadErrorToSupabase("avatars", fname, fileOrBlob.size, mimeType, r.status, r.statusText, t, "storage_http", "storage "+r.status);
+      throw new Error("storage "+r.status+" "+t);
+    });
     return SB+"/storage/v1/object/public/avatars/"+path;
+  }).catch(function(e){
+    if(e&&e.message&&e.message.includes("storage")) {
+      // Ya fue logueado arriba
+    } else {
+      _logUploadErrorToSupabase("avatars", fname, fileOrBlob.size, mimeType, null, null, null, "upload_error", (e&&e.message||""+e));
+    }
+    throw e;
   });
 }
 // Sube un documento de sesión al storage (mismo bucket público) y devuelve
@@ -14155,10 +14214,18 @@ function _uploadDoc(f){
       var msg="HTTP "+r.status+" | "+t.substring(0,200);
       var log={ts:new Date().toISOString(), step:"storage_response", status:r.status, statusText:r.statusText, contentLength:r.headers.get("content-length"), body:t.substring(0,500)};
       try{var logs=JSON.parse(localStorage.getItem("_photo_logs")||"[]");logs.push(log);localStorage.setItem("_photo_logs",JSON.stringify(logs.slice(-50)));}catch(e){}
+      // Registrar en Supabase para diagnóstico permanente
+      _logUploadErrorToSupabase("docs", fname, f.size, mimeType, r.status, r.statusText, t, "storage_http", msg);
       throw new Error(msg);
     });
     return SB+"/storage/v1/object/public/docs/"+path;
   }).catch(function(e){
+    // También loguear errores de red/parsing
+    if(e&&e.message&&e.message.includes("HTTP")) {
+      // Ya fue logueado arriba
+    } else {
+      _logUploadErrorToSupabase("docs", fname, f.size, mimeType, null, null, null, "upload_error", (e&&e.message||""+e));
+    }
     throw new Error((e&&e.message?e.message:"Error desconocido al subir"));
   });
 }
