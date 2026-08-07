@@ -120,6 +120,7 @@ Deno.serve(async (req: Request) => {
   const startISO = String(ev.startISO || "");
   const endISO = String(ev.endISO || "");
   if (!startISO || !endISO) return json({ ok: false, reason: "no_dates" });
+  const requestId = `pathway-${crypto.randomUUID()}`;
   const gev: Record<string, unknown> = {
     summary: String(ev.summary || "Sesión · Pathway"),
     description: String(ev.description || ""),
@@ -128,7 +129,7 @@ Deno.serve(async (req: Request) => {
     end: { dateTime: endISO },
     conferenceData: {
       createRequest: {
-        requestId: `pathway-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        requestId,
         conferenceSolutionKey: { type: "hangoutsMeet" },
       },
     },
@@ -149,12 +150,15 @@ Deno.serve(async (req: Request) => {
     const d = await r.json().catch(() => ({}));
     console.log(`gcal-push: Google API response status=${r.status}, ok=${r.ok}, has_id=${!!d.id}, has_conferenceData=${!!d.conferenceData}`);
     if (d.conferenceData) {
+      console.log(`gcal-push: conferenceData full: ${JSON.stringify(d.conferenceData)}`);
       console.log(`gcal-push: conferenceData.entryPoints count=${d.conferenceData.entryPoints?.length || 0}`);
       if (d.conferenceData.entryPoints) {
         for (const ep of d.conferenceData.entryPoints) {
           console.log(`gcal-push: entryPoint type=${ep.entryPointType}, uri=${ep.uri}`);
         }
       }
+    } else {
+      console.log(`gcal-push: NO conferenceData in response. Event keys: ${Object.keys(d).join(",")}`);
     }
     if (!r.ok) {
       console.error(`gcal-push: Google API error response: ${JSON.stringify(d)}`);
