@@ -88,7 +88,7 @@ async function hasConflict(coachId: string, inicio: string): Promise<boolean> {
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "post_only" }, 405);
-  if (!SB_URL || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
+  if (!SB.AUTH || !SB.USERS || !SB.DATA || !SERVICE || !ANON) return json({ error: "env_missing" }, 500);
 
   // ── Gate: quien llama debe ser el owner de una org ───────────────
   const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
