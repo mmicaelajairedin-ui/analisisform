@@ -133,8 +133,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    console.log(`[SYNC-CITA] Returning: ok=true, event_id=${eventId}, hangoutLink=${hangoutLink ? "FOUND" : "MISSING"}`);
-    return json({ ok: true, hangoutLink, event_id: eventId });
+    console.log(`[SYNC-CITA] Returning: ok=true, event_id=${eventId}, hangoutLink=${hangoutLink ? "FOUND" : "MISSING"}, patched=${Object.keys(patchPayload).length > 0}`);
+    return json({ ok: true, event_id: eventId, hangoutLink, patched: Object.keys(patchPayload).length > 0 });
   } catch (e) {
     console.error("sync-cita-to-gcal error:", e);
     return json({ error: "internal_error", detail: String(e) }, 500);

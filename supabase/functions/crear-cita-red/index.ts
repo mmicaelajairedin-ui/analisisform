@@ -147,18 +147,24 @@ Deno.serve(async (req: Request) => {
     if (!r.ok) return json({ error: "insert_failed", status: r.status }, 502);
     const rows = await r.json().catch(() => []);
     const cita = Array.isArray(rows) && rows[0] ? rows[0] : { coach_id, nombre, tipo, inicio, estado: "confirmada" };
-    // Sincronizar a Google Calendar (best-effort — no bloquea la creación).
-    // Extrae el hangoutLink, guarda en citas.meet_link, y envía email con el link.
+    // Sincronizar a Google Calendar — ESPERA a que complete para devolver meet_link/google_event_id.
+    let syncResult = { ok: false, event_id: null, hangoutLink: "", patched: false };
     if (cita.id) {
       try {
-        await fetch(`${SB.DATA}/functions/v1/sync-cita-to-gcal`, {
+        const syncResp = await fetch(`${SB.DATA}/functions/v1/sync-cita-to-gcal`, {
           method: "POST",
           headers: { "Content-Type": "application/json", apikey: SERVICE, Authorization: `Bearer ${SERVICE}` },
           body: JSON.stringify({ cita_id: cita.id }),
         });
-      } catch { /* ignore */ }
+        syncResult = await syncResp.json().catch(() => ({ ok: false, event_id: null, hangoutLink: "", patched: false }));
+        // Actualizar cita con valores devueltos por sync (para que panel envíe email correcto)
+        if (syncResult.event_id) cita.google_event_id = syncResult.event_id;
+        if (syncResult.hangoutLink) cita.meet_link = syncResult.hangoutLink;
+      } catch (e) {
+        console.error(`crear-cita-red: sync failed: ${String(e)}`);
+      }
     }
-    return json({ ok: true, cita });
+    return json({ ok: true, cita, sync: syncResult });
   } catch { return json({ error: "write_failed" }, 502); }
 });
 
