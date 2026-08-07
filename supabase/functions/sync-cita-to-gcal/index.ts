@@ -55,6 +55,8 @@ Deno.serve(async (req: Request) => {
     reason: null as string | null,
     event_id: null as string | null,
     hangoutLink: null as string | null,
+    video_url: null as string | null,
+    video_url_source: null as string | null,
     patched: false,
     patch_status: null as number | null,
   };
@@ -68,6 +70,24 @@ Deno.serve(async (req: Request) => {
     const cita = citas[0];
     const { coach_id, nombre, inicio, modalidad, lugar, email, tipo } = cita;
     if (!coach_id || !inicio) return json({ error: "cita_incomplete" }, 400);
+
+    // 1b) Leer configuración del coach (zoom_url, etc.) desde el proyecto de usuarios
+    let coachConfig: any = {};
+    try {
+      const cfgResp = await fetch(
+        `${SB.USERS}/rest/v1/usuarios?id=eq.${encodeURIComponent(coach_id)}&select=configuracion`,
+        { headers: svc }
+      );
+      if (cfgResp.ok) {
+        const cfgRows = await cfgResp.json();
+        if (Array.isArray(cfgRows) && cfgRows[0] && cfgRows[0].configuracion) {
+          coachConfig = cfgRows[0].configuracion;
+        }
+      }
+    } catch (e) {
+      console.error(`[SYNC-CITA] Failed to fetch coach config: ${String(e)}`);
+    }
+    const coachZoomUrl = (coachConfig && coachConfig.zoom_url) ? String(coachConfig.zoom_url).trim() : "";
 
     // 2) Calcular hora fin (asumimos 1h de duración)
     const startMs = new Date(inicio).getTime();
@@ -118,17 +138,43 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[SYNC-CITA] gcal-push: event_id=${trace.event_id}, hangoutLink=${trace.hangoutLink}, ok=${trace.ok}`);
 
+    // Calcular video_url con prioridad:
+    // 1. Google Meet (si gcal-push devolvió hangoutLink)
+    // 2. Zoom URL del coach (si está configurado)
+    // 3. Sala de Pathway (fallback)
+    const salaPathwayLink = `https://pathwaycareercoach.com/sala.html?room=Pathway-${coach_id}-${new Date(inicio).getTime()}`;
+    let video_url: string;
+    let video_url_source: string;
+
+    if (trace.hangoutLink) {
+      video_url = trace.hangoutLink;
+      video_url_source = "google_meet";
+    } else if (coachZoomUrl) {
+      video_url = coachZoomUrl;
+      video_url_source = "coach_zoom";
+    } else {
+      video_url = salaPathwayLink;
+      video_url_source = "pathway_sala";
+    }
+
+    trace.video_url = video_url;
+    trace.video_url_source = video_url_source;
+
+    console.log(`[SYNC-CITA] video_url calculated: source=${video_url_source}, url=${video_url}`);
+
     const hangoutLink = trace.hangoutLink || "";
     const eventId = trace.event_id || "";
 
-    // 4) Guardar ambos campos en UN SOLO PATCH (meet_link + google_event_id)
+    // 4) Guardar video_url + google_event_id en UN SOLO PATCH
+    // meet_link guarda el video_url final (Google Meet, Zoom del coach, o Sala de Pathway)
     const patchPayload: Record<string, string> = {};
-    if (hangoutLink) patchPayload.meet_link = hangoutLink;
+    if (video_url) patchPayload.meet_link = video_url;
     if (eventId) patchPayload.google_event_id = eventId;
 
     if (Object.keys(patchPayload).length > 0) {
       console.log(`[PATCH] Payload: ${JSON.stringify(patchPayload)}`);
       console.log(`[PATCH] URL: ${SB.DATA}/rest/v1/citas?id=eq.${citaId}`);
+      console.log(`[PATCH] video_url source: ${trace.hangoutLink ? "Google Meet" : coachZoomUrl ? "Coach Zoom" : "Sala Pathway"}`);
 
       const ur = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}`, {
         method: "PATCH",
@@ -147,21 +193,21 @@ Deno.serve(async (req: Request) => {
         console.log(`[PATCH] HTTP ${ur.status}: success`);
       }
     } else {
-      console.log(`[PATCH-SKIP] No data to save (no hangoutLink, no eventId)`);
+      console.log(`[PATCH-SKIP] No data to save (no video_url, no eventId)`);
     }
 
-    // 5) Enviar email de confirmación (SIEMPRE, con o sin meet_link)
-    // Si hay hangoutLink, lo incluye. Si no, dice "el link aparecerá pronto"
+    // 5) Enviar email de confirmación (SIEMPRE, con o sin video_url)
+    // video_url es la única fuente de verdad (Google Meet, Zoom, o Sala Pathway)
     if (email) {
       try {
-        await enviarEmailConMeetLink(email, tipo || "Sesión", inicio, modalidad, lugar, hangoutLink);
-        console.log(`[EMAIL-SENT] Confirmation email sent to ${email}, hangoutLink=${hangoutLink ? "INCLUDED" : "MISSING"}`);
+        await enviarEmailConVideoLink(email, tipo || "Sesión", inicio, modalidad, lugar, video_url, video_url_source);
+        console.log(`[EMAIL-SENT] Confirmation email sent to ${email}, video_url_source=${video_url_source}`);
       } catch (e) {
         console.error(`[EMAIL-ERROR] Failed to send email: ${String(e)}`);
       }
     }
 
-    console.log(`[SYNC-CITA] Final: ok=${trace.ok}, event_id=${trace.event_id}, hangoutLink=${trace.hangoutLink}, patched=${trace.patched}, patch_status=${trace.patch_status}`);
+    console.log(`[SYNC-CITA] Final: ok=${trace.ok}, event_id=${trace.event_id}, video_url_source=${trace.video_url_source}, video_url=${trace.video_url}, patched=${trace.patched}, patch_status=${trace.patch_status}`);
     return json({ ok: trace.ok && trace.patched, sync: trace });
   } catch (e) {
     console.error("sync-cita-to-gcal error:", e);
@@ -175,14 +221,14 @@ function fmtFecha(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]} · ${m[4]}:${m[5]}` : iso;
 }
 
-// Enviar email de confirmación con Meet link
-async function enviarEmailConMeetLink(to: string, tipo: string, inicio: string, modalidad: string, lugar: string, meetLink: string): Promise<void> {
+// Enviar email de confirmación con video link (Google Meet, Zoom, o Sala de Pathway)
+async function enviarEmailConVideoLink(to: string, tipo: string, inicio: string, modalidad: string, lugar: string, videoUrl: string, videoSource: string): Promise<void> {
   const cuando = fmtFecha(inicio);
   const donde = modalidad === "presencial"
     ? `<p style='font-size:15px'>📍 <b>Presencial:</b> ${lugar || "te confirmamos el lugar"}</p>`
-    : meetLink
-      ? `<p style='margin:20px 0'><a href='${meetLink}' target='_blank' rel='noopener' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a Google Meet →</a></p>`
-      : `<p style='margin:20px 0;color:#8A968E'><b>Google Meet:</b> el link aparecerá en tu Google Calendar.</p>`;
+    : videoUrl
+      ? `<p style='margin:20px 0'><a href='${videoUrl}' target='_blank' rel='noopener' style='background:#1F5740;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:15px;font-weight:600;display:inline-block'>Entrar a la sesión →</a></p>`
+      : `<p style='margin:20px 0;color:#8A968E'><b>Link:</b> te compartiremos el acceso pronto.</p>`;
   const html =
     "<p style='font-size:15px'>¡Hola!</p>" +
     "<p style='font-size:15px;line-height:1.6'>Tu sesión quedó agendada:</p>" +
