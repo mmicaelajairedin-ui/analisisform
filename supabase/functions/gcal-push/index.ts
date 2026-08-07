@@ -141,17 +141,16 @@ Deno.serve(async (req: Request) => {
   try {
     const url = (op === "update" && eventId) ? `${base}/${encodeURIComponent(eventId)}` : base;
     const method = (op === "update" && eventId) ? "PATCH" : "POST";
+    const eventIdShort = eventId ? eventId.substring(eventId.length - 8) : "new";
 
     // Log request body (sanitized, no tokens)
     const bodyStr = JSON.stringify(gev);
-    console.log(`[REQUEST] method=${method}, url=${url}`);
-    console.log(`[REQUEST] body keys: ${Object.keys(gev).join(",")}`);
+    console.log(`[REQUEST] method=${method}, op=${op}, eventIdShort=${eventIdShort}`);
     console.log(`[REQUEST] conferenceData present: ${!!gev.conferenceData}`);
     if (gev.conferenceData) {
-      console.log(`[REQUEST] conferenceData.createRequest.requestId: ${(gev.conferenceData as any).createRequest?.requestId || "MISSING"}`);
-      console.log(`[REQUEST] conferenceData.createRequest.conferenceSolutionKey: ${JSON.stringify((gev.conferenceData as any).createRequest?.conferenceSolutionKey || "MISSING")}`);
+      console.log(`[REQUEST] conferenceData.createRequest present: ${!!(gev.conferenceData as any).createRequest}`);
+      console.log(`[REQUEST] conferenceDataVersion: ${gev.conferenceDataVersion}`);
     }
-    console.log(`[REQUEST] conferenceDataVersion: ${gev.conferenceDataVersion || "MISSING"}`);
 
     const r = await fetch(url, {
       method,
@@ -159,33 +158,33 @@ Deno.serve(async (req: Request) => {
       body: bodyStr,
     });
 
-    // Log response metadata
-    console.log(`[RESPONSE] HTTP status: ${r.status}`);
-    console.log(`[RESPONSE] Content-Type: ${r.headers.get("content-type")}`);
-
     const d = await r.json().catch(() => ({}));
 
-    // Log full response structure
-    console.log(`[RESPONSE] Full JSON keys: ${Object.keys(d).join(",")}`);
-    console.log(`[RESPONSE] event id: ${d.id || "MISSING"}`);
+    // Log response metadata
+    console.log(`[RESPONSE] HTTP status: ${r.status}, ok: ${r.ok}`);
+
+    if (!r.ok) {
+      console.error(`[ERROR] Google returned ${r.status}`);
+      console.error(`[ERROR] error.code: ${d.error?.code || "N/A"}`);
+      console.error(`[ERROR] error.message: ${d.error?.message || "N/A"}`);
+      console.error(`[ERROR] error.errors: ${JSON.stringify(d.error?.errors || [])}`);
+      return json({ ok: false, reason: "write_failed", status: r.status, detail: (d && d.error && d.error.message) || "" });
+    }
+
+    // Success response
+    console.log(`[RESPONSE] event id: ${d.id ? d.id.substring(d.id.length - 8) : "MISSING"}`);
     console.log(`[RESPONSE] conferenceData present: ${!!d.conferenceData}`);
 
     if (d.conferenceData) {
-      console.log(`[RESPONSE] conferenceData keys: ${Object.keys(d.conferenceData).join(",")}`);
-      console.log(`[RESPONSE] conferenceData.entryPoints type: ${typeof d.conferenceData.entryPoints}, length: ${Array.isArray(d.conferenceData.entryPoints) ? d.conferenceData.entryPoints.length : "N/A"}`);
-      if (Array.isArray(d.conferenceData.entryPoints)) {
-        for (let i = 0; i < d.conferenceData.entryPoints.length; i++) {
-          const ep = d.conferenceData.entryPoints[i];
-          console.log(`[RESPONSE] entryPoint[${i}]: type=${ep.entryPointType}, uri=${ep.uri ? ep.uri.substring(0, 50) + "..." : "MISSING"}`);
+      console.log(`[RESPONSE] conferenceData.entryPoints count: ${Array.isArray(d.conferenceData.entryPoints) ? d.conferenceData.entryPoints.length : "N/A"}`);
+      if (Array.isArray(d.conferenceData.entryPoints) && d.conferenceData.entryPoints.length > 0) {
+        const videoEp = d.conferenceData.entryPoints.find((ep: any) => ep.entryPointType === "video");
+        if (videoEp?.uri) {
+          console.log(`[RESPONSE] video entryPoint found: ${videoEp.uri.substring(0, 50)}...`);
         }
       }
     } else {
-      console.log(`[RESPONSE] conferenceData: null/undefined`);
-    }
-
-    if (!r.ok) {
-      console.error(`[ERROR] Google API returned ${r.status}: ${JSON.stringify(d)}`);
-      return json({ ok: false, reason: "write_failed", status: r.status, detail: (d && d.error && d.error.message) || "" });
+      console.log(`[RESPONSE] conferenceData: MISSING (event created without Meet)`);
     }
 
     // Extract Google Meet link
@@ -199,10 +198,10 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    console.log(`[FINAL] event_id=${d.id || eventId}, hangoutLink=${hangoutLink ? "FOUND" : "NOT_FOUND"}`);
+    console.log(`[FINAL] status=success, event_id_short=${d.id ? d.id.substring(d.id.length - 8) : "new"}, hangoutLink=${hangoutLink ? "FOUND" : "NOT_FOUND"}`);
     return json({ ok: true, event_id: d.id || eventId, hangoutLink });
   } catch (e) {
-    console.error(`[EXCEPTION] ${String(e)}, stack: ${String((e as any).stack)}`);
+    console.error(`[EXCEPTION] ${String(e)}`);
     return json({ ok: false, reason: "google_unreachable" });
   }
 });
