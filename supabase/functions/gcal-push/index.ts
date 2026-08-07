@@ -178,7 +178,8 @@ Deno.serve(async (req: Request) => {
       console.error(`[ERROR] error.code: ${d.error?.code || "N/A"}`);
       console.error(`[ERROR] error.message: ${d.error?.message || "N/A"}`);
       console.error(`[ERROR] error.errors: ${JSON.stringify(d.error?.errors || [])}`);
-      return json({ ok: false, reason: "write_failed", status: r.status, detail: (d && d.error && d.error.message) || "" });
+      console.error(`[ERROR] Full Google response: ${JSON.stringify(d)}`);
+      return json({ ok: false, reason: "google_api_failed", status: r.status, detail: (d && d.error && d.error.message) || "Unknown Google error" });
     }
 
     // Success response
