@@ -4277,7 +4277,7 @@ function _resLoad(){
   // select=* (no una lista fija) para que traiga 'respuestas' si esa columna ya
   // existe, sin romper la lista de reservas en las cuentas donde todavía no se
   // aplicó la migración (una lista fija con una columna inexistente da 400).
-  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+"&order=inicio.asc&select=*")
+  _sbCitas("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&inicio=gte."+encodeURIComponent(since)+"&order=inicio.asc&select=*")
     .then(function(rows){ _RES_DATA=Object.prototype.toString.call(rows)==="[object Array]"?rows:[]; var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_resRender(_RES_DATA); _agMonthRender(); try{ _agProxRender(); }catch(e){} })
     .catch(function(){ var b=document.getElementById("cp-res-body"); if(b) b.innerHTML=_agEmpty("No pudimos leer las reservas. Si es la primera vez, aplica la migración citas.sql en Supabase."); });
 }
@@ -4303,7 +4303,7 @@ function _segDemo(){
 function _segLoad(){
   if(typeof _isDemoCoach==="function" && _isDemoCoach()){ _SEG_DATA=_segDemo(); try{ _segFill(); }catch(e){} return; }
   if(!(REAL&&RME&&RME.id)){ _SEG_DATA=[]; try{ _segFill(); }catch(e){} return; }
-  _sb("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&select=id,nombre,email,telefono,tipo,inicio,estado,resultado,notas_llamada&order=inicio.desc&limit=300")
+  _sbCitas("citas?coach_id=eq."+encodeURIComponent(RME.id)+"&select=id,nombre,email,telefono,tipo,inicio,estado,resultado,notas_llamada&order=inicio.desc&limit=300")
     .then(function(rows){ rows=(Object.prototype.toString.call(rows)==="[object Array]")?rows:[]; _SEG_DATA=rows.filter(function(x){ return x && x.resultado; }); try{ _segFill(); }catch(e){} })
     .catch(function(){ _SEG_DATA=[]; try{ _segFill(); }catch(e){} });
 }
@@ -4439,7 +4439,7 @@ function _salaMergeSessions(c, rows){
     var email=((c.raw&&c.raw.email)||c.email||"").toLowerCase().trim(); if(!email) return;
     var completed=(rows||[]).filter(function(x){ return x && x.inicio && x.notas_llamada; });
     if(!completed.length) return;
-    _sb("citas?email=eq."+encodeURIComponent(email)+cg()+"&select=inicio,kind").then(function(kr){
+    _sbCitas("citas?email=eq."+encodeURIComponent(email)+cg()+"&select=inicio,kind").then(function(kr){
       kr=Object.prototype.toString.call(kr)==="[object Array]"?kr:[];
       if(!kr.length) return;   // sin columna kind (o sin datos) → no mergear
       var kmap={}; kr.forEach(function(k){ if(k&&k.inicio) kmap[+new Date(k.inicio)]=(k.kind||"sesion"); });
@@ -4479,7 +4479,7 @@ function _salaHistLoad(cid){
   var c=(CLIENTS||[]).filter(function(x){return String(x.id)===String(cid);})[0]; if(!c){ box.innerHTML=""; return; }
   var email=((c.raw&&c.raw.email)||c.email||"").toLowerCase().trim();
   if(!email){ box.innerHTML=""; return; }
-  _sb("citas?email=eq."+encodeURIComponent(email)+cg()+"&select=inicio,tipo,resultado,notas_llamada,coach_id&order=inicio.desc").then(function(rows){
+  _sbCitas("citas?email=eq."+encodeURIComponent(email)+cg()+"&select=inicio,tipo,resultado,notas_llamada,coach_id&order=inicio.desc").then(function(rows){
     rows=Object.prototype.toString.call(rows)==="[object Array]"?rows:[];
     rows=rows.filter(function(x){ return x && (x.resultado||x.notas_llamada); });
     if(!rows.length){ box.innerHTML=""; _salaMergeSessions(c, rows); return; }
@@ -10666,7 +10666,7 @@ document.addEventListener("click", function(ev){
     var _prevEst=_rr?_rr.estado:null;
     // Optimista en AMBAS listas (Resumen + Calendario) → ninguna vista queda vieja.
     _syncCitaLocal(_rid,{estado:_est}); _repaintCitas();
-    _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
+    _sbwCitas("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
       .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Confirmada ✓ — le mandamos el email al cliente":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel") _notifResCancel(_rr); else _confirmCliente(_rr); } else { _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); } })
       .catch(function(){ _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); });
     return;
@@ -10683,7 +10683,7 @@ document.addEventListener("click", function(ev){
     // Actualiza AMBAS listas (Resumen + Calendario) → el mes/agenda no queda con la
     // hora vieja y el "Unirse" no manda a la sala vieja.
     _syncCitaLocal(_rid,{inicio:_iso}); _repaintCitas();
-    _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{inicio:_iso})
+    _sbwCitas("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{inicio:_iso})
       .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso); } else { _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); } })
       .catch(function(){ _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); });
     return;
@@ -10704,7 +10704,7 @@ document.addEventListener("click", function(ev){
   if(act==="seg-descartar"){
     var _sdid=el.getAttribute("data-id"); var _sdc=(_SEG_DATA||[]).filter(function(x){return String(x.id)===String(_sdid);})[0]; if(!_sdc) return;
     if(typeof _isDemoCoach==="function" && _isDemoCoach()){ _sdc.resultado="perdido"; _segFill(); toast("Demo: marcado como 'por ahora no'."); return; }
-    _sbw("citas?id=eq."+encodeURIComponent(_sdid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"perdido"})
+    _sbwCitas("citas?id=eq."+encodeURIComponent(_sdid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"perdido"})
       .then(function(r){ if(r&&r.ok){ _sdc.resultado="perdido"; _segFill(); toast("Marcado: por ahora no."); } else toast("No se pudo guardar."); })
       .catch(function(){ toast("No se pudo guardar."); });
     return;
@@ -10747,7 +10747,7 @@ document.addEventListener("click", function(ev){
         fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:_sem,to_name:_snm,subject:"Tus servicios con "+_cn+" · elige y empieza",html:_html,signature:"coach",coach:{nombre:_cn,email:_cemail,photo:_cfoto,slug:_slug}})}).catch(function(){});
         toast("¡Le mandamos a "+_snm+" tus servicios para que elija y pague! Apenas pague, entra a tu portal.");
       }
-      _sbw("citas?id=eq."+encodeURIComponent(_scid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"convirtio"}).catch(function(){});
+      _sbwCitas("citas?id=eq."+encodeURIComponent(_scid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"convirtio"}).catch(function(){});
       _scc.resultado="convirtio"; _segFill();
       try{ pwAddXP(50,"Venta enviada"); }catch(e){}
       try{ loadReal(); }catch(e){}
@@ -10899,14 +10899,14 @@ document.addEventListener("click", function(ev){
     var _agDone=function(r,sent){ if(r&&r.ok) toast("Cita agendada ✓"+(sent?" — avisamos al invitado":"")+" — ya está en tu agenda"); else toast("No se pudo guardar la cita. Reintenta."); try{ _resLoad(); }catch(e){} try{ _calLoad(); }catch(e){} };
     var _sendAgEmail=function(meetLink){if(_ag2&&/@/.test(_ag2)){try{var _f=_fechaCli(_iso,_atz),_tzTag=_atz?(" <span style='color:#8A968E;font-weight:400'>(hora de "+esc(_tzNice(_atz))+")</span>"):"",_coachNm=(COACH&&COACH.name)||(RME&&RME.nombre)||"Pathway",_inner,_ics;if(_amod==="presencial"){_ics=_icsBuild("Sesión · Pathway",_ast.getTime(),_aen.getTime(),(_alugar||"Presencial"));_inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+".</p>"+"<div style='background:#F0F5EF;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:14px'>📍 <strong>Presencial</strong>"+(_alugar?(" · "+esc(_alugar)):"")+"</div>"+"<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";}else{var _gcalUrl="https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(_atl||"Sesión")+"&dates="+utc(_ast)+"/"+utc(_aen)+"&details="+encodeURIComponent("Tu sesión en Pathway. Mirá tu Google Calendar para acceder a Google Meet."),_meetBtn=meetLink?("<a href=\""+esc(meetLink)+"\" target='_blank' rel='noopener' style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Entrar a Google Meet</a>"):("<a href=\""+_gcalUrl+"\" style='display:inline-block;background:#2D6A4F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700'>Ver en Google Calendar</a>");_ics=_icsBuild("Sesión · Pathway",_ast.getTime(),_aen.getTime(),meetLink||_gcalUrl);_inner="<p>¡Hola! Te confirmo nuestra sesión"+(_f?(" para el <strong>"+esc(_f)+"</strong>"+_tzTag):"")+(_agrupal?" (grupal)":"")+".</p>"+"<div style='margin:16px 0'>"+_meetBtn+"</div>"+"<p style='font-size:12.5px;color:#8A968E'>Puedes guardarla en tu calendario con el archivo adjunto. ¡Nos vemos!</p>";}_notifResCliente(_ag2,_shWith,"Tu sesión con "+_coachNm+" está agendada",_inner,_ics&&_ics.b64);return true;}catch(e){return false;}}return false;};
     var _sendAgEmailDelayed=function(citaId){if(citaId){var _pollStart=Date.now(),_pollLink=function(){fetch(SB_CITAS+'/rest/v1/citas?id=eq.'+encodeURIComponent(citaId)+'&select=meet_link',{headers:{apikey:KEY}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}).then(function(rows){var meetLink=(Array.isArray(rows) && rows[0] && rows[0].meet_link)?rows[0].meet_link:'';if(meetLink){_sendAgEmail(meetLink);}else if(Date.now()-_pollStart<4000){setTimeout(_pollLink,200);}else{_sendAgEmail('');}});};_pollLink();}else{_sendAgEmail('');}};
-    _sbw("citas","POST",Object.assign({},_agBody,_agExtra))
+    _sbwCitas("citas","POST",Object.assign({},_agBody,_agExtra))
       .then(function(r){
         if(r&&r.ok){
           _agDone(r,false);
           try{ r.json().then(function(rows){ if(Array.isArray(rows) && rows[0] && rows[0].id){ fetch(SB+'/functions/v1/sync-cita-to-gcal',{method:'POST',headers:{'content-type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({cita_id:rows[0].id})}).catch(function(){}); _sendAgEmailDelayed(rows[0].id); } }).catch(function(){}); }catch(e){}
           return;
         }
-        return _sbw("citas","POST",_agBody).then(function(r2){
+        return _sbwCitas("citas","POST",_agBody).then(function(r2){
           _agDone(r2,false);
           if(r2&&r2.ok){ try{ r2.json().then(function(rows){ if(Array.isArray(rows) && rows[0] && rows[0].id){ fetch(SB+'/functions/v1/sync-cita-to-gcal',{method:'POST',headers:{'content-type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({cita_id:rows[0].id})}).catch(function(){}); _sendAgEmailDelayed(rows[0].id); } }).catch(function(){}); }catch(e){} }
           return r2;
@@ -10914,7 +10914,7 @@ document.addEventListener("click", function(ev){
       })
       .catch(function(){ toast("No se pudo guardar la cita. Reintenta."); });
     // 2) Compañeros de equipo invitados: cada uno recibe la cita en SU panel.
-    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ var _tb={coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_iso,estado:"confirmada",origen:"panel"}; _sbw("citas","POST",Object.assign({},_tb,_agExtra)).then(function(r){ if(!(r&&r.ok)) return _sbw("citas","POST",_tb); if(r&&r.ok){ try{ r.json().then(function(rows){ if(Array.isArray(rows) && rows[0] && rows[0].id){ fetch(SB+'/functions/v1/sync-cita-to-gcal',{method:'POST',headers:{'content-type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({cita_id:rows[0].id})}).catch(function(){}); } }).catch(function(){}); }catch(e){} } }).catch(function(){}); } });
+    _team.forEach(function(em){ var m=(_AG_TEAM||[]).filter(function(x){return x.email===em;})[0]; if(m&&m.id){ var _tb={coach_id:m.id,nombre:_shWith,email:_ag2||"",tipo:_atl,inicio:_iso,estado:"confirmada",origen:"panel"}; _sbwCitas("citas","POST",Object.assign({},_tb,_agExtra)).then(function(r){ if(!(r&&r.ok)) return _sbwCitas("citas","POST",_tb); if(r&&r.ok){ try{ r.json().then(function(rows){ if(Array.isArray(rows) && rows[0] && rows[0].id){ fetch(SB+'/functions/v1/sync-cita-to-gcal',{method:'POST',headers:{'content-type':'application/json',apikey:KEY,Authorization:'Bearer '+KEY},body:JSON.stringify({cita_id:rows[0].id})}).catch(function(){}); } }).catch(function(){}); }catch(e){} } }).catch(function(){}); } });
     render(); return;
   }
   // Portal del cliente: SIEMPRE en la misma pestaña ("pathway_portal"). Si ya
@@ -14147,7 +14147,7 @@ function _salaInsightsLoad(){
   box.innerHTML="<div class='cp-card'><div class='cp-card-pad' style='text-align:center;color:var(--pw-text-soft);font-size:12.5px;padding:22px'>Cargando llamadas de la Sala…</div></div>";
   var _c=null,_f=null,_done=0;
   function _fin(){ if(_done<2) return; var b=document.getElementById('sala-insights'); if(b) b.innerHTML=_salaInsightsRender(_c||[],_f||[]); }
-  _sb("citas?select=kind,resultado,inicio"+cg()+"&order=inicio.desc&limit=800").then(function(r){ _c=(Object.prototype.toString.call(r)==="[object Array]"?r:[]); },function(){ _c=[]; }).then(function(){ _done++; _fin(); });
+  _sbCitas("citas?select=kind,resultado,inicio"+cg()+"&order=inicio.desc&limit=800").then(function(r){ _c=(Object.prototype.toString.call(r)==="[object Array]"?r:[]); },function(){ _c=[]; }).then(function(){ _done++; _fin(); });
   _sb("sala_feedback?select=rating,created_at&order=created_at.desc&limit=800").then(function(r){ _f=(Object.prototype.toString.call(r)==="[object Array]"?r:[]); },function(){ _f=[]; }).then(function(){ _done++; _fin(); });
 }
 function _salaInsightsRender(citas, fbs){
@@ -14341,6 +14341,39 @@ function _sbCitas(p){
     }
     return r.ok?r.json():[];
   }).catch(function(){return [];});
+}
+// _sbwCitas — igual a _sbw() pero apunta a SB_CITAS (proyecto nuevo para citas)
+function _sbwCitas(p,method,body){
+  if((method==="PATCH"||method==="DELETE") && _isExampleWrite(p)){ return Promise.resolve({ok:true,status:204,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}); }
+  if((method==="PATCH"||method==="DELETE") && /^candidatos\?id=eq\./.test(p) && p.indexOf("coach_id=")<0){ p += cg(); }
+  var _fail=function(st){ return {ok:false,status:st,rows:0,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; };
+  var _parse=function(r){
+    if(!r.ok){ return _fail(r.status); }
+    return r.json().then(function(a){ var n=(a&&a.length)||0; return {ok:n>=1,status:r.status,rows:n,json:function(){return Promise.resolve(a);},text:function(){return Promise.resolve(JSON.stringify(a));}}; },
+      function(){ return {ok:true,status:r.status,rows:1,json:function(){return Promise.resolve([]);},text:function(){return Promise.resolve("");}}; });
+  };
+  var _do=function(){ return _hdr({"Content-Type":"application/json",Prefer:"return=representation"}).then(function(h){ return fetch(SB_CITAS+"/rest/v1/"+p,{method:method,headers:h,body:JSON.stringify(body)}); }); };
+  var _stripRetry=function(r,depth){
+    if(r.ok) return _parse(r);
+    if(depth>=10 || !body || typeof body!=="object" || (method!=="PATCH"&&method!=="POST")) return _parse(r);
+    if(r.status!==400 && r.status!==404) return _parse(r);
+    return r.text().then(function(t){
+      var m=/Could not find the '([^']+)' column/.exec(t) || /'([^']+)' column/.exec(t) || /column "([^"]+)"/.exec(t) || /column ([a-z0-9_]+) /i.exec(t);
+      var col=m&&m[1];
+      if(!col || !Object.prototype.hasOwnProperty.call(body,col)) return _fail(r.status);
+      delete body[col];
+      if(!Object.keys(body).length) return _fail(r.status);
+      return _do().then(function(rr){ return _stripRetry(rr,depth+1); });
+    }, function(){ return _fail(r.status); });
+  };
+  return _do().then(function(r){
+    if(r.status===401||r.status===403){
+      return _pwRefresh().then(function(ok){ if(!ok){ try{ _authExpired(); }catch(e){} return _fail(r.status); }
+        return _do().then(function(r2){ if(r2.status===401||r2.status===403){ try{ _authExpired(); }catch(e){} return _fail(r2.status); } return _stripRetry(r2,0); });
+      });
+    }
+    return _stripRetry(r,0);
+  });
 }
 // PATCH de la PROPIA fila del coach en `usuarios` (config, perfil, gamificación),
 // a prueba de RLS Fase 5. Con RLS estricto, si NO viaja el JWT (sesión vencida o
@@ -15174,7 +15207,7 @@ function loadReal(){
     // Reservas del link (tabla citas) desde el inicio del mes → el Resumen suma
     // estas sesiones junto a las cargadas a mano (sesiones_registro). Fuente única
     // de sesiones = Calendario. Falla suave: si la tabla no existe, queda [].
-    _sb("citas?coach_id=eq."+encodeURIComponent(ME.id)+"&inicio=gte."+encodeURIComponent((function(){var d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.toISOString();})())+"&select=inicio,estado&order=inicio.asc").catch(function(){return [];})
+    _sbCitas("citas?coach_id=eq."+encodeURIComponent(ME.id)+"&inicio=gte."+encodeURIComponent((function(){var d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.toISOString();})())+"&select=inicio,estado&order=inicio.asc").catch(function(){return [];})
   // RED DE SEGURIDAD: cada query falla SUAVE (devuelve vacío) para que UNA que
   // se rompa (p.ej. una columna que no existe) NO tumbe la carga entera y deje
   // el panel en blanco. Se ve vacía SOLO esa parte; el resto (config, link del
