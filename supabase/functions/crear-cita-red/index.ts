@@ -152,7 +152,8 @@ Deno.serve(async (req: Request) => {
       } catch { /* ignore */ }
     }
     // Email de confirmación al cliente (best-effort, no bloquea la creación).
-    // JULIO 2026: Google Meet links come from Google Calendar sync, not sala.html
+    // meet_link llegará vacío si sync-cita-to-gcal aún no termina (asincrónico).
+    // El email mostrará "el link aparecerá pronto" hasta que Google Calendar genere el Meet link.
     if (EMAIL_RE.test(cliEmail)) {
       try { await notificarCita(cliEmail, tipo, inicio, modalidad, lugar, cita.meet_link || ""); } catch { /* ignore */ }
     }
