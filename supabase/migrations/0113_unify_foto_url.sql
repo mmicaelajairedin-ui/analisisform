@@ -21,10 +21,7 @@ UPDATE usuarios
 -- 2) Ensure foto_url column exists (should already exist from initial schema)
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto_url TEXT;
 
--- 3) Index for efficient lookups (needed for usuarios_publicos_view and coach directory)
-CREATE INDEX IF NOT EXISTS idx_usuarios_foto_url ON usuarios(foto_url) WHERE foto_url IS NOT NULL;
-
--- 4) Optional: Also sync to foto_perfil_url for backward compatibility with edge functions
+-- 3) Optional: Also sync to foto_perfil_url for backward compatibility with edge functions
 --    (Only fill if foto_perfil_url is empty but foto_url now has a value)
 UPDATE usuarios
    SET foto_perfil_url = foto_url
