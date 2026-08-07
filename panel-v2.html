@@ -14210,24 +14210,64 @@ function _saveWkName(el,cid,w){
   if(c._example){ c.raw.etapas=ej; return; }
   _sbw("candidatos?id=eq."+encodeURIComponent(cid),"PATCH",{etapas:ej}).then(function(r){ if(r&&r.ok) c.raw.etapas=ej; }).catch(function(){});
 }
-// Foto por ejercicio desde el listado del gym (subir/cambiar ahí mismo).
-// Usar "input" además de "change" para mejor compatibilidad con iOS
+// Foto por ejercicio: flujo con logging automático para diagnóstico
+function _logPhotoError(step, error){
+  var log={ts:new Date().toISOString(), step:step, error:(error&&error.message)||error||"unknown"};
+  var logs=[];try{logs=JSON.parse(localStorage.getItem("_photo_logs")||"[]");}catch(e){}
+  logs.push(log); if(logs.length>50) logs=logs.slice(-50);
+  localStorage.setItem("_photo_logs", JSON.stringify(logs));
+  var code="ERR_"+step.toUpperCase().substring(0,8)+"_"+Math.random().toString(36).substring(2,8).toUpperCase();
+  return code;
+}
 ["change","input"].forEach(function(evt){
   document.addEventListener(evt, function(ev){
     if(!ev.target || !ev.target.classList || !ev.target.classList.contains("exfoto-inp")) return;
-    var ff=ev.target.files && ev.target.files[0]; if(!ff) return;
-    var ext=(ff.name||"").split(".").pop().toLowerCase();
-    if(!ext || ["png","jpg","jpeg","webp"].indexOf(ext)<0){ alert("Usa PNG, JPG o WebP."); ev.target.value=""; return; }
-    if(ff.size===undefined || ff.size > 5*1024*1024){ if(ff.size!==undefined) alert("La foto no puede pesar más de 5 MB."); ev.target.value=""; return; }
-  var cid=ev.target.getAttribute("data-id"), ix=parseInt(ev.target.getAttribute("data-idx"),10);
-  toast("Subiendo foto…");
-  _uploadDoc(ff).then(function(url){
-    var c2=CLIENTS.filter(function(x){return String(x.id)===String(cid);})[0];
-    var arr=_rutToArr(c2&&c2.raw&&c2.raw.fit_rutina); if(!arr[ix]) return;
-    arr[ix].foto=url; var j=JSON.stringify(arr);
-    if(c2 && c2._example){ c2.raw.fit_rutina=j; toast("Foto agregada (demo) ✓"); render(); return; }
-    _sbw("candidatos?id=eq."+encodeURIComponent(cid),"PATCH",{fit_rutina:j}).then(function(r){ if(r.ok && c2&&c2.raw) c2.raw.fit_rutina=j; toast("Foto agregada ✓"); render(); }).catch(function(){ alert("No se pudo guardar la foto."); });
-  }).catch(function(){ alert("No se pudo subir la foto."); });
+    try{
+      var ff=ev.target.files && ev.target.files[0];
+      if(!ff){ _logPhotoError("file_select", "no file selected"); ev.target.value=""; return; }
+      var fname=(ff.name||"photo").trim();
+      var ext=fname.split(".").pop().toLowerCase();
+      if(!ext || ["png","jpg","jpeg","webp"].indexOf(ext)<0){
+        var code=_logPhotoError("file_format", "invalid format: "+ext);
+        alert("Usa PNG, JPG o WebP.\n("+code+")"); ev.target.value=""; return;
+      }
+      if(ff.size===undefined){
+        var code=_logPhotoError("file_size_check", "size property undefined");
+        alert("No se pudo verificar el tamaño de la foto.\n("+code+")"); ev.target.value=""; return;
+      }
+      if(ff.size > 5*1024*1024){
+        var code=_logPhotoError("file_size_limit", "size "+ff.size+" > 5MB");
+        alert("La foto no puede pesar más de 5 MB.\n("+code+")"); ev.target.value=""; return;
+      }
+      var cid=ev.target.getAttribute("data-id"), ix=parseInt(ev.target.getAttribute("data-idx"),10);
+      toast("Subiendo foto…");
+      _uploadDoc(ff).then(function(url){
+        try{
+          var c2=CLIENTS.filter(function(x){return String(x.id)===String(cid);})[0];
+          if(!c2){ var code=_logPhotoError("client_lookup", "client not found: "+cid); alert("Cliente no encontrado.\n("+code+")"); return; }
+          var arr=_rutToArr(c2&&c2.raw&&c2.raw.fit_rutina);
+          if(!arr || !arr[ix]){ var code=_logPhotoError("exercise_index", "invalid index "+ix); alert("Ejercicio no encontrado.\n("+code+")"); return; }
+          arr[ix].foto=url; var j=JSON.stringify(arr);
+          if(c2 && c2._example){ c2.raw.fit_rutina=j; toast("Foto agregada (demo) ✓"); render(); return; }
+          _sbw("candidatos?id=eq."+encodeURIComponent(cid),"PATCH",{fit_rutina:j}).then(function(r){
+            if(r.ok && c2&&c2.raw) c2.raw.fit_rutina=j;
+            toast("Foto agregada ✓"); render();
+          }).catch(function(e){
+            var code=_logPhotoError("db_save", e);
+            alert("No se pudo guardar la foto.\n("+code+")");
+          });
+        }catch(e){
+          var code=_logPhotoError("save_logic", e);
+          alert("Error procesando la foto.\n("+code+")");
+        }
+      }).catch(function(e){
+        var code=_logPhotoError("storage_upload", e);
+        alert("No se pudo subir la foto.\n("+code+")");
+      });
+    }catch(e){
+      var code=_logPhotoError("event_handler", e);
+      alert("Error inesperado.\n("+code+")");
+    }
   });
 });
 // Extracto bancario (PDF) → categorizar-gastos (IA) → categorías + total.
