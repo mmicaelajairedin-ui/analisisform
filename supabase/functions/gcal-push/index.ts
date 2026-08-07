@@ -141,32 +141,56 @@ Deno.serve(async (req: Request) => {
   try {
     const url = (op === "update" && eventId) ? `${base}/${encodeURIComponent(eventId)}` : base;
     const method = (op === "update" && eventId) ? "PATCH" : "POST";
-    console.log(`gcal-push: calling Google Calendar API, method=${method}, url=${url}`);
+
+    // Log request body (sanitized, no tokens)
+    const bodyStr = JSON.stringify(gev);
+    console.log(`[REQUEST] method=${method}, url=${url}`);
+    console.log(`[REQUEST] body keys: ${Object.keys(gev).join(",")}`);
+    console.log(`[REQUEST] conferenceData present: ${!!gev.conferenceData}`);
+    if (gev.conferenceData) {
+      console.log(`[REQUEST] conferenceData.createRequest.requestId: ${(gev.conferenceData as any).createRequest?.requestId || "MISSING"}`);
+      console.log(`[REQUEST] conferenceData.createRequest.conferenceSolutionKey: ${JSON.stringify((gev.conferenceData as any).createRequest?.conferenceSolutionKey || "MISSING")}`);
+    }
+    console.log(`[REQUEST] conferenceDataVersion: ${gev.conferenceDataVersion || "MISSING"}`);
+
     const r = await fetch(url, {
       method,
       headers: auth,
-      body: JSON.stringify(gev),
+      body: bodyStr,
     });
+
+    // Log response metadata
+    console.log(`[RESPONSE] HTTP status: ${r.status}`);
+    console.log(`[RESPONSE] Content-Type: ${r.headers.get("content-type")}`);
+
     const d = await r.json().catch(() => ({}));
-    console.log(`gcal-push: Google API response status=${r.status}, ok=${r.ok}, has_id=${!!d.id}, has_conferenceData=${!!d.conferenceData}`);
+
+    // Log full response structure
+    console.log(`[RESPONSE] Full JSON keys: ${Object.keys(d).join(",")}`);
+    console.log(`[RESPONSE] event id: ${d.id || "MISSING"}`);
+    console.log(`[RESPONSE] conferenceData present: ${!!d.conferenceData}`);
+
     if (d.conferenceData) {
-      console.log(`gcal-push: conferenceData full: ${JSON.stringify(d.conferenceData)}`);
-      console.log(`gcal-push: conferenceData.entryPoints count=${d.conferenceData.entryPoints?.length || 0}`);
-      if (d.conferenceData.entryPoints) {
-        for (const ep of d.conferenceData.entryPoints) {
-          console.log(`gcal-push: entryPoint type=${ep.entryPointType}, uri=${ep.uri}`);
+      console.log(`[RESPONSE] conferenceData keys: ${Object.keys(d.conferenceData).join(",")}`);
+      console.log(`[RESPONSE] conferenceData.entryPoints type: ${typeof d.conferenceData.entryPoints}, length: ${Array.isArray(d.conferenceData.entryPoints) ? d.conferenceData.entryPoints.length : "N/A"}`);
+      if (Array.isArray(d.conferenceData.entryPoints)) {
+        for (let i = 0; i < d.conferenceData.entryPoints.length; i++) {
+          const ep = d.conferenceData.entryPoints[i];
+          console.log(`[RESPONSE] entryPoint[${i}]: type=${ep.entryPointType}, uri=${ep.uri ? ep.uri.substring(0, 50) + "..." : "MISSING"}`);
         }
       }
     } else {
-      console.log(`gcal-push: NO conferenceData in response. Event keys: ${Object.keys(d).join(",")}`);
+      console.log(`[RESPONSE] conferenceData: null/undefined`);
     }
+
     if (!r.ok) {
-      console.error(`gcal-push: Google API error response: ${JSON.stringify(d)}`);
+      console.error(`[ERROR] Google API returned ${r.status}: ${JSON.stringify(d)}`);
       return json({ ok: false, reason: "write_failed", status: r.status, detail: (d && d.error && d.error.message) || "" });
     }
-    // Extraer Google Meet link de conferenceData (puede tardar un momento en generarse)
+
+    // Extract Google Meet link
     let hangoutLink = "";
-    if (d.conferenceData && d.conferenceData.entryPoints) {
+    if (d.conferenceData && Array.isArray(d.conferenceData.entryPoints)) {
       for (const ep of d.conferenceData.entryPoints) {
         if (ep.entryPointType === "video" && ep.uri) {
           hangoutLink = ep.uri;
@@ -174,10 +198,11 @@ Deno.serve(async (req: Request) => {
         }
       }
     }
-    console.log(`gcal-push: FINAL result event_id=${d.id}, hangoutLink=${hangoutLink ? "YES (" + hangoutLink.substring(0, 30) + "...)" : "NO"}`);
+
+    console.log(`[FINAL] event_id=${d.id || eventId}, hangoutLink=${hangoutLink ? "FOUND" : "NOT_FOUND"}`);
     return json({ ok: true, event_id: d.id || eventId, hangoutLink });
   } catch (e) {
-    console.error(`gcal-push: exception during Google API call: ${String(e)}`);
+    console.error(`[EXCEPTION] ${String(e)}, stack: ${String((e as any).stack)}`);
     return json({ ok: false, reason: "google_unreachable" });
   }
 });
