@@ -14128,17 +14128,31 @@ function _uploadAvatar(fileOrBlob, ext){
 // la URL pública. Conserva el nombre original (limpio) en el path.
 function _uploadDoc(f){
   var id=(REAL&&RME&&RME.id)?RME.id:"anon";
-  var clean=(""+(f.name||"doc")).replace(/[^a-zA-Z0-9._-]/g,"_").slice(-60);
+  var fname=(f.name||"").trim();
+  if(!fname) fname="photo-"+Date.now();
+  var clean=(""+fname).replace(/[^a-zA-Z0-9._-]/g,"_").slice(-60);
   var path="doc-"+id+"-"+Date.now()+"-"+clean;
-  // Bucket 'docs' (acepta PDF/Word/imágenes). El bucket 'avatars' está restringido
-  // a imágenes → los PDF/Word rebotaban. Migration: docs_bucket.sql.
+  var mimeType=f.type;
+  if(!mimeType || mimeType==="application/octet-stream"){
+    var ext=(fname).split(".").pop().toLowerCase();
+    var mimeMap={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp","pdf":"application/pdf","doc":"application/msword","docx":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","xls":"application/vnd.ms-excel","xlsx":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","txt":"text/plain"};
+    mimeType=mimeMap[ext]||"image/jpeg";
+  }
   return fetch(SB+"/storage/v1/object/docs/"+encodeURIComponent(path),{
     method:"POST",
-    headers:{ apikey:KEY, "Content-Type": (f.type||"application/octet-stream"), "x-upsert":"true" },
+    headers:{ apikey:KEY, "Content-Type": mimeType },
+    mode:"cors",
     body: f
   }).then(function(r){
-    if(!r.ok) return r.text().then(function(t){ throw new Error("storage "+r.status+" "+t); });
+    if(!r.ok) return r.text().then(function(t){
+      var msg="HTTP "+r.status+" | "+t.substring(0,200);
+      var log={ts:new Date().toISOString(), step:"storage_http", status:r.status, body:t.substring(0,500)};
+      try{var logs=JSON.parse(localStorage.getItem("_photo_logs")||"[]");logs.push(log);localStorage.setItem("_photo_logs",JSON.stringify(logs.slice(-50)));}catch(e){}
+      throw new Error(msg);
+    });
     return SB+"/storage/v1/object/public/docs/"+path;
+  }).catch(function(e){
+    throw new Error((e&&e.message?e.message:"Error desconocido al subir"));
   });
 }
 
