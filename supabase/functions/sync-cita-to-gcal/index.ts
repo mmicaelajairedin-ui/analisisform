@@ -66,6 +66,8 @@ Deno.serve(async (req: Request) => {
   };
 
   try {
+    console.log(`[SYNC-START] cita_id=${citaId}`);
+
     // 1) Obtener detalles de la cita
     const cr = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}&select=*`, { headers: svc });
     if (!cr.ok) return json({ error: "cita_query_failed" }, 502);
@@ -164,7 +166,7 @@ Deno.serve(async (req: Request) => {
     trace.video_url = video_url;
     trace.video_url_source = video_url_source;
 
-    console.log(`[SYNC-CITA] video_url calculated: source=${video_url_source}, url=${video_url}`);
+    console.log(`[SYNC-VIDEO] coach_id=${coach_id} zoom_url=${coachZoomUrl ? "PRESENT" : "MISSING"} google_result=${trace.hangoutLink ? "PRESENT" : "MISSING"} fallback=${video_url_source}`);
 
     const hangoutLink = trace.hangoutLink || "";
     const eventId = trace.event_id || "";
@@ -176,9 +178,7 @@ Deno.serve(async (req: Request) => {
     if (eventId) patchPayload.google_event_id = eventId;
 
     if (Object.keys(patchPayload).length > 0) {
-      console.log(`[PATCH] Payload: ${JSON.stringify(patchPayload)}`);
-      console.log(`[PATCH] URL: ${SB.DATA}/rest/v1/citas?id=eq.${citaId}`);
-      console.log(`[PATCH] video_url source: ${trace.hangoutLink ? "Google Meet" : coachZoomUrl ? "Coach Zoom" : "Sala Pathway"}`);
+      console.log(`[SYNC-PATCH] cita_id=${citaId} payload=${JSON.stringify(patchPayload)}`);
 
       const ur = await fetch(`${SB.DATA}/rest/v1/citas?id=eq.${citaId}`, {
         method: "PATCH",
@@ -191,13 +191,13 @@ Deno.serve(async (req: Request) => {
 
       if (!ur.ok) {
         trace.patched = false;
-        console.error(`[PATCH] HTTP ${ur.status}: ${patchResponseText}`);
+        console.error(`[SYNC-PATCH-ERROR] HTTP ${ur.status}: ${patchResponseText}`);
       } else {
         trace.patched = true;
-        console.log(`[PATCH] HTTP ${ur.status}: success`);
+        console.log(`[SYNC-PATCH-SUCCESS] HTTP ${ur.status}`);
       }
     } else {
-      console.log(`[PATCH-SKIP] No data to save (no video_url, no eventId)`);
+      console.log(`[SYNC-PATCH-SKIP] No data to save (no video_url, no eventId)`);
     }
 
     // 5) El email se envía desde panel-v2 usando video_url guardado en meet_link

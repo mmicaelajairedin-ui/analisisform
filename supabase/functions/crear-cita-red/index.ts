@@ -165,6 +165,7 @@ Deno.serve(async (req: Request) => {
 
     if (cita.id) {
       try {
+        console.log(`[CREAR-CITA] Calling sync-cita-to-gcal for cita_id=${cita.id}`);
         const syncResp = await fetch(`${SB.DATA}/functions/v1/sync-cita-to-gcal`, {
           method: "POST",
           headers: { "Content-Type": "application/json", apikey: SERVICE, Authorization: `Bearer ${SERVICE}` },
@@ -173,6 +174,7 @@ Deno.serve(async (req: Request) => {
         const syncData = await syncResp.json().catch(() => ({ sync: null }));
         syncTrace = syncData.sync || syncTrace;
         syncTrace.called = true;
+        console.log(`[CREAR-CITA] sync-cita-to-gcal responded: ok=${syncTrace.ok}, video_url_source=${syncTrace.video_url_source}`);
 
         // Actualizar cita con valores devueltos por sync (para que panel envíe email correcto)
         if (syncTrace.event_id) cita.google_event_id = syncTrace.event_id;
