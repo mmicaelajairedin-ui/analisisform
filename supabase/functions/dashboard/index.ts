@@ -116,7 +116,7 @@ async function getDashboard(
     // Organization stats
     const { data: orgData, error: orgError } = await supabase
       .from("organizaciones")
-      .select("id, nombre, owner_id, plan_tipo")
+      .select("id, nombre, owner_id, plan")
       .eq("id", orgId)
       .single();
 
