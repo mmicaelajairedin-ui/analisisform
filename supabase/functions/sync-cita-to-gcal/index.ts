@@ -172,9 +172,10 @@ Deno.serve(async (req: Request) => {
     const eventId = trace.event_id || "";
 
     // 4) Guardar video_url + google_event_id en UN SOLO PATCH
-    // meet_link guarda el video_url final (Google Meet, Zoom del coach, o Sala de Pathway)
+    // meet_link guarda SOLO links reales (Google Meet o Zoom del coach)
+    // NO guarda Pathway Sala — eso es solo fallback técnico, no para emails
     const patchPayload: Record<string, string> = {};
-    if (video_url) patchPayload.meet_link = video_url;
+    if (video_url && video_url_source !== "pathway_sala") patchPayload.meet_link = video_url;
     if (eventId) patchPayload.google_event_id = eventId;
 
     if (Object.keys(patchPayload).length > 0) {

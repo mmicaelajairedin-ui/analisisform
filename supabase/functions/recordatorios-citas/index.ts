@@ -160,25 +160,18 @@ async function sendReminder(
     ? (EN ? `Your <strong>${esc(tipo)}</strong> with ${esc(coachName)} is <strong>today at ${esc(hora)}</strong>. See you there!` : `Tu <strong>${esc(tipo)}</strong> con ${esc(coachName)} es <strong>hoy a las ${esc(hora)}</strong>. ¡Te esperamos!`)
     : (EN ? `A reminder about your <strong>${esc(tipo)}</strong> with ${esc(coachName)}: <strong>${esc(cuando)} at ${esc(hora)}</strong>.` : `Te recordamos tu <strong>${esc(tipo)}</strong> con ${esc(coachName)}: <strong>${esc(cuando)} a las ${esc(hora)}</strong>.`);
 
-  // Determinar qué link usar: Zoom → Google Meet → Pathway Sala
+  // Determinar qué link usar: SOLO links reales (Google Meet o Zoom)
+  // meet_link ya fue calculado por sync-cita-to-gcal con prioridad: Google Meet → Zoom → (NO Pathway Sala)
   const esPresencial = String(c.modalidad || "online") === "presencial";
-  const startMs = new Date(c.inicio).getTime();
-  const salaRoom = "Pathway-" + (c.coach_id || "x") + "-" + startMs;
-  const salaLink = "https://pathwaycareercoach.com/sala.html?room=" + encodeURIComponent(salaRoom);
-
-  // Priority: Zoom → Google Meet → Pathway Sala
   let videoLink = "";
   let videoLabel = "";
-  if (!esPresencial) {
-    if (zoomUrl) {
-      videoLink = zoomUrl;
-      videoLabel = EN ? "Video call" : "Videollamada";
-    } else if (c.meet_link) {
-      videoLink = c.meet_link;
+  if (!esPresencial && c.meet_link) {
+    videoLink = c.meet_link;
+    // Si es Google Meet (contiene meet.google.com), etiqueta como Google Meet; si no, como Zoom
+    if (String(c.meet_link).indexOf("meet.google.com") >= 0) {
       videoLabel = EN ? "Google Meet" : "Google Meet";
     } else {
-      videoLink = salaLink;
-      videoLabel = EN ? "Pathway video call" : "Videollamada de Pathway";
+      videoLabel = EN ? "Zoom" : "Zoom";
     }
   }
 
