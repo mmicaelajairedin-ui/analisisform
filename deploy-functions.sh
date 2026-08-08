@@ -19,7 +19,7 @@ supabase login
 # Step 2: Link project
 echo ""
 echo "🔗 Step 2: Linking project..."
-supabase link --project-ref ddxnrsnjdvtqhxunxbwj
+supabase link --project-ref ddxnrsnjdvtqhxunxnwj
 
 # Step 3: Deploy functions
 echo ""
@@ -46,8 +46,8 @@ echo ""
 echo "🧪 Step 5: Testing fetch-coach-detail endpoint..."
 echo ""
 
-SUPABASE_URL="https://ddxnrsnjdvtqhxunxbwj.supabase.co"
-ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU"
+SUPABASE_URL="https://ddxnrsnjdvtqhxunxnwj.supabase.co"
+ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjM5ODAwMDAsImV4cCI6MTg4MTc0NjAwMH0.WyY8_f_mTGJfRJLZ_b4A_rC8_r-9qOqNM8gfDg6xxRk"
 
 curl -s -H "Authorization: Bearer $ANON_KEY" \
   "$SUPABASE_URL/functions/v1/fetch-coach-detail/organization/550e8400-e29b-41d4-a716-446655440000/coaches/53eb424e-3b04-45e9-a07f-257eb62280c4" | jq -r '.coach.name // "❌ No coach data"' > /tmp/test_result.txt
