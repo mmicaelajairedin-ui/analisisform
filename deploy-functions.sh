@@ -47,9 +47,17 @@ echo "🧪 Step 5: Testing fetch-coach-detail endpoint..."
 echo ""
 
 SUPABASE_URL="https://ddxnrsnjdvtqhxunxnwj.supabase.co"
-ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjM5ODAwMDAsImV4cCI6MTg4MTc0NjAwMH0.WyY8_f_mTGJfRJLZ_b4A_rC8_r-9qOqNM8gfDg6xxRk"
+# ANON_KEY removed — use SUPABASE_ANON_KEY environment variable instead
+# This key should be obtained from Supabase dashboard (Settings → API Keys)
+# Project: ddxnrsnjdvtqhxunxnwj (ref: wj)
 
-curl -s -H "Authorization: Bearer $ANON_KEY" \
+if [ -z "$SUPABASE_ANON_KEY" ]; then
+  echo "⚠️  SUPABASE_ANON_KEY not set. Skipping test."
+  echo "   To test, set: export SUPABASE_ANON_KEY='your-key-here'"
+  exit 0
+fi
+
+curl -s -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
   "$SUPABASE_URL/functions/v1/fetch-coach-detail/organization/550e8400-e29b-41d4-a716-446655440000/coaches/53eb424e-3b04-45e9-a07f-257eb62280c4" | jq -r '.coach.name // "❌ No coach data"' > /tmp/test_result.txt
 
 RESULT=$(cat /tmp/test_result.txt)
