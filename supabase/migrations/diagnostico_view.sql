@@ -2,7 +2,9 @@
 -- Aggregates coach inactivity and client session inactivity alerts
 -- Used by dashboard Edge Function to generate alerts
 
-CREATE OR REPLACE VIEW diagnostico_view AS
+DROP VIEW IF EXISTS diagnostico_view CASCADE;
+
+CREATE VIEW diagnostico_view AS
 WITH coach_activity AS (
   SELECT
     org_id,
