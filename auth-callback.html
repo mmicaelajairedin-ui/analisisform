@@ -327,62 +327,54 @@ async function handleCallback(){
 
   // ── Manejo especial para Google nativo (Capacitor iOS) ──
   if(googleNative){
-    var googleIdToken = null;
-    var googleEmail = null;
-    var googleName = null;
-    try {
-      googleIdToken = localStorage.getItem('pw_google_id_token');
-      googleEmail = localStorage.getItem('pw_google_email');
-      googleName = localStorage.getItem('pw_google_name');
-    } catch(e) {}
-
-    if(!googleIdToken){
-      return showError('Token de Google no encontrado. Intenta iniciar sesión de nuevo.');
-    }
-
     setLoadingMsg('Validando tu identidad con Google...');
 
-    // Limpiar localStorage.
-    try {
-      localStorage.removeItem('pw_google_id_token');
-      localStorage.removeItem('pw_google_email');
-      localStorage.removeItem('pw_google_name');
-    } catch(e) {}
+    // Con el flujo Browser.open() + OAuth, Supabase ya maneja el intercambio
+    // automáticamente (detectSessionInUrl: true). Solo necesitamos leer la sesión
+    // que ya se creó. El idToken se intercepta de la URL (#access_token=...) y
+    // se convierte en una sesión automáticamente — no hay paso manual en localStorage.
 
-    if(!googleEmail){
-      return showError('No pudimos obtener tu email. Intenta iniciar sesión de nuevo.');
-    }
-
-    setLoadingMsg('Conectando tu cuenta...');
-
-    // ── Intercambiar idToken de Google por sesión real en Supabase ──
     try {
       var sb = window.supabase.createClient(SB, KEY, {
-        auth: { persistSession: true, autoRefreshToken: true }
+        auth: { detectSessionInUrl: true, persistSession: true, autoRefreshToken: true }
       });
 
-      var { data: authData, error: authError } = await sb.auth.signInWithIdToken({
-        provider: 'google',
-        token: googleIdToken
-      });
-
-      if(authError){
-        return showError('Error validando con Google: ' + (authError.message || 'desconocido'));
+      // Esperar a que Supabase procese el OAuth (igual que en el flujo normal).
+      // _getSessionRetry maneja la race condition entre el parsing de URL y
+      // getSession().
+      async function _googleGetSessionRetry(){
+        var maxRetries = 20;
+        for(var i=0;i<maxRetries;i++){
+          try{
+            var r = await sb.auth.getSession();
+            if(r && r.data && r.data.session) return r.data.session;
+          }catch(e){}
+          if(i < maxRetries - 1) await new Promise(function(res){ setTimeout(res, 300); });
+        }
+        return null;
       }
 
-      if(!authData || !authData.user || !authData.session){
-        return showError('No se recibió sesión de Google. Intenta de nuevo.');
+      var session = await _googleGetSessionRetry();
+
+      if(!session){
+        return showError('No se encontró sesión de Google. Prueba iniciar sesión de nuevo.');
       }
 
-      var email = (authData.user.email || googleEmail || '').toLowerCase().trim();
-      var name = googleName || (authData.user.user_metadata && authData.user.user_metadata.full_name) || email.split('@')[0];
+      var user = session.user;
+      var email = (user.email || '').toLowerCase().trim();
+      if(!email){
+        return showError('No pudimos obtener tu email. Intenta iniciar sesión de nuevo.');
+      }
+
+      var meta = user.user_metadata || {};
+      var name = meta.full_name || meta.name || meta.given_name || email.split('@')[0];
       var provider = 'google';
-      var userId = authData.user.id;
-      var authJWT = authData.session.access_token;
+      var userId = user.id;
+      var authJWT = session.access_token;
 
       // Crear/actualizar usuario con el JWT real.
       setLoadingMsg('Buscando tu cuenta...');
-      var usr = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,email,rol,nombre,activo,configuracion', {
+      var usr = await fetch(SB + '/rest/v1/usuarios?email=eq.' + encodeURIComponent(email) + '&select=id,email,rol,nombre,activo,configuracion,auth_id', {
         headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + authJWT }
       }).then(r => r.json()).then(rows => rows && rows.length > 0 ? rows[0] : null);
 
@@ -419,7 +411,7 @@ async function handleCallback(){
           return r.json();
         }).then(created => Array.isArray(created) ? created[0] : created);
 
-        // Email de bienvenida.
+        // Email de bienvenida (best-effort).
         fetch(SB + '/functions/v1/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -428,12 +420,13 @@ async function handleCallback(){
             to_name: name,
             subject: '¡Te damos la bienvenida a Pathway! Tu trial de 14 días empezó 🌱',
             html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + (name.split(' ')[0]) + ',</h2>'
-              + '<p style="font-size:15px;line-height:1.65;">Te damos la bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis</strong>.</p>'
+              + '<p style="font-size:15px;line-height:1.65;">Te damos la bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis</strong>. No te pedimos tarjeta — si al final no quieres seguir, simplemente no haces nada.</p>'
               + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
+              + '<p style="font-size:13px;color:#888;margin-top:18px;">Cualquier duda, responde este mail. — Mica</p>'
           })
         }).catch(function(){});
 
-        // Guardar sesión y redirigir.
+        // Guardar sesión.
         localStorage.setItem('mj_user', JSON.stringify({
           id: usr.id,
           email: usr.email,
@@ -447,19 +440,19 @@ async function handleCallback(){
 
         // En iOS (Browser nativo), cerrar la ventana después de guardar la sesión.
         // El app principal recibe el browserFinished event y redirige al panel.
-        if(googleNative){
-          var Browser = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
-          if(Browser && Browser.close) Browser.close();
+        var Browser = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
+        if(Browser && Browser.close) {
+          Browser.close();
         } else {
           setTimeout(function(){
             window.location.href = '/panel-v2.html?welcome=1&v=' + Date.now();
           }, 800);
         }
       } else {
-        // Usuario existente.
+        // Usuario existente — actualizar last_login.
         var cfg = usr.configuracion || {};
         cfg.last_login = new Date().toISOString();
-        await fetch(SB + '/rest/v1/usuarios?id=eq.' + usr.id, {
+        fetch(SB + '/rest/v1/usuarios?id=eq.' + usr.id, {
           method: 'PATCH',
           headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + authJWT, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
           body: JSON.stringify({ configuracion: cfg })
@@ -477,9 +470,9 @@ async function handleCallback(){
         try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
 
         // En iOS (Browser nativo), cerrar la ventana después de guardar la sesión.
-        if(googleNative){
-          var Browser = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
-          if(Browser && Browser.close) Browser.close();
+        var Browser = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
+        if(Browser && Browser.close) {
+          Browser.close();
         } else {
           setTimeout(function(){
             var dest = usr.rol === 'cliente' ? '/cliente.html?v=' : '/panel-v2.html?v=';
