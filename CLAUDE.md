@@ -44,6 +44,103 @@ Regresión — ✅ VERIFICADO EN NAVEGADOR
 
 ---
 
+## 🔍 FASE 1: Sistema de Detección y Triage de Errores (Agosto 2026)
+
+**Implementado para prevenir regresos de bugs arreglados y documentar ciclo de vida de errores.**
+
+### Flujo de error: DETECTED → TRIAGED → FIXED → TESTED → VERIFIED
+
+Cada error sigue un ciclo de vida documentado en `docs/ERROR_REGISTRY.md`:
+- **DETECTED:** Se identifica el síntoma (reporte, log, test fallido)
+- **TRIAGED:** Se audita causa raíz, se clasifica severidad, módulo afectado
+- **FIXED:** Se implementa la solución
+- **TESTED:** Se crea o actualiza test automatizado
+- **VERIFIED:** Se verifica en producción sin regresión (48h mínimo)
+
+### Herramientas
+
+**npm run verify** (antes de git push)
+- Ejecuta secuencialmente: syntax → smoke → guardrails → parity → icons → triage
+- Si falla algún check crítico (syntax, guardrails, triage), bloquea commit
+- Detecta: NEW_ERROR | REGRESSION | KNOWN_ERROR
+
+**npm run triage** (clasificar test fallos)
+- Lee `tests/results/test-results.json` (salida Playwright)
+- Cross-referencia con `docs/ERROR_REGISTRY.md`
+- Clasifica cada fallo: KNOWN_ERROR | REGRESSION | NEW_ERROR | ENVIRONMENT_ERROR
+- Output: `tests/results/triaged-errors.json` con error_id, correlation_id, severity
+
+**docs/ERROR_REGISTRY.md** (registro oficial)
+- Tabla de errores conocidos con: síntoma, categoría, módulo, root cause, evidencia (commit, archivos, test)
+- Estado actual: DETECTED | TRIAGED | FIXED | TESTED | VERIFIED
+- Cómo evitar regresión: guardrail específico o regla en check-guardrails.js
+
+**docs/ENVIRONMENT_CONFIG.md** (configuración)
+- Project ref allowlist (production: ddxnrsnjdvtqhxunxbwj)
+- Blocked refs: mzxgxkkgxvunpsiqbzxd (ERR-ENV-001, legacy)
+- Environment detection: production | staging | preview | local
+
+**scripts/error-triage.js** (clasificador)
+- Lee test-results.json, clasifica errores automáticamente
+- Genera correlation_id (UUID) para cada error
+- Output JSON con: error_id, type, severity, module, autonomy_level
+
+**scripts/verify.js** (orquestador)
+- Ejecuta todos los checks (syntax, smoke, guardrails, parity, icons, triage)
+- Exit 1 si hay BLOCKER (syntax fail, guardrails fail, triage detecta NEW/REGRESSION)
+- Previene commit si hay errores críticos
+
+**Extended tester-bot.spec.js**
+- Captura: error_id, correlation_id, environment, frontend_commit, error_code, module, severity
+- Genera UUID v4 para cada test run
+- Detecta entorno: production/staging/preview/local
+- Extrae git commit de meta tag `<meta name="frontend-commit">`
+- Clasifica errores por patrón (ERR-UPLOAD-001, ERR-UPLOAD-002, etc.)
+
+**supabase/migrations/upload_diagnostics_v2.sql**
+- Nuevas columnas: correlation_id, environment, frontend_commit, backend_commit, upload_type, error_code
+- RLS: anon puede INSERT (error reporting), admin puede SELECT
+- Índices para triage rápido por environment, error_code, commit
+
+### Protocolo: Antes de git push
+
+```bash
+npm run verify
+```
+
+Si falla:
+1. Revisar salida de verify → identifica qué check falló
+2. Si es TRIAGE: se detectó NEW_ERROR o REGRESSION
+   - Si NEW_ERROR: documentar en docs/ERROR_REGISTRY.md (DETECTED)
+   - Si REGRESSION: el error ya fue arreglado antes, revisar qué se rompió
+3. Si es GUARDRAILS: la regla de un bug conocido se incumplió
+   - Revisar check-guardrails.js y arreglar la violación
+4. Si es SYNTAX: error de JS puro, arreglar el error
+5. Correr `npm run verify` nuevamente hasta que pase
+
+Si pasa: seguro hacer `git push`
+
+### Autonomy Levels (Fase 2)
+
+- **Level 0:** UNKNOWN | NEW_ERROR | REGRESSION | CRITICAL severity → requiere revisión humana
+- **Level 1:** KNOWN_ERROR | HIGH severity → auto-triage, requiere validación
+- **Level 2:** KNOWN_ERROR | MEDIUM severity | autonomy_level=2 → se puede auto-fix (futuro)
+- **Level 3:** KNOWN_ERROR | LOW severity | autonomy_level=3 → auto-fix sin aprobación (futuro)
+
+### Meta tags en HTML (frontend-commit)
+
+Cada HTML principal (panel-v2.html, index.html, cliente.html, cv.html, carta.html) incluye:
+```html
+<meta name="frontend-commit" content="7a2ba42ff9961cc5fe311c24b0fd25051f05df95">
+```
+
+Usado para:
+- Vincular errores a commit específico
+- Detectar si error es por cambio reciente o antiguo
+- Reproducibilidad en auditorías
+
+---
+
 ## ⚡ MODO ASISTENTE DE VENTAS — LEER PRIMERO
 
 Si Micaela escribe un **nombre + lo que le preguntó/dijo un lead**, actuá como
