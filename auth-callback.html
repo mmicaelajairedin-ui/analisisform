@@ -331,14 +331,61 @@ async function handleCallback(){
     }
   }
 
+  // ── Función para parsear manualmente token de Google desde la URL ──
+  // Extrae #access_token=... y lo guarda en localStorage antes de que la URL se pierda
+  function _parseGoogleTokenFromURL(){
+    try {
+      var hash = window.location.hash.substring(1); // remove leading #
+      if(!hash) return false;
+
+      var params = new URLSearchParams(hash);
+      var accessToken = params.get('access_token');
+      var refreshToken = params.get('refresh_token');
+      var expiresIn = params.get('expires_in');
+      var tokenType = params.get('token_type') || 'bearer';
+
+      if(!accessToken) return false;
+
+      // Guardar con la estructura que Supabase espera en localStorage
+      // Clave: sb-<project_ref>-auth-token (el SDK la buscará aquí)
+      var projectRef = 'ddxnrsnjdvtqhxunxbwj';
+      var storageKey = 'sb-' + projectRef + '-auth-token';
+      var expiresInSec = parseInt(expiresIn) || 3600;
+      var expiresAt = Math.floor(Date.now() / 1000) + expiresInSec;
+
+      var sessionData = {
+        access_token: accessToken,
+        refresh_token: refreshToken || '',
+        expires_in: expiresInSec,
+        expires_at: expiresAt,
+        token_type: tokenType,
+        user: {} // El SDK llenará esto luego si es necesario
+      };
+
+      var storageValue = {
+        session: sessionData,
+        user: {}
+      };
+
+      localStorage.setItem(storageKey, JSON.stringify(storageValue));
+      console.log('[Google OAuth] Token parseado y guardado en localStorage');
+      return true;
+    } catch(e){
+      console.error('[Google OAuth] Error parseando token:', e);
+      return false;
+    }
+  }
+
   // ── Manejo especial para Google nativo (Capacitor iOS) ──
   if(googleNative){
     setLoadingMsg('Validando tu identidad con Google...');
 
-    // Con el flujo Browser.open() + OAuth, Supabase ya maneja el intercambio
-    // automáticamente (detectSessionInUrl: true). Solo necesitamos leer la sesión
-    // que ya se creó. El idToken se intercepta de la URL (#access_token=...) y
-    // se convierte en una sesión automáticamente — no hay paso manual en localStorage.
+    // Intentar parsear manualmente el token de la URL primero (más robusto)
+    var tokenParsed = _parseGoogleTokenFromURL();
+
+    // Con el flujo Browser.open() + OAuth, Supabase maneja el intercambio.
+    // Si parseamos el token arriba, getSession() lo encontrará en localStorage.
+    // Si no, caemos a los reintentos (fallback compatible).
 
     try {
       var sb = window.supabase.createClient(SB, KEY, {
@@ -347,7 +394,7 @@ async function handleCallback(){
 
       // Esperar a que Supabase procese el OAuth (igual que en el flujo normal).
       // _getSessionRetry maneja la race condition entre el parsing de URL y
-      // getSession().
+      // getSession(). Ahora con el token ya en localStorage, tiene más chances de encontrarlo.
       async function _googleGetSessionRetry(){
         var maxRetries = 20;
         for(var i=0;i<maxRetries;i++){
