@@ -2,7 +2,21 @@
 
 **Registro oficial de errores detectados, clasificados y resueltos.**
 
-Estado posible: `DETECTED` | `TRIAGED` | `FIXED` | `TESTED` | `VERIFIED`
+**Referencia:** Ver `docs/ERROR-STATES.md` para definición formal de estados y transiciones.
+
+## Estados Formales
+
+- **DETECTED:** Error identificado, síntoma reportado
+- **SUSPECTED:** Análisis inicial sugiere causa (próximo: STATIC o RUNTIME confirmation)
+- **ROOT_CAUSE_CONFIRMED_STATIC:** Análisis estático de código confirma
+- **ROOT_CAUSE_CONFIRMED_RUNTIME:** Logs/traces de ejecución confirman
+- **FIXED:** Código modificado (commit hash documentado)
+- **VERIFIED:** Test pasa + Guardrail OK + 48h sin regresión en producción
+- **REGRESSION:** Error VERIFIED que reaparece
+- **BLOCKED:** Depende de otro trabajo previo
+- **OUT_OF_SCOPE:** Pertenece a otra rama/módulo
+
+**Principio:** STATIC ≠ RUNTIME ≠ E2E ≠ VERIFIED (ver ERROR-STATES.md)
 
 ---
 

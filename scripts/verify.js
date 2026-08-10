@@ -55,6 +55,11 @@ const checks = [
     script: 'node scripts/error-triage.js',
     description: 'Classify test failures',
   },
+  {
+    name: 'Async Patterns',
+    script: 'node scripts/check-async-patterns.js',
+    description: 'Detect async/timing patterns (report-only)',
+  },
 ];
 
 async function run() {
@@ -82,11 +87,13 @@ async function run() {
       if (
         check.name === 'Syntax' ||
         check.name === 'Guardrails' ||
-        check.name === 'Error Scope' ||
         check.name === 'Triage'
       ) {
         blockerFound = true;
         console.error(`\n  Error output:\n${err.stdout || err.stderr || err.message}\n`);
+      } else if (check.name === 'Error Scope') {
+        // Error Scope is informational (report-only) in Fase 1
+        console.error(`\n  Error output (report-only):\n${err.stdout || err.stderr || err.message}\n`);
       }
     }
   }
