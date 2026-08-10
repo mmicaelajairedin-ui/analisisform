@@ -176,6 +176,250 @@ Este error requiere confirmación manual antes de cualquier fix automático.
 
 ---
 
+## ERR-APP-004: Missing Apple Sign in (iOS App Store)
+
+**Estado:** DETECTED  
+**Fecha detectado:** 2026-08-10  
+**Severity:** CRITICAL  
+
+### Síntoma
+App iOS rechazada por Apple App Store (requisito 4.8):  
+"Ofrece login con Google sin equivalente Apple Sign in"
+
+### Categoría
+`APP_SUBMISSION_ERROR` · `AUTH_PROVIDER`
+
+### Módulo
+iOS authentication (login.html, auth-callback.html, pw-app.js)
+
+### Root Cause
+- login.html tiene btn-apple pero está `display:none` (nunca se muestra)
+- signInWithApple() existe pero tal vez no está wired correctamente
+- Supabase Auth provider 'apple' puede no estar configurado
+
+### Evidencia
+- **Files affected:**
+  - login.html:151-164 (btn-apple con display:none)
+  - auth-callback.html:113, 302, 316 (handleAppleNativeUser, provider apple)
+  - panel-v2.html (debe ocultar precios en PW_IN_APP)
+  - pw-app.js (PW_IN_APP detection)
+
+### Estado actual
+- ❌ **DETECTED:** Apple rechazó app
+- ❌ **FIXED:** NO
+- ❌ **TESTED:** NO
+- ❌ **VERIFIED:** NO
+
+### Cómo evitar regresión
+Guardrail: verificar que btn-apple existe, signInWithApple() está implementado, y se ejecuta en iOS
+
+---
+
+## ERR-MULTICOACH-001: Owner navigation broken (404)
+
+**Estado:** DETECTED  
+**Fecha detectado:** 2026-08-10  
+**Severity:** CRITICAL  
+
+### Síntoma
+Owner entra a login → redirige a `/multicoach-v3.html`  
+Archivo no existe o ruta es incorrecta → 404  
+Owner no puede acceder a su red de coaches
+
+### Categoría
+`NAVIGATION_ERROR` · `AUTH_ROUTING`
+
+### Módulo
+login.html auth callback, multicoach navigation
+
+### Root Cause
+login.html:659 redirige a `/multicoach-v3.html`  
+Pero archivo se llama `multicoach.html`  
+O `multicoach.html` no existe, es stub, o es maqueta (no funcional)
+
+### Evidencia
+- **Files affected:**
+  - login.html:659 (redirect logic)
+  - multicoach.html (debe ser la implementación real)
+- **Error:** Usuario owner recibe 404
+
+### Estado actual
+- ❌ **DETECTED:** Ruta rota confirmada
+- ❌ **FIXED:** NO
+- ❌ **TESTED:** NO
+- ❌ **VERIFIED:** NO
+
+### Cómo evitar regresión
+Guardrail: verificar que owner redirige a multicoach.html (o path correcto) y archivo existe y funciona
+
+---
+
+## ERR-ADMIN-001: Coach deletion RLS block
+
+**Estado:** DETECTED  
+**Fecha detectado:** 2026-08-10  
+**Severity:** HIGH  
+
+### Síntoma
+Admin intenta eliminar cuenta de coach → error "No se pudo eliminar... protegida por RLS"  
+Feature completamente rota, no hay workaround
+
+### Categoría
+`RLS_SECURITY_ERROR` · `ADMIN_OPERATIONS`
+
+### Módulo
+admin-coach-op edge function, panel-v2.html coach management
+
+### Root Cause
+panel-v2.html:12277 (coach-access handler) intenta DELETE directo a usuarios  
+RLS bloquea DELETE con anon key  
+Debe usar edge function admin-coach-op con op:delete_coach (service role)
+
+### Evidencia
+- **Files affected:**
+  - panel-v2.html:12277-12343 (coach-access handler)
+  - supabase/functions/admin-coach-op/index.ts (debe tener op:delete_coach)
+
+### Estado actual
+- ❌ **DETECTED:** Feature rota, RLS bloquea
+- ❌ **FIXED:** NO
+- ❌ **TESTED:** NO
+- ❌ **VERIFIED:** NO
+
+### Cómo evitar regresión
+Guardrail: verificar que coach-access no usa DELETE directo, usa admin-coach-op
+
+---
+
+## ERR-DEPLOY-001: 11 Edge Functions not deployed
+
+**Estado:** DETECTED  
+**Fecha detectado:** 2026-08-10  
+**Severity:** HIGH  
+
+### Síntoma
+85 edge functions en repo, solo 75 deployed en workflow  
+11 faltando:
+- add-coach-to-org
+- add-collab-to-org
+- cambiar-plan-org
+- change-owner-org
+- get-coach-busy-slots
+- load-org-clients
+- load-team-members
+- reassign-client
+- remove-member-org
+- suspender-org
+- update-team-member
+
+Endpoints `/functions/v1/add-coach-to-org` etc. devuelven 404 en producción  
+Multicoach admin completamente roto
+
+### Categoría
+`CI_CD_ERROR` · `DEPLOYMENT`
+
+### Módulo
+.github/workflows/deploy-functions.yml
+
+### Root Cause
+Workflow define solo 75 deploy steps  
+Cuando se crean nuevas functions, dev olvida agregalas al workflow  
+Functions existen en git pero nunca se despliegan
+
+### Evidencia
+- **Files affected:**
+  - .github/workflows/deploy-functions.yml (falta 11 steps)
+  - supabase/functions/add-coach-to-org/index.ts (existe pero no deployed)
+  - supabase/functions/add-collab-to-org/index.ts (existe pero no deployed)
+  - etc. (9 más)
+
+### Estado actual
+- ❌ **DETECTED:** Faltando steps confirmado
+- ❌ **FIXED:** NO
+- ❌ **TESTED:** NO
+- ❌ **DEPLOYED:** NO
+
+### Cómo evitar regresión
+Guardrail: verificar que todas las functions en supabase/functions/ tienen step en workflow
+
+---
+
+## ERR-MC-SYNTAX-001: Multicoach onclick quote escaping
+
+**Estado:** DETECTED  
+**Fecha detectado:** 2026-08-10  
+**Severity:** MEDIUM  
+
+### Síntoma
+Multicoach onclick handlers tienen comillas rotas  
+Click en botón hace nothing (SyntaxError)  
+Chat messaging en multicoach no funciona
+
+### Categoría
+`JAVASCRIPT_SYNTAX_ERROR` · `DOM_HANDLER`
+
+### Módulo
+multicoach.html onclick handlers (dynamic message sending)
+
+### Root Cause
+Falta función `_toastChat(name)` helper  
+Onclick concatena strings sin escapar comillas:  
+`onclick="foo('\"bar\"')"` → SyntaxError  
+Debe usar JSON.stringify() o similar
+
+### Evidencia
+- **Files affected:**
+  - multicoach.html (onclick handlers)
+  - Falta _toastChat() implementation
+
+### Estado actual
+- ❌ **DETECTED:** Syntax error confirmado
+- ❌ **FIXED:** NO
+- ❌ **TESTED:** NO
+- ❌ **VERIFIED:** NO
+
+### Cómo evitar regresión
+Guardrail: verificar que _toastChat existe y onclick handlers usan JSON.stringify para valores dinámicos
+
+---
+
+## ERR-EMAIL-RECORDATORIO: Recordatorio email says "Google Meet"
+
+**Estado:** DETECTED  
+**Fecha detectado:** 2026-08-10  
+**Severity:** LOW  
+
+### Síntoma
+Email de recordatorio de cita dice "Google Meet: [link]"  
+Pero videollamada es Sala de Pathway  
+Cliente confundido, puede llegar tarde
+
+### Categoría
+`EMAIL_COPY_ERROR` · `UX_MESSAGING`
+
+### Módulo
+supabase/functions/recordatorios-citas/index.ts email template
+
+### Root Cause
+Template de email no fue actualizado en migración de Google Meet → Sala de Pathway  
+Texto legacy sigue mencionando Google Meet
+
+### Evidencia
+- **Files affected:**
+  - supabase/functions/recordatorios-citas/index.ts (~162)
+  - Email template references "Google Meet"
+
+### Estado actual
+- ❌ **DETECTED:** Copy error
+- ❌ **FIXED:** NO
+- ❌ **TESTED:** NO
+- ❌ **VERIFIED:** NO
+
+### Cómo evitar regresión
+Guardrail: verificar que recordatorios no mencionan "Google Meet" (o si menciona, debe ser contexto correcto)
+
+---
+
 ## ESTADO RESUMEN
 
 | Error | Estado | Severity | Module | Fixed | Verified |
@@ -184,17 +428,33 @@ Este error requiere confirmación manual antes de cualquier fix automático.
 | ERR-UPLOAD-002 | TRIAGED | CRITICAL | exercise | ✅ | ✅ |
 | ERR-UPLOAD-003 | TRIAGED | HIGH | exercise | ✅ | ✅ |
 | ERR-ENV-001 | DETECTED | CRITICAL | infra | ❌ | ❌ |
+| **ERR-APP-004** | **DETECTED** | **CRITICAL** | **auth** | ❌ | ❌ |
+| **ERR-MULTICOACH-001** | **DETECTED** | **CRITICAL** | **nav** | ❌ | ❌ |
+| **ERR-ADMIN-001** | **DETECTED** | **HIGH** | **admin** | ❌ | ❌ |
+| **ERR-DEPLOY-001** | **DETECTED** | **HIGH** | **ci/cd** | ❌ | ❌ |
+| **ERR-MC-SYNTAX-001** | **DETECTED** | **MEDIUM** | **multicoach** | ❌ | ❌ |
+| **ERR-EMAIL-RECORDATORIO** | **DETECTED** | **LOW** | **email** | ❌ | ❌ |
 
 ---
 
 ## PRÓXIMOS PASOS
+
+**Fase 1.5 — ESTABILIZACIÓN:**
+- [ ] ERR-APP-004: Implementar Apple Sign in completo (iOS)
+- [ ] ERR-MULTICOACH-001: Corregir navegación owner (routing)
+- [ ] ERR-ADMIN-001: Usar admin-coach-op para delete_coach (RLS)
+- [ ] ERR-DEPLOY-001: Agregar 11 functions al workflow
+- [ ] ERR-MC-SYNTAX-001: Implementar _toastChat, escapar quotes
+- [ ] ERR-EMAIL-RECORDATORIO: Actualizar copy (Google Meet → Sala)
 
 **Fase 2:**
 - Integrar auto-guardrails para ERR-UPLOAD-001/002/003
 - Auditoría completa de ERR-ENV-001
 - Auto-test en Playwright para cada error
 - Integración con CI/CD
+- Autonomy levels 1-3 para auto-fix
 
 ---
 
-*Generado: 2026-08-08*
+*Actualizado: 2026-08-10*  
+*Fase 1.5 en progreso*
