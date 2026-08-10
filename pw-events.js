@@ -23,8 +23,16 @@
   "use strict";
   try {
     var SB = "https://api.pathwaycareercoach.com";
-    var KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
+    var KEY = null;
     var ENDPOINT = SB + "/rest/v1/eventos";
+
+    // Fetch config immediately; if it fails, use fallback
+    fetch(SB+'/.well-known/config')
+      .then(function(r){return r.json();})
+      .then(function(cfg){KEY=cfg.anon_key;})
+      .catch(function(err){
+        KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+      });
 
     var sent = 0;         // tope por sesion (anti-loop)
     var MAX = 300;

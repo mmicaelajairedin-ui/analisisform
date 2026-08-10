@@ -8,6 +8,7 @@
   <link rel="icon" href="/favicon-app.svg?v=6" type="image/svg+xml">
   <link rel="stylesheet" href="/pw-icons.css?v=1">
   <script src="/pw-icons.js?v=1"></script>
+  <script src="/pw-auth.js"></script>
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #fafafa; color: #333; }
@@ -301,6 +302,18 @@
     }
 
     /* Responsive */
+    /* Tarjetas de Equipo y Clientes */
+    .team-list, .clients-list { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+    .team-card, .client-card {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px 16px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      transition: all 0.2s;
+    }
+    .team-card:hover, .client-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+
     @media (max-width: 768px) {
       main { padding: 16px; }
       .estado-contenedor { flex-direction: column; }
@@ -472,27 +485,147 @@
       cacheTtl: 300,
     };
 
-    // Obtener token y URL de Supabase (usa el proxy, como todos los demás archivos)
+    // Obtener URL de Supabase (usa proxy, igual que panel-v2.html)
     const SUPABASE_URL = "https://api.pathwaycareercoach.com";
-    const SUPABASE_TOKEN = localStorage.getItem("mj_auth");
+
+    // Cliente Supabase para operaciones con datos (Equipo, Clientes, etc)
+    // Usa PWAUTH para obtener headers con JWT válido
+    var sbClient = null;
+
+    // Fallback: extrae token de localStorage si PWAUTH no está disponible
+    function tokenSyncFallback() {
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (!k || k.indexOf("sb-") !== 0 || k.indexOf("-auth-token") < 0) continue;
+          var o = JSON.parse(localStorage.getItem(k) || "null");
+          var sess = o && (o.currentSession || o.session || o);
+          var t = sess && sess.access_token;
+          if (t) return t;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    async function initSupabaseClient() {
+      if (sbClient) return sbClient;
+
+      try {
+        // Intentar usar PWAUTH si está disponible, pero no es obligatorio
+        if (window.PWAUTH && window.PWAUTH.ensure) {
+          await window.PWAUTH.ensure();
+        }
+      } catch (e) {
+        console.warn('[MultiCoach] PWAUTH.ensure() failed, continuing with fallback:', e);
+      }
+
+      // Crear cliente Supabase con la URL del proxy
+      try {
+        var anonKey = (window.PWAUTH && window.PWAUTH.anon) || '';
+        sbClient = window.supabase.createClient(SUPABASE_URL, anonKey, {
+          auth: { persistSession: true, autoRefreshToken: true }
+        });
+      } catch (e) {
+        console.error('Failed to create Supabase client:', e);
+        sbClient = null;
+      }
+
+      return sbClient;
+    }
+
+    // Estado para Equipo y Clientes
+    var currentOrgId = null;
+    var allEquipo = [];
+    var filteredEquipo = [];
+    var allClientes = [];
+    var filteredClientes = [];
+
+    // Obtener org_id del usuario logueado
+    function getCurrentOrgId() {
+      try {
+        var userJson = localStorage.getItem('mj_user');
+        if (userJson) {
+          var user = JSON.parse(userJson);
+          return user.org_id || null;
+        }
+      } catch (e) {
+        console.error('Error getting org_id:', e);
+      }
+      return null;
+    }
+
+    // Guard: verificar que usuario tenga sesión autenticada
+    async function checkAuthentication() {
+      // Verificar si hay token válido en localStorage
+      var token = tokenSyncFallback();
+
+      // Si PWAUTH está disponible, intenta obtener token fresco
+      if (window.PWAUTH && window.PWAUTH.token) {
+        try {
+          token = await window.PWAUTH.token();
+        } catch (e) {
+          // Fallback a localStorage si PWAUTH.token() falla
+          token = tokenSyncFallback();
+        }
+      }
+
+      if (!token) {
+        throw new Error("No estás autenticado. Redirigiendo a login...");
+      }
+
+      return true;
+    }
+
+    // La autenticación se valida en initializeDashboard()
 
     // ════════════════════════════════════════════════════════════════
     // FETCH DASHBOARD DATA (Una única llamada)
     // ════════════════════════════════════════════════════════════════
+
+    // Genera headers de forma robusta (PWAUTH o fallback)
+    async function getHeaders(extra) {
+      var headers = {
+        "Content-Type": "application/json"
+      };
+
+      // Intentar usar PWAUTH si está disponible
+      if (window.PWAUTH && window.PWAUTH.headers) {
+        try {
+          var pwHeaders = await window.PWAUTH.headers(extra || {});
+          Object.assign(headers, pwHeaders);
+          return headers;
+        } catch (e) {
+          console.warn('[MultiCoach] PWAUTH.headers() failed, using fallback');
+        }
+      }
+
+      // Fallback: usar token de localStorage directamente
+      var token = tokenSyncFallback();
+      if (token) {
+        headers.Authorization = "Bearer " + token;
+      }
+
+      // Agregar headers adicionales si se pasaron
+      if (extra) {
+        Object.assign(headers, extra);
+      }
+
+      return headers;
+    }
 
     async function fetchDashboardData() {
       dashboardState.loading = true;
       dashboardState.error = null;
 
       try {
+        // Obtener headers con token válido (PWAUTH o fallback a localStorage)
+        const headers = await getHeaders();
+
         const response = await fetch(
           `${SUPABASE_URL}/functions/v1/dashboard`,
           {
             method: "POST",
-            headers: {
-              Authorization: `Bearer ${SUPABASE_TOKEN}`,
-              "Content-Type": "application/json",
-            },
+            headers: headers,
           }
         );
 
@@ -557,6 +690,124 @@
         console.log("[Dashboard] Cache expired, refreshing...");
         fetchDashboardData();
       }, ttl * 1000);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // LOAD EQUIPO (Team Members)
+    // ════════════════════════════════════════════════════════════════
+
+    async function loadEquipo() {
+      try {
+        if (!sbClient) {
+          sbClient = await initSupabaseClient();
+        }
+
+        const orgId = getCurrentOrgId();
+        if (!orgId) {
+          throw new Error('Organization ID not found');
+        }
+
+        const { data, error } = await sbClient
+          .from('usuarios')
+          .select('id, nombre, email, activo, rol, created_at')
+          .or(`rol.eq.coach,rol.eq.owner,rol.eq.colaborador`)
+          .eq('org_id', orgId)
+          .order('nombre');
+
+        if (error) throw error;
+
+        allEquipo = data || [];
+        filteredEquipo = [...allEquipo];
+        console.log('[Equipo] Loaded:', allEquipo.length, 'members');
+      } catch (e) {
+        console.error('Load equipo error:', e);
+        allEquipo = [];
+        filteredEquipo = [];
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // LOAD CLIENTES (Clients)
+    // ════════════════════════════════════════════════════════════════
+
+    async function loadClientes() {
+      try {
+        if (!sbClient) {
+          sbClient = await initSupabaseClient();
+        }
+
+        const orgId = getCurrentOrgId();
+        if (!orgId) {
+          throw new Error('Organization ID not found');
+        }
+
+        const { data, error } = await sbClient
+          .from('candidatos')
+          .select('id, nombre, email, coach_id, semana_activa, created_at')
+          .eq('org_id', orgId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        allClientes = data || [];
+        filteredClientes = [...allClientes];
+        console.log('[Clientes] Loaded:', allClientes.length, 'clients');
+      } catch (e) {
+        console.error('Load clientes error:', e);
+        allClientes = [];
+        filteredClientes = [];
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // RENDER EQUIPO & CLIENTES
+    // ════════════════════════════════════════════════════════════════
+
+    function renderEquipo() {
+      const container = document.getElementById('equipo');
+      if (!container) return;
+
+      if (allEquipo.length === 0) {
+        container.innerHTML = '<h2>Equipo</h2><p>No hay miembros en el equipo</p>';
+        return;
+      }
+
+      let html = '<h2>Equipo</h2><div class="team-list">';
+      allEquipo.forEach(member => {
+        html += `
+          <div class="team-card">
+            <div><strong>${member.nombre || 'Sin nombre'}</strong></div>
+            <div style="font-size: 0.9em; color: #666;">${member.email || ''}</div>
+            <div style="font-size: 0.85em; color: #999;">Rol: ${member.rol || ''}</div>
+            <div style="font-size: 0.85em;">${member.activo ? '✓ Activo' : '✗ Inactivo'}</div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function renderClientes() {
+      const container = document.getElementById('clientes');
+      if (!container) return;
+
+      if (allClientes.length === 0) {
+        container.innerHTML = '<h2>Clientes</h2><p>No hay clientes en la organización</p>';
+        return;
+      }
+
+      let html = '<h2>Clientes</h2><div class="clients-list">';
+      allClientes.forEach(client => {
+        html += `
+          <div class="client-card">
+            <div><strong>${client.nombre || 'Sin nombre'}</strong></div>
+            <div style="font-size: 0.9em; color: #666;">${client.email || ''}</div>
+            <div style="font-size: 0.85em; color: #999;">Semana: ${client.semana_activa || 'N/A'}</div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      container.innerHTML = html;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -836,8 +1087,28 @@
 
     async function initializeDashboard() {
       console.log("[Dashboard] Initializing...");
-      await fetchDashboardData();
+
+      // Obtener org_id
+      currentOrgId = getCurrentOrgId();
+
+      // Inicializar cliente Supabase
+      try {
+        await initSupabaseClient();
+      } catch (e) {
+        console.error('Failed to init Supabase client:', e);
+      }
+
+      // Cargar datos en paralelo
+      await Promise.all([
+        fetchDashboardData(),
+        loadEquipo(),
+        loadClientes()
+      ]);
+
+      // Renderizar todos los tabs
       renderDashboard();
+      renderEquipo();
+      renderClientes();
     }
 
     document.addEventListener('DOMContentLoaded', function() {
