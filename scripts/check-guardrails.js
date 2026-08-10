@@ -254,8 +254,9 @@ const RULES = [
     check() {
       const s = read("panel-v2.html");
       if (!s) return null;
-      if (!/cfg\s*&&\s*\(cfg\.foto_url\s*\|\|\s*cfg\.foto_perfil\)/.test(s))
-        return "panel-v2.html perdio el fallback cfg.foto_url||cfg.foto_perfil para la foto del coach.";
+      // Busca el fallback en cualquier forma: cfg, RCFG, RME, etc.
+      if (!/(?:RCFG|cfg|RME|cg)\s*&&\s*\(?(?:RCFG|cfg|RME|cg)\.foto_url\s*\|\|\s*(?:RCFG|cfg|RME|cg)\.foto_perfil/.test(s))
+        return "panel-v2.html perdio el fallback foto_url||foto_perfil para la foto del coach.";
       return null;
     },
   },
@@ -5020,6 +5021,31 @@ const RULES = [
       return null;
     },
   },
+
+  // ========================================================================
+  // FUTURE GUARDRAILS — Documentación de reglas que se implementarán
+  // cuando se active la feature correspondiente. NO blocker hoy.
+  // ========================================================================
+
+  // FUTURE GUARDRAIL (Phase 2): ERR-AGENDA-001 — Realtime subscription presente
+  // Cuando se implemente Agenda real: verificar que fetch() desde citas siempre
+  // lleva .on('postgres_changes') para detectar updates en tiempo real. Sin esto,
+  // cambios en citas solo se ven al refresh. Regla: cliente.html y panel-v2.html
+  // deben tener >= 1 .on('postgres_changes') si tienen citas.fetch().
+  // Status: BLOCKED (realtime subscriptions no implementadas en cliente.html todavía)
+
+  // FUTURE GUARDRAIL (Phase 2): ERR-AGENDA-002 — Email recibe URL de videollamada
+  // Cuando se generen notificaciones de citas: el email debe contener link de zoom/meet.
+  // Regla: Email body incluye url_video OR meet_link OR zoom_url. Requiere:
+  // (1) mock de EmailJS en tests, (2) integration test de crear-cita + email.
+  // Status: BLOCKED (EmailJS mock no implementado)
+
+  // FUTURE GUARDRAIL (Phase 2): ERR-AGENDA-003 — Zoom URL se usa si está configurado
+  // Si coach configura zoom_url en tipos de evento, debe inyectarse en la reunión.
+  // Regla: Si cfg.zoom_url existe, debe encontrarse en invocación de meet/zoom.
+  // Verifica: pattern `zoom_url` guardado + pattern de uso en crear-cita-red.
+  // Status: BLOCKED (Agenda no implementada)
+
 ];
 
 
