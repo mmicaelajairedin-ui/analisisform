@@ -202,15 +202,69 @@ body::after{content:'';position:absolute;bottom:-120px;left:-120px;width:340px;h
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
 <script>
-var SB='https://api.pathwaycareercoach.com';
-var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+// ════════════════════════════════════════════════════════════════
+// CONFIGURATION ARCHITECTURE — Automatic Project Detection (v2)
+// ════════════════════════════════════════════════════════════════
+//
+// DESIGN PRINCIPLE: Configuration must be automatic and project-aware.
+// Do NOT hardcode JWTs or access tokens. They must be generated dynamically.
+//
+// Architecture:
+// 1. Proxy (api.pathwaycareercoach.com) provides configuration endpoint
+// 2. login.html fetches ANON_KEY from proxy on page load
+// 3. Supabase client is initialized with ANON_KEY for correct project
+// 4. Auth flows issue JWTs for correct project automatically
+//
+// This ensures: same code works for all deployments (dev, staging, prod)
+// without hardcoding secrets or changing code.
+
 var BASE='https://pathwaycareercoach.com';
+
+// SB points to proxy which routes to correct Supabase project
+var SB='https://api.pathwaycareercoach.com';
+
+// KEY will be loaded asynchronously from proxy configuration
+var KEY=null;
+
+// Load configuration from proxy on page initialization
+(function loadConfig(){
+  // Attempt to load config from proxy's well-known endpoint
+  fetch(SB + '/.well-known/config')
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(cfg){
+      if(cfg && cfg.anon_key){
+        KEY=cfg.anon_key;
+        document.body.classList.add('auth-ready');
+        console.log('[CONFIG] Loaded from proxy/.well-known/config');
+      }else{
+        throw new Error('No anon_key in response');
+      }
+    })
+    .catch(function(err){
+      console.error('[CONFIG] Failed to load from proxy:', err);
+      // Without config, authentication is not available
+      // Show error and disable login buttons
+      var btnGoogle=document.getElementById('btn-google');
+      var btnApple=document.getElementById('btn-apple');
+      if(btnGoogle) btnGoogle.disabled=true;
+      if(btnApple) btnApple.disabled=true;
+      document.getElementById('error').textContent='⚠️ Configuration unavailable. Please refresh the page.';
+    });
+})();
 
 // ── Google Sign-in ─────────────────────────────────────────
 // Redirige al usuario a Google OAuth → Supabase → /auth-callback.html?source=login
 // auth-callback.html sincroniza con la tabla usuarios y redirige al panel
 // (o a Stripe si es la primera vez via Google y no tienen cuenta).
 function signInWithApple(){
+  if(!KEY){
+    alert('⚠️ Configuración aún no disponible. Por favor recarga la página.');
+    return;
+  }
+
   var btn = document.getElementById('btn-apple');
   if(btn){btn.disabled = true; btn.style.opacity = '.65'; var span = btn.querySelector('span'); if(span) span.textContent = 'Conectando con Apple...';}
 
@@ -296,7 +350,10 @@ function signInWithApple(){
   });
 }
 function signInWithGoogle(){
-  console.log('[google-debug] Capacitor existe:', !!window.Capacitor, '| Browser plugin:', !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser), '| GoogleAuth plugin:', !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.GoogleAuth));
+  if(!KEY){
+    alert('⚠️ Configuración aún no disponible. Por favor recarga la página.');
+    return;
+  }
   if(!window.supabase){
     alert('Supabase SDK no cargo todavia. Recarga la página.');
     return;
@@ -453,6 +510,12 @@ async function entrar(){
   var btn=document.getElementById('btn');
   var error=document.getElementById('error');
   var loading=document.getElementById('loading');
+
+  // Guard: wait for KEY to load from configuration
+  if(!KEY){
+    error.textContent='⚠️ Configuración cargando... Inténtalo en unos momentos.';
+    return;
+  }
 
   error.textContent='';
   if(!email||!password){error.textContent=TXT[_lng].err_empty;return;}
