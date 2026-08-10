@@ -11036,9 +11036,17 @@ document.addEventListener("click", function(ev){
     var _prevEst=_rr?_rr.estado:null;
     // Optimista en AMBAS listas (Resumen + Calendario) → ninguna vista queda vieja.
     _syncCitaLocal(_rid,{estado:_est}); _repaintCitas();
-    _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{estado:_est})
-      .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Confirmada ✓ — le mandamos el email al cliente":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel") _notifResCancel(_rr); else _confirmCliente(_rr); } else { _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); } })
-      .catch(function(){ _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); });
+
+    // ═══ IDENTITY VALIDATION: Validar identidad antes de actualizar cita ═══
+    try{
+      var validatedCoachId = _validateUserIdentityBeforeWrite();
+      _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent(validatedCoachId),"PATCH",{estado:_est})
+        .then(function(r){ if(r&&r.ok){ toast(_est==="confirmada"?"Confirmada ✓ — le mandamos el email al cliente":"Reserva cancelada — avisamos al cliente"); if(act==="res-cancel") _notifResCancel(_rr); else _confirmCliente(_rr); } else { _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); } })
+        .catch(function(){ _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas(); toast("No se pudo actualizar la reserva."); });
+    }catch(valErr){
+      _syncCitaLocal(_rid,{estado:_prevEst}); _repaintCitas();
+      alert(valErr.message || "Tu sesión cambió. Por favor, recarga la página.");
+    }
     return;
   }
   if(act==="res-hora"){ var _rid=el.getAttribute("data-id"); if(!_rid) return; var _b=document.getElementById("rh-"+_rid); if(_b) _b.style.display=(_b.style.display==="none"?"block":"none"); return; }
@@ -11053,9 +11061,17 @@ document.addEventListener("click", function(ev){
     // Actualiza AMBAS listas (Resumen + Calendario) → el mes/agenda no queda con la
     // hora vieja y el "Unirse" no manda a la sala vieja.
     _syncCitaLocal(_rid,{inicio:_iso}); _repaintCitas();
-    _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{inicio:_iso})
-      .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso); } else { _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); } })
-      .catch(function(){ _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); });
+
+    // ═══ IDENTITY VALIDATION: Validar identidad antes de reprogramar cita ═══
+    try{
+      var validatedCoachId = _validateUserIdentityBeforeWrite();
+      _sbw("citas?id=eq."+encodeURIComponent(_rid)+"&coach_id=eq."+encodeURIComponent(validatedCoachId),"PATCH",{inicio:_iso})
+        .then(function(r){ if(r&&r.ok){ toast("Hora actualizada ✓ — avisamos al cliente"); _notifResReprog(_rrh,_iso); } else { _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); } })
+        .catch(function(){ _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas(); toast("No se pudo cambiar la hora."); });
+    }catch(valErr){
+      _syncCitaLocal(_rid,{inicio:_prevIso}); _repaintCitas();
+      alert(valErr.message || "Tu sesión cambió. Por favor, recarga la página.");
+    }
     return;
   }
   if(act==="cal-filtro"){ _calFiltro=el.getAttribute("data-f")||"proximas"; render(); return; }
@@ -11074,9 +11090,16 @@ document.addEventListener("click", function(ev){
   if(act==="seg-descartar"){
     var _sdid=el.getAttribute("data-id"); var _sdc=(_SEG_DATA||[]).filter(function(x){return String(x.id)===String(_sdid);})[0]; if(!_sdc) return;
     if(typeof _isDemoCoach==="function" && _isDemoCoach()){ _sdc.resultado="perdido"; _segFill(); toast("Demo: marcado como 'por ahora no'."); return; }
-    _sbw("citas?id=eq."+encodeURIComponent(_sdid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"perdido"})
-      .then(function(r){ if(r&&r.ok){ _sdc.resultado="perdido"; _segFill(); toast("Marcado: por ahora no."); } else toast("No se pudo guardar."); })
-      .catch(function(){ toast("No se pudo guardar."); });
+
+    // ═══ IDENTITY VALIDATION: Validar identidad antes de marcar lead ═══
+    try{
+      var validatedCoachId = _validateUserIdentityBeforeWrite();
+      _sbw("citas?id=eq."+encodeURIComponent(_sdid)+"&coach_id=eq."+encodeURIComponent(validatedCoachId),"PATCH",{resultado:"perdido"})
+        .then(function(r){ if(r&&r.ok){ _sdc.resultado="perdido"; _segFill(); toast("Marcado: por ahora no."); } else toast("No se pudo guardar."); })
+        .catch(function(){ toast("No se pudo guardar."); });
+    }catch(valErr){
+      alert(valErr.message || "Tu sesión cambió. Por favor, recarga la página.");
+    }
     return;
   }
   if(act==="seg-convert"){
@@ -11087,9 +11110,12 @@ document.addEventListener("click", function(ev){
     var _snm=_scc.nombre||_sem.split("@")[0];
     var _snicho=((typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||"carrera");
     // 1) Alta del candidato con ignore-duplicates: si ya existe, no lo pisa.
-    _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
-      return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:_snm,email:_sem,whatsapp:_scc.telefono||"",coach_id:(RME&&RME.id)||"",nicho:_snicho,semana_activa:1,activo:true,origen:"llamada"})});
-    }).then(function(){
+    // ═══ IDENTITY VALIDATION: Validar identidad antes de crear candidato desde lead ═══
+    try{
+      var _validatedCoachId = _validateUserIdentityBeforeWrite();
+      _hdr({"Content-Type":"application/json",Prefer:"return=minimal,resolution=ignore-duplicates"}).then(function(h){
+        return fetch(SB+"/rest/v1/candidatos",{method:"POST",headers:h,body:JSON.stringify({nombre:_snm,email:_sem,whatsapp:_scc.telefono||"",coach_id:_validatedCoachId,nicho:_snicho,semana_activa:1,activo:true,origen:"llamada"})});
+      }).then(function(){
       // "Fue bien" NO le da acceso todavía: el acceso al portal se crea SOLO
       // cuando PAGA (círculo del cliente Pathway). Acá le mandamos TU lista de
       // servicios (con detalle, para que pueda decidir/preguntar) + botón para
@@ -11117,11 +11143,20 @@ document.addEventListener("click", function(ev){
         fetch(SB+"/functions/v1/send-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:_sem,to_name:_snm,subject:"Tus servicios con "+_cn+" · elige y empieza",html:_html,signature:"coach",coach:{nombre:_cn,email:_cemail,photo:_cfoto,slug:_slug}})}).catch(function(){});
         toast("¡Le mandamos a "+_snm+" tus servicios para que elija y pague! Apenas pague, entra a tu portal.");
       }
-      _sbw("citas?id=eq."+encodeURIComponent(_scid)+"&coach_id=eq."+encodeURIComponent((RME&&RME.id)||""),"PATCH",{resultado:"convirtio"}).catch(function(){});
+      // ═══ IDENTITY VALIDATION: Validar identidad para marcar como convertido ═══
+      try{
+        var _convCoachId = _validateUserIdentityBeforeWrite();
+        _sbw("citas?id=eq."+encodeURIComponent(_scid)+"&coach_id=eq."+encodeURIComponent(_convCoachId),"PATCH",{resultado:"convirtio"}).catch(function(){});
+      }catch(valErr){
+        // No bloqueamos el flujo, solo es marcar en DB. El candidato ya se creó.
+      }
       _scc.resultado="convirtio"; _segFill();
       try{ pwAddXP(50,"Venta enviada"); }catch(e){}
       try{ loadReal(); }catch(e){}
     }).catch(function(){ toast("No se pudo convertir. Revisa el email o créalo desde Clientes."); });
+    }catch(valErr){
+      alert(valErr.message || "Tu sesión cambió. Por favor, recarga la página.");
+    }
     return;
   }
   if(act==="cal-asis"){
@@ -12036,8 +12071,19 @@ document.addEventListener("click", function(ev){
       if(!REAL || !RME || !RME.id){ alert("Inicia sesión primero."); if(ccBtn) ccBtn.disabled=false; return; }
       if(_redBusy){ if(ccBtn) ccBtn.disabled=false; return; } _redBusy=true;
       state.msgDraft = ccTxt; // conservar por si falla
+
+      // ═══ IDENTITY VALIDATION: Validar identidad antes de enviar mensaje de red ═══
+      try{
+        var msgRedCoachId = _validateUserIdentityBeforeWrite();
+      }catch(valErr){
+        _redBusy=false;
+        alert(valErr.message || "Tu sesión cambió. Por favor, recarga la página.");
+        if(ccBtn) ccBtn.disabled=false;
+        return;
+      }
+
       _hdr({"Content-Type":"application/json"}).then(function(h){
-        return fetch(SB+"/functions/v1/mensaje-red",{method:"POST",headers:h,body:JSON.stringify({action:"send",coach_id:RME.id,texto:ccTxt})});
+        return fetch(SB+"/functions/v1/mensaje-red",{method:"POST",headers:h,body:JSON.stringify({action:"send",coach_id:msgRedCoachId,texto:ccTxt})});
       }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {status:r.status,d:d||{}}; }); }).then(function(res){
         _redBusy=false;
         if(!res.d||!res.d.ok){
@@ -12826,11 +12872,19 @@ document.addEventListener("click", function(ev){
     var _isnow=new Date();
     var _istit="Informe · "+_isnow.toLocaleDateString("es-ES",{day:"2-digit",month:"short",year:"numeric"});
     var _isbtn=ev&&ev.currentTarget; if(_isbtn) _isbtn.disabled=true;
-    _sbw("informes_guardados","POST",{coach_id:(RME&&RME.id)||null,email:_isem,titulo:_istit,contenido:_isc.inf.d}).then(function(r){
+
+    // ═══ IDENTITY VALIDATION: Validar identidad antes de guardar informe ═══
+    try{
+      var validatedCoachId = _validateUserIdentityBeforeWrite();
+      _sbw("informes_guardados","POST",{coach_id:validatedCoachId,email:_isem,titulo:_istit,contenido:_isc.inf.d}).then(function(r){
+        if(_isbtn) _isbtn.disabled=false;
+        if(r&&r.ok){ toast("Informe guardado como archivo ✓"); _infFilesLoad(_isid); }
+        else { alert("No se pudo guardar. Si es la primera vez, aplica la migración informes_guardados.sql en Supabase."); }
+      }).catch(function(){ if(_isbtn) _isbtn.disabled=false; alert("Sin conexión. Reintenta."); });
+    }catch(valErr){
       if(_isbtn) _isbtn.disabled=false;
-      if(r&&r.ok){ toast("Informe guardado como archivo ✓"); _infFilesLoad(_isid); }
-      else { alert("No se pudo guardar. Si es la primera vez, aplica la migración informes_guardados.sql en Supabase."); }
-    }).catch(function(){ if(_isbtn) _isbtn.disabled=false; alert("Sin conexión. Reintenta."); });
+      alert(valErr.message || "Tu sesión cambió. Por favor, recarga la página.");
+    }
     return;
   }
   // Abrir un informe guardado en un overlay de solo lectura.
@@ -12951,9 +13005,16 @@ document.addEventListener("click", function(ev){
       // del usuario es best-effort: si el email ya existe, no rompe el alta.
       var ub={ email:em, rol:"cliente", nombre:nm, activo:true }; if(hash) ub.password_hash=hash;
       _sbw("usuarios","POST",ub).catch(function(){});
-      _sbw("candidatos","POST",{nombre:nm,email:em,cargo:cg,coach_id:RME.id,nicho:((typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||"carrera"),semana_activa:1,activo:true})
-        .then(function(r){ if(!r.ok) throw 0; finish(); })
-        .catch(function(){ alert("No se pudo crear. Revisa el email (¿ya existe?) o créalo desde tu panel actual."); });
+
+      // ═══ IDENTITY VALIDATION: Validar identidad antes de crear candidato ═══
+      try{
+        var validatedCoachId = _validateUserIdentityBeforeWrite();
+        _sbw("candidatos","POST",{nombre:nm,email:em,cargo:cg,coach_id:validatedCoachId,nicho:((typeof RCFG!=='undefined'&&RCFG&&RCFG.coach_type)||"carrera"),semana_activa:1,activo:true})
+          .then(function(r){ if(!r.ok) throw 0; finish(); })
+          .catch(function(){ alert("No se pudo crear. Revisa el email (¿ya existe?) o créalo desde tu panel actual."); });
+      }catch(valErr){
+        alert(valErr.message || "Tu sesión cambió. Por favor, recarga la página.");
+      }
     };
     if(pw && window.crypto && crypto.subtle){
       crypto.subtle.digest("SHA-256", new TextEncoder().encode(pw)).then(function(buf){
@@ -14889,12 +14950,18 @@ function _sb(p){
 // coach-self-save (service role, lista blanca SIN rol/password → sin escalada).
 function _selfPatchUsuarios(fields){
   if(!(REAL&&RME&&RME.id)) return Promise.resolve({ok:false});
+  // ═══ IDENTITY VALIDATION: Validar identidad antes de actualizar usuario ═══
+  try{
+    var validatedUserId = _validateUserIdentityBeforeWrite();
+  }catch(valErr){
+    return Promise.reject(new Error(valErr.message || "Tu sesión cambió. Por favor, recarga la página."));
+  }
   // El token de Google nunca se escribe dentro de configuracion (va a gcal_tokens).
   try{ if(fields&&fields.configuracion&&typeof fields.configuracion==="object") delete fields.configuracion.gcal; }catch(e){}
-  return _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",fields).then(function(r){
+  return _sbw("usuarios?id=eq."+encodeURIComponent(validatedUserId),"PATCH",fields).then(function(r){
     if(r&&r.ok) return r;
     return fetch(SB+"/functions/v1/coach-self-save",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({id:RME.id,email:(RME&&RME.email)||"",fields:fields})})
+      body:JSON.stringify({id:validatedUserId,email:(RME&&RME.email)||"",fields:fields})})
       .then(function(x){ return {ok:!!(x&&x.ok),status:(x&&x.status)||0,rows:(x&&x.ok)?1:0}; })
       .catch(function(){ return {ok:false,status:0,rows:0}; });
   });
@@ -15514,7 +15581,16 @@ function pollClientChats(){
 function _isOnline(ts){ return !!(ts && (Date.now()-new Date(ts).getTime() < 90000)); }
 // "Form pendiente": invitado/creado pero sin datos del formulario todavía.
 function _formPendiente(c){ if(!c||c._example||!c.raw) return false; var r=c.raw; return !(c.inf||r.cargo||r.objetivo||r.nivel||r.peso||r.ingresos||r.situacion||r.linkedin_texto||r.cv_url||r.experiencia||r.habilidades); }
-function coachBeat(){ if(!REAL||!RME||!RME.id) return; _sbw("usuarios?id=eq."+encodeURIComponent(RME.id),"PATCH",{last_seen:new Date().toISOString()}); }
+function coachBeat(){
+  if(!REAL||!RME||!RME.id) return;
+  // ═══ IDENTITY VALIDATION: Validar identidad antes del heartbeat ═══
+  try{
+    var validatedId = _validateUserIdentityBeforeWrite();
+    _sbw("usuarios?id=eq."+encodeURIComponent(validatedId),"PATCH",{last_seen:new Date().toISOString()});
+  }catch(valErr){
+    // No bloqueamos el heartbeat por error de validación; solo es best-effort
+  }
+}
 // Mientras el coach mira la ficha de un cliente, refrescamos su presencia.
 // La columna cliente_last_seen viene de la migración presence_last_seen.sql; si
 // esa cuenta NO la aplicó, el select da 400 y —como esto corre por timer— se
@@ -15665,6 +15741,46 @@ function _updateProfileSlug(){
   var nom=(nomInput.value||"").toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"").substring(0,60).replace(/^-+|-+$/g,"");
   slugInput.value=nom || "coach";
 }
+
+// ═══ STALE STATE FIX: Identidad central y validación antes de escrituras críticas ═══
+// Helper: obtiene la identidad ACTUAL del usuario desde localStorage (no de RME).
+// Devuelve {id, email, rol, nombre, ...} o null si no hay sesión.
+// Sincrónico: seguro para usar antes de operaciones POST/PATCH.
+function _getCurrentUserIdentity(){
+  try{
+    var u=JSON.parse(localStorage.getItem("mj_user")||"null");
+    if(u && u.id) return u; // sesión válida
+  }catch(e){}
+  return null; // sin sesión
+}
+
+// Validador: verifica que RME.id sea actual. Si cambió (sesión de otra pestaña),
+// actualiza el contexto de forma controlada. Si no hay sesión válida, rechaza.
+function _validateUserIdentityBeforeWrite(){
+  var currentUser = _getCurrentUserIdentity();
+
+  // Sin sesión actual → ERROR
+  if(!currentUser || !currentUser.id){
+    throw new Error("Tu sesión no está activa. Por favor, recarga la página e inicia sesión de nuevo.");
+  }
+
+  // Sesión cambió en otra pestaña → actualizar RME sin recargar toda la app
+  if(RME && RME.id && String(currentUser.id) !== String(RME.id)){
+    REAL=true; RME=currentUser; RADMIN=(currentUser.rol==="admin");
+    // Nota: NO recargamos CLIENTS/RCFG/etc. Solo sincronizamos la identidad.
+    // Una operación ESCRIBIRÁ con la identidad correcta; si luego lee datos
+    // stale, eso se detecta en la respuesta (404, 0 rows). Mejor que recargar
+    // toda la app por cada pestaña.
+  }
+
+  // Validación final: después de sincronizar, RME.id debe ser válido y matchear
+  if(!RME || !RME.id || String(RME.id) !== String(currentUser.id)){
+    throw new Error("No se pudo validar tu identidad. Por favor, recarga la página.");
+  }
+
+  return RME.id; // devuelve la identidad validada
+}
+
 function loadReal(){
   var ME; try{ ME=JSON.parse(localStorage.getItem("mj_user")||"null"); }catch(e){ ME=null; }
   if(!ME||!ME.id) return; // sin sesión → datos de ejemplo
@@ -16053,6 +16169,38 @@ function _paywallCheck(u){
   // Watchdog: nunca dejar "Cargando…" colgado. Si en 6s no se pintó el panel, pintarlo igual.
   setTimeout(function(){ if(!document.querySelector(".cp-app")){ render(); } },6000);
   setTimeout(function(){ if(!document.querySelector(".cp-app")){ render(); } },12000);
+
+  // ═══ STALE STATE FIX: Storage listener para sincronización entre pestañas ═══
+  // Si mj_user cambia en otra pestaña, detectarlo y actualizar RME.
+  // Esto permite que si una pestaña hace logout, la otra lo detecte antes de intentar una escritura.
+  window.addEventListener('storage', function(e){
+    if(e.key === 'mj_user'){
+      try{
+        var newUser = JSON.parse(e.newValue || 'null');
+        var oldUser = RME;
+
+        if(!newUser || !newUser.id){
+          // Logout en otra pestaña
+          if(oldUser && oldUser.id){
+            RME = null;
+            REAL = false;
+            RADMIN = false;
+            // Opcional: mostrar aviso
+            try{ toast("Tu sesión cambió. Por favor, recarga la página."); }catch(er){}
+          }
+        } else {
+          // Login o cambio de identidad en otra pestaña
+          if(!oldUser || String(oldUser.id) !== String(newUser.id)){
+            RME = newUser;
+            REAL = true;
+            RADMIN = (newUser.rol === 'admin');
+            // Opcional: mostrar aviso si hubo cambio de identidad
+            try{ if(oldUser && oldUser.id) toast("Tu sesión se sincronizó con otra pestaña."); }catch(er){}
+          }
+        }
+      }catch(e){}
+    }
+  });
 })();
 
 // ── Pull-to-refresh (móvil): al bajar la pantalla estando arriba de todo, se
