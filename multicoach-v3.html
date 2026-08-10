@@ -302,6 +302,18 @@
     }
 
     /* Responsive */
+    /* Tarjetas de Equipo y Clientes */
+    .team-list, .clients-list { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+    .team-card, .client-card {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px 16px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      transition: all 0.2s;
+    }
+    .team-card:hover, .client-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+
     @media (max-width: 768px) {
       main { padding: 16px; }
       .estado-contenedor { flex-direction: column; }
@@ -476,6 +488,55 @@
     // Obtener URL de Supabase (usa proxy, igual que panel-v2.html)
     const SUPABASE_URL = "https://api.pathwaycareercoach.com";
 
+    // Cliente Supabase para operaciones con datos (Equipo, Clientes, etc)
+    // Usa PWAUTH para obtener headers con JWT válido
+    var sbClient = null;
+
+    async function initSupabaseClient() {
+      if (sbClient) return sbClient;
+
+      // Esperar a que PWAUTH esté listo
+      if (!window.PWAUTH) {
+        throw new Error("PWAUTH not initialized");
+      }
+
+      await window.PWAUTH.ensure();
+
+      // Crear cliente Supabase con la URL del proxy
+      // El cliente usará la sesión que PWAUTH maneja automáticamente
+      try {
+        sbClient = window.supabase.createClient(SUPABASE_URL, window.PWAUTH.anon || '', {
+          auth: { persistSession: true, autoRefreshToken: true }
+        });
+      } catch (e) {
+        console.error('Failed to create Supabase client:', e);
+        sbClient = null;
+      }
+
+      return sbClient;
+    }
+
+    // Estado para Equipo y Clientes
+    var currentOrgId = null;
+    var allEquipo = [];
+    var filteredEquipo = [];
+    var allClientes = [];
+    var filteredClientes = [];
+
+    // Obtener org_id del usuario logueado
+    function getCurrentOrgId() {
+      try {
+        var userJson = localStorage.getItem('mj_user');
+        if (userJson) {
+          var user = JSON.parse(userJson);
+          return user.org_id || null;
+        }
+      } catch (e) {
+        console.error('Error getting org_id:', e);
+      }
+      return null;
+    }
+
     // Guard: verificar que PWAUTH esté listo y usuario autenticado
     // PWAUTH se carga desde pw-auth.js y proporciona la sesión correcta
     async function checkAuthentication() {
@@ -582,6 +643,124 @@
         console.log("[Dashboard] Cache expired, refreshing...");
         fetchDashboardData();
       }, ttl * 1000);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // LOAD EQUIPO (Team Members)
+    // ════════════════════════════════════════════════════════════════
+
+    async function loadEquipo() {
+      try {
+        if (!sbClient) {
+          sbClient = await initSupabaseClient();
+        }
+
+        const orgId = getCurrentOrgId();
+        if (!orgId) {
+          throw new Error('Organization ID not found');
+        }
+
+        const { data, error } = await sbClient
+          .from('usuarios')
+          .select('id, nombre, email, activo, rol, created_at')
+          .or(`rol.eq.coach,rol.eq.owner,rol.eq.colaborador`)
+          .eq('org_id', orgId)
+          .order('nombre');
+
+        if (error) throw error;
+
+        allEquipo = data || [];
+        filteredEquipo = [...allEquipo];
+        console.log('[Equipo] Loaded:', allEquipo.length, 'members');
+      } catch (e) {
+        console.error('Load equipo error:', e);
+        allEquipo = [];
+        filteredEquipo = [];
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // LOAD CLIENTES (Clients)
+    // ════════════════════════════════════════════════════════════════
+
+    async function loadClientes() {
+      try {
+        if (!sbClient) {
+          sbClient = await initSupabaseClient();
+        }
+
+        const orgId = getCurrentOrgId();
+        if (!orgId) {
+          throw new Error('Organization ID not found');
+        }
+
+        const { data, error } = await sbClient
+          .from('candidatos')
+          .select('id, nombre, email, coach_id, semana_activa, created_at')
+          .eq('org_id', orgId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        allClientes = data || [];
+        filteredClientes = [...allClientes];
+        console.log('[Clientes] Loaded:', allClientes.length, 'clients');
+      } catch (e) {
+        console.error('Load clientes error:', e);
+        allClientes = [];
+        filteredClientes = [];
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // RENDER EQUIPO & CLIENTES
+    // ════════════════════════════════════════════════════════════════
+
+    function renderEquipo() {
+      const container = document.getElementById('equipo');
+      if (!container) return;
+
+      if (allEquipo.length === 0) {
+        container.innerHTML = '<h2>Equipo</h2><p>No hay miembros en el equipo</p>';
+        return;
+      }
+
+      let html = '<h2>Equipo</h2><div class="team-list">';
+      allEquipo.forEach(member => {
+        html += `
+          <div class="team-card">
+            <div><strong>${member.nombre || 'Sin nombre'}</strong></div>
+            <div style="font-size: 0.9em; color: #666;">${member.email || ''}</div>
+            <div style="font-size: 0.85em; color: #999;">Rol: ${member.rol || ''}</div>
+            <div style="font-size: 0.85em;">${member.activo ? '✓ Activo' : '✗ Inactivo'}</div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function renderClientes() {
+      const container = document.getElementById('clientes');
+      if (!container) return;
+
+      if (allClientes.length === 0) {
+        container.innerHTML = '<h2>Clientes</h2><p>No hay clientes en la organización</p>';
+        return;
+      }
+
+      let html = '<h2>Clientes</h2><div class="clients-list">';
+      allClientes.forEach(client => {
+        html += `
+          <div class="client-card">
+            <div><strong>${client.nombre || 'Sin nombre'}</strong></div>
+            <div style="font-size: 0.9em; color: #666;">${client.email || ''}</div>
+            <div style="font-size: 0.85em; color: #999;">Semana: ${client.semana_activa || 'N/A'}</div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      container.innerHTML = html;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -861,8 +1040,28 @@
 
     async function initializeDashboard() {
       console.log("[Dashboard] Initializing...");
-      await fetchDashboardData();
+
+      // Obtener org_id
+      currentOrgId = getCurrentOrgId();
+
+      // Inicializar cliente Supabase
+      try {
+        await initSupabaseClient();
+      } catch (e) {
+        console.error('Failed to init Supabase client:', e);
+      }
+
+      // Cargar datos en paralelo
+      await Promise.all([
+        fetchDashboardData(),
+        loadEquipo(),
+        loadClientes()
+      ]);
+
+      // Renderizar todos los tabs
       renderDashboard();
+      renderEquipo();
+      renderClientes();
     }
 
     document.addEventListener('DOMContentLoaded', function() {
