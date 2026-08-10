@@ -30,8 +30,8 @@ const PATTERNS = [
       const lines = content.split("\n");
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        // Busca: fetch(...) sin await
-        if (/\bfetch\s*\([^)]+\)\s*[;]/.test(line) && !/\bawait\s+fetch/.test(line) && !/Promise\.(all|race)/.test(line)) {
+        // Busca: fetch(...) sin await, PERO no dentro de .then() callbacks (return fetch)
+        if (/\bfetch\s*\([^)]+\)\s*[;]/.test(line) && !/\bawait\s+fetch/.test(line) && !/Promise\.(all|race)/.test(line) && !/return\s+fetch|\.then\s*\(|\.catch\s*\(/.test(line)) {
           matches.push({ line: i + 1, code: line.trim().substring(0, 80) });
         }
       }
@@ -167,12 +167,23 @@ const PATTERNS = [
     detect: (content, file) => {
       const matches = [];
       // Busca: operaciones críticas sin retry loop
-      // Críticas: .patch(), .post(), .delete(), .update() a Supabase
-      const re = /(?:\.patch|\.post|\.delete|\.update|_sbw)\s*\([^)]*\)(?![\s\S]{0,200}for\s*\(.*retry|while.*retry|for.*attempt)/;
-      const m = content.match(re);
-      if (m) {
-        const lineNum = content.substring(0, content.indexOf(m[0])).split("\n").length;
-        matches.push({ line: lineNum, code: m[0].substring(0, 60) + "..." });
+      // Críticas: .patch(), .post(), .update() a Supabase (NO .delete() que confunde Set.delete)
+      // Estrategia: línea-a-línea con filtros para FP comunes
+      const lines = content.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Skip: await _sbw (...) — ya es sincronizado
+        if (/\bawait\s+_sbw\s*\(/.test(line)) continue;
+        // Skip: .delete() sin Supabase context (probablemente Set.delete)
+        if (/\b\w+\.delete\s*\(/.test(line) && !/supabase\.from|_sb\s*\(/.test(line)) continue;
+        // Match: .patch(), .post(), .update(), _sbw sin await
+        if (/(?:\.patch|\.post|\.update|_sbw)\s*\([^)]*\)/.test(line) && !/\bawait/.test(line)) {
+          // Check next 20 lines for retry logic
+          const nextLines = lines.slice(i, Math.min(i + 20, lines.length)).join("\n");
+          if (!/for\s*\(.*retry|while.*retry|for.*attempt|\.retry|for\s*\(.*;[^;]*retry/.test(nextLines)) {
+            matches.push({ line: i + 1, code: line.trim().substring(0, 60) });
+          }
+        }
       }
       return matches.length ? matches : null;
     },
