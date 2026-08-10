@@ -23,70 +23,37 @@
 
   var _client = null;
   var _ready = null;
-  var _configReady = null;
-
-  // Carga la configuración desde el proxy (mismo endpoint que login.html)
-  // Obtiene la anon key correcta para el proyecto Supabase actual
-  function loadConfig() {
-    if (_configReady) return _configReady;
-    _configReady = new Promise(function (resolve) {
-      fetch(SB_URL + '/.well-known/config')
-        .then(function (r) {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.json();
-        })
-        .then(function (cfg) {
-          if (cfg && cfg.anon_key) {
-            ANON = cfg.anon_key;
-            resolve(true);
-          } else {
-            throw new Error('No anon_key in response');
-          }
-        })
-        .catch(function (err) {
-          console.error('[PWAUTH] Config load failed:', err);
-          // Fallback: si la config no carga, continuamos con null (tokenSync()
-          // se encargará de obtener el token de localStorage)
-          resolve(false);
-        });
-    });
-    return _configReady;
-  }
 
   // Carga el SDK (una vez) y crea el client reusando la sesión persistida.
   function ensure() {
     if (_ready) return _ready;
     _ready = new Promise(function (resolve) {
-      // Primero cargar la configuración (para obtener la anon key correcta)
-      loadConfig().then(function () {
-        function init() {
-          try {
-            // Si ANON no se cargó, usar fallback (tokenSync() buscará en localStorage)
-            var key = ANON || '';
-            _client = window.supabase.createClient(SB_URL, key, {
-              auth: { persistSession: true, autoRefreshToken: true },
-            });
-          } catch (e) {
-            _client = null;
-          }
-          resolve(_client);
+      function init() {
+        try {
+          var key = ANON || '';
+          _client = window.supabase.createClient(SB_URL, key, {
+            auth: { persistSession: true, autoRefreshToken: true },
+          });
+        } catch (e) {
+          _client = null;
         }
-        if (window.supabase && window.supabase.createClient) {
-          init();
-          return;
-        }
-        var s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
-        // Anti-cuelgue: si el CDN no responde (bloqueado, caído, red lenta), el
-        // script tag puede quedar pendiente sin disparar onload NI onerror. Sin este
-        // timeout, ensure() nunca resolvería y TODA lectura/escritura quedaría
-        // colgada en "Procesando…". A los 6s seguimos sin SDK (headers cae al token
-        // de localStorage / anon).
-        var _to = setTimeout(function () { resolve(null); }, 6000);
-        s.onload = function () { clearTimeout(_to); init(); };
-        s.onerror = function () { clearTimeout(_to); resolve(null); };
-        document.head.appendChild(s);
-      });
+        resolve(_client);
+      }
+      if (window.supabase && window.supabase.createClient) {
+        init();
+        return;
+      }
+      var s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+      // Anti-cuelgue: si el CDN no responde (bloqueado, caído, red lenta), el
+      // script tag puede quedar pendiente sin disparar onload NI onerror. Sin este
+      // timeout, ensure() nunca resolvería y TODA lectura/escritura quedaría
+      // colgada en "Procesando…". A los 6s seguimos sin SDK (headers cae al token
+      // de localStorage / anon).
+      var _to = setTimeout(function () { resolve(null); }, 6000);
+      s.onload = function () { clearTimeout(_to); init(); };
+      s.onerror = function () { clearTimeout(_to); resolve(null); };
+      document.head.appendChild(s);
     });
     return _ready;
   }
