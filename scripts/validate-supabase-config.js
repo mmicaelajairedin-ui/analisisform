@@ -5,7 +5,7 @@
  */
 const fs = require('fs');
 
-const CORRECT_PROJECT_REF = 'ddxnrsnjdvtqhxunxbwj';
+const CORRECT_PROJECT_REF = 'ddxnrsnjdvtqhxunxnwj';
 const WRONG_PROJECT_REF = 'mxkljqhlwiqavbjfjfov';
 const PROXY_URL = 'api.pathwaycareercoach.com';
 

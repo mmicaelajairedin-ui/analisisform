@@ -5,8 +5,8 @@
 ## Valid Environments
 
 ### Production
-- **Project Ref:** `ddxnrsnjdvtqhxunxbwj`
-- **URL:** `https://ddxnrsnjdvtqhxunxbwj.supabase.co`
+- **Project Ref:** `ddxnrsnjdvtqhxunxnwj`
+- **URL:** `https://api.pathwaycareercoach.com` (custom domain)
 - **Domain:** pathwaycareercoach.com
 - **Deployment:** Cloudflare Pages (auto-deploy from main)
 - **Status:** Active
@@ -26,7 +26,7 @@
 ## Project Ref Allowlist
 
 ✅ **ALLOWED:**
-- `ddxnrsnjdvtqhxunxbwj` (production)
+- `ddxnrsnjdvtqhxunxnwj` (production)
 
 ❌ **BLOCKED (Regression Prevention):**
 - `mzxgxkkgxvunpsiqbzxd` (ERR-ENV-001: incorrect/legacy project)

@@ -44,6 +44,28 @@ Regresión — ✅ VERIFICADO EN NAVEGADOR
 
 ---
 
+## 🔐 CONFIGURACIÓN DE SUPABASE — URLs y Project Refs (CRÍTICO)
+
+**PROYECTO CORRECTO (PRODUCCIÓN):**
+- **Project Ref:** `ddxnrsnjdvtqhxunxnwj` (SIN la "b" de "bwj")
+- **Custom Domain:** `https://api.pathwaycareercoach.com` (USAR SIEMPRE en código)
+- **Direct URL:** `https://ddxnrsnjdvtqhxunxnwj.supabase.co` (NO usar en frontend)
+
+**REGLA DE ORO:**
+- ❌ NUNCA hardcodear URLs como `https://ddxnrsnjdvtqhxunxbwj.supabase.co` 
+- ❌ NUNCA usar project refs viejos (bdwj, mxkljqh, etc.)
+- ✅ SIEMPRE usar custom domain en Frontend: `https://api.pathwaycareercoach.com`
+- ✅ Project ref en JWTs y scripts DEBE ser: `ddxnrsnjdvtqhxunxnwj`
+
+**POR QUÉ:** El custom domain está configurado en Cloudflare y apunta al proyecto correcto. Los directos a Supabase con project ref incorrecto causan DNS_PROBE_FINISHED_NXDOMAIN.
+
+**ANTES DE CUALQUIER CAMBIO EN AUTH:**
+1. Verificar project ref es `ddxnrsnjdvtqhxunxnwj` (búsqueda: `grep -r "ddxnrsnjdvtqh"`)
+2. Si encuentra `bwj` o `mxkljqh`, revertir inmediatamente
+3. Ejecutar `npm run verify` antes de push (detecta project refs incorrectos)
+
+---
+
 ## 🔍 FASE 1: Sistema de Detección y Triage de Errores (Agosto 2026)
 
 **Implementado para prevenir regresos de bugs arreglados y documentar ciclo de vida de errores.**
