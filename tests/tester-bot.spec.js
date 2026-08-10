@@ -37,12 +37,85 @@ function cuentas() {
 }
 const CUENTAS = cuentas();
 
+// Genera UUID v4 para correlation_id
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Detecta el entorno (production/staging/preview/local)
+function detectEnvironment() {
+  const host = typeof window !== 'undefined' ? window.location.hostname : (process.env.BASE_URL || '');
+  if (host.includes('pathwaycareercoach.com')) return 'production';
+  if (host.includes('staging')) return 'staging';
+  if (host.includes('analisisform.pages.dev')) return 'preview';
+  if (host.includes('localhost')) return 'local';
+  return 'unknown';
+}
+
+// Extrae el frontend_commit del meta tag (si existe)
+function getCommitHash(page) {
+  try {
+    const meta = page.evaluate(() => document.querySelector('meta[name="frontend-commit"]'));
+    return meta ? meta.getAttribute('content') : 'UNKNOWN';
+  } catch (_e) {
+    return 'UNKNOWN';
+  }
+}
+
+// Clasifica error y extrae código de error si existe
+function classifyError(errorMessage) {
+  const msg = String(errorMessage || '');
+
+  // Detectar error_id de patrones conocidos
+  if (/foto_url|NULL|avatar|persist|foto_perfil/i.test(msg)) {
+    return { error_id: 'ERR-UPLOAD-001', code: 'AVATAR_PERSIST', module: 'avatar', severity: 'CRITICAL' };
+  }
+  if (/Authorization|header|403|401|_uploadDoc|exercise|photo.*auth/i.test(msg)) {
+    return { error_id: 'ERR-UPLOAD-002', code: 'EXERCISE_AUTH', module: 'exercise', severity: 'CRITICAL' };
+  }
+  if (/File.name|extension|Google Photo|MIME|\.pop\(\)|png|jpg|webp|gif/i.test(msg)) {
+    return { error_id: 'ERR-UPLOAD-003', code: 'FILE_EXT', module: 'exercise', severity: 'HIGH' };
+  }
+  if (/mzxgxkkgxvunpsiqbzxd|project_ref|SUPABASE_URL|ddxnrsnjdvtqhxunxbwj/i.test(msg)) {
+    return { error_id: 'ERR-ENV-001', code: 'ENV_MISMATCH', module: 'environment', severity: 'CRITICAL' };
+  }
+
+  // Genérico
+  return { error_id: 'ERR-UNKNOWN', code: 'UNKNOWN_ERROR', module: 'unknown', severity: 'MEDIUM' };
+}
+
 // Captura los errores de JS NO controlados (pageerror) de la página.
+// Extiende con metadata: error_id, correlation_id, environment, etc.
 function capturarErrores(page) {
-  /** @type {string[]} */
+  const correlationId = generateUUID();
+  const environment = detectEnvironment();
+  const frontendCommit = getCommitHash(page);
+
+  /** @type {Array} */
   const errores = [];
-  page.on('pageerror', (e) => { const s = String((e && e.message) || e); if (!RUIDO.test(s)) errores.push(s); });
-  return errores;
+
+  page.on('pageerror', (e) => {
+    const s = String((e && e.message) || e);
+    if (!RUIDO.test(s)) {
+      const classification = classifyError(s);
+      errores.push({
+        message: s,
+        error_id: classification.error_id,
+        error_code: classification.code,
+        module: classification.module,
+        severity: classification.severity,
+        correlation_id: correlationId,
+        environment: environment,
+        frontend_commit: frontendCommit,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  return { errores, correlationId, environment, frontendCommit };
 }
 
 // Verifica que renderizó una app real. La plataforma es un SPA: primero pinta el
@@ -97,11 +170,11 @@ async function entrar(page, email, password, urlPat) {
 test.describe('🤖 Bot de usuaria — recorre cada panel', () => {
   for (const c of CUENTAS) {
     test(`${c.label}: entra, renderiza y no hay errores de JS`, async ({ page }) => {
-      const errores = capturarErrores(page);
+      const { errores, correlationId } = capturarErrores(page);
       await entrar(page, c.email, c.pass);
       await verificarRender(page);
       await navegarPanel(page); // recorre las secciones (panel del coach o portal del cliente)
-      expect(errores, `Errores de JS (${c.label}):\n` + errores.join('\n')).toHaveLength(0);
+      expect(errores, `Errores de JS (${c.label}) [${correlationId}]:\n` + errores.map(e => `${e.error_id}: ${e.message}`).join('\n')).toHaveLength(0);
     });
   }
 
@@ -120,7 +193,7 @@ test.describe('✉️ Invitación al cliente — el email sale de verdad', () =>
   const coach = CUENTAS.find((c) => c && (c.nav || /coach/i.test(c.label || '')));
   test('el coach reenvía la invitación y el email sale (sent=true)', async ({ page }) => {
     test.skip(!coach, 'Sin cuenta de coach de prueba (TEST_ACCOUNTS/TEST_COACH_*) — se saltea');
-    const errores = capturarErrores(page);
+    const { errores, correlationId } = capturarErrores(page);
     await entrar(page, /** @type {any} */(coach).email, /** @type {any} */(coach).pass, /panel-v2/i);
     await verificarRender(page);
     // Ir a Clientes.
@@ -143,7 +216,7 @@ test.describe('✉️ Invitación al cliente — el email sale de verdad', () =>
     // (típicamente BREVO_API_KEY) → el test falla y el reporte lo marca.
     await expect(page.locator('body'), 'La invitación no confirmó envío (¿email/Brevo caído?)').toContainText(/invitaci[oó]n reenviada/i, { timeout: 15000 });
     await expect(page.locator('body')).not.toContainText(/no se pudo enviar/i);
-    expect(errores, 'Errores de JS al reenviar invitación:\n' + errores.join('\n')).toHaveLength(0);
+    expect(errores, `Errores de JS al reenviar invitación [${correlationId}]:\n` + errores.map(e => `${e.error_id}: ${e.message}`).join('\n')).toHaveLength(0);
   });
 });
 
@@ -158,7 +231,7 @@ test.describe('💳 Selector de plan — cambiar de plan sin salir del panel', (
   const coach = CUENTAS.find((c) => c && (c.nav || /coach/i.test(c.label || '')));
   test('el coach abre su plan y togglea Anual/Mensual + Basic/Pro sin errores', async ({ page }) => {
     test.skip(!coach, 'Sin cuenta de coach de prueba (TEST_ACCOUNTS/TEST_COACH_*) — se saltea');
-    const errores = capturarErrores(page);
+    const { errores, correlationId } = capturarErrores(page);
     await entrar(page, /** @type {any} */(coach).email, /** @type {any} */(coach).pass, /panel-v2/i);
     await verificarRender(page);
     // Config (sidebar) → Mi cuenta (sub-pestaña donde vive el plan).
@@ -178,7 +251,7 @@ test.describe('💳 Selector de plan — cambiar de plan sin salir del panel', (
     await page.waitForTimeout(300);
     // Tras togglear, el selector debe seguir renderizado (no se rompió el re-render).
     await expect(page.locator('.cp-psel-tiles'), 'El selector de plan dejó de renderizar tras togglear').toBeVisible({ timeout: 6000 });
-    expect(errores, 'Errores de JS en el selector de plan:\n' + errores.join('\n')).toHaveLength(0);
+    expect(errores, `Errores de JS en el selector de plan [${correlationId}]:\n` + errores.map(e => `${e.error_id}: ${e.message}`).join('\n')).toHaveLength(0);
   });
 });
 
@@ -191,20 +264,20 @@ test.describe('🏋️ Panel multi-coach (gym) — carga y renderiza', () => {
     const password = process.env.TEST_GYM_PASSWORD;
     test.skip(!email || !password, 'Sin TEST_GYM_EMAIL/PASSWORD — se saltea');
 
-    const errores = capturarErrores(page);
+    const { errores, correlationId } = capturarErrores(page);
     await entrar(page, /** @type {string} */(email), /** @type {string} */(password), /multicoach|empresa|panel-v2/i);
     // Si el login lo dejó en el panel del coach, vamos a su multicoach.
     if (!/multicoach|empresa/i.test(page.url())) {
       await page.goto(`${BASE}multicoach.html`, { waitUntil: 'domcontentloaded' });
     }
     await verificarRender(page);
-    expect(errores, 'Errores de JS en el panel multi-coach:\n' + errores.join('\n')).toHaveLength(0);
+    expect(errores, `Errores de JS en el panel multi-coach [${correlationId}]:\n` + errores.map(e => `${e.error_id}: ${e.message}`).join('\n')).toHaveLength(0);
   });
 
   test('multicoach.html carga y renderiza sin errores de JS', async ({ page }) => {
-    const errores = capturarErrores(page);
+    const { errores, correlationId } = capturarErrores(page);
     await page.goto(`${BASE}multicoach.html`, { waitUntil: 'domcontentloaded' });
     await verificarRender(page);
-    expect(errores, 'Errores de JS en multicoach:\n' + errores.join('\n')).toHaveLength(0);
+    expect(errores, `Errores de JS en multicoach [${correlationId}]:\n` + errores.map(e => `${e.error_id}: ${e.message}`).join('\n')).toHaveLength(0);
   });
 });
