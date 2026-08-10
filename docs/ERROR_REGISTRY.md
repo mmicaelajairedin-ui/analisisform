@@ -13,6 +13,13 @@ Estado posible: `DETECTED` | `TRIAGED` | `FIXED` | `TESTED` | `VERIFIED`
 **Fecha triaged:** 2026-08-08  
 **Severity:** CRITICAL  
 
+### Scope Metadata
+- **Module:** `uploads`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `uploads` (dedicated upload branch)
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No (not claude/pathway-app-store-review-fy5y15 scope)  
+
 ### Síntoma
 Coach sube avatar, se guarda correctamente, pero desaparece al recargar la página. Campo `usuarios.foto_url` queda NULL.
 
@@ -53,6 +60,13 @@ Si se vuelve a leer foto de múltiples columnas → guardrail debe fallar.
 **Fecha detectado:** 2026-08-08  
 **Fecha triaged:** 2026-08-08  
 **Severity:** CRITICAL  
+
+### Scope Metadata
+- **Module:** `uploads`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `uploads` (dedicated upload branch)
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No (not claude/pathway-app-store-review-fy5y15 scope)  
 
 ### Síntoma
 Coach intenta subir foto de ejercicio → HTTP 400  
@@ -95,6 +109,13 @@ Guardrail debe verificar: si _uploadAvatar tiene Authorization, _uploadDoc TAMBI
 **Fecha triaged:** 2026-08-08  
 **Severity:** HIGH  
 
+### Scope Metadata
+- **Module:** `uploads`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `uploads` (dedicated upload branch)
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No (not claude/pathway-app-store-review-fy5y15 scope)  
+
 ### Síntoma
 Coach (Android tablet) selecciona foto de Google Photos  
 Validador rechaza: "Usa PNG, JPG, WebP o GIF"  
@@ -136,6 +157,13 @@ Guardrail: si no hay extensión en filename pero hay MIME type, debe inferirse. 
 **Fecha detectado:** 2026-08-07  
 **Fecha triaged:** 2026-08-08  
 **Severity:** CRITICAL  
+
+### Scope Metadata
+- **Module:** `environment`
+- **Scope Type:** `CORE_INFRASTRUCTURE`
+- **Scope Belongs To:** `core` (infrastructure branch)
+- **Blocking Scope:** `core`
+- **Blocks Current Branch:** YES (CORE_INFRASTRUCTURE always blocks)  
 
 ### Síntoma
 Código y logs hacen referencia a project_ref `mzxgxkkgxvunpsiqbzxd`  
@@ -182,6 +210,13 @@ Este error requiere confirmación manual antes de cualquier fix automático.
 **Fecha detectado:** 2026-08-10  
 **Severity:** CRITICAL  
 
+### Scope Metadata
+- **Module:** `ios_auth`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `claude/pathway-app-store-review-fy5y15`
+- **Blocking Scope:** `current`
+- **Blocks Current Branch:** YES (belongs to current branch scope)  
+
 ### Síntoma
 App iOS rechazada por Apple App Store (requisito 4.8):  
 "Ofrece login con Google sin equivalente Apple Sign in"
@@ -220,6 +255,13 @@ Guardrail: verificar que btn-apple existe, signInWithApple() está implementado,
 **Estado:** DETECTED  
 **Fecha detectado:** 2026-08-10  
 **Severity:** CRITICAL  
+
+### Scope Metadata
+- **Module:** `multicoach`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `multicoach` (multicoach feature branch)
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No (belongs to multicoach branch, not current)  
 
 ### Síntoma
 Owner entra a login → redirige a `/multicoach-v3.html`  
@@ -260,6 +302,14 @@ Guardrail: verificar que owner redirige a multicoach.html (o path correcto) y ar
 **Fecha detectado:** 2026-08-10  
 **Severity:** HIGH  
 
+### Scope Metadata
+- **Module:** `admin_security` (cross-module: admin + usuarios + rls)
+- **Scope Type:** `CROSS_MODULE`
+- **Scope Belongs To:** `multicoach`
+- **Affects Modules:** `admin`, `usuarios`, `rls`
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No (affects multicoach, not current branch infrastructure)  
+
 ### Síntoma
 Admin intenta eliminar cuenta de coach → error "No se pudo eliminar... protegida por RLS"  
 Feature completamente rota, no hay workaround
@@ -296,6 +346,13 @@ Guardrail: verificar que coach-access no usa DELETE directo, usa admin-coach-op
 **Estado:** DETECTED  
 **Fecha detectado:** 2026-08-10  
 **Severity:** HIGH  
+
+### Scope Metadata
+- **Module:** `ci_cd`
+- **Scope Type:** `CORE_INFRASTRUCTURE`
+- **Scope Belongs To:** `core` (infrastructure/CI branch)
+- **Blocking Scope:** `core`
+- **Blocks Current Branch:** YES (CORE_INFRASTRUCTURE always blocks, affects all deployments)  
 
 ### Síntoma
 85 edge functions en repo, solo 75 deployed en workflow  
@@ -350,6 +407,13 @@ Guardrail: verificar que todas las functions en supabase/functions/ tienen step 
 **Fecha detectado:** 2026-08-10  
 **Severity:** MEDIUM  
 
+### Scope Metadata
+- **Module:** `multicoach`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `multicoach` (multicoach feature branch)
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** No (belongs to multicoach branch, not current)  
+
 ### Síntoma
 Multicoach onclick handlers tienen comillas rotas  
 Click en botón hace nothing (SyntaxError)  
@@ -388,6 +452,13 @@ Guardrail: verificar que _toastChat existe y onclick handlers usan JSON.stringif
 **Estado:** DETECTED  
 **Fecha detectado:** 2026-08-10  
 **Severity:** LOW  
+
+### Scope Metadata
+- **Module:** `email_template`
+- **Scope Type:** `MODULE_SPECIFIC`
+- **Scope Belongs To:** `core` (email templates are shared infrastructure)
+- **Blocking Scope:** `other`
+- **Blocks Current Branch:** Pending confirmation (awaiting PO decision if belongs to App Store review scope)  
 
 ### Síntoma
 Email de recordatorio de cita dice "Google Meet: [link]"  

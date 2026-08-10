@@ -36,6 +36,11 @@ const checks = [
     description: 'Check regression prevention rules',
   },
   {
+    name: 'Error Scope',
+    script: 'node scripts/check-error-scope.js',
+    description: 'Classify errors by branch scope (BLOCKER vs OUT_OF_SCOPE)',
+  },
+  {
     name: 'Parity',
     script: 'node scripts/check-parity.js',
     description: 'Validate cross-file consistency',
@@ -77,6 +82,7 @@ async function run() {
       if (
         check.name === 'Syntax' ||
         check.name === 'Guardrails' ||
+        check.name === 'Error Scope' ||
         check.name === 'Triage'
       ) {
         blockerFound = true;

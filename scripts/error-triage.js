@@ -18,6 +18,50 @@ const RESULTS_FILE = path.join(__dirname, '..', 'tests', 'results', 'test-result
 const REGISTRY_FILE = path.join(__dirname, '..', 'docs', 'ERROR_REGISTRY.md');
 const OUTPUT_FILE = path.join(__dirname, '..', 'tests', 'results', 'triaged-errors.json');
 
+// Configuration: current branch
+const CURRENT_BRANCH = process.env.GITHUB_REF_NAME || 'claude/pathway-app-store-review-fy5y15';
+
+/**
+ * Parse error scope metadata from ERROR_REGISTRY.md
+ * Returns: { errorId: { module, scope_type, scope_belongs_to, blocking_scope } }
+ */
+function parseErrorScope() {
+  const registryPath = REGISTRY_FILE;
+  const content = fs.readFileSync(registryPath, 'utf8');
+
+  const errorScopes = {};
+  const errorBlocks = content.split(/\n## ERR-/);
+
+  for (const block of errorBlocks) {
+    if (!block.trim()) continue;
+
+    const lines = block.split('\n');
+    const header = lines[0];
+    const errorIdMatch = header.match(/^([A-Z]+-\d{3})/);
+    if (!errorIdMatch) continue;
+    const errorId = `ERR-${errorIdMatch[1]}`;
+
+    // Look for scope metadata
+    const scopeMatch = block.match(/### Scope Metadata\n([\s\S]*?)(?=\n###|\n## |$)/);
+    if (scopeMatch) {
+      const scopeBlock = scopeMatch[1];
+      const moduleMatch = scopeBlock.match(/- \*\*Module:\*\*\s*`([^`]+)`/);
+      const scopeTypeMatch = scopeBlock.match(/- \*\*Scope Type:\*\*\s*`([^`]+)`/);
+      const belongsToMatch = scopeBlock.match(/- \*\*Scope Belongs To:\*\*\s*`([^`]+)`/);
+      const blockingScopeMatch = scopeBlock.match(/- \*\*Blocking Scope:\*\*\s*`([^`]+)`/);
+
+      errorScopes[errorId] = {
+        module: moduleMatch ? moduleMatch[1] : 'unknown',
+        scope_type: scopeTypeMatch ? scopeTypeMatch[1] : 'UNDEFINED',
+        scope_belongs_to: belongsToMatch ? belongsToMatch[1] : 'unknown',
+        blocking_scope: blockingScopeMatch ? blockingScopeMatch[1] : 'undefined',
+      };
+    }
+  }
+
+  return errorScopes;
+}
+
 // Known error signatures from ERROR_REGISTRY.md
 const KNOWN_ERRORS = {
   'ERR-UPLOAD-001': {
@@ -137,6 +181,9 @@ function extractFailures(results) {
 async function main() {
   console.log('📋 Error Triage: Classifying failures...\n');
 
+  // Parse error scope metadata
+  const errorScopes = parseErrorScope();
+
   // Check if test results exist
   if (!fs.existsSync(RESULTS_FILE)) {
     console.log('ℹ️  No test results found. Assuming all tests passed.');
@@ -166,9 +213,18 @@ async function main() {
   for (const failure of failures) {
     const classification = classifyError(failure.error_message, failure.test_name);
 
+    // Get scope metadata if error is known
+    const scopeMetadata = errorScopes[classification.error_id] || {
+      module: classification.module,
+      scope_type: 'UNDEFINED',
+      scope_belongs_to: 'unknown',
+      blocking_scope: 'undefined',
+    };
+
     const triageRecord = {
       ...failure,
       ...classification,
+      scope_metadata: scopeMetadata,
       correlation_id: `triage-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     };
 
