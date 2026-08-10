@@ -19,7 +19,8 @@
 // nada y prender RLS después, en una ventana controlada.
 (function () {
   var SB_URL = "https://api.pathwaycareercoach.com";
-  var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';  // Hardcoded fallback (matching login.html, pw-observe.js)
+  var ANON =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU";
 
   var _client = null;
   var _ready = null;
@@ -30,8 +31,7 @@
     _ready = new Promise(function (resolve) {
       function init() {
         try {
-          var key = ANON || '';
-          _client = window.supabase.createClient(SB_URL, key, {
+          _client = window.supabase.createClient(SB_URL, ANON, {
             auth: { persistSession: true, autoRefreshToken: true },
           });
         } catch (e) {
