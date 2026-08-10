@@ -492,20 +492,37 @@
     // Usa PWAUTH para obtener headers con JWT válido
     var sbClient = null;
 
+    // Fallback: extrae token de localStorage si PWAUTH no está disponible
+    function tokenSyncFallback() {
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (!k || k.indexOf("sb-") !== 0 || k.indexOf("-auth-token") < 0) continue;
+          var o = JSON.parse(localStorage.getItem(k) || "null");
+          var sess = o && (o.currentSession || o.session || o);
+          var t = sess && sess.access_token;
+          if (t) return t;
+        }
+      } catch (e) {}
+      return null;
+    }
+
     async function initSupabaseClient() {
       if (sbClient) return sbClient;
 
-      // Esperar a que PWAUTH esté listo
-      if (!window.PWAUTH) {
-        throw new Error("PWAUTH not initialized");
+      try {
+        // Intentar usar PWAUTH si está disponible, pero no es obligatorio
+        if (window.PWAUTH && window.PWAUTH.ensure) {
+          await window.PWAUTH.ensure();
+        }
+      } catch (e) {
+        console.warn('[MultiCoach] PWAUTH.ensure() failed, continuing with fallback:', e);
       }
 
-      await window.PWAUTH.ensure();
-
       // Crear cliente Supabase con la URL del proxy
-      // El cliente usará la sesión que PWAUTH maneja automáticamente
       try {
-        sbClient = window.supabase.createClient(SUPABASE_URL, window.PWAUTH.anon || '', {
+        var anonKey = (window.PWAUTH && window.PWAUTH.anon) || '';
+        sbClient = window.supabase.createClient(SUPABASE_URL, anonKey, {
           auth: { persistSession: true, autoRefreshToken: true }
         });
       } catch (e) {
@@ -537,19 +554,22 @@
       return null;
     }
 
-    // Guard: verificar que PWAUTH esté listo y usuario autenticado
-    // PWAUTH se carga desde pw-auth.js y proporciona la sesión correcta
+    // Guard: verificar que usuario tenga sesión autenticada
     async function checkAuthentication() {
-      if (!window.PWAUTH) {
-        throw new Error("Authentication system not initialized");
+      // Verificar si hay token válido en localStorage
+      var token = tokenSyncFallback();
+
+      // Si PWAUTH está disponible, intenta obtener token fresco
+      if (window.PWAUTH && window.PWAUTH.token) {
+        try {
+          token = await window.PWAUTH.token();
+        } catch (e) {
+          // Fallback a localStorage si PWAUTH.token() falla
+          token = tokenSyncFallback();
+        }
       }
 
-      // Esperar a que el sistema de auth esté listo
-      await window.PWAUTH.ensure();
-
-      // Verificar si hay token válido
-      const t = await window.PWAUTH.token();
-      if (!t) {
+      if (!token) {
         throw new Error("No estás autenticado. Redirigiendo a login...");
       }
 
@@ -562,17 +582,44 @@
     // FETCH DASHBOARD DATA (Una única llamada)
     // ════════════════════════════════════════════════════════════════
 
+    // Genera headers de forma robusta (PWAUTH o fallback)
+    async function getHeaders(extra) {
+      var headers = {
+        "Content-Type": "application/json"
+      };
+
+      // Intentar usar PWAUTH si está disponible
+      if (window.PWAUTH && window.PWAUTH.headers) {
+        try {
+          var pwHeaders = await window.PWAUTH.headers(extra || {});
+          Object.assign(headers, pwHeaders);
+          return headers;
+        } catch (e) {
+          console.warn('[MultiCoach] PWAUTH.headers() failed, using fallback');
+        }
+      }
+
+      // Fallback: usar token de localStorage directamente
+      var token = tokenSyncFallback();
+      if (token) {
+        headers.Authorization = "Bearer " + token;
+      }
+
+      // Agregar headers adicionales si se pasaron
+      if (extra) {
+        Object.assign(headers, extra);
+      }
+
+      return headers;
+    }
+
     async function fetchDashboardData() {
       dashboardState.loading = true;
       dashboardState.error = null;
 
       try {
-        // Obtener headers con token válido (PWAUTH maneja refresh automático)
-        // Si hay sesión de usuario → Authorization con JWT
-        // Si no hay sesión → Authorization con anon key (fallback)
-        const headers = await window.PWAUTH.headers({
-          "Content-Type": "application/json",
-        });
+        // Obtener headers con token válido (PWAUTH o fallback a localStorage)
+        const headers = await getHeaders();
 
         const response = await fetch(
           `${SUPABASE_URL}/functions/v1/dashboard`,
