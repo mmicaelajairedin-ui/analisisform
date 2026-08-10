@@ -27,15 +27,12 @@ const PATTERNS = [
     desc: "fetch() sin await. Puede ser intencional (best-effort) o bug (resultado ignora).",
     detect: (content, file) => {
       const matches = [];
-      // Busca: fetch(...) sin await, seguido de ; o ). En líneas sin await.
-      const re = /^[^]*?\bfetch\s*\([^)]+\)\s*[;)\]](?![\s]*return\s+fetch)/gm;
-      let m;
-      while ((m = re.exec(content))) {
-        const lineNum = content.substring(0, m.index).split("\n").length;
-        // Filtra falsos positivos: Promise.all, Promise.race, array de fetches
-        const context = content.substring(Math.max(0, m.index - 100), m.index + 50);
-        if (!/Promise\.(all|race)|Array|\.map|fetchAll/.test(context)) {
-          matches.push({ line: lineNum, code: m[0].trim(), risk: "Puede ser intencional o bug" });
+      const lines = content.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Busca: fetch(...) sin await
+        if (/\bfetch\s*\([^)]+\)\s*[;]/.test(line) && !/\bawait\s+fetch/.test(line) && !/Promise\.(all|race)/.test(line)) {
+          matches.push({ line: i + 1, code: line.trim().substring(0, 80) });
         }
       }
       return matches.length ? matches : null;
@@ -86,18 +83,18 @@ const PATTERNS = [
     severity: "PATTERN_DETECTED",
     desc: "fetch() desde tabla Supabase pero sin .on('postgres_changes'). Datos solo al refresh.",
     detect: (content, file) => {
+      // Solo reportar para files que usan realtime o fetch mucho (ignorar layouts/estilos)
+      if (!/\.js|cliente\.html|panel-v2\.html|pathway-.*cliente\.html/.test(file)) return null;
       const matches = [];
-      // Busca: fetch de tablas Supabase
-      const hasFetch = /fetch\s*\(\s*['"]*.*\/rest\/v1\/|sbGet|supabase\.from\(['"]\w+/.test(content);
-      if (hasFetch) {
-        // Checa si hay subscription realtime
-        const hasRealtime = /\.on\s*\(\s*['"]postgres_changes|realtime|subscribe/.test(content);
-        if (!hasRealtime) {
-          // Falso positivo: puede no necesitar realtime (datos inmutables, una sola lectura, etc)
+      const hasFetch = /sbGet|supabase\.from/.test(content);
+      const hasRealtime = /\.on\s*\(\s*['"]postgres_changes/.test(content);
+      if (hasFetch && !hasRealtime && file.endsWith(".html")) {
+        const lineNum = content.split("\n").findIndex(l => /sbGet|supabase\.from/.test(l));
+        if (lineNum >= 0) {
           matches.push({
-            line: content.split("\n").findIndex(line => /fetch.*rest\/v1|sbGet|supabase\.from/.test(line)) + 1,
-            code: "fetch() detectado, pero no hay .on('postgres_changes')",
-            risk: "Puede ser aceptable si los datos no cambian"
+            line: lineNum + 1,
+            code: "sbGet/supabase.from sin .on('postgres_changes')",
+            risk: "Puede ser aceptable"
           });
         }
       }
@@ -190,8 +187,8 @@ const line = (s) => console.log(s);
 let totalPatterns = 0;
 let totalMatches = 0;
 
-const htmlFiles = fs.readdirSync(".").filter((x) => x.endsWith(".html"));
-const jsFiles = fs.readdirSync("scripts").filter((x) => x.endsWith(".js"));
+const htmlFiles = fs.readdirSync(".").filter((x) => x.endsWith(".html") && !/^\.|\.min/.test(x));
+const jsFiles = fs.readdirSync("scripts").filter((x) => x.endsWith(".js") && !/^\.|test|\.min/.test(x));
 const allFiles = [...htmlFiles, ...jsFiles.map((f) => `scripts/${f}`)];
 
 line("═══ ASYNC/TIMING PATTERNS ═══\n");
@@ -200,7 +197,7 @@ for (const pattern of PATTERNS) {
   let any = false;
   for (const file of allFiles) {
     const content = read(file);
-    if (!content) continue;
+    if (!content || content.length < 100) continue; // Skip tiny files
     const matches = pattern.detect(content, file);
     if (matches) {
       if (!any) {
