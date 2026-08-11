@@ -9,7 +9,8 @@ const fs = require('fs');
 const CORRECT_PROJECT_REF = 'ddxnrsnjdvtqhxunxnwj';
 const WRONG_REFS = [
   'mxkljqhlwiqavbjfjfov',  // legacy incorrecto
-  'ddxnrsnjdvtqhxunxbwj',  // typo 'bwj' en lugar de 'nwj'
+  'ddxnrsnjdvtqhxunxbwj',  // typo 'bwj' en lugar de 'nwj' (Bloque 1)
+  'ddxnrsnjdvtqhxunxbnwj', // typo 'bnwj' en lugar de 'nwj' (Bloque 1)
   'mzxgxkkgxvunpsiqbzxd',  // otro legacy
 ];
 const PROXY_URL = 'api.pathwaycareercoach.com';
@@ -32,20 +33,42 @@ const criticalFiles = [
   'pw-apple-signin.js',
 ];
 
+// Archivos donde detectar project refs incorrectos (incluyendo scripts/docs)
+const allFilesToCheck = [
+  ...criticalFiles,
+  'scripts/backup-export.js',
+  'scripts/apply-migration-0103.js',
+  'scripts/apply-migration-0103.sh',
+  'APPLY_MIGRATION_0103.md',
+  'EPIC_1_5_RLS_VALIDATION_PLAN.md',
+];
+
 console.log('🔍 Escaneando archivos críticos...\n');
 
-criticalFiles.forEach(file => {
+// Validar project refs en todos los archivos
+allFilesToCheck.forEach(file => {
   try {
     const content = fs.readFileSync(file, 'utf8');
 
-    // Chequeo 1: No debe contener NINGÚN project ref incorrecto
+    // Chequeo: No debe contener NINGÚN project ref incorrecto
     WRONG_REFS.forEach(wrongRef => {
       if (content.includes(wrongRef)) {
         errors.push(`❌ ${file}: CONTIENE project ref INCORRECTO (${wrongRef})`);
       }
     });
+  } catch (e) {
+    if (e.code !== 'ENOENT') {
+      console.error(`⚠️  ${file}: error — ${e.message}`);
+    }
+  }
+});
 
-    // Chequeo 2: No debe tener URLs directas a Supabase (excepto en comentarios)
+// Validar URLs de proxy solo en código frontend (no en scripts/documentación)
+criticalFiles.forEach(file => {
+  try {
+    const content = fs.readFileSync(file, 'utf8');
+
+    // Chequeo: No debe tener URLs directas a Supabase (excepto en comentarios)
     const lines = content.split('\n');
     lines.forEach((line, i) => {
       const trimmed = line.trim();
@@ -55,7 +78,7 @@ criticalFiles.forEach(file => {
       }
     });
 
-    // Chequeo 3: El project ref correcto debe estar presente
+    // Chequeo: El project ref correcto debe estar presente
     if (!content.includes(CORRECT_PROJECT_REF) && !content.includes(PROXY_URL)) {
       warnings.push(`⚠️  ${file}: No contiene ref ni proxy`);
     }

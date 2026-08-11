@@ -5021,6 +5021,44 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "Supabase project ref correcto (ddxnrsnjdvtqhxunxnwj) en scripts de migraciones y backups",
+    bug: "Bloque 1 (agosto 2026): Se encontraron 5 typos en scripts donde project refs " +
+         "estaban mal (bwj, bnwj en lugar de nwj). Esto causaba URLs rotas en instrucciones " +
+         "y fallback URLs incorrectas. Si algún script usa ref incorrecto, usuarios se " +
+         "conectan al proyecto equivocado o fallidos silenciosos. Se arreglaron 5 archivos, " +
+         "esta regla previene regresión.",
+    check() {
+      const CORRECT_REF = "ddxnrsnjdvtqhxunxnwj";
+      const WRONG_REFS = ["ddxnrsnjdvtqhxunxbwj", "ddxnrsnjdvtqhxunxbnwj", "bwj", "bnwj"];
+      const files = [
+        "scripts/backup-export.js",
+        "scripts/apply-migration-0103.js",
+        "scripts/apply-migration-0103.sh",
+        "APPLY_MIGRATION_0103.md",
+        "EPIC_1_5_RLS_VALIDATION_PLAN.md"
+      ];
+
+      const bad = [];
+      for (const f of files) {
+        const content = read(f);
+        if (!content) continue;
+
+        for (const wrongRef of WRONG_REFS) {
+          if (new RegExp(wrongRef).test(content)) {
+            bad.push(`${f} contiene proyecto ref incorrecto: ${wrongRef}`);
+            break;
+          }
+        }
+      }
+
+      if (bad.length) {
+        return bad.join("; ");
+      }
+
+      return null;
+    },
+  },
 
   // ========================================================================
   // FUTURE GUARDRAILS — Documentación de reglas que se implementarán
