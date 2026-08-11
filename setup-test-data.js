@@ -5,8 +5,8 @@
 
 const { createClient } = require('@supabase/supabase-js');
 
-// Decode JWT to get project ref: ref: "ddxnrsnjdvtqhxunxbwj"
-const SB_URL = 'https://ddxnrsnjdvtqhxunxbwj.supabase.co';
+// Decode JWT to get project ref: ref: "ddxnrsnjdvtqhxunxnwj"
+const SB_URL = 'https://ddxnrsnjdvtqhxunxnwj.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjM5ODAwMDAsImV4cCI6MTg4MTc0NjAwMH0.WyY8_f_mTGJfRJLZ_b4A_rC8_r-9qOqNM8gfDg6xxRk';
 
 const sb = createClient(SB_URL, SB_KEY);
