@@ -10,7 +10,7 @@ Esta migration abre acceso read-only a la tabla `citas` para usuarios anon.
 
 ### 1. Abre Supabase Dashboard
 ```
-https://supabase.com/dashboard/project/ddxnrsnjdvtqhxunxbwj
+https://supabase.com/dashboard/project/ddxnrsnjdvtqhxunxnwj
 ```
 
 ### 2. Ve a SQL Editor

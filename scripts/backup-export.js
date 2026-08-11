@@ -4,13 +4,13 @@
 // como "artifact" privado del repo (no se publica en ningun lado).
 //
 // Necesita las variables de entorno:
-//   SUPABASE_URL          (ej. https://ddxnrsnjdvtqhxunxbwj.supabase.co)
+//   SUPABASE_URL          (ej. https://ddxnrsnjdvtqhxunxnwj.supabase.co)
 //   SUPABASE_SERVICE_KEY  (la service_role key — secreto, NUNCA en el codigo)
 //
 // Correr local:  SUPABASE_URL=... SUPABASE_SERVICE_KEY=... node scripts/backup-export.js
 const fs = require("fs");
 
-const SB = process.env.SUPABASE_URL || "https://ddxnrsnjdvtqhxunxbwj.supabase.co";
+const SB = process.env.SUPABASE_URL || "https://ddxnrsnjdvtqhxunxnwj.supabase.co";
 const KEY = process.env.SUPABASE_SERVICE_KEY || "";
 
 // Las tablas con la data irremplazable del negocio.
