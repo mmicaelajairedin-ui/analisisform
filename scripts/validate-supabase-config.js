@@ -1,43 +1,101 @@
 #!/usr/bin/env node
 /**
- * VALIDACIÓN DE CONFIGURACIÓN DE SUPABASE
- * Previene que un cambio de Project Ref rompa producción
+ * VALIDACIÓN DE CONFIGURACIÓN DE SUPABASE — BLINDAJE CRÍTICO
+ * Previene que un cambio de Project Ref rompa producción.
+ * Corre en: pre-commit (Husky), CI/CD, y npm run verify
  */
 const fs = require('fs');
 
 const CORRECT_PROJECT_REF = 'ddxnrsnjdvtqhxunxnwj';
-const WRONG_PROJECT_REF = 'mxkljqhlwiqavbjfjfov';
+const WRONG_REFS = [
+  'mxkljqhlwiqavbjfjfov',  // legacy incorrecto
+  'ddxnrsnjdvtqhxunxbwj',  // typo 'bwj' en lugar de 'nwj'
+  'mzxgxkkgxvunpsiqbzxd',  // otro legacy
+];
 const PROXY_URL = 'api.pathwaycareercoach.com';
+const DIRECT_SUPABASE_PATTERN = /https?:\/\/[a-z0-9-]+\.supabase\.co/i;
 
 let errors = [];
+let warnings = [];
 
-// Validar que NO hay referencias al proyecto incorrecto
-['panel-v2.html', 'cliente.html', 'pw-native.js', 'pw-auth.js', 'pw-ia-chat.js', 'supabase/functions/obtener-perfil-coach/index.ts'].forEach(file => {
+const criticalFiles = [
+  'login.html',
+  'auth-callback.html',
+  'panel-v2.html',
+  'cliente.html',
+  'pw-auth.js',
+  'pw-observe.js',
+  'pw-native.js',
+  'pw-ia-chat.js',
+  'pw-push.js',
+  'pw-events.js',
+  'pw-apple-signin.js',
+];
+
+console.log('🔍 Escaneando archivos críticos...\n');
+
+criticalFiles.forEach(file => {
   try {
     const content = fs.readFileSync(file, 'utf8');
-    
-    // CRÍTICO: No debe tener el proyecto incorrecto
-    if (content.includes(WRONG_PROJECT_REF)) {
-      errors.push(`❌ ${file}: CONTIENE proyecto INCORRECTO (${WRONG_PROJECT_REF})`);
-    }
-    
-    // Debe tener el proyecto correcto (al menos en JWT o comentarios)
+
+    // Chequeo 1: No debe contener NINGÚN project ref incorrecto
+    WRONG_REFS.forEach(wrongRef => {
+      if (content.includes(wrongRef)) {
+        errors.push(`❌ ${file}: CONTIENE project ref INCORRECTO (${wrongRef})`);
+      }
+    });
+
+    // Chequeo 2: No debe tener URLs directas a Supabase (excepto en comentarios)
+    const lines = content.split('\n');
+    lines.forEach((line, i) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('//') || trimmed.startsWith('*')) return;
+      if (DIRECT_SUPABASE_PATTERN.test(line) && !line.includes('api.pathwaycareercoach.com')) {
+        errors.push(`❌ ${file}:${i+1}: URL directa a Supabase — usar ${PROXY_URL}`);
+      }
+    });
+
+    // Chequeo 3: El project ref correcto debe estar presente
     if (!content.includes(CORRECT_PROJECT_REF) && !content.includes(PROXY_URL)) {
-      console.log(`⚠️ ${file}: No contiene ref explícita (verificar manualmente)`);
+      warnings.push(`⚠️  ${file}: No contiene ref ni proxy`);
     }
   } catch (e) {
-    console.log(`⚠️ ${file}: No encontrado (skip)`);
+    if (e.code !== 'ENOENT') {
+      console.error(`⚠️  ${file}: error — ${e.message}`);
+    }
   }
 });
 
+// Verificar documentación
+try {
+  const envConfig = fs.readFileSync('docs/ENVIRONMENT_CONFIG.md', 'utf8');
+  if (!envConfig.includes(CORRECT_PROJECT_REF)) {
+    errors.push(`❌ docs/ENVIRONMENT_CONFIG.md: Falta project ref correcto`);
+  }
+  if (envConfig.includes('ddxnrsnjdvtqhxunxbwj')) {
+    errors.push(`❌ docs/ENVIRONMENT_CONFIG.md: Contiene typo 'bwj'`);
+  }
+} catch (e) {}
+
+console.log('');
 if (errors.length > 0) {
-  console.error('\n❌ VALIDACIÓN FALLÓ:\n');
-  errors.forEach(e => console.error(e));
+  console.error('❌ VALIDACIÓN FALLÓ\n');
+  errors.forEach(e => console.error('  ' + e));
+  if (warnings.length > 0) {
+    console.log('\n⚠️  ADVERTENCIAS:\n');
+    warnings.forEach(w => console.log('  ' + w));
+  }
+  console.log('\n📖 Revisa CLAUDE.md sección "🔐 CONFIGURACIÓN DE SUPABASE"\n');
   process.exit(1);
 } else {
-  console.log('\n✅ Validación OK:');
-  console.log(`   • No hay referencias a ${WRONG_PROJECT_REF}`);
-  console.log(`   • Proyecto correcto: ${CORRECT_PROJECT_REF}`);
-  console.log(`   • Proxy: ${PROXY_URL}`);
+  console.log('✅ VALIDACIÓN OK\n');
+  console.log(`  ✓ No hay project refs incorrectos`);
+  console.log(`  ✓ URLs usan proxy: ${PROXY_URL}`);
+  console.log(`  ✓ Project ref correcto: ${CORRECT_PROJECT_REF}`);
+  if (warnings.length > 0) {
+    console.log('\n⚠️  ADVERTENCIAS:\n');
+    warnings.forEach(w => console.log('  ' + w));
+  }
+  console.log('');
   process.exit(0);
 }

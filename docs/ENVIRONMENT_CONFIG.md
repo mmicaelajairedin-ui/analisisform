@@ -64,7 +64,7 @@ Check that project_ref matches allowlist. If not, error is classified as ERR-ENV
 **In production (pathwaycareercoach.com):**
 ```javascript
 // Browser console
-fetch('https://ddxnrsnjdvtqhxunxbwj.supabase.co/rest/v1/').then(r => console.log(r.status))
+fetch('https://api.pathwaycareercoach.com/rest/v1/').then(r => console.log(r.status))
 // Should return 200 (or 401 if unauthenticated, but endpoint exists)
 ```
 
@@ -74,7 +74,7 @@ SELECT DISTINCT project_ref FROM upload_diagnostics
 WHERE ts > NOW() - INTERVAL '7 days'
 ORDER BY project_ref;
 ```
-Should only show `ddxnrsnjdvtqhxunxbwj`.
+Should only show `ddxnrsnjdvtqhxunxnwj`.
 
 ---
 
