@@ -225,6 +225,13 @@ var SB='https://api.pathwaycareercoach.com';
 
 // KEY — usar valor conocido, fallback inmediato (no bloquear login)
 var KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeG5yc25qZHZ0cWh4dW54bndqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNDk5MzksImV4cCI6MjA5MDcyNTkzOX0.t82X1x-PDgFDGYhKC7YXoRKhga9I8Hjet60QUYvtZLU';
+
+// ── Instancia global Supabase (evita "Multiple GoTrueClient" warning) ──
+var _sbGlobal = null;
+try {
+  if(window.supabase) _sbGlobal = window.supabase.createClient(SB, KEY);
+} catch(e) {}
+
 document.body.classList.add('auth-ready');
 
 // ── Google Sign-in ─────────────────────────────────────────
@@ -336,13 +343,17 @@ function signInWithGoogle(){
   // Detectar si está corriendo en iOS app nativa
   var isNativeIOS = window.Capacitor && (typeof window.Capacitor.isNativePlatform === 'function' ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative);
   console.log('[google-debug] Capacitor existe:', !!window.Capacitor, '| isNativeIOS:', isNativeIOS, '| Browser plugin:', !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser));
-  var redirectTo = 'https://pathwaycareercoach.com/auth-callback.html?source=login' + (isNativeIOS ? '&google_native=1' : '');
+  // iOS: redirigir a custom scheme (App.addListener captura en login.html)
+  // Web: redirigir a auth-callback.html (flujo OAuth web clásico)
+  var redirectTo = isNativeIOS
+    ? 'com.pathwaycareercoach.twa://auth-callback?source=login'
+    : 'https://pathwaycareercoach.com/auth-callback.html?source=login';
 
   if(isNativeIOS){
     // En iOS nativo, usar Browser.open() para abrir OAuth en ventana nativa integrada
     var Browser = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
     if(Browser){
-      var sb = window.supabase.createClient(SB, KEY);
+      var sb = _sbGlobal || window.supabase.createClient(SB, KEY);
       sb.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: redirectTo, skipBrowserRedirect: true }
@@ -384,7 +395,7 @@ function signInWithGoogle(){
   }
 
   // En web, usar flujo OAuth estándar
-  var sb = window.supabase.createClient(SB, KEY);
+  var sb = _sbGlobal || window.supabase.createClient(SB, KEY);
   sb.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: redirectTo }
@@ -392,6 +403,169 @@ function signInWithGoogle(){
     console.error('[google signin]', err);
     if(btn){btn.disabled = false; btn.style.opacity = '1'; var span = btn.querySelector('span'); if(span) span.textContent = 'Continuar con Google';}
     alert('Error iniciando sesión con Google: ' + (err && err.message || 'desconocido'));
+  });
+}
+
+// ── iOS Custom Scheme Handler (@capacitor/app App.addListener) ──────────────
+// Intercepta custom scheme com.pathwaycareercoach.twa://auth-callback
+// Ejecuta en main app context (CON acceso a Capacitor bridge → Browser.close() funciona)
+if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+  const { App } = window.Capacitor.Plugins;
+
+  App.addListener('appUrlOpen', async function(data) {
+    const url = new URL(data.url);
+
+    // Solo procesar si es nuestro custom scheme
+    if (!url.href.startsWith('com.pathwaycareercoach.twa://auth-callback')) {
+      return;
+    }
+
+    try {
+      const hash = url.hash.substring(1); // Remove #
+      const params = new URLSearchParams(hash);
+      const access_token = params.get('access_token');
+      const refresh_token = params.get('refresh_token');
+
+      if (!access_token) {
+        console.error('[iOS OAuth] No access_token en URL hash');
+        return;
+      }
+
+      // Restaurar sesión en Supabase
+      const sb = _sbGlobal || window.supabase.createClient(SB, KEY);
+      const { data: session, error: sessionError } = await sb.auth.setSession({
+        access_token,
+        refresh_token
+      });
+
+      if (sessionError || !session) {
+        throw new Error('setSession failed: ' + (sessionError && sessionError.message));
+      }
+
+      const user = session.user;
+      const email = (user.email || '').toLowerCase().trim();
+
+      if (!email) {
+        throw new Error('Sin email en JWT');
+      }
+
+      // Buscar usuario existente
+      const { data: existingUser, error: fetchError } = await sb
+        .from('usuarios')
+        .select('*')
+        .eq('email', email)
+        .single();
+
+      if (existingUser) {
+        // USUARIO EXISTENTE: actualizar last_login
+        const cfg = Object.assign({}, existingUser.configuracion || {});
+        cfg.last_login = new Date().toISOString();
+
+        await sb
+          .from('usuarios')
+          .update({ configuracion: cfg })
+          .eq('id', existingUser.id)
+          .catch(() => {}); // best-effort
+
+        localStorage.setItem('mj_user', JSON.stringify({
+          id: existingUser.id,
+          email: existingUser.email,
+          rol: existingUser.rol,
+          nombre: existingUser.nombre,
+          activo: true,
+          configuracion: cfg
+        }));
+
+        // Cerrar browser desde main context (SÍ tiene acceso a bridge)
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+          setTimeout(() => {
+            try { window.Capacitor.Plugins.Browser.close(); } catch(e) {}
+          }, 300);
+        }
+
+        // Redirigir según rol
+        const dest = existingUser.rol === 'cliente' ? '/cliente.html?' : '/panel-v2.html?';
+        window.location.href = dest + 'v=' + Date.now();
+
+      } else {
+        // USUARIO NUEVO: crear con trial 14 días
+        const meta = user.user_metadata || {};
+        const name = meta.full_name || meta.name || meta.given_name || email.split('@')[0];
+        const trialDays = 14;
+
+        const newUser = {
+          email,
+          password_hash: null,
+          rol: 'coach',
+          nombre: name,
+          activo: true,
+          auth_id: user.id,
+          configuracion: {
+            coach_type: 'carrera',
+            auth_provider: 'google',
+            from_google: true,
+            from_apple: false,
+            plan: 'basic',
+            estado_sub: 'prueba',
+            visible_directorio: true,
+            max_candidatos: 5,
+            fecha_fin_prueba: new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString(),
+            last_login: new Date().toISOString()
+          }
+        };
+
+        const { data: createdUser, error: createError } = await sb
+          .from('usuarios')
+          .insert(newUser)
+          .select()
+          .single();
+
+        if (createError) throw new Error('Insert failed: ' + createError.message);
+
+        localStorage.setItem('mj_user', JSON.stringify({
+          id: createdUser.id,
+          email: createdUser.email,
+          rol: createdUser.rol,
+          nombre: createdUser.nombre,
+          activo: true,
+          configuracion: createdUser.configuracion || {}
+        }));
+
+        // Email de bienvenida (best-effort, no bloquea)
+        fetch(SB + '/functions/v1/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: email,
+            to_name: name,
+            subject: '¡Te damos la bienvenida a Pathway! Tu trial de 14 días empezó 🌱',
+            html: '<h2 style="font-family:Fraunces,Georgia,serif;color:#1B4332;margin:0 0 14px;">Hola ' + (name.split(' ')[0]) + ',</h2>'
+              + '<p style="font-size:15px;line-height:1.65;">Te damos la bienvenida a Pathway. Tu cuenta está lista y empezaste tu <strong>trial de 14 días gratis</strong>. No te pedimos tarjeta — si al final no quieres seguir, simplemente no haces nada.</p>'
+              + '<p style="margin-top:20px;"><a href="https://pathwaycareercoach.com/panel-v2.html" style="display:inline-block;padding:13px 28px;background:#2D6A4F;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Ir a mi panel →</a></p>'
+              + '<p style="font-size:13px;color:#888;margin-top:18px;">Cualquier duda, responde este mail. — Mica</p>'
+          })
+        }).catch(() => {});
+
+        // Cerrar browser desde main context (SÍ tiene acceso a bridge)
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+          setTimeout(() => {
+            try { window.Capacitor.Plugins.Browser.close(); } catch(e) {}
+          }, 300);
+        }
+
+        // Redirigir
+        window.location.href = '/panel-v2.html?welcome=1&v=' + Date.now();
+      }
+
+    } catch (err) {
+      console.error('[iOS OAuth appUrlOpen] Error:', err);
+      // Fallback: cerrar browser
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+        setTimeout(() => {
+          try { window.Capacitor.Plugins.Browser.close(); } catch(e) {}
+        }, 300);
+      }
+    }
   });
 }
 
