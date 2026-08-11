@@ -10,7 +10,7 @@
 // Correr local:  SUPABASE_URL=... SUPABASE_SERVICE_KEY=... node scripts/backup-export.js
 const fs = require("fs");
 
-const SB = process.env.SUPABASE_URL || "https://ddxnrsnjdvtqhxunxbwj.supabase.co";
+const SB = process.env.SUPABASE_URL || "https://ddxnrsnjdvtqhxunxnwj.supabase.co";
 const KEY = process.env.SUPABASE_SERVICE_KEY || "";
 
 // Las tablas con la data irremplazable del negocio.

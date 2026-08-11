@@ -117,7 +117,7 @@ https://[project-id].supabase.co/auth/v1/token?grant_type=password
 ```bash
 # 1. Obtener project-id
 # En Supabase Dashboard → Settings → General
-# Ej: ddxnrsnjdvtqhxunxbnwj
+# Ej: ddxnrsnjdvtqhxunxnwj
 
 # 2. Crear test users en Supabase Auth
 # (via CLI o Dashboard UI)
@@ -134,7 +134,7 @@ https://[project-id].supabase.co/auth/v1/token?grant_type=password
 ```bash
 # Ejecutar script
 node EPIC_1_RLS_VALIDATION.js \
-  --supabase-url "https://ddxnrsnjdvtqhxunxbnwj.supabase.co" \
+  --supabase-url "https://ddxnrsnjdvtqhxunxnwj.supabase.co" \
   --anon-key "eyJhbGc..." \
   --test-users-file test-users.json
 

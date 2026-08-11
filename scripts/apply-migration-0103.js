@@ -90,7 +90,7 @@ async function main() {
     log.warn('Could not connect to Supabase');
     log.info('⚠️  Supabase REST API does not support direct SQL execution');
     console.log(`\n${colors.yellow}Please apply the migration manually:${colors.reset}\n`);
-    console.log(`1. Open: https://supabase.com/dashboard/project/ddxnrsnjdvtqhxunxbwj`);
+    console.log(`1. Open: https://supabase.com/dashboard/project/ddxnrsnjdvtqhxunxnwj`);
     console.log(`2. Go to: SQL Editor → + New Query`);
     console.log(`3. Paste this SQL:\n`);
     console.log(sql);
@@ -100,7 +100,7 @@ async function main() {
 
   console.log(`\n${colors.yellow}⚠️  Important: REST API cannot execute arbitrary SQL${colors.reset}\n`);
   console.log(`${colors.yellow}Please apply the migration manually in Supabase Dashboard:${colors.reset}\n`);
-  console.log(`1. Open: https://supabase.com/dashboard/project/ddxnrsnjdvtqhxunxbwj`);
+  console.log(`1. Open: https://supabase.com/dashboard/project/ddxnrsnjdvtqhxunxnwj`);
   console.log(`2. Go to: SQL Editor → + New Query`);
   console.log(`3. Paste this SQL:\n`);
   console.log(`───────────────────────────────────────────\n`);

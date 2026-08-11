@@ -20,7 +20,7 @@ if ! command -v supabase &> /dev/null; then
     echo "Options:"
     echo "1. Install Supabase CLI: https://supabase.com/docs/guides/cli"
     echo "2. Or apply manually via Supabase Dashboard:"
-    echo "   - Go to: https://supabase.com/dashboard/project/ddxnrsnjdvtqhxunxbwj"
+    echo "   - Go to: https://supabase.com/dashboard/project/ddxnrsnjdvtqhxunxnwj"
     echo "   - Open SQL Editor"
     echo "   - Copy-paste from: supabase/migrations/0103_citas_anon_read.sql"
     exit 1
@@ -31,7 +31,7 @@ if [ ! -f ".supabase/config.json" ]; then
     echo -e "${RED}✗ Supabase project not linked${NC}"
     echo ""
     echo "Link your project first:"
-    echo "  supabase link --project-ref ddxnrsnjdvtqhxunxbwj"
+    echo "  supabase link --project-ref ddxnrsnjdvtqhxunxnwj"
     exit 1
 fi
 
