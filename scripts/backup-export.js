@@ -4,7 +4,7 @@
 // como "artifact" privado del repo (no se publica en ningun lado).
 //
 // Necesita las variables de entorno:
-//   SUPABASE_URL          (ej. https://ddxnrsnjdvtqhxunxbwj.supabase.co)
+//   SUPABASE_URL          (ej. https://ddxnrsnjdvtqhxunxnwj.supabase.co)
 //   SUPABASE_SERVICE_KEY  (la service_role key — secreto, NUNCA en el codigo)
 //
 // Correr local:  SUPABASE_URL=... SUPABASE_SERVICE_KEY=... node scripts/backup-export.js
