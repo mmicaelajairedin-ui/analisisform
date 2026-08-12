@@ -83,7 +83,9 @@ Deno.serve(async (req: Request) => {
     const pushData = await pushResp.json();
     const hangoutLink = pushData.hangoutLink || "";
 
-    // 4) Si hay hangoutLink, guardar en citas.meet_link
+    // 4) Contrato transaccional: si hay hangoutLink, DEBE guardarse exitosamente en citas.meet_link
+    // ANTES de reportar ok:true. Si falla, retornar error explícito para que el cliente no
+    // envíe un email prometiendo un Meet inexistente.
     if (hangoutLink) {
       const ur = await fetch(`${SB_URL}/rest/v1/citas?id=eq.${citaId}`, {
         method: "PATCH",
@@ -91,12 +93,14 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({ meet_link: hangoutLink }),
       });
       if (!ur.ok) {
-        console.error(`Failed to save meet_link for cita ${citaId}`, ur.status);
-        // No es error fatal — el link se generó pero no se guardó en BD
+        console.error(`[sync-cita-to-gcal] PATCH meet_link falló. cita_id=${citaId}, status=${ur.status}. Google Meet se creó (${hangoutLink}) pero no se guardó en BD.`);
+        return json({ ok: false, reason: "meet_link_patch_failed", detail: `Supabase PATCH status ${ur.status}` }, 500);
       }
+      // PATCH exitoso. Confirmar que se escribió.
+      console.log(`[sync-cita-to-gcal] ✓ meet_link guardado. cita_id=${citaId}, link=${hangoutLink}`);
     }
 
-    return json({ ok: true, hangoutLink, event_id: pushData.event_id || "" });
+    return json({ ok: true, hangoutLink, link_saved: hangoutLink ? true : false, event_id: pushData.event_id || "" });
   } catch (e) {
     console.error("sync-cita-to-gcal error:", e);
     return json({ error: "internal_error", detail: String(e) }, 500);

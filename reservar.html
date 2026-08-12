@@ -941,22 +941,37 @@ function confirmar(){
             _sendEmail(zoomLink); // Usar Zoom link
           } else {
             // 2) Si no hay Zoom, intentar Google Meet
-            console.log('[reserva:H2] No hay Zoom, intentando Google Meet');
+            // CONTRATO TRANSACCIONAL: sync-cita-to-gcal solo devuelve ok:true si el PATCH a citas.meet_link fue exitoso.
+            // Si falla, devuelve error explícito. No reintentar automáticamente para evitar duplicar eventos en Google.
+            console.log('[reserva:H2] No hay Zoom, intentando Google Meet (contrato transaccional)');
             fetch(SB+'/functions/v1/sync-cita-to-gcal',{ method:'POST', headers:{ 'content-type':'application/json', apikey:KEY, Authorization:'Bearer '+KEY }, body:JSON.stringify({ cita_id:citaId }), timeout:15000 })
-              .then(function(r){ return r.ok?r.json():{ok:false}; })
+              .then(function(r){ return r.ok?r.json():{ok:false, error:'http_error'}; })
               .then(function(d){
-                var meetLink=(d && d.ok && d.hangoutLink)?d.hangoutLink:'';
-                console.log('[reserva:H2] Google Meet link:', meetLink || '(vacío)');
-                // 3) Si no hay Google Meet, usar Pathway Sala como fallback garantizado
-                _link=meetLink || _fallbackSalaUrl;
-                console.log('[reserva:H2] _link final enviado a sendEmails:', _link);
-                _sendEmail(_link);
+                if(d.ok && d.link_saved && d.hangoutLink){
+                  // ✓ Google Meet generado + PATCH exitoso = citas.meet_link garantizado en BD
+                  console.log('[reserva:H2] ✓ Google Meet link guardado en BD:', d.hangoutLink);
+                  _link=d.hangoutLink;
+                  _sendEmail(_link);
+                } else if(d.ok && !d.link_saved){
+                  // Google Meet no generado (coach sin permisos, modalidad presencial, etc.)
+                  // Usar fallback sin error
+                  console.log('[reserva:H2] Google Meet no disponible, usando fallback de Sala');
+                  _link=_fallbackSalaUrl;
+                  _sendEmail(_link);
+                } else {
+                  // sync-cita-to-gcal falló: PATCH no exitoso u otro error
+                  console.warn('[reserva:H2] sync-cita-to-gcal falló:', d.reason || d.error || 'unknown');
+                  _link=_fallbackSalaUrl;
+                  console.log('[reserva:H2] Usando fallback de Sala. Se avisa al cliente que el Meet aparecerá pronto.');
+                  _sendEmail(_link);
+                  try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_failed', cita_id:citaId, reason:d.reason||'unknown' }) }).catch(function(){}); }catch(e){}
+                }
               })
               .catch(function(err){
-                console.warn('Google Calendar sync falló:', err);
+                console.warn('[reserva:H2] Google Calendar sync error (network/timeout):', err);
                 _link=_fallbackSalaUrl;
-                console.log('[reserva:H2] Fallback a Sala:', _link);
-                _sendEmail(_link); // Fallback a la Sala de Pathway
+                console.log('[reserva:H2] Fallback a Sala. Se avisa al cliente que el Meet aparecerá pronto.');
+                _sendEmail(_link);
                 try{ fetch(SB+'/functions/v1/telemetria', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ kind:'gcal_sync_error', cita_id:citaId, error:String(err) }) }).catch(function(){}); }catch(e){}
               });
           }
