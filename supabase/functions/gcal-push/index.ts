@@ -144,6 +144,13 @@ Deno.serve(async (req: Request) => {
     }
     // DEBUG: log qué retornó Google
     console.log(`gcal-push: event_id=${d.id}, conferenceData=${d.conferenceData ? "YES" : "NO"}, entryPoints=${d.conferenceData?.entryPoints?.length || 0}, hangoutLink=${hangoutLink ? "YES" : "NO"}`);
+
+    // CONTRATO ESTRICTO: Si Google no devolvió conferenceData, NO reportar ok:true
+    // El evento se creó en Google, pero sin Meet link. Reportar error explícito.
+    if (!hangoutLink) {
+      console.error(`gcal-push: Evento creado en Google (${d.id}) PERO sin conferenceData. Probablemente: Gmail (no Workspace), refresh_token revocado, o permisos limitados.`);
+      return json({ ok: false, reason: "google_no_conference_data", event_id: d.id || "", detail: "Google creó evento pero no devolvió Meet link. Verifica: ¿Gmail (necesita Workspace)? ¿Refresh token válido? ¿Permisos de conferencia?" }, 422);
+    }
     return json({ ok: true, event_id: d.id || eventId, hangoutLink });
   } catch { return json({ ok: false, reason: "google_unreachable" }); }
 });
