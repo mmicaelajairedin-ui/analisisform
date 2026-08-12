@@ -130,6 +130,32 @@ Deno.serve(async (req: Request) => {
       const t = await r.text().catch(() => "");
       return json({ error: "write_failed", status: r.status, detail: t.slice(0, 200) }, 502);
     }
+
+    // Defensive: ensure assignment exists (best-effort)
+    try {
+      if (stampCoach && cand && cand.id != null && email) {
+        const assignmentCheck = await fetch(
+          `${SB_URL}/rest/v1/coach_client_assignments?org_id=eq.${encodeURIComponent((cand as any).org_id || "")}&client_id=eq.${encodeURIComponent(cand.id)}&coach_id=eq.${encodeURIComponent(stampCoach)}&select=id`,
+          { headers: svc }
+        );
+        if (assignmentCheck.ok) {
+          const asgn = await assignmentCheck.json();
+          if (!Array.isArray(asgn) || asgn.length === 0) {
+            // Create assignment if missing (best-effort, log if fails)
+            const createResp = await fetch(
+              `${SB_URL}/rest/v1/coach_client_assignments`,
+              { method: "POST", headers: { ...svc, "Content-Type": "application/json" }, body: JSON.stringify({ org_id: (cand as any).org_id, coach_id: stampCoach, client_id: cand.id, estado: "activa" }) }
+            );
+            if (!createResp.ok) console.error(`[guardar-informe] Failed to ensure assignment: ${createResp.status}`);
+          }
+        } else {
+          console.error(`[guardar-informe] Failed to check assignment: ${assignmentCheck.status}`);
+        }
+      }
+    } catch (e) {
+      console.error("[guardar-informe] Failed to ensure assignment:", e);
+    }
+
     return json({ ok: true, email, coach_id: stampCoach || null });
   } catch {
     return json({ error: "write_failed" }, 502);
