@@ -1,623 +1,579 @@
-# AGENDA V2 — ESPECIFICACIÓN TÉCNICA EXACTA
+# V2-MODEL-SPECIFICATION.md — Booking/Agenda V2: Especificación Cerrada
 
-**Status:** FASE 0 — Diseño (no implementado)  
-**Audience:** Dev team + DB admin  
-**Last Updated:** August 13, 2026
+**Fecha:** Agosto 13, 2026  
+**Estado:** ESPECIFICACIÓN FINAL DE ARQUITECTURA (sin implementar aún)  
+**Aprobación:** Pendiente de Micaela  
 
 ---
 
-## 1. SCHEMA SQL EXACTO
+## PARTE 1: DATA MODEL
 
-### 1.1 Migración: Agregar Columnas a `citas`
+### New Columns en `citas` table
 
 ```sql
--- Migration: add-provider-fields-to-citas.sql
--- Applied: NOT YET (pending Phase 1 approval)
+-- Provider decision (centralized)
+ALTER TABLE citas ADD COLUMN provider TEXT 
+  DEFAULT 'none' 
+  CHECK (provider IN ('none', 'google_meet', 'zoom', 'pathway_room'));
 
-BEGIN;
+-- URL para unirse (confirmada DESPUÉS de que sync completa exitosamente)
+ALTER TABLE citas ADD COLUMN provider_url TEXT;
 
--- New columns for V2 provider model
-ALTER TABLE citas 
-  ADD COLUMN IF NOT EXISTS provider TEXT DEFAULT 'none' CHECK (provider IN ('none', 'google_meet', 'zoom', 'pathway_room')),
-  ADD COLUMN IF NOT EXISTS provider_url TEXT,
-  ADD COLUMN IF NOT EXISTS provider_ready_at TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS provider_error TEXT,
-  ADD COLUMN IF NOT EXISTS provider_retry_count INT DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS sala_token TEXT;
+-- Timestamp cuando sync completó exitosamente
+ALTER TABLE citas ADD COLUMN provider_ready_at TIMESTAMPTZ;
 
--- Index for efficient lookups during provider selection
-CREATE INDEX IF NOT EXISTS citas_provider_idx ON citas (provider, provider_ready_at DESC);
-CREATE INDEX IF NOT EXISTS citas_provider_error_idx ON citas (provider_error, creada_at DESC) WHERE provider_error IS NOT NULL;
+-- Mensaje de error si sync falló definitivamente
+ALTER TABLE citas ADD COLUMN provider_error TEXT;
 
--- Comment for clarity
-COMMENT ON COLUMN citas.provider IS 'Video provider: none | google_meet | zoom | pathway_room';
-COMMENT ON COLUMN citas.provider_url IS 'URL to join the meeting/room. NULL while provider is being set up.';
-COMMENT ON COLUMN citas.provider_ready_at IS 'Timestamp when provider_url became available';
-COMMENT ON COLUMN citas.provider_error IS 'Error message if provider setup failed. Triggers retry.';
-COMMENT ON COLUMN citas.provider_retry_count IS 'Number of retry attempts. Resets on success.';
-COMMENT ON COLUMN citas.sala_token IS 'Secure token for Pathway Room access (JWT)';
+-- Número de reintentos intentados por sync
+ALTER TABLE citas ADD COLUMN provider_retry_count INT DEFAULT 0;
 
--- Keep legacy columns for V1 backward compatibility
--- meet_link TEXT (V1 writes here; V2 ignores)
--- google_event_id TEXT (gcal-push writes here if called; V2 ignores)
-
-COMMIT;
+-- JWT token para Sala Pathway (SOLO si provider='pathway_room')
+ALTER TABLE citas ADD COLUMN sala_token TEXT;
 ```
 
-**Rationale:**
-- All new columns nullable → V1 continues (SELECT * ignores new fields)
-- CHECK constraint on provider → data integrity
-- Indexes on (provider, ready_at) → fast lookups during booking display
-- Comments → clarity for future maintenance
+### New Indexes
 
-### 1.2 Existing Tables (No Changes)
-
-| Table | Columns Used | Notes |
-|-------|--------------|-------|
-| usuarios | configuracion (JSON) | OAuth tokens stay here (gcal, zoom) |
-| gcal_tokens | coach_id, token (JSON) | V1/V2 both read; no changes |
-| sesiones_registro | (existing) | V2 can optionally track Sala sessions |
-| candidatos | (existing) | V1/V2 both use; no changes |
-
----
-
-## 2. PROVIDER STATE MACHINE — TRANSICIONES EXACTAS
-
-### 2.1 Estados Válidos
-
-```
-CREATED → PROVIDER_PENDING → [PROVIDER_READY | PROVIDER_ERROR] → COMPLETED/FAILED
-```
-
-| Estado | provider | provider_url | provider_error | provider_ready_at | Valid Next States |
-|--------|----------|--------------|----------------|-------------------|-------------------|
-| CREATED | 'none' | NULL | NULL | NULL | PROVIDER_PENDING |
-| PROVIDER_PENDING | 'google_meet'\|'zoom'\|'pathway_room' | NULL | NULL | NULL | PROVIDER_READY, PROVIDER_ERROR |
-| PROVIDER_READY | ✓ set | ✓ set | NULL | ✓ set | MEETING_LIVE, COMPLETED |
-| PROVIDER_ERROR | ✓ set | NULL | ✓ set | NULL | PROVIDER_PENDING (retry) |
-| MEETING_LIVE | ✓ set | ✓ set | NULL | ✓ set | COMPLETED, INCOMPLETE |
-| COMPLETED | ✓ set | ✓ set | NULL | ✓ set | (terminal) |
-
-### 2.2 Transiciones Detalladas
-
-#### Transición: CREATED → PROVIDER_PENDING
-
-**Trigger:** INSERT cita + estado='confirmada' completa
-
-**Responsable:** reservar-v2.html (frontend)
-
-**Acción:**
 ```sql
-INSERT INTO citas (coach_id, nombre, email, tipo, inicio, estado, provider, creada_at)
-VALUES ($1, $2, $3, $4, $5, 'confirmada', 'none', NOW());
-RETURNING id;
+-- Encontrar citas esperando sync
+CREATE INDEX idx_citas_provider_pending 
+  ON citas (provider_ready_at DESC, provider_error) 
+  WHERE provider_ready_at IS NULL 
+    AND provider_error IS NULL 
+    AND estado = 'confirmada';
+
+-- Encontrar citas con errores de sync
+CREATE INDEX idx_citas_provider_error 
+  ON citas (creada_at DESC, provider_error) 
+  WHERE provider_error IS NOT NULL;
 ```
 
-**Next Step:** Backend async job picks up cita_id and calls `select-provider`
+### New Constraints
 
----
-
-#### Transición: PROVIDER_PENDING → PROVIDER_READY
-
-**Trigger:** Provider API call succeeds (Google Meet, Zoom, or Sala token generated)
-
-**Responsable:** Edge function `sync-provider-v2` (backend)
-
-**Acción:**
-```typescript
-// After successful provider call
-const result = await callProvider(provider, cita);
-// result = { ok: true, provider_url, event_id, ... }
-
-await supabase
-  .from('citas')
-  .update({
-    provider_url: result.provider_url,
-    provider_ready_at: new Date(),
-    provider_error: null,
-    provider_retry_count: 0,  // Reset on success
-  })
-  .eq('id', citaId);
-
-// Trigger: Send email (reads provider_url from DB)
-await fetch(SB + '/functions/v1/send-email-v2', {
-  method: 'POST',
-  body: JSON.stringify({ cita_id: citaId, recipient: 'client' }),
-});
-```
-
-**Guardrail:** Email service **must** read cita.provider_url from DB, never trust frontend
-
----
-
-#### Transición: PROVIDER_PENDING → PROVIDER_ERROR
-
-**Trigger:** Provider API call fails with non-retriable error
-
-**Responsable:** Edge function `sync-provider-v2` (backend)
-
-**Acción:**
-```typescript
-// After provider failure
-const error = await callProvider(provider, cita);
-// error.ok = false, error.retriable = false (e.g., Gmail account, token revoked)
-
-await supabase
-  .from('citas')
-  .update({
-    provider_error: error.message,  // "gmail_not_supported" | "token_revoked"
-    provider_retry_count: retryCount,
-    provider_url: null,
-  })
-  .eq('id', citaId);
-
-// Send notification to coach
-await fetch(SB + '/functions/v1/notify-coach-provider-failed', {
-  method: 'POST',
-  body: JSON.stringify({ cita_id: citaId, error: error.message }),
-});
-```
-
-**Email to Coach:** "Google Meet no disponible para tu cuenta. Usa Sala Pathway en su lugar."
-
----
-
-#### Transición: PROVIDER_PENDING → PROVIDER_ERROR (Retriable)
-
-**Trigger:** Provider API call fails with retriable error (timeout, rate limit)
-
-**Responsable:** Edge function `sync-provider-v2` (backend)
-
-**Acción:**
-```typescript
-// After retriable failure (network timeout, rate limit)
-const error = await callProvider(provider, cita);
-// error.ok = false, error.retriable = true, error.retry_after_seconds = 60
-
-await supabase
-  .from('citas')
-  .update({
-    provider_error: error.message,
-    provider_retry_count: retryCount + 1,
-    provider_url: null,
-  })
-  .eq('id', citaId);
-
-// Schedule retry
-const backoffMs = [2000, 4000, 8000, 16000, 60000][retryCount] || 300000;
-await scheduleRetry(citaId, backoffMs);
-```
-
-**Max Retries:** 5 (total ~5 min of retry window)
-
----
-
-#### Transición: PROVIDER_ERROR → PROVIDER_PENDING (Retry)
-
-**Trigger:** Scheduled retry fires OR coach clicks "Reintentar" button
-
-**Responsable:** Background job OR coach action (panel-v2)
-
-**Acción:**
-```typescript
-// Retry: attempt same provider again
-const citaId = 123;
-const cita = await loadCita(citaId);
-
-// Reset to PROVIDER_PENDING state
-await supabase
-  .from('citas')
-  .update({
-    provider_error: null,
-    // provider stays same (don't switch providers on retry)
-  })
-  .eq('id', citaId);
-
-// Call provider again
-const result = await callProvider(cita.provider, cita);
-// ...
-```
-
-**Decision Point:** Should retry attempt SAME provider or try NEXT provider in cascade?
-- **Recommended:** Same provider (config issue needs human intervention, not auto-switch)
-- **Exception:** If error is "gmail_not_supported" → auto-switch to Pathway Room
-
----
-
-#### Transición: PROVIDER_READY → MEETING_LIVE
-
-**Trigger:** Coach OR client enters the room (clicks provider_url)
-
-**Responsable:** Client (no backend action, just tracking)
-
-**Optional Tracking:**
 ```sql
-INSERT INTO sesiones_registro (cita_id, coach_id, client_entered_at)
-VALUES ($1, $2, NOW())
-ON CONFLICT (cita_id) DO UPDATE SET client_entered_at = NOW();
+-- URL puede existir SOLO si provider es real (no 'none')
+ALTER TABLE citas
+ADD CONSTRAINT check_provider_url_requires_provider 
+CHECK (
+  provider_url IS NULL 
+  OR provider IN ('google_meet', 'zoom', 'pathway_room')
+);
+
+-- sala_token SOLO para Pathway rooms
+ALTER TABLE citas
+ADD CONSTRAINT check_sala_token_only_pathway 
+CHECK (
+  sala_token IS NULL 
+  OR provider = 'pathway_room'
+);
+```
+
+### Data Model Benefits
+
+| Beneficio | Cómo logrado |
+|-----------|--------------|
+| Single source of truth | Un campo `provider` para todos |
+| Trackable errors | `provider_error` + `provider_retry_count` |
+| Queryable history | Index por `provider_ready_at` |
+| Audit trail | `provider_ready_at` timestamp proof |
+| No data loss | Todos nullable, defaults seguros |
+
+---
+
+## PARTE 2: STATE MACHINE
+
+### Estados de una Cita (para provider sync)
+
+```
+INITIAL STATE:
+  provider = 'none'
+  provider_url = NULL
+  provider_error = NULL
+  provider_retry_count = 0
+  provider_ready_at = NULL
+
+↓
+
+AFTER RESERVATION SAVED:
+  [Call select-provider edge function]
+
+↓
+
+SELECT_PROVIDER DECIDES:
+  IF coach.email matches @gmail.com → try Sala first
+  IF coach has Zoom account → try Zoom first
+  IF coach has Workspace email → try Google Meet first
+  ELSE → default Sala
+
+  OUTPUT: { provider_type: 'zoom'|'google_meet'|'pathway_room' }
+
+↓
+
+SYNC_PROVIDER_V2 ATTEMPTS:
+  [Call sync-provider-v2 edge function with provider_type]
+  
+  Retries: [2s, 4s, 8s, 16s, 60s] (max 5)
+  Only retry on: network timeout, rate limit, transient error
+  
+  If provider == 'zoom':
+    → Call Zoom API
+    → If fail (retryable): wait + retry
+    → If fail (non-retryable): set provider_error, EXIT
+    → If success: extract zoom_event_id
+  
+  If provider == 'google_meet':
+    → Call Google Calendar API
+    → If success: extract google_event_id + hangoutLink
+    → If fail: set provider_error, EXIT (no retry)
+  
+  If provider == 'pathway_room':
+    → Generate sala_token (JWT 1h TTL)
+    → Build sala_url = sala.html?token=XXX&cita_id=YYY
+    → NO external dependency, always succeeds
+
+↓
+
+IF SYNC SUCCESS:
+  UPDATE citas SET
+    provider = <type>,
+    provider_url = <url>,
+    provider_ready_at = NOW(),
+    sala_token = <token if Sala>,
+    provider_error = NULL,
+    provider_retry_count = <final count>
+
+↓
+
+IF SYNC FAILURE:
+  UPDATE citas SET
+    provider = <attempted type>,
+    provider_url = NULL,
+    provider_error = <error message>,
+    provider_retry_count = <final count>,
+    provider_ready_at = NULL
+
+↓
+
+FINAL STATE: READY FOR EMAIL
+  [Call send-email-v2 edge function]
+  
+  Email function reads from citas table:
+  - IF provider_url IS NOT NULL AND provider_ready_at IS NOT NULL:
+      → Send email with ACTUAL provider name + URL
+  - ELSE IF provider_error IS NOT NULL:
+      → Send "sync failed" email with fallback instructions
+  - ELSE:
+      → Delay 30s, retry email later (sync still in progress)
 ```
 
 ---
 
-### 2.3 Timeout & Cleanup
+## PARTE 3: PROVIDER ABSTRACTION
 
-| Event | Timeout | Action |
-|-------|---------|--------|
-| Provider pending | 5 minutes | If still PROVIDER_PENDING, mark error "timeout_provider_setup" |
-| Retry backoff | Incremental (2s, 4s, 8s, 16s, 1m) | Max 5 retries → give up |
-| Room idle (Sala) | 30+ minutes | Auto-disconnect (JaaS default) |
-| Session record | 24 hours | Archive if no activity |
+### Zoom Provider
 
----
+```
+select-provider decides:
+  IF coach.zoom_account exists AND is_active
+    → Zoom is option 1
 
-## 3. RESPONSABILIDADES POR COMPONENTE
+sync-provider-v2:
+  zoom_link = fetch from Zoom API
+  provider_url = zoom_link
+  provider = 'zoom'
+  provider_event_id = zoom_meeting_id
+  
+No Zoom-specific data in sala.html or email templates.
+```
 
-### 3.1 Frontend (reservar-v2.html)
+### Google Meet Provider
 
-**Responsibilities:**
-1. ✅ Collect booking details (nombre, email, inicio, etc.)
-2. ✅ Check double-booking (anti-collision)
-3. ✅ INSERT cita with estado='confirmada', provider='none'
-4. ❌ DO NOT decide provider
-5. ❌ DO NOT call provider APIs
-6. ❌ DO NOT send email directly
-7. ✅ Display confirmation: "Sesión confirmada. El link se generará en breve."
+```
+select-provider decides:
+  IF coach.email ends with @workspace.com OR @company.com
+    → Google Meet is option N
+  ELSE IF coach.email ends with @gmail.com
+    → SKIP Google Meet (documented API limitation)
 
-**Changes from V1:**
-- Remove 3-way branching (Zoom/Google/Sala logic)
-- Don't call sync-cita-to-gcal directly
-- Don't call send-email directly
-- Trust backend to handle provider async
+sync-provider-v2:
+  IF coach has valid refresh_token:
+    → Call Google Calendar API via gcal-push
+    → Extract hangoutLink from conferenceData.entryPoints
+  IF NO entryPoints OR timeout:
+    → provider_error = "Google Calendar: Gmail (necesita Workspace) o token revocado"
+    → Exit, no retry
+  
+  provider_url = hangoutLink
+  provider = 'google_meet'
+  provider_event_id = google_event_id
+```
 
-**New Flow:**
-```javascript
-// V2 flow (simpler)
-fetch(SB + '/rest/v1/citas', {
-  method: 'POST',
-  body: JSON.stringify({
-    coach_id, nombre, email, tipo, inicio, estado: 'confirmada',
-  }),
-})
-  .then(r => r.json())
-  .then(cita => {
-    // SUCCESS: show confirmation screen
-    // Backend will handle provider async (no polling needed)
-    showConfirmation('Sesión confirmada. El link aparecerá pronto.');
-  });
+### Sala Pathway Provider
+
+```
+select-provider decides:
+  Sala is ALWAYS available (no dependencies, always succeeds)
+  Default if others fail
+
+sync-provider-v2:
+  Generate sala_token = JWT(cita_id, coach_id, exp=now+1h)
+  Build sala_url = https://pathwaycareercoach.com/sala.html?token=<JWT>&cita_id=<id>
+  
+  provider_url = sala_url
+  provider = 'pathway_room'
+  sala_token = JWT
+  No provider_error (ALWAYS succeeds)
+
+Integration:
+  sala.html validates token against citas.token in Supabase
+  Existing token validation logic unchanged (it works)
 ```
 
 ---
 
-### 3.2 Backend: select-provider (New Edge Function)
+## PARTE 4: RETRIES & TIMEOUTS
 
-**Purpose:** Decide which provider to use for this booking
+### Retry Strategy
 
-**Trigger:** Async background job or webhook after INSERT cita
+```
+Provider       Max Retries  Backoff Pattern      Only Retry On
+────────────────────────────────────────────────────────────
+Zoom           5            [2s, 4s, 8s, 16s, 60s]  network, rate limit
+Google Meet    0            (no retry)          N/A (non-retriable)
+Sala Pathway   0            (no retry)          N/A (never fails)
+```
+
+**Why no retry for Google Meet?**
+- If conferenceData is NULL → it's a permissions issue (Gmail limitation)
+- Retrying won't fix it
+- Better to fail fast + fallback to Sala
+
+**Why no retry for Sala?**
+- Token generation + URL building: no external dependencies
+- If it fails, bigger problem (JWT generation broken)
+
+---
+
+## PARTE 5: CONTRACTS (Synchronous)
+
+### select-provider → sync-provider-v2
 
 **Input:**
-```typescript
-{ cita_id: number }
 ```
-
-**Logic:**
-```typescript
-async function selectProvider(citaId: number) {
-  const cita = await loadCita(citaId);
-  const coach = await loadCoach(cita.coach_id);
-
-  // Decision tree
-  if (coach.configuracion.zoom_url) {
-    return 'zoom';
-  } else if (coach.gcal_tokens?.refresh_token) {
-    // Will try Google Meet; if Gmail, fallback to Pathway
-    return 'google_meet';
-  } else {
-    return 'pathway_room';
-  }
+{
+  cita_id: bigint,
+  coach_id: uuid,
+  coach_email: string,
+  coach_zoom_account?: string,
+  coach_google_token?: boolean,
+  provider_preference?: 'zoom_first' | 'meet_first' | 'sala_first'
 }
 ```
 
 **Output:**
-```typescript
-{ provider: 'zoom' | 'google_meet' | 'pathway_room' }
+```
+{
+  ok: true,
+  provider: 'zoom' | 'google_meet' | 'pathway_room',
+  reason?: string (for logging)
+}
 ```
 
-**Next Step:** Calls `sync-provider-v2` with selected provider
+### sync-provider-v2 → Supabase (citas update)
+
+**Precondition:** `cita_id` exists in citas table
+
+**On Success:**
+```
+UPDATE citas SET
+  provider = 'zoom' | 'google_meet' | 'pathway_room',
+  provider_url = <URL>,
+  provider_ready_at = NOW(),
+  sala_token = <token if Sala>,
+  provider_error = NULL,
+  provider_retry_count = <count>
+WHERE id = cita_id
+```
+
+**On Failure:**
+```
+UPDATE citas SET
+  provider_error = '<specific error message>',
+  provider_retry_count = <count>,
+  provider_ready_at = NULL
+WHERE id = cita_id
+```
+
+**Invariants:**
+- If `provider_url` is NOT NULL → `provider` must be non-'none'
+- If `sala_token` is NOT NULL → `provider` must be 'pathway_room'
+- If `provider_error` is NOT NULL → `provider_ready_at` must be NULL
+- If `provider_ready_at` is NOT NULL → `provider_url` must be NOT NULL
 
 ---
 
-### 3.3 Backend: sync-provider-v2 (New Edge Function)
+## PARTE 6: EMAIL FLOW
 
-**Purpose:** Actually create the provider room/event
+### Old (V1) Email Flow
 
-**Responsible for:**
-1. ✅ Load provider credentials (OAuth token, API key)
-2. ✅ Call provider API (Google Calendar, Zoom, Sala token gen)
-3. ✅ Handle errors (retriable vs non-retriable)
-4. ✅ PATCH citas with provider_url + provider_ready_at
-5. ✅ Trigger email send
-6. ✅ Schedule retry on failure
-
-**Input:**
-```typescript
-{ cita_id: number, provider: string }
+```
+reservar.html decides link → postEmail(joinLink) → Brevo API
+  ↑
+  No guarantee link is in BD yet
+  Race condition risk
 ```
 
-**Output to Database:**
-```typescript
-// On success:
-{ provider_url: "https://...", provider_ready_at: NOW(), provider_error: null }
+### New (V2) Email Flow
 
-// On retriable error:
-{ provider_error: "network_timeout", provider_retry_count: 1 }
-
-// On non-retriable error:
-{ provider_error: "gmail_not_supported", provider_retry_count: 0 }
 ```
-
----
-
-### 3.4 Backend: send-email-v2 (Modified Edge Function)
-
-**Current Behavior (V1):** Email HTML hardcoded by caller
-
-**New Behavior (V2):** Email service builds HTML from DB
-
-**Responsible for:**
-1. ✅ Load cita + coach from DB
-2. ✅ Wait if provider_url still NULL (retry 5x with 30s delay)
-3. ✅ Build HTML with provider label + link
-4. ✅ Send via Brevo
-5. ❌ DO NOT accept HTML from caller
-
-**Input:**
-```typescript
-{ cita_id: number, recipient: 'client' | 'coach' }
-```
-
-**Logic:**
-```typescript
-async function sendEmailV2(citaId: number, recipient: string) {
-  const cita = await loadCita(citaId);
+After sync-provider-v2 completes (success OR failure):
+  [Call send-email-v2 edge function]
   
-  // If provider not ready yet, retry later (max 5 times)
-  if (!cita.provider_url && cita.estado === 'confirmada') {
-    if (retryCount < 5) {
-      // Return 202; caller will retry after 30s
-      return json({ retry_at: Date.now() + 30000 }, 202);
-    } else {
-      // Give up; send email without link
-      return sendWithoutLink(cita, recipient);
-    }
-  }
+  send-email-v2 reads from citas table:
   
-  // Build HTML
-  const html = buildTemplate('booking-confirmation', {
-    provider: cita.provider,
-    provider_url: cita.provider_url,
-    // ...
-  });
+  SELECT provider, provider_url, provider_error, provider_ready_at
+  FROM citas WHERE id = cita_id
   
-  return sendViaBrENV(html, cita[recipient === 'client' ? 'email' : 'usuarios.email']);
-}
-```
-
----
-
-### 3.5 Coach Panel (panel-v2.html)
-
-**Responsibilities:**
-1. ✅ Read citas from DB
-2. ✅ Display provider + provider_url
-3. ✅ Show state (PENDING, READY, ERROR)
-4. ✅ Provide "Reintentar" button if error
-5. ✅ Display "Entrando..." if provider_url set
-
-**Changes from V1:**
-```javascript
-// V1 (old)
-if (cita.meet_link) {
-  display(`<a href="${cita.meet_link}">Google Meet</a>`);
-}
-
-// V2 (new)
-if (cita.provider_url) {
-  const label = { google_meet: 'Google Meet', zoom: 'Zoom', pathway_room: 'Sala' }[cita.provider];
-  display(`<a href="${cita.provider_url}">${label}</a>`);
-} else if (cita.provider_error) {
-  display(`<span class="error">Error: ${cita.provider_error}</span>`);
-  display(`<button onclick="retryProvider(${cita.id})">Reintentar</button>`);
-} else if (cita.provider !== 'none') {
-  display(`<span class="pending">Preparando...</span>`);
-}
-```
-
----
-
-### 3.6 Client Portal (cliente.html)
-
-**Responsibilities:**
-1. ✅ Display provider_url if available
-2. ✅ Show state (PENDING, READY, ERROR)
-3. ✅ Direct link to join
-
-**Changes from V1:**
-```javascript
-// V2
-if (cita.provider_url) {
-  display(`<a class="btn-primary" href="${cita.provider_url}">📹 Entrar a ${cita.provider}</a>`);
-} else if (cita.provider !== 'none') {
-  display(`<p>Videollamada en preparación. Te avisaremos cuando esté lista.</p>`);
-}
-```
-
----
-
-## 4. COMPATIBILIDAD CON V1
-
-### 4.1 Queries V1 Siguen Funcionando
-
-**V1 doesn't know about new columns:**
-```sql
--- V1 query (unchanged)
-SELECT id, nombre, email, meet_link, google_event_id
-FROM citas WHERE coach_id = $1;
-
--- Still works: new columns are ignored
--- meet_link stays NULL (V2 uses provider_url)
--- google_event_id stays NULL (V2 uses provider model)
-```
-
-**V1 INSERT (unchanged):**
-```sql
-INSERT INTO citas (coach_id, nombre, email, tipo, inicio, estado)
-VALUES ($1, $2, $3, $4, $5, 'confirmada');
-
--- Works: new columns get defaults (provider='none', provider_url=NULL, etc.)
-```
-
-### 4.2 Dual-Write Period (Phase 1)
-
-During transition, BOTH systems active:
-
-| Operation | V1 | V2 | Outcome |
-|-----------|----|----|---------|
-| View booking (coach) | Reads meet_link | Reads provider_url | V2 wins (provider_url canonical) |
-| Send email | Hardcoded HTML | Reads from DB | V2 only |
-| Create Google event | Writes meet_link | Ignores meet_link | V2 uses provider_url |
-
-### 4.3 Cutover Procedure
-
-**Phase 1 (Day 1-7):**
-- V2 code deployed, but V1 still primary
-- New bookings can use V2 (optional)
-- V1 bookings unaffected
-
-**Phase 2 (Day 8-14):**
-- 50% of new bookings → V2
-- 50% of new bookings → V1 (control group)
-- Monitor error rates
-
-**Phase 3 (Day 15+):**
-- 100% of new bookings → V2
-- V1 kept as fallback (no deletion)
-
-**Phase 4 (Day 30+):**
-- Sunset V1 (v1 code removed, v1 queries deprecated)
-- Legacy citas (with meet_link) still readable
-
----
-
-## 5. ERROR HANDLING & RETRY STRATEGY
-
-### 5.1 Error Categories
-
-| Error Type | Retriable | Action | Retry After |
-|-----------|-----------|--------|------------|
-| Network timeout | YES | Exponential backoff | 2s, 4s, 8s, 16s, 1m |
-| Gmail account | NO | Auto-switch to Pathway | (none) |
-| Token revoked | NO | Notify coach | (none) |
-| Zoom quota | YES | Exponential backoff | 60s, 120s, 300s |
-| Rate limit (Google) | YES | Exponential backoff | 60s + wait header |
-| Server error (500) | YES | Exponential backoff | 5s, 10s, 20s |
-
-### 5.2 Retry Logic in Code
-
-```typescript
-async function syncProviderWithRetry(citaId, provider, retryCount = 0) {
-  const MAX_RETRIES = 5;
-  const BACKOFF = [2000, 4000, 8000, 16000, 60000];
+  IF provider_url IS NOT NULL AND provider_ready_at IS NOT NULL:
+    → Build email with ACTUAL provider name:
+        "Tu coach usa Google Meet: <URL>"
+        "Tu coach usa Zoom: <URL>"
+        "Tu coach usa Video Sala Pathway: <URL>"
   
-  try {
-    const result = await callProvider(provider, cita);
-    
-    if (result.ok) {
-      // SUCCESS
-      await saveToDB(citaId, { provider_url: result.url, provider_error: null });
-      return { ok: true };
-    }
-    
-    if (result.retriable && retryCount < MAX_RETRIES) {
-      // RETRIABLE: schedule retry
-      const delay = BACKOFF[retryCount];
-      await scheduleRetry(citaId, delay);
-      await saveToDB(citaId, {
-        provider_error: result.message,
-        provider_retry_count: retryCount + 1,
-      });
-      return { ok: false, scheduled_retry: true };
-    }
-    
-    // NON-RETRIABLE
-    await saveToDB(citaId, {
-      provider_error: result.message,
-      provider_retry_count: retryCount,
-    });
-    return { ok: false, scheduled_retry: false };
-  } catch (e) {
-    if (retryCount < MAX_RETRIES) {
-      const delay = BACKOFF[retryCount];
-      await scheduleRetry(citaId, delay);
-      return { ok: false, scheduled_retry: true };
-    }
-    return { ok: false, scheduled_retry: false };
-  }
-}
+  ELSE IF provider_error IS NOT NULL:
+    → Build error email:
+        "Hubo un error preparando tu sesión: <error_message>"
+        "Contacta al coach si hay problemas"
+  
+  ELSE:
+    → provider_url is still NULL and no error
+    → Delay 30s, retry email (sync still in progress)
+  
+  Send via Brevo API (existing send-email function, same as before)
 ```
+
+**Key difference:** Email content is built from DB, not frontend.
 
 ---
 
-## 6. FINAL SCHEMA SUMMARY
+## PARTE 7: ROOM ISOLATION (MultiCoach)
 
-### New Columns
+### Current Implementation
+
+**RLS policies** already filter by `coach_id`:
 ```sql
-provider TEXT DEFAULT 'none' CHECK (provider IN ('none', 'google_meet', 'zoom', 'pathway_room'))
-provider_url TEXT
-provider_ready_at TIMESTAMPTZ
-provider_error TEXT
-provider_retry_count INT DEFAULT 0
-sala_token TEXT
+SELECT ... FROM citas WHERE coach_id = auth.uid()
 ```
 
-### Indexes
-```sql
-CREATE INDEX citas_provider_idx ON citas (provider, provider_ready_at DESC);
-CREATE INDEX citas_provider_error_idx ON citas (provider_error, creada_at DESC) WHERE provider_error IS NOT NULL;
-```
+### V2 Behavior (no changes needed)
 
-### Data Flow
-```
-reservar-v2.html (INSERT)
-  ↓
-select-provider (async)
-  ↓
-sync-provider-v2 (async)
-  ├─ On success: PATCH provider_url + provider_ready_at
-  ├─ On retriable error: PATCH provider_error + schedule retry
-  └─ On non-retriable error: PATCH provider_error + notify coach
-  ↓
-send-email-v2 (reads provider_url)
-  ├─ If not ready: retry 5x with 30s delay
-  └─ If ready: send with provider link
-  ↓
-panel-v2 (reads citas, displays provider-aware UI)
-cliente.html (reads citas, displays link)
-```
+When MultiCoach coach books a cita:
+- `cita.coach_id = multicoach_coach_id`
+- `select-provider` reads coach-specific Zoom/Google tokens
+- `sync-provider-v2` uses those coach-specific credentials
+- Email sent to `candidate_email` (not coach email)
+- RLS filters ensure coach can only see/edit their own citas
+
+**Result:** Complete room isolation by coach_id (existing, not new).
 
 ---
 
-## ✅ CHECKLIST: SCHEMA READY FOR IMPLEMENTATION?
+## PARTE 8: ROLLBACK STRATEGY
 
-- [x] SQL migration written (idempotent, reversible)
-- [x] New columns nullable (V1 compatible)
-- [x] Indexes for performance (provider lookup, error queries)
-- [x] CHECK constraint for data integrity
-- [x] Comments for clarity
-- [x] State machine transitions documented (exact)
-- [x] Component responsibilities defined
-- [x] Retry logic specified (max retries, backoff)
-- [x] Error categories & handling defined
-- [x] Backward compatibility verified (V1 still works)
-- [x] No RLS changes needed (uses existing coach_id filtering)
+### No Data Loss Rollback
 
-**Status:** ✅ **READY FOR IMPLEMENTATION** (pending user approval)
+**Option 1: Feature Flag** (recommended)
+```
+Environment variable: ENABLE_V2_PROVIDER=true/false
+
+If V2 fails:
+  1. Set ENABLE_V2_PROVIDER=false
+  2. V1 booking flow resumes
+  3. 6 new columns still exist (nullable, no harm)
+  4. Can roll forward without data loss
+```
+
+**Option 2: Full Revert** (if needed)
+```
+1. Drop new constraints (safe)
+   ALTER TABLE citas DROP CONSTRAINT check_provider_url_requires_provider;
+   ALTER TABLE citas DROP CONSTRAINT check_sala_token_only_pathway;
+
+2. Drop new indexes (safe)
+   DROP INDEX idx_citas_provider_pending;
+   DROP INDEX idx_citas_provider_error;
+
+3. Optionally drop columns (data loss, only if certain)
+   ALTER TABLE citas DROP COLUMN provider CASCADE;
+   ... etc
+
+4. Deploy V1 edge functions + frontend
+
+But SAFER: just set feature flag off, columns stay as dead columns.
+```
+
+### Testing Rollback
+
+**Before V2 deployment:**
+1. Deploy V2 SQL + edge functions to staging
+2. Enable V2 feature flag for 10% of bookings
+3. Monitor for 48h
+4. If issues: disable feature flag (V1 resumes automatically)
+5. Investigate issue offline
+6. Re-enable when fixed
+
+---
+
+## PARTE 9: CURRENT SALA PATHWAY STATE
+
+### ✅ What Works
+
+| Capability | Status | Evidence |
+|------------|--------|----------|
+| Token validation | ✅ Works | Lines 390-410: validates token vs citas.token |
+| Access control | ✅ Works | Lines 355-388: MOD status checked correctly |
+| P2P video | ✅ Works | WebRTC implementation solid, TURN fallback |
+| JaaS fallback | ✅ Works | 8x8 integration working, switches if P2P blocked |
+| UI/UX | ✅ Works | Responsive, mobile-optimized, clean |
+| Chat | ✅ Works | Casual messaging integrated |
+| Session feedback | ✅ Works | Emoji rating + notes at end |
+| Coach tasks | ✅ Works | Objectives, notes, task tracking |
+
+### ❌ What Doesn't Work / Needs Improvement
+
+| Gap | Severity | Fix |
+|-----|----------|-----|
+| No session join tracking | MEDIUM | V2: store join/leave in sesiones_registro |
+| No timeout management | MEDIUM | V2: auto-disconnect after 2h idle |
+| No recording | LOW | Future: depends on 8x8 plan |
+| No session data persistence | MEDIUM | V2: sync notas/tareas to DB |
+| Single point of failure (8x8) | LOW | Future: secondary provider fallback |
+
+### Integration Path for V2
+
+**Sala continues unchanged:**
+- Same token validation
+- Same P2P + JaaS engine selection
+- Same UI/UX
+
+**V2 additions:**
+1. `select-provider` decides `provider='pathway_room'`
+2. `sync-provider-v2` generates `sala_token`
+3. Email shows "Video Sala Pathway: <URL>"
+4. Panel shows `provider='pathway_room'` icon
+5. Client sees "🎥 Sala" in session list
+
+**No breaking changes to sala.html or its flow.**
+
+---
+
+## PARTE 10: IMPLEMENTATION ORDER (FASE 1)
+
+### Fase 1A: Architecture Freeze
+- ✅ Diagnóstico entregado
+- ⏳ Micaela approval: "OK, procedemos con V2"
+
+### Fase 1B: SQL Foundation (Week 2)
+1. Add 6 new columns (all nullable, defaults safe)
+2. Create 2 new indexes
+3. Add 2 new constraints
+4. Run audit queries to baseline state
+5. **Zero data modifications, zero downtime**
+
+**Deploy to:** Staging first, 48h observation, then Production (with authorization)
+
+### Fase 1C: Edge Functions (Week 3)
+1. `select-provider` — new edge function
+2. `sync-provider-v2` — new edge function
+3. `send-email-v2` — new edge function (calls existing send-email)
+4. Unit tests for each function
+
+**Deploy to:** Staging, test locally, then production
+
+### Fase 1D: Frontend Updates (Week 4)
+1. `reservar.html` — remove email sending, add sync spinner
+2. `panel-v2.html` — add provider column, error badges
+3. `cliente.html` — show provider with emoji, link from DB
+4. Error handling for sync failures
+
+**No breaking changes to V1 (parallel deployment possible).**
+
+### Fase 1E: Testing & QA (Week 5)
+1. Manual testing checklist (Zoom, Meet, Sala, retries)
+2. Automated edge function tests
+3. RLS policy verification
+4. MultiCoach isolation testing
+
+### Fase 1F: Gradual Rollout (Week 6)
+1. **10% of bookings** use V2 (48h)
+2. **50% of bookings** use V2 (48h)
+3. **100% of bookings** use V2 (full migration)
+
+**If issue detected:** disable feature flag (V1 resumes).
+
+---
+
+## SUMMARY: Qué Queda Demostrado
+
+✅ **COMPROBADO:**
+- V1 Gmail limitation: 0% de Meet links para @gmail.com (limitación Google, no bug)
+- V1 Email template mismatch: dice "Meet" pero entrega "Sala"
+- V1 Race condition: email antes de confirmación en BD
+- Sala Pathway: ✅ secure token validation + P2P + JaaS ✅ works
+- Multi-coach isolation: ✅ RLS policies en lugar
+
+---
+
+## Qué Queda Pendiente de Prueba
+
+⏳ **PENDING:**
+- V2 edge functions (no desplegadas aún)
+- V2 retry logic (sin probar en Zoom)
+- V2 error recovery (sin casos reales)
+- V2 gradual rollout (10%→50%→100% no hecho)
+- Session tracking integration (notas/tareas a BD)
+- Timeout management (auto-disconnect 2h)
+
+---
+
+## Qué Cambiaremos en FASE 1
+
+**Cambios concretos:**
+
+1. **SQL** (0 data loss)
+   - 6 nuevas columnas
+   - 2 nuevos índices
+   - 2 nuevas constraints
+
+2. **Edge Functions** (3 nuevas)
+   - select-provider
+   - sync-provider-v2
+   - send-email-v2 (wrapper de send-email)
+
+3. **Frontend**
+   - reservar.html: remove email sending, add sync spinner
+   - panel-v2.html: add provider column + error badges + retry button
+   - cliente.html: show provider emoji, link from DB
+
+4. **RLS** (NO CHANGES)
+   - Existing RLS policies sufficient
+   - coach_id filtering already in place
+
+---
+
+## ORDEN EXACTO DE IMPLEMENTACIÓN
+
+**NO COMIENCE HASTA QUE MICAELA APRUEBE ESTA ESPECIFICACIÓN.**
+
+1. **Week 2 (SQL):** Migrations applied to staging → 48h observation → production
+2. **Week 3 (Functions):** Deploy edge functions → test locally → staging → production
+3. **Week 4 (Frontend):** Update HTML/JS → smoke tests → staging → production
+4. **Week 5 (QA):** Manual + automated testing
+5. **Week 6 (Rollout):** 10% → 50% → 100% (killswitch: feature flag)
+
+**Killswitch:** If any week fails: disable feature flag, V1 resumes, investigate offline.
+
+---
+
+**ESTADO:** Especificación CERRADA. Listo para ejecución en FASE 1.
+
