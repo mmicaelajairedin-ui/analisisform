@@ -1,15 +1,16 @@
 // ===================================================================
-// editar-coach-red — el DUEÑO de una red cambia el TIPO de un miembro de su
-// red: 'coach' (da clases) ↔ 'colaborador' (no da clases, gestiona clientes y
-// ve la agenda). Service role tras verificar owner + que el miembro es de su org.
+// editar-coach-red — el DUEÑO de una red edita un miembro (coach/colaborador):
+// - member_role: 'coach' (da clases) ↔ 'colaborador' (sin clases)
+// - nombre, email, especialidad (campos usuarios)
+// - servicios, permisos (campos configuracion)
 //
-// La distinción vive en usuarios.configuracion.member_role (los dos son
-// rol='coach' a nivel usuarios). PostgREST no hace merge de un JSONB, así que
-// leemos la configuracion actual, mergeamos y reescribimos.
+// Service role tras verificar owner + que el miembro es de su org.
+// La distinción vive en usuarios.configuracion.member_role. PostgREST no hace
+// merge de un JSONB, así que leemos la configuracion actual, mergeamos y reescribimos.
 //
-// Body:   { coach_id, member_role: 'coach' | 'colaborador' }
+// Body:   { coach_id, member_role?, nombre?, email?, especialidad?, servicios?, permisos? }
 // Header: Authorization: Bearer <JWT del owner logueado>
-// Resp:   { ok, member_role } | { error }
+// Resp:   { ok, member_role?, nombre?, email?, especialidad? } | { error }
 //
 // Deploy: supabase functions deploy editar-coach-red --no-verify-jwt
 // ===================================================================
@@ -63,14 +64,18 @@ Deno.serve(async (req: Request) => {
   const orgId = await ownerOrg(email);
   if (!orgId) return json({ error: "not_owner" }, 403);
 
-  let body: { coach_id?: string; member_role?: string; servicios?: unknown; permisos?: unknown };
+  let body: { coach_id?: string; member_role?: string; nombre?: string; email?: string; especialidad?: string; servicios?: unknown; permisos?: unknown };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const coachId = (body.coach_id || "").toString().trim();
   if (!coachId) return json({ error: "missing_coach" }, 400);
+
   const hasRole = typeof body.member_role === "string" && body.member_role.length > 0;
+  const hasNombre = typeof body.nombre === "string" && body.nombre.trim().length > 0;
+  const hasEmail = typeof body.email === "string" && body.email.trim().length > 0;
+  const hasEsp = typeof body.especialidad === "string" && body.especialidad.trim().length > 0;
   const hasSvcs = Array.isArray(body.servicios);
   const hasPerms = !!body.permisos && typeof body.permisos === "object" && !Array.isArray(body.permisos);
-  if (!hasRole && !hasSvcs && !hasPerms) return json({ error: "nothing_to_update" }, 400);
+  if (!hasRole && !hasNombre && !hasEmail && !hasEsp && !hasSvcs && !hasPerms) return json({ error: "nothing_to_update" }, 400);
 
   // El target tiene que ser de ESTA org, o el propio dueño (que también ofrece
   // servicios). Leemos su configuracion para mergear.
@@ -129,12 +134,30 @@ Deno.serve(async (req: Request) => {
     cfg.permisos = out;
   }
 
+  // Preparar cambios de usuarios (nombre, email) y configuracion
+  const usuariosUpdate: Record<string, unknown> = { configuracion: cfg };
+  if (hasNombre) usuariosUpdate.nombre = body.nombre!.trim().slice(0, 200);
+  if (hasEmail) {
+    const em = body.email!.trim().toLowerCase();
+    if (!EMAIL_RE.test(em)) return json({ error: "invalid_email" }, 400);
+    usuariosUpdate.email = em;
+  }
+  if (hasEsp) cfg.especialidad = body.especialidad!.trim().slice(0, 200);
+
   try {
     const r = await fetch(
       `${SB_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(coachId)}`,
-      { method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ configuracion: cfg }) },
+      { method: "PATCH", headers: { ...svc, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify(usuariosUpdate) },
     );
     if (!r.ok) return json({ error: "update_failed", status: r.status }, 502);
   } catch { return json({ error: "write_failed" }, 502); }
-  return json({ ok: true, member_role: memberRole || undefined, servicios: hasSvcs ? (cfg.servicios as unknown[]).length : undefined });
+
+  return json({
+    ok: true,
+    member_role: memberRole || undefined,
+    nombre: hasNombre ? usuariosUpdate.nombre : undefined,
+    email: hasEmail ? usuariosUpdate.email : undefined,
+    especialidad: hasEsp ? cfg.especialidad : undefined,
+    servicios: hasSvcs ? (cfg.servicios as unknown[]).length : undefined
+  });
 });
