@@ -42,7 +42,7 @@ test.describe('ERR-APP-004: Apple Sign in visibility', () => {
 
     // Function must be defined
     const functionDefined = await page.evaluate(() => {
-      return typeof (window as any).signInWithApple === 'function';
+      return typeof window.signInWithApple === 'function';
     });
     expect(functionDefined).toBe(true);
   });
@@ -62,7 +62,7 @@ test.describe('ERR-APP-004: Apple Sign in visibility', () => {
 
     // Verify Supabase SDK is loaded
     const sbLoaded = await page.evaluate(() => {
-      return typeof (window as any).supabase !== 'undefined';
+      return typeof window.supabase !== 'undefined';
     });
     expect(sbLoaded).toBe(true);
   });
