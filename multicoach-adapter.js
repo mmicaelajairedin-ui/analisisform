@@ -65,17 +65,14 @@ function mcCreateCoach(nombre, email, rol) {
 }
 
 /**
- * Editar coach
+ * Editar coach (parcial)
  * @param {string} coachId
- * @param {object} updates - { nombre?, email?, especialidad?, telefono?, rol? }
+ * @param {object} updates - { nombre?, email?, especialidad?, telefono? }
  * @returns {Promise}
  */
 function mcEditCoach(coachId, updates) {
   var coach = _coach(coachId);
   if (!coach) throw new Error('Coach no encontrado');
-
-  // BLOCKER: soft delete, role change require backend support
-  // Currently can update: name, email (limited), especialidad, telefono
 
   if (!MC_REAL) {
     // Demo: local
@@ -83,12 +80,12 @@ function mcEditCoach(coachId, updates) {
     if (updates.email) coach.email = updates.email.toLowerCase();
     if (updates.especialidad) coach.esp = updates.especialidad;
     if (updates.telefono) coach.tel = updates.telefono;
-    // Note: updates.rol not supported in demo yet (needs backend)
     return Promise.resolve({ ok: true });
   }
 
-  // Real: edge function (BLOCKED — needs implementation)
-  return Promise.reject(new Error('Edición de coach: backend bloqueado'));
+  // Real: editar-coach-red edge function (currently supports role, servicios, permisos)
+  // TODO: Extend for name, email, specialty fields (backend expansion needed)
+  return Promise.reject(new Error('Edición de coach: requiere expansión del backend (editar-coach-red)'));
 }
 
 /**
