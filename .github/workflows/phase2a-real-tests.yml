@@ -1,0 +1,48 @@
+name: Phase 2A Real Tests - Pathway API Validation
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * 1'  # Mondays at 8 AM UTC
+
+jobs:
+  infrastructure:
+    name: Validate Auth Infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Unit Tests — Auth Flow Infrastructure
+        run: node scripts/phase2a-test-auth-flow.cjs
+
+  tests:
+    name: Run Phase 2A Tests
+    runs-on: ubuntu-latest
+    needs: infrastructure
+    env:
+      PATHWAY_SUPABASE_URL: https://ddxnrsnjdvtqhxunxnwj.supabase.co
+      PATHWAY_SUPABASE_ANON_KEY: ${{ secrets.PATHWAY_SUPABASE_ANON_KEY }}
+      PATHWAY_TEST_OWNER_A_REFRESH_TOKEN: ${{ secrets.PATHWAY_TEST_OWNER_A_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+
+      - name: Execute Phase 2A Real Tests
+        run: node scripts/phase2a-real-tests-run.cjs
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2a-test-results
+          path: app/test-results.txt
+          retention-days: 30
