@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/pw-icons.css?v=1">
 <script src="/pw-icons.js?v=1"></script>
 <script src="pw-brand.js?v=2"></script>
+<script src="multicoach-adapter.js"></script>
 <link rel="stylesheet" href="pw-design-tokens.css?v=1">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1132,19 +1133,17 @@ function __nuevoCliente(){
   if(!MC_REAL){ DB.clientes.push({id:'k'+(DB.clientes.length+1)+'x',n:n,ini:_ini(n),nicho:(c?c.nicho:(NICHOS[0]&&NICHOS[0].id)||''),coach:cid,est:'activo',prog:'Onboarding',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién'}); if(c)c.cli++; __act('➕','var(--bosque)','Nuevo cliente: '+n,'Asignado a '+(c?c.n:'')); __mclose(); __toast('Cliente '+n+' agregado ✓'); if(_sec==='clientes')_fillClientes();else if(_sec==='coaches')renderCoaches(); return; }
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){__toast('Email inválido');return;}
   var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Agregando…';}
-  _hdr({'Content-Type':'application/json'}).then(function(h){
-   return fetch(SB+'/functions/v1/agregar-cliente-red',{method:'POST',headers:h,body:JSON.stringify({nombre:n,email:em,coach_id:cid})});
-  }).then(function(r){ return r.json().catch(function(){return {};}).then(function(d){ return {ok:r.ok,d:d||{}}; }); }).then(function(res){
-   if(!res.ok||!res.d.ok){
-    var er=res.d.error, msg=er==='coach_ajeno'?'Elige un coach de tu red.':er==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo agregar. Reintenta';
+  mcCreateCliente(n,em,cid).then(function(res){
+   if(!res.ok){
     if(ok){ok.disabled=false;ok.textContent='Agregar';}
-    if(er==='cap_reached'){ __mclose(); mcUpgrade('clientes'); return; }
-    __toast(msg); return;
+    __toast('No se pudo agregar. Reintenta');
+    return;
    }
-   DB.clientes.push({id:res.d.id||('k'+haveK+'x'),n:n,ini:_mcIni(n),nicho:(c?c.nicho:(NICHOS[0]&&NICHOS[0].id)||''),coach:cid,est:'activo',prog:'',week:1,plan:'pending',med:'pending',lastState:'fresh',ult:'recién',email:em});
-   if(c)c.cli=(c.cli||0)+1;
    __mclose(); __toast('Cliente '+n+' agregado a tu red ✓'); mcApplyNiche(); if(_sec==='clientes')_fillClientes();else if(_sec==='coaches')renderCoaches();
-  }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Agregar';} __toast('Error de conexión. Reintenta'); });
+  }).catch(function(e){
+   if(ok){ok.disabled=false;ok.textContent='Agregar';}
+   __toast(e.message||'Error de conexión. Reintenta');
+  });
  });
 }
 // Reasigna un cliente a un coach (compartido: dropdown de la ficha, drag y el
@@ -2309,7 +2308,21 @@ function reasignar(id){
  var k=_cli(id);if(!k)return;var cs=DB.coaches.filter(function(c){return c.est==='activo';});
  __openModal('Reasignar '+DET().coachSing.toLowerCase()+' — '+k.n,'<div><span class="lbl">Nuevo '+DET().coachSing.toLowerCase()+'</span><select id="rz-c" class="inp">'+cs.map(function(c){return '<option value="'+c.id+'"'+(c.id===k.coach?' selected':'')+'>'+c.n+' · '+c.esp+'</option>';}).join('')+'</select></div>','Reasignar',function(){var cid=document.getElementById('rz-c').value;_reassign(id,cid,function(ok){if(ok){__mclose();fichaCliente(id);}else{__toast('No se pudo reasignar. Reintenta');}});});
 }
-function toggleCli(id){var k=_cli(id);if(!k)return;k.est=(k.est==='activo'?'inactivo':'activo');__toast(k.n+(k.est==='activo'?' reactivado ✓':' suspendido'));fichaCliente(id);}
+function toggleCli(id){
+ var k=_cli(id);if(!k)return;
+ var oldEst=k.est;
+ if(MC_REAL){
+  mcDeleteCliente(id).then(function(res){
+   if(!res.ok){ k.est=oldEst; __toast('No se pudo cambiar. Reintenta'); return; }
+   __toast(k.n+(k.est==='activo'?' reactivado ✓':' suspendido'));
+   fichaCliente(id);
+  }).catch(function(e){ k.est=oldEst; __toast(e.message||'Error. Reintenta'); });
+ } else {
+  k.est=(k.est==='activo'?'inactivo':'activo');
+  __toast(k.n+(k.est==='activo'?' reactivado ✓':' suspendido'));
+  fichaCliente(id);
+ }
+}
 
 /* --- COACHES --- */
 function renderCoaches(){
@@ -2859,44 +2872,32 @@ function _mcCoachLink(nombre,email,sent){
 }
 function invitarCoach(){
  var sing=DET().coachSing.toLowerCase();
- if(MC_REAL){
-  // El cupo cuenta coaches CONTRATADOS (el dueño no cuenta aunque atienda).
-  var maxC=(MC_ORG&&MC_ORG.max_coaches!=null)?MC_ORG.max_coaches:null, have=(DB.coaches||[]).filter(function(c){return !c.esOwner;}).length;
-  if(maxC!=null && have>=maxC){ mcUpgrade('coaches'); return; }
-  var capTxt=maxC!=null?('Vas <b>'+have+' de '+maxC+'</b> de tu plan.'):'Coaches <b>ilimitados</b> en tu plan.';
-  __openModal('Sumar a la red',
-   '<div style="font-size:12px;color:var(--soft);background:var(--pw-niebla-3);border-radius:9px;padding:9px 11px;margin-bottom:4px">'+capTxt+' Hereda el nicho de tu empresa. Le llega un link para activar su cuenta.</div>'+
-   __inp('ic-n','Nombre y apellido')+__inp('ic-e','email@empresa.com')+
-   '<div style="margin-top:2px"><span class="lbl">Tipo</span><select id="ic-rol" class="inp"><option value="coach">Coach (da clases)</option><option value="colaborador">Colaborador (no da clases)</option></select><div style="font-size:11px;color:var(--soft);margin-top:3px">El colaborador gestiona clientes y ve la agenda, pero no figura dando clases.</div></div>',
-   'Sumar',function(){
-    var n=(document.getElementById('ic-n').value||'').trim(), em=(document.getElementById('ic-e').value||'').trim().toLowerCase();
-    var rol=((document.getElementById('ic-rol')||{}).value||'coach');
-    if(!n){__toast('Pon el nombre');return;} if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){__toast('Email inválido');return;}
-    var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Sumando…';}
-    _hdr({'Content-Type':'application/json'}).then(function(h){
-     return fetch(SB+'/functions/v1/agregar-coach-red',{method:'POST',headers:h,body:JSON.stringify({email:em,nombre:n,member_role:rol})});
-    }).then(function(r){return r.json().catch(function(){return {};}).then(function(d){return {ok:r.ok,d:d||{}};});}).then(function(res){
-     if(!res.ok||!res.d.ok){
-      var er=res.d.error, msg=er==='email_in_use'?('Ese email ya lo usa un usuario "'+(res.d.rol||'?')+'".'):er==='not_owner'?'Tu sesión no está activa — reingresa':'No se pudo sumar. Reintenta';
-      if(ok){ok.disabled=false;ok.textContent='Sumar';}
-      if(er==='cap_reached'){ __mclose(); mcUpgrade('coaches'); return; }
-      __toast(msg); return;
-     }
-     DB.coaches.push({id:res.d.coach_id||('c'+have+'x'),n:n,ini:_mcIni(n),nicho:(NICHOS&&NICHOS[0]&&NICHOS[0].id)||'',rat:0,ret:null,cli:0,ses:0,esp:'',est:'pendiente',foto:'',tipo:rol});
-     mcApplyNiche(); if(_sec==='coaches')renderCoaches();
-     _mcCoachLink(n,em,res.d.email_sent);
-     if(MC_OWNER) setTimeout(function(){ mcLoadReal(MC_OWNER); },400); // refresca la red desde el server (aparece con sus datos reales)
-    }).catch(function(){ if(ok){ok.disabled=false;ok.textContent='Sumar '+sing;} __toast('Error de conexión. Reintenta'); });
+ var maxC=(MC_ORG&&MC_ORG.max_coaches!=null)?MC_ORG.max_coaches:null, have=(DB.coaches||[]).filter(function(c){return !c.esOwner;}).length;
+ if(MC_REAL && maxC!=null && have>=maxC){ mcUpgrade('coaches'); return; }
+ var capTxt=MC_REAL?(maxC!=null?('Vas <b>'+have+' de '+maxC+'</b> de tu plan.'):'Coaches <b>ilimitados</b> en tu plan.'):('Define la especialidad del '+sing+'. La hereda automáticamente.');
+ __openModal('Sumar '+sing,
+  '<div style="font-size:12px;color:var(--soft);background:var(--pw-niebla-3);border-radius:9px;padding:9px 11px;margin-bottom:4px">'+capTxt+(MC_REAL?' Hereda el nicho de tu empresa. Le llega un link para activar su cuenta.':'')+'</div>'+
+  __inp('ic-n','Nombre y apellido')+__inp('ic-e','email@empresa.com')+
+  (MC_REAL?'<div style="margin-top:2px"><span class="lbl">Tipo</span><select id="ic-rol" class="inp"><option value="coach">Coach (da clases)</option><option value="colaborador">Colaborador (no da clases)</option></select><div style="font-size:11px;color:var(--soft);margin-top:3px">El colaborador gestiona clientes y ve la agenda, pero no figura dando clases.</div></div>':'<div><span class="lbl">Especialidad</span><input id="ic-s" class="inp" placeholder="Ej: Nutrición, Fitness, Finanzas"></div>'),
+  'Sumar',function(){
+   var n=(document.getElementById('ic-n').value||'').trim(), em=(document.getElementById('ic-e').value||'').trim().toLowerCase();
+   if(!n){__toast('Pon el nombre');return;} if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){__toast('Email inválido');return;}
+   var rol=MC_REAL?((document.getElementById('ic-rol')||{}).value||'coach'):'coach';
+   var ok=document.getElementById('__mo'); if(ok){ok.disabled=true;ok.textContent='Sumando…';}
+   mcCreateCoach(n,em,rol).then(function(res){
+    if(!res.ok){
+     if(ok){ok.disabled=false;ok.textContent='Sumar';}
+     __toast('No se pudo sumar. Reintenta');
+     return;
+    }
+    mcApplyNiche(); if(_sec==='coaches')renderCoaches();
+    __mclose();__toast('Invitación enviada a '+n+' ✓');
+    if(MC_OWNER) setTimeout(function(){ mcLoadReal(MC_OWNER); },400);
+   }).catch(function(e){
+    if(ok){ok.disabled=false;ok.textContent='Sumar';}
+    __toast(e.message||'Error de conexión. Reintenta');
    });
-  return;
- }
- // Demo (prospecto): alta local en la maqueta.
- var nlbl=NM().emo+' '+MC_N.charAt(0).toUpperCase()+MC_N.slice(1),areas=NICHOS.map(function(c){return c.lbl;});
- __openModal('Invitar '+sing,'<div style="font-size:12px;color:var(--soft);background:var(--pw-niebla-3);border-radius:9px;padding:9px 11px;margin-bottom:4px">El '+sing+' hereda el nicho de tu empresa: <b>'+nlbl+'</b> (definido en el panel admin). Elige su área.</div>'+__inp('ic-n','Nombre y apellido')+__inp('ic-e','email@empresa.com')+'<div><span class="lbl">Área</span>'+__sel('ic-nz',areas)+'</div>'+__inp('ic-s','Especialidad'),'Enviar invitación',function(){
-  var n=document.getElementById('ic-n').value.trim();if(!n)return;var s=document.getElementById('ic-s').value.trim()||'General';var sel=document.getElementById('ic-nz').value;var nz=(NICHOS.filter(function(c){return c.lbl===sel;})[0]||NICHOS[0]).id;
-  DB.coaches.push({id:'c'+(DB.coaches.length+1)+'x',n:n,ini:_ini(n),nicho:nz,rat:0,ret:0,cli:0,ses:0,esp:s,est:'pendiente',foto:''});
-  __mclose();__toast('Invitación enviada a '+n+' ✓');renderCoaches();
- });
+  });
 }
 
 /* ===== ETAPA 3 — Comunidad / Revista + gaming (solo edita el responsable) ===== */
