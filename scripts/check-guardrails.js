@@ -521,17 +521,30 @@ const RULES = [
     },
   },
   {
-    name: "login no crashea en navegadores viejos: pw-polyfill.js antes del SDK",
+    name: "pw-polyfill.js: carga ANTES del SDK en TODAS las páginas con Supabase",
     bug: "En webviews in-app / navegadores viejos (sin Array.prototype.at, ES2022) el " +
-         "SDK de Supabase crasheaba con '.at is not a function' y el usuario NO podía " +
-         "entrar. pw-polyfill.js parchea .at() y debe cargarse ANTES que cualquier SDK.",
+         "SDK de Supabase crasheaba con '.at is not a function'. pw-polyfill.js parchea .at() " +
+         "y DEBE cargarse ANTES que cualquier SDK en TODAS las páginas que lo usen.",
     check() {
       const poly = read("pw-polyfill.js");
       if (!poly) return "falta pw-polyfill.js (parche de navegadores viejos).";
-      if (!/prototype\s*,\s*["']at["']|prototype\.at/.test(poly) && !/def\(Array\.prototype,\s*"at"/.test(poly))
-        return "pw-polyfill.js ya no parchea Array.prototype.at → login vuelve a crashear en navegadores viejos.";
-      for (const f of ["login.html", "login-en.html", "panel-v2.html", "cliente.html"]) {
-        if (!/pw-polyfill\.js/.test(read(f))) return f + " ya no carga pw-polyfill.js (login/panel crashea en webviews viejos).";
+      if (!/__pwPolyfilledAt/.test(poly)) return "pw-polyfill.js: falta flag __pwPolyfilledAt para diagnosticar fallos silenciosos.";
+      if (!/def\(Array\.prototype,\s*"at"/.test(poly)) return "pw-polyfill.js ya no parchea Array.prototype.at.";
+      if (!/def\(String\.prototype,\s*"at"/.test(poly)) return "pw-polyfill.js ya no parchea String.prototype.at.";
+      // Verificar que TODAS las páginas con Supabase SDK tienen polyfill ANTES del SDK
+      const fs = require("fs");
+      const path = require("path");
+      const htmlFiles = fs.readdirSync(".")
+        .filter(f => f.endsWith(".html") && fs.existsSync(f))
+        .map(f => read(f) || "");
+      for (let i = 0; i < htmlFiles.length; i++) {
+        const content = htmlFiles[i];
+        if (content.includes("@supabase/supabase-js")) {
+          const polyIdx = content.indexOf("pw-polyfill.js");
+          const sdkIdx = content.indexOf("@supabase/supabase-js");
+          if (polyIdx < 0) return "Página HTML con SDK Supabase pero SIN pw-polyfill.js cargado.";
+          if (polyIdx > sdkIdx) return "pw-polyfill.js cargado DESPUÉS del SDK (debe ser ANTES).";
+        }
       }
       return null;
     },
