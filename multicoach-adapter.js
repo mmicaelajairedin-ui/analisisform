@@ -83,31 +83,88 @@ function mcEditCoach(coachId, updates) {
     return Promise.resolve({ ok: true });
   }
 
-  // Real: editar-coach-red edge function (currently supports role, servicios, permisos)
-  // TODO: Extend for name, email, specialty fields (backend expansion needed)
-  return Promise.reject(new Error('Edición de coach: requiere expansión del backend (editar-coach-red)'));
+  // Real: editar-coach-red edge function
+  var payload = { coach_id: coachId };
+  if (updates.nombre) payload.nombre = updates.nombre;
+  if (updates.email) payload.email = updates.email;
+  if (updates.especialidad) payload.especialidad = updates.especialidad;
+  if (updates.telefono) payload.telefono = updates.telefono;
+
+  return _hdr({ 'Content-Type': 'application/json' })
+    .then(function (h) {
+      return fetch(SB + '/functions/v1/editar-coach-red', {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify(payload)
+      });
+    })
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        return { ok: r.ok, d: d || {} };
+      });
+    })
+    .then(function (res) {
+      if (!res.ok || !res.d.ok) {
+        var err = res.d.error;
+        throw new Error(
+          err === 'invalid_email' ? 'Email inválido' :
+            err === 'missing_coach' ? 'Coach no encontrado' :
+              err === 'nothing_to_update' ? 'Nada que actualizar' :
+                err === 'not_owner' ? 'No tienes permiso' :
+                  'Error al editar coach'
+        );
+      }
+      return { ok: true };
+    });
 }
 
 /**
  * Soft-delete coach (desactivar)
  * @param {string} coachId
+ * @param {string} modo - 'suspender' | 'reactivar' | 'quitar' (soft-delete only)
  * @returns {Promise}
  */
-function mcDeleteCoach(coachId) {
+function mcDeleteCoach(coachId, modo) {
   var coach = _coach(coachId);
   if (!coach) throw new Error('Coach no encontrado');
 
-  // Blocker: requires backend authorization + cascading logic
-  // Questions: what happens to their clients?
-
   if (!MC_REAL) {
     // Demo: local
-    coach.est = 'inactivo';
+    if (modo === 'suspender') coach.est = 'inactivo';
+    if (modo === 'reactivar') coach.est = 'activo';
+    if (modo === 'quitar') {
+      var idx = DB.coaches.indexOf(coach);
+      if (idx >= 0) DB.coaches.splice(idx, 1);
+    }
     return Promise.resolve({ ok: true });
   }
 
-  // Real: BLOCKED
-  return Promise.reject(new Error('Soft-delete coach: requiere backend + autorización'));
+  // Real: eliminar-coach-red edge function (soft-delete with 3 modes)
+  return _hdr({ 'Content-Type': 'application/json' })
+    .then(function (h) {
+      return fetch(SB + '/functions/v1/eliminar-coach-red', {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify({ coach_id: coachId, modo: modo })
+      });
+    })
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        return { ok: r.ok, d: d || {} };
+      });
+    })
+    .then(function (res) {
+      if (!res.ok || !res.d.ok) {
+        var err = res.d.error;
+        throw new Error(
+          err === 'missing_id' ? 'Coach no encontrado' :
+            err === 'modo_invalido' ? 'Modo inválido' :
+              err === 'not_owner' ? 'No tienes permiso' :
+                'Error al desactivar coach'
+        );
+      }
+      return { ok: true };
+    });
 }
 
 /**
@@ -163,10 +220,32 @@ function mcAssignClientToCoach(clienteId, coachId, authCheck) {
     return Promise.resolve({ ok: true });
   }
 
-  // Real: edge function
-  return _reassign(clienteId, coachId, function (ok) {
-    return ok;
-  });
+  // Real: asignar-cliente edge function
+  return _hdr({ 'Content-Type': 'application/json' })
+    .then(function (h) {
+      return fetch(SB + '/functions/v1/asignar-cliente', {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify({ cliente_id: clienteId, coach_id: coachId })
+      });
+    })
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        return { ok: r.ok, d: d || {} };
+      });
+    })
+    .then(function (res) {
+      if (!res.ok || !res.d.ok) {
+        var err = res.d.error;
+        throw new Error(
+          err === 'missing_client' ? 'Cliente no encontrado' :
+            err === 'missing_coach' ? 'Coach no encontrado' :
+              err === 'not_owner' ? 'No tienes permiso' :
+                'Error al asignar cliente'
+        );
+      }
+      return { ok: true };
+    });
 }
 
 // ===== CLIENTES ADAPTER =====
@@ -230,7 +309,7 @@ function mcCreateCliente(nombre, email, coachId) {
 /**
  * Editar cliente
  * @param {string} clienteId
- * @param {object} updates - { nombre?, email?, coach?, plan? }
+ * @param {object} updates - { nombre?, email?, estado?, coach?, plan? }
  * @returns {Promise}
  */
 function mcEditCliente(clienteId, updates) {
@@ -241,6 +320,7 @@ function mcEditCliente(clienteId, updates) {
     // Demo: local
     if (updates.nombre) cli.n = updates.nombre;
     if (updates.email) cli.email = updates.email.toLowerCase();
+    if (updates.estado) cli.est = updates.estado;
     if (updates.coach !== undefined && updates.coach !== cli.coach) {
       var prevCoach = _coach(cli.coach);
       cli.coach = updates.coach;
@@ -253,27 +333,88 @@ function mcEditCliente(clienteId, updates) {
     return Promise.resolve({ ok: true });
   }
 
-  // Real: BLOCKED — requires backend
-  return Promise.reject(new Error('Edición de cliente: requiere backend'));
+  // Real: editar-cliente-red edge function
+  var payload = { cliente_id: clienteId };
+  if (updates.nombre) payload.nombre = updates.nombre;
+  if (updates.email) payload.email = updates.email;
+  if (updates.estado) payload.estado = updates.estado;
+
+  return _hdr({ 'Content-Type': 'application/json' })
+    .then(function (h) {
+      return fetch(SB + '/functions/v1/editar-cliente-red', {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify(payload)
+      });
+    })
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        return { ok: r.ok, d: d || {} };
+      });
+    })
+    .then(function (res) {
+      if (!res.ok || !res.d.ok) {
+        var err = res.d.error;
+        throw new Error(
+          err === 'invalid_email' ? 'Email inválido' :
+            err === 'invalid_estado' ? 'Estado inválido (use: activo, inactivo)' :
+              err === 'missing_cliente' ? 'Cliente no encontrado' :
+                err === 'nothing_to_update' ? 'Nada que actualizar' :
+                  err === 'not_owner' ? 'No tienes permiso' :
+                    'Error al editar cliente'
+        );
+      }
+      return { ok: true };
+    });
 }
 
 /**
- * Soft-delete cliente (desactivar)
+ * Soft-delete cliente (desactivar, reactivar, o quitar)
  * @param {string} clienteId
+ * @param {string} modo - 'suspender' | 'reactivar' | 'quitar'
  * @returns {Promise}
  */
-function mcDeleteCliente(clienteId) {
+function mcDeleteCliente(clienteId, modo) {
   var cli = _cli(clienteId);
   if (!cli) throw new Error('Cliente no encontrado');
 
   if (!MC_REAL) {
     // Demo: local
-    cli.est = 'inactivo';
+    if (modo === 'suspender') cli.est = 'inactivo';
+    if (modo === 'reactivar') cli.est = 'activo';
+    if (modo === 'quitar') {
+      var idx = DB.clientes.indexOf(cli);
+      if (idx >= 0) DB.clientes.splice(idx, 1);
+    }
     return Promise.resolve({ ok: true });
   }
 
-  // Real: BLOCKED
-  return Promise.reject(new Error('Soft-delete cliente: requiere backend'));
+  // Real: eliminar-cliente-red edge function (soft-delete with 3 modes)
+  return _hdr({ 'Content-Type': 'application/json' })
+    .then(function (h) {
+      return fetch(SB + '/functions/v1/eliminar-cliente-red', {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify({ cliente_id: clienteId, modo: modo })
+      });
+    })
+    .then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        return { ok: r.ok, d: d || {} };
+      });
+    })
+    .then(function (res) {
+      if (!res.ok || !res.d.ok) {
+        var err = res.d.error;
+        throw new Error(
+          err === 'missing_id' ? 'Cliente no encontrado' :
+            err === 'modo_invalido' ? 'Modo inválido (use: suspender, reactivar, quitar)' :
+              err === 'not_owner' ? 'No tienes permiso' :
+                'Error al desactivar cliente'
+        );
+      }
+      return { ok: true };
+    });
 }
 
 /**
