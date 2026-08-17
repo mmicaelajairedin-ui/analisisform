@@ -881,7 +881,26 @@ async function entrar(){
     // recargando en vez de desloguear; esto resetea ese "una vez" por login.)
     try{ sessionStorage.removeItem('pw_auth_retry'); }catch(e){}
     var _v='v='+Date.now();
-    if(usuario.rol==='owner' || (usuario.rol==='colaborador' && multicoachAccess)) window.location.href='https://pathwayplatforms.com/?'+_v;
+    if(usuario.rol==='owner' || (usuario.rol==='colaborador' && multicoachAccess)) {
+      // Handoff seguro de sesión a MultiCoach
+      try {
+        var _handoffResp = await fetch(SB+'/functions/v1/pathway-handoff', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer '+_jwt},
+        });
+        if (_handoffResp.ok) {
+          var _handoffData = await _handoffResp.json();
+          if (_handoffData.code) {
+            window.location.href='https://pathwayplatforms.com/?handoff='+encodeURIComponent(_handoffData.code);
+            return;
+          }
+        }
+      } catch(e) {
+        console.error('[handoff] Error:', e);
+      }
+      // Fallback si handoff falla: redirect sin código (usuario tendrá que hacer login)
+      window.location.href='https://pathwayplatforms.com/?'+_v;
+    }
     else if(usuario.rol==='coach'||usuario.rol==='admin'){
       window.location.href=BASE+'/panel-v2.html?'+_v;
     } else if(usuario.rol==='empleado'){
