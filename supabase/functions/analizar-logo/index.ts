@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
 
 const client = new Anthropic();
 
