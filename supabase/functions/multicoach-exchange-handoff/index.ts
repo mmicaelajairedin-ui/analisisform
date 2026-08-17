@@ -18,7 +18,6 @@
 //   supabase functions deploy multicoach-exchange-handoff
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import * as jose from "https://deno.land/x/jose@v5.4.1/index.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
