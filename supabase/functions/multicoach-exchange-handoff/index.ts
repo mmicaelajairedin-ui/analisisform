@@ -90,20 +90,8 @@ Deno.serve(async (req) => {
       return json({ error: "User not found" }, 404);
     }
 
-    // Obtener rol en organización si existe
-    let rolEnOrg = userData.rol;
-    if (orgId) {
-      const { data: roleData } = await supabase
-        .from("usuarios_org")
-        .select("rol")
-        .eq("usuario_id", userData.id)
-        .eq("org_id", orgId)
-        .single();
-
-      if (roleData?.rol) {
-        rolEnOrg = roleData.rol;
-      }
-    }
+    // Obtener rol en organización (userData contiene rol_en_org)
+    const rolEnOrg = userData.rol_en_org || userData.rol;
 
     // Generar nuevo session token para MultiCoach
     // (Usar el JWT de Supabase Auth directamente)
