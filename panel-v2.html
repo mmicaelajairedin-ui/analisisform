@@ -10419,7 +10419,7 @@ document.addEventListener("click", function(ev){
 });
 // El badge se asienta cuando los datos terminan de cargar (por si el último
 // render corrió antes de que llegaran).
-window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _pwLoadCoachNotif(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} try{ if(!_gamiOn()){ var _nb=document.getElementById("pw-nov-btn"); if(_nb) _nb.style.display="none"; } }catch(e){} try{ if(_gamiOn()&&(RMONTH===null||RWEEK===null)) _loadRanks(); }catch(e){} try{ _novAutoOpen(); }catch(e){} },t); }); });
+window.addEventListener("load",function(){ [900,2500,5000].forEach(function(t){ setTimeout(function(){ try{ _syncUserMenu(); }catch(e){} try{ _pwLoadCoachNotif(); }catch(e){} try{ _syncNotifBadge(); }catch(e){} try{ pwCheckAutoBadges(); }catch(e){} try{ if(!_gamiOn()){ var _nb=document.getElementById("pw-nov-btn"); if(_nb) _nb.style.display="none"; } }catch(e){} try{ if(_gamiOn()&&(window.RMONTH===null||window.RWEEK===null)) _loadRanks(); }catch(e){} try{ _novAutoOpen(); }catch(e){} },t); }); });
 
 // ═══ Drawers laterales: Novedades (revista semanal) + Perfil (puntos/medallas/badges) ═══
 // Se embeben las páginas ya aprobadas (novedades-preview.html / perfil-preview.html)
@@ -10448,7 +10448,7 @@ function _openDrawer(which){
     try{ clients=clientMedalInfo().n; }catch(e){}
     try{ photo=(typeof COACH!=="undefined"&&COACH&&COACH.photo)||""; }catch(e){}
     try{ nm=(typeof COACH!=="undefined"&&COACH&&COACH.name)||(RME&&RME.nombre)||""; }catch(e){}
-    try{ if(RMONTH===null||RWEEK===null) _loadRanks(); }catch(e){}
+    try{ if(window.RMONTH===null||window.RWEEK===null) _loadRanks(); }catch(e){}
     var since="", loc="";
     try{ if(RME&&RME.created_at){ var _dd=new Date(RME.created_at); var _M=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]; if(!isNaN(_dd.getTime())) since=_M[_dd.getMonth()]+" "+_dd.getFullYear(); } }catch(e){}
     try{ loc=(typeof RCFG!=="undefined"&&RCFG&&(RCFG.ciudad||RCFG.ubicacion||RCFG.pais))||""; }catch(e){}
@@ -10554,11 +10554,11 @@ function pwMonthKey(){ var d=new Date(); return "M-"+d.getFullYear()+"-"+("0"+(d
 function pwWeekKey(){ var now=new Date(); var d=new Date(Date.UTC(now.getFullYear(),now.getMonth(),now.getDate())); var day=d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-day); var ys=new Date(Date.UTC(d.getUTCFullYear(),0,1)); var wk=Math.ceil((((d-ys)/86400000)+1)/7); return "W-"+d.getUTCFullYear()+"-"+("0"+wk).slice(-2); }
 function _pwPeriodAdd(period,n){ n=parseInt(n,10)||0; if(!n||!(REAL&&RME&&RME.id)) return; try{ _hdr({"Content-Type":"application/json"}).then(function(h){ fetch(SB+"/rest/v1/rpc/pw_add_month_pts",{method:"POST",headers:h,body:JSON.stringify({p_coach:RME.id,p_ym:period,p_n:n,p_nombre:(RME.nombre||"")})}).catch(function(){}); }); }catch(e){} }
 function pwRankAdd(n){ _pwPeriodAdd(pwMonthKey(),n); _pwPeriodAdd(pwWeekKey(),n); } // suma al mes Y a la semana
-var RMONTH=null, RWEEK=null;
-function _loadRanks(){ try{
-  _sb("ranking_mensual?ym=eq."+encodeURIComponent(pwMonthKey())+"&select=coach_id,nombre,pts&order=pts.desc&limit=80").then(function(r){ RMONTH=r||[]; });
-  _sb("ranking_mensual?ym=eq."+encodeURIComponent(pwWeekKey())+"&select=coach_id,nombre,pts&order=pts.desc&limit=80").then(function(r){ RWEEK=r||[]; });
-}catch(e){} }
+window.RMONTH=null; window.RWEEK=null;
+window._loadRanks = function _loadRanks(){ try{
+  _sb("ranking_mensual?ym=eq."+encodeURIComponent(pwMonthKey())+"&select=coach_id,nombre,pts&order=pts.desc&limit=80").then(function(r){ window.RMONTH=r||[]; render(); });
+  _sb("ranking_mensual?ym=eq."+encodeURIComponent(pwWeekKey())+"&select=coach_id,nombre,pts&order=pts.desc&limit=80").then(function(r){ window.RWEEK=r||[]; render(); });
+}catch(e){} };
 // Arma el &rank=. Excluye admin (Micaela/tú), bots y demos. Si el período está
 // vacío, cae a los puntos acumulados (game_pts) para no salir en blanco.
 function _rankQFrom(list){
@@ -10575,9 +10575,10 @@ function _rankQFrom(list){
     var _ls=list.filter(function(c){
       if(!c||!c.nombre) return false;
       if((c.pts||0)<=0) return false;                             // solo quien realmente sumó
-      if(/bot|test|ejemplo|demo/i.test(c.nombre)) return false;   // sin bots/demos
+      if(/\b(bot|test|ejemplo|demo)\b/i.test(c.nombre)) return false;   // sin bots/demos (word boundaries)
       if(c.rol==="admin") return false;
       if(_adm[String(c.coach_id)]) return false;                  // sin admin/tú
+      if(RME && String(c.coach_id)===String(RME.id)) return false;   // excluir al usuario actual
       return true;
     }).sort(function(a,b){ return (b.pts||0)-(a.pts||0); });
     if(!_ls.length) return "";
@@ -10587,8 +10588,8 @@ function _rankQFrom(list){
     return "&rank="+encodeURIComponent(JSON.stringify({top:_top,me:_me}));
   }catch(e){ return ""; }
 }
-function _monthRankQ(){ return _rankQFrom((RMONTH&&RMONTH.length)?RMONTH:null); }
-function _weekRankQ(){ return _rankQFrom((RWEEK&&RWEEK.length)?RWEEK:null); }
+function _monthRankQ(){ return _rankQFrom((window.RMONTH&&window.RMONTH.length)?window.RMONTH:null); }
+function _weekRankQ(){ return _rankQFrom((window.RWEEK&&window.RWEEK.length)?window.RWEEK:null); }
 function pwAddXP(n,reason){
   n=parseInt(n,10)||0; if(!n) return;
   var cur=pwXpGet()+n;
@@ -16550,6 +16551,8 @@ function _applyProfileGen(){
       if(modal) modal.style.display='flex';
     }catch(e){}
   }, 2000);
+  // Cargar ranking al inicializar
+  try{ if(typeof _gamiOn==="function" && _gamiOn()){ _loadRanks(); } }catch(e){}
 })();
 </script>
 </body>

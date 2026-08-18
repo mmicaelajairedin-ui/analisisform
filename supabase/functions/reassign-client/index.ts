@@ -111,6 +111,7 @@ Deno.serve(async (req: Request) => {
 
   // Perform the reassignment
   try {
+    // Step 1: Update coach_id
     const url = `${SB_URL}/rest/v1/candidatos?id=eq.${encodeURIComponent(client_id)}&select=id,coach_id`;
     const r = await fetch(url, {
       method: "PATCH",
@@ -119,6 +120,57 @@ Deno.serve(async (req: Request) => {
     });
 
     if (!r.ok) return json({ error: "update_failed", status: r.status }, 502);
+
+    // Step 2: Close old assignment (best-effort)
+    try {
+      const oldCheck = await fetch(
+        `${SB_URL}/rest/v1/coach_client_assignments?client_id=eq.${encodeURIComponent(client_id)}&estado=eq.activa&select=id`,
+        { headers: svc }
+      );
+      if (oldCheck.ok) {
+        const oldRows = await oldCheck.json();
+        if (Array.isArray(oldRows) && oldRows.length > 0) {
+          const oldId = oldRows[0].id;
+          const closeResp = await fetch(
+            `${SB_URL}/rest/v1/coach_client_assignments?id=eq.${encodeURIComponent(oldId)}`,
+            { method: "PATCH", headers: { ...svc, "Content-Type": "application/json" }, body: JSON.stringify({ estado: "cerrada", updated_at: new Date().toISOString() }) }
+          );
+          if (!closeResp.ok) console.error(`[reassign-client] Failed to close old assignment ${oldId}: ${closeResp.status}`);
+        }
+      }
+    } catch (e) {
+      console.error("[reassign-client] Failed to close old assignment:", e);
+    }
+
+    // Step 3: Create new assignment
+    try {
+      const assignmentCheck = await fetch(
+        `${SB_URL}/rest/v1/coach_client_assignments?org_id=eq.${encodeURIComponent(org_id)}&client_id=eq.${encodeURIComponent(client_id)}&coach_id=eq.${encodeURIComponent(new_coach_id)}&select=id`,
+        { headers: svc }
+      );
+      if (assignmentCheck.ok) {
+        const rows = await assignmentCheck.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          // Reactivate if paused
+          const updateResp = await fetch(
+            `${SB_URL}/rest/v1/coach_client_assignments?id=eq.${encodeURIComponent(rows[0].id)}`,
+            { method: "PATCH", headers: { ...svc, "Content-Type": "application/json" }, body: JSON.stringify({ estado: "activa", updated_at: new Date().toISOString() }) }
+          );
+          if (!updateResp.ok) console.error(`[reassign-client] Failed to update assignment ${rows[0].id}: ${updateResp.status}`);
+        } else {
+          // Create new
+          const createResp = await fetch(
+            `${SB_URL}/rest/v1/coach_client_assignments`,
+            { method: "POST", headers: { ...svc, "Content-Type": "application/json" }, body: JSON.stringify({ org_id, coach_id: new_coach_id, client_id, estado: "activa" }) }
+          );
+          if (!createResp.ok) console.error(`[reassign-client] Failed to create assignment: ${createResp.status}`);
+        }
+      } else {
+        console.error(`[reassign-client] Failed to check existing assignment: ${assignmentCheck.status}`);
+      }
+    } catch (e) {
+      console.error("[reassign-client] Failed to sync assignment:", e);
+    }
 
     const result = await r.json();
     const updated = Array.isArray(result) ? result[0] : result;
