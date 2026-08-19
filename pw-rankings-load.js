@@ -41,22 +41,56 @@
     var monthKey = pwMonthKey();
     var weekKey = pwWeekKey();
 
-    // Cargar ranking mensual
+    // Cargar ranking mensual CON fotos desde usuarios
     fetch(SB + "/rest/v1/ranking_mensual?ym=eq." + encodeURIComponent(monthKey) + "&select=coach_id,nombre,pts&order=pts.desc&limit=80", {
       headers: { apikey: KEY, "Accept": "application/json" }
     })
     .then(function(r){ return r.json(); })
+    .then(function(rows){
+      // Buscar fotos en usuarios por coach_id
+      if(rows && rows.length){
+        var coachIds = rows.map(function(r){ return r.coach_id; });
+        return fetch(SB + "/rest/v1/usuarios?id=in.(" + coachIds.map(function(id){ return '"'+id+'"'; }).join(',') + ")&select=id,foto_url", {
+          headers: { apikey: KEY, "Accept": "application/json" }
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(users){
+          var photoMap = {};
+          (users||[]).forEach(function(u){ if(u.id) photoMap[u.id] = u.foto_url; });
+          rows.forEach(function(r){ r.photo = photoMap[r.coach_id] || ""; });
+          return rows;
+        });
+      }
+      return rows;
+    })
     .then(function(rows){
       window.RMONTH = rows || [];
       if(typeof render === 'function') render();
     })
     .catch(function(e){ console.error('[pw-rankings] Error cargando RMONTH:', e); });
 
-    // Cargar ranking semanal
+    // Cargar ranking semanal CON fotos desde usuarios
     fetch(SB + "/rest/v1/ranking_mensual?ym=eq." + encodeURIComponent(weekKey) + "&select=coach_id,nombre,pts&order=pts.desc&limit=80", {
       headers: { apikey: KEY, "Accept": "application/json" }
     })
     .then(function(r){ return r.json(); })
+    .then(function(rows){
+      // Buscar fotos en usuarios por coach_id
+      if(rows && rows.length){
+        var coachIds = rows.map(function(r){ return r.coach_id; });
+        return fetch(SB + "/rest/v1/usuarios?id=in.(" + coachIds.map(function(id){ return '"'+id+'"'; }).join(',') + ")&select=id,foto_url", {
+          headers: { apikey: KEY, "Accept": "application/json" }
+        })
+        .then(function(r){ return r.json(); })
+        .then(function(users){
+          var photoMap = {};
+          (users||[]).forEach(function(u){ if(u.id) photoMap[u.id] = u.foto_url; });
+          rows.forEach(function(r){ r.photo = photoMap[r.coach_id] || ""; });
+          return rows;
+        });
+      }
+      return rows;
+    })
     .then(function(rows){
       window.RWEEK = rows || [];
       if(typeof render === 'function') render();
