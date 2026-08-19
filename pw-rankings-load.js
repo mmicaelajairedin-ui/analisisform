@@ -2,6 +2,25 @@
 (function(){
   "use strict";
 
+  // Inyectar CSS para ocultar avatares/fotos en el podio
+  var style = document.createElement('style');
+  style.textContent = `
+    /* Ocultar avatares en ranking de la revista */
+    .novedad-ranking-podio .avatar,
+    .ranking-avatar,
+    [data-ranking-photo],
+    .podio-photo {
+      display: none !important;
+    }
+    /* Ocultar círculos de color con iniciales */
+    .rank-circle,
+    .coach-circle,
+    .podium-circle {
+      display: none !important;
+    }
+  `;
+  document.head.appendChild(style);
+
   // Calcular claves de período actual
   function pwMonthKey(){ var d=new Date(); return "M-"+d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2); }
   function pwWeekKey(){
