@@ -699,7 +699,7 @@ async function entrar(){
     if(_si.error){
       try{
         var _mc=new AbortController();
-        var _mt=setTimeout(function(){_mc.abort();},8000);
+        var _mt=setTimeout(function(){_mc.abort();},3000);
         var _mr=await fetch(SB+'/functions/v1/migrate-user-to-auth',{
           method:'POST',
           headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},
@@ -768,7 +768,7 @@ async function entrar(){
         : 'https://buy.stripe.com/00waEX3Qke8gczqge78AE0d';
       // Dentro de la app de tienda no se muestra el link de pago (se renueva en la web).
       error.innerHTML = window.PW_IN_APP
-        ? 'Tu cuenta está pendiente de pago. Renueva tu suscripción entrando a <strong>pathwaycareercoach.com</strong> desde tu navegador.'
+        ? 'Tu cuenta está pendiente de pago. Contacta con nuestro equipo para completar tu suscripción.'
         : 'Tu cuenta está pendiente de pago. <a href="'+stripeUrl+'?prefilled_email='+encodeURIComponent(usuario.email)+'" style="color:var(--bosque);font-weight:600;text-decoration:underline;">Completar pago →</a>';
       btn.disabled=false;loading.style.display='none';
       return;
@@ -778,54 +778,66 @@ async function entrar(){
     var multicoachAccess = false;
     var colaboradorPermisos = null;
 
-    // Si es OWNER: validar acceso y detectar multi-org
+    // PARALELO: Iniciar fetches de owner/colaborador SIN bloquear
+    var _ownerPromise = null;
+    var _colaboradorPromise = null;
+
     if(usuario.rol === 'owner'){
       multicoachAccess = true;
-      // Detectar si pertenece a múltiples orgs
-      try{
-        var _orgsRes = await fetch(SB+'/rest/v1/usuarios?auth_id=eq.'+encodeURIComponent(_authUid)+'&select=org_id&distinct=true', {
-          headers: {'apikey': KEY, 'Authorization': 'Bearer ' + _jwt}
-        });
-        var _orgsRows = await _orgsRes.json();
-        if(_orgsRows && Array.isArray(_orgsRows)){
-          var _orgIds = {};
-          _orgsRows.forEach(function(r){ if(r.org_id) _orgIds[r.org_id] = true; });
-          var _orgIdsList = Object.keys(_orgIds);
-          if(_orgIdsList.length > 1){
-            // Multi-org: guardar en localStorage para que multicoach.html muestre selector
-            localStorage.setItem('mj_multiorg_ids', JSON.stringify(_orgIdsList));
-            localStorage.setItem('mj_multiorg_current', usuario.org_id || _orgIdsList[0]);
+      // Iniciar fetch de orgs en paralelo (NO await aquí)
+      _ownerPromise = (async function(){
+        try{
+          var _orgsRes = await fetch(SB+'/rest/v1/usuarios?auth_id=eq.'+encodeURIComponent(_authUid)+'&select=org_id&distinct=true', {
+            headers: {'apikey': KEY, 'Authorization': 'Bearer ' + _jwt}
+          });
+          var _orgsRows = await _orgsRes.json();
+          if(_orgsRows && Array.isArray(_orgsRows)){
+            var _orgIds = {};
+            _orgsRows.forEach(function(r){ if(r.org_id) _orgIds[r.org_id] = true; });
+            var _orgIdsList = Object.keys(_orgIds);
+            if(_orgIdsList.length > 1){
+              localStorage.setItem('mj_multiorg_ids', JSON.stringify(_orgIdsList));
+              localStorage.setItem('mj_multiorg_current', usuario.org_id || _orgIdsList[0]);
+            }
           }
-        }
-      }catch(_e){}
+        }catch(_e){}
+      })();
     }
-    // Si es COLABORADOR: validar permisos antes de permitir acceso
     else if(usuario.rol === 'colaborador' && usuario.org_id){
-      try{
-        var _permRes = await fetch(SB+'/rest/v1/colaborador_permisos?usuario_id=eq.'+encodeURIComponent(usuario.id)+'&org_id=eq.'+encodeURIComponent(usuario.org_id)+'&select=permisos', {
-          headers: {'apikey': KEY, 'Authorization': 'Bearer ' + _jwt}
-        });
-        var _permRows = await _permRes.json();
-        if(_permRows && Array.isArray(_permRows) && _permRows.length > 0){
-          // Tiene permisos → permitir acceso a MultiCoach
-          multicoachAccess = true;
-          colaboradorPermisos = _permRows[0].permisos || [];
-        } else {
-          // Sin permisos → denegar acceso
-          error.innerHTML = _lng === 'en'
-            ? 'You do not have access to enterprise management. Contact your administrator.'
-            : 'No tienes permisos para acceder a la gestión empresarial. Contacta al administrador.';
-          btn.disabled = false;
-          loading.style.display = 'none';
-          return;
+      // Iniciar fetch de permisos en paralelo (NO await aquí)
+      _colaboradorPromise = (async function(){
+        try{
+          var _permRes = await fetch(SB+'/rest/v1/colaborador_permisos?usuario_id=eq.'+encodeURIComponent(usuario.id)+'&org_id=eq.'+encodeURIComponent(usuario.org_id)+'&select=permisos', {
+            headers: {'apikey': KEY, 'Authorization': 'Bearer ' + _jwt}
+          });
+          var _permRows = await _permRes.json();
+          if(_permRows && Array.isArray(_permRows) && _permRows.length > 0){
+            multicoachAccess = true;
+            colaboradorPermisos = _permRows[0].permisos || [];
+            return true;
+          } else {
+            return false;
+          }
+        }catch(_e){
+          return false;
         }
-      }catch(_e){
-        // Si falla la query, denegar acceso (safer)
-        error.textContent = TXT[_lng].err_net;
+      })();
+    }
+
+    // Esperar promesas de owner/colaborador ANTES de redirect (non-blocking)
+    if(_colaboradorPromise !== null){
+      var _hasPerms = await _colaboradorPromise;
+      if(!_hasPerms){
+        error.innerHTML = _lng === 'en'
+          ? 'You do not have access to enterprise management. Contact your administrator.'
+          : 'No tienes permisos para acceder a la gestión empresarial. Contacta al administrador.';
         btn.disabled = false;
         loading.style.display = 'none';
         return;
       }
+    }
+    if(_ownerPromise !== null){
+      await _ownerPromise;
     }
 
     // Guardar usuario con contexto + flags de acceso

@@ -5059,6 +5059,41 @@ const RULES = [
       return null;
     },
   },
+  {
+    name: "seguridad: pw-observe.js NUNCA loguea OAuth tokens en location.hash (sanitizer activo)",
+    bug: "Agosto 2026: CRITICAL — pw-observe.js capturaba location.pathname + location.hash " +
+         "directamente, exponiendo access_token, refresh_token, provider_token en client_errors " +
+         "durante Google/Apple OAuth flows. Si un error ocurría en auth-callback.html, la URL " +
+         "completa con tokens quedaba guardada en plaintext, haciendo possiblemente hijacking " +
+         "de sesiones. Fix: sanitizar location.hash antes de loguear, removiendo: " +
+         "access_token, refresh_token, provider_token, id_token, session, code, state.",
+    check() {
+      const obs = read("pw-observe.js");
+      if (!obs) return null;
+
+      // Verificar que el sanitizer está presente (URLSearchParams + .delete)
+      if (!/URLSearchParams\s*\(/.test(obs))
+        return "pw-observe.js: no usa URLSearchParams para sanitizar hash (vuelve a loguear tokens).";
+
+      if (!/(?:access_token|refresh_token|provider_token)/.test(obs))
+        return "pw-observe.js: sanitizer NO menciona access_token/refresh_token/provider_token (leak abierto).";
+
+      // Verificar que el sanitizer esté ACTIVO (en la función report, no comentado)
+      if (!/function\s+report\s*\([^)]*\)\s*\{[\s\S]*?var\s+safeUrl[\s\S]*?URLSearchParams/.test(obs))
+        return "pw-observe.js: el sanitizer de tokens NO está activo en report() (puede estar comentado).";
+
+      // Verificar que la URL sana se use (no location.pathname + location.hash crudo)
+      if (/page:\s*location\.pathname\s*\+\s*location\.hash/.test(obs))
+        return "pw-observe.js: aun loguea location.pathname + location.hash sin sanitizar (FUGA ACTIVA).";
+
+      // auth-callback.html debe incluir pw-observe.js pero nunca pasar URLs con tokens manualmente
+      const authCb = read("auth-callback.html");
+      if (authCb && /__pwReport\s*\(\s*['"][^'"]*['"],\s*(?:location|window\.location)/.test(authCb))
+        return "auth-callback.html: llama __pwReport() con location/URL (puede loguear tokens).";
+
+      return null;
+    },
+  },
 
   // ========================================================================
   // FUTURE GUARDRAILS — Documentación de reglas que se implementarán
