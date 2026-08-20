@@ -40,10 +40,26 @@
         if (sent >= MAX || !origFetch) return;
         var sig = kind + "|" + (detail || "").slice(0, 120);
         if (seen[sig]) return; seen[sig] = 1; sent++;
+        // SECURITY FIX: Sanitize URL to remove OAuth tokens and sensitive parameters
+        var safeUrl = location.pathname + location.search; // keep query, exclude hash
+        if (location.hash) {
+          try {
+            var hashStr = location.hash.substring(1);
+            var hashParams = new URLSearchParams(hashStr);
+            // Remove all sensitive OAuth + session parameters
+            ['access_token','refresh_token','provider_token','id_token','session','code','state','token','auth'].forEach(function(k){
+              hashParams.delete(k);
+            });
+            var safeHash = hashParams.toString();
+            if (safeHash) safeUrl += '#' + safeHash;
+          } catch (e) {
+            // If URLSearchParams fails, just skip the hash entirely
+          }
+        }
         var row = {
           kind: kind,
           detail: ("" + (detail || "")).slice(0, 600),
-          page: location.pathname + location.hash,
+          page: safeUrl,
           email: who(),
           ua: (navigator.userAgent || "").slice(0, 200),
           ts: new Date().toISOString()
