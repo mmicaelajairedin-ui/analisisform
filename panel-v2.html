@@ -7270,9 +7270,22 @@ function cfgAccount(){
         "<div style='display:flex;justify-content:flex-end;margin-top:8px'><button class='cp-btn cp-btn-primary' data-act='coach-pass-save'>Guardar contraseña</button></div></div></div></div>"+
     notifCard()+
     "<div class='cp-card' style='border-color:rgba(192,117,110,.25)'><div class='cp-card-pad' style='display:flex;justify-content:space-between;align-items:center;gap:18px'>"+
-      "<div><div class='cp-toggle-title' style='color:var(--pw-danger)'>Cerrar mi cuenta</div>"+
-      "<div class='cp-toggle-desc'>Tus clientes pierden acceso a su portal. Tus datos se eliminan a los 30 días.</div></div>"+
-      "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='open' data-url='"+esc("https://wa.me/34623816019?text="+encodeURIComponent("Hola, quiero solicitar el cierre de mi cuenta de coach en Pathway ("+((REAL&&COACH.email)||"")+")."))+"'>Solicitar cierre</button></div></div>";
+      "<div><div class='cp-toggle-title' style='color:var(--pw-danger)'>Eliminar mi cuenta</div>"+
+      "<div class='cp-toggle-desc'>Se eliminará tu cuenta permanentemente después de 24 horas (puedes cancelar en cualquier momento).</div></div>"+
+      "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='delete-account-modal'>Eliminar cuenta</button></div></div>";
+}
+function viewDeleteAccountModal(){
+  return "<div data-act='del-bg' style='position:fixed;inset:0;background:rgba(27,46,38,.5);z-index:160;display:flex;align-items:center;justify-content:center;padding:20px'>"+
+    "<div data-act='del-stop' role='dialog' aria-modal='true' style='background:#fff;border-radius:18px;box-shadow:var(--pw-shadow-xl);width:420px;max-width:100%;padding:30px 26px'>"+
+      "<h3 style='font-family:var(--pw-serif);font-size:20px;font-weight:600;margin:0 0 8px;color:var(--pw-danger)'>Eliminar mi cuenta</h3>"+
+      "<p style='font-size:13px;color:var(--pw-text-soft);margin:0 0 20px;line-height:1.6'>Tu cuenta se eliminará permanentemente en 24 horas. Puedes cancelar en cualquier momento durante ese período.</p>"+
+      "<div class='cp-form-row'><label class='cp-form-label'>Tu contraseña</label>"+
+        "<input id='del-pass' type='password' class='cp-form-input' placeholder='Confirma tu contraseña'>"+
+      "</div>"+
+      "<div style='display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding-top:12px'>"+
+        "<button class='cp-btn cp-btn-ghost' data-act='del-cancel'>Cancelar</button>"+
+        "<button class='cp-btn cp-btn-ghost' style='color:var(--pw-danger);border-color:rgba(192,117,110,.4)' data-act='del-confirm'>Eliminar cuenta</button>"+
+      "</div></div></div>";
 }
 function cfgPlan(){
   // ── No mostrar selector de planes en la app: Apple rechaza pagos en-app ──
@@ -10831,6 +10844,7 @@ function render(){
       (state.genmat&&state.genmat.open?viewGenMatModal():"")+
       (state.review&&state.review.open?viewReviewModal():"")+
       (state.reasignOpen?viewReasignModal():"")+
+      (state.deleteAccountModal?viewDeleteAccountModal():"")+
       (state.ag?viewAgModal():"");
     var _same=(_vk===_lastViewKey);
     try{ var _scEl2=document.querySelector(".cp-scroll"); if(_scEl2) _scEl2.scrollTop=(_same?_prevScroll:0); }catch(e){}
@@ -11623,6 +11637,8 @@ document.addEventListener("click", function(ev){
   if(act==="mail-bg"){ if(ev.target===el){ state.mail.open=false; _gameReturnMaybe(); render(); } return; }
   if(act==="mail-stop"){ return; }
   if(act==="mail-close"){ state.mail.open=false; _gameReturnMaybe(); render(); return; }
+  if(act==="del-bg"){ if(ev.target===el){ state.deleteAccountModal=false; render(); } return; }
+  if(act==="del-stop"){ return; }
   if(act.indexOf("genmat:")===0){ var _gmid=el.getAttribute("data-id"); if(_gmid==="ejemplo-maria"){ demoGenerateExample(); return; } state.genmat={open:true,kind:act.slice(7),id:_gmid}; render(); return; }
   if(act==="genmat-bg"){ if(ev.target===el){ state.genmat=null; render(); } return; }
   if(act==="genmat-stop"){ return; }
@@ -13974,6 +13990,37 @@ document.addEventListener("click", function(ev){
   if(act==="path-toggle"){ try{ var _pc=localStorage.getItem("mj_path_collapsed")==="1"; localStorage.setItem("mj_path_collapsed", _pc?"0":"1"); }catch(e){} render(); return; }
   if(act==="goat-wave"){ _goatWaveUntil=Date.now()+2400; render(); setTimeout(function(){ try{ render(); }catch(e){} },2500); return; }
   if(act==="guide-off"){ try{ localStorage.setItem("pw_guide_off","1"); }catch(e){} render(); return; }
+  if(act==="delete-account-modal"){ state.deleteAccountModal=true; render(); return; }
+  if(act==="del-cancel"){ state.deleteAccountModal=false; var dp=document.getElementById("del-pass"); if(dp) dp.value=""; render(); return; }
+  if(act==="del-confirm"){
+    if(!REAL||!RME||!RME.id){ alert("Inicia sesión para eliminar tu cuenta."); return; }
+    var pw=_val("del-pass").trim(); if(!pw){ alert("Escribe tu contraseña para confirmar."); return; }
+    var em=RME.email||COACH.email||""; if(!em){ alert("No se pudo obtener tu email."); return; }
+    _sha256(pw).then(function(ph){
+      return _sbw("usuarios?email=eq."+encodeURIComponent(em)+"&select=id,password_hash","GET").then(function(r){
+        if(!r.ok){ throw "No se pudo verificar la contraseña"; }
+        return r.json().then(function(rows){
+          if(!rows||!rows[0]){ throw "Usuario no encontrado"; }
+          var stored=rows[0].password_hash||"";
+          if(stored!==ph){ throw "Contraseña incorrecta"; }
+          return ph;
+        });
+      });
+    }).then(function(){
+      return _hdr({"Content-Type":"application/json"}).then(function(h){
+        return fetch(SB+"/functions/v1/schedule-account-deletion",{method:"POST",headers:h,body:JSON.stringify({usuario_id:RME.id})});
+      });
+    }).then(function(r){ return r.json().catch(function(){return {};}).then(function(j){return {ok:r.ok,j:j};});})
+      .then(function(res){
+        if(!res.ok||!res.j||res.j.success!==true){ throw ((res.j&&res.j.error)||"error"); }
+        state.deleteAccountModal=false; var dp=document.getElementById("del-pass"); if(dp) dp.value="";
+        alert("Tu cuenta será eliminada en 24 horas. Puedes cancelar en cualquier momento.");
+        render();
+      }).catch(function(e){
+        alert("Error: "+(typeof e==="string"?e:"No se pudo procesar tu solicitud. Intenta de nuevo."));
+      });
+    return;
+  }
   if(act==="logout"){
     try{ localStorage.removeItem("mj_user"); }catch(e){}
     try{ sessionStorage.clear(); }catch(e){}
