@@ -59,6 +59,13 @@ function generateReport(results) {
   const timeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 
   const suites = results.suites || [];
+
+  // INC-026 / R-33 — Playwright emite en `errors` lo que le impidio cargar los
+  // ficheros de test, y en ese caso `suites` viene vacio. Leer solo `suites`
+  // convertia "no se ejecuto nada" en "0 fallos" y de ahi en SALUDABLE: once dias
+  // de correo verde con la bateria muerta. Un runner que no corre no es salud.
+  const runnerErrors = Array.isArray(results.errors) ? results.errors : [];
+
   let totalTests = 0;
   let passed = 0;
   let failed = 0;
@@ -113,9 +120,19 @@ function generateReport(results) {
 
   processSuites(suites);
 
-  // Determinar estado general
-  const healthStatus = failed === 0 ? '✅ SALUDABLE' : failed <= 3 ? '⚠️ ATENCIÓN NECESARIA' : '🔴 PROBLEMAS CRÍTICOS';
-  const healthEmoji = failed === 0 ? '✅' : failed <= 3 ? '⚠️' : '🔴';
+  // Determinar estado general.
+  // INEJECUTABLE manda sobre todo lo demas: si el cargador fallo, o si no se
+  // descubrio ni un test, no hay nada que aprobar. Cuenta como CRITICO, nunca
+  // como salud, y nunca como "0 fallos". (INC-026, R-33)
+  const inejecutable = runnerErrors.length > 0 || totalTests === 0;
+  const motivoInejecutable = runnerErrors.length > 0
+    ? `Playwright no pudo cargar los tests (${runnerErrors.length} error(es) del cargador)`
+    : 'No se descubrio ni un solo test';
+
+  const healthStatus = inejecutable
+    ? '🔴 BATERÍA INEJECUTABLE'
+    : failed === 0 ? '✅ SALUDABLE' : failed <= 3 ? '⚠️ ATENCIÓN NECESARIA' : '🔴 PROBLEMAS CRÍTICOS';
+  const healthEmoji = inejecutable ? '🔴' : failed === 0 ? '✅' : failed <= 3 ? '⚠️' : '🔴';
 
   // Generar reporte en texto
   let report = '';
@@ -133,6 +150,19 @@ function generateReport(results) {
   report += `  ❌ Fallaron:       ${failed}\n`;
   report += `  ⏭️  Omitidos:      ${skipped}\n`;
   report += `  Tasa de éxito:     ${totalTests > 0 ? Math.round((passed / totalTests) * 100) : 0}%\n\n`;
+
+  if (inejecutable) {
+    report += `🔴 LA BATERÍA NO SE EJECUTÓ\n`;
+    report += `─────────────────────────────────────────\n`;
+    report += `  ${motivoInejecutable}.\n`;
+    report += `  Un 0/0 NO significa que la plataforma esté sana: significa que\n`;
+    report += `  nadie la miró. Revisa los errores de abajo antes que nada.\n\n`;
+    runnerErrors.slice(0, 10).forEach((e, i) => {
+      const msg = String((e && (e.message || e.value)) || e).split('\n').slice(0, 6).join('\n     ');
+      report += `  ${i + 1}. ${msg}\n\n`;
+    });
+    if (runnerErrors.length > 10) report += `  … y ${runnerErrors.length - 10} más.\n\n`;
+  }
 
   // Leer auto-fixes si existen
   let autoFixesTxt = [];
@@ -211,7 +241,7 @@ function generateReport(results) {
     dateStr,
     timeStr,
     healthStatus,
-    healthEmoji,
+    healthEmoji, inejecutable, motivoInejecutable, runnerErrors,
     totalTests,
     passed,
     failed,
@@ -288,18 +318,33 @@ function generateReport(results) {
     ? `🔴 Testing diario: ${issueFailures.length} problema(s) necesitan revisión — ${dateStr}`
     : '';
 
-  return { text: report, html: htmlReport, failed, passed, totalTests, issueBody, issueTitle };
+  return { text: report, html: htmlReport, failed, passed, totalTests, issueBody, issueTitle,
+    inejecutable, motivoInejecutable, runnerErrors };
 }
 
 function generateHTMLReport(data) {
   const {
     dateStr, timeStr, healthEmoji, totalTests, passed, failed,
     skipped, failures, warnings, suiteGroups,
+    inejecutable, motivoInejecutable, runnerErrors,
   } = data;
 
   const successRate = totalTests > 0 ? Math.round((passed / totalTests) * 100) : 0;
-  const statusColor = failed === 0 ? '#4a7c5f' : failed <= 3 ? '#b45309' : '#c0756e';
-  const statusText = failed === 0 ? 'Saludable' : failed <= 3 ? 'Atención necesaria' : 'Problemas críticos';
+  const statusColor = inejecutable ? '#c0756e' : failed === 0 ? '#4a7c5f' : failed <= 3 ? '#b45309' : '#c0756e';
+  const statusText = inejecutable
+    ? 'Batería inejecutable'
+    : failed === 0 ? 'Saludable' : failed <= 3 ? 'Atención necesaria' : 'Problemas críticos';
+
+  // El aviso va ARRIBA del todo y antes de las cifras: si se lee el 0/0 sin el
+  // motivo, el correo vuelve a mentir. (INC-026)
+  const inejecutableHTML = !inejecutable ? '' : `
+      <div style="background:#fdf6f6;border:1.5px solid #c0756e;border-radius:10px;padding:14px 16px;margin-bottom:20px;">
+        <strong style="font-size:14px;color:#c0756e;">🔴 La batería no se ejecutó</strong>
+        <p style="font-size:12px;color:#5a4a4a;margin:6px 0 0;">${motivoInejecutable}. Un 0/0 no dice que la plataforma esté sana: dice que nadie la miró.</p>
+        ${(runnerErrors || []).slice(0, 5).map((e) => `
+          <pre style="font-size:11px;color:#7a5c5c;background:#fff;border-radius:6px;padding:8px;margin:8px 0 0;white-space:pre-wrap;overflow-x:auto;">${String((e && (e.message || e.value)) || e).split('\n').slice(0, 6).join('\n').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>
+        `).join('')}
+      </div>`;
 
   // Leer resultados del auto-fixer (si existen)
   let autoFixes = [];
@@ -404,6 +449,8 @@ function generateHTMLReport(data) {
         </span>
       </div>
 
+      ${inejecutableHTML}
+
       <!-- Stats Grid -->
       <div style="display:flex;gap:8px;margin-bottom:20px;">
         <div style="flex:1;background:#f9f8f8;border-radius:8px;padding:12px;text-align:center;">
@@ -454,7 +501,8 @@ function generateHTMLReport(data) {
 // Main
 async function main() {
   const results = await readResults();
-  const { text, html, failed, totalTests, issueBody, issueTitle } = generateReport(results);
+  const { text, html, failed, totalTests, issueBody, issueTitle,
+    inejecutable, motivoInejecutable, runnerErrors } = generateReport(results);
 
   // Imprimir reporte en consola
   console.log(text);
@@ -473,7 +521,12 @@ async function main() {
     passed: totalTests - failed,
     failed,
     successRate: totalTests > 0 ? Math.round(((totalTests - failed) / totalTests) * 100) : 0,
-    status: failed === 0 ? 'healthy' : failed <= 3 ? 'warning' : 'critical',
+    // INC-026 / R-33 · inejecutable ⇒ critical, SIEMPRE. Antes esta linea decia
+    // solo `failed === 0 ? 'healthy'`, y con 0 tests descubiertos failed ES 0.
+    status: inejecutable ? 'critical' : failed === 0 ? 'healthy' : failed <= 3 ? 'warning' : 'critical',
+    unexecutable: inejecutable,
+    unexecutableReason: inejecutable ? motivoInejecutable : null,
+    runnerErrors: (runnerErrors || []).map((e) => String((e && (e.message || e.value)) || e).split('\n')[0]),
   };
 
   fs.writeFileSync(path.join(outputDir, 'summary.json'), JSON.stringify(summary, null, 2));

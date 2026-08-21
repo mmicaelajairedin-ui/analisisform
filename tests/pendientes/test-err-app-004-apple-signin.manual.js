@@ -1,3 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PENDIENTE · NO se ejecuta en el testing diario. NO esta resuelto.
+//
+// Por que esta aqui: tenia sintaxis TypeScript (`window as any`) dentro de un
+// fichero `.js`, y Playwright abortaba el DESCUBRIMIENTO ENTERO al cargarlo:
+// `Total: 0 tests in 0 files`. Desde el 2026-08-10 la bateria completa dejo de
+// ejecutarse y el correo diario siguio diciendo SALUDABLE. (INC-026)
+//
+// Que le falta para volver a la bateria — las dos cosas, no una:
+//   1. Quitar la sintaxis TS o renombrar a `.spec.ts`.
+//   2. Dejar de apuntar a `http://localhost:5173`: en CI no hay servidor de
+//      desarrollo, asi que hoy no puede pasar aunque cargue. Debe usar BASE_URL.
+//
+// Mientras tanto se ejecuta a mano:  npx playwright test <ruta de este fichero>
+// con un `npm run dev` levantado y renombrandolo a `.spec.js`.
+// ─────────────────────────────────────────────────────────────────────────────
 import { test, expect } from '@playwright/test';
 
 /**

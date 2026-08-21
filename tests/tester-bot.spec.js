@@ -55,16 +55,6 @@ function detectEnvironment() {
   return 'unknown';
 }
 
-// Extrae el frontend_commit del meta tag (si existe)
-function getCommitHash(page) {
-  try {
-    const meta = page.evaluate(() => document.querySelector('meta[name="frontend-commit"]'));
-    return meta ? meta.getAttribute('content') : 'UNKNOWN';
-  } catch (_e) {
-    return 'UNKNOWN';
-  }
-}
-
 // Clasifica error y extrae código de error si existe
 function classifyError(errorMessage) {
   const msg = String(errorMessage || '');
@@ -92,7 +82,17 @@ function classifyError(errorMessage) {
 function capturarErrores(page) {
   const correlationId = generateUUID();
   const environment = detectEnvironment();
-  const frontendCommit = getCommitHash(page);
+  // Aqui se llamaba a getCommitHash(page), ANTES de que hubiera pagina cargada.
+  // Hacia `page.evaluate(...)` SIN await: la promesa quedaba suelta y al navegar se
+  // rechazaba con "Execution context was destroyed, most likely because of a
+  // navigation". El try/catch no la atrapaba —es asincrona— y ese rechazo hundia el
+  // test. Nueve de los nueve fallos de tester-bot del run #169 son este.
+  //
+  // Y ademas NUNCA funciono: `meta` era la promesa, no el elemento, asi que
+  // `meta.getAttribute` lanzaba TypeError, el catch lo tragaba y la funcion devolvia
+  // 'UNKNOWN' siempre. Quitarla no pierde ningun dato que se estuviera leyendo.
+  // Comprobado en local con Chromium: 8/8 en test-tester-bot.mjs. (INC-026)
+  const frontendCommit = 'UNKNOWN';
 
   /** @type {Array} */
   const errores = [];

@@ -1,3 +1,21 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PENDIENTE · NO se ejecuta en el testing diario. NO esta resuelto.
+//
+// Por que esta aqui: nunca fue un test de Playwright. Usa `describe`/`it` al
+// estilo de Jest y no importa nada, asi que al cargarlo Playwright lanzaba
+// `ReferenceError: describe is not defined` y abortaba el DESCUBRIMIENTO
+// ENTERO: `Total: 0 tests in 0 files`. Entro el 2026-08-13, encima de una
+// rotura identica que ya venia del 2026-08-10. (INC-026)
+//
+// Que le falta para volver a la bateria — las dos cosas, no una:
+//   1. Portarlo a Playwright: `const { test, expect } = require('@playwright/test')`
+//      y `test.describe` / `test` en lugar de `describe` / `it`.
+//   2. Un `TEST_OWNER_JWT` valido en los secrets del workflow. Hoy no existe,
+//      asi que sus asserts contra las Edge Functions no pueden pasar.
+//
+// Valida editar-coach-red, editar-cliente-red y eliminar-cliente-red. Esa
+// cobertura NO existe hoy: no se ha ejecutado ni una vez.
+// ─────────────────────────────────────────────────────────────────────────────
 /**
  * PHASE 2A BACKEND VALIDATION — Staging Tests
  *
