@@ -5060,35 +5060,42 @@ const RULES = [
     },
   },
   {
-    name: "seguridad: pw-observe.js NUNCA loguea OAuth tokens en location.hash (sanitizer activo)",
-    bug: "Agosto 2026: CRITICAL — pw-observe.js capturaba location.pathname + location.hash " +
-         "directamente, exponiendo access_token, refresh_token, provider_token en client_errors " +
-         "durante Google/Apple OAuth flows. Si un error ocurría en auth-callback.html, la URL " +
-         "completa con tokens quedaba guardada en plaintext, haciendo possiblemente hijacking " +
-         "de sesiones. Fix: sanitizar location.hash antes de loguear, removiendo: " +
-         "access_token, refresh_token, provider_token, id_token, session, code, state.",
+    name: "seguridad: pw-observe.js nunca guarda VALORES de la URL en client_errors",
+    bug: "Agosto 2026: pw-observe.js guardaba location.pathname + location.hash, asi que durante " +
+         "el OAuth de Google/Apple los access_token, refresh_token y provider_token quedaban en " +
+         "client_errors en claro — 475 hubo que redactarlos a posteriori. El primer arreglo saneo " +
+         "el fragmento con una lista negra de nueve nombres y, en el mismo cambio, empezo a guardar " +
+         "location.search entero: cerro la fuga de tokens y abrio una de datos personales, porque " +
+         "por el query string de estas paginas viajan el correo del cliente y el UUID del coach. " +
+         "La leccion no es alargar la lista de nombres prohibidos: es dejar de guardar valores.",
+    why: "Esta regla comprueba lo que NO puede existir, no que exista una implementacion concreta. " +
+         "La version anterior exigia URLSearchParams y una lista de nombres, asi que daba VERDE a " +
+         "una fuga nueva y ROJO a un arreglo mas estricto.",
     check() {
-      const obs = read("pw-observe.js");
-      if (!obs) return null;
+      const crudo = read("pw-observe.js");
+      if (!crudo) return null;
 
-      // Verificar que el sanitizer está presente (URLSearchParams + .delete)
-      if (!/URLSearchParams\s*\(/.test(obs))
-        return "pw-observe.js: no usa URLSearchParams para sanitizar hash (vuelve a loguear tokens).";
+      // Un guardarrail que lee comentarios se puede enganar con una cita del codigo antiguo.
+      const sinComentarios = (s) =>
+        s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      const obs = sinComentarios(crudo);
 
-      if (!/(?:access_token|refresh_token|provider_token)/.test(obs))
-        return "pw-observe.js: sanitizer NO menciona access_token/refresh_token/provider_token (leak abierto).";
+      // Formas inseguras conocidas. Cada una nacio de un fallo real.
+      const FORMAS_INSEGURAS = [
+        [/page:\s*location\.pathname\s*\+\s*location\.hash/,
+         "`page` guarda location.hash crudo: los tokens de OAuth acaban en client_errors."],
+        [/location\.pathname\s*\+\s*location\.search/,
+         "`page` guarda el query string entero: en estas paginas lleva email, coach, name, photo, id y slug."],
+        [/hashParams\.delete\(|\.forEach\(function\s*\(k\)\s*\{\s*hashParams\.delete/,
+         "el fragmento se sanea con lista negra: protege solo los nombres que alguien recordo escribir."],
+      ];
+      for (const [forma, motivo] of FORMAS_INSEGURAS) {
+        if (forma.test(obs)) return "pw-observe.js: " + motivo;
+      }
 
-      // Verificar que el sanitizer esté ACTIVO (en la función report, no comentado)
-      if (!/function\s+report\s*\([^)]*\)\s*\{[\s\S]*?var\s+safeUrl[\s\S]*?URLSearchParams/.test(obs))
-        return "pw-observe.js: el sanitizer de tokens NO está activo en report() (puede estar comentado).";
-
-      // Verificar que la URL sana se use (no location.pathname + location.hash crudo)
-      if (/page:\s*location\.pathname\s*\+\s*location\.hash/.test(obs))
-        return "pw-observe.js: aun loguea location.pathname + location.hash sin sanitizar (FUGA ACTIVA).";
-
-      // auth-callback.html debe incluir pw-observe.js pero nunca pasar URLs con tokens manualmente
+      // Se conserva intacta la comprobacion de auth-callback del guardarrail anterior.
       const authCb = read("auth-callback.html");
-      if (authCb && /__pwReport\s*\(\s*['"][^'"]*['"],\s*(?:location|window\.location)/.test(authCb))
+      if (authCb && /__pwReport\s*\(\s*['"][^'"]*['"],\s*(?:location|window\.location)/.test(sinComentarios(authCb)))
         return "auth-callback.html: llama __pwReport() con location/URL (puede loguear tokens).";
 
       return null;
