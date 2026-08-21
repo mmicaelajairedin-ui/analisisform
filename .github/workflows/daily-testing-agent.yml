@@ -38,8 +38,24 @@ jobs:
         id: run-tests
         run: |
           mkdir -p tests/results
-          npx playwright test --reporter=json > tests/results/test-results.json 2>&1 || true
-          echo "Tests ejecutados"
+          # El JSON va a SU fichero y los errores del cargador al log del job.
+          # Mezclarlos con 2>&1 y taparlos con `|| true` fue lo que dejo once dias
+          # de "healthy" sin ejecutar un solo test: el SyntaxError que abortaba el
+          # descubrimiento acababa dentro del JSON y nadie lo miraba. (INC-026)
+          RUNNER_EXIT=0
+          npx playwright test --reporter=json \
+            > tests/results/test-results.json \
+            2> tests/results/runner-stderr.txt || RUNNER_EXIT=$?
+          echo "runner_exit=$RUNNER_EXIT" >> $GITHUB_OUTPUT
+          if [ -s tests/results/runner-stderr.txt ]; then
+            echo "::group::Salida de error de Playwright"
+            cat tests/results/runner-stderr.txt
+            echo "::endgroup::"
+          fi
+          if [ "$RUNNER_EXIT" -ne 0 ]; then
+            echo "::warning::Playwright termino con codigo $RUNNER_EXIT"
+          fi
+          echo "Tests ejecutados (exit $RUNNER_EXIT)"
         env:
           BASE_URL: "https://pathwaycareercoach.com/"
           # TEST_ACCOUNTS: JSON con todas las cuentas de prueba (coach + los 3
@@ -282,7 +298,10 @@ jobs:
           fi
 
       - name: "✅ Cerrar Issue si todos los tests pasan"
-        if: steps.generate-report.outputs.failed == '0' && steps.generate-report.outputs.status != 'error'
+        # Antes bastaba con failed==0, y con 0 tests descubiertos failed ES 0: el
+        # agente cerraba el issue diciendo "todos los tests pasan" sin haber
+        # ejecutado ninguno. Ahora exige salud de verdad. (INC-026, R-33)
+        if: steps.generate-report.outputs.status == 'healthy'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -327,3 +346,12 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "</details>" >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: "🚦 Poner el job en rojo si el resultado es critico"
+        # Ultimo a proposito: el correo, el issue y el artifact ya se emitieron.
+        # Sin esto el job sale verde pase lo que pase, que es como un runner caido
+        # pasa inadvertido durante once dias. (INC-026)
+        if: always() && steps.generate-report.outputs.status == 'critical'
+        run: |
+          echo "::error::Resultado critico — total ${{ steps.generate-report.outputs.total }}, fallos ${{ steps.generate-report.outputs.failed }}, runner exit ${{ steps.run-tests.outputs.runner_exit }}"
+          exit 1
